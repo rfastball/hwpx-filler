@@ -56,6 +56,7 @@ from ..data.factory import source_for_path
 from ..external.job_store import JobRegistry, content_fingerprint
 from ..host.locations import default_templates_dir, default_text_templates_dir
 from ..gui.edit_session import (
+    DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
     SECTION_FILENAME,
     SECTION_TEMPLATE,
@@ -202,6 +203,11 @@ class EditorController:
         # (#349 리뷰 P1)이 채운다: 참조를 경로로만 줄이면 사용자가 고른 것과 **다른 헤더**로
         # 마법사가 서고, 그 어긋남은 화면 어디에도 표시가 없다.
         self.data_header_row = 0
+        # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
+        # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
+        # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
+        # 이탈마다 헛확인이 뜬다(사람이 그 파일을 고른 적이 없다).
+        self._entry_data: "dict[str, str]" = {"data_path": "", "data_sheet": ""}
         self.source_fields: "list[str]" = []
         # '미사용' 헤더(#49) — 세션 국소 상태. durable 저장 없음: 매핑이 곧 사용 헤더의
         # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
@@ -388,14 +394,14 @@ class EditorController:
         }
 
     def _extras_of(self, base: "Job") -> "dict[str, str]":
-        """저장본이 함의하는 extras — 이름은 저장본의 것이고 **데이터 선택은 없음**이다.
+        """이 세션이 **서 있는 기준**의 extras — 이름은 저장본의 것, 데이터는 진입이 세운 것.
 
-        :meth:`load_job` 은 데이터를 싣지 않는다(``keep_data`` 없는 ``_restore_from``): 편집
-        세션의 데이터 선택은 언제나 사람이 이 세션에서 고른 검토용 문맥이고 작업에 저장되지
-        않는다(§5.3 — 작업↔데이터 결속 없음). 그래서 「저장본과 다르다」의 기준값이 빈
-        문자열이다.
+        데이터 선택은 작업에 저장되지 않으므로(§5.3 — 작업↔데이터 결속 없음) 기준값을 저장본이
+        낼 수 없다. 사람이 관문에서 고른 데이터는 종전대로 빈 기준 대비 「달라진 것」이고,
+        **진입이 들고 온 데이터**(#878 인계)는 사람이 고른 적이 없으므로 기준 그 자체다 —
+        그렇게 세지 않으면 아무것도 손대지 않은 수리 진입이 열리자마자 미저장이 된다.
         """
-        return {"job_name": base.name, "data_path": "", "data_sheet": ""}
+        return {"job_name": base.name, **self._entry_data}
 
     def dirty_extras(self) -> "tuple[str, ...]":
         """저장본 대비 달라진 extras 이름들 — 초안은 비교 대상이 없어 빈 튜플이다."""
@@ -796,7 +802,7 @@ class EditorController:
         새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
         먼저 끊는다. 미저장 확인은 호출측(브리지/웹)이 ``has_unsaved_work`` 로 선판단한다.
 
-        **예외 하나 — 데이터를 들고 시작한 초안**(U2 §2.4 · #349 리뷰 3R): 그 세션의 데이터는
+        **예외 하나 — 데이터를 들고 온 진입**(U2 §2.4 · #349 리뷰 3R, #878): 그 세션의 데이터는
         「이전 세션의 잔재」가 아니라 **이 세션이 존재하는 이유**다. 1단계에서 템플릿을 고르는
         것은 마법사의 정상 진행인데, 그때 이 seam 이 앵커를 지우면 「이 데이터로 새 작업」이
         **모든 사용자에게** 보통의 빈 초안으로 퇴화한다(선언은 살고 결과가 죽는 자리).
@@ -809,19 +815,20 @@ class EditorController:
         self._restore_anchor(anchor)
         self.load_template_path(path)
 
-    #: 앵커를 승계시키는 진입 사유 — 「데이터를 이미 고른 채 시작한 초안」의 표지.
-    #: 사유로 판정하는 이유: 데이터가 있는 초안이라고 다 앵커가 아니다(관문에서 데이터를
-    #: 골랐다가 1단계로 되돌아온 세션은 종전대로 끊긴다 — 그쪽은 계약이 바뀐 적이 없다).
-    _ANCHOR_ENTRY_REASON = "document_browser_new_work"
-
     def _anchor_stash(self) -> "dict":
-        """템플릿 교체를 건너 살아야 할 것 — 없으면 빈 사전(호출측 분기 없음)."""
+        """템플릿 교체를 건너 살아야 할 것 — 없으면 빈 사전(호출측 분기 없음).
+
+        판정은 **진입 사유** 하나다(:data:`DATA_ANCHORED_ENTRY_REASONS` 단일 출처): 데이터가
+        있는 세션이라고 다 앵커가 아니다 — 관문에서 데이터를 골랐다가 1단계로 되돌아온
+        세션은 종전대로 끊긴다(그쪽은 계약이 바뀐 적이 없다).
+
+        저장본 유무(``session.base``)는 **보지 않는다**(#878). 종전엔 초안만 앵커였는데,
+        데이터를 들고 오는 진입이 「이 데이터로 새 작업」(초안)뿐이라 그 조건이 사유 조건과
+        구별되지 않았다. 수리 진입은 저장된 작업을 여는데(base 있음) 그 데이터도 진입이
+        들고 온 것이고, 템플릿을 갈아 끼우는 것은 그 세션의 정상 진행이다.
+        """
         context = self.session.context
-        if (
-            self.session.base is not None
-            or context.entry_reason != self._ANCHOR_ENTRY_REASON
-            or not self.data_path
-        ):
+        if context.entry_reason not in DATA_ANCHORED_ENTRY_REASONS or not self.data_path:
             return {}
         return {"context": context, "data": self._data_stash()}
 
@@ -883,18 +890,9 @@ class EditorController:
         )
         self._reset()
         self.session = EditSession(context=context, base=None, section=self.section)
-        path = str(source_ref.get("path") or "")
-        if not path:
-            raise ValueError("데이터 참조에 경로가 없습니다.")
-        sheet = str(source_ref.get("sheet") or "")
-        header = source_ref.get("header_row")
         # 템플릿은 아직 없다 — 1단계에서 고른다. 데이터만 먼저 서고 매핑 모델은 2단계 진입
         # (`_do_goto_section` → `_ensure_model`)이 세운다(모델 전 선로드의 기존 경로).
-        self.load_data_path(
-            path,
-            sheet=sheet or None,
-            header_row=header if isinstance(header, int) and not isinstance(header, bool) else 0,
-        )
+        self._load_source_ref(source_ref)
 
     # ---------------------------------- 템플릿 라이브러리 피커(R-info 2부 접합 최소분)
     def _do_use_library_template(self, p: dict) -> None:
@@ -1096,7 +1094,8 @@ class EditorController:
         ])
 
     def load_data_path(
-        self, path: str, *, sheet: "str | None" = None, header_row: int = 0
+        self, path: str, *, sheet: "str | None" = None, header_row: int = 0,
+        emit_push: bool = True,
     ) -> None:
         """선택된 데이터 파일 로드. ``sheet`` = 웹에서 확정한 시트명(다중 시트 게이트 #33,
         None = CSV·단일 시트라 물을 것이 없는 경우).
@@ -1104,6 +1103,10 @@ class EditorController:
         ``header_row`` 는 **등록 데이터 참조가 들고 있던 옵션의 승계 자리**다(#349 리뷰 P1)
         — 0 이면 어댑터 기본(1행). 관문에서 사람이 파일을 직접 고르는 경로는 이 옵션을
         만들지 않으므로 늘 0이고, 그 경로의 거동은 종전과 같다.
+
+        ``emit_push=False`` 는 **더 큰 전이 안에서** 불릴 때의 자리다(``load_template_path``
+        와 같은 규약): 작업 복원은 하나의 화면 전환이라 중간 상태를 먼저 내보내면 DOM 이 한 번
+        더 재구성돼 화면이 깜빡인다.
         """
         opts: "dict[str, object]" = {"sheet": sheet}
         if header_row:
@@ -1136,7 +1139,28 @@ class EditorController:
                 self.model.apply_active_sources(
                     self._active_sources(), vocabulary=self.source_fields
                 )
-        self._push()
+        if emit_push:
+            self._push()
+
+    def _load_source_ref(self, source_ref: dict, *, emit_push: bool = True) -> None:
+        """참조 한 벌(``{path, sheet, header_row}``)로 데이터를 **다시 읽는다** — 인계의 공용 자리.
+
+        「이 데이터로 새 작업」(:meth:`new_draft_with_data`)과 「수정…」(수리 진입, #878)이 같은
+        성분을 같은 규칙으로 푼다. 두 자리가 각자 풀면 한쪽이 ``header_row`` 를 흘려도 아무도
+        모른다 — 그 어긋남은 화면 어디에도 표시가 없다(#349 리뷰 P1 이 지목한 자리).
+        참조를 낸 곳은 「문서 만들기」의 단일 판정
+        (:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`)이다.
+        """
+        path = str(source_ref.get("path") or "")
+        if not path:
+            raise ValueError("데이터 참조에 경로가 없습니다.")
+        header = source_ref.get("header_row")
+        self.load_data_path(
+            path,
+            sheet=str(source_ref.get("sheet") or "") or None,
+            header_row=header if isinstance(header, int) and not isinstance(header, bool) else 0,
+            emit_push=emit_push,
+        )
 
     # ------------------------------------------------------- 편집 모드(#26 #1)
     def load_job(
@@ -1149,6 +1173,7 @@ class EditorController:
         evidence: "dict | None" = None,
         return_context: "dict | None" = None,
         target: str = "",
+        source_ref: "dict | None" = None,
     ) -> None:
         """저장된 작업을 **문맥과 함께** 편집 세션으로 연다(계약 §5.1).
 
@@ -1161,6 +1186,13 @@ class EditorController:
         절 = section) — 겨눈다고 말하고 다른 탭에 내리는 반쪽 착지를 막는다. 행 단위
         조준(스크롤·포커스)은 뷰 소관이고, 스키마 드리프트로 행이 사라졌으면 뷰가
         fail-open 한다(탭 착지·배너 증거는 그대로 참이다).
+
+        ``source_ref`` 는 **진입이 들고 온 데이터 참조**다(#878, ``{path, sheet, header_row}``
+        한 벌). 「문서 만들기」가 데이터를 든 채 보낸 수리 진입
+        (:data:`~hwpxfiller.gui.edit_session.DATA_ANCHORED_ENTRY_REASONS`)에만 서고, 참조를
+        낸 곳도 그 화면의 단일 판정이다(``new_work_handoff``). 레코드가 아니라 **참조**를
+        받아 여기서 다시 읽는 이유는 풀 규약과 같다: 두 화면이 같은 파일의 서로 다른 판을
+        들고 있게 만들지 않는다.
         """
         job = self.registry.load(name)  # 부재·손상 → loud raise
         context = make_context(
@@ -1177,6 +1209,7 @@ class EditorController:
             landing_section=landing_section,
             context=context,
             emit_push=emit_push,
+            source_ref=source_ref,
         )
 
     def _restore_from(
@@ -1187,6 +1220,7 @@ class EditorController:
         context,
         emit_push: bool = True,
         keep_data: bool = False,
+        source_ref: "dict | None" = None,
     ) -> None:
         """작업 스냅샷 하나로 편집 세션 상태를 재구성 — 3분류 상태 재구성(단순 배선 아님).
 
@@ -1211,6 +1245,15 @@ class EditorController:
         (데이터 선택은 patch 가 아니라 세션 문맥 — §10.13 판정 L). 반대로 **세션 전체** 버리기는
         데이터도 내려놓는다: 「저장된 상태로 되돌린다」가 문안이고, 남기면 버린 뒤에도 세션이
         미저장으로 남아 같은 파기를 다시 묻는다.
+
+        ``source_ref``(#878)는 **모델보다 먼저** 선다: 데이터를 나중에 얹으면
+        :meth:`load_data_path` 의 ``_ensure_model`` 이 키 변화를 보고 매핑을 전원 미확정
+        초안으로 재생성해, 고칠 필드 하나 때문에 온 사람에게 저장된 매핑 전량 재확정을 물린다.
+        데이터를 먼저 세우면 저장 매핑은 **그 데이터 어휘 위로** 복원되고
+        (``apply_profile(require_source=True)``), 데이터에 없는 열을 겨눈 행만 확정에서
+        빠져 재진술 대상이 된다(조용한 게이트 우회 금지 — 그 행은 빈 값 문서를 찍는다).
+        재읽기 실패는 진입을 막지 않고(고치러 온 필드는 데이터 없이도 고칠 수 있다) 사유를
+        통지로 재진술한다 — 조용히 빈 데이터 관문으로 떨어지지 않는다.
         """
         if not Path(job.template_path).exists():
             raise ValueError(
@@ -1218,6 +1261,9 @@ class EditorController:
                 "파일을 되돌리거나, 홈/작업 화면의 [템플릿 다시 연결…]로 경로를 바꾸세요."
             )
         stash = self._data_stash() if keep_data else None
+        # 기준 데이터도 함께 넘긴다 — 탭 되돌리기가 인계 데이터를 「사람이 고른 것」으로
+        # 승격시키면 되돌린 세션이 곧바로 미저장이 된다(같은 헛확인의 다른 얼굴).
+        entry_data = dict(self._entry_data) if keep_data else None
         self._reset()
         # 작업 복원은 하나의 화면 전환이다. 템플릿만 로드된 중간 상태를 먼저 내보내면
         # 최종 편집 상태 직전에 DOM 전체가 한 번 더 재구성돼 화면이 깜빡인다.
@@ -1226,6 +1272,14 @@ class EditorController:
             raise ValueError(self.raw_block or RAW_BLOCK_MESSAGE)  # 매체별 문안(F6 PR-B)
         if self.gate_error:
             raise ValueError("템플릿 상태를 확인할 수 없어 편집을 열 수 없습니다.")
+        handoff_failure = ""
+        if source_ref:
+            try:
+                self._load_source_ref(source_ref, emit_push=False)
+            except Exception as exc:  # noqa: BLE001  (사유를 통지로 재진술 — 진입은 계속)
+                handoff_failure = str(exc)
+        carried_data = bool(self.data_path)
+        self._entry_data = {"data_path": self.data_path, "data_sheet": self.data_sheet}
         self.job_name = job.name
         self.pattern = job.filename_pattern
         self._editing_origin = job.name
@@ -1236,10 +1290,13 @@ class EditorController:
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
-        # (비움)으로 오표시되지 않는다.
-        self.source_fields = profile_source_vocabulary(job.mapping)
+        # (비움)으로 오표시되지 않는다. 진입이 데이터를 들고 왔으면(#878) 어휘는 **그 데이터의
+        # 열**이다: 새 필드에 붙일 열이 후보로 서야 수리 진입이 성립하고, 데이터에 없는 옛
+        # source 는 뷰가 '(데이터에 없음)' 옵션으로 시끄럽게 드러낸다.
+        if not carried_data:
+            self.source_fields = profile_source_vocabulary(job.mapping)
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
-        applied = self.model.apply_profile(job.mapping)
+        applied = self.model.apply_profile(job.mapping, require_source=carried_data)
         self._model_key = self._model_key_now()
         # 거래 상태 — base = **이 스냅샷**(§5.2 baseSnapshot). patch 는 여기서부터의 차이다.
         # 문맥의 대상은 늘 **지금 열려 있는 작업**이다: 초안이 저장으로 작업이 되는 전이에서
@@ -1255,12 +1312,26 @@ class EditorController:
         self.session.section = self.section
         if stash is not None:
             self._apply_data_stash(stash)
+        if entry_data is not None:
+            self._entry_data = entry_data
         row_fields = {r.template_field for r in self.model.rows}
         dropped = [
             m.template_field for m in job.mapping.mappings
             if m.template_field not in row_fields
         ]
-        fresh = [r.template_field for r in self.model.rows if not r.confirmed]
+        # 미확정으로 도착한 행을 **사유별로** 가른다: 저장 매핑에 없던 필드는 템플릿이 새로
+        # 낳은 것이고, 있었는데 확정에서 빠진 행은 인계 데이터에 그 열이 없는 것이다
+        # (require_source). 한 문장으로 뭉치면 데이터 불일치가 "템플릿에 새로 생긴 필드"로
+        # 오보돼 사람이 엉뚱한 곳을 본다.
+        saved_fields = {m.template_field for m in job.mapping.mappings}
+        fresh = [
+            r.template_field for r in self.model.rows
+            if not r.confirmed and r.template_field not in saved_fields
+        ]
+        detached = [
+            r.template_field for r in self.model.rows
+            if not r.confirmed and r.template_field in saved_fields
+        ]
         # 사용자 어휘 재진술(F17) — "매핑 N행 복원" 같은 로그 어휘를 UI 로 내보내지 않는다.
         notice = f"'{job.name}' 을(를) 편집합니다. 저장된 매핑 {applied}행을 불러왔습니다."
         if dropped:
@@ -1273,7 +1344,16 @@ class EditorController:
                 f"\n템플릿에 새로 생긴 필드 {len(fresh)}개는 확정이 필요합니다: "
                 + ", ".join(fresh)
             )
-        self._set_notice(notice, "warn" if (dropped or fresh) else "ok")
+        if detached:
+            notice += (
+                f"\n불러온 데이터에 없는 열을 쓰던 필드 {len(detached)}개는 확정이 필요합니다: "
+                + ", ".join(detached)
+            )
+        if handoff_failure:
+            notice += f"\n문서 만들기 화면의 데이터를 다시 읽지 못했습니다: {handoff_failure}"
+        self._set_notice(
+            notice, "warn" if (dropped or fresh or detached or handoff_failure) else "ok"
+        )
         # 복원 직후 = 디스크 저장본과 동일(클린) — 손대기 전 전환·새 작업이 "저장하지 않은
         # 세션" 헛확인을 띄우지 않는다(리뷰). 내부의 load_template_path 가 표지를 껐으므로
         # 마지막에 켠다. 드리프트 경고(warn)가 있어도 내용 동일성은 참이다.

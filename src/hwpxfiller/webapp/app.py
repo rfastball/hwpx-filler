@@ -56,7 +56,10 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
 from ..data.factory import source_for_path, source_from_pool_item
-from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
+from ..gui.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
+    DATA_ANCHORED_ENTRY_REASONS,
+    SECTION_BINDING,
+)
 from ..external.artifact_observation import (  # 안착 문서 되읽기 커널(S7-01 · #823)
     ArtifactObservationRefused,
     observe_delivered_artifact,
@@ -887,6 +890,11 @@ class WebFrontend:
         ``section`` 은 deep-link 의 **거친 형태**(어느 탭인가), ``target`` 은 필드 단위
         deep-link(§10.14.3 — ``binding/<fieldId>`` / ``filename/filenamePattern``)다.
         target 이 서면 착지 탭도 target 이 정한다(load_job 소관).
+
+        **데이터를 든 화면에서 온 진입은 그 데이터를 들고 간다**(#878): 「입력이 필요한 항목」의
+        「수정…」은 마운트한 데이터에 열을 붙이러 가는 왕복인데, 인계가 없으면 편집기가 데이터
+        없이 서서 사람이 같은 파일을 한 번 더 고르게 된다. 참조는 웹이 싣지 않고 여기서
+        「문서 만들기」에 되묻는다 — 근거는 :meth:`new_job_from_data` 와 같다.
         """
         ctx = context or {}
         try:
@@ -896,17 +904,36 @@ class WebFrontend:
             # 그 배치의 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7). 판정은
             # 「문서 만들기」가 소유한 단일 술어를 쓴다(자물쇠는 앱이 공유 주입).
             self._controller("job").raise_if_generating("편집기를 여세요")
+            entry_reason = str(ctx.get("entry_reason") or "voluntary")
             self._controller("editor").load_job(
                 name,
                 landing_section=str(ctx.get("section") or SECTION_BINDING),
-                entry_reason=str(ctx.get("entry_reason") or "voluntary"),
+                entry_reason=entry_reason,
                 evidence=ctx.get("evidence"),
                 return_context=ctx.get("return_context"),
                 target=str(ctx.get("target") or ""),
+                source_ref=self._mounted_data_handoff(entry_reason),
             )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return name
+
+    def _mounted_data_handoff(self, entry_reason: str) -> dict:
+        """이 진입이 들고 갈 「문서 만들기」의 데이터 참조 — 인계가 없으면 빈 사전(#878).
+
+        가부는 **두 판정의 합**이고 둘 다 이미 있는 것을 읽는다: 사유는 링1 의 목록
+        (:data:`~hwpxfiller.gui.edit_session.DATA_ANCHORED_ENTRY_REASONS`), 참조는 「문서
+        만들기」의 단일 판정(``new_work_handoff`` — 버튼의 가부와 같은 술어). 여기서 `data_path`
+        를 따로 보고 판정하지 않는 이유는 :meth:`new_job_from_data` 와 같다.
+
+        마운트가 없거나 파일로 다시 열 수 없는 마운트(조립 파이프라인 등)면 인계 없이 종전
+        거동(빈 데이터 관문)으로 선다 — 이 진입은 데이터를 약속한 적이 없으므로 거절로
+        막지 않는다. 약속한 진입(「이 데이터로 새 작업」)은 같은 거절을 ``ERROR:`` 로 낸다.
+        """
+        if entry_reason not in DATA_ANCHORED_ENTRY_REASONS:
+            return {}
+        source_ref, _blocked = self._controller("job").new_work_handoff()
+        return source_ref
 
     def new_job_from_data(self, context: "dict | None" = None) -> "str | None":
         """「문서 만들기」의 **마운트 데이터를 든 채** 신규 작업 마법사를 연다(U2 §2.4·§4 E).
