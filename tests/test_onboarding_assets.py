@@ -27,7 +27,11 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.domain.authoring import scan_structure
+from hwpxfiller.domain.lint import similarity
+from hwpxfiller.domain.mapping import SUGGEST_THRESHOLD
+from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
+from hwpxfiller.gui.mapping_state import MappingModel
 from hwpxfiller.external.template_inspection import (
     compile_structure_file,
     compile_template_file,
@@ -220,6 +224,45 @@ def test_practice_notice_compiles_on_both_axes(tmp_path: Path) -> None:
     assert structure_report.options == 2
 
     assert scan_structure(read_hwpx_package(work)).summary.markers == 0
+
+
+# ------------------------------------------------- 4-B. T14 비움 확정 게이트(#908)
+def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
+    """`계약보증금` 은 실 8열 어디에도 안 붙어 **무제안**으로 남고, 비움 확정이 선다.
+
+    T14 의 전제는 '열이 없으면 묻는다'인데, 퍼지 임계 0.6 시절엔 `계약보증금` 이
+    `계약금액` 을 0.6667 로 물어 **오답이 제안된 채** 게이트를 지났다(#908). 보증금
+    자리의 계약금액은 법적 문서에서 위험한 초안이라 임계를 그 위로 올렸다.
+
+    실자산으로 단언하는 이유는 이 결함이 합성 코퍼스가 아니라 실완주 게이트(#895)에서
+    나왔기 때문이다 — 커밋된 TXT 와 CSV 를 그대로 읽어 그 경로를 되짚는다.
+    """
+    text = (ASSETS / "text_templates" / "오류연습_보증금.txt").read_text(encoding="utf-8")
+    tokens = template_fields(text)
+    assert "계약보증금" in tokens  # 자산이 결핍 재료를 실제로 들고 있다
+
+    with (ASSETS / "data" / "계약목록.csv").open(encoding="utf-8-sig", newline="") as fh:
+        headers = next(csv.reader(fh))
+    assert headers == HEADER
+
+    model = MappingModel.from_field_names(tokens, headers)
+    by_field = {row.template_field: row for row in model.rows}
+
+    # 나머지 두 토큰은 헤더와 정확 일치라 자동 결속된다(결정 30) — 대조군.
+    assert by_field["공고번호"].source == "공고번호"
+    assert by_field["계약상대자"].source == "계약상대자"
+
+    # 결핍 자리: 결속도 제안도 없다. 특히 '계약금액' 이 밀려들지 않는다.
+    deposit = by_field["계약보증금"]
+    assert deposit.source == ""
+    assert model.suggestions().get("계약보증금") is None
+    assert similarity("계약보증금", "계약금액") < SUGGEST_THRESHOLD
+
+    # 그래서 게이트가 선다 — 사람이 이름을 재진술하고 비움 확정해야 넘어간다(ADR-E).
+    assert model.unconfirmed_blank_fields() == ["계약보증금"]
+    assert deposit.is_empty_confirmed() is False
+    model.confirm_fields(["계약보증금"])
+    assert deposit.is_empty_confirmed() is True
 
 
 # ------------------------------------------------------------------ 5. 허구화 규칙

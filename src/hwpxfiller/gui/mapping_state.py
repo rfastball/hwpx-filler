@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from ..domain.authoring import scan_tokens
 from ..domain.lint import similarity
 from ..domain.mapping import (
+    SUGGEST_THRESHOLD,
     TYPES,
     FieldMapping,
     MappingProfile,
@@ -562,11 +563,16 @@ class MappingModel:
         raise ValueError(f"매핑에 없는 토큰: {template_field!r}")
 
     def suggestions(self) -> "dict[str, str]":
-        """무결속 행별 **근사 열 제안 1개**(결정 30, 임계 0.6) — 자동 적용 안 함(원클릭 대상).
+        """무결속 행별 **근사 열 제안 1개**(결정 30) — 자동 적용 안 함(원클릭 대상).
 
         정확 일치는 :meth:`from_field_names` 가 이미 자동 결속했으므로, 여기 남는 건 이름이
         비슷하기만 한 자리다. 이미 다른 토큰이 쓰는 열은 후보에서 뺀다(1:1 계약) — 같은 열을
-        여러 자리에 미는 제안은 소음이다. 임계 미만은 후보 없음(빈 dict 항목 없음)."""
+        여러 자리에 미는 제안은 소음이다. 임계 미만은 후보 없음(빈 dict 항목 없음).
+
+        임계는 :data:`~hwpxfiller.domain.mapping.SUGGEST_THRESHOLD` 를 **빌려 쓴다**. 예전엔
+        0.6 리터럴을 여기 다시 적었는데, 그러면 같은 판정을 두 곳이 소유해 도메인 임계를
+        올려도 TXT 트랙(``from_field_names`` + 이 메서드)만 옛 값에 남는다 — #908 의 위험
+        근접쌍이 실제로 그 경로로 살아 있었다."""
         used = {r.source for r in self.rows if r.source}
         out: "dict[str, str]" = {}
         for row in self.rows:
@@ -579,7 +585,7 @@ class MappingModel:
                 s = similarity(row.template_field, self.aliases.get(col, col))
                 if s > score:
                     best, score = col, s
-            if best is not None and score >= 0.6:
+            if best is not None and score >= SUGGEST_THRESHOLD:
                 out[row.template_field] = best
         return out
 

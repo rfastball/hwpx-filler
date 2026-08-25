@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.domain.lint import similarity
 from hwpxfiller.domain.mapping import (
+    SUGGEST_THRESHOLD,
     TYPES,
     FieldMapping,
     MappingProfile,
@@ -123,6 +125,113 @@ def test_suggest_without_source_vocabulary_matches_raw_keys():
     assert pairs == {"공고명": "공고명", "추정가격": "추정가격"}
     # 영문 코드 소스 — 나라 어휘를 강요하지 않으면 한글 필드와 안 맞아 초안 없음.
     assert suggest_mappings(["공고명"], ["bidNtceNm"]) == []
+
+
+# ------------------------------------------------------ 임계 캘리브레이션(#908)
+# 여기가 :data:`SUGGEST_THRESHOLD` 의 **반증 코퍼스 정본**이다. 임계를 만지려는 사람은
+# 두 집합을 먼저 본다: 위험 근접쌍(공유 접두 · 의미 축 상이)은 반드시 죽고, 정당한
+# 표기 변형(띄어쓰기 · 앞뒤 공백 · 언더스코어 · 괄호 단위)은 반드시 산다.
+#
+# ``similarity`` = 공백 제거 후 ``SequenceMatcher.ratio()`` = 2*M/T (M=매칭 문자 수,
+# T=두 문자열 길이 합). 아래 주석의 산술이 각 수치의 유도다.
+
+# 죽어야 하는 쌍 — 앞머리를 공유하지만 가리키는 것이 다르다. 보증금 자리의 계약금액,
+# 금액 자리의 방법처럼 그럴듯해서 더 위험하다(일괄 확정에 실린다).
+RISKY_NEAR_PAIRS = [
+    # 계약/금 3자 공통, 2*3/(5+4) = 0.6667 — #908 을 낸 원 결함. 이 집합의 최대값이다.
+    ("계약보증금", "계약금액", 2 / 3),
+    # 입찰/금 3자 공통, 2*3/(5+4) = 0.6667 — 같은 결함류(보증금 ↔ 금액 축).
+    ("입찰보증금", "입찰금액", 2 / 3),
+    # 공고+명/일, 2*2/(3+3) = 0.6667 — 이름 ↔ 날짜 축.
+    ("공고명", "공고일", 2 / 3),
+    # 금액 2자 공통, 2*2/(3+3) = 0.6667 — 선금 ↔ 잔금(정반대 뜻).
+    ("선금액", "잔금액", 2 / 3),
+    # 계약+대자 4자 공통, 2*4/(5+5) = 0.8 이 아니라 '계약'+'자' = 2*3/10 = 0.6.
+    ("계약상대자", "계약담당자", 0.6),
+    # 납품 2자 공통, 2*2/(4+4) = 0.5 — 기한 ↔ 장소.
+    ("납품기한", "납품장소", 0.5),
+    # 계약 2자 공통, 2*2/(4+4) = 0.5 — 일자 ↔ 금액.
+    ("계약일자", "계약금액", 0.5),
+]
+
+# 살아야 하는 쌍 — 같은 것을 다르게 적었을 뿐이다.
+LEGITIMATE_NOTATION_PAIRS = [
+    # 공백은 similarity 가 먼저 지운다 → 정규화 후 동일 → 1.0.
+    ("공고 번호", "공고번호", 1.0),
+    ("계약 상대자", "계약상대자", 1.0),
+    ("  계약금액  ", "계약금액", 1.0),
+    ("\t수요기관\n", "수요기관", 1.0),
+    # 언더스코어는 공백이 아니라 남는다: '계약금액' 4자 매칭, 2*4/(5+4) = 0.8889.
+    ("계약_금액", "계약금액", 8 / 9),
+    ("공고_번호", "공고번호", 8 / 9),
+    # 괄호 단위 — 이 집합의 **최소값**이 임계의 상한을 정한다.
+    # '추정가격(원)' = 7자, 매칭 4자 → 2*4/(7+4) = 0.7273.
+    ("추정가격(원)", "추정가격", 8 / 11),
+    ("계약금액(원)", "계약금액", 8 / 11),
+    ("납품기한(일)", "납품기한", 8 / 11),
+    ("추정가격[원]", "추정가격", 8 / 11),
+    # 공백 낀 단위도 공백 제거 후 위와 동형.
+    ("계약금액 (원)", "계약금액", 8 / 11),
+    # 어간이 길수록 단위 주석의 비중이 줄어 점수가 오른다: 2*5/(8+5) = 0.7692.
+    ("계약보증금(원)", "계약보증금", 10 / 13),
+]
+
+
+@pytest.mark.parametrize("a,b,expected", RISKY_NEAR_PAIRS)
+def test_risky_near_pairs_score_below_the_suggest_threshold(a, b, expected):
+    """의미 축이 다른 공유-접두 쌍은 임계 아래에 있어 제안되지 않는다(#908).
+
+    수치를 먼저 못박아 임계가 아니라 ``similarity`` 가 바뀌어도 빨강이 나게 한다.
+    """
+    assert similarity(a, b) == pytest.approx(expected)
+    assert similarity(a, b) < SUGGEST_THRESHOLD
+    assert suggest_mappings([a], [b]) == []
+
+
+@pytest.mark.parametrize("a,b,expected", LEGITIMATE_NOTATION_PAIRS)
+def test_legitimate_notation_variants_survive_the_suggest_threshold(a, b, expected):
+    """띄어쓰기·앞뒤 공백·언더스코어·괄호 단위는 같은 것의 다른 표기라 계속 제안된다."""
+    assert similarity(a, b) == pytest.approx(expected)
+    assert similarity(a, b) >= SUGGEST_THRESHOLD
+    sugg = suggest_mappings([a], [b])
+    assert [(m.template_field, m.source) for m in sugg] == [(a, b)]
+
+
+def test_suggest_threshold_sits_in_the_gap_between_the_two_corpora():
+    """임계는 두 코퍼스 **사이**에 있다 — 이 간극이 사라지면 임계로는 못 가른다.
+
+    0.6667(위험 최대) < 0.7(임계) <= 0.7273(정당 최소). 어느 쪽 코퍼스에 새 쌍을
+    더하다 간극이 닫히면 여기가 먼저 빨강이 되어, 수치를 완화해 결함을 다시 들이는
+    대신 매칭 설계를 다시 보게 만든다.
+    """
+    riskiest = max(similarity(a, b) for a, b, _ in RISKY_NEAR_PAIRS)
+    tamest = min(similarity(a, b) for a, b, _ in LEGITIMATE_NOTATION_PAIRS)
+    assert riskiest == pytest.approx(2 / 3)
+    assert tamest == pytest.approx(8 / 11)
+    assert riskiest < SUGGEST_THRESHOLD <= tamest
+
+
+def test_threshold_is_a_declared_constant_not_a_literal_default():
+    """호출측이 옛 0.6 을 되살리지 못하게 기본값이 상수에 묶여 있다."""
+    assert SUGGEST_THRESHOLD == 0.7
+    assert suggest_mappings(["계약보증금"], ["계약금액"]) == []
+    # 명시로 완화하면 옛 결함이 그대로 재현된다 — 임계가 실제로 이 쌍을 가른다는 증거.
+    revived = suggest_mappings(["계약보증금"], ["계약금액"], threshold=0.6)
+    assert [m.source for m in revived] == ["계약금액"]
+
+
+def test_parenthetical_gloss_is_a_documented_limit_not_a_threshold_choice():
+    """어간만큼 긴 괄호 주석은 **어떤 임계로도** 위험 근접쌍과 안 갈린다(설계 한계).
+
+    길이비 인공물이라 정당한 변형인데도 위험쌍과 같은 구간에 겹친다. 옛 0.6 에서
+    살아 있던 건 우연이고, 그때조차 더 높은 오답이 앞섰다. 지금은 제안이 없어 행이
+    비고 사람이 채우거나 비움 확정한다 — 조용히 틀리는 대신 시끄럽게 빈다.
+    """
+    gloss = similarity("계약상대자(업체명)", "계약상대자")
+    riskiest = max(similarity(a, b) for a, b, _ in RISKY_NEAR_PAIRS)
+    assert gloss == pytest.approx(2 / 3)  # 2*5/(10+5)
+    assert gloss <= riskiest  # 겹친다 = 분리 불가
+    assert suggest_mappings(["계약상대자"], ["계약상대자(업체명)"]) == []
 
 
 # ------------------------------------------------------------- 프로파일 저장/적용

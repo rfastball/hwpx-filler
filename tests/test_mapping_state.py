@@ -100,23 +100,32 @@ def test_editing_a_confirmed_row_resets_confirmation():
 # ----------------------------- 활성 소스 변화 = 칩-라이브 계약(결정 12·13)
 # 신판 관문 = apply_active_sources(전집합 재계산) — 구 ignore_source(헤더별 무차별 해제)의 대체:
 # 시스템 소유 행은 라이브 재제안(조용), 사람 소유 행은 소스가 꺼지면 R4 시끄러운 강등.
-def _pum_model(sources: "list[str]") -> MappingModel:
-    """'품명' 단일 필드 + 주어진 소스 어휘의 소형 모델(재제안 경합 시연용)."""
-    schema = TemplateSchema(fields=[FieldSpec("품명", "text", 1, False)])
+def _pum_model(sources: "list[str]", field: str = "품명") -> MappingModel:
+    """단일 필드 + 주어진 소스 어휘의 소형 모델(재제안 경합 시연용).
+
+    ``field`` 가 인자인 이유(#908): 2 음절 필드는 접미가 붙는 순간 길이비가 무너져
+    (``품명`` ↔ ``세부품명`` = 2*2/(2+4) = 0.6667) 제안 임계 아래로 떨어진다. 차선
+    후보가 **실제로 서야** 하는 테스트는 어간이 긴 필드로 세운다.
+    """
+    schema = TemplateSchema(fields=[FieldSpec(field, "text", 1, False)])
     return MappingModel.from_suggestions(schema, sources)
 
 
 def test_apply_active_sources_resuggests_system_rows_live():
     """시스템 소유 행(미확정·미접촉)은 활성 헤더가 바뀌면 최선으로 라이브 재제안된다(결정 12).
 
-    '품명'은 활성에 '품명'이 있으면 그것(정확), 끄면 '세부품명'(부분일치)으로 다시 선다 —
-    강등이 아니라 조용한 재제안(반환 빈 목록)."""
-    model = _pum_model(["품명", "세부품명"])
-    assert model.rows[0].source == "품명"                  # 초기 최선(정확)
-    assert model.apply_active_sources(["세부품명"]) == []   # 시스템 행 = 조용(R4 아님)
-    assert model.rows[0].source == "세부품명"              # 활성 따라 재제안
-    model.apply_active_sources(["품명", "세부품명"])
-    assert model.rows[0].source == "품명"                  # 복귀
+    '계약금액'은 활성에 '계약금액'이 있으면 그것(정확), 끄면 '계약_금액'(언더스코어
+    표기 변형, 0.8889)으로 다시 선다 — 강등이 아니라 조용한 재제안(반환 빈 목록).
+
+    차선을 표기 변형으로 두는 것이 #908 이후의 계약이다: 의미 축이 다른 근접쌍은
+    임계 아래라 재제안 후보가 되지 못한다(그 자리는 빈 채로 남아 사람이 고른다).
+    """
+    model = _pum_model(["계약금액", "계약_금액"], field="계약금액")
+    assert model.rows[0].source == "계약금액"                # 초기 최선(정확)
+    assert model.apply_active_sources(["계약_금액"]) == []    # 시스템 행 = 조용(R4 아님)
+    assert model.rows[0].source == "계약_금액"               # 활성 따라 재제안
+    model.apply_active_sources(["계약금액", "계약_금액"])
+    assert model.rows[0].source == "계약금액"                # 복귀
 
 
 def test_apply_active_sources_r4_loud_demotes_human_owned_to_empty():
@@ -137,16 +146,17 @@ def test_demotion_fully_resets_type_and_const():
     """R4 강등 = 완전 리셋(리뷰 반영) — 유형·상수가 남으면 강등 행이 시스템 소유가 된 뒤
     다음 재제안이 소스를 얹어 '제안 표시 ≠ 옛 상수 방출' 하이브리드가 된다(revert_to_auto
     R1 과 같은 근거 — 강등 경로만 부분 리셋일 이유가 없다)."""
-    model = _pum_model(["품명", "세부품명"])
-    model.set_source(0, "품명")
+    # 차선이 실제로 다시 서야 하는 테스트라 어간이 긴 필드 + 표기 변형으로 세운다(#908).
+    model = _pum_model(["계약금액", "계약_금액"], field="계약금액")
+    model.set_source(0, "계약금액")
     model.set_type(0, "const")                             # 소스는 남는다(set_type 은 소스 불변)
     model.set_const(0, "X")
-    demoted = model.apply_active_sources(["세부품명"])      # '품명' 끔 → 사람 소유 강등
-    assert demoted == ["품명"]
+    demoted = model.apply_active_sources(["계약_금액"])     # '계약금액' 끔 → 사람 소유 강등
+    assert demoted == ["계약금액"]
     row = model.rows[0]
     assert row.source == "" and row.const == "" and row.type != "const"  # 완전 리셋
-    model.apply_active_sources(["세부품명"])                # 다음 활성 변화 — 시스템 소유 재제안
-    assert model.rows[0].source == "세부품명"
+    model.apply_active_sources(["계약_금액"])               # 다음 활성 변화 — 시스템 소유 재제안
+    assert model.rows[0].source == "계약_금액"
     assert model.rows[0].to_mapping().const == ""           # 옛 상수 방출 없음(하이브리드 봉쇄)
 
 
