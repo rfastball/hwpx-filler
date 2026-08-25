@@ -611,6 +611,8 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
     '저장 폴더', '충돌 처리', '생성 예정 문서', 'C:\\문서',
     '백엔드-그대로_7.hwpx', '번호를 붙인 새 파일', '목록 새로 확인',
     '실제 파일 생성을 예약한 것은 아닙니다.',
+    // U3-06(#879): 계획도 어디에 떨어지는지 같은 자리에서 진술한다.
+    '저장 폴더: C:\\문서',
   ]) assert.ok(markup.includes(text), text);
 
   const before = h.controller.getRun().lastFull;
@@ -630,6 +632,49 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
 
   const source = String(JobWorkbenchStatus);
   for (const forbidden of ['new Date', '{{date', '{{seq', 'existsSync', 'casefold', '.sort(']) {
+    assert.equal(source.includes(forbidden), false, forbidden);
+  }
+});
+
+test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 그린다', async () => {
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
+      output_folder: {
+        directory: 'C:\\서고\\Results',
+        source: 'template_default',
+        source_label: '기본값',
+        notice: '지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다.',
+      },
+      run_delivery_intent: {
+        output_directory: 'C:\\서고\\Results', collision_policy: 'ADD_SUFFIX',
+      },
+      delivery: {
+        resolvable: true, blockers: [],
+        planned_documents: [{
+          record_identity: 'opaque-record', item_ordinal: 0,
+          relative_path: '공고서-001.hwpx', collision_disposition: 'WRITE_NEW',
+        }],
+      },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  // 표시된 기본값이지 빈칸이 아니다 — 경로·출처·사유가 전부 backend 문안이다.
+  assert.ok(markup.includes('value="C:\\서고\\Results"'));
+  assert.ok(markup.includes('기본값'));
+  assert.ok(markup.includes('지난번에 지정한 저장 폴더를 찾을 수 없습니다.'));
+  assert.ok(markup.includes('저장 폴더: C:\\서고\\Results'));
+  // 라벨을 프런트가 다시 만들지 않는다.
+  const source = String(JobWorkbenchStatus);
+  for (const forbidden of ['기억한 폴더', '직접 지정', 'template_default', 'Results']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
 });

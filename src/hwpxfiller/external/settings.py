@@ -50,6 +50,8 @@ __all__ = (
     "save_draft_target_font",
     "load_boot_completed",
     "save_boot_completed",
+    "load_last_output_directory",
+    "save_last_output_directory",
     "load_job_collapsed_groups",
     "recollapse_job_group",
     "save_job_collapsed_groups",
@@ -326,6 +328,30 @@ def load_boot_completed() -> str:
 def save_boot_completed(version: str) -> None:
     """부팅 완주 스탬프 영속 — 빈 버전은 '미검출로 완주'(sentinel)로 정규화한다."""
     _save_key("boot_completed_runtime", version.strip() or BOOT_STAMP_UNKNOWN_VERSION)
+
+
+def load_last_output_directory() -> str:
+    """마지막으로 **명시 지정**한 저장 폴더 — 없으면 ``""``(U3-06 · #879).
+
+    다음 세션의 기본값 **재료**다: 도출·판정은
+    :func:`hwpxfiller.domain.output_folder_default.resolve_output_folder` 가 하고, 이 값이
+    실제로 쓰이려면 존재 확인을 통과해야 한다(사라진 폴더의 조용한 재사용 금지). 자동으로 잡힌
+    기본값은 기억하지 않는다 — 기억하면 템플릿을 옮겨도 옛 템플릿 옆 폴더가 따라다닌다.
+
+    비문자열(손상·구버전)은 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은
+    그대로 기본 거동으로 산다."""
+    raw = _read().get("last_output_directory")
+    return raw if isinstance(raw, str) else ""
+
+
+def save_last_output_directory(path: str) -> None:
+    """명시 지정한 저장 폴더 영속 — 빈 경로는 조용히 무시하지 않고 ``ValueError``.
+
+    빈 값 저장을 허용하면 '지정한 적 없음'과 '빈 경로를 지정함'이 한 값으로 접혀 다음 세션의
+    도출이 침묵한다(confirm-or-alarm). 보존·원자성·재시도 계약은 :func:`_save_key` 가 진다."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError(f"유효하지 않은 저장 폴더 경로: {path!r}")
+    _save_key("last_output_directory", path)
 
 
 def load_job_collapsed_groups() -> "list[str]":
