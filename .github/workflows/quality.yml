@@ -257,13 +257,19 @@ jobs:
   live-webview2:
     name: live-webview2 (real WebView2 session)
     runs-on: windows-latest
-    # 바깥 상한은 안쪽 진단보다 **느슨해야** 한다(N-11A 교훈). 현재 최악 대기는 selftest
-    # 합계 1200s + qualified 콜드부팅 실패 75s + 101 바깥 상한 720s
-    # + same-home restart 바깥 상한 240s = 37.25분이다.
-    # 45분이면 테스트별 하드스톱과
+    # 바깥 상한은 안쪽 진단보다 **느슨해야** 한다(N-11A 교훈). 현재 최악 대기는
+    #   selftest 합계                1200s
+    # + qualified 콜드부팅 실패         75s
+    # + 101 바깥 상한                 720s  (_OUTER_TIMEOUT_S)
+    # + same-home restart 바깥 상한    240s  (_RESTART_OUTER_TIMEOUT_S)
+    # + 온보딩 여정 바깥 상한          720s  (_ONBOARDING_OUTER_TIMEOUT_S · #895)
+    #                               = 2955s = 49.25분이다.
+    # 60분이면 테스트별 하드스톱과
     # `if: always()` 증거 회수가 먼저 끝난다. 첫 실패 뒤에는 아래 maxfail 이 형제 부팅을
-    # 더 태우지 않는다. 정상 실행은 2~3분이라 평시 비용은 늘지 않는다.
-    timeout-minutes: 45
+    # 더 태우지 않는다. 위 항은 전부 **매달림 상한**이지 정상 실행 시간이 아니다 — 온보딩
+    # 여정의 평시 비용은 자기 예산(600s) 안이고, 720s 는 그 예산이 하드 스톱까지 밀렸을 때의
+    # 바깥 상한이다(`_ONBOARDING_OUTER_TIMEOUT_S` = 600 + 60 + 60).
+    timeout-minutes: 60
     needs: sealed-web
     env:
       PYTHONUTF8: "1"

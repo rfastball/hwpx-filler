@@ -230,7 +230,10 @@ def test_product_assertions_are_never_retried() -> None:
         assert retry_token not in text, f"재시도 흔적: {retry_token}"
 
     live = _jobs()["live-webview2"]
-    assert live["timeout-minutes"] == "45"
+    # 최악 산술은 워크플로 주석이 소유한다(그 자리에서 항이 유도된다):
+    # 1200 + 75 + 720 + 240 + 720 = 2955s = 49.25분 → 여유를 두고 60분.
+    # 온보딩 여정(#895)이 720s 항을 더하며 45 → 60 으로 올랐다.
+    assert live["timeout-minutes"] == "60"
     assert "--maxfail=1" in _job_text(live), "첫 하드스톱 뒤 형제 live 부팅을 계속 태웁니다"
 
 

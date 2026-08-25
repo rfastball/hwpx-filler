@@ -111,8 +111,17 @@ REFUSE_STATE = [p for p in PRACTICE_STATE if p != "webview"]
 #: 임시 홈에 시딩하는 커밋된 자산 — 사용자가 받는 것과 **같은 파일**이라야 검사가 의미를 갖는다.
 SEED_ASSETS = ["data", "templates", "text_templates"]
 
+#: 이 하니스가 아는 실행 phase 전집 — 값이 곧 대본 선택자다.
+#:
+#: ``onboarding`` 만 홈 전제가 반대다(#895): 나머지 셋은 101 자산이 **시딩된** 홈에서 돌지만
+#: 온보딩 여정은 **빈 홈**을 전제한다. 설치 액션이 번들 원천을 스스로 풀어 홈에 앉히는 것이
+#: 그 여정의 첫 검사 대상이라, 자산을 미리 깔아 두면 검사할 것이 사라진다.
+PHASES = ("legacy", "journey", "restart", "onboarding")
+
 #: 생성물이 떨어지는 자리(README 「기본 저장 폴더」).
 RESULTS_REL = Path("templates") / "Results"
+#: 동봉 예제 데이터가 설치되는 자리(``host/locations.default_example_data_dir``).
+EXAMPLE_DATA_REL = Path("example_data")
 SX_TEMPLATE_REL = Path("templates") / "발주요청서.hwpx"
 SX_OUTPUT_REL = Path("sx-output")
 _SECTION = "Contents/section0.xml"
@@ -322,6 +331,26 @@ def sx_template_bytes(base: bytes, *, successor: bool = False) -> bytes:
     return payload
 
 
+def home_census(home: Path) -> dict[str, str]:
+    """앱 홈의 **사용자 자산** census — WebView2 프로필은 빼고 나머지 전부.
+
+    프로필을 빼는 이유는 둘이고 그 둘이 같은 방향을 가리킨다. ① **읽을 수 없다**: 실행 중인
+    WebView2 가 프로필 파일을 잠그고 있어 통째로 해시하려 들면 ``PermissionError`` 로 죽는다
+    (실측 — 온보딩 첫 실행이 그 자리에서 넘어졌다). ② **잴 것이 아니다**: 이 census 가 재는
+    것은 「앱이 사용자 홈에 무엇을 썼는가」인데, 프로필은 앱이 부팅마다 스스로 통청소하는
+    자기 작업 공간이라 D1 계약(누르기 전에는 홈에 아무것도 쓰지 않는다)의 대상이 아니다.
+
+    그래도 **폴더의 존재 자체는 숨기지 않는다** — 빼는 것은 내용의 해시뿐이고, 무엇이 검사
+    밖인지는 이 docstring 과 :data:`~.scenario.BOOT_RESIDUE_PREFIXES` 가 함께 말한다.
+    """
+    profile = (home / "webview").resolve()
+    return {
+        path.relative_to(home).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(home.rglob("*"))
+        if path.is_file() and profile not in path.resolve().parents
+    }
+
+
 def filesystem_manifest(root: Path) -> dict[str, str]:
     """Stable file manifest used to prove the managed path published nothing."""
     if not root.exists():
@@ -351,6 +380,27 @@ def build_web_artifact() -> None:
     )
 
 
+def _missing_onboarding_assets() -> "list[str]":
+    """동봉 예제 원천(``examples/onboarding/``)의 부재를 전수로 센다 — 조용한 부분 확인 금지.
+
+    이름 목록의 정본은 :mod:`hwpxfiller.external.example_pack` 이다. 여기서 파일명을 다시 적으면
+    자산이 늘 때 하니스만 옛 목록을 보게 되고, 그 침묵은 「전제를 증명했다」는 초록 밑에 숨는다.
+    """
+    from hwpxfiller.external import example_pack
+
+    root = example_pack.asset_root()
+    plan = [
+        *(("templates", name) for name in example_pack.HWPX_ASSETS),
+        *(("text_templates", name) for name in example_pack.TXT_ASSETS),
+        *(("data", name) for name in example_pack.DATA_ASSETS),
+    ]
+    return [
+        f"온보딩 예제 자산 없음: {root / sub / name}"
+        for sub, name in plan
+        if not (root / sub / name).is_file()
+    ]
+
+
 def preflight(mode: str, phase: str = "legacy") -> "list[str]":
     """실행 없이 **전제만** 센다 — CI 가 "돌 수 있는 환경인가"를 시끄럽게 증명하는 자리.
 
@@ -370,6 +420,12 @@ def preflight(mode: str, phase: str = "legacy") -> "list[str]":
             problems.append(f"101 자산 없음: {EXAMPLE_HOME / name}")
     if not (EXAMPLE_HOME / "data" / "발주목록.csv").is_file():
         problems.append("101 데이터 없음: data/발주목록.csv")
+    if phase == "onboarding":
+        # 온보딩 여정은 **시딩하지 않는다** — 홈에 자산을 앉히는 것이 설치 액션의 일이고 그것이
+        # 검사 대상이다. 그래서 여기서 세는 전제는 시딩 자산이 아니라 **번들 원천**이다: 동봉
+        # 자산이 없으면 설치가 대본 한가운데서 `FileNotFoundError` 로 터지고, 그 실패는 「예제
+        # 설치가 깨졌다」는 제품 문장으로 나온다(전제 부재를 제품 결함으로 오분류하는 자리).
+        problems.extend(_missing_onboarding_assets())
     if mode == "capture" or phase == "journey":
         try:
             import PIL  # noqa: F401
@@ -417,10 +473,10 @@ def run(
     """
     if mode not in ("check", "capture"):
         raise ValueError(f"모르는 실행 모드: {mode!r}")
-    if phase not in ("legacy", "journey", "restart"):
-        raise ValueError(f"모르는 SX-05 phase: {phase!r}")
+    if phase not in PHASES:
+        raise ValueError(f"모르는 live phase: {phase!r}")
     if mode == "capture" and phase != "legacy":
-        raise ValueError("SX-05 phase는 check 모드에서만 실행합니다")
+        raise ValueError("legacy 아닌 phase는 check 모드에서만 실행합니다")
 
     landing = _Landing(land)
     previous_home = os.environ.get("HWPXFILLER_HOME")
@@ -681,7 +737,15 @@ def _run_with_home(
             scenario_ctx = scenario_mod.ScenarioContext(
                 surface=surface,
                 shoot=sink.shoot,
-                csv_path=str(home / "data" / "발주목록.csv"),
+                csv_path=str(
+                    # 온보딩 홈에는 101 데이터가 없다(시딩 0). 이 자리는 「이 실행의 데이터
+                    # 파일」이므로 예제 설치가 앉힐 자리를 가리킨다 — 편집기의 매핑 관문은
+                    # 고정 데이터를 받지 못하고 native 파일 대화상자만 지나므로(`pickData`
+                    # 하나뿐), 대본이 실제로 답해야 할 경로가 이것이다.
+                    home / EXAMPLE_DATA_REL / "계약목록.csv"
+                    if phase == "onboarding"
+                    else home / "data" / "발주목록.csv"
+                ),
                 queue_file_answer=answers.append,
                 queue_folder_answer=folder_answers.append,
                 stage_template=stage_template,
@@ -691,9 +755,12 @@ def _run_with_home(
                 prepare_output=prepare_output,
                 create_collision=create_collision,
                 output_manifest=lambda: filesystem_manifest(home / SX_OUTPUT_REL),
+                home_census=lambda: home_census(home),
                 audit_shoot=audit_shoot,
             )
-            if phase == "restart":
+            if phase == "onboarding":
+                observations = scenario_mod.run_onboarding(scenario_ctx)
+            elif phase == "restart":
                 observations = scenario_mod.run_restart(scenario_ctx)
             else:
                 observations = scenario_mod.run(scenario_ctx)

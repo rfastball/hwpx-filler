@@ -16,9 +16,18 @@
 from __future__ import annotations
 
 import json
+import posixpath
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from hwpxfiller.domain.job import MISSING_MARKER
+from hwpxfiller.external.example_pack import (
+    DATA_ASSETS,
+    EXAMPLE_GROUP,
+    HWPX_ASSETS,
+    TXT_ASSETS,
+)
+from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS
 from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
 
 from .surface import ScenarioFailure, StepTimeout, Surface
@@ -74,6 +83,10 @@ class ScenarioContext:
     prepare_output: "Callable[[], str]"
     create_collision: "Callable[[str], None]"
     output_manifest: "Callable[[], dict[str, str]]"
+    #: 앱 홈 전체의 파일 census(상대경로 → sha256). 온보딩 여정의 「누르기 전에는 홈에
+    #: 아무것도 쓰지 않는다」(#891 D1)를 재는 자리이고, 그 뒤로는 설치·생성·제거가 실제로
+    #: 파일을 움직였는지의 실물 증거다 — 화면이 말하는 것과 디스크가 말하는 것을 가른다.
+    home_census: "Callable[[], dict[str, str]]"
     audit_shoot: "Callable[[str], dict]"
     #: 대본이 관측한 사실 — 드라이버가 파일 시스템 사실과 합쳐 보고서를 만든다.
     observations: dict = field(default_factory=dict)
@@ -1387,3 +1400,1238 @@ def run_restart(ctx: ScenarioContext) -> dict:
             "filesystem_after": after_files,
         }
     }
+
+
+# ══════════════════════════════════════════════════ 온보딩 여정(#895 · 슬라이스 F)
+#
+# 정본은 ``docs/ONBOARDING_TUTORIAL.md`` §3.3~3.6(T0~T17)·§4.5 다. 위의 101 대본과 **홈 전제가
+# 반대**라는 것이 이 절의 요점이다: 101 은 커밋된 자산이 시딩된 홈에서 돌지만, 온보딩은 **빈
+# 홈**에서 시작해 앱 안의 「예제로 시작하기」가 번들 원천을 스스로 풀어 앉히는 것부터 잰다.
+# 그래서 자산을 미리 깔면 이 대본의 첫 검사 대상이 사라진다(:data:`~.driver.PHASES` 주석).
+
+#: 빈 홈에 **부팅만으로** 생기는 것 — 여기 없는 파일이 설치 전에 있으면 시끄럽게 죽는다.
+#:
+#: 이 목록이 화이트리스트인 이유는 「0건」이 참이 아니기 때문이다: 앱은 부팅 자체로 설정과
+#: WebView2 프로필을 쓴다. 그렇다고 "설치 전 census 는 안 본다"로 가면 D1 계약(누르기 전에는
+#: 홈에 아무것도 쓰지 않는다, #891)을 재는 자리가 통째로 사라진다. 그래서 **부팅 잔재만**
+#: 통과시키고 나머지는 전부 거절한다 — 새 부팅 산물이 생기면 이 목록을 고치라고 빨강이 난다.
+BOOT_RESIDUE_PREFIXES: "tuple[str, ...]" = (
+    "settings.json",        # 부팅 완주 스탬프(`boot_completed_runtime`)와 사용자 설정
+    "ui_settings.ini",      # 창 기하 기억
+    "webapp-alerts.log",    # 경보 채널의 곁사본
+    # WebView2 프로필(``webview/``)은 여기 없다 — census 가 **애초에 싣지 않는다**
+    # (:func:`~.driver.home_census` 가 그 이유를 진다: 실행 중 잠겨 읽히지도 않고, 앱이
+    # 스스로 통청소하는 자기 작업 공간이라 D1 이 재는 「사용자 홈에 쓴 것」이 아니다).
+    "template_authority/",  # S3 권위 스토어의 부팅 초기화(빈 하위 스토어 + 토큰 비밀)
+    "presets/",             # Selection Preset 레지스트리 초기화
+    "jobs/",                # 작업 레지스트리 폴더 초기화(설치 전에는 **기재 0건**이어야 한다)
+    "datasets/",            # 데이터 참조 풀 초기화(같은 이유로 슬롯 0건)
+)
+
+#: 설치가 홈에 앉혀야 하는 것 — census 로 **디스크에서** 되짚는 자리(화면 말고).
+INSTALLED_RELATIVE: "tuple[str, ...]" = (
+    *(f"templates/{name}" for name in HWPX_ASSETS),
+    *(f"text_templates/{name}" for name in TXT_ASSETS),
+    *(f"example_data/{name}" for name in DATA_ASSETS),
+)
+
+#: 생성물이 떨어지는 자리(홈 상대 · :data:`~.driver.RESULTS_REL` 과 같은 곳).
+RESULTS_PREFIX = "templates/Results/"
+
+#: 온보딩 작업 이름 — 티어별로 하나씩. 이름이 곧 ``#jobCandidates`` 의 ``data-cand`` 다.
+ONBOARDING_JOBS = {
+    "basic": "계약체결안내",
+    "applied_hwpx": "구매추진안내",
+    "applied_txt": "계약안내 기안",
+    "error": "오류연습 보증금",
+    "advanced": "공고서 연습",
+}
+
+#: 기본 데이터의 행 수 = 기본 티어가 만들어야 하는 문서 수(``계약목록.csv`` 3행).
+ONBOARDING_ROWS = 3
+
+
+def _results(census: "dict[str, str]") -> "dict[str, str]":
+    """홈 census 에서 생성 산출물만 — 상대경로 → sha256."""
+    return {
+        path: digest
+        for path, digest in census.items()
+        if path.startswith(RESULTS_PREFIX) and path.endswith(".hwpx")
+    }
+
+
+def _confirm(ctx: "ScenarioContext", label: str, what: str) -> str:
+    """공용 확인 모달을 **라벨로 겨눠** 확정하고 재진술 본문을 돌려준다.
+
+    라벨을 정확 대조하는 것이 요점이다. ``#confirmModalOk`` 는 어느 확인이든 같은 노드라,
+    존재만 재면 **다른 확인**(가령 이탈 가드)이 떠 있어도 통과한다 — 그러면 대본이 사용자가
+    보지 않은 것을 눌러 놓고 초록으로 지나간다. 판정·수치·문안은 Python 이 내고 확인 UI 는
+    웹이 그린다는 계약이 여기서 검사된다: 본문을 돌려주는 이유도 그것이다.
+    """
+    s = ctx.surface
+    s.wait(
+        "(function(){"
+        "if(document.getElementById('confirmModal').classList.contains('hidden'))return false;"
+        "return document.getElementById('confirmModalOk').textContent.trim() === "
+        f"{json.dumps(label, ensure_ascii=False)};}})()",
+        f"{what} 확인 모달(「{label}」)",
+        timeout=30.0,
+        requires=["#confirmModal", "#confirmModalOk"],
+    )
+    body = str(s.js("document.getElementById('confirmModalBody').textContent")).strip()
+    s.click_sel("#confirmModalOk", what=f"{what} 확정")
+    s.wait(
+        "document.getElementById('confirmModal').classList.contains('hidden')",
+        f"{what} 확인 모달 닫힘",
+        requires=["#confirmModal"],
+    )
+    return body
+
+
+def _goto_library(ctx: "ScenarioContext", what: str) -> None:
+    s = ctx.surface
+    s.click_sel('.navbtn[data-scr="library"]', what=f"문서 작업 탭({what})")
+    s.wait(
+        "document.querySelector('#scr-library.on') !== null",
+        f"문서 작업 화면({what})",
+        requires=["#scr-library"],
+    )
+
+
+def _open_editor(ctx: "ScenarioContext", what: str) -> None:
+    """「＋ 새 작업」으로 편집기(몰입 표면)에 들어가 라이브러리 피커 단계에 선다."""
+    _goto_library(ctx, what)
+    s = ctx.surface
+    s.click_sel("#libraryNewWork", what=f"새 작업({what})")
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null"
+        " && !!document.querySelector('#scr-editor [data-act=\"install-examples\"]')",
+        f"편집기 라이브러리 피커({what})",
+        requires=["#scr-editor"],
+    )
+
+
+def _leave_editor(ctx: "ScenarioContext", what: str) -> None:
+    s = ctx.surface
+    s.click_sel("#editorBack", what=f"편집기 출구({what})")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null",
+        f"편집기 이탈({what})",
+        requires=["#scr-job"],
+    )
+
+
+def _save_work(
+    ctx: "ScenarioContext",
+    *,
+    template: str,
+    name: str,
+    confirmed: str,
+    pattern: "str | None" = None,
+    empty_confirm: bool = False,
+) -> bool:
+    """편집기 한 바퀴 — 템플릿 채택 → 데이터 연결 → 전 행 확정 → (파일 이름) → 저장.
+
+    ``pattern`` 이 있으면 hwpx 3탭 세션(파일 이름 탭을 지난다), 없으면 TXT 2탭 세션이다 —
+    파일을 만들지 않는 작업에는 그 탭이 아예 없다(§3.2). ``empty_confirm`` 은 데이터에 **열
+    자체가 없는** 항목이 있어 저작측 결핍 게이트를 지나야 하는 갈래다(T14).
+
+    **게이트가 실제로 떴다는 사실을 돌려준다.** T14 는 「단계가 체크됐다」로 재면 안 되는
+    자리다: 퍼지 제안 임계가 다시 낮아지면(#908 이 0.6→0.7 로 올린 그 값) ``계약보증금`` 이
+    ``계약금액`` 에 자동 결속돼 게이트가 **서지 않고**, 그래도 저장은 성립한다. 그때 조용히
+    지나가는 것은 잘못된 열이 결속된 작업이므로, 게이트의 발화 자체가 보고서에 남아 판정을
+    받아야 한다(대본의 대기는 실행 중에만 살아 있다).
+    """
+    s = ctx.surface
+    _open_editor(ctx, name)
+    s.click_sel(
+        f'#scr-editor button[data-act="use-library"][data-path*="{template}"]',
+        what=f"{template} 템플릿 채택",
+    )
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        f"{name} 템플릿 스키마",
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','파일 선택…')",
+        f"{name} 데이터 관문",
+        requires=["#scr-editor"],
+    )
+    # 편집기의 매핑 관문은 고정 데이터를 받지 못한다 — 여는 동사가 native 파일 선택 하나뿐이라
+    # (`editor.ts` 의 `pickData`), 설치된 예제 CSV 의 실경로로 답한다.
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_text("#scr-editor", "파일 선택…")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        " && document.querySelector('#scr-editor').textContent.includes('한빛과학기술연구원')",
+        f"{name} 매핑표 미리보기",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "모두 확정")
+    gate_fired = False
+    if empty_confirm:
+        # 데이터에 열 자체가 없는 「계약보증금」 — 채우지 않고 비움으로 확정할지 **묻는다**.
+        s.wait("!!window.__cap.btn(null,'비움으로 확정')", f"{name} 비움 확정 이름게이트")
+        s.click_text(None, "비움으로 확정")
+        gate_fired = True
+    s.wait(
+        f"document.querySelector('#scr-editor').textContent.includes({json.dumps(confirmed)})",
+        f"{name} 전 행 확정({confirmed})",
+        requires=["#scr-editor"],
+    )
+    if pattern is not None:
+        s.click_text("#scr-editor", "다음 ▶")
+        s.wait(
+            "!!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
+            f"{name} 파일 이름 탭",
+            requires=['#scr-editor input[data-act="pattern"]'],
+        )
+        s.set_value('#scr-editor input[data-act="pattern"]', pattern)
+    s.set_value("#editorName", name)
+    s.click_text("#scr-editor", "작업 저장")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        f"{name} 저장 착지",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    _leave_editor(ctx, name)
+    return gate_fired
+
+
+def _mount_pinned(ctx: "ScenarioContext", name: str) -> None:
+    """「고정한 데이터」에서 한 건을 마운트한다 — 파괴적 교체면 중간 확인을 실제로 지난다."""
+    s = ctx.surface
+    pinned = (
+        "#dataPickerPinned button[data-act=\"use\"]"
+        f"[data-name={json.dumps(name, ensure_ascii=False)}]"
+    )
+    s.click_sel("#jobBtnPickData", what=f"데이터 선택({name})")
+    s.wait(
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')"
+        f" && !!document.querySelector({json.dumps(pinned)})",
+        f"데이터 선택 면·고정 항목({name})",
+        timeout=30.0,
+        requires=["#dataPickerModal", "#dataPickerPinned"],
+    )
+    s.click_sel(pinned, what=f"고정 데이터 사용({name})")
+    # 실행 증거가 서 있으면 교체는 파괴 전이라 확인을 **먼저** 받는다(`confirmDestructiveIfArmed`).
+    # 그 확인은 조건부라, 「떴으면 지난다」를 한 대기 안에서 갈라야 대본이 두 갈래에 다 산다.
+    s.wait(
+        "(function(){"
+        "const m=document.getElementById('confirmModal');"
+        "if(m && !m.classList.contains('hidden'))return true;"
+        "return document.getElementById('dataPickerModal').classList.contains('hidden');})()",
+        f"교체 확인 또는 마운트 착지({name})",
+        timeout=30.0,
+        requires=["#dataPickerModal"],
+    )
+    if not s.js("document.getElementById('confirmModal').classList.contains('hidden')"):
+        _confirm(ctx, "데이터 바꾸고 버리기", f"데이터 교체({name})")
+    s.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')"
+        " && document.getElementById('jobDataLabel').value.includes("
+        f"{json.dumps(name, ensure_ascii=False)})",
+        f"데이터 마운트 착지({name})",
+        timeout=30.0,
+        requires=["#dataPickerModal", "#jobDataLabel"],
+    )
+
+
+def _select_all(ctx: "ScenarioContext", job: str) -> None:
+    """후보 카드를 **명시로** 고르고 전체 선택까지 — 마운트 직후 선택은 0건이다(§18.2)."""
+    _select_work(ctx.surface, job)
+    s = ctx.surface
+    s.wait(
+        "!document.getElementById('jobSelAll').disabled",
+        f"{job} 전체 선택 가능",
+        requires=["#jobSelAll"],
+    )
+    s.click_sel("#jobSelAll", what=f"전체 선택({job})")
+    # 클릭이 아니라 **선택이 선 것**이 이 걸음의 착지다: 작업 저장 직후의 새 스냅샷은 범위를
+    # 0건으로 되돌리므로(`_reset_range_for_snapshot`), 누른 사실만 믿고 넘어가면 다음 걸음이
+    # 「0건 선택」 게이트를 제품 결함으로 읽는다.
+    s.wait(
+        "(function(){const g=document.getElementById('jobGate');"
+        "return !!g && !g.textContent.includes('최소 1건');})()",
+        f"{job} 선택 착지",
+        timeout=30.0,
+        requires=["#jobGate"],
+    )
+
+
+def _approve(
+    ctx: "ScenarioContext", what: str, *, managed: bool, expect_text: "str | None" = None
+) -> str:
+    """생성 값 미리보기를 열어 승인하고 닫는다 — 승인은 **버튼의 부재**로 착지한다.
+
+    ``expect_text`` 는 승인 **전에** 확인 면이 말하고 있어야 하는 문안이다. 빈 값 표식(T13)이
+    그것인데, 그 표식의 계약은 「빈칸으로 새지 않는다」라서 **사용자가 확정하기 전에 보인다**는
+    것까지가 계약이다 — 생성된 파일에서만 확인하면 「나중에 보였다」만 증명된다.
+    """
+    s = ctx.surface
+    opener = "#jobManagedPreviewOpen" if managed else "#jobPreviewOpen"
+    s.wait(
+        f"!!document.querySelector('{opener}') && !document.querySelector('{opener}').disabled",
+        f"{what} 미리보기 열기 가능",
+        timeout=30.0,
+        requires=[opener],
+    )
+    s.take_dispatch_trace()  # 이 걸음의 왕복만 남기고 앞의 것은 버린다(실패 진단용)
+    s.click_sel(opener, what=f"{what} 생성 값 미리보기")
+    # 열림을 **가시성**으로 잰다. ``hidden`` 클래스로 재면 실측으로 넘어진다: 재승인에서 다시
+    # 열린 서랍은 화면에 서 있고 승인 버튼도 누를 수 있는데 그 클래스가 남아 있었다(관측:
+    # `open:false` 인데 `innerText` 는 전문이 나오고 `approve:true`). 클래스는 표면의 사정이고
+    # 대본이 물어야 하는 것은 「사용자가 지금 이 승인 버튼을 누를 수 있는가」다.
+    try:
+        s.wait(
+            "(function(){const b=document.getElementById('previewApprove');"
+            "if(!b || b.disabled)return false;const st=getComputedStyle(b);"
+            "return b.getClientRects().length > 0 && st.display !== 'none'"
+            " && st.visibility !== 'hidden';})()",
+            f"{what} 확인 면·승인 버튼 가시",
+            timeout=30.0,
+            requires=["#previewSheet"],
+        )
+    except StepTimeout as exc:
+        # 「열리지 않았다」와 「열렸는데 승인 버튼이 없다」는 전혀 다른 사건이다 — 시한만
+        # 남기면 둘이 같은 빨강이 되고, 뒤쪽은 곧 「이미 승인돼 있다」일 수도 있다.
+        # 그래서 표면과 **백엔드 투영**을 함께 뜬다: 화면이 안 그린 것과 백엔드가 안 준 것은
+        # 고칠 자리가 다르다.
+        state = s.js(
+            "(function(){const sh=document.getElementById('previewSheet');"
+            "const all=[...document.querySelectorAll('#previewApprove')].map(b=>{"
+            "const st=getComputedStyle(b);return {label:b.textContent.trim(),"
+            " disabled:b.disabled, rects:b.getClientRects().length, display:st.display};});"
+            "return {sheet_hidden: !sh || sh.classList.contains('hidden'), approvals: all,"
+            " opener_disabled: (document.getElementById('jobPreviewOpen')||{}).disabled,"
+            # 셸 상태기계가 「지금 어느 화면인가」를 어떻게 답하는지 — `openPreview` 가 그
+            # 답으로 열지 말지를 가르므로(`job_run.ts`), DOM 의 `.on` 과 갈리면 버튼이
+            # 죽는다. 튜토리얼 패널 루트가 그 답을 `data-screen` 으로 이미 그리고 있다.
+            " nav_screen: (document.getElementById('tutorialPanelRoot')||{dataset:{}})"
+            ".dataset.screen,"
+            " dom_screen: (document.querySelector('.scr.on')||{}).id,"
+            " gate: (document.getElementById('jobGate')||{textContent:''}).textContent.trim()};})()"
+        )
+        projection = _snapshot(s)
+        preview = projection.get("preview") if isinstance(projection, dict) else None
+        trace = [
+            {k: v for k, v in item.items() if k in ("action", "payload", "response", "error")}
+            for item in s.take_dispatch_trace()
+        ]
+        wb = projection.get("workbench_observation") or {}
+        state["out_dir"] = projection.get("out_dir")
+        state["output_folder"] = wb.get("output_folder")
+        state["preview_requirement"] = wb.get("preview_requirement")
+        raise ScenarioFailure(
+            f"{what} 확인 면이 승인할 상태로 서지 않았습니다 — DOM {state}"
+            f" · preview zone {preview!r} · review {projection.get('review')!r}"
+            f" · dispatch trace {trace!r}"
+        ) from exc
+    if expect_text is not None:
+        s.wait(
+            "document.getElementById('previewSheet').innerText.includes("
+            f"{json.dumps(expect_text, ensure_ascii=False)})",
+            f"{what} 확인 면의 {expect_text!r} 표면",
+            timeout=30.0,
+            requires=["#previewSheet"],
+        )
+    sheet_text = str(s.js("document.getElementById('previewSheet').innerText"))
+    s.click_sel("#previewApprove", what=f"{what} 이 이름과 값으로 승인")
+    # 승인의 착지는 버튼의 **부재 또는 숨김**이다. 서랍 변형이 둘이라(하나는 노드를 지우고
+    # 하나는 display 로 숨긴다) 한쪽만 겨누면 착지가 예외로 둔갑한다(run_sx 가 만난 함정).
+    s.wait(
+        "(function(){const b=document.getElementById('previewApprove');"
+        "return !b || getComputedStyle(b).display === 'none';})()",
+        f"{what} 승인 착지",
+        timeout=30.0,
+        requires=["#previewSheet"],
+    )
+    s.click_sel("#previewClose", what=f"{what} 확인 면 닫기")
+    s.wait(
+        "(function(){const sh=document.getElementById('previewSheet');"
+        "return !sh || sh.getClientRects().length === 0;})()",
+        f"{what} 확인 면 닫힘",
+    )
+    return sheet_text
+
+
+#: 관리 경로 primary action → 그것을 푸는 **화면의 버튼**(§3.5 T16 「검토 확인들」).
+#: 미리보기(``REVIEW_PREVIEW``)는 서랍 왕복이라 아래 loop 가 따로 다룬다.
+def _exclude_invalid_records(ctx: "ScenarioContext", what: str) -> dict:
+    """``REVIEW_RECORD_DATA`` — 제품이 지목한 행을 **범위에서 빼고** 진행한다.
+
+    ## 무엇이 막는가 (실측 · #895 4차)
+
+    변환본 `공고서_연습` 의 `납품기한` 은 **날짜 종류**를 요구하는데 동봉 `계약목록.csv` 3행 중
+    둘이 자유 문안(`계약 후 90일 이내`)이라 ``RECORD_VALUE_TYPE_INVALID`` 로 막힌다(날짜인
+    `2026-12-31` 한 행만 통과). 즉 **동봉 데이터가 동봉 서식을 다 만족하지 못한다** — 튜토리얼
+    고급 티어를 밟는 사용자는 누구나 「먼저 데이터 문제를 확인하세요」를 만난다. 이 어긋남은
+    막다른 길이 아니라 자산↔서식 드리프트라, 대본은 제품이 준 길로 지나가되 그 사실을
+    관측에 실어 보고서가 말하게 한다(조용히 넘기면 이 게이트가 드리프트를 못 본다).
+
+    빼는 행은 대본이 정하지 않고 **제품이 지목한 것**(``record_validation.issues`` 의
+    ``model_index``)을 그대로 쓴다 — 고정 인덱스를 박으면 자산이 고쳐졌을 때 옳은 동작이
+    빨강이 되고, 무엇이 빠졌는지도 보고서가 말하지 못한다.
+    """
+    s = ctx.surface
+    issues = (_workbench(_snapshot(s)).get("record_validation") or {}).get("issues") or ()
+    drop = sorted({
+        int((item.get("recovery_target") or {}).get("model_index"))
+        for item in issues
+        if (item.get("recovery_target") or {}).get("model_index") is not None
+    })
+    _expect(drop, f"{what}: 데이터 확인을 요구하는데 지목된 행이 없습니다 — {issues!r}")
+    reasons = sorted({str(item.get("message") or "") for item in issues})
+    s.click_sel("#jobDataExpand", what=f"{what} 펼쳐서 행 고르기")
+    s.wait(
+        "!document.getElementById('dataSheet').classList.contains('hidden')",
+        f"{what} 범위 편집기",
+        timeout=30.0,
+        requires=["#dataSheet", "#jobTableBody"],
+    )
+    # 표시순서를 원본 오름차순으로 고정한다 — `data-i` 는 모델 인덱스라 순서와 무관하지만,
+    # 겨눌 행이 화면에 서 있어야 클릭이 성립한다(기본 「최신 행 먼저」에서도 전 행이 서지만
+    # 순서를 못박아 두면 실패 진단의 좌표가 흔들리지 않는다).
+    s.set_value("#jobOrderSel", "sourceAsc")
+    for index in drop:
+        row = f'#jobTableBody tr[data-i="{index}"] input[type="checkbox"]'
+        s.wait(
+            f"(function(){{const b=document.querySelector({json.dumps(row)});"
+            "return !!b && b.checked;})()",
+            f"{what} {index}행 선택 상태",
+            timeout=30.0,
+            requires=["#jobTableBody"],
+        )
+        s.click_sel(row, what=f"{what} {index}행 제외")
+    s.click_sel("#jobRangeApply", what=f"{what} 선택 적용")
+    s.wait(
+        "document.getElementById('dataSheet').classList.contains('hidden')",
+        f"{what} 범위 적용 착지",
+        timeout=30.0,
+        requires=["#dataSheet"],
+    )
+    return {"excluded": drop, "reasons": reasons}
+
+
+_MANAGED_REVIEW_CONTROLS: "dict[str, str]" = {
+    "RESOLVE_EXECUTION": "#jobResolveExecution",
+    "RESOLVE_RUNTIME_POLICY": "#jobResolveExecution",
+    "REVIEW_DELIVERY": "#jobRefreshDelivery",
+}
+
+
+def _resolve_bindings(ctx: "ScenarioContext", what: str) -> dict:
+    """결속 검토(``REVIEW_BINDING``) — 편집기로 건너가 **연결을 확정**하고 돌아온다.
+
+    누름틀 변환이 만든 필드는 **판본에 규칙이 정말 없는 활성 Field**(``NEW_ACTIVE_FIELD``)라,
+    편집기 매핑을 확정해 저장한 것과는 다른 층이다: 저 확정은 작업의 매핑 프로필이고, 여기서
+    묻는 것은 durable Binding 판본이다. 그래서 「확정 5/5 로 저장했는데 왜 또 묻나」가 아니라
+    **처음 묻는 것**이다(§3.5 가 말하는 결속 검토).
+
+    ## 왜 무변경 확정인가 (#911)
+
+    매핑이 이미 옳으면 더럽힐 것이 없어 변경 기반 무장(``armed = dirty || pendingEdits``)이
+    영영 안 열린다 — #895 3차 실주행이 정확히 거기서 막혔다(푸터 두 동사 모두 비활성,
+    ``REVIEW_BINDING`` 상주). #911 이 무변경 확정 동사 「연결 확정」을 무장했으므로 대본은
+    **그 동사를 그대로 누른다**. 종전 우회(모두 해제 → 모두 확정으로 억지 dirty 만들기)는
+    이제 쓰지 않는다: 그것은 사용자가 실제로 밟는 길이 아니었고, 그 우회가 초록이면 진짜
+    사용자가 막히는 것을 이 게이트가 영영 못 본다.
+
+    확정 동사가 **무변경 갈래로** 섰다는 사실(``data-confirm-binding``·라벨)을 관측에 실어
+    돌려준다 — #911 이 실제로 발화했다는 증거이고, 임계가 되돌아가면 이 사실이 먼저 죽는다.
+    """
+    s = ctx.surface
+    pending = [
+        str(item.get("exact_target") or "")
+        for item in (_workbench(_snapshot(s)).get("input_requirements") or ())
+        if item.get("action_required") is True
+    ]
+    _expect(pending, f"{what}: 결속 검토를 요구하는데 조치 대상이 비었습니다")
+    target = (
+        "#jobInputRequirements button"
+        f"[data-exact-target={json.dumps(pending[0], ensure_ascii=False)}]"
+    )
+    s.click_sel(target, what=f"{what} 결속 수정 진입")
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null"
+        " && !!document.querySelector('#editor-body table.map')",
+        f"{what} 결속 편집기",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    # 확정 동사를 **바꾸지 않고** 기다린다(#911). 손대지 않았으므로 dirty 는 거짓이고, 무장의
+    # 사유는 오직 `binding_confirm.pending` 이다 — 그 갈래가 정확히 이 걸음이 재는 것이다.
+    # 서지 않으면 「내 선택자가 틀렸다」와 「사용자가 여기서 막힌다」가 같은 빨강이 되므로
+    # 푸터 상태를 통째로 떠서 문장으로 가른다(#895 3차가 이 진단으로 막다른 길을 이름 지었다).
+    save_sel = '#editor-foot button[data-act="save"]'
+    try:
+        s.wait(
+            f"(function(){{const b=document.querySelector({json.dumps(save_sel)});"
+            "return !!b && !b.disabled;})()",
+            f"{what} 연결 확정 동사 무장",
+            timeout=30.0,
+            requires=["#editor-foot"],
+        )
+    except StepTimeout as exc:
+        state = s.js(
+            "(function(){const f=document.getElementById('editor-foot');"
+            "return {footer: f ? [...f.querySelectorAll('button')].map(b=>"
+            "({label:b.textContent.trim(), act:b.getAttribute('data-act'), disabled:b.disabled}))"
+            " : null,"
+            " hint: (document.querySelector('[data-role=\"binding-confirm-hint\"]')"
+            "||{textContent:''}).textContent.trim(),"
+            " confirmed: (document.querySelector('#scr-editor')||{textContent:''})"
+            ".textContent.match(/확정 \\d+\\/\\d+/),"
+            " save_state: (document.getElementById('editorSaveState')||{textContent:''})"
+            ".textContent.trim()};})()"
+        )
+        raise ScenarioFailure(
+            f"{what}: 결속 검토가 편집기를 지목했는데 확정 동사가 무장하지 않습니다 — {state}."
+            " 바꿀 것이 없는 검토를 닫을 길이 없다는 뜻이라 사용자가 여기서 막힙니다"
+            " (#911 회귀 후보)"
+        ) from exc
+    verb = s.js(
+        f"(function(){{const b=document.querySelector({json.dumps(save_sel)});"
+        "return {label: b.textContent.trim(),"
+        " confirm_only: b.getAttribute('data-confirm-binding') === '1',"
+        " hint: (document.querySelector('[data-role=\"binding-confirm-hint\"]')"
+        "||{textContent:''}).textContent.trim()};})()"
+    )
+    # 무변경 갈래로 섰는지까지 잰다 — 라벨만 보면 「변경 저장」과 구별되지 않고, 우리가 아무것도
+    # 건드리지 않았으므로 여기서 참이어야 하는 것은 `confirm_only` 다.
+    _expect(
+        isinstance(verb, dict) and verb.get("confirm_only") is True,
+        f"{what}: 무변경 확정 갈래가 서지 않았습니다 — {verb!r}",
+    )
+    s.click_sel(save_sel, what=f"{what} 연결 확정")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        f"{what} 연결 확정 착지",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_text("#editorContext", "문서 만들기로 돌아가기")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null",
+        f"{what} 결속 복귀",
+        timeout=30.0,
+        requires=["#scr-job"],
+    )
+    return {"pending": len(pending), "verb": verb}
+
+
+def _managed_reviews(ctx: "ScenarioContext", what: str, *, limit: int = 8) -> "list[str]":
+    """관리 경로의 **검토 확인들**을 지나 「만들기」를 연다 — 지나온 단계 코드를 돌려준다.
+
+    구간 템플릿의 첫 작업은 기본 티어보다 확인 왕복이 몇 걸음 더 있다(§3.5, PR #909): 결속·
+    전달·실행 검토를 사람이 확정해야 생성이 열린다. 그 사슬을 대본이 **미리 적지 않는** 이유는
+    순서와 구성이 제품 소유이기 때문이다(``PRIMARY_ACTION_CODES`` 우선순위) — 고정 대본을 박으면
+    제품이 한 걸음을 더하거나 뺄 때 옳은 동작이 빨강이 된다. 그래서 매 바퀴 **제품이 지금 무엇을
+    최우선으로 요구하는지**(``primary_action``)를 읽고 그 자리의 버튼을 누른다.
+
+    ``NOT_REQUIRED`` 미리보기에서는 승인할 것이 아예 없다(``#jobManagedPreviewOpen`` 이 서지
+    않는다) — 그 갈래를 승인으로 재면 없는 버튼을 기다리게 된다. 모르는 코드는 조용히 넘기지
+    않고 관측을 통째로 실어 시끄럽게 죽는다.
+    """
+    s = ctx.surface
+    passed: "list[str]" = []
+    for _ in range(limit):
+        observation = _workbench(_snapshot(s))
+        create = observation.get("create_action") or {}
+        if create.get("enabled") is True:
+            return passed
+        code = str(observation.get("primary_action") or "")
+        if code == "CREATE_DOCUMENTS":
+            # 최종 단계인데 아직 안 열렸다 — 한 tick 늦은 것일 수 있으니 화면으로 기다린다.
+            s.wait(
+                "!document.getElementById('jobManagedCreate').disabled",
+                f"{what} 만들기 열림",
+                timeout=30.0,
+                requires=["#jobManagedCreate"],
+            )
+            return passed
+        passed.append(code)
+        if code == "REVIEW_PREVIEW":
+            _approve(ctx, what, managed=True)
+            continue
+        if code == "REVIEW_BINDING":
+            # 무변경 확정 갈래가 섰다는 사실(#911)은 관측에 남긴다 — 이 사슬을 닫은 것이 무엇이
+            # 었는지를 보고서가 말할 수 있어야 한다(첫 확정만 기록: 뒤 바퀴는 같은 사실이다).
+            resolved = _resolve_bindings(ctx, what)
+            ctx.observations.setdefault("binding_confirm", resolved["verb"])
+            continue
+        if code == "REVIEW_RECORD_DATA":
+            # 자산↔서식 드리프트를 지나온 사실은 관측에 남긴다(위 helper 주석 참조).
+            ctx.observations.setdefault(
+                "record_data_drift", _exclude_invalid_records(ctx, what)
+            )
+            continue
+        selector = _MANAGED_REVIEW_CONTROLS.get(code)
+        if selector is None:
+            raise ScenarioFailure(
+                f"{what}: 모르는 관리 경로 단계 {code!r} — 지나온 단계 {passed!r} ·"
+                f" blockers {observation.get('blockers')!r} ·"
+                f" create {create!r} ·"
+                f" preview {observation.get('preview_requirement')!r} ·"
+                f" execution {observation.get('execution_action')!r} ·"
+                f" input_requirements {observation.get('input_requirements')!r} ·"
+                f" record_validation {observation.get('record_validation')!r} ·"
+                f" delivery {observation.get('delivery')!r}"
+            )
+        before = str(s.js(
+            "(document.getElementById('jobManagedCreateReason')||{textContent:''}).textContent"
+        ))
+        s.click_sel(selector, what=f"{what} {code}")
+        # 착지는 「사유가 바뀌었다」거나 「열렸다」 — 클릭 직후를 재면 아직 안 온 재렌더를
+        # 통과로 읽고 같은 단계를 limit 까지 헛돈다.
+        s.wait(
+            "(function(){const b=document.getElementById('jobManagedCreate');"
+            "if(b && !b.disabled)return true;"
+            "const r=document.getElementById('jobManagedCreateReason');"
+            f"return !!r && r.textContent !== {json.dumps(before, ensure_ascii=False)};}})()",
+            f"{what} {code} 착지",
+            timeout=60.0,
+            requires=["#jobManagedCreate"],
+        )
+    raise ScenarioFailure(
+        f"{what}: 검토 확인 {limit}바퀴에도 만들기가 열리지 않았습니다 — 지나온 단계 {passed!r}"
+    )
+
+
+def _managed_route(ctx: "ScenarioContext") -> bool:
+    """이 실행이 managed materialization 갈래인가 — **화면에 선 것으로** 가른다.
+
+    구간을 가진 durable Work 는 legacy staging 을 타지 않고 managed 파이프라인으로 간다
+    (``screen_job._is_managed_hwpx_work``). 어느 쪽인지 추측하지 않고 제품이 세운 버튼을 보고,
+    그 사실을 관측에 실어 증거로 남긴다 — 갈래를 조용히 삼키면 「어느 경로가 검사됐는가」를
+    보고서가 말하지 못한다.
+    """
+    return bool(ctx.surface.js("!!document.getElementById('jobManagedCreate')"))
+
+
+def _generate(ctx: "ScenarioContext", what: str) -> dict:
+    """문서를 실제로 만들고 **무슨 일이 있었는지**를 돌려준다 — 갈래는 화면이 정한다.
+
+    덮어쓰기 확인을 기대값으로 받지 않고 **관측해서 싣는다**. 같은 이름이 이미 있는가는
+    갈래가 정하지("legacy 는 확인을 묻고 managed 는 기본 충돌 처리로 접미를 붙인다") 대본이
+    정하는 것이 아니라서, 기대값을 박으면 옳은 제품 동작이 빨강이 된다. 대신 「어느 바퀴에서
+    확인이 실제로 떴는가」를 돌려주므로, 그것이 계약인 자리(T8)는 부른 쪽이 단언한다.
+    """
+    s = ctx.surface
+    route = "managed" if _managed_route(ctx) else "legacy"
+    button = "#jobManagedCreate" if route == "managed" else "#jobGenBtn"
+    s.wait(
+        f"!document.querySelector('{button}').disabled",
+        f"{what} 생성 열림({route})",
+        timeout=30.0,
+        requires=[button],
+    )
+    s.click_sel(button, what=f"{what} 문서 만들기({route})")
+    # 확인 모달과 완료 태 중 **먼저 서는 것**을 기다린다. 확인을 무조건 기다리면 안 뜨는
+    # 갈래에서 매달리고, 완료만 기다리면 확인이 뜬 갈래에서 영영 오지 않는 태를 기다린다.
+    s.wait(
+        "(function(){"
+        "const m=document.getElementById('confirmModal');"
+        "if(m && !m.classList.contains('hidden'))return true;"
+        "return (document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed';"
+        "})()",
+        f"{what} 덮어쓰기 확인 또는 생성 완료",
+        timeout=90.0,
+        requires=["#jobResult"],
+    )
+    overwrite = not s.js("document.getElementById('confirmModal').classList.contains('hidden')")
+    if overwrite:
+        _confirm(ctx, "덮어쓰고 생성", f"{what} 덮어쓰기")
+        s.wait(
+            "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",
+            f"{what} 덮어쓴 뒤 생성 완료 태",
+            timeout=90.0,
+            requires=["#jobResult"],
+        )
+    state = str(s.js("document.getElementById('jobResult').dataset.state"))
+    # 결과 구획을 닫아 다음 바퀴의 실행 면을 되돌린다(닫지 않으면 다음 걸음이 지난 결과를 본다).
+    if s.js("!!document.getElementById('jobResultClose')"):
+        s.click_sel("#jobResultClose", what=f"{what} 결과 닫기")
+        s.wait(
+            "(document.getElementById('jobResult')||{dataset:{}}).dataset.state !== 'completed'",
+            f"{what} 결과 닫힘",
+            requires=["#jobResult"],
+        )
+    return {"state": state, "route": route, "overwrite_confirmed": overwrite}
+
+
+def _visible_moment(s: Surface, what: str) -> str:
+    """지금 떠 있는 순간 카드의 단계 — **가시성으로** 잰다.
+
+    존재만 재면 안 되는 자리다(저장소가 아는 함정: selftest 프로브의 `click` 은 hidden 도
+    지난다). 다만 ``offsetParent`` 는 쓰지 않는다 — 카드는 요소를 겨누지 않는 고정 자리라
+    ``position: fixed`` 이고, 그러면 보이는 카드도 ``offsetParent`` 가 ``null`` 이라 이 축이
+    「안 보인다」를 참으로 만든다(가시성을 재려다 가시성을 부정하는 검사가 된다).
+    """
+    s.wait(
+        "(function(){const c=document.getElementById('tutorialMoment');"
+        "if(!c)return false;const st=getComputedStyle(c);"
+        "return c.getClientRects().length > 0 && st.display !== 'none'"
+        " && st.visibility !== 'hidden' && parseFloat(st.opacity || '1') > 0;})()",
+        f"{what} 순간 카드 가시",
+        timeout=30.0,
+        requires=["#tutorialMoment"],
+    )
+    return str(s.js("document.getElementById('tutorialMoment').dataset.milestone"))
+
+
+def _tier_complete(s: Surface, tier: str) -> bool:
+    return bool(s.js(
+        "!!document.querySelector('#tutorialPanel"
+        f" section.tut-tier[data-tier=\"{tier}\"][data-complete=\"1\"]')"
+    ))
+
+
+def _require_step(s: Surface, milestone: str, what: str) -> None:
+    """체크리스트의 한 단계가 **체크된 것으로 보이는지** — 링1 판정의 표면 착지."""
+    s.wait(
+        "!!document.querySelector('#tutorialPanel"
+        f" li.tut-step[data-milestone=\"{milestone}\"][data-achieved=\"1\"]')",
+        f"{what}({milestone}) 체크",
+        timeout=30.0,
+        requires=["#tutorialPanel"],
+    )
+
+
+def _tutorial_snapshot(s: Surface) -> dict:
+    value = s.bridge("window.pywebview.api.initial('tutorial')", "튜토리얼 스냅샷")
+    if not isinstance(value, dict):
+        raise ScenarioFailure(f"튜토리얼 스냅샷이 객체가 아닙니다: {type(value)!r}")
+    return value
+
+
+def _achieved(snapshot: dict) -> "list[str]":
+    return [
+        step["milestone"]
+        for tier in snapshot.get("tiers", ())
+        for step in tier.get("steps", ())
+        if step.get("achieved")
+    ]
+
+
+def _example_rows(s: Surface) -> int:
+    """편집기 라이브러리 밴드에 서 있는 **예제 자산** 행 수 — 이름으로 센다."""
+    names = json.dumps(
+        [name for name in (*HWPX_ASSETS, *TXT_ASSETS)], ensure_ascii=False
+    )
+    return int(s.js(
+        "(function(){const names=" + names + ";"
+        "return [...document.querySelectorAll("
+        "'#scr-editor button[data-act=\"use-library\"]')]"
+        ".filter(b=>names.some(n=>(b.getAttribute('data-path')||'').includes(n))).length;})()"
+    ))
+
+
+#: 「고정한 데이터」 목록에서 예제 등록만 세는 표현식 — 이름·문안을 함께 낸다.
+_PINNED_PROBE = (
+    "(function(){const stems=%s;"
+    "const all=[...document.querySelectorAll('#dataPickerPinned button[data-act=\"use\"]')];"
+    "return {matched: all.filter(b=>stems.includes(b.getAttribute('data-name'))).length,"
+    " names: all.map(b=>b.getAttribute('data-name')),"
+    " text: document.getElementById('dataPickerPinned').innerText.slice(0, 400)};})()"
+) % json.dumps([name.removesuffix(".csv") for name in DATA_ASSETS], ensure_ascii=False)
+
+
+def _pinned_examples(ctx: "ScenarioContext", expected: int) -> dict:
+    """「고정한 데이터」의 예제 등록이 ``expected`` 건이 될 때까지 기다려 세고 닫는다.
+
+    **기다리는 것이 계약이다.** 이 면은 열리는 순간 지난 스냅샷의 목록을 먼저 그리고
+    (`pool` 모델은 부팅 때 이미 한 번 채워진다), 그 뒤에야 여는 길이 띄운
+    ``dispatch('pool','refresh')`` 가 도착한다. 그래서 「읽는 중이 아니다」로 재면 **설치
+    이전의 빈 목록**을 보고 0건이라 읽는다 — 실측으로 이 자리에서 두 번 넘어졌고, 그 빨강은
+    「설치가 데이터를 고정하지 못했다」는 제품 문장으로 나왔다(디스크에는 있었다).
+
+    수치만 돌려주지 않는 이유도 같다: 「0건」의 뜻이 여럿이라(비었는가·이름이 다른가·아직
+    안 왔는가) 실패에 본 이름과 목록 문안을 함께 실어야 무엇을 고치라는 말인지 남는다.
+    """
+    s = ctx.surface
+    s.click_sel("#jobBtnPickData", what="고정 데이터 확인")
+    s.wait(
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 면(고정 확인)",
+        timeout=30.0,
+        requires=["#dataPickerModal", "#dataPickerPinned"],
+    )
+    try:
+        s.wait(
+            f"{_PINNED_PROBE}.matched === {expected}",
+            f"고정한 예제 데이터 {expected}건 도착",
+            timeout=30.0,
+            requires=["#dataPickerPinned"],
+        )
+    except StepTimeout as exc:
+        observed = s.js(_PINNED_PROBE)
+        raise ScenarioFailure(
+            f"고정한 예제 데이터가 {expected}건이 되지 않았습니다 — {observed!r}"
+        ) from exc
+    observed = s.js(_PINNED_PROBE)
+    if not isinstance(observed, dict):
+        raise ScenarioFailure(f"고정 목록 관측이 객체가 아닙니다: {observed!r}")
+    s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기(고정 확인)")
+    s.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 면 닫힘(고정 확인)",
+        requires=["#dataPickerModal"],
+    )
+    return observed
+
+
+def run_onboarding(ctx: ScenarioContext) -> dict:
+    """온보딩 여정(#895) — 빈 홈에서 설치 → 4티어 완주 → 제거까지 실창으로 완주한다.
+
+    §0 의 독자 2(제작자)가 하는 UX 검증 루프를 CI 가 대신 도는 자리다. 체크리스트가 넘어가지
+    않는 지점 = 사용자가 막히는 지점이라, 이 대본이 재는 것은 화면 문안이 아니라 **단계가
+    실제로 체크되는가**다: 각 T 는 링1 판정의 표면 착지(``li.tut-step[data-achieved]``)로
+    확인하고, 수치는 디스크 census 로 되짚는다.
+    """
+    s = ctx.surface
+    seen = ctx.observations
+    facts: dict = {}
+
+    # ---- O1 설치 전 홈 불가침(§1 D1 · #891 완료 기준 승계) --------------------
+    s.wait(
+        "document.querySelector('#jobPickInLibrary') !== null",
+        "빈 홈 부팅 랜딩",
+        requires=["#jobPickInLibrary"],
+    )
+    # 제품 command 를 관찰만 한다(가로채지 않는다). 실패했을 때 「눌렀는데 아무 일도 없다」가
+    # 「보내지 않았다」인지 「보냈는데 거절됐다」인지를 가르는 유일한 증거다.
+    s.install_dispatch_probe()
+    before = ctx.home_census()
+    intruders = sorted(
+        path for path in before if not path.startswith(BOOT_RESIDUE_PREFIXES)
+    )
+    _expect(
+        not intruders,
+        "D1: 「예제로 시작하기」를 누르기 전에 홈에 부팅 잔재가 아닌 파일이 있습니다"
+        f" — {intruders}",
+    )
+    asset_names = {*HWPX_ASSETS, *TXT_ASSETS, *DATA_ASSETS}
+    planted = sorted(path for path in before if posixpath.basename(path) in asset_names)
+    _expect(not planted, f"D1: 설치 전에 예제 자산이 이미 홈에 있습니다 — {planted}")
+    # 튜토리얼은 **명시 시작**이다(§1 D3): 설치 전에는 표면 자체가 서지 않는다.
+    _expect(
+        not s.js("!!document.getElementById('tutorialPanel')"),
+        "D3: 예제를 설치하기 전에 튜토리얼 패널이 이미 서 있습니다",
+    )
+    facts["home_before_install"] = sorted(before)
+
+    # ---- O2 설치(T0) --------------------------------------------------------
+    _goto_library(ctx, "설치")
+    s.wait(
+        "(function(){const b=document.querySelector('#scr-library [data-install-examples]');"
+        "if(!b)return false;const st=getComputedStyle(b);"
+        "return b.getClientRects().length > 0 && st.visibility !== 'hidden' && !b.disabled;})()",
+        "빈 라이브러리의 예제 설치 제안",
+        requires=["#scr-library", "#scr-library [data-install-examples]"],
+    )
+    s.click_sel("#scr-library [data-install-examples]", what="예제로 시작하기")
+    install_body = _confirm(ctx, "설치", "예제 설치")
+    _require_step(s, "T0", "예제 설치")
+    # 순간 카드는 설치 직후 자리에서 잰다 — 큐의 맨 앞이고 자동 소멸까지 시간이 있다.
+    facts["moment_visible"] = _visible_moment(s, "설치")
+    after_install = ctx.home_census()
+    missing = [rel for rel in INSTALLED_RELATIVE if rel not in after_install]
+    _expect(not missing, f"T0: 설치가 홈에 앉히지 못한 자산이 있습니다 — {missing}")
+    _open_editor(ctx, "설치 확인")
+    installed_rows = _example_rows(s)
+    _expect(
+        installed_rows == len(HWPX_ASSETS) + len(TXT_ASSETS),
+        f"T0: 라이브러리의 예제 템플릿이 {installed_rows}건입니다"
+        f" (기대 {len(HWPX_ASSETS) + len(TXT_ASSETS)}건)",
+    )
+    grouped = bool(s.js(
+        "document.getElementById('scr-editor').innerText.includes("
+        f"{json.dumps(EXAMPLE_GROUP, ensure_ascii=False)})"
+    ))
+    _expect(grouped, f"T0: 설치한 템플릿이 '{EXAMPLE_GROUP}' 그룹으로 묶이지 않았습니다")
+    _leave_editor(ctx, "설치 확인")
+    pinned = _pinned_examples(ctx, len(DATA_ASSETS))
+    facts["install"] = {
+        "templates": installed_rows,
+        "pinned": pinned["matched"],
+        "grouped": grouped,
+        "confirm_body": install_body,
+        "installed_files": [rel for rel in INSTALLED_RELATIVE if rel in after_install],
+    }
+
+    # ---- O3 기본 티어(T1~T8) — L1 + L4a + L9(덮어쓰기) -----------------------
+    _save_work(
+        ctx,
+        template="계약체결안내",
+        name=ONBOARDING_JOBS["basic"],
+        confirmed="확정 7/7",
+        pattern="계약체결안내-{{공고번호}}",
+    )
+    for milestone, what in (("T1", "템플릿 고르기"), ("T2", "데이터 열 연결"), ("T3", "작업 저장")):
+        _require_step(s, milestone, what)
+    _mount_pinned(ctx, "계약목록")
+    _require_step(s, "T4", "데이터 연결")
+    _select_all(ctx, ONBOARDING_JOBS["basic"])
+    _require_step(s, "T5", "작업과 행 선택")
+    # 첫 실행은 결과 확인을 요구한다(§13-3) — 그 요구가 서 있는 것을 보고 나서 승인한다.
+    s.wait(
+        "document.getElementById('jobGenBtn').disabled"
+        " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')",
+        "기본 티어 첫 실행 검토 요구",
+        requires=["#jobGenBtn", "#jobGate"],
+    )
+    _approve(ctx, "기본 첫 바퀴", managed=False)
+    _require_step(s, "T6", "이름과 값 승인")
+    first_run = _generate(ctx, "기본 첫 바퀴")
+    _require_step(s, "T7", "문서 생성")
+    first_docs = _results(ctx.home_census())
+    _expect(
+        len(first_docs) == ONBOARDING_ROWS,
+        f"T7: 생성 문서가 {len(first_docs)}건입니다 (기대 {ONBOARDING_ROWS}건)",
+    )
+
+    # 한 바퀴 더 — ① 규칙축 승인은 **작업당 1회**라 다시 서지 않고(L4a) ② 같은 이름 파일은
+    # 조용히 덮이지 않는다(L9). ①은 누르기 **전**에 재야 한다: 누른 뒤에 재면 이미 지나갔다.
+    rearmed = bool(s.js(
+        "(function(){const g=document.getElementById('jobGate');"
+        "return !!g && g.textContent.includes('생성 값 미리보기');})()"
+    ))
+    _expect(
+        not rearmed,
+        "T8: 두 번째 바퀴에 승인이 다시 섰습니다 — 규칙축 승인은 작업당 1회입니다",
+    )
+    second_run = _generate(ctx, "기본 두 바퀴")
+    _expect(
+        second_run["overwrite_confirmed"],
+        "T8: 같은 이름의 파일을 덮어쓰는데 확인을 묻지 않았습니다",
+    )
+    _require_step(s, "T8", "한 바퀴 더")
+    _expect(_tier_complete(s, "basic"), "기본 티어가 졸업 상태로 서지 않았습니다")
+    facts["basic"] = {
+        "documents": len(first_docs),
+        "first_run": first_run,
+        "second_run": second_run,
+        "approval_rearmed": rearmed,
+    }
+
+    # ---- O4 응용 티어(T9~T14) — L2 + L6 + L3 + L4b + L9(결핍 2종) ------------
+    _save_work(
+        ctx,
+        template="구매추진안내",
+        name=ONBOARDING_JOBS["applied_hwpx"],
+        confirmed="확정 5/5",
+        pattern="구매추진안내-{{공고번호}}",
+    )
+    # 데이터를 **다시 고르지 않는다** — 마운트는 작업이 아니라 화면이 든다(§18.2 · L2).
+    _select_all(ctx, ONBOARDING_JOBS["applied_hwpx"])
+    _approve(ctx, "작업 전환", managed=False)
+    switch_run = _generate(ctx, "작업 전환")
+    _require_step(s, "T9", "작업 전환")
+
+    _save_work(
+        ctx,
+        template="계약안내_기안",
+        name=ONBOARDING_JOBS["applied_txt"],
+        confirmed="확정 6/6",
+    )
+    _require_step(s, "T10", "TXT 작업 저장")
+    _select_all(ctx, ONBOARDING_JOBS["applied_txt"])
+    s.wait(
+        "document.getElementById('jobGenBtn').textContent.includes('검토·복사 시작')"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "검토·복사 진입 버튼",
+        requires=["#jobGenBtn"],
+    )
+    s.click_sel("#jobGenBtn", what="검토·복사 시작")
+    s.wait(
+        "document.querySelector('#scr-workbench.on') !== null"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent"
+        ".includes('계약 안내')",
+        "작업대 카드 채움",
+        timeout=30.0,
+        requires=["#scr-workbench", "#wbCard"],
+    )
+    s.click_sel("#wbCopy", what="복사")
+    s.wait(
+        "(document.getElementById('wbCopied')||{textContent:''}).textContent"
+        ".trim().indexOf('1 /') === 0",
+        "복사 카운터",
+        requires=["#wbCopied"],
+    )
+    copied = str(s.js("document.getElementById('wbCopied').textContent")).strip()
+    _require_step(s, "T11", "검토와 복사")
+    # 미복사 잔량이 있는 이탈은 가드가 확인을 요구한다 — 실 클릭으로 지난다.
+    s.click_sel("#wbBack", what="작업대 출구")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null || !!window.__cap.btn(null,'나가기')",
+        "작업대 이탈 가드",
+    )
+    s.js("window.__cap.clickBtn(null,'나가기'); true;")
+    s.wait("document.querySelector('#scr-job.on') !== null", "작업대 이탈", requires=["#scr-job"])
+
+    # T12 데이터 교체 — 앞 데이터의 선택을 새 행에 물려주지 않는다.
+    _mount_pinned(ctx, "계약목록_2")
+    swapped = _snapshot(s)
+    _expect(
+        swapped.get("selected_count") == 0,
+        f"T12: 데이터 교체 뒤 선택이 0건에서 재시작하지 않았습니다 — {swapped.get('selected_count')!r}",
+    )
+    _require_step(s, "T12", "데이터 교체")
+
+    # T13 빈 값 재승인 — 이번 실행의 빈 값 집합이 갈려 승인이 **다시 선다**(L4b).
+    marker = MISSING_MARKER.format(field="납품기한")
+    _select_all(ctx, ONBOARDING_JOBS["basic"])
+    s.wait(
+        "document.getElementById('jobGenBtn').disabled"
+        " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')",
+        "빈 값축 재승인 요구",
+        requires=["#jobGenBtn", "#jobGate"],
+    )
+    _approve(ctx, "빈 값 재승인", managed=False, expect_text=marker)
+    blank_run = _generate(ctx, "빈 값 생성")
+    _require_step(s, "T13", "빈 값 포함 승인")
+
+    # T14 저작측 결핍 — 열 자체가 없는 항목은 **저장할 때** 한 번 비움을 확정한다.
+    empty_gate = _save_work(
+        ctx,
+        template="오류연습_보증금",
+        name=ONBOARDING_JOBS["error"],
+        confirmed="확정 4/4",
+        empty_confirm=True,
+    )
+    _expect(empty_gate, "T14: 비움 확정 게이트가 서지 않았습니다")
+    _require_step(s, "T14", "비움 확정")
+    _expect(_tier_complete(s, "applied"), "응용 티어가 졸업 상태로 서지 않았습니다")
+    facts["applied"] = {
+        "switch_run": switch_run,
+        "copied": copied,
+        "selected_after_swap": swapped.get("selected_count"),
+        "blank_marker": marker,
+        "blank_run": blank_run,
+        "empty_confirm_gate": empty_gate,
+    }
+
+    # ---- O5 고급·심화 티어(T15~T17) — L8 → L1 재진입 → L8b -------------------
+    # 갈래 대조는 빈 값 없는 3행 위에서 한다 — 결핍이 섞이면 「무엇이 문서를 바꿨는가」가 흐려진다.
+    _mount_pinned(ctx, "계약목록")
+
+    _open_editor(ctx, "누름틀 변환")
+    s.click_sel(
+        '#scr-editor button[data-act="lib-more"][data-media="hwpx"][data-key="공고서_연습.hwpx"]',
+        what="공고서_연습 항목 관리",
+    )
+    s.wait(
+        "!!document.querySelector('.ctx-menu button[data-context-menu-action=\"act:compile\"]')",
+        "누름틀 변환 메뉴 항목",
+        requires=[".ctx-menu"],
+    )
+    s.click_sel(
+        '.ctx-menu button[data-context-menu-action="act:compile"]', what="누름틀·구간 변환"
+    )
+    compile_body = _confirm(ctx, "제자리 변환", "누름틀 변환")
+    _require_step(s, "T15", "누름틀 변환")
+    _leave_editor(ctx, "누름틀 변환")
+
+    _save_work(
+        ctx,
+        template="공고서_연습",
+        name=ONBOARDING_JOBS["advanced"],
+        confirmed="확정 5/5",
+        pattern="공고서-{{공고번호}}",
+    )
+    _select_all(ctx, ONBOARDING_JOBS["advanced"])
+    # 구간은 EXACTLY_ONE 이다 — 항목마다 갈래 하나를 골라야 생성이 열린다(§3.6).
+    # 갓 저장한 작업은 **아직 bootstrap 전**이라 「포함할 내용」이 서지 않는다(durable id 미발급 —
+    # 스냅샷 존은 그 상태를 `supported:true, initialized:false` 로 정직하게 낸다). 「템플릿 변경사항
+    # 확인」이 그 bootstrap 동사다: 누르면 권위 id 가 발급되고 구간과 managed 실행면이 함께 선다.
+    s.click_sel("#jobTplCheck", what="템플릿 확인(구간 bootstrap)")
+    s.wait(
+        "document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 1"
+        " && !!document.getElementById('cs-opt-0-0')"
+        " && !!document.getElementById('cs-opt-0-1')",
+        "구간 1개·갈래 2",
+        timeout=60.0,
+        requires=["#jobContentSelectionZone"],
+    )
+    s.click_sel("#cs-opt-0-0", what="현장설명회 실시 갈래")
+    s.wait("document.getElementById('cs-opt-0-0').checked", "첫 갈래 반영", requires=["#cs-opt-0-0"])
+    managed = _managed_route(ctx)
+    # 관리 경로는 승인 한 번이 아니라 **검토 확인들**이다(§3.5) — 무엇을 몇 걸음 요구하는지는
+    # 제품이 정하므로 대본은 그 사슬을 따라간다. legacy 갈래면 종전대로 승인 한 번이다.
+    advanced_reviews = (
+        _managed_reviews(ctx, "변환본 생성")
+        if managed
+        else [_approve(ctx, "변환본 생성", managed=False) and "REVIEW_PREVIEW"]
+    )
+    compiled_run = _generate(ctx, "변환본 생성")
+    _require_step(s, "T16", "변환본으로 생성")
+    before_deep = _results(ctx.home_census())
+
+    # T17 구성 바꿔 생성 — 「절을 뺀다」가 곧 「생략」 갈래를 고르는 것이다(v1 EXACTLY_ONE).
+    s.click_sel("#cs-opt-0-1", what="현장설명회 생략 갈래")
+    s.wait(
+        "document.getElementById('cs-opt-0-1').checked"
+        " && !document.getElementById('cs-opt-0-0').checked",
+        "갈래 전환 반영",
+        timeout=30.0,
+        requires=["#cs-opt-0-1", "#cs-opt-0-0"],
+    )
+    # 구성 변경은 규칙 변경이라 확인이 **다시 선다**(L4a 의 두 번째 대면) — 관리 경로에서는
+    # 그것이 실행 검토의 재확정으로 나타난다(구성이 갈리면 Plan 이 stale 이 된다).
+    #
+    # 재무장을 **기다린 뒤** 사슬을 걷는다. 클릭 직후를 재면 아직 도착하지 않은 재계산을
+    # 「아무것도 안 섰다」로 읽어, 늦은 push 와 계약 위반이 같은 빨강이 된다.
+    #
+    # ## 실측이 뒤집은 기대 (#895 4차)
+    #
+    # 관리 갈래에서는 **아무 확인도 다시 서지 않는다**: 60초를 기다려 봐도 `primary_action` 은
+    # `CREATE_DOCUMENTS`, `blockers` 는 빈 배열, 만들기는 열린 채였다(`preview_requirement` 가
+    # 처음부터 `NOT_REQUIRED` 다 — 이 작업에는 애초에 승인이 요구된 적이 없다). 그런데 §3.6 의
+    # T17 순간 카드는 "갈래를 바꾸자 … 승인이 다시 섰습니다" 라고 말한다.
+    #
+    # 그래서 여기서 **단언하지 않는다**. 「다시 섰다」를 단언하면 지금 제품이 빨강이고,
+    # 「안 선다」를 단언하면 지금 동작을 정본으로 못박아 정반대 판정을 막는다 — 어느 쪽도 이
+    # 대본이 내릴 판정이 아니다(문서와 제품 중 무엇을 고칠지는 §3.6 재판정 소관). 관측된
+    # 사실만 실어 보고서가 말하게 하고, T17 의 **단단한 증거는 산출물 차이**가 진다(아래).
+    #
+    # 그래서 프로브는 **짧다**. 단언하지 않는 관측에 60초를 태우면 관리 갈래를 지나는 모든
+    # 실행이 매번 그만큼을 버린다 — 게이트 예산은 매달림을 유한 시간에 빨강으로 만들라고
+    # 있는 것이지 확정된 관측을 다시 확인하라고 있는 것이 아니다. 여기서 흡수해야 할 것은
+    # **늦은 push** 하나뿐이고 그건 초 단위다(재무장이 실제로 서는 갈래로 제품이 바뀌면
+    # 그때는 이 짧은 대기가 그대로 참을 낸다).
+    reconfirmed = False
+    if managed:
+        try:
+            s.wait(
+                "(function(){const b=document.getElementById('jobManagedCreate');"
+                "return !!b && b.disabled;})()",
+                "T17 구성 변경 뒤 확인 재무장",
+                timeout=8.0,
+                requires=["#jobManagedCreate"],
+            )
+            reconfirmed = True
+        except StepTimeout:
+            reconfirmed = False
+    deep_reviews = (
+        _managed_reviews(ctx, "구성 바꿔 생성")
+        if managed
+        else [_approve(ctx, "구성 바꿔 생성", managed=False) and "REVIEW_PREVIEW"]
+    )
+    seen["composition_reconfirmed"] = {
+        "rearmed": reconfirmed,
+        "reviews": list(deep_reviews),
+        "managed": managed,
+    }
+    composed_run = _generate(ctx, "구성 바꿔 생성")
+    _require_step(s, "T17", "구성 바꿔 생성")
+    after_deep = _results(ctx.home_census())
+    fresh = sorted(set(after_deep.values()) - set(before_deep.values()))
+    _expect(
+        fresh,
+        "T17: 갈래를 바꿔 다시 만들었는데 앞선 산출과 내용이 같은 문서만 있습니다"
+        " — 절이 빠지지 않았습니다",
+    )
+    _expect(_tier_complete(s, "advanced"), "고급 티어가 졸업 상태로 서지 않았습니다")
+    _expect(_tier_complete(s, "deep"), "심화 티어가 졸업 상태로 서지 않았습니다")
+    facts["advanced"] = {
+        "compile_confirm_body": compile_body,
+        "compiled_run": compiled_run,
+        "documents_before_change": len(before_deep),
+        "reviews": advanced_reviews,
+    }
+    facts["deep"] = {
+        "route": composed_run["route"],
+        "composed_run": composed_run,
+        "documents_after_change": len(after_deep),
+        "fresh_digests": len(fresh),
+        "reviews": deep_reviews,
+    }
+
+    # ---- O6 전 티어 완주 --------------------------------------------------
+    tutorial = _tutorial_snapshot(s)
+    achieved = _achieved(tutorial)
+    facts["achieved"] = achieved
+    facts["step_count"] = tutorial.get("step_count")
+    facts["all_complete"] = tutorial.get("all_complete")
+    facts["tiers"] = {
+        str(tier.get("tier")): bool(tier.get("complete"))
+        for tier in tutorial.get("tiers", ())
+    }
+    expected_steps = [str(step.milestone) for step in TUTORIAL_STEPS]
+    _expect(
+        achieved == expected_steps,
+        f"전 단계 완주가 아닙니다 — 달성 {achieved} (기대 {expected_steps})",
+    )
+    _expect(tutorial.get("all_complete") is True, "튜토리얼 스냅샷이 전체 완주를 말하지 않습니다")
+
+    # ---- O7 제거(§1 D4) — manifest 기재분만 걷고 잔재는 정직하게 드러난다 ----
+    _open_editor(ctx, "예제 제거")
+    s.wait(
+        "!!document.querySelector('#scr-editor button[data-act=\"remove-examples\"]')",
+        "예제 걷어내기 어포던스",
+        requires=["#scr-editor"],
+    )
+    s.click_sel(
+        '#scr-editor button[data-act="remove-examples"]', what="예제 걷어내기"
+    )
+    remove_body = _confirm(ctx, "걷어내기", "예제 제거")
+    _expect(
+        "되돌리기는 다시 설치하기입니다" in remove_body,
+        f"제거 확인이 되돌리는 법을 말하지 않았습니다 — {remove_body!r}",
+    )
+    s.wait(
+        "!document.querySelector('#scr-editor button[data-act=\"remove-examples\"]')",
+        "제거 뒤 걷어내기 어포던스 소멸",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    left_rows = _example_rows(s)
+    _expect(left_rows == 0, f"제거 뒤에도 예제 템플릿이 {left_rows}건 남았습니다")
+    entry_label = str(s.js(
+        "document.querySelector('#scr-editor [data-act=\"install-examples\"]').textContent"
+    )).strip()
+    _expect(
+        entry_label == "예제로 시작하기…",
+        f"제거 뒤 설치 진입점 라벨이 되돌아오지 않았습니다 — {entry_label!r}",
+    )
+    _leave_editor(ctx, "예제 제거")
+    left_pins = _pinned_examples(ctx, 0)
+    removed_census = ctx.home_census()
+    left_files = [rel for rel in INSTALLED_RELATIVE if rel in removed_census]
+    _expect(not left_files, f"제거 뒤에도 예제 자산 파일이 남았습니다 — {left_files}")
+
+    # 실습으로 만든 작업들은 남는다 — 그 템플릿이 사라진 사실을 라이브러리가 **시끄럽게** 말한다.
+    _goto_library(ctx, "제거 뒤 정직성 경보")
+    s.wait(
+        "[...document.querySelectorAll('#scr-library .note.warnbox')]"
+        ".some(n=>n.textContent.includes('템플릿이 연결되지 않은 작업'))",
+        "끊긴 작업 경보",
+        timeout=30.0,
+        requires=["#scr-library"],
+    )
+    alarm = str(s.js(
+        "([...document.querySelectorAll('#scr-library .note.warnbox')]"
+        ".find(n=>n.textContent.includes('템플릿이 연결되지 않은 작업'))||{}).textContent || ''"
+    )).strip()
+    broken = int("".join(ch for ch in alarm.split("작업")[1] if ch.isdigit()) or 0)
+    _expect(
+        broken >= 1,
+        f"제거 뒤 끊긴 작업 수를 경보가 말하지 않았습니다 — {alarm!r}",
+    )
+    facts["removal"] = {
+        "confirm_body": remove_body,
+        "templates_left": left_rows,
+        "pinned_left": left_pins["matched"],
+        "files_left": left_files,
+        "entry_label": entry_label,
+        "missing_template_jobs": broken,
+        "alarm": alarm,
+    }
+
+    seen["onboarding"] = facts
+    return seen

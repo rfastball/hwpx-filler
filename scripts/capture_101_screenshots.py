@@ -98,10 +98,19 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
         help="SX-05 두 프로세스가 공유할 호출자 소유 home.",
     )
     check.add_argument(
+        # 이름이 둘인 이유는 하나가 낡았기 때문이다: phase 축은 SX-05 가 열었지만 이제
+        # ``onboarding``(#895)도 그 축에 산다 — SX-05 와 아무 관계가 없는 대본을
+        # ``--sx-phase`` 로 고르는 것은 거짓말이다. 정직한 이름을 세우되 기존 호출측
+        # (`tests/test_quickstart_101_live.py`)을 깨지 않게 옛 이름을 별칭으로 남긴다.
+        "--phase",
         "--sx-phase",
-        choices=("journey", "restart"),
+        dest="sx_phase",
+        choices=("journey", "restart", "onboarding"),
         default=None,
-        help="SX-05 actual-shell journey 또는 같은-home restart phase.",
+        help=(
+            "실행할 대본. journey/restart 는 SX-05(101 자산 시딩 홈),"
+            " onboarding 은 #895 온보딩 여정(빈 홈)."
+        ),
     )
     check.add_argument(
         "--evidence-dir",
@@ -147,11 +156,24 @@ def main(argv: "list[str] | None" = None) -> int:
     phase = getattr(args, "sx_phase", None) or "legacy"
     shared_home = getattr(args, "shared_home", None)
     if phase == "restart" and shared_home is None:
-        print("--sx-phase restart에는 --shared-home이 필요합니다", file=sys.stderr)
+        print("--phase restart에는 --shared-home이 필요합니다", file=sys.stderr)
         return driver.ExitCode.USAGE
     if phase == "journey" and getattr(args, "evidence_dir", None) is None:
-        print("--sx-phase journey에는 --evidence-dir가 필요합니다", file=sys.stderr)
+        print("--phase journey에는 --evidence-dir가 필요합니다", file=sys.stderr)
         return driver.ExitCode.USAGE
+    if phase == "onboarding":
+        # 온보딩은 홈 전제가 반대다(빈 홈) — 그래서 시딩 임시 홈도 예제 홈도 받지 않고
+        # 호출자가 만든 **빈** 폴더만 받는다. 여기서 침묵하면 첫 걸음의 「설치 전 홈
+        # 불가침」 단언이 남의 잔재를 재며 실패하고, 그 빨강은 제품 언어로 나온다.
+        if shared_home is None:
+            print("--phase onboarding에는 --shared-home이 필요합니다", file=sys.stderr)
+            return driver.ExitCode.USAGE
+        if shared_home.is_dir() and any(shared_home.iterdir()):
+            print(
+                f"--phase onboarding의 --shared-home은 비어 있어야 합니다: {shared_home}",
+                file=sys.stderr,
+            )
+            return driver.ExitCode.USAGE
 
     if getattr(args, "preflight", False):
         problems = driver.preflight(args.mode, phase)
@@ -299,6 +321,13 @@ def _land(
         )
     elif summary.get("phase") == "restart":
         print(f"완료: SX-05 restart 통과 ({summary['elapsed_s']}s)")
+    elif summary.get("phase") == "onboarding":
+        onboarding = (summary.get("observations") or {}).get("onboarding") or {}
+        achieved = onboarding.get("achieved") or []
+        print(
+            f"완료: 온보딩 여정 완주 (단계 {len(achieved)}/{onboarding.get('step_count', '?')}"
+            f" · HWPX {summary['hwpx_generated']}건 · {summary['elapsed_s']}s)"
+        )
     else:
         print(
             f"완료: 101 check 통과 (HWPX {summary['hwpx_generated']}건 ·"
