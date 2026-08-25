@@ -3,7 +3,8 @@
 첫 시트(또는 지정 시트)의 ``header_row``가 필드명이고 이후 각 행이 문서 1건이다.
 빈 행은 건너뛰고 짧은 행은 빈 값으로 채운다. 빈/중복 헤더와 헤더보다 긴 비어 있지
 않은 행은 조용한 데이터 소실을 막기 위해 거절한다. XLSX 수식은 계산하지 않고 저장된
-cache만 읽으며 cache가 없으면 시끄럽게 실패한다.
+계산값만 읽으며, 계산값이 없는 셀은 첫 건에서 멈추지 않고 시트 전체를 훑어 모은 뒤
+좌표를 병기해 한 번에 시끄럽게 실패한다(한 셀씩 반복 실패는 사용자를 소모시킨다).
 """
 
 from __future__ import annotations
@@ -14,6 +15,27 @@ from datetime import date, datetime, time
 from pathlib import Path
 
 from openpyxl import load_workbook
+
+#: 계산값 부재 좌표를 문안에 직접 나열하는 상한. 초과분은 "외 N개"로 요약해
+#: 오류 문안이 수백 좌표로 폭주하는 것을 막는다(전수 판정은 유지, 나열만 줄인다).
+_MISSING_VALUE_REPORT_LIMIT = 5
+
+
+def _missing_formula_value_error(coordinates: "list[tuple[int, int]]") -> ValueError:
+    """계산값 없는 수식 셀 전수를 ① 문제 ② 조치 2문장으로 재진술한다.
+
+    문안의 단일 출처다 — 웹(`load_data_sheet` 의 ``ERROR:`` 포장)도 CLI 도 이 문장을
+    가공 없이 그대로 사용자에게 보인다.
+    """
+    listed = ", ".join(f"행 {row} 열 {column}" for row, column in coordinates[:_MISSING_VALUE_REPORT_LIMIT])
+    rest = len(coordinates) - _MISSING_VALUE_REPORT_LIMIT
+    if rest > 0:
+        listed = f"{listed} 외 {rest}개"
+    return ValueError(
+        f"수식이 있는 셀에 계산값이 저장돼 있지 않습니다({listed}). "
+        "엑셀에서 이 파일을 열어 다시 저장하면 계산값이 함께 저장되니, "
+        "저장한 파일을 다시 불러오세요."
+    )
 
 
 def _cell_text(value: object) -> str:
@@ -151,6 +173,11 @@ class ExcelDataSource:
         if any(isinstance(value, str) and value.startswith("=") for value in header_formulas):
             raise ValueError("헤더에는 Excel 수식을 사용할 수 없습니다.")
         self._headers = _normalize_headers(value_rows[self.header_row - 1])
+        # 계산값 부재는 첫 셀에서 끊지 않고 시트 전체를 훑어 모은다 — 실무 파일은 위반이
+        # 수십 개라 한 셀씩 고쳐 다시 여는 왕복이 사용자를 소모시킨다. 수집이 끝난 뒤
+        # 레코드를 담기 전에 한 번에 거절한다(구제 경로 없음 — 여전히 loud reject).
+        missing: list[tuple[int, int]] = []
+        rows: list[tuple[list[object], int]] = []
         for offset, raw in enumerate(value_rows[self.header_row:], start=self.header_row + 1):
             formulas = formula_rows[offset - 1] if offset - 1 < len(formula_rows) else ()
             resolved: list[object] = []
@@ -159,10 +186,12 @@ class ExcelDataSource:
                 value = raw[column] if column < len(raw) else None
                 formula = formulas[column] if column < len(formulas) else None
                 if isinstance(formula, str) and formula.startswith("=") and value is None:
-                    raise ValueError(
-                        f"Excel 수식 cache가 없습니다: 행 {offset}, 열 {column + 1}"
-                    )
+                    missing.append((offset, column + 1))
                 resolved.append(value)
+            rows.append((resolved, offset))
+        if missing:
+            raise _missing_formula_value_error(missing)
+        for resolved, offset in rows:
             self._append_record(resolved, row_number=offset)
 
     def _load_csv(self) -> None:
