@@ -45,7 +45,6 @@ from ..application.slot_configuration_context import (
 )
 from ..application.jobs import (
     JobStorePort,
-    ensure_job_authority_id,
     load_job,
     release_job_authority_id,
     seat_job_authority_id,
@@ -251,17 +250,14 @@ class TemplateChangeCoordinator:
     def _now(self) -> str:
         return self._clock().isoformat(timespec="seconds")
 
-    def _work_id_for(self, job_name: str, *, create: bool) -> "str | None":
-        """작업의 Work identity — ``Job.authority_id`` 가 정본. ``create=True`` 면
-        **bootstrap 전에** 발급·영속한다(id-first — 중간 crash 시 같은 id 로 재개).
-        경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환)."""
-        current = load_job(self._registry, job_name).authority_id
-        if current:
-            return current
-        if not create:
-            return None
-        # 발급 형태·결속은 단일 helper(S6-05 · #812) — 형태 재타이핑 금지.
-        return ensure_job_authority_id(self._registry, job_name)
+    def _work_id_for(self, job_name: str) -> "str | None":
+        """작업의 **이미 결속된** Work identity — ``Job.authority_id`` 가 정본, 없으면 None.
+
+        발급하는 쪽은 :func:`seat_job_authority_id` 하나다(#804): 발급은 곧 롤백 자격을
+        낳으므로 「발급했는가」를 못 돌려주는 조회 helper 가 발급까지 겸하면, bootstrap 이
+        실패했을 때 되돌릴 근거를 그 자리에서 잃는다. 조회와 발급을 갈라 둔 이유다.
+        """
+        return load_job(self._registry, job_name).authority_id or None
 
     def _failures(self) -> dict[str, dict[str, Any]]:
         if self._init_failures is None:
@@ -416,7 +412,7 @@ class TemplateChangeCoordinator:
     def get_current_template_change_preparation(self, job_name: str) -> "dict[str, Any] | None":
         """current Preparation 조회 — ``work.current_template_preparation_id`` 역참조만 쓴다
         (latest 검색·ORDER BY 금지 계약 #659)."""
-        work_id = self._work_id_for(job_name, create=False)
+        work_id = self._work_id_for(job_name)
         if work_id is None or not self._works.exists(work_id):
             return None
         self._recover(work_id)
@@ -581,8 +577,7 @@ class TemplateChangeCoordinator:
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
         profile = _profile_for(job.media, "생성")
         self._ensure_manifest()
-        work_id = self._work_id_for(job_name, create=True)
-        assert work_id is not None
+        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
         job = load_job(self._registry, job_name)
         if job.authority_id != work_id:
             raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
@@ -596,6 +591,11 @@ class TemplateChangeCoordinator:
                 work_id, job_name, job, f"gen-{uuid.uuid4().hex}", profile
             )
             if outcome.result != BOOTSTRAP_OK:
+                # 확인 경로와 **같은 규율**이다(#804): 초기 등록이 실패하면 Work 상태 집합은
+                # 서지 않으므로 방금 발급한 권위는 아무 이력도 가리키지 않는 좀비다. 문을
+                # 확인 쪽에서만 닫으면 같은 막다른 길이 「문서 만들기」로 다시 열린다.
+                if issued_now:
+                    release_job_authority_id(self._registry, job_name, work_id)
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
         if on_context is not None:
@@ -811,7 +811,7 @@ class TemplateChangeCoordinator:
         if resolved is None:
             raise TemplateChangeError("적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요")
         token_work_id, change_id = resolved
-        work_id = self._work_id_for(job_name, create=False)
+        work_id = self._work_id_for(job_name)
         if work_id is None or work_id != token_work_id:
             # cross-Work misuse: request 거절, 두 Work·Change 상태 무변경.
             raise TemplateChangeError("이 변경사항은 현재 작업의 것이 아닙니다")

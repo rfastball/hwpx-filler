@@ -18,6 +18,7 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchObservation,
 )
 from hwpxfiller.application.document_creation_vocabulary import BLOCKER_CODES
+from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -511,6 +512,35 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     assert ctrl.dispatch("template_check", {"request_id": "k3"})["ok"] is True
     assert reg.load(clone).authority_id != ""  # 이제 겪은 권위가 선다
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
+
+
+def test_failed_initialization_on_the_generate_path_releases_the_authority_too(
+    tmp_path: Path,
+) -> None:
+    """생성 경로의 초기 등록 실패도 **같은 규율**로 롤백한다 — 문을 하나만 닫지 않는다.
+
+    확인 경로만 고치면 같은 좀비가 「문서 만들기」로 다시 만들어지고 막다른 길이 그대로
+    열린다(#804 잔여). 두 경로가 같은 use case(`seat_job_authority_id`/`release_job_
+    authority_id`)를 공유하는지를 여기서 잰다.
+
+    겨눔은 `resolve_generation_template` 이다: 그 위 `generate` 가드는 slot-bearing 을 **다른
+    사유**로 먼저 닫으므로(같은 파일의 `_resolve_managed_template` 테스트와 같은 이유) 가드
+    아래 실제 문에 대고 물어야 이 규율이 확인된다.
+    """
+    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    clone = reg.clone("공고서")
+    ctrl.dispatch("select_job", {"name": clone})
+    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물
+
+    with pytest.raises(SlotlessRunAdmissionError):
+        ctrl._template_change.resolve_generation_template(clone)
+
+    assert reg.load(clone).authority_id == ""  # 좀비 권위 부재
+    assert reg.load("공고서").authority_id != ""  # 이미 겪은 권위는 무사하다
+
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is False
+    assert zone["current_view"] is None  # CONTEXT_ERROR 막다른 길이 서지 않는다
 
 
 def test_clone_of_a_work_with_durable_selection_opens_its_own_zone(tmp_path: Path) -> None:
