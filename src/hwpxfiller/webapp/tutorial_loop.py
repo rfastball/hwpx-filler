@@ -8,8 +8,8 @@
 
 ## 왜 세션이 직접 세는가
 
-§3.3 T8(같은 작업 2번째 생성)·§3.4 T9(같은 마운트 위 작업 전환)·§3.6 T17·T18(구간 구성
-변화)의 달성 판정은 **생성 이력**인데, 앱은 그것을 어디에도 들고 있지 않다:
+§3.3 T8(같은 작업 2번째 생성)·§3.4 T9(같은 마운트 위 작업 전환)·§3.6 T17(갈래 구성 변화)의
+달성 판정은 **생성 이력**인데, 앱은 그것을 어디에도 들고 있지 않다:
 
 - :class:`~hwpxfiller.domain.job.Job` 은 ``last_run_at`` 한 칸이라 횟수를 세지 않는다.
 - managed 배달 원장은 출력 폴더에 쌓이는 **쓰기 전용** 사이드카라 실행 시점에 되읽지 않는다.
@@ -37,9 +37,11 @@ class GenerationLoopFacts:
     repeat_job: bool
     #: 같은 마운트를 유지한 채 **다른 작업**으로 만든 적이 있다(§3.4 T9 작업 전환).
     other_job_same_mount: bool
-    #: 같은 작업의 직전 실행과 견줘 **항목 구성**이 달라졌다(§3.6 T17).
-    items_changed: bool
-    #: 항목 구성은 같은데 **고른 갈래**가 달라졌다(§3.6 T18).
+    #: 같은 작업의 직전 실행과 견줘 **고른 갈래의 구성**이 달라졌다(§3.6 T17).
+    #:
+    #: 축이 갈래 하나인 이유는 v1 제어면이 EXACTLY_ONE 이기 때문이다(#284 재판정): 항목을
+    #: 빼는 별도 동사가 없어 「구간을 뺀다」가 곧 「생략」 갈래를 고르는 것이고, 그래서
+    #: 「항목 구성 변화」와 「갈래 변화」를 가르면 제품에 없는 구분을 가르치게 된다.
     options_changed: bool
 
 
@@ -50,7 +52,7 @@ class GenerationLoopLedger:
     이 클래스가 있는 이유는 앱이 그 이력을 **어디에도 들고 있지 않기** 때문이다:
     :class:`~hwpxfiller.domain.job.Job` 은 ``last_run_at`` 한 칸뿐이라 횟수를 세지 않고,
     managed 배달 원장은 출력 폴더에 쌓이는 쓰기 전용 사이드카라 실행 시점에 되읽지 않으며,
-    「마운트가 바뀌었는가」를 말하는 플래그도 없다. 그런데 §3.3 T8·§3.4 T9·§3.6 T17·T18 의
+    「마운트가 바뀌었는가」를 말하는 플래그도 없다. 그런데 §3.3 T8·§3.4 T9·§3.6 T17 의
     달성 판정이 정확히 그 이력이다. 그래서 세션이 직접 센다 — **세는 것만** 한다.
 
     수명은 세션이다(앱 재시작에서 사라진다). 달성 자체는 링1 이 영속하므로 한 번 체크된
@@ -94,25 +96,17 @@ class GenerationLoopLedger:
             self.mount_jobs = set()
         repeat_job = job in self.generated_jobs
         other_job_same_mount = bool(self.mount_jobs - {job})
-        items_changed = False
         options_changed = False
         if slot_shape is not None:
             previous = self.slot_shapes.get(job)
-            if previous is not None:
-                # 항목 구성 = **고른 것이 있는 항목의 집합**이다. 「항목을 뺀다」가 곧 그
-                # 항목의 선택을 비우는 것이라(§3.6 T17), 갈래만 바뀐 T18 과 이 축으로 갈린다.
-                before = {sid for sid, opts in previous.items() if opts}
-                after = {sid for sid, opts in slot_shape.items() if opts}
-                if before != after:
-                    items_changed = True
-                elif previous != slot_shape:
-                    options_changed = True
+            # 축은 「직전 실행의 구성과 다른가」 하나다(§3.6 T17). 구성 = 항목마다 고른 갈래
+            # 이고, 절을 빼는 것도 그 안의 한 갈래라 별도 축이 없다.
+            options_changed = previous is not None and previous != slot_shape
             self.slot_shapes[job] = dict(slot_shape)
         self.generated_jobs.add(job)
         self.mount_jobs.add(job)
         return GenerationLoopFacts(
             repeat_job=repeat_job,
             other_job_same_mount=other_job_same_mount,
-            items_changed=items_changed,
             options_changed=options_changed,
         )

@@ -33,18 +33,18 @@ def _achieve_all(vm: TutorialViewModel) -> None:
 def test_step_table_covers_every_milestone_once():
     """열거와 정의표가 1:1 — 문안 없는 단계도, 정의만 있고 통지 못 하는 단계도 없다."""
     assert _all_milestones() == list(Milestone)
-    assert len({step.milestone for step in STEPS}) == len(STEPS) == 19
+    assert len({step.milestone for step in STEPS}) == len(STEPS) == 18
 
 
 def test_tier_structure_is_the_documented_four_tiers():
-    """T0~T8 기본 · T9~T14 응용 · T15~T16 고급 · T17~T18 심화(선택 진입)."""
+    """T0~T8 기본 · T9~T14 응용 · T15~T16 고급 · T17 심화(선택 진입, 한 걸음 — #284)."""
     by_tier: "dict[Tier, list[str]]" = {}
     for step in STEPS:
         by_tier.setdefault(step.tier, []).append(str(step.milestone))
     assert by_tier[Tier.BASIC] == [f"T{n}" for n in range(0, 9)]
     assert by_tier[Tier.APPLIED] == [f"T{n}" for n in range(9, 15)]
     assert by_tier[Tier.ADVANCED] == ["T15", "T16"]
-    assert by_tier[Tier.DEEP] == ["T17", "T18"]
+    assert by_tier[Tier.DEEP] == ["T17"]
     assert [d.optional for d in TIERS] == [False, False, False, True]
 
 
@@ -73,8 +73,7 @@ def test_tier_graduation_and_full_completion():
     assert vm.all_complete is False
     assert vm.suggested_tier == "deep"  # 심화는 앞 세 티어 졸업 뒤에야 제안된다
 
-    vm.notify(Milestone.TOGGLE_SECTION)
-    vm.notify(Milestone.SWITCH_OPTION)
+    vm.notify(Milestone.CHANGE_COMPOSITION)
     assert vm.all_complete is True
     assert vm.suggested_tier == ""
 
@@ -166,6 +165,18 @@ def test_restore_tolerates_dead_and_absent_values():
 
     assert TutorialViewModel.from_progress(None).progress() == {"achieved": [], "dismissed": False}
     assert TutorialViewModel.from_progress({"achieved": "T0"}).progress()["achieved"] == []
+
+
+def test_retired_deep_tier_step_needs_no_migration():
+    """심화 티어 병합 전(#284)에 저장된 ``T18`` 기록은 무해하게 걸러진다.
+
+    마이그레이션을 쓰지 않는 근거를 코드로 고정한다: 죽은 키 관용(#899)이 이미 계약이라
+    옛 진행이 부팅을 막지도, 없는 단계를 달성으로 세지도 않는다.
+    """
+    vm = TutorialViewModel.from_progress({"achieved": ["T16", "T17", "T18"], "dismissed": False})
+    assert vm.progress()["achieved"] == ["T16", "T17"]
+    assert vm.snapshot()["achieved_count"] == 2
+    assert vm.all_complete is False
 
 
 def test_snapshot_is_json_serialisable_and_carries_tier_copy():

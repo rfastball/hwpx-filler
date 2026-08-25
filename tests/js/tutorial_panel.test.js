@@ -76,7 +76,7 @@ function snapshot(overrides = {}) {
         invitation: "심화 초대 문안",
         achieved_count: 0,
         step_count: 1,
-        steps: [step("T17", "항목 넣고 빼기", false)],
+        steps: [step("T17", "구성 바꿔 생성", false)],
       },
     ],
     moment_queue: [],

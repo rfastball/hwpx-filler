@@ -3,7 +3,7 @@
 정본은 :doc:`docs/ONBOARDING_TUTORIAL.md` §1 D3(체크리스트 + 순간 카드)·§3.3–3.6(티어·단계
 판정표)·§4.3–4.4(구현 좌표·영속)다. 이 모듈이 소유하는 것은 셋이다.
 
-1. **단계·티어 구조** — T0~T18 과 기본/응용/고급/심화 4티어. 티어 졸업·다음 티어 제안·
+1. **단계·티어 구조** — T0~T17 과 기본/응용/고급/심화 4티어. 티어 졸업·다음 티어 제안·
    전체 완주 판정이 여기 한 곳에서만 난다("같은 상태를 두 곳이 판정하지 않는다").
 2. **문안** — 단계별 제목 한 줄·다음 걸음 한 줄·순간 카드 문안(:attr:`TutorialStep.
    moment_copy`). 링2 는 이 문자열을 그리기만 하고 다시 조립하지 않는다.
@@ -69,7 +69,7 @@ class Tier(StrEnum):
 class Milestone(StrEnum):
     """단계 열거 — §3.3–3.6 표의 「달성 판정」과 1:1.
 
-    값(``T0``…``T18``)이 곧 영속·스냅샷의 식별자다. 컨트롤러는 이 열거로만 통지한다.
+    값(``T0``…``T17``)이 곧 영속·스냅샷의 식별자다. 컨트롤러는 이 열거로만 통지한다.
     """
 
     INSTALL_EXAMPLES = "T0"
@@ -89,8 +89,7 @@ class Milestone(StrEnum):
     CONFIRM_EMPTY_FIELD = "T14"
     COMPILE_TEMPLATE = "T15"
     GENERATE_FROM_COMPILED = "T16"
-    TOGGLE_SECTION = "T17"
-    SWITCH_OPTION = "T18"
+    CHANGE_COMPOSITION = "T17"
 
 
 @dataclass(frozen=True)
@@ -267,21 +266,14 @@ STEPS: "tuple[TutorialStep, ...]" = (
         ),
     ),
     TutorialStep(
-        milestone=Milestone.TOGGLE_SECTION,
+        milestone=Milestone.CHANGE_COMPOSITION,
         tier=Tier.DEEP,
-        title="항목 넣고 빼기",
-        next_step="'포함할 내용'에서 항목 하나를 빼고 다시 승인해 생성하세요.",
+        title="구성 바꿔 생성",
+        next_step="'포함할 내용'에서 항목의 갈래를 바꿔 다시 승인하고 생성하세요.",
         moment_copy=(
-            "구성을 바꾸자 승인이 다시 섰습니다. "
+            "갈래를 바꾸자 그 절이 빠진 문서가 나오고, 승인이 다시 섰습니다. "
             "규칙이 갈리면 확인을 받는다는 그 규칙이 그대로 선 것입니다."
         ),
-    ),
-    TutorialStep(
-        milestone=Milestone.SWITCH_OPTION,
-        tier=Tier.DEEP,
-        title="선택 갈래 바꾸기",
-        next_step="선택 구간의 갈래를 바꿔 생성하세요.",
-        moment_copy="서식이 갈라질 이유가 한 벌 안으로 접혔습니다. 갈래를 바꿔도 작업은 하나입니다.",
     ),
 )
 
@@ -311,7 +303,7 @@ TIERS: "tuple[TierDefinition, ...]" = (
         tier=Tier.DEEP,
         label="심화",
         title="구간: 서식 여러 벌을 한 벌로",
-        graduation_copy="서식이 갈라질 이유가 구간으로 접힙니다.",
+        graduation_copy="서식이 갈라질 이유가 갈래로 접힙니다.",
         invitation=(
             "거의 같은 서식이 여러 벌로 갈라져 있다면, 구간이 그것을 한 벌로 만듭니다. "
             "고르지 않아도 됩니다."
@@ -389,7 +381,7 @@ class TutorialViewModel:
     def progress(self) -> "dict":
         """영속할 값 — ``save_tutorial_progress(**vm.progress())`` 로 그대로 넘어간다.
 
-        달성 목록은 표 순서(T0…T18)로 정규화한다 — 통지 순서가 파일 diff 를 흔들지 않게.
+        달성 목록은 표 순서(T0…T17)로 정규화한다 — 통지 순서가 파일 diff 를 흔들지 않게.
         """
         return {
             "achieved": [str(step.milestone) for step in STEPS if step.milestone in self._achieved],
@@ -452,7 +444,7 @@ class TutorialViewModel:
 
     @property
     def all_complete(self) -> bool:
-        """전체 완주 — 심화까지 포함해 T0~T18 이 모두 달성."""
+        """전체 완주 — 심화까지 포함해 T0~T17 이 모두 달성."""
         return len(self._achieved) == len(STEPS)
 
     @property

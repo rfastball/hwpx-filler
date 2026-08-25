@@ -212,7 +212,7 @@ def test_product_assembly_wires_every_notifying_controller(tmp_path, monkeypatch
 
 
 def test_every_milestone_has_a_notifying_site_in_the_product():
-    """T0~T18 **전수**가 어딘가에서 통지된다 — 등록만 되고 아무도 안 켜는 단계 금지.
+    """T0~T17 **전수**가 어딘가에서 통지된다 — 등록만 되고 아무도 안 켜는 단계 금지.
 
     정적 스캔인 이유는 그 결함이 런타임에 침묵이기 때문이다(F7 판정 K: "열거값을 만들어 두고
     아무도 안 쓰면, 나중에 배선을 빠뜨려도 아무 테스트도 울지 않는다").
@@ -406,7 +406,7 @@ def test_copy_notifies_when_the_counter_actually_moves(tmp_path):
     assert ctrl.snapshot()["copied_count"] == 1
 
 
-# ============================================================ 6. 루프 이력(T8·T9·T17·T18 재료)
+# ============================================================ 6. 루프 이력(T8·T9·T17 재료)
 def test_generation_loop_ledger_answers_facts_not_milestones():
     """이력은 **사실**을 답하고 어느 T 인지는 호출자가 정한다(커리큘럼 재판정 금지)."""
     ledger = GenerationLoopLedger()
@@ -427,28 +427,40 @@ def test_generation_loop_ledger_answers_facts_not_milestones():
     assert replaced.other_job_same_mount is False
 
 
-def test_generation_loop_ledger_splits_item_composition_from_option_choice():
-    """§3.6 — 항목을 빼면 T17, 갈래만 바꾸면 T18. 축은 「고른 것이 있는 항목의 집합」이다."""
+def test_generation_loop_ledger_reads_composition_change_as_one_axis():
+    """§3.6 T17 — 축은 「직전 실행과 갈래 구성이 다른가」 하나다(#284 병합).
+
+    형상은 실제 예제 자산이 낼 수 있는 것만 쓴다: 항목 1개(`현장설명회`)에 갈래 2개
+    (`실시`/`생략`). v1 제어면은 EXACTLY_ONE 이라 항목의 선택이 빈 실행은 서지 않고,
+    「절을 뺀다」가 곧 `생략` 을 고르는 것이다.
+    """
     ledger = GenerationLoopLedger()
-    base = {"항목1": frozenset({"갑"}), "항목2": frozenset({"을"})}
-    first = ledger.note_generated("작업A", mount_key="m", slot_shape=base)
-    assert first.items_changed is False and first.options_changed is False
-
-    # 항목2 를 뺀다(선택을 비운다) → 구성 변화.
-    dropped = ledger.note_generated(
-        "작업A", mount_key="m", slot_shape={"항목1": frozenset({"갑"}), "항목2": frozenset()},
+    first = ledger.note_generated(
+        "작업A", mount_key="m", slot_shape={"현장설명회": frozenset({"실시"})},
     )
-    assert dropped.items_changed is True and dropped.options_changed is False
+    assert first.options_changed is False, "첫 실행에는 견줄 직전이 없다"
 
-    # 같은 구성에서 갈래만 바꾼다 → 선택 변화.
-    swapped = ledger.note_generated(
-        "작업A", mount_key="m", slot_shape={"항목1": frozenset({"병"}), "항목2": frozenset()},
+    # 같은 구성으로 한 바퀴 더 — 구성은 그대로라 심화 단계가 서면 거짓이다.
+    same = ledger.note_generated(
+        "작업A", mount_key="m", slot_shape={"현장설명회": frozenset({"실시"})},
     )
-    assert swapped.items_changed is False and swapped.options_changed is True
+    assert same.options_changed is False
+
+    # 갈래를 바꾼다(절이 빠진 문서) → 구성 변화.
+    omitted = ledger.note_generated(
+        "작업A", mount_key="m", slot_shape={"현장설명회": frozenset({"생략"})},
+    )
+    assert omitted.options_changed is True
+
+    # 다른 작업의 구성은 이 작업의 직전이 아니다.
+    other = ledger.note_generated(
+        "작업B", mount_key="m", slot_shape={"현장설명회": frozenset({"실시"})},
+    )
+    assert other.options_changed is False
 
     # 구간을 모르는 실행(조회 불가·구간 없음)은 추측으로 체크하지 않는다.
     unknown = ledger.note_generated("작업A", mount_key="m", slot_shape=None)
-    assert unknown.items_changed is False and unknown.options_changed is False
+    assert unknown.options_changed is False
 
 
 def test_compiled_memory_is_scoped_to_what_was_actually_converted():
