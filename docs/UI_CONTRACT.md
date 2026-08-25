@@ -430,6 +430,15 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   데이터는 유지한다(데이터 선택은 patch 가 아니라 세션 문맥이다).
 - **주 행동은 하나** — 「변경 저장」. 「이번 생성에 적용」은 `runOverrides`(PR-B)의 표면이라
   라디오를 미리 늘어놓지 않는다(§6: 같은 선택지를 모든 문맥에 나열하지 않는다).
+- **연결 확정 대기는 무장 사유를 더한다**(#911). 스냅샷 `binding_confirm`
+  (`{pending, label, hint}`)이 참이면 주 행동이 활성으로 서고, 손댄 것이 없을 때만 라벨이
+  링1 의 확정 문안(`gui/job_editor_state.BINDING_CONFIRM_*`)으로 갈린다 — 무변경 확정을
+  「변경 저장」이라 부르지 않는다. dirty 기반 무장과 「변경 버리기」는 무변경이다(확정 대기는
+  버릴 것을 만들지 않는다). 동사 실행은 **기존 저장 경로 그대로**이고 새 백엔드 동사가 없다.
+  판정은 `JobController.editor_binding_confirm_pending` 이 관리 검토의
+  `REVIEW_BINDING` 과 **같은 술어**(`document_creation_workbench.binding_review_needed`)로
+  내리므로, 확정 동사가 서는 순간과 그 blocker 가 서는 순간이 정의상 같다. 종전에는 매핑이
+  이미 옳으면 dirty 가 영영 거짓이라 확정을 요구받고도 수행할 동사가 없었다(#895 3차 관측).
 - **진입은 늘 문맥과 함께**(§5.1): 사유·증거·복귀처를 보낸 표면이 싣는다. 미배선 사유는
   fail-closed 로 거절한다 — 조용한 폴백은 곧 배너가 아무 말도 못 하는 진입이다.
 - **판본은 저장 상태 옆에서 읽힌다**(`저장됨 · 템플릿 r2 · 연결 r5`). 규칙이 갈릴 때만 오르고

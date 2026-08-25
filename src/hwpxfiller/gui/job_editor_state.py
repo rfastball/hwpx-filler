@@ -15,6 +15,17 @@ from dataclasses import dataclass
 
 from ..domain.mapping import MappingProfile
 
+# ── 연결 확정 대기(#911) ────────────────────────────────────────────────────────────────
+# 「변경 저장」과 **다른 동사**다. 관리 검토가 연결 확정을 요구하는데 매핑이 이미 옳으면
+# 더럽힐 것이 없어 변경 기반 무장이 영영 안 열린다(#895 3차 관측: 푸터 두 동사 모두 비활성,
+# blocker 는 REVIEW_BINDING 상주). 그래서 문안이 **무변경 확정**임을 먼저 말한다 — 변경을
+# 전제한 라벨로는 누를 이유가 화면 어디에도 없다.
+#
+# 어휘는 정본표를 따른다(COPY_STYLE_GUIDE §4-A): 사용자 대면에서 Binding 은 '연결'이고
+# 판본 줄(`저장됨 · 템플릿 r2 · 연결 r5`)이 이미 그 말을 쓴다.
+BINDING_CONFIRM_LABEL = "연결 확정"
+BINDING_CONFIRM_HINT = "바꿀 것이 없어도 지금 연결을 확정해야 문서를 만들 수 있습니다."
+
 
 @dataclass(frozen=True)
 class SaveVerdict:

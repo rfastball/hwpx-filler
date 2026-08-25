@@ -4517,6 +4517,60 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._invalidate_current_preparations()
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
+    def editor_binding_confirm_pending(self, work_ref: str) -> bool:
+        """편집 중 작업의 **연결 확정 대기** 여부(#911) — :meth:`on_editor_mapping_saved` 의 짝.
+
+        저쪽이 확정을 쓰는 자리라면 여기는 그 확정이 아직 남았는지를 읽는 자리다. 답은
+        관리 검토 사슬이 ``REVIEW_BINDING`` 을 세울 때 쓰는 **바로 그 술어**
+        (:func:`~hwpxfiller.application.document_creation_workbench.binding_review_needed`)에
+        같은 두 재료를 먹여 얻는다 — 편집기가 자기 기준을 따로 세우면 「확정하라는데 동사가
+        없다」의 거울상(확정할 것이 없는데 동사가 서 있다)이 생긴다.
+
+        합성 Observation 을 부르지 않는 이유는 그것이 읽기가 아니기 때문이다:
+        :meth:`workbench_observation` 은 레코드 검증·미리보기 준비를 무효화하므로 편집기
+        렌더 경로에서 부르면 사람이 승인해 둔 미리보기가 조용히 사라진다.
+
+        배선 가드 셋은 편집기 저장이 실제로 확정을 부르는 조건과 같아야 한다 — 확정하지
+        못할 상태에서 동사를 무장하면 눌러도 아무 일이 없다. 세션 증거가 겨눈 작업과 편집
+        대상이 다르면 이 세션은 그 작업에 대해 아는 것이 없다(정직한 거짓).
+        """
+        if (
+            self._seal_execution is None
+            or self._workbench_observation is None
+            or not work_ref
+            or work_ref != self.job_name
+        ):
+            return False
+        try:
+            job = load_job(self.registry, work_ref)
+        except Exception:  # noqa: BLE001 - 부재·손상은 「확정할 것 없음」으로 읽는다.
+            return False
+        if job.media != "hwpx" or not job.authority_id:
+            return False
+        projection = self._binding_review_projection()
+        return self._workbench_observation.binding_review_pending(
+            fresh_observation=self._last_fresh_observation,
+            input_requirements=(
+                projection.input_requirements if projection is not None else ()
+            ),
+        )
+
+    def _binding_review_projection(self):
+        """관찰이 결속 분류표를 **읽는 조건**(#911 로 한 자리로 모음).
+
+        봉인된 계획은 분류표를 보지 않는다 — 그 Work 의 실행 계획이 이미 durable 결속 위에
+        서 있다는 뜻이라, legacy Mapping 기준 재분류를 얹으면 확정된 작업에 확정을 다시
+        묻는다. 이 가드가 관찰과 편집기 두 자리에 흩어져 있으면 한쪽만 갱신되는 날 두 표면이
+        같은 작업을 다르게 답한다.
+        """
+        if (
+            self._seal_execution is None
+            or not self.job_name
+            or not isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
+        ):
+            return None
+        return self._seal_execution.current_binding_review(self.job_name)
+
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
         job = load_job(self.registry, work_ref)
@@ -5194,13 +5248,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     resp = None
                 if resp is not None:
                     slot_view = resp.current_view.projection
-        binding_projection = None
-        if (
-            self._seal_execution is not None
-            and self.job_name
-            and isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
-        ):
-            binding_projection = self._seal_execution.current_binding_review(self.job_name)
+        binding_projection = self._binding_review_projection()
         if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
             self._invalidate_current_preparations()
         record_validation, context_integrity = self._current_record_validation()

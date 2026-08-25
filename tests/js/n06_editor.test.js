@@ -956,6 +956,76 @@ async function awaitLint(controller, tries = 40) {
   return controller.viewModel.getSnapshot().txtEdit?.lint !== null;
 }
 
+/* ---------------- 연결 확정 대기가 무장 사유를 더한다(#911) ---------------- */
+
+/** 편집 모드(탭) footer 가 서는 최소 스냅샷 — `binding_confirm` 만 갈아 끼운다. */
+function footSnap(bindingConfirm, extra) {
+  return snap(Object.assign({
+    section: "binding", is_draft: false, editing_origin: "공고서", dirty: false,
+    reachable: { template: true, binding: true, filename: true },
+    binding_confirm: bindingConfirm,
+  }, extra || {}));
+}
+
+async function footMarkup(bindingConfirm, extra) {
+  const h = harness({ initial: async () => footSnap(bindingConfirm, extra) });
+  await h.controller.init();
+  return renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
+}
+
+const CONFIRM = { pending: true, label: "연결 확정", hint: "바꿀 것이 없어도 지금 연결을 확정해야 합니다." };
+
+test("#911 확정 대기가 참이면 손대지 않은 세션에서도 저장 동사가 활성이다", async () => {
+  const markup = await footMarkup(CONFIRM);
+
+  const save = markup.slice(markup.indexOf('data-act="save"'));
+  assert.equal(save.slice(0, save.indexOf(">")).includes("disabled"), false,
+    "확정을 요구받는데 그 확정을 수행할 동사가 잠겨 있다(#911 그 결함)");
+  assert.ok(markup.includes("연결 확정"), "무변경 확정을 「변경 저장」이라 부르지 않는다");
+  assert.equal(markup.includes("변경 저장"), false);
+  assert.ok(markup.includes(CONFIRM.hint), "왜 눌러야 하는지는 Python 문안 그대로 선다");
+});
+
+test("#911 확정 대기여도 「변경 버리기」는 dirty 술어 그대로다", async () => {
+  const markup = await footMarkup(CONFIRM);
+
+  const discard = markup.slice(markup.indexOf('data-act="discard-patch"'));
+  assert.ok(discard.slice(0, discard.indexOf(">")).includes("disabled"),
+    "확정 대기는 버릴 것을 만들지 않는다");
+});
+
+test("#911 손댄 세션은 확정 대기여도 「변경 저장」으로 남는다(라벨이 참말)", async () => {
+  const markup = await footMarkup(CONFIRM, { dirty: true });
+
+  assert.ok(markup.includes("변경 저장"), "고친 것이 있으면 그 저장이 확정도 겸한다");
+  assert.equal(markup.includes(">연결 확정<"), false);
+});
+
+test("#911 확정 대기가 거짓이면 종전 무장 술어가 그대로다(무회귀)", async () => {
+  const markup = await footMarkup({ pending: false, label: "연결 확정", hint: "…" });
+
+  const save = markup.slice(markup.indexOf('data-act="save"'));
+  assert.ok(save.slice(0, save.indexOf(">")).includes("disabled"),
+    "클린 세션의 저장은 버리기와 같은 술어여야 한다");
+  assert.equal(markup.includes('data-role="binding-confirm-hint"'), false,
+    "대기가 아니면 설명 줄도 서지 않는다");
+});
+
+test("#911 스냅샷에 사실이 없으면 프런트가 확정을 발명하지 않는다", async () => {
+  const h = harness({
+    initial: async () => snap({
+      section: "binding", is_draft: false, editing_origin: "공고서", dirty: false,
+      reachable: { template: true, binding: true, filename: true },
+    }),
+  });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
+
+  const save = markup.slice(markup.indexOf('data-act="save"'));
+  assert.ok(save.slice(0, save.indexOf(">")).includes("disabled"));
+  assert.ok(markup.includes("변경 저장"));
+});
+
 test("S10-05 저작 창은 textarea 가 아니라 린트메모장 호스트를 세운다", async () => {
   const h = harness();
   await h.controller.init();

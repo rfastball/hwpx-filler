@@ -1914,16 +1914,31 @@ function EditorFooter(props: {
   if (isEditing(snapshot)) {
     /* 저장·버리기는 **같은 합성 술어**로 상시 표시 + 상태 비활성이다(U2 §2.4·§2.17). */
     const armed = !!snapshot.dirty || hasPendingEdits(draft);
+    /* 연결 확정 대기(#911)는 무장 사유를 **더한다**. 판정·라벨·설명은 Python 이 실어 보낸
+       것을 그대로 읽는다 — 「저장 안 됨」 같은 인접 사실로 확정 필요를 여기서 추론하지 않는다.
+       바꿀 것이 없는데 관리 검토가 확정을 기다리면 dirty 는 영영 거짓이고, 그 상태에서
+       두 동사가 모두 잠겨 사슬을 닫을 길이 없었다. 버리기는 그대로 dirty 술어다(확정
+       대기는 버릴 것을 만들지 않는다). 라벨이 갈리는 자리는 **무변경 확정 하나**다:
+       손댄 것이 있으면 그 저장이 확정도 겸하므로 「변경 저장」이 여전히 참말이다. */
+    const confirm = (snapshot.binding_confirm || {}) as Obj;
+    const confirmPending = !!confirm.pending;
+    const confirmOnly = confirmPending && !armed;
     return h("footer", { className: "wfoot", id: "editor-foot" },
       h("button", {
         className: "btn", "data-act": "discard-patch", disabled: !armed,
         onClick: (event: Obj) => controller.guarded(() => controller.discardPatch(event.currentTarget)),
       }, "변경 버리기"),
       h("span", { className: "spacer" }),
+      confirmPending
+        ? h("span", { className: "muted capnote", "data-role": "binding-confirm-hint" },
+          String(confirm.hint || ""))
+        : null,
       h("button", {
-        className: "btn primary", "data-act": "save", disabled: !armed,
+        className: "btn primary", "data-act": "save",
+        "data-confirm-binding": confirmOnly ? "1" : null,
+        disabled: !(armed || confirmPending),
         onClick: () => controller.guarded(() => controller.doSave({})),
-      }, "변경 저장"));
+      }, confirmOnly ? String(confirm.label || "") : "변경 저장"));
   }
   const last = here >= sections.length - 1;
   const can = !!(snapshot.reachable || {})[snapshot.section];

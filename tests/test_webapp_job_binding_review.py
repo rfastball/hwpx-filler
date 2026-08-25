@@ -1702,6 +1702,52 @@ def _saved_active_mapping() -> MappingProfile:
     )
 
 
+# ── 편집기 확정 동사의 근거 = REVIEW_BINDING 과 **같은 사실**(#911) ────────────────────────
+def test_editor_confirm_pending_rises_with_the_review_binding_blocker(
+    tmp_path: Path,
+) -> None:
+    """확정 대기는 관리 검토 blocker 와 **함께** 선다(양성 값).
+
+    증거가 없는 동안에는 주장하지 않는다 — 관리 검토도 그때는 결속을 요구하지 않는다.
+    """
+    ctrl = _controller(tmp_path, with_binding=False)
+    assert ctrl.editor_binding_confirm_pending(WORK_REF) is False, (
+        "증거가 없는 세션은 확정 대기를 주장하지 않는다"
+    )
+
+    ctrl.dispatch("resolve_execution", {})
+    assert "REVIEW_BINDING" in _zone(ctrl)["blockers"]
+    assert ctrl.editor_binding_confirm_pending(WORK_REF) is True
+
+
+def test_editor_confirm_pending_is_false_on_a_sealed_plan(tmp_path: Path) -> None:
+    """봉인된 계획 위에서는 거짓이다(음성 값) — 확정할 것이 없는데 동사를 세우지 않는다.
+
+    #911 의 거울상 결함이다. 이 값을 함께 재지 않으면 「무장 사유를 더한다」가 조용히
+    「늘 무장한다」로 미끄러진다.
+    """
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+
+    assert "REVIEW_BINDING" not in _zone(ctrl)["blockers"]
+    assert ctrl.editor_binding_confirm_pending(WORK_REF) is False
+
+
+def test_editor_confirm_pending_is_false_for_another_work(tmp_path: Path) -> None:
+    """세션 증거가 겨눈 작업이 아니면 거짓 — 남의 작업 상태를 이 세션 증거로 답하지 않는다."""
+    ctrl = _controller(tmp_path, with_binding=False)
+    ctrl.dispatch("resolve_execution", {})
+    assert ctrl.editor_binding_confirm_pending(WORK_REF) is True
+
+    assert ctrl.editor_binding_confirm_pending("다른작업") is False
+
+
+def test_editor_confirm_pending_needs_the_seal_seam(tmp_path: Path) -> None:
+    """seal 미배선이면 확정 대기는 거짓이다 — 없는 표면을 있다고 말하지 않는다."""
+    ctrl = _controller(tmp_path, with_binding=False, wire_seal=False)
+    assert ctrl.editor_binding_confirm_pending(WORK_REF) is False
+
+
 def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=False)
     job = ctrl.registry.load(WORK_REF)

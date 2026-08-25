@@ -35,7 +35,7 @@ def _clock() -> datetime:
 
 
 def _controller(
-    tmp_path: Path, *, after_mapping_saved=None
+    tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None
 ) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
@@ -51,6 +51,7 @@ def _controller(
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
         after_mapping_saved=after_mapping_saved,
+        binding_confirm_pending=binding_confirm_pending,
     )
     return ctrl, pushes
 
@@ -2500,6 +2501,102 @@ def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_pat
     assert saved.mapping.mappings
     assert ctrl.snapshot()["notice"]["level"] == "danger"
     assert "Field Binding" in result["block_reason"]
+
+
+# ── 연결 확정 대기(#911) — 무장 사유를 **더한다**(dirty 술어는 무회귀) ──────────────────────
+def test_binding_confirm_pending_is_absent_for_an_ordinary_job(tmp_path) -> None:
+    """비관리 작업에선 확정 대기가 거짓이다 — 확정할 것이 없는 자리에 동사를 세우지 않는다.
+
+    미주입 조립(테스트 단독·비관리 앱)도 같은 갈래다: 없는 표면을 있다고 말하지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "평범작업")["ok"] is True
+    ctrl.load_job("평범작업")
+
+    snap = ctrl.snapshot()
+    assert snap["binding_confirm"]["pending"] is False
+    # 라벨·설명은 대기 여부와 무관하게 늘 실린다(표면이 문안을 발명하지 않는다).
+    assert snap["binding_confirm"]["label"] and snap["binding_confirm"]["hint"]
+
+
+def test_binding_confirm_pending_survives_a_clean_reentry_and_clears_on_confirm(
+    tmp_path,
+) -> None:
+    """확정 대기 사실은 **손댄 것이 없는** 재진입에서도 참이고, 무변경 확정으로 걷힌다.
+
+    이 두 값이 #911 의 결함과 수리다: 종전에는 dirty 하나가 두 동사를 잠가, 매핑이 이미
+    옳은 작업은 확정을 요구받으면서 그 확정을 수행할 활성 동사가 없었다.
+    """
+    name = "확정대기"
+    probe_calls: list[str] = []
+    committed: list[str] = []
+    pending = {"value": True}
+
+    def probe(work_ref: str) -> bool:
+        probe_calls.append(work_ref)
+        return pending["value"]
+
+    def commit(work_ref: str) -> None:
+        committed.append(work_ref)
+        pending["value"] = False       # 확정이 성립하면 대기는 사라진다(실 서비스의 전이).
+
+    ctrl, _ = _controller(
+        tmp_path, after_mapping_saved=commit, binding_confirm_pending=probe
+    )
+    assert _save_named(ctrl, name)["ok"] is True
+    registry = JobRegistry(tmp_path / "jobs")
+    job = registry.load(name)
+    job.authority_id = "managed-work-911"
+    registry.save(job, allow_overwrite=True)
+
+    ctrl.load_job(name)
+    snap = ctrl.snapshot()
+    assert snap["dirty"] is False, "손대지 않은 재진입이라 변경 기반 무장은 닫혀 있다"
+    assert snap["binding_confirm"]["pending"] is True
+
+    result = ctrl.dispatch("save", {})    # 무변경 확정 — payload 는 평소 저장과 같다
+
+    assert result["ok"] is True
+    assert committed == [name], "무변경 저장도 결속 확정을 부른다"
+    assert ctrl.snapshot()["binding_confirm"]["pending"] is False, (
+        "확정이 성립했으면 확정 동사는 스스로 걷힌다"
+    )
+    assert probe_calls, "판정은 백엔드에 물어본다(표면 추론 금지)"
+
+
+def test_binding_confirm_pending_stays_true_when_the_commit_fails(tmp_path) -> None:
+    """확정이 실패하면 대기는 그대로다 — 실패를 성공처럼 접어 동사를 걷지 않는다."""
+    name = "확정실패"
+
+    def fail(work_ref: str) -> None:
+        raise RuntimeError("binding commit failed")
+
+    ctrl, _ = _controller(
+        tmp_path, after_mapping_saved=fail, binding_confirm_pending=lambda _ref: True
+    )
+    assert _save_named(ctrl, name)["ok"] is True
+    registry = JobRegistry(tmp_path / "jobs")
+    job = registry.load(name)
+    job.authority_id = "managed-work-911"
+    registry.save(job, allow_overwrite=True)
+    ctrl.load_job(name)
+
+    result = ctrl.dispatch("save", {})
+
+    assert result["ok"] is False and result["legacy_saved"] is True
+    assert ctrl.snapshot()["binding_confirm"]["pending"] is True
+
+
+def test_binding_confirm_probe_failure_never_arms_the_verb(tmp_path) -> None:
+    """판정이 터지면 확정 대기는 거짓이다 — 눌러도 아무 일 없는 동사를 세우지 않는다."""
+    def boom(_work_ref: str) -> bool:
+        raise RuntimeError("authority store unreadable")
+
+    ctrl, _ = _controller(tmp_path, binding_confirm_pending=boom)
+    assert _save_named(ctrl, "판정불가")["ok"] is True
+    ctrl.load_job("판정불가")
+
+    assert ctrl.snapshot()["binding_confirm"]["pending"] is False
 
 
 def test_ordinary_managed_mapping_save_runs_binding_sync(tmp_path) -> None:

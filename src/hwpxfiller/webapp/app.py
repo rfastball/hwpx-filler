@@ -442,6 +442,9 @@ class WebFrontend:
                 # 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지).
                 library_slots=tpl_ctrl.slot_snapshot,
                 after_mapping_saved=job_ctrl.on_editor_mapping_saved,
+                # 그 확정의 **읽기 짝**(#911) — 편집기 footer 가 확정 동사를 세울지 말지는
+                # 같은 컨트롤러가 관리 검토에 쓰는 사실 하나로 정해진다(두 표면 한 판정).
+                binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,
                 tutorial=tutorial,
             ),
         )
