@@ -1,17 +1,20 @@
 """온보딩 예제 자산 계약 — `docs/ONBOARDING_TUTORIAL.md` §2 의 검사 가능한 얼굴.
 
-지키는 것은 다섯이다.
+지키는 것은 여섯이다.
 
 1. **재생성 결정론** — `examples/onboarding/make_assets.py` 를 임시 폴더에 다시 돌리면
    커밋된 자산과 **bytes 가 같다**. 손편집이 끼면 여기서 갈라진다.
 2. **CSV 스키마** — 헤더 8열이 §2.3 표와 정확히 일치하고(헤더 = 필드명 일치가 자동
-   제안의 조건), 행 수와 **의도 결측의 자리**(계약목록_2 둘째 행의 `납품기한` 만 빈
+   제안의 조건), 행 수와 **의도 결측의 자리**(계약목록_2 둘째 행의 `납품조건` 만 빈
    값)가 선언대로다.
 3. **누름틀 필드 집합** — 컴파일된 두 템플릿의 필드가 스펙과 정확 일치(7/5).
 4. **미컴파일 연습본** — `공고서_연습` 은 필드 토큰과 구간 표기를 **둘 다** 들고 있고,
    두 축 컴파일(필드 먼저·구간 다음)이 차단 사유 없이 성립한다. 이것이 고급·심화
    티어(T15·T17)의 재료가 실제로 서 있다는 증거다.
-5. **허구화 규칙(§2.1)** — 원형 실문서의 식별 가능한 값이 자산 어디에도 없다.
+5. **값 유형 정합(§2.3, #915)** — 이름이 선언한 값 유형과 CSV 값이 어긋나지 않는다.
+   어긋나면 관리 경로가 「먼저 데이터 문제를 확인하세요」로 막아, 커리큘럼에 없는
+   데이터 게이트를 고급·심화 티어 사용자 전원이 만난다.
+6. **허구화 규칙(§2.1)** — 원형 실문서의 식별 가능한 값이 자산 어디에도 없다.
 """
 
 from __future__ import annotations
@@ -26,9 +29,16 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.application.field_binding_input import (
+    LegacyFieldBindingEntry,
+    prepare_legacy_field_binding_migration,
+)
+from hwpxfiller.application.record_validation import interpret_current_source_value
 from hwpxfiller.domain.authoring import scan_structure
 from hwpxfiller.domain.lint import similarity
 from hwpxfiller.domain.mapping import SUGGEST_THRESHOLD
+from hwpxfiller.domain.raw_data_record import SourceText, source_value_type_of
+from hwpxfiller.domain.schema import extract_schema
 from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.gui.mapping_state import MappingModel
@@ -52,7 +62,7 @@ HEADER = [
     "계약방법",
     "계약상대자",
     "계약금액",
-    "납품기한",
+    "납품조건",
 ]
 
 #: 자산 census — 생성 스크립트가 낳는 파일 전부(결정론 비교의 대상 집합).
@@ -73,10 +83,10 @@ CONTRACT_FIELDS = {
     "사업명",
     "계약상대자",
     "계약금액",
-    "납품기한",
+    "납품조건",
 }
-PURCHASE_FIELDS = {"공고번호", "수요기관", "품명", "계약방법", "납품기한"}
-NOTICE_TOKENS = {"공고번호", "수요기관", "품명", "계약방법", "납품기한"}
+PURCHASE_FIELDS = {"공고번호", "수요기관", "품명", "계약방법", "납품조건"}
+NOTICE_TOKENS = {"공고번호", "수요기관", "품명", "계약방법", "납품조건"}
 
 #: §2.1 금지 목록의 대표 문자열 — 실기관·실업체·실인명·실번호·실연락처.
 FORBIDDEN = (
@@ -160,7 +170,7 @@ def test_csv_header_matches_field_names(name: str, rows_n: int) -> None:
 
 
 def test_only_the_declared_cell_is_missing() -> None:
-    """결측은 한 자리뿐 — 계약목록_2 둘째 행의 `납품기한`(§2.2 데이터측 결핍)."""
+    """결측은 한 자리뿐 — 계약목록_2 둘째 행의 `납품조건`(§2.2 데이터측 결핍)."""
     _, primary = _read_csv(ASSETS / "data" / "계약목록.csv")
     assert all(cell.strip() for row in primary for cell in row), "계약목록.csv 에는 결측이 없다"
 
@@ -171,7 +181,7 @@ def test_only_the_declared_cell_is_missing() -> None:
         for column, cell in enumerate(row)
         if not cell.strip()
     }
-    assert blanks == {(1, "납품기한")}
+    assert blanks == {(1, "납품조건")}
 
 
 # ------------------------------------------------------------------ 3. 누름틀 필드
@@ -265,7 +275,80 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
     assert deposit.is_empty_confirmed() is True
 
 
-# ------------------------------------------------------------------ 5. 허구화 규칙
+# ------------------------------------------------- 5. 값 유형 정합(#915 데이터 게이트)
+def _declared_value_types(template: Path) -> "dict[str, str]":
+    """제품이 실제로 쓰는 사슬로 **소스 열별 선언 값 유형**을 낸다.
+
+    `infer_type`(이름 휴리스틱) → `MappingModel` 기본 유형 → 저장 매핑 → legacy migration
+    후보 규칙의 `value_type`. 마지막 단계가 관리 경로 Plan 의 요구 유형이 되고, 그것이
+    데이터 값과 어긋나면 `RECORD_VALUE_TYPE_INVALID` 로 생성이 막힌다.
+    """
+    schema = extract_schema(read_hwpx_package(template))
+    model = MappingModel.from_suggestions(schema, list(HEADER))
+    draft = prepare_legacy_field_binding_migration(
+        work_authority_id="onboarding",
+        base_template_application_id="asset",
+        legacy_entries=[
+            LegacyFieldBindingEntry(
+                row.template_field, row.type, row.source, row.const, row.fmt
+            )
+            for row in model.rows
+        ],
+        captured_at="2026-08-26T00:00:00Z",
+    )
+    return {
+        candidate.source_key: candidate.value_type
+        for candidate in draft.candidate_rules
+        if candidate.source_key and candidate.value_type
+    }
+
+
+@pytest.fixture(scope="module")
+def compiled_notice(tmp_path_factory) -> Path:
+    """T15 가 만드는 것과 같은 **변환본** — 심화 티어가 실제로 생성에 쓰는 템플릿이다."""
+    work = tmp_path_factory.mktemp("notice") / "공고서_연습.hwpx"
+    shutil.copy(ASSETS / "templates" / "공고서_연습.hwpx", work)
+    compile_template_file(str(work))
+    compile_structure_file(str(work))
+    return work
+
+
+def test_every_template_field_accepts_every_committed_data_value(
+    compiled_notice: Path,
+) -> None:
+    """동봉 3행이 **한 행도 빠지지 않고** 세 템플릿 전부를 통과한다(#915).
+
+    종전 자산은 `납품기한` 이라는 **이름**이 날짜 유형을 선언했는데 값 2행이 자유서식
+    (「계약 후 90일 이내」 — 원 공문의 실표현)이라, 관리 경로가 그 행들을 「먼저 데이터
+    문제를 확인하세요」로 막았다. 커리큘럼에 없는 게이트를 고급·심화 티어 사용자 전원이
+    만난 것이 #915 다. 값이 아니라 이름을 고쳤으므로(`납품조건`, text) 여기서 재는 것은
+    「이름이 선언한 유형이 값을 받아들이는가」다 — 되돌아가면 이 단언이 먼저 죽는다.
+    """
+    _, rows = _read_csv(ASSETS / "data" / "계약목록.csv")
+    records = [dict(zip(HEADER, row, strict=True)) for row in rows]
+
+    for template in (
+        ASSETS / "templates" / "계약체결안내.hwpx",
+        ASSETS / "templates" / "구매추진안내.hwpx",
+        compiled_notice,
+    ):
+        declared = _declared_value_types(template)
+        assert declared, f"{template.name}: 선언 유형이 하나도 나오지 않았다"
+        mismatches = [
+            (index, key, record[key], value_type)
+            for index, record in enumerate(records)
+            for key, value_type in declared.items()
+            if source_value_type_of(
+                interpret_current_source_value(SourceText(record[key]), value_type)
+            )
+            != value_type
+        ]
+        assert mismatches == [], (
+            f"{template.name}: 선언 유형이 동봉 값을 거절한다 — {mismatches}"
+        )
+
+
+# ------------------------------------------------------------------ 6. 허구화 규칙
 @pytest.mark.parametrize("needle", FORBIDDEN)
 def test_no_real_world_identifier_survives_in_the_assets(needle: str) -> None:
     """원형 실문서의 식별 가능한 값이 자산 어디에도 없다(§2.1, 예외 없음)."""

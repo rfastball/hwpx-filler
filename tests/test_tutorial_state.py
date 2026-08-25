@@ -203,7 +203,7 @@ def test_moment_copy_names_what_did_not_happen():
     by_id = {str(step.milestone): step.moment_copy for step in STEPS}
     assert "승인을 묻지 않았습니다" in by_id["T8"]
     assert "데이터를 다시 고르지 않았습니다" in by_id["T9"]
-    assert "〘미입력·납품기한〙" in by_id["T13"]  # 빈 값은 빈칸으로 새지 않는다
+    assert "〘미입력·납품조건〙" in by_id["T13"]  # 빈 값은 빈칸으로 새지 않는다
     assert "절이 빠진 문서" in by_id["T17"]
 
 
