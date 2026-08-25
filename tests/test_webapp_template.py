@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external import settings
@@ -72,6 +73,8 @@ def _controller(tmp_path: Path, monkeypatch) -> "tuple[TemplateController, Path,
             lib, registry, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
         ),
         library_dir=lib,
+        pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
+        example_data_dir=tmp_path / "example_data",
     )
     return ctrl, tmp_path, pushes
 
@@ -441,7 +444,8 @@ def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
         registry, lambda s, x: None,
         file_store=TemplateFileStore(
             tp / "lib", registry, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
-        ), library_dir=tp / "lib"
+        ), library_dir=tp / "lib",
+        pool_registry=DatasetPoolRegistry(tp / "datasets"),
     )
     assert "입찰" in ctrl2.snapshot()["hwpx"]["group_names"]
 

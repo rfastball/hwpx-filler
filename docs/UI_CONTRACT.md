@@ -466,6 +466,15 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
     (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
     한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
+- **동봉 예제 상시 진입점**(#891 · `ONBOARDING_TUTORIAL.md` §4.1~4.2): 밴드의 `emptyText` 는
+  문자열 prop 이라 버튼을 품지 못하므로, 진입점은 밴드 **밖** 공용 버튼 줄
+  (`import-template`·`import-folder`·`lib-new-txt` 가 서는 자리)의 `data-act="install-examples"`
+  다. 라벨·힌트·설치 여부는 스냅샷 `library.examples` 소유고 프런트가 짓지 않는다. 액션은
+  `install_examples`(`confirm` 하나)이고 **1차는 홈에 아무것도 쓰지 않는 재진술**, `confirm`
+  2차가 실행이다 — 확인 본문(무엇을 몇 건 어디에)은 Python 이 싣는다. 설치 몸통(복사·그룹
+  지정·데이터 고정·설치 manifest)은 `external/example_pack.install` 이 지고 tpl 컨트롤러는
+  조립·문구만 맡는다. 재설치는 되돌리기다(D4): 지난 manifest 기재분만 덮어쓰고, 기재에 없는
+  동명 파일은 접미로 비켜 가며 그 사실이 결과 줄에 실린다.
 - **TXT 저작 린트메모장**(S10-05 #862 · #299 회수): `#txtEditModal` 의 본문 입력은 textarea 가
   아니라 CodeMirror 6 메모장(`#txtLintpad`, 컨텐츠 DOM 은 종전 id `#txtEditContent`)이다.
   **판정은 하나도 프런트에 없다** — 타이핑 180ms 디바운스 뒤 `tpl/txt_lint`(`content` 하나,
@@ -956,6 +965,13 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - 액션: `set_view`·`set_mode`·`set_query`·`toggle_facet`·`clear_facets`·`clear_filters`·
   `toggle_group`·`select_work`·`toggle_favorite`·`clone_job`·`set_tags`·`delete_job`·
   `undo_delete_job`·`relink_template`·`delete_corrupt`·`refresh`.
+- **빈 상태의 출구는 둘**(#891 · `ONBOARDING_TUTORIAL.md` §1 D1): 저장된 작업이 없는 갈래
+  (`is_empty`)에 「＋ 첫 작업 만들기」(`data-new-work`)와 동봉 예제 설치
+  (`data-install-examples`)가 나란히 선다. 라벨·설치 여부는 스냅샷 `examples`
+  (`external/example_pack.entry_point_state()` 단일 출처, tpl·editor 와 같은 값)가 내고
+  프런트가 짓지 않는다. 실행은 **tpl 채널의 `install_examples`** 교차 화면 dispatch 다 —
+  설치는 템플릿 라이브러리의 사건이지 작업 레지스트리의 사건이 아니다. 필터가 비운 갈래
+  (`!shown`)에는 두지 않는다: 거기서 할 일은 `clear_filters` 이지 라이브러리 채우기가 아니다.
 - `clear_filters` 는 0건 화면의 **상주 출구**다 — 네 절단자(보기·방식·검색·태그)를 한 번에
   걷는다. 절단 밖 작업에 도달할 길이 사라지지 않게 하는 §8.4 「도달성」 면의 이행분이다.
 - `select_work` 는 상세 패널이 겨눌 행일 뿐 **활성 작업이 아니다** — 여기서 다른 작업을 열어도

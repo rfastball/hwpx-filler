@@ -200,6 +200,24 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     }
   }
 
+  /** 동봉 예제 세트 설치(#891) — 저장된 작업이 없는 빈 상태의 두 번째 출구.
+   *
+   *  실행은 **tpl 채널**이다(설치는 템플릿 라이브러리의 사건이지 작업 레지스트리의 사건이
+   *  아니다 — `jobDispatch` 와 같은 교차 화면 관용구). 확인 문안·수치는 Python 이 내고 여기는
+   *  묻기만 한다. 성공하면 이 화면의 라벨(설치됨)이 갈리므로 스스로 재당긴다. */
+  async function installExamples(trigger?: HTMLElement): Promise<void> {
+    const result = await dispatch("tpl", "install_examples", {});
+    if (result.needs_confirm && await deps.modal.confirm({
+      title: "예제 설치 확인",
+      body: `${result.confirm_text}\n\n설치할까요?`,
+      confirmLabel: "설치", cancelLabel: "취소", returnFocus: trigger,
+    })) {
+      const done = await dispatch("tpl", "install_examples", { confirm: true });
+      if (done.ok === false) deps.notify(String(done.error));
+      await dispatch("library", "refresh", {});
+    }
+  }
+
   async function runPrimary(name: string): Promise<void> {
     const work = selected(name);
     if (work === null) return;
@@ -299,6 +317,7 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     axis,
     toggleFavorite,
     runPrimary,
+    installExamples,
     newWork: () => deps.ports.editorEntry.current().newDraft(),
     editWork(name: string, evidence: Obj = {}): unknown {
       return deps.ports.editorEntry.current().openGuarded(name, {
@@ -376,10 +395,19 @@ function LibraryList(props: { snapshot: Obj; controller: LibraryController }): R
   const sections = snapshot.sections || [];
   const shown = sections.reduce((sum: number, section: Obj) => sum + Number(section.count || 0), 0);
   let content: ReactNode;
+  const examples = (snapshot.examples || null) as Obj | null;
   if (snapshot.is_empty) {
+    /* 빈 상태의 출구는 둘이다(#891 · D1): 직접 만들기와 동봉 예제. 예제 라벨·설치 여부는
+       스냅샷이 낸다(프런트 발명 금지). **필터가 비운 갈래에는 두지 않는다** — 거기서 할 일은
+       필터를 지우는 것이지 라이브러리를 채우는 것이 아니다. */
     content = h("div", { className: "empty" }, h("div", { className: "heading" }, "저장된 작업이 없습니다"),
       h("p", null, "템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 문서를 만들 때 고릅니다."),
-      h("button", { className: "btn primary", "data-new-work": true, onClick: controller.newWork }, "＋ 첫 작업 만들기"));
+      h("button", { className: "btn primary", "data-new-work": true, onClick: controller.newWork }, "＋ 첫 작업 만들기"),
+      examples ? h("button", {
+        className: "btn", "data-install-examples": true, "data-busy-lock": true,
+        title: String(examples.hint || ""),
+        onClick: (event: Obj) => { void controller.installExamples(event.currentTarget); },
+      }, String(examples.label || "")) : null);
   } else if (!shown) {
     content = h("div", { className: "empty" }, h("div", { className: "heading" }, "조건에 맞는 작업이 없습니다"),
       h("p", null, "보기·작업 방식·검색·태그 중 하나가 목록을 비웠습니다."),
@@ -559,7 +587,11 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
 
 export function LibraryScreen(props: { controller: LibraryController }): ReactNode {
   const { controller } = props;
-  const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
+  /* 세 번째 인자(server snapshot)는 `EditorScreen` 선례를 따른다: 제품 런타임은 쓰지 않지만,
+     없으면 이 셸이 `react-dom/server` 로 **한 번도** 렌더되지 못해 빈 상태의 노드 배치 계약을
+     단위층에서 잴 수 없다(#891 — 두 출구가 어느 갈래에 서는가가 결과인 계약이다). */
+  const snapshot = useSyncExternalStore(
+    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
   if (snapshot === null) return h("p", { className: "note", role: "status" }, "문서 작업을 읽는 중…");
   const alerts = snapshot.alerts || {};
   return h("div", { className: "library-react-surface" },

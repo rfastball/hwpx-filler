@@ -374,7 +374,9 @@ class WebFrontend:
                           workbench_observation=WorkbenchObservationProduct()),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
-                registry, self._push, file_store=template_files, txt_groups=txt_groups
+                registry, self._push, file_store=template_files, txt_groups=txt_groups,
+                # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
+                pool_registry=pool_registry,
             ),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),

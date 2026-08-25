@@ -88,6 +88,19 @@ def default_text_templates_dir() -> Path:
     return home_dir() / "text_templates"
 
 
+def default_example_data_dir() -> Path:
+    """동봉 예제 데이터(CSV)의 착지 자리 — 사용자 홈 아래 ``example_data``.
+
+    템플릿은 매체별 라이브러리 루트로 가지만(:func:`library_root_for`) 데이터는 **경로 참조**
+    로만 고정되므로(``external/dataset_store``: 풀은 파일을 품지 않고 다시 여는 법만 안다)
+    실물이 앉을 durable 자리가 따로 필요하다. 다른 홈 자산과 같은 관례이고
+    ``HWPXFILLER_HOME`` 을 존중한다(해석은 :func:`home_dir`). **설치 전에는 만들지 않는다**
+    — 폴더 생성은 예제 설치(:func:`hwpxfiller.external.example_pack.install`)의 몫이고,
+    누르기 전에 홈을 건드리지 않는 것이 온보딩 D1 의 계약이다(#891).
+    """
+    return home_dir() / "example_data"
+
+
 def library_root_for(template_path: str) -> "Path | None":
     """매체별 라이브러리 루트(hwpx=``templates``/txt=``text_templates``) — 확장자에서만 고른다.
 

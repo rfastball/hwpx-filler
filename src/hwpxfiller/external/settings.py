@@ -485,6 +485,82 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
     _mutate(mutate)
 
 
+# 예제 세트 설치 manifest(#891 · 설계 정본 ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``
+# 중첩 키 아래 ``manifest`` 칸이다(#893 진행 칸이 예고한 자리). 그룹은 실체가 아니라 소속이라
+# 「그룹 삭제 한 번으로 통째 제거」가 성립하지 않는다: 제거(슬라이스 C)는 **여기 기재된 항목만**
+# 걷어야 사용자가 직접 넣은 이웃 파일을 건드리지 않는다. 값의 의미(무엇을 설치하는가)는
+# ``external/example_pack.py`` 가 소유하고 여기는 형상만 검증한다.
+def load_tutorial_manifest() -> "dict | None":
+    """설치 manifest — 미설치는 ``None``. 손상·구형상도 미설치로 접는다(부분 해석 금지).
+
+    반쯤 읽은 manifest 로 제거를 돌리면 「무엇을 지우는지」가 흔들린다 — 형상이 계약과
+    다르면 없는 것으로 보고, 재설치가 정상 기재를 다시 쓰게 둔다(되돌리기 = 재설치, D4).
+    """
+    raw = _read().get("tutorial")
+    if not isinstance(raw, dict):
+        return None
+    manifest = raw.get("manifest")
+    if not isinstance(manifest, dict):
+        return None
+    templates = manifest.get("templates")
+    if not isinstance(templates, list) or any(
+        not isinstance(t, dict) or not isinstance(t.get("path"), str) for t in templates
+    ):
+        return None
+    return manifest
+
+
+def save_tutorial_manifest(
+    *,
+    group: str,
+    templates: "list[dict]",
+    data_files: "list[str]",
+    pool_keys: "list[str]",
+) -> None:
+    """설치 manifest 를 **한 번의 원자 변이**로 저장 — 같은 ``tutorial`` 아래 진행 칸 보존.
+
+    스키마(슬라이스 C 가 읽는 계약):
+
+    - ``group``: 설치된 템플릿이 묶인 그룹 이름(hwpx·txt 공통).
+    - ``templates``: ``{"media": "hwpx"|"txt", "path": 절대경로, "key": 라이브러리 상대 식별키}``.
+    - ``data_files``: 홈으로 복사한 예제 데이터 파일 절대경로 전수.
+    - ``pool_keys``: 데이터 풀에 고정된 슬롯 키.
+
+    비유효 인자는 조용히 무시하지 않고 ``ValueError`` (:func:`save_tutorial_progress` 전례).
+    """
+    if not isinstance(group, str) or not group.strip():
+        raise ValueError("예제 그룹 이름이 비어 있습니다")
+    if not isinstance(templates, list) or any(
+        not isinstance(t, dict)
+        or t.get("media") not in VALID_TEMPLATE_MEDIA
+        or not isinstance(t.get("path"), str)
+        or not isinstance(t.get("key"), str)
+        for t in templates
+    ):
+        raise ValueError("설치 manifest 의 템플릿 기재가 올바르지 않습니다")
+    if not isinstance(data_files, list) or any(not isinstance(p, str) for p in data_files):
+        raise ValueError("설치 manifest 의 데이터 파일 기재가 올바르지 않습니다")
+    if not isinstance(pool_keys, list) or any(not isinstance(k, str) for k in pool_keys):
+        raise ValueError("설치 manifest 의 풀 등록 키 기재가 올바르지 않습니다")
+    record = {
+        "group": group.strip(),
+        "templates": [
+            {"media": t["media"], "path": t["path"], "key": t["key"]} for t in templates
+        ],
+        "data_files": list(data_files),
+        "pool_keys": list(pool_keys),
+    }
+
+    def mutate(data: dict) -> None:
+        bucket = data.get("tutorial")
+        if not isinstance(bucket, dict):
+            bucket = {}
+        bucket["manifest"] = record
+        data["tutorial"] = bucket
+
+    _mutate(mutate)
+
+
 def load_job_collapsed_groups() -> "list[str]":
     """「작업」 좌 목록의 접힌 그룹 이름들(``""``=「그룹 없음」 구획) — 마지막 상태 영속.
 

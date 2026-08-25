@@ -267,6 +267,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     },
     "tpl": {
         "refresh": _schema(),
+        # 동봉 예제 세트 설치(#891 · ONBOARDING_TUTORIAL.md §4.1~4.2) — 확인 왕복. 1차는
+        # 홈에 아무것도 쓰지 않고 재진술만 돌려주고, `confirm` 2차가 실행이다. 이 채널이
+        # 소유하는 이유는 설치가 템플릿 라이브러리 + 그룹 지정이기 때문이고, 라이브러리 빈
+        # 상태 버튼은 교차 화면 dispatch 로 부른다(library→job 전례).
+        "install_examples": _schema(optional="confirm"),
         "compile": _schema("path", "confirm"),
         "review": _schema("path"),
         # 컴파일된 Slot 관리(S8-03 #834). 개명은 구조 무변형이라 무확인이고, 표기로 풀기·

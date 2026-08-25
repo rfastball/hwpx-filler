@@ -99,6 +99,19 @@ def main(spec_dir: Path | None = None) -> int:
     assert '(str(REPO / "frontend"), "web")' not in web, (
         "web spec: frontend source를 runtime data로 번들하면 안 됩니다"
     )
+    # 온보딩 동봉 예제(#891 · ONBOARDING_TUTORIAL.md §4.5) — 설치본·포터블도 소스 실행과
+    # 같은 설치 동작이어야 한다. 자산 **폴더 셋만** 싣는지까지 본다: 폴더를 통째로 넣으면
+    # 생성 스크립트·__pycache__ 가 배포본에 실린다.
+    assert 'ONBOARDING_SRC = REPO / "examples" / "onboarding"' in web, (
+        "web spec: 온보딩 예제 자산 원천 경로 누락(#891)"
+    )
+    assert 'for name in ("templates", "text_templates", "data")' in web, (
+        "web spec: 온보딩 예제 자산 폴더 셋(templates·text_templates·data) 열거 누락"
+    )
+    assert "*onboarding_datas," in web, "web spec: 온보딩 예제 자산 datas 합류 누락"
+    assert '(str(REPO / "examples"), "examples")' not in web, (
+        "web spec: examples/ 를 통째로 번들하면 안 됩니다(스크립트·테스트 유입)"
+    )
     assert '"hwpxfiller.webapp.app"' in web, "web spec: 브리지 hidden import 누락"
     assert "hwpx-filler.ico" in web, "web spec: 문서나르미 아이콘(#258) 배선 누락"
     assert (here / "hwpx-filler.ico").exists(), "hwpx-filler.ico 없음(#258 브랜딩 아이콘)"

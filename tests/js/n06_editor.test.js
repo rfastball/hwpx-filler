@@ -1095,3 +1095,92 @@ test("S10-05 스팬→데코 투영은 문서 밖·겹침·미지 kind 를 버�
   // 모르는 어휘는 칠하지 않는다(조용히 틀린 색보다 무색이 낫다).
   assert.deepEqual(usableSpans([{ kind: "미래어휘", start: 0, end: 3 }], 20), []);
 });
+
+/* ---------------- ⑧ 동봉 예제 상시 진입점 — #891 ---------------- */
+
+/** 예제 진입점이 실린 「템플릿」 탭 스냅샷 — 라벨·힌트는 Python 이 낸 값 그대로다. */
+function exampleSnap(examples) {
+  return snap({
+    section: "template",
+    library: {
+      hwpx: { flat: true, count: 0, group_names: [], dir: "C:/lib", sections: [] },
+      txt: { flat: true, count: 0, group_names: [], dir: "C:/txt", sections: [] },
+      result: { text: "", level: "muted" },
+      slots: null,
+      examples,
+    },
+  });
+}
+
+test("#891 예제 진입점은 밴드 밖 공용 줄에 서고 라벨은 스냅샷이 낸다", async () => {
+  const h = harness({
+    initial: async () => exampleSnap({
+      installed: false, label: "예제로 시작하기…", hint: "동봉 예제 7건을 넣습니다.",
+    }),
+  });
+  await h.controller.init();
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('data-act="install-examples"'), "상시 진입점 트리거가 없다");
+  assert.ok(markup.includes("예제로 시작하기…"), "라벨은 스냅샷 값 그대로 실린다");
+  assert.ok(markup.includes("동봉 예제 7건을 넣습니다."), "힌트도 스냅샷 소유다");
+});
+
+test("#891 설치된 상태의 라벨도 프런트가 짓지 않는다", async () => {
+  const h = harness({
+    initial: async () => exampleSnap({
+      installed: true, label: "예제 다시 설치…", hint: "처음 상태로 되돌립니다.",
+    }),
+  });
+  await h.controller.init();
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes("예제 다시 설치…"), "설치 뒤 라벨은 Python 판정이다");
+  assert.equal(markup.includes("예제로 시작하기…"), false, "미설치 문안이 남으면 안 된다");
+});
+
+test("#891 설치는 확인 왕복이고 확정 전에는 실행 호출이 없다", async () => {
+  const asked = [];
+  const no = harness({
+    initial: async () => exampleSnap({ installed: false, label: "예제로 시작하기…", hint: "" }),
+    call: async (screen, action, payload) => {
+      if (screen === "tpl" && action === "install_examples") {
+        asked.push(payload);
+        return payload.confirm
+          ? { ok: true }
+          : { needs_confirm: true, confirm_text: "7건을 씁니다" };
+      }
+      return {};
+    },
+    confirm: () => false,
+  });
+  await no.controller.init();
+
+  await no.controller.installExamples();
+  assert.deepEqual(asked, [{}], "취소하면 실행 호출이 없다");
+  const spec = no.trace.find((row) => row[0] === "modal.confirm")[1];
+  assert.ok(spec.body.includes("7건을 씁니다"), "확인 본문은 Python 재진술을 싣는다");
+
+  const yes = harness({
+    initial: async () => exampleSnap({ installed: false, label: "예제로 시작하기…", hint: "" }),
+    call: async (screen, action, payload) => (
+      screen === "tpl" && action === "install_examples" && !payload.confirm
+        ? { needs_confirm: true, confirm_text: "7건을 씁니다" }
+        : { ok: true }
+    ),
+    confirm: () => true,
+  });
+  await yes.controller.init();
+  await yes.controller.installExamples();
+  assert.deepEqual(
+    yes.trace
+      .filter((row) => row[0] === "dispatch" && row[2] === "install_examples")
+      .map((row) => row[3]),
+    [{}, { confirm: true }],
+    "확정 뒤에야 실행이 나간다",
+  );
+});
