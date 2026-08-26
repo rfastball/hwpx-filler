@@ -457,6 +457,20 @@ class JobRegistry:
 
         return self.mutate(name, _set)
 
+    def release_authority_id(self, name: str, authority_id: str) -> Job:
+        """방금 발급한 결속의 되돌림(#804) — **값이 같을 때만** 지운다(compare-and-clear).
+
+        `assign_authority_id` 의 짝이다: 초기 등록(bootstrap)이 실패해 Work 상태 집합이 서지
+        않았을 때, id-first 로 먼저 durable 해진 권위만 남아 「이력 없는 권위」가 된다. 그
+        좀비만 되돌린다 — 그사이 다른 결속이 이겼으면(값 불일치) **무변경**이라 남의 이력을
+        끊지 않는다. 잠금 안 read-modify-write 라 대조와 삭제 사이에 끼어들 창이 없다.
+        """
+        def _clear(job: Job) -> None:
+            if job.authority_id == authority_id:
+                job.authority_id = ""
+
+        return self.mutate(name, _clear)
+
     def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job:
         """즐겨찾기 지정/해제(§18.5) — 다른 writer 와 직렬화된 단일 필드 갱신.
 

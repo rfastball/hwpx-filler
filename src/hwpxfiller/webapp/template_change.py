@@ -43,7 +43,12 @@ from ..application.slot_configuration_context import (
     SlotConfigurationContextError,
     resolve_exact_applied_template_input,
 )
-from ..application.jobs import JobStorePort, ensure_job_authority_id, load_job
+from ..application.jobs import (
+    JobStorePort,
+    load_job,
+    release_job_authority_id,
+    seat_job_authority_id,
+)
 from ..application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
     find_application,
@@ -226,7 +231,11 @@ class TemplateChangeCoordinator:
         self._session_id = "s-" + uuid.uuid4().hex
         self._recovered: set[str] = set()
         #: bootstrap 실패 기록 — **durable**(재시작 뒤에도 같은 실물이면 비활성+사유 유지,
-        #: 리뷰 P2). 파일이 정본이고 이 dict 는 lazy 캐시(write-through).
+        #: 리뷰 P2). 파일이 정본이고 이 dict 는 lazy 캐시(write-through). 키는 **작업 이름**
+        #: 이다(#804): 초기 등록에 실패한 Work 는 권위가 롤백돼 사라지므로 work_id 로 키를
+        #: 걸면 사유를 말하던 유일한 자리가 함께 없어진다. 이름 재활용의 위험은 이 기록에
+        #: 한해 없다 — 표시 자격을 **템플릿 실물 서명**이 다시 가르므로 다른 파일을 가리키는
+        #: 동명 작업에는 애초에 서지 않는다(구 work_id 키 항목은 그렇게 조용히 낡아 떨어진다).
         self._failures_path = self._root / "init_failures.json"
         self._init_failures: "dict[str, dict[str, Any]] | None" = None
         # token ↔ 내부 id 양방향 map(세션 로컬 — 재시작 후 current 조회가 새 token 을 발급한다).
@@ -241,17 +250,14 @@ class TemplateChangeCoordinator:
     def _now(self) -> str:
         return self._clock().isoformat(timespec="seconds")
 
-    def _work_id_for(self, job_name: str, *, create: bool) -> "str | None":
-        """작업의 Work identity — ``Job.authority_id`` 가 정본. ``create=True`` 면
-        **bootstrap 전에** 발급·영속한다(id-first — 중간 crash 시 같은 id 로 재개).
-        경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환)."""
-        current = load_job(self._registry, job_name).authority_id
-        if current:
-            return current
-        if not create:
-            return None
-        # 발급 형태·결속은 단일 helper(S6-05 · #812) — 형태 재타이핑 금지.
-        return ensure_job_authority_id(self._registry, job_name)
+    def _work_id_for(self, job_name: str) -> "str | None":
+        """작업의 **이미 결속된** Work identity — ``Job.authority_id`` 가 정본, 없으면 None.
+
+        발급하는 쪽은 :func:`seat_job_authority_id` 하나다(#804): 발급은 곧 롤백 자격을
+        낳으므로 「발급했는가」를 못 돌려주는 조회 helper 가 발급까지 겸하면, bootstrap 이
+        실패했을 때 되돌릴 근거를 그 자리에서 잃는다. 조회와 발급을 갈라 둔 이유다.
+        """
+        return load_job(self._registry, job_name).authority_id or None
 
     def _failures(self) -> dict[str, dict[str, Any]]:
         if self._init_failures is None:
@@ -263,15 +269,15 @@ class TemplateChangeCoordinator:
                 self._init_failures = {}
         return self._init_failures
 
-    def _record_failure(self, work_id: str, entry: "dict[str, Any] | None") -> None:
+    def _record_failure(self, job_name: str, entry: "dict[str, Any] | None") -> None:
         """실패 기록의 durable write-through — ``entry=None`` 은 해소(삭제)다."""
         with self._lock:
             failures = self._failures()
             if entry is None:
-                if failures.pop(work_id, None) is None:
+                if failures.pop(job_name, None) is None:
                     return
             else:
-                failures[work_id] = entry
+                failures[job_name] = entry
             self._root.mkdir(parents=True, exist_ok=True)
             tmp = self._failures_path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(failures, ensure_ascii=False), encoding="utf-8")
@@ -370,7 +376,7 @@ class TemplateChangeCoordinator:
             return unsupported_zone()
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
-        failure = self._failures().get(work_id or "")
+        failure = self._failures().get(job_name)
         if failure is not None:
             if self._template_signature(job.template_path) == failure["signature"]:
                 # 같은 template 실물이 그대로다 — 확인 버튼 비활성 + 사유 병기(#659 회귀,
@@ -384,7 +390,7 @@ class TemplateChangeCoordinator:
                     "epoch": None,
                     "preparation": None,
                 }
-            self._record_failure(work_id or "", None)
+            self._record_failure(job_name, None)
         base = {
             "supported": True,
             "reason": "",
@@ -406,7 +412,7 @@ class TemplateChangeCoordinator:
     def get_current_template_change_preparation(self, job_name: str) -> "dict[str, Any] | None":
         """current Preparation 조회 — ``work.current_template_preparation_id`` 역참조만 쓴다
         (latest 검색·ORDER BY 금지 계약 #659)."""
-        work_id = self._work_id_for(job_name, create=False)
+        work_id = self._work_id_for(job_name)
         if work_id is None or not self._works.exists(work_id):
             return None
         self._recover(work_id)
@@ -485,8 +491,7 @@ class TemplateChangeCoordinator:
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
         profile = _profile_for(job.media, "변경사항 확인")
         self._ensure_manifest()
-        work_id = self._work_id_for(job_name, create=True)
-        assert work_id is not None
+        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
         job = load_job(self._registry, job_name)
         if job.authority_id != work_id:
             raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
@@ -495,6 +500,15 @@ class TemplateChangeCoordinator:
         if not self._works.exists(work_id):
             outcome = self._bootstrap(work_id, job_name, job, prepare_request_id, profile)
             if outcome.result != BOOTSTRAP_OK:
+                # 좀비 권위 롤백(#804): 실패한 bootstrap 은 Work 상태 집합을 하나도 세우지
+                # 않는다(`bootstrap_work` 의 non-OK 반환은 전부 `initialize_work` **앞**이다).
+                # 그래서 **이 호출이 방금 발급한** 권위만 남는데, 그것은 어떤 이력도 가리키지
+                # 않는 좀비다: 남겨 두면 슬롯 존이 「초기화됨 + CONTEXT_ERROR」로 서서
+                # 「템플릿을 확인하세요」만 되풀이하는 막다른 길이 된다. 되돌리면 존은 복제
+                # 직후와 같은 미초기화로 접히고, 안내는 실패 기록을 든 이 존 한 곳이 진다.
+                # 이 호출 전부터 있던 권위(S3-09 이력·token 의 정본)는 건드리지 않는다.
+                if issued_now:
+                    release_job_authority_id(self._registry, job_name, work_id)
                 return (
                     {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED},
                     None,
@@ -563,8 +577,7 @@ class TemplateChangeCoordinator:
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
         profile = _profile_for(job.media, "생성")
         self._ensure_manifest()
-        work_id = self._work_id_for(job_name, create=True)
-        assert work_id is not None
+        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
         job = load_job(self._registry, job_name)
         if job.authority_id != work_id:
             raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
@@ -578,6 +591,11 @@ class TemplateChangeCoordinator:
                 work_id, job_name, job, f"gen-{uuid.uuid4().hex}", profile
             )
             if outcome.result != BOOTSTRAP_OK:
+                # 확인 경로와 **같은 규율**이다(#804): 초기 등록이 실패하면 Work 상태 집합은
+                # 서지 않으므로 방금 발급한 권위는 아무 이력도 가리키지 않는 좀비다. 문을
+                # 확인 쪽에서만 닫으면 같은 막다른 길이 「문서 만들기」로 다시 열린다.
+                if issued_now:
+                    release_job_authority_id(self._registry, job_name, work_id)
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
         if on_context is not None:
@@ -752,7 +770,7 @@ class TemplateChangeCoordinator:
                 )
             except ObjectNotFound:
                 pass
-            self._record_failure(work_id, {
+            self._record_failure(job_name, {
                 # repair 판정은 **파일 실물 서명**이다 — job revision 은 한글에서 바이트만
                 # 고친 수정(레지스트리 무접촉)에 안 오르므로 그걸 키로 쓰면 정당한 수리
                 # 뒤에도 확인이 영영 닫힌다.
@@ -762,7 +780,7 @@ class TemplateChangeCoordinator:
                 ],
             })
         else:
-            self._record_failure(work_id, None)
+            self._record_failure(job_name, None)
         return outcome
 
     @staticmethod
@@ -793,7 +811,7 @@ class TemplateChangeCoordinator:
         if resolved is None:
             raise TemplateChangeError("적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요")
         token_work_id, change_id = resolved
-        work_id = self._work_id_for(job_name, create=False)
+        work_id = self._work_id_for(job_name)
         if work_id is None or work_id != token_work_id:
             # cross-Work misuse: request 거절, 두 Work·Change 상태 무변경.
             raise TemplateChangeError("이 변경사항은 현재 작업의 것이 아닙니다")

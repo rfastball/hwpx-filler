@@ -100,6 +100,8 @@ class JobStorePort(Protocol):
     def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job: ...
     # S3 권위 Work identity 최초 1회 결속(S3-09) — 기존 값이 있으면 쓰지 않는다(멱등).
     def assign_authority_id(self, name: str, authority_id: str) -> Job: ...
+    # 방금 발급한 결속의 되돌림(#804) — **주어진 값과 같을 때만** 지운다(compare-and-clear).
+    def release_authority_id(self, name: str, authority_id: str) -> Job: ...
     def rename(self, name: str, new_name: str) -> None: ...
     def clone(self, name: str) -> str: ...
     def delete(self, name: str) -> None: ...
@@ -193,19 +195,45 @@ def mint_work_authority_id() -> str:
     return "w-" + uuid.uuid4().hex
 
 
+def seat_job_authority_id(store: JobStorePort, name: str) -> "tuple[str, bool]":
+    """작업의 WorkAuthorityId 와 **이 호출이 방금 발급했는가** — 롤백 자격의 단일 술어(#804).
+
+    발급이 bootstrap 보다 먼저 durable 한 id-first 계약(S3-09)은 「bootstrap 이 실패하면
+    권위만 남은 Work」를 만들 수 있다. 그 좀비를 되돌리려면 **누가 발급했는지**를 알아야
+    하고, 그 사실은 발급 시점에만 값싸게 참이다 — 그래서 결속 use case 가 함께 낸다.
+    경합 화해로 남의 id 를 받았으면 발급자가 아니다(먼저 커밋된 id 가 이긴다): 발급 형태는
+    단일 helper 를 쓰고 결속 **결과**와 대조해 판정한다(형태 재타이핑 금지, S6-05 · #812).
+    """
+    current = load_job(store, name).authority_id
+    if current:
+        return current, False
+    minted = mint_work_authority_id()
+    bound = assign_job_authority_id(store, name, minted).authority_id
+    assert bound
+    return bound, bound == minted
+
+
 def ensure_job_authority_id(store: JobStorePort, name: str) -> str:
     """작업의 WorkAuthorityId 를 읽고, 없으면 lazy 발급해 결속한다(id-first, S3-09).
 
     lazy 발급은 Work identity(의미 1)·durable authority 표식(의미 2)의 성질이라 라우팅에서
     일어나도 옳다 — 실행 경로 선택(의미 4)은 이 값이 아니라 start gate 판정이 진다(#812).
-    경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환).
+    경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환). 발급자 여부까지 필요하면
+    :func:`seat_job_authority_id` 를 쓴다 — 이 함수는 그 값의 투영이다.
     """
-    current = load_job(store, name).authority_id
-    if current:
-        return current
-    minted = assign_job_authority_id(store, name, mint_work_authority_id()).authority_id
-    assert minted is not None
-    return minted
+    return seat_job_authority_id(store, name)[0]
+
+
+def release_job_authority_id(store: JobStorePort, name: str, authority_id: str) -> Job:
+    """방금 발급한 WorkAuthorityId 결속을 되돌린다(#804) — 겪지 않은 권위만 지운다.
+
+    호출 자격은 :func:`seat_job_authority_id` 가 ``True`` 를 낸 **그 호출**뿐이다: 초기
+    등록(bootstrap)이 실패하면 Work 상태 집합은 서지 않으므로 남은 권위는 어떤 이력도
+    가리키지 않는 좀비이고, 지우는 것이 역사를 지어내지 않는 유일한 경우다. 이미 서 있던
+    권위는 그 작업의 적용 이력·token 을 가리키므로 **절대** 이 경로로 지우지 않는다 —
+    저장소가 값을 대조해(compare-and-clear) 그사이 다른 결속이 이겼으면 무변경으로 둔다.
+    """
+    return store.release_authority_id(name, authority_id)
 
 
 def clone_job(store: JobStorePort, name: str) -> str:

@@ -18,6 +18,7 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchObservation,
 )
 from hwpxfiller.application.document_creation_vocabulary import BLOCKER_CODES
+from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -447,8 +448,8 @@ def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     그 재현 시도다. 결과는 **음성**이다: 복제본의 `authority_id` 는 미계승(S3-09)이라 존이
     `initialized=False` 로 서지만, 화면이 시키는 확인이 durable id 를 발급해 존이 열린다.
 
-    따라서 #804 의 원인은 이 층 **아래가 아니라 위**(ring2 렌더) 또는 이 fixture 가 갖지 못한
-    실파일·기존 선택 쪽에 있다. 배선을 「고치지 않는다」는 판정의 근거가 이 테스트다.
+    복제 자체는 그러니 결백하다 — 확정된 원인은 **확인이 실패했을 때**의 세 자리이고, 아래 두
+    테스트가 그 자리를 잰다(좀비 권위 롤백·수리 뒤 재개방).
     """
     ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
@@ -464,6 +465,120 @@ def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
     assert reg.load(clone).authority_id != ""
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
+
+
+# ── #804: 확인이 **실패**하면 무엇이 남는가 — 좀비 권위 금지 ──────────────────────────────
+def test_failed_initialization_releases_the_authority_it_just_issued(tmp_path: Path) -> None:
+    """초기 등록에 실패한 확인은 방금 발급한 권위를 되돌린다 — 막다른 길의 재료를 안 남긴다.
+
+    id-first 계약(S3-09)은 발급을 bootstrap **앞**에 둔다. 그래서 bootstrap 이 자격 심사에서
+    거절되면 「권위는 있는데 Work 상태 집합은 없다」는 좀비가 남고, 슬롯 존이 그 좀비를 보고
+    `initialized=True` + `CONTEXT_ERROR/TEMPLATE_INITIALIZATION_REQUIRED` 로 서서 「템플릿을
+    확인하세요」만 되풀이한다 — 시킨 대로 눌러도 같은 자리로 돌아오는 막다른 길(#804).
+
+    되돌린 뒤의 상태는 **복제 직후와 같다**: 존은 미초기화로 접히고 안내는 실패 기록을 든
+    template_change 존 한 곳이 진다. 겪지 않은 권위를 지우는 것이므로 역사를 지어내지 않는다.
+    """
+    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    clone = reg.clone("공고서")
+    ctrl.dispatch("select_job", {"name": clone})
+    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물(복제본은 아직 미부트스트랩)
+
+    assert ctrl.dispatch("template_check", {"request_id": "k2"}) == {
+        "ok": False, "reason": "initialization_required",
+    }
+    assert reg.load(clone).authority_id == ""  # 좀비 권위 부재
+    assert reg.load("공고서").authority_id != ""  # 이미 겪은 권위는 무사하다
+
+    snap = ctrl.snapshot()
+    zone = snap["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is False
+    assert zone["current_view"] is None  # CONTEXT_ERROR 막다른 길이 서지 않는다
+    tpl_zone = snap["template_change"]
+    assert tpl_zone["reason"] == "initialization_required"
+    assert tpl_zone["checkable"] is False and tpl_zone["diagnostics"]  # 비활성 + 사유 병기
+
+
+def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> None:
+    """실패 기록은 실물이 바뀌면 지워지고, 그 뒤 재확인이 초기화까지 **완주한다**.
+
+    실패 기록의 키가 Work 였을 때는 이 왕복이 성립하지 않았다: 권위를 되돌리면 사유를 말하던
+    유일한 자리가 함께 사라지기 때문이다. 기록은 작업 이름이 지고 표시 자격은 템플릿 실물
+    서명이 가른다 — 이 테스트가 그 두 사실의 합이다(#804 결함 2).
+    """
+    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    clone = reg.clone("공고서")
+    ctrl.dispatch("select_job", {"name": clone})
+    tpl.write_bytes(b"not a zip")
+    ctrl.dispatch("template_check", {"request_id": "k2"})
+    stuck = ctrl.snapshot()["template_change"]
+    assert stuck["checkable"] is False and stuck["diagnostics"]
+    # 기다리는 동안에도 슬롯 존은 막다른 길이 아니라 **미초기화**로 서 있다.
+    assert ctrl.snapshot()["slot_configuration"]["initialized"] is False
+
+    _two_slot_template(tpl)  # 안내대로 원본을 고친다 — 실물 서명이 달라진다
+    reopened = ctrl.snapshot()["template_change"]
+    assert reopened["checkable"] is True and reopened["diagnostics"] == []
+
+    assert ctrl.dispatch("template_check", {"request_id": "k3"})["ok"] is True
+    assert reg.load(clone).authority_id != ""  # 이제 겪은 권위가 선다
+    assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
+
+
+def test_failed_initialization_on_the_generate_path_releases_the_authority_too(
+    tmp_path: Path,
+) -> None:
+    """생성 경로의 초기 등록 실패도 **같은 규율**로 롤백한다 — 문을 하나만 닫지 않는다.
+
+    확인 경로만 고치면 같은 좀비가 「문서 만들기」로 다시 만들어지고 막다른 길이 그대로
+    열린다(#804 잔여). 두 경로가 같은 use case(`seat_job_authority_id`/`release_job_
+    authority_id`)를 공유하는지를 여기서 잰다.
+
+    겨눔은 `resolve_generation_template` 이다: 그 위 `generate` 가드는 slot-bearing 을 **다른
+    사유**로 먼저 닫으므로(같은 파일의 `_resolve_managed_template` 테스트와 같은 이유) 가드
+    아래 실제 문에 대고 물어야 이 규율이 확인된다.
+    """
+    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    clone = reg.clone("공고서")
+    ctrl.dispatch("select_job", {"name": clone})
+    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물
+
+    with pytest.raises(SlotlessRunAdmissionError):
+        ctrl._template_change.resolve_generation_template(clone)
+
+    assert reg.load(clone).authority_id == ""  # 좀비 권위 부재
+    assert reg.load("공고서").authority_id != ""  # 이미 겪은 권위는 무사하다
+
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is False
+    assert zone["current_view"] is None  # CONTEXT_ERROR 막다른 길이 서지 않는다
+
+
+def test_clone_of_a_work_with_durable_selection_opens_its_own_zone(tmp_path: Path) -> None:
+    """durable 선택을 가진 원본의 복제도 확인 한 번으로 자기 존을 연다(음성 대조).
+
+    #804 관측이 「선택까지 해 둔 작업을 복제했다」였으므로 그 조건을 실제로 세워 재현을
+    시도한다. 결과는 음성이다 — 막힘은 선택 유무가 아니라 **확인의 실패**가 만든다.
+    """
+    ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
+    token = ctrl.dispatch("open_slot_configuration", {})["current_view"][
+        "new_configuration_token"
+    ]
+    selected = ctrl.dispatch("select_slot_option", {
+        "configuration_token": token, "slot_id": "s-keep",
+        "option_id": "o-keep", "request_id": "r1",
+    })
+    assert selected["mutation_outcome"]["changed"] is True
+
+    origin = reg.load("공고서").authority_id
+    clone = reg.clone("공고서")
+    assert reg.load(clone).authority_id == ""  # 선택은 원본 Work 의 것이라 미계승(S3-09)
+
+    ctrl.dispatch("select_job", {"name": clone})
+    assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
+    assert reg.load(clone).authority_id not in ("", origin)
+    view = ctrl.snapshot()["slot_configuration"]["current_view"]
+    assert view["view_status"] == "CURRENT" and view["projection"]["slots"]
 
 
 # ── S10-03(#860): 「포함할 내용」이 TXT 작업에서도 선다 ────────────────────────────────────

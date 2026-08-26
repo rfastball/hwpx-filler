@@ -708,6 +708,20 @@ side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 �
   실패(`initialization_required`)는 확인 버튼 비활성 + 진단 병기이고 템플릿 실물이 바뀌면
   재확인이 열린다. `invalid` 는 Candidate 유래 진단을 재진술하며 기존 템플릿이 계속 쓰임을
   말한다(조용한 fallback 금지).
+- **거절 재진술**(#804): `template_check` 는 실패해도 예외가 아니라 종결된 판정
+  (`{"ok": false, "reason": …}`, 필요하면 `error` 문장 동반)을 돌려준다. 표면은 그 응답을
+  **반드시 읽고** 구획 재진술(`#jobTplNotice`)과 실행 기록에 함께 착지시킨다 — 좌석이 풀리는
+  거절(`work_context_changed`)은 존 자체가 사라지므로 기록이 유일한 채널이다. `error` 가
+  실려 오면 그것이 정본이고, `initialization_required` 문안은 존 상태 문안과 **같은 상수**를
+  쓴다(웹 단일 출처 `TPL_INITIALIZATION_REQUIRED_COPY`). 표에 없는 사유도 비우지 않는다.
+- **좀비 권위 금지**(#804): 초기 등록(bootstrap)에 실패한 호출은 **그 호출이 방금 발급한**
+  `authority_id` 를 되돌린다(이전부터 있던 권위는 불가침). 그래서 「권위는 있는데 Work 상태
+  집합은 없다」가 남지 않고, 「포함할 내용」 존은 `CONTEXT_ERROR` 막다른 길 대신 복제 직후와
+  같은 미초기화로 접힌다 — 안내는 실패 기록을 든 이 존 한 곳이 진다. 규율의 적용 범위는
+  **bootstrap 을 하는 경로 전부**다: 확인(`check_for_seated_context`)과 생성
+  (`resolve_generation_template`)이 같은 use case(`seat_job_authority_id` 의 발급자 판정 →
+  `release_job_authority_id` 의 compare-and-clear)를 공유한다. 한쪽만 닫으면 같은 막다른
+  길이 다른 문으로 다시 열린다.
 
 #### 전체 표시순서 축 (F3 — 지도 §10.11)
 
