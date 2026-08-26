@@ -179,6 +179,12 @@ from ..application.automatic_seal_orchestration import (
     on_seal_settled,
     request_manual_recovery,
 )
+from ..application.template_change_product import workbench_template_change_verdict
+from ..application.workbench_execution_status import (
+    CHECKING as EXECUTION_STATUS_CHECKING,
+    NO_EVIDENCE as EXECUTION_STATUS_NO_EVIDENCE,
+    STALE as EXECUTION_STATUS_STALE,
+)
 from ..application.document_creation_workbench import (
     ActiveWorkContext,
     DeliveryPreviewBlocker,
@@ -190,7 +196,6 @@ from ..application.document_creation_workbench import (
     RecordValidationIssue,
     RecordValidationSummary,
     RELEASE,
-    RESOLVE_EXECUTION,
     WorkbenchContextIntegrity,
     decide_active_work_after_data_transition,
 )
@@ -264,13 +269,25 @@ from ..domain.field_binding import (
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
 
+#: 확인 동사(`#jobResolveExecution`)가 실려야 하는 execution status(#912 D1). 세 상태는
+#: 「확인이 이 상태를 지운다」는 공통점으로 묶인다 — CHECKING 은 자동 확인이 이미 그 일을 하는
+#: 중이라 링1 이 비활성 + 사유로 낸다. 나머지 넷(CURRENT/DOMAIN_BLOCKED/POLICY_BLOCKED/
+#: CONTEXT_ERROR)은 확인이 답이 아니라 여기 들지 않는다.
+_EXECUTION_RESOLVABLE_STATUS_CODES = frozenset(
+    (EXECUTION_STATUS_NO_EVIDENCE, EXECUTION_STATUS_CHECKING, EXECUTION_STATUS_STALE)
+)
+
 # managed 생성 admission 차단 코드 → 사용자 문안(confirm-or-alarm — 조용한 fallback 없음).
 _ADMISSION_REJECT_TEXT = {
     "TEMPLATE_INITIALIZATION_REQUIRED": "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요.",
     "NEEDS_CONFIGURATION_REVIEW": "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요.",
     "NEEDS_CONFIGURATION": "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다.",
     "STALE_TEMPLATE_APPLICATION": "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다.",
-    "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 템플릿의 슬롯 구성 실행은 아직 지원하지 않습니다.",
+    # 실사유는 「미지원」이 아니라 「이 작업의 문서 구성이 아직 안 잡혔다」다(#907·#912) —
+    # slot-bearing 템플릿인데 구성 capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 닫힌 자리다.
+    # 「아직 지원하지 않습니다」는 S5/S6 미출하 시절의 전제라 S6 완주 이후로는 거짓이고,
+    # 사용자에게 다음 행동도 주지 못한다.
+    "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요.",
     "SLOTLESS_SELECTION_CONTEXT_REQUIRED": "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다.",
     "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR": "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다.",
     # 문안은 링1 단일 원천 — 편집 게이트와 생성 차단이 같은 상태를 같은 문장으로 말한다(S8-04).
@@ -4151,13 +4168,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "primary_action": observation.primary_action,
             "primary_action_enabled": observation.primary_action_enabled,
             "disabled_reason": observation.disabled_reason,
+            # 확인 축이 화면에 서 있는 동안(NO_EVIDENCE/CHECKING/STALE) 그것을 지울 동사를
+            # **언제나** 싣는다(#912 D1). 종전에는 Primary Action 이 RESOLVE_EXECUTION 일 때만
+            # 실었는데, 데이터·레코드처럼 앞선 blocker 가 하나라도 있으면 그 조건이 거짓이 돼
+            # 「현재 설정을 확인해야 합니다」가 지울 수단 없이 화면에 남았다. 활성 여부는 링1 이
+            # 판정한다(재조립 0).
             "execution_action": (
                 {
                     "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
-                    "enabled": observation.primary_action_enabled,
-                    "disabled_reason": observation.disabled_reason,
+                    "enabled": observation.resolve_execution_disabled_reason is None,
+                    "disabled_reason": observation.resolve_execution_disabled_reason,
                 }
-                if observation.primary_action == RESOLVE_EXECUTION
+                if code in _EXECUTION_RESOLVABLE_STATUS_CODES
                 else None
             ),
             "create_action": {
@@ -5291,6 +5313,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ),
             record_validation=record_validation,
             delivery=delivery,
+            template_change_verdict=self._template_change_verdict(),
             preview_requirement=preview_requirement,
             preview_satisfied=preview_satisfied,
             semantic_preview=(
@@ -5305,6 +5328,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             run_delivery_intent=self._effective_run_delivery_intent(),
             context_integrity=context_integrity,
         )
+
+    def _template_change_verdict(self) -> "str | None":
+        """현재 작업의 템플릿 확인 상태 → 작업대 ``template_change_verdict``(#912 D2).
+
+        composer 의 ``REVIEW_TEMPLATE_CHANGE`` 축은 정의·소비·통로가 다 있는데 **프로덕션
+        전달자가 0** 이었다. 그래서 「확인이 끝나지 않았다」는 사실이 템플릿 구획에만 서고
+        작업대 관찰에는 못 서서, 사용자는 생성을 눌러 실패한 뒤에야 그것을 알았다.
+
+        **읽기 전용이다**(#804 규율): 권위 발급을 겸하는 호출(``seat_job_authority_id`` 계열)을
+        쓰지 않고 이미 결속된 Work 의 current Preparation 만 되읽는다 — 렌더 경로가 durable
+        권위를 만들면 실패했을 때 되돌릴 근거를 그 자리에서 잃는다. status → verdict 판정은
+        :func:`~hwpxfiller.application.template_change_product.workbench_template_change_verdict`
+        하나가 지고 여기서 status 문자열을 다시 분기하지 않는다.
+        """
+        if self._template_change is None or not self.job_name:
+            return None
+        try:
+            if load_job(self.registry, self.job_name).media != "hwpx":
+                return None
+            preparation = self._template_change.get_current_template_change_preparation(
+                self.job_name
+            )
+        except Exception:  # noqa: BLE001 — 조회 실패는 확인 요구가 아니다(context 축 소관).
+            return None
+        status = preparation.get("status") if preparation is not None else None
+        return workbench_template_change_verdict(status)
 
     def _do_resolve_execution(self, p: dict) -> dict:
         """'현재 설정 확인' Primary Action(EXECUTION_CHECKING/STALE·NO_EVIDENCE) — 자동 확인의 명시 재실행.

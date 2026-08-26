@@ -46,6 +46,12 @@ NOT_EXPOSED_BY_DEFAULT: tuple[str, ...] = ("Sealed Plan",)
 #: 사용자 작업대 blocker 계열(#724 §3). **정의 순서가 곧 우선순위 기반**이다 — 여러 blocker 가
 #: 동시에 서 있어도 Primary Action 은 이 순서로 하나만 고른다. React 가 이 순서를 재구현하지
 #: 않는다(합성은 backend Product 계약이 진다).
+#:
+#: ``EXECUTION_NO_EVIDENCE`` 는 #912 D1 이 세운 축이다: 「아직 확인하지 않았다」를 runtime 거절
+#: (``RUNTIME_NOT_ADMITTED``)로 접으면 사용자가 지금 지울 수 있는 상태에 「현재 환경에서는 만들 수
+#: 없습니다」라는 거짓 사유가 붙고, 그것을 지울 동사가 사슬 끝(RESOLVE_RUNTIME_POLICY)으로 밀려
+#: 사라진다. 확인 축 셋(no-evidence/checking/stale)은 나란히 서서 하나의 ``RESOLVE_EXECUTION`` 로
+#: 접힌다.
 BLOCKER_CODES: tuple[str, ...] = (
     "SELECT_DATA",
     "SELECT_RECORDS",
@@ -56,6 +62,7 @@ BLOCKER_CODES: tuple[str, ...] = (
     "REVIEW_RECORD_DATA",
     "REVIEW_DELIVERY",
     "REVIEW_PREVIEW",
+    "EXECUTION_NO_EVIDENCE",
     "EXECUTION_CHECKING",
     "EXECUTION_STALE",
     "POLICY_BLOCKED",
@@ -67,7 +74,8 @@ BLOCKER_CODES: tuple[str, ...] = (
 
 #: Primary Action 코드 — **우선순위 순서**(#724 §3). 첫 원소가 최우선(context 복원 실패)이고
 #: 마지막이 ``CREATE_DOCUMENTS`` 다. 우선순위 사슬은 이슈가 못박은 것이고, 각 단계의 코드 이름은
-#: blocker 계열과 나란히 붙였다(``EXECUTION_CHECKING``/``EXECUTION_STALE`` 두 blocker → 하나의
+#: blocker 계열과 나란히 붙였다(``EXECUTION_NO_EVIDENCE``/``EXECUTION_CHECKING``/``EXECUTION_STALE``
+#: 세 blocker → 하나의
 #: ``RESOLVE_EXECUTION``, ``RUNTIME_NOT_ADMITTED``/``POLICY_BLOCKED`` 두 blocker → 하나의
 #: ``RESOLVE_RUNTIME_POLICY`` 로 접힌다). 이슈가 리터럴로 고정한 코드는 종단 ``CREATE_DOCUMENTS``
 #: 뿐이고 나머지 식별자 명명은 이 정본이 소유한다.
@@ -79,7 +87,7 @@ PRIMARY_ACTION_CODES: tuple[str, ...] = (
     "REVIEW_TEMPLATE_CHANGE",  # Template change
     "CHOOSE_CONTENT",          # content
     "REVIEW_BINDING",          # Binding
-    "RESOLVE_EXECUTION",       # execution checking/stale
+    "RESOLVE_EXECUTION",       # execution no-evidence/checking/stale
     "REVIEW_RECORD_DATA",      # record
     "REVIEW_DELIVERY",         # delivery
     "REVIEW_PREVIEW",          # required preview

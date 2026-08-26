@@ -27,6 +27,7 @@ from .prepare_orchestration import (
     APPLY_REJECTED,
     APPLY_SUPERSEDED,
 )
+from .selection_compatibility import REVIEW_REQUIRED
 from .work_template_state import (
     CHANGE_APPLIED,
     CHANGE_CONFLICTED,
@@ -143,6 +144,44 @@ def product_preparation_status(
             f"투영표 밖 상태: prep={preparation.status!r} change={change_status!r}"
         )
     return product
+
+
+#: 확인이 **종결되지 않아** 다시 확인해야 하는 제품 status(#912 D2). 셋을 가르는 기준은 하나다:
+#: 「지금 '변경사항 확인'을 누르면 이 상태가 지워지는가」.
+#:
+#: - 여기 드는 여섯은 전부 확인 도중·직후에 무언가 어긋나 결론이 없는 상태이고, 재확인이 곧 해소다.
+#: - ``ready`` 는 결론이 있고 해소 동사가 **적용**이라 여기 없다. 확인만으로 지워지지 않는 상태를
+#:   확인 요구로 세우면 「적용하기 싫은 변경」이 생성을 영영 막는 막다른 길이 된다(#804 부류).
+#: - ``no_change``·``applied`` 는 종결이고, ``invalid``·``rejected`` 는 「기존 템플릿이 계속
+#:   쓰인다」는 종결 진술이라 생성을 막을 근거가 아니다.
+#: - ``checking`` 은 진행 중이라 사용자 조치가 아니다.
+_UNSETTLED_PREPARATION_STATUSES: frozenset[str] = frozenset(
+    {
+        "error",
+        "interrupted",
+        "conflict",
+        "source_changed",
+        "changed_while_checking",
+        "superseded",
+    }
+)
+
+
+def workbench_template_change_verdict(preparation_status: "str | None") -> "str | None":
+    """제품 preparation status → 작업대 ``template_change_verdict``(``REVIEW_REQUIRED`` | ``None``).
+
+    작업대 composer 의 ``REVIEW_TEMPLATE_CHANGE`` 축이 프로덕션에서 사문이던 것을 잇는 판정이다
+    (#912 D2). 판정은 여기 한 곳이고 ring2 는 읽어 나르기만 한다 — 컨트롤러가 status 문자열을
+    직접 분기하면 같은 상태를 템플릿 존과 작업대가 다르게 답하게 된다.
+
+    Preparation 이 없으면(``None``) 확인을 요구하지 않는다: 아직 한 번도 확인하지 않은 작업은
+    적용된 템플릿이 곧 원본이라 대조할 변경이 없다. 그 상태에서 원본이 실제로 편집됐다면
+    :meth:`~hwpxfiller.webapp.template_change.TemplateChangeCoordinator.source_drift_note` 가
+    따로 시끄럽게 말한다.
+    """
+    if preparation_status in _UNSETTLED_PREPARATION_STATUSES:
+        return REVIEW_REQUIRED
+    return None
 
 
 def product_apply_status(apply_result: str) -> str:

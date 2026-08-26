@@ -162,6 +162,14 @@ def _mount_rows(ctrl: JobController, rows: list[dict]) -> None:
 
 
 def test_no_evidence_before_any_check(tmp_path: Path) -> None:
+    """확인 전 상태는 **정직한 사유 + 그것을 지울 활성 동사**를 함께 낸다(#912 D1).
+
+    종전 단언은 `primary_action != "CREATE_DOCUMENTS"` 뿐이라 「무엇이 서 있는가」를 못 박지
+    않았고, 그 틈으로 두 거짓이 함께 살았다: (a) 확인 동사(`execution_action`)가 `null` 이라
+    「현재 설정을 확인해야 합니다」를 지울 수단이 화면에 없고, (b) 생성 버튼 사유가 「현재
+    환경에서는 문서를 만들 수 없습니다」라 사용자가 지금 풀 수 있는 상태를 못 푸는 상태로
+    오보했다. 둘 다 여기서 못 박는다.
+    """
     ctrl = _controller(tmp_path, with_binding=True)
     zone = _zone(ctrl)
     assert zone["supported"] is True and zone["kind"] == "observation"
@@ -169,7 +177,36 @@ def test_no_evidence_before_any_check(tmp_path: Path) -> None:
     assert zone["execution_status_phrase"] == "현재 설정을 확인해야 합니다"
     # 아직 확인 전이라 READY 를 주장하지 않는다(materialization NOT_READY).
     assert zone["materialization_readiness"] == "NOT_READY"
-    assert zone["primary_action"] != "CREATE_DOCUMENTS"
+
+    # (a) 확인 축이 blocker 로 서고, 그것을 지울 동사가 **활성으로** 실린다. 앞선 blocker
+    #     (여기서는 데이터 미선택)가 Primary Action 을 가져가도 동사는 사라지지 않는다.
+    assert zone["primary_action"] == "SELECT_DATA"
+    assert "EXECUTION_NO_EVIDENCE" in zone["blockers"]
+    assert zone["execution_action"] == {
+        "label": "현재 설정 확인",
+        "enabled": True,
+        "disabled_reason": None,
+    }
+    # (b) 아직 확인하지 않았을 뿐 runtime 이 거절한 것이 아니다 — 사유도 admission 사유도 정직하다.
+    assert zone["create_action"]["enabled"] is False
+    assert zone["create_action"]["disabled_reason"] == "필요한 준비를 먼저 완료해 주세요"
+    assert zone["admission"] == {
+        "state": "NOT_ADMITTED",
+        "reasons": ["EXECUTION_EVIDENCE_NOT_OBSERVED"],
+    }
+    assert "RUNTIME_NOT_ADMITTED" not in zone["blockers"]
+
+
+def test_no_evidence_keeps_the_check_verb_after_data_is_mounted(tmp_path: Path) -> None:
+    """데이터가 갖춰져 Primary Action 이 확인으로 넘어와도 같은 동사 하나가 계속 선다(#912 D1)."""
+    ctrl = _controller(tmp_path, with_binding=True)
+    _mount_rows(ctrl, [{"name": "A"}])
+    ctrl.dispatch("set_all", {})
+    zone = _zone(ctrl)
+    assert zone["execution_status_code"] == "NO_EVIDENCE"
+    assert zone["primary_action"] == "RESOLVE_EXECUTION"
+    assert zone["execution_action"]["enabled"] is True
+    assert zone["create_action"]["disabled_reason"] == "필요한 준비를 먼저 완료해 주세요"
 
 
 def test_selected_record_capture_preserves_order_and_never_rereads_source(
