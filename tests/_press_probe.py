@@ -164,6 +164,87 @@ def measure_press(scaffold: str, width: int, motion: str) -> dict:
     }
 
 
+#: 뷰포트 골격 — 셸(`.app` = 100vh 그리드)을 그대로 세워 **바닥 띠가 실제로 어디 있는지**를
+#: 재는 문서다. 위 `_DOC` 는 폭 고정 상자를 재려고 `#probe-host` 로 가두므로 뷰포트에 붙는
+#: 표면(fixed 패널·sticky 액션바·토스트)의 자리를 물을 수 없다.
+_VIEWPORT_DOC = """<!doctype html>
+<html lang="ko" data-theme="light"><head><meta charset="utf-8">
+<link rel="stylesheet" href="./{css_path}">
+</head><body class="{body_class}">{scaffold}</body></html>
+"""
+
+_MEASURE_RECTS = """(selectors) => {
+  const read = (selector) => {
+    const el = document.querySelector(selector);
+    if (el === null) return null;
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    return {
+      left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+      width: r.width, height: r.height,
+      zIndex: style.zIndex, position: style.position,
+      /* 「덮였는가」는 z 값 비교가 아니라 **적중 판정**이다 — 조상이 만든 쌓임 맥락이
+         자식의 z 를 가두므로(#overlayRoot z:90 안의 토스트 z:200) 숫자만 보면 반대로 읽힌다. */
+      covered: hit === null ? true : !(el === hit || el.contains(hit)),
+      covered_by: hit === null ? "" : (hit.id || String(hit.className || "") || hit.tagName),
+    };
+  };
+  return {
+    rects: Object.fromEntries(selectors.map((selector) => [selector, read(selector)])),
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+  };
+}"""
+
+
+def measure_viewport_rects(
+    scaffold: str,
+    *,
+    width: int,
+    height: int,
+    selectors: tuple[str, ...],
+    body_class: str = "",
+) -> dict:
+    """뷰포트 골격을 실렌더해 선택자별 상자·적중 판정을 잰다(sealed CSS · loopback)."""
+    from playwright.sync_api import sync_playwright
+
+    css_path, artifact_id = _built_css_path()
+    html = _VIEWPORT_DOC.format(
+        css_path=css_path, body_class=body_class, scaffold=scaffold,
+    )
+    with _loopback_document(html) as (url, served_artifact_id):
+        assert served_artifact_id == artifact_id
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome")
+            try:
+                context = browser.new_context(
+                    viewport={"width": width, "height": height},
+                    reduced_motion="no-preference",
+                )
+                page = context.new_page()
+                page.goto(url, wait_until="networkidle")
+                page.wait_for_timeout(120)
+                measured = page.evaluate(_MEASURE_RECTS, list(selectors))
+                resources = page.evaluate(
+                    "() => performance.getEntriesByType('resource').map((entry) => entry.name)"
+                )
+                current_url = page.url
+            finally:
+                browser.close()
+
+    origin = f"{urlsplit(current_url).scheme}://{urlsplit(current_url).netloc}"
+    assert resources, "sealed CSS resource가 뷰포트 probe에서 로드되지 않았습니다."
+    forbidden = [
+        resource
+        for resource in resources
+        if f"{urlsplit(resource).scheme}://{urlsplit(resource).netloc}" != origin
+        or urlsplit(resource).scheme == "file"
+        or "@vite/client" in resource
+    ]
+    assert not forbidden, f"뷰포트 probe가 loopback 외 resource를 로드했습니다: {forbidden}"
+    return {**measured, "artifact_id": artifact_id, "url": current_url}
+
+
 _FORCED_COLORS_SCAFFOLD = """
 <div class="wc-render">
   <span id="auto" class="seg-fill own-auto">자동</span>
