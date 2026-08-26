@@ -22,7 +22,7 @@ import { createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
-  'recoverRecordIssue',
+  'recoverRecordIssue', 'recoverContext',
   "model", "subscribe", "getRun", "getUi", "getTemplateChange", "client", "notify",
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
@@ -807,4 +807,64 @@ test('데이터 확인은 backend context error detail을 숨기지 않는다', 
   assert.ok(markup.includes(detail));
   assert.equal(markup.includes('확인할 데이터가 없습니다.'), false);
   assert.equal(markup.includes('INTERNAL_RECORD_CONTEXT'), false);
+});
+
+test('context error는 복구 동사를 활성으로 세우고 refresh_observation을 보낸다', async () => {
+  /* #912 D4 — 종전에는 이 자리에 danger 문안만 섰고 그것을 지울 동사가 없었다.
+     `refresh_observation` 은 registry·핸들러 양쪽에 있었는데 프런트 호출자가 0 이었다.
+     문안·활성은 backend 가 실은 `recover_action` 을 그대로 쓴다(링2 재조립 0). */
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true,
+      kind: 'context_error',
+      code: 'EXECUTION_ADMISSION_CONTEXT_ERROR',
+      detail: '현재 실행 맥락을 복원하지 못했습니다',
+      input_requirements: [],
+      input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CONTEXT_ERROR',
+      execution_status_phrase: '현재 실행 상태를 확인할 수 없습니다',
+      recover_action: { label: '다시 확인', enabled: true, disabled_reason: null },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('id="jobRecoverContext"'));
+  assert.ok(markup.includes('다시 확인'));
+  /* 비활성으로 서면 「눌러 보라」는 지시가 거짓이 된다 — 그 갈래를 명시로 배제한다. */
+  assert.equal(/id="jobRecoverContext"[^>]*disabled/.test(markup), false);
+
+  await h.controller.recoverContext();
+  assert.equal(h.calls.at(-1).action, 'refresh_observation');
+  assert.deepEqual(h.calls.at(-1).payload, {});
+});
+
+test('관찰이 정상이면 복구 동사를 세우지 않는다', async () => {
+  /* 음성 대조 — backend 가 `recover_action` 을 싣지 않은 자리에 버튼이 서면 표면이
+     스스로 판정한 것이다. 그 갈래는 이 게이트가 막는다. */
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true,
+      kind: 'observation',
+      primary_action: 'CREATE_DOCUMENTS',
+      input_requirements: [],
+      input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CURRENT',
+      execution_status_phrase: '현재 설정이 반영됐습니다',
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  assert.equal(markup.includes('jobRecoverContext'), false);
 });

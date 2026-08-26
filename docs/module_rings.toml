@@ -297,6 +297,12 @@ source_write_set = ["src/hwpxfiller/webapp/app.py"]
 oracle_nodeid = "tests/test_webapp_bridge.py::test_native_close_guard_allows_clean_and_blocks_armed_session"
 
 [[unit]]
+module = "hwpxfiller.webapp.blocker_affordance"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/blocker_affordance.py"]
+oracle_nodeid = "tests/repo_contract/test_blocker_affordance_registry.py::test_every_blocker_declares_an_affordance"
+
+[[unit]]
 module = "hwpxfiller.webapp.boot_budget"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/boot_budget.py"]
