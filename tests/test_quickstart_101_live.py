@@ -1051,8 +1051,29 @@ def _healthy_onboarding_report(**observation_overrides) -> dict:
             "blank_marker": "〘미입력·납품조건〙",
             "empty_confirm_gate": True,
         },
-        "advanced": {"compiled_documents": 3},
-        "deep": {"fresh_digests": 1},
+        "advanced": {
+            "compiled_documents": 3,
+            "reviews": ["REVIEW_BINDING", "RESOLVE_EXECUTION"],
+        },
+        "deep": {"fresh_digests": 1, "reviews": []},
+        # #912 (c) — 사슬의 매 걸음에서 그 자리의 컨트롤이 어떤 꼴로 서 있었는가.
+        # 걸음 수(reviews 합)와 관측 수가 맞아야 한다: 프로브를 잃어도 사슬은 지나간다.
+        "affordance": [
+            {
+                "code": "REVIEW_BINDING",
+                "selector": "#jobInputRequirements button",
+                "present": True,
+                "disabled": False,
+                "reason": "",
+            },
+            {
+                "code": "RESOLVE_EXECUTION",
+                "selector": "#jobResolveExecution",
+                "present": True,
+                "disabled": False,
+                "reason": "",
+            },
+        ],
         "lifecycle": _healthy_lifecycle(),
         "achieved": [str(step.milestone) for step in TUTORIAL_STEPS],
         "all_complete": True,
@@ -1117,6 +1138,45 @@ def test_an_empty_onboarding_observation_is_never_green() -> None:
         # 문안 둘이 뒤바뀌면 남은 과정이 없다고 하거나 걸은 과정이 사라진다.
         ({"lifecycle": _healthy_lifecycle(standard_title=COMPLETION_TITLE_ALL)}, "표준 완주 문안"),
         ({"lifecycle": _healthy_lifecycle(final_title=COMPLETION_TITLE_STANDARD)}, "전체 완주 문안"),
+        # 어포던스(#912) — 제품이 지시한 단계에 누를 것이 없거나, 비활성인데 사유가 없거나,
+        # 프로브가 통째로 사라진 세 갈래를 각각 잡는다.
+        ({"affordance": []}, "어포던스를 관측했습니다"),
+        (
+            {
+                "affordance": [
+                    {"code": "REVIEW_BINDING", "selector": "#x", "present": False},
+                    {
+                        "code": "RESOLVE_EXECUTION",
+                        "selector": "#jobResolveExecution",
+                        "present": True,
+                        "disabled": False,
+                        "reason": "",
+                    },
+                ]
+            },
+            "컨트롤이 화면에 없습니다",
+        ),
+        (
+            {
+                "affordance": [
+                    {
+                        "code": "REVIEW_BINDING",
+                        "selector": "#jobInputRequirements button",
+                        "present": True,
+                        "disabled": False,
+                        "reason": "",
+                    },
+                    {
+                        "code": "RESOLVE_EXECUTION",
+                        "selector": "#jobResolveExecution",
+                        "present": True,
+                        "disabled": True,
+                        "reason": "  ",
+                    },
+                ]
+            },
+            "비활성인데 사유가 비어",
+        ),
         ({"removal": {"templates_left": 2, "pinned_left": 0, "files_left": [], "missing_template_jobs": 5}}, "제거 뒤 잔존"),
         ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": ["계약목록.csv"], "missing_template_jobs": 5}}, "자산 파일이 남았"),
         ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": [], "missing_template_jobs": 0}}, "끊긴 작업 경보"),

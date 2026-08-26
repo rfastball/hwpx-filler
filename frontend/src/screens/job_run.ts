@@ -500,6 +500,18 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         log(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
       }
     },
+    /** context error 의 복구 동사(#912 D4) — 마지막 Plan 을 **지금 이 순간으로** 다시 관찰한다.
+     *
+     *  이 액션은 registry 와 핸들러에 있었는데 프런트 호출자가 0 이라 단방향 배선이었다:
+     *  「현재 실행 맥락을 복원하지 못했습니다」가 danger 문안으로만 서고 그것을 지울 동사가
+     *  화면에 없었다. 판정·문안은 backend 가 낸 `recover_action` 을 그대로 소비한다(재조립 0). */
+    async recoverContext(): Promise<void> {
+      try {
+        await dispatch("refresh_observation", {});
+      } catch (error) {
+        log(`현재 상태를 다시 확인하지 못했습니다: ${String(error)}`);
+      }
+    },
     async recoverRecordIssue(target: Obj): Promise<void> {
       try {
         const result = await dispatch('recover_record_issue', { target });
@@ -916,6 +928,9 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const items = (wb.input_requirements || []) as Obj[];
   const executionAction = (wb.execution_action || null) as Obj | null;
+  // context error 의 복구 동사(#912 D4). execution_action 과 배타다 — 관찰이 무너진 자리에는
+  // 「현재 설정 확인」이 아니라 복구가 서고, 어느 쪽이든 **backend 가 실은 것만** 그린다.
+  const recoverAction = (wb.recover_action || null) as Obj | null;
   const recordValidation = (wb.record_validation || {}) as Obj;
   const recordIssues = (recordValidation.issues || []) as Obj[];
   const recordSection = wb.kind === 'context_error'
@@ -1059,6 +1074,16 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
           }, String(executionAction.label || "")),
           h("span", { className: "muted capnote" },
             String(executionAction.disabled_reason || "")))
+      : null,
+    recoverAction
+      ? h("div", { className: "run-row" },
+          h("button", {
+            className: "btn sm", type: "button", id: "jobRecoverContext",
+            disabled: recoverAction.enabled !== true,
+            onClick: () => { void props.controller.recoverContext(); },
+          }, String(recoverAction.label || "")),
+          h("span", { className: "muted capnote" },
+            String(recoverAction.disabled_reason || "")))
       : null,
     recordSection,
     deliverySection);

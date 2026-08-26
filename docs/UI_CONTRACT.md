@@ -1143,6 +1143,14 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   소유한다. 둘 이상에서 공유하는 사용자 문구만 명시적 공용 상수 모듈로 올린다(승격 대상이
   없으면 모듈도 두지 않는다 — 구 `frontend/js/copy.js` 는 R5-99 B2 에서 소비자 0 으로 삭제).
   문구 규율과 금지어는 [카피 스타일 가이드](COPY_STYLE_GUIDE.md)와 관련 테스트가 맡는다.
+- **blocker 어포던스**(「그 blocker 를 사용자가 무엇으로 지우는가」)의 단일 출처는
+  `src/hwpxfiller/webapp/blocker_affordance.py` 다. blocker 전건이 세 형태 중 하나를 **명시로**
+  선언한다: 활성 동사(셀렉터 + dispatch 액션/직접 브리지 메서드) · 자동 진행(비활성 + 사유) ·
+  설계상 동사 없음(알림 설계 — 생략이 아니라 선언). 이 표는 계약이라 세 층이 함께 지킨다 —
+  정적 대조와 **역방향 고아 액션 0** 은 `tests/repo_contract/test_blocker_affordance_registry.py`,
+  상태별 불변식은 `tests/test_webapp_job_blocker_affordance.py`, 실창 관측은
+  `scripts/live101/scenario.py` 의 관리 검토 사슬(겨눔은 이 표에서 파생)이 진다. 사설 코드→
+  셀렉터 표를 따로 두지 않는다(#912 D6 이 그 드리프트의 실측이다).
 
 ## 변경 규율
 

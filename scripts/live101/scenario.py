@@ -29,6 +29,7 @@ from hwpxfiller.external.example_pack import (
 )
 from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS
 from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
+from hwpxfiller.webapp.blocker_affordance import managed_primary_action_controls
 
 from .surface import ScenarioFailure, StepTimeout, Surface
 
@@ -1760,13 +1761,52 @@ def _approve(
     return sheet_text
 
 
-#: 관리 경로 primary action → 그것을 푸는 **화면의 버튼**(§3.5 T16 「검토 확인들」).
-#: 미리보기(``REVIEW_PREVIEW``)는 서랍 왕복이라 아래 loop 가 따로 다룬다.
-_MANAGED_REVIEW_CONTROLS: "dict[str, str]" = {
-    "RESOLVE_EXECUTION": "#jobResolveExecution",
-    "RESOLVE_RUNTIME_POLICY": "#jobResolveExecution",
-    "REVIEW_DELIVERY": "#jobRefreshDelivery",
-}
+#: 이 대본이 **스스로 지나갈 의사가 있는** 관리 경로 단계(§3.5 T16 「검토 확인들」).
+#:
+#: 셀렉터는 여기 적지 않는다 — 그것은 제품 소유의 사실이고
+#: :func:`~hwpxfiller.webapp.blocker_affordance.managed_primary_action_controls` 가 낸다(#912 D6).
+#: 종전에는 이 자리가 코드→셀렉터 **사설 매핑표**였고 정본과 결속이 없어 거짓 항목을 실었다:
+#: ``RESOLVE_RUNTIME_POLICY → #jobResolveExecution`` — runtime/policy 는 설계상 동사가 없는 축이라
+#: 그 조합에서 버튼이 렌더되지 않는다. 파생으로 옮기면 그 항목은 만들어질 수 없다.
+#:
+#: 그래도 이 tuple 이 남는 이유는 **범위 선언**이기 때문이다: 파생표에는 데이터·작업 선택처럼
+#: 사슬에 들어오기 **전에** 끝났어야 할 동사도 들어 있고, 그것이 여기서 서면 지나갈 일이 아니라
+#: 앞 단계가 무너진 것이다. 자동으로 눌러 넘기면 그 사실이 조용히 지나간다.
+#: 미리보기·결속은 서랍/편집기 왕복이라 아래 loop 가 따로 다루되, 겨눔은 같은 파생표에서 온다.
+_MANAGED_REVIEW_STEPS: "tuple[str, ...]" = (
+    "REVIEW_BINDING",
+    "REVIEW_PREVIEW",
+    "RESOLVE_EXECUTION",
+    "REVIEW_DELIVERY",
+)
+
+
+def _managed_review_control(code: str) -> "str | None":
+    """관리 검토 단계 코드 → 그것을 푸는 셀렉터(정본 파생). 범위 밖이면 ``None``."""
+    if code not in _MANAGED_REVIEW_STEPS:
+        return None
+    return managed_primary_action_controls().get(code)
+
+
+def _probe_affordance(s: "Surface", code: str, selector: str) -> dict:
+    """그 단계의 컨트롤이 **실제로 어떤 꼴로 서 있는지**를 뜬다(#912 (c) 층).
+
+    재는 것은 하나다: 「존재하고 비활성이 아니거나, 비활성이면 사유가 비어 있지 않다」. 이것이
+    #912 결함류의 실창 얼굴이다 — 제품이 무엇을 하라고 지시했는데 그 자리에 누를 것이 없거나,
+    비활성인데 왜인지 말하지 않으면 사용자는 거기서 막힌다. 판정은 여기서 내리지 않고
+    ``report.py`` 가 보고서만 보고 내린다(관측과 판정의 분리 — 앱 없이 음성 대조를 세우려면
+    판정이 대본 밖에 있어야 한다).
+    """
+    return s.js(
+        f"(function(){{const el=document.querySelector({json.dumps(selector)});"
+        "if(!el)return {present:false, disabled:null, reason:''};"
+        "const row=el.closest('.run-row');"
+        "const note=row ? row.querySelector('.capnote') : null;"
+        "const create=document.getElementById('jobManagedCreateReason');"
+        "return {present:true, disabled: !!el.disabled,"
+        " label:(el.textContent||'').trim(),"
+        " reason:((note&&note.textContent)||(create&&create.textContent)||'').trim()};})()"
+    ) or {"present": False, "disabled": None, "reason": ""}
 
 
 def _resolve_bindings(ctx: "ScenarioContext", what: str) -> dict:
@@ -1907,6 +1947,13 @@ def _managed_reviews(ctx: "ScenarioContext", what: str, *, limit: int = 8) -> "l
             )
             return passed
         passed.append(code)
+        selector = _managed_review_control(code)
+        if selector is not None:
+            # 누르기 **전에** 그 자리의 꼴을 뜬다(#912 (c)) — 누른 뒤에 재면 이미 지나간
+            # 화면을 재게 되고, 「지시했는데 누를 것이 없었다」가 관측에서 사라진다.
+            ctx.observations.setdefault("blocker_affordance", []).append(
+                {"code": code, "selector": selector, **_probe_affordance(s, code, selector)}
+            )
         if code == "REVIEW_PREVIEW":
             _approve(ctx, what, managed=True)
             continue
@@ -1916,10 +1963,11 @@ def _managed_reviews(ctx: "ScenarioContext", what: str, *, limit: int = 8) -> "l
             resolved = _resolve_bindings(ctx, what)
             ctx.observations.setdefault("binding_confirm", resolved["verb"])
             continue
-        selector = _MANAGED_REVIEW_CONTROLS.get(code)
         if selector is None:
             raise ScenarioFailure(
-                f"{what}: 모르는 관리 경로 단계 {code!r} — 지나온 단계 {passed!r} ·"
+                f"{what}: 대본이 지나갈 수 없는 관리 경로 단계 {code!r}"
+                " — 어포던스 정본이 이 자리의 활성 동사를 선언하지 않았거나"
+                f" 대본 범위 밖입니다. 지나온 단계 {passed!r} ·"
                 f" blockers {observation.get('blockers')!r} ·"
                 f" create {create!r} ·"
                 f" preview {observation.get('preview_requirement')!r} ·"
@@ -2689,6 +2737,10 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         "missing_template_jobs": broken,
         "alarm": alarm,
     }
+
+    # 관리 검토 사슬을 지나며 뜬 어포던스 관측(#912 (c)). 대본은 뜨기만 하고 판정은
+    # `report._judge_onboarding` 이 진다 — 관측만 하고 아무도 안 보면 계약이 아니다.
+    facts["affordance"] = seen.pop("blocker_affordance", [])
 
     seen["onboarding"] = facts
     return seen

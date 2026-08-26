@@ -4157,6 +4157,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "primary_action": observation.primary_action,
                 "execution_status_code": code,
                 "execution_status_phrase": phrase,
+                # 복구 동사(#912 D4). 종전에는 context error 가 danger 문안만 내고 그것을
+                # 지울 동사가 화면에 없었다 — `refresh_observation` 은 registry·핸들러 양쪽에
+                # 있었는데 프런트 호출자가 0 인 단방향 배선이었다. 언제나 활성인 이유: 다시
+                # 관찰하는 것은 어느 실패에서든 시도할 수 있고, 실패하면 조용히 유지하지 않고
+                # 새 context error 로 교체된다(`_do_refresh_observation`).
+                "recover_action": {
+                    "label": "\ub2e4\uc2dc \ud655\uc778",
+                    "enabled": True,
+                    "disabled_reason": None,
+                },
                 "create_action": {
                     "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
                     "enabled": False,

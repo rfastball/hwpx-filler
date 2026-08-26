@@ -285,6 +285,31 @@ def _judge_onboarding(report: dict) -> Verdict:
             f"초점 해제 뒤 전체 완주 문안이 서지 않았습니다 — {lifecycle.get('final_title')!r}"
         )
 
+    # 어포던스(#912 (c)) — 관리 검토 사슬의 매 걸음에서 「제품이 하라고 한 그 일을 할 컨트롤이
+    # 실제로 서 있었는가」. 재는 것은 존재와 꼴 둘이다: 없으면 사용자가 막히고, 비활성인데
+    # 사유가 없으면 왜 막혔는지도 모른다. 걸음 수와 관측 수를 맞춰 보는 이유는 「관측이 통째로
+    # 비었는데 초록」을 막기 위해서다 — 대본이 프로브를 잃어도 사슬은 그대로 지나간다.
+    affordance = facts.get("affordance")
+    if not isinstance(affordance, list):
+        failures.append("어포던스 관측이 보고서에 없습니다")
+    else:
+        walked = len((facts.get("advanced") or {}).get("reviews") or []) + len(
+            (facts.get("deep") or {}).get("reviews") or []
+        )
+        if len(affordance) != walked:
+            failures.append(
+                f"관리 검토 {walked}걸음 중 {len(affordance)}걸음만 어포던스를 관측했습니다"
+            )
+        for probe in affordance:
+            code = probe.get("code")
+            if not probe.get("present"):
+                failures.append(
+                    f"{code}: 제품이 지시한 단계의 컨트롤이 화면에 없습니다"
+                    f" ({probe.get('selector')!r})"
+                )
+            elif probe.get("disabled") and not str(probe.get("reason") or "").strip():
+                failures.append(f"{code}: 컨트롤이 비활성인데 사유가 비어 있습니다")
+
     removal = facts.get("removal") or {}
     if removal.get("templates_left") != 0 or removal.get("pinned_left") != 0:
         failures.append(
