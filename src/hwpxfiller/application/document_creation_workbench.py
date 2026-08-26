@@ -53,6 +53,7 @@ from hwpxfiller.application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
     CANONICAL_ENCODING_NOT_SUPPORTED_BY_RUNTIME,
     EXECUTION_BASE_NOT_ADMITTED,
+    EXECUTION_EVIDENCE_NOT_OBSERVED,
     MATERIALIZATION_CONTRACT_NOT_ADMITTED,
     NOT_ADMITTED,
     PLAN_SCHEMA_NOT_SUPPORTED_BY_RUNTIME,
@@ -84,6 +85,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     REVIEW_RECORD_DATA,
     REVIEW_DELIVERY,
     REVIEW_PREVIEW,
+    EXECUTION_NO_EVIDENCE,
     EXECUTION_CHECKING,
     EXECUTION_STALE,
     POLICY_BLOCKED,
@@ -110,8 +112,9 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
 # ─── Primary Action 우선순위 사슬(#724 §3) ─────────────────────────────────────────────────────
 # (blocker_code, primary_action_code) 쌍의 **우선순위 순서**. 이슈 §3 사슬을 리터럴로 인코딩한다:
 #   context → 데이터 → 레코드 → Work → Template change → content → Binding
-#   → execution checking/stale → record → delivery → required preview → runtime/policy → CREATE.
-# 두 blocker(EXECUTION_CHECKING/EXECUTION_STALE)가 하나의 RESOLVE_EXECUTION 로,
+#   → execution no-evidence/checking/stale → record → delivery → required preview → runtime/policy
+#   → CREATE.
+# 세 blocker(EXECUTION_NO_EVIDENCE/EXECUTION_CHECKING/EXECUTION_STALE)가 하나의 RESOLVE_EXECUTION 로,
 # 두 blocker(POLICY_BLOCKED/RUNTIME_NOT_ADMITTED)가 하나의 RESOLVE_RUNTIME_POLICY 로 접힌다.
 # :func:`compose_primary_action` 이 이 순서로 **첫 blocker 하나**만 골라 정확히 하나를 낸다.
 _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
@@ -122,6 +125,7 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (REVIEW_TEMPLATE_CHANGE, PA_REVIEW_TEMPLATE_CHANGE),
     (CHOOSE_CONTENT, PA_CHOOSE_CONTENT),
     (REVIEW_BINDING, PA_REVIEW_BINDING),
+    (EXECUTION_NO_EVIDENCE, RESOLVE_EXECUTION),
     (EXECUTION_CHECKING, RESOLVE_EXECUTION),
     (EXECUTION_STALE, RESOLVE_EXECUTION),
     (REVIEW_RECORD_DATA, PA_REVIEW_RECORD_DATA),
@@ -143,6 +147,10 @@ _RUNTIME_ADMISSION_REASONS: frozenset[str] = frozenset(
         CANONICAL_ENCODING_NOT_SUPPORTED_BY_RUNTIME,
     }
 )
+# 「아직 확인하지 않았다」축(#912 D1) — 거절이 아니라 재료 부재다. runtime/policy 어느 쪽에도
+# 넣지 않는 이유가 그것이다: 넣는 순간 사용자가 지금 지울 수 있는 상태에 「현재 환경에서는」·
+# 「정책상」이라는 남의 사유가 붙는다.
+_UNOBSERVED_ADMISSION_REASONS: frozenset[str] = frozenset({EXECUTION_EVIDENCE_NOT_OBSERVED})
 
 # blocker → exact deep-link route(내부 route id — 사용자 문안이 아니다).
 _DEEP_LINK_ROUTES: dict[str, str] = {
@@ -155,6 +163,7 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     REVIEW_RECORD_DATA: "workbench.record_data",
     REVIEW_PREVIEW: "workbench.preview",
     REVIEW_DELIVERY: "workbench.delivery",
+    EXECUTION_NO_EVIDENCE: "workbench.execution",
     EXECUTION_CHECKING: "workbench.execution",
     EXECUTION_STALE: "workbench.execution",
     POLICY_BLOCKED: "workbench.runtime_policy",
@@ -513,14 +522,32 @@ class DocumentCreationWorkbenchObservation:
 
     @property
     def create_documents_disabled_reason(self) -> str | None:
-        """Explain the Create CTA independently of Primary Action precedence."""
+        """Explain the Create CTA independently of Primary Action precedence.
+
+        NOT_ADMITTED 를 통째로 runtime/policy 거절로 읽지 않는다(#912 D1): 아직 확인하지 않은
+        상태는 거절이 아니라 재료 부재라, 「현재 환경에서는 만들 수 없습니다」로 말하면 사용자가
+        지금 지울 수 있는 상태를 못 지우는 상태로 오보한다. 그 자리는 준비 폴백이 맡는다.
+        """
         if self.create_documents_enabled:
             return None
-        if self.admission.state == NOT_ADMITTED:
+        if self.admission.state == NOT_ADMITTED and not _has_unobserved_reason(self.admission):
             if _has_runtime_reason(self.admission):
                 return _RUNTIME_DISABLED_PHRASE
             return _POLICY_DISABLED_PHRASE
         return _CREATE_PREPARATION_DISABLED_PHRASE
+
+    @property
+    def resolve_execution_disabled_reason(self) -> str | None:
+        """확인 동사를 Primary Action 우선순위와 **독립**으로 설명한다(#912 D1).
+
+        :attr:`create_documents_disabled_reason` 과 같은 이유로 있는 자리다: 확인 축이 화면에
+        서 있는 동안(NO_EVIDENCE/CHECKING/STALE) 그것을 지울 동사는 데이터·레코드 같은 앞선
+        blocker 가 Primary Action 을 가져갔는지와 무관하게 무장돼 있어야 한다. 비활성은 자동
+        확인이 진행 중일 때뿐이고, 그때도 숨기지 않고 사유를 병기한다.
+        """
+        if self.orchestration.state == CHECKING:
+            return _CHECKING_PHRASE
+        return None
 
     @property
     def user_facing_texts(self) -> tuple[str, ...]:
@@ -540,6 +567,8 @@ class DocumentCreationWorkbenchObservation:
             texts.append(self.disabled_reason)
         if self.create_documents_disabled_reason is not None:
             texts.append(self.create_documents_disabled_reason)
+        if self.resolve_execution_disabled_reason is not None:
+            texts.append(self.resolve_execution_disabled_reason)
         if self.semantic_preview is not None:
             texts.append(self.semantic_preview.label)
         for issue in self.record_validation.issues:
@@ -591,6 +620,11 @@ def _has_policy_reason(admission: RuntimePolicyAdmission) -> bool:
 
 def _has_runtime_reason(admission: RuntimePolicyAdmission) -> bool:
     return bool(set(admission.reasons) & _RUNTIME_ADMISSION_REASONS)
+
+
+def _has_unobserved_reason(admission: RuntimePolicyAdmission) -> bool:
+    """admission 이 「거절」이 아니라 「아직 안 봤다」인가(#912 D1)."""
+    return bool(set(admission.reasons) & _UNOBSERVED_ADMISSION_REASONS)
 
 
 def binding_review_needed(
@@ -651,7 +685,7 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     if inp.orchestration.state in (ORCHESTRATION_STALE, FAILED):
         present.add(EXECUTION_STALE)
 
-    # runtime / policy — admission verdict(재판정 아님)
+    # runtime / policy / 미확인 — admission verdict(재판정 아님)
     if inp.admission.state == NOT_ADMITTED:
         policy = _has_policy_reason(inp.admission)
         runtime = _has_runtime_reason(inp.admission)
@@ -659,7 +693,11 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
             present.add(POLICY_BLOCKED)
         if runtime:
             present.add(RUNTIME_NOT_ADMITTED)
-        if not policy and not runtime:
+        if _has_unobserved_reason(inp.admission):
+            # 아직 확인하지 않았다(#912 D1) — 사용자가 지금 지울 수 있는 상태라 runtime 거절이
+            # 아니라 확인 축에 세운다. 그래야 사슬이 RESOLVE_EXECUTION 을 골라 확인 동사가 선다.
+            present.add(EXECUTION_NO_EVIDENCE)
+        elif not policy and not runtime:
             # NOT_ADMITTED 인데 알려진 사유가 없다 — 조용히 드롭하지 않고 runtime 축으로 시끄럽게.
             present.add(RUNTIME_NOT_ADMITTED)
 

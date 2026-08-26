@@ -7,6 +7,7 @@ current view 를 실으며, 작업대 Observation 이 SX-02 축만 실사실로 
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,8 @@ from hwpxfiller.application.document_creation_workbench import (
 )
 from hwpxfiller.application.document_creation_vocabulary import BLOCKER_CODES
 from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
+from hwpxfiller.application.work_template_state import PREP_INTERRUPTED
+from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -412,6 +415,72 @@ def _slot_bearing_controller(tmp_path: Path):
     return ctrl, reg, tpl
 
 
+def _interrupt_current_preparation(tmp_path: Path, work_id: str) -> None:
+    """직전 세션이 확인을 못 끝내고 죽은 상태를 durable 하게 세운다(``recover_session`` 산출물).
+
+    seam 을 스텁하지 않는다 — 권위 저장소의 값만 그 상태로 두고, 읽는 쪽은 실 coordinator ·
+    실 컨트롤러 · 실 composer 가 그대로 지난다.
+    """
+    store = AtomicWorkTemplateStateStore(_root(tmp_path) / "works")
+    with store.update(work_id) as txn:
+        aggregate = txn.aggregate
+        current = aggregate.work.current_template_preparation_id
+        assert current is not None
+        txn.aggregate = dataclasses.replace(
+            aggregate,
+            aggregate_version=aggregate.aggregate_version + 1,
+            preparations=tuple(
+                dataclasses.replace(prep, status=PREP_INTERRUPTED)
+                if prep.preparation_id == current
+                else prep
+                for prep in aggregate.preparations
+            ),
+        )
+
+
+def test_unsettled_template_check_stands_in_the_workbench_observation(tmp_path: Path) -> None:
+    """확인이 종결되지 않은 사실이 **작업대 관찰에** 선다(#912 D2).
+
+    `template_change_verdict` 는 정의·소비·통로가 다 있었는데 프로덕션 전달자가 0 이라
+    `REVIEW_TEMPLATE_CHANGE` 축이 사문이었다. 그래서 「다시 확인하세요」는 템플릿 구획에만
+    서고 작업대는 아무 말도 안 했으며, 사용자는 생성을 눌러 실패한 뒤에야 그것을 알았다.
+    """
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+    work_id = ctrl.registry.load("공고서").authority_id
+    assert work_id
+
+    settled = ctrl.workbench_observation()
+    assert isinstance(settled, DocumentCreationWorkbenchObservation)
+    assert "REVIEW_TEMPLATE_CHANGE" not in settled.blockers  # 종결 상태에선 안 선다
+
+    _interrupt_current_preparation(tmp_path, work_id)
+    unsettled = ctrl.workbench_observation()
+    assert isinstance(unsettled, DocumentCreationWorkbenchObservation)
+    assert "REVIEW_TEMPLATE_CHANGE" in unsettled.blockers
+    # 그 blocker 가 겨누는 곳은 템플릿 확인 구획이고, 그 구획의 확인 동사는 실제로 활성이다
+    # (지시만 있고 수단이 없는 상태를 만들지 않는다).
+    routes = {t.blocker_code: t.route for t in unsettled.deep_link_targets}
+    assert routes["REVIEW_TEMPLATE_CHANGE"] == "workbench.template_change"
+    zone = ctrl._template_change.zone("공고서", "hwpx", False)
+    assert zone["checkable"] is True
+    assert zone["preparation"]["status"] == "interrupted"
+
+
+def test_workbench_observation_reads_template_change_without_issuing_authority(
+    tmp_path: Path,
+) -> None:
+    """관찰은 읽기다(#804 규율) — verdict 파생이 durable 권위를 발급·변조하지 않는다."""
+    ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
+    before = (reg.load("공고서").authority_id, _aggregate_bytes(tmp_path, reg))
+    ctrl.workbench_observation()
+    assert (reg.load("공고서").authority_id, _aggregate_bytes(tmp_path, reg)) == before
+
+
+def _aggregate_bytes(tmp_path: Path, reg) -> bytes:
+    work_id = reg.load("공고서").authority_id
+    return (_root(tmp_path) / "works" / f"{work_id}.json").read_bytes()
+
+
 def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
     tmp_path: Path,
 ) -> None:
@@ -436,7 +505,13 @@ def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
     reject = ctrl._resolve_managed_template(ctrl.vm)
     assert reject is not None, "slot-bearing 은 legacy generator 로 통과되면 안 된다"
     assert reject["ok"] is False
-    assert reject["error"] == "이 템플릿의 슬롯 구성 실행은 아직 지원하지 않습니다."
+    # (3) 사유는 실사유여야 한다(#907·#912). 「아직 지원하지 않습니다」는 S5/S6 미출하 시절의
+    # 전제라 S6 완주 이후로는 거짓이고, 다음 행동도 주지 못했다.
+    assert reject["error"] == (
+        "이 작업의 문서 구성이 아직 확립되지 않았습니다. "
+        "'템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
+    )
+    assert "지원하지 않습니다" not in reject["error"]
 
 
 def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(

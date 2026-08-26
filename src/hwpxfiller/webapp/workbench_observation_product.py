@@ -55,7 +55,7 @@ from ..application.execution_compilation import (
 from ..application.field_binding_input import INACTIVE_ONLY, PRESERVED
 from ..application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
-    MATERIALIZATION_CONTRACT_NOT_ADMITTED,
+    EXECUTION_EVIDENCE_NOT_OBSERVED,
     NOT_ADMITTED,
     NOT_READY,
     CurrentSealedPlanObservation,
@@ -182,10 +182,14 @@ def _sealed_input_requirements(
         for requirement in fresh.sealed_plan_value.active_field_requirements
     )
 
-#: 확인 증거 부재(seal 미실행)·current-work 미봉인의 정직한 runtime admission — S6 미출하와 같은
-#: 계열로 NOT_ADMITTED. unknown 을 ADMITTED 로 풀지 않는다(fail-closed, #726 §5).
+#: 확인 증거 부재(seal 미실행)·current-work 미봉인의 정직한 admission — unknown 을 ADMITTED 로
+#: 풀지 않는다(fail-closed, #726 §5). 사유는 **거절이 아니라 재료 부재**다(#912 D1): 여기가
+#: ``MATERIALIZATION_CONTRACT_NOT_ADMITTED``(= S6 런타임이 이 문서를 못 만든다)를 빌려 쓰던 동안,
+#: 부팅 직후처럼 아무것도 아직 안 본 상태가 「현재 환경에서는 문서를 만들 수 없습니다」로 말해졌고
+#: 그것을 지울 확인 동사는 사슬 끝으로 밀려 화면에서 사라졌다. 실제로 런타임이 거절한 자리는
+#: :class:`CurrentSealedPlanObservation` 이 자기 admission 을 그대로 싣는다.
 _NO_EVIDENCE_ADMISSION = RuntimePolicyAdmission(
-    state=NOT_ADMITTED, reasons=(MATERIALIZATION_CONTRACT_NOT_ADMITTED,)
+    state=NOT_ADMITTED, reasons=(EXECUTION_EVIDENCE_NOT_OBSERVED,)
 )
 
 

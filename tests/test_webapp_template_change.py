@@ -16,10 +16,13 @@ import pytest
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.application.prepare_orchestration import APPLY_INTEGRITY_ERROR, ApplyOutcome
+from hwpxfiller.application.selection_compatibility import REVIEW_REQUIRED
 from hwpxfiller.application.template_change_product import (
+    PRODUCT_PREPARATION_STATUSES,
     TemplateChangeProjectionError,
     preparation_view,
     product_preparation_status,
+    workbench_template_change_verdict,
 )
 from hwpxfiller.application.work_template_state import (
     CHANGE_APPLIED,
@@ -455,6 +458,37 @@ def test_projection_refuses_ready_without_change_and_unknown_change():
         product_preparation_status(_prep("READY"), None)
     with pytest.raises(TemplateChangeProjectionError):
         product_preparation_status(_prep("READY"), "몰라")
+
+
+@pytest.mark.parametrize(
+    ("product_status", "expected"),
+    [
+        # 확인이 결론 없이 끝난 여섯 — 다시 확인하면 지워진다.
+        ("error", REVIEW_REQUIRED),
+        ("interrupted", REVIEW_REQUIRED),
+        ("conflict", REVIEW_REQUIRED),
+        ("source_changed", REVIEW_REQUIRED),
+        ("changed_while_checking", REVIEW_REQUIRED),
+        ("superseded", REVIEW_REQUIRED),
+        # 결론이 있는 것들 — 확인을 다시 시켜도 지워지지 않으므로 확인 요구로 세우지 않는다.
+        ("ready", None),  # 해소 동사는 **적용**이다(확인 요구로 세우면 막다른 길).
+        ("no_change", None),
+        ("applied", None),
+        ("invalid", None),
+        ("rejected", None),
+        ("checking", None),  # 진행 중 — 사용자 조치가 아니다.
+        (None, None),  # 확인한 적 없음 — 대조할 변경이 없다.
+    ],
+)
+def test_workbench_template_change_verdict_table(product_status, expected):
+    """제품 status → 작업대 verdict(#912 D2). 기준은 「확인이 이 상태를 지우는가」 하나다."""
+    assert workbench_template_change_verdict(product_status) == expected
+
+
+def test_workbench_verdict_covers_every_product_status():
+    """어휘가 늘면 이 판정도 함께 늘어야 한다 — 조용한 기본값으로 새 status 를 삼키지 않는다."""
+    for status in PRODUCT_PREPARATION_STATUSES:
+        assert workbench_template_change_verdict(status) in (REVIEW_REQUIRED, None)
 
 
 def test_view_drops_change_token_unless_ready():

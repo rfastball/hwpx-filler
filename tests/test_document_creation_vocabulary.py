@@ -23,6 +23,7 @@ EXPECTED_BLOCKERS = (
     "REVIEW_RECORD_DATA",
     "REVIEW_DELIVERY",
     "REVIEW_PREVIEW",
+    "EXECUTION_NO_EVIDENCE",
     "EXECUTION_CHECKING",
     "EXECUTION_STALE",
     "POLICY_BLOCKED",
@@ -51,8 +52,16 @@ EXPECTED_PRIMARY_ACTIONS = (
 
 def test_blocker_codes_exact_order_and_count() -> None:
     assert vocab.BLOCKER_CODES == EXPECTED_BLOCKERS
-    assert len(vocab.BLOCKER_CODES) == 14
-    assert len(set(vocab.BLOCKER_CODES)) == 14  # 중복 없음
+    assert len(vocab.BLOCKER_CODES) == 15
+    assert len(set(vocab.BLOCKER_CODES)) == 15  # 중복 없음
+    # 확인 축 셋은 나란히 선다(#912 D1) — 「아직 확인 안 함」이 runtime 거절로 접히면
+    # 그것을 지울 동사가 사슬 끝으로 밀려 사라진다.
+    execution_axis = vocab.BLOCKER_CODES.index("EXECUTION_NO_EVIDENCE")
+    assert vocab.BLOCKER_CODES[execution_axis : execution_axis + 3] == (
+        "EXECUTION_NO_EVIDENCE",
+        "EXECUTION_CHECKING",
+        "EXECUTION_STALE",
+    )
 
 
 def test_primary_action_codes_exact_order_and_count() -> None:
