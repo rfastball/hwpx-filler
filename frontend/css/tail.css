@@ -184,6 +184,26 @@
 /* 완료 단계에 남는 순간 카드 문안(§1 D3) — 카드를 놓쳐도 같은 말이 여기 있다. */
 .tut-step-note{color:var(--a-muted);line-height:1.45}
 
+/* ---- 완주·다시 보기 국면(#918 A·C) ----
+   완주는 「다음 걸음」 자리를 완주 문안이 대신하는 국면이다. 체크리스트가 사라진 자리에
+   다시 보기 줄이 서므로 패널의 세로 무게는 오히려 줄어든다 — 18/18 인 패널이 전 화면에
+   같은 높이로 계속 서 있던 것이 결함의 절반이었다. */
+.tut-done{display:flex;flex-direction:column;gap:var(--sp-4);
+  padding:var(--sp-8);background:var(--n-surface-alt);border-radius:var(--rad-control)}
+.tut-done-title{font-size:var(--fs-body)}
+.tut-done-copy{margin:0;font-size:var(--fs-caption);color:var(--a-muted);line-height:1.45}
+.tut-revisit{display:flex;flex-direction:column;gap:var(--sp-6)}
+.tut-revisit-lead{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.tut-picker{display:flex;flex-wrap:wrap;gap:var(--sp-6)}
+.tut-pick{display:inline-flex;align-items:baseline;gap:var(--sp-4)}
+.tut-pick-count{color:var(--a-muted);font-variant-numeric:tabular-nums}
+/* 되돌아가지 않는 것의 문안 — 목록 **앞**에 서서 「다시 보기」가 「되돌리기」로 읽히지
+   않게 한다. 경보색이 아니라 주의색인 이유는 이것이 실패가 아니라 사실이어서다. */
+.tut-caveat{margin:0;font-size:var(--fs-caption);color:var(--a-ink);line-height:1.45;
+  padding:var(--sp-8);background:var(--n-surface-alt);border-radius:var(--rad-control);
+  border-left:2px solid var(--a-warn)}
+.tut-focus-clear{align-self:flex-start}
+
 /* 순간 카드 — 요소를 겨누지 않는 고정 자리(코치마크 기각). 클릭을 **가로채지 않는다**:
    컨테이너와 달리 자기 자신도 pointer-events 를 되받지 않는 유일한 상자다. */
 .tut-moment{pointer-events:none;width:340px;max-width:100%;

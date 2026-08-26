@@ -13,6 +13,11 @@ import pytest
 
 from hwpxfiller.external import settings
 from hwpxfiller.gui.tutorial_state import (
+    COMPLETION_COPY_ALL,
+    COMPLETION_COPY_STANDARD,
+    COMPLETION_TITLE_ALL,
+    COMPLETION_TITLE_STANDARD,
+    REVISIT_PROMPT,
     STEPS,
     TIERS,
     Milestone,
@@ -198,6 +203,124 @@ def test_snapshot_is_json_serialisable_and_carries_tier_copy():
     assert snapshot["tiers"][3]["optional"] is True
 
 
+# ============================================================ 안내 초점 축(#918 C)
+def test_focus_overrides_the_derived_suggestion_and_clearing_returns_to_it():
+    vm = TutorialViewModel()
+    vm.notify(Milestone.INSTALL_EXAMPLES)
+    assert vm.focus_tier == "" and vm.guided_tier == "basic" == vm.suggested_tier
+
+    vm.set_focus_tier(Tier.ADVANCED)
+    assert vm.focus_tier == "advanced" and vm.guided_tier == "advanced"
+    assert vm.suggested_tier == "basic", "초점이 파생 제안 자체를 덮어썼습니다"
+
+    vm.clear_focus_tier()
+    assert vm.focus_tier == "" and vm.guided_tier == "basic"
+
+
+def test_focus_never_touches_the_ledger_of_what_was_done():
+    """달성 기록은 단조다 — 다시 걷기는 겨눔의 이동이지 기록의 되돌리기가 아니다."""
+    vm = TutorialViewModel()
+    _achieve_all(vm)
+    before = vm.progress()
+
+    vm.set_focus_tier("basic")
+    vm.clear_focus_tier()
+    vm.set_focus_tier("deep")
+    assert vm.progress() == before
+    assert vm.all_complete is True and vm.snapshot()["achieved_count"] == len(STEPS)
+
+    # 이미 달성한 단계를 다시 통지해도 무해하다 — 되걷기에 새 기제가 필요 없다(#918 설계).
+    assert vm.notify(Milestone.SAVE_JOB) is False
+    assert vm.progress() == before
+
+
+def test_focus_is_display_history_and_does_not_persist():
+    vm = TutorialViewModel()
+    vm.notify(Milestone.INSTALL_EXAMPLES)
+    vm.set_focus_tier("applied")
+    assert set(vm.progress()) == {"achieved", "dismissed"}, "초점이 영속 값에 샜습니다"
+
+    restored = TutorialViewModel.from_progress(vm.progress())
+    assert restored.focus_tier == "", "다시 켠 앱이 지난 초점에 갇혔습니다"
+
+
+def test_dismiss_drops_the_focus_so_resume_opens_on_the_current_state():
+    vm = TutorialViewModel()
+    _achieve_all(vm)
+    vm.set_focus_tier("basic")
+    vm.dismiss()
+    assert vm.focus_tier == ""
+    vm.resume()
+    assert vm.focus_tier == "" and vm.guided_tier == ""
+
+
+def test_unknown_focus_tier_is_loud():
+    vm = TutorialViewModel()
+    with pytest.raises(ValueError, match="알 수 없는 튜토리얼 과정"):
+        vm.set_focus_tier("초급")
+
+
+def test_basic_tier_focus_states_the_limit_of_what_can_be_walked_again():
+    """T0~T3 는 안내만 되짚을 수 있다 — 그 한계를 숨기지 않고 문안으로 말한다(#918 C)."""
+    vm = TutorialViewModel()
+    vm.set_focus_tier(Tier.BASIC)
+    caveat = vm.focus_caveat
+    assert "안내만 다시 볼 수 있습니다" in caveat
+    assert "두 번째 작업" in caveat, "되돌아가지 않는다는 사실이 문안에서 빠졌습니다"
+
+    # 되짚기 쉬운 과정에는 없는 말이다 — 모든 곳에 붙이면 경고가 배경음이 된다.
+    for tier in (Tier.APPLIED, Tier.ADVANCED, Tier.DEEP):
+        vm.set_focus_tier(tier)
+        assert vm.focus_caveat == ""
+
+    # 파생 제안만으로는 서지 않는다(아직 안 걸은 걸음에는 되돌릴 것이 없다).
+    vm.clear_focus_tier()
+    assert vm.guided_tier == "basic" and vm.focus_caveat == ""
+
+
+# ============================================================ 완주 문안(#918 A)
+def test_completion_copy_distinguishes_standard_from_all_and_is_empty_before():
+    vm = TutorialViewModel()
+    assert vm.completion_title == "" and vm.completion_copy == ""
+
+    for milestone in _all_milestones()[:17]:
+        vm.notify(milestone)
+    assert vm.standard_complete is True and vm.all_complete is False
+    assert vm.completion_title == "기본·응용·고급을 모두 마쳤습니다"
+    assert "심화가 남아 있고" in vm.completion_copy
+
+    vm.notify(Milestone.CHANGE_COMPOSITION)
+    assert vm.completion_title == "모든 단계를 마쳤습니다"
+    assert "튜토리얼을 닫아도" in vm.completion_copy
+
+
+def test_completed_snapshot_aims_nowhere_and_offers_the_revisit_line():
+    """완주 = 겨눌 다음 걸음이 없는 상태 = 「어느 과정을 다시 볼까요」(#918 A·C 같은 배선)."""
+    vm = TutorialViewModel()
+    _achieve_all(vm)
+    snapshot = vm.snapshot()
+    assert snapshot["suggested_tier"] == "" and snapshot["guided_tier"] == ""
+    assert snapshot["standard_complete"] is True and snapshot["all_complete"] is True
+    assert snapshot["completion_title"] and snapshot["completion_copy"]
+    assert snapshot["revisit_prompt"] == "다시 볼 과정을 고르세요."
+
+    # 다시 보기 안내는 완주해야 열리는 특전이 아니다 — 진행 중에도 같은 자리가 선다.
+    assert TutorialViewModel().snapshot()["revisit_prompt"] == snapshot["revisit_prompt"]
+
+
+def test_snapshot_carries_the_focus_axis_and_per_tier_caveat():
+    vm = TutorialViewModel()
+    vm.notify(Milestone.INSTALL_EXAMPLES)
+    vm.set_focus_tier("advanced")
+    snapshot = vm.snapshot()
+    assert json.loads(json.dumps(snapshot, ensure_ascii=False)) == snapshot
+    assert snapshot["focus_tier"] == "advanced" and snapshot["guided_tier"] == "advanced"
+    assert snapshot["suggested_tier"] == "basic"
+    assert snapshot["focus_caveat"] == ""
+    assert snapshot["tiers"][0]["replay_caveat"], "기본 과정의 한계 문안이 스냅샷에서 빠졌습니다"
+    assert snapshot["tiers"][2]["replay_caveat"] == ""
+
+
 def test_moment_copy_names_what_did_not_happen():
     """부재의 의미를 짚는 네 자리(§1 D3) — 문안이 통째로 사라지지 않게 못박는다."""
     by_id = {str(step.milestone): step.moment_copy for step in STEPS}
@@ -214,7 +337,19 @@ def test_user_copy_never_exposes_the_internal_slot_word():
         for step in STEPS
         for text in (step.title, step.next_step, step.moment_copy)
     ]
-    texts += [t for tier in TIERS for t in (tier.label, tier.title, tier.graduation_copy, tier.invitation)]
+    texts += [
+        t
+        for tier in TIERS
+        for t in (tier.label, tier.title, tier.graduation_copy, tier.invitation, tier.replay_caveat)
+    ]
+    # 완주·다시 보기 문안도 같은 규칙 아래 산다(#918) — 새 문안이 규칙 밖에 서지 않게.
+    texts += [
+        COMPLETION_TITLE_STANDARD,
+        COMPLETION_COPY_STANDARD,
+        COMPLETION_TITLE_ALL,
+        COMPLETION_COPY_ALL,
+        REVISIT_PROMPT,
+    ]
     for text in texts:
         assert "슬롯" not in text
         assert "slot" not in text.lower()

@@ -1071,12 +1071,27 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   다시 싣는다). 동시 1장·클릭 불가로채기(`pointer-events:none`)·`prefers-reduced-motion` 존중.
   억제 축은 overlay 엔진의 `isDialogPending()` 하나다 — `needs_confirm` 은 화면 컨트롤러마다
   흩어져 있어 중앙 관측점이 못 된다. 억제 중에는 시계도 서지 않는다(모달에 가려 소진되지 않게).
-- **액션 3종**: `dismiss`·`resume`(명시 종료·재개, 영속) · `consume_moment`(`milestone`).
-  달성 기록은 닫힌 동안에도 이어지고, 그동안의 순간 카드는 큐에 넣지 않는다(재개 순간 밀린
-  카드가 쏟아지지 않게). 닫은 뒤에도 `#tutorialResume` 하나가 남아 재개가 도달 가능하다.
-- **DOM id**: `#tutorialPanelRoot`(`data-screen`) · `#tutorialPanel`(`data-collapsed`) ·
-  `#tutorialPanelTitle` · `#tutorialProgress` · `#tutorialCollapse` · `#tutorialDismiss` ·
-  `#tutorialBody` · `#tutorialNextStep` · `#tutorialMoment`(`data-milestone`) · `#tutorialResume`.
+- **수명주기 = 두 축**(#918 · `ONBOARDING_TUTORIAL.md` §1 D5): 달성 기록은 **단조·영속**이고
+  지우는 액션이 없다. 다시 걷기는 기록의 되돌리기가 아니라 **안내 초점**(`focus_tier`)의
+  이동이고, 표면이 보는 실효값은 링1 이 합친 `guided_tier`(= 초점 ?? `suggested_tier`)
+  하나다. 초점은 표시 이력이라 영속하지 않는다(순간 카드 소비와 같은 부류) — 닫기·재부팅은
+  초점을 걷어 지금 상태로 연다. 되돌아가지 않는 것(기본 티어 T0~T3)은 감추지 않고 링1 의
+  `replay_caveat` 이 초점 자리에서 말한다.
+- **렌더 분기는 본문 국면 셋**: `progress`(다음 걸음 + 전 티어 목록 + 다시 보기 자리) /
+  `complete`(`standard_complete` ∧ 초점 없음 → 완주 문안 + 다시 보기 자리, 체크리스트 없음) /
+  `focus`(겨눈 티어 하나 + 한계 문안 + 해제 동선). 국면은 `#tutorialPanel` 의 `data-phase` 에
+  실린다. 완주 자리에서 「다음 걸음」이 사라지는 것이 계약이다 — 18/18 인 채 걸음을 재촉하던
+  것이 #918 A 다.
+- **액션 5종**: `dismiss`·`resume`(명시 종료·재개, 영속) · `consume_moment`(`milestone`) ·
+  `focus_tier`(`tier`)·`clear_focus`(안내 초점 지정·해제, 세션 값). 뒤 셋은 전부 「무엇을
+  보여줄까」이고 「무엇을 달성했는가」를 바꾸는 액션은 등록되지 않는다. 달성 기록은 닫힌
+  동안에도 이어지고, 그동안의 순간 카드는 큐에 넣지 않는다(재개 순간 밀린 카드가 쏟아지지
+  않게). 닫은 뒤에도 `#tutorialResume` 하나가 완주·미완주 양쪽에서 남아 재개가 도달 가능하다.
+- **DOM id**: `#tutorialPanelRoot`(`data-screen`) · `#tutorialPanel`(`data-collapsed`·
+  `data-phase`) · `#tutorialPanelTitle` · `#tutorialProgress` · `#tutorialCollapse` ·
+  `#tutorialDismiss` · `#tutorialBody` · `#tutorialNextStep` · `#tutorialComplete` ·
+  `#tutorialRevisit` · `#tutorialTierPicker`(버튼마다 `data-tier`) · `#tutorialFocusCaveat` ·
+  `#tutorialFocusClear` · `#tutorialMoment`(`data-milestone`) · `#tutorialResume`.
   단계·티어 행은 `data-milestone`·`data-achieved`·`data-tier`·`data-complete` 를 싣는다.
 - **게이트**: 헤드리스·배선·영속은 `tests/test_webapp_tutorial.py`, 렌더 요소와 큐·억제 규칙은
   `tests/js/tutorial_panel.test.js`, 링1 판정은 `tests/test_tutorial_state.py`. 실창 완주는
