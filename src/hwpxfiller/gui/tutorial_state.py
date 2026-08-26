@@ -37,6 +37,27 @@
 재개했을 때 그동안의 진행이 통째로 거짓이 되고, 카드를 큐에 넣으면 닫아 둔 사용자에게
 재개 순간 밀린 카드가 쏟아진다.
 
+## 두 축 — 달성 기록과 안내 초점 (#918 A·C)
+
+달성 기록(``_achieved``)은 **사실의 원장**이라 단조·영속이다. 지우는 경로를 두지 않는다:
+한 일을 안 했다고 말하는 순간 체크리스트는 진행의 지도가 아니라 그때그때의 기분이 된다.
+
+그래서 「다시 걷기」는 기록을 되돌리는 것이 아니라 **안내가 겨누는 곳**을 옮기는 일이고,
+그 축이 :attr:`TutorialViewModel.focus_tier` 다. 초점이 없으면 안내는 파생값
+(:attr:`~TutorialViewModel.suggested_tier` = 첫 미졸업 티어)을 겨누고, 사용자가 지정하면
+그것을 덮는다(:attr:`~TutorialViewModel.guided_tier` 가 둘을 합친 실효값이다). 재수행의
+중복 통지는 이미 무해하므로(:meth:`~TutorialViewModel.notify` 는 ``False`` 만 낸다) 되걷기에
+새 기제가 필요하지 않다.
+
+완주가 이 축으로 함께 풀린다: 전부 졸업하면 겨눌 다음 걸음이 없고, 그 상태가 곧 **초점 없는
+완주 상태**(「어느 과정을 다시 볼까요」)다. 초점은 표시 이력이라 영속하지 않는다(순간 카드
+소비와 같은 부류) — 닫았다 열거나 앱을 다시 켜면 완주 상태로 돌아온다.
+
+**되돌릴 수 있는 것을 정직하게 말한다**: 기본 과정의 앞 걸음(예제 설치·템플릿 고르기·데이터
+열 연결·작업 저장)은 안내만 다시 볼 수 있고 앱 상태는 되돌아가지 않는다. 이미 만든 작업이
+있으면 같은 걸음을 다시 걷는 것은 재수행이 아니라 두 번째 작업이다. 그 한계를
+:attr:`TierDefinition.replay_caveat` 이 문안으로 말한다(숨기지 않는다).
+
 ## 순간 카드 큐
 
 큐에는 **이 세션에서 새로 달성된** 단계만 들어간다. 영속에서 복원한 달성은 이미 지나간
@@ -114,6 +135,10 @@ class TierDefinition:
     """티어 하나의 정의 — 이름·소속 단계·졸업 문안·진입 제안 문안.
 
     ``optional`` 인 티어(심화)는 표준 완주에 들지 않는다. 표준 완주는 고급까지다(§3.6).
+
+    ``replay_caveat`` 은 **이 과정을 다시 겨눴을 때 되돌아가지 않는 것**을 말하는 문안이다
+    (없으면 빈 문자열). 안내는 어느 과정이든 다시 겨눌 수 있지만 앱 상태는 그렇지 않아서,
+    그 비대칭을 숨기면 사용자는 「다시 보기」를 「되돌리기」로 읽는다(#918 C).
     """
 
     tier: Tier
@@ -122,6 +147,7 @@ class TierDefinition:
     graduation_copy: str
     invitation: str
     optional: bool = False
+    replay_caveat: str = ""
 
 
 STEPS: "tuple[TutorialStep, ...]" = (
@@ -291,6 +317,12 @@ TIERS: "tuple[TierDefinition, ...]" = (
         title="첫 문서",
         graduation_copy="이 작업으로 언제든 다시 만들 수 있습니다.",
         invitation="예제 서식과 데이터로 첫 문서를 만듭니다. 15분이면 충분합니다.",
+        # 앞 네 걸음(T0~T3)은 한 번 일어나면 그대로 남는 사실이라 안내만 되짚을 수 있다.
+        # 데이터 연결(T4)부터는 같은 걸음을 그대로 다시 걷는다 — 그 선을 문안이 말한다.
+        replay_caveat=(
+            "예제 설치부터 작업 저장까지는 안내만 다시 볼 수 있습니다. "
+            "이미 만든 작업은 그대로 남아 있어, 같은 걸음을 다시 걸으면 두 번째 작업이 생깁니다."
+        ),
     ),
     TierDefinition(
         tier=Tier.APPLIED,
@@ -319,6 +351,23 @@ TIERS: "tuple[TierDefinition, ...]" = (
     ),
 )
 
+#: 표준 완주(고급까지) 문안 — 선택 과정인 심화가 남아 있다는 사실을 함께 말한다(§3.6).
+COMPLETION_TITLE_STANDARD = "기본·응용·고급을 모두 마쳤습니다"
+COMPLETION_COPY_STANDARD = (
+    "예제로 배울 것은 여기까지입니다. 선택 과정인 심화가 남아 있고, "
+    "지난 걸음은 언제든 다시 볼 수 있습니다."
+)
+
+#: 전체 완주(심화까지) 문안. 닫아도 기록이 남는다는 것을 함께 말한다(닫기 = 파괴가 아니다).
+COMPLETION_TITLE_ALL = "모든 단계를 마쳤습니다"
+COMPLETION_COPY_ALL = (
+    "심화까지 다 걸었습니다. 지난 걸음은 언제든 다시 볼 수 있고, "
+    "튜토리얼을 닫아도 지금까지의 기록은 남습니다."
+)
+
+#: 초점 지정 자리의 안내 한 줄. 완주 상태에서는 이것이 「다음 걸음」을 대신한다.
+REVISIT_PROMPT = "다시 볼 과정을 고르세요."
+
 #: 마일스톤 → 단계 정의. 열거와 정의표가 어긋나면 이 dict 가 짧아진다(테스트가 센다).
 _STEP_BY_MILESTONE: "dict[Milestone, TutorialStep]" = {step.milestone: step for step in STEPS}
 
@@ -327,6 +376,10 @@ _STEPS_BY_TIER: "dict[Tier, tuple[TutorialStep, ...]]" = {
     definition.tier: tuple(step for step in STEPS if step.tier == definition.tier)
     for definition in TIERS
 }
+
+
+#: 티어 → 정의. 초점 축이 문안(``replay_caveat``)을 되찾는 경로다.
+_TIER_BY_ID: "dict[Tier, TierDefinition]" = {d.tier: d for d in TIERS}
 
 
 def _coerce(milestone: "Milestone | str") -> Milestone:
@@ -341,6 +394,18 @@ def _coerce(milestone: "Milestone | str") -> Milestone:
         raise ValueError(f"알 수 없는 튜토리얼 단계: {milestone!r}") from None
 
 
+def _coerce_tier(tier: "Tier | str") -> Tier:
+    """초점 지정 인자를 열거로 정규화 — 모르는 값은 조용히 무시하지 않고 ``ValueError``.
+
+    초점은 웹이 부르는 액션이라 오타난 값이 들어올 수 있다. 조용히 흘리면 사용자가 누른 과정
+    대신 파생 제안이 그대로 서고, 화면은 「눌렀는데 아무 일도 없다」가 된다(#918 A 의 반복).
+    """
+    try:
+        return Tier(tier)
+    except ValueError:
+        raise ValueError(f"알 수 없는 튜토리얼 과정: {tier!r}") from None
+
+
 class TutorialViewModel:
     """진행 감지 체크리스트의 상태 모델(링1).
 
@@ -350,6 +415,8 @@ class TutorialViewModel:
       ``settings`` 를 import 하지 않는다.
     - :meth:`notify` — 이미 성립한 전이 사실의 통지. 새로 기록됐으면 ``True``.
     - :meth:`dismiss` / :meth:`resume` — 명시 종료·재개.
+    - :meth:`set_focus_tier` / :meth:`clear_focus_tier` — 안내 초점 축(#918 C). 달성 기록은
+      건드리지 않는다: 겨누는 곳만 옮긴다.
     - :meth:`pending_moments` / :meth:`consume_moment` — 순간 카드 큐(동시 1장은 표면 몫).
     - :meth:`snapshot` — JSON-safe 스냅샷. 링2 는 이것만 그린다.
     """
@@ -374,6 +441,9 @@ class TutorialViewModel:
                 continue
         self._dismissed = bool(dismissed)
         self._pending: "list[Milestone]" = []  # 이 세션에서 새로 달성된 것만
+        # 안내 초점은 **표시 이력**이라 복원 인자가 없다(순간 카드 소비와 같은 부류). 영속하면
+        # 앱을 다시 켠 사용자가 자기가 언제 겨눴는지도 모르는 과정에 갇힌 채 부팅한다.
+        self._focus: "Tier | None" = None
 
     @classmethod
     def from_progress(cls, progress: "dict | None") -> "TutorialViewModel":
@@ -413,9 +483,15 @@ class TutorialViewModel:
         return True
 
     def dismiss(self) -> None:
-        """명시 종료 — 표면을 내리고 대기 중인 순간 카드를 버린다."""
+        """명시 종료 — 표면을 내리고 대기 중인 순간 카드와 안내 초점을 버린다.
+
+        초점을 함께 버리는 이유는 재개가 **지금 상태**로 열려야 하기 때문이다: 완주한 사용자가
+        닫았다 다시 열면 「어느 과정을 다시 볼까요」가 서고, 지난번에 겨눴던 과정의 체크리스트가
+        영문 없이 되살아나지 않는다.
+        """
         self._dismissed = True
         self._pending.clear()
+        self._focus = None
 
     def resume(self) -> None:
         """재개 — 달성 기록은 그대로 살아 있으므로 진행은 이어진다."""
@@ -466,6 +542,64 @@ class TutorialViewModel:
                 return str(definition.tier)
         return ""
 
+    # --------------------------------------------------------- 안내 초점 축(#918 C)
+    def set_focus_tier(self, tier: "Tier | str") -> None:
+        """안내를 이 과정으로 명시하게 겨눈다 — 파생 제안을 덮는다.
+
+        **달성 기록은 건드리지 않는다**: 다시 걷는다는 것은 한 일을 안 한 일로 되돌리는 것이
+        아니라 안내가 보는 곳을 옮기는 것이다(모듈 머리말 「두 축」). 이미 달성한 단계를 다시
+        통지해도 :meth:`notify` 가 ``False`` 를 낼 뿐이라 되걷기에 새 기제가 필요 없다.
+        """
+        self._focus = _coerce_tier(tier)
+
+    def clear_focus_tier(self) -> None:
+        """명시 초점을 걷는다 — 안내가 파생값(:attr:`suggested_tier`)으로 돌아간다."""
+        self._focus = None
+
+    @property
+    def focus_tier(self) -> str:
+        """사용자가 명시로 겨눈 과정 식별자. 지정이 없으면 빈 문자열이다."""
+        return "" if self._focus is None else str(self._focus)
+
+    @property
+    def guided_tier(self) -> str:
+        """안내가 실제로 겨누는 과정 — 명시 초점이 있으면 그것, 없으면 파생 제안.
+
+        링2 는 이 값 하나만 본다. 「초점인가 제안인가」를 표면이 다시 합치면 같은 판정이 두
+        곳에 서고, 한쪽이 조금 다르게 조립되는 순간 안내가 조용히 어긋난다.
+        """
+        return self.focus_tier or self.suggested_tier
+
+    @property
+    def focus_caveat(self) -> str:
+        """지금 겨눈 과정에서 **되돌아가지 않는 것**의 문안(없으면 빈 문자열).
+
+        명시 초점일 때만 선다 — 파생 제안은 아직 걷지 않은 걸음을 가리키므로 되돌리기의 한계를
+        말할 자리가 아니다.
+        """
+        if self._focus is None:
+            return ""
+        return _TIER_BY_ID[self._focus].replay_caveat
+
+    # --------------------------------------------------------- 완주 문안(#918 A)
+    @property
+    def completion_title(self) -> str:
+        """완주 제목 한 줄 — 표준 완주와 전체 완주가 다른 말을 한다(미완주면 빈 문자열)."""
+        if self.all_complete:
+            return COMPLETION_TITLE_ALL
+        if self.standard_complete:
+            return COMPLETION_TITLE_STANDARD
+        return ""
+
+    @property
+    def completion_copy(self) -> str:
+        """완주 본문 한 줄 — 남은 것(심화)과 다음 처분(다시 보기·닫기)을 말한다."""
+        if self.all_complete:
+            return COMPLETION_COPY_ALL
+        if self.standard_complete:
+            return COMPLETION_COPY_STANDARD
+        return ""
+
     def pending_moments(self) -> "tuple[Milestone, ...]":
         """아직 표면이 띄우지 않은 순간 카드 — 달성 순서."""
         return tuple(self._pending)
@@ -491,9 +625,13 @@ class TutorialViewModel:
         - ``started``/``active``/``dismissed`` — 시작·표면 노출·닫힘 상태.
         - ``achieved_count``/``step_count`` — 전체 진행 수치.
         - ``standard_complete``/``all_complete`` — 표준 완주(고급까지)·전체 완주.
-        - ``suggested_tier`` — 다음 제안 티어 식별자(없으면 ``""``).
+        - ``suggested_tier`` — 파생 제안 티어 식별자(없으면 ``""``).
+        - ``focus_tier``/``guided_tier``/``focus_caveat`` — 안내 초점 축(#918 C). 표면이 그릴
+          때 보는 것은 ``guided_tier`` 하나다.
+        - ``completion_title``/``completion_copy``/``revisit_prompt`` — 완주 문안과 다시 보기
+          안내(#918 A). 완주 전에는 앞 둘이 빈 문자열이다.
         - ``tiers`` — 티어별 ``{tier,label,title,optional,complete,graduation_copy,
-          invitation,achieved_count,step_count,steps}``. ``steps`` 항목은
+          invitation,replay_caveat,achieved_count,step_count,steps}``. ``steps`` 항목은
           ``{milestone,title,next_step,moment_copy,achieved}``.
         - ``moment_queue`` — 미소비 카드 ``{milestone,title,moment_copy}`` 목록(달성 순서).
         """
@@ -507,6 +645,14 @@ class TutorialViewModel:
             "standard_complete": self.standard_complete,
             "all_complete": self.all_complete,
             "suggested_tier": self.suggested_tier,
+            "focus_tier": self.focus_tier,
+            "guided_tier": self.guided_tier,
+            "focus_caveat": self.focus_caveat,
+            "completion_title": self.completion_title,
+            "completion_copy": self.completion_copy,
+            # 다시 보기 안내는 완주 전후로 같은 말이다 — 지나간 과정을 겨누는 길은 완주해야
+            # 열리는 특전이 아니라 늘 서 있는 동선이다(#918 C).
+            "revisit_prompt": REVISIT_PROMPT,
             "tiers": [self._tier_snapshot(definition) for definition in TIERS],
             "moment_queue": [
                 {
@@ -528,6 +674,7 @@ class TutorialViewModel:
             "complete": self.tier_complete(definition.tier),
             "graduation_copy": definition.graduation_copy,
             "invitation": definition.invitation,
+            "replay_caveat": definition.replay_caveat,
             "achieved_count": sum(1 for step in steps if step.milestone in self._achieved),
             "step_count": len(steps),
             "steps": [

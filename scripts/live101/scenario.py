@@ -2048,6 +2048,80 @@ def _require_step(s: Surface, milestone: str, what: str) -> None:
     )
 
 
+def _tutorial_phase(s: Surface) -> str:
+    """지금 패널이 선 국면 — 진행 · 완주 · 초점(``data-phase``). 없으면 빈 문자열."""
+    return str(s.js(
+        "(document.getElementById('tutorialPanel')||{dataset:{}}).dataset.phase || ''"
+    ))
+
+
+def _await_complete_phase(s: Surface, what: str) -> dict:
+    """완주 국면이 **실제로 섰는지** — 체크리스트가 사라진 자리에 완주 문안이 선다(§1 D5).
+
+    이 함수가 있는 이유는 실측 하나다(#927). 고급 티어는 T15·T16 둘이라 **T16 이 체크되는
+    바로 그 순간** 표준 완주가 성립하고, 패널은 같은 렌더에서 complete 국면으로 접혀
+    체크리스트를 통째로 걷는다. 그래서 T16 의 착지를 ``li.tut-step`` 으로 기다리면 그 대기는
+    영영 참이 되지 않는다 — CI 에서 30.1초 시한으로 나온 빨강이 그것이고, 제품은 옳았다.
+
+    그러므로 이 단계의 착지는 **국면 전환**이 증언한다. 체크 자체는 지나간 과정을 다시 겨눈
+    뒤(:func:`_focus_tier`) 본다 — 「보이지 않는다」와 「체크되지 않았다」를 가르는 것이
+    이 두 걸음의 요점이다.
+
+    셋을 함께 잰다: 국면 표기 · 완주 문안의 실존 · 체크리스트 **부재**. 앞의 둘만 재면 완주
+    문안이 체크리스트 위에 겹쳐 선 화면도 같은 초록으로 지나간다.
+    """
+    s.wait(
+        "(function(){const p=document.getElementById('tutorialPanel');"
+        "return !!p && p.dataset.phase === 'complete'"
+        " && !!document.getElementById('tutorialComplete')"
+        " && !document.querySelector('#tutorialPanel li.tut-step');})()",
+        f"{what} 완주 국면",
+        timeout=30.0,
+        requires=["#tutorialPanel"],
+    )
+    return {
+        "phase": _tutorial_phase(s),
+        "title": str(s.js(
+            "document.querySelector('#tutorialComplete .tut-done-title').textContent"
+        )).strip(),
+    }
+
+
+def _focus_tier(s: Surface, tier: str, what: str) -> str:
+    """「다시 볼 과정」에서 한 과정을 **명시로 겨눈다** — 심화 진입의 유일한 어포던스(§1 D5).
+
+    심화는 선택 과정이라 표준 완주가 그리로 이어 주지 않는다. 사용자가 그 과정을 골라야
+    안내가 그쪽을 보고, 그때 패널은 그 과정 하나만 세운다(focus 국면). 대본이 그 길을 그대로
+    걷는 것은 우회가 아니라 새 어포던스의 live 커버리지다 — 이 버튼이 죽으면 심화는 제품에서
+    닿을 수 없는 곳이 되고, 그 사실은 여기서만 드러난다.
+    """
+    selector = f'#tutorialTierPicker button[data-tier={json.dumps(tier)}]'
+    s.wait(
+        f"!!document.querySelector({json.dumps(selector)})",
+        f"{what} 과정 버튼",
+        timeout=30.0,
+        requires=["#tutorialTierPicker"],
+    )
+    s.click_sel(selector, what=f"{what} 과정 겨눔")
+    # 겨눈 과정이 **실제로 그 과정인지**까지 본다 — 국면만 재면 남의 과정이 선 화면도 통과한다.
+    s.wait(
+        "(function(){const p=document.getElementById('tutorialPanel');"
+        "return !!p && p.dataset.phase === 'focus'"
+        f" && !!p.querySelector('section.tut-tier[data-tier={json.dumps(tier)}]')"
+        " && !!document.getElementById('tutorialFocusClear');})()",
+        f"{what} 초점 국면",
+        timeout=30.0,
+        requires=["#tutorialPanel"],
+    )
+    return _tutorial_phase(s)
+
+
+def _clear_focus(s: Surface, what: str) -> dict:
+    """초점을 놓고 완주 자리로 돌아온다 — 「전체 보기」가 그 해제 동선이다(§1 D5)."""
+    s.click_sel("#tutorialFocusClear", what=f"{what} 초점 해제")
+    return _await_complete_phase(s, what)
+
+
 def _tutorial_snapshot(s: Surface) -> dict:
     value = s.bridge("window.pywebview.api.initial('tutorial')", "튜토리얼 스냅샷")
     if not isinstance(value, dict):
@@ -2416,7 +2490,18 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         else [_approve(ctx, "변환본 생성", managed=False) and "REVIEW_PREVIEW"]
     )
     compiled_run = _generate(ctx, "변환본 생성")
+    # T16 이 곧 표준 완주다(고급 = T15·T16) — 체크되는 순간 패널이 complete 국면으로 접히고
+    # 체크리스트가 사라진다. 그래서 여기서 기다리는 것은 체크가 아니라 **국면 전환**이다.
+    standard = _await_complete_phase(s, "표준 완주")
+    # 그 체크를 눈으로 보려면 지나간 과정을 다시 겨눠야 한다 — 「다시 볼 과정」이 그 길이다.
+    advanced_focus = _focus_tier(s, "advanced", "고급 되짚기")
     _require_step(s, "T16", "변환본으로 생성")
+    _expect(_tier_complete(s, "advanced"), "고급 티어가 졸업 상태로 서지 않았습니다")
+    # 초점 국면은 겨눈 과정 **하나만** 세운다 — 「다시 볼 과정」은 그 자리에 없다. 그래서 다른
+    # 과정으로 옮기는 길은 초점을 놓고 완주 자리로 돌아가는 것 하나다(제품이 그렇게 섰다).
+    refocus = _clear_focus(s, "고급 되짚기 해제")
+    # 심화는 **선택 과정**이라 표준 완주가 그리로 이어 주지 않는다(§1 D5) — 명시로 겨눈다.
+    deep_focus = _focus_tier(s, "deep", "심화 진입")
     before_deep = _results(ctx.home_census())
     # 심화 티어는 **동봉 3행 전부**로 선다(#915). 종전 자산은 `납품기한` 이라는 이름이
     # 날짜 유형을 선언해 자유서식 값 2행이 「먼저 데이터 문제를 확인하세요」에 걸렸고,
@@ -2494,8 +2579,21 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         "T17: 갈래를 바꿔 다시 만들었는데 앞선 산출과 내용이 같은 문서만 있습니다"
         " — 절이 빠지지 않았습니다",
     )
-    _expect(_tier_complete(s, "advanced"), "고급 티어가 졸업 상태로 서지 않았습니다")
     _expect(_tier_complete(s, "deep"), "심화 티어가 졸업 상태로 서지 않았습니다")
+    # 초점을 놓으면 완주 자리로 돌아온다 — 이번엔 심화까지 걸었으므로 표준 완주와 **다른 말**을
+    # 해야 한다. 그 갈림은 링1 이 이미 냈고 여기서는 그것이 화면에 섰는지만 관측한다.
+    all_done = _clear_focus(s, "전체 완주")
+    facts["lifecycle"] = {
+        "standard_phase": standard["phase"],
+        "standard_title": standard["title"],
+        "advanced_focus_phase": advanced_focus,
+        "refocus_phase": refocus["phase"],
+        # 심화에 어떻게 들어갔는가 — 자동 이월이 아니라 「다시 볼 과정」 선택이다(§1 D5).
+        "deep_entry": "focus_picker",
+        "deep_focus_phase": deep_focus,
+        "final_phase": all_done["phase"],
+        "final_title": all_done["title"],
+    }
     facts["advanced"] = {
         "compile_confirm_body": compile_body,
         "compiled_run": compiled_run,

@@ -244,6 +244,8 @@ export const SCREEN_ACTIONS = {
     dismiss: { required: [], optional: [] },
     resume: { required: [], optional: [] },
     consume_moment: { required: ["milestone"], optional: [] },
+    focus_tier: { required: ["tier"], optional: [] },
+    clear_focus: { required: [], optional: [] },
   },
 } as const;
 

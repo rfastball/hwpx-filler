@@ -153,6 +153,61 @@ def test_consume_moment_is_a_round_trip_not_a_frontend_local_erase():
     assert done["achieved"] is True and done["moment_copy"]
 
 
+def test_focus_actions_move_the_aim_without_touching_the_record(tmp_path):
+    """#918 C — 초점은 「무엇을 보여줄까」다. 달성 기록도 영속도 건드리지 않는다."""
+    ctrl, pushes, saved = _tutorial()
+    for step in STEPS:
+        ctrl.notify(step.milestone)
+    achieved = ctrl.snapshot()["achieved_count"]
+    writes = len(saved)
+
+    _send(ctrl, "focus_tier", {"tier": "basic"})
+    snap = ctrl.snapshot()
+    assert snap["focus_tier"] == "basic" and snap["guided_tier"] == "basic"
+    assert snap["focus_caveat"], "기본 과정의 한계 문안이 서지 않았습니다"
+    assert snap["achieved_count"] == achieved
+    assert len(saved) == writes, "초점 지정이 진행 파일을 다시 썼습니다"
+    assert pushes[-1][1]["focus_tier"] == "basic", "초점 전이가 화면에 밀리지 않았습니다"
+
+    _send(ctrl, "clear_focus")
+    assert ctrl.snapshot()["focus_tier"] == ""
+    assert len(saved) == writes
+
+
+def test_unknown_focus_tier_is_loud_and_missing_key_never_reaches_the_controller():
+    ctrl, _, _ = _tutorial()
+    with pytest.raises(ValueError, match="알 수 없는 튜토리얼 과정"):
+        _send(ctrl, "focus_tier", {"tier": "초급"})
+    # 스키마 관문이 먼저 선다 — payload 오타가 `dict.get` 으로 조용히 흘러 기본값이 되지 않는다.
+    with pytest.raises(ValueError):
+        _send(ctrl, "focus_tier", {"teir": "basic"})
+
+
+def test_completion_snapshot_stops_pointing_at_a_next_step(tmp_path):
+    """#918 A — 18/18 인데 「다음 걸음」을 계속 가리키던 상태의 반대 증거."""
+    ctrl, _, _ = _tutorial()
+    for step in STEPS[:17]:
+        ctrl.notify(step.milestone)
+    standard = ctrl.snapshot()
+    assert standard["standard_complete"] is True and standard["all_complete"] is False
+    assert standard["completion_title"] and "심화" in standard["completion_copy"]
+
+    ctrl.notify(Milestone.CHANGE_COMPOSITION)
+    done = ctrl.snapshot()
+    assert done["all_complete"] is True
+    assert done["guided_tier"] == "", "다 걸었는데 안내가 아직 어딘가를 겨눕니다"
+    assert done["revisit_prompt"], "다시 볼 과정을 고를 자리가 없습니다"
+
+    # 완주 뒤 닫았다 열면 완주 상태로 열린다(초점은 세션 값이라 재개가 지난 겨눔을 되살리지
+    # 않는다). 재개 문은 완주·미완주 어느 쪽에서도 남는다.
+    _send(ctrl, "focus_tier", {"tier": "advanced"})
+    _send(ctrl, "dismiss")
+    _send(ctrl, "resume")
+    reopened = ctrl.snapshot()
+    assert reopened["active"] is True and reopened["focus_tier"] == ""
+    assert reopened["all_complete"] is True
+
+
 def test_boot_restores_persisted_progress():
     pushes: list = []
     ctrl = TutorialController(

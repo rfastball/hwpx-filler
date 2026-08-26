@@ -24,6 +24,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   MOMENT_VISIBLE_MS,
   TutorialPanel,
+  focusedTierOf,
   momentToShow,
   nextStepOf,
 } from "../../frontend/src/tutorial/panel.ts";
@@ -62,6 +63,13 @@ function snapshot(overrides = {}) {
     standard_complete: false,
     all_complete: false,
     suggested_tier: "basic",
+    /* 안내가 겨누는 곳은 링1 이 합쳐서 준다(#918 C) — 표면은 `guided_tier` 하나만 본다. */
+    focus_tier: "",
+    guided_tier: "basic",
+    focus_caveat: "",
+    completion_title: "",
+    completion_copy: "",
+    revisit_prompt: "다시 볼 과정을 고르세요.",
     tiers: [
       {
         tier: "basic",
@@ -71,6 +79,7 @@ function snapshot(overrides = {}) {
         complete: false,
         graduation_copy: "기본 졸업 문안",
         invitation: "기본 초대 문안",
+        replay_caveat: "기본 한계 문안",
         achieved_count: 1,
         step_count: 2,
         steps: [step("T0", "예제 설치", true), step("T1", "템플릿 고르기", false)],
@@ -83,6 +92,7 @@ function snapshot(overrides = {}) {
         complete: false,
         graduation_copy: "심화 졸업 문안",
         invitation: "심화 초대 문안",
+        replay_caveat: "",
         achieved_count: 0,
         step_count: 1,
         steps: [step("T17", "구성 바꿔 생성", false)],
@@ -91,6 +101,26 @@ function snapshot(overrides = {}) {
     moment_queue: [],
     ...overrides,
   };
+}
+
+/** 완주 스냅샷 — 두 과정이 다 서고 겨눌 다음 걸음이 없는 상태(#918 A). */
+function completed(overrides = {}) {
+  const snap = snapshot({
+    achieved_count: 3,
+    standard_complete: true,
+    all_complete: true,
+    suggested_tier: "",
+    guided_tier: "",
+    completion_title: "모든 단계를 마쳤습니다",
+    completion_copy: "심화까지 다 걸었습니다.",
+    ...overrides,
+  });
+  for (const tier of snap.tiers) {
+    tier.complete = true;
+    tier.achieved_count = tier.step_count;
+    for (const entry of tier.steps) entry.achieved = true;
+  }
+  return snap;
 }
 
 /** 렌더 1회 — `ports` 는 안정 참조 규약을 그대로 흉내낸다(구독은 즉시 해제 클로저 반환). */
@@ -243,6 +273,105 @@ test("닫으면 체크리스트는 걷히고 재개 문 하나만 남는다", ()
   assert.ok(!markup.includes('id="tutorialBody"'));
 });
 
+/* ─────────────────── 1-b. 완주·초점 국면(#918 A·C) ─────────────────── */
+
+test("완주하면 체크리스트 대신 완주 문안이 선다 — 다 걸은 사람에게 걸음을 재촉하지 않는다", () => {
+  const { markup } = render(completed());
+  assert.match(markup, /data-phase="complete"/);
+  assert.match(markup, /id="tutorialComplete"/);
+  assert.match(markup, /모든 단계를 마쳤습니다/);
+  assert.ok(!markup.includes('id="tutorialNextStep"'),
+    "18/18 인데 다음 걸음 줄이 남았습니다(#918 A)");
+  assert.ok(!markup.includes('data-milestone="T0"'),
+    "완주 자리에 전 단계 체크리스트가 그대로 남았습니다");
+  // 머리 줄의 진행 수치는 그대로 산다 — 무엇이 끝났는지는 계속 말한다.
+  assert.match(markup, /id="tutorialProgress"[^>]*>3\/3</);
+});
+
+test("표준 완주는 심화를 남긴 채 선다 — 완주 문안의 갈림은 링1 이 이미 했다", () => {
+  const snap = completed({
+    all_complete: false,
+    completion_title: "기본·응용·고급을 모두 마쳤습니다",
+    completion_copy: "선택 과정인 심화가 남아 있습니다.",
+  });
+  snap.tiers[1].complete = false;
+  snap.tiers[1].achieved_count = 0;
+  snap.tiers[1].steps[0].achieved = false;
+  const { markup } = render(snap);
+  assert.match(markup, /data-phase="complete"/, "표준 완주도 완주 국면이다(심화는 선택 진입)");
+  assert.match(markup, /선택 과정인 심화가 남아 있습니다\./);
+  // 남은 심화로 가는 길은 다시 보기 자리가 진다(선택 진입이라 재촉하지 않는다).
+  assert.match(markup, /id="tutorialTierPicker"/);
+  assert.match(markup, /data-tier="deep"/);
+});
+
+test("다시 보기 자리는 완주 전에도 선다 — 지나간 과정을 겨눌 길이 늘 있다(#918 C)", () => {
+  for (const snap of [snapshot(), completed()]) {
+    const { markup } = render(snap);
+    assert.match(markup, /id="tutorialRevisit"[^>]*>다시 볼 과정을 고르세요\.</);
+    assert.match(markup, /id="tutorialTierPicker"/);
+    assert.match(markup, /data-tier="basic"[^>]*>.*기본/);
+    assert.match(markup, /data-tier="deep"/);
+  }
+});
+
+test("과정 버튼은 초점만 보낸다 — 달성 기록을 되돌리는 액션이 아니다", () => {
+  const { sent } = render(snapshot());
+  assert.deepEqual(sent, [], "렌더만으로 무언가 보냈습니다");
+  // 보낼 수 있는 액션 어휘를 컴포넌트 원문에서 확인한다(서버 렌더는 클릭을 커밋하지 않는다).
+  const source = readFileSync(
+    new URL("../../frontend/src/tutorial/panel.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /send\("focus_tier", \{ tier: tier\.tier \}\)/);
+  assert.match(source, /send\("clear_focus"\)/);
+  assert.ok(!/send\("[a-z_]*(reset|forget|unachieve|clear_progress)[a-z_]*"/.test(source),
+    "진행 기록을 지우는 액션을 부릅니다 — 기록은 단조입니다");
+});
+
+test("초점이 서면 그 과정만 서고 한계 문안과 해제 동선이 함께 온다", () => {
+  const { markup } = render(snapshot({
+    focus_tier: "basic",
+    guided_tier: "basic",
+    focus_caveat: "기본 한계 문안",
+  }));
+  assert.match(markup, /data-phase="focus"/);
+  assert.match(markup, /data-tier="basic"/);
+  assert.ok(!markup.includes('data-milestone="T17"'), "겨누지 않은 과정이 함께 섰습니다");
+  assert.match(markup, /id="tutorialFocusCaveat"[^>]*>기본 한계 문안</);
+  assert.match(markup, /id="tutorialFocusClear"[^>]*>전체 보기</);
+  assert.ok(!markup.includes('id="tutorialTierPicker"'),
+    "초점 중에 고르는 자리가 함께 남아 무엇이 선택된 상태인지 흐려집니다");
+  // 한계 문안은 목록 **앞**에 선다 — 걷기 시작한 뒤에 알리면 늦다.
+  assert.ok(markup.indexOf("기본 한계 문안") < markup.indexOf('data-milestone="T0"'));
+});
+
+test("한계 없는 과정을 겨누면 경고 줄이 아예 없다 — 모든 곳에 붙이면 배경음이 된다", () => {
+  const { markup } = render(snapshot({ focus_tier: "deep", guided_tier: "deep", focus_caveat: "" }));
+  assert.match(markup, /data-phase="focus"/);
+  assert.ok(!markup.includes('id="tutorialFocusCaveat"'));
+  assert.match(markup, /id="tutorialFocusClear"/);
+});
+
+test("완주 뒤 겨눔은 그 과정의 완료 목록을 보여준다 — 다시 보기이지 되돌리기가 아니다", () => {
+  const { markup } = render(completed({
+    focus_tier: "basic",
+    guided_tier: "basic",
+    focus_caveat: "기본 한계 문안",
+  }));
+  assert.match(markup, /data-phase="focus"/);
+  assert.match(markup, /data-milestone="T0"[^>]*data-achieved="1"/);
+  assert.match(markup, /기본 졸업 문안/);
+  assert.ok(!markup.includes('id="tutorialComplete"'), "겨눈 뒤에도 완주 문안이 겹쳐 섰습니다");
+});
+
+test("닫힘은 완주에서도 재개 문 하나만 남긴다 — 완주가 패널을 파괴하지 않는다", () => {
+  const { markup } = render(completed({ active: false, dismissed: true }));
+  assert.match(markup, /id="tutorialResume"[^>]*>튜토리얼 다시 열기</);
+  assert.ok(!markup.includes('id="tutorialComplete"'));
+  assert.ok(!markup.includes('id="tutorialTierPicker"'));
+});
+
 /* ────────────────────────── 2. 순간 카드 큐 ────────────────────────── */
 
 test("큐가 비면 카드가 서지 않는다", () => {
@@ -318,15 +447,26 @@ test("momentToShow — 큐에서 파생이고, 억제·미활성은 큐를 남�
 
 /* ────────────────────────── 3. 다음 걸음 선택 ────────────────────────── */
 
-test("nextStepOf 는 제안 티어의 첫 미달성 단계다 — 순서도 링1 배열 그대로", () => {
+test("nextStepOf 는 **겨눈** 과정의 첫 미달성 단계다 — 순서도 링1 배열 그대로", () => {
   const snap = snapshot();
   assert.equal(nextStepOf(snap).milestone, "T1");
   snap.tiers[0].steps[1].achieved = true;
-  assert.equal(nextStepOf(snap), null, "그 티어에 남은 단계가 없으면 안내할 걸음도 없다");
-  snap.suggested_tier = "deep";
+  assert.equal(nextStepOf(snap), null, "그 과정에 남은 단계가 없으면 안내할 걸음도 없다");
+  snap.guided_tier = "deep";
   assert.equal(nextStepOf(snap).milestone, "T17");
-  snap.suggested_tier = "";
-  assert.equal(nextStepOf(snap), null, "제안 티어가 없으면(전부 졸업) 걸음도 없다");
+  snap.guided_tier = "";
+  assert.equal(nextStepOf(snap), null, "겨눈 과정이 없으면(전부 졸업) 걸음도 없다");
+});
+
+test("겨눔은 초점이 제안을 덮은 결과다 — 표면이 둘을 다시 합치지 않는다", () => {
+  /* `guided_tier` 만 읽는다는 것을 어긋난 값으로 못박는다: 초점이 심화인데 제안이 기본이면
+     안내는 심화를 따라야 한다. 합침을 여기서 다시 하면 링1 과 두 곳이 판정하게 된다. */
+  const snap = snapshot({ focus_tier: "deep", guided_tier: "deep", suggested_tier: "basic" });
+  assert.equal(nextStepOf(snap).milestone, "T17");
+  assert.equal(focusedTierOf(snap).tier, "deep");
+  assert.equal(focusedTierOf(snapshot()), null, "명시 초점이 없으면 제안으로 서지 않는다");
+  assert.equal(focusedTierOf(snapshot({ focus_tier: "없는과정" })), null,
+    "스냅샷에 없는 과정을 겨눠도 시끄럽게 죽지 않는다");
 });
 
 test("자동 소멸 시간은 공용 상수 하나다", () => {

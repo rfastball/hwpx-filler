@@ -107,6 +107,19 @@ class TutorialController:
         self.vm.resume()
         self._persist()
 
+    def _do_focus_tier(self, p: dict) -> None:
+        """안내 초점을 이 과정으로 겨눈다(#918 C) — 달성 기록은 그대로다.
+
+        영속하지 않는 이유는 순간 카드 소비와 같다: 초점은 진행이 아니라 표시 이력이라
+        ``progress()`` 에 실리지 않고, 다음 부팅은 완주 상태(초점 없음)로 연다. 모르는 과정
+        식별자는 링1 이 시끄럽게 거절한다.
+        """
+        self.vm.set_focus_tier(p["tier"])
+
+    def _do_clear_focus(self, p: dict) -> None:
+        """초점을 걷는다 — 안내가 파생 제안으로 돌아간다(완주 상태면 다시 보기 자리로)."""
+        self.vm.clear_focus_tier()
+
     def _do_consume_moment(self, p: dict) -> dict:
         """순간 카드 한 장의 소비를 되알린다(표시 이력이라 영속하지 않는다).
 

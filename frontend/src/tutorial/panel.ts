@@ -30,6 +30,18 @@
  *
  * 큐 소비는 백엔드 왕복이다(`consume_moment`). 프런트가 자기 안에서 지우면 다음 스냅샷이
  * 같은 카드를 다시 싣는다 — 소비 사실의 정본은 링1 의 큐 하나다.
+ *
+ * ## 세 국면 — 진행 · 완주 · 초점 (#918 A·C)
+ *
+ * 렌더 분기는 `started`·`dismissed` 둘이 아니라 본문의 세 국면을 함께 가른다.
+ *
+ * - **진행**: 다음 걸음 한 줄 + 전 과정 체크리스트 + 다시 보기 자리.
+ * - **완주**(`standard_complete` ∧ 초점 없음): 체크리스트 대신 완주 문안 + 다시 보기 자리.
+ *   18/18 인 채 「다음 걸음」을 계속 가리키던 것이 #918 A 다.
+ * - **초점**(`focus_tier` ≠ ""): 그 과정 하나만 + 되돌아가지 않는 것의 문안 + 해제 동선.
+ *
+ * 국면 판정의 재료(`standard_complete`·`focus_tier`·`guided_tier`·문안)는 전부 링1 이 실어
+ * 보낸다. 여기서 하는 것은 그 값들로 어느 가지를 그릴지 고르는 일뿐이다.
  */
 import { createElement, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -54,6 +66,8 @@ export type TutorialTierSnapshot = {
   complete: boolean;
   graduation_copy: string;
   invitation: string;
+  /** 이 과정을 다시 겨눴을 때 **되돌아가지 않는 것**의 문안(없으면 ""). */
+  replay_caveat: string;
   achieved_count: number;
   step_count: number;
   steps: readonly TutorialStepSnapshot[];
@@ -74,7 +88,16 @@ export type TutorialSnapshot = {
   step_count: number;
   standard_complete: boolean;
   all_complete: boolean;
+  /** 파생 제안(첫 미졸업 과정). 그릴 때 보는 것은 `guided_tier` 다. */
   suggested_tier: string;
+  /** 사용자가 명시로 겨눈 과정(없으면 ""). 국면을 가르는 축. */
+  focus_tier: string;
+  /** 안내가 실제로 겨누는 과정 = 초점 ?? 제안. 둘을 표면이 다시 합치지 않는다. */
+  guided_tier: string;
+  focus_caveat: string;
+  completion_title: string;
+  completion_copy: string;
+  revisit_prompt: string;
   tiers: readonly TutorialTierSnapshot[];
   moment_queue: readonly TutorialMomentSnapshot[];
 };
@@ -113,14 +136,25 @@ function asSnapshot(value: unknown): TutorialSnapshot | null {
   return value as TutorialSnapshot;
 }
 
-/** 지금 안내할 걸음 — 제안 티어(링1 판정)의 첫 미달성 단계. 없으면 `null`.
+/** 지금 안내할 걸음 — 겨눈 과정(링1 판정)의 첫 미달성 단계. 없으면 `null`.
  *
- *  「어느 티어인가」는 링1 이 정한다(`suggested_tier`). 여기서 하는 것은 그 티어 안에서
- *  표 순서상 첫 미달성을 고르는 일뿐이고, 그 순서 역시 링1 이 실어 보낸 배열 순서다. */
+ *  「어느 과정인가」는 링1 이 정한다(`guided_tier` = 명시 초점 ?? 파생 제안). 여기서 하는
+ *  것은 그 과정 안에서 표 순서상 첫 미달성을 고르는 일뿐이고, 그 순서 역시 링1 이 실어 보낸
+ *  배열 순서다. 다 걸은 과정을 겨누면 남은 걸음이 없어 `null` 이고, 그때 안내 자리에 서는
+ *  것은 「다음 걸음」이 아니라 완주 문안이다(#918 A). */
 export function nextStepOf(snapshot: TutorialSnapshot): TutorialStepSnapshot | null {
-  const tier = snapshot.tiers.find((entry) => entry.tier === snapshot.suggested_tier);
+  const tier = snapshot.tiers.find((entry) => entry.tier === snapshot.guided_tier);
   if (tier === undefined) return null;
   return tier.steps.find((step) => !step.achieved) ?? null;
+}
+
+/** 지금 겨눈 과정의 스냅샷 — 명시 초점이 없으면 `null`(국면 판정의 축).
+ *
+ *  파생 제안으로는 이 값이 서지 않는다: 제안은 「다음에 갈 곳」이고 초점은 「지금 이것만
+ *  본다」라서, 둘을 한 값으로 합치면 아직 안 걸은 과정이 혼자 서고 나머지가 사라진다. */
+export function focusedTierOf(snapshot: TutorialSnapshot): TutorialTierSnapshot | null {
+  if (snapshot.focus_tier === "") return null;
+  return snapshot.tiers.find((entry) => entry.tier === snapshot.focus_tier) ?? null;
 }
 
 function stepNode(step: TutorialStepSnapshot): ReactNode {
@@ -146,7 +180,7 @@ function stepNode(step: TutorialStepSnapshot): ReactNode {
   );
 }
 
-function tierNode(tier: TutorialTierSnapshot, suggested: string): ReactNode {
+function tierNode(tier: TutorialTierSnapshot, guided: string): ReactNode {
   return createElement(
     "section",
     {
@@ -170,10 +204,59 @@ function tierNode(tier: TutorialTierSnapshot, suggested: string): ReactNode {
        같이 그리면 아직 시작도 안 한 티어가 "할 수 있습니다"라고 말한다. */
     tier.complete
       ? createElement("p", { className: "tut-tier-grad" }, tier.graduation_copy)
-      : tier.tier === suggested
+      : tier.tier === guided
         ? createElement("p", { className: "tut-tier-invite" }, tier.invitation)
         : null,
     createElement("ul", { className: "tut-steps" }, tier.steps.map(stepNode)),
+  );
+}
+
+/** 다시 볼 과정을 고르는 자리 — 안내 한 줄(링1 문안) + 과정 버튼들.
+ *
+ *  이 줄이 #918 C 의 답이다: 지나간 과정을 겨눌 길이 없어서 안내는 늘 「첫 미졸업」만
+ *  가리켰고, 다 걸으면 그마저 사라졌다. 버튼이 보내는 것은 초점뿐이고 **달성 기록은 손대지
+ *  않는다** — 한 일을 안 했다고 말하지 않는다(링1 머리말 「두 축」). */
+function revisitNode(
+  snapshot: TutorialSnapshot,
+  send: (action: string, payload?: Record<string, unknown>) => void,
+): ReactNode {
+  return createElement(
+    "div",
+    { key: "revisit", className: "tut-revisit" },
+    createElement("p", { id: "tutorialRevisit", className: "tut-revisit-lead" }, snapshot.revisit_prompt),
+    createElement(
+      "div",
+      { id: "tutorialTierPicker", className: "tut-picker", role: "group", "aria-labelledby": "tutorialRevisit" },
+      ...snapshot.tiers.map((tier) => createElement(
+        "button",
+        {
+          key: tier.tier,
+          type: "button",
+          className: "btn sm tut-pick",
+          "data-tier": tier.tier,
+          onClick: () => { send("focus_tier", { tier: tier.tier }); },
+        },
+        createElement("span", { className: "tut-pick-label" }, tier.label),
+        createElement(
+          "span",
+          { className: "tut-pick-count" },
+          `${tier.achieved_count}/${tier.step_count}`,
+        ),
+      )),
+    ),
+  );
+}
+
+/** 완주 자리 — 체크리스트가 서던 곳에 완주 문안이 선다.
+ *
+ *  표준 완주와 전체 완주가 다른 말을 하지만 그 갈림은 링1 이 이미 했다: 여기 오는 것은
+ *  문자열 둘뿐이라 표면이 「어디까지 했는가」를 다시 세지 않는다. */
+function completionNode(snapshot: TutorialSnapshot): ReactNode {
+  return createElement(
+    "div",
+    { key: "complete", id: "tutorialComplete", className: "tut-done" },
+    createElement("strong", { className: "tut-done-title" }, snapshot.completion_title),
+    createElement("p", { className: "tut-done-copy" }, snapshot.completion_copy),
   );
 }
 
@@ -279,6 +362,43 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   }
 
   const next = nextStepOf(snapshot);
+  const focused = focusedTierOf(snapshot);
+  /* 국면 셋(머리말): 초점이 서면 초점, 아니면 완주 여부. 「완주」의 기준은 링1 의 표준 완주
+     (고급까지)다 — 선택 진입인 심화를 안 걸었다고 계속 걸음을 재촉하지 않는다(§3.6). */
+  const phase = focused !== null ? "focus" : snapshot.standard_complete ? "complete" : "progress";
+  const body: ReactNode[] = [];
+  if (phase === "focus" && focused !== null) {
+    if (next !== null) {
+      body.push(createElement("p", { key: "next", id: "tutorialNextStep", className: "tut-next" }, next.next_step));
+    }
+    /* 되돌아가지 않는 것을 먼저 말하고 목록을 준다 — 「다시 보기」를 「되돌리기」로 읽고
+       걷기 시작한 뒤에 알리면 이미 두 번째 작업이 생긴 뒤다(#918 C 한계 문안). */
+    if (snapshot.focus_caveat !== "") {
+      body.push(createElement("p", { key: "caveat", id: "tutorialFocusCaveat", className: "tut-caveat" }, snapshot.focus_caveat));
+    }
+    body.push(tierNode(focused, snapshot.guided_tier));
+    body.push(createElement(
+      "button",
+      {
+        key: "clear",
+        type: "button",
+        id: "tutorialFocusClear",
+        className: "btn sm tut-focus-clear",
+        onClick: () => { send("clear_focus"); },
+      },
+      "전체 보기",
+    ));
+  } else if (phase === "complete") {
+    body.push(completionNode(snapshot));
+    body.push(revisitNode(snapshot, send));
+  } else {
+    if (next !== null) {
+      body.push(createElement("p", { key: "next", id: "tutorialNextStep", className: "tut-next" }, next.next_step));
+    }
+    body.push(...snapshot.tiers.map((tier) => tierNode(tier, snapshot.guided_tier)));
+    body.push(revisitNode(snapshot, send));
+  }
+
   return createElement(
     "div",
     { id: "tutorialPanelRoot", className: "tut-root", "data-screen": screen ?? "" },
@@ -289,6 +409,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
         className: collapsed ? "tut-panel is-collapsed" : "tut-panel",
         "aria-labelledby": "tutorialPanelTitle",
         "data-collapsed": collapsed ? "1" : "0",
+        "data-phase": phase,
       },
       createElement(
         "header",
@@ -324,20 +445,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       ),
       /* 접힘은 렌더를 걷는다(hidden 이 아니라 부재) — 접힌 목록이 초점 순서에 남아 Tab 이
          보이지 않는 곳으로 가지 않게. 머리 줄은 남아 진행 수치를 계속 말한다. */
-      collapsed
-        ? null
-        : createElement(
-          "div",
-          { id: "tutorialBody", className: "tut-body" },
-          next === null
-            ? null
-            : createElement(
-              "p",
-              { id: "tutorialNextStep", className: "tut-next" },
-              next.next_step,
-            ),
-          ...snapshot.tiers.map((tier) => tierNode(tier, snapshot.suggested_tier)),
-        ),
+      collapsed ? null : createElement("div", { id: "tutorialBody", className: "tut-body" }, ...body),
     ),
     /* 억제 중에는 `momentToShow` 가 null 을 낸다 — 큐는 그대로라 모달이 닫히면 다시 선다. */
     card === null ? null : momentNode(card),
