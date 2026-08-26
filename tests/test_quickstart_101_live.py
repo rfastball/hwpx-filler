@@ -44,7 +44,11 @@ from live101.surface import (  # noqa: E402
     UnexpectedNativeAlert,
 )
 
-from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS  # noqa: E402
+from hwpxfiller.gui.tutorial_state import (  # noqa: E402
+    COMPLETION_TITLE_ALL,
+    COMPLETION_TITLE_STANDARD,
+    STEPS as TUTORIAL_STEPS,
+)
 from hwpxfiller.webapp import boot_budget  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -796,6 +800,12 @@ def test_the_onboarding_journey_completes_every_tier_on_an_empty_home(
     assert facts["achieved"] == [str(step.milestone) for step in TUTORIAL_STEPS]
     assert facts["all_complete"] is True
     assert all(facts["tiers"].values()), facts["tiers"]
+    # D5 — 심화는 **명시 초점**으로 열렸고, 초점을 놓은 자리가 전체 완주를 말한다(#918).
+    lifecycle = facts["lifecycle"]
+    assert lifecycle["deep_entry"] == "focus_picker", lifecycle
+    assert lifecycle["deep_focus_phase"] == "focus", lifecycle
+    assert lifecycle["standard_title"] == COMPLETION_TITLE_STANDARD, lifecycle
+    assert lifecycle["final_title"] == COMPLETION_TITLE_ALL, lifecycle
     # D1 — 누르기 전 홈에 예제가 없다(빈 홈이라야 가릴 수 있는 사실).
     assert not [name for name in facts["home_before_install"] if "예제" in name]
     # 제거 뒤 끊긴 작업을 숨기지 않는다.
@@ -986,6 +996,22 @@ def test_each_journey_fact_is_actually_judged(observation, fragment) -> None:
 # 그때 「관측이 비었는데 초록」을 아무도 묻지 않는다(파일 머리말의 층 분리 승계).
 
 
+def _healthy_lifecycle(**overrides) -> dict:
+    """완주·재수행 수명주기(#918 D5)의 건강한 관측 — 국면 셋이 제자리에 선 실행."""
+    base = {
+        "standard_phase": "complete",
+        "standard_title": COMPLETION_TITLE_STANDARD,
+        "advanced_focus_phase": "focus",
+        "refocus_phase": "complete",
+        "deep_entry": "focus_picker",
+        "deep_focus_phase": "focus",
+        "final_phase": "complete",
+        "final_title": COMPLETION_TITLE_ALL,
+    }
+    base.update(overrides)
+    return base
+
+
 def _healthy_onboarding_report(**observation_overrides) -> dict:
     """전 단계를 완주한 보고서 — 실주행 산출(run 5)의 형상을 그대로 축약했다."""
     facts = {
@@ -1004,6 +1030,7 @@ def _healthy_onboarding_report(**observation_overrides) -> dict:
             "empty_confirm_gate": True,
         },
         "deep": {"fresh_digests": 1},
+        "lifecycle": _healthy_lifecycle(),
         "achieved": [str(step.milestone) for step in TUTORIAL_STEPS],
         "all_complete": True,
         "tiers": {"basic": True, "applied": True, "advanced": True, "deep": True},
@@ -1053,6 +1080,17 @@ def test_an_empty_onboarding_observation_is_never_green() -> None:
         ({"applied": {"copied": "1 / 3", "selected_after_swap": 2, "blank_marker": "x", "empty_confirm_gate": True}}, "선택이 0건"),
         # T17 — 갈래를 바꿔 만든 문서가 앞선 산출과 **정말 다른가**(vacuous 금지).
         ({"deep": {"fresh_digests": 0}}, "다른 문서를 내지"),
+        # 수명주기(#918 D5) — 완주가 계속 「다음 걸음」을 가리키면(진행 국면 잔류) 잡는다.
+        ({"lifecycle": _healthy_lifecycle(standard_phase="progress")}, "표준 완주 국면"),
+        ({"lifecycle": _healthy_lifecycle(advanced_focus_phase="complete")}, "고급 되짚기 국면"),
+        ({"lifecycle": _healthy_lifecycle(refocus_phase="focus")}, "초점 해제 뒤 완주 자리 국면"),
+        ({"lifecycle": _healthy_lifecycle(deep_focus_phase="complete")}, "심화 진입 국면"),
+        ({"lifecycle": _healthy_lifecycle(final_phase="focus")}, "전체 완주 국면"),
+        # 심화가 명시 초점이 아닌 길로 열렸다면 그건 선택 과정이 아니다(§1 D5).
+        ({"lifecycle": _healthy_lifecycle(deep_entry="auto")}, "명시 초점 선택이 아닙니다"),
+        # 문안 둘이 뒤바뀌면 남은 과정이 없다고 하거나 걸은 과정이 사라진다.
+        ({"lifecycle": _healthy_lifecycle(standard_title=COMPLETION_TITLE_ALL)}, "표준 완주 문안"),
+        ({"lifecycle": _healthy_lifecycle(final_title=COMPLETION_TITLE_STANDARD)}, "전체 완주 문안"),
         ({"removal": {"templates_left": 2, "pinned_left": 0, "files_left": [], "missing_template_jobs": 5}}, "제거 뒤 잔존"),
         ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": ["계약목록.csv"], "missing_template_jobs": 5}}, "자산 파일이 남았"),
         ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": [], "missing_template_jobs": 0}}, "끊긴 작업 경보"),

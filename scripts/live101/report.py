@@ -16,7 +16,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS
+from hwpxfiller.gui.tutorial_state import (
+    COMPLETION_TITLE_ALL,
+    COMPLETION_TITLE_STANDARD,
+    STEPS as TUTORIAL_STEPS,
+)
 
 from .scenario import (
     CAPTURE_POINTS,
@@ -240,6 +244,36 @@ def _judge_onboarding(report: dict) -> Verdict:
     deep = facts.get("deep") or {}
     if not deep.get("fresh_digests"):
         failures.append("갈래를 바꾼 생성이 앞선 산출과 다른 문서를 내지 않았습니다")
+
+    # 수명주기(#918 D5) — 완주가 「다음 걸음」을 계속 가리키지 않고, 심화가 **명시 초점**으로만
+    # 열리며, 초점을 놓으면 전체 완주가 표준 완주와 다른 말을 하는가. 대본은 이 국면들을
+    # 관측만 하므로, 그것이 계약이 되는 자리는 여기다(관측만 하고 안 보면 계약이 아니다).
+    lifecycle = facts.get("lifecycle") or {}
+    for label, key, expected in (
+        ("표준 완주", "standard_phase", "complete"),
+        ("고급 되짚기", "advanced_focus_phase", "focus"),
+        ("초점 해제 뒤 완주 자리", "refocus_phase", "complete"),
+        ("심화 진입", "deep_focus_phase", "focus"),
+        ("전체 완주", "final_phase", "complete"),
+    ):
+        if lifecycle.get(key) != expected:
+            failures.append(
+                f"{label} 국면이 {expected!r} 가 아닙니다: {lifecycle.get(key)!r}"
+            )
+    if lifecycle.get("deep_entry") != "focus_picker":
+        failures.append(
+            f"심화 진입이 명시 초점 선택이 아닙니다: {lifecycle.get('deep_entry')!r}"
+        )
+    # 문안 둘은 서로 달라야 한다 — 표준 완주가 「모든 단계」를 말하면 남은 선택 과정이 없다고
+    # 거짓말하는 것이고, 전체 완주가 표준 문안을 말하면 심화를 걸은 사실이 사라진다.
+    if lifecycle.get("standard_title") != COMPLETION_TITLE_STANDARD:
+        failures.append(
+            f"완주 자리가 표준 완주 문안을 말하지 않습니다 — {lifecycle.get('standard_title')!r}"
+        )
+    if lifecycle.get("final_title") != COMPLETION_TITLE_ALL:
+        failures.append(
+            f"초점 해제 뒤 전체 완주 문안이 서지 않았습니다 — {lifecycle.get('final_title')!r}"
+        )
 
     removal = facts.get("removal") or {}
     if removal.get("templates_left") != 0 or removal.get("pinned_left") != 0:
