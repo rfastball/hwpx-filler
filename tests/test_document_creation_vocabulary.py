@@ -79,10 +79,11 @@ def test_preview_requirement_kinds_exact() -> None:
 
 def test_collision_policies_exact_and_default() -> None:
     assert vocab.COLLISION_POLICIES == ("ADD_SUFFIX", "FAIL", "OVERWRITE_EXPLICIT")
-    # 기본은 ADD_SUFFIX, overwrite 는 명시 선택(§8) — 기본이 정책 집합 안에 있고 덮어쓰기가 아님.
-    assert vocab.DEFAULT_COLLISION_POLICY == "ADD_SUFFIX"
+    # U4 계열2-27: 기본은 덮어쓰기다. 이름 충돌 자체는 blocker 가 아니고, 고르는 자리도 없다.
+    # 「조용히 덮지 않는다」를 지키는 것은 이 값이 아니라 그 결과다 —
+    # `tests/test_preview_requirement.py` 가 덮어쓸 항목이 승인을 세우는 것을 못박는다.
+    assert vocab.DEFAULT_COLLISION_POLICY == "OVERWRITE_EXPLICIT"
     assert vocab.DEFAULT_COLLISION_POLICY in vocab.COLLISION_POLICIES
-    assert vocab.DEFAULT_COLLISION_POLICY != "OVERWRITE_EXPLICIT"
 
 
 def test_user_vocabulary_maps_expected_domain_terms() -> None:

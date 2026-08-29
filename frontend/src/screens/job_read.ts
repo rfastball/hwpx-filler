@@ -554,7 +554,6 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
       h("span", { className: "cand-meta" },
         row.suggested ? h("span", { className: "cand-sug" }, "추천") : null,
         h("span", { className: "cand-mode" }, row.mode_label || ""),
-        h("span", { className: "cand-run" }, row.last_run_label || ""),
         row.conn_label ? h("span", { className: "cand-conn" }, row.conn_label) : null),
       active && row.template_name ? h("span", { className: "cand-tpl mono" }, row.template_name) : null),
     menu ? h("button", { className: "cand-menu", type: "button", id: "jobCandMenuBtn", "data-cand-menu": true,

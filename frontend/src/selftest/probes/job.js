@@ -223,14 +223,12 @@ function dataFirstSnapshot() {
         name: "공고서", tier: "favorite", favorited: true,
         last_run_at: "2026-07-20T09:00:00", suggested: false,
         mode: "hwpx_generate", mode_label: "HWPX 생성",
-        last_run_label: "마지막 성공 실행 2026-07-20",
         template_name: "공고서.hwpx", template_path: "C:\\t\\공고서.hwpx",
         template_missing: false, conn_label: "",
       }, {
         name: "계약서", tier: "unused", favorited: false,
         last_run_at: "", suggested: true,
         mode: "text_review_copy", mode_label: "온나라 기안",
-        last_run_label: "복사한 적 없음",
         template_name: "계약서.txt", template_path: "C:\\t\\계약서.txt",
         template_missing: false, conn_label: "",
       }],
@@ -338,14 +336,12 @@ function activeCardSnapshot() {
         name: "공고서", tier: "recent", favorited: false,
         last_run_at: "2026-07-20T09:00:00", suggested: false,
         mode: "hwpx_generate", mode_label: "HWPX 생성",
-        last_run_label: "마지막 성공 실행 2026-07-20",
         template_name: "공고서.hwpx", template_path: "C:\\t\\공고서.hwpx",
         template_missing: false, conn_label: "",
       }, {
         name: "계약서", tier: "unused", favorited: false,
         last_run_at: "", suggested: false,
         mode: "hwpx_generate", mode_label: "HWPX 생성",
-        last_run_label: "실행한 적 없음",
         template_name: "계약서.hwpx", template_path: "C:\\t\\계약서.hwpx",
         template_missing: true, conn_label: "템플릿 없음",
       }],
@@ -690,11 +686,6 @@ async function runJobDataFirst(ctx) {
     const m = doc.querySelector("#jobCandidates .cand-more");
     return m ? m.textContent : "";
   })();
-  out.last_run_text = (() => {
-    const r = doc.querySelector("#jobCandidates .cand-run");
-    return r ? r.textContent : "";
-  })();
-
   const favChain = driveFavoriteIntents(ctx, out, snap);
   favChain.catch(() => {});      // 위와 같은 이유 — 실패는 아래 Promise.all 이 그대로 올린다
 

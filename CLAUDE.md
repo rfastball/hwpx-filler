@@ -234,6 +234,11 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호(`feat: … (#319)`, 파괴적 변경은 `feat!:`).
 - 커밋하지 않는 것: `.venv/`, `.secrets/`, `build/`·`dist/`·`installer-dist/`, coverage·pytest 보고서,
   `.claude/settings.local.json`, `research-private/`.
+- 작업/템플릿 **태그·그룹은 동결**이다(U4 §2-30) — 모델·판정·영속(`Job.tags`·`Job.group`·
+  `webapp/template_groups.py`·설정의 `template_groups`·`job_collapsed_groups`)은 지우지 않고
+  두되 **웹 표면에 노출하지 않는다**: 지정·개명·해산·접힘·태그 편집·태그 facet 동사가 전부
+  걷혔고 링2 투영도 그 축을 묻지 않는다(`library_sections(grouped=False)` ·
+  `build_sections(grouped_view=False)`). 되살릴 때 그 자리에서 다시 소비하면 된다.
 - 나라장터(조달청 API) 소스는 **동결**이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지
   않는다. 풀에 있는 nara 항목은 숨기지 말고 시끄럽게 거절한다. 테스트는 실 API·서비스 키
   대신 `tests/fixtures` 의 응답을 쓴다.

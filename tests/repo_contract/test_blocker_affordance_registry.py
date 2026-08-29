@@ -252,4 +252,6 @@ def test_managed_controls_derive_from_the_single_source() -> None:
     # 확인 축 셋(동사 둘 + 자동 진행 하나)이 하나의 셀렉터로 접힌다.
     assert controls["RESOLVE_EXECUTION"] == "#jobResolveExecution"
     assert controls["RECOVER_CONTEXT"] == "#jobRecoverContext"
-    assert controls["REVIEW_DELIVERY"] == "#jobRefreshDelivery"
+    # U4 계열2-27·2-28: 이름 충돌이 blocker 가 아니게 된 뒤 이 자리에 남는 원인은
+    # 「덮어쓸 수 없는 물건에 이름이 걸렸다」이고, 그것을 지우는 동사는 폴더 바꾸기다.
+    assert controls["REVIEW_DELIVERY"] == "#jobManagedPickFolder"

@@ -21,6 +21,9 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.application.document_creation_vocabulary import (
+    DEFAULT_COLLISION_POLICY,
+)
 from hwpxfiller.application.jobs import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
@@ -456,7 +459,7 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
     assert ctrl.out_dir == legacy_out
     assert zone["run_delivery_intent"] == {
         "output_directory": str(out),
-        "collision_policy": "ADD_SUFFIX",
+        "collision_policy": DEFAULT_COLLISION_POLICY,
     }
     assert zone["delivery"] == {
         "resolvable": True,
@@ -511,7 +514,7 @@ def test_unset_output_folder_defaults_beside_the_template_and_says_so(
     }
     assert zone["run_delivery_intent"] == {
         "output_directory": str(results),
-        "collision_policy": "ADD_SUFFIX",
+        "collision_policy": DEFAULT_COLLISION_POLICY,
     }
     assert zone["delivery"]["resolvable"] is True
     assert zone["delivery"]["blockers"] == []
@@ -522,21 +525,28 @@ def test_unset_output_folder_defaults_beside_the_template_and_says_so(
     assert not results.exists()  # 관찰은 폴더를 만들지 않는다
 
 
-def test_collision_policy_is_selectable_on_the_derived_default(tmp_path: Path) -> None:
-    """폴더를 먼저 고르라고 되묻지 않는다. 그렇다고 기본값이 '직접 지정'으로 승격되지도 않는다."""
-    ctrl, results = _sited_delivery_controller(tmp_path)
+def test_collision_policy_is_the_fixed_default_and_has_no_selector(tmp_path: Path) -> None:
+    """충돌 처리는 **고르는 값이 아니다**(U4 계열2-27).
 
-    assert ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"}) == {
-        "ok": True
-    }
+    이름 충돌 자체는 blocker 가 아니라서 고를 것이 없다 — 같은 이름이 있으면 덮어쓰고,
+    무엇을 덮어쓰는지는 확인 면이 묻는다. 그래서 정책을 바꾸는 액션도 사라졌고, 도출된
+    기본값 위에서도 intent 는 그 하나로 선다(기본값이 '직접 지정'으로 승격되지도 않는다).
+    """
+    ctrl, results = _sited_delivery_controller(tmp_path)
 
     zone = _zone(ctrl)
     assert zone["run_delivery_intent"] == {
         "output_directory": str(results),
-        "collision_policy": "FAIL",
+        "collision_policy": DEFAULT_COLLISION_POLICY,
     }
+    assert DEFAULT_COLLISION_POLICY == "OVERWRITE_EXPLICIT"
     assert zone["output_folder"]["source"] == "template_default"
     assert ctrl._run_delivery_intent is None
+
+    with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):
+        ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):
+        ctrl.dispatch("refresh_delivery", {})
 
 
 def test_explicit_pick_wins_and_is_remembered_for_the_next_session(
@@ -635,12 +645,11 @@ def test_releasing_the_work_drops_the_explicit_pick_but_not_the_memory(
     picked = tmp_path / "고른-폴더"
     picked.mkdir()
     ctrl.set_output_folder(str(picked))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
 
     ctrl.dispatch("select_job", {"name": ""})
 
     assert ctrl._run_delivery_intent is None
-    assert ctrl._run_delivery_collision == "ADD_SUFFIX"
+    assert ctrl._run_delivery_collision == DEFAULT_COLLISION_POLICY
     assert load_last_output_directory() == str(picked)
 
 
@@ -722,7 +731,6 @@ def test_required_preview_approval_is_current_token_only_and_legacy_review_isola
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     _zone(ctrl)
 
     current = ctrl._current_preview_preparation
@@ -785,7 +793,6 @@ def test_stale_execution_invalidates_preview_and_rejects_old_token(
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     ctrl.dispatch("preview_open", {})
     current = ctrl._current_preview_preparation
     assert current is not None
@@ -812,12 +819,11 @@ def test_delivery_refresh_replaces_token_and_stale_approval_writes_nothing(
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     ctrl.dispatch("preview_open", {})
     old = ctrl._current_preview_preparation
     assert old is not None
 
-    ctrl.dispatch("refresh_delivery", {})
+    ctrl.set_output_folder(str(out))
     _zone(ctrl)
     current = ctrl._current_preview_preparation
     assert current is not None
@@ -857,7 +863,9 @@ def test_output_directory_and_policy_changes_replace_preview_token(tmp_path: Pat
     _zone(ctrl)
     second = ctrl._current_preview_preparation
     assert second is not None and second.preview_token != first.preview_token
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    # 같은 폴더를 다시 지정해도 delivery 는 다시 관찰된다 — 토큰은 관찰의 정체이지
+    # 경로의 정체가 아니다(U4 계열2-28 이후 이 재관찰이 「목록 새로 확인」의 승계자다).
+    ctrl.set_output_folder(str(second_out))
     _zone(ctrl)
     third = ctrl._current_preview_preparation
     assert third is not None
@@ -868,7 +876,6 @@ def test_preview_becoming_unconstructable_rejects_old_token(tmp_path: Path) -> N
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     ctrl.dispatch("preview_open", {})
     current = ctrl._current_preview_preparation
     assert current is not None
@@ -885,7 +892,6 @@ def test_new_controller_never_restores_preview_approval(tmp_path: Path) -> None:
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     ctrl.dispatch("preview_open", {})
     current = ctrl._current_preview_preparation
     assert current is not None
@@ -906,14 +912,15 @@ def test_s6_new_overwrite_target_requires_fresh_token_and_approval(
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
     ctrl.dispatch("preview_open", {})
     approved = ctrl._current_preview_preparation
     assert approved is not None
     ctrl.dispatch("preview_approve", {"preview_token": approved.preview_token})
 
     (out / "공고서-20260818-002.hwpx").write_bytes(b"late collision")
-    ctrl.dispatch("refresh_delivery", {})
+    # 재관찰의 트리거는 delivery 를 무효화하는 전이다 — 사람이 눌러 새로 세는 동사는
+    # U4 계열2-28 에서 걷혔고, 최종 방어는 여전히 S6 handoff 의 쓰기 직전 재확인이다.
+    ctrl.set_output_folder(str(out))
     zone = _zone(ctrl)
     current = ctrl._current_preview_preparation
     assert current is not None and current.preview_token != approved.preview_token
@@ -939,7 +946,7 @@ def test_preview_final_recheck_fails_closed_on_delivery_race(
         return projection
 
     monkeypatch.setattr(screen_job_module, "build_current_preview_projection", race)
-    ctrl.dispatch("refresh_delivery", {})
+    ctrl.set_output_folder(str(out))
     zone = _zone(ctrl)
     assert zone["kind"] == "context_error"
     assert zone["code"] == "CURRENT_PREVIEW_PREPARATION_STALE"
@@ -951,7 +958,6 @@ def test_non_regular_collision_keeps_delivery_ahead_of_preview(tmp_path: Path) -
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").mkdir()
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
 
     zone = _zone(ctrl)
     assert zone["primary_action"] == "REVIEW_DELIVERY"
@@ -981,7 +987,7 @@ def test_delivery_intent_changes_reuse_record_preparation(
     ctrl.set_output_folder(str(second_out))
     _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    ctrl.set_output_folder(str(second_out))
     _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
 
@@ -1012,13 +1018,19 @@ def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) ->
     ctrl._current_delivery(record_validation)
     assert calls == 1
     assert ctrl._current_delivery_preparation is prepared
-    ctrl.dispatch("refresh_delivery", {})
+    ctrl.set_output_folder(str(second_out))
     assert ctrl._current_delivery_preparation is not prepared
 
 
-def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
+def test_delivery_occupancy_is_read_only_and_name_conflicts_are_not_blockers(
     tmp_path: Path,
 ) -> None:
+    """점유 관찰은 폴더를 건드리지 않고, 같은 이름은 **막지 않고 덮어쓸 계획**이 된다.
+
+    U4 계열2-27 이전에는 이 자리가 정책 셋을 오가며 「번호 붙이기 / 막기 / 덮어쓰기」를
+    각각 증명했다. 이제 제품이 세우는 정책은 하나이고, 그 하나가 이름 충돌을 blocker 로
+    만들지 않는다 — 파괴 승인은 이름이 아니라 **처분**(`WRITE_OVERWRITE`)이 요구한다.
+    """
     ctrl, out = _delivery_controller(tmp_path)
     existing = out / "공고서-20260818-001.hwpx"
     existing.write_text("existing", encoding="utf-8")
@@ -1028,33 +1040,28 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
 
     ctrl.set_output_folder(str(out))
     zone = _zone(ctrl)
-    assert zone["delivery"]["planned_documents"][0]["relative_path"] == (
-        "공고서-20260818-001_1.hwpx"
-    )
-    assert tuple(item.name for item in out.iterdir()) == before
-    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
-    zone = _zone(ctrl)
-    assert zone["delivery"]["resolvable"] is False
-    assert zone["delivery"]["blockers"][0]["code"] == (
-        "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
-    )
-    assert [
-        blocker["conflicting_relative_path"]
-        for blocker in zone["delivery"]["blockers"]
-    ] == ["공고서-20260818-001.hwpx", "공고서-20260818-002.hwpx"]
-    assert tuple(item.name for item in out.iterdir()) == before
-
-    ctrl.dispatch(
-        "set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"}
-    )
-    zone = _zone(ctrl)
+    assert zone["delivery"]["resolvable"] is True
+    assert zone["delivery"]["blockers"] == []
     assert zone["delivery"]["planned_documents"][0] == {
         "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
         "item_ordinal": 0,
         "relative_path": "공고서-20260818-001.hwpx",
         "collision_disposition": "WRITE_OVERWRITE",
     }
+    # 번호를 붙여 피해 가지 않는다 — 사용자가 본 이름과 만들 이름이 같다.
+    assert [item["relative_path"] for item in zone["delivery"]["planned_documents"]] == [
+        "공고서-20260818-001.hwpx",
+        "공고서-20260818-002.hwpx",
+    ]
+    # 그래도 조용하지 않다: 덮어쓸 항목이 섰으므로 확인이 REQUIRED 로 선다.
+    assert zone["preview_requirement"] == {
+        "kind": "REQUIRED",
+        "reason": "DESTRUCTIVE_OVERWRITE",
+    }
+    assert zone["primary_action"] == "REVIEW_PREVIEW"
+    # 관찰도 계획도 디스크를 만지지 않는다.
     assert tuple(item.name for item in out.iterdir()) == before
+    assert existing.read_text(encoding="utf-8") == "existing"
 
 
 def test_directory_collision_blocks_explicit_overwrite_with_exact_path(tmp_path: Path) -> None:
@@ -1063,9 +1070,6 @@ def test_directory_collision_blocks_explicit_overwrite_with_exact_path(tmp_path:
     conflict.mkdir()
 
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch(
-        "set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"}
-    )
     zone = _zone(ctrl)
 
     assert zone["delivery"]["resolvable"] is False

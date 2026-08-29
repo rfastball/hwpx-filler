@@ -95,12 +95,6 @@ export function saveArtifactMessage(result: Obj): string {
   return `${title}. ${String(result.detail || "")}`;
 }
 
-const DELIVERY_POLICIES = [
-  ["ADD_SUFFIX", "같은 이름이 있으면 번호 붙이기"],
-  ["FAIL", "같은 이름이 있으면 만들지 않기"],
-  ["OVERWRITE_EXPLICIT", "기존 파일 덮어쓰기"],
-] as const;
-
 export const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
   WRITE_NEW: "새 파일",
   WRITE_ADD_SUFFIX: "번호를 붙인 새 파일",
@@ -596,28 +590,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       if (text.startsWith("ERROR:")) { log(`폴더 오류: ${text.slice(6).trim()}`); return; }
       log(`저장 폴더: ${text}`);
     },
-    async setDeliveryCollision(policy: string): Promise<void> {
-      if (policy === "OVERWRITE_EXPLICIT") {
-        const confirmed = await deps.modal.confirm({
-          title: "기존 파일 덮어쓰기",
-          body: "같은 이름의 파일이 있으면 기존 파일을 덮어씁니다.",
-          confirmLabel: "덮어쓰기 사용", cancelLabel: "취소", danger: true,
-        });
-        if (!confirmed) return;
-      }
-      try {
-        await dispatch("set_delivery_collision", { collision_policy: policy });
-      } catch (error) {
-        log(`충돌 처리를 바꾸지 못했습니다: ${String(error)}`);
-      }
-    },
-    async refreshDelivery(): Promise<void> {
-      try {
-        await dispatch("refresh_delivery", {});
-      } catch (error) {
-        log(`생성 예정 문서를 다시 확인하지 못했습니다: ${String(error)}`);
-      }
-    },
     relinkActive(): void {
       const s = snapshot();
       if (s && s.job_name) void deps.ports.jobRelinkFlow.current().relinkTemplateFor(String(s.job_name));
@@ -967,7 +939,6 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const delivery = (wb.delivery || {}) as Obj;
   const planned = (delivery.planned_documents || []) as Obj[];
   const deliveryBlockers = (delivery.blockers || []) as Obj[];
-  const collisionPolicy = String(intent?.collision_policy || '');
   // 저장 폴더는 backend 가 도출한다(U3-06 #879) — 명시 지정이 없어도 실제로 쓰일 경로와
   // 그 출처가 실려 온다. 표면은 그 값을 그리기만 하고 경로·라벨을 여기서 다시 만들지 않는다.
   const outputFolder = (wb.output_folder || {}) as Obj;
@@ -997,21 +968,9 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       ? h('p', { className: 'warn capnote', id: 'jobManagedOutDirNotice' },
         outputFolderNotice)
       : null,
-    h('div', { className: 'zone-cap' }, '충돌 처리'),
-    h('select', {
-      className: 'field', id: 'jobDeliveryCollision', value: collisionPolicy,
-      disabled: running || intent === null,
-      onChange: (event: Obj) => {
-        const policy = String(event.currentTarget.value);
-        event.currentTarget.value = collisionPolicy;
-        void props.controller.setDeliveryCollision(policy);
-      },
-    },
-    intent === null
-      ? h('option', { value: '' }, '저장 폴더를 먼저 선택하세요')
-      : null,
-    ...DELIVERY_POLICIES.map(([value, label]) =>
-      h('option', { key: value, value }, label))),
+    // 「충돌 처리」 선택기는 없다(U4 계열2-27) — 같은 이름이 있으면 덮어쓰는 것이 기본이고
+    // (`DEFAULT_COLLISION_POLICY`), 그 사실은 정책 라벨이 아니라 **파일마다** 아래 목록의
+    // `DELIVERY_DISPOSITION_COPY` 가 말한다. 무엇을 덮어쓰는지 묻는 확인 면은 그 다음이다.
     h('div', { className: 'zone-cap' }, '생성 예정 문서'),
     // 계획은 이름만 말하면 절반이다 — 어디에 떨어지는지를 같은 자리에서 진술한다(#879).
     outputFolderPath
@@ -1037,12 +996,9 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
                     h('br', null), String(blocker.conflicting_relative_path))
                   : null)))
         : h('p', { className: 'muted capnote' }, '생성 예정 문서가 없습니다.'),
+    // 「목록 새로 확인」도 없다(U4 계열2-28) — 계획은 그것을 바꾸는 전이에서 Python 이
+    // 무효화하고 다시 세운다. 사람이 눌러 새로고침해야 하는 목록이면 그 자체가 결함이다.
     h('div', { className: 'run-row' },
-      h('button', {
-        className: 'btn sm', id: 'jobRefreshDelivery', type: 'button',
-        disabled: running || intent === null,
-        onClick: () => { void props.controller.refreshDelivery(); },
-      }, '목록 새로 확인'),
       h('span', { className: 'muted capnote' },
         '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
   // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.

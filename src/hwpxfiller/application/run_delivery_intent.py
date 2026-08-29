@@ -8,7 +8,7 @@ Sealed Plan/VDR identity 도 **아니다** — session-scoped 의도일 뿐이�
 
     RunDeliveryIntent
     ├─ output_directory
-    └─ collision_policy = ADD_SUFFIX | FAIL | OVERWRITE_EXPLICIT   (기본 ADD_SUFFIX)
+    └─ collision_policy = ADD_SUFFIX | FAIL | OVERWRITE_EXPLICIT   (기본 OVERWRITE_EXPLICIT)
 
 **핵심 계약**(#724 §8): RunDeliveryIntent 변경 → Plan 유지·VDR 유지·**delivery 만 재해결**.
 :func:`hwpxfiller.application.generation_delivery.resolve_generation_delivery_plan` 이
@@ -87,7 +87,13 @@ class RunDeliveryIntent:
 
     @property
     def is_destructive(self) -> bool:
-        """파괴적(overwrite) 의도 여부 — OVERWRITE_EXPLICIT 을 명시로 골랐을 때만 True."""
+        """파괴적(overwrite) 의도 여부.
+
+        U4 계열2-27 이후 이 값은 **기본값이라 참**이다 — 「명시로 골랐다」는 더 이상 이
+        속성의 뜻이 아니다. 의도가 파괴적인 것과 이번 delivery 가 실제로 무엇을 덮어쓰는
+        가는 다른 사실이고, 승인을 요구하는 쪽은 후자다(`evaluate_current_preview_requirement`
+        는 item 의 `collision_disposition` 을 본다). 이 속성으로 승인 요구를 판정하지 않는다.
+        """
         return self.collision_policy == OVERWRITE_EXPLICIT
 
 

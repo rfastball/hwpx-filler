@@ -15,15 +15,10 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
-import {
-  ContextMenu,
-  createContextMenu,
-} from "./context_menu.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
 
 type Obj = Record<string, any>;
-type Listener = () => void;
 
 type ModalPort = {
   confirm(spec: Obj): Promise<boolean>;
@@ -61,10 +56,6 @@ export function createLibraryController(deps: LibraryControllerDeps) {
   const favoriteTail = new Map<string, Promise<void>>();
   const favoriteIntent = new Map<string, boolean>();
   const favoriteRevision = new Map<string, number>();
-  const groupContextMenu = createContextMenu();
-  let menuFor: { group: string; trigger: HTMLElement } | null = null;
-  let moveState: Obj | null = null;
-  const moveListeners = new Set<Listener>();
 
   const dispatch = async (screen: string, action: string, payload: Obj = {}): Promise<Obj> => {
     const call = deps.client.dispatch as unknown as (
@@ -101,40 +92,6 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     return result;
   }
 
-  function emitMove(): void {
-    for (const listener of [...moveListeners]) listener();
-  }
-
-  function openMove(name: string, trigger: HTMLElement): void {
-    const row = selected(name);
-    if (row === null) return;
-    moveState = {
-      name,
-      current: row.group || "",
-      groups: snapshot()?.group_names || [],
-      choice: row.group || "",
-      fresh: "",
-      error: "",
-      returnFocus: trigger,
-    };
-    emitMove();
-    deps.modal.open("libraryMoveModal", { initialFocus: deps.doc.getElementById("libraryMoveList") });
-  }
-
-  async function confirmMove(): Promise<void> {
-    if (moveState === null) return;
-    const target = String(moveState.fresh || moveState.choice || "").trim();
-    try {
-      await jobDispatch("set_group", { name: moveState.name, group: target });
-      deps.modal.close("libraryMoveModal");
-      moveState = null;
-      emitMove();
-    } catch (error) {
-      moveState = { ...moveState, error: String((error as Obj)?.message || error) };
-      emitMove();
-    }
-  }
-
   async function renameJob(name: string, returnFocus: HTMLElement): Promise<void> {
     await deps.modal.prompt({
       body: `'${name}' 의 새 이름을 입력하세요.`, value: name, returnFocus,
@@ -142,41 +99,6 @@ export function createLibraryController(deps: LibraryControllerDeps) {
         const next = String(raw || "").trim();
         const result = await jobDispatch("rename_job", { name, new: raw }, next);
         return result.ok === false ? (result.error || "이름을 바꾸지 못했습니다.") : "";
-      },
-    });
-  }
-
-  function parseTags(text: string): { tags?: Obj; err?: string } {
-    const tags: Obj = {};
-    for (const part of text.split(",")) {
-      const token = part.trim();
-      if (token === "") continue;
-      const index = token.indexOf("=");
-      if (index <= 0 || token.slice(index + 1).trim() === "") return { err: token };
-      tags[token.slice(0, index).trim()] = token.slice(index + 1).trim();
-    }
-    return { tags };
-  }
-
-  async function editTags(name: string, returnFocus: HTMLElement): Promise<void> {
-    const row = selected(name);
-    if (row === null) return;
-    const current = row.tags || {};
-    const serialized = Object.entries(current).map(([key, value]) => `${key}=${value}`).join(", ");
-    const roundTrip = parseTags(serialized);
-    if (roundTrip.err !== undefined || JSON.stringify(roundTrip.tags) !== JSON.stringify(current)) {
-      deps.notify(`'${name}' 의 태그에 쉼표나 등호가 들어 있어 여기서 수정할 수 없습니다.\n현재 태그: ${serialized}`);
-      return;
-    }
-    await deps.modal.prompt({
-      body: `'${name}' 의 태그를 '축=값' 쌍, 쉼표 구분으로 입력하세요. 비우면 전부 해제합니다.`,
-      value: serialized,
-      returnFocus,
-      validate: async (raw: unknown) => {
-        const parsed = parseTags(String(raw ?? ""));
-        if (parsed.err !== undefined) return `태그 형식 오류: '${parsed.err}'. '축=값' 으로 입력하세요.`;
-        await dispatch("library", "set_tags", { name, tags: parsed.tags });
-        return "";
       },
     });
   }
@@ -265,55 +187,9 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     }
   }
 
-  async function renameGroup(group: string, trigger: HTMLElement): Promise<void> {
-    const count = (snapshot()?.sections || []).find((row: Obj) => row.value === group)?.count || 0;
-    const value = await deps.modal.prompt({
-      title: "그룹 이름 변경",
-      body: `그룹 '${group}' 의 새 이름을 입력하세요. 소속 작업 전부(지금 기준 ${count}건)가 함께 옮겨집니다.`,
-      value: group, returnFocus: trigger,
-    });
-    if (value === null) return;
-    let result = await jobDispatch("rename_group", { name: group, new: value, seen: count });
-    if (result.needs_confirm && await deps.modal.confirm({
-      title: "그룹 병합 확인", body: result.confirm_text || "기존 그룹과 합칩니다.",
-      confirmLabel: "합치기", cancelLabel: "취소", returnFocus: trigger,
-    })) {
-      result = await jobDispatch("rename_group", {
-        name: group, new: value, seen: result.count, confirm: true,
-      });
-    }
-    if (result.ok === false) deps.notify(result.error || "그룹 이름을 바꾸지 못했습니다.");
-    if (result.drift_note) deps.notify(result.drift_note);
-  }
-
-  async function disbandGroup(group: string, trigger: HTMLElement): Promise<void> {
-    const first = await jobDispatch("disband_group", { name: group });
-    if (!first.needs_confirm) return;
-    const accepted = await deps.modal.confirm({
-      title: "그룹 해산 확인",
-      body: `그룹 '${group}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${first.count}건)가 「그룹 없음」으로 옮겨집니다.`,
-      confirmLabel: "해산", cancelLabel: "취소", returnFocus: trigger,
-    });
-    if (!accepted) return;
-    const done = await jobDispatch("disband_group", {
-      name: group, confirm: true, seen: first.count,
-    });
-    if (done.drift_note) deps.notify(done.drift_note);
-  }
-
   return {
     init(): Promise<unknown> { return deps.runtime.loadInitial("library"); },
     model,
-    moveModel: {
-      getSnapshot: () => moveState,
-      subscribe(listener: Listener): () => void {
-        moveListeners.add(listener);
-        return () => { moveListeners.delete(listener); };
-      },
-    },
-    setMove(patch: Obj): void { moveState = moveState === null ? null : { ...moveState, ...patch }; emitMove(); },
-    closeMove(): void { deps.modal.close("libraryMoveModal"); moveState = null; emitMove(); },
-    confirmMove,
     axis,
     toggleFavorite,
     runPrimary,
@@ -325,8 +201,6 @@ export function createLibraryController(deps: LibraryControllerDeps) {
       });
     },
     renameJob,
-    openMove,
-    editTags,
     cloneJob: (name: string) => dispatch("library", "clone_job", { name }),
     removeJob,
     relink(name: string): Promise<boolean> {
@@ -336,28 +210,8 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     },
     revealCorrupt: (path: string) => invoke("reveal_corrupt_job", path),
     deleteCorrupt,
-    showGroupMenu(group: string, trigger: HTMLElement): void {
-      menuFor = { group, trigger };
-      groupContextMenu.open(trigger, [
-        { action: "rename", label: "그룹 이름 변경…" },
-        { action: "disband", label: "그룹 해산", danger: true, separatorBefore: true },
-      ]);
-    },
-    closeGroupMenu(): void { menuFor = null; groupContextMenu.close(); },
-    handleGroupMenu(action: string): void {
-      const current = menuFor;
-      menuFor = null;
-      groupContextMenu.close();
-      if (current === null || current.group === "") {
-        if (current?.group === "") deps.notify("「그룹 없음」은 이름을 바꾸거나 해산할 수 없습니다.");
-        return;
-      }
-      if (action === "rename") void renameGroup(current.group, current.trigger);
-      if (action === "disband") void disbandGroup(current.group, current.trigger);
-    },
     doc: deps.doc,
     client: deps.client,
-    groupContextMenu,
     popover: deps.popover,
     notify: deps.notify,
   };
@@ -381,7 +235,7 @@ function LibraryRow(props: { row: Obj; selected: string; controller: LibraryCont
     },
     h("span", { className: "lib-row-name" }, row.name, h(HealthPill as any, { health: row.health })),
     h("span", { className: "lib-row-meta" },
-      `${row.mode_label}${row.group ? ` · ${row.group}` : ""} · ${row.last_run_display}`)),
+      `${row.mode_label} · ${row.last_run_display}`)),
     h("button", {
       className: "lib-fav", "data-fav": row.name,
       "aria-pressed": row.favorited ? "true" : "false",
@@ -410,34 +264,15 @@ function LibraryList(props: { snapshot: Obj; controller: LibraryController }): R
       }, String(examples.label || "")) : null);
   } else if (!shown) {
     content = h("div", { className: "empty" }, h("div", { className: "heading" }, "조건에 맞는 작업이 없습니다"),
-      h("p", null, "보기·작업 방식·검색·태그 중 하나가 목록을 비웠습니다."),
+      h("p", null, "보기·작업 방식·검색 중 하나가 목록을 비웠습니다."),
       h("button", { className: "btn", "data-clear-filters": true, onClick: () => { void controller.axis("clear_filters"); } },
         "필터 지우고 전체 보기"));
   } else {
-    content = sections.flatMap((section: Obj, index: number) => {
-      const rows = (section.rows || []).map((row: Obj) =>
-        h(LibraryRow as any, { key: row.name, row, selected: snapshot.selected, controller }));
-      if (!section.headed) return rows;
-      return [
-        h("div", { className: "lib-grp job-grp", key: `head-${index}` },
-          h("button", {
-            className: "lib-grp-head", "data-group": section.value,
-            "aria-expanded": section.collapsed ? "false" : "true", "data-busy-lock": true,
-            onClick: (event: Obj) => {
-              const target = event.currentTarget as HTMLElement;
-              target.setAttribute("aria-expanded", section.collapsed ? "true" : "false");
-              void controller.axis("toggle_group", { group: section.value });
-            },
-          }, h("span", { className: "grp-caret" }, section.collapsed ? "▸" : "▾"),
-          ` ${section.label} · ${section.count}`),
-          h("button", {
-            className: "job-more", "data-group-more": section.value,
-            "aria-haspopup": "true", "aria-label": `${section.label} 그룹 관리`,
-            onClick: (event: Obj) => controller.showGroupMenu(section.value, event.currentTarget),
-          }, "⋮")),
-        h("div", { className: "lib-grp-rows", hidden: !!section.collapsed, key: `rows-${index}` }, ...rows),
-      ];
-    });
+    /* 구획 헤더는 없다(U4 §2-30) — 그룹 표면이 걷혀 백엔드가 언제나 헤더 없는 평면
+       1구획을 낸다. 구획 구조 자체는 스냅샷 계약이라 그대로 훑는다. */
+    content = sections.flatMap((section: Obj) =>
+      (section.rows || []).map((row: Obj) =>
+        h(LibraryRow as any, { key: row.name, row, selected: snapshot.selected, controller })));
   }
   return h("section", {
     className: "library-list-pane", id: "libraryPanel", role: "tabpanel",
@@ -467,7 +302,6 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
   if (!detail) return h(LibraryDetailRoot as any, null,
     h("p", { className: "lib-detail-blank muted" }, "왼쪽에서 작업을 고르면 상세가 열립니다."));
   const primary = detail.primary || { label: "문서 만들기에서 사용", hint: "" };
-  const tags = Object.entries(detail.tags || {});
   const health = detail.health_causes?.length ? h("div", { className: "note warnbox" },
     h("div", { className: "cap" }, "확인할 것"),
     h("ul", { className: "lib-causes" },
@@ -484,20 +318,15 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     detail.filename_pattern ? h("dd", null, detail.filename_pattern) : null,
     detail.run_note ? h("dt", null, "실행 방식") : null,
     detail.run_note ? h("dd", null, detail.run_note) : null);
-  const tagNodes = tags.length
-    ? tags.map(([key, value]) => h("span", { className: "pill muted", key }, `${key}: ${String(value)}`))
-    : [h("span", { className: "muted", key: "none" }, "태그 없음")];
   const scroll = h("div", { className: "lib-detail-scroll", "data-preserve-scroll": true },
     h("h2", { className: "lib-detail-name" }, detail.name),
     h("p", { className: "lib-detail-sub" },
-      `${detail.mode_label}${detail.group ? ` · ${detail.group}` : " · 그룹 없음"} · ${detail.last_run_display}`),
+      `${detail.mode_label} · ${detail.last_run_display}`),
     health, facts,
     h("div", { className: "cap" }, "필드 연결"),
     h("p", { className: "muted lib-detail-note" },
       "작업에 저장된 데이터 항목 키입니다(현재 데이터의 열 이름이 아닙니다)."),
-    h(Bindings as any, { rows: detail.bindings }),
-    h("div", { className: "cap" }, "태그"),
-    h("p", { className: "lib-tags" }, ...tagNodes));
+    h(Bindings as any, { rows: detail.bindings }));
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),
@@ -506,10 +335,6 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     h("span", { className: "lib-detail-manage" },
       h("button", { className: "btn sm", "data-rename": detail.name,
         onClick: (event: Obj) => { void controller.renameJob(detail.name, event.currentTarget); } }, "이름 변경"),
-      h("button", { className: "btn sm", "data-move": detail.name,
-        onClick: (event: Obj) => controller.openMove(detail.name, event.currentTarget) }, "그룹 이동"),
-      h("button", { className: "btn sm", "data-tags": detail.name,
-        onClick: (event: Obj) => { void controller.editTags(detail.name, event.currentTarget); } }, "태그…"),
       h("button", { className: "btn sm", "data-clone": detail.name,
         onClick: () => { void controller.cloneJob(detail.name); } }, "복제"),
       h("button", { className: "btn sm lib-del", "data-delete": detail.name,
@@ -527,14 +352,6 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
   useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
   const views = ["all", "recent", "favorites", "needsAction"];
   const modes = [["all", "전체"], ["hwpx", "HWPX 문서 생성"], ["txt", "온나라 기안 검토·복사"]];
-  const facets = (snapshot.facets || []).flatMap((facet: Obj) => (facet.values || []).map((entry: Obj) =>
-    h("button", {
-      className: `pill${entry.active ? "" : " muted"}`, "data-axis": facet.axis,
-      "data-val": entry.value, disabled: entry.count === 0 && !entry.active,
-      "aria-pressed": entry.active ? "true" : "false", "data-busy-lock": true,
-      key: `${facet.axis}:${entry.value}`,
-      onClick: () => { void controller.axis("toggle_facet", { axis: facet.axis, value: entry.value }); },
-    }, `${facet.axis}: ${entry.value} · ${entry.count}`)));
   return h("div", { className: "library-toolbar" },
     h("label", { className: "library-search-field" }, h("span", { className: "lbl" }, "작업 검색"),
       h("input", { className: "field", id: "librarySearch", type: "search", autoComplete: "off",
@@ -579,10 +396,7 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
         ...modes.map(([mode, label]) => h("button", { className: "pill", type: "button",
           "data-library-mode": mode, "aria-pressed": snapshot.mode === mode ? "true" : "false",
           "data-busy-lock": true, key: mode, onClick: () => { void controller.axis("set_mode", { mode }); } }, label)))),
-    h("div", { className: "library-facets", id: "libraryFacets", style: { display: facets.length ? "" : "none" } },
-      ...(facets.length ? [h("span", { className: "library-filter-label", key: "label" }, "태그"), ...facets,
-        h("button", { className: "btn sm", id: "libraryClearFacets", "data-busy-lock": true, key: "clear",
-          onClick: () => { void controller.axis("clear_facets"); } }, "태그 필터 해제")] : [])));
+    );
 }
 
 export function LibraryScreen(props: { controller: LibraryController }): ReactNode {
@@ -596,7 +410,7 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
   const alerts = snapshot.alerts || {};
   return h("div", { className: "library-react-surface" },
     h("header", { className: "scr-head" }, h("div", null, h("h1", null, "문서 작업"),
-      h("p", { className: "sub" }, "저장된 문서 작업을 찾고 상태를 확인합니다. 여기서 다른 작업을 열어도 「문서 만들기」의 선택과 데이터는 그대로입니다.")),
+      h("p", { className: "sub" }, "저장된 문서 작업을 찾고 상태를 확인합니다.")),
     h("div", { className: "scr-head-actions" }, h("button", { className: "btn primary sm", id: "libraryNewWork",
       onClick: controller.newWork }, "＋ 새 작업"))),
     h("div", { id: "libraryAlerts" },
@@ -612,37 +426,5 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
     h(LibraryToolbar as any, { snapshot, controller }),
     h("div", { className: "library-browser" },
       h(LibraryList as any, { snapshot, controller }),
-      h(LibraryDetail as any, { detail: snapshot.detail, controller })),
-    h(ContextMenu as any, {
-      id: "libraryGroupMenu",
-      controller: controller.groupContextMenu,
-      popover: controller.popover,
-      triggerSelector: "#scr-library [data-group-more]",
-      onDismiss: controller.closeGroupMenu,
-      onSelect: (action: string) => controller.handleGroupMenu(action),
-    }));
-}
-
-export function LibraryMoveDialog(props: { controller: LibraryController }): ReactNode {
-  const { controller } = props;
-  const state = useSyncExternalStore(controller.moveModel.subscribe, controller.moveModel.getSnapshot);
-  return h("div", { className: "modal-card" },
-    h("h3", { id: "libraryMoveTitle" }, "그룹으로 이동"),
-    h("p", { className: "modal-sub", id: "libraryMoveName" }, state ? `'${state.name}' 을(를) 옮길 그룹` : ""),
-    h("div", { id: "libraryMoveList", className: "sheet-list", tabIndex: -1 },
-      ...(state ? [
-        h("label", { key: "none" }, h("input", { type: "radio", name: "libMove", checked: state.choice === "" && !state.fresh,
-          onChange: () => controller.setMove({ choice: "", fresh: "" }) }), " 그룹 없음"),
-        ...(state.groups || []).map((group: string) => h("label", { key: group }, h("input", {
-          type: "radio", name: "libMove", checked: state.choice === group && !state.fresh,
-          onChange: () => controller.setMove({ choice: group, fresh: "" }),
-        }), ` ${group}`)),
-        h("label", { key: "new" }, h("input", { type: "radio", name: "libMove", checked: !!state.fresh, readOnly: true }),
-          " 새 그룹 ", h("input", { className: "field", value: state.fresh,
-            onChange: (event: Obj) => controller.setMove({ fresh: event.currentTarget.value }) })),
-      ] : [])),
-    h("p", { id: "libraryMoveErr", className: "note dangerbox", style: { display: state?.error ? "" : "none" } }, state?.error || ""),
-    h("div", { className: "modal-actions" },
-      h("button", { className: "btn", id: "libMoveCancel", onClick: controller.closeMove }, "취소"),
-      h("button", { className: "btn primary", id: "libMoveOk", onClick: () => { void controller.confirmMove(); } }, "이동")));
+      h(LibraryDetail as any, { detail: snapshot.detail, controller })));
 }

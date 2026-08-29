@@ -122,9 +122,9 @@ def _shell_overlays(screen: str, root_style: str = "", toast_style: str = "") ->
     )
 
 
+# 좌상단 브랜드 락업은 U4 §2-33 에서 걷혔다 — 실제 토바와 같은 자식 둘(내비·도구)만 싣는다.
 _TOPBAR = (
-    '<header class="topbar"><div class="brand"><span class="brand-lockup">'
-    '<span class="brand-name">문서나르미</span></span></div>'
+    '<header class="topbar">'
     '<nav class="nav"><button class="navbtn">문서 만들기</button>'
     '<button class="navbtn">문서 작업</button></nav><div></div></header>'
 )

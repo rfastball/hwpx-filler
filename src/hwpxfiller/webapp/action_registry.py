@@ -68,17 +68,15 @@ _POOL_TARGETING = {
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).
-    # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job·set_group·
-    # rename_group·disband_group)은 여기 없다 — 「문서 만들기」(`job`)가 계속 소유하고
-    # 라이브러리 표면이 교차 화면 dispatch 로 부른다(지도 §10.8 판정 F).
+    # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job)은 여기 없다 —
+    # 「문서 만들기」(`job`)가 계속 소유하고 라이브러리 표면이 교차 화면 dispatch 로
+    # 부른다(지도 §10.8 판정 F). 그룹·태그·facet 동사는 U4 §2-30 에서 표면과 함께
+    # 사라졌다 — 판정·영속은 링1·모델에 동결로 남고 액션 좌표만 걷혔다.
     "library": {
         "set_view": _schema(optional="view"),
         "set_mode": _schema(optional="mode"),
         "set_query": _schema(optional="text"),
-        "toggle_facet": _schema("axis value"),
-        "clear_facets": _schema(),
         "clear_filters": _schema(),
-        "toggle_group": _schema("group"),
         "select_work": _schema(optional="name"),
         "toggle_favorite": _schema("name value"),
         "delete_job": _schema("name", "confirm"),
@@ -87,13 +85,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "relink_template": _schema("name", "path confirm"),
         # `select` = 정체가 바뀌는 관리 동사(이름 변경)가 새 이름을 실어 선택을 승계하는 자리.
         "refresh": _schema(optional="select"),
-        "set_tags": _schema("name", "tags"),
         "delete_corrupt": _schema("path", "confirm"),
     },
     "editor": {
         "use_library_template": _schema("path"),
-        # `media` 가 밴드(hwpx/txt)를 고른다 — 신규 액션 대신 기존 액션의 키 확장(§10.15.15 판정 F).
-        "toggle_library_group": _schema("group media"),
         "new_session": _schema(),
         "discard_session": _schema(),
         # 탭 이동 — `disposition` 은 3택 가드를 통과했다는 표지(웹이 저장·버리기를 먼저
@@ -205,9 +200,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # SX-04A record issue recovery — exact backend target만 되돌려 받는다.
         "recover_record_issue": _schema("target"),
         # SX-04B session delivery intent. output directory 는 native picker가 좁은
-        # set_output_folder command로 세우고, 이 둘은 current delivery만 재계산한다.
-        "set_delivery_collision": _schema("collision_policy"),
-        "refresh_delivery": _schema(),
+        # set_output_folder command로 세운다. 충돌 처리는 고르는 값이 아니라 기본값
+        # 하나이고(U4 계열2-27 — `DEFAULT_COLLISION_POLICY`), 그래서 그것을 바꾸는 액션도
+        # 그 계획을 다시 세는 액션도 여기 없다. 계획은 그것을 바꾸는 전이에서 무효화된다.
         # 작업대 execution 확인(SX-03 #726) — 무페이로드: 무엇을 봉인·관찰할지(현재 작업)는 Python 이
         # 소유한다. resolve_execution 은 자동 확인의 명시 재실행(수동 seal 관리 동사 아님),
         # refresh_observation 은 마지막 Plan 재관찰(새 seal 아님). 둘 다 seal 서비스 경로를 지난다.
@@ -218,9 +213,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 결과 3태의 「실패한 N건만 선택」(지도 §10.10 판정 F) — 무페이로드: 실패 index 는
         # Python 이 소유한다(웹이 들고 있다 되돌려주면 그 사이 교체된 데이터의 남의 행을 고른다).
         "select_failed": _schema(),
-        "set_group": _schema("name", "group"),
-        "rename_group": _schema("name", "new confirm seen"),
-        "disband_group": _schema("name", "confirm seen"),
         # (ack_field·unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13. 표식 삽입
         #  동의는 확인 면의 승인(preview_approve)이 겸한다.)
     },
@@ -289,10 +281,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "slot_rename": _schema("path slot_id", "label"),
         "slot_decompile": _schema("path slot_id", "confirm"),
         "slot_remove": _schema("path slot_id", "confirm"),
-        "set_group": _schema("media key", "group"),
-        "toggle_group": _schema("media group"),
-        "rename_group": _schema("media group", "new confirm"),
-        "disband_group": _schema("media group", "confirm"),
         "delete": _schema("media path", "confirm"),
         "undo_delete": _schema(),
         "txt_new": _schema("name content"),

@@ -57,15 +57,11 @@ from ..application.generation import (
 )
 from ..application.jobs import (
     JobStorePort,
-    assign_group,
-    disband_group,
-    group_member_count,
     job_content_fingerprint,
     job_exists,
     job_names,
     list_jobs,
     load_job,
-    rename_group,
     rename_job,
     set_favorite,
 )
@@ -242,7 +238,7 @@ from ..application.record_validation import (
     validate_data_records_against_current_value,
 )
 from ..application.run_delivery_intent import (
-    ADD_SUFFIX,
+    DEFAULT_COLLISION_POLICY,
     RunDeliveryIntent,
 )
 from ..application.field_binding_input import FieldBindingInput
@@ -293,11 +289,9 @@ _ADMISSION_REJECT_TEXT = {
     # 문안은 링1 단일 원천 — 편집 게이트와 생성 차단이 같은 상태를 같은 문장으로 말한다(S8-04).
     STRUCTURE_NOTATION_UNCOMPILED: STRUCTURE_NOTATION_BLOCK_MESSAGE,
 }
-from .job_list import drift_note
 from ..external.settings import (
     load_last_data_source,
     load_last_output_directory,
-    recollapse_job_group,
     save_last_data_source,
     save_last_output_directory,
 )
@@ -588,10 +582,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._session_orchestration = AutomaticSealOrchestration()
         self._current_record_preparation: _CurrentRecordPreparation | None = None
         self._run_delivery_intent: RunDeliveryIntent | None = None
-        # 세션 충돌 처리 선언(U3-06 #879) — 저장 폴더 **명시 지정과 독립**이다. 폴더를 안 고른
-        # 사용자도 충돌 처리는 고를 수 있어야 하는데, 그 선택이 intent 를 물질화하면 도출된
-        # 기본값이 '직접 지정'으로 승격돼 화면이 출처를 잘못 말한다. 명시 지정과 함께 소거된다.
-        self._run_delivery_collision = ADD_SUFFIX
+        # 세션 충돌 처리(U3-06 #879) — 저장 폴더 **명시 지정과 독립**이라 폴더를 안 고른
+        # 세션에도 선다. 사용자가 고르는 값이 아니게 된 뒤(U4 계열2-27)에도 세션 축에 남는
+        # 이유는 그대로다: 여기서 intent 를 물질화하면 도출된 기본값이 '직접 지정'으로
+        # 승격돼 화면이 출처를 잘못 말한다. 명시 지정과 함께 소거된다.
+        self._run_delivery_collision = DEFAULT_COLLISION_POLICY
         # 마지막 **명시 지정** 저장 폴더(U3-06 #879) — 설정 층 소유의 기본값 재료다.
         # session-scoped `_run_delivery_intent` 의 수명 규약(작업 전환·해제에서 소거)은 그대로고,
         # 이 값은 그 소거 뒤에도 살아 다음 도출에서 다시 후보가 된다. 부팅 1회 판독 —
@@ -1481,9 +1476,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
                 "mode": r.mode,
                 "mode_label": work_mode_label(r.mode, short=True),
-                # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
-                # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
-                "last_run_label": last_use_label(r.mode, job.last_run_at),
+                # (`last_run_label` 은 U4 계열2-31 에서 걷혔다 — 후보 카드는 「이 데이터로
+                #  무엇을 만들 수 있는가」를 말하는 자리이고 실행 이력은 그 판단에 안 든다.
+                #  같은 문안의 라이브러리 소비처는 `home_state.last_run_display` 로 산다.)
                 # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
                 # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
                 "template_name": Path(job.template_path).name if job.template_path else "",
@@ -2439,48 +2434,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 것이야말로 조용한 파괴다. 상태는 그대로라 push 도 하지 않는다.
             return {"stale": True, "epoch": self.zone_epoch}
         result = handler(payload)
-        # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — ① is_query 표식 핸들러(순수
-        # 질의: filter_panel·guard_state) ② needs_confirm 반환(가드가 전이를 막아 상태
-        # 그대로). 동일 스냅샷 전량 재계산+재렌더가 모달 여는 중에 겹치는 낭비 제거.
+        # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — is_query 표식 핸들러(순수 질의:
+        # filter_panel·guard_state). 동일 스냅샷 전량 재계산+재렌더 낭비 제거.
+        #
+        # 짝이던 `needs_confirm` 갈래는 U4 §2-30 에서 **생산자 0** 이 돼 걷혔다(마지막
+        # 생산자가 그룹 병합·해산 승격이었다). 이 화면에 확인 왕복을 되들이는 핸들러가
+        # 생기면 그 갈래도 자기 테스트와 함께 돌아온다 — 도달 불가 분기를 남겨 두면
+        # 「규칙은 있는데 결과는 없는」 계약이 된다.
         is_query = getattr(handler, "is_query", False)
-        blocked = isinstance(result, dict) and result.get("needs_confirm")
         # T5 작업·행 선택(#894) — 두 사실(현재 작업 성립 · 선택 ≥1)이 **서로 다른 액션 무리**
         # 에서 세워지므로(작업 카드 선택 vs 존 변이 13종), 액션마다 훅을 달면 그 목록이 곧
         # 두 번째 판정자가 된다. 스냅샷이 이미 같은 두 값을 읽어 `has_job`·`selected_count`
         # 로 싣고 있으므로, 여기서는 그 둘을 그대로 조회해 동시 성립만 본다.
         if not is_query and bool(self.job_name) and self.selection.selected_count() >= 1:
             self._tutorial(Milestone.SELECT_ROWS)
-        if not is_query and not blocked:
+        if not is_query:
             self._push()
         return result
-
-    def _do_set_delivery_collision(self, p: dict) -> dict:
-        # 저장 폴더는 도출된 기본값으로도 선다(U3-06 #879) — 충돌 처리를 고르려고 폴더를 먼저
-        # 지정하게 만들지 않는다. 도출조차 불가능할 때만 loud 거절이다.
-        effective = self._effective_run_delivery_intent()
-        if effective is None:
-            raise ValueError("먼저 저장 폴더를 선택하세요.")
-        # 미지원 policy 거절은 RunDeliveryIntent 가 진다(여기서 어휘를 다시 세지 않는다).
-        policy = RunDeliveryIntent(
-            effective.output_directory, str(p["collision_policy"])
-        ).collision_policy
-        # 선언은 세션 축에 남는다. 명시 지정이 이미 있으면 그 intent 도 같은 값으로 맞춘다
-        # (두 자리가 같은 정책을 달리 말하지 않게).
-        self._run_delivery_collision = policy
-        if self._run_delivery_intent is not None:
-            self._run_delivery_intent = RunDeliveryIntent(
-                self._run_delivery_intent.output_directory, policy
-            )
-        self._current_delivery_preparation = None
-        self._invalidate_current_preview()
-        return {"ok": True}
-
-    def _do_refresh_delivery(self, p: dict) -> dict:
-        if self._effective_run_delivery_intent() is None:
-            raise ValueError("먼저 저장 폴더를 선택하세요.")
-        self._current_delivery_preparation = None
-        self._invalidate_current_preview()
-        return {"ok": True}
 
     def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
         """이 존 변이가 **남의 세계**를 겨누고 있는가(리뷰 4R).
@@ -2735,7 +2705,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._seated_template_application_id = None
         self._run_delivery_intent = None
         # 명시 지정과 함께 선다·죽는다(U3-06 #879). 기억은 설정에 남아 다음 도출에서 다시 산다.
-        self._run_delivery_collision = ADD_SUFFIX
+        self._run_delivery_collision = DEFAULT_COLLISION_POLICY
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
@@ -3113,58 +3083,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.selection.toggle(i, True)
         return {"selected": len(idx)}
 
-    def _do_set_group(self, p: dict) -> None:
-        """그룹 지정/해제(이동 다이얼로그 확정) — ``group=""`` 는 「그룹 없음」으로 이동.
-
-        새 그룹 = 다이얼로그의 새 이름 입력이 이 액션으로 그대로 들어온다(소속=생성,
-        빈 그룹 불가 불변식은 모델 구조가 담보).
-        """
-        assign_group(self.registry, p["name"], p.get("group", ""))
-
-    def _drift_note(self, seen, count: int) -> str:
-        """확인 시점 건수와 실제 이동 건수 어긋남 고지(#149) — 공용 job_list.drift_note 위임."""
-        return drift_note(seen, count)
-
-    # (접힘 영속 정리는 :func:`~hwpxfiller.external.settings.recollapse_job_group` 이
-    #  소유한다 — P2-24: 읽기-수정-쓰기가 컨트롤러에 남으면 설정 영속의 제2 조립자가 된다.
-    #  그룹을 개명·해산하는 동사는 여기가 소유하므로 호출도 여기서 한다.)
-
-    def _do_rename_group(self, p: dict) -> dict:
-        """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
-
-        순수 개명이면 접힘 상태를 새 이름으로 승계한다(이름만 바뀐 같은 그룹). 병합이면
-        대상 그룹의 접힘 상태를 존중하고 옛 이름만 접힘 집합에서 걷는다.
-
-        확인 문안의 건수는 **약속이 아니라 그 시점의 관측**이다(#149) — 실제 이동 건수는 잠금
-        안 일괄 갱신이 세어 ``count`` 로 돌려주고, 확인 때 본 수(``seen``)와 다르면
-        ``drift_note`` 로 함께 말한다.
-        """
-        old, new = p["name"], p.get("new", "").strip()
-        if not new:
-            return {"ok": False, "error": "그룹 이름이 비어 있습니다."}
-        if new == old:
-            return {"ok": True, "count": 0, "drift_note": ""}
-        target_members = group_member_count(self.registry, new)
-        if target_members and not p.get("confirm"):
-            count = group_member_count(self.registry, old)
-            return {"needs_confirm": True, "kind": "merge_group", "name": old,
-                    "new": new, "count": count, "target_count": target_members}
-        count = rename_group(self.registry, old, new)
-        recollapse_job_group(old, new if not target_members else "")
-        return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
-
-    def _do_disband_group(self, p: dict) -> dict:
-        """그룹 해산(결정 43) — 무확인 호출은 소속 수 재진술로 멈춘다. 소속은 「그룹 없음」으로.
-
-        재진술한 수는 그 시점의 관측이다 — 실제 이동 건수·어긋남 고지는 ``_drift_note``(#149).
-        """
-        name = p["name"]
-        if not p.get("confirm"):
-            count = group_member_count(self.registry, name)
-            return {"needs_confirm": True, "name": name, "count": count}
-        count = disband_group(self.registry, name)
-        recollapse_job_group(name, "")
-        return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
+    # 그룹 지정·개명·해산 동사는 U4 §2-30 에서 표면과 함께 걷혔다. 판정 몸통
+    # (`application.jobs.assign_group`·`rename_group`·`disband_group`)과 접힘 영속
+    # (`settings.recollapse_job_group`)은 **동결**로 남는다 — 지우지 않되 제품이 부르지
+    # 않는다. 되살리면 이 화면이 다시 소유자다(열린 세션의 정체와 결속된 동사라서).
 
     # (행 선택 4액션·필터 12액션·직전 필터 슬롯·소스 키는 DataZoneMixin 으로 이동 —
     #  슬라이스 6 PR-2b: txt 큐가 같은 존을 재사용한다. data_zone.py 가 정본.)

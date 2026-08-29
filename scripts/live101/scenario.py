@@ -20,10 +20,12 @@ import posixpath
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from hwpxfiller.application.document_creation_vocabulary import (
+    DEFAULT_COLLISION_POLICY,
+)
 from hwpxfiller.domain.job import MISSING_MARKER
 from hwpxfiller.external.example_pack import (
     DATA_ASSETS,
-    EXAMPLE_GROUP,
     HWPX_ASSETS,
     TXT_ASSETS,
 )
@@ -1183,10 +1185,12 @@ def run_sx(ctx: ScenarioContext) -> dict:
     )
     ctx.create_collision(relative_path)
     baseline_manifest = ctx.output_manifest()
-    s.set_value("#jobDeliveryCollision", "OVERWRITE_EXPLICIT")
-    s.wait("!!window.__cap.btn(null,'덮어쓰기 사용')", "overwrite 명시 확인")
-    s.click_text(None, "덮어쓰기 사용")
-    s.click_sel("#jobRefreshDelivery", what="overwrite exact delivery 재계산")
+    # 충돌 처리 선택기는 없다(U4 계열2-27) — 기본이 덮어쓰기라 같은 이름은 막히지 않고
+    # `WRITE_OVERWRITE` 처분으로 선다. 「목록 새로 확인」도 없으므로(2-28) 재관찰은
+    # delivery 를 무효화하는 전이가 낸다: 같은 폴더를 다시 지정하는 것이 그 전이이고,
+    # REVIEW_DELIVERY 의 등록된 복구 동사(`#jobManagedPickFolder`)와 같은 자리다.
+    ctx.queue_folder_answer(output_dir)
+    s.click_sel("#jobManagedPickFolder", what="충돌 발생 뒤 delivery 재관찰")
     s.wait(
         "!!document.querySelector('#jobPlannedDocuments li[data-collision-disposition="
         "\"WRITE_OVERWRITE\"]')",
@@ -1369,10 +1373,11 @@ def run_restart(ctx: ScenarioContext) -> dict:
         binding["active_field"] and not binding["pending_action"],
         "H7: durable Binding이 restart 뒤 복원되지 않았습니다",
     )
-    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. session 선언이
-    # 부활하는 것이 아니라는 사실을 세 값이 함께 말한다: 경로는 지난번 명시 지정 그대로이고
-    # 출처는 「기억한 폴더」인데, 지난 세션이 명시로 골랐던 파괴적 충돌 처리
-    # (OVERWRITE_EXPLICIT)는 비파괴 기본값으로 돌아와 있다.
+    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. 경로는
+    # 지난번 명시 지정 그대로이고 출처는 「기억한 폴더」다. 충돌 처리는 세션이 고르는 값이
+    # 아니게 됐으므로(U4 §2-27) 언제나 `DEFAULT_COLLISION_POLICY` 여야 한다 — 이 자리가
+    # 재는 것은 「세션 축이 restart 를 넘어 새어 오지 않는다」이고, 그 축이 하나 줄었을 뿐
+    # 판정은 그대로다(정책 이름을 여기 적지 않고 정본 상수를 읽는다).
     intent = wb.get("run_delivery_intent") or {}
     delivery_default = {
         "directory": intent.get("output_directory"),
@@ -1383,7 +1388,7 @@ def run_restart(ctx: ScenarioContext) -> dict:
         delivery_default == {
             "directory": ctx.output_dir,
             "source": "remembered",
-            "collision_policy": "ADD_SUFFIX",
+            "collision_policy": DEFAULT_COLLISION_POLICY,
         },
         f"H7: 저장 폴더 기억이 계약대로 복원되지 않았습니다 — {delivery_default!r}",
     )
@@ -1395,7 +1400,9 @@ def run_restart(ctx: ScenarioContext) -> dict:
             "durable": {"job": current.get("job_name"), "selections": selected, "binding": binding},
             "delivery_default": delivery_default,
             "data_restored": data_restored,
-            "session_absent": {"active_work_before_reselect": True, "delivery_collision": True, "preview": True},
+            # 세션 축은 둘이다 — 충돌 처리는 U4 §2-27 에서 세션이 고르는 값이 아니게 돼
+            # 「부활하지 않았다」고 말할 것 자체가 없다(위 delivery_default 가 기본값을 잰다).
+            "session_absent": {"active_work_before_reselect": True, "preview": True},
             "filesystem_before": before_files,
             "filesystem_after": after_files,
         }
@@ -2309,17 +2316,26 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         f"T0: 라이브러리의 예제 템플릿이 {installed_rows}건입니다"
         f" (기대 {len(HWPX_ASSETS) + len(TXT_ASSETS)}건)",
     )
-    grouped = bool(s.js(
-        "document.getElementById('scr-editor').innerText.includes("
-        f"{json.dumps(EXAMPLE_GROUP, ensure_ascii=False)})"
-    ))
-    _expect(grouped, f"T0: 설치한 템플릿이 '{EXAMPLE_GROUP}' 그룹으로 묶이지 않았습니다")
+    # 그룹 표면은 U4 §2-30 에서 걷혔다 — 「'예제' 그룹으로 묶였는가」는 이제 화면에서 잴 수
+    # 없는 사실이다(지정 자체는 동결 모델에 계속 서고 `tests/test_example_pack.py` 가 진다).
+    # 그 자리를 **음성 단언**으로 바꾼다: 걷힌 좌표가 되살아나면 시끄럽게 실패한다.
+    #
+    # 낱말이 아니라 **좌표**를 겨눈다 — 「예제」는 설치 버튼·자산 이름·튜토리얼 문안에도
+    # 정당하게 있으므로 문자열 부재로 재면 참인 적이 없는 단언이 된다.
+    group_surface = s.js(
+        "(function(){const r=document.getElementById('scr-editor');return r ? "
+        "r.querySelectorAll('.job-grp-head, .grp-more, [data-act=lib-assign]').length : -1;})()"
+    )
+    _expect(
+        group_surface == 0,
+        f"T0: 걷힌 그룹 표면이 편집기에 남아 있습니다(구획 머리·그룹 ⋮·지정 칩) — {group_surface!r}",
+    )
     _leave_editor(ctx, "설치 확인")
     pinned = _pinned_examples(ctx, len(DATA_ASSETS))
     facts["install"] = {
         "templates": installed_rows,
         "pinned": pinned["matched"],
-        "grouped": grouped,
+        "group_surface_gone": group_surface == 0,
         "confirm_body": install_body,
         "installed_files": [rel for rel in INSTALLED_RELATIVE if rel in after_install],
     }

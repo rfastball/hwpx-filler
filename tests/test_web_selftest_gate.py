@@ -634,20 +634,25 @@ class TestWebSelftestGate:
     def test_responsive_shell_keeps_all_tabs_reachable_at_min_width(
         self, selftest_result: dict
     ) -> None:
-        # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 3개(기안 탭
-        # 사망 — F6 PR-B)는 전부 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에
-        # 못 가는 것이 상단 셸의 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
+        # 최소폭(760<820 경계)에서 토바가 축약된다: 도구 값 라벨은 접히고 탭은 전부 남으며
+        # 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에 못 가는 것이 상단 셸의 진짜
+        # 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행). 접힘의 축은 종전 브랜드 워드마크였는데
+        # 그 표면이 U4 §2-33 에서 사라져 같은 미디어 쿼리의 값 라벨이 승계했다.
         narrow = selftest_result["grid_narrow"]
         assert narrow["tabs"] == len(NAV_SCREENS), f"최소폭에서 탭이 사라짐: {narrow!r}"
-        assert narrow["brand_visible"] is False, f"최소폭에서 브랜드 워드마크가 안 접힘: {narrow!r}"
+        assert narrow["tool_labels_visible"] is False, (
+            f"최소폭에서 도구 값 라벨이 안 접힘: {narrow!r}"
+        )
         assert narrow["overflow"] is False, f"최소폭에서 가로 오버플로: {narrow!r}"
 
     def test_responsive_shell_expands_topbar_when_wide(self, selftest_result: dict) -> None:
-        # 넓힐 때(경계 위) 워드마크가 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
+        # 넓힐 때(경계 위) 값 라벨이 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
         # 축약이 눌러앉아 상시 접힘이 되는 회귀 가드(#27 승계).
         wide = selftest_result["grid_wide"]
         assert wide["rows"] == 2, f"넓은 폭에서 .app 이 토바+스테이지 2행이 아님: {wide!r}"
-        assert wide["brand_visible"] is True, f"넓은 폭에서 브랜드 워드마크가 안 펴짐: {wide!r}"
+        assert wide["tool_labels_visible"] is True, (
+            f"넓은 폭에서 도구 값 라벨이 안 펴짐: {wide!r}"
+        )
         assert wide["tabs"] == len(NAV_SCREENS) and wide["overflow"] is False, (
             f"넓은 폭 셸 이상: {wide!r}"
         )
@@ -917,9 +922,11 @@ class TestWebSelftestGate:
         assert j["suggested_marks"] == 1, "추천 표지가 렌더되지 않았습니다."
         assert j["suggested_dashed"] == "dashed", j["suggested_dashed"]
         assert "2건" in j["more_text"], f"「외 N건」 고지가 없습니다: {j['more_text']!r}"
-        # 문안은 **완주 스탬프**의 의미와 일치해야 한다(4R P2): 성공 뒤 실패 런이 있으면
-        # 스탬프는 앞선 성공에 머무르므로 "마지막 실행"은 거짓이 된다.
-        assert j["last_run_text"] == "마지막 성공 실행 2026-07-20", j["last_run_text"]
+        # 후보 카드는 「이 데이터로 무엇을 만들 수 있는가」만 말한다(U4 §2-31) — 실행 이력
+        # 문구는 걷혔다. 매체별 문안 자체는 라이브러리 목록이 계속 쓴다.
+        assert "last_run_text" not in j, (
+            f"후보 카드에 실행 이력 문구가 남아 있습니다: {j.get('last_run_text')!r}"
+        )
         # 방식 구획(§19.3, F6) — 두 방식이 섞인 판이라 머리글이 **선다**. 카드 부제의
         # 방식 텍스트는 구획과 별개로 늘 남는다(색만으로 방식을 구별하지 않는다).
         assert j["cand_sec_caps"] == ["HWPX 문서 생성", "온나라 기안 검토·복사"], (
@@ -1528,33 +1535,27 @@ class TestWebSelftestGate:
             "상단 행동 줄(가져오기·폴더에서 가져오기(#339)·새 TXT·새로고침 — .tpl-libbar"
             f" 승계) 소실: {t['toolbar']!r}"
         )
-        assert t["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {t!r}"
-        assert t["rows_visible"] == 4, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {t!r}"
-        assert t["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
-        assert t["row_more"] == 4, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
-        assert t["assign_chips"] == 2, (
-            "＋그룹지정 칩은 「그룹 없음」 행에만 노출돼야 합니다(결정 2)."
+        # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
+        assert t["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {t!r}"
+        # 접힘이 없으니 두 밴드의 행이 전부 선다(hwpx 4 + txt 1).
+        assert t["rows_visible"] == 5, f"평면 밴드의 행이 전부 서지 않았습니다: {t!r}"
+        assert t["grp_more"] == 0, "그룹 ⋮ 가 남아 있습니다 — U4 §2-30 에서 걷혔습니다."
+        assert t["row_more"] == 5, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
+        assert t["assign_chips"] == 0, (
+            "＋그룹지정 칩이 남아 있습니다 — 그룹 표면은 U4 §2-30 에서 걷혔습니다."
         )
         assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
         assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
         assert t["band_caption"] is True, "밴드 캡션(개수·루트 경로 — 점검표 10행)이 없습니다."
-        # 그룹 있는 HWPX 행 ⋮ = [링1 상태 동사, 이동, 삭제] — 소비 동사 없음(행 버튼 소유,
-        # 같은 동사 2벌 금지). TXT 무그룹 행 ⋮ = [내용 편집, 삭제](이동은 칩 소관).
+        # HWPX 행 ⋮ = [링1 상태 동사, 삭제] — 소비 동사 없음(행 버튼 소유, 같은 동사 2벌
+        # 금지). TXT 행 ⋮ = [내용 편집, 삭제]. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서 사망.
         assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "move", "delete"], (
-            f"그룹 있는 HWPX 행 ⋮ 구성이 [변환·검토·이동·삭제]와 다릅니다: {t['hwpx_menu_items']!r}"
+        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "delete"], (
+            f"HWPX 행 ⋮ 구성이 [변환·검토·삭제]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
         assert t["txt_menu_items"] == ["edit", "delete"], (
-            f"무그룹 TXT 행 ⋮ 구성이 [내용 편집·삭제]와 다릅니다: {t['txt_menu_items']!r}"
-        )
-        assert t["group_menu_items"] == ["grp-rename", "grp-disband"], (
-            f"그룹 헤더 ⋮ 구성이 [개명·해산]과 다릅니다: {t['group_menu_items']!r}"
-        )
-        # ＋그룹지정 칩 → 이동 다이얼로그 개폐(기존 #tplMoveModal DOM 재사용).
-        assert t["move_hidden_before"] is True, "이동 다이얼로그가 기본 닫힘이 아닙니다."
-        assert t["move_shown_after_chip"] is True, (
-            "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
+            f"TXT 행 ⋮ 구성이 [내용 편집·삭제]와 다릅니다: {t['txt_menu_items']!r}"
         )
         # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 같은 창에 얹은 단계다.
         assert t["slot_rows"] == 1, f"구간 항목 목록이 렌더되지 않았습니다: {t!r}"
@@ -1707,19 +1708,15 @@ class TestWebSelftestGate:
         # 으로 실 WebView2 에 서는지. 접힌 그룹 행 제외·현 선택 표지·필터 고지·퇴화 평면 되읽기.
         e = selftest_result["editor_lib"]
         assert e.get("error") is None, f"에디터 피커 프로브 예외: {e.get('error')!r}"
-        assert e["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {e!r}"
-        assert e["rows_visible"] == 3, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {e!r}"
+        # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
+        assert e["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {e!r}"
+        assert e["rows_visible"] == 4, f"평면 밴드의 행이 전부 서지 않았습니다: {e!r}"
         # 선택 전용 — 현 선택은 「선택됨」(버튼 아님), 나머지 가시 행만 「이 템플릿으로」.
         assert e["current_marked"] == 1, f"현 선택 표지가 다릅니다: {e!r}"
-        assert e["pick_btns"] == 2, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
+        assert e["pick_btns"] == 3, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
         assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
         # F6 PR-B — 단일 매체 고지(「HWPX 서식만」)는 2밴드 각자의 산출물 고지로 대체됐다.
         assert e["filter_notice"] is True, "매체 밴드 고지(파일 생성/복사)가 렌더되지 않았습니다."
-        assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
-        # 그룹 헤더 안정 id는 재렌더 뒤 Preserve 포커스 복원의 근거다.
-        assert e["grp_head_has_id"] is True, (
-            "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
-        )
         # 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
         assert e["fname_ellipsis"] == "ellipsis", (
             f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
@@ -1727,8 +1724,8 @@ class TestWebSelftestGate:
         assert e["fname_minwidth"] == "0px", (
             f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
         )
-        # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
-        assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"퇴화 평면 위반: {e!r}"
+        # 밴드는 언제나 평면이다(U4 §2-30) — 스냅샷이 바뀌어도 헤더는 서지 않는다.
+        assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"평면 위반: {e!r}"
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 본문 존 한 줄과 섞이지 않고 차단 배너 + 행동 링크로
@@ -1966,7 +1963,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     # 큰 배율에서도 좁은 창의 탭 도달성과 넓은 창의 토바 전개가 유지된다(배율×셸 교차 회귀).
     assert full["grid_narrow"]["tabs"] == len(NAV_SCREENS)
     assert full["grid_narrow"]["overflow"] is False
-    assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True
+    assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["tool_labels_visible"] is True
 
 
 @pytest.mark.live

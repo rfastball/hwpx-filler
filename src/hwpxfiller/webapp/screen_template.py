@@ -171,7 +171,6 @@ class TemplateController:
             key = rel_key(r.path, root)
             rows.append({
                 "key": key,
-                "group": self.hwpx_groups.group_of(key),
                 "name": r.name,
                 "path": r.path,
                 "state": r.state.value if r.state is not None else "",
@@ -202,7 +201,6 @@ class TemplateController:
             key = rel_key(t.path, root)
             rows.append({
                 "key": key,
-                "group": self.txt_groups.group_of(key),
                 "name": t.name,
                 "path": str(t.path),
                 "field_count": field_count,
@@ -211,13 +209,19 @@ class TemplateController:
         return rows
 
     def _media_snapshot(self, media: str, rows: "list[dict]", model: TemplateGroupModel) -> dict:
-        """한 매체 구획의 스냅샷 — 유령 지정 정리 후 그룹 구획 뷰로 성형(작업 목록 동형)."""
+        """한 매체 구획의 스냅샷 — U4 §2-30 이후 **언제나 평면**이다.
+
+        구획을 만들던 축은 템플릿 그룹 하나였고 그 표면이 걷혔다. 모델은 동결이라 유령 지정
+        정리(``reconcile``)는 계속 돌린다 — 저장된 지정이 스캔과 어긋난 채 굳는 것이 되살릴
+        때의 부채다. 다만 **구획으로 묻지 않는다**(``grouped_view=False``).
+        """
         model.reconcile([r["key"] for r in rows])
-        sections, flat = model.build_sections(rows, key_of=lambda r: r["key"])
+        sections, flat = model.build_sections(
+            rows, key_of=lambda r: r["key"], grouped_view=False
+        )
         return {
             "sections": sections,
             "flat": flat,
-            "group_names": model.existing_groups([r["key"] for r in rows]),
             "count": len(rows),
         }
 
@@ -710,47 +714,8 @@ class TemplateController:
         view = self.vm.remove_slot(path, slot_id)
         return self._after_slot_mutation(path, view, f"항목을 지웠습니다 '{slot_id}'")
 
-    # ---- 그룹 관리(작업 목록과 단일 모델 · 결정 2)
-    def _do_set_group(self, p: dict) -> None:
-        """그룹 지정/해제(이동 다이얼로그·＋그룹지정 칩 확정) — ``group=""`` 는 「그룹 없음」.
-
-        새 그룹 = 다이얼로그의 새 이름 입력이 이 액션으로 그대로 들어온다(소속=생성,
-        빈 그룹 불가 불변식은 모델 구조가 담보)."""
-        self._model(p["media"]).set_group(p["key"], p.get("group", ""))
-
-    def _do_toggle_group(self, p: dict) -> None:
-        """그룹 접힘/펼침 토글 — 마지막 상태를 매체별 설정에 영속(결정 6-①). ``""``=「그룹 없음」."""
-        self._model(p["media"]).toggle_collapse(p["group"])
-
-    def _do_rename_group(self, p: dict) -> dict:
-        """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
-
-        모델이 remap·접힘 승계를 진다(순수 개명=이월, 병합=대상 접힘 존중). 화면은 병합 여부만
-        판정해 재진술한다(screen_job._do_rename_group 동형)."""
-        model = self._model(p["media"])
-        old = p["group"]
-        new = p.get("new", "").strip()
-        if not new:
-            return {"ok": False, "error": "그룹 이름이 비어 있습니다."}
-        live = self._live_keys(p["media"])
-        if new != old and not p.get("confirm"):
-            target = sum(1 for k in live if model.group_of(k) == new)
-            if target:
-                count = sum(1 for k in live if model.group_of(k) == old)
-                return {"needs_confirm": True, "kind": "merge_group",
-                        "group": old, "new": new, "count": count, "target": target}
-        count = model.rename_group(old, new)
-        return {"ok": True, "count": count}
-
-    def _do_disband_group(self, p: dict) -> dict:
-        """그룹 해산(결정 43) — 무확인 호출은 소속 수 재진술로 멈춘다. 소속은 「그룹 없음」으로."""
-        model = self._model(p["media"])
-        name = p["group"]
-        if not p.get("confirm"):
-            count = sum(1 for k in self._live_keys(p["media"]) if model.group_of(k) == name)
-            return {"needs_confirm": True, "kind": "disband_group", "group": name, "count": count}
-        count = model.disband_group(name)
-        return {"ok": True, "count": count}
+    # 그룹 관리 동사 4종(지정·접힘·개명·해산)은 U4 §2-30 에서 표면과 함께 걷혔다.
+    # 판정·영속은 `template_groups.TemplateGroupModel` 에 **동결**로 남는다.
 
     def _live_keys(self, media: str) -> "list[str]":
         """현 스캔의 살아있는 식별키 — 그룹 소속 수 판정용(캐시된 행 소비, 재파싱 없음)."""

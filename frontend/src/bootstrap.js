@@ -102,7 +102,6 @@ import { createJobRelink } from "./screens/job_relink.ts";
 import { createEditorController } from "./screens/editor.ts";
 import { createEditorEntry } from "./screens/editor_entry.ts";
 import { createWorkbenchController } from "./screens/workbench.ts";
-import { createGroupMoveDialog } from "./screens/group_move_dialog.ts";
 import { createSheetPickerController } from "./screens/sheet_picker.ts";
 import { overlayEngine } from "./overlay/instance.ts";
 import { bootSelftest } from "./selftest/boot.js";
@@ -237,12 +236,10 @@ export function bootProduct() {
     navigation, doc: document,
     notify: (message) => window.alert(message),
   });
-  const GroupMove = createGroupMoveDialog({ modal: Modal });
   const EditorController = createEditorController({
     doc: document,
     runtime, client, ports: screenPorts, services: servicePorts,
     modal: Modal, undo: UndoToast, popover: Popover, chain: Intent,
-    groupMove: GroupMove,
     navigation,
     notify: (message) => window.alert(message),
   });
@@ -484,12 +481,9 @@ export function bootProduct() {
       jobRun: JobRunController,
       slotContent: JobContentSelectionController,
       dataPicker: DataPicker,
-      groupMove: GroupMove,
-      sheetPicker: SheetPickerController,
+        sheetPicker: SheetPickerController,
       dataSheetClose,
       overlays: [
-        productOverlayComponent("libraryMoveModal", PRODUCT_OVERLAY_COMPONENTS.LibraryMoveDialog,
-          { controller: LibraryController }),
         productOverlayComponent("poolRegModal", PRODUCT_OVERLAY_COMPONENTS.PoolRegistrationDialog,
           { controller: DataPicker }),
         productOverlayComponent("dataPickerModal", PRODUCT_OVERLAY_COMPONENTS.DataPickerDialog,
@@ -500,8 +494,6 @@ export function bootProduct() {
           { controller: JobRead }),
         productOverlayComponent("txtEditModal", PRODUCT_OVERLAY_COMPONENTS.TxtEditDialog,
           { controller: EditorController }),
-        productOverlayComponent("tplMoveModal", PRODUCT_OVERLAY_COMPONENTS.GroupMoveDialog,
-          { controller: GroupMove }),
         productOverlayComponent("sheetModal", PRODUCT_OVERLAY_COMPONENTS.SheetPickerDialog,
           { controller: SheetPickerController }),
         productOverlayComponent("previewSheet", PRODUCT_OVERLAY_COMPONENTS.JobPreviewSheet,
