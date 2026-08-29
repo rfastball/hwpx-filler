@@ -247,6 +247,18 @@ export function createJobReadController(deps: JobReadControllerDeps) {
      그 확인이 다음 진짜 확인의 무게를 깎는다). 겨눔 성분은 보내지 않는다: 재료는 세션이
      마운트 시점에 포획한 한 벌이라 웹이 실어 보내면 그사이 갈린 화면과 다른 데이터를
      새로고침한다. */
+  /* 결속 없는 작업을 고치러 간다 — 쓰는 자리가 편집기 저장 하나이므로 복구도 거기다
+     (#932 U4-C). 이탈 가드·미저장 확인은 편집기 진입 seam 이 이미 진다. */
+  async function connectJobData(): Promise<void> {
+    const name = snapshot()?.job_name;
+    if (!name) return;
+    await deps.ports.editorEntry.current().openGuarded(String(name), {
+      entry_reason: "library",
+      evidence: { "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요" },
+      return_context: { surface: "data" },
+    });
+  }
+
   async function remountData(): Promise<void> {
     const first = await zone("remount_data", {});
     if (first.needs_confirm) {
@@ -455,6 +467,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     },
     openDataSheet,
     remountData,
+    connectJobData,
     closeDataSheet: () => deps.surfaceSheet.close("dataSheet"),
     /** 열 필터 패널을 **트리거 아래**에 붙인다(U4 계열1-9). 배치 규칙은 공용
      *  `Popover.place` 하나가 소유한다 — 문맥 메뉴와 같은 진실이라 화면이 자기 좌표를
@@ -526,7 +539,17 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
       h("button", { className: "btn sm", id: "jobBtnRemountData", type: "button",
         "data-busy-lock": true, disabled: !snapshot.has_data,
         title: "같은 파일을 디스크에서 다시 읽습니다.",
-        onClick: () => { void props.controller.remountData(); } }, "다시 읽기")),
+        onClick: () => { void props.controller.remountData(); } }, "다시 읽기"),
+      /* 결속 부재의 복구 동사(#932 U4-C) — 판정은 Python 한 자리(`job_data_unbound`)이고
+         여기서는 그리기만 한다. 데이터 머리에 두는 이유는 이 상태가 **작업의 데이터**에
+         관한 사실이라서다: 게이트가 「현재 데이터」 구획을 지목하면 눈이 닿는 자리가
+         여기고, 없는 자리를 가리키는 지시는 이행 불가능하다. */
+      snapshot.job_data_unbound
+        ? h("button", { className: "btn primary sm", id: "jobConnectData", type: "button",
+          "data-busy-lock": true,
+          title: "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다.",
+          onClick: () => { void props.controller.connectJobData(); } }, "데이터 연결하기…")
+        : null),
     h("div", { id: "jobDataNotice", className: `note ${notice?.level === "ok" ? "quiet" : "warnbox"}`,
       hidden: !notice?.text, style: { whiteSpace: "pre-line" } }, notice?.text ? `${notice.level === "ok" ? "" : "확인 필요: "}${notice.text}` : ""));
 }

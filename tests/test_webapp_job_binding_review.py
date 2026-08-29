@@ -113,7 +113,13 @@ def _controller(
     reg = JobRegistry(tmp_path / "jobs")
     # 기본 template_path 는 상대 경로다 — 저장 폴더 기본값이 서지 **않는** 형상(U3-06 #879).
     # 기본값 도출을 재는 테스트만 전체 경로를 건넨다.
-    reg.save(Job(name=WORK_REF, template_path=template_path))
+    # 데이터 결속(#932 U4-C) — 미결속이면 `CONNECT_DATA` blocker 가 앞서 서서 이 파일이
+    # 재려는 관리 배달·미리보기·실행 축에 도달하지 못한다. 이 축들이 결속 유무와
+    # 무관하다는 사실 자체가 픽스처를 결속시키는 근거다.
+    reg.save(Job(
+        name=WORK_REF, template_path=template_path,
+        data_path=str(tmp_path / "d.csv"), data_sheet="", data_header_row=0,
+    ))
     reg.assign_authority_id(WORK_REF, WORK)
     kwargs = dict(
         clock=_clock(),

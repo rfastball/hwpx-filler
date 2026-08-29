@@ -47,6 +47,9 @@ def _job(tmp_path) -> Job:
             FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
         filename_pattern="doc-{{공고명}}",
+        # 실행 게이트가 데이터 결속을 요구한다(#932 U4-C) — 미결속이면 「연결 필요」가
+        # 앞서 서서, 이 파일이 재려는 뒤 단들(드리프트·토큰·폴더·선택)에 도달하지 못한다.
+        data_path=str(tmp_path / "d.csv"), data_sheet="", data_header_row=0,
     )
 
 

@@ -117,15 +117,22 @@ def content_selection_from_view(
     )
 
 
-def active_work_from_session(work_ref: str | None) -> ActiveWorkContext:
+def active_work_from_session(
+    work_ref: str | None, *, data_bound: bool = True
+) -> ActiveWorkContext:
     """세션의 선택된 Work → :class:`ActiveWorkContext`. work_ref 가 있으면 active, 없으면 미선택.
 
-    exact context 복원·현재 데이터 사용 가능 판정(``exact_context_restorable``·
+    exact context 복원·현재 데이터 결속 판정(``exact_context_restorable``·
     ``bound_to_current_data``)은 **SX-05/backend 소관**이라 여기서 채우지 않는다 —
     :func:`decide_active_work_after_data_transition` 이 소비할 플래그의 자리만 둔다.
+
+    ``data_bound`` 는 다른 축이다(U4 §2.4 · #932 U4-C): 「지금 마운트된 그 데이터냐」가
+    아니라 「연결 자체가 있느냐」이고, 세션이 착석 시점에 이미 판정해 든 사실
+    (``JobController.job_data_unbound``)을 그대로 나른다 — 여기서 durable 을 다시 읽으면
+    같은 상태를 두 곳이 판정한다. Work 미선택 문맥에는 이 축이 없으므로 기본은 참이다.
     """
     if work_ref:
-        return ActiveWorkContext(active=True, work_ref=work_ref)
+        return ActiveWorkContext(active=True, work_ref=work_ref, data_bound=data_bound)
     return ActiveWorkContext(active=False)
 
 
@@ -268,6 +275,10 @@ class WorkbenchObservationProduct:
         selected_record_count: int,
         total_record_count: int,
         active_work_ref: str | None,
+        # 열린 Work 가 데이터에 연결돼 있는가(U4 §2.4 · #932 U4-C) — 세션이 착석 시점에
+        # 판정해 든 사실을 나른다. 기본이 참인 이유는 Work 없는 문맥이 이 축을 안 지기
+        # 때문이고, 미주입 조립이 조용히 「연결 필요」를 외치지 않게 하려는 것이다.
+        active_work_data_bound: bool = True,
         slot_view: CurrentSlotConfigurationView | None,
         orchestration: AutomaticSealOrchestration,
         fresh_observation: FreshExecutionObservation | None = None,
@@ -310,7 +321,9 @@ class WorkbenchObservationProduct:
                 total_record_count=total_record_count,
             ),
             content_selection=content_selection_from_view(slot_view),
-            active_work=active_work_from_session(active_work_ref),
+            active_work=active_work_from_session(
+                active_work_ref, data_bound=active_work_data_bound,
+            ),
             orchestration=orchestration,
             # ── SX-03 축(fresh_observation 소비 — 재판정 0) ──
             admission=verdicts.admission,

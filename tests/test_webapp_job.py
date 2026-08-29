@@ -1735,6 +1735,52 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
 
 
 # ------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 판정 D)
+# --------------------- 결속 없는 작업의 실행 차단·복구 동사(U4 §2.4 · #932 U4-C)
+def test_an_unbound_job_cannot_generate_and_says_where_to_fix_it(tmp_path):
+    """결속이 「필수」라면 실행 게이트도 그것을 요구한다.
+
+    저장 게이트만 요구하면 「필수」는 한 자리에서만 참인 말이 되고, 구판 작업은 매 세션
+    데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다. 대신 좌초시키지 않는다 —
+    고칠 자리(편집기)를 가리키는 동사가 같은 화면에 함께 선다(`job_data_unbound`).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("set_all", {})
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False
+    assert "연결된 데이터가 없습니다" in snap["gate"]["text"]
+    # 복구 동사를 그릴 판정은 **여기 하나**다 — 표면이 라벨 유무로 유추하면 세션 마운트가
+    # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다).
+    assert snap["job_data_unbound"] is True
+    assert snap["has_data"] is True          # 세션 데이터는 서 있다 — 축이 다르다
+
+
+def test_a_bound_job_neither_blocks_nor_advertises_the_repair_verb(tmp_path):
+    """대조군 — 결속이 있으면 이 축은 조용하다(없는 위험에 동사를 세우지 않는다)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["job_data_unbound"] is False
+    assert "연결된 데이터가 없습니다" not in snap["gate"]["text"]
+
+
+def test_the_unbound_axis_is_a_work_fact_not_a_session_one(tmp_path):
+    """작업을 놓으면 이 축도 함께 없어진다 — 물을 대상 자체가 없다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["job_data_unbound"] is True
+    ctrl.dispatch("select_job", {"name": ""})          # 선택 해제
+    assert ctrl.snapshot()["job_data_unbound"] is False
+
+
 # ------------------------------- 현재 데이터 다시 읽기(U4 항목 5 · #932 U4-C)
 def test_remount_reads_the_same_reference_again_and_picks_up_new_rows(tmp_path):
     """「다시 읽기」는 **같은 참조**를 디스크에서 새로 읽는다 — stale 판정이 아니다.

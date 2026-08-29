@@ -17,6 +17,7 @@ EXPECTED_BLOCKERS = (
     "SELECT_DATA",
     "SELECT_RECORDS",
     "SELECT_WORK",
+    "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
@@ -31,13 +32,14 @@ EXPECTED_BLOCKERS = (
     "CONTEXT_ERROR",
 )
 
-# ─── #724 §3 Primary Action — 우선순위 순서, 종단 CREATE_DOCUMENTS, 정확히 13개 ─────────
+# ─── #724 §3 Primary Action — 우선순위 순서, 종단 CREATE_DOCUMENTS, 정확히 14개 ─────────
 
 EXPECTED_PRIMARY_ACTIONS = (
     "RECOVER_CONTEXT",
     "SELECT_DATA",
     "SELECT_RECORDS",
     "SELECT_WORK",
+    "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
@@ -52,8 +54,8 @@ EXPECTED_PRIMARY_ACTIONS = (
 
 def test_blocker_codes_exact_order_and_count() -> None:
     assert vocab.BLOCKER_CODES == EXPECTED_BLOCKERS
-    assert len(vocab.BLOCKER_CODES) == 15
-    assert len(set(vocab.BLOCKER_CODES)) == 15  # 중복 없음
+    assert len(vocab.BLOCKER_CODES) == 16   # +CONNECT_DATA(U4 §2.4 · #932 U4-C)
+    assert len(set(vocab.BLOCKER_CODES)) == 16  # 중복 없음
     # 확인 축 셋은 나란히 선다(#912 D1) — 「아직 확인 안 함」이 runtime 거절로 접히면
     # 그것을 지울 동사가 사슬 끝으로 밀려 사라진다.
     execution_axis = vocab.BLOCKER_CODES.index("EXECUTION_NO_EVIDENCE")
@@ -66,8 +68,8 @@ def test_blocker_codes_exact_order_and_count() -> None:
 
 def test_primary_action_codes_exact_order_and_count() -> None:
     assert vocab.PRIMARY_ACTION_CODES == EXPECTED_PRIMARY_ACTIONS
-    assert len(vocab.PRIMARY_ACTION_CODES) == 13
-    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 13
+    assert len(vocab.PRIMARY_ACTION_CODES) == 14   # +CONNECT_DATA(#932 U4-C)
+    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 14
     # 우선순위 계약: 첫째는 context 복원, 마지막은 최종 실행(이슈가 리터럴로 고정).
     assert vocab.PRIMARY_ACTION_CODES[0] == "RECOVER_CONTEXT"
     assert vocab.PRIMARY_ACTION_CODES[-1] == "CREATE_DOCUMENTS"

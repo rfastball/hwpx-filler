@@ -79,6 +79,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     SELECT_DATA,
     SELECT_RECORDS,
     SELECT_WORK,
+    CONNECT_DATA,
     REVIEW_TEMPLATE_CHANGE,
     CHOOSE_CONTENT,
     REVIEW_BINDING,
@@ -98,6 +99,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     PA_SELECT_DATA,
     PA_SELECT_RECORDS,
     PA_SELECT_WORK,
+    PA_CONNECT_DATA,
     PA_REVIEW_TEMPLATE_CHANGE,
     PA_CHOOSE_CONTENT,
     PA_REVIEW_BINDING,
@@ -122,6 +124,7 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (SELECT_DATA, PA_SELECT_DATA),
     (SELECT_RECORDS, PA_SELECT_RECORDS),
     (SELECT_WORK, PA_SELECT_WORK),
+    (CONNECT_DATA, PA_CONNECT_DATA),
     (REVIEW_TEMPLATE_CHANGE, PA_REVIEW_TEMPLATE_CHANGE),
     (CHOOSE_CONTENT, PA_CHOOSE_CONTENT),
     (REVIEW_BINDING, PA_REVIEW_BINDING),
@@ -157,6 +160,7 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     SELECT_DATA: "job.data",
     SELECT_RECORDS: "job.records",
     SELECT_WORK: "library.work",
+    CONNECT_DATA: "editor.data",
     REVIEW_TEMPLATE_CHANGE: "workbench.template_change",
     CHOOSE_CONTENT: "workbench.content",
     REVIEW_BINDING: "workbench.binding",
@@ -229,6 +233,12 @@ class ActiveWorkContext:
     template_application_ref: str | None = None
     exact_context_restorable: bool = False
     bound_to_current_data: bool = False
+    #: 이 Work 가 **어떤** 데이터에 durable 로 연결돼 있는가(U4 §2.4 · #932 U4-C).
+    #: ``bound_to_current_data`` 와 다른 질문이다: 저쪽은 「지금 마운트된 그 데이터냐」
+    #: (전이 판정)이고 이쪽은 「연결 자체가 있느냐」(정의 완결성)다. 기본이 ``True`` 인
+    #: 이유는 Work 가 없는 문맥이 이 축을 지지 않기 때문이다 — 기본을 거짓으로 두면
+    #: 작업 미선택 상태가 「연결 필요」까지 함께 외친다.
+    data_bound: bool = True
     unique_candidate_available: bool = False
     is_favorite: bool = False
     recently_used: bool = False
@@ -660,6 +670,11 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     # Work / Template change / content / Binding
     if not inp.active_work.active:
         present.add(SELECT_WORK)
+    elif not inp.active_work.data_bound:
+        # 열린 Work 가 데이터에 연결돼 있지 않다(U4 §2.4 · #932 U4-C). Work 미선택과
+        # **함께 세우지 않는다**: 고를 Work 가 없는 상태와 고른 Work 가 미완인 상태는
+        # 고칠 자리가 다르고(라이브러리 vs 편집기), 둘을 겹쳐 말하면 지목이 흐려진다.
+        present.add(CONNECT_DATA)
     if inp.template_change_verdict in (REVIEW_REQUIRED, DETACHED):
         present.add(REVIEW_TEMPLATE_CHANGE)
     if inp.content_selection.has_unselected_required_content:

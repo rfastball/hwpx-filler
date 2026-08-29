@@ -22,7 +22,7 @@ from ..domain.fill_ledger import (
     template_path_drift,
     template_structure_drift,
 )
-from ..domain.job import Job, RunRequest, require_hwpx
+from ..domain.job import Job, RunRequest, has_data_binding, require_hwpx
 from ..domain.mapping import MappingProfile
 from ..naming import (
     OutputNameAudit,
@@ -71,6 +71,12 @@ class FieldState:
 
     name: str
     state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
+
+
+#: 이 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C). 축 이름이 따로 필요한
+#: 이유는 표면의 지목이 달라서다 — `no_data` 는 「지금 무엇이 마운트됐나」의 세션 사실이고
+#: 이쪽은 「이 작업이 무엇을 기억하나」의 작업 사실이라, 고칠 자리도 피커가 아니라 편집기다.
+GATE_REASON_DATA_UNBOUND = "data_unbound"
 
 
 @dataclass(frozen=True)
@@ -527,7 +533,11 @@ class RunViewModel:
         audit: "OutputNameAudit | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
-        전제조건(warn) > **검토 요구(warn)** > 열림.
+        **데이터 결속(warn)** > 세션 전제조건(warn) > **검토 요구(warn)** > 열림.
+
+        결속 단이 세션 전제조건보다 앞선 이유는 **고칠 자리가 다르기** 때문이다(U4 §2.4):
+        저장 폴더·행 선택은 이 화면에서 지우지만 결속은 편집기를 지난다. 세션을 다 갖춰도
+        남는 결핍을 뒤에 두면 사용자가 준비를 마친 뒤에야 진짜 막힌 이유를 듣는다.
 
         구 「미확인 미입력」 단은 필드축 ack 폐기(U2 §2.13)와 함께 죽었다 — 빈 값은
         승인 지문의 성분(``blank_set`` 위험종)이 되어 검토 요구 단이 진다.
@@ -558,6 +568,20 @@ class RunViewModel:
             )
         if name_gate is not None:
             return name_gate
+        # 데이터 결속은 **작업 정의 수준의 결핍**이다(U4 §2.4 · #932 U4-C): 저장 게이트가
+        # 요구하는 것을 실행 게이트가 통과시키면 「필수」는 한 자리에서만 참인 말이 되고,
+        # 그 작업은 매 세션 데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다.
+        #
+        # **자리는 danger 뒤·세션 전제조건 앞**이다. 구조가 깨진 것(드리프트·미해소 토큰)은
+        # 차단 등급이 더 높아 먼저 말해야 하고, 반대로 저장 폴더·행 선택 같은 세션 준비보다는
+        # 앞선다 — 세션을 다 갖춰도 이 결핍은 남고 고칠 자리도 다르다(피커가 아니라 편집기).
+        if not has_data_binding(self.job):
+            return GateState(
+                False, "warn",
+                "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 "
+                "있습니다.",
+                reason=GATE_REASON_DATA_UNBOUND,
+            )
         if not out_dir:
             return GateState(False, "warn", "저장 폴더를 지정하세요.")
         if not indices:

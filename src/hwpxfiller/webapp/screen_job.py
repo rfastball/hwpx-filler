@@ -745,6 +745,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`recollapse_job_group`).
         # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
         # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
+        # 열린 작업이 데이터에 연결돼 있지 않다(U4 §2.4 · #932 U4-C) — 착석이 세우고
+        # 해제가 되돌리는 래치. 매체 래치(`job_is_txt`)와 같은 자리에서 산다.
+        self.job_data_unbound = False
         self.job_is_txt = False
         # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
         # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(링1 `seat_kinds`).
@@ -1823,6 +1826,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 작업이 선택됐는가 — **`vm` 이 아니라 이름**이다(F6): TXT 는 hwpx 실행뷰를
             # 세우지 않으므로 `vm is not None` 은 "선택됨"이 아니라 "hwpx 로 실행한다"다.
             "has_job": bool(self.job_name),
+            # 열린 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C).
+            # **판정은 여기 하나**다 — 표면이 `data_label` 유무로 유추하면 세션 마운트가
+            # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다). 실행 게이트
+            # (`run_state`)와 같은 술어를 쓰므로 두 자리가 같은 상태를 다르게 부르지 않는다.
+            "job_data_unbound": self.job_data_unbound,
             # 실행 행동 = **매체 파생 2분기**(F6 판정 D). 라벨과 행동 키를 Python 이 낸다 —
             # 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
             "run_action": self._run_action(),
@@ -2643,6 +2651,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         필요한 곳은 이 함수를 부르면 된다.
         """
         job_is_txt, job_unsupported = seat_kinds(job.template_path)
+        # 결속 유무도 **여기서 한 번** 판정한다(U4 §2.4 · #932 U4-C): 매체·실행뷰 유무와
+        # 무관한 작업 사실이라 vm 을 조건으로 걸면 TXT 만 이 축을 잃는다. 스냅샷마다
+        # 디스크를 다시 읽지 않으려는 이유도 같다 — 착석이 유일한 진입점이다.
+        self.job_data_unbound = not has_data_binding(job)
         vm = (
             None
             if (job_is_txt or job_unsupported)
@@ -2873,6 +2885,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
+        self.job_data_unbound = False  # 작업이 없으면 물을 대상 자체가 없다
         self.out_dir = ""
         self._last_failed = []
 
@@ -5450,6 +5463,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             selected_record_count=self.selection.selected_count(),
             total_record_count=len(self.records),
             active_work_ref=self.job_name or None,
+            active_work_data_bound=not self.job_data_unbound,
             slot_view=slot_view,
             orchestration=self._session_orchestration,
             fresh_observation=self._last_fresh_observation,

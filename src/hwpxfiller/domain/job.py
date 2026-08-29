@@ -414,6 +414,23 @@ def has_data_binding(job: "Job") -> bool:
     return bool(job.data_path)
 
 
+def data_binding_label(job: "Job") -> str:
+    """결속을 사람이 읽는 한 줄로 — 미결속이면 ``""``.
+
+    ``파일이름.csv`` 또는 ``파일이름.xlsx · 시트이름``. 시트는 **있을 때만** 붙인다:
+    CSV·단일 시트에 빈 시트명을 구분자와 함께 그리면 없는 축을 있는 것처럼 보인다.
+
+    경로 전체가 아니라 파일 이름인 이유는 이 값의 소비처가 **목록·상세의 한 줄**이기
+    때문이다(전체 경로는 로케이트 동사의 것이다). 링0 에 두는 이유는 durable 필드의 순수
+    파생이고, 같은 문자열을 라이브러리와 「문서 만들기」가 함께 쓰기 때문이다 — 두 표면이
+    각자 basename 을 뽑으면 시트 표기가 한쪽에서만 늙는다.
+    """
+    if not has_data_binding(job):
+        return ""
+    stem = job.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+    return f"{stem} · {job.data_sheet}" if job.data_sheet else stem
+
+
 def data_binding_matches(
     job: "Job", path: str, sheet: str = "", header_row: int = 0
 ) -> bool:
