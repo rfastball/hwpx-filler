@@ -172,7 +172,7 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     # 저장.
     ctrl.dispatch("goto_section", {"section": "filename"})
     ctrl.dispatch("set_name", {"name": "테스트작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "문서-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "문서-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is True and res["saved_name"] == "테스트작업"
     assert JobRegistry(tmp_path / "jobs").exists("테스트작업")
@@ -441,7 +441,7 @@ def test_save_gate_blocks_incomplete_and_unnamed(tmp_path):
     blanks = ctrl.snapshot()  # confirm_all 이 content 0 → 모두 blanks
     ctrl.dispatch("confirm_blanks", {"fields": [r["template_field"] for r in blanks["rows"]]})
     ctrl.dispatch("set_name", {"name": "빈작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "x-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "x-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "비움" in res["block_reason"]
 
@@ -456,7 +456,7 @@ def test_overwrite_confirm_flow(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "중복작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
     # **새 세션**에서 같은 이름 저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
@@ -470,7 +470,7 @@ def test_overwrite_confirm_flow(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "중복작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and res.get("needs_overwrite") is True
     assert "덮어" in res["overwrite_text"]
@@ -489,7 +489,7 @@ def _save_named(ctrl: EditorController, name: str) -> dict:
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     return ctrl.dispatch("save", {})
 
 
@@ -524,7 +524,7 @@ def _build_complete_session(ctrl, name: str) -> None:
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("goto_section", {"section": "filename"})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
 
 
 def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
@@ -714,6 +714,31 @@ def test_load_job_template_drift_is_restated(tmp_path):
     assert snap["is_complete"] is False                  # 새 스키마 필드는 미확정(사람 확정 필요)
 
 
+def test_session_notice_is_dismissible_and_the_trigger_can_stand_it_again(tmp_path):
+    """세운 뒤 **지워지는가**(U4 계열1-20 · U3 §1 이 지목한 결함류).
+
+    이 채널에는 세우는 전이만 있고 지우는 전이가 없어서 한 번 선 통지가 사유 해소 뒤에도
+    남았다. 닫기는 사용자 몫이고, 트리거는 그대로라 같은 사유가 다시 서면 통지도 다시 선다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="드리프트",
+        template_path=str(TPL_COMPILED),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="유령필드", source="", type="const", const="x"),
+        ]),
+    ))
+    ctrl.load_job("드리프트")
+    assert ctrl.snapshot()["notice"] is not None
+
+    ctrl.dispatch("dismiss_notice", {})
+    assert ctrl.snapshot()["notice"] is None
+
+    ctrl.load_job("드리프트")                              # 같은 트리거 → 같은 통지가 다시 선다
+    assert ctrl.snapshot()["notice"] is not None
+
+
 def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
     """편집 원점 그대로 재저장 = 자기-갱신(확인 불요) + 태그·마지막 실행 메타 보존."""
     ctrl, _ = _controller26(tmp_path)
@@ -820,7 +845,7 @@ def _complete_with_data(ctrl, name: str) -> None:
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
 
 
 def test_save_with_data_registers_nothing_anywhere(tmp_path, monkeypatch):
@@ -939,7 +964,7 @@ def test_edit_save_preserves_authored_at_updates_updated_at(tmp_path):
 
     ctrl.load_job("출처편집")
     assert ctrl.snapshot()["provenance"]["template"].endswith(".hwpx")  # 편집 모드 표시
-    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{수요기관}}"})
     ctrl.dispatch("save", {"confirm_overwrite": True})
     second = JobRegistry(tmp_path / "jobs").load("출처편집").mapping.provenance
     assert second["authored_at"] == authored          # 최초 작성시각 보존
@@ -1088,7 +1113,7 @@ def test_load_job_reedit_starts_all_active(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "재편집대상"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
     ctrl.load_job("재편집대상")
@@ -1409,7 +1434,7 @@ def test_new_hwpx_save_from_filename_tab_lands_in_place(tmp_path):
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("goto_section", {"section": "filename"})   # 실 UI: 3단계까지 전진
     ctrl.dispatch("set_name", {"name": "전진저장작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
     snap = ctrl.snapshot()
     assert snap["section"] == "filename"                     # 제자리 — 뒤로 가지 않는다
@@ -2068,7 +2093,7 @@ def test_overwrite_confirm_reasks_when_the_situation_changed_under_the_modal(tmp
     ctrl, _ = _controller26(tmp_path)
     _save_named(ctrl, "원본작업")
     ctrl.load_job("원본작업")
-    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True                   # 무드리프트 자기-갱신
 
     ctrl.load_job("원본작업")

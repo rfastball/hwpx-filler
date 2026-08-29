@@ -103,6 +103,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 없으면 세션 전체 되돌리기(footer 「변경 버리기」·이탈의 「버리고 나가기」).
         "discard_patch": _schema(optional="section"),
         "ack_gate": _schema(),
+        # 세션 통지 닫기(U4 계열1-20) — 통지를 **세우는** 전이는 그대로 두고 사용자가
+        # 끄는 문만 연다. 해소를 자동 감지해 지우려면 통지마다 해소 술어를 지어야 하고
+        # 그 술어가 곧 두 번째 판정이다. 다시 필요해지면 같은 트리거가 다시 세운다.
+        "dismiss_notice": _schema(),
         "skip_data": _schema(),
         "use_all_headers": _schema(),
         "use_none": _schema(),

@@ -248,13 +248,17 @@ function blockingBySlot(view: SlotCurrentView | null): Map<string, SlotAttention
   return out;
 }
 
-/** 상단 상태 한 줄 — phase(왕복)와 configuration_status(backend 판정)를 그대로 사상. */
+/** 상단 상태 한 줄 — phase(왕복)와 configuration_status(backend 판정)를 그대로 사상.
+ *
+ * ``pending`` 은 **줄을 세우지 않는다**(U4 계열1-26). 한 번의 선택에서 이 줄이 섰다가
+ * 다시 사라지면 구획 높이가 두 번 튀어 「접혔다 깜빡인다」로 보인다 — 그 사이 실제로 바뀐
+ * 것은 아무것도 없다. 왕복 중이라는 사실은 레이아웃을 안 건드리는 두 채널이 이미 말한다:
+ * 구획의 ``aria-busy`` 와 비활성된 radio. 진짜 상태 전이(error·stale·needs·broken)만
+ * 줄을 세우므로 남는 높이 변화는 **정말 바뀐 것**뿐이다.
+ */
 function statusLine(state: SlotConfigState): { kind: string; text: string } | null {
   if (state.phase === "error") {
     return { kind: "error", text: state.error ?? "오류가 발생했습니다" };
-  }
-  if (state.phase === "pending") {
-    return { kind: "pending", text: "선택 반영 중…" };
   }
   if (state.phase === "stale") {
     return { kind: "stale", text: "설정이 갱신되어 최신 내용을 다시 불러왔습니다" };

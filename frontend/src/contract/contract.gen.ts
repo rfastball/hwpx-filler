@@ -115,6 +115,7 @@ export const SCREEN_ACTIONS = {
     goto_section: { required: ["section"], optional: ["disposition"] },
     discard_patch: { required: [], optional: ["section"] },
     ack_gate: { required: [], optional: [] },
+    dismiss_notice: { required: [], optional: [] },
     skip_data: { required: [], optional: [] },
     use_all_headers: { required: [], optional: [] },
     use_none: { required: [], optional: [] },

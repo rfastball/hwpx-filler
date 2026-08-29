@@ -1631,6 +1631,16 @@ class EditorController:
         self.model.apply_profile(base.mapping)
         self._model_key = self._model_key_now()
 
+    def _do_dismiss_notice(self, p: dict) -> None:
+        """사용자가 세션 통지를 끈다(U4 계열1-20).
+
+        이 채널에는 **세우는 전이만** 있었고 지우는 전이가 :meth:`_reset` 밖에 없어서, 한 번
+        선 통지가 사유가 해소돼도 화면에 남았다. 자동 소멸 대신 수동 닫기를 두는 이유는
+        해소 판정을 통지마다 새로 지으면 그 술어가 같은 상태의 **두 번째 판정**이 되기
+        때문이다 — 트리거는 그대로라 사유가 다시 서면 통지도 다시 선다.
+        """
+        self._set_notice("", "muted")
+
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
         if self.gate is None:

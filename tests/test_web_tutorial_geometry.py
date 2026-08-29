@@ -164,7 +164,6 @@ _JOB_STAGE = (
     '<div class="session-actionbar"><div class="actionbar-row">'
     '<span class="actionbar-identity">'
     '<span class="actionbar-job" id="jobActionName">2026 상반기 계약</span></span>'
-    '<button class="btn" id="jobPreviewOpen">생성 값 미리보기</button>'
     '<button class="btn primary" id="jobGenBtn">이 작업으로 문서 생성</button>'
     '<span class="muted capnote" id="jobGate">선택 3건</span>'
     "</div></div></section></div></section>"

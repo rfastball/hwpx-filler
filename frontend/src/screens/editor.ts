@@ -2000,11 +2000,18 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
     h(ContextBanner as any, { snapshot, controller }),
     h(StepHeader as any, { snapshot, controller }),
     h("div", { className: "wbody", id: "editor-body", "data-preserve-scroll": true },
-      /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄. */
+      /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄.
+         닫기는 **사용자 몫**이다(U4 계열1-20): 세우는 트리거는 그대로라 사유가 다시 서면
+         통지도 다시 서고, 해소를 자동 감지하려 들면 통지마다 해소 술어를 새로 지어야 한다. */
       snapshot.notice ? h("p", {
-        className: `note ${snapshot.notice.level === "ok" ? "quiet" : "warnbox"}`,
+        className: `note editor-notice ${snapshot.notice.level === "ok" ? "quiet" : "warnbox"}`,
         style: { whiteSpace: "pre-line" },
-      }, snapshot.notice.text) : null,
+      }, h("span", { className: "editor-notice-text" }, snapshot.notice.text),
+        h("button", {
+          className: "editor-notice-close", id: "editorNoticeClose", type: "button",
+          "aria-label": "알림 닫기",
+          onClick: () => { void controller.sendEdit("dismiss_notice", {}); },
+        }, "✕")) : null,
       body),
     h(SaveMessage as any, { view }),
     h(EditorFooter as any, { snapshot, draft, controller }),

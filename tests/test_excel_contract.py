@@ -107,15 +107,44 @@ def test_xlsx_scalar_conversion_is_deterministic(tmp_path: Path) -> None:
         ],
     )
 
+    # 날짜 셀은 openpyxl 이 자정 datetime 으로 돌려주지만 표시 서식에 시각이 없다 —
+    # 사용자가 쓴 적 없는 00:00:00 을 지어내지 않는다(U4 계열1-25).
     assert ExcelDataSource(str(path)).records() == [
         {
-            "날짜": "2026-07-22 00:00:00",
+            "날짜": "2026-07-22",
             "시각": "2026-07-22 09:05:06",
             "정수": "1000",
             "실수": "1.25",
             "참거짓": "TRUE",
         }
     ]
+
+
+def test_midnight_datetime_keeps_its_time_when_the_format_shows_one(tmp_path: Path) -> None:
+    """자정 억제는 **서식에 시각이 없을 때만**이다 — 실제 자정 값을 잃지 않는다."""
+    path = _xlsx(tmp_path / "midnight.xlsx", [["마감"], [datetime(2026, 7, 22, 0, 0)]])
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb.active
+    ws.cell(row=2, column=1).number_format = "yyyy-mm-dd hh:mm"
+    wb.save(path)
+    wb.close()
+
+    assert ExcelDataSource(str(path)).records() == [{"마감": "2026-07-22 00:00:00"}]
+
+
+def test_date_only_cell_does_not_leak_a_fabricated_time_into_the_display_form(
+    tmp_path: Path,
+) -> None:
+    """읽기 경계의 자정 억제가 표시형까지 관통하는가 — 결함 25 의 재현 회귀."""
+    from hwpxfiller.domain.mapping import apply_transform
+
+    path = _xlsx(tmp_path / "dates.xlsx", [["계약일"], [date(2026, 7, 22)]])
+    value = ExcelDataSource(str(path)).records()[0]["계약일"]
+
+    assert value == "2026-07-22"
+    assert apply_transform("date", value) == "2026. 7. 22."
 
 
 def test_xlsx_formula_without_cached_value_fails_loudly(tmp_path: Path) -> None:

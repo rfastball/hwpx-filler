@@ -687,7 +687,7 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Bridge = service(ctx, "Bridge");
         const out = { pending: true };
-        const btn = byId(ctx, "jobPreviewOpen");
+        const btn = byId(ctx, "jobMirrorPreviewOpen");
         const modal = byId(ctx, "previewSheet");
         out.present = !!(btn && modal);
         if (!out.present) { out.pending = false; return { preview_drawer: out }; }

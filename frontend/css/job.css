@@ -325,8 +325,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .cs-status{margin:0;font-size:var(--fs-caption);padding:var(--sp-6) var(--sp-8);
   border-radius:var(--rad-surface);line-height:1.4}
 .cs-status-needs,.cs-status-broken{background:var(--fb-missing-bg);color:var(--a-danger)}
-.cs-status-pending,.cs-status-stale{background:var(--a-card);color:var(--a-muted);
-  border:1px solid var(--a-border)}
+.cs-status-stale{background:var(--a-card);color:var(--a-muted);border:1px solid var(--a-border)}
+/* 왕복 중 표시는 **자리를 차지하지 않는다**(U4 계열1-26) — 임시 줄이 섰다 사라지면 구획
+   높이가 두 번 튄다. 색만 죽여 「지금은 못 고른다」를 말하고 높이는 그대로 둔다. */
+.content-selection[aria-busy="true"] .cs-slots{opacity:.6}
 .cs-status-error{background:var(--fb-missing-bg);color:var(--a-danger);border:1px solid var(--a-danger)}
 .cs-slots{display:flex;flex-direction:column;gap:var(--sp-10)}
 .cs-slot{margin:0;padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);

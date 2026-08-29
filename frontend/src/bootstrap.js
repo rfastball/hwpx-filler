@@ -233,7 +233,7 @@ export function bootProduct() {
   });
   const JobRead = createJobReadController({
     runtime, client, ports: screenPorts, services: servicePorts,
-    modal: Modal, surfaceSheet: SurfaceSheet, dataPicker: DataPicker,
+    modal: Modal, popover: Popover, surfaceSheet: SurfaceSheet, dataPicker: DataPicker,
     navigation, doc: document,
     notify: (message) => window.alert(message),
   });

@@ -374,7 +374,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       return;
     }
     deps.modal.open("previewSheet", {
-      returnFocus: previewTrigger ?? deps.doc.getElementById("jobPreviewOpen"),
+      returnFocus: previewTrigger ?? deps.doc.getElementById("jobMirrorPreviewOpen"),
       initialFocus: deps.doc.getElementById("previewClose"),
       onClose: () => { void dispatch("preview_close", {}); },
     });
@@ -705,9 +705,14 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       void dispatch("preview_blank_only", { value }).catch((error) =>
         log(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
     },
+    /** 승인은 **한 동작**이다(U4 계열1-21) — 성사하면 면을 닫는다. 거절은 면을 남긴다:
+     *  사유를 보여 줄 자리가 그 면이고 닫으면 무엇이 왜 안 됐는지 말할 곳이 없다.
+     *  닫기가 `Modal.close` 를 지나므로 `preview_close` 가 함께 나가 열림의 Python
+     *  소유(§13-2)가 두 곳으로 갈라지지 않는다. */
     previewApprove(previewToken?: string): void {
-      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {}).catch((error) =>
-        log(`확인을 저장하지 못했습니다: ${String(error)}`));
+      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {})
+        .then(() => { deps.modal.close("previewSheet"); })
+        .catch((error) => log(`확인을 저장하지 못했습니다: ${String(error)}`));
     },
     previewEdit(): void {
       deps.modal.close("previewSheet");
@@ -1097,7 +1102,6 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const missing = on && !!s?.template_missing;
   const gate = (s?.gate || { enabled: false, level: "", text: "" }) as Obj;
   const review = (s?.review || {}) as Obj;
-  const pv = (s?.preview || {}) as Obj;
   const managed = isManagedHwpx(s);
   const workbench = (s?.workbench_observation || {}) as Obj;
   const createAction = (workbench.create_action || {}) as Obj;
@@ -1115,11 +1119,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
         className: "btn sm", id: "jobActionRelink", type: "button", "data-busy-lock": true,
         hidden: !missing, disabled: busy, onClick: props.controller.relinkActive,
       }, "템플릿 다시 연결…")),
-    h("button", {
-      className: "btn", id: "jobPreviewOpen", "data-busy-lock": true,
-      hidden: managed, disabled: busy || managed || !pv.can_open,
-      onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
-    }, "생성 값 미리보기"),
+    // 확인 면 출구는 **하나**다(U4 계열1-22): 「본문 확인」 존의 `#jobMirrorPreviewOpen`
+    // 이 UI 계약이 지정한 자리이고, 여기 있던 같은 핸들러의 사본은 걷혔다. 관리형의
+    // `#jobManagedPreviewOpen` 은 사본이 아니라 게이트가 승격시키는 별개 동사다.
     // 「승인 필요」 표지는 요구가 **아직 안 풀렸을 때만** — 승인한 뒤에도 붙어 있으면
     // 확인이 무의미해진다.
     h("span", {

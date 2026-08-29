@@ -223,8 +223,12 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
     액션의 양방향 존재, 기존 공유 팩토리·상수·헬퍼의 인라인 재구현 여부, 문서화된 seam
     계약(docstring 의 접근 제한 등) 우회 여부.
 - 링1 공개 API 를 바꾸면 소비 컨트롤러와 헤드리스 테스트를 같은 변경에 담는다. DOM `id`·
-  `data-*`·script 순서·화면 루트를 바꾸면 정적 DOM 계약을 먼저 갱신하고, 실동작이 관여하면
-  selftest 시나리오까지 갱신한다.
+  `data-*`·script 순서·화면 루트를 바꾸면 **그 좌표를 든 게이트를 같은 변경에 담는다** —
+  지금 그것을 지키는 것은 selftest 프로브(`frontend/src/selftest/probes/`)·live101 대본
+  (`scripts/live101/scenario.py`)·press geometry(`tests/test_web_press_geometry.py`)·
+  blocker 어포던스 표(`src/hwpxfiller/webapp/blocker_affordance.py` + 그 계약 테스트)다.
+  종전 서술이 가리키던 별도의 「정적 DOM 계약」 파일(`test_web_dom_contract.py`·
+  `test_web_datazone.py`)은 **존재하지 않는다**(#932 B4).
 - 동결 목업(`docs/UI_PROTOTYPE_APPB.html`, `docs/r-flow-mockups/`)은 현재 기능을 설계·검증하려고
   먼저 고치지 않는다.
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호(`feat: … (#319)`, 파괴적 변경은 `feat!:`).

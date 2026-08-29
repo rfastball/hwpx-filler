@@ -214,18 +214,34 @@ def template_missing(template_path: str) -> bool:
     return not template_path or not Path(template_path).exists()
 
 
-def unresolved_name_tokens_for(job: "Job") -> "list[str]":
-    """파일명 패턴이 요구하는데 이 작업이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
+def unresolved_name_tokens_in(
+    mapping: "MappingProfile", filename_pattern: str
+) -> "list[str]":
+    """파일명 패턴이 요구하는데 이 매핑이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
 
     생성 파일명은 **매핑 적용 후** 레코드({템플릿필드: 값})에서 해소되므로 해소 가능 집합 =
     비움 아닌 매핑 커버 필드다(blank 선언 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다).
     매핑 적용 키는 전 레코드 균일이라 CLI 의 '일부 레코드 누락' 경고 분기는 GUI 에 원리적으로
-    없다. **데이터 없이도 판정 가능한 작업 정의 수준의 계약 검사**라, 실행 게이트
-    (:meth:`RunViewModel._name_token_gate`)와 전역 건강 보기(§19.7 번역)가 이 한 몸통을
-    공유한다 — 두 표면이 같은 상태를 다르게 부르지 않게(리뷰 P2).
+    없다.
+
+    **데이터 없이도 판정 가능한 작업 정의 수준의 계약 검사**라 ``Job`` 이 아직 없는 자리
+    (저장 게이트 :func:`~hwpxfiller.gui.job_editor_state.validate_save`, U4 계열4-4)에서도
+    같은 몸통을 부를 수 있게 프로파일 수준으로 둔다 — 저장 게이트가 이 술어를 다시 지으면
+    같은 상태를 두 곳이 판정한다.
     """
-    resolved = set(job.mapping.cover_fields()) - set(job.mapping.blank_fields())
-    return [t for t in pattern_field_tokens(job.filename_pattern) if t not in resolved]
+    resolved = set(mapping.cover_fields()) - set(mapping.blank_fields())
+    return [t for t in pattern_field_tokens(filename_pattern) if t not in resolved]
+
+
+def unresolved_name_tokens_for(job: "Job") -> "list[str]":
+    """:func:`unresolved_name_tokens_in` 의 ``Job`` 결속 형태.
+
+    실행 게이트(:meth:`RunViewModel._name_token_gate`)와 전역 건강 보기(§19.7 번역)가 이
+    한 몸통을 공유한다 — 두 표면이 같은 상태를 다르게 부르지 않게(리뷰 P2). 저장 게이트가
+    선 뒤에도 **방어층으로 남는다**: 이 앱 밖에서 편집되거나 저장 게이트 이전에 만들어진
+    작업은 여전히 미해소 토큰을 들 수 있다(조용한 리터럴 파일명 금지).
+    """
+    return unresolved_name_tokens_in(job.mapping, job.filename_pattern)
 
 
 class RunViewModel:
