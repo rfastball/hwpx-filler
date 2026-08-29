@@ -104,9 +104,17 @@ def _wire(tmp_path: Path):
 
 
 def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:
-    """마법사 한 바퀴 — 템플릿 고르고 전 필드를 고정값으로 확정한 뒤 저장."""
+    """마법사 한 바퀴 — 템플릿·데이터를 고르고 전 필드를 고정값으로 확정한 뒤 저장.
+
+    데이터 연결은 저장 게이트다(#932 U4-C S2-3). 열 이름은 템플릿 필드와 겹치지 않게
+    둔다 — 자동 제안이 서면 이 여정이 재려는 것(확정 대기)이 아니라 매핑이 달라진다.
+    """
+    data = tpl.parent / "행목록.csv"
+    if not data.exists():
+        data.write_text("항목,수량\n연필,3\n", encoding="utf-8-sig")
     editor.load_template_path(str(tpl))
-    editor.dispatch("skip_data", {})
+    editor.load_data_path(str(data))
+    editor.dispatch("goto_section", {"section": "binding"})
     for index in range(len(editor.model.rows)):
         editor.dispatch("set_type", {"index": index, "type": "const"})
         editor.dispatch("set_const", {"index": index, "const": f"v{index}"})

@@ -26,7 +26,7 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``docs/core-workflow.md``; 봉�
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..domain.job import WORK_MODE_HWPX, WORK_MODE_UNSUPPORTED
+from ..domain.job import WORK_MODE_HWPX, WORK_MODE_UNSUPPORTED, data_binding_matches
 from .run_state import GateState
 
 if TYPE_CHECKING:
@@ -74,6 +74,30 @@ def compatibility_for(job: "Job", fields: "list[str]") -> WorkCompatibility:
     if missing:
         return WorkCompatibility(KIND_NEEDS_ACTION, missing=missing, mode=mode)
     return WorkCompatibility(KIND_AVAILABLE, mode=mode)
+
+
+def bound_jobs(
+    jobs: "list[Job]", path: str, sheet: str = "", header_row: int = 0
+) -> "list[Job]":
+    """이 마운트에 **결속된** 작업만 — 후보 축의 1차 관문(U4 §2.4 · #932 U4-C).
+
+    U2 §5.3 판정 D 를 뒤집으며 후보의 뜻이 갈렸다: 종전에는 「이 데이터로 쓸 수 있는
+    작업」(스키마 호환)이었고 지금은 「이 데이터로 만드는 작업」(결속)이다. 두 축을
+    **병존시키지 않는다**(사용자 확정 2026-08-29) — 같은 목록에 두 관계가 섞이면 사용자는
+    어느 작업이 이 데이터를 기억하는지 알 수 없고, 그것이 판정 D 가 지우려던 혼란이다.
+
+    **호환성을 대신하지는 않는다.** 이 함수는 목록을 좁히고, 좁혀진 목록 안에서
+    :func:`compatibility_for` 가 계속 available/needs_action 을 가른다 — 결속된 파일의
+    열이 사라지는 일은 여전히 일어나고, 그때 조용히 목록에서 빠지면 사용자는 자기 작업이
+    어디로 갔는지 모른다(사라짐은 사유가 아니다).
+
+    입력 순서를 보존한다(:func:`candidate_rows` 와 같은 규율 — 정렬은 순위가 진다).
+    ``path`` 가 비면 결속이 성립할 수 없으므로 빈 목록이다: 파일로 가리킬 수 없는
+    마운트(조립 파이프라인)는 어떤 작업의 결속 대상도 아니다.
+    """
+    if not path:
+        return []
+    return [j for j in jobs if data_binding_matches(j, path, sheet, header_row)]
 
 
 def candidate_rows(
@@ -291,6 +315,11 @@ def prework_gate(
     ``has_candidates`` 는 **선택 가능한(available) 후보의 존재**다 — needs_action 뿐인
     목록으로 True 를 주면 "선택하세요"가 이행 불가능한 지시가 된다(#302 리뷰 P2).
 
+    후보의 뜻은 U4 §2.4 에서 갈렸다(#932 U4-C): 「이 데이터로 쓸 수 있는 작업」이 아니라
+    「이 데이터에 연결된 작업」이다. 그래서 없음의 문안도 갈린다 — 종전 「사용할 수 있는」은
+    사용자에게 「호환되는 것이 없다」로 읽혀 데이터를 바꾸라는 뜻이 됐지만, 지금의 정도는
+    **이 데이터로 새 작업을 만들거나 「문서 작업」에서 고르는 것**이다.
+
     각 갈래는 **막는 축의 이름**(``reason``)을 함께 낸다 — 표면의 구획 지목이 그 이름
     하나만 읽게 하려는 것이다(상태 재유도 금지, #342 리뷰 P2).
     """
@@ -304,7 +333,7 @@ def prework_gate(
         )
     if not has_candidates:
         return GateState(
-            False, "warn", "현재 데이터에 사용할 수 있는 문서 작업이 없습니다.",
+            False, "warn", "이 데이터에 연결된 문서 작업이 없습니다.",
             reason=GATE_REASON_NO_CANDIDATES,
         )
     return GateState(

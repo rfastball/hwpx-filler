@@ -62,6 +62,9 @@ export type JobRunControllerDeps = {
 const GATE_ZONE: Record<string, string> = {
   no_data: "현재 데이터 · ",
   no_rows: "현재 데이터 · ",
+  // 결속 부재는 데이터 축이 아니라 **작업 축**이다(#932 U4-C) — 고칠 자리가 피커가 아니라
+  // 편집기라, 데이터 머리에 함께 선 「데이터 연결하기…」가 그 자리다.
+  data_unbound: "현재 데이터 · ",
   no_candidates: "이 데이터에 사용할 문서 · ",
   no_job: "이 데이터에 사용할 문서 · ",
   drift: "본문 확인 · ",

@@ -125,6 +125,9 @@ def _job_row_dict(r: JobRow) -> dict:
         "badge_level": badge_level(r.compile_state),  # muted/warn/ok/danger
         "last_run_display": r.last_run_display,
         "template_missing": r.template_missing,
+        # 데이터 결속 유무(U4 §2.4 · #932 U4-C) — 행에는 **유무만** 싣는다. 라벨은 상세가
+        # 지고 행은 「조치가 필요한가」만 말한다(템플릿 축의 `template_missing` 과 같은 결).
+        "data_bound": r.data_bound,
         "runnable": r.is_runnable(),
         "favorited": bool(r.favorited_at),
         # 필터가 쓰는 **정규화된** 매체를 그대로 싣는다(리뷰 P2): 미연결을 hwpx 로 걸러 놓고
@@ -225,6 +228,11 @@ class LibraryController:
             # 화면에 없었다(계기판의 짝). 경로 검증은 백엔드 화이트리스트(app.py
             # ``_validate_owned``)가 이미 소유한다 — 신설은 이 한 칸뿐이다.
             "template_path": job.template_path,
+            # 데이터 결속의 정체(U4 §2.4) — 템플릿 정체 바로 옆이 제자리다: 「무엇으로
+            # 만드는가」의 두 축이고, 한쪽만 보이면 목록이 절반만 말한다. 라벨 성형은
+            # 링0 단일 출처(`data_binding_label`)라 표면이 basename·시트 표기를 안 짓는다.
+            "data_label": row.data_label,
+            "data_path": job.data_path,
             # §19.6: HWPX 는 파일 이름 규칙을, 온나라 기안은 실행 방식을 보여준다.
             "filename_pattern": row.filename_pattern if mode == "hwpx" else "",
             "run_note": (

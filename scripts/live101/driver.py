@@ -586,8 +586,23 @@ def _run_with_home(
         return str(target)
 
     def stage_data(kind: str) -> str:
+        """SX-05 가 겨눌 데이터 상태를 실제 파일로 만든다.
+
+        **`blank` 은 같은 파일의 내용 변경이다**(#932 U4-C). 작업이 데이터를 durable 로
+        들게 된 뒤로 「다른 경로」는 곧 「다른 데이터」이고, 그 위에서 앉아 있던 작업은
+        결속이 안 맞아 해제된다 — 그러면 이 걸음이 재려던 record recovery 에 도달하지
+        못한다. 원래 의도(같은 데이터에 빈 값이 생겼다)를 경로가 아니라 **내용**으로
+        표현하도록 원본 자리에 쓰고, `clean` 이 원본을 되돌린다.
+
+        `release`·`incompatible` 은 반대로 **다른 데이터**가 의도라 별도 경로 그대로다 —
+        그 갈래에서 작업이 해제되는 것이 지금 계약이 말하는 바다.
+        """
         source = home / "data" / "발주목록.csv"
+        backup = home / "data" / ".sx05-source-backup.csv"
         if kind == "clean":
+            if backup.exists():
+                source.write_bytes(backup.read_bytes())
+                backup.unlink()
             return str(source)
         if kind == "missing":
             return str(home / "data" / "sx05-does-not-exist.csv")
@@ -595,6 +610,31 @@ def _run_with_home(
         if kind == "incompatible":
             target.write_text("다른항목\n값\n", encoding="utf-8-sig")
             return str(target)
+        if kind not in ("blank", "release"):
+            raise ValueError(f"모르는 SX-05 data stage: {kind!r}")
+        with source.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            rows = list(reader)
+            fields = list(reader.fieldnames or ())
+        if not rows or "공고명" not in fields:
+            raise ValueError("SX-05 blank fixture가 공고명 열을 찾지 못했습니다")
+        if kind == "blank":
+            rows[0]["공고명"] = ""
+        else:
+            fields.remove("공고명")
+            for row in rows:
+                row.pop("공고명", None)
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        if kind == "blank":
+            if not backup.exists():
+                backup.write_bytes(source.read_bytes())
+            source.write_text(buffer.getvalue(), encoding="utf-8-sig")
+            return str(source)
+        target.write_text(buffer.getvalue(), encoding="utf-8-sig")
+        return str(target)
         if kind not in ("blank", "release"):
             raise ValueError(f"모르는 SX-05 data stage: {kind!r}")
         with source.open(encoding="utf-8-sig", newline="") as stream:

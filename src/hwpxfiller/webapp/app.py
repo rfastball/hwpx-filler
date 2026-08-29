@@ -424,7 +424,12 @@ class WebFrontend:
             EditorController(
                 job_registry, self._push,
                 clock=datetime.now,
-                # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 재진술 사망.)
+                # 등록 데이터 풀 = 데이터 선택 면·라이브러리와 **같은 인스턴스**(#932 U4-C
+                # S2-5): 마법사 데이터 관문의 「등록 데이터에서 고르기」가 이것을 읽는다.
+                # #347 이 이 주입을 지우며 "소비자 0 인 seam 은 남기지 않는다"고 적은 것은
+                # 그때 사실이었고 지금은 아니다 — 결속이 저장 게이트라 마법사가 데이터를
+                # 고르는 표면이 됐다. 편집기는 읽기만 한다(등록·다시 연결·삭제는 그 면의 일).
+                pool_registry=pool_registry,
                 template_library=tpl_ctrl.vm,
                 # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**:
                 # 별도 인스턴스면 접힘·지정 인메모리 캐시가 갈라져 두 표면이 다른 조직을 보인다.

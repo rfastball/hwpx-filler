@@ -21,7 +21,12 @@ from pathlib import Path
 from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
 from ..domain.engine import HwpxEngine
 from ..domain.fill_ledger import template_path_drift
-from ..domain.job import Job, require_hwpx_template
+from ..domain.job import (
+    Job,
+    data_binding_label,
+    has_data_binding,
+    require_hwpx_template,
+)
 from ..domain.template_status import CompileState, TemplateStatus
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
@@ -131,6 +136,13 @@ class JobRow:
     unresolved_name_tokens: bool = False
     # 확정 매핑이 아직 없음 — 드리프트와 **원인이 다르지만 둘 다 실행을 막는다**(리뷰 P2).
     mapping_empty: bool = False
+    # 이 작업이 어느 데이터에 연결돼 있는가(U4 §2.4 · #932 U4-C). 템플릿 축이
+    # `template_name`·`template_linked` 로 이미 실려 오는 자리라, 데이터 축만 비워 두면
+    # 목록은 「무엇으로 만드는가」의 절반만 말한다. `data_bound` 가 거짓인 작업은 구판
+    # 파일·앱 밖 편집분이고, 그 사실이 여기서 처음 보인다 — 하나씩 눌러 봐야 아는 상태를
+    # 남기지 않는다(U4-C 마이그레이션의 목록 표면).
+    data_bound: bool = False
+    data_label: str = ""
 
     @classmethod
     def from_job(
@@ -187,6 +199,9 @@ class JobRow:
             txt_readable=txt_readable,
             unresolved_name_tokens=name_tokens,
             mapping_empty=not job.mapping.mappings,
+            # 링0 파생 단일 출처 — 표면이 basename·시트 표기를 각자 만들지 않는다.
+            data_bound=has_data_binding(job),
+            data_label=data_binding_label(job),
         )
 
     def meta_line(self) -> str:

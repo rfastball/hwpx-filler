@@ -233,7 +233,7 @@ function LibraryRow(props: { row: Obj; selected: string; controller: LibraryCont
       "aria-current": active ? "true" : "false", "data-busy-lock": true,
       onClick: () => { void controller.axis("select_work", { name: row.name }); },
     },
-    h("span", { className: "lib-row-name" }, row.name, h(HealthPill as any, { health: row.health })),
+    h("span", { className: "lib-row-name" }, row.name, h(HealthPill as any, { health: row.health }), row.data_bound === false ? h("span", { className: "pill warn", title: "데이터를 연결해야 문서를 만들 수 있습니다." }, "연결 필요") : null),
     h("span", { className: "lib-row-meta" },
       `${row.mode_label} · ${row.last_run_display}`)),
     h("button", {
@@ -314,6 +314,20 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     h("dt", null, "템플릿"),
     h("dd", null, detail.template_name, " ",
       h(PathActions as any, { client: controller.client, path: detail.template_path, notify: controller.notify })),
+    /* 데이터 축은 템플릿 바로 아래다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
+       한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**으로
+       말한다: 빈칸은 「아직 못 읽었다」와 구별되지 않는다. */
+    h("dt", null, "데이터"),
+    detail.data_bound
+      ? h("dd", null, String(detail.data_label || ""), " ",
+        h(PathActions as any, { client: controller.client, path: detail.data_path, notify: controller.notify }))
+      : h("dd", { className: "lib-detail-unbound" },
+        h("span", { className: "pill warn" }, "연결 필요"),
+        " 데이터를 연결해야 문서를 만들 수 있습니다. ",
+        h("button", { className: "btn sm", "data-connect-data": detail.name,
+          onClick: () => controller.editWork(detail.name, {
+            "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
+          }) }, "데이터 연결하기…")),
     detail.filename_pattern ? h("dt", null, "파일 이름 규칙") : null,
     detail.filename_pattern ? h("dd", null, detail.filename_pattern) : null,
     detail.run_note ? h("dt", null, "실행 방식") : null,

@@ -20,7 +20,15 @@
 구 2단계 '데이터 선택'을 매핑 단계의 관문으로 인라인했다 — 데이터는 별도 단계가 아니라
 매핑 단계의 머리(파일 선택/바꾸기·데이터 없이 진행)이며, 관문에서 데이터를 고르면 매핑표가
 **그 자리에서** 다시 선다(단계 왕복이 만들던 유령 상태 소멸, 결정 11·12). 데이터 선택성은
-단계 경계가 아니라 관문 옵트아웃(``skip_data``)으로 표현된다(ADR-J 승계).
+단계 경계가 아니라 관문의 데이터 선택 동사 둘(파일 고르기·등록 데이터에서 고르기)로
+표현된다. 「데이터 없이 진행」(구 ``skip_data``)은 #932 U4-C 에서 사라졌다 — 작업이 데이터
+결속을 durable 로 들고 저장 게이트가 그것을 요구하므로 옵트아웃은 저장할 수 없는 세션으로
+가는 링크가 됐다.
+
+**데이터 결속(U4 §2.4, #932 U4-C)**: 이 화면이 세운 데이터는 더는 검토용 문맥만이 아니다 —
+경로·시트·헤더 행 한 벌이 :class:`~hwpxfiller.domain.job.Job` 에 실려 저장되고, 저장본 편집
+진입은 그 결속을 다시 읽어 세운다(:meth:`EditorController._restore_from`). 저장 착지도 같은
+경로를 지나므로 저장 한 번이 세션의 데이터를 내려놓지 않는다.
 
 **#26 패리티 회수(이 라운드 포함)**: 편집 모드(:meth:`EditorController.load_job`).
 매핑 베이스 프로파일(``_do_profile_*``, ADR J 축2)은 F22 로 제거 — 작업이 매핑을 자족
@@ -42,10 +50,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from ..application.dataset_pool import DatasetPoolRow
+from ..domain.dataset_reference import STATUS_ACTIVE
 from ..domain.format_engine import presets as format_presets
 from ..domain.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
+    data_binding_of,
+    has_data_binding,
     template_media,
 )
 from ..domain.mapping import TYPES, MappingProfile
@@ -54,6 +66,7 @@ from ..external import example_pack
 from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path
+from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry, content_fingerprint
 from ..host.locations import default_templates_dir, default_text_templates_dir
 from ..gui.edit_session import (
@@ -91,6 +104,9 @@ from .screens import (
     TXT_RAW_BLOCK,
     PushSink,
     TutorialSink,
+    load_pool_into,
+    pool_reference_triple,
+    reference_missing,
     unwired_tutorial,
 )
 from .template_groups import TemplateGroupModel, norm_library_path, rel_key
@@ -128,6 +144,42 @@ _EMPTY_PRESERVED: "dict[str, object]" = {
 }
 
 
+#: 풀 seam 미배선(테스트 단독 구동·비완전 조립)의 거절 문구 — 없는 표면을 있다고 말하지
+#: 않는다. 제품 조립은 늘 배선돼 있어 이 문구는 오배선의 신호다.
+POOL_UNWIRED_TEXT = "등록 데이터 목록을 읽을 수 없습니다."
+
+
+def _binding_source_ref(job: "Job") -> "dict | None":
+    """저장본의 데이터 결속을 **인계 참조 한 벌**로 — 미결속이면 ``None``.
+
+    ``{path, sheet, header_row}`` 는 :meth:`EditorController._load_source_ref` 가 받는
+    형상 그대로다(#878 인계와 같은 문). 결속을 경로 하나로 줄이지 않는 이유도 같다:
+    참조 성분을 흘리면 마법사가 **다른 헤더**에 앵커를 걸고 그 어긋남은 화면 어디에도
+    표시가 없다(#349 리뷰 P1).
+    """
+    if not has_data_binding(job):
+        return None
+    path, sheet, header_row = data_binding_of(job)
+    return {"path": path, "sheet": sheet, "header_row": header_row}
+
+
+def pool_option_block(row: "DatasetPoolRow") -> str:
+    """이 등록 데이터를 작업 데이터로 연결할 수 있는가 — 못 쓰면 사유, 쓸 수 있으면 ``""``.
+
+    **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5, 나라장터 동결 규율과 같은 줄):
+    목록에서 지우면 사람이 등록해 둔 항목이 이유 없이 사라진 것으로 보이고, 그 침묵이
+    이 라운드가 고치는 결함과 같은 종류다. 판정도 문구도 여기 한 곳이 낸다 — 표면이
+    ``status``·``kind`` 로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다.
+    """
+    if row.kind != "excel":
+        return f"{row.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
+    if row.status != STATUS_ACTIVE:
+        return "보관한 항목입니다. '문서 만들기'의 데이터 선택에서 활성화한 뒤 쓰세요."
+    if reference_missing(row.locate_path):
+        return "참조가 끊겼습니다. '문서 만들기'의 데이터 선택에서 다시 연결한 뒤 쓰세요."
+    return ""
+
+
 def _preserved_meta(job: "Job") -> "dict[str, object]":
     """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기·검토 기준선).
 
@@ -158,6 +210,7 @@ class EditorController:
         push: PushSink,
         *,
         clock: Callable[[], datetime],
+        pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
         template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
@@ -175,8 +228,14 @@ class EditorController:
         # 전확정(T2)·작업 저장(T3 HWPX / T10 TXT)·비움 확정(T14). 전부 **이미 성립한** 전이
         # 지점에서만 부르고, 어느 것도 여기서 다시 판정하지 않는다.
         self._tutorial = tutorial
-        # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 연결 재진술이 죽어
-        #  이 화면은 풀을 읽지도 쓰지도 않는다. 소비자 0 인 seam 은 남기지 않는다.)
+        # 등록 데이터(풀) 읽기 seam — **재판정으로 되살아났다**(#932 U4-C S2-5). #347 은 이
+        # 주입을 지우며 "소비자 0 인 seam 은 남기지 않는다"고 적었고 그때는 사실이었다:
+        # 자동등록·기본 데이터 재진술이 함께 죽어 이 화면이 풀을 읽을 일이 없었다. 지금은
+        # 다르다 — 데이터 결속이 저장 게이트라 마법사가 데이터를 **고르는** 표면이고,
+        # 「고정해 둔 데이터」를 마법사에서 못 고르면 사람은 같은 파일을 매번 다시 찾아야
+        # 한다. 쓰기는 여기 없다(등록·다시 연결·삭제는 데이터 선택 면의 일). 미주입이면
+        # 그 사실을 스냅샷이 말하고 목록 동사는 서지 않는다.
+        self._pool_registry = pool_registry
         # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
         # 주입**한다. 별도 인스턴스면 두 표면의 접힘·지정 인메모리 캐시가 갈라져(한쪽 토글이
         # 다른쪽에 반영 안 됨) 1단계 피커가 관리 화면과 다른 구획을 조용히 보인다(단일 실체).
@@ -256,6 +315,11 @@ class EditorController:
         self._editing_fingerprint = ""
         # 편집 모드에서 복원한 작성 출처 메타(#53-C) — 표시용 + 재저장 시 최초 작성시각 보존.
         self._loaded_provenance: "dict[str, str]" = {}
+        # 진입·저장 착지가 결속 데이터를 다시 읽다 실패한 사유(#932 U4-C S2-1·S2-2).
+        # 통지 문장을 짓는 자리가 둘(진입 notice / 저장 착지 notice)이라 사유를 값으로
+        # 든다 — 실패를 성공 문안으로 덮으면 저장 뒤 화면이 빈 데이터 관문인 채로 "저장
+        # 했습니다"만 말한다.
+        self._reload_failure = ""
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
         self.notice_level = "muted"
         # (별도 라이브러리 행 캐시 없음 — #138 리뷰 F8·F11: 공유 VM rows() 직독으로 발산 제거.)
@@ -565,6 +629,10 @@ class EditorController:
             "data_path": self.data_path,
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "data_sheet": self.data_sheet,  # 관문 파일칩 시트 표기(#33 확정 시트)
+            # 등록 데이터에서 고르기가 이 조립에 서 있는가(#932 U4-C S2-5) — 목록 자체는
+            # 사건 때만 읽는다(`pool_options`). 미배선 조립에서 동사를 세우면 눌러도 아무
+            # 일도 안 일어나고, 그 침묵이 이 라운드가 고치는 결함과 같은 종류다.
+            "pool_enabled": self._pool_registry is not None,
             "record_count": len(self.records),
             # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
@@ -1289,7 +1357,9 @@ class EditorController:
         데이터도 내려놓는다: 「저장된 상태로 되돌린다」가 문안이고, 남기면 버린 뒤에도 세션이
         미저장으로 남아 같은 파기를 다시 묻는다.
 
-        ``source_ref``(#878)는 **모델보다 먼저** 선다: 데이터를 나중에 얹으면
+        ``source_ref``(#878)는 **모델보다 먼저** 선다. 진입이 참조를 들고 오지 않았으면
+        **저장본의 결속**(:func:`_binding_source_ref`)이 그 자리를 잇는다(#932 U4-C S2-2):
+        데이터를 나중에 얹으면
         :meth:`load_data_path` 의 ``_ensure_model`` 이 키 변화를 보고 매핑을 전원 미확정
         초안으로 재생성해, 고칠 필드 하나 때문에 온 사람에게 저장된 매핑 전량 재확정을 물린다.
         데이터를 먼저 세우면 저장 매핑은 **그 데이터 어휘 위로** 복원되고
@@ -1315,10 +1385,19 @@ class EditorController:
             raise ValueError(self.raw_block or RAW_BLOCK_MESSAGE)  # 매체별 문안(F6 PR-B)
         if self.gate_error:
             raise ValueError("템플릿 상태를 확인할 수 없어 편집을 열 수 없습니다.")
+        # 진입이 참조를 들고 오지 않았으면 **저장본의 결속**이 선다(#932 U4-C S2-2).
+        # 우선순위가 이 방향인 이유: 인계(``DATA_ANCHORED_ENTRY_REASONS``)는 사람이 방금
+        # 고른 데이터라 저장된 결속보다 새 의사다. 결속은 그 의사가 없을 때의 기본값이고,
+        # 구판 작업(결속 없음)은 조용히 지나간다 — 여기서 「데이터 연결 필요」를 말하는
+        # 것은 저장 게이트(``validate_save``)의 일이라 같은 상태를 두 곳이 판정하지 않는다.
+        # ``keep_data`` 갈래는 아래 스태시가 이기므로 읽지 않는다(같은 파일을 두 번 읽지 않는다).
         handoff_failure = ""
-        if source_ref:
+        carried_ref = source_ref if source_ref else (
+            None if keep_data else _binding_source_ref(job)
+        )
+        if carried_ref:
             try:
-                self._load_source_ref(source_ref, emit_push=False)
+                self._load_source_ref(carried_ref, emit_push=False)
             except Exception as exc:  # noqa: BLE001  (사유를 통지로 재진술 — 진입은 계속)
                 handoff_failure = str(exc)
         carried_data = bool(self.data_path)
@@ -1392,8 +1471,11 @@ class EditorController:
                 f"\n불러온 데이터에 없는 열을 쓰던 필드 {len(detached)}개는 확정이 필요합니다: "
                 + ", ".join(detached)
             )
+        # 실패 사유는 값으로도 든다 — 저장 착지는 이 notice 를 자기 문안으로 덮으므로,
+        # 값이 없으면 그 갈래에서 사유가 조용히 사라진다(#932 U4-C S2-1).
+        self._reload_failure = handoff_failure
         if handoff_failure:
-            notice += f"\n문서 만들기 화면의 데이터를 다시 읽지 못했습니다: {handoff_failure}"
+            notice += f"\n연결된 데이터를 다시 읽지 못했습니다: {handoff_failure}"
         self._set_notice(
             notice, "warn" if (dropped or fresh or detached or handoff_failure) else "ok"
         )
@@ -1446,7 +1528,10 @@ class EditorController:
 
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
     _NONMUTATING_ACTIONS = frozenset(
-        {"goto_section", "step_preview", "mapping_reset_stakes", "toggle_library_group"}
+        {"goto_section", "step_preview", "mapping_reset_stakes", "toggle_library_group",
+         # 목록 조회는 세션을 안 바꾼다 — 데이터를 고르기 전에 클린 표지를 끄면 아무것도
+         # 안 고른 사람에게 이탈 확인이 뜬다(#932 U4-C S2-5).
+         "pool_options"}
     )
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
@@ -1556,18 +1641,33 @@ class EditorController:
         base = self.session.base
         section = str(p.get("section") or "")
         if not section:  # footer 「변경 버리기」·이탈의 「버리고 나가기」 = 세션 전체를 되돌린다
-            # **데이터 선택도 함께 내려놓는다**(8R P2): 문안이 「저장된 상태로 되돌린다」고
-            # 말했는데 고른 엑셀·자동등록 이름을 남기면, 버리기를 마친 세션이 여전히 미저장
-            # 이라 다음 작업을 열 때 방금 버린 것을 또 묻고(같은 파기를 두 번 승인시킨다),
-            # 편집기로 돌아가면 버렸다던 데이터 선택이 그대로 서 있다.
-            had_data = bool(self.data_path)
+            # **데이터 선택도 함께 되돌린다**(8R P2): 문안이 「저장된 상태로 되돌린다」고
+            # 말했는데 고른 엑셀을 남기면, 버리기를 마친 세션이 여전히 미저장이라 다음
+            # 작업을 열 때 방금 버린 것을 또 묻고(같은 파기를 두 번 승인시킨다), 편집기로
+            # 돌아가면 버렸다던 데이터 선택이 그대로 서 있다.
+            #
+            # **되돌아가는 자리는 「빈 값」이 아니라 「저장된 결속」이다**(#932 U4-C):
+            # 결속이 durable 이 된 뒤로 저장본의 데이터는 버릴 대상이 아니라 되돌아갈
+            # 자리다. 문안도 그 사실을 따라간다 — 결속이 있는 작업에 「내려놨습니다」라고
+            # 말하면 화면에는 데이터가 서 있는데 문안만 거짓이 된다(과진술도 부정직이다).
+            restored_ref = data_binding_of(base)
+            data_changed = (
+                self.data_path, self.data_sheet, self.data_header_row
+            ) != restored_ref
+            base_bound = has_data_binding(base)
             self._restore_from(
                 base, landing_section=self.section, context=self.session.context,
                 emit_push=False,
             )
+            if not data_changed:
+                data_line = ""
+            elif base_bound:
+                data_line = "\n데이터도 이 작업에 연결된 것으로 되돌렸습니다."
+            else:
+                # 구판 작업(결속 없음) — 되돌아갈 자리가 없으므로 실제로 내려놓는다.
+                data_line = "\n고른 데이터도 함께 내려놨습니다."
             self._set_notice(
-                "바꾼 내용을 버리고 저장된 상태로 되돌렸습니다."
-                + ("\n고른 데이터도 함께 내려놨습니다." if had_data else ""),
+                "바꾼 내용을 버리고 저장된 상태로 되돌렸습니다." + data_line,
                 "ok",
             )
             return
@@ -1631,48 +1731,76 @@ class EditorController:
             raise ValueError("확인할 항목이 없습니다.")
         self.gate.acknowledge(self.gate.unmet_tokens)
 
-    def _do_skip_data(self, p: dict) -> None:
-        """데이터 없이 진행(스키마온리) — 매핑 단계 관문의 옵트아웃(F20).
+    # ---- 등록 데이터(풀)에서 고르기(#932 U4-C S2-5)
+    #
+    # 「데이터 없이 진행」(``_do_skip_data``)은 여기서 사라졌다: 데이터 결속이 저장 게이트가
+    # 된 이상 옵트아웃은 **저장할 수 없는 세션**으로 데려가는 링크였고, 그것은 관문이 아니라
+    # 막다른 길이다. 그 자리를 대신하는 것이 이 두 동사다 — 사람이 이미 고정해 둔 데이터를
+    # 마법사 안에서 그대로 고른다(파일 피커와 같은 관문, 다른 출처).
+    #
+    # ``job`` 화면의 ``load_pool`` 을 공유하지 않고 편집기 소유 이름을 쓰는 이유: 화면별
+    # 허용 목록(`action_registry`)이 곧 이 경계의 정의라 같은 이름을 두 화면이 나눠 쓰면
+    # 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다. 포획 규율은 공유한다
+    # (:func:`~hwpxfiller.webapp.screens.pool_reference_triple`).
 
-        3단계 접기 후 별도 '데이터 단계'는 없다 — 이 액션은 매핑 관문에서 데이터 참조를
-        비우고(고른 게 있었으면 해제) 스키마온리 모델로 매핑을 잇는다. 매핑 단계(1)에
-        머문다(관문에서 호출) — step 0 에서 shortcut 으로 불려도 매핑으로 착지한다.
+    def _do_pool_options(self, p: dict) -> dict:
+        """고정한 데이터 목록 1회 조회(무변이) — 목록·사유·손상 항목을 그대로 싣는다.
 
-        **템플릿 게이트 선통과는 step 0 shortcut 에만**(PR#105 리뷰 F2 + PR-2 리뷰 F6):
-        step 0 진입은 ``goto_step(1)`` 과 달리 게이트를 안 거치므로 PARTIAL 미확인 템플릿을
-        매핑으로 밀어 넣을 수 있어 막는다. 이미 매핑에 정당히 서 있는 세션(편집 복원 —
-        게이트 확인은 세션 국소라 재로드 시 미확인으로 돌아온다)의 관문 클릭까지 막으면,
-        전부터 되던 옵트아웃이 엉뚱한 처방("토큰 확인")과 함께 하드 실패한다.
+        렌더당 I/O 가 아니다: 스냅샷에 상주시키지 않고 사람이 목록을 여는 사건에서만
+        지불한다(:func:`~hwpxfiller.webapp.screens.reference_missing` 와 같은 규율).
 
-        **비울 참조가 없으면 어휘를 지우지 않는다**(PR-2 리뷰 F3): 편집 복원 세션은 데이터
-        없이 저장-매핑 어휘(``profile_source_vocabulary``)로 서는데, 이 링크가 no-op 으로
-        읽히는 상황에서 어휘를 비우면 전 행이 미확정 강등 + "(데이터에 없음)" 오표시된다.
-        데이터가 실재할 때만 해제하고, 편집 세션의 해제는 현재 매핑이 참조하는 소스 어휘로
-        복귀한다(load_job 초기 상태와 동형 — 빈 어휘 강등 금지).
+        쓸 수 없는 항목도 **빼지 않는다** — ``usable=False`` + 사유를 함께 실어 표면이
+        비활성으로 그린다. 손상 등록도 목록 밖으로 밀지 않고 따로 재진술한다(RC-05).
         """
-        if self.section == SECTION_TEMPLATE and not self.can_advance(SECTION_TEMPLATE):
-            raise ValueError(
-                "미해결 토큰을 확인하거나 템플릿을 정리해야 매핑으로 진행할 수 있습니다."
-            )
-        had_data = bool(self.data_path)
-        self.data_path = ""
-        self.data_sheet = ""
-        self.records = []
-        self.preview_index = 0
-        if had_data:
-            if self._editing_origin and self.model is not None:
-                seen: "list[str]" = []
-                for row in self.model.rows:
-                    if row.source and row.source not in seen:
-                        seen.append(row.source)
-                self.source_fields = seen
-            else:
-                self.source_fields = []
-            self._ignored_sources = set()
-            self._ignored_expanded = False
-        self._ensure_model()
-        self.section = SECTION_BINDING
-        self.session.section = self.section
+        if self._pool_registry is None:
+            return {"ok": False, "error": POOL_UNWIRED_TEXT, "items": [], "corrupted": []}
+        entries, corrupted = self._pool_registry.list_references()
+        items = []
+        for key, item in entries:
+            row = DatasetPoolRow.from_item(key, item)
+            reason = pool_option_block(row)
+            items.append({
+                "key": row.key,
+                "name": row.name,
+                "reference": row.reference,
+                "usable": not reason,
+                "reason": reason,
+            })
+        return {
+            "ok": True,
+            "items": items,
+            "corrupted": [{"file": e.file_name, "error": e.error} for e in corrupted],
+        }
+
+    def _mount_pool_item(self, item) -> list:
+        """풀 항목을 이 세션의 데이터로 마운트하고 레코드를 돌려준다(공유 관문의 loader).
+
+        참조 포획은 :func:`~hwpxfiller.webapp.screens.pool_reference_triple` 하나가 진다 —
+        경로·시트·헤더 행이 한 벌로 오지 않으면 마법사가 사람이 고른 것과 **다른 헤더**로
+        선다(#349 리뷰 P1). 파일 참조가 아닌 항목은 여기서 시끄럽게 거절한다(목록이 이미
+        비활성으로 그렸어도 그 판정을 표면에만 두지 않는다).
+        """
+        path, sheet, header_row = pool_reference_triple(item)
+        if not path:
+            raise ValueError(f"'{item.name}' 은(는) 파일 참조가 아니라 연결할 수 없습니다.")
+        self.load_data_path(
+            path, sheet=sheet or None, header_row=header_row, emit_push=False
+        )
+        return self.records
+
+    def _do_use_pool_data(self, p: dict) -> dict:
+        """고른 등록 데이터를 이 작업의 데이터로 연결 — 실패는 사유 dict 로 재진술.
+
+        거절 사다리(나라 동결·항목 부재·모호 시트·죽은 참조·0행)는 공유 실행부
+        (:func:`~hwpxfiller.webapp.screens.load_pool_into`)가 소유한다. 여기서 다시 적으면
+        같은 실패가 화면마다 다른 문구를 갖는다.
+        """
+        if self._pool_registry is None:
+            return {"ok": False, "error": POOL_UNWIRED_TEXT}
+        res = load_pool_into(self._pool_registry, str(p["key"]), self._mount_pool_item)
+        if not res["ok"]:
+            return {"ok": False, "error": res["error"]}
+        return {"ok": True, "label": res["item"].name}
 
     # ---- 사용 헤더 칩(#49 + 칩-라이브 결정 12·13) — 즉시 동사, 활성/미사용 전환.
     # 체크박스 스테이징 소거(결정 13): 칩 토글이 곧 즉시 반영. 활성 집합 변화는 model.
@@ -2104,6 +2232,9 @@ class EditorController:
         """
         verdict = validate_save(
             self.model, self.job_name, self.pattern, schema=self.schema,
+            # 데이터 결속은 저장 게이트다(#932 U4-C S2-3) — 세션이 선 경로를 그대로 넘긴다.
+            # 「데이터 없이 진행」은 이 술어와 함께 사라졌다(S2-4).
+            data_path=self.data_path,
             # 파일명 패턴 게이트는 매체 인지(F6 PR-B) — TXT 는 파일 이름 축이 없다(§3.2).
             media=template_media(self.template_path) if self.template_path else "hwpx",
         )
@@ -2208,6 +2339,13 @@ class EditorController:
             template_path=self.template_path,
             mapping=verdict.profile,
             filename_pattern=self.pattern,
+            # 데이터 결속은 이 화면이 **다시 짓는** 것이다(U4 §2.4, #932 U4-C) —
+            # 그래서 ``_preserved_meta`` 가 아니라 세션 값을 싣는다. 결속을 쓰는 자리는
+            # 저장 하나뿐이라(사용자 확정 2026-08-29) 「데이터 바꾸기 → 저장」이 결속
+            # 변경의 유일 동선이다.
+            data_path=self.data_path,
+            data_sheet=self.data_sheet,
+            data_header_row=self.data_header_row,
             # 비-편집 메타는 사전 하나에서 통째로 되싣는다(_preserved_meta 단일 출처) —
             # 편집이 그룹·즐겨찾기를 조용히 초기화하던 자리(슬라이스 2 인접 수선).
             last_run_at=str(preserved["last_run_at"]),
@@ -2245,5 +2383,14 @@ class EditorController:
             emit_push=False,
             probe_binding=False,  # 쓰기 잠금 안 — 확정 대기는 `_do_save` 가 잠금 밖에서 잰다.
         )
-        self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
+        # 착지 재로드가 결속 데이터를 못 읽었으면 그 사유를 성공 문안으로 덮지 않는다
+        # (#932 U4-C S2-1) — 덮으면 화면은 빈 데이터 관문인 채 "저장했습니다"만 말한다.
+        if self._reload_failure:
+            self._set_notice(
+                f"작업 '{saved}' 을(를) 저장했습니다."
+                f"\n연결된 데이터를 다시 읽지 못했습니다: {self._reload_failure}",
+                "warn",
+            )
+        else:
+            self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
         return {"ok": True, "saved_name": saved}

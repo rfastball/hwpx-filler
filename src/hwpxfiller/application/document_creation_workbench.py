@@ -79,6 +79,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     SELECT_DATA,
     SELECT_RECORDS,
     SELECT_WORK,
+    CONNECT_DATA,
     REVIEW_TEMPLATE_CHANGE,
     CHOOSE_CONTENT,
     REVIEW_BINDING,
@@ -98,6 +99,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     PA_SELECT_DATA,
     PA_SELECT_RECORDS,
     PA_SELECT_WORK,
+    PA_CONNECT_DATA,
     PA_REVIEW_TEMPLATE_CHANGE,
     PA_CHOOSE_CONTENT,
     PA_REVIEW_BINDING,
@@ -122,6 +124,7 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (SELECT_DATA, PA_SELECT_DATA),
     (SELECT_RECORDS, PA_SELECT_RECORDS),
     (SELECT_WORK, PA_SELECT_WORK),
+    (CONNECT_DATA, PA_CONNECT_DATA),
     (REVIEW_TEMPLATE_CHANGE, PA_REVIEW_TEMPLATE_CHANGE),
     (CHOOSE_CONTENT, PA_CHOOSE_CONTENT),
     (REVIEW_BINDING, PA_REVIEW_BINDING),
@@ -157,6 +160,7 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     SELECT_DATA: "job.data",
     SELECT_RECORDS: "job.records",
     SELECT_WORK: "library.work",
+    CONNECT_DATA: "editor.data",
     REVIEW_TEMPLATE_CHANGE: "workbench.template_change",
     CHOOSE_CONTENT: "workbench.content",
     REVIEW_BINDING: "workbench.binding",
@@ -218,7 +222,7 @@ class ActiveWorkContext:
     """active Work/Template Application 식별 + exact context 복원·현재 데이터 사용 가능 플래그.
 
     **backend/controller(SX-02)가 채우는 사실**이다. ``exact_context_restorable`` 과
-    ``usable_with_current_data`` 의 **실제 판정은 SX-05/backend** 가 지고, 여기서는 그 플래그를
+    ``bound_to_current_data`` 의 **실제 판정은 SX-05/backend** 가 지고, 여기서는 그 플래그를
     **소비만** 한다(:func:`decide_active_work_after_data_transition`). 후보/추천 신호
     (``unique_candidate_available``·``is_favorite``·``recently_used``·``preferred_work_id``)는
     다른 Work 를 **자동 활성화하는 근거가 아니다**(#724 §9) — 사용자 명시 선택을 대체하지 않는다.
@@ -228,7 +232,13 @@ class ActiveWorkContext:
     work_ref: str | None = None
     template_application_ref: str | None = None
     exact_context_restorable: bool = False
-    usable_with_current_data: bool = False
+    bound_to_current_data: bool = False
+    #: 이 Work 가 **어떤** 데이터에 durable 로 연결돼 있는가(U4 §2.4 · #932 U4-C).
+    #: ``bound_to_current_data`` 와 다른 질문이다: 저쪽은 「지금 마운트된 그 데이터냐」
+    #: (전이 판정)이고 이쪽은 「연결 자체가 있느냐」(정의 완결성)다. 기본이 ``True`` 인
+    #: 이유는 Work 가 없는 문맥이 이 축을 지지 않기 때문이다 — 기본을 거짓으로 두면
+    #: 작업 미선택 상태가 「연결 필요」까지 함께 외친다.
+    data_bound: bool = True
     unique_candidate_available: bool = False
     is_favorite: bool = False
     recently_used: bool = False
@@ -602,13 +612,13 @@ class ActiveWorkTransitionDecision:
 def decide_active_work_after_data_transition(
     ctx: ActiveWorkContext,
 ) -> ActiveWorkTransitionDecision:
-    """기존 active Work 유지 여부 — exact context 복원 가능 **and** 현재 데이터 사용 가능일 때만 KEEP.
+    """기존 active Work 유지 여부 — exact context 복원 가능 **and** 현재 데이터에 결속일 때만 KEEP.
 
     그 밖에는 RELEASE 하고, 후보/추천 신호가 있어도 **다른 Work 를 자동 활성화하지 않는다**(#724 §9).
     복원 가능성 판정 자체는 재구현하지 않는다 — ``ctx`` 의 플래그(backend/SX-05 가 채운 사실)를 소비만
     한다.
     """
-    if ctx.active and ctx.exact_context_restorable and ctx.usable_with_current_data:
+    if ctx.active and ctx.exact_context_restorable and ctx.bound_to_current_data:
         return ActiveWorkTransitionDecision(disposition=KEEP)
     return ActiveWorkTransitionDecision(disposition=RELEASE)
 
@@ -660,6 +670,11 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     # Work / Template change / content / Binding
     if not inp.active_work.active:
         present.add(SELECT_WORK)
+    elif not inp.active_work.data_bound:
+        # 열린 Work 가 데이터에 연결돼 있지 않다(U4 §2.4 · #932 U4-C). Work 미선택과
+        # **함께 세우지 않는다**: 고를 Work 가 없는 상태와 고른 Work 가 미완인 상태는
+        # 고칠 자리가 다르고(라이브러리 vs 편집기), 둘을 겹쳐 말하면 지목이 흐려진다.
+        present.add(CONNECT_DATA)
     if inp.template_change_verdict in (REVIEW_REQUIRED, DETACHED):
         present.add(REVIEW_TEMPLATE_CHANGE)
     if inp.content_selection.has_unselected_required_content:

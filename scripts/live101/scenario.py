@@ -224,78 +224,46 @@ def run(ctx: ScenarioContext) -> dict:
     )
     ctx.shoot("library-detail")
     s.click_sel('#libraryDetail [data-use="발주요청서"]', what="문서 만들기에서 사용")
-    # 작업↔데이터 결속(`Job.default_dataset_ref`)과 자동 조준은 U2 §5.3 판정 D 로 폐기됐다
-    # (#347) — 「문서 만들기에서 사용」은 **데이터 선택을 반드시 지난다**. 데이터가 없으면
-    # 백엔드가 그 명시 사건을 보관만 한다(reason=no_data). 마운트 뒤에도 active Work 는 0이고,
-    # 사용자가 현재 데이터에 맞는 후보를 다시 명시적으로 골라야 한다.
+    # **작업이 자기 데이터를 끌고 온다**(U4 §2.4 · #932 U4-C — U2 §5.3 판정 D 의 명시 철회).
+    # 종전 계약은 「문서 만들기에서 사용」이 **데이터 선택을 반드시 지난다**였고(결속 폐기의
+    # 귀결) 마운트 뒤에도 작업은 0이었다. 결속이 durable 이 된 지금은 착지 자체가 승격이다 —
+    # 이 걸음이 재는 것이 그 뒤집기다. 데이터 선택 면의 찾아보기·고정 계약(U2 §2.7 · #343)은
+    # 아래 SX-05 H7 의 `_mount_data` 가 계속 지난다(같은 증거를 두 번 밟지 않는다).
     s.wait("document.querySelector('#scr-job.on') !== null", "문서 만들기 착지", requires=["#scr-job"])
-    ctx.queue_file_answer(ctx.csv_path)
-    s.click_sel("#jobBtnPickData", what="데이터 선택")
-    s.wait(
-        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
-        "데이터 선택 면",
-        requires=["#dataPickerModal"],
-    )
-    s.click_sel("#dataPickerBrowse", what="파일 찾아보기")
-    # 찾아보기 성사는 **면을 닫지 않는다**(U2 §2.7, #343): 「현재 데이터」가 방금 고른
-    # 파일로 재진술되고 그 자리에 「이 데이터 고정…」이 선다. 존재만 재면 hidden 버튼도
-    # 통과하므로(프로브 click 이 hidden 을 지나는 것과 같은 함정) **가시성**으로 잰다.
     s.wait(
         "(function(){"
-        "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
-        "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
-        "const b=document.getElementById('dataPickerPin');"
-        "return !!b && getComputedStyle(b).display !== 'none';})()",
-        "찾아보기 성사·면 유지·고정 버튼 가시",
+        "const d=document.getElementById('jobDataLabel');"
+        "const n=document.getElementById('jobActionName');"
+        # 화면이 다시 마운트되는 동안 두 요소는 잠시 사라진다(스냅샷 null 렌더) —
+        # 부재를 실패가 아니라 「아직」으로 접어야 착지를 기다릴 수 있다.
+        "if(!d||!n)return false;"
+        "return d.value.length > 0 && n.textContent.trim() === '발주요청서';})()",
+        "결속 데이터·작업 동시 착지",
         timeout=25.0,
-        requires=["#dataPickerModal", "#dataPickerCurrent", "#dataPickerPin"],
+        requires=["#jobDataLabel", "#jobActionName"],
     )
-    s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
-    s.wait(
-        "document.getElementById('dataPickerModal').classList.contains('hidden')"
-        " && document.getElementById('jobDataLabel').value.length > 0",
-        "데이터 마운트 착지",
-        timeout=25.0,
-        requires=["#dataPickerModal", "#jobDataLabel"],
-    )
-    s.wait(
-        "document.getElementById('jobActionName').textContent.trim() === ''",
-        "데이터 마운트 뒤 active Work 0",
-        requires=["#jobActionName"],
-    )
-    seen["active_work_absent_after_mount"] = True
+    seen["bound_work_arrives_with_its_data"] = str(
+        s.js("document.getElementById('jobDataLabel').value")
+    ).strip()
 
     candidate = '#jobCandidates button[data-cand="발주요청서"]'
+    # 후보 줄은 이제 **결속 역인덱스**다 — 그 데이터로 만드는 작업만 선다. 방금 승격된
+    # 작업이 그 자리에 `aria-pressed="true"` 로 서 있는 것이 「열렸다」의 정본이다.
+    # 가시성·클릭 가능성은 여기서 재지 않는다: 그 단언은 **명시 선택을 앞둔 카드**의
+    # 것이었고(누를 수 있는가), 지금 이 카드는 이미 눌린 결과다. 클릭 가능한 후보의
+    # 기하는 온보딩 대본의 `_select_all` 이 매 티어에서 계속 지난다.
     s.wait(
         "(function(){"
         f"const b=document.querySelector({candidate!r});"
-        "if(!b)return false;const style=getComputedStyle(b);"
-        "return !b.disabled && b.getClientRects().length > 0"
-        " && style.visibility !== 'hidden' && style.pointerEvents !== 'none'"
-        " && b.getAttribute('aria-pressed') === 'false';})()",
-        "현재 데이터의 발주요청서 후보 가시·선택 가능",
+        "if(!b)return false;"
+        "return b.getAttribute('aria-pressed') === 'true';})()",
+        "결속 후보가 열린 작업으로 선다",
+        timeout=25.0,
         requires=["#jobCandidates", candidate],
     )
     seen["work_candidate_actionable"] = "발주요청서"
-    s.wait(
-        "(function(){const n=document.getElementById('jobDataNotice');"
-        "return !n.hidden && n.textContent.includes('발주요청서')"
-        " && n.textContent.includes('직접 고르세요');})()",
-        "preferred notice의 직접 선택 안내",
-        requires=["#jobDataNotice"],
-    )
-    seen["preferred_notice_requires_selection"] = True
-
-    # 후보 카드의 보이는 production action을 실제로 누른다. 「열렸다」의 정본은 액션바 이름과
-    # 카드 aria-pressed다. 이 확인 전에 다음 단계로 가면 명시 선택 없는 진행을 놓친다.
-    s.click_sel(candidate, what="발주요청서 후보 명시 선택")
-    s.wait(
-        "document.getElementById('jobActionName').textContent.trim() === '발주요청서'"
-        f" && document.querySelector({candidate!r}).getAttribute('aria-pressed') === 'true'"
-        " && !document.getElementById('jobSelAll').disabled",
-        "데이터 마운트·명시 작업 선택",
-        requires=["#jobActionName", candidate, "#jobSelAll"],
-    )
+    # 명시 사건은 사라지지 않고 **자리가 옮겨졌다**: 사용자가 누른 것은 라이브러리의
+    # 「문서 만들기에서 사용」이고, 그 한 번이 데이터와 작업을 함께 세운다.
     seen["explicit_work_selected"] = "발주요청서"
     # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
     # 사용자가 고른다. 그래서 마운트만으로는 게이트가 열리지 않고, 여기서 전체 선택을
@@ -1528,6 +1496,125 @@ def _leave_editor(ctx: "ScenarioContext", what: str) -> None:
     )
 
 
+def _rebind_work(ctx: "ScenarioContext", *, name: str, pinned: str) -> None:
+    """저장된 작업의 **데이터 연결을 바꾼다** — 「문서 작업」 → 편집 → 등록 데이터 → 저장.
+
+    U4-C(#932)가 만든 동선이다. 작업이 데이터를 durable 로 들고(§2.4) 그 결속을 쓰는
+    자리가 저장 하나이므로, 「이 작업을 다른 파일로 돌린다」는 마운트를 갈아 끼우는 일이
+    아니라 **작업을 고치는 일**이다 — 화면에 무엇이 마운트돼 있든 작업을 고르면 자기
+    데이터가 서기 때문이다.
+
+    등록 데이터에서 고르는 이유는 그것이 사람이 실제로 밟는 짧은 길이기 때문이다(예제
+    설치가 두 CSV 를 이미 고정해 뒀다). 네이티브 파일 대화상자 갈래는 신규 저장
+    (:func:`_save_work`)이 이미 매 티어에서 지난다.
+    """
+    s = ctx.surface
+    _goto_library(ctx, f"{name} 연결 바꾸기")
+    s.wait(
+        f"!!document.querySelector({json.dumps(f'#libraryList [data-work={json.dumps(name, ensure_ascii=False)}]')})",
+        f"라이브러리 행({name})",
+        requires=["#libraryList"],
+    )
+    s.click_sel(
+        f"#libraryList [data-work={json.dumps(name, ensure_ascii=False)}]",
+        what=f"저장된 작업 행({name})",
+    )
+    s.wait(
+        "!!document.querySelector('#libraryDetail [data-edit]')",
+        f"상세 편집 동사({name})",
+        timeout=30.0,
+        requires=["#libraryDetail"],
+    )
+    s.click_sel(
+        f"#libraryDetail [data-edit={json.dumps(name, ensure_ascii=False)}]",
+        what=f"작업 편집({name})",
+    )
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null"
+        " && !!document.querySelector('#editor-body button[data-act=\"pick-pool-data\"]')",
+        f"편집기 데이터 관문({name})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_sel('#editor-body button[data-act="pick-pool-data"]', what="등록 데이터에서 고르기")
+    # 확정 매핑이 걸린 교체는 **열기 전에** 한 번 묻는다(`confirmMappingResetIfConfirmed`)
+    # — 고른 뒤 되묻는 순서를 금지한 그 규율이다. 확인은 **조건부**(확정·직접 편집 행이
+    # 있을 때만)라 「떴으면 지난다」를 한 대기 안에서 갈라야 대본이 두 갈래에 다 산다.
+    s.wait(
+        "(function(){"
+        "const m=document.getElementById('confirmModal');"
+        "if(m && !m.classList.contains('hidden'))return true;"
+        "return !!document.getElementById('editorPoolPick');})()",
+        f"연결 교체 확인 또는 목록({name})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    if not s.js("document.getElementById('confirmModal').classList.contains('hidden')"):
+        _confirm(ctx, "미확정으로 되돌리기", f"{name} 연결 교체")
+    s.wait(
+        "(function(){const cards=[...document.querySelectorAll('#editorPoolPick .tplcard')];"
+        f"const hit=cards.find(c=>(c.querySelector('.tplcard-name')||{{}}).textContent==={json.dumps(pinned, ensure_ascii=False)});"
+        "return !!hit && !hit.querySelector('button[data-act=\"use-pool-data\"]').disabled;})()",
+        f"고정 데이터 목록({pinned})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.js(
+        "(function(){const cards=[...document.querySelectorAll('#editorPoolPick .tplcard')];"
+        f"const hit=cards.find(c=>(c.querySelector('.tplcard-name')||{{}}).textContent==={json.dumps(pinned, ensure_ascii=False)});"
+        "hit.querySelector('button[data-act=\"use-pool-data\"]').click();return true;})()"
+    )
+    s.wait(
+        f"document.querySelector('#scr-editor').textContent.includes({json.dumps(pinned, ensure_ascii=False)})",
+        f"연결 데이터 반영({pinned})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    # **데이터가 갈리면 확정이 풀린다**(`_model_key_now` — U4-C 가 명시로 지킨 방어다:
+    # 결합과 재확인 면제는 다른 결정이다, #932 B1). 그래서 연결을 바꾼 뒤에는 전 행을
+    # 다시 확정해야 저장 동사가 무장한다 — 같은 이름의 열이라도 뜻이 다를 수 있고, 그
+    # 조용한 통과가 이 방어가 막는 것이다.
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','모두 확정')",
+        f"연결 교체 뒤 재확정 관문({name})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "모두 확정")
+    s.wait(
+        "(function(){const b=window.__cap.btn('#scr-editor','변경 저장');"
+        "return !!b && !b.disabled;})()",
+        f"연결 교체 뒤 저장 무장({name})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    # 저장본 편집 모드의 footer 는 마법사의 「작업 저장」이 아니라 「변경 저장」이다
+    # (U2 §2.4 형상) — 마법사 문안을 겨누면 없는 버튼을 기다린다.
+    s.click_text("#scr-editor", "변경 저장")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        f"연결 바꾸기 저장 착지({name})",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    # 편집기 출구(`#editorBack`)는 **들어온 자리**로 돌아간다 — 여기는 라이브러리다.
+    # 다음 걸음이 서는 곳은 「문서 만들기」라 탭으로 명시 이동한다.
+    s.click_sel("#editorBack", what=f"편집기 출구({name} 연결 바꾸기)")
+    s.wait(
+        "document.querySelector('#scr-library.on') !== null",
+        f"라이브러리 복귀({name})",
+        timeout=30.0,
+        requires=["#scr-library"],
+    )
+    s.click_sel('.navbtn[data-scr="job"]', what=f"문서 만들기 탭({name} 연결 바꾸기)")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null",
+        f"문서 만들기 복귀({name})",
+        timeout=30.0,
+        requires=["#scr-job"],
+    )
+
+
 def _save_work(
     ctx: "ScenarioContext",
     *,
@@ -2458,6 +2545,12 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         f"T12: 데이터 교체 뒤 선택이 0건에서 재시작하지 않았습니다 — {swapped.get('selected_count')!r}",
     )
     _require_step(s, "T12", "데이터 교체")
+
+    # U4-C(#932): 데이터를 갈아 끼웠다고 앞 작업이 그 데이터로 도는 것이 아니다 — 작업이
+    # 자기 데이터를 durable 로 들기 때문이다(§2.4). 그래서 「같은 작업을 새 데이터로」는
+    # **연결을 바꾸는 일**이고, 그 동선을 여기서 실제로 지난다. 이 걸음이 없으면 아래
+    # T13 은 후보에 서지도 않는 작업을 기다린다.
+    _rebind_work(ctx, name=ONBOARDING_JOBS["basic"], pinned="계약목록_2")
 
     # T13 빈 값 재승인 — 이번 실행의 빈 값 집합이 갈려 승인이 **다시 선다**(L4b).
     marker = MISSING_MARKER.format(field="납품조건")

@@ -56,6 +56,10 @@ BLOCKER_CODES: tuple[str, ...] = (
     "SELECT_DATA",
     "SELECT_RECORDS",
     "SELECT_WORK",
+    # 열린 Work 가 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C). Work 축 다음인
+    # 이유는 대상이 **그 Work 의 정의**라서다 — Work 가 없으면 물을 것이 없고, 있으면
+    # 그것이 완결됐는지가 다음 질문이다. 생산자는 구판 파일·앱 밖 편집분 둘뿐이다.
+    "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
@@ -84,6 +88,7 @@ PRIMARY_ACTION_CODES: tuple[str, ...] = (
     "SELECT_DATA",             # 데이터
     "SELECT_RECORDS",          # 레코드
     "SELECT_WORK",             # Work
+    "CONNECT_DATA",           # 열린 Work 의 데이터 결속
     "REVIEW_TEMPLATE_CHANGE",  # Template change
     "CHOOSE_CONTENT",          # content
     "REVIEW_BINDING",          # Binding

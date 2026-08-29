@@ -17,6 +17,8 @@ import pytest
 from hwpxfiller.domain.job import (
     Job,
     RunRequest,
+    data_binding_matches,
+    has_data_binding,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -146,20 +148,115 @@ def test_tags_roundtrip_and_backward_compat():
     assert loaded2.tags == {"목적물": "용역"}
 
 
-def test_default_dataset_ref_is_dead_and_legacy_key_is_ignored():
-    """작업↔데이터 결속(default_dataset_ref, #53-A)은 #347(U2 §5.3 판정 D)로 폐기됐다.
+def test_legacy_name_axis_dataset_ref_stays_dead():
+    """구 ``default_dataset_ref``(#53-A)의 **이름 축**은 U4-C 뒤에도 폐기된 채다.
 
-    구 JSON 의 결속 키는 마이그레이션이 아니라 **폐기** — 미지 키로 무시되고(loud raise
-    없음, 타입이 깨져 있어도 읽지 않는 키는 검증 대상이 아니다) 재저장 시 소멸한다.
+    U4 §2.4 가 되들인 것은 결속이지 그 키가 아니다 — U2 §5.3 판정 C 가 데이터 정체성을
+    경로+시트로 옮겼고(풀 항목 이름은 중복 허용·개명 자유라 정체가 못 된다), 결속이
+    무너졌던 실제 지점이 거기다. 구 JSON 의 그 키는 계속 미지 키로 무시된다.
     """
     assert not hasattr(Job(), "default_dataset_ref")
     assert "default_dataset_ref" not in encode_job(_job())
 
     old_dict = {**encode_job(_job()), "default_dataset_ref": "월별_낙찰현황"}
-    from_old = decode_job(old_dict)          # 구버전이 남긴 결속 키 — 조용히 무시
+    from_old = decode_job(old_dict)          # 구버전이 남긴 이름 축 — 조용히 무시
     assert from_old.version == 1
     assert "default_dataset_ref" not in encode_job(from_old)
+    # 읽지 않는 키는 타입이 깨져 있어도 검증 대상이 아니다.
     assert decode_job({**encode_job(_job()), "default_dataset_ref": 7}).name == _job().name
+
+
+def test_data_binding_round_trips_as_three_components():
+    """데이터 결속은 경로·시트·헤더 행 **한 벌**로 저장·복원된다(U4 §2.4 · #932 U4-C).
+
+    경로 하나로 줄이면 마법사·마운트가 다른 헤더에 앵커를 건다(#349 리뷰 2R). 그래서
+    세 값이 함께 다니는지를 왕복으로 못박는다.
+    """
+    bound = Job(
+        name="입찰공고서",
+        template_path="/tmp/template.hwpx",
+        mapping=_profile(),
+        data_path="/data/2026-08.xlsx",
+        data_sheet="낙찰",
+        data_header_row=3,
+    )
+    d = encode_job(bound)
+    assert (d["data_path"], d["data_sheet"], d["data_header_row"]) == (
+        "/data/2026-08.xlsx", "낙찰", 3,
+    )
+    back = decode_job(d)
+    assert (back.data_path, back.data_sheet, back.data_header_row) == (
+        "/data/2026-08.xlsx", "낙찰", 3,
+    )
+
+
+def test_old_job_json_lands_in_needs_connection_state_without_guessing():
+    """구판 JSON 에는 결속이 없다 — 기본값으로 착지하되 **추측해 채우지 않는다**.
+
+    빈 결속은 손상이 아니라 구판의 유효 상태라 loud raise 가 아니다. 대신 「데이터 연결
+    필요」로 시끄럽게 서고(표면 계약), 되살리는 것은 사용자가 편집기에서 한다.
+    """
+    d = encode_job(_job())
+    for key in ("data_path", "data_sheet", "data_header_row"):
+        d.pop(key)
+    old = decode_job(d)
+    assert (old.data_path, old.data_sheet, old.data_header_row) == ("", "", 0)
+    assert not has_data_binding(old)
+
+
+def test_data_binding_type_corruption_is_loud():
+    """결속 성분의 타입 훼손은 조용히 통과하지 않는다 — durable 값 loud 격리 관례 그대로.
+
+    헤더 행의 ``bool`` 거절은 ``_revision`` 과 같은 근거다: 파이썬에서 ``True`` 는 ``int``
+    라 무검사면 1행 헤더로 조용히 읽힌다.
+    """
+    for key, bad in (
+        ("data_path", 7),
+        ("data_sheet", ["낙찰"]),
+        ("data_header_row", "3"),
+        ("data_header_row", True),
+        ("data_header_row", -1),
+    ):
+        with pytest.raises(ValueError):
+            decode_job({**encode_job(_job()), key: bad})
+
+
+def test_data_binding_is_in_the_content_fingerprint():
+    """결속은 편집기가 **덮어쓰는** 값이라 내용 지문에 든다(U4 §2.4).
+
+    제외 목록(태그·이력·즐겨찾기·그룹·권위·검토 기준선·판본)은 저장이 되싣거나 계산하는
+    메타다. 결속을 거기 섞으면 열어 둔 편집 세션이 다른 자리에서 갈린 결속을 무확인으로
+    덮어쓴다.
+    """
+    base = _job()
+    moved = decode_job({**encode_job(base), "data_path": "/data/other.xlsx"})
+    assert content_fingerprint(base) != content_fingerprint(moved)
+
+
+def test_data_binding_is_not_a_rule_axis():
+    """결속은 실행 **입력**이지 규칙이 아니다 — ``rules_values`` 에 들지 않는다(U4 §2.4).
+
+    들면 데이터를 바꿀 때마다 ``binding_revision`` 이 올라 겪지 않은 세대와 검토 요구가
+    선다(§13-6: 판본 변경 = validation·approval 폐기).
+    """
+    from hwpxfiller.domain.job import advance_revisions, rules_values
+
+    base = _job()
+    assert set(rules_values(base)) == {"template", "filename", "fields"}
+    moved = decode_job({**encode_job(base), "data_path": "/data/other.xlsx"})
+    advance_revisions(moved, base)
+    assert (moved.template_revision, moved.binding_revision) == (1, 1)
+
+
+def test_data_binding_matches_is_the_single_inverse_index_predicate():
+    """후보 역인덱스의 술어 하나 — 정체성은 U2 판정 C(경로 정규화 + 시트) 재사용."""
+    bound = Job(name="a", data_path="/data/A.xlsx", data_sheet="s1", data_header_row=2)
+    assert data_binding_matches(bound, os.path.abspath("/data/A.xlsx"), "s1", 2)
+    assert not data_binding_matches(bound, "/data/A.xlsx", "s2", 2)   # 다른 시트 = 다른 데이터
+    assert not data_binding_matches(bound, "/data/A.xlsx", "s1", 1)   # 다른 헤더 행 = 다른 한 벌
+    assert not data_binding_matches(bound, "/data/B.xlsx", "s1", 2)
+    # 미결속 작업은 어떤 마운트에도 맞지 않는다 — 빈 결속은 「아무거나」가 아니다.
+    assert not data_binding_matches(Job(name="b"), "/data/A.xlsx", "s1", 2)
 
 
 def test_from_dict_rejects_type_corrupt_durable_values():

@@ -96,6 +96,9 @@ from .managed_generation import (
 )
 from ..domain.job import (
     Job,
+    data_binding_matches,
+    data_binding_of,
+    has_data_binding,
     rules_fingerprints,
     template_media,
     work_mode,
@@ -150,6 +153,7 @@ from ..gui.work_candidates import (
     browse_candidates,
     candidate_rows,
     compatibility_for,
+    bound_jobs,
     prework_gate,
     unsupported_media_gate,
     workbench_entry_gate,
@@ -305,6 +309,7 @@ from .screens import (
     PoolTargetingMixin,
     PushSink,
     TutorialSink,
+    pool_reference_triple,
     reference_missing,
     relink_job_template,
     source_label,
@@ -320,6 +325,30 @@ _REMEMBERED_DATA_MISSING = (
     "지난번에 사용한 데이터 파일을 찾을 수 없습니다: {path}. 데이터를 다시 고르세요."
 )
 _REMEMBERED_DATA_FAILED = "지난번에 사용한 데이터를 다시 불러오지 못했습니다. {reason}"
+
+#: 작업의 데이터 결속을 세우는 세 결과의 문안(U4 §2.4 · #932 U4-C). 부재·실패 두 갈래는
+#: 위 부팅 복원과 **같은 사유 채널**을 쓴다(같은 실패가 두 문안을 갖지 않게). 성사 문안이
+#: 따로 있는 이유는 그것이 실패 재진술이 아니라 **초기화 고지**이기 때문이다 — 마운트는
+#: 선택·필터·열 선별을 되돌리므로 조용히 지나가면 사용자가 고른 행이 말없이 사라진다.
+_JOB_BINDING_MISSING = (
+    "이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {path}. "
+    "데이터를 다시 고른 뒤 작업을 저장하세요."
+)
+_JOB_BINDING_FAILED = "이 작업에 연결된 데이터를 불러오지 못했습니다. {reason}"
+_JOB_BINDING_MOUNTED = (
+    "이 작업에 연결된 데이터 '{label}' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
+)
+_JOB_BINDING_ABSENT = (
+    "'{name}' 작업에는 연결된 데이터가 없습니다. 데이터를 고른 뒤 편집기에서 저장하면 "
+    "다음부터 이 작업과 함께 열립니다."
+)
+
+#: 데이터 새로고침(U4 항목 5)의 파괴 확인 문안과 실패 재진술. 확인 문안이 **수치**를 드는
+#: 이유는 「선택이 사라진다」가 추상이면 사용자가 무엇을 잃는지 못 재기 때문이다.
+_REMOUNT_CONFIRM = (
+    "데이터를 다시 읽으면 지금 고른 {count}건의 선택과 필터 초안이 초기화됩니다."
+)
+_REMOUNT_FAILED = "데이터를 다시 읽지 못했습니다. {reason}"
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
@@ -716,6 +745,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`recollapse_job_group`).
         # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
         # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
+        # 열린 작업이 데이터에 연결돼 있지 않다(U4 §2.4 · #932 U4-C) — 착석이 세우고
+        # 해제가 되돌리는 래치. 매체 래치(`job_is_txt`)와 같은 자리에서 산다.
+        self.job_data_unbound = False
         self.job_is_txt = False
         # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
         # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(링1 `seat_kinds`).
@@ -1419,6 +1451,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             note += " 파일 이름의 순번도 이 순서를 따릅니다."
         return note
 
+    def _bound_jobs(self, jobs):
+        """이 마운트에 결속된 작업만 — 후보·탐색이 **같은 한 관문**을 지난다.
+
+        판정 자체는 링1(:func:`~hwpxfiller.gui.work_candidates.bound_jobs`)이 지고 여기는
+        세션이 포획해 둔 참조 한 벌을 넘길 뿐이다. 두 표면(후보 줄·문서 탐색)이 각자
+        필터를 쓰면 같은 데이터에 대해 다른 목록을 말한다(판정 단일 출처).
+
+        참조를 여기서 다시 조립하지 않는다 — ``data_path``·``data_sheet``·
+        ``data_header_row`` 는 마운트가 성사되는 자리에서 한 벌로 포획된 값이고, 나중에
+        슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다(#349 리뷰 2R).
+        """
+        return bound_jobs(
+            jobs, self.data_path, self.data_sheet, self.data_header_row,
+        )
+
     def _candidate_payload(self, jobs) -> dict:
         """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
         링1 단일 출처 소비.
@@ -1451,8 +1498,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
-        by_name = {j.name: j for j in jobs}
-        ranked = rank_available(jobs, fields)
+        # **후보 축은 결속 역인덱스다**(U4 §2.4, #932 U4-C — U2 §5.3 판정 D 폐기).
+        # 종전에는 스키마 호환 전체가 후보였다: 「이 데이터로 쓸 수 있는 작업」. 지금은
+        # 「이 데이터로 만드는 작업」이고, 새 데이터를 처음 마운트하면 후보 0건이 정상이다
+        # (그 자리는 「＋ 이 데이터로 새 작업」이 진다). 호환 판정은 죽지 않고 **좁혀진
+        # 목록 안에서** available/needs 를 계속 가른다 — 결속된 파일의 열이 사라지는 일은
+        # 여전히 일어나고, 그때 조용히 목록에서 빠지면 사용자는 사유를 못 듣는다.
+        bound = self._bound_jobs(jobs)
+        by_name = {j.name: j for j in bound}
+        ranked = rank_available(bound, fields)
         suggested = suggested_work(ranked, active=self.job_name)
 
         top = []
@@ -1489,7 +1543,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         needs = sorted(
             (
                 {"name": j.name, "missing": list(c.missing)}
-                for j, c in candidate_rows(jobs, fields)
+                for j, c in candidate_rows(bound, fields)
                 if c.kind == KIND_NEEDS_ACTION
             ),
             key=lambda d: d["name"],
@@ -1541,8 +1595,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
         if self.datasource is None or not self.records:
             return empty
+        # 탐색 시트도 **같은 결속 관문**을 지난다(#932 U4-C): 후보 줄이 결속만 보는데
+        # 여기서 전체를 보이면 같은 화면의 두 목록이 서로 다른 관계를 말한다. 다른 데이터에
+        # 결속된 작업으로 가는 길은 이 시트가 아니라 「문서 작업」 화면이고(그쪽의
+        # 「문서 만들기에서 사용」이 그 작업의 데이터를 세운다) 빈 상태가 그리로 보낸다.
         res = browse_candidates(
-            jobs, list(self.records[0].keys()),
+            self._bound_jobs(jobs), list(self.records[0].keys()),
             tab=self.browse_tab, query=self.browse_query,
         )
         rows = [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
@@ -1768,6 +1826,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 작업이 선택됐는가 — **`vm` 이 아니라 이름**이다(F6): TXT 는 hwpx 실행뷰를
             # 세우지 않으므로 `vm is not None` 은 "선택됨"이 아니라 "hwpx 로 실행한다"다.
             "has_job": bool(self.job_name),
+            # 열린 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C).
+            # **판정은 여기 하나**다 — 표면이 `data_label` 유무로 유추하면 세션 마운트가
+            # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다). 실행 게이트
+            # (`run_state`)와 같은 술어를 쓰므로 두 자리가 같은 상태를 다르게 부르지 않는다.
+            "job_data_unbound": self.job_data_unbound,
             # 실행 행동 = **매체 파생 2분기**(F6 판정 D). 라벨과 행동 키를 Python 이 낸다 —
             # 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
             "run_action": self._run_action(),
@@ -2204,7 +2267,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return ""
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
-    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+    def load_data_path(
+        self, path: str, *, sheet: "str | None" = None, header_row: int = 0,
+    ) -> None:
         """선택된 데이터 파일을 세션에 마운트. 레코드 0건이면 시끄럽게 실패.
 
         **데이터-우선(§18.2)**: 작업 미선택에도 마운트할 수 있다 — 데이터는 세션 소유고
@@ -2213,23 +2278,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
         시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
+
+        ``header_row`` 는 참조가 들고 있던 읽기 옵션의 승계 자리다(0 = 어댑터 기본).
+        사람이 파일 피커에서 직접 고르는 경로는 이 옵션을 만들지 않아 늘 0이고, 값이 오는
+        곳은 둘이다 — 풀 참조가 포획한 값과 **작업의 데이터 결속**(#932 U4-C). 결속을
+        경로+시트로만 되읽으면 헤더 행이 다른 표를 같은 데이터라고 부른다.
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_file_source(
-            path, sheet=sheet, source_factory=self._file_source_factory
+            path, sheet=sheet, header_row=header_row,
+            source_factory=self._file_source_factory,
         )  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self._commit_data_transition(source, records)
+        self._commit_data_transition(source, records, (path, sheet or "", header_row))
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
         self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
-        # 파일 겨눔은 헤더 행 옵션을 만들지 않는다(어댑터 기본) — 풀 겨눔이 포획해 둔 값이
-        # 남지 않게 같은 자리에서 비운다(마운트 성분은 **한 벌**로 갈린다, 리뷰 2R).
-        self.data_header_row = 0
+        # 헤더 행은 **마운트 성분 한 벌**로 갈린다(리뷰 2R): 풀 겨눔·작업 결속이 포획해 둔
+        # 값이 다음 파일 겨눔에 남지 않게, 넘어온 값을 같은 자리에서 그대로 세운다.
+        self.data_header_row = header_row
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
@@ -2238,8 +2309,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         finally:
             self._push()
 
-    def _commit_data_transition(self, source, records: list) -> None:
-        """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다."""
+    def _commit_data_transition(
+        self, source, records: list, incoming: "tuple[str, str, int]",
+    ) -> None:
+        """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다.
+
+        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌이다(#932 U4-C). 세션 필드
+        (``self.data_path`` …)를 읽으면 안 되는 이유는 순서다: 마운트는 이 판정을 먼저
+        지나고 성분을 **그 뒤에** 세운다(파일·풀 두 경로 모두). 여기서 세션을 읽으면
+        「직전 데이터에 결속됐나」를 묻게 돼 판정이 한 걸음 늦는다.
+        """
         work_ref = self.job_name
         seated_job = self.vm.job if self.vm is not None else None
         active_job = None
@@ -2284,9 +2363,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             work_ref=work_ref or None,
             template_application_ref=restored_template_application_id,
             exact_context_restorable=exact_context_restorable,
-            usable_with_current_data=(
+            # **결속이 판정 축이다**(U4 §2.4, #932 U4-C): 종전 술어는 「이 데이터로 쓸 수
+            # 있나」(스키마 호환)였고 지금은 「이 작업이 이 데이터를 쓰나」다. 데이터를
+            # 갈아 끼우면 그 작업은 자기 데이터를 잃은 것이므로 놓아 준다 — 호환은 우연히
+            # 맞을 수 있고, 우연한 일치로 남의 데이터를 물린 채 실행에 들어가는 것이
+            # 이 라운드가 없애는 조용한 어긋남이다.
+            bound_to_current_data=(
                 active_job is not None
-                and compatibility_for(active_job, list(records[0].keys())).kind == KIND_AVAILABLE
+                and data_binding_matches(active_job, *incoming)
             ),
         )
         decision = decide_active_work_after_data_transition(context)
@@ -2314,10 +2398,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 f"문서 작업을 다시 선택하세요.{preferred_restatement}"
             )
             self.data_notice_level = "warn"
-        elif active_job is not None and not context.usable_with_current_data:
+        elif active_job is not None and not context.bound_to_current_data:
             self.data_notice_text = (
-                "이전 문서 작업은 이 데이터로 실행할 수 없어 선택을 해제했습니다. "
-                "아래 후보를 선택하거나 「확인 필요」에서 사유를 확인하세요."
+                "이전 문서 작업은 다른 데이터에 연결돼 있어 선택을 해제했습니다. "
+                "아래 후보를 선택하거나 「문서 작업」에서 그 작업을 여세요."
                 f"{preferred_restatement}"
             )
             self.data_notice_level = "warn"
@@ -2567,6 +2651,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         필요한 곳은 이 함수를 부르면 된다.
         """
         job_is_txt, job_unsupported = seat_kinds(job.template_path)
+        # 결속 유무도 **여기서 한 번** 판정한다(U4 §2.4 · #932 U4-C): 매체·실행뷰 유무와
+        # 무관한 작업 사실이라 vm 을 조건으로 걸면 TXT 만 이 축을 잃는다. 스냅샷마다
+        # 디스크를 다시 읽지 않으려는 이유도 같다 — 착석이 유일한 진입점이다.
+        self.job_data_unbound = not has_data_binding(job)
         vm = (
             None
             if (job_is_txt or job_unsupported)
@@ -2650,6 +2738,84 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요.")}
         return {"ok": True, "count": len(indices)}
 
+    def _do_remount_data(self, p: dict) -> dict:
+        """현재 데이터를 **다시 읽는다**(U4 항목 5 · #932 U4-C) — 같은 참조, 새 레코드.
+
+        ## 왜 「새로고침」이 재마운트인가
+
+        이 앱에는 **stale 판정 술어가 없다**: 데이터는 마운트마다 디스크에서 다시 읽히고,
+        mtime·해시 추적은 템플릿 축에만 있다. 그래서 「파일이 바뀌었는지」를 물을 수 없고,
+        요구의 실체는 「지금 화면의 레코드를 지금 디스크로 갈아 끼워라」다. 결속이 durable
+        이 된 뒤(§2.4) 같은 파일이 갱신되는 것이 흔한 사건이 되므로 이 동사가 짝이 된다.
+
+        **세 번째 마운트 경로를 만들지 않는다.** 세션이 마운트 시점에 포획해 둔 참조를
+        그대로 기존 진입점(:meth:`load_data_path` / ``_do_load_pool``)에 되돌려 준다 —
+        부팅 복원(:meth:`_mount_remembered_data`)이 이미 같은 패턴이고, 여기서 성분을
+        다시 조립하면 지금 화면에 없는 데이터를 새로고침하게 된다.
+
+        ## 무엇이 사라지는지 먼저 말한다
+
+        재마운트는 마운트와 **같은 seam** 을 타므로 선택·필터 초안·열 선별이 초기화된다
+        (:meth:`_reset_range_for_snapshot`). 고른 행이 있는데 조용히 지우면 그것이 곧
+        무확인 파괴라, 선택이 1건 이상이면 ``needs_confirm`` 왕복으로 **사라지는 집합을
+        열거**한 뒤에만 실행한다. 0건이면 잃을 것이 없으므로 바로 돈다(없는 위험에
+        확인을 물리면 그 확인이 다음 진짜 확인의 무게를 깎는다).
+        """
+        if not self.data_source:
+            return {"ok": False, "error": "다시 읽을 데이터가 없습니다. 데이터를 먼저 고르세요."}
+        selected = self.selection.selected_count()
+        if selected and not p.get("confirm"):
+            return {
+                "ok": True, "needs_confirm": True,
+                "confirm_text": _REMOUNT_CONFIRM.format(count=selected),
+            }
+        if self.data_source == "pool":
+            return self._do_load_pool({"key": self.data_pool_key})
+        try:
+            self.load_data_path(
+                self.data_path, sheet=self.data_sheet or None,
+                header_row=self.data_header_row,
+            )
+        except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술
+            return {"ok": False, "error": _REMOUNT_FAILED.format(reason=exc)}
+        return {"ok": True, "label": source_label(self.data_source, self.data_label)}
+
+    def _mount_job_binding(self, job) -> str:
+        """이 작업의 결속 데이터를 세션에 세운다 — 성사·무변화면 ``""``, 아니면 **사유**.
+
+        U4 §2.4(#932 U4-C)의 「작업 → 데이터」 방향이 사는 자리다. 세 갈래뿐이다:
+
+        - **결속 없음**(구판 작업·앱 밖 편집분) — 데이터는 세우지 않되 **그 사실을 말한다**.
+          U4-C 마이그레이션의 유일한 표면이라 여기서 침묵하면 사용자는 자기 작업이 왜
+          매번 데이터를 다시 묻는지 영영 모른다. 세션 게이트(「데이터를 고르세요」)와
+          겹치지 않는다: 저쪽은 지금 무엇이 마운트됐는가의 사실이고 이쪽은 이 작업이
+          무엇을 기억하는가의 사실이다.
+        - **이미 그 데이터가 서 있음** — 다시 읽지 않는다. 재마운트는 선택·필터·열 선별을
+          초기화하므로(`_reset_range_for_snapshot`), 아무것도 바꾸지 않는 재읽기로 사용자의
+          선택을 지우는 것은 그 자체로 조용한 파기다. 「새로 읽기」는 명시 동사의 일이다.
+        - **다른 데이터** — 마운트한다. 마운트는 선택·필터를 초기화하는 전이라 그 사실을
+          호출측이 재진술하도록 문구를 돌려준다(조용한 초기화 금지).
+
+        실패(파일 부재·0행·읽기 오류)는 삼키지 않고 사유를 그대로 올린다 — 기존 로드
+        관문이 이미 낸 문장을 쓰고 여기서 새 문안을 발명하지 않는다. 실패해도 선택 자체는
+        진행한다: 작업을 못 여는 것이 아니라 데이터가 없는 것이고, 그 상태의 정도는
+        게이트가 말한다.
+        """
+        if not has_data_binding(job):
+            return _JOB_BINDING_ABSENT.format(name=job.name)
+        path, sheet, header_row = data_binding_of(job)
+        if data_binding_matches(
+            job, self.data_path, self.data_sheet, self.data_header_row,
+        ):
+            return ""
+        if reference_missing(path):
+            return _JOB_BINDING_MISSING.format(path=path)
+        try:
+            self.load_data_path(path, sheet=sheet or None, header_row=header_row)
+        except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술(조용한 빈 상태 금지)
+            return _JOB_BINDING_FAILED.format(reason=exc)
+        return _JOB_BINDING_MOUNTED.format(label=self.data_label)
+
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
 
@@ -2660,9 +2826,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
         ``confirm`` 페이로드 키는 왕복 동형 유지를 위해 수용하되 더는 판정에 쓰지 않는다.
 
-        (구 기본 데이터셋 자동 조준(#53-A)은 U2 §5.3 판정 D 로 폐기 — 작업 선택은 데이터를
-        세우지 않는다. 데이터는 세션 소유라 이미 마운트돼 있으면 전환에서 생존하고, 없으면
-        사용자가 데이터 선택 면에서 명시로 고른다 — 요구는 세션당 1회다.)
+        **작업 선택은 그 작업의 데이터를 세운다**(U4 §2.4, #932 U4-C — U2 §5.3 판정 D 의
+        명시 철회). 종전 서술은 「작업 선택은 데이터를 세우지 않는다」였고 그 귀결이
+        「작업을 열면 데이터가 이미 서 있다」의 소멸이었다. 결속이 durable 이 된 지금
+        작업은 자기 데이터를 들고 오고, 이미 그 데이터가 서 있으면 아무 일도 하지 않는다.
+        결속이 없는 구판 작업은 조용히 지나간다 — 「데이터 연결 필요」는 게이트가 말한다.
         """
         name = p["name"]
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
@@ -2677,6 +2845,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return
         self._discard_active_work_session_evidence()
         job = load_job(self.registry, name)
+        # 결속 데이터를 먼저 세운다 — vm 을 앉히기 **전**이어야 한다: 마운트는 세션
+        # 데이터 전이라 `set_acquired` 주입 대상이 갈리고, 뒤에 세우면 방금 앉힌 작업이
+        # 자기 마운트의 전이 판정에 걸려 스스로 해제된다.
+        mount_notice = self._mount_job_binding(job)
         # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
         # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
@@ -2697,6 +2869,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.out_dir = default_output_directory(job.template_path)
         if job.media == "hwpx" and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
+        if mount_notice:
+            # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
+            self.data_notice_text = mount_notice
+            self.data_notice_level = "warn"
 
     def _release_active_work(self) -> None:
         """현재 active Work만 해제한다. 데이터와 후보는 그대로 둔다."""
@@ -2709,6 +2885,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
+        self.job_data_unbound = False  # 작업이 없으면 물을 대상 자체가 없다
         self.out_dir = ""
         self._last_failed = []
 
@@ -2729,7 +2906,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
-        """현재 데이터 기준 available 순위 — 후보 구획과 **같은 링1 판정**을 재사용한다."""
+        """현재 데이터에 **결속된** 작업의 순위 — 후보 구획과 같은 링1 판정을 재사용한다."""
+        if self.datasource is None or not self.records:
+            return []
+        fields = list(self.records[0].keys())
+        return rank_available(self._bound_jobs(list_jobs(self.registry)), fields)
+
+    def _ranked_by_schema_now(self) -> list:
+        """현재 데이터와 **구조가 맞는** 작업의 순위 — 결속 관문을 지나지 않는다.
+
+        결속 축(:meth:`_ranked_now`)과 나란히 두는 이유는 소비자가 하나뿐이기 때문이다:
+        **결속이 없는 구판 작업**(U4-C 이전에 저장됐거나 앱 밖에서 편집된 것)의 보관된
+        명시 사건. 그 작업은 정의상 어떤 마운트에도 결속되지 않아 결속 축 순위에 영영
+        서지 못하므로, 결속 축으로 판정하면 「고를 수 있다」가 **도달 불가 분기**가 되고
+        구판 작업은 편집기에서 수리하기 전까지 좌초한다. 마이그레이션은 사용자를 가두지
+        않는다 — 결속이 없는 동안은 종전대로 스키마가 답하고, 그 사실은 「데이터 연결
+        필요」 재진술이 따로 말한다.
+
+        결속 **있는** 작업은 여기 오지 않는다: :meth:`_do_prefer_work` 가 그 갈래를 먼저
+        `select_job` 으로 소비한다(자기 데이터를 끌고 오므로 지금 데이터의 호환을 물을
+        이유가 없다).
+        """
         if self.datasource is None or not self.records:
             return []
         fields = list(self.records[0].keys())
@@ -2738,21 +2935,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _do_prefer_work(self, p: dict) -> dict:
         """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 분기를 **Python 이 가른다**.
 
-        분기 판정(데이터 준비·호환)은 링1 술어가 이미 소유하므로 표면이 다시 계산하면 같은
-        상태를 두 곳이 판정하게 된다(판정 단일 출처). 웹은 반환된 ``reason`` 으로 라우팅만
-        한다.
+        분기 판정(결속 유무·현재 데이터 호환)은 링1 술어가 이미 소유하므로 표면이 다시
+        계산하면 같은 상태를 두 곳이 판정하게 된다(판정 단일 출처). 웹은 반환된 ``reason``
+        으로 라우팅만 한다.
 
         ```text
-        데이터 ready + 호환   → 명시 선택(select_job) — RecordRangeState 는 세션 소유라 생존
-        데이터 ready + 비호환 → 활성 불변 + 보관. 표면이 「확인 필요」 탭에서 사유를 보인다
-        데이터 없음           → 보관 후 안내 하나 — 데이터 선택을 반드시 지난다(§5.3 판정 D).
+        결속 있음             → 명시 선택(select_job) 자체가 승격이자 마운트다(U4 §2.4).
+                               지금 어떤 데이터가 서 있든 그 작업이 제 데이터를 끌고 온다.
+        결속 없음 + 현재 데이터 호환   → 명시 선택(select_job) — RecordRangeState 는
+                               세션 소유라 생존
+        결속 없음 + 현재 데이터 비호환 → 활성 불변 + 보관. 표면이 「확인 필요」 탭에서
+                               사유를 보인다
+        결속 없음 + 데이터 없음        → 보관 후 안내 하나 — 데이터 선택을 반드시 지난다.
                                마운트 시 _apply_preferred_work 가 판정한다
         ```
 
+        **「데이터 없음」 분기는 결속 있는 작업에서 죽는다**(#932 U4-C): 종전에는 무데이터
+        상태가 모든 작업을 보관+안내로 미뤘지만, 결속이 durable 이 된 지금 그 작업은 자기
+        데이터를 들고 오므로 여기서 미룰 이유가 없다 — 미루면 승격을 한 박자 늦추는 것뿐이고
+        늦춘 자리에 아무 새 정보도 없다. 결속이 **없는** 구판 작업만 여전히 「지금 서 있는
+        데이터」에 기대야 하므로 구 분기(무데이터 보관·비호환 보관)를 그대로 잇는다.
+
         (구 ``default_data`` 분기 — 작업의 기본 데이터 참조(#53-A)를 무데이터에서 자동
         마운트 — 는 U2 §5.3 판정 D 로 결속 자체가 폐기되며 죽었다. F2 PR-B 판정 I 가
-        걱정한 「#53-A 도달 불가능」은 #53-A 자체가 죽어 소멸. 데이터↔작업 결속은 어느
-        방향으로도 다시 들이지 않는다.)
+        걱정한 「#53-A 도달 불가능」은 #53-A 자체가 죽어 소멸. 이후 U4-C 가 결속을 durable
+        축으로 다시 들였지만 방향은 반대다 — 작업이 데이터를 조준하는 것이 아니라 작업
+        **자신**이 데이터를 소유한다.)
 
         **비호환에서 활성으로 세우지 않는 이유**: 게이트가 닫힌 채 화면이 "이걸 만들 참"이라고
         말하게 된다. 계약도 그 경우 선택이 아니라 **사유 표면**으로 보내라고 적는다(§19.8).
@@ -2762,10 +2970,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("겨눌 작업 이름이 비어 있습니다.")
         if not job_exists(self.registry, name):
             raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
+        job = load_job(self.registry, name)
+        if has_data_binding(job):
+            # select_job 자체가 그 작업의 결속 데이터를 세운다(§2.4) — 여기서 다시
+            # 호환·유무를 판정하면 같은 상태를 두 곳이 재는 것이 된다.
+            self.preferred_work = ""
+            self._do_select_job({"name": name})
+            return {"promoted": True, "name": name}
         self.preferred_work = name
         if self.datasource is None or not self.records:
-            return {"stored": True, "reason": "no_data", "name": name}
-        if any(r.name == name for r in self._ranked_now()):
+            return {"stored": True, "reason": "no_binding", "name": name}
+        # 결속 없는 작업의 판정 축은 **스키마**다(_ranked_by_schema_now): 결속 축으로
+        # 물으면 미결속 작업은 영영 서지 못해 이 승격이 도달 불가 분기가 되고, 구판
+        # 작업이 편집기 수리 전까지 좌초한다.
+        if any(r.name == name for r in self._ranked_by_schema_now()):
             self.preferred_work = ""  # 소비 — 지금 이뤄졌다
             self._do_select_job({"name": name})
             return {"promoted": True, "name": name}
@@ -2780,14 +2998,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         선택하지 않은 사유는 삼키지 않는다: 사용자가 방금 「이 작업을 쓰겠다」고 눌렀는데
         아무 일도 안 일어나면 그게 조용한 소실이다. 기존 활성 작업이 있어 계약이 유지를
-        지시한 경우(§18.3 2행)와 이 데이터로 실행할 수 없는 경우를 갈라 재진술한다.
+        지시한 경우(§18.3 2행)와 결속이 없어 이 데이터로 열 수 없는 경우를 갈라 재진술한다.
+
+        **이 자리에 남는 것은 항상 결속 없는 작업이다**(#932 U4-C): 결속 있는 작업은
+        `_do_prefer_work` 가 즉시 `select_job` 으로 소비해 여기까지 오지 않는다(자기
+        데이터를 끌고 오므로 「지금 데이터」의 호환을 물을 필요가 없다). 그래서 순위도
+        결속 축이 아니라 **스키마 축**(`_ranked_by_schema_now`)으로 매긴다 — 결속 축으로
+        물으면 미결속 작업은 영영 서지 못해 승격이 도달 불가 분기가 된다.
+
+        선택되지 못한 사유는 갈라 말한다: 지금 데이터와 구조가 맞지 않으면 「확인 필요」로,
+        맞는데도 활성 작업이 있어 안 바꿨으면 그 사실로. 결속 자체가 없다는 사실은 별개
+        축이라 선택 뒤 게이트가 말한다 — 여기서 겹쳐 말하면 같은 상태를 두 곳이 판정한다.
         """
         name, self.preferred_work = self.preferred_work, ""
         if not name:
             return
         try:
             exists = job_exists(self.registry, name)
-            ranked = self._ranked_now() if exists else []
+            ranked = self._ranked_by_schema_now() if exists else []
         except Exception:  # noqa: BLE001 — 후보 조회 실패는 성공한 데이터 마운트를 되돌리지 않는다.
             self.data_notice_text = (
                 f"「문서 작업」에서 고른 '{name}' 작업을 다시 확인할 수 없습니다. "
@@ -2804,14 +3032,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         promoted = preferred_promotion(
             ranked, active=self.job_name, preferred=name,
         )
-        in_top = any(r.name == name for r in ranked[:MAIN_TOP_N])
-        next_action = (
-            "아래 후보에서 직접 고르세요."
-            if in_top else "'문서 작업'에서 직접 선택하세요."
-        )
+        # 다음 걸음은 **언제나 「문서 작업」**이다(#932 U4-C). 종전에는 「상위 후보에 있으면
+        # 아래에서 고르세요」로 갈랐지만, 후보 줄은 결속 축이라 결속 없는 이 작업은 거기
+        # 서지 않는다 — 없는 자리를 가리키는 안내는 이행 불가능한 지시다.
+        next_action = "'문서 작업'에서 직접 선택하세요."
         if promoted:
             self.data_notice_text = (
-                f"이전에 고른 '{promoted}' 작업을 사용할 수 있습니다. {next_action}"
+                f"이전에 고른 '{promoted}' 작업을 이 데이터로 쓸 수 있습니다. {next_action}"
             )
             self.data_notice_level = "warn"
             return
@@ -2822,8 +3049,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             )
         else:
             self.data_notice_text = (
-                f"「문서 작업」에서 고른 '{name}' 은(는) 이 데이터로 실행할 수 없습니다. "
-                "「확인 필요」에서 사유를 확인하세요."
+                f"「문서 작업」에서 고른 '{name}' 은(는) 이 데이터와 구조가 맞지 않습니다. "
+                "필요한 열을 갖춘 데이터를 고르거나 편집기에서 연결을 고치세요."
             )
         self.data_notice_level = "warn"
 
@@ -3131,7 +3358,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if not records:
             return []
-        self._commit_data_transition(source, records)
+        # 풀 겨눔도 **같은 시점의 한 벌**을 판정에 넘긴다 — 믹스인이 이 호출 뒤에 세션
+        # 성분을 세우므로(순서 계약) 여기서 세션을 읽으면 직전 데이터를 묻게 된다.
+        self._commit_data_transition(source, records, pool_reference_triple(item))
         return records
 
     def _after_pool_load(self, records: list) -> None:
@@ -5234,6 +5463,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             selected_record_count=self.selection.selected_count(),
             total_record_count=len(self.records),
             active_work_ref=self.job_name or None,
+            active_work_data_bound=not self.job_data_unbound,
             slot_view=slot_view,
             orchestration=self._session_orchestration,
             fresh_observation=self._last_fresh_observation,

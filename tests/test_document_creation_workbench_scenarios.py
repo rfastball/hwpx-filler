@@ -86,7 +86,7 @@ def _input(**overrides: object) -> WorkbenchCompositionInput:
             selected_option_ids=("opt-1",), has_unselected_required_content=False
         ),
         active_work=ActiveWorkContext(
-            active=True, work_ref="work-1", exact_context_restorable=True, usable_with_current_data=True
+            active=True, work_ref="work-1", exact_context_restorable=True, bound_to_current_data=True
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
         orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),

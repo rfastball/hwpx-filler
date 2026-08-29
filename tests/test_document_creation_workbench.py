@@ -115,7 +115,7 @@ def _clear_input(**overrides: object) -> WorkbenchCompositionInput:
             active=True,
             work_ref="work-1",
             exact_context_restorable=True,
-            usable_with_current_data=True,
+            bound_to_current_data=True,
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
         orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
@@ -398,7 +398,7 @@ def test_orchestration_failed_needs_manual_recovery_but_stays_stale_blocker() ->
 # ══════════════════════════════════════ data transition 규칙(#724 §9) ═══════════════════════════
 def test_active_work_kept_only_when_restorable_and_usable() -> None:
     keep = decide_active_work_after_data_transition(
-        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=True, usable_with_current_data=True)
+        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=True, bound_to_current_data=True)
     )
     assert keep.disposition == KEEP
     assert keep.auto_activated_work_ref is None
@@ -408,9 +408,9 @@ def test_active_work_kept_only_when_restorable_and_usable() -> None:
     "ctx",
     [
         # 복원 불가
-        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=False, usable_with_current_data=True),
+        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=False, bound_to_current_data=True),
         # 현재 데이터에서 사용 불가
-        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=True, usable_with_current_data=False),
+        ActiveWorkContext(active=True, work_ref="w", exact_context_restorable=True, bound_to_current_data=False),
         # 애초에 active 아님
         ActiveWorkContext(active=False),
     ],
@@ -428,7 +428,7 @@ def test_release_ignores_candidate_and_preference_signals() -> None:
         active=True,
         work_ref="w",
         exact_context_restorable=False,  # 복원 불가라 RELEASE 대상
-        usable_with_current_data=True,
+        bound_to_current_data=True,
         unique_candidate_available=True,
         is_favorite=True,
         recently_used=True,

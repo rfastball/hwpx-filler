@@ -356,6 +356,10 @@ def _editor(tmp_path: Path, notify, lib_dir: "Path | None" = None):
     return ctrl, reg
 
 
+#: 편집기 저장 게이트가 요구하는 데이터 결속의 재료(#932 U4-C) — 매핑 판정은 안 바꾼다.
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
+
+
 def _txt_template(tmp_path: Path, name: str, body: str) -> Path:
     root = tmp_path / "text_templates"
     root.mkdir(parents=True, exist_ok=True)
@@ -371,12 +375,15 @@ def test_editor_notifies_template_pick_mapping_completion_and_txt_save(tmp_path)
 
     ctrl.dispatch("use_library_template", {"path": str(tpl)})
     assert str(Milestone.PICK_TEMPLATE) in seen
+    # 저장 게이트가 데이터 결속을 요구한다(#932 U4-C S2-3). 편집기 마운트는 T4 를 세우지
+    # 않는다 — 그 이정표의 축은 「문서 만들기」의 마운트이고 여기서 세우면 온보딩이 실제
+    # 진행보다 앞선다. 이 줄은 저장 단언이 도달하게 하는 전제일 뿐이다.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
 
     # 매핑 전확정은 **상승 모서리**다: 확정이 여러 갈래로 도달하므로 액션마다 훅을 달지 않고
     # 링1 ``is_complete()`` 의 false→true 만 읽는다.
     seen.clear()
     ctrl.dispatch("goto_section", {"section": "binding"})   # 매핑 진입(모델 초안 생성)
-    ctrl.dispatch("skip_data", {})                          # 관문 옵트아웃(데이터 없이 진행)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "복사기 임차"})
     ctrl.dispatch("set_type", {"index": 1, "type": "const"})
@@ -419,7 +426,6 @@ def test_confirm_blanks_notifies_only_when_rows_actually_move(tmp_path):
     tpl = _txt_template(tmp_path, "결핍", "건명: {{건명}}\n보증금: {{계약보증금}}")
     ctrl.dispatch("use_library_template", {"path": str(tpl)})
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("skip_data", {})
     seen.clear()
 
     # 빈 목록·이미 확정된 이름으로 온 무변이 호출에는 통지가 없다.

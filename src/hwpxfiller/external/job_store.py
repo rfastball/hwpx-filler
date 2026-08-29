@@ -169,6 +169,12 @@ def encode_job(job: Job) -> dict:
         "template_key": library_key_for(job.template_path),
         "filename_pattern": job.filename_pattern,
         "mapping": job.mapping.to_dict(),
+        # 데이터 결속 세 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
+        # 미지 키로 무시하고, 구 JSON 은 decode 의 기본값으로 「데이터 연결 필요」에 착지한다.
+        # 이름 축(구 default_dataset_ref)은 되살아나지 않는다 — 정체성은 경로+시트다(U2 판정 C).
+        "data_path": job.data_path,
+        "data_sheet": job.data_sheet,
+        "data_header_row": job.data_header_row,
         "last_run_at": job.last_run_at,
         "favorited_at": job.favorited_at,
         "tags": dict(job.tags),
@@ -238,6 +244,21 @@ def decode_job(d: dict) -> Job:
             raise ValueError(f"작업 필드 '{key}' 는 1 이상이어야 하는데 {v} 입니다")
         return v
 
+    def _header_row(key: str) -> int:
+        """헤더 행은 0 이상의 정수(0=어댑터 기본) — ``_revision`` 미러의 loud 가드.
+
+        술어를 ``external.settings.load_last_data_source`` 의 것과 같은 모양으로 둔다:
+        같은 세 성분을 두 영속 층이 들고 있어서, 한쪽만 관대하면 설정에서 거절된 값이
+        작업 JSON 으로 들어온다. ``bool`` 을 거르는 이유는 ``_revision`` 과 같다."""
+        v = d.get(key, 0)
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise ValueError(
+                f"작업 필드 '{key}' 는 정수여야 하는데 {type(v).__name__} 입니다"
+            )
+        if v < 0:
+            raise ValueError(f"작업 필드 '{key}' 는 0 이상이어야 하는데 {v} 입니다")
+        return v
+
     raw_reviewed = d.get("reviewed_rules", {})
     if not isinstance(raw_reviewed, dict):
         raise ValueError(
@@ -269,9 +290,16 @@ def decode_job(d: dict) -> Job:
         mapping=MappingProfile.from_dict(d.get("mapping", {})),
         filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
         version=d.get("version", 1),
+        # 데이터 결속 세 성분(U4 §2.4 재판정) — 없으면 「데이터 연결 필요」 상태로 착지한다.
+        # 여기서 추측해 채우지 않는다: 구판 파일에는 그 정보가 없고, 조용한 추측은 남의
+        # 데이터로 문서를 만드는 길이다. 되살리는 것은 사용자가 편집기에서 한다.
+        data_path=_str("data_path"),
+        data_sheet=_str("data_sheet"),
+        data_header_row=_header_row("data_header_row"),
         # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로, default_dataset_ref
-        # (#53-A 작업→데이터 결속)는 U2 §5.3 판정 D 로 개념째 제거 — 구 JSON 의
-        # 해당 키는 미지 키로 무시된다(가산 스키마 규율의 역방향, 하위호환 무해).
+        # (#53-A 작업→데이터 결속의 **이름 축**)는 U2 §5.3 판정 D 로 개념째 제거 — 구
+        # JSON 의 해당 키는 미지 키로 무시된다. U4-C 가 결속을 되들였지만 키는 경로+시트라
+        # (판정 C) 이름 축은 부활 대상이 아니다.
         last_run_at=_str("last_run_at"),
         favorited_at=_str("favorited_at"),
         tags=tags,
@@ -325,6 +353,9 @@ def content_fingerprint(job: Job) -> str:
     d.pop("template_revision", None)
     d.pop("binding_revision", None)
     d.pop("previous_rules", None)
+    # 데이터 결속 세 성분은 **뺴지 않는다**(U4 §2.4): 위 제외 목록은 저장이 되싣거나
+    # 계산하는 메타이고, 결속은 편집기가 세션 값으로 **덮어쓰는** 편집 대상이다. 빼면
+    # 열어 둔 편집 세션이 다른 자리에서 갈린 결속을 조용히 덮어쓴다(무확인 파괴).
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
@@ -542,8 +573,9 @@ class JobRegistry:
         """작업 복제 — '<이름> (복사본[ N])' 유일 이름으로 저장하고 새 이름을 반환(F22).
 
         매핑 재사용의 단일 동선이다: 공유 베이스 프로파일을 걷어낸 자리를 「복제 후
-        필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·그룹·기본 데이터 참조는
-        그대로 계승하되(그룹 계승 = 복사본이 원본 옆 같은 구획에 뜬다, 결정 43 인접) **실행 이력(last_run_at)과 즐겨찾기(favorited_at)는 계승하지 않는다** — 복사본은 아직
+        필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·그룹·**데이터 결속**은
+        그대로 계승하되(복제의 뜻이 「같은 데이터로 하나 더」다 — 미계승 목록은 전부 실행·권위
+        **이력**이라 부류가 다르다, U4 §2.4)(그룹 계승 = 복사본이 원본 옆 같은 구획에 뜬다, 결정 43 인접) **실행 이력(last_run_at)과 즐겨찾기(favorited_at)는 계승하지 않는다** — 복사본은 아직
         실행된 적도 사용자가 고른 적도 없다는 사실을 홈 카드·후보 순위가 그대로 말하게
         (조용한 이력·우선순위 위조 금지).
         원본 부재·손상은 loud raise(호출측이 재진술). 자리 선점 검사는 파일 존재

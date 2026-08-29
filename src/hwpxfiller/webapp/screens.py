@@ -246,6 +246,35 @@ def load_pool_into(
     return {"ok": True, "records": records, "item": item}
 
 
+def pool_reference_triple(item: "DatasetReference") -> "tuple[str, str, int]":
+    """풀 항목이 가리키는 데이터 참조 한 벌 — ``(path, sheet, header_row)``.
+
+    파일 참조가 아닌 항목(나라·파이프라인)은 ``("", "", 0)`` 이다. ``kind`` 판정은
+    :meth:`~hwpxfiller.application.dataset_pool.DatasetPoolRow.locate_path` 와 동형이다
+    (``opts["path"]`` 만 보면 두 사이트의 판정이 표류한다, PR #70 리뷰).
+
+    세 성분을 **같은 시점에** 한 벌로 뽑는다(#349 리뷰 2R): 나중에 슬롯에서 다시 읽으면
+    그사이 「다시 연결」된 슬롯이 지금 화면에 없는 데이터를 답한다. 형이 깨진 값은 추측해
+    고치지 않고 어댑터 기본(0)으로 둔다.
+
+    소비자는 둘이다 — 실행 표면의 겨눔(:meth:`PoolTargetingMixin._do_load_pool`)과 편집기의
+    데이터 결속(:meth:`~hwpxfiller.webapp.screen_editor.EditorController._mount_pool_item`,
+    #932 U4-C). 두 자리가 각자 뽑으면 한쪽만 헤더 행을 흘려도 아무도 모른다.
+    """
+    opts = item.opts if isinstance(item.opts, dict) else {}
+    raw = opts.get("path")
+    path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+    raw_sheet = opts.get("sheet")
+    sheet = raw_sheet if isinstance(raw_sheet, str) else ""
+    raw_hdr = opts.get("header_row")
+    header_row = (
+        raw_hdr
+        if path and isinstance(raw_hdr, int) and not isinstance(raw_hdr, bool) and raw_hdr > 0
+        else 0
+    )
+    return (path, sheet, header_row)
+
+
 def source_label(source: str, data_label: str) -> str:
     """소스 종류 플래그(``'file'``|``'pool'``)+표시명 → 병기 라벨 합성(K8).
 
@@ -427,22 +456,10 @@ class PoolTargetingMixin:
         self.data_label = item.name
         self.data_source = "pool"
         self.data_pool_key = key
-        # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은 뜨지 않지만(이미 고정된
-        # 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야 한다. kind 판정은
-        # DatasetPoolRow.locate_path 와 동형(excel 만 파일 경로 — opts["path"]만 보면 두 사이트의
-        # 판정이 표류한다, PR #70 리뷰).
-        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
-        self.data_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
-        raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
-        self.data_sheet = raw_sheet if isinstance(raw_sheet, str) else ""
-        # 헤더 행도 **같은 시점에** 포획한다(#349 리뷰 2R) — 참조 성분을 나중에 슬롯에서
-        # 다시 읽으면, 그사이 「다시 연결」된 슬롯이 지금 화면에 없는 데이터를 답한다.
-        # 형이 깨진 값은 추측해 고치지 않고 어댑터 기본(0)으로 둔다.
-        raw_hdr = item.opts.get("header_row") if isinstance(item.opts, dict) else None
-        self.data_header_row = (
-            raw_hdr if self.data_path and isinstance(raw_hdr, int)
-            and not isinstance(raw_hdr, bool) and raw_hdr > 0 else 0
-        )
+        # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은
+        # 뜨지 않지만(이미 고정된 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야
+        # 한다. 포획은 한 벌짜리 단일 출처(:func:`pool_reference_triple`)를 지난다.
+        self.data_path, self.data_sheet, self.data_header_row = pool_reference_triple(item)
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", item.name)}
 

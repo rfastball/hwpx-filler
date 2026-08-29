@@ -34,9 +34,12 @@ def _reg(tmp_path) -> JobRegistry:
         filename_pattern="공고-{{ID}}",
         last_run_at="2026-07-09T15:42:00",
         tags={"금액구간": "1억미만"},
+        # 결속된 작업(U4 §2.4) — 목록·상세가 데이터 축을 말하는지 재는 표본.
+        data_path="/data/월별.xlsx", data_sheet="낙찰현황",
     ))
     reg.save(Job(
         name="낙찰", template_path="", filename_pattern="낙찰-{{ID}}",
+        # 결속 없는 구판 작업 — U4-C 마이그레이션이 목록에서 보여야 하는 상태다.
         last_run_at="2026-06-30T11:08:00", tags={"금액구간": "10억이상"},
     ))
     return reg
@@ -384,6 +387,38 @@ def test_favorite_toggle_takes_the_intended_state(tmp_path):
     assert res["ok"] is False and "즐겨찾기를 바꾸지 못했습니다" in res["error"]
 
 
+def test_list_rows_say_which_jobs_need_a_data_connection(tmp_path):
+    """목록 행은 데이터 결속의 **유무**를 말한다(U4 §2.4 · #932 U4-C).
+
+    행에 라벨까지 싣지 않는 이유는 행의 일이 「조치가 필요한가」이기 때문이다 — 템플릿
+    축이 `template_missing` 한 비트로 말하는 것과 같은 결이고, 정체는 상세가 진다.
+
+    이 비트가 없으면 U4-C 마이그레이션 상태는 **작업을 하나씩 눌러 봐야** 보인다:
+    「문서 만들기」에서 골랐을 때의 통지가 유일한 표면이 된다. 목록이 먼저 말한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    rows = {
+        r["name"]: r
+        for sec in ctrl.snapshot()["sections"] for r in sec["rows"]
+    }
+    assert rows["공고서"]["data_bound"] is True
+    assert rows["낙찰"]["data_bound"] is False       # 결속 없는 구판 작업
+    # 행은 라벨을 지지 않는다 — 정체를 두 자리가 말하면 한쪽이 늙는다.
+    assert "data_label" not in rows["공고서"]
+
+
+def test_detail_of_an_unbound_job_states_the_gap_instead_of_a_blank(tmp_path):
+    """미결속 작업의 상세는 **빈칸이 아니라 사실**을 낸다.
+
+    빈 라벨은 「아직 못 읽었다」와 구별되지 않는다 — 표면이 「연결 필요」를 그릴 수 있게
+    유무를 따로 싣는다(문안·동사는 웹, 판정은 여기).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_work", {"name": "낙찰"})
+    d = ctrl.snapshot()["detail"]
+    assert d["data_bound"] is False and d["data_label"] == "" and d["data_path"] == ""
+
+
 def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     """§19.7 "상세에서 모든 실제 원인" + §19.6 「필드 연결」 표는 **저장된 항목 키**.
 
@@ -406,6 +441,11 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     # 템플릿 전체 경로(U2 §2.20, #342) — 상세 「열기」·「폴더에서 보기」가 겨눌 값. 경보
     # (템플릿 미연결)는 이 화면이 내는데 조작이 여기 없었다 — payload 한 칸이 그 선행이다.
     assert d["template_path"] == "/none/t.hwpx"
+    # 데이터 축도 템플릿 옆에서 말한다(#932 U4-C) — 라벨 성형은 링0 단일 출처라
+    # 표면이 basename·시트 표기를 짓지 않는다.
+    assert d["data_bound"] is True
+    assert d["data_label"] == "월별.xlsx · 낙찰현황"
+    assert d["data_path"] == "/data/월별.xlsx"
     ctrl.dispatch("select_work", {"name": ""})          # 선택 해제
     assert ctrl.snapshot()["detail"] is None
 

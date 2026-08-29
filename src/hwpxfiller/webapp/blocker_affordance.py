@@ -106,7 +106,17 @@ _TABLE: dict[str, BlockerAffordance] = {
         kind=ACTIVE_VERB,
         selector="#jobCandidates .cand-pick",
         dispatch_action="job.select_job",
-        rationale="현재 데이터로 쓸 수 있는 작업 후보 카드가 곧 선택 동사다.",
+        rationale="이 데이터에 연결된 작업 후보 카드가 곧 선택 동사다(U4 §2.4 — 후보 축은 결속이다).",
+    ),
+    "CONNECT_DATA": BlockerAffordance(
+        kind=ACTIVE_VERB,
+        selector="#jobConnectData",
+        bridge_method="open_job_in_editor",
+        rationale="결속을 쓰는 자리는 편집기 저장 하나라(U4 §2.4) 복구도 거기다. "
+        "동사를 데이터 머리에 두는 이유는 게이트가 「현재 데이터」 구획을 지목하기 "
+        "때문이다 — 없는 자리를 가리키는 지시는 이행 불가능하다. 네이티브 진입이 "
+        "아니라 직접 브리지인 이유는 편집기 진입이 이탈 가드·미저장 확인을 지나기 "
+        "때문이다(디스패치 밖).",
     ),
     "REVIEW_TEMPLATE_CHANGE": BlockerAffordance(
         kind=ACTIVE_VERB,

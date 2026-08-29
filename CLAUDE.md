@@ -93,10 +93,17 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 `SCREEN`, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry, `docs/UI_CONTRACT.md`
 를 **한 계약 변경으로** 갱신한다.
 
-세션 소유권은 **데이터-우선**이다: 마운트된 데이터·선택·필터는 `JobController` 세션 소유이고
-작업 전환에서 생존한다. 잃는 것은 실행 증거뿐. 마운트 직후 선택은 0건이고, 실행 입력 순서는
+작업↔데이터는 **durable 강결합**이다(U4 §2.4 · #932 U4-C — U2 §5.3 판정 D 의 명시 철회):
+`Job` 이 경로·시트·헤더 행 한 벌을 들고, 작업을 고르면 그 데이터가 서고, 데이터를 열면
+거기 결속된 작업이 후보로 선다. 관계는 **하나**이고 스키마 호환을 후보 축으로 병존시키지
+않는다 — 호환 판정(`compatibility_for`)은 결속된 파일의 열이 사라진 경우를 잡는 실행
+게이트로만 산다. 결속을 쓰는 자리는 **편집기 저장 하나**다.
+
+그 위에서 세션 소유권은 그대로다: 마운트된 데이터·선택·필터는 `JobController` 세션 소유이고
+작업 전환에서 생존한다(잃는 것은 실행 증거뿐). 마운트 직후 선택은 0건이고, 실행 입력 순서는
 표시순서 투영(`_display_indices`)을 통과한다 — 표·거울·파일 이름 계획이 전부 같은 투영을 쓴다.
-배경과 대조표는 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`.
+`docs/archive/DATA_FIRST_INTEGRATION_MAP.md` 는 **역사 기록**이고 그 「데이터-우선」 전제는
+위 재판정이 대체했다 — 동결 문서는 고치지 않고 승계 진술을 `docs/UI_CONTRACT.md` 가 진다.
 
 ## 제품 규칙 — 조용히 틀리지 않는다
 

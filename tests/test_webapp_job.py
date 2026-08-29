@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -69,6 +70,24 @@ def _write_template(path, fields) -> None:
     )
 
 
+def _data_csv_path(tmp_path) -> str:
+    """이 파일의 기본 데이터 경로 — 파일을 쓰지 않고 **자리만** 답한다.
+
+    `_registry` 는 컨트롤러보다 먼저 서고 데이터는 테스트가 필요할 때 쓴다. 그래서 결속
+    재료는 경로 계산으로만 얻고, 실제 파일 생성은 `_data_csv` 가 진다(같은 자리 단일 출처).
+    """
+    return str(tmp_path / "d.csv")
+
+
+def _bound_to(path: str, sheet: str = "", header_row: int = 0) -> dict:
+    """데이터 결속 3성분 kwargs — `Job(...)` 생성 지점이 한 벌로 받는다(#932 U4-C).
+
+    경로 하나만 넘기는 축약을 두지 않는다: 결속은 한 벌이고, 성분을 흘리면 테스트가
+    사람이 고른 것과 다른 헤더에 결속된 작업을 만든다(#349 리뷰 2R 와 같은 규율).
+    """
+    return {"data_path": path, "data_sheet": sheet, "data_header_row": header_row}
+
+
 def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
     """공용 픽스처 — 기본은 **이미 한 번 완주한** 작업이다(재작성 F5).
 
@@ -86,6 +105,10 @@ def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
             FieldMapping(template_field="공고명", source="bidNtceNm"),
             FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
+        # 후보 축이 결속 역인덱스라(#932 U4-C) 픽스처 작업은 이 파일의 기본 데이터에
+        # 결속돼 있어야 후보로 선다. 경로는 `_data_csv` 가 쓰는 자리와 같은 한 곳이다 —
+        # 두 자리에 적으면 한쪽만 고쳐지는 날 후보가 조용히 0건이 된다.
+        **_bound_to(_data_csv_path(tmp_path)),
         filename_pattern="doc-{{seq:001}}",
     )
     if reviewed:
@@ -149,6 +172,21 @@ def _mount_all(ctrl, path, *, sheet=None) -> None:
     if selected_work and not ctrl.job_name:
         ctrl.dispatch("select_job", {"name": selected_work})
     ctrl.dispatch("set_all", {})
+
+
+def _unbind(ctrl, name: str = "공고서") -> None:
+    """작업의 결속을 지운다(#932 U4-C) — 결속 축이 아닌 것을 재는 테스트를 위한 헬퍼다.
+
+    결속이 남아 있으면 결속 밖 데이터로의 전이마다 active Work가 RELEASE 되고,
+    `_mount_all` 의 재선택이 `_mount_job_binding` 을 태워 그 작업의 결속 데이터로
+    조용히 되튄다 — 방금 마운트한(결속과 다른) 데이터가 재선택 한 줄 만에 지워진다.
+    결속을 비우면 재선택이 무동작이라(`_mount_job_binding` 의 「결속 없음」 분기) 이
+    되튐이 없다. 결속 축을 재는 테스트가 아니라 자유 마운트 시나리오(가드·재적용
+    선반 등)를 재는 테스트만 쓴다.
+    """
+    ctrl.registry.save(
+        replace(ctrl.registry.load(name), **_bound_to("")), allow_overwrite=True,
+    )
 
 
 def _approve_run(ctrl) -> None:
@@ -315,10 +353,20 @@ def test_generate_result_carries_the_exit_summary(tmp_path):
 
 def test_prework_gate_counts_only_available_candidates(tmp_path):
     """후보가 전부 needs_action 이면 "선택하세요"는 이행 불가능한 지시다(#302 리뷰 P2)
-    — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다."""
+    — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다.
+
+    U4-C 뒤 이 상태의 뜻이 좁아졌다(#932): 후보 축이 결속이라 「확인 필요」는 **이 데이터에
+    연결돼 있는데 쓰던 열이 사라진** 작업이다. 결속되지 않은 작업은 확인 필요가 아니라
+    애초에 이 데이터의 후보가 아니다 — 그래서 표본을 「같은 파일에 결속 + 열 불일치」로
+    세운다. 이 갈래가 사라지지 않는 이유가 곧 호환 판정을 남긴 이유다(열은 실제로 사라진다).
+    """
     ctrl, _ = _controller(tmp_path)
     csv = tmp_path / "other.csv"
     csv.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
+    bound_elsewhere = ctrl.registry.load("공고서")
+    ctrl.registry.save(                                 # 결속만 이 파일로 옮긴다
+        replace(bound_elsewhere, **_bound_to(str(csv))), allow_overwrite=True,
+    )
     ctrl.load_data_path(str(csv))                       # '공고서' 필수 소스가 없는 데이터
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     snap = ctrl.snapshot()
@@ -327,7 +375,7 @@ def test_prework_gate_counts_only_available_candidates(tmp_path):
     # 확인 필요 **목록**은 문서 탐색 탭이 소유한다(슬라이스 3 이사).
     ctrl.dispatch("browse_tab", {"tab": "needs_action"})
     assert [r["name"] for r in ctrl.snapshot()["browse"]["rows"]] == ["공고서"]
-    assert "사용할 수 있는 문서 작업이 없습니다" in snap["gate"]["text"]
+    assert "연결된 문서 작업이 없습니다" in snap["gate"]["text"]
 
 
 def test_job_selection_reconciles_filter_kinds_unless_defined(tmp_path):
@@ -433,8 +481,14 @@ def test_data_first_flow_end_to_end(tmp_path):
 
 # ------------------- 메인 후보 순위·추천·즐겨찾기 (슬라이스 2, §18.5·§19.3·§18.3 개정)
 def _extra_job(ctrl, name: str, *, favorited_at: str = "", last_run_at: str = "",
-               sources=("bidNtceNm", "presmptPrce")) -> None:
-    """같은 템플릿을 쓰는 추가 hwpx 작업 저장(순위 표본용)."""
+               sources=("bidNtceNm", "presmptPrce"), bound: bool = True) -> None:
+    """같은 템플릿을 쓰는 추가 hwpx 작업 저장(순위 표본용).
+
+    기본은 **기준 작업과 같은 데이터에 결속**이다(#932 U4-C): 후보 축이 결속 역인덱스라
+    결속 없는 표본은 순위에 아예 서지 않아 순위·추천·즐겨찾기 테스트가 빈 목록을 잰다.
+    결속을 base 에서 물려받는 이유는 자리를 두 곳에 적지 않기 위해서다. ``bound=False`` 는
+    「다른 데이터에 결속된 작업은 이 데이터의 후보가 아니다」를 겨누는 테스트의 것이다.
+    """
     base = ctrl.registry.load("공고서")
     ctrl.registry.save(Job(
         name=name,
@@ -446,6 +500,8 @@ def _extra_job(ctrl, name: str, *, favorited_at: str = "", last_run_at: str = ""
         filename_pattern="doc-{{seq:001}}",
         favorited_at=favorited_at,
         last_run_at=last_run_at,
+        **(_bound_to(base.data_path, base.data_sheet, base.data_header_row)
+           if bound else {}),
     ))
 
 
@@ -1679,17 +1735,127 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
 
 
 # ------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 판정 D)
+# --------------------- 결속 없는 작업의 실행 차단·복구 동사(U4 §2.4 · #932 U4-C)
+def test_an_unbound_job_cannot_generate_and_says_where_to_fix_it(tmp_path):
+    """결속이 「필수」라면 실행 게이트도 그것을 요구한다.
+
+    저장 게이트만 요구하면 「필수」는 한 자리에서만 참인 말이 되고, 구판 작업은 매 세션
+    데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다. 대신 좌초시키지 않는다 —
+    고칠 자리(편집기)를 가리키는 동사가 같은 화면에 함께 선다(`job_data_unbound`).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("set_all", {})
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False
+    assert "연결된 데이터가 없습니다" in snap["gate"]["text"]
+    # 복구 동사를 그릴 판정은 **여기 하나**다 — 표면이 라벨 유무로 유추하면 세션 마운트가
+    # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다).
+    assert snap["job_data_unbound"] is True
+    assert snap["has_data"] is True          # 세션 데이터는 서 있다 — 축이 다르다
+
+
+def test_a_bound_job_neither_blocks_nor_advertises_the_repair_verb(tmp_path):
+    """대조군 — 결속이 있으면 이 축은 조용하다(없는 위험에 동사를 세우지 않는다)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["job_data_unbound"] is False
+    assert "연결된 데이터가 없습니다" not in snap["gate"]["text"]
+
+
+def test_the_unbound_axis_is_a_work_fact_not_a_session_one(tmp_path):
+    """작업을 놓으면 이 축도 함께 없어진다 — 물을 대상 자체가 없다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["job_data_unbound"] is True
+    ctrl.dispatch("select_job", {"name": ""})          # 선택 해제
+    assert ctrl.snapshot()["job_data_unbound"] is False
+
+
+# ------------------------------- 현재 데이터 다시 읽기(U4 항목 5 · #932 U4-C)
+def test_remount_reads_the_same_reference_again_and_picks_up_new_rows(tmp_path):
+    """「다시 읽기」는 **같은 참조**를 디스크에서 새로 읽는다 — stale 판정이 아니다.
+
+    앱에는 「파일이 바뀌었는가」를 답할 술어가 없다(mtime·해시 추적은 템플릿 축뿐).
+    그래서 이 동사의 실체는 재마운트이고, 결속이 durable 이 된 뒤(§2.4) 같은 파일이
+    갱신되는 것이 흔한 사건이 되므로 짝이 된다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    csv = Path(_data_csv(tmp_path))
+    ctrl.load_data_path(str(csv))
+    assert len(ctrl.records) == 2
+    csv.write_text(
+        "bidNtceNm,presmptPrce\n전산장비,\n사무비품,2000000\n추가건,3000000\n",
+        encoding="utf-8",
+    )
+
+    res = ctrl.dispatch("remount_data", {})    # 선택 0건이라 확인 없이 곧바로 돈다
+    assert res["ok"] is True and "needs_confirm" not in res
+    assert len(ctrl.records) == 3
+
+
+def test_remount_states_what_it_clears_before_it_clears_it(tmp_path):
+    """고른 행이 있으면 **사라지는 집합을 수치로 재진술**한 뒤에만 다시 읽는다.
+
+    재마운트는 마운트와 같은 seam 을 타 선택·필터 초안·열 선별이 초기화된다. 조용히
+    지우면 그것이 곧 무확인 파괴다. 확인 없이 온 요청은 **상태를 바꾸지 않고** 확인을
+    돌려준다 — 물어 놓고 이미 저지른 왕복은 확인이 아니다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("set_all", {})
+    selected = ctrl.snapshot()["selected_count"]
+    assert selected == 2
+
+    first = ctrl.dispatch("remount_data", {})
+    assert first["needs_confirm"] is True
+    assert "2건" in first["confirm_text"]                  # 무엇을 잃는지 수치로
+    assert ctrl.snapshot()["selected_count"] == 2         # 아직 아무것도 안 지웠다
+
+    ctrl.dispatch("remount_data", {"confirm": True})
+    assert ctrl.snapshot()["selected_count"] == 0         # 마운트와 같은 초기화
+
+
+def test_remount_without_a_mount_is_refused_loudly(tmp_path):
+    """다시 읽을 것이 없으면 조용한 무동작이 아니라 사유다."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch("remount_data", {})
+    assert res["ok"] is False and "데이터를 먼저 고르세요" in res["error"]
+
+
 def test_select_job_does_not_mount_any_data(tmp_path):
     """작업 선택은 데이터를 세우지 않는다 — 구 기본 데이터셋 자동 조준(#53-A)은 폐기됐다.
 
     구 JSON 이 default_dataset_ref 를 들고 있고 동명 풀 항목이 실재해도, 선택은 결속을
     읽지 않는다(마이그레이션이 아니라 폐기 — 데이터↔작업 결속은 어느 방향으로도 다시
     들이지 않는다).
+
+    이 테스트가 재는 축은 결속(#932 U4-C)이 아니라 폐기된 legacy 키다 — 그래서 픽스처
+    기본값의 결속(`_bound_to`)을 지워 「결속 없음」 상태로 되돌린 뒤 legacy 키만 얹는다.
+    결속이 남아 있으면 `_mount_job_binding` 이 그 결속으로 마운트를 시도해 이 테스트가
+    실제로 재려는 것(legacy 키 무시)과 무관하게 실패한다.
+
+    결속이 **없다**는 사실 자체는 조용히 넘기지 않는다(#932 U4-C 마이그레이션) — 구
+    legacy 키는 무시하되, 화면은 「이 작업에는 연결된 데이터가 없다」고 말하고 고치는
+    자리(편집기)를 가리킨다. 침묵하면 사용자는 자기 작업이 왜 매번 데이터를 다시 묻는지
+    영영 모른다.
     """
     import json as _json
 
     ctrl, pool = _pool_controller(tmp_path)
     _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
     path = ctrl.registry.path_for("공고서")
     payload = _json.loads(path.read_text(encoding="utf-8"))
     payload["default_dataset_ref"] = "7월공고"          # 구버전이 남긴 결속 키
@@ -1700,14 +1866,26 @@ def test_select_job_does_not_mount_any_data(tmp_path):
     assert snap["has_job"] is True
     assert snap["has_data"] is False                    # 자동 마운트 없음
     assert snap["data_source_label"] == ""
-    assert snap["data_notice"] is None                  # 조준 재진술도 없다 — 판정 자체가 없다
+    # 구 키로 조준하지는 않되, 결속 부재는 사유로 말한다(조용한 빈 상태 금지).
+    assert "7월공고" not in (snap["data_notice"] or {}).get("text", "")
+    assert "연결된 데이터가 없습니다" in snap["data_notice"]["text"]
+    assert snap["data_notice"]["level"] == "warn"
 
 
 def test_mounted_session_data_survives_job_selection(tmp_path):
-    """세션 소유 마운트 데이터는 작업 선택에서 생존한다(§18.2) — §5.3 완화 ⑴의 근거."""
+    """세션 소유 마운트 데이터는 작업 선택에서 생존한다(§18.2) — §5.3 완화 ⑴의 근거.
+
+    재려는 것은 결속 축이 아니라 「선택이 세션 마운트를 밀어내지 않는다」다(#932 U4-C
+    이후에도 유효). 그래서 「공고서」를 **지금 마운트할 데이터**에 결속시켜, 선택이
+    `_mount_job_binding` 의 "이미 그 데이터가 서 있음" 분기(무변화)를 타게 한다 — 다른
+    결속이면 선택이 재마운트를 시도해 이 테스트가 재려는 생존 여부를 가린다.
+    """
     ctrl, _pool = _pool_controller(tmp_path)
     other = tmp_path / "직접.csv"
     other.write_text("bidNtceNm,presmptPrce\n수동데이터,900\n", encoding="utf-8")
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to(str(other))), allow_overwrite=True,
+    )
     ctrl.load_data_path(str(other))                      # 작업 미선택 상태의 수동 마운트
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -2269,8 +2447,13 @@ def test_session_guard_for_cross_screen_query(tmp_path):
 
 
 def test_guard_armed_by_set_comparison(tmp_path):
-    """무장 술어(결정 27) — 전체/빈/정의-유래/완주 집합은 비무장, 수작업 열거만 무장."""
+    """무장 술어(결정 27) — 전체/빈/정의-유래/완주 집합은 비무장, 수작업 열거만 무장.
+
+    재는 축은 선택 집합 대 정의 비교이지 결속(#932 U4-C)이 아니다 — `_unbind` 로 결속을
+    비워 `_data_csv3` 로의 마운트가 재선택 되튐 없이 그대로 서게 한다.
+    """
     ctrl, _ = _session(tmp_path)
+    _unbind(ctrl)
     _mount_all(ctrl, _data_csv3(tmp_path))
     assert ctrl.snapshot()["guard"]["armed"] is False       # 초기 전체 선택 = 1클릭 재현
     ctrl.dispatch("set_none", {})
@@ -2291,8 +2474,13 @@ def test_guard_armed_by_set_comparison(tmp_path):
 
 
 def test_guard_disarmed_by_generation_completion(tmp_path):
-    """완료 이벤트 = 무장 해제(결정 27) — 내역은 완료 존이 담보. 재편집 시 재무장."""
+    """완료 이벤트 = 무장 해제(결정 27) — 내역은 완료 존이 담보. 재편집 시 재무장.
+
+    재는 축은 완료 여부이지 결속(#932 U4-C)이 아니다 — `_unbind` 로 재선택 되튐을 끈다
+    (`test_guard_armed_by_set_comparison` 과 같은 사유).
+    """
     ctrl, _ = _session(tmp_path)
+    _unbind(ctrl)
     _mount_all(ctrl, _data_csv3(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("set_none", {})
@@ -2394,8 +2582,15 @@ def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
 
 # ------------------------------------------- 건 연속성(직전 필터 재적용, 결정 28)
 def test_reapply_slot_written_on_session_death_and_source_gated(tmp_path):
-    """슬롯 = 정의 가진 세션이 죽을 때 덮어씀 · 소스 일치 게이트(다른 소스엔 미제공)."""
+    """슬롯 = 정의 가진 세션이 죽을 때 덮어씀 · 소스 일치 게이트(다른 소스엔 미제공).
+
+    재는 축은 소스 키 비교이지 결속(#932 U4-C)이 아니다 — 결속이 있으면 d3.csv 로의
+    마운트가 RELEASE 를 태우고 `_mount_all` 의 재선택이 `_mount_job_binding` 으로 d.csv
+    로 조용히 되튀어(결속이 그 경로다), 방금 세운 d3.csv 소스가 사라진다. `_unbind` 로
+    그 되튐을 끄고 이 테스트가 실제로 재는 소스 키 게이트만 남긴다.
+    """
     ctrl, _ = _session(tmp_path)
+    _unbind(ctrl)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
     assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 아직 산 세션
@@ -2496,8 +2691,12 @@ def test_reapply_hint_carries_definition_to_be_installed(tmp_path):
     """버튼이 설치할 정의를 업는다(#127 조치 2 — 목업 칩 문법 승계).
 
     어포던스가 회수되면 문안도 함께 내려간다(죽은 힌트가 남으면 그 자체가 거짓 진술).
+
+    재는 축은 힌트 문안이지 결속(#932 U4-C)이 아니다 — `_unbind` 로 재선택 되튐을 끈다
+    (`test_reapply_slot_written_on_session_death_and_source_gated` 와 같은 사유).
     """
     ctrl, _ = _session(tmp_path)
+    _unbind(ctrl)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
     _mount_all(ctrl, _data_csv3(tmp_path))               # 죽음 → 슬롯(정의줄 동반)
@@ -2547,9 +2746,16 @@ def test_reapply_pool_key_includes_reference_identity(tmp_path):
 
 
 def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
-    """가지 소실 시 프루닝 복원 포기(리뷰 #2) — 거짓 「매치 없음」 빈 화면을 만들지 않는다."""
+    """가지 소실 시 프루닝 복원 포기(리뷰 #2) — 거짓 「매치 없음」 빈 화면을 만들지 않는다.
+
+    재는 축은 프루닝 포기 로직이지 결속(#932 U4-C)이 아니다 — 결속이 있으면 both.csv 로의
+    반복 마운트마다 재선택이 `_mount_job_binding` 을 태워 그 작업의 결속 데이터(d.csv)로
+    되튀어, 이 테스트가 both.csv 위에서 쌓아 올린 필터·프루닝 슬롯을 지운다. `_unbind` 로
+    끈다.
+    """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unbind(ctrl)
     both = tmp_path / "both.csv"
     both.write_text("bidNtceNm,memo\n전산장비,전산비고\n사무비품,일반\n", encoding="utf-8")
     _mount_all(ctrl, str(both))
@@ -2792,13 +2998,15 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
     [
         ("compatible", "공고서", "공고서", True, True, None, None),
         (
-            "incompatible",
+            # #932 U4-C: 판정 축이 스키마 호환에서 결속으로 갈렸다 — 예전 "incompatible"
+            # (이 데이터로 못 도는 매핑)이 아니라 "다른 데이터에 결속돼 있다"를 잰다.
+            "bound_elsewhere",
             "계약서",
             "",
             True,
             False,
             None,
-            "이 데이터로 실행할 수 없어",
+            "다른 데이터에 연결돼 있어",
         ),
         (
             "same_name_recreated",
@@ -2878,7 +3086,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     notice,
 ):
     """file/pool 성공 전환은 exact authority KEEP/RELEASE와 같은 무효화 seam을 탄다."""
-    registry = _incompatible_reg(tmp_path) if case == "incompatible" else _registry(tmp_path)
+    registry = _incompatible_reg(tmp_path) if case == "bound_elsewhere" else _registry(tmp_path)
     if case != "identity_missing":
         registry.assign_authority_id(active_name, "authority-old")
     coordinator = (
@@ -2891,10 +3099,26 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     ctrl, pool = _pool_controller(
         tmp_path, registry=registry, template_change=coordinator
     )
-    old_path = tmp_path / "old.csv"
+    # 셋업 국면의 겨눔 경로(#932 U4-C) — "bound_elsewhere" 만 별도 파일(old.csv)에
+    # 결속시켜 뒤의 관측 전환에서 결속이 어긋나게 **남긴다**(그 어긋남 자체가 그 케이스가
+    # 재는 것). 나머지는 active_name 의 **기본 결속 경로**(`_data_csv_path` — `_registry`
+    # 가 이미 묶어 둔 자리)에 그대로 "옛" 내용을 써서 겨눈다: 마운트 경로를 결속과 다르게
+    # 두면(구판처럼 old.csv 를 따로 쓰면) 셋업 마운트마다 결속 밖 데이터로 읽혀 진짜(아직
+    # monkeypatch 전) RELEASE 가 셋업 단계에서부터 터져 「관측된 전환 1건」·work_ref 단언이
+    # 애초에 성립하지 않는다. 같은 경로 재읽기는 `test_data_mount_identity_changes_on_every_remount`
+    # 가 이미 검증한 "같은 소스·바뀐 내용도 새 전환" 결의 시나리오라 결속은 그대로 두고
+    # 내용만 바뀐 전환을 재현한다 — `data_path` 를 select 뒤에 다시 쓰면 그 자체가
+    # `content_fingerprint` 에 실려(U4 §2.4) "외부에서 결속이 바뀐 작업"으로 오판돼
+    # restorable 케이스들의 판정을 오염시키므로, 결속은 select **전**에 한 번만 정한다.
+    old_path = (
+        Path(tmp_path / "old.csv") if case == "bound_elsewhere"
+        else Path(_data_csv_path(tmp_path))
+    )
     old_path.write_text(
         "bidNtceNm,presmptPrce,없는열\n이전,100,old\n", encoding="utf-8"
     )
+    if case == "bound_elsewhere":
+        ctrl.registry.mutate(active_name, lambda job: setattr(job, "data_path", str(old_path)))
     if case in {"identity_missing", "application_missing"}:
         ctrl.load_data_path(str(old_path))
         ctrl.dispatch("select_job", {"name": active_name})
@@ -2953,6 +3177,10 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
             raise ValueError("internal registry detail")
 
         monkeypatch.setattr(screen_job_module, "load_job", fail_active_work_reload)
+    # "bound_elsewhere" 를 제외한 모든 케이스는 old_path 가 이미 active_name 의 기본
+    # 결속 경로(`_data_csv_path`) 였다 — `_data_csv` 가 **같은 자리**에 새 내용을 덮어써
+    # 결속은 그대로 둔 채 관측 전환만 새로 세운다(usable=True 를 결속 정직하게 재현).
+    # "bound_elsewhere" 는 old_path(별도 파일)에 묶인 채 두어 new_path 와 계속 어긋난다.
     new_path = _data_csv(tmp_path)
     if target == "file":
         ctrl.load_data_path(new_path)
@@ -2964,7 +3192,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert calls[0].work_ref == active_name
     assert calls[0].template_application_ref == expected_application_ref
     assert calls[0].exact_context_restorable is restorable
-    assert calls[0].usable_with_current_data is usable
+    assert calls[0].bound_to_current_data is usable
     assert ctrl.job_name == expected_name
     assert ctrl.records is not old_records
     assert ctrl._snapshot_gen == old_generation + 1
@@ -2981,7 +3209,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
         assert notice in snap["data_notice"]["text"]
         assert "internal registry detail" not in snap["data_notice"]["text"]
         assert snap["data_notice"]["level"] == "warn"
-    if case == "incompatible":
+    if case == "bound_elsewhere":
         assert snap["candidates"]["suggested"] == "공고서"
         assert ctrl.job_name == ""  # 유일 후보도 자동 활성화하지 않는다.
 
@@ -3107,7 +3335,7 @@ def test_data_transition_uses_template_application_identity(
 
     assert contexts[0].template_application_ref == restored_application_id
     assert contexts[0].exact_context_restorable is applied_locally
-    assert contexts[0].usable_with_current_data is True
+    assert contexts[0].bound_to_current_data is True
     assert ctrl.job_name == ("공고서" if applied_locally else "")
     assert ctrl._seated_template_application_id == (
         restored_application_id if applied_locally else None
@@ -3282,47 +3510,68 @@ def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
 
 
 def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_path):
-    """데이터가 없으면 보관하되, 마운트 뒤에도 active Work는 사용자가 직접 고른다.
+    """결속 있는 작업은 무데이터에서도 prefer_work 자체가 즉시 승격이다(#932 U4-C).
 
-    preferredWorkId도 DataTarget 전환의 자동 선택 권위가 아니다. 보관분은 1회 소비하고
-    사용할 수 있는 후보라는 사실만 재진술한다.
+    종전 「무데이터 = 항상 보관」은 결속 있는 작업에서 죽었다 — 그 작업이 자기 데이터를
+    끌고 오므로 미룰 이유가 없다.
+
+    **결속 없는 구판 작업의 판정 축은 스키마다.** 마이그레이션은 사용자를 가두지 않는다:
+    결속이 없는 동안은 종전대로 「지금 데이터와 구조가 맞는가」가 답하고, 구조가 맞지
+    않으면 보관 후 안내로 남는다. 결속 축으로 물으면 미결속 작업은 후보에 영영 못 서서
+    이 승격이 도달 불가 분기가 되고 구판 작업이 편집기 수리 전까지 좌초한다.
+
+    preferredWorkId 가 DataTarget 전환의 자동 선택 권위가 아니라는 원 취지(사용자가
+    직접 고른다)는 구판 작업 축에서 그대로 산다.
     """
     ctrl, _ = _controller(tmp_path)
+    _data_csv(tmp_path)  # 결속 경로(d.csv)에 실물을 둔다 — 안 두면 마운트 자체가 실패한다.
+    # 결속 있는 작업 — 무데이터에서도 prefer_work 자체가 승격이자 마운트다.
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
-    assert res == {"stored": True, "reason": "no_data", "name": "공고서"}
-    assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"
+    assert res == {"promoted": True, "name": "공고서"}
+    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""
+    assert ctrl.snapshot()["has_data"] is True  # 자기 결속 데이터를 끌고 왔다
 
-    ctrl.load_data_path(_data_csv(tmp_path))
-    assert ctrl.job_name == ""
+    # 결속 없는 구판 작업 + 지금 데이터와 구조 불일치 → 보관 후 안내(활성 불변).
+    _extra_job(ctrl, "구판", sources=("없는열A", "없는열B"), bound=False)
+    res = ctrl.dispatch("prefer_work", {"name": "구판"})
+    assert res == {"stored": True, "reason": "incompatible", "name": "구판"}
+    assert ctrl.job_name == "공고서" and ctrl.preferred_work == "구판"  # 활성 작업 불변
+
+    other = tmp_path / "other.csv"
+    other.write_text("bidNtceNm,presmptPrce\n다른데이터,1\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))
     assert ctrl.preferred_work == ""              # 1회 소비
     snap = ctrl.snapshot()
-    assert [row["name"] for row in snap["candidates"]["top"]] == ["공고서"]
-    assert "공고서" in snap["data_notice"]["text"]
-    assert "직접 고르세요" in snap["data_notice"]["text"]
-    assert "'문서 작업'에서 직접 선택하세요" not in snap["data_notice"]["text"]
+    # 결속 축 후보에는 영영 서지 않는다 — 그래서 안내도 「아래 후보」가 아니라
+    # 「문서 작업」을 가리킨다(없는 자리를 가리키는 지시는 이행 불가능하다).
+    assert "구판" not in [row["name"] for row in snap["candidates"]["top"]]
+    assert "구판" in snap["data_notice"]["text"]
+    assert "구조가 맞지 않습니다" in snap["data_notice"]["text"]
+    assert "문서 작업" in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
 
 
 def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path):
-    """Top-N 밖 preferred는 순위를 왜곡하지 않고 전역 라이브러리의 명시 선택으로 잇는다."""
+    """결속 있는 작업은 순위 밖이어도 prefer_work 가 순위와 무관하게 즉시 승격한다(#932 U4-C).
+
+    종전(U4-C 이전)에는 순위 밖 preferred 작업이 데이터 마운트 뒤에도 곧장 승격되지
+    않고 라이브러리의 명시 선택으로만 닿았다 — 순위가 유일한 후보 통로였기 때문이다.
+    지금은 후보 축이 결속 역인덱스이고(§2.4) prefer_work 는 결속 있는 작업을 순위와
+    무관하게 즉시 승격한다 — top-N 밖이라는 사실이 승격 성사에 아무 영향도 주지 않는다는
+    것이 이 테스트가 지금 재는 것이다. 라이브러리의 「문서 만들기에서 사용」 행 선택 →
+    명시 prefer_work 왕복은 여전히 유효한 사용자 여정이라 함께 남긴다.
+    """
     ctrl, _ = _controller(tmp_path)
     for i in range(MAIN_TOP_N + 1):
         _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
 
-    assert ctrl.dispatch("prefer_work", {"name": "공고서"})["stored"] is True
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
     top = [row["name"] for row in snap["candidates"]["top"]]
     ranked = [row.name for row in ctrl._ranked_now()]
     assert top == ranked[:MAIN_TOP_N] == ["작업5", "작업4", "작업3", "작업2", "작업1"]
-    assert "공고서" not in top
+    assert "공고서" not in top  # 결속은 있지만 순위 밖(§2.4 — 순위는 후보 통로가 아니다)
     assert snap["candidates"]["more"] == len(ranked) - MAIN_TOP_N == 2
-    assert snap["candidates"]["suggested"] == ""
-    assert ctrl.job_name == "" and ctrl.preferred_work == ""
-    notice = snap["data_notice"]["text"]
-    assert "이전에 고른 '공고서' 작업을 사용할 수 있습니다" in notice
-    assert "'문서 작업'에서 직접 선택하세요" in notice
-    assert "아래 후보" not in notice
 
     library = LibraryController(
         ctrl.registry, TextTemplateRegistry(tmp_path / "txt"), lambda _s, _snap: None,
@@ -3350,8 +3599,15 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
 def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     tmp_path, monkeypatch, target,
 ):
-    """후보 조회 실패는 성공한 file/pool 마운트를 partial failure로 되돌리지 않는다."""
+    """후보 조회 실패는 성공한 file/pool 마운트를 partial failure로 되돌리지 않는다.
+
+    재는 축은 후보 조회 실패의 격리이지 결속(#932 U4-C)이 아니다 — "공고서"가 결속돼
+    있으면 prefer_work 가 즉시 승격해 `preferred_work` 가 애초에 저장되지 않으므로
+    (마운트 시점에 재판정할 보관분이 없다) `_unbind` 로 결속을 지워 구판 시나리오를
+    재현한다.
+    """
     ctrl, pool = _pool_controller(tmp_path)
+    _unbind(ctrl)
     ctrl.dispatch("prefer_work", {"name": "공고서"})
 
     def fail_registry_list(_store):
@@ -3432,7 +3688,18 @@ def test_snapshot_registry_warning_composes_and_clears_on_recovery(
 def test_release_notice_preserves_the_pending_preferred_work_restatement(
     tmp_path, target,
 ):
-    """A RELEASE 사유가 새 데이터에서 사용 가능한 명시 preferred B 안내를 덮지 않는다."""
+    """A RELEASE 사유가 preferred B 안내를 덮지 않고 **합성**한다.
+
+    #932 U4-C 이후 A(공고서)의 해제 사유는 「다른 데이터에 연결돼 있어」다 — 판정 축이
+    스키마 호환에서 결속으로 갈렸기 때문이다. B(계약서)는 결속 없는 구판 작업이라 판정
+    축이 **스키마**이고, 새 마운트(`없는열` 한 칸)가 마침 그 작업이 요구하는 열이라 이
+    데이터로 쓸 수 있다 — 그래도 **자동으로 열리지는 않는다**(§18.3 개정: 추천은 표지일
+    뿐 전이가 아니다).
+
+    이 테스트가 재는 것은 두 사실이 **한 문안에 함께 선다**는 합성 규율이다 — 한쪽이
+    다른 쪽을 덮으면 사용자는 왜 작업이 사라졌는지 또는 B 가 어떻게 됐는지 둘 중 하나를
+    영영 못 듣는다.
+    """
     registry = _incompatible_reg(tmp_path)
     registry.assign_authority_id("공고서", "authority-a")
     ctrl, pool = _pool_controller(tmp_path, registry=registry)
@@ -3455,34 +3722,45 @@ def test_release_notice_preserves_the_pending_preferred_work_restatement(
     assert ctrl.job_name == "" and ctrl.preferred_work == ""
     notice = ctrl.snapshot()["data_notice"]
     assert "공고서" not in notice["text"]
-    assert "이 데이터로 실행할 수 없어 선택을 해제했습니다" in notice["text"]
-    assert "계약서" in notice["text"] and "직접 고르세요" in notice["text"]
+    assert "다른 데이터에 연결돼 있어 선택을 해제했습니다" in notice["text"]
+    assert "계약서" in notice["text"]
+    assert "이 데이터로 쓸 수 있습니다" in notice["text"]  # 다만 자동 선택은 없다
 
 
 def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
-    """무데이터 「문서 만들기에서 사용」은 언제나 「보관 후 안내」 하나다(§5.3 판정 D).
+    """무데이터 「문서 만들기에서 사용」은 언제나 「보관 후 안내」 하나다(§5.3 판정 D) —
+    **결속 없는** 작업에 한해서다(#932 U4-C, `reason` 은 `no_binding`).
 
-    구 default_data 분기(작업의 기본 데이터 참조 자동 마운트 — F2 PR-B 판정 I)는 결속
-    폐기와 함께 죽었다: 구 JSON 이 결속 키를 들고 있고 동명 풀 항목이 실재해도 데이터
-    선택을 반드시 지난다. 마운트 시 보관분도 후보 안내만 하고 선택하지 않는다.
+    구 default_data 분기(작업의 기본 데이터 참조 자동 마운트 — F2 PR-B 판정 I)는 U4-C 이전
+    결속 폐기와 함께 죽었다: 구 JSON 이 그 legacy 키(`default_dataset_ref`)를 들고 있고
+    동명 풀 항목이 실재해도 데이터 선택을 반드시 지난다. 이 테스트가 재는 축은 그 legacy
+    키의 무효화이지 U4-C 의 새 `data_path` 결속이 아니다 — 그래서 픽스처 기본 결속을
+    `_unbind` 로 비운다(안 비우면 결속 있는 작업이라 select_job 이 곧바로 도는
+    새 분기를 타 이 테스트가 재는 것과 무관하게 즉시 승격된다).
     """
     import json as _json
 
     ctrl, pool = _pool_controller(tmp_path)
     _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    _unbind(ctrl)
     path = ctrl.registry.path_for("공고서")
     payload = _json.loads(path.read_text(encoding="utf-8"))
     payload["default_dataset_ref"] = "7월공고"          # 구버전이 남긴 결속 키
     path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
-    assert res == {"stored": True, "reason": "no_data", "name": "공고서"}
+    assert res == {"stored": True, "reason": "no_binding", "name": "공고서"}
     assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"  # 보관 — 자동 마운트 없음
     assert ctrl.snapshot()["has_data"] is False
-    # 데이터를 명시로 골라도 active Work 선택은 별도 명시 사건이다.
+    # 데이터를 명시로 골라도 active Work 선택은 **별도 명시 사건**이다(§18.3 개정) —
+    # 보관분은 소비되지만 자동 선택은 없고, 쓸 수 있다는 사실만 재진술한다. 결속 없는
+    # 구판 작업의 판정 축은 스키마라 이 데이터로는 실제로 쓸 수 있다(#932 U4-C).
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.job_name == "" and ctrl.preferred_work == ""
-    assert "직접 고르세요" in ctrl.snapshot()["data_notice"]["text"]
+    notice = ctrl.snapshot()["data_notice"]["text"]
+    assert "이 데이터로 쓸 수 있습니다" in notice and "공고서" in notice
+    # 결속 축 후보에는 못 서므로 안내는 「아래 후보」가 아니라 「문서 작업」을 가리킨다.
+    assert "문서 작업" in notice and "아래 후보" not in notice
 
 
 def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
@@ -3523,6 +3801,9 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     """보관분이 새 데이터에서도 못 도는 경우 — 사유를 재진술하고 보관분을 비운다.
 
     들고 있으면 사용자가 잊은 의도가 다음 마운트에서 조용히 발화한다(지연된 조용한 추측).
+    "계약서"는 결속 없는 작업이라(`_incompatible_reg`) 판정 축이 스키마인데(#932 U4-C),
+    그 스키마가 이 데이터와 맞지 않는다 — 문안도 그 사실("구조가 맞지 않는다")로 수렴하고
+    결속 유무는 여기서 겹쳐 말하지 않는다(그 축은 선택 뒤 게이트가 진다).
     """
     pushes: list = []
     ctrl = JobController(
@@ -3532,14 +3813,21 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert ctrl.job_name == "" and ctrl.preferred_work == ""
-    assert "실행할 수 없습니다" in snap["data_notice"]["text"]
+    assert "구조가 맞지 않습니다" in snap["data_notice"]["text"]
     assert "직접 선택하세요" not in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
 
 
 def test_stored_preference_pointing_at_a_deleted_work_is_loud(tmp_path):
-    """그사이 삭제·개명된 작업을 겨눈 보관분은 유령을 열지 않고 사실을 말한다."""
+    """그사이 삭제·개명된 작업을 겨눈 보관분은 유령을 열지 않고 사실을 말한다.
+
+    재는 축은 삭제된 유령 참조 처리이지 결속(#932 U4-C)이 아니다 — "공고서"가 결속돼
+    있으면 prefer_work 가 즉시 승격해 `preferred_work` 가 저장되지 않으므로(삭제 전에
+    이미 소비돼 마운트 시점엔 겨눌 보관분이 없다) `_unbind` 로 결속을 지워 구판
+    시나리오를 재현한다.
+    """
     ctrl, _ = _controller(tmp_path)
+    _unbind(ctrl)
     ctrl.dispatch("prefer_work", {"name": "공고서"})
     ctrl.registry.delete("공고서")
     ctrl.load_data_path(_data_csv(tmp_path))
@@ -4810,13 +5098,18 @@ def test_review_scope_key_hashes_the_blank_field_set(tmp_path):
 
 # ------------------------------------------- TXT 합류와 작업대 진입 (재작성 F6 PR-A)
 def _txt_job(ctrl, tmp_path, *, name: str = "발주요청_기안") -> None:
-    """같은 데이터로 돌 수 있는 TXT 작업을 하나 저장한다(후보 판정은 hwpx 와 같은 술어)."""
+    """같은 데이터에 결속된 TXT 작업을 하나 저장한다(후보 판정은 hwpx 와 같은 술어).
+
+    결속은 매체를 가리지 않는다(#932 U4-C): TXT 작업도 레코드를 읽어 기안을 세우므로
+    후보로 서려면 이 데이터에 연결돼 있어야 한다.
+    """
     tpl = tmp_path / f"{name}.txt"
     tpl.write_text("공고: {{공고명}}", encoding="utf-8")
     ctrl.registry.save(Job(
         name=name, template_path=str(tpl),
         mapping=MappingProfile(mappings=[
             FieldMapping(template_field="공고명", source="bidNtceNm")]),
+        **_bound_to(_data_csv_path(tmp_path)),
     ))
 
 
@@ -5586,11 +5879,21 @@ def test_template_check_final_gate_read_failure_prevents_admission_commit(
 
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
     """#681 G11 무회귀: 코디네이터가 배선된 managed 생성이 mutable template_path 직독 대신
-    bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존)."""
+    bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존).
+
+    재는 축은 managed 생성 배선이지 결속(#932 U4-C)이 아니다 — 결말의 KEEP 단언
+    (`ctrl.job_name == "공고서"`)이 성립하려면 clean.csv 가 이 작업의 결속이어야 한다.
+    기본 결속(`_registry` 의 d.csv, 이 테스트엔 없는 경로)에 남아 있으면 재마운트마다
+    RELEASE 된다. select 전에 결속해야 seated 지문이 그 결속으로 시작해 이후 재마운트가
+    `content_fingerprint`(U4 §2.4)의 결속 3성분과 계속 일치한다.
+    """
     ctrl, pushes = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to(str(clean))), allow_overwrite=True,
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
     pushes.clear()
@@ -5686,19 +5989,27 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     tmp_path, monkeypatch, target,
 ):
     """#681 F3: capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 던지면 raw 예외로 새지 않고
-    구조화된 제품 상태(ok:False)로 거절한다."""
+    구조화된 제품 상태(ok:False)로 거절한다.
+
+    재는 축은 admission 거절 뒤 KEEP 배선이지 결속(#932 U4-C)이 아니다 — 결말의
+    `ctrl.job_name == "공고서"` 단언이 성립하려면 c.csv 가 이 작업의 결속이어야 한다
+    (`test_managed_generation_routes_through_exact_applied_bytes_no_regression` 과 같은 사유).
+    """
     import hwpxfiller.webapp.template_change as tc
     from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
 
     ctrl, pushes = _template_change_controller(tmp_path)
+    clean = tmp_path / "c.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to(str(clean))), allow_overwrite=True,
+    )
     ctrl.dispatch("select_job", {"name": "공고서"})
 
     def boom(*_a, **_k):
         raise SlotSelectionCaptureError("SLOT_CONFIGURATION_INCOMPLETE", "미완")
 
     monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
-    clean = tmp_path / "c.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out3"))
     pushes.clear()
