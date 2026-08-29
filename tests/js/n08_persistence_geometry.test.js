@@ -93,8 +93,8 @@ function createDom(options) {
     "data-theme": conf.dataTheme === undefined ? null : conf.dataTheme,
     "data-font-scale": conf.fontScale === undefined ? "normal" : conf.fontScale,
   };
-  const brand = new FakeEl("span");
-  if (conf.brandVisible === false) brand.offsetParent = null;
+  const toolLabel = new FakeEl("span");
+  if (conf.toolLabelsVisible === false) toolLabel.offsetParent = null;
   const tabs = [new FakeEl("button"), new FakeEl("button")];
   if (conf.hiddenTabs) tabs[1].offsetParent = null;
   body.scrollWidth = conf.bodyScrollWidth === undefined ? 1000 : conf.bodyScrollWidth;
@@ -126,7 +126,7 @@ function createDom(options) {
     },
     querySelector(sel) {
       if (sel === ".app") return app;
-      if (sel === ".brand-name") return brand;
+      if (sel === ".shell-tool .d") return toolLabel;
       if (sel === ".topbar") return topbar;
       return null;
     },
@@ -160,7 +160,7 @@ function createDom(options) {
     },
   };
 
-  return { doc, win, app, body, root, brand, tabs, topbar, created };
+  return { doc, win, app, body, root, toolLabel, tabs, topbar, created };
 }
 
 function createCaps(overrides) {
@@ -259,11 +259,11 @@ test("grid_narrow / grid_wide — resize 는 호스트가 하고 읽기는 프�
       return null;
     },
   });
-  /* 폭에 따라 브랜드가 접히는 것을 대역이 흉내 낸다. */
+  /* 폭에 따라 도구 값 라벨이 접히는 것을 대역이 흉내 낸다(U4 §2-33 이후의 접힘 축). */
   const originalQuery = dom.doc.querySelector.bind(dom.doc);
   dom.doc.querySelector = (sel) => {
     const el = originalQuery(sel);
-    if (sel === ".brand-name") el.offsetParent = width >= 820 ? {} : null;
+    if (sel === ".shell-tool .d") el.offsetParent = width >= 820 ? {} : null;
     return el;
   };
   caps.host.request = (op, payload) => {
@@ -281,12 +281,12 @@ test("grid_narrow / grid_wide — resize 는 호스트가 하고 읽기는 프�
     { width: 760, height: 600 },
     { width: 1440, height: 900 },
   ]);
-  /* 좁게 = 브랜드 접힘, 넓게 = 브랜드 전개. 대조 두 극이 살아 있다. */
-  assert.equal(report.results.grid_narrow.brand_visible, false);
-  assert.equal(report.results.grid_wide.brand_visible, true);
+  /* 좁게 = 값 라벨 접힘, 넓게 = 전개. 대조 두 극이 살아 있다. */
+  assert.equal(report.results.grid_narrow.tool_labels_visible, false);
+  assert.equal(report.results.grid_wide.tool_labels_visible, true);
   for (const key of ["grid_narrow", "grid_wide"]) {
     assert.deepEqual(Object.keys(report.results[key]), [
-      "rows", "tabs", "brand_visible", "overflow",
+      "rows", "tabs", "tool_labels_visible", "overflow",
     ]);
     assert.equal(report.results[key].rows, 2);
     assert.equal(report.results[key].tabs, 2);

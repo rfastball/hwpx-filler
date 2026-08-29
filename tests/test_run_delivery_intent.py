@@ -21,6 +21,7 @@ from hwpxfiller.application.generation_delivery import (
     ResolvedGenerationDeliveryPlan,
     resolve_generation_delivery_plan,
 )
+import hwpxfiller.application.preview_requirement as preview_requirement_module
 from hwpxfiller.application.run_delivery_intent import (
     ADD_SUFFIX,
     FAIL,
@@ -31,19 +32,26 @@ from hwpxfiller.application.run_delivery_intent import (
 )
 
 
-# ─── 기본 ADD_SUFFIX · overwrite 명시 선택 ──────────────────────────────────────────────────
-def test_default_collision_is_add_suffix_non_destructive():
+# ─── 기본 OVERWRITE_EXPLICIT — 파괴 승인은 의도가 아니라 처분이 요구한다(U4 계열2-27) ────────
+def test_default_collision_is_overwrite_and_says_so():
     intent = RunDeliveryIntent(output_directory="C:/out")
-    assert intent.collision_policy == DEFAULT_COLLISION_POLICY == ADD_SUFFIX
+    assert intent.collision_policy == DEFAULT_COLLISION_POLICY == OVERWRITE_EXPLICIT
+    assert intent.is_destructive is True
+
+
+def test_destructive_intent_is_not_by_itself_an_approval_requirement():
+    """의도가 파괴적인 것과 **이번 delivery 가 무엇을 덮어쓰는가**는 다른 사실이다.
+
+    기본이 덮어쓰기가 된 뒤 ``is_destructive`` 는 거의 언제나 참이라 승인 판정의 입력이
+    될 수 없다. 승인을 세우는 것은 item 의 ``collision_disposition`` 이고 그 판정은
+    :func:`evaluate_current_preview_requirement` 하나가 소유한다 — 이 속성은 그 자리에
+    쓰이지 않는다(``preview_requirement`` 모듈이 이 모듈을 import 하지 않는 것이 그 증거다).
+    """
+    intent = RunDeliveryIntent(output_directory="C:/out", collision_policy=ADD_SUFFIX)
     assert intent.is_destructive is False
-
-
-def test_overwrite_requires_explicit_choice():
-    # 기본 생성으로는 overwrite 가 되지 않는다 — 명시로 골라야만 파괴적.
-    default_intent = RunDeliveryIntent(output_directory="C:/out")
-    assert default_intent.is_destructive is False
-    explicit = RunDeliveryIntent(output_directory="C:/out", collision_policy=OVERWRITE_EXPLICIT)
-    assert explicit.is_destructive is True
+    source = inspect.getsource(preview_requirement_module)
+    assert "run_delivery_intent" not in source
+    assert "is_destructive" not in source
 
 
 def test_collision_policy_vocabulary_is_from_single_source():

@@ -49,6 +49,10 @@ __all__ = (
 
 #: 설치된 템플릿이 들어갈 그룹 이름(hwpx·txt 두 매체에 같은 이름). 소속이 곧 존재라
 #: 빈 그룹은 만들어지지 않는다 — 제거는 manifest 가 진다(§1 D4).
+#:
+#: U4 §2-30 이후 이 소속은 **어느 표면에도 보이지 않는다**(그룹 표면 동결). 지정을 계속
+#: 하는 이유는 동결의 뜻이 「지우지 않고 둔다」이기 때문이다 — 되살리면 예제가 묶인 채로
+#: 돌아온다. 대신 확인·제거 문안에서는 뺐다: 보이지 않는 것을 약속하면 그 문안이 거짓이다.
 EXAMPLE_GROUP = "예제"
 
 #: 동봉 자산 파일 이름 — 정본은 ``examples/onboarding/make_assets.py`` 의 생성 목록이고
@@ -128,8 +132,6 @@ def confirm_text(*, hwpx_root: Path, txt_root: Path, data_dir: Path) -> str:
         f"· HWPX 서식 {len(HWPX_ASSETS)}건 → {hwpx_root}",
         f"· TXT 기안 {len(TXT_ASSETS)}건 → {txt_root}",
         f"· 예제 데이터 {len(DATA_ASSETS)}건 → {data_dir} (데이터 풀에 고정)",
-        "",
-        f"템플릿 {len(HWPX_ASSETS) + len(TXT_ASSETS)}건은 '{EXAMPLE_GROUP}' 그룹으로 묶입니다.",
     ]
     if settings.load_tutorial_manifest() is not None:
         lines.append("이미 설치돼 있어 지난 설치분을 덮어쓰고 처음 상태로 되돌립니다.")
@@ -318,7 +320,6 @@ def remove_confirm_text(plan: dict) -> str:
         f"· 템플릿 {len(templates)}건 — 라이브러리에서 걷습니다",
         f"· 예제 데이터 {len(plan['data_files'])}건 — 파일을 지웁니다",
         f"· 데이터 풀 고정 {len(plan['pool_keys'])}건 — 해제합니다",
-        f"· '{plan['group']}' 그룹 1개 — 해산합니다",
         "",
         "설치할 때 기재한 것만 걷습니다. 예제를 고쳐 다른 이름으로 저장한 것은 그대로 남습니다.",
         "되돌리기는 다시 설치하기입니다 — 걷은 것을 하나씩 되살리는 길은 없습니다.",

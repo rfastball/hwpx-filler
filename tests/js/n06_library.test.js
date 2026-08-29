@@ -11,12 +11,14 @@ import { createServiceHandoffPorts } from "../../frontend/src/ports/service_hand
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+/* 그룹·태그 동사(moveModel·setMove·closeMove·confirmMove·openMove·editTags·
+   showGroupMenu·closeGroupMenu·handleGroupMenu·groupContextMenu)는 U4 §2-30 에서
+   표면과 함께 사라졌다 — 판정·영속은 링1·모델에 동결로 남는다. */
 const SURFACE = [
-  "init", "model", "moveModel", "setMove", "closeMove", "confirmMove", "axis",
-  "toggleFavorite", "runPrimary", "installExamples", "newWork", "editWork", "renameJob", "openMove",
-  "editTags", "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
-  "showGroupMenu", "closeGroupMenu", "handleGroupMenu", "doc", "client",
-  "groupContextMenu", "popover", "notify",
+  "init", "model", "axis",
+  "toggleFavorite", "runPrimary", "installExamples", "newWork", "editWork", "renameJob",
+  "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
+  "doc", "client", "popover", "notify",
 ];
 
 function build(options = {}) {
@@ -164,18 +166,6 @@ test("BridgeClient late binding — 교체한 dispatch가 다음 발신을 받�
   h.client.dispatch = async (...args) => { swapped.push(args); return { ok: true, value: {} }; };
   await h.controller.cloneJob("작업A");
   assert.deepEqual(swapped, [["library", "clone_job", { name: "작업A" }]]);
-});
-
-test("그룹 이동 — 선택 snapshot에서 dialog state를 만들고 확정한다", async () => {
-  const h = build({ snapshot: {
-    detail: { name: "작업A", group: "기존" }, group_names: ["기존", "새 그룹"], sections: [],
-  } });
-  h.controller.openMove("작업A", {});
-  h.controller.setMove({ choice: "새 그룹" });
-  assert.equal(h.controller.moveModel.getSnapshot().choice, "새 그룹");
-  await h.controller.confirmMove();
-  assert.deepEqual(h.dispatchCalls.map((row) => row.slice(0, 2)), [["job", "set_group"], ["library", "refresh"]]);
-  assert.equal(h.controller.moveModel.getSnapshot(), null);
 });
 
 test("즐겨찾기 연타 — 같은 작업의 최신 intent를 직렬화한다", async () => {

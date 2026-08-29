@@ -122,9 +122,9 @@ def _shell_overlays(screen: str, root_style: str = "", toast_style: str = "") ->
     )
 
 
+# 좌상단 브랜드 락업은 U4 §2-33 에서 걷혔다 — 실제 토바와 같은 자식 둘(내비·도구)만 싣는다.
 _TOPBAR = (
-    '<header class="topbar"><div class="brand"><span class="brand-lockup">'
-    '<span class="brand-name">문서나르미</span></span></div>'
+    '<header class="topbar">'
     '<nav class="nav"><button class="navbtn">문서 만들기</button>'
     '<button class="navbtn">문서 작업</button></nav><div></div></header>'
 )
@@ -164,7 +164,6 @@ _JOB_STAGE = (
     '<div class="session-actionbar"><div class="actionbar-row">'
     '<span class="actionbar-identity">'
     '<span class="actionbar-job" id="jobActionName">2026 상반기 계약</span></span>'
-    '<button class="btn" id="jobPreviewOpen">생성 값 미리보기</button>'
     '<button class="btn primary" id="jobGenBtn">이 작업으로 문서 생성</button>'
     '<span class="muted capnote" id="jobGate">선택 3건</span>'
     "</div></div></section></div></section>"

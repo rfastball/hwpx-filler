@@ -210,8 +210,9 @@ def _judge_onboarding(report: dict) -> Verdict:
         failures.append(
             f"고정된 예제 데이터 {install.get('pinned')!r}건 (기대 {EXPECTED_EXAMPLE_DATA}건)"
         )
-    if install.get("grouped") is not True:
-        failures.append("설치한 템플릿이 예제 그룹으로 묶이지 않았습니다")
+    # U4 §2-30: 그룹은 표면에서 걷혔다 — 대본이 재는 것은 「그 어휘가 화면에 없다」다.
+    if install.get("group_surface_gone") is not True:
+        failures.append("걷힌 예제 그룹 어휘가 편집기 표면에 남아 있습니다")
     # D1: 누르기 전에는 홈에 아무것도 쓰지 않는다 — 대본이 census 를 실었는지까지 본다.
     if not isinstance(facts.get("home_before_install"), list):
         failures.append("설치 전 홈 census 가 보고서에 없습니다")

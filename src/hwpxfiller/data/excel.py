@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Iterable
 from datetime import date, datetime, time
 from pathlib import Path
@@ -38,13 +39,43 @@ def _missing_formula_value_error(coordinates: "list[tuple[int, int]]") -> ValueE
     )
 
 
-def _cell_text(value: object) -> str:
-    """CSV와 Excel이 공유하는 결정론적 scalar→text 정책."""
+#: Excel 표시 서식에서 **시각 성분**을 가리키는 토큰. ``m`` 은 월/분 양의라 단독으로는
+#: 판정이 안 되므로 겨누지 않는다 — 분은 실무 서식에서 언제나 ``h`` 를 동반한다.
+_TIME_FORMAT_TOKENS = ("h", "s", "am/pm", "a/p")
+
+
+def _format_carries_time(number_format: "str | None") -> bool:
+    """Excel 표시 서식이 시각을 보여주는가. **모르면 참**이다 — 값을 버리지 않는다.
+
+    ``None``(CSV·서식 없는 경로)과 ``General``(서식이 값 모양을 말하지 않음)은 판정
+    불가라 「시각 있음」으로 남긴다. 판정은 표시 서식 하나만 보고, 리터럴 구간
+    (``"..."``)은 서식 토큰이 아니므로 먼저 걷는다.
+    """
+    if not number_format:
+        return True
+    code = re.sub(r'"[^"]*"', "", number_format).lower()
+    if "general" in code:
+        return True
+    return any(token in code for token in _TIME_FORMAT_TOKENS)
+
+
+def _cell_text(value: object, number_format: "str | None" = None) -> str:
+    """CSV와 Excel이 공유하는 결정론적 scalar→text 정책.
+
+    ``number_format`` 은 Excel 셀의 표시 서식이다(CSV·순수 값 경로는 ``None``).
+    openpyxl 은 **날짜 셀도 자정 datetime 으로** 돌려주므로 그대로 문자열화하면 사용자가
+    쓴 적 없는 ``00:00:00`` 이 값에 들어가고, 표시형 날짜 서식이 그것을 다시 주워
+    ``2026. 7. 22. 00:00`` 을 만든다(U4 §1 계열1-25). 그래서 **서식에 시각이 없고
+    시각 성분이 정확히 자정**일 때만 날짜로 낸다 — 두 조건을 함께 요구하므로 시각
+    서식을 단 실제 자정 값은 잃지 않는다.
+    """
     if value is None:
         return ""
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, datetime):
+        if value.time() == time(0, 0) and not _format_carries_time(number_format):
+            return value.date().isoformat()
         return value.isoformat(sep=" ")
     if isinstance(value, (date, time)):
         return value.isoformat()
@@ -162,7 +193,14 @@ class ExcelDataSource:
                 if self.sheet
                 else formulas_wb[formulas_wb.sheetnames[0]]
             )
-            value_rows = list(values_ws.iter_rows(values_only=True))
+            # 값 워크시트는 **셀로** 훑는다 — 표시 서식(`number_format`)이 「이 날짜에
+            # 시각이 있는가」의 단일 출처인데 `values_only=True` 는 그것을 버린다.
+            value_cells = [tuple(row) for row in values_ws.iter_rows()]
+            value_rows = [tuple(cell.value for cell in row) for row in value_cells]
+            format_rows = [
+                tuple(getattr(cell, "number_format", None) for cell in row)
+                for row in value_cells
+            ]
             formula_rows = list(formulas_ws.iter_rows(values_only=True))
         finally:
             values_wb.close()
@@ -177,10 +215,12 @@ class ExcelDataSource:
         # 수십 개라 한 셀씩 고쳐 다시 여는 왕복이 사용자를 소모시킨다. 수집이 끝난 뒤
         # 레코드를 담기 전에 한 번에 거절한다(구제 경로 없음 — 여전히 loud reject).
         missing: list[tuple[int, int]] = []
-        rows: list[tuple[list[object], int]] = []
+        rows: list[tuple[list[object], list[str | None], int]] = []
         for offset, raw in enumerate(value_rows[self.header_row:], start=self.header_row + 1):
             formulas = formula_rows[offset - 1] if offset - 1 < len(formula_rows) else ()
+            formats = format_rows[offset - 1] if offset - 1 < len(format_rows) else ()
             resolved: list[object] = []
+            resolved_formats: list[str | None] = []
             width = max(len(raw), len(formulas))
             for column in range(width):
                 value = raw[column] if column < len(raw) else None
@@ -188,11 +228,12 @@ class ExcelDataSource:
                 if isinstance(formula, str) and formula.startswith("=") and value is None:
                     missing.append((offset, column + 1))
                 resolved.append(value)
-            rows.append((resolved, offset))
+                resolved_formats.append(formats[column] if column < len(formats) else None)
+            rows.append((resolved, resolved_formats, offset))
         if missing:
             raise _missing_formula_value_error(missing)
-        for resolved, offset in rows:
-            self._append_record(resolved, row_number=offset)
+        for resolved, resolved_formats, offset in rows:
+            self._append_record(resolved, row_number=offset, number_formats=resolved_formats)
 
     def _load_csv(self) -> None:
         with open(self.path, "r", encoding="utf-8-sig", newline="") as fh:
@@ -203,10 +244,16 @@ class ExcelDataSource:
         for offset, raw in enumerate(rows[self.header_row:], start=self.header_row + 1):
             self._append_record(raw, row_number=offset)
 
-    def _append_record(self, raw, *, row_number: int) -> None:
+    def _append_record(
+        self, raw, *, row_number: int, number_formats: "list[str | None] | None" = None
+    ) -> None:
         if raw is None:
             return
-        cells = [_cell_text(value) for value in raw]
+        formats = number_formats or ()
+        cells = [
+            _cell_text(value, formats[index] if index < len(formats) else None)
+            for index, value in enumerate(raw)
+        ]
         if all(c.strip() == "" for c in cells):
             return  # 빈 행 스킵
         overflow = cells[len(self._headers):]

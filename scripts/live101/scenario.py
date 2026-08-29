@@ -20,10 +20,12 @@ import posixpath
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from hwpxfiller.application.document_creation_vocabulary import (
+    DEFAULT_COLLISION_POLICY,
+)
 from hwpxfiller.domain.job import MISSING_MARKER
 from hwpxfiller.external.example_pack import (
     DATA_ASSETS,
-    EXAMPLE_GROUP,
     HWPX_ASSETS,
     TXT_ASSETS,
 )
@@ -308,12 +310,12 @@ def run(ctx: ScenarioContext) -> dict:
     s.wait(
         "document.getElementById('jobGenBtn').disabled"
         " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')"
-        " && !document.getElementById('jobPreviewOpen').disabled",
+        " && !document.getElementById('jobMirrorPreviewOpen').disabled",
         "첫 실행 검토 요구",
-        requires=["#jobGenBtn", "#jobGate", "#jobPreviewOpen"],
+        requires=["#jobGenBtn", "#jobGate", "#jobMirrorPreviewOpen"],
     )
     seen["first_run_review_required"] = True
-    s.click_sel("#jobPreviewOpen", what="생성 값 미리보기")
+    s.click_sel("#jobMirrorPreviewOpen", what="생성 값 미리보기")
     s.wait(
         "!document.getElementById('previewSheet').classList.contains('hidden')"
         " && document.querySelectorAll('#previewRows .mir-row').length > 0"
@@ -323,21 +325,17 @@ def run(ctx: ScenarioContext) -> dict:
     )
     ctx.shoot("preview-drawer")
     s.click_sel("#previewApprove", what="이 이름과 값으로 승인")
-    # 승인은 명시 사건이다 — 버튼이 사라지는 것이 그 사건의 착지다(면은 열린 채 남아
-    # 나머지 문서를 계속 넘겨볼 수 있다).
-    s.wait(
-        "getComputedStyle(document.getElementById('previewApprove')).display === 'none'",
-        "결과 확인 착지",
-        requires=["#previewApprove"],
-    )
-    seen["preview_approved"] = True
-    s.click_sel("#previewClose", what="확인 면 닫기")
+    # 승인은 **한 동작**이다(U4 계열1-21) — 확인했다는 뜻이므로 면이 함께 닫힌다. 종전
+    # 계약은 「승인 뒤 면 생존」이었고(`docs/archive/DATA_FIRST_INTEGRATION_MAP.md:1472`)
+    # 그 자리에서 나머지를 더 넘겨보게 했는데, 확인이 끝난 뒤의 열람은 다시 여는 것으로
+    # 족하다. 착지의 증거는 닫힘과 게이트 열림을 함께 본다.
     s.wait(
         "document.getElementById('previewSheet').classList.contains('hidden')"
         " && !document.getElementById('jobGenBtn').disabled",
-        "확인 뒤 게이트 열림",
+        "승인 착지 — 면 닫힘 + 게이트 열림",
         requires=["#previewSheet", "#jobGenBtn"],
     )
+    seen["preview_approved"] = True
     ctx.shoot("session-panel")
 
     # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------
@@ -941,7 +939,14 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.gate_dispatch("select_slot_option", mode="before")
     s.click_sel("#cs-opt-1-1", what="old-token Option command")
     s.wait_dispatch_gate("old-token command 보류")
-    s.wait("!!document.querySelector('.cs-status-pending')", "content command pending", requires=["#jobContentSelectionZone"])
+    # 왕복 중 표지는 임시 **줄**이 아니라 구획의 `aria-busy` 다(U4 계열1-26) — 줄이 섰다
+    # 사라지면 구획 높이가 두 번 튀어 「접혔다 깜빡인다」로 보인다.
+    s.wait(
+        "(document.querySelector('.content-selection')||{getAttribute:()=>null})"
+        ".getAttribute('aria-busy') === 'true'",
+        "content command pending",
+        requires=["#jobContentSelectionZone"],
+    )
     s.click_sel("#jobTplCheck", what="successor 템플릿 변경사항 확인")
     s.wait("!!document.getElementById('jobTplApply')", "successor 템플릿 적용 가능", timeout=30.0, requires=["#jobTplChange"])
     s.click_sel("#jobTplApply", what="successor 템플릿 적용")
@@ -1180,10 +1185,12 @@ def run_sx(ctx: ScenarioContext) -> dict:
     )
     ctx.create_collision(relative_path)
     baseline_manifest = ctx.output_manifest()
-    s.set_value("#jobDeliveryCollision", "OVERWRITE_EXPLICIT")
-    s.wait("!!window.__cap.btn(null,'덮어쓰기 사용')", "overwrite 명시 확인")
-    s.click_text(None, "덮어쓰기 사용")
-    s.click_sel("#jobRefreshDelivery", what="overwrite exact delivery 재계산")
+    # 충돌 처리 선택기는 없다(U4 계열2-27) — 기본이 덮어쓰기라 같은 이름은 막히지 않고
+    # `WRITE_OVERWRITE` 처분으로 선다. 「목록 새로 확인」도 없으므로(2-28) 재관찰은
+    # delivery 를 무효화하는 전이가 낸다: 같은 폴더를 다시 지정하는 것이 그 전이이고,
+    # REVIEW_DELIVERY 의 등록된 복구 동사(`#jobManagedPickFolder`)와 같은 자리다.
+    ctx.queue_folder_answer(output_dir)
+    s.click_sel("#jobManagedPickFolder", what="충돌 발생 뒤 delivery 재관찰")
     s.wait(
         "!!document.querySelector('#jobPlannedDocuments li[data-collision-disposition="
         "\"WRITE_OVERWRITE\"]')",
@@ -1215,20 +1222,15 @@ def run_sx(ctx: ScenarioContext) -> dict:
     preview_text = str(s.js("document.getElementById('previewSheet').innerText"))
     _expect("Artifact" not in preview_text and "아티팩트" not in preview_text, "H6: preview를 Artifact로 표현했습니다")
     s.click_sel("#previewApprove", what="current preview 승인")
-    # 승인이 착지하면 이 서랍은 승인 버튼을 **지운다**(`job_preview.ts:121-127` — 요구가 남아
-    # 있을 때만 서는 블록이라 satisfied 뒤에는 null 이다). 다른 변형(`:205-213`)은 display 로
-    # 숨기지만 여기 오는 것은 앞의 것이다. 그래서 「display 가 none 인가」로 재면
-    # `getElementById` 가 null 을 내고 `getComputedStyle` 이 던진다 — 착지가 예외로 둔갑한다.
-    # 착지의 증거는 버튼의 **부재**와 문안의 전환을 함께 본다: 문안만 보면 승인 전 버튼 라벨이
-    # 같은 말("확인 완료")을 해서 vacuous 하다.
+    # 승인이 착지하면 이 서랍은 승인 버튼을 **지우고**(`job_preview.ts:121-127` — 요구가 남아
+    # 있을 때만 서는 블록이라 satisfied 뒤에는 null 이다) 면이 닫힌다(U4 계열1-21). 문안으로
+    # 재지 않는 이유는 그대로다: 승인 전 버튼 라벨이 같은 말("확인 완료")을 해서 vacuous 하다.
     s.wait(
         "!document.getElementById('previewApprove')"
-        " && document.getElementById('previewSheet').textContent.includes('확인 완료')",
-        "current preview 승인 착지",
+        " && document.getElementById('previewSheet').classList.contains('hidden')",
+        "current preview 승인 착지 — 요구 소멸 + 면 닫힘",
         requires=["#previewSheet"],
     )
-    s.click_sel("#previewClose", what="managed preview 닫기")
-    s.wait("document.getElementById('previewSheet').classList.contains('hidden')", "managed preview 닫힘", requires=["#previewSheet"])
     # S6-05(#812): 클릭 간극이 닫혔다 — 열린 create 를 실제로 눌러 managed materialization
     # 이 actual WebView2 에서 문서를 앉히는 것까지가 이 지점의 수직 증거다(H6 극성 전환:
     # 「filesystem 불변」→「계획된 문서가 실제로 생겼다」).
@@ -1371,10 +1373,11 @@ def run_restart(ctx: ScenarioContext) -> dict:
         binding["active_field"] and not binding["pending_action"],
         "H7: durable Binding이 restart 뒤 복원되지 않았습니다",
     )
-    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. session 선언이
-    # 부활하는 것이 아니라는 사실을 세 값이 함께 말한다: 경로는 지난번 명시 지정 그대로이고
-    # 출처는 「기억한 폴더」인데, 지난 세션이 명시로 골랐던 파괴적 충돌 처리
-    # (OVERWRITE_EXPLICIT)는 비파괴 기본값으로 돌아와 있다.
+    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. 경로는
+    # 지난번 명시 지정 그대로이고 출처는 「기억한 폴더」다. 충돌 처리는 세션이 고르는 값이
+    # 아니게 됐으므로(U4 §2-27) 언제나 `DEFAULT_COLLISION_POLICY` 여야 한다 — 이 자리가
+    # 재는 것은 「세션 축이 restart 를 넘어 새어 오지 않는다」이고, 그 축이 하나 줄었을 뿐
+    # 판정은 그대로다(정책 이름을 여기 적지 않고 정본 상수를 읽는다).
     intent = wb.get("run_delivery_intent") or {}
     delivery_default = {
         "directory": intent.get("output_directory"),
@@ -1385,7 +1388,7 @@ def run_restart(ctx: ScenarioContext) -> dict:
         delivery_default == {
             "directory": ctx.output_dir,
             "source": "remembered",
-            "collision_policy": "ADD_SUFFIX",
+            "collision_policy": DEFAULT_COLLISION_POLICY,
         },
         f"H7: 저장 폴더 기억이 계약대로 복원되지 않았습니다 — {delivery_default!r}",
     )
@@ -1397,7 +1400,9 @@ def run_restart(ctx: ScenarioContext) -> dict:
             "durable": {"job": current.get("job_name"), "selections": selected, "binding": binding},
             "delivery_default": delivery_default,
             "data_restored": data_restored,
-            "session_absent": {"active_work_before_reselect": True, "delivery_collision": True, "preview": True},
+            # 세션 축은 둘이다 — 충돌 처리는 U4 §2-27 에서 세션이 고르는 값이 아니게 돼
+            # 「부활하지 않았다」고 말할 것 자체가 없다(위 delivery_default 가 기본값을 잰다).
+            "session_absent": {"active_work_before_reselect": True, "preview": True},
             "filesystem_before": before_files,
             "filesystem_after": after_files,
         }
@@ -1675,7 +1680,7 @@ def _approve(
     것까지가 계약이다 — 생성된 파일에서만 확인하면 「나중에 보였다」만 증명된다.
     """
     s = ctx.surface
-    opener = "#jobManagedPreviewOpen" if managed else "#jobPreviewOpen"
+    opener = "#jobManagedPreviewOpen" if managed else "#jobMirrorPreviewOpen"
     s.wait(
         f"!!document.querySelector('{opener}') && !document.querySelector('{opener}').disabled",
         f"{what} 미리보기 열기 가능",
@@ -1709,7 +1714,7 @@ def _approve(
             "const st=getComputedStyle(b);return {label:b.textContent.trim(),"
             " disabled:b.disabled, rects:b.getClientRects().length, display:st.display};});"
             "return {sheet_hidden: !sh || sh.classList.contains('hidden'), approvals: all,"
-            " opener_disabled: (document.getElementById('jobPreviewOpen')||{}).disabled,"
+            " opener_disabled: (document.getElementById('jobMirrorPreviewOpen')||{}).disabled,"
             # 셸 상태기계가 「지금 어느 화면인가」를 어떻게 답하는지 — `openPreview` 가 그
             # 답으로 열지 말지를 가르므로(`job_run.ts`), DOM 의 `.on` 과 갈리면 버튼이
             # 죽는다. 튜토리얼 패널 루트가 그 답을 `data-screen` 으로 이미 그리고 있다.
@@ -1743,20 +1748,14 @@ def _approve(
         )
     sheet_text = str(s.js("document.getElementById('previewSheet').innerText"))
     s.click_sel("#previewApprove", what=f"{what} 이 이름과 값으로 승인")
-    # 승인의 착지는 버튼의 **부재 또는 숨김**이다. 서랍 변형이 둘이라(하나는 노드를 지우고
-    # 하나는 display 로 숨긴다) 한쪽만 겨누면 착지가 예외로 둔갑한다(run_sx 가 만난 함정).
-    s.wait(
-        "(function(){const b=document.getElementById('previewApprove');"
-        "return !b || getComputedStyle(b).display === 'none';})()",
-        f"{what} 승인 착지",
-        timeout=30.0,
-        requires=["#previewSheet"],
-    )
-    s.click_sel("#previewClose", what=f"{what} 확인 면 닫기")
+    # 승인이 면을 닫는다(U4 계열1-21) — 그래서 착지는 버튼의 꼴이 아니라 **면의 부재**로
+    # 잰다. 버튼으로 재던 종전 방식은 서랍 변형이 둘이라(하나는 노드를 지우고 하나는
+    # display 로 숨긴다) 한쪽만 겨누면 착지가 예외로 둔갑했다(run_sx 가 만난 함정).
     s.wait(
         "(function(){const sh=document.getElementById('previewSheet');"
         "return !sh || sh.getClientRects().length === 0;})()",
-        f"{what} 확인 면 닫힘",
+        f"{what} 승인 착지 — 확인 면 닫힘",
+        timeout=30.0,
     )
     return sheet_text
 
@@ -2317,17 +2316,26 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         f"T0: 라이브러리의 예제 템플릿이 {installed_rows}건입니다"
         f" (기대 {len(HWPX_ASSETS) + len(TXT_ASSETS)}건)",
     )
-    grouped = bool(s.js(
-        "document.getElementById('scr-editor').innerText.includes("
-        f"{json.dumps(EXAMPLE_GROUP, ensure_ascii=False)})"
-    ))
-    _expect(grouped, f"T0: 설치한 템플릿이 '{EXAMPLE_GROUP}' 그룹으로 묶이지 않았습니다")
+    # 그룹 표면은 U4 §2-30 에서 걷혔다 — 「'예제' 그룹으로 묶였는가」는 이제 화면에서 잴 수
+    # 없는 사실이다(지정 자체는 동결 모델에 계속 서고 `tests/test_example_pack.py` 가 진다).
+    # 그 자리를 **음성 단언**으로 바꾼다: 걷힌 좌표가 되살아나면 시끄럽게 실패한다.
+    #
+    # 낱말이 아니라 **좌표**를 겨눈다 — 「예제」는 설치 버튼·자산 이름·튜토리얼 문안에도
+    # 정당하게 있으므로 문자열 부재로 재면 참인 적이 없는 단언이 된다.
+    group_surface = s.js(
+        "(function(){const r=document.getElementById('scr-editor');return r ? "
+        "r.querySelectorAll('.job-grp-head, .grp-more, [data-act=lib-assign]').length : -1;})()"
+    )
+    _expect(
+        group_surface == 0,
+        f"T0: 걷힌 그룹 표면이 편집기에 남아 있습니다(구획 머리·그룹 ⋮·지정 칩) — {group_surface!r}",
+    )
     _leave_editor(ctx, "설치 확인")
     pinned = _pinned_examples(ctx, len(DATA_ASSETS))
     facts["install"] = {
         "templates": installed_rows,
         "pinned": pinned["matched"],
-        "grouped": grouped,
+        "group_surface_gone": group_surface == 0,
         "confirm_body": install_body,
         "installed_files": [rel for rel in INSTALLED_RELATIVE if rel in after_install],
     }

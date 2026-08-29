@@ -1039,7 +1039,7 @@ def _healthy_onboarding_report(**observation_overrides) -> dict:
     facts = {
         "home_before_install": ["settings.json"],
         "moment_visible": "T0",
-        "install": {"templates": 5, "pinned": 2, "grouped": True},
+        "install": {"templates": 5, "pinned": 2, "group_surface_gone": True},
         "basic": {
             "documents": 3,
             "approval_rearmed": False,
@@ -1110,8 +1110,8 @@ def test_an_empty_onboarding_observation_is_never_green() -> None:
         ({"all_complete": False}, "전체 완주"),
         ({"tiers": {"basic": True, "applied": True, "advanced": True, "deep": False}}, "졸업하지 못한"),
         ({"achieved": ["T0"]}, "체크리스트 완주"),
-        ({"install": {"templates": 3, "pinned": 2, "grouped": True}}, "예제 템플릿"),
-        ({"install": {"templates": 5, "pinned": 0, "grouped": True}}, "고정된 예제 데이터"),
+        ({"install": {"templates": 3, "pinned": 2, "group_surface_gone": True}}, "예제 템플릿"),
+        ({"install": {"templates": 5, "pinned": 0, "group_surface_gone": True}}, "고정된 예제 데이터"),
         ({"moment_visible": ""}, "순간 카드"),
         ({"basic": {"documents": 0, "approval_rearmed": False, "second_run": {"overwrite_confirmed": True}}}, "기본 티어 생성"),
         ({"basic": {"documents": 3, "approval_rearmed": True, "second_run": {"overwrite_confirmed": True}}}, "작업당 1회"),

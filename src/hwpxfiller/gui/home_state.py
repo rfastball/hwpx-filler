@@ -675,13 +675,18 @@ class HomeViewModel:
             ]
         return rows
 
-    def library_sections(self) -> "list[GroupSection]":
+    def library_sections(self, *, grouped: bool = True) -> "list[GroupSection]":
         """보기별 투영(§19.6 표) — 모든 작업만 구획, 나머지는 평면.
 
         - 모든 작업: 사용자 group 구획(그룹 이름순 → 「그룹 없음」 마지막), 그룹 안 이름순.
           저장된 이름 있는 group 이 하나도 없으면 헤더 없는 평면으로 퇴화한다(1구획 반환).
         - 최근 사용: `last_run_at` 최신순 / 즐겨찾기: `favorited_at` 최신순 / 확인 필요:
           심각도 → 이름순. 동률은 전부 이름순(결정적 순서).
+
+        ``grouped=False`` 는 group 축을 **묻지 않는** 호출이다(U4 §2-30). 제품 표면에서
+        그룹이 걷힌 뒤 링2 가 쓰는 것이 이 갈래다: 저장된 group 값이 남아 있어도 구획을
+        만들지 않는다 — 지울 동사가 없는 구획을 그리면 「복구 동사 없는 표면」이 된다.
+        group 판정 자체는 **동결**이라 여기 그대로 살아 있고 이 파일의 테스트가 계속 진다.
         """
         rows = self._library_pool()
         if self.library_view == VIEW_RECENT:
@@ -702,7 +707,7 @@ class HomeViewModel:
         named: "dict[str, list[JobRow]]" = {}
         for r in sorted(rows, key=lambda r: r.name):
             named.setdefault(r.group, []).append(r)
-        groups = sorted(g for g in named if g)
+        groups = [] if not grouped else sorted(g for g in named if g)
         if not groups:  # 저장된 이름 있는 group 0개 = 헤더 없는 평면(퇴화 불변식)
             flat = [r for r in sorted(rows, key=lambda r: r.name)]
             return [GroupSection(value="", count=len(flat), rows=flat)]

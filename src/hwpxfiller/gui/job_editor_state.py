@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..domain.mapping import MappingProfile
+from .run_state import unresolved_name_tokens_in
 
 # ── 연결 확정 대기(#911) ────────────────────────────────────────────────────────────────
 # 「변경 저장」과 **다른 동사**다. 관리 검토가 연결 확정을 요구하는데 매핑이 이미 옳으면
@@ -85,7 +86,20 @@ def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "
         return SaveVerdict(
             "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요."
         )
-    return SaveVerdict(profile=model.to_profile(name))
+    profile = model.to_profile(name)
+    # 미해소 파일명 토큰은 **저장 시점**에 막는다(U4 계열4-4). 이 검사는 데이터가 필요 없는
+    # 작업 정의 수준 계약이라 여기서 답할 수 있고, 실행 화면까지 미루면 「고칠 자리는 편집기인데
+    # 지적은 문서 만들기에서」가 돼 수정 동선이 갈린다. 판정 몸통은 실행 게이트와 공유한다.
+    if media != "txt":
+        unresolved = unresolved_name_tokens_in(profile, pattern)
+        if unresolved:
+            listed = ", ".join(f"{{{{{token}}}}}" for token in unresolved)
+            return SaveVerdict(
+                f"파일명 패턴의 {listed} 에 채울 값이 없습니다. "
+                "매핑에서 그 항목을 연결하거나 패턴에서 지운 뒤 저장하세요.",
+                blocked_field="pattern",
+            )
+    return SaveVerdict(profile=profile)
 
 
 def needs_overwrite_confirm(

@@ -68,9 +68,10 @@ export const B_KEYS = Object.freeze([
 
 /* ────────────────────────── 인라인 조각 ────────────────────────── */
 
-/** 라이브러리 표면 실재(app.py:3729-3731) — 축 4종과 2-pane 골격의 id 전수. */
+/** 라이브러리 표면 실재(app.py:3729-3731) — 축 3종과 2-pane 골격의 id 전수.
+ *  넷째 축이던 태그 facet(`libraryFacets`)은 U4 §2-30 에서 태그 표면과 함께 걷혔다. */
 const LIBRARY_SURFACE_IDS = Object.freeze([
-  "scr-library", "libraryViewTabs", "libraryModeFilters", "libraryFacets",
+  "scr-library", "libraryViewTabs", "libraryModeFilters",
   "librarySearch", "libraryList", "libraryDetail", "libraryCount",
 ]);
 

@@ -3,7 +3,7 @@
 계약 §19.6(전역 문서 작업 라이브러리)·§19.7(전역 작업 건강)의 표면. **홈 화면을 대체한다**
 (재작성 F2, 지도 §10.8): 카드 나열 + group-by 렌즈였던 홈은 죽고, 저장된 작업을 찾는 자리가
 이 화면 하나로 모였다. 링1 VM(:class:`~hwpxfiller.gui.home_state.HomeViewModel`)의 라이브러리
-투영·건강 번역·facet 판정을 **그대로** 소비한다 — 백엔드 판정 재구현 0.
+투영·건강 번역을 **그대로** 소비한다 — 백엔드 판정 재구현 0.
 
 (링1 모듈은 ``home_state``·``HomeViewModel`` 이름을 유지한다 — 지도 §10.3 이 "재작성 무영향"
 자산으로 배정했다. 링2 만 어휘를 정산했다: 이 파일·푸시 채널·액션 키가 ``library`` 다.)
@@ -12,15 +12,17 @@
 「작업 편집」 같은 이동은 링2(웹)가 대상 화면의 자체 dispatch 로 미리 겨눈 뒤 셸 라우터
 (앱 셸이 내는 `Nav` — 전역이 아니라 주입으로 닿는다)로 전환한다.
 
-**좌 목록 관리 동사의 소유(지도 §10.8 판정 F)**: 이름 변경·그룹 지정·그룹 이름 변경·해산은
-「문서 만들기」 컨트롤러가 계속 소유하고 링2가 교차 화면 dispatch 로 부른다 — 그 동사들은
-열린 세션의 정체(``job_name``)와 결속돼 있어 여기서 재구현하면 판정이 둘로 갈린다. 이 화면이
-직접 소유하는 것은 라이브러리 자신의 축(보기·방식·검색·facet·접힘·선택)과, 세션 정체와 무관한
-관리 동사(즐겨찾기·복제·태그·삭제·다시 연결·손상 조치)뿐이다.
+**좌 목록 관리 동사의 소유(지도 §10.8 판정 F)**: 이름 변경은 「문서 만들기」 컨트롤러가
+계속 소유하고 링2가 교차 화면 dispatch 로 부른다 — 열린 세션의 정체(``job_name``)와 결속돼
+있어 여기서 재구현하면 판정이 둘로 갈린다. 이 화면이 직접 소유하는 것은 라이브러리 자신의
+축(보기·방식·검색·선택)과, 세션 정체와 무관한 관리 동사(즐겨찾기·복제·삭제·다시 연결·손상
+조치)뿐이다.
 
-**그룹 접힘의 소유**: 이 화면이 쓰고(``toggle_group``) 「작업」 좌 목록이 함께 읽는다. 영속
-키는 기존 ``job_collapsed_groups`` 를 그대로 쓴다 — 키 개명은 마이그레이션 비용만 낳고 얻는
-것이 어휘뿐이다(좌 목록은 F2 PR-B 에서 죽고 이 화면이 유일 소유자가 된다).
+**그룹·태그는 표면에 없다(U4 §2-30)**: 그룹 지정/이름 변경/해산·접힘, 태그 편집, 그리고 태그로
+좁히던 facet 칩이 함께 걷혔다 — 태그를 만들 자리가 없는데 태그로 좁히는 칩만 남기면 신규
+사용자에게 영영 빈 줄이다. 링0·링1 의 group/tag 판정과 영속(``Job.group``·``Job.tags``·
+``job_collapsed_groups``·``template_groups``)은 **동결**이다: 지우지 않고 두되 제품 표면이
+읽지도 쓰지도 않는다(나라장터 소스와 같은 처분). 되살릴 때 이 화면이 다시 소비하면 된다.
 
 **남은 스코프 경계(조용히 빠뜨리지 않고 명시)**:
 - Template/Binding **판본**은 §19.6 상세가 요구하지만 F7 신설분이라 오늘 존재하지 않는다.
@@ -61,7 +63,6 @@ from ..gui.home_state import (
 )
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
 from .screens import PushSink, relink_job_template
-from ..external.settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 def mode_label(filter_value: str) -> str:
     """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.gui.work_mode`) 위임.
@@ -108,8 +109,8 @@ def primary_action(row: JobRow) -> dict:
 def _job_row_dict(r: JobRow) -> dict:
     """행 1건 성형 — 링1 JobRow 표면만 읽는다(VM 로직 재구현 없음).
 
-    §19.6 "행은 이름, 작업 방식 텍스트, 사용자 group, 최근 사용, 작업 건강, 즐겨찾기를
-    보여준다". 컴파일 배지의 심각도(pill 색 레벨)는 :func:`badge_level`(RC-29 단일 어휘)로
+    §19.6 "행은 이름, 작업 방식 텍스트, 최근 사용, 작업 건강, 즐겨찾기를 보여준다"
+    (사용자 group 은 U4 §2-30 에서 표면이 걷혀 행에도 싣지 않는다). 컴파일 배지의 심각도(pill 색 레벨)는 :func:`badge_level`(RC-29 단일 어휘)로
     파생해 템플릿 관리 화면과 같은 상태에 같은 신호를 낸다.
     """
     mode = library_mode_of(r)
@@ -125,7 +126,6 @@ def _job_row_dict(r: JobRow) -> dict:
         "last_run_display": r.last_run_display,
         "template_missing": r.template_missing,
         "runnable": r.is_runnable(),
-        "group": r.group,
         "favorited": bool(r.favorited_at),
         # 필터가 쓰는 **정규화된** 매체를 그대로 싣는다(리뷰 P2): 미연결을 hwpx 로 걸러 놓고
         # 페이로드엔 빈 값을 주면 소비자가 같은 행을 다른 방식으로 읽는다(표시=판정 정합 붕괴).
@@ -166,9 +166,6 @@ class LibraryController:
         self._generation_lock = generation_lock
         self._push_sink = push
         self._deleted_job_slot = None
-        # 「모든 작업」 보기의 그룹 접힘(§19.6 ``collapsedGroups``) — 보기만 바꾸고 행을
-        # 집합에서 빼지 않는다. 영속은 「작업」 좌 목록과 **같은 설정 키**(단일 정본).
-        self._collapsed: "set[str]" = set(load_job_collapsed_groups())
         # 상세 패널이 겨눈 작업(§19.6 ``selectedWorkId``) — **활성 작업과 무관**하다.
         # 여기서 행을 골라도 「문서 만들기」의 선택·데이터·승인은 불변이다(§19.6 서문).
         self.selected_work: str = ""
@@ -181,36 +178,24 @@ class LibraryController:
         self._push_sink(self.name, self.snapshot())
 
     # ------------------------------------------------------------- 스냅샷
-    def _facets(self) -> "list[dict]":
-        return [
-            {
-                "axis": fa.axis,
-                "values": [
-                    {"value": v.value, "count": v.count, "active": v.active}
-                    for v in fa.values
-                ],
-            }
-            for fa in self.vm.facets()
-        ]
-
     def _sections(self) -> "list[dict]":
-        """현재 보기의 구획 — 「모든 작업」만 사용자 group 으로 나뉘고 나머지는 평면.
+        """현재 보기의 구획 — U4 §2-30 이후 **언제나 헤더 없는 평면 하나**다.
 
-        ``is_untagged`` 로 「그룹 없음」과 "나눌 group 이 없어 퇴화한 평면"을 가른다(링1
-        계약) — 표면이 값으로만 키잉하면 퇴화 평면에 헤더가 붙는다. 접힘은 **행을 지우지
-        않고** 표식만 실어 보낸다: 접었다고 건수가 달라지면 목록이 자기 사실을 배신한다.
+        구획을 만들던 축은 사용자 group 하나였고 그 표면이 걷혔다. 링1 의 group 판정은
+        동결이라 살아 있지만(`library_sections(grouped=True)`) 제품은 묻지 않는다 —
+        저장된 group 값으로 구획을 그리면 이름을 바꾸거나 해산할 동사가 없는 헤더가 선다.
+        모양(`headed`·`is_untagged`·`collapsed`)은 링1 퇴화 갈래가 내는 값 그대로 싣는다.
         """
         out: "list[dict]" = []
-        for sec in self.vm.library_sections():
+        for sec in self.vm.library_sections(grouped=False):
             headed = bool(sec.value) or sec.is_untagged
             out.append({
                 "value": sec.value,
                 "label": NO_GROUP_LABEL if sec.is_untagged else sec.value,
                 "count": sec.count,
                 "is_untagged": sec.is_untagged,
-                # 헤더가 있는 구획만 접을 수 있다 — 퇴화 평면엔 접을 헤더가 없다.
                 "headed": headed,
-                "collapsed": headed and sec.value in self._collapsed,
+                "collapsed": False,
                 "rows": [_job_row_dict(r) for r in sec.rows],
             })
         return out
@@ -233,8 +218,6 @@ class LibraryController:
         mode = library_mode_of(row)
         return {
             **_job_row_dict(row),
-            # 정체 메타는 **상세만** 싣는다(행은 걸러진 투영이라 정체의 원천이 될 수 없다).
-            "tags": dict(row.tags),
             "primary": primary_action(row),
             "template_name": row.template_name,
             # 템플릿 전체 경로(U2 §2.20, #342) — 상세의 「열기」·「폴더에서 보기」가 겨눈다.
@@ -273,17 +256,12 @@ class LibraryController:
             # 실행 자체는 tpl 채널의 `install_examples` 를 교차 화면 dispatch 로 부른다:
             # 설치는 템플릿 라이브러리의 사건이지 작업 레지스트리의 사건이 아니다.
             "examples": example_pack.entry_point_state(),
-            # 라이브러리 browser(§19.6) — 보기 4종 × 작업 방식 × 검색 × 태그 facet.
+            # 라이브러리 browser(§19.6) — 보기 4종 × 작업 방식 × 검색.
             "view": self.vm.library_view,
             "mode": self.vm.library_mode,
             "query": self.vm.library_query,
             "counts": self.vm.library_counts(),
-            "facets": self._facets(),
             "sections": self._sections(),
-            # 그룹 이동 다이얼로그의 도착지 후보 — **레지스트리 전역**이다(리뷰 1R P2).
-            # 구획(`sections`)에서 파생하면 평면 보기(최근·즐겨찾기·확인 필요)나 켜진
-            # 필터가 목록에서 뺀 그룹이 도착지에서도 사라진다: 있는 그룹으로 못 옮긴다.
-            "group_names": self._job_registry.groups(),
             "selected": self.selected_work,
             "detail": self._detail(),
             # 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 조치 경로(#26 #8).
@@ -307,7 +285,7 @@ class LibraryController:
 
     # ------------------------------------------------------------- 라이브러리 축
     def _do_set_view(self, p: dict) -> None:
-        """보기 교체(§19.6) — 검색어·방식 필터·facet 은 유지한다(축이 다르므로 서로 지우지 않는다)."""
+        """보기 교체(§19.6) — 검색어·방식 필터는 유지한다(축이 다르므로 서로 지우지 않는다)."""
         self.vm.set_library_view(p.get("view") or "")
 
     def _do_set_mode(self, p: dict) -> None:
@@ -316,36 +294,16 @@ class LibraryController:
     def _do_set_query(self, p: dict) -> None:
         self.vm.set_library_query(str(p.get("text", "")))
 
-    def _do_toggle_facet(self, p: dict) -> None:
-        self.vm.toggle_facet(p["axis"], p["value"])
-
-    def _do_clear_facets(self, p: dict) -> None:
-        self.vm.clear_facets()
-
     def _do_clear_filters(self, p: dict) -> None:
         """필터를 전부 지우고 「모든 작업」으로 — 0건 화면의 상주 출구(§8.4 도달성 면).
 
-        보기·방식·검색·facet 넷이 이 화면의 절단자다. 0건이 됐을 때 어느 축이 범인인지
-        일일이 되짚게 두면 필터 밖 작업에 도달할 길이 사실상 사라진다.
+        보기·방식·검색 셋이 이 화면의 절단자다(태그 facet 은 U4 §2-30 에서 걷혔다). 0건이
+        됐을 때 어느 축이 범인인지 일일이 되짚게 두면 필터 밖 작업에 도달할 길이 사실상
+        사라진다.
         """
-        self.vm.clear_facets()
         self.vm.set_library_mode("")
         self.vm.set_library_query("")
         self.vm.set_library_view("")
-
-    def _do_toggle_group(self, p: dict) -> None:
-        """그룹 접힘/펼침 — 마지막 상태를 Python 설정에 영속(#74 전례).
-
-        접힘은 **보기**만 바꾼다: 행은 집합에서 빠지지 않아 건수·검색 판정에 무영향이다.
-        ``""`` 는 「그룹 없음」 구획. 「작업」 좌 목록과 같은 키를 쓰므로 그쪽 화면도 다음
-        ``refresh`` 에서 같은 접힘을 본다(제2 정본 금지).
-        """
-        g = p["group"]
-        if g in self._collapsed:
-            self._collapsed.discard(g)
-        else:
-            self._collapsed.add(g)
-        save_job_collapsed_groups(sorted(self._collapsed))
 
     def _do_select_work(self, p: dict) -> None:
         """상세 패널이 겨눌 행(§19.6 ``selectedWorkId``) — **활성 작업은 바뀌지 않는다**.
@@ -447,19 +405,9 @@ class LibraryController:
         어차피 빈 상태로 정직하게 그려진다).
         """
         self.vm.refresh()
-        self._collapsed = set(load_job_collapsed_groups())
         sel = str(p.get("select", "") or "")
         if sel and any(r.name == sel for r in self.vm.rows()):
             self.selected_work = sel
-
-    # ------------------------------------------------------- 태그 편집(#26 #2·D14)
-    def _do_set_tags(self, p: dict) -> None:
-        """작업의 분류 태그(축→값)를 통째로 교체·저장 — VM seam 위임(#44).
-
-        검증(비어 있지 않은 축·값 문자열)·저장·refresh 는 전부
-        :meth:`HomeViewModel.set_tags` 가 소유한다 — 다른 액션들과 같은 위임 규약.
-        """
-        self.vm.set_tags(p["name"], p.get("tags", {}))
 
     # ------------------------------------------------- 손상 작업 조치(#26 #8·UD-44)
     def validate_corrupt_path(self, raw: str) -> Path:

@@ -44,15 +44,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .topbar{background:var(--n-header-bg);border-bottom:1px solid var(--a-border);
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
   gap:var(--sp-16);padding:0 var(--sp-16);min-width:0}
-.topbar .brand{font-weight:700;font-size:var(--fs-strong);letter-spacing:-.02em;min-width:0}
-/* #258 문서나르미 락업 — 세 열린 문서 면이 원본·처리·결과 순으로 오른쪽 위로 흐른다.
-   타일 없이도 16px에서 색과 사선 외곽이 남으며, 제품 고유색은 UI 액센트와 분리한다. */
-.brand-lockup{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
-.brand-mark{width:24px;height:24px;flex:none}
-.brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 좌상단 브랜드 락업(심벌 + 워드마크)은 U4 §2-33 에서 걷혔다. 세 열 grid 는 그대로 두고
+   자리만 비운다 — 첫 열이 비어 있는 것이 가운데 내비를 **광학적으로 중앙**에 세우는 근거다
+   (열을 둘로 줄이면 내비가 왼쪽으로 붙는다). 제품 정체는 창 제목·설치본 아이콘이 진다. */
 /* 세그먼트 내비 — 가운데 정렬 한 묶음, 계약 2탭 최종 형상(F8 §10.17.2 판정 E — 과도기
    임시 탭·구분선(.nav-sep) 기제는 제도째 은퇴). */
-.nav{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-4);
+.nav{grid-column:2;display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-4);
   background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control);
   min-width:0;overflow:auto}
 /* 탭 항목: 아이콘(.ni SVG 상시) + 라벨(.lbl>.n). 활성=틴트+액센트 잉크(레일의 좌측 막대는
@@ -71,7 +68,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .navbtn[aria-current="true"] .n{font-weight:600}
 .navbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
 /* 셸 도구(테마·글자 크기) — navbtn 이 아니다(라우팅 대상 아님). 값 라벨 .d 는 현재 모드. */
-.topbar-tools{display:flex;align-items:center;gap:var(--sp-4);justify-self:end}
+.topbar-tools{grid-column:3;display:flex;align-items:center;gap:var(--sp-4);justify-self:end}
 .shell-tool{font:inherit;cursor:pointer;border:0;background:transparent;color:var(--n-ink-control);
   padding:var(--sp-6) var(--sp-8);border-radius:var(--rad-control);
   display:flex;align-items:center;gap:var(--sp-6);white-space:nowrap}
@@ -79,10 +76,11 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .shell-tool .d{font-size:var(--fs-caption);color:var(--a-muted)}
 .shell-tool:hover{background:var(--n-hover)}
 .shell-tool:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
-/* 좁은 창: 브랜드 워드마크·도구 값 라벨을 접어 탭 4개의 자리를 먼저 지킨다(도달성 우선). */
+/* 좁은 창: 도구 값 라벨을 접어 탭의 자리를 먼저 지킨다(도달성 우선). 브랜드 워드마크가
+   이 접힘의 첫 대상이었으나 §2-33 에서 표면째 사라졌고, 접힘 계약을 실앱에서 지키는 축은
+   이제 이 값 라벨 하나다(`persistence_geometry` 프로브의 `tool_labels_visible`). */
 @media (max-width:820px){
   .topbar{grid-template-columns:auto 1fr auto;padding:0 var(--sp-10);gap:var(--sp-8)}
-  .brand-name{display:none}
   .shell-tool .d{display:none}
 }
 

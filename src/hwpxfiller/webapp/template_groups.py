@@ -182,7 +182,9 @@ class TemplateGroupModel:
         self._persist(self._assign, new_collapsed)
 
     # ---------------------------------------------------------- 구획 뷰
-    def build_sections(self, items: "list", key_of) -> "tuple[list[dict], bool]":
+    def build_sections(
+        self, items: "list", key_of, *, grouped_view: bool = True
+    ) -> "tuple[list[dict], bool]":
         """행 목록 → ``(sections, flat)`` (screen_job._job_sections 동형).
 
         - 그룹 배열 = 이름순 안정(결정 4), 「그룹 없음」(``group==""``)은 마지막.
@@ -190,10 +192,14 @@ class TemplateGroupModel:
           이때도 sections 는 무그룹 1구획으로 돌아가 표면이 분기 없이 그린다.
         - ``collapsed`` 는 영속 접힘 집합의 사영(``flat`` 이면 항상 펼침).
         각 section: ``{"group", "collapsed", "count", "items"}`` — items 는 넘어온 행 그대로.
+
+        ``grouped_view=False`` 는 그룹 축을 **묻지 않는** 호출이다(U4 §2-30 — 템플릿 그룹
+        표면이 걷혔다). 저장된 지정이 남아 있어도 퇴화 갈래로 답한다: 지정을 바꿀 동사가
+        없는 헤더를 그리지 않기 위해서다. 지정·접힘·개명·해산 판정은 동결로 남는다.
         """
         grouped: "dict[str, list]" = {}
         for it in items:
-            grouped.setdefault(self.group_of(key_of(it)), []).append(it)
+            grouped.setdefault(self.group_of(key_of(it)) if grouped_view else "", []).append(it)
         named = sorted(g for g in grouped if g)
         flat = not named
         order = named + ([""] if "" in grouped else [])

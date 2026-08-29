@@ -287,7 +287,18 @@ test("사라진 이전 선택은 현재 포함 내용과 분리된 informational
 test("pending 동안 radio 를 disabled 로 그려 중복 mutation 을 막는다", () => {
   const html = render(stateOf(NEEDS, "pending"));
   assert.match(html, /disabled/);
-  assert.match(html, /반영 중/);
+  assert.match(html, /aria-busy="true"/);
+});
+
+test("pending 은 **줄을 세우지 않는다** — 왕복 하나에 높이가 두 번 튀지 않게", () => {
+  // U4 계열1-26: 임시 줄이 섰다 사라지면 구획이 「접혔다 깜빡인다」로 보이는데 그 사이
+  // 실제로 바뀐 것은 없다. 왕복 사실은 레이아웃을 안 건드리는 aria-busy·disabled 가 진다.
+  const idle = render(stateOf(NEEDS, "idle"));
+  const pending = render(stateOf(NEEDS, "pending"));
+  const statusLines = (html) => (html.match(/class="cs-status/g) || []).length;
+
+  assert.equal(statusLines(pending), statusLines(idle));
+  assert.ok(!pending.includes("cs-status-pending"));
 });
 
 test("context error 는 backend 사용자 문안만 service와 alert에 공유한다", async () => {

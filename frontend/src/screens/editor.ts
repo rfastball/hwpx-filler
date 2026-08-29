@@ -33,7 +33,6 @@ import type {
   ContextMenuPopoverPort,
 } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
-import type { GroupMoveDialogController } from "./group_move_dialog.ts";
 import {
   NAME_FIELD, PATTERN_FIELD, editorRevision, editorServerValues, editorSession,
   emptyDraft, hasPendingEdits, ingestSnapshot, issueToken, markField,
@@ -68,7 +67,6 @@ export type EditorControllerDeps = {
   modal: ModalPort;
   undo: UndoPort;
   popover: ContextMenuPopoverPort;
-  groupMove: GroupMoveDialogController;
   chain: ChainPort;
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
   notify(message: string): void;
@@ -139,9 +137,8 @@ type TxtEditState = {
 
 type LibMenu = {
   media: string;
-  kind: "row" | "group";
+  kind: "row";
   key?: string;
-  group?: string;
   item?: Obj | null;
   trigger: HTMLElement;
 };
@@ -425,42 +422,28 @@ export function createEditorController(deps: EditorControllerDeps) {
     libContextMenu.close();
   }
 
-  function openLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {
-    let items: ContextMenuItem[];
-    if (kind === "group") {
-      items = [
-        { action: "grp-rename", label: "그룹 이름 변경" },
-        { action: "grp-disband", label: "그룹 해산" },
-      ];
-      patchView({ libMenu: { media, kind, group: id, trigger } });
-    } else {
-      const item = findLibItem(media, id);
-      /* 수선 동사의 목록·라벨은 링1 소유 — 스냅샷 actions 를 그대로 그린다(발명 금지). */
-      const repairs = media === "hwpx"
-        ? ((item && item.actions) || []).map((action: Obj) =>
-          ({ action: `act:${String(action.key)}`, label: String(action.label) }))
-        : (item && !item.error ? [{ action: "edit", label: "내용 편집" }] : []);
-      items = [...repairs];
-      if (item && item.group) {
-        items.push({ action: "move", label: "그룹으로 이동…", separatorBefore: repairs.length > 0 });
-      }
-      items.push({
-        action: "delete",
-        label: "삭제",
-        danger: true,
-        separatorBefore: repairs.length > 0 && !(item && item.group),
-      });
-      patchView({ libMenu: { media, kind, key: id, item, trigger } });
-    }
+  /* 겨눔은 **행 하나**다 — 그룹 갈래는 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
+  function openLibMenu(media: string, id: string, trigger: HTMLElement): void {
+    const item = findLibItem(media, id);
+    /* 수선 동사의 목록·라벨은 링1 소유 — 스냅샷 actions 를 그대로 그린다(발명 금지). */
+    const repairs = media === "hwpx"
+      ? ((item && item.actions) || []).map((action: Obj) =>
+        ({ action: `act:${String(action.key)}`, label: String(action.label) }))
+      : (item && !item.error ? [{ action: "edit", label: "내용 편집" }] : []);
+    const items: ContextMenuItem[] = [...repairs, {
+      action: "delete",
+      label: "삭제",
+      danger: true,
+      separatorBefore: repairs.length > 0,
+    }];
+    patchView({ libMenu: { media, kind: "row", key: id, item, trigger } });
     libContextMenu.open(trigger, items);
   }
 
-  function toggleLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {
+  function toggleLibMenu(media: string, id: string, trigger: HTMLElement): void {
     const open = view.libMenu;
-    const same = open !== null && open.kind === kind && open.media === media &&
-      (kind === "group" ? open.group === id : open.key === id);
-    if (same) { closeLibMenu(); return; }
-    openLibMenu(media, kind, id, trigger);
+    if (open !== null && open.media === media && open.key === id) { closeLibMenu(); return; }
+    openLibMenu(media, id, trigger);
   }
 
   async function handleLibMenu(action: string): Promise<void> {
@@ -468,10 +451,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (menu === null) return;
     closeLibMenu();
     try {
-      if (action === "move") openLibMoveDialog(menu.media, menu.item || null, menu.trigger);
-      else if (action === "delete") await deleteLibTemplate(menu.media, menu.item || null);
-      else if (action === "grp-rename") await renameLibGroup(menu.media, menu.group || "", menu.trigger);
-      else if (action === "grp-disband") await disbandLibGroup(menu.media, menu.group || "", menu.trigger);
+      if (action === "delete") await deleteLibTemplate(menu.media, menu.item || null);
       else if (action === "edit") {
         const item = menu.item || {};
         const result = await dispatch("tpl", "txt_content", { path: item.path });
@@ -579,47 +559,6 @@ export function createEditorController(deps: EditorControllerDeps) {
       else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
     } catch (error) {
       noticeSave(String((error as Obj)?.message || error));
-    }
-  }
-
-  function openLibMoveDialog(media: string, item: Obj | null, trigger: HTMLElement): void {
-    if (item === null) return;
-    const band = (snapshot().library || {})[media] || {};
-    deps.groupMove.open({
-      nameText: String(item.name || ""),
-      groups: band.group_names || [],
-      current: String(item.group || ""),
-      returnFocus: trigger,
-      onConfirm: (group) => dispatch("tpl", "set_group", { media, key: item.key, group })
-        .catch((error) => deps.notify(String((error as Obj)?.message || error))),
-    });
-  }
-
-  async function renameLibGroup(media: string, old: string, trigger: HTMLElement): Promise<void> {
-    const value = await deps.modal.prompt({
-      title: "그룹 이름 변경", body: `'${old}' 의 새 이름`, value: old, returnFocus: trigger,
-    });
-    if (value === null) return;
-    const result = await dispatch("tpl", "rename_group", { media, group: old, new: value });
-    if (result.needs_confirm) {
-      if (await deps.modal.confirm({
-        body: `'${result.new}' 그룹이 이미 있습니다. '${old}' 의 ${result.count}개를 '${result.new}'(${result.target}개)에 합칠까요?`,
-        confirmLabel: "합치기", cancelLabel: "취소", returnFocus: trigger,
-      })) {
-        await dispatch("tpl", "rename_group", { media, group: old, new: value, confirm: true });
-      }
-    } else if (result.error) {
-      noticeSave(String(result.error));      // 구조화 거절 — 인라인 채널(#323)
-    }
-  }
-
-  async function disbandLibGroup(media: string, name: string, trigger: HTMLElement): Promise<void> {
-    const result = await dispatch("tpl", "disband_group", { media, group: name });
-    if (result.needs_confirm && await deps.modal.confirm({
-      body: `'${name}' 그룹을 해산하면 ${result.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`,
-      returnFocus: trigger, confirmLabel: "해산", cancelLabel: "취소",
-    })) {
-      await dispatch("tpl", "disband_group", { media, group: name, confirm: true });
     }
   }
 
@@ -1195,7 +1134,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
     isLibMenuOpen: (): boolean => view.libMenu !== null,
     libContextMenu,
-    openLibMoveDialog, findLibItem,
+    findLibItem,
     openTxtEdit, patchTxtEdit, confirmDiscardTxtEdit, submitTxtEdit,
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
@@ -1308,15 +1247,10 @@ function LibRowTail(props: { media: string; item: Obj; controller: EditorControl
   /* legacy 는 두 버튼을 감싸지 않고 이어 붙였다 — 요소 트리에서 감싸면 `.libselrow` 의
      flex 자식 수가 바뀌어 배치가 달라진다. Fragment 는 DOM 노드를 만들지 않는다. */
   return createElement(Fragment, null,
-    item.group ? null : h("button", {
-      className: "tpl-assign", "data-act": "lib-assign", "data-media": media, "data-key": item.key,
-      onClick: (event: Obj) => controller.openLibMoveDialog(
-        media, controller.findLibItem(media, item.key), event.currentTarget),
-    }, "＋ 그룹 지정"),
     h("button", {
       className: "job-more", "data-act": "lib-more", "data-media": media, "data-key": item.key,
       "aria-haspopup": "true", "aria-label": "항목 관리",
-      onClick: (event: Obj) => controller.toggleLibMenu(media, "row", item.key, event.currentTarget),
+      onClick: (event: Obj) => controller.toggleLibMenu(media, item.key, event.currentTarget),
     }, "⋮"));
 }
 
@@ -1371,38 +1305,11 @@ function LibraryBand(props: {
   if (!total) {
     return h("div", { className: "muted", style: { padding: "var(--sp-8)" } }, emptyText);
   }
-  if (band.flat) {
-    /* 퇴화 불변식(그룹 0개) — 헤더 없는 평면 나열. */
-    return h("div", { className: "tpl-grp-rows flat" },
-      ...sections.flatMap((section: Obj) => (section.items || []).map((item: Obj) =>
-        h(Row as any, { key: item.key, item, controller }))));
-  }
-  /* 그룹 구획도 형제 나열이다(legacy `sections.map(...).join("")`). */
-  return createElement(Fragment, null,
-    ...sections.flatMap((section: Obj, index: number) => {
-      const label = section.group || "그룹 없음";
-      const head = h("div", { className: "job-grp", key: `head-${index}` },
-        h("button", {
-          className: "job-grp-head", id: `libgrp-${media}-${index}`,
-          "data-act": "toggle-lib-group", "data-group": section.group, "data-media": media,
-          "aria-expanded": section.collapsed ? "false" : "true",
-          onClick: () => controller.guarded(() => controller.sendEdit(
-            "toggle_library_group", { group: section.group, media })),
-        },
-        h("span", { className: "grp-name" }, label),
-        h("span", { className: "grp-count" }, String(section.count)),
-        h("span", { className: "grp-caret" }, section.collapsed ? "▸" : "▾")),
-        /* 명명 그룹만 ⋮(이름 변경·해산). 「그룹 없음」은 관리 대상이 아니다. */
-        section.group ? h("button", {
-          className: "job-more grp-more", "data-act": "lib-grp-more", "data-media": media,
-          "data-group": section.group, "aria-haspopup": "true", "aria-label": "그룹 관리",
-          onClick: (event: Obj) => controller.toggleLibMenu(
-            media, "group", section.group, event.currentTarget),
-        }, "⋮") : null);
-      if (section.collapsed) return [head];
-      return [head, h("div", { className: "tpl-grp-rows", key: `rows-${index}` },
-        ...(section.items || []).map((item: Obj) => h(Row as any, { key: item.key, item, controller })))];
-    }));
+  /* 그룹 구획은 없다(U4 §2-30) — 백엔드가 언제나 평면 1구획으로 답한다(`grouped_view=False`).
+     구획 구조는 스냅샷 계약이라 그대로 훑되 헤더는 그리지 않는다. */
+  return h("div", { className: "tpl-grp-rows flat" },
+    ...sections.flatMap((section: Obj) => (section.items || []).map((item: Obj) =>
+      h(Row as any, { key: item.key, item, controller }))));
 }
 
 function BandCap(props: { label: string; band: Obj }): ReactNode {
@@ -2000,11 +1907,18 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
     h(ContextBanner as any, { snapshot, controller }),
     h(StepHeader as any, { snapshot, controller }),
     h("div", { className: "wbody", id: "editor-body", "data-preserve-scroll": true },
-      /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄. */
+      /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄.
+         닫기는 **사용자 몫**이다(U4 계열1-20): 세우는 트리거는 그대로라 사유가 다시 서면
+         통지도 다시 서고, 해소를 자동 감지하려 들면 통지마다 해소 술어를 새로 지어야 한다. */
       snapshot.notice ? h("p", {
-        className: `note ${snapshot.notice.level === "ok" ? "quiet" : "warnbox"}`,
+        className: `note editor-notice ${snapshot.notice.level === "ok" ? "quiet" : "warnbox"}`,
         style: { whiteSpace: "pre-line" },
-      }, snapshot.notice.text) : null,
+      }, h("span", { className: "editor-notice-text" }, snapshot.notice.text),
+        h("button", {
+          className: "editor-notice-close", id: "editorNoticeClose", type: "button",
+          "aria-label": "알림 닫기",
+          onClick: () => { void controller.sendEdit("dismiss_notice", {}); },
+        }, "✕")) : null,
       body),
     h(SaveMessage as any, { view }),
     h(EditorFooter as any, { snapshot, draft, controller }),

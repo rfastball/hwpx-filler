@@ -73,11 +73,14 @@ function measureGrid(ctx) {
     doc.querySelectorAll(".navbtn"),
     (b) => b.offsetParent !== null,
   );
-  const brand = doc.querySelector(".brand-name");
+  // 접힘 축(U4 §2-33): 종전에는 브랜드 워드마크가 좁은 폭에서 접히는 것을 이 자리가
+  // 쟀는데 그 요소가 표면째 사라졌다. 축을 지우면 좁게/넓게 두 극이 같은 값을 내
+  // 대조가 vacuous 해지므로, **같은 미디어 쿼리가 접는** 도구 값 라벨로 옮긴다.
+  const toolLabel = doc.querySelector(".shell-tool .d");
   return {
     rows: ctx.win.getComputedStyle(app).gridTemplateRows.split(" ").length,
     tabs: tabs.length,
-    brand_visible: !!(brand && brand.offsetParent !== null),
+    tool_labels_visible: !!(toolLabel && toolLabel.offsetParent !== null),
     overflow: body.scrollWidth > body.clientWidth + 1,
   };
 }

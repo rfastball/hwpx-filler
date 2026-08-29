@@ -70,12 +70,18 @@ def _trashed_names(root: Path) -> "set[str]":
     return {p.name.split("-", 2)[2] for p in trash.iterdir() if p.is_file()}
 
 
-def _group_of(snapshot: dict, media: str, name: str) -> str:
-    for section in snapshot[media]["sections"]:
-        for item in section["items"]:
-            if Path(item["path"]).name == name:
-                return section["group"]
-    raise AssertionError(f"{media} 목록에 '{name}' 이 없습니다")
+def _group_of(ctrl, media: str, name: str) -> str:
+    """설치가 지정한 그룹 — **모델에서** 읽는다.
+
+    U4 §2-30 이후 스냅샷은 그룹 축을 싣지 않는다(표면이 걷혔다). 지정 자체는 동결로 계속
+    일어나므로 계약은 살아 있고, 그것을 확인할 자리가 표면에서 모델로 내려왔을 뿐이다.
+    """
+    model = ctrl.hwpx_groups if media == "hwpx" else ctrl.txt_groups
+    root = ctrl.vm.library_dir if media == "hwpx" else ctrl.text_registry.directory
+    for key in model._assign:
+        if Path(key).name == name:
+            return model.group_of(key)
+    raise AssertionError(f"{media} 지정에 '{name}' 이 없습니다 (root={root})")
 
 
 # ---------------------------------------------------------------- 누르기 전 홈 불가침
@@ -112,7 +118,8 @@ def test_first_call_restates_and_writes_nothing(tmp_path):
     assert f"TXT 기안 {len(example_pack.TXT_ASSETS)}건" in text
     assert f"예제 데이터 {len(example_pack.DATA_ASSETS)}건" in text
     assert str(lib) in text and str(txt_dir) in text and str(default_example_data_dir()) in text
-    assert f"'{example_pack.EXAMPLE_GROUP}' 그룹" in text
+    # 그룹은 **문안에 없다**(U4 §2-30) — 보이지 않는 소속을 약속하지 않는다.
+    assert "그룹" not in text
     assert "덮어쓰고" not in text  # 첫 설치는 덮어쓸 것이 없다
     # 확정을 지나지 않았으므로 홈·라이브러리는 불변이다.
     assert not default_example_data_dir().exists()
@@ -133,9 +140,9 @@ def test_confirmed_install_lands_templates_groups_data_and_manifest(tmp_path):
     )
     snap = ctrl.snapshot()
     for name in example_pack.HWPX_ASSETS:
-        assert _group_of(snap, "hwpx", name) == example_pack.EXAMPLE_GROUP
+        assert _group_of(ctrl, "hwpx", name) == example_pack.EXAMPLE_GROUP
     for name in example_pack.TXT_ASSETS:
-        assert _group_of(snap, "txt", name) == example_pack.EXAMPLE_GROUP
+        assert _group_of(ctrl, "txt", name) == example_pack.EXAMPLE_GROUP
     assert snap["examples"]["installed"] is True
     assert snap["examples"]["label"] == "예제 다시 설치…"
     assert snap["result"]["level"] == "ok"
@@ -304,7 +311,7 @@ def test_removal_restates_what_disappears_and_writes_nothing_first(tmp_path):
     assert f"템플릿 {len(example_pack.HWPX_ASSETS + example_pack.TXT_ASSETS)}건" in text
     assert f"예제 데이터 {len(example_pack.DATA_ASSETS)}건" in text
     assert f"데이터 풀 고정 {len(example_pack.DATA_ASSETS)}건" in text
-    assert f"'{example_pack.EXAMPLE_GROUP}' 그룹 1개" in text
+    assert "그룹" not in text
     assert "되돌리기는 다시 설치하기입니다" in text  # 벌크 undo 가 없다는 사실을 숨기지 않는다
     # 확정을 지나지 않았으므로 아무것도 걷히지 않았다.
     assert _installed_names(lib, txt_dir) == set(
@@ -333,8 +340,8 @@ def test_confirmed_removal_sweeps_every_manifest_entry_and_returns_the_empty_sta
 
     snap = ctrl.snapshot()
     assert snap["hwpx"]["count"] == 0 and snap["txt"]["count"] == 0
-    assert example_pack.EXAMPLE_GROUP not in snap["hwpx"]["group_names"]
-    assert example_pack.EXAMPLE_GROUP not in snap["txt"]["group_names"]
+    assert example_pack.EXAMPLE_GROUP not in ctrl.hwpx_groups.existing_groups()
+    assert example_pack.EXAMPLE_GROUP not in ctrl.txt_groups.existing_groups()
     assert snap["examples"]["installed"] is False
     assert snap["examples"]["removable"] is False
     assert snap["result"]["level"] == "ok"
@@ -363,9 +370,9 @@ def test_files_outside_the_manifest_are_untouchable(tmp_path):
     mine_hwpx.write_bytes(b"my own edit of the example")
     mine_txt = txt_dir / "내기안.txt"
     mine_txt.write_text("제목: {{공고번호}}", encoding="utf-8")
-    # 그룹까지 예제와 같이 묶어 둔 경우에도 파일은 안전하다(해산은 소속만 걷는다).
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": mine_hwpx.name,
-                                "group": example_pack.EXAMPLE_GROUP})
+    # 그룹까지 예제와 같이 묶여 있어도 파일은 안전하다(해산은 소속만 걷는다). 지정 동사는
+    # U4 §2-30 에서 표면과 함께 걷혔으므로 **동결된 모델**에 직접 세운다.
+    ctrl.hwpx_groups.set_group(mine_hwpx.name, example_pack.EXAMPLE_GROUP)
 
     ctrl.dispatch("remove_examples", {"confirm": True})
 
@@ -373,7 +380,8 @@ def test_files_outside_the_manifest_are_untouchable(tmp_path):
     assert mine_txt.is_file()
     assert _installed_names(lib, txt_dir) == {mine_hwpx.name, mine_txt.name}
     assert _trashed_names(lib) == set(example_pack.HWPX_ASSETS)  # 남의 파일은 휴지통에도 없다
-    assert ctrl.snapshot()["hwpx"]["group_names"] == []  # 그룹은 해산됐고 파일은 남았다
+    # 그룹은 해산됐고 파일은 남았다 — 확인은 동결 모델에서 한다(표면은 그룹을 안 싣는다).
+    assert ctrl.hwpx_groups.existing_groups() == []
 
 
 def test_a_user_edited_manifest_file_is_still_removed(tmp_path):
@@ -624,16 +632,15 @@ def test_reinstall_after_removal_restores_the_same_state(tmp_path):
     )  # "이름 (2).hwpx" 사본이 서지 않았다(제거가 자리를 비워 뒀다)
     after = settings.load_tutorial_manifest()
     assert after["templates"] == before["templates"]
-    snap = ctrl.snapshot()
     for name in example_pack.HWPX_ASSETS:
-        assert _group_of(snap, "hwpx", name) == example_pack.EXAMPLE_GROUP
+        assert _group_of(ctrl, "hwpx", name) == example_pack.EXAMPLE_GROUP
     assert {p.name for p in default_example_data_dir().iterdir()} == set(
         example_pack.DATA_ASSETS
     )
     assert len(DatasetPoolRegistry(tmp_path / "datasets").list_items()) == len(
         example_pack.DATA_ASSETS
     )
-    assert snap["examples"]["removable"] is True
+    assert ctrl.snapshot()["examples"]["removable"] is True
 
 
 def test_a_job_left_pointing_at_a_removed_example_uses_the_existing_alarm(tmp_path):

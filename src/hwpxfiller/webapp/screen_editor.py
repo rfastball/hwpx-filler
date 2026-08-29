@@ -656,7 +656,6 @@ class EditorController:
         items = [
             {
                 "key": rel_key(r.path, root),
-                "group": self.template_groups.group_of(rel_key(r.path, root)),
                 "name": r.name,
                 "path": r.path,
                 "badge_label": r.badge_label,
@@ -676,28 +675,28 @@ class EditorController:
             }
             for r in self.template_library.rows()
         ]
-        hwpx_keys = [it["key"] for it in items]
-        sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
-        txt_rows = self._txt_library_rows()
-        txt_keys = [it["key"] for it in txt_rows]
-        txt_sections, txt_flat = self.txt_groups.build_sections(
-            txt_rows, key_of=lambda it: it["key"]
+        # 그룹 축은 묻지 않는다(U4 §2-30) — 지정을 바꿀 동사가 표면에서 걷혔으므로 저장된
+        # 지정이 남아 있어도 평면으로 답한다. 모델·영속은 동결이라 되살릴 때 그대로 쓴다.
+        sections, flat = self.template_groups.build_sections(
+            items, key_of=lambda it: it["key"], grouped_view=False
         )
-        # 관리 표면 승격(F8 — tpl 화면 사망): 이동 다이얼로그의 그룹 후보·개수·루트 경로를
-        # 밴드에 싣는다(tpl `_media_snapshot` 동형). **reconcile 은 여기서도 하지 않는다** —
-        # 유령 지정 위생은 관리 동사가 지나는 tpl 채널의 snapshot() 이 계속 소유한다(부분
-        # 목록 reconcile 이 살아있는 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
+        txt_rows = self._txt_library_rows()
+        txt_sections, txt_flat = self.txt_groups.build_sections(
+            txt_rows, key_of=lambda it: it["key"], grouped_view=False
+        )
+        # 밴드에 싣는 것은 개수·루트 경로다(이동 다이얼로그의 그룹 후보는 U4 §2-30 에서
+        # 그 다이얼로그와 함께 걷혔다). **reconcile 은 여기서도 하지 않는다** — 유령 지정
+        # 위생은 tpl 채널의 snapshot() 이 계속 소유한다(부분 목록 reconcile 이 살아있는
+        # 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
         result = self._library_result() if self._library_result is not None else {}
         return {
             "hwpx": {
                 "sections": sections, "flat": flat,
-                "group_names": self.template_groups.existing_groups(hwpx_keys),
                 "count": len(items),
                 "dir": str(root) if root is not None else "",
             },
             "txt": {
                 "sections": txt_sections, "flat": txt_flat,
-                "group_names": self.txt_groups.existing_groups(txt_keys),
                 "count": len(txt_rows),
                 "dir": str(self.text_registry.directory),
             },
@@ -731,7 +730,6 @@ class EditorController:
             key = rel_key(t.path, root)
             rows.append({
                 "key": key,
-                "group": self.txt_groups.group_of(key),
                 "name": t.name,
                 "path": str(t.path),
                 "field_count": field_count,
@@ -962,20 +960,6 @@ class EditorController:
         # T1 템플릿 고르기(#894) — 세션에 템플릿이 실제로 앉은 뒤다. 자산 정체성(예제인가)은
         # 따지지 않는다: 루프를 돈 것이 판정이지 예제 강제가 아니다(§3.1-4 비강제).
         self._tutorial(Milestone.PICK_TEMPLATE)
-
-    def _do_toggle_library_group(self, p: dict) -> None:
-        """1단계 피커 그룹 접힘 토글 — **관리 화면과 같은 모델**을 토글해 한 조직을 공유한다
-        (한 표면에서 접으면 다른 표면도 접힌 채로; 설정 영속). 세션 변이가 아니라 뷰 상태라
-        _session_clean 을 건드리지 않는다. ``media`` 가 밴드를 고른다(F6 PR-B 2밴드) —
-        미상 매체는 loud(tpl 화면 ``_model`` 동형)."""
-        media = str(p["media"])
-        if media == "hwpx":
-            model = self.template_groups
-        elif media == "txt":
-            model = self.txt_groups
-        else:
-            raise ValueError(f"알 수 없는 형식: {media!r}")
-        model.toggle_collapse(p["group"])
 
     def adopt_imported_template(self, dest: str) -> str:
         """가져온 사본의 편집기 채택 판정(F8 — §10.17.2 판정 C, 가져오기 통일).
@@ -1630,6 +1614,16 @@ class EditorController:
         self.model = MappingModel.from_suggestions(self.schema, vocabulary)
         self.model.apply_profile(base.mapping)
         self._model_key = self._model_key_now()
+
+    def _do_dismiss_notice(self, p: dict) -> None:
+        """사용자가 세션 통지를 끈다(U4 계열1-20).
+
+        이 채널에는 **세우는 전이만** 있었고 지우는 전이가 :meth:`_reset` 밖에 없어서, 한 번
+        선 통지가 사유가 해소돼도 화면에 남았다. 자동 소멸 대신 수동 닫기를 두는 이유는
+        해소 판정을 통지마다 새로 지으면 그 술어가 같은 상태의 **두 번째 판정**이 되기
+        때문이다 — 트리거는 그대로라 사유가 다시 서면 통지도 다시 선다.
+        """
+        self._set_notice("", "muted")
 
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""

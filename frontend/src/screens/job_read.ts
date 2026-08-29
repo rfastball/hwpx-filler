@@ -36,12 +36,22 @@ type SurfaceSheetPort = {
   isOpen(id: string): boolean;
 };
 
+/** 공용 팝오버의 **배치 계산만** 쓴다 — dismissal registry 는 이 화면의 관심사가 아니다. */
+type PopoverPort = {
+  place(
+    el: HTMLElement,
+    anchor: HTMLElement,
+    options?: Readonly<{ gap?: number; margin?: number; offsetParent?: HTMLElement }>,
+  ): unknown;
+};
+
 export type JobReadControllerDeps = {
   runtime: ScreenRuntime;
   client: BridgeClient;
   ports: ScreenPorts;
   services: ServiceHandoffPorts;
   modal: ModalPort;
+  popover: PopoverPort;
   surfaceSheet: SurfaceSheetPort;
   dataPicker: DataPickerController;
   navigation: { go(screen: string): void };
@@ -424,6 +434,13 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     },
     openDataSheet,
     closeDataSheet: () => deps.surfaceSheet.close("dataSheet"),
+    /** 열 필터 패널을 **트리거 아래**에 붙인다(U4 계열1-9). 배치 규칙은 공용
+     *  `Popover.place` 하나가 소유한다 — 문맥 메뉴와 같은 진실이라 화면이 자기 좌표를
+     *  다시 지으면 같은 규칙이 두 곳에 산다. `.colpanel` 은 `position:fixed` 이고
+     *  offsetParent 를 주지 않으므로 viewport 좌표로 clamp·flip 된다. */
+    placePopover(el: HTMLElement, anchor: HTMLElement): void {
+      deps.popover.place(el, anchor);
+    },
     applyRange,
     discardRange,
     openBrowse,
@@ -537,7 +554,6 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
       h("span", { className: "cand-meta" },
         row.suggested ? h("span", { className: "cand-sug" }, "추천") : null,
         h("span", { className: "cand-mode" }, row.mode_label || ""),
-        h("span", { className: "cand-run" }, row.last_run_label || ""),
         row.conn_label ? h("span", { className: "cand-conn" }, row.conn_label) : null),
       active && row.template_name ? h("span", { className: "cand-tpl mono" }, row.template_name) : null),
     menu ? h("button", { className: "cand-menu", type: "button", id: "jobCandMenuBtn", "data-cand-menu": true,

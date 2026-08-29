@@ -392,11 +392,13 @@ def test_personalization_shell_and_splitters_are_wired() -> None:
     assert "saveMasterWidth" in app_js and "setRailCollapsed" not in app_js
     compact = "".join(css.split())
     assert ".jobtbtbodytr" in compact and "user-select:none" in compact
-    # 셸은 상단 토바 2행 그리드(F2 PR-B) — 좁은 창의 여유는 접기가 아니라 브랜드 워드마크·
-    # 도구 값 라벨 접힘이 번다(레일 접기 사망의 승계분, 지도 §10.9 4계약면 4행).
+    # 셸은 상단 토바 2행 그리드(F2 PR-B) — 좁은 창의 여유는 접기가 아니라 도구 값 라벨
+    # 접힘이 번다(레일 접기 사망의 승계분, 지도 §10.9 4계약면 4행). 브랜드 워드마크가 함께
+    # 접히던 축은 U4 §2-33 에서 표면째 사라져 이 미디어 쿼리에 남지 않는다.
     assert ".app{display:grid;grid-template-rows:var(--shell-topbar-h)1fr;height:100vh}" in compact
     narrow = compact.split("@media(max-width:820px){.topbar{", 1)[1].split("}}", 1)[0]
-    assert ".brand-name{display:none}" in narrow and ".shell-tool.d{display:none" in narrow
+    assert ".shell-tool.d{display:none" in narrow
+    assert "brand" not in compact
 
 
 def test_forced_colors_preserves_three_owner_signals() -> None:

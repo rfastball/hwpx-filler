@@ -73,12 +73,40 @@ def test_validate_save_blocks_all_blank_job():
 
 
 def test_validate_save_passes_with_profile():
-    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}")
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{공고명}}")
     assert verdict.ok and verdict.block_reason == ""
     assert verdict.profile is not None
     assert verdict.profile.name == "작업1"
     # 확정 2행(값 1 + 명시 blank 1) 전부 프로파일로 영속화(L1).
     assert len(verdict.profile.mappings) == 2
+
+
+def test_validate_save_blocks_a_filename_token_nothing_can_fill():
+    """U4 계열4-4 — 미해소 파일명 토큰은 **저장 시점**에 막는다.
+
+    실행 화면까지 미루면 「고칠 자리는 편집기인데 지적은 문서 만들기에서」가 돼 수정
+    동선이 갈린다. 이 검사는 데이터가 필요 없는 작업 정의 수준 계약이라 여기서 답할 수 있다.
+    """
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}")
+    assert not verdict.ok
+    assert "{{ID}}" in verdict.block_reason
+    assert verdict.blocked_field == "pattern"      # 고칠 칸을 함께 말한다(U2 §2.4)
+    assert verdict.profile is None
+
+
+def test_a_blank_declared_field_cannot_carry_a_filename_token():
+    """명시 비움 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다 — 그래서 미해소다."""
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{비고}}")
+    assert not verdict.ok
+    assert "{{비고}}" in verdict.block_reason
+
+
+def test_txt_media_has_no_filename_axis_so_the_token_gate_is_silent():
+    """TXT 작업은 파일을 만들지 않아 파일 이름 축이 없다(§3.2) — 없는 규칙을 요구하지 않는다."""
+    verdict = validate_save(
+        _model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}", media="txt"
+    )
+    assert verdict.ok
 
 
 def test_blocked_field_names_the_input_to_fix():

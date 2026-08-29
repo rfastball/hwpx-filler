@@ -95,12 +95,6 @@ export function saveArtifactMessage(result: Obj): string {
   return `${title}. ${String(result.detail || "")}`;
 }
 
-const DELIVERY_POLICIES = [
-  ["ADD_SUFFIX", "같은 이름이 있으면 번호 붙이기"],
-  ["FAIL", "같은 이름이 있으면 만들지 않기"],
-  ["OVERWRITE_EXPLICIT", "기존 파일 덮어쓰기"],
-] as const;
-
 export const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
   WRITE_NEW: "새 파일",
   WRITE_ADD_SUFFIX: "번호를 붙인 새 파일",
@@ -374,7 +368,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       return;
     }
     deps.modal.open("previewSheet", {
-      returnFocus: previewTrigger ?? deps.doc.getElementById("jobPreviewOpen"),
+      returnFocus: previewTrigger ?? deps.doc.getElementById("jobMirrorPreviewOpen"),
       initialFocus: deps.doc.getElementById("previewClose"),
       onClose: () => { void dispatch("preview_close", {}); },
     });
@@ -596,28 +590,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       if (text.startsWith("ERROR:")) { log(`폴더 오류: ${text.slice(6).trim()}`); return; }
       log(`저장 폴더: ${text}`);
     },
-    async setDeliveryCollision(policy: string): Promise<void> {
-      if (policy === "OVERWRITE_EXPLICIT") {
-        const confirmed = await deps.modal.confirm({
-          title: "기존 파일 덮어쓰기",
-          body: "같은 이름의 파일이 있으면 기존 파일을 덮어씁니다.",
-          confirmLabel: "덮어쓰기 사용", cancelLabel: "취소", danger: true,
-        });
-        if (!confirmed) return;
-      }
-      try {
-        await dispatch("set_delivery_collision", { collision_policy: policy });
-      } catch (error) {
-        log(`충돌 처리를 바꾸지 못했습니다: ${String(error)}`);
-      }
-    },
-    async refreshDelivery(): Promise<void> {
-      try {
-        await dispatch("refresh_delivery", {});
-      } catch (error) {
-        log(`생성 예정 문서를 다시 확인하지 못했습니다: ${String(error)}`);
-      }
-    },
     relinkActive(): void {
       const s = snapshot();
       if (s && s.job_name) void deps.ports.jobRelinkFlow.current().relinkTemplateFor(String(s.job_name));
@@ -705,9 +677,14 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       void dispatch("preview_blank_only", { value }).catch((error) =>
         log(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
     },
+    /** 승인은 **한 동작**이다(U4 계열1-21) — 성사하면 면을 닫는다. 거절은 면을 남긴다:
+     *  사유를 보여 줄 자리가 그 면이고 닫으면 무엇이 왜 안 됐는지 말할 곳이 없다.
+     *  닫기가 `Modal.close` 를 지나므로 `preview_close` 가 함께 나가 열림의 Python
+     *  소유(§13-2)가 두 곳으로 갈라지지 않는다. */
     previewApprove(previewToken?: string): void {
-      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {}).catch((error) =>
-        log(`확인을 저장하지 못했습니다: ${String(error)}`));
+      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {})
+        .then(() => { deps.modal.close("previewSheet"); })
+        .catch((error) => log(`확인을 저장하지 못했습니다: ${String(error)}`));
     },
     previewEdit(): void {
       deps.modal.close("previewSheet");
@@ -962,7 +939,6 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const delivery = (wb.delivery || {}) as Obj;
   const planned = (delivery.planned_documents || []) as Obj[];
   const deliveryBlockers = (delivery.blockers || []) as Obj[];
-  const collisionPolicy = String(intent?.collision_policy || '');
   // 저장 폴더는 backend 가 도출한다(U3-06 #879) — 명시 지정이 없어도 실제로 쓰일 경로와
   // 그 출처가 실려 온다. 표면은 그 값을 그리기만 하고 경로·라벨을 여기서 다시 만들지 않는다.
   const outputFolder = (wb.output_folder || {}) as Obj;
@@ -992,21 +968,9 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       ? h('p', { className: 'warn capnote', id: 'jobManagedOutDirNotice' },
         outputFolderNotice)
       : null,
-    h('div', { className: 'zone-cap' }, '충돌 처리'),
-    h('select', {
-      className: 'field', id: 'jobDeliveryCollision', value: collisionPolicy,
-      disabled: running || intent === null,
-      onChange: (event: Obj) => {
-        const policy = String(event.currentTarget.value);
-        event.currentTarget.value = collisionPolicy;
-        void props.controller.setDeliveryCollision(policy);
-      },
-    },
-    intent === null
-      ? h('option', { value: '' }, '저장 폴더를 먼저 선택하세요')
-      : null,
-    ...DELIVERY_POLICIES.map(([value, label]) =>
-      h('option', { key: value, value }, label))),
+    // 「충돌 처리」 선택기는 없다(U4 계열2-27) — 같은 이름이 있으면 덮어쓰는 것이 기본이고
+    // (`DEFAULT_COLLISION_POLICY`), 그 사실은 정책 라벨이 아니라 **파일마다** 아래 목록의
+    // `DELIVERY_DISPOSITION_COPY` 가 말한다. 무엇을 덮어쓰는지 묻는 확인 면은 그 다음이다.
     h('div', { className: 'zone-cap' }, '생성 예정 문서'),
     // 계획은 이름만 말하면 절반이다 — 어디에 떨어지는지를 같은 자리에서 진술한다(#879).
     outputFolderPath
@@ -1032,12 +996,9 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
                     h('br', null), String(blocker.conflicting_relative_path))
                   : null)))
         : h('p', { className: 'muted capnote' }, '생성 예정 문서가 없습니다.'),
+    // 「목록 새로 확인」도 없다(U4 계열2-28) — 계획은 그것을 바꾸는 전이에서 Python 이
+    // 무효화하고 다시 세운다. 사람이 눌러 새로고침해야 하는 목록이면 그 자체가 결함이다.
     h('div', { className: 'run-row' },
-      h('button', {
-        className: 'btn sm', id: 'jobRefreshDelivery', type: 'button',
-        disabled: running || intent === null,
-        onClick: () => { void props.controller.refreshDelivery(); },
-      }, '목록 새로 확인'),
       h('span', { className: 'muted capnote' },
         '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
   // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.
@@ -1097,7 +1058,6 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const missing = on && !!s?.template_missing;
   const gate = (s?.gate || { enabled: false, level: "", text: "" }) as Obj;
   const review = (s?.review || {}) as Obj;
-  const pv = (s?.preview || {}) as Obj;
   const managed = isManagedHwpx(s);
   const workbench = (s?.workbench_observation || {}) as Obj;
   const createAction = (workbench.create_action || {}) as Obj;
@@ -1115,11 +1075,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
         className: "btn sm", id: "jobActionRelink", type: "button", "data-busy-lock": true,
         hidden: !missing, disabled: busy, onClick: props.controller.relinkActive,
       }, "템플릿 다시 연결…")),
-    h("button", {
-      className: "btn", id: "jobPreviewOpen", "data-busy-lock": true,
-      hidden: managed, disabled: busy || managed || !pv.can_open,
-      onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
-    }, "생성 값 미리보기"),
+    // 확인 면 출구는 **하나**다(U4 계열1-22): 「본문 확인」 존의 `#jobMirrorPreviewOpen`
+    // 이 UI 계약이 지정한 자리이고, 여기 있던 같은 핸들러의 사본은 걷혔다. 관리형의
+    // `#jobManagedPreviewOpen` 은 사본이 아니라 게이트가 승격시키는 별개 동사다.
     // 「승인 필요」 표지는 요구가 **아직 안 풀렸을 때만** — 승인한 뒤에도 붙어 있으면
     // 확인이 무의미해진다.
     h("span", {

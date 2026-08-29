@@ -10,8 +10,6 @@ import { DataPickerDialog, PoolRegistrationDialog } from "./data_picker.ts";
 import type { DataPickerController } from "./data_picker.ts";
 import { EditorScreen, TxtEditDialog } from "./editor.ts";
 import type { EditorController } from "./editor.ts";
-import { GroupMoveDialog } from "./group_move_dialog.ts";
-import type { GroupMoveDialogController } from "./group_move_dialog.ts";
 import {
   JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeader, JobNoDataExit,
   JobReadEffects,
@@ -28,7 +26,7 @@ import {
   JobStatusPill,
 } from "./job_run.ts";
 import type { JobRunController } from "./job_run.ts";
-import { LibraryMoveDialog, LibraryScreen } from "./library.ts";
+import { LibraryScreen } from "./library.ts";
 import type { LibraryController } from "./library.ts";
 import { SheetPickerDialog } from "./sheet_picker.ts";
 import type { SheetPickerController } from "./sheet_picker.ts";
@@ -88,7 +86,6 @@ export type ProductScreensPorts = {
   jobRun: JobRunController;
   slotContent: JobContentSelectionController;
   dataPicker: DataPickerController;
-  groupMove: GroupMoveDialogController;
   sheetPicker: SheetPickerController;
   dataSheetClose: HTMLElement;
   overlays: readonly ProductOverlayPortal[];
@@ -202,13 +199,11 @@ export function ProductScreens(ports: ProductScreensPorts): ReactNode {
 
 /* overlay component imports are kept here so bootstrap only describes controller wiring and portal targets. */
 export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
-  LibraryMoveDialog,
   PoolRegistrationDialog,
   DataPickerDialog,
   JobDataBody,
   JobBrowseDialog,
   TxtEditDialog,
-  GroupMoveDialog,
   SheetPickerDialog,
   JobPreviewSheet,
   JobArtifactSheet,

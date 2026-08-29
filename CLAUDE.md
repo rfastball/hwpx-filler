@@ -223,13 +223,22 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
     액션의 양방향 존재, 기존 공유 팩토리·상수·헬퍼의 인라인 재구현 여부, 문서화된 seam
     계약(docstring 의 접근 제한 등) 우회 여부.
 - 링1 공개 API 를 바꾸면 소비 컨트롤러와 헤드리스 테스트를 같은 변경에 담는다. DOM `id`·
-  `data-*`·script 순서·화면 루트를 바꾸면 정적 DOM 계약을 먼저 갱신하고, 실동작이 관여하면
-  selftest 시나리오까지 갱신한다.
+  `data-*`·script 순서·화면 루트를 바꾸면 **그 좌표를 든 게이트를 같은 변경에 담는다** —
+  지금 그것을 지키는 것은 selftest 프로브(`frontend/src/selftest/probes/`)·live101 대본
+  (`scripts/live101/scenario.py`)·press geometry(`tests/test_web_press_geometry.py`)·
+  blocker 어포던스 표(`src/hwpxfiller/webapp/blocker_affordance.py` + 그 계약 테스트)다.
+  종전 서술이 가리키던 별도의 「정적 DOM 계약」 파일(`test_web_dom_contract.py`·
+  `test_web_datazone.py`)은 **존재하지 않는다**(#932 B4).
 - 동결 목업(`docs/UI_PROTOTYPE_APPB.html`, `docs/r-flow-mockups/`)은 현재 기능을 설계·검증하려고
   먼저 고치지 않는다.
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호(`feat: … (#319)`, 파괴적 변경은 `feat!:`).
 - 커밋하지 않는 것: `.venv/`, `.secrets/`, `build/`·`dist/`·`installer-dist/`, coverage·pytest 보고서,
   `.claude/settings.local.json`, `research-private/`.
+- 작업/템플릿 **태그·그룹은 동결**이다(U4 §2-30) — 모델·판정·영속(`Job.tags`·`Job.group`·
+  `webapp/template_groups.py`·설정의 `template_groups`·`job_collapsed_groups`)은 지우지 않고
+  두되 **웹 표면에 노출하지 않는다**: 지정·개명·해산·접힘·태그 편집·태그 facet 동사가 전부
+  걷혔고 링2 투영도 그 축을 묻지 않는다(`library_sections(grouped=False)` ·
+  `build_sections(grouped_view=False)`). 되살릴 때 그 자리에서 다시 소비하면 된다.
 - 나라장터(조달청 API) 소스는 **동결**이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지
   않는다. 풀에 있는 nara 항목은 숨기지 말고 시끄럽게 거절한다. 테스트는 실 API·서비스 키
   대신 `tests/fixtures` 의 응답을 쓴다.

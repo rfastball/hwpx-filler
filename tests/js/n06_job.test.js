@@ -29,7 +29,7 @@ const SURFACE = [
   "renderResult", "markResultStale",
   "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
-  "pickOutputFolder", "setDeliveryCollision", "refreshDelivery",
+  "pickOutputFolder",
   "relinkActive", "templateCheck", "templateApply",
   "openPreviewFrom", "closePreview",
   "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
@@ -481,7 +481,7 @@ test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안
   assert.equal(markup.includes("jobInputRequirements"), false);
   // 나머지 구획은 그대로 선다 — 확인 대상 정보·미지정 조치 요구를 숨기지 않는다.
   for (const text of ["현재 실행 상태", "현재 설정이 반영됐습니다", "데이터 확인",
-    "2건의 데이터를 확인했습니다.", "저장 폴더", "충돌 처리", "생성 예정 문서"]) {
+    "2건의 데이터를 확인했습니다.", "저장 폴더", "생성 예정 문서"]) {
     assert.ok(markup.includes(text), text);
   }
 });
@@ -588,14 +588,14 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
       supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
       execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
       run_delivery_intent: {
-        output_directory: 'C:\\문서', collision_policy: 'ADD_SUFFIX',
+        output_directory: 'C:\\문서', collision_policy: 'OVERWRITE_EXPLICIT',
       },
       delivery: {
         resolvable: true, blockers: [],
         planned_documents: [{
           record_identity: 'opaque-record', item_ordinal: 0,
           relative_path: '백엔드-그대로_7.hwpx',
-          collision_disposition: 'WRITE_ADD_SUFFIX',
+          collision_disposition: 'WRITE_OVERWRITE',
         }],
       },
     },
@@ -608,27 +608,19 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
     createElement(JobWorkbenchStatus, { controller: h.controller }),
   );
   for (const text of [
-    '저장 폴더', '충돌 처리', '생성 예정 문서', 'C:\\문서',
-    '백엔드-그대로_7.hwpx', '번호를 붙인 새 파일', '목록 새로 확인',
+    '저장 폴더', '생성 예정 문서', 'C:\\문서',
+    '백엔드-그대로_7.hwpx',
+    // 덮어쓴다는 사실은 정책 라벨이 아니라 **파일마다** 선다(U4 계열2-27).
+    '기존 파일 덮어쓰기',
     '실제 파일 생성을 예약한 것은 아닙니다.',
     // U3-06(#879): 계획도 어디에 떨어지는지 같은 자리에서 진술한다.
     '저장 폴더: C:\\문서',
   ]) assert.ok(markup.includes(text), text);
 
-  const before = h.controller.getRun().lastFull;
-  await h.controller.setDeliveryCollision('FAIL');
-  assert.deepEqual(h.calls.at(-1), {
-    screen: 'job', action: 'set_delivery_collision',
-    payload: { collision_policy: 'FAIL' },
-  });
-  assert.equal(h.controller.getRun().lastFull, before);
-  assert.equal(h.controller.getRun().lastFull.workbench_observation
-    .delivery.planned_documents[0].relative_path, '백엔드-그대로_7.hwpx');
-
-  await h.controller.refreshDelivery();
-  assert.deepEqual(h.calls.at(-1), {
-    screen: 'job', action: 'refresh_delivery', payload: {},
-  });
+  // 고르는 자리도 새로고침 동사도 없다(U4 계열2-27 · 2-28) — 정책은 기본값 하나이고
+  // 계획은 그것을 바꾸는 전이에서 Python 이 다시 센다.
+  for (const gone of ['충돌 처리', '목록 새로 확인', 'jobDeliveryCollision', 'jobRefreshDelivery'])
+    assert.equal(markup.includes(gone), false, gone);
 
   const source = String(JobWorkbenchStatus);
   for (const forbidden of ['new Date', '{{date', '{{seq', 'existsSync', 'casefold', '.sort(']) {
@@ -649,7 +641,7 @@ test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 
         notice: '지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다.',
       },
       run_delivery_intent: {
-        output_directory: 'C:\\서고\\Results', collision_policy: 'ADD_SUFFIX',
+        output_directory: 'C:\\서고\\Results', collision_policy: 'OVERWRITE_EXPLICIT',
       },
       delivery: {
         resolvable: true, blockers: [],
@@ -677,22 +669,6 @@ test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 
   for (const forbidden of ['기억한 폴더', '직접 지정', 'template_default', 'Results']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
-});
-
-test('기존 파일 덮어쓰기는 명시 확인 뒤에만 backend policy command를 보낸다', async () => {
-  const cancelled = harness({ confirmResult: false });
-  await cancelled.controller.setDeliveryCollision('OVERWRITE_EXPLICIT');
-  assert.equal(cancelled.confirmSpecs.length, 1);
-  assert.equal(cancelled.confirmSpecs[0].danger, true);
-  assert.equal(cancelled.calls.some((call) => call.action === 'set_delivery_collision'), false);
-
-  const confirmed = harness();
-  await confirmed.controller.setDeliveryCollision('OVERWRITE_EXPLICIT');
-  assert.equal(confirmed.confirmSpecs.length, 1);
-  assert.deepEqual(confirmed.calls.at(-1), {
-    screen: 'job', action: 'set_delivery_collision',
-    payload: { collision_policy: 'OVERWRITE_EXPLICIT' },
-  });
 });
 
 test('delivery blocker는 backend exact 충돌 경로를 추론 없이 구분해 표시한다', async () => {

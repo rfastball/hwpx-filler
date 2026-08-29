@@ -172,7 +172,7 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     # 저장.
     ctrl.dispatch("goto_section", {"section": "filename"})
     ctrl.dispatch("set_name", {"name": "테스트작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "문서-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "문서-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is True and res["saved_name"] == "테스트작업"
     assert JobRegistry(tmp_path / "jobs").exists("테스트작업")
@@ -441,7 +441,7 @@ def test_save_gate_blocks_incomplete_and_unnamed(tmp_path):
     blanks = ctrl.snapshot()  # confirm_all 이 content 0 → 모두 blanks
     ctrl.dispatch("confirm_blanks", {"fields": [r["template_field"] for r in blanks["rows"]]})
     ctrl.dispatch("set_name", {"name": "빈작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "x-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "x-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "비움" in res["block_reason"]
 
@@ -456,7 +456,7 @@ def test_overwrite_confirm_flow(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "중복작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
     # **새 세션**에서 같은 이름 저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
@@ -470,7 +470,7 @@ def test_overwrite_confirm_flow(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "중복작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and res.get("needs_overwrite") is True
     assert "덮어" in res["overwrite_text"]
@@ -489,7 +489,7 @@ def _save_named(ctrl: EditorController, name: str) -> dict:
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     return ctrl.dispatch("save", {})
 
 
@@ -524,7 +524,7 @@ def _build_complete_session(ctrl, name: str) -> None:
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("goto_section", {"section": "filename"})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
 
 
 def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
@@ -714,6 +714,31 @@ def test_load_job_template_drift_is_restated(tmp_path):
     assert snap["is_complete"] is False                  # 새 스키마 필드는 미확정(사람 확정 필요)
 
 
+def test_session_notice_is_dismissible_and_the_trigger_can_stand_it_again(tmp_path):
+    """세운 뒤 **지워지는가**(U4 계열1-20 · U3 §1 이 지목한 결함류).
+
+    이 채널에는 세우는 전이만 있고 지우는 전이가 없어서 한 번 선 통지가 사유 해소 뒤에도
+    남았다. 닫기는 사용자 몫이고, 트리거는 그대로라 같은 사유가 다시 서면 통지도 다시 선다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="드리프트",
+        template_path=str(TPL_COMPILED),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="유령필드", source="", type="const", const="x"),
+        ]),
+    ))
+    ctrl.load_job("드리프트")
+    assert ctrl.snapshot()["notice"] is not None
+
+    ctrl.dispatch("dismiss_notice", {})
+    assert ctrl.snapshot()["notice"] is None
+
+    ctrl.load_job("드리프트")                              # 같은 트리거 → 같은 통지가 다시 선다
+    assert ctrl.snapshot()["notice"] is not None
+
+
 def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
     """편집 원점 그대로 재저장 = 자기-갱신(확인 불요) + 태그·마지막 실행 메타 보존."""
     ctrl, _ = _controller26(tmp_path)
@@ -820,7 +845,7 @@ def _complete_with_data(ctrl, name: str) -> None:
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": name})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
 
 
 def test_save_with_data_registers_nothing_anywhere(tmp_path, monkeypatch):
@@ -939,7 +964,7 @@ def test_edit_save_preserves_authored_at_updates_updated_at(tmp_path):
 
     ctrl.load_job("출처편집")
     assert ctrl.snapshot()["provenance"]["template"].endswith(".hwpx")  # 편집 모드 표시
-    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{수요기관}}"})
     ctrl.dispatch("save", {"confirm_overwrite": True})
     second = JobRegistry(tmp_path / "jobs").load("출처편집").mapping.provenance
     assert second["authored_at"] == authored          # 최초 작성시각 보존
@@ -1088,7 +1113,7 @@ def test_load_job_reedit_starts_all_active(tmp_path):
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("set_name", {"name": "재편집대상"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
     ctrl.load_job("재편집대상")
@@ -1409,7 +1434,7 @@ def test_new_hwpx_save_from_filename_tab_lands_in_place(tmp_path):
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     ctrl.dispatch("goto_section", {"section": "filename"})   # 실 UI: 3단계까지 전진
     ctrl.dispatch("set_name", {"name": "전진저장작업"})
-    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
     snap = ctrl.snapshot()
     assert snap["section"] == "filename"                     # 제자리 — 뒤로 가지 않는다
@@ -1777,37 +1802,6 @@ def test_snapshot_exposes_library_on_template_stage(tmp_path):
     }
 
 
-def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
-    """1단계 피커가 관리 화면과 **같은 hwpx 그룹 모델**을 소비 — 지정·접힘이 두 표면에 함께
-    반영된다(결정 6, 단일 실체). 토글은 뷰 상태라 세션을 더럽히지 않는다."""
-    groups = TemplateGroupModel("hwpx")
-    # 명시 경로 라이브러리는 library_dir 이 None → 키=파일명(rel_key 폴백).
-    groups.set_group(TPL_COMPILED.name, "계약")
-    pushes: list = []
-    ctrl = EditorController(
-        JobRegistry(tmp_path / "jobs"),
-        lambda s, snap: pushes.append((s, snap)),
-        clock=_clock,
-        template_library=TemplateManagerViewModel(
-            paths=[TPL_COMPILED, TPL_PARTIAL],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        ),
-        template_groups=groups,
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
-    )
-    lib = ctrl.snapshot()["library"]["hwpx"]
-    assert lib["flat"] is False
-    by = {sec["group"]: sec for sec in lib["sections"]}
-    assert [it["name"] for it in by["계약"]["items"]] == [TPL_COMPILED.name]
-    assert TPL_PARTIAL.name in [it["name"] for it in by[""]["items"]]  # 미지정 = 「그룹 없음」
-    # 접힘 토글 = 공유 모델 경유 → 같은 모델이 접힌 채(관리 화면도 접혀 보인다) · 세션 불변.
-    ctrl.dispatch("toggle_library_group", {"group": "계약", "media": "hwpx"})
-    assert groups.is_collapsed("계약")
-    assert {s["group"]: s for s in ctrl.snapshot()["library"]["hwpx"]["sections"]}["계약"]["collapsed"] is True
-    assert ctrl.has_unsaved_work() is False
-
-
 def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
     """#137·#138 리뷰 F8 — 관리 화면 가져오기(공유 VM refresh)가 에디터 피커에 즉시 반영된다
     (별도 행 캐시 발산 제거 — 공유 VM rows() 직독)."""
@@ -1852,10 +1846,13 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
 
 
 def test_library_snapshot_carries_management_surface(tmp_path):
-    """F8(§10.17.2 판정 A·D) — 피커가 선택 전용에서 **관리 표면**으로 승격: 행에 그룹·상태
-    동사·채움 고지, 밴드에 이동 후보(group_names)·개수·루트 경로. 상태 동사 목록은 링1
-    `_STATE_ACTIONS` 소유를 그대로 읽되 `preview`(#13 결정)·`make_job`(행 「이 템플릿으로」
-    버튼이 이미 소유 — 같은 동사 2벌 금지)은 걷는다."""
+    """F8(§10.17.2 판정 A·D) — 피커가 선택 전용에서 **관리 표면**으로 승격: 행에 상태
+    동사·채움 고지, 밴드에 개수·루트 경로. 상태 동사 목록은 링1 `_STATE_ACTIONS` 소유를
+    그대로 읽되 `preview`(#13 결정)·`make_job`(행 「이 템플릿으로」 버튼이 이미 소유 —
+    같은 동사 2벌 금지)은 걷는다.
+
+    그룹 축(행의 `group`·밴드의 `group_names`)은 U4 §2-30 에서 표면이 걷혀 **싣지 않는다** —
+    저장된 지정이 있어도 그렇다는 것을 음성 단언으로 함께 못박는다."""
     groups = TemplateGroupModel("hwpx")
     groups.set_group(TPL_COMPILED.name, "계약")
     txt_dir = tmp_path / "text_templates"
@@ -1877,18 +1874,20 @@ def test_library_snapshot_carries_management_surface(tmp_path):
     )
     lib = ctrl.snapshot()["library"]
     hwpx = {it["name"]: it for sec in lib["hwpx"]["sections"] for it in sec["items"]}
-    assert hwpx[TPL_COMPILED.name]["group"] == "계약"
-    assert hwpx[TPL_PARTIAL.name]["group"] == ""
+    # 지정은 모델에 살아 있는데(위 set_group) 표면은 그것을 묻지 않는다.
+    assert groups.group_of(TPL_COMPILED.name) == "계약"
+    assert "group" not in hwpx[TPL_COMPILED.name]
+    assert lib["hwpx"]["flat"] is True and len(lib["hwpx"]["sections"]) == 1
     assert isinstance(hwpx[TPL_PARTIAL.name]["fill_warns"], list)
     acts = {a["key"] for it in hwpx.values() for a in it["actions"]}
     assert "make_job" not in acts and "preview" not in acts
     assert {a["key"] for a in hwpx[TPL_PARTIAL.name]["actions"]} == {"compile", "review"}
-    assert lib["hwpx"]["group_names"] == ["계약"]
+    assert "group_names" not in lib["hwpx"]
     assert lib["hwpx"]["count"] == 2
     assert lib["hwpx"]["dir"] == ""  # 명시 경로 VM 은 루트 없음 — 빈 값 정직 노출
     txt = {it["name"]: it for sec in lib["txt"]["sections"] for it in sec["items"]}
-    assert txt["공문"]["group"] == "기안"
-    assert lib["txt"]["group_names"] == ["기안"]
+    assert "group" not in txt["공문"]
+    assert "group_names" not in lib["txt"]
     assert lib["txt"]["count"] == 1
     assert lib["txt"]["dir"] == str(txt_dir)
 
@@ -2068,7 +2067,7 @@ def test_overwrite_confirm_reasks_when_the_situation_changed_under_the_modal(tmp
     ctrl, _ = _controller26(tmp_path)
     _save_named(ctrl, "원본작업")
     ctrl.load_job("원본작업")
-    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{수요기관}}"})
     assert ctrl.dispatch("save", {})["ok"] is True                   # 무드리프트 자기-갱신
 
     ctrl.load_job("원본작업")
@@ -2422,31 +2421,6 @@ def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path
     assert snap["section"] == "binding" and snap["editing_origin"] == "TXT기안작업"
 
 
-def test_toggle_library_group_routes_by_media(tmp_path):
-    """접힘 토글 — media 키가 밴드를 고른다(txt 토글이 hwpx 모델을 건드리지 않는다)."""
-    txt_groups = TemplateGroupModel("txt")
-    hwpx_groups = TemplateGroupModel("hwpx")
-    txt_groups.set_group("기안.txt", "온나라")
-    ctrl = EditorController(
-        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-        clock=_clock,
-        template_library=TemplateManagerViewModel(
-            paths=[],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        ),
-        template_groups=hwpx_groups,
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
-        txt_groups=txt_groups,
-    )
-    _txt_template(tmp_path)
-    ctrl.dispatch("toggle_library_group", {"group": "온나라", "media": "txt"})
-    assert txt_groups.is_collapsed("온나라") and not hwpx_groups.is_collapsed("온나라")
-    with pytest.raises(ValueError, match="알 수 없는 형식"):
-        ctrl.dispatch("toggle_library_group", {"group": "온나라", "media": "hwp"})
-
-
-# ---------------------------------------- 드로어 deep-link 착지(F6 PR-B, §10.14.3)
 def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_path):
     """target 이 서면 착지 탭도 target 이 정한다(값의 앞 절 = section) + 스냅샷 왕복.
 

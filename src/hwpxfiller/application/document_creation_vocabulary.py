@@ -107,10 +107,17 @@ SEMANTIC_PREVIEW_LABEL = "생성 내용 확인"
 
 # ------------------------------------------------------------------ RunDeliveryIntent
 
-#: session-scoped RunDeliveryIntent 의 collision policy(#724 §8). 기본은
-#: :data:`DEFAULT_COLLISION_POLICY`(``ADD_SUFFIX``)이고 ``OVERWRITE_EXPLICIT`` 은 명시적 선택이
-#: 필요하다. 선택 사실만으로 preview 를 REQUIRED 로 만들지는 않는다.
+#: session-scoped RunDeliveryIntent 의 collision policy(#724 §8). application 층은 셋을 계속
+#: 지원하지만 **제품 표면은 고르게 하지 않는다** — 「충돌 처리」 선택기는 U4 계열2-27 에서
+#: 걷혔고 세션은 :data:`DEFAULT_COLLISION_POLICY` 하나로 선다. 선택 사실만으로 preview 를
+#: REQUIRED 로 만들지는 않는다(REQUIRED 를 세우는 것은 의도가 아니라 실제 덮어쓸 항목이다).
 COLLISION_POLICIES: tuple[str, ...] = ("ADD_SUFFIX", "FAIL", "OVERWRITE_EXPLICIT")
 
-#: 기본 충돌 정책 — 덮어쓰기는 사용자가 명시로 골라야 한다(조용히 덮지 않는다).
-DEFAULT_COLLISION_POLICY = "ADD_SUFFIX"
+#: 기본 충돌 정책 — **이름 충돌 자체는 blocker 가 아니다**(U4 계열2-27). 같은 이름이 있으면
+#: 덮어쓰되 조용하지 않다: 덮어쓸 항목이 하나라도 서면
+#: :func:`~hwpxfiller.application.preview_requirement.evaluate_current_preview_requirement` 가
+#: ``DESTRUCTIVE_OVERWRITE`` 확인을 REQUIRED 로 세워 승인 없이는 생성이 서지 않는다.
+#: 「묻고 확정하게 한다」를 지는 것은 그 확인 면이지 정책 선택기가 아니었다 — 선택기는
+#: 일반 생성 경로(`plan_generation` 의 덮어쓰기 확인 왕복)를 지배하지도 않으면서 서 있었고,
+#: 그래서 두 경로가 같은 상황을 다르게 말했다. 기본을 여기 맞춰 그 갈림을 없앤다.
+DEFAULT_COLLISION_POLICY = "OVERWRITE_EXPLICIT"

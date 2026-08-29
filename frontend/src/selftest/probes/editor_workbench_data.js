@@ -687,7 +687,7 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Bridge = service(ctx, "Bridge");
         const out = { pending: true };
-        const btn = byId(ctx, "jobPreviewOpen");
+        const btn = byId(ctx, "jobMirrorPreviewOpen");
         const modal = byId(ctx, "previewSheet");
         out.present = !!(btn && modal);
         if (!out.present) { out.pending = false; return { preview_drawer: out }; }
@@ -1798,8 +1798,8 @@ export function createEditorWorkbenchDataProbes() {
       after: ["editor_save_gate"],
       afterReason: "레거시 드라이버 순서 그대로(3961 → 3966).",
       note:
-        "**아는 취약점**: 이 프로브의 클릭 5곳에 가시성 단언이 없다(흘리기 body 클릭·행 ⋮ 2회·"
-        + "그룹 ⋮·＋그룹지정 칩). 프로브 click 은 hidden 을 통과하므로 눈으로 본 것과 다른"
+        "**아는 취약점**: 이 프로브의 클릭 3곳에 가시성 단언이 없다(흘리기 body 클릭·행 ⋮ 2회). "
+        + "프로브 click 은 hidden 을 통과하므로 눈으로 본 것과 다른"
         + " 결론이 날 수 있다 — 이식에서 고치지 않고 그대로 옮긴다(계약을 바꾸는 별건)."
         + ` 클러스터 전체의 같은 자리는 ${CLICK_SITES_WITHOUT_VISIBILITY.length} 군이다.`,
       async run(ctx) {
@@ -1809,33 +1809,30 @@ export function createEditorWorkbenchDataProbes() {
         try {
           Nav.go("editor", { force: true });
           const acts = [{ key: "compile", label: "누름틀 변환" }, { key: "review", label: "검토" }];
-          const H = (name, group, cur, warns) => ({
-            key: name, group, name, path: `C:/lib/${name}`,
+          const H = (name, cur, warns) => ({
+            key: name, name, path: `C:/lib/${name}`,
             badge_label: "누름틀", badge_level: "ok", is_error: false, detail: "필드 3개",
             fill_warns: warns || [], actions: acts, current: !!cur,
           });
           const draft = editorBase({
             library: {
+              /* 구획은 언제나 평면 1개다(U4 §2-30 — 백엔드가 `grouped_view=False` 로 낸다). */
               hwpx: {
-                flat: false, count: 4, group_names: ["계약", "입찰"], dir: "C:/lib",
-                sections: [
-                  {
-                    group: "입찰", collapsed: false, count: 2,
-                    items: [H("a.hwpx", "입찰", true), H("b.hwpx", "입찰", false)],
-                  },
-                  { group: "계약", collapsed: true, count: 1, items: [H("c.hwpx", "계약", false)] },
-                  {
-                    group: "", collapsed: false, count: 1,
-                    items: [H("d.hwpx", "", false, ["빈 값 2건은 공란으로 채워집니다"])],
-                  },
-                ],
+                flat: true, count: 4, dir: "C:/lib",
+                sections: [{
+                  group: "", collapsed: false, count: 4,
+                  items: [
+                    H("a.hwpx", true), H("b.hwpx", false), H("c.hwpx", false),
+                    H("d.hwpx", false, ["빈 값 2건은 공란으로 채워집니다"]),
+                  ],
+                }],
               },
               txt: {
-                flat: true, count: 1, group_names: [], dir: "C:/txt",
+                flat: true, count: 1, dir: "C:/txt",
                 sections: [{
                   group: "", collapsed: false, count: 1,
                   items: [{
-                    key: "메모.txt", group: "", name: "메모", path: "C:/txt/메모.txt",
+                    key: "메모.txt", name: "메모", path: "C:/txt/메모.txt",
                     field_count: 2, error: "", current: false,
                   }],
                 }],
@@ -1858,11 +1855,13 @@ export function createEditorWorkbenchDataProbes() {
           /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침. */
           out.toolbar = ["import-template", "import-folder", "lib-new-txt", "lib-refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
-          out.grp_heads = host.querySelectorAll(".job-grp-head").length;      // 입찰·계약·그룹없음
-          out.rows_visible = host.querySelectorAll(".libselrow").length;      // 계약 접힘 제외 → 3+1
+          // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
+          // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
+          out.grp_heads = host.querySelectorAll(".job-grp-head").length;
+          out.rows_visible = host.querySelectorAll(".libselrow").length;      // 접힘 없음 → 전부
           out.row_more = host.querySelectorAll('[data-act="lib-more"]').length;  // 모든 가시 행
-          out.grp_more = host.querySelectorAll(".grp-more").length;           // 명명 그룹만
-          out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length; // 무그룹 행만
+          out.grp_more = host.querySelectorAll(".grp-more").length;
+          out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length;
           out.fill_warn = /빈 값 2건/.test(host.textContent);                 // #154 사전 고지 승계
           const res = host.querySelector(".run-result");
           out.result_line = !!res && /검토: 문제 없음/.test(res.textContent)
@@ -1879,7 +1878,8 @@ export function createEditorWorkbenchDataProbes() {
               (button) => button.dataset.contextMenuAction,
             );
           };
-          /* 그룹 있는 HWPX 행 ⋮ = [링1 상태 동사(변환·검토), 이동, 삭제] — 소비 동사 없음. */
+          /* HWPX 행 ⋮ = [링1 상태 동사(변환·검토), 삭제] — 소비 동사 없음.
+             「이동」은 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
           await settleRender(ctx);
@@ -1890,29 +1890,13 @@ export function createEditorWorkbenchDataProbes() {
           await settleRender(ctx);
           const closedMenu = byId(ctx, "tplRowMenu");
           out.menu_closed = !closedMenu || isHidden(ctx, closedMenu);
-          /* 무그룹 TXT 행 ⋮ = [내용 편집, 삭제](이동은 칩 소관). */
+          /* TXT 행 ⋮ = [내용 편집, 삭제]. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="메모.txt"]').click();
           await settleRender(ctx);
           out.txt_menu_items = menuActions();
           ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
           await settleRender(ctx);
-          /* 그룹 헤더 ⋮ = [개명, 해산]. */
-          flush();
-          host.querySelector(".grp-more").click();
-          await settleRender(ctx);
-          out.group_menu_items = menuActions();
-          ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
-          await settleRender(ctx);
-          /* ＋그룹지정 칩 → 이동 다이얼로그(기존 #tplMoveModal DOM 재사용). */
-          out.move_hidden_before = byId(ctx, "tplMoveModal").classList.contains("hidden");
-          flush();
-          host.querySelector('[data-act="lib-assign"]').click();
-          out.move_shown_after_chip = !byId(ctx, "tplMoveModal").classList.contains("hidden");
-          Modal.close("tplMoveModal");
-          if (!settleModal(ctx, "tplMoveModal")) {
-            ctx.fail(ERROR_CODES.CONTRACT, "#tplMoveModal .modal-card 가 없습니다 — 닫힘 전이를 정착시킬 수 없습니다.");
-          }
           /* 구간 항목 목록 + 동사 1건 왕복(S8-03). 개명이 가장 싸다: 프롬프트 하나로
              끝나고 확인 왕복이 없다. 발신은 이 클러스터의 관례대로 가로챈다 — 목록 자체가
              **합성 스냅샷**이라 그 경로를 실 백엔드에 보내면 남의 라이브러리를 겨눈다.
@@ -2004,22 +1988,16 @@ export function createEditorWorkbenchDataProbes() {
           });
           const draft = editorBase({
             library: {
+              /* U4 §2-30 이후 밴드는 언제나 평면 1구획이다 — 헤더·접힘 축이 사라졌다. */
               hwpx: {
-                flat: false,
-                sections: [
-                  {
-                    group: "입찰", collapsed: false, count: 2,
-                    items: [it("a.hwpx", "준비됨", "ok", true), it("b.hwpx", "변환 필요", "warn", false)],
-                  },
-                  {
-                    group: "계약", collapsed: true, count: 1,
-                    items: [it("c.hwpx", "준비됨", "ok", false)],
-                  },
-                  {
-                    group: "", collapsed: false, count: 1,
-                    items: [it("d.hwpx", "준비됨", "ok", false)],
-                  },
-                ],
+                flat: true,
+                sections: [{
+                  group: "", collapsed: false, count: 4,
+                  items: [
+                    it("a.hwpx", "준비됨", "ok", true), it("b.hwpx", "변환 필요", "warn", false),
+                    it("c.hwpx", "준비됨", "ok", false), it("d.hwpx", "준비됨", "ok", false),
+                  ],
+                }],
               },
               txt: { flat: true, sections: [] },
             },
@@ -2027,8 +2005,8 @@ export function createEditorWorkbenchDataProbes() {
           ctx.push("editor", draft);
           await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
-          out.grp_heads = host.querySelectorAll(".job-grp-head").length;   // 입찰·계약·그룹없음
-          out.rows_visible = host.querySelectorAll(".libselrow").length;   // 계약 접힘 → 2+1
+          out.grp_heads = host.querySelectorAll(".job-grp-head").length;   // 0 — 구획 헤더 없음
+          out.rows_visible = host.querySelectorAll(".libselrow").length;   // 접힘이 없으니 전부
           out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;
           out.current_marked = host.querySelectorAll(".libselrow.cur").length;  // 현 선택(a) 1
           out.import_btn = !!host.querySelector('button[data-act="import-template"]');
@@ -2036,11 +2014,7 @@ export function createEditorWorkbenchDataProbes() {
              산출물(파일 생성/복사)을 말한다. 두 고지의 실재를 되읽는다. */
           out.filter_notice = /\.hwpx 문서 파일을 만드는/.test(host.textContent)
             && /복사해 쓰는 작업/.test(host.textContent);
-          const caret = host.querySelector('.job-grp-head[aria-expanded="false"] .grp-caret');
-          out.caret_collapsed = caret ? styleOf(ctx, caret).visibility : "missing";
-          /* F13 — 그룹 헤더에 안정 id(재렌더 뒤 포커스 복원 근거). F14 — 파일명 칸 말줄임/축소. */
-          const head0 = host.querySelector(".job-grp-head");
-          out.grp_head_has_id = !!(head0 && head0.id);
+          /* F14 — 파일명 칸 말줄임/축소. (F13 그룹 헤더 안정 id 는 헤더와 함께 사망.) */
           const fn = host.querySelector(".libselrow .fname");
           out.fname_ellipsis = fn ? styleOf(ctx, fn).textOverflow : "missing";
           out.fname_minwidth = fn ? styleOf(ctx, fn).minWidth : "missing";

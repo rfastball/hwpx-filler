@@ -2368,24 +2368,6 @@ def test_guard_state_no_longer_enumerates_the_dead_ack_axis(tmp_path):
     assert g["armed"] is False
 
 
-def test_needs_confirm_does_not_push(tmp_path):
-    """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8).
-
-    구 표본이던 switch_job 가드는 데이터-우선 보존으로 죽었고(§18.2), 그다음 표본이던
-    작업 삭제는 좌 목록과 함께 이 채널에서 걷혔다(F2 PR-B) — 살아 있는 needs_confirm 경로
-    (그룹 병합 승격)로 같은 dispatch 불변식을 가드한다.
-    """
-    ctrl, pushes = _session(tmp_path)
-    reg = ctrl.registry
-    reg.save(Job(name="둘째"))
-    reg.set_group("공고서", "입찰")
-    reg.set_group("둘째", "수의")
-    before = len(pushes)
-    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
-    assert res["needs_confirm"] is True
-    assert len(pushes) == before                       # 차단 = 상태 그대로 = push 생략
-
-
 def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
     """부분 실패 런은 완주가 아니다(리뷰 #1) — 실패분 재시도 선택을 무확인 파괴에서 지킨다."""
     import hwpxfiller.application.generation as appgen
@@ -2611,61 +2593,6 @@ def test_rename_job_collision_and_empty_are_restated(tmp_path):
     assert ctrl.registry.exists("공고서")  # 실패 무손상
 
 
-def test_set_group_moves_and_clears(tmp_path):
-    """그룹 이동은 라이브러리 상세가 부르고 판정은 여기가 낸다 — 관측은 레지스트리다
-    (구획 스냅샷은 좌 목록과 함께 사망, F2 PR-B)."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("set_group", {"name": "공고서", "group": "입찰"})
-    assert ctrl.registry.groups() == ["입찰"]
-    ctrl.dispatch("set_group", {"name": "공고서", "group": ""})  # 해제 = 그룹 없음
-    assert ctrl.registry.groups() == []
-
-
-def test_rename_group_merge_needs_confirm_roundtrip(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    reg.save(Job(name="둘째"))
-    reg.set_group("공고서", "입찰")
-    reg.set_group("둘째", "수의")
-    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
-    assert res["needs_confirm"] is True and res["kind"] == "merge_group"
-    assert res["count"] == 1 and res["target_count"] == 1  # 병합 수치 재진술
-    assert set(reg.groups()) == {"수의", "입찰"}  # 무변이
-    res2 = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰", "confirm": True})
-    assert res2["ok"] is True and reg.groups() == ["입찰"]
-
-
-def test_rename_group_carries_collapse_state(tmp_path):
-    """접힘의 **표면**은 라이브러리로 갔지만(§10.8 판정 F) 그룹을 개명하는 동사는 여기가
-    소유하므로 영속 키의 승계도 여기가 진다 — 이름만 바뀐 같은 그룹은 접힌 채로 남는다.
-    관측 지점이 스냅샷에서 영속 키로 내려온 것은 좌 목록 사망의 정산분이다(F2 PR-B)."""
-    from hwpxfiller.external.settings import load_job_collapsed_groups, save_job_collapsed_groups
-
-    ctrl, _ = _controller(tmp_path)
-    ctrl.registry.set_group("공고서", "입찰")
-    save_job_collapsed_groups(["입찰"])                    # 라이브러리에서 접어 둔 상태
-    ctrl.dispatch("rename_group", {"name": "입찰", "new": "2026 입찰"})
-    assert load_job_collapsed_groups() == ["2026 입찰"]     # 접힘 승계(유령 옛 이름 없음)
-
-
-def test_disband_group_confirm_roundtrip(tmp_path):
-    from hwpxfiller.external.settings import save_job_collapsed_groups
-
-    ctrl, _ = _controller(tmp_path)
-    ctrl.registry.set_group("공고서", "입찰")
-    save_job_collapsed_groups(["입찰"])                    # 라이브러리에서 접어 둔 상태
-    res = ctrl.dispatch("disband_group", {"name": "입찰"})
-    assert res["needs_confirm"] is True and res["count"] == 1
-    assert ctrl.registry.groups() == ["입찰"]  # 무확인 = 무변이
-    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True})
-    assert res2["ok"] is True and ctrl.registry.groups() == []
-    # 사라진 그룹의 접힘 잔재는 걷는다 — 같은 이름 재생성 시 유령 접힘 방지.
-    from hwpxfiller.external.settings import load_job_collapsed_groups
-    assert "입찰" not in load_job_collapsed_groups()
-
-
-# ---------------- 실 공개 writer × 스탬프 동시성(#129) ----------------
-# 아래 세 테스트는 화면이 실제로 부르는 공개 writer 경로를 그대로 쓴다.
 def _pause_stamp(monkeypatch):
     """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
     import threading
@@ -2779,49 +2706,6 @@ def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
     saved = reg.load("공고서")
     assert saved.last_run_at == "2026-07-21T09:00:00"
     assert saved.template_path == str(new_template)
-
-
-def test_disband_group_restates_actual_count_when_it_drifted(tmp_path):
-    """확인 시점 건수와 실제 이동 건수가 갈라지면 조용히 넘기지 않는다(#149).
-
-    확인 문안은 잠금 밖 사전 카운트로 만들어진다 — 사용자가 모달을 읽는 사이 다른 표면이
-    작업을 옮기면 "N건" 이 실제와 어긋난다. 이동은 파괴가 아니라 재확인까지 올리지 않되,
-    결과 재진술이 **어긋남을 말해야** 확인한 내용과 실제가 갈라진 채 넘어가지 않는다.
-    """
-    ctrl, _ = _controller(tmp_path)
-    ctrl.registry.set_group("공고서", "입찰")
-    res = ctrl.dispatch("disband_group", {"name": "입찰"})
-    assert res["count"] == 1
-    ctrl.registry.save(Job(name="늦게합류", group="입찰"), allow_overwrite=True)  # 확인 왕복 사이 합류
-    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True, "seen": res["count"]})
-    assert res2["ok"] is True and res2["count"] == 2  # 실제 이동은 잠금 안에서 센 값
-    assert "확인 시점 1건" in res2["drift_note"]
-
-
-def test_disband_group_says_nothing_when_count_held(tmp_path):
-    """어긋나지 않았으면 고지는 침묵 — 매번 붙는 문구는 신호가 아니라 소음이다."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.registry.set_group("공고서", "입찰")
-    res = ctrl.dispatch("disband_group", {"name": "입찰"})
-    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True, "seen": res["count"]})
-    assert res2["drift_note"] == ""
-
-
-def test_rename_group_merge_restates_actual_count_when_it_drifted(tmp_path):
-    """병합도 같은 고지를 진다(#149) — 두 표면이 같은 술어를 써야 어긋남이 한쪽만 새지 않는다."""
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    reg.save(Job(name="둘째"))
-    reg.set_group("공고서", "입찰")
-    reg.set_group("둘째", "수의")
-    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
-    assert res["count"] == 1
-    reg.save(Job(name="늦게합류", group="수의"), allow_overwrite=True)
-    res2 = ctrl.dispatch(
-        "rename_group", {"name": "수의", "new": "입찰", "confirm": True, "seen": res["count"]}
-    )
-    assert res2["ok"] is True and res2["count"] == 2
-    assert "확인 시점 1건" in res2["drift_note"]
 
 
 def test_describe_fill_note_names_field_and_kinds():
@@ -5042,14 +4926,17 @@ def test_candidate_sections_stand_only_when_both_modes_are_present(tmp_path):
     assert both[0]["names"][0] == top_names[0]
 
 
-def test_candidate_card_carries_the_media_aware_recent_use_label(tmp_path):
-    """§19.4 — 두 매체가 다른 술어를 쓴다는 사실을 카드 문안이 말한다."""
+def test_candidate_card_does_not_carry_run_history(tmp_path):
+    """후보 카드는 「이 데이터로 무엇을 만들 수 있는가」만 말한다(U4 계열2-31).
+
+    실행 이력은 그 판단에 들지 않는데 카드마다 「성공한 실행 없음」이 서서 정보 밀도만
+    깎았다. 매체별 술어 문안 자체(§19.4)는 죽지 않았다 — 라이브러리 목록이 계속 쓴다.
+    """
     ctrl, _ = _controller(tmp_path)
     _txt_job(ctrl, tmp_path)
     _mount_all(ctrl, _data_csv(tmp_path))
-    labels = {c["name"]: c["last_run_label"] for c in ctrl.snapshot()["candidates"]["top"]}
-    assert labels["공고서"] == "성공한 실행 없음"
-    assert labels["발주요청_기안"] == "복사한 적 없음"
+    for card in ctrl.snapshot()["candidates"]["top"]:
+        assert "last_run_label" not in card
 
 
 def test_browse_rows_section_inside_the_tab_not_across_it(tmp_path):

@@ -4,6 +4,7 @@ import {
   createElement,
   Fragment,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,6 +27,7 @@ type JobReadController = {
   closeDataSheet(): void;
   discardRange(): Promise<void>;
   applyRange(): Promise<void>;
+  placePopover(el: HTMLElement, anchor: HTMLElement): void;
 };
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
@@ -63,9 +65,10 @@ function ColumnPanel(props: {
   column: string;
   data: Obj | null;
   close(): void;
+  rootRef: { current: HTMLElement | null };
 }): ReactNode {
-  const { controller, column, data, close } = props;
-  if (data === null) return h("div", { className: "colpanel react-colpanel", "aria-busy": "true" },
+  const { controller, column, data, close, rootRef } = props;
+  if (data === null) return h("div", { className: "colpanel react-colpanel", "aria-busy": "true", ref: rootRef },
     h("div", { className: "cp-head" }, h("span", null, `'${column}' 필터`),
       h("button", { "data-act": "panel-close", onClick: close, "aria-label": "닫기" }, "✕")),
     h("div", { className: "cp-sec cp-loading", role: "status" }, "불러오는 중…"));
@@ -73,7 +76,7 @@ function ColumnPanel(props: {
   const allOn = checked === null;
   const isRange = data.kind === "amount" || data.kind === "date";
   const values = data.options || [];
-  return h("div", { className: "colpanel react-colpanel" },
+  return h("div", { className: "colpanel react-colpanel", ref: rootRef },
     h("div", { className: "cp-head" }, h("span", null, `'${column}' 필터`),
       h("button", { "data-act": "panel-close", onClick: close, "aria-label": "닫기" }, "✕")),
     isRange ? h("div", { className: "cp-sec" },
@@ -130,6 +133,10 @@ export function JobDataZone(props: {
   const table = snapshot.table || { columns: [], rows: [], visible_count: 0, hidden_selected: [], hidden_columns: [] };
   const [query, setQuery] = useState(String(filter.search || ""));
   const [panel, setPanel] = useState<{ column: string; data: Obj | null } | null>(null);
+  // 팝오버는 **누른 자리** 아래에 선다(U4 계열1-9). 트리거는 ref 로 든다 — 상태에 넣으면
+  // 배치 한 번에 재렌더가 한 번 더 붙는다.
+  const panelRoot = useRef<HTMLElement | null>(null);
+  const panelTrigger = useRef<HTMLElement | null>(null);
   const anchor = useRef<{ index: number; value: boolean } | null>(null);
   const optimisticSelection = useRef(new Map<number, boolean>());
   const [, setSelectionRevision] = useState(0);
@@ -172,8 +179,9 @@ export function JobDataZone(props: {
     });
   }
 
-  async function openPanel(column: string): Promise<void> {
+  async function openPanel(column: string, trigger: HTMLElement | null): Promise<void> {
     if (panel?.column === column) { setPanel(null); return; }
+    panelTrigger.current = trigger;
     setPanel({ column, data: null });
     try {
       const data = await controller.zone("filter_panel", { column }, true);
@@ -183,6 +191,16 @@ export function JobDataZone(props: {
       setPanel(null);
     }
   }
+
+  // 그린 **뒤** 재는 것이 계약이다 — `Popover.place` 는 실제 렌더 크기로 viewport clamp·
+  // flip 을 하므로 측정 전에는 답을 낼 수 없다. `panel` 은 열림과 도착에서 각각 새 객체라
+  // 「불러오는 중…」과 실내용의 높이 차이도 이 한 훅이 흡수한다.
+  useLayoutEffect(() => {
+    const root = panelRoot.current;
+    const trigger = panelTrigger.current;
+    if (!panel || !root || !trigger) return;
+    controller.placePopover(root, trigger);
+  }, [controller, panel]);
 
   function toggleRow(row: Obj, shift: boolean): void {
     if (shift && anchor.current !== null) {
@@ -264,7 +282,7 @@ export function JobDataZone(props: {
                     "data-busy-lock": true,
                     "aria-label": `${column.name} 열 필터`,
                     "aria-expanded": panel?.column === column.name,
-                    onClick: () => { void openPanel(column.name); },
+                    onClick: (event: Obj) => { void openPanel(column.name, event.currentTarget); },
                   }, "▾"));
               }))),
           h("tbody", { id: "jobTableBody" },
@@ -315,6 +333,7 @@ export function JobDataZone(props: {
       panel
         ? h(ColumnPanel as any, {
           controller, column: panel.column, data: panel.data, close: () => setPanel(null),
+          rootRef: panelRoot,
         })
         : null),
     h("div", { className: "fstrip", id: "jobSelStrip", hidden: !snapshot.has_data || !hidden.length },

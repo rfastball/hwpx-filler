@@ -100,7 +100,8 @@ def test_initial_serializes_bands_and_ring1_actions(tmp_path, monkeypatch):
     assert _item(snap["txt"], "온나라_기안")["field_count"] == 1
     assert snap["hwpx"]["count"] == 2 and snap["txt"]["count"] == 1
     # 그룹 0개 = 퇴화 평면.
-    assert snap["hwpx"]["flat"] is True and snap["hwpx"]["group_names"] == []
+    # 밴드는 언제나 평면이고 그룹 후보 목록은 싣지 않는다(U4 §2-30).
+    assert snap["hwpx"]["flat"] is True and "group_names" not in snap["hwpx"]
     assert snap["result"]["text"] == ""
     # 드리프트 UI 미노출(10F2FF98-D) — 스냅샷에 drift 표면이 없다.
     assert "drift" not in snap and not any("drift" in k for k in snap)
@@ -423,73 +424,21 @@ def test_txt_edit_drift_gate_does_not_notify_the_editing_session(tmp_path, monke
     assert "저장했습니다" not in ctrl.snapshot()["result"]["text"]
 
 
-# =============================================== 매체 구획 + 그룹(결정 2·3)
-def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    band = ctrl.snapshot()["hwpx"]
-    assert band["flat"] is False and "입찰" in band["group_names"]
-    by = {s["group"]: s for s in band["sections"]}
-    assert {it["name"] for it in by["입찰"]["items"]} == {"raw.hwpx"}
-    assert {it["name"] for it in by[""]["items"]} == {"comp.hwpx"}  # 미지정 = 「그룹 없음」
-    assert _item(band, "raw.hwpx")["group"] == "입찰"
-    assert _item(band, "comp.hwpx")["group"] == ""
-    ctrl.dispatch("toggle_group", {"media": "hwpx", "group": "입찰"})
-    section = {s["group"]: s for s in ctrl.snapshot()["hwpx"]["sections"]}["입찰"]
-    assert section["collapsed"] is True
-    assert settings.load_template_collapsed_groups("hwpx") == ["입찰"]
-    # 새 컨트롤러(설정에서 복원)도 같은 구획 — 영속 실증.
-    registry = TextTemplateRegistry(tp / "txt")
-    ctrl2 = TemplateController(
-        registry, lambda s, x: None,
-        file_store=TemplateFileStore(
-            tp / "lib", registry, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
-        ), library_dir=tp / "lib",
-        pool_registry=DatasetPoolRegistry(tp / "datasets"),
-    )
-    assert "입찰" in ctrl2.snapshot()["hwpx"]["group_names"]
-
-
-def test_rename_group_merge_needs_confirm(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "comp.hwpx", "group": "수의"})
-    r = ctrl.dispatch("rename_group", {"media": "hwpx", "group": "수의", "new": "입찰"})
-    assert r["needs_confirm"] is True and r["kind"] == "merge_group" and r["target"] == 1
-    ctrl.dispatch("rename_group", {"media": "hwpx", "group": "수의", "new": "입찰", "confirm": True})
-    assert ctrl.snapshot()["hwpx"]["group_names"] == ["입찰"]
-
-
-def test_disband_group_returns_to_ungrouped(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    r = ctrl.dispatch("disband_group", {"media": "hwpx", "group": "입찰"})
-    assert r["needs_confirm"] is True and r["count"] == 1
-    ctrl.dispatch("disband_group", {"media": "hwpx", "group": "입찰", "confirm": True})
-    band = ctrl.snapshot()["hwpx"]
-    assert band["flat"] is True and band["group_names"] == []
-
-
 def test_orphan_group_returns_to_ungrouped_after_delete(tmp_path, monkeypatch):
-    """Explorer 삭제/이동으로 키가 사라진 지정은 고아 → 「그룹 없음」 복귀 + reconcile 설정 정리(결정 8)."""
+    """Explorer 삭제/이동으로 키가 사라진 지정은 고아 → reconcile 설정 정리(결정 8).
+
+    그룹 표면은 U4 §2-30 에서 걷혔지만 이 위생은 남는다 — 되살릴 때 스캔과 어긋난 지정이
+    굳어 있으면 그것이 곧 부채다. 그래서 스냅샷은 여전히 ``reconcile`` 을 돌린다.
+    """
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
+    ctrl.hwpx_groups.set_group("raw.hwpx", "입찰")
     (tp / "lib" / "raw.hwpx").unlink()  # 파일이 사라짐
     ctrl.dispatch("refresh", {})
-    assert "입찰" not in ctrl.snapshot()["hwpx"]["group_names"]
+    ctrl.snapshot()
+    assert ctrl.hwpx_groups.existing_groups() == []
     assert settings.load_template_group_map("hwpx") == {}  # reconcile 이 유령 지정 정리
 
 
-def test_media_groups_are_isolated(tmp_path, monkeypatch):
-    """같은 이름 그룹이 두 매체에 독립(결정 3) — hwpx 지정이 txt 구획을 건드리지 않는다."""
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    snap = ctrl.snapshot()
-    assert snap["hwpx"]["group_names"] == ["입찰"]
-    assert snap["txt"]["group_names"] == [] and snap["txt"]["flat"] is True
-
-
-# ==================================================== 가져오기·삭제(결정 4)
 def test_import_routes_by_extension_and_is_independent(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ext = tp / "ext"
@@ -508,8 +457,8 @@ def test_import_routes_by_extension_and_is_independent(tmp_path, monkeypatch):
     assert (tp / "txt" / "협조전.txt").read_text(encoding="utf-8") == "원본"
     # 사본은 「그룹 없음」에서 시작.
     snap = ctrl.snapshot()
-    assert _item(snap["txt"], "협조전")["group"] == ""
-    assert _item(snap["hwpx"], "용역.hwpx")["group"] == ""
+    assert "group" not in _item(snap["txt"], "협조전")
+    assert "group" not in _item(snap["hwpx"], "용역.hwpx")
 
 
 def test_import_name_collision_suffixes(tmp_path, monkeypatch):
@@ -701,8 +650,8 @@ def test_import_folder_routes_media_suffixes_collision_and_skips_subfolders(
     assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
     assert not (tp / "txt" / "하위.txt").exists()                    # 1단계 밖 미반입
     snap = ctrl.snapshot()
-    assert _item(snap["hwpx"], "용역.hwpx")["group"] == ""           # 「그룹 없음」 시작
-    assert _item(snap["txt"], "협조전")["group"] == ""
+    assert "group" not in _item(snap["hwpx"], "용역.hwpx")   # 표면은 그룹을 안 싣는다
+    assert "group" not in _item(snap["txt"], "협조전")
     assert "3건을 가져왔습니다" in snap["result"]["text"]
     assert snap["result"]["level"] == "ok"
 
@@ -1001,12 +950,12 @@ def test_undo_restores_group_assignment(tmp_path, monkeypatch):
     제거하므로, 복원은 슬롯에 떠 둔 **삭제 시점 그룹**으로 재지정해야 한다(파일만 돌아와
     조용히 「그룹 없음」이 되는 것 금지)."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
+    (ctrl.hwpx_groups if "hwpx" == "hwpx" else ctrl.txt_groups).set_group("raw.hwpx", "입찰")
     ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
     ctrl.snapshot()  # 삭제 직후 관측 — 고아 지정은 정리된다(결정 8 유지)
     assert settings.load_template_group_map("hwpx") == {}
     assert ctrl.dispatch("undo_delete", {})["ok"] is True
-    assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["group"] == "입찰"
+    assert ctrl.hwpx_groups.group_of("raw.hwpx") == "입찰"
     assert settings.load_template_group_map("hwpx") == {"raw.hwpx": "입찰"}
 
 
@@ -1015,7 +964,7 @@ def test_undo_keeps_slot_when_group_restore_fails(tmp_path, monkeypatch):
     비웠다면 재시도가 '복원할 템플릿이 없습니다'로 막히고 템플릿은 조용히 「그룹 없음」이
     된다. 실패 시 파일 이동을 되돌려 Undo 재시도를 가능하게 남긴다."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
+    (ctrl.hwpx_groups if "hwpx" == "hwpx" else ctrl.txt_groups).set_group("raw.hwpx", "입찰")
     ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
     trashed = ctrl._deleted_template_slot[2]
 
@@ -1032,7 +981,7 @@ def test_undo_keeps_slot_when_group_restore_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ctrl.hwpx_groups, "set_group", original_set_group)
     assert ctrl.dispatch("undo_delete", {})["ok"] is True
-    assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["group"] == "입찰"
+    assert ctrl.hwpx_groups.group_of("raw.hwpx") == "입찰"
 
 
 def test_txt_undo_restore_holds_writer_lock(tmp_path, monkeypatch):
@@ -1057,7 +1006,7 @@ def test_txt_undo_group_restore_and_rollback_run_inside_writer_lock(tmp_path, mo
     락으로 덮으면, 락 해제 후 동시 writer 가 같은 이름을 새로 쓴 뒤 설정 쓰기가 실패했을
     때 롤백 replace 가 그 새 내용을 무락으로 휴지통에 쓸어 넣는다."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "txt", "key": "온나라_기안.txt", "group": "기안"})
+    (ctrl.hwpx_groups if "txt" == "hwpx" else ctrl.txt_groups).set_group("온나라_기안.txt", "기안")
     ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
 
     events: list = []
@@ -1080,7 +1029,7 @@ def test_txt_undo_group_restore_and_rollback_run_inside_writer_lock(tmp_path, mo
     )
     assert ctrl.dispatch("undo_delete", {})["ok"] is True
     assert events == ["lock_enter", "set_group", "lock_exit"]
-    assert _item(ctrl.snapshot()["txt"], "온나라_기안")["group"] == "기안"
+    assert ctrl.txt_groups.group_of("온나라_기안.txt") == "기안"
 
 
 def test_delete_rejects_path_outside_library(tmp_path, monkeypatch):

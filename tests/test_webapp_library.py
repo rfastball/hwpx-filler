@@ -113,10 +113,12 @@ def test_empty_registry_is_loudly_empty(tmp_path):
     assert snap["sections"] and snap["sections"][0]["rows"] == []
 
 
-def test_group_sections_and_collapse_are_view_only(tmp_path):
-    """「모든 작업」만 사용자 group 으로 구획하고, 접힘은 **보기**만 바꾼다.
+def test_sections_are_always_one_headless_flat_partition(tmp_path):
+    """목록은 **언제나 헤더 없는 평면 하나**다(U4 §2-30).
 
-    접었다고 건수·행이 빠지면 목록이 자기 사실을 배신한다(§19.6 "group 접힘은 보기만 바꾼다").
+    구획을 만들던 축은 사용자 group 하나였고 그 표면이 걷혔다. 저장된 group 값이 남아
+    있어도 구획을 만들지 않는다 — 이름을 바꾸거나 해산할 동사가 없는 헤더는 「복구 동사
+    없는 표면」이다. 판정 자체는 링1 에 동결로 살아 있다(`test_home_state`).
     """
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="가", template_path="", group="조달"))
@@ -126,17 +128,22 @@ def test_group_sections_and_collapse_are_view_only(tmp_path):
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     secs = ctrl.snapshot()["sections"]
-    assert [(s["label"], s["count"], s["headed"]) for s in secs] == [
-        ("조달", 1, True), ("그룹 없음", 1, True),
+    assert [(s["value"], s["count"], s["headed"], s["collapsed"]) for s in secs] == [
+        ("", 2, False, False),
     ]
-    assert all(not s["collapsed"] for s in secs)
-    ctrl.dispatch("toggle_group", {"group": "조달"})
-    secs = {s["value"]: s for s in ctrl.snapshot()["sections"]}
-    assert secs["조달"]["collapsed"] is True
-    assert secs["조달"]["count"] == 1 and len(secs["조달"]["rows"]) == 1  # 행은 그대로
-    # 태그 facet 은 살아 있고 group-by 렌즈 액션은 죽었다(지도 §10.8 판정 B).
-    with pytest.raises(ValueError, match="알 수 없는 library 액션"):
-        ctrl.dispatch("set_group_by", {"axis": "금액구간"})
+    assert [r["name"] for r in secs[0]["rows"]] == ["가", "나"]
+    assert reg.load("가").group == "조달"          # durable 값은 동결로 남는다
+    assert "group" not in secs[0]["rows"][0]        # 표면은 그것을 싣지 않는다
+    # 그룹·태그·facet 동사는 전부 이 채널에서 사라졌다.
+    for action, payload in (
+        ("toggle_group", {"group": "조달"}),
+        ("set_tags", {"name": "가", "tags": {}}),
+        ("toggle_facet", {"axis": "금액구간", "value": "1억미만"}),
+        ("clear_facets", {}),
+        ("set_group_by", {"axis": "금액구간"}),
+    ):
+        with pytest.raises(ValueError, match="알 수 없는 library 액션"):
+            ctrl.dispatch(action, payload)
 
 
 def test_delete_job_clears_selected_detail_and_pushes_snapshot(tmp_path):
@@ -209,36 +216,6 @@ def test_unknown_library_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 library 액션"):
         ctrl.dispatch("frobnicate", {})
-
-
-# ============================================================ #26 관리 조치
-def test_set_tags_replaces_clears_and_refreshes_axes(tmp_path):
-    """태그 통째 교체 저장(#2·D14) — 저장 후 axes/facets 즉시 재발견 + 카드 프리필 노출."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_work", {"name": "공고서"})
-    ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"물품": "의약품"}})
-    snap = ctrl.snapshot()
-    assert "물품" in {fa["axis"] for fa in snap["facets"]}      # 새 축 재발견
-    # 프리필 원천은 **상세**다 — 행에는 싣지 않는다(리뷰 1R P1 근본 조치).
-    assert snap["detail"]["tags"] == {"물품": "의약품"}
-    assert "tags" not in _rows(snap)["공고서"]
-    # durable 확인 — 레지스트리에 실제 저장됐다.
-    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"물품": "의약품"}
-    ctrl.dispatch("set_tags", {"name": "공고서", "tags": {}})
-    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {}
-
-
-def test_set_tags_rejects_malformed_loudly(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    with pytest.raises(ValueError, match="문자열"):
-        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"축": 3}})
-    with pytest.raises(ValueError, match="문자열"):
-        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"": "값"}})
-    # 공백 변형 중복 축 — 조용한 last-wins 로 값 하나가 증발하지 않고 loud 거절.
-    with pytest.raises(ValueError, match="중복된 태그 축"):
-        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"지역": "본청", " 지역": "대전"}})
-    # 실패해도 기존 태그는 무손상.
-    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"금액구간": "1억미만"}
 
 
 def _corrupt_file(tmp_path) -> "tuple[LibraryController, str]":
@@ -380,17 +357,19 @@ def test_actions_switch_view_mode_and_query_independently(tmp_path):
 
 
 def test_clear_filters_is_the_resident_exit_from_zero_results(tmp_path):
-    """0건 화면의 상주 출구 — 네 절단자(보기·방식·검색·태그)를 한 번에 걷는다(§8.4 도달성)."""
+    """0건 화면의 상주 출구 — 세 절단자(보기·방식·검색)를 한 번에 걷는다(§8.4 도달성).
+
+    넷째였던 태그 facet 은 U4 §2-30 에서 표면과 함께 사라졌다.
+    """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("set_view", {"view": "favorites"})
     ctrl.dispatch("set_mode", {"mode": "txt"})
     ctrl.dispatch("set_query", {"text": "없는이름"})
-    ctrl.dispatch("toggle_facet", {"axis": "금액구간", "value": "1억미만"})
     assert _rows(ctrl.snapshot()) == {}
     ctrl.dispatch("clear_filters", {})
     snap = ctrl.snapshot()
     assert (snap["view"], snap["mode"], snap["query"]) == ("all", "all", "")
-    assert not any(v["active"] for fa in snap["facets"] for v in fa["values"])
+    assert "facets" not in snap
     assert set(_rows(snap)) == {"공고서", "낙찰"}
 
 
@@ -431,33 +410,11 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     assert ctrl.snapshot()["detail"] is None
 
 
-def test_group_names_are_registry_wide_not_a_projection(tmp_path):
-    """리뷰 1R P2 — 이동 도착지 후보는 보기·필터와 **무관**하게 전역이다.
-
-    평면 보기나 켜진 필터가 구획에서 그룹을 없애도 도착지는 그대로여야 한다 — 아니면
-    실재하는 그룹으로 옮길 길이 화면 상태에 따라 사라진다.
-    """
-    reg = JobRegistry(tmp_path / "jobs")
-    reg.save(Job(name="가", template_path="", group="조달"))
-    reg.save(Job(name="나", template_path="", group="계약"))
-    reg.save(Job(name="다", template_path=""))
-    ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
-                          engine=make_hwpx_engine(),
-                          pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
-    assert ctrl.snapshot()["group_names"] == ["계약", "조달"]
-    # 평면 보기 + 아무것도 안 맞는 검색 → 구획은 비지만 도착지는 불변.
-    ctrl.dispatch("set_view", {"view": "favorites"})
-    ctrl.dispatch("set_query", {"text": "없는이름"})
-    snap = ctrl.snapshot()
-    assert _rows(snap) == {} and snap["group_names"] == ["계약", "조달"]
-
-
 def test_detail_survives_being_filtered_out_of_the_list(tmp_path):
     """리뷰 1R P1 의 백엔드 전제 — 상세는 걸러지지 않은 rows() 에서 성형된다.
 
-    선택 행이 검색·facet 밖으로 밀려나도 상세(그리고 그 안의 tags·group)는 그대로 산다.
-    표면의 관리 동사가 여기서 정체를 읽어야 하는 근거다.
+    선택 행이 검색 밖으로 밀려나도 상세는 그대로 산다. 표면의 관리 동사가 여기서 정체를
+    읽어야 하는 근거다(태그는 U4 §2-30 에서 상세에서도 걷혔다).
     """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_work", {"name": "공고서"})
@@ -465,7 +422,7 @@ def test_detail_survives_being_filtered_out_of_the_list(tmp_path):
     snap = ctrl.snapshot()
     assert "공고서" not in _rows(snap)
     assert snap["detail"]["name"] == "공고서"
-    assert snap["detail"]["tags"] == {"금액구간": "1억미만"}   # 프리필 원천이 살아 있다
+    assert "tags" not in snap["detail"]
 
 
 def test_refresh_can_carry_the_selection_to_a_renamed_work(tmp_path):
