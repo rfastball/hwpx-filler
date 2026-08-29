@@ -18,6 +18,9 @@ from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.host.locations import default_templates_dir
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
+#: 세션 저장 게이트가 요구하는 데이터 결속의 재료(#932 U4-C) — 매핑 판정은 안 바꾼다.
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
+
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
 SECTION = "Contents/section0.xml"
@@ -61,9 +64,15 @@ def _raw_hwpx(name: str = "계약서") -> Path:
 
 
 def _mounted_txt_session(frontend, path: Path):
-    """TXT 세션 하나를 매핑까지 세운다 — 첫 토큰은 상수로 **확정**해 둔다(이월 관측점)."""
+    """TXT 세션 하나를 매핑까지 세운다 — 첫 토큰은 상수로 **확정**해 둔다(이월 관측점).
+
+    데이터도 연결해 둔다: 저장 게이트가 결속을 요구하므로(#932 U4-C S2-3) 안 세우면 이
+    파일의 저장 단언이 전부 **데이터 게이트**에 막혀, 정작 재려던 템플릿 소실 차단이
+    도달하지 않는다(앞선 술어가 뒤의 술어를 가린다).
+    """
     editor = frontend.controllers["editor"]
     editor.load_template_path(str(path))
+    editor.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     editor.dispatch("goto_section", {"section": "binding"})
     editor.dispatch("set_type", {"index": 0, "type": "const"})
     editor.dispatch("set_const", {"index": 0, "const": "총무과"})

@@ -15,6 +15,12 @@ from hwpxfiller.gui.job_editor_state import (
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 
 
+#: 이 세션이 선 데이터 결속의 경로(#932 U4-C S2-3) — 저장 게이트가 요구하는 값이다.
+#: 실재하는 파일일 필요는 없다: 술어는 「연결이 있는가」 하나이고 읽기는 이 층의 일이
+#: 아니다(:func:`~hwpxfiller.domain.job.has_data_binding` 과 같은 축).
+BOUND = "D:/데이터/공고목록.xlsx"
+
+
 def _model(*rows: RowState) -> MappingModel:
     return MappingModel(rows=list(rows))
 
@@ -29,7 +35,7 @@ def _blank_row(name: str = "비고") -> RowState:
 
 # ------------------------------------------------------------------ validate_save
 def test_validate_save_blocks_when_model_missing():
-    verdict = validate_save(None, "작업1", "doc-{{ID}}")
+    verdict = validate_save(None, "작업1", "doc-{{ID}}", data_path=BOUND)
     assert not verdict.ok
     assert "확정" in verdict.block_reason
     assert verdict.profile is None
@@ -37,20 +43,20 @@ def test_validate_save_blocks_when_model_missing():
 
 def test_validate_save_blocks_when_not_all_confirmed():
     model = _model(_content_row(), _content_row("추정가격", confirmed=False))
-    verdict = validate_save(model, "작업1", "doc-{{ID}}")
+    verdict = validate_save(model, "작업1", "doc-{{ID}}", data_path=BOUND)
     assert not verdict.ok
     assert "모든 매핑 행" in verdict.block_reason
 
 
 def test_validate_save_blocks_on_empty_name():
-    verdict = validate_save(_model(_content_row()), "", "doc-{{ID}}")
+    verdict = validate_save(_model(_content_row()), "", "doc-{{ID}}", data_path=BOUND)
     assert not verdict.ok
     assert "이름" in verdict.block_reason
 
 
 def test_validate_save_blocks_on_empty_pattern():
     """RC-20 — 빈 패턴을 화면에 없던 값으로 조용히 폴백하지 않는다."""
-    verdict = validate_save(_model(_content_row()), "작업1", "")
+    verdict = validate_save(_model(_content_row()), "작업1", "", data_path=BOUND)
     assert not verdict.ok
     assert "패턴" in verdict.block_reason
 
@@ -58,22 +64,22 @@ def test_validate_save_blocks_on_empty_pattern():
 def test_validate_save_pattern_gate_is_media_aware():
     """F6 PR-B — TXT 작업은 파일을 만들지 않아 파일 이름 축이 없다(§3.2): 패턴 게이트가
     서지 않는다. 없는 규칙의 차단 문구는 고칠 표면이 없는 문구다. 그 외 게이트는 동일."""
-    assert validate_save(_model(_content_row()), "작업1", "", media="txt").ok
-    assert "이름" in validate_save(_model(_content_row()), "", "", media="txt").block_reason
-    assert "전부 비움" in validate_save(_model(_blank_row()), "작업1", "", media="txt").block_reason
+    assert validate_save(_model(_content_row()), "작업1", "", media="txt", data_path=BOUND).ok
+    assert "이름" in validate_save(_model(_content_row()), "", "", media="txt", data_path=BOUND).block_reason
+    assert "전부 비움" in validate_save(_model(_blank_row()), "작업1", "", media="txt", data_path=BOUND).block_reason
 
 
 def test_validate_save_blocks_all_blank_job():
     """RC-08 회귀 — 전부 비움 확정 작업은 emits_any_value 질의로 시끄럽게 차단."""
     verdict = validate_save(
-        _model(_blank_row("갑"), _blank_row("을")), "작업1", "doc-{{ID}}"
+        _model(_blank_row("갑"), _blank_row("을")), "작업1", "doc-{{ID}}", data_path=BOUND
     )
     assert not verdict.ok
     assert "전부 비움" in verdict.block_reason
 
 
 def test_validate_save_passes_with_profile():
-    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{공고명}}")
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{공고명}}", data_path=BOUND)
     assert verdict.ok and verdict.block_reason == ""
     assert verdict.profile is not None
     assert verdict.profile.name == "작업1"
@@ -87,7 +93,7 @@ def test_validate_save_blocks_a_filename_token_nothing_can_fill():
     실행 화면까지 미루면 「고칠 자리는 편집기인데 지적은 문서 만들기에서」가 돼 수정
     동선이 갈린다. 이 검사는 데이터가 필요 없는 작업 정의 수준 계약이라 여기서 답할 수 있다.
     """
-    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}")
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}", data_path=BOUND)
     assert not verdict.ok
     assert "{{ID}}" in verdict.block_reason
     assert verdict.blocked_field == "pattern"      # 고칠 칸을 함께 말한다(U2 §2.4)
@@ -96,7 +102,7 @@ def test_validate_save_blocks_a_filename_token_nothing_can_fill():
 
 def test_a_blank_declared_field_cannot_carry_a_filename_token():
     """명시 비움 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다 — 그래서 미해소다."""
-    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{비고}}")
+    verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{비고}}", data_path=BOUND)
     assert not verdict.ok
     assert "{{비고}}" in verdict.block_reason
 
@@ -104,7 +110,7 @@ def test_a_blank_declared_field_cannot_carry_a_filename_token():
 def test_txt_media_has_no_filename_axis_so_the_token_gate_is_silent():
     """TXT 작업은 파일을 만들지 않아 파일 이름 축이 없다(§3.2) — 없는 규칙을 요구하지 않는다."""
     verdict = validate_save(
-        _model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}", media="txt"
+        _model(_content_row(), _blank_row()), "작업1", "doc-{{ID}}", media="txt", data_path=BOUND
     )
     assert verdict.ok
 
@@ -118,25 +124,47 @@ def test_blocked_field_names_the_input_to_fix():
     칸을 겨눌 수 없는 차단(미확정·스키마 불일치·전부 비움)은 **빈 문자열**이다 — 없는
     칸을 겨눈 척하지 않는다. 그것들은 표 전체가 대상이라 지목할 입력이 없다.
     """
-    assert validate_save(_model(_content_row()), "", "doc-{{ID}}").blocked_field == "name"
-    assert validate_save(_model(_content_row()), "작업1", "").blocked_field == "pattern"
+    assert validate_save(_model(_content_row()), "", "doc-{{ID}}", data_path=BOUND).blocked_field == "name"
+    assert validate_save(_model(_content_row()), "작업1", "", data_path=BOUND).blocked_field == "pattern"
     # TXT 는 파일 이름 축이 없어 패턴 차단 자체가 없다 — 겨눌 칸도 없다.
-    assert validate_save(_model(_content_row()), "작업1", "", media="txt").ok
+    assert validate_save(_model(_content_row()), "작업1", "", media="txt", data_path=BOUND).ok
     for verdict in (
-        validate_save(_model(_content_row(confirmed=False)), "작업1", "doc-{{ID}}"),
-        validate_save(_model(_blank_row()), "작업1", "doc-{{ID}}"),
+        validate_save(_model(_content_row(confirmed=False)), "작업1", "doc-{{ID}}", data_path=BOUND),
+        validate_save(_model(_blank_row()), "작업1", "doc-{{ID}}", data_path=BOUND),
     ):
         assert not verdict.ok and verdict.blocked_field == ""
 
 
+def test_validate_save_blocks_until_data_is_connected():
+    """데이터 결속은 저장 게이트다(#932 U4-C S2-3) — 「데이터 없이 진행」의 사망과 한 짝.
+
+    작업이 데이터 참조를 durable 로 들게 된 이상(U4 §2.4), 결속 없는 저장은 실행할 수 없는
+    작업을 만든다. 차단은 고칠 자리(데이터 관문)를 함께 말한다.
+    """
+    verdict = validate_save(_model(_content_row()), "작업1", "doc-{{공고명}}", data_path="")
+    assert not verdict.ok
+    assert "데이터를 연결" in verdict.block_reason
+    assert verdict.blocked_field == "data"
+    assert verdict.profile is None
+    # TXT 도 예외가 아니다 — 파일 이름 축은 없어도 채울 값의 출처는 있어야 한다.
+    assert not validate_save(
+        _model(_content_row()), "작업1", "", media="txt", data_path=""
+    ).ok
+
+
 def test_validate_save_predicate_order_is_stable():
-    """차단 사유 순서 고정: 미확정 → 이름 → 패턴 → 전부 비움(종전 accept 와 동일)."""
+    """차단 사유 순서 고정: 미확정 → 데이터 → 이름 → 패턴 → 전부 비움.
+
+    데이터 술어는 **템플릿 다음**이다: 템플릿이 필드를 정하고 그 필드를 채울 데이터가
+    이어진다. 이름·파일명보다 앞에 서므로, 아무것도 안 채운 세션의 첫 지적은 데이터다.
+    """
     unconfirmed = _model(_content_row(confirmed=False))
-    assert "모든 매핑 행" in validate_save(unconfirmed, "", "").block_reason
+    assert "모든 매핑 행" in validate_save(unconfirmed, "", "", data_path="").block_reason
     all_blank = _model(_blank_row())
-    assert "이름" in validate_save(all_blank, "", "").block_reason
-    assert "패턴" in validate_save(all_blank, "작업1", "").block_reason
-    assert "전부 비움" in validate_save(all_blank, "작업1", "doc-{{ID}}").block_reason
+    assert "데이터를 연결" in validate_save(all_blank, "", "", data_path="").block_reason
+    assert "이름" in validate_save(all_blank, "", "", data_path=BOUND).block_reason
+    assert "패턴" in validate_save(all_blank, "작업1", "", data_path=BOUND).block_reason
+    assert "전부 비움" in validate_save(all_blank, "작업1", "doc-{{ID}}", data_path=BOUND).block_reason
 
 
 # ------------------------------------------------------- needs_overwrite_confirm
@@ -167,9 +195,14 @@ def test_overwrite_confirm_text_restates_actual_victim():
 
 # --------- 근본 조치(리뷰 3R): durable Job 필드의 **분류 완전성** 구조 가드 ---------
 #: 에디터 저장이 세션 값으로 **다시 짓는** 필드 — 곧 편집기가 소유하는 규칙·정체다.
-#: (default_dataset_ref 는 #347(U2 §5.3 판정 D)에서 필드째 폐기 — 분류 대상 자체가 없다.)
+#: (구 default_dataset_ref 의 **이름 축**은 #347(U2 §5.3 판정 D)에서 폐기된 채다. U4-C 가
+#:  되들인 결속은 경로+시트+헤더 행 세 성분이고 아래에 분류돼 있다.)
 _EDITOR_REBUILDS = {
     "version", "name", "template_path", "mapping", "filename_pattern",
+    # 데이터 결속 3성분(U4 §2.4 · #932 U4-C) — 「다시 짓는다」 갈래다. 보존으로
+    # 선언하면 편집기가 결속을 바꿀 수 없고(그것이 지금 유일한 동선이다),
+    # 레지스트리 파생으로 선언하면 저장이 사용자가 고른 데이터를 발명하게 된다.
+    "data_path", "data_sheet", "data_header_row",
 }
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {

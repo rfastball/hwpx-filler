@@ -121,7 +121,7 @@ def active_work_from_session(work_ref: str | None) -> ActiveWorkContext:
     """세션의 선택된 Work → :class:`ActiveWorkContext`. work_ref 가 있으면 active, 없으면 미선택.
 
     exact context 복원·현재 데이터 사용 가능 판정(``exact_context_restorable``·
-    ``usable_with_current_data``)은 **SX-05/backend 소관**이라 여기서 채우지 않는다 —
+    ``bound_to_current_data``)은 **SX-05/backend 소관**이라 여기서 채우지 않는다 —
     :func:`decide_active_work_after_data_transition` 이 소비할 플래그의 자리만 둔다.
     """
     if work_ref:

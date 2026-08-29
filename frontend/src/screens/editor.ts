@@ -150,6 +150,9 @@ type ViewState = {
   foldOpen: boolean;
   tokFoldOpen: boolean;
   saveMessage: { text: string; level: string } | null;
+  /** 열린 등록 데이터 목록 1슬롯 — 판정·문구는 Python 이 낸 그대로 든다(#932 U4-C S2-5).
+   *  `null` = 닫힘. 스냅샷에 상주시키지 않는 이유는 목록이 durable 저장소 읽기라서다. */
+  poolPick: { items: Obj[]; corrupted: Obj[] } | null;
   invalidField: string;
   aim: string;
   /** 이 문맥에서 이미 겨눈 목표 — 문맥당 한 번만 조준한다. */
@@ -179,8 +182,8 @@ export function createEditorController(deps: EditorControllerDeps) {
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
     libMenu: null, folderImportInFlight: false, txtEdit: null,
-    foldOpen: false, tokFoldOpen: false, saveMessage: null, invalidField: "", aim: "",
-    aimed: "",
+    foldOpen: false, tokFoldOpen: false, saveMessage: null, poolPick: null,
+    invalidField: "", aim: "", aimed: "",
   };
   const libContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
@@ -813,6 +816,15 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다. */
   function aimAtBlockedField(field: string): void {
+    /* 데이터 미연결(#932 U4-C S2-3)의 「칸」은 입력이 아니라 관문의 데이터 선택 동사다.
+       그 탭에 있지 않으면 겨눌 노드가 없으므로 문구만 남긴다(패턴 칸과 같은 규율). */
+    if (field === "data") {
+      if (snapshot().section !== "binding") return;
+      const gateway = deps.doc.querySelector<HTMLElement>(
+        '#editor-body button[data-act="pick-data"]');
+      gateway?.focus();
+      return;
+    }
     if (field !== NAME_FIELD && field !== PATTERN_FIELD) return;
     if (field === PATTERN_FIELD && snapshot().section !== "filename") return;
     patchView({ invalidField: field });
@@ -1016,13 +1028,38 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
     if (typeof result === "string" && result.startsWith("ERROR:")) {
       noticeSave(result.slice(6).trim());
+      return;
     }
+    if (result !== null) closePoolData();          // 파일로 갈아탔으면 열린 목록은 지난 상태다
   }
 
-  async function skipData(): Promise<void> {
-    if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) return;
-    await sendEdit("skip_data", {});
+  /* 등록 데이터에서 고르기(#932 U4-C S2-5) — 파일 피커와 **같은 선행 규율**을 지킨다:
+     확정 매핑이 걸린 교체는 열기 전에 한 번 묻는다(고른 뒤 되묻는 순서 금지). */
+  async function openPoolData(): Promise<void> {
+    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
+    const result = await sendEdit("pool_options", {});
+    if (result.ok === false) {
+      noticeSave(String(result.error || "등록 데이터 목록을 읽을 수 없습니다."));
+      return;
+    }
+    patchView({
+      poolPick: {
+        items: (result.items || []) as Obj[],
+        corrupted: (result.corrupted || []) as Obj[],
+      },
+    });
   }
+
+  async function usePoolData(key: string): Promise<void> {
+    const result = await sendEdit("use_pool_data", { key });
+    if (result.ok === false) {
+      noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
+      return;                                       // 목록은 열어 둔다 — 다른 항목을 고를 수 있다
+    }
+    patchView({ poolPick: null });
+  }
+
+  function closePoolData(): void { patchView({ poolPick: null }); }
 
   async function useNone(): Promise<void> {
     /* 확정 존재는 확인 **전에** 선차단한다(파괴를 승인시킨 뒤 거부하는 순서 금지). */
@@ -1141,7 +1178,8 @@ export function createEditorController(deps: EditorControllerDeps) {
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
     installExamples,
     removeExamples,
-    useLibraryTemplate, importTemplate, importFolder, pickData, skipData,
+    useLibraryTemplate, importTemplate, importFolder, pickData,
+    openPoolData, usePoolData, closePoolData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
     guarded,
@@ -1512,13 +1550,54 @@ function DataGateway(props: { snapshot: Obj; controller: EditorController }): Re
       className: has ? "btn" : "btn primary", "data-act": "pick-data",
       onClick: () => controller.guarded(() => controller.pickData()),
     }, has ? "바꾸기…" : "파일 선택…"),
-    h("button", {
-      className: "btn linklike", "data-act": "skip-data",
-      onClick: () => controller.guarded(() => controller.skipData()),
-    }, "데이터 없이 진행"),
+    snapshot.pool_enabled ? h("button", {
+      className: "btn", "data-act": "pick-pool-data",
+      onClick: () => controller.guarded(() => controller.openPoolData()),
+    }, "등록 데이터에서 고르기…") : null,
     has ? h(PathActions as any, {
       client: controller.client, path: snapshot.data_path, notify: controller.notify,
     }) : null);
+}
+
+/** 고정해 둔 데이터 목록(#932 U4-C S2-5) — 쓸 수 없는 항목도 **숨기지 않고** 비활성 + 사유.
+ *
+ *  판정도 사유 문구도 Python 이 낸 값을 그대로 든다(`usable`·`reason`). 여기서 `kind` 나
+ *  상태로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다. */
+function PoolPickList(props: { view: ViewState; controller: EditorController }): ReactNode {
+  const { view, controller } = props;
+  if (view.poolPick === null) return null;
+  const items = view.poolPick.items;
+  const corrupted = view.poolPick.corrupted;
+  return h("div", { className: "grp", id: "editorPoolPick" },
+    h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
+      h("span", { className: "cap" }, "고정한 데이터"),
+      h("span", { className: "spacer" }),
+      h("button", {
+        className: "btn sm", "data-act": "pool-pick-close",
+        onClick: () => controller.guarded(() => Promise.resolve(controller.closePoolData())),
+      }, "닫기")),
+    items.length
+      ? h("div", { className: "tpllist" }, ...items.map((item: Obj) => h("div", {
+        className: "tplcard", "data-pool-row": String(item.key), key: String(item.key),
+      },
+      h("div", { className: "tplcard-top" },
+        h("span", { className: "tplcard-name", title: String(item.reference || "") },
+          String(item.name))),
+      h("div", { className: "tplcard-meta muted" }, String(item.reference || "")),
+      item.usable ? null : h("div", { className: "tplcard-meta muted" },
+        h("span", { className: "pk-note" }, String(item.reason))),
+      h("div", { className: "tplcard-acts" },
+        h("button", {
+          className: "btn sm primary", "data-act": "use-pool-data",
+          "data-key": String(item.key),
+          disabled: !item.usable, title: item.usable ? "" : String(item.reason),
+          onClick: () => controller.guarded(() => controller.usePoolData(String(item.key))),
+        }, "이 데이터 연결")))))
+      : h("p", { className: "muted capnote" },
+        "고정한 데이터가 없습니다. '파일 선택…'으로 고른 뒤 '문서 만들기'에서 고정하세요."),
+    ...corrupted.map((entry: Obj) => h("div", {
+      className: "note dangerbox", key: String(entry.file),
+    }, `손상된 등록 데이터: ${entry.file} (${entry.error})`)));
 }
 
 function HeaderSelect(props: { snapshot: Obj; view: ViewState; controller: EditorController }): ReactNode {
@@ -1669,6 +1748,7 @@ function MappingStage(props: {
     h("div", { className: "wtitle" }, stageTitle(snapshot, "binding")),
     h("p", { className: "wsub" }, "필드마다 데이터 열을 지정하고 전 행을 확정하세요."),
     h(DataGateway as any, { snapshot, controller }),
+    h(PoolPickList as any, { view, controller }),
     h(HeaderSelect as any, { snapshot, view, controller }),
     snapshot.schema_only ? h("p", { className: "note warnbox" },
       "데이터 없이 매핑 중입니다. 고정값을 넣거나 비움으로 확정하세요.") : null,

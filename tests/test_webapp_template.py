@@ -902,7 +902,7 @@ def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
     session_tpl = _write_compiled(tmp_path / "세션.hwpx")
     editor = fe.controllers["editor"]
     editor.load_template_path(str(session_tpl))
-    editor.dispatch("skip_data", {})
+    editor.dispatch("goto_section", {"section": "binding"})
     assert editor.has_unsaved_work() is True
 
     txt_root = fe.controllers["tpl"].text_registry.directory

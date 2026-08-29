@@ -1,8 +1,9 @@
 """작업(Job) 데이터모델 — 생성 의도의 앵커.
 
 트랙 C UX 결정([[hwpx-filler-scope]]): 생성 의도는 데이터도 템플릿도 아닌 **저장된 "작업"**에
-붙는다. 작업은 durable 바인딩 ``{템플릿, 매핑 프로파일, 파일명 패턴}``(양식 측 {T·M·N})이다.
-데이터·행은 매 실행 일회성이라 **작업에 저장하지 않는다**.
+붙는다. 작업은 durable 바인딩 ``{템플릿, 매핑 프로파일, 파일명 패턴, 데이터 참조}``이다.
+**행은** 매 실행 일회성이라 작업에 저장하지 않는다 — 저장되는 것은 「어느 파일·시트·헤더 행을
+쓰는가」이지 그 내용이 아니다(U4 §2.4 재판정, #932 U4-C — U2 §5.3 판정 D 의 명시 철회).
 
 - **한 겹.** 데이터 측은 :class:`~hwpxfiller.domain.data_source.DataSource` 이음새로 추상 참조한다.
   누적치환(이전 출력을 소스로)·API 직결(미래)은 그 이음새 뒤의 *소스 종류*일 뿐 — 여기서 조인/
@@ -22,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .dataset_reference import excel_identity
 from .mapping import MappingProfile
 from ..domain.validation import ValidationReport, validate
 
@@ -252,10 +254,33 @@ class Job:
     # 복제는 새 identity 라 미계승(판본 미계승과 같은 근거). 순수 메타 — 매핑·실행 경로
     # 무영향이라 내용 지문에서 빠진다(favorited_at 과 같은 줄).
     authority_id: str = ""
-    # (default_dataset_ref(#53-A 작업→데이터 결속)는 U2 §5.3 판정 D 로 **폐기** — v6
-    #  데이터-우선 재작성을 살아남은 작업-앵커 잔재였고, 데이터↔작업 결속은 어느 방향으로도
-    #  다시 들이지 않는다(#347). 구 JSON 의 해당 키는 미지 키로 무시된다 — 마이그레이션이
-    #  아니라 폐기다: 「이 작업이 지난번 쓰던 데이터」 정보는 사용자 확인 하에 사라졌다.)
+    # 이 작업이 쓰는 **데이터 결속**(U4 §2.4 재판정, #932 U4-C). 마운트 시점에 한 벌로
+    # 포획한 참조 그대로다 — :meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`
+    # ·설정의 ``last_data_source`` 와 **같은 세 성분**이라 새 형상을 발명하지 않는다.
+    #
+    # **U2 §5.3 판정 D 의 명시 철회다.** 그 판정은 ``default_dataset_ref`` 를 폐기하며
+    # *"데이터↔작업 결속은 어느 방향으로도 다시 들이지 않는다"* 라고 적었다(#347). 실사용
+    # 라운드 U4 가 그 문장을 뒤집었다: 결속이 없으면 「데이터 없이 작업 만들기」가 예외가
+    # 아니라 **유일한 경로**가 되고, 그래서 작업을 열 때마다 데이터를 다시 골라야 한다.
+    # 되들인 것은 **참조의 재료가 다르다** — 판정 D 가 실제로 무너진 지점은 결속 자체가
+    # 아니라 결속의 키가 **개명 자유인 풀 항목 이름**이었다는 것이고(판정 C 가 같은 절에서
+    # 데이터 정체성을 경로+시트로 옮겼다), 여기 실리는 것은 그 정체성 축이다. 구 JSON 의
+    # ``default_dataset_ref`` 키는 그대로 폐기 — 이름 축은 되살아나지 않는다.
+    #
+    # **필수 성분이다**: 빈 참조는 「데이터 연결 필요」 상태이고 편집기 저장 게이트가 그것을
+    # 요구한다(:func:`~hwpxfiller.gui.job_editor_state.validate_save`). 빈 값이 유효 상태로
+    # 남는 이유는 구판 파일과 앱 밖 편집분뿐이다 — 조용히 추측해 채우지 않고 시끄럽게 세운다.
+    #
+    # **규칙 축이 아니다**: :func:`rules_values` 에 들지 않는다. 결속은 실행 **입력**이지
+    # 문서를 만드는 **규칙**(템플릿·파일명·필드)이 아니라, 넣으면 데이터를 바꿀 때마다
+    # ``binding_revision`` 이 올라 겪지 않은 세대와 검토 요구가 선다.
+    data_path: str = ""
+    #: 다중 시트 통합문서에서 확정한 시트명(""=CSV·단일 시트). 정체성 성분이다 — 같은
+    #: 워크북의 다른 시트는 다른 데이터다(#33).
+    data_sheet: str = ""
+    #: 헤더 행(1-based, 0=어댑터 기본). 참조를 경로 하나로 줄이면 **다른 헤더**에 앵커가
+    #: 걸리므로 세 값이 한 벌로 다닌다(#349 리뷰 2R 과 같은 규율).
+    data_header_row: int = 0
     # 마지막 **완주** 런이 쓴 규칙의 대상별 지문(재작성 F5, 지도 §10.12 판정 B).
     # ``{}`` = 아직 완주한 적 없음 = 새 작업이라 검토 요구가 선다(§13-3).
     # 왜 영속인가: §13-2("정상 반복 실행에서 미리보기는 선택")가 **앱 재시작을 넘어**
@@ -368,6 +393,45 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
 #: 않게). ``blank`` 는 ``"blank"``/``""`` 두 값만 갖는다(지문 문자열과 같은 표기를 쓴다 —
 #: 표기를 바꾸면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다).
 RULE_AXES = ("source", "type", "const", "blank", "fmt")
+
+
+def data_binding_of(job: "Job") -> "tuple[str, str, int]":
+    """작업의 데이터 결속 한 벌 — ``(path, sheet, header_row)``. 미결속이면 ``("", "", 0)``.
+
+    세 값을 따로 읽는 자리를 만들지 않으려고 한 함수로 낸다: 참조를 경로 하나로 줄이면
+    마법사·마운트가 **다른 헤더**에 앵커를 건다(#349 리뷰 2R).
+    """
+    return (job.data_path, job.data_sheet, job.data_header_row)
+
+
+def has_data_binding(job: "Job") -> bool:
+    """이 작업이 데이터에 연결돼 있는가 — 술어는 ``data_path`` 하나다.
+
+    ``data_path`` 하나로 판정하는 이유는 그 필드의 뜻이 이미 「이 결속을 파일로 가리킬 수
+    있는가」이기 때문이다(시트·헤더 행은 그 파일을 **어떻게** 읽는지의 옵션이라 단독으로
+    결속을 세우지 못한다). 거짓 = 「데이터 연결 필요」 상태.
+    """
+    return bool(job.data_path)
+
+
+def data_binding_matches(
+    job: "Job", path: str, sheet: str = "", header_row: int = 0
+) -> bool:
+    """이 작업의 결속이 **지금 마운트된 데이터**를 가리키는가(후보 역인덱스의 단일 술어).
+
+    경로 비교는 :func:`~hwpxfiller.domain.dataset_reference.excel_identity` 를 재사용한다 —
+    U2 §5.3 판정 C 가 데이터 정체성을 ``normcase(abspath(path)) + sheet`` 로 이미 확정했고,
+    여기서 정규화를 새로 지으면 같은 파일을 두 자리가 다르게 부른다. 헤더 행까지 보는 것은
+    결속이 **한 벌**이기 때문이다(같은 시트라도 헤더 행이 다르면 다른 데이터, #349 리뷰 P1).
+
+    미결속 작업은 어떤 마운트에도 맞지 않는다 — 빈 결속을 「아무 데이터나 된다」로 읽으면
+    「데이터 연결 필요」가 조용히 사라진다(confirm-or-alarm).
+    """
+    if not has_data_binding(job):
+        return False
+    if excel_identity(job.data_path, job.data_sheet) != excel_identity(path, sheet):
+        return False
+    return job.data_header_row == header_row
 
 
 def rules_values(job: "Job") -> "dict":

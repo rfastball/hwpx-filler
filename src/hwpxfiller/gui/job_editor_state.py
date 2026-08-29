@@ -32,8 +32,9 @@ BINDING_CONFIRM_HINT = "바꿀 것이 없어도 지금 연결을 확정해야 �
 class SaveVerdict:
     """저장 게이트 판정 1회 — 차단이면 ``block_reason``, 통과면 확정 ``profile``.
 
-    술어 순서는 종전 ``accept()`` 와 동일하게 고정한다:
-    매핑 미확정 → 이름 없음 → 파일명 패턴 없음(RC-20) → 전부 비움(RC-08).
+    술어 순서는 고정 계약이다:
+    매핑 미확정 → 템플릿 스키마 불일치 → 데이터 미연결(#932 U4-C) → 이름 없음 →
+    파일명 패턴 없음(RC-20) → 전부 비움(RC-08) → 미해소 파일명 토큰.
 
     ``blocked_field`` 는 **고칠 입력이 어디인가**다(U2 §2.4). 차단 문구만 띄우고 커서를
     안 옮기면 "입력하세요"라고 말한 뒤 어디에 입력할지는 안 알려 주는 꼴이고, 작업 이름은
@@ -51,7 +52,10 @@ class SaveVerdict:
         return not self.block_reason
 
 
-def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "hwpx") -> SaveVerdict:
+def validate_save(
+    model, name: str, pattern: str, *, data_path: str,
+    schema=None, media: str = "hwpx",
+) -> SaveVerdict:
     """저장 전 게이트 술어(순수) — 위젯은 ``block_reason`` 을 경고로 띄우기만 한다.
 
     ``model`` 은 :class:`~hwpxfiller.gui.mapping_state.MappingModel`(또는 ``None``).
@@ -67,6 +71,12 @@ def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "
     ``media`` — 파일명 패턴 게이트는 **매체 인지**다(F6 PR-B): TXT 작업은 파일을 만들지
     않아 파일 이름 축 자체가 없다(§3.2 — 탭도 없다). 없는 규칙을 요구하면 고칠 표면이
     없는 차단 문구가 된다.
+
+    ``data_path`` 는 이 세션이 선 **데이터 결속**의 경로다(U4 §2.4, #932 U4-C). 기본값이
+    없는 키워드인 이유는 그것이 곧 이 게이트의 실체이기 때문이다: 기본을 두면 결속을
+    안 실은 호출부가 조용히 통과하거나 조용히 차단당하고, 어느 쪽이든 판정이 호출부의
+    부주의로 정해진다. 술어 자체는 :func:`~hwpxfiller.domain.job.has_data_binding` 과
+    같은 축(경로 하나)이다.
     """
     if model is None or not model.is_complete():
         return SaveVerdict("모든 매핑 행을 확정해야 작업을 저장할 수 있습니다.")
@@ -75,6 +85,16 @@ def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "
     }:
         return SaveVerdict(
             "매핑이 현재 템플릿 스키마와 일치하지 않습니다. 템플릿을 다시 로드한 뒤 저장하세요."
+        )
+    # 데이터 결속은 **템플릿 다음**이다(U4 §2.4, #932 U4-C): 템플릿이 필드를 정하고 그
+    # 다음에 그 필드를 채울 데이터가 온다. 이름·파일명보다 앞에 서는 이유도 같다 — 데이터가
+    # 없으면 이름을 붙일 대상이 아직 규칙으로 완결되지 않았고, 사람이 이름부터 고치게 하면
+    # 정작 막힌 자리는 두 번째 저장에서야 드러난다. 「데이터 없이 진행」은 이 술어와 함께
+    # 사라졌다(#932 U4-C S2-4).
+    if not data_path:
+        return SaveVerdict(
+            "데이터를 연결해야 작업을 저장할 수 있습니다. '필드 연결' 탭에서 데이터를 고르세요.",
+            blocked_field="data",
         )
     if not name:
         return SaveVerdict("작업 이름을 입력하세요.", blocked_field="name")

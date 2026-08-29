@@ -151,7 +151,9 @@ class FileSourceFactoryPort(Protocol):
     """파일 경로 → DataSource 포트 — 구체 종류 선택(엑셀/CSV)은 Host(``webapp.app``)가
     주입하는 factory 의 몫이다. 링1 은 포트만 안다(P2-16, `gui → data.factory` 역간선 제거)."""
 
-    def __call__(self, path: str, *, sheet: "str | None" = None) -> object: ...
+    def __call__(
+        self, path: str, *, sheet: "str | None" = None, header_row: int = 0,
+    ) -> object: ...
 
 
 class PoolSourceFactoryPort(Protocol):
@@ -162,15 +164,24 @@ class PoolSourceFactoryPort(Protocol):
 
 
 def resolve_file_source(
-    path: str, *, sheet: "str | None" = None, source_factory: FileSourceFactoryPort
+    path: str, *, sheet: "str | None" = None, header_row: int = 0,
+    source_factory: FileSourceFactoryPort,
 ) -> "tuple[object, list[dict]]":
     """파일 경로 → (DataSource, records). 종류 선택은 주입된 factory. 로드 실패는 raise.
 
     ``sheet`` 는 사용자가 **확정한** 시트명(T2) — None 이면 기본(첫/유일 시트).
     확정은 표현 계층의 시트 선택 UI가 하고 여기는 옵션 관통만 한다(링1: PySide6 금지).
     ``source_factory`` 는 **필수 주입**(기본값·service locator 금지) — 조립은 Host 한 곳.
+
+    ``header_row`` 는 참조가 들고 있던 읽기 옵션의 승계 자리다(0 = 어댑터 기본 1행).
+    작업이 데이터를 durable 로 결속한 뒤(#932 U4-C) 이 값이 여기까지 와야 한다: 결속을
+    경로+시트로만 되읽으면 헤더 행이 다른 파일을 **같은 데이터라고 부르며** 다른 표를
+    세운다 — 화면 어디에도 표시가 없는 어긋남이다(#349 리뷰 P1 과 같은 자리).
     """
-    source = source_factory(path, sheet=sheet)
+    opts: "dict[str, object]" = {"sheet": sheet}
+    if header_row:
+        opts["header_row"] = header_row
+    source = source_factory(path, **opts)  # type: ignore[arg-type]
     return source, source.records()
 
 

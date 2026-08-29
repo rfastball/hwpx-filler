@@ -218,7 +218,7 @@ class ActiveWorkContext:
     """active Work/Template Application 식별 + exact context 복원·현재 데이터 사용 가능 플래그.
 
     **backend/controller(SX-02)가 채우는 사실**이다. ``exact_context_restorable`` 과
-    ``usable_with_current_data`` 의 **실제 판정은 SX-05/backend** 가 지고, 여기서는 그 플래그를
+    ``bound_to_current_data`` 의 **실제 판정은 SX-05/backend** 가 지고, 여기서는 그 플래그를
     **소비만** 한다(:func:`decide_active_work_after_data_transition`). 후보/추천 신호
     (``unique_candidate_available``·``is_favorite``·``recently_used``·``preferred_work_id``)는
     다른 Work 를 **자동 활성화하는 근거가 아니다**(#724 §9) — 사용자 명시 선택을 대체하지 않는다.
@@ -228,7 +228,7 @@ class ActiveWorkContext:
     work_ref: str | None = None
     template_application_ref: str | None = None
     exact_context_restorable: bool = False
-    usable_with_current_data: bool = False
+    bound_to_current_data: bool = False
     unique_candidate_available: bool = False
     is_favorite: bool = False
     recently_used: bool = False
@@ -602,13 +602,13 @@ class ActiveWorkTransitionDecision:
 def decide_active_work_after_data_transition(
     ctx: ActiveWorkContext,
 ) -> ActiveWorkTransitionDecision:
-    """기존 active Work 유지 여부 — exact context 복원 가능 **and** 현재 데이터 사용 가능일 때만 KEEP.
+    """기존 active Work 유지 여부 — exact context 복원 가능 **and** 현재 데이터에 결속일 때만 KEEP.
 
     그 밖에는 RELEASE 하고, 후보/추천 신호가 있어도 **다른 Work 를 자동 활성화하지 않는다**(#724 §9).
     복원 가능성 판정 자체는 재구현하지 않는다 — ``ctx`` 의 플래그(backend/SX-05 가 채운 사실)를 소비만
     한다.
     """
-    if ctx.active and ctx.exact_context_restorable and ctx.usable_with_current_data:
+    if ctx.active and ctx.exact_context_restorable and ctx.bound_to_current_data:
         return ActiveWorkTransitionDecision(disposition=KEEP)
     return ActiveWorkTransitionDecision(disposition=RELEASE)
 

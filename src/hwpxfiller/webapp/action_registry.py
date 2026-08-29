@@ -102,7 +102,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 끄는 문만 연다. 해소를 자동 감지해 지우려면 통지마다 해소 술어를 지어야 하고
         # 그 술어가 곧 두 번째 판정이다. 다시 필요해지면 같은 트리거가 다시 세운다.
         "dismiss_notice": _schema(),
-        "skip_data": _schema(),
+        # 등록 데이터(풀)에서 고르기(#932 U4-C S2-5) — 조회 1 + 겨눔 1. `job` 화면의
+        # `load_pool` 과 이름을 나눠 쓰지 않는다: 이 표가 곧 화면별 경계의 정의라 같은
+        # 이름이 두 화면에 걸리면 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다.
+        # (구 `skip_data` 는 여기서 사라졌다 — 데이터 결속이 저장 게이트가 된 이상
+        #  「데이터 없이 진행」은 저장할 수 없는 세션으로 가는 링크였다.)
+        "pool_options": _schema(),
+        "use_pool_data": _schema("key"),
         "use_all_headers": _schema(),
         "use_none": _schema(),
         "toggle_source_active": _schema("field"),
@@ -136,6 +142,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         **_POOL_TARGETING,
         "guard_state": _schema(),
         "refresh": _schema(),
+        # 현재 마운트 재읽기(U4 항목 5 · #932 U4-C) — 겨눔 성분을 payload 로 받지 **않는다**:
+        # 재료는 세션이 마운트 시점에 포획해 둔 한 벌이고, 웹이 실어 보내면 그사이 갈린
+        # 화면과 다른 데이터를 새로고침한다. 파괴 확인 왕복이라 `confirm` 만 받는다.
+        "remount_data": _schema(optional="confirm"),
         # 전체 표시순서 축(§18.10, 재작성 F3) — 데이터 존 공유 액션이 **아니다**: 「기안」
         # 화면은 원본 순서 고정으로 산다. TXT 는 F6 합류로 **이 화면에서** 축을 얻었다:
         # 작업대는 데이터 존이 없고 표시순 투영을 통과한 고정 사본을 받기 때문이다.
