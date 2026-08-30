@@ -144,7 +144,9 @@ def test_data_zone_handoff_fails_closed_and_preserves_reference_tuple() -> None:
     zone.data_header_row = 3
     handoff, error = zone.new_work_handoff()
     assert error == ""
-    assert handoff == {"path": "C:/data/source.xlsx", "sheet": "Sheet2", "header_row": 3}
+    assert handoff == {
+        "path": "C:/data/source.xlsx", "sheet": "Sheet2", "header_row": 3, "kind": "",
+    }
 
 
 def test_job_list_drift_note_only_reports_a_real_count_drift() -> None:

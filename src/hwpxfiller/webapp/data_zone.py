@@ -83,6 +83,10 @@ class DataZoneMixin:
     #: (「다시 연결」은 정상 수명 사건, #347). 마운트가 성사된 그 순간의 참조가 곧 지금 화면에
     #: 보이는 레코드를 만든 참조이므로, 승계는 슬롯을 다시 읽지 않고 이 포획분만 읽는다.
     data_header_row: int = 0
+    #: 마운트의 **종류**(""=엑셀/CSV, 그 밖은 그 소스의 코드) — 위 세 성분과 **같은 시점에
+    #: 같은 이유로** 포획한다. 종류를 흘리면 같은 경로 문자열이 두 뜻을 갖고, 승계·결속
+    #: 판정이 어느 어댑터로 읽을지를 추측하게 된다.
+    data_kind: str = ""
 
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
@@ -128,7 +132,7 @@ class DataZoneMixin:
     def new_work_handoff(self) -> "tuple[dict, str]":
         """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.
 
-        반환은 ``({"path", "sheet", "header_row"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
+        반환은 ``({"path", "sheet", "header_row", "kind"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
         가부(스냅샷)와 진입의 fail-closed(브리지)가 **같은 한 판정**을 읽는다 — 표면이
         `data_path` 유무로 스스로 유추하면 화면은 「누를 수 있다」고 말하고 백엔드는 거절하는
         어긋남이 난다(#349 리뷰 1R 이 지목한 자리).
@@ -163,6 +167,8 @@ class DataZoneMixin:
             "path": self.data_path,
             "sheet": self.data_sheet,
             "header_row": self.data_header_row,
+            # 종류도 한 벌의 성분이다 — 받는 쪽이 경로 모양으로 종류를 되추측하지 않게.
+            "kind": self.data_kind,
         }, ""
 
     def _display_indices(self, indices: "list[int]") -> "list[int]":

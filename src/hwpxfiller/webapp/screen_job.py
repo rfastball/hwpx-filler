@@ -1467,11 +1467,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         필터를 쓰면 같은 데이터에 대해 다른 목록을 말한다(판정 단일 출처).
 
         참조를 여기서 다시 조립하지 않는다 — ``data_path``·``data_sheet``·
-        ``data_header_row`` 는 마운트가 성사되는 자리에서 한 벌로 포획된 값이고, 나중에
-        슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다(#349 리뷰 2R).
+        ``data_header_row``·``data_kind`` 는 마운트가 성사되는 자리에서 한 벌로 포획된
+        값이고, 나중에 슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다
+        (#349 리뷰 2R).
         """
         return bound_jobs(
             jobs, self.data_path, self.data_sheet, self.data_header_row,
+            kind=self.data_kind,
         )
 
     def _candidate_payload(self, jobs) -> dict:
@@ -2308,7 +2310,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self._commit_data_transition(source, records, (path, sheet or "", header_row))
+        self._commit_data_transition(
+            source, records, (path, sheet or "", header_row, ""),
+        )
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
@@ -2316,6 +2320,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 헤더 행은 **마운트 성분 한 벌**로 갈린다(리뷰 2R): 풀 겨눔·작업 결속이 포획해 둔
         # 값이 다음 파일 겨눔에 남지 않게, 넘어온 값을 같은 자리에서 그대로 세운다.
         self.data_header_row = header_row
+        self.data_kind = ""  # 파일 마운트 = 엑셀/CSV — 이전 마운트의 종류가 남지 않게 같은 자리에서.
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
@@ -2325,11 +2330,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._push()
 
     def _commit_data_transition(
-        self, source, records: list, incoming: "tuple[str, str, int]",
+        self, source, records: list, incoming: "tuple[str, str, int, str]",
     ) -> None:
         """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다.
 
-        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌이다(#932 U4-C). 세션 필드
+        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌
+        ``(path, sheet, header_row, kind)`` 이다(#932 U4-C). 세션 필드
         (``self.data_path`` …)를 읽으면 안 되는 이유는 순서다: 마운트는 이 판정을 먼저
         지나고 성분을 **그 뒤에** 세운다(파일·풀 두 경로 모두). 여기서 세션을 읽으면
         「직전 데이터에 결속됐나」를 묻게 돼 판정이 한 걸음 늦는다.
@@ -2385,7 +2391,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 이 라운드가 없애는 조용한 어긋남이다.
             bound_to_current_data=(
                 active_job is not None
-                and data_binding_matches(active_job, *incoming)
+                and data_binding_matches(
+                    active_job, *incoming[:3], kind=incoming[3]
+                )
             ),
         )
         decision = decide_active_work_after_data_transition(context)
@@ -2818,9 +2826,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if not has_data_binding(job):
             return _JOB_BINDING_ABSENT.format(name=job.name)
-        path, sheet, header_row = data_binding_of(job)
+        # ``kind`` 는 결속의 종류 축이다 — 아래 마운트 갈래(파일 로드)는 아직 엑셀/CSV 뿐이라
+        # 읽지 않고, 계약 목록 마운트가 서는 것은 다음 단계다.
+        path, sheet, header_row, _kind = data_binding_of(job)
         if data_binding_matches(
             job, self.data_path, self.data_sheet, self.data_header_row,
+            kind=self.data_kind,
         ):
             return ""
         if reference_missing(path):
@@ -3396,7 +3407,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return []
         # 풀 겨눔도 **같은 시점의 한 벌**을 판정에 넘긴다 — 믹스인이 이 호출 뒤에 세션
         # 성분을 세우므로(순서 계약) 여기서 세션을 읽으면 직전 데이터를 묻게 된다.
-        self._commit_data_transition(source, records, pool_reference_triple(item))
+        # 풀 참조는 아직 엑셀 종류뿐이라 꼬리에 ``""`` 를 세운다(``pool_reference_triple``
+        # 은 세 성분 그대로 — 풀 스키마의 종류 축은 이 커밋의 밖이다).
+        self._commit_data_transition(
+            source, records, (*pool_reference_triple(item), ""),
+        )
         return records
 
     def _after_pool_load(self, records: list) -> None:

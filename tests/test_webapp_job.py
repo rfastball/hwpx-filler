@@ -1660,7 +1660,7 @@ def test_new_work_handoff_carries_the_reference_or_refuses_out_loud(tmp_path):
     assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     ref, blocked = ctrl.new_work_handoff()
     assert blocked == ""
-    assert ref == {"path": str(xlsx), "sheet": "발주", "header_row": 2}
+    assert ref == {"path": str(xlsx), "sheet": "발주", "header_row": 2, "kind": ""}
 
     a, b = tmp_path / "a.csv", tmp_path / "b.csv"
     a.write_text("id,bidNtceNm\n1,전산장비\n", encoding="utf-8")

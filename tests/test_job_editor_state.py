@@ -199,10 +199,11 @@ def test_overwrite_confirm_text_restates_actual_victim():
 #:  되들인 결속은 경로+시트+헤더 행 세 성분이고 아래에 분류돼 있다.)
 _EDITOR_REBUILDS = {
     "version", "name", "template_path", "mapping", "filename_pattern",
-    # 데이터 결속 3성분(U4 §2.4 · #932 U4-C) — 「다시 짓는다」 갈래다. 보존으로
+    # 데이터 결속 성분(U4 §2.4 · #932 U4-C) — 「다시 짓는다」 갈래다. 보존으로
     # 선언하면 편집기가 결속을 바꿀 수 없고(그것이 지금 유일한 동선이다),
     # 레지스트리 파생으로 선언하면 저장이 사용자가 고른 데이터를 발명하게 된다.
-    "data_path", "data_sheet", "data_header_row",
+    # 종류 축(``data_kind``)도 같은 한 벌이라 같은 갈래다 — 저장이 세션 값을 그대로 싣는다.
+    "data_path", "data_sheet", "data_header_row", "data_kind",
 }
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {

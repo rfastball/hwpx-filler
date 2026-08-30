@@ -152,15 +152,16 @@ POOL_UNWIRED_TEXT = "등록 데이터 목록을 읽을 수 없습니다."
 def _binding_source_ref(job: "Job") -> "dict | None":
     """저장본의 데이터 결속을 **인계 참조 한 벌**로 — 미결속이면 ``None``.
 
-    ``{path, sheet, header_row}`` 는 :meth:`EditorController._load_source_ref` 가 받는
+    ``{path, sheet, header_row, kind}`` 는 :meth:`EditorController._load_source_ref` 가 받는
     형상 그대로다(#878 인계와 같은 문). 결속을 경로 하나로 줄이지 않는 이유도 같다:
     참조 성분을 흘리면 마법사가 **다른 헤더**에 앵커를 걸고 그 어긋남은 화면 어디에도
-    표시가 없다(#349 리뷰 P1).
+    표시가 없다(#349 리뷰 P1). ``kind`` 도 같은 근거로 함께 간다 — 종류를 흘리면 받는 쪽이
+    경로 모양으로 어느 어댑터인지를 되추측한다.
     """
     if not has_data_binding(job):
         return None
-    path, sheet, header_row = data_binding_of(job)
-    return {"path": path, "sheet": sheet, "header_row": header_row}
+    path, sheet, header_row, kind = data_binding_of(job)
+    return {"path": path, "sheet": sheet, "header_row": header_row, "kind": kind}
 
 
 def pool_option_block(row: "DatasetPoolRow") -> str:
@@ -283,6 +284,9 @@ class EditorController:
         # (#349 리뷰 P1)이 채운다: 참조를 경로로만 줄이면 사용자가 고른 것과 **다른 헤더**로
         # 마법사가 서고, 그 어긋남은 화면 어디에도 표시가 없다.
         self.data_header_row = 0
+        # 결속의 **종류**(""=엑셀/CSV) — 위 세 성분과 한 벌이다. 저장이 그대로 Job 에 실어
+        # durable 이 되므로(`_EDITOR_REBUILDS` 갈래) 세션 리셋에서 함께 선다.
+        self.data_kind = ""
         # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
         # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
@@ -966,6 +970,7 @@ class EditorController:
         self.data_path = data["data_path"]
         self.data_sheet = data["data_sheet"]
         self.data_header_row = data["data_header_row"]
+        self.data_kind = data["data_kind"]
         self.source_fields = list(data["source_fields"])
         self.records = data["records"]
         self.session = EditSession(
@@ -1229,6 +1234,9 @@ class EditorController:
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.data_header_row = header_row
+        # 이 관문은 **파일 소스**의 것이다 — 종류는 늘 엑셀/CSV 이고, 이전 세션의 종류가
+        # 새 결속에 남지 않게 같은 자리에서 세운다(성분 한 벌 규율).
+        self.data_kind = ""
         self.source_fields = source.fields()
         # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
         self._ignored_sources = set()
@@ -1253,17 +1261,26 @@ class EditorController:
             self._push()
 
     def _load_source_ref(self, source_ref: dict, *, emit_push: bool = True) -> None:
-        """참조 한 벌(``{path, sheet, header_row}``)로 데이터를 **다시 읽는다** — 인계의 공용 자리.
+        """참조 한 벌(``{path, sheet, header_row, kind}``)로 데이터를 **다시 읽는다** — 인계의 공용 자리.
 
         「이 데이터로 새 작업」(:meth:`new_draft_with_data`)과 「수정…」(수리 진입, #878)이 같은
         성분을 같은 규칙으로 푼다. 두 자리가 각자 풀면 한쪽이 ``header_row`` 를 흘려도 아무도
         모른다 — 그 어긋남은 화면 어디에도 표시가 없다(#349 리뷰 P1 이 지목한 자리).
         참조를 낸 곳은 「문서 만들기」의 단일 판정
         (:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`)이다.
+
+        ``kind`` 가 엑셀/CSV(``""``)가 아니면 **시끄럽게 거절한다**: 이 자리의 해석기는
+        :meth:`load_data_path` 하나뿐이라 다른 종류의 참조를 그냥 넘기면 db 경로를 엑셀로
+        오파싱하거나 빈 세션으로 조용히 착지한다. (계약 목록 결속의 실제 복원 배선은 다음
+        단계에서 이 가드를 대체한다.)
         """
         path = str(source_ref.get("path") or "")
         if not path:
             raise ValueError("데이터 참조에 경로가 없습니다.")
+        kind = str(source_ref.get("kind") or "")
+        if kind:
+            label = "계약 목록" if kind == "pclm" else f"'{kind}'"
+            raise ValueError(f"{label} 데이터 결속은 아직 편집기에서 복원할 수 없습니다.")
         header = source_ref.get("header_row")
         self.load_data_path(
             path,
@@ -1498,9 +1515,10 @@ class EditorController:
         return {
             "data_path": self.data_path,
             "data_sheet": self.data_sheet,
-            # 참조 성분은 **한 벌로** 다닌다(#349 리뷰 2R·3R): 경로·시트만 되싣고 헤더 행을
-            # 흘리면 되돌린 뒤의 세션이 같은 파일의 다른 판을 들게 된다.
+            # 참조 성분은 **한 벌로** 다닌다(#349 리뷰 2R·3R): 경로·시트만 되싣고 헤더 행·
+            # 종류를 흘리면 되돌린 뒤의 세션이 같은 경로의 다른 판·다른 종류를 들게 된다.
             "data_header_row": self.data_header_row,
+            "data_kind": self.data_kind,
             "source_fields": list(self.source_fields),
             "records": self.records,
             "ignored": set(self._ignored_sources),
@@ -1520,6 +1538,7 @@ class EditorController:
         self.data_path = stash["data_path"]
         self.data_sheet = stash["data_sheet"]
         self.data_header_row = stash.get("data_header_row", 0)
+        self.data_kind = stash.get("data_kind", "")
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
         self._ignored_sources = stash["ignored"]
@@ -1652,7 +1671,7 @@ class EditorController:
             # 말하면 화면에는 데이터가 서 있는데 문안만 거짓이 된다(과진술도 부정직이다).
             restored_ref = data_binding_of(base)
             data_changed = (
-                self.data_path, self.data_sheet, self.data_header_row
+                self.data_path, self.data_sheet, self.data_header_row, self.data_kind
             ) != restored_ref
             base_bound = has_data_binding(base)
             self._restore_from(
@@ -2346,6 +2365,7 @@ class EditorController:
             data_path=self.data_path,
             data_sheet=self.data_sheet,
             data_header_row=self.data_header_row,
+            data_kind=self.data_kind,
             # 비-편집 메타는 사전 하나에서 통째로 되싣는다(_preserved_meta 단일 출처) —
             # 편집이 그룹·즐겨찾기를 조용히 초기화하던 자리(슬라이스 2 인접 수선).
             last_run_at=str(preserved["last_run_at"]),

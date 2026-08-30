@@ -169,12 +169,15 @@ def encode_job(job: Job) -> dict:
         "template_key": library_key_for(job.template_path),
         "filename_pattern": job.filename_pattern,
         "mapping": job.mapping.to_dict(),
-        # 데이터 결속 세 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
+        # 데이터 결속 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
         # 미지 키로 무시하고, 구 JSON 은 decode 의 기본값으로 「데이터 연결 필요」에 착지한다.
         # 이름 축(구 default_dataset_ref)은 되살아나지 않는다 — 정체성은 경로+시트다(U2 판정 C).
+        # ``data_kind`` 는 그 위의 **종류** 축이고 부재는 ""(=엑셀/CSV)라 구 저장본이
+        # 그대로 읽힌다 — 조용한 migration 이 아니라 기본값이 곧 구판의 뜻이다.
         "data_path": job.data_path,
         "data_sheet": job.data_sheet,
         "data_header_row": job.data_header_row,
+        "data_kind": job.data_kind,
         "last_run_at": job.last_run_at,
         "favorited_at": job.favorited_at,
         "tags": dict(job.tags),
@@ -290,12 +293,16 @@ def decode_job(d: dict) -> Job:
         mapping=MappingProfile.from_dict(d.get("mapping", {})),
         filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
         version=d.get("version", 1),
-        # 데이터 결속 세 성분(U4 §2.4 재판정) — 없으면 「데이터 연결 필요」 상태로 착지한다.
+        # 데이터 결속 성분(U4 §2.4 재판정) — 없으면 「데이터 연결 필요」 상태로 착지한다.
         # 여기서 추측해 채우지 않는다: 구판 파일에는 그 정보가 없고, 조용한 추측은 남의
         # 데이터로 문서를 만드는 길이다. 되살리는 것은 사용자가 편집기에서 한다.
+        # 종류 축의 부재는 ``""`` = 엑셀/CSV 라 구 저장본이 뜻을 잃지 않는다. 비문자열은
+        # ``_str`` 의 loud 규칙 그대로 던진다(훼손을 조용히 통과시키면 어느 어댑터로 읽을지가
+        # 추측이 된다).
         data_path=_str("data_path"),
         data_sheet=_str("data_sheet"),
         data_header_row=_header_row("data_header_row"),
+        data_kind=_str("data_kind"),
         # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로, default_dataset_ref
         # (#53-A 작업→데이터 결속의 **이름 축**)는 U2 §5.3 판정 D 로 개념째 제거 — 구
         # JSON 의 해당 키는 미지 키로 무시된다. U4-C 가 결속을 되들였지만 키는 경로+시트라

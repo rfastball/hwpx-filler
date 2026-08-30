@@ -1198,6 +1198,49 @@ def test_saved_job_carries_the_data_binding(tmp_path):
     assert job.data_header_row == 0
 
 
+def test_saved_job_carries_the_session_data_kind(tmp_path):
+    """결속의 **종류**도 저장이 다시 짓는 성분이다 — 세션 값이 그대로 durable 로 간다.
+
+    엑셀/CSV 마운트의 종류는 ``""`` 라 기본 동선에서는 눈에 띄지 않는다. 그래서 세션 값을
+    직접 세워 **싣는 자리가 있는지**를 못박는다: 저장이 종류를 흘리면 다른 종류의 결속이
+    디스크에서 엑셀로 되읽혀 어느 어댑터로 읽을지가 조용히 갈린다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "종류없는작업")["ok"] is True
+    registry = JobRegistry(tmp_path / "jobs")
+    assert registry.load("종류없는작업").data_kind == ""    # 파일 마운트 = 엑셀/CSV
+
+    ctrl2, _ = _controller(tmp_path)
+    ctrl2.load_template_path(str(TPL_COMPILED))
+    _mount_data(ctrl2)
+    ctrl2.data_kind = "pclm"                               # 마운트 뒤 종류만 갈아 끼운다
+    ctrl2.dispatch("goto_section", {"section": "binding"})
+    ctrl2.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl2.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl2.dispatch("confirm_all", {})
+    ctrl2.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl2.dispatch("set_name", {"name": "종류있는작업"})
+    assert ctrl2.dispatch("save", {})["ok"] is True
+    assert registry.load("종류있는작업").data_kind == "pclm"
+
+
+def test_whole_session_discard_compares_all_four_binding_components(tmp_path):
+    """버리기의 결속 비교는 **네 성분**이다 — 종류만 갈려도 「되돌렸다」가 참이어야 한다.
+
+    경로·시트·헤더 행만 보면 종류가 갈린 세션은 「아무것도 안 바뀌었다」로 읽혀 문안이
+    침묵하고, 화면에는 저장본과 다른 종류의 데이터가 서 있던 사실이 아무 데도 안 남는다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "종류버리기")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("종류버리기")
+    assert ctrl.data_kind == ""
+    ctrl.data_kind = "pclm"                       # 경로·시트·헤더는 그대로, 종류만 다르다
+    ctrl.dispatch("discard_patch", {})            # section 없음 = 세션 전체
+    assert ctrl.data_kind == ""                   # 저장본의 종류로 되돌아왔고
+    assert "연결된 것으로 되돌렸습니다" in ctrl.notice_text   # 그 사실을 재진술한다
+
+
 def test_save_landing_keeps_the_session_data(tmp_path):
     """저장 착지가 데이터를 내려놓지 않는다(#932 U4-C S2-1).
 
