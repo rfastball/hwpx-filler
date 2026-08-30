@@ -25,11 +25,10 @@
   border-top:1px solid var(--a-border)}
 #dataSheetSlot > .range-foot .muted{flex:1;min-width:0;margin:0;font-size:var(--fs-caption)}
 #dataSheetSlot > .range-foot .btn[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary)}
-/* 표시순서 축(F3) — 라벨+선택기는 고정폭, 재진술 문안이 남는 폭을 먹고 줄바꿈한다
-   (기안 글꼴 바 .wc-fontbar 와 같은 조판 — 같은 형태의 줄은 같은 규칙으로 선다). */
+/* 표시순서 축(F3) — 컨트롤은 표 머리로 갔고(U4 7번) 이 줄에는 **상시 재진술만** 남는다.
+   라벨·선택기 규칙을 함께 걷는다: 산출자가 0 인 규칙을 남기면 다음 사람이 그 표면이 아직
+   산다고 읽는다(#325 가 경고하는 바로 그 패턴). */
 .job-orderbar{margin-top:var(--sp-8);flex-wrap:wrap}
-.job-orderbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
-.job-orderbar .field{flex:none;width:auto}
 .job-orderbar .capnote{flex:1;min-width:0}
 
 /* 사전검증 박스 */
@@ -273,13 +272,13 @@ body.resizing-master{cursor:col-resize;user-select:none}
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
 .zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
 .zone + .zone{border-top:1px solid var(--a-border)}
-/* 캡션의 블록화는 **행동이 없는 캡션의 것**이다(리뷰 R5). `.zone-cap-actions`(현재 데이터·
-   본문 확인 — 캡션 오른쪽 끝에 ⤢ 가 서는 줄)는 draftcard.css 가 `display:flex` +
-   `justify-content:space-between` 으로 소유하는데, 같은 특정도(class 하나)인 이 규칙이
-   **나중 로드**라 그대로 이겼다. 실측: 캡션이 block 이 되고 ⤢ 가 제목 4px 뒤에 붙어 오른쪽에
-   549px 가 비었다. 되살린 규칙이 곁의 규칙을 덮는 것은 이 파일이 막으려던 사고와 같은
-   모양이라, 블록 규칙 쪽을 좁힌다 — flex 선언의 주인은 계속 한 곳이다. */
-.zone-cap:not(.zone-cap-actions){display:block}
+/* 캡션은 블록이다. 종전에는 `:not(.zone-cap-actions)` 로 좁혀 두었는데, 그 예외가 있던 이유는
+   ⤢ 를 든 캡션이 `display:flex` 를 써야 했기 때문이다(리뷰 R5: 같은 특정도 규칙이 나중 로드로
+   이겨 ⤢ 가 제목 4px 뒤에 붙고 오른쪽 549px 가 비던 실측 사고). **U4 10번에서 그 ⤢ 가 표
+   머리로 가면서 행동이 붙은 캡션이 0 이 됐다** — 예외를 남기면 다음 사람이 그 표면이 아직
+   산다고 읽는다. 같은 결함류를 재는 실렌더 단언은 표 머리 줄로 옮겨 갔다(selftest
+   `cap_actions`). */
+.zone-cap{display:block}
 .zone-cap{margin-bottom:var(--sp-10);color:var(--n-header-ink)}
 /* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
    (이 데이터에 사용할 문서·생성 준비 — 구 「선택한 작업」 존은 U2 §4 로 사망).

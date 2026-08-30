@@ -448,21 +448,26 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Bridge = service(ctx, "Bridge");
         const out = { pending: true };
-        const sel = byId(ctx, "jobOrderSel");
-        out.present = !!sel;
-        if (!sel) { out.pending = false; return { view_order: out }; }
-        out.options = Array.prototype.map.call(sel.options, (o) => o.value);
+        /* 축 컨트롤은 `<select>` 가 아니라 표 머리의 스위치다(U4 7번). 값 설정형 조작이
+           사라졌으므로 **사용자가 하는 그대로** 누르고, 상태는 `aria-pressed` 로 읽는다.
+           2값 고정(F3)은 컨트롤이 `data-order-values` 로 선언한다. */
+        const toggle = byId(ctx, "jobOrderToggle");
+        out.present = !!toggle;
+        if (!toggle) { out.pending = false; return { view_order: out }; }
+        out.options = String(toggle.getAttribute("data-order-values") || "")
+          .split(",").filter(Boolean);
+        const axis = () => (toggle.getAttribute("aria-pressed") === "true"
+          ? "sourceAsc" : "sourceDesc");
         try {
           const snap = await Bridge.initial("job");
-          out.control_before = sel.value === snap.view_order && sel.value === "sourceDesc";
+          out.control_before = axis() === snap.view_order && axis() === "sourceDesc";
           out.note_before = String(textOf(byId(ctx, "jobOrderNote")) || "");
-          sel.value = "sourceAsc";
-          sel.dispatchEvent(new ctx.win.Event("change"));
+          toggle.click();
           await ctx.sleep(400);                       // 왕복 + push 재렌더 여유(app.py:2685)
-          out.after_roundtrip = sel.value;            // 되돌아왔으면 'sourceDesc'
+          out.after_roundtrip = axis();               // 되돌아왔으면 'sourceDesc'
           await Bridge.call("job", "set_view_order", { value: "sourceDesc" });
           await ctx.sleep(200);
-          out.restored = sel.value;
+          out.restored = axis();
         } catch (thrown) {
           /* 레거시는 `out.error` 를 담은 정상 모양 값을 그대로 내보냈다. 러너 계약은
              "프로브가 실패한 것"과 "프로브가 false 를 잰 것"을 가른다. */
@@ -584,8 +589,14 @@ export function createEditorWorkbenchDataProbes() {
             await ctx.sleep(50);
             settleModal(ctx, "dataSheet");
             const done = liveNodes().every((el) => inside(inlineHost, el));
-            if (done || tries++ > 40) {
-              out.restored = done && ctx.doc.activeElement === trigger;
+            /* 트리거는 표 머리로 왔고(U4 10번) 면이 열리는 동안 인라인과 **함께 언마운트**된다
+               — 그래서 초점 복귀는 캡처해 둔 노드가 아니라 **지금 살아 있는 같은 단추**로
+               재야 한다. 옛 노드로 재면 「복귀가 깨졌다」가 아니라 「노드가 바뀌었다」를 재게
+               되고, 그것은 이 프로브가 지키려던 사실이 아니다. */
+            const back = byId(ctx, "jobDataExpand");
+            const focused = done && !!back && ctx.doc.activeElement === back;
+            if (focused || tries++ > 40) {
+              out.restored = focused;
               break;
             }
           }

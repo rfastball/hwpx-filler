@@ -268,7 +268,7 @@ def run(ctx: ScenarioContext) -> dict:
     # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
     # 사용자가 고른다. 그래서 마운트만으로는 게이트가 열리지 않고, 여기서 전체 선택을
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
-    s.click_sel("#jobSelAll", what="전체 선택")
+    _ensure_all_selected(s, "전체 선택")
 
     # ---- S5a 첫 실행의 결과 확인(F5) ---------------------------------------
     # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다 — §13-3 대로 결과를 확인해야
@@ -318,7 +318,9 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#dataSheet", "#dataSheetSlot", "#jobRangeFoot"],
     )
     # 표시순서를 뒤집어 표가 실제로 따라오는지 본다(보이는 것 = 만들어지는 것).
-    s.set_value("#jobOrderSel", "sourceAsc")
+    # 축은 이제 `<select>` 가 아니라 표 머리의 스위치다(U4 7번) — 값 설정형이 사라졌으므로
+    # 대본도 **사용자가 하는 그대로** 누른다.
+    s.click_sel("#jobOrderToggle", what="표시순서 뒤집기")
     s.wait(
         "(document.querySelector('#jobTableBody tr')||{dataset:{}}).dataset.i === '0'",
         "표시순서 전환 반영",
@@ -331,9 +333,9 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 토글")
     s.wait(
         "document.getElementById('jobRangeApply').textContent.includes('2건')"
-        " && document.getElementById('jobOrderSel').value === 'sourceAsc'",
+        " && document.getElementById('jobOrderToggle').getAttribute('aria-pressed') === 'true'",
         "재렌더 뒤에도 초안 축 유지",
-        requires=["#jobRangeApply", "#jobOrderSel"],
+        requires=["#jobRangeApply", "#jobOrderToggle"],
     )
     s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 복원")
     s.wait(
@@ -348,10 +350,10 @@ def run(ctx: ScenarioContext) -> dict:
     # 취소 = 초안만 버린다: 메인 범위(선택 3건)와 축(최신 행 먼저)이 그대로여야 한다.
     s.wait(
         "document.getElementById('dataSheet').classList.contains('hidden')"
-        " && document.getElementById('jobOrderSel').value === 'sourceDesc'"
+        " && document.getElementById('jobOrderToggle').getAttribute('aria-pressed') === 'false'"
         " && !document.getElementById('jobGenBtn').disabled",
         "취소 뒤 메인 범위 보존",
-        requires=["#dataSheet", "#jobOrderSel", "#jobGenBtn"],
+        requires=["#dataSheet", "#jobOrderToggle", "#jobGenBtn"],
     )
 
     # ---- S6 본문 확인(한 줄) ------------------------------------------------
@@ -473,7 +475,7 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#jobActionName", "#jobSelAll"],
     )
     seen["data_survived_job_switch"] = True
-    s.click_sel("#jobSelAll", what="전체 선택(TXT)")
+    _ensure_all_selected(s, "전체 선택(TXT)")
     s.wait(
         "document.getElementById('jobGenBtn').textContent.includes('검토·복사 시작')"
         " && !document.getElementById('jobGenBtn').disabled",
@@ -595,7 +597,7 @@ def run(ctx: ScenarioContext) -> dict:
         timeout=25.0,
         requires=["#jobActionName", "#jobSelAll"],
     )
-    s.click_sel("#jobSelAll", what="전체 선택(오류 연습)")
+    _ensure_all_selected(s, "전체 선택(오류 연습)")
     s.wait(
         "!document.getElementById('jobGenBtn').disabled",
         "검토·복사 진입(오류 연습)",
@@ -1100,7 +1102,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # Record recovery: the blank value is induced by a real DataTarget transition; PASS comes from Product projection/DOM.
     blank_path = ctx.stage_data("blank")
     _mount_data(ctx, blank_path)
-    s.click_sel("#jobSelAll", what="blank record 전체 선택")
+    _ensure_all_selected(s, "blank record 전체 선택")
     s.wait("!!document.querySelector('#jobRecordValidationIssues button')", "record validation issue", timeout=30.0, requires=["#jobRecordValidationIssues"])
     record_before = _workbench(_snapshot(s))
     issue = record_before["record_validation"]["issues"][0]
@@ -1132,7 +1134,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 그래서 전환 뒤에 배달 계획을 물으려면 **다시 고르는** 걸음이 대본에 있어야 한다. 없으면
     # 제품은 계획 대신 배달 blocker 를 세우므로(`job_run.ts:869-878`) `#jobPlannedDocuments` 는
     # 아예 서지 않고, 그 부재는 「계획이 늦다」가 아니라 「고른 것이 0건이다」라는 뜻이다.
-    s.click_sel("#jobSelAll", what="전환 뒤 record 재선택")
+    _ensure_all_selected(s, "전환 뒤 record 재선택")
     output_dir = ctx.prepare_output()
     ctx.queue_folder_answer(output_dir)
     s.click_sel("#jobManagedPickFolder", what="managed output folder 선택")
@@ -1764,6 +1766,32 @@ def _mount_pinned(ctx: "ScenarioContext", name: str) -> None:
     )
 
 
+def _ensure_all_selected(s: "Surface", what: str) -> None:
+    """전건 선택 **상태로 만든다** — 「그 단추를 한 번 누른다」가 아니다.
+
+    U4 11번에서 「전체 선택/해제」 두 버튼이 머리 체크박스 하나로 접히면서 이 자리의 동사가
+    멱등에서 **토글**로 바뀌었다. 선택은 작업 전환에서 생존하므로(§18.2 세션 소유) 전환 뒤에는
+    이미 전건인 채로 들어오는 걸음이 있고, 거기서 한 번 누르면 그것이 곧 **해제**다. 그래서
+    대본은 상태를 보고 필요할 때만 누른다 — 표현하려는 것은 클릭이 아니라 「전건이 됐다」다.
+
+    착지도 **수치**로 잰다. 종전 술어는 게이트 문안에 「최소 1건」이 없는 것을 봤는데, 그것은
+    다른 blocker(검토 요구 등)가 서 있으면 선택이 0건이어도 조용히 통과한다 — 실제로 이
+    라운드에서 그 구멍이 온보딩 T9 를 엉뚱한 자리에서 넘어뜨렸다.
+    """
+    s.js(
+        "(function(){const b=document.getElementById('jobSelAll');"
+        "if(b && !b.checked && !b.disabled)b.click(); return true;})()"
+    )
+    s.wait(
+        "(function(){const c=document.getElementById('jobSelCount');"
+        r"if(!c)return false;const m=/선택\s+(\d+)/.exec(c.textContent||'');"
+        "return !!m && Number(m[1]) > 0;})()",
+        f"{what} — 선택 착지",
+        timeout=30.0,
+        requires=["#jobSelCount"],
+    )
+
+
 def _select_all(ctx: "ScenarioContext", job: str) -> None:
     """후보 카드를 **명시로** 고르고 전체 선택까지 — 마운트 직후 선택은 0건이다(§18.2)."""
     _select_work(ctx.surface, job)
@@ -1773,17 +1801,10 @@ def _select_all(ctx: "ScenarioContext", job: str) -> None:
         f"{job} 전체 선택 가능",
         requires=["#jobSelAll"],
     )
-    s.click_sel("#jobSelAll", what=f"전체 선택({job})")
     # 클릭이 아니라 **선택이 선 것**이 이 걸음의 착지다: 작업 저장 직후의 새 스냅샷은 범위를
     # 0건으로 되돌리므로(`_reset_range_for_snapshot`), 누른 사실만 믿고 넘어가면 다음 걸음이
     # 「0건 선택」 게이트를 제품 결함으로 읽는다.
-    s.wait(
-        "(function(){const g=document.getElementById('jobGate');"
-        "return !!g && !g.textContent.includes('최소 1건');})()",
-        f"{job} 선택 착지",
-        timeout=30.0,
-        requires=["#jobGate"],
-    )
+    _ensure_all_selected(s, f"전체 선택({job})")
 
 
 def _approve(

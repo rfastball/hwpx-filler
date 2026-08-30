@@ -411,14 +411,18 @@ class TestWebSelftestGate:
     def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
         """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
 
-        이 축의 결함류는 "왕복 중 도착한 push 가 선택기를 옛 값으로 되돌린다"이고, 정적
+        이 축의 결함류는 "왕복 중 도착한 push 가 컨트롤을 옛 값으로 되돌린다"이고, 정적
         계약은 요소 존재까지만 본다. 양성대조(`control_before`)가 먼저 선다 — 렌더가 실제로
-        이 요소의 값을 쓴다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과해 버린다.
+        이 컨트롤의 상태를 축으로 세운다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과한다.
+
+        컨트롤은 U4 7번에서 `<select>` 에서 **표 머리의 스위치**로 바뀌었다(`#jobOrderToggle`).
+        상태는 `aria-pressed`, 2값 고정(F3)은 `data-order-values` 선언이 진다 — 축의 이름과
+        수는 그대로이므로 이 게이트가 재는 사실도 그대로다.
         """
         v = selftest_result["view_order"]
         assert v.get("error") is None, f"표시순서 프로브 오류: {v!r}"
         assert v["present"] is True and v["options"] == ["sourceDesc", "sourceAsc"]
-        assert v["control_before"] is True, "양성대조 실패 — 렌더가 선택기를 쓰지 않습니다."
+        assert v["control_before"] is True, "양성대조 실패 — 렌더가 컨트롤 상태를 안 씁니다."
         assert v["note_before"], "축 옆 재진술 문안이 비어 있습니다(판정 I)."
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
@@ -871,25 +875,17 @@ class TestWebSelftestGate:
             f"빈 게이트 문안이 자리를 차지해 버튼이 {j['actionbar_plane_empty_note']}px "
             "물러섰습니다 — 폭 0 이어도 flex 항목이면 앞의 gap 이 남습니다."
         )
-        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
-        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
+        # 표 머리 줄의 ⤢ 는 오른쪽 끝이다(리뷰 R5 의 결함류 그대로) — 규칙은 둘 다 살아 있고
+        # **어느 쪽이 이기는가**만 갈리는 자리라 정적 검사가 못 본다. 겨눔은 U4 10번에서
+        # 「현재 데이터」 캡션에서 표 머리(`#jobRecsHead`)로 옮겨왔다: 지키는 사실은 클래스
+        # 이름이 아니라 「행동이 그 줄의 오른쪽 끝에 선다」이고, 그 줄이 바뀐 것뿐이다.
         cap = j["cap_actions"]
-        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
+        assert cap, "표 머리 줄의 ⤢ 를 찾지 못했습니다 — 프로브 겨눔 소실."
         assert cap["display"] == "flex", (
-            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
+            f"표 머리 줄이 flex 를 잃었습니다({cap['display']!r}) — 곁의 규칙이 덮었습니다."
         )
         assert abs(cap["far_edge"]) <= 1, (
-            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
-        )
-        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
-        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
-        cap = j["cap_actions"]
-        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
-        assert cap["display"] == "flex", (
-            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
-        )
-        assert abs(cap["far_edge"]) <= 1, (
-            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
+            f"⤢ 가 표 머리 줄 오른쪽 끝에서 {cap['far_edge']}px 물러섰습니다."
         )
         assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         # 확인 필요·순위 밖은 후보 줄에서 수치 + 출구로만 말한다(슬라이스 3 구획 이사).
@@ -1106,8 +1102,12 @@ class TestWebSelftestGate:
         assert j["row_doccell_display"] == "flex", (
             "table-cell 대신 내부 래퍼가 flex를 소유해야 합니다."
         )
-        assert j["lead_hint"] == "선택하면 파일명이 정해집니다"
-        assert j["repeated_placeholder"] == 0
+        # U4 8번 — 이름·요약이 표에서 사라졌다(사용자 확정: 그 이름은 쓸모 있는 정보가 아니다).
+        # 사라지는 변경이라 **음성 단언**이 진다: 되살아나면 여기가 빨강이다.
+        assert j["doccol_row_names"] == 0, "「문서」 열의 이름·요약이 표에 되살아났습니다."
+        assert j["head_doccol_text"] == "", "선택 열 머리에 텍스트가 남았습니다."
+        # U4 11번 — 그 자리에 온 것은 선택 동사다(자리는 바뀌어도 id 는 같다).
+        assert j["head_selall"] is True, "전체 선택 동사가 열 머리에 서지 않았습니다."
         assert j["amount_align"] == "right"
         assert "tabular-nums" in j["amount_nums"]
 

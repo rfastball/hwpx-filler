@@ -130,8 +130,6 @@ table.dmap tr:last-child td{border-bottom:0}
   font-size:var(--fs-caption);font-weight:700;vertical-align:-2px}
 /* (.capstrip 은 유일 소비자 거울 캡스트립의 사망 — U2 §2.13 표 없는 한 줄 재편 — 과 함께
    걷혔다.) */
-.zone-cap-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
-.zone-cap-actions>.btn{margin-left:auto}
 
 /* ---- 빠른 기안(작업의 휘발 쌍둥이 · R-flow 블록 5 · 슬라이스 7) ----
    미리보기는 txt 의 .wc-render(+.seg-*·f-* 글꼴)를 그대로 재사용한다 — 채움 표지 삼분이

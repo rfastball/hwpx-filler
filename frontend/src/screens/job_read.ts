@@ -290,6 +290,16 @@ export function createJobReadController(deps: JobReadControllerDeps) {
         patchUi({ sheetOpen: false });
         const draft = snapshot()?.range_draft;
         if (!rangeApplied && draft?.open) void zone("range_draft_cancel", {});
+        // 면을 연 단추는 그 면과 **함께 언마운트됐다**(U4 10번 — 트리거가 표 머리로 왔고,
+        // 인라인/시트는 한쪽만 렌더된다). 저장해 둔 노드는 죽었으므로 오버레이의 복귀는
+        // 화면으로 착지한다(`restoreFocusTo` 의 대안 착지). 그 뒤 인라인이 다시 마운트되면
+        // **살아 있는 같은 단추**로 초점을 돌린다 — 「누른 자리로 돌아온다」는 계약은 그
+        // 자리가 옮겨졌다고 없어지지 않는다. 복귀는 `restoreFocus` → `onClose` 순서라
+        // 여기서 거는 초점이 나중이고, 재마운트를 기다려야 하므로 한 프레임 뒤에 건다.
+        const view = deps.doc.defaultView;
+        const back = () => deps.doc.getElementById("jobDataExpand");
+        if (view) view.requestAnimationFrame(() => { back()?.focus(); });
+        else back()?.focus();
       },
     });
   }
@@ -528,9 +538,10 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
   if (snapshot === null) return h("p", { className: "muted", role: "status" }, "데이터 상태를 읽는 중…");
   const notice = snapshot.data_notice;
   return createElement(Fragment, null,
-    h("div", { className: "zone-cap zone-cap-actions" }, h("span", null, "현재 데이터"),
-      h("button", { className: "btn sm", id: "jobDataExpand", type: "button",
-        onClick: (event: Obj) => { void props.controller.openDataSheet(event.currentTarget); } }, "펼쳐서 행 고르기 ⤢")),
+    // 「펼쳐서 행 고르기 ⤢」는 여기 없다(U4 10번) — 표를 여는 동사라 표 머리로 갔다.
+    // 옮긴 것은 **진입점뿐**이고 초안 거래(`RecordRangeDraft`·존 13액션·「적용 전 메인 범위
+    // 불변」 §18.11-21)와 면 수명주기는 그대로다.
+    h("div", { className: "zone-cap" }, h("span", null, "현재 데이터")),
     h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터(.xlsx/.csv)"),
       h("input", { className: "field ro", id: "jobDataLabel", type: "text", readOnly: true,
         value: snapshot.data_source_label || "", placeholder: "데이터를 선택하세요" }),
