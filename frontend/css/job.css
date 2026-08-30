@@ -358,6 +358,11 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .cs-presets{margin:0;padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);
   border-radius:var(--rad-surface);display:flex;flex-direction:column;gap:var(--sp-6)}
 .cs-presets-title{margin:0;font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700}
+/* 저장 구획은 동사 하나만 든다(U4 14~17) — 제목이 없으므로 테두리 상자도 필요 없다. */
+.cs-presets-save{border:0;padding:0;background:none}
+/* 끝난 슬롯의 접힌 줄(U4 14~17) — 접혔다는 사실만 남기지 않고 **고른 값**을 함께 말한다. */
+.cs-slot>.cs-slot-legend{cursor:pointer}
+.cs-slot-chosen{margin-left:var(--sp-6);color:var(--a-muted);font-weight:400}
 .cs-preset-save{align-self:flex-start;font-size:var(--fs-caption);background:none;
   border:1px solid var(--a-border);border-radius:var(--rad-pill);padding:2px var(--sp-8);
   cursor:pointer}

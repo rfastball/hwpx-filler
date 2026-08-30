@@ -25,11 +25,15 @@ function opt(id, text, effective = false) {
     structurally_associated_field_ids: [],
   };
 }
-function slot(id, text, status, options, sharedFields = []) {
+/** `settled`(끝난 슬롯 = 기본 접힘)는 **backend 가 낸 값**이다(U4 14~17) — 대역은 그것을
+ *  흉내내되(RESOLVED ∧ 실효 선택 있음) 호출자가 명시로 뒤집을 수 있다. */
+function slot(id, text, status, options, sharedFields = [], settled = undefined) {
+  const effective = options.filter((o) => o.effective).map((o) => o.option_id);
   return {
     slot_id: id, display_text: text, selection_policy: "EXACTLY_ONE", status,
-    declared_option_ids: [], effective_option_ids: options.filter((o) => o.effective).map((o) => o.option_id),
+    declared_option_ids: [], effective_option_ids: effective,
     options, shared_field_ids: sharedFields,
+    settled: settled ?? (status === "RESOLVED" && effective.length > 0),
   };
 }
 /** `zone_actionable`·`savable_selection` 은 **backend 가 낸 값**이다(U4 13번) — 대역은 그것을
@@ -581,8 +585,10 @@ test("projection.slots 를 그대로 그린다(Template 구조 재해석/조립 
       slot("s2", "부록 유형", "RESOLVED", [opt("o3", "없음", true)])],
     { blocking: [{ slot_id: "s1", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
   const html = render(stateOf(two));
-  const fieldsets = (html.match(/<fieldset/g) ?? []).length;
-  assert.equal(fieldsets, 2); // backend 가 준 slot 수 그대로 — 더하거나 빼지 않는다
+  // U4 14~17 로 슬롯 상자가 `<details>` 가 됐다(접힘은 네이티브 위젯이 진다) — 세는 대상만
+  // 바뀌고 재는 사실은 그대로다: **backend 가 준 slot 수 그대로**, 더하거나 빼지 않는다.
+  const boxes = (html.match(/<details/g) ?? []).length;
+  assert.equal(boxes, 2);
   assert.match(html, /표지 유형/);
   assert.match(html, /부록 유형/);
 });
@@ -626,10 +632,13 @@ test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면
 /* ══ S9-03(#829) 보관된 선택(Preset) — 저장·적용 두 동사 ═══════════════════════════════════ */
 /** `actionable` 은 Python `preset_zone_actionable` 이 낸 값이다(U4 13번) — 대역은 그 셋 중
  *  둘(보관·손상)을 흉내내고, 「지금 저장할 선택」 갈래는 호출자가 명시로 세운다. */
-function presetZone(items = [], corrupt = [], { actionable } = {}) {
+/** 두 구획의 술어는 Python 이 낸다(U4 14~17): 목록은 `preset_list_actionable`, 저장은 저장
+ *  게이트 그 자체다. 대역은 목록 축만 흉내내고 저장 축은 호출자가 세운다. */
+function presetZone(items = [], corrupt = [], { listActionable, saveActionable } = {}) {
   return {
     supported: true,
-    actionable: actionable ?? (items.length > 0 || corrupt.length > 0),
+    listActionable: listActionable ?? (items.length > 0 || corrupt.length > 0),
+    saveActionable: saveActionable ?? false,
     items,
     corrupt,
   };
@@ -849,12 +858,12 @@ test("컨트롤러 savePreset: 확인 거절이면 두 번째 저장을 보내�
 });
 
 test("존 렌더: 목록·적용 버튼과 정직한 빈 상태", () => {
-  // U4 13번: 보관 0건이어도 **저장할 선택이 있으면** 구획이 선다(저장 동사가 프리셋을 처음
-  // 만드는 유일한 입구다). 그때 목록이 비었다는 사실은 계속 정직하게 말한다.
+  // U4 14~17: 두 구획이 갈렸다. 보관 0건 ∧ 저장할 선택 있음이면 **저장 구획만** 선다 —
+  // 목록이 없으므로 「아직 없습니다」를 말할 목록 자체가 서지 않는다.
   const empty = render(stateOf(SELECTED, "idle", null, null, {
-    presets: presetZone([], [], { actionable: true }),
+    presets: presetZone([], [], { saveActionable: true }),
   }));
-  assert.match(empty, /보관된 선택이 아직 없습니다/);
+  assert.ok(!empty.includes("보관된 선택이 아직 없습니다"));
   assert.match(empty, /현재 선택을 프리셋으로 저장/);
 
   const listed = render(stateOf(SELECTED, "idle", null, null, {
@@ -899,6 +908,57 @@ test("13번: 보관 0건 ∧ 저장할 선택 0건이면 「보관된 선택」 
   assert.ok(!html.includes("cs-presets"));
   assert.ok(!html.includes("현재 선택을 프리셋으로 저장"));
   assert.match(html, /표지 유형/); // 구획 자체는 항목이 있어 그대로 선다
+});
+
+/* ══ U4 14~17 — 프리셋을 위로 · 끝난 슬롯은 접기 (#932) ═══════════════════════════════ */
+
+test("14~17: 보관된 선택 목록이 첫 슬롯보다 **앞에** 그려진다", () => {
+  const html = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+  }));
+  // 한 번에 끝내는 길을 먼저 보여 준다 — 자리가 곧 순서의 뜻이다.
+  assert.ok(html.indexOf("cs-presets") < html.indexOf("cs-slot"), html);
+});
+
+test("14~17: 저장 동사는 슬롯 **아래**에 남는다(고르고 나서 보관한다)", () => {
+  const html = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")], [], { saveActionable: true }),
+  }));
+  assert.ok(html.indexOf("cs-slot") < html.indexOf("cs-preset-save"), html);
+});
+
+test("14~17: 끝난 슬롯은 접힌 채 서고 고른 값을 그 줄이 말한다", () => {
+  const html = render(stateOf(SELECTED));
+  assert.match(html, /<details/);
+  // `open` 은 class 뒤에 붙으므로 속성 순서에 기대지 않는다 — `/<details open/` 는 언제나
+  // 거짓이라 이 단언이 vacuous 하게 통과했다(음성 단언이 아무것도 안 재던 자리).
+  assert.ok(!/<details[^>]*\sopen=/.test(html), "끝난 슬롯이 펼쳐진 채 섰습니다");
+  assert.match(html, /cs-slot-chosen/);
+  assert.match(html, /기본 표지/); // 접힌 줄이 고른 값을 대신 말한다
+});
+
+test("14~17: 고를 것이 남은 슬롯은 펼쳐진 채 선다", () => {
+  const html = render(stateOf(NEEDS));
+  assert.match(html, /<details[^>]*\sopen=/);
+});
+
+test("14~17: 술어는 Python 값이다 — 웹이 status 로 다시 판정하지 않는다", () => {
+  // RESOLVED 인데 backend 가 「접지 말라」고 실으면 그 말을 따른다. 웹이 재판정하면 빨강.
+  const held = view("SLOT_SELECTIONS_COMPLETE",
+    [slot("s1", "표지 유형", "RESOLVED", [opt("o1", "기본 표지", true)], [], false)]);
+  assert.match(render(stateOf(held)), /<details[^>]*\sopen=/);
+});
+
+test("14~17: 접힌 슬롯도 DOM 에 남는다 — `cs-opt-N-M` 인덱스가 밀리지 않는다", () => {
+  // 걸러내면 뒤 슬롯의 index 가 전부 밀려 실주행 대본이 **다른 슬롯을 누르고도 초록**이 된다.
+  const mixed = view("NEEDS_SELECTION",
+    [slot("s1", "표지 유형", "RESOLVED", [opt("o1", "기본", true), opt("o2", "간이")]),
+      slot("s2", "부록 유형", "MISSING_REQUIRED_SELECTION", [opt("o3", "없음")])],
+    { blocking: [{ slot_id: "s2", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
+  const html = render(stateOf(mixed));
+  for (const id of ["cs-opt-0-0", "cs-opt-0-1", "cs-opt-1-0"]) {
+    assert.ok(html.includes(`id="${id}"`), `${id} 가 사라졌습니다`);
+  }
 });
 
 test("13번: 손상 항목만 있어도 「보관된 선택」 구획은 선다(비활성 + 사유 병기)", () => {

@@ -688,12 +688,19 @@ U3 §3(#876) 「확인할 것이 없으면 숨김이 기본」의 적용 확장)
 `apply_selection_preset {configuration_token, preset_key}`. `request_id` 가 없는 이유는 S9-02 가
 재전송을 원장이 아니라 이름 유일성 + token version CAS 로 닫았기 때문이다.
 
-- **구획도 자기 술어로 선다**(U4 13번): 보관 항목·손상 항목이 있거나 **지금 저장할 선택이
-  있을 때** 선다(`preset_command.preset_zone_actionable` → 존의 `actionable`). 목록 건수만으로
-  숨기지 않는 이유는 「현재 선택을 프리셋으로 저장」이 프리셋을 처음 만드는 **유일한 입구**라
-  구획째 지우면 만들 방법이 사라지기 때문이다(#932 B5 가 템플릿 존에서 거절한 스위치 트랩).
-  세 번째 갈래는 저장 게이트(`has_declared_selection` — `PRESET_EMPTY_SELECTION` 을 세우는 그
-  함수)를 **그대로** 묻는다: 보이는 단추가 곧 이행되는 단추다.
+- **구획은 둘이고 자리가 다르다**(U4 14~17): **목록**(적용)은 slot 목록 **위**에, **저장**은
+  **아래**에 선다. 통째로 올리면 「지금 고른 것을 보관한다」가 고르는 자리보다 앞에 서서 인과가
+  뒤집힌다. 술어도 각자다 — 목록은 `preset_command.preset_list_actionable`(보관·손상 → 존의
+  `list_actionable`), 저장은 저장 게이트 `has_declared_selection` **그 자체**(→ `save_actionable`).
+  목록 건수만으로 저장 구획을 지우지 않는 이유는 「현재 선택을 프리셋으로 저장」이 프리셋을 처음
+  만드는 **유일한 입구**이기 때문이다(#932 B5 가 템플릿 존에서 거절한 스위치 트랩) — 보이는
+  단추가 곧 이행되는 단추다.
+- **끝난 슬롯은 접힌 채 선다**(U4 14~17): 판정은 `slot_settled` 하나(→ `ProjectedSlot.settled`)이고
+  「기본 접힘」이지 「접혀 있다」가 아니다. 사용자가 편 상태는 표시 상태라 웹이 소유하고 영속하지
+  않으며, **이 세션에서 만진 슬롯은 접지 않는다**(고른 직후 눈앞에서 접히면 U4-A 26번이 고친
+  깜빡임이 되돌아온다). 접혀도 **DOM 에서 사라지지 않는다** — `cs-opt-N-M` 은 렌더 순서 기반
+  id 라 걸러내면 실주행 대본이 다른 슬롯을 누르고도 초록이 된다. `CHOOSE_CONTENT` 가 겨누는
+  상태는 술어의 **입력**으로 배제된다.
 - **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, actionable,
   items[{key,name,created_at}], corrupt[{file_name,error}], corrupt_code}`). 지원 조건은
   `slot_configuration` 존과 동형이고, `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —

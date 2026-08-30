@@ -394,8 +394,9 @@ def test_snapshot_zone_hides_itself_when_there_is_nothing_to_choose(tmp_path: Pa
     assert not projection["slots"]  # asdict 는 tuple 을 보존한다(JSON 직렬화에서 배열이 된다)
     assert projection["zone_actionable"] is False
     assert projection["savable_selection"] is False
-    # 같은 상태에서 Preset 구획도 서지 않는다(보관 0 · 손상 0 · 저장할 선택 0).
-    assert ctrl.snapshot()["content_presets"]["actionable"] is False
+    # 같은 상태에서 Preset 두 구획도 서지 않는다(보관 0 · 손상 0 · 저장할 선택 0).
+    presets = ctrl.snapshot()["content_presets"]
+    assert presets["list_actionable"] is False and presets["save_actionable"] is False
 
 
 def test_choose_content_never_points_at_a_zone_that_is_not_standing(tmp_path: Path) -> None:

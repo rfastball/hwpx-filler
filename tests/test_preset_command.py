@@ -42,7 +42,7 @@ from hwpxfiller.application.preset_command import (
     fit_preset_selections,
     list_selection_presets,
     plan_preset_save,
-    preset_zone_actionable,
+    preset_list_actionable,
 )
 from hwpxfiller.application.slot_command import (
     CHANGED,
@@ -597,17 +597,14 @@ def test_listing_without_a_structure_claims_no_compatible_item_but_keeps_corrupt
 
 
 # ── 「보관된 선택」 구획 노출 술어(U4 13번 · #932) ────────────────────────────────────────
-def test_preset_zone_stands_on_any_of_the_three_reasons(tmp_path: Path) -> None:
-    """세우는 갈래 셋 — 보관·손상·「지금 저장할 선택」. 셋 다 0 일 때만 서지 않는다."""
+def test_preset_list_stands_on_stored_or_corrupt_items(tmp_path: Path) -> None:
+    """목록 구획은 **이미 보관된 것**을 묻는다 — 적용이라는 미이행 동사가 걸려 있을 때 선다."""
     reg = _registry(tmp_path)
     empty = list_selection_presets(reg, _pure_ctx())
-    assert preset_zone_actionable(empty, savable_selection=False) is False
-    # 저장 동사가 프리셋을 처음 만드는 유일한 입구다 — 목록 건수만으로 지우면 스위치 트랩(B5).
-    assert preset_zone_actionable(empty, savable_selection=True) is True
+    assert preset_list_actionable(empty) is False
 
     reg.add(_preset("표준", _sel(("s1", ("o1",)))))
-    listed = list_selection_presets(reg, _pure_ctx())
-    assert preset_zone_actionable(listed, savable_selection=False) is True
+    assert preset_list_actionable(list_selection_presets(reg, _pure_ctx())) is True
 
     reg2 = _registry(tmp_path / "other")
     reg2.directory.mkdir(parents=True, exist_ok=True)
@@ -615,7 +612,25 @@ def test_preset_zone_stands_on_any_of_the_three_reasons(tmp_path: Path) -> None:
     corrupt_only = list_selection_presets(reg2, _pure_ctx())
     # 손상만 남아도 선다: 비활성 + 사유 병기가 이 구획의 몫이라 숨기면 사용자가 묻지 못한다.
     assert corrupt_only.items == () and corrupt_only.corrupt_count == 1
-    assert preset_zone_actionable(corrupt_only, savable_selection=False) is True
+    assert preset_list_actionable(corrupt_only) is True
+
+
+@pytest.mark.parametrize("savable", [False, True])
+def test_two_predicates_cover_exactly_what_the_single_one_did(tmp_path: Path, savable) -> None:
+    """13번의 3항 OR 과 14~17 의 두 술어는 **합집합에서 동치**다 — 구획이 갈렸을 뿐 잃은 갈래가 없다.
+
+    옛 식을 여기 그대로 적어 두는 이유는, 그 식을 프로덕션에 남기면 그것이 곧 산출자 0 코드가
+    되기 때문이다. 계약은 살리고 죽은 함수는 남기지 않는다.
+    """
+    reg = _registry(tmp_path)
+    for listing in (list_selection_presets(reg, _pure_ctx()),):
+        legacy = bool(listing.items) or bool(listing.corrupt) or savable
+        assert (preset_list_actionable(listing) or savable) is legacy
+
+    reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    listed = list_selection_presets(reg, _pure_ctx())
+    legacy = bool(listed.items) or bool(listed.corrupt) or savable
+    assert (preset_list_actionable(listed) or savable) is legacy
 
 
 @pytest.mark.parametrize(

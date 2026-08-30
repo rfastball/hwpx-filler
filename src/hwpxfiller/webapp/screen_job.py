@@ -217,7 +217,7 @@ from ..application.generation_delivery import (
     build_delivery_binding_basis,
     resolve_current_generation_delivery,
 )
-from ..application.preset_command import preset_zone_actionable
+from ..application.preset_command import preset_list_actionable
 from ..application.preview_requirement import (
     CurrentPreviewPreparationError,
     PreviewNotRequired,
@@ -4634,7 +4634,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     @staticmethod
     def _content_presets_blank() -> dict:
         """미지원 content_presets 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
-        return {"supported": False, "items": [], "corrupt": [], "actionable": False}
+        return {
+            "supported": False, "items": [], "corrupt": [],
+            "list_actionable": False, "save_actionable": False,
+        }
 
     @staticmethod
     def _savable_selection(slot_zone: dict) -> bool:
@@ -4690,9 +4693,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ],
             "corrupt_code": listing.corrupt_code,
             # 노출 술어는 Python 이 낸다(U4 13번) — 링2 는 목록 길이를 다시 세지 않는다.
-            "actionable": preset_zone_actionable(
-                listing, savable_selection=savable_selection
-            ),
+            # 14~17 에서 **두 술어로 갈렸다**: 목록(적용)은 슬롯 위, 저장은 슬롯 아래에 서므로
+            # 한 구획이 아니라 두 구획이고, 각자의 성격이 각자의 술어를 갖는다.
+            "list_actionable": preset_list_actionable(listing),
+            # 저장 구획의 술어는 저장 게이트 **그 자체**다(`has_declared_selection`) — 보이는
+            # 단추가 곧 이행되는 단추라는 13번의 결속을 그대로 잇는다.
+            "save_actionable": savable_selection,
         }
 
     def _do_save_selection_preset(self, p: dict) -> dict:

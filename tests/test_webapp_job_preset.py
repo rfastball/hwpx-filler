@@ -255,8 +255,11 @@ def test_zone_unsupported_without_selected_job(tmp_path: Path) -> None:
     ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": ""})
     zone = _presets_zone(ctrl)
-    # U4 13번: 노출 술어도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
-    assert zone == {"supported": False, "items": [], "corrupt": [], "actionable": False}
+    # U4 13번·14~17: 노출 술어도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
+    assert zone == {
+        "supported": False, "items": [], "corrupt": [],
+        "list_actionable": False, "save_actionable": False,
+    }
 
 
 def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
@@ -271,32 +274,33 @@ def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
 
 
 # ── 구획 노출 술어(U4 13번 · #932) ───────────────────────────────────────────────────────
-def test_zone_actionable_follows_the_stored_list_and_the_save_gate(tmp_path: Path) -> None:
-    """보관 0건이어도 **저장할 선택이 있으면** 구획이 선다 — 저장 동사가 유일한 입구다(B5).
+def test_save_section_follows_the_save_gate(tmp_path: Path) -> None:
+    """저장 구획의 술어는 **저장 게이트 그 자체**다 — 보이는 단추가 곧 이행되는 단추(13번 결속).
 
-    술어는 Python 이 낸다: 링2·웹 어느 쪽도 목록 길이를 다시 세지 않는다.
+    14~17 에서 목록과 저장이 서로 다른 자리에 서면서 술어도 갈렸다. 여기는 저장 축만 본다.
     """
     ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
-    # 아직 아무것도 고르지 않았고 보관도 0건 → 이 구획에 지금 할 수 있는 일이 없다.
+    # 아직 아무것도 고르지 않았고 보관도 0건 → 두 구획 다 설 이유가 없다.
     fresh = _presets_zone(ctrl)
     assert fresh["supported"] is True and fresh["items"] == []
-    assert fresh["actionable"] is False
+    assert fresh["list_actionable"] is False and fresh["save_actionable"] is False
 
     token = _token(ctrl)
     _select(ctrl, token, _S_KEEP, _O_KEEP, "r1")
-    # 고르는 순간 저장할 것이 생긴다 — 같은 스냅샷에서 구획이 선다.
-    assert _presets_zone(ctrl)["actionable"] is True
+    # 고르는 순간 저장할 것이 생긴다 — 저장 구획만 선다(보관은 여전히 0건이다).
+    after = _presets_zone(ctrl)
+    assert after["save_actionable"] is True and after["list_actionable"] is False
 
 
-def test_zone_actionable_survives_on_the_stored_list_alone(tmp_path: Path) -> None:
-    """보관된 항목이 있으면 지금 고른 것이 없어도 선다 — 적용이라는 미이행 동사가 걸려 있다."""
+def test_list_section_stands_on_the_stored_list_alone(tmp_path: Path) -> None:
+    """보관된 항목이 있으면 목록 구획이 선다 — 적용이라는 미이행 동사가 걸려 있다."""
     ctrl, token, _tpl = _seated(tmp_path)
     ctrl.dispatch("save_selection_preset", {
         "configuration_token": token, "name": "표준 구성",
     })
     zone = _presets_zone(ctrl)
     assert [item["name"] for item in zone["items"]] == ["표준 구성"]
-    assert zone["actionable"] is True
+    assert zone["list_actionable"] is True
 
 
 # ── 목록 필터: 현재 템플릿 구조 호환만 실린다(U3 §2 · #875) ─────────────────────────────
@@ -387,10 +391,10 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     if ctrl.vm is not None:
         ctrl.vm.job.authority_id = ""
 
-    # 대고 물을 구조가 없으면 보관 0 · 손상 0 이고, 저장할 선택도 없다 → 구획이 서지 않는다.
+    # 대고 물을 구조가 없으면 보관 0 · 손상 0 이고, 저장할 선택도 없다 → 두 구획 다 안 선다.
     assert _presets_zone(ctrl) == {
         "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
-        "actionable": False,
+        "list_actionable": False, "save_actionable": False,
     }
     assert ctrl.registry.load(clone).authority_id == ""  # 렌더가 발급하지 않았다
 
