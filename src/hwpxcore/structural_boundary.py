@@ -21,6 +21,10 @@ _HS_NS = "http://www.hancom.co.kr/hwpml/2011/section"
 _HP = f"{{{HP_NS}}}"
 _HS = f"{{{_HS_NS}}}"
 
+#: 진단이 재진술하는 Field 텍스트 발췌의 상한 — 위치 표지로 충분하고 문서 본문을
+#: 통째로 증거 저장소에 흘리지 않을 만큼 짧게.
+_FIELD_TEXT_PREVIEW_LIMIT = 40
+
 
 class ContentEntryKind(StrEnum):
     SECTION = "section"
@@ -78,6 +82,11 @@ class BoundaryPairRef:
 class FieldBegin:
     pair: BoundaryPairRef
     raw_name: str | None
+    #: ``fieldBegin@type`` 원문(속성 부재는 ``None``) — 제품 층이 채울 누름틀을 가르는 축(#931).
+    field_type: str | None = None
+    #: 짝 사이 텍스트의 앞부분. 이름 없는 Field 를 사용자가 문서에서 찾을 유일한 표지라
+    #: 진단이 이것을 재진술한다. 길이는 :data:`_FIELD_TEXT_PREVIEW_LIMIT` 로 자른다.
+    text_preview: str = ""
 
 
 @dataclass(frozen=True)
@@ -508,7 +517,17 @@ def _scan_entry(
     for occurrence in field_resolution.occurrences:
         pair = BoundaryPairRef()
         native_fields.append((pair, occurrence))
-        events.append((occurrence.begin_order, FieldBegin(pair, occurrence.raw_name)))
+        events.append(
+            (
+                occurrence.begin_order,
+                FieldBegin(
+                    pair,
+                    occurrence.raw_name,
+                    occurrence.field_type,
+                    _field_text_preview(occurrence),
+                ),
+            )
+        )
         events.append((occurrence.end_order, FieldEnd(pair)))
     native_bookmarks: list[tuple[BoundaryPairRef, _BookmarkPair]] = []
     for bookmark in bookmark_pairs:
@@ -555,6 +574,17 @@ def _scan_entry(
             tuple(native_bookmarks),
         ),
     )
+
+
+def _field_text_preview(occurrence: FieldOccurrence) -> str:
+    """짝 사이 ``hp:t`` 텍스트를 한 줄로 이어 붙여 자른다(줄바꿈은 공백으로)."""
+    # 파편 ``hp:t`` 는 한 값의 조각이라 사이에 공백을 넣지 않는다(값 읽기와 같은 규칙).
+    text = " ".join(
+        "".join("".join(node.itertext()) for node in occurrence.texts).split()
+    )
+    if len(text) > _FIELD_TEXT_PREVIEW_LIMIT:
+        return text[:_FIELD_TEXT_PREVIEW_LIMIT] + "…"
+    return text
 
 
 def scan_structural_boundaries(pkg: object) -> StructuralBoundaryScan:

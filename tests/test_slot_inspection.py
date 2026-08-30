@@ -167,6 +167,20 @@ def _field(name: str, value: str = "값") -> str:
     return _field_begin(name) + f"<hp:t>{value}</hp:t>" + _field_end()
 
 
+def _hyperlink(url: str, identifier: str = "1737418110") -> str:
+    """한글이 URL 입력 때 자동으로 세우는 하이퍼링크 필드(#931).
+
+    사용자가 만든 누름틀과 같은 ``fieldBegin``/``fieldEnd`` 문법을 쓰되
+    ``type="HYPERLINK"`` 이고 ``name`` 은 항상 비어 있다 — 그것이 정상이다.
+    """
+    return (
+        f'<hp:ctrl><hp:fieldBegin id="{identifier}" type="HYPERLINK" name="" '
+        'editable="0" dirty="1" fieldid="627600491"/></hp:ctrl>'
+        f"<hp:t>{url}</hp:t>"
+        f'<hp:ctrl><hp:fieldEnd beginIDRef="{identifier}"/></hp:ctrl>'
+    )
+
+
 def _plain_ancestor_package() -> HwpxPackage:
     return _xml_package(
         _p(_begin("1", "SLOT") + "<hp:t>A</hp:t>")
@@ -1141,6 +1155,66 @@ def test_qualification_rejects_ambiguous_field_ownership_without_partial_structu
         assert expected_kind in {item.kind for item in inspection.diagnostics}
         assert inspection.structure is None
         assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+
+def test_qualification_admits_hyperlinks_without_counting_them_as_fields(
+    tmp_path: Path,
+) -> None:
+    """하이퍼링크는 채울 누름틀이 아니다 — 등록을 막지도, 필드 집합에 들지도 않는다(#931).
+
+    법령 링크·기관 홈페이지가 든 공공 조달 서식에서 거의 항상 재현하던 등록
+    불가의 회귀 자리다. 음성 단언이 같은 무게를 갖는다: 조치안 A(하이퍼링크에 이름
+    부여)는 게이트만 넘기고 매핑 화면이 링크를 채울 대상으로 요구하게 만들었다.
+    """
+    package = _xml_package(
+        _p(_hyperlink("https://www.law.go.kr"))
+        + _p(_field("계약명"))
+        + _p(_hyperlink("http://www.law.go.kr", "1745692334"))
+        + _p("<hp:t>TAIL</hp:t>")
+    )
+    canonical_bytes = package.to_bytes()
+
+    inspection = inspect_hwpx_qualification(canonical_bytes)
+    assert inspection.diagnostics == ()
+    assert inspection.structure == TemplateStructure(("계약명",), ())
+
+    execution = inspection.execution_structure
+    assert execution is not None
+    assert [o.field_id for o in execution.field_occurrences] == ["계약명"]
+
+    path = tmp_path / "hyperlink.hwpx"
+    path.write_bytes(canonical_bytes)
+    template = inspect_hwpx_template(str(path))
+    assert template.fields == ("계약명",)
+    assert template.status.field_n == 1
+
+
+def test_qualification_still_rejects_an_unnamed_click_here_field_by_position(
+    tmp_path: Path,
+) -> None:
+    """양성 대조: 이름을 지운 누름틀은 여전히 거절되고, 진단이 그 자리를 말한다(#931).
+
+    예전 문안은 ``Field '' has no valid ID`` 라 이름이 빈 문자열일 때 정보가 0
+    이었다. 어느 자리의 무엇인지와 무엇을 할지가 문안에 들어야 막다른 길이 아니다.
+    """
+    package = _xml_package(
+        _p(_hyperlink("https://www.law.go.kr"))
+        + _p(
+            '<hp:ctrl><hp:fieldBegin type="CLICK_HERE" name=""/></hp:ctrl>'
+            "<hp:t>수요기관명</hp:t>"
+            "<hp:ctrl><hp:fieldEnd/></hp:ctrl>"
+        )
+        + _p("<hp:t>TAIL</hp:t>")
+    )
+    inspection = inspect_hwpx_qualification(package.to_bytes())
+
+    assert inspection.structure is None
+    assert [item.kind for item in inspection.diagnostics] == ["invalid-field-id"]
+    message = inspection.diagnostics[0].message
+    assert SECTION in message  # 어느 entry 인가
+    assert "2번째 필드" in message  # 그 안 몇 번째인가
+    assert "수요기관명" in message  # 문서에서 눈으로 찾을 표지
+    assert "지정하거나" in message  # 무엇을 할지
 
 
 def test_qualification_combines_native_capability_blockers_without_partial_structure() -> None:

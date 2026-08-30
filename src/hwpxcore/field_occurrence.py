@@ -52,6 +52,9 @@ class FieldOccurrence:
 
     entry: str
     raw_name: str | None
+    #: ``fieldBegin@type`` 원문(속성 부재는 ``None``). 이 kernel 은 값을 읽어 나르기만
+    #: 한다 — "무엇이 채울 누름틀인가"는 이름과 같이 제품 층의 의미론이다(#931).
+    field_type: str | None
     begin_order: int
     end_order: int
     begin: etree._Element
@@ -158,7 +161,10 @@ def resolve_field_occurrences(
     ``id``/``beginIDRef`` links win when present; the legacy id-less shape is
     paired only by an unambiguous begin-then-end sequence on that same lane.
     Invalid names remain occurrences because name semantics belong to the
-    product layer, not this format kernel.
+    product layer, not this format kernel. So does ``type``: every non-BOOKMARK
+    Field stays an occurrence — automatic ones (``HYPERLINK`` and friends) included
+    — because structural safety must see every pair that a mutation could cut.
+    Which ``type`` is a fillable 누름틀 is decided above this kernel (#931).
     """
     nodes = [node for node in root.iter() if isinstance(node.tag, str)]
     order = {node: index for index, node in enumerate(nodes)}
@@ -321,6 +327,7 @@ def resolve_field_occurrences(
                 FieldOccurrence(
                     entry=entry,
                     raw_name=opened.get("name"),
+                    field_type=opened.get("type"),
                     begin_order=begin_order,
                     end_order=end_order,
                     begin=opened,

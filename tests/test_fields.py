@@ -590,3 +590,52 @@ def test_precheck_matches_post_notes_on_divergent_shapes():
     for name in doc.required_fields():
         doc.set_field(name, "전부 다른 새값")
     assert set(doc.notes) == pre  # 같은 걸음·같은 어휘 — 사전=사후
+
+
+# ------------------------------------------------------- 자동 필드 제외(#931)
+_HYPERLINK_XML = (
+    _HDR
+    + "<hp:p>"
+    '<hp:run><hp:ctrl><hp:fieldBegin id="1737418110" type="HYPERLINK" name=""'
+    ' editable="0" dirty="1" fieldid="627600491"/></hp:ctrl></hp:run>'
+    "<hp:run><hp:t>https://www.law.go.kr</hp:t></hp:run>"
+    '<hp:run><hp:ctrl><hp:fieldEnd beginIDRef="1737418110"/></hp:ctrl></hp:run>'
+    "</hp:p>"
+    "<hp:p>"
+    '<hp:run><hp:ctrl><hp:fieldBegin id="9" type="HYPERLINK" name="링크1"/></hp:ctrl></hp:run>'
+    "<hp:run><hp:t>http://www.law.go.kr</hp:t></hp:run>"
+    '<hp:run><hp:ctrl><hp:fieldEnd beginIDRef="9"/></hp:ctrl></hp:run>'
+    "</hp:p>"
+    "<hp:p>"
+    '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+    "<hp:run><hp:t>기존값</hp:t></hp:run>"
+    "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    "</hp:p></hs:sec>"
+).encode("utf-8")
+
+
+def test_hyperlink_fields_are_not_fill_targets():
+    """한글이 자동으로 낳는 하이퍼링크는 누름틀이 아니다 — 채움 표면이 보지 않는다(#931).
+
+    이름이 붙은 하이퍼링크까지 막는 것이 이 단언의 몫이다: 이름만 보고 걸렀다면
+    ``name="링크1"`` 이 채울 항목 목록에 섞여 사용자에게 값을 요구한다(조치안 A 의 오염).
+    """
+    doc = FieldDocument(_HYPERLINK_XML)
+    assert doc.required_fields() == ["계약명"]
+    assert doc.field_values() == [("계약명", "기존값")]
+    assert doc.read_field("링크1") is None
+    assert doc.set_field("링크1", "덮어쓰기") is False
+    assert doc.precheck() == []
+    assert doc.modified is False
+
+
+def test_hyperlink_pairs_stay_visible_to_the_format_kernel():
+    """제외는 제품 층에서만 일어난다 — 커널은 하이퍼링크 짝을 계속 본다(#931).
+
+    구조 안전 판정(구간 제거가 자를 수 있는 짝)은 커널의 occurrence 집합을 근거로
+    선다. 거기서 하이퍼링크를 빼면 그 짝을 반 토막 내는 변형이 조용히 통과한다.
+    """
+    root = etree.fromstring(_HYPERLINK_XML)
+    occurrences = resolve_field_occurrences("Contents/section0.xml", root).require_usable()
+    assert [occ.field_type for occ in occurrences] == ["HYPERLINK", "HYPERLINK", None]
+    assert [occ.raw_name for occ in occurrences] == ["", "링크1", "계약명"]
