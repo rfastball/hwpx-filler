@@ -193,6 +193,15 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .acts{display:inline-flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}  /* 우측 액션 버튼 묶음 */
 /* 정상 상태 재진술(F32) — "정상은 조용히": ok 레벨은 초록 박스 대신 muted 한 줄 */
 .note.quiet{color:var(--a-muted);font-size:var(--fs-body);margin-top:var(--sp-10);line-height:1.5}
+/* 수동 소멸 알림의 상자 문법(U4 §2.12 · #945) — 소유자는 `screens/notice_box.ts` 하나다.
+   문안은 흐르고 ✕ 는 오른쪽 위에 붙어 여러 줄 통지에서도 자리가 흔들리지 않는다. 박스가
+   없는 `quiet` 변형은 같은 배치만 공유한다. 화면 중립이라 여기 산다 — 종전 거처였던
+   `.note.editor-notice` 는 셀렉터가 편집기에 못박혀 두 번째 소비자를 받을 수 없었다. */
+.note.note-dismissable{display:flex;align-items:flex-start;gap:var(--sp-8)}
+.note.note-dismissable .note-text{flex:1 1 auto;min-width:0}
+.note.note-dismissable .note-close{flex:0 0 auto;background:none;border:0;padding:0 var(--sp-4);
+  color:inherit;cursor:pointer;line-height:1.5;opacity:.7}
+.note.note-dismissable .note-close:hover{opacity:1}
 /* 모달 보조 설명문 — 제목 아래 한 줄(인라인 font-size 리터럴 대체) */
 .modal-sub{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-4) 0 var(--sp-8)}
 

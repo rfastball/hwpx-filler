@@ -456,6 +456,15 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   `window.alert`(`deps.notify`)는 **던져진 예외의 catch 백스톱 전용**이다. 종전에는 파일
   이름 탭에서만 인라인이라 나머지 두 탭의 거절이 모달 경보로 샜다 — 경보는 읽는 순간
   사라지고 그 뒤 화면은 왜 막혔는지 아무 말도 하지 않는다.
+- **수동 소멸 알림은 닫기 동사를 가진다**(U4 §2.12 · #945 F4). 매 변이 자동 소멸하지 않고
+  「사유가 해소될 때까지 남는」 알림은 전부 화면 중립 `NoticeBox`
+  (`frontend/src/screens/notice_box.ts`)로 그린다 — `onClose` 가 필수 인자라 **닫기 없는
+  인스턴스를 만들 수 없다**. 지금 이 문법을 쓰는 자리는 셋이다: 편집기 `#save-msg`
+  (닫기 `#saveMsgClose` → JS 전용 `clearSaveMessage`), 편집기 세션 통지(닫기
+  `#editorNoticeClose` → 액션 `dismiss_notice`), job 데이터 통지 `#jobDataNotice`(닫기
+  `#jobDataNoticeClose` → 액션 `dismiss_data_notice`). 상자·닫기만 컴포넌트가 소유하고
+  문안 조립·레벨 판정은 각 렌더러가 그대로 진다. 자동 소멸 알림(workbench·job_run·
+  job_slot_config)은 이 문법을 **쓰지 않는다** — 닫아도 다음 변이에서 다시 서는 단추가 된다.
 - **「누름틀·구간 변환」과 구간 항목 관리**(S8-03 #834): 라이브러리 행의 상태 동사
   `compile` 은 **한 동사로 두 축**을 변환한다 — 필드 토큰(`compile_document`)을 먼저,
   구간 표기(`compile_structure`)를 다음에(순서는 계약이다: 구조를 먼저 만들면 그 안의
@@ -1160,7 +1169,10 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   hint**로 한 번만 보관한다. preferred는 active Work도 선택 권한도 아니다. 다음 DataTarget
   마운트에서 backend가 같은 링1 호환 판정으로 확인한 뒤 1회 소비하고, 호환이면 「사용할 수
   있음」을, 비호환이면 사유를 `data_notice` 로 재진술한다. 어느 경우에도 마운트가 active
-  Work를 자동 선택하지 않는다. 사용자가 현재 「문서 만들기」의 후보를 누르거나 전역
+  Work를 자동 선택하지 않는다. 그 `data_notice` 는 자동 소멸이 아니라 사유가 해소될 때까지
+  남는 채널이라 닫기 동사(`dismiss_data_notice` — 무페이로드, 채널이 하나라 지울 대상을 웹이
+  지목하지 않는다)를 가진다. 레지스트리 조회 실패 경고는 스냅샷마다 실측에서 다시 합성되는
+  자동 소멸분이라 그 문의 대상이 아니다. 사용자가 현재 「문서 만들기」의 후보를 누르거나 전역
   「문서 작업」 browser에서 exact Work를 찾아 「문서 만들기에서 사용」을 다시 누른 명시
   command 뒤에만 active Work가 된다. preferred가 메인 Top-N 밖이면 순위를 바꾸거나 카드를
   끼워 넣지 않고, 전역 「문서 작업」 browser에서 직접 검색·선택한다(#764).

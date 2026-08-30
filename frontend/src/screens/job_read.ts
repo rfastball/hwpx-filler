@@ -17,6 +17,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { DataPickerController } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { JobDataZone } from "./data_zone.ts";
+import { NoticeBox } from "./notice_box.ts";
 import type { JobRunCallbacks, PreviewRequest, ScreenPorts } from "./ports.ts";
 import type { JobScreenModel, ScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
@@ -481,6 +482,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     openDataSheet,
     remountData,
     connectJobData,
+    /** 데이터 통지 닫기(U4 §2.12 · #945) — 통지는 Python 소유라 지우는 것도 Python 이
+     *  한다. 존 변이가 아니므로 세대(`epoch`)를 싣지 않는 `call` 경로다. */
+    dismissDataNotice: (): Promise<Obj> => call("job", "dismiss_data_notice", {}),
     closeDataSheet: () => deps.surfaceSheet.close("dataSheet"),
     /** 열 필터 패널을 **트리거 아래**에 붙인다(U4 계열1-9). 배치 규칙은 공용
      *  `Popover.place` 하나가 소유한다 — 문맥 메뉴와 같은 진실이라 화면이 자기 좌표를
@@ -527,7 +531,10 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 export type JobReadController = ReturnType<typeof createJobReadController>;
 
 function useJob(controller: JobReadController): Obj | null {
-  const model = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
+  /* 세 번째 인자는 정적 렌더의 스냅샷이다 — 같은 출처를 준다(다른 화면의 관례와 동일).
+     없으면 `renderToStaticMarkup` 이 이 화면에서만 던져 정적 렌더 계약을 못 세운다. */
+  const model = useSyncExternalStore(
+    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
   return fullSnapshot(model);
 }
 
@@ -566,8 +573,18 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
           title: "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다.",
           onClick: () => { void props.controller.connectJobData(); } }, "데이터 연결하기…")
         : null),
-    h("div", { id: "jobDataNotice", className: `note ${notice?.level === "ok" ? "quiet" : "warnbox"}`,
-      hidden: !notice?.text, style: { whiteSpace: "pre-line" } }, notice?.text ? `${notice.level === "ok" ? "" : "확인 필요: "}${notice.text}` : ""));
+    /* 데이터 통지(U4 §2.12 · #945) — 상자·닫기는 `NoticeBox` 가, 문안 조립(「확인 필요: 」
+       접두)과 레벨 판정은 여기가 그대로 진다. 이 채널은 매 변이 자동 소멸이 아니라
+       **사유가 해소될 때까지 남는** 수동 소멸이라 닫기 동사를 가진다. */
+    notice?.text
+      ? createElement(NoticeBox, {
+        id: "jobDataNotice",
+        closeId: "jobDataNoticeClose",
+        level: notice.level === "ok" ? "quiet" : "warn",
+        text: `${notice.level === "ok" ? "" : "확인 필요: "}${notice.text}`,
+        onClose: () => { void props.controller.dismissDataNotice(); },
+      })
+      : h("div", { id: "jobDataNotice", className: "note", hidden: true }));
 }
 
 /* R5-02: 미착좌 JobDataHeaderPortal은 생산·소비가 모두 0이라 제거했다.

@@ -18,7 +18,7 @@ import {
   initialRunState,
   isForeignResult,
 } from "../../frontend/src/screens/job_run_state.ts";
-import { createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
+import { JobDataHeader, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
@@ -875,4 +875,42 @@ test('관찰이 정상이면 복구 동사를 세우지 않는다', async () => 
     createElement(JobWorkbenchStatus, { controller: h.controller }),
   );
   assert.equal(markup.includes('jobRecoverContext'), false);
+});
+
+/* ============ 데이터 통지의 닫기 문법(U4 §2.12 · #945 F4) ============ */
+
+/* `data_notice` 는 매 변이 자동 소멸이 아니라 사유가 해소될 때까지 남는 채널인데 끄는
+   동사가 없었다(#874 `saveMessage`·#933 편집기 `notice` 에 이은 3세대 같은 결함류).
+   렌더만 재는 이유는 닫기의 결과가 Python 소유라서다 — 그 전이는 `tests/test_webapp_job.py`
+   의 `dismiss_data_notice` 가 진다. */
+function dataHeaderStub(snapshot) {
+  return {
+    model: { getSnapshot: () => ({ full: snapshot, progress: null }), subscribe: () => () => {} },
+    openDataPicker() {}, remountData() {}, connectJobData() {},
+    dismissDataNotice: async () => ({}),
+  };
+}
+
+test('#945 F4 데이터 통지에는 닫기 단추가 선다', () => {
+  const markup = renderToStaticMarkup(createElement(JobDataHeader, {
+    controller: dataHeaderStub({
+      has_job: true, has_data: false, job_name: 'A',
+      data_notice: { level: 'warn', text: '연결된 데이터가 없습니다.' },
+    }),
+  }));
+  assert.ok(markup.includes('id="jobDataNotice"'));
+  assert.ok(markup.includes('id="jobDataNoticeClose"'),
+    '닫을 수 없는 통지는 사유가 지나간 뒤에도 화면 위에 영구히 남는다');
+  assert.ok(markup.includes('aria-label="알림 닫기"'));
+  // 문안 조립(접두)은 NoticeBox 가 아니라 이 렌더러가 그대로 진다.
+  assert.ok(markup.includes('확인 필요: 연결된 데이터가 없습니다.'));
+});
+
+test('#945 F4 통지가 없으면 닫기도 없다', () => {
+  const markup = renderToStaticMarkup(createElement(JobDataHeader, {
+    controller: dataHeaderStub({
+      has_job: true, has_data: true, job_name: 'A', data_notice: null,
+    }),
+  }));
+  assert.equal(markup.includes('jobDataNoticeClose'), false);
 });

@@ -42,13 +42,8 @@ table.data-preview td{white-space:nowrap}
 .note.warnbox{background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);color:var(--a-warn)}
 .note.dangerbox{background:var(--fb-missing-bg);border:1px solid var(--fb-missing-bd);color:var(--a-danger)}
 .note.okbox{background:var(--fb-fill-bg);border:1px solid var(--fb-fill-bd);color:var(--a-ok)}
-/* 세션 통지의 닫기(U4 계열1-20) — 문안은 흐르고 ✕ 는 오른쪽 위에 붙어 여러 줄 통지에서도
-   자리가 흔들리지 않는다. `quiet` 변형은 박스가 없으므로 같은 배치만 공유한다. */
-.note.editor-notice{display:flex;align-items:flex-start;gap:var(--sp-8)}
-.note.editor-notice .editor-notice-text{flex:1 1 auto;min-width:0}
-.note.editor-notice .editor-notice-close{flex:0 0 auto;background:none;border:0;padding:0 var(--sp-4);
-  color:inherit;cursor:pointer;line-height:1.5;opacity:.7}
-.note.editor-notice .editor-notice-close:hover{opacity:1}
+/* (세션 통지의 닫기(U4 계열1-20)는 화면 중립 `.note.note-dismissable`(base.css)로 승격 —
+   U4 §2.12 · #945. 편집기 전용 셀렉터로는 job `data_notice` 가 같은 문법을 못 썼다.) */
 
 /* 매핑 표 — table-layout:fixed(F23): 값 길이에 따라 열폭이 변해 행 스텝마다 레이아웃이
    튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
