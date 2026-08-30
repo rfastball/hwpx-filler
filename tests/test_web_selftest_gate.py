@@ -411,14 +411,18 @@ class TestWebSelftestGate:
     def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
         """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
 
-        이 축의 결함류는 "왕복 중 도착한 push 가 선택기를 옛 값으로 되돌린다"이고, 정적
+        이 축의 결함류는 "왕복 중 도착한 push 가 컨트롤을 옛 값으로 되돌린다"이고, 정적
         계약은 요소 존재까지만 본다. 양성대조(`control_before`)가 먼저 선다 — 렌더가 실제로
-        이 요소의 값을 쓴다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과해 버린다.
+        이 컨트롤의 상태를 축으로 세운다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과한다.
+
+        컨트롤은 U4 7번에서 `<select>` 에서 **표 머리의 스위치**로 바뀌었다(`#jobOrderToggle`).
+        상태는 `aria-pressed`, 2값 고정(F3)은 `data-order-values` 선언이 진다 — 축의 이름과
+        수는 그대로이므로 이 게이트가 재는 사실도 그대로다.
         """
         v = selftest_result["view_order"]
         assert v.get("error") is None, f"표시순서 프로브 오류: {v!r}"
         assert v["present"] is True and v["options"] == ["sourceDesc", "sourceAsc"]
-        assert v["control_before"] is True, "양성대조 실패 — 렌더가 선택기를 쓰지 않습니다."
+        assert v["control_before"] is True, "양성대조 실패 — 렌더가 컨트롤 상태를 안 씁니다."
         assert v["note_before"], "축 옆 재진술 문안이 비어 있습니다(판정 I)."
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
@@ -1106,8 +1110,12 @@ class TestWebSelftestGate:
         assert j["row_doccell_display"] == "flex", (
             "table-cell 대신 내부 래퍼가 flex를 소유해야 합니다."
         )
-        assert j["lead_hint"] == "선택하면 파일명이 정해집니다"
-        assert j["repeated_placeholder"] == 0
+        # U4 8번 — 이름·요약이 표에서 사라졌다(사용자 확정: 그 이름은 쓸모 있는 정보가 아니다).
+        # 사라지는 변경이라 **음성 단언**이 진다: 되살아나면 여기가 빨강이다.
+        assert j["doccol_row_names"] == 0, "「문서」 열의 이름·요약이 표에 되살아났습니다."
+        assert j["head_doccol_text"] == "", "선택 열 머리에 텍스트가 남았습니다."
+        # U4 11번 — 그 자리에 온 것은 선택 동사다(자리는 바뀌어도 id 는 같다).
+        assert j["head_selall"] is True, "전체 선택 동사가 열 머리에 서지 않았습니다."
         assert j["amount_align"] == "right"
         assert "tabular-nums" in j["amount_nums"]
 

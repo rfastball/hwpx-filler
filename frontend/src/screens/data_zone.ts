@@ -225,6 +225,25 @@ export function JobDataZone(props: {
   const hidden = table.hidden_selected || [];
   const hiddenColumns = table.hidden_columns || [];
   const showChips = snapshot.has_data && (filter.active || hiddenColumns.length);
+  // 표시순서 축은 초안이 열려 있으면 초안의 것이다(§18.11-21 — 적용 전 메인 범위 불변).
+  const viewOrder = String(
+    snapshot.range_draft?.open
+      ? snapshot.range_draft.view_order || "sourceDesc"
+      : snapshot.view_order || "sourceDesc",
+  );
+  // 머리 체크박스의 3상태는 **보이는 행** 기준이다(U4 11번). 백엔드가 필터 활성 시 매치만
+  // 가산하므로(`data_zone.py` `_do_set_all`), 전건 판정을 전체 레코드로 재면 필터를 켠 채
+  // 다 골라도 영영 「일부」로 남는다 — 술어가 동사의 실제 결과를 따라가야 한다.
+  const visibleRows = (table.rows || []) as Obj[];
+  const visibleSelected = visibleRows.filter((row) => selectedFor(row)).length;
+  const headChecked = visibleRows.length > 0 && visibleSelected === visibleRows.length;
+  const headPartial = visibleSelected > 0 && !headChecked;
+  // 해제는 **필터 밖 선택까지** 지운다(`set_none` 은 집합 전체를 비운다). 문안이 그 범위를
+  // 말하지 않으면 사용자는 보이지 않는 곳에서 잃은 것을 모른다 — 종전 「전체 해제」 버튼과
+  // 같은 동사이지만, 어포던스가 체크박스가 된 만큼 사유를 이름이 진다.
+  const headSelectLabel = headChecked
+    ? (hidden.length ? `전체 해제 (필터 밖 선택 ${hidden.length}행도 함께)` : "전체 해제")
+    : (filter.active ? "보이는 행 모두 선택" : "전체 선택");
   return createElement(Fragment, null,
     h("div", { className: "run-row run-recs-head", id: "jobRecsHead" },
       h("span", { className: "lbl", style: { fontWeight: 600 } }, "생성 대상 문서"),
@@ -240,16 +259,27 @@ export function JobDataZone(props: {
         } }, "직전 필터 재적용"),
       h("div", { className: "acts" }, h("span", { className: "muted capnote", id: "jobSelCount" },
         `선택 ${selected}/${snapshot.record_count || 0}${filter.active ? ` · 표시 ${table.visible_count || 0}` : ""}`),
-      h("button", { className: "btn sm", id: "jobSelAll", "data-busy-lock": true,
-        onClick: () => { void controller.zone("set_all", {}); } }, "전체 선택"),
-      h("button", { className: "btn sm", id: "jobSelNone", "data-busy-lock": true,
-        onClick: () => { void controller.zone("set_none", {}); } }, "전체 해제"))),
+      // 「전체 선택/해제」 두 버튼은 표 머리 체크박스로 갔다(U4 11번). 그 자리가 곧 그 동사가
+      // 겨누는 열이라, 표와 무관한 줄에서 표를 조작하던 어긋남이 사라진다.
+      //
+      // 표시순서도 여기서 `<select>` 를 버린다(U4 7번). 2값 고정 축이라(F3 계약) 스위치가
+      // 정확한 형태이고, 기본값(`sourceDesc` — 최신 행 먼저)에서 **벗어난 상태만** 눌린 것으로
+      // 표현한다. 기본값 자체는 그대로다: 요구는 기본값이 아니라 컨트롤의 시각 비중이었다.
+      h("button", { className: "btn sm", id: "jobOrderToggle", type: "button", "data-busy-lock": true,
+        "aria-pressed": viewOrder === "sourceAsc" ? "true" : "false",
+        // 이 컨트롤이 무슨 축을 모는지 DOM 이 **선언**한다 — `<select>` 시절 `options` 가
+        // 지던 「2값 고정」(F3)을 스위치에서도 게이트가 되읽을 수 있어야 한다.
+        "data-order-values": "sourceDesc,sourceAsc",
+        title: "표를 원본 파일 순서로 봅니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다.",
+        onClick: () => {
+          void controller.zone("set_view_order", {
+            value: viewOrder === "sourceAsc" ? "sourceDesc" : "sourceAsc",
+          });
+        } }, "⇅ 원본 순서"))),
+    // `#jobOrderBar` 는 id 를 유지한 채 **상시 재진술만** 든다 — 컨트롤이 표 머리로 갔어도
+    // 「보이는 순서대로 생성되고 파일 이름 순번도 그 순서를 따른다」를 말하는 자리는 그대로다
+    // (F3 판정 I: 확인 왕복 대신 문안이 진다).
     h("div", { className: "run-row job-orderbar", id: "jobOrderBar" },
-      h("label", { className: "lbl", htmlFor: "jobOrderSel" }, "표시순서"),
-      h("select", { className: "field sm", id: "jobOrderSel", "data-busy-lock": true,
-        value: snapshot.range_draft?.open ? snapshot.range_draft.view_order || "sourceDesc" : snapshot.view_order || "sourceDesc",
-        onChange: (event: Obj) => { void controller.zone("set_view_order", { value: event.currentTarget.value }); } },
-      h("option", { value: "sourceDesc" }, "최신 행 먼저"), h("option", { value: "sourceAsc" }, "원본 순서")),
       h("span", { className: "muted capnote", id: "jobOrderNote" }, snapshot.order_note || "")),
     h("div", { className: "fchips", id: "jobFilterChips", hidden: !showChips },
       ...(filter.active ? (filter.chips || []).map((chip: string, index: number) => h("span", { className: "fchip definition", key: `c-${index}` },
@@ -269,8 +299,19 @@ export function JobDataZone(props: {
         h("table", { className: "tb jobtb" },
           h("thead", { id: "jobTableHead" },
             h("tr", null,
-              h("th", { className: "doccol" }, "문서",
-                h("span", { className: "col-hint" }, "선택하면 파일명이 정해집니다")),
+              // 선택 동사가 그 열의 머리로 온다(U4 11번). **id 는 유지한다** — 자리는 바뀌어도
+              // 동사는 같고(`SELECT_RECORDS` 의 복구 동사 선언이 이 좌표를 든다), 대본의
+              // 클릭들도 전부 0건 상태에서 한 번 누르는 걸음이라 그대로 산다.
+              //
+              // `indeterminate` 는 속성이 아니라 DOM 프로퍼티라 ref 로만 세울 수 있다.
+              h("th", { className: "doccol" },
+                h("input", {
+                  type: "checkbox", id: "jobSelAll", className: "selall", "data-busy-lock": true,
+                  checked: headChecked,
+                  ref: (element: any) => { if (element) element.indeterminate = headPartial; },
+                  "aria-label": headSelectLabel, title: headSelectLabel,
+                  onChange: () => { void controller.zone(headChecked ? "set_none" : "set_all", {}); },
+                })),
               ...(table.columns || []).map((raw: unknown, index: number) => {
                 const column = columnMeta(raw);
                 if (column.visible === false) return null;
@@ -301,17 +342,16 @@ export function JobDataZone(props: {
                 }
               },
             },
+            // 「문서」 열의 **이름·요약은 걷혔다**(U4 8번 · 사용자 확정: 「문서 이름은 생각처럼
+            // 쓸모있는 정보가 아니다」). 남는 것은 선택 표지 하나이고, 생성될 이름을 확인하는
+            // 자리는 「생성 예정 문서」 존이 진다. `row.name`·`row.summary` payload 는 **그대로**
+            // 다 — 필터 밖 선택 스트립이 그 값으로 칩 이름을 짓는다(생산자 0 아님).
             h("td", { className: "doccol" },
               h("div", { className: "doccell" },
                 h("input", {
                   type: "checkbox", tabIndex: -1, checked: selectedFor(row), readOnly: true,
                   "aria-label": `${row.index + 1}행 선택`,
-                }),
-                h("span", { className: "doc-body" },
-                  row.name
-                    ? h("span", { className: "doc-name" }, row.name)
-                    : h("span", { className: "doc-off", "aria-hidden": "true" }, "—"),
-                  row.summary ? h("span", { className: "doc-sum" }, row.summary) : null))),
+                }))),
             ...(row.cells || []).map((cell: unknown, index: number) => {
               const column = columnMeta(table.columns[index]);
               return column.visible === false

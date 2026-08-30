@@ -103,8 +103,9 @@ window.__cap = {
     const markLeft = () => { left = true; };
     el.addEventListener('focusout', markLeft);
     el.focus();
-    /* set_value 의 기존 소비자인 #jobOrderSel 은 select 다. React 의 select
-       onChange 는 native change 를 소유하므로 이탈 상에서만 실제 이벤트를 재현한다. */
+    /* set_value 의 소비자 중 편집기 소스 선택기는 select 다(#jobOrderSel 은 U4 7번에서
+       스위치가 되어 이 헬퍼를 떠났다). React 의 select onChange 는 native change 를
+       소유하므로 이탈 상에서만 실제 이벤트를 재현한다. */
     const view = el.ownerDocument.defaultView || window;
     if (el.tagName === 'SELECT') el.dispatchEvent(new view.Event('change', { bubbles: true }));
     el.blur();

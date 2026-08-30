@@ -101,8 +101,12 @@ DEAD_SELECTORS: tuple[str, ...] = (".job-item", ".mir-row.miss")
 SCAFFOLDS: dict[str, str] = {
     ".jobtb tbody tr": (
         '<div class="tbwrap jobtbwrap"><table class="tb jobtb"><tbody>'
-        '<tr id="probe"><td class="doccol">문서</td><td class="col-text">값</td></tr>'
-        '<tr><td class="doccol">문서</td><td class="col-text">값</td></tr>'
+        # U4 8번 이후 이 열은 **선택 표지 하나**다(이름·요약은 걷혔다). 스캐폴드는 값이
+        # 아니라 상자를 재는 것이라 실 산출자의 구조만 따라간다.
+        '<tr id="probe"><td class="doccol"><div class="doccell">'
+        '<input type="checkbox"></div></td><td class="col-text">값</td></tr>'
+        '<tr><td class="doccol"><div class="doccell">'
+        '<input type="checkbox"></div></td><td class="col-text">값</td></tr>'
         "</tbody></table></div>"
     ),
     ".job-grp-head": (

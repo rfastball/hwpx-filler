@@ -17,7 +17,6 @@
     background:var(--a-card);border-color:var(--a-border);
     -webkit-backdrop-filter:none;backdrop-filter:none}
 }
-.jobtb th .col-hint{font-weight:400;margin-left:var(--sp-6)}
 .jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
   white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 .jobtb tbody tr:last-child td{border-bottom:0}
@@ -34,14 +33,16 @@
 .jobtb tbody tr:active{background:color-mix(in srgb,var(--a-sel) 70%,transparent)}
 .jobtb tbody tr.on:active{background:color-mix(in srgb,var(--a-sel) 88%,var(--a-ink))}
 .jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
-.jobtb .doccol{min-width:180px}
+/* 선택 표지만 남은 좁은 열(U4 8번) — 이름·요약이 먹던 180px 가 데이터 열로 돌아간다. */
+.jobtb .doccol{width:1%;white-space:nowrap}
 .jobtb .doccell{display:flex;gap:var(--sp-6);align-items:flex-start}
 /* 체크박스는 시각 표지 전용(결정 26 체크박스 문법) — 동사는 행 클릭이 소유한다(이중 토글 방지). */
 .jobtb td.doccol input{accent-color:var(--a-primary);margin-top:2px;flex:none;pointer-events:none}
-.jobtb .doc-name{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
-  font-size:var(--fs-dense);font-weight:600;overflow:hidden;text-overflow:ellipsis}
-.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted);font-size:var(--fs-caption)}
-.jobtb .doc-body{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+/* 머리 체크박스는 반대다(U4 11번): **자기가 눌리는** 실제 컨트롤이라 pointer-events 를 끄지
+   않는다. 같아 보이는 두 요소의 동사가 다른 이유는 UI_CONTRACT 가 진술한다 — 행은 행 전체가
+   동사이고(넓은 표적), 머리는 누를 행이 없어 체크박스 자신이 동사다. */
+.jobtb th.doccol input.selall{accent-color:var(--a-primary);margin:0 var(--sp-6) 0 0;
+  vertical-align:middle;cursor:pointer}
 .jobtb .col-text{text-align:left}
 .jobtb .col-amount,.jobtb .col-date{text-align:right;font-variant-numeric:tabular-nums}
 

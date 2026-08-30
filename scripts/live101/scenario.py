@@ -318,7 +318,9 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#dataSheet", "#dataSheetSlot", "#jobRangeFoot"],
     )
     # 표시순서를 뒤집어 표가 실제로 따라오는지 본다(보이는 것 = 만들어지는 것).
-    s.set_value("#jobOrderSel", "sourceAsc")
+    # 축은 이제 `<select>` 가 아니라 표 머리의 스위치다(U4 7번) — 값 설정형이 사라졌으므로
+    # 대본도 **사용자가 하는 그대로** 누른다.
+    s.click_sel("#jobOrderToggle", what="표시순서 뒤집기")
     s.wait(
         "(document.querySelector('#jobTableBody tr')||{dataset:{}}).dataset.i === '0'",
         "표시순서 전환 반영",
@@ -331,9 +333,9 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 토글")
     s.wait(
         "document.getElementById('jobRangeApply').textContent.includes('2건')"
-        " && document.getElementById('jobOrderSel').value === 'sourceAsc'",
+        " && document.getElementById('jobOrderToggle').getAttribute('aria-pressed') === 'true'",
         "재렌더 뒤에도 초안 축 유지",
-        requires=["#jobRangeApply", "#jobOrderSel"],
+        requires=["#jobRangeApply", "#jobOrderToggle"],
     )
     s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 복원")
     s.wait(
@@ -348,10 +350,10 @@ def run(ctx: ScenarioContext) -> dict:
     # 취소 = 초안만 버린다: 메인 범위(선택 3건)와 축(최신 행 먼저)이 그대로여야 한다.
     s.wait(
         "document.getElementById('dataSheet').classList.contains('hidden')"
-        " && document.getElementById('jobOrderSel').value === 'sourceDesc'"
+        " && document.getElementById('jobOrderToggle').getAttribute('aria-pressed') === 'false'"
         " && !document.getElementById('jobGenBtn').disabled",
         "취소 뒤 메인 범위 보존",
-        requires=["#dataSheet", "#jobOrderSel", "#jobGenBtn"],
+        requires=["#dataSheet", "#jobOrderToggle", "#jobGenBtn"],
     )
 
     # ---- S6 본문 확인(한 줄) ------------------------------------------------

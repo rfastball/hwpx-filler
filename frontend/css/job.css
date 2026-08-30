@@ -25,11 +25,10 @@
   border-top:1px solid var(--a-border)}
 #dataSheetSlot > .range-foot .muted{flex:1;min-width:0;margin:0;font-size:var(--fs-caption)}
 #dataSheetSlot > .range-foot .btn[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary)}
-/* 표시순서 축(F3) — 라벨+선택기는 고정폭, 재진술 문안이 남는 폭을 먹고 줄바꿈한다
-   (기안 글꼴 바 .wc-fontbar 와 같은 조판 — 같은 형태의 줄은 같은 규칙으로 선다). */
+/* 표시순서 축(F3) — 컨트롤은 표 머리로 갔고(U4 7번) 이 줄에는 **상시 재진술만** 남는다.
+   라벨·선택기 규칙을 함께 걷는다: 산출자가 0 인 규칙을 남기면 다음 사람이 그 표면이 아직
+   산다고 읽는다(#325 가 경고하는 바로 그 패턴). */
 .job-orderbar{margin-top:var(--sp-8);flex-wrap:wrap}
-.job-orderbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
-.job-orderbar .field{flex:none;width:auto}
 .job-orderbar .capnote{flex:1;min-width:0}
 
 /* 사전검증 박스 */

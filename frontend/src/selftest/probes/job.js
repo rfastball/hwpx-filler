@@ -912,8 +912,14 @@ async function runJobMirror(ctx) {
   out.row_selected = renderedRow && renderedRow.getAttribute("aria-selected");
   out.row_checkbox = !!doc.querySelector('#jobTableBody td.doccol input[type="checkbox"]');
   out.row_doccell_display = win.getComputedStyle(doc.querySelector("#jobTableBody .doccell")).display;
-  out.lead_hint = doc.querySelector("#jobTableHead .col-hint").textContent;
-  out.repeated_placeholder = doc.querySelectorAll('#jobTableBody .doc-off:not([aria-hidden="true"])').length;
+  /* U4 8번 — 「문서」 열의 이름·요약은 걷혔다. 사라진 것은 **음성으로** 재고(되살아나면 빨강),
+     그 자리에 온 선택 동사(U4 11번)는 양성으로 잰다. 옛 `lead_hint`·`repeated_placeholder` 는
+     각각 죽은 노드와 vacuous 0 이 되어 이 둘로 승계됐다. */
+  out.doccol_row_names = doc.querySelectorAll(
+    "#jobTableBody .doc-name, #jobTableBody .doc-sum, #jobTableBody .doc-off",
+  ).length;
+  out.head_doccol_text = doc.querySelector("#jobTableHead th.doccol").textContent.trim();
+  out.head_selall = !!doc.querySelector("#jobTableHead th.doccol input#jobSelAll");
   out.amount_align = win.getComputedStyle(renderedAmount).textAlign;
   out.amount_nums = win.getComputedStyle(renderedAmount).fontVariantNumeric;
   out.tbl_mark = (() => {
