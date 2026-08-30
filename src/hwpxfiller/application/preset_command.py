@@ -31,7 +31,11 @@ from hwpxfiller.application.work_slot_configuration import (
     has_declared_selection,
 )
 from hwpxfiller.domain.preset import CorruptPresetEntry, SelectionPreset
-from hwpxfiller.domain.slot_selection import SlotSelection, SlotSelectionSet
+from hwpxfiller.domain.slot_selection import (
+    SlotSelection,
+    SlotSelectionSet,
+    semantic_selection_equal,
+)
 
 # ─── 진단 코드(#821 §3 + 부재) ────────────────────────────────────────────────
 PRESET_NAME_CONFLICT = "PRESET_NAME_CONFLICT"
@@ -297,14 +301,52 @@ class PresetListing:
     items: tuple[PresetListItem, ...]
     corrupt: tuple[CorruptPresetEntry, ...]
     corrupt_code: str = field(default=PRESET_ENTRY_CORRUPT)
+    #: 지금 서 있는 선택이 **곧 그 Preset** 인 항목의 key(U4-G2 · #945 F3). 없으면 None.
+    applied_key: str | None = None
 
     @property
     def corrupt_count(self) -> int:
         return len(self.corrupt)
 
 
+def _applied_preset_key(
+    ordered: "list[tuple[str, SelectionPreset, PresetStructuralFit]]",
+    config: "WorkSlotConfigurationDraft | None",
+) -> "str | None":
+    """지금 서 있는 선택이 **곧 그 Preset** 인 항목의 key — 적용 상태의 단일 출처(#945 F3).
+
+    종전에는 「어떤 프리셋이 서 있는가」를 아무도 들고 있지 않았고, 직전 왕복의 휘발 재진술
+    (「N개를 적용했습니다」)이 그 자리를 대신 서 있었다 — 그것은 상태가 아니라 사건이라
+    선택을 손으로 바꾼 뒤에도 그대로 남아 지금과 다른 것을 말한다.
+
+    판정은 **새로 짓지 않는다**: 구조 판정은 목록·적용이 함께 쓰는 :func:`fit_preset_selections`
+    이고, 같음의 정의는 :func:`~hwpxfiller.domain.slot_selection.semantic_selection_equal`
+    (``apply_selections`` 가 NO_CHANGE 를 가르는 바로 그 술어)이다. 그래서 이 값이 서 있다는
+    것은 「그 Preset 을 다시 눌러도 아무것도 바뀌지 않는다」와 같은 말이고, 선택을 하나라도
+    손으로 바꾸면 그 순간 거짓이 되어 표지가 내려간다.
+
+    ``fit.applied`` 와 대조하는 이유는 저장된 원문이 아니라 **이 구조에서 그 Preset 이 세우는
+    것**이 비교 대상이기 때문이다. 목록은 이미 ``fully_applicable`` 로 좁혀져 있으므로 여기
+    들어오는 항목의 ``applied`` 는 그 Preset 이 선언한 전부다.
+
+    같은 내용이 다른 이름으로 둘 이상 보관돼 있으면 **목록 순서(이름·key)의 첫 항목**이
+    표지를 든다. 어느 쪽을 지목해도 진술은 참이므로 요구는 결정론뿐이고, 표지를 여럿 켜서
+    「둘 다 서 있다」는 없는 개념을 만들지 않는다.
+    """
+    if config is None or not config.selections.selections:
+        # 선택 0건 위에는 어떤 Preset 도 서 있지 않다(빈 선택과 「빈 Preset 적용」을 같게 보지
+        # 않는다 — 빈 선택은 저장조차 거절되는 상태다).
+        return None
+    for key, _preset, fit in ordered:
+        if semantic_selection_equal(config.selections, SlotSelectionSet(fit.applied)):
+            return key
+    return None
+
+
 def list_selection_presets(
-    port: PresetStorePort, context: "SlotConfigurationContext | None"
+    port: PresetStorePort,
+    context: "SlotConfigurationContext | None",
+    config: "WorkSlotConfigurationDraft | None" = None,
 ) -> PresetListing:
     """이름순 목록 + 손상 항목 — **현재 구조에 전부 적용 가능한 것만** 싣는다(#875).
 
@@ -318,14 +360,20 @@ def list_selection_presets(
 
     손상 항목은 어느 경우에도 거르지 않는다: 읽을 수 없는 항목은 호환 판정의 **대상이 아니라
     표시 대상**이라 숨기면 사용자가 묻지도 못한다.
+
+    ``config`` 는 지금 서 있는 Configuration 이다(없으면 선택 0건). 어느 항목이 **지금 적용돼
+    있는가**(:func:`_applied_preset_key`)를 여기서 함께 내는 이유는 그 판정의 재료가 이미 이
+    함수 안에 있기 때문이다 — 호환 필터가 계산한 ``fit`` 을 그대로 쓰므로 구조 순회가 늘지
+    않고, 목록과 표지가 **같은 한 순간**을 말한다.
     """
     entries, corrupt = port.list_presets()
-    applicable = [
-        entry
-        for entry in entries
-        if context is not None
-        and fit_preset_selections(context, entry[1].selection_set).fully_applicable
-    ]
+    applicable: list[tuple[str, SelectionPreset, PresetStructuralFit]] = []
+    for key, preset in entries:
+        if context is None:
+            continue
+        fit = fit_preset_selections(context, preset.selection_set)
+        if fit.fully_applicable:
+            applicable.append((key, preset, fit))
     ordered = sorted(applicable, key=lambda entry: (entry[1].name, entry[0]))
     return PresetListing(
         items=tuple(
@@ -335,9 +383,10 @@ def list_selection_presets(
                 created_at=preset.created_at,
                 provenance=preset.provenance_map,
             )
-            for key, preset in ordered
+            for key, preset, _fit in ordered
         ),
         corrupt=tuple(corrupt),
+        applied_key=_applied_preset_key(ordered, config),
     )
 
 

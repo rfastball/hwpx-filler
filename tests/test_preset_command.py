@@ -652,6 +652,84 @@ def test_zone_predicate_and_save_gate_never_disagree(config, savable) -> None:
         assert exc.value.code == PRESET_EMPTY_SELECTION
 
 
+# ── 적용 표지: 「지금 어떤 프리셋이 서 있는가」의 단일 출처(U4-G2 · #945 F3) ────────────────
+# 종전에는 이 상태가 아무 데도 없어서 직전 왕복의 휘발 재진술이 그 자리를 대신 서 있었다.
+# 여기가 재는 것은 진리표다 — 일치·불일치·프리셋 0·손상만·선택 0·비호환·다수 일치.
+
+
+def test_applied_key_points_at_the_preset_that_is_currently_standing(
+    tmp_path: Path,
+) -> None:
+    reg = _registry(tmp_path)
+    key = reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    reg.add(_preset("다른", _sel(("s2", ("x1",)))))
+
+    standing = list_selection_presets(reg, _pure_ctx(), _config(("s1", ("o1",))))
+    assert standing.applied_key == key
+    # 같음의 정의는 domain 의 `semantic_selection_equal` 하나다 — 저장 순서가 달라도 같다.
+
+
+def test_applied_key_falls_when_the_selection_is_changed_by_hand(tmp_path: Path) -> None:
+    """수동 변경으로 일치가 깨지면 표지도 내려간다 — 표지는 사건이 아니라 상태다."""
+    reg = _registry(tmp_path)
+    reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    assert list_selection_presets(reg, _pure_ctx(), _config(("s1", ("o2",)))).applied_key is None
+    # 프리셋이 언급하지 않은 Slot 을 더 골라도 「곧 그 프리셋」은 더 이상 참이 아니다.
+    widened = _config(("s1", ("o1",)), ("s2", ("x1",)))
+    assert list_selection_presets(reg, _pure_ctx(), widened).applied_key is None
+
+
+@pytest.mark.parametrize("config", [None, _config()])
+def test_applied_key_is_none_on_an_empty_selection(tmp_path: Path, config) -> None:
+    """선택 0건 위에는 어떤 프리셋도 서 있지 않다(저장조차 거절되는 상태다)."""
+    reg = _registry(tmp_path)
+    reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    assert list_selection_presets(reg, _pure_ctx(), config).applied_key is None
+
+
+def test_applied_key_is_none_without_items_or_with_corruption_only(tmp_path: Path) -> None:
+    reg = _registry(tmp_path)
+    empty = list_selection_presets(reg, _pure_ctx(), _config(("s1", ("o1",))))
+    assert empty.items == () and empty.applied_key is None
+
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    reg.slot_path("c" * 16).write_text(json.dumps({"schema_version": "x"}), encoding="utf-8")
+    corrupt_only = list_selection_presets(reg, _pure_ctx(), _config(("s1", ("o1",))))
+    # 읽을 수 없는 항목은 무엇과도 일치를 주장할 수 없다 — 그래도 목록에는 남는다.
+    assert corrupt_only.corrupt_count == 1 and corrupt_only.applied_key is None
+
+
+def test_applied_key_only_considers_items_the_structure_can_fully_apply(
+    tmp_path: Path,
+) -> None:
+    """목록에서 걸러진 항목은 표지 후보가 아니다 — 안 보이는 줄에 표지를 켤 수 없다."""
+    reg = _registry(tmp_path)
+    reg.add(_preset("모르는옵션", _sel(("s2", ("사라진옵션",)))))
+    listing = list_selection_presets(reg, _pure_ctx(), _config(("s2", ("사라진옵션",))))
+    assert listing.items == () and listing.applied_key is None
+
+
+def test_duplicate_content_marks_the_first_listed_item_only(tmp_path: Path) -> None:
+    """같은 내용이 두 이름으로 보관돼 있으면 **목록 순서의 첫 항목**이 표지를 든다.
+
+    어느 쪽을 지목해도 진술은 참이라 요구는 결정론뿐이고, 둘 다 켜서 「둘이 서 있다」는 없는
+    개념을 만들지 않는다.
+    """
+    reg = _registry(tmp_path)
+    later = reg.add(_preset("나중", _sel(("s1", ("o1",)))))
+    first = reg.add(_preset("가장먼저", _sel(("s1", ("o1",)))))
+    listing = list_selection_presets(reg, _pure_ctx(), _config(("s1", ("o1",))))
+    assert [item.name for item in listing.items] == ["가장먼저", "나중"]
+    assert listing.applied_key == first != later
+
+
+def test_listing_without_a_config_claims_no_standing_preset(tmp_path: Path) -> None:
+    """``config`` 를 넘기지 않는 호출(목록만 묻는 자리)은 표지를 주장하지 않는다."""
+    reg = _registry(tmp_path)
+    reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    assert list_selection_presets(reg, _pure_ctx()).applied_key is None
+
+
 def test_delete_restates_the_destroyed_name(tmp_path: Path) -> None:
     reg = _registry(tmp_path)
     key = reg.add(_preset("표준"))
