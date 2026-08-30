@@ -94,6 +94,10 @@ class ProjectedSlot:
     options: tuple[ProjectedOption, ...]
     shared_field_ids: tuple[str, ...]
     diagnostics: tuple[ProjectedDiagnostic, ...]
+    #: 이 Slot 을 **접은 채로 세워도 되는가**(U4 14~17) — 판정은 :func:`slot_settled` 한 곳이고
+    #: 링2·웹은 읽어 나르기만 한다. 「기본 접힘」이지 「접혀 있다」가 아니다: 사용자가 편 상태는
+    #: 표시 상태라 웹이 소유한다(영속하지 않는다).
+    settled: bool = False
 
 
 @dataclass(frozen=True)
@@ -232,6 +236,42 @@ def content_selection_zone_actionable(
     return len(slots) > 0
 
 
+def slot_settled(
+    slot_status: str,
+    effective_option_ids: "tuple[str, ...]",
+    diagnostics: "tuple[ProjectedDiagnostic, ...]",
+    *,
+    has_retained_note: bool,
+) -> bool:
+    """이 Slot 을 접어도 되는가 — U4 14~17 판정의 **단 한 곳**.
+
+    사용자 확정(2026-08-30): 프리셋을 위로 올리고 **끝난 슬롯은 접는다**. 슬롯이 늘수록 다 고른
+    항목의 라디오가 자리를 먹어 「한 번에 끝내는 길」(프리셋)이 화면 밖으로 밀리던 것이 요구의
+    실체다. 그러니 접어도 되는 것은 **더 볼 것도 할 것도 없는** 슬롯 하나다.
+
+    접지 **않는** 갈래를 먼저 못박는다 — 순서가 계약이다.
+
+    - ``_BLOCKING_STATUSES`` — ``CHOOSE_CONTENT`` blocker 의 복구 동사가 이 슬롯 안의 라디오
+      (``.cs-option-input``, :mod:`~hwpxfiller.webapp.blocker_affordance`)다. 접으면 **없는 자리를
+      가리키는 지시**가 된다(#912 결함류). ``RESOLVED`` 판정이 이미 이들을 배제하지만, 배제를
+      **결과가 아니라 술어의 입력**으로 적어 둔다: 함의가 깨지는 날 조용히 접히는 것이 하필
+      지시가 겨눈 자리다(13번이 구획 술어에 같은 이유로 같은 장치를 뒀다).
+    - ``RESOLVED`` 가 아닌 나머지 — 아직 답하지 않았거나 답이 깨진 자리다.
+    - 진단이 남은 자리 — 사라진 Option 처럼 **할 말이 있는** 슬롯이다.
+    - 이전 선택의 운명 문안(``has_retained_note``)이 붙은 자리 — 같은 이유다. 그 문안은
+      「템플릿이 바뀌어 다시 확인이 필요하다」고 말하는데 접으면 그 말을 못 본다.
+    - 실효 선택이 **없는** 자리 — 접은 줄은 고른 값을 대신 말해야 하는데 댈 값이 없다.
+      빈 줄로 접으면 「접혔다」와 「비었다」가 같아 보인다.
+    """
+    if slot_status in _BLOCKING_STATUSES:
+        return False
+    if slot_status != RESOLVED:
+        return False
+    if diagnostics or has_retained_note:
+        return False
+    return bool(effective_option_ids)
+
+
 def project_context_error(
     context_error_code: str, context_error_detail: str | None = None
 ) -> CurrentSlotConfigurationView:
@@ -342,8 +382,15 @@ def project_current_slot_configuration(
     잃은 것이 같은 빈칸이 된다.
     """
     structure = context.template_structure
+    # 이전 선택의 운명을 **먼저** 판정한다 — 접힘 술어(:func:`slot_settled`)가 「이 슬롯에 할
+    # 말이 남았는가」를 묻는데, 그 말 중 하나가 이 운명 문안이다. 나중에 구하면 슬롯은 이미
+    # 접힌 채로 만들어져 그 문안을 못 본 채 사라진다.
+    retained_selections = project_retained_selections(context, resolution, retained)
+    noted_slot_ids = frozenset(
+        item.slot_id for item in retained_selections if item.fate != SLOT_REMOVED
+    )
     slots = tuple(
-        _project_slot(struct_slot, slot_res)
+        _project_slot(struct_slot, slot_res, has_retained_note=slot_res.slot_id in noted_slot_ids)
         for struct_slot, slot_res in zip(structure.slots, resolution.slots, strict=True)
     )
     detached = tuple(
@@ -395,11 +442,13 @@ def project_current_slot_configuration(
         informational_changes=informational,
         zone_actionable=content_selection_zone_actionable(slots, status),
         savable_selection=has_declared_selection(configuration),
-        retained_selections=project_retained_selections(context, resolution, retained),
+        retained_selections=retained_selections,
     )
 
 
-def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> ProjectedSlot:
+def _project_slot(
+    struct_slot: TemplateSlot, slot_res: SlotResolution, *, has_retained_note: bool = False
+) -> ProjectedSlot:
     declared = set(slot_res.declared_option_ids)
     effective = set(slot_res.effective_option_ids)
     options = tuple(
@@ -412,6 +461,9 @@ def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> Projec
         )
         for opt in struct_slot.options
     )
+    diagnostics = tuple(
+        ProjectedDiagnostic(kind=d.kind, option_id=d.option_id) for d in slot_res.diagnostics
+    )
     return ProjectedSlot(
         slot_id=slot_res.slot_id,
         display_text=_display_text(struct_slot.label, slot_res.slot_id),
@@ -421,9 +473,12 @@ def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> Projec
         effective_option_ids=slot_res.effective_option_ids,
         options=options,
         shared_field_ids=struct_slot.shared_fields,
-        diagnostics=tuple(
-            ProjectedDiagnostic(kind=d.kind, option_id=d.option_id)
-            for d in slot_res.diagnostics
+        diagnostics=diagnostics,
+        settled=slot_settled(
+            slot_res.status,
+            slot_res.effective_option_ids,
+            diagnostics,
+            has_retained_note=has_retained_note,
         ),
     )
 

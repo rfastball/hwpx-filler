@@ -21,6 +21,7 @@ from hwpxfiller.application.slot_configuration_projection import (
     SLOT_SELECTIONS_COMPLETE,
     content_selection_zone_actionable,
     project_context_error,
+    slot_settled,
     project_current_slot_configuration,
 )
 from hwpxfiller.application.slot_reconciliation import (
@@ -319,6 +320,54 @@ def test_savable_selection_is_the_save_gate_itself() -> None:
 def test_context_error_claims_neither_axis() -> None:
     view = project_context_error("TEMPLATE_INITIALIZATION_REQUIRED")
     assert view.zone_actionable is False and view.savable_selection is False
+
+
+
+# ── 끝난 슬롯의 접힘 술어(U4 14~17 · #932) ───────────────────────────────────────────────
+def test_settled_slot_is_the_one_with_nothing_left_to_do() -> None:
+    structure = _structure(_slot("s", [TemplateOption("A"), TemplateOption("B")]))
+    view = _project(structure, _sel(("s", ["A"])))
+    (slot,) = view.slots
+    assert slot.status == "RESOLVED" and slot.settled is True
+
+
+@pytest.mark.parametrize(
+    "structure,selections,why",
+    [
+        # 아직 안 골랐다 — CHOOSE_CONTENT 가 겨누는 자리다.
+        (_structure(_slot("s", [TemplateOption("A")])), _sel(), "MISSING_REQUIRED_SELECTION"),
+        # 고른 것이 사라졌다 — 다시 골라야 한다.
+        (_structure(_slot("s", [TemplateOption("A")])), _sel(("s", ["Z"])), "broken"),
+        # 고를 수 있는 것이 없다 — 접으면 그 사실을 못 본다.
+        (_structure(_slot("s", [])), _sel(), "NO_AVAILABLE_OPTIONS"),
+    ],
+)
+def test_slot_with_anything_left_to_say_never_collapses(structure, selections, why) -> None:
+    (slot,) = _project(structure, selections).slots
+    assert slot.settled is False, why
+
+
+def test_choose_content_target_is_excluded_by_the_predicate_itself() -> None:
+    """``CHOOSE_CONTENT`` 가 겨누는 상태는 **술어의 입력**으로 배제된다(#912 결함류 구조 차단).
+
+    ``RESOLVED`` 판정이 이미 이들을 거르지만, 그 함의가 깨지는 날 조용히 접히는 것이 하필
+    지시가 겨눈 자리다 — 그래서 결과가 아니라 술어에 적어 둔다(13번이 구획 술어에 같은 장치를
+    둔 것과 같은 이유).
+    """
+    for blocking in ("MISSING_REQUIRED_SELECTION", "SELECTED_OPTION_REMOVED",
+                     "NO_AVAILABLE_OPTIONS", "CARDINALITY_VIOLATION"):
+        assert slot_settled(blocking, ("A",), (), has_retained_note=False) is False
+
+
+def test_retained_note_keeps_its_slot_open() -> None:
+    """「템플릿이 바뀌어 다시 확인이 필요하다」는 문안이 붙은 자리는 접지 않는다 — 접으면 그 말을 못 본다."""
+    assert slot_settled("RESOLVED", ("A",), (), has_retained_note=True) is False
+    assert slot_settled("RESOLVED", ("A",), (), has_retained_note=False) is True
+
+
+def test_settled_needs_a_value_to_show_in_the_collapsed_line() -> None:
+    """실효 선택이 없으면 접은 줄이 댈 값이 없다 — 「접혔다」와 「비었다」가 같아 보인다."""
+    assert slot_settled("RESOLVED", (), (), has_retained_note=False) is False
 
 
 # ── summary counts / blocking_items ───────────────────────────────────────────

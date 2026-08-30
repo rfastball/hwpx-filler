@@ -835,8 +835,18 @@ def run_sx(ctx: ScenarioContext) -> dict:
 
     s.take_dispatch_trace()
     before_token = initial_view["new_configuration_token"]
-    s.click_sel("#cs-opt-0-0", what="공고번호 표시 선택")
+    _pick_option(s, "#cs-opt-0-0", what="공고번호 표시 선택")
     s.wait("document.getElementById('cs-opt-0-0').checked", "첫 Option fresh 반영", requires=["#cs-opt-0-0"])
+    # U4 14~17 — **고른 직후 그 슬롯은 접히지 않는다**(U4-A 26번 회귀 금지). backend 는 이제
+    # 이 슬롯을 `settled` 로 싣지만, 방금 만진 자리가 눈앞에서 접히면 그것이 26번이 고친 바로
+    # 그 깜빡임이다. 상태가 걸린 사실이라 정적 렌더 테스트가 못 보고 여기가 진다.
+    _expect(
+        s.js(
+            "(function(){const d=document.getElementById('cs-opt-0-0').closest('details');"
+            "return !!d && d.open;})()"
+        ),
+        "H1: 고른 직후 그 슬롯이 접혔습니다(U4-A 26번 회귀)",
+    )
     after_first = _snapshot(s)
     after_first_view = _current_view(after_first)
     _expect(after_first_view["new_configuration_token"] != before_token, "H2: command 뒤 token이 갱신되지 않았습니다")
@@ -845,15 +855,15 @@ def run_sx(ctx: ScenarioContext) -> dict:
     h2_trace = s.take_dispatch_trace()
     _expect(any(item.get("action") == "select_slot_option" for item in h2_trace), "H2: actual Product command trace가 없습니다")
     for selector in ("#cs-opt-1-0", "#cs-opt-2-0"):
-        s.click_sel(selector, what="initial canonical Option 선택")
+        _pick_option(s, selector, what="initial canonical Option 선택")
         s.wait(f"document.querySelector({json.dumps(selector)}).checked", "Option fresh 반영", requires=[selector])
 
     before_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
-    s.click_sel("#cs-opt-0-1", what="S1 Option B 전환")
+    _pick_option(s, "#cs-opt-0-1", what="S1 Option B 전환")
     s.wait("document.getElementById('cs-opt-0-1').checked", "Option B fresh recompute", requires=["#cs-opt-0-1"])
     after_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
     _expect(before_fields != after_fields, "H3: Option A↔B 뒤 Active Field가 변하지 않았습니다")
-    s.click_sel("#cs-opt-0-0", what="preserved Option 복원")
+    _pick_option(s, "#cs-opt-0-0", what="preserved Option 복원")
     s.wait("document.getElementById('cs-opt-0-0').checked", "preserved Option 복원 반영", requires=["#cs-opt-0-0"])
 
     # S9-03(#829) 보관된 선택 왕복 — **기존 창·기존 선택 위**에서 밟는다(새 콜드 부팅 0).
@@ -884,6 +894,18 @@ def run_sx(ctx: ScenarioContext) -> dict:
         any(item.get("name") == preset_name for item in preset_items),
         f"S9: 저장한 프리셋이 스냅샷 목록에 없습니다 — {preset_items!r}",
     )
+    # U4 14~17 — 보관된 선택 **목록이 슬롯보다 앞에** 선다(한 번에 끝내는 길이 먼저다).
+    _expect(
+        s.js(
+            "(function(){const z=document.getElementById('jobContentSelectionZone');"
+            "const list=z&&z.querySelector('.cs-presets');"
+            "const slot=z&&z.querySelector('.cs-slot');"
+            "if(!list||!slot)return false;"
+            "return !!(list.compareDocumentPosition(slot)"
+            " & Node.DOCUMENT_POSITION_FOLLOWING);})()"
+        ),
+        "S9: 보관된 선택 목록이 슬롯 뒤에 섰습니다(U4 14~17 — 프리셋 우선)",
+    )
     # 목록에 **실제로 보이는지**를 잰다(hidden 요소는 존재해도 사용자에게는 없는 것이다).
     s.wait(
         "[...document.querySelectorAll('#jobContentSelectionZone .cs-preset-name')]"
@@ -892,7 +914,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         requires=["#jobContentSelectionZone"],
     )
     # 지금을 저장 시점과 다르게 만든 뒤 적용해야 「되돌아왔다」가 vacuous 하지 않다.
-    s.click_sel("#cs-opt-0-1", what="프리셋 적용 대조를 위한 다른 선택")
+    _pick_option(s, "#cs-opt-0-1", what="프리셋 적용 대조를 위한 다른 선택")
     s.wait("document.getElementById('cs-opt-0-1').checked", "대조 선택 반영", requires=["#cs-opt-0-1"])
     s.gate_dispatch("apply_selection_preset", mode="after")
     s.click_sel("#jobContentSelectionZone .cs-preset-apply", what="보관된 선택 적용")
@@ -919,7 +941,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # V2: hold the real old-token request, apply successor through the UI, then let it settle stale.
     ctx.stage_template("successor")
     s.gate_dispatch("select_slot_option", mode="before")
-    s.click_sel("#cs-opt-1-1", what="old-token Option command")
+    _pick_option(s, "#cs-opt-1-1", what="old-token Option command")
     s.wait_dispatch_gate("old-token command 보류")
     # 왕복 중 표지는 임시 **줄**이 아니라 구획의 `aria-busy` 다(U4 계열1-26) — 줄이 섰다
     # 사라지면 구획 높이가 두 번 튀어 「접혔다 깜빡인다」로 보인다.
@@ -993,9 +1015,9 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 셋의 **행동이 다르다**는 것을 여기서 실제로 밟는다. broken 은 고른 것이 사라졌으니 **다른
     # 것**을 골라야 닫히고, 유지된 것은 **같은 것을 다시 고르면** 닫힌다(자동 승계가 아니므로
     # 확인은 사용자가 한다). 사라진 항목은 어느 쪽으로도 닫히지 않는다 — 정보로만 남는다.
-    s.click_sel("#cs-opt-1-0", what="깨진 선택 복구")
+    _pick_option(s, "#cs-opt-1-0", what="깨진 선택 복구")
     s.wait("document.getElementById('cs-opt-1-0').checked", "깨진 선택 복구 반영", requires=["#cs-opt-1-0"])
-    s.click_sel("#cs-opt-0-0", what="유지된 이전 선택 재확인")
+    _pick_option(s, "#cs-opt-0-0", what="유지된 이전 선택 재확인")
     s.wait("document.getElementById('cs-opt-0-0').checked", "재확인 반영", requires=["#cs-opt-0-0"])
     s.wait(
         "!document.querySelector('#jobContentSelectionZone"
@@ -1279,7 +1301,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
 
     # Work A response cannot land on Work B: send A, hold only its response, switch B, then settle/re-hydrate latest.
     s.gate_dispatch("select_slot_option", mode="after")
-    s.click_sel("#cs-opt-0-1", what="Work A pending Option")
+    _pick_option(s, "#cs-opt-0-1", what="Work A pending Option")
     s.wait_dispatch_gate("Work A response 보류")
     _select_work(s, "발주요청 기안")
     s.release_dispatch()
@@ -1764,6 +1786,22 @@ def _mount_pinned(ctx: "ScenarioContext", name: str) -> None:
         timeout=30.0,
         requires=["#dataPickerModal", "#jobDataLabel"],
     )
+
+
+def _pick_option(s: "Surface", selector: str, *, what: str) -> None:
+    """갈래 라디오를 **사람이 하는 그대로** 누른다 — 접혀 있으면 먼저 편다.
+
+    U4 14~17 로 끝난 슬롯은 접힌 채 선다(`<details>`). 닫힌 `<details>` 안의 요소는 화면에
+    없지만 `el.click()` 은 **그래도 통과한다** — 그래서 대본이 「눈으로 본 것과 다른 결론」을
+    내는 자리가 생긴다(CLAUDE.md 가 selftest 클릭에 대해 경고하는 바로 그 결함류). 펼치는
+    걸음을 명시로 두어, 사람이 밟는 경로와 대본이 밟는 경로를 같게 만든다.
+    """
+    s.js(
+        "(function(){const el=document.querySelector(" + json.dumps(selector) + ");"
+        "if(!el)return false;const d=el.closest('details');"
+        "if(d && !d.open)d.open=true;return true;})()"
+    )
+    s.click_sel(selector, what=what)
 
 
 def _ensure_all_selected(s: "Surface", what: str) -> None:
@@ -2685,7 +2723,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
         "템플릿 존 부재(조치 0건)",
         requires=["#jobContentSelectionZone"],
     )
-    s.click_sel("#cs-opt-0-0", what="현장설명회 실시 갈래")
+    _pick_option(s, "#cs-opt-0-0", what="현장설명회 실시 갈래")
     s.wait("document.getElementById('cs-opt-0-0').checked", "첫 갈래 반영", requires=["#cs-opt-0-0"])
     managed = _managed_route(ctx)
     # 관리 경로는 승인 한 번이 아니라 **검토 확인들**이다(§3.5) — 무엇을 몇 걸음 요구하는지는
@@ -2723,7 +2761,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     )
 
     # T17 구성 바꿔 생성 — 「절을 뺀다」가 곧 「생략」 갈래를 고르는 것이다(v1 EXACTLY_ONE).
-    s.click_sel("#cs-opt-0-1", what="현장설명회 생략 갈래")
+    _pick_option(s, "#cs-opt-0-1", what="현장설명회 생략 갈래")
     s.wait(
         "document.getElementById('cs-opt-0-1').checked"
         " && !document.getElementById('cs-opt-0-0').checked",

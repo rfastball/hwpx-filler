@@ -15,7 +15,7 @@
  *   - **내부어 미노출**: display_text 만 그린다(slot_id/option_id 는 command 용 내부 key).
  */
 
-import { createElement, useSyncExternalStore } from "react";
+import { createElement, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
@@ -66,8 +66,10 @@ function readPresetZone(full: unknown): PresetZone {
   if (z.supported !== true) return emptyPresetZone;
   return {
     supported: true,
-    // 노출 술어는 Python 이 낸다(U4 13번) — 목록 길이를 여기서 다시 세지 않는다.
-    actionable: z.actionable === true,
+    // 노출 술어는 Python 이 낸다(U4 13번·14~17) — 목록 길이를 여기서 다시 세지 않는다.
+    // 두 구획이 자리도 성격도 다르므로 술어도 둘이다(목록은 슬롯 위, 저장은 슬롯 아래).
+    listActionable: z.list_actionable === true,
+    saveActionable: z.save_actionable === true,
     items: Array.isArray(z.items) ? (z.items as PresetZone["items"]) : [],
     // 손상 항목을 목록에서 지우지 않는다 — 표면이 비활성 + 사유 병기로 재진술한다.
     corrupt: Array.isArray(z.corrupt) ? (z.corrupt as PresetZone["corrupt"]) : [],
@@ -282,18 +284,31 @@ function SlotFieldset(props: {
   attention: SlotAttention | undefined;
   retained: ProjectedRetainedSelection | undefined;
   pending: boolean;
+  collapsed: boolean;
   onSelect: (slotId: string, optionId: string) => void;
 }): ReactNode {
-  const { slot, slotIndex, attention, retained, pending } = props;
+  const { slot, slotIndex, attention, retained, pending, collapsed } = props;
   // DOM id/name 은 render-local index 로만 만든다 — slot_id/option_id 는 임의 문자열이라 이어붙이면
   // 충돌한다("a-b"+"c" == "a"+"b-c"). index 는 injective 라 htmlFor 가 엉뚱한 radio 를 가리키지 않는다.
   const groupName = `cs-slot-${slotIndex}`;
   // 재선택으로 고칠 수 없는 kind(고를 게 없음·현재 방식 미지원)는 선택을 비활성화한다(무동작 no-op 방지).
   const disabled = pending || attention?.selectable === false;
+  // 끝난 슬롯은 접힌 채 선다(U4 14~17). **접어도 DOM 에서 사라지지는 않는다** — `cs-opt-N-M` 은
+  // 렌더 순서 기반 id 이고 실주행 대본이 그 좌표를 든다. 걸러내면 뒤 슬롯의 index 가 전부 밀려
+  // 대본이 **다른 슬롯을 누르고도 초록**일 수 있다(조용한 오탐). `<details>` 의 네이티브 접힘은
+  // 자식을 남기므로 index 가 불변이고, 키보드 조작도 공짜로 얻는다.
+  const chosen = slot.options.filter((option) => option.effective)
+    .map((option) => option.display_text).join(", ");
   return h(
-    "fieldset",
-    { className: `cs-slot${attention !== undefined ? " cs-slot-attention" : ""}` },
-    h("legend", { className: "cs-slot-legend" }, slot.display_text),
+    "details",
+    {
+      className: `cs-slot${attention !== undefined ? " cs-slot-attention" : ""}`,
+      open: !collapsed,
+    },
+    h("summary", { className: "cs-slot-legend" },
+      slot.display_text,
+      // 접힌 줄은 **고른 값을 대신 말한다** — 접혔다는 사실만 남으면 비어 있는 것과 같아 보인다.
+      collapsed && chosen ? h("span", { className: "cs-slot-chosen" }, chosen) : null),
     attention !== undefined
       ? h("p", { className: "cs-slot-note", role: "note" }, attention.label)
       : null,
@@ -308,7 +323,9 @@ function SlotFieldset(props: {
       : null,
     h(
       "div",
-      { className: "cs-options" },
+      // `<fieldset>/<legend>` 가 지던 그룹 의미를 명시로 되돌린다 — `<details>` 는 펼침 위젯이지
+      // 라디오 묶음의 이름이 아니다. 이름을 잃으면 스크린리더가 「무엇에 대한 선택인가」를 못 낸다.
+      { className: "cs-options", role: "group", "aria-label": slot.display_text },
       ...slot.options.map((opt, optIndex) => {
         const inputId = `cs-opt-${slotIndex}-${optIndex}`;
         return h(
@@ -377,11 +394,40 @@ function presetNoticeText(notice: PresetNotice): { kind: string; text: string } 
   }
 }
 
-function PresetSection(props: {
+/** 저장 동사 하나만 든 구획 — **슬롯 아래**에 선다(U4 14~17).
+ *
+ *  목록에서 갈라낸 이유는 인과다: 「지금 고른 것을 보관한다」가 고르는 자리보다 **앞에** 서면
+ *  순서가 뜻을 뒤집는다. 술어도 갈렸다 — 이쪽은 저장 게이트 그 자체(`has_declared_selection`)라
+ *  저장할 것이 없으면 아예 서지 않는다. */
+function PresetSaveSection(props: {
+  pending: boolean;
+  onSave: () => void;
+}): ReactNode {
+  return h(
+    "section",
+    { className: "cs-presets cs-presets-save", "aria-label": "선택 보관" },
+    h(
+      "button",
+      {
+        type: "button",
+        className: "cs-preset-save",
+        disabled: props.pending,
+        onClick: props.onSave,
+      },
+      "현재 선택을 프리셋으로 저장",
+    ),
+  );
+}
+
+/** 보관된 묶음의 **목록**(적용) — 슬롯 **위**에 선다(U4 14~17): 한 번에 끝내는 길이 먼저다.
+ *
+ *  직전 왕복의 결과 재진술도 여기 산다. 저장 결과까지 이 구획이 드는 이유는 재진술의 수명이
+ *  웹 소유이기 때문이다(#659) — 저장이 성사되면 목록에 항목이 늘어 이 구획이 어차피 서고,
+ *  거절이면 그 사유를 말할 자리가 여기밖에 없다. */
+function PresetListSection(props: {
   presets: PresetZone;
   notice: PresetNotice | null;
   pending: boolean;
-  onSave: () => void;
   onApply: (presetKey: string) => void;
 }): ReactNode {
   const { presets, notice, pending } = props;
@@ -390,16 +436,6 @@ function PresetSection(props: {
     "section",
     { className: "cs-presets", "aria-label": "보관된 선택" },
     h("h3", { className: "cs-presets-title" }, "보관된 선택"),
-    h(
-      "button",
-      {
-        type: "button",
-        className: "cs-preset-save",
-        disabled: pending,
-        onClick: props.onSave,
-      },
-      "현재 선택을 프리셋으로 저장",
-    ),
     // 결과 재진술 — 깨짐이 있는 적용도 성공 UI 뒤에 숨지 않는다(같은 자리에서 시끄럽게).
     noticeLine === null
       ? null
@@ -470,6 +506,24 @@ export function JobContentSelection(props: {
   const projection = state.view?.projection ?? null;
   const status = statusLine(state);
   const pending = state.phase === "pending";
+  /* 끝난 슬롯은 **기본 접힘**이고, 그 판정은 Python 이 낸다(`slot.settled`). 여기가 소유하는
+     것은 「사용자가 이 세션에서 편 것」뿐이다 — 표시 상태라 영속하지 않는다.
+
+     **U4-A 26번을 되돌리지 않는 것이 이 상태의 존재 이유다.** 26번은 「옵션을 고르면 구획이
+     접혔다 깜빡인다」를 고친 판정이었다. 접힘을 매 왕복마다 다시 계산하면 사용자가 라디오를
+     고른 순간 그 슬롯이 RESOLVED 가 되어 **눈앞에서 접힌다** — 같은 결함을 우리 손으로
+     되만드는 꼴이다. 그래서 만진 슬롯은 접지 않는다.
+
+     구성이 갈리면(작업 전환·successor 적용으로 slot 집합이 바뀌면) 기억을 버린다 — 다른
+     구성의 「만졌다」를 이 구성에 적용하면 남의 흔적으로 이 화면을 그리게 된다. */
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
+  const slotSignature = (projection?.slots ?? []).map((slot) => slot.slot_id).join(" ");
+  const lastSignature = useRef(slotSignature);
+  useEffect(() => {
+    if (lastSignature.current === slotSignature) return;
+    lastSignature.current = slotSignature;
+    setTouched(new Set());
+  }, [slotSignature]);
   const backendError = state.zoneError?.message ?? state.view?.context_error_message ?? null;
   const statusNode = status === null
     ? null
@@ -534,12 +588,35 @@ export function JobContentSelection(props: {
   );
   const retainedGone = retained.filter((r) => r.fate === "SLOT_REMOVED");
 
+  /* 고른 슬롯을 기억한다 — 판정(`settled`)은 Python 것이고, 「방금 만졌다」는 이 세션의
+     표시 사실이라 여기가 든다. 이 한 줄이 26번 회귀를 막는다. */
+  const selectOption = (slotId: string, optionId: string) => {
+    setTouched((current) => {
+      if (current.has(slotId)) return current;
+      const next = new Set(current);
+      next.add(slotId);
+      return next;
+    });
+    return controller.selectOption(slotId, optionId);
+  };
+
   return h(
     "section",
     { className: "content-selection", "aria-label": "포함할 내용", "aria-busy": pending },
     h("h2", { className: "cs-title" }, "포함할 내용"),
     statusNode,
     backendErrorNode,
+    // 보관된 선택 **목록**이 슬롯 위에 선다(U4 14~17) — 한 번에 끝내는 길을 먼저 보여 준다.
+    // 저장 동사는 아래 남는다: 「지금 고른 것을 보관한다」가 고르는 자리보다 앞에 서면 인과가
+    // 뒤집힌다. 그래서 한 구획이 아니라 **성격이 다른 두 구획**이고 술어도 각자다.
+    state.presets.supported && (state.presets.listActionable || state.presetNotice !== null)
+      ? h(PresetListSection as any, {
+        presets: state.presets,
+        notice: state.presetNotice,
+        pending,
+        onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
+      })
+      : null,
     projection.slots.length === 0
       ? h("p", { className: "cs-empty" }, "이 문서 작업에는 선택할 내용이 없습니다.")
       : h(
@@ -553,7 +630,8 @@ export function JobContentSelection(props: {
               attention: attention.get(slot.slot_id),
               retained: retainedBySlot.get(slot.slot_id),
               pending,
-              onSelect: controller.selectOption,
+              collapsed: slot.settled === true && !touched.has(slot.slot_id),
+              onSelect: selectOption,
             }),
           ),
         ),
@@ -575,18 +653,12 @@ export function JobContentSelection(props: {
     // 은 SG-01(#733)이 compatibility gate 로 닫았고, 그 뒤로 승계 선언집합에는 target 에 있는
     // Option 만(AUTO_KEEP) 실린다. 그래서 detached 는 제품 경로에서 만들어지지 않고, 이전 선택의
     // 운명은 위 `cs-retained-gone` 이 정보로 재진술한다.
-    // 보관된 선택(S9-03 #829) — slot 목록 아래에 선다. 목록·손상은 snapshot 존이 낸 사실이고
-    // 적용 결과의 수치는 command 응답 값 그대로다(웹 재계산 0).
-    // 보관된 선택 구획도 같은 규율이다(U4 13번): 보관·손상 항목이 있거나 **지금 저장할 선택이
-    // 있을 때** 선다. 저장 동사를 목록 건수로 지우면 프리셋을 처음 만들 입구가 사라진다 —
-    // #932 B5 가 템플릿 존에서 거절한 스위치 트랩이라 술어의 입력에 저장 게이트를 함께 넣었다.
-    state.presets.supported && (state.presets.actionable || state.presetNotice !== null)
-      ? h(PresetSection as any, {
-          presets: state.presets,
-          notice: state.presetNotice,
+    // 저장 동사는 **슬롯 아래**에 남는다(U4 14~17) — 고르고 나서 보관한다는 인과 그대로다.
+    // 술어는 저장 게이트 그 자체이므로(13번의 결속) 저장할 것이 없으면 이 구획도 서지 않는다.
+    state.presets.supported && state.presets.saveActionable
+      ? h(PresetSaveSection as any, {
           pending,
           onSave: () => { void controller.savePreset(); },
-          onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
         })
       : null,
   );

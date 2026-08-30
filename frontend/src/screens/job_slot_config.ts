@@ -34,6 +34,9 @@ export type ProjectedSlot = {
   display_text: string;
   selection_policy: string | null;
   status: string;
+  /** 접은 채로 세워도 되는가(U4 14~17) — 판정은 Python `slot_settled` 하나다. 「기본 접힘」이지
+   *  「접혀 있다」가 아니다: 사용자가 편 상태는 표시 상태라 렌더 층이 소유한다. */
+  settled: boolean;
   declared_option_ids: string[];
   effective_option_ids: string[];
   options: ProjectedOption[];
@@ -104,13 +107,16 @@ export type PresetCorruptEntry = { file_name: string; error: string };
  *  `actionable` 은 구획 노출 술어(U4 13번)이고 Python `preset_zone_actionable` 이 낸 값이다. */
 export type PresetZone = {
   supported: boolean;
-  actionable: boolean;
+  /** 목록(적용) 구획 — 슬롯 **위**에 선다. Python `preset_list_actionable`. */
+  listActionable: boolean;
+  /** 저장 구획 — 슬롯 **아래**에 선다. 저장 게이트(`has_declared_selection`) 그 자체다. */
+  saveActionable: boolean;
   items: PresetListItem[];
   corrupt: PresetCorruptEntry[];
 };
 
 export const emptyPresetZone: PresetZone = {
-  supported: false, actionable: false, items: [], corrupt: [],
+  supported: false, listActionable: false, saveActionable: false, items: [], corrupt: [],
 };
 
 /** backend `PresetSaveResult` asdict — 문안 0(status·code·충돌 항목 사실만). */
