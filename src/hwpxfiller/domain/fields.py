@@ -43,6 +43,25 @@ _FIELD_PART_PATTERNS = (
 )
 
 
+#: 채우기 대상이 **아닌** ordinary Field ``type`` — 사용자가 만든 누름틀이 아니라 한글이
+#: 자동으로 낳는 필드다(#931). 한글은 본문에 URL 을 입력하면 ``type="HYPERLINK" name=""``
+#: 인 fieldBegin/fieldEnd 짝을 몰래 세우는데, 그것을 누름틀로 세면 이름 없는 필드가 되어
+#: 자격 판정이 통째로 막히고(법령 링크가 든 공공 조달 서식에서 거의 항상 재현) 이름을 주면
+#: 이번엔 채울 항목 목록이 링크로 오염된다. 둘 다 틀리므로 애초에 세지 않는다.
+#:
+#: **거부 목록이지 허용 목록이 아니다.** 누름틀은 ``CLICK_HERE`` 이고 우리 authoring 도
+#: 그것을 쓰지만, ``type`` 속성 없이 ``name`` 만 든 예전 형상이 실제로 존재한다 — 허용
+#: 목록으로 뒤집으면 그 필드들이 **조용히** 채움 대상에서 빠진다. 모르는 type 은 계속
+#: 누름틀로 세고, 이름이 없으면 ``invalid-field-id`` 로 시끄럽게 거절된다. 그 진단이
+#: 자리와 원문을 재진술하므로 새 자동 type 이 나타나면 증거를 들고 여기 한 줄 붙인다.
+NON_FILL_FIELD_TYPES = frozenset({"HYPERLINK"})
+
+
+def is_fill_target_field_type(field_type: "str | None") -> bool:
+    """이 ``fieldBegin@type`` 이 채울 누름틀인가 — 채움·자격 두 표면의 단일 출처(#931)."""
+    return field_type not in NON_FILL_FIELD_TYPES
+
+
 @dataclass(frozen=True)
 class FillNote:
     """채움이 "경고 후 진행"으로 처리한 사실의 기록(#154, confirm-or-alarm 완화).
@@ -78,13 +97,22 @@ class FieldDocument:
         self._notes: "list[FillNote]" = []
 
     def _field_occurrences(self) -> "tuple[FieldOccurrence, ...]":
-        """현재 트리의 신뢰 가능한 ordinary Field occurrence를 공용 seam에서 얻는다."""
+        """현재 트리의 신뢰 가능한 **누름틀** occurrence를 공용 seam에서 얻는다.
+
+        형식 kernel 은 자동 필드(:data:`NON_FILL_FIELD_TYPES`)까지 포함한 모든
+        non-BOOKMARK 짝을 돌려준다 — 구조 안전 판정이 잘릴 수 있는 짝을 하나도 놓치면
+        안 되기 때문이다. 채움 표면이 보는 것은 그중 누름틀뿐이다(#931).
+        """
         if self._occurrences_dirty:
             self._occurrences = resolve_field_occurrences(
                 self._entry, self._tree
             ).require_usable()
             self._occurrences_dirty = False
-        return self._occurrences
+        return tuple(
+            occurrence
+            for occurrence in self._occurrences
+            if is_fill_target_field_type(occurrence.field_type)
+        )
 
     @property
     def modified(self) -> bool:

@@ -91,7 +91,12 @@ from ..domain.authoring import (
     scan_structure,
     scan_tokens,
 )
-from ..domain.fields import fill_precheck, normalize_field_id, read_fields
+from ..domain.fields import (
+    fill_precheck,
+    is_fill_target_field_type,
+    normalize_field_id,
+    read_fields,
+)
 from ..domain.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..domain.schema import extract_schema
 from ..domain.slot import Slot, SlotOption
@@ -177,6 +182,11 @@ class _OpenField:
     #: 이 Field 가 열린 문서 순서(#773 composition projection 의 structural_order).
     structural_order: int = 0
     product_boundary_opened: bool = False
+    #: 채울 누름틀인가 — 아니면 한글이 자동으로 낳은 필드다(#931).
+    fill_target: bool = True
+    #: 진단이 자리를 재진술하는 데 쓰는 표지(entry-local 필드 순번·원문 발췌).
+    entry_ordinal: int = 0
+    text_preview: str = ""
 
 
 class _ParsedProduct(NamedTuple):
@@ -677,6 +687,22 @@ def _blocker_summary(
     )
 
 
+def _unnamed_field_message(entry: str, open_field: _OpenField) -> str:
+    """이름 없는 누름틀 진단 문안 — 자리와 원문을 재진술한다(#931).
+
+    ``repr(raw_name)`` 만 싣던 예전 문안은 이름이 빈 문자열일 때 ``Field ''`` 로 정보가
+    0 이었고, 사용자가 문서에서 그 필드를 찾을 길이 없었다. entry·필드 순번·감싼 원문이
+    그 자리를 가리키고, 조치 동사가 다음 걸음을 준다.
+    """
+    where = f"{open_field.entry_ordinal}번째 필드"
+    if open_field.text_preview:
+        where += f" '{open_field.text_preview}'"
+    return (
+        f"{entry}: {where}에 이름이 없습니다. "
+        "한글에서 그 누름틀에 이름을 지정하거나 필드를 지우세요."
+    )
+
+
 def _consume_observation(
     cursor: Iterator[_ObservationT],
     pair: BoundaryPairRef,
@@ -919,6 +945,7 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
         current_option_pair: BoundaryPairRef | None = None
         invalid_product_depth = 0
         open_field: _OpenField | None = None
+        entry_field_ordinal = 0
 
         entry_kinds[entry.entry] = entry.kind
         entry_removal_blockers.setdefault(entry.entry, [])
@@ -927,14 +954,21 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
             order_counter += 1
             structural_order = order_counter
             if isinstance(event, FieldBegin):
+                # 관측 cursor 는 kernel occurrence 순서와 자리를 맞춰 전진한다 — 누름틀이
+                # 아닌 Field 라도 **반드시** 소비한다(건너뛰면 이후 전부 어긋난다).
                 fill = _consume_observation(
                     field_fill_cursor, event.pair, "Field fill", entry.entry
                 )
-                fill_blocker_kinds.extend(blocker.kind for blocker in fill.blockers)
+                fill_target = is_fill_target_field_type(event.field_type)
+                if fill_target:
+                    # 자동 필드의 기입 장애는 이 판정에 들지 않는다 — 채우지 않을 자리라
+                    # 세면 `field_write_preserves_identity` 가 근거 없이 내려간다(#931).
+                    fill_blocker_kinds.extend(blocker.kind for blocker in fill.blockers)
                 if open_field is not None:
                     raise TemplateInspectionContractError(
                         f"{entry.entry}: Field began while another Field was open"
                     )
+                entry_field_ordinal += 1
                 open_field = _OpenField(
                     event.pair,
                     event.raw_name,
@@ -947,6 +981,9 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                     ),
                     fill,
                     structural_order,
+                    fill_target=fill_target,
+                    entry_ordinal=entry_field_ordinal,
+                    text_preview=event.text_preview,
                 )
                 continue
 
@@ -988,11 +1025,17 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                             f"{entry.entry}: Field {field_label} contains a selection boundary",
                         )
                     )
+                elif not open_field.fill_target:
+                    # 한글이 자동으로 낳은 필드(하이퍼링크 등)다 — 이름이 없어도 정상이고
+                    # 채울 자리도 아니라 필드 집합·occurrence 어디에도 들지 않는다(#931).
+                    # 위의 구조 진단(소유자·경계 교차)은 그대로 받는다: 자동 필드의 짝도
+                    # 구간 제거가 자를 수 있는 실체라 침묵시키면 조용히 틀린다.
+                    pass
                 elif open_field.field_id is None:
                     diagnostics.append(
                         TemplateDiagnostic(
                             "invalid-field-id",
-                            f"{entry.entry}: Field {field_label} has no valid ID",
+                            _unnamed_field_message(entry.entry, open_field),
                         )
                     )
                 elif not open_field.fill.fillable:
