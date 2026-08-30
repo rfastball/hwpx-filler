@@ -246,6 +246,12 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   두되 **웹 표면에 노출하지 않는다**: 지정·개명·해산·접힘·태그 편집·태그 facet 동사가 전부
   걷혔고 링2 투영도 그 축을 묻지 않는다(`library_sections(grouped=False)` ·
   `build_sections(grouped_view=False)`). 되살릴 때 그 자리에서 다시 소비하면 된다.
+- **온보딩 튜토리얼 표면은 동결**이다(#941) — 링1(`gui/tutorial_state.py`)·컨트롤러
+  (`webapp/screen_tutorial.py`)·마일스톤 통지 seam·설정 영속·`external/example_pack`·
+  `examples/onboarding/` 자산과 컴포넌트(`frontend/src/tutorial/panel.ts`)는 지우지 않고 두되
+  **웹 표면에 노출하지 않는다**: React 마운트·포트 배관·`.tut-*` CSS·예제 설치/제거 진입점이
+  전부 걷혔고 PyInstaller spec 은 그 자산을 **동봉하지 않는다**(`packaging/verify_specs.py` 가
+  부재를 단언). live101 `onboarding` phase 도 함께 퇴역했다.
 - 나라장터(조달청 API) 소스는 **동결**이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지
   않는다. 풀에 있는 nara 항목은 숨기지 말고 시끄럽게 거절한다. 테스트는 실 API·서비스 키
   대신 `tests/fixtures` 의 응답을 쓴다.

@@ -99,16 +99,19 @@ def main(spec_dir: Path | None = None) -> int:
     assert '(str(REPO / "frontend"), "web")' not in web, (
         "web spec: frontend source를 runtime data로 번들하면 안 됩니다"
     )
-    # 온보딩 동봉 예제(#891 · ONBOARDING_TUTORIAL.md §4.5) — 설치본·포터블도 소스 실행과
-    # 같은 설치 동작이어야 한다. 자산 **폴더 셋만** 싣는지까지 본다: 폴더를 통째로 넣으면
-    # 생성 스크립트·__pycache__ 가 배포본에 실린다.
-    assert 'ONBOARDING_SRC = REPO / "examples" / "onboarding"' in web, (
-        "web spec: 온보딩 예제 자산 원천 경로 누락(#891)"
+    # 온보딩 동봉 예제(#891)는 **배포본에 실리지 않는다**(#941) — 앱 안의 설치 진입점이
+    # 걷혔으므로 닿을 길 없는 동봉이다. 동봉 금지가 새 계약이라 부재를 단언한다: 표면을
+    # 되살리는 변경은 이 단언을 존재 단언으로 함께 뒤집어야 한다(조용한 재유입 금지).
+    assert 'ONBOARDING_SRC' not in web, (
+        "web spec: 온보딩 예제 자산이 다시 번들에 실렸습니다 — 진입 표면이 걷힌 동안에는"
+        " 닿을 길이 없습니다(#941)"
     )
-    assert 'for name in ("templates", "text_templates", "data")' in web, (
-        "web spec: 온보딩 예제 자산 폴더 셋(templates·text_templates·data) 열거 누락"
+    assert "onboarding_datas" not in web, (
+        "web spec: 온보딩 예제 자산 datas 합류가 재유입했습니다(#941)"
     )
-    assert "*onboarding_datas," in web, "web spec: 온보딩 예제 자산 datas 합류 누락"
+    assert '"examples/onboarding' not in web, (
+        "web spec: 온보딩 예제 도착 경로가 재유입했습니다(#941)"
+    )
     assert '(str(REPO / "examples"), "examples")' not in web, (
         "web spec: examples/ 를 통째로 번들하면 안 됩니다(스크립트·테스트 유입)"
     )

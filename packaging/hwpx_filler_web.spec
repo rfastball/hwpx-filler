@@ -31,17 +31,11 @@ version_res = str(version_path) if version_path.exists() else None
 icon_path = SPEC_DIR / "hwpx-filler.ico"
 icon_res = str(icon_path) if icon_path.exists() else None
 
-# 온보딩 동봉 예제 자산(#891 · ONBOARDING_TUTORIAL.md §4.5) — 설치본·포터블 사용자가 저장소
-# 없이 앱 안에서 예제 세트를 설치할 수 있어야 한다(exe 사용자에게 quickstart-101 은 닿지
-# 않는다). **자산 폴더 셋만** 싣는다: 생성 스크립트(make_assets.py)·테스트·__pycache__ 는
-# 런타임이 쓰지 않으므로 폴더를 통째로 넣지 않고 여기서 명시적으로 자른다.
-# 도착 경로는 `_MEIPASS/examples/onboarding/<폴더>` 이고 해석은
-# `hwpxfiller.external.example_pack.asset_root()` 의 sys._MEIPASS 분기가 맡는다.
-ONBOARDING_SRC = REPO / "examples" / "onboarding"
-onboarding_datas = [
-    (str(ONBOARDING_SRC / name), f"examples/onboarding/{name}")
-    for name in ("templates", "text_templates", "data")
-]
+# 온보딩 동봉 예제 자산(#891)은 **싣지 않는다**(#941). 앱 안의 설치 진입점이 배포본에서
+# 걷혔으므로 그 자산을 실어도 사용자가 닿을 길이 없고, 닿을 길 없는 동봉은 배포본 크기와
+# 「무엇이 출하됐는가」의 답만 흐린다. 자산 원천(`examples/onboarding/`)과 그 해석기
+# (`external.example_pack.asset_root()` 의 sys._MEIPASS 분기)는 저장소에 동결로 남는다 —
+# 표면을 되살리는 변경이 이 자리에 datas 합류를 함께 되돌린다.
 
 a = Analysis(
     [str(SPEC_DIR / "hwpx_filler_web_entry.py")],
@@ -49,7 +43,6 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(REPO / "build" / "web"), "web"),  # sealed Vite output only
-        *onboarding_datas,  # 온보딩 예제 자산 3폴더(#891)
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[

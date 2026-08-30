@@ -48,6 +48,9 @@ allowed_source_roots = [
   "frontend/src/shell/host.ts",
   # 셸 레벨 튜토리얼 표면(#894) — 화면 stage 밖에 서야 몰입 표면에서도 살아남는다.
   # 파일 하나로 좁힌다(디렉터리로 넓히지 않는다 — codemirror 주석의 그 이유 그대로).
+  # #941 에서 진입 표면이 배포본에서 걷히며 이 컴포넌트의 **마운트가 끊겼다**(boundary.ts).
+  # 파일과 그 react 의존은 동결로 남으므로 배치 경로도 남는다 — 지우면 여기 사는 react
+  # import 가 vendor 봉쇄 위반이 된다. 되살릴 때 마운트만 boundary.ts 에 다시 건다.
   "frontend/src/tutorial/panel.ts",
 ]
 mount_owner = "frontend/src/react/root.ts|boot"

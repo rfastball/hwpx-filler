@@ -113,15 +113,12 @@ SEED_ASSETS = ["data", "templates", "text_templates"]
 
 #: 이 하니스가 아는 실행 phase 전집 — 값이 곧 대본 선택자다.
 #:
-#: ``onboarding`` 만 홈 전제가 반대다(#895): 나머지 셋은 101 자산이 **시딩된** 홈에서 돌지만
-#: 온보딩 여정은 **빈 홈**을 전제한다. 설치 액션이 번들 원천을 스스로 풀어 홈에 앉히는 것이
-#: 그 여정의 첫 검사 대상이라, 자산을 미리 깔아 두면 검사할 것이 사라진다.
-PHASES = ("legacy", "journey", "restart", "onboarding")
+#: ``onboarding`` phase 는 걷혔다(#941): 튜토리얼 진입 표면이 배포본에서 제거돼 실창으로
+#: 밟을 대본이 없다. 되살릴 때는 그 자리에 phase·전제 검사·대본을 함께 되돌린다.
+PHASES = ("legacy", "journey", "restart")
 
 #: 생성물이 떨어지는 자리(README 「기본 저장 폴더」).
 RESULTS_REL = Path("templates") / "Results"
-#: 동봉 예제 데이터가 설치되는 자리(``host/locations.default_example_data_dir``).
-EXAMPLE_DATA_REL = Path("example_data")
 SX_TEMPLATE_REL = Path("templates") / "발주요청서.hwpx"
 SX_OUTPUT_REL = Path("sx-output")
 _SECTION = "Contents/section0.xml"
@@ -380,27 +377,6 @@ def build_web_artifact() -> None:
     )
 
 
-def _missing_onboarding_assets() -> "list[str]":
-    """동봉 예제 원천(``examples/onboarding/``)의 부재를 전수로 센다 — 조용한 부분 확인 금지.
-
-    이름 목록의 정본은 :mod:`hwpxfiller.external.example_pack` 이다. 여기서 파일명을 다시 적으면
-    자산이 늘 때 하니스만 옛 목록을 보게 되고, 그 침묵은 「전제를 증명했다」는 초록 밑에 숨는다.
-    """
-    from hwpxfiller.external import example_pack
-
-    root = example_pack.asset_root()
-    plan = [
-        *(("templates", name) for name in example_pack.HWPX_ASSETS),
-        *(("text_templates", name) for name in example_pack.TXT_ASSETS),
-        *(("data", name) for name in example_pack.DATA_ASSETS),
-    ]
-    return [
-        f"온보딩 예제 자산 없음: {root / sub / name}"
-        for sub, name in plan
-        if not (root / sub / name).is_file()
-    ]
-
-
 def preflight(mode: str, phase: str = "legacy") -> "list[str]":
     """실행 없이 **전제만** 센다 — CI 가 "돌 수 있는 환경인가"를 시끄럽게 증명하는 자리.
 
@@ -420,12 +396,6 @@ def preflight(mode: str, phase: str = "legacy") -> "list[str]":
             problems.append(f"101 자산 없음: {EXAMPLE_HOME / name}")
     if not (EXAMPLE_HOME / "data" / "발주목록.csv").is_file():
         problems.append("101 데이터 없음: data/발주목록.csv")
-    if phase == "onboarding":
-        # 온보딩 여정은 **시딩하지 않는다** — 홈에 자산을 앉히는 것이 설치 액션의 일이고 그것이
-        # 검사 대상이다. 그래서 여기서 세는 전제는 시딩 자산이 아니라 **번들 원천**이다: 동봉
-        # 자산이 없으면 설치가 대본 한가운데서 `FileNotFoundError` 로 터지고, 그 실패는 「예제
-        # 설치가 깨졌다」는 제품 문장으로 나온다(전제 부재를 제품 결함으로 오분류하는 자리).
-        problems.extend(_missing_onboarding_assets())
     if mode == "capture" or phase == "journey":
         try:
             import PIL  # noqa: F401
@@ -777,15 +747,7 @@ def _run_with_home(
             scenario_ctx = scenario_mod.ScenarioContext(
                 surface=surface,
                 shoot=sink.shoot,
-                csv_path=str(
-                    # 온보딩 홈에는 101 데이터가 없다(시딩 0). 이 자리는 「이 실행의 데이터
-                    # 파일」이므로 예제 설치가 앉힐 자리를 가리킨다 — 편집기의 매핑 관문은
-                    # 고정 데이터를 받지 못하고 native 파일 대화상자만 지나므로(`pickData`
-                    # 하나뿐), 대본이 실제로 답해야 할 경로가 이것이다.
-                    home / EXAMPLE_DATA_REL / "계약목록.csv"
-                    if phase == "onboarding"
-                    else home / "data" / "발주목록.csv"
-                ),
+                csv_path=str(home / "data" / "발주목록.csv"),
                 queue_file_answer=answers.append,
                 queue_folder_answer=folder_answers.append,
                 stage_template=stage_template,
@@ -798,9 +760,7 @@ def _run_with_home(
                 home_census=lambda: home_census(home),
                 audit_shoot=audit_shoot,
             )
-            if phase == "onboarding":
-                observations = scenario_mod.run_onboarding(scenario_ctx)
-            elif phase == "restart":
+            if phase == "restart":
                 observations = scenario_mod.run_restart(scenario_ctx)
             else:
                 observations = scenario_mod.run(scenario_ctx)

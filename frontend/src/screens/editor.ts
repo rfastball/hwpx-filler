@@ -480,35 +480,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
-  /** 동봉 예제 세트 설치(#891) — 확인 왕복. 재진술 문안·수치는 Python 이 낸다.
-   *
-   *  누르기 전에는 홈에 아무것도 쓰이지 않는다(1차는 읽기 전용 재진술). 확정 뒤의 결과·
-   *  실패 사유는 tpl 결과 줄이 재진술하므로 여기서 다시 말하지 않는다. */
-  async function installExamples(trigger?: HTMLElement): Promise<void> {
-    const result = await dispatch("tpl", "install_examples", {});
-    if (result.needs_confirm && await deps.modal.confirm({
-      title: "예제 설치 확인",
-      body: `${result.confirm_text}\n\n설치할까요?`,
-      confirmLabel: "설치", cancelLabel: "취소", returnFocus: trigger,
-    })) {
-      await dispatch("tpl", "install_examples", { confirm: true });
-    }
-  }
-
-  /** 설치한 예제 일괄 제거(#892) — 설치와 대칭인 확인 왕복.
-   *
-   *  **무엇이 몇 건 사라지는지도, 「되돌리기는 재설치」도 Python 재진술 그대로**다. 여기서
-   *  수치를 세지 않는다. 벌크 되돌리기가 없으므로 파괴 확정(`danger`)으로 묻는다. */
-  async function removeExamples(trigger?: HTMLElement): Promise<void> {
-    const result = await dispatch("tpl", "remove_examples", {});
-    if (result.needs_confirm && await deps.modal.confirm({
-      title: "예제 제거 확인",
-      body: `${result.confirm_text}\n\n걷어낼까요?`,
-      confirmLabel: "걷어내기", cancelLabel: "취소", danger: true, returnFocus: trigger,
-    })) {
-      await dispatch("tpl", "remove_examples", { confirm: true });
-    }
-  }
+  /* 동봉 예제 세트의 설치(#891)·제거(#892) 진입점은 여기 있었다. 튜토리얼 진입 표면과 함께
+     배포본에서 걷혔고(#941), `tpl` 채널의 `install_examples`·`remove_examples` 액션과 그
+     스냅샷 축(`library.examples`)은 동결로 남는다 — 되살릴 때 이 자리에서 다시 소비한다. */
 
   /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ---- */
 
@@ -1176,8 +1150,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
-    installExamples,
-    removeExamples,
     useLibraryTemplate, importTemplate, importFolder, pickData,
     openPoolData, usePoolData, closePoolData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
@@ -1403,7 +1375,6 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
   const txt = library.txt || {};
   const result = library.result || {};
   const slots = library.slots || null;
-  const examples = (library.examples || null) as Obj | null;
   return createElement(Fragment, null,
     /* 가져오기는 hwpx·txt 겸용(확장자가 매체 라우팅)이라 밴드 밖 공용 줄에 둔다. */
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
@@ -1419,20 +1390,6 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         className: "btn sm", "data-act": "lib-new-txt",
         onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
       }, "새 TXT 템플릿…"),
-      /* 동봉 예제 상시 진입점(#891) — 라벨·설치 여부는 스냅샷이 낸다(여기서 발명 금지). */
-      examples ? h("button", {
-        className: "btn sm", "data-act": "install-examples", "data-busy-lock": true,
-        title: String(examples.hint || ""),
-        onClick: (event: Obj) => controller.guarded(
-          () => controller.installExamples(event.currentTarget)),
-      }, String(examples.label || "")) : null,
-      /* 제거 어포던스(#892)는 **설치돼 있을 때만** 선다 — 판정도 라벨도 스냅샷 소유다. */
-      examples && examples.removable ? h("button", {
-        className: "btn sm", "data-act": "remove-examples", "data-busy-lock": true,
-        title: String(examples.remove_hint || ""),
-        onClick: (event: Obj) => controller.guarded(
-          () => controller.removeExamples(event.currentTarget)),
-      }, String(examples.remove_label || "")) : null,
       h("span", { className: "spacer" }),
       h("button", {
         className: "btn sm", "data-act": "lib-refresh", title: "라이브러리 폴더를 다시 읽습니다",

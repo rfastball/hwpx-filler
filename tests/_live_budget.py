@@ -34,7 +34,6 @@ __all__ = [
     "LIVE101_OUTER_SLACK_S",
     "LIVE101_JOURNEY_BUDGET_S",
     "LIVE101_RESTART_BUDGET_S",
-    "LIVE101_ONBOARDING_BUDGET_S",
     "outer",
     "LIVE_WEBVIEW2_WORST_CASE_S",
     "LIVE_WEBVIEW2_TIMEOUT_MINUTES",
@@ -84,9 +83,6 @@ LIVE101_JOURNEY_BUDGET_S = 600.0
 #: same-home restart(SX-05)의 안쪽 예산.
 LIVE101_RESTART_BUDGET_S = 120.0
 
-#: 온보딩 여정(#895)의 안쪽 예산. 실측 완주 77.5초(2026-08-25, 개발 기기).
-LIVE101_ONBOARDING_BUDGET_S = 600.0
-
 
 def outer(budget_s: float) -> float:
     """안쪽 예산 하나에서 **바깥** 시한(`subprocess.run(timeout=...)`)을 파생한다.
@@ -106,7 +102,6 @@ LIVE_WEBVIEW2_WORST_CASE_TERMS: "tuple[tuple[str, float], ...]" = (
     ("qualified 콜드부팅 실패", QUALIFIED_COLD_BOOT_FAILURE_S),
     ("101 바깥 상한", outer(LIVE101_JOURNEY_BUDGET_S)),
     ("same-home restart 바깥 상한", outer(LIVE101_RESTART_BUDGET_S)),
-    ("온보딩 여정 바깥 상한", outer(LIVE101_ONBOARDING_BUDGET_S)),
 )
 
 #: 위 항의 합 — 전부 **매달림 상한**이지 정상 실행 시간이 아니다.
