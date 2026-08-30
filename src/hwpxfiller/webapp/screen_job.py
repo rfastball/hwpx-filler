@@ -3216,6 +3216,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """문서 탐색 검색어 갱신 — 대상은 작업 표시 이름만(§18.6, 판정은 링1)."""
         self.browse_query = str(p.get("text", ""))
 
+    def _do_dismiss_data_notice(self, p: dict) -> None:
+        """데이터 통지 닫기(U4 §2.12 · #945) — 세우는 자리의 짝.
+
+        이 채널에는 사용자가 끄는 전이가 없어서, 사유가 지나간 뒤에도 통지가 남아 지금이
+        아닌 과거를 계속 서술했다(편집기 `dismiss_notice` 와 같은 결함류). 해소를 자동
+        감지하려 들지 않는 것도 같은 이유다 — 통지마다 해소 술어를 새로 지어야 하고 그
+        술어가 곧 두 번째 판정이다. 사유가 다시 서면 같은 트리거가 통지도 다시 세운다.
+
+        레지스트리 조회 실패 경고는 여기서 지우지 않는다(지울 수도 없다) — 그 문안은
+        스냅샷마다 실측에서 다시 합성되는 자동 소멸분이라 이 문의 대상이 아니다.
+        """
+        self._clear_data_notice()
+
     def _clear_data_notice(self) -> None:
         self.data_notice_text = ""
         self.data_notice_level = ""

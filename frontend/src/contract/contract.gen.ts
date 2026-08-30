@@ -171,6 +171,7 @@ export const SCREEN_ACTIONS = {
     prefer_work: { required: ["name"], optional: [] },
     browse_tab: { required: [], optional: ["tab"] },
     browse_query: { required: [], optional: ["text"] },
+    dismiss_data_notice: { required: [], optional: [] },
     relink_template: { required: ["name"], optional: ["confirm", "path"] },
     template_check: { required: ["request_id"], optional: [] },
     template_apply: { required: ["change_token"], optional: [] },

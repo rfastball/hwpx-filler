@@ -1874,6 +1874,32 @@ def test_select_job_does_not_mount_any_data(tmp_path):
     assert snap["data_notice"]["level"] == "warn"
 
 
+def test_dismiss_data_notice_clears_the_channel(tmp_path):
+    """수동 소멸 통지에는 닫는 동사가 있다(U4 §2.12 · #945 F4).
+
+    `data_notice` 는 매 변이 자동 소멸이 아니라 사유가 해소될 때까지 남는 채널인데,
+    끄는 전이가 없어서 사용자가 읽고 이해한 뒤에도 화면 위에 영구히 남았다(#874
+    `saveMessage`·#933 편집기 `notice` 와 같은 결함류). 세우는 전이는 그대로 두고 끄는
+    문만 연다 — 사유가 다시 서면 같은 트리거가 통지도 다시 세운다.
+    """
+    ctrl, _pool = _pool_controller(tmp_path)
+    ctrl.registry.save(
+        replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert "연결된 데이터가 없습니다" in ctrl.snapshot()["data_notice"]["text"]
+
+    pushes: list = []
+    ctrl._push_sink = lambda _screen, snapshot: pushes.append(snapshot)
+    assert ctrl.dispatch("dismiss_data_notice", {}) is None
+
+    # 스냅샷에서 사라지고(세션 상태), 그 사실이 push 로 화면까지 간다.
+    assert ctrl.snapshot()["data_notice"] is None
+    assert pushes and pushes[-1]["data_notice"] is None
+    # 닫기는 통지 채널만 만진다 — 작업 선택·데이터 상태는 그대로다.
+    assert ctrl.job_name == "공고서"
+
+
 def test_mounted_session_data_survives_job_selection(tmp_path):
     """세션 소유 마운트 데이터는 작업 선택에서 생존한다(§18.2) — §5.3 완화 ⑴의 근거.
 

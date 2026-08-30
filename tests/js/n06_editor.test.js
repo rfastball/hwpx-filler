@@ -334,6 +334,33 @@ for (const section of NOTICE_SECTIONS) {
   });
 }
 
+/* ---------------- 수동 소멸 알림의 닫기 문법(U4 §2.12 · #945 F4) ---------------- */
+
+/* `saveMessage` 는 사유가 해소될 때까지 남는 채널인데 끄는 동사가 없었다(#874 이후에도
+   JS 전용 상태 쪽은 그대로였다). NoticeBox 로 이행해 닫기를 상자 문법이 강제한다. */
+test("#945 F4 인라인 알림에는 닫기 단추가 서고 눌리면 채널이 비워진다", async () => {
+  const h = blockedSaveHarness("filename");
+  await h.controller.init();
+  await h.controller.doSave({});
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('id="saveMsgClose"'),
+    "닫을 수 없는 알림은 사유가 지나간 뒤에도 과거를 계속 서술한다");
+  assert.ok(markup.includes('aria-label="알림 닫기"'), "닫기 단추에 이름이 없다");
+
+  assert.equal(typeof h.controller.clearSaveMessage, "function");
+  h.controller.clearSaveMessage();
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null);
+  /* 통지가 없어도 노드는 남는다 — #323 이 재는 것은 「통지가 갈 자리」의 존재다. */
+  const after = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(after.includes('id="save-msg"'));
+  assert.equal(after.includes('id="saveMsgClose"'), false);
+});
+
 test("#323 구조화 거절(전체 미사용 선차단)도 인라인 채널로 간다", async () => {
   // `useNone` 의 확정 선차단은 던져진 예외가 아니라 **판정 결과**다. catch 백스톱
   // (`deps.notify`)이 아니라 화면이 붙들 수 있는 자리로 가야 한다.

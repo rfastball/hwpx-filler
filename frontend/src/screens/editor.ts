@@ -32,6 +32,7 @@ import type {
   ContextMenuItem,
   ContextMenuPopoverPort,
 } from "./context_menu.ts";
+import { NoticeBox } from "./notice_box.ts";
 import { PathActions } from "./path_actions.ts";
 import {
   NAME_FIELD, PATTERN_FIELD, editorRevision, editorServerValues, editorSession,
@@ -1139,6 +1140,9 @@ export function createEditorController(deps: EditorControllerDeps) {
         return () => { viewListeners.delete(listener); };
       },
     },
+    /** 인라인 알림의 닫기 동사(U4 §2.12 · #945) — `NoticeBox` 의 `onClose` 가 이것이다.
+     *  JS 전용 상태라 백엔드 왕복이 없다. */
+    clearSaveMessage,
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
     setFold(open: boolean): void { patchView({ foldOpen: open }); },
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
@@ -1845,13 +1849,21 @@ function FilenameStage(props: {
 }
 
 /** 인라인 알림 노드(#323) — **셸 레벨**이라 세 탭이 공유하고 본문 재렌더에 증발하지 않는다.
- *  종전 거처는 파일 이름 탭 본문이었고, 그래서 나머지 두 탭의 통지가 갈 곳이 없었다. */
-function SaveMessage(props: { view: ViewState }): ReactNode {
+ *  종전 거처는 파일 이름 탭 본문이었고, 그래서 나머지 두 탭의 통지가 갈 곳이 없었다.
+ *
+ *  상자·닫기는 `NoticeBox` 가 소유한다(U4 §2.12 · #945) — 문안 조립(`⚠ ` 표지)은 여기
+ *  그대로다. 통지가 없어도 **노드는 남는다**: 세 탭 어디서든 통지가 갈 자리가 있다는
+ *  것이 #323 의 계약이라 프로브가 그 존재를 통지 이전에 먼저 잰다. */
+function SaveMessage(props: { view: ViewState; controller: EditorController }): ReactNode {
   const { saveMessage } = props.view;
-  return h("div", {
-    id: "save-msg", className: `note ${saveMessage?.level === "ok" ? "okbox" : "warnbox"}`,
-    style: { display: saveMessage ? "block" : "none" },
-  }, saveMessage ? `${saveMessage.level === "ok" ? "" : "⚠ "}${saveMessage.text}` : "");
+  if (!saveMessage) return h("div", { id: "save-msg", className: "note", style: { display: "none" } });
+  return createElement(NoticeBox, {
+    id: "save-msg",
+    closeId: "saveMsgClose",
+    level: saveMessage.level === "ok" ? "ok" : "warn",
+    text: `${saveMessage.level === "ok" ? "" : "⚠ "}${saveMessage.text}`,
+    onClose: props.controller.clearSaveMessage,
+  });
 }
 
 function EditorFooter(props: {
@@ -1952,17 +1964,15 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
       /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄.
          닫기는 **사용자 몫**이다(U4 계열1-20): 세우는 트리거는 그대로라 사유가 다시 서면
          통지도 다시 서고, 해소를 자동 감지하려 들면 통지마다 해소 술어를 새로 지어야 한다. */
-      snapshot.notice ? h("p", {
-        className: `note editor-notice ${snapshot.notice.level === "ok" ? "quiet" : "warnbox"}`,
-        style: { whiteSpace: "pre-line" },
-      }, h("span", { className: "editor-notice-text" }, snapshot.notice.text),
-        h("button", {
-          className: "editor-notice-close", id: "editorNoticeClose", type: "button",
-          "aria-label": "알림 닫기",
-          onClick: () => { void controller.sendEdit("dismiss_notice", {}); },
-        }, "✕")) : null,
+      snapshot.notice ? createElement(NoticeBox, {
+        tag: "p",
+        closeId: "editorNoticeClose",     // 좌표는 불변 — 이 id 를 든 게이트가 이미 있다.
+        level: snapshot.notice.level === "ok" ? "quiet" : "warn",
+        text: String(snapshot.notice.text),
+        onClose: () => { void controller.sendEdit("dismiss_notice", {}); },
+      }) : null,
       body),
-    h(SaveMessage as any, { view }),
+    h(SaveMessage as any, { view, controller }),
     h(EditorFooter as any, { snapshot, draft, controller }),
     h(ContextMenu as any, {
       id: "tplRowMenu",

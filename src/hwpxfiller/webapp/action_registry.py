@@ -184,6 +184,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "prefer_work": _schema("name"),
         "browse_tab": _schema(optional="tab"),
         "browse_query": _schema(optional="text"),
+        # 데이터 통지 닫기(U4 §2.12 · #945) — 편집기 `dismiss_notice` 와 같은 문법이다:
+        # 세우는 전이는 그대로 두고 사용자가 끄는 문만 연다. 무페이로드인 이유는 채널이
+        # 하나라서다(지울 대상을 웹이 지목하면 그 지목이 곧 두 번째 판정이 된다).
+        "dismiss_data_notice": _schema(),
         "relink_template": _schema("name", "path confirm"),
         # 템플릿 변경 확인·적용(S3-09 #659) — work 는 세션의 현재 작업이라 payload 에 없다.
         # request_id 는 prepare intent 재전송 단위(웹 발급), change_token 은 opaque token.
