@@ -718,7 +718,7 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
     /* 같은 서버 query를 재전달해도 포커스 상태는 달라질 수 있다. 값 의존으로 줄이면
        focused push 뒤 blur + 동일값 push가 빠지므로, model delivery가 만든 매 render에서 잰다. */
   });
-  if (snapshot === null) return h("div", { className: "sheet-card" }, "작업 목록을 읽는 중…");
+  if (snapshot === null) return h("div", { className: "modal-card sheet-card" }, "작업 목록을 읽는 중…");
   const browse = snapshot.browse || { tab: "available", query: "", rows: [], available_count: 0, needs_count: 0, filtered_out: 0 };
   const needs = browse.tab === "needs_action";
   const rows = browse.rows || [];
@@ -729,7 +729,7 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
       ...(section.names || []).map((name: string) => byName.has(name)
         ? h(BrowseRow as any, { key: name, row: byName.get(name), needs, snapshot, controller: props.controller }) : null)))
     : rows.map((row: Obj) => h(BrowseRow as any, { key: row.name, row, needs, snapshot, controller: props.controller }));
-  return h("div", { className: "sheet-card browse-sheet" },
+  return h("div", { className: "modal-card sheet-card browse-sheet" },
     h("div", { className: "sheet-head" }, h("h2", { id: "jobBrowseTitle" }, "문서 작업 찾기"),
       h("button", { className: "btn", id: "jobBrowseClose", type: "button", "data-busy-lock": true,
         onClick: props.controller.closeBrowse }, "닫기")),

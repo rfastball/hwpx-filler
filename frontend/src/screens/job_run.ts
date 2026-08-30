@@ -517,10 +517,20 @@ export function createJobRunController(deps: JobRunControllerDeps) {
           || deps.doc.getElementById(String(result.fallback_element_id || ''))
         );
         if (!element) throw new Error('문제 위치가 현재 표에 없습니다.');
-        element.scrollIntoView?.({ block: 'center' });
-        element.focus();
+        // 겨눔은 하나다 — 이전 표지를 걷지 않으면 지난 겨눔이 같이 남아 어디를 봤는지 잃는다.
+        deps.doc.querySelectorAll('.jb-aimed').forEach((stale) => stale.classList.remove('jb-aimed'));
+        try { element.focus({ preventScroll: true }); } catch { element.focus(); }
+        /* 표지는 별 상태가 아니라 **성공한 focus 수명**에만 붙는 class 다(workbench `aimAt` 승계):
+           WebView2 는 focus 된 tr 을 activeElement 로 되읽으면서도 `tr:focus` 의 셀 shadow 를
+           계산하지 않는 경우가 있다. blur 와 함께 사라지고 앱 상태로는 들지 않는다. */
+        if (deps.doc.activeElement === element) element.classList.add('jb-aimed');
+        // `center` 는 중첩 스크롤러(.jobtbwrap) 밖 페이지째를 끌어올린다 — 겨눔이 시야를 옮긴다.
+        element.scrollIntoView?.({ block: 'nearest' });
       } catch (error) {
-        log(`문제 위치로 이동하지 못했습니다: ${String(error)}`);
+        // 실패 사유를 접힌 로그에만 두면 「눌렀는데 아무 일도 없다」가 된다 — 가시 채널로 올린다.
+        const message = `문제 위치로 이동하지 못했습니다: ${String(error)}`;
+        deps.notify(message);
+        log(message);
       }
     },
     confirmDestructiveIfArmed, log,
