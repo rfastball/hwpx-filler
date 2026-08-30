@@ -82,6 +82,10 @@ const NEEDS_INIT_SNAP = {
     supported: true,
     reason: "initialization_required",
     checkable: false,
+    // 노출 술어는 Python 이 낸다(#932 B5) — 초기 등록 실패는 비활성 + 사유 병기로 **선다**.
+    actionable: true,
+    source_drift: null,
+    source_drift_note: null,
     diagnostics: [{ kind: "not_a_package", message: "HWPX 꾸러미를 열지 못했습니다" }],
     epoch: null,
     preparation: null,
@@ -93,6 +97,9 @@ const CHECKABLE_SNAP = {
   ...NEEDS_INIT_SNAP,
   template_change: {
     supported: true, reason: "", checkable: true, diagnostics: [],
+    // 원본이 갈렸으니 확인이 열려 있고 존도 선다(#932 B5).
+    actionable: true, source_drift: "changed",
+    source_drift_note: "원본 파일이 캡처 이후 편집되었습니다.",
     epoch: null, preparation: null,
   },
 };
@@ -115,6 +122,43 @@ test("초기 등록 실패 문안은 존이 그리는 문장과 **같다**(단�
   const restated = tplCheckRefusalNotice({ ok: false, reason: "initialization_required" });
   // 존 문안은 HTML 에 그대로 들어간다 — 두 자리가 갈리면 여기서 부러진다.
   assert.ok(zone.includes(restated), `존 문안과 재진술이 갈렸다: ${restated}`);
+});
+
+/* 준비를 마쳤고 원본도 그대로다 — 조치가 없는 종결 상태(#932 B5). */
+const SETTLED_SNAP = {
+  ...NEEDS_INIT_SNAP,
+  template_change: {
+    supported: true, reason: "", checkable: true, diagnostics: [],
+    actionable: false, source_drift: "unchanged", source_drift_note: null,
+    epoch: 1, preparation: null,
+  },
+};
+
+test("조치가 없으면 존은 서지 않는다 — U4 12번", async () => {
+  const h = await seated(SETTLED_SNAP);
+  const zone = renderToStaticMarkup(createElement(JobTemplateChange, { controller: h.controller }));
+  assert.equal(zone, "", `조치 없는 상태에서 존이 섰다: ${zone}`);
+});
+
+test("결과 재진술이 서 있는 동안에는 숨기지 않는다 — 재진술 수명은 웹 소유", async () => {
+  const h = await seated(SETTLED_SNAP, {
+    dispatchValue: { ok: false, reason: "initialization_required" },
+  });
+  await h.controller.templateCheck();  // 거절 한 줄이 구획에 앉는다
+
+  const zone = renderToStaticMarkup(createElement(JobTemplateChange, { controller: h.controller }));
+  assert.ok(zone.includes("jobTplNotice"), "재진술이 존과 함께 증발했다");
+  // 조치는 없는데 재진술만 남은 자리라 「조치 필요」로 부르지 않는다(24번).
+  assert.ok(zone.includes("템플릿 변경사항"), zone);
+  assert.ok(!zone.includes("템플릿 조치 필요"), zone);
+});
+
+test("조치가 있을 때만 「조치 필요」로 부른다 — 12·24 는 한 판정", async () => {
+  const h = await seated(CHECKABLE_SNAP);
+  const zone = renderToStaticMarkup(createElement(JobTemplateChange, { controller: h.controller }));
+  assert.ok(zone.includes("템플릿 조치 필요"), zone);
+  // status 가 없는 자리는 드리프트 재진술이 문장을 진다(빈 칸으로 새지 않는다).
+  assert.ok(zone.includes("원본 파일이 캡처 이후 편집되었습니다."), zone);
 });
 
 test("백엔드가 실은 error 문장이 정본이다 — 프런트가 다시 짓지 않는다", async () => {

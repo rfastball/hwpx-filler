@@ -309,6 +309,7 @@ export function bootProduct() {
      수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
     Bridge: bridge, modal: Modal, Theme, Personalization, shellNav, initSequence,
+    refreshScreen: (screen) => runtime.refresh(screen),
   });
   Nav = appShell.Nav;
   const AppCloseGuard = appShell.AppCloseGuard;

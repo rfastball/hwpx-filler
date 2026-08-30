@@ -27,10 +27,15 @@ type AppShellArgs = {
   Personalization: PersonalizationService;
   shellNav: ReturnType<typeof createShellNav>;
   initSequence: ReadonlyArray<() => unknown>;
+  /** 현재 화면 재당김 — 포커스 복귀가 부른다(#932 B5). 실패는 삼킨다: 갱신은 편의이지
+   *  계약이 아니고, 못 얻으면 다음 동작의 push 가 같은 값을 싣는다. */
+  refreshScreen: (screen: string) => Promise<unknown>;
 };
 
 export function createAppShell(args: AppShellArgs) {
-  const { Bridge, modal, Theme, Personalization, shellNav, initSequence } = args;
+  const {
+    Bridge, modal, Theme, Personalization, shellNav, initSequence, refreshScreen,
+  } = args;
   const AppCloseGuard = {
     async prompt(state: { reasons?: unknown[] } | null | undefined): Promise<void> {
       if (!shellNav.beginClosePrompt()) return;
@@ -98,6 +103,16 @@ export function createAppShell(args: AppShellArgs) {
   attach(window, "hwpx:personalizationchange", syncPersonalizationLabels);
   if (themeToggle !== null) attach(themeToggle, "click", () => { Theme.toggle(); });
   attach(window, "hwpx:themechange", syncThemeLabel);
+  /* **창으로 돌아오면 현재 화면을 다시 묻는다**(#932 B5). 앱 밖에서 일어난 변화 —
+     한글에서 템플릿을 고치는 것이 정확히 그것이다 — 는 push 를 내지 않으므로, 조치가
+     있을 때만 서는 구획(「템플릿 조치 필요」)이 다음 상호작용까지 침묵할 창이 생겼다.
+     주기 검사가 아니라 **사용자가 돌아온 순간** 한 번이라 유휴 비용이 0 이고, 그 갱신을
+     놓쳐도 실행 게이트가 드리프트를 blocker 로 잡는다(두 층이 같은 사실을 진다). */
+  attach(window, "focus", () => {
+    const screen = shellNav.currentScreen();
+    if (screen === null) return;  // 아직 아무 화면도 안 선 부팅 창 — 물을 대상이 없다
+    void Promise.resolve(refreshScreen(screen)).catch(() => {});
+  });
 
   document.querySelectorAll<HTMLElement>(".master-splitter").forEach((splitter) => {
     attach(splitter, "pointerdown", (rawEvent) => {

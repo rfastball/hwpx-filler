@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import shutil
 import threading
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -3122,6 +3123,12 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     if case in {"identity_missing", "application_missing"}:
         ctrl.load_data_path(str(old_path))
         ctrl.dispatch("select_job", {"name": active_name})
+        if case == "application_missing":
+            # 착석이 준비를 지게 된 뒤로(#932 B5) 선택 자체가 권위를 세운다. 이 케이스가 재는
+            # 것은 「착석한 Work 의 Application 을 전환 시점에 다시 확인할 수 없다」는 상태라,
+            # 착석 **다음**에 권위 저장소를 지워 그 상태를 만든다 — 선택 전에 비워 두면 자동
+            # 준비가 도로 세워 이 축이 영영 안 재진다.
+            shutil.rmtree(tmp_path / "authority")
     else:
         ctrl.dispatch("select_job", {"name": active_name})
         ctrl.load_data_path(str(old_path))
@@ -3360,6 +3367,7 @@ def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transitio
         tmp_path, registry=registry, template_change=coordinator
     )
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
     assert ctrl.vm is not None and not ctrl.vm.job.authority_id
     assert ctrl._seated_template_application_id is None
 
@@ -3403,6 +3411,7 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
         "공고서",
         lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
     )
+    _unprepared_after_select(ctrl)  # 채택은 아래 동사가 진다(#932 B5)
     pushes.clear()
 
     result = (
@@ -5530,21 +5539,57 @@ def _template_change_controller(tmp_path):
     return ctrl, pushes
 
 
+def _unprepared_after_select(ctrl, name="공고서"):
+    """작업이 든 권위 참조만 걷어 **생성이 최초 채택자**인 상태를 되만든다.
+
+    선택이 준비를 지게 된 뒤로(#932 B5) 그 상태는 「선택 때 준비가 거절됐고 그 뒤 템플릿이
+    수리된」 경우에만 남는다. 아래 테스트들이 재는 것은 그 lazy 채택 경로의 계약(발급 순간의
+    사본 대조·push 규율)이고 그 계약은 그대로 살아 있다 — 사라진 것은 **도달 방법**이라
+    여기서 명시로 만든다(전제가 바뀌었을 때 단언을 지우지 않고 새 계약으로 옮긴다).
+    """
+    ctrl.registry.mutate(name, lambda job: setattr(job, "authority_id", ""))
+    if ctrl.vm is not None:
+        ctrl.vm.job.authority_id = ""
+    ctrl._seated_template_application_id = None
+
+
+def test_selecting_a_job_prepares_it_without_a_button(tmp_path):
+    """#932 B5 — 「변경사항 확인」의 겸직 해소. 선택만으로 권위가 서고 구간 표면이 열린다.
+
+    종전에는 갓 저장한 작업이 이름이 전혀 다른 단추를 누르기 전까지 「포함할 내용」을 못
+    세웠다 — 구간이 서려면 준비가 필요하고 생성이 열리려면 구간이 필요한 교착이었다.
+    """
+    ctrl, _pushes = _template_change_controller(tmp_path)
+    assert ctrl.registry.load("공고서").authority_id == ""
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    assert ctrl.registry.load("공고서").authority_id  # 클릭 0회로 준비됐다
+    # 준비를 마쳤고 원본도 그대로다 — 존은 자기 발로 내려온다(U4 12번).
+    snap = ctrl.snapshot()
+    assert snap["template_change"]["actionable"] is False
+    assert snap["template_change"]["source_drift"] == "unchanged"
+
+
 def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     ctrl, pushes = _template_change_controller(tmp_path)
     # 작업 미선택 — 존은 부재가 아니라 명시적 unsupported 다(분기별 키 동형).
     assert ctrl.snapshot()["template_change"]["supported"] is False
     ctrl.dispatch("select_job", {"name": "공고서"})
     seated_job = ctrl.vm.job
-    assert seated_job.authority_id == ""
+    # 착석이 준비를 진다(#932 B5) — 정체는 여기서 이미 서고, 확인은 그것을 흔들지 않는다.
+    assert seated_job.authority_id == ctrl.registry.load("공고서").authority_id != ""
+    seated_application = ctrl._seated_template_application_id
+    assert seated_application
     zone = ctrl.snapshot()["template_change"]
     assert zone["supported"] is True and zone["checkable"] is True
+    assert zone["actionable"] is False  # 준비를 마쳤고 원본 그대로 — 존은 내려온다
     result = ctrl.dispatch("template_check", {"request_id": "k1"})
     assert result["ok"] is True
     assert result["preparation"]["status"] == "no_change"
     final_job = ctrl.registry.load("공고서")
     assert seated_job.authority_id == final_job.authority_id
-    assert ctrl._seated_template_application_id is not None
+    assert ctrl._seated_template_application_id == seated_application
     # 비-query 동사라 push 가 일어나 존이 최신 Preparation 을 실었다.
     assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
     # 개명이 권위 인덱스를 추종한다 — epoch 이 살아 있으면 재-bootstrap 이 아니다.
@@ -5569,11 +5614,14 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     snap = ctrl.snapshot()
     zone = snap["template_change"]
     assert zone["supported"] is True and zone["checkable"] is True
-    assert snap["source_drift"] is None  # 키 부재 분기 금지 — 미부트스트랩은 정직한 None
+    # 드리프트 사실은 **존 하나**가 든다(#932 B5 — 종전 top-level 사본은 소비자 0 이었다).
+    # TXT 도 착석이 준비를 지므로 대조가 성립하고, 원본 그대로면 존은 서지 않는다.
+    assert zone["source_drift"] == "unchanged" and zone["source_drift_note"] is None
+    assert zone["actionable"] is False
+    assert ctrl.registry.load("안내문").authority_id != ""  # 착석이 권위를 발급했다
 
     result = ctrl.dispatch("template_check", {"request_id": "t1"})
     assert result["ok"] is True and result["preparation"]["status"] == "no_change"
-    assert ctrl.registry.load("안내문").authority_id != ""  # 첫 확인이 권위를 발급한다
     assert pushes[-1][1]["template_change"]["epoch"] == 1
 
     txt.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
@@ -5600,6 +5648,7 @@ def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_pat
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     _approve_run(ctrl)
+    _unprepared_after_select(ctrl)  # 1회차 generate 가 최초 발급자인 상태(#932 B5)
     assert ctrl.registry.load("공고서").authority_id == ""
 
     assert ctrl.generate()["ok"] is True
@@ -5621,13 +5670,20 @@ def test_template_check_validation_failure_precedes_durable_commit(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     old_vm = ctrl.vm
     push_count = len(pushes)
+    # 기준선은 **착석 직후 상태**다(#932 B5): 선택이 준비를 지게 되며 「durable 이 비어
+    # 있다」는 더 이상 이 테스트의 전제가 아니고, 재는 것은 애초에 「실패한 확인이 그것을
+    # 움직이지 않는다」였다 — 기준선을 상수에서 관측으로 바꾼다.
+    baseline_authority = ctrl.registry.load("공고서").authority_id
+    baseline_works = sorted((tmp_path / "authority" / "works").glob("*"))
+    baseline_application = ctrl._seated_template_application_id
 
     with pytest.raises(TemplateChangeError, match="잘못된 확인 요청 키"):
         ctrl.dispatch("template_check", {"request_id": "한글키"})
 
-    assert ctrl.registry.load("공고서").authority_id == ""
-    assert not (tmp_path / "authority" / "works").exists()
-    assert ctrl.vm is old_vm and ctrl._seated_template_application_id is None
+    assert ctrl.registry.load("공고서").authority_id == baseline_authority
+    assert sorted((tmp_path / "authority" / "works").glob("*")) == baseline_works
+    assert ctrl.vm is old_vm
+    assert ctrl._seated_template_application_id == baseline_application
     assert len(pushes) == push_count
 
 
@@ -5639,6 +5695,7 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
 
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)  # 확인 한 바퀴만 재는 자리(#932 B5)
     coordinator = ctrl._template_change
     assert coordinator is not None
     state = {"in_check": False, "committed": False, "post_commit_reads": 0}
@@ -5779,6 +5836,7 @@ def test_template_check_releases_when_rules_change_before_final_gate(
     """같은 authority라도 final gate B의 규칙/판본이 seated A와 다르면 채택하지 않는다."""
     ctrl, _pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
     seated_job = ctrl.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
@@ -5810,6 +5868,7 @@ def test_template_check_releases_same_name_recreation_seen_by_final_gate(
     """Capture 뒤 동명 A→B 재생성은 final gate B를 돌려 loud RELEASE한다."""
     ctrl, _pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
     seated_job = ctrl.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
@@ -5841,6 +5900,7 @@ def test_template_check_final_gate_read_failure_prevents_admission_commit(
     """Admission transaction의 final Job read 실패는 그 commit을 허가하지 않는다."""
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
     seated_job = ctrl.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
@@ -5921,6 +5981,7 @@ def test_managed_generation_pushes_adopted_identity_before_review_rejection(tmp_
     ctrl.set_output_folder(str(tmp_path / "out"))
     assert ctrl.snapshot()["managed_hwpx"] is False
 
+    _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
     pushes.clear()
     rejected = ctrl.generate()
 
@@ -6012,6 +6073,7 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out3"))
+    _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
     pushes.clear()
     res = ctrl.generate()
     assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
@@ -6050,6 +6112,9 @@ def test_managed_generation_exception_pushes_only_changed_identity(
         monkeypatch.setattr(coordinator._workspace, "get_or_create", boom)
     else:
         monkeypatch.setattr(slot_command_runner, "stage_exact_applied_bytes", boom)
+    # `adopted` 축이 살아 있으려면 채택이 generate 안에서 일어나야 한다(#932 B5) — 착석이
+    # 이미 채택해 버리면 세 failpoint 가 전부 같은 답을 내 축이 vacuous 해진다.
+    _unprepared_after_select(ctrl)
     pushes.clear()
 
     with pytest.raises(OSError, match=rf"{failpoint} I/O failed"):
@@ -6103,6 +6168,7 @@ def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
 
     lock = ReleaseErrorLock()
     ctrl._generation_lock = lock
+    _unprepared_after_select(ctrl)  # RELEASE 는 발급 순간의 대조에서 난다(#932 B5)
     pushes.clear()
 
     with pytest.raises(OSError, match="generation lock cleanup failed"):
@@ -6136,6 +6202,12 @@ def test_generation_recovers_after_repairing_bad_template(tmp_path):
     assert Path(staged).exists()
 
 
+def _drift(ctrl):
+    """스냅샷이 실은 드리프트 (상태, 문안) — 존이 그 사실의 단일 자리다(#932 B5)."""
+    zone = ctrl.snapshot()["template_change"]
+    return zone["source_drift"], zone["source_drift_note"]
+
+
 def test_source_drift_is_flagged_loudly_in_snapshot(tmp_path):
     """#681 F1: 부트스트랩된 Work 의 원본을 앱 밖에서 편집하면 스냅샷이 시끄럽게 표식한다
     — 생성은 캡처본을 쓰므로 「검토한 편집분이 조용히 안 반영」을 막는다(confirm-or-alarm)."""
@@ -6144,19 +6216,21 @@ def test_source_drift_is_flagged_loudly_in_snapshot(tmp_path):
     ctrl, _ = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("template_check", {"request_id": "k1"})   # lazy bootstrap(캡처 확립)
-    assert ctrl.snapshot().get("source_drift") is None      # 무편집 = 일관, 경고 없음
+    assert _drift(ctrl) == ("unchanged", None)              # 무편집 = 일관, 경고 없음
     tp = load_job(ctrl.registry, "공고서").template_path
     Path(tp).write_bytes(Path(tp).read_bytes() + b"EXTERNAL-EDIT")  # 앱 밖 편집(미가져오기)
-    note = ctrl.snapshot().get("source_drift")
-    assert note and "캡처된 버전" in note                    # 시끄러운 표식
+    state, note = _drift(ctrl)
+    assert state == "changed" and note and "캡처된 버전" in note   # 시끄러운 표식
+    assert ctrl.snapshot()["template_change"]["actionable"] is True  # 존이 스스로 선다
 
 
 def test_unbootstrapped_work_shows_no_source_drift(tmp_path):
     """미부트스트랩 Work 는 원본이 곧 실행본이라 일관 — 경고 없음(그리고 seat 에서 비싼
     resolve/stage 를 하지 않는다: applied-work 회귀 방지)."""
     ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})          # 미부트스트랩
-    assert ctrl.snapshot().get("source_drift") is None
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _unprepared_after_select(ctrl)                          # 미부트스트랩 상태(#932 B5)
+    assert _drift(ctrl) == (None, None)                     # 판정 불성립 — 「없다」가 아니다
 
 
 def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, monkeypatch):

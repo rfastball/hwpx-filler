@@ -81,6 +81,11 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     ctrl.set_output_folder(str(tmp_path / "out"))
+    # 착석이 준비를 지게 된 뒤로(#932 B5) 이 고리는 「준비가 없던 작업의 첫 생성」에서만
+    # 재진다 — 고리 자체(발급이 성사 전에 일어난다)는 그대로라 상태만 명시로 되만든다.
+    ctrl.registry.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
+    if ctrl.vm is not None:
+        ctrl.vm.job.authority_id = ""
     assert ctrl.registry.load("공고서").authority_id == ""
 
     rejected = ctrl.generate()
