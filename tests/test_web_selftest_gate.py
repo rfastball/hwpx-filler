@@ -322,7 +322,7 @@ class TestWebSelftestGate:
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
         assert probe["opened"] is True, probe
-        assert probe["rows"] == 2, probe
+        assert probe["rows"] == 3, probe
         # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
         assert probe["use_active_enabled"] is True, probe
         assert probe["use_archived_disabled"] is True, probe
@@ -367,6 +367,25 @@ class TestWebSelftestGate:
         assert probe["error"] is None, probe
         assert probe["use_targets_key"] is True, probe
         assert probe["dupes_shown"] is True, probe
+
+    def test_data_picker_registers_contract_lists(self, selftest_result: dict) -> None:
+        """계약 목록(pclm)이 이 면에서 **실제로** 서고 등록된다(#937 ADR N).
+
+        엑셀과 좌표가 다른 종류라 정적 계약만으로는 「목록에 그려지는가」·「엑셀 전용
+        동사가 새지 않는가」를 못 본다. 진입 버튼은 존재가 아니라 **가시**여야 하고
+        (프로브 click 은 hidden 도 통과한다), 열린 폼은 기본 DB 자리를 프리필하되 뷰는
+        빈 placeholder 로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        # 종류가 달라도 목록에서 그냥 쓸 수 있다(끊김·보관이 아니면 비활성 사유가 없다).
+        assert probe["pclm_row_usable"] is True, probe
+        # 「다시 연결」은 경로+시트 좌표의 엑셀 전용 동사 — pclm 행에 서면 거짓 어포던스다.
+        assert probe["pclm_no_relink"] is True, probe
+        assert probe["pclm_entry"] is True, probe
+        # 뷰 전수(4) + 빈 placeholder 1 — 목록 첫 항목이 기본으로 서지 않는다.
+        assert probe["pclm_reg_view_options"] == 5, probe
+        assert probe["pclm_reg_db_prefill"] == "C:/AppData/Local/Pclm/pclm.db", probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self,

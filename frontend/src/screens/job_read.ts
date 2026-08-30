@@ -232,6 +232,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
       path: target.path || "",
       sheet: target.sheet || "",
       origin: target.origin || "",
+      /* `sheet` 자리가 무엇을 뜻하는지(엑셀=시트 / 계약 목록=뷰)는 호스트가 말한다(#937) —
+         떨어뜨리면 선택 면이 경로 모양으로 되추측하게 된다. */
+      kind: target.kind || "",
     };
   }
 

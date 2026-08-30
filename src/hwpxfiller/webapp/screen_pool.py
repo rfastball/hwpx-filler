@@ -40,11 +40,13 @@ loud 재진술한다(판정·수치는 Application·어댑터, 문안·확인 UI
 nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register_nara`` 는 보존, 배선만 유보).
 **계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
-소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 지금 이 화면이 지는 것은 **스냅샷**(등록 폼이
-물어야 할 기본 DB 자리와 뷰 전수)까지이고, 등록 액션은 그 폼과 **한 계약 변경**으로 함께
-선다 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
-(``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 이미 링1
-(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.register_pclm`)에 있다.
+소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **스냅샷**(등록 폼이 물어야
+할 기본 DB 자리와 뷰 전수)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
+둘은 폼(``#dataPickerPclm`` → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
+— 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
+(``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
+(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.register_pclm`)이 소유하고
+여기는 그 거절을 재진술만 한다.
 """
 from __future__ import annotations
 
@@ -57,9 +59,10 @@ from ..application.dataset_pool import (
     confirm_basis,
     kind_transition_clause,
     reference_summary,
+    resolve_pclm_db,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference
+from ..domain.dataset_reference import DatasetReference, pclm_identity
 from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS, default_pclm_db
 from .screens import PushSink, reference_missing
 
@@ -360,6 +363,83 @@ class PoolController:
         except OSError as exc:
             # 저장 자체의 실패(디스크·권한·경로 점유 등) — 날것 예외로 웹에 새면 unhandled
             # rejection 으로 삼켜질 수 있다(C7). 결과줄 문구로 loud 재진술한다.
+            msg = f"등록 데이터 저장에 실패했습니다: {exc}"
+            self._set_result(msg, "danger")
+            return {"ok": False, "error": msg}
+        verb = "갱신" if same is not None else "추가"
+        self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} ({display_reference(item)})")
+        return {"ok": True, "name": item.name}
+
+    def _do_register_pclm(self, p: dict) -> dict:
+        """계약 목록(pclm) 참조 등록 — 엑셀 등록의 거울. 중복 판정은 **정체성**(DB+뷰)이다.
+
+        세 분기와 그 근거는 :meth:`_do_register_excel` 과 같다(신규 추가 / 무변경 재등록의
+        멱등 확정 / 이름·메모 변경의 라벨 갱신 확정). 갈리는 것은 좌표뿐이다: 엑셀이
+        경로+시트로 겨누는 자리를 여기는 DB+뷰로 겨눈다 — 그래서 확정 왕복은 종류를 묻지
+        않는 정체성 판(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.
+        relabel_confirmed_raw`)을 쓴다(결속 규율 자체는 한 벌이다).
+
+        빈 ``db`` 는 「기본 자리」라는 뜻이라 조회 **전에** 해석한다
+        (:func:`~hwpxfiller.application.dataset_pool.resolve_pclm_db`) — 조회와 등록이 다른
+        자리를 보면 같은 데이터가 2건이 된다. 뷰 검증은 링1 이 소유하고 여기는 그 거절을
+        재진술만 한다(다중 시트 게이트가 엑셀 등록에 서는 자리의 대응물).
+        """
+        name = (p.get("name") or "").strip()
+        db = resolve_pclm_db(str(p.get("db") or ""))
+        view = str(p.get("view") or "")
+        note = p.get("note") or ""
+        try:
+            same = self.vm.find_same_pclm(db, view)
+            if same is not None:
+                key, existing = same
+                changes_name = bool(name) and name != existing.name
+                changes_note = bool(note) and note != existing.note
+                ident = pclm_identity(db, view)
+                if not changes_name and not changes_note:
+                    # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접되, 보고도 잠금
+                    # 안 재검증을 지난다(엑셀 판과 같은 근거, 코덱스 #578 P2).
+                    try:
+                        item = self.vm.relabel_confirmed_raw(
+                            ident, existing.name, note="",
+                            basis=confirm_basis([bound_state(key, existing)]),
+                        )
+                    except StaleConfirmError:
+                        self.vm.refresh()
+                        return self._stale_basis_result()
+                    self._set_result(
+                        f"이미 고정돼 있습니다: {item.name} "
+                        f"({display_reference(item)})"
+                    )
+                    return {"ok": True, "key": key, "name": item.name}
+                if not p.get("confirm"):
+                    return {
+                        "ok": True, "needs_confirm": True, "key": key, "name": name,
+                        "basis": confirm_basis([bound_state(key, existing)]),
+                        "confirm_text": (
+                            f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
+                            f"({display_reference(existing)}).\n"
+                            f"같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'."
+                        ),
+                    }
+                try:
+                    item = self.vm.relabel_confirmed_raw(
+                        ident, name, note=note, basis=p.get("basis")
+                    )
+                except StaleConfirmError:
+                    self.vm.refresh()
+                    return self._stale_basis_result()
+            else:
+                if p.get("confirm"):
+                    # 확인 모달은 「기존 등록 갱신」에 대한 승인이다 — 그 사이 항목이
+                    # 사라졌다고 신규 등록 승인으로 바꾸지 않는다.
+                    return self._stale_item_result(name)
+                item = self.vm.register_pclm(name, db, view=view, note=note)
+        except FileNotFoundError:
+            return self._stale_item_result(name)
+        except ValueError as exc:  # 빈 이름·미지 뷰·정체성 중복 백스톱 — 사용자 문구로
+            self._set_result(str(exc), "danger")
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
             msg = f"등록 데이터 저장에 실패했습니다: {exc}"
             self._set_result(msg, "danger")
             return {"ok": False, "error": msg}

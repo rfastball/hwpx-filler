@@ -527,14 +527,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 ### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
 
 데이터 선택은 「문서 만들기」 세션 표면이 여는 **한 오버레이**(`#dataPickerModal`,
-`frontend/js/data_picker.js`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과 `pool`
-화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 세 구획으로 흡수됐다:
+`frontend/src/screens/data_picker.ts`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과
+`pool` 화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 세 구획으로 흡수됐다:
 
 | 구획 | 내용 | 백엔드 |
 |---|---|---|
-| 현재 데이터 | 마운트 재진술 + 「이 데이터 고정」(파일 출처에서만 — 등록 데이터는 이미 고정된 참조). 이 회차에 고정했으면 버튼 자리에 「고정됨: 이름」(U2 §2.7 6행) | 호스트 스냅샷 `data_target` / 찾아보기 뒤는 브리지 descriptor |
+| 현재 데이터 | 마운트 재진술(부제 라벨은 `data_target.kind` 가 가른다 — 엑셀 `시트:` / 계약 목록 `뷰:`) + 「이 데이터 고정」(파일 출처에서만 — 등록 데이터는 이미 고정된 참조). 이 회차에 고정했으면 버튼 자리에 「고정됨: 이름」(U2 §2.7 6행) | 호스트 스냅샷 `data_target` / 찾아보기 뒤는 브리지 descriptor |
 | 고정한 데이터 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) + 사용·보관·활성화·삭제·다시 연결 + 손상 격리 | `pool` 컨트롤러 스냅샷·액션 **그대로** |
-| 다른 데이터 | 파일 찾아보기(1회용) → 다중 시트면 시트 확정 게이트 | 호스트 `pick_data_file`/`load_data_sheet` |
+| 다른 데이터 | 파일 찾아보기(1회용) → 다중 시트면 시트 확정 게이트 · **계약 목록(pclm) 등록**(`#dataPickerPclm` → `#poolRegModal` pclm 모드) | 호스트 `pick_data_file`/`load_data_sheet` · `pool/register_pclm` |
 
 - **화면은 죽고 컨트롤러는 산다**: `PoolController` 는 그대로 살아 이 다이얼로그가 `pool`
   관측 푸시의 구독자다(`Bridge.onPush("pool", …)`). 판정·문구는 Python 단일 출처.
@@ -550,17 +550,36 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   「＋ 직접 등록…」은 죽었다(U2 §2.7 4행 — 「읽지 않고 등록」이 유일한 고유 기능이자 곧
   결함). pin 모드에서는 path·sheet 가 읽기전용이고 폼 안 찾아보기(`#poolRegBrowse`)를
   감춘다(§2.7 5행) — 그 버튼·`pick_pool_data_file` 브리지는 「다시 연결」이 계속 쓴다.
-- **데이터 축 정체성 = `normcase(abspath(path)) + sheet`, 이름 = 순수 라벨**(#347, U2 §5.3
-  판정 C). 풀 항목 조작(`archive`·`activate`·`delete`·`load_pool`·`relink`)은 슬롯 `key` 를
-  겨눈다. `register_excel` 의 중복 판정은 정체성이다: 같은 데이터 재등록은 2건이 아니라
-  기존 등록의 라벨·메모 갱신(확인 승격) 또는 「이미 고정돼 있습니다」 재진술로 접힌다.
+- **데이터 축 정체성은 kind-스코프다**(#347 · U2 §5.3 판정 C · #937): 엑셀은
+  `normcase(abspath(path)) + sheet`, 계약 목록은 `"pclm"` 접두 + `normcase(abspath(db)) + view`.
+  이름은 어느 쪽에서도 **순수 라벨**이다. 접두를 나누는 이유는 종류가 정체의 성분이기
+  때문이다 — 한 축으로 뭉치면 같은 파일을 가리키는 두 종류의 등록이 서로를 「같은 데이터」로
+  읽는다. 풀 항목 조작(`archive`·`activate`·`delete`·`load_pool`·`relink`)은 종류와 무관하게
+  슬롯 `key` 를 겨눈다. `register_excel`·`register_pclm` 의 중복 판정은 각자의 정체성이다:
+  같은 데이터 재등록은 2건이 아니라 기존 등록의 라벨·메모 갱신(확인 승격) 또는 「이미
+  고정돼 있습니다」 재진술로 접힌다.
   `relink`(`key`+새 참조)는 같은 슬롯의 참조 교체(수명 보존)이고 확인 왕복을 거친다.
   구판(이름=키)이 남긴 **같은 정체성 등록 2+건**은 스냅샷 `duplicates` 로 loud 표면화되고
   `resolve_duplicate`(남길 `keep` 확정, 확인 왕복)로만 정리된다 — 조용한 자동 병합 금지.
+- **계약 목록(pclm) 행의 규약**(#937): 목록에 종류 배지(`계약 목록`)와 참조 요약
+  (`DB: … · 뷰 …`)으로 서고, `locate_path` 는 db 파일이라 끊김 배지·열기·폴더보기가 엑셀과
+  같게 산다. 활성·파일 존재면 「이 데이터 사용」이 그대로 열린다. **「다시 연결」은 서지
+  않는다** — 그 동사는 경로+시트 좌표(`relink_excel`)의 엑셀 전용이라 pclm 행에 세우면 누를
+  수 있는 거짓 어포던스가 된다(표면 조건은 `row.kind === "excel"`).
+- **`#poolRegModal` 은 모드를 명시로 든다**(`RegState.mode` — `excel`|`pclm`). pclm 모드는
+  경로·시트·폼 안 찾아보기를 감추고 **DB 자리**(`#poolRegDb` — 스냅샷 `pclm.default_db`
+  프리필, 편집 가능. 비우면 백엔드가 「기본 자리」로 해석해 `opts` 에 박는다)와 **읽을 뷰**
+  (`#poolRegView` select — 스냅샷 `pclm.views` 의 이름+설명)를 묻는다. 뷰의 초기 선택은
+  목록 첫 항목이 아니라 **빈 placeholder**(「뷰를 고르세요」)이고 빈 채 제출은 프런트가
+  사유와 함께 막는다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋나므로 뷰는 사용자가
+  확정할 값이다. 진입 버튼(`#dataPickerPclm`)은 스냅샷에 `pclm` 블록이 없으면 숨기지 않고
+  **비활성 + `title` 사유**다(조용한 죽은 버튼 금지). 확인 왕복(`needs_confirm`/`basis`)은
+  엑셀 등록과 **같은 한 벌**을 재사용한다 — 신설 브리지 메서드는 없다(직접 브리지 목록 무변).
 - **파괴·덮어쓰기 확정은 「보여준 상태의 지문」에 결속된다** — 이 화면의 확정 왕복
-  **넷 전부**(`delete` · `register_excel` 의 라벨 갱신 · `relink` · `resolve_duplicate`)가
-  기제 하나를 공유한다. 1차 응답이 `basis`(`screen_pool.confirm_basis`)를 발행하고 확정이
-  그대로 되싣는다. 백엔드는 쓰기 잠금 안에서 지금 상태의 지문을 다시 지어 대조하고,
+  **다섯 전부**(`delete` · `register_excel` 의 라벨 갱신 · `register_pclm` 의 라벨 갱신 ·
+  `relink` · `resolve_duplicate`)가 기제 하나를 공유한다. 종류가 늘어도 왕복은 늘지 않는다:
+  좌표가 다른 등록은 정체성 판(`relabel_confirmed_raw`)으로 같은 몸통에 얹는다. 1차 응답이
+  `basis`(`screen_pool.confirm_basis`)를 발행하고 확정이 그대로 되싣는다. 백엔드는 쓰기 잠금 안에서 지금 상태의 지문을 다시 지어 대조하고,
   다르거나 미동봉이면 **삭제·덮어쓰기 0건 + loud 재진술 후 재확인**(fail-closed).
 - 지문 재료는 **표시 요약이 아니라 정체를 정하는 전체 값**이다(`screen_pool.bound_state` —
   슬롯 키·이름·종류·정규화 정체성·`opts` 원본·비고·수명). `reference_summary` 는 사람이

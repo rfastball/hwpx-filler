@@ -714,6 +714,122 @@ def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
 
 
 # ------------------------------------------------- 계약 목록(pclm) 등록 표면(ADR N)
+def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
+    """신규 추가 / 무변경 멱등 확정 / 이름 갱신 확정(결속) — 엑셀 등록의 거울이다."""
+    ctrl, reg, pushes = _controller(tmp_path)
+    db = str(tmp_path / "pclm.db")
+
+    res = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
+    assert res["ok"] is True and res["name"] == "계약 목록"
+    assert "추가했습니다" in ctrl.snapshot()["result"]["text"]
+    row = pushes[-1][1]["rows"][0]
+    assert row["kind"] == "pclm" and row["kind_label"] == "계약 목록"
+    assert row["reference"] == "DB: pclm.db · 뷰 v_통합_v1"
+    assert row["locate_path"] == db and row["missing"] is True  # 없는 파일은 끊김으로
+
+    noop = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
+    assert noop["ok"] is True and "needs_confirm" not in noop
+    assert "이미 고정돼 있습니다" in ctrl.snapshot()["result"]["text"]
+
+    first = ctrl.dispatch("register_pclm", {"name": "통합면", "db": db, "view": "v_통합_v1"})
+    assert first["needs_confirm"] is True
+    assert "'계약 목록'" in first["confirm_text"]   # 기존 이름 재진술
+    assert "pclm.db" in first["confirm_text"]       # 기존 참조 요약 재진술
+    assert [r.name for r in ctrl.vm.rows()] == ["계약 목록"]   # 1차는 무변형
+
+    # 확인 사이 라벨이 바뀌면 갱신 0건(결속 대조는 종류를 묻지 않는다).
+    key = ctrl.snapshot()["rows"][0]["key"]
+    DatasetPoolRegistry(reg.directory).relabel(key, "남이 개명")
+    stale = ctrl.dispatch(
+        "register_pclm",
+        {"name": "통합면", "db": db, "view": "v_통합_v1", "confirm": True,
+         "basis": first["basis"]})
+    assert stale["ok"] is False and "다시 확인" in stale["error"]
+    assert [r.name for r in ctrl.vm.rows()] == ["남이 개명"]
+
+    fresh = ctrl.dispatch("register_pclm", {"name": "통합면", "db": db, "view": "v_통합_v1"})
+    done = ctrl.dispatch(
+        "register_pclm",
+        {"name": "통합면", "db": db, "view": "v_통합_v1", "confirm": True,
+         "basis": fresh["basis"]})
+    assert done["ok"] is True
+    rows = ctrl.snapshot()["rows"]
+    assert len(rows) == 1 and rows[0]["name"] == "통합면"      # 2건이 되지 않는다
+    assert reg.load(rows[0]["key"]).opts == {"db": db, "view": "v_통합_v1"}
+
+
+def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
+    """db 를 비우면 「기본 자리」로 해석돼 opts 에 박힌다 — 조회와 등록이 같은 자리를 본다."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    ctrl, reg, _ = _controller(tmp_path)
+    res = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
+    assert res["ok"] is True
+    key = ctrl.snapshot()["rows"][0]["key"]
+    assert reg.load(key).opts == {
+        "db": str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"),
+        "view": "v_계약_v1",
+    }
+    # 같은 뜻의 재등록(빈 db)은 2건이 아니라 「이미 고정」으로 접힌다.
+    again = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
+    assert again["ok"] is True and len(ctrl.snapshot()["rows"]) == 1
+
+
+def test_register_pclm_unknown_view_is_worded_not_raised(tmp_path):
+    """미지 뷰는 날것 예외가 아니라 사용자 문구 — 쓸 수 있는 뷰를 설명과 함께 재진술한다."""
+    from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
+
+    ctrl, _reg, _ = _controller(tmp_path)
+    res = ctrl.dispatch(
+        "register_pclm", {"name": "오타", "db": "C:/d/pclm.db", "view": "v_통합"})
+    assert res["ok"] is False
+    assert all(view in res["error"] for view in PCLM_VIEWS)
+    assert PCLM_VIEW_LABELS["v_통합_v1"] in res["error"]
+    assert ctrl.snapshot()["rows"] == [] and ctrl.snapshot()["result"]["level"] == "danger"
+    empty = ctrl.dispatch("register_pclm", {"name": " ", "db": "C:/d/pclm.db",
+                                            "view": "v_통합_v1"})
+    assert empty["ok"] is False and "이름" in empty["error"]
+
+
+def test_register_pclm_confirm_does_not_resurrect_deleted_item(tmp_path):
+    """확인 사이 삭제됐으면 확정을 신규 등록 승인으로 바꾸지 않는다(엑셀 판과 같은 규율)."""
+    ctrl, reg, _ = _controller(tmp_path)
+    db = str(tmp_path / "pclm.db")
+    ctrl.dispatch("register_pclm", {"name": "계약", "db": db, "view": "v_공고_v1"})
+    first = ctrl.dispatch("register_pclm", {"name": "공고면", "db": db, "view": "v_공고_v1"})
+    reg.delete(ctrl.snapshot()["rows"][0]["key"])
+
+    res = ctrl.dispatch(
+        "register_pclm",
+        {"name": "공고면", "db": db, "view": "v_공고_v1", "confirm": True,
+         "basis": first["basis"]})
+    assert res["ok"] is False and "이미 삭제된 항목" in res["error"]
+    assert reg.list_references()[0] == []   # 부활 0건
+
+
+def test_pclm_duplicates_merge_through_the_same_confirm_path(tmp_path):
+    """같은 DB+뷰 2건(손편집 잔재)도 duplicates 로 표면화되고 확정 병합된다."""
+    import json as _json
+
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    for slug, name in (("구판", "구판 계약"), ("최신", "최신 계약")):
+        item = DatasetReference(
+            name=name, kind="pclm",
+            opts={"db": "C:/d/pclm.db", "view": "v_품목_v1"})
+        (reg.directory / f"{slug}{reg.SUFFIX}").write_text(
+            _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8")
+    ctrl.dispatch("refresh", {})
+
+    group = ctrl.snapshot()["duplicates"][0]
+    assert "pclm.db" in group["reference"] and len(group["entries"]) == 2
+    keep = next(e["key"] for e in group["entries"] if e["name"] == "최신 계약")
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    res2 = ctrl.dispatch(
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]})
+    assert res2["ok"] is True and res2["removed"] == 1
+    assert [r["name"] for r in ctrl.snapshot()["rows"]] == ["최신 계약"]
+
+
 def test_pclm_snapshot_block_carries_default_db_and_every_view(tmp_path, monkeypatch):
     """스냅샷이 기본 DB 자리와 **뷰 전수**(설명 포함)를 낸다 — 웹이 목록을 복제하지 않게."""
     from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS

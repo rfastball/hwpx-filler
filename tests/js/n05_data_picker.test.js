@@ -2,16 +2,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createDataPickerController } from "../../frontend/src/screens/data_picker.ts";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+
+import {
+  DataPickerDialog,
+  PoolRegistrationDialog,
+  createDataPickerController,
+} from "../../frontend/src/screens/data_picker.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 const SURFACE = [
   "init", "poolModel", "model", "regModel", "open", "close", "browseFile", "openPin",
-  "poolAction", "resolveDuplicate", "openRegDialog", "patchReg", "closeReg",
+  "openPclm", "poolAction", "resolveDuplicate", "openRegDialog", "patchReg", "closeReg",
   "browseRegPath", "submitReg", "client", "notify",
 ];
+
+/** 스냅샷이 내려주는 계약 목록 블록(실 백엔드 `_pclm_block` 과 같은 모양). */
+const PCLM_BLOCK = {
+  default_db: "C:/AppData/Local/Pclm/pclm.db",
+  views: [
+    { name: "v_통합_v1", label: "공고와 계약을 이어 붙인 계약면" },
+    { name: "v_공고_v1", label: "공고 정보" },
+    { name: "v_계약_v1", label: "계약 정보" },
+    { name: "v_품목_v1", label: "품목 명세" },
+  ],
+};
 
 function build(options = {}) {
   let pool = options.pool ?? { rows: [], duplicates: [], corrupted: [] };
@@ -347,6 +365,138 @@ test("중복 정리 — 남길 key와 basis를 보존한 2단 왕복이다", asy
   assert.deepEqual(h.dispatchCalls.map((row) => row[2]), [
     { keep: "keep" }, { keep: "keep", confirm: true, basis: "dupe" },
   ]);
+});
+
+/* ── 계약 목록(pclm) 등록 — 엑셀과 좌표만 다른 거울(#937) ──────────────────────────── */
+
+test("계약 목록 진입 — pclm 모드로 열고 기본 DB 자리를 프리필하며 뷰는 비운다", async () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const { result } = await opened(h);
+  h.controller.openPclm();
+  const reg = h.controller.regModel.getSnapshot();
+  assert.equal(reg.mode, "pclm");
+  assert.equal(reg.db, PCLM_BLOCK.default_db);
+  assert.equal(reg.view, "");            // 뷰는 사용자가 확정한다(첫 항목 기본 금지)
+  assert.equal(reg.title, "계약 목록 등록");
+  h.controller.closeReg(); h.controller.close(); await result;
+});
+
+test("계약 목록 진입 — 스냅샷에 블록이 없으면 열지 않고 사유를 말한다", async () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [] } });
+  const { result } = await opened(h);
+  h.controller.openPclm();
+  assert.equal(h.controller.regModel.getSnapshot(), null);
+  assert.match(h.controller.model.getSnapshot().status, /계약 목록 정보/);
+  h.controller.close(); await result;
+});
+
+test("계약 목록 등록 — register_pclm payload는 name·db·view·note다", async () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  h.controller.openRegDialog({ mode: "pclm", name: " 계약 ", db: " C:/d/pclm.db ", note: " 메모 " });
+  h.controller.patchReg({ view: "v_공고_v1" });
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls[0], ["pool", "register_pclm", {
+    name: "계약", db: "C:/d/pclm.db", view: "v_공고_v1", note: "메모",
+  }]);
+  assert.equal(h.controller.regModel.getSnapshot(), null);
+});
+
+test("계약 목록 등록 — 뷰가 비면 발신하지 않고 확정을 요구한다", async () => {
+  const h = build();
+  h.controller.openRegDialog({ mode: "pclm", name: "계약", db: "C:/d/pclm.db" });
+  await h.controller.submitReg();
+  assert.match(h.controller.regModel.getSnapshot().error, /뷰를 고르세요/);
+  assert.deepEqual(h.dispatchCalls, []);
+  // 이름이 비어도 같은 자리에서 막는다(파일 경로를 묻지 않는 종류다).
+  h.controller.patchReg({ name: "", view: "v_통합_v1", error: "" });
+  await h.controller.submitReg();
+  assert.match(h.controller.regModel.getSnapshot().error, /이름을 입력하세요/);
+  assert.deepEqual(h.dispatchCalls, []);
+});
+
+test("계약 목록 등록 — 라벨 갱신 확정도 같은 basis 왕복을 쓴다", async () => {
+  let count = 0;
+  const h = build({
+    dispatch: async () => (++count === 1
+      ? { needs_confirm: true, basis: "b", confirm_text: "이미 고정" } : { ok: true }),
+    confirm: true,
+  });
+  h.controller.openRegDialog({ mode: "pclm", name: "통합면", db: "C:/d/pclm.db", view: "v_통합_v1" });
+  await h.controller.submitReg();
+  assert.equal(h.dispatchCalls.length, 2);
+  assert.equal(h.dispatchCalls[1][0] + "/" + h.dispatchCalls[1][1], "pool/register_pclm");
+  assert.equal(h.dispatchCalls[1][2].confirm, true);
+  assert.equal(h.dispatchCalls[1][2].basis, "b");
+});
+
+test("계약 목록 폼 렌더 — db 프리필·뷰 select(placeholder 포함)가 서고 경로·시트는 없다", () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  h.controller.openRegDialog({ mode: "pclm", db: PCLM_BLOCK.default_db });
+  const markup = renderToStaticMarkup(
+    createElement(PoolRegistrationDialog, { controller: h.controller }));
+  assert.ok(markup.includes('id="poolRegDb"'), "DB 자리 입력이 서야 한다");
+  assert.ok(markup.includes(PCLM_BLOCK.default_db), "기본 자리를 프리필한다");
+  assert.ok(markup.includes('id="poolRegView"'), "뷰 select 가 서야 한다");
+  assert.equal(markup.split("<option").length - 1, PCLM_BLOCK.views.length + 1,
+    "뷰 전수 + 빈 placeholder");
+  assert.ok(markup.includes("뷰를 고르세요"), "빈 선택의 문안이 서야 한다");
+  for (const view of PCLM_BLOCK.views) assert.ok(markup.includes(view.name), view.name);
+  // 좌표가 다른 종류라 경로·시트는 묻지 않는다(엑셀 모드에서만 산다).
+  assert.equal(markup.includes('id="poolRegPath"'), false);
+  assert.equal(markup.includes('id="poolRegSheet"'), false);
+});
+
+test("엑셀 폼 렌더 — 기존 좌표만 서고 pclm 필드는 나오지 않는다", () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
+  const markup = renderToStaticMarkup(
+    createElement(PoolRegistrationDialog, { controller: h.controller }));
+  assert.ok(markup.includes('id="poolRegPath"') && markup.includes('id="poolRegSheet"'));
+  assert.equal(markup.includes('id="poolRegDb"'), false);
+  assert.equal(markup.includes('id="poolRegView"'), false);
+});
+
+test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활성이고 사유를 병기한다", async () => {
+  const withBlock = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const a = await opened(withBlock);
+  const on = renderToStaticMarkup(
+    createElement(DataPickerDialog, { controller: withBlock.controller }));
+  assert.ok(on.includes('id="dataPickerPclm"'), "진입 버튼이 실재해야 한다");
+  assert.equal(on.includes('id="dataPickerPclm" disabled'), false);
+  withBlock.controller.close(); await a.result;
+
+  const without = build({ pool: { rows: [], duplicates: [], corrupted: [] } });
+  const b = await opened(without);
+  const off = renderToStaticMarkup(
+    createElement(DataPickerDialog, { controller: without.controller }));
+  assert.ok(off.includes('id="dataPickerPclm"'), "숨기지 않는다 — 비활성 + 사유다");
+  assert.ok(/id="dataPickerPclm"[^>]*disabled/.test(off), "블록이 없으면 비활성이다");
+  assert.ok(off.includes("계약 목록 정보를 아직 읽지 못했습니다"), "사유를 title 로 병기한다");
+  without.controller.close(); await b.result;
+});
+
+test("현재 데이터 카드 — 계약 목록 마운트는 「시트」가 아니라 「뷰」로 말한다", async () => {
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const { result } = await opened(h, {
+    current: {
+      label: "계약 목록", path: "C:/d/pclm.db", sheet: "v_통합_v1",
+      origin: "pclm", kind: "pclm",
+    },
+  });
+  const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
+  assert.ok(markup.includes("뷰: v_통합_v1"), markup);
+  assert.equal(markup.includes("시트: v_통합_v1"), false);
+  h.controller.close(); await result;
+});
+
+test("현재 데이터 카드 — 엑셀 마운트는 그대로 「시트」로 말한다", async () => {
+  const h = build();
+  const { result } = await opened(h, {
+    current: { label: "대장.xlsx", path: "C:/d/대장.xlsx", sheet: "물품", origin: "file", kind: "" },
+  });
+  const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
+  assert.ok(markup.includes("시트: 물품"), markup);
+  h.controller.close(); await result;
 });
 
 test("registration close — state를 비우고 poolRegModal만 닫는다", () => {
