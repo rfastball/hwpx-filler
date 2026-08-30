@@ -32,6 +32,14 @@
    오히려 옅어진다. */
 .jobtb tbody tr:active{background:color-mix(in srgb,var(--a-sel) 70%,transparent)}
 .jobtb tbody tr.on:active{background:color-mix(in srgb,var(--a-sel) 88%,var(--a-ink))}
+/* 「문제 위치 보기」 겨눔(#945 F1 · `#wbMapPanel` 동형) — 강조는 **포커스 파생**이다:
+   WebView2 의 `tr:focus` 계산 편차를 피해 성공한 focus 수명만 .jb-aimed 로 거울한다. 별 앱
+   상태는 없고 blur 와 함께 사라진다. 프로그램 포커스(tabindex=-1)는 :focus-visible 을 켜지
+   않으므로 표지는 여기서 낸다. 행(jobRow-*)과 셀 span(jobCell-*) 둘 다 겨눔 대상이다. */
+.jobtb tbody tr.jb-aimed{outline:none;background:var(--fb-fill-bg)}
+.jobtb tbody tr.jb-aimed>td:first-child{box-shadow:inset 3px 0 0 var(--a-primary)}
+.jobtb td .jb-aimed{outline:none;background:var(--fb-fill-bg);
+  box-shadow:inset 0 -2px 0 var(--a-primary)}
 .jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
 /* 선택 표지만 남은 좁은 열(U4 8번) — 이름·요약이 먹던 180px 가 데이터 열로 돌아간다. */
 .jobtb .doccol{width:1%;white-space:nowrap}

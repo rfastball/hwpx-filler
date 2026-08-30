@@ -44,6 +44,7 @@ const SURFACE = [
 
 function harness(options = {}) {
   const calls = [];
+  const notes = [];
   const confirmSpecs = [];
   let listeners = 0;
   let initialCalls = 0;
@@ -107,16 +108,19 @@ function harness(options = {}) {
       open() {}, close() {},
     },
     navigation: { go() {}, currentScreen: () => "job" },
-    doc: options.doc ?? { getElementById: () => null, querySelector: () => null },
+    doc: options.doc ?? {
+      getElementById: () => null, querySelector: () => null,
+      querySelectorAll: () => [], activeElement: null,
+    },
     selectionLine: (n) => `${n}행 선택`,
-    notify() {},
+    notify(message) { notes.push(message); },
   });
   const push = (value) => {
     snapshot = value;
     for (const listener of [...subscribers]) listener();
   };
   return {
-    controller, calls, confirmSpecs, editorEntry, client, push,
+    controller, calls, notes, confirmSpecs, editorEntry, client, push,
     editorCalls,
     listeners: () => listeners,
     initialCalls: () => initialCalls,
@@ -729,17 +733,26 @@ test('데이터 확인은 backend 문안과 recovery target만 소비한다', as
     },
   };
   let focused = false;
+  const scrolled = [];
+  const focusOpts = [];
+  const classes = new Set();
+  const staleCleared = [];
+  const stale = { classList: { remove: (name) => { staleCleared.push(name); } } };
   const element = {
-    focus: () => { focused = true; },
-    scrollIntoView: () => {},
+    focus: (opts) => { focused = true; focusOpts.push(opts); },
+    scrollIntoView: (opts) => { scrolled.push(opts); },
+    classList: { add: (name) => { classes.add(name); }, remove: (name) => { classes.delete(name); } },
+  };
+  const doc = {
+    getElementById: (id) => id === 'backend-cell' ? element : null,
+    querySelector: () => null,
+    querySelectorAll: () => [stale],
+    get activeElement() { return focused ? element : null; },
   };
   const h = harness({
     snapshot: snap,
     dispatchValue: { element_id: 'backend-cell', fallback_element_id: 'backend-row' },
-    doc: {
-      getElementById: (id) => id === 'backend-cell' ? element : null,
-      querySelector: () => null,
-    },
+    doc,
   });
   await h.controller.init();
   h.push(snap);
@@ -756,6 +769,25 @@ test('데이터 확인은 backend 문안과 recovery target만 소비한다', as
   await h.controller.recoverRecordIssue(target);
   assert.equal(h.calls.at(-1).payload.target, target);
   assert.equal(focused, true);
+  // 겨눔은 **보이는 것**이어야 한다(#945 F1): 지난 표지를 걷고, 성공한 focus 수명에만 표지를
+  // 붙이고, 중첩 스크롤러를 페이지째 끌어올리지 않는다.
+  assert.deepEqual(staleCleared, ['jb-aimed']);
+  assert.deepEqual(focusOpts, [{ preventScroll: true }]);
+  assert.equal(classes.has('jb-aimed'), true);
+  assert.deepEqual(scrolled, [{ block: 'nearest' }]);
+  assert.deepEqual(h.notes, []);
+});
+
+test('문제 위치를 못 찾으면 접힌 로그가 아니라 가시 채널로 말한다', async () => {
+  const h = harness({
+    snapshot: { ...SNAP, managed_hwpx: true },
+    dispatchValue: { element_id: 'gone-cell', fallback_element_id: 'gone-row' },
+  });
+  await h.controller.init();
+
+  await h.controller.recoverRecordIssue({ model_index: 1 });
+  assert.equal(h.notes.length, 1, '실패는 조용한 무동작으로 두지 않는다');
+  assert.ok(h.notes[0].includes('문제 위치가 현재 표에 없습니다.'));
 });
 
 test('데이터 확인은 backend context error detail을 숨기지 않는다', async () => {
