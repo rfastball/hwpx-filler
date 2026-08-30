@@ -111,6 +111,12 @@ source_write_set = ["src/hwpxfiller/data/nara.py"]
 oracle_nodeid = "tests/test_cli.py::test_nara_auth_failure_is_loud_exit_1"
 
 [[unit]]
+module = "hwpxfiller.data.pclm"
+target = "EXTERNAL_ADAPTER"
+source_write_set = ["src/hwpxfiller/data/pclm.py"]
+oracle_nodeid = "tests/test_data_pclm.py::test_reads_records_and_fields_as_a_datasource"
+
+[[unit]]
 module = "hwpxfiller.data.pipeline"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/pipeline.py"]
