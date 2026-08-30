@@ -162,7 +162,12 @@ from ..gui.work_candidates import (
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
-from .template_change import SUPPORTED_MEDIA, TemplateChangeError, unsupported_zone
+from .template_change import (
+    NO_SOURCE_DRIFT_JUDGMENT,
+    SUPPORTED_MEDIA,
+    TemplateChangeError,
+    unsupported_zone,
+)
 from ..application.slotless_run_bridge import (
     STRUCTURE_NOTATION_UNCOMPILED,
     SlotlessRunAdmissionError,
@@ -2854,6 +2859,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
         # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
         self._last_failed = []
+        # **준비는 착석 앞이다**(#932 B5). 「변경사항 확인」이 겸직하던 최초 준비를 여기로
+        # 옮기되, 착석 **뒤**에 두면 vm 은 준비 전 사본을 들고 앉는다 — 그러면 권위·
+        # Application 정체가 세션에 안 서고, 생성 시점의 채택 대조가 그 간극을 「외부에서
+        # 바뀐 작업」으로 읽어 선택을 해제한다. 옛 클릭이 확인 성공 뒤 `_adopt_seated_identity`
+        # 로 하던 일을 `_seat_active_job` 이 그대로 하므로, 순서만 맞추면 같은 상태가 선다.
+        # 실패는 삼키지 않는다: durable 실패 기록이 남고 템플릿 존이 비활성 + 진단으로
+        # 재진술하며, 같은 실물로는 되돌지 않는다.
+        was_prepared = bool(job.authority_id)
+        if self._template_change is not None:
+            self._template_change.ensure_bootstrapped(name)
+            job = load_job(self.registry, name)  # 준비가 발급한 권위를 들고 앉는다
         self._seat_active_job(job)
         self.job_name = name
         if self.records and self.vm is not None:
@@ -2867,7 +2883,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 기본 저장 폴더는 두 축이 **같은 함수**를 본다(U3-06 #879) — 관리 축의 도출
         # 우선순위 ③도 이 값이라, 여기서 경로를 다시 조립하면 한쪽만 늙는다.
         self.out_dir = default_output_directory(job.template_path)
-        if job.media == "hwpx" and job.authority_id:
+        # **최초 준비는 선택이 진다**(#932 B5). 종전에는 이름이 전혀 다른 「변경사항 확인」
+        # 단추가 그 겸직을 졌고, 그래서 갓 저장한 작업은 그걸 누르기 전까지 「포함할 내용」이
+        # 서지 않았다 — 구간이 서려면 준비가 필요하고 생성이 열리려면 구간이 필요한 교착이라
+        # 자동으로 준비하는 유일한 경로(생성)에는 도달할 수가 없었다. 스냅샷이 아니라 이
+        # **명령 경로**에 거는 이유는 write-on-read 금지다(`_slot_configuration_zone` 참조).
+        # 실패는 삼키지 않는다: 거절은 durable 실패 기록으로 남고 템플릿 존이 비활성 + 진단
+        # 병기로 재진술한다(그 자리가 사유를 말할 단 한 곳이다).
+        # 자동 확인(seal)의 트리거는 **준비 이전의** 권위를 본다: 종전 bootstrap 동사였던
+        # 「변경사항 확인」도 seal 을 켜지 않았으므로, 준비를 앞당긴 것이 자동 seal 까지
+        # 딸려 켜면 그건 이 판정이 안 받은 두 번째 변경이다(준비 ≠ 재확인).
+        if job.media == "hwpx" and was_prepared:
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -4168,10 +4194,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self._template_change is None:
             return
-        base["template_change"] = self._template_change.zone(self.job_name, media, tmissing)
-        # 원본 파일이 캡처 이후 편집됐으면 시끄럽게 표식한다(생성은 캡처본을 씀, #681 F1).
-        base["source_drift"] = (
-            None if tmissing else self._template_change.source_drift_note(self.job_name)
+        # 드리프트는 **한 번만** 판정하고 **한 자리에만** 실린다(#932 B5). 종전에는 존과
+        # 나란히 top-level `source_drift` 가 같은 사실을 들었는데 그 키의 웹 소비자는 0 이었다
+        # — 생산자만 살아 있고 화면엔 안 붙은 상태다. 이제 그 사실이 존의 노출 술어 자체라
+        # 존이 든다(원본 편집분은 생성이 캡처본을 쓰므로 시끄럽게 선다, #681 F1).
+        drift = (
+            NO_SOURCE_DRIFT_JUDGMENT
+            if tmissing
+            else self._template_change.source_drift(self.job_name)
+        )
+        base["template_change"] = self._template_change.zone(
+            self.job_name, media, tmissing, source_drift=drift
         )
 
     def _is_managed_hwpx_work(self, job) -> bool:
@@ -5515,7 +5548,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         except Exception:  # noqa: BLE001 — 조회 실패는 확인 요구가 아니다(context 축 소관).
             return None
         status = preparation.get("status") if preparation is not None else None
-        return workbench_template_change_verdict(status)
+        # 드리프트도 같은 요구를 세운다(#932 B5) — 존이 조치가 있을 때만 서게 된 뒤로,
+        # 원본이 갈린 사실을 사용자가 못 본 채 캡처본으로 생성할 창이 생겼다. 판정은 여전히
+        # application 층 한 곳이고 여기는 축을 실어 나르기만 한다.
+        return workbench_template_change_verdict(status, self._source_drift_state())
+
+    def _source_drift_state(self) -> "str | None":
+        """현재 작업의 원본 드리프트 상태 — 읽기 전용(digest 비교뿐, 권위 발급 없음)."""
+        if self._template_change is None or not self.job_name:
+            return None
+        try:
+            return self._template_change.source_drift(self.job_name).state
+        except Exception:  # noqa: BLE001 — 조회 실패는 요구가 아니다(context 축 소관).
+            return None
 
     def _do_resolve_execution(self, p: dict) -> dict:
         """'현재 설정 확인' Primary Action(EXECUTION_CHECKING/STALE·NO_EVIDENCE) — 자동 확인의 명시 재실행.

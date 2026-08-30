@@ -59,8 +59,12 @@ from ..application.template_qualification import QualificationProfile
 from ..application.template_change_product import (
     CAPABILITY_INITIALIZATION_REQUIRED,
     CAPABILITY_UNSUPPORTED_MEDIA,
+    SOURCE_DRIFT_CHANGED,
+    SOURCE_DRIFT_UNCHANGED,
+    SOURCE_DRIFT_UNKNOWN,
     preparation_view,
     product_apply_status,
+    template_change_zone_actionable,
 )
 from ..application.work_bootstrap import (
     BOOTSTRAP_OK,
@@ -124,6 +128,19 @@ class TemplateChangeError(ValueError):
     """제품 계약 위반·권한 실패·무결성 오류 — 정상 domain status 와 분리된 시끄러운 실패."""
 
 
+class _BootstrapRefused(Exception):
+    """초기 등록 실패 — 오류가 아니라 **종결된 판정**이라 모듈 밖으로 나가지 않는다.
+
+    좀비 권위 롤백과 durable 실패 기록은 이미 끝난 상태로 오므로, 받는 쪽은 자기 경로의
+    어휘로 옮기기만 한다(확인은 ``{"ok": False, …}``, 생성은 ``SlotlessRunAdmissionError``,
+    자동 준비는 조용히 존에 맡긴다).
+    """
+
+    def __init__(self, outcome: BootstrapOutcome) -> None:
+        super().__init__(str(outcome.reason or ""))
+        self.outcome = outcome
+
+
 #: 매체 → (qualification profile, durable manifest 팩토리). **지원 매체의 단일 출처**다
 #: (S10-02 #859). 사건 경계·상태 전이는 매체를 모르는 S2/S3 기계가 그대로 지고, 매체가
 #: 가르는 것은 「그 bytes 를 무엇으로 자격 심사하는가」 하나뿐이다 — 그래서 이 표만 늘고
@@ -157,12 +174,44 @@ class _AdvanceResult:
     current_application_id: str
 
 
+@dataclass(frozen=True)
+class SourceDrift:
+    """원본 파일 ↔ 캡처된 applied bytes 대조 결과(#932 B5).
+
+    ``state`` 는 :data:`SOURCE_DRIFT_CHANGED`/``UNCHANGED``/``UNKNOWN`` 또는 **판정 불성립**의
+    ``None`` 이다. ``note`` 는 세울 재진술 한 줄이고 갈리지 않았으면 ``None``.
+    """
+
+    state: "str | None"
+    note: "str | None"
+
+
+#: 판정 불성립 — 미지원 매체·미부트스트랩. 「안 갈렸다」와 다른 값이다.
+NO_SOURCE_DRIFT_JUDGMENT = SourceDrift(None, None)
+
+#: 드리프트 재진술. **동사는 존의 동사와 같다** — 종전 문안은 「다시 가져오세요」로 존
+#: (「변경사항 확인」)과 다른 동사를 지시했는데, 같은 사실을 두 문장이 다르게 지시하면
+#: 그중 하나는 반드시 늙는다(#932 B5).
+_DRIFT_CHANGED_NOTE = (
+    "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. "
+    "편집분을 반영하려면 「변경사항 확인」 뒤 적용하세요."
+)
+#: 「모른다」는 「없다」가 아니다 — 값싸게 못 구한 사실을 그대로 말하고 존을 세운다.
+_DRIFT_UNKNOWN_NOTE = (
+    "원본 파일을 읽지 못해 편집 여부를 확인할 수 없습니다. "
+    "파일 위치와 접근 권한을 확인한 뒤 「변경사항 확인」을 누르세요."
+)
+
+
 def unsupported_zone() -> dict[str, Any]:
     """지원 매체가 아니거나 템플릿 미연결·작업 미선택 — capability 비노출(명시적 unsupported)."""
     return {
         "supported": False,
         "reason": CAPABILITY_UNSUPPORTED_MEDIA,
         "checkable": False,
+        "actionable": False,
+        "source_drift": None,
+        "source_drift_note": None,
         "diagnostics": [],
         "epoch": None,
         "preparation": None,
@@ -370,10 +419,29 @@ class TemplateChangeCoordinator:
         self._recover(work_id)
         return self._works.load(work_id).work.current_template_application_id
 
-    def zone(self, job_name: str, media: str, template_missing: bool) -> dict[str, Any]:
-        """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch."""
+    def zone(
+        self,
+        job_name: str,
+        media: str,
+        template_missing: bool,
+        *,
+        source_drift: "SourceDrift | None" = None,
+    ) -> dict[str, Any]:
+        """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch·노출 술어.
+
+        ``actionable`` 이 #932 B5 의 산출이다: 이 존은 「확인할 수 있다」는 capability 존이라
+        건수로 숨길 수 없었고(숨기면 확인 개시 입구가 사라진다), 그래서 술어의 입력을 **확인
+        결과가 아니라 원본 드리프트**로 옮겼다. 판정 자체는
+        :func:`~hwpxfiller.application.template_change_product.template_change_zone_actionable`
+        한 곳이고 여기는 재료만 모은다.
+
+        ``source_drift`` 를 인자로 받는 이유는 **한 스냅샷에 원본 해시를 한 번만** 돌리기
+        위해서다 — 같은 판정을 top-level ``source_drift`` 키도 쓴다(`screen_job` 이 한 번
+        구해 양쪽에 나눈다). 안 넘기면 여기서 구한다.
+        """
         if media not in SUPPORTED_MEDIA or template_missing:
             return unsupported_zone()
+        drift = self.source_drift(job_name) if source_drift is None else source_drift
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
         failure = self._failures().get(job_name)
@@ -382,14 +450,14 @@ class TemplateChangeCoordinator:
                 # 같은 template 실물이 그대로다 — 확인 버튼 비활성 + 사유 병기(#659 회귀,
                 # S3-08 「repair 전 prepare/apply 비활성」). 실물이 바뀌면(한글에서 수정·
                 # 재연결) 아래에서 기록을 지워 재확인이 열린다.
-                return {
+                return self._with_actionable({
                     "supported": True,
                     "reason": CAPABILITY_INITIALIZATION_REQUIRED,
                     "checkable": False,
                     "diagnostics": failure["diagnostics"],
                     "epoch": None,
                     "preparation": None,
-                }
+                }, drift)
             self._record_failure(job_name, None)
         base = {
             "supported": True,
@@ -400,14 +468,33 @@ class TemplateChangeCoordinator:
             "preparation": None,
         }
         if work_id is None or not self._works.exists(work_id):
-            return base
+            return self._with_actionable(base, drift)
         self._recover(work_id)
         aggregate = self._works.load(work_id)
         base["epoch"] = find_application(
             aggregate, aggregate.work.current_template_application_id
         ).application_epoch
         base["preparation"] = self._current_preparation_view(aggregate, work_id)
-        return base
+        return self._with_actionable(base, drift)
+
+    @staticmethod
+    def _with_actionable(zone: dict[str, Any], drift: SourceDrift) -> dict[str, Any]:
+        """존 dict 에 노출 술어와 드리프트 상태를 얹는다 — **모든 갈래가 같은 키 집합**을 낸다.
+
+        키 부재 분기를 만들지 않는 것이 이 헬퍼의 존재 이유다: 표면이 ``"actionable" in z`` 로
+        갈리기 시작하면 갈래 하나가 빠졌을 때 존이 조용히 사라진다.
+        """
+        zone["source_drift"] = drift.state
+        zone["source_drift_note"] = drift.note
+        zone["actionable"] = template_change_zone_actionable(
+            supported=bool(zone["supported"]),
+            reason=str(zone["reason"]),
+            preparation_status=(
+                str(zone["preparation"]["status"]) if zone["preparation"] else None
+            ),
+            source_drift=drift.state,
+        )
+        return zone
 
     def get_current_template_change_preparation(self, job_name: str) -> "dict[str, Any] | None":
         """current Preparation 조회 — ``work.current_template_preparation_id`` 역참조만 쓴다
@@ -470,6 +557,84 @@ class TemplateChangeCoordinator:
 
     # ─── prepare ────────────────────────────────────────────────────────────
 
+    def _seat_bootstrapped_work(
+        self, job_name: str, profile: QualificationProfile, request_id: str
+    ) -> "tuple[str, Job]":
+        """권위 좌석 + (최초면) bootstrap — 확인·생성·자동 준비 **셋의 공유 입구**.
+
+        세 경로가 각자 이 순서를 적고 있었고 그중 둘은 아래 좀비 롤백까지 복제했다. 그런
+        복제는 다음에 규율이 바뀔 때 일부만 따라온다. 갈리는 것은 ``request_id`` **하나**다:
+        확인은 사용자 재전송 키에서 파생해 멱등을, 생성·자동 준비는 fresh id 로 재부트스트랩
+        가능성을 산다(고정 id 면 create-once object 가 ``ObjectAlreadyExists`` 로 막힌다).
+
+        **좀비 권위 롤백**(#804): 실패한 bootstrap 은 Work 상태 집합을 하나도 세우지 않는다
+        (``bootstrap_work`` 의 non-OK 반환은 전부 ``initialize_work`` **앞**이다). 그래서 이
+        호출이 방금 발급한 권위만 남는데, 그것은 어떤 이력도 가리키지 않는 좀비다: 남겨 두면
+        슬롯 존이 「초기화됨 + CONTEXT_ERROR」로 서서 「템플릿을 확인하세요」만 되풀이하는
+        막다른 길이 된다. 되돌리면 존은 복제 직후와 같은 미초기화로 접히고, 안내는 실패
+        기록을 든 존 한 곳이 진다. 이 호출 전부터 있던 권위(S3-09 이력·token 의 정본)는
+        건드리지 않는다.
+        """
+        self._ensure_manifest()
+        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
+        self._recover(work_id)
+        if not self._works.exists(work_id):
+            outcome = self._bootstrap(work_id, job_name, job, request_id, profile)
+            if outcome.result != BOOTSTRAP_OK:
+                if issued_now:
+                    release_job_authority_id(self._registry, job_name, work_id)
+                raise _BootstrapRefused(outcome)
+        return work_id, job
+
+    def ensure_bootstrapped(self, job_name: str) -> dict[str, Any]:
+        """작업 선택 시의 **자동 준비**(#932 B5) — 「변경사항 확인」의 겸직을 푼다.
+
+        lazy bootstrap 의 트리거는 원래 「권위가 필요한 첫 동작」이었고 그건 확인과 생성
+        둘이었다. 그런데 나중에 선 「포함할 내용」(구간) 구획이 세 번째 소비자가 되면서 자기
+        몫의 트리거를 못 받아 교착이 났다 — 구간이 서려면 준비가 필요하고, 생성이 열리려면
+        구간이 필요하고, 준비를 자동으로 하는 것은 생성뿐이다. 유일한 탈출구가 **이름이 전혀
+        다른** 「변경사항 확인」 단추였고, 실주행 대본이 그 동선을 주석으로 해명하며 손으로
+        눌렀다. 그 겸직을 여기서 끊는다.
+
+        호출자는 **명령 경로**여야 한다 — 스냅샷 조립에서 부르면 렌더가 durable id 를
+        발급하는 write-on-read 가 된다(``screen_job._slot_configuration_zone`` 이 명시로 피하는
+        것이 그것이다).
+
+        **재시도하지 않는다**: 같은 실물로 이미 실패한 기록이 있으면 그대로 거절을 돌려준다.
+        자동 경로가 매 선택마다 실패하는 capture·qualification 을 되돌리면 선택이 느려지기만
+        하고, 사용자가 볼 사유는 존이 이미 비활성 + 진단으로 들고 있다.
+        """
+        job = load_job(self._registry, job_name)
+        if job.media not in SUPPORTED_MEDIA:
+            return {"ok": True, "bootstrapped": False, "reason": CAPABILITY_UNSUPPORTED_MEDIA}
+        signature = self._template_signature(job.template_path)
+        if not job.template_path or signature is None:
+            # 템플릿 실물 부재 — 존이 unsupported 로 서고 복구 동사는 라이브러리 재연결이다.
+            return {"ok": True, "bootstrapped": False, "reason": CAPABILITY_UNSUPPORTED_MEDIA}
+        failure = self._failures().get(job_name)
+        if failure is not None and signature == failure["signature"]:
+            return {
+                "ok": False, "bootstrapped": False,
+                "reason": CAPABILITY_INITIALIZATION_REQUIRED,
+            }
+        if job.authority_id and self._works.exists(job.authority_id):
+            return {"ok": True, "bootstrapped": False, "reason": ""}  # 이미 섰다 — 작업당 1회
+        # **확인 한 바퀴를 그대로 돈다**(bootstrap 만이 아니다). 겸직을 끊는다는 것은 단추가
+        # 하던 일을 착석이 대신한다는 뜻이고, 그 일은 bootstrap + capture + qualification +
+        # admission 전부다 — managed 실행 admission 이 그 산물을 요구하므로(슬롯 실행
+        # 가용성) bootstrap 만 옮기면 「'템플릿 변경사항 확인'을 먼저 실행하세요」라는
+        # 지시가 남는데, 그 지시가 겨누는 존은 방금 우리가 숨긴 그 존이다(#912 결함류).
+        result = self.check(job_name, f"auto-{uuid.uuid4().hex}")
+        if result.get("ok") is not True:
+            return {
+                "ok": False, "bootstrapped": False,
+                "reason": str(result.get("reason") or CAPABILITY_INITIALIZATION_REQUIRED),
+            }
+        return {"ok": True, "bootstrapped": True, "reason": ""}
+
     def check(self, job_name: str, prepare_request_id: str, actor: str = LOCAL_ACTOR) -> dict:
         """[변경사항 확인] — bootstrap(최초)·capture·qualification·admission 을 동기로 완주한다.
 
@@ -490,30 +655,12 @@ class TemplateChangeCoordinator:
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
         profile = _profile_for(job.media, "변경사항 확인")
-        self._ensure_manifest()
-        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
-        job = load_job(self._registry, job_name)
-        if job.authority_id != work_id:
-            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
-        self._recover(work_id)
-
-        if not self._works.exists(work_id):
-            outcome = self._bootstrap(work_id, job_name, job, prepare_request_id, profile)
-            if outcome.result != BOOTSTRAP_OK:
-                # 좀비 권위 롤백(#804): 실패한 bootstrap 은 Work 상태 집합을 하나도 세우지
-                # 않는다(`bootstrap_work` 의 non-OK 반환은 전부 `initialize_work` **앞**이다).
-                # 그래서 **이 호출이 방금 발급한** 권위만 남는데, 그것은 어떤 이력도 가리키지
-                # 않는 좀비다: 남겨 두면 슬롯 존이 「초기화됨 + CONTEXT_ERROR」로 서서
-                # 「템플릿을 확인하세요」만 되풀이하는 막다른 길이 된다. 되돌리면 존은 복제
-                # 직후와 같은 미초기화로 접히고, 안내는 실패 기록을 든 이 존 한 곳이 진다.
-                # 이 호출 전부터 있던 권위(S3-09 이력·token 의 정본)는 건드리지 않는다.
-                if issued_now:
-                    release_job_authority_id(self._registry, job_name, work_id)
-                return (
-                    {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED},
-                    None,
-                    None,
-                )
+        try:
+            # boot id 를 **사용자 재전송 키에서** 파생하는 것이 이 경로의 멱등이다 — 같은 키로
+            # 다시 오면 같은 bootstrap id 라 create-once object 가 충돌하지 않는다.
+            work_id, job = self._seat_bootstrapped_work(job_name, profile, prepare_request_id)
+        except _BootstrapRefused:
+            return ({"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED}, None, None)
 
         binding = self._binding(work_id, job)
         prep = start_prepare(
@@ -576,27 +723,18 @@ class TemplateChangeCoordinator:
         if job.media != "hwpx":
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
         profile = _profile_for(job.media, "생성")
-        self._ensure_manifest()
-        work_id, issued_now = seat_job_authority_id(self._registry, job_name)
-        job = load_job(self._registry, job_name)
-        if job.authority_id != work_id:
-            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
-        self._recover(work_id)
-        if not self._works.exists(work_id):
+        try:
             # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
             # Candidate/qualification object 를 남겨도, 템플릿을 고쳐 다시 누르면 새 id 로 재부트스트랩
             # 된다(고정 id 면 ObjectAlreadyExists 로 복구 불가). 진짜 중복 클릭은 generation_lock 이
             # 막으므로 여기서 재전송-멱등을 따로 지킬 필요가 없다.
-            outcome = self._bootstrap(
-                work_id, job_name, job, f"gen-{uuid.uuid4().hex}", profile
+            work_id, job = self._seat_bootstrapped_work(
+                job_name, profile, f"gen-{uuid.uuid4().hex}"
             )
-            if outcome.result != BOOTSTRAP_OK:
-                # 확인 경로와 **같은 규율**이다(#804): 초기 등록이 실패하면 Work 상태 집합은
-                # 서지 않으므로 방금 발급한 권위는 아무 이력도 가리키지 않는 좀비다. 문을
-                # 확인 쪽에서만 닫으면 같은 막다른 길이 「문서 만들기」로 다시 열린다.
-                if issued_now:
-                    release_job_authority_id(self._registry, job_name, work_id)
-                raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
+        except _BootstrapRefused as exc:
+            # 확인 경로와 **같은 규율**이다(#804): 문을 확인 쪽에서만 닫으면 같은 막다른 길이
+            # 「문서 만들기」로 다시 열린다.
+            raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED) from exc
         aggregate = self._works.load(work_id)
         if on_context is not None:
             job = load_job(self._registry, job_name)
@@ -631,13 +769,20 @@ class TemplateChangeCoordinator:
         누적된다."""
         clear_run_staging(self._root)
 
-    def source_drift_note(self, job_name: str) -> "str | None":
-        """이미 부트스트랩된 Work 의 현재 원본 파일 bytes 가 캡처된 applied Candidate bytes 와
-        다르면 시끄러운 경고 문안을 낸다 — 생성은 캡처본을 쓰므로(#681 F1) 사용자가 「검토한
-        원본 편집분이 반영 안 됨」을 조용히 겪지 않게 한다(confirm-or-alarm). digest 비교뿐:
-        seat 시점에 gate/stage 를 돌리지 않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
+    def source_drift(self, job_name: str) -> SourceDrift:
+        """부트스트랩된 Work 의 현재 원본 파일 bytes ↔ 캡처된 applied Candidate bytes 대조.
 
-        미부트스트랩(원본=실행본이라 일관)·미지원 매체·무편집·값싸게 못 구하는 경우는 None.
+        생성은 캡처본을 쓰므로(#681 F1) 사용자가 「검토한 원본 편집분이 반영 안 됨」을 조용히
+        겪지 않게 하는 것이 원래 목적이었고, #932 B5 부터는 **「템플릿 변경사항」 존이 스스로
+        설지**를 정하는 입력이기도 하다. digest 비교뿐이라 seat 시점에 gate/stage 를 돌리지
+        않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
+
+        **값싸게 못 구한 경우를 「안 갈렸다」로 접지 않는다**(#932 B5): 종전 구현은 그 갈래를
+        ``None`` 으로 접었는데, 그 위에 숨김 술어를 세우면 읽지 못한 파일이 「변경 없음」으로
+        조용히 통과해 존이 사라진다. 그래서 ``unknown`` 은 사유를 들고 존을 세운다.
+
+        미부트스트랩·미지원 매체는 **판정 불성립**(:data:`NO_SOURCE_DRIFT_JUDGMENT`) —
+        원본이 곧 실행본이라 대조할 캡처본 자체가 없다.
         """
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
@@ -646,7 +791,7 @@ class TemplateChangeCoordinator:
             or not work_id
             or not self._works.exists(work_id)
         ):
-            return None
+            return NO_SOURCE_DRIFT_JUDGMENT
         try:
             aggregate = self._works.load(work_id)
             applied = resolve_exact_applied_template_input(
@@ -654,16 +799,14 @@ class TemplateChangeCoordinator:
                 work_id, aggregate.work.current_template_application_id,
             )
             # ponytail: 부트스트랩된 Work 는 snapshot 마다 원본을 해시한다(hwpx 는 클 수 있다).
-            # 지금은 그런 Work 가 드물어 무시할 비용 — 지연이 문제되면 (mtime_ns,size) 로 캐시.
+            # 스냅샷 한 번에 한 번만 돌도록 `screen_job` 이 이 값을 구해 존과 top-level 에
+            # 나눠 준다 — 지연이 더 문제되면 (mtime_ns,size) 로 캐시.
             source_digest = blob_digest(Path(job.template_path).read_bytes())
         except (SlotConfigurationContextError, OSError):
-            return None  # 값싸게 못 구하면 경고 없음(preview 를 막지 않는다)
+            return SourceDrift(SOURCE_DRIFT_UNKNOWN, _DRIFT_UNKNOWN_NOTE)
         if source_digest == applied.exact_content_digest:
-            return None
-        return (
-            "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. "
-            "편집분을 반영하려면 다시 가져오세요."
-        )
+            return SourceDrift(SOURCE_DRIFT_UNCHANGED, None)
+        return SourceDrift(SOURCE_DRIFT_CHANGED, _DRIFT_CHANGED_NOTE)
 
     def _advance(
         self,

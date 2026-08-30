@@ -73,6 +73,9 @@ def _controller(tmp_path: Path, *, wire: bool = True, bootstrap: bool = True):
     """실 Product 세벌을 **같은 authority root** 로 배선한 헤드리스 컨트롤러.
 
     ``wire=False`` 는 미주입(loud 거절 계약)용. ``bootstrap=True`` 면 template_check 로 Work 를 세운다.
+    ``bootstrap=False`` 는 **준비 이전** 상태를 쓰는 갈래인데, 선택이 준비를 지게 된 뒤로
+    (#932 B5) 착석만으로는 그 상태가 안 남는다 — 그 갈래를 쓰는 테스트가 재는 것이 「준비
+    전」 계약이므로 여기서 명시로 되만든다(전제가 바뀌었을 때 단언을 지우지 않는다).
     """
     tpl = tmp_path / "공고서.hwpx"
     _template(tpl, ["공고명"])
@@ -100,6 +103,10 @@ def _controller(tmp_path: Path, *, wire: bool = True, bootstrap: bool = True):
     ctrl.dispatch("select_job", {"name": "공고서"})
     if bootstrap:
         ctrl.dispatch("template_check", {"request_id": "k1"})
+    else:
+        reg.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
+        if ctrl.vm is not None:
+            ctrl.vm.job.authority_id = ""
     return ctrl, pushes
 
 
@@ -464,6 +471,35 @@ def test_unsettled_template_check_stands_in_the_workbench_observation(tmp_path: 
     zone = ctrl._template_change.zone("공고서", "hwpx", False)
     assert zone["checkable"] is True
     assert zone["preparation"]["status"] == "interrupted"
+    # 그리고 그 구획이 **실제로 선다**(#932 B5): 존 노출을 드리프트가 판정하게 된 뒤로
+    # 「비활성이 아니라 아예 없는 자리를 가리키는 지시」가 새 결함류로 가능해졌다 —
+    # 미종결 확인은 원본이 그대로여도 존을 세운다는 것이 그 자리를 막는 불변식이다.
+    assert zone["source_drift"] == "unchanged" and zone["actionable"] is True
+
+
+def test_source_drift_stands_in_the_workbench_observation(tmp_path: Path) -> None:
+    """앱 밖에서 원본을 고치면 **생성이 막힌다**(#932 B5) — 조용한 오생성 0.
+
+    존이 조치가 있을 때만 서게 된 뒤로, 한글에서 템플릿을 고친 사용자가 그 사실을 못 본 채
+    생성을 누를 창이 생겼다. 생성은 캡처된 bytes 를 쓰므로(#681 F1) 그 창은 「검토한 편집분이
+    반영 안 된 문서」로 착지한다. 그래서 드리프트를 실행 게이트로 올린다 — 좌초시키지는
+    않는다: 이 blocker 의 복구 동사(`#jobTplCheck`)는 같은 판정이 세우는 존 안에 있다.
+    """
+    ctrl, _reg, tpl = _slot_bearing_controller(tmp_path)
+    settled = ctrl.workbench_observation()
+    assert isinstance(settled, DocumentCreationWorkbenchObservation)
+    assert "REVIEW_TEMPLATE_CHANGE" not in settled.blockers
+    assert ctrl.snapshot()["template_change"]["actionable"] is False
+
+    _template(tpl, ["공고명"])  # 한글에서 고친 셈 — 앱 밖 편집(미가져오기)
+
+    drifted = ctrl.workbench_observation()
+    assert isinstance(drifted, DocumentCreationWorkbenchObservation)
+    assert "REVIEW_TEMPLATE_CHANGE" in drifted.blockers
+    # 지시가 겨누는 자리가 실제로 선다 — 없는 자리를 가리키지 않는다(#912 결함류).
+    zone = ctrl.snapshot()["template_change"]
+    assert zone["source_drift"] == "changed" and zone["actionable"] is True
+    assert zone["checkable"] is True
 
 
 def test_workbench_observation_reads_template_change_without_issuing_authority(
@@ -517,13 +553,14 @@ def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
 def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     tmp_path: Path,
 ) -> None:
-    """복제본은 「변경사항 확인」으로 초기화에 **도달한다** — #804 의 막다른 길은 여기서 안 난다.
+    """복제본은 **선택만으로** 초기화에 도달한다 — #804 의 막다른 길은 여기서 안 난다.
 
     #804 는 실 WebView2 관측이고 스스로 「결정적 재현으로 확정하지 않았다」고 적었다. 이 테스트가
-    그 재현 시도다. 결과는 **음성**이다: 복제본의 `authority_id` 는 미계승(S3-09)이라 존이
-    `initialized=False` 로 서지만, 화면이 시키는 확인이 durable id 를 발급해 존이 열린다.
+    그 재현 시도이고 결과는 **음성**이다. 종전에는 복제본의 `authority_id` 미계승(S3-09) 때문에
+    존이 `initialized=False` 로 섰다가 화면이 시키는 「변경사항 확인」이 그걸 풀었는데, 그
+    겸직이 #932 B5 에서 끊겼다 — 준비는 착석이 지므로 복제본은 **막힌 적이 없다**.
 
-    복제 자체는 그러니 결백하다 — 확정된 원인은 **확인이 실패했을 때**의 세 자리이고, 아래 두
+    복제 자체는 그러니 결백하다 — 확정된 원인은 **준비가 실패했을 때**의 세 자리이고, 아래 두
     테스트가 그 자리를 잰다(좀비 권위 롤백·수리 뒤 재개방).
     """
     ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
@@ -533,12 +570,11 @@ def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     assert reg.load(clone).authority_id == ""  # 겪지 않은 권위 역사를 지어내지 않는다(S3-09)
 
     ctrl.dispatch("select_job", {"name": clone})
-    stuck = ctrl.snapshot()["slot_configuration"]
-    assert stuck["supported"] is True and stuck["initialized"] is False
+    assert reg.load(clone).authority_id != ""  # 착석이 준비를 졌다(#932 B5)
+    assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
 
-    # 화면이 지시하는 행동이 실제로 그 상태를 푼다.
+    # 확인은 겸직을 잃었을 뿐 자기 일은 그대로 한다(변경 0건 = 종결).
     assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
-    assert reg.load(clone).authority_id != ""
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
 
 
@@ -556,8 +592,10 @@ def test_failed_initialization_releases_the_authority_it_just_issued(tmp_path: P
     """
     ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
     clone = reg.clone("공고서")
-    ctrl.dispatch("select_job", {"name": clone})
+    # 실물을 **착석 전에** 깬다: 준비를 착석이 지게 된 뒤로(#932 B5) 초기 등록은 여기서
+    # 시도되고 거절된다 — 뒤에 깨면 이미 준비를 마친 뒤라 이 자리가 안 재진다.
     tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물(복제본은 아직 미부트스트랩)
+    ctrl.dispatch("select_job", {"name": clone})
 
     assert ctrl.dispatch("template_check", {"request_id": "k2"}) == {
         "ok": False, "reason": "initialization_required",
@@ -583,8 +621,8 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     """
     ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
     clone = reg.clone("공고서")
+    tpl.write_bytes(b"not a zip")  # 착석 전에 깬다(#932 B5 — 준비는 착석이 진다)
     ctrl.dispatch("select_job", {"name": clone})
-    tpl.write_bytes(b"not a zip")
     ctrl.dispatch("template_check", {"request_id": "k2"})
     stuck = ctrl.snapshot()["template_change"]
     assert stuck["checkable"] is False and stuck["diagnostics"]
@@ -615,8 +653,8 @@ def test_failed_initialization_on_the_generate_path_releases_the_authority_too(
     """
     ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
     clone = reg.clone("공고서")
+    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물(착석 전 — #932 B5)
     ctrl.dispatch("select_job", {"name": clone})
-    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물
 
     with pytest.raises(SlotlessRunAdmissionError):
         ctrl._template_change.resolve_generation_template(clone)
@@ -799,11 +837,14 @@ def test_txt_check_seats_the_template_application_identity(tmp_path: Path) -> No
     )
     ctrl.dispatch("select_job", {"name": "안내문"})
     assert ctrl.vm is None and ctrl.job_is_txt is True  # 실행뷰 없음(§F6 판정 D)
-    assert ctrl._seated_template_application_id is None  # 아직 durable id 미발급
+    # 착석이 준비를 진다(#932 B5) — TXT 도 같은 배선이라 여기서 이미 정체가 선다.
+    # 이 테스트가 재는 것은 그 **매체 무관성**과 재확인의 무-흔들림이다: 종전 결함은
+    # 채택이 `self.vm is not None` 아래 있어 실행뷰 없는 TXT 만 정체를 못 들던 것이었다.
+    seated = ctrl._seated_template_application_id
+    assert seated
 
     assert ctrl.dispatch("template_check", {"request_id": "k1"})["ok"] is True
-    seated = ctrl._seated_template_application_id
-    assert seated  # 확인이 세운 current Application 을 세션이 든다
+    assert ctrl._seated_template_application_id == seated
     assert ctrl.job_name == "안내문"  # 조용한 해제 0
     # 재확인은 이미 선 정체를 흔들지 않는다(중복 채택 0).
     assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True

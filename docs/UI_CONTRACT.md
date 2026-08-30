@@ -689,15 +689,47 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   사유만 재진술한다. 진단 원문(`detail`)은 사실 서술이라 아는 코드는 웹 문안으로 말한다.
 - 삭제·편집·공유·자동 적용은 비범위다(#821 §6).
 
-#### 템플릿 변경사항 존 (S3-09 #659)
+#### 템플릿 조치 필요 존 (S3-09 #659 · 노출 술어 #932 B5)
 
 side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 사용자 능력 둘을 연다:
 [변경사항 확인](`#jobTplCheck` → `template_check {request_id}`) ·
 [변경사항 적용](`#jobTplApply` → `template_apply {change_token}`).
 
+- **존은 조치가 있을 때만 선다**(#932 B5 — U4 12·24 는 한 판정이다). U4 12번의 「변경 0건이면
+  숨김」은 그대로는 자기모순이었다: 이 존은 결과 보고판이 아니라 **스위치**이고 건수를 알려면
+  확인을 돌려야 하는데 그 확인을 여는 단추가 존 안에 있어서, 건수로 숨기면 확인을 개시할
+  방법이 사라진다. 그래서 술어의 입력을 확인 결과가 아니라 **원본 드리프트**로 옮겼다 —
+  캡처된 applied bytes 와 현재 원본 파일의 digest 대조라 확인을 안 눌러도 값싸게 안다.
+  판정은 `application/template_change_product.template_change_zone_actionable` 한 곳이고
+  링2 는 `actionable` 을 읽어 그릴지 말지만 정한다. **세우는 갈래**: `initialization_required` ·
+  미종결 preparation(`ready`·`checking` + `_UNSETTLED_PREPARATION_STATUSES` 여섯) ·
+  드리프트 `changed`/`unknown`. 나머지 하나(준비를 마쳤고 원본 그대로이며 확인도 종결)에서만
+  숨는다. **드리프트 3상태**에서 `unknown`(값싸게 못 구함)은 「없음」으로 접지 않는다 — 접으면
+  읽지 못한 파일이 「변경 없음」으로 통과해 존이 조용히 사라진다.
+- **재진술 클로즈는 웹 소유**: 적용이 성사되면 드리프트가 0 이 되므로 술어만으로는 「변경사항을
+  적용했습니다」가 존과 함께 증발한다. 재전송·재진술 수명은 웹이 지므로(아래) 그동안은 세운다.
+  그 자리의 존 이름은 「템플릿 변경사항」이고, 조치가 실제로 남은 자리에서만 「템플릿 조치
+  필요」다 — 방금 끝낸 일을 다시 시키는 이름을 쓰지 않는다.
+- **숨김이 연 창은 두 층이 닫는다**(#932 B5). 앱 밖 편집(한글에서 템플릿 수정)은 push 를
+  내지 않으므로, 조치가 있을 때만 서는 구획은 다음 상호작용까지 침묵한다. ⑴ 창 **포커스
+  복귀**가 현재 화면을 다시 묻는다(`shell/app.ts` 의 서술 → ShellHost 가 부착; 주기 검사가
+  아니라 사용자가 돌아온 순간 한 번이라 유휴 비용 0, 실패는 삼킨다 — 갱신은 편의이지
+  계약이 아니다). ⑵ 그 갱신을 놓쳐도 드리프트가 **실행 게이트**로 선다
+  (`workbench_template_change_verdict` 가 `changed`·`unknown` 에 `REVIEW_REQUIRED`) — 생성은
+  캡처된 bytes 를 쓰므로 막지 않으면 「검토한 편집분이 반영 안 된 문서」가 조용히 나온다.
+  막되 좌초시키지 않는다: 이 blocker 의 복구 동사(`#jobTplCheck`)는 **같은 판정이 세우는**
+  존 안에 있어, 지시와 수단이 함께 서는 것이 구조로 보장된다.
+- **최초 준비는 착석이 진다**(#932 B5): 「변경사항 확인」은 lazy bootstrap 을 겸직했고, 나중에
+  선 「포함할 내용」 구획이 자기 트리거 없이 그 겸직에 얹혀 교착을 만들었다(구간 ← 준비,
+  생성 ← 구간, 준비 ← 생성). 준비는 이제 `job.select_job` 이 부르는
+  `TemplateChangeCoordinator.ensure_bootstrapped` 가 진다 — **명령 경로**이지 스냅샷이 아니다
+  (렌더가 durable id 를 발급하는 write-on-read 금지는 그대로다). 거절은 삼키지 않는다:
+  durable 실패 기록이 남고 이 존이 비활성 + 진단으로 재진술하며, 같은 실물로는 되돌지 않는다.
 - **opaque Product Contract**: 스냅샷 존 `template_change` 는 capability(`supported`·`reason`·
-  `checkable`)·`epoch`·현재 Preparation view(`preparation_token`/`status`/`change_token`/
-  `diagnostics`/`prepared_at`)만 싣는다. revision 번호·목록·선택기·내부 ID(경로·evidence·
+  `checkable`)·노출 술어(`actionable`)·드리프트(`source_drift`·`source_drift_note`)·`epoch`·
+  현재 Preparation view(`preparation_token`/`status`/`change_token`/
+  `diagnostics`/`prepared_at`)만 싣는다. **모든 갈래가 같은 키 집합**을 낸다(키 부재 분기
+  금지 — 표면이 키 유무로 갈리면 갈래 하나가 빠졌을 때 존이 조용히 사라진다). revision 번호·목록·선택기·내부 ID(경로·evidence·
   profile·base)는 DOM 에 없다. status 어휘는 생성 계약(`contract.gen.ts` 의
   `TEMPLATE_PREPARATION_STATUSES`·`TEMPLATE_APPLY_STATUSES`)이 정본이고 판정·token 발급은
   코디네이터(`webapp/template_change.py`) 소유다 — 표면은 문안과 재전송 규율만 가진다.

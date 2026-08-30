@@ -19,9 +19,13 @@ from hwpxfiller.application.prepare_orchestration import APPLY_INTEGRITY_ERROR, 
 from hwpxfiller.application.selection_compatibility import REVIEW_REQUIRED
 from hwpxfiller.application.template_change_product import (
     PRODUCT_PREPARATION_STATUSES,
+    SOURCE_DRIFT_CHANGED,
+    SOURCE_DRIFT_UNCHANGED,
+    SOURCE_DRIFT_UNKNOWN,
     TemplateChangeProjectionError,
     preparation_view,
     product_preparation_status,
+    template_change_zone_actionable,
     workbench_template_change_verdict,
 )
 from hwpxfiller.application.work_template_state import (
@@ -38,7 +42,9 @@ from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.webapp import template_change as tc
 from hwpxfiller.webapp.template_change import (
+    NO_SOURCE_DRIFT_JUDGMENT,
     SUPPORTED_MEDIA,
+    SourceDrift,
     TemplateChangeCoordinator,
     TemplateChangeError,
     unsupported_zone,
@@ -404,7 +410,7 @@ def test_txt_applied_work_survives_later_source_edits_with_a_loud_note(tmp_path)
     reg, tpl = _seed_txt(tmp_path)
     coord = _coordinator(tmp_path, reg)
     coord.check("안내문", "k1")
-    assert coord.source_drift_note("안내문") is None  # 무편집 = 일관
+    assert coord.source_drift("안내문") == SourceDrift(SOURCE_DRIFT_UNCHANGED, None)
     tpl.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
     token = coord.check("안내문", "k2")["preparation"]["change_token"]
     coord.apply("안내문", token)
@@ -412,8 +418,163 @@ def test_txt_applied_work_survives_later_source_edits_with_a_loud_note(tmp_path)
 
     tpl.write_text("적용 뒤 다시 고침 {{공고명}}\n", encoding="utf-8")
     assert coord.zone("안내문", "txt", False)["epoch"] == staged_before  # Work 무변경
-    note = coord.source_drift_note("안내문")
-    assert note and "캡처" in note
+    drift = coord.source_drift("안내문")
+    assert drift.state == SOURCE_DRIFT_CHANGED
+    assert drift.note and "캡처" in drift.note
+
+
+# ─── 존 노출 술어(#932 B5) ─────────────────────────────────────────────────
+
+
+def test_unbootstrapped_work_has_no_drift_judgment(tmp_path):
+    """미부트스트랩은 「안 갈렸다」가 아니라 **판정 불성립**이다 — 대조할 캡처본이 없다."""
+    reg, _tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    assert coord.source_drift("안내문") is NO_SOURCE_DRIFT_JUDGMENT
+
+
+def test_zone_stands_down_once_the_source_is_unchanged(tmp_path):
+    """U4 12번의 실제 요구 — 준비를 마쳤고 원본 그대로면 존은 자기 발로 내려온다."""
+    reg, _tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    zone = coord.zone("안내문", "txt", False)
+    assert zone["preparation"]["status"] == "no_change"
+    assert zone["source_drift"] == SOURCE_DRIFT_UNCHANGED
+    assert zone["actionable"] is False
+
+
+def test_zone_stands_when_the_source_was_edited(tmp_path):
+    """확인을 **누르지 않아도** 존이 스스로 선다 — B5 가 요구한 「앱이 알아서 안다」."""
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    tpl.write_text("한글에서 고친 본문 {{공고명}}\n", encoding="utf-8")
+    zone = coord.zone("안내문", "txt", False)
+    assert zone["source_drift"] == SOURCE_DRIFT_CHANGED
+    assert zone["actionable"] is True
+
+
+def test_unreadable_source_is_unknown_and_still_stands(tmp_path):
+    """「모른다」를 「없다」로 접지 않는다 — 읽지 못한 원본은 존을 세우고 사유를 든다."""
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    tpl.unlink()  # 원본이 사라져 값싸게 대조할 수 없다
+    drift = coord.source_drift("안내문")
+    assert drift.state == SOURCE_DRIFT_UNKNOWN
+    assert drift.note  # 재진술 없는 침묵 금지
+    assert coord.zone("안내문", "txt", False)["actionable"] is True
+
+
+def test_zone_stands_while_a_prepared_change_waits(tmp_path):
+    """``ready`` 는 종결이 아니다 — 적용이라는 미이행 동사가 남아 있으면 숨기지 않는다."""
+    _reg, _tpl, coord, _token = _ready(tmp_path)
+    zone = coord.zone("공고서", "hwpx", False)
+    assert zone["preparation"]["status"] == "ready"
+    assert zone["actionable"] is True
+
+
+def test_every_zone_branch_carries_the_same_keys(tmp_path):
+    """키 부재 분기 금지 — 표면이 ``"actionable" in z`` 로 갈리면 갈래 하나가 조용히 사라진다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.txt"
+    tpl.write_bytes(b"\xff\xfe\x00\x00")
+    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+    coord = _coordinator(tmp_path, reg)
+    coord.check("깨진안내", "k1")  # bootstrap 실패 기록
+    branches = [
+        unsupported_zone(),
+        coord.zone("깨진안내", "txt", False),          # initialization_required
+        coord.zone("깨진안내", "없는매체", False),      # unsupported
+    ]
+    for zone in branches:
+        assert {"actionable", "source_drift"} <= set(zone), zone
+
+
+def test_initialization_failure_zone_still_stands(tmp_path):
+    """비활성 + 사유 병기가 이 존의 몫이라, 숨기면 왜 안 도는지 물을 자리가 사라진다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.txt"
+    tpl.write_bytes(b"\xff\xfe\x00\x00")
+    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+    coord = _coordinator(tmp_path, reg)
+    coord.check("깨진안내", "k1")
+    zone = coord.zone("깨진안내", "txt", False)
+    assert zone["reason"] == "initialization_required"
+    assert zone["checkable"] is False and zone["actionable"] is True
+
+
+def test_new_product_statuses_default_to_standing():
+    """어휘가 늘면 기본은 **세움**이다 — 등록을 잊은 status 가 구획을 조용히 지우지 않는다."""
+    settled = {"no_change", "applied", "invalid", "rejected"}
+    for status in PRODUCT_PREPARATION_STATUSES:
+        actionable = template_change_zone_actionable(
+            supported=True, reason="", preparation_status=status,
+            source_drift=SOURCE_DRIFT_UNCHANGED,
+        )
+        assert actionable is (status not in settled), status
+
+
+def test_unsupported_media_never_stands():
+    """capability 밖은 술어 이전의 문제다 — drift 가 무엇이든 존은 없다."""
+    for drift in (SOURCE_DRIFT_CHANGED, SOURCE_DRIFT_UNKNOWN, None):
+        assert template_change_zone_actionable(
+            supported=False, reason="unsupported_media",
+            preparation_status=None, source_drift=drift,
+        ) is False
+
+
+# ─── 자동 준비(#932 B5) ────────────────────────────────────────────────────
+
+
+def test_ensure_bootstrapped_seats_authority_once(tmp_path):
+    """선택이 준비를 진다 — 「변경사항 확인」을 누르지 않아도 권위가 서고, 두 번 서지 않는다."""
+    reg, _tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    assert not load_job(reg, "안내문").authority_id
+
+    first = coord.ensure_bootstrapped("안내문")
+    assert first["ok"] is True and first["bootstrapped"] is True
+    assert load_job(reg, "안내문").authority_id  # 구간·실행면이 설 수 있는 상태
+
+    again = coord.ensure_bootstrapped("안내문")
+    assert again["ok"] is True and again["bootstrapped"] is False  # 작업당 1회
+
+
+def test_ensure_bootstrapped_does_not_retry_a_recorded_failure(tmp_path, monkeypatch):
+    """자동 경로가 매 선택마다 실패하는 capture 를 되돌리지 않는다 — 사유는 존이 든다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.txt"
+    tpl.write_bytes(b"\xff\xfe\x00\x00")
+    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+    coord = _coordinator(tmp_path, reg)
+
+    assert coord.ensure_bootstrapped("깨진안내") == {
+        "ok": False, "bootstrapped": False, "reason": "initialization_required",
+    }
+    calls = []
+    original = coord._bootstrap
+    monkeypatch.setattr(
+        coord, "_bootstrap",
+        lambda *a, **k: (calls.append(1), original(*a, **k))[1],
+    )
+    assert coord.ensure_bootstrapped("깨진안내")["ok"] is False
+    assert calls == []  # 같은 실물이면 되돌지 않는다
+    assert coord.zone("깨진안내", "txt", False)["actionable"] is True  # 사유는 선다
+
+    tpl.write_text("고쳤습니다 {{공고명}}\n", encoding="utf-8")
+    assert coord.ensure_bootstrapped("깨진안내")["bootstrapped"] is True  # 수리하면 열린다
+
+
+def test_ensure_bootstrapped_is_inert_without_a_template(tmp_path):
+    """템플릿 실물이 없으면 준비할 것이 없다 — 복구 동사는 라이브러리 재연결이다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="빈작업", template_path=str(tmp_path / "없다.txt")))
+    coord = _coordinator(tmp_path, reg)
+    result = coord.ensure_bootstrapped("빈작업")
+    assert result["ok"] is True and result["bootstrapped"] is False
+    assert not load_job(reg, "빈작업").authority_id  # 좀비 권위를 만들지 않는다
 
 
 # ─── 내부 → 제품 status 투영(순수) ──────────────────────────────────────────
@@ -489,6 +650,30 @@ def test_workbench_verdict_covers_every_product_status():
     """어휘가 늘면 이 판정도 함께 늘어야 한다 — 조용한 기본값으로 새 status 를 삼키지 않는다."""
     for status in PRODUCT_PREPARATION_STATUSES:
         assert workbench_template_change_verdict(status) in (REVIEW_REQUIRED, None)
+
+
+@pytest.mark.parametrize(
+    ("drift", "expected"),
+    [
+        (SOURCE_DRIFT_CHANGED, REVIEW_REQUIRED),   # 원본이 갈렸다 — 캡처본으로 조용히 밀지 않는다
+        (SOURCE_DRIFT_UNKNOWN, REVIEW_REQUIRED),   # 모른다 — 모르는 채 미는 것이 곧 조용한 추측
+        (SOURCE_DRIFT_UNCHANGED, None),
+        (None, None),                              # 판정 불성립(미부트스트랩)
+    ],
+)
+def test_source_drift_raises_the_same_review_requirement(drift, expected):
+    """드리프트도 확인 요구를 세운다(#932 B5).
+
+    존이 조치가 있을 때만 서게 된 뒤로 「원본을 고쳤는데 그 사실을 못 본 채 생성」할 창이
+    생겼다 — 생성은 캡처된 bytes 를 쓰므로(#681 F1) 그 창이 곧 조용한 오생성이다. 막되
+    좌초시키지 않는다: 복구 동사(`#jobTplCheck`)는 같은 판정이 세우는 존 안에 있다.
+    """
+    assert workbench_template_change_verdict(None, drift) == expected
+
+
+def test_unsettled_status_stands_regardless_of_drift():
+    """두 축은 독립이다 — 드리프트가 없어도 미종결 확인은 그대로 요구를 세운다."""
+    assert workbench_template_change_verdict("error", SOURCE_DRIFT_UNCHANGED) == REVIEW_REQUIRED
 
 
 def test_view_drops_change_token_unless_ready():

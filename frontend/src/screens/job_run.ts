@@ -1207,6 +1207,20 @@ export function tplCheckRefusalNotice(res: Obj): string {
     : "변경사항을 확인하지 못했습니다.";
 }
 
+/** 존 이름 — U4 24번. 「템플릿 변경사항」은 **상시 존**의 이름이었다: 조치할 것이 없어도 늘
+ *  떠 있었으니 「조치 필요」로 부르면 거짓이었다. #932 B5 가 술어를 원본 드리프트로 옮겨
+ *  「정말 조치할 때만 뜨는 존」이 된 뒤에야 그 이름이 참이 된다 — 그래서 12·24 는 한 판정이다.
+ *
+ *  종결 이름이 따로 있는 이유: 적용 직후에는 조치가 남지 않았는데도 결과 재진술 때문에 존이
+ *  한 번 더 선다. 그 순간까지 「조치 필요」라고 부르면 방금 끝낸 일을 다시 시키는 말이 된다. */
+const TPL_ZONE_CAP_ACTION = "템플릿 조치 필요";
+const TPL_ZONE_CAP_SETTLED = "템플릿 변경사항";
+
+/** 존이 섰는데 status 도 드리프트 문안도 없는 자리는 술어상 없다 — 그래도 **빈 칸으로 새지
+ *  않는다**(조용한 폴백 금지). 이 줄이 보이면 술어와 문안 표가 갈렸다는 뜻이다. */
+const TPL_STANDING_FALLBACK_COPY =
+  "템플릿 상태를 확인해 주세요.";
+
 /** FAIL(invalid)과 오류·중단·대체를 다른 행동 문구로 가른다 — 재확인 라벨이 그 분리다. */
 const TPL_RECHECK_LABEL: Record<string, string> = {
   error: "다시 확인",
@@ -1251,14 +1265,21 @@ export function JobTemplateChange(props: { controller: JobRunController }): Reac
   const status = prep ? String(prep.status || "") : "";
   const needsInit = z.reason === "initialization_required";
   const busy = tpl.inFlight || running;
+  // **노출 술어는 Python 이 낸다**(#932 B5). 존이 「확인할 수 있다」는 capability 존이라
+  // 건수로는 숨길 수 없었고(숨기면 확인 개시 입구가 사라진다), 그래서 판정의 입력이 확인
+  // 결과가 아니라 원본 드리프트로 옮겨졌다 — 여기서 그 판정을 다시 조립하지 않는다.
+  //
+  // `tpl.notice` 클로즈만 웹 몫이다: 적용이 성사되면 드리프트가 0 이 되므로 술어만으로는
+  // 「변경사항을 적용했습니다」가 존과 함께 증발한다. 재진술 수명은 웹이 소유한다(#659).
+  if (!z.actionable && !tpl.notice) return null;
   const diagnostics = ((needsInit ? z.diagnostics : prep?.diagnostics) || []) as Obj[];
   const statusText = needsInit
     ? TPL_INITIALIZATION_REQUIRED_COPY
     : status
       ? (TPL_STATUS_COPY[status] ?? `확인 상태: ${status}`)
-      : "템플릿 원본을 고쳤다면 변경사항을 확인한 뒤 이 작업에 적용할 수 있습니다.";
+      : String(z.source_drift_note || TPL_STANDING_FALLBACK_COPY);
   return h("div", { id: "jobTplChange" },
-    h("div", { className: "zone-cap" }, "템플릿 변경사항"),
+    h("div", { className: "zone-cap" }, z.actionable ? TPL_ZONE_CAP_ACTION : TPL_ZONE_CAP_SETTLED),
     h("div", {
       className: needsInit || status === "invalid" ? "note warnbox" : "muted capnote",
       id: "jobTplStatus",

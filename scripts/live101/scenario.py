@@ -761,6 +761,18 @@ def _select_work(surface: Surface, name: str) -> None:
 def _apply_staged_template(ctx: ScenarioContext, kind: str) -> None:
     s = ctx.surface
     ctx.stage_template(kind)
+    # staging 은 **앱 밖 편집**이다(한글에서 템플릿을 고치는 것과 같은 사건) — push 를 내지
+    # 않으므로 조치가 있을 때만 서는 구획이 아직 침묵한다. 그 사용자 이야기의 나머지 절반,
+    # 「앱으로 돌아온다」를 여기서 실제로 낸다: 셸이 포커스 복귀에 현재 화면을 다시 묻고
+    # (#932 B5), 그때 드리프트가 존을 세운다. 대본이 지어내는 상태가 아니라 사용자가 반드시
+    # 지나는 사건이라 여기 선다.
+    s.js("window.dispatchEvent(new Event('focus')); true;")
+    s.wait(
+        "!!document.getElementById('jobTplCheck')",
+        f"{kind} 앱 복귀 뒤 템플릿 조치 필요 존",
+        timeout=30.0,
+        requires=["#scr-job"],
+    )
     s.click_sel("#jobTplCheck", what=f"{kind} 템플릿 변경사항 확인")
     s.wait(
         "!!document.getElementById('jobTplApply')",
@@ -1269,12 +1281,18 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.wait_dispatch_gate("Work A response 보류")
     _select_work(s, "발주요청 기안")
     s.release_dispatch()
+    # 재는 것은 **A 의 응답이 B 에 착지하지 않는다**이고, 표지는 「B 의 구획이 비었다」였다.
+    # 그 표지는 B 가 **미준비**라 구획이 통째로 안 서던 시절의 것이다 — 준비를 착석이 지게
+    # 된 뒤로(#932 B5) B 의 구획은 서고 「선택할 내용이 없습니다」를 정직하게 말한다. 그래서
+    # 표지를 사실로 옮긴다: B 에는 **A 의 갈래가 없다**(A 가 보류시킨 것이 `cs-opt-0-1` 이다).
+    # 빈 칸을 계속 요구하면 「구획이 진실을 말하기 시작한 것」이 빨강이 된다.
     s.wait(
         "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
-        " && document.getElementById('jobContentSelectionZone').textContent.trim() === ''",
+        " && !document.getElementById('cs-opt-0-1')"
+        " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 0",
         "Work B latest snapshot wins",
         timeout=30.0,
-        requires=["#jobActionName"],
+        requires=["#jobActionName", "#jobContentSelectionZone"],
     )
     _select_work(s, "발주요청서")
 
@@ -2615,16 +2633,24 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     )
     _select_all(ctx, ONBOARDING_JOBS["advanced"])
     # 구간은 EXACTLY_ONE 이다 — 항목마다 갈래 하나를 골라야 생성이 열린다(§3.6).
-    # 갓 저장한 작업은 **아직 bootstrap 전**이라 「포함할 내용」이 서지 않는다(durable id 미발급 —
-    # 스냅샷 존은 그 상태를 `supported:true, initialized:false` 로 정직하게 낸다). 「템플릿 변경사항
-    # 확인」이 그 bootstrap 동사다: 누르면 권위 id 가 발급되고 구간과 managed 실행면이 함께 선다.
-    s.click_sel("#jobTplCheck", what="템플릿 확인(구간 bootstrap)")
+    # 갓 저장한 작업의 준비는 **착석이 진다**(#932 B5). 종전에는 이름이 전혀 다른 「템플릿
+    # 변경사항 확인」 단추가 그 겸직을 져서 대본이 여기서 그것을 눌러야 했고, 그 걸음이
+    # 있다는 사실 자체가 결함의 증거였다 — 구간이 서려면 준비가 필요하고 생성이 열리려면
+    # 구간이 필요한 교착에서 이름이 다른 단추가 유일한 탈출구였다. 이제 **누르지 않는다**:
+    # 누르지 않아도 구간이 서는 것이 그 판정의 실주행 증거다.
     s.wait(
         "document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 1"
         " && !!document.getElementById('cs-opt-0-0')"
         " && !!document.getElementById('cs-opt-0-1')",
         "구간 1개·갈래 2",
         timeout=60.0,
+        requires=["#jobContentSelectionZone"],
+    )
+    # 원본을 고친 적이 없으니 템플릿 존은 **서지 않는다**(U4 12번 · 음성 단언) — 조치가
+    # 없는데 뜬 구획이 다시 살아나면 여기서 부러진다.
+    s.wait(
+        "!document.getElementById('jobTplChange')",
+        "템플릿 존 부재(조치 0건)",
         requires=["#jobContentSelectionZone"],
     )
     s.click_sel("#cs-opt-0-0", what="현장설명회 실시 갈래")

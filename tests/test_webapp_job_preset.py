@@ -351,6 +351,11 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     })
     clone = ctrl.registry.clone("공고서")
     ctrl.dispatch("select_job", {"name": clone})
+    # 준비는 착석이 진다(#932 B5). 이 테스트가 재는 것은 **렌더가 발급하지 않는다**이므로
+    # 준비의 산물만 걷어 그 규율을 그대로 겨눈다(스냅샷은 여전히 아무것도 발급하지 않는다).
+    ctrl.registry.mutate(clone, lambda job: setattr(job, "authority_id", ""))
+    if ctrl.vm is not None:
+        ctrl.vm.job.authority_id = ""
 
     assert _presets_zone(ctrl) == {
         "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
