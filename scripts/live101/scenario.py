@@ -188,10 +188,10 @@ def run(ctx: ScenarioContext) -> dict:
         timeout=30.0,
         requires=["#scr-editor"],
     )
-    # 저장 뒤 머리가 판본을 말한다(§10.13 판정 O) — 첫 저장이므로 r1 이다.
+    # 저장 뒤 머리가 상태를 말한다(#945 F5 — 판본 표기는 내부 어휘라 걷혔다).
     s.wait(
-        "document.getElementById('editorSaveState').textContent.includes('r1')",
-        "저장 상태·판본 표기",
+        "document.getElementById('editorSaveState').textContent.includes('저장됨')",
+        "저장 상태 표기",
         requires=["#editorSaveState"],
     )
     seen["hwpx_job_saved"] = True
