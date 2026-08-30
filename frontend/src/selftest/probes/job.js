@@ -435,15 +435,21 @@ function measureActionbarPlaneWithEmptyNote(ctx) {
 }
 
 /** app.py:1038-1045. 레거시는 이 블록을 1046-1056 에 **한 번 더 복사해 두었다**(같은 코드가
- *  같은 필드를 덮어쓴다). 산출이 동일하므로 여기서는 한 번만 잰다 — 필드 순서도 그대로다. */
+ *  같은 필드를 덮어쓴다). 산출이 동일하므로 여기서는 한 번만 잰다 — 필드 순서도 그대로다.
+ *
+ *  **겨눔이 U4 10번에서 옮겨왔다**: ⤢ 가 「현재 데이터」 캡션에서 표 머리로 가면서
+ *  `.zone-cap-actions`(행동이 붙은 캡션)는 산출자 0 이 됐다. 이 프로브가 지키던 사실은
+ *  클래스 이름이 아니라 **「행동이 그 줄의 오른쪽 끝에 선다」**이고, 그 사실은 이제 표 머리
+ *  줄(`#jobRecsHead`)이 진다 — 같은 결함류(같은-명시도 규칙이 곁의 규칙을 덮어 컨트롤이 제
+ *  끝에서 물러난다)를 같은 방식으로 잰다. 정적 검사가 못 보는 자리라는 점도 그대로다. */
 function measureCapActions(ctx) {
   const doc = ctx.doc;
-  const cap = doc.querySelector("#jobZones .zone-cap.zone-cap-actions");
-  const btn = cap && cap.querySelector("button");
-  if (!cap || !btn) return null;
+  const head = doc.getElementById("jobRecsHead");
+  const btn = head && head.querySelector("#jobDataExpand");
+  if (!head || !btn) return null;
   return {
-    display: ctx.win.getComputedStyle(cap).display,
-    far_edge: Math.round(cap.getBoundingClientRect().right - btn.getBoundingClientRect().right),
+    display: ctx.win.getComputedStyle(head).display,
+    far_edge: Math.round(head.getBoundingClientRect().right - btn.getBoundingClientRect().right),
   };
 }
 

@@ -875,25 +875,17 @@ class TestWebSelftestGate:
             f"빈 게이트 문안이 자리를 차지해 버튼이 {j['actionbar_plane_empty_note']}px "
             "물러섰습니다 — 폭 0 이어도 flex 항목이면 앞의 gap 이 남습니다."
         )
-        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
-        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
+        # 표 머리 줄의 ⤢ 는 오른쪽 끝이다(리뷰 R5 의 결함류 그대로) — 규칙은 둘 다 살아 있고
+        # **어느 쪽이 이기는가**만 갈리는 자리라 정적 검사가 못 본다. 겨눔은 U4 10번에서
+        # 「현재 데이터」 캡션에서 표 머리(`#jobRecsHead`)로 옮겨왔다: 지키는 사실은 클래스
+        # 이름이 아니라 「행동이 그 줄의 오른쪽 끝에 선다」이고, 그 줄이 바뀐 것뿐이다.
         cap = j["cap_actions"]
-        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
+        assert cap, "표 머리 줄의 ⤢ 를 찾지 못했습니다 — 프로브 겨눔 소실."
         assert cap["display"] == "flex", (
-            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
+            f"표 머리 줄이 flex 를 잃었습니다({cap['display']!r}) — 곁의 규칙이 덮었습니다."
         )
         assert abs(cap["far_edge"]) <= 1, (
-            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
-        )
-        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
-        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
-        cap = j["cap_actions"]
-        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
-        assert cap["display"] == "flex", (
-            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
-        )
-        assert abs(cap["far_edge"]) <= 1, (
-            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
+            f"⤢ 가 표 머리 줄 오른쪽 끝에서 {cap['far_edge']}px 물러섰습니다."
         )
         assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         # 확인 필요·순위 밖은 후보 줄에서 수치 + 출구로만 말한다(슬라이스 3 구획 이사).

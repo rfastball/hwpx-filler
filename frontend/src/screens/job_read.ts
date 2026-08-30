@@ -541,7 +541,7 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
     // 「펼쳐서 행 고르기 ⤢」는 여기 없다(U4 10번) — 표를 여는 동사라 표 머리로 갔다.
     // 옮긴 것은 **진입점뿐**이고 초안 거래(`RecordRangeDraft`·존 13액션·「적용 전 메인 범위
     // 불변」 §18.11-21)와 면 수명주기는 그대로다.
-    h("div", { className: "zone-cap zone-cap-actions" }, h("span", null, "현재 데이터")),
+    h("div", { className: "zone-cap" }, h("span", null, "현재 데이터")),
     h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터(.xlsx/.csv)"),
       h("input", { className: "field ro", id: "jobDataLabel", type: "text", readOnly: true,
         value: snapshot.data_source_label || "", placeholder: "데이터를 선택하세요" }),
