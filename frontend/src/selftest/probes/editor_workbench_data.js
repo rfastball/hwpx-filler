@@ -1489,7 +1489,7 @@ export function createEditorWorkbenchDataProbes() {
           const pclmRow = {
             key: "k3", name: "계약 목록", kind: "pclm", kind_label: "계약 목록",
             status: "active", badge_label: "활성", badge_level: "ok",
-            reference: "DB: pclm.db · 뷰 v_통합_v1", locate_path: "C:/d/pclm.db",
+            reference: "DB: pclm.db · 시트 통합", locate_path: "C:/d/pclm.db",
             sheet: "", missing: false, note: "",
             actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
           };
@@ -1501,15 +1501,20 @@ export function createEditorWorkbenchDataProbes() {
                 [{ key: "activate", label: "활성화" }, { key: "delete", label: "삭제" }]),
               pclmRow,
             ],
-            /* 등록 폼이 물어야 할 두 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. */
+            /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
+               새로 고르게 할 것(품목 제외 3건)이고 `titles` 는 이미 선 마운트를 제목으로
+               그리기 위한 뷰 전수 매핑이다. */
             pclm: {
               default_db: "C:/AppData/Local/Pclm/pclm.db",
               views: [
-                { name: "v_통합_v1", label: "공고와 계약을 이어 붙인 계약면" },
-                { name: "v_공고_v1", label: "공고 정보" },
-                { name: "v_계약_v1", label: "계약 정보" },
-                { name: "v_품목_v1", label: "품목 명세" },
+                { name: "v_통합_v1", title: "통합", desc: "공고와 계약을 이어 붙인 표" },
+                { name: "v_공고_v1", title: "공고", desc: "공고 정보" },
+                { name: "v_계약_v1", title: "계약", desc: "계약 정보" },
               ],
+              titles: {
+                "v_통합_v1": "통합", "v_공고_v1": "공고",
+                "v_계약_v1": "계약", "v_품목_v1": "품목",
+              },
             },
             /* 키를 따옴표로 싼다 — 값이 아니라 **표기**의 문제다. 봉인의 금지 패턴
                `\bfile:` 은 평범한 객체 키 `file:` 도 `file:` URL 로 읽어 산출물을 거절한다.
@@ -1559,14 +1564,24 @@ export function createEditorWorkbenchDataProbes() {
           Modal.close("poolRegModal");
           /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
              가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 기본 DB
-             자리를 프리필하고 뷰 전수 + **빈 placeholder** 를 세운다(뷰는 사용자 확정). */
+             자리를 프리필하고 **고르게 할 시트 + 빈 placeholder** 를 세운다(시트는 사용자
+             확정). 라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
           const pclmEntry = byId(ctx, "dataPickerPclm");
           out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
             && pclmEntry.offsetParent !== null && !pclmEntry.disabled;
+          out.pclm_entry_text = textOf(pclmEntry);
           pclmEntry.click();
           await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
-          out.pclm_reg_view_options = byId(ctx, "poolRegView").options.length;
+          const viewSelect = byId(ctx, "poolRegView");
+          out.pclm_reg_view_options = viewSelect.options.length;
           out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
+          /* 옵션의 **값**은 백엔드 계약(실 뷰 이름)이고 **보이는 글자**는 제목이다. 둘을
+             따로 회수해 표면에 내부 이름이 새지 않는 것을 게이트가 잰다. */
+          out.pclm_reg_view_values = Array.prototype.map.call(
+            viewSelect.options, (o) => o.value).join("|");
+          out.pclm_reg_view_text = Array.prototype.map.call(
+            viewSelect.options, (o) => textOf(o)).join("|");
+          out.pclm_reg_view_label = textOf(viewSelect.closest(".ctl").querySelector(".lbl"));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(

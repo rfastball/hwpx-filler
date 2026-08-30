@@ -70,9 +70,36 @@ def test_every_contract_view_is_accepted(tmp_path):
 
 
 def test_every_view_carries_a_line_that_says_what_one_row_is():
-    """설명 없는 뷰를 허용목록에 늘리지 않는다 — 고르는 기준이 '한 줄이 무엇인가'다."""
-    assert set(PCLM_VIEW_LABELS) == set(PCLM_VIEWS)
-    assert all(PCLM_VIEW_LABELS[view].strip() for view in PCLM_VIEWS)
+    """문안 없는 뷰를 허용목록에 늘리지 않는다 — 고르는 기준이 '한 줄이 무엇인가'다.
+
+    셋을 함께 잰다: 제목(표면이 부를 이름)·설명(그 면이 무엇인지)·라벨(둘을 이은 한 줄).
+    하나라도 키 집합이 갈리면 허용목록에 이름만 늘고 사용자가 읽을 것이 빈 자리가 생긴다.
+    """
+    from hwpxfiller.domain.pclm_views import PCLM_VIEW_DESCS, PCLM_VIEW_TITLES
+
+    for table in (PCLM_VIEW_LABELS, PCLM_VIEW_TITLES, PCLM_VIEW_DESCS):
+        assert set(table) == set(PCLM_VIEWS)
+        assert all(table[view].strip() for view in PCLM_VIEWS)
+    # 제목은 내부 이름의 대역이라 그 이름을 다시 들고 다니지 않는다.
+    assert not any(title.startswith("v_") for title in PCLM_VIEW_TITLES.values())
+    # 라벨은 「설명. 뜻」 골격 — CLI 나열·거절 재진술이 그 한 줄을 소비한다.
+    assert all(
+        PCLM_VIEW_LABELS[view].startswith(PCLM_VIEW_DESCS[view] + ". ")
+        for view in PCLM_VIEWS
+    )
+
+
+def test_web_registration_offers_a_subset_of_the_allowlist():
+    """웹이 **새로 고르게 하는** 뷰는 허용목록의 부분집합이고 품목만 빠진다.
+
+    좁히는 것은 고르게 하는 자리 하나다 — 허용목록·CLI·겨눔 백스톱은 넷 그대로여서 이미
+    등록된 품목 참조가 조용히 못 읽는 것이 되지 않는다.
+    """
+    from hwpxfiller.domain.pclm_views import PCLM_DOC_VIEWS
+
+    assert set(PCLM_DOC_VIEWS) < set(PCLM_VIEWS)
+    assert set(PCLM_VIEWS) - set(PCLM_DOC_VIEWS) == {"v_품목_v1"}
+    assert DEFAULT_PCLM_VIEW in PCLM_DOC_VIEWS
 
 
 def test_default_view_is_the_joined_one():

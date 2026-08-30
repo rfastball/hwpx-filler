@@ -104,6 +104,7 @@ from ..domain.job import (
     work_mode,
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
+from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨은 내부 이름을 안 든다
 from ..domain.output_folder_default import (
     SOURCE_EXPLICIT as OUTPUT_FOLDER_SOURCE_EXPLICIT,
     OutputFolderResolution,
@@ -2364,10 +2365,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
         self._commit_data_transition(source, records, (db, view, 0, "pclm"))
-        # 라벨에 뷰를 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으로는 **무엇이 서
+        # 라벨에 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으로는 **무엇이 서
         # 있는지**를 말하지 못한다(엑셀의 `data_binding_label` 이 시트를 병기하는 것과 같은
         # 규율). 스냅샷 `data_target` 과 겹치는 것이 아니라, 저쪽은 성분이고 이쪽은 한 줄이다.
-        self.data_label = f"{Path(db).name} · {view}"
+        # 병기하는 것은 **제목**이다: 라벨은 사람이 읽는 한 줄이라 내부 이름(`v_통합_v1`)이
+        # 여기로 새면 결속 마운트 notice·소스 라벨까지 그 이름을 지고 다닌다. 미지 이름은
+        # 감추지 않고 원문 그대로 남긴다(구판·손편집을 조용히 지우지 않는다).
+        self.data_label = f"{Path(db).name} · {PCLM_VIEW_TITLES.get(view, view)}"
         self.data_source = "pclm"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 슬롯 없는 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
         self.data_path, self.data_sheet = db, view  # db=파일 · 뷰=시트 자리 재사용

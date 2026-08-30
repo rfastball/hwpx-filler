@@ -60,8 +60,8 @@ type RegState = {
   error: string;
 };
 
-/** 뷰 미선택 placeholder — 목록 첫 항목을 기본으로 세우지 않는다(사용자가 확정할 값이다). */
-const PCLM_VIEW_PLACEHOLDER = "뷰를 고르세요";
+/** 시트 미선택 placeholder — 목록 첫 항목을 기본으로 세우지 않는다(사용자가 확정할 값이다). */
+const PCLM_VIEW_PLACEHOLDER = "시트를 고르세요";
 const PCLM_UNAVAILABLE = "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요.";
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
@@ -230,7 +230,7 @@ export function createDataPickerController(args: {
          비어도 된다(백엔드가 「기본 자리」로 해석) — 폼은 그 자리를 미리 보여 준다. */
       if (!payload.name) { patchReg({ error: "이름을 입력하세요." }); return; }
       if (!payload.view) {
-        patchReg({ error: "읽을 뷰를 고르세요 — 계약 목록은 어느 면을 읽을지 확정해야 합니다." });
+        patchReg({ error: "읽을 시트를 고르세요." });
         return;
       }
     } else if (!payload.name || !payload.path) {
@@ -412,17 +412,20 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
   const rows = pool?.rows || [];
   return h("div", { className: "modal-card data-picker" },
     h("h3", { id: "dataPickerTitle" }, "데이터 선택"),
-    h("p", { className: "modal-sub" }, "엑셀·CSV 는 위치(경로·시트)만 기억하고, 고를 때 원본을 읽습니다."),
     h("p", { id: "dataPickerNote", className: `note ${state.level === "danger" ? "dangerbox" : state.level === "ok" ? "okbox" : ""}`,
       role: "status", "aria-live": "polite", style: { display: state.status ? "" : "none", whiteSpace: "pre-line" } }, state.status),
     h("section", { className: "picker-sec", "aria-labelledby": "dataPickerCurCap" },
       h("div", { className: "cap", id: "dataPickerCurCap" }, "현재 데이터"),
       h("div", { id: "dataPickerCurrent" }, current.label ? h("div", { className: "tplcard" },
         h("div", { className: "tplcard-top" }, h("span", { className: "tplcard-name" }, current.label),
-          /* 같은 자리가 종류마다 다른 것을 뜻한다(#937) — 엑셀=시트, 계약 목록=뷰. 종류는
-             호스트가 `data_target.kind` 로 이미 말하므로 경로 모양으로 되추측하지 않는다. */
+          /* 자리 이름은 종류를 가리지 않고 「시트」 하나다 — 계약면도 사용자에겐 표 한 장이라
+             내부 어휘(뷰)를 표면에 세울 이유가 없다. 종류가 가르는 것은 **값의 표기**뿐이다
+             (#937): 계약 목록의 면 이름은 내부 이름이라 스냅샷 제목표로 옮겨 그린다. 그
+             표에 없는 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다. */
           current.sheet ? h("span", { className: "muted" },
-            `${current.kind === "pclm" ? "뷰" : "시트"}: ${current.sheet}`) : null,
+            `시트: ${current.kind === "pclm"
+              ? (pool?.pclm?.titles || {})[current.sheet] || current.sheet
+              : current.sheet}`) : null,
           h("span", { className: "pill ok" }, "사용 중")),
         current.detail ? h("div", { className: "tplcard-meta muted" }, current.detail) : null,
         current.origin === "file" && current.path ? h("div", { className: "tplcard-acts" },
@@ -443,18 +446,15 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
         h("div", { className: "note dangerbox", key: entry.file }, `⚠ 손상된 등록 데이터: ${entry.file} — ${entry.error}`)))),
     h("section", { className: "picker-sec", "aria-labelledby": "dataPickerOtherCap" },
       h("div", { className: "cap", id: "dataPickerOtherCap" }, "다른 데이터"),
-      h("p", { className: "muted capnote" }, "한 번만 쓸 파일. 고른 뒤 「이 데이터 고정」으로 남길 수 있습니다."),
       h("button", { className: "btn", id: "dataPickerBrowse", "data-busy-lock": true,
         onClick: () => { void controller.browseFile(); } }, "파일 찾아보기…"),
-      /* 이 동사만 성격이 다르다(1회용이 아니라 고정) — 캡션이 거짓이 되지 않게 여기서 말한다. */
-      h("p", { className: "muted capnote" },
-        "계약 목록은 파일이 아니라 DB 자리와 뷰로 가리킵니다. 등록하면 「고정한 데이터」에 남습니다."),
-      /* 계약 목록(pclm)은 파일 피커가 아니라 **DB 자리 + 뷰**로 겨눈다(#937). 스냅샷이 그
+      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
          둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
-         「눌러도 아무 일 없음」이 결함으로 읽힌다. */
+         「눌러도 아무 일 없음」이 결함으로 읽힌다. 라벨의 괄호는 **확장자**다: 저쪽
+         프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
       h("button", { className: "btn", id: "dataPickerPclm", "data-busy-lock": true,
         disabled: !pool?.pclm, title: pool?.pclm ? "" : PCLM_UNAVAILABLE,
-        onClick: controller.openPclm }, "계약 목록(pclm) 등록…")),
+        onClick: controller.openPclm }, "계약 목록(.db) 등록…")),
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "dataPickerClose", onClick: controller.close }, "닫기")));
 }
@@ -472,13 +472,10 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
     db: "", view: "", note: "", targetKey: "", pinMode: false, error: "",
   };
   const pclm = value.mode === "pclm";
-  /* 뷰 목록·설명은 링0 단일 출처가 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
+  /* 고를 수 있는 시트와 그 설명은 링0 단일 출처가 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
   const views: Obj[] = (pool?.pclm?.views || []) as Obj[];
   return h("div", { className: "modal-card" },
     h("h3", { id: "poolRegTitle" }, value.title),
-    h("p", { className: "modal-sub" }, pclm
-      ? "DB 자리와 읽을 면(뷰)만 기억하고, 실행할 때 원본을 읽습니다."
-      : "파일 위치만 기억하고, 실행할 때 원본을 읽습니다."),
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
       h("input", { className: "field", id: "poolRegName", type: "text", value: value.name,
         placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
@@ -492,17 +489,19 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
         readOnly: value.pinMode, onChange: (event: Obj) => controller.patchReg({ sheet: event.currentTarget.value }) })),
     /* DB 자리는 편집 가능하다 — 기본 자리를 프리필하되 다른 사본을 가리킬 수 있어야 한다.
        비우면 백엔드가 「기본 자리」로 해석해 opts 에 박는다(미기재로 두지 않는다). */
-    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리(pclm.db)"),
+    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리"),
       h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db,
         onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
-    /* 뷰는 **사용자가 확정**한다 — 목록 첫 항목을 기본으로 세우면 계약면이 조용히 섞여
-       문서 건수가 어긋난다. 그래서 초기 선택은 빈 placeholder 이고, 빈 채 제출은 막는다. */
-    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "읽을 뷰"),
+    /* 시트는 **사용자가 확정**한다 — 목록 첫 항목을 기본으로 세우면 계약면이 조용히 섞여
+       문서 건수가 어긋난다. 그래서 초기 선택은 빈 placeholder 이고, 빈 채 제출은 막는다.
+       보이는 것은 제목과 설명이고 `value` 는 실제 뷰 이름이다 — 백엔드 계약이 그 이름이라
+       표기만 사람 말로 옮긴다(내부 이름은 표면에 서지 않는다). */
+    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "읽을 시트"),
       h("select", { className: "field", id: "poolRegView", value: value.view,
         onChange: (event: Obj) => controller.patchReg({ view: event.currentTarget.value }) },
       h("option", { value: "", key: "" }, PCLM_VIEW_PLACEHOLDER),
       ...views.map((view: Obj) => h("option", { value: String(view.name), key: String(view.name) },
-        `${view.name} — ${view.label}`)))) : null,
+        `${view.title} — ${view.desc}`)))) : null,
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
       h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note,
         onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),

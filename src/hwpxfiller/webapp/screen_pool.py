@@ -63,7 +63,13 @@ from ..application.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference, pclm_identity
-from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS, default_pclm_db
+from ..domain.pclm_views import (
+    PCLM_DOC_VIEWS,
+    PCLM_VIEW_DESCS,
+    PCLM_VIEW_TITLES,
+    PCLM_VIEWS,
+    default_pclm_db,
+)
 from .screens import PushSink, reference_missing
 
 __all__ = [
@@ -155,15 +161,24 @@ class PoolController:
         ]
 
     def _pclm_block(self) -> dict:
-        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고를 수 있는 뷰 전수**.
+        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고르게 할 뷰**, 그리고 제목표.
 
-        웹이 뷰 목록을 리터럴로 들지 않는다: 허용목록도 그 설명도 링0 단일 출처
+        웹이 뷰 목록을 리터럴로 들지 않는다: 허용목록도 그 문안도 링0 단일 출처
         (:mod:`hwpxfiller.domain.pclm_views`)이고, 여기 스냅샷은 그 값을 옮기기만 한다 —
-        표면이 목록을 복제하면 뷰가 늘거나 설명이 갈릴 때 한쪽만 늙는다.
+        표면이 목록을 복제하면 뷰가 늘거나 문안이 갈릴 때 한쪽만 늙는다.
+
+        두 목록이 **다른 일**을 한다: ``views`` 는 새로 고를 수 있는 것
+        (:data:`~hwpxfiller.domain.pclm_views.PCLM_DOC_VIEWS`)이고, ``titles`` 는 이미 선
+        마운트를 이름 대신 제목으로 그리기 위한 **뷰 전수** 매핑이다. 후자를 좁히면 CLI 로
+        등록한 품목 마운트가 카드에서 내부 이름(``v_품목_v1``)으로 새 나간다.
         """
         return {
             "default_db": str(default_pclm_db()),
-            "views": [{"name": v, "label": PCLM_VIEW_LABELS[v]} for v in PCLM_VIEWS],
+            "views": [
+                {"name": v, "title": PCLM_VIEW_TITLES[v], "desc": PCLM_VIEW_DESCS[v]}
+                for v in PCLM_DOC_VIEWS
+            ],
+            "titles": {v: PCLM_VIEW_TITLES[v] for v in PCLM_VIEWS},
         }
 
     def snapshot(self) -> dict:

@@ -43,7 +43,12 @@ from ..domain.dataset_reference import (
     pclm_identity,
     reference_identity,
 )
-from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS, default_pclm_db
+from ..domain.pclm_views import (
+    PCLM_VIEW_LABELS,
+    PCLM_VIEW_TITLES,
+    PCLM_VIEWS,
+    default_pclm_db,
+)
 from .nara_acquire import validate_range
 
 
@@ -248,11 +253,14 @@ def reference_summary(item: DatasetReference) -> str:
         sheet = opts.get("sheet")
         return f"파일: {name}" + (f" · 시트 {sheet}" if sheet else "")
     if item.kind == "pclm":
-        # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 면 하나(시트↔뷰).
+        # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 면 하나. 표면 어휘는 「시트」로
+        # 통일한다(내부 어휘 「뷰」는 사용자가 읽을 자리에 서지 않는다). 면 이름도 제목으로
+        # 옮긴다 — 미지 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다.
         db = str(opts.get("db", ""))
         name = Path(db).name if db else "(경로 없음)"
         view = opts.get("view")
-        return f"DB: {name}" + (f" · 뷰 {view}" if view else "")
+        title = PCLM_VIEW_TITLES.get(str(view), view)
+        return f"DB: {name}" + (f" · 시트 {title}" if view else "")
     if item.kind == "nara":
         bgn = opts.get("bgn_dt", "?")
         end = opts.get("end_dt", "?")

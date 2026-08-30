@@ -724,7 +724,7 @@ def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
     assert "추가했습니다" in ctrl.snapshot()["result"]["text"]
     row = pushes[-1][1]["rows"][0]
     assert row["kind"] == "pclm" and row["kind_label"] == "계약 목록"
-    assert row["reference"] == "DB: pclm.db · 뷰 v_통합_v1"
+    assert row["reference"] == "DB: pclm.db · 시트 통합"   # 표면 어휘는 시트 + 제목
     assert row["locate_path"] == db and row["missing"] is True  # 없는 파일은 끊김으로
 
     noop = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
@@ -832,9 +832,21 @@ def test_pclm_duplicates_merge_through_the_same_confirm_path(tmp_path):
     assert [r["name"] for r in ctrl.snapshot()["rows"]] == ["최신 계약"]
 
 
-def test_pclm_snapshot_block_carries_default_db_and_every_view(tmp_path, monkeypatch):
-    """스냅샷이 기본 DB 자리와 **뷰 전수**(설명 포함)를 낸다 — 웹이 목록을 복제하지 않게."""
-    from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
+def test_pclm_snapshot_block_carries_default_db_doc_views_and_every_title(
+    tmp_path, monkeypatch,
+):
+    """스냅샷이 기본 DB 자리·**고르게 할 뷰**·**뷰 전수 제목표**를 낸다.
+
+    두 목록은 다른 일을 한다: ``views`` 는 새로 고를 수 있는 것(품목 제외 3건)이고,
+    ``titles`` 는 이미 선 마운트를 제목으로 그리기 위한 전수 매핑(4건)이다. 후자를 같이
+    좁히면 CLI 로 등록한 품목 마운트가 카드에서 내부 이름으로 새 나간다.
+    """
+    from hwpxfiller.domain.pclm_views import (
+        PCLM_DOC_VIEWS,
+        PCLM_VIEW_DESCS,
+        PCLM_VIEW_TITLES,
+        PCLM_VIEWS,
+    )
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
@@ -844,8 +856,14 @@ def test_pclm_snapshot_block_carries_default_db_and_every_view(tmp_path, monkeyp
     assert block["default_db"] == str(
         tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
     )
-    assert [v["name"] for v in block["views"]] == list(PCLM_VIEWS)
-    assert all(v["label"] == PCLM_VIEW_LABELS[v["name"]] for v in block["views"])
+    assert [v["name"] for v in block["views"]] == list(PCLM_DOC_VIEWS)
+    assert "v_품목_v1" not in [v["name"] for v in block["views"]]
+    assert all(v["title"] == PCLM_VIEW_TITLES[v["name"]] for v in block["views"])
+    assert all(v["desc"] == PCLM_VIEW_DESCS[v["name"]] for v in block["views"])
+    # 종전 `label` 키는 폐기 — 표면이 「설명. 뜻」 한 줄을 다시 조립하지 않는다.
+    assert all("label" not in v for v in block["views"])
+    assert block["titles"] == {v: PCLM_VIEW_TITLES[v] for v in PCLM_VIEWS}
+    assert set(block["titles"]) == set(PCLM_VIEWS)
 
 
 def test_targeting_gate_rejects_a_broken_pclm_view_and_still_freezes_nara(tmp_path):

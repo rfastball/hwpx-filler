@@ -6485,6 +6485,8 @@ def test_remembered_descriptor_rejects_half_written_components(tmp_path):
 # 겨눔(슬롯 정체는 그대로 pool) · 작업 결속(durable, 종류가 갈래를 가른다) · 부팅 복원과
 # 재마운트(기억은 db+뷰 한 벌).
 _PCLM_VIEW = "v_통합_v1"
+# 라벨·통지가 지는 것은 **제목**이다 — 내부 이름은 성분(경로·시트·키)에만 산다.
+_PCLM_TITLE = "통합"
 
 
 def _pclm_db(
@@ -6556,10 +6558,12 @@ def test_mount_pclm_seats_every_session_component(tmp_path):
     assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
         db, _PCLM_VIEW, 0, "pclm",
     )
-    # 라벨은 뷰를 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으론 무엇이 섰는지 모른다.
-    assert ctrl.data_label == f"pclm.db · {_PCLM_VIEW}"
+    # 라벨은 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으론 무엇이 섰는지 모른다.
+    # 병기하는 것은 제목이다: 사람이 읽는 한 줄이라 내부 이름(v_…)이 새면 안 된다.
+    assert ctrl.data_label == f"pclm.db · {_PCLM_TITLE}"
     snap = ctrl.snapshot()
-    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_VIEW}"
+    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_TITLE}"
+    assert "v_" not in snap["data_source_label"]
     assert snap["record_count"] == 2 and snap["selected_count"] == 0
     assert snap["data_target"]["kind"] == "pclm"
     # 소스 일치 키는 파일 접두와 갈린다(결정 28) — 종류가 정체의 성분이다.
@@ -6596,7 +6600,7 @@ def test_selecting_a_pclm_bound_job_mounts_its_view_and_then_stands_still(tmp_pa
 
     assert ctrl.data_kind == "pclm" and ctrl.records[0]["bidNtceNm"] == "전산장비"
     assert ctrl.snapshot()["data_notice"]["text"] == (
-        f"이 작업에 연결된 데이터 'pclm.db · {_PCLM_VIEW}' 을(를) 불러왔습니다. "
+        f"이 작업에 연결된 데이터 'pclm.db · {_PCLM_TITLE}' 을(를) 불러왔습니다. "
         "항목 선택은 초기화됐습니다."
     )
     ctrl.dispatch("set_all", {})
@@ -6657,7 +6661,7 @@ def test_remount_reruns_the_pclm_branch_with_the_captured_reference(tmp_path):
 
     res = ctrl.dispatch("remount_data", {})
 
-    assert res == {"ok": True, "label": f"계약 목록: pclm.db · {_PCLM_VIEW}"}
+    assert res == {"ok": True, "label": f"계약 목록: pclm.db · {_PCLM_TITLE}"}
     assert ctrl.snapshot()["record_count"] == 3
 
 
@@ -6676,7 +6680,7 @@ def test_pclm_mount_is_remembered_and_restored_on_the_first_snapshot(tmp_path):
     snap = fresh.initial()
 
     assert snap["has_data"] is True and snap["record_count"] == 2
-    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_VIEW}"
+    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_TITLE}"
     assert snap["selected_count"] == 0 and snap["data_notice"] is None
     assert pushes == []  # 결과는 첫 스냅샷 자체가 나른다
 
