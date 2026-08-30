@@ -28,6 +28,7 @@ from hwpxfiller.application.slot_reconciliation import (
 from hwpxfiller.application.work_slot_configuration import (
     WorkSlotConfigurationDraft,
     apply_selections,
+    has_declared_selection,
 )
 from hwpxfiller.domain.preset import CorruptPresetEntry, SelectionPreset
 from hwpxfiller.domain.slot_selection import SlotSelection, SlotSelectionSet
@@ -87,7 +88,7 @@ def plan_preset_save(
     선택이 하나도 없으면(Configuration 부재 포함) :class:`PresetSaveRejected` —
     ``PRESET_EMPTY_SELECTION``. 이름 검증은 :class:`SelectionPreset` 생성이 진다.
     """
-    if config is None or len(config.selections.selections) == 0:
+    if not has_declared_selection(config):
         raise PresetSaveRejected(
             PRESET_EMPTY_SELECTION, "저장할 선택이 없습니다(선택 0건)."
         )
@@ -339,6 +340,28 @@ def list_selection_presets(
         corrupt=tuple(corrupt),
     )
 
+
+
+def preset_zone_actionable(
+    listing: PresetListing, *, savable_selection: bool
+) -> bool:
+    """「보관된 선택」 구획을 세울 것인가 — U4 13번 판정의 **단 한 곳**.
+
+    U4 13번의 「0건이면 숨김」을 목록 건수만으로 읽으면 12번과 같은 **스위치 트랩**이 된다:
+    프리셋을 처음 만드는 유일한 입구가 이 구획 안의 「현재 선택을 프리셋으로 저장」이라,
+    보관 0건이라고 구획째 지우면 프리셋을 영영 만들 수 없다(#932 B5 가 템플릿 존에서 거절한
+    바로 그 모양). 그래서 술어의 입력이 목록 건수 **하나가 아니다**.
+
+    세우는 갈래는 셋이고 전부 「지금 여기서 할 수 있는 것」이다.
+
+    - 보관된 항목이 있다 — 적용이라는 미이행 동사가 목록에 걸려 있다.
+    - 손상 항목이 있다 — 비활성 + 사유 병기가 이 구획의 몫이다(숨기면 사용자가 묻지 못한다).
+    - 지금 저장할 선택이 있다 — 저장 동사의 게이트(:func:`has_declared_selection`)와 **같은
+      술어**라 보이는 단추가 곧 이행되는 단추다.
+
+    셋 다 0 이면 이 구획에는 사용자가 지금 할 수 있는 일도, 확인할 사실도 없다.
+    """
+    return bool(listing.items) or bool(listing.corrupt) or savable_selection
 
 # ─── 삭제 ─────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)

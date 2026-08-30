@@ -66,6 +66,8 @@ function readPresetZone(full: unknown): PresetZone {
   if (z.supported !== true) return emptyPresetZone;
   return {
     supported: true,
+    // 노출 술어는 Python 이 낸다(U4 13번) — 목록 길이를 여기서 다시 세지 않는다.
+    actionable: z.actionable === true,
     items: Array.isArray(z.items) ? (z.items as PresetZone["items"]) : [],
     // 손상 항목을 목록에서 지우지 않는다 — 표면이 비활성 + 사유 병기로 재진술한다.
     corrupt: Array.isArray(z.corrupt) ? (z.corrupt as PresetZone["corrupt"]) : [],
@@ -509,6 +511,22 @@ export function JobContentSelection(props: {
     );
   }
 
+  // **노출 술어는 Python 이 낸다**(U4 13번). 고를 항목이 없으면 이 구획에는 사용자가 확인할
+  // 것도 할 것도 없다 — slot 없는 작업에서 「선택할 내용이 없습니다」 한 줄로 영영 서 있던
+  // 자리다. 여기서 `slots.length` 를 다시 세면 같은 상태를 두 곳이 판정하게 된다.
+  //
+  // 술어가 숨겨도 **시끄러운 재진술은 남는다**: 실패·stale 사유(`statusNode`·`backendErrorNode`)
+  // 와 직전 preset 왕복 결과는 웹이 수명을 소유하는 채널이라(#659), 술어만으로 지우면 사용자가
+  // 방금 겪은 거절이 화면에서 증발한다.
+  if (
+    projection.zone_actionable !== true
+    && statusNode === null
+    && backendErrorNode === null
+    && state.presetNotice === null
+  ) {
+    return null;
+  }
+
   const attention = blockingBySlot(state.view);
   const retained = projection.retained_selections ?? [];
   const retainedBySlot = new Map(
@@ -559,7 +577,10 @@ export function JobContentSelection(props: {
     // 운명은 위 `cs-retained-gone` 이 정보로 재진술한다.
     // 보관된 선택(S9-03 #829) — slot 목록 아래에 선다. 목록·손상은 snapshot 존이 낸 사실이고
     // 적용 결과의 수치는 command 응답 값 그대로다(웹 재계산 0).
-    state.presets.supported
+    // 보관된 선택 구획도 같은 규율이다(U4 13번): 보관·손상 항목이 있거나 **지금 저장할 선택이
+    // 있을 때** 선다. 저장 동사를 목록 건수로 지우면 프리셋을 처음 만들 입구가 사라진다 —
+    // #932 B5 가 템플릿 존에서 거절한 스위치 트랩이라 술어의 입력에 저장 게이트를 함께 넣었다.
+    state.presets.supported && (state.presets.actionable || state.presetNotice !== null)
       ? h(PresetSection as any, {
           presets: state.presets,
           notice: state.presetNotice,

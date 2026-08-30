@@ -42,6 +42,7 @@ from hwpxfiller.application.preset_command import (
     fit_preset_selections,
     list_selection_presets,
     plan_preset_save,
+    preset_zone_actionable,
 )
 from hwpxfiller.application.slot_command import (
     CHANGED,
@@ -66,6 +67,7 @@ from hwpxfiller.application.template_qualification import (
 from hwpxfiller.application.work_slot_configuration import (
     apply_selections,
     create_empty,
+    has_declared_selection,
 )
 from hwpxfiller.domain.preset import SelectionPreset
 from hwpxfiller.domain.slot_selection import (
@@ -592,6 +594,47 @@ def test_listing_without_a_structure_claims_no_compatible_item_but_keeps_corrupt
     listing = list_selection_presets(reg, None)
     assert listing.items == ()
     assert listing.corrupt_count == 1 and listing.corrupt[0].error
+
+
+# ── 「보관된 선택」 구획 노출 술어(U4 13번 · #932) ────────────────────────────────────────
+def test_preset_zone_stands_on_any_of_the_three_reasons(tmp_path: Path) -> None:
+    """세우는 갈래 셋 — 보관·손상·「지금 저장할 선택」. 셋 다 0 일 때만 서지 않는다."""
+    reg = _registry(tmp_path)
+    empty = list_selection_presets(reg, _pure_ctx())
+    assert preset_zone_actionable(empty, savable_selection=False) is False
+    # 저장 동사가 프리셋을 처음 만드는 유일한 입구다 — 목록 건수만으로 지우면 스위치 트랩(B5).
+    assert preset_zone_actionable(empty, savable_selection=True) is True
+
+    reg.add(_preset("표준", _sel(("s1", ("o1",)))))
+    listed = list_selection_presets(reg, _pure_ctx())
+    assert preset_zone_actionable(listed, savable_selection=False) is True
+
+    reg2 = _registry(tmp_path / "other")
+    reg2.directory.mkdir(parents=True, exist_ok=True)
+    reg2.slot_path("c" * 16).write_text(json.dumps({"schema_version": "x"}), encoding="utf-8")
+    corrupt_only = list_selection_presets(reg2, _pure_ctx())
+    # 손상만 남아도 선다: 비활성 + 사유 병기가 이 구획의 몫이라 숨기면 사용자가 묻지 못한다.
+    assert corrupt_only.items == () and corrupt_only.corrupt_count == 1
+    assert preset_zone_actionable(corrupt_only, savable_selection=False) is True
+
+
+@pytest.mark.parametrize(
+    "config,savable",
+    [(None, False), (_config(), False), (_config(("s1", ("o1",))), True)],
+)
+def test_zone_predicate_and_save_gate_never_disagree(config, savable) -> None:
+    """보이는 저장 단추 = 이행되는 저장이다 — 두 술어가 같은 함수를 물어야 성립한다.
+
+    갈리면 화면은 단추를 세우고 backend 는 그 저장을 ``PRESET_EMPTY_SELECTION`` 으로 거절하는
+    자리가 생긴다(#912 가 이름 붙인 「이행되지 않는 동사」).
+    """
+    assert has_declared_selection(config) is savable
+    if savable:
+        assert plan_preset_save(config, "표준", {}, NOW).name == "표준"
+    else:
+        with pytest.raises(PresetSaveRejected) as exc:
+            plan_preset_save(config, "표준", {}, NOW)
+        assert exc.value.code == PRESET_EMPTY_SELECTION
 
 
 def test_delete_restates_the_destroyed_name(tmp_path: Path) -> None:

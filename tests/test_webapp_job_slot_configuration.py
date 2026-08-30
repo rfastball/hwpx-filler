@@ -383,6 +383,36 @@ def test_unwired_workbench_observation_rejects_loudly(tmp_path: Path) -> None:
         ctrl.workbench_observation()
 
 
+# ── 「포함할 내용」 구획 노출 술어(U4 13번 · #932) ────────────────────────────────────────
+def test_snapshot_zone_hides_itself_when_there_is_nothing_to_choose(tmp_path: Path) -> None:
+    """slot 없는 작업에서 이 구획은 서지 않는다 — 「선택할 내용이 없습니다」가 상주하던 자리다.
+
+    술어는 projection 이 낸 값 하나이고(``zone_actionable``), 링2 는 그것을 실어 나르기만 한다.
+    """
+    ctrl, _ = _controller(tmp_path)  # slotless Work
+    projection = ctrl.snapshot()["slot_configuration"]["current_view"]["projection"]
+    assert not projection["slots"]  # asdict 는 tuple 을 보존한다(JSON 직렬화에서 배열이 된다)
+    assert projection["zone_actionable"] is False
+    assert projection["savable_selection"] is False
+    # 같은 상태에서 Preset 구획도 서지 않는다(보관 0 · 손상 0 · 저장할 선택 0).
+    assert ctrl.snapshot()["content_presets"]["actionable"] is False
+
+
+def test_choose_content_never_points_at_a_zone_that_is_not_standing(tmp_path: Path) -> None:
+    """``CHOOSE_CONTENT`` 가 설 때 그 복구 동사의 구획이 **반드시** 선다는 불변식.
+
+    이 blocker 의 복구 동사는 구획 안의 갈래 라디오(``.cs-option-input`` —
+    :mod:`~hwpxfiller.webapp.blocker_affordance`)다. 구획이 사라지는 변경이라 「없는 자리를
+    가리키는 지시」(#912 결함류)를 우리 손으로 만들지 않았음을 여기가 증언한다.
+    """
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+    obs = ctrl.workbench_observation()
+    assert isinstance(obs, DocumentCreationWorkbenchObservation)
+    assert "CHOOSE_CONTENT" in obs.blockers  # 필수 Slot 미선택 상태로 선다
+    projection = ctrl.snapshot()["slot_configuration"]["current_view"]["projection"]
+    assert projection["zone_actionable"] is True
+
+
 # ── blocker 어휘 계약(구조 회귀 감지) ─────────────────────────────────────────────────────
 def test_blocker_codes_include_choose_content_axis(tmp_path: Path) -> None:
     # SX-02 content 축이 소비하는 blocker 가 vocabulary 정본에 존재한다(드리프트 조기 감지).

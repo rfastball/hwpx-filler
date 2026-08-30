@@ -32,7 +32,10 @@ from hwpxfiller.application.slot_reconciliation import (
     SlotResolution,
 )
 from hwpxfiller.application.template_qualification import TemplateSlot
-from hwpxfiller.application.work_slot_configuration import WorkSlotConfigurationDraft
+from hwpxfiller.application.work_slot_configuration import (
+    WorkSlotConfigurationDraft,
+    has_declared_selection,
+)
 from hwpxfiller.domain.slot_selection import (
     CARDINALITY_VIOLATION,
     MISSING_REQUIRED_SELECTION,
@@ -195,7 +198,38 @@ class CurrentSlotConfigurationView:
     reconciliation_changes: ProjectionReconciliationChanges | None
     blocking_items: tuple[ProjectedChangeItem, ...]
     informational_changes: tuple[ProjectedChangeItem, ...]
+    #: 「포함할 내용」 구획을 세울 것인가(U4 13번) — 판정은 :func:`content_selection_zone_actionable`
+    #: 하나이고 링2 는 읽어 나르기만 한다. 링2 가 ``len(slots)`` 을 다시 세면 같은 상태를 두 곳이
+    #: 판정하게 되고, 그 둘 중 하나만 늙는다.
+    zone_actionable: bool = False
+    #: 지금 Preset 으로 저장할 선택이 있는가 — 저장 게이트와 **같은** :func:`has_declared_selection`.
+    savable_selection: bool = False
     retained_selections: tuple[ProjectedRetainedSelection, ...] = ()
+
+
+def content_selection_zone_actionable(
+    slots: "tuple[ProjectedSlot, ...]", configuration_status: str
+) -> bool:
+    """「포함할 내용」 구획을 세울 것인가 — U4 13번 판정의 **단 한 곳**.
+
+    사용자 확정(2026-08-30): **고를 항목이 있을 때만** 선다. slot 이 없는 작업에서 이 구획은
+    「이 문서 작업에는 선택할 내용이 없습니다.」한 줄로 영영 서 있었고, 그 줄은 사용자가 확인할
+    것도 할 것도 아니었다 — U3 §3(#876)이 세운 「확인할 것이 없으면 숨김이 기본」의 적용이다.
+
+    12번(#932 B5)의 스위치 트랩은 여기서 재현되지 않는다: 항목을 **만드는** 동사가 이 구획
+    안에 없기 때문이다. 구간을 세우는 것은 「변경사항 확인」(템플릿 존)이고, 그 존은 자기 술어로
+    따로 선다. 이 구획은 이미 있는 항목을 고르는 자리라 항목이 없으면 개시할 것도 없다.
+
+    ``configuration_status`` 를 함께 묻는 이유는 **지시가 겨누는 자리**를 술어가 지게 하기
+    위해서다. ``CHOOSE_CONTENT`` blocker 의 복구 동사가 이 구획 안의 라디오(``.cs-option-input``,
+    :mod:`~hwpxfiller.webapp.blocker_affordance`)라, 그 blocker 가 서는 두 상태에서 구획이 사라지면
+    **없는 자리를 가리키는 지시**가 된다(#912 가 이름 붙인 결함류). 오늘 그 두 상태는 slot ≥ 1
+    을 함의하므로 이 갈래는 결과를 바꾸지 않지만, 함의가 깨지는 날 조용히 사라지는 것이 하필
+    지시가 겨눈 자리다 — 그래서 결과가 아니라 **술어의 입력**으로 못박는다.
+    """
+    if configuration_status in (NEEDS_SELECTION, HAS_BROKEN_SELECTIONS):
+        return True
+    return len(slots) > 0
 
 
 def project_context_error(
@@ -219,6 +253,10 @@ def project_context_error(
         reconciliation_changes=None,
         blocking_items=(),
         informational_changes=(),
+        # context error 는 이 두 축을 주장하지 않는다 — 구획은 「실패 재진술 + 복구 동사」로
+        # 서고(그 갈래는 표면 소유), 저장할 선택도 구조 없이는 말할 수 없다.
+        zone_actionable=False,
+        savable_selection=False,
     )
 
 
@@ -341,9 +379,10 @@ def project_current_slot_configuration(
         ProjectedChangeItem(slot_id=d.slot_id, kind=SLOT_REMOVED) for d in detached
     )
 
+    status = _configuration_status(resolution)
     return CurrentSlotConfigurationView(
         view_status=CURRENT,
-        configuration_status=_configuration_status(resolution),
+        configuration_status=status,
         context_error=None,
         context_error_detail=None,
         configuration_present=configuration is not None,
@@ -354,6 +393,8 @@ def project_current_slot_configuration(
         reconciliation_changes=_project_delta(source_delta),
         blocking_items=tuple(blocking_items),
         informational_changes=informational,
+        zone_actionable=content_selection_zone_actionable(slots, status),
+        savable_selection=has_declared_selection(configuration),
         retained_selections=project_retained_selections(context, resolution, retained),
     )
 

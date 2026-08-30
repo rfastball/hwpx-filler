@@ -217,6 +217,7 @@ from ..application.generation_delivery import (
     build_delivery_binding_basis,
     resolve_current_generation_delivery,
 )
+from ..application.preset_command import preset_zone_actionable
 from ..application.preview_requirement import (
     CurrentPreviewPreparationError,
     PreviewNotRequired,
@@ -1937,8 +1938,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 언어·context·store·command·projection·Preset)에는 어디에도 매체가 없고, 존의
             # 자격 판정은 그 함수들이 `SUPPORTED_MEDIA` 하나로 진다. 그러니 여기는 hwpx
             # 분기와 **같은 두 줄**을 앉히기만 한다(가지마다 다른 조립을 만들지 않는다).
-            base["slot_configuration"] = self._slot_configuration_zone(tmissing)
-            base["content_presets"] = self._content_presets_zone(tmissing)
+            slot_zone = self._slot_configuration_zone(tmissing)
+            base["slot_configuration"] = slot_zone
+            base["content_presets"] = self._content_presets_zone(
+                tmissing, savable_selection=self._savable_selection(slot_zone)
+            )
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
@@ -2107,10 +2111,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # S4 Working Slot Configuration 존(SX-02 #725) — projection·token·상태 전부 Product 소유
         # (링2 재조립 금지). fresh current view 를 매 스냅샷 조회한다: open 은 무변이라 늘 fresh
         # view+새 token 을 낸다(F1/F2 fence). preserved/broken/detached 분리는 projection 이 이미 진다.
-        base["slot_configuration"] = self._slot_configuration_zone(tmissing)
+        slot_zone = self._slot_configuration_zone(tmissing)
+        base["slot_configuration"] = slot_zone
         # Selection Preset 목록 존(S9-03 #829) — 같은 지원 조건에서 함께 선다. 손상 항목은
-        # 숨기지 않고 함께 실려 표면이 비활성 + 사유 병기로 재진술한다.
-        base["content_presets"] = self._content_presets_zone(tmissing)
+        # 숨기지 않고 함께 실려 표면이 비활성 + 사유 병기로 재진술한다. 노출 술어(U4 13번)는
+        # 「지금 저장할 선택이 있는가」를 함께 묻는다 — 그 사실은 방금 세운 slot 존이 든다.
+        base["content_presets"] = self._content_presets_zone(
+            tmissing, savable_selection=self._savable_selection(slot_zone)
+        )
         # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
@@ -4624,9 +4632,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     @staticmethod
     def _content_presets_blank() -> dict:
         """미지원 content_presets 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
-        return {"supported": False, "items": [], "corrupt": []}
+        return {"supported": False, "items": [], "corrupt": [], "actionable": False}
 
-    def _content_presets_zone(self, tmissing: bool) -> dict:
+    @staticmethod
+    def _savable_selection(slot_zone: dict) -> bool:
+        """방금 조립한 slot 존에서 「지금 저장할 선택이 있는가」를 집는다(판정 0 — 운반).
+
+        값을 낸 것은 projection(:func:`~hwpxfiller.application.work_slot_configuration.has_declared_selection`)
+        이고 여기는 같은 스냅샷의 두 존이 **같은 한 순간**을 말하도록 그 값을 옆으로 넘길 뿐이다.
+        Preset 존이 view 를 따로 한 번 더 조회하면 두 존이 서로 다른 순간을 들 수 있다.
+        """
+        view = slot_zone.get("current_view") or {}
+        projection = view.get("projection") or {}
+        return bool(projection.get("savable_selection"))
+
+    def _content_presets_zone(self, tmissing: bool, *, savable_selection: bool) -> dict:
         """스냅샷의 ``content_presets`` 존 — 홈 레지스트리 목록 + 손상 항목 병기.
 
         지원 조건은 ``slot_configuration`` 존과 **동형**이다(미주입·미선택·미지원 매체·템플릿
@@ -4667,6 +4687,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 for entry in listing.corrupt
             ],
             "corrupt_code": listing.corrupt_code,
+            # 노출 술어는 Python 이 낸다(U4 13번) — 링2 는 목록 길이를 다시 세지 않는다.
+            "actionable": preset_zone_actionable(
+                listing, savable_selection=savable_selection
+            ),
         }
 
     def _do_save_selection_preset(self, p: dict) -> dict:

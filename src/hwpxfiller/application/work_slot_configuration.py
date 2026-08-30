@@ -183,6 +183,20 @@ def apply_selections(
     )
 
 
+def has_declared_selection(config: "WorkSlotConfigurationDraft | None") -> bool:
+    """이 Draft 에 **선언된 선택**이 하나라도 있는가 — 「보관할 것이 있는가」의 단일 출처.
+
+    Preset 저장 게이트(:func:`~hwpxfiller.application.preset_command.plan_preset_save` 의
+    ``PRESET_EMPTY_SELECTION``)와 「보관된 선택」 구획의 노출 술어(U4 13번)가 **같은 이 함수**를
+    묻는다. 둘이 갈리면 화면은 저장 단추를 세우고 backend 는 그 저장을 거절하는 자리가 생긴다 —
+    보이는 동사가 이행되지 않는 것이 이 저장소가 이름 붙인 결함류(#912)다.
+
+    Configuration 부재(아직 아무 것도 고르지 않은 Work)도 선택 0건이다 — 없는 초안과 빈 초안을
+    두 사실로 가르지 않는다(저장 게이트가 이미 둘을 같게 본다).
+    """
+    return config is not None and len(config.selections.selections) > 0
+
+
 @dataclass(frozen=True)
 class WorkSlotConfigurationAggregate:
     """한 Document Work 의 모든 Application-bound Configuration 을 담는 per-Work 컨테이너.

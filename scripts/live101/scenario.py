@@ -1282,17 +1282,28 @@ def run_sx(ctx: ScenarioContext) -> dict:
     _select_work(s, "발주요청 기안")
     s.release_dispatch()
     # 재는 것은 **A 의 응답이 B 에 착지하지 않는다**이고, 표지는 「B 의 구획이 비었다」였다.
-    # 그 표지는 B 가 **미준비**라 구획이 통째로 안 서던 시절의 것이다 — 준비를 착석이 지게
-    # 된 뒤로(#932 B5) B 의 구획은 서고 「선택할 내용이 없습니다」를 정직하게 말한다. 그래서
-    # 표지를 사실로 옮긴다: B 에는 **A 의 갈래가 없다**(A 가 보류시킨 것이 `cs-opt-0-1` 이다).
-    # 빈 칸을 계속 요구하면 「구획이 진실을 말하기 시작한 것」이 빨강이 된다.
+    # 그 표지는 B 가 **미준비**라 구획이 통째로 안 서던 시절의 것이고, 준비를 착석이 지게 된
+    # 뒤로(#932 B5) 한동안 구획이 서서 「선택할 내용이 없습니다」를 말했다. U4 13번 뒤로는
+    # 다시 서지 않는다 — 다만 사유가 다르다: 미준비라서가 아니라 **고를 항목이 없어서**다.
+    # 그래서 두 사실을 함께 잰다: B 에 A 의 갈래가 없고(A 가 보류시킨 것이 `cs-opt-0-1` 이다),
+    # 조치 0건인 B 의 구획은 자리째 서지 않는다.
     s.wait(
         "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
         " && !document.getElementById('cs-opt-0-1')"
-        " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 0",
+        " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 0"
+        " && document.getElementById('jobContentSelectionZone').children.length === 0"
+        " && !document.querySelector('#jobContentSelectionZone .cs-presets')",
         "Work B latest snapshot wins",
         timeout=30.0,
         requires=["#jobActionName", "#jobContentSelectionZone"],
+    )
+    # 숨김이 자리만 남기지 않는가 — 빈 `.zone` 은 안쪽 여백과 구분선을 그대로 들어 사용자에게는
+    # 「사라진 구획」이 아니라 「비어 있는 구획」으로 보인다(CSS `:empty` 접기의 실주행 증거).
+    _expect(
+        s.js(
+            "getComputedStyle(document.getElementById('jobContentSelectionZone')).display"
+        ) == "none",
+        "H7: 조치 0건 구획이 빈 상자로 남았습니다",
     )
     _select_work(s, "발주요청서")
 

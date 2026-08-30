@@ -255,7 +255,8 @@ def test_zone_unsupported_without_selected_job(tmp_path: Path) -> None:
     ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": ""})
     zone = _presets_zone(ctrl)
-    assert zone == {"supported": False, "items": [], "corrupt": []}
+    # U4 13번: 노출 술어도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
+    assert zone == {"supported": False, "items": [], "corrupt": [], "actionable": False}
 
 
 def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
@@ -267,6 +268,35 @@ def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         ctrl.dispatch("apply_selection_preset", {"configuration_token": "t", "preset_key": "k"})
     assert ctrl.snapshot()["content_presets"]["supported"] is False
+
+
+# ── 구획 노출 술어(U4 13번 · #932) ───────────────────────────────────────────────────────
+def test_zone_actionable_follows_the_stored_list_and_the_save_gate(tmp_path: Path) -> None:
+    """보관 0건이어도 **저장할 선택이 있으면** 구획이 선다 — 저장 동사가 유일한 입구다(B5).
+
+    술어는 Python 이 낸다: 링2·웹 어느 쪽도 목록 길이를 다시 세지 않는다.
+    """
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+    # 아직 아무것도 고르지 않았고 보관도 0건 → 이 구획에 지금 할 수 있는 일이 없다.
+    fresh = _presets_zone(ctrl)
+    assert fresh["supported"] is True and fresh["items"] == []
+    assert fresh["actionable"] is False
+
+    token = _token(ctrl)
+    _select(ctrl, token, _S_KEEP, _O_KEEP, "r1")
+    # 고르는 순간 저장할 것이 생긴다 — 같은 스냅샷에서 구획이 선다.
+    assert _presets_zone(ctrl)["actionable"] is True
+
+
+def test_zone_actionable_survives_on_the_stored_list_alone(tmp_path: Path) -> None:
+    """보관된 항목이 있으면 지금 고른 것이 없어도 선다 — 적용이라는 미이행 동사가 걸려 있다."""
+    ctrl, token, _tpl = _seated(tmp_path)
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "표준 구성",
+    })
+    zone = _presets_zone(ctrl)
+    assert [item["name"] for item in zone["items"]] == ["표준 구성"]
+    assert zone["actionable"] is True
 
 
 # ── 목록 필터: 현재 템플릿 구조 호환만 실린다(U3 §2 · #875) ─────────────────────────────
@@ -357,8 +387,10 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     if ctrl.vm is not None:
         ctrl.vm.job.authority_id = ""
 
+    # 대고 물을 구조가 없으면 보관 0 · 손상 0 이고, 저장할 선택도 없다 → 구획이 서지 않는다.
     assert _presets_zone(ctrl) == {
         "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
+        "actionable": False,
     }
     assert ctrl.registry.load(clone).authority_id == ""  # 렌더가 발급하지 않았다
 

@@ -19,6 +19,7 @@ from hwpxfiller.application.slot_configuration_projection import (
     NEEDS_SELECTION,
     NOT_APPLICABLE,
     SLOT_SELECTIONS_COMPLETE,
+    content_selection_zone_actionable,
     project_context_error,
     project_current_slot_configuration,
 )
@@ -32,7 +33,10 @@ from hwpxfiller.application.template_qualification import (
     TemplateSlot,
     TemplateStructure,
 )
-from hwpxfiller.application.work_slot_configuration import create_empty
+from hwpxfiller.application.work_slot_configuration import (
+    apply_selections,
+    create_empty,
+)
 from hwpxfiller.domain.slot_selection import (
     DEFAULT_SELECTION_SEMANTIC_REGISTRY,
     SelectionSemanticContractManifest,
@@ -254,6 +258,67 @@ def test_zero_slots_still_shows_detached_selection() -> None:
     assert view.configuration_status == NOT_APPLICABLE
     assert len(view.detached_selections) == 1
     assert view.summary is not None and view.summary.detached_selection_count == 1
+
+
+
+# ── 「포함할 내용」 구획 노출 술어(U4 13번 · #932) ────────────────────────────────────────
+# 사용자 확정 2026-08-30: 고를 항목이 있을 때만 선다. 12번(#932 B5)과 달리 스위치 트랩이
+# 없는 이유는 **항목을 만드는 동사가 이 구획 안에 없기** 때문이다(구간은 템플릿 존이 세운다).
+
+
+def test_zone_actionable_needs_items() -> None:
+    assert _project(_structure(), _sel()).zone_actionable is False
+    assert _project(
+        _structure(_slot("s", [TemplateOption("A")])), _sel(("s", ["A"]))
+    ).zone_actionable is True
+
+
+def test_zone_actionable_stands_wherever_the_choose_content_instruction_points() -> None:
+    """``CHOOSE_CONTENT`` 의 복구 동사가 이 구획 안 라디오라 그 두 상태는 술어의 입력이다.
+
+    오늘 두 상태는 slot ≥ 1 을 함의하지만, 함의가 깨지는 날 조용히 사라지는 것이 하필 지시가
+    겨눈 자리다 — 「없는 자리를 가리키는 지시」(#912)를 술어가 구조로 막는다.
+    """
+    for status in (NEEDS_SELECTION, HAS_BROKEN_SELECTIONS):
+        assert content_selection_zone_actionable((), status) is True
+    for status in (SLOT_SELECTIONS_COMPLETE, NOT_APPLICABLE):
+        assert content_selection_zone_actionable((), status) is False
+
+
+def test_zone_actionable_is_false_when_only_a_vanished_selection_remains() -> None:
+    """항목 0건이면 사라진 이전 선택만 남아도 구획은 서지 않는다(사용자 확정 2026-08-30).
+
+    이 단언은 **확정의 귀결을 명시로 못박는 자리**다: detached/retained 축은 그대로 실려 나가고
+    (아래 `test_zero_slots_still_shows_detached_selection`), 그것을 그리던 표면만 서지 않는다.
+    되살릴 때 술어에 갈래를 더하면 되고, 조용히 갈린 것이 아님을 여기가 증언한다.
+    """
+    view = _project(_structure(), _sel(("Z", ["C"])))
+    assert view.zone_actionable is False
+    assert len(view.detached_selections) == 1
+
+
+def test_savable_selection_is_the_save_gate_itself() -> None:
+    """「저장할 선택이 있는가」는 Preset 저장 게이트와 **같은 술어**다(보이는 단추 = 이행되는 단추)."""
+    structure = _structure(_slot("s", [TemplateOption("A")]))
+    resolution = resolve_slot_configuration(_sel(("s", ["A"])), structure, V1)
+
+    empty_draft = create_empty("w1", "A1", "2026-08-30T00:00:00")
+    view = project_current_slot_configuration(_ctx(structure), empty_draft, resolution)
+    assert view.savable_selection is False
+    # Configuration 부재도 같은 사실이다 — 없는 초안과 빈 초안을 두 사실로 가르지 않는다.
+    assert project_current_slot_configuration(
+        _ctx(structure), None, resolution
+    ).savable_selection is False
+
+    chosen = apply_selections(empty_draft, _sel(("s", ["A"])), "2026-08-30T00:01:00")
+    assert project_current_slot_configuration(
+        _ctx(structure), chosen, resolution
+    ).savable_selection is True
+
+
+def test_context_error_claims_neither_axis() -> None:
+    view = project_context_error("TEMPLATE_INITIALIZATION_REQUIRED")
+    assert view.zone_actionable is False and view.savable_selection is False
 
 
 # ── summary counts / blocking_items ───────────────────────────────────────────
