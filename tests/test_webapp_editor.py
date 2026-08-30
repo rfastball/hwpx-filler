@@ -1198,6 +1198,49 @@ def test_saved_job_carries_the_data_binding(tmp_path):
     assert job.data_header_row == 0
 
 
+def test_saved_job_carries_the_session_data_kind(tmp_path):
+    """결속의 **종류**도 저장이 다시 짓는 성분이다 — 세션 값이 그대로 durable 로 간다.
+
+    엑셀/CSV 마운트의 종류는 ``""`` 라 기본 동선에서는 눈에 띄지 않는다. 그래서 세션 값을
+    직접 세워 **싣는 자리가 있는지**를 못박는다: 저장이 종류를 흘리면 다른 종류의 결속이
+    디스크에서 엑셀로 되읽혀 어느 어댑터로 읽을지가 조용히 갈린다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "종류없는작업")["ok"] is True
+    registry = JobRegistry(tmp_path / "jobs")
+    assert registry.load("종류없는작업").data_kind == ""    # 파일 마운트 = 엑셀/CSV
+
+    ctrl2, _ = _controller(tmp_path)
+    ctrl2.load_template_path(str(TPL_COMPILED))
+    _mount_data(ctrl2)
+    ctrl2.data_kind = "pclm"                               # 마운트 뒤 종류만 갈아 끼운다
+    ctrl2.dispatch("goto_section", {"section": "binding"})
+    ctrl2.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl2.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl2.dispatch("confirm_all", {})
+    ctrl2.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl2.dispatch("set_name", {"name": "종류있는작업"})
+    assert ctrl2.dispatch("save", {})["ok"] is True
+    assert registry.load("종류있는작업").data_kind == "pclm"
+
+
+def test_whole_session_discard_compares_all_four_binding_components(tmp_path):
+    """버리기의 결속 비교는 **네 성분**이다 — 종류만 갈려도 「되돌렸다」가 참이어야 한다.
+
+    경로·시트·헤더 행만 보면 종류가 갈린 세션은 「아무것도 안 바뀌었다」로 읽혀 문안이
+    침묵하고, 화면에는 저장본과 다른 종류의 데이터가 서 있던 사실이 아무 데도 안 남는다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "종류버리기")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("종류버리기")
+    assert ctrl.data_kind == ""
+    ctrl.data_kind = "pclm"                       # 경로·시트·헤더는 그대로, 종류만 다르다
+    ctrl.dispatch("discard_patch", {})            # section 없음 = 세션 전체
+    assert ctrl.data_kind == ""                   # 저장본의 종류로 되돌아왔고
+    assert "연결된 것으로 되돌렸습니다" in ctrl.notice_text   # 그 사실을 재진술한다
+
+
 def test_save_landing_keeps_the_session_data(tmp_path):
     """저장 착지가 데이터를 내려놓지 않는다(#932 U4-C S2-1).
 
@@ -2739,3 +2782,178 @@ def test_ordinary_managed_mapping_save_runs_binding_sync(tmp_path) -> None:
 
     assert result["ok"] is True
     assert calls == [name]
+
+
+# ------------------------------- 계약 목록(pclm) 결속(#937)
+#
+# 편집기가 계약 목록을 **고르고 · 저장하고 · 다시 여는** 한 바퀴. 세 자리가 같은 성분 한
+# 벌(db=경로 · 뷰=시트 · 0 · pclm)을 돌려야 저장본이 어느 어댑터로 읽힐지가 추측이 아니다.
+_PCLM_VIEW = "v_통합_v1"
+
+
+def _pclm_db(tmp_path: Path, *, name: str = "pclm.db", rows=None) -> str:
+    """pclm 이 내는 모양을 흉내 낸 SQLite — 표 하나 위에 계약면 뷰를 얹는다."""
+    import sqlite3
+
+    db = tmp_path / name
+    connection = sqlite3.connect(db)
+    connection.execute('CREATE TABLE 계약 ("계약건명" TEXT, "계약금액" TEXT);')
+    connection.executemany(
+        "INSERT INTO 계약 VALUES (?, ?);",
+        rows if rows is not None else [("잔류항생제분석기", "170,309,180")],
+    )
+    connection.execute(f'CREATE VIEW "{_PCLM_VIEW}" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(db)
+
+
+def _pool_editor(tmp_path: Path):
+    """풀 seam 을 주입한 편집기 — 「고정한 데이터에서 고르기」가 서는 조립."""
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    pushes: list = []
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        clock=_clock,
+        pool_registry=pool,
+        template_library=TemplateManagerViewModel(
+            paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS,
+        ),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+    )
+    return ctrl, pool
+
+
+def test_pool_option_block_admits_pclm_and_speaks_its_own_broken_line(tmp_path):
+    """계약 목록 행은 **쓸 수 있다**. 끊김 문안은 없는 동사를 지시하지 않는다.
+
+    엑셀 끊김은 「다시 연결」로 보내지만 계약 목록 행에는 그 동사가 없다 — 같은 문장을
+    돌려쓰면 사람을 있지도 않은 버튼으로 보낸다. 사실(참조가 끊겼다)은 한 문장으로 같다.
+    """
+    from hwpxfiller.application.dataset_pool import DatasetPoolRow
+    from hwpxfiller.webapp.screen_editor import pool_option_block
+
+    db = _pclm_db(tmp_path)
+    live = DatasetPoolRow.from_item(
+        "k1", DatasetReference(name="계약", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    assert pool_option_block(live) == ""
+
+    gone = DatasetPoolRow.from_item(
+        "k2",
+        DatasetReference(
+            name="계약", kind="pclm",
+            opts={"db": str(tmp_path / "없다.db"), "view": _PCLM_VIEW},
+        ),
+    )
+    reason = pool_option_block(gone)
+    assert reason.startswith("참조가 끊겼습니다.") and "다시 연결" not in reason
+    assert "계약 목록 DB" in reason
+
+    frozen = DatasetPoolRow.from_item(
+        "k3", DatasetReference(name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}),
+    )
+    assert "작업 데이터로 연결할 수 없습니다" in pool_option_block(frozen)
+
+
+def test_use_pool_data_mounts_a_pclm_view_and_the_save_carries_the_binding(tmp_path):
+    """고르기 → 마운트 → 저장 한 바퀴 — 저장본이 db·뷰·0·pclm 을 그대로 든다."""
+    ctrl, pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = pool.add(
+        DatasetReference(name="계약목록", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+
+    assert ctrl.dispatch("use_pool_data", {"key": key}) == {"ok": True, "label": "계약목록"}
+
+    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
+        db, _PCLM_VIEW, 0, "pclm",
+    )
+    assert ctrl.source_fields == ["계약건명", "계약금액"]  # 컬럼이 곧 어휘(엑셀 헤더 동형)
+
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "계약작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    job = JobRegistry(tmp_path / "jobs").load("계약작업")
+    assert (job.data_path, job.data_sheet, job.data_header_row, job.data_kind) == (
+        db, _PCLM_VIEW, 0, "pclm",
+    )
+
+
+def test_reopening_a_pclm_bound_job_restores_the_view(tmp_path):
+    """저장본을 다시 열면 결속이 **데이터를 먼저** 세운다 — 종류가 해석기를 가른다."""
+    ctrl, pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = pool.add(
+        DatasetReference(name="계약목록", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "계약작업"})
+    ctrl.dispatch("save", {})
+
+    fresh, _ = _pool_editor(tmp_path)
+    fresh.load_job("계약작업")
+
+    assert fresh.data_kind == "pclm" and fresh.data_sheet == _PCLM_VIEW
+    assert fresh.source_fields == ["계약건명", "계약금액"]
+    assert fresh.records[0]["계약건명"] == "잔류항생제분석기"
+
+
+def test_load_source_ref_still_refuses_a_kind_it_cannot_read(tmp_path):
+    """이름 없는 종류는 그대로 시끄럽게 거절한다 — 파일 갈래로 흘려보내지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+
+    with pytest.raises(ValueError, match="복원할 수 없습니다"):
+        ctrl._load_source_ref({"path": "C:/d/x.bin", "sheet": "", "kind": "미래소스"})
+
+
+def test_whole_session_discard_returns_to_the_saved_pclm_binding(tmp_path):
+    """세션 전체 버리기는 저장본의 **계약 목록 결속**으로 되돌아간다(빈 값이 아니다)."""
+    ctrl, pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = pool.add(
+        DatasetReference(name="계약목록", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "계약작업"})
+    ctrl.dispatch("save", {})
+    ctrl.load_job("계약작업")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 엑셀로 갈아탄 뒤
+
+    ctrl.dispatch("discard_patch", {})  # section 없음 = 세션 전체
+
+    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_kind) == (db, _PCLM_VIEW, "pclm")
+    assert "연결된 것으로 되돌렸습니다" in ctrl.notice_text
+
+
+def test_new_work_handoff_carries_the_pclm_kind_across_the_two_screens(tmp_path):
+    """「이 데이터로 새 작업」의 참조는 종류를 관통한다 — 받는 쪽이 경로로 되추측하지 않는다."""
+    db = _pclm_db(tmp_path)
+
+    fresh, _ = _pool_editor(tmp_path)
+    fresh.new_draft_with_data(
+        {"path": db, "sheet": _PCLM_VIEW, "header_row": 0, "kind": "pclm"},
+        entry_reason="document_browser_new_work",
+    )
+
+    assert fresh.data_kind == "pclm" and fresh.data_path == db
+    assert fresh.source_fields == ["계약건명", "계약금액"]

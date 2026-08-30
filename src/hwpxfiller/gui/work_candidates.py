@@ -77,7 +77,8 @@ def compatibility_for(job: "Job", fields: "list[str]") -> WorkCompatibility:
 
 
 def bound_jobs(
-    jobs: "list[Job]", path: str, sheet: str = "", header_row: int = 0
+    jobs: "list[Job]", path: str, sheet: str = "", header_row: int = 0,
+    *, kind: str = "",
 ) -> "list[Job]":
     """이 마운트에 **결속된** 작업만 — 후보 축의 1차 관문(U4 §2.4 · #932 U4-C).
 
@@ -94,10 +95,15 @@ def bound_jobs(
     입력 순서를 보존한다(:func:`candidate_rows` 와 같은 규율 — 정렬은 순위가 진다).
     ``path`` 가 비면 결속이 성립할 수 없으므로 빈 목록이다: 파일로 가리킬 수 없는
     마운트(조립 파이프라인)는 어떤 작업의 결속 대상도 아니다.
+
+    ``kind`` 는 마운트의 **종류**(""=엑셀/CSV)를 그대로 술어에 관통시킨다 — 여기서 종류를
+    떨어뜨리면 다른 종류의 결속이 같은 경로 하나로 후보에 섞인다.
     """
     if not path:
         return []
-    return [j for j in jobs if data_binding_matches(j, path, sheet, header_row)]
+    return [
+        j for j in jobs if data_binding_matches(j, path, sheet, header_row, kind=kind)
+    ]
 
 
 def candidate_rows(

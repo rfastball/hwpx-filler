@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import zipfile
 from pathlib import Path
 
@@ -13,6 +14,7 @@ import pytest
 from openpyxl import Workbook
 
 from hwpxfiller.cli import main
+from hwpxfiller.data.pclm import PCLM_VIEWS
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -396,6 +398,98 @@ def test_nara_without_profile_warns(tmp_path, monkeypatch, capsys):
     # 프로파일 없이도 실행은 되지만(영문키라 대부분 빈칸) 경고를 낸다.
     assert rc == 0
     assert "--profile 없이는" in capsys.readouterr().err
+
+
+# ------------------------------------------------ 계약 목록 소스(--source pclm)
+PCLM_ROW = ["R26TA0215950700", "육군 잔류항생제분석기 조달", "일반경쟁",
+            "170,309,180", "2026-08-01 10:00"]
+
+
+def _pclm_db(path: Path, *, view: str = "v_통합_v1", rows=None) -> str:
+    """pclm 이 내는 모양 — 표 하나 위에 계약면 뷰 하나(컬럼이 곧 템플릿 요구 필드)."""
+    rows = [PCLM_ROW] if rows is None else rows
+    connection = sqlite3.connect(path)
+    columns = ", ".join(f'"{name}" TEXT' for name in FIELDS)
+    placeholders = ", ".join("?" for _ in FIELDS)
+    connection.execute(f"CREATE TABLE 계약 ({columns});")
+    connection.executemany(f"INSERT INTO 계약 VALUES ({placeholders});", rows)
+    connection.execute(f'CREATE VIEW "{view}" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(path)
+
+
+def test_pclm_requires_explicit_view_with_view_listing(tmp_path, capsys):
+    """--view 미지정은 loud 실패 — 뷰마다 한 줄의 뜻이 달라 기본을 추측하지 않는다."""
+    db = _pclm_db(tmp_path / "pclm.db")
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as caught:
+        main(["--template", TEMPLATE, "--source", "pclm", "--db", db, "--out", str(out)])
+    assert caught.value.code == 2
+    err = capsys.readouterr().err
+    for view in PCLM_VIEWS:
+        assert view in err          # 무엇을 고를 수 있는지 그 자리에서 나열
+    assert not out.exists()         # 조용한 생성 없음
+
+
+def test_pclm_rejects_view_outside_the_contract(tmp_path, capsys):
+    """계약면 넷 밖의 이름은 소스가 거절하고 CLI 가 같은 목록으로 번역한다."""
+    db = _pclm_db(tmp_path / "pclm.db")
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as caught:
+        main(["--template", TEMPLATE, "--source", "pclm", "--db", db,
+              "--view", "v_없음", "--out", str(out)])
+    assert caught.value.code == 2
+    err = capsys.readouterr().err
+    assert "v_없음" in err
+    for view in PCLM_VIEWS:
+        assert view in err
+    assert not out.exists()
+
+
+def test_pclm_fills_documents_from_a_view(tmp_path, capsys):
+    """계약면 뷰 한 줄이 문서 한 건 — 엑셀 경로와 같은 생성 척추를 탄다."""
+    db = _pclm_db(tmp_path / "pclm.db")
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "pclm", "--db", db,
+               "--view", "v_통합_v1", "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 0
+    assert _outputs(out) == ["공고-R26TA0215950700.hwpx"]
+    err = capsys.readouterr().err
+    assert "[계약 목록]" in err
+    assert db in err and "v_통합_v1" in err and "1건" in err  # 어디서 몇 건인지 재진술
+
+
+def test_pclm_default_db_is_resolved_and_said(tmp_path, capsys, monkeypatch):
+    """--db 생략은 기본 자리로 가되 그 실경로를 말한다 — 어느 DB 를 읽었는지 조용하지 않다."""
+    local = tmp_path / "Local"
+    (local / "Pclm").mkdir(parents=True)
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    # 기본 자리 해석은 이제 %APPDATA% 의 쪽지(config.json)도 본다 — 개발 기기의 실제
+    # 쪽지가 새어들면 이 테스트가 다른 DB 를 읽는다(홈 격리와 같은 근거).
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    db = _pclm_db(local / "Pclm" / "pclm.db")
+    out = tmp_path / "out"
+
+    rc = main(["--template", TEMPLATE, "--source", "pclm", "--view", "v_통합_v1",
+               "--out", str(out), "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 0
+    assert db in capsys.readouterr().err
+
+
+def test_pclm_ledger_source_is_a_pointer(tmp_path):
+    """원장 표기는 가리키는 곳만 — 경로와 뷰뿐이고 값도 쿼리도 박제하지 않는다."""
+    db = _pclm_db(tmp_path / "pclm.db", view="v_품목_v1")
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "pclm", "--db", db,
+               "--view", "v_품목_v1", "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}", "--ledger"])
+    assert rc == 0
+    (sidecar,) = list(out.glob("fill-ledger-*.json"))
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["source"] == f"sqlite:{db}#v_품목_v1"
+    assert "R26TA0215950700" not in payload["source"]
 
 
 # ------------------------------------------------ 최상위 오류 번역 경계(RC-16)

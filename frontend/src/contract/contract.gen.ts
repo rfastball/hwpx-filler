@@ -210,6 +210,7 @@ export const SCREEN_ACTIONS = {
     activate: { required: ["key"], optional: [] },
     delete: { required: ["key"], optional: ["basis", "confirm"] },
     register_excel: { required: ["name", "path"], optional: ["basis", "confirm", "note", "sheet"] },
+    register_pclm: { required: ["name", "view"], optional: ["basis", "confirm", "db", "note"] },
     relink: { required: ["key", "path"], optional: ["basis", "confirm", "name", "note", "sheet"] },
     resolve_duplicate: { required: ["keep"], optional: ["basis", "confirm"] },
   },

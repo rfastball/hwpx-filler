@@ -281,6 +281,11 @@ class Job:
     #: 헤더 행(1-based, 0=어댑터 기본). 참조를 경로 하나로 줄이면 **다른 헤더**에 앵커가
     #: 걸리므로 세 값이 한 벌로 다닌다(#349 리뷰 2R 과 같은 규율).
     data_header_row: int = 0
+    #: 결속의 **종류**. ``""`` = 엑셀/CSV(구 저장본 포함 — 부재는 곧 이 값이다),
+    #: ``"pclm"`` = 계약 목록(그때 ``data_path`` = db 경로, ``data_sheet`` = 뷰,
+    #: ``data_header_row`` = 0). 위 세 성분과 **같은 한 벌**이라 따로 다니지 않는다:
+    #: 종류를 흘리면 같은 경로 문자열이 두 뜻을 갖고, 어느 어댑터로 읽을지가 추측이 된다.
+    data_kind: str = ""
     # 마지막 **완주** 런이 쓴 규칙의 대상별 지문(재작성 F5, 지도 §10.12 판정 B).
     # ``{}`` = 아직 완주한 적 없음 = 새 작업이라 검토 요구가 선다(§13-3).
     # 왜 영속인가: §13-2("정상 반복 실행에서 미리보기는 선택")가 **앱 재시작을 넘어**
@@ -395,13 +400,15 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
 RULE_AXES = ("source", "type", "const", "blank", "fmt")
 
 
-def data_binding_of(job: "Job") -> "tuple[str, str, int]":
-    """작업의 데이터 결속 한 벌 — ``(path, sheet, header_row)``. 미결속이면 ``("", "", 0)``.
+def data_binding_of(job: "Job") -> "tuple[str, str, int, str]":
+    """작업의 데이터 결속 한 벌 — ``(path, sheet, header_row, kind)``. 미결속 = ``("", "", 0, "")``.
 
-    세 값을 따로 읽는 자리를 만들지 않으려고 한 함수로 낸다: 참조를 경로 하나로 줄이면
-    마법사·마운트가 **다른 헤더**에 앵커를 건다(#349 리뷰 2R).
+    네 값을 따로 읽는 자리를 만들지 않으려고 한 함수로 낸다: 참조를 경로 하나로 줄이면
+    마법사·마운트가 **다른 헤더**에 앵커를 건다(#349 리뷰 2R). ``kind`` 가 꼬리에 붙는
+    이유도 같다 — 같은 경로가 엑셀일 수도 계약 목록 db 일 수도 있어서 종류를 흘리면
+    어느 어댑터로 읽을지가 추측이 된다.
     """
-    return (job.data_path, job.data_sheet, job.data_header_row)
+    return (job.data_path, job.data_sheet, job.data_header_row, job.data_kind)
 
 
 def has_data_binding(job: "Job") -> bool:
@@ -432,19 +439,27 @@ def data_binding_label(job: "Job") -> str:
 
 
 def data_binding_matches(
-    job: "Job", path: str, sheet: str = "", header_row: int = 0
+    job: "Job", path: str, sheet: str = "", header_row: int = 0, *, kind: str = ""
 ) -> bool:
     """이 작업의 결속이 **지금 마운트된 데이터**를 가리키는가(후보 역인덱스의 단일 술어).
 
+    ``kind`` 가 **먼저** 갈린다(keyword-only — 위치 인자로 흘러들어 헤더 행 자리에 앉는
+    사고를 막는다): 종류가 다르면 같은 경로 문자열이라도 다른 데이터다. 종류를 안 보면
+    계약 목록 db 를 가리키는 결속이 같은 경로의 엑셀 마운트에 조용히 맞는다.
+
     경로 비교는 :func:`~hwpxfiller.domain.dataset_reference.excel_identity` 를 재사용한다 —
     U2 §5.3 판정 C 가 데이터 정체성을 ``normcase(abspath(path)) + sheet`` 로 이미 확정했고,
-    여기서 정규화를 새로 지으면 같은 파일을 두 자리가 다르게 부른다. 헤더 행까지 보는 것은
-    결속이 **한 벌**이기 때문이다(같은 시트라도 헤더 행이 다르면 다른 데이터, #349 리뷰 P1).
+    여기서 정규화를 새로 지으면 같은 파일을 두 자리가 다르게 부른다. **종류가 늘어도 그
+    정규화는 그대로다**: 계약 목록도 경로(db)+이름(뷰)의 같은 형상이라 새 정규화를 짓지
+    않는다. 헤더 행까지 보는 것은 결속이 **한 벌**이기 때문이다(같은 시트라도 헤더 행이
+    다르면 다른 데이터, #349 리뷰 P1).
 
     미결속 작업은 어떤 마운트에도 맞지 않는다 — 빈 결속을 「아무 데이터나 된다」로 읽으면
     「데이터 연결 필요」가 조용히 사라진다(confirm-or-alarm).
     """
     if not has_data_binding(job):
+        return False
+    if job.data_kind != kind:
         return False
     if excel_identity(job.data_path, job.data_sheet) != excel_identity(path, sheet):
         return False

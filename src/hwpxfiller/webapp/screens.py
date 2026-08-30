@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Iterable, Protocol
 
 from ..application.jobs import CrossMediaRelinkError, relink_template
@@ -24,6 +25,7 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS  # 계약 목록 뷰 백스톱
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
@@ -150,9 +152,14 @@ def collect_owned_paths(
         if getattr(j, "template_path", ""):
             paths.add(norm_path(j.template_path, base_dir))
     for it in pool_registry.list_items(corrupted=[]):     # 손상 흡수(raise 방지)
-        p = it.opts.get("path") if isinstance(it.opts, dict) else None
-        if isinstance(p, str) and p:
-            paths.add(norm_path(p, base_dir))
+        opts = it.opts if isinstance(it.opts, dict) else {}
+        # 참조가 가리키는 파일의 키는 종류마다 다르다(엑셀=path, 계약 목록=db) — 둘 다
+        # 사용자 소유 파일이라 로케이트·열기가 열려야 한다(빠뜨리면 「끊김」 배지만 있고
+        # 그 파일을 확인할 길이 없다).
+        for opt_key in ("path", "db"):
+            p = opts.get(opt_key)
+            if isinstance(p, str) and p:
+                paths.add(norm_path(p, base_dir))
     for p in session_paths:
         if p:
             paths.add(norm_path(p, base_dir))
@@ -185,7 +192,9 @@ def reference_missing(path: str) -> bool:
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetReference:
-    """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
+    """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트·미지 계약 목록 뷰는 시끄럽게 거절.
+
+    웹 소스 경계의 **단일 관문**이다.
 
     겨눔의 정체는 슬롯 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨). 거절 문구는 사람이
     아는 어휘(항목 이름)로 재진술한다.
@@ -213,6 +222,15 @@ def load_pool_item_checked(
         )
         if err:
             raise ValueError(err)
+    # 계약 목록 뷰 백스톱 — 등록 게이트(링1 `register_pclm`)가 뷰를 확정해도, 손편집한
+    # `.dataset.json` 이나 뷰 이름이 갈린 구판 항목은 그 게이트를 지나지 않았다. 뷰 이름은
+    # SELECT 에 그대로 박히므로 겨눔 시점의 이 관문이 다중 시트 게이트와 같은 자리를 진다.
+    if item.kind == "pclm" and item.opts.get("view") not in PCLM_VIEWS:
+        raise ValueError(
+            f"등록 데이터 '{item.name}' 의 계약 목록 뷰가 올바르지 않습니다.\n"
+            "쓸 수 있는 뷰:\n"
+            + "\n".join(f"  {v} — {PCLM_VIEW_LABELS[v]}" for v in PCLM_VIEWS)
+        )
     return item
 
 
@@ -246,22 +264,36 @@ def load_pool_into(
     return {"ok": True, "records": records, "item": item}
 
 
-def pool_reference_triple(item: "DatasetReference") -> "tuple[str, str, int]":
-    """풀 항목이 가리키는 데이터 참조 한 벌 — ``(path, sheet, header_row)``.
+def pool_reference_quad(item: "DatasetReference") -> "tuple[str, str, int, str]":
+    """풀 항목이 가리키는 데이터 참조 한 벌 — ``(path, sheet, header_row, kind)``.
 
-    파일 참조가 아닌 항목(나라·파이프라인)은 ``("", "", 0)`` 이다. ``kind`` 판정은
+    파일 참조가 아닌 항목(나라·파이프라인)은 ``("", "", 0, "")`` 이다. ``kind`` 판정은
     :meth:`~hwpxfiller.application.dataset_pool.DatasetPoolRow.locate_path` 와 동형이다
     (``opts["path"]`` 만 보면 두 사이트의 판정이 표류한다, PR #70 리뷰).
 
-    세 성분을 **같은 시점에** 한 벌로 뽑는다(#349 리뷰 2R): 나중에 슬롯에서 다시 읽으면
+    네 성분을 **같은 시점에** 한 벌로 뽑는다(#349 리뷰 2R): 나중에 슬롯에서 다시 읽으면
     그사이 「다시 연결」된 슬롯이 지금 화면에 없는 데이터를 답한다. 형이 깨진 값은 추측해
-    고치지 않고 어댑터 기본(0)으로 둔다.
+    고치지 않고 어댑터 기본(빈 값·0)으로 둔다.
+
+    **종류가 꼬리에 붙는 이유**(#937)는 :func:`~hwpxfiller.domain.job.data_binding_of` 와
+    같다 — 같은 경로 문자열이 엑셀일 수도 계약 목록 db 일 수도 있어서, 종류를 여기서
+    떨어뜨리면 받는 쪽이 경로 모양으로 어느 어댑터인지를 되추측한다. 계약 목록은 엑셀
+    참조와 **같은 자리를 다른 이름으로** 쓴다(db=파일, 뷰=시트)이고 헤더 행 축이 없으므로
+    0 이 곧 「해당 없음」이다.
 
     소비자는 둘이다 — 실행 표면의 겨눔(:meth:`PoolTargetingMixin._do_load_pool`)과 편집기의
     데이터 결속(:meth:`~hwpxfiller.webapp.screen_editor.EditorController._mount_pool_item`,
     #932 U4-C). 두 자리가 각자 뽑으면 한쪽만 헤더 행을 흘려도 아무도 모른다.
     """
     opts = item.opts if isinstance(item.opts, dict) else {}
+    if item.kind == "pclm":
+        raw_db, raw_view = opts.get("db"), opts.get("view")
+        return (
+            raw_db if isinstance(raw_db, str) else "",
+            raw_view if isinstance(raw_view, str) else "",
+            0,
+            "pclm",
+        )
     raw = opts.get("path")
     path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
     raw_sheet = opts.get("sheet")
@@ -272,11 +304,22 @@ def pool_reference_triple(item: "DatasetReference") -> "tuple[str, str, int]":
         if path and isinstance(raw_hdr, int) and not isinstance(raw_hdr, bool) and raw_hdr > 0
         else 0
     )
-    return (path, sheet, header_row)
+    return (path, sheet, header_row, "")
+
+
+def pclm_reference(db: str, view: str) -> SimpleNamespace:
+    """풀 슬롯 없는 계약 목록 마운트가 링1 리졸버에 넘길 **참조 형상** 한 자리.
+
+    작업의 durable 결속(:func:`~hwpxfiller.domain.job.data_binding_of`)과 부팅 기억은 슬롯이
+    아니라 db+뷰를 든다 — 그것으로 소스를 복원하려면 :func:`~hwpxfiller.data.factory.
+    source_from_pool_item` 이 읽는 덕타입(``.kind``/``.opts``)이 필요하다. 두 화면(작업 마운트·
+    편집기 복원)이 각자 조립하면 opts 키 이름이 갈리는 날 한쪽만 조용히 기본 db 를 읽는다.
+    """
+    return SimpleNamespace(kind="pclm", opts={"db": db, "view": view})
 
 
 def source_label(source: str, data_label: str) -> str:
-    """소스 종류 플래그(``'file'``|``'pool'``)+표시명 → 병기 라벨 합성(K8).
+    """소스 종류 플래그(``'file'``|``'pool'``|``'pclm'``)+표시명 → 병기 라벨 합성(K8).
 
     예전엔 ``data_source_label`` 이 ``data_label`` 과 쌍으로 컨트롤러 여러 지점에서
     저장·리셋되는 전(全)파생 중복 상태였다 — 저장하지 않고 스냅샷이 매번 여기서 합성한다
@@ -288,6 +331,8 @@ def source_label(source: str, data_label: str) -> str:
         return f"파일: {data_label}"
     if source == "pool":
         return f"등록 데이터: {data_label}"
+    if source == "pclm":
+        return f"계약 목록: {data_label}"
     raise ValueError(f"알 수 없는 데이터 소스 종류: {source!r}")
 
 
@@ -416,12 +461,14 @@ class PoolTargetingMixin:
     - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run=행 선택 초기화).
 
     요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``·
-    ``data_path``/``data_sheet``(:class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 소유).
+    ``data_path``/``data_sheet``/``data_header_row``/``data_kind``
+    (:class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 소유).
     """
 
     pool_registry: DatasetPoolRegistry
     data_label: str
-    data_source: str  # ''(미겨눔) | 'file' | 'pool' — 라벨은 source_label 이 합성(K8)
+    # ''(미겨눔) | 'file' | 'pool' | 'pclm' — 라벨은 source_label 이 합성(K8)
+    data_source: str
     # 겨눈 풀 슬롯 키(U2 §5.3) — 라벨은 개명 자유라 세션이 참조 정체를 따로 든다.
     data_pool_key: str = ""
 
@@ -458,8 +505,12 @@ class PoolTargetingMixin:
         self.data_pool_key = key
         # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은
         # 뜨지 않지만(이미 고정된 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야
-        # 한다. 포획은 한 벌짜리 단일 출처(:func:`pool_reference_triple`)를 지난다.
-        self.data_path, self.data_sheet, self.data_header_row = pool_reference_triple(item)
+        # 한다. 포획은 한 벌짜리 단일 출처(:func:`pool_reference_quad`)를 지난다 — 종류도
+        # 그 한 벌의 성분이다(#937): 슬롯 정체(`data_source`)는 여전히 「등록 데이터」이고
+        # 갈리는 것은 그 슬롯이 **무엇을 가리키는가**라, 두 축을 한 값으로 뭉개지 않는다.
+        (
+            self.data_path, self.data_sheet, self.data_header_row, self.data_kind,
+        ) = pool_reference_quad(item)
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", item.name)}
 

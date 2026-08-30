@@ -29,8 +29,10 @@ from hwpxfiller.application.dataset_pool import (
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
+    pclm_identity,
     reference_identity,
 )
+from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 
 
@@ -75,19 +77,19 @@ class InMemoryDatasetPool:
             entries = [e for e in entries if e[1].status == status]
         return entries, list(self.corrupt)
 
-    def find_identity(self, path, sheet=""):
-        ident = excel_identity(path, sheet)
+    def find_identity_raw(self, ident):
         for k, it in self.list_references()[0]:
             if reference_identity(it) == ident:
                 return (k, it)
         return None
 
+    def find_identity(self, path, sheet=""):
+        return self.find_identity_raw(excel_identity(path, sheet))
+
     def add(self, item):
         ident = reference_identity(item)
-        if ident is not None and self.find_identity(
-            item.opts["path"], item.opts.get("sheet") or ""
-        ):
-            raise ValueError("같은 데이터(경로·시트)가 이미 고정돼 있습니다.")
+        if ident is not None and self.find_identity_raw(ident):
+            raise ValueError("같은 데이터가 이미 고정돼 있습니다.")
         self._seq += 1
         key = f"mem{self._seq:04d}"
         self.slots[key] = self._copy(item)
@@ -128,13 +130,19 @@ class InMemoryDatasetPool:
 
         return self._update(key, _c)
 
-    def relabel_confirmed(self, path, sheet, name, *, note="", expected_basis):
-        same = self.find_identity(path, sheet or "")
+    def relabel_confirmed_raw(self, ident, name, *, note="", expected_basis):
+        same = self.find_identity_raw(ident)
         if same is None:
             raise FileNotFoundError(name)
         key, existing = same
         self._check(expected_basis, [bound_state(key, existing)])
         return key, self.relabel(key, name, note=note)
+
+    def relabel_confirmed(self, path, sheet, name, *, note="", expected_basis):
+        return self.relabel_confirmed_raw(
+            excel_identity(path, sheet or ""), name, note=note,
+            expected_basis=expected_basis,
+        )
 
     def relink_confirmed(
         self, key, path, *, sheet=None, note="", name="", expected_basis
@@ -202,6 +210,100 @@ def test_lifecycle_and_identity_reject_hold_for_both_ports(registry):
     assert vm.rows()[0].status == "active"
     vm.delete(key)
     assert vm.is_empty()
+
+
+def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
+    registry, monkeypatch, tmp_path
+):
+    """계약 목록 등록은 db·뷰 **두 키를 항상** 채운다 — 빈 db = 「기본 자리」의 해석.
+
+    미기재로 두면 정체성이 지어지지 않아 중복 판정이 통째로 죽고, 나중에 기본 자리가
+    바뀌면 같은 항목이 조용히 다른 DB 를 가리킨다.
+    """
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    vm = DatasetPoolViewModel(registry)
+
+    item = vm.register_pclm("계약 목록", view="v_통합_v1", note="기본 자리")
+    assert item.kind == "pclm"
+    assert set(item.opts) == {"db", "view"}
+    assert item.opts["db"] == str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db")
+    assert item.opts["view"] == "v_통합_v1"
+    assert vm.find_same_pclm(str(item.opts["db"]), "v_통합_v1") is not None
+
+    # 명시 db 는 절대경로로 정규화돼 들어간다(표기 변형은 정체성이 흡수).
+    named = vm.register_pclm("다른 DB", str(tmp_path / "other.db"), view="v_품목_v1")
+    assert named.opts == {"db": str(tmp_path / "other.db"), "view": "v_품목_v1"}
+    # 같은 DB 의 다른 뷰는 **다른 데이터**다(계약면마다 한 줄의 뜻이 다르다).
+    assert vm.find_same_pclm(str(tmp_path / "other.db"), "v_통합_v1") is None
+    assert len(vm.rows()) == 2
+
+
+def test_register_pclm_is_fail_closed_on_name_view_and_duplicate(registry, tmp_path):
+    """빈 이름·미지 뷰·같은 정체성 재등록은 전부 loud — 죽은 참조를 조용히 만들지 않는다."""
+    vm = DatasetPoolViewModel(registry)
+    db = str(tmp_path / "pclm.db")
+    with pytest.raises(ValueError, match="이름"):
+        vm.register_pclm("  ", db, view="v_통합_v1")
+    with pytest.raises(ValueError) as caught:
+        vm.register_pclm("오타", db, view="v_통합")
+    # 거절은 쓸 수 있는 뷰를 설명과 함께 재진술한다(허용목록 재구현 금지의 관측면).
+    assert all(view in str(caught.value) for view in PCLM_VIEWS)
+    assert PCLM_VIEW_LABELS["v_품목_v1"] in str(caught.value)
+    assert vm.is_empty()
+
+    vm.register_pclm("계약", db, view="v_계약_v1")
+    with pytest.raises(ValueError, match="이미"):
+        vm.register_pclm("다른 이름", db, view="v_계약_v1")
+    assert len(vm.rows()) == 1
+
+
+def test_relabel_confirmed_raw_binds_pclm_to_shown_state(registry, tmp_path):
+    """정체성 판 확정 왕복이 계약 목록에도 같은 결속으로 선다(종류별 확정 경로 복제 금지)."""
+    vm = DatasetPoolViewModel(registry)
+    db = str(tmp_path / "pclm.db")
+    vm.register_pclm("계약 목록", db, view="v_통합_v1")
+    key = vm.rows()[0].key
+    ident = pclm_identity(db, "v_통합_v1")
+    _item, basis = vm.inspect(key)
+
+    updated = vm.relabel_confirmed_raw(ident, "계약 목록(통합)", basis=basis)
+    assert updated.name == "계약 목록(통합)"
+    assert updated.opts == {"db": db, "view": "v_통합_v1"}  # 참조 불변
+    with pytest.raises(StaleConfirmError):
+        vm.relabel_confirmed_raw(ident, "또 갱신", basis=basis)
+    with pytest.raises(StaleConfirmError):
+        vm.relabel_confirmed_raw(ident, "근거 없음", basis=None)
+    assert vm.rows()[0].name == "계약 목록(통합)"
+
+
+def test_duplicate_pclm_registrations_merge_by_identity(registry, tmp_path):
+    """손편집이 남긴 같은 DB+뷰 2건도 정체성으로 묶여 확정 병합된다(엑셀과 같은 기제)."""
+    db = str(tmp_path / "pclm.db")
+    ref = DatasetReference(name="구판", kind="pclm", opts={"db": db, "view": "v_공고_v1"})
+    keep_ref = DatasetReference(
+        name="최신", kind="pclm", opts={"db": db, "view": "v_공고_v1"}
+    )
+    if isinstance(registry, DatasetPoolRegistry):
+        registry.directory.mkdir(parents=True, exist_ok=True)
+        for slug, item in (("구판", ref), ("최신", keep_ref)):
+            (registry.directory / f"{slug}{registry.SUFFIX}").write_text(
+                json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
+            )
+        keep = "최신"
+    else:
+        registry.slots["구판"] = ref
+        registry.slots["최신"] = keep_ref
+        keep = "최신"
+
+    vm = DatasetPoolViewModel(registry)
+    group = vm.duplicate_group(keep)
+    assert group is not None and len(group) == 2
+    basis = confirm_basis([bound_state(k, it) for k, it in group])
+    kept, removed = vm.resolve_duplicates(keep, basis=basis)
+    assert (kept, removed) == ("최신", 1)
+    assert [r.name for r in vm.rows()] == ["최신"]
 
 
 def test_relabel_confirmed_binds_to_shown_state(registry):

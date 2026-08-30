@@ -361,7 +361,11 @@ def save_last_output_directory(path: str) -> None:
 
 # 마지막으로 성사된 데이터 마운트의 출처 축(U3-07 · #880) — 세션의 `data_source` 플래그와
 # 같은 열거형이다('' = 미겨눔이라 기억할 것이 없다). 오타 키는 loud 로 자른다.
-VALID_DATA_SOURCES = ("file", "pool")
+# ``pclm``(계약 목록, #937)은 풀 슬롯 없이 서는 마운트라 파일 갈래와 같은 성분을 쓴다 —
+# ``path`` 가 db, ``sheet`` 가 뷰다(엑셀 참조와 **같은 자리를 다른 이름으로** 쓰는 규율,
+# `pool_reference_quad`). 종류 축을 따로 저장하지 않는 이유는 출처가 이미 그것을 말하기
+# 때문이다: 여기 두 번 적으면 둘이 어긋난 descriptor 가 성립한다.
+VALID_DATA_SOURCES = ("file", "pool", "pclm")
 
 
 def load_last_data_source() -> "dict | None":
@@ -375,8 +379,9 @@ def load_last_data_source() -> "dict | None":
     **판정은 여기 없다**: 그 파일이 지금도 있는지·읽히는지는 마운트가 답하고, 실패는 조용한
     빈 상태가 아니라 사유 문구로 재진술된다(:mod:`hwpxfiller.webapp.screen_job`).
 
-    비dict·형 불일치·필수 성분 부재(파일인데 경로 없음, 풀인데 슬롯 키 없음)는 미저장과 같이
-    다룬다 — 이 키가 없는 기존 ``settings.json`` 은 그대로 빈 부팅으로 산다."""
+    비dict·형 불일치·필수 성분 부재(파일인데 경로 없음, 풀인데 슬롯 키 없음, 계약 목록인데
+    db·뷰 없음)는 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은 그대로 빈
+    부팅으로 산다."""
     raw = _read().get("last_data_source")
     if not isinstance(raw, dict):
         return None
@@ -394,6 +399,8 @@ def load_last_data_source() -> "dict | None":
     if source == "file" and not path:
         return None
     if source == "pool" and not pool_key:
+        return None
+    if source == "pclm" and not (path and sheet):
         return None
     return {
         "source": source,
@@ -427,6 +434,8 @@ def save_last_data_source(
         raise ValueError("파일 마운트 기억에는 데이터 파일 경로가 필요합니다")
     if source == "pool" and not pool_key.strip():
         raise ValueError("등록 데이터 마운트 기억에는 슬롯 키가 필요합니다")
+    if source == "pclm" and not (path.strip() and sheet.strip()):
+        raise ValueError("계약 목록 마운트 기억에는 DB 경로와 뷰가 필요합니다")
     _save_key(
         "last_data_source",
         {

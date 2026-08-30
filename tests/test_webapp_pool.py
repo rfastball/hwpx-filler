@@ -711,3 +711,201 @@ def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
     assert res["ok"] is False
     assert "이미 고정돼 있습니다" not in ctrl.snapshot()["result"]["text"]
     assert reg.list_references()[0] == []  # 부활 0건
+
+
+# ------------------------------------------------- 계약 목록(pclm) 등록 표면(ADR N)
+def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
+    """신규 추가 / 무변경 멱등 확정 / 이름 갱신 확정(결속) — 엑셀 등록의 거울이다."""
+    ctrl, reg, pushes = _controller(tmp_path)
+    db = str(tmp_path / "pclm.db")
+
+    res = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
+    assert res["ok"] is True and res["name"] == "계약 목록"
+    assert "추가했습니다" in ctrl.snapshot()["result"]["text"]
+    row = pushes[-1][1]["rows"][0]
+    assert row["kind"] == "pclm" and row["kind_label"] == "계약 목록"
+    assert row["reference"] == "DB: pclm.db · 시트 통합"   # 표면 어휘는 시트 + 제목
+    assert row["locate_path"] == db and row["missing"] is True  # 없는 파일은 끊김으로
+
+    noop = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
+    assert noop["ok"] is True and "needs_confirm" not in noop
+    assert "이미 고정돼 있습니다" in ctrl.snapshot()["result"]["text"]
+
+    first = ctrl.dispatch("register_pclm", {"name": "통합면", "db": db, "view": "v_통합_v1"})
+    assert first["needs_confirm"] is True
+    assert "'계약 목록'" in first["confirm_text"]   # 기존 이름 재진술
+    assert "pclm.db" in first["confirm_text"]       # 기존 참조 요약 재진술
+    assert [r.name for r in ctrl.vm.rows()] == ["계약 목록"]   # 1차는 무변형
+
+    # 확인 사이 라벨이 바뀌면 갱신 0건(결속 대조는 종류를 묻지 않는다).
+    key = ctrl.snapshot()["rows"][0]["key"]
+    DatasetPoolRegistry(reg.directory).relabel(key, "남이 개명")
+    stale = ctrl.dispatch(
+        "register_pclm",
+        {"name": "통합면", "db": db, "view": "v_통합_v1", "confirm": True,
+         "basis": first["basis"]})
+    assert stale["ok"] is False and "다시 확인" in stale["error"]
+    assert [r.name for r in ctrl.vm.rows()] == ["남이 개명"]
+
+    fresh = ctrl.dispatch("register_pclm", {"name": "통합면", "db": db, "view": "v_통합_v1"})
+    done = ctrl.dispatch(
+        "register_pclm",
+        {"name": "통합면", "db": db, "view": "v_통합_v1", "confirm": True,
+         "basis": fresh["basis"]})
+    assert done["ok"] is True
+    rows = ctrl.snapshot()["rows"]
+    assert len(rows) == 1 and rows[0]["name"] == "통합면"      # 2건이 되지 않는다
+    assert reg.load(rows[0]["key"]).opts == {"db": db, "view": "v_통합_v1"}
+
+
+def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
+    """db 를 비우면 「기본 자리」로 해석돼 opts 에 박힌다 — 조회와 등록이 같은 자리를 본다."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    ctrl, reg, _ = _controller(tmp_path)
+    res = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
+    assert res["ok"] is True
+    key = ctrl.snapshot()["rows"][0]["key"]
+    assert reg.load(key).opts == {
+        "db": str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"),
+        "view": "v_계약_v1",
+    }
+    # 같은 뜻의 재등록(빈 db)은 2건이 아니라 「이미 고정」으로 접힌다.
+    again = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
+    assert again["ok"] is True and len(ctrl.snapshot()["rows"]) == 1
+
+
+def test_register_pclm_unknown_view_is_worded_not_raised(tmp_path):
+    """미지 뷰는 날것 예외가 아니라 사용자 문구 — 쓸 수 있는 뷰를 설명과 함께 재진술한다."""
+    from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
+
+    ctrl, _reg, _ = _controller(tmp_path)
+    res = ctrl.dispatch(
+        "register_pclm", {"name": "오타", "db": "C:/d/pclm.db", "view": "v_통합"})
+    assert res["ok"] is False
+    assert all(view in res["error"] for view in PCLM_VIEWS)
+    assert PCLM_VIEW_LABELS["v_통합_v1"] in res["error"]
+    assert ctrl.snapshot()["rows"] == [] and ctrl.snapshot()["result"]["level"] == "danger"
+    empty = ctrl.dispatch("register_pclm", {"name": " ", "db": "C:/d/pclm.db",
+                                            "view": "v_통합_v1"})
+    assert empty["ok"] is False and "이름" in empty["error"]
+
+
+def test_register_pclm_confirm_does_not_resurrect_deleted_item(tmp_path):
+    """확인 사이 삭제됐으면 확정을 신규 등록 승인으로 바꾸지 않는다(엑셀 판과 같은 규율)."""
+    ctrl, reg, _ = _controller(tmp_path)
+    db = str(tmp_path / "pclm.db")
+    ctrl.dispatch("register_pclm", {"name": "계약", "db": db, "view": "v_공고_v1"})
+    first = ctrl.dispatch("register_pclm", {"name": "공고면", "db": db, "view": "v_공고_v1"})
+    reg.delete(ctrl.snapshot()["rows"][0]["key"])
+
+    res = ctrl.dispatch(
+        "register_pclm",
+        {"name": "공고면", "db": db, "view": "v_공고_v1", "confirm": True,
+         "basis": first["basis"]})
+    assert res["ok"] is False and "이미 삭제된 항목" in res["error"]
+    assert reg.list_references()[0] == []   # 부활 0건
+
+
+def test_pclm_duplicates_merge_through_the_same_confirm_path(tmp_path):
+    """같은 DB+뷰 2건(손편집 잔재)도 duplicates 로 표면화되고 확정 병합된다."""
+    import json as _json
+
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    for slug, name in (("구판", "구판 계약"), ("최신", "최신 계약")):
+        item = DatasetReference(
+            name=name, kind="pclm",
+            opts={"db": "C:/d/pclm.db", "view": "v_품목_v1"})
+        (reg.directory / f"{slug}{reg.SUFFIX}").write_text(
+            _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8")
+    ctrl.dispatch("refresh", {})
+
+    group = ctrl.snapshot()["duplicates"][0]
+    assert "pclm.db" in group["reference"] and len(group["entries"]) == 2
+    keep = next(e["key"] for e in group["entries"] if e["name"] == "최신 계약")
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    res2 = ctrl.dispatch(
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]})
+    assert res2["ok"] is True and res2["removed"] == 1
+    assert [r["name"] for r in ctrl.snapshot()["rows"]] == ["최신 계약"]
+
+
+def test_pclm_snapshot_block_carries_default_db_doc_views_and_every_title(
+    tmp_path, monkeypatch,
+):
+    """스냅샷이 기본 DB 자리·**고르게 할 뷰**·**뷰 전수 제목표**를 낸다.
+
+    두 목록은 다른 일을 한다: ``views`` 는 새로 고를 수 있는 것(품목 제외 3건)이고,
+    ``titles`` 는 이미 선 마운트를 제목으로 그리기 위한 전수 매핑(4건)이다. 후자를 같이
+    좁히면 CLI 로 등록한 품목 마운트가 카드에서 내부 이름으로 새 나간다.
+    """
+    from hwpxfiller.domain.pclm_views import (
+        PCLM_DOC_VIEWS,
+        PCLM_VIEW_DESCS,
+        PCLM_VIEW_TITLES,
+        PCLM_VIEWS,
+    )
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    ctrl, _reg, _ = _controller(tmp_path)
+    block = ctrl.initial()["pclm"]
+    assert block["default_db"] == str(
+        tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
+    )
+    assert [v["name"] for v in block["views"]] == list(PCLM_DOC_VIEWS)
+    assert "v_품목_v1" not in [v["name"] for v in block["views"]]
+    assert all(v["title"] == PCLM_VIEW_TITLES[v["name"]] for v in block["views"])
+    assert all(v["desc"] == PCLM_VIEW_DESCS[v["name"]] for v in block["views"])
+    # 종전 `label` 키는 폐기 — 표면이 「설명. 뜻」 한 줄을 다시 조립하지 않는다.
+    assert all("label" not in v for v in block["views"])
+    assert block["titles"] == {v: PCLM_VIEW_TITLES[v] for v in PCLM_VIEWS}
+    assert set(block["titles"]) == set(PCLM_VIEWS)
+
+
+def test_targeting_gate_rejects_a_broken_pclm_view_and_still_freezes_nara(tmp_path):
+    """겨눔 관문의 백스톱 — 손편집·구판이 남긴 미지 뷰는 거절하고, 나라 동결은 그대로다.
+
+    등록 게이트(링1)가 뷰를 확정해도 그 게이트를 지나지 않은 항목(직접 쓴
+    ``.dataset.json``)이 있다. 뷰 이름은 SELECT 에 그대로 박히므로 다중 시트 게이트와
+    같은 자리에서 한 번 더 잡는다.
+    """
+    from hwpxfiller.domain.pclm_views import PCLM_VIEWS
+    from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT, load_pool_item_checked
+
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    good = reg.add(DatasetReference(
+        name="정상", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합_v1"}))
+    broken = reg.add(DatasetReference(
+        name="구판", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합"}))
+    missing = reg.add(DatasetReference(
+        name="뷰 없음", kind="pclm", opts={"db": "C:/d/other.db"}))
+    nara = reg.add(DatasetReference(
+        name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
+
+    assert load_pool_item_checked(reg, good).opts["view"] == "v_통합_v1"
+    for key in (broken, missing):
+        with pytest.raises(ValueError) as caught:
+            load_pool_item_checked(reg, key)
+        assert reg.load(key).name in str(caught.value)      # 항목 이름으로 재진술
+        assert all(view in str(caught.value) for view in PCLM_VIEWS)
+    with pytest.raises(ValueError, match="나라장터"):        # 동결 회귀 — 문구 불변
+        load_pool_item_checked(reg, nara)
+    assert NARA_FROZEN_TEXT.startswith("나라장터 소스는")
+
+
+def test_pclm_db_is_reachable_from_the_locate_whitelist(tmp_path):
+    """계약 목록 DB 도 사용자 소유 파일이라 열기·폴더보기가 열린다(끊김만 알리고 못 여는 일 금지)."""
+    from hwpxfiller.external.job_store import JobRegistry
+    from hwpxfiller.webapp.screens import collect_owned_paths, norm_path
+
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    db = tmp_path / "pclm.db"
+    reg.add(DatasetReference(name="계약", kind="pclm",
+                             opts={"db": str(db), "view": "v_통합_v1"}))
+    owned = collect_owned_paths(
+        JobRegistry(tmp_path / "jobs"), reg, base_dir=tmp_path)
+    assert owned == {norm_path(db, tmp_path)}

@@ -68,10 +68,11 @@ class DataZoneMixin:
     selection: SelectionModel
     filter: "FilterModel | None"
     _last_filter: "dict | None"   # {"source_key": str, "state": dict} — 결정 28 슬롯
-    _data_key: str                # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
+    # 현 데이터 소스 정체(file:경로 | pool:참조 | pclm:db#뷰) — 소스 일치 판정
+    _data_key: str
     pool_registry: DatasetPoolRegistry
     data_label: str
-    data_source: str              # ''(미겨눔) | 'file' | 'pool'
+    data_source: str              # ''(미겨눔) | 'file' | 'pool' | 'pclm'
     data_pool_key: str            # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
     #: 현 마운트 대상의 참조 정체(겨눔 시점 캐시) — 데이터 선택 다이얼로그 「현재 데이터」와
     #: 「이 데이터 고정」 프리필의 소재(재작성 F1). 라벨(파일명)만으론 고정할 참조를 지을 수
@@ -83,6 +84,10 @@ class DataZoneMixin:
     #: (「다시 연결」은 정상 수명 사건, #347). 마운트가 성사된 그 순간의 참조가 곧 지금 화면에
     #: 보이는 레코드를 만든 참조이므로, 승계는 슬롯을 다시 읽지 않고 이 포획분만 읽는다.
     data_header_row: int = 0
+    #: 마운트의 **종류**(""=엑셀/CSV, 그 밖은 그 소스의 코드) — 위 세 성분과 **같은 시점에
+    #: 같은 이유로** 포획한다. 종류를 흘리면 같은 경로 문자열이 두 뜻을 갖고, 승계·결속
+    #: 판정이 어느 어댑터로 읽을지를 추측하게 된다.
+    data_kind: str = ""
 
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
@@ -113,22 +118,27 @@ class DataZoneMixin:
         return view.visible_indices()
 
     def _data_target(self) -> dict:
-        """마운트 대상 재진술 ``{path, sheet, origin}`` — 스냅샷 동봉(신설 상태 아님, 파생).
+        """마운트 대상 재진술 ``{path, sheet, origin, kind}`` — 스냅샷 동봉(신설 상태 아님, 파생).
 
         「이 데이터 고정」은 ``origin == 'file'`` 에서만 뜬다: 등록 데이터 출처는 **이미
         고정된 참조**라 다시 고정하면 같은 파일의 참조가 둘로 갈린다(v6 ``pinCurrentData``
         hidden 동형). 값은 겨눔 시점 캐시라 로드된 레코드와 같은 신선도 의미다.
+
+        ``kind`` 는 ``sheet`` 자리가 **무엇을 뜻하는지**를 표면에 넘긴다(#937): 엑셀은 시트,
+        계약 목록은 뷰라 같은 값이 두 어휘를 갖는다. 표면이 경로 모양으로 되추측하면
+        같은 상태를 두 곳이 판정하게 된다 — 종류는 마운트가 이미 아는 사실이다.
         """
         return {
             "path": self.data_path,
             "sheet": self.data_sheet,
             "origin": self.data_source,
+            "kind": self.data_kind,
         }
 
     def new_work_handoff(self) -> "tuple[dict, str]":
         """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.
 
-        반환은 ``({"path", "sheet", "header_row"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
+        반환은 ``({"path", "sheet", "header_row", "kind"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
         가부(스냅샷)와 진입의 fail-closed(브리지)가 **같은 한 판정**을 읽는다 — 표면이
         `data_path` 유무로 스스로 유추하면 화면은 「누를 수 있다」고 말하고 백엔드는 거절하는
         어긋남이 난다(#349 리뷰 1R 이 지목한 자리).
@@ -149,8 +159,8 @@ class DataZoneMixin:
         데이터 관문은 파일 참조를 여는 표면이고, 여기서 조용히 빈 초안으로 보내면
         「이 데이터로」라는 문안 자체가 거짓이 된다. 술어는 포획된 ``data_path`` 하나다 —
         그 필드의 뜻이 이미 「이 마운트를 파일로 가리킬 수 있는가」이기 때문이다
-        (:meth:`~hwpxfiller.webapp.screens.PoolTargetingMixin._do_load_pool` 이 엑셀 참조에만
-        채운다).
+        (:meth:`~hwpxfiller.webapp.screens.PoolTargetingMixin._do_load_pool` 이 **파일을
+        가리키는 참조**에만 채운다 — 엑셀은 ``path``, 계약 목록은 ``db``).
         """
         if not self.data_source:
             return {}, "데이터를 먼저 고르세요."
@@ -163,6 +173,8 @@ class DataZoneMixin:
             "path": self.data_path,
             "sheet": self.data_sheet,
             "header_row": self.data_header_row,
+            # 종류도 한 벌의 성분이다 — 받는 쪽이 경로 모양으로 종류를 되추측하지 않게.
+            "kind": self.data_kind,
         }, ""
 
     def _display_indices(self, indices: "list[int]") -> "list[int]":
@@ -411,6 +423,20 @@ class DataZoneMixin:
         """
         norm = str(Path(path).resolve()).casefold()
         return f"file:{norm}" + (f"::{sheet}" if sheet else "")
+
+    @staticmethod
+    def _pclm_key(db: str, view: str) -> str:
+        """계약 목록 소스 키 — 정규화 db 경로 + 뷰, **``file:`` 과 다른 접두**(#937).
+
+        정규화는 :meth:`_file_key` 와 같은 이유로 같은 규칙(resolve+casefold)을 쓴다. 접두를
+        나누는 이유는 종류가 정체의 성분이기 때문이다(:func:`~hwpxfiller.domain.job.
+        data_binding_matches` 의 kind 선판정과 같은 근거) — 한 접두로 뭉치면 같은 경로의
+        엑셀 마운트가 남긴 직전 필터가 계약 목록 마운트에서 재적용 후보로 떠, 결정 28 의
+        소스 일치 조항이 조용히 열린다. 뷰는 늘 병기한다: 한 db 의 계약면 넷은 서로 다른
+        소스다(시트 병기와 같은 규율).
+        """
+        norm = str(Path(db).resolve()).casefold()
+        return f"pclm:{norm}::{view}"
 
     def _pool_key(self) -> str:
         """풀 소스 키 — 슬롯 키 + **참조 정체**(kind+opts) 병기(리뷰 #6 · §5.3 재편).

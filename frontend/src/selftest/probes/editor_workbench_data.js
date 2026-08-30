@@ -1484,13 +1484,38 @@ export function createEditorWorkbenchDataProbes() {
             locate_path: `C:/d/${name}.xlsx`, sheet: "물품", missing: false, note: "",
             actions,
           });
+          /* 계약 목록(pclm) 행 — 좌표가 DB+뷰라 「다시 연결」(엑셀 전용 동사)이 서지 않고,
+             파일이 살아 있으면 그냥 쓸 수 있다(#937). */
+          const pclmRow = {
+            key: "k3", name: "계약 목록", kind: "pclm", kind_label: "계약 목록",
+            status: "active", badge_label: "활성", badge_level: "ok",
+            reference: "DB: pclm.db · 시트 통합", locate_path: "C:/d/pclm.db",
+            sheet: "", missing: false, note: "",
+            actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
+          };
           ctx.push("pool", {
             rows: [
               row("k1", "7월 공고목록", "active", "활성", "ok",
                 [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }]),
               row("k2", "6월 보관분", "archived", "보관", "muted",
                 [{ key: "activate", label: "활성화" }, { key: "delete", label: "삭제" }]),
+              pclmRow,
             ],
+            /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
+               새로 고르게 할 것(품목 제외 3건)이고 `titles` 는 이미 선 마운트를 제목으로
+               그리기 위한 뷰 전수 매핑이다. */
+            pclm: {
+              default_db: "C:/AppData/Local/Pclm/pclm.db",
+              views: [
+                { name: "v_통합_v1", title: "통합", desc: "공고와 계약을 이어 붙인 표" },
+                { name: "v_공고_v1", title: "공고", desc: "공고 정보" },
+                { name: "v_계약_v1", title: "계약", desc: "계약 정보" },
+              ],
+              titles: {
+                "v_통합_v1": "통합", "v_공고_v1": "공고",
+                "v_계약_v1": "계약", "v_품목_v1": "품목",
+              },
+            },
             /* 키를 따옴표로 싼다 — 값이 아니라 **표기**의 문제다. 봉인의 금지 패턴
                `\bfile:` 은 평범한 객체 키 `file:` 도 `file:` URL 로 읽어 산출물을 거절한다.
                따옴표를 두면 텍스트에 `file:` 이 연속하지 않아 오탐이 사라지고, 스냅샷
@@ -1502,7 +1527,7 @@ export function createEditorWorkbenchDataProbes() {
               reference: "파일: 대장.xlsx · 시트 물품",
               entries: [{ key: "k1", name: "7월 공고목록" }, { key: "k2", name: "6월 보관분" }],
             }],
-            count: "2건", empty: false, result: { text: "", level: "muted" },
+            count: "3건", empty: false, result: { text: "", level: "muted" },
           });
           await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
           const host = byId(ctx, "dataPickerPinned");
@@ -1512,6 +1537,12 @@ export function createEditorWorkbenchDataProbes() {
           out.use_archived_disabled = uses.length > 1 && !!uses[1].disabled;
           out.activate_reachable = !!host.querySelector('[data-act="activate"]');
           out.relink_reachable = !!host.querySelector('[data-act="relink"]');
+          /* 계약 목록 행(#937) — 종류가 달라도 목록에서 그냥 쓸 수 있고, 엑셀 전용 동사인
+             「다시 연결」(경로+시트 좌표)은 그 행에 서지 않는다. */
+          const pclmCard = host.querySelector('[data-row="k3"]');
+          const pclmUse = pclmCard && pclmCard.querySelector('[data-act="use"]');
+          out.pclm_row_usable = !!pclmUse && !pclmUse.disabled;
+          out.pclm_no_relink = !!pclmCard && !pclmCard.querySelector('[data-act="relink"]');
           /* 행동 버튼이 슬롯 키를 겨눈다(§5.3 — 이름은 라벨). 키 없는 버튼은 남의 항목을 겨눈다. */
           out.use_targets_key = uses.length > 0 && uses[0].dataset.key === "k1";
           out.corrupt_shown = textOf(byId(ctx, "dataPickerCorrupt")).indexOf("손상") >= 0;
@@ -1530,6 +1561,27 @@ export function createEditorWorkbenchDataProbes() {
           out.pin_path_readonly = byId(ctx, "poolRegPath").readOnly;
           out.pin_sheet_readonly = byId(ctx, "poolRegSheet").readOnly;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
+          Modal.close("poolRegModal");
+          /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
+             가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 기본 DB
+             자리를 프리필하고 **고르게 할 시트 + 빈 placeholder** 를 세운다(시트는 사용자
+             확정). 라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
+          const pclmEntry = byId(ctx, "dataPickerPclm");
+          out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
+            && pclmEntry.offsetParent !== null && !pclmEntry.disabled;
+          out.pclm_entry_text = textOf(pclmEntry);
+          pclmEntry.click();
+          await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
+          const viewSelect = byId(ctx, "poolRegView");
+          out.pclm_reg_view_options = viewSelect.options.length;
+          out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
+          /* 옵션의 **값**은 백엔드 계약(실 뷰 이름)이고 **보이는 글자**는 제목이다. 둘을
+             따로 회수해 표면에 내부 이름이 새지 않는 것을 게이트가 잰다. */
+          out.pclm_reg_view_values = Array.prototype.map.call(
+            viewSelect.options, (o) => o.value).join("|");
+          out.pclm_reg_view_text = Array.prototype.map.call(
+            viewSelect.options, (o) => textOf(o)).join("|");
+          out.pclm_reg_view_label = textOf(viewSelect.closest(".ctl").querySelector(".lbl"));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(

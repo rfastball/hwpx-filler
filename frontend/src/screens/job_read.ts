@@ -232,6 +232,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
       path: target.path || "",
       sheet: target.sheet || "",
       origin: target.origin || "",
+      /* `sheet` 자리가 무엇을 뜻하는지(엑셀=시트 / 계약 목록=뷰)는 호스트가 말한다(#937) —
+         떨어뜨리면 선택 면이 경로 모양으로 되추측하게 된다. */
+      kind: target.kind || "",
     };
   }
 
@@ -542,7 +545,9 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
     // 옮긴 것은 **진입점뿐**이고 초안 거래(`RecordRangeDraft`·존 13액션·「적용 전 메인 범위
     // 불변」 §18.11-21)와 면 수명주기는 그대로다.
     h("div", { className: "zone-cap" }, h("span", null, "현재 데이터")),
-    h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터(.xlsx/.csv)"),
+    /* 라벨은 확장자를 세지 않는다 — 마운트되는 종류가 엑셀/CSV 하나가 아니게 됐고(#937
+       계약 목록), 여기 서는 값은 종류를 이미 말한다(`data_source_label`). */
+    h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터"),
       h("input", { className: "field ro", id: "jobDataLabel", type: "text", readOnly: true,
         value: snapshot.data_source_label || "", placeholder: "데이터를 선택하세요" }),
       h("button", { className: "btn primary", id: "jobBtnPickData", "data-busy-lock": true,

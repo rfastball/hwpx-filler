@@ -378,6 +378,22 @@ def test_last_data_source_defaults_to_none_and_roundtrips(home):
     }
 
 
+def test_last_data_source_carries_a_pclm_mount_as_db_and_view(home):
+    """계약 목록(#937)은 파일 갈래와 **같은 성분 자리**를 쓴다 — path=db · sheet=뷰.
+
+    출처 축이 이미 종류를 말하므로 descriptor 에 종류를 따로 두지 않는다: 두 번 적으면
+    둘이 어긋난 기억이 성립하고, 그때 무엇을 열어야 할지 답할 수 있는 자리가 없다.
+    """
+    assert "pclm" in settings.VALID_DATA_SOURCES
+    settings.save_last_data_source(
+        source="pclm", path=r"C:\d\pclm.db", sheet="v_통합_v1"
+    )
+    assert settings.load_last_data_source() == {
+        "source": "pclm", "path": r"C:\d\pclm.db", "sheet": "v_통합_v1",
+        "header_row": 0, "pool_key": "",
+    }
+
+
 def test_last_data_source_preserves_other_keys(home):
     settings.save_theme("dark")
     settings.save_last_data_source(source="pool", pool_key="slot-7")
@@ -398,6 +414,9 @@ def test_last_data_source_preserves_other_keys(home):
         {"source": "file", "path": "p", "sheet": "", "header_row": -1, "pool_key": ""},
         {"source": "file", "path": "", "sheet": "", "header_row": 0, "pool_key": "slot-7"},
         {"source": "pool", "path": "p", "sheet": "", "header_row": 0, "pool_key": ""},
+        # 계약 목록은 db·뷰 둘 다 있어야 무엇을 열지가 정해진다(#937).
+        {"source": "pclm", "path": "", "sheet": "v_통합_v1", "header_row": 0, "pool_key": ""},
+        {"source": "pclm", "path": "p", "sheet": "", "header_row": 0, "pool_key": ""},
     ],
 )
 def test_last_data_source_corrupt_variants_fall_back_to_none(home, stored):
@@ -425,6 +444,8 @@ def test_last_data_source_corrupt_variants_fall_back_to_none(home, stored):
         {"source": "file", "path": "p", "header_row": -1},         # 음수 헤더 행
         {"source": "file", "path": "   "},                         # 공백뿐인 경로
         {"source": "pool", "pool_key": "  "},                      # 공백뿐인 슬롯 키
+        {"source": "pclm", "path": "C:/d/pclm.db", "sheet": "  "},  # 뷰 없는 계약 목록
+        {"source": "pclm", "path": "  ", "sheet": "v_통합_v1"},      # db 없는 계약 목록
     ],
 )
 def test_invalid_last_data_source_is_loud(home, kwargs):

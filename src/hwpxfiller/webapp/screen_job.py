@@ -104,6 +104,7 @@ from ..domain.job import (
     work_mode,
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
+from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨은 내부 이름을 안 든다
 from ..domain.output_folder_default import (
     SOURCE_EXPLICIT as OUTPUT_FOLDER_SOURCE_EXPLICIT,
     OutputFolderResolution,
@@ -315,7 +316,8 @@ from .screens import (
     PoolTargetingMixin,
     PushSink,
     TutorialSink,
-    pool_reference_triple,
+    pclm_reference,
+    pool_reference_quad,
     reference_missing,
     relink_job_template,
     source_label,
@@ -1467,11 +1469,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         필터를 쓰면 같은 데이터에 대해 다른 목록을 말한다(판정 단일 출처).
 
         참조를 여기서 다시 조립하지 않는다 — ``data_path``·``data_sheet``·
-        ``data_header_row`` 는 마운트가 성사되는 자리에서 한 벌로 포획된 값이고, 나중에
-        슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다(#349 리뷰 2R).
+        ``data_header_row``·``data_kind`` 는 마운트가 성사되는 자리에서 한 벌로 포획된
+        값이고, 나중에 슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다
+        (#349 리뷰 2R).
         """
         return bound_jobs(
             jobs, self.data_path, self.data_sheet, self.data_header_row,
+            kind=self.data_kind,
         )
 
     def _candidate_payload(self, jobs) -> dict:
@@ -2201,8 +2205,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _remember_data_source(self) -> None:
         """성사된 마운트의 성분을 설정에 남긴다 — 다음 부팅 자동 마운트의 재료.
 
-        **두 마운트 경로가 같은 한 자리를 부른다**(파일 피커 → :meth:`load_data_path`,
-        풀 겨눔 → :meth:`_after_pool_load`). 성분은 세션이 그 마운트 시점에 포획해 둔
+        **세 마운트 경로가 같은 한 자리를 부른다**(파일 피커 → :meth:`load_data_path`,
+        풀 겨눔 → :meth:`_after_pool_load`, 계약 목록 → :meth:`_mount_pclm`). 계약 목록은
+        슬롯이 없어 파일 갈래와 같은 성분(``path``=db·``sheet``=뷰)을 쓰고, 출처 축
+        (``source``)이 그 성분을 **어느 어댑터로 읽을지**를 말한다(#937). 성분은 세션이 그 마운트 시점에 포획해 둔
         것을 그대로 읽는다(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.
         new_work_handoff` 와 같은 재료) — 여기서 슬롯이나 파일을 다시 읽어 조립하면 지금
         화면에 없는 데이터를 기억하게 된다.
@@ -2263,9 +2269,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         사유는 기존 로드 관문이 이미 낸 문장을 이어 붙인다(새 채널·새 문안 발명 금지):
         풀 경로는 :func:`~hwpxfiller.webapp.screens.load_pool_into` 의 거절(나라 동결·삭제된
-        항목·죽은 참조·0행)이, 파일 경로는 소스 해석 예외와 :data:`NO_ROWS_TEXT` 가 낸다.
-        파일 부재만 마운트를 시도하기 전에 가른다 — 판정은 풀 목록의 「끊김」 배지와
-        **같은 술어**(:func:`~hwpxfiller.webapp.screens.reference_missing`)다.
+        항목·죽은 참조·0행)이, 파일·계약 목록 경로는 소스 해석 예외와 :data:`NO_ROWS_TEXT`
+        가 낸다. 파일 부재만 마운트를 시도하기 전에 가른다 — 판정은 풀 목록의 「끊김」
+        배지와 **같은 술어**(:func:`~hwpxfiller.webapp.screens.reference_missing`)이고,
+        계약 목록 db 도 그 술어의 대상이다(가리키는 것이 파일이면 종류를 묻지 않는다).
         """
         if descriptor["source"] == "pool":
             result = self._do_load_pool({"key": descriptor["pool_key"]})
@@ -2276,7 +2283,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if reference_missing(path):
             return _REMEMBERED_DATA_MISSING.format(path=path)
         try:
-            self.load_data_path(path, sheet=descriptor["sheet"] or None)
+            if descriptor["source"] == "pclm":
+                # 계약 목록 기억은 db+뷰 한 벌이다(#937) — 출처 축이 이미 종류를 말하므로
+                # descriptor 에 종류를 따로 두지 않는다(둘이 어긋난 기억이 성립하지 않게).
+                self._mount_pclm(path, descriptor["sheet"])
+            else:
+                self.load_data_path(path, sheet=descriptor["sheet"] or None)
         except Exception as exc:  # noqa: BLE001 — 읽기 실패는 사유 불문 loud 재진술
             return _REMEMBERED_DATA_FAILED.format(reason=exc)
         return ""
@@ -2308,7 +2320,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self._commit_data_transition(source, records, (path, sheet or "", header_row))
+        self._commit_data_transition(
+            source, records, (path, sheet or "", header_row, ""),
+        )
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
@@ -2316,6 +2330,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 헤더 행은 **마운트 성분 한 벌**로 갈린다(리뷰 2R): 풀 겨눔·작업 결속이 포획해 둔
         # 값이 다음 파일 겨눔에 남지 않게, 넘어온 값을 같은 자리에서 그대로 세운다.
         self.data_header_row = header_row
+        self.data_kind = ""  # 파일 마운트 = 엑셀/CSV — 이전 마운트의 종류가 남지 않게 같은 자리에서.
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
@@ -2324,12 +2339,73 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         finally:
             self._push()
 
+    def _mount_pclm(self, db: str, view: str) -> None:
+        """계약 목록(pclm) 뷰를 세션에 마운트 — :meth:`load_data_path` 의 **자매**(#937).
+
+        본문 순서가 파일 마운트와 같은 이유는 그 순서 자체가 계약이기 때문이다: 생성 중
+        거절 → 읽기(성공 전 현 runtime 미파기) → 직전 필터 스태시(옛 소스 키 기준) →
+        전이 판정 → 세션 성분 → 소스 키 → 범위·필터 재생성 → 기억 → 푸시. 한 자리라도
+        순서를 달리하면 이 화면의 불변식이 종류별로 갈린다.
+
+        **소스는 링1 리졸버를 지난다**(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)
+        — 구체 선택은 유일한 제품 조립점이 주입한 factory 의 몫이라(P2-16), 여기서
+        ``PclmDataSource`` 를 직접 만들면 링2 가 구체를 조용히 재선택하는 뒷문이 된다.
+        풀 슬롯이 없는 마운트라 참조 형상은 :func:`~hwpxfiller.webapp.screens.
+        pclm_reference` 가 짓는다.
+
+        읽기 실패(db 부재·뷰 손상·미지 뷰)는 삼키지 않고 그대로 올린다 — 호출자
+        (결속 마운트·부팅 복원·재마운트)가 자기 채널의 문안으로 재진술한다.
+        """
+        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
+        source, records = resolve_pool_source(
+            pclm_reference(db, view), source_factory=self._pool_source_factory,
+        )
+        if not records:
+            raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
+        self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
+        self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
+        self._commit_data_transition(source, records, (db, view, 0, "pclm"))
+        # 라벨에 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으로는 **무엇이 서
+        # 있는지**를 말하지 못한다(엑셀의 `data_binding_label` 이 시트를 병기하는 것과 같은
+        # 규율). 스냅샷 `data_target` 과 겹치는 것이 아니라, 저쪽은 성분이고 이쪽은 한 줄이다.
+        # 병기하는 것은 **제목**이다: 라벨은 사람이 읽는 한 줄이라 내부 이름(`v_통합_v1`)이
+        # 여기로 새면 결속 마운트 notice·소스 라벨까지 그 이름을 지고 다닌다. 미지 이름은
+        # 감추지 않고 원문 그대로 남긴다(구판·손편집을 조용히 지우지 않는다).
+        self.data_label = f"{Path(db).name} · {PCLM_VIEW_TITLES.get(view, view)}"
+        self.data_source = "pclm"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self.data_pool_key = ""  # 슬롯 없는 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
+        self.data_path, self.data_sheet = db, view  # db=파일 · 뷰=시트 자리 재사용
+        self.data_header_row = 0  # 계약면에는 헤더 행 축이 없다 — 0 이 곧 「해당 없음」
+        self.data_kind = "pclm"
+        self._data_key = self._pclm_key(db, view)  # 소스 일치 게이트(결정 28)
+        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
+        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
+        try:
+            self._remember_data_source()  # 다음 부팅 자동 마운트의 재료(U3-07 #880)
+        finally:
+            self._push()
+
+    def _mount_by_kind(self, path: str, sheet: str, header_row: int, kind: str) -> None:
+        """결속 한 벌의 **종류로 마운트 경로를 가른다** — 종류 해석의 단일 자리(#937).
+
+        여기 이름 없는 종류는 시끄럽게 거절한다(:func:`~hwpxfiller.data.factory.make_source`
+        와 같은 규율): 모르는 종류를 파일 갈래로 흘려보내면 db 를 엑셀로 오파싱하거나
+        확장자 거절이 「데이터 파일 형식」 문안으로 둔갑해 실제 사유를 덮는다.
+        """
+        if kind == "pclm":
+            self._mount_pclm(path, sheet)
+            return
+        if kind:
+            raise ValueError(f"알 수 없는 데이터 결속 종류입니다: {kind!r}")
+        self.load_data_path(path, sheet=sheet or None, header_row=header_row)
+
     def _commit_data_transition(
-        self, source, records: list, incoming: "tuple[str, str, int]",
+        self, source, records: list, incoming: "tuple[str, str, int, str]",
     ) -> None:
         """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다.
 
-        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌이다(#932 U4-C). 세션 필드
+        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌
+        ``(path, sheet, header_row, kind)`` 이다(#932 U4-C). 세션 필드
         (``self.data_path`` …)를 읽으면 안 되는 이유는 순서다: 마운트는 이 판정을 먼저
         지나고 성분을 **그 뒤에** 세운다(파일·풀 두 경로 모두). 여기서 세션을 읽으면
         「직전 데이터에 결속됐나」를 묻게 돼 판정이 한 걸음 늦는다.
@@ -2385,7 +2461,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 이 라운드가 없애는 조용한 어긋남이다.
             bound_to_current_data=(
                 active_job is not None
-                and data_binding_matches(active_job, *incoming)
+                and data_binding_matches(
+                    active_job, *incoming[:3], kind=incoming[3]
+                )
             ),
         )
         decision = decide_active_work_after_data_transition(context)
@@ -2763,8 +2841,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         요구의 실체는 「지금 화면의 레코드를 지금 디스크로 갈아 끼워라」다. 결속이 durable
         이 된 뒤(§2.4) 같은 파일이 갱신되는 것이 흔한 사건이 되므로 이 동사가 짝이 된다.
 
-        **세 번째 마운트 경로를 만들지 않는다.** 세션이 마운트 시점에 포획해 둔 참조를
-        그대로 기존 진입점(:meth:`load_data_path` / ``_do_load_pool``)에 되돌려 준다 —
+        **새 마운트 경로를 만들지 않는다.** 세션이 마운트 시점에 포획해 둔 참조를
+        그대로 기존 진입점(:meth:`load_data_path` / ``_do_load_pool`` /
+        :meth:`_mount_pclm`)에 되돌려 준다 —
         부팅 복원(:meth:`_mount_remembered_data`)이 이미 같은 패턴이고, 여기서 성분을
         다시 조립하면 지금 화면에 없는 데이터를 새로고침하게 된다.
 
@@ -2787,10 +2866,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.data_source == "pool":
             return self._do_load_pool({"key": self.data_pool_key})
         try:
-            self.load_data_path(
-                self.data_path, sheet=self.data_sheet or None,
-                header_row=self.data_header_row,
-            )
+            if self.data_source == "pclm":
+                # 슬롯 없는 마운트라 되돌려 줄 진입점이 파일 갈래가 아니다(#937) — 성분은
+                # 여기서도 세션이 포획해 둔 것을 그대로 쓴다(재조립 금지, 위 규율 그대로).
+                self._mount_pclm(self.data_path, self.data_sheet)
+            else:
+                self.load_data_path(
+                    self.data_path, sheet=self.data_sheet or None,
+                    header_row=self.data_header_row,
+                )
         except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술
             return {"ok": False, "error": _REMOUNT_FAILED.format(reason=exc)}
         return {"ok": True, "label": source_label(self.data_source, self.data_label)}
@@ -2818,15 +2902,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if not has_data_binding(job):
             return _JOB_BINDING_ABSENT.format(name=job.name)
-        path, sheet, header_row = data_binding_of(job)
+        # ``kind`` 는 결속의 종류 축이다 — 마운트 갈래를 가르는 것이 그 값이고(#937), 부재
+        # 판정은 종류와 무관하다: 계약 목록 db 도 사라질 수 있는 **파일**이라 같은 술어가 센다.
+        path, sheet, header_row, kind = data_binding_of(job)
         if data_binding_matches(
             job, self.data_path, self.data_sheet, self.data_header_row,
+            kind=self.data_kind,
         ):
             return ""
         if reference_missing(path):
             return _JOB_BINDING_MISSING.format(path=path)
         try:
-            self.load_data_path(path, sheet=sheet or None, header_row=header_row)
+            self._mount_by_kind(path, sheet, header_row, kind)
         except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술(조용한 빈 상태 금지)
             return _JOB_BINDING_FAILED.format(reason=exc)
         return _JOB_BINDING_MOUNTED.format(label=self.data_label)
@@ -3396,7 +3483,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return []
         # 풀 겨눔도 **같은 시점의 한 벌**을 판정에 넘긴다 — 믹스인이 이 호출 뒤에 세션
         # 성분을 세우므로(순서 계약) 여기서 세션을 읽으면 직전 데이터를 묻게 된다.
-        self._commit_data_transition(source, records, pool_reference_triple(item))
+        # 종류도 그 한 벌의 성분이다(#937) — 참조가 가리키는 것이 엑셀 파일인지 계약 목록
+        # db 인지를 여기서 흘리면 결속 판정이 경로 문자열 하나로 두 종류를 뭉갠다.
+        self._commit_data_transition(source, records, pool_reference_quad(item))
         return records
 
     def _after_pool_load(self, records: list) -> None:

@@ -18,6 +18,7 @@ from hwpxfiller.domain.job import (
     Job,
     RunRequest,
     data_binding_matches,
+    data_binding_of,
     has_data_binding,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -188,6 +189,50 @@ def test_data_binding_round_trips_as_three_components():
     assert (back.data_path, back.data_sheet, back.data_header_row) == (
         "/data/2026-08.xlsx", "낙찰", 3,
     )
+
+
+def test_data_kind_round_trips_and_old_json_lands_on_excel():
+    """종류 축도 결속 한 벌의 성분이다 — 왕복하고, 부재는 ``""``(=엑셀/CSV)다.
+
+    부재를 기본값으로 착지시키는 것은 추측이 아니라 **구판의 뜻 그대로**다: 종류 축이
+    생기기 전의 저장본은 전부 엑셀/CSV 결속이었다. 반대로 **존재하는데 타입이 깨진** 값은
+    조용히 통과시키지 않는다(``_str`` loud 규칙) — 종류를 잘못 읽으면 어느 어댑터로 읽을지가
+    통째로 갈린다.
+    """
+    bound = Job(name="계약목록", data_path="/db/pclm.sqlite", data_sheet="계약",
+                data_kind="pclm")
+    d = encode_job(bound)
+    assert d["data_kind"] == "pclm"
+    assert decode_job(d).data_kind == "pclm"
+
+    legacy = encode_job(_job())
+    legacy.pop("data_kind")
+    assert decode_job(legacy).data_kind == ""
+
+    with pytest.raises(ValueError):
+        decode_job({**encode_job(_job()), "data_kind": 7})
+
+
+def test_data_binding_of_carries_the_kind_in_the_tail():
+    """결속 한 벌은 ``(path, sheet, header_row, kind)`` 네 값이다 — 종류가 꼬리에 선다."""
+    assert data_binding_of(Job(name="빈")) == ("", "", 0, "")
+    bound = Job(name="a", data_path="/db/pclm.sqlite", data_sheet="계약",
+                data_kind="pclm")
+    assert data_binding_of(bound) == ("/db/pclm.sqlite", "계약", 0, "pclm")
+
+
+def test_data_binding_matches_splits_on_kind_before_identity():
+    """종류가 다르면 같은 경로·시트라도 다른 데이터다(#932 U4-C 위의 종류 축).
+
+    종류를 안 보면 계약 목록 db 를 가리키는 결속이 같은 경로의 엑셀 마운트에 조용히 맞고,
+    그 순간 후보 줄이 남의 데이터로 서 있는 작업을 추천한다.
+    """
+    pclm = Job(name="a", data_path="/db/pclm.sqlite", data_sheet="계약", data_kind="pclm")
+    assert data_binding_matches(pclm, "/db/pclm.sqlite", "계약", 0, kind="pclm")
+    assert not data_binding_matches(pclm, "/db/pclm.sqlite", "계약", 0)  # kind="" 기본
+    excel = Job(name="b", data_path="/db/pclm.sqlite", data_sheet="계약")
+    assert data_binding_matches(excel, "/db/pclm.sqlite", "계약", 0)
+    assert not data_binding_matches(excel, "/db/pclm.sqlite", "계약", 0, kind="pclm")
 
 
 def test_old_job_json_lands_in_needs_connection_state_without_guessing():

@@ -42,17 +42,27 @@ type PickerState = {
   level: "" | "ok" | "danger";
 };
 
+/* 등록면은 종류를 **명시로** 든다(#937). `mode` 가 없으면 표면이 어느 좌표를 물어야 할지를
+   path 유무 같은 모양으로 되추측하게 되고, 그러면 같은 판정이 두 곳에 산다. 엑셀은
+   경로+시트, 계약 목록은 DB+뷰 — 좌표가 다를 뿐 확인 왕복(needs_confirm/basis)은 한 벌이다. */
 type RegState = {
   title: string;
   okLabel: string;
+  mode: "excel" | "pclm";
   name: string;
   path: string;
   sheet: string;
+  db: string;
+  view: string;
   note: string;
   targetKey: string;
   pinMode: boolean;
   error: string;
 };
+
+/** 시트 미선택 placeholder — 목록 첫 항목을 기본으로 세우지 않는다(사용자가 확정할 값이다). */
+const PCLM_VIEW_PLACEHOLDER = "시트를 고르세요";
+const PCLM_UNAVAILABLE = "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요.";
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
@@ -145,7 +155,8 @@ export function createDataPickerController(args: {
         onLoaded: null,
         current: {
           label: result.label, detail: `${result.rows}건`, path: result.path,
-          sheet: result.sheet || "", origin: "file",
+          // 파일 찾아보기가 낳는 마운트는 늘 엑셀/CSV 다 — 종류를 비워 두지 않고 명시한다.
+          sheet: result.sheet || "", origin: "file", kind: "",
         },
       };
       patch({
@@ -165,16 +176,20 @@ export function createDataPickerController(args: {
     reg = {
       title: options.title || "데이터 등록",
       okLabel: options.okLabel || "등록",
+      mode: options.mode || "excel",
       name: options.name || "",
       path: options.path || "",
       sheet: options.sheet || "",
+      db: options.db || "",
+      view: options.view || "",
       note: options.note || "",
       targetKey: options.targetKey || "",
       pinMode: !!options.pinMode,
       error: "",
     };
     emitReg();
-    modal.open("poolRegModal", { initialFocus: args.doc.getElementById(options.pinMode ? "poolRegName" : "poolRegPath") });
+    const focusId = reg.mode === "pclm" || options.pinMode ? "poolRegName" : "poolRegPath";
+    modal.open("poolRegModal", { initialFocus: args.doc.getElementById(focusId) });
   }
 
   function openPin(): void {
@@ -186,14 +201,39 @@ export function createDataPickerController(args: {
     });
   }
 
+  /* 계약 목록 등록 — 물어야 할 두 좌표(기본 DB 자리·고를 수 있는 뷰)는 **스냅샷이 준다**.
+     웹이 뷰 목록이나 기본 경로를 리터럴로 들면 링0 허용목록이 늘 때 한쪽만 늙는다.
+     블록이 아직 없으면 열지 않고 사유를 말한다(조용한 무반응 금지) — 버튼도 같은
+     판정으로 비활성이라 정상 경로에서는 여기 닿지 않는다. */
+  function openPclm(): void {
+    const block = poolModel.getSnapshot()?.pclm;
+    if (!block) { patch({ status: `⚠ ${PCLM_UNAVAILABLE}`, level: "danger" }); return; }
+    openRegDialog({
+      title: "계약 목록 등록", okLabel: "등록", mode: "pclm",
+      db: String(block.default_db || ""), view: "",
+    });
+  }
+
   async function submitReg(): Promise<void> {
     if (reg === null) return;
-    const action = reg.targetKey ? "relink" : "register_excel";
-    const payload: Obj = {
-      name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), note: reg.note.trim(),
-    };
-    if (reg.targetKey) payload.key = reg.targetKey;
-    if (!payload.name || !payload.path) {
+    const pclm = reg.mode === "pclm";
+    const action = pclm ? "register_pclm" : reg.targetKey ? "relink" : "register_excel";
+    const payload: Obj = pclm
+      ? { name: reg.name.trim(), db: reg.db.trim(), view: reg.view, note: reg.note.trim() }
+      : {
+        name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), note: reg.note.trim(),
+      };
+    if (!pclm && reg.targetKey) payload.key = reg.targetKey;
+    if (pclm) {
+      /* 빈 뷰는 백엔드가 「약속한 뷰가 아닙니다」로 거절하지만, 사용자가 아직 **고르지
+         않은 것**과 **틀리게 고른 것**은 다른 사건이라 여기서 그 말로 막는다. db 는
+         비어도 된다(백엔드가 「기본 자리」로 해석) — 폼은 그 자리를 미리 보여 준다. */
+      if (!payload.name) { patchReg({ error: "이름을 입력하세요." }); return; }
+      if (!payload.view) {
+        patchReg({ error: "읽을 시트를 고르세요." });
+        return;
+      }
+    } else if (!payload.name || !payload.path) {
       patchReg({ error: "이름과 파일 경로를 입력하세요." });
       return;
     }
@@ -305,6 +345,7 @@ export function createDataPickerController(args: {
     },
     browseFile,
     openPin,
+    openPclm,
     poolAction,
     resolveDuplicate,
     openRegDialog,
@@ -359,20 +400,32 @@ function PinnedRow(props: { row: Obj; controller: DataPickerController }): React
 
 export function DataPickerDialog(props: { controller: DataPickerController }): ReactNode {
   const { controller } = props;
-  const state = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
-  const pool = useSyncExternalStore(controller.poolModel.subscribe, controller.poolModel.getSnapshot);
+  /* 세 번째 인자(getServerSnapshot)를 같은 getter 로 넘긴다(`EditorScreen` 선례): 제품
+     런타임은 쓰지 않지만, 없으면 이 면이 `react-dom/server` 로 한 번도 렌더되지 못해
+     노드 배치 계약을 단위층에서 잴 수 없다. */
+  const state = useSyncExternalStore(
+    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
+  const pool = useSyncExternalStore(
+    controller.poolModel.subscribe, controller.poolModel.getSnapshot,
+    controller.poolModel.getSnapshot);
   const current = state.session?.current || {};
   const rows = pool?.rows || [];
   return h("div", { className: "modal-card data-picker" },
     h("h3", { id: "dataPickerTitle" }, "데이터 선택"),
-    h("p", { className: "modal-sub" }, "엑셀·CSV 는 위치(경로·시트)만 기억하고, 고를 때 원본을 읽습니다."),
     h("p", { id: "dataPickerNote", className: `note ${state.level === "danger" ? "dangerbox" : state.level === "ok" ? "okbox" : ""}`,
       role: "status", "aria-live": "polite", style: { display: state.status ? "" : "none", whiteSpace: "pre-line" } }, state.status),
     h("section", { className: "picker-sec", "aria-labelledby": "dataPickerCurCap" },
       h("div", { className: "cap", id: "dataPickerCurCap" }, "현재 데이터"),
       h("div", { id: "dataPickerCurrent" }, current.label ? h("div", { className: "tplcard" },
         h("div", { className: "tplcard-top" }, h("span", { className: "tplcard-name" }, current.label),
-          current.sheet ? h("span", { className: "muted" }, `시트: ${current.sheet}`) : null,
+          /* 자리 이름은 종류를 가리지 않고 「시트」 하나다 — 계약면도 사용자에겐 표 한 장이라
+             내부 어휘(뷰)를 표면에 세울 이유가 없다. 종류가 가르는 것은 **값의 표기**뿐이다
+             (#937): 계약 목록의 면 이름은 내부 이름이라 스냅샷 제목표로 옮겨 그린다. 그
+             표에 없는 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다. */
+          current.sheet ? h("span", { className: "muted" },
+            `시트: ${current.kind === "pclm"
+              ? (pool?.pclm?.titles || {})[current.sheet] || current.sheet
+              : current.sheet}`) : null,
           h("span", { className: "pill ok" }, "사용 중")),
         current.detail ? h("div", { className: "tplcard-meta muted" }, current.detail) : null,
         current.origin === "file" && current.path ? h("div", { className: "tplcard-acts" },
@@ -393,34 +446,62 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
         h("div", { className: "note dangerbox", key: entry.file }, `⚠ 손상된 등록 데이터: ${entry.file} — ${entry.error}`)))),
     h("section", { className: "picker-sec", "aria-labelledby": "dataPickerOtherCap" },
       h("div", { className: "cap", id: "dataPickerOtherCap" }, "다른 데이터"),
-      h("p", { className: "muted capnote" }, "한 번만 쓸 파일. 고른 뒤 「이 데이터 고정」으로 남길 수 있습니다."),
       h("button", { className: "btn", id: "dataPickerBrowse", "data-busy-lock": true,
-        onClick: () => { void controller.browseFile(); } }, "파일 찾아보기…")),
+        onClick: () => { void controller.browseFile(); } }, "파일 찾아보기…"),
+      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
+         둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
+         「눌러도 아무 일 없음」이 결함으로 읽힌다. 라벨의 괄호는 **확장자**다: 저쪽
+         프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
+      h("button", { className: "btn", id: "dataPickerPclm", "data-busy-lock": true,
+        disabled: !pool?.pclm, title: pool?.pclm ? "" : PCLM_UNAVAILABLE,
+        onClick: controller.openPclm }, "계약 목록(.db) 등록…")),
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "dataPickerClose", onClick: controller.close }, "닫기")));
 }
 
 export function PoolRegistrationDialog(props: { controller: DataPickerController }): ReactNode {
   const { controller } = props;
-  const state = useSyncExternalStore(controller.regModel.subscribe, controller.regModel.getSnapshot);
+  const state = useSyncExternalStore(
+    controller.regModel.subscribe, controller.regModel.getSnapshot,
+    controller.regModel.getSnapshot);
+  const pool = useSyncExternalStore(
+    controller.poolModel.subscribe, controller.poolModel.getSnapshot,
+    controller.poolModel.getSnapshot);
   const value = state || {
-    title: "데이터 등록", okLabel: "등록", name: "", path: "", sheet: "", note: "",
-    targetKey: "", pinMode: false, error: "",
+    title: "데이터 등록", okLabel: "등록", mode: "excel", name: "", path: "", sheet: "",
+    db: "", view: "", note: "", targetKey: "", pinMode: false, error: "",
   };
+  const pclm = value.mode === "pclm";
+  /* 고를 수 있는 시트와 그 설명은 링0 단일 출처가 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
+  const views: Obj[] = (pool?.pclm?.views || []) as Obj[];
   return h("div", { className: "modal-card" },
     h("h3", { id: "poolRegTitle" }, value.title),
-    h("p", { className: "modal-sub" }, "파일 위치만 기억하고, 실행할 때 원본을 읽습니다."),
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
       h("input", { className: "field", id: "poolRegName", type: "text", value: value.name,
         placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
-    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "파일 경로(.xlsx/.csv)"),
+    pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "파일 경로(.xlsx/.csv)"),
       h("span", { className: "row" }, h("input", { className: "field mono spacer", id: "poolRegPath", type: "text",
         value: value.path, readOnly: value.pinMode, onChange: (event: Obj) => controller.patchReg({ path: event.currentTarget.value }) }),
       h("button", { className: "btn", id: "poolRegBrowse", type: "button", hidden: value.pinMode,
         onClick: () => { void controller.browseRegPath(); } }, "찾아보기…"))),
-    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "시트(선택)"),
+    pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "시트(선택)"),
       h("input", { className: "field", id: "poolRegSheet", type: "text", value: value.sheet,
         readOnly: value.pinMode, onChange: (event: Obj) => controller.patchReg({ sheet: event.currentTarget.value }) })),
+    /* DB 자리는 편집 가능하다 — 기본 자리를 프리필하되 다른 사본을 가리킬 수 있어야 한다.
+       비우면 백엔드가 「기본 자리」로 해석해 opts 에 박는다(미기재로 두지 않는다). */
+    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리"),
+      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db,
+        onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
+    /* 시트는 **사용자가 확정**한다 — 목록 첫 항목을 기본으로 세우면 계약면이 조용히 섞여
+       문서 건수가 어긋난다. 그래서 초기 선택은 빈 placeholder 이고, 빈 채 제출은 막는다.
+       보이는 것은 제목과 설명이고 `value` 는 실제 뷰 이름이다 — 백엔드 계약이 그 이름이라
+       표기만 사람 말로 옮긴다(내부 이름은 표면에 서지 않는다). */
+    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "읽을 시트"),
+      h("select", { className: "field", id: "poolRegView", value: value.view,
+        onChange: (event: Obj) => controller.patchReg({ view: event.currentTarget.value }) },
+      h("option", { value: "", key: "" }, PCLM_VIEW_PLACEHOLDER),
+      ...views.map((view: Obj) => h("option", { value: String(view.name), key: String(view.name) },
+        `${view.title} — ${view.desc}`)))) : null,
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
       h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note,
         onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),

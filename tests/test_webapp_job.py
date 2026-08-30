@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import threading
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -1660,7 +1661,7 @@ def test_new_work_handoff_carries_the_reference_or_refuses_out_loud(tmp_path):
     assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     ref, blocked = ctrl.new_work_handoff()
     assert blocked == ""
-    assert ref == {"path": str(xlsx), "sheet": "발주", "header_row": 2}
+    assert ref == {"path": str(xlsx), "sheet": "발주", "header_row": 2, "kind": ""}
 
     a, b = tmp_path / "a.csv", tmp_path / "b.csv"
     a.write_text("id,bidNtceNm\n1,전산장비\n", encoding="utf-8")
@@ -6476,3 +6477,271 @@ def test_remembered_descriptor_rejects_half_written_components(tmp_path):
     with pytest.raises(ValueError):
         save_last_data_source(source="registry", path="x")
     assert load_last_data_source() is None
+
+
+# ------------------------------- 계약 목록(pclm) 마운트 세 길(#937)
+#
+# 세션 소스 축에 ``pclm`` 이 늘었다. 그 축이 서는 길은 셋이고 전부 여기서 잰다: 풀
+# 겨눔(슬롯 정체는 그대로 pool) · 작업 결속(durable, 종류가 갈래를 가른다) · 부팅 복원과
+# 재마운트(기억은 db+뷰 한 벌).
+_PCLM_VIEW = "v_통합_v1"
+# 라벨·통지가 지는 것은 **제목**이다 — 내부 이름은 성분(경로·시트·키)에만 산다.
+_PCLM_TITLE = "통합"
+
+
+def _pclm_db(
+    tmp_path,
+    *,
+    name: str = "pclm.db",
+    rows=(("전산장비", ""), ("사무비품", "2000000")),
+    view: str = _PCLM_VIEW,
+) -> str:
+    """pclm 이 내는 모양을 흉내 낸 SQLite — 표 하나 위에 계약면 뷰를 얹는다.
+
+    열 이름을 이 파일의 픽스처 작업 소스 키에 맞춘다: 계약 목록도 엑셀과 **같은 후보·호환
+    판정**을 지나므로(열 이름이 곧 어휘), 다른 이름을 쓰면 재는 축이 조용히 호환 판정으로
+    바뀐다.
+    """
+    db = tmp_path / name
+    connection = sqlite3.connect(db)
+    connection.execute('CREATE TABLE 계약 ("bidNtceNm" TEXT, "presmptPrce" TEXT);')
+    connection.executemany("INSERT INTO 계약 VALUES (?, ?);", rows)
+    connection.execute(f'CREATE VIEW "{view}" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(db)
+
+
+def _bind_pclm(registry, db: str, *, name: str = "공고서", view: str = _PCLM_VIEW) -> None:
+    """작업의 durable 결속을 계약 목록 한 벌로 갈아 끼운다(db=경로 · 뷰=시트 · 0 · pclm)."""
+    registry.save(
+        replace(
+            registry.load(name),
+            data_path=db, data_sheet=view, data_header_row=0, data_kind="pclm",
+        ),
+        allow_overwrite=True,
+    )
+
+
+def test_pool_targeting_a_pclm_reference_captures_the_kind_with_the_reference(tmp_path):
+    """풀 겨눔의 정체는 그대로 슬롯(``pool``)이고, 갈리는 것은 **가리키는 종류**다.
+
+    두 축을 한 값으로 뭉개면(출처를 ``pclm`` 으로 세우면) 재마운트가 슬롯을 잃고, 종류를
+    흘리면 결속 판정이 같은 경로 문자열로 엑셀과 계약 목록을 뭉갠다.
+    """
+    ctrl, pool = _pool_controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = _pool_add(pool, "계약목록", {"db": db, "view": _PCLM_VIEW}, kind="pclm")
+
+    res = ctrl.dispatch("load_pool", {"key": key})
+
+    assert res == {"ok": True, "label": "등록 데이터: 계약목록"}
+    assert ctrl.data_source == "pool" and ctrl.data_pool_key == key
+    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
+        db, _PCLM_VIEW, 0, "pclm",
+    )
+    snap = ctrl.snapshot()
+    assert snap["record_count"] == 2 and snap["selected_count"] == 0
+    assert snap["data_target"] == {
+        "path": db, "sheet": _PCLM_VIEW, "origin": "pool", "kind": "pclm",
+    }
+
+
+def test_mount_pclm_seats_every_session_component(tmp_path):
+    """직접 마운트 — 성분 한 벌·라벨·소스 키·선택 초기화가 파일 마운트와 **같은 순서**다."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+
+    ctrl._mount_pclm(db, _PCLM_VIEW)
+
+    assert ctrl.data_source == "pclm" and ctrl.data_pool_key == ""
+    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
+        db, _PCLM_VIEW, 0, "pclm",
+    )
+    # 라벨은 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으론 무엇이 섰는지 모른다.
+    # 병기하는 것은 제목이다: 사람이 읽는 한 줄이라 내부 이름(v_…)이 새면 안 된다.
+    assert ctrl.data_label == f"pclm.db · {_PCLM_TITLE}"
+    snap = ctrl.snapshot()
+    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_TITLE}"
+    assert "v_" not in snap["data_source_label"]
+    assert snap["record_count"] == 2 and snap["selected_count"] == 0
+    assert snap["data_target"]["kind"] == "pclm"
+    # 소스 일치 키는 파일 접두와 갈린다(결정 28) — 종류가 정체의 성분이다.
+    assert ctrl._data_key.startswith("pclm:") and _PCLM_VIEW in ctrl._data_key
+
+
+def test_mount_pclm_refuses_an_empty_view_before_destroying_the_current_mount(tmp_path):
+    """0행은 조용한 빈 세션이 아니다 — 거절이고, 서 있던 데이터는 그대로 산다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    empty = _pclm_db(tmp_path, name="빈.db", rows=())
+
+    with pytest.raises(ValueError, match="행이 없습니다"):
+        ctrl._mount_pclm(empty, _PCLM_VIEW)
+
+    assert ctrl.data_source == "file" and ctrl.snapshot()["record_count"] == 2
+
+
+def test_mount_pclm_lets_a_missing_database_speak_for_itself(tmp_path):
+    """읽기 실패는 삼키지 않고 그대로 올린다 — 호출자가 자기 채널로 재진술한다."""
+    ctrl, _ = _controller(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="찾지 못했습니다"):
+        ctrl._mount_pclm(str(tmp_path / "없다.db"), _PCLM_VIEW)
+
+
+def test_selecting_a_pclm_bound_job_mounts_its_view_and_then_stands_still(tmp_path):
+    """작업 → 데이터 방향이 종류를 관통한다. 이미 서 있으면 다시 읽지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    _bind_pclm(ctrl.registry, db)
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    assert ctrl.data_kind == "pclm" and ctrl.records[0]["bidNtceNm"] == "전산장비"
+    assert ctrl.snapshot()["data_notice"]["text"] == (
+        f"이 작업에 연결된 데이터 'pclm.db · {_PCLM_TITLE}' 을(를) 불러왔습니다. "
+        "항목 선택은 초기화됐습니다."
+    )
+    ctrl.dispatch("set_all", {})
+    ctrl.dispatch("select_job", {"name": ""})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    # 같은 데이터가 서 있으면 재읽기가 없다 — 아무것도 안 바꾸는 마운트가 선택을 지우면
+    # 그 자체가 조용한 파기다.
+    assert ctrl.snapshot()["selected_count"] == 2
+    assert ctrl.snapshot()["data_notice"] is None
+
+
+def test_selecting_a_pclm_bound_job_with_a_missing_db_reuses_the_missing_text(tmp_path):
+    """계약 목록 db 도 사라질 수 있는 파일이다 — 끊김 판정·문안은 같은 한 자리를 쓴다."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    _bind_pclm(ctrl.registry, db)
+    Path(db).unlink()
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    assert ctrl.data_source == ""  # 마운트 없음(작업 선택 자체는 성사)
+    assert ctrl.snapshot()["data_notice"] == {
+        "level": "warn",
+        "text": (
+            f"이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {db}. "
+            "데이터를 다시 고른 뒤 작업을 저장하세요."
+        ),
+    }
+
+
+def test_binding_mount_refuses_an_unknown_kind_out_loud(tmp_path):
+    """이름 없는 종류를 파일 갈래로 흘려보내지 않는다 — 사유가 그 자리에서 선다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(
+        replace(
+            ctrl.registry.load("공고서"),
+            data_path=_data_csv(tmp_path), data_kind="미래소스",
+        ),
+        allow_overwrite=True,
+    )
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    assert ctrl.data_source == ""
+    assert "알 수 없는 데이터 결속 종류입니다" in ctrl.snapshot()["data_notice"]["text"]
+
+
+def test_remount_reruns_the_pclm_branch_with_the_captured_reference(tmp_path):
+    """새로고침도 새 마운트 경로를 만들지 않는다 — 포획해 둔 db+뷰를 그대로 되돌려 준다."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    ctrl._mount_pclm(db, _PCLM_VIEW)
+
+    connection = sqlite3.connect(db)
+    connection.execute("INSERT INTO 계약 VALUES ('추가건', '3000');")
+    connection.commit()
+    connection.close()
+
+    res = ctrl.dispatch("remount_data", {})
+
+    assert res == {"ok": True, "label": f"계약 목록: pclm.db · {_PCLM_TITLE}"}
+    assert ctrl.snapshot()["record_count"] == 3
+
+
+def test_pclm_mount_is_remembered_and_restored_on_the_first_snapshot(tmp_path):
+    """기억은 db+뷰 한 벌이고 출처 축이 어느 어댑터로 읽을지를 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    ctrl._mount_pclm(db, _PCLM_VIEW)
+
+    assert load_last_data_source() == {
+        "source": "pclm", "path": db, "sheet": _PCLM_VIEW,
+        "header_row": 0, "pool_key": "",
+    }
+
+    fresh, pushes = _controller(tmp_path)
+    snap = fresh.initial()
+
+    assert snap["has_data"] is True and snap["record_count"] == 2
+    assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_TITLE}"
+    assert snap["selected_count"] == 0 and snap["data_notice"] is None
+    assert pushes == []  # 결과는 첫 스냅샷 자체가 나른다
+
+
+def test_missing_remembered_pclm_db_restates_the_existing_reason(tmp_path):
+    """부팅 복원의 실패도 새 채널을 만들지 않는다 — 파일 부재는 같은 술어·같은 문안."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    ctrl._mount_pclm(db, _PCLM_VIEW)
+    Path(db).unlink()
+
+    snap = _controller(tmp_path)[0].initial()
+
+    assert snap["has_data"] is False
+    assert snap["data_notice"] == {
+        "level": "warn",
+        "text": (
+            f"지난번에 사용한 데이터 파일을 찾을 수 없습니다: {db}. 데이터를 다시 고르세요."
+        ),
+    }
+    assert load_last_data_source()["path"] == db  # 기억은 지우지 않는다
+
+
+def test_remembered_pclm_descriptor_needs_both_db_and_view(tmp_path):
+    """반쪽 계약 목록 기억은 조용히 저장되지 않는다 — 뷰 없이는 무엇을 열지 모른다."""
+    with pytest.raises(ValueError, match="DB 경로와 뷰"):
+        save_last_data_source(source="pclm", path="C:/d/pclm.db", sheet="")
+    with pytest.raises(ValueError, match="DB 경로와 뷰"):
+        save_last_data_source(source="pclm", path="", sheet=_PCLM_VIEW)
+    assert load_last_data_source() is None
+
+
+def test_a_pclm_bound_job_is_no_candidate_for_an_excel_mount_of_the_same_path(tmp_path):
+    """종류가 갈리면 다른 데이터다 — 경로 문자열이 같아도 후보에 섞이지 않는다(교차 불일치)."""
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+    _bind_pclm(ctrl.registry, db)
+
+    # 같은 경로를 엑셀 종류로 마운트한 것처럼 세션 성분만 세운다(파일 파싱은 이 축이 아니다).
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.data_path, ctrl.data_sheet, ctrl.data_kind = db, _PCLM_VIEW, ""
+    assert [j.name for j in ctrl._bound_jobs(list(ctrl.registry.list_jobs()))] == []
+
+    ctrl.data_kind = "pclm"
+    assert [j.name for j in ctrl._bound_jobs(list(ctrl.registry.list_jobs()))] == ["공고서"]
+
+
+def test_a_pclm_bound_job_that_lost_a_column_stays_visible_as_needs_action(tmp_path):
+    """호환 판정은 결속을 대신하지 않는다 — 열이 사라지면 「확인 필요」로 남는다(사라짐 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    thin = tmp_path / "결손.db"
+    connection = sqlite3.connect(thin)
+    connection.execute('CREATE TABLE 계약 ("bidNtceNm" TEXT);')
+    connection.execute("INSERT INTO 계약 VALUES ('전산장비');")
+    connection.execute(f'CREATE VIEW "{_PCLM_VIEW}" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    _bind_pclm(ctrl.registry, str(thin))
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+
+    assert snap["candidates"]["top"] == []
+    assert snap["candidates"]["needs_count"] == 1

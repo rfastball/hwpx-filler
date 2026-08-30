@@ -322,7 +322,7 @@ class TestWebSelftestGate:
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
         assert probe["opened"] is True, probe
-        assert probe["rows"] == 2, probe
+        assert probe["rows"] == 3, probe
         # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
         assert probe["use_active_enabled"] is True, probe
         assert probe["use_archived_disabled"] is True, probe
@@ -367,6 +367,35 @@ class TestWebSelftestGate:
         assert probe["error"] is None, probe
         assert probe["use_targets_key"] is True, probe
         assert probe["dupes_shown"] is True, probe
+
+    def test_data_picker_registers_contract_lists(self, selftest_result: dict) -> None:
+        """계약 목록이 이 면에서 **실제로** 서고 등록된다(#937 ADR N).
+
+        엑셀과 좌표가 다른 종류라 정적 계약만으로는 「목록에 그려지는가」·「엑셀 전용
+        동사가 새지 않는가」를 못 본다. 진입 버튼은 존재가 아니라 **가시**여야 하고
+        (프로브 click 은 hidden 도 통과한다), 열린 폼은 기본 DB 자리를 프리필하되 시트는
+        빈 placeholder 로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
+
+        표면 어휘도 여기서 잰다: 옵션의 **값**은 백엔드 계약(실 뷰 이름)이지만 **보이는
+        글자**에는 내부 이름도 저쪽 프로그램 이름도 서지 않는다.
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        # 종류가 달라도 목록에서 그냥 쓸 수 있다(끊김·보관이 아니면 비활성 사유가 없다).
+        assert probe["pclm_row_usable"] is True, probe
+        # 「다시 연결」은 경로+시트 좌표의 엑셀 전용 동사 — pclm 행에 서면 거짓 어포던스다.
+        assert probe["pclm_no_relink"] is True, probe
+        assert probe["pclm_entry"] is True, probe
+        assert probe["pclm_entry_text"] == "계약 목록(.db) 등록…", probe
+        # 고르게 할 시트 3 + 빈 placeholder 1 — 목록 첫 항목이 기본으로 서지 않는다.
+        # 품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지 웹 등록에서 고르게 하지 않는다.
+        assert probe["pclm_reg_view_options"] == 4, probe
+        assert probe["pclm_reg_db_prefill"] == "C:/AppData/Local/Pclm/pclm.db", probe
+        # 값은 실 뷰 이름 그대로(백엔드 계약), 글자는 제목 — 표면에 `v_` 이름이 새지 않는다.
+        assert probe["pclm_reg_view_values"] == "|v_통합_v1|v_공고_v1|v_계약_v1", probe
+        assert "v_" not in probe["pclm_reg_view_text"], probe
+        assert probe["pclm_reg_view_text"].startswith("시트를 고르세요|통합 —"), probe
+        assert probe["pclm_reg_view_label"] == "읽을 시트", probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self,

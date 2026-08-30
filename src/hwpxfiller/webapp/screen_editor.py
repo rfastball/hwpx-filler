@@ -65,7 +65,7 @@ from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_typ
 from ..external import example_pack
 from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
-from ..data.factory import source_for_path
+from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry, content_fingerprint
 from ..host.locations import default_templates_dir, default_text_templates_dir
@@ -105,7 +105,8 @@ from .screens import (
     PushSink,
     TutorialSink,
     load_pool_into,
-    pool_reference_triple,
+    pclm_reference,
+    pool_reference_quad,
     reference_missing,
     unwired_tutorial,
 )
@@ -152,15 +153,16 @@ POOL_UNWIRED_TEXT = "등록 데이터 목록을 읽을 수 없습니다."
 def _binding_source_ref(job: "Job") -> "dict | None":
     """저장본의 데이터 결속을 **인계 참조 한 벌**로 — 미결속이면 ``None``.
 
-    ``{path, sheet, header_row}`` 는 :meth:`EditorController._load_source_ref` 가 받는
+    ``{path, sheet, header_row, kind}`` 는 :meth:`EditorController._load_source_ref` 가 받는
     형상 그대로다(#878 인계와 같은 문). 결속을 경로 하나로 줄이지 않는 이유도 같다:
     참조 성분을 흘리면 마법사가 **다른 헤더**에 앵커를 걸고 그 어긋남은 화면 어디에도
-    표시가 없다(#349 리뷰 P1).
+    표시가 없다(#349 리뷰 P1). ``kind`` 도 같은 근거로 함께 간다 — 종류를 흘리면 받는 쪽이
+    경로 모양으로 어느 어댑터인지를 되추측한다.
     """
     if not has_data_binding(job):
         return None
-    path, sheet, header_row = data_binding_of(job)
-    return {"path": path, "sheet": sheet, "header_row": header_row}
+    path, sheet, header_row, kind = data_binding_of(job)
+    return {"path": path, "sheet": sheet, "header_row": header_row, "kind": kind}
 
 
 def pool_option_block(row: "DatasetPoolRow") -> str:
@@ -170,12 +172,18 @@ def pool_option_block(row: "DatasetPoolRow") -> str:
     목록에서 지우면 사람이 등록해 둔 항목이 이유 없이 사라진 것으로 보이고, 그 침묵이
     이 라운드가 고치는 결함과 같은 종류다. 판정도 문구도 여기 한 곳이 낸다 — 표면이
     ``status``·``kind`` 로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다.
+
+    **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
+    행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다. 사실
+    (참조가 끊겼다)은 한 문장으로 같고 그다음 절만 갈린다.
     """
-    if row.kind != "excel":
+    if row.kind not in ("excel", "pclm"):
         return f"{row.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
     if row.status != STATUS_ACTIVE:
         return "보관한 항목입니다. '문서 만들기'의 데이터 선택에서 활성화한 뒤 쓰세요."
     if reference_missing(row.locate_path):
+        if row.kind == "pclm":
+            return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
         return "참조가 끊겼습니다. '문서 만들기'의 데이터 선택에서 다시 연결한 뒤 쓰세요."
     return ""
 
@@ -283,6 +291,9 @@ class EditorController:
         # (#349 리뷰 P1)이 채운다: 참조를 경로로만 줄이면 사용자가 고른 것과 **다른 헤더**로
         # 마법사가 서고, 그 어긋남은 화면 어디에도 표시가 없다.
         self.data_header_row = 0
+        # 결속의 **종류**(""=엑셀/CSV) — 위 세 성분과 한 벌이다. 저장이 그대로 Job 에 실어
+        # durable 이 되므로(`_EDITOR_REBUILDS` 갈래) 세션 리셋에서 함께 선다.
+        self.data_kind = ""
         # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
         # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
@@ -966,6 +977,7 @@ class EditorController:
         self.data_path = data["data_path"]
         self.data_sheet = data["data_sheet"]
         self.data_header_row = data["data_header_row"]
+        self.data_kind = data["data_kind"]
         self.source_fields = list(data["source_fields"])
         self.records = data["records"]
         self.session = EditSession(
@@ -1222,13 +1234,52 @@ class EditorController:
         if header_row:
             opts["header_row"] = header_row
         source = source_for_path(path, **opts)
-        records = source.records()
+        self._adopt_datasource(
+            source, source.records(), path=path, sheet=sheet or "",
+            header_row=header_row,
+            # 이 관문은 **파일 소스**의 것이다 — 종류는 늘 엑셀/CSV 다.
+            kind="", emit_push=emit_push,
+        )
+
+    def _adopt_pclm(self, db: str, view: str, *, emit_push: bool = True) -> None:
+        """계약 목록(pclm) 뷰를 이 세션의 데이터로 — :meth:`load_data_path` 의 자매(#937).
+
+        참조 형상은 :func:`~hwpxfiller.webapp.screens.pclm_reference` 하나가 짓는다(「문서
+        만들기」의 마운트와 같은 한 벌) — 두 화면이 각자 덕타입을 조립하면 opts 키가
+        갈리는 날 한쪽만 조용히 기본 db 를 읽는다. 복원은 풀 항목 복원과 **같은 함수**를
+        지난다: 참조로부터 소스를 세우는 규칙이 이 저장소에 두 벌이 되지 않게.
+
+        읽기 실패(db 부재·미지 뷰)는 :meth:`load_data_path` 와 같은 규약으로 raise 한다 —
+        호출자(공유 관문·인계 복원)가 자기 채널의 문안으로 재진술한다.
+        """
+        source = source_from_pool_item(pclm_reference(db, view))
+        self._adopt_datasource(
+            source, source.records(), path=db, sheet=view,
+            # 계약면에는 헤더 행 축이 없다 — 0 이 곧 「해당 없음」이다.
+            header_row=0, kind="pclm", emit_push=emit_push,
+        )
+
+    def _adopt_datasource(
+        self, source, records: list, *, path: str, sheet: str, header_row: int,
+        kind: str, emit_push: bool = True,
+    ) -> None:
+        """읽어 온 소스·레코드를 이 세션의 데이터로 **채택**한다 — 종류 무관 공용 몸통.
+
+        종류별로 다른 것은 **소스를 어떻게 세우는가** 하나이고(파일 확장자 · 계약 목록
+        참조), 그 뒤의 전이 — 0행 거절·클린 표지 해제·참조 성분 한 벌·어휘 초기화·매핑
+        재조립 — 는 전부 같다. 갈래마다 이 몸통을 복붙하면 한쪽만 미사용 칩을 안 비우거나
+        한쪽만 모델을 안 다시 세우는 표류가 난다(#937).
+
+        ``path``·``sheet``·``header_row``·``kind`` 는 **한 벌로** 세운다: 이전 세션의 성분이
+        새 결속에 남지 않게 같은 자리에서 넷 다 대입한다.
+        """
         if not records:
             raise ValueError(NO_ROWS_TEXT)
         self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.data_path = path
-        self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
+        self.data_sheet = sheet  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.data_header_row = header_row
+        self.data_kind = kind
         self.source_fields = source.fields()
         # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
         self._ignored_sources = set()
@@ -1253,21 +1304,33 @@ class EditorController:
             self._push()
 
     def _load_source_ref(self, source_ref: dict, *, emit_push: bool = True) -> None:
-        """참조 한 벌(``{path, sheet, header_row}``)로 데이터를 **다시 읽는다** — 인계의 공용 자리.
+        """참조 한 벌(``{path, sheet, header_row, kind}``)로 데이터를 **다시 읽는다** — 인계의 공용 자리.
 
         「이 데이터로 새 작업」(:meth:`new_draft_with_data`)과 「수정…」(수리 진입, #878)이 같은
         성분을 같은 규칙으로 푼다. 두 자리가 각자 풀면 한쪽이 ``header_row`` 를 흘려도 아무도
         모른다 — 그 어긋남은 화면 어디에도 표시가 없다(#349 리뷰 P1 이 지목한 자리).
         참조를 낸 곳은 「문서 만들기」의 단일 판정
         (:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`)이다.
+
+        ``kind`` 가 **해석기를 가른다**(#937): ``""`` 는 파일(엑셀/CSV), ``"pclm"`` 은 계약
+        목록(db+뷰)이다. 이름 없는 종류는 시끄럽게 거절한다 — 그냥 넘기면 db 경로를 엑셀로
+        오파싱하거나 빈 세션으로 조용히 착지한다. 이 한 자리가 작업 열기 복원·「이 데이터로
+        새 작업」·수리 진입을 전부 받으므로, 종류 해석을 여기 밖에 두면 입구마다 갈린다.
         """
         path = str(source_ref.get("path") or "")
         if not path:
             raise ValueError("데이터 참조에 경로가 없습니다.")
+        kind = str(source_ref.get("kind") or "")
+        sheet = str(source_ref.get("sheet") or "")
+        if kind == "pclm":
+            self._adopt_pclm(path, sheet, emit_push=emit_push)
+            return
+        if kind:
+            raise ValueError(f"'{kind}' 데이터 결속은 편집기에서 복원할 수 없습니다.")
         header = source_ref.get("header_row")
         self.load_data_path(
             path,
-            sheet=str(source_ref.get("sheet") or "") or None,
+            sheet=sheet or None,
             header_row=header if isinstance(header, int) and not isinstance(header, bool) else 0,
             emit_push=emit_push,
         )
@@ -1498,9 +1561,10 @@ class EditorController:
         return {
             "data_path": self.data_path,
             "data_sheet": self.data_sheet,
-            # 참조 성분은 **한 벌로** 다닌다(#349 리뷰 2R·3R): 경로·시트만 되싣고 헤더 행을
-            # 흘리면 되돌린 뒤의 세션이 같은 파일의 다른 판을 들게 된다.
+            # 참조 성분은 **한 벌로** 다닌다(#349 리뷰 2R·3R): 경로·시트만 되싣고 헤더 행·
+            # 종류를 흘리면 되돌린 뒤의 세션이 같은 경로의 다른 판·다른 종류를 들게 된다.
             "data_header_row": self.data_header_row,
+            "data_kind": self.data_kind,
             "source_fields": list(self.source_fields),
             "records": self.records,
             "ignored": set(self._ignored_sources),
@@ -1520,6 +1584,7 @@ class EditorController:
         self.data_path = stash["data_path"]
         self.data_sheet = stash["data_sheet"]
         self.data_header_row = stash.get("data_header_row", 0)
+        self.data_kind = stash.get("data_kind", "")
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
         self._ignored_sources = stash["ignored"]
@@ -1652,7 +1717,7 @@ class EditorController:
             # 말하면 화면에는 데이터가 서 있는데 문안만 거짓이 된다(과진술도 부정직이다).
             restored_ref = data_binding_of(base)
             data_changed = (
-                self.data_path, self.data_sheet, self.data_header_row
+                self.data_path, self.data_sheet, self.data_header_row, self.data_kind
             ) != restored_ref
             base_bound = has_data_binding(base)
             self._restore_from(
@@ -1741,7 +1806,7 @@ class EditorController:
     # ``job`` 화면의 ``load_pool`` 을 공유하지 않고 편집기 소유 이름을 쓰는 이유: 화면별
     # 허용 목록(`action_registry`)이 곧 이 경계의 정의라 같은 이름을 두 화면이 나눠 쓰면
     # 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다. 포획 규율은 공유한다
-    # (:func:`~hwpxfiller.webapp.screens.pool_reference_triple`).
+    # (:func:`~hwpxfiller.webapp.screens.pool_reference_quad`).
 
     def _do_pool_options(self, p: dict) -> dict:
         """고정한 데이터 목록 1회 조회(무변이) — 목록·사유·손상 항목을 그대로 싣는다.
@@ -1775,17 +1840,21 @@ class EditorController:
     def _mount_pool_item(self, item) -> list:
         """풀 항목을 이 세션의 데이터로 마운트하고 레코드를 돌려준다(공유 관문의 loader).
 
-        참조 포획은 :func:`~hwpxfiller.webapp.screens.pool_reference_triple` 하나가 진다 —
-        경로·시트·헤더 행이 한 벌로 오지 않으면 마법사가 사람이 고른 것과 **다른 헤더**로
-        선다(#349 리뷰 P1). 파일 참조가 아닌 항목은 여기서 시끄럽게 거절한다(목록이 이미
-        비활성으로 그렸어도 그 판정을 표면에만 두지 않는다).
+        참조 포획은 :func:`~hwpxfiller.webapp.screens.pool_reference_quad` 하나가 진다 —
+        경로·시트·헤더 행·종류가 한 벌로 오지 않으면 마법사가 사람이 고른 것과 **다른
+        헤더**로 서거나 db 를 엑셀로 읽는다(#349 리뷰 P1 · #937). 파일 참조가 아닌 항목은
+        여기서 시끄럽게 거절한다(목록이 이미 비활성으로 그렸어도 그 판정을 표면에만 두지
+        않는다) — 술어는 ``path`` 이고 계약 목록은 그 자리에 db 를 채운다.
         """
-        path, sheet, header_row = pool_reference_triple(item)
+        path, sheet, header_row, kind = pool_reference_quad(item)
         if not path:
             raise ValueError(f"'{item.name}' 은(는) 파일 참조가 아니라 연결할 수 없습니다.")
-        self.load_data_path(
-            path, sheet=sheet or None, header_row=header_row, emit_push=False
-        )
+        if kind == "pclm":
+            self._adopt_pclm(path, sheet, emit_push=False)
+        else:
+            self.load_data_path(
+                path, sheet=sheet or None, header_row=header_row, emit_push=False
+            )
         return self.records
 
     def _do_use_pool_data(self, p: dict) -> dict:
@@ -2346,6 +2415,7 @@ class EditorController:
             data_path=self.data_path,
             data_sheet=self.data_sheet,
             data_header_row=self.data_header_row,
+            data_kind=self.data_kind,
             # 비-편집 메타는 사전 하나에서 통째로 되싣는다(_preserved_meta 단일 출처) —
             # 편집이 그룹·즐겨찾기를 조용히 초기화하던 자리(슬라이스 2 인접 수선).
             last_run_at=str(preserved["last_run_at"]),

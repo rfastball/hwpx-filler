@@ -1,7 +1,8 @@
 """데이터셋 풀 워크숍 Application 상태 — UI·저장 구현 비의존.
 
 웹 컨트롤러(:class:`~hwpxfiller.webapp.screen_pool.PoolController`)가 이 뷰모델을 들고
-``rows()``·``register_excel``/``register_nara``·``archive``/``activate``/``delete`` 로
+``rows()``·``register_excel``/``register_pclm``/``register_nara``·
+``archive``/``activate``/``delete`` 로
 **렌더·오케스트레이션만** 한다(액션 키→핸들러 라우팅과 stale 항목 봉합은 컨트롤러 몫).
 참조 등록·상태 전이·행 성형은 전부 여기 산다 — PySide6 임포트 없이 헤드리스로
 테스트된다(template_manager_state 분리를 미러링). *(구 Qt ``DatasetPoolPanel`` 은
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -38,7 +40,14 @@ from ..domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     DatasetReference,
+    pclm_identity,
     reference_identity,
+)
+from ..domain.pclm_views import (
+    PCLM_VIEW_LABELS,
+    PCLM_VIEW_TITLES,
+    PCLM_VIEWS,
+    default_pclm_db,
 )
 from .nara_acquire import validate_range
 
@@ -126,6 +135,10 @@ class DatasetPoolPort(Protocol):
         self, status: "str | None" = None
     ) -> "tuple[list[tuple[str, DatasetReference]], list[CorruptDatasetEntry]]": ...
 
+    def find_identity_raw(
+        self, ident: str
+    ) -> "tuple[str, DatasetReference] | None": ...
+
     def find_identity(
         self, path: "str | Path", sheet: "str | None" = ""
     ) -> "tuple[str, DatasetReference] | None": ...
@@ -144,6 +157,11 @@ class DatasetPoolPort(Protocol):
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
     ) -> DatasetReference: ...
+
+    def relabel_confirmed_raw(
+        self, ident: str, name: str, *,
+        note: str = "", expected_basis: "str | None",
+    ) -> "tuple[str, DatasetReference]": ...
 
     def relabel_confirmed(
         self, path: str, sheet: "str | None", name: str, *,
@@ -174,7 +192,16 @@ _BADGE_LEVELS = {
     STATUS_ACTIVE: "ok",
     STATUS_ARCHIVED: "muted",
 }
-_KIND_LABELS = {"excel": "엑셀/CSV", "nara": "나라장터", "pipeline": "파이프라인"}
+_KIND_LABELS = {
+    "excel": "엑셀/CSV",
+    "nara": "나라장터",
+    "pclm": "계약 목록",
+    "pipeline": "파이프라인",
+}
+
+#: 종류 → 그 참조가 **가리키는 파일**이 사는 opts 키. 없는 종류(나라·조립)는 파일 참조가
+#: 아니라 로케이트·끊김 배지의 대상이 아니다(빈 문자열 = 판정 밖).
+_LOCATE_KEYS = {"excel": "path", "pclm": "db"}
 
 
 @dataclass(frozen=True)
@@ -205,6 +232,18 @@ def available_actions(status: str) -> "list[PoolAction]":
     return list(_STATE_ACTIONS.get(status, ()))
 
 
+def resolve_pclm_db(db: str) -> str:
+    """계약 목록 DB 경로 해석 — 빈 값이면 **기본 자리**, 있으면 절대경로.
+
+    등록(:meth:`DatasetPoolViewModel.register_pclm`)과 그 전 중복 조회가 **같은 자리**를
+    봐야 한다. 두 곳이 각자 빈 값을 해석하면 조회는 기본 자리를, 등록은 빈 문자열을 보고
+    같은 데이터가 2건이 된다. 존재 검사는 하지 않는다 — 참조 등록은 파일을 열지 않고,
+    끊김은 배지(:func:`~hwpxfiller.webapp.screens.reference_missing`)와 실행 시점 재읽기가
+    말한다(``register_excel`` 과 같은 규율).
+    """
+    return os.path.abspath(db) if db else str(default_pclm_db())
+
+
 def reference_summary(item: DatasetReference) -> str:
     """항목이 가리키는 참조의 사람이 읽는 요약(경로/쿼리 — 데이터·키 없음)."""
     opts = item.opts
@@ -213,6 +252,15 @@ def reference_summary(item: DatasetReference) -> str:
         name = Path(path).name if path else "(경로 없음)"
         sheet = opts.get("sheet")
         return f"파일: {name}" + (f" · 시트 {sheet}" if sheet else "")
+    if item.kind == "pclm":
+        # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 면 하나. 표면 어휘는 「시트」로
+        # 통일한다(내부 어휘 「뷰」는 사용자가 읽을 자리에 서지 않는다). 면 이름도 제목으로
+        # 옮긴다 — 미지 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다.
+        db = str(opts.get("db", ""))
+        name = Path(db).name if db else "(경로 없음)"
+        view = opts.get("view")
+        title = PCLM_VIEW_TITLES.get(str(view), view)
+        return f"DB: {name}" + (f" · 시트 {title}" if view else "")
     if item.kind == "nara":
         bgn = opts.get("bgn_dt", "?")
         end = opts.get("end_dt", "?")
@@ -267,7 +315,8 @@ class DatasetPoolRow:
     badge_level: str
     reference: str
     note: str = ""
-    # 로케이트 대상 파일 경로(추적성 #53-B) — 엑셀 참조만. nara/파이프라인은 파일이 아니라 "".
+    # 로케이트 대상 파일 경로(추적성 #53-B) — 파일을 가리키는 참조만(엑셀=``path``,
+    # 계약 목록=``db``). nara/파이프라인은 파일이 아니라 "".
     locate_path: str = ""
     # 확정 시트(#67 다시 연결 프리필) — 엑셀 참조만. 미지정/비엑셀은 "".
     sheet: str = ""
@@ -277,9 +326,12 @@ class DatasetPoolRow:
 
     @classmethod
     def from_item(cls, key: str, item: DatasetReference) -> "DatasetPoolRow":
-        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
-        locate_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
-        raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
+        opts = item.opts if isinstance(item.opts, dict) else {}
+        # 「끊김」 배지·로케이트가 보는 파일은 종류마다 키가 다르다(엑셀=path, 계약 목록=db).
+        # 그 대응을 여기 한 번만 적어야 배지와 로케이트가 **같은 파일**을 본다.
+        raw = opts.get(_LOCATE_KEYS.get(item.kind, ""))
+        locate_path = raw if isinstance(raw, str) else ""
+        raw_sheet = opts.get("sheet")
         sheet = raw_sheet if (item.kind == "excel" and isinstance(raw_sheet, str)) else ""
         return cls(
             key=key,
@@ -389,6 +441,17 @@ class DatasetPoolViewModel:
         """
         return self.registry.find_identity(path, sheet or "")
 
+    def find_same_pclm(
+        self, db: str, view: str
+    ) -> "tuple[str, DatasetReference] | None":
+        """이 DB+뷰가 이미 고정돼 있는가 — 계약 목록 판 :meth:`find_same_data`.
+
+        정체성 계산은 Domain 이 소유하므로(:func:`~hwpxfiller.domain.dataset_reference.
+        pclm_identity`) 조회는 어댑터의 정체성 질의에 그대로 얹는다 — 경로 정규화(대소문자·
+        상대경로)는 그 계산이 흡수한다.
+        """
+        return self.registry.find_identity_raw(pclm_identity(db, view))
+
     def register_excel(
         self, name: str, path: str, *, sheet: "str | None" = None, note: str = ""
     ) -> DatasetReference:
@@ -406,6 +469,36 @@ class DatasetPoolViewModel:
         if sheet:
             opts["sheet"] = sheet
         item = DatasetReference(name=name, kind="excel", opts=opts, note=note)
+        self.registry.add(item)
+        self.refresh()
+        return item
+
+    def register_pclm(
+        self, name: str, db: str = "", *, view: str, note: str = ""
+    ) -> DatasetReference:
+        """계약 목록(pclm) 참조 등록 — **DB 경로 + 뷰만** 저장(스냅샷 아님, 실행 때 재읽기).
+
+        ``opts`` 는 **항상 두 키를 채운다**: 빈 ``db`` 는 「기본 자리」라는 뜻이지 「자리
+        미상」이 아니므로 등록 시점에 :func:`resolve_pclm_db` 로 해석해 박는다 — 미기재로
+        두면 나중에 기본 자리가 바뀌었을 때 같은 항목이 조용히 다른 DB 를 가리키고,
+        정체성(같은 데이터인가)도 지어지지 않아 중복 판정이 통째로 죽는다.
+
+        뷰는 여기서 검증한다(등록 시점 확정): 뷰 이름은 SELECT 에 그대로 박히는
+        허용목록이고(:data:`~hwpxfiller.domain.pclm_views.PCLM_VIEWS`), 잘못된 이름을
+        저장하면 실행 때마다 실패하는 죽은 참조가 조용히 생긴다(``register_nara`` 의 기간
+        검증과 같은 근거, RC-13). 거절은 쓸 수 있는 뷰를 설명과 함께 재진술한다.
+        """
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("데이터셋 이름을 입력하세요.")
+        if view not in PCLM_VIEWS:
+            raise ValueError(
+                f"계약 목록이 약속한 뷰가 아닙니다: {view!r}\n"
+                "쓸 수 있는 뷰:\n"
+                + "\n".join(f"  {v} — {PCLM_VIEW_LABELS[v]}" for v in PCLM_VIEWS)
+            )
+        opts: "dict[str, object]" = {"db": resolve_pclm_db(db), "view": view}
+        item = DatasetReference(name=name, kind="pclm", opts=opts, note=note)
         self.registry.add(item)
         self.refresh()
         return item
@@ -438,6 +531,25 @@ class DatasetPoolViewModel:
             raise ValueError("데이터셋 이름을 입력하세요.")
         _key, item = self.registry.relabel_confirmed(
             path, sheet or "", name, note=note, expected_basis=basis
+        )
+        self.refresh()
+        return item
+
+    def relabel_confirmed_raw(
+        self, ident: str, name: str, *, note: str = "", basis: "str | None"
+    ) -> DatasetReference:
+        """정체성으로 겨눈 라벨 갱신 확정 — 종류를 묻지 않는 :meth:`relabel_confirmed` 의 몸통.
+
+        엑셀 판은 경로+시트라는 **사람이 든 좌표**를 받지만, 계약 목록처럼 좌표가 다른
+        종류가 늘 때마다 확정 경로를 복제하지 않으려면 결속 왕복은 정체성 하나로 서야
+        한다(어댑터도 같은 규율 — :meth:`~hwpxfiller.external.dataset_store.
+        DatasetPoolRegistry.relabel_confirmed_raw`). 정체성 계산은 Domain 소유다.
+        """
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("데이터셋 이름을 입력하세요.")
+        _key, item = self.registry.relabel_confirmed_raw(
+            ident, name, note=note, expected_basis=basis
         )
         self.refresh()
         return item
@@ -563,4 +675,5 @@ __all__ = [
     "confirm_basis",
     "kind_transition_clause",
     "reference_summary",
+    "resolve_pclm_db",
 ]

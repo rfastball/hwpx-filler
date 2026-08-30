@@ -21,6 +21,7 @@ from hwpxfiller.gui.work_candidates import (
     TIER_UNUSED,
     TAB_AVAILABLE,
     TAB_NEEDS_ACTION,
+    bound_jobs,
     browse_candidates,
     candidate_rows,
     compatibility_for,
@@ -307,3 +308,19 @@ def test_browse_unknown_tab_degenerates_to_available():
     """미지 탭 값은 사용 가능으로 퇴화 — 표면 오타가 빈 화면을 만들지 않는다."""
     res = browse_candidates(_browse_jobs(), ["bidNtceNm"], tab="엉뚱")
     assert res.tab == TAB_AVAILABLE and len(res.rows) == 3
+
+
+# ------------------------------------------------------------ 결속 축(종류 포함)
+def test_bound_jobs_passes_the_kind_through_to_the_predicate():
+    """마운트의 **종류**가 다르면 결속이 아니다 — 관문이 종류를 흘리지 않는다.
+
+    경로·시트가 같아도 종류가 다르면 다른 데이터다(엑셀 파일과 계약 목록 db 는 같은
+    경로 문자열을 가질 수 있다). 여기서 종류를 떨어뜨리면 후보 줄이 남의 데이터로 서 있는
+    작업을 추천한다.
+    """
+    excel = Job(name="엑셀결속", template_path="/tmp/t.hwpx", data_path="/data/A.xlsx")
+    pclm = Job(name="목록결속", template_path="/tmp/t.hwpx", data_path="/data/A.xlsx",
+               data_kind="pclm")
+    jobs = [excel, pclm]
+    assert [j.name for j in bound_jobs(jobs, "/data/A.xlsx")] == ["엑셀결속"]
+    assert [j.name for j in bound_jobs(jobs, "/data/A.xlsx", kind="pclm")] == ["목록결속"]
