@@ -211,6 +211,21 @@ def test_declared_selector_tokens_exist_in_frontend(code: str) -> None:
 
 # ─────────────────────────────────────────────── 4. 역방향(고아 0) ──
 
+#: 프런트 소비자가 **없어도 되는** 액션 — 사유를 여기 적는다. 조용한 무시와 선언된 배제는
+#: 다르다(자매 게이트 `test_dispatch_payload_contract.NO_FRONTEND_CONSUMER` 의 F5 판정 O·
+#: F7 판정 K 선례를 그대로 승계한다).
+#:
+#: 동결된 표면은 이 축에서 두 갈래다. 태그·그룹(U4 §2-30)은 링1·영속만 남기고 **액션까지**
+#: 걷었으므로 여기 적을 것이 없다. 튜토리얼 진입 표면(#941)은 다르다 — 설치·제거 몸통
+#: (`external/example_pack`)과 그 확인 왕복 조립이 tpl 컨트롤러에 통째로 살아 있고 헤드리스
+#: 게이트(`tests/test_webapp_tutorial.py`·`tests/test_example_pack.py`)가 그 dispatch 경로를
+#: 실제로 밟는다. 액션을 걷으면 **되살릴 때 다시 쓸 계약이 아니라 그 계약의 게이트가**
+#: 사라지므로, 걷는 대신 배제를 선언한다. 표면을 되살리는 변경이 이 두 줄을 지운다.
+NO_FRONTEND_CONSUMER: "set[tuple[str, str]]" = {
+    ("tpl", "install_examples"),
+    ("tpl", "remove_examples"),
+}
+
 
 def test_no_registered_action_is_without_a_frontend_caller() -> None:
     """registry 에 등록된 액션 중 프런트 호출자가 0 인 것이 없다(#912 D4 재발 방지).
@@ -227,12 +242,27 @@ def test_no_registered_action_is_without_a_frontend_caller() -> None:
         f"{screen}.{action}"
         for screen, actions in ACTION_REGISTRY.items()
         for action in actions
-        if action not in literals
+        if action not in literals and (screen, action) not in NO_FRONTEND_CONSUMER
     )
     assert not orphans, (
         f"등록만 되고 프런트 호출자가 0 인 액션: {orphans}"
-        " — 단방향 배선입니다(등록을 걷거나 호출자를 세우세요)"
+        " — 단방향 배선입니다(등록을 걷거나 호출자를 세우거나,"
+        " NO_FRONTEND_CONSUMER 에 사유와 함께 적으세요)"
     )
+
+
+def test_the_declared_exclusions_are_still_registered_actions() -> None:
+    """선언된 배제가 **stale 하지 않은가** — 없는 액션을 면제해 두면 그 줄은 거짓말이다.
+
+    배제 목록은 게이트를 무디게 만드는 방향으로만 틀릴 수 있다. 그래서 목록 자신에게도
+    빨강이 날 자리를 준다: 액션이 실제로 걷힌 뒤에도 줄이 남아 있으면 여기서 잡힌다.
+    """
+    stale = sorted(
+        f"{screen}.{action}"
+        for screen, action in NO_FRONTEND_CONSUMER
+        if action not in ACTION_REGISTRY.get(screen, {})
+    )
+    assert not stale, f"registry 에 없는 액션을 면제하고 있습니다: {stale}"
 
 
 # ─────────────────────────────────────── 파생: 실창 대본이 쓰는 매핑 ──

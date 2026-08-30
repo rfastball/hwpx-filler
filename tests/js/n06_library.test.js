@@ -13,10 +13,12 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 /* 그룹·태그 동사(moveModel·setMove·closeMove·confirmMove·openMove·editTags·
    showGroupMenu·closeGroupMenu·handleGroupMenu·groupContextMenu)는 U4 §2-30 에서
-   표면과 함께 사라졌다 — 판정·영속은 링1·모델에 동결로 남는다. */
+   표면과 함께 사라졌다 — 판정·영속은 링1·모델에 동결로 남는다.
+   `installExamples`(#891 빈 상태의 두 번째 출구)도 같은 처분이다 — 튜토리얼 진입 표면과
+   함께 배포본에서 걷혔고(#941) `tpl` 채널의 액션·스냅샷 축은 동결로 남는다. */
 const SURFACE = [
   "init", "model", "axis",
-  "toggleFavorite", "runPrimary", "installExamples", "newWork", "editWork", "renameJob",
+  "toggleFavorite", "runPrimary", "newWork", "editWork", "renameJob",
   "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
   "doc", "client", "popover", "notify",
 ];
@@ -172,60 +174,4 @@ test("즐겨찾기 연타 — 같은 작업의 최신 intent를 직렬화한다"
   const h = build();
   await Promise.all([h.controller.toggleFavorite("작업A", false), h.controller.toggleFavorite("작업A", false)]);
   assert.deepEqual(h.dispatchCalls.map((row) => row[2].value), [true, false]);
-});
-
-/* ---------------- 동봉 예제 진입점 — #891 ---------------- */
-
-const EXAMPLES = { installed: false, label: "예제로 시작하기…", hint: "동봉 예제 7건" };
-
-function markupOf(snapshot) {
-  const h = build({ snapshot });
-  return renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-}
-
-test("#891 빈 상태의 출구는 둘 — 첫 작업 만들기와 동봉 예제", () => {
-  const markup = markupOf({
-    is_empty: true, detail: null, sections: [], examples: EXAMPLES,
-  });
-  assert.ok(markup.includes("data-new-work"), "직접 만들기 출구는 그대로다");
-  assert.ok(markup.includes("data-install-examples"), "예제 출구가 없다");
-  assert.ok(markup.includes("예제로 시작하기…"), "라벨은 스냅샷이 낸 값이다");
-});
-
-test("#891 필터가 비운 갈래에는 예제 버튼을 두지 않는다", () => {
-  const markup = markupOf({
-    is_empty: false, detail: null, examples: EXAMPLES,
-    sections: [{ value: "", label: "그룹 없음", count: 0, headed: false, rows: [] }],
-  });
-  assert.ok(markup.includes("data-clear-filters"), "여기서 할 일은 필터를 지우는 것이다");
-  assert.equal(markup.includes("data-install-examples"), false,
-    "라이브러리를 채우는 출구는 이 갈래의 답이 아니다");
-});
-
-test("#891 설치는 tpl 채널의 확인 왕복이고 성공 뒤 이 화면을 재당긴다", async () => {
-  const h = build({
-    confirm: true,
-    dispatch: async (screen, action, payload) => (
-      screen === "tpl" && action === "install_examples" && !payload.confirm
-        ? { needs_confirm: true, confirm_text: "7건을 씁니다" }
-        : { ok: true }
-    ),
-  });
-  await h.controller.installExamples();
-  assert.deepEqual(
-    h.dispatchCalls.map((row) => [row[0], row[1]]),
-    [["tpl", "install_examples"], ["tpl", "install_examples"], ["library", "refresh"]],
-    "실행은 tpl, 재당김은 자기 화면이다",
-  );
-  assert.ok(h.modalCalls[0][1].body.includes("7건을 씁니다"),
-    "확인 본문은 Python 재진술을 싣는다");
-});
-
-test("#891 취소하면 아무것도 실행되지 않는다", async () => {
-  const h = build({
-    confirm: false,
-    dispatch: async () => ({ needs_confirm: true, confirm_text: "7건을 씁니다" }),
-  });
-  await h.controller.installExamples();
-  assert.deepEqual(h.dispatchCalls.map((row) => row[2]), [{}]);
 });

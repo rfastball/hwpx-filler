@@ -475,23 +475,13 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
     (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
     한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
-- **동봉 예제 상시 진입점**(#891 · `ONBOARDING_TUTORIAL.md` §4.1~4.2): 밴드의 `emptyText` 는
-  문자열 prop 이라 버튼을 품지 못하므로, 진입점은 밴드 **밖** 공용 버튼 줄
-  (`import-template`·`import-folder`·`lib-new-txt` 가 서는 자리)의 `data-act="install-examples"`
-  다. 라벨·힌트·설치 여부는 스냅샷 `library.examples` 소유고 프런트가 짓지 않는다. 액션은
-  `install_examples`(`confirm` 하나)이고 **1차는 홈에 아무것도 쓰지 않는 재진술**, `confirm`
-  2차가 실행이다 — 확인 본문(무엇을 몇 건 어디에)은 Python 이 싣는다. 설치 몸통(복사·그룹
-  지정·데이터 고정·설치 manifest)은 `external/example_pack.install` 이 지고 tpl 컨트롤러는
-  조립·문구만 맡는다. 재설치는 되돌리기다(D4): 지난 manifest 기재분만 덮어쓰고, 기재에 없는
-  동명 파일은 접미로 비켜 가며 그 사실이 결과 줄에 실린다.
-- **동봉 예제 일괄 제거**(#892 · 같은 문서 §1 D4): 같은 공용 버튼 줄의
-  `data-act="remove-examples"` 로, **설치돼 있을 때만** 선다(판정·라벨은 스냅샷
-  `library.examples` 의 `removable`·`remove_label`·`remove_hint`). 액션은
-  `remove_examples`(`confirm` 하나)이고 1차는 무엇이 몇 건 사라지는지(템플릿·데이터·고정·
-  그룹)와 **되돌리기는 재설치**임을 재진술만 한다. 제거 몸통(경로 화이트리스트 검증 →
-  템플릿 건별 `.trash` 이동 → 데이터 고정 해제·제거 → 그룹 해산 → manifest 소거)은
-  `external/example_pack.remove` 가 지고, **manifest 기재분 밖은 건드리지 않는다**.
-  벌크 undo 슬롯은 없다(`undo_delete` 는 여전히 최근 1건 전용).
+- **동봉 예제 진입점 둘은 동결이다**(#941): 편집기 「템플릿」 탭 공용 버튼 줄의
+  `data-act="install-examples"`(#891 상시 설치)와 `data-act="remove-examples"`(#892 일괄 제거)는
+  튜토리얼 진입 표면과 함께 배포본에서 걷혔다. `tpl` 채널의 `install_examples`·
+  `remove_examples` 액션, 확인 왕복 문안, 스냅샷 축 `library.examples`
+  (`removable`·`remove_label`·`remove_hint` 포함), 설치·제거 몸통
+  (`external/example_pack.install`/`.remove` — manifest 기재분 밖은 건드리지 않는다)은 전부
+  그대로 산다. 되살릴 때 그 자리에서 다시 소비한다(아래 「온보딩 튜토리얼」 절의 동결 표기).
 - **TXT 저작 린트메모장**(S10-05 #862 · #299 회수): `#txtEditModal` 의 본문 입력은 textarea 가
   아니라 CodeMirror 6 메모장(`#txtLintpad`, 컨텐츠 DOM 은 종전 id `#txtEditContent`)이다.
   **판정은 하나도 프런트에 없다** — 타이핑 180ms 디바운스 뒤 `tpl/txt_lint`(`content` 하나,
@@ -1187,13 +1177,12 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - 액션: `set_view`·`set_mode`·`set_query`·`toggle_facet`·`clear_facets`·`clear_filters`·
   `toggle_group`·`select_work`·`toggle_favorite`·`clone_job`·`set_tags`·`delete_job`·
   `undo_delete_job`·`relink_template`·`delete_corrupt`·`refresh`.
-- **빈 상태의 출구는 둘**(#891 · `ONBOARDING_TUTORIAL.md` §1 D1): 저장된 작업이 없는 갈래
-  (`is_empty`)에 「＋ 첫 작업 만들기」(`data-new-work`)와 동봉 예제 설치
-  (`data-install-examples`)가 나란히 선다. 라벨·설치 여부는 스냅샷 `examples`
-  (`external/example_pack.entry_point_state()` 단일 출처, tpl·editor 와 같은 값)가 내고
-  프런트가 짓지 않는다. 실행은 **tpl 채널의 `install_examples`** 교차 화면 dispatch 다 —
-  설치는 템플릿 라이브러리의 사건이지 작업 레지스트리의 사건이 아니다. 필터가 비운 갈래
-  (`!shown`)에는 두지 않는다: 거기서 할 일은 `clear_filters` 이지 라이브러리 채우기가 아니다.
+- **빈 상태의 출구는 하나다** — 저장된 작업이 없는 갈래(`is_empty`)의 「＋ 첫 작업 만들기」
+  (`data-new-work`). 동봉 예제로 시작하는 두 번째 출구(#891 `data-install-examples`)는
+  튜토리얼 진입 표면과 함께 배포본에서 걷혔다(#941 — 아래 「온보딩 튜토리얼」 절의 동결
+  표기). 스냅샷의 `examples` 축(`external/example_pack.entry_point_state()` 단일 출처)은
+  그대로 서 있으므로 되살릴 때 이 자리에서 다시 소비한다. 필터가 비운 갈래(`!shown`)의 답은
+  종전대로 `clear_filters` 이지 라이브러리 채우기가 아니다.
 - `clear_filters` 는 0건 화면의 **상주 출구**다 — 네 절단자(보기·방식·검색·태그)를 한 번에
   걷는다. 절단 밖 작업에 도달할 길이 사라지지 않게 하는 §8.4 「도달성」 면의 이행분이다.
 - `select_work` 는 상세 패널이 겨눌 행일 뿐 **활성 작업이 아니다** — 여기서 다른 작업을 열어도
@@ -1225,6 +1214,22 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - 액션: `set_library_view`(`view`)·`set_library_mode`(`mode`)·`set_library_query`(`text`).
 
 ### 온보딩 튜토리얼 — 체크리스트 셸 패널 + 순간 카드 (#894 · `ONBOARDING_TUTORIAL.md` §1 D3·§4.3)
+
+> **표면 동결(2026-08-30 · #941).** 아래 서술의 **웹 표면은 배포본에서 걷혔다** — React 트리의
+> `TutorialPanel` 마운트(`react/boundary.ts`)·포트 배관(`react/boot.ts`·`bootstrap.js`)·
+> `.tut-*` CSS(`frontend/css/tail.css`)·라이브러리 빈 상태와 편집기의 예제 설치·제거 진입점이
+> 전부 제거됐고, PyInstaller spec 은 `examples/onboarding/` 자산을 **더 이상 동봉하지 않는다**
+> (`packaging/verify_specs.py` 가 그 부재를 단언한다). live101 의 `onboarding` phase 도
+> 함께 걷혔다(콜드 부팅 하나 감소).
+>
+> 태그·그룹(U4 §2-30)·나라장터와 같은 처분이다: **모델·판정·영속은 지우지 않는다.** 링1
+> (`gui/tutorial_state.py`)·컨트롤러(`webapp/screen_tutorial.py`)·마일스톤 통지 seam·
+> 설정 영속·`external/example_pack`·`examples/onboarding/` 자산과 그 생성 스크립트·
+> 컴포넌트(`frontend/src/tutorial/panel.ts`)와 그 렌더 계약 테스트가 전부 동결로 산다. action
+> registry 의 `tutorial` 화면과 `tpl` 의 `install_examples`·`remove_examples` 도 그대로다 —
+> 되살릴 때 그 자리에서 다시 소비하면 된다. 재구축 정본은 #941.
+>
+> 아래는 **되살릴 때의 설계 정본**으로 남긴다.
 
 **화면이 아니라 채널이다.** `tutorial` 은 `PRODUCT_SCREEN_IDS` 에 없고 DOM 루트도 탭도 없다.
 그런데 action registry 의 화면 키를 갖는 이유는 이 저장소에서 **스냅샷 채널과 디스패치 어휘를
@@ -1299,8 +1304,10 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   `#tutorialFocusClear` · `#tutorialMoment`(`data-milestone`) · `#tutorialResume`.
   단계·티어 행은 `data-milestone`·`data-achieved`·`data-tier`·`data-complete` 를 싣는다.
 - **게이트**: 헤드리스·배선·영속은 `tests/test_webapp_tutorial.py`, 렌더 요소와 큐·억제 규칙은
-  `tests/js/tutorial_panel.test.js`, 링1 판정은 `tests/test_tutorial_state.py`. 실창 완주는
-  슬라이스 F 몫이라 이 변경은 **새 WebView2 콜드 부팅을 늘리지 않는다**.
+  `tests/js/tutorial_panel.test.js`, 링1 판정은 `tests/test_tutorial_state.py`. 이 셋은 표면
+  동결(#941) 뒤에도 그대로 선다. 실렌더 기하(`tests/test_web_tutorial_geometry.py`)와 CSS
+  소비자 대조, live101 `onboarding` phase 는 그릴 것이 사라져 함께 걷혔다 — 되살리는 변경이
+  `.tut-*` CSS 와 그 두 층을 한 벌로 되돌린다.
 
 ## DOM과 런타임 게이트
 
