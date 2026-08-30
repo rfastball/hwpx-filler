@@ -589,8 +589,14 @@ export function createEditorWorkbenchDataProbes() {
             await ctx.sleep(50);
             settleModal(ctx, "dataSheet");
             const done = liveNodes().every((el) => inside(inlineHost, el));
-            if (done || tries++ > 40) {
-              out.restored = done && ctx.doc.activeElement === trigger;
+            /* 트리거는 표 머리로 왔고(U4 10번) 면이 열리는 동안 인라인과 **함께 언마운트**된다
+               — 그래서 초점 복귀는 캡처해 둔 노드가 아니라 **지금 살아 있는 같은 단추**로
+               재야 한다. 옛 노드로 재면 「복귀가 깨졌다」가 아니라 「노드가 바뀌었다」를 재게
+               되고, 그것은 이 프로브가 지키려던 사실이 아니다. */
+            const back = byId(ctx, "jobDataExpand");
+            const focused = done && !!back && ctx.doc.activeElement === back;
+            if (focused || tries++ > 40) {
+              out.restored = focused;
               break;
             }
           }

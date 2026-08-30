@@ -24,6 +24,8 @@ type JobReadController = {
   call(screen: string, action: string, payload?: Obj): Promise<Obj>;
   scheduleColumnText(column: string, value: string): void;
   scheduleSearch(value: string): void;
+  /** 표를 펼침 면으로 여는 동사(U4 10번에서 이 존의 머리로 왔다 — 진입점만 이동). */
+  openDataSheet(trigger: HTMLElement | null): Promise<void>;
   closeDataSheet(): void;
   discardRange(): Promise<void>;
   applyRange(): Promise<void>;
@@ -275,7 +277,14 @@ export function JobDataZone(props: {
           void controller.zone("set_view_order", {
             value: viewOrder === "sourceAsc" ? "sourceDesc" : "sourceAsc",
           });
-        } }, "⇅ 원본 순서"))),
+        } }, "⇅ 원본 순서"),
+      // 「펼쳐서 행 고르기」도 표를 여는 동사라 표 머리에 선다(U4 10번). **시트 안에서는
+      // 그리지 않는다** — 자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의
+      // 취소·적용이 이미 진다.
+      ui.sheetOpen ? null : h("button", {
+        className: "btn sm", id: "jobDataExpand", type: "button",
+        onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
+      }, "펼쳐서 행 고르기 ⤢"))),
     // `#jobOrderBar` 는 id 를 유지한 채 **상시 재진술만** 든다 — 컨트롤이 표 머리로 갔어도
     // 「보이는 순서대로 생성되고 파일 이름 순번도 그 순서를 따른다」를 말하는 자리는 그대로다
     // (F3 판정 I: 확인 왕복 대신 문안이 진다).
