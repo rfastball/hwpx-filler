@@ -20,6 +20,7 @@ from hwpxfiller.data import DataSource
 from hwpxfiller.data.factory import make_source, source_from_pool_item
 from hwpxfiller.data.pclm import (
     DEFAULT_PCLM_VIEW,
+    PCLM_VIEW_LABELS,
     PCLM_VIEWS,
     PclmDataSource,
     default_pclm_db,
@@ -65,6 +66,12 @@ def test_every_contract_view_is_accepted(tmp_path):
         db = tmp_path / f"{view}.db"
         _build(db, view=view)
         assert PclmDataSource(db=db, view=view).fields() == list(COLUMNS)
+
+
+def test_every_view_carries_a_line_that_says_what_one_row_is():
+    """설명 없는 뷰를 허용목록에 늘리지 않는다 — 고르는 기준이 '한 줄이 무엇인가'다."""
+    assert set(PCLM_VIEW_LABELS) == set(PCLM_VIEWS)
+    assert all(PCLM_VIEW_LABELS[view].strip() for view in PCLM_VIEWS)
 
 
 def test_default_view_is_the_joined_one():

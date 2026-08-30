@@ -306,6 +306,33 @@ def _load_records(
     나라장터는 영문 코드 키를 반환하므로, 한글 템플릿 필드로 채우려면 대개 ``--profile``
     이 함께 필요하다(호출부에서 적용). 필수 인자 누락은 ``ap.error`` 로 종료.
     """
+    if args.source == "pclm":
+        from .data.pclm import PCLM_VIEW_LABELS, PCLM_VIEWS, PclmDataSource
+
+        # 뷰마다 한 줄의 뜻이 달라 문서 건수가 갈린다 — 고르지 않은 채로 기본 뷰를
+        # 쓰면 계약 20건 대신 품목 200건이 조용히 나온다. 그래서 목록을 보이고 멈춘다.
+        listing = "\n".join(f"  {name} — {PCLM_VIEW_LABELS[name]}" for name in PCLM_VIEWS)
+        if not args.view:
+            ap.error(
+                "--source pclm 에는 --view <이름> 이 필요합니다 — 조용히 기본 뷰를 "
+                f"쓰지 않습니다:\n{listing}"
+            )
+        try:
+            src = PclmDataSource(db=args.db, view=args.view)
+        except ValueError:
+            # 허용목록 밖 이름. 소스의 ValueError 를 CLI 문형으로 번역한다(같은 목록).
+            ap.error(f"pclm 이 약속한 뷰가 아닙니다: {args.view!r}\n{listing}")
+        try:
+            records = src.records()
+        except RuntimeError as exc:
+            # 열기·읽기 실패(뷰가 아직 안 지어졌다 등)를 원시 traceback 으로 흘리지
+            # 않는다(RC-16). 파일 부재는 OSError 라 최상위 번역 경계가 받는다.
+            ap.error(str(exc))
+        # 생략된 --db 의 실경로를 소스가 해석한 그대로 되뇐다 — 어디를 읽었는지가
+        # 조용하면 다른 DB 를 읽고도 알 수 없다(경로 재해석 금지, src.db 가 단일 출처).
+        print(f"[계약 목록] {src.db} 의 {src.view} 에서 {len(records)}건", file=sys.stderr)
+        return records
+
     if args.source == "nara":
         from .data.nara import NaraStdDataSource
 
@@ -330,7 +357,7 @@ def _load_records(
 
     # 기본: 엑셀/CSV
     if not args.data:
-        ap.error("--data 가 필요합니다 (또는 --fields, 또는 --source nara)")
+        ap.error("--data 가 필요합니다 (또는 --fields, 또는 --source nara/--source pclm)")
     _require_sheet_if_ambiguous(ap, args.data, args.sheet)
     return ExcelDataSource(args.data, sheet=args.sheet).records()
 
@@ -422,8 +449,9 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
-    ap.add_argument("--source", choices=["excel", "nara"], default="excel",
-                    help="데이터 소스 (기본: excel)")
+    ap.add_argument("--source", choices=["excel", "nara", "pclm"], default="excel",
+                    help="데이터 소스 (기본: excel). pclm 은 계약 목록 DB 의 뷰이며 "
+                         "--view 가 필수입니다")
     ap.add_argument("--data", help="엑셀/CSV 데이터 경로 (--source excel)")
     ap.add_argument("--out", default="./out", help="결과 저장 폴더")
     ap.add_argument("--pattern", default=DEFAULT_FILENAME_PATTERN,
@@ -455,6 +483,11 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--end", default=None, help="공고 종료일시 YYYYMMDDHHMM (bgn 과 1개월 이내)")
     ap.add_argument("--num-rows", type=int, default=100, help="나라장터 페이지당 건수(기본 100)")
     ap.add_argument("--page", type=int, default=1, help="나라장터 페이지 번호(기본 1)")
+    # 계약 목록(pclm) 옵션(--source pclm)
+    ap.add_argument("--db", default=None,
+                    help="pclm SQLite 경로 (생략 시 기본 자리, --source pclm)")
+    ap.add_argument("--view", default=None,
+                    help="pclm 뷰 이름 (필수, --source pclm). 이름 목록은 미지정 시 안내")
     args = ap.parse_args(argv)
 
     engine = make_hwpx_engine()
@@ -607,6 +640,12 @@ def _export_ledger(
         from .data.nara import NaraStdDataSource
         labels = NaraStdDataSource.field_labels()
         source = f"nara:표준입찰공고 {args.bgn}~{args.end}"
+    elif args.source == "pclm":
+        from .data.pclm import PclmDataSource
+
+        # 포인터는 소스가 만든다 — 문자열을 여기서 재조립하면 표기가 둘로 갈린다.
+        # 값을 읽지 않는 순수 구성이라 원장 저장이 DB 를 다시 열지 않는다.
+        source = PclmDataSource(db=args.db, view=args.view).source_pointer()
     else:
         source = f"file:{args.data}"
     sidecar = export_batch_ledger(
