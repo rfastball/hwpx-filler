@@ -22,8 +22,10 @@ from .run_state import unresolved_name_tokens_in
 # blocker 는 REVIEW_BINDING 상주). 그래서 문안이 **무변경 확정**임을 먼저 말한다 — 변경을
 # 전제한 라벨로는 누를 이유가 화면 어디에도 없다.
 #
-# 어휘는 정본표를 따른다(COPY_STYLE_GUIDE §4-A): 사용자 대면에서 Binding 은 '연결'이고
-# 판본 줄(`저장됨 · 템플릿 r2 · 연결 r5`)이 이미 그 말을 쓴다.
+# 어휘는 정본표를 따른다(COPY_STYLE_GUIDE §4-A): 사용자 대면에서 Binding 은 '연결'이다.
+# 같은 말을 쓰는 자리가 이미 있다 — 편집기의 '필드 연결·표시' 탭과 실행 결과 증거의 판본
+# 줄(`연결 r5`). 편집기 머리의 판본 표기는 #945 F5 로 걷혔지만(내부 어휘) 어휘 정본은
+# 그 표기가 아니라 정본표라 이 상수의 근거는 그대로 선다.
 BINDING_CONFIRM_LABEL = "연결 확정"
 BINDING_CONFIRM_HINT = "바꿀 것이 없어도 지금 연결을 확정해야 문서를 만들 수 있습니다."
 

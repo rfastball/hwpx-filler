@@ -510,23 +510,33 @@ class EditorController:
             "data_sheet": self.data_sheet,
         }
 
-    def _extras_of(self, base: "Job") -> "dict[str, str]":
+    def _extras_of(self, base: "Job | None") -> "dict[str, str]":
         """이 세션이 **서 있는 기준**의 extras — 이름은 저장본의 것, 데이터는 진입이 세운 것.
 
         데이터 선택은 작업에 저장되지 않으므로(§5.3 — 작업↔데이터 결속 없음) 기준값을 저장본이
         낼 수 없다. 사람이 관문에서 고른 데이터는 종전대로 빈 기준 대비 「달라진 것」이고,
         **진입이 들고 온 데이터**(#878 인계)는 사람이 고른 적이 없으므로 기준 그 자체다 —
         그렇게 세지 않으면 아무것도 손대지 않은 수리 진입이 열리자마자 미저장이 된다.
-        """
-        return {"job_name": base.name, **self._entry_data}
 
-    def dirty_extras(self) -> "tuple[str, ...]":
-        """저장본 대비 달라진 extras 이름들 — 초안은 비교 대상이 없어 빈 튜플이다."""
-        base = self.session.base
-        if base is None:
-            return ()
+        ``base`` 가 없으면(초안) 이름의 기준은 빈 문자열이다 — 초안은 아직 이름이 없는 것이
+        기준이고, 데이터 축의 면제는 저장본 갈래와 **같은 것 하나**를 쓴다(#945 F7): 인계
+        면제가 저장본에만 서면 「이 데이터로 새 작업」 무조작 진입이 곧바로 미저장이 된다.
+        """
+        return {"job_name": base.name if base is not None else "", **self._entry_data}
+
+    def _extras_diff(self, base: "Job | None") -> "tuple[str, ...]":
+        """기준 대비 달라진 extras 이름들 — 저장본·초안 두 갈래의 공용 셈."""
         now, was = self._extras_now(), self._extras_of(base)
         return tuple(k for k in self.SESSION_EXTRAS if now[k] != was[k])
+
+    def dirty_extras(self) -> "tuple[str, ...]":
+        """**저장본** 대비 달라진 extras 이름들 — 초안은 비교 대상이 없어 빈 튜플이다.
+
+        초안의 셈은 :meth:`has_unsaved_work` 이 :meth:`_extras_diff` 로 직접 한다: 여기서
+        초안까지 답하면 「저장본과 다르다」를 참칭한다(비교할 저장본이 없다).
+        """
+        base = self.session.base
+        return () if base is None else self._extras_diff(base)
 
     # --------------------------------------------------- 활성 헤더(#49)
     def _active_sources(self) -> "list[str]":
@@ -916,15 +926,23 @@ class EditorController:
         나타났고, 라운드마다 그 두 얼굴 중 하나가 다시 잡혔다. 파생은 빠질 자리가 없다:
         되돌리면 비교가 같아져 저절로 깨끗해지고, 손대면 저절로 더러워진다.
 
-        초안(base 없음)은 비교 대상이 없어 종전 판정을 그대로 쓴다 — ``_reset()`` 직후엔
-        False, 클린 표지가 서 있으면 False, 그 외엔 이름·데이터·매핑 모델 중 하나라도 있으면
-        사용자가 손댄 세션이므로 True(템플릿만 갓 로드한 상태는 아직 버릴 게 없어 False).
+        초안(base 없음)은 저장본이 없으니 section patch 가 성립하지 않는다 — ``_reset()``
+        직후엔 False, 클린 표지가 서 있으면 False, 그 외엔 **기준선 대비 이탈**(이름·데이터)
+        이나 매핑 모델이 있으면 사용자가 손댄 세션이므로 True(템플릿만 갓 로드한 상태는
+        아직 버릴 게 없어 False).
+
+        **기준선은 저장본 갈래와 같은 것**이다(#945 F7): 초안의 이름 기준은 빈 값이고 데이터
+        기준은 :attr:`_entry_data`(진입이 들고 온 참조)라, 「이 데이터로 새 작업」으로 열자마자
+        아무것도 손대지 않은 세션이 미저장으로 서지 않는다 — 종전엔 ``data_path`` 를 날것으로
+        세어, 사람이 고른 적 없는 인계 데이터 하나 때문에 첫 이탈부터 「버리고 계속」을 물었다
+        (수리 진입에서 #878 이 이미 끊어 낸 것과 같은 결함의 초안 얼굴). 사람이 관문에서
+        데이터를 갈아 끼우거나 이름을 넣으면 기준선을 벗어나 그 즉시 다시 True 다.
         """
         if self.session.base is not None:
             return bool(self.dirty_sections()) or bool(self.dirty_extras())
         if self._session_clean:
             return False
-        return bool(self.job_name or self.data_path or self.model is not None)
+        return bool(self._extras_diff(None)) or self.model is not None
 
     def new_job_session(self, path: str) -> None:
         """새 작업 세션을 원자적으로 시작 — 이전 세션 전량 초기화 후 템플릿 로드(#25).
@@ -962,7 +980,15 @@ class EditorController:
         context = self.session.context
         if context.entry_reason not in DATA_ANCHORED_ENTRY_REASONS or not self.data_path:
             return {}
-        return {"context": context, "data": self._data_stash()}
+        # 기준선도 함께 건넌다(#945 F7): 앵커는 「진입이 들고 온 데이터」라는 사실 그 자체이므로
+        # 템플릿을 고르는 정상 진행에서 그 사실만 잃으면, 살아남은 데이터가 그 순간 「사람이
+        # 고른 것」으로 승격돼 손대지 않은 세션이 미저장이 된다(`load_job` 의 ``entry_data``
+        # 인계와 같은 규율).
+        return {
+            "context": context,
+            "data": self._data_stash(),
+            "entry_data": dict(self._entry_data),
+        }
 
     def _restore_anchor(self, anchor: "dict") -> None:
         """초기화 뒤 앵커 복원 — 데이터는 :meth:`_data_stash` 한 벌 그대로.
@@ -980,6 +1006,7 @@ class EditorController:
         self.data_kind = data["data_kind"]
         self.source_fields = list(data["source_fields"])
         self.records = data["records"]
+        self._entry_data = dict(anchor["entry_data"])
         self.session = EditSession(
             context=anchor["context"], base=None, section=self.section
         )
@@ -1026,6 +1053,10 @@ class EditorController:
         # 템플릿은 아직 없다 — 1단계에서 고른다. 데이터만 먼저 서고 매핑 모델은 2단계 진입
         # (`_do_goto_section` → `_ensure_model`)이 세운다(모델 전 선로드의 기존 경로).
         self._load_source_ref(source_ref)
+        # 인계 데이터는 이 세션의 **기준선**이다(#945 F7 — `load_job` 과 같은 자리·같은 값):
+        # 사람이 고른 적이 없으므로 「달라진 것」으로 세면 열자마자 미저장이 된다. 적재가
+        # 실패하면 여기 닿지 않고 사유가 그대로 올라간다(빈 기준선을 지어내지 않는다).
+        self._entry_data = {"data_path": self.data_path, "data_sheet": self.data_sheet}
 
     # ---------------------------------- 템플릿 라이브러리 피커(R-info 2부 접합 최소분)
     def _do_use_library_template(self, p: dict) -> None:

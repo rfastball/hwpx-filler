@@ -1185,13 +1185,14 @@ function gateHint(snapshot: Obj): string {
 
 function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController }): ReactNode {
   const { snapshot, draft, view, controller } = props;
-  const revisions = snapshot.revisions || {};
   const dirty = !!snapshot.dirty;
   const level = snapshot.is_draft ? "idle" : (dirty ? "warn" : "idle");
+  /* 머리는 **상태만** 말한다(#945 F5). 저장 세대 카운터(`revisions`)는 규칙이 갈릴 때 오르는
+     내부 어휘라 여기서 읽는 사람에게 아무 행동도 주지 않는다 — 스냅샷 키와 도메인 축은
+     그대로 살고, 판본을 실제로 대조하는 자리(실행 결과 증거·작업 목록)가 계속 든다. */
   const stateText = snapshot.is_draft
     ? "아직 저장하지 않은 새 작업"
-    : (dirty ? "저장하지 않은 변경 · " : "저장됨 · ")
-      + `템플릿 r${revisions.template || "?"} · 연결 r${revisions.binding || "?"}`;
+    : (dirty ? "저장하지 않은 변경" : "저장됨");
   return h("header", { className: "scr-head editor-head" },
     h("div", null,
       h("p", { className: "eyebrow" }, "문서 작업 편집기"),
@@ -1707,8 +1708,12 @@ function MappingStage(props: {
     h(DataGateway as any, { snapshot, controller }),
     h(PoolPickList as any, { view, controller }),
     h(HeaderSelect as any, { snapshot, view, controller }),
+    /* 처방은 **저장 게이트와 같은 말**이어야 한다(#945 F8). U4-C 이후 데이터 연결은 저장의
+       하드 게이트라(`gui/job_editor_state.validate_save`), 종전의 "고정값을 넣거나 비움으로
+       확정하세요"는 그대로 따라도 저장이 막히는 거짓 처방이었다. 같은 상태를 두 어휘로
+       판정하지 않는다 — 여기서 말하는 것은 그 게이트의 사실과 고칠 자리(바로 위 관문)다. */
     snapshot.schema_only ? h("p", { className: "note warnbox" },
-      "데이터 없이 매핑 중입니다. 고정값을 넣거나 비움으로 확정하세요.") : null,
+      "데이터를 연결하지 않아 지금은 저장할 수 없습니다. 위 '이 작업의 데이터'에서 데이터를 고르세요.") : null,
     h("div", { className: "tblwrap" }, h("table", { className: "map" },
       h("thead", null, h("tr", null,
         h("th", null, "확정"), h("th", null, "템플릿 필드 · 추정"), h("th", null, "데이터 열"),

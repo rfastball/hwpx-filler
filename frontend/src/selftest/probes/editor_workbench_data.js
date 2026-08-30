@@ -1389,9 +1389,10 @@ export function createEditorWorkbenchDataProbes() {
             out.save_enabled_dirty = !!(saveOf() && !saveOf().disabled);
             return ctx.doc.querySelectorAll("#editor-steps button.wstep-tab.dirty").length;
           })();
-          /* 머리 — 이름(안정 입력)·저장 상태·판본(§10.13 판정 O 표시 자리 ①). */
+          /* 머리 — 이름(안정 입력)과 저장 상태. 상태는 **상태만** 말한다(#945 F5): 저장 세대
+             카운터는 내부 어휘라 머리에서 걷혔고, 손댄 갈래(위 dirty_head)와 여기 두 값으로
+             양성·음성을 각각 잰다. */
           draft.name = "공고서";
-          draft.revisions = { template: 2, binding: 5 };
           draft.dirty_sections = [];
           draft.dirty = false;
           ctx.push("editor", draft);

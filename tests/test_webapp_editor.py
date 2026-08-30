@@ -554,6 +554,51 @@ def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
     assert ctrl.snapshot()["has_unsaved_work"] is True   # 스냅샷에도 노출(웹 확인 판단용)
 
 
+def test_handed_over_data_is_the_draft_baseline_not_an_unsaved_change(tmp_path):
+    """#945 F7 — 「이 데이터로 새 작업」 무조작 진입은 미저장이 아니다(초안 갈래 정렬).
+
+    저장본 갈래는 #878 에서 이미 그렇게 센다(`_extras_of` — 진입이 들고 온 데이터는 사람이
+    고른 적이 없으므로 기준 그 자체). 초안 갈래만 `data_path` 를 날것으로 세어, 데이터를
+    골라 새 작업으로 들어온 사람은 아무것도 손대지 않고도 첫 이탈부터 「버리고 계속」을
+    물었다. 이제 두 갈래가 같은 기준선을 쓴다 — 1단계 템플릿 선택(마법사의 정상 진행)에서도
+    앵커와 함께 기준선이 건너간다.
+    """
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        entry_reason="document_browser_new_work",
+        evidence={"데이터": "multi_sheet.xlsx"},
+        return_context={"surface": "data"},
+    )
+    assert ctrl.data_path == str(MULTI_SHEET)             # 데이터는 서 있고
+    assert ctrl.has_unsaved_work() is False               # 사람이 손댄 것은 없다
+    assert ctrl.snapshot()["has_unsaved_work"] is False   # 웹의 확인 판단도 같은 값
+
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
+    assert ctrl.snapshot()["data_name"] == "multi_sheet.xlsx"  # 앵커 생존(계약 무변경)
+    assert ctrl.has_unsaved_work() is False, "템플릿만 고른 진행이 미저장으로 섭니다."
+
+    ctrl.dispatch("set_name", {"name": "손댄 이름"})       # 양성 대조 — 손대면 즉시 미저장
+    assert ctrl.has_unsaved_work() is True
+
+
+def test_swapping_the_handed_over_data_returns_the_draft_to_unsaved(tmp_path):
+    """면제는 **진입이 세운 그 참조**에만 선다 — 관문에서 갈아타면 다시 미저장이다.
+
+    면제를 「데이터가 있으면 안 센다」로 넓히면 사람이 고른 데이터를 조용히 버리는 이탈이
+    생긴다(같은 결함의 반대 얼굴). 경로가 같아도 시트가 갈리면 다른 데이터다(#33).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        entry_reason="document_browser_new_work",
+    )
+    assert ctrl.has_unsaved_work() is False
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")   # 사람이 관문에서 갈아탄다
+    assert ctrl.data_path == str(MULTI_SHEET)                 # 경로는 그대로인데
+    assert ctrl.has_unsaved_work() is True                    # 시트가 갈렸다 = 사람의 선택
+
+
 def test_new_job_session_atomically_clears_prior_session_and_blocks_mixed_save(tmp_path):
     """템플릿 A 진행 세션 → new_job_session(B) 는 이름·데이터·매핑·단계를 원자 초기화(#25)."""
     ctrl, _ = _controller(tmp_path)

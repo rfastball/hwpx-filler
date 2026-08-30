@@ -1414,10 +1414,14 @@ class TestWebSelftestGate:
         assert j["save_enabled_dirty"] is True, (
             "손댄 세션에서 「변경 저장」이 비활성입니다 — 버리기와 같은 술어여야 합니다."
         )
-        # 머리 — 이름은 안정 입력이고 저장 상태가 **판본을 말한다**(§10.13 판정 O 표시 자리 ①).
+        # 머리 — 이름은 안정 입력이고 저장 상태는 **상태만** 말한다(#945 F5). 판본(저장 세대
+        # 카운터)은 내부 어휘라 머리에서 걷혔다: 음성 단언을 함께 둬야 표기가 되살아나도 잡힌다.
         assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"
-        assert "r2" in j["save_state"] and "r5" in j["save_state"], (
-            f"저장 상태가 판본을 말하지 않습니다 — 아무도 안 읽는 durable 은 조용히 틀린다: {j['save_state']!r}"
+        assert "저장됨" in j["save_state"], (
+            f"손대지 않은 세션의 머리가 「저장됨」이라 말하지 않습니다: {j['save_state']!r}"
+        )
+        assert "r" not in j["save_state"], (
+            f"머리가 내부 판본 표기를 말합니다 — 읽는 사람에게 행동이 없는 어휘다: {j['save_state']!r}"
         )
         # 진입 문맥 — 자발적 진입이면 침묵, 사유가 있으면 증거·복귀 버튼과 함께 선다.
         assert j["ctx_hidden_when_voluntary"] is True, "할 말이 없는데 배너가 섰습니다."
