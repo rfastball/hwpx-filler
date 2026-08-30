@@ -761,6 +761,8 @@ def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
 def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
     """db 를 비우면 「기본 자리」로 해석돼 opts 에 박힌다 — 조회와 등록이 같은 자리를 본다."""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     ctrl, reg, _ = _controller(tmp_path)
     res = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
     assert res["ok"] is True
@@ -835,6 +837,8 @@ def test_pclm_snapshot_block_carries_default_db_and_every_view(tmp_path, monkeyp
     from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
 
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     ctrl, _reg, _ = _controller(tmp_path)
     block = ctrl.initial()["pclm"]
     assert block["default_db"] == str(

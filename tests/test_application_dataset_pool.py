@@ -221,6 +221,8 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
     바뀌면 같은 항목이 조용히 다른 DB 를 가리킨다.
     """
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     vm = DatasetPoolViewModel(registry)
 
     item = vm.register_pclm("계약 목록", view="v_통합_v1", note="기본 자리")

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -187,10 +188,73 @@ def test_missing_database_fails_loudly(tmp_path):
     assert "찾지 못했습니다" in str(caught.value)
 
 
-def test_default_db_points_at_the_place_pclm_writes(monkeypatch):
-    """저쪽 Database.DefaultPath 와 같은 자리 — 창과 명령줄이 함께 보는 곳."""
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\me\AppData\Local")
-    assert default_pclm_db() == Path(r"C:\Users\me\AppData\Local\Pclm\pclm.db")
+def _isolate_pclm_places(monkeypatch, tmp_path):
+    """개발 기기의 실제 pclm 쪽지·자료가 새어들지 않게 두 자리를 임시 폴더로 — 헬퍼.
+
+    ``default_pclm_db`` 는 이제 ``%APPDATA%`` 의 쪽지도 읽으므로, LOCALAPPDATA 만 갈아끼운
+    테스트는 이 기계에 진짜 ``config.json`` 이 있는 순간 다른 답을 낸다.
+    """
+    roaming = tmp_path / "Roaming"
+    local = tmp_path / "Local"
+    roaming.mkdir(exist_ok=True)
+    local.mkdir(exist_ok=True)
+    monkeypatch.setenv("APPDATA", str(roaming))
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    return roaming, local
+
+
+def _write_config(roaming: Path, text: str) -> Path:
+    cfg_dir = roaming / "Pclm"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = cfg_dir / "config.json"
+    cfg.write_text(text, encoding="utf-8")
+    return cfg
+
+
+def test_default_db_points_at_the_place_pclm_writes(monkeypatch, tmp_path):
+    """쪽지가 없으면 저쪽 Database.DefaultPath 와 같은 자리 — 종전 고정 자리 그대로."""
+    _, local = _isolate_pclm_places(monkeypatch, tmp_path)
+    assert default_pclm_db() == local / "Pclm" / "pclm.db"
+
+
+def test_default_db_follows_the_configured_data_dir(monkeypatch, tmp_path):
+    """사용자가 옮긴 자료 폴더(config.json 의 dataDir)를 따라간다 — 자리는 여전히 하나."""
+    roaming, _ = _isolate_pclm_places(monkeypatch, tmp_path)
+    moved = tmp_path / "계약목록_자료"
+    _write_config(roaming, f'{{"dataDir": {json.dumps(str(moved))}, "pendingMoveFrom": null}}')
+    assert default_pclm_db() == moved / "pclm.db"
+
+
+def test_default_db_ignores_pending_move_marker(monkeypatch, tmp_path):
+    """pendingMoveFrom 은 저쪽 창의 혼잣말 — 값이 있어도 dataDir 만 본다."""
+    roaming, _ = _isolate_pclm_places(monkeypatch, tmp_path)
+    moved = tmp_path / "옮긴자리"
+    _write_config(
+        roaming,
+        f'{{"dataDir": {json.dumps(str(moved))}, "pendingMoveFrom": "C:\\\\old"}}',
+    )
+    assert default_pclm_db() == moved / "pclm.db"
+
+
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        pytest.param(None, id="no-config"),
+        pytest.param("{이건 JSON 이 아니다", id="broken-json"),
+        pytest.param('{"dataDir": null}', id="null-datadir"),
+        pytest.param('{"dataDir": ""}', id="empty-datadir"),
+        pytest.param('{"dataDir": 7}', id="non-string-datadir"),
+        pytest.param('["dataDir"]', id="non-object-root"),
+    ],
+)
+def test_default_db_falls_back_quietly_when_the_note_is_unusable(
+    monkeypatch, tmp_path, config_text
+):
+    """쪽지 하나 때문에 멈추지 않는다 — 어떤 실패 경로도 예외 없이 기본 자리로."""
+    roaming, local = _isolate_pclm_places(monkeypatch, tmp_path)
+    if config_text is not None:
+        _write_config(roaming, config_text)
+    assert default_pclm_db() == local / "Pclm" / "pclm.db"
 
 
 # -------------------------------------------------------------------- 팩토리

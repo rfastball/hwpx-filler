@@ -466,6 +466,9 @@ def test_pclm_default_db_is_resolved_and_said(tmp_path, capsys, monkeypatch):
     local = tmp_path / "Local"
     (local / "Pclm").mkdir(parents=True)
     monkeypatch.setenv("LOCALAPPDATA", str(local))
+    # 기본 자리 해석은 이제 %APPDATA% 의 쪽지(config.json)도 본다 — 개발 기기의 실제
+    # 쪽지가 새어들면 이 테스트가 다른 DB 를 읽는다(홈 격리와 같은 근거).
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     db = _pclm_db(local / "Pclm" / "pclm.db")
     out = tmp_path / "out"
 
