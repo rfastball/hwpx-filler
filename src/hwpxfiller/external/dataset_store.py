@@ -316,8 +316,8 @@ class DatasetPoolRegistry:
 
         return self.mutate(key, _update)
 
-    def relabel_confirmed(
-        self, path: str, sheet: "str | None", name: str, *,
+    def relabel_confirmed_raw(
+        self, ident: str, name: str, *,
         note: str = "", expected_basis: "str | None",
     ) -> "tuple[str, DatasetReference]":
         """「같은 데이터 재등록 = 라벨 갱신」의 확정 착지 — 정체성 보유 슬롯을 잠금 안 대조 후 갱신.
@@ -325,14 +325,30 @@ class DatasetPoolRegistry:
         확인 모달이 열린 사이 그 슬롯이 삭제됐으면 ``FileNotFoundError`` — 확정을 신규
         등록 승인으로 바꿔 부활시키지 않는다. 이름·비고가 바뀌었으면 지문이 갈려
         :class:`StaleConfirmError` — 사용자가 승인한 것은 1차가 보여준 옛 라벨이다(3R P2-2).
+
+        겨눔은 **정체성 문자열**이다(:meth:`find_identity_raw` 와 같은 축) — 종류마다 이
+        20줄을 복제하면 종류 하나가 늘 때마다 결속 규율이 한 벌씩 새로 생긴다. 종류별
+        정체성 계산은 Domain 이 소유하고(:func:`~hwpxfiller.domain.dataset_reference.
+        excel_identity`·:func:`~hwpxfiller.domain.dataset_reference.pclm_identity`)
+        여기는 그 값을 받는다.
         """
         with self._write_lock:
-            same = self.find_identity(path, sheet or "")
+            same = self.find_identity_raw(ident)
             if same is None:
                 raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {name}")
             key, existing = same
             self._check_basis(expected_basis, [bound_state(key, existing)])
             return key, self.relabel(key, name, note=note)
+
+    def relabel_confirmed(
+        self, path: str, sheet: "str | None", name: str, *,
+        note: str = "", expected_basis: "str | None",
+    ) -> "tuple[str, DatasetReference]":
+        """엑셀/CSV 판 :meth:`relabel_confirmed_raw` — 경로+시트를 정체성으로 옮기는 랩퍼."""
+        return self.relabel_confirmed_raw(
+            excel_identity(path, sheet or ""), name, note=note,
+            expected_basis=expected_basis,
+        )
 
     def _relink_locked(
         self, key: str, path: str, *, sheet: "str | None", note: str, name: str,

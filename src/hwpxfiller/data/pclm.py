@@ -20,10 +20,19 @@ pclm 은 나라장터에서 내려받은 입찰공고서·계약서 PDF 를 읽�
 """
 from __future__ import annotations
 
-import os
 import sqlite3
 import urllib.request
 from pathlib import Path
+
+# 뷰 어휘·기본 자리는 링0 이 소유한다(:mod:`hwpxfiller.domain.pclm_views`) — 등록 게이트
+# (Application)와 이 어댑터가 **같은 허용목록**을 봐야 하는데 Application 은 바깥 링을
+# import 할 수 없기 때문이다. 여기서 계속 re-export 하므로 기존 소비자는 그대로다.
+from ..domain.pclm_views import (
+    DEFAULT_PCLM_VIEW,
+    PCLM_VIEW_LABELS,
+    PCLM_VIEWS,
+    default_pclm_db,
+)
 
 __all__ = [
     "DEFAULT_PCLM_VIEW",
@@ -32,35 +41,6 @@ __all__ = [
     "PclmDataSource",
     "default_pclm_db",
 ]
-
-# 계약면. pclm 이 약속한 것은 이 넷뿐이라 그 밖의 이름은 받지 않는다.
-# 뷰 이름은 SELECT 문에 그대로 박히므로 이 허용목록이 주입 방어를 겸한다 —
-# 사용자가 고른 문자열이 SQL 로 흘러드는 유일한 자리가 여기다.
-PCLM_VIEWS: "tuple[str, ...]" = ("v_통합_v1", "v_공고_v1", "v_계약_v1", "v_품목_v1")
-
-# 뷰를 고르는 사람에게 보일 한 줄. **한 줄이 무엇 하나인지**가 고르는 기준이라
-# 그것을 문장의 절반으로 쓴다 — 계약면을 섞으면 문서 건수가 조용히 어긋난다.
-# 키 집합은 PCLM_VIEWS 와 같다(허용목록에 이름만 늘고 설명이 빠지는 것을 테스트가 막는다).
-PCLM_VIEW_LABELS: "dict[str, str]" = {
-    "v_통합_v1": "공고와 계약을 이어 붙인 계약면. 한 줄이 계약 1건(기본 문서 대상)",
-    "v_공고_v1": "공고 정보. 한 줄이 공고 1건",
-    "v_계약_v1": "계약 정보. 한 줄이 계약 1건",
-    "v_품목_v1": "품목 명세. 한 줄이 품목 1줄(계약 1건에 여러 줄)",
-}
-
-# 가장 자주 쓰는 시트: 계약 1건 + 이어진 공고. 한 줄이 계약 하나다.
-DEFAULT_PCLM_VIEW = "v_통합_v1"
-
-
-def default_pclm_db() -> Path:
-    """pclm 이 자료를 쌓는 자리 — 그쪽 창과 명령줄이 함께 보는 곳.
-
-    저쪽 ``Database.DefaultPath`` 와 같은 값이다. 한동안 창과 명령줄이 서로 다른 자리를
-    봐서 같은 컴퓨터에 DB 가 여럿 생겼는데, 밖에서 읽는 쪽에는 **가리킬 자리가 하나**
-    여야 하므로 그쪽이 이리로 모았다.
-    """
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return Path(base) / "Pclm" / "pclm.db"
 
 
 class PclmDataSource:

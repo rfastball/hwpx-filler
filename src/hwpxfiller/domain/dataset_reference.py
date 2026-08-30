@@ -27,6 +27,19 @@ def excel_identity(path: "str | Path", sheet: "str | None" = "") -> str:
     return os.path.normcase(os.path.abspath(os.fspath(path))) + "\x1f" + (sheet or "")
 
 
+def pclm_identity(db: "str | Path", view: str) -> str:
+    """계약 목록(pclm) 참조 정체성: **kind 접두** + 정규화 DB 경로 + 뷰.
+
+    축은 엑셀과 같다(파일 하나 + 그 안의 면 하나 = 데이터 하나)라 계산은
+    :func:`excel_identity` 를 그대로 쓰지만, 접두 없이 같은 문자열 공간을 쓰면 두 종류가
+    **교차 충돌**한다: ``pclm.db`` 를 파일로 등록한 엑셀 참조와 뷰 이름이 시트 이름과
+    겹치는 pclm 참조가 같은 데이터로 판정돼 등록이 거절되거나(``add``), 서로 다른 종류가
+    한 중복 그룹으로 묶여 병합 확정에 섞인다(``resolve_duplicates``). 정체성은 「같은
+    데이터인가」의 축이고 종류가 다르면 같은 데이터가 아니다.
+    """
+    return "pclm\x1f" + excel_identity(db, view)
+
+
 @dataclass
 class DatasetReference:
     """소스를 다시 여는 순수 참조 값과 2상태 수명.
@@ -86,15 +99,24 @@ class DatasetReference:
 
 
 def reference_identity(item: DatasetReference) -> "str | None":
-    """경로가 있는 엑셀 참조의 데이터 정체성. 그 밖에는 ``None``."""
-    if item.kind != "excel" or not isinstance(item.opts, dict):
+    """파일을 가리키는 참조(엑셀·계약 목록)의 데이터 정체성. 그 밖에는 ``None``."""
+    if not isinstance(item.opts, dict):
         return None
-    raw = item.opts.get("path")
-    if not isinstance(raw, str) or not raw:
-        return None
-    raw_sheet = item.opts.get("sheet")
-    sheet = raw_sheet if isinstance(raw_sheet, str) else ""
-    return excel_identity(raw, sheet)
+    if item.kind == "excel":
+        raw = item.opts.get("path")
+        if not isinstance(raw, str) or not raw:
+            return None
+        raw_sheet = item.opts.get("sheet")
+        sheet = raw_sheet if isinstance(raw_sheet, str) else ""
+        return excel_identity(raw, sheet)
+    if item.kind == "pclm":
+        # 손편집·구판 항목의 깨진 형은 추측해 고치지 않는다 — 정체성 없음(엑셀과 같은 규율).
+        raw_db = item.opts.get("db")
+        raw_view = item.opts.get("view")
+        if not isinstance(raw_db, str) or not raw_db or not isinstance(raw_view, str):
+            return None
+        return pclm_identity(raw_db, raw_view)
+    return None
 
 
 __all__ = [
@@ -103,5 +125,6 @@ __all__ = [
     "STATUS_RETIRED",
     "DatasetReference",
     "excel_identity",
+    "pclm_identity",
     "reference_identity",
 ]

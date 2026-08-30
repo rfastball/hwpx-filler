@@ -24,6 +24,7 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS  # 계약 목록 뷰 백스톱
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
@@ -150,9 +151,14 @@ def collect_owned_paths(
         if getattr(j, "template_path", ""):
             paths.add(norm_path(j.template_path, base_dir))
     for it in pool_registry.list_items(corrupted=[]):     # 손상 흡수(raise 방지)
-        p = it.opts.get("path") if isinstance(it.opts, dict) else None
-        if isinstance(p, str) and p:
-            paths.add(norm_path(p, base_dir))
+        opts = it.opts if isinstance(it.opts, dict) else {}
+        # 참조가 가리키는 파일의 키는 종류마다 다르다(엑셀=path, 계약 목록=db) — 둘 다
+        # 사용자 소유 파일이라 로케이트·열기가 열려야 한다(빠뜨리면 「끊김」 배지만 있고
+        # 그 파일을 확인할 길이 없다).
+        for opt_key in ("path", "db"):
+            p = opts.get(opt_key)
+            if isinstance(p, str) and p:
+                paths.add(norm_path(p, base_dir))
     for p in session_paths:
         if p:
             paths.add(norm_path(p, base_dir))
@@ -185,7 +191,9 @@ def reference_missing(path: str) -> bool:
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetReference:
-    """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
+    """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트·미지 계약 목록 뷰는 시끄럽게 거절.
+
+    웹 소스 경계의 **단일 관문**이다.
 
     겨눔의 정체는 슬롯 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨). 거절 문구는 사람이
     아는 어휘(항목 이름)로 재진술한다.
@@ -213,6 +221,15 @@ def load_pool_item_checked(
         )
         if err:
             raise ValueError(err)
+    # 계약 목록 뷰 백스톱 — 등록 게이트(링1 `register_pclm`)가 뷰를 확정해도, 손편집한
+    # `.dataset.json` 이나 뷰 이름이 갈린 구판 항목은 그 게이트를 지나지 않았다. 뷰 이름은
+    # SELECT 에 그대로 박히므로 겨눔 시점의 이 관문이 다중 시트 게이트와 같은 자리를 진다.
+    if item.kind == "pclm" and item.opts.get("view") not in PCLM_VIEWS:
+        raise ValueError(
+            f"등록 데이터 '{item.name}' 의 계약 목록 뷰가 올바르지 않습니다.\n"
+            "쓸 수 있는 뷰:\n"
+            + "\n".join(f"  {v} — {PCLM_VIEW_LABELS[v]}" for v in PCLM_VIEWS)
+        )
     return item
 
 

@@ -711,3 +711,63 @@ def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
     assert res["ok"] is False
     assert "이미 고정돼 있습니다" not in ctrl.snapshot()["result"]["text"]
     assert reg.list_references()[0] == []  # 부활 0건
+
+
+# ------------------------------------------------- 계약 목록(pclm) 등록 표면(ADR N)
+def test_pclm_snapshot_block_carries_default_db_and_every_view(tmp_path, monkeypatch):
+    """스냅샷이 기본 DB 자리와 **뷰 전수**(설명 포함)를 낸다 — 웹이 목록을 복제하지 않게."""
+    from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    ctrl, _reg, _ = _controller(tmp_path)
+    block = ctrl.initial()["pclm"]
+    assert block["default_db"] == str(
+        tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
+    )
+    assert [v["name"] for v in block["views"]] == list(PCLM_VIEWS)
+    assert all(v["label"] == PCLM_VIEW_LABELS[v["name"]] for v in block["views"])
+
+
+def test_targeting_gate_rejects_a_broken_pclm_view_and_still_freezes_nara(tmp_path):
+    """겨눔 관문의 백스톱 — 손편집·구판이 남긴 미지 뷰는 거절하고, 나라 동결은 그대로다.
+
+    등록 게이트(링1)가 뷰를 확정해도 그 게이트를 지나지 않은 항목(직접 쓴
+    ``.dataset.json``)이 있다. 뷰 이름은 SELECT 에 그대로 박히므로 다중 시트 게이트와
+    같은 자리에서 한 번 더 잡는다.
+    """
+    from hwpxfiller.domain.pclm_views import PCLM_VIEWS
+    from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT, load_pool_item_checked
+
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    good = reg.add(DatasetReference(
+        name="정상", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합_v1"}))
+    broken = reg.add(DatasetReference(
+        name="구판", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합"}))
+    missing = reg.add(DatasetReference(
+        name="뷰 없음", kind="pclm", opts={"db": "C:/d/other.db"}))
+    nara = reg.add(DatasetReference(
+        name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
+
+    assert load_pool_item_checked(reg, good).opts["view"] == "v_통합_v1"
+    for key in (broken, missing):
+        with pytest.raises(ValueError) as caught:
+            load_pool_item_checked(reg, key)
+        assert reg.load(key).name in str(caught.value)      # 항목 이름으로 재진술
+        assert all(view in str(caught.value) for view in PCLM_VIEWS)
+    with pytest.raises(ValueError, match="나라장터"):        # 동결 회귀 — 문구 불변
+        load_pool_item_checked(reg, nara)
+    assert NARA_FROZEN_TEXT.startswith("나라장터 소스는")
+
+
+def test_pclm_db_is_reachable_from_the_locate_whitelist(tmp_path):
+    """계약 목록 DB 도 사용자 소유 파일이라 열기·폴더보기가 열린다(끊김만 알리고 못 여는 일 금지)."""
+    from hwpxfiller.external.job_store import JobRegistry
+    from hwpxfiller.webapp.screens import collect_owned_paths, norm_path
+
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    db = tmp_path / "pclm.db"
+    reg.add(DatasetReference(name="계약", kind="pclm",
+                             opts={"db": str(db), "view": "v_통합_v1"}))
+    owned = collect_owned_paths(
+        JobRegistry(tmp_path / "jobs"), reg, base_dir=tmp_path)
+    assert owned == {norm_path(db, tmp_path)}

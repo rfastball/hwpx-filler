@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.application.dataset_pool import (
+    DatasetPoolRow,
     DatasetPoolViewModel,
     available_actions,
     reference_summary,
@@ -218,6 +219,29 @@ def test_duplicates_surface_from_legacy_files(tmp_path):
 def test_reference_summary_unknown_kind():
     it = DatasetReference(name="x", kind="excel", opts={})
     assert "경로 없음" in reference_summary(it)
+    # 미지 kind 의 fallback 은 불변 — 새 종류가 늘어도 모르는 것은 모른다고 말한다.
+    assert reference_summary(
+        DatasetReference(name="y", kind="미래소스", opts={"db": "/x.db"})
+    ) == "(알 수 없는 소스)"
+
+
+def test_pclm_row_renders_kind_label_summary_and_locate_path(tmp_path):
+    """계약 목록 항목의 행 성형 — 종류 라벨·DB/뷰 요약·로케이트 경로(끊김 배지가 볼 파일)."""
+    vm = _vm(tmp_path)
+    db = tmp_path / "pclm.db"
+    vm.register_pclm("계약 목록", str(db), view="v_품목_v1", note="품목 명세")
+    row = vm.rows()[0]
+    assert row.kind == "pclm" and row.kind_label == "계약 목록"
+    assert row.reference == "DB: pclm.db · 뷰 v_품목_v1"
+    assert row.locate_path == str(db)   # 「끊김」 배지·로케이트가 같은 파일을 본다
+    assert row.sheet == ""              # 시트는 엑셀 축 — 계약 목록은 뷰가 그 자리다
+    assert row.note == "품목 명세"
+
+    # 미지 kind 는 로케이트 대상이 아니다(파일 참조가 아닌 종류의 판정 밖).
+    row_unknown = DatasetPoolRow.from_item(
+        "k", DatasetReference(name="z", kind="미래소스", opts={"db": "/x.db"})
+    )
+    assert row_unknown.locate_path == "" and row_unknown.kind_label == "미래소스"
 
 
 def test_pipeline_row_renders_kind_label_and_summary(tmp_path):

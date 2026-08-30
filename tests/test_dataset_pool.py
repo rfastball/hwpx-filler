@@ -16,6 +16,7 @@ from hwpxfiller.domain.dataset_reference import (
     STATUS_RETIRED,
     DatasetReference,
     excel_identity,
+    pclm_identity,
     reference_identity,
 )
 from hwpxfiller.external import dataset_store
@@ -121,6 +122,36 @@ def test_item_identity_only_for_pathful_excel():
     assert reference_identity(DatasetReference(name="c", kind="excel", opts={})) is None
     assert reference_identity(
         DatasetReference(name="d", kind="excel", opts={"path": 3})  # 훼손 opts
+    ) is None
+
+
+def _pclm(name: str, db, view: str = "v_통합_v1") -> DatasetReference:
+    return DatasetReference(name=name, kind="pclm", opts={"db": db, "view": view})
+
+
+def test_pclm_identity_normalizes_db_and_carries_view(tmp_path):
+    """계약 목록 정체성 = kind 접두 + normcase(abspath(db)) + 뷰(엑셀 축의 거울)."""
+    db = tmp_path / "pclm.db"
+    assert pclm_identity(db, "v_통합_v1") == pclm_identity(str(db).upper(), "v_통합_v1")
+    assert pclm_identity(db, "v_통합_v1") != pclm_identity(db, "v_계약_v1")
+    assert reference_identity(_pclm("a", str(db))) == pclm_identity(db, "v_통합_v1")
+    # 상대경로 표기도 같은 자리를 가리키면 같은 데이터다.
+    assert reference_identity(_pclm("b", "sub/../pclm.db", "v_공고_v1")) == pclm_identity(
+        "pclm.db", "v_공고_v1"
+    )
+
+
+def test_pclm_identity_is_disjoint_from_excel_and_fails_soft_on_broken_opts():
+    """kind 접두가 교차 충돌을 막는다 — 같은 파일·같은 면 이름이라도 종류가 다르면 다른 데이터."""
+    assert pclm_identity("/x/pclm.db", "v_통합_v1") != excel_identity(
+        "/x/pclm.db", "v_통합_v1"
+    )
+    # 훼손·미기재 opts 는 추측해 고치지 않는다(엑셀과 같은 규율 — 정체성 없음).
+    assert reference_identity(_pclm("c", "/x/pclm.db", view=3)) is None  # type: ignore[arg-type]
+    assert reference_identity(_pclm("d", 3)) is None
+    assert reference_identity(_pclm("e", "")) is None
+    assert reference_identity(
+        DatasetReference(name="f", kind="pclm", opts={"view": "v_통합_v1"})
     ) is None
 
 

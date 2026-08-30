@@ -38,6 +38,13 @@ loud 재진술한다(판정·수치는 Application·어댑터, 문안·확인 UI
 **스코프 경계(조용히 빠뜨리지 않고 명시)**: 나라장터 참조 **등록**은 웹에 노출하지 않는다
 (동결 결정 2026-07-16 — 내부망 API 미확인, ServiceKey 웹 표면 부재). 단 풀에 이미 있는
 nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register_nara`` 는 보존, 배선만 유보).
+**계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
+네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
+소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 지금 이 화면이 지는 것은 **스냅샷**(등록 폼이
+물어야 할 기본 DB 자리와 뷰 전수)까지이고, 등록 액션은 그 폼과 **한 계약 변경**으로 함께
+선다 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
+(``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 이미 링1
+(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.register_pclm`)에 있다.
 """
 from __future__ import annotations
 
@@ -53,6 +60,7 @@ from ..application.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference
+from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS, default_pclm_db
 from .screens import PushSink, reference_missing
 
 __all__ = [
@@ -143,6 +151,18 @@ class PoolController:
             for group in self.vm.duplicates()
         ]
 
+    def _pclm_block(self) -> dict:
+        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고를 수 있는 뷰 전수**.
+
+        웹이 뷰 목록을 리터럴로 들지 않는다: 허용목록도 그 설명도 링0 단일 출처
+        (:mod:`hwpxfiller.domain.pclm_views`)이고, 여기 스냅샷은 그 값을 옮기기만 한다 —
+        표면이 목록을 복제하면 뷰가 늘거나 설명이 갈릴 때 한쪽만 늙는다.
+        """
+        return {
+            "default_db": str(default_pclm_db()),
+            "views": [{"name": v, "label": PCLM_VIEW_LABELS[v]} for v in PCLM_VIEWS],
+        }
+
     def snapshot(self) -> dict:
         return {
             "rows": self._rows(),
@@ -150,6 +170,7 @@ class PoolController:
             "empty": self.vm.is_empty(),
             "corrupted": self._corrupted_rows(),
             "duplicates": self._duplicate_groups(),
+            "pclm": self._pclm_block(),
             "result": {"text": self.result_text, "level": self.result_level},
         }
 
