@@ -656,6 +656,30 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 - 시트는 조판·서식을 재현하지 않는다(#360 rhwp 는 별도 트랙): 문단 텍스트와 표(행·열 및
   `cellSpan`/`cellAddr` 병합 메타)와 빈 값 표식 집계까지다.
 
+#### 「포함할 내용」 존의 노출 술어 (U4 13번 · #932)
+
+`#jobContentSelectionZone` 은 **고를 항목이 있을 때만 선다**(사용자 확정 2026-08-30 —
+U3 §3(#876) 「확인할 것이 없으면 숨김이 기본」의 적용 확장). slot 없는 작업에서 이 존은
+「이 문서 작업에는 선택할 내용이 없습니다.」 한 줄로 영영 서 있었고, 그 줄은 사용자가 확인할
+것도 할 것도 아니었다.
+
+- **판정은 Python 한 곳**이다: `application/slot_configuration_projection.py` 의
+  `content_selection_zone_actionable` → projection 의 `zone_actionable`. 링2·웹은 읽어 나르기만
+  한다 — 웹이 `slots.length` 를 다시 세면 같은 상태를 두 곳이 판정하게 된다(음성 단언이 그
+  금지를 진다).
+- **`CHOOSE_CONTENT` blocker 가 서는 두 상태**(`NEEDS_SELECTION`·`HAS_BROKEN_SELECTIONS`)는
+  술어의 **입력**이다. 그 blocker 의 복구 동사가 이 존 안의 갈래 라디오(`.cs-option-input` —
+  `blocker_affordance`)라, 존이 사라지면 「없는 자리를 가리키는 지시」가 된다(#912 결함류).
+  오늘 두 상태는 항목 ≥ 1 을 함의하지만 결과가 아니라 술어로 못박는다.
+- **실패·거절·직전 왕복 결과의 재진술은 술어가 숨겨도 살아남는다** — 재진술 수명은 웹 소유이고
+  (#659), 술어만으로 지우면 방금 겪은 거절이 화면에서 증발한다. `CONTEXT_ERROR` 갈래(복구 동사
+  「다시 불러오기」)도 그대로 선다.
+- 술어가 거짓이면 React 는 children 을 비울 뿐이라 `.zone` 여백·구분선이 빈 상자로 남는다 —
+  `#jobContentSelectionZone:empty`(그리고 같은 이유의 `#jobTplChangeZone:empty`)가 자리째 접는다.
+- **귀결(명시 기록)**: 항목 0 건 ∧ 사라진 이전 선택 ≥ 1 이면 `cs-retained-gone` 정보는 말할
+  자리를 잃는다. projection 의 detached·retained 축은 그대로 실려 나가므로 되살릴 때는 술어에
+  갈래를 더하면 된다.
+
 #### 「포함할 내용」 존의 보관된 선택(Preset) (S9-03 · #829)
 
 `#jobContentSelectionZone` 의 slot 목록 아래 `.cs-presets` 구획이 선택 묶음을 Work **밖**에
@@ -664,9 +688,15 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 `apply_selection_preset {configuration_token, preset_key}`. `request_id` 가 없는 이유는 S9-02 가
 재전송을 원장이 아니라 이름 유일성 + token version CAS 로 닫았기 때문이다.
 
-- **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, items[{key,name,created_at}],
-  corrupt[{file_name,error}], corrupt_code}`). 지원 조건은 `slot_configuration` 존과 동형이고,
-  `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —
+- **구획도 자기 술어로 선다**(U4 13번): 보관 항목·손상 항목이 있거나 **지금 저장할 선택이
+  있을 때** 선다(`preset_command.preset_zone_actionable` → 존의 `actionable`). 목록 건수만으로
+  숨기지 않는 이유는 「현재 선택을 프리셋으로 저장」이 프리셋을 처음 만드는 **유일한 입구**라
+  구획째 지우면 만들 방법이 사라지기 때문이다(#932 B5 가 템플릿 존에서 거절한 스위치 트랩).
+  세 번째 갈래는 저장 게이트(`has_declared_selection` — `PRESET_EMPTY_SELECTION` 을 세우는 그
+  함수)를 **그대로** 묻는다: 보이는 단추가 곧 이행되는 단추다.
+- **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, actionable,
+  items[{key,name,created_at}], corrupt[{file_name,error}], corrupt_code}`). 지원 조건은
+  `slot_configuration` 존과 동형이고, `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —
   비활성 + 사유 병기로 같은 목록에 선다(숨기면 사용자가 묻지도 못한다).
 - **`items` 는 현재 템플릿 구조에 「전부 적용 가능」한 것만 싣는다**(U3 §2 · #875). 판정은
   적용 경로가 쓰는 `preset_command.fit_preset_selections` 의 `fully_applicable` 하나이고

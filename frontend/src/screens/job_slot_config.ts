@@ -62,6 +62,10 @@ export type SlotProjection = {
   view_status: string;
   configuration_status: string;
   configuration_present: boolean;
+  /** 「포함할 내용」 구획을 세울 것인가(U4 13번) — 판정은 Python 이고 여기는 읽기만 한다. */
+  zone_actionable: boolean;
+  /** 지금 Preset 으로 저장할 선택이 있는가 — 저장 게이트와 같은 술어(재판정 0). */
+  savable_selection: boolean;
   slots: ProjectedSlot[];
   blocking_items: { slot_id: string; kind: string; option_id: string | null }[];
   informational_changes: { slot_id: string; kind: string; option_id: string | null }[];
@@ -96,14 +100,18 @@ export type SlotZoneError = {
 export type PresetListItem = { key: string; name: string; created_at: string };
 export type PresetCorruptEntry = { file_name: string; error: string };
 
-/** snapshot `content_presets` 존 — 손상 항목은 items 와 **함께** 온다(숨기지 않는다). */
+/** snapshot `content_presets` 존 — 손상 항목은 items 와 **함께** 온다(숨기지 않는다).
+ *  `actionable` 은 구획 노출 술어(U4 13번)이고 Python `preset_zone_actionable` 이 낸 값이다. */
 export type PresetZone = {
   supported: boolean;
+  actionable: boolean;
   items: PresetListItem[];
   corrupt: PresetCorruptEntry[];
 };
 
-export const emptyPresetZone: PresetZone = { supported: false, items: [], corrupt: [] };
+export const emptyPresetZone: PresetZone = {
+  supported: false, actionable: false, items: [], corrupt: [],
+};
 
 /** backend `PresetSaveResult` asdict — 문안 0(status·code·충돌 항목 사실만). */
 export type PresetSaveResponse = {

@@ -32,10 +32,15 @@ function slot(id, text, status, options, sharedFields = []) {
     options, shared_field_ids: sharedFields,
   };
 }
+/** `zone_actionable`·`savable_selection` 은 **backend 가 낸 값**이다(U4 13번) — 대역은 그것을
+ *  흉내내되(항목 ≥1 · 선언 선택 ≥1) 호출자가 명시로 뒤집을 수 있다. 술어를 여기서 재구현하는
+ *  것이 아니라 「Python 이 이 값을 실어 보냈다」를 세우는 자리다. */
 function view(status, slots, extra = {}) {
   const {
     token = "tok-1", blocking = [], viewStatus = "CURRENT", contextError = null,
     contextErrorMessage = null, retained = [],
+    zoneActionable = slots.length > 0,
+    savableSelection = slots.some((s) => s.options.some((o) => o.selected)),
   } = extra;
   return {
     view_status: viewStatus,
@@ -45,6 +50,7 @@ function view(status, slots, extra = {}) {
     new_configuration_token: token,
     projection: viewStatus === "CONTEXT_ERROR" ? null : {
       view_status: viewStatus, configuration_status: status, configuration_present: true,
+      zone_actionable: zoneActionable, savable_selection: savableSelection,
       slots, blocking_items: blocking, informational_changes: [],
       retained_selections: retained,
     },
@@ -618,8 +624,15 @@ test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면
 });
 
 /* ══ S9-03(#829) 보관된 선택(Preset) — 저장·적용 두 동사 ═══════════════════════════════════ */
-function presetZone(items = [], corrupt = []) {
-  return { supported: true, items, corrupt };
+/** `actionable` 은 Python `preset_zone_actionable` 이 낸 값이다(U4 13번) — 대역은 그 셋 중
+ *  둘(보관·손상)을 흉내내고, 「지금 저장할 선택」 갈래는 호출자가 명시로 세운다. */
+function presetZone(items = [], corrupt = [], { actionable } = {}) {
+  return {
+    supported: true,
+    actionable: actionable ?? (items.length > 0 || corrupt.length > 0),
+    items,
+    corrupt,
+  };
 }
 function presetItem(key, name, createdAt = "2026-08-24T09:00:00") {
   return { key, name, created_at: createdAt };
@@ -836,7 +849,11 @@ test("컨트롤러 savePreset: 확인 거절이면 두 번째 저장을 보내�
 });
 
 test("존 렌더: 목록·적용 버튼과 정직한 빈 상태", () => {
-  const empty = render(stateOf(SELECTED, "idle", null, null, { presets: presetZone() }));
+  // U4 13번: 보관 0건이어도 **저장할 선택이 있으면** 구획이 선다(저장 동사가 프리셋을 처음
+  // 만드는 유일한 입구다). 그때 목록이 비었다는 사실은 계속 정직하게 말한다.
+  const empty = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([], [], { actionable: true }),
+  }));
   assert.match(empty, /보관된 선택이 아직 없습니다/);
   assert.match(empty, /현재 선택을 프리셋으로 저장/);
 
@@ -846,6 +863,50 @@ test("존 렌더: 목록·적용 버튼과 정직한 빈 상태", () => {
   assert.match(listed, /표준 구성/);
   assert.match(listed, /적용/);
   assert.ok(!listed.includes(">k1<")); // 슬롯 키는 내부 식별자다
+});
+
+/* ══ U4 13번 — 확인할 것이 없으면 구획이 서지 않는다(#932 · U3 §3 적용 확장) ═══════════ */
+
+test("13번: 고를 항목이 없으면 「포함할 내용」 구획이 통째로 서지 않는다", () => {
+  const none = view("SLOT_SELECTIONS_COMPLETE", []);
+  assert.equal(render(stateOf(none)), "");
+});
+
+test("13번: 술어는 Python 값이다 — 웹이 slots 길이로 다시 판정하지 않는다", () => {
+  // 항목은 있는데 backend 가 「세우지 않는다」고 실으면 그 말을 따른다. 링2 가 `slots.length`
+  // 로 재조립하면 이 단언이 빨강이 되고, 그것이 곧 같은 상태의 두 판정이다.
+  const said = view("SLOT_SELECTIONS_COMPLETE",
+    [slot("s1", "표지 유형", "RESOLVED", [opt("o1", "기본 표지", true)])],
+    { zoneActionable: false });
+  assert.equal(render(stateOf(said)), "");
+});
+
+test("13번: 항목 0건이어도 실패·거절 재진술은 숨기지 않는다", () => {
+  const none = view("SLOT_SELECTIONS_COMPLETE", []);
+  const failed = render(stateOf(none, "error", "옵션을 바꾸지 못했습니다"));
+  assert.match(failed, /옵션을 바꾸지 못했습니다/);
+  assert.match(failed, /role="alert"/);
+
+  const noticed = render(stateOf(none, "idle", null, null, {
+    presets: presetZone(),
+    presetNotice: { kind: "saved", name: "표준 구성" },
+  }));
+  assert.match(noticed, /표준 구성.{0,12} 이름으로 보관했습니다/); // 따옴표는 HTML escape 된다
+});
+
+test("13번: 보관 0건 ∧ 저장할 선택 0건이면 「보관된 선택」 구획이 서지 않는다", () => {
+  const html = render(stateOf(NEEDS, "idle", null, null, { presets: presetZone() }));
+  assert.ok(!html.includes("cs-presets"));
+  assert.ok(!html.includes("현재 선택을 프리셋으로 저장"));
+  assert.match(html, /표지 유형/); // 구획 자체는 항목이 있어 그대로 선다
+});
+
+test("13번: 손상 항목만 있어도 「보관된 선택」 구획은 선다(비활성 + 사유 병기)", () => {
+  const html = render(stateOf(NEEDS, "idle", null, null, {
+    presets: presetZone([], [{ file_name: "bad.preset.json", error: "digest 불일치" }]),
+  }));
+  assert.match(html, /cs-preset-corrupt/);
+  assert.match(html, /파일이 손상돼 적용할 수 없습니다/);
 });
 
 test("존 렌더: 손상 항목은 숨기지 않고 비활성 + 사유 병기", () => {
