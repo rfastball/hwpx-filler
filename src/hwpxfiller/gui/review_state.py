@@ -221,24 +221,6 @@ def review_requirement(
     )
 
 
-def review_reason_text(req: ReviewRequirement) -> str:
-    """**왜** 확인을 묻는가 — 판정 N 의 세 갈래를 한 문장으로.
-
-    변경 대상은 **다 적는다**: "규칙이 바뀌었습니다"만으로는 결과에서 무엇을 대조할지 모른 채
-    지나가게 되고, 그러면 확인이 형식이 된다(빈 값 고지가 필드 이름을 다 적는 것과 같은 근거).
-    """
-    if req.first_run:
-        return "아직 한 번도 문서를 만들지 않은 작업입니다."
-    if req.unknown_baseline:
-        return "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
-    if req.risk_class == "blank_set":
-        # 규칙축이 아니라 데이터축이다(§2.13) — "규칙이 바뀌었습니다"는 여기서 거짓말이다.
-        return (
-            f"빈 값 필드가 표식으로 문서에 박힙니다: {', '.join(req.changed_targets)}."
-        )
-    return f"규칙이 바뀌었습니다: {', '.join(req.changed_targets)}."
-
-
 def review_notice_text(req: ReviewRequirement) -> str:
     """검토 요구의 **비차단 고지** 문안 — 생성을 막지 않고 확인 자리를 결과 문서로 지목한다.
 

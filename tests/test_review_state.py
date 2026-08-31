@@ -29,7 +29,6 @@ from hwpxfiller.external.job_store import (
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import (
     review_notice_text,
-    review_reason_text,
     review_requirement,
     rules_key,
 )
@@ -286,41 +285,6 @@ def test_notice_text_never_speaks_of_blocking_or_approval():
         assert "—" not in text  # 표기 규칙 1(em dash 금지)
 
 
-# ------------------------------------------------------------ 사유 문안(고지의 앞머리)
-def test_reason_text_names_what_changed():
-    job = _reviewed(_job())
-    job.mapping.mappings[1].source = "다른열"
-    text = review_reason_text(review_requirement(job))
-    assert "금액(연결)" in text and text.startswith("규칙이 바뀌었습니다: ")
-    assert "—" not in text  # 표기 규칙 1(em dash 금지)
-
-
-def test_reason_text_for_a_new_job_does_not_claim_rules_changed():
-    text = review_reason_text(review_requirement(_job()))
-    assert "규칙이 바뀌" not in text
-    assert text == "아직 한 번도 문서를 만들지 않은 작업입니다."
-
-
-def test_reason_text_for_unknown_baseline_does_not_claim_a_first_run():
-    """실행 이력은 있는데 기준선이 없는 경우 — 「첫 실행」도 「규칙이 바뀌었다」도 거짓말이다.
-
-    종전 이 갈래는 게이트 문안 경유로만 밟혔다(#957 에서 그 소비자가 사망) — 사유 문안이
-    같은 세 갈래를 그대로 지므로 여기서 직접 겨눈다.
-    """
-    job = _job()
-    job.last_run_at = "2026-08-01T09:00:00"
-    req = review_requirement(job)
-    assert req.unknown_baseline and not req.first_run
-    assert review_reason_text(req) == "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
-
-
-def test_reason_text_for_blank_set_speaks_the_data_axis():
-    """데이터축이다 — 규칙축 문안("규칙이 바뀌었습니다")은 여기서 거짓말이다(§2.13)."""
-    text = review_reason_text(review_requirement(_reviewed(_job()), blank_fields=("담당자",)))
-    assert "빈 값" in text and "담당자" in text
-    assert "규칙이 바뀌" not in text
-
-
 def test_rules_key_is_stable_across_processes():
     """hash() 가 아니라 안정 해시 — 같은 규칙이면 언제나 같은 키다."""
     assert rules_key(rules_fingerprints(_job())) == rules_key(rules_fingerprints(_job()))
@@ -440,11 +404,9 @@ def test_blank_fields_raise_a_requirement_even_when_rules_match_the_baseline():
     assert req.selection_bound is True, (
         "빈 값 집합은 선택에 딸린 사실이다 — 선택 결속이 아니면 요구가 남의 선택에 산다."
     )
-    # 문안은 사유 한 줄이 진다(#957: 게이트 문안은 사망). 데이터축이므로 규칙축 문장은
-    # 여기서 거짓말이다.
-    text = review_reason_text(req)
-    assert "빈 값" in text and "담당자" in text
-    assert "규칙이 바뀌었습니다" not in text
+    # 고지 문안은 여기서 침묵한다 — 사전검증의 "[경고] 빈 값 필드" 가 같은 자리에서
+    # 필드 이름을 다 적으므로, 한 사실이 한 면에 두 줄로 서지 않는다(#957).
+    assert review_notice_text(req) == ""
 
 
 def test_no_blanks_and_matching_rules_stay_quiet():
