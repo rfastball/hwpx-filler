@@ -321,7 +321,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     try {
       await zone("range_draft_cancel", {});
     } catch (error) {
-      deps.ports.jobRunCoordination.current().log(`범위 편집을 취소하지 못했습니다: ${String(error)}`);
+      deps.notify(`범위 편집을 취소하지 못했습니다: ${String(error)}`);
       return;
     }
     rangeForceClose = true;
@@ -355,7 +355,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
       await flushPendingEdits();
       await zone("range_draft_apply", {});
     } catch (error) {
-      deps.ports.jobRunCoordination.current().log(`범위를 적용하지 못했습니다: ${String(error)}`);
+      deps.notify(`범위를 적용하지 못했습니다: ${String(error)}`);
       return;
     }
     rangeApplied = true;
@@ -371,13 +371,13 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     const previous = favoriteTail.get(name) ?? Promise.resolve();
     const next = previous.then(async () => {
       const result = await call("job", "toggle_favorite", { name, value: intended });
-      if (result.ok === false) deps.ports.jobRunCoordination.current().log(result.error || "즐겨찾기를 바꾸지 못했습니다.");
+      if (result.ok === false) deps.notify(result.error || "즐겨찾기를 바꾸지 못했습니다.");
       if (favoriteRevision.get(name) === revision) {
         favoriteIntent.delete(name);
         favoriteRevision.delete(name);
       }
     });
-    favoriteTail.set(name, next.catch((error) => deps.ports.jobRunCoordination.current().log(String(error))));
+    favoriteTail.set(name, next.catch((error) => deps.notify(String(error))));
     await next;
   }
 
@@ -385,7 +385,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     const current = snapshot();
     const gate = current?.new_work || { can: true, reason: "" };
     if (gate.can === false) {
-      deps.ports.jobRunCoordination.current().log(gate.reason || "이 데이터로 새 작업을 만들 수 없습니다.");
+      deps.notify(gate.reason || "이 데이터로 새 작업을 만들 수 없습니다.");
       return false;
     }
     return deps.ports.editorEntry.current().newDraftFromData({
@@ -409,14 +409,17 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     if (active && !(await deps.ports.jobRunCoordination.current().confirmDestructiveIfArmed(
       "템플릿 다시 연결 확인", "템플릿을 다시 연결하면", "다시 연결하고 버리기",
     ))) return;
+    /* 재연결 메시지의 착지 = 알림 채널(library 소비자와 같은 규율). 실패(`error`)는 서비스
+       자신의 loud 채널이 이미 세우므로 여기서 두 번 말하지 않고, 능동 취소(`cancel`)는
+       방금 취소를 고른 사람에게 되돌려 주지 않는다 — 남는 것은 백엔드가 실은 재진술이다. */
     const committed = await deps.services.relink.current().relinkTemplate(
-      "job", name, (message) => deps.ports.jobRunCoordination.current().log(message),
+      "job", name, (message, kind) => { if (kind === "ok") deps.notify(message); },
     );
     if (!committed || active) return;
     try {
       await selectJob(name);
     } catch (error) {
-      deps.ports.jobRunCoordination.current().log(`작업 열기 실패: ${String(error)}`);
+      deps.notify(`작업 열기 실패: ${String(error)}`);
     }
   }
 
@@ -471,12 +474,13 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     flushPendingEdits,
     selectJob,
     toggleFavorite,
+    /** 불러온 사실은 「현재 데이터」 존의 라벨이 이미 보인다 — 성공에 따로 착지를 두지
+     *  않는다(실패는 피커 자신이 그 자리에서 말한다). */
     openDataPicker(): void {
       void deps.dataPicker.open({
         screen: "job",
         current: currentData(),
         confirmSwap: confirmDataSwap,
-        onLoaded: (label) => deps.ports.jobRunCoordination.current().log(`데이터 불러옴: ${label}`),
       });
     },
     openDataSheet,

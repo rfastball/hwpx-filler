@@ -33,8 +33,8 @@ const FACTORY_SERVICES = {
   JobRun: [
     'recoverRecordIssue', 'recoverContext',
     "model", "client", "notify", "subscribe", "getRun", "getUi", "getTemplateChange",
-    "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
-    "confirmDestructiveIfArmed", "log", "renderResult", "markResultStale",
+    "overwriteBody", "guardBody", "selectionLine",
+    "confirmDestructiveIfArmed", "renderResult", "markResultStale",
     "openBindingRequirement", "resolveExecution",
     "startGenerate", "cancelGeneration", "closeResult", "selectFailed",
     "openRenameRules", "pickOutputFolder", "relinkActive",
@@ -43,7 +43,7 @@ const FACTORY_SERVICES = {
     "previewFixField", "previewFixFilename",
     // 산출물 관찰(S7-03 · #825) — 결과 존 행이 여는 별도 표면과 그 직접 브리지 저장.
     "openArtifactFrom", "closeArtifact", "saveArtifactAs",
-    "openRepair", "toggleLog", "init", "dispose",
+    "openRepair", "init", "dispose",
   ],
   Nav: ["go", "refresh", "currentScreen"],
   AppCloseGuard: ["prompt"],

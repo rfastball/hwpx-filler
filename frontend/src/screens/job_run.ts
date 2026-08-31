@@ -9,11 +9,11 @@
    나머지는 전부 그대로다 — 판정·수치·문안의 출처는 여전히 Python 이고, 이 층은 그것을
    자리에 놓기만 한다.
 
-   ## 순수 합성기 넷은 표면이 아니라 계약이다
+   ## 순수 합성기 셋은 표면이 아니라 계약이다
 
-   `overwriteBody`·`guardBody`·`resultExitLine`·`selectionLine` 은 인자만 읽는 순수 함수다.
-   실앱 게이트가 산출을 되읽어 파괴적 확인·퇴장 한 줄의 조용한 문안 드리프트를 막는다 —
-   그래서 컨트롤러 표면에 이름째 남는다(삭제 회귀를 핀이 잡는다). */
+   `overwriteBody`·`guardBody`·`selectionLine` 은 인자만 읽는 순수 함수다. 실앱 게이트가
+   산출을 되읽어 파괴적 확인 문안의 조용한 드리프트를 막는다 — 그래서 컨트롤러 표면에
+   이름째 남는다(삭제 회귀를 핀이 잡는다). */
 
 import { Fragment, createElement, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -129,19 +129,6 @@ export function composeGuardBody(
   };
 }
 
-/** 퇴장 한 줄 — **수치를 여기서 다시 조립하지 않는다**(#363 리뷰 P2). `total` 은 대상 수이지
- *  만들어진 수가 아니라, 취소된 배치에서 「N건 생성」이 유일하게 남는 거짓 진술이 된다.
- *  수치 몸통은 Python 이 낸 `exit_summary` 를 그대로 쓴다. */
-export function resultExitLine(r: Obj | null, owner: string): string {
-  if (!r || r.running || r.rejected) return "";
-  const who = owner ? `'${owner}' ` : "";
-  const dir = r.out_dir ? ` — ${r.out_dir}` : "";
-  // 요약 없는 실행 결과는 조용히 넘기지 않는다 — 이 줄이 유일한 흔적이라 침묵하면 소멸
-  // 자체가 흔적 없이 사라진다. 수치를 지어내지 않고 **모른다고 적는다**.
-  const body = r.exit_summary || "생성 결과가 세션에서 물러났습니다(수치 요약 없음)";
-  return `${who}${body}${dir}`;
-}
-
 /** 실행 표면이 작업대인가 — 판정은 Python 이 낸 `run_action.key` 하나를 읽는다. 표면이
  *  확장자·매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다(F6 판정 D). */
 function isCopyWork(s: Obj | null): boolean {
@@ -159,8 +146,6 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
 /* ------------------------------------------------------------------ 컨트롤러 */
 
 type UiState = {
-  log: readonly string[];
-  logOpen: boolean;
   /** 산출물 「다른 이름으로 저장」의 마지막 결과 한 줄(S7-03 · #825). 저장·취소·저장 실패·
    *  관찰 거절이 서로 다른 문장으로 여기 앉는다. 판정은 백엔드 `status` 가 하고 이 값은
    *  그 코드를 문안으로 옮긴 결과다(시트 밖에서 조립해 시트가 상태를 갖지 않게 한다). */
@@ -174,7 +159,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   const nextToken = createTokenFactory();
 
   let run: JobRunState = initialRunState();
-  let ui: UiState = { log: [], logOpen: false, artifactSave: "" };
+  let ui: UiState = { artifactSave: "" };
   /* 템플릿 변경 확인·적용(S3-09)의 화면 local 상태 — 진행 여부·요청 키·적용 재진술.
      요청 키는 prepare intent 의 재전송 단위다: 진행 중 중복 클릭은 무시(한 요청으로 수렴),
      전송 실패로 남은 키는 다음 클릭이 **같은 키로 재전송**, 성공 뒤 클릭만 새 키(=새 intent). */
@@ -188,13 +173,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   function emit(): void { for (const listener of [...listeners]) listener(); }
   function setRun(next: JobRunState): void { run = next; emit(); }
   function setTpl(next: TemplateChangeUi): void { tpl = next; emit(); }
-
-  /** 실행 기록 — 이 화면의 유일한 비모달 사건 채널이라 실패가 여기로 착지한다. */
-  function log(message: string): void {
-    const ts = new Date().toLocaleTimeString("ko-KR", { hour12: false });
-    ui = { ...ui, log: [...ui.log, `[${ts}] ${message}`] };
-    emit();
-  }
 
   function snapshot(): Obj | null {
     return run.lastFull;
@@ -223,16 +201,11 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     if (tplSwitched && (tpl.requestId !== null || tpl.notice)) {
       tpl = { ...tpl, requestId: null, notice: "" };
     }
-    /* 퇴장 한 줄은 **초기화 갈래에서만** 선다. 그 갈래는 legacy `resetGenResult` 와 같이
-       실행 기록을 **먼저 비운다** — 안 비우면 죽은 세션의 줄이 다음 세션 밑에 그대로 쌓여
-       「이어지는 한 실행」으로 읽힌다(마지막 줄만 보는 계약은 이 누적을 통과시킨다).
-       문안은 리셋 **전** 상태에서 조립하고, 로그는 리셋 **뒤에** 적는다(순서를 바꾸면 방금
-       적은 줄이 곧바로 지워진다). `ui` 를 `setRun` 앞에 두어 emit 한 번에 함께 실린다. */
-    const resetting = !before.running && disposal.kind === "reset";
-    const line = resetting ? resultExitLine(before.result, disposal.exitOwner) : "";
-    if (resetting) ui = { log: [], logOpen: false, artifactSave: "" };
+    /* 초기화 갈래는 그 실행에 딸린 웹 소유 한 줄(산출물 저장 결과)도 함께 치운다 — 결과가
+       물러난 뒤 남으면 다음 세션 밑에 앉은 남의 문장이 된다. `ui` 를 `setRun` 앞에 두어
+       emit 한 번에 함께 실린다. */
+    if (!before.running && disposal.kind === "reset") ui = { artifactSave: "" };
     setRun(next);
-    if (line) log(line);
     syncPreviewOpen(next.lastFull);
     syncArtifactOpen(next.lastFull);
   }
@@ -285,9 +258,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     // 무의미해지므로 시끄럽게 세운다(그 상태로 결과를 그리면 남의 응답도 그린다).
     if (typeof res.run_token !== "string" || res.run_token === "") {
       setRun(endRun(run));
-      const message = "실행 응답에 상관 토큰이 없습니다(계약 위반) — 결과를 신뢰할 수 없습니다.";
-      deps.notify(message);
-      log(message);
+      deps.notify("실행 응답에 상관 토큰이 없습니다(계약 위반) — 결과를 신뢰할 수 없습니다.");
       return;
     }
 
@@ -299,18 +270,18 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         confirmLabel: "덮어쓰고 생성", cancelLabel: "취소", danger: true,
       });
       if (ok) { await doGenerate(token, true); return; }
+      // 능동 취소는 착지가 없다 — 방금 「취소」를 고른 사람에게 취소를 다시 알리지 않는다.
       setRun(endRun(run));
-      log("생성을 취소했습니다.");
       return;
     }
 
     if (res.ok === false && res.error) {
       // 실행 전 거절 — 결과 자리를 비워 두면 눌렀는데 아무 일도 없는 것으로 읽힌다.
+      // 사유는 이 구획 하나가 진다(재진술 두 벌 금지).
       setRun(acceptDirect(run, {
         rejected: true, level: res.level === "danger" ? "danger" : "warn",
         title: "생성하지 않았습니다", summary: String(res.error), run_token: res.run_token,
       }));
-      log(String(res.error));
       return;
     }
     setRun(acceptDirect(run, res));
@@ -325,7 +296,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       await deps.ports.jobData.current().flushPendingEdits();
       const res = await dispatch("open_workbench", {});
       if (res.ok) { deps.navigation.go("workbench"); return; }
-      log(String(res.error || "작업대를 열지 못했습니다."));
+      deps.notify(String(res.error || "작업대를 열지 못했습니다."));
       return;
     }
     /* S6-05(#812): managed 조기 return(조용한 로그, #729 잔여위험 2)은 철거됐다 — managed
@@ -343,12 +314,11 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     if (run.running) return;
     const token = nextToken();
     setRun(beginRun(run, token));
-    log("생성 요청");
     try {
       await doGenerate(token, false);
     } catch (error) {
       setRun(endRun(run));
-      log(`생성하지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
+      deps.notify(`생성하지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
     }
   }
 
@@ -359,7 +329,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       await deps.ports.jobData.current().flushPendingEdits();
       await dispatch("preview_open", { at: o.at || 0 });
     } catch (error) {
-      log(`미리보기를 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
+      deps.notify(`미리보기를 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
       return;
     }
     // 왕복 중 화면을 떠났으면 열지 않고 상태를 되돌린다 — 남는 「열림」 상태가 다음
@@ -393,7 +363,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     try {
       await dispatch("artifact_open", { ordinal });
     } catch (error) {
-      log(`문서 내용을 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
+      deps.notify(`문서 내용을 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
       return;
     }
     if (deps.navigation.currentScreen() !== "job") {
@@ -488,13 +458,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     getTemplateChange: (): TemplateChangeUi => tpl,
 
     /* 순수 합성기 — 실앱 게이트가 산출을 되읽는다(이름째 표면에 남는 이유). */
-    overwriteBody, guardBody, resultExitLine,
+    overwriteBody, guardBody,
     selectionLine: deps.selectionLine,
     async resolveExecution(): Promise<void> {
       try {
         await dispatch("resolve_execution", {});
       } catch (error) {
-        log(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
+        deps.notify(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
       }
     },
     /** context error 의 복구 동사(#912 D4) — 마지막 Plan 을 **지금 이 순간으로** 다시 관찰한다.
@@ -506,7 +476,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       try {
         await dispatch("refresh_observation", {});
       } catch (error) {
-        log(`현재 상태를 다시 확인하지 못했습니다: ${String(error)}`);
+        deps.notify(`현재 상태를 다시 확인하지 못했습니다: ${String(error)}`);
       }
     },
     async recoverRecordIssue(target: Obj): Promise<void> {
@@ -527,13 +497,11 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         // `center` 는 중첩 스크롤러(.jobtbwrap) 밖 페이지째를 끌어올린다 — 겨눔이 시야를 옮긴다.
         element.scrollIntoView?.({ block: 'nearest' });
       } catch (error) {
-        // 실패 사유를 접힌 로그에만 두면 「눌렀는데 아무 일도 없다」가 된다 — 가시 채널로 올린다.
-        const message = `문제 위치로 이동하지 못했습니다: ${String(error)}`;
-        deps.notify(message);
-        log(message);
+        // 실패 사유는 가시 채널로 올린다 — 「눌렀는데 아무 일도 없다」로 읽히지 않게.
+        deps.notify(`문제 위치로 이동하지 못했습니다: ${String(error)}`);
       }
     },
-    confirmDestructiveIfArmed, log,
+    confirmDestructiveIfArmed,
 
     /** 결과 3태 구획의 **프로브 입구**(F4) — legacy 파사드가 지던 이름 그대로다.
      *  실앱 게이트가 Python 이 내는 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실
@@ -549,15 +517,16 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     startGenerate,
     openBindingRequirement,
     async cancelGeneration(): Promise<void> {
+      /* 중단 요청의 착지는 결과 구획이다 — 진행 중인 문서를 마친 뒤 Python 이 「생성을
+         중단했습니다 · N개 완료」와 미착수 건수를 그 자리에 낸다. 접수 시점에 따로 알리지
+         않는 이유는 그것이 성공한 요청이라서다(실패·거절만 알림 채널로 간다). */
       await dispatch("cancel_generation", {});
-      log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
     },
     closeResult(): void {
-      /* legacy `resetGenResult` 동등 — 명시 파기는 결과만이 아니라 **그 실행의 기록까지**
-         치운다. 로그가 남으면 치우라는 행동을 반만 들은 것이 되고, 다음 실행의 첫 줄이 남의
-         실행 끝줄 밑에 붙어 「이어지는 한 세션」으로 읽힌다. 펼침은 그 세션의 의사표시라
-         함께 접는다. `log`·`logOpen` 은 JobRunState 가 아니라 UiState 라 reducer 밖이다. */
-      ui = { log: [], logOpen: false, artifactSave: "" };
+      /* legacy `resetGenResult` 동등 — 명시 파기는 결과와 함께 그 실행에 딸린 웹 소유 한 줄
+         (산출물 저장 결과)까지 치운다. 남으면 치우라는 행동을 반만 들은 것이 된다.
+         `artifactSave` 는 JobRunState 가 아니라 UiState 라 reducer 밖이다. */
+      ui = { artifactSave: "" };
       setRun(closeResult(run));
       // S6-05: managed 화면에선 #jobGenBtn 이 숨어 있다 — 눌렀던 create 로 초점을 되돌린다.
       const managedButton = deps.doc.getElementById(
@@ -570,17 +539,20 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     },
     async selectFailed(): Promise<void> {
       const res = await dispatch("select_failed", {});
-      const count = Number(res.selected || 0);
-      log(count
-        ? `실패한 ${count}건만 선택했습니다. 그대로 다시 생성하면 이 건만 만듭니다.`
-        : "다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다).");
+      // 성사한 선택은 표의 선택 수·재진술이 그대로 보인다(무착지). 0 건은 **거절**이라
+      // 조용히 넘기지 않는다 — 눌렀는데 표가 그대로인 이유가 여기 말고 없다.
+      if (!Number(res.selected || 0)) {
+        deps.notify("다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다).");
+      }
     },
     openRenameRules(): void {
       const s = snapshot();
-      if (!s || !s.job_name) { log("작업이 선택돼 있지 않습니다."); return; }
+      if (!s || !s.job_name) { deps.notify("작업이 선택돼 있지 않습니다."); return; }
       const owner = String(s.last_run_job || s.job_name);
       if (owner !== String(s.job_name)) {
-        log(`이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`);
+        deps.notify(
+          `이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`,
+        );
         return;
       }
       const result = (run.result || {}) as Obj;
@@ -600,8 +572,8 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         await deps.client.invoke("pick_output_folder", "job"), "pick_output_folder");
       if (result === null || result === undefined) return;
       const text = String(result);
-      if (text.startsWith("ERROR:")) { log(`폴더 오류: ${text.slice(6).trim()}`); return; }
-      log(`저장 폴더: ${text}`);
+      // 고른 폴더는 저장 폴더 칸이 그대로 보인다(무착지) — 오류만 알림 채널로 간다.
+      if (text.startsWith("ERROR:")) deps.notify(`폴더 오류: ${text.slice(6).trim()}`);
     },
     relinkActive(): void {
       const s = snapshot();
@@ -620,17 +592,17 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         // 된다. 판정·사유는 Python 이 싣고 여기는 그것을 재진술할 뿐이다.
         const notice = res.ok === true ? "" : tplCheckRefusalNotice(res);
         // 응답이 오는 사이 작업이 갈렸으면 구획에는 싣지 않는다(남의 재진술 차단, 리뷰 P2).
-        // 그래도 **실행 기록에는 남긴다** — 좌석이 풀리는 거절(work_context_changed)은 존
+        // 그래도 **알림 채널에는 낸다** — 좌석이 풀리는 거절(work_context_changed)은 존
         // 자체가 사라져 구획이 아무 말도 할 수 없는 자리이기 때문이다.
         const still = String(snapshot()?.job_name || "") === owner;
         setTpl({ inFlight: false, requestId: null, notice: still ? notice : "" });
-        if (notice) log(notice);
+        if (notice) deps.notify(notice);
       } catch (error) {
         // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송. 단 그사이 작업이 갈렸으면
         // 키는 남의 intent 라 버린다(리뷰 P2 동류 — 상태는 세션 정체를 따른다).
         const still = String(snapshot()?.job_name || "") === owner;
         setTpl({ inFlight: false, requestId: still ? requestId : null, notice: "" });
-        log(`변경사항 확인에 실패했습니다: ${String(error)}`);
+        deps.notify(`변경사항 확인에 실패했습니다: ${String(error)}`);
       }
     },
     async templateApply(token: string): Promise<void> {
@@ -645,7 +617,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         setTpl({ inFlight: false, requestId: null, notice: still ? applyNotice(res) : "" });
       } catch (error) {
         setTpl({ ...tpl, inFlight: false });
-        log(`변경사항 적용에 실패했습니다: ${String(error)}`);
+        deps.notify(`변경사항 적용에 실패했습니다: ${String(error)}`);
       }
     },
     openPreviewFrom(trigger: HTMLElement | null): void {
@@ -674,21 +646,20 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       }
       try {
         const result = (await deps.client.invoke("save_artifact_as", ordinal)) as Obj;
-        const message = saveArtifactMessage(result || {});
-        ui = { ...ui, artifactSave: message };
+        ui = { ...ui, artifactSave: saveArtifactMessage(result || {}) };
         emit();
-        log(message);
       } catch (error) {
-        const message = `저장하지 못했습니다. ${String((error as Obj)?.message ?? error)}`;
-        ui = { ...ui, artifactSave: message };
+        ui = {
+          ...ui,
+          artifactSave: `저장하지 못했습니다. ${String((error as Obj)?.message ?? error)}`,
+        };
         emit();
-        log(message);
       }
     },
     previewMove(delta: number): void { void dispatch("preview_move", { delta }); },
     previewBlankOnly(value: boolean): void {
       void dispatch("preview_blank_only", { value }).catch((error) =>
-        log(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
+        deps.notify(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
     },
     /** 승인은 **한 동작**이다(U4 계열1-21) — 성사하면 면을 닫는다. 거절은 면을 남긴다:
      *  사유를 보여 줄 자리가 그 면이고 닫으면 무엇이 왜 안 됐는지 말할 곳이 없다.
@@ -697,7 +668,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     previewApprove(previewToken?: string): void {
       void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {})
         .then(() => { deps.modal.close("previewSheet"); })
-        .catch((error) => log(`확인을 저장하지 못했습니다: ${String(error)}`));
+        .catch((error) => deps.notify(`확인을 저장하지 못했습니다: ${String(error)}`));
     },
     previewEdit(): void {
       deps.modal.close("previewSheet");
@@ -713,13 +684,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         "보고 있던 행": String(deps.doc.getElementById("previewPos")?.textContent || "").trim(),
         "필드": field,
         "본 값": row.value || "(빈 값)",
-      }).catch((error) => log(`수정으로 이동하지 못했습니다: ${String(error)}`));
+      }).catch((error) => deps.notify(`수정으로 이동하지 못했습니다: ${String(error)}`));
     },
     previewFixFilename(): Promise<void> {
       return previewFix("filename/filenamePattern", {
         "보고 있던 행": String(deps.doc.getElementById("previewPos")?.textContent || "").trim(),
         "파일 이름": String(deps.doc.getElementById("previewFilename")?.textContent || "").trim(),
-      }).catch((error) => log(`수정으로 이동하지 못했습니다: ${String(error)}`));
+      }).catch((error) => deps.notify(`수정으로 이동하지 못했습니다: ${String(error)}`));
     },
     openRepair(kind: "fix-mapping" | "fix-filename"): void {
       void openEditForRepair({
@@ -731,7 +702,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         return_context: { surface: "data" },
       });
     },
-    toggleLog(): void { ui = { ...ui, logOpen: !ui.logOpen }; emit(); },
 
     init(): Promise<unknown> {
       if (releaseModel === null) {
@@ -760,7 +730,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     openPreview,
     dispose() { controller.dispose(); },
   });
-  deps.ports.jobRunCoordination.bind({ confirmDestructiveIfArmed, log });
+  deps.ports.jobRunCoordination.bind({ confirmDestructiveIfArmed });
 
   return controller;
 }

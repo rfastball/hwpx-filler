@@ -1,5 +1,5 @@
-/* R4-03 결과 3태 구획 + 증거 + 실행 기록 — legacy `job.js` 의 `renderResultPanel`·
-   `renderEvidence`·`failRow`·`log` 후계.
+/* R4-03 결과 3태 구획 + 증거 — legacy `job.js` 의 `renderResultPanel`·`renderEvidence`·
+   `failRow` 후계.
 
    **판정을 재조립하지 않는다**: 태·색·문안·실패 수치·판본은 전부 Python 이 낸 값 그대로다.
    여기서 다시 계산하면 판정이 두 벌이 되고, 그 둘은 따로 늙는다(판정 A).
@@ -199,20 +199,5 @@ export function JobResultZone(props: { controller: JobRunController }): ReactNod
           }))),
         h("div", { className: "result3-fails", id: "jobResultFails" },
           ...fails.map((f, i) => createElement(FailRow as any, { key: i, fail: f }))),
-        createElement(Evidence as any, { result: shown }))),
-    createElement(JobRunLog as any, { controller: props.controller }));
-}
-
-/** 실행 기록 — 이 화면의 유일한 비모달 사건 채널. 접힘은 노이즈 억제지 소음 제거가
- *  아니라 **마지막 한 줄은 접힌 채로도 보인다**. */
-export function JobRunLog(props: { controller: JobRunController }): ReactNode {
-  const run = useRun(props.controller);
-  const lines = run.log;
-  return h("details", { className: "runlog", id: "jobRunLog", open: run.logOpen },
-    h("summary", { onClick: props.controller.toggleLog },
-      h("span", { className: "zone-cap zone-cap-sub" }, "실행 기록"),
-      h("span", { className: "runlog-last", id: "jobRunLogLast" },
-        lines.length ? lines[lines.length - 1] : "아직 기록이 없습니다.")),
-    h("div", { className: "logbox", id: "jobGenLog" },
-      lines.length ? lines.join("\n") : "이 세션에서 일어난 일이 여기에 남습니다."));
+        createElement(Evidence as any, { result: shown }))));
 }

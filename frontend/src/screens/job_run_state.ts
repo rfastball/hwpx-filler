@@ -108,12 +108,12 @@ export function createTokenFactory(prefix = "run"): () => string {
 
 /** 결과 처분 — 성분별 2분기(U2 §2.18). legacy `disposeResultBySession` 의 후계다.
  *
- *  `exit` 는 초기화 갈래에서만 non-null 이고, 호출자가 그 한 줄을 로그에 잇는다. 합성 자체는
- *  여기서 하지 않는다 — 문안은 표현 계층이 소유하고 이 파일은 **무엇이 일어났는가**만 낸다. */
+ *  이 파일이 내는 것은 **무엇이 일어났는가** 하나다 — 문안은 표현 계층 몫이고, 초기화에
+ *  딸리던 퇴장 한 줄은 실행 기록 상자와 함께 퇴역했다(#957). */
 export type Disposal =
   | { kind: "keep" }
   | { kind: "stale" }
-  | { kind: "reset"; exitOwner: string };
+  | { kind: "reset" };
 
 export function disposeBySession(
   state: JobRunState, prev: SessionKey | null, next: SessionKey | null,
@@ -123,7 +123,7 @@ export function disposeBySession(
   // 작업이면 같은 작업이다. 이 한 줄이 없으면 이름만 바꿔도 결과가 통째로 사라진다.
   const jobSwitched = next === null || (prev.job !== next.job && next.own !== next.job);
   if (jobSwitched || (next !== null && prev.data !== next.data)) {
-    return { kind: "reset", exitOwner: String(state.lastFull?.last_run_job ?? "") };
+    return { kind: "reset" };
   }
   if (prev.job !== next.job || prev.out !== next.out
       || prev.sel !== next.sel || prev.rules !== next.rules) {

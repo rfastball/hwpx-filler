@@ -18,9 +18,9 @@
  * app.py:3494). 이 클러스터의 스태시는 열둘이다 — 즐겨찾기 넷(`favSent`·`favChain`·`favDiag`·
  * `favDone`), 탐색 넷(`browsePickFocus`·`browseSheetClosed`·`browseCloseFocus`·`browseDone`),
  * 거울 여섯(`jobToggleValues`·`mirrorPreviewDispatch`·`mirrorPreviewFocus`·`mirrorClickSeen`·
- * `mirrorFocusTargetState`·`mirrorPushes`), 후보 둘(`candSent`·`candProbeDone`), 결과 여덟
- * (`jobResultSnap`·`rejectState`·`rejectText`·`rejectGen`·`rejectLog`·`rejectHidden`·
- * `rejectPushes`·`runlogLast`). 전부 지역 변수와 반환값이 됐다. 전역 쓰기 금지가 첫 이유고,
+ * `mirrorFocusTargetState`·`mirrorPushes`), 후보 둘(`candSent`·`candProbeDone`), 결과 여섯
+ * (`jobResultSnap`·`rejectState`·`rejectText`·`rejectGen`·`rejectHidden`·`rejectPushes`).
+ * 전부 지역 변수와 반환값이 됐다. 전역 쓰기 금지가 첫 이유고,
  * 두 번째가 더 무겁다 — 번들러가 모듈 스코프 이름을 바꾸면 문자열로 만든 전역 조회가
  * **조용히** 빗나가고, 선언은 살고 결과만 죽는다.
  *
@@ -34,6 +34,7 @@
  *
  * 보존한 양성/음성 대조(하나도 잃지 않는다):
  *   · job_data_first : actionbar_plane ↔ actionbar_plane_empty_note(빈 문안 자리) ·
+ *                      fav_refusal_alerts(거절 착지=알림 채널, #957) ·
  *                      fav_pressed=["true","false"] · fav_order=[F,T,T,F,T,F] ·
  *                      gen_disabled · restate_hidden · folder_pick_disabled ·
  *                      cand_disabled_chips==0 · browse_query_kept↔browse_query_settled.
@@ -45,7 +46,6 @@
  *   · job_mirror     : mirror_trigger_disabled(false) ↔ mirror_trigger_locked(true) ·
  *                      reapply_shown ↔ reapply_hidden · panel_hidden(hidden 이 flex 를 이긴다) ·
  *                      guard_body(재적용 있음) ↔ guard_body_minimal(없음) ·
- *                      exit_rejected/exit_running(빈 문자열) ↔ 채워진 퇴장 다섯 줄 ·
  *                      mirror_trigger_disabled_at_click(false) + mirror_click_seen(true)
  *                      — 비활성 요소의 `click()` 은 이벤트를 만들지 않으므로 「발신 0」을
  *                      배선 부재로 읽지 않기 위한 **부재판별력** 계기다 ·
@@ -54,7 +54,8 @@
  *                      selection_change_keeps_result(+demotes) · foreign_*_hidden ↔
  *                      renamed_*_shown · folder_hidden_while_running ↔ folder_shown_on_result ·
  *                      reject_state=="rejected" · close_focus ∈ {jobGenBtn, jobResultZone} ·
- *                      close_runlog_last 는 퇴장 한 줄의 **부재**를 단언한다.
+ *                      reject_alerts(0 — 거절은 결과 구획이 앉힌다) ↔ refusal_alerts(1 —
+ *                      구획이 말할 수 없는 거절은 알림 채널로 간다, #957 재라우팅).
  *                      하위 `artifact`(S7-03 · #825): 문서 목록 행이 그려지고(offsetParent) ·
  *                      「내용 보기」가 `job/artifact_open` 을 쏘고 `.artifact-sheet` 가
  *                      **보이며** · 관찰이 선 판은 문단·병합 표·빈 값 표식·「표시하지 못한
@@ -386,7 +387,6 @@ function resultSnapshot() {
 function partialResult() {
   return {
     ok: true, status: "partiallyCompleted", title: "2개 성공 · 1개 실패",
-    exit_summary: "2개 성공 · 1개 실패",
     summary: "완료. 성공 2/3, 실패 1.", level: "danger", stage: "", message: "", known: true,
     out_dir: "D:\\out", succeeded: 2, failed: 1, failed_selectable: 1, total: 3,
     failures: [{ index: 7, identity: "사무비품", filename: "doc-003.hwpx", reason: "설명 없는 오류", known: false }],
@@ -581,6 +581,12 @@ async function driveFavoriteIntents(ctx, out, snap) {
 
   const sent = [];
   const release = [];
+  /* 거절 착지 계측(#957) — 실패한 즐겨찾기 왕복은 실행 기록이 아니라 알림 채널로 간다.
+     실 alert 는 실행을 막는 네이티브 다이얼로그라 **기록으로 대체**한다(boot 프로브 선례):
+     대체하지 않으면 아래 「실패 시늉」 넷이 창을 세워 런 전체가 그 자리에서 매달린다. */
+  const refusalAlerts = [];
+  const realAlert = ctx.win.alert;
+  ctx.win.alert = function (message) { refusalAlerts.push(String(message)); };
   const dispatchStub = stubDispatch(services, (real) => function (screen, action, payload) {
     if (action !== "toggle_favorite") return real.apply(null, arguments);
     sent.push(payload.value);
@@ -629,10 +635,12 @@ async function driveFavoriteIntents(ctx, out, snap) {
         + " html=" + doc.getElementById("jobCandidates").innerHTML.slice(0, 80));
     }
   }
+  ctx.win.alert = realAlert;
   return {
     fav_chain: String(favChain),
     fav_order: JSON.stringify(sent),
     fav_diag: JSON.stringify(diag),
+    fav_refusal_alerts: JSON.stringify(refusalAlerts),
   };
 }
 
@@ -1021,34 +1029,6 @@ async function runJobMirror(ctx) {
   out.ow_body = services.JobRun.overwriteBody({
     total: 10, overwrite_count: 3, new_count: 7, conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 5,
   });
-  /* 퇴장 한 줄(§2.18)의 네 태 산출 — 결과 구획이 초기화된 뒤 **유일하게 남는 흔적**이라
-     거짓 진술이 여기서 조용히 배포되면 되돌아볼 자리가 없다(#363 리뷰 P2). */
-  out.exit_cancelled_untouched = services.JobRun.resultExitLine(
-    { exit_summary: "중단 · 0개 성공 · 미착수 12건", out_dir: "D:\\out" }, "발주요청서",
-  );
-  out.exit_cancelled_mixed = services.JobRun.resultExitLine(
-    { exit_summary: "중단 · 5개 성공 · 1개 실패 · 미착수 6건", out_dir: "D:\\out" }, "발주요청서",
-  );
-  out.exit_prebatch_failed = services.JobRun.resultExitLine(
-    { exit_summary: "생성 시작 전 실패 · 대상 12건", out_dir: "D:\\out" }, "발주요청서",
-  );
-  out.exit_completed = services.JobRun.resultExitLine(
-    { exit_summary: "12개 성공", out_dir: "D:\\out" }, "발주요청서",
-  );
-  out.exit_partial_failure = services.JobRun.resultExitLine(
-    { exit_summary: "10개 성공 · 2개 실패", out_dir: "D:\\out" }, "발주요청서",
-  );
-  /* 생성이 아닌 태는 적을 것이 없다 — 거절·진행에 퇴장 한 줄을 지어내지 않는다(음성 극). */
-  out.exit_rejected = services.JobRun.resultExitLine(
-    { rejected: true, title: "생성하지 않았습니다", summary: "빈 값" }, "발주요청서",
-  );
-  out.exit_running = services.JobRun.resultExitLine(
-    { running: true, title: "생성 중… 1/3" }, "발주요청서",
-  );
-  /* 요약 없는 **실행 결과**는 조용히 넘기지 않는다 — 수치를 지어내지 않고 모른다고 적는가. */
-  out.exit_missing_summary = services.JobRun.resultExitLine(
-    { ok: true, status: "completed", title: "문서 생성 완료 · 3개", out_dir: "D:\\out" }, "발주요청서",
-  );
   /* 세션 가드 재진술 본문 — 있는 손실만 열거한다(과경고는 경보의 인플레). 두 극을 함께 낸다. */
   out.guard_body = services.JobRun.guardBody(
     { sel_count: 3, in_def: 2, extra: 1, filter_active: true, filter_parts: 2 }, "데이터를 바꾸면",
@@ -1234,12 +1214,11 @@ async function runJobResult(ctx) {
   out.renamed_failedsel_shown = !doc.getElementById("jobResultFailedSel").hidden;
   out.renamed_keeps_result = !doc.getElementById("jobResult").hidden;
 
-  /* ② 다른 작업으로 전환(§2.18) — 존이 닫히고 실행 기록에 퇴장 한 줄이 남는다. */
+  /* ② 다른 작업으로 전환(§2.18) — 존이 닫힌다. */
   const snapB = deepCopy(snapR);
   snapB.job_name = "둘째";
   await pushAndSettle(ctx, "job", snapB);
   out.switch_resets_result = doc.getElementById("jobResult").hidden;
-  out.switch_exit_line = textOf(doc, "jobRunLogLast");
 
   /* 강등 렌더러의 주체 방어(3R P2) — 푸시를 거치지 않고 결과가 재수립되는 경로에서
      남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다. 증거는 남는다. */
@@ -1261,13 +1240,12 @@ async function runJobResult(ctx) {
   out.selection_change_keeps_result = !doc.getElementById("jobResult").hidden;
   out.selection_change_demotes = !doc.getElementById("jobResultStale").hidden;
 
-  /* ④ 데이터 교체 = 초기화 + 퇴장 한 줄(경로 포함). 교체의 표지는 **마운트 세대**이지 표시
-     라벨이 아니다(#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올린다. */
+  /* ④ 데이터 교체 = 초기화. 교체의 표지는 **마운트 세대**이지 표시 라벨이 아니다
+     (#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올린다. */
   const snapData = deepCopy(snapSel);
   snapData.data_mount = 2;
   await pushAndSettle(ctx, "job", snapData);
   out.data_swap_resets_result = doc.getElementById("jobResult").hidden;
-  out.data_swap_exit_line = textOf(doc, "jobRunLogLast");
   out.data_swap_label_unchanged = snapData.data_source_label === "파일: d.csv";
   await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(다음 단계는 같은 작업 문맥)
   services.JobRun.renderResult(partial);
@@ -1435,11 +1413,10 @@ async function runJobResult(ctx) {
   await settle(ctx);
   out.closed = doc.getElementById("jobResult").hidden;
   out.close_focus = activeId(doc);
-  /* 명시 파기는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 실행 기록이 기본 문안으로
-     돌아왔는지 되읽는다. 이 필드는 **부재**를 단언하는 자리다(자동 초기화만 흔적을 남긴다). */
-  out.close_runlog_last = textOf(doc, "jobRunLogLast");
-  out.runlog_collapsed = !doc.getElementById("jobRunLog").open;
-  out.runlog_last_visible = isShown(ctx, doc.getElementById("jobRunLogLast"));
+  /* 실행 기록 상자는 퇴역했다(#957) — 결과 존 아래에 그 자리가 **없다**는 사실을 단언한다.
+     남아 있으면 착지 재라우팅이 반만 된 것이다. */
+  out.runlog_absent = doc.getElementById("jobRunLog") === null
+    && doc.getElementById("jobGenLog") === null;
 
   /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
      누를 수 있는 상태는 **스냅샷으로** 만든다(세션 성분은 그대로라 강등·초기화가 아니다).
@@ -1498,6 +1475,12 @@ async function runJobResult(ctx) {
     rejectDispatches.push(`${screen}/${action}`);
     return {};
   });
+  /* 착지 계측(#957) — 실행 기록이 사라진 뒤 실패 고지는 알림 채널(`deps.notify`)이 진다.
+     실 alert 는 실행을 막는 네이티브 다이얼로그라 **기록으로 대체**한다(boot 프로브 선례).
+     두 극을 같은 창에서 잰다: 거절은 결과 구획이 앉히므로 0, 구획이 말할 수 없는 거절은 1. */
+  const rejectAlerts = [];
+  const realAlert = ctx.win.alert;
+  ctx.win.alert = (message) => { rejectAlerts.push(String(message)); };
   const genBtn = doc.getElementById("jobGenBtn");
   // React 가 **스스로** 연 상태여야 한다 — 여기가 참이면 이후 단언 전체가 공허하다.
   const rejectBtnDisabled = genBtn.disabled;
@@ -1505,6 +1488,13 @@ async function runJobResult(ctx) {
 
   await ctx.sleep(60);
   ctx.win.removeEventListener("unhandledrejection", onUnhandled);
+  out.reject_alerts = rejectAlerts.length;
+  /* 양성극 — 다시 만들 실패 건이 0 인 「실패한 N건만 선택」은 표가 그대로라 구획이 말할
+     자리가 없다. 그 거절이 알림 채널로 나가는지 같은 창에서 되읽는다(스텁 dispatch 라
+     `selected` 가 없다 = 0건). */
+  await services.JobRun.selectFailed();
+  out.refusal_alerts = rejectAlerts.slice(out.reject_alerts);
+  ctx.win.alert = realAlert;
   dispatchStub.restore();
   out.reject_btn_disabled = !!rejectBtnDisabled;
   out.reject_unhandled = rejectUnhandled;
@@ -1513,7 +1503,7 @@ async function runJobResult(ctx) {
   out.reject_btn_label = String(genBtn.textContent || "");
   out.reject_run_action = String((baseSnap.run_action && baseSnap.run_action.key) || "");
   const resultBox = doc.getElementById("jobResult");
-  /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
+  /* 판별 증거 — 스텁 호출 수·구획 문안·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
      렌더 후 소거」 세 갈래를 가른다. 그래서 **이 자리의 읽기만은 던지지 않는다**: 자리가
      없다는 사실 자체가 세 갈래 중 하나를 가리키는 증거인데, 던지면 그 증거가 통째로
      사라지고 "null 을 읽었다" 한 줄만 남는다 — 그 한 줄은 세 갈래를 구별하지 못한다.
@@ -1525,20 +1515,15 @@ async function runJobResult(ctx) {
   };
   const rejectState = resultBox === null ? ABSENT : resultBox.dataset.state;
   const rejectText = textOrAbsent("jobResultSummary");
-  const rejectLog = textOrAbsent("jobGenLog");
   const rejectHidden = resultBox === null ? true : resultBox.hidden;
-  // 거절 사유는 로그도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
-  const runlogLast = textOrAbsent("jobRunLogLast");
   ctx.push = realPush;
   genStub.restore();
 
   out.reject_state = String(rejectState);
   out.reject_text = String(rejectText);
   out.reject_gen = Number(rejectGenCalls);
-  out.reject_log = String(rejectLog);
   out.reject_hidden = !!rejectHidden;
   out.reject_pushes = rejectPushes;
-  out.runlog_last = String(runlogLast);
 
   return { job_result: out };
 }

@@ -44,7 +44,7 @@ APP_CSS_FILES = (
     "base.css",           # @font-face·리셋·스크롤바·셸·모션층·.btn/.field·유틸·H-01 타이포
     "draftcard.css",      # table.dmap·.wc-*·.qd-* (작업대가 실소비)
     "editor.css",         # 마법사·table.map·.hchip·.editor-shell
-    "job.css",            # 실행 행·거울·결과 3태·runlog·master-detail·.ctx-menu
+    "job.css",            # 실행 행·거울·결과 3태·master-detail·.ctx-menu
     "overlay.css",        # #overlayRoot·.modal/.sheet·.pill·.tpllist·데이터 선택·드로어
     "library.css",        # .library-*·.lib-*·.jcard
     "forced-colors.css",  # @media (forced-colors:active) — 현재 위치 뒤에도 두 조각이 더 온다

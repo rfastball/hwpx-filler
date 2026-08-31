@@ -153,29 +153,9 @@
 .result3-evidence>summary{cursor:pointer}
 .result3-evidence pre{margin-top:var(--sp-6);white-space:pre-wrap;word-break:break-word;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+/* `.zone-cap-sub` 의 소비자는 결과 존의 「만든 문서 N건」 하나다 — 실행 기록 상자가
+   퇴역하면서(#957) 같이 쓰던 두 번째 자리가 사라졌다. */
 .zone-cap-sub{margin-top:var(--sp-12)}
-/* 실행 기록 = 기본 접힘(F4 후속) — 요약 줄이 마지막 기록 한 줄을 계속 말한다.
-   `.zone-cap` 은 블록이라(위 .zone-cap{display:block}) summary 안에 그대로 두면 표지·캡션·
-   마지막 줄이 3행으로 흩어진다 — 이 자리에서만 인라인으로 되돌려 한 줄에 세운다. */
-.runlog{margin-top:var(--sp-12)}
-.runlog>summary{cursor:pointer;display:flex;align-items:baseline;gap:var(--sp-8);
-  list-style-position:inside}
-.runlog>summary .zone-cap{display:inline;margin:0}
-.runlog-last{font-size:var(--fs-caption);color:var(--a-muted);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-/* summary{display:flex} 는 기본 표지(▶)를 지운다 — 접힘/펼침이 보이지 않으면 상자가
-   있다는 사실 자체가 숨는다. 표지를 직접 그린다(회전은 열림 상태를 따른다). */
-.runlog>summary::before{content:"▸";color:var(--a-muted);flex:none;
-  transition:transform var(--dur-press) var(--ease-out)}
-.runlog[open]>summary::before{transform:rotate(90deg)}
-.runlog>summary::-webkit-details-marker{display:none}
-@media (prefers-reduced-motion:reduce){.runlog>summary::before{transition:none}}
-/* border 는 항상 — 라이트에선 어두운 콘솔의 은은한 테두리, 다크에선 카드와 붙는 콘솔을 분리
-   (다크에선 로그 표면·페이지가 둘 다 어두워 경계가 소실되므로 보더가 승강을 대신한다). */
-.logbox{margin-top:var(--sp-10);background:var(--log-surface);color:var(--log-ink);border-radius:var(--rad-surface);
-  border:1px solid var(--a-border);
-  padding:var(--sp-8) var(--sp-10);font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-caption);
-  height:110px;overflow:auto;white-space:pre-wrap}
 @media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
 
 /* ---- 「작업」 화면 (R-flow 슬라이스 1, #90) — master-detail 세션 패널 4존 ---- */

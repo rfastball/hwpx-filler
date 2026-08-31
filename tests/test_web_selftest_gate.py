@@ -777,21 +777,15 @@ class TestWebSelftestGate:
         # §2.18 — 주체가 이름을 추종하므로 개명은 전환이 아니다).
         assert j["renamed_keeps_result"], j
         assert j["renamed_rename_shown"] and j["renamed_failedsel_shown"], j
-        # 작업 전환 = **초기화**(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫히고, 실행 기록에
-        # 퇴장 한 줄(주체·건수·경로)이 남는다(사용자가 요청하지 않은 소멸의 흔적).
+        # 작업 전환 = **초기화**(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫힌다.
         assert j["switch_resets_result"], j
-        # 문안은 Python 이 낸 태별 제목 그대로다(#363 리뷰 P2) — 이 런은 부분 실패라
-        # 「2개 성공 · 1개 실패」이지 「3건 생성」이 아니다(대상 수는 만들어진 수가 아니다).
-        assert "2개 성공" in j["switch_exit_line"] and "1개 실패" in j["switch_exit_line"], j
-        assert "3건 생성" not in j["switch_exit_line"], j
-        assert "공고서(수정)" in j["switch_exit_line"] and "D:\\out" in j["switch_exit_line"], j
         # 선택 변경 = **강등 유지**(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
         assert j["selection_change_keeps_result"] and j["selection_change_demotes"], j
-        # 데이터 교체 = **초기화** + 퇴장 한 줄(경로 포함). 교체 판정은 **마운트 세대**가
+        # 데이터 교체 = **초기화**. 교체 판정은 **마운트 세대**가
         # 지고 표시 라벨은 그대로다(#363 리뷰 P2) — 같은 basename 의 다른 파일·같은
         # 통합문서의 다른 시트·같은 경로 재읽기가 라벨로는 구별되지 않기 때문이다.
         assert j["data_swap_label_unchanged"], "프로브가 라벨을 바꿔 정체 축을 안 재고 있습니다."
-        assert j["data_swap_resets_result"] and "D:\\out" in j["data_swap_exit_line"], j
+        assert j["data_swap_resets_result"], j
         # 강등 렌더러의 주체 방어(3R P2)는 남는다 — 푸시 없이 결과가 재수립되는 방어 경로에서
         # 남의 작업을 겨누는 버튼이 서지 않는다. 증거는 남는다.
         assert j["foreign_rename_hidden"] and j["foreign_failedsel_hidden"], j
@@ -803,9 +797,8 @@ class TestWebSelftestGate:
         # 닫기 뒤 포커스는 **실 DOM 에 착지**한다 — body 낙하가 결함이다. 게이트가 닫혀
         # 있으면 생성 버튼이 disabled 라 구획 자신이 받는다(방금 있던 문맥 유지).
         assert j["closed"] and j["close_focus"] in {"jobGenBtn", "jobResultZone"}, j
-        # 「결과 닫기」(명시 파기)는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 치우라는
-        # 행동이 흔적을 남기면 반만 듣는 것이 된다.
-        assert j["close_runlog_last"] == "아직 기록이 없습니다.", j
+        # 실행 기록 상자는 퇴역했다(#957) — 결과 존 아래에 그 자리가 **없다**.
+        assert j["runlog_absent"], j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
         # 실패 시 판별 증거만 좁혀 보인다(전체 dict 는 pytest 가 자른다 — 판독 불능 덤프 금지).
         if not (j["reject_state"] == "rejected" and "빈 값" in j["reject_text"]):
@@ -814,7 +807,6 @@ class TestWebSelftestGate:
                 "reject_state",
                 "reject_text",
                 "reject_gen",
-                "reject_log",
                 "reject_hidden",
                 "reject_pushes",
                 "reject_btn_disabled",
@@ -822,7 +814,8 @@ class TestWebSelftestGate:
                 "reject_dispatches",
                 "reject_btn_label",
                 "reject_run_action",
-                "runlog_last",
+                "reject_alerts",
+                "refusal_alerts",
             ):
                 print(f"  {k} = {j.get(k)!r}")
             print("REJECT_EVIDENCE_END")
@@ -834,10 +827,12 @@ class TestWebSelftestGate:
             j["reject_state"],
             j["reject_text"],
         )
-        # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
-        # 접힘이 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
-        assert j["runlog_collapsed"] and j["runlog_last_visible"], j
-        assert "빈 값" in j["runlog_last"], j
+        # ⑧ 착지 재라우팅(#957) — 거절은 결과 구획 하나가 앉히므로 알림은 0 이고, 구획이
+        # 말할 자리가 없는 거절(0건 재선택)은 알림 채널로 나간다. 두 극을 함께 잰다:
+        # 위가 깨지면 재진술이 두 벌, 아래가 깨지면 조용한 거절이다.
+        assert j["reject_alerts"] == 0, j
+        assert len(j["refusal_alerts"]) == 1, j
+        assert "다시 만들 실패 건이 남아 있지 않습니다" in j["refusal_alerts"][0], j
 
     def test_job_result_lists_documents_and_opens_the_artifact_sheet(
         self, selftest_result: dict
@@ -971,6 +966,10 @@ class TestWebSelftestGate:
         # 상태의 4번째 클릭 = false. 정리를 값 비교로 하면 최신 의도가 지워져 여기서
         # true 가 나오고(=껐다가 다시 켜짐) 사용자 의도가 소실된다(5R P2).
         assert json.loads(j["fav_order"]) == [False, True, True, False, True, False], j["fav_order"]
+        # 실패한 왕복의 거절은 **알림 채널**로 간다(#957 — 실행 기록 상자 퇴역). 조용히
+        # 삼키면 별만 되돌아오고 왜 안 됐는지는 어디에도 없다.
+        refusals = json.loads(j["fav_refusal_alerts"])
+        assert refusals and all("실패 시늉" in line for line in refusals), refusals
 
     def test_job_document_browser_sheet_renders_tabs_rows_and_reasons(
         self, selftest_result: dict
@@ -1629,12 +1628,11 @@ class TestWebSelftestGate:
         # zone-cap 타이포 역할(위 13px/700)은 그대로라 H-01 3역할 계약은 유지된다.
         assert h["job_step_badges"] == 0
         assert h["job_steps"] == [
-            # 「실행 기록」 = 결과 3태 구획이 결과 사건을 가져간 뒤 로그 상자에 남은 역할
-            # (F4 판정 D) — 같은 존 안의 부캡션이라 이 목록에 함께 잡힌다.
+            # 「실행 기록」 부캡션은 로그 상자와 함께 퇴역했다(#957) — 실패 고지는 알림
+            # 채널로 갔고, 결과 존이 세우는 부캡션은 「만든 문서 N건」 하나뿐이다.
             "현재 데이터",
             "본문 확인",
             "생성 결과",
-            "실행 기록",
             # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
             # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
             # 「선택한 작업」 존은 사망(U2 §4 판정 A, #342) — 활성 카드·액션바 이름이 승계.
@@ -1777,49 +1775,6 @@ class TestWebSelftestGate:
         assert j["restate_hidden_on_drift"] is True, (
             "danger 차단인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
         )
-
-    def test_job_exit_line_tells_the_truth_about_each_run(self, selftest_result: dict) -> None:
-        """퇴장 한 줄(§2.18)은 **실제 성분**을 말한다(#363 리뷰 P2 회귀).
-
-        이 줄은 결과 구획이 초기화된 뒤 남는 유일한 흔적이라, 여기서 거짓을 말하면
-        되돌아볼 자리가 없다. 종전엔 대상 수(`total`)를 「N건 생성」으로 적어, 첫 건 전에
-        취소한 12건 배치가 **실제 생성 0건인데 「12건 생성」**이라고 주장했다.
-        """
-        j = probe(selftest_result, "job_mirror")
-        # ① 첫 건 전 취소 — 「생성」 완주 문형이 0건을 주장하지 않고 미착수가 남는다.
-        untouched = j["exit_cancelled_untouched"]
-        assert "중단" in untouched and "0개 성공" in untouched, untouched
-        assert "미착수 12건" in untouched, untouched
-        assert "12건 생성" not in untouched, f"취소를 완주로 말합니다: {untouched!r}"
-        # ② 취소 + 실패 혼재 — 성공·실패·미착수가 **하나도 안 빠진다**(구 제목이 접던 자리).
-        mixed = j["exit_cancelled_mixed"]
-        for needle in ("5개 성공", "1개 실패", "미착수 6건"):
-            assert needle in mixed, f"퇴장 요약이 수치를 흘립니다({needle}): {mixed!r}"
-        # ③ 레코드 처리 전 실패 — 수치를 통째로 생략하던 태가 사실을 말한다.
-        assert "생성 시작 전 실패 · 대상 12건" in j["exit_prebatch_failed"], j[
-            "exit_prebatch_failed"
-        ]
-        # ④ 정상 완주 · ⑤ 일부 실패 — 0 인 성분(실패·미착수)은 붙지 않는다(지어내지 않는다).
-        assert j["exit_completed"].startswith("'발주요청서' 12개 성공")
-        assert "미착수" not in j["exit_completed"] and "실패" not in j["exit_completed"]
-        assert "10개 성공 · 2개 실패" in j["exit_partial_failure"], j["exit_partial_failure"]
-        assert "미착수" not in j["exit_partial_failure"], j["exit_partial_failure"]
-        # 다섯 태 모두 착지 폴더를 남긴다 — 손으로 고른 저장 폴더의 마지막 보관처다(§2.18 ⑷).
-        for key in (
-            "exit_cancelled_untouched",
-            "exit_cancelled_mixed",
-            "exit_prebatch_failed",
-            "exit_completed",
-            "exit_partial_failure",
-        ):
-            assert j[key].endswith("D:\\out"), (key, j[key])
-        # 생성이 아닌 태에는 퇴장 한 줄이 없다(없는 실행을 지어내지 않는다).
-        assert j["exit_rejected"] == "" and j["exit_running"] == ""
-        # 요약 없는 실행 결과는 **조용히 넘기지 않는다** — 이 줄이 유일한 흔적이라 침묵하면
-        # 소멸 자체가 흔적 없이 사라진다. 수치를 지어내지 않고 모른다고 적고, 경로는 남긴다.
-        missing = j["exit_missing_summary"]
-        assert "수치 요약 없음" in missing and missing.endswith("D:\\out"), missing
-        assert "개 성공" not in missing, f"없는 수치를 지어냅니다: {missing!r}"
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.

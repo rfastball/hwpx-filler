@@ -4,7 +4,8 @@
  * 돌려준다. 그 응답을 읽지 않으면 화면은 「눌렀는데 아무 일도 안 일어난다」가 되고, 그것이
  * #804 가 실 WebView2 에서 관측한 막다른 길의 직접 원인이었다(이 경로는 커버 0 건이었다).
  *
- * 재는 것 셋: ① 거절이 구획 재진술 + 실행 기록에 **둘 다** 착지한다 ② 백엔드가 실어 보낸
+ * 재는 것 셋: ① 거절이 구획 재진술 + 알림 채널에 **둘 다** 착지한다(#957 — 실행 기록
+ * 상자가 퇴역하면서 두 번째 착지가 `deps.notify` 로 옮겨졌다) ② 백엔드가 실어 보낸
  * `error` 문장이 정본이다(문안 재조립 금지) ③ 초기 등록 실패 문안은 존이 그리는 것과 **같은
  * 문장**이다(단일 출처). 판정·수치는 Python, 문안·집행만 웹이라는 링 계약의 표면이다.
  */
@@ -21,6 +22,7 @@ import {
 
 function harness(options = {}) {
   const calls = [];
+  const notified = [];
   let snapshot = options.snapshot ?? null;
   const subscribers = new Set();
   const model = {
@@ -56,13 +58,13 @@ function harness(options = {}) {
     navigation: { go() {}, currentScreen: () => "job" },
     doc: { getElementById: () => null, querySelector: () => null },
     selectionLine: (n) => `${n}행 선택`,
-    notify() {},
+    notify(message) { notified.push(String(message)); },
   });
   const push = (value) => {
     snapshot = value;
     for (const listener of [...subscribers]) listener();
   };
-  return { controller, calls, push };
+  return { controller, calls, push, notified };
 }
 
 /** 스냅샷이 컨트롤러에 **실제로 도달한** 대역 — `init` 이 model 을 붙여야 세션 정체가 산다. */
@@ -104,7 +106,7 @@ const CHECKABLE_SNAP = {
   },
 };
 
-test("초기 등록 실패 거절은 구획과 실행 기록에 함께 재진술된다", async () => {
+test("초기 등록 실패 거절은 구획과 알림 채널에 함께 재진술된다", async () => {
   const h = await seated(CHECKABLE_SNAP, {
     dispatchValue: { ok: false, reason: "initialization_required" },
   });
@@ -112,8 +114,8 @@ test("초기 등록 실패 거절은 구획과 실행 기록에 함께 재진술
 
   const notice = h.controller.getTemplateChange().notice;
   assert.ok(notice.includes("템플릿 초기 등록에 실패해"), `조용한 성공: ${notice}`);
-  assert.equal(h.controller.getUi().log.length, 1);
-  assert.ok(h.controller.getUi().log[0].includes("템플릿 초기 등록에 실패해"));
+  assert.equal(h.notified.length, 1);
+  assert.ok(h.notified[0].includes("템플릿 초기 등록에 실패해"));
 });
 
 test("초기 등록 실패 문안은 존이 그리는 문장과 **같다**(단일 출처)", async () => {
@@ -168,10 +170,10 @@ test("백엔드가 실은 error 문장이 정본이다 — 프런트가 다시 �
   });
   await h.controller.templateCheck();
   assert.equal(h.controller.getTemplateChange().notice, backend);
-  assert.ok(h.controller.getUi().log[0].endsWith(backend));
+  assert.deepEqual(h.notified, [backend]);
 });
 
-test("좌석이 갈린 뒤 도착한 거절은 남의 구획에 안 앉되 기록에는 남는다", async () => {
+test("좌석이 갈린 뒤 도착한 거절은 남의 구획에 안 앉되 알림 채널에는 남는다", async () => {
   const h = await seated(CHECKABLE_SNAP, {
     dispatchValue: { ok: false, reason: "work_context_changed", error: "다시 선택하세요." },
   });
@@ -179,7 +181,7 @@ test("좌석이 갈린 뒤 도착한 거절은 남의 구획에 안 앉되 기�
   h.push({ ...CHECKABLE_SNAP, job_name: "다른 작업" });  // 응답이 오는 사이 작업이 갈린다
   await pending;
   assert.equal(h.controller.getTemplateChange().notice, "");  // 남의 재진술 차단
-  assert.equal(h.controller.getUi().log.length, 1);  // 그래도 사라지지는 않는다
+  assert.equal(h.notified.length, 1);  // 그래도 사라지지는 않는다
 });
 
 test("표에 없는 사유도 조용히 비우지 않는다", () => {
@@ -193,5 +195,5 @@ test("성공(ok:true)은 아무 재진술도 남기지 않는다", async () => {
   });
   await h.controller.templateCheck();
   assert.equal(h.controller.getTemplateChange().notice, "");
-  assert.deepEqual(h.controller.getUi().log, []);
+  assert.deepEqual(h.notified, []);
 });

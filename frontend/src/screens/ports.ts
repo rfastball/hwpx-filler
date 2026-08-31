@@ -46,7 +46,6 @@ export type JobDataCoordinator = { flushPendingEdits(): Promise<void> };
 
 export type JobRunCoordinationPort = {
   confirmDestructiveIfArmed(title: string, verb: string, confirmLabel: string): Promise<boolean>;
-  log(message: string): void;
 };
 
 export type JobRelinkFlowPort = { relinkTemplateFor(name: string): Promise<void> };
