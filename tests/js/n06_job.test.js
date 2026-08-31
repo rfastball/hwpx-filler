@@ -24,8 +24,8 @@ import { JobDataHeader, createJobRunAdapter } from "../../frontend/src/screens/j
 const SURFACE = [
   'recoverRecordIssue', 'recoverContext',
   "model", "subscribe", "getRun", "getUi", "getTemplateChange", "client", "notify",
-  "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
-  "confirmDestructiveIfArmed", "log",
+  "overwriteBody", "guardBody", "selectionLine",
+  "confirmDestructiveIfArmed",
   "renderResult", "markResultStale",
   "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
@@ -36,7 +36,7 @@ const SURFACE = [
   "previewFixField", "previewFixFilename",
   // 산출물 관찰(S7-03 · #825) — 미리보기와 **별도 표면**이라 이름도 갈린다.
   "openArtifactFrom", "closeArtifact", "saveArtifactAs",
-  "openRepair", "toggleLog",
+  "openRepair",
   "init", "dispose",
 ];
 
@@ -134,8 +134,8 @@ const SNAP = { has_job: true, job_name: "A", preview: { pos: 0, rows: [] } };
 test("공개 표면 — 프로브·셸이 부르는 이름 집합이 계약 표와 정확히 같다", () => {
   const { controller } = harness();
   assert.deepEqual(Object.keys(controller).sort(), [...SURFACE].sort());
-  for (const key of ["overwriteBody", "guardBody", "resultExitLine", "renderResult",
-    "markResultStale", "confirmDestructiveIfArmed", "log", "init"]) {
+  for (const key of ["overwriteBody", "guardBody", "renderResult",
+    "markResultStale", "confirmDestructiveIfArmed", "init"]) {
     assert.equal(typeof controller[key], "function", key + " 는 함수다");
   }
 });

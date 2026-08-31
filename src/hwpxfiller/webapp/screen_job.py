@@ -474,45 +474,6 @@ def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str
     return "문서 생성 실패"
 
 
-def _run_exit_summary(
-    status: str, cancelled: bool, succeeded: int, failed: int,
-    unstarted: int, attempted: int, total: int,
-) -> str:
-    """**퇴장 요약** — 결과가 세션에서 물러날 때 실행 기록에 남는 한 줄의 수치 몸통(§2.18).
-
-    제목(:func:`_run_title`)과 **다른 함수인 이유**(#363 리뷰 P2): 요구가 반대다.
-    제목은 구획 **머리**라 일부러 짧다 — 나머지 수치는 같은 구획의 요약·실패 행·증거가
-    바로 옆에서 말하므로 취소 갈래가 ``failed`` 를 접고 ``failed`` 태가 수치를 통째로
-    생략해도 화면에서는 아무것도 잃지 않는다. 퇴장 줄은 그 구획이 **초기화된 뒤 남는
-    유일한 흔적**이라 정반대로 **하나도 흘리면 안 된다**. 제목을 손실 없게 바꾸면
-    머리가 길어지고 같은 수치를 구획이 두 번 말한다 — 그래서 표면을 늘리지 않고
-    **같은 층(Python)에 목적이 다른 합성기**를 하나 더 둔다. 금지된 것은 층을 넘는
-    재조립(웹이 수치를 다시 세는 것)이지 같은 층의 두 문장이 아니다(``summary`` 가
-    제목과 나란히 사는 것과 같은 형태).
-
-    **0 인 성분은 지어내지 않는다**: 실패·미착수는 있을 때만 붙는다. 취소의 완료 수는
-    0 이라도 남긴다 — 「어디까지 됐나」가 그 보고의 머리이고, 0 은 지어낸 성분이 아니라
-    그 질문의 답이다.
-
-    ``attempted == 0`` 인 실패(배치 진입 전)는 **성공/실패로 가르지 않는다**: 그 페이로드는
-    같은 레코드를 ``failed`` 와 ``unstarted`` 에 동시에 세므로(둘 다 대상 전량) 그대로
-    이어 붙이면 같은 건을 두 번 말한다. 시도가 없었다는 사실과 대상 수가 그 태의 진실이다.
-    """
-    if cancelled:
-        parts = [f"중단 · {succeeded}개 성공"]
-        if failed:
-            parts.append(f"{failed}개 실패")
-        if unstarted:
-            parts.append(f"미착수 {unstarted}건")
-        return " · ".join(parts)
-    if status == "failed" and attempted == 0:
-        return f"생성 시작 전 실패 · 대상 {total}건"
-    parts = [f"{succeeded}개 성공"]
-    if failed:
-        parts.append(f"{failed}개 실패")
-    return " · ".join(parts)
-
-
 class JobController(DataZoneMixin, PoolTargetingMixin):
     """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
 
@@ -3804,10 +3765,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {
                 "ok": True, "status": "cancelled",
                 "title": _run_title("cancelled", True, 0, 0),
-                "exit_summary": _run_exit_summary(
-                    "cancelled", True, 0, 0,
-                    outcome.total - outcome.attempted, outcome.attempted, outcome.total,
-                ),
                 "stage": "", "message": "", "known": True, "summary": summary,
                 "level": "warn", "out_dir": prep.result.output_directory,
                 "succeeded": 0, "failed": 0, "failed_selectable": 0,
@@ -3866,9 +3823,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {
                 "ok": True, "status": "completed",
                 "title": _run_title("completed", False, succeeded, 0),
-                "exit_summary": _run_exit_summary(
-                    "completed", False, succeeded, 0, 0, total, total
-                ),
                 "stage": "", "message": "", "known": True, "summary": summary,
                 "level": "ok" if not ledger_note else "danger",
                 "out_dir": outcome.output_directory,
@@ -3895,9 +3849,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {
                 "ok": True, "status": status,
                 "title": _run_title(status, False, succeeded, 1),
-                "exit_summary": _run_exit_summary(
-                    status, False, succeeded, 1, 0, total, total
-                ),
                 "stage": "", "message": "", "known": True, "summary": summary,
                 "level": "danger", "out_dir": prep.result.output_directory,
                 "succeeded": succeeded, "failed": 1,
@@ -3922,9 +3873,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True, "status": status,
             "title": _run_title(status, False, succeeded, 1),
-            "exit_summary": _run_exit_summary(
-                status, False, succeeded, 1, unstarted, succeeded + 1, total
-            ),
             "stage": "", "message": "", "known": True, "summary": summary,
             "level": "danger", "out_dir": prep.result.output_directory,
             "succeeded": succeeded, "failed": 1,
@@ -4136,12 +4084,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "title": _run_title(
                 outcome.status, cancelled, outcome.succeeded, outcome.failed
             ),
-            # 퇴장 요약(§2.18) — 결과가 물러난 뒤 남는 유일한 흔적이라 **수치를 하나도
-            # 흘리지 않는다**. 제목과 목적이 달라 합성기가 따로다(둘 다 Python 소유).
-            "exit_summary": _run_exit_summary(
-                outcome.status, cancelled, outcome.succeeded, outcome.failed,
-                outcome.unstarted, outcome.attempted, outcome.total,
-            ),
             # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
             # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
             "stage": "",
@@ -4222,9 +4164,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "ok": True,
             "status": "failed",
             "title": _run_title("failed", False, 0, n),
-            # 시도가 0 이라 성공/실패로 가르지 않는다 — 이 페이로드는 같은 레코드를
-            # `failed` 와 `unstarted` 에 동시에 세므로 이어 붙이면 같은 건을 두 번 말한다.
-            "exit_summary": _run_exit_summary("failed", False, 0, n, n, 0, n),
             "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
             "level": "danger",
             "stage": "생성 시작 전",
