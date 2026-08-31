@@ -176,9 +176,13 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     toggleFavorite,
     runPrimary,
     newWork: () => deps.ports.editorEntry.current().newDraft(),
-    editWork(name: string, evidence: Obj = {}): unknown {
+    /* `extra` 는 편집기 deep-link 의 거친 형태(`section`)를 실어 보내는 자리다 — 재선택
+       바로가기가 「어느 탭에 착지하는가」를 여기서 정한다. 배관은 이미 서 있다:
+       `app.py` 의 `open_editor` 가 `ctx.section` 을 `load_job(landing_section=…)` 으로
+       넘긴다(신설 없음). 이탈 가드는 `openGuarded` 가 그대로 진다. */
+    editWork(name: string, evidence: Obj = {}, extra: Obj = {}): unknown {
       return deps.ports.editorEntry.current().openGuarded(name, {
-        entry_reason: "library", evidence, return_context: { surface: "library" },
+        entry_reason: "library", evidence, return_context: { surface: "library" }, ...extra,
       });
     },
     renameJob,
@@ -215,8 +219,7 @@ function LibraryRow(props: { row: Obj; selected: string; controller: LibraryCont
       onClick: () => { void controller.axis("select_work", { name: row.name }); },
     },
     h("span", { className: "lib-row-name" }, row.name, h(HealthPill as any, { health: row.health }), row.data_bound === false ? h("span", { className: "pill warn", title: "데이터를 연결해야 문서를 만들 수 있습니다." }, "연결 필요") : null),
-    h("span", { className: "lib-row-meta" },
-      `${row.mode_label} · ${row.last_run_display}`)),
+    h("span", { className: "lib-row-meta" }, row.mode_label)),
     h("button", {
       className: "lib-fav", "data-fav": row.name,
       "aria-pressed": row.favorited ? "true" : "false",
@@ -258,14 +261,6 @@ function LibraryList(props: { snapshot: Obj; controller: LibraryController }): R
   h("div", { className: "library-list", id: "libraryList", "data-preserve-scroll": true }, content));
 }
 
-function Bindings({ rows }: { rows?: Obj[] }): ReactNode {
-  if (!rows?.length) return h("p", { className: "muted" }, "확정한 필드 연결이 없습니다.");
-  return h("table", { className: "tb lib-bindings" },
-    h("thead", null, h("tr", null, h("th", null, "문서 필드"), h("th", null, "데이터 항목"), h("th", null, "표시형"))),
-    h("tbody", null, ...rows.map((row, index) => h("tr", { key: index, className: row.blank ? "muted" : "" },
-      h("td", null, row.template_field), h("td", null, row.source_label), h("td", null, row.format_label)))));
-}
-
 function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
   return h("aside", {
     className: "library-detail", id: "libraryDetail", "aria-label": "선택한 작업 상세",
@@ -285,17 +280,30 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
       className: "btn sm", "data-relink": detail.name,
       onClick: () => { void controller.relink(detail.name); },
     }, "템플릿 다시 연결…") : null) : null;
+  /* 재선택 바로가기 — 정체를 보는 자리에서 그 정체를 **바꾸러 가는** 길이다. 착지 탭은
+     Python 이 아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로
+     싣고, 진입 가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다. */
   const facts = h("dl", { className: "lib-detail-facts" },
     h("dt", null, "템플릿"),
     h("dd", null, detail.template_name, " ",
-      h(PathActions as any, { client: controller.client, path: detail.template_path, notify: controller.notify })),
+      h(PathActions as any, { client: controller.client, path: detail.template_path, notify: controller.notify }),
+      " ",
+      h("button", { className: "btn sm", id: "libraryRepickTemplate", "data-repick": "template",
+        onClick: () => controller.editWork(detail.name, {
+          "여기서 할 것": "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요",
+        }, { section: "template" }) }, "템플릿 재선택…")),
     /* 데이터 축은 템플릿 바로 아래다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**으로
        말한다: 빈칸은 「아직 못 읽었다」와 구별되지 않는다. */
     h("dt", null, "데이터"),
     detail.data_bound
       ? h("dd", null, String(detail.data_label || ""), " ",
-        h(PathActions as any, { client: controller.client, path: detail.data_path, notify: controller.notify }))
+        h(PathActions as any, { client: controller.client, path: detail.data_path, notify: controller.notify }),
+        " ",
+        h("button", { className: "btn sm", id: "libraryRepickData", "data-repick": "data",
+          onClick: () => controller.editWork(detail.name, {
+            "여기서 할 것": "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요",
+          }, { section: "binding" }) }, "데이터 재선택…"))
       : h("dd", { className: "lib-detail-unbound" },
         h("span", { className: "pill warn" }, "연결 필요"),
         " 데이터를 연결해야 문서를 만들 수 있습니다. ",
@@ -304,18 +312,11 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
             "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
           }) }, "데이터 연결하기…")),
     detail.filename_pattern ? h("dt", null, "파일 이름 규칙") : null,
-    detail.filename_pattern ? h("dd", null, detail.filename_pattern) : null,
-    detail.run_note ? h("dt", null, "실행 방식") : null,
-    detail.run_note ? h("dd", null, detail.run_note) : null);
+    detail.filename_pattern ? h("dd", null, detail.filename_pattern) : null);
   const scroll = h("div", { className: "lib-detail-scroll", "data-preserve-scroll": true },
     h("h2", { className: "lib-detail-name" }, detail.name),
-    h("p", { className: "lib-detail-sub" },
-      `${detail.mode_label} · ${detail.last_run_display}`),
-    health, facts,
-    h("div", { className: "cap" }, "필드 연결"),
-    h("p", { className: "muted lib-detail-note" },
-      "작업에 저장된 데이터 항목 키입니다(현재 데이터의 열 이름이 아닙니다)."),
-    h(Bindings as any, { rows: detail.bindings }));
+    h("p", { className: "lib-detail-sub" }, detail.mode_label),
+    health, facts);
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),
@@ -344,7 +345,11 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
   return h("div", { className: "library-toolbar" },
     h("label", { className: "library-search-field" }, h("span", { className: "lbl" }, "작업 검색"),
       h("input", { className: "field", id: "librarySearch", type: "search", autoComplete: "off",
-        placeholder: "작업 이름, 그룹, 태그", "data-busy-lock": true, value: search,
+        /* 링1(`HomeViewModel._library_pool`)은 이름·사용자 group·태그 값을 훑지만, 뒤의 두
+           축은 U4 §2-30 에서 표면이 걷혀 **사용자가 만들 자리가 없다** — 그것을 안내로
+           내걸면 있지도 않은 축으로 찾으라는 말이 된다. 문안은 실제로 쓸 수 있는 축만
+           말한다(판정·매칭 범위는 링1 그대로, 동결 축은 그대로 동결). */
+        placeholder: "작업 이름", "data-busy-lock": true, value: search,
         onChange: (event: Obj) => {
           const text = String(event.currentTarget.value);
           setSearch(text);

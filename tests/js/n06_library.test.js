@@ -174,3 +174,75 @@ test("즐겨찾기 연타 — 같은 작업의 최신 intent를 직렬화한다"
   await Promise.all([h.controller.toggleFavorite("작업A", false), h.controller.toggleFavorite("작업A", false)]);
   assert.deepEqual(h.dispatchCalls.map((row) => row[2].value), [true, false]);
 });
+
+/* ---------------------------------------------- 상세 재선택 바로가기 + 걷힌 표면 */
+function detailSnapshot(detail) {
+  return {
+    view: "all", mode: "all", query: "", counts: {}, selected: detail.name,
+    alerts: {}, corrupt_rows: [], detail,
+    sections: [{ value: "", label: "", count: 1, headed: false, is_untagged: false,
+      collapsed: false, rows: [{ name: detail.name, mode_label: detail.mode_label,
+        health: {}, data_bound: detail.data_bound, favorited: false }] }],
+  };
+}
+
+const BOUND_DETAIL = {
+  name: "작업A", mode_label: "HWPX 문서 생성", primary: { label: "문서 만들기에서 사용", hint: "" },
+  template_name: "t.hwpx", template_path: "C:/t.hwpx",
+  data_bound: true, data_label: "월별.xlsx · 낙찰현황", data_path: "C:/월별.xlsx",
+  filename_pattern: "공고-{{ID}}", health_causes: [],
+};
+
+test("상세 재선택 — 템플릿·데이터 두 축이 각자 바로가기를 든다", () => {
+  const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes('id="libraryRepickTemplate"'));
+  assert.ok(markup.includes("템플릿 재선택…"));
+  assert.ok(markup.includes('id="libraryRepickData"'));
+  assert.ok(markup.includes("데이터 재선택…"));
+});
+
+test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐이다(재선택 버튼 없음)", () => {
+  const h = build({ snapshot: detailSnapshot({ ...BOUND_DETAIL, data_bound: false, data_label: "", data_path: "" }) });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes("데이터 연결하기…"));
+  assert.ok(!markup.includes('id="libraryRepickData"'));
+  assert.ok(markup.includes('id="libraryRepickTemplate"'));   // 템플릿 축은 그대로 선다
+});
+
+test("editWork — section extra가 EditorEntry 문맥에 합류한다(착지 탭 deep-link)", async () => {
+  /* 두 재선택 버튼의 onClick 이 부르는 그 경로다. 섹션 어휘는 Python 이 아는 값
+     (`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
+  const h = build();
+  await h.controller.editWork("작업A", { "여기서 할 것": "고르세요" }, { section: "template" });
+  await h.controller.editWork("작업A", {}, { section: "binding" });
+  assert.deepEqual(h.editor, [
+    ["openGuarded", "작업A", {
+      entry_reason: "library", evidence: { "여기서 할 것": "고르세요" },
+      return_context: { surface: "library" }, section: "template",
+    }],
+    ["openGuarded", "작업A", {
+      entry_reason: "library", evidence: {},
+      return_context: { surface: "library" }, section: "binding",
+    }],
+  ]);
+});
+
+test("걷힌 상세 표면 — 실행 이력·필드 연결 표·실행 방식은 렌더되지 않는다", () => {
+  const h = build({
+    snapshot: detailSnapshot({
+      ...BOUND_DETAIL,
+      // 낡은 페이로드가 되살아나도 표면은 그리지 않는다(소비처가 없어야 진짜 걷힌 것이다).
+      last_run_display: "마지막 성공 실행 2026-07-09", run_note: "채운 원문을 검토해 복사합니다",
+      bindings: [{ template_field: "계약명", source_label: "bidNtceNm", format_label: "텍스트", blank: false }],
+    }),
+  });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(!markup.includes("마지막 성공 실행"));
+  assert.ok(!markup.includes("실행 방식"));
+  assert.ok(!markup.includes("bidNtceNm"));
+  assert.ok(!markup.includes("필드 연결"));
+  assert.ok(markup.includes("HWPX 문서 생성"));               // 방식 부제는 남는다
+  assert.ok(markup.includes("작업 이름"));                     // 검색 안내는 실제 축만 말한다
+  assert.ok(!markup.includes("작업 이름, 그룹, 태그"));
+});

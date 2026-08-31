@@ -419,11 +419,12 @@ def test_detail_of_an_unbound_job_states_the_gap_instead_of_a_blank(tmp_path):
     assert d["data_bound"] is False and d["data_label"] == "" and d["data_path"] == ""
 
 
-def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
-    """§19.7 "상세에서 모든 실제 원인" + §19.6 「필드 연결」 표는 **저장된 항목 키**.
+def test_detail_carries_every_health_cause_but_no_mapping_copy(tmp_path):
+    """§19.7 "상세에서 모든 실제 원인" + 상세는 매핑 사본을 싣지 않는다.
 
-    현재 데이터는 「문서 만들기」 세션 소유라 라이브러리가 원본 열 이름을 쓰지 않는다
-    (지도 §10.8 판정 C). 판본 열은 F7 까지 만들지 않는다(판정 D).
+    「필드 연결」 표와 TXT 「실행 방식」 문구는 표면과 payload 에서 함께 걷혔다 — 매핑의
+    정본은 편집기 탭이고, 방식은 부제(`mode_label`)가 이미 말한다. 판본 열은 F7 까지 만들지
+    않는다(판정 D).
     """
     ctrl, _ = _controller(tmp_path)
     assert ctrl.snapshot()["detail"] is None
@@ -434,9 +435,11 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     # 목록 배지는 최고 심각도 1건이지만 상세는 두 계보를 함께 본다.
     assert "템플릿 파일을 찾을 수 없습니다." in causes
     assert "파일명 패턴의 토큰을 채우지 못합니다." in causes
-    assert [b["source_label"] for b in d["bindings"]] == ["bidNtceNm"]
     assert d["filename_pattern"] == "공고-{{ID}}"      # HWPX 는 파일 이름 규칙
-    assert d["run_note"] == ""                          # TXT 만 실행 방식 문구
+    # 걷힌 축은 빈 값이 아니라 **부재**다 — 빈 값을 남기면 표면이 자리를 다시 그리는 미끼다.
+    assert "bindings" not in d
+    assert "run_note" not in d
+    assert "last_run_display" not in d
     assert "revision" not in d                          # 판본은 F7 — 빈 자리도 두지 않는다
     # 템플릿 전체 경로(U2 §2.20, #342) — 상세 「열기」·「폴더에서 보기」가 겨눌 값. 경보
     # (템플릿 미연결)는 이 화면이 내는데 조작이 여기 없었다 — payload 한 칸이 그 선행이다.

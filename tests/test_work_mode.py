@@ -12,7 +12,6 @@ from hwpxfiller.domain.job import (
 )
 from hwpxfiller.gui.work_mode import (
     WORK_MODE_ORDER,
-    last_use_label,
     mode_sections,
     work_mode_label,
     work_mode_of_filter_value,
@@ -61,18 +60,9 @@ def test_order_lists_every_mode_exactly_once():
     assert len(WORK_MODE_ORDER) == 3
 
 
-# ------------------------------------------------ 최근 사용 문안(§19.4) — 매체별 술어
-def test_last_use_label_says_which_event_it_recorded():
-    """두 매체가 다른 술어를 쓴다는 사실을 문안이 말한다(지도 §10.15 판정 I).
-
-    HWPX 스탬프는 성공 뒤 실패 런이 있어도 앞선 성공 시각에 머무르므로 "마지막 실행"이
-    아니고, TXT 스탬프는 애초에 실행이 아니라 복사다. 같은 문구로 뭉치면 하필 구별이
-    중요한 자리에서 이력을 거짓으로 말한다.
-    """
-    assert last_use_label(WORK_MODE_HWPX, "2026-07-28T10:00:00") == "마지막 성공 실행 2026-07-28"
-    assert last_use_label(WORK_MODE_HWPX, "") == "성공한 실행 없음"
-    assert last_use_label(WORK_MODE_TEXT, "2026-07-28T10:00:00") == "마지막 복사 2026-07-28"
-    assert last_use_label(WORK_MODE_TEXT, "") == "복사한 적 없음"
+# (최근 사용 **문안**의 매체별 술어 테스트는 산출자와 함께 걷혔다 — 실행 이력을 문구로
+#  말하던 표면이 사라져 `last_use_label` 의 소비자가 0 이 됐다. `Job.last_run_at` 은 남고
+#  「최근 사용」 보기의 정렬 재료로만 산다.)
 
 
 # ------------------------------------------------------- 방식 구획(§19.3·§19.5)

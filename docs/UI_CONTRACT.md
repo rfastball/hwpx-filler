@@ -1249,9 +1249,11 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   `needsAction`)·방식 필터(`all`/`hwpx`/`txt`)·검색·태그 facet 은 **서로 다른 축**이라 하나를
   바꿔도 나머지가 살아 있고, 판정·정렬·건수는 전부 링1(`HomeViewModel.library_*`)이 낸다.
   구 group-by 렌즈는 **은퇴**했다 — 화면당 primary grouping 은 사용자 group 하나다(§19.2).
-- 액션: `set_view`·`set_mode`·`set_query`·`toggle_facet`·`clear_facets`·`clear_filters`·
-  `toggle_group`·`select_work`·`toggle_favorite`·`clone_job`·`set_tags`·`delete_job`·
-  `undo_delete_job`·`relink_template`·`delete_corrupt`·`refresh`.
+- 액션(정본 = `screen_library.py` 의 `_do_*` + `action_registry.py` 의 `library` 블록, 12건):
+  `set_view`·`set_mode`·`set_query`·`clear_filters`·`select_work`·`toggle_favorite`·
+  `delete_job`·`undo_delete_job`·`clone_job`·`relink_template`·`refresh`·`delete_corrupt`.
+  구 `toggle_facet`·`clear_facets`·`toggle_group`·`set_tags` 는 U4 §2-30 에서 태그·그룹 표면과
+  함께 걷혔다(판정·영속은 동결로 남고 액션만 없다).
 - **빈 상태의 출구는 하나다** — 저장된 작업이 없는 갈래(`is_empty`)의 「＋ 첫 작업 만들기」
   (`data-new-work`). 동봉 예제로 시작하는 두 번째 출구(#891 `data-install-examples`)는
   튜토리얼 진입 표면과 함께 배포본에서 걷혔다(#941 — 아래 「온보딩 튜토리얼」 절의 동결
@@ -1267,22 +1269,41 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - 그룹 접힘은 **보기**만 바꾼다 — 접어도 구획 건수와 행 페이로드는 그대로다. 구획의
   `value=""` 는 두 뜻(퇴화 평면 / 「그룹 없음」)이라 `is_untagged`·`headed` 로 가른다.
 - 탭 건수는 **검색 전** 값이다(라이브러리에 대한 사실 — 문서 탐색 탭과 같은 규칙).
-- 검색 대상은 작업 이름·사용자 그룹·태그 값뿐이다(소스 키·데이터 경로 제외, §19.6).
+- 검색 판정(`HomeViewModel._library_pool`)은 작업 이름·사용자 group·태그 값을 훑는다(소스
+  키·데이터 경로 제외, §19.6). **안내 문구는 「작업 이름」 하나만 말한다** — 뒤의 두 축은
+  U4 §2-30 에서 표면이 걷혀 사용자가 값을 만들 자리가 없고, 없는 축으로 찾으라고 안내하면
+  문구가 제품을 거짓으로 말한다. 매칭 범위는 그대로 두고(동결 축은 동결) 문안만 실동작을
+  말한다.
 - 확인 필요 행의 `health` 는 `{severity, text}` 쌍이다 — 문구만 주면 소비자가 경고(2)와
   차단(3)을 구분하지 못해 §19.7 건강 축이 "사유 있음/없음"으로 뭉개진다. 판정·문구는
   `library_health()`(§19.7 번역)가 소유하고 표면이 다시 만들지 않는다. 현재 데이터 호환성(`work_candidates`)과는 **섞지 않는다**(§19.7 명문).
 - 목록의 1건은 **파생**이고 정본은 `library_health_causes()` 의 전 원인 열거다(§19.7 "상세에서
   모든 실제 원인"). 상세 `detail.health_causes` 가 그것을 그대로 싣는다 — 같은 상태를 두 술어가
   따로 판정하면 목록과 상세가 서로 다른 말을 한다.
-- 상세 「필드 연결」 표(`detail.bindings`)는 **저장된 항목 키**를 보인다. 현재 데이터는 「문서
-  만들기」 세션 소유라 라이브러리가 원본 열 표시 이름을 쓰면 화면 간 결합이 생긴다(지도 §10.8
-  판정 C — 되깎기 조건 기록됨). Template/Binding **판본** 열은 F7 신설분이라 오늘 만들지
-  않는다(빈 자리·「준비 중」 표기도 두지 않는다 — 판정 D).
+- **상세는 실행 이력·매핑 사본·실행 방식 문구를 싣지 않는다.** 셋 다 표면과 payload 에서
+  함께 걷혔고(`detail.bindings`·`run_note`·`last_run_display`, 목록 행의 `last_run_display`
+  포함), 남은 키에 빈 값을 두지도 않는다 — 빈 값은 표면이 자리를 다시 그리는 미끼다.
+  근거는 각각 하나다: 매핑의 정본은 편집기 「필드 연결」 탭이라 읽기 전용 사본을 상세에 한 벌
+  더 두면 같은 상태를 두 자리가 말하고, 실행 방식은 부제(`mode_label`)가 이미 말하며, 실행
+  이력은 「무엇으로 만드는가」의 판단에 들지 않는다(`screen_job` 후보 카드의 `last_run_label`
+  이 U4 계열2-31 에서 같은 사유로 먼저 걷혔다). 링1 `Job.last_run_at` 은 그대로 영속하고
+  「최근 사용」 보기의 **정렬 재료**로만 산다 — 매체별 술어를 문구로 가르던 산출자
+  (`gui/work_mode.last_use_label`)는 소비자 0 으로 삭제됐다(R5-99 B2 전례).
+  Template/Binding **판본** 열은 F7 신설분이라 오늘 만들지 않는다(빈 자리·「준비 중」 표기도
+  두지 않는다 — 판정 D).
 - 상세 `<dt>템플릿</dt>` 행은 이름 곁에 **「열기」·「폴더에서 보기」**(PathActions 아이콘,
   `detail.template_path` 겨눔)를 신설로 싣는다(U2 §2.20, #342) — 경보(템플릿 미연결 N건)는
   이 화면이 내는데 조작이 여기 없었다(계기판의 짝). 어휘·아이콘은 PathActions가 소유하고,
   자리는 템플릿 행 안이다(자리가 대상을 말한다). 경로 검증은 백엔드 화이트리스트, 클릭은
   React 핸들러 — 신설 배선은 payload 한 칸(`template_path`)뿐이다.
+- 같은 두 행이 **재선택 바로가기**를 하나씩 더 든다: `#libraryRepickTemplate`(「템플릿
+  재선택…」)와, 결속된 갈래에서만 서는 `#libraryRepickData`(「데이터 재선택…」). 정체를 보는
+  자리가 그 정체를 바꾸러 가는 자리이기도 하다 — 종전에는 「작업 편집」으로 들어가 탭을 다시
+  찾아야 했다. 둘 다 `editWork(name, evidence, {section})` → `EditorEntry.openGuarded` 를 타므로
+  편집기 이탈 가드·데이터 인계는 종전대로다. `section` 어휘는 Python 단일 출처
+  (`gui/edit_session.py`: `template`/`binding`)이고 배관은 이미 서 있다 — `app.py.open_editor`
+  가 `ctx.section` 을 `load_job(landing_section=…)` 으로 넘긴다(백엔드 신설 0). 미결속 데이터
+  갈래는 종전의 「데이터 연결하기…」 하나를 유지한다(재선택할 결속이 아직 없다).
 - 2-pane 공간 배분은 목록 길이에 끌려다니지 않는다: 넓고(≥921px) 높은(≥760px) 창에서 두 pane 이
   뷰포트를 나눠 각자 스크롤하고 **페이지는 스크롤하지 않는다**. 상시 행동(`작업 편집`·`문서
   만들기에서 사용`)은 상세 스크롤과 분리해 pane 아래 고정한다(§19.6 마지막 문단).
