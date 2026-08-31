@@ -1,30 +1,31 @@
-"""S5-01 field-binding/v1 값·소스 스키마·규칙 semantic 모델 (#697)."""
+"""S5-01 field-binding/v2 값·소스 스키마·규칙 semantic 모델 (#697).
+
+v2 는 데이터 값 유형 어휘를 물리 제거했다 — 값 알파벳은 exact text 단형이고 규칙 canonical
+프레이밍은 6 슬롯(value_type 슬롯 없음)이다.
+"""
 
 from __future__ import annotations
 
 import pytest
 
 from hwpxfiller.domain.field_binding import (
-    BOOLEAN,
+    BINDING_VALUE_VERSION,
     CONSTANT,
-    DATE,
-    DECIMAL,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     EXACT_BLANK_POLICY,
-    EXACT_TEXT,
+    FIELD_BINDING_SEMANTIC_VERSION,
     INTENTIONAL_BLANK,
     SOURCE,
-    CanonicalBoolean,
-    CanonicalDate,
-    CanonicalDateTime,
-    CanonicalDecimal,
+    SOURCE_SCHEMA_VERSION,
+    VALUE_KIND_NULL,
+    VALUE_KIND_TEXT,
+    CanonicalBindingValue,
     ExactText,
     FieldBindingInputIntegrityError,
     FieldBindingRule,
     SourceSchemaDuplicateKeyError,
     UnsupportedDocumentValuePolicyError,
     UnsupportedFieldBindingContractError,
-    UnsupportedFieldValueTypeError,
     canonicalize_binding_rules,
     canonicalize_source_schema,
     digest_binding_rules,
@@ -33,27 +34,55 @@ from hwpxfiller.domain.field_binding import (
     require_registered_document_value_policy,
     require_single_rule_per_field,
     require_source_schema_contract,
-    require_value_type,
     resolve_document_value_policy,
     validate_source_schema_keys,
-    value_type_of,
 )
 
 POLICY = DOCUMENT_CONTENT_VALUE_POLICY_V1
 
 
 def _source(field_id: str, key: str = "k") -> FieldBindingRule:
-    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key, value_type=EXACT_TEXT)
+    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key)
 
 
-# ─── typed value equality / distinctness ─────────────────────────────────────────
-def test_typed_values_are_distinct_across_variants() -> None:
-    assert CanonicalDecimal("1") != ExactText("1")
-    assert CanonicalBoolean(True) != ExactText("true")
-    assert CanonicalDecimal("1") != CanonicalDecimal("1.0")  # literal 보존
+# ─── 값 알파벳 — 단형(v2) ────────────────────────────────────────────────────────
+def test_contract_versions_are_v2() -> None:
+    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v2"
+    assert SOURCE_SCHEMA_VERSION == "source-schema/v2"
+    assert BINDING_VALUE_VERSION == "binding-value/v2"
+
+
+def test_tagged_value_kind_alphabet_has_one_home() -> None:
+    """Plan constant 인코더와 source 값 인코더가 같은 리터럴을 각자 짓지 않는다."""
+    from hwpxfiller.domain.raw_data_record import SOURCE_NULL_KIND, SOURCE_TEXT_KIND
+
+    assert (VALUE_KIND_TEXT, VALUE_KIND_NULL) == ("TEXT", "NULL")
+    assert (SOURCE_TEXT_KIND, SOURCE_NULL_KIND) == (VALUE_KIND_TEXT, VALUE_KIND_NULL)
+
+
+def test_value_alphabet_is_exact_text_only() -> None:
+    """값 union 이 서던 자리는 단형 별칭으로 남는다 — 타입 있는 값 생성자는 존재하지 않는다."""
+    import hwpxfiller.domain.field_binding as fb
+
+    assert CanonicalBindingValue is ExactText
+    for gone in (
+        "DECIMAL",
+        "DATE",
+        "DATETIME",
+        "BOOLEAN",
+        "EXACT_TEXT",
+        "VALUE_TYPES",
+        "CanonicalDecimal",
+        "CanonicalDate",
+        "CanonicalDateTime",
+        "CanonicalBoolean",
+        "value_type_of",
+        "require_value_type",
+        "UnsupportedFieldValueTypeError",
+    ):
+        assert not hasattr(fb, gone), gone
     assert ExactText("x") == ExactText("x")
-    assert value_type_of(CanonicalBoolean(False)) == BOOLEAN
-    assert value_type_of(CanonicalDate("2026-01-02")) == DATE
+    assert ExactText("1") != ExactText("1.0")
 
 
 def test_exact_text_preserves_whitespace_and_empty() -> None:
@@ -64,43 +93,22 @@ def test_exact_text_preserves_whitespace_and_empty() -> None:
 
 
 @pytest.mark.parametrize(
-    "bad",
-    ["NaN", "Infinity", "-Infinity", "inf", "1e5", "1,000", "", " 1", "01"],
+    "display_text",
+    ["1,000,000", "2026.8.31", "금 오백만원", "계약 후 90일 이내", "NaN", "1e5", "예"],
 )
-def test_canonical_decimal_rejects_non_canonical(bad: str) -> None:
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalDecimal(bad)
-
-
-def test_canonical_decimal_accepts_plain_literals() -> None:
-    for good in ("0", "1", "-3", "1.50", "-0.5"):
-        assert CanonicalDecimal(good).literal == good
-
-
-def test_canonical_date_and_datetime_validate() -> None:
-    assert CanonicalDate("2026-02-28").iso == "2026-02-28"
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalDate("2026-13-01")
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalDate("2026/01/01")
-    assert CanonicalDateTime("2026-01-01T09:00:00+09:00")
-    # implicit timezone(naive) 거절.
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalDateTime("2026-01-01T09:00:00")
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalDateTime("not-a-datetime")
+def test_display_shaped_text_is_an_ordinary_value(display_text: str) -> None:
+    """v1 에서 타입 검증이 막던 표시형 문자열이 v2 에선 그냥 값이다(#915 서사 반전)."""
+    assert ExactText(display_text).text == display_text
 
 
 def test_lone_surrogate_rejected() -> None:
     with pytest.raises(FieldBindingInputIntegrityError):
         ExactText("\ud800")
-    with pytest.raises(FieldBindingInputIntegrityError):
-        CanonicalBoolean("true")  # type: ignore[arg-type]
 
 
 # ─── binding kind exclusivity ────────────────────────────────────────────────────
 def test_source_constant_blank_shapes() -> None:
-    src = FieldBindingRule("f", SOURCE, POLICY, source_key="k", value_type=DECIMAL)
+    src = FieldBindingRule("f", SOURCE, POLICY, source_key="k")
     const = FieldBindingRule("f", CONSTANT, POLICY, canonical_constant_value=ExactText("v"))
     blank = FieldBindingRule("f", INTENTIONAL_BLANK, POLICY)
     assert src.binding_kind == SOURCE
@@ -112,10 +120,8 @@ def test_source_constant_blank_shapes() -> None:
     "kwargs",
     [
         # SOURCE + constant 합성
-        {"binding_kind": SOURCE, "source_key": "k", "value_type": EXACT_TEXT,
+        {"binding_kind": SOURCE, "source_key": "k",
          "canonical_constant_value": ExactText("v")},
-        # SOURCE 인데 value_type 없음
-        {"binding_kind": SOURCE, "source_key": "k"},
         # CONSTANT + source_key 합성
         {"binding_kind": CONSTANT, "canonical_constant_value": ExactText("v"),
          "source_key": "k"},
@@ -132,23 +138,20 @@ def test_rule_kind_exclusivity_rejected(kwargs: dict) -> None:
         FieldBindingRule("f", document_content_value_policy=POLICY, **kwargs)
 
 
-def test_source_rule_unknown_value_type_rejected() -> None:
-    with pytest.raises(UnsupportedFieldValueTypeError):
-        FieldBindingRule("f", SOURCE, POLICY, source_key="k", value_type="FLOAT")
+def test_source_rule_no_longer_accepts_a_value_type() -> None:
+    """삭제된 필드는 조용히 무시되지 않는다 — 생성자가 TypeError 로 거절한다."""
+    with pytest.raises(TypeError):
+        FieldBindingRule(  # type: ignore[call-arg]
+            "f", SOURCE, POLICY, source_key="k", value_type="DECIMAL"
+        )
 
 
 def test_non_string_scalar_and_format_code() -> None:
     with pytest.raises(FieldBindingInputIntegrityError):
         ExactText(123)  # type: ignore[arg-type]
     # format_code(빈 문자열 허용)는 검증만 통과한다.
-    rule = FieldBindingRule("f", SOURCE, POLICY, source_key="k", value_type=DATE, format_code="%Y")
+    rule = FieldBindingRule("f", SOURCE, POLICY, source_key="k", format_code="%Y")
     assert rule.format_code == "%Y"
-
-
-def test_value_type_of_covers_all_variants() -> None:
-    assert value_type_of(ExactText("x")) == EXACT_TEXT
-    assert value_type_of(CanonicalDecimal("1")) == DECIMAL
-    assert value_type_of(CanonicalDateTime("2026-01-01T00:00:00+09:00")) == "DATETIME"
 
 
 def test_constant_value_must_be_canonical_binding_value() -> None:
@@ -166,7 +169,7 @@ def test_single_rule_per_field() -> None:
 
 def test_rule_requires_policy_object_and_known_policy() -> None:
     with pytest.raises(FieldBindingInputIntegrityError):
-        FieldBindingRule("f", SOURCE, "policy/v1", source_key="k", value_type=EXACT_TEXT)  # type: ignore[arg-type]
+        FieldBindingRule("f", SOURCE, "policy/v1", source_key="k")  # type: ignore[arg-type]
 
 
 # ─── source schema ───────────────────────────────────────────────────────────────
@@ -185,6 +188,10 @@ def test_source_schema_canonical_order_is_byte_order() -> None:
     assert digest_source_schema(["A"]) != digest_source_schema(["a"])
 
 
+def test_source_schema_canonical_bytes_carry_the_v2_version() -> None:
+    assert SOURCE_SCHEMA_VERSION.encode("utf-8") in canonicalize_source_schema(["a"])
+
+
 # ─── binding rule canonicalization / digest ──────────────────────────────────────
 def test_binding_rules_digest_is_order_independent() -> None:
     a = [_source("x"), _source("y")]
@@ -197,17 +204,49 @@ def test_binding_rules_digest_is_order_independent() -> None:
     )
 
 
+def test_binding_rule_framing_has_six_slots_and_the_v2_version() -> None:
+    """v2 프레이밍 실측: field_id·kind·policy_id·source_key·format_code·constant text."""
+    from hwpxfiller.domain.field_binding import _encode_rule, _opt_text, _text
+
+    rule = FieldBindingRule("f", SOURCE, POLICY, source_key="k", format_code="%Y")
+    assert _encode_rule(rule) == (
+        _text("f")
+        + _text(SOURCE)
+        + _text(POLICY.policy_id)
+        + _opt_text("k")
+        + _opt_text("%Y")
+        + _opt_text(None)
+    )
+    const = FieldBindingRule("f", CONSTANT, POLICY, canonical_constant_value=ExactText(""))
+    assert _encode_rule(const) == (
+        _text("f")
+        + _text(CONSTANT)
+        + _text(POLICY.policy_id)
+        + _opt_text(None)
+        + _opt_text(None)
+        + _opt_text("")
+    )
+    assert FIELD_BINDING_SEMANTIC_VERSION.encode("utf-8") in canonicalize_binding_rules(
+        [rule]
+    )
+
+
+def test_empty_constant_text_is_not_absent_constant() -> None:
+    """``ExactText("")`` 과 constant 부재는 canonical bytes 에서 갈린다(빈칸 ≠ 없음)."""
+    empty = FieldBindingRule("f", CONSTANT, POLICY, canonical_constant_value=ExactText(""))
+    blank = FieldBindingRule("f", INTENTIONAL_BLANK, POLICY)
+    assert digest_binding_rules([empty]) != digest_binding_rules([blank])
+
+
 # ─── registries / policies (no fallback) ─────────────────────────────────────────
-def test_contract_and_value_type_and_policy_registries_fail_closed() -> None:
-    assert require_field_binding_contract("field-binding/v1")
-    assert require_source_schema_contract("source-schema/v1")
-    assert require_value_type(EXACT_TEXT)
+def test_contract_and_policy_registries_fail_closed() -> None:
+    assert require_field_binding_contract("field-binding/v2")
+    assert require_source_schema_contract("source-schema/v2")
+    # 퇴역한 v1 계약은 v2 로 풀지 않는다 — v1 은 store 마이그레이션 경로만 안다.
     with pytest.raises(UnsupportedFieldBindingContractError):
-        require_field_binding_contract("field-binding/v2")
+        require_field_binding_contract("field-binding/v1")
     with pytest.raises(UnsupportedFieldBindingContractError):
-        require_source_schema_contract("source-schema/v2")
-    with pytest.raises(UnsupportedFieldValueTypeError):
-        require_value_type("FLOAT")
+        require_source_schema_contract("source-schema/v1")
     with pytest.raises(UnsupportedDocumentValuePolicyError):
         resolve_document_value_policy("document-content-value/v9")
 
@@ -226,7 +265,7 @@ def test_registered_policy_id_with_altered_behavior_rejected() -> None:
     with pytest.raises(UnsupportedDocumentValuePolicyError):
         require_registered_document_value_policy(diverged)
     with pytest.raises(UnsupportedDocumentValuePolicyError):
-        FieldBindingRule("f", SOURCE, diverged, source_key="k", value_type=EXACT_TEXT)
+        FieldBindingRule("f", SOURCE, diverged, source_key="k")
     assert require_registered_document_value_policy(POLICY) is POLICY
 
 

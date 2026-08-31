@@ -33,11 +33,10 @@ from hwpxfiller.application.field_binding_input import (
     LegacyFieldBindingEntry,
     prepare_legacy_field_binding_migration,
 )
-from hwpxfiller.application.record_validation import interpret_current_source_value
 from hwpxfiller.domain.authoring import scan_structure
 from hwpxfiller.domain.lint import similarity
 from hwpxfiller.domain.mapping import SUGGEST_THRESHOLD
-from hwpxfiller.domain.raw_data_record import SourceText, source_value_type_of
+from hwpxfiller.domain.raw_data_record import SourceText
 from hwpxfiller.domain.schema import extract_schema
 from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
@@ -275,13 +274,14 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
     assert deposit.is_empty_confirmed() is True
 
 
-# ------------------------------------------------- 5. 값 유형 정합(#915 데이터 게이트)
-def _declared_value_types(template: Path) -> "dict[str, str]":
-    """제품이 실제로 쓰는 사슬로 **소스 열별 선언 값 유형**을 낸다.
+# ------------------------------------------- 5. 값 정합은 사람 몫(#915 게이트 퇴역)
+def _bound_source_keys(template: Path) -> "set[str]":
+    """제품이 실제로 쓰는 사슬로 **결속된 소스 열**을 낸다.
 
     `infer_type`(이름 휴리스틱) → `MappingModel` 기본 유형 → 저장 매핑 → legacy migration
-    후보 규칙의 `value_type`. 마지막 단계가 관리 경로 Plan 의 요구 유형이 되고, 그것이
-    데이터 값과 어긋나면 `RECORD_VALUE_TYPE_INVALID` 로 생성이 막힌다.
+    후보 규칙. 종전에는 이 사슬의 마지막 단계가 열마다 `value_type` 을 선언했고 그것이
+    데이터 값과 어긋나면 생성이 막혔다 — 값 유형 어휘 퇴역으로 그 축이 사라졌으므로
+    남는 것은 「어떤 열이 문서로 흐르는가」다.
     """
     schema = extract_schema(read_hwpx_package(template))
     model = MappingModel.from_suggestions(schema, list(HEADER))
@@ -296,10 +296,13 @@ def _declared_value_types(template: Path) -> "dict[str, str]":
         ],
         captured_at="2026-08-26T00:00:00Z",
     )
+    assert all(
+        not hasattr(candidate, "value_type") for candidate in draft.candidate_rules
+    ), "migration 후보가 아직 값 유형을 선언한다(어휘 퇴역 위반)"
     return {
-        candidate.source_key: candidate.value_type
+        candidate.source_key
         for candidate in draft.candidate_rules
-        if candidate.source_key and candidate.value_type
+        if candidate.source_key
     }
 
 
@@ -321,8 +324,9 @@ def test_every_template_field_accepts_every_committed_data_value(
     종전 자산은 `납품기한` 이라는 **이름**이 날짜 유형을 선언했는데 값 2행이 자유서식
     (「계약 후 90일 이내」 — 원 공문의 실표현)이라, 관리 경로가 그 행들을 「먼저 데이터
     문제를 확인하세요」로 막았다. 커리큘럼에 없는 게이트를 고급·심화 티어 사용자 전원이
-    만난 것이 #915 다. 값이 아니라 이름을 고쳤으므로(`납품조건`, text) 여기서 재는 것은
-    「이름이 선언한 유형이 값을 받아들이는가」다 — 되돌아가면 이 단언이 먼저 죽는다.
+    만난 것이 #915 다. 그 게이트는 값 유형 어휘째 퇴역했다 — 소스 값은 언제나 타입 없는
+    텍스트이고, 값이 맞는지는 사람이 본다. 여기서 재는 것은 결속된 열의 값이 **하나도
+    남김없이** 문서 값으로 성립하는가다(빈/공백만 아니어야 한다 — 그 게이트는 존치).
     """
     _, rows = _read_csv(ASSETS / "data" / "계약목록.csv")
     records = [dict(zip(HEADER, row, strict=True)) for row in rows]
@@ -332,19 +336,16 @@ def test_every_template_field_accepts_every_committed_data_value(
         ASSETS / "templates" / "구매추진안내.hwpx",
         compiled_notice,
     ):
-        declared = _declared_value_types(template)
-        assert declared, f"{template.name}: 선언 유형이 하나도 나오지 않았다"
-        mismatches = [
-            (index, key, record[key], value_type)
+        bound = _bound_source_keys(template)
+        assert bound, f"{template.name}: 결속된 소스 열이 하나도 나오지 않았다"
+        refused = [
+            (index, key, record[key])
             for index, record in enumerate(records)
-            for key, value_type in declared.items()
-            if source_value_type_of(
-                interpret_current_source_value(SourceText(record[key]), value_type)
-            )
-            != value_type
+            for key in bound
+            if SourceText(record[key]).text.strip() == ""
         ]
-        assert mismatches == [], (
-            f"{template.name}: 선언 유형이 동봉 값을 거절한다 — {mismatches}"
+        assert refused == [], (
+            f"{template.name}: 결속 열의 값이 빈/공백만이라 게이트가 선다 — {refused}"
         )
 
 

@@ -15,7 +15,8 @@ ref/retention port(:class:`ImmutableVdrStore`).
 
 경계(issue #708): VDR 의 ``document_value`` 는 native writer 에 전달할 **logical Unicode text** 다 —
 XML escaped text·XML fragment·serialized ``hp:t`` bytes 가 아니다(그건 S6 소유). unresolved/missing/
-null/blank/type-mismatch 는 조용한 빈칸이 아니라 시끄러운 blocker 다(confirm-or-alarm). unsupported
+null/blank 는 조용한 빈칸이 아니라 시끄러운 blocker 다(confirm-or-alarm) — 값의 **모양**은 여기서
+판정하지 않는다(값 유형 어휘 퇴역, v2). unsupported
 local implementation(format code·unknown policy·미지원 contract)은 user-fixable blocker 로 낮추지
 않고 context error 로 닫는다.
 
@@ -48,21 +49,15 @@ from hwpxfiller.domain.canonical_execution_encoding import (
 )
 from hwpxfiller.domain.field_binding import (
     BINDING_VALUE_VERSION,
-    BOOLEAN,
-    DATE,
-    DATETIME,
-    DECIMAL,
     EXACT_BLANK_POLICY,
-    EXACT_TEXT,
     SOURCE_SCHEMA_VERSION,
+    VALUE_KIND_TEXT,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
-    FieldBindingError,
     UnsupportedDocumentValuePolicyError,
     resolve_document_value_policy,
 )
 from hwpxfiller.domain.raw_data_record import (
-    CanonicalSourceValue,
     RAW_RECORD_CONTRACT_ID,
     RECORD_REVIEW_CONTRACT_ID,
     RECORD_REVIEW_EXAMINED,
@@ -70,14 +65,7 @@ from hwpxfiller.domain.raw_data_record import (
     RawRecordIntegrityError,
     RecordReviewEvidence,
     RecordReviewEvidenceIntegrityError,
-    SourceBoolean,
-    SourceDate,
-    SourceDateTime,
-    SourceDecimal,
     SourceNull,
-    SourceText,
-    encode_source_value,
-    source_value_type_of,
     verify_raw_record_snapshot,
     verify_record_review_evidence_integrity,
 )
@@ -85,12 +73,8 @@ from hwpxfiller.domain.raw_data_record import (
 VALIDATED_RECORD_SCHEMA_VERSION = "validated-record/v1"
 RECORD_VALIDATION_CONTRACT_ID = "record-validation/v1"
 DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID = "document-content-value/v1"
-# 이 validator 가 지원하는 exact plan schema 집합 — 미지원은 v1 로 풀지 않고 fail-closed.
-SUPPORTED_PLAN_SCHEMA_VERSIONS = ("hwpx-execution-plan/v1",)
-
-# boolean logical text — canonical lexical form(v1 결정). downstream 이 format code 로 확장한다.
-_BOOLEAN_TRUE_TEXT = "true"
-_BOOLEAN_FALSE_TEXT = "false"
+# 이 validator 가 지원하는 exact plan schema 집합 — 미지원은 v2 로 풀지 않고 fail-closed.
+SUPPORTED_PLAN_SCHEMA_VERSIONS = ("hwpx-execution-plan/v2",)
 
 # value expression kind(S5-05 encode_value_expression 와 동일 어휘).
 _KIND_FROM_SOURCE = "FROM_SOURCE"
@@ -100,7 +84,6 @@ _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
 # ─── record validation blocker 어휘(user-fixable, deterministic Plan order) ───────────────
 RECORD_REQUIRED_VALUE_MISSING = "RECORD_REQUIRED_VALUE_MISSING"
 RECORD_EXPLICIT_NULL_NOT_ALLOWED = "RECORD_EXPLICIT_NULL_NOT_ALLOWED"
-RECORD_VALUE_TYPE_INVALID = "RECORD_VALUE_TYPE_INVALID"
 RECORD_VALUE_FORMAT_INVALID = "RECORD_VALUE_FORMAT_INVALID"
 RECORD_BLANK_POLICY_VIOLATION = "RECORD_BLANK_POLICY_VIOLATION"
 RECORD_REVIEW_REQUIRED = "RECORD_REVIEW_REQUIRED"
@@ -249,28 +232,6 @@ def _apply_whitespace_policy(text: str, whitespace_policy: str) -> str:
     )
 
 
-def _scalar_literal_text(value_type: str, literal: Any, what: str) -> str:
-    """tagged scalar literal → logical text(locale·repr 변환 없음)."""
-    if value_type == BOOLEAN:
-        if not isinstance(literal, bool):
-            raise _ContextSignal(
-                UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-                f"{what} BOOLEAN literal 이 bool 이 아니다",
-            )
-        return _BOOLEAN_TRUE_TEXT if literal else _BOOLEAN_FALSE_TEXT
-    if value_type in (EXACT_TEXT, DECIMAL, DATE, DATETIME):
-        if not isinstance(literal, str):
-            raise _ContextSignal(
-                UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-                f"{what} {value_type} literal 이 문자열이 아니다",
-            )
-        return literal
-    raise _ContextSignal(
-        UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-        f"{what} 미지원 value_type: {value_type!r}",
-    )
-
-
 def _resolve_policy(policy_id: str) -> Any:
     try:
         return resolve_document_value_policy(policy_id)
@@ -290,41 +251,23 @@ def _require_no_format_code(ve: Mapping[str, Any]) -> None:
         )
 
 
-def interpret_current_source_value(
-    value: CanonicalSourceValue, expected_type: str
-) -> CanonicalSourceValue:
-    """Frozen current source scalar를 exact declared type 의미로 해석한다."""
-    if not isinstance(value, SourceText) or expected_type == EXACT_TEXT:
-        return value
-    try:
-        if expected_type == DECIMAL:
-            return SourceDecimal(value.text)
-        if expected_type == DATE:
-            return SourceDate(value.text)
-        if expected_type == DATETIME:
-            return SourceDateTime(value.text)
-        if expected_type == BOOLEAN and value.text in ('TRUE', 'FALSE'):
-            return SourceBoolean(value.text == 'TRUE')
-    except FieldBindingError:
-        pass
-    return value
-
-
 def _resolve_from_source(
     ve: Mapping[str, Any],
     field_id: str,
     snapshot: RawDataRecordSnapshot,
-    *,
-    interpret_source_text: bool = False,
 ) -> str | RecordValidationBlocker:
-    """required source key 를 frozen snapshot 에서만 읽어 logical text 를 낸다(row 재조회 0)."""
+    """required source key 를 frozen snapshot 에서만 읽어 logical text 를 낸다(row 재조회 0).
+
+    소스 값은 언제나 타입 없는 텍스트다 — 값이 맞는지는 사람이 본다. 이 함수가 판정하는 것은
+    **존재**뿐이다: 키 부재(MISSING) · explicit null · 빈/공백 텍스트(blank). blank 가드는 특정
+    값 유형이 아니라 **모든** SOURCE 값에 걸린다.
+    """
     _require_no_format_code(ve)
     source_key = ve.get("source_key")
-    expected_type = ve.get("value_type")
-    if not isinstance(source_key, str) or not isinstance(expected_type, str):
+    if not isinstance(source_key, str):
         raise _ContextSignal(
             PLAN_INTEGRITY_ERROR,
-            f"FROM_SOURCE requirement {field_id!r} 의 source_key/value_type 형식 불량",
+            f"FROM_SOURCE requirement {field_id!r} 의 source_key 형식 불량",
         )
     policy = _resolve_policy(str(ve.get("document_content_value_policy_id")))
 
@@ -341,29 +284,16 @@ def _resolve_from_source(
             field_id,
             f"source key {source_key!r} 가 explicit null 이다",
         )
-    assert value is not None  # has_key True 이고 NULL 이 아니면 scalar
-    if interpret_source_text:
-        value = interpret_current_source_value(value, expected_type)
-    actual_type = source_value_type_of(value)
-    if actual_type != expected_type:
+    assert value is not None  # has_key True 이고 NULL 이 아니면 텍스트
+    # blank(빈/공백만) source 는 조용히 빈 문서 필드로 새지 않고 시끄럽게 막는다.
+    # 의도된 빈칸은 Plan 의 INTENTIONAL_BLANK 이지 blank source 값이 아니다.
+    if value.text.strip() == "":
         return RecordValidationBlocker(
-            RECORD_VALUE_TYPE_INVALID,
+            RECORD_BLANK_POLICY_VIOLATION,
             field_id,
-            f"source key {source_key!r} 타입 {actual_type} 가 요구 타입 {expected_type} 와 불일치",
+            f"source key {source_key!r} 가 빈/공백만 텍스트다(blank policy 위반)",
         )
-    literal = encode_source_value(value)["literal"]
-    if expected_type == EXACT_TEXT:
-        assert isinstance(literal, str)
-        # blank(빈/공백만) source 는 조용히 빈 문서 필드로 새지 않고 시끄럽게 막는다.
-        # 의도된 빈칸은 Plan 의 INTENTIONAL_BLANK 이지 blank source 값이 아니다.
-        if literal.strip() == "":
-            return RecordValidationBlocker(
-                RECORD_BLANK_POLICY_VIOLATION,
-                field_id,
-                f"source key {source_key!r} 가 빈/공백만 텍스트다(blank policy 위반)",
-            )
-    text = _scalar_literal_text(expected_type, literal, f"source key {source_key!r}")
-    return _apply_whitespace_policy(text, policy.whitespace_policy)
+    return _apply_whitespace_policy(value.text, policy.whitespace_policy)
 
 
 def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
@@ -376,23 +306,18 @@ def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
             PLAN_INTEGRITY_ERROR,
             f"CONSTANT requirement {field_id!r} 에 canonical_value 가 없다",
         )
-    value_type = canonical.get("value_type")
-    if not isinstance(value_type, str):
+    text = canonical.get("text")
+    if canonical.get("kind") != VALUE_KIND_TEXT or not isinstance(text, str):
         raise _ContextSignal(
             PLAN_INTEGRITY_ERROR,
-            f"CONSTANT requirement {field_id!r} 의 value_type 형식 불량",
+            f"CONSTANT requirement {field_id!r} 의 canonical_value 형식 불량",
         )
-    text = _scalar_literal_text(
-        value_type, canonical.get("literal"), f"constant {field_id!r}"
-    )
     return _apply_whitespace_policy(text, policy.whitespace_policy)
 
 
 def _resolve_requirement(
     requirement: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
-    *,
-    interpret_source_text: bool = False,
 ) -> str | RecordValidationBlocker:
     field_id = requirement.get("field_id")
     if not isinstance(field_id, str) or field_id == "":
@@ -404,12 +329,7 @@ def _resolve_requirement(
         )
     kind = ve.get("kind")
     if kind == _KIND_FROM_SOURCE:
-        return _resolve_from_source(
-            ve,
-            field_id,
-            snapshot,
-            interpret_source_text=interpret_source_text,
-        )
+        return _resolve_from_source(ve, field_id, snapshot)
     if kind == _KIND_CONSTANT:
         return _resolve_constant(ve, field_id)
     if kind == _KIND_INTENTIONAL_BLANK:
@@ -512,39 +432,16 @@ def current_record_validation_basis(
     )
 
 
-def _current_source_text_interpretation_keys(
-    plan: SealedExecutionPlanValue,
-) -> frozenset[str]:
-    declared: dict[str, str] = {}
-    conflicts: set[str] = set()
-    for requirement in plan.active_field_requirements:
-        value_expression = requirement.get('value_expression')
-        if not isinstance(value_expression, Mapping):
-            continue
-        if value_expression.get('kind') != _KIND_FROM_SOURCE:
-            continue
-        source_key = value_expression.get('source_key')
-        value_type = value_expression.get('value_type')
-        if not isinstance(source_key, str) or not isinstance(value_type, str):
-            continue
-        existing = declared.setdefault(source_key, value_type)
-        if existing != value_type:
-            conflicts.add(source_key)
-    return frozenset(conflicts)
-
-
 def validate_data_record_against_current_value(
     *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
 ) -> ValidateCurrentDataRecordResult:
     basis = current_record_validation_basis(plan)
-    interpretation_keys = _current_source_text_interpretation_keys(plan)
     try:
         return _validate_current_value(
             plan=plan,
             snapshot=snapshot,
             validated_at=validated_at,
             validation_basis=basis,
-            source_text_interpretation_keys=interpretation_keys,
         )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
@@ -557,7 +454,6 @@ def validate_data_records_against_current_value(
     validated_at: str,
 ) -> tuple[ValidateCurrentDataRecordResult, ...]:
     basis = current_record_validation_basis(plan)
-    interpretation_keys = _current_source_text_interpretation_keys(plan)
     results: list[ValidateCurrentDataRecordResult] = []
     for snapshot in snapshots:
         try:
@@ -567,7 +463,6 @@ def validate_data_records_against_current_value(
                     snapshot=snapshot,
                     validated_at=validated_at,
                     validation_basis=basis,
-                    source_text_interpretation_keys=interpretation_keys,
                 )
             )
         except _ContextSignal as sig:
@@ -581,7 +476,6 @@ def _validate_current_value(
     snapshot: RawDataRecordSnapshot,
     validated_at: str,
     validation_basis: CurrentRecordValidationBasis,
-    source_text_interpretation_keys: frozenset[str],
 ) -> ValidateCurrentDataRecordResult:
     if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
@@ -597,16 +491,7 @@ def _validate_current_value(
     blockers: list[RecordValidationBlocker] = []
     resolved: list[tuple[str, str]] = []
     for requirement in plan.active_field_requirements:
-        value_expression = requirement.get('value_expression')
-        outcome = _resolve_requirement(
-            requirement,
-            snapshot,
-            interpret_source_text=(
-                isinstance(value_expression, Mapping)
-                and value_expression.get('source_key')
-                in source_text_interpretation_keys
-            ),
-        )
+        outcome = _resolve_requirement(requirement, snapshot)
         if isinstance(outcome, RecordValidationBlocker):
             blockers.append(outcome)
         else:

@@ -44,7 +44,6 @@ from hwpxfiller.application.record_validation import (
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
     current_record_validation_basis,
-    interpret_current_source_value,
     verify_current_validated_record_completeness,
     verify_validated_record_completeness,
 )
@@ -61,13 +60,7 @@ from hwpxfiller.domain.output_name import (
     has_forbidden_filename_char,
 )
 from hwpxfiller.domain.field_binding import (
-    BOOLEAN,
     CONSTANT,
-    DATE,
-    DATETIME,
-    DECIMAL,
-    EXACT_TEXT,
-    INTENTIONAL_BLANK,
     SOURCE,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
@@ -77,11 +70,11 @@ from hwpxfiller.domain.field_binding import (
     resolve_document_value_policy,
 )
 from hwpxfiller.domain.raw_data_record import (
+    SOURCE_TEXT_KIND,
     RawDataRecordSnapshot,
     RawRecordIntegrityError,
     SourceNull,
     encode_source_value,
-    source_value_type_of,
     verify_raw_record_snapshot,
 )
 
@@ -91,7 +84,7 @@ if TYPE_CHECKING:
 # ─── contract/schema 버전(코드·문서 단일 출처) ────────────────────────────────────────────
 FILENAME_PATTERN_CONTRACT_ID = "filename-pattern/v1"
 DELIVERY_CONTRACT_ID = "generation-delivery/v1"
-DELIVERY_BINDING_BASIS_SCHEMA = "generation-delivery-binding-basis/v1"
+DELIVERY_BINDING_BASIS_SCHEMA = "generation-delivery-binding-basis/v2"
 OUTPUT_NAME_BASIS_SCHEMA = "output-name-basis-canonical/v1"
 GENERATION_DELIVERY_PLAN_SCHEMA = "generation-delivery-plan-canonical/v1"
 MANAGED_GENERATION_PLAN_SCHEMA = "managed-generation-plan/v1"
@@ -112,7 +105,6 @@ _DISPOSITION_BY_POLICY = {
 # ─── output blocker taxonomy(user-fixable — seal terminal blocker 아님) ─────────────────────
 OUTPUT_NAME_TOKEN_UNRESOLVED = "OUTPUT_NAME_TOKEN_UNRESOLVED"
 OUTPUT_NAME_BINDING_AMBIGUOUS = "OUTPUT_NAME_BINDING_AMBIGUOUS"
-OUTPUT_NAME_VALUE_RESOLUTION_FAILED = "OUTPUT_NAME_VALUE_RESOLUTION_FAILED"
 OUTPUT_NAME_PATTERN_INVALID = "OUTPUT_NAME_PATTERN_INVALID"
 OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED = "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
 OUTPUT_PATH_NON_REGULAR_CONFLICT = "OUTPUT_PATH_NON_REGULAR_CONFLICT"
@@ -145,9 +137,6 @@ S5_EXACT_DELIVERY_GUARANTEE = "s5-managed-delivery/v1"
 _KIND_FROM_SOURCE = "FROM_SOURCE"
 _KIND_CONSTANT = "CONSTANT"
 _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
-
-_BOOLEAN_TRUE_TEXT = "true"
-_BOOLEAN_FALSE_TEXT = "false"
 
 # current delivery disposition — publication guarantee 가 아니라 현재 관찰에 대한 계획이다.
 WRITE_NEW = "WRITE_NEW"
@@ -289,7 +278,6 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
         return {
             "kind": _KIND_FROM_SOURCE,
             "source_key": rule.source_key,
-            "value_type": rule.value_type,
             # format_code 를 봉인한다 — Active 경로처럼 조용히 버리지 않고 resolution 이 판정한다.
             "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
@@ -469,27 +457,6 @@ def _apply_whitespace_policy(text: str, whitespace_policy: str) -> str:
     )
 
 
-def _scalar_literal_text(value_type: str, literal: Any, what: str) -> str:
-    if value_type == BOOLEAN:
-        if not isinstance(literal, bool):
-            raise _DeliveryContextSignal(
-                UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-                f"{what} BOOLEAN literal 이 bool 이 아니다",
-            )
-        return _BOOLEAN_TRUE_TEXT if literal else _BOOLEAN_FALSE_TEXT
-    if value_type in (EXACT_TEXT, DECIMAL, DATE, DATETIME):
-        if not isinstance(literal, str):
-            raise _DeliveryContextSignal(
-                UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-                f"{what} {value_type} literal 이 문자열이 아니다",
-            )
-        return literal
-    raise _DeliveryContextSignal(
-        UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-        f"{what} 미지원 value_type: {value_type!r}",
-    )
-
-
 def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> None:
     """v1 은 format code 미구현 — nonempty format_code 는 조용히 버리지 않고 fail-closed(Active 경로 일치)."""
     format_code = value_expression.get("format_code")
@@ -503,14 +470,12 @@ def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> Non
 def resolve_delivery_field_value(
     value_expression: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
-    *,
-    interpret_source_text: bool = False,
 ) -> str | tuple[str, str]:
     """inactive Field token 값을 exact requirement + raw snapshot 에서 해석한다.
 
-    반환: exact logical text | (blocker_code, detail). 미지원 policy/value_type/contract 는 blocker 로
+    반환: exact logical text | (blocker_code, detail). 미지원 policy/contract 는 blocker 로
     낮추지 않고 ``_DeliveryContextSignal`` 로 닫는다(fail-closed). Active token 은 이 함수를 거치지 않고
-    VDR 값을 재사용한다.
+    VDR 값을 재사용한다. 소스 값은 언제나 타입 없는 텍스트다 — 여기서 판정하는 것은 존재뿐이다.
     """
     try:
         policy = resolve_document_value_policy(
@@ -531,17 +496,19 @@ def resolve_delivery_field_value(
             raise _DeliveryContextSignal(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR, "CONSTANT requirement 에 canonical_value 가 없다"
             )
-        text = _scalar_literal_text(
-            str(canonical.get("value_type")), canonical.get("literal"), "constant"
-        )
+        text = canonical.get("text")
+        if canonical.get("kind") != SOURCE_TEXT_KIND or not isinstance(text, str):
+            raise _DeliveryContextSignal(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                "CONSTANT requirement 의 canonical_value 형식 불량",
+            )
         return _apply_whitespace_policy(text, policy.whitespace_policy)
     if kind == _KIND_FROM_SOURCE:
         source_key = value_expression.get("source_key")
-        expected_type = value_expression.get("value_type")
-        if not isinstance(source_key, str) or not isinstance(expected_type, str):
+        if not isinstance(source_key, str):
             raise _DeliveryContextSignal(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                "FROM_SOURCE requirement 의 source_key/value_type 형식 불량",
+                "FROM_SOURCE requirement 의 source_key 형식 불량",
             )
         if not snapshot.has_key(source_key):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 raw record 에 없다")
@@ -549,17 +516,7 @@ def resolve_delivery_field_value(
         if isinstance(value, SourceNull):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 explicit null")
         assert value is not None
-        if interpret_source_text:
-            value = interpret_current_source_value(value, expected_type)
-        actual_type = source_value_type_of(value)
-        if actual_type != expected_type:
-            return (
-                OUTPUT_NAME_VALUE_RESOLUTION_FAILED,
-                f"source key {source_key!r} 타입 {actual_type} 가 요구 타입 {expected_type} 와 불일치",
-            )
-        literal = encode_source_value(value)["literal"]
-        text = _scalar_literal_text(expected_type, literal, f"source key {source_key!r}")
-        return _apply_whitespace_policy(text, policy.whitespace_policy)
+        return _apply_whitespace_policy(value.text, policy.whitespace_policy)
     raise _DeliveryContextSignal(
         GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
         f"미지원 delivery value expression kind: {kind!r}",
@@ -995,7 +952,7 @@ def _resolve_current(
                 value = active_map[field_id]
             elif field_id in inactive_by_field:
                 value = resolve_delivery_field_value(
-                    inactive_by_field[field_id], snapshot, interpret_source_text=True
+                    inactive_by_field[field_id], snapshot
                 )
             else:
                 value = (

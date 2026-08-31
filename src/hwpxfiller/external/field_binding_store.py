@@ -34,6 +34,10 @@ from hwpxfiller.application.field_binding_input import (
     decide_application_review_commit,
     decide_migration_commit,
 )
+from hwpxfiller.application.legacy_field_binding_store_v1 import (
+    is_legacy_v1,
+    migrate_stored_v1,
+)
 from hwpxfiller.application.qualification_evidence import content_digest
 from hwpxfiller.application.stored_field_binding import (
     APPLICATION_REVIEW,
@@ -155,13 +159,19 @@ class WorkFieldBindingStore:
                 f"work {work_authority_id} Field Binding aggregate 없음"
             )
         content = _read_enveloped(path)
-        if content.get("schema_version") != STORE_SCHEMA_VERSION:
+        # schema_version 필드 하나가 판별자다 — v1 파일은 decode-path 에서 v2 로 옮겨 읽고
+        # (파일은 손대지 않는다), 그 밖의 값은 latest 로 풀지 않고 시끄럽게 닫는다.
+        version = content.get("schema_version")
+        if version == STORE_SCHEMA_VERSION:
+            decode = decode_stored
+        elif is_legacy_v1(content):
+            decode = migrate_stored_v1
+        else:
             raise FieldBindingSchemaUnsupported(
-                f"work {work_authority_id} aggregate schema 미상: "
-                f"{content.get('schema_version')!r}"
+                f"work {work_authority_id} aggregate schema 미상: {version!r}"
             )
         try:
-            stored = decode_stored(content)
+            stored = decode(content)
         except StoredFieldBindingError as exc:
             raise FieldBindingIntegrityError(
                 f"work {work_authority_id} aggregate 불변식 위반"
@@ -400,7 +410,7 @@ def commit_field_binding_migration(
     omitted_field_ids: "frozenset[str] | set[str]" = frozenset(),
     now: str,
 ) -> FieldBindingCommitResult:
-    """CommitFieldBindingMigration — fence 아래 legacy basis 재확인·immutable v1 revision 생성."""
+    """CommitFieldBindingMigration — fence 아래 legacy basis 재확인·immutable revision 생성."""
     with per_work_mutation_fence(workspace_instance_id, work_authority_id):
         return _commit_migration_under_fence(
             store, basis_port, workspace_instance_id, work_authority_id,

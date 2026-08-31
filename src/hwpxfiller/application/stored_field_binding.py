@@ -14,10 +14,6 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from hwpxfiller.domain.field_binding import (
-    CanonicalBoolean,
-    CanonicalDate,
-    CanonicalDateTime,
-    CanonicalDecimal,
     ExactText,
     FieldBindingError,
     FieldBindingInputIntegrityError,
@@ -26,7 +22,7 @@ from hwpxfiller.domain.field_binding import (
 )
 from hwpxfiller.application.field_binding_input import FieldBindingRevision
 
-STORE_SCHEMA_VERSION = "work-field-binding-store-v1"
+STORE_SCHEMA_VERSION = "work-field-binding-store-v2"
 
 MIGRATION = "MIGRATION"
 APPLICATION_REVIEW = "APPLICATION_REVIEW"
@@ -243,54 +239,18 @@ def commit_revision(
 
 
 # ─── codec ─────────────────────────────────────────────────────────────────────
-def _encode_value(value: Any) -> dict[str, Any]:
-    if isinstance(value, ExactText):
-        return {"kind": "EXACT_TEXT", "text": value.text}
-    if isinstance(value, CanonicalDecimal):
-        return {"kind": "DECIMAL", "literal": value.literal}
-    if isinstance(value, CanonicalDate):
-        return {"kind": "DATE", "iso": value.iso}
-    if isinstance(value, CanonicalDateTime):
-        return {"kind": "DATETIME", "iso": value.iso}
-    if isinstance(value, CanonicalBoolean):
-        return {"kind": "BOOLEAN", "value": value.value}
-    raise StoredFieldBindingError(  # pragma: no cover - 합타입 소진
-        f"미지원 constant 값: {type(value).__name__}"
-    )
-
-
-def _decode_value(data: Any) -> Any:
-    if not isinstance(data, dict):
-        raise StoredFieldBindingError("constant 값 표현이 malformed")
-    kind = data.get("kind")
-    if kind == "EXACT_TEXT":
-        return ExactText(data.get("text"))
-    if kind == "DECIMAL":
-        return CanonicalDecimal(data.get("literal"))
-    if kind == "DATE":
-        return CanonicalDate(data.get("iso"))
-    if kind == "DATETIME":
-        return CanonicalDateTime(data.get("iso"))
-    if kind == "BOOLEAN":
-        value = data.get("value")
-        if not isinstance(value, bool):
-            raise StoredFieldBindingError("BOOLEAN constant 값이 bool 이 아니다")
-        return CanonicalBoolean(value)
-    raise StoredFieldBindingError(f"미지원 constant 값 kind: {kind!r}")
-
-
 def _encode_rule(rule: FieldBindingRule) -> dict[str, Any]:
+    """v2 규칙 표현 — 고정값은 tagged 표현 없이 텍스트 하나로 평탄화한다(값 알파벳이 단형)."""
     return {
         "field_id": rule.field_id,
         "binding_kind": rule.binding_kind,
         "policy_id": rule.document_content_value_policy.policy_id,
         "source_key": rule.source_key,
-        "value_type": rule.value_type,
         "format_code": rule.format_code,
-        "canonical_constant_value": (
+        "canonical_constant_text": (
             None
             if rule.canonical_constant_value is None
-            else _encode_value(rule.canonical_constant_value)
+            else rule.canonical_constant_value.text
         ),
     }
 
@@ -302,16 +262,17 @@ def _decode_rule(data: Any) -> FieldBindingRule:
         policy = resolve_document_value_policy(data.get("policy_id"))
     except FieldBindingError as exc:  # policy_id None·미지원 → fail-closed
         raise StoredFieldBindingError("policy_id 표현이 malformed·미지원") from exc
-    constant_raw = data.get("canonical_constant_value")
+    constant_text = data.get("canonical_constant_text")
+    if constant_text is not None and not isinstance(constant_text, str):
+        raise StoredFieldBindingError("canonical_constant_text 표현이 malformed")
     return FieldBindingRule(
         field_id=data.get("field_id"),
         binding_kind=data.get("binding_kind"),
         document_content_value_policy=policy,
         source_key=data.get("source_key"),
-        value_type=data.get("value_type"),
         format_code=data.get("format_code"),
         canonical_constant_value=(
-            None if constant_raw is None else _decode_value(constant_raw)
+            None if constant_text is None else ExactText(constant_text)
         ),
     )
 

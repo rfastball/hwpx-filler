@@ -18,11 +18,8 @@ from dataclasses import dataclass
 
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
-    DATE,
-    DECIMAL,
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     FIELD_BINDING_SEMANTIC_VERSION,
     INTENTIONAL_BLANK,
     SOURCE,
@@ -40,8 +37,10 @@ from hwpxfiller.domain.field_binding import (
     validate_source_schema_keys,
 )
 
-# migration 시 legacy value 유형 → v1 value_type 매핑(text/date/amount 만 소스 값을 나른다).
-_LEGACY_TYPE_TO_VALUE_TYPE = {"text": EXACT_TEXT, "date": DATE, "amount": DECIMAL}
+#: 소스 값을 나르는 legacy 유형(나머지는 const·blank·today 로 따로 갈린다). 값 유형 어휘가
+#: 사라졌으므로 이 집합은 "SOURCE 후보인가"만 가른다 — 미지 유형은 조용히 확장하지 않고
+#: 시끄럽게 거절한다.
+_LEGACY_SOURCE_TYPES = ("text", "date", "amount")
 
 # review 분류 어휘.
 PRESERVED = "PRESERVED"
@@ -55,7 +54,7 @@ INACTIVE_ONLY = "INACTIVE_ONLY"
 # migration blocker 어휘.
 AMBIGUOUS_BLANK_OMISSION = "AMBIGUOUS_BLANK_OMISSION"
 #: legacy ``today``(오늘 날짜, U4-E1 #939) — 값이 **실행 시각**에서 나오므로 SOURCE(데이터
-#: 열)도 CONSTANT(고정 리터럴)도 아니다. 이 slice 는 v1 binding kind 어휘를 늘리지 않으므로
+#: 열)도 CONSTANT(고정 리터럴)도 아니다. 이 slice 는 binding kind 어휘를 늘리지 않으므로
 #: 후보 규칙을 짓지 않고 blocker 로 남긴다. SOURCE(빈 source_key)나 CONSTANT(그때의 렌더값)로
 #: 접으면 **거짓 durable 규칙**을 판본에 적는다 — 조용히 틀리느니 시끄럽게 막는다.
 RUNTIME_TODAY_UNSUPPORTED = "RUNTIME_TODAY_UNSUPPORTED"
@@ -304,7 +303,6 @@ class MigrationCandidateRule:
     field_id: str
     binding_kind: str
     source_key: str | None
-    value_type: str | None
     format_code: str | None
     canonical_constant_value: object | None
     proposed_policy_id: str
@@ -319,7 +317,7 @@ class MigrationBlocker:
 
 @dataclass(frozen=True)
 class FieldBindingMigrationDraft:
-    """legacy → v1 migration 초안 — legacy authority 를 수정하지 않는다.
+    """legacy → field-binding migration 초안 — legacy authority 를 수정하지 않는다.
 
     ``blockers`` 가 비어 있지 않으면 commit 은 명시 사용자 결정 없이는 진행하지 않는다.
     ``legacy_basis_fingerprint`` 로 commit 시점 legacy basis 이동을 되짚는다.
@@ -384,7 +382,6 @@ def prepare_legacy_field_binding_migration(
                     field_id=entry.template_field,
                     binding_kind=CONSTANT,
                     source_key=None,
-                    value_type=None,
                     canonical_constant_value=ExactText(entry.const),
                     format_code=None,
                     proposed_policy_id=DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id,
@@ -393,14 +390,13 @@ def prepare_legacy_field_binding_migration(
             )
             continue
         if entry.legacy_type == "today":
-            # 실행 시각에서 값을 얻는 Field — v1 binding kind 어휘(SOURCE/CONSTANT/
+            # 실행 시각에서 값을 얻는 Field — binding kind 어휘(SOURCE/CONSTANT/
             # INTENTIONAL_BLANK)에 대응이 없다. 억지로 접지 않고 명시 결정으로 남긴다.
             blockers.append(
                 MigrationBlocker(entry.template_field, RUNTIME_TODAY_UNSUPPORTED)
             )
             continue
-        value_type = _LEGACY_TYPE_TO_VALUE_TYPE.get(entry.legacy_type)
-        if value_type is None:
+        if entry.legacy_type not in _LEGACY_SOURCE_TYPES:
             raise FieldBindingInputIntegrityError(
                 f"미지원 legacy 유형: {entry.legacy_type!r} ({entry.template_field!r})"
             )
@@ -409,7 +405,6 @@ def prepare_legacy_field_binding_migration(
                 field_id=entry.template_field,
                 binding_kind=SOURCE,
                 source_key=entry.source,
-                value_type=value_type,
                 canonical_constant_value=None,
                 format_code=entry.fmt or None,
                 # legacy 는 값을 암묵 strip 했다 — 명시 whitespace 결정을 요구한다.

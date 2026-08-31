@@ -242,7 +242,6 @@ from ..application.record_validation import (
     RECORD_EXPLICIT_NULL_NOT_ALLOWED,
     RECORD_REQUIRED_VALUE_MISSING,
     RECORD_VALUE_FORMAT_INVALID,
-    RECORD_VALUE_TYPE_INVALID,
     RecordValidationBlocked,
     RecordValidationContextError,
     RecordValidationBlocker,
@@ -257,22 +256,11 @@ from ..domain.raw_data_record import (
     RawDataRecordSnapshot,
     RawDataRecordError,
     RawRecordCaptureProvenance,
-    SourceBoolean,
-    SourceDate,
-    SourceDateTime,
-    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
 )
-from ..domain.field_binding import (
-    BOOLEAN,
-    DATE,
-    DATETIME,
-    DECIMAL,
-    EXACT_TEXT,
-    FieldBindingError,
-)
+from ..domain.field_binding import FieldBindingError
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
 
@@ -443,33 +431,18 @@ class _CurrentRecordCaptureError(ValueError):
     pass
 
 
-def _capture_source_value(value: object, declared_type: str | None):
+def _capture_source_value(value: object):
+    """데이터 칸 하나를 exact source 값으로 고정한다 — 값은 언제나 타입 없는 텍스트다."""
     if value is None:
         return SourceNull()
-    if not isinstance(value, str):
-        raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
-    if declared_type in (None, EXACT_TEXT):
+    if isinstance(value, str):
         return SourceText(value)
-    try:
-        if declared_type == DECIMAL:
-            return SourceDecimal(value)
-        if declared_type == DATE:
-            return SourceDate(value)
-        if declared_type == DATETIME:
-            return SourceDateTime(value)
-        if declared_type == BOOLEAN and value in ('TRUE', 'FALSE'):
-            return SourceBoolean(value == 'TRUE')
-    except FieldBindingError:
-        return SourceText(value)
-    if declared_type == BOOLEAN:
-        return SourceText(value)
-    raise _CurrentRecordCaptureError('현재 필드의 데이터 값 종류를 확인할 수 없습니다.')
+    raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
 
 
 _RECORD_BLOCKER_PHRASES = {
     RECORD_REQUIRED_VALUE_MISSING: "필수 값이 없습니다.",
     RECORD_EXPLICIT_NULL_NOT_ALLOWED: "값이 명시적으로 비어 있어 사용할 수 없습니다.",
-    RECORD_VALUE_TYPE_INVALID: "값의 종류가 이 항목에서 요구하는 형식과 다릅니다.",
     RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
     RECORD_BLANK_POLICY_VIOLATION: "빈 값이나 공백만 있는 값은 사용할 수 없습니다.",
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
@@ -478,7 +451,6 @@ _RECORD_BLOCKER_PHRASES = {
 _DELIVERY_BLOCKER_PHRASES = {
     "OUTPUT_NAME_TOKEN_UNRESOLVED": "파일 이름에 사용할 값을 확인할 수 없습니다.",
     "OUTPUT_NAME_BINDING_AMBIGUOUS": "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다.",
-    "OUTPUT_NAME_VALUE_RESOLUTION_FAILED": "파일 이름에 사용할 값을 해석할 수 없습니다.",
     "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
     "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 파일이 있습니다:",
     "OUTPUT_PATH_NON_REGULAR_CONFLICT": "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:",
@@ -5044,31 +5016,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _current_record_identity(snapshot_generation: int, model_index: int) -> str:
         return f"current-record/{snapshot_generation}/{model_index}"
 
-    @staticmethod
-    def _current_source_value_types(plan: SealedExecutionPlanValue) -> dict[str, str]:
-        source_types: dict[str, str] = {}
-        for requirement in plan.active_field_requirements:
-            value_expression = requirement.get('value_expression')
-            if not isinstance(value_expression, Mapping):
-                continue
-            if value_expression.get('kind') != 'FROM_SOURCE':
-                continue
-            source_key = value_expression.get('source_key')
-            value_type = value_expression.get('value_type')
-            if not isinstance(source_key, str) or not isinstance(value_type, str):
-                raise _CurrentRecordCaptureError(
-                    '현재 필드의 원본 항목과 데이터 값 종류를 확인할 수 없습니다.'
-                )
-            existing = source_types.get(source_key)
-            if existing is not None and existing != value_type:
-                source_types[source_key] = EXACT_TEXT
-                continue
-            source_types[source_key] = value_type
-        return source_types
-
     def _capture_current_selected_records(
-        self, plan: SealedExecutionPlanValue,
+        self,
     ) -> tuple[int, tuple[int, ...], tuple[RawDataRecordSnapshot, ...]]:
+        """선택 행을 frozen snapshot 으로 고정한다 — Plan 을 보지 않는다(값은 타입 없는 텍스트)."""
         generation = self._snapshot_gen
         indices = tuple(self._indices())
         rows = self.records
@@ -5080,7 +5031,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             else ()
         )
         captured_at = self._clock().isoformat(timespec="seconds")
-        source_value_types = self._current_source_value_types(plan)
         captured: list[RawDataRecordSnapshot] = []
         for model_index in indices:
             if not 0 <= model_index < len(rows):
@@ -5089,12 +5039,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             for key, value in rows[model_index].items():
                 if not isinstance(key, str):
                     raise _CurrentRecordCaptureError("데이터 항목 이름을 확인할 수 없습니다.")
-                if value is None:
-                    source_value = SourceNull()
-                elif isinstance(value, str):
-                    source_value = _capture_source_value(
-                        value, source_value_types.get(key)
-                    )
+                if value is None or isinstance(value, str):
+                    source_value = _capture_source_value(value)
                 else:
                     raise _CurrentRecordCaptureError(
                         f"{model_index + 1}행 {key} 값을 정확히 읽을 수 없습니다."
@@ -5190,7 +5136,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return RecordValidationSummary(), None
         try:
             generation, captured_indices, raw_records = (
-                self._capture_current_selected_records(plan)
+                self._capture_current_selected_records()
             )
             results = validate_data_records_against_current_value(
                 plan=plan,

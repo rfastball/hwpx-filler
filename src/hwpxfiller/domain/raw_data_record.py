@@ -1,7 +1,7 @@
 """S5 Raw Data Record snapshot·Record Review evidence — mutable row 를 exact bytes 로 고정 (S5-12 · #708).
 
 이 모듈이 소유하는 것: ``raw-data-record/v1`` semantic contract, :data:`CanonicalSourceValue`
-합타입(exact tagged scalar + explicit null), :class:`RawDataRecordSnapshot` payload/record/codec/
+합타입(exact text + explicit null), :class:`RawDataRecordSnapshot` payload/record/codec/
 digest, source adapter duplicate-key boundary, 그리고 :class:`RecordReviewEvidence` 계약·basis digest.
 
 핵심 불변식(issue #708):
@@ -14,9 +14,10 @@ digest, source adapter duplicate-key boundary, 그리고 :class:`RecordReviewEvi
   아니라 requirement 를 식별한다. 값은 이 snapshot·downstream VDR 에서만 산다.
 
 canonical byte framing·SHA-256 은 S5-06 closed set(:mod:`.canonical_execution_encoding`). scalar
-검증(canonical decimal·ISO date·명시 timezone·NaN/Infinity 거절·lone surrogate)은 S5-01
-:mod:`.field_binding` 의 값 모델을 **그대로 재사용**한다 — source scalar 와 binding constant 는 같은
-``binding-value/v1`` 의미 언어를 쓴다. PURE domain: store·HWPX·native·application 을 import 하지 않는다.
+검증(lone surrogate 거절)은 S5-01 :mod:`.field_binding` 의 값 모델을 **그대로 재사용**한다 —
+source 값과 binding constant 는 같은 ``binding-value/v2`` 의미 언어를 쓴다. 그 알파벳은 두
+변형뿐이다: exact text 와 explicit null(값 유형 어휘는 v2 에서 물리 제거됐다). PURE domain:
+store·HWPX·native·application 을 import 하지 않는다.
 """
 
 from __future__ import annotations
@@ -33,14 +34,10 @@ from hwpxfiller.domain.canonical_execution_encoding import (
 )
 from hwpxfiller.domain.field_binding import (
     SOURCE_SCHEMA_VERSION,
-    CanonicalBindingValue,
-    CanonicalBoolean,
-    CanonicalDate,
-    CanonicalDateTime,
-    CanonicalDecimal,
+    VALUE_KIND_NULL,
+    VALUE_KIND_TEXT,
     ExactText,
     digest_source_schema,
-    value_type_of,
 )
 
 # ─── semantic 버전·contract id(코드·문서 단일 출처) ─────────────────────────────────────
@@ -49,8 +46,10 @@ RAW_RECORD_CONTRACT_ID = "raw-record/v1"
 RECORD_REVIEW_CONTRACT_ID = "record-review/v1"
 RECORD_REVIEW_BASIS_SCHEMA = "record-review-basis/v1"
 
-# explicit null 의 tagged value_type — empty/whitespace text 와 다른 별개 tag.
-SOURCE_NULL_TYPE = "NULL"
+# source 값 알파벳의 tagged kind 두 개 — explicit null 은 empty/whitespace text 와 별개 tag 다.
+# 리터럴 정본은 binding-value/v2(:mod:`.field_binding`)이고 여기서는 spec 어휘로 재노출한다.
+SOURCE_TEXT_KIND = VALUE_KIND_TEXT
+SOURCE_NULL_KIND = VALUE_KIND_NULL
 
 # v1 review policy basis — "검토·수용" 이지 승인이 아니다(승인 판단은 S6 밖·이 계층 밖).
 RECORD_REVIEW_EXAMINED = "EXAMINED"
@@ -74,21 +73,17 @@ class RecordReviewEvidenceIntegrityError(RawDataRecordError):
     code = "RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR"
 
 
-# ─── CanonicalSourceValue = exact tagged scalar | explicit null ─────────────────────────
+# ─── CanonicalSourceValue = exact text | explicit null ──────────────────────────────────
 @dataclass(frozen=True)
 class SourceNull:
     """explicit source null — key 부재(MISSING)와도, empty text 와도 다른 별개 값."""
 
 
-# source scalar 는 binding-value/v1 값 모델을 그대로 쓴다(같은 canonical 규율·value_type 매핑).
+# source 값은 binding-value/v2 값 모델을 그대로 쓴다(같은 canonical 규율).
 # spec 어휘로 재노출한다 — SourceText("") 는 유효 empty 값이고 SourceNull 과 절대 같지 않다.
 SourceText = ExactText
-SourceDecimal = CanonicalDecimal
-SourceDate = CanonicalDate
-SourceDateTime = CanonicalDateTime
-SourceBoolean = CanonicalBoolean
 
-CanonicalSourceValue = CanonicalBindingValue | SourceNull
+CanonicalSourceValue = SourceText | SourceNull
 
 
 def _require_scalar_text(value: object, what: str, *, allow_empty: bool = False) -> str:
@@ -103,54 +98,32 @@ def _require_scalar_text(value: object, what: str, *, allow_empty: bool = False)
     return value
 
 
-def source_value_type_of(value: CanonicalSourceValue) -> str:
-    """source 값의 value_type 코드 — SourceNull 은 ``NULL``, 나머지는 binding value_type."""
-    if isinstance(value, SourceNull):
-        return SOURCE_NULL_TYPE
-    return value_type_of(value)
-
-
 def encode_source_value(value: CanonicalSourceValue) -> dict[str, Any]:
-    """source 값의 canonical JSON-safe 표현 — NULL 은 literal 없이 tag 만(empty text 와 구분)."""
+    """source 값의 canonical JSON-safe 표현 — NULL 은 text 없이 tag 만(empty text 와 구분)."""
     if isinstance(value, SourceNull):
-        return {"value_type": SOURCE_NULL_TYPE}
+        return {"kind": SOURCE_NULL_KIND}
     if isinstance(value, ExactText):
-        literal: Any = value.text
-    elif isinstance(value, CanonicalDecimal):
-        literal = value.literal
-    elif isinstance(value, CanonicalDate):
-        literal = value.iso
-    elif isinstance(value, CanonicalDateTime):
-        literal = value.iso
-    else:  # CanonicalBoolean(합타입 소진)
-        literal = value.value
-    return {"value_type": source_value_type_of(value), "literal": literal}
+        return {"kind": SOURCE_TEXT_KIND, "text": value.text}
+    raise RawRecordIntegrityError(  # pragma: no cover - 합타입 소진
+        f"미지원 source 값: {type(value).__name__}"
+    )
 
 
 def decode_source_value(tagged: Mapping[str, Any]) -> CanonicalSourceValue:
     """canonical tagged 표현 → :data:`CanonicalSourceValue`(sealed payload 를 단일 출처로 되읽는다).
 
-    scalar 생성자가 다시 검증하므로(canonical decimal·ISO·명시 timezone) tamper 된 literal 은 decode
-    에서 시끄럽게 닫힌다. unknown value_type 은 v1 로 풀지 않고 거절한다(fail-closed).
+    수용하는 kind 는 ``TEXT``·``NULL`` 두 개뿐이다. 값 유형 태그(EXACT_TEXT·DECIMAL·DATE·
+    DATETIME·BOOLEAN)를 포함한 그 밖의 표현은 v2 로 풀지 않고 거절한다(fail-closed) — 옛 태그를
+    조용히 텍스트로 승격하면 어떤 의미로 봉인됐는지 모르는 값이 문서로 흘러간다.
     """
-    value_type = tagged.get("value_type")
-    if value_type == SOURCE_NULL_TYPE:
+    kind = tagged.get("kind")
+    if kind == SOURCE_NULL_KIND:
         return SourceNull()
-    literal = tagged.get("literal")
-    if value_type == "BOOLEAN":
-        if not isinstance(literal, bool):
-            raise RawRecordIntegrityError("BOOLEAN literal 이 bool 이 아니다")
-        return CanonicalBoolean(literal)
-    ctor = {
-        "EXACT_TEXT": ExactText,
-        "DECIMAL": CanonicalDecimal,
-        "DATE": CanonicalDate,
-        "DATETIME": CanonicalDateTime,
-    }.get(value_type)  # type: ignore[arg-type]
-    if ctor is None:
-        raise RawRecordIntegrityError(f"미지원 source value_type: {value_type!r}")
+    if kind != SOURCE_TEXT_KIND:
+        raise RawRecordIntegrityError(f"미지원 source 값 kind: {kind!r}")
+    text = tagged.get("text")
     try:
-        return ctor(literal)  # 생성자가 canonical 검증(tampered literal 은 여기서 닫힌다).
+        return SourceText(text)  # 생성자가 scalar 검증(tampered text 는 여기서 닫힌다).
     except Exception as exc:
         raise RawRecordIntegrityError(f"source value decode 실패: {exc}") from exc
 
@@ -221,8 +194,7 @@ def build_raw_record_snapshot(
     values: dict[str, CanonicalSourceValue] = {}
     for key, value in source_values:
         _require_scalar_text(key, "source_key", allow_empty=True)
-        if not isinstance(value, (SourceNull, ExactText, CanonicalDecimal,
-                                  CanonicalDate, CanonicalDateTime, CanonicalBoolean)):
+        if not isinstance(value, (SourceNull, ExactText)):
             raise RawRecordIntegrityError(
                 f"source value 가 CanonicalSourceValue 가 아니다: {key!r}"
             )

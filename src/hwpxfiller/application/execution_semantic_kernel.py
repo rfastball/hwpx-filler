@@ -82,10 +82,10 @@ from hwpxfiller.application.field_binding_input import FieldBindingInput
 from hwpxfiller.application.slot_selection_input import SlotSelectionInput
 from hwpxfiller.domain.canonical_execution_encoding import CANONICAL_ENCODING_VERSION
 
-# plan schema identity — kernel 이 fail-closed 로 아는 supported 값(단일 shipping v1). 미지원은 latest
+# plan schema identity — kernel 이 fail-closed 로 아는 supported 값(단일 shipping v2). 미지원은 latest
 # 로 풀지 않는다. seal_execution_plan.SUPPORTED_PLAN_SCHEMAS 와 같은 값이되, 그 모듈을 import 하면
 # theorem/store 결합이 되살아나므로 kernel 은 이 identity 만 지역 상수로 둔다(R2-01 결합 제거).
-_SUPPORTED_PLAN_SCHEMAS = ("hwpx-execution-plan/v1",)
+_SUPPORTED_PLAN_SCHEMAS = ("hwpx-execution-plan/v2",)
 
 
 class SemanticKernelContextError(Exception):

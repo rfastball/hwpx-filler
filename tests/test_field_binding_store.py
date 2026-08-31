@@ -32,13 +32,8 @@ from hwpxfiller.application.stored_field_binding import (
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
-    CanonicalBoolean,
-    CanonicalDate,
-    CanonicalDateTime,
-    CanonicalDecimal,
     ExactText,
     FieldBindingRule,
 )
@@ -69,7 +64,7 @@ NOW = "2026-01-01T00:00:00+09:00"
 
 
 def _rule(field_id: str, key: str = "name") -> FieldBindingRule:
-    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key, value_type=EXACT_TEXT)
+    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key)
 
 
 def _input(*, base="A17", rules=None, keys=("name",), work=WORK, ws=WS):
@@ -101,16 +96,13 @@ class _StructurePort:
         return self.structure
 
 
-# ─── codec round-trip (all value variants) ───────────────────────────────────────
-def test_stored_codec_roundtrip_all_value_kinds() -> None:
+# ─── codec round-trip ────────────────────────────────────────────────────────────
+def test_stored_codec_roundtrip_all_rule_kinds() -> None:
     rules = [
-        FieldBindingRule("t", SOURCE, POLICY, source_key="k", value_type=EXACT_TEXT),
+        FieldBindingRule("t", SOURCE, POLICY, source_key="k"),
         FieldBindingRule("c1", CONSTANT, POLICY, canonical_constant_value=ExactText("x")),
-        FieldBindingRule("c2", CONSTANT, POLICY, canonical_constant_value=CanonicalDecimal("1.5")),
-        FieldBindingRule("c3", CONSTANT, POLICY, canonical_constant_value=CanonicalDate("2026-01-02")),
-        FieldBindingRule("c4", CONSTANT, POLICY,
-                         canonical_constant_value=CanonicalDateTime("2026-01-02T03:04:05+09:00")),
-        FieldBindingRule("c5", CONSTANT, POLICY, canonical_constant_value=CanonicalBoolean(True)),
+        # 빈 고정값은 평탄화 뒤에도 "값 없음" 과 갈린다.
+        FieldBindingRule("c2", CONSTANT, POLICY, canonical_constant_value=ExactText("")),
         FieldBindingRule("b", INTENTIONAL_BLANK, POLICY),
     ]
     rev = revision_from_input(_input(rules=rules, keys=("k", "other")))
@@ -125,9 +117,14 @@ def test_stored_codec_roundtrip_all_value_kinds() -> None:
 
 
 def test_leaf_decoders_fail_closed() -> None:
-    for bad in ("x", {"kind": "ZZZ"}, {"kind": "BOOLEAN", "value": "no"}):
+    # 고정값은 텍스트 하나로 평탄화됐다 — tagged 표현·비문자열은 조용히 풀지 않는다.
+    for bad in ({"kind": "EXACT_TEXT", "text": "x"}, 7):
         with pytest.raises(StoredFieldBindingError):
-            sfb._decode_value(bad)
+            sfb._decode_rule({
+                "field_id": "f", "binding_kind": CONSTANT,
+                "policy_id": POLICY.policy_id, "source_key": None,
+                "format_code": None, "canonical_constant_text": bad,
+            })
     for fn in (sfb._decode_rule, sfb._decode_revision, sfb._decode_pointer,
                sfb._decode_draft, sfb._decode_ledger):
         with pytest.raises(StoredFieldBindingError):
@@ -291,7 +288,7 @@ def test_store_invalid_id_and_envelope_shape(tmp_path) -> None:
         store.load(WORK)
     # 유효 schema·digest 지만 내부가 malformed → decode 오류를 integrity 로 정규화.
     store_mod._write_enveloped(path, {
-        "schema_version": "work-field-binding-store-v1", "aggregate_version": 1,
+        "schema_version": "work-field-binding-store-v2", "aggregate_version": 1,
         "workspace_instance_id": WS, "work_authority_id": WORK,
         "current_by_application": "x", "immutable_binding_revisions": [],
         "first_seen_command_ledger": [],

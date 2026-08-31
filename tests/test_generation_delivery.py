@@ -59,13 +59,8 @@ from hwpxfiller.application.record_validation import (
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.domain.field_binding import (
-    BOOLEAN,
     CONSTANT,
-    DATE,
-    DATETIME,
-    DECIMAL,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
     ExactText,
@@ -73,8 +68,6 @@ from hwpxfiller.domain.field_binding import (
 )
 from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
-    SourceBoolean,
-    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
@@ -92,9 +85,9 @@ _PATTERN = "공고서-{{f_name}}-{{date:YYYYMMDD}}-{{seq:001}}"
 # ─── Plan / VDR scaffold(S5-06/12 real builders) ─────────────────────────────────────────
 def _rules():
     return (
-        EffectiveFieldBindingRule("f_name", "SOURCE", FromSource("name", EXACT_TEXT, None, _POLICY_ID)),
-        EffectiveFieldBindingRule("f_amount", "SOURCE", FromSource("amount", DECIMAL, None, _POLICY_ID)),
-        EffectiveFieldBindingRule("f_flag", "SOURCE", FromSource("flag", "BOOLEAN", None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_name", "SOURCE", FromSource("name", None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_amount", "SOURCE", FromSource("amount", None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_flag", "SOURCE", FromSource("flag", None, _POLICY_ID)),
         EffectiveFieldBindingRule("f_const", "CONSTANT", ConstantValue(ExactText("보증금"), None, _POLICY_ID)),
         EffectiveFieldBindingRule("f_blank", "INTENTIONAL_BLANK", IntentionalBlank()),
     )
@@ -103,11 +96,11 @@ def _rules():
 def _contracts(**over):
     kw = dict(
         slot_selection_contract_id="slot-selection/v1",
-        field_binding_contract_id="field-binding/v1",
-        source_schema_contract_id="source-schema/v1",
+        field_binding_contract_id="field-binding/v2",
+        source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         execution_semantic_contract_id="execution-semantics/v1",
-        binding_value_contract_id="binding-value/v1",
+        binding_value_contract_id="binding-value/v2",
         document_value_resolution_contract_id="document-content-value/v1",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
@@ -169,15 +162,15 @@ def _plan():
             for r in rules
         ],
         ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": r.field_id} for r in rules],
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
     )
 
 
 def _snapshot(name="홍길동", *, identity="rec-1", dept="총무과", extra_pairs=()):
     pairs = [
         ("name", SourceText(name)),
-        ("amount", SourceDecimal("1500.00")),
-        ("flag", SourceBoolean(True)),
+        ("amount", SourceText("1500.00")),
+        ("flag", SourceText("TRUE")),
         ("dept", SourceText(dept)),  # inactive delivery source(Plan active 아님)
         *extra_pairs,
     ]
@@ -206,7 +199,6 @@ _DEPT_RULE = FieldBindingRule(
     binding_kind=SOURCE,
     document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
     source_key="dept",
-    value_type=EXACT_TEXT,
 )
 
 
@@ -451,16 +443,17 @@ def test_current_non_regular_collision_blocks_overwrite_and_add_suffix_avoids_it
 
 
 @pytest.mark.parametrize(
-    ("value_type", "raw_text", "expected"),
+    ("raw_text", "expected"),
     [
-        (DECIMAL, "1500.00", "1500.00"),
-        (DATE, "2026-08-20", "2026-08-20"),
-        (DATETIME, "2026-08-20T09:15:00+09:00", "2026-08-20T09_15_00+09_00"),
-        (BOOLEAN, "TRUE", "true"),
+        ("1500.00", "1500.00"),
+        ("1,500,000", "1,500,000"),
+        ("2026.8.31", "2026.8.31"),
+        ("2026-08-20T09:15:00+09:00", "2026-08-20T09_15_00+09_00"),
+        ("TRUE", "TRUE"),
     ],
 )
-def test_current_inactive_filename_interprets_frozen_source_text_by_binding_type(
-    value_type: str, raw_text: str, expected: str,
+def test_current_inactive_filename_uses_the_frozen_source_text_verbatim(
+    raw_text: str, expected: str,
 ) -> None:
     plan = _current_plan()
     rule = FieldBindingRule(
@@ -468,7 +461,6 @@ def test_current_inactive_filename_interprets_frozen_source_text_by_binding_type
         binding_kind=SOURCE,
         document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
         source_key="typed",
-        value_type=value_type,
     )
     result = _resolve_current(
         plan,
@@ -480,16 +472,15 @@ def test_current_inactive_filename_interprets_frozen_source_text_by_binding_type
     assert result.ordered_items[0].resolved_output_relative_path == f"{expected}.hwpx"
 
 
-def test_current_inactive_fields_interpret_same_frozen_source_key_independently() -> None:
+def test_current_inactive_fields_share_one_frozen_source_key() -> None:
     rules = tuple(
         FieldBindingRule(
             field_id=field_id,
             binding_kind=SOURCE,
             document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
             source_key="shared",
-            value_type=value_type,
         )
-        for field_id, value_type in (("f_text", EXACT_TEXT), ("f_decimal", DECIMAL))
+        for field_id in ("f_text", "f_decimal")
     )
     result = _resolve_current(
         _current_plan(),
@@ -629,7 +620,7 @@ def test_inactive_source_missing_key_unresolved() -> None:
     rule = FieldBindingRule(
         field_id="f_ghost", binding_kind=SOURCE,
         document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="ghost", value_type=EXACT_TEXT,
+        source_key="ghost",
     )
     basis = _basis_dto(plan, pattern="{{f_ghost}}", inactive_rules=(rule,))
     res = _resolve(plan, (snap,), pattern="{{f_ghost}}", basis=basis)
@@ -637,17 +628,12 @@ def test_inactive_source_missing_key_unresolved() -> None:
     assert res.blockers[0].code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
 
 
-def test_inactive_source_type_mismatch_resolution_failed() -> None:
-    plan = _plan()
-    rule = FieldBindingRule(
-        field_id="f_dept", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept", value_type=DECIMAL,  # dept 는 EXACT_TEXT → 불일치
-    )
-    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    res = _resolve(plan, (_snapshot(dept="1500.00"),), pattern="{{f_dept}}", basis=basis)
-    assert isinstance(res, gd.DeliveryPlanBlocked)
-    assert res.blockers[0].code == gd.OUTPUT_NAME_VALUE_RESOLUTION_FAILED
+def test_output_name_value_resolution_failed_code_is_retired() -> None:
+    """타입 대조가 유일 생산자였다 — 어휘째 퇴역하고 문안도 함께 걷혔다."""
+    from hwpxfiller.webapp.screen_job import _DELIVERY_BLOCKER_PHRASES
+
+    assert not hasattr(gd, "OUTPUT_NAME_VALUE_RESOLUTION_FAILED")
+    assert "OUTPUT_NAME_VALUE_RESOLUTION_FAILED" not in _DELIVERY_BLOCKER_PHRASES
 
 
 def test_inactive_constant_token_resolves() -> None:
@@ -953,7 +939,7 @@ def _runtime_manifest(status="PASS"):
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
         native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         admitted_composition_contract_ids=(COMPOSITION_CONTRACT_ID,),
-        supported_plan_schema_versions=("hwpx-execution-plan/v1",),
+        supported_plan_schema_versions=("hwpx-execution-plan/v2",),
         supported_canonical_encoding_versions=("execution-canonical/v1",),
         conformance_status=status,
     )
@@ -996,17 +982,17 @@ def test_runtime_admission_derives_query_from_plan_not_caller() -> None:
 # ═══ fail-closed branch coverage(inactive value resolution·guards·integrity) ═══════════════
 def test_resolve_delivery_field_value_variants() -> None:
     snap = _snapshot(dept="본과")
-    # CONSTANT boolean → canonical lexical text.
-    ve_bool = {"kind": "CONSTANT", "canonical_value": {"value_type": "BOOLEAN", "literal": True},
-               "document_content_value_policy_id": _POLICY_ID}
-    assert gd.resolve_delivery_field_value(ve_bool, snap) == "true"
+    # CONSTANT → tagged text 하나(값 유형 없음).
+    ve_const = {"kind": "CONSTANT", "canonical_value": {"kind": "TEXT", "text": "고정"},
+                "document_content_value_policy_id": _POLICY_ID}
+    assert gd.resolve_delivery_field_value(ve_const, snap) == "고정"
     # FROM_SOURCE explicit null → unresolved blocker.
     null_snap = build_raw_record_snapshot(
         source_schema_keys=["dept"],
         source_values=[("dept", SourceNull())],
         record_identity="rn", capture_provenance=_PROV,
     )
-    ve_src = {"kind": "FROM_SOURCE", "source_key": "dept", "value_type": EXACT_TEXT,
+    ve_src = {"kind": "FROM_SOURCE", "source_key": "dept",
               "document_content_value_policy_id": _POLICY_ID}
     code, _ = gd.resolve_delivery_field_value(ve_src, null_snap)
     assert code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
@@ -1017,7 +1003,7 @@ def test_resolve_delivery_field_value_fail_closed() -> None:
     # 미지원 policy → context signal.
     with pytest.raises(gd._DeliveryContextSignal):
         gd.resolve_delivery_field_value(
-            {"kind": "CONSTANT", "canonical_value": {"value_type": EXACT_TEXT, "literal": "x"},
+            {"kind": "CONSTANT", "canonical_value": {"kind": "TEXT", "text": "x"},
              "document_content_value_policy_id": "document-content-value/v999"},
             snap,
         )
@@ -1034,14 +1020,14 @@ def test_resolve_delivery_field_value_fail_closed() -> None:
     # FROM_SOURCE 형식 불량 source_key → integrity.
     with pytest.raises(gd._DeliveryContextSignal):
         gd.resolve_delivery_field_value(
-            {"kind": "FROM_SOURCE", "source_key": None, "value_type": EXACT_TEXT,
+            {"kind": "FROM_SOURCE", "source_key": None,
              "document_content_value_policy_id": _POLICY_ID},
             snap,
         )
-    # BOOLEAN literal 이 bool 이 아님 → integrity.
+    # 구 tagged 표현(value_type/literal)은 v2 로 풀지 않는다 → integrity.
     with pytest.raises(gd._DeliveryContextSignal):
         gd.resolve_delivery_field_value(
-            {"kind": "CONSTANT", "canonical_value": {"value_type": "BOOLEAN", "literal": "yes"},
+            {"kind": "CONSTANT", "canonical_value": {"value_type": "EXACT_TEXT", "literal": "x"},
              "document_content_value_policy_id": _POLICY_ID},
             snap,
         )
@@ -1134,7 +1120,7 @@ def test_inactive_format_code_sealed_and_fail_closed() -> None:
     rule = FieldBindingRule(
         field_id="f_dept", binding_kind=SOURCE,
         document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept", value_type=EXACT_TEXT, format_code="UPPER",
+        source_key="dept", format_code="UPPER",
     )
     plan = _plan()
     basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))

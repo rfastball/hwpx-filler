@@ -73,7 +73,6 @@ from hwpxfiller.domain.canonical_execution_encoding import CANONICAL_ENCODING_VE
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
     ExactText,
@@ -319,7 +318,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         policy_resolution_version="pol/1",
         execution_base_kind=APPLIED_TEMPLATE_CANDIDATE,
         execution_semantic_contract_id="execution-semantics/v1",
-        binding_value_contract_id="binding-value/v1",
+        binding_value_contract_id="binding-value/v2",
         raw_record_contract_id="raw-record/v1",
         document_value_resolution_contract_id="document-content-value/v1",
         record_validation_contract_id="record-validation/v1",
@@ -329,7 +328,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
         composition_theorem_evidence_manifest_digest=theorem_evidence_digest(THEOREM_EVIDENCE_V1),
         materialization_contract_id="materialization/v1",
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version=CANONICAL_ENCODING_VERSION,
     )
     kw.update(over)
@@ -341,7 +340,7 @@ def _rule(fid: str, spec_binding: tuple) -> FieldBindingRule:
     if kind == "SOURCE":
         return FieldBindingRule(
             field_id=fid, binding_kind=SOURCE, document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-            source_key=spec_binding[1], value_type=EXACT_TEXT, format_code="",
+            source_key=spec_binding[1], format_code="",
         )
     if kind == "CONST":
         return FieldBindingRule(

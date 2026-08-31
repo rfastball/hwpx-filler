@@ -64,14 +64,9 @@ from hwpxfiller.domain.field_binding import (
     CONSTANT,
     EXACT_BLANK_POLICY,
     SOURCE,
+    VALUE_KIND_TEXT,
     CanonicalBindingValue,
-    CanonicalBoolean,
-    CanonicalDate,
-    CanonicalDateTime,
-    CanonicalDecimal,
-    ExactText,
     FieldBindingRule,
-    value_type_of,
 )
 
 EXECUTION_SEMANTICS_CONTRACT = "execution-semantics/v1"
@@ -83,7 +78,6 @@ ACTIVE_FIELD_BINDING_AMBIGUOUS = "ACTIVE_FIELD_BINDING_AMBIGUOUS"
 ACTIVE_FIELD_BINDING_CONFLICT = "ACTIVE_FIELD_BINDING_CONFLICT"
 REQUIRED_SOURCE_KEY_MISSING = "REQUIRED_SOURCE_KEY_MISSING"
 UNSUPPORTED_FIELD_BINDING_RULE = "UNSUPPORTED_FIELD_BINDING_RULE"
-UNSUPPORTED_FIELD_VALUE_TYPE = "UNSUPPORTED_FIELD_VALUE_TYPE"
 UNSUPPORTED_DOCUMENT_VALUE_POLICY = "UNSUPPORTED_DOCUMENT_VALUE_POLICY"
 NEEDS_CONFIGURATION_REVIEW = "NEEDS_CONFIGURATION_REVIEW"
 NEEDS_CONFIGURATION = "NEEDS_CONFIGURATION"
@@ -97,7 +91,6 @@ _BLOCKER_PRIORITY = (
     ACTIVE_FIELD_BINDING_CONFLICT,
     REQUIRED_SOURCE_KEY_MISSING,
     UNSUPPORTED_FIELD_BINDING_RULE,
-    UNSUPPORTED_FIELD_VALUE_TYPE,
     UNSUPPORTED_DOCUMENT_VALUE_POLICY,
     SLOT_CONFIGURATION_INCOMPLETE,
     NEEDS_CONFIGURATION_REVIEW,
@@ -125,7 +118,6 @@ class ExecutionCompilationError(ValueError):
 @dataclass(frozen=True)
 class FromSource:
     source_key: str
-    value_type: str
     format_code: str | None
     document_content_value_policy_id: str
 
@@ -259,9 +251,9 @@ def _value_expression(rule: FieldBindingRule) -> ActiveFieldValueExpression:
     """FieldBindingRule → value expression. rule 은 이미 kind exclusivity·contract 를 검증했다."""
     policy_id = rule.document_content_value_policy.policy_id
     if rule.binding_kind == SOURCE:
-        # SOURCE 규칙은 source_key·value_type 를 반드시 갖는다(FieldBindingRule 이 강제).
-        assert rule.source_key is not None and rule.value_type is not None
-        return FromSource(rule.source_key, rule.value_type, rule.format_code, policy_id)
+        # SOURCE 규칙은 source_key 를 반드시 갖는다(FieldBindingRule 이 강제).
+        assert rule.source_key is not None
+        return FromSource(rule.source_key, rule.format_code, policy_id)
     if rule.binding_kind == CONSTANT:
         assert rule.canonical_constant_value is not None
         return ConstantValue(rule.canonical_constant_value, rule.format_code, policy_id)
@@ -375,18 +367,7 @@ def verify_requirement_operation_bijection(
 
 # ─── canonical semantic payload + digest seam ────────────────────────────────────────
 def _encode_canonical_value(value: CanonicalBindingValue) -> dict[str, Any]:
-    vt = value_type_of(value)
-    if isinstance(value, ExactText):
-        literal: Any = value.text
-    elif isinstance(value, CanonicalDecimal):
-        literal = value.literal
-    elif isinstance(value, CanonicalDate):
-        literal = value.iso
-    elif isinstance(value, CanonicalDateTime):
-        literal = value.iso
-    else:  # CanonicalBoolean(합타입 소진)
-        literal = value.value
-    return {"value_type": vt, "literal": literal}
+    return {"kind": VALUE_KIND_TEXT, "text": value.text}
 
 
 def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
@@ -394,7 +375,6 @@ def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
         return {
             "kind": "FROM_SOURCE",
             "source_key": ve.source_key,
-            "value_type": ve.value_type,
             "format_code": ve.format_code,
             "document_content_value_policy_id": ve.document_content_value_policy_id,
         }

@@ -127,7 +127,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         policy_resolution_version="policy/v1",
         execution_base_kind=APPLIED_TEMPLATE_CANDIDATE,
         execution_semantic_contract_id="execution-semantics/v1",
-        binding_value_contract_id="binding-value/v1",
+        binding_value_contract_id="binding-value/v2",
         raw_record_contract_id="raw-record/v1",
         document_value_resolution_contract_id="document-content-value/v1",
         record_validation_contract_id="record-validation/v1",
@@ -139,7 +139,7 @@ def _policy(**over) -> ResolvedSealPolicy:
             THEOREM_EVIDENCE_V1
         ),
         materialization_contract_id="materialization/v1",
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version=CANONICAL_ENCODING_VERSION,
     )
     kw.update(over)

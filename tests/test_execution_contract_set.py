@@ -60,18 +60,18 @@ from hwpxfiller.application.execution_contract_set import (
 )
 
 _THEOREM_DIGEST = theorem_evidence_digest(THEOREM_EVIDENCE_V1)
-_PLAN_SCHEMA = "hwpx-execution-plan/v1"
+_PLAN_SCHEMA = "hwpx-execution-plan/v2"
 
 
 # ─── fixtures ─────────────────────────────────────────────────────────────────────────
 def _contracts(**over) -> ExecutionContractSet:
     kw = dict(
         slot_selection_contract_id="slot-selection/v1",
-        field_binding_contract_id="field-binding/v1",
-        source_schema_contract_id="source-schema/v1",
+        field_binding_contract_id="field-binding/v2",
+        source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         execution_semantic_contract_id="execution-semantics/v1",
-        binding_value_contract_id="binding-value/v1",
+        binding_value_contract_id="binding-value/v2",
         document_value_resolution_contract_id="document-content-value/v1",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
@@ -112,7 +112,7 @@ def _selection(**over) -> EffectiveSelectionBasis:
 
 _RULES = (
     EffectiveFieldBindingRule(
-        "f_name", "SOURCE", FromSource("name", "TEXT", None, "document-content-value/v1")
+        "f_name", "SOURCE", FromSource("name", None, "document-content-value/v1")
     ),
     EffectiveFieldBindingRule("f_blank", "INTENTIONAL_BLANK", IntentionalBlank()),
 )
@@ -344,7 +344,7 @@ def test_plan_digest_deterministic_same_inputs() -> None:
 
 def test_schema_version_change_gives_distinct_plan_digest() -> None:
     p1 = _plan()
-    p2 = _plan(plan_schema_version="hwpx-execution-plan/v2")
+    p2 = _plan(plan_schema_version="hwpx-execution-plan/v3")
     assert plan_semantic_digest(p1) != plan_semantic_digest(p2)  # schema version 이 identity 에 참여
 
 
@@ -457,7 +457,7 @@ def test_verify_plan_requirement_value_expression_mismatch_rejected() -> None:
     reqs[0] = dict(reqs[0])
     reqs[0]["value_expression"] = {
         "kind": "FROM_SOURCE", "source_key": "SOMETHING_ELSE",
-        "value_type": "TEXT", "format_code": None,
+        "format_code": None,
         "document_content_value_policy_id": "document-content-value/v1",
     }
     with pytest.raises(ExecutionPlanIntegrityError):
