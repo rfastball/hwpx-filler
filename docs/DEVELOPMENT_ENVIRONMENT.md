@@ -164,6 +164,15 @@ Node-free selfcheck 는 종료코드만 보지 않는다 — 그 프로세스가
 기존 EXE를 재사용하려면 `-SkipExe`를 지정한다. 설치본은 사용자 권한으로
 `%LOCALAPPDATA%\Programs` 아래에 설치된다. 결과는 `installer-dist/`에 생성된다.
 
+같은 AppId의 기존 설치가 등록돼 있으면 설치 마법사가 방식 선택 페이지를 하나 띄운다 —
+「기존 데이터를 유지하며 덮어쓰기」(기본)와 「모든 데이터를 지우고 새로 설치」(초기화) 둘이다.
+초기화는 사용자 데이터 홈(`HWPXFILLER_HOME` 또는 `~/.hwpxfiller` — `host/locations.py`와 같은
+해석 규칙)과 설치 폴더를 지우므로, 지워질 대상을 재진술하는 확인을 한 번 더 거친 뒤에야
+발화한다. **`/VERYSILENT` 무인 설치는 언제나 데이터 유지 덮어쓰기다** — 페이지가 뜨지 않는
+경로에서 삭제가 나지 않도록 `WizardSilent` 가드를 삭제 판정에 겹쳐 두었고, 그 가드의 존재는
+`tests/repo_contract/test_packaging_contract.py`가 센다(릴리스 CI의 무인 설치 스모크가 사용자
+데이터를 지우는 사고는 되돌릴 수 없다).
+
 ## 5. CI와 공식 릴리스
 
 `.github/workflows/quality.yml`은 PR과 `master`/`main` push에서 **생산자 하나와 소비자 여럿**을
