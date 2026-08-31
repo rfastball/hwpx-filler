@@ -101,7 +101,7 @@ class GateState:
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
     #: ""=이 사유 축과 무관(warn·열림).
-    #: 값: drift | template_unreadable | name_tokens | review_required
+    #: 값: drift | template_unreadable | name_tokens
     reason: str = ""
 
 
