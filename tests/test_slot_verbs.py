@@ -14,10 +14,13 @@ fixture 는 S8-02(:mod:`tests.test_structure_compile`) 의 헬퍼를 그대로 �
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.package import HwpxPackage
 import hwpxfiller.external.template_inspection as template_inspection
 from hwpxfiller.domain.authoring import (
@@ -178,6 +181,35 @@ def test_decompile_of_an_absent_slot_is_loud_and_changes_nothing() -> None:
     with pytest.raises(ValueError, match="없음|not found"):
         decompile_slot(pkg, "없음")
     assert pkg.entries == before
+
+
+def test_decompile_refuses_an_option_that_lives_in_another_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """항목과 선택이 다른 content XML 에 있으면 되쓴 표기가 도로 안 읽힌다 — 시끄럽게 멈춘다.
+
+    **실제 판독으로는 그 상태에 이를 수 없다**: 소속은 중첩으로 정해지고 중첩은 한 entry
+    안에서 닫히므로, 다른 entry 의 선택은 항목을 못 얻어 ``orphan-option`` 진단이 먼저
+    서고 진단이 있으면 변이가 시작되지도 않는다. 그래서 이 방어 갈래는 그 상태를 **주입해**
+    잰다 — 보존 대조를 비틀어 재는 기존 문법(:func:`_region_identity_counter` 드리프트)과
+    같은 결이고, 지키는 계약은 「모르는 형상 위에서 되쓰지 않는다」다.
+    """
+    pkg = _notation_package()
+    compile_structure(pkg)
+    before = dict(pkg.entries)
+    original = template_inspection._inspect_slot_snapshot
+
+    def relocated(package):
+        snapshot = original(package)
+        return snapshot._replace(option_regions={
+            key: replace(region, section="Contents/section9.xml")
+            for key, region in snapshot.option_regions.items()
+        })
+
+    monkeypatch.setattr(template_inspection, "_inspect_slot_snapshot", relocated)
+    with pytest.raises(ValueError, match="lives in another entry"):
+        decompile_slot(pkg, "특약")
+    assert pkg.entries == before  # 좌표를 세우다 멈췄다 — 변이 0
 
 
 def test_decompile_keeps_a_neighbouring_non_product_region() -> None:
@@ -357,6 +389,36 @@ def test_decompile_rolls_back_when_a_region_would_be_lost(
     with pytest.raises(ValueError, match="pre-existing regions"):
         decompile_slot(pkg, "특약")
     assert pkg.entries == before
+
+
+# 전체판 종료 대조 둘(U4-E3 #939). 슬롯별 사후조건이 전부 초록이어도 **문서 하나의 성공**은
+# 따로 서야 하므로, 그 갈래는 헬퍼를 직접 불러 잰다 — 공개 함수로는 중간 단계가 먼저 잡아
+# 도달하지 않는 자리다(`_inspect_hwpx_detail`·`_analyze_hwpx_detail` 직접 호출 선례).
+def test_structure_postcondition_is_loud_when_a_declaration_is_lost() -> None:
+    """종료 대조 ⓑ — 풀린 선언이 표기로 **전건** 되읽히지 않으면 멈춘다."""
+    pkg = _two_slot_package()
+    declared = inspect_slots(pkg)[0]
+    decompile_structure(pkg)  # 실제 종료 상태는 정상이다
+
+    phantom = (*declared, Slot("없는항목", (), None))
+    with pytest.raises(ValueError, match="postcondition \\(notation\\)"):
+        template_inspection._assert_decompile_structure_postconditions(
+            pkg, phantom, Counter(), Counter()
+        )
+
+
+def test_structure_postcondition_is_loud_when_a_region_would_be_lost() -> None:
+    """종료 대조 ⓒ — 비제품 region 이 기대만큼 남지 않으면 멈춘다."""
+    pkg = _two_slot_package()
+    declared = inspect_slots(pkg)[0]
+    before = template_inspection._region_identity_counter(resolve_bookmark_topology(pkg))
+    decompile_structure(pkg)
+
+    # 걷힌 제품 region 을 `removed` 에서 빼먹으면 `before - removed` 가 실제와 갈린다.
+    with pytest.raises(ValueError, match="pre-existing regions"):
+        template_inspection._assert_decompile_structure_postconditions(
+            pkg, declared, before, Counter()
+        )
 
 
 # -------------------------------------------------------------- 5. 마커 성형
