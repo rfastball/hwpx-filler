@@ -43,7 +43,6 @@ seam 은 존치하나 이 패널이 노출하지 않는다. "없는 기능을 �
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-import hashlib
 from datetime import datetime
 from pathlib import Path
 import threading
@@ -122,9 +121,6 @@ from ..naming import pattern_uses_seq
 from ..gui.record_range import RecordRange, RecordRangeDraft
 from ..gui.review_state import (
     ReviewRequirement,
-    ReviewState,
-    build_evidence,
-    previous_values,
     review_requirement,
 )
 from ..gui.run_state import (
@@ -214,20 +210,12 @@ from ..application.generation_delivery import (
     PathOccupancyEntry,
     PathOccupancyObservation,
     REGULAR_FILE,
+    WRITE_OVERWRITE,
     CurrentResolvedDelivery,
     build_delivery_binding_basis,
     resolve_current_generation_delivery,
 )
 from ..application.preset_command import preset_list_actionable
-from ..application.preview_requirement import (
-    CurrentPreviewPreparationError,
-    PreviewNotRequired,
-    PreviewRequired,
-    PreviewRequirement,
-    SemanticValuePreviewProjection,
-    build_current_preview_projection,
-    evaluate_current_preview_requirement,
-)
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
@@ -418,15 +406,6 @@ class _CurrentDeliveryPreparation:
     result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
 
 
-@dataclass(frozen=True)
-class _CurrentPreviewPreparation:
-    record_preparation: _CurrentRecordPreparation
-    delivery_preparation: _CurrentDeliveryPreparation
-    requirement: PreviewRequirement
-    projection: SemanticValuePreviewProjection
-    preview_token: str
-
-
 class _CurrentRecordCaptureError(ValueError):
     pass
 
@@ -476,6 +455,24 @@ _DELIVERY_BLOCKER_PHRASES = {
 
 # (결과 3태 판정은 :func:`hwpxfiller.application.generation.run_status` 가 소유한다 —
 #  P2-23. 여기는 그 태 facts 를 받아 문안만 조립한다.)
+def _needs_overwrite_result(*, total: int, conflict_names: "list[str]") -> dict:
+    """덮어쓰기 확인 왕복의 응답 — **managed·legacy 공용 단일 출처**(#957).
+
+    두 갈래가 각자 조립하면 같은 확인창이 경로에 따라 다른 수치를 말한다(파괴분·신규분
+    스왑이 대표 결함류다). 키 집합은 웹의 본문 합성기(`overwriteBody`)가 읽는 그대로다 —
+    총량·파괴분·신규분·이름 표본(최대 10)·나머지 수. ``run_token`` 은 여기서 싣지 않는다:
+    되돌림은 :meth:`JobController.generate` 의 단일 출구가 모든 갈래에 찍는다.
+    """
+    return {
+        "ok": False, "needs_overwrite": True,
+        "total": total,                                       # 총량
+        "overwrite_count": len(conflict_names),               # 파괴분(기존 덮어씀)
+        "new_count": max(0, total - len(conflict_names)),      # 신규분(새 파일)
+        "conflict_names": conflict_names[:10],                 # 파괴분 표본
+        "conflict_more": max(0, len(conflict_names) - 10),
+    }
+
+
 def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str:
     """3태 제목 — 취소는 태를 바꾸지 않고 제목이 그 사실을 **먼저** 말한다.
 
@@ -530,16 +527,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._clock = clock
         self._engine = engine
         # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이가 가장 많다: 마운트(T4/T12)·
-        # 작업+행 선택(T5)·승인(T6/T13)·생성 완주(T7/T8/T9/T16/T17). 전부 이미 성립한
-        # 전이 지점이고, 어느 것도 여기서 다시 판정하지 않는다.
+        # 작업+행 선택(T5)·생성 완주(T7/T8/T9/T16/T17). 전부 이미 성립한 전이 지점이고,
+        # 어느 것도 여기서 다시 판정하지 않는다. 승인축(T6/T13)의 **발신자**는 #957 에서
+        # 사라졌다 — 링1 단계 정의는 동결 자산이라 그대로 두고(#941) 여기 통지만 없다.
         self._tutorial = tutorial
         # 루프 감지의 세션 이력(#894) — 앱이 들고 있지 않은 사실 넷(같은 작업 반복·같은 마운트
         # 위 작업 전환·갈래 구성 변화·이 세션의 누름틀 변환)을 세는 기억이다. 판정이 아니라
         # 기억이라 튜토리얼 모듈이 소유하고 이 컨트롤러는 한 칸으로 든다(모듈 독스트링 참조).
         self._tutorial_loop = GenerationLoopLedger()
-        # 마지막 승인이 빈 값을 포함했는가(§3.4 T13) — 승인과 생성 완주가 **다른 사건**이라
-        # 그 사이를 잇는 한 칸이다. 판정은 링1 ``blank_record_positions`` 가 이미 냈다.
-        self._tutorial_blank_approval = False
         # 이 **세션에서** 마지막으로 성립한 마운트(§3.4 T12 교체 판정의 왼쪽 항).
         # `_remembered_data_source` 를 쓰지 않는 이유는 그 칸이 부팅 때 지난 세션 값으로 이미
         # 차 있어 첫 마운트가 교체로 읽히기 때문이다(:meth:`_remember_data_source` 주석).
@@ -590,8 +585,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 전에 미는 스냅샷은 아직 화면을 세우지 않은 프런트에 같은 상태를 한 번 더 던진다.
         self._boot_restore_in_progress = False
         self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
-        self._current_preview_preparation: _CurrentPreviewPreparation | None = None
-        self._approved_preview_token: str | None = None
         # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
         # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
         # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
@@ -612,8 +605,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 관찰이 필요할 때마다 커널을 다시 부른다(#820 D1 — 캐시는 관찰 권위가 못 된다).
         # 수명은 `_last_generated` 와 같은 자리다 — 데이터 교체·작업 전환에서 비운다.
         self._last_delivered: "tuple[DeliveredDocument, ...]" = ()
-        # 산출물 관찰 시트의 **열림과 결과**(S7-03) — JobPreviewSheet 선례대로 열림·값이
-        # 전부 Python 소유다. DOM 이 들면 push 재렌더가 면을 조용히 닫거나 남의 문서를 그린다.
+        # 산출물 관찰 시트의 **열림과 결과**(S7-03) — 열림·값이 전부 Python 소유다.
+        # DOM 이 들면 push 재렌더가 면을 조용히 닫거나 남의 문서를 그린다.
         self._artifact_view: "dict | None" = None
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
@@ -670,23 +663,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 직전 런이 **고정한** 판본(재작성 F7 판정 I·§13-7). 런 시작 시점에 찍고 그 뒤
         # 디스크를 다시 읽지 않는다 — 결과가 대는 근거는 그 런이 실제로 쓴 규칙의 세대다.
         self._run_revisions: "dict[str, int]" = {}
-        # 검토 승인 사건(재작성 F5, 지도 §10.12 판정 B) — **세션 소유·미영속**. 기준선은
-        # `Job.reviewed_rules` 가 durable 로 들고, 승인만 여기 산다: 승인하고 실행하지 않은
-        # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
-        # — 승인이 규칙 지문(+선택 결속 위험이면 선택 지문)에 결속돼 자동으로 무효가 된다.
-        self.review = ReviewState()
-        # 미리보기 드로어(F5) — **열림 여부와 자리가 Python 소유**다(§10.12.1 정체 면,
-        # F3 초안이 세운 선례). DOM 클래스로 들면 push 재렌더가 면을 조용히 닫거나
-        # 자리를 되돌린다. 자리는 **표시순 서수**이지 원본 index 가 아니다(판정 M).
-        self.preview_open = False
-        self.preview_pos = 0
-        # 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 빈 값 있는 건으로 한정하는 면의
-        # 보기 상태. 열림·자리와 같은 이유로 Python 소유이고, 면이 닫히면 함께 놓는다.
-        # 훑기 가속의 실제 기제는 표지가 아니라 이 한정이다(선례: 「실패한 건만 선택」).
-        self.preview_blank_only = False
-        # 미리보기가 **본 이름**의 시각을 붙들어 두는 핀(5R P2) — 값은 그때의 실행 입력
-        # 정체다. 그 정체가 그대로인 동안만 유효하고, 생성이 소비하면 놓는다.
-        self._names_pin: "str | None" = None
+        # 덮어쓰기 확인 왕복이 붙드는 실행 시각(#957) — `(세대 키, 그 판정이 쓴 시각)`.
+        # `needs_overwrite` 를 낸 호출이 세우고 확인 재호출이 **소비하며 소거**한다. 세대
+        # 키가 어긋나면(존 변이·데이터 교체·작업 전환) 그 핀은 이미 다른 세계의 것이라
+        # 버린다 — 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 갈리는 길을 막는다.
+        self._overwrite_now_pin: "tuple[str, datetime] | None" = None
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -729,8 +710,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.data_pool_key = ""  # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
         self.out_dir = ""
-        # 레코드 미리보기의 날짜 토큰 기준 시각(F33) — 스냅샷마다 갱신되고 generate 가 재사용
-        # (미리보기=실파일명, RC-02 확장). None=미리보기 전(헤드리스 직행).
+        # 표시용 날짜 토큰의 기준 시각 — **스냅샷당 1회** 캡처한다(#957). 한 스냅샷 안의
+        # 소비처(게이트 감사·표 「문서」 열·이름 계획)가 같은 시각을 말하게 하는 값이고,
+        # 생성은 이 값을 소비하지 않는다: 실행은 진입 시점에 자기 시각을 1회 캡처한다.
+        # None=아직 스냅샷을 그린 적 없음(헤드리스 직행).
         self._names_now: "datetime | None" = None
         # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 성공(ok)/실패(warn)를 스냅샷에 노출.
         self.data_notice_text = ""
@@ -887,55 +870,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("범위 편집기가 열려 있지 않습니다.")
         return self.range_draft
 
-    # ---- 미리보기 드로어(F5, 지도 §10.12) ------------------------------------
-    def _do_preview_open(self, p: dict) -> dict:
-        """드로어 열기. §13-2 대로 **요구가 없어도 열린다**(정상 반복 실행에서 선택).
-
-        거절 넷: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
-        ⓑ범위 초안 열림(판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를
-        그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
-        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다)
-        ⓓ**TXT 작업**(재작성 F6 판정 J — 배제 선언).
-
-        ⓓ의 문안이 ⓒ와 갈리는 이유: TXT 는 작업이 **선택된 채로** `vm` 이 없다. 그 상태에서
-        "먼저 문서 작업을 선택하세요"라고 말하면 방금 고른 작업을 못 본 척하는 거짓 지시가
-        된다 — 같은 술어(`vm is None`)에 뜻이 둘이라는 사실을 문안까지 끌고 온 자리다.
-        """
-        self.raise_if_generating("미리보기를 여세요")
-        if self.range_draft is not None:
-            raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
-        if self._seat_is_managed_hwpx():
-            self.workbench_observation()
-            if self._current_preview_preparation is None:
-                raise ValueError(
-                    "현재 생성 내용을 확인할 수 없습니다. 먼저 데이터와 저장 위치를 확인하세요."
-                )
-            self.preview_open = True
-            self.preview_pos = 0
-            return {"ok": True}
-        if self.job_is_txt:
-            raise ValueError(
-                "이 작업은 검토·복사 작업대에서 행마다 값을 확인합니다."
-            )
-        if self.vm is None:
-            raise ValueError("먼저 문서 작업을 선택하세요.")
-        if not self._indices():
-            raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
-        self.preview_open = True
-        # `at`(deep-link 복귀, §10.15.15 판정 C) — 값의 출처는 Python 이 push 한
-        # `preview.pos` 의 왕복이다(EditContext 를 지나 돌아온다). 편집 중 선택이 줄었으면
-        # 클램프가 안전측으로 접는다 — stale 인덱스로 남의 행을 그리지 않는다.
-        self.preview_pos = max(0, min(len(self._indices()) - 1, int(p.get("at", 0) or 0)))
-        # 핀(5R P2)은 여기서 조립하지 않는다 — 면이 열려 있는 동안 스냅샷이 **같은
-        # 술어로** 채운다. 두 자리가 각자 조립하면 그 순간 정체가 두 벌이 된다
-        # (F3 1R 이 표면의 자체 조립에서 났던 자리).
-        return {"ok": True}
-
-    def _do_preview_close(self, p: dict) -> None:
-        self.preview_open = False
-        self.preview_pos = 0
-        self.preview_blank_only = False  # 면의 보기 상태 — 열림과 같은 수명(U2 §2.13)
-
     # ---- 산출물 관찰(S7-03 · #825, #820 D1·D4) --------------------------------
     def delivered_artifact(self, ordinal: int) -> "DeliveredDocument | None":
         """이 세션이 앉힌 문서 중 ``item_ordinal`` 이 맞는 것 — 없으면 ``None``.
@@ -1015,112 +949,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _do_artifact_close(self, p: dict) -> None:
         self._artifact_view = None
-
-    def _preview_blank_positions(self, mapped: "list[dict] | None" = None) -> "list[int]":
-        """빈 값이 있는 건의 표시순 자리 — 판정은 링1
-        (:meth:`~hwpxfiller.gui.run_state.RunViewModel.blank_record_positions`)이 소유한다
-        (P2-24: 필드축 ``blank_fields`` 와 같은 층·같은 술어). 여기는 세션 상태(vm 유무·
-        실행 입력)를 대는 관통이다."""
-        if self.vm is None:
-            return []
-        return self.vm.blank_record_positions(self._indices(), mapped)
-
-    def _do_preview_blank_only(self, p: dict) -> None:
-        """「빈 값 있는 건만 보기」 토글(U2 §2.13) — ‹ › 이동을 그 건들로 한정한다.
-
-        켤 때 빈 값 건이 없으면 시끄럽게 거절한다(무동작 토글 금지 — 표면도 0건이면
-        비활성이지만 잠금은 상태가 진다). 켜는 순간 자리가 대상 밖이면 가장 가까운
-        빈 값 건으로 당긴다 — 한정을 켰는데 대상 밖 건을 보고 있으면 ‹ › 가 어디서
-        움직이는지 갈린다.
-        """
-        if not self.preview_open:
-            raise ValueError("미리보기를 연 뒤에 쓸 수 있습니다.")
-        value = bool(p.get("value"))
-        if value:
-            positions = self._preview_blank_positions()
-            if not positions:
-                raise ValueError("빈 값이 있는 문서가 없습니다.")
-            if self.preview_pos not in positions:
-                after = [q for q in positions if q >= self.preview_pos]
-                self.preview_pos = after[0] if after else positions[-1]
-        self.preview_blank_only = value
-
-    def _do_preview_move(self, p: dict) -> None:
-        """레코드 이동 — 자리는 **표시순 서수**다(판정 M). 웹은 인덱스를 되돌려주지 않는다.
-
-        경계에서 멈춘다(순환하지 않는다): 마지막에서 한 번 더 눌러 첫 건으로 돌아가면
-        「몇 번째를 보고 있는가」가 사용자 머릿속에서 끊긴다. 「빈 값 있는 건만 보기」가
-        켜져 있으면 이동은 그 건들 사이로만 간다(§2.13 — 한정이 곧 훑기 가속의 기제).
-        """
-        if not self.preview_open:
-            raise ValueError("미리보기가 열려 있지 않습니다.")
-        total = len(self._indices())
-        if not total:
-            return
-        delta = int(p["delta"])
-        if self.preview_blank_only:
-            positions = self._preview_blank_positions()
-            if positions:
-                if delta > 0:
-                    nxt = [q for q in positions if q > self.preview_pos]
-                    if nxt:
-                        self.preview_pos = min(nxt[0], total - 1)
-                else:
-                    prv = [q for q in positions if q < self.preview_pos]
-                    if prv:
-                        self.preview_pos = max(prv[-1], 0)
-                return
-        self.preview_pos = max(0, min(total - 1, self.preview_pos + delta))
-
-    def _do_preview_approve(self, p: dict) -> None:
-        """명시 승인 — 불변식 §13-4(생성 ≠ 승인)의 유일한 사건.
-
-        **면이 열려 있을 때만** 받는다: 승인은 증거를 본 사건이라, 증거를 띄우지 않은
-        경로로 세우면 그 승인은 무엇에 근거했는지 말할 수 없다(F-06 이 지목한 바로 그
-        결함을 우리 손으로 재현하는 꼴). 요구가 없으면 거절한다 — 조용히 세우지 않는다.
-        """
-        if self._seat_is_managed_hwpx():
-            token = p.get("preview_token")
-            if not isinstance(token, str) or not token:
-                raise ValueError("현재 생성 내용 확인 토큰이 필요합니다.")
-            if not self.preview_open:
-                raise ValueError("생성 내용을 연 뒤에 확인할 수 있습니다.")
-            self.workbench_observation()
-            current = self._current_preview_preparation
-            if current is None:
-                raise ValueError(
-                    "현재 생성 내용을 더 이상 구성할 수 없습니다. 다시 확인해 주세요."
-                )
-            if token != current.preview_token:
-                raise ValueError("생성 내용이 바뀌었습니다. 새 내용을 다시 확인해 주세요.")
-            if not isinstance(current.requirement, PreviewRequired):
-                raise ValueError("현재 생성 내용은 별도 승인이 필요하지 않습니다.")
-            self._approved_preview_token = token
-            self._note_tutorial_approval()
-            return
-        if not self.preview_open:
-            raise ValueError("미리보기를 연 뒤에 확인할 수 있습니다.")
-        req, unmet = self._review()
-        if unmet is None:
-            raise ValueError("지금 확인이 필요한 변경이 없습니다.")
-        self.review.approve(req, self._review_scope_key())
-        self._note_tutorial_approval()
-
-    def _note_tutorial_approval(self) -> None:
-        """승인 성립 통지 + 빈 값 동반 여부 기억(#894) — managed·legacy 두 갈래 공용.
-
-        T6 은 승인 그 자체이고, T13(§3.4 빈 값 재승인)은 「빈 값 포함 승인 **+** 생성 완료」라
-        두 사건에 걸친다. 그래서 여기서는 이번 승인이 빈 값을 안고 섰는지만 기억하고, 체크는
-        생성이 완주한 자리에서 선다 — 승인만 하고 만들지 않은 사용자를 만들었다고 하지 않는다.
-
-        빈 값 판정은 링1(``blank_record_positions``)이 이미 냈다. 그 조회가 설 수 없는 상태
-        (VM 부재·TXT)는 「빈 값 없음」이 아니라 **모른다**라서 기억을 세우지 않는다.
-        """
-        self._tutorial(Milestone.APPROVE_VALUES)
-        try:
-            self._tutorial_blank_approval = bool(self._preview_blank_positions())
-        except Exception:  # noqa: BLE001 — 승인은 이미 성립했다. 부기 실패로 되돌리지 않는다.
-            self._tutorial_blank_approval = False
 
     def _do_range_draft_open(self, p: dict) -> dict:
         """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
@@ -1220,179 +1048,60 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
 
     def _selection_key(self) -> str:
-        """**커밋된** 실행 입력의 지문 — 결과 강등 판정(F4)과 승인 결속(F5)이 함께 쓴다.
+        """**커밋된** 실행 입력의 지문 — 결과 강등 판정(F4)이 소비한다.
 
         순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도 다른
-        실행 입력이다(§2 충돌 B). 두 소비처가 각자 조립하면 그 순간 지문이 두 벌이 된다
+        실행 입력이다(§2 충돌 B). 소비처가 각자 조립하면 그 순간 지문이 두 벌이 된다
         (F3 리뷰 1R 이 표면의 자체 조립에서 났던 자리) — 그래서 메서드 하나가 낸다.
         """
         return ",".join(str(i) for i in self._indices())
 
     def _run_marker(self, indices: "list[int]") -> str:
-        """이 실행 입력에 실제로 붙을 미입력 표식 — 생성·미리보기·승인의 **단일 술어**.
+        """이 실행 입력에 실제로 붙을 미입력 표식 — 표시와 생성의 **단일 술어**.
 
         조건은 「빈 값이 있으면」 하나다(U2 §2.13 재정의) — 필드축 ack 가 폐기되면서
-        「확인 안 된 빈 값」이라는 중간 상태 자체가 사라졌다. 표식 삽입 동의는 승인이
-        겸하고, 승인 지문에 빈 값 집합이 들어가 조용한 통과를 막는다. 이 조건이 세
-        자리에서 갈리면 각각 다른 실행 입력을 그리거나 승인하게 된다(1R P2 · 4R P2).
+        「확인 안 된 빈 값」이라는 중간 상태 자체가 사라졌고, #957 이후 동의 사건도 없다
+        (표식이 문서에 박히는 것 자체가 고지다). 이 조건이 두 자리에서 갈리면 표가 그리는
+        실행 입력과 실제로 만들어지는 문서가 어긋난다(1R P2 · 4R P2).
         """
         if self.vm is None or not indices:
             return ""
         return blank_marker(self.vm.blank_fields(indices))
 
-    def _review_scope_key(
-        self, indices: "list[int] | None" = None,
-        blanks: "list[str] | None" = None,
-    ) -> str:
-        """승인이 결속되는 범위 — **어느 스냅샷의** 어느 선택인가(2R P1).
-
-        선택 index 만으로는 부족하다: 데이터 A 에서 의미·파일명 위험을 승인한 뒤 데이터 B 를
-        올리면 선택은 0건으로 리셋되지만 세션의 승인 집합은 남고, 같은 index 를 다시 고르는
-        순간 **같은 키가 재구성돼** B 의 값·이름을 한 번도 보지 않은 채 게이트가 열린다.
-        `_snapshot_gen` 은 마운트마다 오르는 단조 표식이라 그 재구성을 원리적으로 막는다.
-
-        `selection_key`(F4 결과 강등)와 **따로 두는** 이유: 그쪽은 "이 결과가 지금 실행 입력의
-        것인가"를 묻는 값이고 이쪽은 "이 승인이 무엇을 보고 난 것인가"를 묻는 값이다. 한
-        문자열이 두 질문을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다(F3 3R 의
-        `selected_count` 가 표 머리와 게이트 지목을 겸하던 자리와 같은 결함류).
-        """
-        idx = self._indices() if indices is None else indices
-        sel = ",".join(str(i) for i in idx)
-        # 표식 상태는 승인의 일부다(4R P2) — 그 성분이 종전엔 이진값(표식 유/무)이었는데
-        # **빈 값 필드 집합의 해시**로 승격했다(U2 §2.13 조건). 이진값이면 「담당자가 빈
-        # 데이터」에서 승인한 것이 「개찰장소가 빈 데이터」에서도 유효해, 한 번도 보지 않은
-        # 표식이 박힌 문서가 조용히 생성된다. 집합이 갈리면 키가 갈려 승인이 자동 무효다.
-        bl = (
-            (self.vm.blank_fields(idx) if self.vm is not None else [])
-            if blanks is None else blanks
-        )
-        if bl:
-            blob = ",".join(sorted(bl)).encode("utf-8")
-            bkey = hashlib.sha256(blob).hexdigest()[:12]
-        else:
-            bkey = "-"
-        return f"{self._snapshot_gen}|{bkey}|{sel}"
-
     def _review(
         self, vm=None, indices: "list[int] | None" = None,
         blanks: "list[str] | None" = None,
-    ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
-        """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
+    ) -> ReviewRequirement:
+        """지금 이 실행 입력의 검토 요구 — **고지의 입력**이지 게이트의 입력이 아니다.
 
-        게이트에 넘기는 것은 **미승인분**이다. 요구 자체는 표면이 문안·증거를 그리는 데
-        쓰므로 승인 뒤에도 그대로 돌려준다(승인했다는 사실을 말하려면 무엇을 승인했는지가
-        필요하다).
+        #957 정책 선회 이후 승인이라는 해소 사건이 없다. 그래서 「미승인분」을 따로 내지
+        않고 요구 자체를 그대로 돌려준다 — 사전검증 고지(:func:`review_notice_text`)가 그
+        요구를 재진술하고, 확인의 자리는 만들어진 문서다.
 
-        ``vm``·``indices`` 를 받는 이유(1R P1): 생성 백스톱은 **그 런의 주체**로 물어야
-        한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재 상태를
-        읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — 완주 스탬프가 run 이
-        고정한 정체로만 적히는 것과 같은 근거다. ``blanks`` 도 같은 이유로 **그 런의 주체**
-        (`target`)에서 센다 — 요구 판정(blank_set)과 승인 결속(scope key)이 같은 집합을
-        보게 호출측이 이미 센 값을 관통시킬 수 있다.
+        ``vm``·``indices``·``blanks`` 를 받는 이유(1R P1): 실행 경로는 **그 런의 주체**로
+        물어야 한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재
+        상태를 읽으면 남의 작업의 사실로 이 런을 설명하게 된다.
         """
         target = self.vm if vm is None else vm
         if target is None:
-            return ReviewRequirement(), None
+            return ReviewRequirement()
         idx = self._indices() if indices is None else indices
         bl = list(target.blank_fields(idx)) if blanks is None else list(blanks)
-        req = review_requirement(target.job, blank_fields=tuple(bl))
-        if not req.required:
-            return req, None
-        approved = self.review.is_approved(
-            req, self._review_scope_key(idx, bl)
-        )
-        return req, (None if approved else req)
+        return review_requirement(target.job, blank_fields=tuple(bl))
 
-    def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
-        """검토 요구의 표면 몫 — 「미리보기」 버튼 표지와 드로어 승인 버튼이 읽는다.
+    def _review_payload(self, req: ReviewRequirement) -> dict:
+        """검토 요구의 표면 몫 — **요구의 사실**만 싣는다.
 
-        ``required`` 는 요구의 **존재**이고 ``approved`` 는 그 해소다. 둘을 한 불리언으로
-        뭉개면(v6 `preview.required && !approved`) 표면이 "승인했다"를 말할 수 없다 —
-        승인 뒤 남는 것이 안심의 근거다.
+        ``approved`` 축은 #957 에서 사망했다: 승인이라는 사건이 없으므로 "승인했다"를 말할
+        상태가 없고, 언제나 거짓인 필드를 실으면 표면이 그 거짓으로 갈라진다.
         """
         return {
             "required": req.required,
-            "approved": req.required and unmet is None,
             "risk": req.risk_class,
             "targets": list(req.changed_targets),
             "first_run": req.first_run,
             "unknown_baseline": req.unknown_baseline,
             "structure_changed": req.structure_changed,
-        }
-
-    def _raw_record(self, indices: "list[int]", pos: int) -> "dict":
-        """표시순 자리(`pos`)의 **원본 레코드** — 이전 판본 규칙을 다시 적용할 재료.
-
-        렌더된 값(`mapped`)으로는 다른 규칙을 적용할 수 없다: 이미 지금 규칙이 통과한
-        결과라 원천이 아니다. 자리→원본 index 변환은 실행 입력과 같은 리스트를 쓴다
-        (같은 순서를 두 번 계산하지 않는다 — 판정 M 의 서수 규율).
-        """
-        if not (0 <= pos < len(indices)):
-            return {}
-        index = indices[pos]
-        return self.records[index] if 0 <= index < len(self.records) else {}
-
-    def _preview_payload(
-        self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
-        audit_counts: "tuple[int, int]",
-        indices: "list[int]",
-        blank_positions: "list[int] | None" = None,
-    ) -> dict:
-        """확인 면 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
-
-        값·이름은 **파생**이다(판정 A): 값은 실행 입력과 같은 ``mapped_records``, 이름은
-        표 「문서」 열이 쓰는 그 문자열 그대로다. 한 건만 따로 계산하면 ``{{seq}}`` 가 1 로
-        고정되고 꼬리표가 사라져 미리보기가 실행과 다른 이름을 말한다.
-
-        ``blank_positions`` 는 빈 값 있는 건의 표시순 자리(§2.13 「빈 값 있는 건만 보기」) —
-        호출측(snapshot)이 표식 없는 매핑 출력에서 이미 센 값을 관통시킨다(이중 계산 방지).
-        """
-        total = len(mapped)
-        bp = self._preview_blank_positions() if blank_positions is None else blank_positions
-        if not self.preview_open:
-            return {
-                "open": False, "pos": 0, "total": total, "can_open": total > 0,
-                "blank_only": False, "blank_count": len(bp),
-                "can_prev": False, "can_next": False,
-            }
-        # 열려 있는 동안 선택이 줄면 자리가 넘칠 수 있다 — 닫지 않고 자리를 당긴다
-        # (§10.12.1 실패 경로: 면 안에서 재진술하고 면을 닫지 않는다).
-        pos = min(self.preview_pos, total - 1) if total else 0
-        record = mapped[pos] if total else {}
-        order = [m.template_field for m in self.vm.job.mapping.mappings] if self.vm else []
-        converged, too_long = audit_counts
-        # ‹ › 가용성도 여기서 판정한다 — 한정(blank_only)이 켜지면 경계가 「그 건들의
-        # 처음·끝」으로 바뀌는데, 표면이 pos/total 로 재유도하면 두 판정이 갈린다.
-        blank_only = self.preview_blank_only and bool(bp)
-        can_prev = any(q < pos for q in bp) if blank_only else pos > 0
-        can_next = any(q > pos for q in bp) if blank_only else pos < total - 1
-        return {
-            "open": True,
-            "can_open": total > 0,
-            "pos": pos,
-            "total": total,
-            "blank_only": blank_only,
-            "blank_count": len(bp),
-            "can_prev": can_prev,
-            "can_next": can_next,
-            "filename": names[pos] if 0 <= pos < len(names) else "",
-            # 「적용 범위」 축은 없다(U2 §2.3). 이 축의 존재 이유였던 runOverrides 는 §10.14
-            # 에서 기각·사망했고 §10.15 판정 H 가 작업대의 대응 배지를 "말할 상태가 없다"며
-            # 이미 죽였다 — 값이 하나뿐인 축은 정보가 아니라 없는 선택지의 암시다.
-            "rows": [
-                {"name": f, "value": str(record.get(f, ""))} for f in order
-            ],
-            "evidence": build_evidence(
-                req, mapped=mapped, names=tuple(names), converged=converged,
-                too_long=too_long, pos=pos,
-                # 직전 판본 규칙으로 **같은 레코드**를 다시 렌더한 값(F7 판정 H — F5 가
-                # 되깎기 조건으로 박제한 before/after 의 회수).
-                before=previous_values(
-                    self.vm.job, req.changed_fields, self._raw_record(indices, pos)
-                ) if self.vm is not None else None,
-            ),
-            "can_approve": unmet is not None and total > 0,
-            "empty_note": "" if total else "선택한 문서가 없습니다. 표에서 만들 문서를 고르세요.",
         }
 
     def _order_note(self) -> str:
@@ -1622,9 +1331,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         파일명은 생성과 동일 규칙으로 계산한다(:func:`~hwpxfiller.naming.plan_output_names`).
         ``{{seq}}``·충돌 접미사는 최종 선택 집합에 따라 달라지므로 **선택된** 레코드에만 이름을
-        계산한다(미선택 행에 확정되지 않은 이름을 지어내지 않는다 — confirm-or-alarm). 날짜 토큰
-        기준 시각은 여기서 캡처해 ``_names_now`` 로 남긴다(:meth:`generate` 가 같은 값 소비 —
-        RC-02 '확인 대상=생성 대상'의 미리보기 확장).
+        계산한다(미선택 행에 확정되지 않은 이름을 지어내지 않는다 — confirm-or-alarm). 날짜
+        토큰 기준 시각은 :meth:`snapshot` 이 스냅샷당 1회 캡처한 ``_names_now`` 를 쓴다 —
+        한 스냅샷의 소비처들이 같은 시각을 말하게 하는 값이다(#957).
         """
         if not self.records:
             return []
@@ -1634,9 +1343,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if indices and self.vm is not None:  # 파일명은 작업 속성 — 미선택이면 미리보기 없음
             # 시각은 **이 스냅샷이 잡아 둔 것**을 쓴다(2R P2): 여기서 따로 찍으면 같은
             # 스냅샷 안에서 게이트 감사(refresh)와 표 「문서」 열이 다른 시각을 갖고,
-            # `{{date:SS}}` 같은 하위-일 토큰이 초 경계를 넘는 순간 미리보기가 승인시킨
-            # 이름과 생성물이 갈린다(덮어쓰기 대상 집합까지 함께 바뀐다). 캡처는
-            # :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접 호출(테스트) 경로용이다.
+            # `{{date:SS}}` 같은 하위-일 토큰이 초 경계를 넘는 순간 한 화면이 두 이름을
+            # 말한다. 캡처는 :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접
+            # 호출(테스트) 경로용이다.
             if self._names_now is None:
                 self._names_now = self._clock()
             planned = plan_output_names(
@@ -1817,7 +1526,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
             # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
             # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
-            # 다른 실행 입력이다(§2 충돌 B). 승인 결속(F5 판정 I)이 같은 값을 쓴다.
+            # 다른 실행 입력이다(§2 충돌 B).
             "selection_key": self._selection_key(),
             # **이 마운트의 정체**(#363 리뷰 P2) — 결과 처분(§2.18)의 데이터 성분이 소비한다.
             # 표시 라벨(`data_source_label`)로는 못 가른다: 같은 basename 의 다른 파일·같은
@@ -1828,7 +1537,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 정체를 여기서 다시 조립하지 않는 이유가 둘: ①어느 파일인가와 무관하게
             # **다시 읽었다**는 사실 자체가 교체이므로 세대가 더 정확하다(같은 경로 재읽기도
             # 새 레코드다) ②경로 정체성 축은 §5.3/#347 이 재편 중이라 두 정의가 생긴다.
-            # 승인 범위 키(`_review_scope_key`)가 같은 세대를 쓰는 것도 같은 근거다.
             "data_mount": self._snapshot_gen,
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
@@ -1924,14 +1632,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "guard": guard_snap,
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
                          "reason": g.reason},
-                # 검토 요구·확인 면은 **배제 선언**(지도 §10.15 판정 J): 확인 면은
-                # 값+파일 이름+승인의 면인데 TXT 엔 파일 이름 축이 없고, 작업대가 이미
-                # 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
+                # 검토 요구는 **배제 선언**(지도 §10.15 판정 J): 작업대가 이미 레코드
+                # 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
                 # 키 부재로 갈라지지 않게 한다.
-                "review": self._review_payload(ReviewRequirement(), None),
-                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False,
-                            "blank_only": False, "blank_count": 0,
-                            "can_prev": False, "can_next": False},
+                "review": self._review_payload(ReviewRequirement()),
             })
             return base
         if self.vm is None:
@@ -1981,12 +1685,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
                          "reason": g.reason},
-                # 작업이 없으면 검토할 규칙도 미리볼 값도 없다 — 뼈대만 실어 표면이
-                # 키 부재로 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
-                "review": self._review_payload(ReviewRequirement(), None),
-                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False,
-                            "blank_only": False, "blank_count": 0,
-                            "can_prev": False, "can_next": False},
+                # 작업이 없으면 검토할 규칙이 없다 — 뼈대만 실어 표면이 키 부재로
+                # 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
+                "review": self._review_payload(ReviewRequirement()),
             })
             return base
         job = self.vm.job
@@ -1996,50 +1697,38 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["managed_hwpx"] = self._is_managed_hwpx_work(job)
         indices = self._indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
-        # 승인 지문 성분(scope key 해시)·요구 판정(blank_set)이 전부 이 한 집합을 소비한다.
-        # 표식이 붙으면 파일명 패턴이 그 필드를 참조할 때 이름·수렴·경로 길이가 전부
-        # 달라진다(1R P2 · 4R P2) — 생성·미리보기·승인이 같은 술어를 공유해야 하는 이유.
+        # 요구 판정(blank_set)까지 전부 이 한 집합을 소비한다. 표식이 붙으면 파일명 패턴이
+        # 그 필드를 참조할 때 이름·수렴·경로 길이가 전부 달라진다(1R P2 · 4R P2) —
+        # 표시와 생성이 같은 술어를 공유해야 하는 이유.
         blanks = self.vm.blank_fields(indices) if indices else []
         marker = blank_marker(blanks)
-        # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
-        req, req_unmet = self._review(indices=indices, blanks=blanks)
-        # 파일명 날짜 토큰의 기준 시각(2R·3R·5R P2) — 이 값은 **사용자가 본 것**의 일부다.
+        # 검토 요구(F5) — 판정은 durable 기준선이 진다(승인 대조는 #957 에서 사망).
+        req = self._review(indices=indices, blanks=blanks)
+        # 파일명 날짜 토큰의 기준 시각 — **이 스냅샷의 것**이다(#957 재정의).
         #
-        # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
-        # 생성)는 서로 맞지만 **스냅샷 사이**에서 움직인다: `{{date:SS}}` 가 그 사이 초
-        # 경계를 넘으면 생성이 사용자가 본 적 없는 이름을 쓴다. 그래서 **누군가 그 값에
-        # 기대는 동안 얼린다**. 기대는 자리는 셋이다:
-        #   ① 면이 열려 있다(지금 보고 있다)
-        #   ② 승인이 서 있다(그 이름으로 확인했다)
-        #   ③ **한 번 본 뒤 아직 그 실행 입력 그대로다**(5R P2) — 검토 요구가 없는 반복
-        #      실행에서도 미리보기는 열린다(§13-2). 생성 버튼을 누르려면 면을 닫아야
-        #      하는데 닫는 순간 ①②가 다 거짓이라, 1초만 들여다봐도 화면이 보여준 것과
-        #      다른 이름(그리고 다른 덮어쓰기 대상)이 만들어졌다.
-        # 핀은 **실행 입력이 그대로인 동안**만 유효하다 — 규칙·데이터·표식·선택 중 하나라도
-        # 바뀌면 화면이 보여준 이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축).
-        pin = f"{req.rules_key}|{self._review_scope_key(indices, blanks)}"
-        if self.preview_open:
-            self._names_pin = pin      # 보고 있는 동안 핀은 현재 정체를 따라간다
-        pinned = self._names_pin == pin
-        if self._names_now is None or not (
-            self.preview_open or (req.required and req_unmet is None) or pinned
-        ):
-            self._names_now = self._clock()
-            self._names_pin = None
+        # 종전엔 미리보기가 본 이름을 붙들려고 「보는 동안·승인이 서 있는 동안·본 뒤 입력이
+        # 그대로인 동안」 세 조건으로 이 값을 얼렸다. 그 세 조건은 전부 확인 면의 사건이었고,
+        # 면이 사라진 지금 남으면 아무도 기대지 않는 값을 얼리는 죽은 규칙이다.
+        #
+        # 지금 계약은 둘로 갈린다. **표시**는 스냅샷당 1회 캡처라 한 스냅샷 안의 소비처(게이트
+        # 감사·표 「문서」 열·이름 계획)가 서로 맞고, **생성**은 실행 진입 시 1회 캡처라 한 런의
+        # 이름·본문·충돌 판정이 한 시각을 말한다. 두 시각이 갈리는 것은 결함이 아니다 — 확인의
+        # 자리가 만들어진 문서로 옮겨졌기 때문이다(#957). 다만 **덮어쓰기 확인 왕복** 안에서는
+        # 갈리면 안 되고, 그 일치는 :attr:`_overwrite_now_pin` 이 진다.
+        self._names_now = self._clock()
         # 선택분 매핑 적용은 표식 유/무 각 1회 — 표식 없는 판(빈 값 자리 판정)과 생성
         # 입력 판(_record_rows·확인 면)이 공유한다(이중 적용 방지).
         #
         # 본문의 ``today``(오늘 날짜) 유형도 **이 시각**을 쓴다(U4-E1 #939): 위에서 파일명
-        # 날짜 토큰용으로 이미 핀한 값을 그대로 넘겨 이름과 본문이 한 시각을 말한다
-        # (RC-02 「확인 대상 = 생성 대상」의 본문 확장). 여기서 따로 찍으면 미리보기가
-        # 승인시킨 본문 날짜와 생성물이 하위-일 경계에서 갈린다.
+        # 날짜 토큰용으로 캡처한 값을 그대로 넘겨 한 스냅샷 안에서 이름과 본문이 한 시각을
+        # 말한다. 여기서 따로 찍으면 표 「문서」 열과 본문 미리 값이 하위-일 경계에서 갈린다.
         mapped = self.vm.mapped_records(indices, now=self._names_now) if indices else []
         run_mapped = (
             self.vm.mapped_records(indices, marker, now=self._names_now)
             if marker else mapped
         )
-        # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 승인이라는 해소 사건이
-        # 없어졌으므로 「미승인분」이 아니라 요구 자체가 사전검증 고지의 입력이다.
+        # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
+        # 요구 자체가 사전검증 고지의 입력이다.
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_notice=req, mapped=run_mapped,
             now=self._names_now,
@@ -2051,9 +1740,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if status.preflight.level == "ok" else status.preflight.text
         )
         drift_fields = self._drift_fields(status)
-        # 빈 값 있는 건의 자리(§2.13) — 표식 **없는** 매핑 출력에서 센다(표식을 채우면
-        # 언제나 0건). 확인 면 「빈 값 있는 건만 보기」와 ‹ › 가용성이 소비한다.
-        blank_positions = self._preview_blank_positions(mapped)
         # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
         # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
@@ -2109,7 +1795,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "guard": guard_snap,
             "preflight": {"level": status.preflight.level, "text": preflight_text},
             # 본문 존 = 표 없는 한 줄(U2 §2.13) — 빈 값 표지의 재료(필드 이름 목록)만
-            # 싣는다. 값은 싣지 않는다: 값을 말하는 표면은 확인 면 하나다.
+            # 싣는다. 값은 싣지 않는다: 값을 말하는 표면은 만들어진 문서다(#957).
             "blank_fields": list(blanks),
             "drift": drift_fields,
             # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서
@@ -2126,16 +1812,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if status.gate.reason == "name_tokens" else []
             ),
             # `reason` 도 함께 싣는다(리뷰 R1) — 표지 문안이 게이트 서열을 **재유도하지 않고**
-            # 이 이름 하나만 읽게 하려고 링1 이 낸 필드다(어휘 분리: 규칙축=「승인」).
+            # 이 이름 하나만 읽게 하려고 링1 이 낸 필드다.
             "gate": {
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,
                 "text": status.gate.text,
                 "reason": status.gate.reason,
             },
-            # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
-            # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).
-            "review": self._review_payload(req, req_unmet),
+            # 검토 요구(F5) — 비차단 고지의 재료이고, 문안은 사전검증이 이미 실었다.
+            "review": self._review_payload(req),
             # **규칙의 지문**도 실행 입력의 정체다(6R P2). 결과가 「지금 결과」로 남으려면
             # 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서 매핑·파일 이름을 고치고
             # 돌아오면 재적재(`_reload_active_job`)가 규칙을 갈아 끼우는데, 세션 지문에 규칙이
@@ -2143,13 +1828,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 파일 이름 수리)까지 열린 채다. 값은 검토 요구가 이미 계산한 그 지문을 쓴다 —
             # 같은 상태를 두 번 세지 않는다(판정 단일 출처).
             "rules_key": req.rules_key,
-            # 드로어는 **생성 입력 그대로**를 그린다(표식 포함) — 여기가 "보이는 것 =
-            # 만들어지는 것"의 마지막 자리다.
-            "preview": self._preview_payload(
-                req, req_unmet, run_mapped, list(status.audit.names),
-                (len(status.audit.converged), len(status.audit.too_long)),
-                indices, blank_positions,
-            ),
         })
         return base
 
@@ -2547,7 +2225,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 path, self._run_delivery_collision
             )
             self._current_delivery_preparation = None
-            self._invalidate_current_preview()
         else:
             self.out_dir = path
         try:
@@ -2639,12 +2316,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """디스크의 최신 규칙으로 활성 VM 을 다시 세운다 — 바뀐 게 없으면 아무것도 안 한다.
 
         **지문이 갈릴 때만** 손대는 이유(4R P1): 이 경로는 화면 전환마다 발화한다
-        (`REFRESH_ON_NAV`). 무조건 재구성하면 평시 왕복이 실행 증거·미리보기 자리를 매번
-        되돌려, 아무 일도 없었는데 게이트가 다시 닫히는 것처럼 보인다.
+        (`REFRESH_ON_NAV`). 무조건 재구성하면 평시 왕복이 실행 증거를 매번 되돌려,
+        아무 일도 없었는데 게이트가 다시 닫히는 것처럼 보인다.
 
         갈렸을 때 버리는 것은 계약이 버리라는 것뿐이다(§19.10): **완주 담보**(그 규칙으로
-        만든 문서가 담보하던 것)와 **열려 있던 미리보기**(옛 규칙의 상). 승인은 따로 지우지
-        않는다 — 규칙 지문에 결속돼 자동으로 무효가 된다(F5 판정 I).
+        만든 문서가 담보하던 것)와 그 규칙이 앉힌 문서 좌표다.
         """
         if not self.job_name:
             return False
@@ -2662,7 +2338,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._seat_active_job(job)
             self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
             self._discard_delivered_artifacts()  # 배달 좌표도 그 표면의 것이다(S7-03)
-            self._do_preview_close({})
             return True
         # TXT 세션은 여기서 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로
         # 다음 스냅샷이 목록에서 최신값을 집는다. 할 일이 없는 것이 정상이지 누락이 아니다.
@@ -2686,10 +2361,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._seat_active_job(job)
         if not same_rules:
             # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
-            # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
+            # 실행 입력이 그대로라 완주 담보를 되돌릴 이유가 없다(과잉 리셋 금지).
             self._last_generated = None
             self._discard_delivered_artifacts()  # 옛 규칙으로 만든 문서다(S7-03)
-            self._do_preview_close({})
         return True
 
     def _seat_active_job(self, job: Job) -> None:
@@ -2886,7 +2560,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         **데이터-우선 보존 계약(§18.2)**: 데이터·선택·필터는 세션 소유라 작업 전환에서
         **생존**한다 — 전환은 vm 만 재생성하고 세션 데이터를 ``set_acquired`` 로 주입한다.
-        전환이 잃는 것은 실행 증거(완주 담보·승인)뿐이고(§19.10) 게이트가 재검증을 강제하므로
+        전환이 잃는 것은 실행 증거(완주 담보)뿐이고(§19.10) 게이트가 재검증을 강제하므로
         조용한 소실이 없다. 구 T1 스위치 가드(전환=세션 파기 재확인)는 파기 자체가 사라져
         함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
         ``confirm`` 페이로드 키는 왕복 동형 유지를 위해 수용하되 더는 판정에 쓰지 않는다.
@@ -2982,13 +2656,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_notice_level = "warn"
 
     def _discard_active_work_session_evidence(self) -> None:
-        """active Work에 묶인 실행·검토·미리보기 증거만 버린다."""
+        """active Work에 묶인 실행 증거만 버린다."""
         self._last_generated = None
         # 배달 좌표는 **그 작업의 실행**이 낸 것이다(S7-03) — 작업이 바뀌면 남의 문서를
         # 가리키게 되므로 완주 담보와 같은 자리에서 놓는다.
         self._discard_delivered_artifacts()
-        self.review.clear()
-        self._do_preview_close({})
+        # 덮어쓰기 확인 핀도 그 작업의 것이다 — 남기면 다음 작업의 확인 왕복이 남의 시각을
+        # 소비한다(세대 키가 이미 막지만, 수명을 같은 자리에 두어 뜻을 분명히 한다).
+        self._overwrite_now_pin = None
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
@@ -3434,10 +3109,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._install_filter(self.records, hints)
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
         self._discard_delivered_artifacts()  # 배달 좌표도 이전 데이터의 것이다(S7-03)
-        self._do_preview_close({})   # 미리보던 값은 이전 스냅샷의 것이다(F5)
+        self._overwrite_now_pin = None       # 확인 왕복의 시각도 이전 데이터의 것이다
 
     # (_do_ack_field·_do_unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13.
-    #  표식 삽입 동의는 확인 면의 승인(preview_approve — blank_set 위험종)이 겸한다.)
+    #  빈 값은 #957 이후 차단이 아니라 표식이라 동의 사건 자체가 없다.)
 
     # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
     def _pool_loader(self):
@@ -3514,6 +3189,46 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         result["run_token"] = token
         return result
 
+    def _overwrite_pin_key(self) -> str:
+        """덮어쓰기 확인 왕복이 결속되는 **세계의 정체**(#957).
+
+        시각 하나를 왕복 사이에 붙들어 두는 것은 확인창이 재진술한 파괴 집합과 실제로
+        파괴되는 집합을 같게 만들려는 것이다. 그 사이 세계가 바뀌면(존 변이·선택 변경·
+        데이터 교체·작업 전환·재봉인) 그 시각은 이미 **다른 배치의 것**이라, 되쓰면 오히려
+        사용자가 본 적 없는 이름을 만든다. 그래서 핀은 이 키에 결속되고 키가 어긋나면
+        버린다 — 세대 자체를 지키는 것은 각 갈래의 stale 검사(managed 는 sealed basis
+        digest·prep 캐시, legacy 는 `plan_generation` 재계획)다.
+        """
+        return "|".join((
+            self.job_name,
+            self._data_key,
+            str(self._snapshot_gen),
+            str(self.zone_epoch),
+            ",".join(str(i) for i in self._indices()),
+            self._last_sealed_basis_digest or "-",
+        ))
+
+    def _arm_overwrite_now_pin(self, now: "datetime") -> None:
+        """이 판정이 쓴 시각을 확인 재호출 몫으로 남긴다 — 소비는 :meth:`_capture_run_now`."""
+        self._overwrite_now_pin = (self._overwrite_pin_key(), now)
+
+    def _capture_run_now(self, confirm_overwrite: bool) -> "datetime | None":
+        """실행 진입 시각 **1회** 캡처(#957) — 런 안의 이름·본문·충돌 판정이 한 시각을 쓴다.
+
+        확인 재호출이면 그 판정이 쓴 시각을 되쓴다(핀). 핀은 어느 갈래로 끝나든 **소비하며
+        소거**한다: 남겨 두면 다음 실행이 지난 왕복의 시각으로 날짜 토큰을 늙힌다.
+
+        ``None`` 은 **낡은 확인**이다: 물어본 세계와 대답이 돌아온 세계가 다르다(존 변이·선택
+        변경·데이터 교체·작업 전환). 확인은 예약이 아니라 **그 배치에 대한** 동의라, 그대로
+        진행하면 사용자가 본 적 없는 파괴가 「확인했다」를 업고 통과한다. 핀이 아예 없는
+        확인은 거절하지 않는다 — 그것은 왕복이 아니라 호출자의 명시 선언이다(CLI·테스트).
+        """
+        pin = self._overwrite_now_pin
+        self._overwrite_now_pin = None
+        if confirm_overwrite and pin is not None:
+            return pin[1] if pin[0] == self._overwrite_pin_key() else None
+        return self._clock()
+
     def _generate_with_token(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
         """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
         if self.vm is None:
@@ -3553,11 +3268,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         try:
             try:
-                if self._is_managed_hwpx_work(job):
+                run_now = self._capture_run_now(confirm_overwrite)
+                if run_now is None:
+                    # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
+                    # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
+                    visible_identity_changed = False
+                    result = {
+                        "ok": False, "level": "warn",
+                        "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
+                        "문서 만들기를 다시 실행하세요.",
+                    }
+                elif self._is_managed_hwpx_work(job):
                     # managed 갈래(S6-05) — legacy staging·admission 을 타지 않는다. 준비
                     # 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
                     visible_identity_changed = False
-                    result = self._generate_managed_locked(run, run_vm)
+                    result = self._generate_managed_locked(
+                        run, run_vm, confirm_overwrite=confirm_overwrite, now=run_now,
+                    )
                 else:
                     reject = self._resolve_managed_template(run_vm)
                     visible_identity_changed = (
@@ -3570,7 +3297,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         reject
                         if reject is not None
                         else self._generate_locked(
-                            run, run_vm, confirm_overwrite=confirm_overwrite
+                            run, run_vm,
+                            confirm_overwrite=confirm_overwrite, now=run_now,
                         )
                     )
             finally:
@@ -3600,9 +3328,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
         # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
         if result.get("ok"):
-            # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
-            # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
-            self._names_pin = None
             self._note_tutorial_generation(result)
             self._push()
         elif visible_identity_changed:
@@ -3649,8 +3374,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         §3.3 T7 의 달성 판정이 「생성 완료 사건(성공 ≥1)」이라고 그렇게 못박혀 있다.
 
         여기서 새로 판정하는 것은 없다. 어느 T 인지는 세션 이력
-        (:class:`~hwpxfiller.webapp.screen_tutorial.GenerationLoopLedger`)이 낸 **사실 셋**과
-        승인 시점에 기억해 둔 빈 값 동반 여부로 갈린다.
+        (:class:`~hwpxfiller.webapp.screen_tutorial.GenerationLoopLedger`)이 낸 **사실 셋**이
+        가른다. 승인축(T13)은 #957 에서 발신자가 사라졌다.
         """
         if int(result.get("succeeded", 0) or 0) < 1:
             return
@@ -3658,12 +3383,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not job:
             return
         self._tutorial(Milestone.GENERATE)
-        if self._tutorial_blank_approval:
-            # T13 — 빈 값 포함 승인이 **실제로 문서가 되어** 나온 자리(§3.4). 한 번 성립하면
-            # 그 승인은 소비된 것이라 표식을 내린다: 다음 실행이 빈 값 없이 서도 승인이 다시
-            # 서지 않는 규칙 때문에, 남겨 두면 관계없는 실행이 계속 이 단계를 켠다.
-            self._tutorial(Milestone.APPROVE_WITH_BLANKS)
-            self._tutorial_blank_approval = False
         if self._tutorial_loop.was_compiled(self._current_template_path()):
             self._tutorial(Milestone.GENERATE_FROM_COMPILED)
         facts = self._tutorial_loop.note_generated(
@@ -3681,7 +3400,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         job = getattr(self.vm, "job", None)
         return str(getattr(job, "template_path", "") or "")
 
-    def _generate_managed_locked(self, run, run_vm) -> dict:
+    def _generate_managed_locked(
+        self, run, run_vm, *, confirm_overwrite: bool = False,
+        now: "datetime | None" = None,
+    ) -> dict:
         """managed HWPX 실행(S6-05 · #812) — legacy generator 를 부르지 않는다(S6-9).
 
         판정 재조립 0(S6-10): 준비 판정은 workbench observation 이, payload↔digest 짝은
@@ -3747,7 +3469,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "error": "현재 환경에서는 문서를 만들 수 없습니다",
                 "level": "warn",
             }
-        now = self._clock().isoformat(timespec="seconds")
+        # 파괴 확인은 legacy 와 **같은 왕복**이다(#957): 덮어쓸 항목이 하나라도 서면 첫
+        # 호출은 만들지 않고 수치를 재진술해 돌아가고, 확인 뒤 같은 토큰의 재호출만 앉힌다.
+        # 판정 재조립 0 — 처분은 이미 delivery 가 항목마다 확정한 사실(`WRITE_OVERWRITE`)을
+        # 세기만 한다. 되읽는 prep 은 **첫 호출과 같은 캐시**라(record/binding/pattern/intent
+        # 가 그대로면 재사용) 확인창이 말한 집합과 앉히는 집합이 같다 — 그 사이 세계가
+        # 바뀌면 위 `create_documents_enabled`·basis digest·prep 검사가 먼저 닫는다.
+        overwriting = [
+            item.resolved_output_relative_path
+            for item in prep.result.ordered_items
+            if item.collision_disposition == WRITE_OVERWRITE
+        ]
+        run_now = now if now is not None else self._clock()
+        if overwriting and not confirm_overwrite:
+            self._arm_overwrite_now_pin(run_now)
+            return _needs_overwrite_result(
+                total=len(prep.record_preparation.ordered_model_indices),
+                conflict_names=[Path(name).name for name in overwriting],
+            )
+        validated_at = run_now.isoformat(timespec="seconds")
         outcome = run_managed_generation(
             root=context.root,
             workspace_instance_id=context.workspace_instance_id,
@@ -3755,7 +3495,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             plan_payload=payload,
             ordered_raw_snapshots=prep.record_preparation.raw_records,
             resolved_delivery=prep.result,
-            validated_at=now,
+            validated_at=validated_at,
             runtime_registry=context.runtime_registry,
             runtime_capability_manifest_digest=(
                 context.runtime_capability_manifest_digest
@@ -3763,7 +3503,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             current_basis_digest_reader=context.current_basis_digest_reader,
             cancel_requested=run.cancel.is_set,
         )
-        return self._managed_result_dict(outcome, prep, payload, context, now)
+        return self._managed_result_dict(outcome, prep, payload, context, validated_at)
 
     def _managed_result_dict(self, outcome, prep, payload, context, now: str) -> dict:
         """managed 실행 결과 → legacy 와 같은 키 집합의 결과 dict(JobResultZone 무변경)."""
@@ -3991,7 +3731,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"ok": False, "level": "warn", "error": str(exc)}
         return None
 
-    def _generate_locked(self, run, run_vm, *, confirm_overwrite: bool = False) -> dict:
+    def _generate_locked(
+        self, run, run_vm, *, confirm_overwrite: bool = False,
+        now: "datetime | None" = None,
+    ) -> dict:
         """단일 생성 실행의 링2 결선 — 판정·척추는 Application use case 가 소유한다(P2-23).
 
         ``run`` 은 :func:`~hwpxfiller.application.generation.start_run` 이 시작 시점에
@@ -4007,8 +3750,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 게이트 판정 순서(①가드 ②빈 값 ③표식 ④덮어쓰기 ⑤불변 계획)는 Application 이
         # 소유한다. 종전 ③이던 검토 백스톱은 #957 정책 선회로 사망했다 — 바뀐 규칙·첫
         # 실행은 사전검증 고지로 나가고 확인의 자리는 결과 문서다.
-        # 날짜 토큰 시각은 미리보기가 캡처한 값을 재사용한다(표시=확인=생성 일치, RC-02).
-        now = self._names_now or self._clock()
+        # 날짜 토큰 시각은 **이 런이 진입 시점에 캡처한 값**이다(#957) — 이름·본문·충돌
+        # 판정이 한 시각을 쓴다. 덮어쓰기 확인 왕복이면 그 판정이 쓴 시각이 핀으로 되돌아온다.
+        now = now if now is not None else self._clock()
         decision = plan_generation(
             run_vm, indices, out_dir, now=now,
             confirm_overwrite=confirm_overwrite,
@@ -4023,16 +3767,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         blanks = list(decision.blanks)
         if decision.needs_overwrite:
             # 수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다.
-            # 표면(job.js)이 이 수치로 modal.js 본문을 합성한다 — 문안은 웹 소유(RC-02).
-            names = [Path(p).name for p in decision.conflicts]
-            return {
-                "ok": False, "needs_overwrite": True,
-                "total": len(indices),                      # 총량
-                "overwrite_count": len(names),              # 파괴분(기존 덮어씀)
-                "new_count": len(indices) - len(names),     # 신규분(새 파일)
-                "conflict_names": names[:10],               # 파괴분 표본
-                "conflict_more": max(0, len(names) - 10),
-            }
+            # 표면(job_run.ts)이 이 수치로 modal.js 본문을 합성한다 — 문안은 웹 소유(RC-02).
+            # 이 판정이 쓴 시각을 핀으로 남긴다(#957): 확인 재호출이 같은 시각으로 다시
+            # 계획해야 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 갈리지 않는다.
+            self._arm_overwrite_now_pin(now)
+            return _needs_overwrite_result(
+                total=len(indices),
+                conflict_names=[Path(p).name for p in decision.conflicts],
+            )
         plan = decision.plan
         assert plan is not None  # PlanDecision 3태의 잔여 갈래 — 위 두 갈래가 소진했다
 
@@ -4070,7 +3812,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if outcome.stamped_job is not None and run_vm is self.vm:
             if rules_fingerprints(outcome.stamped_job) != run.rules:
                 self._last_generated = None
-                self._do_preview_close({})
             run_vm.job = outcome.stamped_job
 
         cancelled = outcome.cancelled
@@ -4297,7 +4038,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """착석한 실행뷰가 managed 갈래인가 — 명령 좌표들의 단일 술어(#905).
 
         :meth:`_is_managed_hwpx_work` 를 그대로 부른다. 별도 메서드인 이유는 판정이 아니라
-        **가드의 결속**이다: 명령 좌표(미리보기 열기·승인·저장 폴더 지정)는 스냅샷·실행 분기와
+        **가드의 결속**이다: 명령 좌표(저장 폴더 지정 등)는 스냅샷·실행 분기와
         달리 `job` 을 손에 들고 있지 않아 `self.vm is not None and …` 을 각자 앞세워야 했고,
         그 두 줄이 세 자리에 복제되면 다음에 축이 바뀔 때 또 일부만 따라온다(S6-05 가 정확히
         그렇게 세 좌표를 남겼다). 실행뷰가 없으면(TXT·미선택) managed 갈래도 없다.
@@ -4512,55 +4253,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     for advisory in observation.record_validation.advisories
                 ],
             },
-            "preview_requirement": {
-                "kind": observation.preview_requirement.kind,
-                **(
-                    {"reason": observation.preview_requirement.reason}
-                    if isinstance(observation.preview_requirement, PreviewRequired)
-                    else {}
-                ),
-            },
-            "preview_satisfied": observation.preview_satisfied,
-            "semantic_preview": (
-                {
-                    "preview_token": observation.semantic_preview.preview_token,
-                    "requirement": {
-                        "kind": observation.semantic_preview.requirement.kind,
-                        **(
-                            {"reason": observation.semantic_preview.requirement.reason}
-                            if isinstance(
-                                observation.semantic_preview.requirement,
-                                PreviewRequired,
-                            )
-                            else {}
-                        ),
-                    },
-                    "included_content_summary": (
-                        observation.semantic_preview.included_content_summary
-                    ),
-                    "ordered_records": [
-                        {
-                            "record_identity": record.record_identity,
-                            "record_display_locator": record.record_display_locator,
-                            "logical_field_values": [
-                                {
-                                    "field_id": field.field_id,
-                                    "display_label": field.display_label,
-                                    "value": field.value,
-                                }
-                                for field in record.logical_field_values
-                            ],
-                            "planned_document_relative_path": (
-                                record.planned_document_relative_path
-                            ),
-                            "collision_disposition": record.collision_disposition,
-                        }
-                        for record in observation.semantic_preview.ordered_records
-                    ],
-                }
-                if self.preview_open and observation.semantic_preview is not None
-                else None
-            ),
             "run_delivery_intent": (
                 {
                     "output_directory": observation.run_delivery_intent.output_directory,
@@ -4846,8 +4538,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         없다」의 거울상(확정할 것이 없는데 동사가 서 있다)이 생긴다.
 
         합성 Observation 을 부르지 않는 이유는 그것이 읽기가 아니기 때문이다:
-        :meth:`workbench_observation` 은 레코드 검증·미리보기 준비를 무효화하므로 편집기
-        렌더 경로에서 부르면 사람이 승인해 둔 미리보기가 조용히 사라진다.
+        :meth:`workbench_observation` 은 레코드 검증·배달 준비를 무효화하므로 편집기
+        렌더 경로에서 부르면 세션이 붙들고 있던 준비가 조용히 사라진다.
 
         배선 가드 셋은 편집기 저장이 실제로 확정을 부르는 조건과 같아야 한다 — 확정하지
         못할 상태에서 동사를 무장하면 눌러도 아무 일이 없다. 세션 증거가 겨눈 작업과 편집
@@ -5334,80 +5026,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             planned_documents=planned,
         )
 
-    def _invalidate_current_preview(self) -> None:
-        self._current_preview_preparation = None
-        self._approved_preview_token = None
-
     def _invalidate_current_preparations(self) -> None:
         self._current_record_preparation = None
         self._current_delivery_preparation = None
-        self._invalidate_current_preview()
-
-    def _current_preview(
-        self,
-    ) -> tuple[_CurrentPreviewPreparation | None, WorkbenchContextIntegrity | None]:
-        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
-            self._invalidate_current_preparations()
-            return None, None
-        record_preparation = self._current_record_preparation
-        delivery_preparation = self._current_delivery_preparation
-        if (
-            record_preparation is None
-            or delivery_preparation is None
-            or delivery_preparation.record_preparation is not record_preparation
-            or not isinstance(delivery_preparation.result, CurrentResolvedDelivery)
-        ):
-            self._invalidate_current_preview()
-            return None, None
-
-        cached = self._current_preview_preparation
-        if (
-            cached is not None
-            and cached.record_preparation is record_preparation
-            and cached.delivery_preparation is delivery_preparation
-        ):
-            return cached, None
-
-        self._invalidate_current_preview()
-        requirement = evaluate_current_preview_requirement(delivery_preparation.result)
-        preview_token = uuid.uuid4().hex
-        try:
-            projection = build_current_preview_projection(
-                preview_token=preview_token,
-                requirement=requirement,
-                plan=record_preparation.execution_value,
-                raw_records=record_preparation.raw_records,
-                validated_records=record_preparation.validated_records,
-                delivery=delivery_preparation.result,
-                record_display_locators=tuple(
-                    f"데이터 {model_index + 1}행"
-                    for model_index in record_preparation.ordered_model_indices
-                ),
-            )
-        except CurrentPreviewPreparationError as exc:
-            return None, WorkbenchContextIntegrity(
-                restore_failure=True,
-                code="CURRENT_PREVIEW_PREPARATION_STALE",
-                detail=str(exc),
-            )
-        if (
-            record_preparation is not self._current_record_preparation
-            or delivery_preparation is not self._current_delivery_preparation
-        ):
-            return None, WorkbenchContextIntegrity(
-                restore_failure=True,
-                code="CURRENT_PREVIEW_PREPARATION_STALE",
-                detail="확인 중 데이터나 생성 예정 경로가 바뀌었습니다. 다시 시도해 주세요.",
-            )
-        current = _CurrentPreviewPreparation(
-            record_preparation=record_preparation,
-            delivery_preparation=delivery_preparation,
-            requirement=requirement,
-            projection=projection,
-            preview_token=preview_token,
-        )
-        self._current_preview_preparation = current
-        return current, None
 
     def _current_delivery(
         self,
@@ -5535,7 +5156,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         (``_last_fresh_observation``)을 **소비만** 한다 — composer/status 함수가 재라벨하고 이 화면은
         재판정하지 않는다(CURRENT/STALE 은 orchestration 축이 나른다). fresh observation 이 없으면
         NO_EVIDENCE(정직한 disabled). SX-04 축
-        (record/preview/delivery)은 seam 유지 — delivery anchor 가 CREATE 로의 누수를 막는다.
+        (record/delivery)은 seam 유지 — delivery anchor 가 CREATE 로의 누수를 막는다.
         """
         if self._workbench_observation is None:
             raise ValueError("작업대 Observation 기능이 조립되지 않았습니다")
@@ -5556,29 +5177,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
             self._invalidate_current_preparations()
         record_validation, context_integrity = self._current_record_validation()
-        preview_preparation = None
         if context_integrity is None:
             delivery, delivery_context = self._current_delivery(record_validation)
             context_integrity = delivery_context
-            if context_integrity is None and delivery.resolvable:
-                preview_preparation, preview_context = self._current_preview()
-                context_integrity = preview_context
-            else:
-                self._invalidate_current_preview()
         else:
             delivery = DeliveryPreviewSummary(resolvable=False)
-        if context_integrity is not None:
-            self._invalidate_current_preview()
-            preview_preparation = None
-        preview_requirement = (
-            preview_preparation.requirement
-            if preview_preparation is not None
-            else PreviewNotRequired()
-        )
-        preview_satisfied = (
-            not isinstance(preview_requirement, PreviewRequired)
-            or self._approved_preview_token == preview_preparation.preview_token
-        )
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -5597,13 +5200,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             record_validation=record_validation,
             delivery=delivery,
             template_change_verdict=self._template_change_verdict(),
-            preview_requirement=preview_requirement,
-            preview_satisfied=preview_satisfied,
-            semantic_preview=(
-                preview_preparation.projection
-                if preview_preparation is not None
-                else None
-            ),
             # S6-05(#812): 세션의 managed 실행 증거 — 부차 축(Primary Action 불결정).
             historical_outcome=self._last_managed_outcome,
             # 표면이 보는 것은 **실제로 쓰일** 폴더다(U3-06 #879) — 명시 지정이 없을 때

@@ -97,14 +97,16 @@ def test_unknown_entry_reason_and_return_surface_are_refused():
 
 def test_context_carries_evidence_verbatim():
     """증거는 **보낸 표면이 본 것**이다 — 편집기가 다시 계산하면 배너와 화면이 갈린다."""
+    # 종전 표본은 `preview_result`/`preview` 였다 — #957 슬라이스 ③ 에서 그 사유·표면이
+    # 어휘에서 사라졌으므로 살아 있는 결과 표면 한 쌍으로 같은 사실을 겨눈다.
     ctx = make_context(
         "입찰공고서",
-        entry_reason="preview_result",
+        entry_reason="run_failure",
         evidence={"지급일 표시형": "2026. 07. 25."},
-        return_context={"surface": "preview", "focus_target": "preview-date"},
+        return_context={"surface": "result", "focus_target": "result-date"},
     )
     assert ctx.to_dict()["evidence"] == {"지급일 표시형": "2026. 07. 25."}
-    assert ctx.to_dict()["return_context"]["focus_target"] == "preview-date"
+    assert ctx.to_dict()["return_context"]["focus_target"] == "result-date"
 
 
 # ------------------------------------------------------------------ patch 유도

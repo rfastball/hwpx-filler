@@ -18,7 +18,6 @@ import type { JobReadController } from "./job_read.ts";
 import { JobContentSelection } from "./job_content_selection.ts";
 import type { JobContentSelectionController } from "./job_content_selection.ts";
 import { JobArtifactSheet } from "./job_artifact.ts";
-import { JobPreviewSheet } from "./job_preview.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
   JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
@@ -205,6 +204,5 @@ export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
   JobBrowseDialog,
   TxtEditDialog,
   SheetPickerDialog,
-  JobPreviewSheet,
   JobArtifactSheet,
 });

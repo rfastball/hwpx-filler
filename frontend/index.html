@@ -111,17 +111,10 @@
     <div id="dataPickerModal" class="modal hidden" role="dialog" aria-modal="true"
          aria-labelledby="dataPickerTitle"></div>
 
-    <!-- 확인 면 = 생성 값 미리보기 **시트**(재작성 F5 드로어의 승격 — U2 §2.13). 레코드별
-         실제 주입값·파일 이름·이름 계획 한 줄·명시 승인. 값과 이름은 **실행 입력과 같은
-         산출**의 투영이다(지도 §10.12 판정 A): 여기서 따로 계산하면 미리보기가 실행과 다른
-         이름을 말한다. 열림·자리·「빈 값 있는 건만 보기」는 Python 소유라 이 DOM 은 뼈대만
-         갖고 job.js 가 값을 채운다. 680px 모달에서 시트로 넓힌 이유: 값을 말하는 표면이
-         여기 하나뿐이 됐고(§2.13 C3 폐색), 렌더러가 올 자리다. -->
-    <div id="previewSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
-         aria-labelledby="previewTitle"></div>
-
-    <!-- 산출물 관찰 시트(S7-03 · #825) — 위 미리보기가 **생성 전** 예고라면 이 면은 **생성
-         후** 실물이다. 안착 파일을 다시 읽어 기록 digest 와 대조를 통과한 bytes 의 구조를
+    <!-- 산출물 관찰 시트(S7-03 · #825) — **생성 후** 실물을 보는 면이다(생성 **전** 값을
+         그리던 확인 면 `#previewSheet` 는 #957 에서 철거됐다: 확인의 자리는 만들어진
+         문서이고, 파괴 확인만 `generate` 의 `needs_overwrite` 왕복이 진다).
+         안착 파일을 다시 읽어 기록 digest 와 대조를 통과한 bytes 의 구조를
          읽기 전용으로 그린다(#820 D1·D4). 별도 표면·별도 어휘라 자리도 따로 선다 — 한 자리를
          돌려쓰면 두 면의 열림 상태가 서로를 밀어낸다. 내용 생산자는 React
          `screens/job_artifact.ts` 의 JobArtifactSheet portal 이고 이 자리는 그 target 이라
@@ -146,10 +139,6 @@
          소유이고 여기는 받은 구획을 그린다. 사용 가능 행 클릭 = 작업 선택(세션 데이터는 생존). -->
     <div id="jobBrowseSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
          aria-labelledby="jobBrowseTitle"></div>
-
-    <!-- (작업 확인 펼침 면(#272 · 2 pane)은 사망 — U2 §2.13: 두 pane 은 이미 둘 다
-         점유돼 있었고(거울 + 파일 이름 계획) 그 내용이 확인 면(#previewSheet) 하나로
-         접혔다. 본문 존의 「생성 값 미리보기 ⤢」가 그 면을 연다.) -->
 
     <!-- (promise 다이얼로그 3종 — #confirmModal·#chooseModal·#promptModal — 은 R3-01 에서
          React host(#reactOverlayHost)로 이전. 완전 데이터-구동 표면이라 정적 골격 없이

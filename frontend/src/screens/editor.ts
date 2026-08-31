@@ -94,20 +94,19 @@ const SECTION_TITLES: Record<string, string> = {
 
 const ENTRY_LEAD: Record<string, string> = {
   library: "「문서 작업」에서 열었습니다.",
-  preview_result: "미리보기에서 열었습니다.",
   run_failure: "생성 실패 결과에서 열었습니다.",
   output_result: "생성 결과에서 열었습니다.",
   document_browser_repair: "실행을 막는 문제를 고치러 열었습니다.",
   document_browser_new_work: "고른 데이터로 새 작업을 시작합니다.",
 };
 const RETURN_LABEL: Record<string, string> = {
-  data: "문서 만들기로 돌아가기", preview: "미리보기로 돌아가기",
+  data: "문서 만들기로 돌아가기",
   result: "결과로 돌아가기", library: "「문서 작업」으로 돌아가기",
   documents: "문서 탐색으로 돌아가기",
 };
 /* 복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다. */
 const RETURN_SCREEN: Record<string, string> = {
-  data: "job", preview: "job", result: "job", documents: "job", library: "library",
+  data: "job", result: "job", documents: "job", library: "library",
 };
 
 /** `tpl/txt_lint` 한 왕복의 결과 — Python 이 낸 값을 **그대로** 든다.
@@ -867,18 +866,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     return RETURN_SCREEN[(context.return_context || {}).surface] || "job";
   }
 
-  /** 복귀 **상태**까지 되돌린다 — 면을 여는 절차는 그 화면이 소유한 seam 을 그대로 쓴다. */
-  async function restoreReturnState(): Promise<void> {
-    const context = snapshot().context || {};
-    const ret = context.return_context || {};
-    if (ret.surface === "preview" && ret.reopen_drawer) {
-      await deps.ports.jobRun.current().openPreview({
-        at: Number(ret.preview_index || 0),
-        focusTarget: String(context.target || ""),
-      });
-    }
-  }
-
   /** 착지 절차 — 목적 화면을 노출하기 **전에** 그 화면이 디스크를 다시 읽게 한다. */
   async function landOn(target: string): Promise<boolean> {
     try {
@@ -907,8 +894,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     } else {
       await sendEdit("discard_patch", {});
     }
-    if (!(await landOn(target))) return;
-    if (target === returnScreen()) await restoreReturnState();
+    await landOn(target);
+    // 복귀 **상태** 복원(구 `restoreReturnState`)은 미리보기 드로어 재개 하나뿐이었고
+    // #957 에서 함께 사망했다 — 착지 화면은 자기 스냅샷으로 선다.
   }
 
   /* ---- 본문 행동 ---- */

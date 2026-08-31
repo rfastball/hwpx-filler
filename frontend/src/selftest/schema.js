@@ -41,7 +41,7 @@ export const SELFTEST_MODES = Object.freeze({
       "job_mirror", "job_on", "job_result", "library_surface", "library_view_tabs",
       "milestone_h_overlay", "milestone_h_wave1", "modal_a11y", "modal_confirm_serial",
       "nav_count", "personalization_persist", "preserve", "preserve_real",
-      "preview_drawer", "range_draft", "react_runtime", "runtime", "sheet_gate",
+      "range_draft", "react_runtime", "runtime", "sheet_gate",
       "theme_persist", "title_dom", "tpl_options", "url", "view_order", "workbench",
     ]),
     echo: null,
@@ -402,11 +402,6 @@ export const SELFTEST_KEYS = Object.freeze({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "B",
-  }),
-  preview_drawer: key({
-    kind: "object", modes: ["full"], owner: "frontend",
-    consumedBy: ["tests/test_web_selftest_gate.py"],
-    cluster: "D",
   }),
   range_draft: key({
     kind: "object", modes: ["full"], owner: "frontend",

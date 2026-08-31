@@ -53,7 +53,7 @@ _SECTIONS_BY_MEDIA = {
 #: 생겼을 때 사유를 새로 발명하게 되고, 발명된 어휘는 계약과 갈린다.
 ENTRY_REASONS = (
     "voluntary", "library", "schema_new_field", "schema_missing_field",
-    "preview_result", "run_failure", "output_result", "workbench_result",
+    "run_failure", "output_result", "workbench_result",
     "document_browser_repair", "document_browser_new_work",
 )
 
@@ -64,7 +64,7 @@ ENTRY_REASONS = (
 #: 섰다. 유보 근거였던 F8 은 종결됐고, 선행이던 저장 시 데이터 자동등록은 #347 이 없앴다
 #: (그 자동등록이 새 진입점을 전원 파괴 확인으로 끝내던 원인이다).
 LIVE_ENTRY_REASONS = frozenset({
-    "voluntary", "library", "preview_result", "run_failure", "output_result",
+    "voluntary", "library", "run_failure", "output_result",
     "document_browser_repair", "document_browser_new_work",
 })
 
@@ -101,8 +101,8 @@ DEFERRED_ENTRY_REASONS = {
 }
 
 #: 복귀 표면(계약 §5.1 `returnContext.surface`) — 진입 사유와 같은 규율로 전부 열거한다.
-RETURN_SURFACES = ("data", "preview", "result", "library", "documents", "workbench")
-LIVE_RETURN_SURFACES = frozenset({"data", "preview", "result", "library", "documents"})
+RETURN_SURFACES = ("data", "result", "library", "documents", "workbench")
+LIVE_RETURN_SURFACES = frozenset({"data", "result", "library", "documents"})
 
 
 def sections_for(media: str) -> "tuple[str, ...]":

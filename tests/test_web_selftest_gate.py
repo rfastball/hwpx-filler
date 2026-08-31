@@ -471,47 +471,6 @@ class TestWebSelftestGate:
         assert d["opened_without_data"] is False, "데이터 없이 초안이 섰습니다(거절 계약 위반)."
         assert d["draft_state"]["open"] is False
 
-    def test_preview_drawer_renders_the_run_input_and_follows_state(
-        self, selftest_result: dict
-    ) -> None:
-        """재작성 F5 — 드로어가 실제로 값·이름·증거를 그리고, 상태가 면을 여닫는다.
-
-        **양성대조 선행**([[measurement-litmus]]): 데이터 없이 여는 미리보기는 거절이다
-        (§18.11-6). 거절과 성사가 다른 값을 내야 이 프로브가 실물을 잰 것이다.
-
-        정적 계약은 배선까지만 본다 — "면은 떴는데 값이 안 그려졌다 / 승인 버튼이 요구
-        없이 서 있다 / Python 은 닫혔다는데 면이 남아 있다"는 렌더된 DOM 을 되읽어야 잡힌다
-        (F2 PR-B 1R 이 `display:none` 인 채 배선만 있던 버튼을 놓친 자리와 같은 계열).
-        """
-        d = selftest_result["preview_drawer"]
-        assert d.get("error") is None, f"미리보기 프로브 오류: {d!r}"
-        assert d["present"] is True and d["hidden_before"] is True
-        assert d["opened_without_data"] is False, (
-            "데이터·작업 없이 미리보기가 열렸습니다 — 첫 레코드로 대신하지 않는다는 계약 위반."
-        )
-        assert d["opened"] is True, "성사 경로에서도 면이 열리지 않았습니다(프로브 무력)."
-        # 자리는 표시순 서수 1-based 로 그린다.
-        assert d["pos_text"] == "2 / 2"
-        assert d["prev_disabled"] is False and d["next_disabled"] is True
-        assert d["value_rows"] == 2 and d["evidence_rows"] == 1
-        assert d["filename"] == "doc-002.hwpx"
-        # 「적용 범위」 축은 실렌더에도 없다(U2 §2.3). 종전엔 "「기본 규칙」이라고만 말하고
-        # 「이번 생성에만」을 암시하지 말라"였는데, runOverrides 기각·사망으로 값이 하나뿐인
-        # 축이 되어 자리째 걷혔다 — 정적 계약이 못 보는 것은 JS 가 그 자리를 **다시 만들지
-        # 않는가**이고, 그것은 실렌더에서만 확인된다.
-        assert d["scope_axis"] is False, "실렌더에서 적용 범위 축이 재유입됐습니다."
-        # 「빈 값 있는 건만 보기」(U2 §2.13) — 상태는 스냅샷 되읽기(정본=Python)이고,
-        # blank_count>0 이면 활성이다. 이름 계획 한 줄(인라인 이름 목록의 이주처)도 선다.
-        assert d["blank_toggle_pressed"] == "false" and d["blank_toggle_disabled"] is False, d
-        assert "2건" in d["name_plan"], f"이름 계획 한 줄이 서지 않았습니다: {d['name_plan']!r}"
-        assert d["approve_shown"] is True and d["flag_shown"] is True
-        # 원격 닫힘 — 상태의 진실은 DOM 이 아니라 스냅샷이다.
-        assert d["closed_by_state"] is True, "Python 이 닫았는데 면이 남았습니다."
-        assert d["focus_returned"] is True, "닫힌 뒤 포커스가 여는 트리거로 돌아오지 않았습니다."
-        assert d["focus_on_body"] is False, (
-            "초점이 문서 맨 앞으로 떨어졌습니다 — `focus()` 가 조용한 no-op 이 된 증상입니다."
-        )
-
     def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
         """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
 
@@ -725,8 +684,9 @@ class TestWebSelftestGate:
 
     def test_job_mirror_zone_renders_one_line_without_values(self, selftest_result: dict) -> None:
         # 「작업」 본문 존 = 표 없는 한 줄(U2 §2.13) — 합성 스냅샷을 실 render() 에 흘려
-        # ①값을 말하는 표가 서지 않고 ②빈 값 표지(필드 이름 지목)와 이름 건수 ③확인 면
-        # 출구(생성 값 미리보기 ⤢)가 한 줄로 서는지 되읽는다. 값 표면 단일화의 실물 검증.
+        # ①값을 말하는 표가 서지 않고 ②빈 값 표지(필드 이름 지목)와 이름 건수가 한 줄로
+        # 서는지 되읽는다. #957 이후 그 줄에 출구는 없다 — 값을 말하는 표면은 만들어진
+        # 문서이고, 철거의 증거도 여기서 함께 잰다(선언된 철거 ≠ 조용한 무시).
         j = probe(selftest_result, "job_mirror")
         assert j.get("error") is None, f"본문 존 프로브 예외: {j.get('error')!r}"
         assert j["mirror_no_table"] is True, (
@@ -738,16 +698,14 @@ class TestWebSelftestGate:
             f"빈 값 지목 누락: {line!r}"
         )
         assert "이름" in line and "2건" in line, f"이름 건수 누락: {line!r}"
-        assert j["mirror_preview_exit"] is True, "확인 면 출구(생성 값 미리보기 ⤢)가 없습니다."
+        assert j["mirror_preview_exit_gone"] is True, (
+            "철거된 확인 면 출구(#jobMirrorPreviewOpen)가 아직 렌더됩니다(#957)."
+        )
+        assert j["mirror_review_flag_gone"] is True, (
+            "철거된 「승인 필요」 표지(#jobReviewFlag)가 아직 렌더됩니다(#957)."
+        )
         # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 두 자리가 배타로 서는지(#364).
         assert j["mirror_banner_empty"] is True, "한 줄과 배너가 같은 자리를 다툽니다."
-        # 출구 가용성은 액션바 버튼과 **같은 판정**(`can_open`)에 결속된다(#364) — 두 값
-        # 대조로 재는 이유: 한 값만 보면 「늘 열려 있는 버튼」도 초록이고, 비활성 요소의
-        # `click()` 은 이벤트를 만들지 않아 발신 부재가 배선 부재와 구별되지 않는다.
-        assert j["mirror_trigger_disabled"] is False, "미리볼 문서가 있는데 출구가 잠겼습니다."
-        assert j["mirror_trigger_locked"] is True, (
-            "can_open=false 인데 출구가 열려 있습니다 — 잠금이 판정에 결속되지 않았습니다."
-        )
 
     def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
         """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
@@ -1051,30 +1009,12 @@ class TestWebSelftestGate:
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = probe(selftest_result, "job_mirror")
         assert j.get("error") is None, j
-        # 확인 면 출구(U2 §2.13) — 실클릭이 preview_open 을 발신하고, 죽은 필드축 ack
-        # 액션(ack_field·unack_field)은 발신되지 않는다(구 jobConfirmSheet 프로브의 승계).
-        # 발신 0 을 「배선 부재」로 읽기 전에 **클릭이 이벤트까지 갔는지** 먼저 가른다
-        # (부재판별력): 비활성 요소의 `click()` 은 이벤트를 만들지 않는다.
-        assert j["mirror_trigger_disabled_at_click"] is False, (
-            "클릭 시점에 출구가 잠겨 있습니다 — 이 상태의 발신 0 은 배선 부재가 아닙니다."
+        # 편집기는 자기 화면으로 **덮는다**(재작성 F7). 종전 이 자리는 확인 면을 열어 둔 채
+        # 그 전환을 쟀는데, 그 면이 #957 에서 철거돼 남는 것은 전환 자체다(펼침 면 일괄
+        # 회수는 `sheet_gate`·`modal_a11y` 가 진다).
+        assert j["edit_takes_over_screen"], (
+            f"편집기 진입이 화면을 덮지 못했습니다 (창에 끼어든 push: {j.get('mirror_pushes')!r})"
         )
-        assert j["mirror_click_seen"] is True, "클릭이 이벤트를 만들지 못했습니다."
-        sent = [d["action"] for d in (j.get("mirror_preview_dispatch") or [])]
-        assert "preview_open" in sent, f"확인 면 출구가 preview_open 을 발신하지 않습니다: {sent!r}"
-        assert not ({"ack_field", "unack_field"} & set(sent)), f"죽은 액션 발신: {sent!r}"
-        # 닫은 뒤 초점은 **그 트리거**로 돌아온다(#364 리뷰 P2) — 위임 currentTarget 을
-        # 복귀점으로 쓰거나(포커스 불가능한 컨테이너) 트리거가 재렌더로 교체되면 여기서
-        # 화면 루트가 잡힌다. 키보드 사용자가 문서 처음에서 다시 걸어오는 그 결함이다.
-        # 복귀점이 틀린 것과 트리거가 그사이 잠긴 것(모달의 정상 경로)을 가르는 계기를
-        # 함께 읽는다 — 「초점이 안 왔다」만으로는 그 둘을 구별할 수 없다.
-        assert j["mirror_focus_target_state"] == "ready", (
-            f"측정 시점 트리거 상태가 복귀 가능하지 않습니다: {j['mirror_focus_target_state']!r} "
-            f"(창에 끼어든 push: {j.get('mirror_pushes')!r})"
-        )
-        assert j["mirror_preview_focus"] == "jobMirrorPreviewOpen", (
-            f"확인 면을 닫은 뒤 초점이 트리거로 돌아오지 않았습니다: {j['mirror_preview_focus']!r}"
-        )
-        assert j["edit_closes_sheets"], j
         # ⤢ 데이터 면은 별도 비동기 프로브(열기가 Python 왕복 뒤 — F3): 이동·헤더 고정·복귀
         # (포커스 포함)에 더해 범위 편집기 footer 가 **면 안에서만** 서는 것까지 본다.
         d = selftest_result["data_sheet"]
@@ -1427,7 +1367,7 @@ class TestWebSelftestGate:
         assert j["ctx_shown"] is True and j["ctx_return_btn"] is True, (
             f"진입 문맥 배너·복귀 버튼이 서지 않습니다: {j!r}"
         )
-        assert "미리보기에서 열었습니다" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
+        assert "생성 실패 결과에서 열었습니다" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
             f"배너가 사유·증거를 말하지 않습니다: {j['ctx_text']!r}"
         )
         assert j["nav_back_after_leave"] is True, (

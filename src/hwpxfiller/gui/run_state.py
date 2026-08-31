@@ -117,9 +117,9 @@ class RunStatus:
     preflight: PreflightResult
     field_states: "tuple[FieldState, ...]"
     gate: GateState
-    #: 이 실행이 발급할 이름과 그 집합 성질(C-01, 재작성 F5). 게이트가 소비하고 미리보기
-    #: 증거가 **같은 산출**을 재사용한다 — 표면이 따로 계획하면 미리보기가 실행과 다른
-    #: 이름을 말할 수 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
+    #: 이 실행이 발급할 이름과 그 집합 성질(C-01, 재작성 F5). 게이트와 표 「문서」 열이
+    #: **같은 산출**을 재사용한다 — 표면이 따로 계획하면 화면이 실행과 다른 이름을 말할 수
+    #: 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
     audit: OutputNameAudit = field(default_factory=OutputNameAudit)
 
 
@@ -474,7 +474,7 @@ class RunViewModel:
         out = req.output_report()
         drift, current_fields = self._structure_snapshot()
         states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
-        # 이름 계획은 **대상이 있으면** 낸다(미리보기가 폴더 없이도 이름을 보여준다).
+        # 이름 계획은 **대상이 있으면** 낸다(폴더가 없어도 이름은 보여 준다).
         # 경로 길이만 폴더에 의존하고, 폴더가 없으면 잴 경로가 없어 조용하다.
         # ``mapped`` 는 호출측이 이미 만든 매핑 결과 — 넘겨받아 같은 계산을 두 번 하지 않는다.
         audit = (
@@ -629,7 +629,7 @@ class RunViewModel:
                 "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
             )
         # 검토 고지(#957) — **차단하지 않는다**. 종전에는 같은 사실이 게이트를 닫고
-        # 「미리보기에서 승인」을 요구했지만, 신뢰 정책 선회로 확인의 자리는 결과 문서다.
+        # 확인 면의 승인을 요구했지만, 신뢰 정책 선회로 확인의 자리는 결과 문서다.
         # ``long_paths`` 와 같은 비차단 선례를 따른다: 침묵도 차단도 아닌 사전 고지.
         # 문안은 링1 단일 출처(:func:`~hwpxfiller.gui.review_state.review_notice_text`)이고
         # 빈 값은 여기 없다 — 그 자리는 위의 "[경고] 빈 값 필드" 가 이미 진다.

@@ -203,14 +203,14 @@ test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async
 
 /* ---------------- ③④ 교차 포트·landOn 순서 ---------------- */
 
-test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복원 → openPreview 복귀, late-binding", async () => {
+test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복원, late-binding", async () => {
   const h = harness({
     initial: async () => snap({
       dirty: true,
       context: {
-        entry_reason: "preview_result",
+        entry_reason: "run_failure",
         target: "binding/납품기한",
-        return_context: { surface: "preview", reopen_drawer: true, preview_index: 2 },
+        return_context: { surface: "result" },
       },
     }),
   });
@@ -221,10 +221,7 @@ test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복�
     refreshList: () => { h.trace.push(["ports.refreshList"]); },
     openBrowseNeedsAction: async () => {},
   });
-  h.ports.jobRun.bind({
-    openPreview: async (request) => { h.trace.push(["ports.openPreview", request]); },
-    attach: () => () => {},
-  });
+  h.ports.jobRun.bind({ attach: () => () => {} });
   h.ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     restoreEntryFocus: () => { h.trace.push(["ports.restoreEntryFocus"]); },
@@ -248,10 +245,10 @@ test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복�
 
   assert.ok(names.indexOf("ports.restoreEntryFocus") > iGo, "착지 뒤 진입 초점 복원");
 
-  const iPreview = names.indexOf("ports.openPreview");
-  assert.ok(iPreview > iGo, "미리보기 복귀는 착지 뒤");
-  assert.deepEqual(h.trace[iPreview][1], { at: 2, focusTarget: "binding/납품기한" },
-    "같은 previewIndex·행 정체성(context.target)을 나른다");
+  /* 복귀 **상태** 복원(구 `restoreReturnState` → `ports.openPreview`)은 미리보기 드로어
+     재개 하나뿐이었고 #957 에서 함께 사망했다 — 착지 화면은 자기 스냅샷으로 선다. */
+  assert.equal(names.includes("ports.openPreview"), false,
+    "이탈이 사라진 미리보기 면을 되열려 하지 않는다");
 });
 
 test("navigation.refresh 실패 — 나가지 않는다(loud 통지, go 0회)", async () => {

@@ -6,9 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { createJobRunController } from "../../frontend/src/screens/job_run.ts";
 import {
-  JobActionBar, JobStatusPill, JobWorkbenchStatus,
+  JobActionBar, JobMirrorZone, JobStatusPill, JobWorkbenchStatus,
 } from "../../frontend/src/screens/job_run.ts";
-import { JobPreviewSheet } from "../../frontend/src/screens/job_preview.ts";
 import {
   acceptDirect,
   acceptFull,
@@ -31,9 +30,6 @@ const SURFACE = [
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
   "pickOutputFolder",
   "relinkActive", "templateCheck", "templateApply",
-  "openPreviewFrom", "closePreview",
-  "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
-  "previewFixField", "previewFixFilename",
   // 산출물 관찰(S7-03 · #825) — 미리보기와 **별도 표면**이라 이름도 갈린다.
   "openArtifactFrom", "closeArtifact", "saveArtifactAs",
   "openRepair",
@@ -127,7 +123,7 @@ function harness(options = {}) {
   };
 }
 
-const SNAP = { has_job: true, job_name: "A", preview: { pos: 0, rows: [] } };
+const SNAP = { has_job: true, job_name: "A" };
 
 /* ================= ① 공개 표면 ================= */
 
@@ -181,16 +177,6 @@ test("dispose 는 구독을 걷고 세대를 올려 앞선 실행의 응답을 �
 // 능력이 많아서 초록이었고, 실제 앱에서는 `typeof` 확인에 걸려 조용히 지나갔다. 그래서 여기서
 // 세는 것을 「무엇을 불렀는가」에서 **「무엇을 넘겼는가」** 로 옮긴다.
 
-test("#789 미리보기 수정은 exact target 을 진입 문맥으로 넘긴다", async () => {
-  const h = harness({ openGuardedResult: true, snapshot: SNAP });
-  await h.controller.init();
-  h.push(SNAP);
-  await h.controller.previewFixField("공고명");
-  const [, context] = h.editorCalls.at(-1);
-  assert.equal(context.target, "binding/공고명");
-  assert.equal(context.entry_reason, "preview_result");
-});
-
 test("#789 exact Binding 수정도 같은 문맥을 넘긴다", async () => {
   const h = harness({ openGuardedResult: true, snapshot: SNAP });
   await h.controller.init();
@@ -222,17 +208,17 @@ test("client 는 객체째 — 발신이 교체한 dispatch 프로퍼티를 본�
     seen.push(["A", action]);
     return Promise.resolve({ ok: true, value: {} });
   };
-  h.controller.previewMove(1);
+  h.controller.resolveExecution();
   h.client.dispatch = (screen, action) => {
     seen.push(["B", action]);
     return Promise.resolve({ ok: true, value: {} });
   };
-  h.controller.previewMove(-1);
-  assert.deepEqual(seen, [["A", "preview_move"], ["B", "preview_move"]],
+  h.controller.resolveExecution();
+  assert.deepEqual(seen, [["A", "resolve_execution"], ["B", "resolve_execution"]],
     "메서드를 사전 추출하면 프로브의 스텁이 우회된다");
 });
 
-test("job run adapter는 full/progress 순서와 preview 전 정산을 보존한다", async () => {
+test("job run adapter는 full/progress 순서를 보존한다", async () => {
   let value = { full: { id: 1 }, progress: null };
   const listeners = new Set();
   const events = [];
@@ -241,8 +227,6 @@ test("job run adapter는 full/progress 순서와 preview 전 정산을 보존한
       getSnapshot: () => value,
       subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
     },
-    beforePreview: async () => { events.push("flush"); },
-    openPreview: async (request) => { events.push(["preview", request]); },
   });
   const release = adapter.attach({
     onFull: (full) => events.push(["full", full]),
@@ -250,12 +234,9 @@ test("job run adapter는 full/progress 순서와 preview 전 정산을 보존한
   });
   value = { full: value.full, progress: { done: 1 } };
   for (const listener of listeners) listener();
-  await adapter.openPreview({ at: 2 });
   assert.deepEqual(events, [
     ["full", { id: 1 }],
     ["progress", { done: 1 }],
-    "flush",
-    ["preview", { at: 2 }],
   ]);
   release();
   assert.equal(listeners.size, 0);
@@ -490,28 +471,16 @@ test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안
   }
 });
 
-test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복한다", async () => {
-  const preview = {
-    preview_token: "opaque-current-token",
-    requirement: { kind: "REQUIRED", reason: "DESTRUCTIVE_OVERWRITE" },
-    included_content_summary: "데이터 1건 · 항목 2개",
-    ordered_records: [{
-      record_identity: "record-7",
-      record_display_locator: "데이터 8행",
-      logical_field_values: [
-        { field_id: "f_name", display_label: "이름", value: "홍길동" },
-        { field_id: "f_note", display_label: "f_note", value: "원문 값" },
-      ],
-      planned_document_relative_path: "backend-exact.hwpx",
-      collision_disposition: "WRITE_OVERWRITE",
-    }],
-  };
+test("생성 내용 확인 표면과 승인 표지는 철거됐다(#957) — 파괴 확인은 생성 왕복이 진다", async () => {
+  /* 종전 이 자리에는 `JobPreviewSheet` 가 backend DTO 를 그리고 `preview_approve` 로 토큰을
+     왕복시키는 계약이 섰다. #957 정책 선회로 그 표면과 승인 축이 통째로 사라졌으므로 여기서
+     세는 것은 **부재**다: 두 출구(A 갈래 거울 트리거·B 갈래 관리형 버튼)와 「승인 필요」
+     표지가 어느 상태에서도 서지 않는다. 파괴 확인의 계약은 `overwriteBody` 가 진다. */
   const snap = {
-    ...SNAP, managed_hwpx: true, preview: { ...SNAP.preview, open: true },
+    ...SNAP, managed_hwpx: true,
+    review: { required: true, risk: "filename_set", targets: ["파일 이름 규칙"] },
     workbench_observation: {
-      supported: true, primary_action: "REVIEW_PREVIEW", preview_satisfied: false,
-      preview_requirement: preview.requirement,
-      semantic_preview: preview,
+      supported: true, primary_action: "CREATE_DOCUMENTS",
       create_action: { label: "문서 만들기", enabled: false, disabled_reason: "S6 부재" },
     },
   };
@@ -519,70 +488,36 @@ test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복�
   await h.controller.init();
   h.push(snap);
 
-  const sheet = renderToStaticMarkup(
-    createElement(JobPreviewSheet, { controller: h.controller }),
-  );
-  for (const text of [
-    "생성 내용 확인", "포함할 내용", "데이터 1건 · 항목 2개", "데이터 8행",
-    "이름", "홍길동", "f_note", "원문 값", "backend-exact.hwpx",
-    "기존 파일 덮어쓰기", "기존 파일을 덮어쓸 예정입니다.", "확인 완료",
-  ]) assert.ok(sheet.includes(text), text);
-  for (const forbidden of ["SEMANTIC", "VALUE", "current_plan_ref", "representative_vdr_ref"])
-    assert.equal(sheet.includes(forbidden), false, forbidden);
-
   const action = renderToStaticMarkup(
     createElement(JobActionBar, { controller: h.controller }),
   );
-  assert.match(action, /id="jobManagedPreviewOpen"[^>]*class="btn primary"|class="btn primary"[^>]*id="jobManagedPreviewOpen"/);
-  h.controller.previewApprove(preview.preview_token);
-  await Promise.resolve();
-  assert.deepEqual(h.calls.at(-1), {
-    screen: "job", action: "preview_approve",
-    payload: { preview_token: "opaque-current-token" },
-  });
+  for (const gone of ["jobManagedPreviewOpen", "jobMirrorPreviewOpen", "jobReviewFlag",
+    "생성 내용 확인", "승인 필요"]) {
+    assert.equal(action.includes(gone), false, gone);
+  }
 
-  const optional = {
-    ...snap,
-    workbench_observation: {
-      ...snap.workbench_observation,
-      primary_action: "RESOLVE_RUNTIME_POLICY",
-      preview_satisfied: true,
-      semantic_preview: { ...preview, requirement: { kind: "OPTIONAL" } },
-    },
-  };
-  h.push(optional);
-  const optionalSheet = renderToStaticMarkup(
-    createElement(JobPreviewSheet, { controller: h.controller }),
-  );
-  assert.equal(optionalSheet.includes('id="previewApprove"'), false);
-  assert.ok(optionalSheet.includes("필요할 때 생성 내용을 확인할 수 있습니다."));
-
-  const source = String(JobPreviewSheet);
-  for (const forbidden of ["existsSync", "OVERWRITE_EXPLICIT", "planned_document_relative_path =", ".sort("])
-    assert.equal(source.includes(forbidden), false, forbidden);
-
-  h.push({
-    ...snap,
-    preview: { ...snap.preview, open: false },
-    workbench_observation: { ...snap.workbench_observation, semantic_preview: null },
-  });
-  const closedAction = renderToStaticMarkup(
+  const legacy = { ...snap, managed_hwpx: false };
+  h.push(legacy);
+  const legacyAction = renderToStaticMarkup(
     createElement(JobActionBar, { controller: h.controller }),
   );
-  assert.ok(closedAction.includes('id="jobManagedPreviewOpen"'));
+  for (const gone of ["jobReviewFlag", "승인 필요", "jobManagedPreviewOpen"]) {
+    assert.equal(legacyAction.includes(gone), false, gone);
+  }
+  const mirror = renderToStaticMarkup(
+    createElement(JobMirrorZone, { controller: h.controller }),
+  );
+  assert.equal(mirror.includes("jobMirrorPreviewOpen"), false);
+  assert.equal(mirror.includes("생성 값 미리보기"), false);
 
-  const closedPreview = { ...preview };
-  Object.defineProperty(closedPreview, "ordered_records", {
-    get() { throw new Error("closed preview rendered records"); },
+  /* 파괴 확인 본문은 남는다 — 수치 재진술의 단일 출처(managed·legacy 공용). */
+  const body = h.controller.overwriteBody({
+    total: 10, overwrite_count: 3, new_count: 7,
+    conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 1,
   });
-  h.push({
-    ...snap,
-    preview: { ...snap.preview, open: false },
-    workbench_observation: { ...snap.workbench_observation, semantic_preview: closedPreview },
-  });
-  assert.doesNotThrow(() => renderToStaticMarkup(
-    createElement(JobPreviewSheet, { controller: h.controller }),
-  ));
+  for (const text of ["10건", "3건", "7건", "a.hwpx", "b.hwpx", "외 1개"]) {
+    assert.ok(body.includes(text), text);
+  }
 });
 
 test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 push를 기다린다', async () => {

@@ -21,7 +21,7 @@ from hwpxfiller.application.generation_delivery import (
     ResolvedGenerationDeliveryPlan,
     resolve_generation_delivery_plan,
 )
-import hwpxfiller.application.preview_requirement as preview_requirement_module
+import hwpxfiller.application.run_delivery_intent as run_delivery_intent_module
 from hwpxfiller.application.run_delivery_intent import (
     ADD_SUFFIX,
     FAIL,
@@ -39,19 +39,20 @@ def test_default_collision_is_overwrite_and_says_so():
     assert intent.is_destructive is True
 
 
-def test_destructive_intent_is_not_by_itself_an_approval_requirement():
-    """의도가 파괴적인 것과 **이번 delivery 가 무엇을 덮어쓰는가**는 다른 사실이다.
+def test_destructive_intent_is_only_a_restatement_of_the_chosen_policy():
+    """의도가 파괴적인 것과 **이번 delivery 가 실제로 무엇을 덮어쓰는가**는 다른 사실이다.
 
-    기본이 덮어쓰기가 된 뒤 ``is_destructive`` 는 거의 언제나 참이라 승인 판정의 입력이
-    될 수 없다. 승인을 세우는 것은 item 의 ``collision_disposition`` 이고 그 판정은
-    :func:`evaluate_current_preview_requirement` 하나가 소유한다 — 이 속성은 그 자리에
-    쓰이지 않는다(``preview_requirement`` 모듈이 이 모듈을 import 하지 않는 것이 그 증거다).
+    기본이 덮어쓰기가 된 뒤 ``is_destructive`` 는 거의 언제나 참이라 그 자체로는 아무것도
+    판정하지 못한다 — 고른 정책의 재진술일 뿐이다. 실제 파괴 집합은 파일 시스템을 본 쪽만
+    말할 수 있고 이 모듈은 그것을 보지 않는다. 종전 이 자리를 지던 단언(승인 요구를 세우는
+    ``preview_requirement`` 가 이 모듈을 읽지 않는다)은 그 모듈이 #957 슬라이스 ③ 에서
+    사라져 겨눌 대상이 없다 — 여전히 참인 사실, 곧 **의도 모듈의 무지**로 다시 겨눈다.
     """
     intent = RunDeliveryIntent(output_directory="C:/out", collision_policy=ADD_SUFFIX)
     assert intent.is_destructive is False
-    source = inspect.getsource(preview_requirement_module)
-    assert "run_delivery_intent" not in source
-    assert "is_destructive" not in source
+    source = inspect.getsource(run_delivery_intent_module)
+    for probe in ("os.path", "pathlib", "Path(", "exists(", "listdir", "scandir"):
+        assert probe not in source, f"session 의도 모듈이 파일 시스템을 관측한다: {probe}"
 
 
 def test_collision_policy_vocabulary_is_from_single_source():

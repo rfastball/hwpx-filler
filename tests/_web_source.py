@@ -89,7 +89,6 @@ SCREEN_ESM_FILES: tuple[str, ...] = ()
 REACT_JOB_RUN_FILES = (
     "src/screens/job_run.ts",
     "src/screens/job_result.ts",
-    "src/screens/job_preview.ts",
     "src/screens/job_run_state.ts",
     "src/screens/job_relink.ts",
 )

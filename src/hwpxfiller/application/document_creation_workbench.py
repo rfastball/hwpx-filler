@@ -9,13 +9,12 @@ backend Product/Application 계약이 진다.
 **절대 하지 않는 것(재판정 금지).**
 
 - 새 durable state · ``current_plan_id`` · UI-only validity 를 만들지 않는다.
-- record validity · output path · Active Field · PreviewRequirement · runtime admission 을
+- record validity · output path · Active Field · runtime admission 을
   **재판정하지 않는다** — 전부 backend 권위가 이미 내린 verdict 를 **shape 만** 받아 합성한다.
   admission 은 :mod:`hwpxfiller.application.fresh_execution_observation` verdict,
   readiness 는 그 모듈의 :func:`decide_materialization_readiness` **권위 함수**로 파생한다
   (R2(#740): currentness 축은 orchestration 상태로 흡수 — 별도 입력이 없다)
-  (재구현 아님). preview requirement 는 :mod:`hwpxfiller.application.preview_requirement`,
-  template change 는 :mod:`hwpxfiller.application.selection_compatibility` verdict, orchestration 은
+  (재구현 아님). template change 는 :mod:`hwpxfiller.application.selection_compatibility` verdict, orchestration 은
   :mod:`hwpxfiller.application.automatic_seal_orchestration` 상태를 그대로 소비한다.
 - store/webapp/gui/pywebview 를 import 하지 않는다(``tests/repo_contract/test_architecture.py`` 의
   링 경계가 강제). S6-absent runtime conformance(``s6_absent_runtime_conformance``)는 webapp 소유라
@@ -25,7 +24,7 @@ backend Product/Application 계약이 진다.
 읽지 못하므로 최소 입력 DTO 를 여기서 정의한다. 이 DTO 들의 값은 **backend/controller(ring2, SX-02)가
 채우는 사실**이지 프런트가 계산하는 값이 아니다 — 프런트가 이걸 계산하면 상향 조건(#724 즉시 상향)
 위반이다. :class:`DataScopeSummary` · :class:`ContentSelectionSummary` · :class:`ActiveWorkContext`
-가 그것이다. 나머지 축(currentness/admission/preview/orchestration/record/delivery)은 위 권위
+가 그것이다. 나머지 축(currentness/admission/orchestration/record/delivery)은 위 권위
 모듈의 verdict 타입을 **재사용**한다.
 
 frozen dataclass 만 쓴다. 어휘 문자열의 정본은
@@ -66,11 +65,6 @@ from hwpxfiller.application.field_binding_input import (
     NEW_ACTIVE_FIELD,
     PRESERVED,
 )
-from hwpxfiller.application.preview_requirement import (
-    PreviewRequired,
-    PreviewRequirement,
-    SemanticValuePreviewProjection,
-)
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQUIRED
 
@@ -85,7 +79,6 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     REVIEW_BINDING,
     REVIEW_RECORD_DATA,
     REVIEW_DELIVERY,
-    REVIEW_PREVIEW,
     EXECUTION_NO_EVIDENCE,
     EXECUTION_CHECKING,
     EXECUTION_STALE,
@@ -106,7 +99,6 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     RESOLVE_EXECUTION,
     PA_REVIEW_RECORD_DATA,
     PA_REVIEW_DELIVERY,
-    PA_REVIEW_PREVIEW,
     RESOLVE_RUNTIME_POLICY,
     CREATE_DOCUMENTS,
 ) = PRIMARY_ACTION_CODES
@@ -114,7 +106,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
 # ─── Primary Action 우선순위 사슬(#724 §3) ─────────────────────────────────────────────────────
 # (blocker_code, primary_action_code) 쌍의 **우선순위 순서**. 이슈 §3 사슬을 리터럴로 인코딩한다:
 #   context → 데이터 → 레코드 → Work → Template change → content → Binding
-#   → execution no-evidence/checking/stale → record → delivery → required preview → runtime/policy
+#   → execution no-evidence/checking/stale → record → delivery → runtime/policy
 #   → CREATE.
 # 세 blocker(EXECUTION_NO_EVIDENCE/EXECUTION_CHECKING/EXECUTION_STALE)가 하나의 RESOLVE_EXECUTION 로,
 # 두 blocker(POLICY_BLOCKED/RUNTIME_NOT_ADMITTED)가 하나의 RESOLVE_RUNTIME_POLICY 로 접힌다.
@@ -133,7 +125,6 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (EXECUTION_STALE, RESOLVE_EXECUTION),
     (REVIEW_RECORD_DATA, PA_REVIEW_RECORD_DATA),
     (REVIEW_DELIVERY, PA_REVIEW_DELIVERY),
-    (REVIEW_PREVIEW, PA_REVIEW_PREVIEW),
     (POLICY_BLOCKED, RESOLVE_RUNTIME_POLICY),
     (RUNTIME_NOT_ADMITTED, RESOLVE_RUNTIME_POLICY),
 )
@@ -165,7 +156,6 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     CHOOSE_CONTENT: "workbench.content",
     REVIEW_BINDING: "workbench.binding",
     REVIEW_RECORD_DATA: "workbench.record_data",
-    REVIEW_PREVIEW: "workbench.preview",
     REVIEW_DELIVERY: "workbench.delivery",
     EXECUTION_NO_EVIDENCE: "workbench.execution",
     EXECUTION_CHECKING: "workbench.execution",
@@ -463,12 +453,12 @@ class InputRequirement:
 class WorkbenchCompositionInput:
     """composer 입력 aggregate — 이미 판정된 권위 verdict + 이 모듈 소유 요약 DTO 를 모은다.
 
-    이 안의 verdict 축(``admission``·``preview_requirement``·``orchestration``·
-    ``template_change_verdict``)은 backend 권위가 이미 내린 값이다 — composer 는 재판정하지 않고
-    합성만 한다. R2(#740): currentness 축은 orchestration 으로 흡수됐다(current value 는 자명히
-    현재라 별도 currentness 입력이 없다 — CURRENT/STALE 은 orchestration 상태가 나른다).
-    ``run_delivery_intent`` 는 session-scoped 라 Plan/VDR identity 에 들어가지 않는다
-    (#724 §8) — delivery preview 맥락으로만 실린다.
+    이 안의 verdict 축(``admission``·``orchestration``·``template_change_verdict``)은 backend
+    권위가 이미 내린 값이다 — composer 는 재판정하지 않고 합성만 한다. R2(#740): currentness
+    축은 orchestration 으로 흡수됐다(current value 는 자명히 현재라 별도 currentness 입력이
+    없다 — CURRENT/STALE 은 orchestration 상태가 나른다). ``run_delivery_intent`` 는
+    session-scoped 라 Plan/VDR identity 에 들어가지 않는다(#724 §8) — delivery 요약 맥락으로만
+    실린다.
     """
 
     data_scope: DataScopeSummary
@@ -476,15 +466,12 @@ class WorkbenchCompositionInput:
     active_work: ActiveWorkContext
     admission: RuntimePolicyAdmission
     orchestration: AutomaticSealOrchestration
-    preview_requirement: PreviewRequirement
     delivery: DeliveryPreviewSummary
     record_validation: RecordValidationSummary = field(default_factory=RecordValidationSummary)
     template_change_verdict: str | None = None
     active_field_requirement_ids: tuple[str, ...] = ()
     binding_review_needed: bool = False
     input_requirements: tuple[InputRequirement, ...] = ()
-    preview_satisfied: bool = False
-    semantic_preview: SemanticValuePreviewProjection | None = None
     run_delivery_intent: RunDeliveryIntent | None = None
     context_integrity: WorkbenchContextIntegrity | None = None
     historical_outcome: HistoricalOutcomeSummary | None = None
@@ -534,10 +521,7 @@ class DocumentCreationWorkbenchObservation:
     materialization_readiness: str  # decide_materialization_readiness 권위 함수 결과
     orchestration: AutomaticSealOrchestration
     record_validation: RecordValidationSummary
-    preview_requirement: PreviewRequirement
-    preview_satisfied: bool
     delivery: DeliveryPreviewSummary
-    semantic_preview: SemanticValuePreviewProjection | None
     run_delivery_intent: RunDeliveryIntent | None
     # (c) 합성 결과
     blockers: tuple[str, ...]
@@ -611,8 +595,6 @@ class DocumentCreationWorkbenchObservation:
             texts.append(self.create_documents_disabled_reason)
         if self.resolve_execution_disabled_reason is not None:
             texts.append(self.resolve_execution_disabled_reason)
-        if self.semantic_preview is not None:
-            texts.append(self.semantic_preview.label)
         for issue in self.record_validation.issues:
             texts.extend((issue.record_display_locator, issue.field_display_label, issue.message))
         texts.extend(blocker.message for blocker in self.delivery.blockers)
@@ -687,7 +669,7 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     """여러 blocker 를 **동시에 보존**해 BLOCKER_CODES 순서로 낸다(#724 §테스트 2).
 
     각 blocker 는 이미 판정된 verdict/요약을 **읽어서만** 세운다 — 여기서 currentness·admission·
-    record validity·preview·delivery 를 재판정하지 않는다. CONTEXT_ERROR 는 이 함수가 세우지 않는다:
+    record validity·delivery 를 재판정하지 않는다. CONTEXT_ERROR 는 이 함수가 세우지 않는다:
     context error 는 :func:`compose_document_creation_workbench` 가 observation 이 아니라
     :class:`DocumentCreationWorkbenchContextError` 로 표현한다(user blocker 로 낮추지 않는다).
     """
@@ -717,13 +699,11 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     ):
         present.add(REVIEW_BINDING)
 
-    # record / delivery / preview
+    # record / delivery
     if inp.record_validation.has_blocking_issues:
         present.add(REVIEW_RECORD_DATA)
     if not inp.delivery.resolvable:
         present.add(REVIEW_DELIVERY)
-    if isinstance(inp.preview_requirement, PreviewRequired) and not inp.preview_satisfied:
-        present.add(REVIEW_PREVIEW)
 
     # execution(checking / stale) — orchestration verdict(R2(#740): currentness 축 흡수).
     # STALE 은 orchestration STALE/FAILED 가 나른다(durable command 가 settle 됐으나 재확인 필요).
@@ -811,7 +791,7 @@ def compose_document_creation_workbench(
     integrity 신호나 admission 의 CONTEXT_ERROR verdict 는
     :class:`DocumentCreationWorkbenchContextError` 로 표현한다(그 다음 행동은 RECOVER_CONTEXT). 그
     밖에는 blocker 를 **동시에 보존**하고 Primary Action 을 §3 사슬로 정확히 하나 골라 Observation 을
-    낸다. admission/preview/orchestration/record/delivery 는 전부 이미 내려진 verdict 를
+    낸다. admission/orchestration/record/delivery 는 전부 이미 내려진 verdict 를
     합성만 한다 — 재판정 없음. readiness 는 :func:`decide_materialization_readiness` 권위 함수로 파생.
     R2(#740): fresh observation 축 실패(ExecutionObservationContextError)는 ring2(observation
     product)가 admission=CONTEXT_ERROR 로 넘겨 이 경로가 ContextError 로 표현한다.
@@ -843,10 +823,7 @@ def compose_document_creation_workbench(
         materialization_readiness=readiness,
         orchestration=inp.orchestration,
         record_validation=inp.record_validation,
-        preview_requirement=inp.preview_requirement,
-        preview_satisfied=inp.preview_satisfied,
         delivery=inp.delivery,
-        semantic_preview=inp.semantic_preview,
         run_delivery_intent=inp.run_delivery_intent,
         blockers=blockers,
         primary_action=primary_action,

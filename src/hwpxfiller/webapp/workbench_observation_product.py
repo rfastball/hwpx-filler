@@ -12,8 +12,8 @@ active Work·S4 content 선택 요약·orchestration 상태)을 :class:`Workbenc
 - ``active_work``         — active Work 식별(:func:`active_work_from_session`)
 - ``orchestration``       — controller 가 든 session-scoped :class:`AutomaticSealOrchestration`
 
-나머지 축(``admission``·``preview_requirement``·``delivery``·``record_validation``·
-``binding_review_needed``·``active_field_requirement_ids``·``preview_satisfied``·``semantic_preview``·
+나머지 축(``admission``·``delivery``·``record_validation``·
+``binding_review_needed``·``active_field_requirement_ids``·
 ``template_change_verdict``·``context_integrity``·``historical_outcome``)은 **명시적 seam 기본값**이다.
 각 seam 은 `_sx03_seam_*` / `_sx04_seam_*` 부분함수 하나가 낸다 — SX-03/SX-04 가 자기 함수 본문만
 실제 backend verdict 로 바꿔 끼우면 되게 축별로 분리했다(다른 축의 라인을 건드리지 않는다).
@@ -63,10 +63,6 @@ from ..application.fresh_execution_observation import (
     ExecutionObservationContextError,
     FreshExecutionObservation,
     RuntimePolicyAdmission,
-)
-from ..application.preview_requirement import (
-    PreviewRequirement,
-    SemanticValuePreviewProjection,
 )
 from ..application.run_delivery_intent import RunDeliveryIntent
 from ..application.slot_configuration_projection import (
@@ -245,7 +241,7 @@ def execution_verdicts_from_fresh(
     )
 
 
-# ── SX-04 seam(record/delivery/preview-satisfied 축) — 부분함수 하나씩 ────────────────────────────
+# ── SX-04 seam(record/delivery 축) — 부분함수 하나씩 ──────────────────────────────────────────────
 def _sx04_seam_record_validation(
     projection: RecordValidationSummary | None = None,
 ) -> RecordValidationSummary:
@@ -288,9 +284,6 @@ class WorkbenchObservationProduct:
         input_requirements: tuple[InputRequirement, ...] = (),
         record_validation: RecordValidationSummary | None = None,
         delivery: DeliveryPreviewSummary | None = None,
-        preview_requirement: PreviewRequirement,
-        preview_satisfied: bool,
-        semantic_preview: SemanticValuePreviewProjection | None,
         run_delivery_intent: RunDeliveryIntent | None = None,
         context_integrity: WorkbenchContextIntegrity | None = None,
         historical_outcome: "HistoricalOutcomeSummary | None" = None,
@@ -299,7 +292,7 @@ class WorkbenchObservationProduct:
 
         판정은 하지 않는다 — admission/readiness 는 :func:`execution_verdicts_from_fresh`
         가 fresh_observation 에서 **추출**한 값을 그대로 composer 에 넘긴다(하드코딩 0). CURRENT/STALE 은
-        orchestration 축이 나른다(R2(#740): currentness 흡수). SX-04 축(record/delivery/preview)은
+        orchestration 축이 나른다(R2(#740): currentness 흡수). SX-04 축(record/delivery)은
         여전히 seam 기본값이다 — delivery anchor(resolvable=False)가 CREATE 로의 조용한 누수를 막는다.
         """
         verdicts = execution_verdicts_from_fresh(fresh_observation)
@@ -327,7 +320,6 @@ class WorkbenchObservationProduct:
             orchestration=orchestration,
             # ── SX-03 축(fresh_observation 소비 — 재판정 0) ──
             admission=verdicts.admission,
-            preview_requirement=preview_requirement,
             active_field_requirement_ids=active_field_requirement_ids,
             binding_review_needed=binding_review_needed,
             template_change_verdict=template_change_verdict,
@@ -336,8 +328,6 @@ class WorkbenchObservationProduct:
             record_validation=_sx04_seam_record_validation(record_validation),
             delivery=_sx04_seam_delivery(delivery),
             run_delivery_intent=run_delivery_intent,
-            preview_satisfied=preview_satisfied,
-            semantic_preview=semantic_preview,
             context_integrity=context_integrity,
             # ── S6-05(#812): 세션 실행 증거 — 부차 축(Primary Action 을 결정하지 못한다) ──
             historical_outcome=historical_outcome,

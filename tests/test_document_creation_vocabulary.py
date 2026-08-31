@@ -23,7 +23,7 @@ EXPECTED_BLOCKERS = (
     "REVIEW_BINDING",
     "REVIEW_RECORD_DATA",
     "REVIEW_DELIVERY",
-    "REVIEW_PREVIEW",
+    # REVIEW_PREVIEW 는 #957 슬라이스 ③ 에서 사망했다 — 생성값 미리보기·승인 축 자체가 없다.
     "EXECUTION_NO_EVIDENCE",
     "EXECUTION_CHECKING",
     "EXECUTION_STALE",
@@ -46,7 +46,7 @@ EXPECTED_PRIMARY_ACTIONS = (
     "RESOLVE_EXECUTION",
     "REVIEW_RECORD_DATA",
     "REVIEW_DELIVERY",
-    "REVIEW_PREVIEW",
+    # 대응 blocker 가 사라졌으므로 Primary Action 사슬에서도 함께 걷혔다(#957).
     "RESOLVE_RUNTIME_POLICY",
     "CREATE_DOCUMENTS",
 )
@@ -54,8 +54,10 @@ EXPECTED_PRIMARY_ACTIONS = (
 
 def test_blocker_codes_exact_order_and_count() -> None:
     assert vocab.BLOCKER_CODES == EXPECTED_BLOCKERS
-    assert len(vocab.BLOCKER_CODES) == 16   # +CONNECT_DATA(U4 §2.4 · #932 U4-C)
-    assert len(set(vocab.BLOCKER_CODES)) == 16  # 중복 없음
+    assert len(vocab.BLOCKER_CODES) == 15   # -REVIEW_PREVIEW(#957 슬라이스 ③)
+    assert len(set(vocab.BLOCKER_CODES)) == 15  # 중복 없음
+    # 미리보기 승인 축은 어휘에서도 흔적이 없다 — 되살리려면 계약 변경으로 다시 등록해야 한다.
+    assert "REVIEW_PREVIEW" not in vocab.BLOCKER_CODES
     # 확인 축 셋은 나란히 선다(#912 D1) — 「아직 확인 안 함」이 runtime 거절로 접히면
     # 그것을 지울 동사가 사슬 끝으로 밀려 사라진다.
     execution_axis = vocab.BLOCKER_CODES.index("EXECUTION_NO_EVIDENCE")
@@ -68,22 +70,29 @@ def test_blocker_codes_exact_order_and_count() -> None:
 
 def test_primary_action_codes_exact_order_and_count() -> None:
     assert vocab.PRIMARY_ACTION_CODES == EXPECTED_PRIMARY_ACTIONS
-    assert len(vocab.PRIMARY_ACTION_CODES) == 14   # +CONNECT_DATA(#932 U4-C)
-    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 14
+    assert len(vocab.PRIMARY_ACTION_CODES) == 13   # -REVIEW_PREVIEW(#957 슬라이스 ③)
+    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 13
     # 우선순위 계약: 첫째는 context 복원, 마지막은 최종 실행(이슈가 리터럴로 고정).
     assert vocab.PRIMARY_ACTION_CODES[0] == "RECOVER_CONTEXT"
     assert vocab.PRIMARY_ACTION_CODES[-1] == "CREATE_DOCUMENTS"
+    assert "REVIEW_PREVIEW" not in vocab.PRIMARY_ACTION_CODES
 
 
-def test_preview_requirement_kinds_exact() -> None:
-    assert vocab.PREVIEW_REQUIREMENT_KINDS == ("NOT_REQUIRED", "OPTIONAL", "REQUIRED")
+def test_preview_vocabulary_is_absent() -> None:
+    """미리보기 축의 어휘 상수는 정본에 **없다**(#957 슬라이스 ③).
+
+    음성 대조로 남긴다 — 상수가 조용히 되살아나면 그것을 읽는 표면도 함께 돌아오고,
+    「확인의 자리는 만들어진 문서」라는 현행 정책과 두 목소리가 된다.
+    """
+    assert not hasattr(vocab, "PREVIEW_REQUIREMENT_KINDS")
+    assert not hasattr(vocab, "SEMANTIC_PREVIEW_LABEL")
 
 
 def test_collision_policies_exact_and_default() -> None:
     assert vocab.COLLISION_POLICIES == ("ADD_SUFFIX", "FAIL", "OVERWRITE_EXPLICIT")
     # U4 계열2-27: 기본은 덮어쓰기다. 이름 충돌 자체는 blocker 가 아니고, 고르는 자리도 없다.
-    # 「조용히 덮지 않는다」를 지키는 것은 이 값이 아니라 그 결과다 —
-    # `tests/test_preview_requirement.py` 가 덮어쓸 항목이 승인을 세우는 것을 못박는다.
+    # 「조용히 덮지 않는다」를 지키는 것은 이 값이 아니라 그 결과다 — #957 이후 그 자리는
+    # 생성 호출이 ``needs_overwrite`` 로 되돌아오는 확인 왕복이 진다(승인 축 아님).
     assert vocab.DEFAULT_COLLISION_POLICY == "OVERWRITE_EXPLICIT"
     assert vocab.DEFAULT_COLLISION_POLICY in vocab.COLLISION_POLICIES
 
@@ -120,10 +129,3 @@ def test_user_facing_copy_never_leaks_internal_vocabulary() -> None:
         if _INTERNAL_DIAGNOSTIC.search(text)
     }
     assert not leaks, f"사용자 문안이 내부 어휘를 노출한다: {leaks}"
-
-
-def test_preview_identity_labels_do_not_impersonate_artifact() -> None:
-    # current preview 는 Artifact 가 아니다 — 라벨이 "실제 생성된 결과"이거나 내부어면 안 된다.
-    artifact_copy = vocab.USER_VOCABULARY["Artifact"]
-    assert vocab.SEMANTIC_PREVIEW_LABEL != artifact_copy
-    assert not _INTERNAL_DIAGNOSTIC.search(vocab.SEMANTIC_PREVIEW_LABEL)

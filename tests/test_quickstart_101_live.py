@@ -599,7 +599,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert tuple(report["shots"]) == CAPTURE_POINTS
     observed = report["observations"]
     assert observed["hwpx_result_state"] == "completed"
-    assert observed["preview_approved"] is True
+    assert observed["preview_surface_retired"] is True
     # U4-C(#932): 「문서 만들기에서 사용」은 데이터 선택을 지나지 않는다 — 작업이 자기
     # 데이터를 끌고 오고(§2.4) 그 착지가 곧 승격이다. 종전 증거 둘
     # (`active_work_absent_after_mount`·`preferred_notice_requires_selection`)은 그 계약이
@@ -798,7 +798,7 @@ def _healthy_report(**overrides) -> dict:
         "unstable_shots": [],
         "observations": {
             "hwpx_result_state": "completed",
-            "preview_approved": True,
+            "preview_surface_retired": True,
             "txt_copied": "1 / 3",
             "empty_value_gate_asked": True,
             "empty_value_surfaced": True,
@@ -834,7 +834,7 @@ def test_a_torn_frame_fails_the_capture_verdict() -> None:
     ("observation", "fragment"),
     [
         ({"hwpx_result_state": "failed"}, "결과 태"),
-        ({"preview_approved": False}, "승인"),
+        ({"preview_surface_retired": False}, "미리보기 표면"),
         ({"txt_copied": ""}, "복사 카운터"),
         ({"empty_value_gate_asked": False}, "이름게이트"),
         ({"empty_value_surfaced": False}, "〈빈 값〉"),
@@ -906,7 +906,7 @@ def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_pa
     """**이 파일의 존재 이유**(#460) — 환경 실패는 제품 판정을 낳지 않는다.
 
     종전에는 창이 안 뜬 실행도 :func:`report_mod.judge` 를 그대로 타 「HWPX 생성 0건」·
-    「미리보기 미승인」·「〈빈 값〉 미표면」 7줄을 냈다. 전부 참이지만 전부 파생이라, 무인
+    「미리보기 표면 잔존」·「〈빈 값〉 미표면」 7줄을 냈다. 전부 참이지만 전부 파생이라, 무인
     판정은 그것을 제품 회귀로 읽고 있지도 않은 결함을 고치러 간다.
     """
     verdict = report_mod.environment_verdict("WebView2 창이 75s 안에 뜨지 않았습니다")
@@ -1151,7 +1151,7 @@ def test_a_boot_failure_no_longer_prints_eight_product_lines(capsys, tmp_path) -
 def test_a_real_product_failure_still_prints_every_line(capsys, tmp_path) -> None:
     """양성 대조 — 제품 실패의 진단까지 접으면 이 조치가 새 침묵을 만든다."""
     lines = _landing_stderr(
-        capsys, tmp_path, environment=False, failures=["HWPX 생성 0건 (기대 3건)", "승인 미착지"]
+        capsys, tmp_path, environment=False, failures=["HWPX 생성 0건 (기대 3건)", "표면 잔존"]
     )
 
     assert "실패[제품]" in lines[0], lines[0]

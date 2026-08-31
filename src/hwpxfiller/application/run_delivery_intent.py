@@ -91,8 +91,9 @@ class RunDeliveryIntent:
 
         U4 계열2-27 이후 이 값은 **기본값이라 참**이다 — 「명시로 골랐다」는 더 이상 이
         속성의 뜻이 아니다. 의도가 파괴적인 것과 이번 delivery 가 실제로 무엇을 덮어쓰는
-        가는 다른 사실이고, 승인을 요구하는 쪽은 후자다(`evaluate_current_preview_requirement`
-        는 item 의 `collision_disposition` 을 본다). 이 속성으로 승인 요구를 판정하지 않는다.
+        가는 다른 사실이고, 확인 왕복을 여는 쪽은 후자다(#957 — 생성 호출이 항목의
+        `collision_disposition` 을 세어 `needs_overwrite` 로 되돌아온다). 이 속성으로 그
+        왕복을 판정하지 않는다.
         """
         return self.collision_policy == OVERWRITE_EXPLICIT
 

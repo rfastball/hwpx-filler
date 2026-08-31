@@ -266,6 +266,13 @@ def test_product_assembly_wires_every_notifying_controller(tmp_path, monkeypatch
     )
 
 
+#: 발신자가 **명시로** 철거된 단계(#957) — 승인 축. 링1 단계 정의는 동결 자산이라 그대로
+#: 서 있고(#941), 링2 통지 지점만 없다. 목록으로 못박는 이유는 아래 전수 스캔이 「배선을
+#: 빠뜨렸다」와 「일부러 걷었다」를 가릴 수 있어야 하기 때문이다 — 예외를 목록 없이 풀면
+#: 그 스캔이 아무것도 못 잡는다.
+RETIRED_MILESTONE_NAMES = frozenset({"APPROVE_VALUES", "APPROVE_WITH_BLANKS"})
+
+
 def test_every_milestone_has_a_notifying_site_in_the_product():
     """T0~T17 **전수**가 어딘가에서 통지된다 — 등록만 되고 아무도 안 켜는 단계 금지.
 
@@ -280,7 +287,10 @@ def test_every_milestone_has_a_notifying_site_in_the_product():
         step.milestone.name for step in STEPS
         if f"Milestone.{step.milestone.name}" not in text
     ]
-    assert not missing, f"통지 지점이 없는 단계입니다: {missing}"
+    # 명시 철거분만 예외다 — 목록에 있는데 통지 지점이 되살아나도 어긋남으로 선다.
+    assert set(missing) == RETIRED_MILESTONE_NAMES, (
+        f"통지 지점 형상이 선언과 다릅니다: {sorted(missing)}"
+    )
 
 
 # ============================================================ 3. tpl 배선(T0·T15)
@@ -609,21 +619,6 @@ _CLEAN = "bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n"
 _BLANK = "bidNtceNm,presmptPrce\n전산장비,\n사무비품,2000000\n"
 
 
-def _approve(ctrl) -> None:
-    """확인 면을 열고 승인한다 — **승인이 필요 없는 실행은 무동작**이다.
-
-    규칙축 승인은 작업당 1회라(§3.3 T8 이 가르치는 바로 그것) 기준선이 이미 선 작업의 깨끗한
-    데이터 실행에는 확인할 변경이 없다. 그 거절을 여기서 흡수하는 이유는 이 헬퍼를 쓰는
-    테스트들의 축이 **생성 완주**이지 승인이 아니어서다 — 승인 자체는 자기 테스트가 잰다.
-    """
-    ctrl.dispatch("preview_open", {})
-    try:
-        ctrl.dispatch("preview_approve", {})
-    except ValueError:
-        pass
-    ctrl.dispatch("preview_close", {})
-
-
 def test_mount_notifies_on_every_mount_and_replacement_only_on_a_second_one(tmp_path):
     """§3.2 부기 — 판정 축은 **마운트 성립 사실**이다(자동 마운트도 달성으로 친다)."""
     seen, notify = _collector()
@@ -657,11 +652,15 @@ def test_select_rows_needs_both_a_seated_job_and_a_non_empty_selection(tmp_path)
     assert str(Milestone.SELECT_ROWS) in seen
 
 
-def test_approval_and_generation_notify_their_own_events(tmp_path):
-    """승인과 생성은 **다른 사건**이다(불변식 §13-4: 생성 ≠ 승인).
+def test_generation_notifies_its_own_event_and_no_approval_event_remains(tmp_path):
+    """생성 완주는 그 자체로 통지된다 — 그 앞에 승인이라는 사건은 없다(#957).
 
-    빈 값 있는 데이터를 쓰는 이유는 그것이 승인을 **세우는** 축이기 때문이다 — 빈 값축은
-    실행마다의 사실이라 확인 면이 반드시 선다(§3.4 L4b).
+    종전 이 자리는 「승인과 생성은 다른 사건」(불변식 §13-4)을 쟀다. 승인 축이 철거되면서
+    잴 것이 뒤집혔다: 이 채널이 내는 것은 생성 완주뿐이고, 승인축 T6/T13 은 **어느 전이도
+    내지 않는다**. 링1 단계 정의는 동결 자산이라 그대로 서 있으므로(#941) 여기서 재는 것은
+    링2 발신자의 부재다 — 남아 있으면 사용자가 하지 않은 일을 했다고 말하게 된다.
+
+    빈 값 있는 데이터를 쓰는 이유는 그것이 종전 승인을 **세우던** 축이기 때문이다.
     """
     seen, notify = _collector()
     ctrl, _ = _job_controller(tmp_path, notify)
@@ -671,14 +670,11 @@ def test_approval_and_generation_notify_their_own_events(tmp_path):
     ctrl.set_output_folder(str(tmp_path / "out"))
     seen.clear()
 
-    _approve(ctrl)
-    assert str(Milestone.APPROVE_VALUES) in seen
-    assert str(Milestone.GENERATE) not in seen, "승인만으로 생성이 체크됐습니다"
-
-    seen.clear()
     assert ctrl.generate()["ok"] is True
     assert str(Milestone.GENERATE) in seen
     assert str(Milestone.SECOND_LAP) not in seen, "첫 바퀴가 두 바퀴로 읽혔습니다"
+    for gone in (Milestone.APPROVE_VALUES, Milestone.APPROVE_WITH_BLANKS):
+        assert str(gone) not in seen, f"철거된 승인 사건이 통지됐습니다: {gone}"
 
 
 def test_second_lap_is_the_same_job_generated_again(tmp_path):
@@ -689,12 +685,11 @@ def test_second_lap_is_the_same_job_generated_again(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve(ctrl)
     assert ctrl.generate()["ok"] is True
     seen.clear()
 
-    # 두 번째 바퀴가 가르치는 둘: 승인이 다시 서지 않고(위 `_approve` 없음), 같은 이름을
-    # 조용히 덮지 않는다 — 덮어쓰기 확인을 지나야 성사된다(§3.3 T8).
+    # 두 번째 바퀴가 가르치는 것: 같은 이름을 조용히 덮지 않는다 — 덮어쓰기 확인을 지나야
+    # 성사된다(§3.3 T8).
     assert ctrl.generate()["needs_overwrite"] is True
     assert str(Milestone.SECOND_LAP) not in seen, "확인 왕복 1차에서 체크가 섰습니다"
     assert ctrl.generate(confirm_overwrite=True)["ok"] is True
@@ -711,7 +706,6 @@ def test_switch_job_is_a_second_work_on_the_same_mount(tmp_path):
     for name in ("공고서", "구매추진"):
         ctrl.dispatch("select_job", {"name": name})
         ctrl.dispatch("set_all", {})
-        _approve(ctrl)
         if name == "구매추진":
             seen.clear()
         assert ctrl.generate()["ok"] is True
@@ -719,20 +713,29 @@ def test_switch_job_is_a_second_work_on_the_same_mount(tmp_path):
     assert str(Milestone.SWITCH_JOB) in seen
 
 
-def test_blank_approval_checks_only_after_the_documents_actually_come_out(tmp_path):
-    """§3.4 T13 — 「빈 값 포함 승인 **+** 생성 완료」. 승인만 하고 만들지 않으면 서지 않는다."""
-    seen, notify = _collector()
-    ctrl, _ = _job_controller(tmp_path, notify)
-    ctrl.load_data_path(_csv(tmp_path, "blank.csv", _BLANK))
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.dispatch("set_all", {})
-    ctrl.set_output_folder(str(tmp_path / "out"))
+def test_frozen_approval_steps_still_stand_in_ring1_but_have_no_producer(tmp_path):
+    """T6·T13 은 링1 에 살아 있고(동결 #941) 링2 발신자만 없다(#957).
 
-    _approve(ctrl)
-    assert str(Milestone.APPROVE_WITH_BLANKS) not in seen, "생성 전에 체크가 섰습니다"
+    종전 이 자리는 「빈 값 포함 승인 **+** 생성 완료」를 링2 왕복으로 쟀다. 승인 사건이
+    사라졌으므로 단계 정의는 **링1 을 직접 구동해** 확인하고(동결 자산 삭제 금지), 발신자
+    부재는 생성 왕복 쪽 테스트가 잰다. 둘을 함께 두는 이유: 정의만 지우면 되살릴 때 근거가
+    사라지고, 정의만 남기고 아무도 안 재면 그 정의가 언제 죽었는지 알 수 없다.
+    """
+    steps = {step.milestone: step for step in STEPS if step.milestone is not None}
+    assert Milestone.APPROVE_VALUES in steps
+    assert Milestone.APPROVE_WITH_BLANKS in steps
 
-    assert ctrl.generate()["ok"] is True
-    assert str(Milestone.APPROVE_WITH_BLANKS) in seen
+    # 링1 직접 구동 — 통지를 받으면 그 단계는 여전히 달성으로 선다(구동 경로는 살아 있다).
+    ctrl, _pushes, _saved = _tutorial()
+    before = ctrl.snapshot()["achieved_count"]
+    assert ctrl.notify(Milestone.APPROVE_VALUES) is True
+    snap = ctrl.snapshot()
+    assert snap["achieved_count"] == before + 1
+    achieved = {
+        step["milestone"]
+        for tier in snap["tiers"] for step in tier["steps"] if step["achieved"]
+    }
+    assert str(Milestone.APPROVE_VALUES) in achieved
 
 
 def test_generation_from_a_template_compiled_in_this_session(tmp_path):
@@ -743,7 +746,6 @@ def test_generation_from_a_template_compiled_in_this_session(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve(ctrl)
 
     # 변환 사실을 모르면 T16 은 서지 않는다.
     assert ctrl.generate()["ok"] is True

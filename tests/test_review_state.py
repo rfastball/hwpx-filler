@@ -1,8 +1,13 @@
-"""검토 요구와 승인 — 재작성 F5(지도 §10.12) 링0·링1 계약. Qt 불필요(헤드리스).
+"""검토 요구 — 재작성 F5(지도 §10.12) 링0·링1 계약. Qt 불필요(헤드리스).
 
-여기서 못박는 것은 셋이다: ①대상별 지문이 **무엇이** 바뀌었는지 답한다(F-06 이 P0 로
-지목한 결함의 봉합) ②승인은 지문에 결속돼 **자동으로** 무효가 된다(폐기 코드 없음)
-③기준선은 완주가 찍고 영속하며 승인은 세션이라 재시작이 요구를 되살린다.
+여기서 못박는 것은 둘이다: ①대상별 지문이 **무엇이** 바뀌었는지 답한다(F-06 이 P0 로
+지목한 결함의 봉합) ②기준선은 완주가 찍고 영속하며, 그 사이 아무도 조용히 기준선을
+밀지 않는다.
+
+**승인 축은 #957 슬라이스 ③ 에서 사망했다.** ``ReviewState``·``approval_key``·
+``build_evidence``·``previous_values``·``review_gate_text`` 가 함께 사라졌으므로 그것들을
+겨누던 단언은 여기 없다 — 검토는 생성을 막지 않고 :func:`review_notice_text` 의 비차단
+고지로 나가며, 확인의 자리는 만들어진 문서다.
 """
 from __future__ import annotations
 
@@ -23,9 +28,8 @@ from hwpxfiller.external.job_store import (
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import (
-    ReviewState,
-    review_gate_text,
     review_notice_text,
+    review_reason_text,
     review_requirement,
     rules_key,
 )
@@ -115,7 +119,7 @@ def test_never_run_job_requires_review_with_heaviest_evidence():
 
 
 def test_completed_job_with_unchanged_rules_requires_nothing():
-    """§13-2 정상 반복 실행에서 미리보기는 선택이다."""
+    """§13-2 정상 반복 실행은 조용하다(#957 이후: 고지도 서지 않는다)."""
     assert not review_requirement(_reviewed(_job())).required
 
 
@@ -155,8 +159,8 @@ def test_filename_change_outranks_semantic():
     assert req.risk_class == "filename_set"
 
 
-def test_template_only_change_needs_no_approval():
-    """판정 E — 구조 위험은 드리프트 게이트가 fail-closed 로 진다. 승인 표면을 더하면
+def test_template_only_change_raises_no_requirement():
+    """판정 E — 구조 위험은 드리프트 게이트가 fail-closed 로 진다. 검토 요구를 여기 더하면
     게이트를 우회하는 두 번째 권위가 생긴다."""
     job = _reviewed(_job())
     job.template_path = "다른.hwpx"
@@ -196,89 +200,47 @@ def test_ordering_meta_does_not_trigger_review():
     assert not review_requirement(job).required
 
 
-# ------------------------------------------------------------------ 승인 결속
+# ------------------------------------------------------- 규칙 지문 결속(승인 없이 성립)
 
 
-def test_approval_clears_the_requirement():
-    job = _reviewed(_job())
-    job.mapping.mappings[1].fmt = "천단위"
-    req = review_requirement(job)
-    st = ReviewState()
-    assert not st.is_approved(req, "0,1")
-    assert st.approve(req, "0,1")
-    assert st.is_approved(req, "0,1")
+def test_rule_change_changes_the_rules_key_without_any_disposal_code():
+    """규칙이 바뀌면 :func:`rules_key` 가 갈린다 — 폐기 코드 없이 성립하는 무효화다.
 
-
-def test_approval_is_refused_when_nothing_is_required():
-    """조용히 승인 상태를 세우지 않는다(확인-또는-경보)."""
-    st = ReviewState()
-    assert not st.approve(review_requirement(_reviewed(_job())), "0,1")
-    assert not st.approved
-
-
-def test_rule_change_invalidates_approval_without_any_disposal_code():
-    """불변식 §13-6 — 규칙이 바뀌면 관련 approval 이 폐기된다. 폐기 코드 없이 성립한다."""
-    job = _reviewed(_job())
-    job.mapping.mappings[1].fmt = "천단위"
-    st = ReviewState()
-    st.approve(review_requirement(job), "0,1")
-    job.mapping.mappings[1].fmt = "다른표시형"
-    assert not st.is_approved(review_requirement(job), "0,1")
-
-
-def test_presentation_approval_survives_a_selection_change():
-    """C-02 차등화 — 선택을 넓혔다고 표시형을 다시 확인시키면 과경고다."""
-    job = _reviewed(_job())
-    job.mapping.mappings[1].fmt = "천단위"
-    req = review_requirement(job)
-    st = ReviewState()
-    st.approve(req, "0,1")
-    assert st.is_approved(req, "0,1,2")
-
-
-def test_semantic_approval_dies_with_the_selection():
-    """증거가 '선택분 중 몇 건이 달라지나'라 선택·순서가 바뀌면 증거 자체가 무효다."""
-    job = _reviewed(_job())
-    job.mapping.mappings[1].source = "다른열"
-    req = review_requirement(job)
-    st = ReviewState()
-    st.approve(req, "0,1")
-    assert not st.is_approved(req, "1,0")  # 순서만 바뀌어도 파일 이름이 달라진다
-
-
-def test_evidence_says_why_confirmation_is_asked():
-    """눈검증이 잡은 자리 — 드로어 안에서는 게이트 문안이 안 보인다. 첫 실행인데 "이름이
-    모두 서로 다릅니다"만 뜨면 묻지 않은 질문에 답한 꼴이다. 게이트와 **같은 문장**을
-    공유해 두 표면이 같은 상태를 다르게 부르지 않게 한다."""
-    from hwpxfiller.gui.review_state import build_evidence, review_reason_text
-
-    req = review_requirement(_job())          # 새 작업
-    ev = build_evidence(req, mapped=[{"공고명": "가"}], names=("가.hwpx",),
-                        converged=0, too_long=0, pos=0)
-    assert ev["reason"] == review_reason_text(req)
-    assert "한 번도 문서를 만들지 않은" in ev["reason"]
-    # 파일 이름은 footer 소유 — 증거 행에 다시 싣지 않는다(한 면에 같은 문자열 두 번 금지).
-    assert ev["rows"] == []
-    # 수렴 0건·경로 초과 0건이면 note 는 **빈다**(U2 §2.3). 종전엔 "이름이 모두 서로
-    # 다릅니다"가 떴는데, 위 docstring 이 이미 그 문장을 "묻지 않은 질문에 답한 꼴"이라고
-    # 적어 뒀다 — 이유 문장을 곁들이는 것으로 완화했던 것을 이제 자리째 비운다.
-    assert ev["note"] == ""
-
-
-def test_review_gate_text_has_no_gate_consumer_left():
-    """#957 — 차단 문안을 **읽는 게이트가 없다**는 사실을 저장소 형상으로 못박는다.
-
-    함수는 미리보기 승인 표면이 걷힐 때까지 남지만(슬라이스 ③), 그동안 누군가 이 문장을
-    다시 게이트에 붙이면 "…승인해야 생성할 수 있습니다"가 조용히 부활한다. 정의 한 자리
-    말고는 소비처가 없어야 한다.
+    #957 이전에는 이 사실이 「승인 자동 폐기」(불변식 §13-6)를 지었다. 승인 축이 사라진
+    뒤에도 남는 것은 그 아래의 사실 하나다: 같은 규칙이면 같은 키, 한 축만 달라져도 다른 키.
     """
+    job = _reviewed(_job())
+    job.mapping.mappings[1].fmt = "천단위"
+    first = review_requirement(job).rules_key
+    job.mapping.mappings[1].fmt = "다른표시형"
+    assert review_requirement(job).rules_key != first
+
+
+def test_the_approval_axis_is_gone_from_the_repository():
+    """#957 슬라이스 ③ — 승인 축의 이름이 ``src`` 어디에도 없다는 사실을 형상으로 못박는다.
+
+    이름 하나가 조용히 돌아오면 "…승인해야 생성할 수 있습니다"라는 차단 서술도 함께 돌아오고,
+    그 순간 「확인의 자리는 만들어진 문서」와 두 목소리가 된다.
+    """
+    from hwpxfiller.gui import review_state
+
+    dead = (
+        "ReviewState", "approval_key", "build_evidence", "previous_values",
+        "review_gate_text",
+    )
+    for name in dead:
+        assert not hasattr(review_state, name), f"승인 축이 되살아났습니다: {name}"
+
+    # 호출 자리도 0 이어야 한다 — 이름을 괄호와 함께 찾는다(``:func:`` 서술은 역사 기록이라
+    # 그대로 두고, 되살아난 **소비처**만 잡는 겨냥이다).
     src = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller"
     hits = sorted({
-        path.relative_to(src).as_posix()
+        f"{path.relative_to(src).as_posix()}:{name}"
         for path in src.rglob("*.py")
-        if "review_gate_text" in path.read_text(encoding="utf-8")
+        for name in dead
+        if f"{name}(" in path.read_text(encoding="utf-8")
     })
-    assert hits == ["gui/review_state.py"], hits
+    assert hits == [], hits
 
 
 # ------------------------------------------------------------ 비차단 고지 문안(#957)
@@ -311,44 +273,52 @@ def test_notice_text_is_empty_for_blank_set_and_for_no_requirement():
     assert review_notice_text(review_requirement(_reviewed(_job()))) == ""
 
 
-def test_gate_text_names_what_changed():
+def test_notice_text_never_speaks_of_blocking_or_approval():
+    """#957 — 고지는 비차단이다. 종전 게이트 문안("…승인해야 생성할 수 있습니다")의
+    어휘가 한 갈래라도 남으면 사용자는 막혀 있다고 읽는다."""
+    for req in (
+        review_requirement(_job()),                                   # 첫 실행
+        review_requirement(_reviewed(_job(filename_pattern="{{금액}}.hwpx"))),
+    ):
+        text = review_notice_text(req)
+        for banned in ("승인", "미리보기", "생성할 수 없", "해야 생성"):
+            assert banned not in text, f"고지가 차단 어휘를 씁니다: {banned!r} in {text!r}"
+        assert "—" not in text  # 표기 규칙 1(em dash 금지)
+
+
+# ------------------------------------------------------------ 사유 문안(고지의 앞머리)
+def test_reason_text_names_what_changed():
     job = _reviewed(_job())
     job.mapping.mappings[1].source = "다른열"
-    text = review_gate_text(review_requirement(job))
-    assert "금액(연결)" in text and "미리보기" in text
+    text = review_reason_text(review_requirement(job))
+    assert "금액(연결)" in text and text.startswith("규칙이 바뀌었습니다: ")
     assert "—" not in text  # 표기 규칙 1(em dash 금지)
 
 
-def test_gate_text_for_a_new_job_does_not_claim_rules_changed():
-    text = review_gate_text(review_requirement(_job()))
+def test_reason_text_for_a_new_job_does_not_claim_rules_changed():
+    text = review_reason_text(review_requirement(_job()))
     assert "규칙이 바뀌" not in text
+    assert text == "아직 한 번도 문서를 만들지 않은 작업입니다."
 
 
-def test_rule_axis_says_approve_not_confirm():
-    """규칙축은 「승인」, 필드축은 「확인」 — 두 축이 한 동사를 나눠 쓰지 않는다(U2 §2.10).
+def test_reason_text_for_unknown_baseline_does_not_claim_a_first_run():
+    """실행 이력은 있는데 기준선이 없는 경우 — 「첫 실행」도 「규칙이 바뀌었다」도 거짓말이다.
 
-    제보는 *"두 확인 트리거의 차이를 소명하라"* 였고, 두 축이 다르다는 소명은 선다.
-    **소명을 요구했다는 사실이 결함**이라 어휘를 가른다: 거울은 "눌러서 **확인**해야
-    생성할 수 있습니다"(필드축 ack), 드로어는 "결과 **확인** 완료"(규칙축 승인)로 같은
-    동사가 두 축에 겹쳐 있었다.
-
-    새 어휘를 짓는 것이 아니라 링1 이름을 표면으로 올리는 것이다 — 코드는 이미 `approve`·
-    `PreviewApproved`(§13-4)로 그렇게 부르고 표면만 한 단어로 눌렀다.
-
-    「검토」·「확정」이 아닌 이유는 **점유 대조**다: 「검토」는 `work_mode` 의 「온나라 기안
-    검토·복사」가, 「확정」은 매핑 축이 이미 갖고 있다. 어휘는 점유를 안 세고 고르면 충돌을
-    옮길 뿐이다.
+    종전 이 갈래는 게이트 문안 경유로만 밟혔다(#957 에서 그 소비자가 사망) — 사유 문안이
+    같은 세 갈래를 그대로 지므로 여기서 직접 겨눈다.
     """
-    text = review_gate_text(review_requirement(_job()))
-    assert "승인" in text, "규칙축 게이트가 「승인」을 안 씁니다."
-    assert "확인" not in text, (
-        "규칙축 게이트가 필드축(거울 ack)의 동사 「확인」을 다시 씁니다 — 같은 동사가 두 축에 "
-        f"겹치면 사용자가 차이를 소명받아야 합니다: {text!r}"
-    )
-    # 지목까지 준다(C3): 이 축이 보는 것은 거울이 못 보여 주는 **이름**이다.
-    assert "이름" in text
-    # 점유 대조 — 다른 축이 쓰는 동사를 빌려오지 않는다.
-    assert "검토" not in text and "확정" not in text
+    job = _job()
+    job.last_run_at = "2026-08-01T09:00:00"
+    req = review_requirement(job)
+    assert req.unknown_baseline and not req.first_run
+    assert review_reason_text(req) == "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
+
+
+def test_reason_text_for_blank_set_speaks_the_data_axis():
+    """데이터축이다 — 규칙축 문안("규칙이 바뀌었습니다")은 여기서 거짓말이다(§2.13)."""
+    text = review_reason_text(review_requirement(_reviewed(_job()), blank_fields=("담당자",)))
+    assert "빈 값" in text and "담당자" in text
+    assert "규칙이 바뀌" not in text
 
 
 def test_rules_key_is_stable_across_processes():
@@ -356,16 +326,14 @@ def test_rules_key_is_stable_across_processes():
     assert rules_key(rules_fingerprints(_job())) == rules_key(rules_fingerprints(_job()))
 
 
-def test_approval_is_not_persisted_so_restart_reinstates_the_requirement():
-    """판정 B — 승인만 하고 실행하지 않은 채 재시작하면 열린 게이트로 시작하지 않는다."""
+def test_requirement_survives_a_durable_round_trip():
+    """판정 B — 기준선은 **완주가** 찍는다. 규칙만 고쳐 두고 재시작하면 요구가 그대로 선다
+    (열린 게이트로 시작하지 않는다는 종전 판정의, 승인 축 없는 잔여분)."""
     job = _reviewed(_job())
     job.mapping.mappings[1].fmt = "천단위"
-    req = review_requirement(job)
-    st = ReviewState()
-    st.approve(req, "0,1")
     reloaded = decode_job(encode_job(job))  # durable 왕복 = 재시작
     assert review_requirement(reloaded).required
-    assert not ReviewState().is_approved(review_requirement(reloaded), "0,1")
+    assert review_requirement(reloaded).rules_key == review_requirement(job).rules_key
 
 
 # ------------------------------------------------------- 기준선의 durable 수명
@@ -436,16 +404,13 @@ def test_a_field_the_filename_consumes_is_a_filename_risk():
     assert req.risk_class == "filename_set" and req.selection_bound
 
 
-def test_a_presentation_change_on_a_filename_field_does_not_escape_selection_binding():
-    """표시형 승인은 선택 결속이 아니라(판정 I) 선택을 넓혀도 살아남는다 — 그 필드가
-    파일 이름을 만든다면 **새로 고른 레코드의 이름 충돌이 검토를 통과**한다."""
+def test_a_presentation_change_on_a_filename_field_stays_selection_bound():
+    """표시형은 규칙축 사실이라 선택과 무관하지만(판정 I), 그 필드가 **파일 이름을 만들면**
+    이야기가 다르다 — 위험이 ``filename_set`` 으로 올라가고 선택 결속이 함께 선다."""
     job = _reviewed(_job(filename_pattern="{{금액}}.hwpx"))
     job.mapping.mappings[1].fmt = "천단위"
     req = review_requirement(job)
-    assert req.risk_class == "filename_set"
-    st = ReviewState()
-    st.approve(req, "0,1")
-    assert not st.is_approved(req, "0,1,2"), "선택이 넓어졌는데 승인이 살아남았습니다."
+    assert req.risk_class == "filename_set" and req.selection_bound is True
 
 
 def test_a_field_the_filename_ignores_keeps_its_own_risk():
@@ -455,129 +420,43 @@ def test_a_field_the_filename_ignores_keeps_its_own_risk():
     assert review_requirement(job).risk_class == "presentation"
 
 
-# ----------------------------------- 직전 판본 before/after (재작성 F7 판정 H — F5 되깎기)
-def test_before_values_render_the_same_record_with_the_previous_rules():
-    """before 는 **저장해 둔 값이 아니라 이전 규칙으로 지금 행을 다시 렌더한 값**이다.
-
-    저장된 값을 되읽으면 다른 시점의 다른 데이터가 before 로 붙는다 — 그건 증거가 아니라
-    지어낸 값이다(§10.3 계열). 같은 행에 두 규칙을 적용해야 사용자가 보는 두 값이 비교
-    가능해진다.
-    """
-    from hwpxfiller.domain.job import rules_values
-    from hwpxfiller.gui.review_state import previous_values
-
-    job = _reviewed(_job())
-    before_snapshot = rules_values(job)          # 판본 r1 의 규칙
-    job.mapping.mappings[0].source = "다른열"     # r2 로 갈 변경
-    job.previous_rules = before_snapshot
-    record = {"bidNtceNm": "옛 공고", "다른열": "새 공고"}
-    assert previous_values(job, ("공고명",), record) == {"공고명": "옛 공고"}
-    # 표시형만 바뀐 축도 같은 규율 — 이전 표시형으로 같은 값을 다시 렌더한다.
-    assert previous_values(job, ("없는필드",), record) == {}
-
-
-def test_before_is_absent_not_empty_when_there_is_no_previous_revision():
-    """직전 판본이 없으면 before 를 **싣지 않는다** — 빈 값으로 세우면 "이전엔 비어
-    있었다"는 거짓 증거가 된다(있는 것과 없는 것은 다르다)."""
-    from hwpxfiller.gui.review_state import build_evidence, previous_values
-
-    job = _reviewed(_job())
-    job.mapping.mappings[1].source = "다른열"   # 금액 = 파일 이름 밖 → 의미 연결 위험
-    assert previous_values(job, ("금액",), {"다른열": "100"}) == {}   # 보관본 없음
-    req = review_requirement(job)
-    ev = build_evidence(req, mapped=[{"금액": "100"}], names=("x.hwpx",),
-                        converged=0, too_long=0, pos=0, before={})
-    assert ev["rows"] and "before" not in ev["rows"][0]
-
-
-def test_before_is_absent_for_fields_the_previous_revision_did_not_have():
-    """그 판본에 없던 필드도 before 가 없다 — 필드 추가는 「이전엔 이랬다」가 성립하지 않는다."""
-    from hwpxfiller.domain.job import rules_values
-    from hwpxfiller.gui.review_state import previous_values
-
-    job = _reviewed(_job())
-    job.previous_rules = rules_values(job)
-    assert previous_values(job, ("새필드",), {"아무열": "값"}) == {}
-
-
-def test_evidence_carries_before_when_the_previous_revision_exists():
-    """증거 행이 두 규칙의 값을 함께 말한다(F5 가 되깎기 조건으로 박제한 자리의 이행)."""
-    from hwpxfiller.domain.job import rules_values
-    from hwpxfiller.gui.review_state import build_evidence, previous_values
-
-    job = _reviewed(_job())
-    job.previous_rules = rules_values(job)
-    job.mapping.mappings[1].source = "다른열"    # 금액 = 파일 이름 밖 → 행 증거가 선다
-    req = review_requirement(job)
-    record = {"presmptPrce": "1000", "다른열": "2000"}
-    ev = build_evidence(
-        req, mapped=[{"금액": "2,000"}], names=("x.hwpx",), converged=0, too_long=0,
-        pos=0, before=previous_values(job, req.changed_fields, record),
-    )
-    row = next(r for r in ev["rows"] if r["name"] == "금액")
-    # 값은 **표시형까지 적용된** 문자열이다(사용자가 문서에서 볼 그 모양).
-    assert row["before"] == "1,000원" and row["value"] == "2,000"
-
-
-def test_before_omits_fields_whose_source_column_is_gone(tmp_path):
-    """**없는 열은 빈 값이 아니다**(3R P2) — 값을 못 말하는 것과 비어 있었다는 것은 다르다.
-
-    `value_for` 는 `record.get(source, "")` 라 소스 열이 사라져도 조용히 ``""`` 를 낸다.
-    그대로 실으면 증거가 "이전엔 비어 있었습니다"라고 **단정**한다.
-    """
-    from hwpxfiller.domain.job import rules_values
-    from hwpxfiller.gui.review_state import previous_values
-
-    job = _reviewed(_job())
-    job.previous_rules = rules_values(job)         # 금액 ← presmptPrce
-    job.mapping.mappings[1].source = "다른열"
-    # 지금 데이터에 옛 소스 열이 없다 → 이전 값을 **말할 수 없다**(빈 값이 아니다).
-    assert previous_values(job, ("금액",), {"다른열": "2000"}) == {}
-    # 열이 있으면 그때 값을 말한다.
-    assert previous_values(job, ("금액",), {"presmptPrce": "1000", "다른열": "2000"})
-
-
-def test_before_keeps_fields_that_were_genuinely_unconnected():
-    """소스가 **애초에 없던** 필드는 그때도 빈 값이 참이라 남긴다 — 연결 신설의 before 다."""
-    from hwpxfiller.domain.job import rules_values
-    from hwpxfiller.gui.review_state import previous_values
-
-    job = _reviewed(_job())
-    job.mapping.mappings[1].source = ""            # 이전 판본: 미연결
-    job.previous_rules = rules_values(job)
-    job.mapping.mappings[1].source = "추정가격"     # 새 판본: 연결
-    assert previous_values(job, ("금액",), {"추정가격": "1000"}) == {"금액": ""}
+# ---- 직전 판본 before/after 증거는 #957 슬라이스 ③ 에서 사망했다 -------------------------
+# 승인 드로어가 사라지며 `previous_values`·`build_evidence` 도 함께 걷혔다. 남은 원재료
+# (`Job.previous_rules`·`domain.job.rules_values`)의 계약은 `tests/test_job.py` 가 진다 —
+# 여기서 소비자 없는 투영을 다시 세우지 않는다.
 
 
 # ------------------------------------------ blank_set 위험종(U2 §2.13 — ack 폐기의 보정)
 def test_blank_fields_raise_a_requirement_even_when_rules_match_the_baseline():
     """침묵 금지(§2.13) — 규칙이 기준선과 같아도 빈 값이 있으면 요구가 선다.
 
-    승인은 규칙 지문 기반이라 한 번 완주하면 영구히 조용해진다(판정 N). 이 위험종이
-    없으면 다음 데이터의 새 빈 값이 표식이 박힌 문서를 조용히 생성한다.
+    규칙축 요구는 한 번 완주하면 조용해진다(판정 N). 이 위험종이 없으면 다음 데이터의
+    새 빈 값이 표식이 박힌 문서를 조용히 생성한다.
     """
     req = review_requirement(_reviewed(_job()), blank_fields=("담당자", "개찰장소"))
     assert req.required and req.risk_class == "blank_set"
     assert req.changed_targets == ("담당자", "개찰장소")
     assert req.evidence_policy == "blank_scope_summary"
     assert req.selection_bound is True, (
-        "빈 값 집합은 선택에 딸린 사실이다 — 선택 결속이 아니면 승인이 남의 선택에 산다."
+        "빈 값 집합은 선택에 딸린 사실이다 — 선택 결속이 아니면 요구가 남의 선택에 산다."
     )
-    text = review_gate_text(req)
-    assert "빈 값" in text and "담당자" in text and "승인" in text
-    assert "규칙이 바뀌었습니다" not in text  # 데이터축이다 — 규칙축 문안은 거짓말
+    # 문안은 사유 한 줄이 진다(#957: 게이트 문안은 사망). 데이터축이므로 규칙축 문장은
+    # 여기서 거짓말이다.
+    text = review_reason_text(req)
+    assert "빈 값" in text and "담당자" in text
+    assert "규칙이 바뀌었습니다" not in text
 
 
 def test_no_blanks_and_matching_rules_stay_quiet():
-    """빈 값 0 + 규칙 일치 = 요구 없음 — §13-2(반복 실행에서 미리보기는 선택) 그대로."""
+    """빈 값 0 + 규칙 일치 = 요구 없음 — §13-2(반복 실행은 조용하다) 그대로."""
     req = review_requirement(_reviewed(_job()), blank_fields=())
     assert req.required is False and req.risk_class == ""
 
 
 def test_rule_risk_outranks_blank_set_but_becomes_selection_bound():
-    """규칙 위험이 있으면 그쪽이 이긴다(무거운 증거) — 단 빈 값이 있으면 표시형 승인도
-    **선택 결속으로 승격**된다: 빈 값 집합은 선택·데이터에 딸린 사실이라, 규칙에만 결속된
-    승인이 살아남으면 새 빈 값이 조용히 통과한다."""
+    """규칙 위험이 있으면 그쪽이 이긴다(무거운 증거) — 단 빈 값이 있으면 표시형 요구도
+    **데이터축으로 승격**된다: 빈 값 집합은 선택·데이터에 딸린 사실이라, 규칙축 사실로만
+    남기면 새 빈 값이 조용히 통과한다."""
     job = _reviewed(_job())
     job.mapping.mappings[1].fmt = "천단위"          # 표시형 변경(presentation)
     quiet = review_requirement(job)
@@ -587,7 +466,7 @@ def test_rule_risk_outranks_blank_set_but_becomes_selection_bound():
 
 
 def test_template_only_change_with_blanks_still_raises_blank_set():
-    """템플릿만 바뀐 경우(승인 축 아님 — 판정 E)에도 빈 값이 있으면 blank_set 이 선다.
+    """템플릿만 바뀐 경우(요구 축 아님 — 판정 E)에도 빈 값이 있으면 blank_set 이 선다.
 
     드리프트 게이트가 늘 함께 서는 것은 아니다(호환 재연결은 지문만 갈린다) — 그 창에서
     빈 값이 조용히 통과하면 안 된다. 구조 변경 병기는 그대로 나른다.

@@ -40,6 +40,8 @@ from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp import screen_job as screen_job_module
+from hwpxfiller.webapp import screen_job as sj
+from hwpxfiller.external.delivery_coordinator import DeliveredDocument, DeliveryCompleted
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
@@ -57,7 +59,6 @@ from hwpxfiller.application.field_binding_input import (
     build_field_binding_input,
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
-from hwpxfiller.application.preview_requirement import PreviewNotRequired, PreviewRequired
 from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     SOURCE,
@@ -680,12 +681,6 @@ def test_managed_generation_creates_the_derived_default_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """관찰은 안 만들고 **생성이** 만든다 — 구식 축의 `ensure_output_directory` 와 같은 시점."""
-    import hwpxfiller.webapp.screen_job as sj
-    from hwpxfiller.external.delivery_coordinator import (
-        DeliveredDocument,
-        DeliveryCompleted,
-    )
-
     template = tmp_path / "서고" / "managed.hwpx"
     template.parent.mkdir(parents=True, exist_ok=True)
     results = template.parent / OUTPUT_SUBDIR_NAME
@@ -726,269 +721,134 @@ def test_managed_generation_creates_the_derived_default_folder(
     assert results.is_dir()
 
 
-def test_optional_preview_token_is_stable_across_passive_render_and_drawer(
-    tmp_path: Path,
-) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    ctrl.set_output_folder(str(out))
-    _zone(ctrl)
-
-    first = ctrl._current_preview_preparation
-    assert first is not None
-    assert first.requirement.kind == "OPTIONAL"
-    assert "REVIEW_PREVIEW" not in _zone(ctrl)["blockers"]
-    assert ctrl._current_preview_preparation is first
-
-    ctrl.dispatch("preview_open", {})
-    assert ctrl._current_preview_preparation is first
-    ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl._current_preview_preparation is first
-    ctrl.dispatch("preview_close", {})
-    assert ctrl._current_preview_preparation is first
-    assert ctrl._approved_preview_token is None
-
-
-def test_required_preview_approval_is_current_token_only_and_legacy_review_isolated(
-    tmp_path: Path,
-) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    _zone(ctrl)
-
-    current = ctrl._current_preview_preparation
-    assert current is not None and isinstance(current.requirement, PreviewRequired)
-    before = _zone(ctrl)
-    assert before["primary_action"] == "REVIEW_PREVIEW"
-    assert before["preview_requirement"] == {
-        "kind": "REQUIRED",
-        "reason": "DESTRUCTIVE_OVERWRITE",
-    }
-    assert before["preview_satisfied"] is False
-    assert before["semantic_preview"] is None
-    ctrl.dispatch("preview_open", {})
-    assert _zone(ctrl)["semantic_preview"] == {
-        "preview_token": current.preview_token,
-        "requirement": {"kind": "REQUIRED", "reason": "DESTRUCTIVE_OVERWRITE"},
-        "included_content_summary": "데이터 2건 · 항목 1개",
-        "ordered_records": [
-            {
-                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
-                "record_display_locator": "데이터 2행",
-                "logical_field_values": [
-                    {"field_id": "f_name", "display_label": "f_name", "value": "B"}
-                ],
-                "planned_document_relative_path": "공고서-20260818-001.hwpx",
-                "collision_disposition": "WRITE_OVERWRITE",
-            },
-            {
-                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 0),
-                "record_display_locator": "데이터 1행",
-                "logical_field_values": [
-                    {"field_id": "f_name", "display_label": "f_name", "value": "A"}
-                ],
-                "planned_document_relative_path": "공고서-20260818-002.hwpx",
-                "collision_disposition": "WRITE_NEW",
-            },
-        ],
-    }
-    legacy_approvals = set(ctrl.review.approved)
-    with pytest.raises(ValueError, match="토큰이 필요"):
-        ctrl.dispatch("preview_approve", {})
-    assert ctrl._approved_preview_token is None
-    assert ctrl.review.approved == legacy_approvals
-    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
-
-    zone = _zone(ctrl)
-    assert "REVIEW_PREVIEW" not in zone["blockers"]
-    assert zone["preview_satisfied"] is True
-    assert ctrl._approved_preview_token == current.preview_token
-    assert ctrl.review.approved == legacy_approvals
-
-
-def test_stale_execution_invalidates_preview_and_rejects_old_token(
-    tmp_path: Path,
-) -> None:
-    from hwpxfiller.application.automatic_seal_orchestration import (
-        AutomaticSealOrchestration,
-    )
-
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    ctrl.dispatch("preview_open", {})
-    current = ctrl._current_preview_preparation
-    assert current is not None
-    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
-
-    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
-    with pytest.raises(ValueError, match="더 이상 구성"):
-        ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
-
-    assert ctrl._current_record_preparation is None
-    assert ctrl._current_delivery_preparation is None
-    assert ctrl._current_preview_preparation is None
-    assert ctrl._approved_preview_token is None
-    assert not ctrl.review.approved
-    zone = _zone(ctrl)
-    assert zone["primary_action"] == "RESOLVE_EXECUTION"
-    assert zone["preview_requirement"] == {"kind": "NOT_REQUIRED"}
-    assert zone["semantic_preview"] is None
-
-
-def test_delivery_refresh_replaces_token_and_stale_approval_writes_nothing(
-    tmp_path: Path,
-) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    ctrl.dispatch("preview_open", {})
-    old = ctrl._current_preview_preparation
-    assert old is not None
-
-    ctrl.set_output_folder(str(out))
-    _zone(ctrl)
-    current = ctrl._current_preview_preparation
-    assert current is not None
-    assert current.preview_token != old.preview_token
-    assert ctrl._approved_preview_token is None
-    with pytest.raises(ValueError, match="바뀌었습니다"):
-        ctrl.dispatch("preview_approve", {"preview_token": old.preview_token})
-    assert ctrl._approved_preview_token is None
-    assert not ctrl.review.approved
-
-
-def test_record_preparation_identity_change_replaces_preview_token(tmp_path: Path) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    ctrl.set_output_folder(str(out))
-    _zone(ctrl)
-    first = ctrl._current_preview_preparation
-    assert first is not None
-
-    ctrl.selection.toggle(0, False)
-    _zone(ctrl)
-    current = ctrl._current_preview_preparation
-    assert current is not None
-    assert current.record_preparation is not first.record_preparation
-    assert current.preview_token != first.preview_token
-
-
-def test_output_directory_and_policy_changes_replace_preview_token(tmp_path: Path) -> None:
-    ctrl, first_out = _delivery_controller(tmp_path)
-    second_out = tmp_path / "delivery-2"
-    second_out.mkdir()
-    ctrl.set_output_folder(str(first_out))
-    _zone(ctrl)
-    first = ctrl._current_preview_preparation
-    assert first is not None
-
-    ctrl.set_output_folder(str(second_out))
-    _zone(ctrl)
-    second = ctrl._current_preview_preparation
-    assert second is not None and second.preview_token != first.preview_token
-    # 같은 폴더를 다시 지정해도 delivery 는 다시 관찰된다 — 토큰은 관찰의 정체이지
-    # 경로의 정체가 아니다(U4 계열2-28 이후 이 재관찰이 「목록 새로 확인」의 승계자다).
-    ctrl.set_output_folder(str(second_out))
-    _zone(ctrl)
-    third = ctrl._current_preview_preparation
-    assert third is not None
-    assert third.preview_token not in (first.preview_token, second.preview_token)
-
-
-def test_preview_becoming_unconstructable_rejects_old_token(tmp_path: Path) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    ctrl.dispatch("preview_open", {})
-    current = ctrl._current_preview_preparation
-    assert current is not None
-
-    ctrl.selection.set_none()
-    with pytest.raises(ValueError, match="더 이상 구성"):
-        ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
-    assert ctrl._current_preview_preparation is None
-    assert ctrl._approved_preview_token is None
-    assert not ctrl.review.approved
-
-
-def test_new_controller_never_restores_preview_approval(tmp_path: Path) -> None:
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    ctrl.dispatch("preview_open", {})
-    current = ctrl._current_preview_preparation
-    assert current is not None
-    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
-    assert ctrl._approved_preview_token == current.preview_token
-
-    restart_root = tmp_path / "restart"
-    restart_root.mkdir()
-    restarted = _controller(restart_root, with_binding=True, seed=False)
-    assert restarted._approved_preview_token is None
-    assert restarted._current_preview_preparation is None
-
-
-def test_s6_new_overwrite_target_requires_fresh_token_and_approval(
-    tmp_path: Path,
-) -> None:
-    """Preview approval is no reservation: S6 handoff must refresh occupancy before write."""
-    ctrl, out = _delivery_controller(tmp_path)
-    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
-    ctrl.dispatch("preview_open", {})
-    approved = ctrl._current_preview_preparation
-    assert approved is not None
-    ctrl.dispatch("preview_approve", {"preview_token": approved.preview_token})
-
-    (out / "공고서-20260818-002.hwpx").write_bytes(b"late collision")
-    # 재관찰의 트리거는 delivery 를 무효화하는 전이다 — 사람이 눌러 새로 세는 동사는
-    # U4 계열2-28 에서 걷혔고, 최종 방어는 여전히 S6 handoff 의 쓰기 직전 재확인이다.
-    ctrl.set_output_folder(str(out))
-    zone = _zone(ctrl)
-    current = ctrl._current_preview_preparation
-    assert current is not None and current.preview_token != approved.preview_token
-    assert ctrl._approved_preview_token is None
-    assert [
-        item["collision_disposition"]
-        for item in zone["semantic_preview"]["ordered_records"]
-    ] == ["WRITE_OVERWRITE", "WRITE_OVERWRITE"]
-    assert zone["primary_action"] == "REVIEW_PREVIEW"
-
-
-def test_preview_final_recheck_fails_closed_on_delivery_race(
+def test_managed_overwrite_needs_confirmation_before_anything_is_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """managed 갈래도 legacy 와 **같은 왕복**으로 파괴를 확인시킨다(#957 delta 1).
+
+    종전 이 자리는 「생성 내용 확인」 면의 승인 토큰이 졌다. 그 면이 철거된 뒤 파괴 확인의
+    유일한 자리는 `generate` 응답의 `needs_overwrite` 다 — 키 집합은 legacy 와 같아야 한다
+    (`overwriteBody` 가 두 경로의 수치를 한 문형으로 합성한다). 1차 호출은 **아무것도
+    쓰지 않는다**: 실행 자체에 진입하지 않는 것을 실행기 미호출로 잰다.
+    """
     ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
     _zone(ctrl)
-    original = screen_job_module.build_current_preview_projection
 
-    def race(**kwargs):
-        projection = original(**kwargs)
-        ctrl._current_delivery_preparation = None
-        return projection
+    ran: list = []
+    monkeypatch.setattr(sj, "run_managed_generation", lambda **kw: ran.append(kw))
 
-    monkeypatch.setattr(screen_job_module, "build_current_preview_projection", race)
+    asked = ctrl.generate(run_token="tk-1")
+
+    assert ran == [], "확인 전에 실행기에 진입했습니다."
+    assert asked["ok"] is False and asked["needs_overwrite"] is True
+    assert asked["run_token"] == "tk-1"
+    assert asked["total"] == 2
+    assert asked["overwrite_count"] == 1 and asked["new_count"] == 1
+    assert asked["conflict_names"] == ["공고서-20260818-001.hwpx"]
+    assert asked["conflict_more"] == 0
+    assert ctrl._overwrite_now_pin is not None
+
+
+def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """확인 재호출은 **1차가 재진술한 그 배치**로 실행에 들어간다.
+
+    같은 배치임을 담보하는 것은 prep 캐시다(record/binding/pattern/intent 가 그대로면
+    재사용) — 확인창이 말한 경로 목록과 실행기에 넘어가는 목록이 같은 객체에서 나온다.
+    """
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
     ctrl.set_output_folder(str(out))
-    zone = _zone(ctrl)
-    assert zone["kind"] == "context_error"
-    assert zone["code"] == "CURRENT_PREVIEW_PREPARATION_STALE"
-    assert ctrl._current_preview_preparation is None
-    assert ctrl._approved_preview_token is None
+    asked = ctrl.generate(run_token="tk-1")
+    assert asked["needs_overwrite"] is True
+    prep_before = ctrl._current_delivery_preparation
+
+    captured: dict = {}
+
+    def fake_run(**kw):
+        captured.update(kw)
+        return DeliveryCompleted(
+            output_directory=str(out),
+            delivered=(
+                DeliveredDocument(0, "rec-0", "공고서-20260818-001.hwpx",
+                                  str(out / "공고서-20260818-001.hwpx"),
+                                  "WRITE_OVERWRITE", "sha256:" + "0" * 64, ()),
+            ),
+        )
+
+    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    result = ctrl.generate(confirm_overwrite=True, run_token="tk-1")
+
+    assert result["ok"] is True, result.get("error")
+    assert ctrl._current_delivery_preparation is prep_before, "확인 왕복이 배치를 갈아치웠습니다."
+    assert [
+        item.resolved_output_relative_path
+        for item in captured["resolved_delivery"].ordered_items
+    ] == ["공고서-20260818-001.hwpx", "공고서-20260818-002.hwpx"]
+    assert ctrl._overwrite_now_pin is None      # 소비했으면 놓는다
 
 
-def test_non_regular_collision_keeps_delivery_ahead_of_preview(tmp_path: Path) -> None:
+def test_managed_overwrite_confirmation_is_refused_when_the_zone_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """왕복 사이에 존이 변하면 확인 재호출은 **stale 로 거절**된다.
+
+    확인은 예약이 아니다: 1차가 재진술한 집합과 지금 앉힐 집합이 갈리면, 사용자가 본 적 없는
+    파괴가 「확인했다」는 사실을 업고 통과한다. 그 문을 닫는 것은 준비 판정(선택이 갈리면
+    delivery 가 서지 않는다)이고, 실행기에는 끝내 닿지 않는다.
+    """
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    assert ctrl.generate(run_token="tk-1")["needs_overwrite"] is True
+
+    ran: list = []
+    monkeypatch.setattr(sj, "run_managed_generation", lambda **kw: ran.append(kw))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})   # 존 변이
+
+    refused = ctrl.generate(confirm_overwrite=True, run_token="tk-1")
+
+    assert ran == [], "낡은 확인이 실행기까지 갔습니다."
+    assert refused["ok"] is False and "needs_overwrite" not in refused
+    assert refused["level"] == "warn" and refused["error"]
+    assert ctrl._overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
+
+
+def test_managed_run_without_any_overwrite_never_asks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """음성 대조 — 파괴가 없으면 확인 왕복 자체가 없다(과경고 금지)."""
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+
+    monkeypatch.setattr(
+        sj, "run_managed_generation",
+        lambda **kw: DeliveryCompleted(output_directory=str(out), delivered=()),
+    )
+    result = ctrl.generate(run_token="tk-1")
+
+    assert "needs_overwrite" not in result
+    assert result["ok"] is True
+    assert ctrl._overwrite_now_pin is None
+
+
+def test_non_regular_collision_keeps_delivery_ahead_of_the_run(tmp_path: Path) -> None:
+    """덮어쓸 수 없는 물건(폴더)에 걸린 이름은 **delivery blocker** 로 먼저 선다.
+
+    확인 왕복은 「덮어쓸 수 있는 것을 덮어쓴다」의 문이고, 이 자리는 그 앞에서 닫힌다 —
+    한 상황을 두 어휘로 말하지 않는다.
+    """
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").mkdir()
     ctrl.set_output_folder(str(out))
 
     zone = _zone(ctrl)
     assert zone["primary_action"] == "REVIEW_DELIVERY"
-    assert "REVIEW_PREVIEW" not in zone["blockers"]
-    assert ctrl._current_preview_preparation is None
-    obs = ctrl.workbench_observation()
-    assert obs.preview_requirement.kind == "NOT_REQUIRED"
-    assert obs.semantic_preview is None
+    assert zone["delivery"]["resolvable"] is False
+    assert ctrl.generate(run_token="tk-1")["ok"] is False
 
 
 def test_delivery_intent_changes_reuse_record_preparation(
@@ -1076,12 +936,9 @@ def test_delivery_occupancy_is_read_only_and_name_conflicts_are_not_blockers(
         "공고서-20260818-001.hwpx",
         "공고서-20260818-002.hwpx",
     ]
-    # 그래도 조용하지 않다: 덮어쓸 항목이 섰으므로 확인이 REQUIRED 로 선다.
-    assert zone["preview_requirement"] == {
-        "kind": "REQUIRED",
-        "reason": "DESTRUCTIVE_OVERWRITE",
-    }
-    assert zone["primary_action"] == "REVIEW_PREVIEW"
+    # 그래도 조용하지 않다: 덮어쓸 항목이 섰으므로 생성 호출이 확인 왕복으로 되돌아온다
+    # (#957 — 그 확인은 관찰 축이 아니라 실행 축에 산다).
+    assert zone["primary_action"] == "CREATE_DOCUMENTS"
     # 관찰도 계획도 디스크를 만지지 않는다.
     assert tuple(item.name for item in out.iterdir()) == before
     assert existing.read_text(encoding="utf-8") == "existing"
@@ -1571,9 +1428,6 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
         orchestration=AutomaticSealOrchestration(),
         fresh_observation=fresh,
-        preview_requirement=PreviewNotRequired(),
-        preview_satisfied=True,
-        semantic_preview=None,
     )
     assert result.primary_action == "REVIEW_BINDING"
 

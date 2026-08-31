@@ -152,20 +152,14 @@ _TABLE: dict[str, BlockerAffordance] = {
         selector="#jobManagedPickFolder",
         bridge_method="pick_output_folder",
         rationale="이름 충돌은 U4 계열2-27 이후 blocker 가 아니다(기본이 덮어쓰기이고 "
-        "파괴 확인은 REVIEW_PREVIEW 가 진다). 그래서 이 자리에 남는 원인은 「그 이름이 "
+        "파괴 확인은 생성 호출의 `needs_overwrite` 왕복이 진다 — #957). 그래서 이 자리에 "
+        "남는 원인은 「그 이름이 "
         "덮어쓸 수 없는 물건(폴더·바로가기)에 걸렸다」이고, 그것을 지우는 동사는 저장 "
         "폴더를 바꾸는 것이다 — 네이티브 피커라 직접 브리지 경로다. 파일 이름 규칙 자체의 "
         "미해소는 저장 시점 게이트(U4 계열4-4 `validate_save`)가 앱 안에서 만들어지는 것을 "
         "막고, 앱 밖에서 편집된 작업이 그것을 들고 오면 사유를 `#jobDeliveryBlockers` 가 "
         "병기한다. 종전 좌표 `#jobRefreshDelivery` 는 「목록 새로 확인」이었는데, 그 동사는 "
         "충돌 갈래에서만 참이었고 나머지 원인에는 아무 일도 하지 않았다.",
-    ),
-    "REVIEW_PREVIEW": BlockerAffordance(
-        kind=ACTIVE_VERB,
-        selector="#jobManagedPreviewOpen",
-        dispatch_action="job.preview_open",
-        rationale="확인 면을 열어야 승인이 성립한다. 승인 자체(`preview_approve`)는 "
-        "그 면 안의 동사라 이 자리의 좌표는 여는 쪽이다.",
     ),
     "EXECUTION_NO_EVIDENCE": BlockerAffordance(
         kind=ACTIVE_VERB,

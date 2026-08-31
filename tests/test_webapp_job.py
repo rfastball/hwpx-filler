@@ -191,17 +191,6 @@ def _unbind(ctrl, name: str = "공고서") -> None:
     )
 
 
-def _approve_run(ctrl) -> None:
-    """확인 면에서 승인한다 — 구 필드축 ack 게이트 통과의 승계 헬퍼(U2 §2.13).
-
-    빈 값이 있으면 blank_set 검토 요구가 서므로(침묵 금지), 게이트를 열려면 확인 면을
-    열어 승인해야 한다 — 표식 삽입 동의는 승인 1번이 겸한다.
-    """
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_approve", {})
-    ctrl.dispatch("preview_close", {})
-
-
 # ---------------------------------------------------------------- 스냅샷 골격
 def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     # 파일 마운트가 **주입된** factory 를 타는지 기록으로 봉인(P2-16) — concrete 만 넣으면
@@ -876,7 +865,6 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -895,7 +883,6 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     class _Done:
         ok = True
@@ -959,7 +946,6 @@ def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True and res["level"] == "ok"
@@ -971,7 +957,7 @@ def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
 
 
 def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
-    """생성 중 최신 규칙을 보존하되 옛 규칙의 완주·미리보기 증거는 버린다."""
+    """생성 중 최신 규칙을 보존하되 옛 규칙의 완주 증거는 버린다."""
     import hwpxfiller.application.generation as appgen
 
     ctrl, _ = _controller(tmp_path)
@@ -980,10 +966,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
-    ctrl.dispatch("preview_open", {})
-    before = ctrl.snapshot()
-    assert before["preview"]["open"] is True and before["guard"]["armed"] is True
+    assert ctrl.snapshot()["guard"]["armed"] is True
 
     generate_batch = appgen.generate_batch
 
@@ -1001,9 +984,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
     assert ctrl.vm.job.filename_pattern == after.filename_pattern  # 최신 Job 전체 승계
     assert ctrl._last_generated is None                          # 새 규칙은 실행되지 않았다
-    snap = ctrl.snapshot()
-    assert snap["preview"]["open"] is False                     # 옛 규칙의 상 폐기
-    assert snap["guard"]["armed"] is True                       # 수작업 선택 보호 복구
+    assert ctrl.snapshot()["guard"]["armed"] is True             # 수작업 선택 보호 복구
 
 
 def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
@@ -1021,7 +1002,6 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     _second_job(ctrl, tmp_path)                       # 전환 시도 대상(공고서2) 등록
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     real_batch = appgen.generate_batch
 
@@ -1049,7 +1029,6 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     calls: list = []
     real = ctrl.registry.stamp_last_run
@@ -1070,7 +1049,6 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    _approve_run(ctrl)
 
     def _boom(job, **kwargs):
         raise OSError("디스크 쓰기 거부")
@@ -1102,7 +1080,6 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     assert ctrl.generate()["failed"] == 1
     assert ctrl.registry.load("공고서").last_run_at == ""       # 미완주 = 역사 없음
@@ -1113,7 +1090,6 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
     assert ctrl.generate()["ok"] is True  # 최초 생성
 
     # 같은 폴더 재생성 → 조용한 덮어쓰기 금지: 수치 합성 재진술 요구(총량·파괴분·신규분).
@@ -1137,7 +1113,6 @@ def test_generate_echoes_run_token_on_every_direct_branch(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     # ② 성공
     ok = ctrl.generate(run_token="t-2")
@@ -1166,7 +1141,6 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표(run 핸들)가 서 있는 상태.
     from hwpxfiller.application.generation import GenerationRun
@@ -1193,7 +1167,6 @@ def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     assert ctrl.generate(run_token="run-9")["ok"] is True
     assert ctrl._run is None
@@ -1205,7 +1178,6 @@ def test_progress_delta_carries_the_run_token(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
     ctrl.generate(run_token="run-42")
 
     deltas = [snap["progress"] for _s, snap in pushes
@@ -1226,7 +1198,6 @@ def test_run_token_is_opaque_to_python(tmp_path):
         ctrl.dispatch("select_job", {"name": "공고서"})
         _mount_all(ctrl, _data_csv(home))
         ctrl.set_output_folder(str(home / "out"))
-        _approve_run(ctrl)
         res = ctrl.generate() if token is None else ctrl.generate(run_token=token)
         assert res["ok"] is True
         assert res["run_token"] == expected
@@ -1341,7 +1312,6 @@ def test_select_none_closes_record_gate(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
     assert ctrl.snapshot()["gate"]["enabled"] is True
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
@@ -2088,30 +2058,98 @@ def test_record_names_follow_selection_not_invented(tmp_path):
     assert rows[0]["name"] == "doc-001.hwpx" and rows[0]["selected"] is True
 
 
-def test_generate_uses_previewed_name_timestamp(tmp_path):
-    """미리보기가 보여준 시각 = 생성 파일명 시각(RC-02 표시=확인=생성).
+def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
+    """덮어쓰기 확인 왕복은 **한 시각**으로 판정하고 생성한다(#957 delta 2).
 
-    시·분·초 date 토큰 패턴에서 미리보기 스냅샷과 생성 클릭 사이 시계가 흘러도, generate 는
-    마지막 미리보기(``_names_now``)의 시각을 재사용해 화면이 보여준 실파일명 그대로 생성한다.
+    `{{date:SS}}` 류에서 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 초 경계에서 갈리면
+    확인창이 거짓이 된다. 그래서 `needs_overwrite` 를 낸 판정이 쓴 시각을 핀으로 남기고
+    확인 재호출이 **소비하며 소거**한다. 표시(스냅샷)와 실행(런 진입)이 각자 시각을 찍는
+    것은 정상이다 — 확인의 자리가 만들어진 문서로 옮겨졌기 때문이다.
     """
     ctrl, _ = _controller(tmp_path)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
-    _rereview(ctrl)   # 파일명 규칙 변경의 검토 요구는 이 테스트의 대상이 아니다
+    _rereview(ctrl)   # 파일명 규칙 변경의 검토 고지는 이 테스트의 대상이 아니다
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    _approve_run(ctrl)
 
-    # 스냅샷 미리보기가 시각을 캡처 → 이후 시계 전진을 결정적으로 모사(주입) → 생성이 캡처값 재사용.
-    assert ctrl.snapshot()["records"][0]["name"].startswith("doc-")
-    ctrl._names_now = datetime(2026, 1, 2, 3, 4, 5)
-    res = ctrl.generate()
-    assert res["ok"] is True
-    made = sorted(p.name for p in out.glob("*.hwpx"))
-    assert made and all(n.startswith("doc-030405-") for n in made)  # 주입 시각 그대로
+    # 시계를 손에 쥔다 — 왕복 사이의 초 경계를 결정적으로 넘겨야 핀이 관측 가능해진다.
+    t1 = datetime(2026, 7, 21, 9, 0, 0)
+    ctrl._clock = lambda: t1
+    assert ctrl.generate()["ok"] is True
+    first = sorted(p.name for p in out.glob("*.hwpx"))
+    assert first == ["doc-090000-1.hwpx", "doc-090000-2.hwpx"]
+    assert ctrl._overwrite_now_pin is None   # 파괴 없는 첫 실행은 핀을 세우지 않는다
+
+    # 같은 시각·같은 폴더로 다시 — 파괴 집합이 서므로 확인 왕복이 열린다.
+    asked = ctrl.generate()
+    assert asked["needs_overwrite"] is True
+    assert asked["total"] == 2 and asked["overwrite_count"] == 2 and asked["new_count"] == 0
+    assert sorted(asked["conflict_names"]) == first and asked["conflict_more"] == 0
+    assert ctrl._overwrite_now_pin is not None
+
+    # 확인 재호출 **직전에 초 경계를 넘긴다**. 핀이 없으면 재호출은 새 시각으로 계획해
+    # 아무것도 덮지 않고 새 파일 2건을 더 만든다 — 확인창이 거짓말이 되는 바로 그 자리다.
+    ctrl._clock = lambda: datetime(2026, 7, 21, 9, 0, 30)
+    ctrl.snapshot()                                    # 사이에 낀 임의 재렌더(표시 축은 새 시각)
+    assert ctrl.generate(confirm_overwrite=True)["ok"] is True
+    assert sorted(p.name for p in out.glob("*.hwpx")) == first, (
+        "확인 재호출이 재진술한 집합과 다른 이름을 만들었습니다."
+    )
+    assert ctrl._overwrite_now_pin is None              # 소비했으면 놓는다
+
+
+def test_the_overwrite_pin_is_dropped_when_the_zone_changes_between_the_roundtrip(tmp_path):
+    """왕복 사이에 실행 입력이 바뀌면 그 핀은 **다른 세계의 것**이라 버린다(#957).
+
+    되쓰면 사용자가 본 적 없는 이름을 만든다 — 확인창이 말한 집합과 실제 집합이 갈리는
+    바로 그 결함류를 반대 방향으로 되살리는 꼴이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    assert ctrl.generate()["ok"] is True
+    assert ctrl.generate()["needs_overwrite"] is True
+    assert ctrl._overwrite_now_pin is not None
+
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})   # 존 변이 — 선택이 갈렸다
+    refused = ctrl.generate(confirm_overwrite=True)
+
+    assert refused["ok"] is False and "needs_overwrite" not in refused
+    assert "다시 받아야" in refused["error"] and refused["level"] == "warn"
+    assert ctrl._overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
+    # 새 배치로 다시 물으면 왕복이 정상적으로 다시 열린다(막다른 거절이 아니다).
+    assert ctrl.generate()["needs_overwrite"] is True
+
+
+def test_the_display_timestamp_is_captured_once_per_snapshot(tmp_path):
+    """표시 시각은 **스냅샷당 1회** 캡처다 — 한 스냅샷의 소비처가 서로 맞는다(#957).
+
+    반대 방향도 함께 잰다: 스냅샷을 다시 그리면 새로 찍는다(오래 열어 둔 세션의 날짜가
+    늙지 않게). 종전의 「보는 동안 얼린다」 규칙은 그 값에 기대던 확인 면과 함께 죽었다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+
+    ctrl._clock = lambda: datetime(2026, 7, 21, 9, 0, 0)
+    snap = ctrl.snapshot()
+    assert ctrl._names_now == datetime(2026, 7, 21, 9, 0, 0)
+    # 한 스냅샷 안: 표 「문서」 열의 이름이 그 시각으로 계획된다(캡처가 1회라 서로 맞는다).
+    assert [r["name"] for r in snap["records"]] == ["doc-090000-1.hwpx", "doc-090000-2.hwpx"]
+
+    ctrl._names_now = datetime(2020, 1, 1)       # 늙은 값을 심는다
+    ctrl.snapshot()
+    assert ctrl._names_now != datetime(2020, 1, 1)
 
 
 def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
@@ -2293,7 +2331,6 @@ def test_hidden_column_still_reaches_the_generated_document(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    _approve_run(ctrl)   # 빈 값 게이트는 승인이 진다(U2 §2.13 — 구 필드축 ack 의 승계)
     ctrl.dispatch("hide_column", {"column": "presmptPrce"})
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 2
@@ -2940,7 +2977,6 @@ def test_generate_surfaces_fill_notes(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -3148,8 +3184,6 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     ctrl._last_fresh_observation = old_observation
     ctrl._current_record_preparation = object()
     ctrl._current_delivery_preparation = object()
-    ctrl._current_preview_preparation = object()
-    ctrl._approved_preview_token = "old-preview"
     old_generation = ctrl._snapshot_gen
     calls = []
     decide = screen_job_module.decide_active_work_after_data_transition
@@ -3187,8 +3221,6 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert ctrl._snapshot_gen == old_generation + 1
     assert ctrl._current_record_preparation is None
     assert ctrl._current_delivery_preparation is None
-    assert ctrl._current_preview_preparation is None
-    assert ctrl._approved_preview_token is None
     assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
     assert ctrl._run_delivery_intent is (old_delivery_intent if expected_name else None)
     snap = ctrl.snapshot()
@@ -3227,12 +3259,9 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
     observation = object()
     record_preparation = object()
     delivery_preparation = object()
-    preview_preparation = object()
     ctrl._last_fresh_observation = observation
     ctrl._current_record_preparation = record_preparation
     ctrl._current_delivery_preparation = delivery_preparation
-    ctrl._current_preview_preparation = preview_preparation
-    ctrl._approved_preview_token = "old-preview"
     old_source = ctrl.datasource
     old_records = ctrl.records
     old_selection = ctrl.selection
@@ -3256,8 +3285,6 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
     assert ctrl._last_fresh_observation is observation
     assert ctrl._current_record_preparation is record_preparation
     assert ctrl._current_delivery_preparation is delivery_preparation
-    assert ctrl._current_preview_preparation is preview_preparation
-    assert ctrl._approved_preview_token == "old-preview"
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
@@ -4522,39 +4549,28 @@ def test_no_gate_reason_names_a_review_anymore(tmp_path):
     상태를 그리는 분기를 계속 든다(링2 에서 죽은 서열을 재조립하는 자리).
     """
     ctrl, _ = _unreviewed_session(tmp_path)
-    assert ctrl.snapshot()["gate"]["reason"] == ""
-    req, unmet = ctrl._review()
-    assert req.required and unmet is not None      # 요구 판정 자체는 그대로 산다(고지 입력)
-    ctrl.review.approve(req, ctrl._review_scope_key())
     assert ctrl.snapshot()["gate"] == {"enabled": True, "level": "", "text": "", "reason": ""}
+    assert ctrl._review().required      # 요구 판정 자체는 그대로 산다(고지 입력)
 
 
-def test_selection_change_still_invalidates_a_selection_bound_approval(tmp_path):
-    """판정 I 는 살아 있다 — 게이트가 아니라 **승인 사실**의 축에서(미리보기 표면이 읽는다).
+def test_review_payload_has_no_approval_axis(tmp_path):
+    """스냅샷의 검토 몫은 **요구의 사실**만 싣는다(#957).
 
-    선택이 바뀌면 승인 키가 갈려 「승인했다」가 거짓이 된다. 게이트를 안 닫는다고 해서
-    승인 결속까지 헐거워지면, ③에서 남는 승인 표면이 남의 선택을 본 승인으로 산다.
+    종전에는 `approved` 가 함께 실려 표면이 「승인했다」를 그렸다. 승인 사건이 사라진 뒤에도
+    그 키를 남기면 값이 언제나 거짓이라 표면이 거짓으로 갈라진다 — 없는 상태를 키로 두지
+    않는 것이 「조용히 틀리지 않는다」의 스냅샷 판이다.
     """
     ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["review"]["approved"] is True
+    review = ctrl.snapshot()["review"]
+    assert "approved" not in review
+    assert review["required"] is True and review["risk"] != ""
+    # 선택·순서를 바꿔도 「승인」이라는 상태가 없으므로 되살아날 것도 없다.
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})
-    assert ctrl.snapshot()["review"]["approved"] is False
-
-
-def test_display_order_change_still_invalidates_the_approval(tmp_path):
-    """선택 집합이 같아도 순서가 바뀌면 파일 이름이 달라진다(§2 충돌 B) — 같은 실행
-    입력이 아니므로 승인이 승계되지 않는다."""
-    ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
-    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    assert ctrl.snapshot()["review"]["approved"] is False
+    assert "approved" not in ctrl.snapshot()["review"]
 
 
 def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path):
-    """§13-2 — 정상 반복 실행에서 미리보기는 선택이다. 완주가 그 자격을 만든다.
+    """완주가 기준선을 세워 다음 실행의 고지가 조용해진다.
 
     빈 값 없는 데이터를 쓴다 — 빈 값이 있으면 blank_set(§2.13)이 반복 실행에도 서는
     것이 계약이라(침묵 금지), 「조용한 반복」의 전제가 데이터 축에서 갈린다.
@@ -4565,12 +4581,12 @@ def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
+    assert ctrl.snapshot()["review"]["required"] is True
     ctrl.generate()
     assert ctrl.registry.load("공고서").reviewed_rules  # 완주 스탬프가 기준선을 세웠다
-    ctrl.review.clear()                                 # 재시작과 같은 상태(승인은 미영속)
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    snap = ctrl.snapshot()
+    assert snap["review"]["required"] is False
+    assert snap["gate"]["enabled"] is True
 
 
 def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
@@ -4586,235 +4602,19 @@ def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
     assert "한 번도" not in text
 
 
-def test_switching_jobs_does_not_carry_an_approval(tmp_path):
-    """승인은 규칙 지문에 결속돼 남의 작업에 닿지 않는다(게이트가 아니라 승인 사실의 축)."""
-    ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
-    other = ctrl.registry.load("공고서")
-    other.name = "다른공고서"
-    other.filename_pattern = "다른-{{seq:001}}"
-    ctrl.registry.save(other)
-    ctrl.dispatch("select_job", {"name": "다른공고서"})
-    assert ctrl.snapshot()["review"]["approved"] is False
+def test_the_generated_value_preview_surface_is_gone(tmp_path):
+    """생성 값 미리보기의 **5액션 전부**가 사라졌다(#957 슬라이스 ③).
 
-
-def test_preview_drawer_projects_the_run_input_not_a_recomputation(tmp_path):
-    """판정 A — 값·이름은 실행 입력과 **같은 산출**의 투영이다.
-
-    한 건만 따로 계산하면 `{{seq}}` 가 1 로 고정되고 꼬리표가 사라져, 미리보기가 실행과
-    다른 이름을 말한다(픽스처 패턴이 `doc-{{seq:001}}` 이라 자리마다 이름이 다르다).
+    선언으로 남기는 이유는 F5 판정 O 와 같다: 조용한 무시와 선언된 철거는 다르다. 누군가
+    이 축을 되살리면 이 테스트가 그 결정을 다시 꺼낸다. 액션 레지스트리 밖의 발신은
+    시끄럽게 거절된다(fail-closed) — 조용한 no-op 이 아니다.
     """
     ctrl, _ = _session(tmp_path)
-    ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("preview_open", {})
-    snap = ctrl.snapshot()
-    p = snap["preview"]
-    assert p["open"] is True and p["pos"] == 0 and p["total"] == 2
-    assert p["filename"] == snap["records"][0]["name"] == "doc-001.hwpx"
-    ctrl.dispatch("preview_move", {"delta": 1})
-    p = ctrl.snapshot()["preview"]
-    assert p["pos"] == 1 and p["filename"] == "doc-002.hwpx"
-
-
-def test_preview_position_follows_the_display_order(tmp_path):
-    """판정 M — 자리는 **표시순 서수**다. 원본 index 로 세면 「보이는 것 = 실행되는 것」이
-    이 면에서만 깨진다."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    first_desc = ctrl.snapshot()["preview"]["rows"]
-    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    assert ctrl.snapshot()["preview"]["rows"] != first_desc
-
-
-def test_preview_move_stops_at_the_edges(tmp_path):
-    """순환하지 않는다 — 마지막에서 첫 건으로 돌아가면 몇 번째인지가 끊긴다."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_move", {"delta": -1})
-    assert ctrl.snapshot()["preview"]["pos"] == 0
-    ctrl.dispatch("preview_move", {"delta": 5})
-    assert ctrl.snapshot()["preview"]["pos"] == 1
-
-
-def test_preview_blank_only_restricts_moves_to_blank_records(tmp_path):
-    """「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동이 빈 값 있는 건 사이로만 간다.
-
-    「12건 중 2건이 비었다」를 알아도 어느 2건인지 아무도 말하지 않아 전 건을 넘겨야
-    했다 — 훑기 가속의 실제 기제는 표지가 아니라 이 한정이다(선례: 「실패한 건만 선택」).
-    """
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    csv = tmp_path / "mixed.csv"
-    # 표시순(sourceDesc) = 원본 3·2·1·0. 빈 값(presmptPrce)은 원본 0·2 = 자리 1·3.
-    csv.write_text("bidNtceNm,presmptPrce\nA,\nB,100\nC,\nD,200\n", encoding="utf-8")
-    _mount_all(ctrl, str(csv))
-    ctrl.dispatch("preview_open", {})
-    p = ctrl.snapshot()["preview"]
-    assert p["blank_count"] == 2 and p["blank_only"] is False
-    ctrl.dispatch("preview_blank_only", {"value": True})
-    p = ctrl.snapshot()["preview"]
-    assert p["blank_only"] is True and p["pos"] == 1     # 대상 밖 자리 → 가장 가까운 빈 값 건
-    ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl.snapshot()["preview"]["pos"] == 3        # 채움 건(자리 2)을 건너뛴다
-    p = ctrl.snapshot()["preview"]
-    assert p["can_next"] is False and p["can_prev"] is True  # 경계 = 그 건들의 처음·끝
-    ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl.snapshot()["preview"]["pos"] == 3        # 경계에서 멈춘다(순환 없음)
-    ctrl.dispatch("preview_move", {"delta": -1})
-    assert ctrl.snapshot()["preview"]["pos"] == 1
-    ctrl.dispatch("preview_blank_only", {"value": False})
-    ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl.snapshot()["preview"]["pos"] == 2        # 끄면 이동이 전 건으로 돌아온다
-    # 닫으면 보기 상태도 함께 놓는다(열림·자리와 같은 수명).
-    ctrl.dispatch("preview_close", {})
-    ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["preview"]["blank_only"] is False
-
-
-def test_preview_blank_only_refuses_when_no_record_is_blank(tmp_path):
-    """빈 값 건이 0이면 켤 수 없다 — 무동작 토글 금지(표면도 0건이면 비활성이지만
-    잠금은 상태가 진다)."""
-    ctrl, _ = _clean_session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    with pytest.raises(ValueError, match="빈 값이 있는 문서가 없습니다"):
-        ctrl.dispatch("preview_blank_only", {"value": True})
-    assert ctrl.snapshot()["preview"]["blank_count"] == 0
-
-
-def _clean_session(tmp_path):
-    """검토 요구가 하나도 없는 세션 — 기준선 있음 + **빈 값 없는** 데이터(§2.13 뒤로는
-    빈 값이 있으면 blank_set 요구가 서므로 「요구 없음」 픽스처는 데이터도 깨끗해야 한다)."""
-    ctrl, pushes = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    clean = tmp_path / "clean.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
-    _mount_all(ctrl, str(clean))
-    return ctrl, pushes
-
-
-def test_preview_opens_even_when_nothing_needs_review(tmp_path):
-    """§13-2 — 정상 반복 실행에서 미리보기는 **선택**이지 금지가 아니다."""
-    ctrl, _ = _clean_session(tmp_path)
-    assert ctrl.snapshot()["review"]["required"] is False
-    ctrl.dispatch("preview_open", {})
-    p = ctrl.snapshot()["preview"]
-    assert p["open"] is True and p["can_approve"] is False  # 승인 버튼은 안 선다
-
-
-def test_opening_the_preview_is_not_approval(tmp_path):
-    """불변식 §13-4 — PreviewCreated 와 PreviewApproved 는 다른 사건이다.
-
-    둘 다 이제 생성을 열지 않는다(#957) — 갈리는 것은 「승인했다」를 말할 수 있는가다.
-    """
-    ctrl, _ = _unreviewed_session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["review"]["approved"] is False
-    ctrl.dispatch("preview_approve", {})
-    assert ctrl.snapshot()["review"]["approved"] is True
-
-
-def test_approval_is_refused_outside_the_drawer(tmp_path):
-    """승인은 증거를 본 사건이다 — 증거를 띄우지 않은 경로로 세우면 그 승인은 무엇에
-    근거했는지 말할 수 없다(F-06 이 지목한 결함을 우리 손으로 재현하는 꼴)."""
-    ctrl, _ = _unreviewed_session(tmp_path)
-    with pytest.raises(ValueError, match="미리보기를 연 뒤"):
-        ctrl.dispatch("preview_approve", {})
-
-
-def test_approval_is_refused_when_nothing_needs_review(tmp_path):
-    ctrl, _ = _clean_session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    with pytest.raises(ValueError, match="확인이 필요한 변경이 없습니다"):
-        ctrl.dispatch("preview_approve", {})
-
-
-def test_preview_refuses_to_open_over_a_range_draft(tmp_path):
-    """판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를 그리면 적용도 안 한
-    편집을 승인하게 되고 그건 불변식 21 위반이다."""
-    ctrl, _ = _draft_session(tmp_path)
-    ctrl.dispatch("range_draft_open", {})
-    with pytest.raises(ValueError, match="범위 편집"):
-        ctrl.dispatch("preview_open", {})
-
-
-def test_preview_refuses_to_open_with_no_selection(tmp_path):
-    """§18.11-6 — 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("set_none", {})
-    with pytest.raises(ValueError, match="최소 1건"):
-        ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["preview"]["can_open"] is False
-
-
-def test_preview_survives_a_shrinking_selection_by_restating(tmp_path):
-    """§10.12.1 실패 경로 — 면 안에서 재진술하고 **닫지 않는다**."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_move", {"delta": 1})
-    ctrl.dispatch("set_none", {})
-    p = ctrl.snapshot()["preview"]
-    assert p["open"] is True and p["total"] == 0
-    assert "선택한 문서가 없습니다" in p["empty_note"]
-
-
-def test_switching_jobs_closes_the_preview(tmp_path):
-    """열려 있던 면은 남의 작업의 값을 그린다 — 상태의 진실은 DOM 이 아니라 여기다."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("select_job", {"name": ""})
-    assert ctrl.snapshot()["preview"]["open"] is False
-
-
-def test_preview_evidence_names_the_change_and_its_scale(tmp_path):
-    """판정 D — before/after 는 짓지 않는다(원천이 없다). 현재 값 + 대상 + 영향 규모."""
-    ctrl, _ = _controller(tmp_path, reviewed=True)
-    job = ctrl.registry.load("공고서")
-    job.mapping.mappings[0].source = "presmptPrce"   # 의미 연결 변경
-    ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.dispatch("preview_open", {})
-    ev = ctrl.snapshot()["preview"]["evidence"]
-    assert ev["policy"] == "value_scope_summary"
-    assert [r["name"] for r in ev["rows"]] == ["공고명"]
-    assert "서로 다른 값" in ev["rows"][0]["note"] and "비는 문서 1건" in ev["rows"][0]["note"]
-
-
-def test_filename_risk_evidence_reports_the_set_not_one_name(tmp_path):
-    """C-01 — 대표 이름 한 건은 패턴 형태만 답한다. 집합 성질은 따로 세어 말한다."""
-    ctrl, _ = _controller(tmp_path, reviewed=True)
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "{{공고명}}"   # seq 를 뺀다 = 이름이 값에만 의존
-    ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    csv = tmp_path / "dup.csv"
-    csv.write_text("bidNtceNm,presmptPrce\n같은이름,1\n같은이름,2\n", encoding="utf-8")
-    _mount_all(ctrl, str(csv))
-    ctrl.dispatch("preview_open", {})
-    ev = ctrl.snapshot()["preview"]["evidence"]
-    assert ev["policy"] == "name_set_summary"
-    assert "꼬리표가 붙은 문서 1건" in ev["note"]
-
-
-def test_preview_has_no_scope_axis(tmp_path):
-    """「적용 범위」 축은 없다(U2 §2.3) — 값이 하나뿐인 축은 없는 선택지의 암시다.
-
-    이 자리는 원래 `runOverrides`(F7 PR-B)의 짝이었다. 그것이 §10.14 에서 기각·사망하고
-    §10.15 판정 H 가 작업대의 대응 배지를 "말할 상태가 없다"며 죽였는데 드로어의 이 항목만
-    살아남아 있었다 — 판정 일관성의 미이행분이다.
-
-    **뒤집힌 선언이지 지운 테스트가 아니다.** 종전엔 "「기본 규칙」이라고만 말하고 「이번
-    생성에만」을 암시하지 말라"를 지켰다. override 가 실제로 서면 그때 축이 돌아오는 것이
-    맞고, 그때까지는 축의 부재가 계약이다.
-    """
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    preview = ctrl.snapshot()["preview"]
-    assert "scope" not in preview, (
-        "적용 범위 축이 재유입됐습니다 — runOverrides 없이 이 축을 세우면 "
-        "고를 수 없는 선택지를 암시합니다."
-    )
+    for action in ("preview_open", "preview_close", "preview_move",
+                   "preview_blank_only", "preview_approve"):
+        with pytest.raises(ValueError, match="알 수 없는"):
+            ctrl.dispatch(action, {})
+    assert "preview" not in ctrl.snapshot()
 
 
 # ---------------- 리뷰 1R 조치의 영구 가드(P1×2·P2×1) ----------------
@@ -4833,27 +4633,23 @@ def test_generation_has_no_review_backstop_left(tmp_path):
     assert made == ["doc-001.hwpx", "doc-002.hwpx"]
 
 
-def test_a_rule_change_after_approval_no_longer_refuses_the_run(tmp_path):
-    """승인 뒤 규칙이 바뀌어도 실행은 열린다 — 고지가 그 사실을 말할 뿐이다."""
+def test_a_rule_change_no_longer_refuses_the_run(tmp_path):
+    """규칙이 바뀌어도 실행은 열린다 — 고지가 그 사실을 말할 뿐이다(#957)."""
     ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "다른-{{seq:001}}"
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
     snap = ctrl.snapshot()
-    assert snap["review"]["approved"] is False          # 승인은 지문 결속으로 무효가 된다
-    assert snap["gate"]["enabled"] is True
+    assert snap["review"]["required"] is True           # 요구는 서고
+    assert snap["gate"]["enabled"] is True              # 게이트는 열려 있다
     assert ctrl.generate()["ok"] is True
 
 
 def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
     """1R P1 — 배치 중 착지한 에디터 저장이 **한 번도 실행된 적 없는 규칙**을 검토받은
-    것으로 만들면 안 된다(조용한 승인). 런의 규칙을 찍으면 요구가 그대로 선다."""
+    것으로 만들면 안 된다(조용한 승계). 런의 규칙을 찍으면 요구가 그대로 선다."""
     ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
     ran_pattern = ctrl.vm.job.filename_pattern
     # 배치가 도는 사이 같은 프로세스의 에디터가 저장한 상황을 스탬프 직전에 재현한다.
     real_stamp = ctrl.registry.stamp_last_run
@@ -4873,9 +4669,11 @@ def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
     assert review_requirement(after).required
 
 
-def test_preview_names_match_what_generation_will_write(tmp_path):
-    """1R P2 — 확인된 빈칸은 문서에 **표식 문자열**로 들어간다. 파일명 패턴이 그 필드를
-    참조하면 표식 없는 값으로 그린 미리보기는 **생성될 것과 다른 이름을 승인**시킨다.
+def test_planned_names_match_what_generation_will_write(tmp_path):
+    """1R P2 — 빈칸은 문서에 **표식 문자열**로 들어간다. 파일명 패턴이 그 필드를 참조하면
+    표식 없는 값으로 그린 이름 계획은 **생성될 것과 다른 이름**을 화면에 세운다.
+
+    #957 이후 그 계획을 말하는 표면은 표 「문서」 열 하나다(확인 면이 아니라).
     """
     ctrl, _ = _controller(tmp_path, reviewed=True)
     job = ctrl.registry.load("공고서")
@@ -4885,20 +4683,17 @@ def test_preview_names_match_what_generation_will_write(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
-    ctrl.dispatch("preview_open", {})
-    shown = ctrl.snapshot()["preview"]["filename"]
+    shown = {r["name"] for r in ctrl.snapshot()["records"]}
     assert ctrl.generate()["ok"] is True
     written = {p.name for p in (tmp_path / "out").glob("*.hwpx")}
-    assert shown in written, f"미리보기 이름 {shown!r} 가 생성물 {written!r} 에 없습니다."
+    assert shown == written, f"계획한 이름 {shown!r} 가 생성물 {written!r} 과 다릅니다."
 
 
 def test_the_marker_appears_whenever_blanks_exist(tmp_path):
     """`_run_marker` 재정의(U2 §2.13) — 조건은 「빈 값이 있으면」 하나다.
 
-    구 「확인 안 된 빈 값 = 표식 없음」 중간 상태는 ack 폐기와 함께 사라졌다: 생성·
-    미리보기·승인 세 자리가 같은 술어를 쓰므로, 미리보기 이름에도 처음부터 표식이 선다
-    — 승인이 곧 「이 표식이 박힌 이름·값」에 대한 동의가 된다.
+    구 「확인 안 된 빈 값 = 표식 없음」 중간 상태는 ack 폐기와 함께 사라졌다: 표시와 생성이
+    같은 술어를 쓰므로 표 「문서」 열의 이름에도 처음부터 표식이 선다.
     """
     ctrl, _ = _controller(tmp_path, reviewed=True)
     job = ctrl.registry.load("공고서")
@@ -4907,57 +4702,21 @@ def test_the_marker_appears_whenever_blanks_exist(tmp_path):
     _rereview(ctrl)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_move", {"delta": 1})   # 빈 값이 나는 레코드로 이동
-    assert "미입력" in ctrl.snapshot()["preview"]["filename"]
+    names = [r["name"] for r in ctrl.snapshot()["records"]]
+    assert any("미입력" in name for name in names), names
 
 
 def test_blank_fields_count_blanks_not_markers(tmp_path):
-    """빈 값 표지·「빈 값 있는 건만 보기」는 표식 **없는** 판에서 센다 — 표식(생성 입력)을
-    세면 언제나 0건이 되어 표지가 거짓이 된다. 두 판이 같은 사실을 다른 각도로 말한다."""
+    """빈 값 표지는 표식 **없는** 판에서 센다 — 표식(생성 입력)을 세면 언제나 0건이 되어
+    표지가 거짓이 된다. 두 판이 같은 사실을 다른 각도로 말한다."""
     ctrl, _ = _session(tmp_path)
-    snap = ctrl.snapshot()
-    assert snap["blank_fields"] == ["추정가격"]
-    assert snap["preview"]["blank_count"] == 1     # 2건 중 1건이 빈 값
+    assert ctrl.snapshot()["blank_fields"] == ["추정가격"]
 
 
-# ---------------- 리뷰 2R 조치의 영구 가드(P1×1·P2×2) ----------------
-def test_approval_does_not_survive_a_data_swap(tmp_path):
-    """2R P1 — 데이터 A 에서 승인한 뒤 데이터 B 를 올리면 선택은 0건으로 리셋되지만
-    세션의 승인 집합은 남는다. 같은 index 를 다시 고르는 순간 **같은 키가 재구성돼**
-    B 의 값·이름을 한 번도 보지 않은 승인이 살아나면 안 된다.
-
-    #957 이후 그 결함은 게이트가 아니라 「승인했다」는 진술에서 드러난다 — 승인이 실행을
-    열지 않게 됐다고 해서 승인이 남의 데이터에 붙어도 되는 것은 아니다.
-    """
-    ctrl, _ = _unreviewed_session(tmp_path)
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["review"]["approved"] is True
-
-    other = tmp_path / "b.csv"
-    other.write_text("bidNtceNm,presmptPrce\n다른공고,\n다른비품,3000000\n", encoding="utf-8")
-    _mount_all(ctrl, str(other))          # 같은 열 지형·같은 행 수 = 같은 index 집합
-    assert ctrl.snapshot()["review"]["approved"] is False, (
-        "다른 데이터의 값을 보지 않은 채 승인이 재사용됐습니다."
-    )
-
-
-def test_approval_scope_key_is_separate_from_the_result_fingerprint(tmp_path):
-    """두 값이 묻는 질문이 다르다: 결과 강등은 "지금 실행 입력의 것인가", 승인은 "무엇을
-    보고 난 것인가". 한 문자열이 둘을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다."""
-    ctrl, _ = _session(tmp_path)
-    before_sel, before_scope = ctrl._selection_key(), ctrl._review_scope_key()
-    _mount_all(ctrl, _data_csv(tmp_path))   # 같은 파일 재마운트 = 같은 선택 지문
-    assert ctrl._selection_key() == before_sel
-    assert ctrl._review_scope_key() != before_scope, (
-        "새 스냅샷인데 승인 범위 키가 그대로입니다 — 승인이 되살아납니다."
-    )
-
-
-def test_preview_and_table_agree_on_the_filename_timestamp(tmp_path):
+# ---------------- 리뷰 2R·3R 조치의 승계(#957 재조준) ----------------
+def test_the_display_timestamp_is_shared_across_one_snapshot(tmp_path):
     """2R P2 — 게이트 감사(refresh)와 표 「문서」 열이 각자 시각을 찍으면 `{{date:SS}}`
-    가 초 경계를 넘는 순간 드로어가 승인시킨 이름과 생성물이 갈린다."""
+    가 초 경계를 넘는 순간 한 화면이 두 이름을 말한다. 캡처는 스냅샷당 1회다."""
     ctrl, _ = _controller(tmp_path, reviewed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
@@ -4965,87 +4724,35 @@ def test_preview_and_table_agree_on_the_filename_timestamp(tmp_path):
     _rereview(ctrl)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.dispatch("preview_open", {})
     snap = ctrl.snapshot()
-    assert snap["preview"]["filename"] == snap["records"][0]["name"]
+    stamp = ctrl._names_now
+    assert stamp is not None
+    marker = stamp.strftime("doc-%H%M%S-")
+    assert all(r["name"].startswith(marker) for r in snap["records"]), snap["records"]
 
 
-# ---------------- 리뷰 3R 조치의 영구 가드(P2×2) ----------------
-def test_the_approved_filename_survives_the_pushes_between_approval_and_generation(tmp_path):
-    """3R P2 — 시각은 **승인의 일부**다.
+def test_run_entry_captures_its_own_timestamp_once(tmp_path):
+    """3R 승계 — 한 런의 이름·본문·충돌 판정은 **한 시각**을 쓴다(#957).
 
-    정상 흐름에서 승인 왕복과 면 닫기가 각각 push 를 부른다. 그 사이 `{{date:SS}}` 가 초
-    경계를 넘으면 생성이 사용자가 승인하지 않은 이름을 쓴다 — 승인 키는 여전히 유효한
-    채로. 누군가 그 값에 기대고 있는 동안(면이 열려 있거나 승인이 서 있는 동안) 얼린다.
+    표시 축(`_names_now`)은 스냅샷의 것이고 실행은 진입 시점에 자기 시각을 1회 캡처한다.
+    두 축이 갈리는 것은 결함이 아니지만, **런 안에서** 갈리면 같은 배치의 문서가 서로 다른
+    초를 이름에 달게 된다 — 그것을 여기서 막는다.
     """
-    ctrl, _ = _controller(tmp_path, reviewed=False)
+    ctrl, _ = _controller(tmp_path, reviewed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
 
-    ctrl.dispatch("preview_open", {})
-    approved_name = ctrl.snapshot()["preview"]["filename"]
-    frozen = ctrl._names_now
-    ctrl.dispatch("preview_approve", {})          # push 1
-    ctrl.dispatch("preview_close", {})            # push 2
-    ctrl.snapshot()                               # 그 뒤의 임의 재렌더
-    assert ctrl._names_now == frozen, "승인 뒤 파일 이름의 시각이 움직였습니다."
+    ctrl.snapshot()                       # 표시 축이 한 시각을 소비한다
     assert ctrl.generate()["ok"] is True
-    assert approved_name in {p.name for p in (tmp_path / "out").glob("*.hwpx")}
-
-
-def test_the_timestamp_refreshes_when_nothing_depends_on_it(tmp_path):
-    """반대 방향 — 아무도 안 기대면 새로 찍는다(오래 열어 둔 세션의 날짜가 늙지 않게)."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.snapshot()
-    first = ctrl._names_now
-    ctrl._names_now = datetime(2020, 1, 1)       # 늙은 값을 심는다
-    ctrl.snapshot()
-    assert ctrl._names_now != datetime(2020, 1, 1) and first is not None
-
-
-def test_an_optional_preview_pins_the_timestamp_until_generation(tmp_path):
-    """5R P2 — 검토 요구가 없는 반복 실행에서도 미리보기는 열린다(§13-2). 생성 버튼을
-    누르려면 면을 **닫아야** 하는데, 닫는 순간 시각이 풀리면 1초만 들여다봐도 화면이
-    보여준 것과 다른 이름(그리고 다른 덮어쓰기 대상)이 만들어진다.
-
-    빈 값이 없는 데이터를 쓴다 — 빈 값이 있으면 blank_set 요구(§2.13)가 서서 「요구 없는
-    반복 실행」이라는 이 테스트의 전제가 성립하지 않는다.
-    """
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    clean = tmp_path / "clean.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
-    _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
-    assert ctrl.snapshot()["review"]["required"] is False   # 요구 없는 반복 실행
-    ctrl.dispatch("preview_open", {})
-    ctrl.snapshot()
-    frozen = ctrl._names_now
-    ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl._names_now == frozen                        # 보는 동안 얼어 있다
-    ctrl.dispatch("preview_close", {})
-    ctrl.snapshot()
-    assert ctrl._names_now == frozen, "면을 닫자 본 이름의 시각이 풀렸습니다."
-    assert ctrl.generate()["ok"] is True
-    ctrl.snapshot()
-    assert ctrl._names_now != frozen, "생성이 소비한 뒤에도 시각이 붙들려 있습니다."
-
-
-def test_the_pin_releases_when_the_run_input_changes(tmp_path):
-    """핀은 **실행 입력이 그대로인 동안**만 유효하다 — 선택이 바뀌면 화면이 보여준
-    이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축)."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {})
-    ctrl.snapshot()
-    frozen = ctrl._names_now
-    ctrl.dispatch("preview_close", {})
-    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
-    ctrl.snapshot()
-    assert ctrl._names_now != frozen
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    stamps = {name.split("-")[1] for name in made}
+    assert len(made) == 2 and len(stamps) == 1, made
 
 
 def test_new_blanks_on_new_data_are_announced_and_marked(tmp_path):
@@ -5077,20 +4784,6 @@ def test_new_blanks_on_new_data_are_announced_and_marked(tmp_path):
     assert ctrl.generate()["needs_overwrite"] is True
     res = ctrl.generate(confirm_overwrite=True)
     assert res["ok"] is True and "빈 값 표시 필드 1개(추정가격)." in res["summary"]
-
-
-def test_review_scope_key_hashes_the_blank_field_set(tmp_path):
-    """§2.13 조건 — 승인 지문의 표식 성분은 이진값(有/無)이 아니라 **빈 값 필드 집합의
-    해시**다. 「담당자가 빈 데이터」에서 한 승인이 「개찰장소가 빈 데이터」에서도 유효하면
-    한 번도 보지 않은 표식이 박힌 문서가 생긴다 — 집합이 갈리면 키가 갈려야 한다."""
-    ctrl, _ = _session(tmp_path)
-    k_none = ctrl._review_scope_key(blanks=[])
-    k_a = ctrl._review_scope_key(blanks=["담당자"])
-    k_b = ctrl._review_scope_key(blanks=["개찰장소"])
-    k_ab = ctrl._review_scope_key(blanks=["담당자", "개찰장소"])
-    assert len({k_none, k_a, k_b, k_ab}) == 4
-    # 순서는 정체가 아니다 — 같은 집합이면 같은 키(정렬 정규화).
-    assert ctrl._review_scope_key(blanks=["개찰장소", "담당자"]) == k_ab
 
 
 # ------------------------------------------- TXT 합류와 작업대 진입 (재작성 F6 PR-A)
@@ -5137,8 +4830,7 @@ def test_selecting_a_txt_work_does_not_build_an_hwpx_run_view(tmp_path):
     assert snap["run_action"] == {"key": "workbench", "label": "검토·복사 시작 · 2건"}
     # 파일 이름 규칙 축은 이 매체에 **없다**(§3.2) — 빈 값이 "아직 안 정했다"가 아니다.
     assert snap["filename_pattern"] == ""
-    # 검토 요구·미리보기 드로어는 배제 선언(판정 J) — 골격만 서고 열리지 않는다.
-    assert snap["preview"]["can_open"] is False
+    # 검토 요구는 배제 선언(판정 J) — 골격만 선다.
     assert snap["review"]["required"] is False
 
 
@@ -5240,13 +4932,13 @@ def test_browse_rows_section_inside_the_tab_not_across_it(tmp_path):
     assert all("mode_label" in r for r in b["rows"])
 
 
-def test_review_and_preview_are_declared_out_of_scope_for_txt(tmp_path):
-    """검토 요구·미리보기 드로어는 TXT 에서 **배제 선언**이다(지도 §10.15 판정 J).
+def test_review_is_declared_out_of_scope_for_txt(tmp_path):
+    """검토 요구는 TXT 에서 **배제 선언**이다(지도 §10.15 판정 J).
 
-    근거: 드로어는 값 + **파일 이름** + 승인의 면인데 TXT 엔 파일 이름 축이 없고(§3.2),
-    작업대가 이미 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. TXT 에 요구를
+    근거: 작업대가 이미 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. TXT 에 요구를
     세우면 작업대에서 눈으로 본 것을 「문서 만들기」에서 또 확인하라는 **이중 권위**가
-    된다(§10.5 판정 단일 출처).
+    된다(§10.5 판정 단일 출처). 종전 함께 배제되던 미리보기 드로어는 #957 에서 매체와
+    무관하게 통째로 철거됐다.
 
     배제를 **선언으로** 남기는 이유는 F5 판정 O·F7 판정 K 와 같다: 조용한 무시와 선언된
     배제는 다르다. 누군가 TXT 에 검토 축을 배선하면 이 테스트가 그 결정을 다시 꺼낸다.
@@ -5259,18 +4951,11 @@ def test_review_and_preview_are_declared_out_of_scope_for_txt(tmp_path):
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     snap = ctrl.snapshot()
     assert snap["review"] == {
-        "required": False, "approved": False, "risk": "", "targets": [],
+        "required": False, "risk": "", "targets": [],
         "first_run": False, "unknown_baseline": False, "structure_changed": False,
     }
-    assert snap["preview"]["can_open"] is False
     # 게이트 사유도 검토를 들먹이지 않는다 — TXT 게이트는 진입 자격만 센다.
     assert "확인" not in snap["gate"]["text"] or "검토" not in snap["gate"]["text"]
-    # 드로어를 직접 열려는 발신은 **시끄럽게** 거절된다(표면 오발신 fail-closed). 문안은
-    # 사실이어야 한다: TXT 는 작업이 선택된 채로 `vm` 이 없으므로 "작업을 선택하세요"는
-    # 방금 고른 작업을 못 본 척하는 거짓 지시가 된다.
-    with pytest.raises(ValueError, match="작업대"):
-        ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["preview"]["open"] is False
 
 
 def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
@@ -5488,20 +5173,6 @@ def test_candidates_txt_note_is_silent_without_an_injected_registry(tmp_path):
     assert ctrl.snapshot()["candidates"]["txt_note"] == ""
 
 
-def test_preview_open_at_restores_the_same_position_with_clamp(tmp_path):
-    """deep-link 복귀의 같은 자리(§10.15.15 판정 C) — `at` 은 Python 스냅샷 값의 왕복이고
-    Python 이 클램프한다(편집 중 선택이 줄어도 stale 인덱스로 남의 행을 그리지 않는다)."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("preview_open", {"at": 1})
-    assert ctrl.snapshot()["preview"]["pos"] == 1               # 같은 자리 복귀
-    ctrl.dispatch("preview_close", {})
-    ctrl.dispatch("preview_open", {"at": 99})
-    assert ctrl.snapshot()["preview"]["pos"] == 1               # 상한 클램프(총 2건)
-    ctrl.dispatch("preview_close", {})
-    ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["preview"]["pos"] == 0               # 무인자 = 종전 거동(첫 행)
-
-
 # ─── 템플릿 변경 확인·적용 배선(S3-09 #659) — 판정은 코디네이터 테스트가 소유 ───
 
 
@@ -5635,7 +5306,6 @@ def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_pat
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    _approve_run(ctrl)
     _unprepared_after_select(ctrl)  # 1회차 generate 가 최초 발급자인 상태(#932 B5)
     assert ctrl.registry.load("공고서").authority_id == ""
 

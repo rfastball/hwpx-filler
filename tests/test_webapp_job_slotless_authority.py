@@ -113,43 +113,28 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     assert ctrl.snapshot()["managed_hwpx"] is False
 
 
-def test_advertised_preview_actually_opens_after_the_mint(tmp_path: Path) -> None:
-    """한 스냅샷이 두 말을 하지 않는다 — 활성 버튼과 열림이 함께 성립한다(#905 ①)."""
-    ctrl, _seen = _slotless_controller(tmp_path)
-    _seated(ctrl, tmp_path)
-    ctrl.set_output_folder(str(tmp_path / "out"))
-    _mint(ctrl)
-    assert ctrl.registry.load("공고서").authority_id != ""
+def test_generation_after_the_mint_needs_no_approval_detour(tmp_path: Path) -> None:
+    """발급 뒤 곧바로 생성이 선다 — 사이에 승인이라는 관문이 없다(#957).
 
-    snap = ctrl.snapshot()
-    assert snap["managed_hwpx"] is False
-    assert snap["preview"]["can_open"] is True
-
-    assert ctrl.dispatch("preview_open", {}) == {"ok": True}
-    assert ctrl.snapshot()["preview"]["open"] is True
-
-
-def test_approval_stands_and_blank_reapproval_reaches_the_milestone(tmp_path: Path) -> None:
-    """승인 성립(②) + 빈 값 재승인이 T13 까지 닿는다(③) — #895 여정이 멎던 자리."""
+    종전 이 자리는 「광고된 미리보기가 실제로 열린다」(#905 ①)와 「승인이 성립한다」(②)를
+    쟀다. 그 표면과 승인 축이 통째로 철거됐으므로 지금 재는 것은 **우회로의 부재**다:
+    발급이 성사된 상태에서 아무 확인 왕복 없이 문서가 난다.
+    """
     ctrl, seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
     _mint(ctrl)
     seen.clear()
-
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_approve", {})
-    ctrl.dispatch("preview_close", {})
-    assert str(Milestone.APPROVE_VALUES) in seen
-    # 승인만으로는 서지 않는다 — T13 은 「빈 값 포함 승인 **+** 생성 완료」다.
-    assert str(Milestone.APPROVE_WITH_BLANKS) not in seen
+    assert ctrl.registry.load("공고서").authority_id != ""
+    assert ctrl.snapshot()["managed_hwpx"] is False
 
     result = ctrl.generate()
 
     assert result["ok"] is True and result["succeeded"] == 2
-    assert str(Milestone.APPROVE_WITH_BLANKS) in seen
     assert len(list(out.glob("*.hwpx"))) == 2
+    # 생성 완주 마일스톤은 그대로 선다(#941 동결 seam) — 사라진 것은 승인 사건뿐이다.
+    assert str(Milestone.GENERATE) in seen
 
 
 def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path) -> None:
@@ -169,9 +154,6 @@ def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path
     assert ctrl.out_dir == str(picked)
     assert ctrl._run_delivery_intent is None
 
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_approve", {})
-    ctrl.dispatch("preview_close", {})
     assert ctrl.generate()["ok"] is True
 
     assert len(list(picked.glob("*.hwpx"))) == 2

@@ -118,8 +118,8 @@ def judge(report: dict, *, mode: str) -> Verdict:
         failures.append(f"HWPX 생성 {generated}건 (기대 {EXPECTED_HWPX}건)")
     if observed.get("hwpx_result_state") != "completed":
         failures.append(f"생성 결과 태가 completed 가 아닙니다: {observed.get('hwpx_result_state')!r}")
-    if observed.get("preview_approved") is not True:
-        failures.append("생성 값 미리보기 승인이 착지하지 않았습니다")
+    if observed.get("preview_surface_retired") is not True:
+        failures.append("철거된 생성 값 미리보기 표면이 아직 화면에 있습니다")
     copied = str(observed.get("txt_copied") or "")
     if not copied.startswith("1 /"):
         failures.append(f"TXT 복사 카운터가 서지 않았습니다: {copied!r}")
