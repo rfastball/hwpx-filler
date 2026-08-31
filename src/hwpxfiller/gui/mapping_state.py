@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from ..domain.authoring import scan_tokens
 from ..domain.lint import similarity
@@ -30,6 +31,9 @@ from ..domain.mapping import (
 )
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import CompileState, TemplateStatus, compile_status
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 # inferred_type → 기본 값 유형. 명시 없는 타입은 text(그대로).
 _DEFAULT_TYPE = {"date": "date", "amount": "amount"}
@@ -130,7 +134,13 @@ class RowState:
         를 낸다) 기억된 소스는 내용이 아니다 — 결속 값을 비운 자리는 되돌리기 위해 소스를
         기억할 뿐, 출력은 빈 문자열이다(Codex F2). 그걸 내용으로 세면 값을 비우고 확정해도
         :meth:`is_empty_confirmed` 가 거짓이라 확정-비움으로 인식되지 않아 게이트가 계속
-        묻는다. 그 외 유형은 결속 소스가 곧 내용이다."""
+        묻는다. 그 외 유형은 결속 소스가 곧 내용이다.
+
+        ``today``(오늘 날짜)는 소스도 상수도 없이 **언제나** 실행 시각의 날짜를 방출한다
+        — 소스 유무로 재면 내용 없음이 되어 확정 시 ``to_profile`` 이 ``blank`` 로 강등해
+        값이 통째 소실된다(조용한 값 소실). 그래서 무조건 참이다."""
+        if self.type == "today":
+            return True
         if self.type == "const":
             return self.const != ""
         return bool(self.source)
@@ -482,27 +492,40 @@ class MappingModel:
         """
         return any(r.confirmed and r.has_content() for r in self.rows)
 
-    def preview(self, record: "dict[str, object]") -> "dict[str, str]":
-        """행별 현재 매핑을 레코드 1건에 적용한 미리보기 값(확정 여부 무관)."""
-        return {r.template_field: r.to_mapping().value_for(record) for r in self.rows}
+    def preview(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> "dict[str, str]":
+        """행별 현재 매핑을 레코드 1건에 적용한 미리보기 값(확정 여부 무관).
 
-    def preview_empties(self, record: "dict[str, object]") -> "list[str]":
+        ``now`` 는 ``today``(오늘 날짜) 행의 기준 시각 — 표면이 **스냅샷당 1회** 잡아
+        넘긴다(RC-02 확장). 미지정이면 적용 시점으로 폴백한다.
+        """
+        return {
+            r.template_field: r.to_mapping().value_for(record, now=now)
+            for r in self.rows
+        }
+
+    def preview_empties(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> "list[str]":
         """내용은 매핑됐으나 이 레코드에선 값이 빈 필드 — validate.py 의 empty_valued 를
         단건화한 것. 의도적 비움(내용 없음) 행은 제외한다."""
         return [
             r.template_field
             for r in self.rows
-            if r.has_content() and r.to_mapping().value_for(record) == ""
+            if r.has_content() and r.to_mapping().value_for(record, now=now) == ""
         ]
 
-    def preview_counts(self, record: "dict[str, object]") -> "tuple[int, int, int]":
+    def preview_counts(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> "tuple[int, int, int]":
         """미리보기 3상태 집계 ``(채움, 빈 값, 미매핑)`` — 합은 언제나 전체 행 수(UD-27).
 
         기존 요약은 '채움/빈 값' 2상태만 세어 미매핑(내용 없는) 행이 무집계로 빠져
         합계가 필드 수와 어긋났다(공란 규모 과소 진술). 세 항의 합 = ``len(rows)`` 로
         묶어 어떤 필드도 집계에서 사라지지 않게 한다(ADR-B '빈 공간으로 보이면 안 됨').
         """
-        empties = self.preview_empties(record)
+        empties = self.preview_empties(record, now=now)
         content_rows = sum(1 for r in self.rows if r.has_content())
         filled = content_rows - len(empties)
         unmapped = len(self.rows) - content_rows

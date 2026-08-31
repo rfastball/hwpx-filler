@@ -1640,10 +1640,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         모드가 엉뚱한 네임스페이스로 오발한다(confirm-or-alarm).
 
         **원본 열을 실제로 나르는 유형만** 대상이다(:data:`~hwpxfiller.domain.mapping.
-        SOURCE_CARRIER_TYPES`). ``const`` 은 리터럴을 방출해 ``source`` 값과 무관하고(옛 매핑에서
-        ``source`` 가 남아 있어도 파일명은 그 열을 나르지 않는다), ``blank`` 은 빈 값이다 — 둘을
-        나르는 열로 오인하면 구별 열이 토큰 모드로 침묵 배제된다(리뷰 반영). 원본 레코드에
-        실재하는 열만 반환한다(부재 열 헛발 방지).
+        SOURCE_CARRIER_TYPES`). ``const`` 은 리터럴을, ``today`` 는 실행 시각을 방출해 둘 다
+        ``source`` 값과 무관하고(옛 매핑에서 ``source`` 가 남아 있어도 파일명은 그 열을 나르지
+        않는다), ``blank`` 은 빈 값이다 — 셋 중 하나라도 나르는 열로 오인하면 구별 열이 토큰
+        모드로 침묵 배제된다(리뷰 반영). 원본 레코드에 실재하는 열만 반환한다(부재 열 헛발 방지).
         """
         from ..naming import pattern_field_tokens
 
@@ -2078,8 +2078,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._names_pin = None
         # 선택분 매핑 적용은 표식 유/무 각 1회 — 표식 없는 판(빈 값 자리 판정)과 생성
         # 입력 판(_record_rows·확인 면)이 공유한다(이중 적용 방지).
-        mapped = self.vm.mapped_records(indices) if indices else []
-        run_mapped = self.vm.mapped_records(indices, marker) if marker else mapped
+        #
+        # 본문의 ``today``(오늘 날짜) 유형도 **이 시각**을 쓴다(U4-E1 #939): 위에서 파일명
+        # 날짜 토큰용으로 이미 핀한 값을 그대로 넘겨 이름과 본문이 한 시각을 말한다
+        # (RC-02 「확인 대상 = 생성 대상」의 본문 확장). 여기서 따로 찍으면 미리보기가
+        # 승인시킨 본문 날짜와 생성물이 하위-일 경계에서 갈린다.
+        mapped = self.vm.mapped_records(indices, now=self._names_now) if indices else []
+        run_mapped = (
+            self.vm.mapped_records(indices, marker, now=self._names_now)
+            if marker else mapped
+        )
         # 게이트에는 **아직 승인 안 된** 요구만 넘긴다(승인됐으면 그 자리에서 열려야 한다).
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
@@ -2102,7 +2110,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
             zone_marker = self._run_marker(zone_indices)
             zone_mapped = (
-                self.vm.mapped_records(zone_indices, zone_marker) if zone_indices else []
+                self.vm.mapped_records(zone_indices, zone_marker, now=self._names_now)
+                if zone_indices else []
             )
         record_rows = self._record_rows(zone_indices, zone_mapped)
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(

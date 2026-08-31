@@ -192,6 +192,51 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     assert JobRegistry(tmp_path / "jobs").exists("테스트작업")
 
 
+def test_full_new_job_flow_today_system_token(tmp_path):
+    """U4-E1 #939 — 「오늘 날짜」 유형 end-to-end: 선택 → 서식 → 미리보기 → 저장 왕복.
+
+    const 흐름과 동형이되 **고정값 입력이 없다**는 것이 이 유형의 요점이다: 데이터 열도
+    사람이 친 리터럴도 없이 행이 값을 낸다. 미리보기는 컨트롤러 clock(``_NOW``) 기준이라
+    실 시각에 흔들리지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    # 유형 목록은 링0 TYPES 를 그대로 싣는다 — 프런트가 자기 목록을 발명하지 않는다.
+    assert "today" in ctrl.snapshot()["type_options"]
+    # 서식 목록은 date 어휘를 공유한다(판정 1) — 없으면 프런트 서식 셀이 통째 비활성.
+    fmt = ctrl.snapshot()["fmt_options"]
+    assert fmt["today"] == fmt["date"] and fmt["today"]
+
+    _mount_data(ctrl)
+    ctrl.dispatch("set_type", {"index": 0, "type": "today"})
+    row = ctrl.snapshot()["rows"][0]
+    # 소스도 상수도 없는데 내용이 있다 — 이 한 줄이 blank 강등(값 소실)의 회귀 심이다.
+    assert row["source"] == "" and row["const"] == ""
+    assert row["has_content"] is True
+    assert row["preview"] == "2026. 8. 11. 12:34"      # clock 기준 기본 서식
+
+    ctrl.dispatch("set_fmt", {"index": 0, "fmt": "%Y-%m-%d"})
+    assert ctrl.snapshot()["rows"][0]["preview"] == "2026-08-11"
+
+    result = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": result["blanks"]})
+    ctrl.dispatch("goto_section", {"section": "filename"})
+    ctrl.dispatch("set_name", {"name": "오늘작업"})
+    ctrl.dispatch("set_pattern", {"pattern": "문서-{{수요기관}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    # 저장 왕복 — 유형·표시형이 durable 로 살아 돌아온다(blank 강등 없음).
+    saved = JobRegistry(tmp_path / "jobs").load("오늘작업")
+    today_rows = [m for m in saved.mapping.mappings if m.type == "today"]
+    assert len(today_rows) == 1
+    assert (today_rows[0].fmt, today_rows[0].source, today_rows[0].const) == (
+        "%Y-%m-%d", "", "",
+    )
+    assert today_rows[0].template_field in saved.mapping.template_fields()
+    assert saved.mapping.apply({}, now=_NOW)[today_rows[0].template_field] == "2026-08-11"
+
+
 def test_unconfirm_all_restores_exact_previous_confirmed_set(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))

@@ -445,9 +445,14 @@ class WorkbenchController(MappingVerbsMixin):
             return base
 
         record = self._current_record()
+        # 「오늘 날짜」의 기준 시각은 **스냅샷당 1회**다(RC-02 확장): 카드 렌더와 행 표가
+        # 각자 찍으면 같은 화면 안에서 두 시각이 서고, 하위-일 서식에서 눈에 보인다.
+        now = self._clock()
         rendered = render_card(
-            self._card_text, self.mapping, record, fullwidth=self._fullwidth
+            self._card_text, self.mapping, record, fullwidth=self._fullwidth, now=now
         )
+        # 행 값은 프로파일 1회 적용을 공유한다(행마다 재적용하면 시각도 값도 갈린다).
+        row_values = self.mapping.live_profile().apply(record, now=now)
         report = rendered.report
         cur = self.queue.current
         missing_set, empty_set = set(report.missing_fields), set(report.empty_fields)
@@ -460,7 +465,7 @@ class WorkbenchController(MappingVerbsMixin):
                 "source": r.source,
                 "own": _row_own(r),
                 "manual": r.type == "const",
-                "value": self.mapping.live_profile().apply(record).get(r.template_field, ""),
+                "value": row_values.get(r.template_field, ""),
                 "fmt_kind": r.type,
                 "fmt_code": r.fmt,
                 "suggest": suggestions.get(r.template_field, ""),
@@ -668,7 +673,7 @@ class WorkbenchController(MappingVerbsMixin):
         assert self.mapping is not None
         rendered = render_card(
             self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth,
+            fullwidth=self._fullwidth, now=self._clock(),
         )
         cur = self.queue.current
         return {
@@ -846,7 +851,7 @@ class WorkbenchController(MappingVerbsMixin):
         assert self.mapping is not None
         rendered = render_card(
             self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth,
+            fullwidth=self._fullwidth, now=self._clock(),
         )
         return card_text(rendered.segments), rendered.report
 

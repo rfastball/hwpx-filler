@@ -509,6 +509,9 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
 
     from .domain.mapping import FieldMapping, MappingProfile
 
+    # 이 실행의 기준 시각 — 본문의 ``today``(오늘 날짜) 유형과 파일명 날짜 토큰이 **같은
+    # 값**을 쓴다(RC-02). 두 자리가 각자 찍으면 하위-일 토큰에서 이름과 본문이 갈린다.
+    now = datetime.now()
     profile = None
     if args.profile:
         from .domain.fill_ledger import template_path_drift
@@ -521,7 +524,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
             print("[오류] 템플릿 구조 드리프트 — " + drift.describe(sep="; "),
                   file=sys.stderr)
             return 1
-        records = profile.apply_all(records)
+        records = profile.apply_all(records, now=now)
 
     required = engine.required_fields(args.template)
     # 생성 경계 재검사(RC-03)용 매핑 — 프로파일이 없으면 "같은 이름 열 그대로"의 항등
@@ -573,7 +576,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     # OSError 는 최상위 번역 경계의 exit 2 로 흘린다(RC-16).
     plan = direct_plan(args.template, records, args.out, args.pattern,
                        marker=marker, overwrite=args.overwrite, mapping=gate_mapping,
-                       now=datetime.now())
+                       now=now)
     outcome = run_generation(start_run(None), plan, engine=engine,
                              capture=(OutputCollisionError, ValueError), store=None,
                              existing_outputs=existing_output_paths,

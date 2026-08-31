@@ -473,7 +473,7 @@ class RunViewModel:
         audit = (
             audit_output_names(
                 self.job.filename_pattern,
-                self.mapped_records(idx) if mapped is None else mapped,
+                self.mapped_records(idx, now=now) if mapped is None else mapped,
                 out_dir,
                 now=now,
             ) if idx else OutputNameAudit()
@@ -677,9 +677,16 @@ class RunViewModel:
                 "warn")]
         return []
 
-    def mapped_records(self, indices: "list[int]", mark_missing: str = "") -> "list[dict]":
-        """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입."""
-        return self.request(indices).mapped_records(mark_missing=mark_missing)
+    def mapped_records(
+        self, indices: "list[int]", mark_missing: str = "",
+        *, now: "datetime | None" = None,
+    ) -> "list[dict]":
+        """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입.
+
+        ``now`` 는 ``today``(오늘 날짜) 유형의 기준 시각 — 파일명 날짜 토큰에 넘긴 값과
+        같아야 본문과 이름이 갈라지지 않는다(RC-02). 미지정이면 적용 시점으로 폴백한다.
+        """
+        return self.request(indices).mapped_records(mark_missing=mark_missing, now=now)
 
     def blank_record_positions(
         self, indices: "list[int]", mapped: "list[dict] | None" = None
@@ -712,7 +719,8 @@ class RunViewModel:
         토큰에서 확인 대상과 실제 생성 대상이 갈라지지 않는다(RC-02).
         """
         names = plan_output_names(
-            self.job.filename_pattern, self.mapped_records(indices, mark_missing),
+            self.job.filename_pattern,
+            self.mapped_records(indices, mark_missing, now=now),
             now=now,
         )
         return existing_outputs(out_dir, names)
@@ -727,7 +735,8 @@ class RunViewModel:
         **배치 안에서 자기들끼리** 생기는 성질(수렴·경로 길이)만 센다.
         """
         return audit_output_names(
-            self.job.filename_pattern, self.mapped_records(indices, mark_missing),
+            self.job.filename_pattern,
+            self.mapped_records(indices, mark_missing, now=now),
             out_dir, now=now,
         )
 
@@ -747,14 +756,16 @@ class RunViewModel:
         이후 표현 계층/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
         생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다. ``now`` 는
         덮어쓰기 확인(:meth:`output_conflicts`)에 넘긴 시각과 **같은 값**이어야 확인
-        대상과 실제 생성 대상이 하위-일 날짜 토큰에서 갈라지지 않는다(RC-02).
+        대상과 실제 생성 대상이 하위-일 날짜 토큰에서 갈라지지 않는다(RC-02). 그 값은
+        파일명뿐 아니라 **본문**의 ``today``(오늘 날짜) 유형에도 그대로 간다 — 한 실행에서
+        이름과 본문이 다른 시각을 말하지 않는다(U4-E1 #939).
         """
         idx = list(indices)
         labels_fn = getattr(self.datasource, "field_labels", None)
         labels = labels_fn() if callable(labels_fn) else {}
         return GenerationPlan(
             template=self.effective_template(),
-            records=tuple(self.mapped_records(idx, marker)),
+            records=tuple(self.mapped_records(idx, marker, now=now)),
             out_dir=out_dir,
             pattern=self.job.filename_pattern,
             marker=marker,

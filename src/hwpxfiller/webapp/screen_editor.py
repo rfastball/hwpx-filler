@@ -567,9 +567,16 @@ class EditorController:
             return {}
         return self.records[self.preview_index % len(self.records)]
 
-    def _row_snapshot(self, index: int, row, record: "dict", schema_only: bool) -> dict:
+    def _row_snapshot(
+        self, index: int, row, record: "dict", schema_only: bool,
+        *, now: "datetime | None" = None,
+    ) -> dict:
+        """행 1개의 스냅샷. ``now`` 는 ``today``(오늘 날짜) 미리보기의 기준 시각이다 —
+        :meth:`snapshot` 이 **스냅샷당 1회** 잡아 전 행이 공유한다(RC-02 확장, `screen_job`
+        의 `_names_now` 규율 승계). 행마다 clock 을 다시 부르면 한 표 안에서 서로 다른
+        시각이 서고, 하위-일 서식에서 그 차이가 눈에 보인다."""
         try:
-            preview = row.to_mapping().value_for(record)
+            preview = row.to_mapping().value_for(record, now=now)
             preview_error = False
         except ValueError:
             preview, preview_error = "", True
@@ -708,13 +715,15 @@ class EditorController:
         if self.model is not None:
             schema_only = self.model.is_schema_only()
             record = self._current_record()
+            # 「오늘 날짜」 미리보기의 기준 시각 — **스냅샷당 1회**(RC-02 확장).
+            rows_now = self._clock()
             snap["rows"] = [
-                self._row_snapshot(i, r, record, schema_only)
+                self._row_snapshot(i, r, record, schema_only, now=rows_now)
                 for i, r in enumerate(self.model.rows)
             ]
-            filled, empty, unmapped = self.model.preview_counts(record)
+            filled, empty, unmapped = self.model.preview_counts(record, now=rows_now)
             snap["counts"] = {"filled": filled, "empty": empty, "unmapped": unmapped}
-            snap["preview_empties"] = self.model.preview_empties(record)
+            snap["preview_empties"] = self.model.preview_empties(record, now=rows_now)
             snap["preview_index"] = (self.preview_index % len(self.records)) + 1 if self.records else 0
             snap["preview_count"] = len(self.records)
             snap["is_complete"] = self.model.is_complete()
@@ -838,17 +847,20 @@ class EditorController:
         if not self.pattern:
             return ""
         data: "dict[str, object]" = {}
+        # 값과 이름이 **한 시각**을 말하게 1회만 찍는다(RC-02) — 본문의 「오늘 날짜」와
+        # 파일명 날짜 토큰이 예시 안에서 갈리면 예시가 거짓말한다.
+        now = self._clock()
         if self.model is not None:
             record = self.records[0] if self.records else {}
             for row in self.model.rows:
                 if not row.has_content():
                     continue
                 try:
-                    data[row.template_field] = row.to_mapping().value_for(record)
+                    data[row.template_field] = row.to_mapping().value_for(record, now=now)
                 except ValueError:
                     data[row.template_field] = ""
         try:
-            return make_output_filename(self.pattern, data, now=self._clock())
+            return make_output_filename(self.pattern, data, now=now)
         except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
             return ""
 
