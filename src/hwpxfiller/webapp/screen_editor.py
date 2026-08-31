@@ -92,9 +92,13 @@ from ..gui.mapping_state import (
     gate_for_template,
     profile_source_vocabulary,
 )
-from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
+from ..external.template_inspection import (
+    HWPX_TEMPLATE_OPS,
+    inspect_hwpx_template,
+    inspect_slots,
+)
 from ..external.hwpx_package_io import read_hwpx_package
-from ..gui.template_manager_state import TemplateManagerViewModel
+from ..gui.template_manager_state import SlotRow, SlotView, TemplateManagerViewModel
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
@@ -285,6 +289,10 @@ class EditorController:
         self.gate: "PartialGate | None" = None
         self.gate_error = False
         self.raw_block = ""
+        # 이 세션이 연 템플릿의 구간(항목·선택) 축 투영(U4-E2 #939) — **편집 세션 소유**다.
+        # tpl 검토의 `library.slots` 와 값의 모양은 같지만 수명이 다르다: 저것은 라이브러리
+        # 생존이 걷고, 이것은 템플릿 로드가 세우고 세션 리셋·템플릿 교체가 지운다.
+        self.template_slots: "SlotView | None" = None
         self.data_path = ""
         self.data_sheet = ""  # 다중 시트 확정값(#33) — 자동등록 참조에 함께 저장(#26)
         # 헤더 행(엑셀 참조 옵션) — 0 = 미지정(어댑터 기본 1행). 등록 데이터를 든 진입
@@ -652,6 +660,13 @@ class EditorController:
             # 나열식 요약(schema_summary)은 표 위 헤더 한 줄로 존치.
             "fields": [f.to_dict() for f in self.schema.fields] if self.schema else [],
             "raw_block": self.raw_block,
+            # 이 템플릿의 구간(항목·선택) 축 요약(U4-E2 #939) — 세울 것이 없으면 ``None``
+            # 이고 표면은 존째 서지 않는다. 모양은 tpl 검토의 `library.slots` 와 같고
+            # (`SlotView.to_dict`) 다른 것은 **동사가 없다**는 점이다: 편집기는 저장 전
+            # 초안 세션이라 템플릿 파일을 변이시키지 않는다.
+            "template_slots": (
+                self.template_slots.to_dict() if self.template_slots is not None else None
+            ),
             "gate": self._gate_snapshot(),
             "gate_error": self.gate_error,
             "data_path": self.data_path,
@@ -1148,6 +1163,7 @@ class EditorController:
         self.gate = None
         self.gate_error = False
         self.raw_block = ""
+        self.template_slots = None  # 교체하는 순간 이전 템플릿의 구조를 말하지 않는다
         if template_media(path) == "txt":
             self._load_txt_template(path)
             if emit_push:
@@ -1164,10 +1180,38 @@ class EditorController:
             return
         try:
             self.gate = gate_for_template(pkg)
+            # 구간 축 요약(U4-E2 #939)은 **같은 pkg** 위에 선다 — 파일을 다시 열면 스키마·
+            # 게이트와 다른 스냅샷을 볼 수 있다. 판독이 예외로 끝나는 경우를 게이트 실패와
+            # 같은 자리에 두는 이유: 구조를 못 읽는 템플릿을 「구조 없음」으로 접으면 있는
+            # 항목이 조용히 사라진다. 못 믿는 파일은 진행을 막고 사유를 말한다(fail-closed).
+            self.template_slots = self._slot_view_for(path, pkg)
         except Exception:  # noqa: BLE001  fail-closed(진행 차단)
             self.gate_error = True
+            self.template_slots = None
         if emit_push:
             self._push()
+
+    @staticmethod
+    def _slot_view_for(path: str, pkg: object) -> "SlotView | None":
+        """열린 pkg 에서 구간 축 투영을 세운다 — **세울 것이 없으면 ``None``**.
+
+        판정·행 성형·요약 문자열은 전부 링1(:class:`SlotView`·:class:`SlotRow`) 소유다.
+        여기서 개수를 다시 세면 같은 사실을 두 곳이 말하게 된다.
+
+        ``None`` 의 뜻은 「확인할 것이 없다」(U3 #876) 하나다: 항목도 진단도 없을 때만
+        접힌다. **진단이 있으면 접지 않는다** — 판독이 무언가를 거절했다는 사실 자체가
+        확인 대상이고, 그 자리는 목록 대신 사유가 선다(:mod:`~hwpxfiller.domain.authoring`
+        의 진단 우선 규율 상속).
+        """
+        slots, diagnostics = inspect_slots(pkg)
+        if not slots and not diagnostics:
+            return None
+        return SlotView(
+            path=path,
+            name=Path(path).name,
+            rows=tuple(SlotRow.from_slot(slot) for slot in slots),
+            diagnostics=tuple(item.message for item in diagnostics),
+        )
 
     # ------------------------------------------- tpl 변이 재정산(S8G-00 #320)
     def reconcile_template_mutation(self, kind: str, path: str) -> None:

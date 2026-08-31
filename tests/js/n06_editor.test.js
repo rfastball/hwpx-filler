@@ -956,6 +956,69 @@ test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
   assert.equal(markup.includes('id="tplSlots"'), false);
 });
 
+/* -------- ⑦-b 편집 중 템플릿의 구간 축 요약(읽기 전용) — U4-E2 #939 -------- */
+
+/** 편집기가 지금 연 템플릿의 슬롯 투영이 실린 「템플릿」 탭 스냅샷. */
+function editorSlotSnap(slots) {
+  return snap({
+    section: "template",
+    template_name: "구간템플릿.hwpx",
+    template_path: "C:/lib/구간템플릿.hwpx",
+    template_slots: slots,
+  });
+}
+
+const EDITOR_SLOTS = {
+  path: "C:/lib/구간템플릿.hwpx", name: "구간템플릿.hwpx",
+  summary: "항목 1개 · 선택 2개",
+  rows: [{
+    id: "특약", label: "특약 사항", option_count: 2,
+    options: ["지체상금 조항", "하자보수 조항"],
+  }],
+  diagnostics: [],
+};
+
+function renderEditor(h) {
+  return renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
+}
+
+test("U4-E2 구조를 가진 템플릿은 읽기 전용 요약 존을 세운다", async () => {
+  const h = harness({ initial: async () => editorSlotSnap(EDITOR_SLOTS) });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes('id="editorSlotSummary"'), "요약 존이 실재해야 한다");
+  assert.ok(markup.includes("항목 1개 · 선택 2개"), "요약 문자열은 스냅샷 값 그대로다");
+  assert.ok(markup.includes("특약 사항") && markup.includes("선택 2"),
+    "투영된 이름·선택 수가 그대로 실린다");
+  for (const act of ["slot-rename", "slot-decompile", "slot-remove"]) {
+    assert.equal(markup.includes(`data-act="${act}"`), false, `${act} 는 읽기 전용 존에 없다`);
+  }
+  assert.equal(markup.includes('id="tplSlots"'), false, "tpl 검토 구획을 빌려쓰지 않는다");
+});
+
+test("U4-E2 세울 것이 없으면 존째 서지 않는다", async () => {
+  const h = harness({ initial: async () => editorSlotSnap(null) });
+  await h.controller.init();
+
+  assert.equal(renderEditor(h).includes('id="editorSlotSummary"'), false);
+});
+
+test("U4-E2 진단이 있으면 목록 대신 사유가 선다", async () => {
+  const h = harness({
+    initial: async () => editorSlotSnap(Object.assign({}, EDITOR_SLOTS, {
+      summary: "구간 구조를 읽을 수 없습니다: 구간템플릿.hwpx",
+      diagnostics: ["「특약」 범위가 열린 채 파일이 끝났습니다."],
+    })),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes('id="editorSlotSummary"'), "진단이 있으면 숨기지 않는다");
+  assert.ok(markup.includes("열린 채 파일이 끝났습니다"), "사유를 그대로 재진술한다");
+  assert.equal(markup.includes("특약 사항"), false, "진단이 있으면 목록은 서지 않는다");
+});
+
 /* ---------------- ⑧ TXT 저작 린트메모장(S10-05 #862 · #299 회수) ---------------- */
 
 const LINT_CONTENT = "제목: {{공고명}}\n{{#항목 사유}}";

@@ -486,6 +486,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
     (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
     한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
+  - **편집기가 지금 연 템플릿의 구간 축 요약은 따로 선다**(U4-E2 #939 · `UX_FEEDBACK_U4`
+    §2.15): 스냅샷 키 `template_slots`, 존 id `#editorSlotSummary`, **읽기 전용**(동사 없음).
+    `load_template_path` 가 스키마·게이트와 **같은 pkg** 로 `inspect_slots` 를 불러 링1
+    `SlotView` 를 세우고, 성형은 tpl 과 공유하는 `SlotView.to_dict()` 하나다(같은 모양).
+    수명은 편집 세션 소유 — 템플릿 교체·`_reset` 이 지운다. **숨김 술어는 Python 이 진다**:
+    항목 0 **이고** 진단 0 이면 `None` 이고 표면은 존째 서지 않는다(U3 #876). 진단이 있으면
+    숨기지 않고 목록 대신 사유가 서며, 판독이 예외로 끝나면 `gate_error` 와 같은 자리에
+    접힌다(fail-closed).
 - **동봉 예제 진입점 둘은 동결이다**(#941): 편집기 「템플릿」 탭 공용 버튼 줄의
   `data-act="install-examples"`(#891 상시 설치)와 `data-act="remove-examples"`(#892 일괄 제거)는
   튜토리얼 진입 표면과 함께 배포본에서 걷혔다. `tpl` 채널의 `install_examples`·

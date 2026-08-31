@@ -697,6 +697,77 @@ def test_discard_session_cancels_new_wizard_but_rejects_saved_edit(tmp_path):
         ctrl.dispatch("discard_session", {})
 
 
+# ------------------------------------- U4-E2 #939 편집기 템플릿 슬롯 구조 요약
+def _structured_template(tmp_path: Path, name: str = "구간템플릿") -> Path:
+    """항목 1 · 선택 2 · 누름틀 3 을 가진 실 HWPX — 표기 → 두 축 컴파일(계약 순서).
+
+    필드 토큰을 먼저(`compile_document`), 구간 표기를 다음(`compile_structure`)에 굽는다.
+    순서를 뒤집으면 구조 안의 `{{필드}}` 가 depth>0 이 되어 필드 컴파일에서 조용히 빠진다
+    (`docs/UI_CONTRACT.md` 의 변환 순서 계약과 같은 이유). 표기 원본은 S8-02 헬퍼 재사용.
+    """
+    from hwpxfiller.external.template_inspection import compile_document, compile_structure
+    from test_structure_compile import NOTATION, _pkg, _text  # noqa: E402 rootdir 임포트
+
+    pkg = _pkg(*(_text(line) for line in NOTATION))
+    compile_document(pkg)
+    report = compile_structure(pkg)
+    assert (report.modified, report.refusal) == (True, None)
+    path = tmp_path / f"{name}.hwpx"
+    path.write_bytes(pkg.to_bytes())
+    return path
+
+
+def test_template_slots_stand_for_a_structured_template(tmp_path):
+    """구조를 가진 템플릿을 열면 슬롯 축 요약이 선다 — 요약·행은 링1 투영 그대로.
+
+    컨트롤러가 개수를 다시 세지 않는다는 것이 이 단언의 요점이다: 요약 문자열은
+    `SlotView.summary()` 소유이고 스냅샷은 그 값을 그대로 나른다.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    tpl = _structured_template(tmp_path)
+    ctrl.load_template_path(str(tpl))
+
+    slots = pushes[-1][1]["template_slots"]
+    assert slots is not None
+    assert slots["summary"] == "항목 1개 · 선택 2개"
+    assert slots["path"] == str(tpl) and slots["name"] == tpl.name
+    assert slots["diagnostics"] == []
+    assert [(r["id"], r["label"], r["option_count"]) for r in slots["rows"]] == [
+        ("특약", "특약 사항", 2)
+    ]
+    assert slots["rows"][0]["options"] == ["지체상금 조항", "하자보수 조항"]
+    # tpl 검토가 내는 것과 **같은 모양**이어야 한다(프런트가 스키마를 둘 배우지 않는다).
+    assert set(slots) == {"path", "name", "summary", "rows", "diagnostics"}
+
+
+def test_template_without_structure_stands_no_slot_zone(tmp_path):
+    """구조가 없으면 ``None`` — 확인할 것이 없으면 숨긴다(U3 #876)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert pushes[-1][1]["template_slots"] is None
+    # 템플릿 이전(빈 세션)에도 서지 않는다.
+    ctrl2, _ = _controller(tmp_path)
+    assert ctrl2.snapshot()["template_slots"] is None
+
+
+def test_template_slots_die_with_the_template_swap_and_the_session_reset(tmp_path):
+    """수명은 편집 세션 소유 — 템플릿 교체와 세션 초기화가 각각 걷는다."""
+    ctrl, pushes = _controller(tmp_path)
+    tpl = _structured_template(tmp_path)
+    ctrl.load_template_path(str(tpl))
+    assert pushes[-1][1]["template_slots"] is not None
+
+    ctrl.load_template_path(str(TPL_COMPILED))            # 구조 없는 템플릿으로 교체
+    assert pushes[-1][1]["template_slots"] is None
+    assert ctrl.template_slots is None
+
+    ctrl.load_template_path(str(tpl))                     # 다시 세우고
+    assert ctrl.template_slots is not None
+    ctrl.dispatch("new_session", {})                      # _reset 이 지운다
+    assert pushes[-1][1]["template_slots"] is None
+    assert ctrl.template_slots is None
+
+
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
 _EDITOR_JS = SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts"
 
