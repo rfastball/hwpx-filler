@@ -45,7 +45,6 @@ function build(options = {}) {
     newDraft(...args) { editor.push(["newDraft", ...args]); return true; },
     newDraftFromData(...args) { editor.push(["newDraftFromData", ...args]); return true; },
     land(...args) { editor.push(["land", ...args]); },
-    confirmDiscard(...args) { editor.push(["confirmDiscard", ...args]); return true; },
     restoreEntryFocus(...args) { editor.push(["restoreEntryFocus", ...args]); },
   });
   const services = createServiceHandoffPorts();

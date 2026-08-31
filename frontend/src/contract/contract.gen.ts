@@ -107,7 +107,7 @@ export const SCREEN_ACTIONS = {
     use_library_template: { required: ["path"], optional: [] },
     new_session: { required: [], optional: [] },
     discard_session: { required: [], optional: [] },
-    goto_section: { required: ["section"], optional: ["disposition"] },
+    goto_section: { required: ["section"], optional: [] },
     discard_patch: { required: [], optional: ["section"] },
     ack_gate: { required: [], optional: [] },
     dismiss_notice: { required: [], optional: [] },
@@ -259,7 +259,6 @@ export const HOST_METHODS = [
   "copy_clipboard",
   "pick_output_folder",
   "generate",
-  "editor_has_unsaved_work",
   "close_guard_state",
   "confirm_window_close",
   "cancel_window_close",
@@ -296,7 +295,6 @@ export interface HostApi {
   copy_clipboard(screen: unknown, token?: unknown): unknown;
   pick_output_folder(screen: unknown): unknown;
   generate(screen: unknown, confirm_overwrite?: unknown, run_token?: unknown): unknown;
-  editor_has_unsaved_work(): unknown;
   close_guard_state(): unknown;
   confirm_window_close(): unknown;
   cancel_window_close(): unknown;

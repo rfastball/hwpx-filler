@@ -596,7 +596,7 @@ def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
     assert ctrl.has_unsaved_work() is False              # 템플릿만 로드 — 아직 세션 아님
     ctrl.dispatch("goto_section", {"section": "binding"})  # 매핑 모델 생성 → 진행 중 세션
     assert ctrl.has_unsaved_work() is True
-    assert ctrl.snapshot()["has_unsaved_work"] is True   # 스냅샷에도 노출(웹 확인 판단용)
+    assert ctrl.snapshot()["dirty"] is True              # 스냅샷의 얼굴은 dirty 하나다
 
 
 def test_handed_over_data_is_the_draft_baseline_not_an_unsaved_change(tmp_path):
@@ -617,7 +617,7 @@ def test_handed_over_data_is_the_draft_baseline_not_an_unsaved_change(tmp_path):
     )
     assert ctrl.data_path == str(MULTI_SHEET)             # 데이터는 서 있고
     assert ctrl.has_unsaved_work() is False               # 사람이 손댄 것은 없다
-    assert ctrl.snapshot()["has_unsaved_work"] is False   # 웹의 확인 판단도 같은 값
+    assert ctrl.snapshot()["dirty"] is False              # 스냅샷의 얼굴도 같은 값
 
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
     assert ctrl.snapshot()["data_name"] == "multi_sheet.xlsx"  # 앵커 생존(계약 무변경)
@@ -1528,11 +1528,11 @@ def test_session_dirty_is_one_python_owned_value(tmp_path):
 
 
 def test_discarding_one_section_keeps_edits_that_live_outside_sections(tmp_path):
-    """탭 가드의 「버리고 이동」은 **그 자리만** 되돌린다(2R P2).
+    """탭 이동의 자동 버리기는 **그 자리만** 되돌린다(2R P2).
 
-    모달이 말한 것은 「그 탭에서 바꾼 것」인데 세션 전체를 되돌리면, 머리에서 고친 이름처럼
-    **어느 section 에도 속하지 않는 편집**(§10.13 판정 L 계열)까지 함께 사라진다 — 되돌리는
-    범위가 확인 문안보다 넓으면 그건 사용자가 승인하지 않은 파기다.
+    되돌렸다고 알리는 것은 「그 탭에서 바꾼 것」인데 세션 전체를 되돌리면, 머리에서 고친
+    이름처럼 **어느 section 에도 속하지 않는 편집**(§10.13 판정 L 계열)까지 함께 사라진다 —
+    되돌리는 범위가 알린 문안보다 넓으면 그건 알린 적 없는 파기다.
     """
     ctrl, _ = _controller26(tmp_path)
     assert _save_named(ctrl, "부분되돌리기")["ok"] is True
@@ -1545,9 +1545,9 @@ def test_discarding_one_section_keeps_edits_that_live_outside_sections(tmp_path)
     ctrl.dispatch("discard_patch", {"section": "filename"})
     assert ctrl.dirty_sections() == ()                             # 그 자리는 되돌아갔고
     assert ctrl.job_name == "새 이름"                              # 이름은 살아 있다
-    assert ctrl.has_unsaved_work() is True                         # 그래서 이탈은 여전히 묻는다
+    assert ctrl.has_unsaved_work() is True                         # 그래서 아직 버릴 것이 남았다
 
-    # 인자 없는 되돌리기(footer 「변경 버리기」·「버리고 나가기」)는 세션 전체가 대상이다.
+    # 인자 없는 되돌리기(footer 「변경 버리기」·이탈의 자동 버리기)는 세션 전체가 대상이다.
     ctrl.dispatch("discard_patch", {})
     assert ctrl.job_name == "부분되돌리기" and ctrl.has_unsaved_work() is False
 
@@ -1742,15 +1742,16 @@ def test_unsaved_work_is_derived_not_flagged(tmp_path):
     assert ctrl.has_unsaved_work() is False, "되돌린 뒤에도 헛확인을 묻습니다(과경고)."
 
 
-def test_editing_tabs_move_freely_until_a_patch_needs_disposing(tmp_path):
-    """편집 탭은 자유 이동하되(결정 41), **손댄 patch 가 있으면** 처분을 먼저 받는다.
+def test_editing_tabs_move_freely_and_autodiscard_the_blocking_patch(tmp_path):
+    """편집 탭은 자유 이동하고(결정 41), **막는 patch 는 묻지 않고 버린다**.
 
     계약 §5.2·§13-16: 한 편집 진입은 한 section patch 만 가진다 — 다른 탭의 규칙을 손대려면
-    지금 것을 저장하거나 버려야 한다. 이동을 조용히 허용하면 두 section 이 동시에 dirty 가
-    되고, 그때 「저장」이 무엇을 저장하는지가 사용자에게 보이지 않는다.
+    지금 것을 처분해야 한다. 종전엔 그 처분을 3택 모달로 물었지만 편집기 한 탭의 작업량은
+    확인을 요구할 만큼 크지 않아, 지금은 컨트롤러가 그 자리만 되돌리고 지나간다.
 
-    거절은 **정보와 함께** 온다(needs_section_guard + 사람이 읽는 자리 이름) — 웹이 3택을
-    합성하는 재료다. 신규 초안(편집 원점 없음)은 대조군: 거래 밖이지만 전진 게이트가 산다.
+    **조용히 지나가지는 않는다**: 되돌린 사실은 notice 로 재진술되고(확인 대신 알림),
+    범위는 종전 「버리고 이동」과 같아 어느 section 에도 속하지 않는 편집(이름)은 살아남는다.
+    신규 초안(편집 원점 없음)은 대조군: 거래 밖이지만 전진 게이트가 산다.
     """
     ctrl, _ = _controller26(tmp_path)
     assert _save_named(ctrl, "자유이동")["ok"] is True
@@ -1758,21 +1759,48 @@ def test_editing_tabs_move_freely_until_a_patch_needs_disposing(tmp_path):
     ctrl.dispatch("goto_section", {"section": "filename"})   # 깨끗한 세션 = 자유 이동
     assert ctrl.section == "filename"
     ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_name", {"name": "이동해도 사는 이름"})           # section 밖 편집
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})   # 연결 patch 발생
     assert ctrl.dirty_sections() == ("binding",)
-    guard = ctrl.dispatch("goto_section", {"section": "filename"})
-    assert guard["needs_section_guard"] is True
-    assert guard["section"] == "binding" and guard["section_label"] == "필드 연결·표시"
-    assert ctrl.section == "binding"                          # 머무른다(조용한 이동 없음)
-    ctrl.dispatch("discard_patch", {})                        # 「버리고 이동」의 앞 절반
-    assert ctrl.dirty_sections() == ()
-    ctrl.dispatch("goto_section", {"section": "filename"})
-    assert ctrl.section == "filename"
+
+    assert ctrl.dispatch("goto_section", {"section": "filename"}) is None
+    assert ctrl.section == "filename"                         # 막히지 않는다
+    assert ctrl.dirty_sections() == ()                        # 막던 자리는 되돌아갔고
+    assert ctrl.job_name == "이동해도 사는 이름"                # section 밖 편집은 살아남는다
+    notice = ctrl.snapshot()["notice"]
+    assert notice and "「필드 연결·표시」" in notice["text"], (
+        f"자동으로 버려 놓고 아무 말도 하지 않았습니다: {notice!r}"
+    )
+
     ctrl2, _ = _controller(tmp_path / "new")             # 대조군: 신규 마법사
     ctrl2.load_template_path(str(TPL_COMPILED))
     ctrl2.dispatch("goto_section", {"section": "binding"})             # 템플릿→연결은 스키마 有로 통과
     with pytest.raises(ValueError, match="조건을 아직 채우지 못해"):
         ctrl2.dispatch("goto_section", {"section": "filename"})         # 매핑 미확정 → 전진 차단
+
+
+def test_discarding_a_clean_session_is_a_silent_no_op(tmp_path):
+    """손대지 않은 세션의 세션 전체 되돌리기는 **아무 일도 하지 않는다**.
+
+    이탈이 확인 없이 `discard_patch {}` 를 무조건 부르게 되면서 생긴 자리다: 판정을 웹에
+    두면 같은 상태를 두 곳이 답하므로 게이트를 여기 하나로 뒀다. 게이트가 없으면 클린
+    이탈마다 디스크를 다시 읽고 「되돌렸습니다」라는 거짓 통지가 선다(과진술도 부정직이다).
+    """
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "클린이탈")["ok"] is True
+    ctrl.load_job("클린이탈")
+    ctrl.dispatch("dismiss_notice", {})
+    assert ctrl.has_unsaved_work() is False
+
+    ctrl.dispatch("discard_patch", {})
+    assert ctrl.snapshot()["notice"] is None, "버릴 것이 없는데 버렸다고 말합니다."
+    assert ctrl.has_unsaved_work() is False
+
+    ctrl.dispatch("set_name", {"name": "손댐"})               # 양성 대조 — 손댄 뒤엔 말한다
+    ctrl.dispatch("discard_patch", {})
+    notice = ctrl.snapshot()["notice"]
+    assert notice and "되돌렸습니다" in notice["text"]
+    assert ctrl.job_name == "클린이탈"
 
 
 # ---------------------------------------- PR-2 고효율 리뷰 반영(파괴 경로·클린 세션·판정 위치)
@@ -2594,10 +2622,16 @@ def test_saving_an_hwpx_draft_over_a_txt_job_name_is_rejected(tmp_path):
 
     이쪽은 PR-B 이전부터 이론상 열려 있던 방향이다(편집기는 hwpx 만 만들었다) — 표면에
     새 매체가 들어오면 기존 동사의 매체 가정을 함께 세어야 한다는 규칙의 대칭 가드.
+
+    저장 뒤의 세션은 그 TXT 작업의 **편집 세션**이므로 새 초안은 실 UI 그대로 세션 시작
+    (`new_session`)으로 연다 — 편집 세션 위에 다른 템플릿을 얹는 것은 어느 표면도 하지
+    않는 조작이고(템플릿 선택 seam 은 언제나 세션을 먼저 끊는다), 그 상태로 재면 이
+    테스트가 겨눈 저장 게이트가 아니라 탭 이동의 자동 버리기를 재게 된다.
     """
     ctrl, _ = _controller(tmp_path)
     assert _txt_draft_named(ctrl, tmp_path, "기안작업")["ok"] is True
 
+    ctrl.dispatch("new_session", {})              # 실 UI: 새 작업은 세션을 먼저 끊는다
     res = _save_named(ctrl, "기안작업")          # hwpx 초안이 같은 이름을 겨눈다
     assert res["ok"] is False
     assert "형식이 다른" in res["block_reason"]

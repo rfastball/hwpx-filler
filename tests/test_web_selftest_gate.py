@@ -1245,59 +1245,57 @@ class TestWebSelftestGate:
     #  프로브 결과가 「기안」 화면과 함께 걷혔다, F6 PR-B. 좌 목록·그룹 계약의 생존 판은
     #  라이브러리·tpl 프로브가, 세션·복사 계약은 작업대 프로브(test_workbench_*)가 진다.)
 
-    def test_tab_disposition_actually_continues_after_saving(self, selftest_result: dict) -> None:
-        # F7 1R P1 의 영구 가드 — 「저장하고 이동」은 **저장 뒤 이동까지** 가야 한다.
-        # 정적 계약은 이 결함을 못 봤다: 배선·문안·판정이 전부 제자리이고 성사 뒤 **이어짐**만
-        # 끊겼다(`doSave` 가 성공에 undefined 를 돌려줘 가드가 조기 반환). 실 클릭 → 실 모달 →
-        # 실 재발신 순서를 그대로 밟아 발신 기록으로 센다.
-        g = selftest_result["editor_guard"]
-        assert g.get("error") is None, f"탭 가드 프로브 예외: {g.get('error')!r}"
-        assert g.get("why") == "완료", f"3택 모달이 뜨지 않았습니다: {g!r}"
-        assert g.get("modal_label") == "저장하고 이동", (
-            f"3택 주 행동 라벨이 다릅니다: {g.get('modal_label')!r}"
-        )
-        assert g["calls"] == ["goto_section", "save", "goto_section:save"], (
-            "저장하고 이동이 저장에서 멈췄습니다 — 사용자가 고른 처분이 절반만 일어납니다"
+    def test_tab_move_autodiscards_without_asking(self, selftest_result: dict) -> None:
+        # 확인 모달 전면 제거의 실런타임 가드 — dirty 인 채 탭을 눌러도 **아무것도 묻지 않고**
+        # 한 발만 나간다. 음성(모달 미개방) 혼자로는 무동작 프로브와 구분되지 않으므로
+        # 양성(발신 1발 + payload 가 `section` 하나)과 함께 센다.
+        g = selftest_result["editor_tab_autodiscard"]
+        assert g.get("error") is None, f"탭 이동 프로브 예외: {g.get('error')!r}"
+        assert g.get("why") == "완료", f"탭 이동 프로브가 완주하지 못했습니다: {g!r}"
+        assert g["calls"] == ["goto_section"], (
+            "탭 이동이 한 발로 끝나지 않았습니다 — 처분 왕복이 되살아났습니다"
             f"(발신 기록: {g['calls']!r})."
         )
+        assert g["payload_keys"] == ["section"], (
+            f"이동 payload 에 처분 표지가 실렸습니다: {g['payload_keys']!r}"
+        )
+        assert g["target_sent"] == "filename", f"누른 탭이 실리지 않았습니다: {g!r}"
+        assert g["choose_modal_open"] is False and g["confirm_modal_open"] is False, (
+            f"탭 이동이 확인을 물었습니다 — 자동 버리기 계약이 죽었습니다: {g!r}"
+        )
 
-    def test_discard_confirm_settles_pending_edit_and_cancel_lands_coherently(
+    def test_discard_runs_immediately_after_settling_pending_edit(
         self, selftest_result: dict
     ) -> None:
-        # §2.17 2R P2 — 1R 이 버리기를 blur 전에 눌리게 열면서 생긴 자리. 정산 없이 확인을
-        # 열면 큐에 든 `set_name` 이 모달이 떠 있는 사이 도착해 `#editor-foot` 을 갈아
-        # 끼우고, 저장해 둔 트리거가 분리돼 **취소가 화면 루트로 떨어진다**(모달의 대안
-        # 착지 — 키보드 사용자는 화면 처음에서 다시 걸어온다). 정적 계약은 못 본다:
-        # 배선·문안·판정이 전부 제자리이고 **비동기 도착 순서**만 어긋나기 때문이다.
-        d = selftest_result["editor_discard_cancel"]
-        assert d.get("error") is None, f"버리기 취소 프로브 예외: {d.get('error')!r}"
-        assert d.get("why") == "완료", f"버리기 확인이 열리지 않았습니다: {d!r}"
+        # 「변경 버리기」는 묻지 않고 즉시 되돌린다. 확인이 사라져도 **정산 선행**은 그대로
+        # 계약이다(§2.17 2R P2 의 승계): 큐에 든 `set_name` 이 버리기 뒤에 도착하면 방금
+        # 되돌린 세션이 늦은 편집으로 다시 더러워지고, 화면은 버렸다고 말한 것을 그대로
+        # 들고 선다. 정적 계약은 못 본다 — **비동기 도착 순서**만 어긋나기 때문이다.
+        d = selftest_result["editor_discard_immediate"]
+        assert d.get("error") is None, f"버리기 프로브 예외: {d.get('error')!r}"
+        assert d.get("why") == "완료", f"버리기가 발신되지 않았습니다: {d!r}"
         assert d["discard_enabled_on_typing"] is True, (
             "타이핑 직후 버리기가 잠긴 채입니다 — 1R 계약(저장과 같은 술어)이 죽었습니다."
         )
         assert d["name_node_stable"] is True
         assert d["name_node_connected"] is True
         assert d["name_focus_stable"] is True
-        assert d["flushed_before_open"] is True, (
-            "확인이 대기 편집 정산 **전에** 열렸습니다 — 큐의 발신이 모달 뒤에 도착해"
-            f" 판정과 화면이 어긋납니다: {d!r}."
+        assert d["confirm_modal_open"] is False, (
+            f"버리기가 확인을 물었습니다 — 자동 버리기 계약이 죽었습니다: {d!r}"
         )
-        assert d["trigger_connected_at_open"] is True, (
-            "확인이 열린 시점의 버리기 버튼이 문서에 붙어 있지 않습니다 — 되돌릴 자리가"
-            " 이미 분리됐습니다."
+        assert d["call_order"] == "set_name,discard_patch", (
+            "대기 편집 정산이 버리기 **뒤로** 밀렸습니다 — 늦게 도착한 편집이 되돌린 세션을"
+            f" 다시 더럽힙니다(발신 기록: {d['call_order']!r})."
         )
-        assert d["focus_back_on_discard"] is True and d["focus_fell_to_screen_root"] is False, (
-            "취소 뒤 초점이 버리기 버튼으로 돌아오지 않고 화면 루트로 떨어졌습니다"
-            f" (활성 요소 판정: {d!r})."
+        assert d["flushed_before_discard"] is True
+        # 되돌린 스냅샷이 도착하면 이름은 저장본으로 돌아가고 두 행동이 함께 잠긴다.
+        assert d["name_value_after_discard"] == "공고서", (
+            f"버렸는데 친 값이 그대로 서 있습니다: {d['name_value_after_discard']!r}"
         )
-        # 취소는 **아무것도 버리지 않는다** — 친 값과 dirty 술어(두 버튼 활성)가 그대로다.
-        assert d["name_value_after_cancel"] == "공고서 수정", (
-            f"취소했는데 친 값이 사라졌습니다: {d['name_value_after_cancel']!r}"
+        assert d["discard_disabled_after"] is True and d["save_disabled_after"] is True, (
+            f"되돌린 뒤에도 두 행동이 무장한 채입니다 — 버릴 것이 남았다는 뜻입니다: {d!r}"
         )
-        assert (
-            d["discard_enabled_after_cancel"] is True and d["save_enabled_after_cancel"] is True
-        ), f"취소 뒤 두 행동이 잠겼습니다 — 손댄 세션인데 버릴 길도 저장할 길도 없습니다: {d!r}"
-        assert d["discarded"] is False, "취소했는데 discard_patch 가 발신됐습니다."
+        assert d["discarded"] is True, "버리기가 발신되지 않았습니다."
 
     def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
         self, selftest_result: dict

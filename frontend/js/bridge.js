@@ -98,8 +98,8 @@ export function createBridge() {
        importTemplateFile 하나로 통일(§10.17.2 판정 C), 라이브러리 선택은 편집기 dispatch
        use_library_template 이 소유. 소비자 0 통로는 남기지 않는다.) */
 
-    /** 에디터에 미저장 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인 판단(#25). */
-    editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },
+    /* (editorHasUnsavedWork 는 편집기 확인 모달 전면 제거와 함께 사망 — 진입도 이탈도 묻지
+       않고 버리므로 「잃을 것이 있는가」를 선판단하던 왕복이 소비자 0 이 됐다.) */
 
     /** 「문서 작업」 상세 '작업 편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26). 이름·"ERROR:…". */
     // context = {entry_reason, evidence, return_context}(계약 §5.1) — 진입 문맥은 **보낸

@@ -91,11 +91,12 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "use_library_template": _schema("path"),
         "new_session": _schema(),
         "discard_session": _schema(),
-        # 탭 이동 — `disposition` 은 3택 가드를 통과했다는 표지(웹이 저장·버리기를 먼저
-        # 마친 뒤 실어 보낸다). 선택적인 이유: 처분할 것이 없는 이동이 대다수다.
-        "goto_section": _schema("section", "disposition"),
-        # `section` 은 탭 가드의 「버리고 이동」 — **그 자리만** 되돌린다(2R P2).
-        # 없으면 세션 전체 되돌리기(footer 「변경 버리기」·이탈의 「버리고 나가기」).
+        # 탭 이동 — 갈 자리 하나만 싣는다. 종전의 `disposition`(3택 가드를 통과했다는 표지)은
+        # 확인 모달과 함께 사망했다: 막는 patch 는 컨트롤러가 자동으로 되돌리므로 웹이 처분을
+        # 먼저 마쳤다고 선언할 자리가 없다.
+        "goto_section": _schema("section"),
+        # `section` 은 탭 이동의 자동 버리기 — **그 자리만** 되돌린다(2R P2).
+        # 없으면 세션 전체 되돌리기(footer 「변경 버리기」·이탈의 자동 버리기).
         "discard_patch": _schema(optional="section"),
         "ack_gate": _schema(),
         # 세션 통지 닫기(U4 계열1-20) — 통지를 **세우는** 전이는 그대로 두고 사용자가

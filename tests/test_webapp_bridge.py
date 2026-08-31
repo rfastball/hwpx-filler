@@ -493,6 +493,7 @@ def test_close_guard_is_a_protocol_every_session_surface_joins(tmp_path, monkeyp
     # 사전 확인 `_do_guard_state` 는 창 종료가 아니라서 이 계약 밖 — 그대로 산다.)
     silent_loss_by_contract = {
         "job": "창 닫기 = 명시적 종료 선언 — 진행 중 선택은 계약상 보존하지 않는다",
+        "editor": "편집 세션 변경은 자동 버리기 계약 — 창 닫기 손실은 계약상 침묵",
     }
     declared = set(not_session) | set(silent_loss_by_contract)
     missing = [
@@ -776,10 +777,14 @@ def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, mo
 
     창 닫기는 명시적 종료 선언이고 진행 중 작업 정보는 보존하지 않는다는 사용자 계약의
     착지다. 끊긴 것은 `_guard_state` 의 소비자 셋 중 **창 종료 하나뿐**이다: 같은 무장
-    상태에서 데이터 재겨눔·재연결 사전 확인(`_do_guard_state`)은 그대로 무장을 답하고
+    상태에서 데이터 재겨눔·재연결 사전 확인(`_do_guard_state`)은 그대로 무장을 답한다
     (홈 삭제 가드 `session_guard_for` 는 ``test_session_guard_for_cross_screen_query`` 가
-    따로 못박는다), 미저장 산출물을 든 작업대·편집기는 여전히 창 종료에 참여한다 —
-    국경은 화면이 아니라 소실의 종류(재현 가능한 선택 vs 미저장 산출물)다.
+    따로 못박는다).
+
+    **편집기도 이제 이 침묵 쪽이다**: 미저장 변경을 묻지 않고 버리는 것이 그 화면의 계약이
+    된 뒤, 창 닫기에서만 되살아나는 확인은 같은 상태를 두 곳이 다르게 답하는 자리가 된다.
+    창 종료 가드에 남는 것은 작업대다 — 국경은 화면이 아니라 소실의 종류(자동으로 되돌아갈
+    자리가 있는 편집 vs 되살릴 길 없는 미저장 산출물)다.
     """
     frontend = _frontend(tmp_path, monkeypatch)
     job = frontend.controllers["job"]
@@ -789,8 +794,9 @@ def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, mo
     job.dispatch("toggle_record", {"index": 0, "value": True})  # 부분 수작업 선택 = 무장
     assert job._do_guard_state({})["armed"] is True   # 재겨눔 사전 확인 소비자는 불변
     assert frontend.close_guard_state()["armed"] is False       # 창 종료만 계약상 침묵
-    # 같은 프런트에서 미저장 산출물 표면들은 여전히 창 종료를 막는다.
-    assert hasattr(frontend.controllers["editor"], "close_guard_reason")
+    # 편집기는 자동 버리기 계약과 함께 이 가드에서 걷혔다(참여 부재의 음성 단언).
+    assert not hasattr(frontend.controllers["editor"], "close_guard_reason")
+    # 되살릴 길 없는 미저장 산출물을 든 표면은 여전히 창 종료를 막는다.
     _armed_workbench(frontend, tmp_path)
     state = frontend.close_guard_state()
     assert state["armed"] is True

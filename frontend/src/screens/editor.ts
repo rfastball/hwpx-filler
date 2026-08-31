@@ -47,7 +47,6 @@ type Listener = () => void;
 type ModalPort = {
   confirm(spec: Obj): Promise<boolean>;
   prompt(spec: Obj): Promise<string | null>;
-  choose(spec: Obj): Promise<string | null>;
   open(id: string, spec?: Obj): void;
   close(id: string): void;
 };
@@ -753,24 +752,6 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 확인 관문 ---- */
 
-  /** 새 템플릿 진입 = 새 작업 세션 확인. 폐기 판정은 entry port 단일 출처. */
-  async function confirmNewSessionIfUnsaved(): Promise<boolean> {
-    const editing = snapshot().editing_origin;
-    if (editing) {
-      const busy = await invoke("editor_has_unsaved_work");
-      if (!busy) return true;
-      return deps.modal.confirm({
-        body: `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.` +
-          "\n저장하지 않은 변경은 사라집니다." +
-          "\n\n계속할까요?",
-        confirmLabel: "새 작업 시작", cancelLabel: "취소",
-      });
-    }
-    return Boolean(await deps.ports.editorEntry.current().confirmDiscard(
-      "새 템플릿으로 시작하면 저장하지 않은 작업 세션이 사라집니다.\n" +
-      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"));
-  }
-
   /** 확정·수동 매핑 보호 — 수치는 Python 이 **지금** 판정한다(stale 우회 차단). */
   async function confirmMappingResetIfConfirmed(verbPhrase: string): Promise<boolean> {
     const stakes = await sendEdit("mapping_reset_stakes", {});
@@ -864,30 +845,15 @@ export function createEditorController(deps: EditorControllerDeps) {
     return false;
   }
 
-  /** 탭 이동 — 처분 미확정 patch 는 Python 이 되돌리고 여기서 3택을 받는다(계약 §5.2). */
+  /** 탭 이동 — 정산하고 한 발 보낸다. 막는 patch 의 처분은 Python 이 진다(계약 §5.2).
+   *
+   *  종전에는 여기서 3택(저장하고 이동·버리고 이동·머무르기)을 받고 처분 표지를 실어 같은
+   *  액션을 다시 보냈다. 지금은 컨트롤러가 막는 자리를 자동으로 되돌리고 그 사실을 통지로
+   *  재진술하므로, 웹이 할 일은 정산과 발신 하나뿐이다. */
   async function gotoSection(target: string): Promise<void> {
     if (!target) return;
     await flushPendingEdits();
-    const result = await sendEdit("goto_section", { section: target });
-    if (!result.needs_section_guard) return;
-    const choice = await deps.modal.choose({
-      title: `「${result.section_label}」 에서 바꾼 내용이 있습니다`,
-      body: "다른 탭으로 가기 전에 이 변경을 어떻게 할지 정하세요.\n" +
-        "한 번에 한 곳만 고칩니다 — 저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
-      choices: [
-        { value: "save", label: "저장하고 이동" },
-        { value: "discard", label: "버리고 이동" },
-        { value: "stay", label: "머무르기" },
-      ],
-    });
-    if (choice === "save") {
-      if (!(await doSave({}))) return;         // 저장이 막혔으면 이동하지 않는다(문맥 보존)
-    } else if (choice === "discard") {
-      await sendEdit("discard_patch", { section: result.section });
-    } else {
-      return;                                  // 머무르기(Escape 포함)
-    }
-    await sendEdit("goto_section", { section: target, disposition: choice });
+    await sendEdit("goto_section", { section: target });
   }
 
   function neighbour(delta: number): string {
@@ -927,43 +893,19 @@ export function createEditorController(deps: EditorControllerDeps) {
     return true;
   }
 
-  /** 편집기를 나가는 **단일 출구** — 확인 전에는 draft 를 파기하지 않는다. */
+  /** 편집기를 나가는 **단일 출구** — 묻지 않고 버리고 나간다.
+   *
+   *  이탈은 두 갈래다: 저장본 편집은 `discard_patch {}` 로 진입 시점 상태(데이터 결속 포함)로
+   *  되돌리고, 초안은 `new_session {}` 으로 세션째 끊는다. 버릴 것이 있는지는 **여기서 다시
+   *  세지 않는다** — 클린 세션의 이탈을 무동작으로 만드는 no-op 게이트가 컨트롤러 안에 있고,
+   *  웹이 dirty 를 재판정하면 같은 상태를 두 곳이 답하게 된다. */
   async function leaveTo(target: string): Promise<void> {
     await flushPendingEdits();
     const state = snapshot();
-    /* 정산 뒤에도 스냅샷이 아니라 컨트롤러에게 묻는다 — 잃을 것이 있는지는 Python 이 지금 답한다. */
-    let dirty = !!state.dirty;
-    if (!dirty && !state.is_draft) {
-      try {
-        dirty = Boolean(await invoke("editor_has_unsaved_work"));
-      } catch {
-        dirty = true;    // 모르면 묻는다(확인-또는-경보의 안전 방향)
-      }
-    }
-    if (dirty && !state.is_draft) {
-      const choice = await deps.modal.choose({
-        title: "저장하지 않은 변경이 있습니다",
-        body: "편집기를 나가기 전에 이 변경을 어떻게 할지 정하세요."
-          + "\n저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
-        choices: [
-          { value: "save", label: "저장하고 나가기" },
-          { value: "discard", label: "버리고 나가기" },
-          { value: "stay", label: "머무르기" },
-        ],
-      });
-      if (choice === "save") {
-        if (!(await doSave({}))) return;       // 저장이 막혔으면 나가지 않는다(문맥 보존)
-      } else if (choice === "discard") {
-        await sendEdit("discard_patch", {});
-      } else {
-        return;
-      }
-    } else if (state.is_draft) {
-      const accepted = await deps.ports.editorEntry.current().confirmDiscard(
-        "편집기를 나가면 저장하지 않은 새 작업이 사라집니다."
-        + "\n사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?");
-      if (!accepted) return;
-      await sendEdit("new_session", {});       // 확인을 마쳤으면 실제로 폐기한다
+    if (state.is_draft) {
+      await sendEdit("new_session", {});
+    } else {
+      await sendEdit("discard_patch", {});
     }
     if (!(await landOn(target))) return;
     if (target === returnScreen()) await restoreReturnState();
@@ -972,12 +914,10 @@ export function createEditorController(deps: EditorControllerDeps) {
   /* ---- 본문 행동 ---- */
 
   async function useLibraryTemplate(path: string): Promise<void> {
-    if (!(await confirmNewSessionIfUnsaved())) return;
     await sendEdit("use_library_template", { path });
   }
 
   async function importTemplate(): Promise<void> {
-    if (!(await confirmNewSessionIfUnsaved())) return;
     const result = await invoke("import_template_file", SCREEN);
     if (typeof result === "string" && result.startsWith("ERROR:")) {
       noticeSave(result.slice(6).trim());
@@ -1098,22 +1038,16 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (accepted) await sendEdit("confirm_blanks", { fields: blanks });
   }
 
-  /** 변경 버리기 — 확인을 열기 **전에** 대기 중 편집을 정산한다. */
-  async function discardPatch(trigger: HTMLElement): Promise<void> {
+  /** 변경 버리기 — 발신 **전에** 대기 중 편집을 정산한다(정산하지 않으면 방금 친 글자가
+   *  되돌리기 뒤에 도착해 버린 상태를 다시 더럽힌다). 되돌렸다는 재진술은 컨트롤러 통지다. */
+  async function discardPatch(): Promise<void> {
     await flushPendingEdits();
-    if (!(await deps.modal.confirm({
-      body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
-      returnFocus: trigger, confirmLabel: "변경 버리기", cancelLabel: "취소",
-    }))) return;
     await sendEdit("discard_patch", {});
   }
 
-  async function cancelNewDraft(trigger: HTMLElement): Promise<void> {
-    const accepted = await deps.ports.editorEntry.current().confirmDiscard(
-      "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?", trigger);
-    if (!accepted) return;
+  async function cancelNewDraft(): Promise<void> {
     await sendEdit("discard_session", {});
-    /* 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다 — 착지는 이탈과 **같은 절차**다. */
+    /* 폐기를 마쳤으니 이탈 경로를 다시 태우지 않는다 — 착지는 이탈과 **같은 절차**다. */
     await landOn(returnScreen());
   }
 
@@ -1941,7 +1875,7 @@ function EditorFooter(props: {
     return h("footer", { className: "wfoot", id: "editor-foot" },
       h("button", {
         className: "btn", "data-act": "discard-patch", disabled: !armed,
-        onClick: (event: Obj) => controller.guarded(() => controller.discardPatch(event.currentTarget)),
+        onClick: () => controller.guarded(() => controller.discardPatch()),
       }, "변경 버리기"),
       h("span", { className: "spacer" }),
       confirmPending
@@ -1960,7 +1894,7 @@ function EditorFooter(props: {
   return h("footer", { className: "wfoot", id: "editor-foot" },
     h("button", {
       className: "btn", "data-act": "cancel-new",
-      onClick: (event: Obj) => controller.guarded(() => controller.cancelNewDraft(event.currentTarget)),
+      onClick: () => controller.guarded(() => controller.cancelNewDraft()),
     }, "취소"),
     here > 0
       ? h("button", {
