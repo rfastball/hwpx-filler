@@ -82,6 +82,10 @@ class TemplateFileOps:
     compile_structure_file: "Callable[[str], object]"
     rename_slot_label: "Callable[[str, str, str | None], tuple[Slot, ...]]"
     decompile_slot: "Callable[[str, str], tuple[Slot, ...]]"
+    #: 문서 전체판 풀기(U4-E3 #939) — 반환은 **되돌린** 선언 목록이라 단건 동사 셋의
+    #: 「변이 뒤 남은 Slot」과 뜻이 다르다. 링1 은 수치를 여기서 받지 않고
+    #: 재투영(:meth:`TemplateManagerViewModel.slot_view`)으로 다시 읽는다.
+    decompile_structure: "Callable[[str], tuple[Slot, ...]]"
     remove_slot: "Callable[[str, str], tuple[Slot, ...]]"
 
 
@@ -633,6 +637,17 @@ class TemplateManagerViewModel:
         self.refresh()
         return self.slot_view(path)
 
+    def decompile_all_slots(self, path: str) -> SlotView:
+        """그 템플릿의 **전 항목**을 구간 표기로 되돌리고 저장(U4-E3 #939).
+
+        단건 동사(:meth:`decompile_slot`)와 같은 결이고 대상만 파일 하나다 — External 이
+        원자적으로 풀거나(전 항목) 원본을 그대로 남긴다(부분 성공 없음). 성공하면 그
+        템플릿은 통째로 미변환 상태가 되므로 목록을 다시 투영해 돌려준다.
+        """
+        self._file_ops.decompile_structure(str(path))
+        self.refresh()
+        return self.slot_view(path)
+
     def remove_slot(self, path: str, slot_id: str) -> SlotView:
         """Slot 하나를 **내용째** 지우고 저장."""
         self._file_ops.remove_slot(str(path), slot_id)
@@ -651,6 +666,20 @@ class TemplateManagerViewModel:
         """
         return (
             f"'{slot_id}' 항목을 구간 표기로 되돌립니다.\n"
+            f"되돌린 뒤: '{Path(path).name}' 은(는) 다시 변환하기 전까지 문서를 만들 수 "
+            "없습니다.\n한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
+        )
+
+    def confirm_decompile_all_text(self, path: str) -> str:
+        """전체판 풀기 확인 본문 — 단건(:meth:`confirm_decompile_text`) 문형 승계.
+
+        다른 것은 **범위 한 줄**뿐이다: 대상이 항목 하나가 아니라 이 파일의 전 항목이라는
+        사실과 그 개수. 뒤 두 줄(전이 결과 · 되살리는 길)은 글자 그대로 같다 — 같은 전이라
+        같은 말을 해야 하고, 여기서 문안을 새로 지으면 두 동사가 다른 사실을 말하게 된다.
+        """
+        count = len(self.slot_view(path).rows)
+        return (
+            f"항목 {count}개를 전부 구간 표기로 되돌립니다.\n"
             f"되돌린 뒤: '{Path(path).name}' 은(는) 다시 변환하기 전까지 문서를 만들 수 "
             "없습니다.\n한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
         )

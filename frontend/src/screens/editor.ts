@@ -511,6 +511,18 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
+  /** 이 템플릿의 항목을 전부 표기로 되돌리기 — 대상이 항목이 아니라 파일이라 `slot_id` 가 없다. */
+  async function decompileAllSlots(trigger: HTMLElement): Promise<void> {
+    const path = String(((snapshot().library || {}).slots || {}).path || "");
+    const result = await dispatch("tpl", "slot_decompile_all", { path });
+    if (result.needs_confirm && await deps.modal.confirm({
+      body: `${result.confirm_text}\n\n되돌릴까요?`,
+      confirmLabel: "전부 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
+    })) {
+      await dispatch("tpl", "slot_decompile_all", { path, confirm: true });
+    }
+  }
+
   /** 항목 삭제 — 내용째 사라지는 파괴 확정. */
   async function removeSlot(slotId: string, trigger: HTMLElement): Promise<void> {
     const path = String(((snapshot().library || {}).slots || {}).path || "");
@@ -523,12 +535,15 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
-  /** Slot 동사 3종의 단일 진입 — 실패는 인라인 채널로(#323 라우팅 규칙). */
+  /** Slot 동사의 단일 진입 — 실패는 인라인 채널로(#323 라우팅 규칙).
+   *
+   *  밴드 동사(`decompile-all`)는 `slotId` 를 쓰지 않는다 — 대상이 파일이다. */
   async function handleSlotVerb(
     verb: string, slotId: string, trigger: HTMLElement,
   ): Promise<void> {
     try {
-      if (verb === "rename") {
+      if (verb === "decompile-all") await decompileAllSlots(trigger);
+      else if (verb === "rename") {
         const rows = (((snapshot().library || {}).slots || {}).rows || []) as Obj[];
         const row = rows.find((item) => String(item.id) === slotId);
         await renameSlot(slotId, String((row || {}).label || ""), trigger);
@@ -1340,10 +1355,16 @@ function BandCap(props: { label: string; band: Obj }): ReactNode {
     }, band.dir) : null);
 }
 
-/** 검토가 낸 구간 항목(Slot) 목록 + 행 동사 3종(S8-03 #834).
+/** 검토가 낸 구간 항목(Slot) 목록 + 행 동사 3종(S8-03 #834) + 밴드 동사 1종(U4-E3 #939).
  *
  *  목록·요약·진단은 Python 투영 그대로 그린다(판정 재조립 금지). 진단이 있으면 목록 대신
- *  사유가 서고 동사 버튼은 아예 없다 — 못 믿는 구조 위에서 변이를 권하지 않는다. */
+ *  사유가 서고 동사 버튼은 아예 없다 — 못 믿는 구조 위에서 변이를 권하지 않는다.
+ *
+ *  밴드 동사 「전부 표기로 되돌리기」의 노출 술어는 **행 동사와 글자 그대로 같다**(진단 0 ·
+ *  행 1건 이상). 개수 문턱(2건 이상)을 새로 두지 않는 이유는 둘이다: 그러면 「진단 0」 하나로
+ *  서 있던 노출 규칙이 두 개로 갈리고, 두 항목을 하나씩 풀다 1건이 남는 순간 버튼이 손 밑에서
+ *  사라진다. 1건일 때 효과가 행 동사와 같아도 **대상 축이 다르다** — 확인 본문이 항목이 아니라
+ *  파일 전체를 말한다. */
 function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNode {
   const { slots, controller } = props;
   const rows = (slots.rows || []) as Obj[];
@@ -1355,11 +1376,18 @@ function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNod
       onClick: (event: Obj) => controller.guarded(
         () => controller.handleSlotVerb(act, String(row.id), event.currentTarget)),
     }, label);
+  const bandVerb = diagnostics.length || !rows.length ? null : h("button", {
+    className: "btn sm danger", "data-act": "slot-decompile-all",
+    style: { marginLeft: "auto" },
+    onClick: (event: Obj) => controller.guarded(
+      () => controller.handleSlotVerb("decompile-all", "", event.currentTarget)),
+  }, "전부 표기로 되돌리기");
   return h("div", { className: "grp", id: "tplSlots" },
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
       h("span", { className: "cap" }, "구간 항목"),
       h("span", { className: "muted capnote" }, String(slots.name || "")),
-      h("span", { className: "muted capnote" }, String(slots.summary || ""))),
+      h("span", { className: "muted capnote" }, String(slots.summary || "")),
+      bandVerb),
     ...diagnostics.map((text, index) =>
       h("div", { className: "hint danger", key: `diag-${index}` }, text)),
     ...(diagnostics.length ? [] : rows.map((row) => h("div", {

@@ -1971,6 +1971,11 @@ export function createEditorWorkbenchDataProbes() {
             .map((a) => !!host.querySelector(`[data-act="${a}"][data-slot="특약"]`));
           const renameBtn = host.querySelector('[data-act="slot-rename"][data-slot="특약"]');
           out.slot_rename_visible = !!renameBtn && !isHidden(ctx, renameBtn);
+          /* 밴드 동사(U4-E3 #939) — 행 1건에서도 서고, 항목이 아니라 **파일**을 겨눈다
+             (`data-slot` 없음). 같은 창에 얹은 좌표 단언 하나다(새 창 0). */
+          const bandBtn = host.querySelector('[data-act="slot-decompile-all"]');
+          out.slot_band_verb_visible = !!bandBtn && !isHidden(ctx, bandBtn);
+          out.slot_band_verb_targets_file = !!bandBtn && !bandBtn.hasAttribute("data-slot");
           const slotSent = [];
           const slotStub = stubBridgeCall(ctx, () => async (screen, action, payload) => {
             slotSent.push([screen, action, payload]);

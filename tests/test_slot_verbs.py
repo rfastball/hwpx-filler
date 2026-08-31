@@ -32,6 +32,8 @@ from hwpxfiller.external.template_inspection import (
     compile_structure,
     decompile_slot,
     decompile_slot_file,
+    decompile_structure,
+    decompile_structure_file,
     inspect_slots,
     remove_slot_file,
     rename_slot_label,
@@ -198,6 +200,92 @@ def test_decompile_keeps_a_neighbouring_non_product_region() -> None:
     assert names == ["남의구간"]
     residue = scan_structure(pkg)
     assert (residue.diagnostics, [slot.id for slot in residue.slots]) == ((), ["특약"])
+
+
+# --------------------------------------------- 2b. 문서 전체 풀기(U4-E3 #939)
+def test_decompile_structure_restores_every_declaration() -> None:
+    """전체판 = 컴파일의 역함수 — native 구조가 0 이 되고 표기가 통째로 돌아온다.
+
+    앞선 슬롯이 마커 문단을 심어 뒤 슬롯의 문단 index 가 밀리는데도 본문이 원본 표기와
+    **글자 단위로** 같다는 것이, 매 호출이 좌표를 다시 세운다는 증거다.
+    """
+    pkg = _pkg(*(_text(line) for line in TWO_SLOT_NOTATION))
+    notation_before = scan_structure(pkg).slots
+    compile_structure(pkg)
+
+    decompiled = decompile_structure(pkg)
+
+    assert [slot.id for slot in decompiled] == ["특약", "부기"]
+    assert inspect_slots(pkg) == ((), ())
+    residue = scan_structure(pkg)
+    assert residue.diagnostics == ()
+    assert residue.slots == notation_before
+    assert _texts(pkg) == list(TWO_SLOT_NOTATION)
+
+
+def test_decompile_structure_round_trip_recompiles_identically() -> None:
+    """컴파일 → 일괄 풀기 → 재변환이 무손실이다(제품 판독·topology·본문 전건 동일)."""
+    pkg = _two_slot_package()
+    reference = (inspect_slots(pkg), _topology(pkg), _texts(pkg))
+
+    decompile_structure(pkg)
+    report = compile_structure(pkg)
+
+    assert (report.modified, report.refusal) == (True, None)
+    assert (inspect_slots(pkg), _topology(pkg), _texts(pkg)) == reference
+
+
+def test_decompile_structure_rolls_back_every_slot_when_one_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """중도 실패 = **전량 원복**. 먼저 풀린 슬롯도 컴파일된 채로 돌아온다.
+
+    첫 슬롯은 정상으로 풀리고 둘째 슬롯의 마커만 비틀어(되읽기 불가) 재현한다 —
+    반쯤 풀린 템플릿이 남는 경로가 없다는 것이 이 동사의 존재 조건이다.
+    """
+    pkg = _two_slot_package()
+    before = dict(pkg.entries)
+    original = template_inspection.begin_marker_text
+
+    def biased(kind, identifier, label=None):
+        if identifier == "부기":
+            return "{{#항목 다른항목}}"
+        return original(kind, identifier, label)
+
+    monkeypatch.setattr(template_inspection, "begin_marker_text", biased)
+    with pytest.raises(ValueError, match="postcondition \\(notation\\)"):
+        decompile_structure(pkg)
+
+    assert pkg.entries == before
+    assert _slot_ids(pkg) == ["특약", "부기"]
+    assert scan_structure(pkg).slots == ()
+
+
+def test_decompile_structure_of_a_slotless_document_is_a_no_op() -> None:
+    """풀 것이 없으면 무변형이다 — compile_structure 의 no-op 선례와 같은 결."""
+    pkg = _pkg(_text("본문뿐"))
+    before = dict(pkg.entries)
+
+    assert decompile_structure(pkg) == ()
+    assert pkg.entries == before
+
+
+def test_decompile_structure_file_writes_only_when_it_mutates(tmp_path: Path) -> None:
+    """파일 판은 변이가 있을 때만 쓴다(:func:`compile_structure_file` 규율)."""
+    target = tmp_path / "template.hwpx"
+    target.write_bytes(_two_slot_package().to_bytes())
+
+    decompiled = decompile_structure_file(str(target))
+
+    assert [slot.id for slot in decompiled] == ["특약", "부기"]
+    saved = HwpxPackage.from_bytes(target.read_bytes())
+    assert inspect_slots(saved) == ((), ())
+    assert [slot.id for slot in scan_structure(saved).slots] == ["특약", "부기"]
+
+    # 두 번째 호출은 풀 것이 없다 — 한 바이트도 쓰지 않는다.
+    untouched = target.read_bytes()
+    assert decompile_structure_file(str(target)) == ()
+    assert target.read_bytes() == untouched
 
 
 # ------------------------------------------------------------------- 3. 왕복

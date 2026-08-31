@@ -223,6 +223,7 @@ export const SCREEN_ACTIONS = {
     review: { required: ["path"], optional: [] },
     slot_rename: { required: ["path", "slot_id"], optional: ["label"] },
     slot_decompile: { required: ["path", "slot_id"], optional: ["confirm"] },
+    slot_decompile_all: { required: ["path"], optional: ["confirm"] },
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
     delete: { required: ["media", "path"], optional: ["confirm"] },
     undo_delete: { required: [], optional: [] },
