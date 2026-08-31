@@ -59,15 +59,12 @@ from hwpxfiller.application.field_binding_input import (
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.application.preview_requirement import PreviewNotRequired, PreviewRequired
 from hwpxfiller.domain.field_binding import (
-    DATE,
-    DECIMAL,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     SOURCE,
     FieldBindingInputIntegrityError,
     FieldBindingRule,
 )
-from hwpxfiller.domain.raw_data_record import source_value_type_of
+from hwpxfiller.domain.raw_data_record import SourceText
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.application.slot_configuration_projection import (
     HAS_BROKEN_SELECTIONS,
@@ -153,7 +150,7 @@ def _wire_source_plan(ctrl: JobController) -> None:
         "field_id": "f_name",
         "expected_active_occurrence_count": 1,
         "value_expression": encode_value_expression(
-            FromSource("name", EXACT_TEXT, None, "document-content-value/v1")
+            FromSource("name", None, "document-content-value/v1")
         ),
     }
     plan = dataclasses.replace(
@@ -234,9 +231,7 @@ def test_selected_record_capture_preserves_order_and_never_rereads_source(
             raise AssertionError(f"mutable source reread: {name}")
 
     ctrl.datasource = NoReadSource()
-    generation, indices, snapshots = ctrl._capture_current_selected_records(
-        fresh.sealed_plan_value
-    )
+    generation, indices, snapshots = ctrl._capture_current_selected_records()
     assert generation == ctrl._snapshot_gen
     assert indices == (2, 1, 0)
     assert [snapshot.value_for("name").text for snapshot in snapshots] == ["C", "B", "A"]
@@ -266,11 +261,12 @@ def test_generation_move_rejects_mixed_capture(
 
     monkeypatch.setattr(screen_job_module, "build_raw_record_snapshot", moving_capture)
     with pytest.raises(ValueError, match="다시 불러와져"):
-        ctrl._capture_current_selected_records(fresh.sealed_plan_value)
+        ctrl._capture_current_selected_records()
     assert ctrl._current_record_preparation is None
 
 
-def test_capture_uses_current_declared_date_and_decimal_types(tmp_path: Path) -> None:
+def test_capture_freezes_every_column_as_untyped_text(tmp_path: Path) -> None:
+    """구 date/amount 열의 표시형 값도 해석 없이 그대로 언다 — 통과에 열 이름이 필요 없다."""
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
     fresh = ctrl._last_fresh_observation
@@ -280,13 +276,10 @@ def test_capture_uses_current_declared_date_and_decimal_types(tmp_path: Path) ->
             'field_id': field_id,
             'expected_active_occurrence_count': 1,
             'value_expression': encode_value_expression(
-                FromSource(source_key, value_type, None, 'document-content-value/v1')
+                FromSource(source_key, None, 'document-content-value/v1')
             ),
         }
-        for field_id, source_key, value_type in (
-            ('f_amount', 'amount', DECIMAL),
-            ('f_date', 'date', DATE),
-        )
+        for field_id, source_key in (('f_amount', 'amount'), ('f_date', 'date'))
     )
     plan = dataclasses.replace(
         fresh.sealed_plan_value, active_field_requirements=requirements
@@ -294,17 +287,15 @@ def test_capture_uses_current_declared_date_and_decimal_types(tmp_path: Path) ->
     ctrl._last_fresh_observation = dataclasses.replace(
         fresh, sealed_plan_value=plan
     )
-    _mount_rows(ctrl, [{'amount': '1500.00', 'date': '2026-08-19'}])
+    _mount_rows(ctrl, [{'amount': '1,500,000', 'date': '계약 후 90일 이내'}])
 
-    _, _, snapshots = ctrl._capture_current_selected_records(plan)
-    amount = snapshots[0].value_for('amount')
-    date = snapshots[0].value_for('date')
-    assert amount is not None and source_value_type_of(amount) == DECIMAL
-    assert date is not None and source_value_type_of(date) == DATE
+    _, _, snapshots = ctrl._capture_current_selected_records()
+    assert snapshots[0].value_for('amount') == SourceText('1,500,000')
+    assert snapshots[0].value_for('date') == SourceText('계약 후 90일 이내')
     assert _zone(ctrl)['record_validation']['validated_count'] == 1
 
 
-def test_shared_source_column_is_interpreted_per_current_requirement(
+def test_shared_source_column_reaches_every_requirement_verbatim(
     tmp_path: Path,
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
@@ -316,13 +307,10 @@ def test_shared_source_column_is_interpreted_per_current_requirement(
             'field_id': field_id,
             'expected_active_occurrence_count': 1,
             'value_expression': encode_value_expression(
-                FromSource('value', value_type, None, 'document-content-value/v1')
+                FromSource('value', None, 'document-content-value/v1')
             ),
         }
-        for field_id, value_type in (
-            ('f_text', EXACT_TEXT),
-            ('f_decimal', DECIMAL),
-        )
+        for field_id in ('f_text', 'f_decimal')
     )
     plan = dataclasses.replace(
         fresh.sealed_plan_value, active_field_requirements=requirements
@@ -1113,7 +1101,7 @@ def test_path_occupancy_classifies_symlink_without_following_it(
     assert observation.occupied_entries[0].kind == screen_job_module.NON_REGULAR
 
 
-def test_inactive_typed_filename_uses_frozen_record_without_source_reread(
+def test_inactive_filename_uses_frozen_record_without_source_reread(
     tmp_path: Path,
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
@@ -1128,7 +1116,6 @@ def test_inactive_typed_filename_uses_frozen_record_without_source_reread(
         binding_kind=SOURCE,
         document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
         source_key="typed_date",
-        value_type=DATE,
     )
     current_binding = build_field_binding_input(
         workspace_instance_id=binding.workspace_instance_id,

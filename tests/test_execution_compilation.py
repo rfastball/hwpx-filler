@@ -94,7 +94,6 @@ from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     EXACT_BLANK_POLICY,
-    EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
     ExactText,
@@ -304,7 +303,6 @@ def _rules(*, name_key="이름", drop=(), extra=()):
             binding_kind=SOURCE,
             document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
             source_key=name_key,
-            value_type=EXACT_TEXT,
             format_code="",
         ),
         "주소": FieldBindingRule(
@@ -323,7 +321,6 @@ def _rules(*, name_key="이름", drop=(), extra=()):
             binding_kind=SOURCE,
             document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
             source_key="금액열",
-            value_type=EXACT_TEXT,
         ),
     }
     return tuple(r for fid, r in base.items() if fid not in drop) + tuple(extra)
@@ -537,7 +534,8 @@ def test_source_constant_blank_positive():
     assert isinstance(result, QualifiedExecutionCompilation)
     by_field = {r.field_id: r.value_expression for r in result.active_field_requirements}
     assert isinstance(by_field["성명"], FromSource)
-    assert by_field["성명"].source_key == "이름" and by_field["성명"].value_type == EXACT_TEXT
+    assert by_field["성명"].source_key == "이름"
+    assert not hasattr(by_field["성명"], "value_type")
     assert isinstance(by_field["주소"], ConstantValue)
     assert isinstance(by_field["주소"].canonical_value, ExactText)
     assert isinstance(by_field["항목"], IntentionalBlank)
@@ -576,7 +574,6 @@ def test_inactive_binding_error_nonblocking():
             binding_kind=r.binding_kind,
             document_content_value_policy=r.document_content_value_policy,
             source_key="비존재열" if r.field_id == "금액" else r.source_key,
-            value_type=r.value_type,
             format_code=r.format_code,
             canonical_constant_value=r.canonical_constant_value,
         )
@@ -589,35 +586,28 @@ def test_inactive_binding_error_nonblocking():
     assert "금액" not in {r.field_id for r in result.active_field_requirements}
 
 
-def test_constant_value_types_encode_in_payload():
-    # 각 CanonicalBindingValue 변형이 semantic payload 로 encode 됨(literal 보존).
-    from hwpxfiller.application.execution_compilation import _encode_canonical_value
-    from hwpxfiller.domain.field_binding import (
-        BOOLEAN,
-        DATE,
-        DATETIME,
-        DECIMAL,
-        CanonicalBoolean,
-        CanonicalDate,
-        CanonicalDateTime,
-        CanonicalDecimal,
+def test_value_expressions_carry_no_value_type_slot():
+    """v2 payload: 고정값은 tagged text 하나, FROM_SOURCE 는 value_type 키가 없다."""
+    from hwpxfiller.application.execution_compilation import (
+        _encode_canonical_value,
+        encode_value_expression,
     )
 
-    assert _encode_canonical_value(CanonicalDecimal("1.50")) == {
-        "value_type": DECIMAL,
-        "literal": "1.50",
+    assert _encode_canonical_value(ExactText("1,500")) == {"kind": "TEXT", "text": "1,500"}
+    assert _encode_canonical_value(ExactText("")) == {"kind": "TEXT", "text": ""}
+    assert encode_value_expression(FromSource("열", None, "document-content-value/v1")) == {
+        "kind": "FROM_SOURCE",
+        "source_key": "열",
+        "format_code": None,
+        "document_content_value_policy_id": "document-content-value/v1",
     }
-    assert _encode_canonical_value(CanonicalDate("2026-08-16")) == {
-        "value_type": DATE,
-        "literal": "2026-08-16",
-    }
-    assert _encode_canonical_value(CanonicalDateTime("2026-08-16T00:00:00+09:00")) == {
-        "value_type": DATETIME,
-        "literal": "2026-08-16T00:00:00+09:00",
-    }
-    assert _encode_canonical_value(CanonicalBoolean(True)) == {
-        "value_type": BOOLEAN,
-        "literal": True,
+    assert encode_value_expression(
+        ConstantValue(ExactText("고정"), None, "document-content-value/v1")
+    ) == {
+        "kind": "CONSTANT",
+        "canonical_value": {"kind": "TEXT", "text": "고정"},
+        "format_code": None,
+        "document_content_value_policy_id": "document-content-value/v1",
     }
 
 

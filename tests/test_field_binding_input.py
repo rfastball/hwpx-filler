@@ -30,7 +30,6 @@ from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
     ExactText,
@@ -46,7 +45,7 @@ NOW = "2026-01-01T00:00:00+09:00"
 
 
 def _rule(field_id: str, key: str = "name") -> FieldBindingRule:
-    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key, value_type=EXACT_TEXT)
+    return FieldBindingRule(field_id, SOURCE, POLICY, source_key=key)
 
 
 def _input(
@@ -95,14 +94,14 @@ def test_revision_rejects_tampered_identity_and_digest() -> None:
             base_template_application_id="A17",
             field_binding_authority_revision=field_binding_authority_revision_identity(
                 work_authority_id=WORK, base_template_application_id="A17",
-                field_binding_semantic_contract_id="field-binding/v1",
-                source_schema_contract_id="source-schema/v1",
+                field_binding_semantic_contract_id="field-binding/v2",
+                source_schema_contract_id="source-schema/v2",
                 raw_record_contract_id="raw-record/v1",
                 canonical_binding_digest=inp.canonical_binding_digest,
                 canonical_source_schema_digest=inp.canonical_source_schema_digest,
             ),
-            field_binding_semantic_contract_id="field-binding/v1",
-            source_schema_contract_id="source-schema/v1",
+            field_binding_semantic_contract_id="field-binding/v2",
+            source_schema_contract_id="source-schema/v2",
             raw_record_contract_id="raw-record/v1",
             binding_rules=inp.binding_rules,
             source_schema_keys=inp.source_schema_keys,
@@ -128,7 +127,7 @@ def test_input_integrity_digest_and_contract_checks() -> None:
     with pytest.raises(FieldBindingInputIntegrityError):
         replace(inp, canonical_source_schema_digest="sha256:nope")
     with pytest.raises(UnsupportedFieldBindingContractError):
-        replace(inp, field_binding_semantic_contract_id="field-binding/v2")
+        replace(inp, field_binding_semantic_contract_id="field-binding/v1")
     with pytest.raises(FieldBindingInputIntegrityError):
         replace(inp, base_template_application_id="")
 
@@ -246,8 +245,8 @@ def test_revision_rejects_unsupported_contract_on_reconstruction() -> None:
     inp = _input()
     identity = field_binding_authority_revision_identity(
         work_authority_id=WORK, base_template_application_id="A17",
-        field_binding_semantic_contract_id="field-binding/v2",
-        source_schema_contract_id="source-schema/v1",
+        field_binding_semantic_contract_id="field-binding/v3",
+        source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         canonical_binding_digest=inp.canonical_binding_digest,
         canonical_source_schema_digest=inp.canonical_source_schema_digest,
@@ -256,8 +255,8 @@ def test_revision_rejects_unsupported_contract_on_reconstruction() -> None:
         FieldBindingRevision(
             work_authority_id=WORK, base_template_application_id="A17",
             field_binding_authority_revision=identity,
-            field_binding_semantic_contract_id="field-binding/v2",
-            source_schema_contract_id="source-schema/v1",
+            field_binding_semantic_contract_id="field-binding/v3",
+            source_schema_contract_id="source-schema/v2",
             raw_record_contract_id="raw-record/v1",
             binding_rules=inp.binding_rules, source_schema_keys=inp.source_schema_keys,
             canonical_binding_digest=inp.canonical_binding_digest,

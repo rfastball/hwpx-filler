@@ -164,7 +164,7 @@ def test_runtime_conformance_manifest_missing_is_fail_closed() -> None:
             materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
             native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
             composition_contract_id=COMPOSITION_CONTRACT_ID,
-            plan_schema_version="hwpx-execution-plan/v1",
+            plan_schema_version="hwpx-execution-plan/v2",
             canonical_encoding_version=CANONICAL_ENCODING_VERSION,
         )
 

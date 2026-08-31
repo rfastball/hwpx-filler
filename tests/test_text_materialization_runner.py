@@ -78,7 +78,6 @@ def _plan(
                 "value_expression": {
                     "kind": "FROM_SOURCE",
                     "source_key": "부서",
-                    "value_type": "EXACT_TEXT",
                     "document_content_value_policy_id": policy_id,
                 },
             },

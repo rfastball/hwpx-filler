@@ -470,7 +470,6 @@ def _rule_from_candidate(
         binding_kind=candidate.binding_kind,
         document_content_value_policy=resolve_policy(candidate.proposed_policy_id),
         source_key=candidate.source_key,
-        value_type=candidate.value_type,
         format_code=candidate.format_code,
         canonical_constant_value=candidate.canonical_constant_value,
     )

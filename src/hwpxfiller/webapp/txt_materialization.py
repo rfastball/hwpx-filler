@@ -43,21 +43,9 @@ from ..application.record_validation import (
 )
 from ..domain.raw_data_record import (
     RawRecordCaptureProvenance,
-    SourceBoolean,
-    SourceDate,
-    SourceDateTime,
-    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
-)
-from ..domain.field_binding import (
-    BOOLEAN,
-    DATE,
-    DATETIME,
-    DECIMAL,
-    EXACT_TEXT,
-    FieldBindingError,
 )
 from ..external.job_store import JobRegistry
 from ..external.materialization_conformance_vocabulary import (
@@ -93,51 +81,18 @@ class TxtMaterializationRefused:
 TxtMaterializationResult = MaterializedDocumentBytes | TxtMaterializationRefused
 
 
-def _source_value(value: object, declared_type: "str | None"):
-    """데이터 열 값 하나를 exact tagged scalar 로 고정한다(「문서 만들기」 capture 와 동형).
+def _source_value(value: object):
+    """데이터 열 값 하나를 exact source 값으로 고정한다(「문서 만들기」 capture 와 동형).
 
-    선언 유형으로 해석해 보되 실패하면 **텍스트로 낮춘다** — 여기서 raise 하면 열 하나의
-    형식 때문에 복사 전체가 사유 없이 죽는다. 형식 불일치의 판정은 record validation 이
-    blocker 로 시끄럽게 진다(같은 상태를 두 곳이 판정하지 않는다).
+    소스 값은 언제나 타입 없는 텍스트다 — 해석하지 않는다. 문자열이 아닌 값(숫자·날짜 객체 등)의
+    ``str`` 승격은 타입 축과 무관한 **캡처 관용**이라 그대로 둔다: 여기서 raise 하면 열 하나의
+    표현 때문에 복사 전체가 사유 없이 죽는다.
     """
     if value is None:
         return SourceNull()
     if not isinstance(value, str):
         value = str(value)
-    if declared_type in (None, EXACT_TEXT):
-        return SourceText(value)
-    try:
-        if declared_type == DECIMAL:
-            return SourceDecimal(value)
-        if declared_type == DATE:
-            return SourceDate(value)
-        if declared_type == DATETIME:
-            return SourceDateTime(value)
-        if declared_type == BOOLEAN and value in ("TRUE", "FALSE"):
-            return SourceBoolean(value == "TRUE")
-    except FieldBindingError:
-        return SourceText(value)
     return SourceText(value)
-
-
-def _declared_source_types(
-    plan: SealedExecutionPlanSemanticPayload,
-) -> "dict[str, str]":
-    """Plan 이 요구하는 source key → value type. 한 열을 두 유형이 요구하면 텍스트로 낮춘다."""
-    declared: "dict[str, str]" = {}
-    for requirement in plan.active_field_requirements:
-        expression = requirement.get("value_expression")
-        if not isinstance(expression, Mapping):
-            continue
-        source_key = expression.get("source_key")
-        value_type = expression.get("value_type")
-        if not isinstance(source_key, str) or not isinstance(value_type, str):
-            continue
-        existing = declared.get(source_key)
-        declared[source_key] = (
-            EXACT_TEXT if existing is not None and existing != value_type else value_type
-        )
-    return declared
 
 
 class TxtMaterializationService:
@@ -219,7 +174,7 @@ class TxtMaterializationService:
         # 3. VDR — record 자격 판정은 record_validation 소유다(여기서 재조립 0).
         validated_at = self._clock().isoformat(timespec="seconds")
         try:
-            snapshot = self._capture(record, plan, validated_at)
+            snapshot = self._capture(record, validated_at)
         except ValueError as exc:
             return TxtMaterializationRefused(RECORD_CAPTURE_FAILED, str(exc))
         validated = validate_data_record_against_plan(
@@ -269,19 +224,12 @@ class TxtMaterializationService:
             return TxtMaterializationRefused(result.code, result.detail)
         return result
 
-    def _capture(
-        self,
-        record: Mapping[str, object],
-        plan: SealedExecutionPlanSemanticPayload,
-        captured_at: str,
-    ):
-        declared = _declared_source_types(plan)
+    def _capture(self, record: Mapping[str, object], captured_at: str):
         keys = tuple(str(key) for key in record)
         return build_raw_record_snapshot(
             source_schema_keys=keys,
             source_values=[
-                (str(key), _source_value(value, declared.get(str(key))))
-                for key, value in record.items()
+                (str(key), _source_value(value)) for key, value in record.items()
             ],
             record_identity=f"workbench-record/{captured_at}/{len(keys)}",
             capture_provenance=RawRecordCaptureProvenance(

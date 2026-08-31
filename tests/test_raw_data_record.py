@@ -1,7 +1,8 @@
 """S5-12(#708) RawDataRecordSnapshot·CanonicalSourceValue·RecordReviewEvidence 도메인 검증.
 
-순수 층: exact tagged scalar 보존·MISSING/NULL/empty/space 구분·duplicate-key 경계·삽입순서
+순수 층: exact text 보존·MISSING/NULL/empty/space 구분·duplicate-key 경계·삽입순서
 무관 digest·UTF-8 key 정렬·review basis 결속. 값·codec·digest 만 본다(Plan validation 은 형제 파일).
+값 알파벳은 v2 에서 두 변형(TEXT·NULL)뿐이다 — 구 타입 태그는 fail-closed 로 거절한다.
 """
 
 from __future__ import annotations
@@ -18,10 +19,6 @@ from hwpxfiller.domain.raw_data_record import (
     RawRecordDuplicateKeyError,
     RawRecordIntegrityError,
     RecordReviewEvidenceIntegrityError,
-    SourceBoolean,
-    SourceDate,
-    SourceDateTime,
-    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
@@ -29,7 +26,6 @@ from hwpxfiller.domain.raw_data_record import (
     compute_review_basis_digest,
     decode_source_value,
     encode_source_value,
-    source_value_type_of,
     verify_raw_record_snapshot,
     verify_record_review_evidence_integrity,
 )
@@ -49,7 +45,7 @@ def _snap(pairs, *, keys=None, identity="rec-1"):
     )
 
 
-# ─── exact tagged scalar 보존 ────────────────────────────────────────────────────────────
+# ─── exact text 보존 ────────────────────────────────────────────────────────────────────
 def test_source_text_preserves_whitespace_and_nfc_nfd() -> None:
     nfc = "é"  # é 합성
     nfd = "é"  # é 분해 — NFC 와 다른 scalar sequence
@@ -63,22 +59,24 @@ def test_source_text_preserves_whitespace_and_nfc_nfd() -> None:
     assert encode_source_value(snap.value_for("b")) != encode_source_value(snap.value_for("c"))
 
 
-def test_scalar_types_positive() -> None:
-    snap = _snap(
-        [
-            ("t", SourceText("x")),
-            ("d", SourceDecimal("1.50")),
-            ("day", SourceDate("2026-01-02")),
-            ("dt", SourceDateTime("2026-01-02T03:04:05+09:00")),
-            ("b", SourceBoolean(True)),
-            ("n", SourceNull()),
-        ]
-    )
-    assert source_value_type_of(snap.value_for("d")) == "DECIMAL"
-    assert source_value_type_of(snap.value_for("n")) == "NULL"
-    assert encode_source_value(SourceDecimal("1.50")) == {"value_type": "DECIMAL", "literal": "1.50"}
-    assert encode_source_value(SourceNull()) == {"value_type": "NULL"}
-    assert encode_source_value(SourceBoolean(False)) == {"value_type": "BOOLEAN", "literal": False}
+def test_value_alphabet_has_two_variants() -> None:
+    """소스 값은 언제나 타입 없는 텍스트 아니면 explicit null 이다(v2)."""
+    import hwpxfiller.domain.raw_data_record as rr
+
+    for gone in (
+        "SourceDecimal",
+        "SourceDate",
+        "SourceDateTime",
+        "SourceBoolean",
+        "source_value_type_of",
+        "SOURCE_NULL_TYPE",
+    ):
+        assert not hasattr(rr, gone), gone
+    snap = _snap([("t", SourceText("1,000,000")), ("n", SourceNull())])
+    assert snap.value_for("t").text == "1,000,000"  # 표시형도 그냥 텍스트
+    assert isinstance(snap.value_for("n"), SourceNull)
+    assert encode_source_value(SourceText("1.50")) == {"kind": "TEXT", "text": "1.50"}
+    assert encode_source_value(SourceNull()) == {"kind": "NULL"}
 
 
 def test_missing_null_empty_space_are_four_distinct_states() -> None:
@@ -92,18 +90,14 @@ def test_missing_null_empty_space_are_four_distinct_states() -> None:
     assert snap.value_for("space").text == " "
     enc = snap.semantic_payload_encoded["source_values"]
     tagged = {e["source_key"]: e["tagged_value"] for e in enc}
-    assert tagged["null"] == {"value_type": "NULL"}
-    assert tagged["empty"] == {"value_type": "EXACT_TEXT", "literal": ""}
-    assert tagged["space"] == {"value_type": "EXACT_TEXT", "literal": " "}
+    assert tagged["null"] == {"kind": "NULL"}
+    assert tagged["empty"] == {"kind": "TEXT", "text": ""}
+    assert tagged["space"] == {"kind": "TEXT", "text": " "}
 
 
-def test_nan_infinity_implicit_timezone_rejected() -> None:
+def test_lone_surrogate_source_text_rejected() -> None:
     with pytest.raises(FieldBindingInputIntegrityError):
-        SourceDecimal("NaN")
-    with pytest.raises(FieldBindingInputIntegrityError):
-        SourceDecimal("Infinity")
-    with pytest.raises(FieldBindingInputIntegrityError):
-        SourceDateTime("2026-01-02T03:04:05")  # timezone offset 없음
+        SourceText("\ud800")
 
 
 def test_non_canonical_source_value_rejected() -> None:
@@ -198,23 +192,29 @@ def test_source_value_encode_decode_round_trip() -> None:
     for v in (
         SourceText("  x\n"),
         SourceText(""),
-        SourceDecimal("1.50"),
-        SourceDate("2026-01-02"),
-        SourceDateTime("2026-01-02T03:04:05+09:00"),
-        SourceBoolean(True),
-        SourceBoolean(False),
+        SourceText("2026.8.31"),
         SourceNull(),
     ):
         assert decode_source_value(encode_source_value(v)) == v
 
 
-def test_decode_rejects_unknown_type_and_tampered_literal() -> None:
+def test_decode_rejects_legacy_typed_tags_and_malformed_text() -> None:
+    # 구 태그(value_type 기반)는 v2 로 풀지 않는다 — 어떤 의미로 봉인됐는지 모르는 값이다.
+    for legacy in (
+        {"value_type": "EXACT_TEXT", "literal": "x"},
+        {"value_type": "DECIMAL", "literal": "1.50"},
+        {"value_type": "NULL"},
+        {"kind": "EXACT_TEXT", "text": "x"},
+        {"kind": "DECIMAL", "literal": "1.50"},
+        {"kind": "MONEY", "text": "1"},
+        {},
+    ):
+        with pytest.raises(RawRecordIntegrityError):
+            decode_source_value(legacy)
     with pytest.raises(RawRecordIntegrityError):
-        decode_source_value({"value_type": "MONEY", "literal": "1"})
+        decode_source_value({"kind": "TEXT", "text": 1})  # 문자열 아님
     with pytest.raises(RawRecordIntegrityError):
-        decode_source_value({"value_type": "DECIMAL", "literal": "NaN"})  # 생성자 검증 실패
-    with pytest.raises(RawRecordIntegrityError):
-        decode_source_value({"value_type": "BOOLEAN", "literal": "true"})  # bool 아님
+        decode_source_value({"kind": "TEXT"})  # text 부재
 
 
 def test_verify_detects_divergent_values_keeping_digest() -> None:

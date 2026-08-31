@@ -73,7 +73,7 @@ def test_default_runtime_conformance_registry_is_empty_until_s6() -> None:
         materialization_base_contract_id="applied-template-candidate-base/v1",
         native_primitive_contract_id="hwpx-native-primitive/v1",
         composition_contract_id="hwpx-composition/v1",
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version="canonical-execution-encoding/v1",
     )
 

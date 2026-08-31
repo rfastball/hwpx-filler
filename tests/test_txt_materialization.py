@@ -291,51 +291,18 @@ def test_slotless_workbench_copy_is_byte_identical_to_the_legacy_path(
 
 
 # ── 순수 helper: capture 성형과 사유 재진술 ────────────────────────────────────
-def test_source_value_capture_downgrades_unparsable_values_to_text() -> None:
-    """열 하나의 형식 때문에 복사 전체가 사유 없이 죽지 않는다 — 판정은 record validation 소유."""
-    from hwpxfiller.domain.raw_data_record import (
-        SourceBoolean,
-        SourceDate,
-        SourceDateTime,
-        SourceDecimal,
-        SourceNull,
-        SourceText,
-    )
+def test_source_value_capture_freezes_every_column_as_untyped_text() -> None:
+    """소스 값은 언제나 타입 없는 텍스트다 — 해석은 없고, str 승격 관용만 남는다."""
+    import hwpxfiller.webapp.txt_materialization as txt
+    from hwpxfiller.domain.raw_data_record import SourceNull, SourceText
     from hwpxfiller.webapp.txt_materialization import _source_value
 
-    assert isinstance(_source_value(None, "EXACT_TEXT"), SourceNull)
-    assert isinstance(_source_value(12, None), SourceText)          # 비문자열은 문자열화
-    assert isinstance(_source_value("값", "EXACT_TEXT"), SourceText)
-    assert isinstance(_source_value("12.5", "DECIMAL"), SourceDecimal)
-    assert isinstance(_source_value("2026-08-25", "DATE"), SourceDate)
-    assert isinstance(
-        _source_value("2026-08-25T09:00:00+09:00", "DATETIME"), SourceDateTime
-    )
-    assert isinstance(_source_value("TRUE", "BOOLEAN"), SourceBoolean)
-    # 해석 실패·미지 유형은 시끄럽게 죽지 않고 텍스트로 낮춘다.
-    assert isinstance(_source_value("숫자아님", "DECIMAL"), SourceText)
-    assert isinstance(_source_value("예", "BOOLEAN"), SourceText)
-    assert isinstance(_source_value("값", "UNKNOWN_TYPE"), SourceText)
-
-
-def test_declared_source_types_downgrades_a_column_two_types_disagree_on() -> None:
-    from types import SimpleNamespace
-
-    from hwpxfiller.webapp.txt_materialization import _declared_source_types
-
-    def _req(field_id, expression):
-        return {"field_id": field_id, "value_expression": expression}
-
-    plan = SimpleNamespace(
-        active_field_requirements=(
-            _req("a", {"source_key": "열", "value_type": "DECIMAL"}),
-            _req("b", {"source_key": "열", "value_type": "DATE"}),
-            _req("c", {"source_key": "다른열", "value_type": "DATE"}),
-            _req("d", {"kind": "INTENTIONAL_BLANK"}),   # source_key 없음 — 건너뛴다
-            _req("e", "형식 불량"),                      # 매핑 아님 — 건너뛴다
-        )
-    )
-    assert _declared_source_types(plan) == {"열": "EXACT_TEXT", "다른열": "DATE"}
+    assert not hasattr(txt, "_declared_source_types")
+    assert _source_value(None) == SourceNull()
+    assert _source_value(12) == SourceText("12")  # 비문자열은 문자열화(캡처 관용)
+    assert _source_value("12.5") == SourceText("12.5")
+    assert _source_value("계약 후 90일 이내") == SourceText("계약 후 90일 이내")
+    assert _source_value("1,000,000") == SourceText("1,000,000")
 
 
 def test_blocked_detail_restates_each_upstream_outcome_shape() -> None:

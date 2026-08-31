@@ -80,7 +80,7 @@ from hwpxfiller.domain.canonical_execution_encoding import (
 
 COMMAND_SCHEMA_VERSION = "seal-execution-plan-command/v1"
 # 지원 plan schema(latest fallback 없음 — unknown 은 시끄럽게 닫는다).
-SUPPORTED_PLAN_SCHEMAS = ("hwpx-execution-plan/v1",)
+SUPPORTED_PLAN_SCHEMAS = ("hwpx-execution-plan/v2",)
 
 # stale reason 어휘(S5-07 store 가 강제하는 두 값과 결속).
 STALE_DIGEST_MISMATCH = "DIGEST_MISMATCH"

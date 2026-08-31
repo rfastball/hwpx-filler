@@ -49,7 +49,6 @@ from hwpxfiller.application.record_validation import (
     RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR,
     RECORD_REVIEW_EVIDENCE_STALE,
     RECORD_REVIEW_REQUIRED,
-    RECORD_VALUE_TYPE_INVALID,
     UNSUPPORTED_BINDING_VALUE_CONTRACT,
     UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
     UNSUPPORTED_RAW_RECORD_CONTRACT,
@@ -69,16 +68,9 @@ from hwpxfiller.application.record_validation import (
     verify_validated_record_completeness,
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
-from hwpxfiller.domain.field_binding import (
-    BOOLEAN,
-    DECIMAL,
-    EXACT_TEXT,
-    ExactText,
-)
+from hwpxfiller.domain.field_binding import ExactText
 from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
-    SourceBoolean,
-    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
@@ -92,12 +84,12 @@ _PROV = RawRecordCaptureProvenance(
 )
 
 
-# ─── Plan builders(real value types) ────────────────────────────────────────────────────
+# ─── Plan builders(모든 소스 값은 타입 없는 텍스트) ──────────────────────────────────────
 def _rules():
     return (
-        EffectiveFieldBindingRule("f_name", "SOURCE", FromSource("name", EXACT_TEXT, None, _POLICY_ID)),
-        EffectiveFieldBindingRule("f_amount", "SOURCE", FromSource("amount", DECIMAL, None, _POLICY_ID)),
-        EffectiveFieldBindingRule("f_flag", "SOURCE", FromSource("flag", BOOLEAN, None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_name", "SOURCE", FromSource("name", None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_amount", "SOURCE", FromSource("amount", None, _POLICY_ID)),
+        EffectiveFieldBindingRule("f_flag", "SOURCE", FromSource("flag", None, _POLICY_ID)),
         EffectiveFieldBindingRule(
             "f_const", "CONSTANT", ConstantValue(ExactText("보증금"), None, _POLICY_ID)
         ),
@@ -108,11 +100,11 @@ def _rules():
 def _contracts(**over):
     kw = dict(
         slot_selection_contract_id="slot-selection/v1",
-        field_binding_contract_id="field-binding/v1",
-        source_schema_contract_id="source-schema/v1",
+        field_binding_contract_id="field-binding/v2",
+        source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         execution_semantic_contract_id="execution-semantics/v1",
-        binding_value_contract_id="binding-value/v1",
+        binding_value_contract_id="binding-value/v2",
         document_value_resolution_contract_id="document-content-value/v1",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
@@ -180,15 +172,15 @@ def _plan(basis=None):
         execution_basis=basis or _basis(),
         active_field_requirements=requirements,
         ordered_operations=operations,
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
     )
 
 
 def _snapshot(pairs=None, *, identity="rec-1"):
     pairs = pairs if pairs is not None else [
         ("name", SourceText("홍길동")),
-        ("amount", SourceDecimal("1500.00")),
-        ("flag", SourceBoolean(True)),
+        ("amount", SourceText("1500.00")),
+        ("flag", SourceText("TRUE")),
         ("extra", SourceText("unused")),  # schema 밖 key 도 보존(무영향)
     ]
     return build_raw_record_snapshot(
@@ -248,26 +240,18 @@ def test_current_value_validator_has_no_legacy_plan_identity_or_review_authority
     ("pairs", "expected"),
     [
         (
-            [("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))],
+            [("amount", SourceText("1")), ("flag", SourceText("TRUE"))],
             RECORD_REQUIRED_VALUE_MISSING,
         ),
         (
-            [("name", SourceNull()), ("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))],
+            [("name", SourceNull()), ("amount", SourceText("1")), ("flag", SourceText("TRUE"))],
             RECORD_EXPLICIT_NULL_NOT_ALLOWED,
         ),
         (
             [
-                ("name", SourceText("ok")),
-                ("amount", SourceText("1")),
-                ("flag", SourceBoolean(True)),
-            ],
-            RECORD_VALUE_TYPE_INVALID,
-        ),
-        (
-            [
                 ("name", SourceText(" ")),
-                ("amount", SourceDecimal("1")),
-                ("flag", SourceBoolean(True)),
+                ("amount", SourceText("1")),
+                ("flag", SourceText("TRUE")),
             ],
             RECORD_BLANK_POLICY_VIOLATION,
         ),
@@ -321,9 +305,9 @@ def test_happy_path_exact_logical_text_all_kinds() -> None:
     assert isinstance(vdr, ValidatedDataRecord)
     values = dict(vdr.document_values_in_order())
     assert values == {
-        "f_name": "홍길동",       # SOURCE EXACT_TEXT
-        "f_amount": "1500.00",   # SOURCE DECIMAL — literal 보존(float 아님)
-        "f_flag": "true",        # SOURCE BOOLEAN — canonical lexical
+        "f_name": "홍길동",       # SOURCE — exact text
+        "f_amount": "1500.00",   # SOURCE — 값을 해석하지 않고 그대로 나른다
+        "f_flag": "TRUE",        # SOURCE — 원문 그대로(canonical lexical 변환 0)
         "f_const": "보증금",      # CONSTANT
         "f_blank": "",           # INTENTIONAL_BLANK — exact empty logical text
     }
@@ -332,13 +316,13 @@ def test_happy_path_exact_logical_text_all_kinds() -> None:
 def test_source_text_no_implicit_trim() -> None:
     snap = _snapshot([
         ("name", SourceText("  spaced  ")),
-        ("amount", SourceDecimal("1")),
-        ("flag", SourceBoolean(False)),
+        ("amount", SourceText("1")),
+        ("flag", SourceText("FALSE")),
     ])
     vdr = _validate(snapshot=snap)
     assert isinstance(vdr, ValidatedDataRecord)
     assert dict(vdr.document_values_in_order())["f_name"] == "  spaced  "
-    assert dict(vdr.document_values_in_order())["f_flag"] == "false"
+    assert dict(vdr.document_values_in_order())["f_flag"] == "FALSE"
 
 
 def test_legacy_strip_policy_strips_whitespace() -> None:
@@ -364,7 +348,7 @@ def test_legacy_strip_policy_strips_whitespace() -> None:
             "value_expression": encode_value_expression(rules[0].value_expression),
         }],
         ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": "f_const"}],
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
     )
     vdr = _validate(plan=plan, snapshot=_snapshot([("name", SourceText("unused"))]))
     assert isinstance(vdr, ValidatedDataRecord)
@@ -374,8 +358,8 @@ def test_legacy_strip_policy_strips_whitespace() -> None:
 def test_document_value_is_logical_unescaped_text() -> None:
     snap = _snapshot([
         ("name", SourceText("a<b>&\"'")),  # XML 특수문자가 escaping 없이 그대로.
-        ("amount", SourceDecimal("1")),
-        ("flag", SourceBoolean(True)),
+        ("amount", SourceText("1")),
+        ("flag", SourceText("TRUE")),
     ])
     vdr = _validate(snapshot=snap)
     assert dict(vdr.document_values_in_order())["f_name"] == "a<b>&\"'"
@@ -383,7 +367,7 @@ def test_document_value_is_logical_unescaped_text() -> None:
 
 # ─── required missing/null/blank/type blockers ───────────────────────────────────────────
 def test_missing_required_value_blocks() -> None:
-    snap = _snapshot([("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))])
+    snap = _snapshot([("amount", SourceText("1")), ("flag", SourceText("TRUE"))])
     res = _validate(snapshot=snap)
     assert isinstance(res, RecordValidationBlocked)
     codes = {(b.code, b.field_id) for b in res.blockers}
@@ -393,8 +377,8 @@ def test_missing_required_value_blocks() -> None:
 def test_explicit_null_blocks() -> None:
     snap = _snapshot([
         ("name", SourceNull()),
-        ("amount", SourceDecimal("1")),
-        ("flag", SourceBoolean(True)),
+        ("amount", SourceText("1")),
+        ("flag", SourceText("TRUE")),
     ])
     res = _validate(snapshot=snap)
     assert isinstance(res, RecordValidationBlocked)
@@ -407,8 +391,8 @@ def test_explicit_null_blocks() -> None:
 def test_blank_source_text_blocks(text: str) -> None:
     snap = _snapshot([
         ("name", SourceText(text)),
-        ("amount", SourceDecimal("1")),
-        ("flag", SourceBoolean(True)),
+        ("amount", SourceText("1")),
+        ("flag", SourceText("TRUE")),
     ])
     res = _validate(snapshot=snap)
     assert isinstance(res, RecordValidationBlocked)
@@ -417,21 +401,51 @@ def test_blank_source_text_blocks(text: str) -> None:
     }
 
 
-def test_type_mismatch_blocks() -> None:
+def test_free_form_display_text_passes_every_source_field() -> None:
+    """#915 서사 반전 — 구 date/amount 열의 자유서식 텍스트가 blocker 0 으로 문서에 exact 도달."""
     snap = _snapshot([
-        ("name", SourceText("ok")),
-        ("amount", SourceText("not-a-decimal")),  # DECIMAL 요구 vs EXACT_TEXT
-        ("flag", SourceBoolean(True)),
+        ("name", SourceText("한국공사")),
+        ("amount", SourceText("금 오백만원")),
+        ("flag", SourceText("계약 후 90일 이내")),
     ])
     res = _validate(snapshot=snap)
+    assert isinstance(res, ValidatedDataRecord)
+    assert dict(res.document_values_in_order()) == {
+        "f_name": "한국공사",
+        "f_amount": "금 오백만원",
+        "f_flag": "계약 후 90일 이내",
+        "f_const": "보증금",
+        "f_blank": "",
+    }
+
+
+@pytest.mark.parametrize("field_id, key", [("f_amount", "amount"), ("f_flag", "flag")])
+@pytest.mark.parametrize("text", ["", " ", "\t\n"])
+def test_blank_guard_covers_every_source_field(field_id: str, key: str, text: str) -> None:
+    """구 typed 상당(amount·flag) 규칙에서도 빈/공백은 blank blocker 다(가드 보편화)."""
+    pairs = [("name", SourceText("ok")), ("amount", SourceText("1")), ("flag", SourceText("Y"))]
+    snap = _snapshot([(k, SourceText(text) if k == key else v) for k, v in pairs])
+    res = _validate(snapshot=snap)
     assert isinstance(res, RecordValidationBlocked)
-    assert (RECORD_VALUE_TYPE_INVALID, "f_amount") in {
+    assert (RECORD_BLANK_POLICY_VIOLATION, field_id) in {
         (b.code, b.field_id) for b in res.blockers
     }
 
 
+def test_blank_guard_does_not_disturb_whitespace_policy() -> None:
+    """blank 가드는 「전부 공백」만 막는다 — 값 안팎의 공백 보존 정책은 그대로다."""
+    snap = _snapshot([
+        ("name", SourceText("  가 나  ")),
+        ("amount", SourceText("1")),
+        ("flag", SourceText("Y")),
+    ])
+    res = _validate(snapshot=snap)
+    assert isinstance(res, ValidatedDataRecord)
+    assert dict(res.document_values_in_order())["f_name"] == "  가 나  "
+
+
 def test_multiple_blockers_deterministic_plan_order() -> None:
-    snap = _snapshot([("flag", SourceBoolean(True))])  # name·amount 둘 다 MISSING
+    snap = _snapshot([("flag", SourceText("TRUE"))])  # name·amount 둘 다 MISSING
     res = _validate(snapshot=snap)
     assert isinstance(res, RecordValidationBlocked)
     # Plan requirement 순서(f_name 먼저, f_amount 다음)로 정렬.
@@ -552,9 +566,9 @@ def test_actual_values_do_not_enter_plan_identity() -> None:
     d1 = plan_semantic_digest(plan)
     # 완전히 다른 row 값으로 VDR 두 개 — Plan digest 는 불변.
     a = _validate(plan=plan, snapshot=_snapshot([
-        ("name", SourceText("A")), ("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))]))
+        ("name", SourceText("A")), ("amount", SourceText("1")), ("flag", SourceText("TRUE"))]))
     b = _validate(plan=plan, snapshot=_snapshot([
-        ("name", SourceText("ZZZ")), ("amount", SourceDecimal("999")), ("flag", SourceBoolean(False))]))
+        ("name", SourceText("ZZZ")), ("amount", SourceText("999")), ("flag", SourceText("FALSE"))]))
     assert plan_semantic_digest(plan) == d1
     # 다른 값 → 다른 VDR digest(값은 VDR 에만 산다).
     assert a.validated_record_digest != b.validated_record_digest
@@ -637,7 +651,7 @@ def test_unsupported_raw_record_contract_is_context_error() -> None:
 def test_format_code_unsupported_is_context_error() -> None:
     rules = (
         EffectiveFieldBindingRule(
-            "f_name", "SOURCE", FromSource("name", EXACT_TEXT, "UPPER", _POLICY_ID)
+            "f_name", "SOURCE", FromSource("name", "UPPER", _POLICY_ID)
         ),
     )
     binding = EffectiveFieldBindingBasis(
@@ -655,7 +669,7 @@ def test_format_code_unsupported_is_context_error() -> None:
             "value_expression": encode_value_expression(rules[0].value_expression),
         }],
         ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": "f_name"}],
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
     )
     res = _validate(plan=plan, snapshot=_snapshot([("name", SourceText("x"))]))
     assert isinstance(res, RecordValidationContextError)
@@ -750,7 +764,7 @@ def test_unknown_blank_policy_rejected_not_treated_as_write_empty() -> None:
             "value_expression": encode_value_expression(rules[0].value_expression),
         }],
         ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": "f_blank"}],
-        plan_schema_version="hwpx-execution-plan/v1",
+        plan_schema_version="hwpx-execution-plan/v2",
     )
     assert _ctx(_validate(plan=plan, snapshot=_snapshot([("name", SourceText("x"))]))) == (
         UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT

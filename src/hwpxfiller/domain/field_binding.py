@@ -1,9 +1,14 @@
 """S5 Field Binding 의미 언어 — 값·소스 스키마·바인딩 규칙 계약 (S5-01 · #697).
 
-이 모듈이 소유하는 것: ``binding-value/v1`` 타입 값 모델(:class:`CanonicalBindingValue`
-합타입), ``source-schema/v1`` exact key 계약, ``field-binding/v1`` 규칙 semantic 모델과
-exclusivity 불변식, ``document-content-value/v1`` 값 정책, Intentional Blank 의미,
+이 모듈이 소유하는 것: ``binding-value/v2`` 값 모델(:class:`CanonicalBindingValue` — exact
+logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v2`` 규칙 semantic
+모델과 exclusivity 불변식, ``document-content-value/v1`` 값 정책, Intentional Blank 의미,
 그리고 이 slice 국소 canonical byte framing·digest.
+
+**값 유형 어휘는 없다**(v2): 데이터가 나르는 값은 언제나 타입 없는 텍스트다. 타입 추론은
+사용자가 고른 것이 아니라 필드 이름 휴리스틱의 산물이었고, 실제 문서에 적히는 값과도 무관한
+검증이었다. 값이 맞는지는 사람이 본다 — 이 계층은 존재(결측·명시 null·빈 값)만 판정한다.
+표시형(format engine)과 매핑 어휘(text/date/amount/…)는 별개 축이라 그대로 산다.
 
 여기는 store·fence·Mapping legacy·Template Structure projection·Active Field 계산·native HWPX
 타입을 **모른다**(Domain 은 순수). legacy 재해석·revision 저장·migration/review 결선은 위층이 진다.
@@ -14,18 +19,16 @@ canonical byte framing 은 S5-06 이 닫을 정본 digest set 이전의 **이 sl
 
 from __future__ import annotations
 
-import datetime as _dt
 import hashlib
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 _U32_MAX = 0xFFFF_FFFF
 
 # semantic 버전 — 코드·문서 단일 출처.
-FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v1"
-SOURCE_SCHEMA_VERSION = "source-schema/v1"
-BINDING_VALUE_VERSION = "binding-value/v1"
+FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v2"
+SOURCE_SCHEMA_VERSION = "source-schema/v2"
+BINDING_VALUE_VERSION = "binding-value/v2"
 DOCUMENT_CONTENT_VALUE_POLICY_VERSION = "document-content-value/v1"
 
 # 이 slice 국소 canonical framing magic(8 bytes 고정).
@@ -37,14 +40,6 @@ SOURCE = "SOURCE"
 CONSTANT = "CONSTANT"
 INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
 BINDING_KINDS = (SOURCE, CONSTANT, INTENTIONAL_BLANK)
-
-# SOURCE/CONSTANT 가 나르는 값 유형 — CanonicalBindingValue 변형과 1:1.
-EXACT_TEXT = "EXACT_TEXT"
-DECIMAL = "DECIMAL"
-DATE = "DATE"
-DATETIME = "DATETIME"
-BOOLEAN = "BOOLEAN"
-VALUE_TYPES = (EXACT_TEXT, DECIMAL, DATE, DATETIME, BOOLEAN)
 
 # Intentional Blank 의 exact plan 의미(S5-01 고정).
 EXACT_BLANK_POLICY = "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
@@ -72,10 +67,6 @@ class UnsupportedFieldBindingContractError(FieldBindingError):
     code = "UNSUPPORTED_FIELD_BINDING_CONTRACT"
 
 
-class UnsupportedFieldValueTypeError(FieldBindingError):
-    code = "UNSUPPORTED_FIELD_VALUE_TYPE"
-
-
 class UnsupportedDocumentValuePolicyError(FieldBindingError):
     code = "UNSUPPORTED_DOCUMENT_VALUE_POLICY"
 
@@ -96,9 +87,12 @@ def _require_scalar_text(value: object, what: str, *, allow_empty: bool = False)
     return value
 
 
-# ─── binding-value/v1 값 모델 ────────────────────────────────────────────────────
-_DECIMAL_RE = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?")
-_DATE_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+# ─── binding-value/v2 값 모델 ────────────────────────────────────────────────────
+#: tagged 값 표현의 kind 어휘 — Plan constant 도 raw source 값도 같은 알파벳을 쓴다. 이 두
+#: 리터럴을 쓰는 자리(compile 의 인코더, validation·delivery 의 디코더)가 갈리지 않게 여기
+#: 한 곳에서만 정의한다. ``NULL`` 은 소스 값에만 나타난다(binding constant 는 항상 값이 있다).
+VALUE_KIND_TEXT = "TEXT"
+VALUE_KIND_NULL = "NULL"
 
 
 @dataclass(frozen=True)
@@ -111,103 +105,9 @@ class ExactText:
         _require_scalar_text(self.text, "ExactText", allow_empty=True)
 
 
-@dataclass(frozen=True)
-class CanonicalDecimal:
-    """exact decimal literal — JSON float identity·NaN·Infinity·지수표기 거절.
-
-    literal 문자열을 그대로 보존한다(``"1.50"`` ≠ ``"1.5"``). Python repr 로 재구성하지 않는다.
-    """
-
-    literal: str
-
-    def __post_init__(self) -> None:
-        _require_scalar_text(self.literal, "CanonicalDecimal")
-        if not _DECIMAL_RE.fullmatch(self.literal):
-            raise FieldBindingInputIntegrityError(
-                f"CanonicalDecimal literal 이 canonical 십진수가 아니다: {self.literal!r}"
-            )
-
-
-@dataclass(frozen=True)
-class CanonicalDate:
-    """exact ISO 날짜(YYYY-MM-DD). locale·implicit timezone 없음."""
-
-    iso: str
-
-    def __post_init__(self) -> None:
-        _require_scalar_text(self.iso, "CanonicalDate")
-        if not _DATE_RE.fullmatch(self.iso):
-            raise FieldBindingInputIntegrityError(f"CanonicalDate 형식 오류: {self.iso!r}")
-        try:
-            _dt.date.fromisoformat(self.iso)
-        except ValueError as exc:
-            raise FieldBindingInputIntegrityError(
-                f"CanonicalDate 가 실제 날짜가 아니다: {self.iso!r}"
-            ) from exc
-
-
-@dataclass(frozen=True)
-class CanonicalDateTime:
-    """exact ISO 일시 — **명시 timezone offset 필수**(implicit timezone 거절)."""
-
-    iso: str
-
-    def __post_init__(self) -> None:
-        _require_scalar_text(self.iso, "CanonicalDateTime")
-        try:
-            parsed = _dt.datetime.fromisoformat(self.iso)
-        except ValueError as exc:
-            raise FieldBindingInputIntegrityError(
-                f"CanonicalDateTime 파싱 실패: {self.iso!r}"
-            ) from exc
-        if parsed.tzinfo is None or parsed.utcoffset() is None:
-            raise FieldBindingInputIntegrityError(
-                f"CanonicalDateTime 은 명시 timezone offset 이 있어야 한다: {self.iso!r}"
-            )
-
-
-@dataclass(frozen=True)
-class CanonicalBoolean:
-    value: bool
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.value, bool):
-            raise FieldBindingInputIntegrityError("CanonicalBoolean 은 bool 이어야 한다")
-
-
-# 합타입 — None 은 변형으로 쓰지 않는다.
-CanonicalBindingValue = (
-    ExactText | CanonicalDecimal | CanonicalDate | CanonicalDateTime | CanonicalBoolean
-)
-
-
-def _encode_value(value: CanonicalBindingValue) -> bytes:
-    if isinstance(value, ExactText):
-        return b"\x01" + _text(value.text)
-    if isinstance(value, CanonicalDecimal):
-        return b"\x02" + _text(value.literal)
-    if isinstance(value, CanonicalDate):
-        return b"\x03" + _text(value.iso)
-    if isinstance(value, CanonicalDateTime):
-        return b"\x04" + _text(value.iso)
-    if isinstance(value, CanonicalBoolean):
-        return b"\x05" + (b"\x01" if value.value else b"\x00")
-    raise FieldBindingInputIntegrityError("미지원 CanonicalBindingValue")  # pragma: no cover - 합타입 소진
-
-
-def value_type_of(value: CanonicalBindingValue) -> str:
-    """값 변형의 value_type 코드 — SOURCE 규칙 value_type 과 대조에 쓴다."""
-    if isinstance(value, ExactText):
-        return EXACT_TEXT
-    if isinstance(value, CanonicalDecimal):
-        return DECIMAL
-    if isinstance(value, CanonicalDate):
-        return DATE
-    if isinstance(value, CanonicalDateTime):
-        return DATETIME
-    if isinstance(value, CanonicalBoolean):
-        return BOOLEAN
-    raise UnsupportedFieldValueTypeError("미지원 값 유형")  # pragma: no cover - 합타입 소진
+#: 값 알파벳은 단형이다 — 데이터가 나르는 값은 언제나 타입 없는 텍스트다(v2). 별칭을 남겨
+#: 두는 이유는 "여기가 값 union 이 서던 자리"라는 계약 좌표를 유지하기 위해서다.
+CanonicalBindingValue = ExactText
 
 
 # ─── document-content-value/v1 정책 ──────────────────────────────────────────────
@@ -342,7 +242,7 @@ def require_registered_document_value_policy(
     return registered
 
 
-# ─── field-binding/v1 semantic contract registry ─────────────────────────────────
+# ─── field-binding/v2 semantic contract registry ─────────────────────────────────
 _SUPPORTED_SEMANTIC_CONTRACTS = frozenset({FIELD_BINDING_SEMANTIC_VERSION})
 _SUPPORTED_SOURCE_SCHEMA_CONTRACTS = frozenset({SOURCE_SCHEMA_VERSION})
 
@@ -363,13 +263,7 @@ def require_source_schema_contract(contract_id: str) -> str:
     return contract_id
 
 
-def require_value_type(value_type: str) -> str:
-    if value_type not in VALUE_TYPES:
-        raise UnsupportedFieldValueTypeError(f"미지원 값 유형: {value_type!r}")
-    return value_type
-
-
-# ─── field-binding/v1 규칙 모델 ──────────────────────────────────────────────────
+# ─── field-binding/v2 규칙 모델 ──────────────────────────────────────────────────
 @dataclass(frozen=True)
 class FieldBindingRule:
     """한 logical Field 의 exact 바인딩 규칙 — kind 별 필드 존재/부재가 exclusivity 를 강제한다."""
@@ -378,7 +272,6 @@ class FieldBindingRule:
     binding_kind: str
     document_content_value_policy: DocumentContentValuePolicy
     source_key: str | None = None
-    value_type: str | None = None
     format_code: str | None = None
     canonical_constant_value: CanonicalBindingValue | None = None
 
@@ -407,9 +300,6 @@ class FieldBindingRule:
 
     def _require_source(self) -> None:
         _require_scalar_text(self.source_key, "source_key", allow_empty=True)
-        if self.value_type is None:
-            raise FieldBindingInputIntegrityError("SOURCE 규칙은 value_type 이 필요하다")
-        require_value_type(self.value_type)
         if self.canonical_constant_value is not None:
             raise FieldBindingInputIntegrityError(
                 "SOURCE 규칙은 constant 값을 가질 수 없다(kind 합성 금지)"
@@ -418,26 +308,19 @@ class FieldBindingRule:
     def _require_constant(self) -> None:
         if self.canonical_constant_value is None:
             raise FieldBindingInputIntegrityError("CONSTANT 규칙은 canonical 값이 필요하다")
-        if not isinstance(
-            self.canonical_constant_value,
-            (ExactText, CanonicalDecimal, CanonicalDate, CanonicalDateTime, CanonicalBoolean),
-        ):
+        if not isinstance(self.canonical_constant_value, ExactText):
             raise FieldBindingInputIntegrityError(
                 "canonical_constant_value 가 CanonicalBindingValue 가 아니다"
             )
-        if self.source_key is not None or self.value_type is not None:
+        if self.source_key is not None:
             raise FieldBindingInputIntegrityError(
-                "CONSTANT 규칙은 source_key·value_type 을 가질 수 없다(kind 합성 금지)"
+                "CONSTANT 규칙은 source_key 를 가질 수 없다(kind 합성 금지)"
             )
 
     def _require_blank(self) -> None:
-        if (
-            self.source_key is not None
-            or self.value_type is not None
-            or self.canonical_constant_value is not None
-        ):
+        if self.source_key is not None or self.canonical_constant_value is not None:
             raise FieldBindingInputIntegrityError(
-                "INTENTIONAL_BLANK 규칙은 source/value/constant 를 가질 수 없다(kind 합성 금지)"
+                "INTENTIONAL_BLANK 규칙은 source/constant 를 가질 수 없다(kind 합성 금지)"
             )
 
 
@@ -459,7 +342,7 @@ def require_single_rule_per_field(rules: Iterable[FieldBindingRule]) -> tuple[
     return tuple(ordered)
 
 
-# ─── source-schema/v1 key 계약 ───────────────────────────────────────────────────
+# ─── source-schema/v2 key 계약 ───────────────────────────────────────────────────
 def validate_source_schema_keys(keys: Iterable[str]) -> tuple[str, ...]:
     """exact Unicode·case-sensitive·whitespace 보존. duplicate exact key 는 loud error."""
     seen: set[str] = set()
@@ -494,22 +377,23 @@ def _u32(value: int) -> bytes:
 
 
 def _encode_rule(rule: FieldBindingRule) -> bytes:
+    """v2 규칙 프레이밍 — 6 슬롯(value_type 슬롯은 v2 에서 사라졌다)."""
     out = bytearray()
     out += _text(rule.field_id)
     out += _text(rule.binding_kind)
     out += _text(rule.document_content_value_policy.policy_id)
     out += _opt_text(rule.source_key)
-    out += _opt_text(rule.value_type)
     out += _opt_text(rule.format_code)
-    if rule.canonical_constant_value is None:
-        out += b"\x00"
-    else:
-        out += b"\x01" + _encode_value(rule.canonical_constant_value)
+    out += _opt_text(
+        None
+        if rule.canonical_constant_value is None
+        else rule.canonical_constant_value.text
+    )
     return bytes(out)
 
 
 def canonicalize_binding_rules(rules: Iterable[FieldBindingRule]) -> bytes:
-    """field-binding/v1 규칙 집합의 정본 bytes — 저장 순서 무관, field_id UTF-8 byte 정렬."""
+    """field-binding/v2 규칙 집합의 정본 bytes — 저장 순서 무관, field_id UTF-8 byte 정렬."""
     ordered = require_single_rule_per_field(rules)
     out = bytearray()
     out += _BINDING_MAGIC
@@ -527,7 +411,7 @@ def digest_binding_rules(rules: Iterable[FieldBindingRule]) -> str:
 
 
 def canonicalize_source_schema(keys: Iterable[str]) -> bytes:
-    """source-schema/v1 정본 bytes — canonical order = unsigned UTF-8 byte order."""
+    """source-schema/v2 정본 bytes — canonical order = unsigned UTF-8 byte order."""
     validated = validate_source_schema_keys(keys)
     out = bytearray()
     out += _SCHEMA_MAGIC
