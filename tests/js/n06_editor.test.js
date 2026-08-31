@@ -946,6 +946,78 @@ test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)"
   assert.deepEqual(h.notices, [], "구조화 실패는 window.alert 로 새지 않는다");
 });
 
+/* ---- U4-E3 #939 밴드 동사 「전부 표기로 되돌리기」 ---- */
+
+test("U4-E3 밴드 동사는 행 동사와 같은 술어로 선다(진단 0 · 행 1건 이상)", async () => {
+  const h = harness({ initial: async () => slotSnap() });
+  await h.controller.init();
+  const render = () => renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }));
+
+  /* 항목 1건이어도 선다 — 개수 문턱을 새로 두면 2→1 이 되는 순간 손 밑에서 사라진다. */
+  assert.ok(render().includes('data-act="slot-decompile-all"'), "행 1건에서도 서야 한다");
+  /* 대상은 파일이라 겨눌 항목 id 가 없다. */
+  assert.equal(render().includes('data-act="slot-decompile-all" data-slot'), false);
+
+  const broken = harness({
+    initial: async () => slotSnap({
+      library: Object.assign({}, slotSnap().library, {
+        slots: {
+          path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "읽을 수 없습니다",
+          rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+        },
+      }),
+    }),
+  });
+  await broken.controller.init();
+  const brokenMarkup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: broken.controller }));
+  assert.equal(brokenMarkup.includes('data-act="slot-decompile-all"'), false,
+    "못 믿는 구조 위에서 일괄 변이를 권하지 않는다");
+});
+
+test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    call: async (_screen, name) => (
+      name === "slot_decompile_all"
+        ? { needs_confirm: true, confirm_text: "항목 1개를 전부 …" }
+        : {}
+    ),
+    confirm: () => true,
+  });
+  await h.controller.init();
+
+  await h.controller.handleSlotVerb("decompile-all", "", {});
+
+  const sent = h.trace
+    .filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+    .map((row) => [row[2], row[3]]);
+  assert.deepEqual(sent, [
+    ["slot_decompile_all", { path: "C:/lib/구간.hwpx" }],
+    ["slot_decompile_all", { path: "C:/lib/구간.hwpx", confirm: true }],
+  ]);
+  const asked = h.trace.find((row) => row[0] === "modal.confirm");
+  assert.ok(asked[1].body.includes("항목 1개를 전부 …"),
+    "확인 문안을 웹이 다시 조립하지 않는다");
+  assert.equal(asked[1].danger, true);
+});
+
+test("U4-E3 밴드 동사 확인 취소는 확정 호출을 보내지 않는다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
+    confirm: () => false,
+  });
+  await h.controller.init();
+
+  await h.controller.handleSlotVerb("decompile-all", "", {});
+
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+  assert.equal(sent.length, 1, "1차 질의 하나뿐이어야 한다");
+  assert.equal(sent[0][3].confirm, undefined);
+});
+
 test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
   const h = harness({ initial: async () => snap({ section: "template", library: {} }) });
   await h.controller.init();

@@ -1596,6 +1596,12 @@ class TestWebSelftestGate:
             f"항목 행 동사 3종(개명·표기로 되돌리기·삭제)이 다 서지 않았습니다: {t['slot_verbs']!r}"
         )
         assert t["slot_rename_visible"] is True, "개명 트리거가 보이지 않습니다(클릭은 hidden 도 통과)."
+        # 밴드 동사(U4-E3 #939) — 행 1건에서도 서는 것이 노출 규칙이고(개수 문턱 없음),
+        # 대상이 파일이라 `data-slot` 을 달지 않는다.
+        assert t["slot_band_verb_visible"] is True, "「전부 표기로 되돌리기」가 보이지 않습니다."
+        assert t["slot_band_verb_targets_file"] is True, (
+            "밴드 동사가 항목 id 를 달고 있습니다 — 대상은 파일 하나여야 합니다."
+        )
         assert t["slot_prompt_shown"] is True, "개명 트리거가 입력 창을 열지 않았습니다."
         assert t["slot_prompt_value"] == "특약 사항", (
             f"개명 프롬프트 초기값이 현재 이름이 아닙니다: {t['slot_prompt_value']!r}"

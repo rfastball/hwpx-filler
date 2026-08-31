@@ -643,15 +643,23 @@ class TemplateController:
         return {"ok": True}
 
     # ---- 컴파일된 Slot 관리 동사(S8-03 #834)
-    def _slot_target(self, p: dict) -> "tuple[str, str]":
-        """(path, slot_id) 검증 — 라이브러리 밖 임의 파일 변이 권한 승격을 막는다.
+    def _slot_path(self, p: dict) -> str:
+        """대상 경로 검증 — 라이브러리 밖 임의 파일 변이 권한 승격을 막는다.
 
         ``_do_delete`` 와 같은 술어다: 경로가 이 매체 라이브러리의 **현재 목록**에 실재해야
-        한다. slot id 는 비어 있을 수 없다(빈 값이 「첫 항목」으로 접히지 않게).
+        한다. 항목을 겨누지 않는 문서 단위 동사(전체판 풀기)도 같은 관문을 지난다.
         """
         path = str(p["path"])
         if self._norm(path) not in self._live_paths("hwpx"):
             raise ValueError("현재 라이브러리 목록에 없는 경로는 바꿀 수 없습니다.")
+        return path
+
+    def _slot_target(self, p: dict) -> "tuple[str, str]":
+        """(path, slot_id) 검증 — 경로 관문에 더해 slot id 는 비어 있을 수 없다.
+
+        (빈 값이 「첫 항목」으로 조용히 접히지 않게 한다.)
+        """
+        path = self._slot_path(p)
         slot_id = str(p.get("slot_id", "")).strip()
         if not slot_id:
             raise ValueError("대상 항목 id 가 비어 있습니다.")
@@ -687,6 +695,22 @@ class TemplateController:
             }
         view = self.vm.decompile_slot(path, slot_id)
         return self._after_slot_mutation(path, view, f"항목을 표기로 되돌렸습니다 '{slot_id}'")
+
+    def _do_slot_decompile_all(self, p: dict) -> dict:
+        """이 템플릿의 항목을 **전부** 표기로 되돌리기 — 2왕복(U4-E3 #939).
+
+        단건(:meth:`_do_slot_decompile`)과 같은 왕복이고 payload 에 ``slot_id`` 가 없다:
+        대상이 항목이 아니라 파일이다. 확인 본문·개수는 링1 이 싣는다(여기서 세지 않는다).
+        """
+        path = self._slot_path(p)
+        if not p.get("confirm"):
+            return {
+                "ok": True, "needs_confirm": True, "kind": "slot_decompile_all",
+                "path": path,
+                "confirm_text": self.vm.confirm_decompile_all_text(path),
+            }
+        view = self.vm.decompile_all_slots(path)
+        return self._after_slot_mutation(path, view, "전 항목을 표기로 되돌렸습니다")
 
     def _do_slot_remove(self, p: dict) -> dict:
         """항목을 **내용째** 삭제 — 2왕복 파괴 확정(손실 목록 재진술)."""

@@ -229,8 +229,66 @@ def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
     assert ctrl.snapshot()["slots"]["rows"] == []
 
 
+#: 항목 2개짜리 표기 문서 — 「전부 되돌리기」가 재는 대상(단건과 구별되려면 2건이어야 한다).
+_TWO_SLOT_BODY = "".join(
+    f'<hp:p><hp:run charPrIDRef="0"><hp:t>{line}</hp:t></hp:run></hp:p>'
+    for line in (
+        "{{#항목 특약 특약 사항}}",
+        "{{#선택 지체상금 지체상금 조항}}",
+        "지체상금은 {{지체상금률}} 로 한다.",
+        "{{/선택}}",
+        "{{/항목}}",
+        "{{#항목 부기 부기 사항}}",
+        "부기: {{부기문}}",
+        "{{/항목}}",
+        "발주자: {{수요기관}}",
+    )
+)
+
+
+def test_slot_decompile_all_takes_two_round_trips(tmp_path, monkeypatch):
+    """전체판 풀기도 확인 왕복이다. 1차는 파일을 만지지 않고 개수·전이 결과만 재진술한다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp, _TWO_SLOT_BODY)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+    assert [row["id"] for row in ctrl.snapshot()["slots"]["rows"]] == ["특약", "부기"]
+    before = Path(path).read_bytes()
+
+    ask = ctrl.dispatch("slot_decompile_all", {"path": path})
+
+    assert ask["needs_confirm"] is True and ask["kind"] == "slot_decompile_all"
+    assert "slot_id" not in ask  # 대상은 항목이 아니라 파일이다
+    assert "항목 2개를 전부" in ask["confirm_text"]
+    # 전이 결과 재진술은 단건 동사와 **같은 말**이어야 한다(같은 전이).
+    assert "문서를 만들 수 없습니다" in ask["confirm_text"]
+    assert "'누름틀·구간 변환'을 다시 하세요" in ask["confirm_text"]
+    assert Path(path).read_bytes() == before
+
+    result = ctrl.dispatch("slot_decompile_all", {"path": path, "confirm": True})
+
+    assert result == {"ok": True, "slot_count": 0}
+    assert ctrl.snapshot()["slots"]["rows"] == []
+    assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
+    # 되돌린 템플릿은 다시 PARTIAL 이다 — 「변환 전까지 못 만든다」는 확인 문안의 재확인.
+    row = next(r for r in _items(ctrl.snapshot()["hwpx"]) if r["path"] == path)
+    assert row["state"] == "partial"
+
+
+def test_slot_decompile_all_guards_the_same_paths_as_the_row_verbs(tmp_path, monkeypatch):
+    """문서 단위 동사도 라이브러리 관문을 지난다(임의 파일 변이 권한 승격 차단)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    foreign = tp / "foreign.hwpx"
+    write_hwpx_package(foreign, _pkg(_NOTATION_BODY))
+    before = foreign.read_bytes()
+
+    with pytest.raises(ValueError, match="현재 라이브러리 목록에 없는"):
+        ctrl.dispatch("slot_decompile_all", {"path": str(foreign)})
+    assert foreign.read_bytes() == before
+
+
 def test_slot_verbs_notify_the_reconciliation_seam(tmp_path, monkeypatch):
-    """bytes 변이 동사 셋이 전부 S8G-00 재정산 seam 을 태운다(#320 선례)."""
+    """bytes 변이 동사 넷이 전부 S8G-00 재정산 seam 을 태운다(#320 선례)."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     path = _notation_template(ctrl, tp)
     ctrl.dispatch("compile", {"path": path, "confirm": True})
@@ -241,9 +299,11 @@ def test_slot_verbs_notify_the_reconciliation_seam(tmp_path, monkeypatch):
     ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "새 이름"})
     ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약", "confirm": True})
     ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("slot_decompile_all", {"path": path, "confirm": True})
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
     ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약", "confirm": True})
 
-    assert [kind for kind, _ in seen] == ["mutated"] * 4
+    assert [kind for kind, _ in seen] == ["mutated"] * 6
     assert {mutated for _, mutated in seen} == {path}
 
 

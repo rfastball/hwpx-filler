@@ -1703,6 +1703,17 @@ def rename_slot_label(pkg: object, slot_id: str, new_label: "str | None" = None)
     )
 
 
+def _notation_identity(slots: "tuple[Slot, ...]") -> "list[Slot]":
+    """표기 선언 대조용 정규형 — id 순 정렬(문서 안에서 선언 id 는 유일하다).
+
+    풀기는 표기가 이미 서 있는 문서에도 걸린다(부분 컴파일 · 전체판의 2번째 슬롯부터).
+    그때 새로 풀린 선언이 기존 표기의 앞에 설지 뒤에 설지는 **문서 좌표**가 정하는
+    것이지 사후조건이 재판정할 사실이 아니다 — 선언 **안**의 순서(선택 order)는 Slot
+    값 자체가 지므로 여기서 잃는 것이 없다.
+    """
+    return sorted(slots, key=lambda slot: slot.id)
+
+
 def decompile_slot(pkg: object, slot_id: str) -> None:
     """컴파일된 Slot 하나를 **구간 표기로 되돌린다**(:func:`compile_structure` 의 역함수).
 
@@ -1711,10 +1722,12 @@ def decompile_slot(pkg: object, slot_id: str) -> None:
        무변형이라 ①의 좌표가 그대로 유효하다).
     ③ 그 좌표에 마커 문단을 되심는다 — 문서 읽기 순서(항목 여는 마커 → 선택 마커들 →
        항목 닫는 마커)대로 실어 보내고 삽입 순서 처리는 Domain 이 진다.
-    ④ 사후조건: 표기 진단 0 · 그 선언이 표기로 전건 복원 · 남은 제품 Slot == 기존 − 대상 ·
-       비제품 region 정체 보존. 하나라도 깨지면 패키지는 원본으로 돌아간다.
+    ④ 사후조건: 표기 진단 0 · 그 선언이 **기존 표기 위에** 더해져 전건 복원 · 남은 제품
+       Slot == 기존 − 대상 · 비제품 region 정체 보존. 하나라도 깨지면 원본으로 돌아간다.
 
-    **문서 전체 일괄 풀기는 없다**(#822 D6) — 대상은 언제나 Slot 하나다.
+    대상은 언제나 Slot 하나다. 문서 전체는 :func:`decompile_structure` 가 이 동사를
+    **반복 호출**해 세운다(U4-E3 #939 — 매 호출이 좌표를 다시 세우므로 앞선 풀기가 민
+    문단 index 를 물려받지 않는다).
     """
     identifier = _require_text(slot_id, "Slot id")
     package, snapshot = _require_mutable_snapshot(pkg)
@@ -1753,6 +1766,8 @@ def decompile_slot(pkg: object, slot_id: str) -> None:
     removed = _region_identity_counter(
         [region, *(option_region for _option, option_region in options)]
     )
+    #: 변이 **전** 표기 — 되돌린 선언은 이 위에 더해져야 한다(기존 표기를 먹지 않는다).
+    notation_before = scan_structure(package).slots
 
     def mutate() -> None:
         for _option, option_region in options:
@@ -1762,10 +1777,13 @@ def decompile_slot(pkg: object, slot_id: str) -> None:
 
     def verify() -> None:
         residue = scan_structure(package)
-        if residue.diagnostics or residue.slots != (slot,):
+        expected_notation = (*notation_before, slot)
+        if residue.diagnostics or _notation_identity(
+            residue.slots
+        ) != _notation_identity(expected_notation):
             raise ValueError(
                 "Slot decompile postcondition (notation) failed: "
-                f"expected {(slot,)!r}, got {residue.to_dict()!r}"
+                f"expected {expected_notation!r}, got {residue.to_dict()!r}"
             )
         _require_slots(package, expected, "Slot decompile")
         after = _region_identity_counter(resolve_bookmark_topology(package))
@@ -1777,6 +1795,75 @@ def decompile_slot(pkg: object, slot_id: str) -> None:
             )
 
     _guarded_slot_mutation(package, mutate, verify)
+
+
+def _assert_decompile_structure_postconditions(
+    package: object,
+    declared: "tuple[Slot, ...]",
+    before: "Counter[tuple[object, ...]]",
+    removed: "Counter[tuple[object, ...]]",
+) -> None:
+    """전체판 **종료 상태** — ⓐ 남은 native Slot 0 · ⓑ 선언 전건 되읽기 · ⓒ 비제품 region 보존.
+
+    슬롯별 사후조건은 이미 각 :func:`decompile_slot` 호출이 졌다. 여기서 다시 재는 것은
+    **한 슬롯의 성공들이 문서 하나의 성공과 같은가**뿐이다 — 중간 단계가 전부 초록이어도
+    마지막에 native 구조가 남아 있거나 표기 한 건이 유실됐으면 전체판은 실패다.
+    """
+    _require_slots(package, (), "Structure decompile")
+    residue = scan_structure(package)
+    if residue.diagnostics or _notation_identity(residue.slots) != _notation_identity(
+        declared
+    ):
+        raise ValueError(
+            "structure decompile postcondition (notation) failed: "
+            f"expected {declared!r}, got {residue.to_dict()!r}"
+        )
+    after = _region_identity_counter(resolve_bookmark_topology(package))
+    if after != before - removed:
+        raise ValueError(
+            "structure decompile postcondition (pre-existing regions) failed: "
+            f"expected {sorted(map(repr, before - removed))!r}, "
+            f"got {sorted(map(repr, after))!r}"
+        )
+
+
+def decompile_structure(pkg: object) -> "tuple[Slot, ...]":
+    """열린 package 의 **전 Slot** 을 구간 표기로 되돌린다(:func:`compile_structure` 의 역함수).
+
+    새 풀기 기제를 만들지 않는다 — :func:`decompile_slot` 을 문서 순서대로 반복 호출하고,
+    매 호출이 ``_require_mutable_snapshot`` 으로 **좌표를 다시 세운다**. 앞선 풀기가 마커
+    문단을 심어 뒤 슬롯의 문단 index 를 밀어도 그 이동이 다음 호출에 새지 않는 근거가 이것이다.
+
+    **원자성은 문서 단위**다(:func:`compile_structure` 선례 동형): 진입에서 ``entries`` 를
+    통째로 백업하고 어느 한 슬롯이라도 실패하면 **전량 원복 후 raise** 한다 — 반쯤 풀린
+    템플릿을 남기지 않는다. 슬롯이 0 이면 무변형 no-op 이고 빈 튜플을 돌려준다.
+
+    반환은 **되돌린 선언 목록**(변이 전 제품 판독 그대로)이라 상위 링이 결과를 재진술하려고
+    파일을 다시 열지 않는다. 진단이 서 있으면 단건 동사와 같이 fail-closed 로 거절한다.
+
+    #822 D6(「일괄 풀기 없음」)은 U4-E3 에서 철회됐다: 금지의 근거는 단건 동사가 세운
+    안전 불변식(사후조건 4종 + 롤백)이 전체판에 없다는 것이었는데, 전체판이 그 동사를
+    **그대로 반복**하고 같은 사후조건을 종료 상태에서 한 번 더 상속하므로 근거가 소멸했다.
+    """
+    package, snapshot = _require_mutable_snapshot(pkg)
+    declared = snapshot.slots
+    if not declared:
+        return ()
+    before = _region_identity_counter(resolve_bookmark_topology(package))
+    removed = _region_identity_counter(
+        [*snapshot.slot_regions.values(), *snapshot.option_regions.values()]
+    )
+    entries = package.entries  # type: ignore[attr-defined]
+    original = dict(entries)
+    try:
+        for slot in declared:
+            decompile_slot(package, slot.id)
+        _assert_decompile_structure_postconditions(package, declared, before, removed)
+    except Exception:
+        entries.clear()
+        entries.update(original)
+        raise
+    return declared
 
 
 # ------------------------------------------------- 구간 표기 → native Slot 컴파일(S8-02)
@@ -2307,6 +2394,20 @@ def decompile_slot_file(path: str, slot_id: str):
     return _mutate_slot_file(path, lambda pkg: decompile_slot(pkg, slot_id))
 
 
+def decompile_structure_file(path: str) -> "tuple[Slot, ...]":
+    """경로의 **전 Slot** 을 구간 표기로 되돌리고 **같은 경로에 저장**(변이가 있을 때만).
+
+    ``_mutate_slot_file`` 을 빌리지 않는 이유는 하나다 — 그쪽은 성공하면 늘 쓰지만 전체판은
+    슬롯 0 no-op 이 실재해서 무변형 저장이 나온다. 거절·no-op 이면 파일을 한 바이트도 쓰지
+    않는 규율은 :func:`compile_structure_file` 과 같다. 반환은 되돌린 선언 목록이다.
+    """
+    package = read_hwpx_package(path)
+    decompiled = decompile_structure(package)
+    if decompiled:
+        write_hwpx_package(path, package)
+    return decompiled
+
+
 def remove_slot_file(path: str, slot_id: str):
     """경로의 Slot 하나를 **내용째** 지우고 제자리 저장(성공 시에만)."""
     return _mutate_slot_file(path, lambda pkg: remove_slot(pkg, slot_id))
@@ -2417,5 +2518,6 @@ HWPX_TEMPLATE_OPS = TemplateFileOps(
     compile_structure_file=compile_structure_file,
     rename_slot_label=rename_slot_label_file,
     decompile_slot=decompile_slot_file,
+    decompile_structure=decompile_structure_file,
     remove_slot=remove_slot_file,
 )

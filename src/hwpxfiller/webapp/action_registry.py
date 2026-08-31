@@ -299,6 +299,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 삭제는 확인 왕복이다(`confirm` 2차 호출).
         "slot_rename": _schema("path slot_id", "label"),
         "slot_decompile": _schema("path slot_id", "confirm"),
+        # 전체판 풀기(U4-E3 #939)는 **문서 하나**를 겨눈다 — `slot_id` 를 받지 않는 것이
+        # 계약이다(빈 값·오타난 id 가 「전부」로 접히는 경로를 만들지 않는다).
+        "slot_decompile_all": _schema("path", "confirm"),
         "slot_remove": _schema("path slot_id", "confirm"),
         "delete": _schema("media path", "confirm"),
         "undo_delete": _schema(),

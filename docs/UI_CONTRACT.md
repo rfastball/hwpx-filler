@@ -483,9 +483,17 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     표기로 되돌리기·삭제는 `needs_confirm` 왕복이다 — **확인 본문은 Python 이 싣는다**
     (되돌리기는 「다시 변환 전까지 문서를 만들 수 없다」는 전이 결과를, 삭제는 손실 집합을
     재진술한다). 판독 진단이 있으면 사유만 서고 동사 버튼은 아예 없다.
+  - **밴드 동사 하나가 더 선다**(U4-E3 #939 · `UX_FEEDBACK_U4` §2.16): 구획 머리의
+    `data-act="slot-decompile-all"`(「전부 표기로 되돌리기」)는 항목이 아니라 **파일**을
+    겨눈다 — `data-slot` 이 없고 payload 에 `slot_id` 가 없다. 노출 술어는 행 동사와 **같다**
+    (진단 0 · 행 1건 이상 — 개수 문턱을 따로 두지 않는다). 확인 문안은 단건 문형 승계로
+    범위 한 줄만 다르고, 확정 뒤 그 템플릿은 PARTIAL 로 재진입한다.
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
-    (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
-    한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
+    (각 `path`·`slot_id`·`confirm`) + `slot_decompile_all`(`path`·`confirm`)이고 넷 다 경로가
+    **현재 HWPX 라이브러리 목록**에 있어야 한다(`_do_delete` 와 같은 술어 — 임의 파일 변이
+    권한 승격 차단. 관문 몸통은 `_slot_path` 하나이고 행 동사는 그 위에 id 검사를 얹는다).
+    풀기 몸통은 External 이 지고(`decompile_structure` = `decompile_slot` 문서 순서 반복 +
+    문서 단위 원자성), 링1 은 `decompile_all_slots`·`confirm_decompile_all_text` 를 소유한다.
   - **편집기가 지금 연 템플릿의 구간 축 요약은 따로 선다**(U4-E2 #939 · `UX_FEEDBACK_U4`
     §2.15): 스냅샷 키 `template_slots`, 존 id `#editorSlotSummary`, **읽기 전용**(동사 없음).
     `load_template_path` 가 스키마·게이트와 **같은 pkg** 로 `inspect_slots` 를 불러 링1
@@ -520,7 +528,8 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     다음 「변경사항 적용」이 남았음을 말한다 — Candidate 출생은 그 동사이지 저장이 아니고,
     말하지 않으면 한 동작이 두 사건인 척한다.
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
-  (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_remove` 확정 · `txt_edit` ·
+  (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_decompile_all`·`slot_remove`
+  확정 · `txt_edit` ·
   `delete` · `undo_delete`) 그 성공 **직후**
   `TemplateController.mutation_sinks` 가 `(kind, path)` 로 통지하고
   `EditorController.reconcile_template_mutation` 이 같은 파일을 든 세션만 다시 세운다
