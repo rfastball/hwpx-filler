@@ -266,6 +266,30 @@ class SlotView:
         options = sum(row.option_count for row in self.rows)
         return f"항목 {len(self.rows)}개 · 선택 {options}개"
 
+    def to_dict(self) -> dict:
+        """웹 스냅샷 성형 — 이 투영의 **모양은 하나**다(U4-E2 #939).
+
+        읽는 표면이 둘이다: tpl 검토가 낸 목록(`library.slots`, 동사 3종)과 편집기가 지금
+        연 템플릿의 구간 축 요약(`template_slots`, 읽기 전용). 수명·게이트는 각 컨트롤러가
+        따로 지지만(전자는 라이브러리 생존, 후자는 편집 세션) 값의 모양까지 각자 조립하면
+        프런트가 같은 뜻의 스키마를 둘 배우게 된다 — 그래서 성형은 여기 하나다.
+        """
+        return {
+            "path": self.path,
+            "name": self.name,
+            "summary": self.summary(),
+            "rows": [
+                {
+                    "id": row.id,
+                    "label": row.label,
+                    "option_count": row.option_count,
+                    "options": list(row.options),
+                }
+                for row in self.rows
+            ],
+            "diagnostics": list(self.diagnostics),
+        }
+
 
 @dataclass
 class TemplateRow:

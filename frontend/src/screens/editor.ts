@@ -1373,6 +1373,30 @@ function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNod
     verb(row, "remove", "삭제", true)))));
 }
 
+/** 이 세션이 연 템플릿의 구간(항목·선택) 축 요약 — **읽기 전용**(U4-E2 #939).
+ *
+ *  `SlotBand`(tpl 검토)와 값의 모양은 같지만 동사가 없다: 편집기는 저장 전 초안 세션이라
+ *  템플릿 파일을 변이시키지 않는다. 요약 문자열·행·진단은 Python 투영 그대로 그린다 —
+ *  여기서 개수를 다시 세지 않는다. 진단이 있으면 목록 대신 사유가 선다(진단 우선).
+ *  존 자체의 유무는 판정이 아니다: 스냅샷이 `null` 이면 서지 않는다. */
+function TemplateSlotSummary(props: { slots: Obj }): ReactNode {
+  const { slots } = props;
+  const rows = (slots.rows || []) as Obj[];
+  const diagnostics = (slots.diagnostics || []) as string[];
+  return h("div", { className: "grp", id: "editorSlotSummary" },
+    h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
+      h("span", { className: "cap" }, "구간 항목"),
+      h("span", { className: "muted capnote" }, String(slots.summary || ""))),
+    ...diagnostics.map((text, index) =>
+      h("div", { className: "hint danger", key: `diag-${index}` }, text)),
+    ...(diagnostics.length ? [] : rows.map((row) => h("div", {
+      className: "slotrow", key: String(row.id), "data-slot": String(row.id),
+    },
+    h("span", { className: "fname" }, String(row.label || row.id)),
+    h("span", { className: "tbadge", title: (row.options || []).join(" · ") },
+      `선택 ${row.option_count}`)))));
+}
+
 function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): ReactNode {
   const { snapshot, controller } = props;
   const library = snapshot.library || {};
@@ -1496,7 +1520,9 @@ function TemplateStage(props: { snapshot: Obj; controller: EditorController }): 
         client: controller.client, path: snapshot.template_path, notify: controller.notify,
       })) : null,
     snapshot.template_name ? h(Provenance as any, { snapshot }) : null,
-    gate);
+    gate,
+    snapshot.template_slots
+      ? h(TemplateSlotSummary as any, { slots: snapshot.template_slots }) : null);
 }
 
 function DataGateway(props: { snapshot: Obj; controller: EditorController }): ReactNode {

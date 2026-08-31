@@ -259,21 +259,7 @@ class TemplateController:
         if self._norm(view.path) not in self._live_paths("hwpx"):
             self._slot_view = None
             return None
-        return {
-            "path": view.path,
-            "name": view.name,
-            "summary": view.summary(),
-            "rows": [
-                {
-                    "id": row.id,
-                    "label": row.label,
-                    "option_count": row.option_count,
-                    "options": list(row.options),
-                }
-                for row in view.rows
-            ],
-            "diagnostics": list(view.diagnostics),
-        }
+        return view.to_dict()  # 성형은 링1 소유(U4-E2 #939) — 편집기 요약과 같은 모양이다
 
     def initial(self) -> dict:
         return self.snapshot()
