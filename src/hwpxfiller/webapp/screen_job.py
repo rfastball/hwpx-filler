@@ -117,7 +117,6 @@ from ..gui.filter_state import (
     FilterModel,
 )
 from ..gui.result_errors import classify_result_error, describe_fill_note
-from ..naming import pattern_uses_seq
 from ..gui.record_range import RecordRange, RecordRangeDraft
 from ..gui.review_state import (
     ReviewRequirement,
@@ -854,7 +853,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         선택 집합은 **건드리지 않는다**: 순서는 투영이고 선택은 집합이라 축이 바뀌어도
         같은 행이 남는다(§18.10 "검색과 필터는 가시성만"의 정렬판). 바뀌는 것은 생성
-        **순서**와 그 함수인 파일명 순번이며, 그 사실은 표면 문안(`order_note`)이 진다.
+        **순서**와 그 함수인 파일명 순번이며, 그 사실은 스위치 자신의 title 이 진다
+        (구 상시 재진술 문안 `order_note` 는 간소화 라운드에서 걷혔다).
         """
         value = str(p.get("value", ""))
         if value not in VIEW_ORDERS:
@@ -1103,22 +1103,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "unknown_baseline": req.unknown_baseline,
             "structure_changed": req.structure_changed,
         }
-
-    def _order_note(self) -> str:
-        """표시순서 축 옆 상시 재진술(지도 §10.11 판정 I) — 확인 왕복 대신 문안이 진다.
-
-        앞 절은 **언제나 참**이고(표시 순서 = 생성 순서), 파일 이름 절은 규칙이 실제로
-        ``{{seq}}`` 를 쓸 때만 붙는다 — 안 쓰는 작업에도 말하면 문안이 거짓이 되고 거짓
-        경보는 경보를 싸구려로 만든다. 같은 이름이 겹칠 때 붙는 꼬리표도 순서의 함수지만
-        문안이 지지 않는다 — **근거가 U4 8번에서 갈렸다**: 종전에는 「표 「문서」 열이 그 행이
-        받을 실이름을 이미 보여준다」였는데 그 열이 걷혔다. 지금 근거는 이름이 **그 자리에서
-        확인할 정보가 아니라는 것**이다(사용자 확정 2026-08-30 — 확인 왕복에 들어갈 가치도
-        없다). 이름을 대조할 자리는 「생성 예정 문서」 존 하나다.
-        """
-        note = "보이는 순서대로 생성됩니다."
-        if self.vm is not None and pattern_uses_seq(self.vm.job.filename_pattern):
-            note += " 파일 이름의 순번도 이 순서를 따릅니다."
-        return note
 
     def _bound_jobs(self, jobs):
         """이 마운트에 결속된 작업만 — 후보·탐색이 **같은 한 관문**을 지난다.
@@ -1512,10 +1496,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "filter_active": False, "filter_parts": 0,
             },
             "out_dir": self.out_dir,
-            # 전체 표시순서 축(§18.10) + 그 옆 상시 재진술(판정 I). 값은 데이터 귀속이라
-            # 작업 미선택 상태에서도 실린다 — 축은 데이터의 성질이지 작업의 성질이 아니다.
+            # 전체 표시순서 축(§18.10). 값은 데이터 귀속이라 작업 미선택 상태에서도 실린다
+            # — 축은 데이터의 성질이지 작업의 성질이 아니다. (옆 상시 재진술 `order_note` 는
+            # 간소화 라운드에서 걷혔다: 표가 그리는 순서가 곧 생성 순서라는 사실은 스위치
+            # 자신의 title 이 말한다.)
             "view_order": self.view_order,
-            "order_note": self._order_note(),
             # 존 표 머리의 「선택 N/M」 — **존 대상**의 수치다(리뷰 3R). `selected_count` 는
             # 커밋 수치로 남아 게이트 지목 같은 판정이 계속 소비한다: 같은 이름의 값 하나가
             # 두 세계를 겸하면, 초안 체크박스와 footer 는 3건인데 표 머리만 5건인 자리가 난다.

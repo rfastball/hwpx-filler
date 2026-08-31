@@ -452,7 +452,6 @@ class TestWebSelftestGate:
         assert v.get("error") is None, f"표시순서 프로브 오류: {v!r}"
         assert v["present"] is True and v["options"] == ["sourceDesc", "sourceAsc"]
         assert v["control_before"] is True, "양성대조 실패 — 렌더가 컨트롤 상태를 안 씁니다."
-        assert v["note_before"], "축 옆 재진술 문안이 비어 있습니다(판정 I)."
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
 

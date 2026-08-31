@@ -692,9 +692,10 @@ export function JobCandidates(props: { controller: JobReadController }): ReactNo
   return h("div", { className: "job-read-side-content" }, h("div", { className: "zone-cap" }, "이 데이터에 사용할 문서"),
     h("div", { className: "job-cands", id: "jobCandidates", role: "group", "aria-label": "문서 작업 후보" },
       !top.length && !candidates.needs_count
-        ? h("span", { className: "muted" }, "이 데이터에 연결된 문서 작업이 없습니다.",
-          h("button", { className: "btn sm", type: "button", "data-cands-exit": true,
-            onClick: () => props.controller.navigation.go("library") }, "「문서 작업」에서 고르기"))
+        // 여기 있던 「「문서 작업」에서 고르기」 단추는 걷혔다(간소화 라운드): 그 자리에서
+        // 할 수 있는 일은 아래 「＋ 이 데이터로 새 작업」 하나이고, 상단 탭이 이미 그 화면으로
+        // 가는 유일한 참 경로다 — 같은 동사를 두 번 그리면 어느 쪽이 진짜인지가 흐려진다.
+        ? h("span", { className: "muted" }, "이 데이터에 연결된 문서 작업이 없습니다.")
         : cards,
       bits.length ? h("span", { className: "cand-more muted" }, ...bits, " — ",
         h("button", { className: "btn sm", type: "button", id: "jobBrowseOpen", "data-browse-open": true,

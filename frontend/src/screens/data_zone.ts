@@ -249,9 +249,18 @@ export function JobDataZone(props: {
   return createElement(Fragment, null,
     h("div", { className: "run-row run-recs-head", id: "jobRecsHead" },
       h("span", { className: "lbl", style: { fontWeight: 600 } }, "생성 대상 문서"),
-      h("input", { className: "field jobsearch", id: "jobFilterSearch", type: "search", value: query,
-        placeholder: "전체 열 검색", autoComplete: "off", "data-busy-lock": true,
-        onChange: (event: Obj) => { setQuery(event.currentTarget.value); controller.scheduleSearch(event.currentTarget.value); } }),
+      // 검색은 이 줄에서 **가장 자주 쓰이는 입력**인데 종전에는 라벨도 표지도 없는 좁은
+      // 상자라 어디에 무엇을 넣는 자리인지 형태가 말하지 않았다. 돋보기는 장식이 아니라
+      // 그 형태의 이름이다(`aria-hidden` — 이름은 placeholder 가 이미 진다).
+      h("span", { className: "jobsearch-wrap" },
+        h("svg", { className: "jobsearch-ico", "aria-hidden": "true", viewBox: "0 0 16 16",
+          width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: 1.6,
+          strokeLinecap: "round" },
+          h("circle", { cx: 7, cy: 7, r: 4.5 }),
+          h("path", { d: "M10.4 10.4 L14 14" })),
+        h("input", { className: "field jobsearch", id: "jobFilterSearch", type: "search", value: query,
+          placeholder: "전체 열 검색", autoComplete: "off", "data-busy-lock": true,
+          onChange: (event: Obj) => { setQuery(event.currentTarget.value); controller.scheduleSearch(event.currentTarget.value); } })),
       h("button", { className: "btn sm filter-reapply", id: "jobFilterReapply", hidden: !snapshot.has_data || !filter.reapply_available,
         title: filter.reapply_hint ? `직전 필터 재적용: ${filter.reapply_hint}` : "직전 필터 재적용", "data-busy-lock": true,
         onClick: async () => {
@@ -272,12 +281,12 @@ export function JobDataZone(props: {
         // 이 컨트롤이 무슨 축을 모는지 DOM 이 **선언**한다 — `<select>` 시절 `options` 가
         // 지던 「2값 고정」(F3)을 스위치에서도 게이트가 되읽을 수 있어야 한다.
         "data-order-values": "sourceDesc,sourceAsc",
-        title: "표를 원본 파일 순서로 봅니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다.",
+        title: "표의 정렬 순서를 바꿉니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다.",
         onClick: () => {
           void controller.zone("set_view_order", {
             value: viewOrder === "sourceAsc" ? "sourceDesc" : "sourceAsc",
           });
-        } }, "⇅ 원본 순서"),
+        } }, "⇅ 정렬 순서"),
       // 「펼쳐서 행 고르기」도 표를 여는 동사라 표 머리에 선다(U4 10번). **시트 안에서는
       // 그리지 않는다** — 자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의
       // 취소·적용이 이미 진다.
@@ -285,11 +294,8 @@ export function JobDataZone(props: {
         className: "btn sm", id: "jobDataExpand", type: "button",
         onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
       }, "펼쳐서 행 고르기 ⤢"))),
-    // `#jobOrderBar` 는 id 를 유지한 채 **상시 재진술만** 든다 — 컨트롤이 표 머리로 갔어도
-    // 「보이는 순서대로 생성되고 파일 이름 순번도 그 순서를 따른다」를 말하는 자리는 그대로다
-    // (F3 판정 I: 확인 왕복 대신 문안이 진다).
-    h("div", { className: "run-row job-orderbar", id: "jobOrderBar" },
-      h("span", { className: "muted capnote", id: "jobOrderNote" }, snapshot.order_note || "")),
+    // (구 `#jobOrderBar` 의 상시 재진술은 간소화 라운드에서 걷혔다 — 표가 그리는 순서가
+    // 곧 생성 순서라는 사실은 스위치 자신의 title 이 말한다.)
     h("div", { className: "fchips", id: "jobFilterChips", hidden: !showChips },
       ...(filter.active ? (filter.chips || []).map((chip: string, index: number) => h("span", { className: "fchip definition", key: `c-${index}` },
         h("span", { className: "chip-role" }, "필터"), chip)) : []),
@@ -396,10 +402,9 @@ export function JobDataZone(props: {
 
 function RangeFooter(props: { snapshot: Obj; controller: JobReadController }): ReactNode {
   const draft = props.snapshot.range_draft || {};
+  // (구 `#jobRangeNote` 범위 안내문은 간소화 라운드에서 걷혔다 — 「선택된 항목만 보기」의
+  // 눌림 상태가 보기 범위를 말하고, 적용 전임은 「선택 적용」 단추 자신이 말한다.)
   return h("div", { className: "range-foot", id: "jobRangeFoot" },
-    h("p", { className: "muted", id: "jobRangeNote" }, draft.selected_only
-      ? "선택된 항목만 보고 있습니다. 적용 전에는 문서 만들기 범위가 바뀌지 않습니다."
-      : "전체 항목을 보고 있습니다. 적용 전에는 문서 만들기 범위가 바뀌지 않습니다."),
     h("button", { className: "btn", id: "jobRangeSelectedOnly", type: "button", "aria-pressed": draft.selected_only ? "true" : "false",
       "data-busy-lock": true, onClick: () => { void props.controller.call("job", "set_selected_only", { value: !draft.selected_only }); } }, "선택된 항목만 보기"),
     h("button", { className: "btn", id: "jobRangeCancel", type: "button", "data-busy-lock": true,

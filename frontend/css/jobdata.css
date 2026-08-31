@@ -1,7 +1,13 @@
 /* ---- 작업 데이터 존 필터 표면(R-flow 블록 4, 슬라이스 4 PR-2b) ----
    테이블 = 선두 「문서」 열 + 원본 데이터 열(가로 스크롤). 하이라이트 <mark> 는 자모
    역매핑 세그먼트(Python 이 잘라 보낸 조각) — 여기선 칠만 한다. */
-.jobsearch{flex:1;min-width:140px;max-width:280px}
+/* 전체 열 검색 — 줄에서 가장 자주 쓰는 입력이라 상자를 넓히고(280→420) 돋보기를 앞에 세운다.
+   폭의 소유자는 **wrapper** 다: 아이콘이 붙으면서 `.run-row` 의 flex 자식이 input 에서 span 으로
+   바뀌었으므로, 종전 `.jobsearch` 가 지던 flex·min·max 를 그 자리로 옮긴다. */
+.jobsearch-wrap{position:relative;display:flex;align-items:center;flex:1;min-width:180px;max-width:420px}
+.jobsearch{flex:1;min-width:0;padding-left:calc(var(--sp-8) * 2 + 14px)}
+.jobsearch-ico{position:absolute;left:var(--sp-8);top:50%;transform:translateY(-50%);
+  color:var(--a-muted);pointer-events:none;display:block}
 .jobtb-host{position:relative}
 .jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
