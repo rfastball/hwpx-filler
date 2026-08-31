@@ -716,9 +716,9 @@ class WebFrontend:
     #  않는다(F2 PR-B set_rail_collapsed 선례). 유일 가져오기 = import_template_file(통일,
     #  §10.17.2 판정 C — 복사 권위는 여전히 TemplateController.import_into_library).)
 
-    def editor_has_unsaved_work(self) -> bool:
-        """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
-        return self._controller("editor").has_unsaved_work()
+    # (editor_has_unsaved_work 브리지는 편집기 확인 모달 전면 제거와 함께 사망 — 그 값을
+    #  물어보던 소비자는 전부 「묻지 않고 버린다」로 바뀌었고, 버릴지 말지의 판정은 컨트롤러
+    #  안(`_do_discard_patch` 의 no-op 게이트)에 남는다. 소비자 0 인 통로는 남기지 않는다.)
 
     def close_guard_state(self) -> dict:
         """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1).
@@ -918,8 +918,8 @@ class WebFrontend:
 
         웹은 이 호출 후 편집기 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW·**미배선
         진입 사유**)는 ``ERROR:`` 접두로 시끄럽게 반환 — 사유를 조용히 `voluntary` 로
-        떨어뜨리면 배너가 아무 말도 못 하는 진입이 생긴다. 미저장 세션 확인은 웹이
-        ``editor_has_unsaved_work`` 로 선판단한다(#25 미러).
+        떨어뜨리면 배너가 아무 말도 못 하는 진입이 생긴다. 앞서 열려 있던 편집 세션의 미저장
+        변경은 **묻지 않고 버린다**(자동 버리기 계약) — 진입 전 선판단 왕복은 없다.
 
         ``context`` = ``{entry_reason, evidence, return_context, section, target}``. 기본값
         (빈 사전)은 자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵).

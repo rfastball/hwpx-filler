@@ -46,7 +46,9 @@ function adapterWith(api) {
 /* ══════════════ 생성 계약의 소비 형태 ══════════════ */
 
 test("생성 계약 — 메서드 전수는 내부 표면을 포함하고, 내부 표면은 그 부분집합이다", () => {
-  assert.equal(HOST_METHODS.length, 25, "WebFrontend 공개 표면은 25 다(패킷 §2.1 + S7-03 save_artifact_as)");
+  assert.equal(HOST_METHODS.length, 24,
+    "WebFrontend 공개 표면은 24 다(패킷 §2.1 + S7-03 save_artifact_as"
+    + " − 자동 버리기로 사망한 editor_has_unsaved_work)");
   for (const name of ["initial", "dispatch", "generate", "close_guard_state"]) {
     assert.ok(HOST_METHODS.includes(name), `${name} 이 HOST_METHODS 에 없습니다`);
   }

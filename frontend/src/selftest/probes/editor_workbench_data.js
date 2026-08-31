@@ -8,8 +8,8 @@
  *   ② `_DATA_SHEET_PROBE_SETUP_JS`(2698)        → data_sheet            · 3764·3767·3772
  *   ③ `_RANGE_DRAFT_PROBE_SETUP_JS`(2799)       → range_draft           · 3774·3777·3782
  *   ④ `_PREVIEW_DRAWER_PROBE_SETUP_JS`(2825)    → preview_drawer        · 3786
- *   ⑤ `_EDITOR_GUARD_PROBE_SETUP_JS`(2032)      → editor_guard          · 3794
- *   ⑥ `_EDITOR_DISCARD_CANCEL_PROBE_JS`(2110)   → editor_discard_cancel · 3802
+ *   ⑤ `_EDITOR_GUARD_PROBE_SETUP_JS`(2032)      → editor_tab_autodiscard   · 3794
+ *   ⑥ `_EDITOR_DISCARD_CANCEL_PROBE_JS`(2110)   → editor_discard_immediate · 3802
  *   ⑦ `_EDITOR_TXT_BAND_PROBE_SETUP_JS`(3311)   → editor_txt_band       · 3808
  *   ⑧ `_WORKBENCH_PROBE_SETUP_JS`(3371)         → workbench             · 3814
  *   ⑨ `_SHEET_PROBE_SETUP_JS`(797)              → sheet_gate            · 3863·3865
@@ -54,11 +54,11 @@
  *                             `value_rows==2` · `closed_by_state`.
  *   · sheet_gate            : 확정(`picked=='확정됨:낙찰현황'`) ↔ 취소(`cancelled===null` +
  *                             `closed_after`). `status=='done'` 이 나머지를 유의미하게 만든다.
- *   · editor_guard          : `calls == [goto_section, save, goto_section:save]` — 마지막 하나가
- *                             저장→이어짐의 재발신이고, 그게 빠지면 처분이 절반만 일어난다.
- *   · editor_discard_cancel : `discarded === false`(취소 ≠ 버림) · `focus_fell_to_screen_root
- *                             === false` · `name_value_after_cancel=='공고서 수정'` ·
- *                             `flushed_before_open` · `trigger_connected_at_open`.
+ *   · editor_tab_autodiscard: `calls == [goto_section]`(양성 — 한 발) ↔ `choose_modal_open ===
+ *                             false` · `payload_keys == [section]`(처분 표지 부재).
+ *   · editor_discard_immediate : `call_order == 'set_name,discard_patch'`(정산 선행) ↔
+ *                             `confirm_modal_open === false` · `name_value_after_discard=='공고서'`
+ *                             · `discard_disabled_after` + `save_disabled_after`.
  *   · editor_save_gate      : 3단 `clean_disabled → typing_enabled → reverted_disabled` 와 그
  *                             행(row_*) 거울 · `gone_control_disables` · `row_value_survives_push`.
  *   · workbench             : `prev_disabled=false`/`next_disabled=true` ↔ 큐 퇴화
@@ -81,7 +81,7 @@
  *      통과하므로(F8 교훈) 「눈으로 본 것과 다른 결론」이 날 수 있는 자리다. 고치는 것은 이
  *      이식의 일이 아니다 — 실렌더 계약을 바꾸는 별건이고, 여기서 슬쩍 더하면 이식이
  *      「무엇을 바꿨나」의 한 줄을 잃는다. 아래 CLICK_SITES_WITHOUT_VISIBILITY 에 적어 둔다.
- *   ⓑ `editor_discard_cancel` 의 내부 폴링 상한(60 × 50ms + 300ms)은 레거시 회수 시한
+ *   ⓑ `editor_discard_immediate` 의 내부 폴링 상한(60 × 50ms + 300ms)은 레거시 회수 시한
  *      (`_probe_late` 2.5초)보다 **길다**. 레거시는 그래서 아직 pending 인 객체를 그대로
  *      실을 수 있었다(조용한 만료). 시한은 늘리지 않으므로 그 초과는 이제 시끄러운 실패다.
  *
@@ -97,8 +97,9 @@ export const D_CLUSTER = "D";
  *  그 동일성은 테스트가 기계로 센다(여기서 schema 를 import 해 유도하면 그 대조가 사라진다 —
  *  둘 다 틀려도 같으면 초록인 자리가 된다). */
 export const D_KEYS = Object.freeze([
-  "data_picker", "data_sheet", "editor_chip", "editor_discard_cancel", "editor_guard",
-  "editor_lib", "editor_lib_manage", "editor_save_gate", "editor_txt_band",
+  "data_picker", "data_sheet", "editor_chip", "editor_discard_immediate",
+  "editor_lib", "editor_lib_manage", "editor_save_gate", "editor_tab_autodiscard",
+  "editor_txt_band",
   "job_editmode", "preview_drawer", "range_draft", "sheet_gate", "view_order", "workbench",
 ]);
 
@@ -110,8 +111,8 @@ const CLICK_SITES_WITHOUT_VISIBILITY = Object.freeze([
   "editor_lib_manage: 행 ⋮ (메모.txt)",
   "editor_lib_manage: 그룹 헤더 ⋮",
   "editor_lib_manage: ＋그룹지정 칩",
-  "editor_guard: 단계 탭(filename) · 3택 모달 주 행동",
-  "editor_discard_cancel: 「변경 버리기」 · 확인 모달 취소",
+  "editor_tab_autodiscard: 단계 탭(filename)",
+  "editor_discard_immediate: 「변경 버리기」",
   "data_picker: 「이 데이터 고정」 · 「찾아보기」(뒤이어 browse_pin_visible 이 가시성을 잰다)",
   "data_sheet: ⤢ 트리거 · 면 닫기",
   "preview_drawer: 미리보기 열기 트리거",
@@ -814,13 +815,15 @@ export function createEditorWorkbenchDataProbes() {
       },
     },
 
-    /* ── editor_guard (app.py:2032 상수 · 3794 호출) ──────────────────────────
-       탭 처분 3택의 **이어짐**(F7 1R P1) — 「저장하고 이동」이 저장까지만 하고 이동을 안 하면
-       사용자가 고른 처분이 절반만 일어난다. 배선·문안·판정이 다 제자리이고 **성사 뒤 이어짐**만
-       끊기므로 실 클릭 → 실 모달 → 실 재발신 순서를 그대로 밟고 발신 기록을 되읽는다. */
+    /* ── editor_tab_autodiscard (구 editor_guard 슬롯) ────────────────────────
+       탭 이동의 **자동 버리기**. 이 자리는 종전 3택 가드의 이어짐(저장→재발신)을 쟀는데,
+       확인 모달이 전면 제거되면서 계약이 뒤집혔다: dirty 인 채 탭을 눌러도 모달은 서지 않고
+       발신은 `goto_section` **한 발**이며 처분 표지(`disposition`)는 실리지 않는다.
+       모달 미개방은 음성 대조라 혼자서는 무동작 프로브와 구분되지 않는다 — 그래서 발신
+       기록(양성)과 **함께** 세운다. 창은 늘리지 않고 같은 슬롯을 갈아 끼운다. */
     {
-      name: "editor_guard",
-      keys: ["editor_guard"],
+      name: "editor_tab_autodiscard",
+      keys: ["editor_tab_autodiscard"],
       cluster: D_CLUSTER,
       owner: "frontend",
       modes: ["full"],
@@ -834,19 +837,16 @@ export function createEditorWorkbenchDataProbes() {
         + " 「작업」 화면에서 재는 일을 끝낸 뒤에 열어야 한다.",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
-        const out = { pending: true, calls: [] };
+        const out = { pending: true, calls: [], payload_keys: [] };
         ctx.state.out = out;
 
         const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
           if (screen !== "editor") return real(screen, action, payload);
-          out.calls.push(action + (payload && payload.disposition ? `:${payload.disposition}` : ""));
-          if (action === "goto_section" && !(payload && payload.disposition)) {
-            return Promise.resolve({
-              ok: false, needs_section_guard: true, section: "binding",
-              section_label: "필드 연결·표시", target: payload.section,
-            });
+          out.calls.push(action);
+          if (action === "goto_section") {
+            out.payload_keys = Object.keys(payload || {}).sort();
+            out.target_sent = String((payload || {}).section || "");
           }
-          if (action === "save") return Promise.resolve({ ok: true, saved_name: "공고서" });
           return Promise.resolve({});
         });
         ctx.state.stub = stub;
@@ -865,35 +865,28 @@ export function createEditorWorkbenchDataProbes() {
           }));
           await settleRender(ctx);
           const tab = ctx.doc.querySelector('#editor-steps button[data-section="filename"]');
-          if (!tab) { out.why = "탭 버튼 없음"; out.pending = false; return { editor_guard: out }; }
-          tab.click();
-
-          let ticks = 0;
-          for (;;) {
-            await ctx.sleep(50);
-            ticks += 1;
-            /* R3-01(#410): chooseModal 골격은 React host 커밋 산물이라 이 프로브(실행 순서상
-               첫 골격 소비자, 3794)가 닿는 시점의 부재를 관용한다 — 같은 폴링이 마운트 대기를
-               겸하고, 끝내 안 뜨면 `why: "모달 미개방"` 이 게이트(`why == "완료"` 단언)에서 붉는다. */
-            const ok = byId(ctx, "chooseModalOk");
-            const chooseRoot = byId(ctx, "chooseModal");
-            const open = chooseRoot !== null && !chooseRoot.classList.contains("hidden");
-            if (open && ok) {
-              out.modal_label = textOf(ok);
-              ok.click();                             // 「저장하고 이동」
-              await ctx.sleep(400);                   // 모달 정착(160ms) + 재발신 왕복
-              out.why = "완료";
-              break;
-            }
-            if (ticks > 40) { out.why = "모달 미개방"; break; }
+          if (!tab) {
+            out.why = "탭 버튼 없음";
+            out.pending = false;
+            return { editor_tab_autodiscard: out };
           }
+          tab.click();
+          /* 정산 + 발신 왕복 + 모달이 뜬다면 뜨고도 남을 시간. 짧게 재고 「안 떴다」고 말하면
+             그 음성 대조는 타이밍이 만든 것이지 계약이 만든 것이 아니다. */
+          await ctx.sleep(400);
+          const chooseRoot = byId(ctx, "chooseModal");
+          out.choose_modal_open = chooseRoot !== null && !chooseRoot.classList.contains("hidden");
+          const confirmRoot = byId(ctx, "confirmModal");
+          out.confirm_modal_open = confirmRoot !== null
+            && !confirmRoot.classList.contains("hidden");
+          out.why = "완료";
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
         } finally {
           stub.restore();
         }
         out.pending = false;
-        return { editor_guard: out };
+        return { editor_tab_autodiscard: out };
       },
       teardown(ctx) {
         if (ctx.state.stub) ctx.state.stub.restore();
@@ -901,13 +894,15 @@ export function createEditorWorkbenchDataProbes() {
       },
     },
 
-    /* ── editor_discard_cancel (app.py:2110 상수 · 3802 호출) ─────────────────
-       「변경 버리기」의 **취소 뒤 정합**(U2 §2.17 2R P2). 정산 없이 열면 blur 가 큐에 넣은
-       `set_name` 이 모달이 떠 있는 사이 도착해 `#editor-foot` 을 갈아 끼우고, 저장해 둔
-       트리거가 분리돼 취소가 화면 루트로 떨어진다. **비동기 도착 순서**만 어긋나는 결함이다. */
+    /* ── editor_discard_immediate (구 editor_discard_cancel 슬롯) ─────────────
+       「변경 버리기」의 **즉시 실행**. 확인이 사라졌으므로 이 자리가 재는 것은 취소 뒤 정합이
+       아니라 ①확인 모달이 서지 않는다 ②그럼에도 **정산이 먼저**다(U2 §2.17 2R P2 의 순서
+       계약은 확인과 무관하게 산다 — blur 가 큐에 넣은 `set_name` 이 버리기 뒤에 도착하면
+       방금 되돌린 세션이 그 늦은 편집으로 다시 더러워진다) ③되돌린 스냅샷이 도착하면 이름이
+       저장본으로 돌아가고 두 버튼이 함께 잠긴다. */
     {
-      name: "editor_discard_cancel",
-      keys: ["editor_discard_cancel"],
+      name: "editor_discard_immediate",
+      keys: ["editor_discard_immediate"],
       cluster: D_CLUSTER,
       owner: "frontend",
       modes: ["full"],
@@ -918,7 +913,7 @@ export function createEditorWorkbenchDataProbes() {
         + " 이 예산보다 길다는 것은 레거시의 결함이다 — 지나면 아직 pending 인 객체가 그대로"
         + " 실렸다. 시한을 늘려 그 결함을 덮지 않는다: 초과는 이제 시끄러운 실패다.",
       completionField: "pending",
-      after: ["editor_guard"],
+      after: ["editor_tab_autodiscard"],
       afterReason: "레거시 드라이버 순서 그대로(3794 → 3802) — 같은 편집기 표면을 잇달아 쓴다.",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
@@ -934,12 +929,12 @@ export function createEditorWorkbenchDataProbes() {
           name: "공고서", pattern: "공고서-{{ID}}", pattern_preview: "공고서-1.hwpx",
           rows: [], source_fields: [], active_source_fields: [], ignored_source_fields: [],
           sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
-          default_dataset: null, has_unsaved_work: false, dataset_name: "", schema_only: true,
+          default_dataset: null, dataset_name: "", schema_only: true,
           counts: { filled: 0, empty: 0, unmapped: 0 }, preview_empties: [],
           preview_index: 0, preview_count: 0, is_complete: true,
         });
         const dirty = Object.assign({}, clean, {
-          dirty: true, dirty_sections: ["template"], has_unsaved_work: true, name: "공고서 수정",
+          dirty: true, dirty_sections: ["template"], name: "공고서 수정",
         });
         const discardOf = () => ctx.doc.querySelector('#editor-foot [data-act="discard-patch"]');
 
@@ -948,8 +943,14 @@ export function createEditorWorkbenchDataProbes() {
           out.calls.push(action);
           if (action === "set_name") {
             /* 큐에 든 blur 발신이 **늦게** 도착하는 실제 조건을 그대로 만든다: 응답 전 지연 +
-               도착 시 dirty 스냅샷 push(= `#editor-foot` 재구성 → 옛 트리거 분리). */
+               도착 시 dirty 스냅샷 push(= `#editor-foot` 재구성). */
             return ctx.sleep(120).then(() => { ctx.push("editor", dirty); return {}; });
+          }
+          if (action === "discard_patch") {
+            /* 컨트롤러가 되돌린 뒤 밀어 주는 것을 그대로 흉내낸다 — 확인이 없으니 이 push 가
+               사용자가 보는 **유일한** 결과다. */
+            ctx.push("editor", clean);
+            return Promise.resolve({});
           }
           return Promise.resolve({});
         });
@@ -963,7 +964,7 @@ export function createEditorWorkbenchDataProbes() {
           if (!nameEl || !discardOf()) {
             out.why = "편집 표면 미구성";
             out.pending = false;
-            return { editor_discard_cancel: out };
+            return { editor_discard_immediate: out };
           }
           // ① 클린 세션에 타이핑 — 대기 편집이 서고 버리기가 열린다(1R 계약).
           nameEl.focus();
@@ -981,31 +982,26 @@ export function createEditorWorkbenchDataProbes() {
           for (;;) {
             await ctx.sleep(50);
             ticks += 1;
-            const cancel = byId(ctx, "confirmModalCancel");
-            const open = !byId(ctx, "confirmModal").classList.contains("hidden");
-            if (open && cancel) {
-              /* 확인이 열린 시점 = 정산이 끝난 뒤여야 한다: 큐의 set_name 이 이미 도착했으므로
-                 그 push 의 재구성도 끝났고, 모달이 든 트리거는 **지금 살아 있는** 버튼이다. */
-              out.flushed_before_open = out.calls.indexOf("set_name") === 0;
-              out.trigger_connected_at_open = !!(discardOf() && discardOf().isConnected);
-              cancel.click();                                   // ③ 취소
-              await ctx.sleep(300);
-              /* ④ 취소 뒤 정합: 초점이 화면 루트가 아니라 버리기 버튼으로 돌아오고, 친 값과
-                    dirty 술어(두 버튼 활성)가 그대로다. 취소는 아무것도 버리지 않는다. */
-              const active = ctx.doc.activeElement;
-              out.focus_back_on_discard = !!(active && active.dataset
-                && active.dataset.act === "discard-patch");
-              out.focus_fell_to_screen_root = !!(active && active.id === "scr-editor");
+            if (out.calls.indexOf("discard_patch") !== -1) {
+              await ctx.sleep(300);                 // 되돌린 스냅샷 push 의 재렌더 정착
+              /* ③ 확인은 어디에도 서지 않는다(음성) — 열렸다면 클릭 없이는 닫히지 않으므로
+                    지금 보이는 것으로 충분하다. */
+              const confirmRoot = byId(ctx, "confirmModal");
+              out.confirm_modal_open = confirmRoot !== null
+                && !confirmRoot.classList.contains("hidden");
+              out.call_order = out.calls.join(",");
+              out.flushed_before_discard = out.calls.indexOf("set_name") === 0;
+              /* ④ 되돌린 뒤 정합: 이름이 저장본으로 돌아오고 두 버튼이 함께 잠긴다. */
               const nm = byId(ctx, "editorName");
-              out.name_value_after_cancel = nm ? nm.value : null;
+              out.name_value_after_discard = nm ? nm.value : null;
               const save = ctx.doc.querySelector('#editor-foot [data-act="save"]');
-              out.discard_enabled_after_cancel = !!(discardOf() && !discardOf().disabled);
-              out.save_enabled_after_cancel = !!(save && !save.disabled);
-              out.discarded = out.calls.indexOf("discard_patch") !== -1;
+              out.discard_disabled_after = !!(discardOf() && discardOf().disabled);
+              out.save_disabled_after = !!(save && save.disabled);
+              out.discarded = true;
               out.why = "완료";
               break;
             }
-            if (ticks > 60) { out.why = "모달 미개방"; break; }
+            if (ticks > 60) { out.why = "버리기 미발신"; break; }
           }
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
@@ -1013,7 +1009,7 @@ export function createEditorWorkbenchDataProbes() {
           stub.restore();
         }
         out.pending = false;
-        return { editor_discard_cancel: out };
+        return { editor_discard_immediate: out };
       },
       teardown(ctx) {
         if (ctx.state.stub) ctx.state.stub.restore();
@@ -1038,7 +1034,7 @@ export function createEditorWorkbenchDataProbes() {
         + " 늘린 것은 매달림을 유한 시간에 빨강으로 만드는 상한이지 통과 조건이 아니다 —"
         + " 실측 여유(내부 대기 상한 2×1.2초)를 담되 무한정은 아니게 잡는다.",
       completionField: "pending",
-      after: ["editor_discard_cancel"],
+      after: ["editor_discard_immediate"],
       afterReason: "레거시 드라이버 순서 그대로(3802 → 3808).",
       note:
         "레거시의 `teardown_error` 필드가 태어난 자리(app.py:3322). 그 필드를 읽는 테스트가"
@@ -1665,7 +1661,7 @@ export function createEditorWorkbenchDataProbes() {
             sample_rows: [["A", "a", "3", "-"], ["B", "b", "6", "x"], ["C", "c", "1", "-"]],
             type_options: ["text", "date", "amount", "const"],
             fmt_options: { text: [], date: [], amount: [], const: [] },
-            name: "", pattern: "x", has_unsaved_work: true, editing_origin: "",
+            name: "", pattern: "x", editing_origin: "",
             provenance: null,
             rows: [row(0, "품명", "품명", true, true, true),      // 확정
               row(1, "수량", "수량", false, true, true),          // 수동(touched 미확정)
@@ -1745,7 +1741,7 @@ export function createEditorWorkbenchDataProbes() {
             active_count: 0, ignored_count: 0, ignored_expanded: false, sample_rows: [],
             type_options: ["text"], fmt_options: { text: [] },
             name: "공고서", pattern: "공고서-{{공고번호}}", pattern_preview: "공고서-1.hwpx",
-            has_unsaved_work: false, editing_origin: "공고서",
+            editing_origin: "공고서",
             provenance: null, rows: [],
             counts: { filled: 0, empty: 0, unmapped: 0 }, preview_empties: [],
             preview_index: 0, preview_count: 0,

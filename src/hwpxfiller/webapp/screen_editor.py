@@ -692,7 +692,6 @@ class EditorController:
             "fmt_options": _FMT_OPTIONS,
             "name": self.job_name,
             "pattern": self.pattern,
-            "has_unsaved_work": self.has_unsaved_work(),
             # 연결 확정 대기(#911) — footer 무장 사유를 **더한다**(빼지 않는다). dirty 기반
             # 무장은 그대로고, 바꿀 것이 없는데 관리 검토가 확정을 기다리는 상태에서만 이
             # 사실이 참이다. 판정·라벨·설명은 전부 여기서 실어 보낸다: 표면이 「저장 안 됨」
@@ -937,13 +936,12 @@ class EditorController:
     def initial(self) -> dict:
         return self.snapshot()
 
-    # ------------------------------------------- 세션 수명주기(confirm-or-alarm)
-    def close_guard_reason(self) -> str:
-        """창 종료 가드 참여(F6 1R) — 잃을 것이 있으면 사유, 없으면 ``""``."""
-        return "저장하지 않은 작업 편집" if self.has_unsaved_work() else ""
+    # ------------------------------------------------------ 세션 수명주기(자동 버리기)
+    # (close_guard_reason 은 확인 모달 전면 제거와 함께 사망 — 편집기의 미저장 변경은
+    # 묻지 않고 버리는 것이 계약이라, 창 닫기에서만 되살아나는 확인은 그 계약을 어긴다.)
 
     def has_unsaved_work(self) -> bool:
-        """버려질 **미저장** 변경이 있는가 — 폐기 전 확인·T2 고지 판단에 쓴다(#25).
+        """버려질 **미저장** 변경이 있는가 — 자동 버리기의 no-op 판정과 ``dirty`` 합성에 쓴다.
 
         **저장된 작업 편집은 세어서 답한다**(8R 근본 조치): 잃을 것은 section patch
         (:meth:`dirty_sections`) 와 section 밖 세션 상태(:meth:`dirty_extras`) 의 합집합이고,
@@ -977,7 +975,8 @@ class EditorController:
         템플릿→에디터 진입(템플릿 관리 '작업 만들기', 에디터 0단계 피커)의 단일 seam.
         ``load_template_path`` 만 부르면 이름·데이터·매핑·단계가 이전 세션 값으로 남아
         새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
-        먼저 끊는다. 미저장 확인은 호출측(브리지/웹)이 ``has_unsaved_work`` 로 선판단한다.
+        먼저 끊는다. 앞선 세션의 미저장 변경은 **묻지 않고 버린다**(자동 버리기 계약):
+        호출측이 확인을 대신 물어 주는 선판단 자리는 더 이상 없다.
 
         **예외 하나 — 데이터를 들고 온 진입**(U2 §2.4 · #349 리뷰 3R, #878): 그 세션의 데이터는
         「이전 세션의 잔재」가 아니라 **이 세션이 존재하는 이유**다. 1단계에서 템플릿을 고르는
@@ -1713,9 +1712,9 @@ class EditorController:
         """홈 「＋ 새 작업」 — 이전 세션 전량 초기화(라벨-행동 일치, F10).
 
         종전 홈 버튼은 bare nav 라 직전 세션(이름·데이터·매핑·편집 원점)이 그대로
-        복원돼 '새'가 사실상 '이전 작성 계속'이었다. 미저장 확인은 호출측(웹)이
-        ``has_unsaved_work`` 로 선판단한다 — ``new_job_session``(템플릿 진입 seam)과
-        같은 분담. 초기 상태 notice 는 두지 않는다(정상은 조용히).
+        복원돼 '새'가 사실상 '이전 작성 계속'이었다. 앞선 세션에 남은 미저장 변경은
+        **묻지 않고 버린다** — ``new_job_session``(템플릿 진입 seam)과 같은 계약이다.
+        초기 상태 notice 는 두지 않는다(정상은 조용히).
         """
         self._reset()
 
@@ -1733,13 +1732,16 @@ class EditorController:
         SECTION_FILENAME: "파일 이름",
     }
 
-    def _do_goto_section(self, p: dict) -> "dict | None":
-        """탭 이동 — 신규(초안)는 전진 게이트, 편집은 자유 이동. **처분 미확정 이동은 거절**.
+    def _do_goto_section(self, p: dict) -> None:
+        """탭 이동 — 신규(초안)는 전진 게이트, 편집은 자유 이동. **막는 patch 는 자동으로 버린다**.
 
         §13-16(한 편집 진입은 한 section patch)은 전이 시점의 규율이다: 다른 탭의 규칙을
-        손대려면 지금 patch 를 **저장하거나 버려야** 한다. 그래서 이동은 조용히 일어나지
-        않고, 처분해야 할 자리가 있으면 ``needs_section_guard`` 로 되돌려 웹이 3택(저장하고
-        이동·버리고 이동·머무르기)을 받게 한다 — 판정은 여기(Python), 문안은 웹이다.
+        손대려면 지금 patch 를 처분해야 한다. 종전엔 그 처분을 3택 모달로 물었지만, 편집기
+        한 탭에서 하는 작업량은 확인을 요구할 만큼 크지 않다 — 확인은 마찰만 남기고 왕복·
+        분기·재발신이라는 내부 복잡도를 벌었다. 그래서 이동은 막히지 않고, 막는 자리를
+        :meth:`_do_discard_patch` 로 **그 탭만** 되돌린 뒤 지나간다(이름처럼 어느 section 에도
+        속하지 않는 편집은 종전 「버리고 이동」과 똑같이 살아남는다). 버렸다는 사실은 그
+        discard 가 세우는 notice 로 재진술된다 — 확인은 걷어도 알림은 남는 쪽이다.
 
         초안은 이 거래 밖이다(§10.13 판정 P): 아직 작업이 아니라 세션 전체가 하나의 초안이라
         「직전 판본과의 차이」가 성립하지 않는다. 대신 초안에는 전진 게이트가 산다(판정 M).
@@ -1748,17 +1750,24 @@ class EditorController:
         sections = self.sections()
         if target not in sections:
             raise ValueError(f"이 작업에는 '{target}' 탭이 없습니다.")
-        blocking = self.session.blocking_section(
-            self._draft_job(), target, pending_binding=self._pending_binding()
-        )
-        if blocking and not p.get("disposition"):
-            return {
-                "ok": False,
-                "needs_section_guard": True,
-                "section": blocking,
-                "section_label": self.SECTION_LABELS.get(blocking, blocking),
-                "target": target,
-            }
+        # ``blocking_section`` 은 막는 자리를 한 번에 하나만 지목하므로 소진될 때까지 돈다.
+        # 되돌렸는데 같은 자리가 다시 막으면 되돌리기가 성립하지 않은 것이다 — 그때는 조용히
+        # 지나가지도, 영원히 돌지도 않고 **시끄럽게 거절**한다(통과시키면 이동한 화면이 버렸다고
+        # 말한 것을 그대로 들고 서 있게 된다).
+        discarded: "set[str]" = set()
+        while True:
+            blocking = self.session.blocking_section(
+                self._draft_job(), target, pending_binding=self._pending_binding()
+            )
+            if not blocking:
+                break
+            if blocking in discarded:
+                raise ValueError(
+                    f"「{self.SECTION_LABELS.get(blocking, blocking)}」 에서 바꾼 것을 "
+                    "되돌리지 못해 이동할 수 없습니다."
+                )
+            discarded.add(blocking)
+            self._do_discard_patch({"section": blocking})
         if target == SECTION_TEMPLATE and self.section != SECTION_TEMPLATE:
             self._refresh_library()  # 템플릿 탭 재진입 = 공유 VM 실 디스크 재스캔(외부 변경 반영)
         if not self._editing_origin:  # 초안: 전진은 각 중간 탭의 게이트 통과 필요
@@ -1773,7 +1782,6 @@ class EditorController:
             self._ensure_model()
         self.section = target
         self.session.section = target
-        return None
 
     def _do_discard_patch(self, p: dict) -> None:
         """「변경 버리기」 — 진입 시점 스냅샷(baseSnapshot)으로 규칙만 되돌린다(§5.2).
@@ -1783,16 +1791,18 @@ class EditorController:
         (``discard_session``)라는 다른 사건이고, 두 사건을 한 버튼이 겸하면 "변경만 버리려던"
         사람이 초안째 잃는다.
 
-        **범위는 확인 문안과 같아야 한다**(8R 근본 조치 — 이 함수의 두 갈래가 각각 한 번씩
-        어긴 자리다). 되돌리는 범위가 문안보다 넓으면 승인받지 않은 파기고, 좁으면 버렸다고
-        말한 것이 남아 다음 전환에서 다시 묻는다. 그래서 두 갈래를 대칭으로 세운다:
+        **범위는 알린 문안과 같아야 한다**(8R 근본 조치 — 이 함수의 두 갈래가 각각 한 번씩
+        어긴 자리다). 되돌리는 범위가 문안보다 넓으면 말하지 않은 것까지 파기한 것이고, 좁으면
+        버렸다고 말한 것이 남아 다음 전이에서 또 되돌아온다. 그래서 두 갈래를 대칭으로 세운다:
         ``section`` 있음 = 그 탭만(extras 는 **보존**), 없음 = 세션 전체(extras 도 **함께**).
+        확인이 사라진 뒤로 이 문안은 승인 요청이 아니라 **사후 재진술**이지만, 범위가 같아야
+        한다는 규율은 그대로다 — 알림이 실제와 다르면 그것이 곧 조용한 파기다.
         """
         if self.session.is_draft or self.session.base is None:
             raise ValueError("아직 저장하지 않은 새 작업이라 되돌릴 이전 상태가 없습니다.")
         base = self.session.base
         section = str(p.get("section") or "")
-        if not section:  # footer 「변경 버리기」·이탈의 「버리고 나가기」 = 세션 전체를 되돌린다
+        if not section:  # footer 「변경 버리기」·이탈의 자동 버리기 = 세션 전체를 되돌린다
             # **데이터 선택도 함께 되돌린다**(8R P2): 문안이 「저장된 상태로 되돌린다」고
             # 말했는데 고른 엑셀을 남기면, 버리기를 마친 세션이 여전히 미저장이라 다음
             # 작업을 열 때 방금 버린 것을 또 묻고(같은 파기를 두 번 승인시킨다), 편집기로
@@ -1806,6 +1816,17 @@ class EditorController:
             data_changed = (
                 self.data_path, self.data_sheet, self.data_header_row, self.data_kind
             ) != restored_ref
+            # **되돌릴 것이 없으면 아무 일도 일어나지 않는다.** 이탈이 확인 없이 이 자리를
+            # 무조건 부르게 되면서, 손대지 않은 세션의 이탈마다 디스크 재적재와 「되돌렸습니다」
+            # 라는 거짓 통지가 서게 됐다. 판정은 여기 한 곳에서 한다 — 웹이 dirty 를 다시
+            # 세어 부를지 말지 고르면 같은 상태를 두 곳이 판정하게 된다.
+            #
+            # 술어가 둘인 것은 두 번째 판정이 아니라 **이 갈래가 실제로 되돌리는 것의 합**
+            # 이다: `has_unsaved_work` 의 extras 축은 이름·경로·시트까지만 보고(헤더 행·종류는
+            # 안 본다), 결속 비교는 네 성분을 전부 본다. 좁은 쪽만 물으면 헤더 행만 갈린
+            # 세션의 되돌리기가 조용히 무동작이 된다.
+            if not data_changed and not self.has_unsaved_work():
+                return
             base_bound = has_data_binding(base)
             self._restore_from(
                 base, landing_section=self.section, context=self.session.context,
@@ -1825,10 +1846,10 @@ class EditorController:
             return
         if section not in self.sections():
             raise ValueError(f"이 작업에는 '{section}' 탭이 없습니다.")
-        # 탭 가드의 「버리고 이동」은 **그 자리만** 되돌린다(2R P2): 모달이 말한 것은 「필드
+        # 탭 이동의 자동 버리기는 **그 자리만** 되돌린다(2R P2): 되돌렸다고 알리는 것은 「필드
         # 연결·표시에서 바꾼 것」인데 세션 전체를 되돌리면 머리에서 고친 이름처럼 **어느
-        # section 에도 속하지 않는 편집**(판정 L 계열)까지 함께 사라진다. 되돌리는 범위가
-        # 확인 문안보다 넓으면 그건 사용자가 승인하지 않은 파기다.
+        # section 에도 속하지 않는 편집**(판정 L 계열)까지 함께 사라진다. 탭 하나를 옮겼을 뿐인
+        # 사람에게 알린 적 없는 손실이 생기는 자리다.
         if section == SECTION_FILENAME:
             self.pattern = base.filename_pattern
         elif section == SECTION_BINDING:

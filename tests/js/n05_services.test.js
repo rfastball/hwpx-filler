@@ -138,7 +138,7 @@ function reactZoneHarness(onDispatch) {
   ports.jobRunCoordination.bind({ confirmDestructiveIfArmed: async () => true, log() {} });
   ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
-    confirmDiscard() {}, restoreEntryFocus() {},
+    restoreEntryFocus() {},
   });
   const services = createServiceHandoffPorts();
   services.relink.bind({ relinkTemplate: async () => true });

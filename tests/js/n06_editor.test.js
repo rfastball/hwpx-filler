@@ -203,7 +203,7 @@ test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async
 
 /* ---------------- ③④ 교차 포트·landOn 순서 ---------------- */
 
-test("저장하고 나가기 — refreshList 관측, refresh→go(refreshed:true), openPreview 복귀, late-binding", async () => {
+test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복원 → openPreview 복귀, late-binding", async () => {
   const h = harness({
     initial: async () => snap({
       dirty: true,
@@ -213,8 +213,6 @@ test("저장하고 나가기 — refreshList 관측, refresh→go(refreshed:true
         return_context: { surface: "preview", reopen_drawer: true, preview_index: 2 },
       },
     }),
-    call: async (_screen, action) => (action === "save" ? { ok: true } : {}),
-    choose: () => "save",
   });
   await h.controller.init();
 
@@ -228,21 +226,22 @@ test("저장하고 나가기 — refreshList 관측, refresh→go(refreshed:true
     attach: () => () => {},
   });
   h.ports.editorEntry.bind({
-    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard: async () => true,
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     restoreEntryFocus: () => { h.trace.push(["ports.restoreEntryFocus"]); },
   });
 
   await h.controller.leaveTo("job");
 
   const names = h.names();
-  const iSave = h.trace.findIndex((row) => row[0] === "dispatch" && row[2] === "save");
-  assert.ok(iSave >= 0, "save 발신이 있었다");
-  assert.ok(names.includes("ports.refreshList"), "저장 성공 시 refreshList 호출");
-  assert.ok(names.indexOf("ports.refreshList") > iSave, "refreshList 는 저장 성공 뒤에 온다");
+  const iDiscard = h.trace.findIndex((row) => row[0] === "dispatch" && row[2] === "discard_patch");
+  assert.ok(iDiscard >= 0, "이탈이 세션 되돌리기를 발신했다");
+  assert.equal(names.includes("modal.choose"), false, "이탈이 3택을 묻지 않는다");
+  assert.equal(names.includes("modal.confirm"), false, "이탈이 확인을 묻지 않는다");
 
   const iRefresh = names.indexOf("navigation.refresh");
   const iGo = names.indexOf("navigation.go");
   assert.ok(iRefresh >= 0 && iGo >= 0, "refresh·go 둘 다 발화");
+  assert.ok(iDiscard < iRefresh, "되돌리기가 착지보다 먼저다");
   assert.ok(iRefresh < iGo, "landOn 순서: refresh 가 go 보다 먼저(8R P1)");
   assert.equal(h.trace[iGo][1], "job");
   assert.deepEqual(h.trace[iGo][2], { force: true, refreshed: true });
@@ -262,7 +261,7 @@ test("navigation.refresh 실패 — 나가지 않는다(loud 통지, go 0회)", 
   });
   h.ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
-    confirmDiscard: async () => true, restoreEntryFocus() {},
+    restoreEntryFocus() {},
   });
   await h.controller.init();
 
@@ -272,17 +271,35 @@ test("navigation.refresh 실패 — 나가지 않는다(loud 통지, go 0회)", 
     "실패를 시끄럽게 재진술한다");
 });
 
-test("이탈 3택의 stay 는 draft 를 파기하지 않고 붙잡는다(확인 전 파기 금지 음성)", async () => {
-  const h = harness({
-    initial: async () => snap({ dirty: true, is_draft: false }),
-    choose: () => "stay",
+test("이탈 — 손댄 세션도 묻지 않고 버리고 나간다(자동 버리기 양성)", async () => {
+  const h = harness({ initial: async () => snap({ dirty: true, is_draft: false }) });
+  h.ports.editorEntry.bind({
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
+    restoreEntryFocus() {},
   });
   await h.controller.init();
   await h.controller.leaveTo("job");
   const actions = h.trace.filter((row) => row[0] === "dispatch").map((row) => row[2]);
-  assert.equal(actions.includes("discard_patch"), false, "머무르기가 patch 를 버리지 않는다");
-  assert.equal(actions.includes("save"), false);
-  assert.equal(h.names().includes("navigation.go"), false, "stay 는 이동 0");
+  assert.ok(actions.includes("discard_patch"), "손댄 세션은 되돌리고 나간다");
+  assert.equal(actions.includes("save"), false, "이탈이 저장을 대신하지 않는다");
+  assert.equal(h.names().includes("modal.choose"), false, "3택 0");
+  assert.equal(h.names().includes("modal.confirm"), false, "확인 0");
+  assert.ok(h.names().includes("navigation.go"), "막히지 않고 나간다");
+});
+
+test("이탈 — 초안은 세션째 끊고 나간다(비초안과 다른 동사)", async () => {
+  const h = harness({ initial: async () => snap({ dirty: true, is_draft: true }) });
+  h.ports.editorEntry.bind({
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
+    restoreEntryFocus() {},
+  });
+  await h.controller.init();
+  await h.controller.leaveTo("job");
+  const actions = h.trace.filter((row) => row[0] === "dispatch").map((row) => row[2]);
+  assert.ok(actions.includes("new_session"), "초안 이탈은 세션 폐기다");
+  assert.equal(actions.includes("discard_patch"), false, "초안엔 되돌릴 base 가 없다");
+  assert.equal(h.names().includes("modal.confirm"), false, "확인 0");
+  assert.ok(h.names().includes("navigation.go"), "막히지 않고 나간다");
 });
 
 /* ---------------- 인라인 알림 채널(#323) ---------------- */

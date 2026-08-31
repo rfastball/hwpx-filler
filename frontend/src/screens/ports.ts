@@ -56,7 +56,6 @@ export type EditorEntryPort = {
   newDraft(...args: unknown[]): unknown;
   newDraftFromData(...args: unknown[]): unknown;
   land(...args: unknown[]): unknown;
-  confirmDiscard(...args: unknown[]): unknown;
   restoreEntryFocus(...args: unknown[]): unknown;
 };
 
