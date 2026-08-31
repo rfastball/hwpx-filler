@@ -4531,14 +4531,20 @@ def _unreviewed_session(tmp_path):
     return ctrl, pushes
 
 
-def test_new_job_gets_a_notice_not_a_block(tmp_path):
-    """#957 — §13-3 의 차단이 고지가 됐다: 첫 실행은 알리되 막지 않는다."""
+def test_new_job_is_neither_blocked_nor_announced(tmp_path):
+    """#957 이 차단을 고지로 낮췄고, 간소화 라운드가 그 고지마저 걷었다.
+
+    첫 실행이라는 사실은 사용자가 이미 안다 — 그리고 결과 문서를 열어 확인하는 것은 첫
+    실행이든 아니든 상수라, 알림이 바꾸는 행동이 없다. 그래서 새 작업의 표면은 **조용히
+    열려 있다**: 게이트도 닫히지 않고 사전검증도 첫 실행을 들먹이지 않는다.
+    """
     ctrl, _ = _unreviewed_session(tmp_path)
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is True and snap["gate"]["reason"] == ""
-    assert "[알림] 이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요." in (
-        snap["preflight"]["text"]
-    )
+    assert ctrl._review().first_run          # 사실 판정은 그대로 산다
+    assert "첫 실행" not in snap["preflight"]["text"]
+    # 없는 실행을 들먹이는 일반 문안으로 새지도 않는다.
+    assert "마지막 실행" not in snap["preflight"]["text"]
     assert "승인" not in snap["preflight"]["text"]
 
 

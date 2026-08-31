@@ -243,10 +243,19 @@ def test_the_approval_axis_is_gone_from_the_repository():
 
 
 # ------------------------------------------------------------ 비차단 고지 문안(#957)
-def test_notice_text_for_a_first_run_points_at_the_result_documents():
-    text = review_notice_text(review_requirement(_job()))
-    assert text == "이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요."
-    assert "승인" not in text and "생성할 수 없" not in text
+def test_a_first_run_is_not_announced_at_all():
+    """첫 실행은 **고지 대상이 아니다**(사용자 판정, 간소화 라운드).
+
+    결과 문서를 열어 확인하는 것은 첫 실행이든 백 번째든 언제나 하는 일이라, 「첫
+    실행입니다」는 행동을 바꾸지 못하는 상수의 재진술이다. 동시에 이 갈래가 사라지면
+    안 된다는 것도 함께 잰다: 갈래가 없으면 요구가 선 첫 실행이 일반 문안으로 새어
+    "마지막 실행 이후"라는 **없는 실행**을 말하게 된다.
+    """
+    req = review_requirement(_job())
+    assert req.required and req.first_run
+    text = review_notice_text(req)
+    assert text == ""
+    assert "첫 실행" not in text and "마지막 실행" not in text
 
 
 def test_notice_text_for_changed_rules_names_the_targets():

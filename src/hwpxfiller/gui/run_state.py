@@ -644,7 +644,7 @@ class RunViewModel:
             level = "warn"
         else:
             # 고지만 있는 실행은 **등급을 올리지 않는다** — 「알려주되 막지 않는다」는
-            # 색까지 포함한 말이라, 첫 실행마다 경고색을 켜면 경고가 싸구려가 된다.
+            # 색까지 포함한 말이라, 고지마다 경고색을 켜면 경고가 싸구려가 된다.
             level = "ok"
         return PreflightResult(
             list(src.missing_columns), list(out.empty_valued), level,
