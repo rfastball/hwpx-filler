@@ -378,19 +378,42 @@ class SlotConfigurationProduct:
         같은 사유로 거절한다.
 
         손상 항목을 목록에서 지우지 않는다: 소비 표면이 비활성 + 사유 병기로 재진술한다.
+
+        **어느 항목이 지금 적용돼 있는가**(``applied_key`` · #945 F3)도 같은 왕복에서 나온다.
+        그래서 현재 Configuration 을 함께 읽어 넘긴다 — 구조를 세운 그 자리에서 draft 도 집으면
+        목록·호환·표지가 **같은 한 순간**을 말한다(표면이 나중에 따로 조회하면 갈릴 수 있다).
+        판정 자체는 application 층이 지고 여기는 재료를 모아 넘기기만 한다.
         """
         context: SlotConfigurationContext | None = None
+        config: WorkSlotConfigurationDraft | None = None
         if work_ref is not None:
             try:
                 work_id, ws = self._route(work_ref)
                 context = resolve_slot_configuration_context(
                     self._works, self._quals, self._candidates, ws, work_id
                 )
+                config = self._stored_draft(work_id, context.template_application_id)
             except (SlotConfigurationProductError, SlotConfigurationContextError):
                 # 구조를 세우지 못하는 모든 사유는 「호환을 주장할 수 있는 항목 0」 하나로
                 # 접힌다 — 여기서 목록을 그리려고 판정을 지어내지 않는다.
                 context = None
-        return list_presets_from_store(self._presets, context)
+                config = None
+        return list_presets_from_store(self._presets, context, config)
+
+    def _stored_draft(
+        self, work_id: str, application_id: str
+    ) -> "WorkSlotConfigurationDraft | None":
+        """이 Work 의 CURRENT application 앞에 서 있는 Configuration(없으면 None) — 읽기만 한다.
+
+        물질화하지 않는다(:meth:`_current_view_and_token` 과 같은 write-on-read 회피). 부재는
+        「아직 아무것도 고르지 않았다」라는 정상 상태다.
+        """
+        if not self._configs.exists(work_id):
+            return None
+        for cfg in self._configs.load(work_id).configurations.configurations:
+            if cfg.base_template_application_id == application_id:
+                return cfg
+        return None
 
     def apply_selection_preset(
         self, work_ref: str, configuration_token: str, preset_key: str

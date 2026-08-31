@@ -246,7 +246,7 @@ function stateOf(v, phase = "idle", error = null, zoneError = null, extra = {}) 
   return {
     view: v, token: v?.new_configuration_token ?? null, phase, error, zoneError,
     // S9-03(#829) — 보관된 선택 축은 서비스가 항상 세운다(미지원이 기본값).
-    presets: extra.presets ?? { supported: false, items: [], corrupt: [] },
+    presets: extra.presets ?? { supported: false, items: [], corrupt: [], appliedKey: null },
     presetNotice: extra.presetNotice ?? null,
   };
 }
@@ -634,13 +634,15 @@ test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면
  *  둘(보관·손상)을 흉내내고, 「지금 저장할 선택」 갈래는 호출자가 명시로 세운다. */
 /** 두 구획의 술어는 Python 이 낸다(U4 14~17): 목록은 `preset_list_actionable`, 저장은 저장
  *  게이트 그 자체다. 대역은 목록 축만 흉내내고 저장 축은 호출자가 세운다. */
-function presetZone(items = [], corrupt = [], { listActionable, saveActionable } = {}) {
+function presetZone(items = [], corrupt = [], { listActionable, saveActionable, appliedKey } = {}) {
   return {
     supported: true,
     listActionable: listActionable ?? (items.length > 0 || corrupt.length > 0),
     saveActionable: saveActionable ?? false,
     items,
     corrupt,
+    // 「지금 서 있는 프리셋」도 Python 값이다(#945 F3) — 대역은 그 값을 실어 보낼 뿐이다.
+    appliedKey: appliedKey ?? null,
   };
 }
 function presetItem(key, name, createdAt = "2026-08-24T09:00:00") {
@@ -753,6 +755,8 @@ test("applyPreset: fresh view 통째 교체 + 새 token + 수치는 응답 값 �
   assert.equal(st.presetNotice.applied, 1);
   assert.equal(st.presetNotice.broken, 1);
   assert.equal(st.presetNotice.brokenItems, broken);
+  // 어느 Slot 이 채워졌는지도 backend 값 그대로 실린다(#945 F2 의 재료).
+  assert.deepEqual(st.presetNotice.appliedSlotIds, ["s1"]);
 });
 
 test("applyPreset 거절: 새 view 가 없으므로 옛 상태를 두고 사유만 싣는다", async () => {
@@ -806,6 +810,31 @@ test("컨트롤러: snapshot content_presets 존을 dispatch 없이 hydrate 한�
   });
   const ctrl = createJobContentSelectionController({ runtime, service: svc });
   assert.deepEqual(ctrl.getSnapshot().presets.items, [presetItem("k1", "표준 구성")]);
+  assert.equal(client.calls.length, 0);
+});
+
+test("컨트롤러: 스냅샷의 applied_key 를 운반한다(웹이 선택과 목록을 대조하지 않는다)", () => {
+  const client = fakeClient(() => okv(response(SELECTED)));
+  const svc = createSlotConfigService({ client });
+  const rt = fakeRuntime({
+    slot_configuration: zone(SELECTED),
+    content_presets: {
+      supported: true, items: [presetItem("k1", "표준 구성")], corrupt: [],
+      list_actionable: true, save_actionable: true, applied_key: "k1",
+    },
+  });
+  const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
+  assert.equal(ctrl.getSnapshot().presets.appliedKey, "k1");
+
+  // 선택을 손으로 바꾸면 backend 가 표지를 내린다 — 웹은 그 값을 그대로 따라간다.
+  rt.push({
+    slot_configuration: zone(SELECTED),
+    content_presets: {
+      supported: true, items: [presetItem("k1", "표준 구성")], corrupt: [],
+      list_actionable: true, save_actionable: true, applied_key: null,
+    },
+  });
+  assert.equal(ctrl.getSnapshot().presets.appliedKey, null);
   assert.equal(client.calls.length, 0);
 });
 
@@ -986,7 +1015,9 @@ test("존 렌더: 손상 항목은 숨기지 않고 비활성 + 사유 병기", 
 test("존 렌더: 적용 결과를 「적용 n · 깨짐 m」으로 재진술하고 m>0 을 숨기지 않는다", () => {
   const clean = render(stateOf(SELECTED, "idle", null, null, {
     presets: presetZone([presetItem("k1", "표준 구성")]),
-    presetNotice: { kind: "applied", applied: 2, broken: 0, brokenItems: [] },
+    presetNotice: {
+      kind: "applied", applied: 2, broken: 0, brokenItems: [], appliedSlotIds: ["s1"],
+    },
   }));
   assert.match(clean, /2개를 적용했습니다/);
   assert.match(clean, /aria-live="polite"/);
@@ -994,7 +1025,7 @@ test("존 렌더: 적용 결과를 「적용 n · 깨짐 m」으로 재진술하
   const partial = render(stateOf(SELECTED, "idle", null, null, {
     presets: presetZone([presetItem("k1", "표준 구성")]),
     presetNotice: {
-      kind: "applied", applied: 1, broken: 2,
+      kind: "applied", applied: 1, broken: 2, appliedSlotIds: ["s1"],
       brokenItems: [{
         slot_id: "s-gone", selected_option_ids: ["o"], clearable: false, status: "SLOT_REMOVED",
       }],
@@ -1025,4 +1056,63 @@ test("존 렌더: pending 중에는 저장·적용 버튼이 비활성이다", (
 test("존 렌더: 미지원(비-hwpx·미선택)이면 프리셋 구획 자체가 서지 않는다", () => {
   const html = render(stateOf(SELECTED));
   assert.ok(!html.includes("cs-presets"));
+});
+
+/* ══ U4-G2(#945) — 프리셋 적용 접힘 · 상태 표지 · 0건 문안 게이트 ═══════════════════════ */
+
+test("F2: 프리셋이 채운 슬롯은 적용 직후에도 접히지 않는다(26번 결함류 재발 0)", () => {
+  // 대조군: 같은 settled 슬롯이 프리셋 적용과 무관하면 접힌 채 선다(위 14~17 계약 그대로).
+  const collapsed = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: { kind: "applied", applied: 1, broken: 0, brokenItems: [], appliedSlotIds: [] },
+  }));
+  assert.ok(!/<details[^>]*\sopen=/.test(collapsed), "대조군이 이미 펼쳐져 있습니다");
+
+  // 실험군: backend 가 「이 슬롯을 채웠다」고 말한 것은 만진 것이라 펼친 채 선다.
+  const kept = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: { kind: "applied", applied: 1, broken: 0, brokenItems: [], appliedSlotIds: ["s1"] },
+  }));
+  assert.match(kept, /<details[^>]*\sopen=/);
+});
+
+test("F2: 어느 슬롯이 채워졌는지는 backend 값이다 — 웹이 slot 목록으로 추측하지 않는다", () => {
+  // 같은 화면·같은 수치인데 backend 가 다른 slot_id 를 실었다면 이 슬롯은 만진 것이 아니다.
+  const other = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: {
+      kind: "applied", applied: 1, broken: 0, brokenItems: [], appliedSlotIds: ["s-다른것"],
+    },
+  }));
+  assert.ok(!/<details[^>]*\sopen=/.test(other), other);
+});
+
+test("F3: 적용 0건 · 깨짐 0건은 「0개를 적용했습니다」로 새지 않는다(침묵도 아니다)", () => {
+  const html = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: { kind: "applied", applied: 0, broken: 0, brokenItems: [], appliedSlotIds: [] },
+  }));
+  assert.ok(!html.includes("0개를 적용했습니다"), html);
+  assert.match(html, /적용된 항목이 없습니다/); // 눌렀으면 결과는 반드시 한 줄로 돌아온다
+  assert.match(html, /cs-preset-notice-empty/);
+});
+
+test("F3: 적용 표지는 Python 이 지목한 그 항목에만 선다", () => {
+  const marked = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone(
+      [presetItem("k1", "표준 구성"), presetItem("k2", "간이 구성")],
+      [],
+      { appliedKey: "k2" },
+    ),
+  }));
+  // 눌린 pill 문법을 적용 단추가 든다 — 표지가 선 것은 정확히 하나다.
+  assert.equal((marked.match(/aria-pressed="true"/g) ?? []).length, 1);
+  assert.ok(marked.indexOf("간이 구성") < marked.indexOf('aria-pressed="true"'), marked);
+
+  // 일치가 깨지면(수동 변경 뒤 스냅샷) 표지도 내려간다 — 웹이 붙들지 않는다.
+  const cleared = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성"), presetItem("k2", "간이 구성")]),
+  }));
+  assert.ok(!cleared.includes('aria-pressed="true"'), cleared);
+  assert.match(cleared, /aria-pressed="false"/); // 축 자체는 늘 선다(키 부재 분기 0)
 });

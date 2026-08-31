@@ -113,10 +113,14 @@ export type PresetZone = {
   saveActionable: boolean;
   items: PresetListItem[];
   corrupt: PresetCorruptEntry[];
+  /** 지금 서 있는 선택이 **곧 그 Preset** 인 항목의 key(#945 F3). 판정은 Python
+   *  `PresetListing.applied_key` 하나이고 웹은 그 key 의 줄에 표지만 얹는다. */
+  appliedKey: string | null;
 };
 
 export const emptyPresetZone: PresetZone = {
   supported: false, listActionable: false, saveActionable: false, items: [], corrupt: [],
+  appliedKey: null,
 };
 
 /** backend `PresetSaveResult` asdict — 문안 0(status·code·충돌 항목 사실만). */
@@ -158,6 +162,9 @@ export type PresetNotice =
       applied: number;
       broken: number;
       brokenItems: ProjectedDetachedSelection[];
+      /** 이 왕복이 실제로 채운 Slot 들(backend `applied_slot_ids` 그대로). 렌더 층이 「방금
+       *  만진 슬롯」으로 등재해 적용 직후의 일괄 접힘을 막는다(#945 F2 — U4 26번 동형). */
+      appliedSlotIds: string[];
     }
   | { kind: "apply_rejected"; code: string | null; detail: string | null };
 
@@ -437,6 +444,9 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
                 applied: raw.applied_count,
                 broken: raw.broken_count,
                 brokenItems: raw.broken,
+                // 어느 Slot 이 채워졌는지도 backend 값 그대로다 — 렌더 층이 slot 목록을 훑어
+                // 「바뀐 것 같은」 슬롯을 추측하지 않는다(#945 F2).
+                appliedSlotIds: raw.applied_slot_ids,
               },
             },
           ),

@@ -258,7 +258,7 @@ def test_zone_unsupported_without_selected_job(tmp_path: Path) -> None:
     # U4 13번·14~17: 노출 술어도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
     assert zone == {
         "supported": False, "items": [], "corrupt": [],
-        "list_actionable": False, "save_actionable": False,
+        "list_actionable": False, "save_actionable": False, "applied_key": None,
     }
 
 
@@ -301,6 +301,36 @@ def test_list_section_stands_on_the_stored_list_alone(tmp_path: Path) -> None:
     zone = _presets_zone(ctrl)
     assert [item["name"] for item in zone["items"]] == ["표준 구성"]
     assert zone["list_actionable"] is True
+
+
+# ── 적용 표지: 스냅샷이 「지금 어떤 프리셋이 서 있는가」를 든다(U4-G2 · #945 F3) ─────────
+# 판정 진리표는 application 층 테스트(`tests/test_preset_command.py`)가 잰다. 여기가 재는 것은
+# 그 값이 **존까지 도달하고**, 실제 왕복(저장·적용·수동 변경)마다 서고 죽는가다.
+
+
+def test_applied_key_stands_and_falls_across_real_round_trips(tmp_path: Path) -> None:
+    ctrl, token, _tpl = _seated(tmp_path)
+    key = ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "표준 구성",
+    })["saved_key"]
+    # 방금 보관한 것이 곧 지금 서 있는 선택이다 — 저장 직후부터 표지가 선다.
+    assert _presets_zone(ctrl)["applied_key"] == key
+
+    # 손으로 다른 Option 을 고르면 일치가 깨진다 — 표지는 사건이 아니라 상태라 내려간다.
+    token = _select(ctrl, token, _S_KEEP, _O_DROP, "r3")
+    assert _presets_zone(ctrl)["applied_key"] is None
+
+    # 다시 적용하면 되돌아온다(같은 값을 두 곳이 판정하지 않으므로 왕복마다 재계산된다).
+    ctrl.dispatch("apply_selection_preset", {
+        "configuration_token": token, "preset_key": key,
+    })
+    assert _presets_zone(ctrl)["applied_key"] == key
+
+
+def test_applied_key_is_none_before_anything_is_chosen(tmp_path: Path) -> None:
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+    zone = _presets_zone(ctrl)
+    assert zone["supported"] is True and zone["applied_key"] is None
 
 
 # ── 목록 필터: 현재 템플릿 구조 호환만 실린다(U3 §2 · #875) ─────────────────────────────
@@ -394,7 +424,7 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     # 대고 물을 구조가 없으면 보관 0 · 손상 0 이고, 저장할 선택도 없다 → 두 구획 다 안 선다.
     assert _presets_zone(ctrl) == {
         "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
-        "list_actionable": False, "save_actionable": False,
+        "list_actionable": False, "save_actionable": False, "applied_key": None,
     }
     assert ctrl.registry.load(clone).authority_id == ""  # 렌더가 발급하지 않았다
 

@@ -4739,6 +4739,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "supported": False, "items": [], "corrupt": [],
             "list_actionable": False, "save_actionable": False,
+            # 「지금 적용돼 있는 항목」도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
+            "applied_key": None,
         }
 
     @staticmethod
@@ -4801,6 +4803,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 저장 구획의 술어는 저장 게이트 **그 자체**다(`has_declared_selection`) — 보이는
             # 단추가 곧 이행되는 단추라는 13번의 결속을 그대로 잇는다.
             "save_actionable": savable_selection,
+            # 「어떤 프리셋이 지금 서 있는가」의 단일 출처(#945 F3). 종전에는 이 상태가 어디에도
+            # 없어 직전 왕복의 휘발 재진술이 그 자리를 대신 서 있었다. 웹은 표지만 그린다.
+            "applied_key": listing.applied_key,
         }
 
     def _do_save_selection_preset(self, p: dict) -> dict:

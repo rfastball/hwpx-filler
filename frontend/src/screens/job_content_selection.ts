@@ -73,6 +73,9 @@ function readPresetZone(full: unknown): PresetZone {
     items: Array.isArray(z.items) ? (z.items as PresetZone["items"]) : [],
     // 손상 항목을 목록에서 지우지 않는다 — 표면이 비활성 + 사유 병기로 재진술한다.
     corrupt: Array.isArray(z.corrupt) ? (z.corrupt as PresetZone["corrupt"]) : [],
+    // 「지금 적용돼 있는 항목」도 Python 이 낸다(#945 F3) — 여기서 선택과 목록을 대조해
+    // 다시 판정하면 같은 상태를 두 곳이 판정하게 된다.
+    appliedKey: typeof z.applied_key === "string" ? z.applied_key : null,
   };
 }
 
@@ -384,6 +387,14 @@ function presetNoticeText(notice: PresetNotice): { kind: string; text: string } 
       };
     default:
       // 적용 n · 깨짐 m — 깨진 것이 있으면 숨기지 않고 같은 줄에서 함께 말한다.
+      //
+      // **0 · 0 은 갈래를 가른다**(#945 F3): 「0개를 적용했습니다」는 수치를 문형에 그대로 끼운
+      // 결과이지 사실의 재진술이 아니다. 아무것도 적용되지 않은 왕복(빈 Preset · stale 로 접힌
+      // 적용)에서 그 문장은 성사를 주장하면서 아무 일도 말하지 않는다. 그렇다고 침묵하지도
+      // 않는다 — 사용자가 「적용」을 눌렀으므로 결과는 반드시 한 줄로 돌아온다.
+      if (notice.applied === 0 && notice.broken === 0) {
+        return { kind: "empty", text: "적용된 항목이 없습니다." };
+      }
       return {
         kind: notice.broken > 0 ? "partial" : "applied",
         text:
@@ -423,7 +434,12 @@ function PresetSaveSection(props: {
  *
  *  직전 왕복의 결과 재진술도 여기 산다. 저장 결과까지 이 구획이 드는 이유는 재진술의 수명이
  *  웹 소유이기 때문이다(#659) — 저장이 성사되면 목록에 항목이 늘어 이 구획이 어차피 서고,
- *  거절이면 그 사유를 말할 자리가 여기밖에 없다. */
+ *  거절이면 그 사유를 말할 자리가 여기밖에 없다.
+ *
+ *  **적용 표지(`presets.appliedKey`)는 재진술과 다른 축이다**(#945 F3): 재진술은 직전 왕복의
+ *  사건이라 다음 command 에서 지워지고, 표지는 스냅샷이 낸 **상태**라 선택을 손으로 바꿔
+ *  일치가 깨지는 순간 backend 가 내려 준다. 종전에는 상태 축이 없어 휘발 재진술이 그 자리를
+ *  대신 서 있었고, 그래서 「1개를 적용했습니다」가 아무것도 안 고른 화면 위에 남았다. */
 function PresetListSection(props: {
   presets: PresetZone;
   notice: PresetNotice | null;
@@ -453,8 +469,12 @@ function PresetListSection(props: {
       : h(
           "ul",
           { className: "cs-preset-list" },
-          ...presets.items.map((item) =>
-            h(
+          ...presets.items.map((item) => {
+            // 적용 표지는 **Python 이 지목한 그 key** 에만 선다(#945 F3). 눌린 pill 문법을
+            // 적용 단추 자체가 든다 — 줄에 새 요소를 늘리지 않고, 보조기술에도 「이 항목이
+            // 지금 서 있다」가 같은 한 채널로 전달된다.
+            const applied = presets.appliedKey === item.key;
+            return h(
               "li",
               { key: item.key, className: "cs-preset-item" },
               h("span", { className: "cs-preset-name" }, item.name),
@@ -463,13 +483,14 @@ function PresetListSection(props: {
                 {
                   type: "button",
                   className: "cs-preset-apply",
+                  "aria-pressed": applied,
                   disabled: pending,
                   onClick: () => props.onApply(item.key),
                 },
                 "적용",
               ),
-            ),
-          ),
+            );
+          }),
           // 손상 항목은 목록에서 지우지 않는다 — 비활성 + 사유 병기(숨기면 사용자가 못 묻는다).
           ...presets.corrupt.map((entry) =>
             h(
@@ -517,13 +538,35 @@ export function JobContentSelection(props: {
      구성이 갈리면(작업 전환·successor 적용으로 slot 집합이 바뀌면) 기억을 버린다 — 다른
      구성의 「만졌다」를 이 구성에 적용하면 남의 흔적으로 이 화면을 그리게 된다. */
   const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
-  const slotSignature = (projection?.slots ?? []).map((slot) => slot.slot_id).join(" ");
+  const slotSignature = (projection?.slots ?? []).map((slot) => slot.slot_id).join("\u0000");
   const lastSignature = useRef(slotSignature);
   useEffect(() => {
     if (lastSignature.current === slotSignature) return;
     lastSignature.current = slotSignature;
     setTouched(new Set());
   }, [slotSignature]);
+  /* 프리셋 적용도 **만진 것**이다(#945 F2). 26번 수리는 옵션 선택 경로에만 서 있어서, 프리셋을
+     적용하면 그것이 채운 슬롯 전부가 응답이 오는 순간 settled 가 되어 **눈앞에서 한꺼번에
+     접혔다** — 같은 결함이 다른 문으로 다시 들어온 것이다. 어느 슬롯이 채워졌는지는 backend 가
+     `applied_slot_ids` 로 이미 말해 주므로 여기서 slot 목록을 훑어 추측하지 않는다.
+
+     두 채널을 쓴다. 렌더는 직전 왕복 사실(`justApplied`)을 그 자리에서 합쳐 **깜빡임 없이**
+     펼친 채 세우고, 효과가 그것을 `touched` 로 등재해 재진술이 지워진 뒤에도 살아남게 한다 —
+     등재하지 않으면 다음 선택 한 번에 나머지가 전부 접혀 같은 결함이 한 걸음 뒤에 다시 선다. */
+  const justApplied = state.presetNotice?.kind === "applied"
+    ? state.presetNotice.appliedSlotIds
+    : [];
+  const justAppliedKey = justApplied.join(" ");
+  useEffect(() => {
+    if (justApplied.length === 0) return;
+    setTouched((current) => {
+      if (justApplied.every((slotId) => current.has(slotId))) return current;
+      const next = new Set(current);
+      for (const slotId of justApplied) next.add(slotId);
+      return next;
+    });
+    // 축은 재진술 객체의 동일성이 아니라 그 **내용**이다(같은 목록의 새 객체로 다시 돌지 않는다).
+  }, [justAppliedKey]);
   const backendError = state.zoneError?.message ?? state.view?.context_error_message ?? null;
   const statusNode = status === null
     ? null
@@ -630,7 +673,12 @@ export function JobContentSelection(props: {
               attention: attention.get(slot.slot_id),
               retained: retainedBySlot.get(slot.slot_id),
               pending,
-              collapsed: slot.settled === true && !touched.has(slot.slot_id),
+              // 「만진 슬롯」은 이 세션의 선택(`touched`)과 직전 프리셋 적용이 채운 것
+              // (`justApplied`)의 합집합이다 — 판정(`settled`)은 그대로 Python 것이다.
+              collapsed:
+                slot.settled === true
+                && !touched.has(slot.slot_id)
+                && !justApplied.includes(slot.slot_id),
               onSelect: selectOption,
             }),
           ),

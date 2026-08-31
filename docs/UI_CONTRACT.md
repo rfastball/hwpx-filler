@@ -730,11 +730,12 @@ U3 §3(#876) 「확인할 것이 없으면 숨김이 기본」의 적용 확장)
 - **끝난 슬롯은 접힌 채 선다**(U4 14~17): 판정은 `slot_settled` 하나(→ `ProjectedSlot.settled`)이고
   「기본 접힘」이지 「접혀 있다」가 아니다. 사용자가 편 상태는 표시 상태라 웹이 소유하고 영속하지
   않으며, **이 세션에서 만진 슬롯은 접지 않는다**(고른 직후 눈앞에서 접히면 U4-A 26번이 고친
-  깜빡임이 되돌아온다). 접혀도 **DOM 에서 사라지지 않는다** — `cs-opt-N-M` 은 렌더 순서 기반
+  깜빡임이 되돌아온다 — **프리셋 적용이 채운 슬롯도 만진 것이다**, U4-G2 · #945). 접혀도
+  **DOM 에서 사라지지 않는다** — `cs-opt-N-M` 은 렌더 순서 기반
   id 라 걸러내면 실주행 대본이 다른 슬롯을 누르고도 초록이 된다. `CHOOSE_CONTENT` 가 겨누는
   상태는 술어의 **입력**으로 배제된다.
-- **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, actionable,
-  items[{key,name,created_at}], corrupt[{file_name,error}], corrupt_code}`). 지원 조건은
+- **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, list_actionable, save_actionable,
+  items[{key,name,created_at}], corrupt[{file_name,error}], corrupt_code, applied_key}`). 지원 조건은
   `slot_configuration` 존과 동형이고, `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —
   비활성 + 사유 병기로 같은 목록에 선다(숨기면 사용자가 묻지도 못한다).
 - **`items` 는 현재 템플릿 구조에 「전부 적용 가능」한 것만 싣는다**(U3 §2 · #875). 판정은
@@ -751,7 +752,19 @@ U3 §3(#876) 「확인할 것이 없으면 숨김이 기본」의 적용 확장)
 - **수치는 Python 값 그대로다**: 적용 응답의 `applied_count`·`broken_count`·`applied_slot_ids`·
   `broken` 은 S9-02 `PresetApplyDecision` 이 낸 값이고 표면은 「적용 n · 깨짐 m」으로 문장만
   고른다(slot 목록을 다시 훑어 세지 않는다 — 같은 상태의 두 판정 금지). 깨짐 m>0 은 성공 UI
-  뒤에 숨지 않고 같은 `aria-live` 줄에서 함께 선다.
+  뒤에 숨지 않고 같은 `aria-live` 줄에서 함께 선다. **적용 0 · 깨짐 0 은 갈래가 다르다**
+  (U4-G2 · #945): 「0개를 적용했습니다」는 수치를 문형에 끼운 결과이지 사실의 재진술이 아니라
+  「적용된 항목이 없습니다.」로 말한다(수치 판정은 그대로 링1 것이고 웹은 분기만 고른다).
+  `applied_slot_ids` 는 문안 재료가 아니라 **접힘 재료**이기도 하다: 그 슬롯들은 「이 세션에서
+  만진 것」으로 등재돼 적용 직후 일괄 접힘이 일어나지 않는다(26번 결함류의 프리셋 경로).
+- **「지금 어떤 프리셋이 서 있는가」는 상태다**(U4-G2 · #945): 존의 `applied_key` 가 그 단일
+  출처이고(`preset_command.PresetListing.applied_key`), 웹은 그 key 의 줄에 **표지만** 얹는다
+  (적용 단추의 `aria-pressed`). 판정은 새로 짓지 않는다 — 구조는 목록·적용이 함께 쓰는
+  `fit_preset_selections`, 같음은 `apply_selections` 가 NO_CHANGE 를 가르는
+  `semantic_selection_equal` 이다. 그래서 표지가 섰다는 것은 「다시 눌러도 아무것도 바뀌지
+  않는다」와 같은 말이고, 선택을 손으로 바꾸면 다음 스냅샷에서 내려간다. 같은 내용이 두 이름으로
+  보관돼 있으면 목록 순서의 첫 항목이 든다(표지는 언제나 0 또는 1개다). 직전 왕복의 재진술
+  (`presetNotice`)과 **다른 축**이다 — 재진술은 사건이라 다음 command 에서 지워진다.
 - **적용은 durable S4 mutation** 이라 select/clear 와 같은 규율이다: 생성과 상호배제하고,
   CHANGED 면 자동 확인에 진입하며, 응답의 fresh view + **새 token** 으로 패널을 통째 교체한다.
   거절(`PRESET_NOT_FOUND`·`PRESET_ENTRY_CORRUPT`)이면 새 view·token 이 없으므로 옛 상태를 두고

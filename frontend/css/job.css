@@ -375,6 +375,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .cs-preset-apply{font-size:var(--fs-caption);background:none;border:1px solid var(--a-border);
   border-radius:var(--rad-pill);padding:2px var(--sp-8);cursor:pointer}
 .cs-preset-apply:disabled{cursor:default;opacity:.6}
+/* 지금 서 있는 프리셋(#945 F3) — 눌린 pill 문법 그대로다(`.library-modes .pill[aria-pressed]`
+   와 같은 토큰 셋). 셀렉터가 library 에 못박혀 있어 승격 대신 같은 규칙을 이 스코프에 둔다. */
+.cs-preset-apply[aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);
+  color:var(--a-ink)}
 .cs-preset-corrupt{color:var(--a-muted)}
 .cs-preset-corrupt-note{font-size:var(--fs-caption);color:var(--a-danger)}
 .cs-preset-notice{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
