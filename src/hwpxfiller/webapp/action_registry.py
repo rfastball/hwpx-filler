@@ -159,23 +159,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "range_draft_open": _schema(),
         "range_draft_apply": _schema(),
         "range_draft_cancel": _schema(),
-        # 미리보기 드로어(§7 Value preview·§13-2·4, 재작성 F5) — 열림·자리는 **Python 소유**라
-        # 웹은 이동 방향만 보낸다(레코드 index 를 되돌려주지 않는다, 지도 §10.12 판정 M).
-        # managed HWPX 승인은 backend preview_token 을 왕복한다. legacy 는 무페이로드 의미를 유지한다.
-        # `at` 은 판정 M 의 carve-out 이 아니라 동류다(§10.15.15 판정 C): deep-link 복귀가
-        # 같은 자리로 서기 위한 값이고, 출처가 **Python 자신이 push 한 스냅샷**(preview.pos)
-        # 의 왕복이며 Python 이 클램프해 권위를 유지한다 — 값을 프런트가 짓지 않는다.
-        "preview_open": _schema(optional="at"),
-        "preview_close": _schema(),
-        "preview_move": _schema("delta"),
-        # 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 빈 값 있는 건으로 한정하는 면의
-        # 보기 상태. 열림·자리와 같은 이유로 Python 소유라 웹은 의도한 값만 보낸다.
-        "preview_blank_only": _schema("value"),
-        "preview_approve": _schema(optional="preview_token"),
         # 산출물 관찰 시트(S7-03 · #825, #820 D1·D4) — 생성 **후** 실물을 다시 읽어 보는
-        # 면이라 미리보기와 어휘가 갈린다. 겨눔의 정체는 배달 문서의 `ordinal` 이다:
-        # 표시 index·파일명은 그 사이 갈릴 수 있는 값이고 ordinal 은 그 실행이 고정한
-        # 좌표다. 열림 여부는 Python 소유라 닫기는 무페이로드다(preview_close 선례).
+        # 면이다(생성 **전** 값을 그리던 미리보기 5액션은 #957 에서 사망했다 — 확인의 자리는
+        # 만들어진 문서이고, 파괴 확인만 `generate` 의 `needs_overwrite` 왕복이 진다).
+        # 겨눔의 정체는 배달 문서의 `ordinal` 이다: 표시 index·파일명은 그 사이 갈릴 수 있는
+        # 값이고 ordinal 은 그 실행이 고정한 좌표다. 열림 여부는 Python 소유라 닫기는 무페이로드다.
         "artifact_open": _schema("ordinal"),
         "artifact_close": _schema(),
         "set_selected_only": _schema("value"),
@@ -228,8 +216,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 결과 3태의 「실패한 N건만 선택」(지도 §10.10 판정 F) — 무페이로드: 실패 index 는
         # Python 이 소유한다(웹이 들고 있다 되돌려주면 그 사이 교체된 데이터의 남의 행을 고른다).
         "select_failed": _schema(),
-        # (ack_field·unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13. 표식 삽입
-        #  동의는 확인 면의 승인(preview_approve)이 겸한다.)
+        # (ack_field·unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13. 빈 값은
+        #  #957 이후 차단이 아니라 표식이라 동의 사건 자체가 없다.)
     },
     # TXT 검토·복사 작업대(v6 S7 · 계약 §11, 재작성 F6) — 데이터 존이 **없다**: 데이터·범위
     # 선택은 「문서 만들기」가 끝내고 여기는 고정 사본을 받는다(§13-13). 필드 연결 동사는

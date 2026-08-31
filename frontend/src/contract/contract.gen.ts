@@ -158,11 +158,6 @@ export const SCREEN_ACTIONS = {
     range_draft_open: { required: [], optional: [] },
     range_draft_apply: { required: [], optional: [] },
     range_draft_cancel: { required: [], optional: [] },
-    preview_open: { required: [], optional: ["at"] },
-    preview_close: { required: [], optional: [] },
-    preview_move: { required: ["delta"], optional: [] },
-    preview_blank_only: { required: ["value"], optional: [] },
-    preview_approve: { required: [], optional: ["preview_token"] },
     artifact_open: { required: ["ordinal"], optional: [] },
     artifact_close: { required: [], optional: [] },
     set_selected_only: { required: ["value"], optional: [] },
@@ -322,7 +317,6 @@ export const DOCUMENT_CREATION_BLOCKERS = [
   "REVIEW_BINDING",
   "REVIEW_RECORD_DATA",
   "REVIEW_DELIVERY",
-  "REVIEW_PREVIEW",
   "EXECUTION_NO_EVIDENCE",
   "EXECUTION_CHECKING",
   "EXECUTION_STALE",
@@ -347,7 +341,6 @@ export const PRIMARY_ACTIONS = [
   "RESOLVE_EXECUTION",
   "REVIEW_RECORD_DATA",
   "REVIEW_DELIVERY",
-  "REVIEW_PREVIEW",
   "RESOLVE_RUNTIME_POLICY",
   "CREATE_DOCUMENTS",
 ] as const;
@@ -368,15 +361,6 @@ export const WORKBENCH_EXECUTION_STATUSES = [
 ] as const;
 
 export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];
-
-/* Current PreviewRequirement — 실제 resolved delivery가 사용자 확인 필요성을 결정한다. */
-export const PREVIEW_REQUIREMENT_KINDS = [
-  "NOT_REQUIRED",
-  "OPTIONAL",
-  "REQUIRED",
-] as const;
-
-export type PreviewRequirementKind = (typeof PREVIEW_REQUIREMENT_KINDS)[number];
 
 /* RunDeliveryIntent collision policy(#724 §8) — 기본 ADD_SUFFIX, overwrite 는 명시 선택. */
 export const COLLISION_POLICIES = [

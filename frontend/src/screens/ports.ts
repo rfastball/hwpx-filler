@@ -27,8 +27,6 @@ export type JobReadPort = {
   openBrowseNeedsAction(name: string): Promise<void>;
 };
 
-export type PreviewRequest = { at?: number; focusTarget?: string };
-
 export type JobRunCallbacks = {
   onFull(snapshot: unknown): void;
   onProgress(progress: unknown): void;
@@ -38,7 +36,6 @@ export type JobRunPort = {
   attach(callbacks: JobRunCallbacks): () => void;
   acceptFull(snapshot: unknown): void;
   acceptProgress(progress: unknown): void;
-  openPreview(request?: PreviewRequest): Promise<void>;
   dispose(): void;
 };
 

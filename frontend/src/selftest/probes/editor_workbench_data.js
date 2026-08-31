@@ -7,7 +7,6 @@
  *   ① `_VIEW_ORDER_PROBE_SETUP_JS`(2665)        → view_order            · 3754·3757·3762
  *   ② `_DATA_SHEET_PROBE_SETUP_JS`(2698)        → data_sheet            · 3764·3767·3772
  *   ③ `_RANGE_DRAFT_PROBE_SETUP_JS`(2799)       → range_draft           · 3774·3777·3782
- *   ④ `_PREVIEW_DRAWER_PROBE_SETUP_JS`(2825)    → preview_drawer        · 3786
  *   ⑤ `_EDITOR_GUARD_PROBE_SETUP_JS`(2032)      → editor_tab_autodiscard   · 3794
  *   ⑥ `_EDITOR_DISCARD_CANCEL_PROBE_JS`(2110)   → editor_discard_immediate · 3802
  *   ⑦ `_EDITOR_TXT_BAND_PROBE_SETUP_JS`(3311)   → editor_txt_band       · 3808
@@ -48,10 +47,6 @@
  *   · data_sheet            : `moved`/`not_moved`/`restored` · `first_sticky` ·
  *                             `foot_shown_in_sheet` ↔ range_draft 의 `foot_hidden_in_screen`.
  *   · range_draft           : `opened_without_data === false`(거절) ↔ `present === true`.
- *   · preview_drawer        : 거절(`opened_without_data === false`) ↔ 성사(`opened === true`) ·
- *                             `prev_disabled=false`/`next_disabled=true` ·
- *                             `focus_on_body=false` + `focus_returned` · `pos_text=='2 / 2'` ·
- *                             `value_rows==2` · `closed_by_state`.
  *   · sheet_gate            : 확정(`picked=='확정됨:낙찰현황'`) ↔ 취소(`cancelled===null` +
  *                             `closed_after`). `status=='done'` 이 나머지를 유의미하게 만든다.
  *   · editor_tab_autodiscard: `calls == [goto_section]`(양성 — 한 발) ↔ `choose_modal_open ===
@@ -100,7 +95,7 @@ export const D_KEYS = Object.freeze([
   "data_picker", "data_sheet", "editor_chip", "editor_discard_immediate",
   "editor_lib", "editor_lib_manage", "editor_save_gate", "editor_tab_autodiscard",
   "editor_txt_band",
-  "job_editmode", "preview_drawer", "range_draft", "sheet_gate", "view_order", "workbench",
+  "job_editmode", "range_draft", "sheet_gate", "view_order", "workbench",
 ]);
 
 /** 가시성 단언 없이 `.click()` 하는 자리 전수 — **아는 채로** 옮긴 감도 공백이다.
@@ -115,7 +110,6 @@ const CLICK_SITES_WITHOUT_VISIBILITY = Object.freeze([
   "editor_discard_immediate: 「변경 버리기」",
   "data_picker: 「이 데이터 고정」 · 「찾아보기」(뒤이어 browse_pin_visible 이 가시성을 잰다)",
   "data_sheet: ⤢ 트리거 · 면 닫기",
-  "preview_drawer: 미리보기 열기 트리거",
   "workbench: 결과 조각(data-token)",
 ]);
 
@@ -675,152 +669,6 @@ export function createEditorWorkbenchDataProbes() {
       },
     },
 
-    /* ── preview_drawer (app.py:2825 상수 · 3786 호출) ────────────────────────
-       드로어가 실제로 값·이름·증거를 그리고, 상태가 면을 여닫는가. */
-    {
-      name: "preview_drawer",
-      keys: ["preview_drawer"],
-      cluster: D_CLUSTER,
-      owner: "frontend",
-      modes: ["full"],
-      legacySite: 3786,
-      deadlineMs: 2500,
-      deadlineRationale:
-        "레거시 회수는 공용 `_probe_late`(app.py:3494-3506) 의 50 × 50ms = 2.5초 예산을 쓴다."
-        + " 그 예산이 이 프로브의 전부이므로 그대로 두고, 초과는 조용한 통과가 아니라 실패다.",
-      completionField: "pending",
-      after: ["range_draft"],
-      afterReason:
-        "레거시 드라이버 순서 그대로(3774 → 3786). 양성대조인 **거절**을 스텁 걸기 전에"
-        + " 실 액션으로 받아야 해서, 앞 프로브의 스텁 복원이 끝난 뒤여야 한다.",
-      note:
-        "양성대조 선행: 데이터 없이 열면 거절이다(§18.11-6). 거절과 성사가 다른 값을 내야"
-        + " 이 프로브가 실물을 잰 것이다 — 둘 다 통과하면 아무것도 안 재고 있다는 뜻이다.",
-      async run(ctx) {
-        const Bridge = service(ctx, "Bridge");
-        const out = { pending: true };
-        const btn = byId(ctx, "jobMirrorPreviewOpen");
-        const modal = byId(ctx, "previewSheet");
-        out.present = !!(btn && modal);
-        if (!out.present) { out.pending = false; return { preview_drawer: out }; }
-        out.hidden_before = modal.classList.contains("hidden");
-
-        /* 양성대조: 스텁을 걸기 **전에** 실 액션으로 거절을 받는다(데이터·작업 없음). */
-        await Bridge.call("job", "preview_open", {}).then(
-          () => { out.opened_without_data = true; },
-          () => { out.opened_without_data = false; },
-        );
-        await ctx.sleep(60);                          // 앞 프로브의 늦은 push 를 흘려보낸다
-
-        const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
-          if (screen === "job" && action === "preview_open") return Promise.resolve({ ok: true });
-          if (screen === "job" && action === "preview_close") return Promise.resolve(null);
-          return real(screen, action, payload);
-        });
-        ctx.state.stub = stub;
-
-        ctx.push("job", {
-          job_name: "공고서", has_job: true, out_dir: "C:\Results",
-          data_label: "d.csv", data_source_label: "d.csv (파일)", data_notice: null,
-          template_name: "t.hwpx", template_path: "C:\t.hwpx", template_missing: false,
-          filename_pattern: "doc-{{seq}}", has_data: true, record_count: 2, selected_count: 2,
-          view_order: "sourceDesc", order_note: "보이는 순서대로 생성됩니다.",
-          range_draft: {
-            open: false, dirty: false, sel_count: 0, selected_only: false,
-            view_order: "sourceDesc",
-          },
-          records: [],
-          filter: {
-            active: false, reapply_available: false, reapply_hint: "",
-            search: "", chips: [], definition: "", branches: [], columns: [],
-          },
-          table: { columns: [], rows: [], visible_count: 0, hidden_selected: [] },
-          restate: { origin: null, filter_active: false, in_def: 0, extra: 0, sample: [] },
-          preflight: { level: "ok", text: "ok" }, blank_fields: [], drift: [], name_tokens: [],
-          gate: { enabled: false, level: "warn", text: "나갈 이름과 값을 승인해야 생성할 수 있습니다." },
-          review: {
-            required: true, approved: false, risk: "presentation",
-            targets: ["금액(표시형)"], first_run: false, unknown_baseline: false,
-            structure_changed: false,
-          },
-          preview: {
-            open: true, can_open: true, pos: 1, total: 2, filename: "doc-002.hwpx",
-            blank_only: false, blank_count: 1, can_prev: true, can_next: false,
-            rows: [{ name: "공고명", value: "전산장비" }, { name: "금액", value: "" }],
-            evidence: {
-              policy: "formatted_value",
-              rows: [{ name: "금액", value: "1,000", note: "표시형이 적용된 값입니다." }],
-              note: "",
-            },
-            can_approve: true, empty_note: "",
-          },
-        });
-        await settleRender(ctx);
-        btn.focus();
-        btn.click();
-        await ctx.sleep(60);
-
-        try {
-          out.flag_shown = !isHidden(ctx, byId(ctx, "jobReviewFlag"));
-          out.opened = !modal.classList.contains("hidden");
-          out.pos_text = textOf(byId(ctx, "previewPos"));
-          out.prev_disabled = byId(ctx, "previewPrev").disabled;
-          out.next_disabled = byId(ctx, "previewNext").disabled;
-          out.value_rows = ctx.doc.querySelectorAll("#previewRows .mir-row").length;
-          out.evidence_rows = ctx.doc.querySelectorAll("#previewEvidenceRows .mir-row").length;
-          out.filename = textOf(byId(ctx, "previewFilename"));
-          /* 「빈 값 있는 건만 보기」(U2 §2.13) — 상태 되읽기(스냅샷이 정본, 낙관 토글 없음)와
-             가용성(blank_count>0 이면 활성), 이름 계획 한 줄의 실렌더. */
-          out.blank_toggle_pressed = byId(ctx, "previewBlankOnly").getAttribute("aria-pressed");
-          out.blank_toggle_disabled = byId(ctx, "previewBlankOnly").disabled;
-          out.name_plan = textOf(byId(ctx, "previewNamePlan"));
-          /* 「적용 범위」 축 부재 되읽기(U2 §2.3) — 정적 계약은 id 부재를 보지만, JS 가 그
-             자리를 다시 만들지 않는지는 실렌더에서만 확인된다. */
-          out.scope_axis = !!byId(ctx, "previewScope");
-          out.approve_shown = !isHidden(ctx, byId(ctx, "previewApprove"));
-          /* 원격 닫힘: Python 이 닫았다고 말하면 DOM 도 닫힌다(상태의 진실은 스냅샷이다).
-             세션은 살려 둔다 — 트리거가 살아 있어야 "초점이 트리거로 돌아온다"를 잴 수 있다
-             (세션째 죽이면 트리거가 비활성이 되고, 그건 초점 **대안 착지**라는 다른 계약이다). */
-          ctx.push("job", {
-            job_name: "공고서", has_job: true, has_data: true,
-            preview: {
-              open: false, pos: 0, total: 2, can_open: true,
-              blank_only: false, blank_count: 0, can_prev: false, can_next: false,
-            },
-            review: {
-              required: false, approved: false, risk: "", targets: [],
-              first_run: false, unknown_baseline: false, structure_changed: false,
-            },
-            records: [], blank_fields: [], drift: [], name_tokens: [],
-            gate: { enabled: false, level: "warn", text: "" },
-          });
-          await ctx.sleep(40);
-          const card = modal.querySelector(".modal-card");
-          const ev = new ctx.win.Event("transitionend", { bubbles: true });
-          Object.defineProperty(ev, "propertyName", { value: "opacity" });
-          card.dispatchEvent(ev);                     // 비동기 닫힘을 정착시킨다
-          out.closed_by_state = modal.classList.contains("hidden");
-          out.focus_returned = ctx.doc.activeElement === btn;
-          /* 초점이 문서 맨 앞으로 떨어지지 않았다는 사실도 따로 센다 — `focus()` 가 조용한
-             no-op 이 되는 경로(비활성 트리거)의 증상이 정확히 이것이다. */
-          out.focus_on_body = ctx.doc.activeElement === ctx.doc.body;
-        } catch (thrown) {
-          ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
-        }
-        out.pending = false;
-        return { preview_drawer: out };
-      },
-      teardown(ctx) {
-        if (ctx.state.stub) ctx.state.stub.restore();
-      },
-    },
-
-    /* ── editor_tab_autodiscard (구 editor_guard 슬롯) ────────────────────────
-       탭 이동의 **자동 버리기**. 이 자리는 종전 3택 가드의 이어짐(저장→재발신)을 쟀는데,
-       확인 모달이 전면 제거되면서 계약이 뒤집혔다: dirty 인 채 탭을 눌러도 모달은 서지 않고
-       발신은 `goto_section` **한 발**이며 처분 표지(`disposition`)는 실리지 않는다.
-       모달 미개방은 음성 대조라 혼자서는 무동작 프로브와 구분되지 않는다 — 그래서 발신
-       기록(양성)과 **함께** 세운다. 창은 늘리지 않고 같은 슬롯을 갈아 끼운다. */
     {
       name: "editor_tab_autodiscard",
       keys: ["editor_tab_autodiscard"],
@@ -831,10 +679,10 @@ export function createEditorWorkbenchDataProbes() {
       deadlineMs: 2500,
       deadlineRationale: "공용 `_probe_late` 예산 2.5초(app.py:3494-3506) 그대로.",
       completionField: "pending",
-      after: ["preview_drawer"],
+      after: ["range_draft"],
       afterReason:
-        "레거시 드라이버 순서 그대로(3786 → 3794). 편집기는 셸을 덮는 화면이라 앞 프로브가"
-        + " 「작업」 화면에서 재는 일을 끝낸 뒤에 열어야 한다.",
+        "편집기는 셸을 덮는 화면이라 앞 프로브가 「작업」 화면에서 재는 일을 끝낸 뒤에"
+        + " 열어야 한다(구 선행자 preview_drawer 는 #957 에서 퇴역했다).",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = { pending: true, calls: [], payload_keys: [] };
@@ -1398,8 +1246,8 @@ export function createEditorWorkbenchDataProbes() {
           /* 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다. */
           out.ctx_hidden_when_voluntary = isHidden(ctx, byId(ctx, "editorContext"));
           draft.context = {
-            entry_reason: "preview_result", evidence: { "보고 있던 행": "4 / 12" },
-            return_context: { surface: "preview" },
+            entry_reason: "run_failure", evidence: { "실패한 행": "4 / 12" },
+            return_context: { surface: "result" },
           };
           ctx.push("editor", draft);
           await settleRender(ctx);

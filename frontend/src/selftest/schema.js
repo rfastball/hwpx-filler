@@ -41,7 +41,7 @@ export const SELFTEST_MODES = Object.freeze({
       "job_mirror", "job_on", "job_result", "library_surface", "library_view_tabs",
       "milestone_h_overlay", "milestone_h_wave1", "modal_a11y", "modal_confirm_serial",
       "nav_count", "personalization_persist", "preserve", "preserve_real",
-      "preview_drawer", "range_draft", "react_runtime", "runtime", "sheet_gate",
+      "range_draft", "react_runtime", "runtime", "sheet_gate",
       "theme_persist", "title_dom", "tpl_options", "url", "view_order", "workbench",
     ]),
     echo: null,
@@ -403,11 +403,6 @@ export const SELFTEST_KEYS = Object.freeze({
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "B",
   }),
-  preview_drawer: key({
-    kind: "object", modes: ["full"], owner: "frontend",
-    consumedBy: ["tests/test_web_selftest_gate.py"],
-    cluster: "D",
-  }),
   range_draft: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
@@ -461,8 +456,8 @@ export const ERROR_CONTRACT = Object.freeze({
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_bridge_timeout",
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_evaluation_error",
   ]),
-  /** 성공 키 48 + 이 키 = 49. "44" 는 폐기된 설계 수치다. */
-  unionWithError: 49,
+  /** 성공 키 47 + 이 키 = 48. "44" 는 폐기된 설계 수치다(#957 에서 `preview_drawer` 퇴역으로 48→47). */
+  unionWithError: 48,
 });
 
 /* ───────────────────── build.ps1 — 비-pytest 소유자 ───────────────────── */
@@ -471,9 +466,9 @@ export const ERROR_CONTRACT = Object.freeze({
 export const BUILD_INVARIANTS = Object.freeze({
   responsibilityCount: Object.freeze({
     source: "packaging/build.ps1:436-437",
-    expected: 43,
+    expected: 42,
     excludes: Object.freeze(["runtime"]),
-    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 43. 키를 더하거나 빼면 릴리스가 죽는다.",
+    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 42. 키를 더하거나 빼면 릴리스가 죽는다.",
   }),
   noTopLevelBooleanFalse: Object.freeze({
     source: "packaging/build.ps1:439-450",
@@ -495,7 +490,7 @@ export const BUILD_INVARIANTS = Object.freeze({
 export const NON_PYTEST_OWNERS = Object.freeze([
   Object.freeze({
     site: "packaging/build.ps1:436-437",
-    owns: "최상위 책임 키 수 == 43(runtime 제외)",
+    owns: "최상위 책임 키 수 == 42(runtime 제외)",
     breaksIf: "키를 더하거나 뺀다",
   }),
   Object.freeze({

@@ -26,7 +26,7 @@
 .sheet-head h3{margin:0}
 .sheet-body{min-width:0;min-height:0;flex:1;padding:var(--sp-16);overflow:auto}
 /* (구 2 pane 시트 골격은 유일 소비자였던 작업 확인 펼침 면의 사망 — U2 §2.13 — 과 함께
-   걷혔다: 확인 면은 1 pane(#previewSheet)으로 접혔다.) */
+   걷혔다. 그 뒤를 이은 1 pane 확인 면도 #957 에서 철거됐다.) */
 .data-sheet-body{display:flex;flex-direction:column;gap:var(--sp-10)}
 .data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
 .data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
@@ -124,37 +124,10 @@
 .pk-note{display:block}
 .pk-row .tplcard-acts{flex:none;margin:0;max-width:230px}
 
-/* ---- 확인 면 = 생성 값 미리보기 시트 (재작성 F5 드로어의 승격 — U2 §2.13) ----
-   레코드 1건의 전 필드를 보여주고, **자리(N/M)와 파일 이름은 고정**이다: 목록을 스크롤하다
-   지금 몇 번째를 보는지 잃으면 미리보기의 뜻이 반쯤 사라진다. 폭은 시트 골격(.sheet-card)이
-   소유한다 — 구 680px 모달 폭은 렌더러가 올 자리라 좁아 승격과 함께 걷혔다. */
-.preview-drawer .preview-nav{display:flex;align-items:center;gap:var(--sp-8);
-  margin-top:var(--sp-8)}
-.preview-drawer .preview-nav #previewBlankOnly[aria-pressed="true"]{
-  border-color:var(--a-primary);color:var(--a-primary)}
-.preview-drawer .preview-nav strong{font-variant-numeric:tabular-nums}
-/* 행 컨테이너만 겨눈다 — `.picker-sec>div` 로 넓게 걸면 구획 캡션(`.cap` 도 div)까지
-   세로 flex·스크롤 상자가 돼 캡션이 가운데로 뭉갠다(눈검증이 잡은 자리). */
-.preview-drawer #previewRows,
-.preview-drawer #previewEvidenceRows{display:flex;flex-direction:column;gap:var(--sp-2);
-  max-height:34vh;overflow:auto;overscroll-behavior:contain}
-.preview-drawer .mir-row{display:flex;gap:var(--sp-12);align-items:baseline;
-  padding:var(--sp-6) 0;border-bottom:1px solid var(--n-border)}
-.preview-drawer .mir-name{flex:0 0 34%;min-width:0;color:var(--a-muted);
-  font-size:var(--fs-caption);overflow-wrap:anywhere}
-.preview-drawer .mir-val{flex:1;min-width:0;overflow-wrap:anywhere}
-.preview-drawer .mir-val .doc-sum{display:block;color:var(--a-muted);
-  font-size:var(--fs-caption)}
-.preview-drawer .preview-foot{display:flex;flex-wrap:wrap;gap:var(--sp-16);
-  margin-top:var(--sp-16);padding-top:var(--sp-12);border-top:1px solid var(--n-border)}
-.preview-drawer .preview-foot>div{display:flex;flex-direction:column;gap:var(--sp-2);
-  min-width:0}
-.preview-drawer .preview-foot strong{overflow-wrap:anywhere}
-
 /* ---- 산출물 관찰 시트 (S7-03 · #825) ----
-   위 미리보기 드로어와 **골격은 같고 시각 어휘는 다르다**(#820 D4): 저기는 값 행(mir-row)의
-   면이고 여기는 문서 본문의 면이다. 문서를 문서처럼 읽히게 하려고 본문 폭을 재단하고
-   문단·표를 그 안에 세운다. 조판·서식 재현은 비범위라(#360) 글꼴·여백을 흉내 내지 않는다. */
+   시트 골격(.sheet-card)을 쓰되 시각 어휘는 문서의 것이다(#820 D4). 문서를 문서처럼
+   읽히게 하려고 본문 폭을 재단하고 문단·표를 그 안에 세운다. 조판·서식 재현은
+   비범위라(#360) 글꼴·여백을 흉내 내지 않는다. */
 .artifact-sheet .artifact-sheet-body{display:flex;flex-direction:column;gap:var(--sp-12)}
 .artifact-sheet .picker-sec{max-width:72ch}
 .artifact-para{margin:0 0 var(--sp-6);white-space:pre-wrap;overflow-wrap:anywhere}

@@ -175,10 +175,6 @@ export function bootProduct() {
   /* editor·library→job 간선 — 소비 메서드만 좁게 싣는다(전 표면을 실으면 절단이 무의미). */
   const jobCallbacks = {
     refreshList: (...args) => screenPorts.jobRead.current().refreshList(...args),
-    openPreview: (_event, options = {}) => screenPorts.jobRun.current().openPreview({
-      at: options.at,
-      focusTarget: options.focusTarget,
-    }),
     openBrowseNeedsAction: (...args) => screenPorts.jobRead.current().openBrowseNeedsAction(...args),
   };
 
@@ -473,8 +469,6 @@ export function bootProduct() {
           { controller: EditorController }),
         productOverlayComponent("sheetModal", PRODUCT_OVERLAY_COMPONENTS.SheetPickerDialog,
           { controller: SheetPickerController }),
-        productOverlayComponent("previewSheet", PRODUCT_OVERLAY_COMPONENTS.JobPreviewSheet,
-          { controller: JobRunController }),
         productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,
           { controller: JobRunController }),
       ],

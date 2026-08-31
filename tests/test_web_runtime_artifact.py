@@ -240,8 +240,10 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "$policyKey.GetValueNames().Count -eq 0" in build
     assert "'hklm-app-policy'" in build
     assert "'process-environment'" in build
-    assert "responsibilities.Count -ne 43" in build
-    assert "responsibilities.Count -ne 42" not in build
+    # #957: `preview_drawer` 책임 퇴역으로 43→42. 옛 수치가 남으면 릴리스 빌드가
+    # 새 sealed web 과 어긋난 채 죽는다 — 방향까지 고정한다.
+    assert "responsibilities.Count -ne 42" in build
+    assert "responsibilities.Count -ne 43" not in build
     assert "falseResponsibilities.Count -ne 0" in build
     # React 실런타임 형상 단언(R2-04 · #408)이 packaged 판정에 실재한다.
     assert "react_runtime 증거가 없습니다" in build

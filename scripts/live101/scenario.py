@@ -35,7 +35,6 @@ CAPTURE_POINTS: "tuple[str, ...]" = (
     "mapping-confirm",
     "save-job",
     "library-detail",
-    "preview-drawer",
     "session-panel",
     "range-editor",
     "mirror-check",
@@ -264,37 +263,25 @@ def run(ctx: ScenarioContext) -> dict:
     # ---- S5a 첫 실행의 결과 고지(#957) -------------------------------------
     # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다. 종전에는 그 사실이 게이트를 닫고
     # 승인을 요구했지만, 신뢰 정책 선회로 **알리되 막지 않는다**: 사전검증이 첫 실행임을
-    # 고지한 채 생성이 열려 있고 확인의 자리는 결과 문서다. 그래도 미리보기는 **선택**으로
-    # 열 수 있어야 하므로 고지·게이트 개방·미리보기 가용성을 **같이** 재고 나서 누른다.
+    # 고지한 채 생성이 열려 있고 확인의 자리는 결과 문서다. 생성 **전** 값을 그리던 확인
+    # 면과 그 승인 동사는 슬라이스 ③ 에서 통째로 철거됐으므로, 여기서 재는 것은 고지와
+    # 게이트 개방이 **함께** 서는 것과 그 출구가 화면에 없다는 사실이다.
     s.wait(
         "!document.getElementById('jobGenBtn').disabled"
-        " && document.getElementById('jobPreflight').textContent.includes('첫 실행')"
-        " && !document.getElementById('jobMirrorPreviewOpen').disabled",
+        " && document.getElementById('jobPreflight').textContent.includes('첫 실행')",
         "첫 실행 검토 고지(비차단)",
-        requires=["#jobGenBtn", "#jobPreflight", "#jobMirrorPreviewOpen"],
+        requires=["#jobGenBtn", "#jobPreflight"],
     )
     seen["first_run_review_notice"] = True
-    s.click_sel("#jobMirrorPreviewOpen", what="생성 값 미리보기")
-    s.wait(
-        "!document.getElementById('previewSheet').classList.contains('hidden')"
-        " && document.querySelectorAll('#previewRows .mir-row').length > 0"
-        " && document.getElementById('previewFilename').textContent.length > 0",
-        "확인 면(생성 값 미리보기)·값·파일 이름",
-        requires=["#previewSheet", "#previewRows", "#previewFilename"],
+    _expect(
+        not s.js("!!document.getElementById('jobMirrorPreviewOpen')"),
+        "S5a: 철거된 「생성 값 미리보기」 출구가 아직 서 있습니다",
     )
-    ctx.shoot("preview-drawer")
-    s.click_sel("#previewApprove", what="이 이름과 값으로 승인")
-    # 승인은 **한 동작**이다(U4 계열1-21) — 확인했다는 뜻이므로 면이 함께 닫힌다. 종전
-    # 계약은 「승인 뒤 면 생존」이었고(`docs/archive/DATA_FIRST_INTEGRATION_MAP.md:1472`)
-    # 그 자리에서 나머지를 더 넘겨보게 했는데, 확인이 끝난 뒤의 열람은 다시 여는 것으로
-    # 족하다. 착지의 증거는 닫힘과 게이트 열림을 함께 본다.
-    s.wait(
-        "document.getElementById('previewSheet').classList.contains('hidden')"
-        " && !document.getElementById('jobGenBtn').disabled",
-        "승인 착지 — 면 닫힘 + 게이트 열림",
-        requires=["#previewSheet", "#jobGenBtn"],
+    _expect(
+        not s.js("!!document.getElementById('jobReviewFlag')"),
+        "S5a: 철거된 「승인 필요」 표지가 아직 서 있습니다",
     )
-    seen["preview_approved"] = True
+    seen["preview_surface_retired"] = True
     ctx.shoot("session-panel")
 
     # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------
@@ -634,30 +621,6 @@ def _workbench(snapshot: dict) -> dict:
     if not isinstance(value, dict) or value.get("supported") is not True:
         raise ScenarioFailure(f"current workbench observation이 없습니다: {value!r}")
     return value
-
-
-def _preview_observation(s: Surface, what: str) -> dict:
-    """미리보기 서랍을 **열어** `semantic_preview` 가 실린 관측을 읽는다(닫지는 않는다).
-
-    `semantic_preview` 는 서랍이 열려 있을 때만 스냅샷에 실린다(`screen_job.py:3390` —
-    `self.preview_open and observation.semantic_preview is not None`). 그래서 토큰을 읽는
-    걸음은 여는 행위와 **한 몸**이다. 닫힌 채로 물으면 `None` 이 오고, 대본은 그 자리에서
-    `TypeError` 로 죽어 무엇이 없었는지 말하지 못한다 — 그 침묵을 여기서 문장으로 바꾼다.
-    """
-    s.click_sel("#jobManagedPreviewOpen", what=f"{what} semantic preview 열기")
-    s.wait(
-        "!document.getElementById('previewSheet').classList.contains('hidden')",
-        f"{what} preview 서랍",
-        timeout=30.0,
-        requires=["#previewSheet"],
-    )
-    observation = _workbench(_snapshot(s))
-    if not isinstance(observation.get("semantic_preview"), dict):
-        raise ScenarioFailure(
-            f"{what} preview 서랍이 열렸는데 semantic_preview 가 없습니다 — "
-            f"requirement={observation.get('preview_requirement')!r}"
-        )
-    return observation
 
 
 def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> None:
@@ -1162,7 +1125,8 @@ def run_sx(ctx: ScenarioContext) -> dict:
         f"H7: old record recovery target이 수락됐습니다 — {old_recovery!r}",
     )
 
-    # Exact delivery + OPTIONAL/REQUIRED semantic preview. The harness collision file predates the no-mutation bracket.
+    # Exact delivery + destructive overwrite confirm roundtrip (#957). The harness collision
+    # file predates the no-mutation bracket.
     # 새 스냅샷은 선택을 0건으로 되돌린다(`_reset_range_for_snapshot` — 마운트 직후 선택 0건).
     # 그래서 전환 뒤에 배달 계획을 물으려면 **다시 고르는** 걸음이 대본에 있어야 한다. 없으면
     # 제품은 계획 대신 배달 blocker 를 세우므로(`job_run.ts:869-878`) `#jobPlannedDocuments` 는
@@ -1186,18 +1150,18 @@ def run_sx(ctx: ScenarioContext) -> dict:
             "return b?b.innerText.trim():null;})()"
         )
         raise ScenarioFailure(f"SX-05 배달 계획이 서지 않았습니다 — blockers={blockers!r}") from exc
-    optional = _preview_observation(s, "OPTIONAL")
-    _expect(optional["preview_requirement"]["kind"] == "OPTIONAL", "H5: OPTIONAL preview가 아닙니다")
-    optional_token = optional["semantic_preview"]["preview_token"]
-    relative_path = optional["delivery"]["planned_documents"][0]["relative_path"]
-    # 읽었으면 닫는다 — 이어지는 충돌 처리·배달 재계산은 작업대 표면의 걸음이라, 서랍을 얹은
-    # 채로 밟으면 무엇이 무엇을 가렸는지가 증거에서 흐려진다.
-    s.click_sel("#previewClose", what="OPTIONAL preview 닫기")
-    s.wait(
-        "document.getElementById('previewSheet').classList.contains('hidden')",
-        "OPTIONAL preview 닫힘",
-        requires=["#previewSheet"],
+    # 파괴 **전**: 계획된 문서는 전부 새 파일이다(`WRITE_NEW`) — 이 음성 대조가 없으면
+    # 아래 파괴 대조가 「원래 그랬다」와 구별되지 않는다.
+    before_collision = _workbench(_snapshot(s))
+    dispositions_before = [
+        item["collision_disposition"]
+        for item in before_collision["delivery"]["planned_documents"]
+    ]
+    _expect(
+        dispositions_before and "WRITE_OVERWRITE" not in dispositions_before,
+        f"H5: 충돌 전인데 이미 파괴 처분입니다 — {dispositions_before!r}",
     )
+    relative_path = before_collision["delivery"]["planned_documents"][0]["relative_path"]
     ctx.create_collision(relative_path)
     baseline_manifest = ctx.output_manifest()
     # 충돌 처리 선택기는 없다(U4 계열2-27) — 기본이 덮어쓰기라 같은 이름은 막히지 않고
@@ -1213,38 +1177,20 @@ def run_sx(ctx: ScenarioContext) -> dict:
         timeout=30.0,
         requires=["#jobPlannedDocuments"],
     )
-    required = _preview_observation(s, "REQUIRED")
-    _expect(required["preview_requirement"]["kind"] == "REQUIRED", "H5: REQUIRED preview가 아닙니다")
-    _expect(required["preview_requirement"].get("reason") == "DESTRUCTIVE_OVERWRITE", "H5: REQUIRED reason이 틀렸습니다")
-    current_token = required["semantic_preview"]["preview_token"]
-    old_preview_expr = (
-        "window.pywebview.api.dispatch('job','preview_approve',"
-        + json.dumps({"preview_token": optional_token})
-        + ")"
-    )
-    old_preview = s.bridge(old_preview_expr, "old preview token 거절")
+    # 파괴 **후**: 처분이 `WRITE_OVERWRITE` 로 서고, 그래도 관찰 축은 막지 않는다
+    # (U4 계열2-27). 확인은 **실행 축**에 산다 — 생성을 눌렀을 때 되돌아오는
+    # `needs_overwrite` 왕복이 그것이고, 그 자리는 legacy·managed 공용 하나다(#957).
+    required = _workbench(_snapshot(s))
     _expect(
-        "생성 내용이 바뀌었습니다" in _rejection_message(old_preview),
-        "H7: old preview token이 수락됐습니다",
+        "WRITE_OVERWRITE" in [
+            item["collision_disposition"]
+            for item in required["delivery"]["planned_documents"]
+        ],
+        "H5: 충돌 뒤에도 파괴 처분이 서지 않았습니다",
     )
-    s.click_sel("#jobManagedPreviewOpen", what="REQUIRED semantic preview")
-    s.wait(
-        "!document.getElementById('previewSheet').classList.contains('hidden')"
-        " && document.getElementById('previewSheet').textContent.includes('생성 내용')",
-        "semantic/value preview",
-        requires=["#previewSheet"],
-    )
-    preview_text = str(s.js("document.getElementById('previewSheet').innerText"))
-    _expect("Artifact" not in preview_text and "아티팩트" not in preview_text, "H6: preview를 Artifact로 표현했습니다")
-    s.click_sel("#previewApprove", what="current preview 승인")
-    # 승인이 착지하면 이 서랍은 승인 버튼을 **지우고**(`job_preview.ts:121-127` — 요구가 남아
-    # 있을 때만 서는 블록이라 satisfied 뒤에는 null 이다) 면이 닫힌다(U4 계열1-21). 문안으로
-    # 재지 않는 이유는 그대로다: 승인 전 버튼 라벨이 같은 말("확인 완료")을 해서 vacuous 하다.
-    s.wait(
-        "!document.getElementById('previewApprove')"
-        " && document.getElementById('previewSheet').classList.contains('hidden')",
-        "current preview 승인 착지 — 요구 소멸 + 면 닫힘",
-        requires=["#previewSheet"],
+    _expect(
+        not s.js("!!document.getElementById('jobManagedPreviewOpen')"),
+        "H5: 철거된 「생성 내용 확인」 동사가 아직 서 있습니다",
     )
     # S6-05(#812): 클릭 간극이 닫혔다 — 열린 create 를 실제로 눌러 managed materialization
     # 이 actual WebView2 에서 문서를 앉히는 것까지가 이 지점의 수직 증거다(H6 극성 전환:
@@ -1260,6 +1206,26 @@ def run_sx(ctx: ScenarioContext) -> dict:
         for item in final_managed["delivery"]["planned_documents"]
     ]
     s.click_sel("#jobManagedCreate", what="managed 문서 만들기")
+    # 파괴 확인 왕복 — 조용히 덮지 않는다. 본문이 수치와 이름을 재진술하고, 확인해야 앉는다.
+    s.wait(
+        "!document.getElementById('confirmModal').classList.contains('hidden')"
+        " && document.getElementById('confirmModalTitle').textContent.includes('덮어쓰기')",
+        "managed 덮어쓰기 확인 왕복",
+        timeout=30.0,
+        requires=["#confirmModal", "#confirmModalTitle"],
+    )
+    overwrite_confirm_body = str(
+        s.js("document.getElementById('confirmModalBody').textContent")
+    )
+    _expect(
+        "덮어씁니다" in overwrite_confirm_body,
+        f"H5: 확인 본문이 파괴를 말하지 않습니다 — {overwrite_confirm_body!r}",
+    )
+    _expect(
+        relative_path in overwrite_confirm_body,
+        "H5: 확인 본문이 덮어쓸 이름을 재진술하지 않습니다",
+    )
+    s.click_sel("#confirmModalOk", what="덮어쓰고 생성")
     s.wait(
         "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",
         "managed 생성 완료 착지",
@@ -1347,9 +1313,9 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "H2": {"before_token": before_token, "after_token": after_first_view["new_configuration_token"], "trace": h2_trace},
         "H3": {"option_a_fields": before_fields, "option_b_fields": after_fields},
         "H4": {"retained_fates": fates, "binding_target": exact_target, "binding_repaired": repaired},
-        "H5": {"context_copy": context_text, "record_advisory": record_advisory, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
-        "H6": {"preview_token": current_token, "filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
-        "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "old_preview_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},
+        "H5": {"context_copy": context_text, "record_advisory": record_advisory, "dispositions_before": dispositions_before, "overwrite_confirm_body": overwrite_confirm_body, "runtime_reason": final_managed["create_action"].get("disabled_reason")},
+        "H6": {"filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
+        "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},
     }
     return seen
 
@@ -1424,7 +1390,6 @@ def run_restart(ctx: ScenarioContext) -> dict:
         },
         f"H7: 저장 폴더 기억이 계약대로 복원되지 않았습니다 — {delivery_default!r}",
     )
-    _expect(wb.get("semantic_preview") is None, "H7: session preview가 거짓 복원됐습니다")
     after_files = ctx.output_manifest()
     _expect(after_files == before_files, "H7: restart observation이 filesystem을 변경했습니다")
     return {
@@ -1434,7 +1399,7 @@ def run_restart(ctx: ScenarioContext) -> dict:
             "data_restored": data_restored,
             # 세션 축은 둘이다 — 충돌 처리는 U4 §2-27 에서 세션이 고르는 값이 아니게 돼
             # 「부활하지 않았다」고 말할 것 자체가 없다(위 delivery_default 가 기본값을 잰다).
-            "session_absent": {"active_work_before_reselect": True, "preview": True},
+            "session_absent": {"active_work_before_reselect": True},
             "filesystem_before": before_files,
             "filesystem_after": after_files,
         }

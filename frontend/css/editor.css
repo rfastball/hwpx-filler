@@ -151,8 +151,6 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
 .ctxbanner .ctx-ev{display:flex;flex-wrap:wrap;gap:var(--sp-6) var(--sp-12);
   font-size:var(--fs-dense);color:var(--a-muted)}
 .ctxbanner .ctx-ev b{color:var(--a-ink);font-weight:600}
-/* 증거의 이전 값(재작성 F7) — 지금 값과 대비되게 죽인다(강조는 새 값 쪽). */
-.ev-before{color:var(--a-muted);text-decoration:line-through}
 /* 이름은 제목 자리에 산다(「저장」 분류 사망의 승계) — 입력이되 제목처럼 읽힌다.
    토큰은 `--fs-section`(화면 제목 역할, H-01)을 쓴다 — 종전 `--fs-h1` 은 tokens.css 에
    **정의가 없어** 늘 폴백(`--fs-strong`)으로 서고 있었다. 없는 토큰의 폴백에 기대면

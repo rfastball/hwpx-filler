@@ -17,8 +17,7 @@
  * 자리에 쌓고 파이썬이 문자열 보간으로 만든 표현식으로 폴링해 회수했다(`_probe_late`,
  * app.py:3494). 이 클러스터의 스태시는 열둘이다 — 즐겨찾기 넷(`favSent`·`favChain`·`favDiag`·
  * `favDone`), 탐색 넷(`browsePickFocus`·`browseSheetClosed`·`browseCloseFocus`·`browseDone`),
- * 거울 여섯(`jobToggleValues`·`mirrorPreviewDispatch`·`mirrorPreviewFocus`·`mirrorClickSeen`·
- * `mirrorFocusTargetState`·`mirrorPushes`), 후보 둘(`candSent`·`candProbeDone`), 결과 여섯
+ * 거울 둘(`jobToggleValues`·`mirrorPushes`), 후보 둘(`candSent`·`candProbeDone`), 결과 여섯
  * (`jobResultSnap`·`rejectState`·`rejectText`·`rejectGen`·`rejectHidden`·`rejectPushes`).
  * 전부 지역 변수와 반환값이 됐다. 전역 쓰기 금지가 첫 이유고,
  * 두 번째가 더 무겁다 — 번들러가 모듈 스코프 이름을 바꾸면 문자열로 만든 전역 조회가
@@ -207,7 +206,7 @@ async function settle(ctx) {
 /* ────────────────────────── 합성 스냅샷 ────────────────────────── */
 
 /* 스냅샷은 매 실행마다 새로 짓는다. 프로브가 자기 판을 **제자리에서 변조**하며 진행하기
-   때문이다(거울의 `preview.can_open`·`drift`·`name_tokens`·`filter.reapply_available`).
+   때문이다(거울의 `drift`·`name_tokens`·`filter.reapply_available`).
    모듈 상수로 얼려 두면 두 번째 실행이 첫 실행의 마지막 상태에서 시작한다. */
 
 /** app.py:951-997 그대로 — 작업 미선택 + 데이터 마운트(데이터-우선 §18.2). */
@@ -290,10 +289,6 @@ function mirrorSnapshot() {
     restate: { origin: "manual", filter_active: true, in_def: 1, extra: 1, sample: [0] },
     preflight: { level: "ok", text: "ok" },
     blank_fields: ["낙찰율"],
-    preview: {
-      open: false, pos: 0, total: 2, can_open: true,
-      blank_only: false, blank_count: 1, can_prev: false, can_next: true,
-    },
     drift: [], gate: { enabled: true, level: "", text: "생성 준비" },
   };
 }
@@ -900,20 +895,10 @@ async function runJobMirror(ctx) {
     return l && !l.hidden ? l.textContent : "";
   })();
   out.mirror_line_has_blank_flag = !!doc.querySelector("#jobMirrorLine .mir-blank-flag");
-  out.mirror_preview_exit = !!doc.getElementById("jobMirrorPreviewOpen");
-  /* 판별 계기(#364 재게이트) — 「트리거가 있는가 / 잠겨 있지 않은가」를 클릭 **전에** 따로
-     센다: `click()` 은 비활성 요소에서 이벤트를 만들지 않아 조용한 무동작이 되고, 그러면
-     발신열만 보고는 「배선이 없다」와 구별할 수 없다(계측의 부재판별력). */
-  out.mirror_trigger_disabled = doc.getElementById("jobMirrorPreviewOpen").disabled;
-  /* 음성 대조(두 값) — 가용성이 실제로 `can_open` 에 결속돼 있는가. 한 값만 재면
-     「늘 열려 있는 버튼」도 초록이라 잠금 계약이 검사되지 않는다. */
-  snap = deepCopy(snap);
-  snap.preview.can_open = false;
-  await pushAndSettle(ctx, "job", snap);
-  out.mirror_trigger_locked = doc.getElementById("jobMirrorPreviewOpen").disabled;
-  snap = deepCopy(snap);
-  snap.preview.can_open = true;
-  await pushAndSettle(ctx, "job", snap);
+  /* 종전 이 자리에 섰던 확인 면 출구(`#jobMirrorPreviewOpen`)와 그 잠금 대조는 #957 에서
+     사망했다 — 이 줄은 이제 요약만 진다. 파괴 확인의 계측은 아래 `ow_body` 다. */
+  out.mirror_preview_exit_gone = !doc.getElementById("jobMirrorPreviewOpen");
+  out.mirror_review_flag_gone = !doc.getElementById("jobReviewFlag");
 
   out.restate_shown = isShown(ctx, doc.getElementById("jobRestate"));
   out.restate_no_namelist = !doc.querySelector("#jobRestate .namelist");
@@ -1064,21 +1049,13 @@ async function runJobMirror(ctx) {
   out.job_grid_wide = win.getComputedStyle(doc.getElementById("jobDataGrid")).gridTemplateColumns;
   jobPanel.style.flex = jobPanelFlex; jobPanel.style.width = jobPanelWidth;
 
-  /* 확인 면 출구는 비동기(정산 뒤 발신)라 발신은 이 turn 뒤에 확정된다. 레거시는 발신열을
-     창 객체에 남기고 파이썬이 새 JS 턴으로 되읽었다 — 여기서는 그냥 await 한다. */
-  const dispatched = [];
-  const sheetStub = stubDispatch(services, () => function (screen, action) {
-    dispatched.push({ screen, action });
-    return Promise.resolve({});
-  });
-  /* 이 창도 실 push 에서 격리한다: 프로브 첫머리 `Nav.go('job')` 이 쏜 실 refresh 의 푸시
-     (세션 없는 실 스냅샷)가 호스트 스레드에서 늦게 착지해 정확히 이 비동기 창에 들어온다.
-     그러면 트리거가 `can_open:false` 로 잠기고, 닫힘 시점의 초점 복귀는 **비활성 트리거를
-     건너뛰는 것이 계약**이라 초점이 화면 루트로 내려간다 — 실앱에선 옳은 처분이고 여기서는
-     합성 세션 위에 실 빈 스냅샷이 끼어드는 프로브 산물이다. 삼킨 것은 기록해 증언한다
-     (조용한 격리 금지).
-     아래 한 줄이 이 파일의 유일한 push 선-포획이다 — **복원·전달 대상**을 잡는 자리이고,
-     측정 구동은 전부 `ctx.push(...)` 호출 시점 조회로 남는다(늦은 결속). */
+  /* 화면 전환의 인계 계약 — 편집기는 자기 화면으로 **덮는다**(재작성 F7). 종전 이 자리는
+     확인 면을 열어 두고 「전환이 펼침 면을 닫는가」를 함께 쟀는데, 그 면이 #957 에서
+     철거돼 남는 것은 전환 자체다(펼침 면 일괄 회수는 `sheet_gate`·`modal_a11y` 가 진다).
+
+     푸시 격리는 그대로 둔다: 프로브 첫머리 `Nav.go('job')` 이 쏜 실 refresh 의 푸시(세션
+     없는 실 스냅샷)가 호스트 스레드에서 늦게 착지해 뒤 프로브(job_result)의 창을 오염시킨다.
+     삼킨 것은 기록해 증언한다(조용한 격리 금지). */
   const mirrorRealPush = ctx.push;
   const mirrorPushes = [];
   ctx.push = function (screen, pushed) {
@@ -1090,58 +1067,15 @@ async function runJobMirror(ctx) {
   };
   ctx.state.mirrorPushes = mirrorPushes;
 
-  const mirrorTrigger = doc.getElementById("jobMirrorPreviewOpen");
-  /* 클릭이 **이벤트까지 갔는가**를 따로 센다(부재판별력): 비활성 요소의 `click()` 은
-     이벤트를 만들지 않으므로, 이것 없이는 「발신 0」이 배선 부재인지 잠금인지 모른다. */
-  let clickSeen = false;
-  mirrorTrigger.addEventListener("click", () => { clickSeen = true; });
-  out.mirror_trigger_disabled_at_click = mirrorTrigger.disabled;
-  mirrorTrigger.focus();
-  mirrorTrigger.click();
-
-  /* 정리는 **스텁이 산 채로** 한다(관측자 오염 리트머스): 닫힘이 발화하는 preview_close 가
-     실 백엔드에 닿으면 세션 없는 실 스냅샷 푸시가 뒤 프로브(job_result)의 비동기 창에
-     착지하고, §2.18 처분이 그 푸시를 「작업 없음 전환」으로 읽어 방금 세운 rejected 결과를
-     초기화한다 — 프로브가 프로브를 오염시키는 자리다. 복원은 닫힘 정착 **뒤에** 한다. */
-  const closing = (async () => {
-    await ctx.sleep(30);
-    services.Modal.close("previewSheet");
-    const card = doc.querySelector("#previewSheet .modal-card");
-    if (card) {
-      const transitionEnd = new win.Event("transitionend", { bubbles: true });
-      Object.defineProperty(transitionEnd, "propertyName", { value: "opacity" });
-      card.dispatchEvent(transitionEnd);
-    }
-    // 닫은 뒤 초점이 **그 트리거**로 돌아오는가(#364 리뷰 P2).
-    const previewFocus = activeId(doc);
-    /* 측정 시점의 트리거 상태 — 초점이 안 돌아왔을 때 「복귀점이 틀렸다」와 「트리거가
-       그사이 잠겼다(정상 경로)」를 가른다. */
-    const focusTargetState = (() => {
-      const b = doc.getElementById("jobMirrorPreviewOpen");
-      if (!b) return "missing";
-      return b.disabled ? "disabled" : (b.isConnected ? "ready" : "detached");
-    })();
-    ctx.push = mirrorRealPush;
-    sheetStub.restore();
-    return { previewFocus, focusTargetState };
-  })();
-
-  /* 편집기가 자기 화면으로 나가며(재작성 F7) 「편집 모드가 화면을 덮는다」는 계약 — 열린
-     펼침 면의 일괄 회수는 화면 전환이 진다. 레거시와 같이 닫힘 대기 **앞에서** 동기로 돈다. */
   services.Nav.go("editor", { force: true });
-  out.edit_closes_sheets = !doc.getElementById("scr-job").classList.contains("on")
+  out.edit_takes_over_screen = !doc.getElementById("scr-job").classList.contains("on")
     && doc.getElementById("scr-editor").classList.contains("on");
   enterSyntheticJob(services, { force: true });
+  ctx.push = mirrorRealPush;
 
-  const closed = await closing;
-
-  /* 지연 회수 여섯(app.py:3907·3911·3913·3915·3917·3919). `row_toggle_values` 는 **덮어쓰기**라
-     필드 자리는 그대로 두고 값만 최종 의도열로 바뀐다. */
+  /* 지연 회수 — `row_toggle_values` 는 **덮어쓰기**라 필드 자리는 그대로 두고 값만 최종
+     의도열로 바뀐다. */
   out.row_toggle_values = toggleValues.slice();
-  out.mirror_preview_dispatch = dispatched;
-  out.mirror_preview_focus = String(closed.previewFocus);
-  out.mirror_click_seen = !!clickSeen;
-  out.mirror_focus_target_state = String(closed.focusTargetState);
   out.mirror_pushes = mirrorPushes;
 
   return { job_mirror: out };

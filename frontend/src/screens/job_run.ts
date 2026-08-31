@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import { PathActions } from "./path_actions.ts";
-import type { PreviewRequest, ScreenPorts } from "./ports.ts";
+import type { ScreenPorts } from "./ports.ts";
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
@@ -206,24 +206,16 @@ export function createJobRunController(deps: JobRunControllerDeps) {
        emit 한 번에 함께 실린다. */
     if (!before.running && disposal.kind === "reset") ui = { artifactSave: "" };
     setRun(next);
-    syncPreviewOpen(next.lastFull);
     syncArtifactOpen(next.lastFull);
   }
 
-  /** 확인 면의 개폐를 상태에 맞춘다(legacy `closePreviewIfOpen` 동등). Python 이 닫았다고
-   *  말했는데 면이 떠 있으면 그 면은 **남의 값**을 그리고 있다 — 작업 전환·데이터 교체가
-   *  백엔드에서 닫는 원격 닫힘이 그 경로다. 개폐 주인은 Python 소유 `preview.open` 이고
+  /** 산출물 관찰 시트의 개폐를 상태에 맞춘다(S7-03 · #825). Python 이 닫았다고 말했는데
+   *  면이 떠 있으면 그 면은 **남의 문서**를 그리고 있다 — 백엔드가 배달 좌표를 놓는
+   *  데이터 교체·작업 전환이 그 경로다. 개폐 주인은 Python 소유 `artifact_view.open` 이고
    *  이 층은 집행만 한다.
    *
    *  열려 있지 않은 대상의 `close` 는 스택에 없어 아무 일도 하지 않으므로 DOM 에 열림
    *  여부를 되묻지 않는다 — 상태의 진실은 스냅샷이지 클래스가 아니다. */
-  function syncPreviewOpen(full: Obj | null): void {
-    if (!(full && full.preview && full.preview.open)) deps.modal.close("previewSheet");
-  }
-
-  /** 산출물 관찰 시트의 개폐를 상태에 맞춘다(S7-03 · #825) — `syncPreviewOpen` 과 같은
-   *  까닭이다. 백엔드가 배달 좌표를 놓으면(데이터 교체·작업 전환) 면도 함께 닫힌다고
-   *  말하는데, 그때 면이 떠 있으면 이미 없는 실행의 문서를 계속 그린다. */
   function syncArtifactOpen(full: Obj | null): void {
     if (!(full && full.artifact_view && full.artifact_view.open)) {
       deps.modal.close("artifactSheet");
@@ -322,40 +314,14 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     }
   }
 
-  /* ---- 확인 면 ---- */
-  async function openPreview(request?: PreviewRequest): Promise<void> {
-    const o = request || {};
-    try {
-      await deps.ports.jobData.current().flushPendingEdits();
-      await dispatch("preview_open", { at: o.at || 0 });
-    } catch (error) {
-      deps.notify(`미리보기를 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
-      return;
-    }
-    // 왕복 중 화면을 떠났으면 열지 않고 상태를 되돌린다 — 남는 「열림」 상태가 다음
-    // 복귀에서 아무 트리거 없이 면을 띄운다. 「지금 어느 화면인가」는 셸 상태기계가 답한다:
-    // `#scr-job` 의 `.on` 을 직접 읽으면 같은 판정이 두 곳에 살고, React 서브트리가
-    // legacy 화면 루트를 붙드는 간선이 된다(정적 폐포가 그 자리를 문다).
-    if (deps.navigation.currentScreen() !== "job") {
-      void dispatch("preview_close", {});
-      return;
-    }
-    deps.modal.open("previewSheet", {
-      returnFocus: previewTrigger ?? deps.doc.getElementById("jobMirrorPreviewOpen"),
-      initialFocus: deps.doc.getElementById("previewClose"),
-      onClose: () => { void dispatch("preview_close", {}); },
-    });
-    if (o.focusTarget) focusPreviewTarget(o.focusTarget);
-  }
-
   /* ---- 산출물 관찰 시트(S7-03 · #825) ---- */
   /** 어느 행이 열었는가 — 닫을 때 초점이 그 자리로 돌아가야 한다(면은 문서마다 열린다). */
   let artifactTrigger: HTMLElement | null = null;
 
   /** 배달 문서 하나를 관찰해 시트를 연다.
    *
-   *  `openPreview` 와 같은 골격이되 커밋 관문(`flushPendingEdits`)은 지나지 않는다: 관찰의
-   *  대상은 **이미 만들어진 파일**이라 지금 표의 편집과 아무 관계가 없다.
+   *  커밋 관문(`flushPendingEdits`)은 지나지 않는다: 관찰의 대상은 **이미 만들어진
+   *  파일**이라 지금 표의 편집과 아무 관계가 없다.
    *
    *  관찰이 서지 않은 갈래에서도 **면은 연다**. 백엔드가 사유를 스냅샷에 실어 주므로 시트가
    *  그것을 말한다 — 여기서 실패로 접으면 사용자는 눌렀는데 아무 일도 없는 화면을 본다. */
@@ -374,40 +340,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       returnFocus: artifactTrigger,
       initialFocus: deps.doc.getElementById("artifactClose"),
       onClose: () => { void dispatch("artifact_close", {}); },
-    });
-  }
-
-  let previewTrigger: HTMLElement | null = null;
-
-  /** 복귀 초점 = 떠났던 그 행의 「수정」. 행 DOM 은 push 재렌더가 만드므로(브리지 반환과
-   *  독립 채널) 유한 재시도 후 폴백은 initialFocus 다. */
-  function focusPreviewTarget(target: string): void {
-    let tries = 0;
-    const find = (): HTMLElement | null => (target === "filename/filenamePattern"
-      ? deps.doc.getElementById("previewFixFilename")
-      : deps.doc.querySelector(
-        `#previewRows [data-act="preview-fix"][data-field="${CSS.escape(target.slice("binding/".length))}"]`));
-    const step = (): void => {
-      const el = find();
-      if (el && el.offsetParent !== null) { el.focus(); return; }
-      if (++tries > 3) return;
-      requestAnimationFrame(step);
-    };
-    step();
-  }
-
-  /** 행별·파일 이름 「수정」의 단일 경로 — `at` 은 `Modal.close` 가 `preview_close` 를
-   *  발화하기 **전에** 읽는다: pos 는 닫힘에 0 으로 리셋되므로 순서를 바꾸면 복귀가 늘
-   *  첫 행으로 선다(발신 순서 규약). */
-  async function previewFix(target: string, evidence: Obj): Promise<void> {
-    const at = ((snapshot()?.preview) || {}).pos || 0;
-    deps.modal.close("previewSheet");
-    // 조준은 editor 가 **자기 진입 문맥으로** 한다(#789). 여기서 port 너머로 부르지 않는다 —
-    // 종전에는 port 표면에 없는 메서드를 `typeof` 로 물어보고 없으면 조용히 지나가서,
-    // deep-link 초점이 한 번도 선 적이 없었다.
-    await openEditForRepair({
-      entry_reason: "preview_result", target, evidence,
-      return_context: { surface: "preview", reopen_drawer: true, preview_index: at },
     });
   }
 
@@ -620,12 +552,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         deps.notify(`변경사항 적용에 실패했습니다: ${String(error)}`);
       }
     },
-    openPreviewFrom(trigger: HTMLElement | null): void {
-      previewTrigger = trigger;
-      void openPreview({});
-    },
-    closePreview(): void { deps.modal.close("previewSheet"); },
-
     /* ---- 산출물 관찰(S7-03 · #825) — 열림·값은 Python 소유, 여기는 집행과 문안이다. */
     openArtifactFrom(ordinal: number, trigger: HTMLElement | null): void {
       artifactTrigger = trigger;
@@ -655,42 +581,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         };
         emit();
       }
-    },
-    previewMove(delta: number): void { void dispatch("preview_move", { delta }); },
-    previewBlankOnly(value: boolean): void {
-      void dispatch("preview_blank_only", { value }).catch((error) =>
-        deps.notify(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
-    },
-    /** 승인은 **한 동작**이다(U4 계열1-21) — 성사하면 면을 닫는다. 거절은 면을 남긴다:
-     *  사유를 보여 줄 자리가 그 면이고 닫으면 무엇이 왜 안 됐는지 말할 곳이 없다.
-     *  닫기가 `Modal.close` 를 지나므로 `preview_close` 가 함께 나가 열림의 Python
-     *  소유(§13-2)가 두 곳으로 갈라지지 않는다. */
-    previewApprove(previewToken?: string): void {
-      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {})
-        .then(() => { deps.modal.close("previewSheet"); })
-        .catch((error) => deps.notify(`확인을 저장하지 못했습니다: ${String(error)}`));
-    },
-    previewEdit(): void {
-      deps.modal.close("previewSheet");
-      void openEditForRepair({
-        entry_reason: "preview_result",
-        evidence: { "보고 있던 행": String(deps.doc.getElementById("previewPos")?.textContent || "").trim() },
-        return_context: { surface: "preview", reopen_drawer: true },
-      });
-    },
-    previewFixField(field: string): Promise<void> {
-      const row = ((snapshot()?.preview || {}).rows || []).find((r: Obj) => r.name === field) || {};
-      return previewFix(`binding/${field}`, {
-        "보고 있던 행": String(deps.doc.getElementById("previewPos")?.textContent || "").trim(),
-        "필드": field,
-        "본 값": row.value || "(빈 값)",
-      }).catch((error) => deps.notify(`수정으로 이동하지 못했습니다: ${String(error)}`));
-    },
-    previewFixFilename(): Promise<void> {
-      return previewFix("filename/filenamePattern", {
-        "보고 있던 행": String(deps.doc.getElementById("previewPos")?.textContent || "").trim(),
-        "파일 이름": String(deps.doc.getElementById("previewFilename")?.textContent || "").trim(),
-      }).catch((error) => deps.notify(`수정으로 이동하지 못했습니다: ${String(error)}`));
     },
     openRepair(kind: "fix-mapping" | "fix-filename"): void {
       void openEditForRepair({
@@ -727,7 +617,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     },
     acceptFull(value: unknown) { ingestFull(value); },
     acceptProgress(value: unknown) { setRun(acceptProgress(run, value as any)); },
-    openPreview,
     dispose() { controller.dispose(); },
   });
   deps.ports.jobRunCoordination.bind({ confirmDestructiveIfArmed });
@@ -760,7 +649,6 @@ export function JobPreflight(props: { controller: JobRunController }): ReactNode
 
 export function JobMirrorZone(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
-  const run = useRun(props.controller);
   // TXT 는 이 존이 **없는 축**이다 — 통째로 걷는다. 남겨 두면 빈 상태 문안이 행을 다 고른
   // 뒤에도 그대로 서서, 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
   // 자리를 비우면 `#jobMirrorZone:empty` 가 존을 접는다(legacy 의 `style.display` 후계 —
@@ -792,28 +680,23 @@ export function JobMirrorZone(props: { controller: JobRunController }): ReactNod
   }
 
   const summary: ReactNode = (!s?.has_job || !s?.has_data || !n)
-    // 선택 0 = 생성될 문서 없음. 트리거는 그대로 두고 문안만 바꾼다 — 자리를 없애면
-    // 안정 복귀점도 함께 사라진다.
-    ? h("span", { className: "mirempty muted capnote" }, "행을 선택하면 생성 내용을 확인할 수 있습니다.")
+    // 선택 0 = 생성될 문서 없음. 자리는 그대로 두고 문안만 바꾼다 — 없애면 이 한 줄이
+    // 상태에 따라 사라졌다 나타나 존이 접혔다 펴진다.
+    ? h("span", { className: "mirempty muted capnote" }, "표에서 행을 선택하면 여기에 요약이 섭니다.")
     : createElement(Fragment, null,
       blanks.length
         ? h("span", { className: "mir-blank-flag" }, "빈 값 ", h("b", null, `${blanks.length}필드`), `(${blanks.join("·")})`)
         : "빈 값 없음",
       " · 이름 ", h("b", null, `${n}건`));
 
-  const pv = (s?.preview || {}) as Obj;
   return createElement(Fragment, null,
     h("div", { className: "zone-cap" }, "본문 확인"),
     h("div", { id: "jobMirror" }, banner),
-    // 한 줄은 안정 DOM 이다 — 확인 면 트리거가 재렌더로 교체되면 시트를 닫은 키보드
-    // 사용자의 초점이 그 버튼으로 못 돌아간다(#280 캡스트립과 같은 결함).
+    // 한 줄은 안정 DOM 이다. 종전 이 자리에 섰던 「생성 값 미리보기」 출구는 #957 에서
+    // 사망했다 — 확인의 자리는 만들어진 문서이고, 이 줄은 그 전에 아는 사실(빈 값·건수)만
+    // 재진술한다.
     h("p", { className: "mirline", id: "jobMirrorLine", hidden: banner !== null },
-      h("span", { id: "jobMirrorSummary" }, summary),
-      h("button", {
-        className: "btn sm", id: "jobMirrorPreviewOpen", type: "button",
-        disabled: run.running || !pv.can_open,
-        onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
-      }, "생성 값 미리보기 ⤢")));
+      h("span", { id: "jobMirrorSummary" }, summary)));
 }
 
 export function JobOutRow(props: { controller: JobRunController }): ReactNode {
@@ -1047,13 +930,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const on = !!s?.has_job;
   const missing = on && !!s?.template_missing;
   const gate = (s?.gate || { enabled: false, level: "", text: "" }) as Obj;
-  const review = (s?.review || {}) as Obj;
   const managed = isManagedHwpx(s);
   const workbench = (s?.workbench_observation || {}) as Obj;
   const createAction = (workbench.create_action || {}) as Obj;
-  const previewRequirement = (workbench.preview_requirement || {}) as Obj;
-  const previewAvailable = previewRequirement.kind === "OPTIONAL"
-    || previewRequirement.kind === "REQUIRED";
   const ra = (s?.run_action || { key: "generate", label: "이 작업으로 문서 생성" }) as Obj;
 
   return h("div", { className: "actionbar-row" },
@@ -1065,21 +944,10 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
         className: "btn sm", id: "jobActionRelink", type: "button", "data-busy-lock": true,
         hidden: !missing, disabled: busy, onClick: props.controller.relinkActive,
       }, "템플릿 다시 연결…")),
-    // 확인 면 출구는 **하나**다(U4 계열1-22): 「본문 확인」 존의 `#jobMirrorPreviewOpen`
-    // 이 UI 계약이 지정한 자리이고, 여기 있던 같은 핸들러의 사본은 걷혔다. 관리형의
-    // `#jobManagedPreviewOpen` 은 사본이 아니라 게이트가 승격시키는 별개 동사다.
-    // 「승인 필요」 표지는 요구가 **아직 안 풀렸을 때만** — 승인한 뒤에도 붙어 있으면
-    // 확인이 무의미해진다.
-    h("span", {
-      className: "pill warn", id: "jobReviewFlag",
-      hidden: managed,
-      style: { display: review.required && !review.approved ? "" : "none" },
-    }, "승인 필요"),
-    managed && previewAvailable ? h("button", {
-      className: workbench.primary_action === "REVIEW_PREVIEW" ? "btn primary" : "btn",
-      id: "jobManagedPreviewOpen", type: "button", disabled: busy,
-      onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
-    }, "생성 내용 확인") : null,
+    // 확인 면 출구(A 갈래 `#jobMirrorPreviewOpen`·B 갈래 `#jobManagedPreviewOpen`)와
+    // 「승인 필요」 표지(`#jobReviewFlag`)는 #957 에서 함께 사망했다. 검토 요구는 사전검증
+    // `[알림]` 한 자리가 지고(같은 상태를 두 곳이 판정하지 않는다), 파괴 확인은 생성 호출의
+    // `needs_overwrite` 왕복이 진다.
     h("button", {
       className: "btn primary", id: "jobGenBtn",
       hidden: managed,

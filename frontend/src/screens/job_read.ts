@@ -1,6 +1,6 @@
 /* R4-01 job 읽기·선택 표면. Python snapshot의 판정은 그대로 투영하고, DataZone·후보·
-   browse·범위 초안의 DOM/이벤트/비동기 의도는 이 React 경계가 단독 소유한다. 실행·결과·
-   preview는 임시 JobRunPort 하류의 legacy remainder에 남는다. */
+   browse·범위 초안의 DOM/이벤트/비동기 의도는 이 React 경계가 단독 소유한다. 실행·결과는
+   임시 JobRunPort 하류의 legacy remainder에 남는다. */
 import {
   Fragment,
   createElement,
@@ -18,7 +18,7 @@ import type { DataPickerController } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
-import type { JobRunCallbacks, PreviewRequest, ScreenPorts } from "./ports.ts";
+import type { JobRunCallbacks, ScreenPorts } from "./ports.ts";
 import type { JobScreenModel, ScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 
@@ -782,8 +782,6 @@ export function JobReadEffects(props: { controller: JobReadController; closeButt
 /** raw store 하류 model 하나를 legacy run remainder에 fan-out하는 임시 포트. */
 export function createJobRunAdapter(args: {
   model: ScreenModel<JobScreenModel>;
-  beforePreview(): Promise<void>;
-  openPreview(request?: PreviewRequest): Promise<void>;
 }) {
   let callbacks: JobRunCallbacks | null = null;
   let release: (() => void) | null = null;
@@ -828,16 +826,6 @@ export function createJobRunAdapter(args: {
     },
     acceptFull,
     acceptProgress,
-    async openPreview(request?: PreviewRequest): Promise<void> {
-      if (request !== undefined) {
-        const keys = Object.keys(request);
-        if (keys.some((key) => key !== "at" && key !== "focusTarget")) {
-          throw new Error(`JobRunPort: 알 수 없는 preview 요청 키입니다: ${keys.join(", ")}`);
-        }
-      }
-      await args.beforePreview();
-      await args.openPreview(request);
-    },
     dispose(): void {
       if (release !== null) release();
       release = null;

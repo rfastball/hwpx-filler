@@ -65,10 +65,6 @@ from hwpxfiller.application.fresh_execution_observation import (
     RuntimePolicyAdmission,
     decide_runtime_policy_admission,
 )
-from hwpxfiller.application.preview_requirement import (
-    PreviewNotRequired,
-    PreviewRequired,
-)
 from hwpxfiller.application.selection_compatibility import (
     AUTO_KEEP,
     REVIEW_REQUIRED,
@@ -119,11 +115,9 @@ def _clear_input(**overrides: object) -> WorkbenchCompositionInput:
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
         orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
-        preview_requirement=PreviewNotRequired(),
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx",)),
         record_validation=RecordValidationSummary(has_blocking_issues=False),
         template_change_verdict=AUTO_KEEP,
-        preview_satisfied=True,
     )
     base.update(overrides)
     return WorkbenchCompositionInput(**base)  # type: ignore[arg-type]
@@ -179,15 +173,7 @@ def _observation(**overrides: object) -> DocumentCreationWorkbenchObservation:
             "REVIEW_RECORD_DATA",
             "REVIEW_RECORD_DATA",
         ),
-        # 필수 preview 미충족 → REVIEW_PREVIEW
-        (
-            {
-                "preview_requirement": PreviewRequired(reason="DESTRUCTIVE_OVERWRITE"),
-                "preview_satisfied": False,
-            },
-            "REVIEW_PREVIEW",
-            "REVIEW_PREVIEW",
-        ),
+        # (REVIEW_PREVIEW 표본은 #957 슬라이스 ③ 에서 사라졌다 — 미리보기 승인 축 자체가 없다.)
         # delivery 미해결 → REVIEW_DELIVERY
         ({"delivery": DeliveryPreviewSummary(resolvable=False)}, "REVIEW_DELIVERY", "REVIEW_DELIVERY"),
         # policy 사유 NOT_ADMITTED(base kind) → POLICY_BLOCKED → RESOLVE_RUNTIME_POLICY
@@ -211,9 +197,9 @@ def test_primary_action_across_state_combinations(
 
 
 def test_primary_action_chain_covers_every_blocker_and_matches_vocabulary_order() -> None:
-    """사슬이 14 blocker 를 모두 덮고, Primary Action 이 vocabulary 정본 순서와 어긋나지 않는다."""
+    """사슬이 blocker 를 하나도 빠짐없이 덮고, Primary Action 이 vocabulary 정본 순서와 어긋나지 않는다."""
     chained_blockers = [b for b, _ in _PRIMARY_ACTION_CHAIN]
-    # 사슬은 14 blocker 를 모두 덮는다(coverage). 순서는 BLOCKER_CODES 정의순이 아니라
+    # 사슬은 정본의 모든 blocker 를 덮는다(coverage). 순서는 BLOCKER_CODES 정의순이 아니라
     # Primary Action 우선순위순이다(CONTEXT_ERROR→RECOVER_CONTEXT 가 최우선).
     assert set(chained_blockers) == set(BLOCKER_CODES)
     assert len(chained_blockers) == len(BLOCKER_CODES)  # 중복 없음
@@ -241,23 +227,27 @@ def test_compose_primary_action_returns_exactly_one_by_priority() -> None:
         assert isinstance(result, str) and result in PRIMARY_ACTION_CODES
 
 
-def test_record_then_delivery_then_preview_priority() -> None:
-    required = PreviewRequired(reason="DESTRUCTIVE_OVERWRITE")
+def test_record_then_delivery_then_runtime_priority() -> None:
+    """검토축 사슬의 잔여 서열 — record → delivery → runtime/policy.
+
+    종전 이 자리는 record → delivery → preview 였다. 미리보기 승인 축이 #957 슬라이스 ③ 에서
+    사라졌으므로 그 아래 칸(runtime/policy)을 꼬리로 세워 **서열 자체**를 계속 겨눈다.
+    """
+    blocked_runtime = RuntimePolicyAdmission(NOT_ADMITTED, (EXECUTION_BASE_NOT_ADMITTED,))
     all_three = _observation(
         record_validation=RecordValidationSummary(
             has_blocking_issues=True, issue_count=1
         ),
         delivery=DeliveryPreviewSummary(resolvable=False),
-        preview_requirement=required,
-        preview_satisfied=False,
+        admission=blocked_runtime,
     )
     assert all_three.primary_action == "REVIEW_RECORD_DATA"
-    delivery_and_preview = _observation(
+    delivery_and_runtime = _observation(
         delivery=DeliveryPreviewSummary(resolvable=False),
-        preview_requirement=required,
-        preview_satisfied=False,
+        admission=blocked_runtime,
     )
-    assert delivery_and_preview.primary_action == "REVIEW_DELIVERY"
+    assert delivery_and_runtime.primary_action == "REVIEW_DELIVERY"
+    assert _observation(admission=blocked_runtime).primary_action == RESOLVE_RUNTIME_POLICY
 
 
 # ══════════════════════════════════════ (2) 여러 blocker 보존 + primary 1개 ═════════════════════

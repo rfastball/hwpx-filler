@@ -2818,9 +2818,11 @@ def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_pat
     ctrl, _ = _controller26(tmp_path)
     assert _save_named(ctrl, "겨눔작업")["ok"] is True
 
+    # 진입 사유·복귀 표면 표본은 `preview_result`/`preview` 였다 — #957 슬라이스 ③ 에서
+    # 그 어휘가 걷혔으므로 살아 있는 결과 표면으로 겨눈다(축은 그대로: 착지 탭과 문맥 왕복).
     ctrl.load_job(
-        "겨눔작업", entry_reason="preview_result",
-        return_context={"surface": "preview", "reopen_drawer": True, "preview_index": 2},
+        "겨눔작업", entry_reason="run_failure",
+        return_context={"surface": "result", "reopen_drawer": True, "preview_index": 2},
         target="filename/filenamePattern",
     )
     snap = ctrl.snapshot()
@@ -2828,8 +2830,8 @@ def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_pat
     assert snap["context"]["target"] == "filename/filenamePattern"
     assert snap["context"]["return_context"]["preview_index"] == 2
 
-    ctrl.load_job("겨눔작업", entry_reason="preview_result",
-                  return_context={"surface": "preview"}, target="binding/공고명")
+    ctrl.load_job("겨눔작업", entry_reason="run_failure",
+                  return_context={"surface": "result"}, target="binding/공고명")
     assert ctrl.snapshot()["section"] == "binding"
 
     import pytest
@@ -2849,7 +2851,7 @@ def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_pat
     assert _save_named(ctrl, "\ubd80\ubd84\uc131\uacf5")["ok"] is True
     ctrl.load_job(
         "\ubd80\ubd84\uc131\uacf5",
-        entry_reason="preview_result",
+        entry_reason="run_failure",   # #957: `preview_result` 진입 사유는 어휘에서 걷혔다
         return_context={"surface": "data"},
         target="binding/\uacf5\uace0\uba85",
     )

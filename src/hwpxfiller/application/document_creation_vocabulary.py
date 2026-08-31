@@ -1,10 +1,9 @@
 """문서 만들기 작업대의 **wire-level 어휘 단일 출처**(SX-01 · #724).
 
-SX-01 의 나머지 Application/Product 모듈(``preview_requirement`` · ``run_delivery_intent`` ·
+SX-01 의 나머지 Application/Product 모듈(``run_delivery_intent`` ·
 ``document_creation_workbench``)은 이 파일의 상수를 **import 만** 한다. 여기에는 판정 로직이
-없다 — 순수 상수/어휘 tuple 과 사용자 문안 매핑뿐이다. blocker 우선순위 계산·PreviewRequirement
-정책·collision 재해결은 각각 그 모듈이 소유하고, 이 파일은 그들이 합의할 **문자열의 정본**만
-진다.
+없다 — 순수 상수/어휘 tuple 과 사용자 문안 매핑뿐이다. blocker 우선순위 계산·collision
+재해결은 각각 그 모듈이 소유하고, 이 파일은 그들이 합의할 **문자열의 정본**만 진다.
 
 두 부류를 담는다.
 
@@ -13,7 +12,7 @@ SX-01 의 나머지 Application/Product 모듈(``preview_requirement`` · ``run_
    매핑이 그 계약의 오러클이다 — 값은 사용자가 읽을 한국어 문안이고 내부 영어 어휘를 담지
    않는다.
 2. **wire-level 코드 tuple** — blocker 계열(§3) · Primary Action 우선순위(§3) ·
-   PreviewRequirement 종류(§6) · collision policy(§8). 정의 순서가 곧 계약이다:
+   collision policy(§8). 정의 순서가 곧 계약이다:
    ``scripts/gen_bridge_contract.py`` 가 이 tuple 들을 ``frontend/src/contract/contract.gen.ts``
    로 방출하고 드리프트 게이트가 바이트로 지킨다. 순서를 흔들면 Python↔TypeScript parity 가
    깨진다.
@@ -65,7 +64,6 @@ BLOCKER_CODES: tuple[str, ...] = (
     "REVIEW_BINDING",
     "REVIEW_RECORD_DATA",
     "REVIEW_DELIVERY",
-    "REVIEW_PREVIEW",
     "EXECUTION_NO_EVIDENCE",
     "EXECUTION_CHECKING",
     "EXECUTION_STALE",
@@ -95,34 +93,20 @@ PRIMARY_ACTION_CODES: tuple[str, ...] = (
     "RESOLVE_EXECUTION",       # execution no-evidence/checking/stale
     "REVIEW_RECORD_DATA",      # record
     "REVIEW_DELIVERY",         # delivery
-    "REVIEW_PREVIEW",          # required preview
     "RESOLVE_RUNTIME_POLICY",  # runtime/policy
     "CREATE_DOCUMENTS",        # 최종 실행(이슈가 리터럴로 고정)
 )
-
-# ------------------------------------------------------------------ PreviewRequirement
-
-#: PreviewRequirement 종류. ``REQUIRED`` reason 은 current delivery 의 실제 overwrite 사실이다.
-PREVIEW_REQUIREMENT_KINDS: tuple[str, ...] = ("NOT_REQUIRED", "OPTIONAL", "REQUIRED")
-
-#: semantic/value preview 정체 라벨. 이 미리보기는 current Plan + VDR 의 사용자 투영이라
-#: **HWPX bytes·actual layout·Artifact 가 아니다**. 그래서 라벨은 "실제 생성된 결과"(=Artifact
-#: 문안)처럼 읽히지 않고 "확인" 계열로만 말한다.
-SEMANTIC_PREVIEW_LABEL = "생성 내용 확인"
 
 # ------------------------------------------------------------------ RunDeliveryIntent
 
 #: session-scoped RunDeliveryIntent 의 collision policy(#724 §8). application 층은 셋을 계속
 #: 지원하지만 **제품 표면은 고르게 하지 않는다** — 「충돌 처리」 선택기는 U4 계열2-27 에서
-#: 걷혔고 세션은 :data:`DEFAULT_COLLISION_POLICY` 하나로 선다. 선택 사실만으로 preview 를
-#: REQUIRED 로 만들지는 않는다(REQUIRED 를 세우는 것은 의도가 아니라 실제 덮어쓸 항목이다).
+#: 걷혔고 세션은 :data:`DEFAULT_COLLISION_POLICY` 하나로 선다.
 COLLISION_POLICIES: tuple[str, ...] = ("ADD_SUFFIX", "FAIL", "OVERWRITE_EXPLICIT")
 
 #: 기본 충돌 정책 — **이름 충돌 자체는 blocker 가 아니다**(U4 계열2-27). 같은 이름이 있으면
-#: 덮어쓰되 조용하지 않다: 덮어쓸 항목이 하나라도 서면
-#: :func:`~hwpxfiller.application.preview_requirement.evaluate_current_preview_requirement` 가
-#: ``DESTRUCTIVE_OVERWRITE`` 확인을 REQUIRED 로 세워 승인 없이는 생성이 서지 않는다.
-#: 「묻고 확정하게 한다」를 지는 것은 그 확인 면이지 정책 선택기가 아니었다 — 선택기는
-#: 일반 생성 경로(`plan_generation` 의 덮어쓰기 확인 왕복)를 지배하지도 않으면서 서 있었고,
-#: 그래서 두 경로가 같은 상황을 다르게 말했다. 기본을 여기 맞춰 그 갈림을 없앤다.
+#: 덮어쓰되 조용하지 않다: 덮어쓸 항목이 하나라도 서면 생성 호출이 ``needs_overwrite`` 로
+#: 한 번 되돌아와 파괴 집합을 재진술한 확인 왕복을 요구한다(#957 — managed·legacy 공통).
+#: 「묻고 확정하게 한다」를 지는 것은 그 확인 왕복이지 정책 선택기가 아니었다 — 선택기는
+#: 그 왕복을 지배하지도 않으면서 서 있었고, 그래서 두 경로가 같은 상황을 다르게 말했다.
 DEFAULT_COLLISION_POLICY = "OVERWRITE_EXPLICIT"

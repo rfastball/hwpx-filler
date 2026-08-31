@@ -13,7 +13,7 @@
     T4 Template Apply preserved/broken → AUTO_KEEP 재승인 없음, REVIEW_REQUIRED/DETACHED 만 행동
     T5 SETTLED_CURRENT + NOT_ADMITTED → RUNTIME_NOT_ADMITTED, primary disabled + reason, READY 아님
     T6 stale command 뒤 fresh 복귀    → EXECUTION_STALE, fresh 지배
-    T7 생성 예정 문서 vs 실제 결과    → delivery preview "생성 예정", Artifact 아님
+    T7 생성 예정 문서 vs 실제 결과    → delivery 요약 "생성 예정", Artifact 아님
 
 R2(#740): currentness 축(SemanticCurrentness)이 orchestration 으로 흡수됐다 — CURRENT/STALE 는
 orchestration 상태(SETTLED_CURRENT/STALE)가 나른다(별도 currentness 입력 없음).
@@ -47,11 +47,6 @@ from hwpxfiller.application.fresh_execution_observation import (
     RuntimeAdmissionFacts,
     RuntimePolicyAdmission,
     decide_runtime_policy_admission,
-)
-from hwpxfiller.application.preview_requirement import (
-    PreviewNotRequired,
-    PreviewOptional,
-    SemanticValuePreviewProjection,
 )
 from hwpxfiller.application.selection_compatibility import AUTO_KEEP, DETACHED, REVIEW_REQUIRED
 from hwpxfiller.webapp.seal_execution_plan_product import s6_absent_runtime_conformance
@@ -90,11 +85,9 @@ def _input(**overrides: object) -> WorkbenchCompositionInput:
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
         orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
-        preview_requirement=PreviewNotRequired(),
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx", "문서-2.hwpx")),
         record_validation=RecordValidationSummary(has_blocking_issues=False),
         template_change_verdict=AUTO_KEEP,
-        preview_satisfied=True,
     )
     base.update(overrides)
     return WorkbenchCompositionInput(**base)  # type: ignore[arg-type]
@@ -248,28 +241,22 @@ def test_h6_stale_command_then_fresh_recovery() -> None:
 
 # ══════════════════════════════════════ H7 / T7 ════════════════════════════════════════════════
 def test_h7_planned_delivery_not_artifact() -> None:
-    """T7: delivery preview 는 '생성 예정 문서'로 말하고 Artifact(실제 결과)가 아니다."""
+    """T7: delivery 요약은 '생성 예정 문서'로 말하고 Artifact(실제 결과)가 아니다.
+
+    종전 이 시나리오는 semantic value preview 라벨('생성 내용 확인')까지 함께 겨눴다.
+    그 투영은 #957 슬라이스 ③ 에서 사라졌으므로 남은 축 하나 — **계획과 결과를 가르는
+    delivery 어휘** — 만 겨눈다. 계획된 이름은 여전히 디스크 write 없이 실린다.
+    """
     verdict = PASS
 
-    semantic = SemanticValuePreviewProjection(
-        preview_token="token",
-        requirement=PreviewOptional(),
-        included_content_summary="데이터 2건 · 항목 1개",
-        ordered_records=(),
-    )
     obs = _obs(
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx", "문서-2.hwpx")),
-        semantic_preview=semantic,
     )
     # "생성 예정 문서"(Resolved Delivery) — 실제 생성된 결과(Artifact)가 아니다.
     assert obs.delivery_label == "생성 예정 문서", f"{verdict}: delivery 는 '생성 예정'으로 말해야 한다"
     assert obs.delivery.label == "생성 예정 문서"
-    assert obs.delivery.is_artifact is False, f"{verdict}: delivery preview 는 Artifact 가 아니다"
-    # semantic preview 라벨도 '확인' 계열이라 실제 결과처럼 읽히지 않는다.
-    assert obs.semantic_preview is not None
-    assert obs.semantic_preview.label == "생성 내용 확인"
-    assert obs.semantic_preview.is_artifact is False
-    # 생성 예정 문서 이름이 미리보기로 실린다(디스크 write 아님).
+    assert obs.delivery.is_artifact is False, f"{verdict}: delivery 요약은 Artifact 가 아니다"
+    # 생성 예정 문서 이름이 계획으로만 실린다(디스크 write 아님).
     assert obs.delivery.planned_output_names == ("문서-1.hwpx", "문서-2.hwpx")
     # H7 판정: PASS — 생성 예정 문서와 실제 결과가 구분된다.
     assert verdict == PASS

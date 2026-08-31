@@ -9,11 +9,10 @@ JSON-safe 값으로 **투영만** 한다(링1: Qt-free · DOM-free · 파일 IO 
 
 ## Projection 과 Artifact View 는 다른 어휘다(#820 D4)
 
-`JobPreviewSheet.semantic_preview` 는 **생성 전** 의 예고이고, 여기 나오는 값은 **생성 후**
-실물의 관찰이다. 둘이 같은 낱말을 쓰면 화면도 로그도 "예고를 봤는지 실물을 봤는지"를
-구분하지 못한다 — 그래서 이 모듈의 공개 이름과 dict 키에는 ``preview``·``projection``
-어근을 쓰지 않고 observed/artifact 계열만 쓴다. 그 규율은 테스트가 직렬화 전문을 훑어
-지킨다.
+여기 나오는 값은 **생성 후** 실물의 관찰이다. 생성 **전** 값을 그리던 확인 면과 그
+projection 은 #957 에서 철거됐지만 어휘 규율은 남는다 — 이 모듈의 공개 이름과 dict 키에는
+``preview``·``projection`` 어근을 쓰지 않고 observed/artifact 계열만 쓴다. 그 규율은
+테스트가 직렬화 전문을 훑어 지킨다.
 
 ## 충실도는 구조 뷰, 못 본 구간은 숨기지 않는다(#820 D3)
 

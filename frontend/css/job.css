@@ -35,7 +35,7 @@
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
 /* ── 본문 존 = 표 없는 한 줄(U2 §2.13) — 구 거울 테이블·클릭형 ack 행은 필드축 ack
-   폐기와 함께 걷혔다. 값을 말하는 표면은 확인 면(#previewSheet) 하나다. ── */
+   폐기와 함께 걷혔다. 값을 말하는 표면은 #957 이후 만들어진 문서다. ── */
 .tbwrap{overflow-x:auto}
 .mirline{margin:var(--sp-10) 0 0;font-size:var(--fs-body);display:flex;align-items:center;
   gap:var(--sp-8);flex-wrap:wrap}
