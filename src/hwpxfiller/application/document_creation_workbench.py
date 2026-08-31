@@ -290,11 +290,35 @@ class RecordValidationIssue:
 
 
 @dataclass(frozen=True)
+class RecordValidationAdvisory:
+    """생성을 **막지 않는** record 사실 — 확인의 자리가 결과 문서인 것(#957).
+
+    blocker 와 같은 통에 담지 않는 이유가 계약이다: 이것이 서 있어도 실행은 열려야 하고,
+    표면은 두 종류를 시각적으로 갈라야 한다. ``marked_record_count`` 는 이 필드가 표식으로
+    나간 **문서 수**다 — 0 이면 사실이 없는 것이므로 세우지 않는다(hollow 금지).
+    """
+
+    code: str
+    field_id: str
+    marked_record_count: int
+
+    def __post_init__(self) -> None:
+        if not self.code or not self.field_id:
+            raise ValueError("record validation advisory code and field are required")
+        if self.marked_record_count <= 0:
+            raise ValueError("advisory 는 근거 문서 수가 1 이상이어야 한다(hollow 금지)")
+
+
+@dataclass(frozen=True)
 class RecordValidationSummary:
     """record validation 요약 — record_validation 권위(RecordValidationBlocked)의 verdict 를 담는다.
 
     여기서 record 를 재검증하지 않는다. ``has_blocking_issues`` 는 이미 내려진 판정이고
     ``issue_count`` 는 그 근거 수다. "막힌다"고 하면서 근거 수가 0 이면 hollow 라 시끄럽게 거절한다.
+
+    ``advisories`` 는 **차단분이 아니다**(#957): 빈 값이 미입력 표식으로 나간 사실은 실행을
+    막지 않으므로 ``has_blocking_issues`` 에 기여하지 않는다. 두 축을 한 불리언으로 뭉개면
+    「알려주되 막지 않는다」가 표면에서 다시 차단으로 굳는다.
     """
 
     has_blocking_issues: bool = False
@@ -302,6 +326,12 @@ class RecordValidationSummary:
     validated_count: int = 0
     blocked_count: int = 0
     issues: tuple[RecordValidationIssue, ...] = ()
+    advisories: tuple[RecordValidationAdvisory, ...] = ()
+
+    @property
+    def marked_value_count(self) -> int:
+        """표식이 박힌 **칸** 수(필드×문서) — 표면 문안의 수치 단일 출처."""
+        return sum(advisory.marked_record_count for advisory in self.advisories)
 
     def __post_init__(self) -> None:
         if self.validated_count < 0 or self.blocked_count < 0:
@@ -314,6 +344,8 @@ class RecordValidationSummary:
             raise ValueError("issue_count 는 음수가 될 수 없다")
         if self.has_blocking_issues and self.issue_count == 0:
             raise ValueError("has_blocking_issues 면 issue_count 가 1 이상이어야 한다(hollow 금지)")
+        if self.advisories and self.validated_count == 0:
+            raise ValueError("advisory 는 통과한 record 에서만 선다(표식은 유효 값이다)")
 
 
 @dataclass(frozen=True)

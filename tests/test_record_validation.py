@@ -43,8 +43,6 @@ from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlan
 from hwpxfiller.application.record_validation import (
     PLAN_INTEGRITY_ERROR,
     RAW_RECORD_INTEGRITY_ERROR,
-    RECORD_BLANK_POLICY_VIOLATION,
-    RECORD_EXPLICIT_NULL_NOT_ALLOWED,
     RECORD_REQUIRED_VALUE_MISSING,
     RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR,
     RECORD_REVIEW_EVIDENCE_STALE,
@@ -62,6 +60,8 @@ from hwpxfiller.application.record_validation import (
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
     VdrRetentionError,
+    marked_missing_fields,
+    missing_value_marker,
     validate_data_record_against_plan,
     validate_data_record_against_current_value,
     validate_data_records_against_current_value,
@@ -69,6 +69,7 @@ from hwpxfiller.application.record_validation import (
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.domain.field_binding import ExactText
+from hwpxfiller.domain.job import MISSING_MARKER, mark_missing_values
 from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
     SourceNull,
@@ -236,33 +237,32 @@ def test_current_value_validator_has_no_legacy_plan_identity_or_review_authority
     }
 
 
-@pytest.mark.parametrize(
-    ("pairs", "expected"),
-    [
-        (
-            [("amount", SourceText("1")), ("flag", SourceText("TRUE"))],
-            RECORD_REQUIRED_VALUE_MISSING,
-        ),
-        (
-            [("name", SourceNull()), ("amount", SourceText("1")), ("flag", SourceText("TRUE"))],
-            RECORD_EXPLICIT_NULL_NOT_ALLOWED,
-        ),
-        (
-            [
-                ("name", SourceText(" ")),
-                ("amount", SourceText("1")),
-                ("flag", SourceText("TRUE")),
-            ],
-            RECORD_BLANK_POLICY_VIOLATION,
-        ),
-    ],
-)
-def test_current_value_validator_preserves_exact_blocker_distinctions(pairs, expected: str) -> None:
+def test_current_value_validator_blocks_a_missing_source_key() -> None:
+    """열 자체가 없는 것은 #957 이후에도 blocker 다 — 결속의 구조 결함이라 표식으로 못 덮는다."""
     result = validate_data_record_against_current_value(
-        plan=_current_plan(), snapshot=_snapshot(pairs), validated_at="now"
+        plan=_current_plan(),
+        snapshot=_snapshot([("amount", SourceText("1")), ("flag", SourceText("TRUE"))]),
+        validated_at="now",
     )
     assert isinstance(result, RecordValidationBlocked)
-    assert expected in {blocker.code for blocker in result.blockers}
+    assert RECORD_REQUIRED_VALUE_MISSING in {blocker.code for blocker in result.blockers}
+
+
+@pytest.mark.parametrize(
+    "empty",
+    [SourceNull(), SourceText(""), SourceText(" "), SourceText("\t\n")],
+)
+def test_current_value_validator_marks_blank_rows_instead_of_blocking(empty) -> None:
+    """#957 — 행 안의 빈 값(null·빈/공백)은 표식으로 통과하고 사실만 provenance 에 남는다."""
+    snap = _snapshot([
+        ("name", empty), ("amount", SourceText("1")), ("flag", SourceText("TRUE")),
+    ])
+    result = validate_data_record_against_current_value(
+        plan=_current_plan(), snapshot=snap, validated_at="now"
+    )
+    assert isinstance(result, CurrentValidatedDataRecord)
+    assert dict(result.document_values_in_order())["f_name"] == missing_value_marker("f_name")
+    assert marked_missing_fields(result.validation_provenance) == ("f_name",)
 
 
 def test_current_batch_shares_one_validation_basis_value() -> None:
@@ -374,31 +374,56 @@ def test_missing_required_value_blocks() -> None:
     assert (RECORD_REQUIRED_VALUE_MISSING, "f_name") in codes
 
 
-def test_explicit_null_blocks() -> None:
+def test_explicit_null_is_marked_not_blocked() -> None:
     snap = _snapshot([
         ("name", SourceNull()),
         ("amount", SourceText("1")),
         ("flag", SourceText("TRUE")),
     ])
     res = _validate(snapshot=snap)
-    assert isinstance(res, RecordValidationBlocked)
-    assert (RECORD_EXPLICIT_NULL_NOT_ALLOWED, "f_name") in {
-        (b.code, b.field_id) for b in res.blockers
-    }
+    assert isinstance(res, ValidatedDataRecord)
+    assert dict(res.document_values_in_order())["f_name"] == missing_value_marker("f_name")
 
 
 @pytest.mark.parametrize("text", ["", " ", "\t\n"])
-def test_blank_source_text_blocks(text: str) -> None:
+def test_blank_source_text_is_marked_not_blocked(text: str) -> None:
     snap = _snapshot([
         ("name", SourceText(text)),
         ("amount", SourceText("1")),
         ("flag", SourceText("TRUE")),
     ])
     res = _validate(snapshot=snap)
-    assert isinstance(res, RecordValidationBlocked)
-    assert (RECORD_BLANK_POLICY_VIOLATION, "f_name") in {
-        (b.code, b.field_id) for b in res.blockers
-    }
+    assert isinstance(res, ValidatedDataRecord)
+    assert dict(res.document_values_in_order())["f_name"] == missing_value_marker("f_name")
+    assert marked_missing_fields(res.validation_provenance) == ("f_name",)
+
+
+def test_the_marker_text_matches_the_legacy_path_for_the_same_field() -> None:
+    """정합 조건(#957) — 같은 입력에서 두 경로의 문서 텍스트가 같아야 한다.
+
+    legacy 는 매핑 키(=템플릿 필드명 = Plan 의 ``field_id``)로 표식을 format 한다. 문구가
+    갈리면 산출물 사후 관찰(`artifact_view_state`)이 만든 문서의 표식을 못 세고, 같은 빈
+    값이 경로에 따라 다른 문서를 낳는다.
+    """
+    legacy = mark_missing_values([{"f_name": ""}], MISSING_MARKER)[0]["f_name"]
+    assert missing_value_marker("f_name") == legacy
+
+
+def test_marking_does_not_pollute_vdr_identity_with_provenance() -> None:
+    """표식 사실은 provenance(=identity 밖)에 산다 — digest 는 canonical payload 만 본다."""
+    snap = _snapshot([
+        ("name", SourceText("")), ("amount", SourceText("1")), ("flag", SourceText("TRUE")),
+    ])
+    res = _validate(snapshot=snap)
+    assert isinstance(res, ValidatedDataRecord)
+    assert marked_missing_fields(res.validation_provenance) == ("f_name",)
+    # 사실은 provenance 에만 있고 canonical payload 에는 없다 — digest 가 그것을 안 본다.
+    assert "MISSING_VALUE_MARKED" not in repr(res.semantic_payload_encoded)
+    assert canonical_execution_digest(res.semantic_payload_encoded) == (
+        res.validated_record_digest
+    )
+    # 대신 **문서 텍스트**는 payload 에 있다 — 표식이 문서를 바꾼 사실은 identity 안이다.
+    assert missing_value_marker("f_name") in repr(res.semantic_payload_encoded)
 
 
 def test_free_form_display_text_passes_every_source_field() -> None:
@@ -421,15 +446,17 @@ def test_free_form_display_text_passes_every_source_field() -> None:
 
 @pytest.mark.parametrize("field_id, key", [("f_amount", "amount"), ("f_flag", "flag")])
 @pytest.mark.parametrize("text", ["", " ", "\t\n"])
-def test_blank_guard_covers_every_source_field(field_id: str, key: str, text: str) -> None:
-    """구 typed 상당(amount·flag) 규칙에서도 빈/공백은 blank blocker 다(가드 보편화)."""
+def test_blank_marking_covers_every_source_field(field_id: str, key: str, text: str) -> None:
+    """빈/공백 처리는 특정 값 유형이 아니라 **모든** SOURCE 값에 걸린다(가드 보편화 승계).
+
+    #957 이후 그 처리는 차단이 아니라 표식이다 — 보편성만 그대로다.
+    """
     pairs = [("name", SourceText("ok")), ("amount", SourceText("1")), ("flag", SourceText("Y"))]
     snap = _snapshot([(k, SourceText(text) if k == key else v) for k, v in pairs])
     res = _validate(snapshot=snap)
-    assert isinstance(res, RecordValidationBlocked)
-    assert (RECORD_BLANK_POLICY_VIOLATION, field_id) in {
-        (b.code, b.field_id) for b in res.blockers
-    }
+    assert isinstance(res, ValidatedDataRecord)
+    assert dict(res.document_values_in_order())[field_id] == missing_value_marker(field_id)
+    assert marked_missing_fields(res.validation_provenance) == (field_id,)
 
 
 def test_blank_guard_does_not_disturb_whitespace_policy() -> None:

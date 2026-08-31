@@ -801,7 +801,7 @@ class TestWebSelftestGate:
         assert j["runlog_absent"], j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
         # 실패 시 판별 증거만 좁혀 보인다(전체 dict 는 pytest 가 자른다 — 판독 불능 덤프 금지).
-        if not (j["reject_state"] == "rejected" and "빈 값" in j["reject_text"]):
+        if not (j["reject_state"] == "rejected" and "최소 1건" in j["reject_text"]):
             print("REJECT_EVIDENCE_BEGIN")
             for k in (
                 "reject_state",
@@ -823,7 +823,9 @@ class TestWebSelftestGate:
         assert j["reject_btn_disabled"] is False, (
             "생성 버튼이 잠긴 채였습니다 — 클릭이 핸들러에 닿지 않아 이후 단언이 공허합니다."
         )
-        assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], (
+        # 대역 문안은 살아 있는 실행 백스톱(`validate_generate`)이다 — 종전의 blank_set
+        # 검토 게이트 문형은 #957 에서 죽었다(빈 값은 표식으로 나가고 막지 않는다).
+        assert j["reject_state"] == "rejected" and "최소 1건" in j["reject_text"], (
             j["reject_state"],
             j["reject_text"],
         )

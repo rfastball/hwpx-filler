@@ -958,16 +958,43 @@ side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 �
   하나라도 있으면 이 면이 `DESTRUCTIVE_OVERWRITE` 로 REQUIRED 가 되고, 무엇을 덮어쓰는지는
   「생성 예정 문서」 목록이 파일마다 말한다. 일반 생성 경로의 덮어쓰기 확인 왕복
   (`plan_generation` → `needs_overwrite`)과 같은 말을 하는 자리다.
+- **검토는 게이트가 아니라 고지다**(#957 — 신뢰 정책 선회). `docs/UX_FEEDBACK_U4.md` §34
+  「빈 값도 확인하면 생성 허용 — 게이트 유지 확정」의 **명시적 뒤집기**이고, U4 문서는 역사
+  기록이라 고치지 않으므로 승계 진술은 여기다. 새 정책은 한 줄이다: **이상이 있으면 알려주되
+  생성을 막지 않는다** — 사용자가 만들어진 문서를 한 번 더 본다. 그래서
+  `plan_generation` 에 검토 판정기 선언이 없고(`review_check`·`PlanDecision.review_unmet`
+  사망), `_compose_gate` 에 검토 단이 없으며(`reason="review_required"` 사망), 실행 백스톱도
+  없다. 남은 차단은 **구조 가드**뿐이다: 드리프트·미해소 파일명 토큰(danger)과 데이터 결속·
+  저장 폴더·선택 0건(warn).
 - 검토 요구(`ReviewRequirement`)는 규칙의 **대상별 지문**과 마지막 완주가 남긴 기준선
   (`Job.reviewed_rules`)의 차이다. 위험은 파일명 집합 > 의미 연결 > 표시형이고 위험마다
-  다른 증거를 싣는다. 템플릿 변경은 승인 축이 아니라 드리프트 게이트가 진다.
-- **빈 값도 요구다**(`blank_set` — U2 §2.13, 필드축 ack 폐기의 보정): 규칙이 기준선과
-  같아도 이번 실행 입력에 빈 값이 있으면 요구가 선다 — 표식(`MISSING_MARKER`)이 박히는
-  실행이라 승인 없이 조용히 생성되지 않는다(침묵 금지). 표식 조건은 「빈 값이 있으면」
-  하나로 단순하고(`_run_marker` — 생성·미리보기·승인의 단일 술어), 승인 지문의 표식
-  성분은 **빈 값 필드 집합의 해시**다(집합이 갈리면 승인 자동 무효). 구 필드축
+  다른 증거를 싣는다. 템플릿 변경은 승인 축이 아니라 드리프트 게이트가 진다. 판정 자체는
+  살아 있고 **소비처가 게이트에서 사전검증 고지로 옮겼다**: `refresh(review_notice=…)` →
+  `_compose_preflight` 가 `review_notice_text` 로 「[알림] …결과 문서를 열어 확인하세요.」
+  한 줄을 세운다(`long_paths` 와 같은 비차단 선례). 고지는 **등급을 올리지 않으므로**
+  (`PreflightResult.level` 은 `ok` 그대로) 별도 축 `PreflightResult.notices` 로도 실린다 —
+  링2 가 통과 문구로 갈아끼우는 자리에서 고지가 조용히 사라지지 않게.
+- **빈 값은 막지 않고 표식으로 남는다**(§2.13 침묵 금지의 #957 판본): 표식
+  (`MISSING_MARKER` = `〘미입력·{field}〙`)이 문서에 박히므로 조용한 통과가 아니다. 그 사실을
+  말하는 자리는 셋이다 — 사전검증 「[경고] 빈 값 필드」·문서 안의 표식·완료 요약의 「빈 값 표시
+  필드 N개(…)」. `blank_set` 위험은 요구로는 그대로 서지만 **고지 문안이 없다**
+  (`review_notice_text` 가 빈 문자열): 같은 사실을 한 면에 두 줄로 세우지 않는다. 표식 조건은
+  「빈 값이 있으면」 하나로 단순하고(`_run_marker` — 생성·미리보기의 단일 술어), 승인 지문의
+  표식 성분은 **빈 값 필드 집합의 해시**다(집합이 갈리면 승인 자동 무효 — 승인이 생성을 열지
+  않게 됐어도 「무엇을 승인했는가」의 결속은 그대로다). 구 필드축
   ack(`ack_field`·`unack_field`·거울 클릭=확인·UD-19 재클릭 토글·가드의 `ack_count`)는
   전부 사망 — 표면 어휘는 「승인」 하나다(§2.10 방향 유지).
+- **관리 경로도 같은 처분이다**: `record_validation` 은 행 안의 빈 값(explicit null·빈/공백)을
+  blocker 가 아니라 **미입력 표식**으로 resolve 하고, 그 사실을 비차단 `advisories` 축
+  (`MISSING_VALUE_MARKED:{field_id}` — VDR provenance, identity 밖)으로 나른다. 표면은
+  `#jobRecordValidationAdvisory` 한 줄(「빈 값 N칸이 있습니다. 문서에는 미입력 표식이
+  들어갑니다.」)이고
+  blocker 목록(`#jobRecordValidationIssues`)과 **다른 키·다른 줄**이다. 표식 문구는 두 경로가
+  같은 입력에서 같아야 하므로 legacy `mark_missing_values` 와 같은 상수·같은 키
+  (매핑 키 = Plan `field_id`)를 쓴다. 남는 blocker 는 **열 누락**
+  (`RECORD_REQUIRED_VALUE_MISSING`)류다 — 행의 결핍이 아니라 데이터↔작업 결속의 구조 결함이라
+  표식으로 덮으면 잘못된 결속이 조용히 출하된다. 구 `RECORD_EXPLICIT_NULL_NOT_ALLOWED`·
+  `RECORD_BLANK_POLICY_VIOLATION` 은 **퇴역**했다.
 - 승인 유효 범위는 위험별로 다르다: 표시형은 규칙 지문에만(단 빈 값이 있으면 선택 결속으로
   승격), 의미·파일명·빈 값은 **선택 지문까지** 결속된다(선택·순서가 바뀌면 그 증거 자체가
   무효다).
@@ -982,8 +1009,11 @@ side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 �
   override 가 실제로 서면 그때 축이 함께 돌아온다. 행별 「수정」 deep-link 도 PR-B 소관이라
   지금은 드로어 하나의 「이 작업 편집」 출구이고, 그 출구는 진입 문맥(`preview_result` + 보고
   있던 행)을 실어 편집기 배너가 왜 왔는지를 말한다(F7 PR-A).
-- 게이트 서열에서 검토 요구는 **전제조건 다음·열림 직전**(warn, `reason="review_required"`)
-  이다. 선택 0건·저장 폴더 미지정 상태에서 "검토하세요"는 이행 불가능한 지시다.
+- 게이트 서열에 검토 요구는 **없다**(#957). 종전 자리(전제조건 다음·열림 직전, warn,
+  `reason="review_required"`)는 비었고 `gate.reason` 어휘에서 그 이름이 사라졌다 — 표지
+  문안의 「승인 필요」 갈래도 함께 죽었다(상단 표지는 이제 「확인 필요」 하나).
+  승인 동사(`preview_approve`·`#jobReviewFlag`)는 미리보기 표면과 함께 **과도기 잔존**이라
+  아무 게이트도 열지 않는다 — 그 표면의 정리는 후속 슬라이스 소관이다.
 
 #### TXT 검토·복사 작업대 = 고정 사본 세션 (F6 PR-A — 지도 §10.15)
 

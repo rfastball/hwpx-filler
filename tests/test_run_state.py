@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
-from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.gui.review_state import review_requirement
@@ -602,44 +602,77 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
         assert "파일명 패턴" not in status.gate.text
 
 
-# ------------------------------------------------ 검토 요구의 게이트 자리(재작성 F5)
-def test_review_requirement_sits_after_preconditions_and_before_open(tmp_path):
-    """지도 §10.12 판정 F — 서열은 드리프트·토큰(danger) > 전제조건 > 검토 > 열림(미입력 단은 U2 §2.13 로 사망).
+# ------------------------------------------------ 검토는 게이트가 아니라 고지다(#957)
+def test_review_requirement_no_longer_closes_the_gate(tmp_path):
+    """#957 정책 선회 — 검토 요구가 서 있어도 **게이트는 열린다**.
 
-    검토가 **전제조건보다 뒤**인 것이 하중이다: 선택 0건에서는 미리보기에 진입하지 않는
-    것이 불변식(§18.11-6)이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가
-    된다(빈 화면을 앞에 두고 확인을 요구하는 자리).
+    U4 §34(「빈 값도 확인하면 생성 허용 — 게이트 유지 확정」)의 명시적 뒤집기다: 이상은
+    알리되 생성을 막지 않고, 사용자가 결과 문서를 한 번 더 본다. 게이트 서열에서 검토 단이
+    사라졌으므로 전제조건이 다 갖춰진 새 작업은 그대로 실행 가능하다.
     """
     vm = _vm(tmp_path)
     req = review_requirement(vm.job)  # 완주 이력 없음 = 새 작업(§13-3)
     assert req.required
 
-    # 선택 0건 — 검토가 아니라 전제조건이 말한다.
-    gate = vm.refresh([], "out", review_unmet=req).gate
+    # 전제조건은 그대로 게이트다 — 검토만 걷혔다.
+    gate = vm.refresh([], "out", review_notice=req).gate
     assert "선택하세요" in gate.text and gate.reason == ""
-
-    # 저장 폴더 없음 — 역시 전제조건이 먼저.
-    gate = vm.refresh([0, 1], "", review_unmet=req).gate
+    gate = vm.refresh([1], "", review_notice=req).gate
     assert "저장 폴더" in gate.text and gate.reason == ""
 
-    # 전제조건이 다 갖춰지면 그때 검토가 막는다.
-    gate = vm.refresh([0, 1], "out", review_unmet=req).gate
-    assert gate.enabled is False and gate.level == "warn"
-    assert gate.reason == "review_required" and "미리보기" in gate.text
+    # 빈 값 없는 레코드만 골라 **고지 하나만** 서는 자리를 만든다(경고와 섞이지 않게).
+    status = vm.refresh([1], "out", review_notice=req)
+    assert status.gate.enabled is True and status.gate.reason == ""
+    # 대신 사전검증이 비차단으로 말한다 — 침묵도 차단도 아니다.
+    assert status.preflight.notices == (
+        "[알림] 이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요.",
+    )
+    assert status.preflight.text == status.preflight.notices[0]
+    # 고지만으로는 등급이 오르지 않는다(경고를 싸구려로 만들지 않는다).
+    assert status.preflight.level == "ok"
 
 
-def test_drift_outranks_review_requirement(tmp_path):
-    """구조 불일치(danger)가 먼저다 — 고칠 수 없는 작업에 미리보기부터 열게 하지 않는다."""
+def test_changed_rules_notice_names_the_targets(tmp_path):
+    """바뀐 규칙 고지는 **무엇이 바뀌었는지**를 적는다 — 이름 없는 알림은 확인을 못 시킨다."""
+    vm = _vm(tmp_path)
+    vm.job.last_run_at = "2026-08-01T09:00:00"
+    vm.job.reviewed_rules = dict(rules_fingerprints(vm.job))
+    vm.job.mapping.mappings[0].source = "presmptPrce"   # source 축 변경 = semantic_binding
+    status = vm.refresh([1], "out", review_notice=review_requirement(vm.job))
+    assert status.gate.enabled is True
+    assert status.preflight.notices == (
+        "[알림] 마지막 실행 이후 바뀐 규칙이 있습니다: 공고명(연결). "
+        "결과 문서를 열어 확인하세요.",
+    )
+
+
+def test_blank_values_do_not_get_a_second_notice(tmp_path):
+    """빈 값의 자리는 「[경고] 빈 값 필드」 하나다 — 한 사실이 한 면에 두 줄로 서지 않는다."""
+    vm = _vm(tmp_path)
+    vm.job.last_run_at = "2026-08-01T09:00:00"
+    vm.job.reviewed_rules = dict(rules_fingerprints(vm.job))
+    blanks = tuple(vm.blank_fields([0, 1]))
+    req = review_requirement(vm.job, blank_fields=blanks)
+    assert req.risk_class == "blank_set"
+    status = vm.refresh([0, 1], "out", review_notice=req)
+    assert status.gate.enabled is True
+    assert status.preflight.notices == ()
+    assert "[알림]" not in status.preflight.text
+
+
+def test_drift_still_outranks_and_blocks(tmp_path):
+    """구조 불일치(danger)는 그대로 차단이다 — 걷힌 것은 검토 단뿐이다."""
     vm = _vm(tmp_path)
     _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
-    gate = vm.refresh([0, 1], "out", review_unmet=review_requirement(vm.job)).gate
+    gate = vm.refresh([0, 1], "out", review_notice=review_requirement(vm.job)).gate
     assert gate.reason == "drift" and gate.level == "danger"
 
 
 def test_no_review_requirement_leaves_the_gate_open(tmp_path):
-    """§13-2 — 규칙이 그대로면 미리보기는 선택이고 게이트는 열려 있다."""
+    """§13-2 — 규칙이 그대로면 게이트는 열려 있고 고지도 없다."""
     vm = _vm(tmp_path)
-    assert vm.refresh([0, 1], "out", review_unmet=None).gate.enabled is True
+    status = vm.refresh([1], "out", review_notice=None)
+    assert status.gate.enabled is True and status.preflight.notices == ()
 
 
 def test_path_length_warns_without_blocking_generation(tmp_path):

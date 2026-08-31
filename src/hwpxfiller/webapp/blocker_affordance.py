@@ -143,7 +143,9 @@ _TABLE: dict[str, BlockerAffordance] = {
         kind=ACTIVE_VERB,
         selector="#jobRecordValidationIssues button",
         dispatch_action="job.recover_record_issue",
-        rationale="「문제 위치 보기」가 지목된 칸으로 데려간다(겨눔은 backend exact target).",
+        rationale="「문제 위치 보기」가 지목된 칸으로 데려간다(겨눔은 backend exact target). "
+        "이 자리에 남는 원인은 #957 이후 **열 누락**류다 — 행 안의 빈 값은 차단이 아니라 "
+        "미입력 표식이고 그 사실은 같은 구획의 비차단 고지가 진다.",
     ),
     "REVIEW_DELIVERY": BlockerAffordance(
         kind=ACTIVE_VERB,

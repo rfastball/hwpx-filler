@@ -845,28 +845,29 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
 
 
 # ---------------------------------------------------------------- 게이트·생성(링1 계약)
-def test_blank_set_gate_blocks_generate_until_approved(tmp_path):
-    """U2 §2.13 — 빈 값이 있으면 blank_set 검토 요구가 서고, 승인해야 생성이 열린다.
+def test_blank_values_are_announced_but_do_not_block_generation(tmp_path):
+    """#957 — 빈 값은 **알리되 막지 않는다**(U4 §34 「게이트 유지 확정」의 명시적 뒤집기).
 
-    구 필드축 ack(배지 클릭=확인)의 승계: 표식 삽입 동의는 확인 면의 승인 1번이 겸한다.
+    구 blank_set 게이트의 자리다: 종전에는 승인해야 생성이 열렸고, 이제는 사전검증이
+    어느 필드가 비었는지 지목한 채 생성이 그대로 열린다 — 확인은 결과 문서에서 한다.
+    빈 값이 조용히 새지 않는 근거는 승인이 아니라 문서에 박히는 표식이다.
     """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
 
     snap = ctrl.snapshot()
-    assert snap["gate"]["enabled"] is False and "빈 값" in snap["gate"]["text"]
-    assert snap["gate"]["reason"] == "review_required"      # 어휘는 「승인」 하나(§2.10 승계)
-    assert "추정가격" in snap["gate"]["text"]                # 어느 필드인지 지목한다
+    assert snap["gate"]["enabled"] is True and snap["gate"]["reason"] == ""
+    assert "[경고] 빈 값 필드" in snap["preflight"]["text"]
+    assert "추정가격" in snap["preflight"]["text"]           # 어느 필드인지 지목한다
 
-    # 생성 시도도 방어적으로 차단(worker/API 우회 방지).
     res = ctrl.generate()
-    assert res["ok"] is False and "빈 값" in res["error"]
-
-    # 확인 면 승인 → 게이트 열림.
-    _approve_run(ctrl)
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert res["ok"] is True and res["succeeded"] == 2
+    assert "빈 값 표시 필드 1개(추정가격)." in res["summary"]
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    assert made == ["doc-001.hwpx", "doc-002.hwpx"]
 
 
 def test_generate_writes_documents_and_marks_missing(tmp_path):
@@ -4503,56 +4504,53 @@ def _unreviewed_session(tmp_path):
     return ctrl, pushes
 
 
-def test_new_job_is_blocked_until_the_result_is_reviewed(tmp_path):
-    """§13-3 — 새 문서 작업은 결과 확인 전 실행을 차단한다."""
+def test_new_job_gets_a_notice_not_a_block(tmp_path):
+    """#957 — §13-3 의 차단이 고지가 됐다: 첫 실행은 알리되 막지 않는다."""
     ctrl, _ = _unreviewed_session(tmp_path)
-    gate = ctrl.snapshot()["gate"]
-    assert gate["enabled"] is False and gate["level"] == "warn"
-    assert "아직 한 번도 문서를 만들지 않은" in gate["text"]
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is True and snap["gate"]["reason"] == ""
+    assert "[알림] 이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요." in (
+        snap["preflight"]["text"]
+    )
+    assert "승인" not in snap["preflight"]["text"]
 
 
-def test_snapshot_carries_the_gate_reason_so_the_pill_can_say_approve(tmp_path):
-    """스냅샷이 `gate.reason` 을 싣는다 — 표지 문안이 서열을 재유도하지 않게(리뷰 R1).
+def test_no_gate_reason_names_a_review_anymore(tmp_path):
+    """`gate.reason` 에서 `review_required` 가 사라졌다 — 표지가 「승인 필요」를 말할 자리가 없다.
 
-    어휘를 갈라 놓고(규칙축=「승인」, 필드축=「확인」) 상단 표지만 「확인 필요」로 두면 첫
-    실행 화면에서 **같은 행동을 두 이름으로** 부른다. 표지가 옳게 말하려면 「무엇이 막고
-    있는가」를 알아야 하는데 그 판정은 링1 이 이미 `reason` 으로 낸다 — 웹이 게이트 서열을
-    다시 유도하지 않고 이 이름 하나만 읽는 것이 이 필드의 존재 이유다.
+    승인이 게이트를 여는 사건이 아니게 됐으므로, 그 이름을 남겨 두면 표면이 존재하지 않는
+    상태를 그리는 분기를 계속 든다(링2 에서 죽은 서열을 재조립하는 자리).
     """
     ctrl, _ = _unreviewed_session(tmp_path)
-    assert ctrl.snapshot()["gate"]["reason"] == "review_required"
-    req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._review_scope_key())
-    gate = ctrl.snapshot()["gate"]
-    assert gate["enabled"] is True and gate["reason"] == ""
-
-
-def test_approval_opens_the_gate_and_survives_a_push_round_trip(tmp_path):
-    ctrl, _ = _unreviewed_session(tmp_path)
+    assert ctrl.snapshot()["gate"]["reason"] == ""
     req, unmet = ctrl._review()
-    assert unmet is not None
+    assert req.required and unmet is not None      # 요구 판정 자체는 그대로 산다(고지 입력)
     ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert ctrl.snapshot()["gate"] == {"enabled": True, "level": "", "text": "", "reason": ""}
 
 
-def test_selection_change_reinstates_a_selection_bound_approval(tmp_path):
-    """판정 I — 새 작업의 증거는 이 배치의 것이라 선택이 바뀌면 다시 확인해야 한다."""
+def test_selection_change_still_invalidates_a_selection_bound_approval(tmp_path):
+    """판정 I 는 살아 있다 — 게이트가 아니라 **승인 사실**의 축에서(미리보기 표면이 읽는다).
+
+    선택이 바뀌면 승인 키가 갈려 「승인했다」가 거짓이 된다. 게이트를 안 닫는다고 해서
+    승인 결속까지 헐거워지면, ③에서 남는 승인 표면이 남의 선택을 본 승인으로 산다.
+    """
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert ctrl.snapshot()["review"]["approved"] is True
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})
-    assert ctrl.snapshot()["gate"]["enabled"] is False
+    assert ctrl.snapshot()["review"]["approved"] is False
 
 
-def test_display_order_change_reinstates_the_approval(tmp_path):
+def test_display_order_change_still_invalidates_the_approval(tmp_path):
     """선택 집합이 같아도 순서가 바뀌면 파일 이름이 달라진다(§2 충돌 B) — 같은 실행
     입력이 아니므로 승인이 승계되지 않는다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    assert ctrl.snapshot()["gate"]["enabled"] is False
+    assert ctrl.snapshot()["review"]["approved"] is False
 
 
 def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path):
@@ -4583,12 +4581,13 @@ def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    text = ctrl.snapshot()["gate"]["text"]
-    assert "확인할 수 없습니다" in text and "한 번도" not in text
+    text = ctrl.snapshot()["preflight"]["text"]
+    assert "[알림] 마지막 실행에 쓴 규칙을 확인할 수 없습니다." in text
+    assert "한 번도" not in text
 
 
 def test_switching_jobs_does_not_carry_an_approval(tmp_path):
-    """승인은 규칙 지문에 결속돼 남의 작업에 닿지 않는다."""
+    """승인은 규칙 지문에 결속돼 남의 작업에 닿지 않는다(게이트가 아니라 승인 사실의 축)."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
@@ -4597,7 +4596,7 @@ def test_switching_jobs_does_not_carry_an_approval(tmp_path):
     other.filename_pattern = "다른-{{seq:001}}"
     ctrl.registry.save(other)
     ctrl.dispatch("select_job", {"name": "다른공고서"})
-    assert ctrl.snapshot()["gate"]["enabled"] is False
+    assert ctrl.snapshot()["review"]["approved"] is False
 
 
 def test_preview_drawer_projects_the_run_input_not_a_recomputation(tmp_path):
@@ -4704,12 +4703,15 @@ def test_preview_opens_even_when_nothing_needs_review(tmp_path):
 
 
 def test_opening_the_preview_is_not_approval(tmp_path):
-    """불변식 §13-4 — PreviewCreated 와 PreviewApproved 는 다른 사건이다."""
+    """불변식 §13-4 — PreviewCreated 와 PreviewApproved 는 다른 사건이다.
+
+    둘 다 이제 생성을 열지 않는다(#957) — 갈리는 것은 「승인했다」를 말할 수 있는가다.
+    """
     ctrl, _ = _unreviewed_session(tmp_path)
     ctrl.dispatch("preview_open", {})
-    assert ctrl.snapshot()["gate"]["enabled"] is False
+    assert ctrl.snapshot()["review"]["approved"] is False
     ctrl.dispatch("preview_approve", {})
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert ctrl.snapshot()["review"]["approved"] is True
 
 
 def test_approval_is_refused_outside_the_drawer(tmp_path):
@@ -4816,31 +4818,34 @@ def test_preview_has_no_scope_axis(tmp_path):
 
 
 # ---------------- 리뷰 1R 조치의 영구 가드(P1×2·P2×1) ----------------
-def test_generation_backstop_refuses_an_unapproved_run(tmp_path):
-    """1R P1 — 게이트는 **스냅샷을 만들 때** 판정한다. 스냅샷을 안 거치는 경로(브리지
-    `generate` 직접 호출·stale 프론트)가 승인 없이 생성을 내면 안 된다.
+def test_generation_has_no_review_backstop_left(tmp_path):
+    """#957 — 승인 없는 실행은 이제 **정상 경로**다(구 1R P1 백스톱의 퇴역 자리).
 
-    미입력 게이트가 같은 이유로 백스톱을 두는 자리다: 버튼 비활성은 표면의 사실이지
-    계약이 아니다.
+    백스톱이 있던 이유는 「버튼 비활성은 표면의 사실이지 계약이 아니다」였고, 그 계약
+    자체가 없어졌다. 남는 백스톱은 구조 가드(`validate_generate`)뿐이라 여기서 확인할
+    것은 「승인 없이도 문서가 나온다」와 「빈 값이 표식으로 남는다」다.
     """
     ctrl, _ = _unreviewed_session(tmp_path)
     res = ctrl.generate()          # 화면을 거치지 않고 곧바로 호출
-    assert res["ok"] is False and res["level"] == "warn"
-    assert "미리보기" in res["error"]
-    assert not list((tmp_path / "out").glob("*.hwpx")), "승인 없이 문서가 생성됐습니다."
+    assert res["ok"] is True and res["succeeded"] == 2
+    assert "빈 값 표시 필드" in res["summary"]
+    made = sorted(p.name for p in (tmp_path / "out").glob("*.hwpx"))
+    assert made == ["doc-001.hwpx", "doc-002.hwpx"]
 
 
-def test_generation_backstop_catches_a_rule_change_after_the_gate_opened(tmp_path):
-    """승인 뒤 규칙이 바뀌면(에디터 저장) 그 승인은 무효다 — 백스톱이 지금 다시 묻는다."""
+def test_a_rule_change_after_approval_no_longer_refuses_the_run(tmp_path):
+    """승인 뒤 규칙이 바뀌어도 실행은 열린다 — 고지가 그 사실을 말할 뿐이다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["gate"]["enabled"] is True
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "다른-{{seq:001}}"
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
-    assert ctrl.generate()["ok"] is False
+    snap = ctrl.snapshot()
+    assert snap["review"]["approved"] is False          # 승인은 지문 결속으로 무효가 된다
+    assert snap["gate"]["enabled"] is True
+    assert ctrl.generate()["ok"] is True
 
 
 def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
@@ -4920,20 +4925,22 @@ def test_blank_fields_count_blanks_not_markers(tmp_path):
 def test_approval_does_not_survive_a_data_swap(tmp_path):
     """2R P1 — 데이터 A 에서 승인한 뒤 데이터 B 를 올리면 선택은 0건으로 리셋되지만
     세션의 승인 집합은 남는다. 같은 index 를 다시 고르는 순간 **같은 키가 재구성돼**
-    B 의 값·이름을 한 번도 보지 않은 채 게이트가 열리면 안 된다.
+    B 의 값·이름을 한 번도 보지 않은 승인이 살아나면 안 된다.
+
+    #957 이후 그 결함은 게이트가 아니라 「승인했다」는 진술에서 드러난다 — 승인이 실행을
+    열지 않게 됐다고 해서 승인이 남의 데이터에 붙어도 되는 것은 아니다.
     """
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert ctrl.snapshot()["review"]["approved"] is True
 
     other = tmp_path / "b.csv"
     other.write_text("bidNtceNm,presmptPrce\n다른공고,\n다른비품,3000000\n", encoding="utf-8")
     _mount_all(ctrl, str(other))          # 같은 열 지형·같은 행 수 = 같은 index 집합
-    assert ctrl.snapshot()["gate"]["enabled"] is False, (
+    assert ctrl.snapshot()["review"]["approved"] is False, (
         "다른 데이터의 값을 보지 않은 채 승인이 재사용됐습니다."
     )
-    assert ctrl.generate()["ok"] is False   # 백스톱도 같은 판정을 낸다
 
 
 def test_approval_scope_key_is_separate_from_the_result_fingerprint(tmp_path):
@@ -5041,13 +5048,12 @@ def test_the_pin_releases_when_the_run_input_changes(tmp_path):
     assert ctrl._names_now != frozen
 
 
-def test_new_blanks_on_new_data_reinstate_the_gate(tmp_path):
+def test_new_blanks_on_new_data_are_announced_and_marked(tmp_path):
     """침묵 금지(U2 §2.13 **최우선**) — 한 번 완주한 작업에 새 데이터를 올려 빈 값이
-    새로 생기면 게이트가 선다.
+    새로 생기면 그 사실이 **말해진다**.
 
-    승인은 규칙 지문 기반이라 완주 뒤 영구히 조용해진다(판정 N). 빈 값 집합이 승인
-    지문에 들지 않으면 다음 달 새 데이터의 빈 값이 **표식이 박힌 문서를 조용히 생성**한다
-    — 생성 시점에 아무도 말하지 않고, 제출한 뒤에 아는 순서가 된다.
+    #957 이후 그 말하기는 게이트가 아니라 ①사전검증 경고 ②문서에 박히는 표식 ③완료 요약의
+    병기 셋이다. 조용한 생성은 여전히 없다 — 없어진 것은 승인을 받아야 열리는 문 하나다.
     """
     ctrl, _ = _controller(tmp_path)                       # 기준선 있는 작업(완주 자격)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -5055,21 +5061,22 @@ def test_new_blanks_on_new_data_reinstate_the_gate(tmp_path):
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    assert ctrl.snapshot()["gate"]["enabled"] is True     # 빈 값 없음 = 조용한 반복 실행
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is True                # 빈 값 없음 = 조용한 반복 실행
+    assert "빈 값" not in snap["preflight"]["text"]
     assert ctrl.generate()["ok"] is True                  # 완주 — 기준선이 다시 선다
 
     _mount_all(ctrl, _data_csv(tmp_path))                 # 다음 달 데이터 — 빈 값 신규 발생
     ctrl.set_output_folder(str(tmp_path / "out"))         # RELEASE 뒤 명시 Work·저장 위치 재선택
     snap = ctrl.snapshot()
-    assert snap["gate"]["enabled"] is False, "새 빈 값인데 게이트가 서지 않습니다(조용한 표식 생성)."
-    assert snap["gate"]["reason"] == "review_required" and "빈 값" in snap["gate"]["text"]
-    res = ctrl.generate()                                 # 백스톱도 같은 판정
-    assert res["ok"] is False and "빈 값" in res["error"]
-    _approve_run(ctrl)                                    # 표식 삽입 동의 = 승인 1번
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert snap["gate"]["enabled"] is True
+    assert "[경고] 빈 값 필드: 추정가격" in snap["preflight"]["text"], (
+        "새 빈 값인데 아무 말도 하지 않습니다(조용한 표식 생성)."
+    )
     # 같은 폴더 재생성이라 덮어쓰기 확인(RC-02)이 먼저 선다 — 확인 뒤 생성이 열린다.
     assert ctrl.generate()["needs_overwrite"] is True
-    assert ctrl.generate(confirm_overwrite=True)["ok"] is True
+    res = ctrl.generate(confirm_overwrite=True)
+    assert res["ok"] is True and "빈 값 표시 필드 1개(추정가격)." in res["summary"]
 
 
 def test_review_scope_key_hashes_the_blank_field_set(tmp_path):
@@ -5953,19 +5960,24 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert ctrl.job_name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
-def test_managed_generation_pushes_adopted_identity_before_review_rejection(tmp_path):
-    """Lazy bootstrap 뒤 plan 거절도 새 managed identity를 한 번 밀어야 한다."""
+def test_managed_generation_pushes_adopted_identity_before_a_plan_rejection(tmp_path):
+    """Lazy bootstrap 뒤 plan 거절도 새 managed identity를 한 번 밀어야 한다.
+
+    거절 사유는 #957 이후 구조 가드다 — 검토 거절 갈래가 사망했으므로 살아 있는 가드
+    (선택 0건)로 같은 순서를 잰다.
+    """
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("set_none", {})
     assert ctrl.snapshot()["managed_hwpx"] is False
 
     _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
     pushes.clear()
     rejected = ctrl.generate()
 
-    assert rejected["ok"] is False and "빈 값" in rejected["error"]
+    assert rejected["ok"] is False and "최소 1건" in rejected["error"]
     current = ctrl.snapshot()
     # S6-05(#812): managed_hwpx 는 slot-bearing 파생이라 slotless 발급 작업은 False 다 —
     # 채택된 identity(authority_id) push 는 그대로 한 번 일어난다.

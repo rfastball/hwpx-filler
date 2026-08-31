@@ -1431,10 +1431,11 @@ async function runJobResult(ctx) {
   let rejectGenCalls = 0;
   const genStub = stubGenerate(services, (args) => {
     rejectGenCalls += 1;
-    /* 문안은 살아 있는 blank_set 게이트 문형(U2 §2.13) — 죽은 ack 문형을 프로브가
-       정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다. */
+    /* 문안은 살아 있는 실행 백스톱 문형(`validate_generate`) — 죽은 문형을 프로브가
+       정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다. 종전 이 자리에 있던
+       blank_set 검토 게이트 문형은 #957 에서 죽었다(빈 값은 표식으로 나가고 막지 않는다). */
     return {
-      ok: false, error: "빈 값 필드가 표식으로 문서에 박힙니다: 추정가격.", level: "warn",
+      ok: false, error: "생성할 문서를 최소 1건 선택하세요.", level: "warn",
       /* 상관 토큰은 **반향**이다(R4-03) — 컨트롤러는 이것이 없으면 거절을 그리기 전에
          계약 위반으로 멈춘다. 대역이 자기 토큰을 지어내면 그 관문을 우회해, 귀속이 깨진
          응답도 통과하는 세계에서 재게 된다. 받은 것을 그대로 돌려준다. */

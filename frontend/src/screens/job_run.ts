@@ -893,6 +893,7 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const recoverAction = (wb.recover_action || null) as Obj | null;
   const recordValidation = (wb.record_validation || {}) as Obj;
   const recordIssues = (recordValidation.issues || []) as Obj[];
+  const recordAdvisory = String(recordValidation.advisory_notice || '');
   const recordSection = wb.kind === 'context_error'
     ? createElement(Fragment, null,
         h('div', { className: 'zone-cap' }, '데이터 확인'),
@@ -917,7 +918,13 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       : h('p', { className: 'muted capnote' },
           Number(recordValidation.validated_count || 0) > 0
             ? `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`
-            : '확인할 데이터가 없습니다.'));
+            : '확인할 데이터가 없습니다.'),
+    // 비차단 고지(#957) — blocker 목록과 **다른 줄·다른 색**이다. 문안은 backend 가
+    // 낸 것을 그대로 그린다(수치·판정을 여기서 다시 조립하지 않는다).
+    recordAdvisory
+      ? h('p', { className: 'warn capnote', id: 'jobRecordValidationAdvisory' },
+        recordAdvisory)
+      : null);
   const intent = (wb.run_delivery_intent || null) as Obj | null;
   const delivery = (wb.delivery || {}) as Obj;
   const planned = (delivery.planned_documents || []) as Obj[];
@@ -1118,10 +1125,10 @@ export function JobStatusPill(props: { controller: JobRunController }): ReactNod
     if (!s.has_data) { text = "데이터 선택"; }
     else if (s.gate && s.gate.enabled) { level = "ok"; text = isCopyWork(s) ? "복사 준비" : "생성 준비"; }
     else {
-      // 막힌 이유가 규칙축이면 표지도 「승인」이다(U2 §2.10) — 어휘를 갈라 놓고 이 자리만
-      // 「확인 필요」로 두면 같은 행동을 두 이름으로 부른다.
+      // 「승인 필요」 갈래는 #957 에서 사망했다 — 검토는 더 이상 생성을 막지 않으므로
+      // 이 자리에 규칙축 차단이 서지 않는다. 남는 것은 전부 「확인 필요」다.
       level = "warn";
-      text = (s.gate && s.gate.reason) === "review_required" ? "승인 필요" : "확인 필요";
+      text = "확인 필요";
     }
   }
   /* 클래스는 `status` 다 — `pill` 이 아니다. 색은 `data-level` **혼자** 내지 않는다:

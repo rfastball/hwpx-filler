@@ -333,9 +333,13 @@ def test_shared_source_column_reaches_every_requirement_verbatim(
 def test_current_record_blocker_projects_exact_backend_target(
     tmp_path: Path,
 ) -> None:
+    """차단 사유는 #957 이후 **열 결핍**이다 — 그 행에 연결된 열이 없는 것.
+
+    같은 열이 다른 행에는 있으므로 겨눔은 행이 아니라 그 칸이다(복구 동선은 무변경).
+    """
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    _mount_rows(ctrl, [{"name": "정상"}, {"name": " "}])
+    _mount_rows(ctrl, [{"name": "정상"}, {"other": "값"}])
 
     zone = _zone(ctrl)
     validation = zone["record_validation"]
@@ -346,7 +350,7 @@ def test_current_record_blocker_projects_exact_backend_target(
     assert issue["record_display_locator"] == "데이터 2행"
     assert issue["field_id"] == "f_name"
     assert issue["field_display_label"] == "name"
-    assert issue["message"] == "빈 값이나 공백만 있는 값은 사용할 수 없습니다."
+    assert issue["message"] == "이 항목에 연결한 데이터 열이 없습니다."
     target = issue["recovery_target"]
     assert target == {
         'target_kind': 'cell',
@@ -363,6 +367,31 @@ def test_current_record_blocker_projects_exact_backend_target(
     ctrl._snapshot_gen += 1
     with pytest.raises(ValueError, match="위치를 복원할 수 없습니다"):
         ctrl.dispatch("recover_record_issue", {"target": target})
+
+
+def test_blank_row_value_is_a_non_blocking_advisory(tmp_path: Path) -> None:
+    """#957 — 행 안의 빈 값은 차단이 아니라 표식 고지다(생성이 열린 채 사실만 남는다)."""
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    _mount_rows(ctrl, [{"name": "정상"}, {"name": " "}])
+
+    validation = _zone(ctrl)["record_validation"]
+    assert validation["validated_count"] == 2 and validation["blocked_count"] == 0
+    assert validation["issues"] == [] and validation["issue_count"] == 0
+    assert validation["advisory_count"] == 1
+    assert validation["advisories"] == [
+        {"code": "MISSING_VALUE_MARKED", "field_id": "f_name", "marked_record_count": 1}
+    ]
+    assert validation["advisory_notice"] == (
+        "빈 값 1칸이 있습니다. 문서에는 미입력 표식이 들어갑니다."
+    )
+    # 표식은 유효 값이라 record 는 통과한다 — 문서 텍스트로 그 사실이 남는다.
+    preparation = ctrl._current_record_preparation
+    assert preparation is not None
+    assert {
+        dict(record.document_values_in_order())["f_name"]
+        for record in preparation.validated_records
+    } == {"정상", "〘미입력·f_name〙"}
 
 
 def test_missing_source_column_projects_reachable_row_target(tmp_path: Path) -> None:
@@ -390,7 +419,7 @@ def test_stale_orchestration_hides_old_record_validation_and_target(
 
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    _mount_rows(ctrl, [{'name': ' '}])
+    _mount_rows(ctrl, [{'other': '값'}])
     target = _zone(ctrl)['record_validation']['issues'][0]['recovery_target']
 
     ctrl._session_orchestration = AutomaticSealOrchestration(state='STALE')
@@ -406,10 +435,10 @@ def test_current_preparation_is_reused_until_existing_basis_moves(
     _wire_source_plan(ctrl)
     rows = [{"name": "정상"}, {"name": " "}]
     _mount_rows(ctrl, rows)
-    assert _zone(ctrl)["record_validation"]["blocked_count"] == 1
+    assert _zone(ctrl)["record_validation"]["advisory_count"] == 1
     first = ctrl._current_record_preparation
     rows[1]["name"] = "원본에서 수정됨"
-    assert _zone(ctrl)["record_validation"]["blocked_count"] == 1
+    assert _zone(ctrl)["record_validation"]["advisory_count"] == 1
     assert ctrl._current_record_preparation is first
 
     fresh = ctrl._last_fresh_observation

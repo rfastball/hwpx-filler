@@ -261,19 +261,19 @@ def run(ctx: ScenarioContext) -> dict:
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
     _ensure_all_selected(s, "전체 선택")
 
-    # ---- S5a 첫 실행의 결과 확인(F5) ---------------------------------------
-    # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다 — §13-3 대로 결과를 확인해야
-    # 실행할 수 있다. 행을 골라도 게이트는 아직 닫혀 있고, 미리보기에서 확인해야 열린다.
-    # 게이트가 「생성 값 미리보기」를 지목하는데 그 버튼이 잠겨 있으면 이행 불가능한
-    # 지시다 — 지목과 가용성을 **같이** 재고 나서 누른다.
+    # ---- S5a 첫 실행의 결과 고지(#957) -------------------------------------
+    # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다. 종전에는 그 사실이 게이트를 닫고
+    # 승인을 요구했지만, 신뢰 정책 선회로 **알리되 막지 않는다**: 사전검증이 첫 실행임을
+    # 고지한 채 생성이 열려 있고 확인의 자리는 결과 문서다. 그래도 미리보기는 **선택**으로
+    # 열 수 있어야 하므로 고지·게이트 개방·미리보기 가용성을 **같이** 재고 나서 누른다.
     s.wait(
-        "document.getElementById('jobGenBtn').disabled"
-        " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')"
+        "!document.getElementById('jobGenBtn').disabled"
+        " && document.getElementById('jobPreflight').textContent.includes('첫 실행')"
         " && !document.getElementById('jobMirrorPreviewOpen').disabled",
-        "첫 실행 검토 요구",
-        requires=["#jobGenBtn", "#jobGate", "#jobMirrorPreviewOpen"],
+        "첫 실행 검토 고지(비차단)",
+        requires=["#jobGenBtn", "#jobPreflight", "#jobMirrorPreviewOpen"],
     )
-    seen["first_run_review_required"] = True
+    seen["first_run_review_notice"] = True
     s.click_sel("#jobMirrorPreviewOpen", what="생성 값 미리보기")
     s.wait(
         "!document.getElementById('previewSheet').classList.contains('hidden')"
@@ -1112,18 +1112,38 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.click_text("#jobContentSelectionZone", "다시 불러오기")
     s.wait("document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 2", "context recovery", timeout=30.0, requires=["#jobContentSelectionZone"])
 
-    # Record recovery: the blank value is induced by a real DataTarget transition; PASS comes from Product projection/DOM.
+    # Record advisory(#957): 행 안의 빈 값은 **차단이 아니라 표식 고지**다. 유도는 그대로
+    # 실 DataTarget 전환이고, PASS 는 Product projection/DOM 이 낸 비차단 한 줄에서 온다.
+    # 종전 이 자리는 blocker 목록(`#jobRecordValidationIssues`)과 그 복구 버튼을 겨눴다 —
+    # 그 목록은 이제 **열 누락**류에만 서므로 빈 값으로는 유도되지 않는다.
     blank_path = ctx.stage_data("blank")
     _mount_data(ctx, blank_path)
     _ensure_all_selected(s, "blank record 전체 선택")
-    s.wait("!!document.querySelector('#jobRecordValidationIssues button')", "record validation issue", timeout=30.0, requires=["#jobRecordValidationIssues"])
+    s.wait(
+        "!!document.getElementById('jobRecordValidationAdvisory')"
+        " && !document.getElementById('jobRecordValidationIssues')",
+        "record validation advisory(비차단)",
+        timeout=30.0,
+        requires=["#jobRecordValidationAdvisory"],
+    )
     record_before = _workbench(_snapshot(s))
-    issue = record_before["record_validation"]["issues"][0]
-    old_recovery_target = issue["recovery_target"]
-    s.click_sel("#jobRecordValidationIssues button", what="exact record recovery")
-    s.wait("document.activeElement && document.activeElement.id.startsWith('job')", "record ReturnContext focus")
-    record_focus = str(s.js("document.activeElement.id"))
-    _expect(record_focus, "H5: record recovery가 exact focus를 내지 않았습니다")
+    record_advisory = str(
+        s.js("document.getElementById('jobRecordValidationAdvisory').textContent")
+    )
+    _expect(
+        not record_before["record_validation"]["issues"]
+        and int(record_before["record_validation"].get("advisory_count") or 0) >= 1,
+        f"H5: 빈 값이 차단 issue 로 섰습니다 — #957 이후 그 자리는 비차단 고지입니다: {record_advisory!r}",
+    )
+    # 옛 좌표 거절(H7)은 그대로 잰다. 실 issue 가 없어졌으므로 좌표를 **지어내** 던진다 —
+    # 계약은 「옛 좌표를 수락하지 않는다」이지 「issue 가 있다」가 아니다.
+    old_recovery_target = {
+        "target_kind": "cell",
+        "snapshot_generation": -1,
+        "record_identity": "current-record/-1/0",
+        "model_index": 0,
+        "field_id": "공고명",
+    }
     _mount_data(ctx, ctx.stage_data("clean"))
     recovery_expr = (
         "window.pywebview.api.dispatch('job','recover_record_issue',"
@@ -1327,7 +1347,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "H2": {"before_token": before_token, "after_token": after_first_view["new_configuration_token"], "trace": h2_trace},
         "H3": {"option_a_fields": before_fields, "option_b_fields": after_fields},
         "H4": {"retained_fates": fates, "binding_target": exact_target, "binding_repaired": repaired},
-        "H5": {"context_copy": context_text, "record_focus": record_focus, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
+        "H5": {"context_copy": context_text, "record_advisory": record_advisory, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
         "H6": {"preview_token": current_token, "filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
         "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "old_preview_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},
     }

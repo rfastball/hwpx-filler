@@ -124,7 +124,6 @@ from ..gui.review_state import (
     ReviewRequirement,
     ReviewState,
     build_evidence,
-    review_gate_text,
     previous_values,
     review_requirement,
 )
@@ -199,6 +198,7 @@ from ..application.document_creation_workbench import (
     HistoricalOutcomeSummary,
     PlannedDocumentSummary,
     RecordRecoveryTarget,
+    RecordValidationAdvisory,
     RecordValidationIssue,
     RecordValidationSummary,
     RELEASE,
@@ -237,14 +237,14 @@ from ..application.fresh_execution_observation import (
 from ..application.execution_semantic_kernel import SealedExecutionPlanValue
 from ..application.record_validation import (
     CurrentValidatedDataRecord,
-    RECORD_BLANK_POLICY_VIOLATION,
+    MISSING_VALUE_MARKED,
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
-    RECORD_EXPLICIT_NULL_NOT_ALLOWED,
     RECORD_REQUIRED_VALUE_MISSING,
     RECORD_VALUE_FORMAT_INVALID,
     RecordValidationBlocked,
     RecordValidationContextError,
     RecordValidationBlocker,
+    marked_missing_fields,
     validate_data_records_against_current_value,
 )
 from ..application.run_delivery_intent import (
@@ -440,13 +440,30 @@ def _capture_source_value(value: object):
     raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
 
 
+# 행 안의 빈 값(explicit null·공백)은 #957 이후 여기 없다 — 차단이 아니라 표식이라
+# advisory 문안(`_record_advisory_notice`)이 그 자리를 진다. 여기 남은 것은 **열이 없는
+# 것**과 값을 문서 내용으로 해석조차 못 하는 것, 곧 데이터↔작업 결속의 구조 결함이다.
 _RECORD_BLOCKER_PHRASES = {
-    RECORD_REQUIRED_VALUE_MISSING: "필수 값이 없습니다.",
-    RECORD_EXPLICIT_NULL_NOT_ALLOWED: "값이 명시적으로 비어 있어 사용할 수 없습니다.",
+    RECORD_REQUIRED_VALUE_MISSING: "이 항목에 연결한 데이터 열이 없습니다.",
     RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
-    RECORD_BLANK_POLICY_VIOLATION: "빈 값이나 공백만 있는 값은 사용할 수 없습니다.",
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
 }
+
+
+def _record_advisory_notice(summary: RecordValidationSummary) -> str:
+    """비차단 record 사실의 한 줄 — 수치는 링1(:attr:`marked_value_count`)이 낸다.
+
+    「빈 값이 있다」가 아니라 「표식이 들어간다」로 말한다: 사용자가 결과 문서에서 무엇을
+    보게 되는지가 이 고지의 요점이고, 그게 곧 생성을 막지 않아도 되는 이유다.
+    문형은 `docs/COPY_STYLE_GUIDE.md` §1(em dash 금지) — 두 문장으로 나눈다.
+    """
+    if not summary.advisories:
+        return ""
+    return (
+        f"빈 값 {summary.marked_value_count}칸이 있습니다. "
+        "문서에는 미입력 표식이 들어갑니다."
+    )
+
 
 _DELIVERY_BLOCKER_PHRASES = {
     "OUTPUT_NAME_TOKEN_UNRESOLVED": "파일 이름에 사용할 값을 확인할 수 없습니다.",
@@ -2021,13 +2038,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.vm.mapped_records(indices, marker, now=self._names_now)
             if marker else mapped
         )
-        # 게이트에는 **아직 승인 안 된** 요구만 넘긴다(승인됐으면 그 자리에서 열려야 한다).
+        # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 승인이라는 해소 사건이
+        # 없어졌으므로 「미승인분」이 아니라 요구 자체가 사전검증 고지의 입력이다.
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
-            indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
+            indices, self.out_dir, review_notice=req, mapped=run_mapped,
             now=self._names_now,
         )
+        # 통과 문구는 링2 어휘로 갈아끼우되 **고지는 잃지 않는다**: 치명·경고가 하나도
+        # 없어도 검토 고지는 사용자가 봐야 하는 사실이라 통과 문구 아래 붙인다.
         preflight_text = (
-            _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
+            "\n".join((_PREFLIGHT_OK_TEXT, *status.preflight.notices))
+            if status.preflight.level == "ok" else status.preflight.text
         )
         drift_fields = self._drift_fields(status)
         # 빈 값 있는 건의 자리(§2.13) — 표식 **없는** 매핑 출력에서 센다(표식을 채우면
@@ -3748,6 +3769,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """managed 실행 결과 → legacy 와 같은 키 집합의 결과 dict(JobResultZone 무변경)."""
         indices = list(prep.record_preparation.ordered_model_indices)
         total = len(indices)
+        # 표식 병기는 legacy 완료 요약과 **같은 문형**이다(#957): 같은 사실이 경로에 따라
+        # 다른 말을 하면 사용자는 다른 상태로 읽는다. 필드 이름은 준비가 이미 센 값에서
+        # 온다 — 결과 자리에서 문서를 다시 훑지 않는다.
+        blank_note = self._managed_blank_note(prep.record_preparation.record_validation)
         if isinstance(outcome, (ManagedRunRefused, DeliveryRefused)):
             # admission 어휘를 쓰는 거절은 legacy 갈래와 **같은 문장**으로 나간다(S8-F1
             # · #852) — 같은 차단이 경로에 따라 다른 말을 하면 사용자는 다른 상태로 읽는다.
@@ -3761,7 +3786,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             summary = (
                 f"중단했습니다. 시도 {outcome.attempted}/{outcome.total}건 — 안착 전이라 "
                 "문서는 만들지 않았습니다."
-            )
+            ) + blank_note
             return {
                 "ok": True, "status": "cancelled",
                 "title": _run_title("cancelled", True, 0, 0),
@@ -3816,7 +3841,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_managed_outcome = HistoricalOutcomeSummary(
                 "DOCUMENTS_DELIVERED", now
             )
-            summary = f"완료. 성공 {succeeded}/{total}, 실패 0."
+            summary = f"완료. 성공 {succeeded}/{total}, 실패 0." + blank_note
             if fill_notes:
                 summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
             summary += ledger_note
@@ -3845,7 +3870,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 f"완료. 성공 {succeeded}/{total}, 실패 1. 문서는 만들었지만 만든 뒤 다시 "
                 f"읽어 확인하는 데 실패했습니다({outcome.code}). 해당 파일을 직접 열어 "
                 "내용을 확인하세요."
-            ) + ledger_note
+            ) + blank_note + ledger_note
             return {
                 "ok": True, "status": status,
                 "title": _run_title(status, False, succeeded, 1),
@@ -3869,7 +3894,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         summary = (
             f"완료. 성공 {succeeded}/{total}, 실패 1. 미착수 {unstarted}건 — "
             "앉은 문서는 그대로 유지됩니다."
-        ) + ledger_note
+        ) + blank_note + ledger_note
         return {
             "ok": True, "status": status,
             "title": _run_title(status, False, succeeded, 1),
@@ -3882,6 +3907,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "revisions": dict(self._run_revisions),
             "delivered": delivered_rows,
         }
+
+    @staticmethod
+    def _managed_blank_note(summary: RecordValidationSummary) -> str:
+        """완료 요약의 표식 병기 — legacy 갈래(`" 빈 값 표시 필드 N개(…)."`)와 같은 문형.
+
+        수치는 **필드 수**다: legacy 가 세는 것도 「빈 값이 난 필드」의 수라, 여기서 칸 수를
+        쓰면 같은 실행이 경로에 따라 다른 숫자를 말한다(managed 는 필드×문서를 아는 반면
+        legacy 는 필드 집합만 안다 — 겹치는 축으로 맞춘다).
+        """
+        fields = [advisory.field_id for advisory in summary.advisories]
+        if not fields:
+            return ""
+        return f" 빈 값 표시 필드 {len(fields)}개({', '.join(fields)})."
 
     def _managed_failure_row(
         self, prep, indices, failed_ordinal: int, reason: str
@@ -3966,14 +4004,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         indices = self._indices()
         out_dir = self.out_dir
 
-        # 게이트 판정 순서(①가드 ②빈 값 ③검토 백스톱 ④표식 ⑤덮어쓰기 ⑥불변 계획)는
-        # Application 이 소유한다. 검토 판정기는 **이 런의 주체**(run_vm·indices·그 입력의
-        # 빈 값)로 묻는 게이트 선언이다 — 세션은 배치가 도는 사이에도 움직인다(1R P1).
+        # 게이트 판정 순서(①가드 ②빈 값 ③표식 ④덮어쓰기 ⑤불변 계획)는 Application 이
+        # 소유한다. 종전 ③이던 검토 백스톱은 #957 정책 선회로 사망했다 — 바뀐 규칙·첫
+        # 실행은 사전검증 고지로 나가고 확인의 자리는 결과 문서다.
         # 날짜 토큰 시각은 미리보기가 캡처한 값을 재사용한다(표시=확인=생성 일치, RC-02).
         now = self._names_now or self._clock()
         decision = plan_generation(
             run_vm, indices, out_dir, now=now,
-            review_check=lambda bl: self._review(run_vm, indices, bl)[1],
             confirm_overwrite=confirm_overwrite,
             existing_outputs=self._existing_outputs,
         )
@@ -3982,11 +4019,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "ok": False,
                 "error": decision.rejection.message,
                 "level": decision.rejection.level,
-            }
-        if decision.review_unmet is not None:
-            return {
-                "ok": False, "level": "warn",
-                "error": review_gate_text(decision.review_unmet),
             }
         blanks = list(decision.blanks)
         if decision.needs_overwrite:
@@ -4002,7 +4034,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "conflict_more": max(0, len(names) - 10),
             }
         plan = decision.plan
-        assert plan is not None  # PlanDecision 4태의 잔여 갈래 — 위 세 갈래가 소진했다
+        assert plan is not None  # PlanDecision 3태의 잔여 갈래 — 위 두 갈래가 소진했다
 
         # materialize → 완주 판정 → durable 기록 요청 → facts (Application 척추).
         # 엔진(zip IO)은 Host 가 조립해 여기로 관통시키고, 완주 기록은 use case 가
@@ -4466,6 +4498,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         "recovery_target": asdict(issue.recovery_target),
                     }
                     for issue in observation.record_validation.issues
+                ],
+                # 비차단 축(#957) — blocker 와 **다른 키**로 싣는다. 프런트가 하나의
+                # 목록으로 합치면 "막힌다"와 "알린다"가 같은 자리에서 같은 색이 된다.
+                "advisory_count": observation.record_validation.marked_value_count,
+                "advisory_notice": _record_advisory_notice(observation.record_validation),
+                "advisories": [
+                    {
+                        "code": advisory.code,
+                        "field_id": advisory.field_id,
+                        "marked_record_count": advisory.marked_record_count,
+                    }
+                    for advisory in observation.record_validation.advisories
                 ],
             },
             "preview_requirement": {
@@ -5123,12 +5167,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 code="CURRENT_RECORD_PREPARATION_STALE",
                 detail="확인 중 데이터나 작업 설정이 바뀌었습니다. 다시 시도해 주세요.",
             )
+        # 표식 사실 집계(#957) — **차단분과 다른 통**이다. 필드별 문서 수로 접는 이유는
+        # 사용자가 고칠 자리가 「그 열」이라서다: 칸 수만 말하면 어느 열을 손봐야 하는지
+        # 말하지 않고, 문서마다 한 줄씩 세우면 100건 선택에서 목록이 사실을 덮는다.
+        marked_counts: dict[str, int] = {}
+        for record in validated:
+            for field_id in marked_missing_fields(record.validation_provenance):
+                marked_counts[field_id] = marked_counts.get(field_id, 0) + 1
         summary = RecordValidationSummary(
             has_blocking_issues=bool(issues),
             issue_count=len(issues),
             validated_count=len(validated),
             blocked_count=blocked_count,
             issues=tuple(issues),
+            advisories=tuple(
+                RecordValidationAdvisory(MISSING_VALUE_MARKED, field_id, count)
+                for field_id, count in marked_counts.items()
+            ),
         )
         self._current_record_preparation = _CurrentRecordPreparation(
             snapshot_generation=generation,
