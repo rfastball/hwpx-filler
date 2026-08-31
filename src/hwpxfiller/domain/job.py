@@ -28,6 +28,8 @@ from .mapping import MappingProfile
 from ..domain.validation import ValidationReport, validate
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
+    from datetime import datetime
+
     from ..domain.data_source import DataSource
 
 # 미충족 공란 표식 — grep 가능 표적의 단일 출처(로드맵 ⑤ 출력검증 = 이 표식 grep).
@@ -593,7 +595,9 @@ class RunRequest:
         recs = self.datasource.records()
         return [recs[i] for i in self.selected_indices]
 
-    def mapped_records(self, *, mark_missing: str = "") -> "list[dict]":
+    def mapped_records(
+        self, *, mark_missing: str = "", now: "datetime | None" = None
+    ) -> "list[dict]":
         """선택 레코드에 작업 매핑을 적용 → {템플릿필드: 값}. generate_batch 가 소비한다.
 
         ``mark_missing`` 이 주어지면(예: :data:`MISSING_MARKER`) **값이 빈 키만**
@@ -605,8 +609,11 @@ class RunRequest:
 
         수용 에지: 파일명 패턴이 ``{{빈필드}}`` 를 쓰면 표식이 파일명에 들어간다 —
         빈 키 파일명은 어차피 이상 신호라 시끄러운 쪽을 택한다.
+
+        ``now`` 는 ``today``(오늘 날짜) 유형의 기준 시각이다 — 파일명 날짜 토큰에 넘긴
+        값과 **같아야** 본문과 파일 이름이 같은 시각을 말한다(RC-02).
         """
-        mapped = self.job.mapping.apply_all(self.selected_records())
+        mapped = self.job.mapping.apply_all(self.selected_records(), now=now)
         if not mark_missing:
             return mapped
         return mark_missing_values(mapped, mark_missing)

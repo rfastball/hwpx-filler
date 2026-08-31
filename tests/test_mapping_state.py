@@ -10,13 +10,21 @@ N→1 결합·구분자(sep)는 없다.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile, apply_transform
 from hwpxfiller.external.mapping_store import load_mapping_profile, save_mapping_profile
 from hwpxfiller.domain.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
-from hwpxfiller.gui.mapping_state import MappingModel, RowState
+from hwpxfiller.gui.mapping_state import (
+    MappingModel,
+    RowState,
+    default_transform_for,
+)
+
+#: 고정 기준 시각 — 「오늘 날짜」 단언은 시계를 고정해야 결정론적이다.
+_TODAY_NOW = datetime(2026, 6, 15, 18, 4)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -335,6 +343,44 @@ def test_apply_profile_restores_explicit_blank_and_roundtrips():
     restored = model.to_profile()
     assert restored.blank_fields() == ["비고"]
     assert restored.apply({}) == {}
+
+
+def test_today_row_has_content_without_source_or_const():
+    """U4-E1 #939 회귀: today 는 소스·상수 없이 **언제나** 값을 방출한다.
+
+    has_content 를 소스 유무로 재면 확정 시 to_profile 이 blank 로 강등해 값이 통째
+    소실된다(조용한 값 소실) — 그 강등이 일어나지 않음을 저장 산출물로 확인한다.
+    """
+    model = MappingModel(rows=[RowState("작성일", type="today", fmt="%Y-%m-%d")])
+    row = model.rows[0]
+    assert row.has_content()
+    model.set_confirmed(0)
+    assert not row.is_empty_confirmed()
+    assert model.emits_any_value()
+    profile = model.to_profile()
+    assert profile.blank_fields() == []
+    assert profile.template_fields() == ["작성일"]
+    assert profile.mappings[0].type == "today"
+    assert profile.apply({}, now=_TODAY_NOW) == {"작성일": "2026-06-15"}
+
+
+def test_today_preview_matches_apply_transform_wysiwyg():
+    """미리보기 값 = apply_transform(같은 now) — 링1 preview 도 WYSIWYG 계약을 진다."""
+    model = MappingModel(rows=[
+        RowState("작성일", type="today", fmt="kor"),
+        RowState("추정가격", source="presmptPrce", type="amount"),
+    ])
+    out = model.preview({"presmptPrce": "21326800"}, now=_TODAY_NOW)
+    assert out["작성일"] == apply_transform("today", fmt="kor", now=_TODAY_NOW)
+    assert out["작성일"] == "2026년 6월 15일 18:04"
+    assert model.preview_empties({"presmptPrce": "21326800"}, now=_TODAY_NOW) == []
+    assert model.preview_counts({"presmptPrce": "21326800"}, now=_TODAY_NOW) == (2, 0, 0)
+
+
+def test_default_transform_never_infers_today():
+    """추론은 today 를 내지 않는다 — 시스템 토큰은 사람이 명시로만 고른다."""
+    for inferred in ("date", "amount", "text", "number", "phone", ""):
+        assert default_transform_for(inferred) != "today"
 
 
 def test_blank_is_internal_marker_not_selectable_type():

@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from . import format_engine as _fe
 from .lint import similarity
@@ -33,24 +34,39 @@ from .lint import similarity
 # 코어는 어휘-불가지: ``aliases`` 는 아래 서명에서 순수 범용 인자다.
 
 # 지원 값 유형. text/date/amount 는 단일 소스 값의 표시형 서식을 교체 가능한
-# domain/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다.
+# domain/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다. ``today`` 는
+# 데이터 열 없이 **실행 시각의 날짜**를 내는 시스템 토큰(U4-E1 #939)이고 표시형은
+# ``date`` 와 **같은 어휘**를 쓴다(:func:`apply_transform` 이 date 로 렌더).
 # ``blank`` 는 empty-confirmed 행의 내부 영속 마커라 공용 UI 목록에 노출하지 않는다.
-TYPES = ("text", "date", "amount", "const")
+TYPES = ("text", "date", "amount", "const", "today")
 
-# 원본 소스 값을 실제로 나르는 유형 — ``const`` 는 리터럴을 방출해 ``source`` 와 무관하다
-# (:func:`apply_transform` 의 분기와 일치). '파일명이 이 열을 나르는가'(식별 요약 토큰 모드
-# 등)를 묻는 곳의 단일 출처 — 화이트리스트를 곳곳에 재적지 않는다. ``blank`` 은 TYPES 에
-# 없는 내부 마커라 자연히 제외된다.
-SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t != "const")
+# 원본 소스 값을 **나르지 않는** 유형 — 값이 ``source`` 와 무관하다. ``const`` 는 리터럴을,
+# ``today`` 는 실행 시각을 방출한다(:func:`apply_transform` 의 분기와 일치). 부정 조건을
+# 하드코딩(``t != "const"``)하면 새 비-carrier 유형이 조용히 carrier 로 분류되므로 **명시
+# 열거**한다.
+_NON_CARRIER_TYPES = ("const", "today")
+
+# 원본 소스 값을 실제로 나르는 유형. '파일명이 이 열을 나르는가'(식별 요약 토큰 모드 등)를
+# 묻는 곳의 단일 출처 — 화이트리스트를 곳곳에 재적지 않는다. ``blank`` 은 TYPES 에 없는
+# 내부 마커라 자연히 제외된다.
+SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t not in _NON_CARRIER_TYPES)
 
 
 # ------------------------------------------------------------------ 변환
-def apply_transform(kind: str, value: str = "", const: str = "", fmt: str = "") -> str:
+def apply_transform(
+    kind: str, value: str = "", const: str = "", fmt: str = "",
+    *, now: "datetime | None" = None,
+) -> str:
     """단일 소스 값을 유형(``kind``)·표시형(``fmt``)에 따라 서식 엔진으로 포맷.
 
     ``fmt`` 는 유형 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
-    코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). text/date/amount 만
-    표시형을 가지며, const 는 리터럴을, blank 는 언제나 빈 값을 낸다.
+    코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). text/date/amount/today
+    가 표시형을 가지며, const 는 리터럴을, blank 는 언제나 빈 값을 낸다.
+
+    ``now`` 는 ``today`` 의 기준 시각이다. ``None`` 이면 ``datetime.now()`` 로 폴백한다
+    (선례: :func:`~hwpxfiller.application.generation.direct_plan` 의 "now=None 은 생성
+    시각"). 파일명 날짜 토큰과 **같은 값**을 넘겨야 확인 대상과 생성 대상이 하위-일
+    경계에서 갈라지지 않는다(RC-02).
     """
     if kind == "blank":
         # 의도적 공란은 값 추론이 아니라 매핑 계약의 명시적 선언이다. 단독
@@ -58,6 +74,11 @@ def apply_transform(kind: str, value: str = "", const: str = "", fmt: str = "") 
         return ""
     if kind == "const":
         return const
+    if kind == "today":
+        # date 의 서식 어휘·프리셋을 **무손실 재사용**한다(U4 §2.14 판정 1): 직렬화한
+        # ``%Y-%m-%d %H:%M`` 를 `format_engine.parse_dt` 가 연·월·일·시·분 전부 되읽으므로
+        # date 프리셋 9개가 그대로 성립한다. 새 서식 표를 만들면 두 벌이 갈린다.
+        return _fe.render("date", fmt, (now or datetime.now()).strftime("%Y-%m-%d %H:%M"))
     if kind in ("text", "date", "amount"):
         return _fe.render(kind, fmt, value.strip())
     # 미지 유형을 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
@@ -81,9 +102,11 @@ class FieldMapping:
         """이 항목이 템플릿 필드를 의도적으로 비운다는 명시적 선언인가."""
         return self.type == "blank"
 
-    def value_for(self, record: "dict[str, object]") -> str:
+    def value_for(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> str:
         return apply_transform(
-            self.type, str(record.get(self.source, "")), self.const, self.fmt
+            self.type, str(record.get(self.source, "")), self.const, self.fmt, now=now
         )
 
     def to_dict(self) -> dict:
@@ -157,20 +180,29 @@ class MappingProfile:
         blanks = set(self.blank_fields())
         return [f for f in self.cover_fields() if f in mapped and f in blanks]
 
-    def apply(self, record: "dict[str, object]") -> "dict[str, str]":
+    def apply(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> "dict[str, str]":
         """소스 레코드 1건 → {템플릿필드: 값}. 엔진/배치가 그대로 소비한다.
 
         명시적 공란은 구조 계약에만 남고 출력 dict 에서는 빠진다. 이는 L1 이전의
         '미매핑 필드는 엔진에 전달하지 않아 누름틀을 그대로 둔다'는 동작을 보존한다.
+
+        ``now`` 는 ``today`` 유형의 기준 시각(:func:`apply_transform`) — 호출측이 파일명
+        날짜 토큰과 같은 값을 관통시킨다(RC-02).
         """
         return {
-            m.template_field: m.value_for(record)
+            m.template_field: m.value_for(record, now=now)
             for m in self.mappings
             if not m.is_blank
         }
 
-    def apply_all(self, records: "list[dict]") -> "list[dict[str, str]]":
-        return [self.apply(r) for r in records]
+    def apply_all(
+        self, records: "list[dict]", *, now: "datetime | None" = None
+    ) -> "list[dict[str, str]]":
+        """배치 적용. ``now`` 는 **전 레코드가 공유**한다 — 레코드마다 다시 찍으면 한 배치
+        안에서 「오늘 날짜」가 하위-일 경계를 넘어 갈린다."""
+        return [self.apply(r, now=now) for r in records]
 
     def to_dict(self) -> dict:
         return {

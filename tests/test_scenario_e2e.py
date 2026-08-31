@@ -27,6 +27,7 @@ Qt 불필요(헤드리스). ``tests/corpus/scenario/`` 번들 하나로 조달 �
 from __future__ import annotations
 
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -135,6 +136,40 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
     ]
     generated = read_hwpx_package(out / "입찰공고서-2026-001.hwpx")
     assert read_fields(generated) == req.mapped_records()[0]
+
+
+def test_today_token_fills_document_body_with_the_filename_clock(tmp_path):
+    """U4-E1 #939 — 「오늘 날짜」가 **문서 본문**에 실행 시각을 낸다(데이터 열 없이).
+
+    핵심 불변식은 두 가지다. ① 값은 데이터가 아니라 실행 시각에서 온다. ② 본문과 파일 이름이
+    **같은 now** 를 말한다 — 매핑 층과 파일명 층에 같은 값을 관통시키므로 하위-일 경계에서
+    「승인한 이름 ≠ 만든 문서」가 생기지 않는다(RC-02).
+    """
+    now = datetime(2026, 6, 15, 18, 4)
+    src = source_for_path(DATA / "조달_한글.csv")
+    field_name = "등록마감일시"
+    mappings = [FieldMapping(f, f) for f in src.fields() if f != field_name]
+    mappings.append(FieldMapping(field_name, type="today", fmt="%Y-%m-%d"))
+    job = Job(
+        name="오늘 날짜 일괄",
+        template_path=BID_NOTICE,
+        mapping=MappingProfile(name="today", mappings=mappings),
+        filename_pattern="공고-{{date:%Y-%m-%d}}-{{입찰공고번호}}",
+    )
+    req = RunRequest(job, src, selected_indices=[0])
+    mapped = req.mapped_records(now=now)
+
+    # 값의 출처는 **실행 시각** 하나다 — 같은 이름의 데이터 열이 있어도 읽지 않는다.
+    assert src.records()[0][field_name] != "2026-06-15"
+    assert mapped[0][field_name] == "2026-06-15"
+
+    out = tmp_path / "out"
+    batch = generate_batch(job.template_path, mapped, str(out), job.filename_pattern,
+                           engine=make_hwpx_engine(), now=now)
+    assert batch.succeeded == 1
+    # 파일 이름의 날짜 토큰과 본문의 「오늘 날짜」가 같은 시각을 말한다.
+    assert _outputs(out) == ["공고-2026-06-15-2026-001.hwpx"]
+    assert read_fields(read_hwpx_package(out / _outputs(out)[0]))[field_name] == "2026-06-15"
 
 
 # ----------------------------------------- 부분집합 템플릿(같은 데이터 → 10필드)

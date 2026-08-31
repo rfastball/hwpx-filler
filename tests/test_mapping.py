@@ -7,13 +7,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.domain.lint import similarity
+from hwpxfiller.domain.format_engine import presets
 from hwpxfiller.domain.mapping import (
+    SOURCE_CARRIER_TYPES,
     SUGGEST_THRESHOLD,
     TYPES,
     FieldMapping,
@@ -73,6 +76,73 @@ def test_apply_transform_known_kinds_and_blank():
     """지원 유형(+내부 blank)은 단일값 기반으로 동작. blank 는 언제나 빈 값."""
     assert apply_transform("text", "가나") == "가나"
     assert apply_transform("blank", "무시") == ""
+
+
+# ------------------------------------------------------ 오늘 날짜(today, U4-E1 #939)
+_FIXED_NOW = datetime(2026, 6, 15, 18, 4)
+
+
+def test_today_reuses_every_date_preset_losslessly():
+    """판정 1: today 는 date 서식 어휘·프리셋 9개를 **그대로** 재사용한다.
+
+    직렬화(``%Y-%m-%d %H:%M``)를 ``parse_dt`` 가 연·월·일·시·분 전부 되읽으므로 date 와
+    같은 코드가 같은 결과를 낸다 — 새 서식 표를 만들 근거가 없다는 것이 이 단언이다.
+    """
+    assert [code for _, code in presets("today")] == [
+        code for _, code in presets("date")
+    ]
+    for _, code in presets("today"):
+        assert apply_transform("today", fmt=code, now=_FIXED_NOW) == apply_transform(
+            "date", "2026-06-15 18:04", fmt=code
+        )
+
+
+def test_today_preset_values_are_pinned():
+    """대표 프리셋의 실제 산출 — 어휘 재사용이 '같은 값'을 뜻함을 값으로 못박는다."""
+    assert apply_transform("today", now=_FIXED_NOW) == "2026. 6. 15. 18:04"
+    assert apply_transform("today", fmt="y2", now=_FIXED_NOW) == "'26.6.15. 18:04"
+    assert apply_transform("today", fmt="kor", now=_FIXED_NOW) == "2026년 6월 15일 18:04"
+    assert apply_transform("today", fmt="%Y-%m-%d", now=_FIXED_NOW) == "2026-06-15"
+    assert apply_transform("today", fmt="%H:%M", now=_FIXED_NOW) == "18:04"
+
+
+def test_today_ignores_source_value_and_const():
+    """today 는 데이터 열도 고정값도 읽지 않는다 — 값의 출처는 실행 시각 하나다."""
+    assert apply_transform(
+        "today", value="2001-01-01", const="무시", now=_FIXED_NOW
+    ) == "2026. 6. 15. 18:04"
+
+
+def test_today_falls_back_to_run_clock_when_now_omitted():
+    """now 미지정 폴백은 **지금**이다(direct_plan 의 'now=None 은 생성 시각' 선례)."""
+    assert apply_transform("today", fmt="%Y-%m-%d") == datetime.now().strftime("%Y-%m-%d")
+
+
+def test_today_is_not_a_source_carrier():
+    """판정 2 짝: today 는 원본 열을 나르지 않는다 — 파일명 식별 요약 토큰 모드가
+    빈 source 를 '이 열을 나른다'로 오분류하면 구별 열이 침묵 배제된다."""
+    assert "today" not in SOURCE_CARRIER_TYPES
+    assert "const" not in SOURCE_CARRIER_TYPES
+    assert set(SOURCE_CARRIER_TYPES) == {"text", "date", "amount"}
+
+
+def test_today_field_mapping_and_profile_share_one_now():
+    """value_for·apply·apply_all 이 같은 now 를 관통한다(RC-02: 한 배치 = 한 시각)."""
+    m = FieldMapping("작성일", type="today", fmt="%Y-%m-%d %H:%M")
+    assert m.value_for({}, now=_FIXED_NOW) == "2026-06-15 18:04"
+    profile = MappingProfile(mappings=[m, FieldMapping("공고명", "bidNtceNm")])
+    assert profile.apply({"bidNtceNm": "입찰"}, now=_FIXED_NOW) == {
+        "작성일": "2026-06-15 18:04", "공고명": "입찰",
+    }
+    out = profile.apply_all([{}, {}], now=_FIXED_NOW)
+    assert [r["작성일"] for r in out] == ["2026-06-15 18:04"] * 2
+
+
+def test_today_roundtrips_through_serialization():
+    """직렬화 왕복 — 손 편집 경계 검증(from_dict)이 today 를 정상 유형으로 받는다."""
+    m = FieldMapping("작성일", type="today", fmt="kor")
+    back = FieldMapping.from_dict(m.to_dict())
+    assert (back.type, back.fmt, back.source, back.const) == ("today", "kor", "", "")
 
 
 # ------------------------------------------------------------- FieldMapping.value

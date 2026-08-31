@@ -21,6 +21,7 @@ from hwpxfiller.application.field_binding_input import (
     decide_application_review_commit,
     decide_migration_commit,
     field_binding_authority_revision_identity,
+    RUNTIME_TODAY_UNSUPPORTED,
     prepare_legacy_field_binding_migration,
     review_field_binding_for_current_application,
     revision_from_input,
@@ -170,6 +171,25 @@ def test_blank_omission_is_blocker_not_auto_intentional_blank() -> None:
     # blank 는 후보 규칙으로 자동 변환되지 않는다(candidate 에 없다).
     assert all(c.field_id != "빈칸" for c in draft.candidate_rules)
     assert [b.field_id for b in draft.blockers] == ["빈칸"]
+
+
+def test_today_is_blocker_not_a_false_source_or_constant_rule() -> None:
+    """U4-E1 #939 — legacy ``today``(오늘 날짜)는 v1 binding kind 어휘에 대응이 없다.
+
+    값이 **실행 시각**에서 나오므로 SOURCE(데이터 열)도 CONSTANT(고정 리터럴)도 아니다.
+    빈 ``source_key`` 의 SOURCE 나 그때의 렌더값을 담은 CONSTANT 로 접으면 판본에 **거짓
+    durable 규칙**을 적는다 — 조용히 틀리느니 명시 결정으로 남긴다.
+    """
+    draft = _legacy([
+        LegacyFieldBindingEntry("작성일", "today", "", "", "%Y-%m-%d"),
+        LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
+    ])
+    assert all(c.field_id != "작성일" for c in draft.candidate_rules)
+    assert [(b.field_id, b.reason) for b in draft.blockers] == [
+        ("작성일", RUNTIME_TODAY_UNSUPPORTED)
+    ]
+    # 다른 Field 는 그대로 후보가 된다(한 행의 미지원이 판본 전체를 삼키지 않는다).
+    assert [c.field_id for c in draft.candidate_rules] == ["계약명"]
 
 
 def test_prepare_rejects_unknown_legacy_type() -> None:

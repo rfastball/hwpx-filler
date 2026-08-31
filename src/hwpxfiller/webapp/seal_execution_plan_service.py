@@ -35,6 +35,8 @@ from typing import Callable
 
 from ..application.document_creation_workbench import InputRequirement
 from ..application.field_binding_input import (
+    AMBIGUOUS_BLANK_OMISSION,
+    RUNTIME_TODAY_UNSUPPORTED,
     CurrentApplicationFieldStructure,
     FieldBindingMigrationDraft,
     FieldBindingReviewRequired,
@@ -508,6 +510,20 @@ def _preserved_inactive_rules(
     return tuple(preserved)
 
 
+# migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기
+# 한 곳에서만 조립한다(같은 사유를 두 자리가 다른 말로 하지 않게).
+_MIGRATION_BLOCKER_TEXT = {
+    AMBIGUOUS_BLANK_OMISSION: "legacy blank omission에 대한 명시 결정이 필요합니다",
+    RUNTIME_TODAY_UNSUPPORTED: (
+        "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. "
+        "이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
+    ),
+}
+_MIGRATION_BLOCKER_FALLBACK_TEXT = (
+    "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
+)
+
+
 def _resolved_rules(
     draft: FieldBindingMigrationDraft,
     entries: tuple[LegacyFieldBindingEntry, ...],
@@ -517,6 +533,10 @@ def _resolved_rules(
 ) -> tuple[FieldBindingRule, ...]:
     """현재 활성 Field 의 규칙 — 현재 Mapping 결정을 그대로 upsert 한다."""
     candidates = {item.field_id: item for item in draft.candidate_rules}
+    # 후보가 없는 Field 는 draft 가 **왜** 못 지었는지를 blocker 로 이미 말했다 — 그
+    # 사유를 그대로 재진술한다. 종전에는 사유를 묻지 않고 언제나 'blank omission' 으로
+    # 적어, 다른 원인(「오늘 날짜」 유형)까지 엉뚜한 이름으로 보고했다.
+    reasons = {item.field_id: item.reason for item in draft.blockers}
     rules: list[FieldBindingRule] = []
     for entry in entries:
         if entry.template_field not in active:
@@ -525,7 +545,11 @@ def _resolved_rules(
         if candidate is None:
             raise FieldBindingReviewRequired(
                 "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED",
-                f"legacy blank omission\uc5d0 \ub300\ud55c \uba85\uc2dc \uacb0\uc815\uc774 \ud544\uc694\ud569\ub2c8\ub2e4: {entry.template_field!r}",
+                _MIGRATION_BLOCKER_TEXT.get(
+                    reasons.get(entry.template_field, ""),
+                    _MIGRATION_BLOCKER_FALLBACK_TEXT,
+                )
+                + f": {entry.template_field!r}",
             )
         rules.append(_rule_from_candidate(candidate, media=media))
     return tuple(rules)

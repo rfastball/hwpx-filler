@@ -12,6 +12,7 @@
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..domain.text_render import (
     RenderReport,
@@ -19,6 +20,9 @@ from ..domain.text_render import (
     render_segments,
     segments_have_space_run,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 __all__ = ["CardRender", "render_card", "card_text", "gate_empty_fields"]
 
@@ -38,15 +42,22 @@ class CardRender:
 
 
 def render_card(
-    template_text: str, mapping, record: dict, *, fullwidth: bool
+    template_text: str, mapping, record: dict, *, fullwidth: bool,
+    now: "datetime | None" = None,
 ) -> CardRender:
     """레코드 1건 → :class:`CardRender`. 카드 렌더·클립보드·린트의 공용 통로.
 
     이음매는 **레코드 → 맞추기 매핑 → 값 사전 → render_segments** 다(#148 슬라이스 3b):
     항등 매핑(토큰명 = 열명)이 아니라 결속·표시형·상수를 얹은 값 사전이 들어간다.
     전각 치환은 세션 옵션이 켜졌을 때만, 그리고 **여기 한 곳에서만** 걸린다.
+
+    ``now`` 는 ``today``(오늘 날짜) 유형의 기준 시각이다 — 표면이 렌더 1회마다 한 번만
+    잡아 넘긴다(「보이는 것 = 복사되는 것」: 카드와 클립보드가 같은 렌더를 나눠 쓰므로
+    시각도 한 벌이어야 한다). 미지정이면 적용 시점으로 폴백한다.
     """
-    segments, report = render_segments(template_text, mapping.live_profile().apply(record))
+    segments, report = render_segments(
+        template_text, mapping.live_profile().apply(record, now=now)
+    )
     space_run = segments_have_space_run(segments)
     return CardRender(
         segments=align_segments(segments) if fullwidth else segments,

@@ -162,6 +162,12 @@ class StdlibFormatEngine:
             ("사업자번호", "biz"),       # 123-45-67890
         ],
     }
+    # 「오늘 날짜」(``today``)는 date 와 **같은 표** 를 공유한다(U4 §2.14 판정 1) — 값은
+    # 실행 시각이지만 표시형 어휘는 같다. 리터럴을 복사하면 두 벌이 조용히 갈리고, 키가
+    # 아예 없으면 :meth:`presets` 가 빈 목록을 내 프런트 서식 셀이 **통째 비활성**이 된다.
+    # 원표 공유가 안전한 이유: :meth:`presets` 가 ``list(...)`` 복사본을 내므로 소비자가
+    # 원표를 못 건드린다.
+    _PRESETS["today"] = _PRESETS["date"]
 
     def render(self, kind: str, code: str, value: str) -> str:
         if kind == "amount":

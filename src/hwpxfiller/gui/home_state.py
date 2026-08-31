@@ -398,9 +398,14 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
 #: 매핑 유형의 표시 어휘 — 라이브러리 상세 「필드 연결」 표가 소비한다. 편집기(웹)가 같은
 #: 어휘를 자기 파일에 따로 두고 있다(`frontend/js/screens/editor.js` ``TYPE_LABEL``); 그 중복은
 #: 편집기를 재작성하는 F7 에서 이 상수로 걷는다 — 빚을 숨기지 않고 적어 둔다.
-MAPPING_TYPE_LABELS = {"text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값"}
+MAPPING_TYPE_LABELS = {
+    "text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값",
+    "today": "오늘 날짜",
+}
 #: 소스를 아직 고르지 않은 항목 — 「없음」이 아니라 **미지정**이다(조용한 빈칸 금지).
 NO_SOURCE_LABEL = "미지정"
+#: 데이터 항목이 아니라 **실행 시각**에서 값을 얻는 항목(``today``)의 데이터 항목 칸.
+RUNTIME_SOURCE_LABEL = "실행 시각"
 
 
 @dataclass
@@ -443,7 +448,9 @@ def field_binding_rows(job: Job) -> "list[FieldBindingRow]":
         fmt_label = codes.get(m.fmt, m.fmt)
         rows.append(FieldBindingRow(
             m.template_field,
-            m.source or NO_SOURCE_LABEL,
+            # 「오늘 날짜」는 데이터 항목을 읽지 않는다 — 빈 source 를 「미지정」(아직 안
+            # 고름)으로 재진술하면 조용히 거짓이다. 값의 출처를 그대로 말한다.
+            RUNTIME_SOURCE_LABEL if m.type == "today" else (m.source or NO_SOURCE_LABEL),
             f"{type_label} · {fmt_label}" if fmt_label else type_label,
         ))
     return rows

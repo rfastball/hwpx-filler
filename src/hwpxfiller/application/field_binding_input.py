@@ -54,6 +54,11 @@ INACTIVE_ONLY = "INACTIVE_ONLY"
 
 # migration blocker 어휘.
 AMBIGUOUS_BLANK_OMISSION = "AMBIGUOUS_BLANK_OMISSION"
+#: legacy ``today``(오늘 날짜, U4-E1 #939) — 값이 **실행 시각**에서 나오므로 SOURCE(데이터
+#: 열)도 CONSTANT(고정 리터럴)도 아니다. 이 slice 는 v1 binding kind 어휘를 늘리지 않으므로
+#: 후보 규칙을 짓지 않고 blocker 로 남긴다. SOURCE(빈 source_key)나 CONSTANT(그때의 렌더값)로
+#: 접으면 **거짓 durable 규칙**을 판본에 적는다 — 조용히 틀리느니 시끄럽게 막는다.
+RUNTIME_TODAY_UNSUPPORTED = "RUNTIME_TODAY_UNSUPPORTED"
 
 # commit terminal outcome 어휘.
 FIELD_BINDING_REVISION_COMMITTED = "FIELD_BINDING_REVISION_COMMITTED"
@@ -385,6 +390,13 @@ def prepare_legacy_field_binding_migration(
                     proposed_policy_id=DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id,
                     whitespace_decision_required=False,
                 )
+            )
+            continue
+        if entry.legacy_type == "today":
+            # 실행 시각에서 값을 얻는 Field — v1 binding kind 어휘(SOURCE/CONSTANT/
+            # INTENTIONAL_BLANK)에 대응이 없다. 억지로 접지 않고 명시 결정으로 남긴다.
+            blockers.append(
+                MigrationBlocker(entry.template_field, RUNTIME_TODAY_UNSUPPORTED)
             )
             continue
         value_type = _LEGACY_TYPE_TO_VALUE_TYPE.get(entry.legacy_type)

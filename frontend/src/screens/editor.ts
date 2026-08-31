@@ -78,7 +78,7 @@ const EDIT_CHAIN = "editor:mutate";
 
 /* 표시형·타입 라벨은 표현 계층이라 여기 산다(Qt mapping_table 의 웹 짝). */
 const TYPE_LABEL: Record<string, string> = {
-  text: "텍스트", date: "날짜", amount: "금액", const: "고정값",
+  text: "텍스트", date: "날짜", amount: "금액", const: "고정값", today: "오늘 날짜",
 };
 const INFERRED_LABEL: Record<string, string> = {
   text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호",
