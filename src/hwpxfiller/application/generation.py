@@ -3,11 +3,12 @@
 생성의 **척추**(입력 고정 → 게이트 판정 → plan → materialize → progress/cancel →
 완주 판정 → durable completion 기록 → stable result facts)를 한 곳이 소유한다.
 GUI(:mod:`~hwpxfiller.webapp.screen_job`)와 CLI(:mod:`~hwpxfiller.cli`)는 같은
-use case 를 **각자의 게이트 선언**으로 부른다 — 게이트 판정 입력(검토 요구·빈값
-처리·덮어쓰기 확정)은 호출자가 명시 선언해 넘기는 facts 다. CLI 생성 경로의 현
-의미(검토 게이트 없음·빈값 기본 차단+``--ack-empty``·완주 스탬프 없음·취소 없음)는
-**의도된 제품 계약**이라 CLI 는 그 부재를 인자 생략이 아니라 선언(``store=None``·
-``review_check=None``)으로 말한다.
+use case 를 **각자의 게이트 선언**으로 부른다 — 게이트 판정 입력(빈값 처리·덮어쓰기
+확정)은 호출자가 명시 선언해 넘기는 facts 다. 검토는 더 이상 게이트가 아니다(#957):
+바뀐 규칙·첫 실행은 **비차단 고지**로 나가고 확인은 결과 문서에서 한다 — 그래서 이
+use case 에 검토 판정기 선언이 없다. CLI 생성 경로의 현 의미(빈값 기본 차단
++``--ack-empty``·완주 스탬프 없음·취소 없음)는 **의도된 제품 계약**이라 CLI 는 그
+부재를 인자 생략이 아니라 선언(``store=None``)으로 말한다.
 
 :mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.gui.run_state` 는 ring 계약
 (`docs/module_rings.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
@@ -117,17 +118,16 @@ def start_run(job: "Job | None", *, job_name: str = "", token: str = "") -> Gene
 
 @dataclass(frozen=True)
 class PlanDecision:
-    """게이트 판정 1회의 facts — 거절·검토 미충족·덮어쓰기 확인 필요·확정 plan 중 하나.
+    """게이트 판정 1회의 facts — 거절·덮어쓰기 확인 필요·확정 plan 중 하나.
 
     문안 조립(거절 재진술·모달 수치 합성)은 Presentation 몫이고 여기는 사실만 싣는다.
     ``rejection`` 은 링1 :class:`~hwpxfiller.gui.run_state.GateError` 관통(판정·문안
-    모두 링1 소유 — 재조립 금지), ``review_unmet`` 은 호출자가 선언한 검토 판정기가
-    돌려준 값을 **불투명하게** 되돌린다(Application 은 검토 문안·지문 구조를 모른다).
+    모두 링1 소유 — 재조립 금지). 검토 미충족 갈래는 #957 정책 선회로 사망했다 —
+    검토는 차단이 아니라 고지라 plan 을 짓는 데 개입하지 않는다.
     """
 
     plan: "GenerationPlan | None" = None
     rejection: "GateError | None" = None
-    review_unmet: Any = None
     blanks: "tuple[str, ...]" = ()
     marker: str = ""
     conflicts: "tuple[str, ...]" = ()
@@ -140,31 +140,27 @@ def plan_generation(
     out_dir: str,
     *,
     now: "datetime",
-    review_check: "Callable[[list[str]], Any] | None" = None,
     confirm_overwrite: bool = False,
     existing_outputs: "Callable[[str, list[str]], list[str]]",
 ) -> PlanDecision:
     """실행 요청의 유효성 판정 **순서**와 게이트 facts — confirm-or-alarm 순서 보존.
 
-    순서는 현행 제품 계약 그대로다: ①기본 가드(링1 ``validate_generate`` 단일 판정)
-    → ②빈 값 집합(표식·승인 백스톱이 같은 집합 소비, §2.13 단일 술어) → ③검토
-    백스톱(버튼이 이미 비활성이어도 다시 묻는다 — 1R P1) → ④표식 결정 → ⑤덮어쓰기
-    확인(RC-02: 확정 없이는 plan 을 짓지 않는다) → ⑥불변 생성 계획(RC-07).
+    순서는 ①기본 가드(링1 ``validate_generate`` 단일 판정) → ②빈 값 집합(표식이 그
+    집합을 소비, §2.13 단일 술어) → ③표식 결정 → ④덮어쓰기 확인(RC-02: 확정 없이는
+    plan 을 짓지 않는다) → ⑤불변 생성 계획(RC-07)이다.
 
-    ``review_check`` 는 호출자가 선언한 게이트 fact 다: GUI 는 **이 런의 주체**로
-    묻는 세션 판정기를 넘기고, CLI 는 ``None``(검토 게이트 없음 — 의도된 계약)을
-    선언한다. ``now`` 는 날짜 토큰 기준 시각 — 확인이 조회한 대상과 실제 생성이
-    같은 값을 쓰도록 호출자가 고정해 넘긴다(RC-02, 미리보기 핀은 호출자 소유).
+    종전 ③이던 **검토 백스톱은 #957 에서 사망**했다: 바뀐 규칙·첫 실행은 생성을 막는
+    대신 비차단 고지로 나가고 확인은 결과 문서에서 한다. 빈 값도 차단하지 않는다 —
+    표식(:func:`blank_marker`)이 붙어 문서에 남으므로 조용한 통과가 아니다.
+
+    ``now`` 는 날짜 토큰 기준 시각 — 확인이 조회한 대상과 실제 생성이 같은 값을 쓰도록
+    호출자가 고정해 넘긴다(RC-02, 미리보기 핀은 호출자 소유).
     """
     errors = vm.validate_generate(indices, out_dir)
     if errors:
         return PlanDecision(rejection=errors[0])
 
     blanks = list(vm.blank_fields(indices))
-    unmet = review_check(blanks) if review_check is not None else None
-    if unmet is not None:
-        return PlanDecision(review_unmet=unmet, blanks=tuple(blanks))
-
     marker = blank_marker(blanks)
     conflicts = vm.output_conflicts(
         indices, out_dir, mark_missing=marker, now=now, existing_outputs=existing_outputs

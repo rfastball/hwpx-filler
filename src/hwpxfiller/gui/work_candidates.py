@@ -228,7 +228,7 @@ TAB_AVAILABLE = "available"
 TAB_NEEDS_ACTION = "needs_action"
 
 # 게이트 사유 축 — :class:`~hwpxfiller.gui.run_state.GateState` 의 ``reason`` 어휘를 이 층의
-# 게이트까지 넓힌 것이다(그쪽 값: drift·template_unreadable·name_tokens·review_required).
+# 게이트까지 넓힌 것이다(그쪽 값: drift·template_unreadable·name_tokens).
 #
 # **왜 이름이 필요한가**: 표면은 막힌 게이트 옆에 「어느 구획으로 가야 하는가」를 붙이는데,
 # 그 지목을 표면이 상태에서 재유도하면 판정이 두 곳에 산다 — 실제로 그렇게 새 있었다(#342

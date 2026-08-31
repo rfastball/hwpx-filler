@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
 from hwpxfiller.domain.job import (
     Job,
@@ -24,6 +25,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import (
     ReviewState,
     review_gate_text,
+    review_notice_text,
     review_requirement,
     rules_key,
 )
@@ -261,6 +263,52 @@ def test_evidence_says_why_confirmation_is_asked():
     # 다릅니다"가 떴는데, 위 docstring 이 이미 그 문장을 "묻지 않은 질문에 답한 꼴"이라고
     # 적어 뒀다 — 이유 문장을 곁들이는 것으로 완화했던 것을 이제 자리째 비운다.
     assert ev["note"] == ""
+
+
+def test_review_gate_text_has_no_gate_consumer_left():
+    """#957 — 차단 문안을 **읽는 게이트가 없다**는 사실을 저장소 형상으로 못박는다.
+
+    함수는 미리보기 승인 표면이 걷힐 때까지 남지만(슬라이스 ③), 그동안 누군가 이 문장을
+    다시 게이트에 붙이면 "…승인해야 생성할 수 있습니다"가 조용히 부활한다. 정의 한 자리
+    말고는 소비처가 없어야 한다.
+    """
+    src = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller"
+    hits = sorted({
+        path.relative_to(src).as_posix()
+        for path in src.rglob("*.py")
+        if "review_gate_text" in path.read_text(encoding="utf-8")
+    })
+    assert hits == ["gui/review_state.py"], hits
+
+
+# ------------------------------------------------------------ 비차단 고지 문안(#957)
+def test_notice_text_for_a_first_run_points_at_the_result_documents():
+    text = review_notice_text(review_requirement(_job()))
+    assert text == "이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요."
+    assert "승인" not in text and "생성할 수 없" not in text
+
+
+def test_notice_text_for_changed_rules_names_the_targets():
+    job = _reviewed(_job())
+    job.mapping.mappings[1].source = "다른열"
+    text = review_notice_text(review_requirement(job))
+    assert text.startswith("마지막 실행 이후 바뀐 규칙이 있습니다: ")
+    assert "금액(연결)" in text and text.endswith("결과 문서를 열어 확인하세요.")
+
+
+def test_notice_text_for_unknown_baseline_does_not_claim_a_first_run():
+    job = _job()
+    job.last_run_at = "2026-08-01T09:00:00"          # 실행 이력은 있는데 기준선이 없다
+    text = review_notice_text(review_requirement(job))
+    assert text == "마지막 실행에 쓴 규칙을 확인할 수 없습니다. 결과 문서를 열어 확인하세요."
+
+
+def test_notice_text_is_empty_for_blank_set_and_for_no_requirement():
+    """빈 값은 사전검증 「[경고] 빈 값 필드」가 이미 말한다 — 두 줄로 세우지 않는다."""
+    blanks = review_requirement(_reviewed(_job()), blank_fields=("담당자",))
+    assert blanks.risk_class == "blank_set"
+    assert review_notice_text(blanks) == ""
+    assert review_notice_text(review_requirement(_reviewed(_job()))) == ""
 
 
 def test_gate_text_names_what_changed():

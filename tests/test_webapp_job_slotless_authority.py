@@ -69,13 +69,24 @@ def _seated(ctrl, tmp_path: Path) -> None:
     ctrl.dispatch("set_all", {})
 
 
+def _mint(ctrl) -> None:
+    """문서를 만들지 않고 권위 id 만 발급시킨다 — 발급은 생성 **성사 전**이라 가능하다.
+
+    #957 로 빈 값이 더는 실행을 막지 않으므로, 뒤 단계가 「아직 아무것도 안 만든 상태」를
+    전제하는 자리에서는 살아 있는 가드(선택 0건)로 성사만 막는다.
+    """
+    ctrl.dispatch("set_none", {})
+    assert ctrl.generate()["ok"] is False
+    ctrl.dispatch("set_all", {})
+
+
 def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path) -> None:
     """mint 고리 — 「변경사항 확인」을 누른 적 없어도 **첫 생성**이 권위 id 를 발급한다.
 
     좌표는 `screen_job._resolve_managed_template` → `TemplateChangeCoordinator.
     resolve_generation_template_for_seated_context` → `_work_id_for(create=True)` →
     `application.jobs.ensure_job_authority_id` 다. 발급은 생성 **성사 전**에 일어나므로
-    (여기서는 빈 값 게이트가 그 뒤에 닫는다) 사용자는 한 번도 성공하지 않고도 발급된
+    (여기서는 선택 0건 가드가 그 뒤에 닫는다) 사용자는 한 번도 성공하지 않고도 발급된
     작업을 손에 쥔다 — #905 가 튜토리얼 전용이 아닌 이유가 이것이다.
     """
     ctrl, _seen = _slotless_controller(tmp_path)
@@ -87,10 +98,12 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     if ctrl.vm is not None:
         ctrl.vm.job.authority_id = ""
     assert ctrl.registry.load("공고서").authority_id == ""
+    ctrl.dispatch("set_none", {})
 
     rejected = ctrl.generate()
 
-    assert rejected["ok"] is False and "빈 값" in rejected["error"]
+    assert rejected["ok"] is False and "최소 1건" in rejected["error"]
+    assert not list((tmp_path / "out").glob("*.hwpx"))
     assert ctrl.registry.load("공고서").authority_id.startswith("w-")
     # 발급됐어도 관리 작업이 아니다 — 판정의 원천은 slot 보유이고, projection 이 그 사실을
     # 스스로 말한다(미주입 우회가 아니라 「구간 0개」).
@@ -105,7 +118,7 @@ def test_advertised_preview_actually_opens_after_the_mint(tmp_path: Path) -> Non
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.generate()  # mint
+    _mint(ctrl)
     assert ctrl.registry.load("공고서").authority_id != ""
 
     snap = ctrl.snapshot()
@@ -122,7 +135,7 @@ def test_approval_stands_and_blank_reapproval_reaches_the_milestone(tmp_path: Pa
     _seated(ctrl, tmp_path)
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    ctrl.generate()  # mint
+    _mint(ctrl)
     seen.clear()
 
     ctrl.dispatch("preview_open", {})
@@ -149,7 +162,7 @@ def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     ctrl.set_output_folder(str(tmp_path / "first"))
-    ctrl.generate()  # mint
+    _mint(ctrl)
 
     picked = tmp_path / "picked"
     ctrl.set_output_folder(str(picked))

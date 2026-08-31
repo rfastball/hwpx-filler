@@ -30,17 +30,24 @@ from ..naming import (
     pattern_field_tokens,
     plan_output_names,
 )
-from .review_state import ReviewRequirement, review_gate_text
+from .review_state import ReviewRequirement, review_notice_text
 
 
 @dataclass
 class PreflightResult:
-    """사전검증 표시용 — 데이터에 없는 항목(치명)·빈 출력값(경고)."""
+    """사전검증 표시용 — 데이터에 없는 항목(치명)·빈 출력값(경고)·비차단 고지(알림).
+
+    ``notices`` 는 등급을 올리지 않는 고지 줄(#957 검토 고지)이다. ``text`` 에도 이미
+    실려 있지만 따로 드는 이유는 「치명·경고가 하나도 없는 실행」의 표면 때문이다:
+    그 자리에서 표면은 ``text`` 대신 통과 문구를 쓰므로(링2 ``_PREFLIGHT_OK_TEXT``),
+    고지를 별도 축으로 들지 않으면 조용히 사라진다.
+    """
 
     missing_columns: "list[str]" = field(default_factory=list)
     empty_valued: "list[str]" = field(default_factory=list)
     level: str = ""          # ""/"ok"/"warn"/"danger" (style.mark 레벨)
     text: str = ""
+    notices: "tuple[str, ...]" = ()
 
     def issues(self) -> "list[str]":
         """로그용 이슈 목록(데이터 항목 누락 + 빈값, 문서순 중복제거)."""
@@ -94,7 +101,7 @@ class GateState:
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
     #: ""=이 사유 축과 무관(warn·열림).
-    #: 값: drift | template_unreadable | name_tokens | review_required
+    #: 값: drift | template_unreadable | name_tokens
     reason: str = ""
 
 
@@ -435,7 +442,7 @@ class RunViewModel:
 
     def refresh(
         self, indices: "list[int]", out_dir: str = "", *,
-        review_unmet: "ReviewRequirement | None" = None,
+        review_notice: "ReviewRequirement | None" = None,
         mapped: "list[dict] | None" = None,
         now: "datetime | None" = None,
     ) -> RunStatus:
@@ -450,10 +457,10 @@ class RunViewModel:
         없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
         작업에 데이터부터 고르게 하지 않는다.
 
-        ``review_unmet`` 은 **아직 승인되지 않은** 검토 요구(재작성 F5, 지도 §10.12 판정 F).
-        요구 판정과 승인 대조는 세션이 하고(기준선은 durable·승인은 세션), 여기서는 그
-        결과를 게이트 서열에 끼운다 — 서열의 권위가 둘로 갈리지 않게 표시 결정은 계속
-        :meth:`_compose_gate` 단일 산출이다.
+        ``review_notice`` 는 현재 **검토 요구**(:func:`~hwpxfiller.gui.review_state.review_requirement`)
+        다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 게이트 서열에
+        끼지 않는다 — #957 정책 선회로 검토는 차단이 아니라 사전검증의 비차단 고지이고,
+        승인이라는 해소 사건 자체가 없어져 「미승인분」이라는 축도 함께 사라졌다.
         """
         name_gate = self._name_token_gate()
         if self.datasource is None:
@@ -481,10 +488,11 @@ class RunViewModel:
         return RunStatus(
             preflight=self._compose_preflight(
                 src, out, drift, name_gate is not None, len(audit.too_long),
+                review_notice,
             ),
             field_states=tuple(states),
             gate=self._compose_gate(
-                states, drift, idx, out_dir, name_gate, review_unmet, audit,
+                states, drift, idx, out_dir, name_gate, audit,
             ),
             audit=audit,
         )
@@ -529,27 +537,25 @@ class RunViewModel:
     def _compose_gate(
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
-        review_unmet: "ReviewRequirement | None" = None,
         audit: "OutputNameAudit | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
-        **데이터 결속(warn)** > 세션 전제조건(warn) > **검토 요구(warn)** > 열림.
+        **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
 
         결속 단이 세션 전제조건보다 앞선 이유는 **고칠 자리가 다르기** 때문이다(U4 §2.4):
         저장 폴더·행 선택은 이 화면에서 지우지만 결속은 편집기를 지난다. 세션을 다 갖춰도
         남는 결핍을 뒤에 두면 사용자가 준비를 마친 뒤에야 진짜 막힌 이유를 듣는다.
 
-        구 「미확인 미입력」 단은 필드축 ack 폐기(U2 §2.13)와 함께 죽었다 — 빈 값은
-        승인 지문의 성분(``blank_set`` 위험종)이 되어 검토 요구 단이 진다.
+        구 「미확인 미입력」 단은 필드축 ack 폐기(U2 §2.13)와 함께 죽었고, 그 자리를
+        이어받았던 **검토 요구 단도 #957 에서 사망**했다: 신뢰 정책이 「이상이 있으면
+        알려주되 생성을 막지 않는다」로 선회해 검토는 차단이 아니라 :meth:`_compose_preflight`
+        의 비차단 고지가 됐다. 빈 값도 게이트가 아니다 — 표식이 문서에 박히므로 조용한
+        통과가 아니고, 확인은 결과 문서에서 한다.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
         재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
         ``validate_generate`` 의 모달 백스톱에 남긴다.
-
-        검토 요구가 **전제조건보다 뒤**인 이유(F5 판정 F): 선택 0건에서는 미리보기에
-        진입하지 않는 것이 불변식(§18.11-6·§13-26 "첫 레코드를 실행 미리보기로 대신하지
-        않는다")이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가 된다.
         """
         if self.target_mode == "continue" and not self.template_override:
             return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
@@ -591,15 +597,11 @@ class RunViewModel:
                 False, "warn",
                 "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
             )
-        if review_unmet is not None and review_unmet.required:
-            return GateState(
-                False, "warn", review_gate_text(review_unmet), reason="review_required",
-            )
         return GateState(True, "", "")
 
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
-        long_paths: int = 0,
+        long_paths: int = 0, review_notice: "ReviewRequirement | None" = None,
     ) -> PreflightResult:
         parts: "list[str]" = []
         if src.missing_columns:
@@ -626,16 +628,29 @@ class RunViewModel:
                 f"[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 문서 {long_paths}건. "
                 "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
             )
+        # 검토 고지(#957) — **차단하지 않는다**. 종전에는 같은 사실이 게이트를 닫고
+        # 「미리보기에서 승인」을 요구했지만, 신뢰 정책 선회로 확인의 자리는 결과 문서다.
+        # ``long_paths`` 와 같은 비차단 선례를 따른다: 침묵도 차단도 아닌 사전 고지.
+        # 문안은 링1 단일 출처(:func:`~hwpxfiller.gui.review_state.review_notice_text`)이고
+        # 빈 값은 여기 없다 — 그 자리는 위의 "[경고] 빈 값 필드" 가 이미 진다.
+        notice = review_notice_text(review_notice) if review_notice is not None else ""
+        notices: "tuple[str, ...]" = ()
+        if notice:
+            notices = (f"[알림] {notice}",)
+            parts.extend(notices)
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
         elif out.empty_valued or long_paths:
             level = "warn"
         else:
+            # 고지만 있는 실행은 **등급을 올리지 않는다** — 「알려주되 막지 않는다」는
+            # 색까지 포함한 말이라, 첫 실행마다 경고색을 켜면 경고가 싸구려가 된다.
             level = "ok"
         return PreflightResult(
             list(src.missing_columns), list(out.empty_valued), level,
             "\n".join(parts) if parts
             else "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요.",
+            notices,
         )
 
     # (acknowledge·unacknowledge·reset_acks·acked_count·unmet_blanks 는 필드축 ack

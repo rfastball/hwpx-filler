@@ -172,9 +172,10 @@ def review_requirement(
         changed = {k for k in set(now) | set(base) if now.get(k) != base.get(k)}
     if not changed:
         if blank_fields:
-            # 빈 값이 문서에 표식으로 박히는 실행 — 규칙이 그대로여도 승인 없이는
-            # 생성이 열리지 않는다(침묵 금지, §2.13). 선택 결속 필수: 빈 값 집합은
-            # 선택에 따라 달라지므로 승인이 그 집합을 본 사건이어야 한다.
+            # 빈 값이 문서에 표식으로 박히는 실행 — 규칙이 그대로여도 사실로 남긴다
+            # (침묵 금지, §2.13). #957 이후 이것은 차단이 아니다: 표식이 문서에 박히는
+            # 것 자체가 고지이고, 사전검증의 "[경고] 빈 값 필드" 가 그 자리를 진다.
+            # 선택 결속은 유지 — 빈 값 집합은 선택에 따라 달라지는 사실이다.
             return ReviewRequirement(
                 risk_class="blank_set",
                 changed_targets=tuple(blank_fields),
@@ -380,9 +381,43 @@ def review_reason_text(req: ReviewRequirement) -> str:
     return f"규칙이 바뀌었습니다: {', '.join(req.changed_targets)}."
 
 
+def review_notice_text(req: ReviewRequirement) -> str:
+    """검토 요구의 **비차단 고지** 문안 — 생성을 막지 않고 확인 자리를 결과 문서로 지목한다.
+
+    #957 정책 선회의 문안 자리다: 종전 :func:`review_gate_text` 가 "…승인해야 생성할 수
+    있습니다"로 차단을 선언하던 것을 대체한다. 판정은 여기서 새로 하지 않는다 —
+    :func:`review_requirement` 가 낸 같은 :class:`ReviewRequirement` 를 읽을 뿐이라
+    고지와 드로어가 같은 사실을 다르게 부르지 않는다.
+
+    ``blank_set`` 은 **빈 문자열**이다: 빈 값은 이미 사전검증의 "[경고] 빈 값 필드" 가
+    같은 자리에서 말하고 있어, 여기서 한 번 더 말하면 한 사실이 한 면에 두 줄로 선다.
+
+    문형은 `docs/COPY_STYLE_GUIDE.md` §1 을 따른다 — em dash 대신 두 문장이다.
+    """
+    if not req.required:
+        return ""
+    if req.first_run:
+        return "이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요."
+    if req.unknown_baseline:
+        return "마지막 실행에 쓴 규칙을 확인할 수 없습니다. 결과 문서를 열어 확인하세요."
+    if req.risk_class == "blank_set":
+        return ""
+    return (
+        f"마지막 실행 이후 바뀐 규칙이 있습니다: {', '.join(req.changed_targets)}. "
+        "결과 문서를 열어 확인하세요."
+    )
+
+
 def review_gate_text(req: ReviewRequirement) -> str:
-    """검토 요구가 게이트에 쓰는 문안 — ①무엇이 됐는가 ②다음에 뭘 하는가만
-    (`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형: 최대 2문장)."""
+    """검토 요구가 게이트에 쓰던 문안 — **게이트 소비자가 없다**(#957 정책 선회).
+
+    검토는 더 이상 생성을 막지 않으므로 이 문장을 읽는 게이트가 저장소에 없다. 남긴
+    이유는 미리보기 승인 표면이 아직 살아 있어서이고(슬라이스 ③ 소관), 그 표면이 걷힐
+    때 이 함수도 같이 죽는다. **새 소비자를 붙이지 마라** — 차단 서술("…해야 생성할 수
+    있습니다")은 현행 제품 계약과 어긋난다. 비차단 고지는 :func:`review_notice_text` 다.
+
+    ①무엇이 됐는가 ②다음에 뭘 하는가만(`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형:
+    최대 2문장)."""
     # 두 이름을 다 실물에 맞춘다: 「생성 값 미리보기」는 그 버튼에 적힌 말이고(U2 §2.3 —
     # 게이트가 다르게 부르면 지시받은 사람이 누를 것을 찾아야 한다), 「승인」은 규칙축의
     # 어휘다(U2 §2.10 — 「확인」은 필드축 ack 단독). 지목까지 준다: 이 축이 보는 것은 거울이

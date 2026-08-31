@@ -14,11 +14,17 @@ ref/retention port(:class:`ImmutableVdrStore`).
 - ``INTENTIONAL_BLANK`` — exact empty logical text(missing/null 승인이 아니라 의도된 빈칸).
 
 경계(issue #708): VDR 의 ``document_value`` 는 native writer 에 전달할 **logical Unicode text** 다 —
-XML escaped text·XML fragment·serialized ``hp:t`` bytes 가 아니다(그건 S6 소유). unresolved/missing/
-null/blank 는 조용한 빈칸이 아니라 시끄러운 blocker 다(confirm-or-alarm) — 값의 **모양**은 여기서
-판정하지 않는다(값 유형 어휘 퇴역, v2). unsupported
-local implementation(format code·unknown policy·미지원 contract)은 user-fixable blocker 로 낮추지
-않고 context error 로 닫는다.
+XML escaped text·XML fragment·serialized ``hp:t`` bytes 가 아니다(그건 S6 소유). unresolved 는 조용한
+빈칸이 아니라 시끄러운 blocker 다(confirm-or-alarm) — 값의 **모양**은 여기서 판정하지 않는다(값 유형
+어휘 퇴역, v2). unsupported local implementation(format code·unknown policy·미지원 contract)은
+user-fixable blocker 로 낮추지 않고 context error 로 닫는다.
+
+**행 안의 빈 값은 차단이 아니라 표식이다**(#957 신뢰 정책 선회): explicit null·빈/공백 텍스트는
+:data:`~hwpxfiller.domain.job.MISSING_MARKER` 를 적용한 텍스트로 resolve 되고 그 사실은
+:attr:`ValidationProvenance.validation_facts` 에 비차단으로 적재된다 — 조용한 빈칸이 아니라
+문서에 남는 표식이라 "알려주되 막지 않는다"가 성립한다. 반대로 **열 자체가 없는 것**
+(``RECORD_REQUIRED_VALUE_MISSING``)은 그대로 blocker 다: 그건 행의 결핍이 아니라 데이터↔작업
+결속의 구조 결함이라 표식으로 덮으면 잘못된 결속이 조용히 출하된다.
 
 canonical framing·digest 는 S5-06 closed set(:mod:`hwpxfiller.domain.canonical_execution_encoding`).
 """
@@ -57,6 +63,7 @@ from hwpxfiller.domain.field_binding import (
     UnsupportedDocumentValuePolicyError,
     resolve_document_value_policy,
 )
+from hwpxfiller.domain.job import MISSING_MARKER
 from hwpxfiller.domain.raw_data_record import (
     RAW_RECORD_CONTRACT_ID,
     RECORD_REVIEW_CONTRACT_ID,
@@ -82,13 +89,22 @@ _KIND_CONSTANT = "CONSTANT"
 _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
 
 # ─── record validation blocker 어휘(user-fixable, deterministic Plan order) ───────────────
+# (``RECORD_EXPLICIT_NULL_NOT_ALLOWED``·``RECORD_BLANK_POLICY_VIOLATION`` 은 #957 에서
+#  **퇴역**했다 — 행 안의 빈 값은 차단이 아니라 표식이고, 그 사실은 아래 advisory 어휘가
+#  나른다. 코드를 남겨 두면 아무도 세우지 않는 blocker 가 문안표에 조용히 남는다.)
 RECORD_REQUIRED_VALUE_MISSING = "RECORD_REQUIRED_VALUE_MISSING"
-RECORD_EXPLICIT_NULL_NOT_ALLOWED = "RECORD_EXPLICIT_NULL_NOT_ALLOWED"
 RECORD_VALUE_FORMAT_INVALID = "RECORD_VALUE_FORMAT_INVALID"
-RECORD_BLANK_POLICY_VIOLATION = "RECORD_BLANK_POLICY_VIOLATION"
 RECORD_REVIEW_REQUIRED = "RECORD_REVIEW_REQUIRED"
 RECORD_REVIEW_EVIDENCE_STALE = "RECORD_REVIEW_EVIDENCE_STALE"
 RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED = "RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED"
+
+# ─── 비차단 advisory 어휘(#957) ───────────────────────────────────────────────────────────
+#: 행 안의 빈 값(explicit null·빈/공백 텍스트)이 미입력 표식으로 문서에 박혔다는 사실.
+#: :attr:`ValidationProvenance.validation_facts` 에 ``MISSING_VALUE_MARKED:{field_id}`` 로
+#: 적재된다 — provenance 는 정의상 VDR identity(canonical payload/digest) **밖**이라 이
+#: 사실이 record 동일성을 오염시키지 않는다. 문서 내용이 달라지는 것은 표식 텍스트 자체가
+#: ``resolved_requirement_values`` 에 실려서이고, 그건 identity 에 들어가는 게 **맞다**.
+MISSING_VALUE_MARKED = "MISSING_VALUE_MARKED"
 
 # ─── context/integrity error 어휘(user-fixable 로 낮추지 않는 fail-closed 실패) ─────────────
 RAW_RECORD_CANONICALIZATION_ERROR = "RAW_RECORD_CANONICALIZATION_ERROR"
@@ -151,12 +167,38 @@ class RecordValidationContextError:
 
 @dataclass(frozen=True)
 class ValidationProvenance:
-    """VDR identity 에서 제외되는 검증 사실(validated_at·review refs·source provenance)."""
+    """VDR identity 에서 제외되는 검증 사실(validated_at·review refs·source provenance).
+
+    #957 의 미입력 표식 사실도 여기 산다 — identity 밖이라는 이 정의가 그 자리의 근거다:
+    표식이 문서를 바꾼 사실은 ``resolved_requirement_values`` 의 텍스트가 이미 지고 있고,
+    「어느 필드가 왜 그 텍스트가 됐는가」는 같은 문서를 두 번 다른 record 로 만들지 않아야
+    할 부기다.
+    """
 
     validation_facts: tuple[str, ...]
     record_review_evidence_refs: tuple[str, ...]
     validated_at: str
     source_value_provenance: tuple[Mapping[str, Any], ...] = ()
+
+
+def _validation_facts(resolved_count: int, marked_field_ids: Iterable[str]) -> tuple[str, ...]:
+    """provenance 사실 줄의 단일 조립 — 두 validator 가 같은 어휘를 쓴다."""
+    return (f"validated:{resolved_count}", *(
+        f"{MISSING_VALUE_MARKED}:{field_id}" for field_id in marked_field_ids
+    ))
+
+
+def marked_missing_fields(provenance: ValidationProvenance) -> tuple[str, ...]:
+    """이 record 에서 미입력 표식이 박힌 field_id 들(Plan requirement 순서).
+
+    사실의 **부호화를 아는 곳은 여기 하나**다: 소비자(준비 경로·결과 요약)가 각자
+    ``"MISSING_VALUE_MARKED:"`` 를 잘라 쓰면 접두어가 바뀌는 날 조용히 0건이 된다.
+    """
+    prefix = f"{MISSING_VALUE_MARKED}:"
+    return tuple(
+        fact[len(prefix):] for fact in provenance.validation_facts
+        if fact.startswith(prefix)
+    )
 
 
 @dataclass(frozen=True)
@@ -251,16 +293,43 @@ def _require_no_format_code(ve: Mapping[str, Any]) -> None:
         )
 
 
+def missing_value_marker(field_id: str) -> str:
+    """빈 값 자리에 박히는 문서 텍스트 — 표식 정본은 링0 :data:`MISSING_MARKER` 하나다.
+
+    문자열을 다시 적지 않는 이유가 둘이다. ①산출물 사후 관찰
+    (:mod:`hwpxfiller.gui.artifact_view_state`)이 같은 상수에서 파생한 정규식으로 표식을
+    세므로 문구가 갈리면 만든 문서의 표식을 우리 손으로 못 본다. ②legacy 경로
+    (:func:`~hwpxfiller.domain.job.mark_missing_values`)가 **매핑 키**로 format 하는데
+    그 키가 곧 Plan 의 ``field_id`` 라, 같은 입력에서 두 경로의 문서 텍스트가 같아야 한다.
+    """
+    return MISSING_MARKER.format(field=field_id)
+
+
+@dataclass(frozen=True)
+class _ResolvedValue:
+    """requirement 하나의 logical text + 비차단 사실(표식 여부)."""
+
+    document_value: str
+    missing_marked: bool = False
+
+
 def _resolve_from_source(
     ve: Mapping[str, Any],
     field_id: str,
     snapshot: RawDataRecordSnapshot,
-) -> str | RecordValidationBlocker:
+) -> _ResolvedValue | RecordValidationBlocker:
     """required source key 를 frozen snapshot 에서만 읽어 logical text 를 낸다(row 재조회 0).
 
     소스 값은 언제나 타입 없는 텍스트다 — 값이 맞는지는 사람이 본다. 이 함수가 판정하는 것은
-    **존재**뿐이다: 키 부재(MISSING) · explicit null · 빈/공백 텍스트(blank). blank 가드는 특정
-    값 유형이 아니라 **모든** SOURCE 값에 걸린다.
+    **존재**뿐이고, 그 판정은 #957 이후 두 등급으로 갈린다:
+
+    - **열이 없다**(MISSING) → blocker. 행 하나의 결핍이 아니라 데이터↔작업 결속의 구조
+      결함이라 표식으로 덮으면 잘못된 결속이 조용히 출하된다.
+    - **행 안이 비었다**(explicit null·빈/공백 텍스트) → 미입력 표식으로 resolve + 비차단
+      사실. 조용한 빈칸이 아니라 문서에 남는 표식이므로 「알려주되 막지 않는다」가 성립한다.
+
+    표식에는 whitespace policy 를 적용하지 않는다 — 그건 **소스 값**의 정규화 규칙이고
+    표식은 우리가 짓는 리터럴이다.
     """
     _require_no_format_code(ve)
     source_key = ve.get("source_key")
@@ -279,21 +348,11 @@ def _resolve_from_source(
         )
     value = snapshot.value_for(source_key)
     if isinstance(value, SourceNull):
-        return RecordValidationBlocker(
-            RECORD_EXPLICIT_NULL_NOT_ALLOWED,
-            field_id,
-            f"source key {source_key!r} 가 explicit null 이다",
-        )
+        return _ResolvedValue(missing_value_marker(field_id), missing_marked=True)
     assert value is not None  # has_key True 이고 NULL 이 아니면 텍스트
-    # blank(빈/공백만) source 는 조용히 빈 문서 필드로 새지 않고 시끄럽게 막는다.
-    # 의도된 빈칸은 Plan 의 INTENTIONAL_BLANK 이지 blank source 값이 아니다.
     if value.text.strip() == "":
-        return RecordValidationBlocker(
-            RECORD_BLANK_POLICY_VIOLATION,
-            field_id,
-            f"source key {source_key!r} 가 빈/공백만 텍스트다(blank policy 위반)",
-        )
-    return _apply_whitespace_policy(value.text, policy.whitespace_policy)
+        return _ResolvedValue(missing_value_marker(field_id), missing_marked=True)
+    return _ResolvedValue(_apply_whitespace_policy(value.text, policy.whitespace_policy))
 
 
 def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
@@ -318,7 +377,7 @@ def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
 def _resolve_requirement(
     requirement: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
-) -> str | RecordValidationBlocker:
+) -> _ResolvedValue | RecordValidationBlocker:
     field_id = requirement.get("field_id")
     if not isinstance(field_id, str) or field_id == "":
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "requirement 에 field_id 가 없다")
@@ -331,7 +390,7 @@ def _resolve_requirement(
     if kind == _KIND_FROM_SOURCE:
         return _resolve_from_source(ve, field_id, snapshot)
     if kind == _KIND_CONSTANT:
-        return _resolve_constant(ve, field_id)
+        return _ResolvedValue(_resolve_constant(ve, field_id))
     if kind == _KIND_INTENTIONAL_BLANK:
         # exact_blank_policy 를 확인한다 — unknown 을 조용히 WRITE_EMPTY 로 풀지 않는다(fail-closed).
         if ve.get("exact_blank_policy") != EXACT_BLANK_POLICY:
@@ -340,7 +399,9 @@ def _resolve_requirement(
                 f"requirement {field_id!r} 의 미지원 blank policy: "
                 f"{ve.get('exact_blank_policy')!r}",
             )
-        return ""  # WRITE_EMPTY_TEXT_PRESERVE_FIELD — field 는 보존, 값만 비운다.
+        # WRITE_EMPTY_TEXT_PRESERVE_FIELD — field 는 보존, 값만 비운다. **표식이 아니다**:
+        # Plan 이 「여기는 비운다」를 선언한 것이라 미입력이 아니다(빈 값과 의도된 공란의 구분).
+        return _ResolvedValue("")
     raise _ContextSignal(
         PLAN_INTEGRITY_ERROR, f"requirement {field_id!r} 의 value_expression kind 미상: {kind!r}"
     )
@@ -490,12 +551,16 @@ def _validate_current_value(
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "duplicate current field identity")
     blockers: list[RecordValidationBlocker] = []
     resolved: list[tuple[str, str]] = []
+    marked: list[str] = []
     for requirement in plan.active_field_requirements:
         outcome = _resolve_requirement(requirement, snapshot)
         if isinstance(outcome, RecordValidationBlocker):
             blockers.append(outcome)
         else:
-            resolved.append((str(requirement["field_id"]), outcome))
+            field_id = str(requirement["field_id"])
+            resolved.append((field_id, outcome.document_value))
+            if outcome.missing_marked:
+                marked.append(field_id)
     if blockers:
         return RecordValidationBlocked(tuple(blockers))
     record = CurrentValidatedDataRecord(
@@ -504,7 +569,7 @@ def _validate_current_value(
         raw_record_digest=snapshot.raw_record_digest,
         resolved_requirement_values=tuple(resolved),
         validation_provenance=ValidationProvenance(
-            validation_facts=(f"validated:{len(resolved)}",),
+            validation_facts=_validation_facts(len(resolved), marked),
             record_review_evidence_refs=(),
             validated_at=validated_at,
         ),
@@ -614,14 +679,18 @@ def _validate(
 
     # (4b) requirement 값 resolution — Plan requirement 순서 그대로.
     resolved: list[dict[str, Any]] = []
+    marked: list[str] = []
     for index, requirement in enumerate(plan.active_field_requirements):
         outcome = _resolve_requirement(requirement, snapshot)
         if isinstance(outcome, RecordValidationBlocker):
             ordered_blockers.append((index, outcome))
             continue
+        field_id = str(requirement["field_id"])
         resolved.append(
-            {"field_id": str(requirement["field_id"]), "document_value": outcome}
+            {"field_id": field_id, "document_value": outcome.document_value}
         )
+        if outcome.missing_marked:
+            marked.append(field_id)
 
     if ordered_blockers:
         ordered_blockers.sort(key=lambda ib: (ib[0], ib[1].code, ib[1].field_id or ""))
@@ -640,7 +709,7 @@ def _validate(
         "resolved_requirement_values": resolved,
     }
     provenance = ValidationProvenance(
-        validation_facts=(f"validated:{len(resolved)}",),
+        validation_facts=_validation_facts(len(resolved), marked),
         record_review_evidence_refs=(review_ref,) if review_ref is not None else (),
         validated_at=validated_at,
     )

@@ -112,41 +112,37 @@ def _plan(tmp_path, n=2):
 _NOW = datetime(2026, 8, 10, 9, 0, 0)
 
 
-def test_gate_order_rejection_stops_before_review():
+def test_gate_order_rejection_stops_before_anything_else():
     vm = _VM(errors=[GateError("먼저 데이터를 선택하세요.", "warn")])
-    decision = plan_generation(
-        vm, [0], "out", now=_NOW,
-        review_check=lambda bl: pytest.fail("거절 뒤에 검토를 물으면 순서 위반"),
-    )
+    decision = plan_generation(vm, [0], "out", now=_NOW)
     assert decision.rejection is vm.errors[0] and decision.plan is None
     assert vm.trace == ["validate"]              # 빈 값·충돌 조회조차 하지 않는다
 
 
-def test_review_backstop_consumes_the_same_blank_set():
+def test_blank_values_no_longer_hold_the_plan():
+    """#957 — 빈 값은 표식을 붙이고 **계획까지 간다**(검토 게이트 갈래 사망).
+
+    종전 이 자리에는 호출자가 선언한 검토 판정기가 있었고, 그것이 미충족을 돌려주면
+    plan 이 서지 않았다. 정책 선회로 그 갈래가 없어졌으므로 같은 입력이 표식 붙은 계획을
+    낸다 — 빈 값 사실은 사라지지 않고 ``blanks``·``marker`` 로 남는다.
+    """
     vm = _VM(blanks=["담당자"])
-    unmet = object()                             # 판정기 반환은 불투명 관통
-    seen = []
-    decision = plan_generation(
-        vm, [0], "out", now=_NOW, review_check=lambda bl: seen.append(bl) or unmet,
-    )
-    assert decision.review_unmet is unmet and decision.blanks == ("담당자",)
-    assert seen == [["담당자"]]                  # 표식·승인이 같은 집합을 본다(§2.13)
-    assert decision.plan is None and "plan" not in vm.trace
+    decision = plan_generation(vm, [0], "out", now=_NOW)
+    assert decision.blanks == ("담당자",) and decision.marker == MISSING_MARKER
+    assert decision.plan is not None and "plan" in vm.trace
 
 
 def test_overwrite_needs_confirmation_then_builds_the_plan():
     now = _NOW
     vm = _VM(blanks=["담당자"], conflicts=["out/doc-001.hwpx"])
-    held = plan_generation(vm, [0, 1], "out", now=now, review_check=lambda bl: None)
+    held = plan_generation(vm, [0, 1], "out", now=now)
     assert held.needs_overwrite and held.plan is None
     assert held.conflicts == ("out/doc-001.hwpx",)
     assert held.marker == MISSING_MARKER         # 확인 왕복에도 표식 사실은 이미 확정
     assert ("conflicts", MISSING_MARKER, now) in vm.trace  # 확인=생성 동일 시각·표식(RC-02)
 
     vm2 = _VM(blanks=[], conflicts=["out/doc-001.hwpx"])
-    done = plan_generation(
-        vm2, [0, 1], "out", now=now, review_check=lambda bl: None, confirm_overwrite=True,
-    )
+    done = plan_generation(vm2, [0, 1], "out", now=now, confirm_overwrite=True)
     assert done.plan is not None and done.plan.overwrite is True
     assert vm2.plan_kwargs == {"marker": "", "overwrite": True, "now": now}
 
