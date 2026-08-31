@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ import reconcile_shipped_copies
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGING = ROOT / "packaging"
 WEB_ENTRY = PACKAGING / "hwpx_filler_web_entry.py"
+INSTALLER_ISS = PACKAGING / "installers" / "hwpx-filler.iss"
 
 
 def _verify_specs():
@@ -635,3 +637,63 @@ def test_the_inno_compiler_lookup_has_one_owner_and_sees_a_per_user_install() ->
     for consumer in (installer, build):
         assert "Find-Iscc.ps1" in consumer, "ISCC 탐색을 각자 재조립하고 있습니다"
         assert "Get-Command iscc.exe" not in consumer
+
+
+def test_installer_appid_matches_the_conflict_guard() -> None:
+    r"""출하 AppId 하나를 세 곳이 각자 적어 두고 있으니 **같은지**를 센다.
+
+    ``[Setup] AppId`` 는 설치 등록의 이름이고, ``[Code]`` 의 ``UninstallKey`` 는 "이미 설치돼
+    있는가"를 묻는 열쇠이며, ``packaging/build.ps1`` 의 거절 가드는 그 등록을 임시 폴더로
+    갈아치우지 않으려고 같은 열쇠를 본다. 하나만 바뀌면 마법사가 기존 설치를 못 보고 조용히
+    새 설치로 빠지거나, 가드가 있지도 않은 등록을 지키게 된다.
+    """
+    iss = INSTALLER_ISS.read_text(encoding="utf-8")
+    build = (PACKAGING / "build.ps1").read_text(encoding="utf-8-sig")
+
+    # AppId 는 Inno 이스케이프라 여는 중괄호가 이중이다: `AppId={{GUID}`.
+    setup_id = re.search(r"^AppId=\{\{([0-9A-Fa-f-]{36})\}", iss, re.MULTILINE)
+    code_id = re.search(r"Uninstall\\\{([0-9A-Fa-f-]{36})\}_is1", iss)
+    guard_id = re.search(r"\{([0-9A-Fa-f-]{36})\}_is1", build)
+
+    assert setup_id is not None, "[Setup] AppId 를 읽지 못했습니다"
+    assert code_id is not None, "[Code] UninstallKey 의 GUID 를 읽지 못했습니다"
+    assert guard_id is not None, "build.ps1 의 _is1 언인스톨 키 가드를 읽지 못했습니다"
+
+    found = {
+        "iss:AppId": setup_id.group(1).upper(),
+        "iss:UninstallKey": code_id.group(1).upper(),
+        "build.ps1:productKey": guard_id.group(1).upper(),
+    }
+    assert len(set(found.values())) == 1, f"출하 AppId 가 세 곳에서 갈라졌습니다: {found}"
+
+
+def test_installer_wipe_path_cannot_fire_silently() -> None:
+    r"""초기화(삭제) 경로는 **사람이 고르고 한 번 더 확인한** 때만 발화한다.
+
+    릴리스 CI 의 ``/VERYSILENT`` 무인 설치 스모크는 마법사 페이지를 띄우지 않는다 — 선택
+    인덱스가 기본값 0 으로 남으니 조건상 삭제로 가지 않지만, 그 안전은 **인덱스 초기값이라는
+    간접 사실**에 기대는 것이다. 무인 경로에서 사용자 데이터 홈과 설치 폴더가 지워지는 사고는
+    되돌릴 수 없으므로 ``WizardSilent`` 명시 가드가 그 위에 겹쳐 서 있는지 직접 센다.
+    """
+    iss = INSTALLER_ISS.read_text(encoding="utf-8")
+
+    assert "\n[Code]" in iss, "[Code] 섹션이 사라졌습니다 — 기존 설치 대응이 없습니다"
+
+    wipe = iss.index("function WipeSelected(): Boolean;")
+    wipe_body = iss[wipe : iss.index("end;", wipe)]
+    assert "not WizardSilent()" in wipe_body, (
+        "삭제 판정이 무인 설치를 명시로 막지 않습니다 — /VERYSILENT 가 삭제로 빠질 수 있습니다"
+    )
+    assert "IsUpgrade()" in wipe_body, "기존 설치가 아닌데도 삭제 판정이 설 수 있습니다"
+
+    assert "MB_DEFBUTTON2" in iss, "삭제 확인 대화상자의 기본 버튼이 '아니오'가 아닙니다"
+    assert "mbConfirmation" in iss, "삭제 확인 대화상자가 확인창이 아닙니다"
+    assert "DelTree(" in iss, "삭제 경로가 사라졌습니다 — 초기화 선택이 아무 일도 하지 않습니다"
+
+    home = iss.index("function DataHomeDir(): String;")
+    home_body = iss[home : iss.index("end;", home)]
+    assert "HWPXFILLER_HOME" in home_body, "데이터 홈 해석이 HWPXFILLER_HOME 을 보지 않습니다"
+    assert ".hwpxfiller" in home_body, (
+        "데이터 홈 해석이 기본 위치(~/.hwpxfiller)를 보지 않습니다 — "
+        "host/locations.py 와 해석 규칙이 갈라졌습니다"
+    )
