@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from _output_folder_pick import pick_output_folder
+
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain.job import Job, rules_fingerprints
@@ -667,7 +669,7 @@ def test_generation_notifies_its_own_event_and_no_approval_event_remains(tmp_pat
     ctrl.load_data_path(_csv(tmp_path, "blank.csv", _BLANK))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     seen.clear()
 
     assert ctrl.generate()["ok"] is True
@@ -684,7 +686,7 @@ def test_second_lap_is_the_same_job_generated_again(tmp_path):
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.generate()["ok"] is True
     seen.clear()
 
@@ -701,7 +703,7 @@ def test_switch_job_is_a_second_work_on_the_same_mount(tmp_path):
     seen, notify = _collector()
     ctrl, _ = _job_controller(tmp_path, notify, names=("공고서", "구매추진"))
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     for name in ("공고서", "구매추진"):
         ctrl.dispatch("select_job", {"name": name})
@@ -745,7 +747,7 @@ def test_generation_from_a_template_compiled_in_this_session(tmp_path):
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     # 변환 사실을 모르면 T16 은 서지 않는다.
     assert ctrl.generate()["ok"] is True

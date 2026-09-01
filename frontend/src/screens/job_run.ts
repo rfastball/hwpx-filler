@@ -20,8 +20,9 @@ import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
-import { PathActions } from "./path_actions.ts";
 import type { ScreenPorts } from "./ports.ts";
+/* 모달 id 는 여는 쪽과 그리는 쪽이 **같은 상수**를 쓴다 — 문자열을 두 벌 들면 한쪽만 늙는다. */
+import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
@@ -499,13 +500,25 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         return_context: { surface: "result" },
       });
     },
+    /** 전역 저장 폴더 지정 — 이 화면에는 트리거가 없고 **설정 모달의 저장 폴더 행**이 부른다.
+     *
+     *  화면이 아니라 여기 남는 이유는 왕복의 소유다: `pick_output_folder` 는 직접 브리지
+     *  경로이고 그 응답의 오류 재진술 규율(조용한 무시 금지)이 이 컨트롤러의 것이다. 설정 면은
+     *  그 동사를 호출만 한다 — 판정·문안을 그쪽에서 다시 조립하지 않는다. */
     async pickOutputFolder(): Promise<void> {
       const result = expectHostValue(
         await deps.client.invoke("pick_output_folder", "job"), "pick_output_folder");
       if (result === null || result === undefined) return;
       const text = String(result);
-      // 고른 폴더는 저장 폴더 칸이 그대로 보인다(무착지) — 오류만 알림 채널로 간다.
+      // 고른 폴더는 저장 폴더 표시가 그대로 보인다(무착지) — 오류만 알림 채널로 간다.
       if (text.startsWith("ERROR:")) deps.notify(`폴더 오류: ${text.slice(6).trim()}`);
+    },
+    /** 배달 blocker 의 착지 — 저장 폴더를 바꾸러 갈 문을 연다(막다른 경보 금지).
+     *  여는 것만 안다: 모달의 내용·현재값·잠금은 전부 설정 면이 진다. */
+    openOutputFolderSettings(): void {
+      deps.modal.open(SETTINGS_MODAL_ID, {
+        returnFocus: deps.doc.getElementById("jobOpenFolderSettings"),
+      });
     },
     relinkActive(): void {
       const s = snapshot();
@@ -699,33 +712,30 @@ export function JobMirrorZone(props: { controller: JobRunController }): ReactNod
       h("span", { id: "jobMirrorSummary" }, summary)));
 }
 
-export function JobOutRow(props: { controller: JobRunController }): ReactNode {
+/** 구식(hwpx) 갈래의 저장 폴더 **표시 한 줄** — 고르는 자리가 아니다.
+ *
+ *  전역화 전 이 자리에는 라벨 + 경로 칸 + 「찾아보기…」 + 경로 어포던스가 선 `#jobOutRow` 가
+ *  있었다. 저장 폴더가 작업 속성이 아니라 앱 설정이 되면서 **고르는 동사는 설정 모달 하나**로
+ *  갔고, 화면에 남는 것은 "이번 생성이 어디로 떨어지는가"라는 사실뿐이다. 그 사실까지 걷으면
+ *  구식 갈래는 저장 위치를 어디에서도 말하지 않게 되므로(조용한 추측) 한 줄은 남긴다.
+ *
+ *  managed 갈래는 같은 사실을 「생성 예정 문서」 머리(`#jobPlannedOutDir`)가 말하고,
+ *  TXT(복사) 갈래는 파일을 만들지 않아 폴더가 축이 아니다 — 셋 다 자리가 하나씩이다. */
+export function JobOutFolderLine(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
-  const run = useRun(props.controller);
-  // 저장 폴더는 hwpx 생성의 축이다 — TXT 에선 그 자리를 그리지 않는다(빈 값으로 두면
-  // "아직 안 정했다"로 읽혀 사용자가 고르러 간다).
   if (isCopyWork(s) || isManagedHwpx(s)) return null;
-  const out = String(s?.out_dir || "");
+  const folder = (s?.output_folder || {}) as Obj;
+  const out = String(folder.directory || s?.out_dir || "");
+  const source = String(folder.source_label || "");
+  const notice = String(folder.notice || "");
+  if (!out && !notice) return null;
   return createElement(Fragment, null,
-    h("span", { className: "lbl" }, "저장 폴더"),
-    h("input", {
-      className: "field ro", id: "jobOutDir", type: "text", readOnly: true,
-      value: out, placeholder: "이 폴더에 문서를 저장합니다",
-    }),
-    h("button", {
-      className: "btn", id: "jobBtnPickFolder", "data-busy-lock": true,
-      // 저장 폴더는 작업 속성이다 — 작업 미선택에서 고르게 두면 작업 선택이 기본값으로
-      // 조용히 덮어써 선택이 증발한다(#302 리뷰 P2).
-      disabled: run.running || !s?.has_job || isCopyWork(s),
-      onClick: () => { void props.controller.pickOutputFolder(); },
-    }, "찾아보기…"),
-    h("span", { id: "jobOutTrack" },
-      out ? createElement(PathActions as any, {
-        client: props.controller.client,
-        path: out,
-        only: ["reveal", "copy"],
-        notify: props.controller.notify,
-      }) : null));
+    out
+      ? h("span", { className: "muted capnote", id: "jobOutDirLine" },
+        source ? `저장 폴더: ${out} (${source})` : `저장 폴더: ${out}`)
+      : null,
+    // 도출이 한 단계 내려간 사유는 침묵하지 않는다 — 설정된 폴더가 사라졌다는 사실이다.
+    notice ? h("p", { className: "warn capnote", id: "jobOutDirNotice" }, notice) : null);
 }
 
 /** 재진술 블록 — 이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. */
@@ -766,7 +776,6 @@ function gateStep(s: Obj, g: Obj): string {
 
 export function JobWorkbenchStatus(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
-  const running = useRun(props.controller).running;
   const wb = (s?.workbench_observation || {}) as Obj;
   if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const items = (wb.input_requirements || []) as Obj[];
@@ -812,43 +821,34 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const delivery = (wb.delivery || {}) as Obj;
   const planned = (delivery.planned_documents || []) as Obj[];
   const deliveryBlockers = (delivery.blockers || []) as Obj[];
-  // 저장 폴더는 backend 가 도출한다(U3-06 #879) — 명시 지정이 없어도 실제로 쓰일 경로와
-  // 그 출처가 실려 온다. 표면은 그 값을 그리기만 하고 경로·라벨을 여기서 다시 만들지 않는다.
-  const outputFolder = (wb.output_folder || {}) as Obj;
+  // 저장 폴더는 backend 가 도출해 **스냅샷 최상위**로 싣는다(전역화) — 작업 유무·관찰 성패와
+  // 무관한 사실이라 작업대 존이 아니라 거기가 그 자리다. 표면은 값을 그리기만 하고 경로·
+  // 라벨을 여기서 다시 만들지 않는다. **고르는 동사는 여기 없다**: 저장 폴더는 작업 속성이
+  // 아니라 앱 설정이 됐고, 그 자리는 설정 모달의 저장 폴더 행 하나다(아래 출구가 그 문이다).
+  const outputFolder = (s?.output_folder || {}) as Obj;
   const outputFolderPath = String(
     outputFolder.directory || intent?.output_directory || '',
   );
   const outputFolderSource = String(outputFolder.source_label || '');
   const outputFolderNotice = String(outputFolder.notice || '');
   const deliverySection = createElement(Fragment, null,
-    h('div', { className: 'zone-cap' }, '저장 폴더'),
-    h('div', { className: 'run-row' },
-      h('input', {
-        className: 'field ro', id: 'jobManagedOutDir', type: 'text', readOnly: true,
-        value: outputFolderPath,
-        placeholder: '이 폴더에 문서를 저장합니다',
-      }),
-      h('button', {
-        className: 'btn sm', id: 'jobManagedPickFolder', type: 'button',
-        disabled: running || !s?.has_job,
-        onClick: () => { void props.controller.pickOutputFolder(); },
-      }, '찾아보기…'),
-      outputFolderSource
-        ? h('span', { className: 'muted capnote', id: 'jobManagedOutDirSource' },
-          outputFolderSource)
-        : null),
-    outputFolderNotice
-      ? h('p', { className: 'warn capnote', id: 'jobManagedOutDirNotice' },
-        outputFolderNotice)
-      : null,
     // 「충돌 처리」 선택기는 없다(U4 계열2-27) — 같은 이름이 있으면 덮어쓰는 것이 기본이고
     // (`DEFAULT_COLLISION_POLICY`), 그 사실은 정책 라벨이 아니라 **파일마다** 아래 목록의
     // `DELIVERY_DISPOSITION_COPY` 가 말한다. 무엇을 덮어쓰는지 묻는 확인 면은 그 다음이다.
     h('div', { className: 'zone-cap' }, '생성 예정 문서'),
-    // 계획은 이름만 말하면 절반이다 — 어디에 떨어지는지를 같은 자리에서 진술한다(#879).
+    // 계획은 이름만 말하면 절반이다 — 어디에 떨어지는지, 그 경로가 **어디서 왔는지**를 같은
+    // 자리에서 진술한다(#879). 출처 라벨을 빼면 「자동으로 잡힌 자리」와 「사용자가 정한
+    // 자리」가 한 줄로 똑같이 보인다. 라벨 문안은 backend 가 낸 것을 그대로 싣는다.
     outputFolderPath
       ? h('p', { className: 'muted capnote', id: 'jobPlannedOutDir' },
-        `저장 폴더: ${outputFolderPath}`)
+        outputFolderSource
+          ? `저장 폴더: ${outputFolderPath} (${outputFolderSource})`
+          : `저장 폴더: ${outputFolderPath}`)
+      : null,
+    // 도출이 한 단계 내려간 사유는 경고로 선다 — 경고 침묵 금지.
+    outputFolderNotice
+      ? h('p', { className: 'warn capnote', id: 'jobPlannedOutDirNotice' },
+        outputFolderNotice)
       : null,
     planned.length
       ? h('ul', { className: 'plain-list', id: 'jobPlannedDocuments' },
@@ -869,6 +869,16 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
                     h('br', null), String(blocker.conflicting_relative_path))
                   : null)))
         : h('p', { className: 'muted capnote' }, '생성 예정 문서가 없습니다.'),
+    // 배달 blocker 의 등록된 복구 동사는 「저장 폴더 바꾸기」이고(`blocker_affordance.py`
+    // REVIEW_DELIVERY), 그 동사는 설정 모달로 이사했다. 그래서 이 자리는 **문**을 세운다 —
+    // 사유만 적고 갈 곳을 안 주면 막다른 경보가 된다. 열기만 하므로 생성 잠금을 타지 않는다
+    // (모달 안의 「찾아보기…」가 실행 중 비활성 + 사유 병기를 진다).
+    deliveryBlockers.length
+      ? h('button', {
+        className: 'btn sm', id: 'jobOpenFolderSettings', type: 'button',
+        onClick: () => { props.controller.openOutputFolderSettings(); },
+      }, '저장 폴더 설정 열기…')
+      : null,
     // 「목록 새로 확인」도 없다(U4 계열2-28) — 계획은 그것을 바꾸는 전이에서 Python 이
     // 무효화하고 다시 세운다. 사람이 눌러 새로고침해야 하는 목록이면 그 자체가 결함이다.
     h('div', { className: 'run-row' },

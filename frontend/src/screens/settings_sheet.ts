@@ -20,10 +20,22 @@
  * ## 행 목록은 자란다
  *
  * 마크업은 `.settings-row` 반복이다 — 라벨 한 칸 + 조작 한 칸. 축이 늘면 행이 하나 는다.
+ *
+ * ## 저장 폴더 행만 화면 상태를 읽는다
+ *
+ * 테마·글자 크기는 셸 서비스의 값이지만 **저장 폴더는 Python 이 도출한 값**이다(작업 화면
+ * 스냅샷의 `output_folder` 존 — 설정한 폴더가 사라졌는지, 지금 쓰이는 경로가 무엇인지, 그
+ * 출처가 무엇인지를 전부 backend 가 판정해 싣는다). 그래서 이 행은 job 컨트롤러를 **포트로**
+ * 받아 그 스냅샷을 구독하고, 지역 상태를 만들지 않는다. 고르는 왕복(`pick_output_folder`)도
+ * 그 컨트롤러의 것을 그대로 부른다 — 오류 재진술 규율이 거기 있고, 여기서 다시 조립하면
+ * 같은 판정이 두 곳에 산다.
  */
 
 import { createElement, useCallback, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+
+import type { BridgeClient } from "../runtime/client.ts";
+import { PathActions } from "./path_actions.ts";
 
 type Obj = Record<string, any>;
 
@@ -34,6 +46,25 @@ export type SettingsPersonalizationPort = {
   setFontScale(scale: string): unknown;
 };
 export type SettingsModalPort = { close(id: string): void };
+
+/** 저장 폴더 행이 쓰는 **구조적** 포트 — `JobRunController` 가 그대로 만족한다.
+ *
+ *  타입을 import 하지 않고 형태로만 적는 이유는 순환이다: `job_run.ts` 가 이 파일의
+ *  `SETTINGS_MODAL_ID` 를 값으로 가져간다(배달 blocker 의 착지가 이 모달을 연다). 필요한 것은
+ *  구독 하나·판독 하나·동사 하나뿐이라 형태로 충분하다. */
+export type SettingsOutputFolderPort = {
+  subscribe(listener: () => void): () => void;
+  /** 컨트롤러의 실행 상태 저장소. `lastFull` 이 마지막 전체 스냅샷, `running` 이 생성 진행. */
+  getRun(): { running?: boolean; lastFull?: Obj | null };
+  pickOutputFolder(): unknown;
+  client: BridgeClient;
+  notify(message: string): void;
+};
+
+/** 생성이 도는 동안 폴더를 못 바꾸는 **사유** — 조용히 비활성으로 두지 않는다. */
+export const OUTPUT_FOLDER_BUSY_REASON = "문서를 만드는 중에는 저장 폴더를 바꿀 수 없습니다.";
+/** 도출 자체가 불가능할 때의 자리 문안(경로 칸이 빈 채로 서는 것을 막는다). */
+export const OUTPUT_FOLDER_EMPTY_TEXT = "아직 정해지지 않았습니다 — 폴더를 선택하세요.";
 
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
 export const SETTINGS_MODAL_ID = "settingsModal";
@@ -95,17 +126,41 @@ function Segment(props: SegmentProps): ReactNode {
     }, props.labels[value] || value)));
 }
 
+/** 저장 폴더 행이 그리는 값 — 전부 Python 도출의 투영이다(여기서 판정하지 않는다). */
+export type OutputFolderView = {
+  directory: string;
+  sourceLabel: string;
+  notice: string;
+  /** 생성 진행 — 참이면 「찾아보기…」가 비활성 + 사유 병기. */
+  busy: boolean;
+};
+
 export function SettingsSheet(props: {
   theme: SettingsThemePort;
   personalization: SettingsPersonalizationPort;
   modal: SettingsModalPort;
+  job: SettingsOutputFolderPort;
 }): ReactNode {
-  const { theme, personalization } = props;
+  const { theme, personalization, job } = props;
   const currentTheme = useShellValue("hwpx:themechange", () => theme.current());
   const currentScale = useShellValue(
     "hwpx:personalizationchange", () => personalization.currentFontScale(),
   );
-  return createElement(SettingsSheetView as any, { ...props, currentTheme, currentScale });
+  /* 스냅샷 판독은 **파생**이다 — 컨트롤러 저장소를 그대로 구독하므로 이 면 밖의 변경(폴더를
+     고른 뒤의 push, 생성 시작·종료)도 같은 값에 도착한다. `getRun` 은 안정 참조를 돌려주는
+     저장소 판독이라 그것을 그대로 스냅샷 함수로 쓴다(파생 객체를 만들면 매 호출이 새 참조가
+     돼 useSyncExternalStore 가 무한 재렌더에 든다). */
+  const runState = useSyncExternalStore(job.subscribe, job.getRun, job.getRun);
+  const folder = ((runState.lastFull || {}).output_folder || {}) as Obj;
+  const outputFolder: OutputFolderView = {
+    directory: String(folder.directory || ""),
+    sourceLabel: String(folder.source_label || ""),
+    notice: String(folder.notice || ""),
+    busy: runState.running === true,
+  };
+  return createElement(SettingsSheetView as any, {
+    ...props, currentTheme, currentScale, outputFolder,
+  });
 }
 
 /** 현재값을 **받아서** 그리는 순수 면 — 훅이 없다.
@@ -117,10 +172,13 @@ export function SettingsSheetView(props: {
   theme: SettingsThemePort;
   personalization: SettingsPersonalizationPort;
   modal: SettingsModalPort;
+  job: SettingsOutputFolderPort;
   currentTheme: string;
   currentScale: string;
+  outputFolder: OutputFolderView;
 }): ReactNode {
-  const { theme, personalization, modal, currentTheme, currentScale } = props;
+  const { theme, personalization, modal, job, currentTheme, currentScale } = props;
+  const folder = props.outputFolder;
 
   return h("div", { className: "modal-card settings-card" },
     h("div", { className: "settings-head" },
@@ -149,5 +207,44 @@ export function SettingsSheetView(props: {
           labels: FONT_SCALE_LABELS,
           current: currentScale,
           onPick: (value: string) => { personalization.setFontScale(value); },
-        }))));
+        })),
+      /* 저장 폴더 — 앞 두 행과 달리 **전역이면서 제품 값**이다. 여기 선 이유는 하나다:
+         작업마다 다시 고르던 축이 폐지되면서 고를 자리가 앱에 한 곳만 남았다. */
+      h("div", { className: "settings-row settings-row-folder" },
+        h("span", { className: "settings-label", id: "settingsFolderLabel" }, "저장 폴더"),
+        h("div", { className: "settings-folder" },
+          h("div", { className: "settings-folder-row" },
+            h("input", {
+              className: "field ro", id: "settingsOutDir", type: "text", readOnly: true,
+              "aria-labelledby": "settingsFolderLabel",
+              value: folder.directory,
+              placeholder: OUTPUT_FOLDER_EMPTY_TEXT,
+            }),
+            h("button", {
+              className: "btn sm", id: "settingsPickFolder", type: "button",
+              /* 생성 중에는 잠근다 — 이번 실행이 겨눈 폴더가 실행 도중 갈리면 결과가 어디로
+                 갔는지 말할 수 없게 된다. 잠그되 **사유를 병기**한다(조용히 막지 않는다). */
+              disabled: folder.busy,
+              title: folder.busy ? OUTPUT_FOLDER_BUSY_REASON : undefined,
+              onClick: () => { void job.pickOutputFolder(); },
+            }, "찾아보기…"),
+            folder.directory
+              ? createElement(PathActions as any, {
+                client: job.client,
+                path: folder.directory,
+                only: ["reveal", "copy"],
+                notify: job.notify,
+              })
+              : null),
+          folder.sourceLabel
+            ? h("span", { className: "muted capnote", id: "settingsOutDirSource" },
+              folder.sourceLabel)
+            : null,
+          folder.notice
+            ? h("p", { className: "warn capnote", id: "settingsOutDirNotice" }, folder.notice)
+            : null,
+          folder.busy
+            ? h("p", { className: "muted capnote", id: "settingsPickFolderReason" },
+              OUTPUT_FOLDER_BUSY_REASON)
+            : null))));
 }

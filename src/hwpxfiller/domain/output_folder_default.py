@@ -1,20 +1,24 @@
-"""저장 폴더 도출(U3-06 · #879) — 명시 지정 → 기억한 폴더 → 템플릿 옆 ``Results``.
+"""저장 폴더 도출(U3-06 · #879 → 전역화) — 설정한 저장 폴더 → 템플릿 옆 ``Results``.
 
 같은 질문에 두 답이 있었다: 구식 축은 작업을 고르는 순간 템플릿 옆 ``Results`` 를 잡았고,
 관리(hwpx) 축은 저장 폴더 미지정을 **생성 차단**으로 다뤘다. 이 모듈이 그 답 하나를 소유한다.
 
+**세션 축은 없다.** 종전에는 그 위에 「이번 세션의 명시 지정」(``SOURCE_EXPLICIT``)이 한 층 더
+있었다 — 같은 사용자가 같은 폴더를 작업마다 다시 고르게 만들고, 작업을 갈아타면 조용히
+증발하는 값이었다. 저장 폴더는 **작업의 속성이 아니라 앱의 설정**이라는 재판정으로 그 층이
+걷혔고, 남은 축은 둘뿐이다: 설정한 저장 폴더(존재 확인 통과분) → 템플릿 옆 ``Results``.
+
 **조용한 추측이 아니라 표시된 기본값이다.** 도출은 경로만 내지 않고 그 경로가 어디서 왔는지
-(:data:`SOURCE_LABELS`)를 함께 낸다. 표면은 실제로 쓰일 경로와 출처를 같이 그리고, 기억한
+(:data:`SOURCE_LABELS`)를 함께 낸다. 표면은 실제로 쓰일 경로와 출처를 같이 그리고, 설정한
 폴더가 사라져 기본값으로 내려간 경우는 :attr:`OutputFolderResolution.notice` 로 사유를 병기한다
 (조용한 하향 금지).
 
-**순수 함수다** — 파일 시스템을 만지지 않는다. 기억한 폴더가 실제로 있는지는 호출자가 관찰해
+**순수 함수다** — 파일 시스템을 만지지 않는다. 설정한 폴더가 실제로 있는지는 호출자가 관찰해
 ``remembered_exists`` 로 건넨다(관찰은 호출자, 판정은 여기).
 
-「기억」의 소유자도 여기가 아니다: 마지막 명시 지정은 설정 층
+설정값의 소유자도 여기가 아니다: 전역 저장 폴더는 설정 층
 (:func:`hwpxfiller.external.settings.load_last_output_directory`)이 들고, 이 함수는 그 값을
-**기본값 재료로만** 받는다. session-scoped
-:class:`hwpxfiller.application.run_delivery_intent.RunDeliveryIntent` 의 수명 규약은 그대로다.
+**도출 재료로만** 받는다.
 """
 
 from __future__ import annotations
@@ -24,27 +28,25 @@ from pathlib import Path
 
 from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 
-#: 이 세션에서 사용자가 폴더 피커로 직접 고른 경로.
-SOURCE_EXPLICIT = "explicit"
-#: 설정에 남은 마지막 명시 지정(존재 확인 통과분).
+#: 설정에 남은 전역 저장 폴더(존재 확인 통과분). 값 이름은 영속 키와 함께 유지하되 의미는
+#: 「지난 세션의 기억」이 아니라 **지금 설정된 값**으로 승격됐다.
 SOURCE_REMEMBERED = "remembered"
-#: 템플릿 옆 ``Results`` — 아무것도 정해지지 않았을 때의 기본값.
+#: 템플릿 옆 ``Results`` — 아무것도 설정되지 않았을 때의 기본값.
 SOURCE_TEMPLATE_DEFAULT = "template_default"
 #: 도출 불가(템플릿 경로 부재 등) — 저장 폴더를 정할 재료가 없다.
 SOURCE_NONE = ""
 
 #: 출처의 사용자 문안. 표면은 이 라벨을 그대로 그린다(재조립 금지).
 SOURCE_LABELS: "dict[str, str]" = {
-    SOURCE_EXPLICIT: "직접 지정",
-    SOURCE_REMEMBERED: "기억한 폴더",
+    SOURCE_REMEMBERED: "설정한 저장 폴더",
     SOURCE_TEMPLATE_DEFAULT: "기본값",
 }
 
 _REMEMBERED_MISSING_WITH_FALLBACK = (
-    "지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."
+    "설정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."
 )
 _REMEMBERED_MISSING_WITHOUT_FALLBACK = (
-    "지난번에 지정한 저장 폴더를 찾을 수 없습니다. 저장 폴더를 선택하세요."
+    "설정한 저장 폴더를 찾을 수 없습니다. 설정에서 저장 폴더를 선택하세요."
 )
 
 
@@ -85,20 +87,17 @@ class OutputFolderResolution:
 
 def resolve_output_folder(
     *,
-    explicit_directory: str = "",
     remembered_directory: str = "",
     remembered_exists: bool = False,
     template_path: str = "",
 ) -> OutputFolderResolution:
-    """저장 폴더 도출 — ① 이 세션의 명시 지정 ② 기억한 지정 ③ 템플릿 옆 ``Results``.
+    """저장 폴더 도출 — ① 설정한 전역 저장 폴더 ② 템플릿 옆 ``Results``.
 
-    ②는 **존재 확인을 통과할 때만** 산다. 사라진 폴더를 조용히 쓰면 생성이 뒤늦게 실패하거나
+    ①은 **존재 확인을 통과할 때만** 산다. 사라진 폴더를 조용히 쓰면 생성이 뒤늦게 실패하거나
     사용자가 모르는 자리에 문서가 떨어진다 — 기본값으로 내리고 ``notice`` 로 사유를 남긴다.
-    셋 다 재료가 없으면(템플릿 경로 부재·전체 경로 아님) ``directory=""`` 로 **도출 불가**를
+    둘 다 재료가 없으면(템플릿 경로 부재·전체 경로 아님) ``directory=""`` 로 **도출 불가**를
     진술한다 — 그때만 저장 폴더 지정이 생성의 전제조건으로 남는다.
     """
-    if explicit_directory:
-        return OutputFolderResolution(explicit_directory, SOURCE_EXPLICIT)
     fallback = default_output_directory(template_path)
     if not _is_full_path(fallback):
         # 전체 경로가 아니면 어디를 가리키는지 실행 시점에 결정된다 — 기본값으로 세우지 않고

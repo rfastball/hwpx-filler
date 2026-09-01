@@ -915,10 +915,10 @@ class TestWebSelftestGate:
         assert j["tbl_rows_order"] == ["1", "0"], (
             f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
         )
-        # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않고(파일명·폴더 정의 불가 = 과진술),
-        # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
+        # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않는다(파일명·폴더 정의 불가 = 과진술).
+        # 곁에 섰던 「저장 폴더 선택 비활성」 단언은 함께 죽었다: 저장 폴더가 작업 속성이 아니라
+        # 전역 설정이 되면서 이 화면에는 고르는 동사가 없고, 작업 미선택에서의 지정도 유효하다.
         assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
-        assert j["folder_pick_disabled"] is True, "prework 상태에서 폴더 선택이 열려 있습니다."
 
     def test_job_candidate_ranking_renders_stars_suggestion_and_overflow(
         self, selftest_result: dict

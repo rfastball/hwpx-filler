@@ -20,7 +20,7 @@ import type { JobContentSelectionController } from "./job_content_selection.ts";
 import { JobArtifactSheet } from "./job_artifact.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
-  JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
+  JobActionBar, JobMirrorZone, JobOutFolderLine, JobPreflight, JobRestate, JobRunCap,
   JobTemplateChange, JobWorkbenchStatus,
   JobStatusPill,
 } from "./job_run.ts";
@@ -154,8 +154,8 @@ function JobScreen(
               h("div", { className: "zone" },
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),
-                h("div", { className: "run-row", id: "jobOutRow" },
-                  h(JobOutRow as any, { controller: jobRun })),
+                h("div", { className: "run-row", id: "jobOutFolderRow" },
+                  h(JobOutFolderLine as any, { controller: jobRun })),
                 h("div", { className: "defblk", id: "jobRestate" },
                   h(JobRestate as any, { controller: jobRun })))))),
         h("div", { className: "session-actionbar", id: "jobActionBar" },

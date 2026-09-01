@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from _output_folder_pick import pick_output_folder
+
 from hwpxfiller.application.document_creation_vocabulary import (
     DEFAULT_COLLISION_POLICY,
 )
@@ -140,6 +142,15 @@ def _controller(
 
 def _zone(ctrl) -> dict:
     return ctrl._workbench_observation_zone(tmissing=False)
+
+
+def _folder(ctrl) -> dict:
+    """저장 폴더 도출 — 스냅샷 **최상위**다(작업대 존이 아니다).
+
+    전역화 전에는 이 값이 관리 축 작업대 존에만 실려서 작업이 없으면 답이 없었다. 저장
+    폴더가 앱 설정이 된 뒤로는 작업 유무·관찰 성패와 무관한 사실이라 최상위가 진다.
+    """
+    return ctrl.snapshot()["output_folder"]
 
 
 # ── 확인 증거 없음 → NO_EVIDENCE(정직한 disabled) ─────────────────────────────────────────────
@@ -475,12 +486,13 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
     tmp_path: Path,
 ) -> None:
     ctrl, out = _delivery_controller(tmp_path)
-    legacy_out = ctrl.out_dir
 
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     zone = _zone(ctrl)
-    assert ctrl.out_dir == legacy_out
+    # 두 축이 **같은 도출**을 지난다(전역화) — 종전 이 자리는 구식 축이 그대로 두는 것을
+    # 쟀고, 그 갈라짐이 「고른 폴더가 갈래에 따라 무시된다」(#905)의 자리였다.
+    assert ctrl.out_dir == str(out)
     assert zone["run_delivery_intent"] == {
         "output_directory": str(out),
         "collision_policy": DEFAULT_COLLISION_POLICY,
@@ -529,8 +541,7 @@ def test_unset_output_folder_defaults_beside_the_template_and_says_so(
 
     zone = _zone(ctrl)
 
-    assert ctrl._run_delivery_intent is None  # 세션 명시 지정은 여전히 없다
-    assert zone["output_folder"] == {
+    assert _folder(ctrl) == {
         "directory": str(results),
         "source": "template_default",
         "source_label": "기본값",
@@ -547,6 +558,8 @@ def test_unset_output_folder_defaults_beside_the_template_and_says_so(
         "공고서-20260818-002.hwpx",
     ]
     assert not results.exists()  # 관찰은 폴더를 만들지 않는다
+    # 존은 더 이상 저장 폴더를 싣지 않는다 — 작업 유무와 무관한 사실이라 최상위가 진다.
+    assert "output_folder" not in zone
 
 
 def test_collision_policy_is_the_fixed_default_and_has_no_selector(tmp_path: Path) -> None:
@@ -564,8 +577,7 @@ def test_collision_policy_is_the_fixed_default_and_has_no_selector(tmp_path: Pat
         "collision_policy": DEFAULT_COLLISION_POLICY,
     }
     assert DEFAULT_COLLISION_POLICY == "OVERWRITE_EXPLICIT"
-    assert zone["output_folder"]["source"] == "template_default"
-    assert ctrl._run_delivery_intent is None
+    assert _folder(ctrl)["source"] == "template_default"
 
     with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):
         ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
@@ -573,63 +585,105 @@ def test_collision_policy_is_the_fixed_default_and_has_no_selector(tmp_path: Pat
         ctrl.dispatch("refresh_delivery", {})
 
 
-def test_explicit_pick_wins_and_is_remembered_for_the_next_session(
+def test_a_pick_becomes_the_global_setting_and_the_used_folder(
     tmp_path: Path,
 ) -> None:
+    """고른 폴더는 **전역 설정**이 되고 그대로 쓰인다 — 세션 명시 지정 축은 없다."""
     ctrl, results = _sited_delivery_controller(tmp_path)
-    picked = tmp_path / "직접-고른-폴더"
-    picked.mkdir()
+    picked = tmp_path / "고른-폴더"
 
-    ctrl.set_output_folder(str(picked))
+    pick_output_folder(ctrl, picked)
 
     zone = _zone(ctrl)
-    assert zone["output_folder"] == {
+    assert _folder(ctrl) == {
         "directory": str(picked),
-        "source": "explicit",
-        "source_label": "직접 지정",
+        "source": "remembered",
+        "source_label": "설정한 저장 폴더",
         "notice": "",
     }
     assert zone["run_delivery_intent"]["output_directory"] == str(picked)
     assert str(results) not in str(zone["run_delivery_intent"])
-    # 기억은 설정 층 소유다 — 다음 세션의 도출 재료.
+    # 영속은 설정 층 소유다 — 같은 값이 다음 부팅의 도출 재료다.
     assert load_last_output_directory() == str(picked)
 
 
-def test_remembered_folder_is_restored_as_the_default_on_a_new_controller(
+def test_both_axes_derive_the_same_folder(tmp_path: Path) -> None:
+    """관리 축(delivery intent)과 구식 축(``out_dir``)이 **같은 도출**을 지난다.
+
+    갈라져 있던 동안 이 자리는 「고른 폴더가 갈래에 따라 조용히 무시된다」(#905)를 만들었다.
+    """
+    ctrl, _results = _sited_delivery_controller(tmp_path)
+    picked = tmp_path / "양-축-같은-폴더"
+
+    pick_output_folder(ctrl, picked)
+
+    assert ctrl.out_dir == str(picked)
+    assert _zone(ctrl)["run_delivery_intent"]["output_directory"] == str(picked)
+    assert _folder(ctrl)["directory"] == str(picked)
+
+
+def test_a_pick_without_a_seated_work_is_valid_and_survives_seating(
     tmp_path: Path,
 ) -> None:
-    """재시작(새 컨트롤러) — 세션 명시 지정은 없지만 기억한 폴더가 기본값으로 산다."""
-    remembered = tmp_path / "지난번-폴더"
+    """**작업 미선택 상태의 지정이 유효하다** — 전역화가 바꾼 계약의 한복판.
+
+    종전에는 저장 폴더가 작업 속성이라 작업이 앉는 순간 템플릿 옆 기본값이 그것을 조용히
+    덮었다(그래서 화면이 작업 미선택에서 폴더 선택을 잠갔다). 지금은 설정이라 앉기 전에
+    골라도 살고, 작업이 앉아도 덮이지 않는다.
+    """
+    template = tmp_path / "서고" / "managed.hwpx"
+    template.parent.mkdir(parents=True, exist_ok=True)
+    ctrl = _controller(tmp_path, with_binding=True, template_path=str(template))
+    assert ctrl.vm is None  # 아직 아무 작업도 앉지 않았다
+    picked = tmp_path / "작업-전에-고른-폴더"
+
+    pick_output_folder(ctrl, picked)
+
+    assert _folder(ctrl)["directory"] == str(picked)
+    assert ctrl.out_dir == str(picked)
+    assert ctrl.snapshot()["output_folder"]["directory"] == str(picked)
+
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    assert ctrl.out_dir == str(picked)
+    assert _folder(ctrl)["source"] == "remembered"
+
+
+def test_the_setting_is_restored_as_the_folder_on_a_new_controller(
+    tmp_path: Path,
+) -> None:
+    """재시작(새 컨트롤러) — 설정한 폴더가 그대로 선다."""
+    remembered = tmp_path / "설정한-폴더"
     remembered.mkdir()
     save_last_output_directory(str(remembered))
 
     ctrl, _results = _sited_delivery_controller(tmp_path)
 
     zone = _zone(ctrl)
-    assert zone["output_folder"] == {
+    assert _folder(ctrl) == {
         "directory": str(remembered),
         "source": "remembered",
-        "source_label": "기억한 폴더",
+        "source_label": "설정한 저장 폴더",
         "notice": "",
     }
     assert zone["run_delivery_intent"]["output_directory"] == str(remembered)
     assert zone["delivery"]["resolvable"] is True
 
 
-def test_vanished_remembered_folder_falls_back_loudly_not_silently(
+def test_vanished_setting_falls_back_loudly_not_silently(
     tmp_path: Path,
 ) -> None:
     save_last_output_directory(str(tmp_path / "사라진-폴더"))
 
     ctrl, results = _sited_delivery_controller(tmp_path)
 
-    zone = _zone(ctrl)
-    assert zone["output_folder"]["directory"] == str(results)
-    assert zone["output_folder"]["source"] == "template_default"
-    assert zone["output_folder"]["notice"] == (
-        "지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."
+    folder = _folder(ctrl)
+    assert folder["directory"] == str(results)
+    assert folder["source"] == "template_default"
+    assert folder["notice"] == (
+        "설정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."
     )
-    assert zone["delivery"]["resolvable"] is True
+    assert _zone(ctrl)["delivery"]["resolvable"] is True
 
 
 def test_underivable_default_keeps_the_output_directory_requirement(
@@ -639,7 +693,7 @@ def test_underivable_default_keeps_the_output_directory_requirement(
     ctrl, _out = _delivery_controller(tmp_path)  # template_path 는 상대 경로
 
     zone = _zone(ctrl)
-    assert zone["output_folder"] == {
+    assert _folder(ctrl) == {
         "directory": "",
         "source": "",
         "source_label": "",
@@ -661,20 +715,20 @@ def test_underivable_default_keeps_the_output_directory_requirement(
     }
 
 
-def test_releasing_the_work_drops_the_explicit_pick_but_not_the_memory(
+def test_releasing_the_work_keeps_the_global_folder(
     tmp_path: Path,
 ) -> None:
-    """명시 지정 소거 규약은 그대로. 기억은 설정에 남아 다음 도출에서 다시 후보가 된다."""
+    """작업을 놓아도 저장 폴더는 산다 — 세션 값이 아니라 설정이기 때문이다."""
     ctrl, _results = _sited_delivery_controller(tmp_path)
     picked = tmp_path / "고른-폴더"
-    picked.mkdir()
-    ctrl.set_output_folder(str(picked))
+    pick_output_folder(ctrl, picked)
 
     ctrl.dispatch("select_job", {"name": ""})
 
-    assert ctrl._run_delivery_intent is None
     assert ctrl._run_delivery_collision == DEFAULT_COLLISION_POLICY
     assert load_last_output_directory() == str(picked)
+    assert ctrl.out_dir == str(picked)
+    assert _folder(ctrl)["directory"] == str(picked)
 
 
 def test_managed_generation_creates_the_derived_default_folder(
@@ -733,7 +787,7 @@ def test_managed_overwrite_needs_confirmation_before_anything_is_written(
     """
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     _zone(ctrl)
 
     ran: list = []
@@ -761,7 +815,7 @@ def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
     """
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     asked = ctrl.generate(run_token="tk-1")
     assert asked["needs_overwrite"] is True
     prep_before = ctrl._current_delivery_preparation
@@ -802,7 +856,7 @@ def test_managed_overwrite_confirmation_is_refused_when_the_zone_moved(
     """
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     assert ctrl.generate(run_token="tk-1")["needs_overwrite"] is True
 
     ran: list = []
@@ -822,7 +876,7 @@ def test_managed_run_without_any_overwrite_never_asks(
 ) -> None:
     """음성 대조 — 파괴가 없으면 확인 왕복 자체가 없다(과경고 금지)."""
     ctrl, out = _delivery_controller(tmp_path)
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     monkeypatch.setattr(
         sj, "run_managed_generation",
@@ -843,7 +897,7 @@ def test_non_regular_collision_keeps_delivery_ahead_of_the_run(tmp_path: Path) -
     """
     ctrl, out = _delivery_controller(tmp_path)
     (out / "공고서-20260818-001.hwpx").mkdir()
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     zone = _zone(ctrl)
     assert zone["primary_action"] == "REVIEW_DELIVERY"
@@ -857,7 +911,7 @@ def test_delivery_intent_changes_reuse_record_preparation(
     ctrl, first_out = _delivery_controller(tmp_path)
     second_out = tmp_path / "delivery-2"
     second_out.mkdir()
-    ctrl.set_output_folder(str(first_out))
+    pick_output_folder(ctrl, first_out)
     _zone(ctrl)
     record_preparation = ctrl._current_record_preparation
     assert record_preparation is not None
@@ -867,10 +921,10 @@ def test_delivery_intent_changes_reuse_record_preparation(
         "validate_data_records_against_current_value",
         lambda **_kwargs: pytest.fail("delivery change reran record validation"),
     )
-    ctrl.set_output_folder(str(second_out))
+    pick_output_folder(ctrl, second_out)
     _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
-    ctrl.set_output_folder(str(second_out))
+    pick_output_folder(ctrl, second_out)
     _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
 
@@ -879,7 +933,7 @@ def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) ->
     ctrl, first_out = _delivery_controller(tmp_path)
     second_out = tmp_path / "delivery-2"
     second_out.mkdir()
-    ctrl.set_output_folder(str(first_out))
+    pick_output_folder(ctrl, first_out)
     calls = 0
 
     def counting_clock() -> datetime:
@@ -888,10 +942,10 @@ def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) ->
         return NOW
 
     ctrl._clock = counting_clock
-    ctrl._run_delivery_intent = dataclasses.replace(
-        ctrl._run_delivery_intent, output_directory=str(second_out)
-    )
-    ctrl._current_delivery_preparation = None
+    # 폴더를 갈면 preparation 이 무효화된다(그것이 재관찰의 전이다) — 종전에는 세션 intent 를
+    # 직접 갈아끼우고 무효화도 손으로 했다. 전역화 뒤에는 지정 자체가 그 둘을 다 한다.
+    pick_output_folder(ctrl, second_out)
+    assert ctrl._current_delivery_preparation is None
     record_validation, context = ctrl._current_record_validation()
     assert context is None
     calls = 0
@@ -901,7 +955,7 @@ def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) ->
     ctrl._current_delivery(record_validation)
     assert calls == 1
     assert ctrl._current_delivery_preparation is prepared
-    ctrl.set_output_folder(str(second_out))
+    pick_output_folder(ctrl, first_out)
     assert ctrl._current_delivery_preparation is not prepared
 
 
@@ -921,7 +975,7 @@ def test_delivery_occupancy_is_read_only_and_name_conflicts_are_not_blockers(
     second_existing.write_text("existing", encoding="utf-8")
     before = tuple(item.name for item in out.iterdir())
 
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     zone = _zone(ctrl)
     assert zone["delivery"]["resolvable"] is True
     assert zone["delivery"]["blockers"] == []
@@ -949,7 +1003,7 @@ def test_directory_collision_blocks_explicit_overwrite_with_exact_path(tmp_path:
     conflict = out / "공고서-20260818-001.hwpx"
     conflict.mkdir()
 
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     zone = _zone(ctrl)
 
     assert zone["delivery"]["resolvable"] is False
@@ -1028,7 +1082,11 @@ def test_inactive_filename_uses_frozen_record_without_source_reread(
     record_validation, context = ctrl._current_record_validation()
     assert context is None
     ctrl.datasource = NoReadSource()
-    ctrl._run_delivery_intent = RunDeliveryIntent(str(out))
+    # 설정 층을 직접 세운다 — `set_output_folder` 는 push 를 동반하고, 이 대역은 **어떤**
+    # 속성 접근에도 폭발하도록 만들어졌기 때문이다(재읽기 0 을 재는 것이 이 테스트의 축).
+    # 전역화 전 이 자리는 같은 이유로 세션 intent 를 직접 대입했다.
+    save_last_output_directory(str(out))
+    ctrl._remembered_output_directory = str(out)
 
     delivery, context = ctrl._current_delivery(record_validation)
     assert context is None
@@ -1038,17 +1096,30 @@ def test_inactive_filename_uses_frozen_record_without_source_reread(
     )
 
 
-def test_delivery_unreadable_directory_is_loud_and_never_created(tmp_path: Path) -> None:
-    ctrl, _out = _delivery_controller(tmp_path)
-    missing = tmp_path / "missing-output"
+def test_delivery_unreadable_directory_is_loud_and_never_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """설정한 저장 폴더를 **읽을 수 없으면** 시끄럽게 멈춘다 — 관용은 기본값에만 있다.
 
-    ctrl.set_output_folder(str(missing))
+    전역화가 바꾼 것은 이 상태에 닿는 길이다. 종전에는 없는 경로를 세션 명시 지정으로
+    꽂을 수 있어 「부재」로 이 자리에 닿았지만, 지금 설정값은 존재 확인을 통과해야 도출에
+    서므로 부재로는 못 닿는다. 남은 길이 원래 이름이 말하던 것이다: 폴더는 있는데 목록을
+    읽을 수 없는 경우(권한·잠김). 그때 조용히 빈 점유로 넘어가면 계획이 거짓이 된다.
+    """
+    ctrl, _out = _delivery_controller(tmp_path)
+    picked = tmp_path / "읽을-수-없는-출력-폴더"
+    pick_output_folder(ctrl, picked)
+    assert ctrl.out_dir == str(picked)
+
+    def refuse_listing(_self):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(Path, "iterdir", refuse_listing)
     zone = _zone(ctrl)
 
     assert zone["kind"] == "context_error"
     assert zone["code"] == "PATH_OCCUPANCY_OBSERVATION_FAILED"
     assert zone["detail"] == "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
-    assert not missing.exists()
 
 
 def test_stale_projects_backend_execution_action_when_it_is_primary(
@@ -1169,7 +1240,7 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     ctrl.vm.set_acquired(ctrl.datasource, rows)
     out = tmp_path / "delivery"
     out.mkdir()
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     captured: dict = {}
 
@@ -1236,7 +1307,7 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
     ctrl.vm.set_acquired(ctrl.datasource, rows)
     out = tmp_path / "delivery"
     out.mkdir()
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     delivered = (
         DeliveredDocument(0, "rec-0", "a.hwpx", str(out / "a.hwpx"),
@@ -1559,8 +1630,10 @@ def test_zone_surfaces_value_error_integrity_failure_as_context_error(
     assert zone["user_fixable"] is False
     assert zone["primary_action"] == "RECOVER_CONTEXT"
     assert zone["create_action"]["enabled"] is False
-    # 저장 폴더 사실은 관찰이 무너져도 실린다(U3-06 #879 계약 유지).
-    assert "output_folder" in zone
+    # 저장 폴더 사실은 관찰이 무너져도 실린다(U3-06 #879 계약 유지) — 다만 그 자리는
+    # 존이 아니라 스냅샷 최상위다(전역화: 작업 유무·관찰 성패와 무관한 사실이라서).
+    assert "output_folder" not in zone
+    assert "output_folder" in ctrl.snapshot()
 
 
 def test_zone_surfaces_non_value_error_integrity_failure_without_killing_snapshot(

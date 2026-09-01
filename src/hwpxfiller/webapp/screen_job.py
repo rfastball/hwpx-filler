@@ -105,9 +105,8 @@ from ..domain.job import (
 from ..domain.mapping import SOURCE_CARRIER_TYPES
 from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨은 내부 이름을 안 든다
 from ..domain.output_folder_default import (
-    SOURCE_EXPLICIT as OUTPUT_FOLDER_SOURCE_EXPLICIT,
+    SOURCE_REMEMBERED as OUTPUT_FOLDER_SOURCE_SETTING,
     OutputFolderResolution,
-    default_output_directory,
     resolve_output_folder,
 )
 from ..gui.filter_state import (
@@ -561,16 +560,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 트리거를 아래 `_maybe_auto_check` 로 배선한다(수동 seal 버튼 0).
         self._session_orchestration = AutomaticSealOrchestration()
         self._current_record_preparation: _CurrentRecordPreparation | None = None
-        self._run_delivery_intent: RunDeliveryIntent | None = None
-        # 세션 충돌 처리(U3-06 #879) — 저장 폴더 **명시 지정과 독립**이라 폴더를 안 고른
-        # 세션에도 선다. 사용자가 고르는 값이 아니게 된 뒤(U4 계열2-27)에도 세션 축에 남는
-        # 이유는 그대로다: 여기서 intent 를 물질화하면 도출된 기본값이 '직접 지정'으로
-        # 승격돼 화면이 출처를 잘못 말한다. 명시 지정과 함께 소거된다.
+        # 세션 충돌 처리(U3-06 #879) — 저장 폴더와 **독립한 축**이다. 사용자가 고르는 값이
+        # 아니게 된 뒤(U4 계열2-27)에도 세션 값으로 남고, 작업 해제에서 기본값으로 돌아간다.
         self._run_delivery_collision = DEFAULT_COLLISION_POLICY
-        # 마지막 **명시 지정** 저장 폴더(U3-06 #879) — 설정 층 소유의 기본값 재료다.
-        # session-scoped `_run_delivery_intent` 의 수명 규약(작업 전환·해제에서 소거)은 그대로고,
-        # 이 값은 그 소거 뒤에도 살아 다음 도출에서 다시 후보가 된다. 부팅 1회 판독 —
-        # 앱은 홈당 단일 인스턴스라 이 값을 바꾸는 것은 아래 `set_output_folder` 뿐이다.
+        # **전역 저장 폴더**(U3-06 #879 → 전역화) — 설정 층 소유의 도출 재료다. 종전 이 자리
+        # 위에는 session-scoped 명시 지정(`_run_delivery_intent`)이 한 층 더 있었고 작업
+        # 전환·해제에서 소거됐다. 저장 폴더가 작업이 아니라 앱의 설정이 되면서 그 층이
+        # 걷혔으므로 지금 축은 이 값 하나다. 부팅 1회 판독 — 앱은 홈당 단일 인스턴스라 이
+        # 값을 바꾸는 것은 아래 `set_output_folder` 뿐이다.
         self._remembered_output_directory = load_last_output_directory()
         # 마지막으로 **성사된** 데이터 마운트 성분(U3-07 #880) — 부팅 자동 마운트의 재료.
         # 저장 폴더 기억과 같은 설정 층이고 같은 이유로 부팅 1회 판독이다(앱은 홈당 단일
@@ -707,7 +704,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_label = ""
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.data_pool_key = ""  # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
-        self.out_dir = ""
+        # 저장 폴더는 부팅 시점부터 값이 있다 — 전역 설정이라 작업이 앉기를 기다리지 않는다.
+        # 세우는 자리가 넷(부팅·착석·해제·설정 변경)이어도 도출은 하나를 지난다.
+        self.out_dir = self._output_folder_resolution().directory
         # 표시용 날짜 토큰의 기준 시각 — **스냅샷당 1회** 캡처한다(#957). 한 스냅샷 안의
         # 소비처(게이트 감사·표 「문서」 열·이름 계획)가 같은 시각을 말하게 하는 값이고,
         # 생성은 이 값을 소비하지 않는다: 실행은 진입 시점에 자기 시각을 1회 캡처한다.
@@ -1496,6 +1495,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "filter_active": False, "filter_parts": 0,
             },
             "out_dir": self.out_dir,
+            # 저장 폴더 도출은 **작업 유무와 무관하게 상시** 실린다(전역화) — 설정 모달이
+            # 이 값을 읽고, 작업 화면의 두 갈래(managed·구식)도 여기서만 읽는다. 종전에는
+            # 관리 축의 작업대 존에만 실려 작업이 없으면 답이 없었다.
+            "output_folder": self._output_folder_dict(),
             # 전체 표시순서 축(§18.10). 값은 데이터 귀속이라 작업 미선택 상태에서도 실린다
             # — 축은 데이터의 성질이지 작업의 성질이 아니다. (옆 상시 재진술 `order_note` 는
             # 간소화 라운드에서 걷혔다: 표가 그리는 순서가 곧 생성 순서라는 사실은 스위치
@@ -2142,21 +2145,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             and self._same_work_snapshot(seated, restored)
         )
 
-    # ── 저장 폴더 도출(U3-06 · #879) ────────────────────────────────────────────
+    # ── 저장 폴더 도출(U3-06 · #879 → 전역화) ────────────────────────────────────
     def _output_folder_resolution(self) -> OutputFolderResolution:
-        """실제로 쓸 저장 폴더 + 출처 + 사유 — ① 세션 명시 지정 ② 기억한 지정 ③ 템플릿 옆 Results.
+        """실제로 쓸 저장 폴더 + 출처 + 사유 — ① 설정한 전역 폴더 ② 템플릿 옆 Results.
 
         판정은 링0 순수 함수(:func:`resolve_output_folder`)가 지고 이 메서드는 **관찰만** 한다:
-        기억한 폴더가 지금도 있는지는 파일 시스템이 답한다. 도출 결과는 스냅샷에 실려 저장 폴더
-        구획·생성 예정 문서 계획에 그대로 표시된다 — 조용한 추측이 아니라 표시된 기본값이다.
+        설정한 폴더가 지금도 있는지는 파일 시스템이 답한다. 도출 결과는 스냅샷에 실려 저장 폴더
+        표시·생성 예정 문서 계획·설정 모달에 그대로 나간다 — 조용한 추측이 아니라 표시된 값이다.
+
+        **도출의 단일 출입구다.** managed 축의 delivery intent 도, 구식 축의 ``out_dir`` 도
+        여기를 지나야 한다 — 한쪽만 다른 자리에서 경로를 조립하면 두 축이 같은 상태를 두
+        답으로 말한다(그것이 종전 세션 명시 지정 축에서 실제로 샜던 자리다).
         """
         remembered = self._remembered_output_directory
         return resolve_output_folder(
-            explicit_directory=(
-                self._run_delivery_intent.output_directory
-                if self._run_delivery_intent is not None
-                else ""
-            ),
             remembered_directory=remembered,
             remembered_exists=bool(remembered) and Path(remembered).is_dir(),
             template_path=(
@@ -2169,7 +2171,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         도출조차 불가능한 경우(템플릿 경로 부재)만 intent 가 ``None`` 이고, 그때만 저장 폴더
         지정이 생성의 전제조건으로 남는다. 충돌 처리는 세션 선언을 그대로 싣는다 — 여기서
-        durable state 를 만들지 않는다(intent 수명 규약 불변).
+        durable state 를 만들지 않는다(intent 수명 규약 불변). intent 는 **매번 도출에서
+        물질화**된다: 세션이 들고 있던 명시 지정 축은 전역화로 사라졌다.
         """
         resolution = self._output_folder_resolution()
         if not resolution.resolved:
@@ -2194,31 +2197,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
 
     def set_output_folder(self, path: str) -> None:
-        """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06).
+        """네이티브 폴더 피커가 고른 **전역** 저장 폴더를 세운다.
 
-        **명시 지정은 기억된다**(U3-06 #879): 다음 세션의 도출 후보로 설정에 남긴다. 영속 실패는
-        삼키지 않고 위층(브리지)이 ``ERROR:`` 로 되돌린다 — 다만 이번 세션의 선택은 이미 유효하고
-        화면도 그것을 그려야 하므로, 적용·push 를 끝낸 뒤에 던진다.
+        **작업 미선택 상태에서도 유효하다.** 이것이 전역화가 바꾼 계약이다: 종전에는 저장
+        폴더가 작업 속성이라 작업이 앉기 전에 고르면 작업 선택이 기본값으로 조용히 덮어썼고,
+        그래서 화면은 작업이 없을 때 폴더 선택을 잠갔다. 지금 이 값은 설정이라 앉은 작업이
+        없어도 쓸 수 있고, 작업이 나중에 앉아도 덮이지 않는다 — 그래서 이 동사의 자리도
+        작업 화면이 아니라 **설정 모달**이다.
 
-        갈래는 **표면이 그것을 어디서 읽는가**와 같은 축이다(#905): managed 면은 delivery
-        intent(→ ``output_folder`` 존)를, legacy 면은 ``out_dir`` 를 읽는다. 축이 `bool(authority_id)`
-        에 남아 있던 동안 발급된 slotless 작업의 지정은 intent 로 들어가 legacy 생성이 보는
-        ``out_dir`` 를 그대로 두었다 — 사용자가 고른 폴더가 조용히 무시되던 자리다.
+        갈래별 분기도 없다: managed 면의 delivery intent 도 구식 축의 ``out_dir`` 도 같은
+        도출(:meth:`_output_folder_resolution`)을 지나므로, 여기서 할 일은 설정값을 갈고
+        도출을 다시 세우는 것뿐이다(종전 #905 의 「고른 폴더가 갈래에 따라 조용히 무시된다」는
+        축 자체가 사라졌다).
+
+        영속 실패는 삼키지 않고 위층(브리지)이 ``ERROR:`` 로 되돌린다 — 다만 이번 선택은 이미
+        메모리에 유효하고 화면도 그것을 그려야 하므로, 재도출·push 를 끝낸 뒤에 던진다.
         """
-        if self._seat_is_managed_hwpx():
-            self._run_delivery_intent = RunDeliveryIntent(
-                path, self._run_delivery_collision
-            )
-            self._current_delivery_preparation = None
-        else:
-            self.out_dir = path
+        # delivery preparation 은 폴더에 매인 관찰이다 — 폴더가 갈리면 무효다(재관찰 유발).
+        self._current_delivery_preparation = None
         try:
             self._remember_output_folder(path)
         finally:
+            self.out_dir = self._output_folder_resolution().directory
             self._push()
 
     def _remember_output_folder(self, path: str) -> None:
-        """마지막 명시 지정을 설정에 남긴다 — 다음 세션 도출의 후보 ②.
+        """전역 저장 폴더를 설정에 남긴다 — 도출 후보 ①.
 
         자동으로 잡힌 기본값은 지나가지 않는다(이 메서드의 호출자는 폴더 피커 경로 하나다).
         """
@@ -2599,9 +2603,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 명시 규칙으로 환원).
             if self.filter is not None and not self.filter.is_active():
                 self._init_filter()
-        # 기본 저장 폴더는 두 축이 **같은 함수**를 본다(U3-06 #879) — 관리 축의 도출
-        # 우선순위 ③도 이 값이라, 여기서 경로를 다시 조립하면 한쪽만 늙는다.
-        self.out_dir = default_output_directory(job.template_path)
+        # 저장 폴더는 두 축이 **같은 도출**을 지난다(U3-06 #879 → 전역화) — 여기서 템플릿 옆
+        # 기본값을 직접 조립하면 설정한 전역 폴더가 작업 선택에서 조용히 덮인다(그것이 종전
+        # 이 줄의 실제 거동이었고, 전역화가 지운 결함이다).
+        self.out_dir = self._output_folder_resolution().directory
         # **최초 준비는 선택이 진다**(#932 B5). 종전에는 이름이 전혀 다른 「변경사항 확인」
         # 단추가 그 겸직을 졌고, 그래서 갓 저장한 작업은 그걸 누르기 전까지 「포함할 내용」이
         # 서지 않았다 — 구간이 서려면 준비가 필요하고 생성이 열리려면 구간이 필요한 교착이라
@@ -2624,14 +2629,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._discard_active_work_session_evidence()
         self.vm = None
         self._seated_template_application_id = None
-        self._run_delivery_intent = None
-        # 명시 지정과 함께 선다·죽는다(U3-06 #879). 기억은 설정에 남아 다음 도출에서 다시 산다.
+        # 충돌 처리는 세션 축이라 작업 해제에서 기본값으로 돌아간다. 저장 폴더는 **같이 죽지
+        # 않는다** — 전역 설정이라 작업이 없어도 값이 서 있고, 아래 재도출이 그것을 말한다.
         self._run_delivery_collision = DEFAULT_COLLISION_POLICY
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
         self.job_data_unbound = False  # 작업이 없으면 물을 대상 자체가 없다
-        self.out_dir = ""
+        # 템플릿이 사라졌으므로 기본값 ②는 도출 불가가 되지만, 설정한 전역 폴더는 그대로
+        # 산다 — 같은 함수를 지나 그 사실이 반영된다(여기서 ``""`` 로 지우지 않는다).
+        self.out_dir = self._output_folder_resolution().directory
         self._last_failed = []
 
     def _release_changed_active_work(self, reason: str) -> None:
@@ -4019,16 +4026,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         projection = response.current_view.projection
         return projection is not None and bool(projection.slots)
 
-    def _seat_is_managed_hwpx(self) -> bool:
-        """착석한 실행뷰가 managed 갈래인가 — 명령 좌표들의 단일 술어(#905).
-
-        :meth:`_is_managed_hwpx_work` 를 그대로 부른다. 별도 메서드인 이유는 판정이 아니라
-        **가드의 결속**이다: 명령 좌표(저장 폴더 지정 등)는 스냅샷·실행 분기와
-        달리 `job` 을 손에 들고 있지 않아 `self.vm is not None and …` 을 각자 앞세워야 했고,
-        그 두 줄이 세 자리에 복제되면 다음에 축이 바뀔 때 또 일부만 따라온다(S6-05 가 정확히
-        그렇게 세 좌표를 남겼다). 실행뷰가 없으면(TXT·미선택) managed 갈래도 없다.
-        """
-        return self.vm is not None and self._is_managed_hwpx_work(self.vm.job)
+    # `_seat_is_managed_hwpx` 는 여기 있었다(#905) — 명령 좌표가 managed 갈래인지 묻는 술어였고
+    # 유일한 소비자가 `set_output_folder` 의 갈래 분기였다. 저장 폴더가 전역화되면서 그 분기
+    # 자체가 사라져 소비자 0 이 됐으므로 함께 걷는다(되살릴 일이 생기면 `_is_managed_hwpx_work`
+    # 가 그대로 있다).
 
     def _slot_configuration_zone(self, tmissing: bool) -> dict:
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
@@ -4103,9 +4104,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 context_error_code(exc), str(exc) or "현재 실행 맥락을 복원하지 못했습니다"
             )
         return {
-            # 저장 폴더 도출은 observation 축과 무관하게 늘 실린다(U3-06 #879) — context error
-            # 로 관찰이 무너져도 "어디에 저장되는가"는 답할 수 있는 사실이다.
-            "output_folder": self._output_folder_dict(),
+            # 저장 폴더 도출은 이 존에 없다(전역화) — 스냅샷 **최상위**의 `output_folder` 가
+            # 그 자리다. observation 축과 무관하게 늘 실려야 한다는 U3-06 #879 의 이유는
+            # 그대로이고(context error 로 관찰이 무너져도 "어디에 저장되는가"는 답할 수 있다),
+            # 지금은 작업 유무와도 무관해야 해서 존이 아니라 최상위가 그것을 진다.
             "supported": True,
             **self._serialize_observation(observation),
         }
@@ -4949,8 +4951,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """저장 폴더의 현재 점유 관찰. 폴더를 만들지 않는다(관찰은 관찰이다).
 
         ``allow_missing`` 은 **도출한 기본값**에만 선다(U3-06 #879): 아직 없는 폴더는 점유가
-        비어 있다는 사실이고, 그 폴더는 생성이 만든다. 그 밖의 판독 실패(권한·잠김)와 사용자가
-        직접 고른 폴더의 부재는 이 완화를 받지 않는다.
+        비어 있다는 사실이고, 그 폴더는 생성이 만든다. 그 밖의 판독 실패(권한·잠김)는 이 완화를
+        받지 않는다 — 설정한 저장 폴더는 도출이 이미 존재를 확인했으므로, 여기서 읽히지 않는
+        것은 「아직 없다」가 아니라 「읽을 수 없다」다.
         """
         root = Path(intent.output_directory)
         if not root.is_absolute():
@@ -5099,10 +5102,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     captured_clock,
                     # 도출한 기본값은 **아직 없을 수 있다**(템플릿 옆 Results 첫 실행) —
                     # 없는 폴더에 걸릴 이름은 없으므로 빈 점유로 관찰하고, 실제 폴더는
-                    # 생성이 만든다. 사용자가 직접 고른 폴더가 사라진 것은 다른 사실이라
-                    # 그대로 시끄럽게 남긴다(조용한 재생성 금지).
+                    # 생성이 만든다. **설정한** 폴더가 그사이 사라진 것은 다른 사실이라
+                    # 그대로 시끄럽게 남긴다(조용한 재생성 금지). 전역화 전에는 이 자리가
+                    # 「이번 세션의 명시 지정」을 겨눴고, 그 축의 승계자가 설정한 저장 폴더다.
                     allow_missing=(
-                        folder_resolution.source != OUTPUT_FOLDER_SOURCE_EXPLICIT
+                        folder_resolution.source != OUTPUT_FOLDER_SOURCE_SETTING
                     ),
                 )
             except ValueError as exc:

@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from _output_folder_pick import pick_output_folder
+
 from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
@@ -845,7 +847,7 @@ def test_blank_values_are_announced_but_do_not_block_generation(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is True and snap["gate"]["reason"] == ""
@@ -864,7 +866,7 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -882,7 +884,7 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     class _Done:
         ok = True
@@ -945,7 +947,7 @@ def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
     assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     res = ctrl.generate()
     assert res["ok"] is True and res["level"] == "ok"
@@ -965,7 +967,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.snapshot()["guard"]["armed"] is True
 
     generate_batch = appgen.generate_batch
@@ -1001,7 +1003,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _second_job(ctrl, tmp_path)                       # 전환 시도 대상(공고서2) 등록
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     real_batch = appgen.generate_batch
 
@@ -1028,7 +1030,7 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     calls: list = []
     real = ctrl.registry.stamp_last_run
@@ -1048,7 +1050,7 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     def _boom(job, **kwargs):
         raise OSError("디스크 쓰기 거부")
@@ -1079,7 +1081,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     assert ctrl.generate()["failed"] == 1
     assert ctrl.registry.load("공고서").last_run_at == ""       # 미완주 = 역사 없음
@@ -1089,7 +1091,7 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.generate()["ok"] is True  # 최초 생성
 
     # 같은 폴더 재생성 → 조용한 덮어쓰기 금지: 수치 합성 재진술 요구(총량·파괴분·신규분).
@@ -1112,7 +1114,7 @@ def test_generate_echoes_run_token_on_every_direct_branch(tmp_path):
 
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     # ② 성공
     ok = ctrl.generate(run_token="t-2")
@@ -1140,7 +1142,7 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표(run 핸들)가 서 있는 상태.
     from hwpxfiller.application.generation import GenerationRun
@@ -1166,7 +1168,7 @@ def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     assert ctrl.generate(run_token="run-9")["ok"] is True
     assert ctrl._run is None
@@ -1177,7 +1179,7 @@ def test_progress_delta_carries_the_run_token(tmp_path):
     ctrl, pushes = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     ctrl.generate(run_token="run-42")
 
     deltas = [snap["progress"] for _s, snap in pushes
@@ -1197,7 +1199,7 @@ def test_run_token_is_opaque_to_python(tmp_path):
         ctrl, _ = _controller(home)
         ctrl.dispatch("select_job", {"name": "공고서"})
         _mount_all(ctrl, _data_csv(home))
-        ctrl.set_output_folder(str(home / "out"))
+        pick_output_folder(ctrl, home / "out")
         res = ctrl.generate() if token is None else ctrl.generate(run_token=token)
         assert res["ok"] is True
         assert res["run_token"] == expected
@@ -1311,7 +1313,7 @@ def test_select_none_closes_record_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.snapshot()["gate"]["enabled"] is True
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
@@ -2074,7 +2076,7 @@ def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     # 시계를 손에 쥔다 — 왕복 사이의 초 경계를 결정적으로 넘겨야 핀이 관측 가능해진다.
     t1 = datetime(2026, 7, 21, 9, 0, 0)
@@ -2112,7 +2114,7 @@ def test_the_overwrite_pin_is_dropped_when_the_zone_changes_between_the_roundtri
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     assert ctrl.generate()["ok"] is True
     assert ctrl.generate()["needs_overwrite"] is True
     assert ctrl._overwrite_now_pin is not None
@@ -2330,7 +2332,7 @@ def test_hidden_column_still_reaches_the_generated_document(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     ctrl.dispatch("hide_column", {"column": "presmptPrce"})
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 2
@@ -2502,7 +2504,7 @@ def test_guard_disarmed_by_generation_completion(tmp_path):
     ctrl, _ = _session(tmp_path)
     _unbind(ctrl)
     _mount_all(ctrl, _data_csv3(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행(빈칸 없는 행)
     assert ctrl.snapshot()["guard"]["armed"] is True
@@ -2592,7 +2594,7 @@ def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
 
     monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: _FakeBatch())
     ctrl, _ = _session(tmp_path)
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행
     res = ctrl.generate()
@@ -2976,7 +2978,7 @@ def test_generate_surfaces_fill_notes(tmp_path):
 
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -3151,8 +3153,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
         ctrl.dispatch("select_job", {"name": active_name})
         ctrl.load_data_path(str(old_path))
     ctrl.dispatch("set_all", {})
-    ctrl.set_output_folder(str(tmp_path / "managed-out"))
-    old_delivery_intent = ctrl._run_delivery_intent
+    picked_folder = pick_output_folder(ctrl, tmp_path / "managed-out")
     if case == "same_name_recreated":
         replacement = ctrl.registry.load(active_name)
         ctrl.registry.delete(active_name)
@@ -3222,7 +3223,9 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert ctrl._current_record_preparation is None
     assert ctrl._current_delivery_preparation is None
     assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
-    assert ctrl._run_delivery_intent is (old_delivery_intent if expected_name else None)
+    # 저장 폴더는 **전역 설정**이라 작업이 풀려도 산다(전역화) — 종전 이 자리는 session-scoped
+    # 명시 지정이 작업과 함께 죽는 것을 쟀고, 그 축 자체가 사라졌다.
+    assert ctrl.out_dir == picked_folder
     snap = ctrl.snapshot()
     if notice is None:
         assert snap["data_notice"] is None
@@ -3415,7 +3418,7 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
     ctrl.dispatch("select_job", {"name": "공고서"})
     if action == "generate":
         _mount_all(ctrl, _data_csv(tmp_path))
-        ctrl.set_output_folder(str(tmp_path / "out"))
+        pick_output_folder(ctrl, tmp_path / "out")
     registry.mutate(
         "공고서",
         lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
@@ -3899,7 +3902,7 @@ def _result_session(tmp_path):
     ctrl, pushes = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv3(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     return ctrl, pushes
 
 
@@ -4196,7 +4199,7 @@ def _draft_session(tmp_path):
     ctrl, pushes = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv3(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     return ctrl, pushes
 
 
@@ -4514,7 +4517,7 @@ def _unreviewed_session(tmp_path):
     ctrl, pushes = _controller(tmp_path, reviewed=False)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     return ctrl, pushes
 
 
@@ -4573,7 +4576,7 @@ def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.snapshot()["review"]["required"] is True
     ctrl.generate()
     assert ctrl.registry.load("공고서").reviewed_rules  # 완주 스탬프가 기준선을 세웠다
@@ -4589,7 +4592,7 @@ def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
     ctrl.registry.mutate("공고서", lambda j: setattr(j, "reviewed_rules", {}))  # 구 버전 작업
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     text = ctrl.snapshot()["preflight"]["text"]
     assert "[알림] 마지막 실행에 쓴 규칙을 확인할 수 없습니다." in text
     assert "한 번도" not in text
@@ -4675,7 +4678,7 @@ def test_planned_names_match_what_generation_will_write(tmp_path):
     _rereview(ctrl)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     shown = {r["name"] for r in ctrl.snapshot()["records"]}
     assert ctrl.generate()["ok"] is True
     written = {p.name for p in (tmp_path / "out").glob("*.hwpx")}
@@ -4739,7 +4742,7 @@ def test_run_entry_captures_its_own_timestamp_once(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
 
     ctrl.snapshot()                       # 표시 축이 한 시각을 소비한다
     assert ctrl.generate()["ok"] is True
@@ -4760,14 +4763,14 @@ def test_new_blanks_on_new_data_are_announced_and_marked(tmp_path):
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is True                # 빈 값 없음 = 조용한 반복 실행
     assert "빈 값" not in snap["preflight"]["text"]
     assert ctrl.generate()["ok"] is True                  # 완주 — 기준선이 다시 선다
 
     _mount_all(ctrl, _data_csv(tmp_path))                 # 다음 달 데이터 — 빈 값 신규 발생
-    ctrl.set_output_folder(str(tmp_path / "out"))         # RELEASE 뒤 명시 Work·저장 위치 재선택
+    pick_output_folder(ctrl, tmp_path / "out")         # RELEASE 뒤 명시 Work·저장 위치 재선택
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is True
     assert "[경고] 빈 값 필드: 추정가격" in snap["preflight"]["text"], (
@@ -5298,7 +5301,7 @@ def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_pat
     ctrl, _ = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     _unprepared_after_select(ctrl)  # 1회차 generate 가 최초 발급자인 상태(#932 B5)
     assert ctrl.registry.load("공고서").authority_id == ""
 
@@ -5606,7 +5609,7 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     )
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     pushes.clear()
     res = ctrl.generate()
     assert res["ok"] is True, res
@@ -5632,7 +5635,7 @@ def test_managed_generation_pushes_adopted_identity_before_a_plan_rejection(tmp_
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     ctrl.dispatch("set_none", {})
     assert ctrl.snapshot()["managed_hwpx"] is False
 
@@ -5680,7 +5683,7 @@ def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
     clean = tmp_path / "c.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out2"))
+    pick_output_folder(ctrl, tmp_path / "out2")
     res = ctrl.generate()
     assert res["ok"] is False and res["level"] == "warn"
     assert "초기화" in res["error"]  # TEMPLATE_INITIALIZATION_REQUIRED 문안
@@ -5694,7 +5697,7 @@ def test_managed_generation_clears_staging_after_run(tmp_path):
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.generate()["ok"] is True
     staging = tmp_path / "authority" / "run_staging"
     assert not staging.exists() or not list(staging.iterdir())  # 누적 없음
@@ -5727,7 +5730,7 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
 
     monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out3"))
+    pick_output_folder(ctrl, tmp_path / "out3")
     _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
     pushes.clear()
     res = ctrl.generate()
@@ -5756,7 +5759,7 @@ def test_managed_generation_exception_pushes_only_changed_identity(
     coordinator = ctrl._template_change
     assert coordinator is not None and ctrl.vm is not None
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
 
     def boom(*_a, **_k):
         raise OSError(f"{failpoint} I/O failed")
@@ -5802,7 +5805,7 @@ def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
     run_vm = ctrl.vm
     assert run_vm is not None
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     ctrl.registry.mutate(
         "공고서",
         lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
@@ -5906,7 +5909,7 @@ def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, mo
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.generate()["ok"] is True
     assert seen, "generate 가 execution provenance guard 를 부르지 않았다(seam 죽음)"
     base, current = seen[0]

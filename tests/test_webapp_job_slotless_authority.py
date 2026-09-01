@@ -17,6 +17,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from _output_folder_pick import pick_output_folder
+
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -91,7 +93,7 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     """
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
-    ctrl.set_output_folder(str(tmp_path / "out"))
+    pick_output_folder(ctrl, tmp_path / "out")
     # 착석이 준비를 지게 된 뒤로(#932 B5) 이 고리는 「준비가 없던 작업의 첫 생성」에서만
     # 재진다 — 고리 자체(발급이 성사 전에 일어난다)는 그대로라 상태만 명시로 되만든다.
     ctrl.registry.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
@@ -123,7 +125,7 @@ def test_generation_after_the_mint_needs_no_approval_detour(tmp_path: Path) -> N
     ctrl, seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     out = tmp_path / "out"
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     _mint(ctrl)
     seen.clear()
     assert ctrl.registry.load("공고서").authority_id != ""
@@ -143,16 +145,19 @@ def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path
     옛 축에서는 발급 뒤의 지정이 delivery intent(관리 면이 읽는 값)로 들어가고 legacy 생성이
     보는 ``out_dir`` 는 도출 기본값 그대로였다. 사용자가 고른 폴더가 아닌 곳에 문서가 나는
     것은 「조용히 틀리지 않는다」의 정면 위반이라, 여기서는 **파일이 난 자리**로 잰다.
+
+    전역화 뒤 그 갈래 분기 자체가 없다 — 두 축이 같은 도출을 지나므로 발급 전후가 같은 값을
+    본다. 그래도 이 테스트는 남는다: 계약은 분기의 부재가 아니라 「고른 폴더에 문서가
+    난다」이고, 그것을 재는 자리는 여전히 파일이 난 자리다.
     """
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
-    ctrl.set_output_folder(str(tmp_path / "first"))
+    pick_output_folder(ctrl, tmp_path / "first")
     _mint(ctrl)
 
     picked = tmp_path / "picked"
-    ctrl.set_output_folder(str(picked))
+    pick_output_folder(ctrl, picked)
     assert ctrl.out_dir == str(picked)
-    assert ctrl._run_delivery_intent is None
 
     assert ctrl.generate()["ok"] is True
 

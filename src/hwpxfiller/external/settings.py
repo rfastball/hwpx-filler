@@ -336,12 +336,20 @@ def save_boot_completed(version: str) -> None:
 
 
 def load_last_output_directory() -> str:
-    """마지막으로 **명시 지정**한 저장 폴더 — 없으면 ``""``(U3-06 · #879).
+    """**전역 저장 폴더** — 설정되지 않았으면 ``""``(U3-06 · #879 → 전역화).
 
-    다음 세션의 기본값 **재료**다: 도출·판정은
-    :func:`hwpxfiller.domain.output_folder_default.resolve_output_folder` 가 하고, 이 값이
-    실제로 쓰이려면 존재 확인을 통과해야 한다(사라진 폴더의 조용한 재사용 금지). 자동으로 잡힌
-    기본값은 기억하지 않는다 — 기억하면 템플릿을 옮겨도 옛 템플릿 옆 폴더가 따라다닌다.
+    .. note:: **의미 승격**(키 이름 유지)
+
+       이 키는 원래 「마지막으로 **명시 지정**한 저장 폴더」, 즉 다음 세션 기본값의 재료였다.
+       저장 폴더의 작업 세션별 지정이 폐지되면서 같은 키가 **지금 쓰이는 전역 설정값**으로
+       승격됐다 — 읽고 쓰는 코드는 그대로이고 마이그레이션은 필요 없다(옛 값은 그 자리에서
+       그대로 새 의미의 값이 된다). 이름을 바꾸지 않은 이유도 그것이다: 값의 형태·해석이
+       하나도 달라지지 않았는데 키를 갈면 기존 ``settings.json`` 이 이유 없이 초기화된다.
+
+    도출·판정은 :func:`hwpxfiller.domain.output_folder_default.resolve_output_folder` 가 하고,
+    이 값이 실제로 쓰이려면 존재 확인을 통과해야 한다(사라진 폴더의 조용한 재사용 금지).
+    자동으로 잡힌 기본값은 여기 쓰이지 않는다 — 쓰면 템플릿을 옮겨도 옛 템플릿 옆 폴더가
+    따라다닌다.
 
     비문자열(손상·구버전)은 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은
     그대로 기본 거동으로 산다."""
@@ -350,10 +358,10 @@ def load_last_output_directory() -> str:
 
 
 def save_last_output_directory(path: str) -> None:
-    """명시 지정한 저장 폴더 영속 — 빈 경로는 조용히 무시하지 않고 ``ValueError``.
+    """전역 저장 폴더 영속 — 빈 경로는 조용히 무시하지 않고 ``ValueError``.
 
-    빈 값 저장을 허용하면 '지정한 적 없음'과 '빈 경로를 지정함'이 한 값으로 접혀 다음 세션의
-    도출이 침묵한다(confirm-or-alarm). 보존·원자성·재시도 계약은 :func:`_save_key` 가 진다."""
+    빈 값 저장을 허용하면 '설정한 적 없음'과 '빈 경로를 설정함'이 한 값으로 접혀 다음 도출이
+    침묵한다(confirm-or-alarm). 보존·원자성·재시도 계약은 :func:`_save_key` 가 진다."""
     if not isinstance(path, str) or not path.strip():
         raise ValueError(f"유효하지 않은 저장 폴더 경로: {path!r}")
     _save_key("last_output_directory", path)

@@ -51,6 +51,40 @@ JOB_NAMES: "tuple[str, ...]" = ("발주요청서", "발주요청 기안", "오�
 EXPECTED_HWPX = 3
 
 
+def _set_output_folder(
+    s: Surface, ctx: "ScenarioContext", directory: str, *, what: str
+) -> None:
+    """저장 폴더를 지정한다 — 전역화 뒤 그 동사의 자리는 **설정 모달 하나**다.
+
+    종전 대본은 작업 화면의 `#jobManagedPickFolder` 를 눌렀다. 저장 폴더가 작업 속성이 아니라
+    앱 설정이 되면서 그 단추가 사라졌고, 지금 길은 토바 ⚙ → 설정 모달 → 「찾아보기…」다.
+    모달은 **닫고 나온다**: 열린 채 두면 뒤 걸음의 클릭을 가린다.
+
+    되읽기까지가 이 걸음이다 — 폴더 응답이 Python 에 닿아 도출이 다시 서고 그 값이 설정 면의
+    경로 칸으로 돌아오는 것을 보고 나서야 다음으로 간다(무착지 클릭 금지).
+    """
+    s.click_sel("#settingsOpen", what=f"설정 열기({what})")
+    s.wait(
+        "!document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 열림({what})",
+        requires=["#settingsModal"],
+    )
+    ctx.queue_folder_answer(directory)
+    s.click_sel("#settingsPickFolder", what=what)
+    s.wait(
+        "(document.getElementById('settingsOutDir')||{}).value === "
+        + json.dumps(directory, ensure_ascii=False),
+        f"설정 모달이 지정한 저장 폴더를 되읽음({what})",
+        requires=["#settingsOutDir"],
+    )
+    s.click_sel("#settingsClose", what=f"설정 닫기({what})")
+    s.wait(
+        "document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 닫힘({what})",
+        requires=["#settingsModal"],
+    )
+
+
 def _rejection_message(value: object) -> str:
     if not isinstance(value, dict):
         return ""
@@ -1133,8 +1167,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 아예 서지 않고, 그 부재는 「계획이 늦다」가 아니라 「고른 것이 0건이다」라는 뜻이다.
     _ensure_all_selected(s, "전환 뒤 record 재선택")
     output_dir = ctx.prepare_output()
-    ctx.queue_folder_answer(output_dir)
-    s.click_sel("#jobManagedPickFolder", what="managed output folder 선택")
+    _set_output_folder(s, ctx, output_dir, what="managed output folder 선택")
     try:
         # `requires` 에 `#jobPlannedDocuments` 를 걸지 않는다 — 그것이 안 서는 것이 바로 제품의
         # 대답이라, requires 로 걸면 뜻 있는 시한이 「없는 요소를 겨눴다」로 둔갑한다.
@@ -1167,9 +1200,10 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 충돌 처리 선택기는 없다(U4 계열2-27) — 기본이 덮어쓰기라 같은 이름은 막히지 않고
     # `WRITE_OVERWRITE` 처분으로 선다. 「목록 새로 확인」도 없으므로(2-28) 재관찰은
     # delivery 를 무효화하는 전이가 낸다: 같은 폴더를 다시 지정하는 것이 그 전이이고,
-    # REVIEW_DELIVERY 의 등록된 복구 동사(`#jobManagedPickFolder`)와 같은 자리다.
-    ctx.queue_folder_answer(output_dir)
-    s.click_sel("#jobManagedPickFolder", what="충돌 발생 뒤 delivery 재관찰")
+    # REVIEW_DELIVERY 의 등록된 복구 동사(`#settingsPickFolder`)와 같은 자리다 — 저장 폴더
+    # 전역화로 그 동사가 작업 화면에서 설정 모달로 이사했다(화면 쪽에 남은 것은 그리로 가는
+    # 문 `#jobOpenFolderSettings` 뿐이라 복구 좌표가 아니다).
+    _set_output_folder(s, ctx, output_dir, what="충돌 발생 뒤 delivery 재관찰")
     s.wait(
         "!!document.querySelector('#jobPlannedDocuments li[data-collision-disposition="
         "\"WRITE_OVERWRITE\"]')",
@@ -1347,9 +1381,16 @@ def run_restart(ctx: ScenarioContext) -> dict:
     )
     _expect(initial.get("has_job") is False, "H7: restart가 active Work를 복원했습니다")
     initial_wb = initial.get("workbench_observation") or {}
-    # 작업을 고르기 전에는 저장 폴더를 도출할 재료(템플릿)조차 없다 — 기억이 있어도 여기서는
-    # 아무것도 서지 않는다(U3-06 #879: 기억은 도출의 재료이지 그 자체로 세워지는 값이 아니다).
+    # 작업이 없으면 작업대 관찰이 없고, 그래서 delivery intent 도 서지 않는다(관찰은 작업의
+    # 것이다). 저장 폴더는 **다르다**: 전역 설정이라 작업이 앉기 전에도 값이 서 있고, 그것이
+    # 전역화가 바꾼 계약의 실증거다 — 종전에는 도출 재료(템플릿)가 없어 여기가 비어 있었다.
     _expect(initial_wb.get("run_delivery_intent") is None, "H7: 작업 선택 전에 delivery intent가 섰습니다")
+    initial_folder = initial.get("output_folder") or {}
+    _expect(
+        (initial_folder.get("directory"), initial_folder.get("source"))
+        == (ctx.output_dir, "remembered"),
+        f"H7: 작업 선택 전 전역 저장 폴더가 서지 않았습니다 — {initial_folder!r}",
+    )
     s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "restart 자동 마운트 뒤 active Work 0", requires=["#jobActionName"])
     _select_work(s, "발주요청서")
     current = _snapshot(s)
@@ -1371,15 +1412,17 @@ def run_restart(ctx: ScenarioContext) -> dict:
         binding["active_field"] and not binding["pending_action"],
         "H7: durable Binding이 restart 뒤 복원되지 않았습니다",
     )
-    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. 경로는
-    # 지난번 명시 지정 그대로이고 출처는 「기억한 폴더」다. 충돌 처리는 세션이 고르는 값이
-    # 아니게 됐으므로(U4 §2-27) 언제나 `DEFAULT_COLLISION_POLICY` 여야 한다 — 이 자리가
-    # 재는 것은 「세션 축이 restart 를 넘어 새어 오지 않는다」이고, 그 축이 하나 줄었을 뿐
-    # 판정은 그대로다(정책 이름을 여기 적지 않고 정본 상수를 읽는다).
+    # U3-06(#879 → 전역화): 저장 폴더는 restart 뒤에도 선다 — **설정한 전역 폴더**로다.
+    # 경로는 지난번 지정 그대로이고 출처는 `remembered`(라벨은 「설정한 저장 폴더」)다.
+    # 도출 존은 작업대 관찰이 아니라 **스냅샷 최상위**에서 읽는다: 작업 유무·관찰 성패와
+    # 무관한 사실이라 자리가 옮겨졌다. 충돌 처리는 세션이 고르는 값이 아니게 됐으므로
+    # (U4 §2-27) 언제나 `DEFAULT_COLLISION_POLICY` 여야 한다 — 이 자리가 재는 것은
+    # 「세션 축이 restart 를 넘어 새어 오지 않는다」이고, 그 축이 저장 폴더 전역화로 하나 더
+    # 줄었을 뿐 판정은 그대로다(정책 이름을 여기 적지 않고 정본 상수를 읽는다).
     intent = wb.get("run_delivery_intent") or {}
     delivery_default = {
         "directory": intent.get("output_directory"),
-        "source": (wb.get("output_folder") or {}).get("source"),
+        "source": (current.get("output_folder") or {}).get("source"),
         "collision_policy": intent.get("collision_policy"),
     }
     _expect(

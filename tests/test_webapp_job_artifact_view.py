@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from _output_folder_pick import pick_output_folder
+
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.external.artifact_observation import (
     ARTIFACT_DIGEST_MISMATCH,
@@ -99,7 +101,7 @@ def _ready_controller(tmp_path: Path):
     ctrl.vm.set_acquired(ctrl.datasource, rows)
     out = tmp_path / "delivery"
     out.mkdir()
-    ctrl.set_output_folder(str(out))
+    pick_output_folder(ctrl, out)
     return ctrl, out
 
 
