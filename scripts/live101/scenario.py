@@ -260,19 +260,19 @@ def run(ctx: ScenarioContext) -> dict:
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
     _ensure_all_selected(s, "전체 선택")
 
-    # ---- S5a 첫 실행의 결과 고지(#957) -------------------------------------
+    # ---- S5a 첫 실행은 막지도 알리지도 않는다 -------------------------------
     # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다. 종전에는 그 사실이 게이트를 닫고
-    # 승인을 요구했지만, 신뢰 정책 선회로 **알리되 막지 않는다**: 사전검증이 첫 실행임을
-    # 고지한 채 생성이 열려 있고 확인의 자리는 결과 문서다. 생성 **전** 값을 그리던 확인
-    # 면과 그 승인 동사는 슬라이스 ③ 에서 통째로 철거됐으므로, 여기서 재는 것은 고지와
-    # 게이트 개방이 **함께** 서는 것과 그 출구가 화면에 없다는 사실이다.
+    # 승인을 요구했고(#957 이 고지로 낮췄다), 간소화 라운드가 그 고지마저 걷었다 — 결과
+    # 문서를 열어 확인하는 것은 첫 실행이든 아니든 상수라 알림이 바꾸는 행동이 없다.
+    # 그래서 여기서 재는 것은 **생성이 열려 있고 사전검증이 첫 실행을 들먹이지 않는 것**,
+    # 그리고 철거된 확인 면의 출구가 화면에 없다는 사실이다.
     s.wait(
         "!document.getElementById('jobGenBtn').disabled"
-        " && document.getElementById('jobPreflight').textContent.includes('첫 실행')",
-        "첫 실행 검토 고지(비차단)",
+        " && !document.getElementById('jobPreflight').textContent.includes('첫 실행')",
+        "첫 실행 무고지 + 생성 게이트 개방",
         requires=["#jobGenBtn", "#jobPreflight"],
     )
-    seen["first_run_review_notice"] = True
+    seen["first_run_not_announced"] = True
     _expect(
         not s.js("!!document.getElementById('jobMirrorPreviewOpen')"),
         "S5a: 철거된 「생성 값 미리보기」 출구가 아직 서 있습니다",

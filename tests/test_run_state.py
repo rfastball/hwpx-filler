@@ -620,15 +620,15 @@ def test_review_requirement_no_longer_closes_the_gate(tmp_path):
     gate = vm.refresh([1], "", review_notice=req).gate
     assert "저장 폴더" in gate.text and gate.reason == ""
 
-    # 빈 값 없는 레코드만 골라 **고지 하나만** 서는 자리를 만든다(경고와 섞이지 않게).
+    # 빈 값 없는 레코드만 골라 다른 경고와 섞이지 않는 자리를 만든다.
     status = vm.refresh([1], "out", review_notice=req)
     assert status.gate.enabled is True and status.gate.reason == ""
-    # 대신 사전검증이 비차단으로 말한다 — 침묵도 차단도 아니다.
-    assert status.preflight.notices == (
-        "[알림] 이 작업의 첫 실행입니다. 결과 문서를 열어 확인하세요.",
-    )
-    assert status.preflight.text == status.preflight.notices[0]
-    # 고지만으로는 등급이 오르지 않는다(경고를 싸구려로 만들지 않는다).
+    # 그리고 **아무 말도 하지 않는다**: 첫 실행 고지는 간소화 라운드에서 퇴역했다 —
+    # 결과 확인은 상수라 「첫 실행입니다」가 바꾸는 행동이 없다. 요구는 서 있어도
+    # 사전검증은 조용하고, 없는 실행을 들먹이는 일반 문안으로 새지도 않는다.
+    assert status.preflight.notices == ()
+    assert "첫 실행" not in status.preflight.text
+    assert "마지막 실행" not in status.preflight.text
     assert status.preflight.level == "ok"
 
 
