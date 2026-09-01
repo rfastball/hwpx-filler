@@ -64,6 +64,7 @@ export const B_KEYS = Object.freeze([
   "home_screen_gone", "library_surface", "library_view_tabs", "data_picker_buttons",
   "action_roundtrip", "modal_a11y", "modal_confirm_serial",
   "preserve", "preserve_real", "milestone_h_wave1", "milestone_h_overlay",
+  "shell_settings",
 ]);
 
 /* ────────────────────────── 인라인 조각 ────────────────────────── */
@@ -1174,6 +1175,111 @@ export function createBootRoutingOverlayProbes() {
             "milestone_h_overlay 의 발판(" + left.map((el) => el.id || el.className).join(", ")
             + ")이 문서에 남았습니다 — 고정 배치라 다음 프로브의 클릭·측정을 가립니다.",
           );
+        }
+      },
+    },
+
+    /* ── shell_settings — 셸 설정 모달(토바 ⚙)의 실런타임 왕복. 레거시 이관이 아니다. ──
+       ⚙ → 열림 → 테마 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 테마 복원
+       → 닫힘 → 초점이 ⚙ 로 복귀. 정적 계약은 "버튼과 핸들러가 있다"까지만 보고, 이 사슬의
+       어느 홉이 끊겨도 초록이다(순환 토글 둘을 걷어내며 실제로 끊길 수 있는 자리들이다). */
+    {
+      name: "shell_settings",
+      keys: ["shell_settings"],
+      cluster: B_CLUSTER,
+      owner: "frontend",
+      modes: ["full"],
+      /* 실재 줄이 아니다 — react_runtime(9990)과 같은 신설 축의 합성 번호다. 이 값이 큰 것이
+         계약이다: 이 프로브는 테마를 **잠시 바꿨다 되돌리므로**, 콜드부트 테마를 읽는
+         `theme_persist`(3990)보다 반드시 뒤에 서야 한다. 순서를 잃으면 복원 실패가 저쪽
+         프로브의 실패로 나타나 귀인이 갈린다. */
+      legacySite: 9991,
+      deadlineMs: 5000,
+      deadlineRationale:
+        "React 커밋(세그먼트 aria-pressed)과 모달 퇴장 전이를 기다린다 — 둘 다 다음 turn 이라"
+        + " 폴링이 필요하고, 매달리면 유한 시간에 빨강이 돼야 한다.",
+      note:
+        "이 클러스터의 알려진 가시성 공백을 여기서는 **닫는다** — `.click()` 은 숨은 요소도"
+        + " 통과하므로 세그먼트를 누르기 전에 offsetParent 로 실제로 보이는지 함께 잰다.",
+      async run(ctx) {
+        const doc = ctx.doc;
+        const win = ctx.win;
+        const trigger = doc.getElementById("settingsOpen");
+        const modal = doc.getElementById("settingsModal");
+        if (!trigger || !modal) {
+          ctx.fail(
+            ERROR_CODES.CONTRACT,
+            "셸 설정 표면(#settingsOpen·#settingsModal)이 없습니다 — 토바에 설정으로 가는 문이 없습니다.",
+          );
+        }
+        const root = doc.documentElement;
+        /* 콜드부트 미저장이면 null(=system). 프로브가 끝날 때 **이 값 그대로** 돌려놓는다. */
+        const before = root.getAttribute("data-theme");
+
+        trigger.focus();
+        trigger.click();
+        const opened = !modal.classList.contains("hidden");
+        const display = win.getComputedStyle(modal).display;
+
+        const pick = (mode) => modal.querySelector('[data-set-theme] [data-value="' + mode + '"]');
+        /* 지금 값과 **다른** 값을 고른다 — 같은 값을 누르면 "반영됐다"가 vacuous 하다. */
+        const target = before === "dark" ? "light" : "dark";
+        const option = pick(target);
+        if (!option) {
+          ctx.fail(
+            ERROR_CODES.CONTRACT,
+            "테마 세그먼트(" + target + ")가 설정 모달에 없습니다 — 값을 고를 자리가 없습니다.",
+          );
+        }
+        const optionVisible = win.getComputedStyle(option).display !== "none"
+          && option.offsetParent !== null;
+        option.click();
+        /* `data-theme` 기입은 동기지만 `aria-pressed` 는 React 커밋이라 다음 turn 이다.
+           조건이 서면 즉시 진행하므로 고정 지연이 아니다. */
+        let pressed = "";
+        for (let turn = 0; turn < 12; turn += 1) {
+          pressed = String(pick(target).getAttribute("aria-pressed"));
+          if (pressed === "true") break;
+          await ctx.sleep(0);
+        }
+        const applied = root.getAttribute("data-theme");
+
+        /* 복원 — 남기면 이 프로브가 사용자의 설정(과 뒤이은 증거)을 조용히 바꾼 것이 된다. */
+        const restoreMode = before === null ? "system" : before;
+        const restoreOption = pick(restoreMode);
+        if (restoreOption) restoreOption.click();
+        for (let turn = 0; turn < 12; turn += 1) {
+          if (root.getAttribute("data-theme") === before) break;
+          await ctx.sleep(0);
+        }
+        const restored = root.getAttribute("data-theme");
+
+        doc.getElementById("settingsClose").click();
+        finishModal(ctx, "settingsModal");
+        const closed = modal.classList.contains("hidden");
+        const focusBack = doc.activeElement ? doc.activeElement.id : "";
+
+        return {
+          shell_settings: {
+            opened,
+            display,
+            option_visible: optionVisible,
+            requested_theme: target,
+            applied_theme: applied,
+            option_pressed: pressed,
+            theme_before: before,
+            theme_restored: restored,
+            closed,
+            focus_back: focusBack,
+          },
+        };
+      },
+      /* 복원이 실패한 채로 지나가면 다음 실행의 콜드부트 테마가 조용히 달라진다 —
+         값으로도 남기지만(theme_restored) 잔존 자체를 러너 오류로 올린다. */
+      teardown(ctx) {
+        const modal = ctx.doc.getElementById("settingsModal");
+        if (modal && !modal.classList.contains("hidden")) {
+          throw new Error("설정 모달(#settingsModal)이 열린 채 남았습니다 — 뒤 프로브의 클릭을 가립니다.");
         }
       },
     },

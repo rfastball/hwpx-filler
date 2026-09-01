@@ -36,17 +36,18 @@
         <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span></span></button>
     </nav>
 
-    <!-- 셸 전역 개인화 — navbtn 이 아니라 라우팅되지 않는다(라우터가 .navbtn 전부에
-         go(data-scr) 를 물린다 — 여기 navbtn 이 붙으면 클릭이 화면을 지운다). 레일 하단에서
-         토바 우측으로 거처만 옮겼고 라벨 동기 경로(themeLabel·fontScaleLabel)는 그대로다.
-         레일 접기(#18/9B2AB35D-A)는 함께 사망 — 토바는 64px 한 줄이라 접을 것이 없다. -->
+    <!-- 셸 전역 설정 — navbtn 이 아니라 라우팅되지 않는다(라우터가 .navbtn 전부에
+         go(data-scr) 를 물린다 — 여기 navbtn 이 붙으면 클릭이 화면을 지운다).
+         종전의 순환 토글 둘(◐ 테마 · A 글자 크기)은 걷혔다: 순환 버튼은 「지금 무엇이고
+         무엇을 고를 수 있는지」를 누르기 전에는 말하지 않는다. 값 선택은 설정 모달의
+         세그먼트가 지고 토바에는 그 문을 여는 ⚙ 하나만 선다.
+         `.shell-tool` + `.ti` + `.d` 3중 구조는 계약이다 — 좁은 창(≤820px)의 값 라벨 접힘
+         (base.css)·눌림 기하(test_web_press_geometry)·접힘 축 프로브(persistence_geometry)가
+         전부 이 좌표를 든다. -->
     <div class="topbar-tools">
-      <button class="shell-tool" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
-              title="테마 전환 (시스템 → 라이트 → 다크)">
-        <span class="ti" aria-hidden="true">◐</span><span class="d" id="themeLabel">시스템</span></button>
-      <button class="shell-tool" id="fontScaleToggle" aria-label="글자 크기 전환 (기본 → 크게 → 더 크게)"
-              title="글자 크기 전환 (기본 → 크게 → 더 크게)">
-        <span class="ti" aria-hidden="true">A</span><span class="d" id="fontScaleLabel">기본</span></button>
+      <button class="shell-tool" id="settingsOpen" aria-haspopup="dialog" aria-label="설정"
+              title="설정">
+        <span class="ti" aria-hidden="true">⚙</span><span class="d">설정</span></button>
     </div>
   </header>
 
@@ -94,6 +95,15 @@
          확인 승격. 데이터 선택 다이얼로그 **위에** 스택으로 뜨며 제목은 진입 사유로 갈린다
          (「이 데이터 고정」·「데이터 등록」·「데이터 다시 연결」 — data_picker.js 소유). -->
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle"></div>
+
+    <!-- 셸 설정 모달 — 토바 ⚙ 하나가 여는 전역 설정 면. 테마·글자 크기가 여기 산다(순환
+         토글 둘의 승계처). 값 판정·영속은 종전 경로 그대로(`shell/preferences.ts` →
+         bridge.setTheme/setFontScale) 이고 이 면은 **고르는 자리**만 진다.
+         내용의 생산자는 React `screens/settings_sheet.ts` 의 SettingsSheet portal 이고 이
+         자리는 그 target 이라 **비어 있어야** 한다(product_screens.requireEmptyTarget 가
+         fail-closed). 다음 슬라이스가 저장 폴더 행을 같은 행 목록에 붙인다. -->
+    <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="settingsTitle"></div>
 
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
     <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle"></div>

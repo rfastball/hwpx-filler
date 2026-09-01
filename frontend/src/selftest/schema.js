@@ -41,7 +41,7 @@ export const SELFTEST_MODES = Object.freeze({
       "job_mirror", "job_on", "job_result", "library_surface", "library_view_tabs",
       "milestone_h_overlay", "milestone_h_wave1", "modal_a11y", "modal_confirm_serial",
       "nav_count", "personalization_persist", "preserve", "preserve_real",
-      "range_draft", "react_runtime", "runtime", "sheet_gate",
+      "range_draft", "react_runtime", "runtime", "sheet_gate", "shell_settings",
       "theme_persist", "title_dom", "tpl_options", "url", "view_order", "workbench",
     ]),
     echo: null,
@@ -413,6 +413,15 @@ export const SELFTEST_KEYS = Object.freeze({
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "D",
   }),
+  shell_settings: key({
+    kind: "object", modes: ["full"], owner: "frontend",
+    consumedBy: ["tests/test_web_selftest_gate.py"],
+    note:
+      "레거시 이관이 아니라 셸 설정 모달(토바 ⚙)의 신설 축이다 — legacySite 9991 은 실재"
+      + " 줄이 아니라 순서 표식이고, theme_persist(3990) **뒤**를 강제한다(이 프로브가"
+      + " 테마를 잠시 바꿨다 되돌린다).",
+    cluster: "B",
+  }),
   title_dom: key({
     kind: "string", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
@@ -456,8 +465,9 @@ export const ERROR_CONTRACT = Object.freeze({
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_bridge_timeout",
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_evaluation_error",
   ]),
-  /** 성공 키 47 + 이 키 = 48. "44" 는 폐기된 설계 수치다(#957 에서 `preview_drawer` 퇴역으로 48→47). */
-  unionWithError: 48,
+  /** 성공 키 48 + 이 키 = 49. "44" 는 폐기된 설계 수치다(#957 에서 `preview_drawer` 퇴역으로
+   *  48→47, 셸 설정 모달의 `shell_settings` 신설로 47→48). */
+  unionWithError: 49,
 });
 
 /* ───────────────────── build.ps1 — 비-pytest 소유자 ───────────────────── */
@@ -466,9 +476,9 @@ export const ERROR_CONTRACT = Object.freeze({
 export const BUILD_INVARIANTS = Object.freeze({
   responsibilityCount: Object.freeze({
     source: "packaging/build.ps1:436-437",
-    expected: 42,
+    expected: 43,
     excludes: Object.freeze(["runtime"]),
-    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 42. 키를 더하거나 빼면 릴리스가 죽는다.",
+    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 43. 키를 더하거나 빼면 릴리스가 죽는다.",
   }),
   noTopLevelBooleanFalse: Object.freeze({
     source: "packaging/build.ps1:439-450",
@@ -490,7 +500,7 @@ export const BUILD_INVARIANTS = Object.freeze({
 export const NON_PYTEST_OWNERS = Object.freeze([
   Object.freeze({
     site: "packaging/build.ps1:436-437",
-    owns: "최상위 책임 키 수 == 42(runtime 제외)",
+    owns: "최상위 책임 키 수 == 43(runtime 제외)",
     breaksIf: "키를 더하거나 뺀다",
   }),
   Object.freeze({

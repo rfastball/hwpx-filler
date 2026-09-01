@@ -53,6 +53,22 @@
 .sheet-opt .sheet-name{font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sheet-opt .sheet-dim{margin-left:auto;white-space:nowrap;font-size:var(--fs-caption)}
 
+/* ---- 셸 설정 모달 (토바 ⚙ · 순환 토글 둘의 승계처) ----
+   행 하나 = 라벨 + 조작. 축이 늘면 `.settings-row` 가 하나 늘 뿐이라 다음 슬라이스(저장
+   폴더)가 골격을 건드리지 않는다. 폭은 표준 모달(.modal-card)을 그대로 쓴다 — 값이 셋인
+   세그먼트 둘이라 넓힐 이유가 없다. */
+.settings-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-12)}
+.settings-head h3{margin:0}
+.settings-body{display:flex;flex-direction:column;gap:var(--sp-12);margin-top:var(--sp-16)}
+/* 라벨 칸은 고정 폭이라 행이 늘어도 조작 칸의 좌변이 흔들리지 않는다(줄 간 정렬 = 위계).
+   좁은 폭에서는 세로로 접는다 — 세그먼트가 잘려 값 하나가 화면 밖으로 나가는 것보다 낫다. */
+.settings-row{display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap}
+.settings-label{flex:0 0 auto;min-width:7em;font-weight:600;font-size:var(--fs-body)}
+/* 붙은 세 칸 = 한 축이라는 표시. 사이 여백 대신 공유 테두리로 묶는다. */
+.settings-seg{display:flex;gap:var(--sp-4);flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end}
+.settings-seg-opt[aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);
+  color:var(--a-ink);font-weight:600}
+
 /* ---- 템플릿 관리(#13) ---- */
 /* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.
    홈 카드 배지와 같은 상태에 같은 심각도 신호(RC-29). */
