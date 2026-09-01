@@ -1,7 +1,7 @@
-<!-- U6 짝짓기 재편 동결 시안 v1.0 (2026-09-02) — 부모 #974. 사용자 확정 대기.
+<!-- U6 조합 재편 동결 시안 v1.0 (2026-09-02) — 부모 #974. 사용자 확정 대기.
 
-     4장면 — 방향서(작업 짝짓기 재편) §3·§6 의 목업을 실물화한 것:
-       장면 1 · 짝짓기(편집기 1단계, §3-1단계)     — 두 풀 + 가운데 연결 카드. 질문은 하나:
+     4장면 — 방향서(작업 조합 재편) §3·§6 의 목업을 실물화한 것:
+       장면 1 · 고르기(편집기 1단계, §3-1단계)     — 두 풀 + 가운데 연결 카드. 질문은 하나:
                                                     「어느 템플릿을 어느 데이터에?」
        장면 2 · 연결 확인(편집기 2단계, §3-2단계)  — 7열이 4열로 접힌 매핑표 + 표 안 미리보기 +
                                                     제안/확인 상태와 일괄 승격.
@@ -14,7 +14,7 @@
        ① 서식 폴더는 단일 루트. 템플릿을 여러 곳에 분산하지 않는다.
        ② 컴파일본 접미사는 `.tpl` 로 확정. 단일 출처 상수 하나로 착지한다.
        ③ 「사용할 데이터 열」 선별은 퇴역. 스키마 재활용 전제가 사라졌다.
-       ④ 드래그 짝짓기는 1차 슬라이스(U6-B)에 포함한다. 클릭 선택이 언제나 같은 결과를 낸다.
+       ④ 끌어 놓기 조합은 1차 슬라이스(U6-B)에 포함한다. 클릭 선택이 언제나 같은 결과를 낸다.
        ⑤ 같은 루트에서 `.txt` 도 읽고 하위 폴더를 재귀로 탐색한다.
 
      관례: `docs/r-flow-mockups/` 선례 승계 — 토큰 인라인(`frontend/css/tokens.css` 의
@@ -27,12 +27,12 @@
      시안이 방향서와 달리 판단한 곳 3:
        ⓐ 데이터 항목 부제의 「보기: 진행」 → 「시트: 공고」. pclm 내부 어휘 '뷰/보기' 는 표면
          미노출이고 시트의 대응물은 '시트' 로 부른다(docs/UI_VOCABULARY.md §1).
-       ⓑ 짝의 열 수를 18 → 15 로. 「사용하지 않는 데이터 열 6개」 와 산술을 맞춘다
+       ⓑ 조합의 열 수를 18 → 15 로. 「사용하지 않는 데이터 열 6개」 와 산술을 맞춘다
          (매핑된 열 9 + 미매핑 6 = 15. 나머지 3 필드는 확인 필요 2 + 오늘 날짜 1).
        ⓒ 방향서 산문의 반말 힌트("고쳐도 된다")는 화면 문구에서 존댓말로("고쳐도 됩니다").
 
      박제 정본 아님 — 착지되면 진실은 코드·테스트·docs/UI_CONTRACT.md 로 돌아간다. -->
-<title>U6 짝짓기 재편 동결 시안 — 4장면</title>
+<title>U6 조합 재편 동결 시안 — 4장면</title>
 <style>
 /* ============ 디자인 토큰 — frontend/css/tokens.css <gen:tokens> 구간 그대로 ============ */
 :root{
@@ -277,7 +277,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid 
 .pill.muted{background:var(--a-window);color:var(--a-muted);border-color:var(--a-border)}
 .pill.acc{background:var(--a-sel);color:var(--a-primary-h);border-color:var(--a-primary)}
 /* frontend/css/library.css */
-/* 좌 목록:우 상세 = 1 : 1.25 — 상세가 이제 짝 카드 + 4열 표를 지므로 폭이 더 필요하다.
+/* 좌 목록:우 상세 = 1 : 1.25 — 상세가 이제 연결 카드 + 4열 표를 지므로 폭이 더 필요하다.
    제품(library.css)은 1.25fr : 1fr 이고, U6-F 착지 때 이 비율 뒤집기가 같은 변경에 든다. */
 .library-browser{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
   gap:var(--sp-12);min-height:0;flex:1}
@@ -311,7 +311,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid 
   background:var(--a-window);border:1px solid var(--n-border-strong);
   border-radius:var(--rad-surface);overflow:hidden}
 /* 1180×720 고정은 장면 1·3 에만 — 장면 2 는 12행이 잘리지 않게 내용 높이로 늘고,
-   장면 4 는 세로 스택 짝 카드 + 표 + 바닥 줄이 스크롤 없이 서게 한 급 깊다.
+   장면 4 는 세로 스택 연결 카드 + 표 + 바닥 줄이 스크롤 없이 서게 한 급 깊다.
    잘림은 결함이다: 창을 줄이는 것보다 시안이 판정을 다 보이는 쪽이 먼저다. */
 .win.tall{height:auto;min-height:720px}
 .win.tall .surface{flex:none}
@@ -344,7 +344,7 @@ button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid 
   border-top:1px solid var(--a-border);padding-top:var(--sp-10)}
 .imm-foot .spacer{flex:1}
 
-/* ============ 장면 1 · 짝짓기 ============ */
+/* ============ 장면 1 · 고르기 ============ */
 .pairzone{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 288px minmax(0,1fr);
   gap:var(--sp-12)}
 .pool{min-width:0;display:flex;flex-direction:column;background:var(--a-card);
@@ -438,7 +438,7 @@ table.bind tfoot td{border-bottom:0;background:var(--n-surface-alt);color:var(--
   text-decoration:underline;font-size:var(--fs-body);white-space:nowrap}
 
 /* ============ 장면 4 · 문서 작업 상세 패널 ============ */
-/* 상세 패널은 좁다 — 3열 짝 카드를 그대로 눕히면 이름이 배지와 겹치고 부제가 '필…' 로
+/* 상세 패널은 좁다 — 3열 연결 카드를 그대로 눕히면 이름이 배지와 겹치고 부제가 '필…' 로
    잘린다. 좁은 호스트에서는 **세로 스택**이 같은 그림을 잘림 없이 낸다: 템플릿 항목 →
    세로 연결선 + 수치 → 데이터 항목. 편집기(장면 1)의 가로 3열과 같은 투영, 다른 배치다. */
 .paircard{display:flex;flex-direction:column;gap:var(--sp-6);
@@ -484,7 +484,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
 
 <header class="doc-head">
   <div class="eyebrow">문서나르미 · U6 · 동결 시안 v1.0</div>
-  <h1>작업 짝짓기 재편 — 4장면</h1>
+  <h1>작업 조합 재편 — 4장면</h1>
   <p>편집기 세 단계와 '문서 작업' 상세 패널을 <b>두 풀 + 한 연결</b>로 다시 세운 그림이다.
      각 장면은 실제 앱 창 비율(약 1180×720) 프레임 안에 있고, 프레임 위쪽은 제품 셸이다.
      장면 1·2 는 판정이 보이는 자리에만 최소 상호작용을 넣었다.</p>
@@ -499,7 +499,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
 
 <nav class="toc" aria-label="장면 목차">
   <span class="lbl">장면</span>
-  <a href="#s1">1 · 짝짓기</a>
+  <a href="#s1">1 · 고르기</a>
   <a href="#s2">2 · 연결 확인</a>
   <a href="#s3">3 · 이름·저장</a>
   <a href="#s4">4 · 문서 작업 상세 패널</a>
@@ -511,14 +511,14 @@ table.ro tbody tr:hover{background:var(--n-hover)}
     <li><b>서식 폴더는 단일 루트</b>. 지정이 없으면 지금의 앱 홈 템플릿 폴더를 루트로 본다.</li>
     <li><b>컴파일본 접미사는 <code>.tpl</code></b>. 단일 출처 상수 하나로 착지한다.</li>
     <li><b>'사용할 데이터 열' 선별은 퇴역</b>. 표 바닥 한 줄이 그 정보를 잇는다.</li>
-    <li><b>드래그 짝짓기는 1차(U6-B)에 포함</b>. 클릭 선택이 언제나 같은 결과를 낸다.</li>
+    <li><b>끌어 놓기 조합은 1차(U6-B)에 포함</b>. 클릭 선택이 언제나 같은 결과를 낸다.</li>
     <li><b>같은 루트에서 <code>.txt</code> 도 읽고 하위 폴더를 재귀로 탐색</b>한다.</li>
   </ol>
 </section>
 
 <!-- ================================================================= 장면 1 -->
 <section class="scene" id="s1">
-  <h2>장면 1 · 짝짓기 <small>편집기 1단계 · 방향서 §3 1단계</small></h2>
+  <h2>장면 1 · 고르기 <small>편집기 1단계 · 방향서 §3 1단계</small></h2>
   <p class="scene-lede">왼쪽 풀에서 하나, 오른쪽 풀에서 하나를 고르면 가운데 연결 카드가 선다.
      항목을 끌어 상대 열의 항목 위에 놓아도 같은 결과다. 이 장면에서 실제로 끌어 보거나 눌러 볼 수 있다.</p>
 
@@ -538,7 +538,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
         <h1>새 작업</h1>
         <span class="ctx">템플릿과 데이터를 하나씩 고르세요.</span>
         <div class="steps">
-          <span class="st on">1 짝짓기</span><span class="st">2 연결 확인</span><span class="st">3 이름·저장</span>
+          <span class="st on">1 고르기</span><span class="st">2 연결 확인</span><span class="st">3 이름·저장</span>
         </div>
       </div>
 
@@ -638,7 +638,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
         (데이터 쪽 '끊김' 과 같은 문법 — §4 「사라진 파일」).</li>
       <li><b>연결 카드가 첫 미리보기다</b> — '자동 연결 10 · 확인 필요 2' 를 여기서 보면 2단계로 갈
         이유가 사용자 눈에 보인다.</li>
-      <li><b>지켜지는 계약</b>: 결속 쓰기는 편집기 저장 하나(U4 §2.4) — 짝짓기 단계는 편집기 안이다.
+      <li><b>지켜지는 계약</b>: 결속 쓰기는 편집기 저장 하나(U4 §2.4) — 고르기 단계는 편집기 안이다.
         표시명은 <code>.tpl</code> 접미사와 확장자를 뗀 것이고 하위 폴더는 상대 경로로 병기한다(확정 ②·⑤).
         드래그는 가속기이고 클릭이 같은 결과를 낸다(확정 ④ · n8n 드래그 참조 결함의 교훈).</li>
     </ul>
@@ -666,7 +666,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
       <div class="imm-head">
         <h1>공고서 ⟷ 2026 하반기 계약</h1>
         <div class="steps">
-          <span class="st">1 짝짓기</span><span class="st on">2 연결 확인</span><span class="st">3 이름·저장</span>
+          <span class="st">1 고르기</span><span class="st on">2 연결 확인</span><span class="st">3 이름·저장</span>
         </div>
       </div>
 
@@ -702,7 +702,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
       </div>
 
       <div class="imm-foot">
-        <button class="btn">짝짓기로</button>
+        <button class="btn">고르기로</button>
         <span class="spacer"></span>
         <button class="btn primary">이름·저장으로</button>
       </div>
@@ -748,7 +748,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
       <div class="imm-head">
         <h1>공고서 ⟷ 2026 하반기 계약</h1>
         <div class="steps">
-          <span class="st">1 짝짓기</span><span class="st">2 연결 확인</span><span class="st on">3 이름·저장</span>
+          <span class="st">1 고르기</span><span class="st">2 연결 확인</span><span class="st on">3 이름·저장</span>
         </div>
       </div>
 
@@ -925,7 +925,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
           표의 <code>—</code> 는 빈 칸 마커 단독이라 COPY_STYLE_GUIDE §3-1 예외다.</li>
         <li><b>동사는 늘지 않는다</b> — '템플릿 재선택…' · '데이터 재선택…' 은 #966 의 deep-link 그대로이고,
           하단 동사 5개는 현행 <code>screens/library.ts</code> 와 같다. 표의 행 클릭이 같은 배관으로 2단계에 착지한다.</li>
-        <li><b>좁은 호스트에서는 짝 카드가 세로로 선다</b> — 편집기의 가로 3열을 그대로 눕히면 이름이
+        <li><b>좁은 호스트에서는 연결 카드가 세로로 선다</b> — 편집기의 가로 3열을 그대로 눕히면 이름이
           배지와 겹치고 부제가 말줄임된다. 같은 링1 투영, 다른 배치다. 표는 12행 중 8행을 프레임 안에
           두고 나머지 4행을 <b>이름으로 명시</b>한다(스크롤로 조용히 감추지 않는다). 좌 목록:우 상세
           비율도 <code>1fr : 1.25fr</code> 로 뒤집혀, 이 뒤집기가 U6-F 의 <code>library.css</code> 변경에 함께 든다.</li>
@@ -957,14 +957,14 @@ table.ro tbody tr:hover{background:var(--n-hover)}
 <script>
 /* ============================================================================
    시연은 판정이 보이는 자리에만 둔다(선례: r-flow 블록 6). 여기서 도는 것은 셋:
-     ① 장면 1 — 드래그/클릭 짝짓기 → 연결 카드 갱신(확정 ④: 두 경로가 같은 결과)
+     ① 장면 1 — 드래그/클릭 고르기 → 연결 카드 갱신(확정 ④: 두 경로가 같은 결과)
      ② 장면 2 — 「제안 n건 모두 확인」 일괄 승격(확인 필요 행은 건드리지 않는다)
      ③ 장면 2 — 미리보기 행 순환(◀ ▶ 가 네 번째 열만 바꾼다)
    ============================================================================ */
 (function () {
   "use strict";
 
-  /* ---------- ① 장면 1 · 짝짓기 ---------- */
+  /* ---------- ① 장면 1 · 고르기 ---------- */
   var TPL = {
     t1: { name: "공고서", fields: 12, auto: 10, need: 2 },
     t2: { name: "계약서", fields: 9, auto: 7, need: 2 },
@@ -1030,7 +1030,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
       ev.dataTransfer.setData("text/plain", el.dataset.side + ":" + el.dataset.key);
     });
 
-    /* 놓는 자리는 **상대 열의 항목**이다 — 두 항목이 한 짝이 된다는 그림 그대로. */
+    /* 놓는 자리는 **상대 열의 항목**이다 — 두 항목이 한 조합이 된다는 그림 그대로. */
     el.addEventListener("dragover", function (ev) {
       var raw = ev.dataTransfer && ev.dataTransfer.types.indexOf("text/plain") >= 0;
       if (!raw) return;
