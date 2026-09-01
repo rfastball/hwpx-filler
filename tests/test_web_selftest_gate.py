@@ -713,30 +713,33 @@ class TestWebSelftestGate:
     #  「기안」 화면과 함께 걷혔다, F6 PR-B. 펼침 면 실 DOM 이동/복귀의 생존 판은
     #  job(dataSheet·jobConfirmSheet) 프로브·정적 계약이 진다.)
 
-    def test_job_mirror_zone_renders_one_line_without_values(self, selftest_result: dict) -> None:
-        # 「작업」 본문 존 = 표 없는 한 줄(U2 §2.13) — 합성 스냅샷을 실 render() 에 흘려
-        # ①값을 말하는 표가 서지 않고 ②빈 값 표지(필드 이름 지목)와 이름 건수가 한 줄로
-        # 서는지 되읽는다. #957 이후 그 줄에 출구는 없다 — 값을 말하는 표면은 만들어진
-        # 문서이고, 철거의 증거도 여기서 함께 잰다(선언된 철거 ≠ 조용한 무시).
+    def test_job_danger_banner_host_stands_without_a_summary_line(
+        self, selftest_result: dict
+    ) -> None:
+        # 존 재편 — 구 「본문 확인」 존의 요약 한 줄(빈 값 필드·이름 건수)은 바로 위
+        # 사전검증이 이미 말하는 사실의 **두 번째 발화**라 걷혔고, 남은 것은 행동을 든
+        # danger 배너 host 하나다. 사라지는 변경이라 음성 단언이 진다(되살아나면 빨강),
+        # 그리고 host 자신은 사전검증 **바로 뒤**에 살아 있어야 한다(양성 한 쌍).
         j = probe(selftest_result, "job_mirror")
-        assert j.get("error") is None, f"본문 존 프로브 예외: {j.get('error')!r}"
-        assert j["mirror_no_table"] is True, (
-            "본문 존에 값 표가 남아 있습니다(§2.13 값 표면 단일화 위반)."
+        assert j.get("error") is None, f"위험 배너 프로브 예외: {j.get('error')!r}"
+        assert j["mirror_host_present"] is True, "위험 배너 host(#jobMirror)가 없습니다."
+        assert j["mirror_follows_preflight"] is True, (
+            "위험 배너가 사전검증 바로 아래가 아닙니다 — 사유와 복구 동사가 갈립니다."
         )
-        assert j["mirror_line_has_blank_flag"] is True, "빈 값 표지가 서지 않았습니다."
-        line = j["mirror_line"]
-        assert "빈 값" in line and "1필드" in line and "낙찰율" in line, (
-            f"빈 값 지목 누락: {line!r}"
+        assert j["mirror_line_gone"] is True, (
+            "철거된 본문 확인 요약 한 줄이 되살아났습니다 — 사전검증과 같은 사실의 2중 발화."
         )
-        assert "이름" in line and "2건" in line, f"이름 건수 누락: {line!r}"
+        assert j["restate_gone"] is True, (
+            "철거된 재진술 블록(#jobRestate)이 되살아났습니다 — 선택 수치의 3중 발화."
+        )
         assert j["mirror_preview_exit_gone"] is True, (
             "철거된 확인 면 출구(#jobMirrorPreviewOpen)가 아직 렌더됩니다(#957)."
         )
         assert j["mirror_review_flag_gone"] is True, (
             "철거된 「승인 필요」 표지(#jobReviewFlag)가 아직 렌더됩니다(#957)."
         )
-        # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 두 자리가 배타로 서는지(#364).
-        assert j["mirror_banner_empty"] is True, "한 줄과 배너가 같은 자리를 다툽니다."
+        # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 경보 인플레 금지(#364).
+        assert j["mirror_banner_empty"] is True, "위험 없는 상태에서 배너가 서 있습니다."
 
     def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
         """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
@@ -915,10 +918,9 @@ class TestWebSelftestGate:
         assert j["tbl_rows_order"] == ["1", "0"], (
             f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
         )
-        # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않는다(파일명·폴더 정의 불가 = 과진술).
-        # 곁에 섰던 「저장 폴더 선택 비활성」 단언은 함께 죽었다: 저장 폴더가 작업 속성이 아니라
-        # 전역 설정이 되면서 이 화면에는 고르는 동사가 없고, 작업 미선택에서의 지정도 유효하다.
-        assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
+        # 곁에 섰던 두 단언은 죽었다: 「저장 폴더 선택 비활성」은 저장 폴더가 전역 설정이
+        # 되면서(이 화면에 고르는 동사가 없다), 「prework 재진술 숨김」(#302 리뷰 P2)은
+        # 재진술 블록 자체가 존 재편에서 걷히면서 — 부재는 job_mirror 가 한 번만 잰다.
 
     def test_job_candidate_ranking_renders_stars_suggestion_and_overflow(
         self, selftest_result: dict
@@ -1059,14 +1061,9 @@ class TestWebSelftestGate:
         )
         assert len(narrow["columns"].split()) == 1
 
-    def test_job_restate_block_keeps_counts_and_loses_names(self, selftest_result: dict) -> None:
-        # 재진술 블록 — 선택 유래·산출 수치는 상시 블록으로 남되, 파일 이름 목록은 확인
-        # 면의 「이름 계획」 한 줄로 이주했다(U2 §2.13 — 값·이름 표면은 확인 면 하나).
-        j = probe(selftest_result, "job_mirror")
-        assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
-        assert j["restate_no_namelist"] is True, (
-            "인라인 재진술에 파일 이름 목록이 남아 있습니다(§2.13 값 표면 단일화 위반)."
-        )
+    # (test_job_restate_block_keeps_counts_and_loses_names 삭제 — 그 블록이 말하던 세 가지는
+    #  표 머리·배달 계획·저장 폴더 표시 줄이 이미 말하던 사실이라 존 재편에서 걷혔다. 부재
+    #  단언은 test_job_danger_banner_host_stands_without_a_summary_line 이 진다.)
 
     def test_job_filter_surface_renders_table_chips_strip(self, selftest_result: dict) -> None:
         # 필터 표면 — 합성 필터 스냅샷이 실 WebView2 에서:
@@ -1090,9 +1087,9 @@ class TestWebSelftestGate:
         assert j["strip_unsel"] is True, (
             "스트립에 항목별 × 해제 어포던스가 없습니다 — 필터 밖 선택을 개별로 뺄 수 없다."
         )
-        assert "정의 매치 1" in j["sel_line"] and "정의 밖 1" in j["sel_line"], (
-            f"선택 유래 수치 병기(S4) 누락: {j['sel_line']!r}"
-        )
+        # 선택 유래 수치(정의 매치/정의 밖)를 화면에 상시로 병기하던 재진술 블록은 존
+        # 재편에서 죽었다 — 그 수치를 정말 다시 물어야 하는 자리는 선택을 파기하는 전이의
+        # 확인 모달 하나이고, 그 문안은 아래 `guard_body` 가 되읽는다.
 
     def test_job_datazone_keeps_row_semantics_and_column_kinds(self, selftest_result: dict) -> None:
         """H-06: native 행/셀 의미와 Python 열 kind가 실 표 조판까지 도달한다."""
@@ -1133,17 +1130,11 @@ class TestWebSelftestGate:
         # danger 라 말없이 사라지고, 남는 신호는 하단 회색 캡션 한 줄뿐인 막다른 경보였다.
         j = probe(selftest_result, "job_mirror")
         assert j["token_banner"] is True, "미해소 파일명 토큰에 차단 배너가 서지 않았습니다."
-        assert j["token_no_line"] is True, (
-            "차단 중인데 본문 존이 건강한 한 줄을 그대로 그립니다(신호 없는 차단)."
-        )
         assert j["token_fix_link"] is True, (
             "배너에 행동 링크가 없습니다 — 막다른 경보 금지(결정 36)."
         )
         assert "납품기한" in j["token_banner_text"], (
             f"배너가 남는 토큰을 재진술하지 않습니다: {j['token_banner_text']!r}"
-        )
-        assert j["token_restate_hidden"] is True, (
-            "danger 차단 중 재진술 블록이 떠 있습니다 — '생성 불가'와 'N건 생성'의 모순."
         )
 
     def test_job_filter_panel_hidden_beats_flex(self, selftest_result: dict) -> None:
@@ -1604,7 +1595,8 @@ class TestWebSelftestGate:
             # 「실행 기록」 부캡션은 로그 상자와 함께 퇴역했다(#957) — 실패 고지는 알림
             # 채널로 갔고, 결과 존이 세우는 부캡션은 「만든 문서 N건」 하나뿐이다.
             "현재 데이터",
-            "본문 확인",
+            # 「본문 확인」 부캡션은 존 재편에서 퇴역했다 — 그 존의 요약 한 줄은 사전검증과
+            # 같은 사실이었고, 남은 위험 배너는 캡션 없이 사전검증 바로 아래 붙는다.
             "생성 결과",
             # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
             # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
@@ -1743,11 +1735,8 @@ class TestWebSelftestGate:
         assert j["drift_fix_link"] is True, (
             "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
         )
-        assert j["drift_no_line"] is True, "드리프트인데 본문 존이 건강한 한 줄을 그대로 그립니다."
-        # 재진술 블록은 danger 차단(드리프트 등) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
-        assert j["restate_hidden_on_drift"] is True, (
-            "danger 차단인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
-        )
+        # 「건강한 한 줄」·「N건 생성 재진술」과의 모순 대조는 그 두 표면이 존 재편에서
+        # 걷히면서 함께 은퇴했다 — 부재는 위 배너 host 테스트가 한 번만 잰다.
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.

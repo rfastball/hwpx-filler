@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { createJobRunController } from "../../frontend/src/screens/job_run.ts";
 import {
-  JobActionBar, JobMirrorZone, JobStatusPill, JobWorkbenchStatus,
+  JobActionBar, JobDangerBanner, JobDelivery, JobStatusPill, JobWorkbenchStatus,
 } from "../../frontend/src/screens/job_run.ts";
 import {
   acceptDirect,
@@ -466,10 +466,15 @@ test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안
   const markup = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
   assert.equal(markup.includes("입력이 필요한 항목"), false);
   assert.equal(markup.includes("jobInputRequirements"), false);
-  // 나머지 구획은 그대로 선다 — 확인 대상 정보·미지정 조치 요구를 숨기지 않는다.
-  for (const text of ["현재 실행 상태", "현재 설정이 반영됐습니다", "데이터 확인",
-    "2건의 데이터를 확인했습니다.", "생성 예정 문서"]) {
+  // 나머지 구획은 그대로 선다 — 확인 대상 정보를 숨기지 않는다.
+  for (const text of ["데이터 확인", "2건의 데이터를 확인했습니다."]) {
     assert.ok(markup.includes(text), text);
+  }
+  /* 존 재편: 「현재 실행 상태」 캡션과 그 문안은 우상단 pill 과 같은 문자열의 2중 발화라
+     걷혔고(pill 계약은 위 테스트가 진다), 「생성 예정 문서」는 좌 열의 `JobDelivery` 로
+     이사했다 — 이 구획은 그 둘을 더 이상 그리지 않는다. */
+  for (const gone of ["현재 실행 상태", "현재 설정이 반영됐습니다", "생성 예정 문서"]) {
+    assert.equal(markup.includes(gone), false, gone);
   }
 });
 
@@ -506,11 +511,11 @@ test("생성 내용 확인 표면과 승인 표지는 철거됐다(#957) — 파
   for (const gone of ["jobReviewFlag", "승인 필요", "jobManagedPreviewOpen"]) {
     assert.equal(legacyAction.includes(gone), false, gone);
   }
-  const mirror = renderToStaticMarkup(
-    createElement(JobMirrorZone, { controller: h.controller }),
+  const banner = renderToStaticMarkup(
+    createElement(JobDangerBanner, { controller: h.controller }),
   );
-  assert.equal(mirror.includes("jobMirrorPreviewOpen"), false);
-  assert.equal(mirror.includes("생성 값 미리보기"), false);
+  assert.equal(banner.includes("jobMirrorPreviewOpen"), false);
+  assert.equal(banner.includes("생성 값 미리보기"), false);
 
   /* 파괴 확인 본문은 남는다 — 수치 재진술의 단일 출처(managed·legacy 공용). */
   const body = h.controller.overwriteBody({
@@ -546,7 +551,7 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
   h.push(snap);
 
   const markup = renderToStaticMarkup(
-    createElement(JobWorkbenchStatus, { controller: h.controller }),
+    createElement(JobDelivery, { controller: h.controller }),
   );
   for (const text of [
     '저장 폴더', '생성 예정 문서', 'C:\\문서',
@@ -563,7 +568,7 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
   for (const gone of ['충돌 처리', '목록 새로 확인', 'jobDeliveryCollision', 'jobRefreshDelivery'])
     assert.equal(markup.includes(gone), false, gone);
 
-  const source = String(JobWorkbenchStatus);
+  const source = String(JobDelivery);
   for (const forbidden of ['new Date', '{{date', '{{seq', 'existsSync', 'casefold', '.sort(']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
@@ -598,14 +603,14 @@ test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 
   h.push(snap);
 
   const markup = renderToStaticMarkup(
-    createElement(JobWorkbenchStatus, { controller: h.controller }),
+    createElement(JobDelivery, { controller: h.controller }),
   );
   // 표시된 기본값이지 빈칸이 아니다 — 경로·출처·사유가 전부 backend 문안이고, 출처는 경로
   // 옆에 병기된다(「기본값이 조용히 쓰였다」와 「내가 설정했다」가 한 줄로 보이지 않게).
   assert.ok(markup.includes('저장 폴더: C:\서고\Results (기본값)'));
   assert.ok(markup.includes('설정한 저장 폴더를 찾을 수 없습니다.'));
   // 라벨을 프런트가 다시 만들지 않는다.
-  const source = String(JobWorkbenchStatus);
+  const source = String(JobDelivery);
   for (const forbidden of ['설정한 저장 폴더', '기본값', 'template_default', 'Results']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
@@ -637,10 +642,10 @@ test('delivery blocker는 backend exact 충돌 경로를 추론 없이 구분해
   h.push(snap);
 
   const markup = renderToStaticMarkup(
-    createElement(JobWorkbenchStatus, { controller: h.controller }),
+    createElement(JobDelivery, { controller: h.controller }),
   );
   for (const blocker of blockers) assert.ok(markup.includes(blocker.conflicting_relative_path));
-  assert.equal(String(JobWorkbenchStatus).includes('blocker.item_ordinal'), false);
+  assert.equal(String(JobDelivery).includes('blocker.item_ordinal'), false);
 });
 
 test('데이터 확인은 backend 문안과 recovery target만 소비한다', async () => {

@@ -37,7 +37,7 @@ CAPTURE_POINTS: "tuple[str, ...]" = (
     "library-detail",
     "session-panel",
     "range-editor",
-    "mirror-check",
+    "preflight-check",
     "generated",
     "workbench-review",
     "workbench-copied",
@@ -368,19 +368,23 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#dataSheet", "#jobOrderToggle", "#jobGenBtn"],
     )
 
-    # ---- S6 본문 확인(한 줄) ------------------------------------------------
-    # 거울 표와 필드축 ack 는 U2 §2.13 으로 폐기됐다(#346) — 값을 말하는 표면은 확인 면
-    # 하나이고, 이 존에 남은 것은 빈 값 표지·이름 건수·확인 면 출구 한 줄이다. 그 줄이
-    # **서 있는 것을 확인한 뒤** 찍는다: 존만 겨눠 찍으면 한 줄이 hidden 인 화면(선택 0건·
-    # 차단 배너)도 같은 컷으로 지나간다.
+    # ---- S6 사전검증 + 위험 배너 --------------------------------------------
+    # 존 재편: 구 「본문 확인」 존의 요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)과
+    # 재진술 블록(`#jobRestate`)은 사전검증·표 머리가 이미 말하던 사실의 2·3중 발화라
+    # 걷혔다. 남은 것은 **행동을 든** 위험 배너 host 뿐이고, 그 자리는 사전검증 바로 아래다.
+    # 실주행에서 재는 것은 ①죽은 세 좌표의 부재 ②배너 host 가 사전검증 뒤에 있음이다 —
+    # 부재를 대본이 안 재면 「걷었다」는 선언이 실앱에서 증명되지 않는다.
     s.wait(
-        "!document.getElementById('jobMirrorLine').hidden"
-        " && document.getElementById('jobMirrorSummary').textContent.trim().length > 0",
-        "본문 확인 한 줄",
-        requires=["#jobMirrorLine", "#jobMirrorSummary"],
+        "!document.getElementById('jobMirrorLine')"
+        " && !document.getElementById('jobMirrorSummary')"
+        " && !document.getElementById('jobRestate')"
+        " && document.getElementById('jobPreflight').nextElementSibling"
+        " === document.getElementById('jobMirror')",
+        "본문 요약·재진술 부재 + 위험 배너 자리",
+        requires=["#jobPreflight", "#jobMirror"],
     )
-    s.scroll_to("#jobMirrorZone")
-    ctx.shoot("mirror-check")
+    s.scroll_to("#jobPreflight")
+    ctx.shoot("preflight-check")
 
     # ---- S7 생성 → 완료 요약 ----------------------------------------------
     s.click_sel("#jobGenBtn", what="이 작업으로 문서 생성")

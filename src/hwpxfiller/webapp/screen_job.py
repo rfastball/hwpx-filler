@@ -365,14 +365,11 @@ ARTIFACT_NOT_IN_SESSION = "ARTIFACT_NOT_IN_SESSION"
 #: 관찰이 성립한 상태의 이름표. 거절 코드와 같은 축에 실려 화면이 한 값으로 분기한다.
 ARTIFACT_OBSERVED = "observed"
 
-# 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
-# (data_zone.EMPTY_*)이 소유한다(PR-2b).
-_EMPTY_RESTATE = {
-    "origin": None, "filter_active": False, "in_def": 0, "extra": 0, "sample": [],
-}
-
-# 재진술 이름 목록 표본 크기 — 소량(≤N)=전부, 대량=층화 표본 N + 「외 …건 펼치기」(결정 5·36).
-_RESTATE_SAMPLE = 3
+# 선택 유래 재진술(``restate``) 스냅샷 축은 존 재편에서 **퇴역**했다. 그 값을 소비하던 표면은
+# 인라인 재진술 블록(`#jobRestate`) 하나였고, 그 블록이 말하던 세 가지(선택 N행·생성 N건·저장
+# 폴더)는 각각 표 머리·배달 계획·저장 폴더 표시 줄이 이미 말하는 사실이었다. 유래 수치를 정말
+# 다시 물어야 하는 자리는 선택을 파기하는 전이의 확인 모달 하나이고, 거기는 ``guard`` 축이
+# (같은 `in_def`/`extra` 수치를 들고) 계속 진다 — 그래서 여기서 죽는 것은 재진술 축 하나다.
 
 # 전체 표시순서 2값(§18.10) — ``snapshotOrdinal``(=로드 순서 index) 내림/오름차순.
 # 정렬 키가 정수라 **동률이 원리적으로 없다** — 2차 정렬 규칙이 필요 없고 두 값은 정확한
@@ -1352,10 +1349,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             for i in self._display_indices(list(range(len(self.records))))
         ]
 
-    # ---- 본문 존(U2 §2.13 — 표 없는 한 줄) ------------------------------------
+    # ---- 위험 배너의 재료 ------------------------------------------------------
     # 구 거울 테이블(_mirror·_field_value_display·_formatted_fields)은 필드축 ack 폐기와
-    # 함께 사망했다: 값을 말하는 표면은 확인 면(미리보기 시트) 하나다. 여기 남는 것은
-    # danger 차단 배너의 재료(drift 필드)와 빈 값 표지의 재료(blank_fields)뿐이다.
+    # 함께 사망했고, 그 뒤를 이은 요약 한 줄도 존 재편에서 걷혔다(사전검증과 같은 사실의
+    # 두 번째 발화). 여기 남는 것은 danger 차단 배너의 재료(drift 필드)와, 표식이 붙는
+    # 필드 집합(blank_fields)뿐이다.
     @staticmethod
     def _drift_fields(status) -> "list[str]":
         """구조 불일치 필드 — 선택과 무관하게 차단 배너로 발화한다(결정 36·RC-23)."""
@@ -1363,20 +1361,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _filter_sections(
         self, indices: "list[int]", record_rows: "list[dict]"
-    ) -> "tuple[dict, dict, dict, dict]":
-        """필터·테이블·재진술 유래 스냅샷(블록 4) — 합성은 공유 믹스인(:class:`~hwpxfiller.
-        webapp.data_zone.DataZoneMixin`), 여기는 화면 몫(선두 「문서」 열 소재·재진술 유래·
-        가드)만 얹는다.
+    ) -> "tuple[dict, dict, dict]":
+        """필터·테이블·세션 가드 스냅샷(블록 4) — 합성은 공유 믹스인(:class:`~hwpxfiller.
+        webapp.data_zone.DataZoneMixin`), 여기는 화면 몫(선두 「문서」 열 소재·가드)만 얹는다.
 
         - **table/filter**: :meth:`_zone_sections` 가 FilterView 1회 평가(캐시 계약)로 합성.
           선두 「문서」 열 소재(이름·요약)는 ``record_rows`` 재사용(F33 승계 — 조용한 드롭 아님).
-        - **restate.origin**: 선택 유래는 **집합 비교로 매 스냅샷 판정**(무상태 — 캡처
-          시점 정의 텍스트가 스테일해지는 창이 없다): 선택==현 매치 전체 = 정의-유래,
-          그 외 = 직접(필터 활성이면 매치/밖 수치 병기 — S4 델타).
-        - **restate.sample**: 층화 표본(결정 5) — 광의 OR 에서 소수 가지가 반드시 등장.
+        - **guard**: 무장 판정은 **커밋된** 범위의 것이라 초안 유무로 소재가 갈린다(아래).
+
+        종전 셋째 산출이던 재진술 유래(``restate``)는 그 소비 표면과 함께 퇴역했다 — 유래
+        수치를 다시 묻는 자리는 파괴 확인 모달 하나이고 그것은 ``guard`` 가 든다.
         """
         if self.filter is None:  # 데이터 미겨눔 — 작업 미선택은 무관(데이터 존은 세션 소유)
-            return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE, self._guard_state()
+            return _EMPTY_FILTER, _EMPTY_TABLE, self._guard_state()
         # 선두 열 소재는 ``record_rows`` 재사용 — 이 화면은 그 목록을 스냅샷 ``records`` 로도
         # 싣기 때문에 이미 전량 지어져 있다(믹스인은 실리는 행에만 이 조회를 부른다).
         rows_by_index = {r["index"]: r for r in record_rows}
@@ -1384,27 +1381,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             indices, rows_by_index.__getitem__
         )
         assert view is not None  # filter 존재를 위에서 확인 — 믹스인 빈 골격 분기 아님
-        # 판정(유래·수치)은 **필터의 가시 집합**을 쓴다 — 렌더용 `visible` 은 「선택된 항목만
-        # 보기」에서 갈아끼워지므로(F3), 그걸로 유래를 판정하면 보기 상태가 곧 「정의-유래」로
-        # 둔갑한다. 보기와 판정을 같은 값으로 뭉개지 않는다.
-        zone_flt = self._zone_flt()
-        assert zone_flt is not None
+        # 가드 수치는 **필터의 가시 집합**을 쓴다 — 렌더용 `visible` 은 「선택된 항목만
+        # 보기」에서 갈아끼워지므로(F3), 그걸로 재면 보기 상태가 판정을 물들인다.
         vis_set = set(view.visible_indices())
-        sel_set = set(indices)
-        f_active = zone_flt.is_active()
-        origin = None
-        if indices:
-            origin = "definition" if (f_active and sel_set == vis_set) else "manual"
-        restate_snap = {
-            "origin": origin,
-            "filter_active": f_active,
-            "in_def": len(sel_set & vis_set) if f_active else 0,
-            "extra": len(sel_set - vis_set) if f_active else 0,
-            "sample": (
-                view.stratified_sample(indices, _RESTATE_SAMPLE)
-                if f_active else indices[:_RESTATE_SAMPLE]
-            ),
-        }
         # 세션 가드는 **커밋된** 범위의 판정이다(F3 판정 D): 초안이 열려 있으면 위 view 는
         # 초안 필터의 것이라 가시 집합을 물려주면 남의 정의로 커밋 선택을 잰다. 그때만
         # 재평가한다(평시엔 이중 평가 금지 계약 그대로 — 리뷰 #7).
@@ -1412,7 +1391,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._guard_state() if self.range_draft is not None
             else self._guard_state(vis_set=vis_set)
         )
-        return filter_snap, table_snap, restate_snap, guard
+        return filter_snap, table_snap, guard
 
     # ------------------------------------------------- 세션 가드(블록 4, 결정 26·27)
     def _guard_state(self, vis_set: "set[int] | None" = None) -> dict:
@@ -1570,7 +1549,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
             zone_indices = self._zone_indices()
             record_rows = self._record_rows(zone_indices, [])
-            filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+            filter_snap, table_snap, guard_snap = self._filter_sections(
                 zone_indices, record_rows
             )
             # 템플릿 정체는 **이번 스캔의 목록**에서 집는다 — 세션이 Job 사본을 들지 않으므로
@@ -1616,7 +1595,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 빈 값 표지·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값
                 # 확인을 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
                 "blank_fields": [], "drift": [], "name_tokens": [],
-                "filter": filter_snap, "table": table_snap, "restate": restate_snap,
+                "filter": filter_snap, "table": table_snap,
                 "guard": guard_snap,
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
                          "reason": g.reason},
@@ -1630,7 +1609,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
             zone_indices = self._zone_indices()
             record_rows = self._record_rows(zone_indices, [])
-            filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+            filter_snap, table_snap, guard_snap = self._filter_sections(
                 zone_indices, record_rows
             )
             g = prework_gate(
@@ -1668,7 +1647,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "records": record_rows,
                 "preflight": {"level": "", "text": ""},
                 "blank_fields": [], "drift": [], "name_tokens": [],
-                "filter": filter_snap, "table": table_snap, "restate": restate_snap,
+                "filter": filter_snap, "table": table_snap,
                 "guard": guard_snap,
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
@@ -1742,7 +1721,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if zone_indices else []
             )
         record_rows = self._record_rows(zone_indices, zone_mapped)
-        filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+        filter_snap, table_snap, guard_snap = self._filter_sections(
             zone_indices, record_rows
         )
         # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭. 술어·
@@ -1776,14 +1755,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "record_count": len(self.records),
             "selected_count": self.selection.selected_count(),
             "records": record_rows,
-            # 필터 상태·데이터 테이블·재진술 유래·가드(블록 4) — 표면은 받은 것을 그리기만.
+            # 필터 상태·데이터 테이블·가드(블록 4) — 표면은 받은 것을 그리기만.
             "filter": filter_snap,
             "table": table_snap,
-            "restate": restate_snap,
             "guard": guard_snap,
             "preflight": {"level": status.preflight.level, "text": preflight_text},
-            # 본문 존 = 표 없는 한 줄(U2 §2.13) — 빈 값 표지의 재료(필드 이름 목록)만
-            # 싣는다. 값은 싣지 않는다: 값을 말하는 표면은 만들어진 문서다(#957).
+            # 이번 실행 입력에서 값이 빈 **필드 이름 목록**. 값은 싣지 않는다 — 값을 말하는
+            # 표면은 만들어진 문서다(#957). 이 목록은 위 `blanks` 한 집합에서 나오고, 같은
+            # 집합이 표식(marker)과 검토 요구를 짓는다: 존 재편 뒤 화면은 이 사실을 사전검증
+            # 문안으로 읽지만, 스냅샷 축은 **표식이 실제로 어느 필드에 붙는가**의 관측면이라
+            # 남는다(표시와 생성이 한 술어를 공유하는지 계약 테스트가 여기서 잰다).
             "blank_fields": list(blanks),
             "drift": drift_fields,
             # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서

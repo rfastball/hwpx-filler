@@ -8,7 +8,7 @@
    portal target 의 **속성은 React 가 만지지 않으므로**(children 만 들어간다) 「이 존이
    없는 축」 판정은 자리를 비우는 것으로 말하고 CSS 가 그것을 접는다. 조건 열거가 아니라
    빈 자리 하나가 규칙이라 새 갈래가 생겨도 여기가 늘지 않는다. */
-#jobPreflight:empty,#jobMirrorZone:empty,#jobOutFolderRow:empty,#jobRestate:empty{display:none}
+#jobPreflight:empty,#jobDeliveryZone:empty,#jobOutFolderRow:empty{display:none}
 /* 저장 폴더 표시 줄(전역화 뒤의 `#jobOutRow` 후계) — 고르는 칸·단추가 사라져 한 줄에 나란히
    놓을 것이 없다. 사유 문안은 경로 **아래**에 서야 읽히므로 이 행만 세로로 눕힌다. */
 #jobOutFolderRow{flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
@@ -34,29 +34,17 @@
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
-/* ── 본문 존 = 표 없는 한 줄(U2 §2.13) — 구 거울 테이블·클릭형 ack 행은 필드축 ack
-   폐기와 함께 걷혔다. 값을 말하는 표면은 #957 이후 만들어진 문서다. ── */
 .tbwrap{overflow-x:auto}
-.mirline{margin:var(--sp-10) 0 0;font-size:var(--fs-body);display:flex;align-items:center;
-  gap:var(--sp-8);flex-wrap:wrap}
-/* 빈 값 표지 — 정보이지 클릭 표적이 아니다(§2.13: 클릭 표적만 사라졌다). 색은 채움 표지
-   토큰(--fb-*)을 그대로 써 표지 언어가 통일된다. */
-.mir-blank-flag{background:var(--fb-missing-bg);color:var(--a-danger);
-  border-radius:var(--rad-pill);padding:1px var(--sp-8);font-weight:600}
-.mir-blank-flag b{color:inherit}
-.mirempty{padding:var(--sp-8) 0}
-/* danger(구조 드리프트·미해소 토큰)는 편집에 가야 풀림 — 한 줄과 섞지 않고 차단 배너 +
-   상시 행동 링크로 분리(결정 36·S9, 막다른 경보 금지). */
+/* ── 위험 배너(`#jobMirror`) — 구조 드리프트·미해소 토큰은 편집에 가야 풀린다. 존 재편에서
+   구 「본문 확인」 존의 요약 한 줄(`.mirline`·`.mir-blank-flag`·`.mirempty`)은 사전검증과
+   같은 사실의 두 번째 발화라 걷혔고, 배너는 그 사전검증 **바로 아래**로 내려왔다. 남는
+   규칙은 배너 하나다 — 차단 사유 + 상시 행동 링크(결정 36·S9, 막다른 경보 금지). ── */
 .mir-drift{background:var(--fb-missing-bg);border:1px solid var(--a-danger);border-radius:var(--rad-surface);
   padding:var(--sp-10) var(--sp-12);margin-top:var(--sp-10);display:flex;flex-direction:column;
   gap:var(--sp-8);align-items:flex-start}
 .mir-drift p{margin:0;color:var(--a-danger)}
-/* 재진술 블록(결정 36 D1-B) — 선택 유래 + 산출 요약. 파일 이름 목록은 확인 면의
-   「이름 계획」 한 줄로 이주했다(U2 §2.13). */
-.defblk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-2) var(--sp-10);
-  margin-top:var(--sp-16);padding:var(--sp-10) var(--sp-12);background:var(--a-card);
-  border:1px solid var(--a-border);border-radius:var(--rad-surface);font-size:var(--fs-body)}
-.defblk .dl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;padding-top:2px}
+/* 구 재진술 블록의 `.defblk`·`.defblk .dl` 은 산출자가 0 이 되어 함께 걷혔다(#325 — 남은
+   규칙은 그 표면이 아직 산다고 읽힌다). */
 
 /* 액션 · 진행 · 결과 · 로그 */
 .run-actions{display:flex;align-items:center;gap:var(--sp-12);margin-top:var(--sp-16);flex-wrap:wrap}

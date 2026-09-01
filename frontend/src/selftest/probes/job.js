@@ -35,14 +35,15 @@
  *   · job_data_first : actionbar_plane ↔ actionbar_plane_empty_note(빈 문안 자리) ·
  *                      fav_refusal_alerts(거절 착지=알림 채널, #957) ·
  *                      fav_pressed=["true","false"] · fav_order=[F,T,T,F,T,F] ·
- *                      gen_disabled · restate_hidden ·
+ *                      gen_disabled ·
  *                      cand_disabled_chips==0 · browse_query_kept↔browse_query_settled.
  *   · job_inherited  : no_data_exit_with_data(false) ↔ no_data_exit_shown(true).
  *   · job_active_card: conn_quiet_when_ok ↔ conn_text_no_data/relink_visible_no_data ·
  *                      warn_click_sends=="[]"(막힘) ↔ warn_redirect_modal(안내 다이얼로그) ·
  *                      cands_hidden_when_no_data. relink 는 `offsetParent` 로 **실제 가시성**을
  *                      본다 — hidden 을 지운 것과 그려진 것은 다른 사실이다.
- *   · job_mirror     : mirror_trigger_disabled(false) ↔ mirror_trigger_locked(true) ·
+ *   · job_mirror     : mirror_host_present(true) ↔ mirror_line_gone/restate_gone(부재 음성) ·
+ *                      mirror_trigger_disabled(false) ↔ mirror_trigger_locked(true) ·
  *                      reapply_shown ↔ reapply_hidden · panel_hidden(hidden 이 flex 를 이긴다) ·
  *                      guard_body(재적용 있음) ↔ guard_body_minimal(없음) ·
  *                      mirror_trigger_disabled_at_click(false) + mirror_click_seen(true)
@@ -254,7 +255,6 @@ function dataFirstSnapshot() {
         { index: 0, selected: false, name: "", summary: "전산장비", cells: [[["전산장비", false]]] }],
       visible_count: 2, hidden_selected: [],
     },
-    restate: { origin: "manual", filter_active: false, in_def: 0, extra: 0, sample: [1] },
     preflight: { level: "", text: "" }, blank_fields: [], drift: [], name_tokens: [],
     gate: { enabled: false, level: "warn", text: "문서 작업을 선택하세요." },
   };
@@ -286,7 +286,6 @@ function mirrorSnapshot() {
       visible_count: 1,
       hidden_selected: [{ index: 1, selected: true, name: "doc-002.hwpx", summary: "사무비품" }],
     },
-    restate: { origin: "manual", filter_active: true, in_def: 1, extra: 1, sample: [0] },
     preflight: { level: "ok", text: "ok" },
     blank_fields: ["낙찰율"],
     drift: [], gate: { enabled: true, level: "", text: "생성 준비" },
@@ -312,7 +311,6 @@ function inheritedSnapshot() {
       rows: [{ index: 0, selected: true, name: "", summary: "사무비품", cells: [[["사무비품", false]]] }],
       visible_count: 1, hidden_selected: [],
     },
-    restate: { origin: "manual", filter_active: false, in_def: 0, extra: 0, sample: [0] },
     preflight: { level: "", text: "" }, blank_fields: [], drift: [], name_tokens: [],
     gate: { enabled: false, level: "warn", text: "문서 작업을 선택하세요." },
   };
@@ -353,7 +351,6 @@ function activeCardSnapshot() {
       rows: [{ index: 0, selected: true, name: "doc-001.hwpx", summary: "사무비품", cells: [[["사무비품", false]]] }],
       visible_count: 1, hidden_selected: [],
     },
-    restate: { origin: "manual", filter_active: false, in_def: 0, extra: 0, sample: [0] },
     preflight: { level: "ok", text: "ok" }, mirror: [], drift: [], name_tokens: [],
     gate: { enabled: true, level: "", text: "생성 준비" },
   };
@@ -372,7 +369,6 @@ function resultSnapshot() {
     browse: { tab: "available", query: "", rows: [], available_count: 0, needs_count: 0, filtered_out: 0 },
     guard: { armed: false, sel_count: 1, in_def: 0, extra: 0, filter_active: false, filter_parts: 0 },
     table: { columns: [], rows: [], visible_count: 0, hidden_selected: [] },
-    restate: { origin: "manual", filter_active: false, in_def: 0, extra: 0, sample: [0] },
     preflight: { level: "", text: "" }, blank_fields: [], drift: [], name_tokens: [],
     gate: { enabled: false, level: "warn", text: "확인이 필요합니다." },
   };
@@ -704,8 +700,10 @@ async function runJobDataFirst(ctx) {
   out.tbl_rows_order = mapAll(
     doc.querySelectorAll("#jobTableBody tr[data-i]"), (r) => r.getAttribute("data-i"),
   );
-  out.restate_hidden = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
-  /* `folder_pick_disabled`(#jobBtnPickFolder) 는 여기 있었다. 저장 폴더가 작업 속성이던
+  /* 종전 이 자리의 `restate_hidden`(prework 에서 생성 재진술이 숨는가)은 그 재진술 블록
+     자체가 존 재편에서 죽어 잴 대상이 없다 — 부재는 job_mirror 의 `restate_gone` 이 한 번만
+     잰다(같은 사실을 두 프로브가 각자 재지 않는다).
+     `folder_pick_disabled`(#jobBtnPickFolder) 도 여기 있었다. 저장 폴더가 작업 속성이던
      동안에는 「작업 미선택에서 폴더를 고르면 작업 선택이 그것을 조용히 덮는다」가 실재하는
      결함이라 비활성이 계약이었다. 전역화로 그 덮어쓰기 자체가 사라졌고 고르는 자리도 이
      화면 밖(설정 모달)이라, 잴 대상이 남지 않았다. */
@@ -889,22 +887,28 @@ async function runJobMirror(ctx) {
   let snap = mirrorSnapshot();
   await pushAndSettle(ctx, "job", snap);
 
-  /* 본문 존 = 표 없는 한 줄(U2 §2.13). 한 줄은 안정 DOM(#jobMirrorLine)이고 #jobMirror 는
-     danger 배너 전용이다(#364) — 자리를 가르는 것이 트리거를 재렌더에서 지키는 기제다. */
-  out.mirror_no_table = !doc.querySelector("#jobMirrorZone table");
+  /* `#jobMirror` 는 **danger 배너 전용 host** 다(#364). 존 재편에서 그 위에 섰던 캡션과
+     요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)이 죽었으므로 여기서 재는 것은 **부재**다
+     — 선언된 철거는 조용한 무시와 다르고, 되살아나면 이 세 줄이 빨강이다. 배너 host 자신은
+     사전검증 바로 아래에 그대로 서 있어야 하므로 존재를 함께 잰다(양성·음성 한 쌍). */
+  out.mirror_host_present = !!doc.getElementById("jobMirror");
+  out.mirror_line_gone = !doc.getElementById("jobMirrorLine")
+    && !doc.getElementById("jobMirrorSummary")
+    && !doc.querySelector(".mirline, .mir-blank-flag, .mirempty");
   out.mirror_banner_empty = doc.getElementById("jobMirror").children.length === 0;
-  out.mirror_line = (() => {
-    const l = doc.getElementById("jobMirrorLine");
-    return l && !l.hidden ? l.textContent : "";
+  /* 배너 host 는 사실을 말하는 사전검증 **바로 뒤**에 온다 — 복구 동사가 사유와 떨어져
+     서면 「무엇이 잘못됐나」와 「어디로 가서 고치나」가 화면에서 갈린다. */
+  out.mirror_follows_preflight = (() => {
+    const pf = doc.getElementById("jobPreflight");
+    const host = doc.getElementById("jobMirror");
+    return !!pf && !!host && pf.nextElementSibling === host;
   })();
-  out.mirror_line_has_blank_flag = !!doc.querySelector("#jobMirrorLine .mir-blank-flag");
   /* 종전 이 자리에 섰던 확인 면 출구(`#jobMirrorPreviewOpen`)와 그 잠금 대조는 #957 에서
-     사망했다 — 이 줄은 이제 요약만 진다. 파괴 확인의 계측은 아래 `ow_body` 다. */
+     사망했다. 파괴 확인의 계측은 아래 `ow_body` 다. */
   out.mirror_preview_exit_gone = !doc.getElementById("jobMirrorPreviewOpen");
   out.mirror_review_flag_gone = !doc.getElementById("jobReviewFlag");
-
-  out.restate_shown = isShown(ctx, doc.getElementById("jobRestate"));
-  out.restate_no_namelist = !doc.querySelector("#jobRestate .namelist");
+  /* 재진술 블록(`#jobRestate`)도 존 재편에서 죽었다 — 선택 수치의 세 번째 발화였다. */
+  out.restate_gone = !doc.getElementById("jobRestate");
 
   /* 필터 표면 되읽기(블록 4) — 가시 행·하이라이트·칩·가지 ×·스트립·유래 수치·아이콘. */
   out.tbl_rows = doc.querySelectorAll("#jobTableBody tr[data-i]").length;
@@ -943,7 +947,6 @@ async function runJobMirror(ctx) {
   out.strip_text = doc.getElementById("jobSelStrip").textContent;
   out.strip_bg = win.getComputedStyle(doc.getElementById("jobSelStrip")).backgroundColor;
   out.strip_unsel = !!doc.querySelector('#jobSelStrip [data-unsel="1"]');
-  out.sel_line = doc.getElementById("jobRestate").textContent;
 
   /* 왕복을 일부러 미결로 둔 채 두 번 누른다. 둘째 값이 첫 낙관 표지를 기준으로 계산돼야
      true→false→true 가 되고, checkbox·aria-selected·행 tint 가 같은 프레임에 맞는다(#217 R2). */
@@ -996,8 +999,8 @@ async function runJobMirror(ctx) {
   await pushAndSettle(ctx, "job", snap);
   out.drift_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
   out.drift_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-mapping"]');
-  out.drift_no_line = !doc.querySelector("#jobMirror .mirline");
-  out.restate_hidden_on_drift = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
+  /* 배너가 섰을 때 그 자리에 요약 한 줄이 남지 않는다 — 존 재편 뒤 그 줄은 어느 상태에도
+     없으므로 부재는 위 `mirror_line_gone` 한 번으로 잰다(중복 계측 금지). */
 
   /* 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. */
   snap = deepCopy(snap);
@@ -1007,12 +1010,10 @@ async function runJobMirror(ctx) {
   await pushAndSettle(ctx, "job", snap);
   out.token_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
   out.token_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-filename"]');
-  out.token_no_line = !doc.querySelector("#jobMirror .mirline");
   out.token_banner_text = (() => {
     const b = doc.querySelector("#jobMirror .mir-drift");
     return b ? b.textContent : "";
   })();
-  out.token_restate_hidden = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
   /* 덮어쓰기 확인 본문 합성 되읽기 — overwrite_count/new_count 스왑·이름 목록 누락의 핀. */
   out.ow_body = services.JobRun.overwriteBody({
     total: 10, overwrite_count: 3, new_count: 7, conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 5,

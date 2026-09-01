@@ -20,7 +20,7 @@ import type { JobContentSelectionController } from "./job_content_selection.ts";
 import { JobArtifactSheet } from "./job_artifact.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
-  JobActionBar, JobMirrorZone, JobOutFolderLine, JobPreflight, JobRestate, JobRunCap,
+  JobActionBar, JobDangerBanner, JobDelivery, JobOutFolderLine, JobPreflight, JobRunCap,
   JobTemplateChange, JobWorkbenchStatus,
   JobStatusPill,
 } from "./job_run.ts";
@@ -135,9 +135,14 @@ function JobScreen(
               h("div", { className: "zone job-data-zone" },
                 h(JobDataHeader as any, { controller: jobRead }),
                 h("div", { id: "jobPreflight" }, h(JobPreflight as any, { controller: jobRun })),
+                // 사실(사전검증)과 그 사실의 복구 동사(위험 배너)는 한 자리에 붙는다 —
+                // 존 재편에서 구 「본문 확인」 존의 몸통이 죽고 배너만 여기로 내려왔다.
+                h(JobDangerBanner as any, { controller: jobRun }),
                 h(JobDataBody as any, { controller: jobRead, location: "inline" })),
-              h("div", { className: "zone job-mirror-zone", id: "jobMirrorZone" },
-                h(JobMirrorZone as any, { controller: jobRun })),
+              // 만들 것 → 만들어진 것. 좌 열은 데이터 표 아래로 「생성 예정 문서」와
+              // 「생성 결과」가 이어지고, 우 열은 고르고 준비하는 축만 든다.
+              h("div", { className: "zone job-delivery-zone", id: "jobDeliveryZone" },
+                h(JobDelivery as any, { controller: jobRun })),
               h("div", { className: "zone job-result-zone", id: "jobResultZone", tabIndex: -1 },
                 h(JobResultZone as any, { controller: jobRun }))),
             h("aside", { className: "dg-side", id: "jobSideCard", "aria-label": "이 데이터에 사용할 문서" },
@@ -155,9 +160,7 @@ function JobScreen(
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),
                 h("div", { className: "run-row", id: "jobOutFolderRow" },
-                  h(JobOutFolderLine as any, { controller: jobRun })),
-                h("div", { className: "defblk", id: "jobRestate" },
-                  h(JobRestate as any, { controller: jobRun })))))),
+                  h(JobOutFolderLine as any, { controller: jobRun })))))),
         h("div", { className: "session-actionbar", id: "jobActionBar" },
           h(JobActionBar as any, { controller: jobRun })))));
 }
