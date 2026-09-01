@@ -45,7 +45,8 @@
 | [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 그 라운드 미결 항목의 정본이기도 하다 |
 | [U3 실사용 피드백 라운드](UX_FEEDBACK_U3.md) | 유효 결정 | S 로드맵 완주(v0.4.0) 후 「문서 만들기」 표면 6건의 트리아지·판정. 조치 추적은 #873 |
 | [U4 실사용 피드백 라운드](UX_FEEDBACK_U4.md) | 유효 결정 | v0.5.0 출하 직후 34항의 판정과 재판정 기록(승인 뒤 확인 면 닫힘 · 이름 충돌은 blocker 아님 · **작업↔데이터 durable 강결합** — U2 §5.3 판정 D 폐기). 34항 트리아지·충돌 지점·라운드 분할은 우산 #932 |
-| [U5 실사용 피드백 라운드](UX_FEEDBACK_U5.md) | 유효 결정 | 간소화 라운드 17항의 판정(중복 발화·상수 알림·거짓 동선·stale 어휘 감량, 설정 모달 신설, 저장 폴더 전역화). 착지 PR #963~#969, 회수 #965·#970. **새 실사용 판정은 여기** |
+| [U5 실사용 피드백 라운드](UX_FEEDBACK_U5.md) | 유효 결정 | 간소화 라운드 17항의 판정(중복 발화·상수 알림·거짓 동선·stale 어휘 감량, 설정 모달 신설, 저장 폴더 전역화). 착지 PR #963~#969, 회수 #965·#970 |
+| [U6 실사용 피드백 라운드](UX_FEEDBACK_U6.md) | 유효 결정 | 작업 조합 재편 — 템플릿 풀·데이터 풀 조합 한 화면, 서식 폴더 풀(단일 루트·`.tpl`), 연결 표 4열, 문서 작업 상세 패널. 리서치 근거·사용자 확정 5건. 우산 #974, 슬라이스 #975~#980. **새 실사용 판정은 여기** |
 | [제어면 범위](CONTROL_PLANE_SCOPE.md) | 유효 결정 | SG-03(#735) v1 제어면 축소의 정본 — production consumer census + 네 scope 결정(shipping Profile 1개·backend-only semantic authority·신규 ledger allowlist·HMAC threat model). 짝 게이트는 `tests/repo_contract/test_control_surface_reduction.py`·`test_bridge_contract.py`·`tests/test_slot_configuration_product.py`·`tests/test_control_plane_evidence.py` |
 | [온보딩 튜토리얼](ONBOARDING_TUTORIAL.md) | 유효 결정 | 배포본 동봉 예제 세트(#284 승계)와 진행 감지 체크리스트의 설계 — 자산 명세·루프 커리큘럼(기본/응용/고급+선택 심화 티어, 기존 UX 루프 문서 역참조)·순간 카드·단계 판정·설치/제거 경로. #284 결정 ②(범용 중립)를 조달 실문서 각색으로 뒤집는 재판정 포함. 구현 추적은 슬라이스 이슈 |
 | [문서 표현과 변경 권위 계층 이론](DOCUMENT_AUTHORITY_LAYERS.md) | 유효 결정 | 저작·구성 투영·산출물 관찰 계층과 그 사이 경계 사건의 판정 기준. **미래 제품 모델이라 P 로드맵(#433·#511)의 입력이 아니다**(§0.0). 명사·불변식의 구체 적용은 [핵심 워크플로 계약](core-workflow.md)이, 현재 표면은 UI 계약이 소유. 적용 우산 = #530 |
@@ -58,6 +59,7 @@
 |---|---|---|
 | `design_language_*.html` | 동결 시안 | 시각 언어 결정 당시 비교안 |
 | `r-flow-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
+| `u6-mockups/` | 동결 시안 | U6 조합 재편 4장면(1·2·3단계 + 문서 작업 상세 패널) — `UX_FEEDBACK_U6.md` 가 참조 |
 | `archive/UI_CONTRACT_QT.md` (#225에서 분리) | 역사 기록 | 웹 이관 전 목업↔ViewModel↔Qt 계약 |
 | [`archive/DATA_FIRST_INTEGRATION_MAP.md`](archive/DATA_FIRST_INTEGRATION_MAP.md) | 역사 기록 | v6 표면 전면 재작성(R1·F1~F8) 완주로 동결(2026-07-29). 대조표·슬라이싱은 정산됐고 **왜 그런 표면이 됐는지**의 근거 원장으로 남는다 — §7·§8.2·§10.x 판정은 계속 인용 대상. **그 「데이터-우선」 전제는 U4 §2.4(#932 U4-C)가 뒤집었다** — 동결 문서는 고치지 않고 승계 진술은 [UI 계약](UI_CONTRACT.md)의 세션·결속 절이 진다 |
 | [`archive/REACT_MIGRATION_COMPLETION.md`](archive/REACT_MIGRATION_COMPLETION.md) | 역사 기록 | React/TypeScript 전환 완료 범위와 장기 계약 소유자. 단계별 계측·좌표는 Git 이력이 보존 |

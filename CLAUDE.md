@@ -204,8 +204,8 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
 
 - `docs/DEVELOPMENT_ENVIRONMENT.md` — 환경·게이트·패키징·릴리스 절차
 - `docs/UI_CONTRACT.md` — 현재 웹 UI 의 링 구조·라우팅·화면별 계약
-- `docs/UX_FEEDBACK_U3.md` — 현재 실사용 피드백 라운드의 판정(새 판정은 여기, 조치 추적 #873).
-  이전 라운드는 `docs/UX_FEEDBACK_U2.md`
+- `docs/UX_FEEDBACK_U6.md` — 현재 실사용 피드백 라운드의 판정(새 판정은 여기, 조치 추적 #974).
+  이전 라운드는 `docs/UX_FEEDBACK_U5.md`(간소화)·`U4`·`U3`·`U2`
 - `docs/archive/DATA_FIRST_INTEGRATION_MAP.md` — v6 워크플로 계약 ↔ master seam 대조.
   **완주·동결**(2026-07-29) — 인용은 하되 새 판정을 덧붙이지 않는다
 - `examples/quickstart-101/README.md` — 실제 사용 흐름(예제 템플릿·데이터 동봉)
@@ -236,7 +236,7 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   blocker 어포던스 표(`src/hwpxfiller/webapp/blocker_affordance.py` + 그 계약 테스트)다.
   종전 서술이 가리키던 별도의 「정적 DOM 계약」 파일(`test_web_dom_contract.py`·
   `test_web_datazone.py`)은 **존재하지 않는다**(#932 B4).
-- 동결 목업(`docs/UI_PROTOTYPE_APPB.html`, `docs/r-flow-mockups/`)은 현재 기능을 설계·검증하려고
+- 동결 목업(`docs/UI_PROTOTYPE_APPB.html`, `docs/r-flow-mockups/`, `docs/u6-mockups/`)은 현재 기능을 설계·검증하려고
   먼저 고치지 않는다.
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호(`feat: … (#319)`, 파괴적 변경은 `feat!:`).
 - 커밋하지 않는 것: `.venv/`, `.secrets/`, `build/`·`dist/`·`installer-dist/`, coverage·pytest 보고서,
