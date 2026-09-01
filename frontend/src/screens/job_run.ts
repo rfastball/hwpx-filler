@@ -1,5 +1,16 @@
-/* R4-03 실행 표면 — 사전검증·거울·재진술·게이트·저장 폴더·액션바·진행/결과 수명주기의
-   단일 owner. legacy `js/screens/job.js` 의 실행 remainder 전체가 여기로 온다.
+/* R4-03 실행 표면 — 사전검증·위험 배너·게이트·저장 폴더·배달 계획·액션바·진행/결과
+   수명주기의 단일 owner. legacy `js/screens/job.js` 의 실행 remainder 전체가 여기로 온다.
+
+   ## 존 재편(#957 후속) — 같은 사실을 두 번 말하지 않는다
+
+   구 「본문 확인」 존의 요약 한 줄(빈 값 필드·이름 건수)과 우 열 「현재 실행 상태」 문안은
+   각각 사전검증 `[경고] 빈 값 필드` 와 우상단 상태 pill 이 이미 말하던 것의 두 번째 발화라
+   걷혔다. 남는 것은 **행동을 든 것**뿐이다: 위험 배너(`#jobMirror` — 구조 드리프트·미해소
+   토큰 + 복구 동사)는 사실을 말하는 사전검증 **바로 아래**로 내려갔고, 「생성 예정 문서」는
+   좌 열(표와 생성 결과 사이)로 옮겨 만들 것과 만들어진 것이 한 줄기로 읽힌다.
+   구 재진술 블록(`#jobRestate`)은 선택 수치를 세 번째로 말하던 자리라 함께 죽었다 —
+   그 수치를 정말 다시 물어야 하는 자리는 파괴 전이 가드 모달 하나이고, 거기는 공유
+   합성기 `selectionLine` 이 계속 진다.
 
    ## 이 파일이 legacy 에서 바꾼 것 하나
 
@@ -68,8 +79,11 @@ const GATE_ZONE: Record<string, string> = {
   data_unbound: "현재 데이터 · ",
   no_candidates: "이 데이터에 사용할 문서 · ",
   no_job: "이 데이터에 사용할 문서 · ",
-  drift: "본문 확인 · ",
-  name_tokens: "본문 확인 · ",
+  // 드리프트·미해소 토큰의 지목도 **빈 문자열**이다 — 그 축을 소유하던 「본문 확인」 존은
+  // 존 재편에서 죽었고, 두 사유의 위험 배너는 사전검증 바로 아래(현재 데이터 존 안)에 서서
+  // 복구 동사를 스스로 든다. 없는 구획을 가리키느니 안 가리킨다(`template_missing` 동형).
+  drift: "",
+  name_tokens: "",
   // 템플릿 축은 **빈 문자열**이다 — 그 축을 소유하던 「선택한 작업」 존은 죽었고 복구는
   // 같은 액션바 줄의 연결 상태·재연결이 곁에서 진다. 없는 구획을 가리키느니 안 가리킨다.
   template_missing: "",
@@ -660,17 +674,23 @@ export function JobPreflight(props: { controller: JobRunController }): ReactNode
     String(p.text));
 }
 
-export function JobMirrorZone(props: { controller: JobRunController }): ReactNode {
+/** 위험 배너 host — 구조 드리프트·미해소 파일명 토큰의 **차단 배너 전용** 자리다.
+ *
+ *  구 「본문 확인」 존의 몸통(cap + `#jobMirrorLine`/`#jobMirrorSummary` 요약 한 줄)은
+ *  걷혔다: 「빈 값 N필드(…)」는 바로 위 사전검증이 이미 말하는 사실이라 두 번째 발화였고,
+ *  「이름 N건」은 표의 선택 수치와 배달 계획이 각각 말한다. 남긴 것은 **사실 말고 행동을
+ *  든 것**이다 — 배너는 사유를 재진술하고 편집기로 가는 복구 동사를 함께 세운다.
+ *
+ *  그래서 이 컴포넌트의 자리도 바뀐다: 사실을 말하는 `#jobPreflight` 바로 아래에 서서
+ *  「무엇이 잘못됐나 → 어디로 가서 고치나」가 한 자리에서 이어진다. `#jobMirror` id 는
+ *  그대로다 — 배너 host 의 정체는 바뀌지 않았고 게이트·대본이 그 좌표를 든다. */
+export function JobDangerBanner(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
-  // TXT 는 이 존이 **없는 축**이다 — 통째로 걷는다. 남겨 두면 빈 상태 문안이 행을 다 고른
-  // 뒤에도 그대로 서서, 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
-  // 자리를 비우면 `#jobMirrorZone:empty` 가 존을 접는다(legacy 의 `style.display` 후계 —
-  // portal target 의 속성은 React 가 만지지 않는다).
+  // TXT·managed 는 이 배너가 **없는 축**이다(구조 드리프트·파일명 토큰이 둘 다 legacy hwpx
+  // 생성 경로의 사유다) — 통째로 걷는다. 렌더 조건은 존 재편 전과 같다.
   if (isCopyWork(s) || isManagedHwpx(s)) return null;
   const drift = (s?.drift || []) as string[];
   const nameTokens = (s?.name_tokens || []) as string[];
-  const n = Number(s?.selected_count || 0);
-  const blanks = (s?.blank_fields || []) as string[];
 
   // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
   let banner: ReactNode = null;
@@ -692,24 +712,9 @@ export function JobMirrorZone(props: { controller: JobRunController }): ReactNod
       }, "편집에서 파일명 패턴 고치기…"));
   }
 
-  const summary: ReactNode = (!s?.has_job || !s?.has_data || !n)
-    // 선택 0 = 생성될 문서 없음. 자리는 그대로 두고 문안만 바꾼다 — 없애면 이 한 줄이
-    // 상태에 따라 사라졌다 나타나 존이 접혔다 펴진다.
-    ? h("span", { className: "mirempty muted capnote" }, "표에서 행을 선택하면 여기에 요약이 섭니다.")
-    : createElement(Fragment, null,
-      blanks.length
-        ? h("span", { className: "mir-blank-flag" }, "빈 값 ", h("b", null, `${blanks.length}필드`), `(${blanks.join("·")})`)
-        : "빈 값 없음",
-      " · 이름 ", h("b", null, `${n}건`));
-
-  return createElement(Fragment, null,
-    h("div", { className: "zone-cap" }, "본문 확인"),
-    h("div", { id: "jobMirror" }, banner),
-    // 한 줄은 안정 DOM 이다. 종전 이 자리에 섰던 「생성 값 미리보기」 출구는 #957 에서
-    // 사망했다 — 확인의 자리는 만들어진 문서이고, 이 줄은 그 전에 아는 사실(빈 값·건수)만
-    // 재진술한다.
-    h("p", { className: "mirline", id: "jobMirrorLine", hidden: banner !== null },
-      h("span", { id: "jobMirrorSummary" }, summary)));
+  // host 는 배너가 없어도 선다 — 안정 DOM 이라 게이트가 「비어 있음」을 실제로 잴 수 있고,
+  // 빈 div 는 자리를 차지하지 않는다(존 상자가 아니라 데이터 존 안의 한 조각이다).
+  return h("div", { id: "jobMirror" }, banner);
 }
 
 /** 구식(hwpx) 갈래의 저장 폴더 **표시 한 줄** — 고르는 자리가 아니다.
@@ -738,30 +743,11 @@ export function JobOutFolderLine(props: { controller: JobRunController }): React
     notice ? h("p", { className: "warn capnote", id: "jobOutDirNotice" }, notice) : null);
 }
 
-/** 재진술 블록 — 이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. */
-export function JobRestate(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  if (isManagedHwpx(s)) return null;
-  const sel = ((s?.records || []) as Obj[]).filter((r) => r.selected);
-  const gate = (s?.gate || {}) as Obj;
-  // danger 차단 중엔 재진술을 숨긴다 — "생성 불가"인데 "N건 생성"을 동시에 진술하면 모순.
-  const blocked = gate.level === "danger";
-  if (!s?.has_job || !s?.has_data || !sel.length || blocked) return null;
-  const rs = (s.restate || {}) as Obj;
-  const selLine = rs.origin === "definition"
-    ? `정의 매치 전체 ${sel.length}행: ${String((s.filter && s.filter.definition) || "")}`
-    : String(props.controller.selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
-  // 산출 재진술은 **매체마다 다른 사실**이다(리뷰 6R) — TXT 는 파일을 만들지 않는다.
-  return createElement(Fragment, null,
-    h("span", { className: "dl" }, "선택"), h("span", null, selLine),
-    isCopyWork(s)
-      ? createElement(Fragment, null,
-        h("span", { className: "dl" }, "복사"),
-        h("span", null, `작업대에서 ${sel.length}건을 한 건씩 검토하고 복사합니다. 파일은 만들지 않습니다.`))
-      : createElement(Fragment, null,
-        h("span", { className: "dl" }, "생성"),
-        h("span", null, `문서 ${sel.length}건 · 저장 폴더: ${String(s.out_dir || "미지정")}`)));
-}
+/* 구 재진술 블록(`JobRestate` · `#jobRestate`)은 존 재편에서 죽었다 — 「선택 N행」은 표
+   머리와 필터 밖 스트립이, 「생성 N건 · 저장 폴더」는 배달 계획(`JobDelivery`)과 저장 폴더
+   표시 한 줄이 이미 말하던 것이라 세 번째 발화였다. 그 수치를 정말 다시 물어야 하는 자리는
+   선택을 파기하는 전이의 확인 모달 하나이고, 거기는 `composeGuardBody` 가 공유 합성기
+   `selectionLine` 으로 계속 짓는다(그래서 그 합성기는 표면에 이름째 남는다). */
 
 function gateStep(s: Obj, g: Obj): string {
   if (!g || g.enabled || !g.text) return "";
@@ -817,6 +803,66 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       ? h('p', { className: 'warn capnote', id: 'jobRecordValidationAdvisory' },
         recordAdvisory)
       : null);
+  // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.
+  // 손댈 것이 없는데 「입력이 필요한 항목」이 상시로 서 있으면 그 자체가 잘못된 진술이다.
+  const inputRequirementSection = items.length
+    ? createElement(Fragment, null,
+      h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
+      h("ul", { className: "plain-list", id: "jobInputRequirements" },
+        ...items.map((item) => h("li", {
+          key: String(item.field_id),
+          "data-binding-state": String(item.binding_state || ""),
+        },
+        h("span", null, String(item.display_label || "")),
+        item.action_required === true
+          ? h("button", {
+              className: "btn sm", type: "button",
+              "data-exact-target": String(item.exact_target || ""),
+              onClick: () => { void props.controller.openBindingRequirement(
+                String(item.exact_target || ""), String(item.display_label || "")); },
+            }, "수정…")
+          : null))))
+    : null;
+  /* 「현재 실행 상태」 캡션 + 상태 문안은 걷혔다: `execution_status_phrase` 는 우상단 상태
+     pill(`JobStatusPill`)이 managed 갈래에서 **그대로** 그리는 바로 그 문자열이라, 이 자리에
+     한 벌 더 두면 같은 사실이 한 화면에서 두 번 발화한다. 남는 것은 그 상태를 **바꾸는 동사**
+     둘(`#jobResolveExecution`·`#jobRecoverContext`)이고, 그 좌표는 blocker 어포던스 표가 든다. */
+  return createElement(Fragment, null,
+    inputRequirementSection,
+    executionAction
+      ? h("div", { className: "run-row" },
+          h("button", {
+            className: "btn sm", type: "button", id: "jobResolveExecution",
+            disabled: executionAction.enabled !== true,
+            onClick: () => { void props.controller.resolveExecution(); },
+          }, String(executionAction.label || "")),
+          h("span", { className: "muted capnote" },
+            String(executionAction.disabled_reason || "")))
+      : null,
+    recoverAction
+      ? h("div", { className: "run-row" },
+          h("button", {
+            className: "btn sm", type: "button", id: "jobRecoverContext",
+            disabled: recoverAction.enabled !== true,
+            onClick: () => { void props.controller.recoverContext(); },
+          }, String(recoverAction.label || "")),
+          h("span", { className: "muted capnote" },
+            String(recoverAction.disabled_reason || "")))
+      : null,
+    recordSection);
+}
+
+/** 「생성 예정 문서」 — 만들 문서의 이름·저장 자리·충돌 처분과, 계획이 서지 않은 사유.
+ *
+ *  존 재편에서 **좌 열**로 내려왔다(데이터 표와 `#jobResultZone` 사이): 만들 것과 만들어진
+ *  것이 같은 열에서 위아래로 읽히고, 우 열은 「고르고 준비하는」 축만 든다. 렌더 조건은
+ *  작업대 존과 같다(managed hwpx + 관찰 지원) — 조건이 같아도 자리가 다르므로 컴포넌트를
+ *  가른다. legacy hwpx 의 저장 폴더 표시는 `JobOutFolderLine` 이 계속 지고 두 갈래는
+ *  배타라 값이 두 자리에 겹치지 않는다. TXT(복사) 갈래는 파일을 만들지 않아 렌더 0 이다. */
+export function JobDelivery(props: { controller: JobRunController }): ReactNode {
+  const s = useRunSnapshot(props.controller);
+  const wb = (s?.workbench_observation || {}) as Obj;
+  if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const intent = (wb.run_delivery_intent || null) as Obj | null;
   const delivery = (wb.delivery || {}) as Obj;
   const planned = (delivery.planned_documents || []) as Obj[];
@@ -831,7 +877,7 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   );
   const outputFolderSource = String(outputFolder.source_label || '');
   const outputFolderNotice = String(outputFolder.notice || '');
-  const deliverySection = createElement(Fragment, null,
+  return createElement(Fragment, null,
     // 「충돌 처리」 선택기는 없다(U4 계열2-27) — 같은 이름이 있으면 덮어쓰는 것이 기본이고
     // (`DEFAULT_COLLISION_POLICY`), 그 사실은 정책 라벨이 아니라 **파일마다** 아래 목록의
     // `DELIVERY_DISPOSITION_COPY` 가 말한다. 무엇을 덮어쓰는지 묻는 확인 면은 그 다음이다.
@@ -884,54 +930,8 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
     h('div', { className: 'run-row' },
       h('span', { className: 'muted capnote' },
         '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
-  // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.
-  // 손댈 것이 없는데 「입력이 필요한 항목」이 상시로 서 있으면 그 자체가 잘못된 진술이다.
-  const inputRequirementSection = items.length
-    ? createElement(Fragment, null,
-      h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
-      h("ul", { className: "plain-list", id: "jobInputRequirements" },
-        ...items.map((item) => h("li", {
-          key: String(item.field_id),
-          "data-binding-state": String(item.binding_state || ""),
-        },
-        h("span", null, String(item.display_label || "")),
-        item.action_required === true
-          ? h("button", {
-              className: "btn sm", type: "button",
-              "data-exact-target": String(item.exact_target || ""),
-              onClick: () => { void props.controller.openBindingRequirement(
-                String(item.exact_target || ""), String(item.display_label || "")); },
-            }, "\uc218\uc815\u2026")
-          : null))))
-    : null;
-  return createElement(Fragment, null,
-    inputRequirementSection,
-    h("div", { className: "zone-cap" }, "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc"),
-    h("p", { className: "muted capnote", "data-status-code": String(wb.execution_status_code || "") },
-      String(wb.execution_status_phrase || "")),
-    executionAction
-      ? h("div", { className: "run-row" },
-          h("button", {
-            className: "btn sm", type: "button", id: "jobResolveExecution",
-            disabled: executionAction.enabled !== true,
-            onClick: () => { void props.controller.resolveExecution(); },
-          }, String(executionAction.label || "")),
-          h("span", { className: "muted capnote" },
-            String(executionAction.disabled_reason || "")))
-      : null,
-    recoverAction
-      ? h("div", { className: "run-row" },
-          h("button", {
-            className: "btn sm", type: "button", id: "jobRecoverContext",
-            disabled: recoverAction.enabled !== true,
-            onClick: () => { void props.controller.recoverContext(); },
-          }, String(recoverAction.label || "")),
-          h("span", { className: "muted capnote" },
-            String(recoverAction.disabled_reason || "")))
-      : null,
-    recordSection,
-    deliverySection);
 }
+
 
 export function JobActionBar(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);

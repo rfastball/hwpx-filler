@@ -557,7 +557,6 @@ export function createEditorWorkbenchDataProbes() {
             }],
             visible_count: 2, hidden_selected: [],
           },
-          restate: { origin: "manual", filter_active: false, in_def: 0, extra: 0, sample: [1, 0] },
           preflight: { level: "ok", text: "ok" }, blank_fields: [], drift: [], name_tokens: [],
           gate: { enabled: true, level: "", text: "생성 준비" },
         });

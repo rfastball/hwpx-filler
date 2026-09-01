@@ -1205,9 +1205,9 @@ def test_run_token_is_opaque_to_python(tmp_path):
         assert res["run_token"] == expected
 
 
-# ---------------------------------------------- 본문 존 거울
+# ---------------------------------------------- 위험 배너·빈 값 표식의 재료
 def _mirror_job(tmp_path) -> JobRegistry:
-    """거울 케이스용 작업 — 채움(text)·미입력(amount, rec0 빈값)·의도적 빈칸 3필드."""
+    """빈 값·드리프트 케이스용 작업 — 채움(text)·미입력(amount, rec0 빈값)·의도적 빈칸 3필드."""
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명", "추정가격", "비고"])
     reg = JobRegistry(tmp_path / "jobs")
@@ -1224,8 +1224,12 @@ def _mirror_job(tmp_path) -> JobRegistry:
 
 
 def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):
-    """본문 존 재료(U2 §2.13) — 빈 값 필드 **이름**만 싣는다: 값 집계(표본·행수 재진술)는
-    표와 함께 죽었고, 의도적 빈칸(blank 선언)은 빈 값이 아니다(매핑이 키를 제외한다)."""
+    """표식이 붙는 필드 집합 — 빈 값 필드 **이름**만 싣는다: 값 집계(표본·행수 재진술)는
+    표와 함께 죽었고, 의도적 빈칸(blank 선언)은 빈 값이 아니다(매핑이 키를 제외한다).
+
+    화면은 이 사실을 사전검증 문안으로 읽지만(존 재편에서 요약 한 줄이 걷혔다), 이 축은
+    **생성 입력**의 관측면이다 — 여기 든 이름이 곧 문서에 〘미입력·필드명〙 표식이 붙는
+    자리이고, 그래서 표시와 생성이 한 술어를 공유하는지 여기서 잰다."""
     ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
@@ -1276,7 +1280,7 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     snap = ctrl.snapshot()
     assert snap["name_tokens"] == ["미해소"]
     assert snap["gate"]["level"] == "danger" and snap["gate"]["enabled"] is False
-    # 빈 값 축은 건강하다 — 그래서 배너가 없으면 본문 존이 건강한 한 줄만 그린다(신호 소실).
+    # 빈 값 축은 건강하다 — 이 danger 를 말할 표면은 배너 하나뿐이라는 뜻이다(신호 소실 방지).
     assert snap["blank_fields"] == []
     ctrl.dispatch("select_job", {"name": ""})           # 미겨눔 골격도 키를 갖춘다
     assert ctrl.snapshot()["name_tokens"] == []
@@ -2240,19 +2244,9 @@ def test_select_range_propagates_anchor_state(tmp_path):
     assert ctrl.snapshot()["selected_count"] == 1
 
 
-def test_restate_origin_by_set_comparison(tmp_path):
-    """선택 유래 = 집합 비교 무상태 판정: 매치 전체=정의-유래, 이탈=직접+수치 병기(S4)."""
-    ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("filter_search", {"text": "전산"})
-    ctrl.dispatch("set_none", {})
-    ctrl.dispatch("set_all", {})
-    r = ctrl.snapshot()["restate"]
-    assert r["origin"] == "definition" and r["filter_active"] is True
-    assert r["in_def"] == 1 and r["extra"] == 0
-    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 정의 밖 가산 → 혼합
-    r = ctrl.snapshot()["restate"]
-    assert r["origin"] == "manual" and r["in_def"] == 1 and r["extra"] == 1
-    assert set(r["sample"]) <= {0, 1} and len(r["sample"]) <= 3
+# (test_restate_origin_by_set_comparison 삭제 — 선택 유래 재진술 축(`restate`)은 그것을
+#  그리던 인라인 블록과 함께 퇴역했다. 같은 수치(`in_def`·`extra`)를 파괴 확인 모달이
+#  계속 쓰고, 그 축의 판정은 세션 가드(`guard`) 테스트가 진다.)
 
 
 def test_filter_range_on_amount_column_and_inline_error(tmp_path):
@@ -4109,12 +4103,12 @@ def _order_session(tmp_path):
 
 
 def _axis(snap) -> "dict[str, list]":
-    """한 스냅샷이 말하는 순서 4벌 — 전부 같은 축이어야 한다."""
+    """한 스냅샷이 말하는 순서 3벌 — 전부 같은 축이어야 한다(넷째였던 재진술 표본은
+    그 재진술 축과 함께 퇴역했다)."""
     return {
         "records": [r["index"] for r in snap["records"]],
         "table": [r["index"] for r in snap["table"]["rows"]],
         "strip": [r["index"] for r in snap["table"]["hidden_selected"]],
-        "sample": list(snap["restate"]["sample"]),
     }
 
 
@@ -4323,12 +4317,11 @@ def test_selected_only_swaps_visibility_without_touching_judgment(tmp_path):
     ctrl.dispatch("filter_search", {"text": "책상"})   # 가시 1행, 선택은 3행 관통
     snap = ctrl.snapshot()
     assert [r["index"] for r in snap["table"]["rows"]] == [2]
-    assert snap["restate"]["origin"] == "manual" and snap["restate"]["extra"] == 2
+    assert snap["table"]["hidden_selected"] != [], "필터 밖 선택 2행이 스트립에 안 섰습니다"
     ctrl.dispatch("set_selected_only", {"value": True})
     snap = ctrl.snapshot()
     assert [r["index"] for r in snap["table"]["rows"]] == [2, 1, 0]   # 선택 전부, 표시순
     assert snap["filter"]["active"] is True and snap["filter"]["search"] == "책상"
-    assert snap["restate"]["origin"] == "manual", "보기 상태가 유래 판정을 물들였습니다"
     assert snap["table"]["hidden_selected"] == []
     # 적용해도 보기 상태는 따라가지 않는다(판정 B 예외) — 메인엔 그 토글이 없다.
     ctrl.dispatch("range_draft_apply", {})
@@ -4420,7 +4413,6 @@ _DRAFT_FACING_SNAPSHOT_KEYS = {
     "records",              # 표 행(선택 표지·실 파일 이름 미리보기)
     "table",                # 표 페이로드(가시 행·필터 밖 스트립)
     "filter",               # 필터 정의·칩(초안이 편집 중인 정의)
-    "restate",              # 선택 유래 재진술(존 소유)
     "range_draft",          # 초안 자신(열림·dirty·수치·보기 상태)
     "zone_selected_count",  # 표 머리 「선택 N/M」 — 표가 그리는 세계의 수치
     # 경계 **자신의 정체**(리뷰 4R): 어느 세계를 편집 중인지의 세대. 내용이 아니라 좌표라
