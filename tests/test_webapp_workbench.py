@@ -368,15 +368,15 @@ def test_stamp_failure_is_reported_not_swallowed(tmp_path, monkeypatch):
 def test_the_two_media_share_the_field_but_not_the_predicate(tmp_path):
     """같은 `Job.last_run_at` 을 쓰되 **찍는 사건이 다르다**(§19.2 — 의미 있는 결과 행동).
 
-    그 사실을 표면 문안이 갈라 말하는지는 `test_work_mode` 가 잰다. 여기서는 저장처가
-    하나라는 것과, TXT 경로가 hwpx 의 완주 술어를 빌리지 않는다는 것만 못박는다.
+    TXT 는 **복사 완료 1건**에서 찍는다 — hwpx 의 완주 술어를 빌리지 않는다. 스탬프를 표시
+    문구로 갈라 말하던 자리는 걷혔으므로(라이브러리 목록·상세) 여기서는 저장처가 하나이고
+    그 값이 이 세션의 복사에서 실제로 서는지를 원시 필드로 못박는다.
     """
-    from hwpxfiller.gui.work_mode import WORK_MODE_TEXT, last_use_label
-
     ctrl, reg, _ = _open(tmp_path)
+    before = reg.load("발주요청_기안").last_run_at
     ctrl.note_copied(ctrl.render()[1])
     job = reg.load("발주요청_기안")
-    assert last_use_label(WORK_MODE_TEXT, job.last_run_at).startswith("마지막 복사")
+    assert before == "" and job.last_run_at != ""
 
 
 def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):

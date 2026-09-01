@@ -70,7 +70,6 @@
 .lib-detail-scroll{padding:var(--sp-12) var(--sp-16)}
 .lib-detail-name{margin:0}
 .lib-detail-sub{font-size:var(--fs-body);color:var(--a-muted);margin:var(--sp-2) 0 var(--sp-10)}
-.lib-detail-note{font-size:var(--fs-caption);margin:0 0 var(--sp-6)}
 .lib-causes{margin:var(--sp-4) 0 var(--sp-8);padding-left:var(--sp-16)}
 .lib-detail-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-2) var(--sp-10);
   margin:0 0 var(--sp-12);font-size:var(--fs-body)}
@@ -79,7 +78,6 @@
 /* 미결속 데이터 줄(#932 U4-C) — 배지·사유·동사가 한 줄에서 줄바꿈으로 눕는다.
    상세 facts 는 2열 그리드라 dd 안에서 흐르게 두는 편이 열 폭을 안 흔든다. */
 .lib-detail-unbound{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
-.lib-bindings{width:100%;margin-bottom:var(--sp-12)}
 .lib-tags{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin:var(--sp-4) 0 0}
 .lib-detail-acts{flex:none;display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;
   border-top:1px solid var(--a-border);padding:var(--sp-10) var(--sp-16)}

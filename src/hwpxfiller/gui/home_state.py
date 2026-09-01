@@ -31,7 +31,6 @@ from ..domain.template_status import CompileState, TemplateStatus
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
-from .work_mode import last_use_label
 
 # (손상 조치 거절 문구 CORRUPT_PATH_REJECT 는 P2-21 #569 에서 Application 포트 계약
 #  (:mod:`~hwpxfiller.application.jobs`)으로 이사 — 잠금 안 재판정이 External semantic op
@@ -107,8 +106,9 @@ class JobRow:
     template_missing: bool
     field_count: int
     filename_pattern: str
-    last_run_display: str
-    last_run_at: str = ""  # 원시 ISO(KPI '최근 실행' 계산용, ""=미실행)
+    # 원시 ISO(KPI '최근 실행' 계산·「최근 사용」 보기 정렬용, ""=미실행). 표시 문구는 없다 —
+    # 실행 이력을 말하던 표면(목록 행 meta·상세 부제)이 걷혔고, 남은 소비자는 **정렬**뿐이다.
+    last_run_at: str = ""
     # C2 파생 컴파일 상태(seam) — refresh 마다 재계산(저장·캐시 없음). None = 배지 없음/부재/오류.
     compile_state: "CompileState | None" = None
     compile_badge: str = ""
@@ -182,11 +182,6 @@ class JobRow:
             template_missing=template_missing,
             field_count=len(job.mapping.mappings),
             filename_pattern=job.filename_pattern,
-            # 최근 사용 문구는 **방식이 정한다**(§19.4 표 · `last_use_label` 단일 출처).
-            # 저장 필드는 `last_run_at` 하나지만 그 뜻은 매체마다 다르다: hwpx 는 생성
-            # 완주에서, txt 는 작업대 **복사 완료** 1건에서 찍힌다. 한 문구로 뭉치면 문서를
-            # 한 번도 만든 적 없는 TXT 작업이 목록·상세에서 「최근 실행」으로 보인다.
-            last_run_display=last_use_label(job.work_mode, job.last_run_at),
             last_run_at=job.last_run_at,
             compile_state=compile_state,
             compile_badge=compile_badge,
@@ -395,65 +390,10 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
     return causes[0] if causes else (0, "")
 
 
-#: 매핑 유형의 표시 어휘 — 라이브러리 상세 「필드 연결」 표가 소비한다. 편집기(웹)가 같은
-#: 어휘를 자기 파일에 따로 두고 있다(`frontend/js/screens/editor.js` ``TYPE_LABEL``); 그 중복은
-#: 편집기를 재작성하는 F7 에서 이 상수로 걷는다 — 빚을 숨기지 않고 적어 둔다.
-MAPPING_TYPE_LABELS = {
-    "text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값",
-    "today": "오늘 날짜",
-}
-#: 소스를 아직 고르지 않은 항목 — 「없음」이 아니라 **미지정**이다(조용한 빈칸 금지).
-NO_SOURCE_LABEL = "미지정"
-#: 데이터 항목이 아니라 **실행 시각**에서 값을 얻는 항목(``today``)의 데이터 항목 칸.
-RUNTIME_SOURCE_LABEL = "실행 시각"
-
-
-@dataclass
-class FieldBindingRow:
-    """라이브러리 상세 「필드 연결」 표의 한 줄 — 문서 필드 · 데이터 항목 · 표시형(§19.6)."""
-
-    template_field: str
-    source_label: str
-    format_label: str
-    blank: bool = False  # 명시적 공란 선언 — "아직 안 정함"과 시각적으로 갈라야 한다
-
-
-def field_binding_rows(job: Job) -> "list[FieldBindingRow]":
-    """저장된 Binding 을 **그대로** 읽어 상세 표로 성형한다(§19.6 · 지도 §10.8 판정 C·D).
-
-    두 가지를 하지 않는다.
-
-    - **현재 데이터의 원본 열 표시 이름을 쓰지 않는다.** 계약 §19.6 은 데이터가 준비돼
-      있으면 열 표시 이름을 쓰라 하지만 그 전제는 v6 의 전역 단일 ``dataState`` 다. master
-      에서 현재 데이터는 「문서 만들기」 **세션 소유**라 라이브러리가 읽으면 화면 간 결합을
-      새로 만든다. 그래서 항상 저장된 항목 키를 보이고 표면 문안이 그 사실을 말한다.
-      되깎기 조건 = 전역 ``dataState`` 가 실제로 서는 시점.
-    - **값을 계산하지 않는다.** 미리보기는 데이터를 요구하고(F5 소관) 여기는 정의만 본다.
-    """
-    from ..domain.format_engine import presets
-
-    rows: "list[FieldBindingRow]" = []
-    for m in job.mapping.mappings:
-        if m.is_blank:
-            rows.append(FieldBindingRow(m.template_field, "비움(명시)", "—", blank=True))
-            continue
-        type_label = MAPPING_TYPE_LABELS.get(m.type, m.type)
-        if m.type == "const":
-            # 상수는 데이터 항목이 아니라 값 자체가 정의다 — 표시형 칸에 쓸 것이 없다.
-            rows.append(FieldBindingRow(m.template_field, f"고정값 「{m.const}」", "—"))
-            continue
-        codes = {code: label for label, code in presets(m.type)}
-        # 미지 코드(프리셋 밖 직접 입력)는 코드 원문을 그대로 — 모르는 것을 아는 척하지 않는다.
-        # 빈 코드("")는 그 유형의 기본 프리셋 라벨이고, 프리셋 자체가 없는 유형이면 ""로 접힌다.
-        fmt_label = codes.get(m.fmt, m.fmt)
-        rows.append(FieldBindingRow(
-            m.template_field,
-            # 「오늘 날짜」는 데이터 항목을 읽지 않는다 — 빈 source 를 「미지정」(아직 안
-            # 고름)으로 재진술하면 조용히 거짓이다. 값의 출처를 그대로 말한다.
-            RUNTIME_SOURCE_LABEL if m.type == "today" else (m.source or NO_SOURCE_LABEL),
-            f"{type_label} · {fmt_label}" if fmt_label else type_label,
-        ))
-    return rows
+# 라이브러리 상세의 「필드 연결」 표(``FieldBindingRow``·``field_binding_rows`` 와 그 표시
+# 어휘 상수들)는 표면과 함께 철거됐다 — 매핑의 정본은 편집기 「필드 연결」 탭이고, 읽기 전용
+# 사본을 상세에 한 벌 더 두면 같은 상태를 두 자리가 말한다. 되살릴 일이 생기면 소비 표면과
+# 함께 다시 세운다(소비자 0 인 산출자는 남기지 않는다 — R5-99 B2 전례).
 
 
 class HomeViewModel:

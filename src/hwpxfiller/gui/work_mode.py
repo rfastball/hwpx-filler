@@ -27,7 +27,6 @@ __all__ = [
     "WORK_MODE_TEXT",
     "WORK_MODE_UNSUPPORTED",
     "WORK_MODE_ORDER",
-    "last_use_label",
     "mode_sections",
     "seat_kinds",
     "work_mode_label",
@@ -86,25 +85,6 @@ def work_mode_of_filter_value(value: str) -> str:
     if value == "txt":
         return WORK_MODE_TEXT
     return WORK_MODE_UNSUPPORTED
-
-
-def last_use_label(mode: str, iso: str) -> str:
-    """최근 사용 표시 문구 — **매체마다 술어가 다르다는 사실을 문안이 말한다**(§19.4).
-
-    | 방식 | 기록하는 사건 | 문안 |
-    |---|---|---|
-    | HWPX | 생성 **완주**(전건 성공) | 「마지막 성공 실행 …」 / 「성공한 실행 없음」 |
-    | TXT | 레코드 **복사 완료** 1건 | 「마지막 복사 …」 / 「복사한 적 없음」 |
-
-    두 매체에 같은 문구를 쓰면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다: HWPX 의
-    스탬프는 성공 뒤 실패 런이 있어도 앞선 성공 시각에 머무르므로 "마지막 실행"이 아니고,
-    TXT 의 스탬프는 애초에 실행이 아니라 복사다. 저장 필드(`Job.last_run_at`)는 하나이되
-    그 뜻은 방식이 정한다 — 그래서 문구도 여기 한 자리에서 갈린다.
-    """
-    day = iso[:10]
-    if mode == WORK_MODE_TEXT:
-        return f"마지막 복사 {day}" if iso else "복사한 적 없음"
-    return f"마지막 성공 실행 {day}" if iso else "성공한 실행 없음"
 
 
 def mode_sections(items: "list[dict]", *, key: str = "mode") -> "list[dict]":

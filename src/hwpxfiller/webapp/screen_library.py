@@ -27,8 +27,9 @@
 **남은 스코프 경계(조용히 빠뜨리지 않고 명시)**:
 - Template/Binding **판본**은 §19.6 상세가 요구하지만 F7 신설분이라 오늘 존재하지 않는다.
   빈 자리·「준비 중」 표기도 두지 않는다(없는 기능을 있는 척하지 않는다, 지도 §10.8 판정 D).
-- 상세 「필드 연결」 표는 **저장된 항목 키**를 보인다(판정 C) — 현재 데이터는 「문서 만들기」
-  세션 소유라 여기서 읽으면 화면 간 결합이 생긴다. 되깎기 조건은 지도에 적혀 있다.
+- 상세는 매핑 목록을 보이지 않는다. 저장된 항목 키를 읽기 전용으로 한 벌 더 그리던 표는
+  철거됐다 — 매핑의 정본은 편집기 탭이고, 상세가 그 사본을 들면 같은 상태를 두 자리가 말한다.
+  상세가 지는 것은 **정체와 조치**(템플릿·데이터·건강 원인·재선택 동선)다.
 - 기안 **템플릿** 목록(구 홈 txt 트랙)의 승계처는 편집기 「템플릿」 탭 TXT 밴드(F6 PR-B)다.
   TXT **작업**은 이 화면에 합류했고 방식 필터(「온나라 기안」)가 구 좌 목록의 최종 승계처다.
 """
@@ -56,7 +57,6 @@ from ..gui.home_state import (
     NO_GROUP_LABEL,
     HomeViewModel,
     JobRow,
-    field_binding_rows,
     library_health,
     library_health_causes,
     library_mode_of,
@@ -109,9 +109,11 @@ def primary_action(row: JobRow) -> dict:
 def _job_row_dict(r: JobRow) -> dict:
     """행 1건 성형 — 링1 JobRow 표면만 읽는다(VM 로직 재구현 없음).
 
-    §19.6 "행은 이름, 작업 방식 텍스트, 최근 사용, 작업 건강, 즐겨찾기를 보여준다"
-    (사용자 group 은 U4 §2-30 에서 표면이 걷혀 행에도 싣지 않는다). 컴파일 배지의 심각도(pill 색 레벨)는 :func:`badge_level`(RC-29 단일 어휘)로
-    파생해 템플릿 관리 화면과 같은 상태에 같은 신호를 낸다.
+    §19.6 "행은 이름, 작업 방식 텍스트, 작업 건강, 즐겨찾기를 보여준다"(사용자 group 은
+    U4 §2-30 에서, **최근 사용 문구**는 이번 정리에서 표면이 걷혀 행에도 싣지 않는다 —
+    `last_run_at` 은 「최근 사용」 보기의 **정렬 재료**로만 산다). 컴파일 배지의 심각도(pill
+    색 레벨)는 :func:`badge_level`(RC-29 단일 어휘)로 파생해 템플릿 관리 화면과 같은 상태에
+    같은 신호를 낸다.
     """
     mode = library_mode_of(r)
     severity, text = library_health(r)
@@ -123,7 +125,6 @@ def _job_row_dict(r: JobRow) -> dict:
         "meta_line": r.meta_line(),
         "compile_badge": r.compile_badge,
         "badge_level": badge_level(r.compile_state),  # muted/warn/ok/danger
-        "last_run_display": r.last_run_display,
         "template_missing": r.template_missing,
         # 데이터 결속 유무(U4 §2.4 · #932 U4-C) — 행에는 **유무만** 싣는다. 라벨은 상세가
         # 지고 행은 「조치가 필요한가」만 말한다(템플릿 축의 `template_missing` 과 같은 결).
@@ -233,19 +234,12 @@ class LibraryController:
             # 링0 단일 출처(`data_binding_label`)라 표면이 basename·시트 표기를 안 짓는다.
             "data_label": row.data_label,
             "data_path": job.data_path,
-            # §19.6: HWPX 는 파일 이름 규칙을, 온나라 기안은 실행 방식을 보여준다.
+            # §19.6: HWPX 는 파일 이름 규칙을 보여준다. TXT 의 「실행 방식」 문구는 걷혔다 —
+            # 방식 자체는 부제(`mode_label`)가 이미 말하고, 같은 사실을 한 상세에서 두 번
+            # 말하면 읽을 것만 늘고 새로 아는 것이 없다.
             "filename_pattern": row.filename_pattern if mode == "hwpx" else "",
-            "run_note": (
-                "채운 원문을 검토해 복사합니다(문서 파일을 만들지 않습니다)."
-                if mode == "txt" else ""
-            ),
             "health_causes": [
                 {"severity": s, "text": t} for s, t in library_health_causes(row)
-            ],
-            "bindings": [
-                {"template_field": b.template_field, "source_label": b.source_label,
-                 "format_label": b.format_label, "blank": b.blank}
-                for b in field_binding_rows(job)
             ],
         }
 

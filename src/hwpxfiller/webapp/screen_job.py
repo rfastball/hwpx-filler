@@ -134,7 +134,6 @@ from ..gui.selection_state import SelectionModel
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import (
     WORK_MODE_TEXT,
-    last_use_label,
     mode_sections,
     seat_kinds,
     work_mode_label,
@@ -1187,7 +1186,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "mode_label": work_mode_label(r.mode, short=True),
                 # (`last_run_label` 은 U4 계열2-31 에서 걷혔다 — 후보 카드는 「이 데이터로
                 #  무엇을 만들 수 있는가」를 말하는 자리이고 실행 이력은 그 판단에 안 든다.
-                #  같은 문안의 라이브러리 소비처는 `home_state.last_run_display` 로 산다.)
+                #  라이브러리 목록·상세의 같은 문안도 뒤이어 걷혀, 실행 이력을 문구로 말하는
+                #  표면은 이제 없다 — 남은 소비자는 「최근 사용」 보기의 정렬뿐이다.)
                 # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
                 # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
                 "template_name": Path(job.template_path).name if job.template_path else "",

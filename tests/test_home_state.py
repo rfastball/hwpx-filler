@@ -21,14 +21,12 @@ from hwpxfiller.gui.home_state import (
     BADGE_READY,
     MODE_HWPX,
     MODE_TXT,
-    NO_SOURCE_LABEL,
     VIEW_ALL,
     VIEW_FAVORITES,
     VIEW_NEEDS,
     VIEW_RECENT,
     HomeViewModel,
     JobRow,
-    field_binding_rows,
     library_health,
     library_health_causes,
     library_mode_of,
@@ -59,15 +57,14 @@ def test_rows_shape_meta_and_missing_template(tmp_path):
     assert g.template_name == "t.hwpx"
     assert g.template_missing is True
     assert g.field_count == 1
-    # 최근 사용 문구는 방식이 정한다(§19.4 · `last_use_label` 단일 출처) — hwpx 는 생성
-    # 완주에서 찍히므로 "실행"이 아니라 **성공한 실행**이라고 말한다.
-    assert g.last_run_display == "마지막 성공 실행 2026-07-09"
+    # 실행 시각은 **원시 ISO 로만** 산다(표시 문구 없음) — 「최근 사용」 보기의 정렬 재료다.
+    assert g.last_run_at == "2026-07-09T15:42:00"
     assert g.meta_line() == "템플릿 t.hwpx · 필드 1개 · 파일명 공고-{{ID}}"
 
     n = rows["낙찰"]
     assert n.template_name == "—"          # 빈 템플릿 경로
     assert n.template_missing is False      # 경로 없음 = 부재 배지 아님
-    assert n.last_run_display == "성공한 실행 없음"
+    assert n.last_run_at == ""
 
 
 def test_empty_registry(tmp_path):
@@ -731,37 +728,9 @@ def test_health_causes_do_not_misdiagnose_unlinked_as_unsupported(tmp_path):
     assert "지원하지 않는 작업 방식입니다." not in texts
 
 
-def test_field_binding_rows_read_saved_binding_without_current_data(tmp_path):
-    """상세 「필드 연결」 표는 **저장된 Binding 그대로**(지도 §10.8 판정 C).
-
-    현재 데이터는 「문서 만들기」 세션 소유라 라이브러리가 원본 열 표시 이름을 쓰면 화면 간
-    결합이 생긴다 — 항상 저장된 항목 키를 보이고, 값은 계산하지 않는다(미리보기는 F5).
-    """
-    job = Job(name="상세", template_path="", mapping=MappingProfile(mappings=[
-        FieldMapping("계약명", source="bidNtceNm"),
-        FieldMapping("추정가격", source="presmptPrce", type="amount", fmt="{:,}"),
-        FieldMapping("공고일", source="bidNtceDt", type="date"),
-        FieldMapping("발주처", type="const", const="조달청"),
-        FieldMapping("비고", type="blank"),
-        FieldMapping("담당자", type="text", fmt="phone"),
-        FieldMapping("미정", source=""),
-    ]))
-    rows = {r.template_field: r for r in field_binding_rows(job)}
-    assert rows["계약명"].source_label == "bidNtceNm"          # 저장 키 그대로(열 이름 아님)
-    assert rows["추정가격"].format_label == "금액 · 숫자"       # 프리셋 라벨은 링0 단일 출처
-    assert rows["공고일"].format_label == "날짜 · 표준"         # 빈 코드 = 기본 프리셋
-    assert rows["담당자"].format_label == "텍스트 · 전화"
-    assert rows["발주처"].source_label == "고정값 「조달청」" and rows["발주처"].format_label == "—"
-    assert rows["비고"].blank and rows["비고"].source_label == "비움(명시)"
-    # 소스를 아직 안 고른 항목은 "없음"이 아니라 **미지정**이다(조용한 빈칸 금지).
-    assert rows["미정"].source_label == NO_SOURCE_LABEL and not rows["미정"].blank
-
-
-def test_field_binding_rows_keep_unknown_format_code_verbatim():
-    """프리셋 밖 직접 입력 코드는 원문 그대로 — 모르는 것을 아는 척하지 않는다."""
-    job = Job(name="고급", template_path="", mapping=MappingProfile(
-        mappings=[FieldMapping("납기", source="dlvrDt", type="date", fmt="%y/%m")]))
-    assert field_binding_rows(job)[0].format_label == "날짜 · %y/%m"
+# (「필드 연결」 표의 성형 테스트 2건은 산출자·소비 표면과 함께 걷혔다 — 라이브러리 상세가
+#  매핑 사본을 그리지 않게 되면서 `field_binding_rows` 의 소비자가 0 이 됐다. 매핑 어휘의
+#  정본은 편집기 「필드 연결」 탭이고 그쪽 테스트가 그대로 진다.)
 
 
 def test_unknown_library_view_and_mode_degenerate(tmp_path):
@@ -771,11 +740,12 @@ def test_unknown_library_view_and_mode_degenerate(tmp_path):
     assert vm.library_view == VIEW_ALL and vm.library_mode == "all"
 
 
-def test_last_use_wording_follows_the_work_mode(tmp_path):
-    """저장 필드는 하나(`last_run_at`)지만 그 뜻은 방식이 정한다(§19.4).
+def test_last_run_stamp_travels_raw_without_a_display_wording(tmp_path):
+    """실행 시각은 **원시 ISO 그대로** 행에 실린다 — 표시 문구는 이제 없다.
 
-    hwpx 는 생성 완주에서, txt 는 작업대 **복사 완료** 1건에서 찍힌다. 한 문구로 뭉치면
-    문서를 한 번도 만든 적 없는 TXT 작업이 라이브러리에서 「최근 실행」으로 보인다.
+    매체마다 술어가 다른 문안(hwpx=생성 완주 / txt=복사 완료, §19.4)을 짓던 자리는 그 문구를
+    쓰던 표면과 함께 걷혔다. 남은 소비자는 「최근 사용」 보기의 **정렬**이고, 순위 축이라
+    술어 차이가 표시로 새지 않는다. 스탬프 자체는 그대로 영속한다.
     """
     reg = JobRegistry(tmp_path / "jobs")
     tpl = tmp_path / "기안.txt"
@@ -784,8 +754,9 @@ def test_last_use_wording_follows_the_work_mode(tmp_path):
                  last_run_at="2026-07-28T09:10:00"))
     reg.save(Job(name="빈기안", template_path=str(tpl)))
     rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
-    assert rows["기안"].last_run_display == "마지막 복사 2026-07-28"
-    assert rows["빈기안"].last_run_display == "복사한 적 없음"
+    assert rows["기안"].last_run_at == "2026-07-28T09:10:00"
+    assert rows["빈기안"].last_run_at == ""
+    assert not hasattr(rows["기안"], "last_run_display")
 
 
 # ================================= 구간 표기 잔존의 홈 전파(S8-04 #835 — 표면 전파)
