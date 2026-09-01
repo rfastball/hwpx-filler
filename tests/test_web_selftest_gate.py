@@ -484,6 +484,38 @@ class TestWebSelftestGate:
         assert c["after_ran"] is True, "실패 뒤 호출이 실행되지 않았습니다 — 체인이 죽었습니다."
         assert c["after_value"] == "ok"
 
+    def test_shell_settings_modal_round_trips_theme_and_returns_focus(
+        self, selftest_result: dict
+    ) -> None:
+        """토바 ⚙ → 설정 모달 → 테마 세그먼트 → 원래 값 복원 → 닫힘 → 초점 복귀.
+
+        순환 토글 둘(`#themeToggle`·`#fontScaleToggle`)이 걷히고 값 선택이 모달 안 세그먼트로
+        옮겨간 뒤, 사용자가 테마를 바꾸려면 **여섯 홉**을 지난다: 셸 리스너 → Modal.open →
+        React portal 커밋 → 세그먼트 클릭 → Theme.set → documentElement 기입. 정적 계약은 이
+        사슬의 각 조각이 소스에 있다는 것까지만 보고, 어느 홉이 끊겨도 초록이다.
+
+        복원까지 한 프로브가 지는 이유: 복원이 빠지면 이 프로브가 뒤 실행의 콜드부트 테마를
+        조용히 바꾼다(같은 창의 `theme_persist` 가 그 값을 읽는다). 그래서 「바뀌었다」와
+        「되돌아왔다」를 한 쌍으로 단언한다.
+        """
+        s = selftest_result["shell_settings"]
+        assert s["opened"] is True, "⚙ 클릭이 설정 모달의 hidden 을 해제하지 못했습니다."
+        assert s["display"] != "none", "설정 모달이 열렸다면서 보이지 않습니다."
+        assert s["option_visible"] is True, (
+            "테마 세그먼트가 보이지 않는데 클릭이 통과했습니다 — .click() 은 숨은 요소도 누릅니다."
+        )
+        assert s["applied_theme"] == s["requested_theme"], (
+            f"세그먼트 클릭이 테마에 닿지 않았습니다: {s!r}"
+        )
+        assert s["option_pressed"] == "true", "고른 값이 aria-pressed 로 말해지지 않습니다."
+        assert s["theme_restored"] == s["theme_before"], (
+            f"프로브가 테마를 되돌리지 못했습니다: {s!r}"
+        )
+        assert s["closed"] is True, "닫기 버튼이 설정 모달을 닫지 못했습니다."
+        assert s["focus_back"] == "settingsOpen", (
+            f"닫은 뒤 초점이 트리거(⚙)로 복귀하지 않았습니다: {s['focus_back']!r}"
+        )
+
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
         # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(promptModalInput)으로 들어간다.
         # (표적 모달 재겨눔 2회: draftSaveTplModal 사망 → txtEditModal(F6 PR-B) →

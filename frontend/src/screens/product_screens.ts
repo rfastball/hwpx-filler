@@ -27,6 +27,7 @@ import {
 import type { JobRunController } from "./job_run.ts";
 import { LibraryScreen } from "./library.ts";
 import type { LibraryController } from "./library.ts";
+import { SettingsSheet } from "./settings_sheet.ts";
 import { SheetPickerDialog } from "./sheet_picker.ts";
 import type { SheetPickerController } from "./sheet_picker.ts";
 import { WorkbenchScreen } from "./workbench.ts";
@@ -205,4 +206,7 @@ export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
   TxtEditDialog,
   SheetPickerDialog,
   JobArtifactSheet,
+  /* 셸 설정 모달 — 화면 컨트롤러가 아니라 셸 서비스(Theme·Personalization·Modal)를 받는
+     유일한 overlay 다. 화면 스냅샷을 안 쓰므로 화면 넷 어디에서 열어도 같은 면이다. */
+  SettingsSheet,
 });

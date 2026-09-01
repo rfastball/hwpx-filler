@@ -234,13 +234,15 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   이고, 결속은 정확히 1회(이중 결속 throw). `go` 는 synchronous 다: 파사드 호출 → 판정 →
   집행이 한 동기 턴이고 React 재렌더를 경유하지 않는다.
 - **수명주기 = React ShellHost**(`frontend/src/shell/host.ts`): 셸 리스너(백스톱
-  `unhandledrejection`·탭 클릭·도구 클릭·라벨 동기)의 부착/해제와 부팅 시퀀스(호스트 ready
+  `unhandledrejection`·탭 클릭·⚙ 클릭)의 부착/해제와 부팅 시퀀스(호스트 ready
   사건 훅 → `markReady` → init 5 재생: library→editor→job→workbench→DataPicker)를 트리
   자식으로 소유한다. 부착 실물(`attachShell`)은 effect 와 node 하니스가 같은 하나를 쓴다.
-  부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로, 부착 전에
-  지나간 `hwpx:*` 라벨 동기 사건은 **부착 직후 따라잡기**(`catchUp` — 현재 상태 재판독)로
-  놓침 창을 닫는다(#74 라벨 어긋남 결함류의 구조 폐쇄). 리스너는 once 가 아니다(재발화 시
-  init 재주행 — 각 controller의 `loadInitial` 멱등 계약이 중복 당김을 막는다).
+  부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로 놓침 창을
+  닫는다. 부착 직후 따라잡기 포트(`catchUp` — 현재 상태 재판독)는 **소비자 0** 이다: 그
+  유일한 소비자였던 토바 라벨 동기 둘이 설정 모달의 파생 표시로 옮겨갔다(아래 절). 포트는
+  남는다 — 결함류(#74 라벨 어긋남)는 그대로 있고 다음 셸 표시가 그 자리에서 다시 등록한다.
+  리스너는 once 가 아니다(재발화 시 init 재주행 — 각 controller의 `loadInitial` 멱등 계약이
+  중복 당김을 막는다).
 - **집행 = ProductScreenExecutor + shell/app.ts adapter**: `src/screens/product_screen_executor.ts`가
   `flushSync` 안에서 visibility store와 aria-current·몰입 body 클래스를 함께 바꾸고,
   `main.stage` 및 명명된 내부 스크롤·안정 focus를 화면별로 보존한다. 화면 전환 전
@@ -261,6 +263,39 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   유지한다. visibility store 하나가 `.on`·`hidden`·`inert`·`aria-hidden`을 함께 내리고,
   editor/workbench 이탈·rerender 수명주기는 registry의 단일 owner가 fail-closed한다.
   **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
+
+#### 셸 설정 모달 — 테마·글자 크기 (⚙ 트리거)
+
+토바 우측의 셸 전역 조작은 **⚙ 하나**다. 종전의 순환 토글 둘(`#themeToggle` ◐ ·
+`#fontScaleToggle` A)은 걷혔다 — 값이 셋인 축을 순환으로 돌리면 지금 값도 고를 수 있는 값도
+누르기 전에는 말해지지 않고, 원하는 값에 닿기까지 화면 전체가 두 번 다시 그려진다.
+
+| 자리 | 좌표 | 소유 |
+|---|---|---|
+| 트리거 | `#settingsOpen`(`.shell-tool` + `.ti` + `.d`, `aria-haspopup="dialog"`) | `frontend/index.html` · 클릭 배선은 `src/shell/app.ts` |
+| 모달 골격 | `#settingsModal`(`.modal.hidden`, `aria-labelledby="settingsTitle"`) — **비어 있어야** 한다 | `frontend/index.html` (portal target) |
+| 내용 | `SettingsSheet`/`SettingsSheetView` | `src/screens/settings_sheet.ts`, `PRODUCT_OVERLAY_COMPONENTS` 경유 `bootstrap.js` 등록 |
+
+- **행 하나 = 라벨 + 3값 세그먼트.** 테마(`[data-set-theme]` — 시스템·라이트·다크)와 글자
+  크기(`[data-set-font]` — 기본·크게·더 크게)가 각각 한 행이고, 버튼은 `data-value` 로
+  값을, `aria-pressed` 로 지금 값을 말한다. 세그먼트에는 `data-busy-lock` 을 걸지 않는다 —
+  전역 개인화는 생성 진행과 무관하고, 잠그면 없는 규칙이 생긴다.
+- **판정·영속은 이 면에 없다.** 현재값 판독·적용·디스크 쓰기는 `src/shell/preferences.ts`
+  (`createTheme`·`createPersonalization` → `bridge.setTheme`/`setFontScale`)가 그대로 진다.
+  Python 쪽 host method(`set_theme`·`set_font_scale`)와 부팅 주입(`preferences` 처리기 →
+  `Theme.apply`)은 **무변경**이다. 표시는 서비스 사건(`hwpx:themechange`·
+  `hwpx:personalizationchange`) 구독에서 **파생**하므로 이 면 밖의 변경(부팅 주입·프로브의
+  직접 `Theme.set`)도 같은 값에 도착한다 — 그래서 셸의 `catchUp` 이 필요 없어졌다.
+- **개폐·초점**: ⚙ 클릭 → `Modal.open("settingsModal", { returnFocus: 트리거 })`,
+  `#settingsClose` → `Modal.close`. 닫으면 초점이 ⚙ 로 돌아온다(Escape·배경도 같은 경로).
+- **다음 슬라이스**: 저장 폴더 행이 같은 `.settings-body` 행 목록에 합류한다(슬라이스 E).
+  기안 대상 글꼴(`#wbTargetFont`)은 작업대 소유로 남고 여기로 오지 않는다.
+- **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`, 실 WebView2 왕복(⚙ 클릭 →
+  열림 → 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 값 복원 → 닫힘 → 초점
+  복귀)은 selftest 프로브 `shell_settings`(클러스터 B)와
+  `tests/test_web_selftest_gate.py::test_shell_settings_modal_round_trips_theme_and_returns_focus`
+  가 진다. 그 프로브는 테마를 잠시 바꾸므로 콜드부트 테마를 읽는 `theme_persist` **뒤**에
+  서야 한다(합성 `legacySite` 9991 이 그 순서를 못박는다).
 
 ### 장기 렌더 검증 배치
 
@@ -415,6 +450,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `src/screens/workbench.ts`(+`workbench_state.ts`·`segment_view.ts`) | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `src/screens/data_picker.ts` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
+| 셸 설정 모달(화면 아님 · 셸 전역) | `#settingsModal`, `src/screens/settings_sheet.ts` | — (host method `set_theme`·`set_font_scale` 직접 브리지) | `src/shell/preferences.ts`(Theme·Personalization 서비스) |
 
 화면을 추가·삭제·이름 변경할 때는 `PRODUCT_SCREEN_IDS`, ProductScreens wrapper, visibility
 store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로

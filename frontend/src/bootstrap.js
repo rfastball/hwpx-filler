@@ -303,7 +303,7 @@ export function bootProduct() {
      선다. 셸 리스너·부팅 시퀀스는 여기서 **서술**(`shellHost`)로만 캡처되고, 부착/해제
      수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
-    Bridge: bridge, modal: Modal, Theme, Personalization, shellNav, initSequence,
+    Bridge: bridge, modal: Modal, Personalization, shellNav, initSequence,
     refreshScreen: (screen) => runtime.refresh(screen),
   });
   Nav = appShell.Nav;
@@ -471,6 +471,10 @@ export function bootProduct() {
           { controller: SheetPickerController }),
         productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,
           { controller: JobRunController }),
+        /* 셸 설정 모달 — 유일하게 화면 컨트롤러가 아니라 셸 서비스를 받는 overlay 다.
+           테마·개인화의 판정·영속은 이 서비스들이 그대로 지고 면은 고르는 자리만 진다. */
+        productOverlayComponent("settingsModal", PRODUCT_OVERLAY_COMPONENTS.SettingsSheet,
+          { theme: Theme, personalization: Personalization, modal: Modal }),
       ],
     },
   });

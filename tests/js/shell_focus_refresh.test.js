@@ -38,11 +38,11 @@ function buildShell(refreshScreen, currentScreen = "job") {
         confirmWindowClose: () => Promise.resolve(null),
         cancelWindowClose: () => Promise.resolve(null),
       },
-      modal: { confirm: () => Promise.resolve(true) },
-      Theme: { current: () => "system", toggle() {} },
+      /* 셸이 아는 modal 포트는 둘이다 — 종료 확인(confirm)과 설정 모달 개폐(open).
+         테마·개인화 값 선택은 셸 인자가 아니라 설정 모달 컴포넌트의 주입으로 옮겨갔다. */
+      modal: { confirm: () => Promise.resolve(true), open() {} },
       Personalization: {
         currentFontScale: () => "normal",
-        toggleFontScale() {},
         setMasterWidth() {},
         saveMasterWidth() {},
         masterMin: 200,

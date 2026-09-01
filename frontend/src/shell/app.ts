@@ -2,7 +2,7 @@
 import { DEFAULT_SCREEN } from "./nav.ts";
 import type { createShellNav } from "./nav.ts";
 import type { ShellAttachment, ShellHostPorts } from "./host.ts";
-import type { PersonalizationService, ThemeService } from "./preferences.ts";
+import type { PersonalizationService } from "./preferences.ts";
 
 type BridgePort = {
   hostReady(): boolean;
@@ -10,7 +10,7 @@ type BridgePort = {
   cancelWindowClose(): Promise<unknown>;
 };
 
-type CloseModalPort = {
+type ShellModalPort = {
   confirm(options: {
     title: string;
     body: string;
@@ -18,12 +18,15 @@ type CloseModalPort = {
     cancelLabel: string;
     danger: boolean;
   }): Promise<boolean>;
+  /** 셸 설정 모달을 여는 자리 — 내용은 React portal(SettingsSheet)이 대고 여기는 개폐만 안다. */
+  open(id: string, options?: { returnFocus?: EventTarget | null }): void;
 };
 
 type AppShellArgs = {
   Bridge: BridgePort;
-  modal: CloseModalPort;
-  Theme: ThemeService;
+  modal: ShellModalPort;
+  /* Theme 는 더 이상 셸의 인자가 아니다 — 테마를 읽고 쓰는 유일한 표면이 설정 모달로
+     옮겨갔고, 그 컴포넌트는 bootstrap 이 직접 서비스를 주입한다(셸을 경유하지 않는다). */
   Personalization: PersonalizationService;
   shellNav: ReturnType<typeof createShellNav>;
   initSequence: ReadonlyArray<() => unknown>;
@@ -34,7 +37,7 @@ type AppShellArgs = {
 
 export function createAppShell(args: AppShellArgs) {
   const {
-    Bridge, modal, Theme, Personalization, shellNav, initSequence, refreshScreen,
+    Bridge, modal, Personalization, shellNav, initSequence, refreshScreen,
   } = args;
   const AppCloseGuard = {
     async prompt(state: { reasons?: unknown[] } | null | undefined): Promise<void> {
@@ -69,21 +72,12 @@ export function createAppShell(args: AppShellArgs) {
   };
   go(DEFAULT_SCREEN);
 
-  const fontLabel = document.getElementById("fontScaleLabel");
-  const fontScaleToggle = document.getElementById("fontScaleToggle");
-  const themeToggle = document.getElementById("themeToggle");
-  const themeLabel = document.getElementById("themeLabel");
-  const fontText = { normal: "기본", large: "크게 (125%)", larger: "더 크게 (150%)" };
-  const themeText = { system: "시스템", light: "라이트", dark: "다크" };
-
-  function syncPersonalizationLabels(): void {
-    if (fontLabel !== null) fontLabel.textContent = fontText[Personalization.currentFontScale()];
-  }
-  function syncThemeLabel(): void {
-    if (themeLabel !== null) themeLabel.textContent = themeText[Theme.current()];
-  }
-  syncPersonalizationLabels();
-  syncThemeLabel();
+  /* 셸 전역 설정의 유일한 문 — ⚙ 하나가 설정 모달을 연다(#957 계열 단순화 슬라이스 D).
+     종전에는 순환 토글 둘(`#themeToggle`·`#fontScaleToggle`)이 여기 서서 클릭마다 값을 한 칸
+     돌리고 라벨 span 을 손으로 동기했다. 그 라벨 동기가 셸 `catchUp` 의 유일한 소비자이기도
+     했다 — 지금은 값 표시가 React 세그먼트의 `aria-pressed` 이고 그 값은 서비스 사건 구독에서
+     파생되므로, 놓침 창을 셸이 따라잡을 이유가 사라졌다. */
+  const settingsOpen = document.getElementById("settingsOpen");
 
   const attachments: ShellAttachment[] = [];
   const attach = (target: ShellAttachment["target"], type: string, run: (event: Event) => void): void => {
@@ -99,10 +93,11 @@ export function createAppShell(args: AppShellArgs) {
   });
   document.querySelectorAll<HTMLElement>(".navbtn").forEach((button) =>
     attach(button, "click", () => go(String(button.dataset.scr || ""))));
-  if (fontScaleToggle !== null) attach(fontScaleToggle, "click", () => { Personalization.toggleFontScale(); });
-  attach(window, "hwpx:personalizationchange", syncPersonalizationLabels);
-  if (themeToggle !== null) attach(themeToggle, "click", () => { Theme.toggle(); });
-  attach(window, "hwpx:themechange", syncThemeLabel);
+  /* 복귀점은 **트리거 자신**이다 — 닫으면 초점이 ⚙ 로 돌아온다(모달 파사드의 기본값은
+     `document.activeElement` 라 대개 같지만, 명시로 넘겨 클릭 경로 밖에서도 같게 만든다). */
+  if (settingsOpen !== null) {
+    attach(settingsOpen, "click", () => { modal.open("settingsModal", { returnFocus: settingsOpen }); });
+  }
   /* **창으로 돌아오면 현재 화면을 다시 묻는다**(#932 B5). 앱 밖에서 일어난 변화 —
      한글에서 템플릿을 고치는 것이 정확히 그것이다 — 는 push 를 내지 않으므로, 조치가
      있을 때만 서는 구획(「템플릿 조치 필요」)이 다음 상호작용까지 침묵할 창이 생겼다.
@@ -159,7 +154,10 @@ export function createAppShell(args: AppShellArgs) {
   const shellHost: ShellHostPorts = {
     nav: shellNav,
     attachments,
-    catchUp: [syncPersonalizationLabels, syncThemeLabel],
+    /* 따라잡기 소비자 0 — 셸이 손으로 동기하던 라벨 둘이 설정 모달의 파생 표시로 옮겨갔다.
+       포트는 남긴다: 「부착 전에 지나간 사건」이라는 결함류는 그대로 있고, 다음 셸 표시가
+       생기면 그 자리에서 다시 등록한다. */
+    catchUp: [],
     boot: {
       win: window,
       hostReady: () => Bridge.hostReady(),
