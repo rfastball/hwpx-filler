@@ -4190,19 +4190,6 @@ def test_unknown_view_order_is_refused_loudly(tmp_path):
     assert ctrl.snapshot()["view_order"] == "sourceDesc"
 
 
-def test_order_note_claims_the_filename_link_only_when_it_is_true(tmp_path):
-    """판정 I: 상시 절은 언제나 참, 순번 절은 규칙이 `{{seq}}` 를 쓸 때만 붙는다."""
-    ctrl, _ = _order_session(tmp_path)
-    assert "보이는 순서대로" in ctrl.snapshot()["order_note"]
-    assert "순번" in ctrl.snapshot()["order_note"]  # 픽스처 규칙 = doc-{{seq:001}}
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "{{bidNtceNm}}"
-    ctrl.registry.save(job)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    note = ctrl.snapshot()["order_note"]
-    assert "보이는 순서대로" in note and "순번" not in note
-
-
 # ------------------------- 전문 범위 편집기 초안(재작성 F3, 지도 §10.11 판정 A·B·D·F·J)
 def _draft_session(tmp_path):
     """3행 + 작업 선택 + 저장 폴더 — 초안이 게이트·거울과 갈리는지 보려면 실행 세션이 필요하다."""

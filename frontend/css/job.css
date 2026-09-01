@@ -19,17 +19,14 @@
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
    면 바닥에 붙어 표를 스크롤하는 동안에도 적용·취소가 상시 도달 가능하다. */
 .range-foot{display:none}
-#dataSheetSlot > .range-foot{display:flex;align-items:center;gap:var(--sp-8);
-  position:sticky;bottom:0;z-index:1;margin-top:var(--sp-10);
+/* 안내문이 걷힌 뒤(간소화 라운드) 이 줄에는 단추뿐이라 스페이서 대신 정렬이 자리를 잡는다 —
+   산출자가 0 인 `.muted{flex:1}` 규칙은 함께 걷는다(#325: 남은 규칙은 표면이 아직 산다고
+   읽힌다). */
+#dataSheetSlot > .range-foot{display:flex;align-items:center;justify-content:flex-end;
+  gap:var(--sp-8);position:sticky;bottom:0;z-index:1;margin-top:var(--sp-10);
   padding:var(--sp-10) 0 var(--sp-4);background:var(--a-card);
   border-top:1px solid var(--a-border)}
-#dataSheetSlot > .range-foot .muted{flex:1;min-width:0;margin:0;font-size:var(--fs-caption)}
 #dataSheetSlot > .range-foot .btn[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary)}
-/* 표시순서 축(F3) — 컨트롤은 표 머리로 갔고(U4 7번) 이 줄에는 **상시 재진술만** 남는다.
-   라벨·선택기 규칙을 함께 걷는다: 산출자가 0 인 규칙을 남기면 다음 사람이 그 표면이 아직
-   산다고 읽는다(#325 가 경고하는 바로 그 패턴). */
-.job-orderbar{margin-top:var(--sp-8);flex-wrap:wrap}
-.job-orderbar .capnote{flex:1;min-width:0}
 
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}

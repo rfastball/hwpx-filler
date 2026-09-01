@@ -456,7 +456,6 @@ export function createEditorWorkbenchDataProbes() {
         try {
           const snap = await Bridge.initial("job");
           out.control_before = axis() === snap.view_order && axis() === "sourceDesc";
-          out.note_before = String(textOf(byId(ctx, "jobOrderNote")) || "");
           toggle.click();
           await ctx.sleep(400);                       // 왕복 + push 재렌더 여유(app.py:2685)
           out.after_roundtrip = axis();               // 되돌아왔으면 'sourceDesc'
@@ -499,7 +498,7 @@ export function createEditorWorkbenchDataProbes() {
         "`Nav.go('job')` 를 부르지 않는다 — 화면 전환은 REFRESH_ON_NAV 로 실 refresh 를 쏘고"
         + " 그 응답(작업 미선택 스냅샷)이 내가 연 면을 닫는다. 부팅 기본 화면이 이미 job 이다.",
       async run(ctx) {
-        const ids = ["jobRecsHead", "jobOrderBar", "jobFilterChips", "jobTableHost",
+        const ids = ["jobRecsHead", "jobFilterChips", "jobTableHost",
           "jobSelStrip", "jobRangeFoot"];
         const out = { pending: true };
         const liveNodes = () => ids.map((id) => byId(ctx, id));
@@ -535,7 +534,7 @@ export function createEditorWorkbenchDataProbes() {
           data_label: "d.csv", data_source_label: "d.csv (파일)", data_notice: null,
           template_name: "t.hwpx", template_path: "C:\t.hwpx", template_missing: false,
           filename_pattern: "doc-{{seq}}", has_data: true, record_count: 2, selected_count: 2,
-          view_order: "sourceDesc", order_note: "보이는 순서대로 생성됩니다.",
+          view_order: "sourceDesc",
           range_draft: {
             open: true, dirty: false, sel_count: 2, selected_only: false,
             view_order: "sourceDesc",

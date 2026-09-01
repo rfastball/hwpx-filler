@@ -22,7 +22,10 @@
 .sheet .sheet-card{width:calc(100vw - 2 * var(--sp-16));height:calc(100vh - 2 * var(--sp-16));
   height:calc(100dvh - 2 * var(--sp-16));max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-12);
-  padding:var(--sp-16) var(--sp-20);border-bottom:1px solid var(--a-border);flex:0 0 auto}
+  /* 종전 값은 `var(--sp-16) var(--sp-20)` 였는데 **`--sp-20` 은 사다리에 없다** — 정의되지
+     않은 var() 는 선언 전체를 무효로 만들어(IACVT) 이 머리의 padding 은 실제로 0 이었다.
+     여백을 넓히는 이 변경은 그래서 사다리 위의 값으로만 쓴다(--sp-16/--sp-24). */
+  padding:var(--sp-16) var(--sp-24);border-bottom:1px solid var(--a-border);flex:0 0 auto}
 .sheet-head h3{margin:0}
 .sheet-body{min-width:0;min-height:0;flex:1;padding:var(--sp-16);overflow:auto}
 /* (구 2 pane 시트 골격은 유일 소비자였던 작업 확인 펼침 면의 사망 — U2 §2.13 — 과 함께
