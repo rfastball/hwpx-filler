@@ -500,8 +500,12 @@ def _assert_source_inputs_clean(repo_root: Path) -> None:
         role="Git source-input status lookup",
     )
     if dirty:
+        # 어느 입력이 더러운지 병기한다 — 경로 없는 거절은 원인을 다시 찾게 만든다
+        # (package-lock.json 만 바뀐 채 남은 트리가 run-filler 를 막았던 전례).
+        offenders = ", ".join(line[3:] for line in dirty.splitlines() if line.strip())
         raise WebArtifactViolation(
-            "web build inputs are not committed; refusing to seal a dirty source tree"
+            "web build inputs are not committed; refusing to seal a dirty source tree: "
+            + offenders
         )
 
 

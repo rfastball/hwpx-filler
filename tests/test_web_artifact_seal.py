@@ -692,3 +692,22 @@ def test_producer_refuses_dirty_source_inputs(
 
     with pytest.raises(WebArtifactViolation, match="dirty source tree"):
         seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_dirty_source_input_refusal_names_the_offending_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """거절 문안이 더러운 경로를 지목한다 — 경로 없는 거절은 원인을 다시 찾게 만든다."""
+    monkeypatch.setattr(
+        web_artifact,
+        "_git_output",
+        lambda _root, _args, *, role: " M package-lock.json\n?? frontend/new.ts",
+    )
+
+    with pytest.raises(WebArtifactViolation) as excinfo:
+        web_artifact._assert_source_inputs_clean(Path("."))
+
+    message = str(excinfo.value)
+    assert "dirty source tree" in message
+    assert "package-lock.json" in message
+    assert "frontend/new.ts" in message
