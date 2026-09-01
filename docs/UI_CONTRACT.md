@@ -264,7 +264,7 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   editor/workbench 이탈·rerender 수명주기는 registry의 단일 owner가 fail-closed한다.
   **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
 
-#### 셸 설정 모달 — 테마·글자 크기 (⚙ 트리거)
+#### 셸 설정 모달 — 테마·글자 크기·저장 폴더 (⚙ 트리거)
 
 토바 우측의 셸 전역 조작은 **⚙ 하나**다. 종전의 순환 토글 둘(`#themeToggle` ◐ ·
 `#fontScaleToggle` A)은 걷혔다 — 값이 셋인 축을 순환으로 돌리면 지금 값도 고를 수 있는 값도
@@ -288,7 +288,18 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   직접 `Theme.set`)도 같은 값에 도착한다 — 그래서 셸의 `catchUp` 이 필요 없어졌다.
 - **개폐·초점**: ⚙ 클릭 → `Modal.open("settingsModal", { returnFocus: 트리거 })`,
   `#settingsClose` → `Modal.close`. 닫으면 초점이 ⚙ 로 돌아온다(Escape·배경도 같은 경로).
-- **다음 슬라이스**: 저장 폴더 행이 같은 `.settings-body` 행 목록에 합류한다(슬라이스 E).
+- **저장 폴더 행**(세 번째 행 · `.settings-row.settings-row-folder`)은 앞 둘과 **다른 종류의
+  값**이다: 테마·글자 크기는 셸 서비스의 값이지만 저장 폴더는 **Python 이 도출한 제품 값**이라
+  경로·출처·사유가 스냅샷으로 온다. 그래서 이 행만 job 컨트롤러를 구조적 포트
+  (`SettingsOutputFolderPort` — `subscribe`/`getRun`/`pickOutputFolder`/`client`/`notify`)로
+  받아 최상위 `output_folder` 존을 구독하고, 지역 상태를 만들지 않는다.
+  좌표는 경로 칸 `#settingsOutDir`(읽기 전용) · 「찾아보기…」 `#settingsPickFolder` ·
+  출처 `#settingsOutDirSource` · 사유 `#settingsOutDirNotice` · 잠금 사유
+  `#settingsPickFolderReason`, 그리고 경로 어포던스(`PathActions` — 폴더에서 보기·경로 복사)다.
+  **생성 중에는 「찾아보기…」가 비활성이고 사유를 병기한다**(조용히 막지 않는다) — 이번 실행이
+  겨눈 폴더가 도중에 갈리면 결과가 어디로 갔는지 말할 수 없기 때문이고, 그래서 이 행만
+  세그먼트와 달리 실행 상태를 본다. 왕복 자체(`pick_output_folder` 직접 브리지 + 오류 재진술)는
+  `JobRunController.pickOutputFolder` 가 그대로 지고 이 면은 부르기만 한다.
   기안 대상 글꼴(`#wbTargetFont`)은 작업대 소유로 남고 여기로 오지 않는다.
 - **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`, 실 WebView2 왕복(⚙ 클릭 →
   열림 → 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 값 복원 → 닫힘 → 초점
@@ -674,7 +685,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 | 열 | 구획 | 소유 |
 |---|---|---|
 | 좌 `.dg-main` | 현재 데이터(겨눔·검색·필터·표·필터 밖 스트립) → 본문 확인(표 없는 한 줄 — U2 §2.13) → 생성 결과 | 데이터-우선 흐름의 입력과 되읽기 |
-| 우 `.dg-side` | 이 데이터에 사용할 문서(후보·추천·탐색 출구 — 활성 카드가 정체·템플릿·연결 상태를 겸한다) → 생성 준비(저장 폴더·재진술) | 문서 선택과 실행 준비 |
+| 우 `.dg-side` | 이 데이터에 사용할 문서(후보·추천·탐색 출구 — 활성 카드가 정체·템플릿·연결 상태를 겸한다) → 생성 준비(저장 폴더 **표시** 한 줄·재진술) | 문서 선택과 실행 준비 |
 
 - 두 열은 존 구분선을 공유하는 **한 카드 안의 구획**이고, 컨테이너 900px 이하에서 1열로
   퇴화한다(`@container session-panel`). 구 `.job-duo`(표\|거울 가로 병치, #272)는 이 형상으로
@@ -1282,6 +1293,61 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   「문서 작업」 browser에서 exact Work를 찾아 「문서 만들기에서 사용」을 다시 누른 명시
   command 뒤에만 active Work가 된다. preferred가 메인 Top-N 밖이면 순위를 바꾸거나 카드를
   끼워 넣지 않고, 전역 「문서 작업」 browser에서 직접 검색·선택한다(#764).
+
+### 저장 폴더 — 전역 단일 값 (U3-06 #879 의 승계 판정)
+
+**저장 폴더는 작업의 속성이 아니라 앱의 설정이다.** U3-06(#879)이 세운 3단 도출
+(① 이번 세션의 명시 지정 → ② 기억한 지정 → ③ 템플릿 옆 `Results`)에서 **①이 폐지됐다** —
+사용자 확정. 남은 축은 둘이다:
+
+1. **설정한 전역 저장 폴더** — 존재 확인을 통과할 때만 선다.
+2. **템플릿 옆 `Results`** — 전체 경로로 도출될 때만 선다.
+
+둘 다 재료가 없으면 `directory=""`(도출 불가)이고, **그때만** 저장 폴더 지정이 생성의
+전제조건으로 남는다(`OUTPUT_DIRECTORY_REQUIRED`).
+
+- **판정은 링0 하나다**: `domain/output_folder_default.resolve_output_folder` — 순수 함수이고
+  존재 관찰(`remembered_exists`)은 호출자가 건넨다. 출처 라벨(`설정한 저장 폴더`/`기본값`)과
+  하향 사유 문안도 여기 산다 — 표면은 그리기만 한다(재조립 금지).
+- **영속은 설정 키 `last_output_directory` 하나다**(`external/settings.py`). 키 이름은 유지하고
+  **의미만 승격**했다: 「마지막 명시 지정(다음 세션의 재료)」 → 「지금 쓰이는 전역 저장 폴더」.
+  값의 형태·해석이 그대로라 마이그레이션이 없다(승격 기록은 그 docstring).
+- **도출의 출입구는 `JobController._output_folder_resolution()` 하나**다. managed 축의
+  `RunDeliveryIntent` 와 구식 축의 `out_dir` 이 **같은 도출**을 지난다 — 부팅·작업 착석·작업
+  해제·설정 변경 넷이 전부 이 함수를 거친다. 갈래별로 다른 값을 세우던 동안 생긴 결함이
+  「고른 폴더가 갈래에 따라 조용히 무시된다」(#905)였다.
+- **세션 상태가 없다.** `_run_delivery_intent`(session-scoped 명시 지정)와 그 갈래 술어
+  `_seat_is_managed_hwpx` 는 소비자 0 으로 걷혔다. `RunDeliveryIntent` 자체는 남는다 —
+  delivery 해결의 인자이고 매 도출에서 물질화된다. 세션 축으로 남는 것은 충돌 처리
+  (`_run_delivery_collision`)뿐이고 저장 폴더와 독립이다.
+- **작업 미선택 상태의 지정이 유효하다.** 전역값이라 앉은 작업이 없어도 설 수 있고, 작업이
+  나중에 앉아도 덮이지 않는다. 종전에는 착석이 템플릿 옆 기본값으로 조용히 덮어써서 화면이
+  작업 미선택에서 폴더 선택을 잠갔다 — 그 잠금과 그것을 재던 게이트 단언이 함께 죽었다.
+- **스냅샷은 최상위 `output_folder` 존**(`directory`·`source`·`source_label`·`notice`)을
+  **작업 유무와 무관하게 상시** 싣는다. 종전 자리였던 작업대 관찰 존
+  (`workbench_observation.output_folder`)에는 더 이상 없다: 「어디에 저장되는가」는 관찰이
+  무너져도, 작업이 없어도 답할 수 있는 사실이라 존이 아니라 최상위가 진다.
+
+**표면 — 고르는 자리는 하나, 보이는 자리는 갈래마다 하나**
+
+| 갈래 | 자리 | 좌표 |
+|---|---|---|
+| 고르기(전역) | 셸 설정 모달의 저장 폴더 행 | `#settingsPickFolder`(+`#settingsOutDir`·`#settingsOutDirSource`·`#settingsOutDirNotice`) |
+| managed hwpx | 「생성 예정 문서」 머리 — `저장 폴더: {경로} ({출처})` + 사유 | `#jobPlannedOutDir` · `#jobPlannedOutDirNotice` |
+| 구식 hwpx | 생성 준비 존의 표시 한 줄(고르는 칸·단추 없음) | `#jobOutFolderRow` → `#jobOutDirLine` · `#jobOutDirNotice` |
+| TXT(복사) | 없음 — 파일을 만들지 않아 폴더가 축이 아니다 | — |
+
+- 작업 화면에서 걷힌 것: `#jobOutRow`(라벨+`#jobOutDir`+`#jobBtnPickFolder`+`#jobOutTrack`)와
+  managed 저장 폴더 구획(`#jobManagedOutDir`·`#jobManagedPickFolder`·`…OutDirSource`·
+  `…OutDirNotice`). 결과 존의 폴더 표시는 **실행 증거**라 불변이다.
+- **배달 blocker 의 착지**: `#jobDeliveryBlockers` 아래 `#jobOpenFolderSettings`
+  (「저장 폴더 설정 열기…」)가 설정 모달을 연다(`JobRunController.openOutputFolderSettings`).
+  사유만 적고 갈 곳을 안 주면 막다른 경보가 되기 때문이다. 다만 blocker 를 **지우는** 동사는
+  폴더를 실제로 바꾸는 쪽이라, `blocker_affordance.py` 의 `REVIEW_DELIVERY` 등록 좌표는
+  `#settingsPickFolder`(`bridge_method="pick_output_folder"`)다 — 문은 좌표가 아니다.
+- **관찰은 폴더를 만들지 않는다**(불변). 도출된 기본값은 아직 없을 수 있어 빈 점유로 관찰하고
+  (`allow_missing`), 설정한 폴더는 도출이 이미 존재를 확인했으므로 그 관용을 받지 않는다 —
+  거기서 읽히지 않으면 「아직 없다」가 아니라 「읽을 수 없다」(권한·잠김)다.
 
 ### `library` 화면(전역 문서 작업 라이브러리) 계약 (§19.6·§19.7)
 

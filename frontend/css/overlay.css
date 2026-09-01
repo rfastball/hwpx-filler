@@ -68,6 +68,12 @@
 .settings-seg{display:flex;gap:var(--sp-4);flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end}
 .settings-seg-opt[aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);
   color:var(--a-ink);font-weight:600}
+/* 저장 폴더 행은 세그먼트가 아니라 **경로 + 동사 + 사유**라 조작 칸이 여러 줄이다. 라벨 칸의
+   세로 가운데 정렬을 풀어 라벨이 첫 줄에 붙게 한다(사유가 길어져도 라벨이 안 미끄러진다). */
+.settings-row-folder{align-items:flex-start}
+.settings-folder{display:flex;flex-direction:column;gap:var(--sp-4);flex:1 1 auto;min-width:0}
+.settings-folder-row{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
+.settings-folder-row .field{flex:1 1 auto;min-width:0}
 
 /* ---- 템플릿 관리(#13) ---- */
 /* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.

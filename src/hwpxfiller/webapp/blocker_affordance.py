@@ -149,13 +149,19 @@ _TABLE: dict[str, BlockerAffordance] = {
     ),
     "REVIEW_DELIVERY": BlockerAffordance(
         kind=ACTIVE_VERB,
-        selector="#jobManagedPickFolder",
+        selector="#settingsPickFolder",
         bridge_method="pick_output_folder",
         rationale="이름 충돌은 U4 계열2-27 이후 blocker 가 아니다(기본이 덮어쓰기이고 "
         "파괴 확인은 생성 호출의 `needs_overwrite` 왕복이 진다 — #957). 그래서 이 자리에 "
         "남는 원인은 「그 이름이 "
         "덮어쓸 수 없는 물건(폴더·바로가기)에 걸렸다」이고, 그것을 지우는 동사는 저장 "
-        "폴더를 바꾸는 것이다 — 네이티브 피커라 직접 브리지 경로다. 파일 이름 규칙 자체의 "
+        "폴더를 바꾸는 것이다 — 네이티브 피커라 직접 브리지 경로다. **그 동사는 작업 화면에 "
+        "없다**: 저장 폴더의 작업 세션별 지정이 폐지되면서 고르는 자리가 전역 설정 모달의 "
+        "저장 폴더 행 하나로 접혔고, 그래서 좌표가 `#jobManagedPickFolder` 에서 "
+        "`#settingsPickFolder` 로 옮겼다(브리지 메서드는 그대로다 — 이사한 것은 자리이지 "
+        "동사가 아니다). 화면 쪽 착지는 `#jobOpenFolderSettings`(「저장 폴더 설정 열기…」)가 "
+        "지는데, 그것은 문일 뿐 복구 동사가 아니라 여기 실리지 않는다 — blocker 를 지우는 "
+        "것은 폴더를 실제로 바꾸는 쪽이다. 파일 이름 규칙 자체의 "
         "미해소는 저장 시점 게이트(U4 계열4-4 `validate_save`)가 앱 안에서 만들어지는 것을 "
         "막고, 앱 밖에서 편집된 작업이 그것을 들고 오면 사유를 `#jobDeliveryBlockers` 가 "
         "병기한다. 종전 좌표 `#jobRefreshDelivery` 는 「목록 새로 확인」이었는데, 그 동사는 "

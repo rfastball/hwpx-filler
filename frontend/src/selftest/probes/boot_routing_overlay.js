@@ -761,7 +761,7 @@ export function createBootRoutingOverlayProbes() {
         + " 셸을 덮은 채 `#scr-job .zone-cap` 을 재게 되어 다른 표면을 잰다.",
       note:
         "이 프로브가 겨누는 것은 **타이포·위계 토큰**이지 작업 화면의 의미가 아니다 —"
-        + " `#scr-job .zone-cap`·`jobGenBtn`·`jobOutTrack` 은 그 계약의 표본일 뿐이다."
+        + " `#scr-job .zone-cap`·`jobGenBtn` 은 그 계약의 표본일 뿐이다."
         + " 표본은 자급(self-seed)한다: 앞 프로브가 남긴 DOM 에 무임승차하면 #137 의 교차오염이"
         + " 되돌아온다. 다만 `#scr-job .zone-cap` 목록은 여전히 앞선 job 렌더(클러스터 C 의"
         + " job_data_first, app.py:3877)를 소비한다 — 클러스터를 넘는 그 순서는 `legacySite`"
@@ -823,31 +823,42 @@ export function createBootRoutingOverlayProbes() {
         card.remove();
 
         /* 로케이트 어포던스 표본 자급 — 목적은 React PathActions 후계의 아이콘·접근 이름
-           *스타일 계약*이다. 제품 handler를 복제하지 않고 같은 class/ARIA 표본만 만든다. */
-        let syntheticPathButtons = [];
-        if (!doc.querySelector(".track-btn")) {
-          const ot = doc.getElementById("jobOutTrack");
-          if (ot) {
-            const specs = [["reveal", "폴더에서 보기", "⌖"], ["copy", "경로 복사", "⧉"]];
-            const buttons = specs.map(([action, label, glyph]) => {
-              const button = doc.createElement("button");
-              button.className = "track-btn";
-              button.type = "button";
-              button.dataset.trackAct = action;
-              button.setAttribute("aria-label", label);
-              button.setAttribute("title", label + " — C:/selftest/result.hwpx");
-              const svg = doc.createElement("svg");
-              svg.setAttribute("aria-hidden", "true");
-              button.appendChild(svg);
-              button.append(glyph);
-              return button;
-            });
-            ot.replaceChildren(...buttons);
-            syntheticPathButtons = buttons;
-          }
+           *스타일 계약*이다. 제품 handler를 복제하지 않고 같은 class/ARIA 표본만 만든다.
+           표본의 그릇은 **자기 컨테이너**다: 종전에는 작업 화면의 저장 폴더 줄에 있던 경로
+           어포던스 자리를 빌려 그 안을 `replaceChildren` 으로 갈아끼웠는데, 그건 남의 존을
+           상하게 바꾸는 일이고 그 자리가 사라지면 표본도 함께 사라진다(저장 폴더 전역화에서
+           실제로 사라졌다). 재질 계약은 제품 DOM 의 위치와 무관하므로 문서에 임시로 붙였다가
+           재고 나면 걷는다. */
+        let syntheticHost = null;
+        let pathButtons = all(doc, ".track-btn");
+        if (!pathButtons.length) {
+          syntheticHost = doc.createElement("span");
+          syntheticHost.className = "track-affords";
+          syntheticHost.setAttribute("data-selftest-probe", "pathtrack");
+          const specs = [["reveal", "폴더에서 보기", "⌖"], ["copy", "경로 복사", "⧉"]];
+          pathButtons = specs.map(([action, label, glyph]) => {
+            const button = doc.createElement("button");
+            button.className = "track-btn";
+            button.type = "button";
+            button.dataset.trackAct = action;
+            button.setAttribute("aria-label", label);
+            button.setAttribute("title", label + " — C:/selftest/result.hwpx");
+            const svg = doc.createElement("svg");
+            svg.setAttribute("aria-hidden", "true");
+            button.appendChild(svg);
+            button.append(glyph);
+            return button;
+          });
+          syntheticHost.append(...pathButtons);
+          doc.body.appendChild(syntheticHost);
         }
-        const pathButtons = syntheticPathButtons.length
-          ? syntheticPathButtons : all(doc, ".track-btn");
+        const pathtrack = {
+          count: pathButtons.length,
+          names: pathButtons.map((e) => e.getAttribute("aria-label")),
+          titled: pathButtons.every((e) => !!e.getAttribute("title")),
+          svg: pathButtons.every((e) => !!e.querySelector("svg")),
+        };
+        if (syntheticHost) syntheticHost.remove();
 
         const scrollHost = doc.createElement("div");
         scrollHost.className = "tblwrap";
@@ -892,12 +903,7 @@ export function createBootRoutingOverlayProbes() {
             selected_card: selectedCard,
             disabled_primary: disabledPrimary,
             enabled_primary: enabledPrimary,
-            pathtrack: {
-              count: pathButtons.length,
-              names: pathButtons.map((e) => e.getAttribute("aria-label")),
-              titled: pathButtons.every((e) => !!e.getAttribute("title")),
-              svg: pathButtons.every((e) => !!e.querySelector("svg")),
-            },
+            pathtrack: pathtrack,
             scroll: scrollContract,
           },
         };

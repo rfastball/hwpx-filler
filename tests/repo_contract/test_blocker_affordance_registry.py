@@ -284,4 +284,7 @@ def test_managed_controls_derive_from_the_single_source() -> None:
     assert controls["RECOVER_CONTEXT"] == "#jobRecoverContext"
     # U4 계열2-27·2-28: 이름 충돌이 blocker 가 아니게 된 뒤 이 자리에 남는 원인은
     # 「덮어쓸 수 없는 물건에 이름이 걸렸다」이고, 그것을 지우는 동사는 폴더 바꾸기다.
-    assert controls["REVIEW_DELIVERY"] == "#jobManagedPickFolder"
+    # 저장 폴더 전역화 뒤 그 동사의 자리는 작업 화면이 아니라 **설정 모달**이다 — 작업
+    # 화면에는 그리로 가는 문(`#jobOpenFolderSettings`)만 서고, blocker 를 실제로 지우는
+    # 동사가 등록 좌표라 여기는 설정 모달 쪽을 겨눈다.
+    assert controls["REVIEW_DELIVERY"] == "#settingsPickFolder"

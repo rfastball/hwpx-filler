@@ -35,7 +35,7 @@
  *   · job_data_first : actionbar_plane ↔ actionbar_plane_empty_note(빈 문안 자리) ·
  *                      fav_refusal_alerts(거절 착지=알림 채널, #957) ·
  *                      fav_pressed=["true","false"] · fav_order=[F,T,T,F,T,F] ·
- *                      gen_disabled · restate_hidden · folder_pick_disabled ·
+ *                      gen_disabled · restate_hidden ·
  *                      cand_disabled_chips==0 · browse_query_kept↔browse_query_settled.
  *   · job_inherited  : no_data_exit_with_data(false) ↔ no_data_exit_shown(true).
  *   · job_active_card: conn_quiet_when_ok ↔ conn_text_no_data/relink_visible_no_data ·
@@ -705,7 +705,10 @@ async function runJobDataFirst(ctx) {
     doc.querySelectorAll("#jobTableBody tr[data-i]"), (r) => r.getAttribute("data-i"),
   );
   out.restate_hidden = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
-  out.folder_pick_disabled = doc.getElementById("jobBtnPickFolder").disabled;
+  /* `folder_pick_disabled`(#jobBtnPickFolder) 는 여기 있었다. 저장 폴더가 작업 속성이던
+     동안에는 「작업 미선택에서 폴더를 고르면 작업 선택이 그것을 조용히 덮는다」가 실재하는
+     결함이라 비활성이 계약이었다. 전역화로 그 덮어쓰기 자체가 사라졌고 고르는 자리도 이
+     화면 밖(설정 모달)이라, 잴 대상이 남지 않았다. */
 
   /* 회수 순서는 레거시 드라이버 그대로다 — 즐겨찾기(3882) 먼저, 탐색(3888) 다음. */
   const [favLate, browseLate] = await Promise.all([favChain, browseChain]);

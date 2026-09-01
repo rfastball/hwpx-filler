@@ -471,10 +471,15 @@ export function bootProduct() {
           { controller: SheetPickerController }),
         productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,
           { controller: JobRunController }),
-        /* 셸 설정 모달 — 유일하게 화면 컨트롤러가 아니라 셸 서비스를 받는 overlay 다.
-           테마·개인화의 판정·영속은 이 서비스들이 그대로 지고 면은 고르는 자리만 진다. */
+        /* 셸 설정 모달 — 셸 서비스 셋(테마·개인화·모달)과 job 컨트롤러 하나를 받는다.
+           앞 셋의 판정·영속은 서비스가 그대로 지고, 저장 폴더는 Python 도출이라 그 값을
+           싣는 스냅샷의 주인(JobRunController)을 포트로 받는다 — 전역 값이라 화면이 job 에
+           있든 없든 같은 면이 같은 값을 그린다. */
         productOverlayComponent("settingsModal", PRODUCT_OVERLAY_COMPONENTS.SettingsSheet,
-          { theme: Theme, personalization: Personalization, modal: Modal }),
+          {
+            theme: Theme, personalization: Personalization, modal: Modal,
+            job: JobRunController,
+          }),
       ],
     },
   });

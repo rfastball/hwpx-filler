@@ -28,7 +28,9 @@ const SURFACE = [
   "renderResult", "markResultStale",
   "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
-  "pickOutputFolder",
+  // 저장 폴더 전역화: 고르는 왕복(설정 모달이 부른다) + 그 모달을 여는 문(작업 화면의
+  // 배달 blocker 착지)이 한 쌍이다.
+  "pickOutputFolder", "openOutputFolderSettings",
   "relinkActive", "templateCheck", "templateApply",
   // 산출물 관찰(S7-03 · #825) — 미리보기와 **별도 표면**이라 이름도 갈린다.
   "openArtifactFrom", "closeArtifact", "saveArtifactAs",
@@ -466,7 +468,7 @@ test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안
   assert.equal(markup.includes("jobInputRequirements"), false);
   // 나머지 구획은 그대로 선다 — 확인 대상 정보·미지정 조치 요구를 숨기지 않는다.
   for (const text of ["현재 실행 상태", "현재 설정이 반영됐습니다", "데이터 확인",
-    "2건의 데이터를 확인했습니다.", "저장 폴더", "생성 예정 문서"]) {
+    "2건의 데이터를 확인했습니다.", "생성 예정 문서"]) {
     assert.ok(markup.includes(text), text);
   }
 });
@@ -570,17 +572,17 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
 test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 그린다', async () => {
   const snap = {
     ...SNAP, managed_hwpx: true,
+    output_folder: {
+      directory: 'C:\서고\Results',
+      source: 'template_default',
+      source_label: '기본값',
+      notice: '설정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다.',
+    },
     workbench_observation: {
       supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
       execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
-      output_folder: {
-        directory: 'C:\\서고\\Results',
-        source: 'template_default',
-        source_label: '기본값',
-        notice: '지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다.',
-      },
       run_delivery_intent: {
-        output_directory: 'C:\\서고\\Results', collision_policy: 'OVERWRITE_EXPLICIT',
+        output_directory: 'C:\서고\Results', collision_policy: 'OVERWRITE_EXPLICIT',
       },
       delivery: {
         resolvable: true, blockers: [],
@@ -598,14 +600,13 @@ test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 
   const markup = renderToStaticMarkup(
     createElement(JobWorkbenchStatus, { controller: h.controller }),
   );
-  // 표시된 기본값이지 빈칸이 아니다 — 경로·출처·사유가 전부 backend 문안이다.
-  assert.ok(markup.includes('value="C:\\서고\\Results"'));
-  assert.ok(markup.includes('기본값'));
-  assert.ok(markup.includes('지난번에 지정한 저장 폴더를 찾을 수 없습니다.'));
-  assert.ok(markup.includes('저장 폴더: C:\\서고\\Results'));
+  // 표시된 기본값이지 빈칸이 아니다 — 경로·출처·사유가 전부 backend 문안이고, 출처는 경로
+  // 옆에 병기된다(「기본값이 조용히 쓰였다」와 「내가 설정했다」가 한 줄로 보이지 않게).
+  assert.ok(markup.includes('저장 폴더: C:\서고\Results (기본값)'));
+  assert.ok(markup.includes('설정한 저장 폴더를 찾을 수 없습니다.'));
   // 라벨을 프런트가 다시 만들지 않는다.
   const source = String(JobWorkbenchStatus);
-  for (const forbidden of ['기억한 폴더', '직접 지정', 'template_default', 'Results']) {
+  for (const forbidden of ['설정한 저장 폴더', '기본값', 'template_default', 'Results']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
 });
