@@ -396,9 +396,9 @@ def test_editor_notifies_template_pick_mapping_completion_and_txt_save(tmp_path)
     # 링1 ``is_complete()`` 의 false→true 만 읽는다.
     seen.clear()
     ctrl.dispatch("goto_section", {"section": "binding"})   # 매핑 진입(모델 초안 생성)
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "복사기 임차"})
-    ctrl.dispatch("set_type", {"index": 1, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 1, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 1, "const": "1,200,000"})
     _confirm_every_row(ctrl)
     assert ctrl.snapshot()["is_complete"] is True

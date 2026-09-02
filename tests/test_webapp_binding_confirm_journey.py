@@ -131,7 +131,7 @@ def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:
     editor.load_data_path(str(data))
     editor.dispatch("goto_section", {"section": "binding"})
     for index in range(len(editor.model.rows)):
-        editor.dispatch("set_type", {"index": index, "type": "const"})
+        editor.dispatch("set_display", {"index": index, "type": "const", "fmt": ""})
         editor.dispatch("set_const", {"index": index, "const": f"v{index}"})
     _confirm_every_row(editor)
     editor.dispatch("set_name", {"name": name})

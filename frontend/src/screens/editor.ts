@@ -84,7 +84,7 @@ const INFERRED_LABEL: Record<string, string> = {
 /** 매핑 행 상태 → class. Python 이 내는 닫힌 집합 넷과 1:1(발명·누락 금지).
  *  **라벨은 여기 없다** — 배지 문안은 링1 `ROW_STATUS_LABEL` 이 스냅샷에 실어 보낸다
  *  (U6-C #977: 같은 상태를 두 층이 문안화하면 한쪽만 옛말을 계속 한다). */
-const ROW_STATE_CLASS: Record<string, string> = {
+export const ROW_STATE_CLASS: Record<string, string> = {
   suggested: "r-suggested", edited: "r-edited",
   confirmed: "r-confirmed", needs_source: "r-needs-source",
 };
@@ -156,6 +156,8 @@ type ViewState = {
   libMenu: LibMenu | null;
   /** 2단계 머리의 ⋯ 메뉴가 열려 있는가 — 항목·위치는 공용 `ContextMenu` 가 소유한다. */
   bindingMenu: boolean;
+  /** 「고정값…」을 고른 행 — 그 입력이 **실제로 선 렌더**에서 초점을 받는다(리뷰 8). */
+  pendingConstFocus: number | null;
   txtEdit: TxtEditState | null;
   tokFoldOpen: boolean;
   saveMessage: { text: string; level: string } | null;
@@ -196,7 +198,7 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
-    libMenu: null, bindingMenu: false, txtEdit: null,
+    libMenu: null, bindingMenu: false, pendingConstFocus: null, txtEdit: null,
     tokFoldOpen: false, saveMessage: null,
     invalidField: "", aim: "", aimed: "",
   };
@@ -293,11 +295,15 @@ export function createEditorController(deps: EditorControllerDeps) {
         commits.push(commit(field, "set_pattern", { pattern: state.draftValue }));
         continue;
       }
-      const match = /^row:(\d+):(source|type|fmt|const)$/.exec(field);
+      /* 행 축의 초안은 **고정값 입력 하나**다(U6-C 리뷰 2). 종전에는 데이터 열 select 도
+         초안을 가졌는데 그 값은 열 이름이 아니라 **항목 값**(`col:…`/`sp:…`)이라, 지연
+         flush 의 일반 갈래가 그것을 `set_source` 에 그대로 실어 존재하지 않는 열
+         「col:품명」에 결속시켰다 — R5 센티넬 금지의 정확한 위반이다. 두 select 는 이제
+         초안을 두지 않고 고른 그 자리에서 kind 로 갈라 발행한다. */
+      const match = /^row:(\d+):(const)$/.exec(field);
       if (match === null) throw new Error(`알 수 없는 편집 draft field입니다: ${field}`);
       const index = Number(match[1]);
-      const axis = match[2] as RowAxis;
-      commits.push(commit(field, `set_${axis}`, { index, [axis]: state.draftValue }));
+      commits.push(commit(field, "set_const", { index, const: state.draftValue }));
     }
     await Promise.all(commits);
     return deps.chain.chained(EDIT_CHAIN, () => Promise.resolve());
@@ -359,8 +365,27 @@ export function createEditorController(deps: EditorControllerDeps) {
    *  접두 규칙(`col:`/`sp:`)을 여기서 다시 해석하면 그 규칙을 두 곳이 소유하게 되고,
    *  Python 이 이름 공간을 바꾸는 날 웹만 옛 규칙으로 남는다. 목록에 없는 값은 조용히
    *  무시하지 않고 시끄럽게 던진다(선택지에 없는 것이 선택됐다 = 배선 결함). */
-  function commitDataColumn(index: number, value: string): void {
-    const field = rowField(index, "source");
+  /** 표 안의 두 select 가 쓰는 **초안 없는** 발신(U6-C 리뷰 2).
+   *
+   *  select 는 값을 들고 있을 이유가 없다 — 고르는 순간이 곧 커밋이고, 타이핑처럼 지켜야 할
+   *  중간 상태가 없다. 초안을 두면 그 값(항목 값)이 지연 flush 의 일반 갈래로 새어 액션
+   *  payload 를 오염시킨다. 실패하면 화면을 서버 값으로 되돌린다: 재렌더가 제어 select 의
+   *  DOM 값을 스냅샷 값으로 되맞추므로 「고른 것처럼 보이는데 안 고른」 자리가 남지 않는다. */
+  function sendRowChoice(action: string, payload: Obj): void {
+    void sendEdit(action, payload)
+      .catch((error) => { noticeSave(String((error as Obj)?.message || error)); })
+      /* 성공이든 실패든 한 번 더 그린다 — 실패는 되돌리기고, 성공은 push 가 오기 전까지
+         화면이 옛 값을 들고 있지 않게 하는 정산이다. */
+      .finally(() => { patchView({}); });
+  }
+
+  /** 데이터 열 항목 값 → 발행할 액션(U6-C #977).
+   *
+   *  **값을 파싱하지 않는다** — Python 이 낸 항목 목록에서 그 값을 찾아 `kind` 를 읽는다.
+   *  접두 규칙(`col:`/`sp:`)을 여기서 다시 해석하면 그 규칙을 두 곳이 소유하게 되고,
+   *  Python 이 이름 공간을 바꾸는 날 웹만 옛 규칙으로 남는다. 목록에 없는 값은 조용히
+   *  무시하지 않고 시끄럽게 던진다(선택지에 없는 것이 선택됐다 = 배선 결함). */
+  function chooseDataColumn(index: number, value: string): void {
     const options = (snapshot().data_column_options || []) as Obj[];
     const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
     /* 「데이터에 없음」 항목은 그 행에만 서는 자리라 공용 목록에 없다 — 지금 값 그대로
@@ -370,38 +395,40 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (picked === undefined) throw new Error(`알 수 없는 데이터 열 항목입니다: ${value}`);
     const kind = String(picked.kind);
     if (kind === "column") {
-      void commit(field, "set_source", { index, source: String(picked.field) });
+      sendRowChoice("set_source", { index, source: String(picked.field) });
     } else if (kind === "none") {
-      void commit(field, "set_source", { index, source: "" });
+      sendRowChoice("set_source", { index, source: "" });
     } else if (kind === "blank") {
-      void commit(field, "set_blank", { index });
+      sendRowChoice("set_blank", { index });
     } else {
-      void commit(field, "set_type", { index, type: kind });
+      /* 「고정값…」을 고르면 값을 적을 자리가 새로 생긴다. 그 입력은 **서버가 이 행을
+         const 로 인정한 뒤에야** 렌더되므로 지금 DOM 에는 없다 — 마이크로태스크로 겨누면
+         언제나 빈손이다. 표지를 남기고 그 입력이 실제로 선 렌더에서 초점을 준다(리뷰 8). */
+      if (kind === "const") patchView({ pendingConstFocus: index });
+      sendRowChoice("set_display", { index, type: kind, fmt: "" });
     }
   }
 
-  function commitRowValue(index: number, axis: RowAxis, value: string): void {
-    const field = rowField(index, axis);
-    if (axis === "source") commitDataColumn(index, value);
-    if (axis === "type") void commit(field, "set_type", { index, type: value });
-    if (axis === "fmt") void commit(field, "set_fmt", { index, fmt: value });
-    if (axis === "const") void commit(field, "set_const", { index, const: value });
+  /** 표시형 항목 값 → (유형, 표시형) 한 쌍(U6-C 리뷰 1). 값 문자열은 파싱하지 않는다 —
+   *  항목이 `type`·`fmt` 를 따로 들고 오므로 접두 규칙을 웹이 소유하지 않는다. */
+  function chooseDisplay(index: number, value: string): void {
+    const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
+    const groups = ((row || {}).display_options || []) as Obj[];
+    for (const group of groups) {
+      const picked = ((group.options || []) as Obj[])
+        .find((option) => String(option.value) === value);
+      if (picked !== undefined) {
+        sendRowChoice("set_display", {
+          index, type: String(picked.type), fmt: String(picked.fmt),
+        });
+        return;
+      }
+    }
+    throw new Error(`알 수 없는 표시형 항목입니다: ${value}`);
   }
 
-  /** 데이터 열 select 의 change — 값을 draft 에 올리고 그 자리에서 발행한다.
-   *
-   *  「고정값…」을 고르면 뒤이어 그 칸의 상수 입력에 초점을 준다. 값을 적을 자리가 생겼는데
-   *  커서가 다른 데 있으면 사람은 골라 놓고 다음 동작을 한 번 더 찾아야 한다. 초점은 **다음
-   *  렌더 뒤**에 선다(지금 DOM 에는 그 입력이 아직 없다). */
-  function chooseDataColumn(index: number, value: string): void {
-    commitRow(index, "source", value);
-    const options = (snapshot().data_column_options || []) as Obj[];
-    const picked = options.find((option) => String(option.value) === value);
-    if (picked === undefined || String(picked.kind) !== "const") return;
-    queueMicrotask(() => {
-      deps.doc.querySelector<HTMLElement>(
-        `#editor-body [data-act="row-const"][data-index="${index}"]`)?.focus();
-    });
+  function commitRowValue(index: number, axis: RowAxis, value: string): void {
+    void commit(rowField(index, axis), "set_const", { index, const: value });
   }
 
   function commitRow(index: number, axis: RowAxis, value: string): void {
@@ -413,6 +440,16 @@ export function createEditorController(deps: EditorControllerDeps) {
     const state = draft.fields[rowField(index, axis)];
     if (state === undefined || !state.dirty) return;
     commitRowValue(index, axis, state.draftValue);
+  }
+
+  /** 대기 중인 「고정값」 초점을 이 행이 가져간다 — 가져가면 표지를 걷는다(1회성).
+   *
+   *  판정을 렌더가 아니라 여기서 하는 이유: 표지가 남아 있으면 이후 모든 재렌더가 그 입력을
+   *  다시 겨눠 사람이 옮긴 커서를 계속 빼앗는다. */
+  function takePendingConstFocus(index: number): boolean {
+    if (view.pendingConstFocus !== index) return false;
+    patchView({ pendingConstFocus: null });
+    return true;
   }
 
   /* ---- 조준(deep-link) ---- */
@@ -1281,7 +1318,8 @@ export function createEditorController(deps: EditorControllerDeps) {
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
     poolAction, resolveDuplicate, openPin, openPclm, openSettings,
     tplModel, poolModel,
-    confirmSuggested, chooseDataColumn, discardPatch, cancelNewDraft,
+    confirmSuggested, chooseDataColumn, chooseDisplay, takePendingConstFocus,
+    discardPatch, cancelNewDraft,
     toggleBindingMenu, closeBindingMenu, handleBindingMenu, bindingContextMenu,
     isBindingMenuOpen: (): boolean => view.bindingMenu,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
@@ -1816,7 +1854,9 @@ function DataColumnCell(props: {
   const { row, snapshot, draft, controller } = props;
   const index = Number(row.index);
   const options = (snapshot.data_column_options || []) as Obj[];
-  const value = valueOf(draft, rowField(index, "source"));
+  /* select 값의 정본은 **스냅샷**이다(리뷰 2) — 초안을 두지 않으므로 여기서 읽을 draft
+     가 없고, 실패한 선택은 다음 렌더가 이 값으로 되돌린다. */
+  const value = String(row.source_value || "");
   const missingLabel = String(row.source_missing_label || "");
   const nodes: ReactNode[] = options.map((option) => h("option", {
     value: String(option.value), key: String(option.value),
@@ -1831,6 +1871,14 @@ function DataColumnCell(props: {
     }, missingLabel));
   }
   const confirmable = !!row.confirmable;
+  const constRef = useRef<HTMLInputElement | null>(null);
+  /* 「고정값…」을 고른 뒤 값을 적을 자리로 커서를 옮긴다(리뷰 8). 그 입력은 **서버가 이
+     행을 const 로 인정한 뒤에야** 렌더되므로 고른 순간에는 DOM 에 없다 — 초점은 그 입력이
+     실제로 선 이 렌더에서 선다. 표지는 가져가는 쪽이 걷어 재렌더마다 커서를 빼앗지 않는다. */
+  useEffect(() => {
+    if (constRef.current === null) return;
+    if (controller.takePendingConstFocus(index)) constRef.current.focus();
+  });
   return h("div", { className: "srccell" },
     h("select", {
       className: `sel${row.row_state === "needs_source" ? " empty" : ""}`,
@@ -1840,6 +1888,7 @@ function DataColumnCell(props: {
     }, ...nodes),
     row.source_kind === "const" ? h("input", {
       className: "sel", "data-act": "row-const", "data-index": index, placeholder: "고정값",
+      ref: constRef,
       value: valueOf(draft, rowField(index, "const")),
       onChange: (event: Obj) => controller.type(rowField(index, "const"), String(event.currentTarget.value)),
       onFocus: () => controller.focus(rowField(index, "const"), true),
@@ -1859,8 +1908,9 @@ function DataColumnCell(props: {
       onClick: () => controller.guarded(() => controller.sendEdit(
         "set_confirmed", { index, confirmed: !row.confirmed })),
     }, String(row.state_label)),
-    /* 수동·미확정 행만 자동 제안 복귀(↻) — 확정 행은 제외(확인 해제가 의식적 1단계). */
-    row.touched && !row.confirmed && snapshot.record_count ? h("button", {
+    /* ↻ 의 노출 술어는 **Python 이 낸다**(`revertable` — 리뷰 9). `_do_revert_source` 가
+       확정 행을 거절하는 것과 같은 술어라야 「눌렀는데 거절당하는」 버튼이 남지 않는다. */
+    row.revertable ? h("button", {
       className: "btn icon", "data-act": "revert-source", "data-index": index,
       title: "자동 제안으로 되돌리기", "aria-label": "이 행 자동 제안 다시 받기",
       onClick: () => controller.guarded(() => controller.sendEdit("revert_source", { index })),
@@ -1887,7 +1937,7 @@ function MapRow(props: {
 }): ReactNode {
   const { row, snapshot, draft, controller } = props;
   const index = Number(row.index);
-  const formats = (row.fmt_options || []) as Obj[];
+  const displayGroups = (row.display_options || []) as Obj[];
   /* 행 상태 class 는 **닫힌 집합**이다(Python `screen_editor.py` 가 넷 중 하나를 낸다).
      보간으로 지으면 이름이 코드에 안 남아 CSS 고아 검사가 이 자리를 통째로 건너뛴다 —
      넷을 리터럴로 적어 그 검사에 들게 하고, 계약 밖 값은 조용히 무-class 로 접지 않는다. */
@@ -1899,12 +1949,21 @@ function MapRow(props: {
       h("span", { className: "tbadge" },
         `[추정: ${INFERRED_LABEL[row.inferred_type] || row.inferred_type || ""}]`)),
     h("td", null, h(DataColumnCell as any, { row, snapshot, draft, controller })),
+    /* 표시형 select 가 **유형 축까지 든다**(리뷰 1). `infer_type` 은 이름 키워드
+       휴리스틱이라 「계약일」이 text 로 추정되면 날짜 서식을 영영 못 고르는 자리가 생겼다 —
+       옵션을 유형별 그룹으로 묶어 한 번의 선택이 (유형, 표시형) 한 쌍을 원자적으로 세운다.
+       그룹·라벨·값은 전부 Python 이 낸다. */
     h("td", null, h("select", {
       className: "sel", "data-act": "row-fmt", "data-index": index,
-      value: valueOf(draft, rowField(index, "fmt")), disabled: !formats.length,
-      onChange: (event: Obj) => controller.commitRow(index, "fmt", String(event.currentTarget.value)),
-    }, ...(formats.length
-      ? formats.map((format) => h("option", { value: format.code, key: format.code }, format.label))
+      value: String(row.display_value || ""), disabled: !displayGroups.length,
+      onChange: (event: Obj) => controller.guarded(
+        () => controller.chooseDisplay(index, String(event.currentTarget.value))),
+    }, ...(displayGroups.length
+      ? displayGroups.map((group) => h("optgroup", {
+        label: String(group.label), key: String(group.label),
+      }, ...((group.options || []) as Obj[]).map((option) =>
+        h("option", { value: String(option.value), key: String(option.value) },
+          String(option.label)))))
       : [h("option", { value: "", key: "" }, "—")]))),
     h("td", null, h(PreviewCell as any, { row })));
 }

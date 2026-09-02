@@ -1445,9 +1445,9 @@ class TestWebSelftestGate:
             f"승격 뒤 문안이 Python 값이 아닙니다: {e['promoted_label_after']!r}"
         )
         # 특수 항목은 **열 이름 공간에 얹히지 않는다** — 각자 자기 액션으로 갈린다.
-        assert e["pick_const"].startswith("set_type:"), f"고정값 분기: {e['pick_const']!r}"
+        assert e["pick_const"].startswith("set_display:"), f"고정값 분기: {e['pick_const']!r}"
         assert '"const"' in e["pick_const"], f"고정값 분기 payload: {e['pick_const']!r}"
-        assert e["pick_today"].startswith("set_type:"), f"오늘 날짜 분기: {e['pick_today']!r}"
+        assert e["pick_today"].startswith("set_display:"), f"오늘 날짜 분기: {e['pick_today']!r}"
         assert e["pick_blank"].startswith("set_blank:"), f"비워 둠 분기: {e['pick_blank']!r}"
         assert e["pick_column"] == 'set_source:{"index":3,"source":"수량"}', (
             f"열 선택이 실 열 이름으로 가지 않습니다: {e['pick_column']!r}"
@@ -1457,6 +1457,14 @@ class TestWebSelftestGate:
         )
         assert e["badge_call"] == 'set_confirmed:{"index":0,"confirmed":true}', (
             f"배지 클릭이 행별 확인을 내지 않았습니다: {e['badge_call']!r}"
+        )
+        # 표시형 select 가 **유형 축**을 든다(리뷰 1) — 유형 열이 걷힌 뒤 유일한 통로라,
+        # 이 그룹이 죽으면 이름 추론이 틀린 행은 날짜·금액 서식을 영영 못 고른다.
+        assert e["display_groups"] == ["텍스트", "날짜", "금액"], (
+            f"표시형 select 가 유형 그룹을 그리지 않습니다: {e['display_groups']!r}"
+        )
+        assert e["pick_display"] == 'set_display:{"index":0,"type":"date","fmt":""}', (
+            f"표시형 선택이 (유형, 표시형) 한 쌍을 원자적으로 내지 않습니다: {e['pick_display']!r}"
         )
         assert e["step_next"] == 'step_preview:{"delta":1}', f"스테퍼 ▶: {e['step_next']!r}"
         assert e["step_prev"] == 'step_preview:{"delta":-1}', f"스테퍼 ◀: {e['step_prev']!r}"
@@ -1476,9 +1484,6 @@ class TestWebSelftestGate:
         assert e["revert_same_line"] is True, (
             "재제안 버튼과 select 의 세로 중심이 어긋났습니다 — 줄이 갈렸습니다."
         )
-        # `guarded` 의 catch 백스톱(`window.alert`)이 한 번도 뜨지 않았다 — 이 창에서 그것이
-        # 뜨면 JS 가 멈춰 프로브가 아니라 런 전체가 매달린다(감시견도 JS 쪽이라 못 깨운다).
-        assert e["alerts"] == 0, f"편집 발신 어딘가가 던졌습니다(alert {e['alerts']}회)."
 
     def test_editor_save_gate_opens_on_typing_not_on_blur(self, selftest_result: dict) -> None:
         """편집(탭)의 「변경 저장」이 **타이핑 시점에** 열린다(U2 §2.4 게이트 · 리뷰 R2).

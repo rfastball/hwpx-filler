@@ -51,7 +51,10 @@ export type FieldPatch = { focused?: boolean; composing?: boolean };
 export const NAME_FIELD = "name";
 export const PATTERN_FIELD = "pattern";
 
-export type RowAxis = "source" | "type" | "fmt" | "const";
+/** 행 축의 **초안 대상**은 고정값 입력 하나다(U6-C 리뷰 2). 두 select(데이터 열·표시형)는
+ *  고르는 순간이 곧 커밋이라 초안을 두지 않는다 — 두면 그 항목 값(`col:…`/`sp:…`)이 지연
+ *  flush 의 일반 갈래로 새어 액션 payload 를 오염시킨다. */
+export type RowAxis = "const";
 
 /** 행 field 키 — 표시 순서가 아니라 **행 index** 로 짓는다(Python 이 든 정체). */
 export function rowField(index: number, axis: RowAxis): string {
@@ -219,13 +222,8 @@ export function editorServerValues(snapshot: Record<string, any>): ServerValues 
   };
   for (const row of (snapshot.rows || []) as Array<Record<string, any>>) {
     const index = Number(row.index);
-    /* 「데이터 열」 칸의 전송 값은 열 이름이 아니라 **select 항목 값**이다(U6-C #977):
-       실 열(`col:…`)과 특수 항목(`sp:const|today|blank`)이 한 칸을 나눠 쓰고, 그 둘의
-       이름 공간은 Python 이 접두로 가른다. 여기 열 이름을 담으면 「고정값…」을 고른 칸이
-       다음 push 에서 빈 값으로 되돌아 보인다(dirty 대조가 다른 축을 잰다). */
-    values[rowField(index, "source")] = String(row.source_value ?? "");
-    values[rowField(index, "type")] = String(row.type ?? "");
-    values[rowField(index, "fmt")] = String(row.fmt ?? "");
+    /* 두 select 는 초안을 두지 않으므로 여기 실리지 않는다(U6-C 리뷰 2) — 서버 값이 곧
+       화면 값이고, 실패하면 재렌더가 그 값으로 되돌린다. 초안은 고정값 입력 하나다. */
     values[rowField(index, "const")] = String(row.const ?? "");
   }
   return values;

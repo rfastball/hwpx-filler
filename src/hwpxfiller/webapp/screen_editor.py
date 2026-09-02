@@ -86,10 +86,12 @@ from ..gui.job_editor_state import (
     validate_save,
 )
 from ..gui.mapping_state import (
+    DISPLAY_TYPE_GROUPS,
     NO_SOURCE_LABEL,
     RAW_BLOCK_MESSAGE,
     ROW_STATUS_LABEL,
     SPECIAL_SOURCE_LABEL,
+    TYPE_GROUP_LABEL,
     MappingModel,
     PartialGate,
     gate_for_template,
@@ -700,16 +702,23 @@ class EditorController:
             "type": row.type,
             "const": row.const,
             "fmt": row.fmt,
-            # 이 행의 표시형 후보 — 유형별 표를 웹이 되짚지 않는다(유형이 행 축이므로 후보도
-            # 행 축이다). 종전의 스냅샷 전역 `fmt_options`·`type_options` 는 유형 열과 함께
-            # 퇴역했다.
-            "fmt_options": _FMT_OPTIONS.get(row.type, []),
+            # 이 행의 표시형 후보 — **유형 축을 흡수한 그룹 목록**이다(리뷰 1). 유형별 표를
+            # 웹이 되짚지 않는다(유형이 행 축이므로 후보도 행 축이다). 종전의 스냅샷 전역
+            # `fmt_options`·`type_options` 는 유형 열과 함께 퇴역했다.
+            "display_options": self._display_options(row, source_kind),
+            "display_value": f"{row.type}:{row.fmt}",
             "confirmed": row.confirmed,
             "touched": row.touched,
             "has_content": row.has_content(),
-            # 배지 버튼이 눌리는가 — 채울 것이 없는 행은 확인할 것이 없다(열이나 특수 항목을
-            # 먼저 골라야 한다). 술어를 웹이 다시 지으면 배지와 게이트가 갈린다.
-            "confirmable": row.has_content(),
+            # 배지 버튼이 눌리는가 — 채울 것이 없고 **확인도 안 된** 행만 잠긴다(리뷰 4).
+            # 비움 확정 행은 채울 것이 없어도 확인을 **풀 수 있어야** 한다: 잠그면 「확인」
+            # 배지가 비활성으로 서서 「열을 고르세요」라고 말하는, 자기 상태와 어긋난 손잡이가
+            # 된다. 술어를 웹이 다시 지으면 배지와 게이트가 갈린다.
+            "confirmable": row.has_content() or row.confirmed,
+            # ↻(자동 제안 되돌리기)가 서는가 — `_do_revert_source` 가 확정 행을 거절하는 것과
+            # **같은 술어**다(리뷰 9). 웹이 `touched && !confirmed && record_count` 로 다시
+            # 조립하면 거절과 어포던스가 갈려 「눌렀는데 거절당하는」 버튼이 남는다.
+            "revertable": row.touched and not row.confirmed and bool(self.records),
             "suggestion_score": round(row.suggestion_score, 3),
             "preview": preview,
             "preview_kind": preview_kind,
@@ -726,6 +735,32 @@ class EditorController:
                 if source_kind == "column" and row.source not in self.source_fields else ""
             ),
         }
+
+    @staticmethod
+    def _display_options(row, source_kind: str) -> "list[dict]":
+        """이 행의 표시형 select 항목 — **유형 그룹**으로 묶인다(리뷰 1).
+
+        값은 ``"<유형>:<표시형 코드>"`` 한 쌍이고 항목이 ``type``·``fmt`` 를 따로 들어
+        웹이 그 문자열을 파싱하지 않는다(데이터 열 항목과 같은 규율).
+
+        그룹 집합은 **값의 출처**가 가른다: 열에서 받는 행은 텍스트·날짜·금액 셋을 고를 수
+        있고(이 select 가 곧 유형 축이다), 「오늘 날짜」 행은 날짜 어휘 하나뿐이며(값은 실행
+        시각이지만 표시형 표는 같다 — U4 §2.14 판정 1), 「고정값」 행은 프리셋이 없어 빈
+        목록이다(표면은 비활성 「—」로 접는다).
+        """
+        if source_kind == "const":
+            return []
+        kinds = ("today",) if source_kind == "today" else DISPLAY_TYPE_GROUPS
+        groups: "list[dict]" = []
+        for kind in kinds:
+            options = [
+                {"value": f"{kind}:{o['code']}", "label": o["label"],
+                 "type": kind, "fmt": o["code"]}
+                for o in _FMT_OPTIONS.get(kind, [])
+            ]
+            if options:
+                groups.append({"label": TYPE_GROUP_LABEL[kind], "options": options})
+        return groups
 
     @staticmethod
     def _source_option_value(row, source_kind: str) -> str:
@@ -869,7 +904,7 @@ class EditorController:
         """데이터 열 select 의 항목 전수 — 실 열 + 특수 항목 3개(U6-C #977).
 
         ``kind`` 가 곧 **발행할 액션**이다: ``column``→``set_source`` ·
-        ``const``/``today``→``set_type`` · ``blank``→``set_blank`` · ``none``→결속 해제.
+        ``const``/``today``→``set_display`` · ``blank``→``set_blank`` · ``none``→결속 해제.
         특수 항목을 소스 값으로 실어 보내지 않는 이유는 리뷰 R5 그대로다 — 같은 이름의 실
         열이 있으면 그 열을 영영 못 겨눈다. 그래서 값의 이름 공간을 접두로 가른다.
         """
@@ -2179,11 +2214,14 @@ class EditorController:
             "kept_confirmed": len(self.model.rows) - len(targets),
         }
 
-    def _do_set_type(self, p: dict) -> None:
-        self.model.set_type(int(p["index"]), p["type"])
+    def _do_set_display(self, p: dict) -> None:
+        """(유형, 표시형) 원자 갱신 — 표시형 select 와 데이터 열의 특수 항목이 함께 쓴다.
 
-    def _do_set_fmt(self, p: dict) -> None:
-        self.model.set_fmt(int(p["index"]), p["fmt"])
+        구 `set_type`·`set_fmt` 두 액션의 후계다(리뷰 1): 유형이 바뀌면 표시형 키가 무효라
+        둘은 애초에 한 전이였고, 나눠 두면 그 사이에 「유형만 바뀐」 상태가 실재해 사람이 고른
+        표시형이 왕복 하나에 조용히 사라진다.
+        """
+        self.model.set_display(int(p["index"]), str(p["type"]), str(p.get("fmt") or ""))
 
     def _do_set_const(self, p: dict) -> None:
         self.model.set_const(int(p["index"]), p["const"])

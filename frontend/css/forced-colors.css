@@ -17,8 +17,13 @@
     border-left-color:Highlight}
   .jcard.corrupt{border-left-color:Mark}
 
-  tr.r-unconfirmed td{border-left:3px solid Mark}
-  tr.r-unmatched td{border-left:3px dashed CanvasText}
+  /* 매핑 행 상태 4태(U6-C #977) — 틴트는 forced-colors 에서 통째로 사라지므로 상태 축을
+     시스템색 실보더로 계속 낸다. 네 클래스가 `ROW_STATE_CLASS` 의 값 전수와 1:1 이고,
+     그 동일성은 `tests/js/n06_editor.test.js` 의 고아 검사가 기계로 센다. */
+  tr.r-suggested td{border-left:3px solid Highlight}
+  tr.r-edited td{border-left:3px solid Mark}
+  tr.r-confirmed td{border-left:3px solid CanvasText}
+  tr.r-needs-source td{border-left:3px dashed CanvasText}
 
   .status{border:1px solid CanvasText}
 

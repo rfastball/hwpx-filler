@@ -118,8 +118,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_source": _schema("index source"),
         "revert_source": _schema("index"),
         "resuggest_all": _schema(),
-        "set_type": _schema("index type"),
-        "set_fmt": _schema("index fmt"),
+        # (유형, 표시형)은 **한 전이**다(U6-C 리뷰 1) — 유형이 바뀌면 표시형 키가 무효라
+        # 구 `set_type`·`set_fmt` 두 발 사이에는 사람이 고른 표시형이 사라진 상태가 실재했다.
+        # 유형 열이 표시형 select 로 흡수되며 그 짝이 한 액션이 됐다(`fmt` 는 기본형=빈 값).
+        "set_display": _schema("index type", "fmt"),
         "set_const": _schema("index const"),
         "set_confirmed": _schema("index confirmed"),
         # 이 필드는 채우지 않는다 — 행별 비움 선언(U6-C #977). 구 `confirm_all` +

@@ -1139,6 +1139,14 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 두 이름 공간이 구조적으로 갈린다(동명 열 충돌 봉쇄).
     s.set_value(source_select, "col:공고명")
     badge = row + ' button[data-act="row-confirm"]'
+    # 배지는 **채울 것이 생긴 뒤에야** 눌린다(`confirmable`). `set_value` 의 발신은 host
+    # 왕복이라 바로 위 줄이 끝난 시점에 서버가 아직 그 열을 모를 수 있고, 그때 누르면
+    # 비활성 버튼을 클릭해 조용히 아무 일도 안 일어난다 — 열린 것을 보고 누른다.
+    s.wait(
+        "!!document.querySelector(" + json.dumps(badge + ":not([disabled])") + ")",
+        "확인 배지 무장(결속 반영)",
+        requires=[row],
+    )
     s.js(
         "(function(){const b=document.querySelector(" + json.dumps(badge) + ");"
         "if(b && b.getAttribute('aria-pressed') !== 'true')b.click();return !!b;})()"

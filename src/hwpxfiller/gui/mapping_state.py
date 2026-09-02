@@ -69,7 +69,7 @@ ROW_STATUS_LABEL = {
 
 #: 데이터 열 select 의 **특수 항목** 문안(U6-C #977). 실제 열 이름 공간과 섞이지 않는다 —
 #: 이 셋은 열이 아니라 「값을 어디서 얻는가」의 다른 답이고, 표면은 열 선택(`set_source`)이
-#: 아니라 `set_type`/`set_blank` 로 갈라 발행한다(센티넬을 소스 값에 얹으면 동명 실열과
+#: 아니라 `set_display`/`set_blank` 로 갈라 발행한다(센티넬을 소스 값에 얹으면 동명 실열과
 #: 충돌해 그 열을 영영 못 겨눈다 — 리뷰 R5 의 근거가 그대로 산다).
 SPECIAL_SOURCE_LABEL = {
     "const": "고정값…",
@@ -79,6 +79,21 @@ SPECIAL_SOURCE_LABEL = {
 
 #: 무결속 행의 열 placeholder — 「고르세요」는 문안이지 상태가 아니다(상태는 배지가 낸다).
 NO_SOURCE_LABEL = "열을 고르세요"
+
+#: 표시형 select 의 **유형 그룹** 라벨(U6-C 리뷰 1). 유형 열이 걷히면서 「이 값을 무엇으로
+#: 볼 것인가」의 축이 갈 곳을 잃었다 — `infer_type` 은 이름 키워드 휴리스틱이라 「계약일」이
+#: text 로 추정되면 날짜 서식을 **영영** 못 고른다. 그 축을 표시형 select 가 흡수한다:
+#: 옵션이 유형별로 묶이고 한 번 고르면 (유형, 표시형) 한 쌍이 원자적으로 선다.
+TYPE_GROUP_LABEL = {
+    "text": "텍스트",
+    "date": "날짜",
+    "amount": "금액",
+    "today": "오늘 날짜",
+    "const": "고정값",
+}
+
+#: 열에서 값을 받는 행이 고를 수 있는 유형 축(문서순 = 그룹 표시순).
+DISPLAY_TYPE_GROUPS = ("text", "date", "amount")
 
 
 def pairing_preview(
@@ -394,16 +409,24 @@ class MappingModel:
         확인한 행이다). 결과 상태는 그때와 같다 — ``to_profile`` 은 ``blank`` 선언으로,
         ``declared_blank_fields`` 는 이 필드를 담는다.
 
-        ``today`` 는 소스도 상수도 없이 언제나 값을 내므로(``has_content`` 무조건 참) 여기서
-        추정 기본형으로 되돌린다. 남기면 「비워 둠」으로 확정된 행이 오늘 날짜를 찍는다.
+        **특수 유형은 추정 기본형으로 되돌린다**(리뷰 5). ``today`` 는 소스도 상수도 없이
+        언제나 값을 내므로(``has_content`` 무조건 참) 남기면 「비워 둠」으로 확정된 행이
+        오늘 날짜를 찍는다. ``const`` 는 값이야 안 내지만(상수를 비웠다) 유형이 남으면 머리
+        pill 「고정값 n」이 채우지 않는 행까지 세고, 확인을 풀면 데이터 열 칸이 「고정값…」
+        으로 되살아나 사람이 고른 적 없는 상태를 보여 준다.
+
+        **사람의 편집이므로 ``touched=True`` 다**(리뷰 3 · :class:`RowState` 소유권 규율).
+        빼면 확인을 푼 순간 그 행이 시스템 소유로 돌아가 라이브 재제안·일괄 승격이 조용히
+        덮는다 — 「채우지 않는다」는 선언이 사람 모르게 뒤집히는 자리다.
         """
         row = self.rows[index]
         row.source = ""
         row.const = ""
-        if row.type == "today":
+        if row.type in ("const", "today"):
             row.type = row.default_type()
             row.fmt = ""
         row.confirmed = True
+        row.touched = True
 
     def set_fmt(self, index: int, fmt: str) -> None:
         """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
@@ -415,6 +438,28 @@ class MappingModel:
     def set_const(self, index: int, const: str) -> None:
         row = self.rows[index]
         row.const = const
+        row.confirmed = False
+        row.touched = True
+
+    def set_display(self, index: int, type_: str, fmt: str) -> None:
+        """**(유형, 표시형) 한 쌍을 원자적으로** 세운다(U6-C 리뷰 1) — 표시형 select 의 단일 관문.
+
+        두 발(``set_type`` → ``set_fmt``)로 나누면 그 사이에 유형만 바뀐 상태가 실재한다:
+        ``set_type`` 이 표시형을 기본으로 리셋하므로 왕복 하나가 늦거나 실패하면 사람이 고른
+        표시형이 조용히 사라진다. 한 번의 선택은 한 번의 전이여야 한다.
+
+        ``const``/``today`` 는 열에서 값을 받지 않으므로 소스를 함께 비운다
+        (:meth:`set_type` 의 짝 규칙과 같은 근거 — 표시와 출력이 갈리지 않게).
+        """
+        if type_ not in TYPES:
+            raise ValueError(f"지원하지 않는 유형: {type_!r} (지원: {TYPES})")
+        row = self.rows[index]
+        row.type = type_
+        row.fmt = fmt
+        if type_ in ("const", "today"):
+            row.source = ""
+        if type_ != "const":
+            row.const = ""
         row.confirmed = False
         row.touched = True
 

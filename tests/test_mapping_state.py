@@ -10,6 +10,8 @@ N→1 결합·구분자(sep)는 없다.
 from __future__ import annotations
 
 import json
+
+import pytest
 from datetime import datetime
 from pathlib import Path
 
@@ -360,10 +362,50 @@ def test_set_blank_declares_intentional_emptiness():
     bound.set_blank(0)
     assert bound.rows[0].source == "" and bound.rows[0].is_empty_confirmed()
 
-    # `today` 는 소스도 상수도 없이 값을 낸다 — 남기면 「비워 둠」이 오늘 날짜를 찍는다.
-    dated = MappingModel(rows=[RowState("작성일", type="today")])
-    dated.set_blank(0)
-    assert dated.rows[0].type != "today" and dated.rows[0].is_empty_confirmed()
+    # 특수 유형 둘은 추정 기본형으로 되돌아간다(리뷰 5). `today` 를 남기면 「비워 둠」이
+    # 오늘 날짜를 찍고, `const` 를 남기면 채우지 않는 행이 「고정값 n」 pill 에 세어지고
+    # 확인을 푼 순간 데이터 열 칸이 「고정값…」으로 되살아난다.
+    for kind in ("today", "const"):
+        row = MappingModel(rows=[RowState("작성일", type=kind, const="x")])
+        row.set_blank(0)
+        assert row.rows[0].type not in ("today", "const"), kind
+        assert row.rows[0].const == "" and row.rows[0].is_empty_confirmed()
+
+
+def test_set_blank_is_a_human_edit_so_resuggestion_cannot_undo_it():
+    """「비워 둠」은 사람의 편집이다(리뷰 3) — ``touched`` 를 안 세우면 확인을 푼 순간
+    시스템 소유로 돌아가 라이브 재제안·일괄 승격이 그 선언을 조용히 덮는다."""
+    model = _pum_model(["품명", "세부품명"])
+    model.set_blank(0)
+    assert model.rows[0].touched is True and model.rows[0].is_human_owned()
+
+    model.set_confirmed(0, False)                       # 「모두 해제」 뒤
+    assert model.rows[0].is_human_owned(), "확인을 풀자 시스템 소유로 돌아갔다"
+    model.apply_active_sources(["품명", "세부품명"])      # 데이터 재마운트의 재동기화
+    assert model.rows[0].source == "", "재제안이 사람의 비움 선언을 덮었다"
+    assert model.confirm_suggested() == 0, "일괄 승격이 사람 소유 행을 건드렸다"
+
+
+def test_set_display_sets_type_and_format_in_one_transition():
+    """(유형, 표시형)은 한 전이다(리뷰 1) — 두 발이면 그 사이에 표시형이 사라진 상태가 산다."""
+    model = MappingModel(rows=[RowState("계약일", spec=FieldSpec("계약일", "text", 1, False))])
+    model.set_source(0, "체결일")
+    model.set_display(0, "date", "kor")
+    assert model.rows[0].type == "date" and model.rows[0].fmt == "kor"
+    assert model.rows[0].source == "체결일", "열 결속은 유형 축과 무관하다"
+    assert model.rows[0].confirmed is False and model.rows[0].touched is True
+
+    # 특수 유형은 열에서 값을 받지 않으므로 소스를 함께 비운다(`set_type` 과 같은 짝 규칙).
+    model.set_display(0, "today", "")
+    assert model.rows[0].source == "" and model.rows[0].fmt == ""
+    # const 를 떠나면 상수도 함께 걷힌다(옛 리터럴 방출 봉쇄).
+    model.set_display(0, "const", "")
+    model.set_const(0, "일금")
+    model.set_display(0, "text", "phone")
+    assert model.rows[0].const == "" and model.rows[0].fmt == "phone"
+
+    with pytest.raises(ValueError, match="지원하지 않는 유형"):
+        model.set_display(0, "없는유형", "")
 
 
 def test_special_types_and_column_binding_do_not_coexist():

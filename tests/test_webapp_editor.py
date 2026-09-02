@@ -206,7 +206,7 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     assert snap["schema_only"] is False
 
     # 0행에 고정값 부여(내용 생성).
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "테스트값"})
     assert ctrl.snapshot()["rows"][0]["has_content"] is True
 
@@ -237,22 +237,27 @@ def test_full_new_job_flow_today_system_token(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    # 표시형 후보는 **행이 든다**(U6-C #977): 유형이 행 축이므로 후보도 행 축이고, 웹이
-    # 유형별 표를 되짚지 않는다. today 는 date 어휘를 공유한다(판정 1) — 안 그러면 그 행의
-    # 표시형 셀이 통째 비활성이다.
-    ctrl.dispatch("set_type", {"index": 0, "type": "date"})
-    date_formats = ctrl.snapshot()["rows"][0]["fmt_options"]
-    ctrl.dispatch("set_type", {"index": 0, "type": "today"})
-    assert ctrl.snapshot()["rows"][0]["fmt_options"] == date_formats and date_formats
+    # 표시형 후보는 **행이 들고 유형 축을 함께 든다**(U6-C 리뷰 1). 열에서 받는 행은
+    # 텍스트·날짜·금액 셋을 고를 수 있고 — `infer_type` 이 「계약일」을 text 로 추정해도
+    # 여기서 날짜로 바꿀 길이 남는다 — 「오늘 날짜」 행은 date 어휘 하나를 그대로 쓴다
+    # (판정 1). 그 길이 없으면 그 행의 표시형 셀이 통째 비활성이다.
+    bound = ctrl.snapshot()["rows"][0]["display_options"]
+    assert [g["label"] for g in bound] == ["텍스트", "날짜", "금액"]
+    date_group = [g for g in bound if g["label"] == "날짜"][0]["options"]
+    ctrl.dispatch("set_display", {"index": 0, "type": "today", "fmt": ""})
+    today = ctrl.snapshot()["rows"][0]["display_options"]
+    assert [g["label"] for g in today] == ["오늘 날짜"]
+    assert [o["label"] for o in today[0]["options"]] == [o["label"] for o in date_group]
+    assert today[0]["options"][0]["type"] == "today"   # 항목이 유형을 든다(웹은 파싱 안 함)
 
-    ctrl.dispatch("set_type", {"index": 0, "type": "today"})
     row = ctrl.snapshot()["rows"][0]
     # 소스도 상수도 없는데 내용이 있다 — 이 한 줄이 blank 강등(값 소실)의 회귀 심이다.
     assert row["source"] == "" and row["const"] == ""
     assert row["has_content"] is True
     assert row["preview"] == "2026. 8. 11. 12:34"      # clock 기준 기본 서식
 
-    ctrl.dispatch("set_fmt", {"index": 0, "fmt": "%Y-%m-%d"})
+    # 표시형만 갈아도 유형은 그 행의 것을 그대로 싣는다 — 한 쌍이 함께 간다(리뷰 1).
+    ctrl.dispatch("set_display", {"index": 0, "type": "today", "fmt": "%Y-%m-%d"})
     assert ctrl.snapshot()["rows"][0]["preview"] == "2026-08-11"
 
     _confirm_every_row(ctrl)
@@ -543,7 +548,7 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "중복작업"})
@@ -557,7 +562,7 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v2"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "중복작업"})
@@ -576,7 +581,7 @@ def _save_named(ctrl: EditorController, name: str) -> dict:
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": name})
@@ -610,7 +615,7 @@ def _build_complete_session(ctrl, name: str) -> None:
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("goto_section", {"section": "filename"})
@@ -1028,7 +1033,7 @@ def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_p
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_other_data(ctrl)                               # 1단계 게이트(U6-B) — 갈아탈 첫 결속
     ctrl.dispatch("goto_section", {"section": "binding"})  # 매핑 진입(모델 생성)
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "보존값"})
     _confirm_every_row(ctrl)
     assert ctrl.snapshot()["is_complete"] is True
@@ -1049,7 +1054,7 @@ def _complete_with_data(ctrl, name: str) -> None:
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     ctrl.dispatch("goto_section", {"section": "binding"})   # 매핑 진입(데이터 겨눔 상태 — 3단계 접기)
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": name})
@@ -1280,7 +1285,7 @@ def test_save_is_blocked_until_data_is_connected(tmp_path):
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
     ctrl.data_path = ""
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "결속없는작업"})
@@ -1324,7 +1329,7 @@ def test_saved_job_carries_the_session_data_kind(tmp_path):
     _mount_data(ctrl2)
     ctrl2.data_kind = "pclm"                               # 마운트 뒤 종류만 갈아 끼운다
     ctrl2.dispatch("goto_section", {"section": "binding"})
-    ctrl2.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl2.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl2.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl2)
     ctrl2.dispatch("set_name", {"name": "종류있는작업"})
@@ -1435,7 +1440,7 @@ def test_save_landing_restates_a_binding_that_cannot_be_reread(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(moving), sheet="낙찰현황")
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "사라진데이터작업"})
@@ -1777,7 +1782,7 @@ def test_new_hwpx_save_from_filename_tab_lands_in_place(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("goto_section", {"section": "filename"})   # 실 UI: 3단계까지 전진
@@ -1829,7 +1834,7 @@ def test_partial_template_saves_once_acked_and_bound(tmp_path):
     ctrl.dispatch("ack_gate", {})
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "부분템플릿작업"})
@@ -1848,7 +1853,7 @@ def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
     assert ctrl.dispatch("mapping_reset_stakes", {})["human"] == 0     # 모델 전
     ctrl.dispatch("goto_section", {"section": "binding"})
     assert ctrl.dispatch("mapping_reset_stakes", {})["human"] == 0     # 미접촉 제안뿐
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == 1                                        # 내용 있는 수동
@@ -1877,7 +1882,7 @@ def test_resuggest_stakes_count_every_row_the_loop_resets(tmp_path):
     # 결속만 세우고(1단계 게이트) 「소스를 겨눌 수 없다」는 전제는 그대로 산다.
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "직접 입력한 값"})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["resuggest_manual"] == 1                # 재제안은 건드린다 → 확인 근거가 선다
@@ -1897,7 +1902,7 @@ def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_other_data(ctrl)                                            # 1단계 게이트(U6-B)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "수동값"})        # touched·미확정
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")            # 관문 겨눔 = 재초안
     row0 = ctrl.snapshot()["rows"][0]
@@ -2218,7 +2223,7 @@ def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)                                    # 1단계 게이트(U6-B)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "수기값"})
     field = ctrl.snapshot()["rows"][0]["template_field"]
     _confirm_every_row(ctrl)
@@ -2424,7 +2429,7 @@ def _txt_draft_named(ctrl, tmp_path, name: str) -> dict:
     ctrl.dispatch("use_library_template", {"path": str(path)})
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "물품 구매"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": name})
@@ -2632,7 +2637,7 @@ def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path
     ctrl.dispatch("use_library_template", {"path": str(path)})
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "물품 구매"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "TXT기안작업"})
@@ -2924,7 +2929,7 @@ def test_use_pool_data_mounts_a_pclm_view_and_the_save_carries_the_binding(tmp_p
     assert snap["pairing"]["column_count"] == 2
 
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "계약작업"})
@@ -2946,7 +2951,7 @@ def test_reopening_a_pclm_bound_job_restores_the_view(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("use_pool_data", {"key": key})
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "계약작업"})
@@ -2978,7 +2983,7 @@ def test_whole_session_discard_returns_to_the_saved_pclm_binding(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("use_pool_data", {"key": key})
     ctrl.dispatch("goto_section", {"section": "binding"})
-    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "계약작업"})
@@ -3107,3 +3112,77 @@ def test_pairing_counts_are_computed_only_on_the_choosing_stage(tmp_path, monkey
     counts = fresh.snapshot()["pairing"]
     assert counts["basis"] == "preview" and counts["column_count"] == 2
     assert len(calls) > settled, "짝이 바뀌었는데 옛 수치를 재사용했습니다"
+
+
+def test_display_options_carry_the_type_axis_the_column_dropped(tmp_path):
+    """표시형 select 가 유형 축을 흡수한다(U6-C 리뷰 1) — 유형 열이 걷힌 뒤 유일한 통로.
+
+    `infer_type` 은 이름 키워드 휴리스틱이라 「계약일」이 text 로 추정될 수 있다. 그 행에서
+    날짜 서식으로 갈 길이 없으면 그 필드는 **영영** 잘못된 유형으로 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    _mount_data(ctrl)
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    row = ctrl.snapshot()["rows"][0]
+    values = [o["value"] for g in row["display_options"] for o in g["options"]]
+    assert row["display_value"] == f"{row['type']}:{row['fmt']}"
+    assert row["display_value"] in values, "지금 값이 목록에 없으면 select 가 첫 항목을 참칭한다"
+    assert "date:kor" in values and "amount:" in values
+
+    # 한 발이 유형·표시형을 함께 세운다.
+    ctrl.dispatch("set_display", {"index": 0, "type": "date", "fmt": "kor"})
+    row = ctrl.snapshot()["rows"][0]
+    assert row["type"] == "date" and row["fmt"] == "kor" and row["display_value"] == "date:kor"
+
+    # 고정값 행은 프리셋이 없어 빈 목록이다(표면은 비활성 「—」).
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    assert ctrl.snapshot()["rows"][0]["display_options"] == []
+
+    # 구 두 액션은 사슬째 사라졌다 — 브리지로도 그 경로에 도달할 수 없다.
+    for gone in ("set_type", "set_fmt"):
+        with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
+            ctrl.dispatch(gone, {"index": 0, "type": "text", "fmt": ""})
+
+
+def test_blank_confirmed_row_keeps_a_way_to_unconfirm(tmp_path):
+    """비움 확정 행의 배지는 눌린다(리뷰 4) — 잠그면 「확인」이 비활성으로 서서 자기 상태와
+    어긋난 손잡이가 된다(그 툴팁은 「열을 고르세요」라고 말한다)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    _mount_data(ctrl)
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    index = next(r["index"] for r in ctrl.snapshot()["rows"] if not r["has_content"])
+    assert ctrl.snapshot()["rows"][index]["confirmable"] is False   # 아직 채울 것이 없다
+
+    ctrl.dispatch("set_blank", {"index": index})
+    row = ctrl.snapshot()["rows"][index]
+    assert row["has_content"] is False and row["confirmed"] is True
+    assert row["confirmable"] is True, "확인을 풀 길이 없다"
+    assert row["source_kind"] == "blank" and row["state_label"] == "확인"
+    # 그 유형 축도 특수 유형으로 남지 않는다(리뷰 5) — 「고정값 n」 pill 이 과다해진다.
+    assert row["type"] not in ("const", "today")
+    assert ctrl.snapshot()["binding_head"]["const"] == 0
+
+
+def test_revertable_is_the_same_predicate_the_action_enforces(tmp_path):
+    """↻ 어포던스와 `revert_source` 의 거절은 **같은 술어**여야 한다(리뷰 9).
+
+    웹이 `touched && !confirmed && record_count` 로 다시 조립하면 셋 중 하나가 갈리는 날
+    「눌렀는데 거절당하는」 버튼이 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    assert all(not r["revertable"] for r in ctrl.snapshot()["rows"])   # 미접촉 제안
+
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    assert ctrl.snapshot()["rows"][0]["revertable"] is True
+    ctrl.dispatch("revert_source", {"index": 0})                      # 서면 실제로 통과한다
+
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    assert ctrl.snapshot()["rows"][0]["revertable"] is False
+    with pytest.raises(ValueError, match="확정을 먼저 해제"):        # 안 서면 실제로 거절한다
+        ctrl.dispatch("revert_source", {"index": 0})

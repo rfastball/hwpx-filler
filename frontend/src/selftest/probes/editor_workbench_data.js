@@ -1525,7 +1525,7 @@ export function createEditorWorkbenchDataProbes() {
        2단계 「연결 확인」 표(U6-C #977 · 동결 시안 장면 2). 합성 매핑 스냅샷을 실 render()
        에 흘려 되읽는다: (a) 4열이 서는가, (b) 머리 pill 셋이 Python 수치를 그대로 말하는가,
        (c) 「제안 n건 모두 확인」이 **제안만** 승격하는가(양성·음성 한 쌍), (d) 특수 항목이
-       `set_type`/`set_blank` 로 갈리고 `set_source` 에는 센티넬이 가지 않는가, (e) 배지
+       `set_display`/`set_blank` 로 갈리고 `set_source` 에는 센티넬이 가지 않는가, (e) 배지
        클릭이 행별 확인을 내는가, (f) 스테퍼가 왕복하는가, (g) 데이터 열 칸 높이가 행마다
        같은가(실렌더 기하 — 구 프로브의 단언 승계). */
     {
@@ -1549,12 +1549,8 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = {};
         let stub = null;
-        /* `guarded` 의 catch 백스톱은 `window.alert` 다 — 이 창에서 그것이 뜨면 JS 가 멈춰
-           프로브가 아니라 **런 전체**가 매달린다(감시견도 JS 쪽이라 못 깨운다). 세어서
-           단언하고 되돌린다: 0 이 아니면 어딘가가 던졌다는 뜻이고 그건 이름 있는 빨강이다. */
-        const realAlert = ctx.win.alert;
-        let alerts = 0;
-        ctx.win.alert = function () { alerts += 1; };
+        /* `window.alert` 감시는 **러너 공용 층**이 진다(리뷰 10) — 프로브별 방어는 자기
+           계약만 지키고 남의 합성 스냅샷이 부른 던짐은 못 막는다. */
         try {
           /* 발신을 가로채 **무엇이 나갔는지**를 센다. 백엔드 왕복을 실제로 태우면 합성
              스냅샷이 실 컨트롤러 상태와 어긋나 이후 단계가 남의 세계를 잰다. */
@@ -1567,6 +1563,16 @@ export function createEditorWorkbenchDataProbes() {
             return real.call(this, screen, action, payload);
           });
           const COLUMNS = ["품명", "세부품명", "수량", "비고"];
+          /* 표시형 select 가 든 **유형 축**(리뷰 1) — 그룹 라벨·항목 값은 Python 이 낸다. */
+          const DISPLAY_GROUPS = [
+            { label: "텍스트", options: [
+              { value: "text:", label: "원문", type: "text", fmt: "" },
+              { value: "text:phone", label: "전화", type: "text", fmt: "phone" }] },
+            { label: "날짜", options: [
+              { value: "date:", label: "표준", type: "date", fmt: "" }] },
+            { label: "금액", options: [
+              { value: "amount:", label: "원", type: "amount", fmt: "" }] },
+          ];
           const OPTIONS = [{ value: "", label: "열을 고르세요", kind: "none", field: "" }]
             .concat(COLUMNS.map((name) => (
               { value: "col:" + name, label: name, kind: "column", field: name })))
@@ -1577,20 +1583,30 @@ export function createEditorWorkbenchDataProbes() {
             ]);
           /* 행 4개 = 상태 4태 전수. `state_label`·`confirmable`·`preview_kind` 는 전부
              Python 이 낸 값이고 프로브는 그것이 화면에 그대로 서는지만 본다. */
-          const row = (index, field, state, over) => Object.assign({
-            index, template_field: field, inferred_type: "text", context: "",
-            source: "", type: "text", const: "", fmt: "", fmt_options: [],
-            confirmed: state === "confirmed", touched: state === "edited",
-            has_content: state !== "needs_source", confirmable: state !== "needs_source",
-            suggestion_score: 0, preview: "값", preview_kind: "value",
-            preview_empty: false, preview_error: false,
-            row_state: state,
-            state_label: { suggested: "제안", edited: "확인 필요", confirmed: "확인",
-              needs_source: "확인 필요" }[state],
-            source_kind: state === "needs_source" ? "" : "column",
-            source_value: state === "needs_source" ? "" : "col:품명",
-            source_missing_label: "",
-          }, over || {});
+          /* `confirmable`·`revertable` 은 **실 생산자와 같은 규칙**으로 짓는다(리뷰 4·9):
+             합성값이 규칙을 따로 지으면 프로브가 제품이 낼 리 없는 세계를 재게 된다. */
+          const row = (index, field, state, over) => {
+            const confirmed = state === "confirmed";
+            const touched = state === "edited";
+            const hasContent = state !== "needs_source";
+            return Object.assign({
+              index, template_field: field, inferred_type: "text", context: "",
+              source: "", type: "text", const: "", fmt: "",
+              display_options: DISPLAY_GROUPS, display_value: "text:",
+              confirmed, touched,
+              has_content: hasContent,
+              confirmable: hasContent || confirmed,
+              revertable: touched && !confirmed,
+              suggestion_score: 0, preview: "값", preview_kind: "value",
+              preview_empty: false, preview_error: false,
+              row_state: state,
+              state_label: { suggested: "제안", edited: "확인 필요", confirmed: "확인",
+                needs_source: "확인 필요" }[state],
+              source_kind: state === "needs_source" ? "" : "column",
+              source_value: state === "needs_source" ? "" : "col:품명",
+              source_missing_label: "",
+            }, over || {});
+          };
           const rows = [
             row(0, "품명", "suggested", { source: "품명", source_value: "col:품명" }),
             row(1, "수량", "suggested", { source: "수량", source_value: "col:수량" }),
@@ -1687,8 +1703,9 @@ export function createEditorWorkbenchDataProbes() {
             root.querySelector('[data-act="confirm-suggested"]')).trim();
           ctx.push("editor", snap);
           await settleRender(ctx);
-          /* ⑧ 특수 항목의 액션 분기 — 「고정값…」은 `set_type`, 「비워 둠」은 `set_blank`.
-             `set_source` 에 `sp:` 가 실려 나가면 여기서 빨강이다(센티넬 금지의 실측). */
+          /* ⑧ 특수 항목의 액션 분기 — 「고정값…」·「오늘 날짜」는 `set_display`(유형·표시형
+             한 쌍), 「비워 둠」은 `set_blank`. `set_source` 에 `sp:` 가 실려 나가면 여기서
+             빨강이다(센티넬 금지의 실측). */
           const pick = async (index, value) => {
             calls.length = 0;
             const select = root.querySelectorAll('table.map [data-act="row-source"]')[index];
@@ -1704,6 +1721,18 @@ export function createEditorWorkbenchDataProbes() {
           out.sentinel_in_set_source = [
             out.pick_const, out.pick_blank, out.pick_today,
           ].some((call) => call.indexOf("set_source") === 0);
+          /* ⑧-b 표시형 select 가 **유형 그룹**을 그리고 한 쌍을 원자적으로 낸다(리뷰 1).
+             유형 열이 걷힌 뒤 유일하게 남은 유형 축이라, 여기가 죽으면 이름 추론이 틀린 행은
+             날짜·금액 서식을 영영 못 고른다. */
+          out.display_groups = Array.prototype.map.call(
+            root.querySelectorAll('table.map [data-act="row-fmt"] optgroup'),
+            (g) => g.getAttribute("label"));
+          calls.length = 0;
+          const fmtSelect = root.querySelectorAll('table.map [data-act="row-fmt"]')[0];
+          typeValue(ctx, fmtSelect, "date:");
+          fire(ctx, fmtSelect, "change");
+          await settleUntil(ctx, () => calls.length > 0);
+          out.pick_display = calls[0] || "";
           /* ⑨ 행별 확인 — 배지 클릭이 그 행의 토글을 낸다. */
           calls.length = 0;
           badges()[0].click();
@@ -1728,9 +1757,7 @@ export function createEditorWorkbenchDataProbes() {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
         } finally {
           if (stub) stub.restore();
-          ctx.win.alert = realAlert;
         }
-        out.alerts = alerts;
         return { editor_binding: out };
       },
     },
@@ -1824,9 +1851,12 @@ export function createEditorWorkbenchDataProbes() {
             },
             rows: [{
               index: 0, template_field: "품명", inferred_type: "text", context: "", source: "",
-              type: "const", const: "고정값", fmt: "", fmt_options: [],
+              type: "const", const: "고정값", fmt: "",
+              /* const 행의 표시형 후보는 비어 있다(프리셋 없음) — 표면은 비활성 「—」. */
+              display_options: [], display_value: "const:",
               confirmed: false, touched: true,
-              has_content: true, confirmable: true, suggestion_score: 0,
+              has_content: true, confirmable: true, revertable: false,
+              suggestion_score: 0,
               preview: "고정값", preview_kind: "value", preview_empty: false,
               preview_error: false, row_state: "edited", state_label: "확인 필요",
               source_kind: "const", source_value: "sp:const", source_missing_label: "",

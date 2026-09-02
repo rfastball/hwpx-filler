@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
-  createEditorController, EditorScreen, TxtEditDialog,
+  createEditorController, EditorScreen, ROW_STATE_CLASS, TxtEditDialog,
 } from "../../frontend/src/screens/editor.ts";
 import { usableSpans } from "../../frontend/src/editorview/txt_lintpad.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
@@ -1547,12 +1547,30 @@ const BIND_OPTIONS = [
   { value: "sp:blank", label: "비워 둠", kind: "blank", field: "" },
 ];
 
+const BIND_DISPLAY_GROUPS = [
+  { label: "텍스트", options: [
+    { value: "text:", label: "원문", type: "text", fmt: "" },
+    { value: "text:phone", label: "전화", type: "text", fmt: "phone" }] },
+  { label: "날짜", options: [
+    { value: "date:", label: "표준", type: "date", fmt: "" },
+    { value: "date:kor", label: "한글", type: "date", fmt: "kor" }] },
+  { label: "금액", options: [
+    { value: "amount:", label: "원", type: "amount", fmt: "" }] },
+];
+
 function bindRow(index, field, state, over) {
+  /* `confirmable`·`revertable` 은 실 생산자와 **같은 규칙**으로 짓는다(리뷰 4·9). */
+  const confirmed = state === "confirmed";
+  const touched = state === "edited";
+  const hasContent = state !== "needs_source";
   return Object.assign({
     index, template_field: field, inferred_type: "text", context: "",
-    source: "", type: "text", const: "", fmt: "", fmt_options: [],
-    confirmed: state === "confirmed", touched: state === "edited",
-    has_content: state !== "needs_source", confirmable: state !== "needs_source",
+    source: "", type: "text", const: "", fmt: "",
+    display_options: BIND_DISPLAY_GROUPS, display_value: "text:",
+    confirmed, touched,
+    has_content: hasContent,
+    confirmable: hasContent || confirmed,
+    revertable: touched && !confirmed,
     suggestion_score: 0, preview: "값", preview_kind: "value",
     preview_empty: false, preview_error: false,
     row_state: state,
@@ -1596,8 +1614,8 @@ test("U6-C 특수 항목 선택은 열 이름 공간을 지나지 않고 자기 
   await h.controller.flushPendingEdits();
 
   assert.deepEqual(sent(), [
-    ["set_type", { index: 1, type: "const" }],
-    ["set_type", { index: 1, type: "today" }],
+    ["set_display", { index: 1, type: "const", fmt: "" }],
+    ["set_display", { index: 1, type: "today", fmt: "" }],
     ["set_blank", { index: 1 }],
     ["set_source", { index: 1, source: "금액" }],
     ["set_source", { index: 1, source: "" }],
@@ -1691,4 +1709,129 @@ test("U6-C 미리보기는 Python 이 낸 표식 문자열을 그대로 그린�
   assert.ok(markup.includes("〘미입력·담당자〙"), "빈 값이 빈칸으로 샜다");
   assert.ok(markup.includes('class="pv missing"'));
   assert.ok(markup.includes('class="pv blank"'));
+});
+
+test("U6-C 지연 flush 는 행의 열 축을 절대 다루지 않는다 — 항목 값이 set_source 로 새던 자리", async () => {
+  // 데이터 열 select 가 초안을 갖던 동안 `flushPendingEdits` 의 일반 갈래가 그 초안
+  // (`col:금액`)을 `set_source` 에 그대로 실어 **존재하지 않는 열**에 결속시켰다 —
+  // R5 센티넬 금지의 정확한 위반이다. 초안을 두지 않는 것이 그 자리를 구조로 닫는다.
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+
+  h.controller.chooseDataColumn(1, "col:금액");
+  await h.controller.flushPendingEdits();
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor");
+
+  // 열 축은 **정확히 한 번**, 실 열 이름으로만 나간다(flush 가 두 번째를 더하지 않는다).
+  const sources = sent.filter((row) => row[2] === "set_source");
+  assert.equal(sources.length, 1);
+  assert.deepEqual(sources[0][3], { index: 1, source: "금액" });
+  for (const [, , action, payload] of sent) {
+    for (const value of Object.values(payload || {})) {
+      if (typeof value !== "string") continue;
+      assert.equal(/^(col|sp):/.test(value), false,
+        `${action} 이 항목 값 ${value} 를 실어 보냈다`);
+    }
+  }
+});
+
+test("U6-C 표시형 select 가 유형 축을 든다 — 그룹 + (유형, 표시형) 원자 발행", async () => {
+  // `infer_type` 은 이름 키워드 휴리스틱이라 「계약일」이 text 로 추정되면 날짜 서식을
+  // 영영 못 고른다. 유형 열이 걷힌 뒤 그 축이 사는 유일한 자리가 이 select 다.
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('<optgroup label="텍스트">'), "유형 그룹이 없다");
+  assert.ok(markup.includes('<optgroup label="날짜">'));
+  assert.ok(markup.includes('<optgroup label="금액">'));
+
+  h.controller.chooseDisplay(0, "date:kor");
+  await h.controller.flushPendingEdits();
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor");
+  // **한 발**이다 — 유형이 바뀌면 표시형 키가 무효라 두 발 사이에는 사람이 고른 표시형이
+  // 사라진 상태가 실재한다.
+  assert.deepEqual(sent.map((row) => [row[2], row[3]]), [
+    ["set_display", { index: 0, type: "date", fmt: "kor" }],
+  ]);
+  assert.throws(() => h.controller.chooseDisplay(0, "date:없는것"), /알 수 없는 표시형 항목/);
+});
+
+test("U6-C 비움 확정 행의 배지는 눌린다 — 확인을 풀 길이 있어야 한다", async () => {
+  // `confirmable` 이 `has_content()` 뿐이면 「확인」 배지가 비활성으로 서서
+  // 「열을 고르세요」라고 말한다 — 자기 상태와 어긋난 손잡이다.
+  const h = harness({
+    initial: async () => bindSnap({
+      rows: [bindRow(0, "비고", "confirmed", {
+        has_content: false, confirmable: true, source_kind: "blank",
+        source_value: "sp:blank", preview: "", preview_kind: "blank",
+      })],
+    }),
+  });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  const badge = (markup.match(/<button[^>]*data-act="row-confirm"[^>]*>/g) || [])[0];
+  assert.ok(badge && !badge.includes("disabled"), `비움 확정 배지가 잠겼다: ${badge}`);
+});
+
+test("U6-C ↻ 의 노출은 Python 술어 하나가 진다 — 웹이 재판정하지 않는다", async () => {
+  // `_do_revert_source` 가 확정 행을 거절하는 것과 같은 술어라야 「눌렀는데 거절당하는」
+  // 버튼이 남지 않는다. 웹이 `touched && !confirmed && record_count` 로 다시 조립하면
+  // 그 셋 중 하나가 갈리는 날 어포던스와 거절이 어긋난다.
+  const shown = harness({
+    initial: async () => bindSnap({ rows: [bindRow(0, "업체", "edited")] }),
+  });
+  await shown.controller.init();
+  assert.ok(renderToStaticMarkup(createElement(EditorScreen, { controller: shown.controller }))
+    .includes('data-act="revert-source"'));
+
+  // 스냅샷이 아니라고 하면 웹은 그리지 않는다 — touched 가 참이어도.
+  const hidden = harness({
+    initial: async () => bindSnap({
+      rows: [bindRow(0, "업체", "edited", { revertable: false })],
+    }),
+  });
+  await hidden.controller.init();
+  assert.equal(renderToStaticMarkup(createElement(EditorScreen, { controller: hidden.controller }))
+    .includes('data-act="revert-source"'), false, "웹이 술어를 재판정했다");
+});
+
+test("U6-C 「고정값…」 초점은 그 입력이 실제로 선 렌더에서 착지한다", async () => {
+  // 입력은 **서버가 이 행을 const 로 인정한 뒤에야** 렌더된다 — 고른 순간의 DOM 에는
+  // 없으므로 마이크로태스크로 겨누면 언제나 빈손이다.
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+
+  h.controller.chooseDataColumn(1, "sp:const");
+  // 아직 서버가 인정하기 전 — 가져갈 초점이 대기 중이다.
+  assert.equal(h.controller.takePendingConstFocus(0), false, "다른 행이 가져갔다");
+  h.controller.chooseDataColumn(1, "sp:const");
+  assert.equal(h.controller.takePendingConstFocus(1), true, "그 행이 초점을 가져간다");
+  // 1회성이다 — 남기면 이후 재렌더가 사람이 옮긴 커서를 계속 빼앗는다.
+  assert.equal(h.controller.takePendingConstFocus(1), false, "표지가 안 걷혔다");
+});
+
+test("U6-C 행 상태 class 넷은 두 CSS 에 **둘 다** 선언돼 있다 — 고아 검사", async () => {
+  // `editor.ts` 의 닫힌 집합이 CSS 와 갈리면 그 상태는 화면에서 무표지가 된다. 특히
+  // `forced-colors.css` 는 고대비에서 **틴트가 통째로 사라진 뒤** 상태를 잇는 유일한 층이라,
+  // 여기서 빠진 클래스는 눈으로도 정적 검사로도 안 보인다(U6-C 리뷰 6 이 실제로 그 자리였다).
+  const { readFileSync } = await import("node:fs");
+  const product = readFileSync("frontend/css/editor.css", "utf8");
+  const forced = readFileSync("frontend/css/forced-colors.css", "utf8");
+  const classes = Object.values(ROW_STATE_CLASS);
+  assert.equal(classes.length, 4);
+  for (const cls of classes) {
+    assert.ok(product.includes(`tr.${cls} `) || product.includes(`tr.${cls}{`),
+      `editor.css 에 tr.${cls} 선언이 없다`);
+    assert.ok(forced.includes(`tr.${cls} `) || forced.includes(`tr.${cls}{`),
+      `forced-colors.css 에 tr.${cls} 선언이 없다 — 고대비에서 이 상태가 사라진다`);
+  }
+  // 반대 방향도 본다: CSS 에만 있는 유령 클래스는 퇴역을 안 따라온 잔재다.
+  for (const stale of ["r-unconfirmed", "r-unmatched", "r-schemaonly"]) {
+    assert.equal(product.includes(`tr.${stale}`), false, `editor.css 에 ${stale} 잔재`);
+    assert.equal(forced.includes(`tr.${stale}`), false, `forced-colors.css 에 ${stale} 잔재`);
+  }
 });
