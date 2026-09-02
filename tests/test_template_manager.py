@@ -702,3 +702,38 @@ def test_row_without_notation_says_nothing_about_it(tmp_path):
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
     assert "구간 표기" not in row.detail_line()
+
+
+# ------------------------------- U6-B 리뷰 8 — TXT 행도 같은 성형 함수를 지난다
+def test_text_rows_share_the_ring1_wording_with_hwpx(tmp_path):
+    """「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」는 **한 벌**이다.
+
+    종전에는 링2 가 TXT 밴드용으로 그 셋을 리터럴로 다시 지었다. 그러면 링1 문안을 고쳐도
+    TXT 밴드만 옛말을 계속 한다 — 같은 사실이 두 어휘를 갖는 자리라 성형 함수를 공유한다.
+    갈리는 축은 **변환 축의 유무** 하나이고, 그것이 `media` 다.
+    """
+    from hwpxfiller.domain.template_status import TemplateStatus
+    from hwpxfiller.gui.template_manager_state import TemplateRow
+
+    txt_ok = TemplateRow.from_text(Path("C:/lib/기안.txt"), 3)
+    hwpx_ok = TemplateRow.from_status(
+        Path("C:/lib/서식.hwpx"),
+        TemplateStatus(state=CompileState.COMPILED, field_n=3, compilable_n=0,
+                       skipped_n=0, stray_n=0),
+    )
+    assert txt_ok.detail_line() == hwpx_ok.detail_line() == "필드 3개"
+    # 변환 축이 없는 매체는 `state=None` 이어도 고를 수 있다(hwpx 라면 「상태 미상」이다).
+    assert txt_ok.select_block_reason() == ""
+    assert hwpx_ok.select_block_reason() == ""
+
+    txt_bad = TemplateRow.from_text(Path("C:/lib/손상.txt"), 0, "cp949 로 저장된 파일")
+    hwpx_bad = TemplateRow.from_error(Path("C:/lib/손상.hwpx"), "cp949 로 저장된 파일")
+    assert txt_bad.detail_line() == hwpx_bad.detail_line()
+    assert txt_bad.select_block_reason() == hwpx_bad.select_block_reason()
+    assert "읽을 수 없어 고를 수 없습니다" in txt_bad.select_block_reason()
+
+    # `state=None` 이 hwpx 에서는 사유가 된다 — 두 매체가 같은 함수를 쓰되 축이 갈린다.
+    assert "상태를 확인할 수 없어" in hwpx_bad.__class__(
+        name="x", path="x", state=None, badge_label="", badge_level="muted",
+        field_count=0, compilable_n=0, skipped_n=0, stray_n=0,
+    ).select_block_reason()

@@ -305,6 +305,12 @@ class TemplateRow:
 
     ``error`` 가 비어있지 않으면 읽기 실패 행(상태 없음·액션 없음) — 조용히 감추지 않고
     시끄럽게 노출한다.
+
+    ``media`` 는 **변환 축이 있는 매체인가**를 가른다(U6-B #976 리뷰 8): TXT 는 누름틀이
+    없어 컴파일 상태 자체가 없고, 그래서 ``state=None`` 이 hwpx 에서는 「읽을 수 없다」인데
+    TXT 에서는 정상이다. 두 밴드가 같은 성형 함수(:meth:`detail_line` ·
+    :meth:`select_block_reason`)를 지나야 문안이 갈리지 않으므로, 갈리는 그 한 축만 여기서
+    든다 — 링2 가 매체별로 문장을 다시 지으면 같은 사실이 두 어휘를 갖는다.
     """
 
     name: str
@@ -322,6 +328,8 @@ class TemplateRow:
     error: str = ""
     # 채움 완화 사전 고지(#154) — "채우면 무슨 일이 생기는가"의 점검 문안.
     fill_warns: "tuple[str, ...]" = ()
+    #: 매체 — ``"hwpx"``(변환 축 있음) / ``"txt"``(없음). 위 클래스 독스트링이 근거를 진다.
+    media: str = "hwpx"
 
     @property
     def is_error(self) -> bool:
@@ -359,6 +367,9 @@ class TemplateRow:
         """
         if self.is_error:
             return f"읽을 수 없어 고를 수 없습니다: {self.error}"
+        if self.media == "txt":
+            # 변환 축이 없는 매체 — 판독에 성공했으면 그대로 고를 수 있다(리뷰 8).
+            return ""
         if self.state is None:
             return "상태를 확인할 수 없어 고를 수 없습니다."
         if self.state in (CompileState.RAW, CompileState.PARTIAL):
@@ -386,6 +397,37 @@ class TemplateRow:
             stray_n=status.stray_n,
             structure_marker_n=status.structure_marker_n,
             fill_warns=fill_warns,
+        )
+
+    @classmethod
+    def from_text(
+        cls,
+        path: Path,
+        field_count: int,
+        error: str = "",
+        *,
+        root: "Path | None" = None,
+    ) -> "TemplateRow":
+        """TXT 템플릿 1건 — hwpx 행과 **같은 성형 함수**를 지나는 자리(U6-B #976 리뷰 8).
+
+        종전에는 링2 가 「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」를
+        각자 리터럴로 지었다. 그 세 문장이 곧 :meth:`detail_line` ·
+        :meth:`select_block_reason` 의 재구현이라, 링1 문안을 고치면 TXT 밴드만 옛말을
+        계속 하게 된다. 배지는 비운다 — 매체 표지는 표면의 pill 이 지고 이 행은 상태를
+        말할 축이 없다(없는 상태를 지어내지 않는다).
+        """
+        return cls(
+            name=library_display_name(root, path),
+            path=str(path),
+            state=None,
+            badge_label="",
+            badge_level="muted",
+            field_count=field_count,
+            compilable_n=0,
+            skipped_n=0,
+            stray_n=0,
+            error=error,
+            media="txt",
         )
 
     @classmethod

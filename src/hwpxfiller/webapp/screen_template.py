@@ -41,7 +41,7 @@ from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
-from ..gui.template_manager_state import SlotView, TemplateManagerViewModel
+from ..gui.template_manager_state import SlotView, TemplateManagerViewModel, TemplateRow
 from ..gui.tutorial_state import Milestone
 from .screens import (
     MUTATION_KINDS,
@@ -166,6 +166,9 @@ class TemplateController:
         rows: "list[dict]" = []
         for r in self.vm.rows():
             key = rel_key(r.path, root)
+            # 사유는 **한 번** 짓고 그 값에서 가부를 파생한다(`screen_pool._row` 규율,
+            # 리뷰 9): 두 번 부르면 같은 판정이 두 번 돌고 그 둘이 갈릴 자리가 생긴다.
+            block = r.select_block_reason()
             rows.append({
                 "key": key,
                 "name": r.name,
@@ -182,12 +185,20 @@ class TemplateController:
                 "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
                 # 「이 템플릿으로 작업을 시작할 수 있는가」 — 판정·문안은 링1 하나(U6-B).
                 # 편집기 1단계 좌 열이 이 두 값으로 비활성 + 사유를 그린다.
-                "selectable": not r.select_block_reason(),
-                "select_block_reason": r.select_block_reason(),
+                "selectable": not block,
+                "select_block_reason": block,
             })
         return rows
 
     def _txt_rows(self) -> "list[dict]":
+        """TXT 밴드 행 — 성형은 hwpx 와 **같은 링1 함수**를 지난다(U6-B #976 리뷰 8).
+
+        종전에는 이 자리가 「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」
+        를 리터럴로 다시 지었고, 그 셋이 곧
+        :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.detail_line` ·
+        ``select_block_reason`` 의 재구현이었다. 링1 문안을 고치면 TXT 밴드만 옛말을 계속
+        하는 자리라 :meth:`TemplateRow.from_text` 하나로 모은다.
+        """
         root = self.text_registry.directory
         rows: "list[dict]" = []
         for t in self.text_registry.list_templates():
@@ -197,22 +208,19 @@ class TemplateController:
                 field_count = len(t.fields())
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 사유를 단 행으로 loud 노출
                 error = str(exc)
-            key = rel_key(t.path, root)
+            row = TemplateRow.from_text(t.path, field_count, error, root=root)
+            block = row.select_block_reason()
             rows.append({
-                "key": key,
+                "key": rel_key(t.path, root),
                 "name": t.name,
                 "path": str(t.path),
                 "field_count": field_count,
                 "error": error,
                 # hwpx 밴드와 **같은 두 축**(U6-B #976) — 고르기 좌 열은 매체를 pill 로만
-                # 가르고 「고를 수 있나」는 한 어휘로 읽는다. TXT 는 변환 축이 없어 판독
-                # 실패 하나가 유일한 차단 사유다.
-                "selectable": not error,
-                "select_block_reason": (
-                    f"읽을 수 없어 고를 수 없습니다: {error}" if error else ""
-                ),
-                # 부제 정본 — hwpx 의 `detail` 자리(성형은 Python 하나가 진다).
-                "detail": f"필드 {field_count}개" if not error else f"읽기 실패: {error}",
+                # 가르고 「고를 수 있나」는 한 어휘로 읽는다.
+                "selectable": not block,
+                "select_block_reason": block,
+                "detail": row.detail_line(),
             })
         return rows
 
