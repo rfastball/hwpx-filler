@@ -236,6 +236,13 @@ export function bootProduct() {
     runtime, client, ports: screenPorts, services: servicePorts,
     modal: Modal, popover: Popover, chain: Intent,
     navigation,
+    /* 고르기 단계 우 열의 「고정」·「계약 목록 등록」은 **데이터 선택 컨트롤러가 가진
+       `#poolRegModal` 을 그대로 연다**(U6-B #976) — 확인 왕복·pin 잠금·pclm 좌표가 한
+       벌이라 두 번째 구현을 세우면 그 한 벌이 갈린다. 그래서 간선은 값이 아니라 포트다. */
+    poolRegistration: {
+      openRegDialog: (options) => DataPicker.openRegDialog(options),
+      openPclm: () => DataPicker.openPclm(),
+    },
     notify: (message) => window.alert(message),
   });
   const WorkbenchController = createWorkbenchController({

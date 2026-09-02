@@ -50,7 +50,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..application.dataset_pool import DatasetPoolRow
 from ..domain.dataset_reference import STATUS_ACTIVE
 from ..domain.format_engine import presets as format_presets
 from ..domain.job import (
@@ -62,7 +61,7 @@ from ..domain.job import (
 )
 from ..domain.mapping import TYPES, MappingProfile
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
-from ..external import example_pack
+
 from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path, source_from_pool_item
@@ -90,6 +89,7 @@ from ..gui.mapping_state import (
     MappingModel,
     PartialGate,
     gate_for_template,
+    pairing_preview,
     profile_source_vocabulary,
 )
 from ..external.template_inspection import (
@@ -114,7 +114,7 @@ from .screens import (
     reference_missing,
     unwired_tutorial,
 )
-from .template_groups import TemplateGroupModel, norm_library_path, rel_key
+from .template_groups import norm_library_path
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
@@ -122,11 +122,6 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
-
-# 1단계 피커 행에 싣지 않는 링1 액션(F8 — tpl 화면 사망의 승계 표면): `preview` 는 #13
-# 결정(10F2FF98-B — 작업 위저드와 중복), `make_job` 은 행 「이 템플릿으로」 버튼이 이미
-# 소유한다(같은 동사 2벌 금지 — §10.17.2 판정 D).
-_PICKER_HIDDEN_ACTIONS = frozenset({"preview", "make_job"})
 
 # TXT 판 RAW 차단 문안은 `screens.TXT_RAW_BLOCK` 단일 출처 — 재연결 게이트와 같은 판정
 # 같은 문안(리뷰 2R P1). 아래 import 로 이 모듈의 옛 소비자(테스트 포함)도 그대로 산다.
@@ -169,29 +164,6 @@ def _binding_source_ref(job: "Job") -> "dict | None":
     return {"path": path, "sheet": sheet, "header_row": header_row, "kind": kind}
 
 
-def pool_option_block(row: "DatasetPoolRow") -> str:
-    """이 등록 데이터를 작업 데이터로 연결할 수 있는가 — 못 쓰면 사유, 쓸 수 있으면 ``""``.
-
-    **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5, 나라장터 동결 규율과 같은 줄):
-    목록에서 지우면 사람이 등록해 둔 항목이 이유 없이 사라진 것으로 보이고, 그 침묵이
-    이 라운드가 고치는 결함과 같은 종류다. 판정도 문구도 여기 한 곳이 낸다 — 표면이
-    ``status``·``kind`` 로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다.
-
-    **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
-    행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다. 사실
-    (참조가 끊겼다)은 한 문장으로 같고 그다음 절만 갈린다.
-    """
-    if row.kind not in ("excel", "pclm"):
-        return f"{row.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
-    if row.status != STATUS_ACTIVE:
-        return "보관한 항목입니다. '문서 만들기'의 데이터 선택에서 활성화한 뒤 쓰세요."
-    if reference_missing(row.locate_path):
-        if row.kind == "pclm":
-            return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
-        return "참조가 끊겼습니다. '문서 만들기'의 데이터 선택에서 다시 연결한 뒤 쓰세요."
-    return ""
-
-
 def _preserved_meta(job: "Job") -> "dict[str, object]":
     """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기·검토 기준선).
 
@@ -224,11 +196,7 @@ class EditorController:
         clock: Callable[[], datetime],
         pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
-        template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
-        txt_groups: "TemplateGroupModel | None" = None,
-        library_result: "Callable[[], dict] | None" = None,
-        library_slots: "Callable[[], dict | None] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
         binding_confirm_pending: "Callable[[str], bool] | None" = None,
         tutorial: TutorialSink = unwired_tutorial,
@@ -248,11 +216,9 @@ class EditorController:
         # 한다. 쓰기는 여기 없다(등록·다시 연결·삭제는 데이터 선택 면의 일). 미주입이면
         # 그 사실을 스냅샷이 말하고 목록 동사는 서지 않는다.
         self._pool_registry = pool_registry
-        # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
-        # 주입**한다. 별도 인스턴스면 두 표면의 접힘·지정 인메모리 캐시가 갈라져(한쪽 토글이
-        # 다른쪽에 반영 안 됨) 1단계 피커가 관리 화면과 다른 구획을 조용히 보인다(단일 실체).
-        # 미주입 시 첫 접근에 표준 hwpx 모델을 지연 생성(라이브러리 VM 지연 생성과 대칭).
-        self._template_groups = template_groups
+        # (`template_groups`·`txt_groups` 주입은 U6-B(#976)에서 퇴역했다 — 목록 성형이
+        #  `tpl` 채널 하나로 모이면서 이 화면에 그룹 모델 소비자가 0 이 됐다. 모델·영속
+        #  자체는 U4 §2-30 의 동결 그대로 tpl 컨트롤러가 계속 든다.)
         # 템플릿 라이브러리(R-info 2부 접합 최소분) — 신규 1단계=라이브러리에서 고르기(생 파일
         # 선택 폐기)·가져오기=복사. **앱 조립에선 tpl 화면의 VM 같은 인스턴스를 주입**(리뷰 F2:
         # 라이브러리=단일 실체 — 폴더 재지정이 두 표면에 함께 반영). 미주입 시 표준 라이브러리를
@@ -263,14 +229,9 @@ class EditorController:
         # tpl 화면과 같은 인스턴스를 주입**한다(hwpx 라이브러리·그룹과 같은 단일 실체 규율 —
         # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
         self._text_registry = text_registry
-        self._txt_groups = txt_groups
-        # 라이브러리 결과 재진술 줄(F8 — tpl 화면 사망의 `#tplResult` 승계): 성형·수명은
-        # TemplateController(result_text/level)가 계속 소유하고 여기는 **읽기만** 한다(성형
-        # 두 벌 금지 — §10.17.2 판정 B). 미주입(테스트 단독 구동)은 빈 결과.
-        self._library_result = library_result
-        # 검토가 낸 Slot 목록(S8-03 #834) — 결과 줄과 같은 규율(투영·수명은 tpl 소유,
-        # 여기는 읽기만). 미주입(테스트 단독 구동)은 목록 없음.
-        self._library_slots = library_slots
+        # (`library_result`·`library_slots` 중계 seam 은 U6-B(#976)에서 퇴역했다: 결과 줄과
+        #  구간 항목 목록의 정본은 `tpl` 채널 스냅샷이고, 편집기 표면이 그 채널을 직접
+        #  구독하면서 편집기 스냅샷이 같은 값을 한 번 더 실어 나를 이유가 사라졌다.)
         self._after_mapping_saved = after_mapping_saved
         # 연결 확정 대기 판정(#911) — `after_mapping_saved` 와 **같은 짝의 반대편**이다(쓰기 ↔
         # 읽기). 판정·문안은 백엔드 소유이고 이 화면은 사실 하나를 싣기만 한다. 미주입(테스트
@@ -302,6 +263,11 @@ class EditorController:
         # 결속의 **종류**(""=엑셀/CSV) — 위 세 성분과 한 벌이다. 저장이 그대로 Job 에 실어
         # durable 이 되므로(`_EDITOR_REBUILDS` 갈래) 세션 리셋에서 함께 선다.
         self.data_kind = ""
+        # 지금 마운트가 겨눈 **풀 슬롯 키**(U6-B #976 — `screen_job.data_pool_key` 미러).
+        # 고르기 단계의 우 열이 「어느 항목이 선택돼 있는가」를 이 값으로 그린다: 표면이
+        # 경로를 대조해 되추측하면 정체성 규칙(kind-스코프 · #347)이 두 곳에 산다. 파일
+        # 마운트는 슬롯이 없으므로 빈 값이고, 그 자리는 「고정」 동사가 대신 선다.
+        self.data_pool_key = ""
         # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
         # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
@@ -319,6 +285,9 @@ class EditorController:
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
+        # 연결 카드 미리보기 수치의 memo(리뷰 7) — `(정체 키 + 활성 헤더, (자동, 확인 필요))`.
+        # 세션 리셋이 함께 비운다: 남기면 새 짝의 카드가 지난 짝의 수치를 말한다.
+        self._pairing_cache: "tuple[tuple, tuple[int, int]] | None" = None
         self.preview_index = 0
         self.job_name = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
@@ -391,13 +360,6 @@ class EditorController:
         return self._template_library
 
     @property
-    def template_groups(self) -> TemplateGroupModel:
-        """HWPX 그룹 모델 — 미주입이면 첫 접근 때 표준 hwpx 모델 지연 생성(라이브러리 VM 대칭)."""
-        if self._template_groups is None:
-            self._template_groups = TemplateGroupModel("hwpx")
-        return self._template_groups
-
-    @property
     def text_registry(self) -> TextTemplateRegistry:
         """TXT 템플릿 레지스트리 — 미주입이면 서식 폴더 홀더로 지연 생성(hwpx VM 대칭).
 
@@ -407,18 +369,14 @@ class EditorController:
             self._text_registry = TextTemplateRegistry(TemplateRoot().path)
         return self._text_registry
 
-    @property
-    def txt_groups(self) -> TemplateGroupModel:
-        """TXT 그룹 모델 — 미주입이면 표준 txt 모델 지연 생성(template_groups 대칭)."""
-        if self._txt_groups is None:
-            self._txt_groups = TemplateGroupModel("txt")
-        return self._txt_groups
-
     def _refresh_library(self) -> None:
-        """공유 라이브러리 VM 재스캔 — 외부(탐색기) 변경을 새 세션·가져오기 시점에 걷는다.
+        """공유 라이브러리 VM 재스캔 — 경로 화이트리스트·가져오기 채택이 부르는 정합 확인.
 
-        별도 행 캐시는 두지 않는다(#138 리뷰 F8·F11): ``_library_snapshot`` 이 공유 VM 의
-        ``rows()`` 를 직독하므로, 이 refresh 는 공유 VM 의 실 디스크 재스캔만 트리거하면 된다."""
+        **목록 표시를 위한 재스캔은 여기 없다**(U6-B #976): 고르기 단계 좌 열의 정본이
+        `tpl` 채널 스냅샷이 되면서 「단계 진입 = 재스캔」은 프런트의 ``tpl/refresh`` 한
+        발이 진다. 여기 남은 두 호출자는 **판정 직전의 정합**이 필요한 자리다 —
+        :meth:`assert_library_path`(방금 사라진 파일을 통과시키지 않는다)와
+        :meth:`adopt_imported_template`(가져온 사본이 목록에 들었는가)."""
         self.template_library.refresh()
 
     def assert_library_path(self, path: str) -> None:
@@ -469,15 +427,123 @@ class EditorController:
         3단계 접기(블록 2 결정 11): 데이터 선택이 매핑 탭의 관문으로 들어와 별도 단계가
         아니다 — 템플릿→연결은 템플릿 준비, 연결→파일 이름은 매핑 확정.
 
+        **U6-B(#976) — 1단계 게이트가 데이터까지 요구한다**: 「고르기」가 묻는 질문은
+        「어느 템플릿을 어느 데이터에?」 하나이므로(U6 §2.2) 반쪽만 고르고 다음으로
+        갈 수 있으면 그 단계가 두 질문을 가진 것이 된다. 데이터 관문이 2단계 머리에서
+        걷혔으므로 통과시키면 고칠 표면이 없는 화면에 착지한다 — 저장 게이트
+        (:func:`~hwpxfiller.gui.job_editor_state.validate_save`)가 이미 요구하던 것을
+        같은 순서로 앞당겨 세운다(술어는 하나, 서는 자리만 늘었다).
+
         **초안에만 걸리는 규율**(§10.13 판정 M): 저장된 작업 편집은 의존이 전부 충족된
         상태라 탭을 자유 이동한다. 초안은 순서 의존이 실재해(템플릿 없인 매핑 없음) 전진
         마다 게이트를 세운다 — 빈 표를 열어 두고 "채우세요"라고 말하지 않는다.
         """
         if from_section == SECTION_TEMPLATE:
-            return self._template_ready()
+            return self._template_ready() and bool(self.data_path)
         if from_section == SECTION_BINDING:
             return self.model is not None and self.model.is_complete()
         return False
+
+    def _advance_block_reason(self) -> str:
+        """1단계에서 다음으로 못 가는 사유(갈 수 있으면 ``""``) — 문안도 여기가 낸다.
+
+        순서는 :meth:`can_advance` 의 술어 순서 그대로다: 템플릿이 필드를 정하고 그 다음에
+        그 필드를 채울 데이터가 온다(U4 §2.4). 두 사유를 한 문장에 합치지 않는 이유는
+        고칠 자리가 좌·우로 갈리기 때문이다 — 사람은 지금 막힌 한쪽만 고치면 된다.
+        """
+        if self.raw_block:
+            return self.raw_block
+        if self.gate_error:
+            return "템플릿 상태를 확인할 수 없습니다."
+        if not self.template_path:
+            return "왼쪽에서 템플릿을 고르세요."
+        # 채울 대상이 0 인 템플릿의 사유는 **링1 문안 하나**다(리뷰 3): 아래 미해결 토큰
+        # 문장을 돌려쓰면 「토큰을 확인하라」고 말해 놓고 확인할 토큰이 없는 화면을 준다.
+        if self.schema is None or not self.schema.fields:
+            return RAW_BLOCK_MESSAGE
+        if not self._template_ready():
+            return "이 템플릿은 아직 진행할 수 없습니다. 미해결 토큰을 확인하세요."
+        if not self.data_path:
+            return "오른쪽에서 데이터를 고르세요."
+        return ""
+
+    def _pairing_snapshot(self, active_sources: "list[str]") -> dict:
+        """고르기 단계 연결 카드 — 「무엇과 무엇이 붙었고 몇 개가 자동으로 이어지는가」.
+
+        **수치의 출처를 명시로 든다**(``basis``). 1단계는 매핑 모델을 만들지 않는다:
+        생성은 2단계 진입의 :meth:`_ensure_model` 하나가 지고, 카드가 미리 만들면
+        고르기를 바꿔 보는 것만으로 「전원 미확정 재생성」 전이가 돌아 확정이 조용히
+        무너진다. 그래서 두 갈래다 —
+
+        - ``model``: 이미 있는 모델의 키가 지금 선택과 같으면 그 모델의 **실제** 수치
+          (확인 = 확정 행, 확인 필요 = 나머지). 2단계를 다녀온 뒤 1단계로 돌아온 자리다.
+        - ``preview``: 그 밖에는 순수 함수
+          (:func:`~hwpxfiller.gui.mapping_state.pairing_preview`)를 읽기 전용으로 한 번
+          돌린 미리보기. 2단계가 실제로 세울 제안과 같은 함수라 수치가 갈리지 않는다.
+
+        **``ready`` 는 「짝이 실제로 섰는가」다**(리뷰 3): 경로 둘만 보면 채울 필드가 0 인
+        템플릿(hwpx RAW · 토큰 0 인 TXT)에서도 참이 되어 「필드 0개 · 자동 연결 0」 카드가
+        비활성 CTA 위에 선다 — 화면이 「짝이 섰다」고 말하면서 다음으로 못 가는 자리다.
+        그래서 필드 1개 이상까지가 조건이고, 그 사유는 ``advance_block_reason`` 이 진다.
+
+        **수치는 이 단계에서만 센다**(리뷰 7): ``suggest_mappings`` 는 필드×열 SequenceMatcher
+        라 매핑 편집의 잦은 push 마다 지불할 것이 아니다. 고르기 단계 밖에서는 세지 않고
+        ``basis=""`` 로 **세지 않았음을 명시**한다(0 을 사실처럼 말하지 않는다). 같은 단계
+        안의 재렌더는 정체 키(:meth:`_model_key_now`)로 memoize 한다.
+        """
+        template_name = (
+            self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+            if self.template_path else ""
+        )
+        data_name = (
+            self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+            if self.data_path else ""
+        )
+        field_names = [f.name for f in self.schema.fields] if self.schema else []
+        ready = bool(self.template_path) and bool(self.data_path) and bool(field_names)
+        auto = confirm = 0
+        basis = ""
+        if ready and self.section == SECTION_TEMPLATE:
+            if self.model is not None and self._model_key == self._model_key_now():
+                # 모델 수치는 확정 토글마다 바뀌므로 memoize 하지 않는다(행 합 하나라 싸다).
+                auto = sum(1 for r in self.model.rows if r.confirmed)
+                confirm = len(self.model.rows) - auto
+                basis = "model"
+            else:
+                auto, confirm = self._pairing_preview_cached(field_names, active_sources)
+                basis = "preview"
+        return {
+            "ready": ready,
+            "template_name": template_name,
+            "data_name": data_name,
+            "field_count": len(field_names),
+            "column_count": len(self.source_fields),
+            "auto_count": auto,
+            "confirm_count": confirm,
+            "basis": basis,
+            "advance_block_reason": self._advance_block_reason(),
+        }
+
+    def _pairing_preview_cached(
+        self, field_names: "list[str]", active_sources: "list[str]"
+    ) -> "tuple[int, int]":
+        """읽기 전용 미리보기 수치 — 같은 정체 키에서는 **한 번만** 센다(리뷰 7).
+
+        캐시 키는 매핑 모델의 정체 키(:meth:`_model_key_now`)와 같다: 그 키가 곧
+        「무엇과 무엇을 붙였는가」이고, 제안 결과가 달라질 수 있는 축이 정확히 그 성분들이다
+        (템플릿·데이터 경로·시트·헤더 행·소스 헤더). 별도 키를 지으면 성분 하나를 빠뜨린
+        날 카드가 옛 수치를 계속 말한다 — 그래서 있는 키를 그대로 쓴다.
+
+        미사용 헤더(#49) 토글은 이 키에 없지만 ``active_sources`` 를 바꾼다. 그래서 캐시는
+        키와 **활성 헤더 튜플**을 함께 든다(둘 다 같아야 재사용).
+        """
+        key = (self._model_key_now(), tuple(active_sources))
+        cached = self._pairing_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        counts = pairing_preview(field_names, active_sources)
+        self._pairing_cache = (key, counts)
+        return counts
 
     def _draft_job(self) -> "Job":
         """지금 세션이 저장한다면 나올 규칙만 담은 Job — patch 유도의 오른쪽 항.
@@ -678,11 +744,13 @@ class EditorController:
             "gate_error": self.gate_error,
             "data_path": self.data_path,
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
-            "data_sheet": self.data_sheet,  # 관문 파일칩 시트 표기(#33 확정 시트)
-            # 등록 데이터에서 고르기가 이 조립에 서 있는가(#932 U4-C S2-5) — 목록 자체는
-            # 사건 때만 읽는다(`pool_options`). 미배선 조립에서 동사를 세우면 눌러도 아무
-            # 일도 안 일어나고, 그 침묵이 이 라운드가 고치는 결함과 같은 종류다.
-            "pool_enabled": self._pool_registry is not None,
+            "data_sheet": self.data_sheet,  # 데이터 항목 부제의 시트 표기(#33 확정 시트)
+            # 참조 성분 한 벌(U6-B #976) — 우 열의 「현재 데이터」 행이 시트·헤더 행을
+            # 다시 묻지 않고 재진술한다(U4 §2.4 정체성 축).
+            "data_header_row": self.data_header_row,
+            "data_kind": self.data_kind,
+            # 지금 마운트가 겨눈 풀 슬롯(없으면 "") — 우 열의 `aria-pressed` 판정.
+            "data_pool_key": self.data_pool_key,
             "record_count": len(self.records),
             # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
@@ -714,16 +782,11 @@ class EditorController:
             "editing_origin": self._editing_origin,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
-            # 템플릿 라이브러리(신규 1단계=라이브러리에서 그룹 구획으로 고르기, #108 슬라이스 3)
-            # — 템플릿 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불
-            # 금지). 그 외 단계는 빈 구획. F6 PR-B: 매체 2밴드({hwpx, txt}).
-            "library": (
-                self._library_snapshot() if self.section == SECTION_TEMPLATE
-                else {
-                    "hwpx": {"sections": [], "flat": True},
-                    "txt": {"sections": [], "flat": True},
-                }
-            ),
+            # 고르기 단계의 **연결 카드**(U6-B #976) — 좌·우에서 하나씩 고른 결과를 한 줄로
+            # 재진술하고 전진 게이트의 사유를 함께 싣는다. 목록 자체는 여기 없다: 좌 열은
+            # `tpl` 채널 스냅샷이, 우 열은 `pool` 채널 스냅샷이 정본이고 편집기가 그것을
+            # 다시 성형하면 같은 목록을 두 컨트롤러가 그린다(구 `library` 존이 그랬다).
+            "pairing": self._pairing_snapshot(active_sources),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
             "pattern_preview": (
                 self._pattern_preview() if self.section == SECTION_FILENAME else ""
@@ -753,117 +816,6 @@ class EditorController:
             snap["rows"] = []
             snap["is_complete"] = False
         return snap
-
-    def _library_snapshot(self) -> "dict":
-        """1단계 피커 = 라이브러리를 **관리 화면과 같은 그룹 구획**으로(선택 전용, #108 슬라이스 3).
-
-        **매체 2밴드**(F6 PR-B — 「기안」 화면 사망의 승계처): ``{hwpx: {...}, txt: {...}}``.
-        어느 밴드든 관리 화면과 같은 그룹 모델·같은 build_sections 로 성형해 두 표면이 한
-        조직을 보인다(결정 6). 여기는 **선택 전용** — 카드 ⋮·이동·삭제·＋그룹지정 없이 상태
-        배지·선택 버튼만. HWPX 상태 판정·배지는 링1(TemplateManagerViewModel) 소유, TXT 는
-        tpl 화면 ``_txt_rows`` 와 같은 성형(필드 수·손상 loud). 오류 행도 숨기지 않는다.
-
-        **공유 VM 직독**(#137·#138 리뷰 F8·F11): 별도 행 캐시를 두지 않고 공유 VM 의
-        ``rows()``(재스캔 없이 캐시 반환)를 그대로 읽는다 — 관리 화면의 가져오기·삭제가
-        공유 VM 을 refresh 하면 여기 피커도 즉시 반영된다(발산 캐시 제거). TXT 레지스트리는
-        캐시가 없어 매 스냅샷이 실 스캔이다. **reconcile 미실행**:
-        유령 지정 정리는 관리 화면의 위생 소관이고, 여기서 (부분/필터된) 목록으로 reconcile 하면
-        살아있는 그룹 지정을 영구 삭제할 수 있어 실행하지 않는다(build_sections 는 표시에서
-        고아를 이미 무시).
-        """
-        root = self.template_library.library_dir
-        items = [
-            {
-                "key": rel_key(r.path, root),
-                "name": r.name,
-                "path": r.path,
-                "badge_label": r.badge_label,
-                "badge_level": r.badge_level,
-                "is_error": r.is_error,
-                "detail": r.detail_line(),
-                # 채움 완화 사전 고지(#154) — tpl 화면 사망(F8)의 가시성 승계. 문안은 링1 확정.
-                "fill_warns": list(r.fill_warns),
-                # 상태 수선 동사(compile·review) — 라벨·구성은 링1 `_STATE_ACTIONS` 소유.
-                # `preview` 는 #13 결정(10F2FF98-B), `make_job` 은 행 「이 템플릿으로」 버튼이
-                # 이미 소유(같은 동사 2벌 금지 — §10.17.2 판정 D)라 여기서 걷는다.
-                "actions": [
-                    {"key": a.key, "label": a.label}
-                    for a in r.actions() if a.key not in _PICKER_HIDDEN_ACTIONS
-                ],
-                "current": bool(self.template_path) and r.path == self.template_path,
-            }
-            for r in self.template_library.rows()
-        ]
-        # 그룹 축은 묻지 않는다(U4 §2-30) — 지정을 바꿀 동사가 표면에서 걷혔으므로 저장된
-        # 지정이 남아 있어도 평면으로 답한다. 모델·영속은 동결이라 되살릴 때 그대로 쓴다.
-        sections, flat = self.template_groups.build_sections(
-            items, key_of=lambda it: it["key"], grouped_view=False
-        )
-        txt_rows = self._txt_library_rows()
-        txt_sections, txt_flat = self.txt_groups.build_sections(
-            txt_rows, key_of=lambda it: it["key"], grouped_view=False
-        )
-        # 밴드에 싣는 것은 개수·루트 경로다(이동 다이얼로그의 그룹 후보는 U4 §2-30 에서
-        # 그 다이얼로그와 함께 걷혔다). **reconcile 은 여기서도 하지 않는다** — 유령 지정
-        # 위생은 tpl 채널의 snapshot() 이 계속 소유한다(부분 목록 reconcile 이 살아있는
-        # 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
-        result = self._library_result() if self._library_result is not None else {}
-        # 빈 목록 안내는 링1 하나가 정본이다(U6-A #975): 루트가 하나라 원인도 하나이고,
-        # 두 밴드가 각자 문안을 지으면 「폴더가 없다」와 「비어 있다」가 갈린다.
-        empty_hint = self.template_library.empty_hint()
-        return {
-            "hwpx": {
-                "sections": sections, "flat": flat,
-                "count": len(items),
-                "dir": str(root) if root is not None else "",
-                "empty_hint": empty_hint,
-            },
-            "txt": {
-                "sections": txt_sections, "flat": txt_flat,
-                "count": len(txt_rows),
-                "dir": str(self.text_registry.directory),
-                "empty_hint": empty_hint,
-            },
-            "result": {
-                "text": str(result.get("text", "") or ""),
-                "level": str(result.get("level", "muted") or "muted"),
-            },
-            # 검토가 낸 Slot 목록(S8-03) — 없으면 ``None`` 이고 표면은 구획째 서지 않는다.
-            "slots": self._library_slots() if self._library_slots is not None else None,
-            # 동봉 예제 상시 진입점(#891 · §4.1) — 밴드의 ``emptyText`` 는 문자열 prop 이라
-            # 버튼을 품지 못하므로 밴드 **밖** 공용 버튼 줄이 그 자리다. 라벨·설치 여부는
-            # tpl·라이브러리 스냅샷과 같은 단일 출처를 읽는다(세 표면이 한 판정을 본다).
-            "examples": example_pack.entry_point_state(),
-        }
-
-    def _txt_library_rows(self) -> "list[dict]":
-        """TXT 밴드 행 — tpl 화면 ``_txt_rows`` 성형 미러(선택 전용 최소분 + current 표지).
-
-        손상(비 UTF-8 등)은 **사유를 단 오류 행**으로 loud 노출한다(숨기면 관리 화면과 다른
-        목록을 조용히 보인다). 그 행에 남는 동사는 없다 — 삭제는 U6-A(#975)에서 퇴역했고
-        내용 편집은 읽히지 않는 파일에 설 수 없어, 표면의 행 ⋮ 는 비활성 + 사유로 선다
-        (`editor.ts` 의 `libRowMenuItems`). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은
-        로드가 맡는다.
-        """
-        root = self.text_registry.directory
-        rows: "list[dict]" = []
-        for t in self.text_registry.list_templates():
-            error = ""
-            field_count = 0
-            try:
-                field_count = len(t.fields())
-            except Exception as exc:  # noqa: BLE001 — 손상 파일도 loud 노출(tpl 화면 동형)
-                error = str(exc)
-            key = rel_key(t.path, root)
-            rows.append({
-                "key": key,
-                "name": t.name,
-                "path": str(t.path),
-                "field_count": field_count,
-                "error": error,
-                "current": bool(self.template_path) and str(t.path) == self.template_path,
-            })
-        return rows
 
     def _pattern_preview(self) -> str:
         """F26 — 파일명 패턴의 라이브 예시 1행(표본 고정 = 첫 레코드, seq=1).
@@ -990,8 +942,14 @@ class EditorController:
         템플릿→에디터 진입(템플릿 관리 '작업 만들기', 에디터 0단계 피커)의 단일 seam.
         ``load_template_path`` 만 부르면 이름·데이터·매핑·단계가 이전 세션 값으로 남아
         새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
-        먼저 끊는다. 앞선 세션의 미저장 변경은 **묻지 않고 버린다**(자동 버리기 계약):
-        호출측이 확인을 대신 물어 주는 선판단 자리는 더 이상 없다.
+        먼저 끊는다.
+
+        **무엇을 묻고 무엇을 안 묻는가**(U6-B #976 리뷰 2 — 종전 두 독스트링이 서로 다른
+        말을 하던 자리): section patch 류의 미저장 편집은 **묻지 않고 버린다**(자동 버리기
+        계약). 갈리는 것은 **확정하거나 직접 편집한 매핑** 하나다 — 그것은 데이터 교체와
+        똑같이 표면이 :meth:`_do_mapping_reset_stakes` 로 수치를 받아 먼저 확인을 치른다.
+        두 제스처(좌 열 클릭 · 끌어 놓기)가 같은 규칙을 지나야 하고, 데이터 쪽만 묻고
+        템플릿 쪽은 안 묻는 상태는 같은 파괴에 두 규칙을 두는 것이다.
 
         **예외 하나 — 데이터를 들고 온 진입**(U2 §2.4 · #349 리뷰 3R, #878): 그 세션의 데이터는
         「이전 세션의 잔재」가 아니라 **이 세션이 존재하는 이유**다. 1단계에서 템플릿을 고르는
@@ -1104,10 +1062,25 @@ class EditorController:
         """라이브러리 목록에서 고른 템플릿으로 새 작업 세션(신규 1단계 정본 경로).
 
         경로 화이트리스트는 :meth:`assert_library_path` 공용 seam(리뷰 F4 — 크로스스크린
-        진입과 단일 정의). 미저장·편집 맥락 확인은 호출측(웹)이 선판단한다.
+        진입과 단일 정의).
+
+        **이미 그 템플릿이면 아무 일도 하지 않는다**(U6-B #976 리뷰 1). 종전 표면에서는
+        현재 항목이 클릭 핸들러 없는 span 이라 이 호출이 구조적으로 불가능했는데, 고르기
+        화면은 현재 항목도 누를 수 있고 끌어 놓을 수도 있다 — 통과시키면
+        :meth:`new_job_session` 이 이름·매핑·단계를 통째로 끊는다(누른 사람은 「이미 고른
+        것을 다시 골랐을」 뿐이다). 프런트도 같은 자리를 막지만 판정은 **여기도** 선다:
+        표면만 막으면 프로브·다른 호출자가 그대로 뚫는다.
+
+        확인은 여기서 묻지 않는다 — 확정 매핑이 걸린 **교체**의 확인 왕복은 호출측(웹)이
+        :meth:`_do_mapping_reset_stakes` 로 수치를 받아 먼저 치른다(데이터 교체와 같은
+        규율). 그 밖의 미저장 편집은 :meth:`new_job_session` 이 묻지 않고 버린다.
         """
         path = str(p["path"])
         self.assert_library_path(path)
+        if self.template_path and norm_library_path(path) == norm_library_path(
+            self.template_path
+        ):
+            return  # 같은 템플릿 재선택 — 세션을 끊을 이유가 없다(리뷰 1)
         self.new_job_session(path)
         # T1 템플릿 고르기(#894) — 세션에 템플릿이 실제로 앉은 뒤다. 자산 정체성(예제인가)은
         # 따지지 않는다: 루프를 돈 것이 판정이지 예제 강제가 아니다(§3.1-4 비강제).
@@ -1382,6 +1355,9 @@ class EditorController:
         self.data_sheet = sheet  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.data_header_row = header_row
         self.data_kind = kind
+        # 새 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체 · `screen_job` 과 같은 규율). 풀 항목
+        # 경로는 이 대입 **뒤에** 자기 키를 다시 세운다(`_do_use_pool_data`).
+        self.data_pool_key = ""
         self.source_fields = source.fields()
         # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
         self._ignored_sources = set()
@@ -1667,6 +1643,7 @@ class EditorController:
             # 종류를 흘리면 되돌린 뒤의 세션이 같은 경로의 다른 판·다른 종류를 들게 된다.
             "data_header_row": self.data_header_row,
             "data_kind": self.data_kind,
+            "data_pool_key": self.data_pool_key,
             "source_fields": list(self.source_fields),
             "records": self.records,
             "ignored": set(self._ignored_sources),
@@ -1687,6 +1664,7 @@ class EditorController:
         self.data_sheet = stash["data_sheet"]
         self.data_header_row = stash.get("data_header_row", 0)
         self.data_kind = stash.get("data_kind", "")
+        self.data_pool_key = stash.get("data_pool_key", "")
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
         self._ignored_sources = stash["ignored"]
@@ -1694,11 +1672,10 @@ class EditorController:
         self._ensure_model()
 
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
+    # (`toggle_library_group` 은 U4 §2-30 에서, `pool_options` 는 U6-B(#976)에서 액션
+    #  자체가 퇴역했다 — 목록 조회가 사라지고 우 열이 `pool` 채널을 직접 구독한다.)
     _NONMUTATING_ACTIONS = frozenset(
-        {"goto_section", "step_preview", "mapping_reset_stakes", "toggle_library_group",
-         # 목록 조회는 세션을 안 바꾼다 — 데이터를 고르기 전에 클린 표지를 끄면 아무것도
-         # 안 고른 사람에게 이탈 확인이 뜬다(#932 U4-C S2-5).
-         "pool_options"}
+        {"goto_section", "step_preview", "mapping_reset_stakes"}
     )
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
@@ -1742,9 +1719,12 @@ class EditorController:
 
     # ---- 탭 이동(§5.2 거래 규율)
     #: 탭 라벨 — 거절 문안이 내부 키(`binding`)가 아니라 사람의 말로 자리를 지목하게 한다.
+    #: 단계 이름 — **사용자에게 보이는 문안**이라 표면(`editor.ts` 의 `SECTION_TITLES`)과
+    #: 글자가 같아야 한다. 되돌린 자리를 지목하는 notice 가 이 표를 쓰므로, 갈리면 화면이
+    #: 「연결 확인」이라 부르는 탭을 알림이 다른 이름으로 지목한다(U6-B #976 라벨 개정).
     SECTION_LABELS = {
-        SECTION_TEMPLATE: "템플릿",
-        SECTION_BINDING: "필드 연결·표시",
+        SECTION_TEMPLATE: "고르기",
+        SECTION_BINDING: "연결 확인",
         SECTION_FILENAME: "파일 이름",
     }
 
@@ -1784,8 +1764,6 @@ class EditorController:
                 )
             discarded.add(blocking)
             self._do_discard_patch({"section": blocking})
-        if target == SECTION_TEMPLATE and self.section != SECTION_TEMPLATE:
-            self._refresh_library()  # 템플릿 탭 재진입 = 공유 VM 실 디스크 재스캔(외부 변경 반영)
         if not self._editing_origin:  # 초안: 전진은 각 중간 탭의 게이트 통과 필요
             here, there = sections.index(self.section), sections.index(target)
             for s in sections[here:there]:
@@ -1932,35 +1910,6 @@ class EditorController:
     # 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다. 포획 규율은 공유한다
     # (:func:`~hwpxfiller.webapp.screens.pool_reference_quad`).
 
-    def _do_pool_options(self, p: dict) -> dict:
-        """고정한 데이터 목록 1회 조회(무변이) — 목록·사유·손상 항목을 그대로 싣는다.
-
-        렌더당 I/O 가 아니다: 스냅샷에 상주시키지 않고 사람이 목록을 여는 사건에서만
-        지불한다(:func:`~hwpxfiller.webapp.screens.reference_missing` 와 같은 규율).
-
-        쓸 수 없는 항목도 **빼지 않는다** — ``usable=False`` + 사유를 함께 실어 표면이
-        비활성으로 그린다. 손상 등록도 목록 밖으로 밀지 않고 따로 재진술한다(RC-05).
-        """
-        if self._pool_registry is None:
-            return {"ok": False, "error": POOL_UNWIRED_TEXT, "items": [], "corrupted": []}
-        entries, corrupted = self._pool_registry.list_references()
-        items = []
-        for key, item in entries:
-            row = DatasetPoolRow.from_item(key, item)
-            reason = pool_option_block(row)
-            items.append({
-                "key": row.key,
-                "name": row.name,
-                "reference": row.reference,
-                "usable": not reason,
-                "reason": reason,
-            })
-        return {
-            "ok": True,
-            "items": items,
-            "corrupted": [{"file": e.file_name, "error": e.error} for e in corrupted],
-        }
-
     def _mount_pool_item(self, item) -> list:
         """풀 항목을 이 세션의 데이터로 마운트하고 레코드를 돌려준다(공유 관문의 loader).
 
@@ -1990,9 +1939,12 @@ class EditorController:
         """
         if self._pool_registry is None:
             return {"ok": False, "error": POOL_UNWIRED_TEXT}
-        res = load_pool_into(self._pool_registry, str(p["key"]), self._mount_pool_item)
+        key = str(p["key"])
+        res = load_pool_into(self._pool_registry, key, self._mount_pool_item)
         if not res["ok"]:
             return {"ok": False, "error": res["error"]}
+        # 겨눈 슬롯을 기억한다 — 마운트 몸통(`_adopt_datasource`)이 방금 비운 자리다.
+        self.data_pool_key = key
         return {"ok": True, "label": res["item"].name}
 
     # ---- 사용 헤더 칩(#49 + 칩-라이브 결정 12·13) — 즉시 동사, 활성/미사용 전환.

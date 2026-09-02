@@ -543,7 +543,23 @@ export function createSelftestRunner(capabilities) {
      *  프로브 코드는 어느 쪽에서도 같은 문장으로 돈다. */
     if (caps.pushPort) {
       Object.defineProperty(ctx, "push", {
-        get() { return caps.pushPort.active; },
+        /* 프로브가 미는 채널은 **그 프로브가 끝날 때까지 정본**이다(U6-B #976): 앞
+           프로브가 낸 왕복의 늦은 호스트 응답이 여기 심은 값을 덮으면, 프로브는 자기가
+           심은 것을 못 보고 조용히 0 을 읽는다(CI 실측 — `data_picker` rows 3→0, 기다리던
+           프로브는 조건이 영영 안 서 run_hung). 클레임은 미는 **순간** 서고 해제는 러너가
+           프로브마다 한다.
+
+           통로가 교체돼 있으면 원본을 그대로 준다 — 그 프로브(`job_mirror`·`job_result`)는
+           도착하는 호스트 푸시를 세는 것이 목적이라 클레임 필터가 서면 안 되고, 자기가
+           붙든 참조(`const 원본 = ctx.push`)도 감싸지 않아야 전달이 한 겹으로 남는다. */
+        get() {
+          const active = caps.pushPort.active;
+          if (caps.pushPort.overridden) return active;
+          return function claimingPush(screen, snapshot) {
+            caps.pushPort.claim(screen);
+            return active(screen, snapshot);
+          };
+        },
         set(fn) { caps.pushPort.override(fn); },
         configurable: true,
         enumerable: true,
@@ -692,7 +708,12 @@ export function createSelftestRunner(capabilities) {
       /* 통로 원복 — 프로브가 갈아끼운 채 죽어도 다음 프로브와 제품 푸시가 오염되지 않는다.
          레거시에는 이 보장이 없었다(전역을 갈아끼운 채 예외가 나면 그 잔존을 아무도 걷지
          않았다). 프로브가 스스로 복원하는 관용은 그대로 두되, 마지막 그물은 러너가 진다. */
-      if (caps.pushPort) caps.pushPort.restore();
+      if (caps.pushPort) {
+        caps.pushPort.restore();
+        /* 클레임은 통로 교체와 **다른 축**이라 따로 푼다 — 다음 프로브는 자기 값을 심기
+           전까지 실 푸시를 정상으로 받아야 한다. */
+        caps.pushPort.releaseClaims();
+      }
 
       if (!failed) {
         for (const k of probe.keys) report.results[k] = value[k];

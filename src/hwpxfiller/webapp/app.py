@@ -449,21 +449,13 @@ class WebFrontend:
                 # 고르는 표면이 됐다. 편집기는 읽기만 한다(등록·다시 연결·삭제는 그 면의 일).
                 pool_registry=pool_registry,
                 template_library=tpl_ctrl.vm,
-                # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**:
-                # 별도 인스턴스면 접힘·지정 인메모리 캐시가 갈라져 두 표면이 다른 조직을 보인다.
-                template_groups=tpl_ctrl.hwpx_groups,
-                # TXT 밴드(F6 PR-B — 「기안」 화면 사망의 생성 경로 승계처)도 같은 단일 실체:
-                # TXT 레지스트리·그룹 모델을 tpl 화면과 공유한다(가져오기·접힘이 함께 반영).
+                # TXT 레지스트리는 tpl 화면과 **같은 단일 실체**다 — 경로 화이트리스트
+                # (`assert_library_path`)가 목록과 같은 스캔을 봐야 방금 사라진 파일을
+                # 통과시키지 않는다. (그룹 모델 주입은 U6-B 에서 소비자 0 으로 퇴역.)
                 text_registry=registry,
-                txt_groups=txt_groups,
-                # 라이브러리 결과 재진술 줄(F8 — `#tplResult` 승계): 성형·수명은 tpl 컨트롤러가
-                # 계속 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지 — §10.17.2 판정 B).
-                library_result=lambda: {
-                    "text": tpl_ctrl.result_text, "level": tpl_ctrl.result_level,
-                },
-                # 검토가 낸 Slot 목록(S8-03)도 같은 규율이다: 투영·수명은 tpl 컨트롤러가
-                # 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지).
-                library_slots=tpl_ctrl.slot_snapshot,
+                # (`library_result`·`library_slots` 중계는 U6-B(#976)에서 퇴역했다 — 결과
+                #  줄과 구간 항목 목록은 `tpl` 채널 스냅샷이 정본이고 고르기 단계 표면이
+                #  그 채널을 직접 구독한다. 중계가 있으면 같은 값이 두 스냅샷에 실린다.)
                 after_mapping_saved=job_ctrl.on_editor_mapping_saved,
                 # 그 확정의 **읽기 짝**(#911) — 편집기 footer 가 확정 동사를 세울지 말지는
                 # 같은 컨트롤러가 관리 검토에 쓰는 사실 하나로 정해진다(두 표면 한 판정).

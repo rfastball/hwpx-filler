@@ -201,15 +201,16 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.shoot("library-empty")
     s.click_sel("#libraryNewWork", what="새 작업")
     # 편집기는 몰입 표면이다(재작성 F7) — 상단 2탭을 덮는 자기 화면으로 착지한다.
+    # 1단계는 「고르기」다(U6-B #976): 좌 템플릿 풀 · 중앙 연결 카드 · 우 데이터 풀.
     s.wait(
         "document.querySelector('#scr-editor.on') !== null"
-        " && !!window.__cap.btn('#scr-editor','이 템플릿으로')",
-        "편집기 화면·라이브러리 피커",
-        requires=["#scr-editor"],
+        " && document.querySelectorAll('#editorTplList .pitem').length > 0",
+        "편집기 화면·고르기 존",
+        requires=["#scr-editor", "#editorPairZone"],
     )
-    # 발주요청서 행의 "이 템플릿으로" — data-path 로 정확 겨눔.
+    # 발주요청서 항목 — data-path 로 정확 겨눔(클릭이 1차 경로, 끌어 놓기는 가속기).
     s.click_sel(
-        '#scr-editor button[data-act="use-library"][data-path*="발주요청서"]',
+        '#editorTplList .pitem[data-path*="발주요청서"]',
         what="발주요청서 템플릿 채택",
     )
     s.wait(
@@ -217,25 +218,27 @@ def run(ctx: ScenarioContext) -> dict:
         "템플릿 선택·필드 스키마",
         requires=["#scr-editor"],
     )
-    # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 스키마 표는 템플릿 목록 아래라
-    # 기본 스크롤에서 폴드 밖이고, 위 조건은 그 상태에서도 참이다(문서가 "6개 필드를
-    # 확인한다"고 적은 그림에 표가 없게 된다). 겨눠 스크롤해 그 말을 그림이 지게 한다.
-    s.scroll_to("#scr-editor table.schema-fields")
+
+    # ---- S3 같은 단계의 오른쪽: 데이터 연결 → 「연결 확인」으로 --------------
+    # 데이터 고르기가 2단계 머리에서 1단계 우 열로 옮겨 왔다(U6 §2.2) — 「다음 ▶」 앞이다.
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_sel("#editorPoolBrowse", what="파일 찾아보기")
+    s.wait(
+        "document.querySelector('#editorLinkCard').textContent.includes('⟷')"
+        " && document.querySelector('#editorLinkCta').disabled === false",
+        "연결 카드·전진 게이트 개방",
+        requires=["#editorLinkCard", "#editorLinkCta"],
+    )
+    # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 연결 카드는 두 열 사이라 기본
+    # 스크롤에서 폴드 밖일 수 있고, 위 조건은 그 상태에서도 참이다. 겨눠 스크롤한다.
+    s.scroll_to("#editorPairZone")
     ctx.shoot("template-pick")
 
-    # ---- S3 2단계: 데이터 연결 + 모두 확정 ---------------------------------
     s.click_text("#scr-editor", "다음 ▶")
-    s.wait(
-        "!!window.__cap.btn('#scr-editor','파일 선택…')",
-        "「필드 연결·표시」 탭 데이터 관문",
-        requires=["#scr-editor"],
-    )
-    ctx.queue_file_answer(ctx.csv_path)
-    s.click_text("#scr-editor", "파일 선택…")
     s.wait(
         "!!window.__cap.btn('#scr-editor','모두 확정')"
         " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
-        "데이터 로드·매핑표 미리보기",
+        "「연결 확인」 단계·매핑표 미리보기",
         requires=["#scr-editor"],
     )
     s.click_text("#scr-editor", "모두 확정")
@@ -466,29 +469,29 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel("#libraryNewWork", what="새 작업(트랙 B)")
     s.wait(
         "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
-        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"발주요청_기안\"]')",
-        "편집기 TXT 밴드",
-        requires=["#scr-editor"],
+        "'#editorTplList .pitem[data-path*=\"발주요청_기안\"]')",
+        "편집기 고르기 존(TXT 항목)",
+        requires=["#scr-editor", "#editorPairZone"],
     )
     s.click_sel(
-        '#scr-editor button[data-act="use-library"][data-path*="발주요청_기안"]',
+        '#editorTplList .pitem[data-path*="발주요청_기안"]',
         what="TXT 템플릿 채택",
     )
-    # TXT 세션 = 탭 2개(템플릿·필드 연결) — 파일 이름 탭이 없다(§3.2, 파일을 만들지 않는 작업).
+    # TXT 세션 = 탭 2개(고르기·연결 확인) — 파일 이름 탭이 없다(§3.2, 파일을 만들지 않는 작업).
     s.wait(
         "document.querySelectorAll('#editor-steps .wstep-tab').length === 2"
         " && document.querySelector('#scr-editor').textContent.includes('공고번호')",
         "TXT 스키마·탭 2개",
         requires=["#editor-steps"],
     )
-    s.click_text("#scr-editor", "다음 ▶")
-    s.wait(
-        "!!window.__cap.btn('#scr-editor','파일 선택…')",
-        "TXT 필드 연결 데이터 관문",
-        requires=["#scr-editor"],
-    )
     ctx.queue_file_answer(ctx.csv_path)
-    s.click_text("#scr-editor", "파일 선택…")
+    s.click_sel("#editorPoolBrowse", what="파일 찾아보기(TXT)")
+    s.wait(
+        "document.querySelector('#editorLinkCta').disabled === false",
+        "TXT 연결 카드·전진 게이트 개방",
+        requires=["#editorLinkCta"],
+    )
+    s.click_text("#scr-editor", "다음 ▶")
     s.wait(
         "!!window.__cap.btn('#scr-editor','모두 확정')"
         " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
@@ -598,12 +601,12 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel("#libraryNewWork", what="새 작업(오류 연습)")
     s.wait(
         "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
-        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"오류연습_미치환\"]')",
-        "편집기 TXT 밴드(오류 연습)",
-        requires=["#scr-editor"],
+        "'#editorTplList .pitem[data-path*=\"오류연습_미치환\"]')",
+        "편집기 고르기 존(오류 연습)",
+        requires=["#scr-editor", "#editorPairZone"],
     )
     s.click_sel(
-        '#scr-editor button[data-act="use-library"][data-path*="오류연습_미치환"]',
+        '#editorTplList .pitem[data-path*="오류연습_미치환"]',
         what="오류 연습 템플릿 채택",
     )
     s.wait(
@@ -611,14 +614,14 @@ def run(ctx: ScenarioContext) -> dict:
         "오류 연습 스키마",
         requires=["#scr-editor"],
     )
-    s.click_text("#scr-editor", "다음 ▶")
-    s.wait(
-        "!!window.__cap.btn('#scr-editor','파일 선택…')",
-        "데이터 관문(오류 연습)",
-        requires=["#scr-editor"],
-    )
     ctx.queue_file_answer(ctx.csv_path)
-    s.click_text("#scr-editor", "파일 선택…")
+    s.click_sel("#editorPoolBrowse", what="파일 찾아보기(오류 연습)")
+    s.wait(
+        "document.querySelector('#editorLinkCta').disabled === false",
+        "연결 카드·전진 게이트 개방(오류 연습)",
+        requires=["#editorLinkCta"],
+    )
+    s.click_text("#scr-editor", "다음 ▶")
     s.wait("!!window.__cap.btn('#scr-editor','모두 확정')", "매핑표(오류 연습)", requires=["#scr-editor"])
     s.click_text("#scr-editor", "모두 확정")
     # 데이터에 없는 「담당연락처」 — 채우지 않고 비움으로 확정할지 **묻는다**(이름게이트).

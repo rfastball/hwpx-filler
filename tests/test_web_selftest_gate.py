@@ -1269,11 +1269,16 @@ class TestWebSelftestGate:
         b = selftest_result["editor_txt_band"]
         assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
         assert b.get("why") == "완료", f"TXT 밴드 프로브 미완주: {b!r}"
-        assert sorted(b["bands"]) == ["HWPX 서식", "TXT 기안"], (
-            f"템플릿 탭 매체 2밴드가 서지 않습니다: {b['bands']!r}"
+        # U6-B(#976): 매체 **구획**은 사라졌다 — 한 목록에 서고 매체는 pill 이 가른다.
+        # 음성 단언으로 남긴다(되살아나면 두 열 그림이 다시 갈린다).
+        assert b["bands"] == [], (
+            f"매체 구획 캡션이 되살아났습니다(U6-B 에서 pill 로 대체): {b['bands']!r}"
         )
         assert b["txt_pick"] is True, (
-            "TXT 행의 선택 버튼(use-library)이 없습니다 — 목록만 있고 생성 경로가 닫혀 있습니다."
+            "TXT 항목(.pitem[data-side=tpl])이 없습니다 — 목록만 있고 생성 경로가 닫혀 있습니다."
+        )
+        assert b["txt_media_pill"] == "TXT", (
+            f"매체를 가르는 pill 이 TXT 를 말하지 않습니다: {b['txt_media_pill']!r}"
         )
         assert b["txt_tabs"] == 2, (
             f"TXT 세션 탭 수가 2가 아닙니다(파일 이름 탭은 HWPX 속성): {b['txt_tabs']!r}"
@@ -1525,8 +1530,10 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        assert t["toolbar"] == [True, True, True], (
-            "상단 행동 줄(가져오기·새 TXT·새로고침 — .tpl-libbar 승계) 소실:"
+        # U6-B(#976): 좌 열 동사는 넷이다 — 바닥의 「파일 가져오기…」·「서식 폴더 설정」·
+        # 「새 TXT 템플릿…」과 머리의 「새로 읽기」. 「폴더에서 보기」는 PathActions 가 진다.
+        assert t["toolbar"] == [True, True, True, True], (
+            "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기) 소실:"
             f" {t['toolbar']!r}"
         )
         assert t["retired_folder_import"] is True, (
@@ -1552,7 +1559,7 @@ class TestWebSelftestGate:
         )
         assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
         assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
-        assert t["band_caption"] is True, "밴드 캡션(개수·루트 경로 — 점검표 10행)이 없습니다."
+        assert t["band_caption"] is True, "좌 열 머리의 「서식 폴더」 부제가 없습니다."
         # HWPX 행 ⋮ = [링1 상태 동사] — 소비 동사 없음(행 버튼 소유, 같은 동사 2벌 금지).
         # TXT 행 ⋮ = [내용 편집]. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서, 「삭제」는
         # U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
@@ -1720,25 +1727,96 @@ class TestWebSelftestGate:
         # 에디터 1단계 피커 — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)
         # 으로 실 WebView2 에 서는지. 접힌 그룹 행 제외·현 선택 표지·필터 고지·퇴화 평면 되읽기.
         e = selftest_result["editor_lib"]
-        assert e.get("error") is None, f"에디터 피커 프로브 예외: {e.get('error')!r}"
-        # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
+        assert e.get("error") is None, f"고르기 화면 프로브 예외: {e.get('error')!r}"
+        # ① 두 열이 각자 채널로 선다(U6-B #976). 구획 헤더는 U4 §2-30 에서 사라졌다.
         assert e["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {e!r}"
-        assert e["rows_visible"] == 4, f"평면 밴드의 행이 전부 서지 않았습니다: {e!r}"
-        # 선택 전용 — 현 선택은 「선택됨」(버튼 아님), 나머지 가시 행만 「이 템플릿으로」.
-        assert e["current_marked"] == 1, f"현 선택 표지가 다릅니다: {e!r}"
-        assert e["pick_btns"] == 3, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
-        assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
-        # F6 PR-B — 단일 매체 고지(「HWPX 서식만」)는 2밴드 각자의 산출물 고지로 대체됐다.
-        assert e["filter_notice"] is True, "매체 밴드 고지(파일 생성/복사)가 렌더되지 않았습니다."
-        # 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
+        assert e["tpl_items"] == 3, f"좌 열 항목이 전부 서지 않았습니다: {e!r}"
+        assert e["dat_items"] == 2, f"우 열 항목이 전부 서지 않았습니다: {e!r}"
+        assert e["import_btn"] is True, "「파일 가져오기…」 어포던스가 없습니다."
+        assert e["browse_btn"] is True, (
+            "우 열 「파일 찾아보기…」가 없습니다 — 데이터를 고르는 문이 닫혀 있습니다."
+        )
+        # F6 PR-B 의 매체 고지 두 줄은 U6-B 에서 걷혔다(매체는 pill 하나가 말한다).
+        assert e["filter_notice"] is False, (
+            "퇴역한 매체 고지가 되살아났습니다 — 매체는 pill 이 말합니다."
+        )
+        # 변환 전 항목은 **숨기지 않고** 비활성 + 사유이고, 끌 수도 없다(U6 §2.3).
+        assert e["blocked_shown"] is True, "변환 전 항목이 목록에서 사라졌습니다(조용한 은닉)."
+        assert e["blocked_reason"] is True, (
+            "비활성 항목의 부제가 사유를 지지 않습니다 — 왜 못 고르는지 화면이 말해야 합니다."
+        )
+        assert e["blocked_not_draggable"] is True, (
+            "고를 수 없는 항목이 draggable 입니다 — 끌 수 있으면 놓을 수 있다고 읽힙니다."
+        )
+        # 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임된다.
         assert e["fname_ellipsis"] == "ellipsis", (
             f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
         )
-        assert e["fname_minwidth"] == "0px", (
-            f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
+        # ② 클릭 둘 = 등록된 액션 둘(템플릿 먼저). 사이의 `mapping_reset_stakes` 는 **질의**다:
+        #    확정 매핑이 걸린 데이터 교체는 고르기 **전에** 한 번 묻는다는 선행 규율이고,
+        #    수치를 Python 이 지금 판정하므로(웹 지역 스냅샷 금지) 왕복이 하나 앞선다.
+        #    순서가 계약이다 — 이 질의가 `use_pool_data` 뒤로 가면 파괴를 승인시킨 뒤 묻는 꼴이다.
+        assert e["click_calls"] == [
+            ["editor", "use_library_template"],
+            ["editor", "mapping_reset_stakes"],
+            ["editor", "use_pool_data"],
+        ], f"클릭 둘이 발행한 액션이 계약과 다릅니다: {e['click_calls']!r}"
+        # ③ 끌어 놓기 = **같은 액션 두 번**(새 액션 0). 형식·강조·정리까지 되읽는다.
+        assert e["drag_payload"] == "tpl:c.hwpx", (
+            f"dataTransfer 형식이 `<side>:<key>` 가 아닙니다: {e['drag_payload']!r}"
         )
-        # 밴드는 언제나 평면이다(U4 §2-30) — 스냅샷이 바뀌어도 헤더는 서지 않는다.
-        assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"평면 위반: {e!r}"
+        assert e["drag_over_accepted"] is True, "상대 열 항목 위에서 드롭이 허용되지 않습니다."
+        assert e["drag_target_marked"] is True, "드롭 대상 강조(.drop-target)가 서지 않습니다."
+        assert e["drag_target_cleared"] is True, "드롭 뒤 강조가 남았습니다."
+        assert e["drop_matches_click"] is True, (
+            "끌어 놓기가 클릭과 다른 액션을 발행했습니다"
+            f" (클릭 {e['click_calls']!r} · 드롭 {e['drop_calls']!r})."
+        )
+        # ④ 같은 열끼리는 짝이 아니다 — 발신 0(음성 대조).
+        assert e["same_side_drop_calls"] == 0, (
+            f"같은 열 안에서 드롭이 발신을 냈습니다: {e['same_side_drop_calls']!r}"
+        )
+        # ⑤ 비활성 항목 클릭은 조용히 삼켜지지 않는다 — 발신 0 + 인라인 사유.
+        assert e["blocked_click_calls"] == 0, (
+            f"고를 수 없는 항목이 발신을 냈습니다: {e['blocked_click_calls']!r}"
+        )
+        assert e["blocked_notice"] is True, (
+            "비활성 항목 클릭이 조용히 무시됐습니다 — 사유를 인라인으로 재진술해야 합니다."
+        )
+        # ⑥ 연결 카드는 Python 이 낸 수치·라벨 그대로다.
+        assert "a.hwpx ⟷ 7월목록.xlsx" in e["card_text"], f"연결 카드 짝 표기: {e['card_text']!r}"
+        assert "필드 12개 · 열 18개" in e["card_text"], f"연결 카드 규모: {e['card_text']!r}"
+        assert "자동 연결 10" in e["card_text"] and "확인 필요 2" in e["card_text"], (
+            f"연결 카드 수치(basis=preview 어휘): {e['card_text']!r}"
+        )
+        assert e["wire_live"] is True, "둘 다 골랐는데 연결선이 살아나지 않았습니다."
+        assert e["cta_enabled"] is True, "둘 다 골랐는데 「연결 확인으로」가 잠겨 있습니다."
+        assert "시트: 물품" in e["current_restated"], (
+            f"현재 데이터가 시트를 재진술하지 않습니다: {e['current_restated']!r}"
+        )
+        assert "헤더 1행" in e["current_restated"] and "12행" in e["current_restated"], (
+            f"현재 데이터가 헤더 행·행 수를 재진술하지 않습니다: {e['current_restated']!r}"
+        )
+        assert e["pool_current_marked"] == 1, (
+            f"겨눈 풀 항목의 선택 표지가 다릅니다: {e['pool_current_marked']!r}"
+        )
+        # 이미 고른 항목 재선택은 **무동작**이다(리뷰 1) — 통과시키면 세션이 통째로 끊긴다.
+        assert e["reselect_calls"] == 0, (
+            f"이미 고른 템플릿을 다시 눌러 발신이 나갔습니다: {e['reselect_calls']!r}"
+        )
+        assert e["reselect_keeps_mark"] == 1, "재선택이 선택 표지를 흔들었습니다."
+        # 관리 동사 연타는 한 번만 나간다(리뷰 6) — 두 벌 확인 모달·두 번 확정 금지.
+        assert e["manage_verb_present"] is True, "우 열에 관리 동사가 서지 않았습니다."
+        assert e["double_fire_calls"] == 1, (
+            f"동사 연타가 두 번 발신됐습니다: {e['double_fire_calls']!r}"
+        )
+        # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
+        assert e["half_cta_disabled"] is True, (
+            "데이터 없이 「연결 확인으로」가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."
+        )
+        assert "오른쪽에서 데이터를 고르세요" in e["half_block_reason"], (
+            f"전진 차단 사유가 Python 문안 그대로가 아닙니다: {e['half_block_reason']!r}"
+        )
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 본문 존 한 줄과 섞이지 않고 차단 배너 + 행동 링크로

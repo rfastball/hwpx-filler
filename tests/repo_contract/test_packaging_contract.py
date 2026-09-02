@@ -697,3 +697,60 @@ def test_installer_wipe_path_cannot_fire_silently() -> None:
         "데이터 홈 해석이 기본 위치(~/.hwpxfiller)를 보지 않습니다 — "
         "host/locations.py 와 해석 규칙이 갈라졌습니다"
     )
+
+
+def _web_entry_module():
+    """`packaging/hwpx_filler_web_entry.py` 를 **모듈로** 싣는다(`__main__` 가드는 안 돈다)."""
+    spec = importlib.util.spec_from_file_location("hwpx_filler_web_entry", WEB_ENTRY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_packaged_selfcheck_smoke_runs_on_the_current_snapshot_contract(
+    tmp_path, monkeypatch
+) -> None:
+    """포터블 selfcheck 의 ViewModel 스모크는 **순수 레인에서** 돈다(U6-B #976).
+
+    이 스모크는 `packaging/` 에 살아서 어떤 게이트도 보지 않았다 — Ruff·pytest 는 `src
+    tests scripts` 만 본다(CLAUDE.md). U6-B 가 편집기 스냅샷의 ``library`` 존을 퇴역시켰을
+    때 그 사실을 아무도 못 봤고, 결과는 창 없는 exe(`console=False`)의 **예외 대화상자**였다:
+    `KeyError` 하나가 29분 침묵이 되어 CI 잡 상한에 취소됐다(실측).
+
+    그래서 스모크 몸통을 함수로 떼어 여기서 부른다. 스냅샷 계약이 갈리면 30분짜리 패키징
+    잡이 아니라 **이 순수 테스트**가 먼저 빨강이 된다. `web_artifact()` 는 부르지 않는다 —
+    그 축은 봉인 산출물 계약(`tests/artifact_contract`)의 일이고, 여기서 재는 것은
+    「번들에서 컨트롤러 둘과 링1 VM 이 현 계약으로 도는가」다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    module = _web_entry_module()
+
+    vm_ok, txt_names, field_count = module.viewmodel_smoke(tmp_path / "root")
+
+    assert vm_ok is True, "포터블 selfcheck 스모크가 현 스냅샷 계약에서 실패합니다."
+    assert txt_names == ["샘플"], f"TXT 목록 정본(`tpl` 채널)이 다릅니다: {txt_names!r}"
+    assert field_count == 2
+
+
+def test_windowless_selfcheck_turns_an_exception_into_a_finite_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """창 없는 exe 는 **매달리지 않는다** — 예외는 종료코드와 사유가 된다(#976).
+
+    `console=False` 인 exe 의 처리되지 않은 예외는 PyInstaller traceback **대화상자**로 뜬다.
+    아무도 누를 수 없는 그 창이 프로세스를 영영 붙들고, 호출자(`packaging/build.ps1` 의
+    `Start-Process -Wait`)에는 시한이 없어 CI 잡 상한이 유일한 그물이 된다. 사유는 증거
+    파일과 stderr **둘 다**에 남아야 한다 — 파일은 게이트가, stderr 는 사람이 읽는다.
+    """
+    module = _web_entry_module()
+    evidence = tmp_path / "evidence" / "selfcheck.json"
+    monkeypatch.setenv("HWPX_SELFCHECK_OUT", str(evidence))
+    monkeypatch.setattr(
+        module, "_selfcheck", lambda: (_ for _ in ()).throw(KeyError("library"))
+    )
+
+    assert module._selfcheck_guarded() == 2, "예외가 종료코드로 착지하지 않았습니다."
+    written = json.loads(evidence.read_text(encoding="utf-8"))
+    assert written["viewmodel_ok"] is False
+    assert "KeyError" in written["error"] and "library" in written["error"]

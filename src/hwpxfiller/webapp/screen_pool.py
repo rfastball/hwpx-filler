@@ -62,7 +62,7 @@ from ..application.dataset_pool import (
     resolve_pclm_db,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference, pclm_identity
+from ..domain.dataset_reference import STATUS_ACTIVE, DatasetReference, pclm_identity
 from ..domain.pclm_views import (
     PCLM_DOC_VIEWS,
     PCLM_VIEW_DESCS,
@@ -78,12 +78,40 @@ __all__ = [
     "bound_state",
     "confirm_basis",
     "display_reference",
+    "select_block_reason",
 ]
 
 
 def display_reference(item: DatasetReference) -> str:
     """재진술 문안에 쓰는 **표시용** 참조 요약 — 결속 재료가 아니다(모듈 독스트링 참조)."""
     return reference_summary(item)
+
+
+def select_block_reason(row) -> str:
+    """이 등록 데이터를 작업 데이터로 쓸 수 **없으면** 사유, 쓸 수 있으면 ``""``.
+
+    **판정 자리는 여기 하나**다(U6-B #976). 종전에는 셋이 각자 답했다: 데이터 선택
+    다이얼로그의 웹 함수(`usableReason` — `status`·`missing` 으로 문장을 다시 지었다),
+    편집기 축약 목록의 `screen_editor.pool_option_block`, 그리고 실제 마운트 관문
+    (`screens.load_pool_into`). 앞의 둘은 같은 상태를 서로 다른 어휘로 말했고, 두 표면이
+    한 컴포넌트가 되면서 그 어긋남이 곧 화면 안에서 드러난다 — 그래서 스냅샷 행이
+    판정을 진다. 마운트 관문은 그대로 남는다(표면 판정은 심층 방어가 아니다).
+
+    **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5 · 나라장터 동결 규율과 같은 줄):
+    목록에서 지우면 「활성화」·「다시 연결」 동사에 닿을 길이 함께 사라진다.
+
+    **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
+    행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다.
+    """
+    if row.kind not in ("excel", "pclm"):
+        return f"{row.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
+    if row.status != STATUS_ACTIVE:
+        return "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다."
+    if reference_missing(row.locate_path):
+        if row.kind == "pclm":
+            return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
+        return "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다."
+    return ""
 
 
 class PoolController:
@@ -118,26 +146,30 @@ class PoolController:
 
     # ------------------------------------------------------------- 스냅샷
     def _rows(self) -> "list[dict]":
-        return [
-            {
-                "key": r.key,  # 슬롯 키(§5.3) — 행동(사용·보관·활성화·삭제·다시 연결)의 겨눔 대상
-                "name": r.name,
-                "kind": r.kind,
-                "kind_label": r.kind_label,
-                "status": r.status,
-                "badge_label": r.badge_label,
-                "badge_level": r.badge_level,
-                "reference": r.reference,
-                "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
-                "sheet": r.sheet,  # 다시 연결 프리필(#67)
-                # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
-                # 판정은 공유 술어(U3-07 #880) — 부팅 자동 마운트가 같은 것을 본다.
-                "missing": reference_missing(r.locate_path),
-                "note": r.note,
-                "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
-            }
-            for r in self.vm.rows()
-        ]
+        return [self._row(r) for r in self.vm.rows()]
+
+    def _row(self, r) -> dict:
+        reason = select_block_reason(r)
+        return {
+            "key": r.key,  # 슬롯 키(§5.3) — 행동(사용·보관·활성화·삭제·다시 연결)의 겨눔 대상
+            "name": r.name,
+            "kind": r.kind,
+            "kind_label": r.kind_label,
+            "status": r.status,
+            "badge_label": r.badge_label,
+            "badge_level": r.badge_level,
+            "reference": r.reference,
+            "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
+            "sheet": r.sheet,  # 다시 연결 프리필(#67)
+            # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
+            # 판정은 공유 술어(U3-07 #880) — 부팅 자동 마운트가 같은 것을 본다.
+            "missing": reference_missing(r.locate_path),
+            "note": r.note,
+            "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
+            # 「이 데이터를 작업에 쓸 수 있는가」 + 사유 — 판정 자리는 하나다(U6-B #976).
+            "selectable": not reason,
+            "select_block_reason": reason,
+        }
 
     def _corrupted_rows(self) -> "list[dict]":
         """격리된 손상 파일을 웹이 시끄럽게 표면화할 행으로(RC-05 — 조용한 은닉 금지)."""

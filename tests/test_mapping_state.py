@@ -21,6 +21,7 @@ from hwpxfiller.gui.mapping_state import (
     MappingModel,
     RowState,
     default_transform_for,
+    pairing_preview,
 )
 
 #: 고정 기준 시각 — 「오늘 날짜」 단언은 시계를 고정해야 결정론적이다.
@@ -688,3 +689,31 @@ def test_bind_column_clears_const_and_unbind_resets():
     assert m.rows[0].source == "을" and m.rows[0].type == "amount" and m.rows[0].const == ""
     m.unbind(0)
     assert m.rows[0].source == "" and m.rows[0].is_system_owned()   # 재제안 대기(값 동결 없음)
+
+
+# ------------------------------------------------ 고르기 연결 카드 미리보기(U6-B #976)
+def test_pairing_preview_splits_exactly_like_suggest_mappings():
+    """카드의 「자동 연결 n」은 2단계가 실제로 세울 제안 수와 **정의상** 같아야 한다.
+
+    수치를 따로 지으면 1단계가 약속한 것과 2단계가 보여 주는 것이 갈린다 — 그래서 같은
+    순수 함수(:func:`~hwpxfiller.domain.mapping.suggest_mappings`)를 읽기 전용으로 한 번
+    돌려 세기만 한다. 그 동일성을 여기서 기계로 대조한다.
+    """
+    from hwpxfiller.domain.mapping import suggest_mappings
+
+    fields = [f.name for f in _schema().fields]
+    sources = list(NARA_ALIASES)
+    auto, confirm = pairing_preview(fields, sources)
+    suggested = {m.template_field for m in suggest_mappings(fields, sources)}
+    assert auto == len(suggested)
+    assert auto + confirm == len(fields)
+    # 이 스키마의 마지막 필드는 어느 소스와도 안 맞는다 — 확인 필요가 최소 1건이다.
+    assert confirm >= 1
+    assert "존재하지않는들판xyz" not in suggested
+
+
+def test_pairing_preview_is_all_confirm_without_sources():
+    """소스가 없으면 제안이 설 수 없다 — 전부 확인 필요다(빈 자동 연결을 지어내지 않는다)."""
+    fields = [f.name for f in _schema().fields]
+    assert pairing_preview(fields, []) == (0, len(fields))
+    assert pairing_preview([], ["아무거나"]) == (0, 0)

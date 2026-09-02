@@ -75,11 +75,14 @@ def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Pat
 # =============================================== 수용기준 1 — 상태별 게이트 액션
 def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
+    # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
+    # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
+    # 그래서 COMPILED·FILLED 는 동사가 없고 표면은 그 사실을 비활성 + 사유로 그린다.
     expected = {
         CompileState.RAW: ["compile"],
         CompileState.PARTIAL: ["compile", "review"],
-        CompileState.COMPILED: ["preview", "make_job"],
-        CompileState.FILLED: ["preview"],
+        CompileState.COMPILED: [],
+        CompileState.FILLED: [],
         None: [],
     }
     for state, keys in expected.items():
@@ -91,7 +94,7 @@ def test_action_matrix_and_vm_delegation():
     vm = TemplateManagerViewModel(
         paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
     )
-    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
+    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == []
 
 
 def test_library_scan_is_recursive(tmp_path):
@@ -168,9 +171,12 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert by_name["raw"].state == CompileState.RAW
     assert [a.key for a in by_name["raw"].actions()] == ["compile"]
     assert by_name["comp"].state == CompileState.COMPILED
-    assert [a.key for a in by_name["comp"].actions()] == ["preview", "make_job"]
+    assert [a.key for a in by_name["comp"].actions()] == []
     assert by_name["fill"].state == CompileState.FILLED
-    assert [a.key for a in by_name["fill"].actions()] == ["preview"]
+    assert [a.key for a in by_name["fill"].actions()] == []
+    # U6-B: 「고를 수 있는가」와 사유도 같은 행이 진다 — 변환 전은 비활성 + 사유다.
+    assert by_name["comp"].select_block_reason() == ""
+    assert "누름틀·구간 변환" in by_name["raw"].select_block_reason()
     # 배지·상세가 성형돼 표현 계층이 읽을 수 있다.
     assert by_name["raw"].badge_label == "원문"
     assert "필드" in by_name["comp"].detail_line()
@@ -198,7 +204,8 @@ def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
     assert template_compile_status(str(path)).state == CompileState.COMPILED
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
-    assert [a.key for a in row.actions()] == ["preview", "make_job"]
+    assert [a.key for a in row.actions()] == []
+    assert row.select_block_reason() == ""   # 변환을 마쳤으니 고를 수 있다
 
 
 def test_apply_fieldize_advances_partial_to_compiled(tmp_path):
@@ -695,3 +702,38 @@ def test_row_without_notation_says_nothing_about_it(tmp_path):
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
     assert "구간 표기" not in row.detail_line()
+
+
+# ------------------------------- U6-B 리뷰 8 — TXT 행도 같은 성형 함수를 지난다
+def test_text_rows_share_the_ring1_wording_with_hwpx(tmp_path):
+    """「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」는 **한 벌**이다.
+
+    종전에는 링2 가 TXT 밴드용으로 그 셋을 리터럴로 다시 지었다. 그러면 링1 문안을 고쳐도
+    TXT 밴드만 옛말을 계속 한다 — 같은 사실이 두 어휘를 갖는 자리라 성형 함수를 공유한다.
+    갈리는 축은 **변환 축의 유무** 하나이고, 그것이 `media` 다.
+    """
+    from hwpxfiller.domain.template_status import TemplateStatus
+    from hwpxfiller.gui.template_manager_state import TemplateRow
+
+    txt_ok = TemplateRow.from_text(Path("C:/lib/기안.txt"), 3)
+    hwpx_ok = TemplateRow.from_status(
+        Path("C:/lib/서식.hwpx"),
+        TemplateStatus(state=CompileState.COMPILED, field_n=3, compilable_n=0,
+                       skipped_n=0, stray_n=0),
+    )
+    assert txt_ok.detail_line() == hwpx_ok.detail_line() == "필드 3개"
+    # 변환 축이 없는 매체는 `state=None` 이어도 고를 수 있다(hwpx 라면 「상태 미상」이다).
+    assert txt_ok.select_block_reason() == ""
+    assert hwpx_ok.select_block_reason() == ""
+
+    txt_bad = TemplateRow.from_text(Path("C:/lib/손상.txt"), 0, "cp949 로 저장된 파일")
+    hwpx_bad = TemplateRow.from_error(Path("C:/lib/손상.hwpx"), "cp949 로 저장된 파일")
+    assert txt_bad.detail_line() == hwpx_bad.detail_line()
+    assert txt_bad.select_block_reason() == hwpx_bad.select_block_reason()
+    assert "읽을 수 없어 고를 수 없습니다" in txt_bad.select_block_reason()
+
+    # `state=None` 이 hwpx 에서는 사유가 된다 — 두 매체가 같은 함수를 쓰되 축이 갈린다.
+    assert "상태를 확인할 수 없어" in hwpx_bad.__class__(
+        name="x", path="x", state=None, badge_label="", badge_level="muted",
+        field_count=0, compilable_n=0, skipped_n=0, stray_n=0,
+    ).select_block_reason()

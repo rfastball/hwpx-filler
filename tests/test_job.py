@@ -1924,3 +1924,113 @@ def test_save_reads_the_template_root_exactly_once(tmp_path):
     reads.clear()
     reg.save(Job(name="A", template_path=str(root / "t.hwpx")))   # 자기 갱신(직전 판본 읽기 포함)
     assert len(reads) == 1, f"재저장 한 번에 루트를 {len(reads)}회 읽었습니다."
+
+
+# ------------------------- durable 훼손의 남은 갈래(무marker 계약 — 커버리지 하한)
+def test_previous_rules_field_entry_shape_is_loud():
+    """``previous_rules.fields`` 의 **항목**도 형상 검증을 지난다(이름=str · 축=dict).
+
+    바깥에서 훼손된 durable 이 여기를 통과하면 「무엇이었나」를 말하는 증거가 조용히
+    다른 모양이 된다 — 그 뒤의 판본 비교가 거짓말을 하게 되므로 읽는 자리에서 막는다.
+    """
+    d = encode_job(_job())
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {1: {}}}
+    with pytest.raises(ValueError, match="필드이름"):        # 이름이 문자열이 아니다
+        decode_job(d)
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": "축아님"}}
+    with pytest.raises(ValueError, match="필드이름"):        # 축이 사전이 아니다
+        decode_job(d)
+
+
+def test_previous_rules_template_and_filename_must_be_strings():
+    """직전 판본의 template·filename 은 문자열이다 — 타입 훼손을 조용히 통과시키지 않는다."""
+    from hwpxfiller.domain.job import rules_values
+
+    d = encode_job(_job())
+    base = rules_values(_job())
+    d["previous_rules"] = {**base, "template": 3}
+    with pytest.raises(ValueError, match="문자열이어야"):
+        decode_job(d)
+    d["previous_rules"] = {**base, "filename": None}
+    with pytest.raises(ValueError, match="문자열이어야"):
+        decode_job(d)
+
+
+def test_assign_authority_id_is_idempotent_and_keeps_the_first_binding(tmp_path):
+    """권위 id 는 **최초 1회만** 쓴다(S3-09) — 두 번째 발급은 기존 값을 이기지 못한다.
+
+    다시 쓰면 그 작업의 적용 이력(epoch·Preparation)이 통째로 남의 것이 된다. 경합하는
+    두 발급 중 먼저 커밋된 쪽이 이기고, 호출자는 **반환 Job 의 값**을 정본으로 쓴다.
+    """
+    registry = JobRegistry(tmp_path / "jobs")
+    registry.save(_job())
+    first = registry.assign_authority_id("입찰공고서", "auth-1")
+    assert first.authority_id == "auth-1"
+
+    second = registry.assign_authority_id("입찰공고서", "auth-2")
+    assert second.authority_id == "auth-1", "이미 결속된 권위를 덮었습니다"
+    assert registry.load("입찰공고서").authority_id == "auth-1"
+
+
+def test_a_directory_named_like_a_template_is_not_migrated(tmp_path, monkeypatch):
+    """이관은 **파일만** 옮긴다 — ``.txt`` 로 끝나는 폴더는 건드리지 않는다(U6-A §4).
+
+    ``rglob`` 은 이름만 보므로 폴더도 걸린다. 그것을 ``shutil.move`` 로 넘기면 폴더째
+    옮겨져 새 루트에 목록이 읽지 못하는 하위트리가 생긴다 — 걸러 내되 사유를 지어내지도
+    않는다(안 옮긴 것이 아니라 애초에 옮길 대상이 아니다).
+    """
+    from hwpxfiller.external.template_root import (
+        TemplateRoot,
+        migrate_legacy_text_templates,
+    )
+
+    home = tmp_path / "home"
+    legacy = home / "text_templates"
+    (legacy / "폴더인데.txt").mkdir(parents=True)         # 이름만 템플릿인 **폴더**
+    (legacy / "진짜.txt").write_text("{{건명}}", encoding="utf-8")
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+
+    result = migrate_legacy_text_templates(home=home, root=TemplateRoot())
+
+    assert result.moved == ["진짜.txt"], f"파일 하나만 옮겨야 합니다: {result!r}"
+    assert result.skipped == [], "옮길 대상이 아닌 것을 건너뛴 것으로 세지 않는다"
+    assert (legacy / "폴더인데.txt").is_dir(), "폴더가 옮겨졌습니다"
+
+
+def test_excluded_subtrees_are_skipped_with_a_reason(tmp_path, monkeypatch):
+    """나열이 거르는 하위트리(``Results``)는 옮기지 않고 **사유와 함께** 남긴다.
+
+    옮겨 봐야 새 루트에서도 걸러져 목록에서 사라진다 — 사라지는 것이 아니라 「안 옮겼다」는
+    사실이 남아야 조용한 증발이 아니다.
+    """
+    from hwpxfiller.external.template_root import (
+        TemplateRoot,
+        migrate_legacy_text_templates,
+    )
+
+    home = tmp_path / "home"
+    legacy = home / "text_templates"
+    (legacy / "Results").mkdir(parents=True)
+    (legacy / "Results" / "산출.txt").write_text("{{건명}}", encoding="utf-8")
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+
+    result = migrate_legacy_text_templates(home=home, root=TemplateRoot())
+
+    assert result.moved == []
+    assert [name for name, _ in result.skipped] == ["Results/산출.txt"]
+    assert "읽지 않는 하위 폴더" in result.skipped[0][1]
+    assert (legacy / "Results" / "산출.txt").is_file(), "제외 대상이 옮겨졌습니다"
+
+
+def test_source_file_exists_answers_for_files_only(tmp_path):
+    """가져오기 원본 존재 판정은 **파일**만 참이다 — 폴더를 통과시키면 복사가 늦게 터진다."""
+    from hwpxfiller.external.template_files import TemplateFileStore
+
+    live = tmp_path / "서식.hwpx"
+    live.write_bytes(b"x")
+    folder = tmp_path / "폴더.hwpx"
+    folder.mkdir()
+
+    assert TemplateFileStore.source_file_exists(live) is True
+    assert TemplateFileStore.source_file_exists(folder) is False
+    assert TemplateFileStore.source_file_exists(tmp_path / "없음.hwpx") is False

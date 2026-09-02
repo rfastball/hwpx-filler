@@ -108,9 +108,17 @@ def test_initial_serializes_bands_and_ring1_actions(tmp_path, monkeypatch):
     # 드리프트 UI 미노출(10F2FF98-D) — 스냅샷에 drift 표면이 없다.
     assert "drift" not in snap and not any("drift" in k for k in snap)
     band = snap["hwpx"]
-    comp_actions = [a["key"] for a in _item(band, "comp")["actions"]]
-    assert "preview" not in comp_actions and "make_job" in comp_actions
+    # U6-B(#976): 링2 필터가 사라지고 목록은 **링1 그대로**다 — `preview`·`make_job` 은
+    # 소비자 0 이라 링1 에서 사슬째 걷혔으므로 COMPILED 행의 동사는 0 이다.
+    assert [a["key"] for a in _item(band, "comp")["actions"]] == []
     assert [a["key"] for a in _item(band, "raw")["actions"]] == ["compile"]
+    # 「고를 수 있는가」 + 사유는 행이 진다(고르기 좌 열의 단일 판정 출처).
+    assert _item(band, "comp")["selectable"] is True
+    assert _item(band, "comp")["select_block_reason"] == ""
+    assert _item(band, "raw")["selectable"] is False
+    assert "누름틀·구간 변환" in _item(band, "raw")["select_block_reason"]
+    txt_row = _item(snap["txt"], "온나라_기안")
+    assert txt_row["selectable"] is True and txt_row["detail"] == "필드 1개"
 
 
 def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):

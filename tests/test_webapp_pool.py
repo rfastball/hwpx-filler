@@ -909,3 +909,44 @@ def test_pclm_db_is_reachable_from_the_locate_whitelist(tmp_path):
     owned = collect_owned_paths(
         JobRegistry(tmp_path / "jobs"), reg, base_dir=tmp_path)
     assert owned == {norm_path(db, tmp_path)}
+
+
+# ------------------------------- 「쓸 수 있는가」의 단일 판정 자리(U6-B #976)
+def test_rows_carry_the_single_selection_verdict_and_its_reason(tmp_path):
+    """행이 「이 데이터를 작업에 쓸 수 있나」와 그 사유를 진다 — 표면은 다시 판정하지 않는다.
+
+    같은 스냅샷을 두 표면이 소비한다(「데이터 선택」 다이얼로그 · 편집기 고르기 우 열).
+    종전에는 두 표면이 각자 문장을 지어 같은 상태가 두 어휘를 가졌다 — 그 재판정을 걷은
+    자리가 이 두 필드다. **숨기지 않고 비활성 + 사유**라 목록에는 그대로 선다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    live = tmp_path / "발주.xlsx"
+    live.write_bytes(b"x")
+    ctrl.dispatch("register_excel", {"name": "살아있음", "path": str(live), "sheet": "s"})
+    ctrl.dispatch(
+        "register_excel",
+        {"name": "끊김", "path": str(tmp_path / "없음.xlsx"), "sheet": "s"},
+    )
+    rows = {r["name"]: r for r in ctrl.snapshot()["rows"]}
+    assert rows["살아있음"]["selectable"] is True
+    assert rows["살아있음"]["select_block_reason"] == ""
+    assert rows["끊김"]["selectable"] is False
+    assert "참조가 끊겼습니다" in rows["끊김"]["select_block_reason"]
+    assert "다시 연결" in rows["끊김"]["select_block_reason"]   # 엑셀에는 그 동사가 있다
+
+    # 보관은 숨기지 않고 활성화 동선을 지목한다(그 동사가 같은 행에 서 있다).
+    ctrl.dispatch("archive", {"key": rows["살아있음"]["key"]})
+    archived = {r["name"]: r for r in ctrl.snapshot()["rows"]}["살아있음"]
+    assert archived["selectable"] is False
+    assert "활성화" in archived["select_block_reason"]
+    assert [a["key"] for a in archived["actions"]] == ["activate", "delete"]
+
+
+def test_frozen_source_rows_are_refused_loudly_not_hidden(tmp_path):
+    """나라장터 항목은 숨기지 않고 **시끄럽게 거절**한다(동결 규율 — CLAUDE.md 작업 규율)."""
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.add(DatasetReference(name="나라 참조", kind="nara", opts={}))
+    ctrl.dispatch("refresh", {})
+    row = {r["name"]: r for r in ctrl.snapshot()["rows"]}["나라 참조"]
+    assert row["selectable"] is False
+    assert "작업 데이터로 연결할 수 없습니다" in row["select_block_reason"]

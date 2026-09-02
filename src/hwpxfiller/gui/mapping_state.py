@@ -56,6 +56,28 @@ STRUCTURE_NOTATION_BLOCK_MESSAGE = (
 )
 
 
+def pairing_preview(
+    template_fields: "list[str]", source_fields: "list[str]"
+) -> "tuple[int, int]":
+    """고르기 단계 연결 카드의 **읽기 전용** 수치 ``(자동 연결, 확인 필요)`` — 순수 함수.
+
+    U6-B(#976). 1단계는 매핑 모델을 만들지 **않는다**: 모델 생성은 2단계 진입의
+    ``_ensure_model`` 하나가 지고(전원 미확정 재생성·값 이월 재진술이 그 자리에 걸려
+    있다), 카드가 미리 만들면 고르기를 바꿔 보는 것만으로 그 전이가 돌아 확정이 조용히
+    무너진다. 그래서 여기서는 :func:`~hwpxfiller.domain.mapping.suggest_mappings` 를
+    **그대로** 한 번 돌려 세어 보기만 한다 — 같은 함수라 카드의 「자동 연결 n」과 2단계가
+    실제로 세우는 제안 행 수가 정의상 같다(수치를 따로 지으면 두 곳이 갈린다).
+
+    ``확인 필요`` 는 제안을 못 받은 나머지다. 확정/미확정 축은 여기 없다 — 그 축은 모델이
+    있을 때만 존재하고, 있으면 표면은 이 함수 대신 모델의 실제 수치를 읽는다(``basis``).
+    """
+    suggested = {
+        m.template_field for m in suggest_mappings(template_fields, source_fields)
+    }
+    auto = sum(1 for name in template_fields if name in suggested)
+    return auto, len(template_fields) - auto
+
+
 def default_transform_for(inferred_type: str) -> str:
     """스키마의 의미 타입에서 기본 값 유형을 유도한다(date→date, amount→amount, 그 외 text)."""
     return _DEFAULT_TYPE.get(inferred_type, "text")
