@@ -58,10 +58,6 @@ from .template_groups import (
     validate_template_name,
 )
 
-# HWPX 미리보기 액션은 작업 위저드와 중복이라 링2에서 노출하지 않는다(#13 10F2FF98-B).
-_HIDDEN_ACTIONS = frozenset({"preview"})
-
-
 class TemplateController:
     """템플릿 라이브러리 채널 — HWPX 라이브러리 VM + TXT 레지스트리 + 매체별 그룹 모델(webview 비의존)."""
 
@@ -181,11 +177,13 @@ class TemplateController:
                 "is_error": r.is_error,
                 # 채움 완화 사전 고지(#154) — 문안은 링1(describe_precheck_note) 확정.
                 "fill_warns": list(r.fill_warns),
-                # 미리보기 제외(10F2FF98-B) — 링1 seam 은 보존하되 노출 액션에서 뺀다.
-                "actions": [
-                    {"key": a.key, "label": a.label}
-                    for a in r.actions() if a.key not in _HIDDEN_ACTIONS
-                ],
+                # 링1 목록 **그대로**다(U6-B #976): `preview`·`make_job` 은 소비자 0 이라
+                # 링1 에서 사슬째 걷혔고, 링2 필터는 그와 함께 사라졌다.
+                "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
+                # 「이 템플릿으로 작업을 시작할 수 있는가」 — 판정·문안은 링1 하나(U6-B).
+                # 편집기 1단계 좌 열이 이 두 값으로 비활성 + 사유를 그린다.
+                "selectable": not r.select_block_reason(),
+                "select_block_reason": r.select_block_reason(),
             })
         return rows
 
@@ -206,6 +204,15 @@ class TemplateController:
                 "path": str(t.path),
                 "field_count": field_count,
                 "error": error,
+                # hwpx 밴드와 **같은 두 축**(U6-B #976) — 고르기 좌 열은 매체를 pill 로만
+                # 가르고 「고를 수 있나」는 한 어휘로 읽는다. TXT 는 변환 축이 없어 판독
+                # 실패 하나가 유일한 차단 사유다.
+                "selectable": not error,
+                "select_block_reason": (
+                    f"읽을 수 없어 고를 수 없습니다: {error}" if error else ""
+                ),
+                # 부제 정본 — hwpx 의 `detail` 자리(성형은 Python 하나가 진다).
+                "detail": f"필드 {field_count}개" if not error else f"읽기 실패: {error}",
             })
         return rows
 

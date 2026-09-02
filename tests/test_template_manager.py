@@ -75,11 +75,14 @@ def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Pat
 # =============================================== 수용기준 1 — 상태별 게이트 액션
 def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
+    # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
+    # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
+    # 그래서 COMPILED·FILLED 는 동사가 없고 표면은 그 사실을 비활성 + 사유로 그린다.
     expected = {
         CompileState.RAW: ["compile"],
         CompileState.PARTIAL: ["compile", "review"],
-        CompileState.COMPILED: ["preview", "make_job"],
-        CompileState.FILLED: ["preview"],
+        CompileState.COMPILED: [],
+        CompileState.FILLED: [],
         None: [],
     }
     for state, keys in expected.items():
@@ -91,7 +94,7 @@ def test_action_matrix_and_vm_delegation():
     vm = TemplateManagerViewModel(
         paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
     )
-    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
+    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == []
 
 
 def test_library_scan_is_recursive(tmp_path):
@@ -168,9 +171,12 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert by_name["raw"].state == CompileState.RAW
     assert [a.key for a in by_name["raw"].actions()] == ["compile"]
     assert by_name["comp"].state == CompileState.COMPILED
-    assert [a.key for a in by_name["comp"].actions()] == ["preview", "make_job"]
+    assert [a.key for a in by_name["comp"].actions()] == []
     assert by_name["fill"].state == CompileState.FILLED
-    assert [a.key for a in by_name["fill"].actions()] == ["preview"]
+    assert [a.key for a in by_name["fill"].actions()] == []
+    # U6-B: 「고를 수 있는가」와 사유도 같은 행이 진다 — 변환 전은 비활성 + 사유다.
+    assert by_name["comp"].select_block_reason() == ""
+    assert "누름틀·구간 변환" in by_name["raw"].select_block_reason()
     # 배지·상세가 성형돼 표현 계층이 읽을 수 있다.
     assert by_name["raw"].badge_label == "원문"
     assert "필드" in by_name["comp"].detail_line()
@@ -198,7 +204,8 @@ def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
     assert template_compile_status(str(path)).state == CompileState.COMPILED
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
-    assert [a.key for a in row.actions()] == ["preview", "make_job"]
+    assert [a.key for a in row.actions()] == []
+    assert row.select_block_reason() == ""   # 변환을 마쳤으니 고를 수 있다
 
 
 def test_apply_fieldize_advances_partial_to_compiled(tmp_path):

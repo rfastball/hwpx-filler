@@ -111,7 +111,6 @@ export const SCREEN_ACTIONS = {
     discard_patch: { required: [], optional: ["section"] },
     ack_gate: { required: [], optional: [] },
     dismiss_notice: { required: [], optional: [] },
-    pool_options: { required: [], optional: [] },
     use_pool_data: { required: ["key"], optional: [] },
     use_all_headers: { required: [], optional: [] },
     use_none: { required: [], optional: [] },

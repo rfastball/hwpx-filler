@@ -437,6 +437,7 @@ def test_confirm_blanks_notifies_only_when_rows_actually_move(tmp_path):
     ctrl, _ = _editor(tmp_path, notify)
     tpl = _txt_template(tmp_path, "결핍", "건명: {{건명}}\n보증금: {{계약보증금}}")
     ctrl.dispatch("use_library_template", {"path": str(tpl)})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 1단계 게이트(U6-B #976)
     ctrl.dispatch("goto_section", {"section": "binding"})
     seen.clear()
 

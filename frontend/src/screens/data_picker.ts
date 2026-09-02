@@ -7,7 +7,8 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
-import { PathActions } from "./path_actions.ts";
+import { PCLM_UNAVAILABLE, PoolSections, createPoolVerbs } from "./pool_list.ts";
+import type { PoolListHost } from "./pool_list.ts";
 
 type Obj = Record<string, any>;
 type Listener = () => void;
@@ -62,7 +63,6 @@ type RegState = {
 
 /** 시트 미선택 placeholder — 목록 첫 항목을 기본으로 세우지 않는다(사용자가 확정할 값이다). */
 const PCLM_VIEW_PLACEHOLDER = "시트를 고르세요";
-const PCLM_UNAVAILABLE = "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요.";
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
@@ -255,47 +255,22 @@ export function createDataPickerController(args: {
     }
   }
 
-  async function poolAction(action: string, row: Obj): Promise<void> {
-    try {
-      if (state.loading) {
-        patch({ status: "⚠ 불러오는 중입니다. 끝날 때까지 닫을 수 없습니다.", level: "danger" });
-        return;
-      }
-      if (action === "use") { await mountPinned(row.key, row.name); return; }
-      if (action === "relink") {
-        openRegDialog({
-          title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
-          name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,
-        });
-        return;
-      }
-      if (action === "delete") {
-        const first = await dispatch("pool", "delete", { key: row.key });
-        if (first.needs_confirm && await modal.confirm({
-          body: `${first.confirm_text}\n\n삭제할까요?`, confirmLabel: "삭제", cancelLabel: "취소", danger: true,
-        })) {
-          await dispatch("pool", "delete", { key: row.key, confirm: true, basis: first.basis });
-        }
-        return;
-      }
-      await dispatch("pool", action, { key: row.key });
-    } catch (error) {
-      patch({ status: `⚠ 고정한 데이터를 바꾸지 못했습니다:\n${String(error)}`, level: "danger" });
-    }
-  }
-
-  async function resolveDuplicate(keep: string): Promise<void> {
-    try {
-      const first = await dispatch("pool", "resolve_duplicate", { keep });
-      if (first.needs_confirm && await modal.confirm({
-        body: `${first.confirm_text}\n\n정리할까요?`, confirmLabel: "정리", cancelLabel: "취소", danger: true,
-      })) {
-        await dispatch("pool", "resolve_duplicate", { keep, confirm: true, basis: first.basis });
-      }
-    } catch (error) {
-      patch({ status: `⚠ 중복 등록을 정리하지 못했습니다:\n${String(error)}`, level: "danger" });
-    }
-  }
+  /* 관리 동사 한 벌은 **고르기 화면과 공유**한다(U6-B #976) — 같은 `pool` 채널, 같은
+     확인 왕복, 같은 지문 되싣기. 갈리는 것은 실패가 착지하는 자리와 「사용」의 몸통뿐이라
+     그 둘만 주입한다. */
+  const { poolAction, resolveDuplicate } = createPoolVerbs({
+    dispatch,
+    modal,
+    onError: (message: string) => { patch({ status: `⚠ ${message}`, level: "danger" }); },
+    onUse: (row: Obj) => mountPinned(row.key, row.name),
+    openRelink: (row: Obj) => openRegDialog({
+      title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
+      name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,
+    }),
+    busyReason: () => (
+      state.loading ? "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다." : ""
+    ),
+  });
 
   return {
     init(): Promise<unknown> { return args.runtime.loadInitial("pool"); },
@@ -363,39 +338,28 @@ export function createDataPickerController(args: {
 
 export type DataPickerController = ReturnType<typeof createDataPickerController>;
 
-function usableReason(row: Obj): string {
-  if (row.status !== "active") return "보관 항목입니다 — [활성화] 뒤에 쓸 수 있습니다";
-  if (row.missing) return "참조가 끊겼습니다 — [다시 연결] 뒤에 쓸 수 있습니다";
-  return "";
-}
-
-function PinnedRow(props: { row: Obj; controller: DataPickerController }): ReactNode {
-  const { row, controller } = props;
-  const reason = usableReason(row);
-  const actions = (row.actions || []).map((action: Obj) => h("button", {
-    className: "btn sm", "data-act": action.key, "data-key": row.key, "data-name": row.name,
-    "data-busy-lock": true, key: action.key,
-    onClick: () => { void controller.poolAction(action.key, row); },
-  }, action.label));
-  if (row.kind === "excel") actions.push(h("button", {
-    className: "btn sm", "data-act": "relink", "data-key": row.key, "data-name": row.name,
-    "data-busy-lock": true, key: "relink", onClick: () => { void controller.poolAction("relink", row); },
-  }, "다시 연결…"));
-  return h("div", { className: "tplcard pk-row", "data-row": row.key },
-    h("div", { className: "pk-info" },
-      h("div", { className: "tplcard-top" }, h("span", { className: "tplcard-name", title: row.reference }, row.name),
-        h("span", { className: "pill muted" }, row.kind_label),
-        h("span", { className: `pill ${row.badge_level}` }, row.badge_label),
-        row.missing ? h("span", { className: "pill danger" }, "참조 끊김") : null),
-      h("div", { className: "tplcard-meta muted pk-ref" }, h("span", null, row.reference),
-        h(PathActions as any, { client: controller.client, path: row.locate_path, notify: controller.notify })),
-      row.note || reason ? h("div", { className: "tplcard-meta muted" },
-        row.note ? h("span", { className: "pk-note" }, row.note) : null,
-        reason ? h("span", { className: "pk-note" }, reason) : null) : null),
-    h("div", { className: "tplcard-acts" },
-      h("button", { className: "btn sm primary", "data-act": "use", "data-key": row.key,
-        "data-name": row.name, disabled: !!reason, title: reason, "data-busy-lock": true,
-        onClick: () => { void controller.poolAction("use", row); } }, "이 데이터 사용"), ...actions));
+/** 이 다이얼로그가 몸통에 넘기는 호스트 포트 — 갈리는 것은 라벨·발행·id 접두 셋뿐이다.
+ *
+ *  좌표는 **불변**이다(`#dataPickerCurrent`·`#dataPickerPinned`·`#dataPickerBrowse`…):
+ *  이 화면을 겨눈 게이트가 이미 있고, 몸통을 공유한다는 것이 그 좌표를 바꿀 이유가 되지
+ *  않는다. 그래서 접두는 종전 id 를 글자 그대로 재생산한다. */
+function dialogHost(controller: DataPickerController, current: Obj): PoolListHost {
+  return {
+    idPrefix: "dataPicker",
+    chooseLabel: "이 데이터 사용",
+    onChoose: (row: Obj) => { void controller.poolAction("use", row); },
+    current,
+    /* 다이얼로그는 「지금 고른 것」을 겨눔 키가 아니라 「현재 데이터」 카드로 말한다 —
+       세션이 슬롯 키를 들고 다니지 않으므로 여기서 지어내지 않는다(추측 금지). */
+    currentKey: "",
+    openPin: controller.openPin,
+    browse: () => { void controller.browseFile(); },
+    openPclm: controller.openPclm,
+    poolAction: (action: string, row: Obj) => { void controller.poolAction(action, row); },
+    resolveDuplicate: (keep: string) => { void controller.resolveDuplicate(keep); },
+    client: controller.client,
+    notify: controller.notify,
+  };
 }
 
 export function DataPickerDialog(props: { controller: DataPickerController }): ReactNode {
@@ -409,52 +373,11 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
     controller.poolModel.subscribe, controller.poolModel.getSnapshot,
     controller.poolModel.getSnapshot);
   const current = state.session?.current || {};
-  const rows = pool?.rows || [];
   return h("div", { className: "modal-card data-picker" },
     h("h3", { id: "dataPickerTitle" }, "데이터 선택"),
     h("p", { id: "dataPickerNote", className: `note ${state.level === "danger" ? "dangerbox" : state.level === "ok" ? "okbox" : ""}`,
       role: "status", "aria-live": "polite", style: { display: state.status ? "" : "none", whiteSpace: "pre-line" } }, state.status),
-    h("section", { className: "picker-sec", "aria-labelledby": "dataPickerCurCap" },
-      h("div", { className: "cap", id: "dataPickerCurCap" }, "현재 데이터"),
-      h("div", { id: "dataPickerCurrent" }, current.label ? h("div", { className: "tplcard" },
-        h("div", { className: "tplcard-top" }, h("span", { className: "tplcard-name" }, current.label),
-          /* 자리 이름은 종류를 가리지 않고 「시트」 하나다 — 계약면도 사용자에겐 표 한 장이라
-             내부 어휘(뷰)를 표면에 세울 이유가 없다. 종류가 가르는 것은 **값의 표기**뿐이다
-             (#937): 계약 목록의 면 이름은 내부 이름이라 스냅샷 제목표로 옮겨 그린다. 그
-             표에 없는 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다. */
-          current.sheet ? h("span", { className: "muted" },
-            `시트: ${current.kind === "pclm"
-              ? (pool?.pclm?.titles || {})[current.sheet] || current.sheet
-              : current.sheet}`) : null,
-          h("span", { className: "pill ok" }, "사용 중")),
-        current.detail ? h("div", { className: "tplcard-meta muted" }, current.detail) : null,
-        current.origin === "file" && current.path ? h("div", { className: "tplcard-acts" },
-          h("button", { className: "btn sm", id: "dataPickerPin", "data-busy-lock": true, onClick: controller.openPin }, "이 데이터 고정…")) : null)
-        : h("p", { className: "muted capnote" }, "아직 데이터가 없습니다. 아래에서 고르세요."))),
-    h("section", { className: "picker-sec", "aria-labelledby": "dataPickerPinCap" },
-      h("div", { className: "cap", id: "dataPickerPinCap" }, "고정한 데이터"),
-      h("div", { id: "dataPickerPinned", className: "tpllist" },
-        pool === null ? h("p", { className: "muted capnote" }, "고정한 데이터를 읽는 중…")
-          : rows.length ? rows.map((row: Obj) => h(PinnedRow as any, { key: row.key, row, controller }))
-            : h("p", { className: "muted capnote" }, "고정한 데이터가 없습니다.")),
-      h("div", { id: "dataPickerDupes" }, ...(pool?.duplicates || []).map((group: Obj) =>
-        h("div", { className: "note warnbox", key: group.reference },
-          `⚠ 같은 데이터(${group.reference})를 가리키는 등록이 ${group.entries.length}건입니다. 남길 등록을 골라 정리하세요: `,
-          ...group.entries.map((entry: Obj) => h("button", { className: "btn sm", "data-dup-keep": entry.key,
-            "data-busy-lock": true, key: entry.key, onClick: () => { void controller.resolveDuplicate(entry.key); } }, `'${entry.name}' 남기기`))))),
-      h("div", { id: "dataPickerCorrupt" }, ...(pool?.corrupted || []).map((entry: Obj) =>
-        h("div", { className: "note dangerbox", key: entry.file }, `⚠ 손상된 등록 데이터: ${entry.file} — ${entry.error}`)))),
-    h("section", { className: "picker-sec", "aria-labelledby": "dataPickerOtherCap" },
-      h("div", { className: "cap", id: "dataPickerOtherCap" }, "다른 데이터"),
-      h("button", { className: "btn", id: "dataPickerBrowse", "data-busy-lock": true,
-        onClick: () => { void controller.browseFile(); } }, "파일 찾아보기…"),
-      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
-         둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
-         「눌러도 아무 일 없음」이 결함으로 읽힌다. 라벨의 괄호는 **확장자**다: 저쪽
-         프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
-      h("button", { className: "btn", id: "dataPickerPclm", "data-busy-lock": true,
-        disabled: !pool?.pclm, title: pool?.pclm ? "" : PCLM_UNAVAILABLE,
-        onClick: controller.openPclm }, "계약 목록(.db) 등록…")),
+    h(PoolSections as any, { host: dialogHost(controller, current), pool }),
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "dataPickerClose", onClick: controller.close }, "닫기")));
 }

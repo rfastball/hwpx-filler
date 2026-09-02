@@ -121,25 +121,29 @@ class TemplateAction:
 # 상태 → 허용 액션(순수 함수의 단일 출처). C5 수용기준 1이 이 표를 못박는다.
 #   RAW      → [누름틀·구간 변환]
 #   PARTIAL  → [마저 변환] [검토]
-#   COMPILED → [미리보기] [작업 만들기]
-#   FILLED   → [미리보기]
+#   COMPILED → (없음)
+#   FILLED   → (없음)
 #
 # RAW 라벨은 S8-03 에서 「누름틀 변환」→「누름틀·구간 변환」이 됐다: 같은 한 동사가 필드
 # 토큰과 **구간 표기**를 함께 변환하므로(:meth:`TemplateManagerViewModel.apply_convert`)
 # 라벨이 누름틀만 말하면 구간 마커가 조용히 바뀐 것처럼 보인다. PARTIAL 의 「마저 변환」은
 # 그대로다 — 같은 동사의 이어하기라 대상을 다시 열거하지 않는다(COPY_STYLE_GUIDE §2:
 # 버튼은 명사구·동사구, 상태 문맥은 배지가 이미 말한다).
+#
+# **U6-B(#976) — `preview`·`make_job` 퇴역**: 둘 다 살아 있는 표면에 소비자가 0 이었다.
+# `preview` 는 #13 결정(10F2FF98-B)으로 처음부터 노출되지 않았고, `make_job` 은 편집기
+# 1단계 항목 선택이 이미 지는 동사라 두 소비 표면(tpl 채널·편집기 피커)이 각자 필터
+# (`_HIDDEN_ACTIONS`·`_PICKER_HIDDEN_ACTIONS`)로 걷고 있었다 — 링2 두 곳이 링1 목록을
+# 다시 판정하던 자리다. 필터를 지우고 목록 자체를 줄인다: 그래서 COMPILED·FILLED 행의
+# 동사는 0 이고, 표면은 그 사실을 **비활성 + 사유**로 그린다(무반응 금지).
 _STATE_ACTIONS: "dict[CompileState, tuple[TemplateAction, ...]]" = {
     CompileState.RAW: (TemplateAction("compile", "누름틀·구간 변환"),),
     CompileState.PARTIAL: (
         TemplateAction("compile", "마저 변환"),
         TemplateAction("review", "검토"),
     ),
-    CompileState.COMPILED: (
-        TemplateAction("preview", "미리보기"),
-        TemplateAction("make_job", "작업 만들기"),
-    ),
-    CompileState.FILLED: (TemplateAction("preview", "미리보기"),),
+    CompileState.COMPILED: (),
+    CompileState.FILLED: (),
 }
 
 
@@ -342,6 +346,24 @@ class TemplateRow:
 
     def actions(self) -> "list[TemplateAction]":
         return available_actions(self.state)
+
+    def select_block_reason(self) -> str:
+        """이 템플릿으로 작업을 시작할 수 **없으면** 사유, 있으면 ``""`` (U6-B #976).
+
+        판정도 문안도 여기 한 곳이 낸다 — 표면이 ``state``·``badge_label`` 로 다시 판정하면
+        같은 상태가 두 어휘를 갖는다(데이터 풀의 ``select_block_reason`` 과 같은 문법).
+
+        **변환 전(RAW·PARTIAL)은 고를 수 없다**(U6 §2.3): 숨기지 않고 비활성 + 사유로
+        세운다 — 숨기면 사람이 넣어 둔 파일이 이유 없이 사라진 것으로 보이고, 그 침묵이
+        이 라운드가 고치는 결함류다. 수선 동사(「누름틀·구간 변환」)는 같은 행의 ⋮ 에 있다.
+        """
+        if self.is_error:
+            return f"읽을 수 없어 고를 수 없습니다: {self.error}"
+        if self.state is None:
+            return "상태를 확인할 수 없어 고를 수 없습니다."
+        if self.state in (CompileState.RAW, CompileState.PARTIAL):
+            return "누름틀·구간 변환을 해야 고를 수 있습니다."
+        return ""
 
     @classmethod
     def from_status(

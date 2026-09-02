@@ -371,6 +371,36 @@ function editorBase(overrides) {
   }, overrides || {});
 }
 
+/** `tpl` 채널 스냅샷 — 고르기 단계 좌 열의 **정본**이다(U6-B #976).
+ *
+ *  종전에는 편집기 스냅샷의 `library` 존이 같은 목록을 한 번 더 실어 왔고 프로브도 거기에
+ *  값을 심었다. 그 존이 퇴역했으므로 프로브도 실제 채널로 민다 — 심는 자리와 그리는 자리가
+ *  어긋나면 프로브가 자기 값을 못 보고 조용히 0 을 읽는다. */
+function tplBase(overrides) {
+  const band = (items) => ({ flat: true, count: items.length, dir: "C:/lib",
+    empty_hint: "서식 폴더에 템플릿이 없습니다: C:/lib",
+    sections: [{ group: "", collapsed: false, count: items.length, items }] });
+  return Object.assign({
+    hwpx: band([]), txt: band([]),
+    templates_root: {
+      directory: "C:/lib", source: "settings", source_label: "설정", notice: "",
+    },
+    result: { text: "", level: "muted" },
+    slots: null,
+    examples: { installed: false, removable: false, remove_label: "", remove_hint: "" },
+  }, overrides || {});
+}
+
+/** `pool` 채널 스냅샷 — 고르기 단계 우 열의 정본(데이터 선택 다이얼로그와 같은 값). */
+function poolBase(rows) {
+  return {
+    rows: rows || [], count: `${(rows || []).length}건`, empty: !(rows || []).length,
+    corrupted: [], duplicates: [],
+    pclm: { default_db: "C:/d/pclm.db", views: [], titles: {} },
+    result: { text: "", level: "muted" },
+  };
+}
+
 /** 편집기가 통지하는 세 탭(#323) — 노드가 서야 하는 자리의 전수. */
 const NOTICE_SECTIONS = Object.freeze(["template", "binding", "filename"]);
 
@@ -899,27 +929,40 @@ export function createEditorWorkbenchDataProbes() {
             name: "", pattern: "", rows: [],
             source_fields: [], active_source_fields: [], ignored_source_fields: [],
             sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
-            library: {
-              hwpx: { sections: [], flat: true },
-              txt: {
-                sections: [{
-                  group: "", count: 1, collapsed: false,
-                  items: [{
-                    key: "기안.txt", name: "기안", path: "C:/t/기안.txt",
-                    field_count: 3, error: "", current: false,
-                  }],
-                }],
-                flat: true,
-              },
+            pairing: {
+              ready: false, template_name: "", data_name: "",
+              field_count: 0, column_count: 0, auto_count: 0, confirm_count: 0,
+              basis: "", advance_block_reason: "왼쪽에서 템플릿을 고르세요.",
             },
           });
+          /* 좌 열의 정본은 **`tpl` 채널**이다(U6-B #976) — 매체는 구획이 아니라 pill 로
+             갈린다. hwpx·txt 가 한 목록에 서는지, TXT 항목이 실제로 고를 수 있는지를 잰다. */
+          ctx.push("tpl", tplBase({
+            txt: {
+              flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+              sections: [{
+                group: "", count: 1, collapsed: false,
+                items: [{
+                  key: "기안.txt", name: "기안", path: "C:/t/기안.txt",
+                  field_count: 3, error: "", detail: "필드 3개",
+                  selectable: true, select_block_reason: "",
+                }],
+              }],
+            },
+          }));
+          ctx.push("pool", poolBase([]));
           ctx.push("editor", base);
           await settleRender(ctx);
+          /* 매체 구획(`HWPX 서식`·`TXT 기안` 캡션)은 U6-B 에서 사라졌다 — **음성 단언**으로
+             남긴다(되살아나면 두 열 그림이 다시 갈린다). */
           const caps = Array.prototype.map.call(
             ctx.doc.querySelectorAll("#editor-body .grp .cap"), (el) => el.textContent);
           out.bands = caps.filter((t) => t === "HWPX 서식" || t === "TXT 기안");
-          out.txt_pick = !!ctx.doc.querySelector(
-            '#editor-body [data-act="use-library"][data-path="C:/t/기안.txt"]');
+          const txtItem = ctx.doc.querySelector(
+            '#editorTplList .pitem[data-side="tpl"][data-path="C:/t/기안.txt"]');
+          out.txt_pick = !!txtItem;
+          out.txt_media_pill = txtItem
+            ? (txtItem.querySelector(".pill") || {}).textContent : "";
           await probeLintpad(ctx, out);
           ctx.push("editor", Object.assign({}, base, {
             sections: ["template", "binding"], template_path: "C:/t/기안.txt",
@@ -1321,11 +1364,17 @@ export function createEditorWorkbenchDataProbes() {
           out.pin_offered = !!byId(ctx, "dataPickerPin");
           // 「＋ 직접 등록…」 사망(U2 §2.7 4행) — DOM 자체가 없어야 한다.
           out.register_gone = !byId(ctx, "dataPickerRegister");
+          /* 「쓸 수 있는가」와 그 사유는 U6-B(#976)에서 **스냅샷 축**이 됐다 — 종전에는
+             이 면의 웹 함수가 `status`·`missing` 으로 문장을 다시 지었고, 그래서 같은 상태가
+             편집기 축약 목록과 다른 어휘를 가졌다. 대역도 실 백엔드와 같은 모양을 낸다. */
           const row = (key, name, status, badge, level, actions) => ({
             key, name, kind: "excel", kind_label: "엑셀/CSV", status,
             badge_label: badge, badge_level: level, reference: `C:/d/${name}.xlsx (물품)`,
             locate_path: `C:/d/${name}.xlsx`, sheet: "물품", missing: false, note: "",
             actions,
+            selectable: status === "active",
+            select_block_reason: status === "active"
+              ? "" : "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다.",
           });
           /* 계약 목록(pclm) 행 — 좌표가 DB+뷰라 「다시 연결」(엑셀 전용 동사)이 서지 않고,
              파일이 살아 있으면 그냥 쓸 수 있다(#937). */
@@ -1335,6 +1384,7 @@ export function createEditorWorkbenchDataProbes() {
             reference: "DB: pclm.db · 시트 통합", locate_path: "C:/d/pclm.db",
             sheet: "", missing: false, note: "",
             actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
+            selectable: true, select_block_reason: "",
           };
           ctx.push("pool", {
             rows: [
@@ -1690,8 +1740,9 @@ export function createEditorWorkbenchDataProbes() {
     },
 
     /* ── editor_lib_manage (app.py:2506 상수 · 3966 호출) ─────────────────────
-       편집기 「템플릿」 탭 관리 표면(F8, §10.17.2 판정 D). 구 `_TPL_LIST_GROUP_PROBE_JS` 의
-       재작성 — 그룹 헤더·접힘 뷰 제외·⋮ 구성·＋그룹지정 칩·이동 다이얼로그 개폐·퇴화 평면. */
+       고르기 단계 좌 열의 **관리 표면**(F8 승계 → U6-B 재편). 구 `_TPL_LIST_GROUP_PROBE_JS`
+       의 후계이고, U6-B 에서 정본이 `tpl` 채널로 옮겨 갔다 — 항목 형은 `.pitem`, 행 동사는
+       ⋮ 하나, 바닥 동사 넷. 구획 헤더·＋그룹지정은 U4 §2-30 에서 사라진 뒤로 음성 단언이다. */
     {
       name: "editor_lib_manage",
       keys: ["editor_lib_manage"],
@@ -1710,67 +1761,79 @@ export function createEditorWorkbenchDataProbes() {
         + ` 클러스터 전체의 같은 자리는 ${CLICK_SITES_WITHOUT_VISIBILITY.length} 군이다.`,
       async run(ctx) {
         const Nav = service(ctx, "Nav");
-        const Modal = service(ctx, "Modal");
         const out = {};
         try {
           Nav.go("editor", { force: true });
-          const acts = [{ key: "compile", label: "누름틀 변환" }, { key: "review", label: "검토" }];
-          const H = (name, cur, warns, rowActs) => ({
+          const acts = [{ key: "compile", label: "누름틀·구간 변환" }, { key: "review", label: "검토" }];
+          const H = (name, warns, rowActs, blocked) => ({
             key: name, name, path: `C:/lib/${name}`,
-            badge_label: "누름틀", badge_level: "ok", is_error: false, detail: "필드 3개",
-            fill_warns: warns || [], actions: rowActs || acts, current: !!cur,
+            badge_label: blocked ? "변환 필요" : "누름틀",
+            badge_level: blocked ? "warn" : "ok",
+            is_error: false, detail: "필드 3개",
+            fill_warns: warns || [],
+            actions: rowActs === undefined ? acts : rowActs,
+            selectable: !blocked,
+            select_block_reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
+          ctx.push("tpl", tplBase({
+            hwpx: {
+              flat: true, count: 4, dir: "C:/lib", empty_hint: "",
+              sections: [{
+                group: "", collapsed: false, count: 4,
+                items: [
+                  H("a.hwpx"), H("b.hwpx"),
+                  /* 동사 0 인 행(COMPILED·FILLED 의 실제 모양) — U6-A 에서 삭제가, U6-B 에서
+                     `preview`·`make_job` 이 퇴역하며 링1 목록이 비었다. ⋮ 는 서되
+                     **비활성 + 사유**여야 한다. */
+                  H("c.hwpx", null, []),
+                  H("d.hwpx", ["빈 값 2건은 공란으로 채워집니다"]),
+                ],
+              }],
+            },
+            txt: {
+              flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+              sections: [{
+                group: "", collapsed: false, count: 1,
+                items: [{
+                  key: "메모.txt", name: "메모", path: "C:/txt/메모.txt",
+                  field_count: 2, error: "", detail: "필드 2개",
+                  selectable: true, select_block_reason: "",
+                }],
+              }],
+            },
+            result: { text: "검토: 문제 없음", level: "ok" },
+            /* 검토가 낸 구간 항목 목록(S8-03 #834) — 같은 창에 얹는 단계다(새 부팅 0). */
+            slots: {
+              path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
+              rows: [{
+                id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
+              }],
+              diagnostics: [],
+            },
+          }));
+          ctx.push("pool", poolBase([]));
           const draft = editorBase({
-            library: {
-              /* 구획은 언제나 평면 1개다(U4 §2-30 — 백엔드가 `grouped_view=False` 로 낸다). */
-              hwpx: {
-                flat: true, count: 4, dir: "C:/lib",
-                sections: [{
-                  group: "", collapsed: false, count: 4,
-                  items: [
-                    H("a.hwpx", true), H("b.hwpx", false),
-                    /* 동사 0 인 행(COMPILED·FILLED 의 실제 모양) — U6-A 에서 삭제가
-                       퇴역하면서 생긴 상태다. ⋮ 는 서되 **비활성 + 사유**여야 한다. */
-                    H("c.hwpx", false, null, []),
-                    H("d.hwpx", false, ["빈 값 2건은 공란으로 채워집니다"]),
-                  ],
-                }],
-              },
-              txt: {
-                flat: true, count: 1, dir: "C:/txt",
-                sections: [{
-                  group: "", collapsed: false, count: 1,
-                  items: [{
-                    key: "메모.txt", name: "메모", path: "C:/txt/메모.txt",
-                    field_count: 2, error: "", current: false,
-                  }],
-                }],
-              },
-              result: { text: "검토: 문제 없음", level: "ok" },
-              /* 검토가 낸 구간 항목 목록(S8-03 #834) — 같은 창에 얹는 단계다(새 부팅 0). */
-              slots: {
-                path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
-                rows: [{
-                  id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
-                }],
-                diagnostics: [],
-              },
+            template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
+            pairing: {
+              ready: false, template_name: "a.hwpx", data_name: "",
+              field_count: 3, column_count: 0, auto_count: 0, confirm_count: 0,
+              basis: "", advance_block_reason: "오른쪽에서 데이터를 고르세요.",
             },
           });
           ctx.push("editor", draft);
           await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
-          await settleUntil(ctx, () => host.querySelectorAll(".libselrow").length > 0);
-          /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·새 TXT·새로고침.
-             「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다: 폴더가 곧 풀이 된 뒤로
-             「폴더에서 한 벌 복사해 온다」는 동사의 전제가 사라졌다. 부재를 음성으로도 잰다. */
-          out.toolbar = ["import-template", "lib-new-txt", "lib-refresh"]
+          await settleUntil(ctx, () => host.querySelectorAll(".pitem").length > 0);
+          /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
+             머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
+             부재를 음성으로도 잰다. */
+          out.toolbar = ["import-template", "open-settings", "lib-new-txt", "lib-refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
           out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
           // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
-          out.rows_visible = host.querySelectorAll(".libselrow").length;      // 접힘 없음 → 전부
+          out.rows_visible = host.querySelectorAll("#editorTplList .pitem").length;   // 5(hwpx4+txt1)
           out.row_more = host.querySelectorAll('[data-act="lib-more"]').length;  // 모든 가시 행
           /* 동작 0 인 행의 ⋮ 는 **비활성 + 사유**다(U6-A 리뷰): 종전에는 멀쩡히 서 있고
              클릭이 조용히 삼켜졌다. 동작 있는 행은 그대로 열린다 — 양성·음성 대조. */
@@ -1785,7 +1848,7 @@ export function createEditorWorkbenchDataProbes() {
           const res = host.querySelector(".run-result");
           out.result_line = !!res && /검토: 문제 없음/.test(res.textContent)
             && res.className.indexOf("ok") !== -1;                            // #tplResult 승계
-          out.band_caption = /4개/.test(host.textContent) && /C:\/lib/.test(host.textContent);
+          out.band_caption = /서식 폴더/.test(host.textContent);
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };
@@ -1798,7 +1861,7 @@ export function createEditorWorkbenchDataProbes() {
             );
           };
           /* HWPX 행 ⋮ = [링1 상태 동사(변환·검토)] — 소비 동사 없음. 「이동」은 U4 §2-30 에서,
-             「삭제」는 U6-A(#975)에서 사라졌다(앱은 사용자 서식 폴더에 쓰지 않는다). */
+             「삭제」는 U6-A(#975)에서, `preview`·`make_job` 은 U6-B(#976)에서 사라졌다. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
           await settleRender(ctx);
@@ -1866,17 +1929,16 @@ export function createEditorWorkbenchDataProbes() {
           } finally {
             slotStub.restore();
           }
-          /* 퇴화 평면(그룹 0개) — 헤더 없는 행 나열. */
-          draft.library.slots = null;
-          draft.library.hwpx = {
-            flat: true, count: 1, group_names: [], dir: "C:/lib",
-            sections: [{ group: "", collapsed: false, count: 1, items: [H("d.hwpx", "", false)] }],
-          };
-          draft.library.txt = { flat: true, count: 0, group_names: [], dir: "C:/txt", sections: [] };
-          ctx.push("editor", draft);
-          await settleUntil(ctx, () => host.querySelectorAll(".job-grp-head").length === 0);
+          /* 퇴화 — 목록 1건 + 구간 항목 없음. 헤더 축은 애초에 없다(음성 단언 유지). */
+          ctx.push("tpl", tplBase({
+            hwpx: {
+              flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+              sections: [{ group: "", collapsed: false, count: 1, items: [H("d.hwpx")] }],
+            },
+          }));
+          await settleUntil(ctx, () => host.querySelectorAll("#editorTplList .pitem").length === 1);
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
-          out.flat_rows = host.querySelectorAll(".libselrow").length;
+          out.flat_rows = host.querySelectorAll("#editorTplList .pitem").length;
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
@@ -1886,8 +1948,10 @@ export function createEditorWorkbenchDataProbes() {
     },
 
     /* ── editor_lib (app.py:2608 상수 · 3985 호출) ────────────────────────────
-       에디터 1단계 피커(#108 슬라이스 3) — 라이브러리를 관리 표면과 **같은 그룹 구획**(선택
-       전용)으로 그리는가. 두 표면이 한 조직을 보인다는 실증(editor_lib_manage 와 대칭). */
+       **고르기 화면 그 자체**(U6-B #976 — 구 「1단계 피커」의 후계). 정적 계약이 못 보는 것을
+       넷 잰다: ①두 열이 각자 채널로 실제로 서는가 ②클릭 둘이 연결 카드와 전진 게이트를
+       세우는가 ③합성 드래그가 **클릭과 같은 상태**를 만드는가 ④비활성 항목의 클릭·드롭이
+       조용히 삼켜지지 않고 사유를 남기는가. 새 창은 만들지 않는다 — 이미 선 창에 얹는다. */
     {
       name: "editor_lib",
       keys: ["editor_lib"],
@@ -1895,8 +1959,11 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3985,
-      deadlineMs: 0,
-      deadlineRationale: "동기 evaluate_js 한 번(app.py:3985) — 레거시에도 폴링이 없다.",
+      deadlineMs: 2500,
+      deadlineRationale:
+        "종전 0(동기 evaluate_js 한 번)에 **합성 드래그 왕복**이 얹혔다(U6-B): dragstart→"
+        + " dragover→drop 뒤 발신이 정착할 때까지 짧게 폴링한다. 늘린 것은 매달림을 유한"
+        + " 시간에 빨강으로 만드는 상한이지 통과 조건이 아니다.",
       after: ["editor_lib_manage"],
       afterReason:
         "레거시 드라이버 순서 그대로(3966 → 3985). 사이의 3969~3983 은 다른 클러스터(B)의"
@@ -1906,57 +1973,169 @@ export function createEditorWorkbenchDataProbes() {
         const out = {};
         try {
           Nav.go("editor", { force: true });
-          const it = (name, badge, level, cur) => ({
+          const it = (name, badge, level, blocked) => ({
             key: name, name, path: `C:/lib/${name}`, badge_label: badge, badge_level: level,
-            is_error: false, detail: "필드 3개", current: !!cur,
+            is_error: false, detail: "필드 3개", actions: [],
+            selectable: !blocked,
+            select_block_reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
-          const draft = editorBase({
-            library: {
-              /* U4 §2-30 이후 밴드는 언제나 평면 1구획이다 — 헤더·접힘 축이 사라졌다. */
-              hwpx: {
-                flat: true,
-                sections: [{
-                  group: "", collapsed: false, count: 4,
-                  items: [
-                    it("a.hwpx", "준비됨", "ok", true), it("b.hwpx", "변환 필요", "warn", false),
-                    it("c.hwpx", "준비됨", "ok", false), it("d.hwpx", "준비됨", "ok", false),
-                  ],
-                }],
-              },
-              txt: { flat: true, sections: [] },
-            },
-          });
-          ctx.push("editor", draft);
-          await settleRender(ctx);
-          const host = byId(ctx, "scr-editor");
-          out.grp_heads = host.querySelectorAll(".job-grp-head").length;   // 0 — 구획 헤더 없음
-          out.rows_visible = host.querySelectorAll(".libselrow").length;   // 접힘이 없으니 전부
-          out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;
-          out.current_marked = host.querySelectorAll(".libselrow.cur").length;  // 현 선택(a) 1
-          out.import_btn = !!host.querySelector('button[data-act="import-template"]');
-          /* F6 PR-B — 「HWPX 서식만」 단일 매체 고지는 2밴드 구조로 대체됐다: 각 밴드가 자기
-             산출물(파일 생성/복사)을 말한다. 두 고지의 실재를 되읽는다. */
-          out.filter_notice = /\.hwpx 문서 파일을 만드는/.test(host.textContent)
-            && /복사해 쓰는 작업/.test(host.textContent);
-          /* F14 — 파일명 칸 말줄임/축소. (F13 그룹 헤더 안정 id 는 헤더와 함께 사망.) */
-          const fn = host.querySelector(".libselrow .fname");
-          out.fname_ellipsis = fn ? styleOf(ctx, fn).textOverflow : "missing";
-          out.fname_minwidth = fn ? styleOf(ctx, fn).minWidth : "missing";
-          /* 퇴화 평면(그룹 0개) — 헤더 없는 선택 행 나열. */
-          draft.library = {
+          ctx.push("tpl", tplBase({
             hwpx: {
-              flat: true,
+              flat: true, count: 3, dir: "C:/lib", empty_hint: "",
               sections: [{
-                group: "", collapsed: false, count: 1,
-                items: [it("d.hwpx", "준비됨", "ok", false)],
+                group: "", collapsed: false, count: 3,
+                items: [
+                  it("a.hwpx", "준비됨", "ok"), it("b.hwpx", "변환 필요", "warn", true),
+                  it("c.hwpx", "준비됨", "ok"),
+                ],
               }],
             },
-            txt: { flat: true, sections: [] },
-          };
-          ctx.push("editor", draft);
+          }));
+          /* 우 열 — 데이터 선택 다이얼로그와 **같은 스냅샷 모양**. 끊긴 항목 하나를 함께
+             세워 「숨기지 않고 비활성 + 사유」가 두 표면에서 같은 값으로 서는지 본다. */
+          const datRow = (key, name, blocked) => ({
+            key, name, kind: "excel", kind_label: "엑셀/CSV", status: "active",
+            badge_label: "활성", badge_level: "ok", reference: `C:/d/${name}.xlsx (물품)`,
+            locate_path: `C:/d/${name}.xlsx`, sheet: "물품", missing: !!blocked, note: "",
+            actions: [{ key: "archive", label: "보관" }],
+            selectable: !blocked,
+            select_block_reason: blocked ? "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다." : "",
+          });
+          ctx.push("pool", poolBase([
+            datRow("d1", "7월목록"), datRow("d2", "지난목록", true),
+          ]));
+          const blank = editorBase({
+            pairing: {
+              ready: false, template_name: "", data_name: "",
+              field_count: 0, column_count: 0, auto_count: 0, confirm_count: 0,
+              basis: "", advance_block_reason: "왼쪽에서 템플릿을 고르세요.",
+            },
+          });
+          ctx.push("editor", blank);
           await settleRender(ctx);
-          out.flat_heads = host.querySelectorAll(".job-grp-head").length;
-          out.flat_rows = host.querySelectorAll(".libselrow").length;
+          const host = byId(ctx, "scr-editor");
+          await settleUntil(ctx, () => host.querySelectorAll(".pitem").length > 0);
+
+          /* ① 두 열이 각자 채널로 선다 — 좌는 `.pitem[data-side=tpl]`, 우는 공유 컴포넌트
+             (`.pk-row[data-side=dat]`). 구획 헤더는 없다(U4 §2-30 음성 단언). */
+          out.grp_heads = host.querySelectorAll(".job-grp-head").length;
+          out.tpl_items = host.querySelectorAll('.pitem[data-side="tpl"]').length;
+          out.dat_items = host.querySelectorAll('[data-side="dat"]').length;
+          out.import_btn = !!host.querySelector('button[data-act="import-template"]');
+          out.browse_btn = !!byId(ctx, "editorPoolBrowse");
+          /* 매체 고지 두 줄(F6 PR-B)은 U6-B 에서 사라졌다 — 매체는 pill 하나가 말한다. */
+          out.filter_notice = /\.hwpx 문서 파일을 만드는/.test(host.textContent);
+          /* 비활성 항목은 **숨기지 않고** 사유를 부제에 진다(양성·음성 대조). */
+          const blockedItem = host.querySelector('.pitem[aria-disabled="true"]');
+          out.blocked_shown = !!blockedItem;
+          out.blocked_reason = blockedItem
+            ? /누름틀·구간 변환/.test(blockedItem.textContent) : false;
+          out.blocked_not_draggable = !!blockedItem && blockedItem.draggable === false;
+          const fn = host.querySelector(".pitem .nm");
+          out.fname_ellipsis = fn ? styleOf(ctx, fn).textOverflow : "missing";
+
+          /* ② 클릭 둘 → 등록된 액션 둘. 발신은 가로챈다(합성 스냅샷이라 실 백엔드로
+             보내면 남의 서식 폴더·풀을 겨눈다). */
+          const sent = [];
+          const stub = stubBridgeCall(ctx, () => async (screen, action, payload) => {
+            sent.push([screen, action, payload]);
+            return {};
+          });
+          try {
+            host.querySelector('.pitem[data-side="tpl"][data-key="a.hwpx"]').click();
+            host.querySelector('[data-side="dat"][data-key="d1"] [data-act="use"]').click();
+            await settleUntil(ctx, () => sent.length >= 2);
+            out.click_calls = sent.map((row) => [row[0], row[1]]);
+
+            /* ③ 합성 드래그 — **같은 액션 두 번**이 나와야 한다(새 액션 0). */
+            sent.length = 0;
+            const transfer = {
+              data: {}, effectAllowed: "", dropEffect: "", types: ["text/plain"],
+              setData(kind, value) { this.data[kind] = value; this.types = ["text/plain"]; },
+              getData(kind) { return this.data[kind] || ""; },
+            };
+            const fire = (node, type) => {
+              const event = new ctx.win.Event(type, { bubbles: true, cancelable: true });
+              event.dataTransfer = transfer;
+              node.dispatchEvent(event);
+              return event;
+            };
+            const source = host.querySelector('.pitem[data-side="tpl"][data-key="c.hwpx"]');
+            const target = host.querySelector('[data-side="dat"][data-key="d1"]');
+            fire(source, "dragstart");
+            out.drag_payload = transfer.getData("text/plain");
+            const over = fire(target, "dragover");
+            out.drag_over_accepted = over.defaultPrevented;
+            out.drag_target_marked = target.classList.contains("drop-target");
+            fire(target, "drop");
+            await settleUntil(ctx, () => sent.length >= 2);
+            out.drop_calls = sent.map((row) => [row[0], row[1]]);
+            out.drop_matches_click = JSON.stringify(out.drop_calls)
+              === JSON.stringify(out.click_calls);
+            out.drag_target_cleared = !target.classList.contains("drop-target");
+
+            /* ④ 같은 열끼리는 짝이 아니다 — 발신 0(음성 대조). */
+            sent.length = 0;
+            const sibling = host.querySelector('.pitem[data-side="tpl"][data-key="a.hwpx"]');
+            fire(source, "dragstart");
+            fire(sibling, "drop");
+            await settleRender(ctx);
+            out.same_side_drop_calls = sent.length;
+
+            /* ⑤ 비활성 항목 클릭 → 발신 0 + 인라인 사유(조용한 무시 금지). */
+            sent.length = 0;
+            host.querySelector('.pitem[data-side="tpl"][data-key="b.hwpx"]').click();
+            await settleUntil(ctx, () => {
+              const node = byId(ctx, "save-msg");
+              return !!node && node.textContent.indexOf("고를 수 없습니다") !== -1;
+            });
+            out.blocked_click_calls = sent.length;
+            const notice = byId(ctx, "save-msg");
+            out.blocked_notice = !!notice && !isHidden(ctx, notice)
+              && notice.textContent.indexOf("누름틀·구간 변환") !== -1;
+          } finally {
+            stub.restore();
+          }
+
+          /* ⑥ 둘 다 고른 스냅샷 → 연결 카드 문구·전진 게이트. 수치도 라벨도 Python 이 낸
+             값 그대로여야 한다(표면이 다시 세면 두 곳이 같은 상태를 다르게 답한다). */
+          ctx.push("editor", editorBase({
+            template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
+            data_path: "C:/d/7월목록.xlsx", data_name: "7월목록.xlsx",
+            data_sheet: "물품", data_header_row: 1, data_pool_key: "d1",
+            record_count: 12,
+            reachable: { template: true, binding: false, filename: false },
+            pairing: {
+              ready: true, template_name: "a.hwpx", data_name: "7월목록.xlsx",
+              field_count: 12, column_count: 18, auto_count: 10, confirm_count: 2,
+              basis: "preview", advance_block_reason: "",
+            },
+          }));
+          await settleUntil(ctx, () => {
+            const card = byId(ctx, "editorLinkCard");
+            return !!card && card.textContent.indexOf("⟷") !== -1;
+          });
+          const card = byId(ctx, "editorLinkCard");
+          out.card_text = card.textContent.replace(/\s+/g, " ").trim();
+          out.wire_live = byId(ctx, "editorWire").classList.contains("live");
+          out.cta_enabled = !byId(ctx, "editorLinkCta").disabled;
+          /* 우 열의 「현재 데이터」가 시트·헤더 행을 **다시 묻지 않고 재진술**한다. */
+          out.current_restated = textOf(byId(ctx, "editorPoolCurrent"));
+          out.pool_current_marked =
+            host.querySelectorAll('[data-side="dat"][aria-current="true"]').length;
+
+          /* ⑦ 반쪽만 고른 스냅샷 → CTA 비활성 + **Python 이 낸 사유**. */
+          ctx.push("editor", editorBase({
+            template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
+            pairing: {
+              ready: false, template_name: "a.hwpx", data_name: "",
+              field_count: 12, column_count: 0, auto_count: 0, confirm_count: 0,
+              basis: "", advance_block_reason: "오른쪽에서 데이터를 고르세요.",
+            },
+          }));
+          await settleUntil(ctx, () => byId(ctx, "editorLinkCta").disabled);
+          out.half_cta_disabled = byId(ctx, "editorLinkCta").disabled;
+          out.half_block_reason = textOf(byId(ctx, "editorLinkBlock"));
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);

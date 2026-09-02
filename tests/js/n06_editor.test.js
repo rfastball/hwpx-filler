@@ -30,14 +30,26 @@ import { Intent } from "../../frontend/js/intent.js";
 /** 셸이 직접 쓰는 controller 핵심 4키. */
 const SHELL_FACADE = ["init", "rerender", "leaveTo", "aimAt"];
 
-/* 렌더가 통과할 최소 스냅샷 — 신규 초안 1단계(라이브러리 빈 밴드). */
+/* 렌더가 통과할 최소 스냅샷 — 신규 초안 1단계.
+   구 `library` 존은 U6-B(#976)에서 퇴역했다: 좌 열의 정본이 `tpl` 채널이라 목록·결과 줄·
+   구간 항목은 이제 그 채널 스냅샷(`tplSnap`)이 진다. */
 function snap(extra) {
   return Object.assign({
     section: "template",
     sections: ["template", "binding", "filename"],
     name: "테스트 작업",
-    library: {},
     rows: [],
+  }, extra || {});
+}
+
+/** `tpl` 채널 스냅샷 — 고르기 단계 좌 열이 구독하는 정본. */
+function tplSnap(extra) {
+  return Object.assign({
+    hwpx: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
+    txt: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
+    templates_root: { directory: "C:/lib", source: "settings", source_label: "설정", notice: "" },
+    result: { text: "", level: "muted" },
+    slots: null,
   }, extra || {});
 }
 
@@ -69,6 +81,10 @@ function harness(cfg) {
   };
   const store = createSnapshotStore({ alarm: assert.fail });
   const runtime = createScreenRuntime({ client, store });
+  /* 고르기 단계의 두 열은 자기 채널을 직접 읽는다(U6-B #976) — 대역도 그 채널로 값을
+     세운다. 편집기 스냅샷에 목록을 실어 주던 길은 이제 없다. */
+  if (opts.tpl !== undefined) store.ingest("tpl", opts.tpl);
+  if (opts.pool !== undefined) store.ingest("pool", opts.pool);
   const ports = createScreenPorts();
   const services = createServiceHandoffPorts();
   services.sheetPicker.bind({ choose: async () => null });
@@ -94,6 +110,10 @@ function harness(cfg) {
     groupMove: { open() {} },
     chain: Intent,
     navigation,
+    poolRegistration: {
+      openRegDialog: (options) => { trace.push(["poolReg.open", options]); },
+      openPclm: () => { trace.push(["poolReg.pclm"]); },
+    },
     notify: (message) => notices.push(String(message)),
   });
   return {
@@ -123,25 +143,56 @@ test("init 2회 — initial 추가 등록 0, 같은 promise 공유", async () =>
   const first = h.controller.init();
   await first;
   assert.equal(h.counts.initial, 1, "initial 당김 1회");
-  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 교차 구독 0");
+  /* U6-B(#976): 좌 열의 정본이 `tpl` 채널이라 편집기는 그 채널을 **구독한다**. 계약은
+     「구독하지 않는다」가 아니라 「정확히 하나」다 — 중복 설치가 곧 두 벌 갱신이다. */
+  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독은 정확히 하나");
+  assert.equal(h.store.listenerCount("pool"), 1, "pool 구독도 정확히 하나");
 
   const second = h.controller.init();
   assert.equal(second, first, "성공한 init 재호출은 같은 promise 를 공유한다");
   await second;
   await h.controller.init();
   assert.equal(h.counts.initial, 1, "initial 추가 당김 0");
-  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 구독 재유입 0");
+  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독 재유입 0");
 });
 
-test("tpl 관리 동사 완료가 editor 재당김을 정확히 한 번 태운다", async () => {
+test("1단계 진입은 두 풀을 한 번씩만 다시 읽는다 — 렌더마다 재스캔 0", async () => {
   const h = harness();
   await h.controller.init();
-  await h.controller.init();               // 셸 ready 재발화 형상
-  const before = h.counts.initial;
+  const rescans = () => h.trace.filter(
+    (row) => row[0] === "dispatch" && row[2] === "refresh").map((row) => row[1]);
+  assert.deepEqual(rescans(), ["tpl", "pool"], "진입 한 번에 채널별 한 발");
+
+  /* 같은 단계에서 스냅샷이 다시 와도 재스캔이 늘지 않는다(진입 수 ≠ 렌더 수). */
+  h.store.ingest("editor", snap({ name: "다른 이름" }));
+  assert.deepEqual(rescans(), ["tpl", "pool"], "렌더마다 디스크를 훑지 않는다");
+
+  /* 2단계로 갔다 1단계로 돌아오면 **재진입**이라 다시 읽는다. */
+  h.store.ingest("editor", snap({ section: "binding" }));
+  h.store.ingest("editor", snap({ section: "template" }));
+  assert.deepEqual(rescans(), ["tpl", "pool", "tpl", "pool"], "재진입은 다시 읽는다");
+});
+
+test("tpl 재스캔은 editor 재당김을 태우지 않고, 변이 동사는 정확히 한 번 태운다", async () => {
+  const h = harness({ tpl: tplSnap({ slots: {
+    path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개",
+    rows: [{ id: "특약", label: "특약 사항", option_count: 1, options: [] }],
+    diagnostics: [],
+  } }) });
+  await h.controller.init();
+
+  /* 재스캔은 `tpl` 채널의 push 하나로 끝난다 — 편집기 스냅샷을 또 묻는 것은 같은 진입에서
+     디스크를 두 번 읽는 일이다(U6-B). */
+  const beforeRefresh = h.counts.initial;
   await h.controller.refreshLibrary();
-  assert.equal(h.counts.initial - before, 1,
-    "교차 push 구독 없이 원인 동사 완료가 재당김 하나를 소유한다");
-  assert.equal(h.store.listenerCount("tpl"), 0);
+  assert.equal(h.counts.initial - beforeRefresh, 0, "재스캔은 editor 재당김을 안 태운다");
+
+  /* 반대로 파일을 변이시키는 동사는 이 세션의 스키마·게이트를 흔들 수 있어 종전대로 하나. */
+  const beforeMutate = h.counts.initial;
+  await h.controller.handleSlotVerb("decompile", "특약", {});
+  assert.equal(h.counts.initial - beforeMutate, 1,
+    "변이 동사 완료가 재당김 하나를 소유한다");
+  assert.equal(h.store.listenerCount("tpl"), 1);
 });
 
 test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => {
@@ -151,7 +202,7 @@ test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => 
   assert.equal(first, second);
   await Promise.all([first, second]);
   assert.equal(h.counts.initial, 1);
-  assert.equal(h.store.listenerCount("tpl"), 0);
+  assert.equal(h.store.listenerCount("tpl"), 1);
 });
 
 test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 initial 만 다시 당긴다", async () => {
@@ -166,6 +217,7 @@ test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 init
   await assert.rejects(h.controller.init(), /boot fail/, "rejection 은 호출자에게 전파된다");
   assert.equal(h.counts.initial, 1);
   const afterFail = h.store.listenerCount("tpl");
+  assert.equal(afterFail, 1, "실패해도 구독은 하나다");
 
   fail = false;
   await h.controller.init();   // 회복 — 스스로 재시도하지 않고 명시적 호출이 다시 당긴다
@@ -173,12 +225,12 @@ test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 init
   assert.equal(h.store.listenerCount("tpl"), afterFail, "tpl 구독 중복 설치 0");
 });
 
-test("rerender — 재당김 하나를 태우고 tpl 구독을 만들지 않는다", async () => {
+test("rerender — 재당김 하나를 태우고 구독을 늘리지 않는다", async () => {
   const h = harness();
   await h.controller.init();
   await h.controller.rerender();
   assert.equal(h.counts.initial, 2, "rerender 는 스냅샷을 다시 묻는다");
-  assert.equal(h.store.listenerCount("tpl"), 0, "rerender 는 교차 구독을 만들지 않는다");
+  assert.equal(h.store.listenerCount("tpl"), 1, "rerender 는 구독을 새로 설치하지 않는다");
 });
 
 test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async () => {
@@ -816,27 +868,26 @@ test("#793 사용자가 스스로 옮긴 초점은 빼앗지 않는다", async (
 
 /* ---------------- ⑦ 구간 항목(Slot) 목록·동사 3종 — S8-03 #834 ---------------- */
 
-/** 검토가 낸 Slot 목록이 실린 「템플릿」 탭 스냅샷. */
+/** 검토가 낸 Slot 목록이 실린 **`tpl` 채널** 스냅샷(U6-B — 편집기 스냅샷이 아니다). */
+function slotTpl(slots) {
+  return tplSnap({
+    slots: slots === undefined ? {
+      path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
+      rows: [{
+        id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
+      }],
+      diagnostics: [],
+    } : slots,
+  });
+}
+
+/** 그 목록을 보는 「고르기」 단계 편집기 스냅샷. */
 function slotSnap(extra) {
-  return snap(Object.assign({
-    section: "template",
-    library: {
-      hwpx: { flat: true, count: 0, group_names: [], dir: "C:/lib", sections: [] },
-      txt: { flat: true, count: 0, group_names: [], dir: "C:/txt", sections: [] },
-      result: { text: "", level: "muted" },
-      slots: {
-        path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
-        rows: [{
-          id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
-        }],
-        diagnostics: [],
-      },
-    },
-  }, extra || {}));
+  return snap(Object.assign({ section: "template" }, extra || {}));
 }
 
 test("S8-03 Slot 목록이 「템플릿」 탭에 서고 동사 3종이 함께 그려진다", async () => {
-  const h = harness({ initial: async () => slotSnap() });
+  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl() });
   await h.controller.init();
 
   const markup = renderToStaticMarkup(
@@ -853,14 +904,11 @@ test("S8-03 Slot 목록이 「템플릿」 탭에 서고 동사 3종이 함께 �
 
 test("S8-03 진단이 있으면 사유만 서고 동사 버튼은 없다", async () => {
   const h = harness({
-    initial: async () => slotSnap({
-      library: Object.assign({}, slotSnap().library, {
-        slots: {
-          path: "C:/lib/구간.hwpx", name: "구간.hwpx",
-          summary: "구간 구조를 읽을 수 없습니다: 구간.hwpx",
-          rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
-        },
-      }),
+    initial: async () => slotSnap(),
+    tpl: slotTpl({
+      path: "C:/lib/구간.hwpx", name: "구간.hwpx",
+      summary: "구간 구조를 읽을 수 없습니다: 구간.hwpx",
+      rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
     }),
   });
   await h.controller.init();
@@ -876,13 +924,14 @@ test("S8-03 진단이 있으면 사유만 서고 동사 버튼은 없다", async
 test("S8-03 개명은 프롬프트 하나로 끝난다(확인 왕복 없음)", async () => {
   const h = harness({
     initial: async () => slotSnap(),
+    tpl: slotTpl(),
     prompt: () => "새 이름",
   });
   await h.controller.init();
 
   await h.controller.handleSlotVerb("rename", "특약", {});
 
-  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh");
   assert.deepEqual(sent.map((row) => [row[2], row[3]]), [
     ["slot_rename", { path: "C:/lib/구간.hwpx", slot_id: "특약", label: "새 이름" }],
   ]);
@@ -892,19 +941,20 @@ test("S8-03 개명은 프롬프트 하나로 끝난다(확인 왕복 없음)", a
 });
 
 test("S8-03 개명 프롬프트 취소는 아무것도 보내지 않는다", async () => {
-  const h = harness({ initial: async () => slotSnap(), prompt: () => null });
+  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl(), prompt: () => null });
   await h.controller.init();
 
   await h.controller.handleSlotVerb("rename", "특약", {});
 
   assert.equal(
-    h.trace.some((row) => row[0] === "dispatch" && row[1] === "tpl"), false);
+    h.trace.some((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh"), false);
 });
 
 for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_remove"]]) {
   test(`S8-03 '${verb}' 는 2왕복이고 확인 본문은 Python 이 싣는다`, async () => {
     const h = harness({
       initial: async () => slotSnap(),
+      tpl: slotTpl(),
       call: async (_screen, name) => (
         name === action
           ? { needs_confirm: true, confirm_text: `${action} 재진술` }
@@ -917,7 +967,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
     await h.controller.handleSlotVerb(verb, "특약", {});
 
     const sent = h.trace
-      .filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+      .filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh")
       .map((row) => [row[2], row[3]]);
     assert.deepEqual(sent, [
       [action, { path: "C:/lib/구간.hwpx", slot_id: "특약" }],
@@ -932,6 +982,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
   test(`S8-03 '${verb}' 확인 취소는 확정 호출을 보내지 않는다`, async () => {
     const h = harness({
       initial: async () => slotSnap(),
+      tpl: slotTpl(),
       call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
       confirm: () => false,
     });
@@ -939,7 +990,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
 
     await h.controller.handleSlotVerb(verb, "특약", {});
 
-    const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+    const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh");
     assert.equal(sent.length, 1, "1차 질의 하나뿐이어야 한다");
     assert.equal(sent[0][3].confirm, undefined);
   });
@@ -948,6 +999,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
 test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)", async () => {
   const h = harness({
     initial: async () => slotSnap(),
+    tpl: slotTpl(),
     prompt: () => "새 이름",
     call: async (_screen, action) => {
       if (action === "slot_rename") throw new Error("항목이 없습니다");
@@ -966,7 +1018,7 @@ test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)"
 /* ---- U4-E3 #939 밴드 동사 「전부 표기로 되돌리기」 ---- */
 
 test("U4-E3 밴드 동사는 행 동사와 같은 술어로 선다(진단 0 · 행 1건 이상)", async () => {
-  const h = harness({ initial: async () => slotSnap() });
+  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl() });
   await h.controller.init();
   const render = () => renderToStaticMarkup(
     createElement(EditorScreen, { controller: h.controller }));
@@ -977,13 +1029,10 @@ test("U4-E3 밴드 동사는 행 동사와 같은 술어로 선다(진단 0 · �
   assert.equal(render().includes('data-act="slot-decompile-all" data-slot'), false);
 
   const broken = harness({
-    initial: async () => slotSnap({
-      library: Object.assign({}, slotSnap().library, {
-        slots: {
-          path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "읽을 수 없습니다",
-          rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
-        },
-      }),
+    initial: async () => slotSnap(),
+    tpl: slotTpl({
+      path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "읽을 수 없습니다",
+      rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
     }),
   });
   await broken.controller.init();
@@ -996,6 +1045,7 @@ test("U4-E3 밴드 동사는 행 동사와 같은 술어로 선다(진단 0 · �
 test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", async () => {
   const h = harness({
     initial: async () => slotSnap(),
+    tpl: slotTpl(),
     call: async (_screen, name) => (
       name === "slot_decompile_all"
         ? { needs_confirm: true, confirm_text: "항목 1개를 전부 …" }
@@ -1008,7 +1058,7 @@ test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", asyn
   await h.controller.handleSlotVerb("decompile-all", "", {});
 
   const sent = h.trace
-    .filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+    .filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh")
     .map((row) => [row[2], row[3]]);
   assert.deepEqual(sent, [
     ["slot_decompile_all", { path: "C:/lib/구간.hwpx" }],
@@ -1023,6 +1073,7 @@ test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", asyn
 test("U4-E3 밴드 동사 확인 취소는 확정 호출을 보내지 않는다", async () => {
   const h = harness({
     initial: async () => slotSnap(),
+    tpl: slotTpl(),
     call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
     confirm: () => false,
   });
@@ -1030,13 +1081,13 @@ test("U4-E3 밴드 동사 확인 취소는 확정 호출을 보내지 않는다"
 
   await h.controller.handleSlotVerb("decompile-all", "", {});
 
-  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh");
   assert.equal(sent.length, 1, "1차 질의 하나뿐이어야 한다");
   assert.equal(sent[0][3].confirm, undefined);
 });
 
 test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
-  const h = harness({ initial: async () => snap({ section: "template", library: {} }) });
+  const h = harness({ initial: async () => snap({ section: "template" }), tpl: tplSnap() });
   await h.controller.init();
 
   const markup = renderToStaticMarkup(
@@ -1285,7 +1336,7 @@ test("S10-05 「새 파일로 저장」은 기존 txt_new 를 재사용한다(�
 
   await h.controller.saveTxtEditAsNew({});
 
-  const verbs = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+  const verbs = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh")
     .map((row) => row[2]);
   assert.ok(verbs.includes("txt_new"), "새 파일 저장이 txt_new 를 부르지 않았다");
   assert.ok(!verbs.includes("txt_edit"), "새 파일 저장이 원본까지 덮었다");

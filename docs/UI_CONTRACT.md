@@ -497,6 +497,53 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 - **탭은 계약 §5.1 의 section 문자열**(`template`·`binding`·`filename`, 「시험」은 F8)이고
   **집합은 매체 파생**이다(TXT 는 파일 이름 탭 없음 — §3.2). 정수 단계 어휘는 사망했다:
   patch 의 키와 탭이 같은 문자열이라야 같은 상태를 두 표면이 다르게 부르지 않는다.
+  **id 는 계약이고 라벨은 문안이다**: U6-B(#976)가 라벨만 갈았다 — `template`→「고르기」,
+  `binding`→「연결 확인」, `filename` 은 그대로. 그 문안은 두 자리에 산다(표면
+  `editor.ts` 의 `SECTION_TITLES`, 되돌림 notice 의 `screen_editor.SECTION_LABELS`)이고
+  **글자가 같아야 한다** — 갈리면 화면이 부르는 이름과 알림이 지목하는 이름이 어긋난다.
+
+- **1단계 「고르기」는 두 풀과 한 카드다**(U6-B #976 · U6 §2.2 · 동결 시안 장면 1). 존
+  `#editorPairZone` 이 좌 템플릿 풀(`#editorTplPool`) · 중앙 연결 카드(`#editorLinkCard`) ·
+  우 데이터 풀(`#editorDataPool`)을 든다. 소유는 이렇게 갈린다:
+  - **좌 열의 정본은 `tpl` 채널 스냅샷**이다(아래 「tpl→editor」 절). 편집기 스냅샷이 목록을
+    한 번 더 성형하던 `library` 존은 **퇴역**했다(구 `_library_snapshot`) — 같은 목록을 두
+    컨트롤러가 그리면 tpl 의 변환·검토가 두 경로로 도착한다. 편집기가 내는 것은 선택 경로
+    (`template_path`) 하나이고 항목은 그것으로 `aria-pressed` 를 그린다. 결과 줄(`.run-result`)과
+    구간 항목 목록(`#tplSlots`)도 같은 이유로 `tpl` 스냅샷을 직접 읽는다(중계 seam
+    `library_result`·`library_slots` 폐기).
+  - **우 열은 「데이터 선택」 다이얼로그와 같은 컴포넌트**다(`frontend/src/screens/pool_list.ts`).
+    갈리는 것은 셋뿐이다 — 1차 동사의 라벨(「이 데이터로」 ↔ 「이 데이터 사용」), 그것이
+    발행하는 액션(`editor/use_pool_data` ↔ `job/load_pool`), DOM id 접두(`editorPool` ↔
+    `dataPicker`). `load_pool` 을 `editor` 채널에 넣지 않는다: 화면별 허용 목록이 곧 경계의
+    정의라 같은 이름이 두 화면에 걸리면 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다.
+    관리 동사(보관·활성화·삭제·다시 연결·중복 정리)는 두 호스트가 **같은 `pool` 채널**로 보낸다.
+  - **「고를 수 있는가」와 그 사유는 Python 행 필드**다(`selectable`·`select_block_reason`):
+    좌는 `screen_template`(링1 `TemplateRow.select_block_reason` — 변환 전 RAW·PARTIAL 은
+    비활성 + 사유), 우는 `screen_pool.select_block_reason`(보관·끊김·나라). 표면이 `state`·
+    `status`·`missing` 으로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다 — 그래서 링2 의
+    재판정(구 `pool_option_block`·웹 `usableReason`)은 사슬째 걷혔고, 못 고르는 항목의
+    클릭·드롭은 조용히 삼켜지지 않고 그 사유를 인라인으로 재진술한다.
+  - **연결 카드의 수치는 출처를 명시로 든다**(`pairing.basis`). 1단계는 매핑 모델을 **만들지
+    않는다**: 생성은 2단계 진입의 `_ensure_model` 하나가 지고, 카드가 미리 만들면 고르기를
+    바꿔 보는 것만으로 「전원 미확정 재생성」 전이가 돌아 확정이 조용히 무너진다. 그래서
+    모델이 있고 그 키가 지금 선택과 같으면 모델의 실제 수치(`basis="model"`, 라벨 「확인」),
+    아니면 순수 함수 `gui.mapping_state.pairing_preview` 를 읽기 전용으로 돌린 미리보기
+    (`basis="preview"`, 라벨 「자동 연결」)다. 2단계가 실제로 세울 제안과 **같은 함수**라
+    수치가 갈리지 않는다.
+  - **초안의 전진 게이트가 데이터까지 요구한다**(`can_advance("template")` = 템플릿 준비 +
+    데이터 마운트). 이 단계가 묻는 질문이 하나이므로 반쪽만 고르고 지나가면 그 단계가 두
+    질문을 가진 것이 되고, 데이터 관문이 2단계 머리에서 걷힌 뒤로는 고칠 표면이 없는 화면에
+    착지한다. 사유는 Python 이 낸다(`pairing.advance_block_reason` — 좌·우 중 막힌 한쪽만
+    지목한다). 저장본의 자유 탭 이동은 불변이고, 저장 게이트의
+    `blocked_field="data"` 는 이제 **1단계 우 열**을 가리킨다.
+  - **끌어 놓기는 가속기이고 클릭이 1차 경로다**(U6 §2.7). 항목을 상대 열의 고를 수 있는
+    항목 위에 놓으면 **클릭이 발행하는 같은 액션 두 번**이 나간다(`use_library_template` →
+    `use_pool_data`, 템플릿 먼저 — 뒤집으면 데이터 마운트가 모델 재조립을 태운 뒤 템플릿
+    교체가 그것을 또 무너뜨린다). 새 액션은 0 이고, `dataTransfer` 형식은
+    `text/plain` = `"<side>:<key>"` 하나다. 같은 열끼리·비활성 항목은 받지 않고, 강조는
+    클래스 하나(`.drop-target`)에 애니메이션이 없어 `prefers-reduced-motion` 과 무관하다.
+  - **아래 존은 이 슬라이스에서 옮기지 않았다**(U6-E 소관): 선택 chip·`Provenance`·스키마
+    표·게이트·`#tplSlots`·`#editorSlotSummary` 는 고르기 존 아래에 좌표 그대로 남는다.
 - **저장 단위는 한 section 의 patch**(§13-16). 다른 탭으로 가는 길을 막는 patch 는 **묻지
   않고 그 자리만 되돌린다**(자동 버리기): 편집기 한 탭에서 하는 작업량은 확인을 요구할 만큼
   크지 않아, 종전 3택(저장하고 이동·버리고 이동·머무르기)은 마찰과 왕복만 남겼다. 판정도
@@ -556,11 +603,12 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   (`convert_preview`·`apply_convert`·`format_convert_*`)이고, **표기 진단이 1건이라도 있으면
   확인을 묻지 않고** 인라인 결과로 차단 사유를 재진술한다(변환 불가는 확정할 것이 아니다).
   구조 컴파일이 거절되면 필드 변환이 이미 저장됐더라도 그 거절이 같은 결과 줄에 실린다.
-  - `review` 는 lint 결과에 더해 그 템플릿의 **구간 항목 목록**을 스냅샷 `library.slots`
+  - `review` 는 lint 결과에 더해 그 템플릿의 **구간 항목 목록**을 `tpl` 스냅샷 `slots`
     (`{path, name, summary, rows[{id,label,option_count,options}], diagnostics}`)로 세운다.
-    투영·수명은 `TemplateController` 소유고 편집기 스냅샷은 읽기만 한다(결과 줄과 같은
-    규율 — 조립 한 줄은 `app.py` 의 `library_slots`). 목록이 겨눈 파일이 라이브러리에서
-    사라지면 스냅샷이 스스로 `null` 로 걷는다(죽은 경로를 겨눈 버튼 금지).
+    투영·수명은 `TemplateController` 소유이고 고르기 단계 표면이 그 채널을 **직접 읽는다**
+    (U6-B #976 — 종전의 편집기 중계 `library.slots` 는 결과 줄과 함께 퇴역했다). 목록이
+    겨눈 파일이 라이브러리에서 사라지면 스냅샷이 스스로 `null` 로 걷는다(죽은 경로를 겨눈
+    버튼 금지).
   - 표면은 `#tplSlots` 구획이고 행 동사 셋은 `data-act="slot-rename"`·`"slot-decompile"`·
     `"slot-remove"`(+`data-slot=<id>`)다. 개명은 `Modal.prompt` 하나로 끝나고(파괴 아님),
     표기로 되돌리기·삭제는 `needs_confirm` 왕복이다 — **확인 본문은 Python 이 싣는다**
@@ -610,6 +658,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     같은 `txt_new` 재사용 — 새 백엔드 동사 없음). 성공 직후 `#save-msg` 가 「변경사항 확인」
     다음 「변경사항 적용」이 남았음을 말한다 — Candidate 출생은 그 동사이지 저장이 아니고,
     말하지 않으면 한 동작이 두 사건인 척한다.
+- **고르기 단계 좌 열은 `tpl` 채널을 직접 구독한다**(U6-B #976): 목록·결과 줄·구간 항목
+  목록의 정본이 그 채널 스냅샷 하나이고, 편집기 표면이 `runtime.model("tpl")` 을 읽어 그린다.
+  그래서 tpl 의 변이가 목록에 닿는 길은 그 채널의 push 하나이고, 재스캔(`tpl/refresh`)은
+  **editor 재당김을 태우지 않는다**(같은 진입에서 디스크를 두 번 읽지 않는다). 반대로 파일을
+  변이시키는 tpl 동사는 이 세션의 스키마·게이트를 흔들 수 있어 종전대로 재당김 하나를
+  태운다. 재스캔 트리거는 **1단계 진입당 한 번**이다(신규 초안·`load_job`·1단계 재진입) —
+  렌더마다 훑지도, 영영 안 읽지도 않는다(U6 §2.3 「화면 진입 시 diff + 수동 새로 읽기」).
+  같은 진입이 `pool/refresh` 도 한 발 보낸다(CLI·다른 창의 등록이 목록에 서지 않으면 같은 침묵이다).
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
   (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_decompile_all`·`slot_remove`
   확정 · `txt_edit`) 그 성공 **직후**
@@ -637,6 +693,13 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 | 고정한 데이터 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) + 사용·보관·활성화·삭제·다시 연결 + 손상 격리 | `pool` 컨트롤러 스냅샷·액션 **그대로** |
 | 다른 데이터 | 파일 찾아보기(1회용) → 다중 시트면 시트 확정 게이트 · **「계약 목록(.db) 등록…」**(`#dataPickerPclm` → `#poolRegModal` pclm 모드) | 호스트 `pick_data_file`/`load_data_sheet` · `pool/register_pclm` |
 
+- **몸통은 편집기 우 열과 같은 컴포넌트다**(U6-B #976 · U6 §2.4): 모달 껍데기(제목·상태줄·
+  닫기)만 이 파일이 지고, 세 구획(현재 데이터 · 고정한 데이터 · 다른 데이터)은
+  `frontend/src/screens/pool_list.ts` 의 `PoolSections` 하나가 낸다. 좌표는 **불변**이다 —
+  접두 `dataPicker` 가 종전 id 를 글자 그대로 재생산하므로 `#dataPickerCurrent`·
+  `#dataPickerPinned`·`#dataPickerBrowse`·`#dataPickerPclm` 을 겨눈 게이트가 그대로 산다.
+  편집기 축약판 `PoolPickList`(`#editorPoolPick`·`pick-pool-data`·`pool-pick-close`)와 그
+  조회 액션 `editor/pool_options` 는 소비자 0 이 되어 **사슬째 퇴역**했다.
 - **화면은 죽고 컨트롤러는 산다**: `PoolController` 는 그대로 살아 이 다이얼로그가 `pool`
   관측 푸시의 구독자다(`Bridge.onPush("pool", …)`). 판정·문구는 Python 단일 출처.
 - 보관·끊김 항목은 숨기지 않고 **정직하게 비활성** + 사유 병기 — 숨기면 `활성화`·`다시 연결`
