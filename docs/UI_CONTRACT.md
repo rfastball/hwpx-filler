@@ -567,6 +567,75 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     클래스 하나(`.drop-target`)에 애니메이션이 없어 `prefers-reduced-motion` 과 무관하다.
   - **아래 존은 이 슬라이스에서 옮기지 않았다**(U6-E 소관): 선택 chip·`Provenance`·스키마
     표·게이트·`#tplSlots`·`#editorSlotSummary` 는 고르기 존 아래에 좌표 그대로 남는다.
+- **2단계 「연결 확인」은 4열 표 하나다**(U6-C #977 · U6 §2.2 · 동결 시안 장면 2). 열은
+  템플릿 필드 · 데이터 열 · 표시형 · 미리보기이고, 종전 7열의 나머지 셋은 흡수됐다:
+  「확정」 체크는 데이터 열 칸의 **상태 배지 버튼**(`data-act="row-confirm"`)으로,
+  「타입/고정값」은 그 칸 select 의 특수 항목군으로, 「상태」는 배지 문안으로.
+  - **행 상태는 닫힌 4태이고 그 라벨은 링1 이 소유한다**: `suggested`(자동 제안) ·
+    `edited`(사람이 손댐, 미확인) · `confirmed`(확인) · `needs_source`(채울 것 없음).
+    판정은 `RowState.status()` 하나이고 문안은 `gui.mapping_state.ROW_STATUS_LABEL` 하나다
+    — 종전에는 링2 가 4태를 짓고 웹이 그 위에서 「제안」을 한 번 더 유추했다(같은 상태를
+    세 층이 판정했다). 데이터 미연결은 별도 상태가 **아니다**: 행이 요구하는 것은 같고
+    (`needs_source`), 고를 열이 왜 없는지는 표 머리·1단계가 말한다.
+  - **특수 항목은 열 이름 공간에 얹지 않는다.** `data_column_options` 의 항목은 실 열
+    (`col:<이름>`, `kind="column"`)과 특수 셋(`sp:const`·`sp:today`·`sp:blank`)으로 갈리고,
+    웹은 값을 파싱하지 않고 `kind` 로 발행 액션을 가른다 — 열은 `set_source`, 고정값·오늘
+    날짜는 `set_type`, 비워 둠은 `set_blank`. `set_source` 에 센티넬이 가지 않는 것이 계약
+    이다(리뷰 R5: 같은 이름의 실 열이 있으면 그 열을 영영 못 겨눈다). 링1 도 그 짝을 지킨다:
+    열을 고르면 `const`/`today` 가 추정 기본형으로 풀리고, 특수 유형을 고르면 소스가 풀린다
+    (표시와 출력이 갈리지 않게).
+  - **유형 축은 표시형 select 가 든다**(U6-C 리뷰 1). 종전 「타입」 열이 데이터 열 칸으로
+    접히며 남긴 것은 `const`/`today` 둘뿐이었는데, `infer_type` 은 이름 키워드 휴리스틱이라
+    「계약일」이 text 로 추정되면 그 행은 날짜 서식으로 갈 길을 **영영** 잃는다. 그래서 표시형
+    select 가 유형별 `optgroup`(텍스트·날짜·금액)으로 `format_presets` 전 유형을 나열하고,
+    항목 값은 `type:fmt` 한 쌍이다. 선택은 **한 액션**(`set_display {index, type, fmt}`)이다 —
+    유형이 바뀌면 표시형 키가 무효라 둘은 애초에 한 전이였고, 나눠 두면 그 사이에 사람이 고른
+    표시형이 사라진 상태가 실재한다(구 `set_type`·`set_fmt` 액션은 사슬째 퇴역). 그룹 집합은
+    값의 출처가 가른다: 「오늘 날짜」 행은 date 어휘 하나(U4 §2.14 판정 1), 「고정값」 행은
+    프리셋이 없어 빈 목록이고 표면이 비활성 「—」로 접는다. 항목이 `type`·`fmt` 를 따로 들어
+    웹은 값 문자열을 파싱하지 않는다(데이터 열 항목과 같은 규율).
+  - **표 안의 두 select 는 초안을 두지 않는다**(리뷰 2). 고르는 순간이 곧 커밋이라 지켜야 할
+    중간 상태가 없고, 초안을 두면 그 값(항목 값 `col:…`/`sp:…`)이 지연 flush 의 일반 갈래로
+    새어 `set_source` 에 실린다 — 존재하지 않는 열 「col:품명」에 결속되는, R5 센티넬 금지의
+    정확한 위반이다. 초안을 가진 행 축은 **고정값 입력 하나**이고(`RowAxis = "const"`), 발신이
+    실패하면 재렌더가 제어 select 를 서버 값으로 되맞춘다.
+  - **행의 어포던스 술어는 전부 Python 이 낸다**: 배지의 `confirmable`(= 내용 있음 **또는**
+    확인됨 — 비움 확정 행도 확인을 풀 길이 있어야 한다) 과 ↻ 의 `revertable`(= `revert_source`
+    가 거절하지 않는 조건 그대로). 웹이 `touched && !confirmed && record_count` 로 다시
+    조립하면 어포던스와 거절이 갈려 「눌렀는데 거절당하는」 버튼이 남는다.
+  - **일괄 승격은 자동 제안만 올린다.** 머리의 `data-act="confirm-suggested"` 는
+    `MappingModel.confirm_suggested()` 를 부르고, 그 대상은 **시스템 소유 + 내용 있는 행**
+    뿐이다. 사람이 손댄 행과 열 필요 행은 각자 다른 답을 요구하므로 이 버튼이 대신 답하지
+    않는다. **명시성 게이트는 불변이다** — `is_complete()` 는 여전히 전 행 확인이고, 승격
+    뒤에도 남은 행이 있으면 저장이 그대로 막힌다. 머리 pill 셋(자동 제안·확인 필요·고정값)과
+    버튼 라벨은 전부 `binding_head` 가 실어 보낸다(웹이 수치를 따로 세면 버튼이 약속과 다른
+    일을 한다). 승격할 것이 0 일 때의 문안이 두 갈래인 것도 Python 소유다 — 다 확인한 0 과
+    애초에 제안이 없던 0 은 같은 문장으로 말할 수 없다.
+  - **일괄 승격 뒤 저장하면 `field:*:source`/`:format` 지문 키가 한 번에 N개 등장하고
+    `binding_revision` 이 1 오른다 — 의도된 결과다**(F-06 지문 2축 불변). 명시성 게이트의
+    정상 산출이고, `reviewed_rules` 기준선은 완주 런만 쓴다.
+  - **미리보기는 산출물이 담을 것을 그대로 말한다**(`preview_kind` 5갈래): `value` 는 실제
+    값, `missing` 은 결속됐는데 이 행에서 빈 값 — 문자열이 `domain/job.MISSING_MARKER` **그
+    자체**다(생성이 그 자리에 넣는 바로 그 문자열이라 UI 문안이 아니라 데이터이고, 그래서
+    웹이 짓지 않는다), `blank` 는 비워 둠(빈 셀 + 배지 「확인」), `none` 은 열 필요(「—」),
+    `error` 는 「(미리보기 오류)」. 스테퍼(`prev-rec`/`next-rec`)는 표 머리 `th` 안에 서고
+    `step_preview` 는 종전 그대로다(표시순서 투영 없음).
+  - **드문 동사는 머리 우측 `⋯` 메뉴**(`data-act="binding-more"` → `#bindingMoreMenu`)다 —
+    「자동 제안 다시 받기」·「모두 해제」·「직전 확인 n개 복원」. 컨트롤러 함수도 확인 왕복도
+    종전 그대로이고 바뀐 것은 **어디에 서는가**뿐이다(§6: 같은 선택지를 모든 문맥에
+    나열하지 않는다).
+  - **「사용할 데이터 열」 선별은 사슬째 퇴역했다**(U6 §2.5 사용자 확정): 세션 상태
+    (`_ignored_sources`·펼침 힌트) · 스냅샷 키 5개(`active_source_fields`·
+    `ignored_source_fields`·`active_count`·`ignored_count`·`ignored_expanded`) · 액션 3개
+    (`use_all_headers`·`use_none`·`toggle_source_active`) · `HeaderSelect` 표면이 전부
+    사라졌다. 매핑되지 않은 열은 자연히 쓰이지 않고, 남은 질문 하나는 표 바닥 한 줄
+    (`binding_head.unused_columns`)이 잇는다. 저장 파일에 이 상태가 없었으므로 마이그레이션도
+    없다. 모델 API `apply_active_sources` 는 **남는다** — 데이터 재겨눔의 어휘 재동기화가
+    계속 그 관문을 쓴다.
+  - 구 `confirm_all`·`confirm_blanks`(ADR-E 이름 재진술 모달)는 사슬째 사라졌다: 일괄 승격이
+    앞 절반을, 행별 「비워 둠」 선언이 뒤 절반을 진다. 이름을 되읽어 주던 이유는 **일괄**이
+    반사적 dismiss 로 여러 필드를 한 번에 비우기 때문이었고, 행별 선언에는 그 위험이 없다
+    (고른 행이 곧 확인한 행이다).
 - **저장 단위는 한 section 의 patch**(§13-16). 다른 탭으로 가는 길을 막는 patch 는 **묻지
   않고 그 자리만 되돌린다**(자동 버리기): 편집기 한 탭에서 하는 작업량은 확인을 요구할 만큼
   크지 않아, 종전 3택(저장하고 이동·버리고 이동·머무르기)은 마찰과 왕복만 남겼다. 판정도
@@ -1661,7 +1730,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 | T1 템플릿 적용 | `screen_editor._do_use_library_template` — `new_job_session` 뒤 |
 | T2 매핑 전확정 | `screen_editor.dispatch` 꼬리 — 링1 `is_complete()` 의 **false→true 상승 모서리** |
 | T3/T10 작업 저장 | `screen_editor._do_save` — 레지스트리 쓰기 성립 뒤. HWPX/TXT 갈림은 `Job.media` |
-| T14 비움 확정 | `screen_editor._do_confirm_blanks` — `confirm_fields` 가 **실제로 확정한 행 ≥1** |
+| T14 비움 확정 | `screen_editor._do_set_blank` — 그 행이 **실제로 비움 확정으로 옮겨갔을 때**(U6-C: 구 `confirm_blanks` 모달의 후계) |
 | T4/T12 마운트·교체 | `screen_job._remember_data_source` — 세 마운트 경로가 모이는 한 자리. T12 는 **이 세션 안에서의** 2번째 마운트 |
 | T5 작업·행 선택 | `screen_job.dispatch` 꼬리 — `job_name` ∧ `selection.selected_count() ≥ 1` |
 | T6 승인 | **발신자 없음**(#957 — 승인 사건 소멸). 링1 단계 정의는 동결 자산이라 그대로 선다 |

@@ -235,20 +235,25 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.shoot("template-pick")
 
     s.click_text("#scr-editor", "다음 ▶")
+    # 라벨에 수치가 들어 있어 문안으로 겨누지 않는다 — 좌표(`data-act`)가 계약이다.
     s.wait(
-        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        "!!document.querySelector('#scr-editor [data-act=\"confirm-suggested\"]')"
         " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
         "「연결 확인」 단계·매핑표 미리보기",
         requires=["#scr-editor"],
     )
-    s.click_text("#scr-editor", "모두 확정")
+    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인")
+    # 「확정 6/6」 게이트 줄은 머리 pill 로 접혔다 — 남은 행이 0 이면 전 행 확인이다.
+    # 배지 전건을 함께 되읽어 pill 만 초록인 자리를 막는다(수치와 행이 갈리지 않는다).
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
-        "전 행 확정",
+        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
+        " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
+        ".every((b) => b.textContent.trim() === '확인')",
+        "전 행 확인",
         requires=["#scr-editor"],
     )
-    # 확정 게이트 줄(확정 6/6·모두 확정)이 폴드 아래로 잘리지 않게 겨눠 스크롤.
-    s.js("window.__cap.btn('#scr-editor','모두 해제')?.scrollIntoView({block:'center'}); true;")
+    # 머리 pill 줄이 폴드 아래로 잘리지 않게 겨눠 스크롤.
+    s.scroll_to("#scr-editor .bindbar")
     ctx.shoot("mapping-confirm")
 
     # ---- S4 「파일 이름」 탭: 이름·패턴 → 저장 ------------------------------
@@ -493,15 +498,15 @@ def run(ctx: ScenarioContext) -> dict:
     )
     s.click_text("#scr-editor", "다음 ▶")
     s.wait(
-        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        "!!document.querySelector('#scr-editor [data-act=\"confirm-suggested\"]')"
         " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
         "TXT 매핑표 미리보기",
         requires=["#scr-editor"],
     )
-    s.click_text("#scr-editor", "모두 확정")
+    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(TXT)")
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
-        "TXT 전 행 확정",
+        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')",
+        "TXT 전 행 확인",
         requires=["#scr-editor"],
     )
     s.set_value("#editorName", "발주요청 기안")
@@ -622,15 +627,26 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#editorLinkCta"],
     )
     s.click_text("#scr-editor", "다음 ▶")
-    s.wait("!!window.__cap.btn('#scr-editor','모두 확정')", "매핑표(오류 연습)", requires=["#scr-editor"])
-    s.click_text("#scr-editor", "모두 확정")
-    # 데이터에 없는 「담당연락처」 — 채우지 않고 비움으로 확정할지 **묻는다**(이름게이트).
-    s.wait("!!window.__cap.btn(null,'비움으로 확정')", "비움 확정 이름게이트")
-    seen["empty_value_gate_asked"] = True
-    s.click_text(None, "비움으로 확정")
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('확정 3/3')",
-        "오류 연습 전 행 확정",
+        '!!document.querySelector(\'#scr-editor [data-act="confirm-suggested"]\')',
+        "매핑표(오류 연습)", requires=["#scr-editor"],
+    )
+    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(오류 연습)")
+    # 데이터에 없는 「담당연락처」는 일괄 승격이 **건드리지 않는다**(U6-C #977) — 사람이 그
+    # 행에서 「비워 둠」을 골라야 넘어간다. 확인의 자리가 모달에서 그 행으로 옮겨 왔고,
+    # 요구 자체(사람이 명시로 비운다)는 그대로다.
+    empty_row = '#scr-editor table.map tr[data-field="담당연락처"]'
+    s.wait(
+        f'!!document.querySelector({json.dumps(empty_row)})'
+        f' && document.querySelector({json.dumps(empty_row)}).querySelector'
+        '(\'[data-act="row-confirm"]\').disabled === true',
+        "비움 선언을 기다리는 행", requires=["#scr-editor"],
+    )
+    seen["empty_value_gate_asked"] = True
+    s.set_value(empty_row + ' select[data-act="row-source"]', "sp:blank")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')",
+        "오류 연습 전 행 확인",
         requires=["#scr-editor"],
     )
     s.set_value("#editorName", "오류연습")
@@ -1119,14 +1135,25 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "H4: Binding deep-link가 exact source select에 focus하지 않았습니다 — "
         f"{focus_state} · editor context={editor_context} · focus log={s.js('window.__focusLog')}",
     )
-    s.set_value(source_select, "공고명")
+    # 열 값은 **항목 값**이다(U6-C #977) — 실 열은 `col:` 접두이고 특수 항목은 `sp:` 라
+    # 두 이름 공간이 구조적으로 갈린다(동명 열 충돌 봉쇄).
+    s.set_value(source_select, "col:공고명")
+    badge = row + ' button[data-act="row-confirm"]'
+    # 배지는 **채울 것이 생긴 뒤에야** 눌린다(`confirmable`). `set_value` 의 발신은 host
+    # 왕복이라 바로 위 줄이 끝난 시점에 서버가 아직 그 열을 모를 수 있고, 그때 누르면
+    # 비활성 버튼을 클릭해 조용히 아무 일도 안 일어난다 — 열린 것을 보고 누른다.
+    s.wait(
+        "!!document.querySelector(" + json.dumps(badge + ":not([disabled])") + ")",
+        "확인 배지 무장(결속 반영)",
+        requires=[row],
+    )
     s.js(
-        "(function(){const c=document.querySelector(" + json.dumps(row + ' input[data-act="row-confirm"]') + ");"
-        "if(c && !c.checked)c.click();return !!c;})()"
+        "(function(){const b=document.querySelector(" + json.dumps(badge) + ");"
+        "if(b && b.getAttribute('aria-pressed') !== 'true')b.click();return !!b;})()"
     )
     s.wait(
-        "document.querySelector(" + json.dumps(row + ' input[data-act="row-confirm"]') + ").checked",
-        "신규 Binding 확정",
+        "document.querySelector(" + json.dumps(badge) + ").getAttribute('aria-pressed') === 'true'",
+        "신규 Binding 확인",
         requires=[row],
     )
     # 수리 진입은 **저장된 작업의 편집 모드**다 — footer 가 마법사의 「작업 저장」이 아니라

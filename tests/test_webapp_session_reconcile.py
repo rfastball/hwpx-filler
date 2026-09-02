@@ -73,11 +73,14 @@ def _mounted_txt_session(frontend, path: Path):
     editor.load_template_path(str(path))
     editor.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     editor.dispatch("goto_section", {"section": "binding"})
-    editor.dispatch("set_type", {"index": 0, "type": "const"})
+    editor.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     editor.dispatch("set_const", {"index": 0, "const": "총무과"})
-    blanks = editor.dispatch("confirm_all", {})["blanks"]
-    if blanks:
-        editor.dispatch("confirm_blanks", {"fields": blanks})
+    for row in editor.snapshot()["rows"]:
+        # 전 행 확인 — 내용 행은 배지, 빈 행은 「비워 둠」(U6-C #977: 「모두 확정」 2발의 후계).
+        if row["confirmable"]:
+            editor.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
+        else:
+            editor.dispatch("set_blank", {"index": row["index"]})
     return editor
 
 

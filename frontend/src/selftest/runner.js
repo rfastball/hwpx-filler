@@ -49,6 +49,7 @@ export const ERROR_CODES = Object.freeze({
   INCOMPLETE: "probe_incomplete",
   CONTRACT: "contract_violation",
   SKIPPED_AFTER_TEARDOWN: "skipped_after_teardown_failure",
+  ALERT_RAISED: "alert_raised",
 });
 
 /** 구조화 오류. `message` 는 사람이 읽는 재진술이고 `code` 는 기계가 가른다. */
@@ -619,6 +620,27 @@ export function createSelftestRunner(capabilities) {
     return value;
   }
 
+  /** 프로브 실행 동안 `window.alert` 를 **기록 stub** 으로 바꾼다(U6-C 리뷰 10).
+   *
+   *  이 창의 `alert` 는 JS 를 멈춘다. 프로브 감시견도 JS 쪽이라 그 창은 아무도 못 깨우고,
+   *  호스트 예산이 만료될 때까지 런 전체가 이름 없는 `run_hung` 으로 끝난다 — 진짜 원인
+   *  (합성 스냅샷의 계약 위반이 제품 코드의 throw 를 부르고, 그것이 `guarded` 의 catch
+   *  백스톱까지 흘렀다)은 어디에도 안 남는다. 실측으로 한 번 그 자리를 밟았다(#977).
+   *
+   *  그래서 공용 층이 삼키고 **세어서 그 프로브를 그 자리에서 빨강으로** 만든다. 프로브별
+   *  stub 은 이 층이 생기면서 걷혔다: 자기 프로브만 지키는 방어는 남의 계약에서 터지는
+   *  결함을 못 막는다(오염은 언제나 다음 프로브에서 드러난다). */
+  function armAlertRecorder() {
+    const win = caps.win;
+    const real = win.alert;
+    const seen = [];
+    win.alert = function (message) { seen.push(String(message)); };
+    return {
+      seen,
+      restore() { if (win.alert !== real) win.alert = real; },
+    };
+  }
+
   /** 모드 하나를 처음부터 끝까지 몬다. 보고서는 **항상** 돌아오고, 실패는 보고서 안에서 시끄럽다. */
   async function run(mode, options) {
     const opts = options || {};
@@ -633,7 +655,9 @@ export function createSelftestRunner(capabilities) {
       timings: {},
     };
     let poisonedBy = null;
+    const alertRecorder = armAlertRecorder();
 
+    try {
     for (const probe of order) {
       if (poisonedBy) {
         report.skipped.push({
@@ -647,6 +671,7 @@ export function createSelftestRunner(capabilities) {
       const waitState = { what: null };
       const ctx = makeContext(probe, mode, opts, waitState);
       const began = now();
+      const alertsBefore = alertRecorder.seen.length;
       let value = null;
       let failed = false;
       let started = false;
@@ -690,6 +715,21 @@ export function createSelftestRunner(capabilities) {
         );
       }
 
+      /* 이 프로브가 도는 동안 `alert` 가 떴는가 — 떴다면 어딘가가 던졌다는 뜻이고, 그
+         던짐은 조용한 매달림이 아니라 **문안을 가진 빨강**이어야 한다. */
+      const raised = alertRecorder.seen.slice(alertsBefore);
+      if (raised.length) {
+        failed = true;
+        report.ok = false;
+        report.errors.push({
+          probe: probe.name,
+          phase: "run",
+          code: ERROR_CODES.ALERT_RAISED,
+          message: `window.alert ${raised.length}회 — 편집 발신이 던졌습니다: `
+            + raised.join(" | "),
+        });
+      }
+
       if (started && probe.teardown) {
         try {
           await probe.teardown(ctx);
@@ -721,6 +761,11 @@ export function createSelftestRunner(capabilities) {
       report.timings[probe.name] = now() - began;
 
       if (probe.cooldownAfterMs > 0) await sleep(probe.cooldownAfterMs);
+    }
+    } finally {
+      /* 실행이 어떻게 끝나든 실 `alert` 를 돌려준다 — 남기면 이 창의 이후 모든 경보가
+         조용히 삼켜지고 그 침묵은 「경보가 없었다」와 구별되지 않는다. */
+      alertRecorder.restore();
     }
 
     return report;

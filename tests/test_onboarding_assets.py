@@ -267,10 +267,12 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
     assert model.suggestions().get("계약보증금") is None
     assert similarity("계약보증금", "계약금액") < SUGGEST_THRESHOLD
 
-    # 그래서 게이트가 선다 — 사람이 이름을 재진술하고 비움 확정해야 넘어간다(ADR-E).
-    assert model.unconfirmed_blank_fields() == ["계약보증금"]
-    assert deposit.is_empty_confirmed() is False
-    model.confirm_fields(["계약보증금"])
+    # 그래서 게이트가 선다 — 사람이 그 행에서 「비워 둠」을 골라야 넘어간다. 일괄 승격
+    # (`confirm_suggested`)은 이 행을 건드리지 않는다(U6-C #977 — 구 ADR-E 이름게이트의
+    # 후계: 확인의 자리가 모달에서 그 행으로 옮겨 왔고 요구 자체는 그대로다).
+    assert deposit.status() == "needs_source"
+    assert model.confirm_suggested() == 3 and deposit.is_empty_confirmed() is False
+    model.set_blank(model.index_of("계약보증금"))
     assert deposit.is_empty_confirmed() is True
 
 

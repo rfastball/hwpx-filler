@@ -1401,35 +1401,84 @@ class TestWebSelftestGate:
             "편집기를 나온 뒤에도 상단 2탭이 숨어 있습니다 — 몰입이 영구 은닉이 됐습니다."
         )
 
-    def test_editor_chip_live_renders_ownership_and_toggle_chips(
+    def test_editor_binding_live_renders_four_column_table(
         self, selftest_result: dict
     ) -> None:
-        # 매핑 분류 칩-라이브(결정 12·13) — 합성 매핑 스냅샷을 실
-        # render() 에 흘려 사용할 헤더가 즉시 토글 칩(체크박스 스테이징 소거)으로, 미사용
-        # 구역이 펼쳐지고, 소유권 태그 4종과 touched 행 ↩(자동 제안 복귀)가 흡수된 편집
-        # 호스트(#jobEditHost) 실 WebView2 에 그려지는지 되읽는다(백엔드는 test_mapping_state).
-        e = selftest_result["editor_chip"]
-        assert e.get("error") is None, f"칩-라이브 프로브 예외: {e.get('error')!r}"
-        assert e["active_chips"] == 3, f"활성 칩(즉시 토글)이 3개가 아닙니다: {e!r}"
-        assert e["has_checkbox_staging"] is False, (
-            "체크박스 스테이징이 남아 있습니다 — 결정 13 소거 위반."
+        # 2단계 「연결 확인」 표(U6-C #977 · U6 §2.2 · 동결 시안 장면 2) — 합성 매핑 스냅샷을
+        # 실 render() 에 흘려 4열·머리 pill·일괄 승격·특수 항목 분기·행별 배지·스테퍼가 실
+        # WebView2 에 그려지고 발신되는지 되읽는다(백엔드 판정은 test_mapping_state).
+        e = selftest_result["editor_binding"]
+        assert e.get("error") is None, f"연결 확인 프로브 예외: {e.get('error')!r}"
+        assert e["head_cols"] == ["템플릿 필드", "데이터 열", "표시형", "미리보기"], (
+            f"7열이 4열로 접히지 않았습니다: {e['head_cols']!r}"
         )
-        assert e["ignored_chip"] is True, "미사용 칩(토글형)이 없습니다."
-        assert e["ignored_fold_open"] is True, (
-            "ignored_expanded 인데 미사용 구역이 펼쳐지지 않았습니다(결정 13)."
+        assert "사용하지 않는 데이터 열 1개" in e["foot_text"], (
+            f"표 바닥이 안 쓰는 열 수를 잇지 않습니다: {e['foot_text']!r}"
         )
-        assert e["use_none_btn"] is True, "'전체 미사용' 버튼이 없습니다(결정 13 대칭쌍)."
-        tags = e["tags"]
-        for want in ("확정", "수동", "제안", "후보 없음"):
-            assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
+        assert e["pills"] == ["자동 제안 2", "확인 필요 2", "고정값 0"], (
+            f"머리 pill 셋이 Python 수치를 그대로 말하지 않습니다: {e['pills']!r}"
+        )
+        assert e["promote_label"] == "제안 2건 모두 확인", (
+            f"일괄 승격 라벨이 링2 문안이 아닙니다: {e['promote_label']!r}"
+        )
+        # 배지 = 상태 4태의 링1 라벨. 채울 것이 없는 행은 확인할 것이 없어 잠기고 사유를 든다.
+        assert e["badges"] == ["제안", "제안", "확인 필요", "확인 필요"], (
+            f"행 배지가 링1 라벨과 다릅니다: {e['badges']!r}"
+        )
+        assert e["badge_disabled"] == [False, False, False, True], (
+            f"배지 잠금 규칙이 `confirmable` 과 어긋납니다: {e['badge_disabled']!r}"
+        )
+        assert e["badge_hint"] and "비워 둠" in e["badge_hint"], (
+            f"잠긴 배지가 사유를 말하지 않습니다: {e['badge_hint']!r}"
+        )
+        assert e["empty_select"] is True, "무결속 행의 열 칸이 조용합니다(경고 표지 부재)."
+        assert e["preview_none"] is True, "열 필요 행의 미리보기가 「—」로 서지 않습니다."
+        # 일괄 승격 — **양성과 음성 한 쌍**. 제안 2행만 오르고 확인 필요 2행은 그대로다.
+        assert e["promote_call"] == 'confirm_suggested:{}', (
+            f"일괄 승격이 `confirm_suggested` 를 내지 않았습니다: {e['promote_call']!r}"
+        )
+        assert e["badges_after"] == ["확인", "확인", "확인 필요", "확인 필요"], (
+            f"일괄 승격이 확인 필요 행까지 건드렸거나 제안을 안 올렸습니다: {e['badges_after']!r}"
+        )
+        assert e["promote_disabled_after"] is True, "승격할 제안이 0 인데 버튼이 열려 있습니다."
+        assert e["promoted_label_after"] == "제안을 모두 확인했습니다", (
+            f"승격 뒤 문안이 Python 값이 아닙니다: {e['promoted_label_after']!r}"
+        )
+        # 특수 항목은 **열 이름 공간에 얹히지 않는다** — 각자 자기 액션으로 갈린다.
+        assert e["pick_const"].startswith("set_display:"), f"고정값 분기: {e['pick_const']!r}"
+        assert '"const"' in e["pick_const"], f"고정값 분기 payload: {e['pick_const']!r}"
+        assert e["pick_today"].startswith("set_display:"), f"오늘 날짜 분기: {e['pick_today']!r}"
+        assert e["pick_blank"].startswith("set_blank:"), f"비워 둠 분기: {e['pick_blank']!r}"
+        assert e["pick_column"] == 'set_source:{"index":3,"source":"수량"}', (
+            f"열 선택이 실 열 이름으로 가지 않습니다: {e['pick_column']!r}"
+        )
+        assert e["sentinel_in_set_source"] is False, (
+            "센티넬이 `set_source` 로 샜습니다 — 동명 실열을 영영 못 겨누게 됩니다(리뷰 R5)."
+        )
+        assert e["badge_call"] == 'set_confirmed:{"index":0,"confirmed":true}', (
+            f"배지 클릭이 행별 확인을 내지 않았습니다: {e['badge_call']!r}"
+        )
+        # 표시형 select 가 **유형 축**을 든다(리뷰 1) — 유형 열이 걷힌 뒤 유일한 통로라,
+        # 이 그룹이 죽으면 이름 추론이 틀린 행은 날짜·금액 서식을 영영 못 고른다.
+        assert e["display_groups"] == ["텍스트", "날짜", "금액"], (
+            f"표시형 select 가 유형 그룹을 그리지 않습니다: {e['display_groups']!r}"
+        )
+        assert e["pick_display"] == 'set_display:{"index":0,"type":"date","fmt":""}', (
+            f"표시형 선택이 (유형, 표시형) 한 쌍을 원자적으로 내지 않습니다: {e['pick_display']!r}"
+        )
+        assert e["step_next"] == 'step_preview:{"delta":1}', f"스테퍼 ▶: {e['step_next']!r}"
+        assert e["step_prev"] == 'step_preview:{"delta":-1}', f"스테퍼 ◀: {e['step_prev']!r}"
+        # 퇴역 좌표의 음성 단언 — 있으면 같은 상태를 두 컨트롤이 판정한다.
+        assert e["header_chips_gone"] is True, "「사용할 데이터 열」 칩이 남아 있습니다(U6 §2.5)."
+        assert e["type_column_gone"] is True, "타입 열이 남아 있습니다(데이터 열 select 로 흡수)."
+        assert e["confirm_checkbox_gone"] is True, "확정 체크박스가 남아 있습니다(배지로 흡수)."
+        # 데이터 열 칸이 한 줄로 서는가(U2 §2.6) — 정적 CSS 검사로는 못 보고 실렌더 기하로만
+        # 드러나는 결함이라 여기서 잰다. ↻ 가 있는 행과 없는 행의 칸 높이가 같으면 안 밀린 것이다.
         assert e["auto_revert_option"] is True, (
             "touched 행에 '자동 제안으로 되돌리기'(↻) 버튼이 없습니다(리뷰 R5)."
         )
-        # 그 버튼이 select 와 **같은 줄에** 서는가(U2 §2.6). 정적 CSS 검사로는 못 보고
-        # 실렌더 기하로만 드러나는 결함이라 여기서 잰다: 버튼 있는 수동 행과 없는 제안
-        # 행의 「데이터 열」 칸 높이가 같으면 줄바꿈이 없는 것이다.
         assert e["src_cell_h_manual"] == e["src_cell_h_suggested"], (
-            "재제안 버튼이 select 를 둘째 줄로 밀었습니다 — 수동 행과 제안 행의 칸 높이가 "
+            "데이터 열 칸의 컨트롤이 둘째 줄로 밀렸습니다 — 수동 행과 제안 행의 칸 높이가 "
             f"다릅니다({e['src_cell_h_manual']} vs {e['src_cell_h_suggested']})."
         )
         assert e["revert_same_line"] is True, (

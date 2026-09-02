@@ -14,7 +14,7 @@
  *   ⑨ `_SHEET_PROBE_SETUP_JS`(797)              → sheet_gate            · 3863·3865
  *   ⑩ `_JOB_EDITMODE_PROBE_JS`(1950)            → job_editmode          · 3948
  *   ⑪ `_DATA_PICKER_PROBE_SETUP_JS`(2297)       → data_picker           · 3952
- *   ⑫ `_EDITOR_CHIP_PROBE_JS`(2221)             → editor_chip           · 3959
+ *   ⑫ `_EDITOR_CHIP_PROBE_JS`(2221)             → editor_binding        · 3959
  *   ⑬ `_EDITOR_SAVE_GATE_PROBE_JS`(2389)        → editor_save_gate      · 3961
  *   ⑭ `_EDITOR_LIBRARY_MANAGE_PROBE_JS`(2506)   → editor_lib_manage     · 3966
  *   ⑮ `_EDITOR_LIB_PICKER_PROBE_JS`(2608)       → editor_lib            · 3985
@@ -68,7 +68,9 @@
  *   · job_editmode          : `discard_disabled_clean`/`save_disabled_clean` ↔
  *                             `discard_enabled_dirty`/`save_enabled_dirty` ·
  *                             `ctx_hidden_when_voluntary` ↔ `ctx_shown`.
- *   · editor_chip           : `has_checkbox_staging === false`(소거의 음성 단언) ·
+ *   · editor_binding        : 일괄 승격의 양성(`badges_after` 제안 2행이 「확인」) ↔ 음성
+ *                             (확인 필요 2행 불변) · `sentinel_in_set_source === false` ·
+ *                             퇴역 좌표 3종의 음성 단언 ·
  *                             `src_cell_h_manual == src_cell_h_suggested`(실렌더 기하).
  *
  * **알면서 그대로 옮긴 취약점 둘**(가리지 않는다):
@@ -92,7 +94,7 @@ export const D_CLUSTER = "D";
  *  그 동일성은 테스트가 기계로 센다(여기서 schema 를 import 해 유도하면 그 대조가 사라진다 —
  *  둘 다 틀려도 같으면 초록인 자리가 된다). */
 export const D_KEYS = Object.freeze([
-  "data_picker", "data_sheet", "editor_chip", "editor_discard_immediate",
+  "data_picker", "data_sheet", "editor_binding", "editor_discard_immediate",
   "editor_lib", "editor_lib_manage", "editor_save_gate", "editor_tab_autodiscard",
   "editor_txt_band",
   "job_editmode", "range_draft", "sheet_gate", "view_order", "workbench",
@@ -736,8 +738,7 @@ export function createEditorWorkbenchDataProbes() {
             revisions: { template: 1, binding: 2 }, template_path: "C:/t/공고서.hwpx",
             template_name: "공고서.hwpx", editing_origin: "공고서",
             name: "공고서", pattern: "x", rows: [], source_fields: [],
-            active_source_fields: [], ignored_source_fields: [], sample_rows: [],
-            type_options: [], fmt_options: {}, provenance: null,
+            sample_rows: [], provenance: null,
           }));
           await settleRender(ctx);
           const tab = ctx.doc.querySelector('#editor-steps button[data-section="filename"]');
@@ -803,8 +804,7 @@ export function createEditorWorkbenchDataProbes() {
           revisions: { template: 1, binding: 2 }, template_path: "C:/t/공고서.hwpx",
           template_name: "공고서.hwpx", editing_origin: "공고서",
           name: "공고서", pattern: "공고서-{{ID}}", pattern_preview: "공고서-1.hwpx",
-          rows: [], source_fields: [], active_source_fields: [], ignored_source_fields: [],
-          sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
+          rows: [], source_fields: [], sample_rows: [], provenance: null,
           default_dataset: null, dataset_name: "", schema_only: true,
           counts: { filled: 0, empty: 0, unmapped: 0 }, preview_empties: [],
           preview_index: 0, preview_count: 0, is_complete: true,
@@ -927,8 +927,7 @@ export function createEditorWorkbenchDataProbes() {
           const base = editorBase({
             context: {}, template_media: "",
             name: "", pattern: "", rows: [],
-            source_fields: [], active_source_fields: [], ignored_source_fields: [],
-            sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
+            source_fields: [], sample_rows: [], provenance: null,
             pairing: {
               ready: false, template_name: "", data_name: "",
               field_count: 0, column_count: 0, auto_count: 0, confirm_count: 0,
@@ -1522,19 +1521,25 @@ export function createEditorWorkbenchDataProbes() {
       },
     },
 
-    /* ── editor_chip (app.py:2221 상수 · 3959 호출) ───────────────────────────
-       매핑 분류 칩-라이브(블록 2 결정 12·13). 합성 매핑 스냅샷을 실 render() 에 흘려 (a) 사용할
-       헤더가 **즉시 토글 칩**(체크박스 스테이징 소거)으로, (b) 미사용 구역이 펼쳐지고,
-       (c) 소유권 태그 4종이, (d) touched 행에 되돌리기가 그려지는지 되읽는다. */
+    /* ── editor_binding (구 editor_chip · app.py:2221 상수 · 3959 호출) ────────
+       2단계 「연결 확인」 표(U6-C #977 · 동결 시안 장면 2). 합성 매핑 스냅샷을 실 render()
+       에 흘려 되읽는다: (a) 4열이 서는가, (b) 머리 pill 셋이 Python 수치를 그대로 말하는가,
+       (c) 「제안 n건 모두 확인」이 **제안만** 승격하는가(양성·음성 한 쌍), (d) 특수 항목이
+       `set_display`/`set_blank` 로 갈리고 `set_source` 에는 센티넬이 가지 않는가, (e) 배지
+       클릭이 행별 확인을 내는가, (f) 스테퍼가 왕복하는가, (g) 데이터 열 칸 높이가 행마다
+       같은가(실렌더 기하 — 구 프로브의 단언 승계). */
     {
-      name: "editor_chip",
-      keys: ["editor_chip"],
+      name: "editor_binding",
+      keys: ["editor_binding"],
       cluster: D_CLUSTER,
       owner: "frontend",
       modes: ["full"],
       legacySite: 3959,
-      deadlineMs: 0,
-      deadlineRationale: "동기 evaluate_js 한 번(app.py:3959) — 레거시에도 폴링이 없다.",
+      deadlineMs: 2500,
+      deadlineRationale:
+        "공용 `_probe_late` 예산 2.5초 그대로. 종전 `editor_chip` 은 동기 evaluate_js 한 번"
+        + " 이라 `deadlineMs: 0` 이었지만 이 프로브는 클릭·발신·재렌더를 **기다린다** —"
+        + " 감시견 없는 대기는 매달림을 이름 없는 `run_hung` 으로 만든다(U6-B 교훈).",
       after: ["data_picker"],
       afterReason:
         "app.py:3957 의 0.4초 정산이 이 둘 **사이**에 있다 — data_picker 가 닫은 모달의"
@@ -1543,14 +1548,73 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
+        let stub = null;
+        /* `window.alert` 감시는 **러너 공용 층**이 진다(리뷰 10) — 프로브별 방어는 자기
+           계약만 지키고 남의 합성 스냅샷이 부른 던짐은 못 막는다. */
         try {
-          const row = (i, f, src, conf, touch, hascontent) => ({
-            index: i, template_field: f, inferred_type: "text", context: "", source: src,
-            type: "text", const: "", fmt: "", confirmed: conf, touched: touch,
-            has_content: hascontent, suggestion_score: src ? 1 : 0,
-            preview: src ? "값" : "", preview_empty: false, preview_error: false,
-            row_state: conf ? "confirmed" : (hascontent ? "unconfirmed" : "unmatched"),
+          /* 발신을 가로채 **무엇이 나갔는지**를 센다. 백엔드 왕복을 실제로 태우면 합성
+             스냅샷이 실 컨트롤러 상태와 어긋나 이후 단계가 남의 세계를 잰다. */
+          const calls = [];
+          stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+            if (screen === "editor") {
+              calls.push(action + ":" + JSON.stringify(payload || {}));
+              return Promise.resolve({});
+            }
+            return real.call(this, screen, action, payload);
           });
+          const COLUMNS = ["품명", "세부품명", "수량", "비고"];
+          /* 표시형 select 가 든 **유형 축**(리뷰 1) — 그룹 라벨·항목 값은 Python 이 낸다. */
+          const DISPLAY_GROUPS = [
+            { label: "텍스트", options: [
+              { value: "text:", label: "원문", type: "text", fmt: "" },
+              { value: "text:phone", label: "전화", type: "text", fmt: "phone" }] },
+            { label: "날짜", options: [
+              { value: "date:", label: "표준", type: "date", fmt: "" }] },
+            { label: "금액", options: [
+              { value: "amount:", label: "원", type: "amount", fmt: "" }] },
+          ];
+          const OPTIONS = [{ value: "", label: "열을 고르세요", kind: "none", field: "" }]
+            .concat(COLUMNS.map((name) => (
+              { value: "col:" + name, label: name, kind: "column", field: name })))
+            .concat([
+              { value: "sp:const", label: "고정값…", kind: "const", field: "" },
+              { value: "sp:today", label: "오늘 날짜", kind: "today", field: "" },
+              { value: "sp:blank", label: "비워 둠", kind: "blank", field: "" },
+            ]);
+          /* 행 4개 = 상태 4태 전수. `state_label`·`confirmable`·`preview_kind` 는 전부
+             Python 이 낸 값이고 프로브는 그것이 화면에 그대로 서는지만 본다. */
+          /* `confirmable`·`revertable` 은 **실 생산자와 같은 규칙**으로 짓는다(리뷰 4·9):
+             합성값이 규칙을 따로 지으면 프로브가 제품이 낼 리 없는 세계를 재게 된다. */
+          const row = (index, field, state, over) => {
+            const confirmed = state === "confirmed";
+            const touched = state === "edited";
+            const hasContent = state !== "needs_source";
+            return Object.assign({
+              index, template_field: field, inferred_type: "text", context: "",
+              source: "", type: "text", const: "", fmt: "",
+              display_options: DISPLAY_GROUPS, display_value: "text:",
+              confirmed, touched,
+              has_content: hasContent,
+              confirmable: hasContent || confirmed,
+              revertable: touched && !confirmed,
+              suggestion_score: 0, preview: "값", preview_kind: "value",
+              preview_empty: false, preview_error: false,
+              row_state: state,
+              state_label: { suggested: "제안", edited: "확인 필요", confirmed: "확인",
+                needs_source: "확인 필요" }[state],
+              source_kind: state === "needs_source" ? "" : "column",
+              source_value: state === "needs_source" ? "" : "col:품명",
+              source_missing_label: "",
+            }, over || {});
+          };
+          const rows = [
+            row(0, "품명", "suggested", { source: "품명", source_value: "col:품명" }),
+            row(1, "수량", "suggested", { source: "수량", source_value: "col:수량" }),
+            row(2, "규격", "edited", { source: "비고", source_value: "col:비고" }),
+            row(3, "담당자", "needs_source", {
+              preview: "", preview_kind: "none", source_kind: "", source_value: "",
+            }),
+          ];
           const snap = editorBase({
             section: "binding", notice: null,
             reachable: { template: true, binding: false, filename: false },
@@ -1559,47 +1623,53 @@ export function createEditorWorkbenchDataProbes() {
             schema_summary: "", fields: [], raw_block: "", gate: null, gate_error: false,
             data_path: "C:/d/대장.xlsx", data_name: "대장.xlsx", data_sheet: "물품",
             record_count: 3,
-            source_fields: ["품명", "세부품명", "수량", "비고"],
-            active_source_fields: ["품명", "수량", "비고"], ignored_source_fields: ["세부품명"],
-            active_count: 3, ignored_count: 1, ignored_expanded: true,
+            source_fields: COLUMNS,
+            data_column_options: OPTIONS,
             sample_rows: [["A", "a", "3", "-"], ["B", "b", "6", "x"], ["C", "c", "1", "-"]],
-            type_options: ["text", "date", "amount", "const"],
-            fmt_options: { text: [], date: [], amount: [], const: [] },
             name: "", pattern: "x", editing_origin: "",
             provenance: null,
-            rows: [row(0, "품명", "품명", true, true, true),      // 확정
-              row(1, "수량", "수량", false, true, true),          // 수동(touched 미확정)
-              row(2, "규격", "비고", false, false, true),         // 제안(시스템 소유)
-              row(3, "담당자", "", false, false, false)],         // 후보 없음
+            rows,
+            binding_head: {
+              suggested: 2, needs_confirm: 2, const: 0,
+              promote_label: "제안 2건 모두 확인", promoted_label: "제안을 모두 확인했습니다",
+              unused_columns: 1,
+            },
             counts: { filled: 3, empty: 0, unmapped: 1 }, preview_empties: [],
             preview_index: 1, preview_count: 3,
             is_complete: false, schema_only: false,
           });
-            Nav.go("editor", { force: true });
+          Nav.go("editor", { force: true });
           ctx.push("editor", snap);
           await settleRender(ctx);
           const root = byId(ctx, "scr-editor");
-          out.active_chips = root.querySelectorAll('.hchip.on[data-act="toggle-header"]').length;
-          out.has_checkbox_staging = !!root.querySelector(".hbx");  // 스테이징 소거 → false 여야
-          out.ignored_chip = !!root.querySelector('.hchip.ign[data-act="toggle-header"]');
-          out.ignored_fold_open = !!root.querySelector("details.hidden-hdrs[open]");
-          out.use_none_btn = !!root.querySelector('[data-act="use-none"]');
-          out.tags = Array.prototype.map.call(
-            root.querySelectorAll("table.map .tag"), (t) => t.textContent.trim());
+          /* ① 4열 — 종전 7열의 「확정」·「타입/고정값」·「상태」가 접힌 결과다. */
+          out.head_cols = Array.prototype.map.call(
+            root.querySelectorAll("table.map thead th"),
+            (th) => th.firstChild ? String(th.firstChild.textContent).trim() : "");
+          out.foot_text = textOf(root.querySelector("table.map tfoot td")).trim();
+          /* ② 머리 pill 셋 — 라벨도 수치도 Python 값 그대로. */
+          out.pills = Array.prototype.map.call(
+            root.querySelectorAll(".bindbar .pill"), (el) => textOf(el).trim());
+          out.promote_label = textOf(root.querySelector('[data-act="confirm-suggested"]')).trim();
+          /* ③ 배지 — 상태 4태의 문안과 잠금 규칙(내용 없는 행은 확인할 것이 없다). */
+          const badges = () => root.querySelectorAll('table.map [data-act="row-confirm"]');
+          out.badges = Array.prototype.map.call(badges(), (b) => textOf(b).trim());
+          out.badge_disabled = Array.prototype.map.call(badges(), (b) => !!b.disabled);
+          out.badge_hint = badges()[3] ? badges()[3].getAttribute("title") : null;
+          /* ④ 무결속 행의 열 칸은 조용하지 않다(경고 테두리 class). */
+          out.empty_select = !!root.querySelector('table.map tr:nth-child(4) select.empty');
+          /* ⑤ 미리보기 4갈래 중 이 스냅샷이 든 둘 — 값과 「—」. */
+          out.preview_none = !!root.querySelector("table.map .pv.none");
+          /* ⑥ 데이터 열 칸 높이는 행마다 같다(구 editor_chip 의 실렌더 기하 승계).
+             결속 행(3)에는 ↻ 가 서고 제안 행(1)에는 없다 — 그 버튼이 select 를 둘째 줄로
+             밀면 여기서만 드러난다(정적 CSS 검사는 못 본다). */
+          const cells = root.querySelectorAll("table.map tbody tr td:nth-child(2)");
+          out.src_cell_h_suggested = cells[0]
+            ? Math.round(cells[0].getBoundingClientRect().height) : -1;
+          out.src_cell_h_manual = cells[2]
+            ? Math.round(cells[2].getBoundingClientRect().height) : -1;
           out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
-          /* 재제안 버튼이 **select 와 같은 줄에** 서는가(U2 §2.6). 종전엔 select 가 width:100%
-             로 열폭을 다 먹고 버튼이 뒤에 인라인으로 붙어 둘째 줄로 밀렸다 — 정적 CSS 검사로는
-             못 보고 실렌더 높이로만 드러나는 결함이라, 수동 행(버튼 有)과 제안 행(버튼 無)의
-             「데이터 열」 칸 높이를 재서 비교한다. 같으면 안 밀린 것이다. */
-          const cells = root.querySelectorAll("table.map tbody tr td:nth-child(3)");
-          const manual = cells[1];
-          const suggested = cells[2];
-          out.src_cell_h_manual = manual
-            ? Math.round(manual.getBoundingClientRect().height) : -1;
-          out.src_cell_h_suggested = suggested
-            ? Math.round(suggested.getBoundingClientRect().height) : -1;
-          /* 버튼과 select 의 세로 중심이 같은가 — 줄이 갈리면 중심이 한 줄 높이만큼 벌어진다. */
-          const wrap = manual && manual.querySelector(".srcwrap");
+          const wrap = cells[2] && cells[2].querySelector(".srccell");
           const sel = wrap && wrap.querySelector(".sel");
           const btn = wrap && wrap.querySelector('[data-act="revert-source"]');
           if (sel && btn) {
@@ -1607,11 +1677,89 @@ export function createEditorWorkbenchDataProbes() {
             const b = btn.getBoundingClientRect();
             out.revert_same_line = Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 4;
           } else { out.revert_same_line = null; }
+          /* ⑦ 일괄 승격 — **제안만** 오른다. 승격 뒤 스냅샷은 Python 이 낼 것과 같은 모양으로
+             직접 밀어 넣는다(합성 세계라 백엔드가 답을 주지 않는다): 양성은 제안 2행이
+             「확인」이 되는 것, 음성은 확인 필요 2행이 **그대로**인 것이다. */
+          calls.length = 0;
+          root.querySelector('[data-act="confirm-suggested"]').click();
+          await settleUntil(ctx, () => calls.length > 0);
+          out.promote_call = calls[0] || "";
+          const promoted = Object.assign({}, snap, {
+            rows: [
+              Object.assign({}, rows[0], {
+                confirmed: true, row_state: "confirmed", state_label: "확인" }),
+              Object.assign({}, rows[1], {
+                confirmed: true, row_state: "confirmed", state_label: "확인" }),
+              rows[2], rows[3],
+            ],
+            binding_head: Object.assign({}, snap.binding_head, { suggested: 0 }),
+          });
+          ctx.push("editor", promoted);
+          await settleRender(ctx);
+          out.badges_after = Array.prototype.map.call(badges(), (b) => textOf(b).trim());
+          out.promote_disabled_after = !!root.querySelector(
+            '[data-act="confirm-suggested"]').disabled;
+          out.promoted_label_after = textOf(
+            root.querySelector('[data-act="confirm-suggested"]')).trim();
+          ctx.push("editor", snap);
+          await settleRender(ctx);
+          /* ⑧ 특수 항목의 액션 분기 — 「고정값…」·「오늘 날짜」는 `set_display`(유형·표시형
+             한 쌍), 「비워 둠」은 `set_blank`. `set_source` 에 `sp:` 가 실려 나가면 여기서
+             빨강이다(센티넬 금지의 실측). */
+          const pick = async (index, value) => {
+            calls.length = 0;
+            const select = root.querySelectorAll('table.map [data-act="row-source"]')[index];
+            typeValue(ctx, select, value);
+            fire(ctx, select, "change");
+            await settleUntil(ctx, () => calls.length > 0);
+            return calls[0] || "";
+          };
+          out.pick_const = await pick(3, "sp:const");
+          out.pick_blank = await pick(3, "sp:blank");
+          out.pick_today = await pick(3, "sp:today");
+          out.pick_column = await pick(3, "col:수량");
+          out.sentinel_in_set_source = [
+            out.pick_const, out.pick_blank, out.pick_today,
+          ].some((call) => call.indexOf("set_source") === 0);
+          /* ⑧-b 표시형 select 가 **유형 그룹**을 그리고 한 쌍을 원자적으로 낸다(리뷰 1).
+             유형 열이 걷힌 뒤 유일하게 남은 유형 축이라, 여기가 죽으면 이름 추론이 틀린 행은
+             날짜·금액 서식을 영영 못 고른다. */
+          /* 그룹은 **한 행의 select** 에서 센다 — 표 전체를 훑으면 행 수만큼 곱해져
+             「3개」라는 계약이 12개로 읽힌다(측정 대상이 아니라 표본이 바뀐 자리). */
+          const fmtSelect = root.querySelectorAll('table.map [data-act="row-fmt"]')[0];
+          out.display_groups = Array.prototype.map.call(
+            fmtSelect.querySelectorAll("optgroup"), (g) => g.getAttribute("label"));
+          calls.length = 0;
+          typeValue(ctx, fmtSelect, "date:");
+          fire(ctx, fmtSelect, "change");
+          await settleUntil(ctx, () => calls.length > 0);
+          out.pick_display = calls[0] || "";
+          /* ⑨ 행별 확인 — 배지 클릭이 그 행의 토글을 낸다. */
+          calls.length = 0;
+          badges()[0].click();
+          await settleUntil(ctx, () => calls.length > 0);
+          out.badge_call = calls[0] || "";
+          /* ⑩ 스테퍼 왕복 — 표 머리 안의 ◀ ▶ 가 `step_preview` 를 낸다. */
+          calls.length = 0;
+          root.querySelector('table.map [data-act="next-rec"]').click();
+          await settleUntil(ctx, () => calls.length > 0);
+          out.step_next = calls[0] || "";
+          calls.length = 0;
+          root.querySelector('table.map [data-act="prev-rec"]').click();
+          await settleUntil(ctx, () => calls.length > 0);
+          out.step_prev = calls[0] || "";
+          /* ⑪ 퇴역 좌표의 **음성 단언** — 칩 구획·타입 열·확정 체크가 남아 있지 않다. */
+          out.header_chips_gone = !root.querySelector('[data-act="toggle-header"]');
+          out.type_column_gone = !root.querySelector('[data-act="row-type"]');
+          out.confirm_checkbox_gone = !root.querySelector(
+            'table.map input[type="checkbox"]');
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
+        } finally {
+          if (stub) stub.restore();
         }
-        return { editor_chip: out };
+        return { editor_binding: out };
       },
     },
 
@@ -1628,7 +1776,7 @@ export function createEditorWorkbenchDataProbes() {
       legacySite: 3961,
       deadlineMs: 0,
       deadlineRationale: "동기 evaluate_js 한 번(app.py:3961-3963) — 레거시에도 폴링이 없다.",
-      after: ["editor_chip"],
+      after: ["editor_binding"],
       afterReason: "레거시 드라이버 순서 그대로(3959 → 3961) — 같은 편집기 표면을 잇달아 쓴다.",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
@@ -1641,9 +1789,7 @@ export function createEditorWorkbenchDataProbes() {
             template_path: "C:/t/공고서.hwpx", template_name: "공고서.hwpx", field_count: 1,
             schema_summary: "", fields: [], raw_block: "", gate: null, gate_error: false,
             data_path: "", data_name: "", data_sheet: "", record_count: 0,
-            source_fields: [], active_source_fields: [], ignored_source_fields: [],
-            active_count: 0, ignored_count: 0, ignored_expanded: false, sample_rows: [],
-            type_options: ["text"], fmt_options: { text: [] },
+            source_fields: [], sample_rows: [],
             name: "공고서", pattern: "공고서-{{공고번호}}", pattern_preview: "공고서-1.hwpx",
             editing_origin: "공고서",
             provenance: null, rows: [],
@@ -1693,14 +1839,28 @@ export function createEditorWorkbenchDataProbes() {
              자리에서만 첫 클릭이 삼켜진다. 행이 있는 단계로 갈아 끼우고 같은 것을 잰다. */
           const rowSnap = Object.assign({}, snap, {
             section: "binding", schema_only: false, field_count: 1,
-            source_fields: ["품명"], active_source_fields: ["품명"], active_count: 1,
-            sample_rows: [["A"]], type_options: ["text", "const"],
-            fmt_options: { text: [], const: [] },
+            source_fields: ["품명"], sample_rows: [["A"]],
+            data_column_options: [
+              { value: "", label: "열을 고르세요", kind: "none", field: "" },
+              { value: "col:품명", label: "품명", kind: "column", field: "품명" },
+              { value: "sp:const", label: "고정값…", kind: "const", field: "" },
+            ],
+            binding_head: {
+              suggested: 0, needs_confirm: 1, const: 1,
+              promote_label: "제안 0건 모두 확인", promoted_label: "확인할 제안이 없습니다",
+              unused_columns: 0,
+            },
             rows: [{
               index: 0, template_field: "품명", inferred_type: "text", context: "", source: "",
-              type: "const", const: "고정값", fmt: "", confirmed: false, touched: true,
-              has_content: true, suggestion_score: 0, preview: "고정값", preview_empty: false,
-              preview_error: false, row_state: "unconfirmed",
+              type: "const", const: "고정값", fmt: "",
+              /* const 행의 표시형 후보는 비어 있다(프리셋 없음) — 표면은 비활성 「—」. */
+              display_options: [], display_value: "const:",
+              confirmed: false, touched: true,
+              has_content: true, confirmable: true, revertable: false,
+              suggestion_score: 0,
+              preview: "고정값", preview_kind: "value", preview_empty: false,
+              preview_error: false, row_state: "edited", state_label: "확인 필요",
+              source_kind: "const", source_value: "sp:const", source_missing_label: "",
             }],
           });
           ctx.push("editor", rowSnap);

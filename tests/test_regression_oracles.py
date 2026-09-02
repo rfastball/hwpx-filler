@@ -47,7 +47,7 @@ def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> Non
     }
     frontend.controllers.update(controllers)
     cases = (
-        ("editor", "set_fmt", {"index": 0, "fmt": "date"}),
+        ("editor", "set_display", {"index": 0, "type": "date", "fmt": "kor"}),
         ("editor", "step_preview", {"delta": 1}),
         ("job", "cancel_generation", {}),
         ("job", "filter_col_text", {"column": "기관", "text": "교육청"}),
@@ -61,15 +61,18 @@ def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> Non
     for screen, action, payload in cases:
         assert frontend.dispatch(screen, action, payload)["action"] == action
 
-    rejected = frontend.dispatch("editor", "set_fmt", {"index": 0, "fmt": "date", "extra": 1})
+    rejected = frontend.dispatch(
+        "editor", "set_display",
+        {"index": 0, "type": "date", "fmt": "kor", "extra": 1},
+    )
     assert rejected == {
         "__hwpx_dispatch_rejection_v1__": {
             "name": "ValueError",
-            "message": "'editor'/'set_fmt' payload 스키마 불일치: 미등록 키=['extra']",
+            "message": "'editor'/'set_display' payload 스키마 불일치: 미등록 키=['extra']",
         }
     }
     assert controllers["editor"].calls == [
-        ("set_fmt", {"index": 0, "fmt": "date"}),
+        ("set_display", {"index": 0, "type": "date", "fmt": "kor"}),
         ("step_preview", {"delta": 1}),
     ]
 

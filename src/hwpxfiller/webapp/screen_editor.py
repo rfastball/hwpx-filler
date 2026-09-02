@@ -54,6 +54,7 @@ from ..domain.dataset_reference import STATUS_ACTIVE
 from ..domain.format_engine import presets as format_presets
 from ..domain.job import (
     DEFAULT_FILENAME_PATTERN,
+    MISSING_MARKER,
     Job,
     data_binding_of,
     has_data_binding,
@@ -85,7 +86,12 @@ from ..gui.job_editor_state import (
     validate_save,
 )
 from ..gui.mapping_state import (
+    DISPLAY_TYPE_GROUPS,
+    NO_SOURCE_LABEL,
     RAW_BLOCK_MESSAGE,
+    ROW_STATUS_LABEL,
+    SPECIAL_SOURCE_LABEL,
+    TYPE_GROUP_LABEL,
     MappingModel,
     PartialGate,
     gate_for_template,
@@ -273,19 +279,15 @@ class EditorController:
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
         # 이탈마다 헛확인이 뜬다(사람이 그 파일을 고른 적이 없다).
         self._entry_data: "dict[str, str]" = {"data_path": "", "data_sheet": ""}
+        # 데이터의 **전체** 헤더. 「사용할 데이터 열」 선별(구 `_ignored_sources`·펼침 힌트)은
+        # U6-C(#977 · U6 §2.5)에서 사슬째 퇴역했다 — 스키마 재활용 전제가 사라졌고, 매핑되지
+        # 않은 열은 자연히 쓰이지 않는다. 남은 질문 하나(안 쓰는 열이 몇인가)는 링1
+        # `unused_source_fields` 가 답하고 표 바닥 한 줄이 잇는다.
         self.source_fields: "list[str]" = []
-        # '미사용' 헤더(#49) — 세션 국소 상태. durable 저장 없음: 매핑이 곧 사용 헤더의
-        # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
-        # 자동 제안·소스 드롭다운 후보만 활성 헤더로 좁힌다(원본 데이터·매핑 계약 불변).
-        self._ignored_sources: "set[str]" = set()
-        # 미사용 구역 펼침 힌트(칩-라이브 결정 13) — '전체 미사용'이 세팅, 새 데이터·전체
-        # 사용·개별 토글이 해제(리뷰 F7: 개별 토글 후에도 남으면 몇 步 전 행동의 stale
-        # 상태가 이후 접힘 렌더를 계속 강제한다). 뷰의 수동 펼침 보존은 editor.js foldOpen.
-        self._ignored_expanded = False
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
-        # 연결 카드 미리보기 수치의 memo(리뷰 7) — `(정체 키 + 활성 헤더, (자동, 확인 필요))`.
+        # 연결 카드 미리보기 수치의 memo(리뷰 7) — `(정체 키, (자동, 확인 필요))`.
         # 세션 리셋이 함께 비운다: 남기면 새 짝의 카드가 지난 짝의 수치를 말한다.
         self._pairing_cache: "tuple[tuple, tuple[int, int]] | None" = None
         self.preview_index = 0
@@ -467,7 +469,7 @@ class EditorController:
             return "오른쪽에서 데이터를 고르세요."
         return ""
 
-    def _pairing_snapshot(self, active_sources: "list[str]") -> dict:
+    def _pairing_snapshot(self) -> dict:
         """고르기 단계 연결 카드 — 「무엇과 무엇이 붙었고 몇 개가 자동으로 이어지는가」.
 
         **수치의 출처를 명시로 든다**(``basis``). 1단계는 매핑 모델을 만들지 않는다:
@@ -510,7 +512,7 @@ class EditorController:
                 confirm = len(self.model.rows) - auto
                 basis = "model"
             else:
-                auto, confirm = self._pairing_preview_cached(field_names, active_sources)
+                auto, confirm = self._pairing_preview_cached(field_names)
                 basis = "preview"
         return {
             "ready": ready,
@@ -524,9 +526,7 @@ class EditorController:
             "advance_block_reason": self._advance_block_reason(),
         }
 
-    def _pairing_preview_cached(
-        self, field_names: "list[str]", active_sources: "list[str]"
-    ) -> "tuple[int, int]":
+    def _pairing_preview_cached(self, field_names: "list[str]") -> "tuple[int, int]":
         """읽기 전용 미리보기 수치 — 같은 정체 키에서는 **한 번만** 센다(리뷰 7).
 
         캐시 키는 매핑 모델의 정체 키(:meth:`_model_key_now`)와 같다: 그 키가 곧
@@ -534,14 +534,16 @@ class EditorController:
         (템플릿·데이터 경로·시트·헤더 행·소스 헤더). 별도 키를 지으면 성분 하나를 빠뜨린
         날 카드가 옛 수치를 계속 말한다 — 그래서 있는 키를 그대로 쓴다.
 
-        미사용 헤더(#49) 토글은 이 키에 없지만 ``active_sources`` 를 바꾼다. 그래서 캐시는
-        키와 **활성 헤더 튜플**을 함께 든다(둘 다 같아야 재사용).
+        종전에는 키에 **활성 헤더 튜플**을 함께 실었다. 그 성분이 빠져도 안전한 것은 열
+        선별(#49)이 U6-C 에서 퇴역해 제안 후보가 언제나 ``source_fields`` 전부이고, 그
+        튜플은 이미 정체 키의 성분이기 때문이다 — 세는 입력이 달라지는 축이 키 안에 남아
+        있다.
         """
-        key = (self._model_key_now(), tuple(active_sources))
+        key = self._model_key_now()
         cached = self._pairing_cache
         if cached is not None and cached[0] == key:
             return cached[1]
-        counts = pairing_preview(field_names, active_sources)
+        counts = pairing_preview(field_names, self.source_fields)
         self._pairing_cache = (key, counts)
         return counts
 
@@ -619,11 +621,6 @@ class EditorController:
         base = self.session.base
         return () if base is None else self._extras_diff(base)
 
-    # --------------------------------------------------- 활성 헤더(#49)
-    def _active_sources(self) -> "list[str]":
-        """미사용을 뺀 활성 헤더(원 순서 보존) — 자동 제안·소스 드롭다운 후보의 단일 출처."""
-        return [f for f in self.source_fields if f not in self._ignored_sources]
-
     # ------------------------------------------------------------- 스냅샷
     def _model_key_now(self) -> tuple:
         """매핑 모델의 **정체 키** — 짓는 자리를 하나로 모은다(성분 누락 = 조용한 우회).
@@ -649,27 +646,52 @@ class EditorController:
         return self.records[self.preview_index % len(self.records)]
 
     def _row_snapshot(
-        self, index: int, row, record: "dict", schema_only: bool,
-        *, now: "datetime | None" = None,
+        self, index: int, row, record: "dict", *, now: "datetime | None" = None,
     ) -> dict:
         """행 1개의 스냅샷. ``now`` 는 ``today``(오늘 날짜) 미리보기의 기준 시각이다 —
         :meth:`snapshot` 이 **스냅샷당 1회** 잡아 전 행이 공유한다(RC-02 확장, `screen_job`
         의 `_names_now` 규율 승계). 행마다 clock 을 다시 부르면 한 표 안에서 서로 다른
-        시각이 서고, 하위-일 서식에서 그 차이가 눈에 보인다."""
+        시각이 서고, 하위-일 서식에서 그 차이가 눈에 보인다.
+
+        **행 상태와 그 라벨은 링1 이 낸다**(U6-C #977): ``row_state`` 는 닫힌 집합 4태이고
+        ``state_label`` 은 그 문안이다. 종전에는 여기서 4태를 짓고 웹이 그 위에 「제안」을
+        한 번 더 유추했다 — 판정이 셋이면 그중 둘은 언젠가 옛말을 한다.
+
+        **미리보기는 산출물이 담을 것을 그대로 말한다.** 결속됐는데 이 행에서 값이 비면
+        빈칸이 아니라 :data:`~hwpxfiller.domain.job.MISSING_MARKER` 다 — 생성이 그 자리에
+        실제로 넣는 문자열이라 UI 문안이 아니라 데이터이고, 그래서 여기서 새로 짓지 않고
+        링0 상수를 포맷한다(빈칸으로 새면 「조용히 틀리지 않는다」가 바로 깨지는 자리다).
+        """
         try:
             preview = row.to_mapping().value_for(record, now=now)
             preview_error = False
         except ValueError:
             preview, preview_error = "", True
         empty = bool(row.has_content()) and preview == ""
-        if row.confirmed:
-            state = "confirmed"
+        blank = row.is_empty_confirmed()
+        if preview_error:
+            preview_kind, preview = "error", ""
         elif row.has_content():
-            state = "unconfirmed"
-        elif schema_only:
-            state = "schemaonly"
+            preview_kind = "missing" if empty else "value"
+            if empty:
+                preview = MISSING_MARKER.format(field=row.template_field)
+        elif blank:
+            preview_kind, preview = "blank", ""
         else:
-            state = "unmatched"
+            preview_kind, preview = "none", ""
+        # 데이터 열 칸이 지금 무엇을 들고 있는가 — 「비워 둠」이 먼저다: 유형은 남아 있어도
+        # 사람이 「채우지 않는다」고 선언한 행은 그 선언으로 보여야 한다.
+        if blank:
+            source_kind = "blank"
+        elif row.type == "const":
+            source_kind = "const"
+        elif row.type == "today":
+            source_kind = "today"
+        elif row.source:
+            source_kind = "column"
+        else:
+            source_kind = ""
+        state = row.status()
         inferred = getattr(row.spec, "inferred_type", "") if row.spec else ""
         return {
             "index": index,
@@ -680,18 +702,82 @@ class EditorController:
             "type": row.type,
             "const": row.const,
             "fmt": row.fmt,
+            # 이 행의 표시형 후보 — **유형 축을 흡수한 그룹 목록**이다(리뷰 1). 유형별 표를
+            # 웹이 되짚지 않는다(유형이 행 축이므로 후보도 행 축이다). 종전의 스냅샷 전역
+            # `fmt_options`·`type_options` 는 유형 열과 함께 퇴역했다.
+            "display_options": self._display_options(row, source_kind),
+            "display_value": f"{row.type}:{row.fmt}",
             "confirmed": row.confirmed,
-            "touched": row.touched,  # 소유권(칩-라이브 결정 12) — 뷰가 제안/수동 태그 파생
+            "touched": row.touched,
             "has_content": row.has_content(),
+            # 배지 버튼이 눌리는가 — 채울 것이 없고 **확인도 안 된** 행만 잠긴다(리뷰 4).
+            # 비움 확정 행은 채울 것이 없어도 확인을 **풀 수 있어야** 한다: 잠그면 「확인」
+            # 배지가 비활성으로 서서 「열을 고르세요」라고 말하는, 자기 상태와 어긋난 손잡이가
+            # 된다. 술어를 웹이 다시 지으면 배지와 게이트가 갈린다.
+            "confirmable": row.has_content() or row.confirmed,
+            # ↻(자동 제안 되돌리기)가 서는가 — `_do_revert_source` 가 확정 행을 거절하는 것과
+            # **같은 술어**다(리뷰 9). 웹이 `touched && !confirmed && record_count` 로 다시
+            # 조립하면 거절과 어포던스가 갈려 「눌렀는데 거절당하는」 버튼이 남는다.
+            "revertable": row.touched and not row.confirmed and bool(self.records),
             "suggestion_score": round(row.suggestion_score, 3),
             "preview": preview,
+            "preview_kind": preview_kind,
             "preview_empty": empty,
             "preview_error": preview_error,
             "row_state": state,
+            "state_label": ROW_STATUS_LABEL[state],
+            "source_kind": source_kind,
+            "source_value": self._source_option_value(row, source_kind),
+            # 결속 열이 지금 데이터에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
+            # 드러낸다(문안은 여기, 렌더는 웹).
+            "source_missing_label": (
+                f"{row.source} (데이터에 없음)"
+                if source_kind == "column" and row.source not in self.source_fields else ""
+            ),
         }
 
+    @staticmethod
+    def _display_options(row, source_kind: str) -> "list[dict]":
+        """이 행의 표시형 select 항목 — **유형 그룹**으로 묶인다(리뷰 1).
+
+        값은 ``"<유형>:<표시형 코드>"`` 한 쌍이고 항목이 ``type``·``fmt`` 를 따로 들어
+        웹이 그 문자열을 파싱하지 않는다(데이터 열 항목과 같은 규율).
+
+        그룹 집합은 **값의 출처**가 가른다: 열에서 받는 행은 텍스트·날짜·금액 셋을 고를 수
+        있고(이 select 가 곧 유형 축이다), 「오늘 날짜」 행은 날짜 어휘 하나뿐이며(값은 실행
+        시각이지만 표시형 표는 같다 — U4 §2.14 판정 1), 「고정값」 행은 프리셋이 없어 빈
+        목록이다(표면은 비활성 「—」로 접는다).
+        """
+        if source_kind == "const":
+            return []
+        kinds = ("today",) if source_kind == "today" else DISPLAY_TYPE_GROUPS
+        groups: "list[dict]" = []
+        for kind in kinds:
+            options = [
+                {"value": f"{kind}:{o['code']}", "label": o["label"],
+                 "type": kind, "fmt": o["code"]}
+                for o in _FMT_OPTIONS.get(kind, [])
+            ]
+            if options:
+                groups.append({"label": TYPE_GROUP_LABEL[kind], "options": options})
+        return groups
+
+    @staticmethod
+    def _source_option_value(row, source_kind: str) -> str:
+        """데이터 열 select 가 지금 고르고 있는 **항목 값**.
+
+        실 열은 ``col:``, 특수 항목은 ``sp:`` 접두다 — 두 이름 공간이 구조적으로 갈리므로
+        「고정값…」이라는 이름의 실제 열이 있어도 충돌하지 않는다(센티넬을 소스 값에 얹지
+        않는다는 규칙의 집행). 웹은 이 값을 파싱하지 않고 항목의 ``kind`` 로 발행 액션을
+        가른다.
+        """
+        if source_kind == "column":
+            return f"col:{row.source}"
+        if source_kind in ("const", "today", "blank"):
+            return f"sp:{source_kind}"
+        return ""
+
     def snapshot(self) -> dict:
-        active_sources = self._active_sources()  # 활성/카운트 재사용(1회 계산)
         sections = self.sections()
         dirty = self.dirty_sections()
         snap: dict = {
@@ -754,17 +840,12 @@ class EditorController:
             "record_count": len(self.records),
             # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
-            # 활성/미사용 헤더(#49) — 드롭다운 후보는 활성만, 헤더 선택 UI는 둘 다 쓴다.
-            "active_source_fields": active_sources,
-            "ignored_source_fields": [f for f in self.source_fields if f in self._ignored_sources],
-            "active_count": len(active_sources),
-            "ignored_count": len(self._ignored_sources),
-            "ignored_expanded": self._ignored_expanded,  # 미사용 구역 펼침 힌트(결정 13)
+            # 데이터 열 select 의 항목 전수(U6-C #977) — 실 열 + 특수 항목 3개. 특수 항목은
+            # 열 이름 공간에 얹지 않고 `kind` 로 갈린다(웹이 그 값으로 발행 액션을 가른다).
+            "data_column_options": self._data_column_options(),
             # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
             "sample_rows": self._sample_rows(),
-            "type_options": list(TYPES),
-            "fmt_options": _FMT_OPTIONS,
             "name": self.job_name,
             "pattern": self.pattern,
             # 연결 확정 대기(#911) — footer 무장 사유를 **더한다**(빼지 않는다). dirty 기반
@@ -786,7 +867,7 @@ class EditorController:
             # 재진술하고 전진 게이트의 사유를 함께 싣는다. 목록 자체는 여기 없다: 좌 열은
             # `tpl` 채널 스냅샷이, 우 열은 `pool` 채널 스냅샷이 정본이고 편집기가 그것을
             # 다시 성형하면 같은 목록을 두 컨트롤러가 그린다(구 `library` 존이 그랬다).
-            "pairing": self._pairing_snapshot(active_sources),
+            "pairing": self._pairing_snapshot(),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
             "pattern_preview": (
                 self._pattern_preview() if self.section == SECTION_FILENAME else ""
@@ -802,7 +883,7 @@ class EditorController:
             # 「오늘 날짜」 미리보기의 기준 시각 — **스냅샷당 1회**(RC-02 확장).
             rows_now = self._clock()
             snap["rows"] = [
-                self._row_snapshot(i, r, record, schema_only, now=rows_now)
+                self._row_snapshot(i, r, record, now=rows_now)
                 for i, r in enumerate(self.model.rows)
             ]
             filled, empty, unmapped = self.model.preview_counts(record, now=rows_now)
@@ -812,10 +893,61 @@ class EditorController:
             snap["preview_count"] = len(self.records)
             snap["is_complete"] = self.model.is_complete()
             snap["schema_only"] = schema_only
+            snap["binding_head"] = self._binding_head()
         else:
             snap["rows"] = []
             snap["is_complete"] = False
+            snap["binding_head"] = self._binding_head()
         return snap
+
+    def _data_column_options(self) -> "list[dict]":
+        """데이터 열 select 의 항목 전수 — 실 열 + 특수 항목 3개(U6-C #977).
+
+        ``kind`` 가 곧 **발행할 액션**이다: ``column``→``set_source`` ·
+        ``const``/``today``→``set_display`` · ``blank``→``set_blank`` · ``none``→결속 해제.
+        특수 항목을 소스 값으로 실어 보내지 않는 이유는 리뷰 R5 그대로다 — 같은 이름의 실
+        열이 있으면 그 열을 영영 못 겨눈다. 그래서 값의 이름 공간을 접두로 가른다.
+        """
+        options: "list[dict]" = [
+            {"value": "", "label": NO_SOURCE_LABEL, "kind": "none", "field": ""},
+        ]
+        options.extend(
+            {"value": f"col:{name}", "label": name, "kind": "column", "field": name}
+            for name in self.source_fields
+        )
+        options.extend(
+            {"value": f"sp:{kind}", "label": SPECIAL_SOURCE_LABEL[kind], "kind": kind,
+             "field": ""}
+            for kind in ("const", "today", "blank")
+        )
+        return options
+
+    def _binding_head(self) -> dict:
+        """2단계 머리 — pill 3개 + 일괄 승격 버튼의 **수치와 문안**(U6-C #977).
+
+        수치는 전부 링1 질의이고 문안도 여기서 완성해 보낸다: 「제안 n건 모두 확인」의 n 은
+        곧 이 동사가 실제로 확정할 행 수라 웹이 따로 세면 버튼이 약속과 다른 일을 한다.
+        승격할 것이 없을 때의 문안(``promoted_label``)이 두 갈래인 이유는 0 의 뜻이 둘이기
+        때문이다 — 다 확인한 0 과 애초에 제안이 없던 0 은 같은 문장으로 말할 수 없다.
+        """
+        model = self.model
+        if model is None:
+            return {
+                "suggested": 0, "needs_confirm": 0, "const": 0,
+                "promote_label": "", "promoted_label": "", "unused_columns": 0,
+            }
+        suggested = model.suggested_count()
+        return {
+            "suggested": suggested,
+            "needs_confirm": model.needs_confirm_count(),
+            "const": model.const_count(),
+            "promote_label": f"제안 {suggested}건 모두 확인",
+            "promoted_label": (
+                "제안을 모두 확인했습니다" if model.confirmed_count()
+                else "확인할 제안이 없습니다"
+            ),
+            "unused_columns": len(model.unused_source_fields()),
+        }
 
     def _pattern_preview(self) -> str:
         """F26 — 파일명 패턴의 라이브 예시 1행(표본 고정 = 첫 레코드, seq=1).
@@ -1359,9 +1491,6 @@ class EditorController:
         # 경로는 이 대입 **뒤에** 자기 키를 다시 세운다(`_do_use_pool_data`).
         self.data_pool_key = ""
         self.source_fields = source.fields()
-        # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
-        self._ignored_sources = set()
-        self._ignored_expanded = False  # 새 데이터 = 펼침 힌트 초기화(결정 13)
         self.records = records
         self.preview_index = 0
         # 3단계 접기(블록 2 결정 11·12): 매핑 단계 관문에서 데이터를 고르면(모델이 이미
@@ -1372,11 +1501,12 @@ class EditorController:
             before = self._model_key
             self._ensure_model()
             if self._model_key == before:
-                # 같은 파일·시트 재겨눔(키 불변 = 재초안 없음) — 위에서 칩 상태만 전원 활성으로
-                # 리셋됐다. 관문 재동기화로 시스템 행 재제안을 되살린다(PR-3 리뷰 F3: use_none
-                # 뒤 같은 파일 재선택이 「후보 없음」 죽은 제안으로 남던 창).
+                # 같은 파일·시트 재겨눔(키 불변 = 재초안 없음) — 어휘 재동기화로 시스템 행
+                # 재제안을 되살린다(PR-3 리뷰 F3). 열 선별이 퇴역한 뒤로 강등 집합은 늘 비지만
+                # 재제안 쪽은 여전히 일한다: 앞 세션에서 후보를 못 찾아 비어 있던 시스템 행이
+                # 같은 파일을 다시 겨누며 제안을 되받는 자리다.
                 self.model.apply_active_sources(
-                    self._active_sources(), vocabulary=self.source_fields
+                    self.source_fields, vocabulary=self.source_fields
                 )
         if emit_push:
             self._push()
@@ -1646,8 +1776,6 @@ class EditorController:
             "data_pool_key": self.data_pool_key,
             "source_fields": list(self.source_fields),
             "records": self.records,
-            "ignored": set(self._ignored_sources),
-            "ignored_expanded": self._ignored_expanded,
         }
 
     def _apply_data_stash(self, stash: "dict") -> None:
@@ -1667,8 +1795,6 @@ class EditorController:
         self.data_pool_key = stash.get("data_pool_key", "")
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
-        self._ignored_sources = stash["ignored"]
-        self._ignored_expanded = stash["ignored_expanded"]
         self._ensure_model()
 
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
@@ -1688,7 +1814,7 @@ class EditorController:
         was_complete = self._mapping_complete()
         result = handler(payload)
         # T2 매핑 전확정(#894) — **상승 모서리**로 통지한다. 확정은 한 액션이 아니라 여러 갈래
-        # (`confirm_all`·`confirm_blanks`·행별 `set_confirmed`·`restore_confirmed`)로 도달하므로
+        # (`confirm_suggested`·`set_blank`·행별 `set_confirmed`·`restore_confirmed`)로 도달하므로
         # 액션마다 훅을 달면 그 목록이 곧 두 번째 판정자가 된다. 판정 자체는 링1
         # ``MappingModel.is_complete()`` 하나이고 여기는 그 값의 false→true 만 읽는다.
         if not was_complete and self._mapping_complete():
@@ -1872,7 +1998,7 @@ class EditorController:
         """
         if self.schema is None:
             return
-        vocabulary = self._active_sources() or profile_source_vocabulary(base.mapping)
+        vocabulary = list(self.source_fields) or profile_source_vocabulary(base.mapping)
         if not self.data_path:
             # 데이터 없는 편집 세션의 어휘는 **저장 매핑이 참조하는 키**다(load_job 과 동형) —
             # 이걸 빼면 되돌린 행이 전부 "(데이터에 없음)"으로 오표시된다.
@@ -1947,74 +2073,6 @@ class EditorController:
         self.data_pool_key = key
         return {"ok": True, "label": res["item"].name}
 
-    # ---- 사용 헤더 칩(#49 + 칩-라이브 결정 12·13) — 즉시 동사, 활성/미사용 전환.
-    # 체크박스 스테이징 소거(결정 13): 칩 토글이 곧 즉시 반영. 활성 집합 변화는 model.
-    # apply_active_sources 단일 관문이 처리한다 — 시스템 소유 행은 라이브 재제안(조용),
-    # 사람 소유 행은 소스가 꺼지면 R4 시끄러운 강등. 원본 데이터·매핑 계약은 불변.
-    def _do_use_all_headers(self, p: dict) -> None:
-        """전체 헤더를 다시 활성으로 — 미사용 일괄 해제(결정 13 대칭쌍)."""
-        self._ignored_expanded = False
-        self._apply_active(set(self.source_fields))
-
-    def _do_use_none(self, p: dict) -> None:
-        """전체 미사용(결정 13) — 확정 존재 시 차단, 아니면 전부 미사용 + 미사용 구역 자동 펼침.
-
-        구 '전부 미사용 무조건 거부'(리뷰 #62)를 결정 13 이 개정: **확정이 있을 때만** 차단하고
-        (되돌릴 수 없는 확정 파괴 방지), 확정이 없으면 '고른다→매핑한다' 흐름의 출발점으로
-        허용한다(수동 touched 행은 강등·재진술하되 진행). 미사용 구역을 펼쳐 고르게 한다.
-        """
-        if self.model is not None and self.model.confirmed_count():
-            raise ValueError(
-                "확정한 매핑이 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 "
-                "칩을 하나씩 끄세요."
-            )
-        self._ignored_expanded = True  # 고르는 흐름의 시작점 — 미사용 구역 펼침(결정 13)
-        self._apply_active(set(), allow_empty=True)
-
-    def _do_toggle_source_active(self, p: dict) -> None:
-        """헤더 1개의 활성/미사용 즉시 토글(칩 클릭 — 결정 13). 마지막 활성은 남긴다."""
-        self._ignored_expanded = False  # 개별 토글 = '전체 미사용' 펼침 힌트의 소임 종료(F7)
-        field = str(p["field"])
-        active = set(self._active_sources())
-        if field in active:
-            active.discard(field)
-        else:
-            active.add(field)
-        self._apply_active(active)  # allow_empty=False → 마지막 헤더 토글은 '하나 이상'으로 차단
-
-    def _apply_active(self, active: "set[str]", *, allow_empty: bool = False) -> None:
-        """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, model.apply_active_sources
-        단일 관문으로 라이브 재제안(시스템 소유) + R4 강등(사람 소유)을 재계산·재진술한다.
-
-        개별 토글은 마지막 활성 헤더를 남긴다(``allow_empty=False`` — '하나 이상'). 명시
-        동사 '전체 미사용'(``_do_use_none``)만 ``allow_empty=True`` 로 0개를 허용하되,
-        확정이 있으면 그쪽에서 먼저 차단한다(결정 13 — 확정 파괴만 사전 차단)."""
-        active = {f for f in active if f in self.source_fields}
-        if self.source_fields and not active and not allow_empty:
-            raise ValueError(
-                "사용할 데이터 열을 하나 이상 남겨 두세요. 전부 끄려면 '전체 미사용'을 쓰세요."
-            )
-        self._ignored_sources = {f for f in self.source_fields if f not in active}
-        demoted: "list[str]" = []
-        if self.model is not None:
-            # vocabulary 로 강등을 현재 데이터 어휘 안으로 한정(PR-3 리뷰 F1) — 어휘 밖 소스를
-            # 겨눈 이월 stale 사람 소유 행은 칩 조작과 무관하니 건드리지 않는다(뷰가 「데이터에
-            # 없음」으로 이미 시끄럽다). 통지도 실제로 끈 헤더의 행만 지목하게 된다.
-            demoted = self.model.apply_active_sources(
-                self._active_sources(), vocabulary=self.source_fields
-            )
-        n_active = len(self._active_sources())
-        n_ignored = len(self._ignored_sources)
-        msg = f"사용 데이터 열 {n_active}개 · 미사용 {n_ignored}개."
-        if demoted:
-            self._set_notice(
-                msg + f"\n미사용으로 바꾸며 확정·수동 매핑을 해제한 필드 {len(demoted)}개"
-                "(재확정 필요): " + ", ".join(demoted),
-                "warn",
-            )
-        else:
-            self._set_notice(msg, "muted")
-
     def _ensure_model(self) -> None:
         """매핑 진입 시 초안 생성 — 키(템플릿·데이터·시트·소스) 불변이면 그대로, 바뀌면
         **전원 미확정 초안으로 재생성**하되 이전 확정 행의 값(소스·유형·상수·서식)은
@@ -2027,11 +2085,9 @@ class EditorController:
         값만 이월하고 확정은 전원 해제(``confirm=False``), 재확정 필요를 notice 로
         시끄럽게 재진술한다(조용한 소실도, 조용한 승계도 금지).
 
-        키(#49 주의): 키는 **전체** ``source_fields`` 만 담고 미사용 집합은 담지 않는다 —
-        의도된 설계다. 활성/미사용 변화는 재생성이 아니라 ``apply_active_sources`` 관문이
-        제자리에서 처리한다(칩-라이브 결정 12·13): 시스템 소유 행은 재활성 헤더까지 포함해
-        라이브 재제안을 받고, 확정·수동 행은 관문의 R4 강등 외엔 재생성으로 날아가지 않는다
-        (재생성=전원 미확정이라 키에 담으면 토글마다 확정이 무너진다).
+        키는 **전체** ``source_fields`` 다. 종전에 「미사용 집합은 키에 담지 않는다」는
+        단서가 붙어 있었는데 그 축(#49 열 선별)이 U6-C 에서 퇴역해 담을 것 자체가 없다 —
+        어휘 변화는 이제 ``source_fields`` 하나로만 온다.
 
         **``data_sheet`` 는 키 성분이다**(3단계 접기 리뷰 F1): 관문에서 같은 workbook 의
         다른 시트로 재겨눔했는데 두 시트의 헤더명이 우연히 같으면(예: 둘 다 '업체명·금액')
@@ -2053,9 +2109,7 @@ class EditorController:
             carried_prior = self.model.carry_profile()
             if carried_prior.mappings:
                 prior = carried_prior
-        # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
-        # 반영된다(진입 후의 활성 변화는 _apply_active → apply_active_sources 관문 소관).
-        self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
+        self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         # 「모두 해제」 undo 슬롯 무효화(#273 리뷰) — 슬롯은 **이전 모델의** 숫자 인덱스라
         # 재생성된 모델에선 엉뚱한(또는 우연히 같은 자리의) 행을 가리킨다. 살려두면 아직
         # 보이는 「되돌리기」가 새 입력의 행들을 검토 없이 확정해, 위 "전원 미확정 재생성"
@@ -2081,26 +2135,21 @@ class EditorController:
         어긋나지 않는다.
         """
         if self.model is None:
-            return {"human": 0, "use_none_manual": 0, "resuggest_manual": 0, "confirmed": 0}
+            return {"human": 0, "resuggest_manual": 0, "confirmed": 0}
         rows = [r for r in self.model.human_owned_rows() if r.confirmed or r.has_content()]
         # 파괴 확인의 수치는 **행동마다 다르다** — 두 관문이 강등하는 집합이 다르기 때문이다.
         # 한 수치를 둘이 나눠 쓰면 좁은 쪽 술어가 넓은 쪽 파괴를 가려 준다(리뷰 R1 P1: 소스
         # 없는 수동 const 행이 일괄 재제안에서 확인 없이 지워졌다). 그래서 이름을 소비자에게
         # 붙인다 — 새 관문이 생기면 자기 수치를 여기 더한다.
         #
-        # use_none: 소스를 겨눈 touched 미확정 행만 강등한다(PR-3 리뷰 F4 — 문안=파괴 집합).
-        use_none_manual = [
-            r for r in self.model.rows if r.touched and not r.confirmed and r.source
-        ]
         # resuggest_all: 미확정 행 **전부**를 reset_to_system 한다 — 소스뿐 아니라 상수·유형·
         # 표시형까지 지우므로 소스 없는 수동 행도 잃을 것이 있다. 술어는 실제 루프
         # (`_resuggest_targets`)에서 되읽어 둘이 갈라질 자리를 없앤다.
         resuggest_manual = [i for i in self._resuggest_targets() if self.model.rows[i].touched]
-        # confirmed 는 use_none 사전 차단의 근거(PR-3 리뷰 F5) — 확인 모달을 띄운 뒤에야
-        # 백엔드가 거부하는 확인-후-오류 순서를 웹이 선차단으로 뒤집는다.
+        # confirmed 는 템플릿·데이터 **교체**의 파괴 규모다(U6-B #976) — 고르기 단계가
+        # 확인 왕복을 세울지 그 수치로 판정한다.
         return {
             "human": len(rows),
-            "use_none_manual": len(use_none_manual),
             "resuggest_manual": len(resuggest_manual),
             "confirmed": self.model.confirmed_count(),
         }
@@ -2136,7 +2185,7 @@ class EditorController:
         if self.model.rows[index].confirmed:
             raise ValueError("확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요.")
         self.model.revert_to_auto(index)
-        self.model.resuggest_row(index, self._active_sources())
+        self.model.resuggest_row(index, self.source_fields)
 
     def _do_resuggest_all(self, p: dict) -> dict:
         """전 행을 자동 제안으로 다시 받는다(U2 §2.4) — 행 단위 ``revert_source`` 의 일괄판.
@@ -2153,7 +2202,7 @@ class EditorController:
         """
         if self.model is None:
             return {"resuggested": 0, "kept_confirmed": 0}
-        active = self._active_sources()
+        active = self.source_fields
         # 대상 술어는 `_resuggest_targets` 단일 출처 — 확인 수치가 여기서 파생돼야
         # 「물어본 것」과 「지운 것」이 갈라지지 않는다(리뷰 R1 P1).
         targets = self._resuggest_targets()
@@ -2165,11 +2214,14 @@ class EditorController:
             "kept_confirmed": len(self.model.rows) - len(targets),
         }
 
-    def _do_set_type(self, p: dict) -> None:
-        self.model.set_type(int(p["index"]), p["type"])
+    def _do_set_display(self, p: dict) -> None:
+        """(유형, 표시형) 원자 갱신 — 표시형 select 와 데이터 열의 특수 항목이 함께 쓴다.
 
-    def _do_set_fmt(self, p: dict) -> None:
-        self.model.set_fmt(int(p["index"]), p["fmt"])
+        구 `set_type`·`set_fmt` 두 액션의 후계다(리뷰 1): 유형이 바뀌면 표시형 키가 무효라
+        둘은 애초에 한 전이였고, 나눠 두면 그 사이에 「유형만 바뀐」 상태가 실재해 사람이 고른
+        표시형이 왕복 하나에 조용히 사라진다.
+        """
+        self.model.set_display(int(p["index"]), str(p["type"]), str(p.get("fmt") or ""))
 
     def _do_set_const(self, p: dict) -> None:
         self.model.set_const(int(p["index"]), p["const"])
@@ -2177,18 +2229,23 @@ class EditorController:
     def _do_set_confirmed(self, p: dict) -> None:
         self.model.set_confirmed(int(p["index"]), bool(p["confirmed"]))
 
-    def _do_confirm_all(self, p: dict) -> dict:
-        """고신뢰(내용 있는) 행 즉시 확정 + 비움 승격 후보 이름 반환(ADR-E 이름게이트)."""
-        self.model.confirm_content_rows()
-        return {"blanks": self.model.unconfirmed_blank_fields()}
+    def _do_confirm_suggested(self, p: dict) -> dict:
+        """자동 제안 행 **일괄 승격**(U6-C #977) — 사람이 손댄 행·열 필요 행은 안 건드린다.
 
-    def _do_confirm_blanks(self, p: dict) -> None:
-        """재진술·확인된 미매칭 행을 의도적 비움으로 확정."""
-        confirmed = self.model.confirm_fields(list(p.get("fields", [])))
-        # T14 비움 확정(#894) — **실제로 확정된 행이 있을 때만**이다: 빈 목록·이미 확정된
-        # 이름으로 온 무변이 호출에서 체크가 서면 지나지 않은 게이트를 지났다고 말하게 된다.
-        # 수치 판정은 링1 ``confirm_fields`` 의 반환(새로 확정된 개수)이 이미 냈다.
-        if confirmed:
+        구 `confirm_all`(내용 있는 전 행) + `confirm_blanks`(이름 재진술 모달) 두 발의
+        후계다. 승격 뒤에도 남은 행이 있으면 저장 게이트가 그대로 막고, 그 사실은 머리
+        pill 「확인 필요 n」이 말한다 — 부분 동작을 조용히 하지 않는다.
+        """
+        return {"promoted": self.model.confirm_suggested()}
+
+    def _do_set_blank(self, p: dict) -> None:
+        """이 행은 채우지 않는다 — 행별 비움 선언(U6-C #977)."""
+        index = int(p["index"])
+        already = self.model.rows[index].is_empty_confirmed()
+        self.model.set_blank(index)
+        # T14 비움 확정(#894) — **상태가 실제로 옮겨갔을 때만**이다: 이미 비움 확정인 행을
+        # 다시 고른 무변이 호출에서 체크가 서면 지나지 않은 게이트를 지났다고 말하게 된다.
+        if not already:
             self._tutorial(Milestone.CONFIRM_EMPTY_FIELD)
 
     def _do_unconfirm_all(self, p: dict) -> dict:
