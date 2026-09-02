@@ -1284,7 +1284,8 @@ class TestWebSelftestGate:
         assert b["txt_tabs"] == 3, (
             f"TXT 세션 탭 수가 3이 아닙니다(두 매체가 같은 세 단계): {b['txt_tabs']!r}"
         )
-        assert b["txt_step3_label"] == "이름·저장", (
+        # 초안의 단계 표지는 순번 span(`.k`)을 앞에 두므로 꼬리로 잰다 — 재는 것은 라벨이다.
+        assert b["txt_step3_label"].endswith("이름·저장"), (
             f"3단계 라벨이 화면과 Python `SECTION_LABELS` 사이에서 갈렸습니다: "
             f"{b['txt_step3_label']!r}"
         )
