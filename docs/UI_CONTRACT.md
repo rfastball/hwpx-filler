@@ -56,10 +56,12 @@ owner는 구독·listener·worker·WASM instance 등 자신이 세운 자원을 
 - **직접 브리지 경로:** 네이티브 자원이 관여하는 호출은 `frontend/js/bridge.js`가
   `WebFrontend` 공개 메서드를 **직접** 부른다 — 파일/폴더 피커(`pick_data_file`,
   `pick_output_folder`, `pick_template_path`, `pick_pool_data_file`), 실행·가져오기
-  (`generate`, `import_template_file` — 단건 가져오기+채택(F8 통일, hwpx·txt·RAW 수용),
-  `import_templates_folder` — 폴더 직속 .hwpx/.txt 일괄 등록(#339): 스캔 재진술 →
-  확정 실행의 2왕복이며 실행은 재스캔이 아니라 **재진술된 후보 목록에 결속**된다,
-  채택 없음 = 편집 세션 무변경),
+  (`generate`, `import_template_file` — 단건 가져오기+채택(F8 통일, hwpx·txt·RAW 수용).
+  폴더 일괄 등록(`import_templates_folder`, #339)은 U6-A(#975)에서 **퇴역**했다 — 폴더가
+  곧 풀이 된 뒤로 「폴더에서 한 벌 복사해 온다」는 동사의 전제가 사라졌다),
+  서식 폴더 지정(`pick_templates_root` — 폴더 피커 → tpl 권위의
+  `set_templates_root`. 전역 값이라 `screen` 은 호출 표면 식별자일 뿐 라우팅에 쓰이지 않는다.
+  빈 값·파일 경로 거절은 그 권위 메서드 본문이 진다 — 아래 「서식 폴더 — 단일 루트」),
   에디터 착지(`open_job_in_editor` — 진입 사유가 `DATA_ANCHORED_ENTRY_REASONS` 에 들면
   (지금은 「수정…」의 `document_browser_repair`) 「문서 만들기」의 마운트 데이터 참조를
   **같은 되묻기**(`new_work_handoff`)로 받아 편집 세션이 그 데이터를 들고 선다(#878).
@@ -264,7 +266,7 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   editor/workbench 이탈·rerender 수명주기는 registry의 단일 owner가 fail-closed한다.
   **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
 
-#### 셸 설정 모달 — 테마·글자 크기·저장 폴더 (⚙ 트리거)
+#### 셸 설정 모달 — 테마·글자 크기·저장 폴더·서식 폴더 (⚙ 트리거)
 
 토바 우측의 셸 전역 조작은 **⚙ 하나**다. 종전의 순환 토글 둘(`#themeToggle` ◐ ·
 `#fontScaleToggle` A)은 걷혔다 — 값이 셋인 축을 순환으로 돌리면 지금 값도 고를 수 있는 값도
@@ -301,7 +303,29 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   세그먼트와 달리 실행 상태를 본다. 왕복 자체(`pick_output_folder` 직접 브리지 + 오류 재진술)는
   `JobRunController.pickOutputFolder` 가 그대로 지고 이 면은 부르기만 한다.
   기안 대상 글꼴(`#wbTargetFont`)은 작업대 소유로 남고 여기로 오지 않는다.
-- **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`, 실 WebView2 왕복(⚙ 클릭 →
+- **서식 폴더 행**(네 번째 행 · 같은 `.settings-row.settings-row-folder` 형상, U6-A #975)은
+  저장 폴더 행의 **복제**다: 경로 칸 `#settingsTplDir`(읽기 전용) · 「찾아보기…」
+  `#settingsPickTplFolder` · 출처 `#settingsTplDirSource` · 사유 `#settingsTplDirNotice` ·
+  잠금 사유 `#settingsPickTplFolderReason` + 경로 어포던스(`PathActions`, reveal·copy).
+  생성 중 잠금·사유 병기도 **같은 술어**(같은 실행 상태를 읽는다 — 두 번째 판정을 세우지
+  않는다). 다른 것은 값의 채널과 도출 하나뿐이다: 값은 `tpl` 스냅샷 최상위 `templates_root`
+  존이고(구조적 포트 `SettingsTemplatesRootPort` — `subscribe`/`getSnapshot`/
+  `pickTemplatesRoot`/`refreshCurrentScreen`), 설정한 폴더가 없어도 **기본값으로 내려가지
+  않는다**(아래 절). `tpl` 은 편집기 동사에서만 밀리는 채널이라 첫 스냅샷을 따로 당겨야 하는데,
+  그 당김은 **셸 부팅 시퀀스**(`bootstrap.js` 의 `initSequence`)가 진다 — 이 오버레이는 부팅
+  상주 마운트라 컴포넌트 effect 에서 호스트를 부르면 그 호출이 `pywebviewready` **앞**에 서고,
+  실측에서 그 순서가 WebView2 창을 아예 못 뜨게 했다(`loaded` 미발화 ·
+  `Main window failed to start`). 그 순서 안전은 지금 **구조가 진다**: `runtime.loadInitial`
+  이 `client.whenReady()` 뒤에 당김을 줄 세우므로 어느 호출자든 안전하고, `initSequence` 의
+  자리는 「부팅에 당기는 채널 전수」를 한 표로 읽히게 하는 몫만 남는다. 재지정 성사 뒤에는
+  지금 화면을 한 번 다시 당긴다(목록의 정본은 각 화면 스냅샷이다).
+- **두 폴더 행은 팩토리 하나**(`FolderRow`)가 그린다 — 라벨·읽기 전용 경로·「찾아보기…」·
+  출처·사유·경로 어포던스의 형상이 같고 다른 것은 좌표와 값의 채널뿐이다. DOM `id` 는
+  계약 좌표라 **호출자가 명시로 싣는다**(파생 조립 금지 — 프로브·게이트·live 대본이 그
+  문자열을 그대로 문다). 서식 폴더 포트는 `client`·`notify` 를 **직접** 들어 경로 어포던스가
+  남의 컨트롤러에 묶이지 않는다.
+- **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`(행 넷·두 폴더 행의 경로·출처·
+  사유·잠금 사유·발신 목적지), 실 WebView2 왕복(⚙ 클릭 →
   열림 → 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 값 복원 → 닫힘 → 초점
   복귀)은 selftest 프로브 `shell_settings`(클러스터 B)와
   `tests/test_web_selftest_gate.py::test_shell_settings_modal_round_trips_theme_and_returns_focus`
@@ -549,8 +573,8 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     범위 한 줄만 다르고, 확정 뒤 그 템플릿은 PARTIAL 로 재진입한다.
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
     (각 `path`·`slot_id`·`confirm`) + `slot_decompile_all`(`path`·`confirm`)이고 넷 다 경로가
-    **현재 HWPX 라이브러리 목록**에 있어야 한다(`_do_delete` 와 같은 술어 — 임의 파일 변이
-    권한 승격 차단. 관문 몸통은 `_slot_path` 하나이고 행 동사는 그 위에 id 검사를 얹는다).
+    **현재 HWPX 라이브러리 목록**에 있어야 한다(임의 파일 변이 권한 승격 차단. 관문 몸통은
+    `_slot_path` 하나이고 행 동사는 그 위에 id 검사를 얹는다).
     풀기 몸통은 External 이 지고(`decompile_structure` = `decompile_slot` 문서 순서 반복 +
     문서 단위 원자성), 링1 은 `decompile_all_slots`·`confirm_decompile_all_text` 를 소유한다.
   - **편집기가 지금 연 템플릿의 구간 축 요약은 따로 선다**(U4-E2 #939 · `UX_FEEDBACK_U4`
@@ -588,16 +612,16 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     말하지 않으면 한 동작이 두 사건인 척한다.
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
   (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_decompile_all`·`slot_remove`
-  확정 · `txt_edit` ·
-  `delete` · `undo_delete`) 그 성공 **직후**
+  확정 · `txt_edit`) 그 성공 **직후**
   `TemplateController.mutation_sinks` 가 `(kind, path)` 로 통지하고
   `EditorController.reconcile_template_mutation` 이 같은 파일을 든 세션만 다시 세운다
   (경로 대조는 `template_groups.norm_library_path` 단일 술어, 남의 파일이면 푸시도 없다).
-  `mutated`·`restored` 는 템플릿을 재로드해 스키마를 다시 파생하고 기존 이월·강등
+  `mutated` 는 템플릿을 재로드해 스키마를 다시 파생하고 기존 이월·강등
   의미론(`_ensure_model`)을 그 위에 돌린 뒤 warn 으로 재진술한다. 채울 대상이 0 이 되면
   (RAW 강등) 낡은 모델을 걷고 danger 로 말한다 — 남겨 두면 이제는 없는 필드로 저장 게이트가
-  통과한다. `deleted` 는 danger 재진술만 하고 `template_path` 는 **지우지 않는다**(복원
-  왕복이 같은 경로로 돌아온다); 그동안의 저장은 링2 심층 방어(`_missing_template_block`)가
+  통과한다. 삭제·복원 동사는 U6-A 에서 **퇴역**했다: `restored` 는 생산자 0 으로 종류
+  열거에서 함께 걷혔고(`MUTATION_KINDS` = `mutated`·`deleted`), `deleted` 의 남은 발신자는
+  동결 온보딩의 예제 일괄 제거뿐이다. `deleted` 는 danger 재진술만 하고 `template_path` 는 **지우지 않는다**; 그동안의 저장은 링2 심층 방어(`_missing_template_block`)가
   기존 `block_reason` 채널로 막는다. 이 seam 은 디스패치 액션이 아니라 **컨트롤러 간
   배선**이라 action registry 밖이고, 조립 한 줄은 `webapp/app.py` 가 소유한다.
 
@@ -1366,6 +1390,76 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - **관찰은 폴더를 만들지 않는다**(불변). 도출된 기본값은 아직 없을 수 있어 빈 점유로 관찰하고
   (`allow_missing`), 설정한 폴더는 도출이 이미 존재를 확인했으므로 그 관용을 받지 않는다 —
   거기서 읽히지 않으면 「아직 없다」가 아니라 「읽을 수 없다」(권한·잠김)다.
+
+### 서식 폴더 — 단일 루트 (U6-A #975 · U6 §2.3)
+
+**템플릿 목록의 루트는 하나이고 사용자가 고른다.** hwpx·txt 가 **같은** 폴더를 재귀로 읽고,
+매체별 루트 축(`templates` / `text_templates`)은 사라졌다. 지정이 없으면 앱 홈 `templates` 가
+루트이므로 기존 사용자의 이행 비용은 0 이다.
+
+- **판정은 링0 하나다**: `domain/template_root_default.resolve_templates_root` — 순수 함수이고
+  존재 관찰(`configured_exists`)은 호출자가 건넨다. 출처 라벨(`설정한 폴더`/`기본 폴더`)과
+  사유 문안도 여기 산다(표면 재조립 금지).
+- **기본값으로 내려가지 않는다** — 저장 폴더 도출과 갈리는 유일한 지점이다. 설정한 폴더가
+  사라져도 그 경로가 그대로 루트이고 `notice` 만 붙는다. 내려가면 사용자가 고른 것과 **다른
+  템플릿 집합**이 목록에 서고, 그것으로 문서를 만드는 것이 곧 조용한 추측이다. 빈 목록의
+  안내는 링1 `TemplateManagerViewModel.empty_hint()` 가 정본이고 두 밴드가 같은 말을 한다 —
+  `tpl` 과 편집기 「템플릿」 탭 둘 다 스냅샷 키 `empty_hint` 로 그 문안을 싣고, 프런트의
+  `emptyText` 는 스냅샷이 아직 없을 때의 자리 문안으로만 남는다.
+- **영속은 설정 키 `templates_root` 하나**(`external/settings.py`, 기본 `""` = 미지정).
+- **런타임 권위는 `external/template_root.TemplateRoot` 인스턴스 하나**다. 캐시하지 않는다 —
+  매 판독이 설정을 다시 읽으므로 재지정 직후의 첫 스냅샷이 곧 새 루트다. 아래 **다섯 자리**가
+  전부 이 홀더(또는 그 `path` 콜러블)를 지난다:
+  ① `app.py` 조립의 `TemplateFileStore(root=…)` ② 같은 조립의 `TextTemplateRegistry(root=…)`
+  ③ `TemplateController` 의 `TemplateManagerViewModel(root.path)` ④ `EditorController` 의 지연
+  폴백 둘(`template_library`·`text_registry`) ⑤ `JobRegistry(template_root=…)` 의
+  `template_key` 승격·해석(`job_store.library_key_for`/`resolve_library_key` 는 루트를 **명시
+  인자**로 받는다). `host/locations` 의 `default_text_templates_dir`·`library_root_for` 는
+  **삭제**됐다. 루트는 **읽는 구간마다 한 번**만 평가한다(스캔 시작·저장 임계구역 진입) —
+  항목마다 다시 읽으면 도중의 재지정이 한 목록·한 저장을 두 루트의 뜻으로 쪼갠다.
+- **루트 재지정이 작업을 재결속하지 않는다**(#983 리뷰 차단 1). 저장된 링크는 둘이고
+  (`template_path` 절대경로 + `template_key` 루트 상대키) 해석 순서는
+  `job_store._resolve_template_link` 하나가 진다: **살아 있는 절대경로가 언제나 이긴다**.
+  키는 「살던 자리가 통째로 사라졌을 때」만 서고(그 자리는 저장된 경로에서 키를 떼어
+  되짚는다 — `_former_root_of`), 그것이 #348 이 겨눈 홈 이동·백업 복원의 정확한 모양이다.
+  파일 하나가 지워진 경우는 **끊긴 링크로 남는다** — 새 루트의 동명 파일로 갈아타면 작업이
+  조용히 다른 서식으로 문서를 만든다(법적 효력 문서에서 최악의 조용한 재결속). 읽기는
+  여전히 디스크를 고치지 않는다(존재를 묻기만 한다).
+- **재지정 동사는 하나**다: 직접 브리지 `pick_templates_root` → `TemplateController.set_templates_root`.
+  빈 값·파일 경로는 loud 거절이고, 성공은 **한 번의 푸시**로 두 밴드와 `templates_root` 존을
+  함께 옮긴다(소비자가 전부 홀더를 지나므로 갈아 끼울 두 번째 자리가 없다). 편집 세션에는
+  변이 통지를 보내지 않는다 — 파일은 하나도 바뀌지 않았고, 폴더 경로를 경로 대조 seam
+  (`mutation_sinks`)에 실으면 어느 세션과도 맞지 않는 조용한 무효 통지가 된다. 목록 갱신은
+  이 푸시 + 호출자(설정 시트)의 화면 재당김이 진다.
+- **스냅샷은 `tpl` 최상위 `templates_root` 존**(`directory`·`source`·`source_label`·`notice`)
+  이고 저장 폴더의 `output_folder` 존과 동형이다. 두 밴드의 `dir` 도 같은 값을 싣는다.
+- **표시명 규칙은 하나**다: `domain/template_status.library_display_name` — 루트 상대 경로,
+  확장자 제외, POSIX(`온나라/기안`). 재귀 루트에서 basename 은 유일하지 않으므로 하위폴더가
+  이름에 남아야 두 파일이 구분된다. 파일명 기반 **정체성**(`rel_key`·`template_key`)은 불변이다.
+- **나열 제외는 두 매체 공통**이다: `Results`(산출물)·`.trash`(옛 삭제 보관소). 목록과 술어의
+  단일 출처는 `domain/template_status` 의 `EXCLUDED_DIR_NAMES`·`is_excluded_subtree` 이고,
+  hwpx walker·txt walker·레거시 이관 **셋이 그 하나를 부른다**(문자열·조건 재선언 금지).
+- **레거시 TXT 는 1회 이관된다**: 설정 키가 비어 기본 루트를 쓰는 경우에만, 부팅 시
+  `home/text_templates/**/*.txt` 를 같은 상대 경로로 `home/templates/` 로 **옮긴다**(복사가
+  아니다 — 다음 부팅에 걷을 것이 남지 않는다). 이름이 이미 있으면 그 파일은 건드리지 않고
+  사유에 남긴다. 나열이 거르는 하위트리(`Results`·`.trash`)는 **옮기지 않고** `skipped` 에
+  사유로 남긴다 — 옮겨 봐야 새 루트에서도 걸러져 목록에서 사라진다. 재진술은 **두 채널**이
+  받는다: 내구성 로그(`settings.alert` — stderr + 홈 `webapp-alerts.log`)와 **화면**(`tpl`
+  스냅샷 `templates_root.notice` 에 이 프로세스 수명 동안 병기 — 도출 사유가 이미 있으면
+  줄바꿈으로 둘 다). 로그만 두면 사용자는 자기 TXT 가 옮겨진 사실을 영영 모른다. 사용자가
+  루트를 지정했으면 이관하지 않는다(고른 폴더에 앱이 파일을 넣지 않는다).
+- **퇴역한 동사**(같은 슬라이스): 폴더 일괄 가져오기(`import_templates_folder` 브리지 ·
+  `tpl/scan_import_folder`·`import_folder` · 링1 후보 몸통 · 「폴더에서 가져오기…」 버튼)와
+  삭제·휴지통(`tpl/delete`·`undo_delete` · `TemplateFileStore.trash`/`restore` · 30일 정리 ·
+  행 메뉴의 「삭제」). 삭제가 걷히면서 **동사가 0 인 행**이 생겼다(COMPILED·FILLED hwpx ·
+  판독 실패 TXT) — 그 행의 ⋮ 는 **비활성 + 사유**(`LIB_ROW_NO_ACTION_REASON`)이고, 메뉴를
+  여는 쪽과 트리거를 잠그는 쪽이 `libRowMenuItems` **한 술어**를 본다(누르면 아무 일도 없는
+  버튼 금지). 앱은 사용자 폴더에 `.trash` 를 만들지 않는다 — 「폴더에서 보기」가
+  삭제 동사를 대신한다. 단건 「가져오기…」(`import_template_file` → 루트 직속 복사 + `이름 (2)`
+  접미)는 **유지**된다. 남은 `deleted` 통지 생산자는 동결 온보딩의 예제 일괄 제거뿐이다.
+- **동결 그룹 정리는 허용한다**: 루트를 바꾸면 첫 스냅샷의 `TemplateGroupModel.reconcile` 이
+  옛 키의 그룹 지정을 삭제·영속한다. 그룹 축은 U4 §2-30 에서 동결·비노출이고, 스캔과 어긋난
+  지정이 굳는 것이 되살릴 때의 부채라 그대로 둔다.
 
 ### `library` 화면(전역 문서 작업 라이브러리) 계약 (§19.6·§19.7)
 

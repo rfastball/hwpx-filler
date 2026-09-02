@@ -39,6 +39,7 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.gui.tutorial_state import STEPS, Milestone
 from hwpxfiller.webapp.action_registry import validate_dispatch
@@ -255,7 +256,7 @@ def test_product_assembly_wires_every_notifying_controller(tmp_path, monkeypatch
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     from hwpxfiller.webapp.app import WebFrontend
 
-    frontend = WebFrontend(tmp_path / "text")
+    frontend = WebFrontend()
     tutorial = frontend.controllers["tutorial"]
     for name in ("job", "editor", "tpl", "workbench"):
         assert frontend.controllers[name]._tutorial == tutorial.notify, (
@@ -299,14 +300,13 @@ def test_every_milestone_has_a_notifying_site_in_the_product():
 def _tpl(tmp_path: Path, notify):
     lib = tmp_path / "lib"
     lib.mkdir()
-    txt_dir = tmp_path / "txt"
-    txt_dir.mkdir()
-    registry = TextTemplateRegistry(txt_dir)
+    root = TemplateRoot(default_root=lib)      # U6-A: hwpx·txt 가 같은 서식 폴더
+    registry = TextTemplateRegistry(root.path)
     ctrl = TemplateController(
         registry,
         lambda screen, snap: None,
-        file_store=TemplateFileStore(lib, registry, clock=time.time, new_id=lambda: "fixedid"),
-        library_dir=lib,
+        file_store=TemplateFileStore(root.path, registry),
+        template_root=root,
         pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
         tutorial=notify,
     )

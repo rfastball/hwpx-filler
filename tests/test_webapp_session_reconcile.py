@@ -31,10 +31,9 @@ def _frontend(tmp_path: Path):
     """실 브리지 조립 — 홈은 conftest autouse 가 이미 tmp 로 못박았다."""
     from hwpxfiller.webapp import app as app_mod
 
-    txt_dir = tmp_path / "txt"
-    txt_dir.mkdir(exist_ok=True)
+    # U6-A(#975): 서식 폴더는 지정 없으면 앱 홈 ``templates`` 하나이고 두 매체가 공유한다.
     default_templates_dir().mkdir(parents=True, exist_ok=True)
-    return app_mod.WebFrontend(txt_dir)
+    return app_mod.WebFrontend()
 
 
 def _txt(frontend, name: str, body: str) -> Path:
@@ -124,7 +123,10 @@ def test_delete_marks_the_session_danger_and_blocks_save_loudly(tmp_path):
     editor.dispatch("set_name", {"name": "발주 기안"})
     assert editor.snapshot()["is_complete"] is True
 
-    fe.controllers["tpl"].dispatch("delete", {"media": "txt", "path": str(path)})
+    # 앱 안의 삭제 동사는 U6-A 에서 퇴역했다 — 파일이 사라지는 길은 탐색기(밖)와 동결
+    # 온보딩의 예제 제거뿐이고, 둘 다 같은 `deleted` 통지로 이 세션에 닿는다.
+    path.unlink()
+    fe.controllers["tpl"]._notify_mutation("deleted", str(path))
 
     notice = editor.snapshot()["notice"]
     assert notice["level"] == "danger" and "삭제됐습니다" in notice["text"]
@@ -138,26 +140,8 @@ def test_delete_marks_the_session_danger_and_blocks_save_loudly(tmp_path):
 
 
 # ==================================================== ③ 복원 왕복
-def test_undo_delete_restores_the_session_schema(tmp_path):
-    fe = _frontend(tmp_path)
-    path = _txt(fe, "기안", "수신: {{수신}}\n제목: {{제목}}")
-    editor = _mounted_txt_session(fe, path)
-    tpl = fe.controllers["tpl"]
-
-    tpl.dispatch("delete", {"media": "txt", "path": str(path)})
-    assert editor.snapshot()["notice"]["level"] == "danger"
-
-    tpl.dispatch("undo_delete", {})
-
-    assert _field_names(editor) == ["수신", "제목"]
-    snap = editor.snapshot()
-    assert snap["notice"]["level"] == "warn"
-    assert "다시 읽었습니다" in snap["notice"]["text"]
-    # 파일이 돌아왔으니 심층 방어 차단도 걷힌다(다른 저장 게이트는 이 테스트 밖).
-    assert editor._missing_template_block() == ""
 
 
-# ==================================================== ④ hwpx 누름틀 변환 양성 대조
 def test_compile_apply_reruns_the_session_schema(tmp_path):
     """평문 토큰 hwpx 를 든 세션이 tpl 변환 확정 뒤 필드를 갖는다(S8 이 얹힐 자리)."""
     fe = _frontend(tmp_path)
@@ -274,7 +258,8 @@ def test_mutation_of_another_template_leaves_the_session_untouched(tmp_path):
     editor._push_sink = lambda screen, snap: pushes.append((screen, snap))
 
     _txt_edit(fe, other, "안건: {{안건}}\n장소: {{장소}}")
-    fe.controllers["tpl"].dispatch("delete", {"media": "txt", "path": str(other)})
+    other.unlink()
+    fe.controllers["tpl"]._notify_mutation("deleted", str(other))
 
     assert editor.snapshot() == before
     assert pushes == []  # 남의 변이는 내 화면을 다시 그리지도 않는다

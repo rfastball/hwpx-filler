@@ -12,6 +12,7 @@ Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfille
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,14 +49,23 @@ class TextTemplateRegistry:
 
     SUFFIX = TEXT_TEMPLATE_SUFFIX
 
-    def __init__(self, directory: "str | Path"):
-        self.directory = Path(directory)
+    def __init__(self, directory: "str | Path | Callable[[], Path]"):
+        # 루트는 **콜러블일 수 있다**(U6-A #975): 서식 폴더가 설정으로 바뀌는 값이 되면서
+        # 생성 시점의 Path 를 굳혀 들면 재지정 뒤에도 옛 폴더를 나열한다(선언≠실제).
+        # 고정 Path 주입(테스트 다수·예제 팩)은 그대로 동작한다 — 아래 프로퍼티가 흡수한다.
+        self._directory = directory
         # 템플릿 파일 쓰기 직렬화 락(JobRegistry.write_lock 동형) — 「템플릿으로 저장」의 덮어쓰기
         # 재검증(내용 지문 재-읽기)과 실제 교체(write_text_atomic) 사이에 다른 스레드가 대상 파일을
         # 바꾸지 못하게 한 임계구역으로 묶는다(리뷰 F5). 효력은 **모든 템플릿 writer 가 함께
         # 잡아야** 성립한다 — 지금의 writer 는 관리 화면 「새 TXT」·내용 편집(screen_template)
         # 하나다(구 「템플릿으로 저장」 공유자는 F6 PR-B 에서 화면과 함께 걷혔다). RLock.
         self._write_lock = threading.RLock()
+
+    @property
+    def directory(self) -> Path:
+        """지금의 루트 — 콜러블 주입이면 **매번 평가**한다(사본 캐시 금지)."""
+        source = self._directory
+        return Path(source() if callable(source) else source)
 
     def write_lock(self) -> "threading.RLock":
         """템플릿 쓰기 임계구역 락(공유) — 덮어쓰기 재검증~교체를 한 임계구역으로 묶는다(F5)."""
@@ -74,18 +84,24 @@ class TextTemplateRegistry:
         파일은 ``하위폴더/이름``. 재귀가 ``a/동명.txt``·``b/동명.txt`` 를 stem 하나로 노출하면
         :meth:`load` 가 첫 파일만 열어 다른 항목을 골라도 조용히 첫 내용이 열린다(#136 리뷰 F1).
         상대경로 이름은 유일하므로 목록·선택·load 계약이 두 파일을 별개로 구분한다. 이름순 정렬."""
-        if not self.directory.exists():
+        # 루트는 **스캔 시작에 한 번** 고정한다(U6-A 리뷰): 콜러블 주입이면 매 평가가 설정
+        # 파일 읽기라 항목 수에 비례해 되풀이되고, 더 나쁘게는 스캔 도중 재지정이 끼면 한
+        # 목록이 두 루트를 뜻하게 된다(이름은 A 기준, 경로는 B 기준).
+        root = self.directory
+        if not root.exists():
             return []
+        found: "list[Path]" = []
+        for path in root.rglob("*" + self.SUFFIX):
+            try:
+                if path.is_file() and is_live_text_template(root, path):
+                    found.append(path)
+            except ValueError:
+                # 고정한 루트 밖의 경로 — 스캔 중 루트가 갈렸다는 뜻이다. 그 한 파일을
+                # 건너뛸 뿐 목록 전체를 예외로 죽이지 않는다(다음 스냅샷이 새 루트로 온다).
+                continue
         return [
-            TextTemplate(text_template_name(self.directory, p), p)
-            for p in sorted(
-                (
-                    p
-                    for p in self.directory.rglob("*" + self.SUFFIX)
-                    if p.is_file() and is_live_text_template(self.directory, p)
-                ),
-                key=lambda p: (p.name, str(p)),
-            )
+            TextTemplate(text_template_name(root, path), path)
+            for path in sorted(found, key=lambda p: (p.name, str(p)))
         ]
 
     def names(self) -> "list[str]":

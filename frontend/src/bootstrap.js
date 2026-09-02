@@ -234,7 +234,7 @@ export function bootProduct() {
   const EditorController = createEditorController({
     doc: document,
     runtime, client, ports: screenPorts, services: servicePorts,
-    modal: Modal, undo: UndoToast, popover: Popover, chain: Intent,
+    modal: Modal, popover: Popover, chain: Intent,
     navigation,
     notify: (message) => window.alert(message),
   });
@@ -292,6 +292,10 @@ export function bootProduct() {
   }));
 
   const initSequence = [
+    /* 서식 폴더 행(U6-A #975)이 읽는 `tpl` 첫 스냅샷 — 다른 화면 init 과 같은 줄에 세운다.
+       (호스트 준비 대기 자체는 `runtime.loadInitial` 이 구조로 진다 — 이 자리에 있는 것은
+       순서 안전이 아니라 「부팅에 당기는 채널 전수」를 한 표로 읽히게 하려는 것이다.) */
+    () => runtime.loadInitial("tpl"),
     () => LibraryController.init(),
     () => EditorController.init(),
     () => JobRunController.init(),
@@ -479,6 +483,19 @@ export function bootProduct() {
           {
             theme: Theme, personalization: Personalization, modal: Modal,
             job: JobRunController,
+            /* 서식 폴더 행(U6-A #975) — 값의 주인은 tpl 채널이라 그 모델을 그대로 구독한다.
+               화면 컨트롤러를 하나 더 세우지 않는 이유는 이 면이 tpl 의 **한 존**만 읽기
+               때문이다(같은 상태를 두 곳이 판정하지 않는다). */
+            templates: {
+              subscribe: (listener) => runtime.model("tpl").subscribe(listener),
+              getSnapshot: () => runtime.model("tpl").getSnapshot(),
+              pickTemplatesRoot: () => bridge.pickTemplatesRoot("tpl"),
+              refreshCurrentScreen: () => runtime.refresh(Nav.currentScreen()),
+              /* 경로 어포던스의 전송 표면은 이 포트가 직접 든다 — 저장 폴더 포트의 것을
+                 빌리면 서식 폴더 행이 남의 컨트롤러에 묶인다. */
+              client,
+              notify: (message) => window.alert(message),
+            },
           }),
       ],
     },

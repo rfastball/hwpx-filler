@@ -21,7 +21,7 @@
  *
  * 마크업은 `.settings-row` 반복이다 — 라벨 한 칸 + 조작 한 칸. 축이 늘면 행이 하나 는다.
  *
- * ## 저장 폴더 행만 화면 상태를 읽는다
+ * ## 폴더 두 행만 제품 스냅샷을 읽는다
  *
  * 테마·글자 크기는 셸 서비스의 값이지만 **저장 폴더는 Python 이 도출한 값**이다(작업 화면
  * 스냅샷의 `output_folder` 존 — 설정한 폴더가 사라졌는지, 지금 쓰이는 경로가 무엇인지, 그
@@ -29,6 +29,11 @@
  * 받아 그 스냅샷을 구독하고, 지역 상태를 만들지 않는다. 고르는 왕복(`pick_output_folder`)도
  * 그 컨트롤러의 것을 그대로 부른다 — 오류 재진술 규율이 거기 있고, 여기서 다시 조립하면
  * 같은 판정이 두 곳에 산다.
+ *
+ * **서식 폴더 행도 같다**(U6-A #975): 값의 주인이 tpl 채널이라 그 스냅샷의 `templates_root`
+ * 존을 구독한다. 다른 점은 두 가지뿐이다 — 채널이 편집기 동사에서만 밀리므로 첫 스냅샷은
+ * 이 면이 직접 당기고(`init`), 재지정 성사 뒤에는 지금 화면을 한 번 다시 당긴다(목록의
+ * 정본은 각 화면 스냅샷이다).
  */
 
 import { createElement, useCallback, useSyncExternalStore } from "react";
@@ -65,6 +70,35 @@ export type SettingsOutputFolderPort = {
 export const OUTPUT_FOLDER_BUSY_REASON = "문서를 만드는 중에는 저장 폴더를 바꿀 수 없습니다.";
 /** 도출 자체가 불가능할 때의 자리 문안(경로 칸이 빈 채로 서는 것을 막는다). */
 export const OUTPUT_FOLDER_EMPTY_TEXT = "아직 정해지지 않았습니다 — 폴더를 선택하세요.";
+
+/** 서식 폴더 행이 쓰는 **구조적** 포트(U6-A #975) — tpl 채널 스냅샷 하나를 구독한다.
+ *
+ *  저장 폴더 포트와 형상이 같되 실행 상태를 따로 묻지 않는다: 잠금 판정은 저장 폴더 행과
+ *  **같은 사실**(생성 진행)이라 그 행이 이미 읽는 값을 재사용하고, 여기서 두 번째 판정을
+ *  세우지 않는다.
+ *
+ *  **첫 스냅샷을 이 면이 당기지 않는다**: 이 오버레이는 부팅에 상주 마운트라, 마운트 effect
+ *  에서 호스트를 부르면 그 호출이 `pywebviewready` **앞**에 선다 — 실측에서 그 순서가
+ *  WebView2 창을 아예 못 뜨게 했다(`loaded` 미발화 · `Main window failed to start`).
+ *  그래서 `tpl` 첫 당김은 셸의 부팅 시퀀스(`initSequence`, 호스트 준비 뒤 발화)가 진다. */
+export type SettingsTemplatesRootPort = {
+  subscribe(listener: () => void): () => void;
+  /** tpl 채널 모델 판독 — 안정 참조를 돌려줘야 한다(파생 객체 금지). */
+  getSnapshot(): Obj | null;
+  pickTemplatesRoot(): unknown;
+  /** 재지정 성사 뒤 지금 화면을 다시 당긴다 — 목록의 정본은 각 화면 스냅샷이다. */
+  refreshCurrentScreen(): unknown;
+  /** 경로 어포던스(폴더에서 보기·경로 복사)가 쓰는 전송 표면. **이 포트가 직접 든다** —
+   *  저장 폴더 포트의 것을 빌려 쓰면 두 행이 남의 컨트롤러에 묶인다. */
+  client: BridgeClient;
+  notify(message: string): void;
+};
+
+/** 생성 중에 서식 폴더를 못 바꾸는 사유 — 저장 폴더와 같은 규율(조용히 막지 않는다). */
+export const TEMPLATES_ROOT_BUSY_REASON =
+  "문서를 만드는 중에는 서식 폴더를 바꿀 수 없습니다.";
+/** 루트가 아직 도출되지 않은 자리 문안(경로 칸이 빈 채로 서는 것을 막는다). */
+export const TEMPLATES_ROOT_EMPTY_TEXT = "아직 읽지 못했습니다 — 폴더를 선택하세요.";
 
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
 export const SETTINGS_MODAL_ID = "settingsModal";
@@ -126,6 +160,68 @@ function Segment(props: SegmentProps): ReactNode {
     }, props.labels[value] || value)));
 }
 
+/** 폴더 행 하나 — 라벨 + 읽기 전용 경로 + 「찾아보기…」 + 출처·사유 + 경로 어포던스.
+ *
+ *  **저장 폴더와 서식 폴더가 이 하나를 부른다.** 둘은 값의 채널과 도출 규칙만 다르고 형상은
+ *  같다 — 사본으로 두면 한쪽에만 붙는 어포던스·잠금 사유가 생기고, 그 어긋남은 눈으로만
+ *  잡힌다. DOM `id` 는 계약 좌표라 **호출자가 명시로 싣는다**(파생 조립 금지 — 프로브·
+ *  게이트·live 대본이 그 문자열을 그대로 문다).
+ *
+ *  판정은 하나도 여기 없다: 경로·출처·사유는 Python 도출의 투영이고, `busy` 는 호출자가
+ *  이미 읽은 실행 상태다. 이 면은 그리기와 클릭 전달만 한다. */
+function FolderRow(props: {
+  label: string;
+  labelId: string;
+  pathId: string;
+  pickId: string;
+  sourceId: string;
+  noticeId: string;
+  reasonId: string;
+  view: OutputFolderView;
+  emptyText: string;
+  busyReason: string;
+  onPick(): void;
+  client: BridgeClient;
+  notify(message: string): void;
+}): ReactNode {
+  const { view } = props;
+  return h("div", { className: "settings-row settings-row-folder" },
+    h("span", { className: "settings-label", id: props.labelId }, props.label),
+    h("div", { className: "settings-folder" },
+      h("div", { className: "settings-folder-row" },
+        h("input", {
+          className: "field ro", id: props.pathId, type: "text", readOnly: true,
+          "aria-labelledby": props.labelId,
+          value: view.directory,
+          placeholder: props.emptyText,
+        }),
+        h("button", {
+          className: "btn sm", id: props.pickId, type: "button",
+          /* 생성 중에는 잠근다 — 이번 실행이 겨눈 폴더가 도중에 갈리면 결과가 어디서 왔고
+             어디로 갔는지 말할 수 없다. 잠그되 **사유를 병기**한다(조용히 막지 않는다). */
+          disabled: view.busy,
+          title: view.busy ? props.busyReason : undefined,
+          onClick: () => { props.onPick(); },
+        }, "찾아보기…"),
+        view.directory
+          ? createElement(PathActions as any, {
+            client: props.client,
+            path: view.directory,
+            only: ["reveal", "copy"],
+            notify: props.notify,
+          })
+          : null),
+      view.sourceLabel
+        ? h("span", { className: "muted capnote", id: props.sourceId }, view.sourceLabel)
+        : null,
+      view.notice
+        ? h("p", { className: "warn capnote", id: props.noticeId }, view.notice)
+        : null,
+      view.busy
+        ? h("p", { className: "muted capnote", id: props.reasonId }, props.busyReason)
+        : null));
+}
+
 /** 저장 폴더 행이 그리는 값 — 전부 Python 도출의 투영이다(여기서 판정하지 않는다). */
 export type OutputFolderView = {
   directory: string;
@@ -135,13 +231,17 @@ export type OutputFolderView = {
   busy: boolean;
 };
 
+/** 서식 폴더 행이 그리는 값 — 저장 폴더와 같은 성분(둘 다 링0 도출의 투영이다). */
+export type TemplatesRootView = OutputFolderView;
+
 export function SettingsSheet(props: {
   theme: SettingsThemePort;
   personalization: SettingsPersonalizationPort;
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
+  templates: SettingsTemplatesRootPort;
 }): ReactNode {
-  const { theme, personalization, job } = props;
+  const { theme, personalization, job, templates } = props;
   const currentTheme = useShellValue("hwpx:themechange", () => theme.current());
   const currentScale = useShellValue(
     "hwpx:personalizationchange", () => personalization.currentFontScale(),
@@ -158,8 +258,19 @@ export function SettingsSheet(props: {
     notice: String(folder.notice || ""),
     busy: runState.running === true,
   };
+  /* 서식 폴더도 같은 규율이다 — tpl 채널의 `templates_root` 존을 그대로 판독한다. */
+  const tplState = useSyncExternalStore(
+    templates.subscribe, templates.getSnapshot, templates.getSnapshot,
+  );
+  const root = ((tplState || {}).templates_root || {}) as Obj;
+  const templatesRoot: TemplatesRootView = {
+    directory: String(root.directory || ""),
+    sourceLabel: String(root.source_label || ""),
+    notice: String(root.notice || ""),
+    busy: runState.running === true,
+  };
   return createElement(SettingsSheetView as any, {
-    ...props, currentTheme, currentScale, outputFolder,
+    ...props, currentTheme, currentScale, outputFolder, templatesRoot,
   });
 }
 
@@ -173,12 +284,24 @@ export function SettingsSheetView(props: {
   personalization: SettingsPersonalizationPort;
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
+  templates: SettingsTemplatesRootPort;
   currentTheme: string;
   currentScale: string;
   outputFolder: OutputFolderView;
+  templatesRoot: TemplatesRootView;
 }): ReactNode {
-  const { theme, personalization, modal, job, currentTheme, currentScale } = props;
+  const { theme, personalization, modal, job, templates, currentTheme, currentScale } = props;
   const folder = props.outputFolder;
+  const root = props.templatesRoot;
+
+  /** 서식 폴더 재지정 — 성사(경로 문자열)면 지금 화면을 다시 당긴다. 취소는 `null`,
+   *  실패는 `"ERROR: …"` 라 어느 쪽도 재당김을 걸지 않는다(브리지 규약 그대로). */
+  const pickRoot = async (): Promise<void> => {
+    const picked = await templates.pickTemplatesRoot();
+    if (typeof picked === "string" && picked !== "" && !picked.startsWith("ERROR:")) {
+      await templates.refreshCurrentScreen();
+    }
+  };
 
   return h("div", { className: "modal-card settings-card" },
     h("div", { className: "settings-head" },
@@ -208,43 +331,24 @@ export function SettingsSheetView(props: {
           current: currentScale,
           onPick: (value: string) => { personalization.setFontScale(value); },
         })),
-      /* 저장 폴더 — 앞 두 행과 달리 **전역이면서 제품 값**이다. 여기 선 이유는 하나다:
-         작업마다 다시 고르던 축이 폐지되면서 고를 자리가 앱에 한 곳만 남았다. */
-      h("div", { className: "settings-row settings-row-folder" },
-        h("span", { className: "settings-label", id: "settingsFolderLabel" }, "저장 폴더"),
-        h("div", { className: "settings-folder" },
-          h("div", { className: "settings-folder-row" },
-            h("input", {
-              className: "field ro", id: "settingsOutDir", type: "text", readOnly: true,
-              "aria-labelledby": "settingsFolderLabel",
-              value: folder.directory,
-              placeholder: OUTPUT_FOLDER_EMPTY_TEXT,
-            }),
-            h("button", {
-              className: "btn sm", id: "settingsPickFolder", type: "button",
-              /* 생성 중에는 잠근다 — 이번 실행이 겨눈 폴더가 실행 도중 갈리면 결과가 어디로
-                 갔는지 말할 수 없게 된다. 잠그되 **사유를 병기**한다(조용히 막지 않는다). */
-              disabled: folder.busy,
-              title: folder.busy ? OUTPUT_FOLDER_BUSY_REASON : undefined,
-              onClick: () => { void job.pickOutputFolder(); },
-            }, "찾아보기…"),
-            folder.directory
-              ? createElement(PathActions as any, {
-                client: job.client,
-                path: folder.directory,
-                only: ["reveal", "copy"],
-                notify: job.notify,
-              })
-              : null),
-          folder.sourceLabel
-            ? h("span", { className: "muted capnote", id: "settingsOutDirSource" },
-              folder.sourceLabel)
-            : null,
-          folder.notice
-            ? h("p", { className: "warn capnote", id: "settingsOutDirNotice" }, folder.notice)
-            : null,
-          folder.busy
-            ? h("p", { className: "muted capnote", id: "settingsPickFolderReason" },
-              OUTPUT_FOLDER_BUSY_REASON)
-            : null))));
+      createElement(FolderRow as any, {
+        label: "저장 폴더", labelId: "settingsFolderLabel",
+        pathId: "settingsOutDir", pickId: "settingsPickFolder",
+        sourceId: "settingsOutDirSource", noticeId: "settingsOutDirNotice",
+        reasonId: "settingsPickFolderReason",
+        view: folder, emptyText: OUTPUT_FOLDER_EMPTY_TEXT,
+        busyReason: OUTPUT_FOLDER_BUSY_REASON,
+        onPick: () => { void job.pickOutputFolder(); },
+        client: job.client, notify: job.notify,
+      }),
+      createElement(FolderRow as any, {
+        label: "서식 폴더", labelId: "settingsTplDirLabel",
+        pathId: "settingsTplDir", pickId: "settingsPickTplFolder",
+        sourceId: "settingsTplDirSource", noticeId: "settingsTplDirNotice",
+        reasonId: "settingsPickTplFolderReason",
+        view: root, emptyText: TEMPLATES_ROOT_EMPTY_TEXT,
+        busyReason: TEMPLATES_ROOT_BUSY_REASON,
+        onPick: () => { void pickRoot(); },
+        client: templates.client, notify: templates.notify,
+      })));
 }

@@ -33,7 +33,7 @@ class _RecordingController:
 
 
 def test_editor_initial_crosses_public_transport_boundary(tmp_path) -> None:
-    frontend = WebFrontend(tmp_path / "txt")
+    frontend = WebFrontend()
     frontend.controllers["editor"] = _RecordingController()
 
     assert frontend.initial("editor") == {"screen": "editor", "ready": True}
@@ -41,7 +41,7 @@ def test_editor_initial_crosses_public_transport_boundary(tmp_path) -> None:
 
 
 def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> None:
-    frontend = WebFrontend(tmp_path / "txt")
+    frontend = WebFrontend()
     controllers = {
         screen: _RecordingController() for screen in ("editor", "job", "tpl", "workbench")
     }

@@ -37,7 +37,7 @@ def _frontend(tmp_path, monkeypatch):
     from hwpxfiller.webapp import app as app_mod
 
     monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
-    return app_mod.WebFrontend(tmp_path / "txt")
+    return app_mod.WebFrontend()
 
 
 def _armed_workbench(frontend, tmp_path):

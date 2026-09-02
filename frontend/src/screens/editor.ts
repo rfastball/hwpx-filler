@@ -51,7 +51,6 @@ type ModalPort = {
   close(id: string): void;
 };
 
-type UndoPort = { show(message: string, action: () => unknown): void };
 /** 발신 직렬화 — legacy `Intent` 를 그대로 주입받는다(기제를 두 벌 만들지 않는다). */
 type ChainPort = {
   chained<T>(key: string, send: () => Promise<T>): Promise<T>;
@@ -65,7 +64,6 @@ export type EditorControllerDeps = {
   ports: ScreenPorts;
   services: ServiceHandoffPorts;
   modal: ModalPort;
-  undo: UndoPort;
   popover: ContextMenuPopoverPort;
   chain: ChainPort;
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
@@ -144,7 +142,6 @@ type LibMenu = {
 
 type ViewState = {
   libMenu: LibMenu | null;
-  folderImportInFlight: boolean;
   txtEdit: TxtEditState | null;
   foldOpen: boolean;
   tokFoldOpen: boolean;
@@ -180,7 +177,7 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
-    libMenu: null, folderImportInFlight: false, txtEdit: null,
+    libMenu: null, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, poolPick: null,
     invalidField: "", aim: "", aimed: "",
   };
@@ -427,17 +424,11 @@ export function createEditorController(deps: EditorControllerDeps) {
   /* 겨눔은 **행 하나**다 — 그룹 갈래는 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
   function openLibMenu(media: string, id: string, trigger: HTMLElement): void {
     const item = findLibItem(media, id);
-    /* 수선 동사의 목록·라벨은 링1 소유 — 스냅샷 actions 를 그대로 그린다(발명 금지). */
-    const repairs = media === "hwpx"
-      ? ((item && item.actions) || []).map((action: Obj) =>
-        ({ action: `act:${String(action.key)}`, label: String(action.label) }))
-      : (item && !item.error ? [{ action: "edit", label: "내용 편집" }] : []);
-    const items: ContextMenuItem[] = [...repairs, {
-      action: "delete",
-      label: "삭제",
-      danger: true,
-      separatorBefore: repairs.length > 0,
-    }];
+    const items: ContextMenuItem[] = libRowMenuItems(media, item);
+    /* 동작이 0 이면 애초에 트리거가 비활성이라 여기 오지 않는다(어포던스는 `LibRowTail`
+       이 같은 술어로 잠근다) — 그래도 방어로 남긴다: 빈 팝오버는 「눌렀는데 아무 일도
+       없다」라서 조용한 no-op 이다. */
+    if (items.length === 0) return;
     patchView({ libMenu: { media, kind: "row", key: id, item, trigger } });
     libContextMenu.open(trigger, items);
   }
@@ -453,8 +444,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (menu === null) return;
     closeLibMenu();
     try {
-      if (action === "delete") await deleteLibTemplate(menu.media, menu.item || null);
-      else if (action === "edit") {
+      if (action === "edit") {
         const item = menu.item || {};
         const result = await dispatch("tpl", "txt_content", { path: item.path });
         openTxtEdit("edit", item.path, item.name, String(result.content || ""), menu.trigger);
@@ -550,18 +540,6 @@ export function createEditorController(deps: EditorControllerDeps) {
       else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
     } catch (error) {
       noticeSave(String((error as Obj)?.message || error));
-    }
-  }
-
-  async function deleteLibTemplate(media: string, item: Obj | null): Promise<void> {
-    if (item === null) return;
-    const result = await dispatch("tpl", "delete", { media, path: item.path });
-    /* 「휴지통」이라 말하지 않는다(U2 §2.12) — 보존은 실재하나 도달 표면이 아직 없다. */
-    if (result.undo) {
-      deps.undo.show(`템플릿 '${item.name}' 을(를) 삭제했습니다.`, async () => {
-        const restored = await dispatch("tpl", "undo_delete", {});
-        if (restored.ok === false) throw new Error(String(restored.error));
-      });
     }
   }
 
@@ -914,29 +892,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (typeof result === "string" && result !== "") await deps.runtime.refresh(SCREEN);
   }
 
-  /** 폴더 일괄 가져오기 — 어포던스 잠금은 클릭을 삼키는 문이고, 정본 거절은 Python 이다. */
-  async function importFolder(trigger: HTMLElement): Promise<void> {
-    if (view.folderImportInFlight) return;
-    patchView({ folderImportInFlight: true });
-    try {
-      const scanned = await invoke("import_templates_folder", null, false, null) as Obj;
-      if (!scanned) return;                                    // 피커 취소
-      if (scanned.error) { noticeSave(String(scanned.error)); return; }
-      if (!scanned.needs_confirm) return;
-      if (!(await deps.modal.confirm({
-        body: `${scanned.confirm_text}\n\n지금 가져올까요?`,
-        confirmLabel: "가져오기", cancelLabel: "취소", returnFocus: trigger,
-      }))) return;
-      /* 확정 실행은 **재진술된 후보 목록**을 그대로 나른다 — 재스캔이면 확인 안 된 파일이 따라 든다. */
-      const done = await invoke(
-        "import_templates_folder", scanned.folder, true, scanned.files) as Obj;
-      if (done && done.error) noticeSave(String(done.error));
-      else if (done) await deps.runtime.refresh(SCREEN);
-    } finally {
-      patchView({ folderImportInFlight: false });              // 어느 출구든 해제
-    }
-  }
-
   async function pickData(): Promise<void> {
     if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
     let result = await invoke("pick_data_file", SCREEN) as any;
@@ -1091,7 +1046,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
-    useLibraryTemplate, importTemplate, importFolder, pickData,
+    useLibraryTemplate, importTemplate, pickData,
     openPoolData, usePoolData, closePoolData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
@@ -1194,14 +1149,39 @@ function StepHeader(props: { snapshot: Obj; controller: EditorController }): Rea
     ...children);
 }
 
+/** 행 ⋮ 가 열 동사 목록 — **한 술어**다. 메뉴를 여는 쪽과 트리거를 잠그는 쪽이 같은 값을
+ *  봐야 「버튼은 있는데 눌러도 아무 일도 없다」가 생기지 않는다(같은 상태 두 곳 판정 금지).
+ *
+ *  목록·라벨은 링1 소유다 — hwpx 는 스냅샷 `actions`(상태 게이트가 낸 수선 동사)를 그대로
+ *  그리고, txt 는 읽을 수 있을 때만 「내용 편집」이 선다. 삭제는 U6-A(#975)에서 퇴역했으므로
+ *  COMPILED·FILLED hwpx 행과 판독 실패 txt 행은 동사가 **0** 이다. */
+export function libRowMenuItems(media: string, item: Obj | null): ContextMenuItem[] {
+  if (item === null || item === undefined) return [];
+  if (media === "hwpx") {
+    return ((item.actions || []) as Obj[]).map((action: Obj) =>
+      ({ action: `act:${String(action.key)}`, label: String(action.label) }));
+  }
+  return item.error ? [] : [{ action: "edit", label: "내용 편집" }];
+}
+
+/** 동작 0 인 행의 ⋮ 에 붙는 사유 — 조용히 죽은 버튼을 두지 않는다. */
+export const LIB_ROW_NO_ACTION_REASON = "이 항목에 지금 할 수 있는 작업이 없습니다.";
+
 function LibRowTail(props: { media: string; item: Obj; controller: EditorController }): ReactNode {
   const { media, item, controller } = props;
+  /* 동작이 하나도 없으면 **비활성 + 사유**다(U6-A 리뷰): 종전에는 버튼이 멀쩡히 서 있고
+     클릭이 조용히 삼켜졌다 — 이 저장소가 금지하는 무반응이다. 버튼을 아예 지우지 않는
+     이유는 행마다 꼬리 폭이 달라져 목록이 들쭉날쭉해지기 때문이고, 비활성은 「지금은
+     없다」를 말하면서 자리를 지킨다. */
+  const disabled = libRowMenuItems(media, item).length === 0;
   /* legacy 는 두 버튼을 감싸지 않고 이어 붙였다 — 요소 트리에서 감싸면 `.libselrow` 의
      flex 자식 수가 바뀌어 배치가 달라진다. Fragment 는 DOM 노드를 만들지 않는다. */
   return createElement(Fragment, null,
     h("button", {
       className: "job-more", "data-act": "lib-more", "data-media": media, "data-key": item.key,
       "aria-haspopup": "true", "aria-label": "항목 관리",
+      disabled,
+      title: disabled ? LIB_ROW_NO_ACTION_REASON : undefined,
       onClick: (event: Obj) => controller.toggleLibMenu(media, item.key, event.currentTarget),
     }, "⋮"));
 }
@@ -1362,10 +1342,6 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         onClick: () => controller.guarded(() => controller.importTemplate()),
       }, "가져오기…"),
       h("button", {
-        className: "btn sm", "data-act": "import-folder",
-        onClick: (event: Obj) => controller.guarded(() => controller.importFolder(event.currentTarget)),
-      }, "폴더에서 가져오기…"),
-      h("button", {
         className: "btn sm", "data-act": "lib-new-txt",
         onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
       }, "새 TXT 템플릿…"),
@@ -1380,7 +1356,10 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         "누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다."),
       h(LibraryBand as any, {
         band: hwpx, media: "hwpx", controller,
-        emptyText: "라이브러리에 템플릿이 없습니다. '가져오기…'로 하나씩, '폴더에서 가져오기…'로 한꺼번에 추가하세요.",
+        /* 빈 사유는 **Python 이 낸다**(U6-A #975 — 링1 `empty_hint`): 미지정·폴더 없음·빈
+           폴더는 서로 다른 사유이고, 여기서 한 문장으로 접으면 사라진 폴더가 「비었다」로
+           읽힌다. 스냅샷이 아직 없을 때만 이 자리 문안이 선다. */
+        emptyText: String(hwpx.empty_hint || "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요."),
       })),
     h("div", { className: "grp" },
       h(BandCap as any, { label: "TXT 기안", band: txt }),
@@ -1388,7 +1367,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         "채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다."),
       h(LibraryBand as any, {
         band: txt, media: "txt", controller,
-        emptyText: "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.",
+        emptyText: String(txt.empty_hint || "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…'로 추가하세요."),
       })),
     slots ? h(SlotBand as any, { slots, controller }) : null,
     result.text ? h("div", {

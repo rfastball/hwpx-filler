@@ -1,7 +1,7 @@
 """템플릿 라이브러리(tpl) 채널 컨트롤러 — HWPX·TXT 라이브러리 관리(webview 비의존).
 
 **화면은 죽고 채널은 산다(F8 §10.17.2 판정 B — F1 pool 선례)**: 「템플릿 관리」 화면
-(scr-tpl·template.js)은 사망했고, 이 컨트롤러의 12액션·잠금 규율·경로 검증·휴지통은
+(scr-tpl·template.js)은 사망했고, 이 컨트롤러의 액션·잠금 규율·경로 검증은
 편집기 「템플릿」 탭(editor.js)이 리터럴 `Bridge.call("tpl", …)` 로 그대로 소비한다.
 push 스냅샷의 생존 소비자 = 편집기 결과 줄(result) + 재당김 신호.
 
@@ -17,24 +17,28 @@ TXT 관리는 코어 :class:`~hwpxfiller.external.text_registry.TextTemplateRegi
   :class:`~hwpxfiller.webapp.template_groups.TemplateGroupModel` 이 소유(설정 영속).
 - **식별키 = 루트 상대경로**(결정 8): 그룹 지정·이동·삭제의 대상 키. Explorer 개명·이동 시
   고아→「그룹 없음」 복귀(build_sections 가 live 행만 묶음 + reconcile 정리).
-- **가져오기 = 루트로 복사**(결정 4): 확장자로 매체 라우팅. 「그룹 없음」에서 시작.
-- **고정 루트**(결정 4): 「폴더 선택…」(라이브러리 재지정) 폐기 — 앱 소유 고정 루트가 정본
-  (파편화 차단·습관 고정). 재지정은 세션 한정·비영속이라 잃을 저장 선택 없음.
+- **가져오기 = 루트로 복사**: 「파일 가져오기…」 단건 하나. 「그룹 없음」에서 시작.
+
+**U6-A(#975) 재편**: 루트가 **사용자가 고르는 단일 폴더**가 됐다(설정 모달의 「서식 폴더」
+행). hwpx·txt 가 같은 루트를 재귀로 읽고, 재지정 동사는 :meth:`TemplateController.set_templates_root`
+하나다. 함께 **퇴역**한 것: 폴더 일괄 가져오기(``scan_import_folder``·``import_folder``)와
+삭제·휴지통(``delete``·``undo_delete``) — 앱은 사용자 폴더에 ``.trash`` 를 만들지 않고
+읽기와 제자리 변환만 한다(U6 §2.3). 「폴더에서 보기」가 삭제 동사를 대신한다.
 
 **결정 반영(#13 승계)**:
 - 미리보기(필드명·토큰) 액션 **제외**(10F2FF98-B) — 링1 seam 은 보존하되 노출 안 함.
 - 판본 드리프트 비교는 **숨김/강등**(10F2FF98-D) — diff 는 앱 A(hwpxdiff) 책임.
-제자리 fieldize 적용은 확인 라운드트립으로 지키고, 삭제는 30일 휴지통+최근 1건 복원으로 완화한다.
+제자리 fieldize 적용은 확인 라운드트립으로 지킨다.
 """
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
 from ..domain.text_structure import scan_text_structure, scan_text_token_spans
-from ..host.locations import default_example_data_dir, default_templates_dir
+from ..host.locations import default_example_data_dir
 from ..external import example_pack
 from ..external.template_files import TemplateFileStore, TextEditDrift
+from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import SlotView, TemplateManagerViewModel
@@ -70,7 +74,8 @@ class TemplateController:
         *,
         file_store: TemplateFileStore,
         pool_registry,
-        library_dir=None,
+        template_root: "TemplateRoot | None" = None,
+        migration_notice: str = "",
         hwpx_groups: "TemplateGroupModel | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
         example_data_dir=None,
@@ -91,9 +96,16 @@ class TemplateController:
             Path(example_data_dir) if example_data_dir is not None
             else default_example_data_dir()
         )
-        # 라이브러리 폴더 미지정이면 표준 라이브러리(~/.hwpxfiller/templates)를 겨눈다(고정 루트).
+        # 서식 폴더 권위(U6-A #975) — hwpx 목록·txt 목록·가져오기 복사가 **같은 홀더**를
+        # 지난다. VM 에는 Path 가 아니라 콜러블을 준다: 재지정은 설정 하나를 바꾸는 일이고
+        # 그 다음 스냅샷이 곧 새 루트여야 한다(사본을 굳혀 들면 선언≠실제가 된다).
+        self._template_root = template_root if template_root is not None else TemplateRoot()
+        # 부팅 1회 레거시 TXT 이관의 재진술(U6-A §4). 경보 로그만으로는 **화면에 닿지 않아**
+        # 사용자가 자기 파일이 옮겨진 사실을 모른다 — 그래서 이 프로세스가 사는 동안 서식
+        # 폴더 존의 사유에 병기한다. 값은 조립부가 계산해 넘긴 문자열 그대로다(재판정 없음).
+        self._migration_notice = str(migration_notice or "")
         self.vm = TemplateManagerViewModel(
-            library_dir if library_dir is not None else default_templates_dir(),
+            self._template_root.path,
             inspect_template=inspect_hwpx_template,
             file_ops=HWPX_TEMPLATE_OPS,
         )
@@ -104,16 +116,9 @@ class TemplateController:
         # basename 동시 가져오기가 이름 선점~복사 사이 무경계로 겹쳐 두 호출이 같은 목적지를
         # 골라 내용 하나만 남는다. 후보 선택~복사를 이 잠금으로 직렬화한다(JobRegistry.clone 동형).
         self._import_lock = file_store.import_lock
-        # 폴더 배치 가져오기의 동시 실행 거절 잠금(PR #355 2R) — _import_lock 은 개별 복사만
-        # 직렬화해 두 배치가 교차하면 같은 목록이 번호 접미로 재반입된다. 배치 중복의 판정은
-        # 여기 **한 곳**(비차단 획득 실패 = loud 거절)이고, JS 는 어포던스만 잠근다.
-        self._folder_import_lock = threading.Lock()
-        # HWPX 라이브러리 writer 잠금(PR #355 P1 후속) — TXT 의 ``text_registry.write_lock()``
-        # 대응물. 「HWPX 는 공유 writer 가 없는 단일 표면」이라는 종전 전제는 **틀렸다**:
-        # 삭제 복원(:meth:`_do_undo_delete` 의 hwpx 갈래)이 바로 그 공유 writer 다. 둘 다
-        # 「이 basename 이 비었는가」를 보고 파일을 놓으므로, 잠금을 공유하지 않으면 복원이
-        # 원본을 되돌린 직후 배치의 ``copy2`` 가 그 위를 덮어 **복원은 성공을 보고하는데
-        # 지운 문서는 사라진다**. TXT 와 같은 축·같은 항목 단위 범위로 세운다. RLock.
+        # HWPX 라이브러리 writer 잠금 — TXT 의 ``text_registry.write_lock()`` 대응물.
+        # 두 매체가 **같은 루트**를 쓰게 된 U6-A 이후에도 축은 그대로다: 가져오기 복사가
+        # 「이 이름이 비었는가」를 보고 파일을 놓으므로 그 구간은 직렬화돼야 한다. RLock.
         self._hwpx_write_lock = file_store.hwpx_write_lock
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
@@ -121,10 +126,6 @@ class TemplateController:
         # 마지막으로 검토한 템플릿의 Slot 목록(S8-03) — 결과 줄과 같은 수명의 관측 채널이다.
         # 「어느 템플릿의 목록인가」를 뷰가 추측하지 않게 경로·이름을 함께 싣는다.
         self._slot_view: "SlotView | None" = None
-        # 최근 삭제 1건 복원 슬롯 — (media, 원경로, 휴지통경로, 삭제 시점 그룹). 그룹을 슬롯에
-        # 보존해야 한다(#269 리뷰): 삭제 직후 스냅샷 푸시의 reconcile 이 사라진 키의 그룹 지정을
-        # 영구 제거하므로, 복원 시 파일만 돌아오면 조용히 「그룹 없음」이 된다.
-        self._deleted_template_slot: "tuple[str, Path, Path, str] | None" = None
         # 템플릿 bytes 변이 통지 sink(S8G-00 #320) — 이 채널이 파일을 실제로 바꾼 **직후**,
         # 같은 파일을 든 다른 표면(편집 세션)이 스스로 재정산할 수 있게 알린다. 서명은
         # ``(kind, path)`` 이고 kind 는 :data:`MUTATION_KINDS` 셋 중 하나다. 배선은 앱
@@ -196,7 +197,7 @@ class TemplateController:
             field_count = 0
             try:
                 field_count = len(t.fields())
-            except Exception as exc:  # noqa: BLE001 — 손상 파일도 삭제 가능한 행으로 loud 노출
+            except Exception as exc:  # noqa: BLE001 — 손상 파일도 사유를 단 행으로 loud 노출
                 error = str(exc)
             key = rel_key(t.path, root)
             rows.append({
@@ -231,14 +232,30 @@ class TemplateController:
         txt_rows = self._txt_rows()
         hwpx = self._media_snapshot("hwpx", hwpx_rows, self.hwpx_groups)
         txt = self._media_snapshot("txt", txt_rows, self.txt_groups)
-        hwpx["dir"] = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
-        txt["dir"] = str(self.text_registry.directory)
-        # (고지②(휘발 「기안」 폐지 재진술)와 empty_hint 는 tpl 화면과 함께 사망(F8 §10.17) —
-        # 빈 밴드 안내는 편집기 「템플릿」 탭이 자기 문안으로 소유한다. 고지①(job txt_note)은
-        # 존치. 이 스냅샷의 생존 소비자 = 편집기 결과 줄(result)·재당김 신호.)
+        resolution = self._template_root.resolution()
+        hwpx["dir"] = resolution.directory
+        txt["dir"] = resolution.directory
+        # 빈 목록 안내는 U6-A 에서 **링1 하나가 정본**이 됐다(`empty_hint`) — 루트가 하나라
+        # 원인도 하나이고, 두 밴드가 각자 문안을 지으면 같은 사실을 두 곳이 판정한다.
+        hint = self.vm.empty_hint()
+        hwpx["empty_hint"] = hint
+        txt["empty_hint"] = hint
         return {
             "hwpx": hwpx,
             "txt": txt,
+            # 서식 폴더 존(U6-A #975) — 저장 폴더의 최상위 `output_folder` 존과 **동형**이다.
+            # 「어느 폴더를 읽고 있는가」는 목록이 비어도, 작업이 없어도 답할 수 있는 사실이라
+            # 밴드 안이 아니라 최상위가 진다. 판정·라벨·사유는 전부 링0 도출 그대로다.
+            "templates_root": {
+                "directory": resolution.directory,
+                "source": resolution.source,
+                "source_label": resolution.source_label,
+                # 도출 사유(폴더 부재)와 이관 재진술은 **둘 다** 설 수 있고 서로를 지우지
+                # 않는다 — 줄바꿈으로 병기한다(하나가 다른 하나를 덮으면 조용한 소실이다).
+                "notice": "\n".join(
+                    text for text in (resolution.notice, self._migration_notice) if text
+                ),
+            },
             "result": {"text": self.result_text, "level": self.result_level},
             "slots": self.slot_snapshot(),
             # 동봉 예제 진입점(#891 · §4.1) — 라벨·설치 여부는 **Python 이 낸다**. 링2 가
@@ -265,6 +282,34 @@ class TemplateController:
         return self.snapshot()
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
+    def set_templates_root(self, path: str) -> dict:
+        """서식 폴더 재지정(U6-A #975) — 영속 뒤 **한 번의 푸시**로 전 소비자가 새 루트를 본다.
+
+        재지정 동사가 홀더 하나인 이유는 소비자가 전부 그 홀더를 지나기 때문이다: hwpx 목록·
+        txt 목록·가져오기 복사·Job 링크 해석 어디에도 「루트를 갈아 끼우는」 두 번째 자리가
+        없다. 그래서 여기가 하는 일은 설정 쓰기와 재스캔뿐이다.
+
+        payload 검증은 **이 메서드 몸통이 진다**(action registry 밖 직접 브리지): 빈 값과
+        파일 경로는 조용히 무시하지 않고 loud 거절한다 — 빈 값을 통과시키면 「지정한 적
+        없음」과 구분되지 않고, 파일을 통과시키면 다음 스캔이 이유 없이 0건이 된다.
+        """
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("서식 폴더 경로가 비어 있습니다.")
+        target = Path(path.strip())
+        if target.is_file():
+            raise ValueError(f"폴더가 아니라 파일입니다: {target}")
+        resolution = self._template_root.set(str(target))
+        # 편집 세션에는 **변이 통지를 보내지 않는다**. `mutation_sinks` 는 「이 경로의 파일이
+        # 바뀌었다」는 seam 이고(:meth:`reconcile_template_mutation` 이 경로 일치에서만 산다),
+        # 루트 재지정은 파일을 하나도 건드리지 않는다 — 세션이 든 절대경로도 스키마도 그대로다.
+        # 폴더 경로를 그 seam 에 실으면 어느 세션과도 일치하지 않아 **조용한 무효 통지**가 되고,
+        # 일치시키려 규칙을 넓히면 「남의 템플릿 변이가 내 세션에 경고를 남기는」 그 결함을
+        # 되살린다. 목록 갱신은 이 채널의 푸시 + 호출자의 화면 재당김이 진다.
+        self.vm.refresh()
+        self._set_result(_ok(f"서식 폴더를 바꿨습니다: {resolution.directory}"))
+        self._push()
+        return {"ok": True, "directory": resolution.directory}
+
     def import_into_library(self, path: str) -> str:
         """가져오기 = 루트로 **복사**(결정 4) — 확장자로 매체 라우팅. 「그룹 없음」에서 시작.
 
@@ -272,9 +317,10 @@ class TemplateController:
         ``이름 (2).ext`` 접미로 회피 + 결과 재진술. 관리 화면은 RAW(누름틀 0)도 받는다(그
         자리에서 변환하는 게 요점 — 에디터 가져오기의 RAW 거부와 다르다). 브리지가 부른다.
 
-        복사 몸통(잠금·라우팅·접미·무잔재)은 :meth:`_copy_into_library` — 배치와 공유."""
+        복사 몸통(잠금·충돌 번호 접미·무잔재)은 store 가 진다. 폴더 일괄 가져오기는
+        U6-A 에서 퇴역했으므로 이 몸통을 나누던 배치 소비자도 없다(소비자 1)."""
         src = Path(path)
-        dest = self._copy_into_library(src)
+        dest = self._files.copy_into_library(src)
         if src.suffix.lower() == ".hwpx":
             self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
         renamed = f" (이름 충돌로 '{dest.name}')" if dest.name != src.name else ""
@@ -286,165 +332,6 @@ class TemplateController:
         # 정확한 목적지를 알아야 한다(충돌 접미로 이름이 바뀔 수 있다). 프런트 소비자는
         # "ERROR:" 접두 검사뿐이라 이름→경로 확장은 무해.
         return str(dest)
-
-    # ---------------------------- 폴더 일괄 가져오기(#339 · U2 §2.16 narrow) — 스캔/실행 2박자
-    def _folder_candidates(self, folder: Path) -> "tuple[list[Path], int]":
-        """폴더 **직속**(1단계) 파일에서 가져올 후보(.hwpx/.txt)와 제외 파일 수.
-
-        하위 폴더는 훑지 않는다(§2.16 narrow) — 재귀는 트리→그룹 유도·중복 병합 정책을
-        먼저 정해야 하는 별건이다. 이름순 정렬 = 재진술과 실행이 같은 결정적 순서."""
-        _root, candidates, skipped, _has_subdirs = self._files.folder_candidates(folder)
-        return candidates, skipped
-
-    def scan_import_folder(self, folder: str) -> dict:
-        """가져오기 재진술 스캔(읽기 전용) — **확정 전에는 홈에 아무것도 쓰지 않는다**.
-
-        수치(매체별 건수·제외 수·이름 충돌 수)와 완성 재진술 문안을 함께 돌려준다 — 표면이
-        수치로 문안을 재조립하면 두 답이 생긴다(판정·문안은 Python, 확인 UI 는 웹). 후보 0
-        은 확인이 아니라 loud 거절이다(가져올 것 없는 확정을 시키지 않는다). 브리지가 부른다.
-
-        ``files`` = 확정 대상 후보 목록(이름) — 실행(:meth:`import_folder`)은 재스캔이 아니라
-        **이 목록에 결속**된다(PR #355 리뷰): 스캔~확정 사이 폴더가 바뀌어도 확인 안 된
-        파일이 따라 들어오지 않는다(재진술이 참이 되게)."""
-        root, candidates, skipped, has_subdirs = self._files.folder_candidates(folder)
-        if not candidates:
-            note = (
-                " 하위 폴더는 살펴보지 않습니다."
-                if has_subdirs else ""
-            )
-            return {
-                "ok": False,
-                "error": f"'{root.name}' 폴더 바로 아래에 가져올 .hwpx/.txt 파일이 없습니다.{note}",
-            }
-        hwpx = sum(1 for p in candidates if p.suffix.lower() == ".hwpx")
-        txt = len(candidates) - hwpx
-        collisions = sum(1 for p in candidates if self._import_dest_taken(p))
-        lines = [f"'{root.name}' 폴더에서 라이브러리로 가져옵니다:"]
-        counts = [f"HWPX 서식 {hwpx}건"] if hwpx else []
-        if txt:
-            counts.append(f"TXT 기안 {txt}건")
-        lines.append("- " + " · ".join(counts))
-        if skipped:
-            lines.append(f"- 나머지 파일 {skipped}개는 가져오지 않습니다(.hwpx/.txt 아님)")
-        lines.append("- 하위 폴더는 살펴보지 않습니다")
-        if collisions:
-            # 「(2)」라 단정하지 않는다(PR #355 리뷰) — 이미 (2)까지 있으면 (3)이 붙는다.
-            # 정확한 접미는 복사 시점 잠금 안에서 정해지므로 정책(번호 접미)만 재진술한다.
-            lines.append(f"- 이름 충돌 {collisions}건은 이름 뒤 번호 접미로 가져옵니다")
-        return {
-            "needs_confirm": True, "folder": str(root),
-            "hwpx": hwpx, "txt": txt, "skipped": skipped, "collisions": collisions,
-            "files": [p.name for p in candidates],
-            "confirm_text": "\n".join(lines),
-        }
-
-    def _import_dest_taken(self, src: Path) -> bool:
-        """가져오기 목적지(매체 루트/원래 이름)가 이미 있는가 — 충돌 수 재진술용(무변이)."""
-        return self._files.import_dest_taken(src)
-
-    def _copy_into_library(self, src: Path) -> Path:
-        """복사 권위 **몸통** — 매체 라우팅·잠금·충돌 번호 접미·무잔재. refresh/결과/push 없음.
-
-        단건(:meth:`import_into_library`)과 배치(:meth:`import_folder`)가 같은 몸통을 쓴다 —
-        배치는 항목별 전체 리프레시·push 를 유예하고 완료 후 1회만 민다(PR #355 리뷰: N건
-        가져오기가 N번의 라이브러리 재스캔+전체 재렌더가 되는 준-제곱 정지 방지).
-
-        **직렬화**(F9): 후보 선택~복사를 인스턴스 잠금으로 묶어 동시 동명 가져오기가 같은
-        목적지를 골라 내용 하나만 남는 경합을 막는다. **무잔재**(F6): 복사 중 실패하면(디스크
-        풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
-        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형).
-
-        **두 매체 모두 공유 writer 축에 함께 선다**(PR #355 P1·P1 후속): ``_import_lock`` 은
-        가져오기끼리만 아는 잠금이라, 배치가 도는 동안 사용자가 「새 TXT」·내용 편집·삭제
-        복원을 하면 두 writer 가 서로를 모른 채 같은 이름을 겨눈다 — 목적지가 「비었다」고
-        고른 뒤 그 사이 채워지면 ``copy2`` 가 방금 놓인 파일을 덮고(반대 방향도 같다),
-        충돌 접미가 지켜야 할 사용자 내용이 조용히 사라진다. **HWPX 도 예외가 아니다**:
-        「공유 writer 가 없는 단일 표면」이라는 전제는 틀렸고, :meth:`_do_undo_delete` 의
-        hwpx 갈래가 그 공유 writer 다(복원이 원본을 되돌린 직후 배치가 덮으면 복원은 성공을
-        보고하는데 지운 문서는 사라진다). 그래서 목적지 선택~복사를 **매체별 writer 잠금**
-        (TXT=:meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`,
-        HWPX=``_hwpx_write_lock``) 안에서 한다. 획득은 **항목 단위**라 배치가 도는 내내
-        그 매체 조작이 통째로 막히지 않는다.
-
-        **잠금 획득 순서 규약**: ``_folder_import_lock``(배치) → ``_import_lock``(가져오기)
-        → 매체 writer(``text_registry.write_lock()`` / ``_hwpx_write_lock``). 항상 안쪽으로만
-        잡는다. 역순 획득 경로는 없다 — 매체 writer 를 먼저 잡는 쪽(``_do_txt_new``·
-        ``_do_txt_edit``·``_do_undo_delete``)은 어느 것도 가져오기 잠금을 잡지 않으므로 순환
-        대기가 성립하지 않는다. 두 매체 writer 는 서로 중첩되지 않는다(매체가 배타적 분기).
-        새 writer 를 더할 때도 이 순서를 지킨다.
-
-        (``_do_delete`` 는 이 축에 세우지 않는다: 삭제는 **있는** 파일을 치우는 이동이라
-        가져오기와 같은 이름을 두고 다투지 않는다 — 최악이 「방금 비워진 이름 대신 접미가
-        붙는다」이고 그건 내용 소실이 아니라 예고 정확도 축이다(별건 #365).)"""
-        return self._files.copy_into_library(src)
-
-    def import_folder(self, folder: str, files: "list[str]") -> dict:
-        """확정 후 실행 — **확정 시점 후보 목록**(``files``)을 복사 몸통으로 반복한다.
-
-        재스캔하지 않는다(PR #355 리뷰): 스캔~확정 사이 폴더에 새 파일이 와도 재진술에
-        없던 것은 들어오지 않고, 확정된 파일이 사라졌으면 그 건만 부분 실패로 사유 병기.
-        각 건이 단건과 같은 잠금·매체 라우팅·충돌 번호 접미·무잔재를 상속하고, 항목별
-        전체 리프레시·push 는 유예해 완료 후 1회만 민다. 결과 줄은 배치 요약으로 재진술:
-        「N건 중 M건 등록 · K건 실패(사유)」. 채택은 없다 — 편집 세션은 이 메서드가 모르는
-        남의 상태다(세션 무변경).
-
-        ``files`` 검증은 여기(권위 소유자)가 진다: 비어 있지 않은 문자열 **basename** 목록
-        (경로 구분자·상위 탈출 불가)에 허용 확장자만 — 임의 경로 반입 승격을 막는다.
-
-        **동시 배치 거절**(PR #355 2R): 배치 진행 중 재실행은 비차단 잠금 실패 = loud
-        거절 — 두 배치가 교차하면 같은 목록이 번호 접미로 재반입되고 완료 푸시 2회가
-        오해를 낳는다. JS 의 in-flight 플래그는 어포던스 잠금이고 판정 정본은 이 잠금
-        하나다(같은 상태를 두 곳이 판정하지 않는다)."""
-        if not self._folder_import_lock.acquire(blocking=False):
-            raise ValueError("폴더 가져오기가 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
-        try:
-            root = self._files.require_folder(folder)
-            if not files or not isinstance(files, list):
-                raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
-            for name in files:
-                if (
-                    not isinstance(name, str)
-                    or not name.strip()
-                    or Path(name).name != name      # 구분자·'..' 등 basename 밖 형태 차단
-                    or Path(name).suffix.lower() not in (".hwpx", ".txt")
-                ):
-                    raise ValueError(f"가져오기 목록에 올 수 없는 항목입니다: {name!r}")
-            imported = 0
-            imported_hwpx = 0
-            failed: "list[tuple[str, str]]" = []
-            for name in sorted(files, key=str.casefold):     # 재진술과 같은 결정적 순서
-                src = root / name
-                if not self._files.source_file_exists(src):
-                    failed.append((name, "확정 뒤 폴더에서 사라졌습니다"))
-                    continue
-                try:
-                    self._copy_into_library(src)
-                    imported += 1
-                    if src.suffix.lower() == ".hwpx":
-                        imported_hwpx += 1
-                except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지를 막지 않는다(사유 병기)
-                    failed.append((name, str(exc)))
-            if imported_hwpx:
-                self.vm.refresh()  # 배치 완료 후 1회 — TXT 는 snapshot 이 매번 재스캔
-            total = len(files)
-            if failed:
-                from ..gui.template_manager_state import ResultLine  # _ok 동형(경량 성형)
-
-                reasons = " · ".join(f"{name}: {err}" for name, err in failed)
-                self._set_result(ResultLine(
-                    f"{total}건 중 {imported}건 등록 · {len(failed)}건 실패({reasons})", "warn",
-                ))
-            else:
-                self._set_result(_ok(
-                    f"'{root.name}' 폴더에서 {total}건을 가져왔습니다. '그룹 없음'에서 시작합니다."
-                ))
-            self._push()
-            return {
-                "ok": not failed, "imported": imported, "total": total,
-                "failed": [{"name": name, "error": err} for name, err in failed],
-            }
-        finally:
-            self._folder_import_lock.release()
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
@@ -563,12 +450,12 @@ class TemplateController:
             self._set_result(_danger(f"예제를 제거하지 못했습니다: {exc}"))
             return {"ok": False, "error": str(exc)}
         self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
-        # 세션이 든 템플릿이 사라졌다 — 편집기가 스스로 시끄러워진다(#320). ``_do_delete`` 와
-        # 같은 계약으로 **건별** 발신한다: 벌크 통지를 새로 짓지 않는다.
-        for entry in done["trashed"]:
+        # 세션이 든 템플릿이 사라졌다 — 편집기가 스스로 시끄러워진다(#320). **건별** 발신한다:
+        # 벌크 통지를 새로 짓지 않는다.
+        for entry in done["removed"]:
             self._notify_mutation("deleted", entry["path"])
         line = (
-            f"예제 템플릿 {len(done['trashed'])}건과 데이터 {done['data_removed']}건을 걷고 "
+            f"예제 템플릿 {len(done['removed'])}건과 데이터 {done['data_removed']}건을 걷고 "
             f"고정 {done['unpinned']}건을 해제했습니다. 되돌리려면 다시 설치하세요."
         )
         if done["missing"]:
@@ -581,7 +468,7 @@ class TemplateController:
         self._set_result(_ok(line))
         return {
             "ok": True,
-            "removed": len(done["trashed"]) + done["data_removed"],
+            "removed": len(done["removed"]) + done["data_removed"],
         }
 
     # ---- HWPX 상태 게이트 액션
@@ -748,92 +635,6 @@ class TemplateController:
         if media == "hwpx":
             return {self._norm(r.path) for r in self.vm.rows()}
         return {self._norm(t.path) for t in self.text_registry.list_templates()}
-
-    # ---- 삭제(HWPX·TXT 공통 · 30일 휴지통 + 최근 1건 복원)
-    def _do_delete(self, p: dict) -> dict:
-        """템플릿을 매체 루트의 .trash로 옮긴다. 그룹은 슬롯에 보존(복원 시 재지정), 스토어의
-        지정 자체는 reconcile 이 정리.
-
-        **경로 검증**(#137 리뷰 F10): 렌더러 페이로드의 ``media``·``path`` 를 그대로 unlink 하면
-        라이브러리 밖 임의 파일도 지워진다. 매체를 열거 검증하고(``_model``), 경로가 그 매체
-        라이브러리의 **현재 목록**에 속하는지 정규화 후 대조해 임의 파일 삭제 권한 승격을 막는다."""
-        media = p["media"]
-        model = self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
-        path = Path(p["path"])
-        if self._norm(path) not in self._live_paths(media):
-            raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
-        root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
-        # 그룹은 이동 전에 떠 둔다 — 이동 직후 reconcile 이 이 키의 지정을 영구 제거한다.
-        group = model.group_of(rel_key(path, Path(root)))
-        trashed = self._files.trash(media, path)
-        self._deleted_template_slot = (media, path, trashed, group)
-        if media == "hwpx":
-            self.vm.refresh()
-        # 삭제 확인은 **UndoToast 하나**다(U2 §2.12 자리 3, #345 — PR #353 1R): 결과줄에도
-        # 실으면 같은 말을 두 번 하고, 되돌리기 어포던스를 든 토스트가 이긴다. 문안 자체도
-        # 「휴지통」이라 말하지 않는다 — .trash 30일 보존은 실재하지만 도달 표면이 아직 없다
-        # (별건 #350). 보존 기제(위 컷오프 정리·이동)는 삭제가 상속하는 의무라 지우지 않는다.
-        #
-        # 다만 **말하지 않는 것과 남의 말을 남기는 것은 다르다**(2R): 직전 행동(TXT 생성·편집·
-        # 검토·가져오기)이 채워 둔 결과줄을 안 건드리면 dispatch 의 push 가 그 문장을 다시
-        # 실어, 지운 직후 화면에 삭제와 무관한 문장이 삭제의 결과인 것처럼 선다. 그래서
-        # 이 자리는 비운다(_do_refresh 와 같은 초기화 — 삭제 경로에만 적용).
-        self.result_text = ""
-        self.result_level = "muted"
-        # 세션이 든 템플릿이 사라졌다 — 편집기가 스스로 시끄러워진다(#320). 통지는 이동이
-        # **끝난 뒤**다: 실패한 삭제로 남의 세션을 놀라게 하지 않는다.
-        self._notify_mutation("deleted", path)
-        return {"ok": True, "undo": True, "name": path.stem}
-
-    def _do_undo_delete(self, p: dict) -> dict:
-        """휴지통 최근 1건 복원 — TXT 는 **복원 전 구간**이 writer 락 임계구역(#268/#280 리뷰).
-
-        TXT 는 존재 검사와 ``replace`` 사이에 다른 pywebview 호출(새 템플릿·템플릿으로 저장)이
-        같은 이름을 새로 쓸 수 있다 — 무락이면 복원이 그 새 파일을 조용히 덮거나, 동시 writer 가
-        복원본을 즉시 덮는다. :meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`
-        을 존재 검사~교체~그룹 복원~실패 롤백까지 한 임계구역으로 잡는다(부분만 덮으면 롤백
-        ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R).
-
-        **HWPX 도 같은 규율이다**(PR #355 P1 후속): 「공유 writer 락이 없는 단일 표면」이라
-        무락으로 두었던 것이 결함이었다 — 폴더 배치 가져오기가 같은 basename 을 겨누고
-        있으면 둘 다 그 이름을 「비었다」고 읽고, 복원이 원본을 되돌린 뒤 배치의 ``copy2``
-        가 그 위를 덮어 **복원은 성공을 보고하는데 지운 문서는 사라진다**. 그래서 hwpx 는
-        ``_hwpx_write_lock``(가져오기 몸통과 공유)을 같은 범위로 잡는다.
-
-        복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) — 삭제 직후 reconcile 이 지정을
-        지웠으므로 슬롯의 그룹이 유일한 생존 기록이다."""
-        if self._deleted_template_slot is None:
-            return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
-        media, path, trashed, group = self._deleted_template_slot
-
-        def regroup() -> None:
-            """복원의 **모든 durable 변이**(존재 검사~이동~그룹 복원~실패 롤백) 한 몸통.
-
-            TXT 는 이 전체가 writer 락 임계구역 안이어야 한다(#280 리뷰 3R) — 이동만 락으로
-            덮고 그룹 복원·롤백을 밖에 두면, 락 해제 후 동시 writer 가 같은 이름을 새로 쓴
-            뒤 설정 쓰기가 실패했을 때 롤백 ``replace`` 가 그 새 내용을 무락으로 휴지통에
-            쓸어 넣는다(재시도 Undo = 엉뚱한 내용 복원 + 동시 편집 소실).
-            """
-            if group:
-                # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
-                # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
-                # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
-                # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
-                root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
-                self._model(media).set_group(rel_key(path, Path(root)), group)
-
-        # 매체 writer 잠금 — 가져오기 복사 몸통(_copy_into_library)과 **같은 축**이라
-        # 배치가 겨눈 이름과 복원이 겨눈 이름이 겹쳐도 한쪽이 먼저 끝난 뒤에 다른 쪽이 본다.
-        error = self._files.restore(media, path, trashed, regroup)
-        if error is not None:
-            return {"ok": False, "error": error}
-        self._deleted_template_slot = None
-        if media == "hwpx":
-            self.vm.refresh()
-        self._set_result(_ok(f"템플릿을 복원했습니다: {path.stem}"))
-        # 같은 경로로 돌아왔다 — 삭제 통지로 danger 를 띄운 편집 세션이 여기서 되살아난다.
-        self._notify_mutation("restored", path)
-        return {"ok": True, "name": path.stem}
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
     def _do_txt_new(self, p: dict) -> dict:

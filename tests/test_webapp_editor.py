@@ -2162,7 +2162,7 @@ def test_snapshot_exposes_library_on_template_stage(tmp_path):
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
     snap = ctrl.snapshot()
     names = [t["name"] for t in _lib_items(snap)]
-    assert TPL_COMPILED.name in names and TPL_PARTIAL.name in names
+    assert TPL_COMPILED.stem in names and TPL_PARTIAL.stem in names
     assert snap["library"]["hwpx"]["flat"] is True  # 그룹 0개 = 퇴화 평면
     assert all(set(t) >= {"name", "path", "badge_label", "badge_level", "current", "detail"}
                for t in _lib_items(snap))
@@ -2197,7 +2197,7 @@ def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
     assert _lib_items(ctrl.snapshot()) == []
     shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")  # 관리 화면 가져오기 시뮬레이션
     vm.refresh()
-    assert "새서식.hwpx" in {it["name"] for it in _lib_items(ctrl.snapshot())}
+    assert "새서식" in {it["name"] for it in _lib_items(ctrl.snapshot())}
 
 
 def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
@@ -2251,12 +2251,12 @@ def test_library_snapshot_carries_management_surface(tmp_path):
     hwpx = {it["name"]: it for sec in lib["hwpx"]["sections"] for it in sec["items"]}
     # 지정은 모델에 살아 있는데(위 set_group) 표면은 그것을 묻지 않는다.
     assert groups.group_of(TPL_COMPILED.name) == "계약"
-    assert "group" not in hwpx[TPL_COMPILED.name]
+    assert "group" not in hwpx[TPL_COMPILED.stem]
     assert lib["hwpx"]["flat"] is True and len(lib["hwpx"]["sections"]) == 1
-    assert isinstance(hwpx[TPL_PARTIAL.name]["fill_warns"], list)
+    assert isinstance(hwpx[TPL_PARTIAL.stem]["fill_warns"], list)
     acts = {a["key"] for it in hwpx.values() for a in it["actions"]}
     assert "make_job" not in acts and "preview" not in acts
-    assert {a["key"] for a in hwpx[TPL_PARTIAL.name]["actions"]} == {"compile", "review"}
+    assert {a["key"] for a in hwpx[TPL_PARTIAL.stem]["actions"]} == {"compile", "review"}
     assert "group_names" not in lib["hwpx"]
     assert lib["hwpx"]["count"] == 2
     assert lib["hwpx"]["dir"] == ""  # 명시 경로 VM 은 루트 없음 — 빈 값 정직 노출
@@ -2307,14 +2307,16 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
     from hwpxfiller.external.text_registry import TextTemplateRegistry as TxtReg
     from hwpxfiller.webapp.screen_template import TemplateController
 
+    from hwpxfiller.external.template_root import TemplateRoot
+
     lib = tmp_path / "lib"
     lib.mkdir()
-    txt_reg = TxtReg(tmp_path / "text_templates")
+    root = TemplateRoot(default_root=lib)      # U6-A: hwpx·txt 가 같은 서식 폴더
+    txt_reg = TxtReg(root.path)
     tpl = TemplateController(
         txt_reg, lambda s, snap: None,
-        file_store=TemplateFileStore(
-            lib, txt_reg, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
-        ), library_dir=lib,
+        file_store=TemplateFileStore(root.path, txt_reg),
+        template_root=root,
         pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
     )
     ctrl = EditorController(
@@ -2403,7 +2405,7 @@ def test_use_library_rejection_refreshes_stale_list(tmp_path):
     ghost = lib / "유령.hwpx"
     ghost.write_bytes(TPL_COMPILED.read_bytes())
     ctrl, pushes = _controller_lib(tmp_path, lib_dir=lib)
-    assert [t["name"] for t in _lib_items(ctrl.snapshot())] == ["유령.hwpx"]
+    assert [t["name"] for t in _lib_items(ctrl.snapshot())] == ["유령"]
     ghost.unlink()                                                     # 외부 삭제
     with pytest.raises(ValueError, match="라이브러리에 없는"):
         ctrl.dispatch("use_library_template", {"path": str(ghost)})

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from ..domain.template_status import TRASH_DIR_NAME
 from .atomic import write_text_atomic
 from .text_registry import TextTemplateRegistry
 
@@ -35,42 +34,22 @@ def _content_fingerprint(content: str) -> str:
 class TemplateFileStore:
     def __init__(
         self,
-        hwpx_root: "str | Path",
+        root: "Callable[[], Path]",
         text_registry: TextTemplateRegistry,
-        *,
-        clock: "Callable[[], float]",
-        new_id: "Callable[[], str]",
     ) -> None:
-        self.hwpx_root = Path(hwpx_root)
+        # 루트는 **콜러블 하나**다(U6-A #975): hwpx·txt 가 사용자가 고른 같은 서식 폴더를
+        # 쓰므로 매체별 루트를 들 자리가 없어졌고, 설정으로 바뀌는 값이라 Path 를 굳혀 들면
+        # 재지정 뒤에도 옛 폴더에 복사한다(선언≠실제).
+        self._root = root
         self.text_registry = text_registry
-        self._clock = clock
-        self._new_id = new_id
         self.import_lock = threading.Lock()
         self.hwpx_write_lock = threading.RLock()
 
     def _root_for(self, suffix_or_media: str) -> Path:
-        if suffix_or_media in (".hwpx", "hwpx"):
-            return self.hwpx_root
-        if suffix_or_media in (".txt", "txt"):
-            return self.text_registry.directory
+        """매체를 검증하고 **같은** 루트를 돌려준다 — 라우팅 축은 U6-A 에서 사라졌다."""
+        if suffix_or_media in (".hwpx", "hwpx", ".txt", "txt"):
+            return self._root()
         raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
-
-    @staticmethod
-    def require_folder(folder: "str | Path") -> Path:
-        root = Path(folder)
-        if not root.is_dir():
-            raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
-        return root
-
-    def folder_candidates(self, folder: "str | Path") -> "tuple[Path, list[Path], int, bool]":
-        root = self.require_folder(folder)
-        entries = list(root.iterdir())
-        files = sorted((p for p in entries if p.is_file()), key=lambda p: p.name.casefold())
-        candidates = [p for p in files if p.suffix.lower() in (".hwpx", ".txt")]
-        return root, candidates, len(files) - len(candidates), any(p.is_dir() for p in entries)
-
-    def import_dest_taken(self, src: Path) -> bool:
-        return (self._root_for(src.suffix.lower()) / src.name).exists()
 
     def copy_into_library(self, src: Path) -> Path:
         root = self._root_for(src.suffix.lower())
@@ -97,44 +76,16 @@ class TemplateFileStore:
     def source_file_exists(path: Path) -> bool:
         return path.is_file()
 
-    def trash(self, media: str, path: Path) -> Path:
-        root = self._root_for(media)
-        trash = root / TRASH_DIR_NAME
-        trash.mkdir(parents=True, exist_ok=True)
-        cutoff = self._clock() - 30 * 24 * 60 * 60
-        for old in trash.iterdir():
-            try:
-                if old.is_file() and old.stat().st_mtime < cutoff:
-                    old.unlink()
-            except OSError:
-                continue
-        trashed = trash / f"{int(self._clock())}-{self._new_id()}-{path.name}"
-        path.replace(trashed)
-        return trashed
+    def remove(self, media: str, path: Path) -> None:
+        """파일 하나를 **지운다** — 휴지통을 만들지 않는다(U6 §2.3).
 
-    def restore(
-        self,
-        media: str,
-        path: Path,
-        trashed: Path,
-        after_restore: "Callable[[], None]",
-    ) -> "str | None":
-        writer = (
-            self.text_registry.write_lock() if media == "txt" else self.hwpx_write_lock
-        )
-        with writer:
-            if not trashed.exists():
-                return "되돌릴 템플릿 파일을 찾을 수 없습니다."
-            if path.exists():
-                return "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."
-            path.parent.mkdir(parents=True, exist_ok=True)
-            trashed.replace(path)
-            try:
-                after_restore()
-            except Exception:
-                path.replace(trashed)
-                raise
-        return None
+        루트가 사용자 폴더가 되면서 앱이 거기에 ``.trash`` 를 짓는 일이 폐기됐다: 앱은 읽기와
+        제자리 변환만 하고, 삭제 동사는 「폴더에서 보기」가 대신한다. 남은 유일한 호출자는
+        동결 온보딩의 예제 제거(:func:`~hwpxfiller.external.example_pack.remove`)이고, 거기서
+        되돌리기는 재설치라 잃는 원본이 없다(데이터 갈래가 이미 같은 규율로 ``unlink`` 한다).
+        """
+        self._root_for(media)  # 매체 열거 검증(오타는 시끄럽게)
+        path.unlink()
 
     def _require_live_txt(self, path: "str | Path") -> Path:
         root = self.text_registry.directory.resolve()

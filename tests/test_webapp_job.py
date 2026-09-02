@@ -2825,12 +2825,12 @@ def _pause_stamp(monkeypatch):
     real_save = job_store.save_job
     fired = {"once": False}
 
-    def slow_save(path, job):
+    def slow_save(path, job, **kwargs):
         if not fired["once"] and job.last_run_at:    # 스탬프 저장만 붙잡는다
             fired["once"] = True
             entered.set()
             release.wait(3)
-        return real_save(path, job)
+        return real_save(path, job, **kwargs)
 
     monkeypatch.setattr(job_store, "save_job", slow_save)
     return entered, release

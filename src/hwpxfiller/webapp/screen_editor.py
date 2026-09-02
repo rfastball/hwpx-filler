@@ -67,8 +67,8 @@ from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
-from ..external.job_store import JobRegistry, content_fingerprint
-from ..host.locations import default_templates_dir, default_text_templates_dir
+from ..external.job_store import JobRegistry
+from ..external.template_root import TemplateRoot
 from ..gui.edit_session import (
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
@@ -377,10 +377,14 @@ class EditorController:
 
     @property
     def template_library(self) -> TemplateManagerViewModel:
-        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 표준 라이브러리로 지연 생성(리뷰 F5)."""
+        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 서식 폴더 홀더로 지연 생성(리뷰 F5).
+
+        홀더의 ``path`` **콜러블**을 준다(U6-A #975): 루트는 설정으로 바뀌는 값이라 Path 를
+        굳혀 들면 재지정 뒤에도 옛 폴더를 나열한다.
+        """
         if self._template_library is None:
             self._template_library = TemplateManagerViewModel(
-                default_templates_dir(),
+                TemplateRoot().path,
                 inspect_template=inspect_hwpx_template,
                 file_ops=HWPX_TEMPLATE_OPS,
             )
@@ -395,9 +399,12 @@ class EditorController:
 
     @property
     def text_registry(self) -> TextTemplateRegistry:
-        """TXT 템플릿 레지스트리 — 미주입이면 표준 루트 지연 생성(hwpx 라이브러리 VM 대칭)."""
+        """TXT 템플릿 레지스트리 — 미주입이면 서식 폴더 홀더로 지연 생성(hwpx VM 대칭).
+
+        루트는 hwpx 와 **같다**(U6-A #975) — 매체별 루트 축은 사라졌다.
+        """
         if self._text_registry is None:
-            self._text_registry = TextTemplateRegistry(default_text_templates_dir())
+            self._text_registry = TextTemplateRegistry(TemplateRoot().path)
         return self._text_registry
 
     @property
@@ -801,16 +808,21 @@ class EditorController:
         # 위생은 tpl 채널의 snapshot() 이 계속 소유한다(부분 목록 reconcile 이 살아있는
         # 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
         result = self._library_result() if self._library_result is not None else {}
+        # 빈 목록 안내는 링1 하나가 정본이다(U6-A #975): 루트가 하나라 원인도 하나이고,
+        # 두 밴드가 각자 문안을 지으면 「폴더가 없다」와 「비어 있다」가 갈린다.
+        empty_hint = self.template_library.empty_hint()
         return {
             "hwpx": {
                 "sections": sections, "flat": flat,
                 "count": len(items),
                 "dir": str(root) if root is not None else "",
+                "empty_hint": empty_hint,
             },
             "txt": {
                 "sections": txt_sections, "flat": txt_flat,
                 "count": len(txt_rows),
                 "dir": str(self.text_registry.directory),
+                "empty_hint": empty_hint,
             },
             "result": {
                 "text": str(result.get("text", "") or ""),
@@ -827,8 +839,11 @@ class EditorController:
     def _txt_library_rows(self) -> "list[dict]":
         """TXT 밴드 행 — tpl 화면 ``_txt_rows`` 성형 미러(선택 전용 최소분 + current 표지).
 
-        손상(비 UTF-8 등)은 삭제 가능한 오류 행으로 loud 노출한다(숨기면 관리 화면과 다른
-        목록을 조용히 보인다). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은 로드가 맡는다.
+        손상(비 UTF-8 등)은 **사유를 단 오류 행**으로 loud 노출한다(숨기면 관리 화면과 다른
+        목록을 조용히 보인다). 그 행에 남는 동사는 없다 — 삭제는 U6-A(#975)에서 퇴역했고
+        내용 편집은 읽히지 않는 파일에 설 수 없어, 표면의 행 ⋮ 는 비활성 + 사유로 선다
+        (`editor.ts` 의 `libRowMenuItems`). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은
+        로드가 맡는다.
         """
         root = self.text_registry.directory
         rows: "list[dict]" = []
@@ -1224,10 +1239,11 @@ class EditorController:
         내 세션에 통지를 남기면 사용자는 자기가 만지지도 않은 파일의 경고를 읽는다. 대조는
         :func:`~hwpxfiller.webapp.template_groups.norm_library_path` 단일 술어다.
 
-        ``deleted`` 는 ``template_path`` 를 **지우지 않는다**: 되돌리기가 같은 경로로 파일을
-        돌려놓고 ``restored`` 가 이 세션을 되살린다. 경로를 비우면 그 복원이 닿을 자리가
-        사라져, 사용자는 실수로 지운 템플릿을 되살려도 세션을 처음부터 다시 세워야 한다.
-        저장은 그동안 :meth:`_missing_template_block` 이 심층 방어로 막는다.
+        ``deleted`` 는 ``template_path`` 를 **지우지 않는다**: 사용자가 탐색기에서 파일을
+        되돌려 놓으면 같은 경로가 다시 살아난다. 경로를 비우면 그 복귀가 닿을 자리가 사라져
+        세션을 처음부터 다시 세워야 한다. 저장은 그동안 :meth:`_missing_template_block` 이
+        심층 방어로 막는다. (앱 안의 복원 동사는 U6-A 에서 퇴역했다 — ``restored`` 종류도
+        생산자 0 으로 함께 걷혔고, 남은 ``deleted`` 생산자는 동결 온보딩의 예제 제거다.)
         """
         if kind not in MUTATION_KINDS:  # 오타·미지 종류는 조용히 무시하지 않는다
             raise ValueError(f"알 수 없는 템플릿 변이 종류: {kind!r}")
@@ -1557,7 +1573,7 @@ class EditorController:
         self._preserved_meta = _preserved_meta(job)
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
-        self._editing_fingerprint = content_fingerprint(job)
+        self._editing_fingerprint = self.registry.content_fingerprint(job)
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
@@ -2270,7 +2286,7 @@ class EditorController:
                 "내용을 확인할 수 없습니다.\n지금 저장하면 그 자리를 이 편집 세션의 "
                 "상태로 덮어씁니다."
             )
-        if content_fingerprint(current) != self._editing_fingerprint:
+        if self.registry.content_fingerprint(current) != self._editing_fingerprint:
             return (
                 f"편집 중 외부 변경: 작업 '{self._editing_origin}' 이 이 편집 세션을 "
                 "여는 사이 다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 "

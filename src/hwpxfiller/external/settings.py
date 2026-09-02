@@ -52,6 +52,8 @@ __all__ = (
     "save_boot_completed",
     "load_last_output_directory",
     "save_last_output_directory",
+    "load_templates_root",
+    "save_templates_root",
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
@@ -365,6 +367,30 @@ def save_last_output_directory(path: str) -> None:
     if not isinstance(path, str) or not path.strip():
         raise ValueError(f"유효하지 않은 저장 폴더 경로: {path!r}")
     _save_key("last_output_directory", path)
+
+
+def load_templates_root() -> str:
+    """**전역 서식 폴더**(템플릿 루트) — 설정되지 않았으면 ``""``(U6-A · #975).
+
+    빈 값은 「지정하지 않음」이고, 그때의 루트는 앱 홈 기본 폴더다 — 그 도출은
+    :func:`hwpxfiller.domain.template_root_default.resolve_templates_root` 가 진다.
+    저장 폴더 키와 달리 **존재 확인은 값의 생존 조건이 아니다**: 사라진 폴더도 그대로
+    루트로 서고 사유만 병기된다(다른 템플릿 집합을 조용히 보여주지 않는다).
+
+    비문자열(손상·구버전)은 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은
+    그대로 기본 거동(앱 홈 ``templates``)으로 산다."""
+    raw = _read().get("templates_root")
+    return raw if isinstance(raw, str) else ""
+
+
+def save_templates_root(path: str) -> None:
+    """전역 서식 폴더 영속 — 빈 경로는 조용히 무시하지 않고 ``ValueError``.
+
+    빈 값 저장을 허용하면 '설정한 적 없음'과 '빈 경로를 설정함'이 한 값으로 접혀 다음 도출이
+    침묵한다(:func:`save_last_output_directory` 와 같은 규율)."""
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError(f"유효하지 않은 서식 폴더 경로: {path!r}")
+    _save_key("templates_root", path)
 
 
 # 마지막으로 성사된 데이터 마운트의 출처 축(U3-07 · #880) — 세션의 `data_source` 플래그와

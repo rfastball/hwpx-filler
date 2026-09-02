@@ -476,6 +476,7 @@ def test_home_move_keeps_the_link_and_costs_only_the_structure_flag(tmp_path, mo
 
     home_b = tmp_path / "home-B"
     shutil.copytree(home_a, home_b)                              # 홈 통째 이사·수령
+    shutil.rmtree(home_a)                                        # 옛 자리는 사라진다(진짜 이사)
     monkeypatch.setenv("HWPXFILLER_HOME", str(home_b))
     moved = JobRegistry(home_b / "jobs").load("공고")
 

@@ -13,9 +13,9 @@ from hwpxfiller.host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
     default_preset_dir,
-    default_text_templates_dir,
     default_templates_dir,
 )
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external import settings
 
 
@@ -36,13 +36,17 @@ def test_empty_override_is_treated_as_unset(monkeypatch) -> None:
 
 
 def test_all_default_roots_share_one_home(monkeypatch, tmp_path: Path) -> None:
-    """6개 소비자가 같은 홈을 본다 — 재지정 뒤 하나라도 딴 곳을 보면 조용한 갈라짐(#76)."""
+    """소비자 전원이 같은 홈을 본다 — 재지정 뒤 하나라도 딴 곳을 보면 조용한 갈라짐(#76).
+
+    U6-A(#975) 이후 txt 루트는 별도 해석기가 아니라 **서식 폴더 홀더**를 지난다: 지정이
+    없으면 hwpx 와 **같은** ``templates`` 다(매체별 루트 축 소멸).
+    """
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     home = tmp_path / "home"
     assert default_jobs_dir() == home / "jobs"
     assert default_dataset_pool_dir() == home / "datasets"
     assert default_templates_dir() == home / "templates"
-    assert default_text_templates_dir() == home / "text_templates"
+    assert TemplateRoot().path() == home / "templates"
     assert default_preset_dir() == home / "presets"
     assert settings._settings_path() == home / "settings.json"
 

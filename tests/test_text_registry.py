@@ -1,11 +1,14 @@
 """txt 기안 템플릿 레지스트리 — Qt 불필요(헤드리스). 루트 나열·로드·필드 추출.
 
-HWPX Job 레지스트리와 별도 루트(ADR A) — 저장 Job 없는 경량 재사용 템플릿 목록.
+U6-A(#975) 이후 루트는 hwpx 와 **같은 서식 폴더**다 — 매체별 루트 축은 사라졌다.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from hwpxfiller.external.text_registry import TextTemplateRegistry
-from hwpxfiller.host.locations import default_text_templates_dir
+from hwpxfiller.external.template_root import TemplateRoot
+from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 
 
 def _seed(tmp_path):
@@ -37,8 +40,32 @@ def test_empty_or_missing_dir(tmp_path):
 
 
 def test_default_dir_under_home(monkeypatch, tmp_path):
+    """지정 없는 기본 루트는 hwpx 와 같은 ``templates`` 다(U6-A — 별도 txt 루트 소멸)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
-    assert default_text_templates_dir() == tmp_path / "text_templates"
+    assert TemplateRoot().path() == tmp_path / "templates"
+
+
+def test_root_may_be_a_callable_and_is_evaluated_every_call(tmp_path):
+    """루트 콜러블은 **매번 평가**된다 — 재지정 뒤에도 옛 폴더를 나열하면 선언≠실제다."""
+    first, second = tmp_path / "a", tmp_path / "b"
+    first.mkdir(); second.mkdir()
+    (first / "가.txt").write_text("{{x}}", encoding="utf-8")
+    (second / "나.txt").write_text("{{y}}", encoding="utf-8")
+    current = [first]
+    reg = TextTemplateRegistry(lambda: current[0])
+    assert reg.names() == ["가"]
+    current[0] = second
+    assert reg.names() == ["나"]
+
+
+def test_scan_excludes_the_output_subdir(tmp_path):
+    """산출물 폴더는 hwpx 스캐너와 **같은 목록**으로 제외한다(U6-A — 루트가 하나라서)."""
+    d = _seed(tmp_path)
+    results = d / OUTPUT_SUBDIR_NAME
+    results.mkdir()
+    (results / "완성문서.txt").write_text("결과", encoding="utf-8")
+    assert "Results/완성문서" not in TextTemplateRegistry(d).names()
+    assert TextTemplateRegistry(d).count() == 2
 
 
 def test_recursive_scan_finds_subfolder_templates(tmp_path):
@@ -93,3 +120,44 @@ def test_load_unknown_name_falls_back_to_root_path(tmp_path):
     d = _seed(tmp_path)
     t = TextTemplateRegistry(d).load("없는이름")
     assert t.path == d / "없는이름.txt"
+
+
+def test_the_root_callable_is_evaluated_once_per_scan(tmp_path):
+    """스캔은 루트를 **한 번** 읽는다 — 항목마다 설정을 다시 여는 비용도, 스캔 중간에
+    루트가 갈려 한 목록이 두 루트를 뜻하는 일도 없다(U6-A 리뷰)."""
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    (root / "가.txt").write_text("{{x}}", encoding="utf-8")
+    (root / "온나라" / "나.txt").write_text("{{y}}", encoding="utf-8")
+    reads = []
+
+    def watched():
+        reads.append(1)
+        return root
+
+    assert TextTemplateRegistry(watched).names() == ["가", "온나라/나"]
+    assert len(reads) == 1, f"루트를 {len(reads)}회 읽었습니다 — 스캔당 1회여야 합니다."
+
+
+def test_a_root_switch_mid_scan_drops_that_file_instead_of_killing_the_list(tmp_path):
+    """고정한 루트 밖 경로가 튀어나와도 목록 전체가 예외로 죽지 않는다(그 파일만 건너뛴다)."""
+    root = tmp_path / "서식"
+    root.mkdir()
+    (root / "가.txt").write_text("{{x}}", encoding="utf-8")
+    outside = tmp_path / "남의곳" / "나.txt"
+    outside.parent.mkdir()
+    outside.write_text("{{y}}", encoding="utf-8")
+
+    reg = TextTemplateRegistry(root)
+    real_rglob = Path.rglob
+
+    def rglob_with_a_stray(self, pattern):
+        return [*real_rglob(self, pattern), outside]   # 스캔 도중 루트가 갈린 세상
+
+    reg_names = None
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "rglob", rglob_with_a_stray)
+        reg_names = reg.names()
+    assert reg_names == ["가"]

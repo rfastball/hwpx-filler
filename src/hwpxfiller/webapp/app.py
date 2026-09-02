@@ -45,9 +45,9 @@ from ..host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
     default_template_authority_dir,
-    default_templates_dir,
-    default_text_templates_dir,
+    home_dir,
 )
+from ..external.template_root import TemplateRoot, migrate_legacy_text_templates
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.template_files import TemplateFileStore
 from ..external.output_files import ensure_output_directory, existing_output_paths
@@ -299,7 +299,7 @@ def _txt_materialization_port(
 class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
 
-    def __init__(self, text_templates_dir: "str | Path") -> None:
+    def __init__(self, template_root: "TemplateRoot | None" = None) -> None:
         # 창 참조는 비공개(_) — pywebview 의 js_api 자동노출 반영(util.get_functions)이 공개
         # 속성을 dir() 로 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 로
         # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
@@ -310,8 +310,27 @@ class WebFrontend:
         self._close_confirmed = False
         self._close_prompt_open = False
         self._owned_path_base = Path.cwd()
-        registry = TextTemplateRegistry(text_templates_dir)
-        job_registry = JobRegistry(default_jobs_dir())
+        # 서식 폴더 권위(U6-A #975) — **프로세스에 하나**다. hwpx 목록·txt 목록·가져오기
+        # 복사·Job 링크 해석이 전부 이 홀더(또는 그 ``path`` 콜러블)를 지난다: 매체마다 기본
+        # 해석기를 각자 부르던 자리들이 루트를 바꿀 수 있게 되는 순간 갈리기 때문이다.
+        self._template_root = template_root if template_root is not None else TemplateRoot()
+        # 레거시 TXT 1회 이관(U6-A §4) — 지정이 없어 기본 루트를 쓰는 경우에만, 옛
+        # ``home/text_templates`` 를 서식 폴더로 **옮긴다**. 결과는 조용히 넘기지 않고
+        # 부팅 뒤 경보 채널로 한 번 재진술한다(아래 ``settings.alert``).
+        self._text_templates_migration = migrate_legacy_text_templates(
+            home=home_dir(), root=self._template_root
+        )
+        # 재진술은 **두 채널**이 받는다: 내구성 로그(경보)와 화면(서식 폴더 존의 사유).
+        # 로그만 두면 사용자는 자기 TXT 가 옮겨진 사실을 영영 모른다(조용한 이동 금지).
+        migration_notice = self._text_templates_migration.restate(
+            self._template_root.path()
+        )
+        if migration_notice:
+            settings.alert(migration_notice)
+        registry = TextTemplateRegistry(self._template_root.path)
+        job_registry = JobRegistry(
+            default_jobs_dir(), template_root=self._template_root.path
+        )
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
         # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
         pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
@@ -332,10 +351,7 @@ class WebFrontend:
         seal_execution = SealExecutionPlanService(
             job_registry, root=default_template_authority_dir(), clock=datetime.now,
         )
-        template_files = TemplateFileStore(
-            default_templates_dir(), registry,
-            clock=time.time, new_id=lambda: uuid.uuid4().hex,
-        )
+        template_files = TemplateFileStore(self._template_root.path, registry)
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
@@ -386,6 +402,8 @@ class WebFrontend:
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups,
+                template_root=self._template_root,
+                migration_notice=migration_notice,
                 # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
                 pool_registry=pool_registry,
                 tutorial=tutorial,
@@ -560,47 +578,26 @@ class WebFrontend:
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
 
-    def import_templates_folder(
-        self,
-        folder: "str | None" = None,
-        confirm: bool = False,
-        files: "list[str] | None" = None,
-    ) -> "dict | None":
-        """「폴더에서 가져오기…」(#339 · U2 §2.16 narrow) — 직속 .hwpx/.txt 일괄 등록.
+    def pick_templates_root(self, screen: str) -> "str | None":
+        """Win32 폴더 피커 → **서식 폴더 재지정**(U6-A #975). 경로·``ERROR:``·None(취소).
 
-        2왕복 계약: ①무인자 = 폴더 피커 → **읽기 전용 스캔** → 재진술 dict(``needs_confirm``
-        + 후보 ``files``) — 확정 전에는 홈에 아무것도 쓰지 않는다. ②``folder``+``files``+
-        ``confirm`` = 실행 — 재스캔이 아니라 **확정 시점 후보 목록에 결속**된다(PR #355
-        리뷰: 스캔~확정 사이 폴더가 바뀌어도 확인 안 된 파일이 따라 들어오지 않고, 사라진
-        확정 건은 부분 실패로 사유 병기). 복사 권위는 단건(:meth:`import_template_file`)과
-        같은 tpl 복사 몸통의 반복(잠금·매체 라우팅·충돌 번호 접미·무잔재)이고 **채택은
-        없다**(편집 세션 무변경 — 웹도 새-세션 확인을 걸지 않는다).
-
-        직접 브리지 메서드(action registry 밖)라 payload 검증은 본문 소유: 실행 호출은
-        ``confirm`` 명시 + 비어 있지 않은 문자열 ``folder`` + 문자열 목록 ``files`` 필수
-        (재진술 없이 임의 폴더·임의 목록을 바로 실행하는 경로 차단) — 폴더 실재와 항목
-        형태(basename·허용 확장자)는 tpl 권위가 loud 검증한다. 반환은 처음부터 dict 계약
-        (실패 = ``{"ok": False, "error": …}``), ``None`` = 피커 취소.
+        저장 폴더 피커(:meth:`pick_output_folder`)와 같은 형상이다: 다이얼로그는 여기가 열고
+        판정·영속·재스캔은 tpl 권위 하나(:meth:`~hwpxfiller.webapp.screen_template.TemplateController.set_templates_root`)
+        가 진다. ``screen`` 은 호출 표면 식별자일 뿐 라우팅에 쓰이지 않는다 — 서식 폴더는
+        **전역 값**이라 어느 화면에서 골라도 같은 설정을 바꾼다. 직접 브리지(action registry
+        밖)라 빈 값·파일 경로 거절은 그 권위 메서드 본문이 진다.
         """
-        tpl = self._controller("tpl")
-        if folder is None:
-            path = _folder_dialog("가져올 템플릿 폴더 선택")
-            if not path:
-                return None
-            try:
-                return tpl.scan_import_folder(path)
-            except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
-                return {"ok": False, "error": str(exc)}
-        if not confirm:  # confirm-or-alarm: 재진술을 지나지 않은 실행은 시끄럽게 거절.
-            raise ValueError("재진술 확정 없이 폴더 실행을 부를 수 없습니다(confirm 필수).")
-        if not isinstance(folder, str) or not folder.strip():
-            raise ValueError("폴더 경로가 비어 있습니다.")
-        if not isinstance(files, list) or not files:
-            raise ValueError("확정된 가져오기 목록이 없습니다 — 스캔 재진술을 먼저 받으세요.")
+        if not isinstance(screen, str) or not screen.strip():
+            raise ValueError("호출 화면 이름이 비어 있습니다.")
+        path = _folder_dialog("서식 폴더 선택")
+        if not path:
+            return None
         try:
-            return tpl.import_folder(folder, files)
+            self._controller("tpl").set_templates_root(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
-            return {"ok": False, "error": str(exc)}
+            return f"ERROR: {exc}"
+        return path
+
     def _mount_descriptor(self, screen: str, path: str, sheet: str = "") -> dict:
         """마운트 성사 descriptor(U2 §2.7 3행) — ``label·path·sheet·rows``.
 
@@ -1608,7 +1605,7 @@ def main(
         selftest_timer.daemon = True
         selftest_timer.start()
 
-    frontend = WebFrontend(default_text_templates_dir())
+    frontend = WebFrontend()
 
     # 시험 능력 부착(N-09 · D-07) — **실행이 명시로 요구할 때만**. 정상 실행의 `js_api` 에는
     # 시험 메서드가 아예 없고, 그래서 프런트의 `testHost.available()` 이 거짓이 되어

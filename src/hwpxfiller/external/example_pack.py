@@ -236,14 +236,15 @@ def install(
 
 # ------------------------------------------------------------------ 제거(#892 · §1 D4)
 # 「그룹 삭제 한 번으로 통째 제거」는 성립하지 않는다(그룹은 실체가 아니라 소속이다). 제거는
-# **manifest 기재 항목만** 걷는다: 템플릿은 매체 store 의 ``.trash`` 로 건별 이동(기존 기제
-# 재사용), 데이터는 고정 해제 + 파일 제거, 그룹 해산, manifest 소거. **벌크 undo 는 만들지
+# **manifest 기재 항목만** 걷는다: 템플릿은 store 의 건별 제거(U6-A 에서 ``.trash`` 이동이
+# 폐기됐다 — 앱은 사용자 서식 폴더에 쓰지 않는다), 데이터는 고정 해제 + 파일 제거, 그룹
+# 해산, manifest 소거. **벌크 undo 는 만들지
 # 않는다** — 자산이 번들에 있으므로 되돌리기는 재설치가 대신하고, 그 사실을 확인 문안이 말한다.
 def _require_inside(root: Path, path: Path, what: str) -> Path:
     """manifest 경로가 그 매체의 제자리 안인지 — 벗어나면 loud 거절(경로 탈출 전례).
 
     manifest 는 설정 파일이라 손편집·구버전·이관으로 라이브러리 밖을 가리킬 수 있다. 그 값을
-    그대로 ``trash``/``unlink`` 에 먹이면 제거가 **임의 파일 삭제 권한**이 된다
+    그대로 ``remove``/``unlink`` 에 먹이면 제거가 **임의 파일 삭제 권한**이 된다
     (:meth:`~hwpxfiller.external.dataset_store.DatasetPoolRegistry.slot_path` 와 같은 규율).
     루트 자신도 거절한다 — 라이브러리 폴더째 옮기는 경로는 이 동사의 것이 아니다.
 
@@ -342,31 +343,30 @@ def remove(
     중간에 실패하면 manifest 가 남아 남은 기재를 다시 걷을 수 있다(재시도가 이미 걷은 건을
     「이미 없던 것」으로 정직하게 보고한다). 먼저 지우면 남은 파일의 주소를 잃는다.
 
-    - 템플릿: :meth:`~hwpxfiller.external.template_files.TemplateFileStore.trash` **건별**.
-      벌크 이동을 새로 짓지 않는다 — 30일 보존·컷오프 정리는 그 기제가 이미 진 의무다.
-    - 데이터: 고정 해제 + 파일 제거. 데이터에는 ``.trash`` 기제가 **없다**(store 의 trash 는
-      hwpx·txt 두 매체 루트로만 라우팅한다). 새 휴지통을 지어내는 대신 지운다 — 파일은
-      번들 자산의 사본이고 되돌리기가 재설치이므로 잃는 원본이 없다.
+    - 템플릿: :meth:`~hwpxfiller.external.template_files.TemplateFileStore.remove` **건별**.
+      U6-A 에서 ``.trash`` 이동이 폐기되면서 데이터 갈래와 **같은 규율**이 됐다.
+    - 데이터: 고정 해제 + 파일 제거. 둘 다 지운다 — 파일은 번들 자산의 사본이고 되돌리기가
+      재설치이므로 잃는 원본이 없다.
     - 고정 해제는 **아직 그 예제 데이터를 가리키는 슬롯**만 건다. 사용자가 그 슬롯을 자기
       데이터로 다시 연결했다면(#67 relink) 그것은 manifest 밖 참조라 남긴다.
     - 그룹: 매체별 :meth:`TemplateGroupModel.disband_group` — 소속만 걷힌다(파일 무관).
 
-    반환: ``{"trashed": [{"media", "path"}], "data_removed", "unpinned", "kept_pins",
+    반환: ``{"removed": [{"media", "path"}], "data_removed", "unpinned", "kept_pins",
     "disbanded", "missing", "group"}``. ``missing`` 은 기재에 있었으나 이미 없던 건이다.
     """
     plan = removal_plan(hwpx_root=hwpx_root, txt_root=txt_root, data_dir=data_dir)
     if plan is None:
         raise ValueError("설치된 예제가 없습니다.")
 
-    trashed: "list[dict]" = []
+    removed: "list[dict]" = []
     missing: "list[str]" = []
     for entry in plan["templates"]:
         path: Path = entry["path"]
         if not path.is_file():  # 사용자가 이미 지웠다 — 재진술하되 실패로 승격하지 않는다
             missing.append(path.name)
             continue
-        file_store.trash(entry["media"], path)
-        trashed.append({"media": entry["media"], "path": str(path)})
+        file_store.remove(entry["media"], path)
+        removed.append({"media": entry["media"], "path": str(path)})
 
     data_removed = 0
     for path in plan["data_files"]:
@@ -397,7 +397,7 @@ def remove(
     disbanded = hwpx_groups.disband_group(group) + txt_groups.disband_group(group)
     settings.clear_tutorial_manifest()
     return {
-        "trashed": trashed,
+        "removed": removed,
         "data_removed": data_removed,
         "unpinned": unpinned,
         "kept_pins": kept_pins,

@@ -31,10 +31,10 @@ from ..domain.fields import FillNote
 from ..domain.lint import LintReport, SchemaDrift
 from ..domain.slot import Slot
 from ..domain.template_status import (
-    OUTPUT_SUBDIR_NAME,
-    TRASH_DIR_NAME,
     CompileState,
     TemplateStatus,
+    is_excluded_subtree,
+    library_display_name,
 )
 
 # 상태 → 배지 (라벨, 레벨)은 :mod:`compile_badge` 가 단일 출처 — 홈 카드 배지와
@@ -349,9 +349,11 @@ class TemplateRow:
         path: Path,
         status: TemplateStatus,
         fill_warns: "tuple[str, ...]" = (),
+        *,
+        root: "Path | None" = None,
     ) -> "TemplateRow":
         return cls(
-            name=path.name,
+            name=library_display_name(root, path),
             path=str(path),
             state=status.state,
             badge_label=_badge_label(status.state),
@@ -365,9 +367,11 @@ class TemplateRow:
         )
 
     @classmethod
-    def from_error(cls, path: Path, message: str) -> "TemplateRow":
+    def from_error(
+        cls, path: Path, message: str, *, root: "Path | None" = None,
+    ) -> "TemplateRow":
         return cls(
-            name=path.name,
+            name=library_display_name(root, path),
             path=str(path),
             state=None,
             badge_label=_badge_label(None),
@@ -390,13 +394,15 @@ class TemplateManagerViewModel:
 
     def __init__(
         self,
-        library_dir: "str | Path | None" = None,
+        library_dir: "str | Path | Callable[[], Path] | None" = None,
         paths=None,
         *,
         inspect_template: TemplateInspectPort,
         file_ops: TemplateFileOps,
     ):
-        self.library_dir = Path(library_dir) if library_dir is not None else None
+        # 루트는 **콜러블일 수 있다**(U6-A #975) — 서식 폴더가 설정으로 바뀌는 값이 되면서
+        # 생성 시점 Path 를 굳혀 들면 재지정 뒤에도 옛 폴더를 나열한다(선언≠실제).
+        self._library_dir = library_dir
         self._explicit_paths = [Path(p) for p in paths] if paths is not None else None
         self._inspect_template = inspect_template
         # 경로 기반 파일 효과(스캔·컴파일 저장·lint·드리프트·값 읽기)의 결속 포트(P2-19R).
@@ -427,42 +433,57 @@ class TemplateManagerViewModel:
         라이브러리 루트 밑에 완성 문서가 쌓인다. 그 하위트리를 템플릿으로 재수집하면 실행할수록
         라이브러리가 산출물로 오염되므로 ``Results`` 경로 성분이 있는 파일은 건너뛴다.
 
-        **휴지통 하위폴더 제외**(#267 리뷰): 삭제는 루트 밑 ``.trash`` 로의 이동이라 제외하지
-        않으면 삭제한 템플릿이 개명된 채 즉시 재수집된다."""
+        **휴지통 하위폴더 제외**(#267 리뷰): 앱은 더 이상 ``.trash`` 를 만들지 않지만(U6-A
+        #975 — 삭제 동사 퇴역) 옛 홈에 이미 있는 하위트리를 제외하지 않으면 지웠던 템플릿이
+        개명된 채 즉시 재수집된다."""
         if self._explicit_paths is not None:
             return list(self._explicit_paths)
-        if self.library_dir is not None and self.library_dir.is_dir():
+        root = self.library_dir  # 스캔 한 번에 한 번 읽는다(도중에 갈리지 않게)
+        if root is not None and root.is_dir():
             return sorted(
                 (
                     p
-                    for p in self.library_dir.rglob("*.hwpx")
+                    for p in root.rglob("*.hwpx")
                     if p.is_file()
-                    and OUTPUT_SUBDIR_NAME not in p.relative_to(self.library_dir).parts
-                    and TRASH_DIR_NAME not in p.relative_to(self.library_dir).parts
+                    and not is_excluded_subtree(p.relative_to(root).parts)
                 ),
                 key=lambda p: (p.name, str(p)),
             )
         return []
 
-    def set_library_dir(self, library_dir: "str | Path") -> None:
+    @property
+    def library_dir(self) -> "Path | None":
+        """지금의 라이브러리 루트 — 콜러블 주입이면 **매번 평가**한다(사본 캐시 금지)."""
+        source = self._library_dir
+        if source is None:
+            return None
+        return Path(source() if callable(source) else source)
+
+    def set_library_dir(self, library_dir: "str | Path | Callable[[], Path]") -> None:
         """라이브러리 폴더 재지정(사용자 폴더 선택) — 명시 경로 주입은 해제하고 재스캔."""
-        self.library_dir = Path(library_dir)
+        self._library_dir = library_dir
         self._explicit_paths = None
         self.refresh()
 
     def empty_hint(self) -> str:
-        """빈 목록의 원인 안내 — '폴더 없음'과 '빈 폴더'를 구분한다(RC-14 침묵 백지 방지)."""
+        """빈 목록의 원인 안내 — '폴더 없음'과 '빈 폴더'를 구분한다(RC-14 침묵 백지 방지).
+
+        U6-A(#975) 이후 이 문안은 **hwpx·txt 두 밴드의 정본**이다 — 루트가 하나라 원인도
+        하나이고, 표면이 매체마다 다른 말을 지어내면 같은 사실을 두 곳이 판정하게 된다.
+        복구 동선도 하나로 고정한다: 「폴더 선택」 단추는 사라졌고 설정 모달이 그 자리다."""
         if self._explicit_paths is not None:
             return "표시할 템플릿이 없습니다."
-        if self.library_dir is None:
-            return "템플릿 폴더가 지정되지 않았습니다.\n[폴더 선택]으로 라이브러리 폴더를 지정하세요."
-        if not self.library_dir.is_dir():
-            return f"템플릿 폴더가 없습니다: {self.library_dir}\n[폴더 선택]으로 다시 지정하세요."
-        return f"폴더에 .hwpx 템플릿이 없습니다: {self.library_dir}"
+        root = self.library_dir
+        if root is None:
+            return "서식 폴더가 지정되지 않았습니다.\n설정에서 서식 폴더를 지정하세요."
+        if not root.is_dir():
+            return f"서식 폴더가 없습니다: {root}\n설정에서 서식 폴더를 다시 지정하세요."
+        return f"서식 폴더에 템플릿이 없습니다: {root}"
 
     def refresh(self) -> None:
         """라이브러리를 다시 스캔해 행을 성형하고 통지(compile_status 매번 재산출)."""
         rows: "list[TemplateRow]" = []
+        root = self.library_dir  # 표시명(루트 상대경로)의 기준 — 스캔 한 번에 한 번 읽는다
         for path in self._discover():
             try:
                 inspection = self._inspect_template(str(path))
@@ -471,9 +492,13 @@ class TemplateManagerViewModel:
                     describe_precheck_note(n) for n in inspection.precheck_notes
                 )
             except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게 노출(감추지 않음)
-                rows.append(TemplateRow.from_error(path, str(exc)))
+                rows.append(TemplateRow.from_error(path, str(exc), root=root))
                 continue
-            rows.append(TemplateRow.from_status(path, inspection.status, fill_warns=warns))
+            rows.append(
+                TemplateRow.from_status(
+                    path, inspection.status, fill_warns=warns, root=root
+                )
+            )
         self._rows = rows
         self._notify()
 

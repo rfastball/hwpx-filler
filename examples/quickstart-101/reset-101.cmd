@@ -4,7 +4,7 @@ REM ===================================================================
 REM  101 example reset -- double-click to wipe practice state.
 REM  Deletes ONLY app-generated files inside this folder, so you can
 REM  start the tutorial from scratch. Committed example assets
-REM  (templates/, text_templates/, data/, *.cmd, *.md, make_template.py)
+REM  (templates/, data/, *.cmd, *.md, make_template.py)
 REM  are never touched. Your real ~/.hwpxfiller is untouched too.
 REM ===================================================================
 

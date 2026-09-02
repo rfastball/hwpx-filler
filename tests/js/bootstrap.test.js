@@ -51,7 +51,7 @@ const FACTORY_SERVICES = {
      `Bridge.call = stub` 으로 프로퍼티를 교체하므로 **객체째**여야 한다. */
   Bridge: [
     "onPush", "hostReady", "initial", "call", "pickDataFile", "loadDataSheet",
-    "importTemplateFile", "importTemplatesFolder", "copyClipboard", "pickOutputFolder",
+    "importTemplateFile", "copyClipboard", "pickOutputFolder", "pickTemplatesRoot",
     "generate", "openJobInEditor", "newJobFromData",
     "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "openPath", "revealPath",
     "copyPath", "saveArtifactAs", "setTheme", "setFontScale", "setMasterWidth",
