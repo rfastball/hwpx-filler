@@ -542,8 +542,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     1슬롯이라 각자 쓰면 앞 문장이 조용히 사라진다).
   - **표시명은 목록과 같은 어휘다**(U6-D #978): 편집기 스냅샷의 `template_name`·
     `pairing.template_name` 은 `domain/template_status.library_display_name`(루트 상대·확장자
-    없음)이고 `data_name`·`pairing.data_name` 은 풀 항목이면 **등록명**, 파일 찾아보기면 확장자
-    없는 basename 이다. 종전에는 편집기가 basename+확장자를 실어 나르고 좌 열은 표시명을 그려
+    없음)이고 `data_name`·`pairing.data_name` 은 이 결속이 **풀에 등록돼 있으면 등록명**,
+    아니면 확장자 없는 basename 이다. 등록명은 **세션 표지가 아니라 풀 조회**로 온다(정체성은
+    등록 게이트가 쓰는 `domain.dataset_reference.reference_identity` 하나) — 「방금 풀에서
+    골랐다」를 세션에 기억하면 저장하고 다시 연 세션이 같은 데이터를 다른 이름으로 부른다.
+    작성 출처 기록(`provenance.dataset`)도 같은 이름을 쓴다. 종전에는 편집기가 basename+확장자를 실어 나르고 좌 열은 표시명을 그려
     같은 파일이 두 어휘로 불렸다 — 머리 부제가 목록과 다른 말을 하던 자리다. 루트는 `tpl`
     화면과 **같은 `TemplateRoot` 홀더**로 온다(주입 `template_root`).
   - **연결 카드의 수치는 출처를 명시로 든다**(`pairing.basis`). 1단계는 매핑 모델을 **만들지
@@ -685,7 +688,10 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     (hwpx 만) + 연번 예시 ③저장 폴더 `#editorOutDir`(읽기 전용) + 출처 + 「설정에서 바꾸기」
     (`#editorOpenFolderSettings` → 설정 모달).
   - **이름 기본값은 링1 이 도출한다**(`gui.job_editor_state.derive_job_name`):
-    `{템플릿 표시명} · {데이터 표시명}`, 한쪽만 있으면 그것 하나. **구분자는 가운뎃점**이다
+    `{템플릿 이름} · {데이터 표시명}`, 한쪽만 있으면 그것 하나. 템플릿 쪽은 표시명의
+    **마지막 세그먼트**다 — 표시명은 루트 상대경로(`온나라/기안`)라 그 슬래시가 작업 이름에
+    들어가면 레지스트리 slug 가 경로 구분자를 접어 서로 다른 두 이름이 같은 파일로 저장될 수
+    있다(목록이 부르는 이름과 작업의 이름은 답하는 질문이 다르다). **구분자는 가운뎃점**이다
     (U6 §5 미결 항목의 확정) — 문장 안 em dash 전면 금지(`docs/COPY_STYLE_GUIDE.md` §3-1)에서
     라벨 문형과 이름 문형이 같은 글자를 두 뜻으로 쓰면 그 규칙이 자리마다 예외를 갖는다.
   - **파생은 표지 하나가 진다**(`job_name_is_derived`). 재도출은 템플릿 채택
@@ -694,19 +700,29 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     이름을 덮지 않는다. `load_job` 은 도출하지 않는다(저장본의 이름은 사람이 지어 저장한 것).
     힌트 문안도 그 표지를 따른다 — 웹이 「이름이 도출값과 같은가」로 되유추하면 우연히 같은
     이름을 지은 순간 힌트가 되살아난다.
-  - **도출값은 변경이 아니다**: 표지가 참인 동안 dirty 기준선(`_extras_of`)이 지금의 도출값
-    그 자체다. 빈 문자열을 기준으로 두면 고르는 정상 진행이 초안을 미저장으로 만들고, 손대지
-    않은 세션의 이탈마다 헛확인이 뜬다(#945 F7 의 데이터 축과 같은 결함류).
+  - **도출값은 변경이 아니다**: 표지가 참인 동안 dirty 기준선은 **재도출 시점에 기록한 그
+    값**(`_derived_name_baseline`)이다. 빈 문자열을 기준으로 두면 고르는 정상 진행이 초안을
+    미저장으로 만들고, 손대지 않은 세션의 이탈마다 헛확인이 뜬다(#945 F7 의 데이터 축과 같은
+    결함류). 기준선을 **매번 다시 도출**해도 같은 결함의 다른 얼굴이 된다 — 도출의 입력이
+    바뀌면(서식 폴더 재지정으로 표시명이 갈리면) 기준선과 현재값이 서로 다른 시점의 도출이 된다.
   - **이름은 그 화면에 그려질 뿐 `filename` patch 가 아니다**(§10.13 판정 L): 탭 이동의 자동
     버리기와 `discard_patch {section}` 은 패턴만 되돌리고 이름은 그대로 둔다. 같은 화면에
     그린다고 같은 거래에 드는 것이 아니다.
-  - **파일명 예시는 연번째로 Python 이 만든다**(`pattern_preview`): seq 1·2·3 을
-    `make_output_filename` 으로 **실제로** 만들어 달라지는 부분만 잇는다(`X-001.hwpx · 002 ·
-    003`). 웹이 번호를 조립하면 seq 토큰이 없는 패턴에서도 연번이 있는 것처럼 그려져, 실제로는
-    이름 셋이 충돌하는 자리를 정상으로 보인다. TXT 세션에서는 계산하지 않는다(빈 문자열).
+  - **파일명 예시는 연번째로 Python 이 만든다**(`pattern_preview` = `X-001.hwpx · 002 · 003`).
+    첫 이름은 실제 생성기(`make_output_filename`)가 만들고, **판정도 서식도 패턴이 낸다** —
+    연번 유무는 `naming.pattern_uses_seq`, 붙는 모양은 그 토큰의 폭(`naming.seq_token_pads` →
+    `domain.output_name.format_seq_token`)이다. 만들어진 이름 셋에서 「달라지는 부분」을
+    유추하지 않는다: 그 휴리스틱은 연번에 **붙어 있는 데이터 값**을 연번으로 오인한다
+    (`A{{연도}}{{seq}}` → `A20261.hwpx · 20262 · 20263` — 값이 그대로인데 연도가 매 건
+    바뀐다고 말한다). 웹이 번호를 조립하면 seq 토큰이 없는 패턴에서도 연번이 있는 것처럼
+    그려져, 실제로는 이름 셋이 충돌하는 자리를 정상으로 보인다. TXT 세션에서는 계산하지 않는다.
   - **저장 폴더는 읽기 전용 재진술**이다(#968 전역 값). 값·출처·하향 사유는 작업 화면과
     **같은 함수**(`webapp/output_folder_zone.output_folder_zone`)가 내고, 편집기는 자기 세션
     `template_path` 로 부른다(기본값이 「템플릿 옆 Results」라 저장 전 초안도 답할 수 있다).
+    「기억한 지정」은 **작업 컨트롤러의 메모리 값**을 콜러블(`remembered_output_directory`)로
+    읽는다 — 값의 소유자가 하나여야 설정 쓰기가 실패한 순간에도 두 표면이 같은 폴더를 말한다.
+    **TXT 는 존이 `null`** 이고 그 행이 서지 않는다: 파일을 만들지 않는 작업이라 폴더가 축이
+    아니고, 빈 재진술은 만들지 않을 파일의 저장 위치를 말하는 것이 된다.
   - **저장 동사는 둘이고 저장 자체는 한 경로다**: `save`(제자리 착지 — 결정 40 불변)와
     `save-and-open`(「저장하고 문서 만들기로」). 후자는 `doSave` 성공 뒤 **`leaveTo` 를 타지
     않고**(그 출구는 `discard_patch`/`new_session` 을 먼저 쏴 저장 착지를 되돌린다) 라이브러리
@@ -715,10 +731,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     `prefer_work` 가 진다** — 편집기가 `select_job` 을 직접 쏘지 않는다. 이동만 실패하면
     머무르며 `#save-msg` 가 저장 성공과 이동 실패를 함께 말한다(성공을 숨기지 않는다).
     두 동사의 무장 술어는 **같은 값**이다(둘을 따로 세면 한쪽만 눌리는 상태가 실재한다).
-  - **차단 조준은 단계 이동을 앞에 둔다**(`aimAtBlockedField`): `name`·`pattern` 은 둘 다
-    3단계에 살므로 다른 단계에서 막히면 먼저 `goto_section("filename")` 을 지나고 겨눈다.
-    표지(`invalidField`)는 이동보다 먼저 서고, 이동이 거절되면 문구만 남는다(한 실패가 두
-    채널로 말하지 않는다). `blocked_field="data"` 는 종전대로 1단계 우 열이다.
+  - **차단 조준은 단계를 옮기지 않는다**(`aimAtBlockedField`). `name`·`pattern` 은 둘 다
+    3단계에 살지만, 거절당한 저장이 사람을 그 단계로 데려가면 지나온 단계의 patch 가 탭 이동의
+    **자동 버리기**에 걸린다 — 연결 확인에서 방금 선언한 「비워 둠」이 저장 거절 하나로
+    사라지는 자리다. 거절은 아무것도 파괴하지 않는 전이여야 하므로 이동은 사람이 하고, 어느
+    단계인지는 **링1 차단 문안**이 말한다(`'이름·저장' 단계에서 …`). 표지(`invalidField`)는
+    그 칸이 보이는 단계에서만 서고 성공 저장·단계 전환·그 칸 입력에서 걷힌다(안 보이는 칸에
+    남은 `aria-invalid` 는 다음에 그 단계로 갔을 때 고치지도 않은 칸을 나무란다).
+    `blocked_field="data"` 는 종전대로 1단계 우 열이다.
 - 「저장」 분류는 사망했고 그 항목은 흩어졌다: 이름·파일 이름·저장 폴더=3단계 「이름·저장」
   폼(U6-D #978 — 종전 「이름=머리 인라인」의 승계처), 작성 출처=템플릿 탭, 저장 버튼·차단
   사유=footer. **저장 시 데이터 자동등록(#18·#26)과 기본 데이터 연결
@@ -1568,7 +1588,9 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   하향 사유 문안도 여기 산다 — 표면은 그리기만 한다(재조립 금지).
 - **관찰과 존 성형도 한 함수다**(U6-D #978): `webapp/output_folder_zone.py` 의
   `output_folder_resolution`/`output_folder_zone` 을 작업 화면과 편집기 3단계가 **함께**
-  부른다. 링0 판정이 하나여도 관찰·성형이 화면마다 손으로 쓰여 있으면 한쪽만 하향 사유를
+  부른다. **설정값의 소유자도 하나다** — `JobController.remembered_output_directory()` 가
+  그 값을 내고 편집기는 그것을 콜러블로 주입받는다(설정 파일을 두 곳이 각자 읽으면 쓰기
+  실패 한 번에 두 표면이 서로 다른 폴더를 말한다). 링0 판정이 하나여도 관찰·성형이 화면마다 손으로 쓰여 있으면 한쪽만 하향 사유를
   빠뜨리는 자리가 그대로 남는다. 갈리는 인자는 「어느 템플릿 옆을 기본값으로 보는가」 하나다
   (작업 화면은 앉은 작업의 템플릿, 편집기는 그 세션의 템플릿).
 - **영속은 설정 키 `last_output_directory` 하나다**(`external/settings.py`). 키 이름은 유지하고
@@ -1598,7 +1620,8 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 | managed hwpx | 「생성 예정 문서」 머리 — `저장 폴더: {경로} ({출처})` + 사유 | `#jobPlannedOutDir` · `#jobPlannedOutDirNotice` |
 | 구식 hwpx | 생성 준비 존의 표시 한 줄(고르는 칸·단추 없음) | `#jobOutFolderRow` → `#jobOutDirLine` · `#jobOutDirNotice` |
 | TXT(복사) | 없음 — 파일을 만들지 않아 폴더가 축이 아니다 | — |
-| 편집기 3단계 | 「이름·저장」 폼의 **읽기 전용 재진술** 한 줄 + 「설정에서 바꾸기」 | `#editorOutDir` · `#editorOutDirSource` · `#editorOutDirNotice` · `#editorOpenFolderSettings` |
+| 편집기 3단계(hwpx) | 「이름·저장」 폼의 **읽기 전용 재진술** 한 줄 + 「설정에서 바꾸기」 | `#editorOutDir` · `#editorOutDirSource` · `#editorOutDirNotice` · `#editorOpenFolderSettings` |
+| 편집기 3단계(TXT) | 없음 — 존이 `null` 이라 행 자체가 서지 않는다(TXT 갈래와 같은 근거) | — |
 
 - 작업 화면에서 걷힌 것: `#jobOutRow`(라벨+`#jobOutDir`+`#jobBtnPickFolder`+`#jobOutTrack`)와
   managed 저장 폴더 구획(`#jobManagedOutDir`·`#jobManagedPickFolder`·`…OutDirSource`·
@@ -1618,6 +1641,10 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 매체별 루트 축(`templates` / `text_templates`)은 사라졌다. 지정이 없으면 앱 홈 `templates` 가
 루트이므로 기존 사용자의 이행 비용은 0 이다.
 
+- **도출은 홀더 안에서 1회 memo 된다**(U6-D #978 리뷰 8): 무효화 지점은
+  `TemplateRoot.set()` 하나이고, 그것이 곧 루트가 바뀌는 전부다(재지정 동사가 이 홀더에 하나
+  뿐이라는 사실이 그 근거다). 편집기 스냅샷이 표시명을 짓느라 홀더를 여러 번 지나므로,
+  재판독이면 푸시 한 번이 같은 답을 사러 `settings.json` 에 여러 번 간다.
 - **판정은 링0 하나다**: `domain/template_root_default.resolve_templates_root` — 순수 함수이고
   존재 관찰(`configured_exists`)은 호출자가 건넨다. 출처 라벨(`설정한 폴더`/`기본 폴더`)과
   사유 문안도 여기 산다(표면 재조립 금지).

@@ -2165,6 +2165,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """실제로 쓰이는 intent만 — 출처가 필요한 호출부는 :meth:`_effective_delivery` 를 쓴다."""
         return self._effective_delivery()[0]
 
+    def remembered_output_directory(self) -> str:
+        """설정된 **전역 저장 폴더**의 지금 값 — 읽기 전용 공개 seam(U6-D #978 리뷰 3).
+
+        이 값의 소유자는 이 컨트롤러 하나다(부팅 1회 판독 + :meth:`set_output_folder` 만이
+        바꾼다). 편집기 3단계의 읽기 전용 재진술이 이것을 콜러블로 받아 읽는다 — 그쪽이
+        설정 파일을 따로 읽으면 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다(한쪽은
+        방금 고른 값, 한쪽은 디스크의 옛 값). 도출·존 성형은 여전히 공용 함수가 진다.
+        """
+        return self._remembered_output_directory
+
     def _output_folder_dict(self) -> dict:
         """스냅샷의 ``output_folder`` 존 — 성형도 **공용 함수 하나**다(U6-D #978).
 

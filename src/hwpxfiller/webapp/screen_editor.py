@@ -50,7 +50,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..domain.dataset_reference import STATUS_ACTIVE
+from ..domain.dataset_reference import (
+    STATUS_ACTIVE,
+    DatasetReference,
+    reference_identity,
+)
 from ..domain.format_engine import presets as format_presets
 from ..domain.job import (
     DEFAULT_FILENAME_PATTERN,
@@ -110,8 +114,8 @@ from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import SlotRow, SlotView, TemplateManagerViewModel
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
-from ..external.settings import load_last_output_directory
-from ..naming import make_output_filename
+from ..domain.output_name import format_seq_token
+from ..naming import make_output_filename, pattern_uses_seq, seq_token_pads
 from .output_folder_zone import output_folder_zone
 from .screens import (
     MUTATION_KINDS,
@@ -164,35 +168,31 @@ POOL_UNWIRED_TEXT = "등록 데이터 목록을 읽을 수 없습니다."
 _EXAMPLE_SEPARATOR = " · "
 
 
-def _sequence_example(names: "list[str]") -> str:
-    """실제로 만든 이름 셋을 「첫 이름 · 달라지는 부분 · 달라지는 부분」으로 접는다(순수).
+def _sequence_example(first: str, pattern: str) -> str:
+    """첫 이름 + **연번 자리의 다음 두 값**(순수) — ``X-001.hwpx · 002 · 003``.
 
-    세 이름을 전부 펼치면 한 줄이 접히도록 길고, 접기를 프런트가 하면 「무엇이 달라지는가」의
-    판정이 두 곳에 산다. 여기서 접는 규칙은 하나다 — **공통 앞·뒤를 걷고 남은 것**이 곧
-    달라지는 부분이다. 앞을 걷을 때 숫자 자리를 넘어 물리는 이유는 자릿수가 있는 연번
-    (``001``)에서 공통 앞이 ``00`` 까지 먹어 남은 것이 ``2`` 가 되기 때문이다 — 사람이 보는
-    것은 ``002`` 이고 그 형태가 곧 이 예시가 답하는 질문이다.
+    이 규칙이 만드는 것은 파일 하나가 아니라 여러 건이고, 첫 이름만 보면 「번호가 어디에
+    붙는가」를 모른 채 저장한다. 그래서 뒤 둘을 잇는다.
 
-    이름이 실제로 안 달라지면(패턴에 seq 토큰이 없다) **첫 이름 하나**만 낸다: 없는 연번을
-    있는 것처럼 그리면 실제로는 이름이 충돌하는 자리를 정상으로 보이게 한다.
+    **판정도 서식도 패턴이 낸다**(리뷰 5): 연번이 있는지는
+    :func:`~hwpxfiller.naming.pattern_uses_seq`(토큰 판정기 단일 출처)가 답하고, 붙는 모양은
+    그 토큰의 폭(:func:`~hwpxfiller.domain.output_name.format_seq_token`)이 답한다. 종전에는
+    만들어진 이름 셋의 공통 앞·뒤를 걷고 숫자 자리를 되감아 「달라지는 부분」을 유추했는데,
+    그 휴리스틱은 **연번에 붙어 있는 데이터 값**을 연번으로 오인한다 —
+    ``A{{연도}}{{seq}}`` 는 ``A20261.hwpx · 20262 · 20263`` 이 되어 연도가 매 건 바뀐다고
+    말한다(값이 그대로인데). 토큰이 아는 것을 문자열에서 되추측하지 않는다.
+
+    seq 토큰이 없으면 **첫 이름 하나**만 낸다: 없는 연번을 있는 것처럼 그리면 실제로는
+    이름 셋이 충돌하는 자리를 정상으로 보이게 한다.
     """
-    first = names[0] if names else ""
-    rest = [name for name in names[1:] if name]
-    if not first or not rest or any(name == first for name in rest):
+    if not first or not pattern_uses_seq(pattern):
         return first
-    head = 0
-    while head < min(len(n) for n in names) and len({n[head] for n in names}) == 1:
-        head += 1
-    while head > 0 and first[head - 1].isdigit():
-        head -= 1
-    limit = min(len(n) for n in names) - head
-    tail = 0
-    while tail < limit and len({n[len(n) - tail - 1] for n in names}) == 1:
-        tail += 1
-    parts = [name[head:len(name) - tail] for name in rest]
-    if not all(parts):
-        return first
-    return _EXAMPLE_SEPARATOR.join([first, *parts])
+    pads = seq_token_pads(pattern)
+    # 폭은 **첫 토큰**의 것이다 — 한 패턴에 seq 가 둘 이상이면 같은 값이 같은 폭으로 두 번
+    # 박히므로 어느 쪽을 읽어도 같고, 없으면 폭 0(``{{seq}}``)이다.
+    pad = pads[0] if pads else None
+    tails = [format_seq_token(pad, n) for n in (2, 3)]
+    return _EXAMPLE_SEPARATOR.join([first, *tails])
 
 
 def _binding_source_ref(job: "Job") -> "dict | None":
@@ -243,6 +243,7 @@ class EditorController:
         pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
         template_root: "TemplateRoot | None" = None,
+        remembered_output_directory: "Callable[[], str] | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
         binding_confirm_pending: "Callable[[str], bool] | None" = None,
@@ -278,6 +279,12 @@ class EditorController:
         # 캐시하지 않으므로(매 호출이 설정을 다시 읽는다) 재지정 직후의 첫 스냅샷이 곧 새
         # 루트다. 미주입이면 표준 홀더를 지연 생성한다.
         self._template_root_holder = template_root
+        # **전역 저장 폴더의 소유자는 작업 화면 하나다**(리뷰 3). 이 화면은 그 값을 읽기만
+        # 하므로 설정 파일을 직접 읽지 않고 그쪽의 메모리 값을 **콜러블로** 받는다: 디스크를
+        # 다시 읽으면 설정 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다(한쪽은 방금
+        # 고른 값, 한쪽은 디스크의 옛 값). 미주입이면 도출 재료가 없다 — 없는 값을 추측하지
+        # 않고 빈 문자열이며, 그때 도출은 템플릿 옆 ``Results`` 로 내려간다.
+        self._remembered_output_directory = remembered_output_directory
         # TXT 템플릿 레지스트리·그룹 모델(F6 PR-B — 「템플릿」 탭 매체 분기): **앱 조립에선
         # tpl 화면과 같은 인스턴스를 주입**한다(hwpx 라이브러리·그룹과 같은 단일 실체 규율 —
         # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
@@ -321,11 +328,11 @@ class EditorController:
         # 경로를 대조해 되추측하면 정체성 규칙(kind-스코프 · #347)이 두 곳에 산다. 파일
         # 마운트는 슬롯이 없으므로 빈 값이고, 그 자리는 「고정」 동사가 대신 선다.
         self.data_pool_key = ""
-        # 그 슬롯의 **등록명**(U6-D #978) — 이름 도출·데이터 표시명이 읽는다. 풀 항목은
-        # 사람이 붙인 이름이 정체이고 파일 경로는 그 이름의 재료가 아니다(같은 파일을 두
-        # 이름으로 고정해 둘 수 있다). 파일 찾아보기 마운트는 빈 값이고 그때만 basename 이
-        # 표시명이 된다.
-        self.data_pool_name = ""
+        # 결속 정체성 → 등록명 memo(U6-D #978 리뷰 2) — 조회가 풀 폴더 스캔이라 스냅샷마다
+        # 지불하지 않는다. 마운트와 세션 리셋이 비우고, 그 둘이 정체성이 바뀌는 전부다.
+        # (세션 표지 `data_pool_name` 은 여기서 사망했다: 「방금 풀에서 골랐다」를 세션에
+        #  기억하면 저장하고 다시 연 세션이 같은 데이터를 다른 이름으로 부른다.)
+        self._data_name_cache: "tuple[str, str] | None" = None
         # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
         # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
@@ -351,6 +358,10 @@ class EditorController:
         # 데이터 마운트가 덮어쓰는」 것과 「도출값이 곧바로 미저장 변경이 되는」 것이 서로
         # 다른 조건에서 되살아난다. 초안 진입이 참, ``load_job`` 과 사람의 편집이 거짓이다.
         self._job_name_is_derived = True
+        # 그 도출값의 **기록**(리뷰 9) — dirty 기준선이 이것이다. 기준선을 매 스냅샷에서 다시
+        # 도출하면 도출의 입력(표시명)이 바뀌는 순간(서식 폴더 재지정 등) 손대지도 않은 초안이
+        # 「저장하지 않은 변경」으로 선다: 기준선과 현재값이 서로 다른 시점의 도출이 된다.
+        self._derived_name_baseline = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
         # (dataset_name·default_dataset_ref·_dataset_existing 은 #347 에서 사망 — 저장 시
         #  데이터 자동등록(#18·#26)과 작업↔데이터 결속(#53-A)이 U2 §5.3 판정 D 로 폐기됐다.
@@ -419,21 +430,65 @@ class EditorController:
         return library_display_name(self.template_root.path(), self.template_path)
 
     def data_display_name(self) -> str:
-        """이 세션 데이터의 **표시명** — 풀 항목이면 등록명, 파일이면 확장자 없는 basename.
+        """이 세션 데이터의 **표시명** — 풀에 등록된 데이터면 등록명, 아니면 basename.
 
         풀 항목의 정체는 사람이 붙인 이름이다(같은 파일을 다른 이름으로 둘 이상 고정할 수
         있다). 경로에서 되짚으면 그 이름이 사라지고, 목록에서 「7월 발주」로 부르던 것이
         여기서는 「대장」이 된다.
+
+        **세션 값이 아니라 풀 조회다**(리뷰 2). 「방금 풀에서 골랐다」를 세션 표지로 기억하면
+        저장하고 다시 연 세션은 그 표지가 없어(``_reset``) 같은 데이터를 다른 이름으로 부른다
+        — 결속은 durable 인데 이름만 세션 수명이 되는 자리다. 정체성 규칙은 등록 게이트가
+        쓰는 것 하나(:func:`~hwpxfiller.domain.dataset_reference.reference_identity`)를 그대로
+        지나므로, 경로·시트·종류 세 성분이 여기서 다시 조립되지 않는다.
         """
-        if self.data_pool_name:
-            return self.data_pool_name
         if not self.data_path:
             return ""
-        return Path(self.data_path).stem
+        registered = self._registered_data_name()
+        return registered or Path(self.data_path).stem
+
+    def _registered_data_name(self) -> str:
+        """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``).
+
+        결과는 결속 정체성으로 memo 한다 — 조회가 풀 폴더 스캔이라 스냅샷마다 지불할 것이
+        아니다. 무효화는 마운트(:meth:`_adopt_datasource`)와 세션 리셋 두 자리이고, 그것이
+        곧 정체성이 바뀔 수 있는 전부다.
+        """
+        if self._pool_registry is None:
+            return ""
+        ident = reference_identity(DatasetReference(
+            name="",
+            kind="pclm" if self.data_kind == "pclm" else "excel",
+            opts=(
+                {"db": self.data_path, "view": self.data_sheet}
+                if self.data_kind == "pclm"
+                else {"path": self.data_path, "sheet": self.data_sheet}
+            ),
+        ))
+        if not ident:
+            return ""
+        cached = self._data_name_cache
+        if cached is not None and cached[0] == ident:
+            return cached[1]
+        try:
+            found = self._pool_registry.find_identity_raw(ident)
+        except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
+            found = None
+        name = found[1].name if found else ""
+        self._data_name_cache = (ident, name)
+        return name
 
     def _derived_job_name(self) -> str:
-        """지금 고르기로부터 나오는 이름 기본값(링1 순수 함수의 호출 한 줄)."""
-        return derive_job_name(self.template_display_name(), self.data_display_name())
+        """지금 고르기로부터 나오는 이름 기본값(링1 순수 함수의 호출 한 줄).
+
+        템플릿 쪽은 **마지막 세그먼트**를 쓴다(리뷰 6): 표시명은 루트 상대경로라 하위 폴더
+        템플릿이면 ``온나라/기안`` 이고, 그 슬래시가 작업 이름에 들어가면 레지스트리 slug 가
+        경로 구분자를 접어 서로 다른 두 이름이 같은 파일로 저장될 수 있다. 목록이 부르는
+        이름(경로 병기)과 **작업의 이름**은 답하는 질문이 다르다.
+        """
+        return derive_job_name(
+            self.template_display_name().rsplit("/", 1)[-1], self.data_display_name()
+        )
 
     def _rederive_job_name(self) -> None:
         """도출 표지가 참일 때만 이름을 다시 채운다 — 템플릿 채택·데이터 마운트 뒤.
@@ -444,6 +499,7 @@ class EditorController:
         """
         if self._job_name_is_derived:
             self.job_name = self._derived_job_name()
+            self._derived_name_baseline = self.job_name
 
     @property
     def template_root(self) -> TemplateRoot:
@@ -716,14 +772,17 @@ class EditorController:
         기준이고, 데이터 축의 면제는 저장본 갈래와 **같은 것 하나**를 쓴다(#945 F7): 인계
         면제가 저장본에만 서면 「이 데이터로 새 작업」 무조작 진입이 곧바로 미저장이 된다.
 
-        **도출된 이름은 변경이 아니다**(U6-D #978): 표지가 참인 동안 기준선은 지금의 도출값
-        그 자체다. 빈 문자열을 기준으로 두면 템플릿·데이터를 고르는 정상 진행이 이름을 채우는
-        순간 「저장하지 않은 변경」이 켜지고, 아무것도 손대지 않은 초안이 이탈에서 잃을 것이
-        있다고 주장한다. 사람이 이름을 고치면 표지가 꺼지고(:meth:`_do_set_name`) 그 뒤로는
-        종전 규칙 그대로다.
+        **도출된 이름은 변경이 아니다**(U6-D #978): 표지가 참인 동안 기준선은 **재도출 시점에
+        기록한 그 값**이다(``_derived_name_baseline``). 빈 문자열을 기준으로 두면 템플릿·데이터를
+        고르는 정상 진행이 이름을 채우는 순간 「저장하지 않은 변경」이 켜지고, 아무것도 손대지
+        않은 초안이 이탈에서 잃을 것이 있다고 주장한다. 기준선을 여기서 **다시 도출**해도 같은
+        결함의 다른 얼굴이 된다(리뷰 9): 도출의 입력이 바뀌면(서식 폴더 재지정으로 표시명이
+        갈리면) 기준선과 현재값이 서로 다른 시점의 도출이 되어 손대지 않은 초안이 미저장으로
+        선다. 사람이 이름을 고치면 표지가 꺼지고(:meth:`_do_set_name`) 그 뒤로는 종전 규칙
+        그대로다.
         """
         name_base = (
-            self._derived_job_name() if self._job_name_is_derived
+            self._derived_name_baseline if self._job_name_is_derived
             else (base.name if base is not None else "")
         )
         return {"job_name": name_base, **self._entry_data}
@@ -980,11 +1039,9 @@ class EditorController:
             # (`docs/UI_CONTRACT.md` 「저장 폴더 — 전역 단일 값」) 이 존은 작업 화면이 그리는
             # 것과 **같은 함수**가 낸다. 편집기가 자기 세션 템플릿으로 부르는 이유는 기본값이
             # 「템플릿 옆 Results」라서다 — 아직 저장되지 않은 초안의 저장 폴더도 그 자리에서
-            # 답할 수 있다.
-            "output_folder": output_folder_zone(
-                template_path=self.template_path,
-                remembered_directory=load_last_output_directory(),
-            ),
+            # 답할 수 있다. **TXT 는 ``None``**(리뷰 4): 파일을 만들지 않는 작업이라 폴더가
+            # 축이 아니고, 빈 재진술을 세우면 만들지 않을 파일이 어디에 저장되는지를 말한다.
+            "output_folder": self._output_folder_zone(),
             # 연결 확정 대기(#911) — footer 무장 사유를 **더한다**(빼지 않는다). dirty 기반
             # 무장은 그대로고, 바꿀 것이 없는데 관리 검토가 확정을 기다리는 상태에서만 이
             # 사실이 참이다. 판정·라벨·설명은 전부 여기서 실어 보낸다: 표면이 「저장 안 됨」
@@ -1092,8 +1149,23 @@ class EditorController:
             "unused_columns": len(model.unused_source_fields()),
         }
 
+    def _output_folder_zone(self) -> "dict[str, str] | None":
+        """3단계의 저장 폴더 존 — TXT 면 ``None``(폴더가 축이 아니다 · 리뷰 4).
+
+        값·출처·하향 사유는 작업 화면과 **같은 함수**가 낸다. 「기억한 지정」은 그 화면의
+        메모리 값을 콜러블로 읽는다(리뷰 3 — 설정 파일 재판독 금지: 소유자가 둘이 되면
+        쓰기가 실패한 순간 두 표면이 다른 폴더를 말한다).
+        """
+        if not self.template_path or template_media(self.template_path) == "txt":
+            return None
+        remembered = self._remembered_output_directory
+        return output_folder_zone(
+            template_path=self.template_path,
+            remembered_directory=remembered() if remembered is not None else "",
+        )
+
     def _pattern_preview(self) -> str:
-        """F26 — 파일명 패턴의 라이브 예시(표본 고정 = 첫 레코드, seq 1·2·3).
+        """F26 — 파일명 패턴의 라이브 예시(표본 고정 = 첫 레코드, seq=1 + 연번 두 자리).
 
         **실제 생성기와 같은 함수**(:func:`make_output_filename`)로 만들어 예시가 거짓말하지
         않는다(별도 구현이면 예시·산출물이 조용히 어긋난다 — 단일 출처). 값은 현 매핑의
@@ -1102,10 +1174,9 @@ class EditorController:
 
         **한 건이 아니라 연번을 보여준다**(U6-D #978 · 동결 시안 장면 3): 이 규칙이 만드는
         것은 파일 하나가 아니라 여러 건이고, 첫 이름만 보면 「번호가 어디에 붙는가」를
-        모른 채 저장한다. 그래서 seq 1·2·3 을 같은 함수로 **실제로 만들어** 다른 부분만
-        이어 붙인다 — 프런트가 번호를 조립하면 seq 토큰이 없는 패턴에서도 「· 002 · 003」이
-        서서, 실제로는 이름 셋이 충돌하는 자리를 정상으로 그린다. 여기서는 그 경우 두
-        번째 이름이 첫 이름과 같으므로 **첫 이름 하나만** 나간다(있지도 않은 연번 금지).
+        모른 채 저장한다. 첫 이름은 실제 생성기가 만들고, 뒤 둘은 **seq 토큰 자체의 서식**이
+        낸다(:func:`_sequence_example`) — 프런트가 번호를 조립하면 seq 토큰이 없는 패턴에서도
+        「· 002 · 003」이 서서, 실제로는 이름 셋이 충돌하는 자리를 정상으로 그린다.
         """
         if not self.pattern:
             return ""
@@ -1123,13 +1194,10 @@ class EditorController:
                 except ValueError:
                     data[row.template_field] = ""
         try:
-            names = [
-                make_output_filename(self.pattern, data, seq=seq, now=now)
-                for seq in (1, 2, 3)
-            ]
+            first = make_output_filename(self.pattern, data, seq=1, now=now)
         except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
             return ""
-        return _sequence_example(names)
+        return _sequence_example(first, self.pattern)
 
     # (_default_dataset_snapshot(#53-A 기본 데이터 연결 상태 재진술)은 #347 에서 삭제 —
     #  작업↔데이터 결속이 폐기돼 재진술할 참조 자체가 없다. U2 §5.3 판정 D.)
@@ -1157,9 +1225,11 @@ class EditorController:
         src = profile_source_vocabulary(profile)
         if src:
             prov["source_keys"] = " · ".join(src)
-        # 데이터 표시명: 이번에 데이터를 골랐으면 그 파일 스템, 아니면(편집 저장) 복원 출처 보존.
+        # 데이터 표시명: 이번에 데이터를 골랐으면 **화면이 부르는 그 이름**(리뷰 7 — 등록명이
+        # 있으면 등록명), 아니면(편집 저장) 복원 출처 보존. 여기서 stem 을 따로 지으면 같은
+        # 세션이 화면과 출처 기록에서 데이터를 다른 이름으로 부른다.
         dataset = (
-            Path(self.data_path).stem if self.data_path
+            self.data_display_name() if self.data_path
             else self._loaded_provenance.get("dataset", "")
         )
         if dataset:
@@ -1289,11 +1359,9 @@ class EditorController:
         self.data_sheet = data["data_sheet"]
         self.data_header_row = data["data_header_row"]
         self.data_kind = data["data_kind"]
-        # 풀 슬롯 성분도 한 벌이다 — 흘리면 살아남은 데이터가 우 열에서 「고른 적 없음」으로
-        # 보이고(`data_pool_key`) 표시명이 등록명에서 basename 으로 강등된다
-        # (`data_pool_name`). 앵커의 계약은 「데이터를 `_data_stash` 한 벌 그대로 건넨다」다.
+        # 풀 슬롯 키도 한 벌이다 — 흘리면 살아남은 데이터가 우 열에서 「고른 적 없음」으로
+        # 보인다. 앵커의 계약은 「데이터를 `_data_stash` 한 벌 그대로 건넨다」다.
         self.data_pool_key = data.get("data_pool_key", "")
-        self.data_pool_name = data.get("data_pool_name", "")
         self.source_fields = list(data["source_fields"])
         self.records = data["records"]
         self._entry_data = dict(anchor["entry_data"])
@@ -1653,7 +1721,7 @@ class EditorController:
         # 새 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체 · `screen_job` 과 같은 규율). 풀 항목
         # 경로는 이 대입 **뒤에** 자기 키·등록명을 다시 세운다(`_do_use_pool_data`).
         self.data_pool_key = ""
-        self.data_pool_name = ""
+        self._data_name_cache = None
         self.source_fields = source.fields()
         self.records = records
         self.preview_index = 0
@@ -1945,9 +2013,6 @@ class EditorController:
             "data_header_row": self.data_header_row,
             "data_kind": self.data_kind,
             "data_pool_key": self.data_pool_key,
-            # 등록명도 그 한 벌이다(U6-D #978) — 흘리면 되돌린 세션의 표시명이 basename 으로
-            # 강등돼 목록이 부르는 이름과 갈린다.
-            "data_pool_name": self.data_pool_name,
             "source_fields": list(self.source_fields),
             "records": self.records,
         }
@@ -1967,7 +2032,6 @@ class EditorController:
         self.data_header_row = stash.get("data_header_row", 0)
         self.data_kind = stash.get("data_kind", "")
         self.data_pool_key = stash.get("data_pool_key", "")
-        self.data_pool_name = stash.get("data_pool_name", "")
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
         self._ensure_model()
@@ -2248,9 +2312,9 @@ class EditorController:
             return {"ok": False, "error": res["error"]}
         # 겨눈 슬롯을 기억한다 — 마운트 몸통(`_adopt_datasource`)이 방금 비운 자리다.
         self.data_pool_key = key
-        # 등록명은 이 항목의 **정체**다(U6-D #978): 같은 파일을 다른 이름으로 둘 이상 고정할
-        # 수 있어 경로에서 되짚을 수 없다. 표시명이 방금 바뀌었으므로 이름 도출도 다시 돈다.
-        self.data_pool_name = res["item"].name
+        # 표시명이 방금 등록명으로 바뀌었으므로(마운트 몸통은 basename 만 알았다) 이름 도출도
+        # 다시 돈다. 이름 자체는 풀 조회가 답한다 — 세션에 복사해 두지 않는다(리뷰 2).
+        self._data_name_cache = None
         self._rederive_job_name()
         return {"ok": True, "label": res["item"].name}
 

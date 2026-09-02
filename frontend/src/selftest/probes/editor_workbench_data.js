@@ -1084,17 +1084,18 @@ export function createEditorWorkbenchDataProbes() {
           out.txt_tabs = ctx.doc.querySelectorAll("#editor-steps .wstep-tab").length;
           out.txt_step3_label = textOf(
             ctx.doc.querySelectorAll("#editor-steps .wstep-tab")[2]).trim();
+          /* TXT 는 파일을 만들지 않아 **저장 폴더가 축이 아니다**(U6-D #978 리뷰 4) —
+             Python 이 존을 `null` 로 내고 표면은 그 행을 세우지 않는다. 합성값도 그대로 `null`
+             이어야 프로브가 재는 것이 제품의 계약이 된다(빈 사전을 밀면 없는 상태를 재게 된다). */
           ctx.push("editor", Object.assign({}, txtSnap, {
             section: "filename", name: "기안 · 대장", job_name_is_derived: false,
-            name_hint: "", pattern_preview: "",
-            output_folder: {
-              directory: "", source: "", source_label: "", notice: "",
-            },
+            name_hint: "", pattern_preview: "", output_folder: null,
           }));
           await settleRender(ctx);
           out.txt_name_input = !!ctx.doc.querySelector("#editor-body #editorName");
           out.txt_pattern_input = !!ctx.doc.querySelector(
             '#editor-body input[data-act="pattern"]');
+          out.txt_out_dir_row = !!byId(ctx, "editorOutFolderRow");
           out.why = "완료";
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));

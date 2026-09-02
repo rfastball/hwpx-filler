@@ -75,8 +75,10 @@ class SaveVerdict:
 
     ``"name"`` 과 ``"pattern"`` 이 사는 자리는 U6-D(#978)에서 **3단계 「이름·저장」 폼**으로
     모였다 — 이름은 종전 편집기 머리의 인라인 입력이었다(라벨 없이 제목 자리에 살아 특히 못
-    찾던 자리). 그래서 겨눔은 이제 두 값 모두 **section 이동을 앞에 두고** 일어난다: 다른
-    단계에서 막히면 그 칸이 아직 DOM 에 없으므로, 겨누기 전에 그 단계로 간다.
+    찾던 자리). 그 자리를 **문안이 지목한다**: 다른 단계에서 막혔을 때 표면이 대신 그 단계로
+    옮겨 가면 지나온 단계의 patch 가 자동 버리기에 걸려, 거절된 저장이 사람이 방금 한 편집을
+    없앤다(연결 확인의 「비워 둠」 선언이 그렇게 사라진다). 거절은 아무것도 파괴하지 않는다 —
+    그래서 이동은 사람이 하고, 차단 문구가 어느 단계인지를 말한다.
     """
 
     block_reason: str = ""
@@ -134,11 +136,15 @@ def validate_save(
             blocked_field="data",
         )
     if not name:
-        return SaveVerdict("작업 이름을 입력하세요.", blocked_field="name")
+        return SaveVerdict(
+            "'이름·저장' 단계에서 작업 이름을 입력하세요.", blocked_field="name"
+        )
     # 파일명 패턴은 문서 식별자를 결정한다 — 빈 입력을 화면에 없던 값으로
     # 조용히 폴백하지 않는다(확인-또는-경보, RC-20). TXT 는 이 축이 없다(위 docstring).
     if media != "txt" and not pattern:
-        return SaveVerdict("파일명 패턴을 입력하세요.", blocked_field="pattern")
+        return SaveVerdict(
+            "'이름·저장' 단계에서 문서 파일 이름을 입력하세요.", blocked_field="pattern"
+        )
     if not model.emits_any_value():
         return SaveVerdict(
             "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요."

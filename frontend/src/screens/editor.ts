@@ -904,12 +904,12 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다.
    *
-   *  이름·패턴은 둘 다 **3단계 「이름·저장」 폼**에 산다(U6-D #978). 그래서 겨눔은 먼저
-   *  그 단계로 가고 그 다음에 칸을 문다: 다른 단계에서 막히면 겨눌 노드가 아직 DOM 에
-   *  없어, 종전 규율(단계가 다르면 문구만 남긴다)이 「입력하세요」라고 말한 뒤 어디에
-   *  입력할지는 끝내 안 알려 주는 결과가 된다. 이동이 거절되면(`sendEdit` 가 던진다)
-   *  겨눔도 서지 않는다 — 조준은 이동이 성사한 뒤의 일이다. */
-  async function aimAtBlockedField(field: string): Promise<void> {
+   *  **겨눔은 단계를 옮기지 않는다.** 이름·패턴은 둘 다 3단계 「이름·저장」 폼에 살지만
+   *  (U6-D #978), 거절당한 저장이 사람을 그 단계로 데려가면 지나온 단계의 patch 가 탭 이동의
+   *  자동 버리기에 걸린다 — 연결 확인에서 방금 선언한 「비워 둠」이 저장 거절 하나로 사라지는
+   *  자리다. 거절은 아무것도 파괴하지 않는다. 그래서 다른 단계에 있으면 문구만 남기고, 어느
+   *  단계인지는 링1 차단 문안이 말한다(`'이름·저장' 단계에서 …`). */
+  function aimAtBlockedField(field: string): void {
     /* 데이터 미연결(#932 U4-C S2-3)의 「칸」은 입력이 아니라 **고르기 단계 우 열**이다
        (U6-B #976 — 2단계 머리의 관문이 걷혔다). 그 단계에 있지 않으면 겨눌 노드가 없으므로
        문구만 남긴다: 1단계로 되돌리는 것은 사람이 지금 보고 있는 표를 걷어내는 큰 이동이라
@@ -921,17 +921,10 @@ export function createEditorController(deps: EditorControllerDeps) {
       return;
     }
     if (field !== NAME_FIELD && field !== PATTERN_FIELD) return;
-    /* 표지는 **이동보다 먼저** 선다: 「어느 칸이 문제인가」는 그 칸에 실제로 닿았는지와
-       별개의 사실이고, 그 표지를 걷는 전이(그 칸을 고치면 사라진다 — #874)도 같은 축이다. */
+    /* 표지는 **그 칸이 보이는 단계에서만** 선다. 안 보이는 칸에 `aria-invalid` 를 남기면
+       다음에 그 단계로 갔을 때 고치지도 않은 칸이 빨갛게 서 있다(끈적한 표지). */
+    if (snapshot().section !== "filename") return;
     patchView({ invalidField: field });
-    if (snapshot().section !== "filename") {
-      /* 이동이 거절되면 겨눌 자리가 없다 — 그래도 차단 문구는 이미 `#save-msg` 에 서 있다.
-         거절을 여기서 다시 경보로 올리면 한 실패가 두 채널로 말한다. */
-      try {
-        await gotoSection("filename");
-      } catch { return; }
-      if (snapshot().section !== "filename") return;
-    }
     const element = field === NAME_FIELD
       ? deps.doc.getElementById("editorName")
       : deps.doc.querySelector<HTMLElement>('#editor-body input[data-act="pattern"]');
@@ -957,6 +950,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
     if (result.ok) {
       clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
+      /* 겨눔 표지도 같은 전이에서 걷는다: 사유가 사라졌는데 칸만 빨갛게 남으면 화면이
+         「저장됐다」와 「이 칸이 잘못됐다」를 동시에 말한다. */
+      if (view.invalidField !== "") patchView({ invalidField: "" });
       /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
       void deps.ports.jobRead.current().refreshList();
       return true;
@@ -974,7 +970,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       return false;
     }
     noticeSave(String(result.block_reason || "저장할 수 없습니다."));
-    await aimAtBlockedField(String(result.blocked_field || ""));
+    aimAtBlockedField(String(result.blocked_field || ""));
     return false;
   }
 
@@ -1019,6 +1015,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (!target) return;
     await flushPendingEdits();
     await sendEdit("goto_section", { section: target });
+    /* 단계를 옮기면 겨눔 표지는 뜻을 잃는다 — 안 보이는 칸의 `aria-invalid` 는 다음에 그
+       단계로 돌아왔을 때 고치지도 않은 칸을 나무란다. */
+    if (view.invalidField !== "") patchView({ invalidField: "" });
     /* 같은 세션 안의 1단계 **재진입** — 화면 진입과 같은 사건이라 같은 재스캔을 지난다
        (리뷰 4). 이동이 거절되면 여기 닿지 않는다(`sendEdit` 가 던진다). */
     if (target === "template") rescanPools();
@@ -2138,7 +2137,10 @@ function NameSaveStage(props: {
   /* 문서 파일 이름 행은 **매체 파생**이다(§3.2) — TXT 작업은 파일을 만들지 않는다.
      단계 자체는 두 매체가 함께 갖는다(U6-D): 이름은 매체와 무관한 저장 게이트 술어다. */
   const hasPattern = snapshot.template_media !== "txt";
-  const folder = (snapshot.output_folder || {}) as Obj;
+  /* 저장 폴더 행은 **Python 이 존을 낼 때만** 선다(U6-D #978 리뷰 4). TXT 는 파일을 만들지
+     않아 폴더가 축이 아니고(`UI_CONTRACT` 「폴더가 축이 아니다」), 그때 존은 `null` 이다 —
+     웹이 매체로 다시 판정하면 같은 사실을 두 곳이 답한다. */
+  const folder = (snapshot.output_folder || null) as Obj | null;
   const rows = ((snapshot.rows || []) as Obj[]).filter((row) => row.has_content);
   const tokens: ReactNode[] = [];
   rows.forEach((row, index) => {
@@ -2202,7 +2204,7 @@ function NameSaveStage(props: {
       h("code", null, "{{date:YYYY-MM-DD}}"), " → 하이픈 포함 날짜", h("br", null),
       "순번: ", h("code", null, "{{seq}}"), " → 1부터 증가 · ",
       h("code", null, "{{seq:001}}"), " → 001부터 세 자리로 증가")) : null,
-    h("div", { className: "row", id: "editorOutFolderRow" },
+    folder ? h("div", { className: "row", id: "editorOutFolderRow" },
       h("span", { className: "lbl lbl-fixed" }, "저장 폴더"),
       h("input", {
         className: "field ro mono", id: "editorOutDir", type: "text", readOnly: true,
@@ -2217,9 +2219,9 @@ function NameSaveStage(props: {
         className: "btn linklike", type: "button", "data-act": "open-settings",
         id: "editorOpenFolderSettings",
         onClick: () => controller.openSettings(),
-      }, "설정에서 바꾸기")),
+      }, "설정에서 바꾸기")) : null,
     /* 설정한 폴더가 사라져 기본값으로 내려간 사유 — 조용한 하향 금지(문안은 링0 소유). */
-    folder.notice
+    (folder && folder.notice)
       ? h("p", { className: "hint", id: "editorOutDirNotice", style: { marginTop: 0 } },
         String(folder.notice))
       : null);

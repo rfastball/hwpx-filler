@@ -60,7 +60,11 @@ def test_validate_save_blocks_on_empty_pattern():
     """RC-20 — 빈 패턴을 화면에 없던 값으로 조용히 폴백하지 않는다."""
     verdict = validate_save(_model(_content_row()), "작업1", "", data_path=BOUND)
     assert not verdict.ok
-    assert "패턴" in verdict.block_reason
+    # 문안은 **고칠 단계와 칸**을 지목한다(U6-D #978 리뷰 1): 거절이 사람을 그 단계로 옮기면
+    # 지나온 단계의 patch 가 자동 버리기에 걸리므로, 이동은 사람이 하고 문안이 길을 말한다.
+    assert verdict.blocked_field == "pattern"
+    assert "'이름·저장' 단계" in verdict.block_reason
+    assert "문서 파일 이름" in verdict.block_reason
 
 
 def test_validate_save_pattern_gate_is_media_aware():
@@ -164,8 +168,10 @@ def test_validate_save_predicate_order_is_stable():
     assert "모든 매핑 행" in validate_save(unconfirmed, "", "", data_path="").block_reason
     all_blank = _model(_blank_row())
     assert "데이터를 연결" in validate_save(all_blank, "", "", data_path="").block_reason
-    assert "이름" in validate_save(all_blank, "", "", data_path=BOUND).block_reason
-    assert "패턴" in validate_save(all_blank, "작업1", "", data_path=BOUND).block_reason
+    assert validate_save(all_blank, "", "", data_path=BOUND).blocked_field == "name"
+    assert validate_save(
+        all_blank, "작업1", "", data_path=BOUND
+    ).blocked_field == "pattern"
     assert "전부 비움" in validate_save(all_blank, "작업1", "doc-{{ID}}", data_path=BOUND).block_reason
 
 

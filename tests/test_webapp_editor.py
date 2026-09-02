@@ -13,6 +13,7 @@ import pytest
 
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.external.job_store import JobRegistry, encode_job
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_inspection import (
@@ -50,7 +51,8 @@ def _confirm_every_row(ctrl) -> None:
 
 
 def _controller(
-    tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None
+    tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None,
+    pool_registry=None, remembered_output_directory=None,
 ) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
@@ -65,6 +67,8 @@ def _controller(
             file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        pool_registry=pool_registry,
+        remembered_output_directory=remembered_output_directory,
         after_mapping_saved=after_mapping_saved,
         binding_confirm_pending=binding_confirm_pending,
     )
@@ -3320,20 +3324,183 @@ def test_the_name_survives_a_section_patch_revert(tmp_path):
     assert snap["pattern"] != "바꾼패턴-{{seq}}"                # 그 자리 patch 만 되돌아간다
 
 
-def test_the_save_stage_carries_the_same_output_folder_zone_as_the_job_screen(
-    tmp_path, monkeypatch
-):
-    """저장 폴더는 **읽기 전용 재진술**이고 그 값은 공용 함수가 낸다(재조립 금지)."""
+def test_the_save_stage_carries_the_same_output_folder_zone_as_the_job_screen(tmp_path):
+    """저장 폴더는 **읽기 전용 재진술**이고 그 값은 공용 함수가 낸다(재조립 금지).
+
+    「기억한 지정」은 작업 화면의 **메모리 값**을 콜러블로 읽는다(리뷰 3) — 편집기가 설정
+    파일을 직접 읽으면 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다.
+    """
     from hwpxfiller.webapp.output_folder_zone import output_folder_zone
 
     picked = tmp_path / "고른폴더"
     picked.mkdir()
-    monkeypatch.setattr(
-        "hwpxfiller.webapp.screen_editor.load_last_output_directory", lambda: str(picked)
-    )
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, remembered_output_directory=lambda: str(picked))
     ctrl.load_template_path(str(TPL_COMPILED))
 
     assert ctrl.snapshot()["output_folder"] == output_folder_zone(
         template_path=str(TPL_COMPILED), remembered_directory=str(picked),
     )
+
+
+def test_the_editor_never_reads_the_output_folder_setting_itself(tmp_path):
+    """소유자는 작업 화면 하나다(리뷰 3) — 미주입이면 **추측하지 않는다**.
+
+    설정 파일을 여기서 다시 읽으면 값의 출처가 둘이 되고, 쓰기 실패 한 번에 두 표면이
+    갈린다. 주입이 없으면 도출 재료가 없는 것이고 기본값(템플릿 옆 Results)이 그 자리를
+    잇는다 — 없는 값을 조용히 채우지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)                    # 주입 없음
+    ctrl.load_template_path(str(TPL_COMPILED))
+
+    zone = ctrl.snapshot()["output_folder"]
+    assert zone["source"] == "template_default"
+    assert zone["directory"] == str(TPL_COMPILED.parent / "Results")
+
+
+def test_a_txt_session_has_no_output_folder_row(tmp_path):
+    """TXT 는 파일을 만들지 않아 **폴더가 축이 아니다**(리뷰 4) — 존 자체가 서지 않는다.
+
+    빈 재진술을 세우면 만들지 않을 파일이 어디에 저장되는지를 말하게 된다.
+    """
+    ctrl, _ = _controller(tmp_path, remembered_output_directory=lambda: str(tmp_path))
+    ctrl.dispatch("use_library_template", {"path": str(_txt_template(tmp_path))})
+
+    assert ctrl.snapshot()["output_folder"] is None
+    ctrl.load_template_path(str(TPL_COMPILED))         # 대조군 — hwpx 는 선다
+    assert ctrl.snapshot()["output_folder"] is not None
+
+
+def test_the_registered_data_name_survives_save_and_reopen(tmp_path):
+    """등록명은 **결속의 정체성**에서 온다 — 세션 표지가 아니다(리뷰 2).
+
+    「방금 풀에서 골랐다」를 세션에 기억하면 저장하고 다시 연 세션은 그 표지가 없어(``_reset``)
+    같은 데이터를 다른 이름으로 부른다. 결속은 durable 인데 이름만 세션 수명이 되는 자리다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    key = pool.add(DatasetReference(
+        name="7월 발주", kind="excel", opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    ))
+    ctrl, _ = _controller(tmp_path, pool_registry=pool)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("use_pool_data", {"key": key})["ok"] is True
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    _confirm_every_row(ctrl)
+    ctrl.dispatch("set_name", {"name": "발주작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    ctrl.load_job("발주작업")                            # 저장본 재열기
+    assert ctrl.snapshot()["data_name"] == "7월 발주"
+
+
+def test_the_derived_name_never_carries_a_folder_separator(tmp_path):
+    """하위 폴더 템플릿의 도출 이름은 **마지막 세그먼트**다(리뷰 6).
+
+    표시명은 루트 상대경로라 ``온나라/기안`` 이고, 그 슬래시가 작업 이름에 들어가면 레지스트리
+    slug 가 경로 구분자를 접어 서로 다른 두 이름이 같은 파일로 저장될 수 있다. 목록이 부르는
+    이름과 **작업의 이름**은 답하는 질문이 다르다.
+    """
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    nested = root / "온나라" / "기안.txt"
+    nested.write_text("수신: {{수신}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.load_template_path(str(nested))
+
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "온나라/기안"        # 목록 어휘는 경로를 병기한다
+    assert "/" not in snap["name"] and snap["name"] == "기안"
+
+
+def test_the_provenance_dataset_matches_the_name_on_screen(tmp_path):
+    """작성 출처의 데이터 이름은 **화면이 부르는 그 이름**이다(리뷰 7).
+
+    여기서 stem 을 따로 지으면 같은 세션이 화면과 기록에서 데이터를 다른 이름으로 부른다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    key = pool.add(DatasetReference(
+        name="7월 발주", kind="excel", opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    ))
+    ctrl, _ = _controller(tmp_path, pool_registry=pool)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    _confirm_every_row(ctrl)
+    ctrl.dispatch("set_name", {"name": "출처작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    saved = JobRegistry(tmp_path / "jobs").load("출처작업")
+    assert saved.mapping.provenance["dataset"] == "7월 발주"
+
+
+def test_a_changed_display_input_does_not_dirty_an_untouched_draft(tmp_path):
+    """dirty 기준선은 **재도출 시점에 기록한 값**이다(리뷰 9).
+
+    기준선을 매번 다시 도출하면 도출의 입력이 바뀌는 순간(서식 폴더 재지정으로 표시명이
+    갈리면) 기준선과 현재값이 서로 다른 시점의 도출이 되어, 손대지도 않은 초안이 「저장하지
+    않은 변경」으로 선다.
+    """
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    nested = root / "온나라" / "기안.txt"
+    nested.write_text("수신: {{수신}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.load_template_path(str(nested))
+    assert ctrl.has_unsaved_work() is False
+
+    # 루트가 바뀌어 표시명이 갈린다 — 사람은 아무것도 하지 않았다.
+    ctrl._template_root_holder = TemplateRoot(load=lambda: "", save=lambda p: None)
+    assert ctrl.has_unsaved_work() is False
+
+
+@pytest.mark.parametrize(
+    ("first", "pattern", "expected"),
+    [
+        # 자릿수 있는 연번 — 토큰이 아는 폭 그대로.
+        ("공고서-001.hwpx", "공고서-{{seq:001}}", "공고서-001.hwpx · 002 · 003"),
+        # 폭 없는 연번.
+        ("x-1.hwpx", "x-{{seq}}", "x-1.hwpx · 2 · 3"),
+        # **연번에 붙은 데이터 값**(리뷰 5의 발화 지점): 종전 휴리스틱은 공통 앞을 숫자 자리로
+        # 되감아 「20262·20263」을 냈다 — 값이 그대로인데 연도가 매 건 바뀐다고 말하는 예시다.
+        ("A20261.hwpx", "A{{연도}}{{seq}}", "A20261.hwpx · 2 · 3"),
+        # seq 토큰이 없으면 첫 이름 하나 — 없는 연번을 그리면 충돌하는 자리를 정상으로 보인다.
+        ("a.hwpx", "a", "a.hwpx"),
+        ("", "{{seq}}", ""),
+    ],
+)
+def test_sequence_example_reads_the_token_not_the_rendered_names(first, pattern, expected):
+    """연번 예시의 판정도 서식도 **패턴이 낸다** — 문자열에서 되추측하지 않는다(리뷰 5)."""
+    from hwpxfiller.webapp.screen_editor import _sequence_example
+
+    assert _sequence_example(first, pattern) == expected
+
+
+def test_the_templates_root_is_read_once_until_it_is_reset(tmp_path):
+    """루트 도출은 **1회 memo** 이고 무효화는 :meth:`TemplateRoot.set` 하나다(리뷰 8).
+
+    편집기 스냅샷이 표시명을 짓느라 홀더를 여러 번 지나므로, 재판독이면 푸시 한 번이 같은
+    답을 사러 디스크에 여러 번 간다. 홀더가 루트의 단일 권위라 그 사이 값이 바뀌지 않는다.
+    """
+    reads: "list[int]" = []
+    saved: "list[str]" = [""]
+
+    def _load() -> str:
+        reads.append(1)
+        return saved[-1]
+
+    root = TemplateRoot(load=_load, save=saved.append, default_root=tmp_path)
+    root.path()
+    root.path()
+    root.resolution()
+    assert len(reads) == 1, "도출이 스냅샷마다 설정을 다시 읽습니다."
+
+    other = tmp_path / "다른루트"
+    other.mkdir()
+    root.set(str(other))
+    assert len(reads) == 2, "재지정이 memo 를 비우지 않았습니다 — 옛 루트를 계속 말합니다."
+    assert root.path() == other

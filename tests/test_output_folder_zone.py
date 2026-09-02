@@ -44,7 +44,7 @@ def test_zone_is_empty_when_nothing_can_be_derived() -> None:
     assert zone == {"directory": "", "source": "", "source_label": "", "notice": ""}
 
 
-def test_both_screens_read_the_same_function(tmp_path, monkeypatch) -> None:
+def test_both_screens_read_the_same_function(tmp_path) -> None:
     """작업 화면의 존과 편집기의 존이 **같은 함수 결과**인가 — 재조립이 있으면 갈린다.
 
     두 컨트롤러를 실제로 세우고 같은 템플릿·같은 설정값에서 두 존을 나란히 읽는다. 종전
@@ -58,12 +58,12 @@ def test_both_screens_read_the_same_function(tmp_path, monkeypatch) -> None:
 
     picked = tmp_path / "고른폴더"
     picked.mkdir()
-    monkeypatch.setattr(
-        "hwpxfiller.webapp.screen_editor.load_last_output_directory", lambda: str(picked)
-    )
     template = tmp_path / "t" / "공고서.hwpx"
+    # 「기억한 지정」은 작업 화면의 **메모리 값**이고 편집기는 그것을 콜러블로 읽는다
+    # (U6-D #978 리뷰 3) — 설정 파일을 양쪽이 각자 읽으면 쓰기 실패 한 번에 갈린다.
     editor = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda screen, snap: None, clock=datetime.now,
+        remembered_output_directory=lambda: str(picked),
     )
     editor.template_path = str(template)
 
