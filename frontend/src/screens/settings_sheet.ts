@@ -36,7 +36,7 @@
  * 정본은 각 화면 스냅샷이다).
  */
 
-import { createElement, useCallback, useEffect, useSyncExternalStore } from "react";
+import { createElement, useCallback, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -75,12 +75,16 @@ export const OUTPUT_FOLDER_EMPTY_TEXT = "아직 정해지지 않았습니다 —
  *
  *  저장 폴더 포트와 형상이 같되 실행 상태를 따로 묻지 않는다: 잠금 판정은 저장 폴더 행과
  *  **같은 사실**(생성 진행)이라 그 행이 이미 읽는 값을 재사용하고, 여기서 두 번째 판정을
- *  세우지 않는다. `init` 은 채널 첫 스냅샷을 자기가 당기는 것이다(tutorial 패널 선례). */
+ *  세우지 않는다.
+ *
+ *  **첫 스냅샷을 이 면이 당기지 않는다**: 이 오버레이는 부팅에 상주 마운트라, 마운트 effect
+ *  에서 호스트를 부르면 그 호출이 `pywebviewready` **앞**에 선다 — 실측에서 그 순서가
+ *  WebView2 창을 아예 못 뜨게 했다(`loaded` 미발화 · `Main window failed to start`).
+ *  그래서 `tpl` 첫 당김은 셸의 부팅 시퀀스(`initSequence`, 호스트 준비 뒤 발화)가 진다. */
 export type SettingsTemplatesRootPort = {
   subscribe(listener: () => void): () => void;
   /** tpl 채널 모델 판독 — 안정 참조를 돌려줘야 한다(파생 객체 금지). */
   getSnapshot(): Obj | null;
-  init(): Promise<unknown>;
   pickTemplatesRoot(): unknown;
   /** 재지정 성사 뒤 지금 화면을 다시 당긴다 — 목록의 정본은 각 화면 스냅샷이다. */
   refreshCurrentScreen(): unknown;
@@ -199,11 +203,6 @@ export function SettingsSheet(props: {
     notice: String(root.notice || ""),
     busy: runState.running === true,
   };
-  /* 채널 첫 스냅샷은 이 면이 당긴다 — tpl 은 편집기 동사가 밀 때만 오는 채널이라, 부팅
-     직후 설정을 열면 경로 칸이 빈 채로 선다(조용한 빈칸 금지). 한 번만 돈다. */
-  useEffect(() => {
-    void templates.init();
-  }, [templates]);
   return createElement(SettingsSheetView as any, {
     ...props, currentTheme, currentScale, outputFolder, templatesRoot,
   });

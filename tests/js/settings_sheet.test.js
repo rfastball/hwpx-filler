@@ -61,7 +61,6 @@ function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT)
       templates: {
         subscribe: () => () => {},
         getSnapshot: () => null,
-        init: () => Promise.resolve(null),
         pickTemplatesRoot: () => { calls.pickedRoot += 1; return "D:\새서식"; },
         refreshCurrentScreen: () => { calls.refreshed += 1; },
       },

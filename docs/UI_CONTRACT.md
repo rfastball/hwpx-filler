@@ -309,11 +309,14 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   잠금 사유 `#settingsPickTplFolderReason` + 경로 어포던스(`PathActions`, reveal·copy).
   생성 중 잠금·사유 병기도 **같은 술어**(같은 실행 상태를 읽는다 — 두 번째 판정을 세우지
   않는다). 다른 것은 값의 채널과 도출 하나뿐이다: 값은 `tpl` 스냅샷 최상위 `templates_root`
-  존이고(구조적 포트 `SettingsTemplatesRootPort` — `subscribe`/`getSnapshot`/`init`/
+  존이고(구조적 포트 `SettingsTemplatesRootPort` — `subscribe`/`getSnapshot`/
   `pickTemplatesRoot`/`refreshCurrentScreen`), 설정한 폴더가 없어도 **기본값으로 내려가지
-  않는다**(아래 절). `tpl` 은 편집기 동사에서만 밀리는 채널이라 첫 스냅샷은 이 면이
-  `init`(`runtime.loadInitial("tpl")`)으로 직접 당기고, 재지정 성사 뒤에는 지금 화면을 한 번
-  다시 당긴다(목록의 정본은 각 화면 스냅샷이다).
+  않는다**(아래 절). `tpl` 은 편집기 동사에서만 밀리는 채널이라 첫 스냅샷을 따로 당겨야 하는데,
+  그 당김은 **셸 부팅 시퀀스**(`bootstrap.js` 의 `initSequence`)가 진다 — 이 오버레이는 부팅
+  상주 마운트라 컴포넌트 effect 에서 호스트를 부르면 그 호출이 `pywebviewready` **앞**에 서고,
+  실측에서 그 순서가 WebView2 창을 아예 못 뜨게 했다(`loaded` 미발화 ·
+  `Main window failed to start`). 재지정 성사 뒤에는 지금 화면을 한 번 다시 당긴다(목록의
+  정본은 각 화면 스냅샷이다).
 - **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`(행 넷·두 폴더 행의 경로·출처·
   사유·잠금 사유·발신 목적지), 실 WebView2 왕복(⚙ 클릭 →
   열림 → 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 값 복원 → 닫힘 → 초점

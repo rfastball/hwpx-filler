@@ -292,6 +292,10 @@ export function bootProduct() {
   }));
 
   const initSequence = [
+    /* 서식 폴더 행(U6-A #975)이 읽는 `tpl` 첫 스냅샷 — **여기서** 당긴다. 설정 오버레이는
+       부팅 상주 마운트라 그 컴포넌트의 effect 에서 부르면 호출이 `pywebviewready` 앞에 서고,
+       실측에서 그 순서가 WebView2 창을 못 뜨게 했다. 이 시퀀스는 호스트 준비 뒤에만 돈다. */
+    () => runtime.loadInitial("tpl"),
     () => LibraryController.init(),
     () => EditorController.init(),
     () => JobRunController.init(),
@@ -485,7 +489,6 @@ export function bootProduct() {
             templates: {
               subscribe: (listener) => runtime.model("tpl").subscribe(listener),
               getSnapshot: () => runtime.model("tpl").getSnapshot(),
-              init: () => runtime.loadInitial("tpl"),
               pickTemplatesRoot: () => bridge.pickTemplatesRoot("tpl"),
               refreshCurrentScreen: () => runtime.refresh(Nav.currentScreen()),
             },
