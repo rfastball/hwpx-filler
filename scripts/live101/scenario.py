@@ -674,10 +674,12 @@ def run(ctx: ScenarioContext) -> dict:
         '#editorTplList .pitem[data-path*="오류연습_미치환"]',
         what="오류 연습 템플릿 채택",
     )
+    # 위와 같은 좌표다(U6-E #979) — 스키마를 읽었다는 증거는 게이트 존의 필드 수다.
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('담당연락처')",
+        "!!document.querySelector('#editorTplGate')"
+        " && /필드 [1-9]/.test(document.querySelector('#editorTplGate').textContent)",
         "오류 연습 스키마",
-        requires=["#scr-editor"],
+        requires=["#scr-editor", "#editorTplGate"],
     )
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기(오류 연습)")
