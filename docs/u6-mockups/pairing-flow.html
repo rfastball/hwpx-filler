@@ -12,7 +12,7 @@
 
      2026-09-02 사용자 확정 5건(방향서 §8):
        ① 서식 폴더는 단일 루트. 템플릿을 여러 곳에 분산하지 않는다.
-       ② 컴파일본 접미사는 `.tpl` 로 확정. 단일 출처 상수 하나로 착지한다.
+       ② 변환은 현행 제자리 멱등 변환 유지 — 첫 확정(`.tpl` 사이드카)은 같은 날 재판정으로 철회(미변환 원본이 풀에 영구 잔류하는 문제, UX_FEEDBACK_U6 §2.8).
        ③ 「사용할 데이터 열」 선별은 퇴역. 스키마 재활용 전제가 사라졌다.
        ④ 끌어 놓기 조합은 1차 슬라이스(U6-B)에 포함한다. 클릭 선택이 언제나 같은 결과를 낸다.
        ⑤ 같은 루트에서 `.txt` 도 읽고 하위 폴더를 재귀로 탐색한다.
@@ -509,7 +509,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
   <h3>2026-09-02 사용자 확정 5건</h3>
   <ol>
     <li><b>서식 폴더는 단일 루트</b>. 지정이 없으면 지금의 앱 홈 템플릿 폴더를 루트로 본다.</li>
-    <li><b>컴파일본 접미사는 <code>.tpl</code></b>. 단일 출처 상수 하나로 착지한다.</li>
+    <li><b>변환은 제자리 멱등 변환 유지</b>. 첫 확정(<code>.tpl</code> 사이드카)은 재판정으로 철회 — 파일 하나가 항목 하나다(§2.8).</li>
     <li><b>'사용할 데이터 열' 선별은 퇴역</b>. 표 바닥 한 줄이 그 정보를 잇는다.</li>
     <li><b>끌어 놓기 조합은 1차(U6-B)에 포함</b>. 클릭 선택이 언제나 같은 결과를 낸다.</li>
     <li><b>같은 루트에서 <code>.txt</code> 도 읽고 하위 폴더를 재귀로 탐색</b>한다.</li>
@@ -558,8 +558,8 @@ table.ro tbody tr:hover{background:var(--n-hover)}
             </button>
             <button class="pitem" type="button" draggable="true" data-side="tpl" data-key="t2" aria-pressed="false">
               <span class="ic"></span>
-              <span><span class="nm">계약서</span><span class="sb">필드 9개 · 원본이 바뀜</span></span>
-              <span class="pill warn">다시 변환</span>
+              <span><span class="nm">계약서</span><span class="sb">필드 9개 · 변환됨</span></span>
+              <span class="pill ok">변환됨</span>
               <span class="more" aria-hidden="true">⋯</span>
             </button>
             <button class="pitem" type="button" data-side="tpl" data-key="t3" aria-disabled="true">
@@ -639,7 +639,7 @@ table.ro tbody tr:hover{background:var(--n-hover)}
       <li><b>연결 카드가 첫 미리보기다</b> — '자동 연결 10 · 확인 필요 2' 를 여기서 보면 2단계로 갈
         이유가 사용자 눈에 보인다.</li>
       <li><b>지켜지는 계약</b>: 결속 쓰기는 편집기 저장 하나(U4 §2.4) — 고르기 단계는 편집기 안이다.
-        표시명은 <code>.tpl</code> 접미사와 확장자를 뗀 것이고 하위 폴더는 상대 경로로 병기한다(확정 ②·⑤).
+        표시명은 확장자를 뗀 것이고 하위 폴더는 상대 경로로 병기한다(확정 ⑤). 변환은 제자리 멱등이라 파일 하나가 항목 하나다(재판정 ②).
         드래그는 가속기이고 클릭이 같은 결과를 낸다(확정 ④ · n8n 드래그 참조 결함의 교훈).</li>
     </ul>
   </div>
