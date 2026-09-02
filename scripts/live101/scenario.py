@@ -256,21 +256,40 @@ def run(ctx: ScenarioContext) -> dict:
     s.scroll_to("#scr-editor .bindbar")
     ctx.shoot("mapping-confirm")
 
-    # ---- S4 「파일 이름」 탭: 이름·패턴 → 저장 ------------------------------
-    # 파일 이름은 F7 에서 **전용 탭**으로 승격했고(대조표 20행), 작업 이름은 화면 머리의
-    # 인라인 입력이다(「저장」 분류 사망의 승계 — §10.13.3).
+    # ---- S4 「이름·저장」 단계: 이름·파일 이름·저장 폴더 → 저장 --------------
+    # 3단계가 묻는 것은 셋이다(U6-D #978): 작업 이름(이제 이 폼에 산다 — 머리의 인라인
+    # 입력이 여기로 왔다) · 문서 파일 이름 · 저장 폴더(읽기 전용 재진술).
     s.click_text("#scr-editor", "다음 ▶")
     s.wait(
-        "!!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
-        "파일 이름 탭",
-        requires=['#scr-editor input[data-act="pattern"]'],
+        "!!document.getElementById('editorName')"
+        " && !!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
+        "이름·저장 단계",
+        requires=["#editorName", '#scr-editor input[data-act="pattern"]'],
+    )
+    # 이름은 이미 도출돼 있다 — 여기서 덮어쓰는 것이 곧 「고쳐도 된다」의 실주행이다.
+    s.wait(
+        "document.getElementById('editorName').value.length > 0"
+        " && !!document.getElementById('editorNameHint')",
+        "이름 기본값·힌트",
+        requires=["#editorName"],
     )
     s.set_value("#editorName", "발주요청서")
     s.set_value('#scr-editor input[data-act="pattern"]', "발주요청서-{{공고번호}}")
+    # 예시는 연번째로 선다 — 첫 이름 + 「· 002 · 003」(수치는 Python 이 만든다).
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('발주요청서-2026-001')",
-        "파일명 라이브 예시",
-        requires=["#scr-editor"],
+        "document.getElementById('editorPatternPreview').textContent"
+        ".includes('발주요청서-2026-001')"
+        " && document.getElementById('editorPatternPreview').textContent"
+        ".includes('· 002 · 003')",
+        "파일명 라이브 예시(연번)",
+        requires=["#editorPatternPreview"],
+    )
+    # 저장 폴더는 읽기 전용 재진술이고 바꾸러 갈 문이 하나 있다(#968 전역 값).
+    s.wait(
+        "document.getElementById('editorOutDir').value.length > 0"
+        " && !!document.getElementById('editorOpenFolderSettings')",
+        "저장 폴더 재진술",
+        requires=["#editorOutDir"],
     )
     ctx.shoot("save-job")
     s.click_text("#scr-editor", "작업 저장")
@@ -509,6 +528,15 @@ def run(ctx: ScenarioContext) -> dict:
         "TXT 전 행 확인",
         requires=["#scr-editor"],
     )
+    # TXT 도 3단계를 갖는다(U6-D #978) — 다른 것은 그 단계에 **문서 파일 이름 행이 없다**는
+    # 것 하나다(파일을 만들지 않는 작업).
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!document.getElementById('editorName')"
+        " && document.querySelector('#scr-editor input[data-act=\"pattern\"]') === null",
+        "이름·저장 단계(TXT — 파일 이름 행 없음)",
+        requires=["#editorName"],
+    )
     s.set_value("#editorName", "발주요청 기안")
     s.click_text("#scr-editor", "작업 저장")
     # (구 「등록 데이터 동명 확인 → [덮어쓰기]」 왕복은 #347 로 사라졌다 — 저장은 데이터를
@@ -649,20 +677,22 @@ def run(ctx: ScenarioContext) -> dict:
         "오류 연습 전 행 확인",
         requires=["#scr-editor"],
     )
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait("!!document.getElementById('editorName')", "이름·저장 단계(오류 연습)",
+           requires=["#editorName"])
     s.set_value("#editorName", "오류연습")
-    s.click_text("#scr-editor", "작업 저장")
+    # **두 저장 동사 중 나머지 한쪽**을 여기서 실주행한다(U6-D #978). 「작업 저장」은
+    # 제자리 착지라 S4·트랙 B 가 이미 찍었고, 이 동사가 약속하는 절반은 그 다음이다:
+    # 저장 성공 뒤 `prefer_work` 로 「문서 만들기」에 그 작업이 **선 상태로** 착석한다.
+    s.click_text("#scr-editor", "저장하고 문서 만들기로")
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
-        "오류 연습 저장 착지",
+        "document.querySelector('#scr-job.on') !== null"
+        " && document.getElementById('jobActionName').textContent.trim() === '오류연습'",
+        "저장 뒤 문서 만들기 착석",
         timeout=30.0,
-        requires=["#scr-editor"],
+        requires=["#scr-job", "#jobActionName"],
     )
-    s.click_sel("#editorBack", what="편집기 출구(오류 연습)")
-    s.wait(
-        "document.querySelector('#scr-job.on') !== null",
-        "편집기 이탈(오류 연습)",
-        requires=["#scr-job"],
-    )
+    seen["save_and_open_seated"] = True
     s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(오류 연습 실행)")
     s.wait(
         "!!document.querySelector('#libraryList [data-work=\"오류연습\"]')",

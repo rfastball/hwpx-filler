@@ -42,11 +42,17 @@ SECTION_TEMPLATE = "template"
 SECTION_BINDING = "binding"
 SECTION_FILENAME = "filename"
 
-#: 매체별 탭 구성(계약 §3.1·§3.2) — TXT 는 파일 이름 탭을 **갖지 않는다**(HWPX 생성 속성).
+#: 매체별 탭 구성(계약 §3.1·§3.2) — **두 매체가 같은 세 단계**다(U6-D #978).
+#:
+#: 종전에 TXT 가 셋째를 갖지 않았던 것은 그 단계의 이름이 「파일 이름」이었기 때문이다:
+#: TXT 작업은 파일을 만들지 않아 그 축이 없다. 그런데 그 단계가 「이름·저장」이 되면서
+#: 묻는 것이 하나 더 생겼다 — **작업 이름**은 매체와 무관한 저장 게이트 술어다(모든 작업이
+#: 이름을 갖는다). 없는 단계에 세우면 TXT 초안은 이름을 넣을 표면 없이 저장 차단만 받는다.
+#: 갈리는 것은 그 단계 **안의 한 행**(문서 파일 이름)이고, 그 유무는 계속 매체가 정한다.
 #: 계약이 넷째로 적던 「시험」은 F8 착수 실측에서 기각됐다(§10.17.1) — 이 목록이 최종형이다.
 _SECTIONS_BY_MEDIA = {
     "hwpx": (SECTION_TEMPLATE, SECTION_BINDING, SECTION_FILENAME),
-    "txt": (SECTION_TEMPLATE, SECTION_BINDING),
+    "txt": (SECTION_TEMPLATE, SECTION_BINDING, SECTION_FILENAME),
 }
 
 #: 계약 §5.1 의 진입 사유 10종 — **전부** 열거한다. 지금 배선된 것만 적으면 나중에 표면이
@@ -108,8 +114,9 @@ LIVE_RETURN_SURFACES = frozenset({"data", "result", "library", "documents"})
 def sections_for(media: str) -> "tuple[str, ...]":
     """이 매체의 탭 구성 — 미상 매체는 템플릿 탭 하나(고를 것을 먼저 고르게 한다).
 
-    매체를 모른다고 HWPX 로 추측하지 않는다(§19.11-2) — 파일 이름 탭은 HWPX 의 속성이라
-    추측이 틀리면 존재하지 않는 규칙을 편집시키게 된다.
+    매체를 모른다고 HWPX 로 추측하지 않는다(§19.11-2). 두 매체의 단계 **집합**은 U6-D 에서
+    같아졌지만 그 사실이 이 폴백을 지우지 않는다 — 매체가 정하는 것이 단계 안의 행(문서
+    파일 이름)으로 좁아졌을 뿐, 모르는 매체에 단계를 세우면 여전히 없는 규칙을 편집시킨다.
     """
     return _SECTIONS_BY_MEDIA.get(media, (SECTION_TEMPLATE,))
 

@@ -665,7 +665,8 @@ def test_repair_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatc
     assert frontend.open_job_in_editor("공고문", _REPAIR) == "공고문"
 
     snap = editor.snapshot()
-    assert snap["data_path"] == str(csv) and snap["data_name"] == "발주.csv"
+    # 표시명은 확장자 없는 basename 이다(U6-D #978) — 파일 찾아보기 마운트의 규칙.
+    assert snap["data_path"] == str(csv) and snap["data_name"] == "발주"
     assert snap["record_count"] == 2                      # 참조로 **다시 읽었다**
     # 새 필드에 붙일 열이 후보로 선다 — 이 목록이 곧 이 슬라이스의 산출이다.
     assert snap["source_fields"] == ["부서", "사업명"]

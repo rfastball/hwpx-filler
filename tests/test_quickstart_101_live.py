@@ -610,6 +610,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert str(observed["txt_copied"]).startswith("1 /"), observed["txt_copied"]
     assert observed["empty_value_gate_asked"] is True
     assert observed["empty_value_surfaced"] is True
+    assert observed["save_and_open_seated"] is True
     assert set(observed["sx05"]) == {"H1", "H2", "H3", "H4", "H5", "H6", "H7"}
     # S6-05(#812) H6 극성 전환: managed create 가 실제 문서를 앉힌다 — 불변이면 클릭이 무반응.
     assert observed["sx05"]["H6"]["filesystem_before"] != observed["sx05"]["H6"]["filesystem_after"]
@@ -802,6 +803,7 @@ def _healthy_report(**overrides) -> dict:
             "txt_copied": "1 / 3",
             "empty_value_gate_asked": True,
             "empty_value_surfaced": True,
+            "save_and_open_seated": True,
         },
     }
     base.update(overrides)
@@ -838,6 +840,7 @@ def test_a_torn_frame_fails_the_capture_verdict() -> None:
         ({"txt_copied": ""}, "복사 카운터"),
         ({"empty_value_gate_asked": False}, "이름게이트"),
         ({"empty_value_surfaced": False}, "〈빈 값〉"),
+        ({"save_and_open_seated": False}, "저장하고 문서 만들기로"),
     ],
 )
 def test_each_journey_fact_is_actually_judged(observation, fragment) -> None:
@@ -914,12 +917,12 @@ def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_pa
     assert verdict.ok is False
     assert verdict.failures == (), "환경 실패가 제품 언어를 낳았습니다"
     assert "창이" in (verdict.reason or "")
-    # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
+    # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **8줄이 나온다**(그것이 종전 형상이다).
     product = report_mod.judge(
         {"phase": "legacy", "hwpx_generated": 0, "shots": [], "observations": {}},
         mode="check",
     )
-    assert len(product.failures) == 7, product.failures
+    assert len(product.failures) == 8, product.failures
 
     from hwpxfiller.webapp import app as app_mod
 

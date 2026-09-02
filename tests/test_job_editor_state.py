@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 from hwpxfiller.gui.job_editor_state import (
+    JOB_NAME_SEPARATOR,
+    derive_job_name,
     needs_overwrite_confirm,
     overwrite_confirm_text,
     validate_save,
@@ -244,3 +246,26 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     # 선언과 실물이 갈리지 않게: 보존 목록의 두 표현(빈 기본값·추출기)이 같은 키를 든다.
     assert set(_EMPTY_PRESERVED) == _EDITOR_PRESERVES
     assert set(_preserved_meta(Job(name="x"))) == _EDITOR_PRESERVES
+
+
+# ─────────────────────────────────────────────── 이름 기본값 도출(U6-D #978)
+def test_derive_job_name_joins_both_names_with_the_middle_dot() -> None:
+    """구분자는 가운뎃점이다 — em dash 는 문장 안 전면 금지(COPY_STYLE_GUIDE §3-1).
+
+    라벨 문형과 이름 문형이 같은 글자를 두 뜻으로 쓰면 그 규칙이 자리마다 예외를 갖는다.
+    """
+    assert derive_job_name("공고서", "2026 하반기 계약") == "공고서 · 2026 하반기 계약"
+    assert JOB_NAME_SEPARATOR == " · "
+
+
+def test_derive_job_name_never_fills_the_missing_half() -> None:
+    """한쪽만 있으면 그것 하나 — 없는 절반을 자리표시자로 채우면 저장본에 그대로 굳는다."""
+    assert derive_job_name("공고서", "") == "공고서"
+    assert derive_job_name("", "2026 하반기 계약") == "2026 하반기 계약"
+    assert derive_job_name("", "") == ""
+
+
+def test_derive_job_name_trims_so_a_blank_half_is_really_blank() -> None:
+    """공백만 든 이름은 이름이 아니다 — 안 다듬으면 「 · 데이터」 같은 앞이 빈 이름이 선다."""
+    assert derive_job_name("   ", "대장") == "대장"
+    assert derive_job_name(" 공고서 ", " 대장 ") == "공고서 · 대장"

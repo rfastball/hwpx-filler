@@ -127,6 +127,10 @@ def judge(report: dict, *, mode: str) -> Verdict:
         failures.append("빈 값 확정 이름게이트가 묻지 않았습니다")
     if observed.get("empty_value_surfaced") is not True:
         failures.append("작업대에 〈빈 값〉 표면이 서지 않았습니다")
+    # 두 저장 동사 중 나머지 한쪽(U6-D #978) — 저장 성공 뒤 그 작업이 「문서 만들기」에
+    # **선 상태로** 착석한다. 「작업 저장」의 제자리 착지는 위 hwpx 갈래가 이미 찍었다.
+    if observed.get("save_and_open_seated") is not True:
+        failures.append("「저장하고 문서 만들기로」가 작업을 착석시키지 못했습니다")
 
     shots = tuple(report.get("shots") or ())
     if shots != CAPTURE_POINTS:
