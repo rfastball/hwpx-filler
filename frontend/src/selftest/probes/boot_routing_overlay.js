@@ -725,8 +725,7 @@ export function createBootRoutingOverlayProbes() {
           snap.template_media = "hwpx";
           snap.field_count = 0;
           snap.fields = [];
-          snap.raw_block = lines.join("
-");
+          snap.raw_block = lines.join("\n");
           ctx.push("editor", snap);
           /* R4-02 — 본문이 React 소유가 되면서 커밋이 다음 turn 이다. 커밋 전에 scrollTop 을
              쓰면 아직 넘칠 내용이 없어 **0 으로 클램프**되고, 그 0 이 「보존 실패」로 읽힌다.

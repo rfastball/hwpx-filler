@@ -224,6 +224,26 @@ def test_review_of_a_txt_item_answers_with_fields_and_no_convert_axis(tmp_path, 
     assert "검토" in ctrl.snapshot()["result"]["text"]
 
 
+def test_review_of_a_broken_txt_answers_with_the_reason(tmp_path, monkeypatch):
+    """판독 실패 행의 「자세히…」가 답할 것은 **사유 하나**다 — 예외로 새지 않는다.
+
+    그 행에서 ⋮ 가 여는 항목은 「자세히…」뿐이고(내용 편집은 못 읽는 파일에 서지 않는다),
+    시트가 보이는 것이 이 사유다. 검토가 던지면 그 자리는 영영 답이 없다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    broken = tp / "lib" / "손상.txt"
+    broken.write_bytes("한글".encode("cp949"))
+    path = str(broken)
+
+    ctrl.dispatch("review", {"path": path})
+
+    detail = ctrl.snapshot()["detail"]
+    assert detail["media"] == "txt" and detail["error"]
+    assert detail["fields"] == [] and detail["slots"] is None
+    assert detail["field_summary"].startswith("읽기 실패: ")
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
 def test_review_rejects_paths_outside_the_live_library(tmp_path, monkeypatch):
     """상세의 경로가 곧 시트 동사들의 대상이다 — 진입에서 같은 관문을 지난다."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
