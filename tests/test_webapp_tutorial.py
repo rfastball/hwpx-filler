@@ -349,20 +349,26 @@ def test_compile_notifies_only_on_real_mutation(tmp_path):
 
 # ============================================================ 4. editor 배선(T1·T2·T3/T10·T14)
 def _editor(tmp_path: Path, notify, lib_dir: "Path | None" = None):
+    """편집기 — 라이브러리 소속 관문은 `tpl` 채널 하나가 진다(U6-E #979).
+
+    종전에는 VM 을 직접 주입했다. 그 자리가 사라졌으므로 격리 루트 위의 실 컨트롤러를
+    세워 그 공개 술어를 넘긴다(제품 조립과 같은 짝).
+    """
     reg = JobRegistry(tmp_path / "jobs")
-    vm = TemplateManagerViewModel(
-        lib_dir if lib_dir is not None else None,
-        paths=None if lib_dir is not None else [],
-        inspect_template=inspect_hwpx_template,
-        file_ops=HWPX_TEMPLATE_OPS,
-    ) if lib_dir is not None else TemplateManagerViewModel(
-        paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS,
+    root_dir = lib_dir if lib_dir is not None else tmp_path / "text_templates"
+    registry = TextTemplateRegistry(root_dir)
+    root = TemplateRoot(default_root=root_dir)
+    gate = TemplateController(
+        registry, lambda s, snap: None,
+        file_store=TemplateFileStore(root.path, registry),
+        template_root=root,
+        pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
     )
     ctrl = EditorController(
         reg, lambda s, snap: None,
         clock=lambda: datetime(2026, 8, 25, 9, 0, 0),
-        template_library=vm,
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=gate.is_live_path,
+        template_root=root,
         tutorial=notify,
     )
     return ctrl, reg

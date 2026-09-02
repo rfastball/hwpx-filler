@@ -28,13 +28,8 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
     from hwpxfiller.external.dataset_store import DatasetPoolRegistry
     from hwpxfiller.external.job_store import JobRegistry
     from hwpxfiller.external.template_files import TemplateFileStore
-    from hwpxfiller.external.template_inspection import (
-        HWPX_TEMPLATE_OPS,
-        inspect_hwpx_template,
-    )
     from hwpxfiller.external.template_root import TemplateRoot
     from hwpxfiller.external.text_registry import TextTemplateRegistry
-    from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
     from hwpxfiller.webapp.screen_editor import EditorController
     from hwpxfiller.webapp.screen_template import TemplateController
 
@@ -60,13 +55,10 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
         JobRegistry(tmp / "jobs"),
         lambda screen, snap: None,
         clock=datetime.now,
-        template_library=TemplateManagerViewModel(
-            paths=[],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        ),
+        # 라이브러리 소속 관문은 `tpl` 채널 하나다(U6-E #979) — 편집기는 자기 VM 도 자기 TXT
+        # 레지스트리도 들지 않는다. 제품 조립(app.py)이 넘기는 것과 **같은 메서드**를 준다.
+        is_library_path=tpl.is_live_path,
         template_root=root,
-        text_registry=registry,
     )
     ctrl.dispatch("use_library_template", {"path": str(tmp / "샘플.txt")})
     snap = ctrl.snapshot()

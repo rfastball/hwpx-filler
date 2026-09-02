@@ -108,6 +108,15 @@
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
     <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle"></div>
 
+    <!-- 항목 상세 시트(U6-E #979) — 서식 폴더 항목 하나의 관리 표면. 편집기 고르기 존 아래에
+         흩어져 있던 것들(선택 chip + 경로 동사·작성 출처·스키마 표·구간 항목 밴드·구간 요약)이
+         여기 모였고, 여는 문은 행 ⋮ 의 「자세히…」 하나다. 겨누는 것은 편집 세션이 아니라
+         **풀 항목(파일)** 이라 편집기 몰입 표면 위에 서도 세션을 가리지 않는다(txtEditModal
+         선례). 내용의 생산자는 React `screens/editor.ts` 의 TplDetailSheet portal 이고 이
+         자리는 그 target 이라 **비어 있어야** 한다(product_screens.requireEmptyTarget 가
+         fail-closed). -->
+    <div id="tplDetailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplDetailTitle"></div>
+
     <!-- 시트 선택 모달(#33) — 다중 시트 워크북 확정 게이트. 조용한 첫 시트 로드 금지:
          에디터·작업 두 화면이 공유하며, 취소·Escape 는 로드를 중단한다(첫 시트 강등 없음). -->
     <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>

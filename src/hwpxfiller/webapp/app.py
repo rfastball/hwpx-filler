@@ -432,9 +432,9 @@ class WebFrontend:
             # 그 순서가 이유 없이 갈린다.
             tutorial_ctrl,
         ]
-        # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
-        # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규
-        # 1단계 피커가 관리 화면과 다른 목록을 조용히 보인다(라이브러리=단일 실체).
+        # 편집기의 라이브러리 소속 판정 = tpl 채널의 공개 관문(U6-E #979): 종전에는 VM·TXT
+        # 레지스트리를 같은 인스턴스로 넘겨 스캔 캐시가 갈라지지 않게 했고, 이제는 판정
+        # 자체를 넘겨 **두 곳이 같은 상태를 판정하는 일**이 없다.
         tpl_ctrl = next(c for c in controllers if c.name == "tpl")
         job_ctrl = next(c for c in controllers if c.name == "job")
         controllers.insert(
@@ -448,7 +448,11 @@ class WebFrontend:
                 # 그때 사실이었고 지금은 아니다 — 결속이 저장 게이트라 마법사가 데이터를
                 # 고르는 표면이 됐다. 편집기는 읽기만 한다(등록·다시 연결·삭제는 그 면의 일).
                 pool_registry=pool_registry,
-                template_library=tpl_ctrl.vm,
+                # 라이브러리 소속 관문(U6-E #979) — 판정은 `tpl` 채널 하나가 진다.
+                # 종전에는 편집기가 tpl 의 VM·TXT 레지스트리를 **같은 인스턴스로** 받아
+                # 같은 술어를 다시 썼다(단일 실체는 지켜졌지만 판정은 두 곳에 있었다).
+                # 이제 넘기는 것은 그 판정 하나이고, 편집기는 상대의 형체를 모른다.
+                is_library_path=tpl_ctrl.is_live_path,
                 # 서식 폴더 권위도 **같은 홀더**다(U6-A #975 · U6-D #978): 목록이 부르는
                 # 표시명(루트 상대·확장자 없음)을 편집기가 그대로 말하려면 루트가 하나여야
                 # 한다. 두 홀더를 두면 재지정 직후 한쪽만 새 루트를 보고, 같은 파일이 두
@@ -458,10 +462,9 @@ class WebFrontend:
                 # 편집기 3단계의 재진술은 그 메모리 값을 **읽기만** 한다. 편집기가 설정 파일을
                 # 따로 읽으면 설정 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다.
                 remembered_output_directory=job_ctrl.remembered_output_directory,
-                # TXT 레지스트리는 tpl 화면과 **같은 단일 실체**다 — 경로 화이트리스트
-                # (`assert_library_path`)가 목록과 같은 스캔을 봐야 방금 사라진 파일을
-                # 통과시키지 않는다. (그룹 모델 주입은 U6-B 에서 소비자 0 으로 퇴역.)
-                text_registry=registry,
+                # (`template_library`·`text_registry` 주입은 U6-E(#979)에서 퇴역했다 — 위
+                #  `is_library_path` 관문 하나가 그 둘이 답하던 유일한 질문을 진다. 그룹
+                #  모델 주입은 그보다 앞서 U6-B 에서 소비자 0 으로 퇴역했다.)
                 # (`library_result`·`library_slots` 중계는 U6-B(#976)에서 퇴역했다 — 결과
                 #  줄과 구간 항목 목록은 `tpl` 채널 스냅샷이 정본이고 고르기 단계 표면이
                 #  그 채널을 직접 구독한다. 중계가 있으면 같은 값이 두 스냅샷에 실린다.)

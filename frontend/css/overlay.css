@@ -115,6 +115,14 @@
   border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
 .slotrow .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slotrow .tbadge,.slotrow .btn{flex:none}
+/* 항목 상세 시트(U6-E #979) — 필드 표와 구간 항목 표를 함께 이는 면이라 표준 모달보다 넓고,
+   목록이 길어도 창을 넘지 않게 **자기 안에서** 스크롤한다(면이 넘치면 닫기가 밀려난다). */
+.modal-card.tpl-detail{width:min(720px,94vw);max-height:86vh;overflow-y:auto}
+.tpl-detail>.row:first-child h3{margin:0}
+/* `.grp` 의 노치 라벨은 화면 배경 위에 앉는 전제라 카드 위에서는 배경을 카드로 맞춘다. */
+.tpl-detail .grp{margin-top:var(--sp-16)}
+.tpl-detail .grp>.cap{background:var(--a-card)}
+.tpl-detail #tplDetailPath{margin:var(--sp-6) 0 0;word-break:break-all}
 
 /* [B] 61C7ADF8: 불투명 배경 카드 — 뒤에 비칠 숨김 텍스트 레이어가 없어 겹침 렌더 버그가
    구성상 소멸(Qt QListWidget 반투명 하이라이트의 웹 대체).

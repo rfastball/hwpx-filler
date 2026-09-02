@@ -104,10 +104,8 @@ export const D_KEYS = Object.freeze([
  *  이식이 이 목록을 지어내지도, 조용히 메우지도 않는다(둘 다 이식을 흐린다). */
 const CLICK_SITES_WITHOUT_VISIBILITY = Object.freeze([
   "editor_lib_manage: 흘리기용 body 클릭(Popover 바깥-닫기 잔재 청소)",
-  "editor_lib_manage: 행 ⋮ (b.hwpx)",
-  "editor_lib_manage: 행 ⋮ (메모.txt)",
-  "editor_lib_manage: 그룹 헤더 ⋮",
-  "editor_lib_manage: ＋그룹지정 칩",
+  "editor_lib_manage: 행 ⋮ (b.hwpx·c.hwpx·메모.txt·깨진.txt·구간.hwpx)",
+  "editor_lib_manage: 「자세히…」 메뉴 항목(열림 뒤 가시성은 detail_item_visible 이 잰다)",
   "editor_tab_autodiscard: 단계 탭(filename)",
   "editor_discard_immediate: 「변경 버리기」",
   "data_picker: 「이 데이터 고정」 · 「찾아보기」(뒤이어 browse_pin_visible 이 가시성을 잰다)",
@@ -388,7 +386,7 @@ function tplBase(overrides) {
       directory: "C:/lib", source: "settings", source_label: "설정", notice: "",
     },
     result: { text: "", level: "muted" },
-    slots: null,
+    detail: null,
     examples: { installed: false, removable: false, remove_label: "", remove_hint: "" },
   }, overrides || {});
 }
@@ -2081,42 +2079,63 @@ export function createEditorWorkbenchDataProbes() {
             selectable: !blocked,
             select_block_reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
+          const txtRow = (name, error) => ({
+            key: name, name: name.replace(/\.txt$/, ""), path: `C:/txt/${name}`,
+            field_count: error ? 0 : 2, error: error || "",
+            detail: error ? `읽기 실패: ${error}` : "필드 2개",
+            selectable: !error,
+            select_block_reason: error ? `읽을 수 없어 고를 수 없습니다: ${error}` : "",
+          });
           const manageTpl = tplBase({
             hwpx: {
-              flat: true, count: 4, dir: "C:/lib", empty_hint: "",
+              flat: true, count: 5, dir: "C:/lib", empty_hint: "",
               sections: [{
-                group: "", collapsed: false, count: 4,
+                group: "", collapsed: false, count: 5,
                 items: [
                   H("a.hwpx"), H("b.hwpx"),
-                  /* 동사 0 인 행(COMPILED·FILLED 의 실제 모양) — U6-A 에서 삭제가, U6-B 에서
-                     `preview`·`make_job` 이 퇴역하며 링1 목록이 비었다. ⋮ 는 서되
-                     **비활성 + 사유**여야 한다. */
-                  H("c.hwpx", null, []),
+                  /* COMPILED 의 실제 모양 — U6-B 뒤 동사가 0 이던 행이다. U6-E(#979)가 그
+                     자리에 「검토」를 세웠고, 「자세히…」는 어느 행에서든 선다. */
+                  H("c.hwpx", null, [{ key: "review", label: "검토" }]),
                   H("d.hwpx", ["빈 값 2건은 공란으로 채워집니다"]),
+                  /* 「자세히…」의 왕복을 실제로 태울 행 — 검토가 상세를 채운다. */
+                  H("구간.hwpx", null, [{ key: "review", label: "검토" }]),
                 ],
               }],
             },
             txt: {
-              flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+              flat: true, count: 2, dir: "C:/lib", empty_hint: "",
               sections: [{
-                group: "", collapsed: false, count: 1,
-                items: [{
-                  key: "메모.txt", name: "메모", path: "C:/txt/메모.txt",
-                  field_count: 2, error: "", detail: "필드 2개",
-                  selectable: true, select_block_reason: "",
-                }],
+                group: "", collapsed: false, count: 2,
+                /* 판독 실패 행도 목록에 선다(숨기지 않는다) — 그 행의 ⋮ 는 「자세히…」
+                   하나이고, 시트가 답하는 것이 바로 그 사유다. */
+                items: [txtRow("메모.txt"), txtRow("깨진.txt", "UTF-8 이 아닙니다")],
               }],
             },
             result: { text: "검토: 문제 없음", level: "ok" },
-            /* 검토가 낸 구간 항목 목록(S8-03 #834) — 같은 창에 얹는 단계다(새 부팅 0). */
-            slots: {
-              path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
-              rows: [{
-                id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
-              }],
-              diagnostics: [],
-            },
           });
+          /* 「자세히…」가 부른 검토의 착지 — 시트 한 장의 재료 전부가 이 한 존에 온다
+             (U6-E #979). 같은 창에 얹는 단계다(새 부팅 0). */
+          const detailTpl = tplBase(Object.assign({}, manageTpl, {
+            detail: {
+              path: "C:/lib/구간.hwpx", name: "구간", media: "hwpx",
+              state: "compiled", badge_label: "누름틀", badge_level: "ok",
+              field_count: 2, field_summary: "필드 2개",
+              fields: [
+                { name: "계약명", type_hint: "text" },
+                { name: "계약일", type_hint: "date" },
+              ],
+              actions: [{ key: "review", label: "검토" }],
+              diagnostics: [],
+              slots: {
+                summary: "항목 1개 · 선택 1개",
+                rows: [{
+                  id: "특약", label: "특약 사항", option_count: 1,
+                  options: ["지체상금 조항"],
+                }],
+              },
+              error: "",
+            },
+          }));
           ctx.push("pool", poolBase([]));
           const draft = editorBase({
             template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
@@ -2130,8 +2149,8 @@ export function createEditorWorkbenchDataProbes() {
           const host = byId(ctx, "scr-editor");
           ctx.push("tpl", manageTpl);
           await ctx.waitFor(
-            () => host.querySelectorAll("#editorTplList .pitem").length === 5,
-            { what: "좌 열 항목 5건(hwpx 4 + txt 1) 렌더", timeoutMs: 2000 },
+            () => host.querySelectorAll("#editorTplList .pitem").length === 7,
+            { what: "좌 열 항목 7건(hwpx 5 + txt 2) 렌더", timeoutMs: 2000 },
           );
           /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
              머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
@@ -2142,22 +2161,37 @@ export function createEditorWorkbenchDataProbes() {
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
           // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
-          out.rows_visible = host.querySelectorAll("#editorTplList .pitem").length;   // 5(hwpx4+txt1)
+          out.rows_visible = host.querySelectorAll("#editorTplList .pitem").length;   // 7(hwpx5+txt2)
           out.row_more = host.querySelectorAll('[data-act="lib-more"]').length;  // 모든 가시 행
-          /* 동작 0 인 행의 ⋮ 는 **비활성 + 사유**다(U6-A 리뷰): 종전에는 멀쩡히 서 있고
-             클릭이 조용히 삼켜졌다. 동작 있는 행은 그대로 열린다 — 양성·음성 대조. */
+          /* **모든 행에 「자세히…」가 있다**(U6-E #979) — 그래서 동사 0 인 행이 없고 ⋮ 는
+             어떤 행에서도 잠기지 않는다. 종전의 「동사 0 → 비활성 + 사유」(U6-A)가 막던
+             무반응은 그대로 막힌다: 어느 행이든 누르면 답할 것이 있다. */
           const moreFor = (key) =>
             host.querySelector(`[data-act="lib-more"][data-key="${key}"]`);
-          out.dead_row_more_disabled = !!moreFor("c.hwpx") && moreFor("c.hwpx").disabled;
-          out.dead_row_more_reason = (moreFor("c.hwpx") || {}).title || "";
-          out.live_row_more_enabled = !!moreFor("b.hwpx") && !moreFor("b.hwpx").disabled;
+          out.detail_always_available = [
+            "a.hwpx", "b.hwpx", "c.hwpx", "d.hwpx", "구간.hwpx", "메모.txt", "깨진.txt",
+          ].every((key) => !!moreFor(key) && !moreFor(key).disabled);
           out.grp_more = host.querySelectorAll(".grp-more").length;
           out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length;
           out.fill_warn = /빈 값 2건/.test(host.textContent);                 // #154 사전 고지 승계
           const res = host.querySelector(".run-result");
           out.result_line = !!res && /검토: 문제 없음/.test(res.textContent)
             && res.className.indexOf("ok") !== -1;                            // #tplResult 승계
+          /* 결과 줄은 관리 동사가 나가는 **좌 열 안**에 선다(U6-E) — 고르기 존 아래가 아니다. */
+          out.result_in_left_column = !!res && !!byId(ctx, "editorTplPool")
+            && byId(ctx, "editorTplPool").contains(res);
           out.band_caption = /서식 폴더/.test(host.textContent);
+          /* 고르기 존 아래에서 걷힌 표면들 — 되살아나면 같은 사실이 두 자리에서 그려진다.
+             셋 다 U6-E 에서 항목 상세 시트로 이주했다. */
+          out.retired_zones = {
+            slots_band: !host.querySelector("#tplSlots"),
+            session_slot_summary: !host.querySelector("#editorSlotSummary"),
+            file_chip: !host.querySelector(".filechip"),
+            schema_table: !host.querySelector("#scr-editor .schema-fields"),
+          };
+          /* 게이트 존은 필드 수 한 줄 + 「자세히…」로 접혔다(세션 판정은 1단계에 남는다). */
+          out.gate_zone = !!byId(ctx, "editorTplGate")
+            && !!host.querySelector('[data-act="session-detail"]');
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };
@@ -2169,8 +2203,17 @@ export function createEditorWorkbenchDataProbes() {
               (button) => button.dataset.contextMenuAction,
             );
           };
-          /* HWPX 행 ⋮ = [링1 상태 동사(변환·검토)] — 소비 동사 없음. 「이동」은 U4 §2-30 에서,
-             「삭제」는 U6-A(#975)에서, `preview`·`make_job` 은 U6-B(#976)에서 사라졌다. */
+          const openRowMenu = async (key) => {
+            flush();
+            host.querySelector(`[data-act="lib-more"][data-key="${key}"]`).click();
+            await settleRender(ctx);
+            const items = menuActions();
+            ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
+            await settleRender(ctx);
+            return items;
+          };
+          /* 행 ⋮ 의 구성 — 링1 상태 동사 + 「자세히…」. 「이동」은 U4 §2-30 에서, 「삭제」는
+             U6-A(#975)에서, `preview`·`make_job` 은 U6-B(#976)에서 사라졌다. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
           await settleRender(ctx);
@@ -2181,28 +2224,65 @@ export function createEditorWorkbenchDataProbes() {
           await settleRender(ctx);
           const closedMenu = byId(ctx, "tplRowMenu");
           out.menu_closed = !closedMenu || isHidden(ctx, closedMenu);
-          /* TXT 행 ⋮ = [내용 편집] — 삭제는 U6-A 에서 퇴역했다. */
-          flush();
-          host.querySelector('[data-act="lib-more"][data-key="메모.txt"]').click();
-          await settleRender(ctx);
-          out.txt_menu_items = menuActions();
-          ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
-          await settleRender(ctx);
-          /* 구간 항목 목록 + 동사 1건 왕복(S8-03). 개명이 가장 싸다: 프롬프트 하나로
-             끝나고 확인 왕복이 없다. 발신은 이 클러스터의 관례대로 가로챈다 — 목록 자체가
-             **합성 스냅샷**이라 그 경로를 실 백엔드에 보내면 남의 라이브러리를 겨눈다.
-             여기서 재는 것은 「트리거 → 프롬프트 → 등록된 액션·payload 발신 → 실패의
-             인라인 착지」이고, 컨트롤러 쪽 판정은 헤드리스 계약(test_webapp_template)이 진다. */
-          out.slot_rows = host.querySelectorAll("#tplSlots .slotrow").length;
+          /* COMPILED 의 실제 모양(동사 0 이던 행) — 이제 「검토」와 「자세히…」가 선다. */
+          out.compiled_menu_items = await openRowMenu("c.hwpx");
+          out.txt_menu_items = await openRowMenu("메모.txt");
+          out.txt_error_menu_items = await openRowMenu("깨진.txt");
+          /* 「자세히…」 왕복 — 검토 발신 → 시트 열림 → 시트 안의 필드 표·구간 항목 표·
+             밴드 동사·행 동사. 발신은 이 클러스터의 관례대로 가로챈다: 목록 자체가 **합성
+             스냅샷**이라 그 경로를 실 백엔드에 보내면 남의 라이브러리를 겨눈다. 새 창은
+             만들지 않는다 — 이미 선 창에 시트 한 장을 얹는다. */
+          const detailSent = [];
+          const detailStub = stubBridgeCall(ctx, () => async (screen, action, payload) => {
+            detailSent.push([screen, action, payload]);
+            return {};      // 검토는 읽기 전용이라 거절할 것이 없다(시트는 push 로 채운다)
+          });
+          try {
+            flush();
+            host.querySelector('[data-act="lib-more"][data-key="구간.hwpx"]').click();
+            await settleRender(ctx);
+            const detailItem = byId(ctx, "tplRowMenu")
+              .querySelector('button[data-context-menu-action="detail"]');
+            out.detail_item_visible = !!detailItem && !isHidden(ctx, detailItem);
+            detailItem.click();
+            await settleUntil(ctx, () => detailSent.length > 0);
+            out.detail_dispatch = detailSent.map(([screen, action, payload]) => [
+              screen, action, payload.path,
+            ]);
+            ctx.push("tpl", detailTpl);
+            await ctx.waitFor(
+              () => {
+                const sheet = byId(ctx, "tplDetailModal");
+                return !!sheet && !isHidden(ctx, sheet)
+                  && !!sheet.querySelector("#tplDetailSlots .slotrow");
+              },
+              { what: "항목 상세 시트 렌더(#tplDetailModal)", timeoutMs: 2000 },
+            );
+          } finally {
+            detailStub.restore();
+          }
+          const sheet = byId(ctx, "tplDetailModal");
+          out.sheet_open = !!sheet && !isHidden(ctx, sheet);
+          out.sheet_fields_table = !!sheet.querySelector("table.schema-fields");
+          out.sheet_field_names = Array.prototype.map.call(
+            sheet.querySelectorAll("table.schema-fields tbody .fname"),
+            (node) => String(node.textContent),
+          );
+          out.slot_rows = sheet.querySelectorAll("#tplDetailSlots .slotrow").length;
           out.slot_verbs = ["slot-rename", "slot-decompile", "slot-remove"]
-            .map((a) => !!host.querySelector(`[data-act="${a}"][data-slot="특약"]`));
-          const renameBtn = host.querySelector('[data-act="slot-rename"][data-slot="특약"]');
+            .map((a) => !!sheet.querySelector(`[data-act="${a}"][data-slot="특약"]`));
+          const renameBtn = sheet.querySelector('[data-act="slot-rename"][data-slot="특약"]');
           out.slot_rename_visible = !!renameBtn && !isHidden(ctx, renameBtn);
           /* 밴드 동사(U4-E3 #939) — 행 1건에서도 서고, 항목이 아니라 **파일**을 겨눈다
              (`data-slot` 없음). 같은 창에 얹은 좌표 단언 하나다(새 창 0). */
-          const bandBtn = host.querySelector('[data-act="slot-decompile-all"]');
+          const bandBtn = sheet.querySelector('[data-act="slot-decompile-all"]');
           out.slot_band_verb_visible = !!bandBtn && !isHidden(ctx, bandBtn);
           out.slot_band_verb_targets_file = !!bandBtn && !bandBtn.hasAttribute("data-slot");
+          /* 동사 줄은 행 ⋮ 와 같은 목록에서 「자세히…」만 걷은 것이다. */
+          out.sheet_verbs = Array.prototype.map.call(
+            sheet.querySelectorAll("#tplDetailVerbs button"),
+            (button) => button.dataset.act,
+          );
           const slotSent = [];
           const slotStub = stubBridgeCall(ctx, () => async (screen, action, payload) => {
             slotSent.push([screen, action, payload]);
@@ -2238,7 +2318,12 @@ export function createEditorWorkbenchDataProbes() {
           } finally {
             slotStub.restore();
           }
-          /* 퇴화 — 목록 1건 + 구간 항목 없음. 헤더 축은 애초에 없다(음성 단언 유지). */
+          service(ctx, "Modal").close("tplDetailModal");
+          settleModal(ctx, "tplDetailModal");
+          await settleRender(ctx);
+          const closedSheet = byId(ctx, "tplDetailModal");
+          out.sheet_closed = !closedSheet || isHidden(ctx, closedSheet);
+          /* 퇴화 — 목록 1건 + 상세 없음. 헤더 축은 애초에 없다(음성 단언 유지). */
           const degenerate = tplBase({
             hwpx: {
               flat: true, count: 1, dir: "C:/lib", empty_hint: "",

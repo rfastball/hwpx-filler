@@ -1673,37 +1673,68 @@ class TestWebSelftestGate:
         )
         # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
         assert t["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {t!r}"
-        # 접힘이 없으니 두 밴드의 행이 전부 선다(hwpx 4 + txt 1).
-        assert t["rows_visible"] == 5, f"평면 밴드의 행이 전부 서지 않았습니다: {t!r}"
+        # 접힘이 없으니 두 밴드의 행이 전부 선다(hwpx 5 + txt 2).
+        assert t["rows_visible"] == 7, f"평면 밴드의 행이 전부 서지 않았습니다: {t!r}"
         assert t["grp_more"] == 0, "그룹 ⋮ 가 남아 있습니다 — U4 §2-30 에서 걷혔습니다."
-        assert t["row_more"] == 5, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
-        # 동작 0 인 행(U6-A 에서 삭제가 퇴역해 생긴 상태)은 **비활성 + 사유**다 — 버튼이
-        # 서 있는데 클릭이 조용히 삼켜지는 무반응은 이 저장소가 금지한다.
-        assert t["dead_row_more_disabled"] is True, (
-            "동작 0 인 행의 ⋮ 가 활성입니다 — 누르면 아무 일도 없습니다."
+        assert t["row_more"] == 7, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
+        # U6-E(#979): 「자세히…」가 모든 행에 서므로 **동사 0 인 행이 없다** — 종전의
+        # 「동사 0 → 비활성 + 사유」(U6-A)는 그 근거와 함께 걷혔고, 그 판정이 막던 무반응은
+        # 그대로 막힌다(어느 행이든 누르면 답할 것이 있다).
+        assert t["detail_always_available"] is True, (
+            "「자세히…」가 없는 행이 있습니다 — 그 행의 ⋮ 는 눌러도 아무 일도 없습니다."
         )
-        assert "할 수 있는 작업이 없습니다" in t["dead_row_more_reason"], (
-            f"비활성 사유가 병기되지 않았습니다: {t['dead_row_more_reason']!r}"
-        )
-        assert t["live_row_more_enabled"] is True, "동사가 있는 행까지 잠갔습니다(과잠금)."
         assert t["assign_chips"] == 0, (
             "＋그룹지정 칩이 남아 있습니다 — 그룹 표면은 U4 §2-30 에서 걷혔습니다."
         )
         assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
         assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
+        # 결과 줄은 관리 동사가 나가는 좌 열 바닥에 선다(U6-E) — 고르기 존 아래가 아니다.
+        assert t["result_in_left_column"] is True, (
+            "결과 줄이 좌 열 밖에 있습니다 — 동사와 그 성과가 다른 열에서 읽힙니다."
+        )
         assert t["band_caption"] is True, "좌 열 머리의 「서식 폴더」 부제가 없습니다."
-        # HWPX 행 ⋮ = [링1 상태 동사] — 소비 동사 없음(행 버튼 소유, 같은 동사 2벌 금지).
-        # TXT 행 ⋮ = [내용 편집]. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서, 「삭제」는
-        # U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
+        # 고르기 존 아래에서 걷힌 표면 넷 — 되살아나면 같은 사실이 두 자리에서 그려진다.
+        assert t["retired_zones"] == {
+            "slots_band": True, "session_slot_summary": True,
+            "file_chip": True, "schema_table": True,
+        }, f"U6-E 에서 시트로 이주한 표면이 화면에 남아 있습니다: {t['retired_zones']!r}"
+        assert t["gate_zone"] is True, (
+            "1단계 게이트 존(#editorTplGate)과 세션 「자세히…」 문이 서지 않았습니다."
+        )
+        # 행 ⋮ 구성 — 링1 상태 동사 + 「자세히…」. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서,
+        # 「삭제」는 U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
         assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["hwpx_menu_items"] == ["act:compile", "act:review"], (
-            f"HWPX 행 ⋮ 구성이 [변환·검토]와 다릅니다: {t['hwpx_menu_items']!r}"
+        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "detail"], (
+            f"HWPX 행 ⋮ 구성이 [변환·검토·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
-        assert t["txt_menu_items"] == ["edit"], (
-            f"TXT 행 ⋮ 구성이 [내용 편집]과 다릅니다: {t['txt_menu_items']!r}"
+        assert t["compiled_menu_items"] == ["act:review", "detail"], (
+            f"COMPILED 행 ⋮ 구성이 [검토·자세히]와 다릅니다: {t['compiled_menu_items']!r}"
         )
-        # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 같은 창에 얹은 단계다.
+        assert t["txt_menu_items"] == ["edit", "detail"], (
+            f"TXT 행 ⋮ 구성이 [내용 편집·자세히]와 다릅니다: {t['txt_menu_items']!r}"
+        )
+        assert t["txt_error_menu_items"] == ["detail"], (
+            "판독 실패 TXT 행의 ⋮ 는 「자세히…」 하나여야 합니다(시트가 사유를 보인다):"
+            f" {t['txt_error_menu_items']!r}"
+        )
+        # 「자세히…」 왕복 — 검토 발신 → 시트 열림 → 시트가 든 표 둘(U6-E #979).
+        assert t["detail_item_visible"] is True, "「자세히…」 항목이 보이지 않습니다."
+        assert t["detail_dispatch"] == [["tpl", "review", "C:/lib/구간.hwpx"]], (
+            f"「자세히…」가 검토 왕복을 태우지 않았습니다: {t['detail_dispatch']!r}"
+        )
+        assert t["sheet_open"] is True, "항목 상세 시트(#tplDetailModal)가 열리지 않았습니다."
+        assert t["sheet_fields_table"] is True, (
+            "시트의 필드 표(.schema-fields)가 없습니다 — #16 「나열식 금지」의 좌표입니다."
+        )
+        assert t["sheet_field_names"] == ["계약명", "계약일"], (
+            f"필드 표가 스냅샷 값을 그대로 그리지 않았습니다: {t['sheet_field_names']!r}"
+        )
+        assert t["sheet_verbs"] == ["detail-act:review"], (
+            "시트 동사 줄이 행 ⋮ 목록에서 「자세히…」만 걷은 것과 다릅니다:"
+            f" {t['sheet_verbs']!r}"
+        )
+        # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 시트 안으로 이주한 좌표다.
         assert t["slot_rows"] == 1, f"구간 항목 목록이 렌더되지 않았습니다: {t!r}"
         assert t["slot_verbs"] == [True, True, True], (
             f"항목 행 동사 3종(개명·표기로 되돌리기·삭제)이 다 서지 않았습니다: {t['slot_verbs']!r}"
@@ -1726,6 +1757,8 @@ class TestWebSelftestGate:
         assert t["slot_notice_inline"] is True, (
             "동사 실패가 인라인 채널(#save-msg)에 보이게 서지 않았습니다(#323 라우팅)."
         )
+        # 시트는 뒤 프로브의 클릭을 가리지 않게 닫힌 채 끝난다(교차 프로브 오염 금지).
+        assert t["sheet_closed"] is True, "항목 상세 시트가 열린 채 남았습니다."
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
         assert t["flat_heads"] == 0 and t["flat_rows"] == 1, f"퇴화 평면 위반: {t!r}"
 

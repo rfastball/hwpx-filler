@@ -25,8 +25,10 @@ from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
+from hwpxfiller.external.template_files import TemplateFileStore
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
-from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
+from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
@@ -89,14 +91,23 @@ def _wire(tmp_path: Path):
         workbench_observation=WorkbenchObservationProduct(),
         seal_execution=SealExecutionPlanService(reg, root=root, clock=_clock()),
     )
+    # 라이브러리 소속 관문은 `tpl` 채널 하나다(U6-E #979) — 이 여정의 템플릿이 실제로
+    # 사는 폴더 위에 그 채널을 세워 공개 술어를 그대로 넘긴다(제품 조립과 같은 짝).
+    tpl_root = TemplateRoot(default_root=tmp_path)
+    tpl_registry = TextTemplateRegistry(tpl_root.path)
+    tpl_ctrl = TemplateController(
+        tpl_registry,
+        lambda s, snap: None,
+        file_store=TemplateFileStore(tpl_root.path, tpl_registry),
+        template_root=tpl_root,
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+    )
     editor = EditorController(
         reg,
         lambda s, snap: None,
         clock=lambda: NOW,
-        template_library=TemplateManagerViewModel(
-            paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
-        ),
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=tpl_ctrl.is_live_path,
+        template_root=tpl_root,
         after_mapping_saved=job_ctrl.on_editor_mapping_saved,
         binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,
     )

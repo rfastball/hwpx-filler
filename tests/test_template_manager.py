@@ -27,6 +27,8 @@ from hwpxfiller.external.template_inspection import (
     template_compile_status,
 )
 from hwpxfiller.gui.template_manager_state import (
+    CONVERT_ACTION_LABEL,
+    TemplateDetail,
     TemplateManagerViewModel,
     available_actions,
 )
@@ -77,12 +79,14 @@ def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
     # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
     # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
-    # 그래서 COMPILED·FILLED 는 동사가 없고 표면은 그 사실을 비활성 + 사유로 그린다.
+    # U6-E(#979): 그때 0 이 된 COMPILED·FILLED 의 동사 자리에 `review` 가 섰다. 그 두 상태
+    # 에서만 존재하는 구간 항목 동사(개명·표기로 되돌리기·삭제)가 `review` 가 세우는 상세
+    # 위에 사는데, 정작 그 상태에서 도달성이 0 이던 구멍을 메운다.
     expected = {
         CompileState.RAW: ["compile"],
         CompileState.PARTIAL: ["compile", "review"],
-        CompileState.COMPILED: [],
-        CompileState.FILLED: [],
+        CompileState.COMPILED: ["review"],
+        CompileState.FILLED: ["review"],
         None: [],
     }
     for state, keys in expected.items():
@@ -94,7 +98,7 @@ def test_action_matrix_and_vm_delegation():
     vm = TemplateManagerViewModel(
         paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
     )
-    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == []
+    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["review"]
 
 
 def test_library_scan_is_recursive(tmp_path):
@@ -171,9 +175,9 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert by_name["raw"].state == CompileState.RAW
     assert [a.key for a in by_name["raw"].actions()] == ["compile"]
     assert by_name["comp"].state == CompileState.COMPILED
-    assert [a.key for a in by_name["comp"].actions()] == []
+    assert [a.key for a in by_name["comp"].actions()] == ["review"]
     assert by_name["fill"].state == CompileState.FILLED
-    assert [a.key for a in by_name["fill"].actions()] == []
+    assert [a.key for a in by_name["fill"].actions()] == ["review"]
     # U6-B: 「고를 수 있는가」와 사유도 같은 행이 진다 — 변환 전은 비활성 + 사유다.
     assert by_name["comp"].select_block_reason() == ""
     assert "누름틀·구간 변환" in by_name["raw"].select_block_reason()
@@ -204,7 +208,7 @@ def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
     assert template_compile_status(str(path)).state == CompileState.COMPILED
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
-    assert [a.key for a in row.actions()] == []
+    assert [a.key for a in row.actions()] == ["review"]
     assert row.select_block_reason() == ""   # 변환을 마쳤으니 고를 수 있다
 
 
@@ -737,3 +741,83 @@ def test_text_rows_share_the_ring1_wording_with_hwpx(tmp_path):
         name="x", path="x", state=None, badge_label="", badge_level="muted",
         field_count=0, compilable_n=0, skipped_n=0, stray_n=0,
     ).select_block_reason()
+
+
+# =============================== U6-E #979 — 항목 상세 투영(「자세히…」 시트의 재료)
+def test_detail_view_projects_one_read_of_the_file(tmp_path):
+    """상태·배지·필드·구간 항목·동사가 **한 판독**에서 나온다(갈린 사실 금지).
+
+    시트 한 장이 두 왕복으로 채워지면 그 사이에 파일이 바뀔 때 「상태는 옛것, 항목 목록은
+    새것」이 한 화면에 함께 선다. 그래서 이 투영은 파일을 한 번만 연다.
+    """
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    path = _write_compiled(
+        lib / "구매요청.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}} / 작성일자: {{작성일자}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(
+        library_dir=lib,
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+
+    detail = vm.detail_view(str(path))
+
+    assert detail.media == "hwpx" and detail.state == CompileState.COMPILED
+    assert detail.name == "구매요청"                      # 루트 상대·확장자 없음(목록과 같은 이름)
+    assert [f.name for f in detail.fields] == ["계약명", "작성일자"]
+    # 유형은 링0 추정 그대로다 — 표면이 이름에서 되유추하면 두 화면이 갈린다.
+    assert [f.type_hint for f in detail.fields] == ["text", "date"]
+    assert detail.field_summary() == "필드 2개"
+    # 동사 목록은 링1 상태 게이트 하나에서 온다(여기서 다시 조립하지 않는다).
+    assert [a.key for a in detail.actions] == [a.key for a in available_actions(detail.state)]
+    assert detail.slots is not None and detail.slots.rows == ()
+    assert detail.error == "" and detail.diagnostics == ()
+
+    projected = detail.to_dict()
+    assert projected["state"] == "compiled"
+    assert projected["fields"] == [
+        {"name": "계약명", "type_hint": "text"}, {"name": "작성일자", "type_hint": "date"}
+    ]
+    # `slots` 는 요약·행만 든다 — 경로·이름·진단은 최상위가 이미 든 사실이다(이중 기재 금지).
+    assert set(projected["slots"]) == {"summary", "rows"}
+
+
+def test_detail_view_carries_the_reason_when_the_file_cannot_be_read(tmp_path):
+    """판독 실패는 감추지 않고 **사유를 단 상세**로 돌려준다(오류 행의 「자세히…」가 답할 것)."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    broken = lib / "깨진.hwpx"
+    broken.write_bytes(b"not a hwpx zip")
+    vm = TemplateManagerViewModel(
+        library_dir=lib,
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+
+    detail = vm.detail_view(str(broken))
+
+    assert detail.error and detail.state is None
+    assert detail.fields == () and detail.slots is None and detail.actions == ()
+    assert detail.field_summary().startswith("읽기 실패: ")
+
+
+def test_text_detail_has_no_convert_axis_and_no_slots():
+    """TXT 는 상태도 구간 항목도 없다 — 없는 축을 지어내지 않는다(`TemplateRow.from_text` 동형)."""
+    detail = TemplateDetail.from_text(
+        Path("C:/lib/온나라/기안.txt"), ["공고명"], root=Path("C:/lib")
+    )
+    assert detail.media == "txt" and detail.state is None and detail.badge_label == ""
+    assert detail.name == "온나라/기안"
+    assert [f.name for f in detail.fields] == ["공고명"]
+    assert detail.to_dict()["slots"] is None and detail.to_dict()["actions"] == []
+
+    empty = TemplateDetail.from_text(Path("C:/lib/빈.txt"), [])
+    assert empty.field_summary() == "채울 필드가 없습니다."
+
+
+def test_the_convert_label_has_one_source():
+    """가져오기 채택의 RAW 거절 문안이 지목하는 라벨은 `_STATE_ACTIONS` 의 그 값이다."""
+    raw = available_actions(CompileState.RAW)
+    assert [a.label for a in raw] == [CONVERT_ACTION_LABEL]

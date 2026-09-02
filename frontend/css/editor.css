@@ -30,8 +30,6 @@ table.schema-fields th,table.data-preview th{background:var(--n-header-bg);color
 table.schema-fields td,table.data-preview td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--n-track);
   vertical-align:top}
 table.schema-fields tr:last-child td,table.data-preview tr:last-child td{border-bottom:0}
-.schema-fields .fctx{color:var(--a-muted);max-width:34ch;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
 table.data-preview{min-width:520px}
 table.data-preview td{white-space:nowrap}
 .row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-4)}
@@ -211,6 +209,9 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
 .pairzone .pool-acts{flex:none;display:flex;gap:var(--sp-6);flex-wrap:wrap;align-items:center;
   border-top:1px solid var(--a-border);padding:var(--sp-8) var(--sp-10);
   background:var(--n-surface-alt)}
+/* 관리 동사의 결과 줄 — 동사가 나가는 그 열의 바닥에 선다(U6-E #979). */
+.pairzone .run-result{flex:none;margin:0;padding:var(--sp-8) var(--sp-10);
+  border-top:1px solid var(--a-border);white-space:pre-line}
 
 /* 항목 하나 — 아이콘 · (이름+부제) · 상태 pill 이 버튼이고, ⋮ 는 그 밖의 형제다
    (버튼 안의 버튼을 만들지 않는다). */

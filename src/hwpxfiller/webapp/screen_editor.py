@@ -68,7 +68,6 @@ from ..domain.mapping import TYPES, MappingProfile
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import library_display_name
 
-from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
@@ -105,13 +104,8 @@ from ..gui.mapping_state import (
     pairing_preview,
     profile_source_vocabulary,
 )
-from ..external.template_inspection import (
-    HWPX_TEMPLATE_OPS,
-    inspect_hwpx_template,
-    inspect_slots,
-)
 from ..external.hwpx_package_io import read_hwpx_package
-from ..gui.template_manager_state import SlotRow, SlotView, TemplateManagerViewModel
+from ..gui.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..domain.output_name import format_seq_token
@@ -241,10 +235,9 @@ class EditorController:
         *,
         clock: Callable[[], datetime],
         pool_registry: "DatasetPoolRegistry | None" = None,
-        template_library: "TemplateManagerViewModel | None" = None,
         template_root: "TemplateRoot | None" = None,
         remembered_output_directory: "Callable[[], str] | None" = None,
-        text_registry: "TextTemplateRegistry | None" = None,
+        is_library_path: "Callable[[str, str], bool] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
         binding_confirm_pending: "Callable[[str], bool] | None" = None,
         tutorial: TutorialSink = unwired_tutorial,
@@ -267,17 +260,12 @@ class EditorController:
         # (`template_groups`·`txt_groups` 주입은 U6-B(#976)에서 퇴역했다 — 목록 성형이
         #  `tpl` 채널 하나로 모이면서 이 화면에 그룹 모델 소비자가 0 이 됐다. 모델·영속
         #  자체는 U4 §2-30 의 동결 그대로 tpl 컨트롤러가 계속 든다.)
-        # 템플릿 라이브러리(R-info 2부 접합 최소분) — 신규 1단계=라이브러리에서 고르기(생 파일
-        # 선택 폐기)·가져오기=복사. **앱 조립에선 tpl 화면의 VM 같은 인스턴스를 주입**(리뷰 F2:
-        # 라이브러리=단일 실체 — 폴더 재지정이 두 표면에 함께 반영). 미주입 시 표준 라이브러리를
-        # **지연 생성**(리뷰 F5: 생성자 즉시 스캔은 라이브러리를 안 쓰는 소비자·테스트에 실
-        # 사용자 폴더 스캔 비용·비결정성을 물린다). 전체 개편(그룹·구획·F16)은 #108 소관.
-        self._template_library = template_library
         # 서식 폴더 권위(U6-A #975) — **앱 조립에선 tpl 화면과 같은 인스턴스**를 주입한다.
-        # 이 화면이 루트를 쓰는 자리는 둘이다: 라이브러리 VM·TXT 레지스트리의 지연 생성과,
-        # 표시명 도출(`library_display_name` — 루트 상대·확장자 없음). 홀더는 상태를
-        # 캐시하지 않으므로(매 호출이 설정을 다시 읽는다) 재지정 직후의 첫 스냅샷이 곧 새
-        # 루트다. 미주입이면 표준 홀더를 지연 생성한다.
+        # 이 화면이 루트를 쓰는 자리는 하나로 좁아졌다(U6-E #979): 표시명 도출
+        # (`library_display_name` — 루트 상대·확장자 없음). 라이브러리 VM·TXT 레지스트리의
+        # 지연 생성은 함께 퇴역했다 — 목록도 소속 판정도 `tpl` 채널 하나가 진다. 홀더는
+        # 상태를 캐시하지 않으므로(매 호출이 설정을 다시 읽는다) 재지정 직후의 첫 스냅샷이
+        # 곧 새 루트다. 미주입이면 표준 홀더를 지연 생성한다.
         self._template_root_holder = template_root
         # **전역 저장 폴더의 소유자는 작업 화면 하나다**(리뷰 3). 이 화면은 그 값을 읽기만
         # 하므로 설정 파일을 직접 읽지 않고 그쪽의 메모리 값을 **콜러블로** 받는다: 디스크를
@@ -285,10 +273,15 @@ class EditorController:
         # 고른 값, 한쪽은 디스크의 옛 값). 미주입이면 도출 재료가 없다 — 없는 값을 추측하지
         # 않고 빈 문자열이며, 그때 도출은 템플릿 옆 ``Results`` 로 내려간다.
         self._remembered_output_directory = remembered_output_directory
-        # TXT 템플릿 레지스트리·그룹 모델(F6 PR-B — 「템플릿」 탭 매체 분기): **앱 조립에선
-        # tpl 화면과 같은 인스턴스를 주입**한다(hwpx 라이브러리·그룹과 같은 단일 실체 규율 —
-        # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
-        self._text_registry = text_registry
+        # 라이브러리 소속 관문(U6-E #979) — `tpl` 채널의 공개 술어
+        # (:meth:`~hwpxfiller.webapp.screen_template.TemplateController.is_live_path`)를
+        # **handoff callable** 로 받는다(`after_mapping_saved` 선례). 종전에는 이 화면이
+        # 자기 hwpx VM·자기 TXT 레지스트리를 들고 같은 판정을 다시 썼다 — 같은 질문에 답하는
+        # 스캔이 둘이라 한쪽만 최신인 순간이 실재했고, 그 둘이 곧 편집기가 tpl 과 별개로
+        # 들고 있던 템플릿 관리 중복이었다. 미주입이면 관문이 없다: 통과시키지 않고 시끄럽게
+        # 거절한다(:meth:`assert_library_path`) — 바깥 파일 입구를 무배선으로 여는 것이
+        # 이 seam 이 막는 바로 그 결함이다.
+        self._is_library_path = is_library_path
         # (`library_result`·`library_slots` 중계 seam 은 U6-B(#976)에서 퇴역했다: 결과 줄과
         #  구간 항목 목록의 정본은 `tpl` 채널 스냅샷이고, 편집기 표면이 그 채널을 직접
         #  구독하면서 편집기 스냅샷이 같은 값을 한 번 더 실어 나를 이유가 사라졌다.)
@@ -310,10 +303,10 @@ class EditorController:
         self.gate: "PartialGate | None" = None
         self.gate_error = False
         self.raw_block = ""
-        # 이 세션이 연 템플릿의 구간(항목·선택) 축 투영(U4-E2 #939) — **편집 세션 소유**다.
-        # tpl 검토의 `library.slots` 와 값의 모양은 같지만 수명이 다르다: 저것은 라이브러리
-        # 생존이 걷고, 이것은 템플릿 로드가 세우고 세션 리셋·템플릿 교체가 지운다.
-        self.template_slots: "SlotView | None" = None
+        # (이 세션이 연 템플릿의 구간 축 요약 `template_slots`(U4-E2 #939)은 U6-E(#979)에서
+        #  퇴역했다 — 그 존은 항목 상세 시트로 흡수됐다. 판정 승계는 `UX_FEEDBACK_U6` §2.9:
+        #  동사는 편집 세션이 아니라 **풀 항목(파일)** 을 겨누고, 세션과 같은 파일일 때의
+        #  무효화는 `reconcile_template_mutation` seam 이 그대로 진다.)
         self.data_path = ""
         self.data_sheet = ""  # 다중 시트 확정값(#33) — 자동등록 참조에 함께 저장(#26)
         # 헤더 행(엑셀 참조 옵션) — 0 = 미지정(어댑터 기본 1행). 등록 데이터를 든 진입
@@ -505,68 +498,34 @@ class EditorController:
     def template_root(self) -> TemplateRoot:
         """서식 폴더 권위 — 미주입이면 첫 접근 때 표준 홀더를 지연 생성한다.
 
-        이 화면의 루트 소비자 셋(hwpx VM · TXT 레지스트리 · 표시명 도출)이 **같은 홀더**를
-        지나게 하는 자리다. 종전에는 두 지연 생성이 각자 ``TemplateRoot()`` 를 새로 만들어,
-        주입이 없는 조립에서 같은 질문에 답하는 홀더가 둘이었다(값은 같아도 「루트 권위는
-        인스턴스 하나」라는 U6-A 의 규율이 그 자리에서만 깨져 있었다).
+        이 화면의 루트 소비자는 하나다(U6-E #979 — 표시명 도출). 종전의 두 지연 생성
+        (hwpx VM · TXT 레지스트리)은 각자 ``TemplateRoot()`` 를 새로 만들 수 있었고, 그
+        중복은 소속 판정이 `tpl` 채널로 위임되면서 사슬째 사라졌다.
         """
         if self._template_root_holder is None:
             self._template_root_holder = TemplateRoot()
         return self._template_root_holder
-
-    @property
-    def template_library(self) -> TemplateManagerViewModel:
-        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 서식 폴더 홀더로 지연 생성(리뷰 F5).
-
-        홀더의 ``path`` **콜러블**을 준다(U6-A #975): 루트는 설정으로 바뀌는 값이라 Path 를
-        굳혀 들면 재지정 뒤에도 옛 폴더를 나열한다.
-        """
-        if self._template_library is None:
-            self._template_library = TemplateManagerViewModel(
-                self.template_root.path,
-                inspect_template=inspect_hwpx_template,
-                file_ops=HWPX_TEMPLATE_OPS,
-            )
-        return self._template_library
-
-    @property
-    def text_registry(self) -> TextTemplateRegistry:
-        """TXT 템플릿 레지스트리 — 미주입이면 서식 폴더 홀더로 지연 생성(hwpx VM 대칭).
-
-        루트는 hwpx 와 **같다**(U6-A #975) — 매체별 루트 축은 사라졌다.
-        """
-        if self._text_registry is None:
-            self._text_registry = TextTemplateRegistry(self.template_root.path)
-        return self._text_registry
-
-    def _refresh_library(self) -> None:
-        """공유 라이브러리 VM 재스캔 — 경로 화이트리스트·가져오기 채택이 부르는 정합 확인.
-
-        **목록 표시를 위한 재스캔은 여기 없다**(U6-B #976): 고르기 단계 좌 열의 정본이
-        `tpl` 채널 스냅샷이 되면서 「단계 진입 = 재스캔」은 프런트의 ``tpl/refresh`` 한
-        발이 진다. 여기 남은 두 호출자는 **판정 직전의 정합**이 필요한 자리다 —
-        :meth:`assert_library_path`(방금 사라진 파일을 통과시키지 않는다)와
-        :meth:`adopt_imported_template`(가져온 사본이 목록에 들었는가)."""
-        self.template_library.refresh()
 
     def assert_library_path(self, path: str) -> None:
         """웹 유래 템플릿 경로의 라이브러리 소속 확인 — 바깥 입구 봉쇄의 공용 seam(리뷰 F4).
 
         use_library_template 가 쓴다(구 크로스스크린 load_template_into_editor 는 F8 사망) —
         한 입구만 막으면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의 불변식이 된다.
-        불일치면 **새 스캔 결과를 먼저 push** 하고 거절한다(리뷰 F7: 방금 삭제된 파일의
-        stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).
 
-        TXT 경로(F6 PR-B)는 TXT 레지스트리 소속을 같은 규율로 확인한다 — 레지스트리는
-        캐시 없이 매번 실 디스크를 스캔하므로 별도 refresh 없이 판정 자체가 최신이다.
+        **판정은 `tpl` 채널 하나가 진다**(U6-E #979 —
+        :meth:`~hwpxfiller.webapp.screen_template.TemplateController.is_live_path`). 그 관문이
+        hwpx 는 재스캔 뒤 판정하고 TXT 는 캐시 없는 실 디스크 스캔이라, 방금 사라진 파일을
+        통과시키지 않는 성질이 매체별로 갈리지 않는다. 여기 남은 것은 **거절의 처분**이다:
+        불일치면 새 스냅샷을 먼저 push 하고 거절한다(리뷰 F7 — 방금 삭제된 파일의 stale 행이
+        남아 같은 클릭을 반복하게 만드는 무행동 안내 금지).
+
+        관문 미배선은 통과가 아니다: 없는 관문을 「열려 있다」로 접으면 이 seam 이 막는 바로
+        그 입구가 조립 실수 하나로 열린다.
         """
-        if template_media(path) == "txt":
-            if all(str(t.path) != path for t in self.text_registry.list_templates()):
-                self._push()  # 다음 스냅샷의 목록이 최신 스캔 — 거절 문구가 실행 가능해진다
-                raise ValueError("라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요.")
-            return
-        self._refresh_library()
-        if all(r.path != path for r in self.template_library.rows()):
+        gate = self._is_library_path
+        if gate is None:
+            raise ValueError("템플릿 라이브러리 관문이 배선되지 않아 경로를 확인할 수 없습니다.")
+        if not gate(template_media(path), path):
             self._push()  # 갱신된 목록을 먼저 보여준다 — 거절 문구가 실행 가능해진다
             raise ValueError("라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요.")
 
@@ -994,19 +953,17 @@ class EditorController:
             "template_name": self.template_display_name(),
             # 선택 템플릿의 매체(F6 PR-B) — 뷰가 확장자를 재파싱하지 않게 판정을 싣는다.
             "template_media": template_media(self.template_path) if self.template_path else "",
+            # 1단계 게이트 존이 말하는 수치 하나(U6-E #979) — 필드 **표**와 나열식 요약
+            # (구 `schema_summary`)은 항목 상세 시트로 갔다. 고르기 단계가 답할 질문은
+            # 「어느 템플릿을 어느 데이터에?」 하나이고, 「그 템플릿에 무엇이 들어 있나」는
+            # 그 답 뒤에 묻는 별개의 질문이라 자리도 따로 선다.
             "field_count": len(self.schema.fields) if self.schema else 0,
-            "schema_summary": self._schema_summary(),
-            # 1단계 구조화 표(#16): 필드별 name/inferred_type/in_table/occurrences/context.
-            # 나열식 요약(schema_summary)은 표 위 헤더 한 줄로 존치.
+            # 이 세션이 **연 파일**의 필드 명세(name/inferred_type/in_table/occurrences/
+            # context) — 스키마 파이프라인이 실제로 돌았음의 증거이고 패키징 스모크가 읽는
+            # 자리다. 시트의 `detail.fields` 와 겨누는 대상이 다르다: 저것은 풀 항목(파일)의
+            # 판독이고 이것은 이 편집 세션이 든 스키마다.
             "fields": [f.to_dict() for f in self.schema.fields] if self.schema else [],
             "raw_block": self.raw_block,
-            # 이 템플릿의 구간(항목·선택) 축 요약(U4-E2 #939) — 세울 것이 없으면 ``None``
-            # 이고 표면은 존째 서지 않는다. 모양은 tpl 검토의 `library.slots` 와 같고
-            # (`SlotView.to_dict`) 다른 것은 **동사가 없다**는 점이다: 편집기는 저장 전
-            # 초안 세션이라 템플릿 파일을 변이시키지 않는다.
-            "template_slots": (
-                self.template_slots.to_dict() if self.template_slots is not None else None
-            ),
             "gate": self._gate_snapshot(),
             "gate_error": self.gate_error,
             "data_path": self.data_path,
@@ -1055,8 +1012,10 @@ class EditorController:
             # #26 편집 모드·프로파일 표면. (dataset_name·default_dataset 스냅샷 키는 #347
             # 에서 사망 — 자동등록·기본 데이터 연결이 U2 §5.3 판정 D 로 폐기됐다.)
             "editing_origin": self._editing_origin,
-            # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
-            "provenance": self._loaded_provenance or None,
+            # (작성 출처 `provenance` 스냅샷 키는 U6-E(#979)에서 퇴역했다 — 고르기 존 아래의
+            #  「작성 출처」 블록이 걷히며 소비자가 0 이 됐다. **생산은 그대로 산다**: 저장
+            #  경로가 `_build_provenance` 로 mapping 에 찍고, 그 값은 durable 이라 편집 재저장의
+            #  최초 작성시각 보존(`_loaded_provenance`)도 불변이다.)
             # 고르기 단계의 **연결 카드**(U6-B #976) — 좌·우에서 하나씩 고른 결과를 한 줄로
             # 재진술하고 전진 게이트의 사유를 함께 싣는다. 목록 자체는 여기 없다: 좌 열은
             # `tpl` 채널 스냅샷이, 우 열은 `pool` 채널 스냅샷이 정본이고 편집기가 그것을
@@ -1202,12 +1161,8 @@ class EditorController:
     # (_default_dataset_snapshot(#53-A 기본 데이터 연결 상태 재진술)은 #347 에서 삭제 —
     #  작업↔데이터 결속이 폐기돼 재진술할 참조 자체가 없다. U2 §5.3 판정 D.)
 
-    def _schema_summary(self) -> str:
-        if self.schema is None:
-            return ""
-        head = ", ".join(f"{f.name}({f.inferred_type})" for f in self.schema.fields[:6])
-        extra = "" if len(self.schema.fields) <= 6 else f" 외 {len(self.schema.fields) - 6}개"
-        return f"필드 {len(self.schema.fields)}개: {head}{extra}"
+    # (`_schema_summary`(나열식 필드 요약)는 U6-E(#979)에서 퇴역했다 — 그 문장의 승계처는
+    #  항목 상세 시트의 필드 표 머리이고, 성형은 링1 `TemplateDetail.field_summary` 하나다.)
 
     def _build_provenance(self, profile) -> "dict[str, str]":
         """작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향, 실행 게이트는 여전히
@@ -1451,21 +1406,26 @@ class EditorController:
         **복사 권위는 :meth:`TemplateController.import_into_library` 하나다**(잠금·충돌
         접미·무잔재) — 여기는 그 사본으로 「세션을 시작할 수 있는가」만 판정한다.
         시작 가능(hwpx 누름틀 有 / txt UTF-8 판독 가능) = 즉시 새 세션(F7 거동 보존).
-        불가(RAW·손상) = **세션 없이 목록 합류** + notice 가 수선 경로(행 ⋮ 변환·삭제)를
-        지목한다 — 종전 선거부의 근거(인앱 삭제 어포던스 부재 → 영구 오류 행)는 F8 이
-        행 ⋮ 삭제를 들이면서 소멸했다(근거가 죽으면 가드도 걷는다).
+        불가(RAW·손상) = **세션 없이 목록 합류** + notice 가 수선 경로를 지목한다.
+
+        **사유 문안은 살아 있는 동사만 지목한다**(U6-E #979): 종전 문안은 「행 ⋮ 에서
+        삭제」와 「'누름틀로 변환'」을 가리켰는데, 앞의 것은 U6-A(#975)에서 퇴역했고
+        (앱은 사용자 서식 폴더에 쓰지 않는다 — 「폴더에서 보기」가 그 자리다) 뒤의 것은
+        S8-03 에서 「누름틀·구간 변환」으로 개명됐다. 라벨은 **링1 상수에서 가져온다** —
+        여기서 리터럴로 다시 쓰면 링1 이 라벨을 고치는 날 이 문장만 옛말을 계속 한다.
         """
         path = Path(dest)
-        # 공유 VM 은 import_into_library 가 이미 refresh 했다 — 단독 구동(테스트)만을 위한
-        # 재스캔이 아니라, 채택 판정 전 목록 정합의 방어적 재확인(앱에선 무해한 중복).
-        self._refresh_library()
+        # (채택 전 목록 재스캔은 U6-E 에서 걷혔다 — 복사 권위(`import_into_library`)가 이미
+        #  자기 VM 을 refresh 했고, 이 화면은 더 이상 자기 목록을 들지 않는다. 소속 판정이
+        #  필요한 자리는 `assert_library_path` 하나이고 그것은 tpl 관문을 지난다.)
         if path.suffix.lower() == ".hwpx":
             try:
                 schema = extract_schema(read_hwpx_package(path))
             except Exception:
                 self._set_notice(
                     f"'{path.name}' 을 가져왔지만 읽을 수 없습니다. "
-                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "목록의 행 ⋮ → '자세히…'에서 사유를 보거나 "
+                    "'폴더에서 보기'로 파일을 확인하세요.",
                     "warn",
                 )
                 self._push()
@@ -1473,7 +1433,7 @@ class EditorController:
             if not schema.fields:
                 self._set_notice(
                     f"'{path.name}' 은 누름틀이 없는 원본(RAW)입니다. "
-                    "목록의 행 ⋮ → '누름틀로 변환'을 거친 뒤 시작하세요.",
+                    f"목록의 행 ⋮ → '{RAW_CONVERT_LABEL}'을 거친 뒤 시작하세요.",
                     "warn",
                 )
                 self._push()
@@ -1484,7 +1444,8 @@ class EditorController:
             except Exception:
                 self._set_notice(
                     f"'{path.name}' 을 가져왔지만 읽을 수 없습니다(UTF-8 아님). "
-                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "목록의 행 ⋮ → '자세히…'에서 사유를 보거나 "
+                    "'폴더에서 보기'로 파일을 확인하세요.",
                     "warn",
                 )
                 self._push()
@@ -1513,7 +1474,6 @@ class EditorController:
         self.gate = None
         self.gate_error = False
         self.raw_block = ""
-        self.template_slots = None  # 교체하는 순간 이전 템플릿의 구조를 말하지 않는다
         if template_media(path) == "txt":
             self._load_txt_template(path)
             if emit_push:
@@ -1530,38 +1490,10 @@ class EditorController:
             return
         try:
             self.gate = gate_for_template(pkg)
-            # 구간 축 요약(U4-E2 #939)은 **같은 pkg** 위에 선다 — 파일을 다시 열면 스키마·
-            # 게이트와 다른 스냅샷을 볼 수 있다. 판독이 예외로 끝나는 경우를 게이트 실패와
-            # 같은 자리에 두는 이유: 구조를 못 읽는 템플릿을 「구조 없음」으로 접으면 있는
-            # 항목이 조용히 사라진다. 못 믿는 파일은 진행을 막고 사유를 말한다(fail-closed).
-            self.template_slots = self._slot_view_for(path, pkg)
         except Exception:  # noqa: BLE001  fail-closed(진행 차단)
             self.gate_error = True
-            self.template_slots = None
         if emit_push:
             self._push()
-
-    @staticmethod
-    def _slot_view_for(path: str, pkg: object) -> "SlotView | None":
-        """열린 pkg 에서 구간 축 투영을 세운다 — **세울 것이 없으면 ``None``**.
-
-        판정·행 성형·요약 문자열은 전부 링1(:class:`SlotView`·:class:`SlotRow`) 소유다.
-        여기서 개수를 다시 세면 같은 사실을 두 곳이 말하게 된다.
-
-        ``None`` 의 뜻은 「확인할 것이 없다」(U3 #876) 하나다: 항목도 진단도 없을 때만
-        접힌다. **진단이 있으면 접지 않는다** — 판독이 무언가를 거절했다는 사실 자체가
-        확인 대상이고, 그 자리는 목록 대신 사유가 선다(:mod:`~hwpxfiller.domain.authoring`
-        의 진단 우선 규율 상속).
-        """
-        slots, diagnostics = inspect_slots(pkg)
-        if not slots and not diagnostics:
-            return None
-        return SlotView(
-            path=path,
-            name=Path(path).name,
-            rows=tuple(SlotRow.from_slot(slot) for slot in slots),
-            diagnostics=tuple(item.message for item in diagnostics),
-        )
 
     # ------------------------------------------- tpl 변이 재정산(S8G-00 #320)
     def reconcile_template_mutation(self, kind: str, path: str) -> None:

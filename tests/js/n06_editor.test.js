@@ -5,7 +5,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
-  createEditorController, EditorScreen, ROW_STATE_CLASS, TxtEditDialog,
+  createEditorController, EditorScreen, libRowMenuItems, ROW_STATE_CLASS,
+  TplDetailSheet, TxtEditDialog,
 } from "../../frontend/src/screens/editor.ts";
 import { usableSpans } from "../../frontend/src/editorview/txt_lintpad.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
@@ -49,7 +50,7 @@ function tplSnap(extra) {
     txt: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
     templates_root: { directory: "C:/lib", source: "settings", source_label: "설정", notice: "" },
     result: { text: "", level: "muted" },
-    slots: null,
+    detail: null,
   }, extra || {});
 }
 
@@ -102,7 +103,10 @@ function harness(cfg) {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return opts.confirm?.(spec) ?? false; },
       prompt: async (spec) => { trace.push(["modal.prompt", spec]); return opts.prompt?.(spec) ?? null; },
       choose: async (spec) => { trace.push(["modal.choose", spec]); return opts.choose?.(spec) ?? null; },
-      open() {}, close() {},
+      /* 여닫기도 자취에 남긴다(U6-E #979) — 항목 상세 시트는 「왕복 먼저, 열기 나중」이
+         계약이라 그 **순서**를 재려면 두 사건이 같은 줄에 있어야 한다. */
+      open(id, spec) { trace.push(["modal.open", id, spec]); },
+      close(id) { trace.push(["modal.close", id]); },
     },
     undo: { show() {} },
     popover: { wireDismiss: () => () => {} },
@@ -289,10 +293,16 @@ test("목록에서 사라진 키는 조용히 반환하지 않는다 + 끌어 �
 });
 
 test("tpl 재스캔은 editor 재당김을 태우지 않고, 변이 동사는 정확히 한 번 태운다", async () => {
-  const h = harness({ tpl: tplSnap({ slots: {
-    path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개",
-    rows: [{ id: "특약", label: "특약 사항", option_count: 1, options: [] }],
+  const h = harness({ tpl: tplSnap({ detail: {
+    path: "C:/lib/구간.hwpx", name: "구간", media: "hwpx",
+    state: "compiled", badge_label: "누름틀", badge_level: "ok",
+    field_count: 0, field_summary: "채울 필드가 없습니다.", fields: [], actions: [],
     diagnostics: [],
+    slots: {
+      summary: "항목 1개",
+      rows: [{ id: "특약", label: "특약 사항", option_count: 1, options: [] }],
+    },
+    error: "",
   } }) });
   await h.controller.init();
 
@@ -1026,56 +1036,115 @@ test("#793 사용자가 스스로 옮긴 초점은 빼앗지 않는다", async (
   }
 });
 
-/* ---------------- ⑦ 구간 항목(Slot) 목록·동사 3종 — S8-03 #834 ---------------- */
+/* -------- ⑦ 항목 상세 시트 — 구간 항목 동사 3종 + 밴드 동사(S8-03 #834 · U6-E #979) -------- */
 
-/** 검토가 낸 Slot 목록이 실린 **`tpl` 채널** 스냅샷(U6-B — 편집기 스냅샷이 아니다). */
-function slotTpl(slots) {
+/** 검토가 낸 상세가 실린 **`tpl` 채널** 스냅샷(U6-E — 편집기 스냅샷이 아니다). */
+function detailTpl(detail) {
   return tplSnap({
-    slots: slots === undefined ? {
-      path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
-      rows: [{
-        id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
-      }],
+    detail: detail === undefined ? {
+      path: "C:/lib/구간.hwpx", name: "구간", media: "hwpx",
+      state: "compiled", badge_label: "누름틀", badge_level: "ok",
+      field_count: 1, field_summary: "필드 1개",
+      fields: [{ name: "계약명", type_hint: "text" }],
+      actions: [{ key: "review", label: "검토" }],
       diagnostics: [],
-    } : slots,
+      slots: {
+        summary: "항목 1개 · 선택 1개",
+        rows: [{
+          id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
+        }],
+      },
+      error: "",
+    } : detail,
   });
 }
 
-/** 그 목록을 보는 「고르기」 단계 편집기 스냅샷. */
+/** 그 상세를 보는 「고르기」 단계 편집기 스냅샷. */
 function slotSnap(extra) {
   return snap(Object.assign({ section: "template" }, extra || {}));
 }
 
-test("S8-03 Slot 목록이 「템플릿」 탭에 서고 동사 3종이 함께 그려진다", async () => {
-  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl() });
+/** 시트는 화면이 아니라 overlay portal 이라 **따로** 렌더한다(제품 배선과 같은 짝). */
+function renderSheet(h) {
+  return renderToStaticMarkup(createElement(TplDetailSheet, { controller: h.controller }));
+}
+
+function renderEditor(h) {
+  return renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
+}
+
+test("U6-E 상세 시트가 머리·필드 표·구간 항목 표·동사 줄을 한 장에 세운다", async () => {
+  const h = harness({ initial: async () => slotSnap(), tpl: detailTpl() });
   await h.controller.init();
 
-  const markup = renderToStaticMarkup(
-    createElement(EditorScreen, { controller: h.controller }),
-  );
-  assert.ok(markup.includes('id="tplSlots"'), "목록 구획이 실재해야 한다");
+  const markup = renderSheet(h);
+  assert.ok(markup.includes('id="tplDetailTitle"') && markup.includes("구간"),
+    "머리에 표시명이 서야 한다");
+  assert.ok(markup.includes("C:/lib/구간.hwpx"), "경로를 재진술해야 한다");
+  /* 필드는 표다 — 나열식 금지(#16)의 좌표를 시트가 잇는다. */
+  assert.ok(markup.includes('class="schema-fields"'), "필드 표가 실재해야 한다");
+  assert.ok(markup.includes("계약명") && markup.includes("텍스트"),
+    "필드 이름과 추정 유형 라벨이 실린다");
+  assert.ok(markup.includes("필드 1개"), "필드 표 머리는 Python 문안 그대로다");
+  assert.ok(markup.includes('id="tplDetailSlots"'), "구간 항목 표가 실재해야 한다");
   assert.ok(markup.includes("특약 사항") && markup.includes("선택 1"),
     "투영된 이름·선택 수가 그대로 실린다");
   for (const act of ["slot-rename", "slot-decompile", "slot-remove"]) {
     assert.ok(markup.includes(`data-act="${act}"`), `${act} 트리거가 없다`);
   }
   assert.ok(markup.includes('data-slot="특약"'), "동사가 겨눌 항목 id 가 실려야 한다");
+  /* 동사 줄은 행 ⋮ 와 같은 목록에서 「자세히…」만 걷은 것이다. */
+  assert.ok(markup.includes('data-act="detail-act:review"'), "상태 동사가 시트에도 선다");
+  assert.equal(markup.includes('data-act="detail-detail"'), false,
+    "지금 서 있는 시트를 여는 동사를 시트 안에 또 세우지 않는다");
+});
+
+test("U6-E 상세가 없으면 시트는 빈 사유를 말한다(조용한 백지 금지)", async () => {
+  const h = harness({ initial: async () => slotSnap(), tpl: tplSnap() });
+  await h.controller.init();
+
+  const markup = renderSheet(h);
+  assert.ok(markup.includes('id="tplDetailEmpty"'), "빈 사유가 서야 한다");
+  assert.equal(markup.includes('id="tplDetailSlots"'), false);
+});
+
+test("U6-E 판독 실패 항목의 시트는 사유를 보인다(오류 행의 「자세히…」가 답할 것)", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: detailTpl({
+      path: "C:/txt/깨진.txt", name: "깨진", media: "txt",
+      state: "", badge_label: "", badge_level: "muted",
+      field_count: 0, field_summary: "읽기 실패: UTF-8 이 아닙니다",
+      fields: [], actions: [], diagnostics: [], slots: null,
+      error: "UTF-8 이 아닙니다",
+    }),
+  });
+  await h.controller.init();
+
+  const markup = renderSheet(h);
+  assert.ok(markup.includes('id="tplDetailError"') && markup.includes("UTF-8 이 아닙니다"),
+    "사유는 숨기지 않는다");
+  assert.equal(markup.includes('id="tplDetailSlots"'), false,
+    "구간 축이 없는 매체에 항목 표를 세우지 않는다");
+  assert.equal(markup.includes('id="tplDetailVerbs"'), false,
+    "읽을 수 없는 항목에 동사를 권하지 않는다");
 });
 
 test("S8-03 진단이 있으면 사유만 서고 동사 버튼은 없다", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl({
-      path: "C:/lib/구간.hwpx", name: "구간.hwpx",
-      summary: "구간 구조를 읽을 수 없습니다: 구간.hwpx",
-      rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+    tpl: detailTpl({
+      path: "C:/lib/구간.hwpx", name: "구간", media: "hwpx",
+      state: "compiled", badge_label: "누름틀", badge_level: "ok",
+      field_count: 0, field_summary: "채울 필드가 없습니다.", fields: [],
+      actions: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+      slots: { summary: "구간 구조를 읽을 수 없습니다: 구간", rows: [] },
+      error: "",
     }),
   });
   await h.controller.init();
 
-  const markup = renderToStaticMarkup(
-    createElement(EditorScreen, { controller: h.controller }),
-  );
+  const markup = renderSheet(h);
   assert.ok(markup.includes("invalid MetaTag JSON"), "사유는 숨기지 않는다");
   assert.equal(markup.includes('data-act="slot-remove"'), false,
     "못 믿는 구조 위에서 변이를 권하지 않는다");
@@ -1084,7 +1153,7 @@ test("S8-03 진단이 있으면 사유만 서고 동사 버튼은 없다", async
 test("S8-03 개명은 프롬프트 하나로 끝난다(확인 왕복 없음)", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl(),
+    tpl: detailTpl(),
     prompt: () => "새 이름",
   });
   await h.controller.init();
@@ -1101,7 +1170,7 @@ test("S8-03 개명은 프롬프트 하나로 끝난다(확인 왕복 없음)", a
 });
 
 test("S8-03 개명 프롬프트 취소는 아무것도 보내지 않는다", async () => {
-  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl(), prompt: () => null });
+  const h = harness({ initial: async () => slotSnap(), tpl: detailTpl(), prompt: () => null });
   await h.controller.init();
 
   await h.controller.handleSlotVerb("rename", "특약", {});
@@ -1114,7 +1183,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
   test(`S8-03 '${verb}' 는 2왕복이고 확인 본문은 Python 이 싣는다`, async () => {
     const h = harness({
       initial: async () => slotSnap(),
-      tpl: slotTpl(),
+      tpl: detailTpl(),
       call: async (_screen, name) => (
         name === action
           ? { needs_confirm: true, confirm_text: `${action} 재진술` }
@@ -1142,7 +1211,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
   test(`S8-03 '${verb}' 확인 취소는 확정 호출을 보내지 않는다`, async () => {
     const h = harness({
       initial: async () => slotSnap(),
-      tpl: slotTpl(),
+      tpl: detailTpl(),
       call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
       confirm: () => false,
     });
@@ -1159,7 +1228,7 @@ for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_
 test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl(),
+    tpl: detailTpl(),
     prompt: () => "새 이름",
     call: async (_screen, action) => {
       if (action === "slot_rename") throw new Error("항목이 없습니다");
@@ -1178,34 +1247,33 @@ test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)"
 /* ---- U4-E3 #939 밴드 동사 「전부 표기로 되돌리기」 ---- */
 
 test("U4-E3 밴드 동사는 행 동사와 같은 술어로 선다(진단 0 · 행 1건 이상)", async () => {
-  const h = harness({ initial: async () => slotSnap(), tpl: slotTpl() });
+  const h = harness({ initial: async () => slotSnap(), tpl: detailTpl() });
   await h.controller.init();
-  const render = () => renderToStaticMarkup(
-    createElement(EditorScreen, { controller: h.controller }));
 
   /* 항목 1건이어도 선다 — 개수 문턱을 새로 두면 2→1 이 되는 순간 손 밑에서 사라진다. */
-  assert.ok(render().includes('data-act="slot-decompile-all"'), "행 1건에서도 서야 한다");
+  assert.ok(renderSheet(h).includes('data-act="slot-decompile-all"'), "행 1건에서도 서야 한다");
   /* 대상은 파일이라 겨눌 항목 id 가 없다. */
-  assert.equal(render().includes('data-act="slot-decompile-all" data-slot'), false);
+  assert.equal(renderSheet(h).includes('data-act="slot-decompile-all" data-slot'), false);
 
   const broken = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl({
-      path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "읽을 수 없습니다",
-      rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+    tpl: detailTpl({
+      path: "C:/lib/구간.hwpx", name: "구간", media: "hwpx",
+      state: "compiled", badge_label: "누름틀", badge_level: "ok",
+      field_count: 0, field_summary: "채울 필드가 없습니다.", fields: [], actions: [],
+      diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+      slots: { summary: "읽을 수 없습니다", rows: [] }, error: "",
     }),
   });
   await broken.controller.init();
-  const brokenMarkup = renderToStaticMarkup(
-    createElement(EditorScreen, { controller: broken.controller }));
-  assert.equal(brokenMarkup.includes('data-act="slot-decompile-all"'), false,
+  assert.equal(renderSheet(broken).includes('data-act="slot-decompile-all"'), false,
     "못 믿는 구조 위에서 일괄 변이를 권하지 않는다");
 });
 
 test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl(),
+    tpl: detailTpl(),
     call: async (_screen, name) => (
       name === "slot_decompile_all"
         ? { needs_confirm: true, confirm_text: "항목 1개를 전부 …" }
@@ -1233,7 +1301,7 @@ test("U4-E3 밴드 동사는 2왕복이고 payload 에 slot_id 가 없다", asyn
 test("U4-E3 밴드 동사 확인 취소는 확정 호출을 보내지 않는다", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: slotTpl(),
+    tpl: detailTpl(),
     call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
     confirm: () => false,
   });
@@ -1246,77 +1314,126 @@ test("U4-E3 밴드 동사 확인 취소는 확정 호출을 보내지 않는다"
   assert.equal(sent[0][3].confirm, undefined);
 });
 
-test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
-  const h = harness({ initial: async () => snap({ section: "template" }), tpl: tplSnap() });
-  await h.controller.init();
+/* -------- ⑦-b 「자세히…」의 도달성과 닫힌 집합 — U6-E #979 -------- */
 
-  const markup = renderToStaticMarkup(
-    createElement(EditorScreen, { controller: h.controller }),
-  );
-  assert.equal(markup.includes('id="tplSlots"'), false);
+test("U6-E 「자세히…」는 어떤 행에서도 선다(동사 0 인 행이 없다)", () => {
+  /* U6-B 뒤 COMPILED 행의 동사가 0 이 되며 ⋮ 가 비활성이던 자리다 — 그 상태에서만 존재하는
+     구간 동사에 닿을 길이 함께 사라졌었다. 이제 어느 행이든 답할 것이 하나 있다. */
+  const compiled = libRowMenuItems("hwpx", { actions: [] });
+  assert.deepEqual(compiled.map((entry) => entry.action), ["detail"]);
+  const raw = libRowMenuItems("hwpx", { actions: [{ key: "compile", label: "누름틀·구간 변환" }] });
+  assert.deepEqual(raw.map((entry) => entry.action), ["act:compile", "detail"]);
+  assert.deepEqual(libRowMenuItems("txt", { error: "" }).map((entry) => entry.action),
+    ["edit", "detail"]);
+  assert.deepEqual(libRowMenuItems("txt", { error: "UTF-8 아님" }).map((entry) => entry.action),
+    ["detail"]);
+  /* 항목이 아예 없을 때만 빈 목록이다(방어). */
+  assert.deepEqual(libRowMenuItems("hwpx", null), []);
 });
 
-/* -------- ⑦-b 편집 중 템플릿의 구간 축 요약(읽기 전용) — U4-E2 #939 -------- */
-
-/** 편집기가 지금 연 템플릿의 슬롯 투영이 실린 「템플릿」 탭 스냅샷. */
-function editorSlotSnap(slots) {
-  return snap({
-    section: "template",
-    template_name: "구간템플릿.hwpx",
-    template_path: "C:/lib/구간템플릿.hwpx",
-    template_slots: slots,
-  });
-}
-
-const EDITOR_SLOTS = {
-  path: "C:/lib/구간템플릿.hwpx", name: "구간템플릿.hwpx",
-  summary: "항목 1개 · 선택 2개",
-  rows: [{
-    id: "특약", label: "특약 사항", option_count: 2,
-    options: ["지체상금 조항", "하자보수 조항"],
-  }],
-  diagnostics: [],
-};
-
-function renderEditor(h) {
-  return renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
-}
-
-test("U4-E2 구조를 가진 템플릿은 읽기 전용 요약 존을 세운다", async () => {
-  const h = harness({ initial: async () => editorSlotSnap(EDITOR_SLOTS) });
-  await h.controller.init();
-
-  const markup = renderEditor(h);
-  assert.ok(markup.includes('id="editorSlotSummary"'), "요약 존이 실재해야 한다");
-  assert.ok(markup.includes("항목 1개 · 선택 2개"), "요약 문자열은 스냅샷 값 그대로다");
-  assert.ok(markup.includes("특약 사항") && markup.includes("선택 2"),
-    "투영된 이름·선택 수가 그대로 실린다");
-  for (const act of ["slot-rename", "slot-decompile", "slot-remove"]) {
-    assert.equal(markup.includes(`data-act="${act}"`), false, `${act} 는 읽기 전용 존에 없다`);
-  }
-  assert.equal(markup.includes('id="tplSlots"'), false, "tpl 검토 구획을 빌려쓰지 않는다");
-});
-
-test("U4-E2 세울 것이 없으면 존째 서지 않는다", async () => {
-  const h = harness({ initial: async () => editorSlotSnap(null) });
-  await h.controller.init();
-
-  assert.equal(renderEditor(h).includes('id="editorSlotSummary"'), false);
-});
-
-test("U4-E2 진단이 있으면 목록 대신 사유가 선다", async () => {
+test("U6-E 동사 0 인 행의 ⋮ 도 활성이다(비활성 + 사유는 근거와 함께 걷혔다)", async () => {
   const h = harness({
-    initial: async () => editorSlotSnap(Object.assign({}, EDITOR_SLOTS, {
-      summary: "구간 구조를 읽을 수 없습니다: 구간템플릿.hwpx",
-      diagnostics: ["「특약」 범위가 열린 채 파일이 끝났습니다."],
-    })),
+    initial: async () => slotSnap({ template_path: "C:/lib/a.hwpx" }),
+    tpl: tplSnap({
+      hwpx: {
+        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+        sections: [{
+          group: "", collapsed: false, count: 1,
+          items: [{
+            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
+            badge_label: "누름틀", badge_level: "ok",
+            actions: [], selectable: true, select_block_reason: "",
+          }],
+        }],
+      },
+    }),
   });
   await h.controller.init();
 
   const markup = renderEditor(h);
-  assert.ok(markup.includes('id="editorSlotSummary"'), "진단이 있으면 숨기지 않는다");
-  assert.ok(markup.includes("열린 채 파일이 끝났습니다"), "사유를 그대로 재진술한다");
-  assert.equal(markup.includes("특약 사항"), false, "진단이 있으면 목록은 서지 않는다");
+  const more = markup.slice(markup.indexOf('data-act="lib-more"'));
+  assert.ok(more, "행 ⋮ 가 서야 한다");
+  assert.equal(more.slice(0, more.indexOf("</button>")).includes("disabled"), false,
+    "동사 0 인 행이 없으므로 ⋮ 를 잠그지 않는다");
+});
+
+test("U6-E 「자세히…」는 검토 왕복 뒤에 시트를 연다(순서가 계약)", async () => {
+  const h = harness({ initial: async () => slotSnap(), tpl: detailTpl() });
+  await h.controller.init();
+
+  await h.controller.openDetail("C:/lib/구간.hwpx", {});
+
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl" && row[2] !== "refresh");
+  assert.deepEqual(sent.map((row) => [row[2], row[3]]), [
+    ["review", { path: "C:/lib/구간.hwpx" }],
+  ]);
+  const opened = h.trace.filter((row) => row[0] === "modal.open");
+  assert.deepEqual(opened.map((row) => row[1]), ["tplDetailModal"]);
+  assert.ok(
+    h.trace.indexOf(sent[0]) < h.trace.indexOf(opened[0]),
+    "왕복이 먼저다 — 먼저 열면 지난 항목의 상세가 한 프레임 선다");
+});
+
+test("U6-E 행 ⋮ 의 모르는 키는 조용히 떨어지지 않는다(닫힌 집합)", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: tplSnap({
+      hwpx: {
+        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+        sections: [{
+          group: "", collapsed: false, count: 1,
+          items: [{
+            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
+            actions: [], selectable: true, select_block_reason: "",
+          }],
+        }],
+      },
+    }),
+  });
+  await h.controller.init();
+  h.controller.toggleLibMenu("hwpx", "a.hwpx", { });
+
+  await h.controller.handleLibMenu("act:없는동사");
+
+  assert.equal(h.notices.length, 1, "던진 예외가 백스톱까지 올라와야 한다");
+  assert.ok(h.notices[0].includes("알 수 없는 항목 동사"), h.notices[0]);
+});
+
+test("U6-E 게이트 존은 필드 수 한 줄 + 「자세히…」로 접힌다(스키마 표는 시트로 갔다)", async () => {
+  const h = harness({
+    initial: async () => slotSnap({
+      template_path: "C:/lib/a.hwpx", template_name: "a", field_count: 3,
+    }),
+    tpl: tplSnap(),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes('id="editorTplGate"'), "게이트 존이 서야 한다");
+  assert.ok(markup.includes("필드 3개"), "남는 수치는 field_count 하나다");
+  assert.ok(markup.includes('data-act="session-detail"'), "세션 템플릿의 시트 문이 서야 한다");
+  /* 걷힌 표면들 — 되살아나면 같은 사실이 두 자리에서 그려진다. */
+  assert.equal(markup.includes('class="schema-fields"'), false, "스키마 표는 시트로 갔다");
+  assert.equal(markup.includes('id="tplSlots"'), false, "구간 항목 밴드는 시트로 갔다");
+  assert.equal(markup.includes('id="editorSlotSummary"'), false, "구간 요약은 시트로 갔다");
+  assert.equal(markup.includes("작성 출처"), false, "작성 출처 블록은 퇴역했다");
+  assert.equal(markup.includes('class="filechip"'), false, "선택 chip 은 퇴역했다");
+});
+
+test("U6-E 결과 줄은 관리 동사가 나가는 좌 열 바닥에 선다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: tplSnap({ result: { text: "검토: 문제 없음", level: "ok" } }),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes("검토: 문제 없음"), "결과 줄이 그려져야 한다");
+  const pool = markup.indexOf('id="editorTplPool"');
+  const data = markup.indexOf('id="editorDataPool"');
+  const result = markup.indexOf("run-result");
+  assert.ok(pool < result && result < data,
+    "결과 줄이 좌 열 안에 서야 한다(고르기 존 아래가 아니다)");
 });
 
 /* ---------------- ⑧ TXT 저작 린트메모장(S10-05 #862 · #299 회수) ---------------- */
