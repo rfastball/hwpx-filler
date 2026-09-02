@@ -516,20 +516,43 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     발행하는 액션(`editor/use_pool_data` ↔ `job/load_pool`), DOM id 접두(`editorPool` ↔
     `dataPicker`). `load_pool` 을 `editor` 채널에 넣지 않는다: 화면별 허용 목록이 곧 경계의
     정의라 같은 이름이 두 화면에 걸리면 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다.
-    관리 동사(보관·활성화·삭제·다시 연결·중복 정리)는 두 호스트가 **같은 `pool` 채널**로 보낸다.
+    관리 동사(보관·활성화·삭제·다시 연결·중복 정리)는 두 호스트가 **같은 `pool` 채널**로
+    보내고, 연타 차단(in-flight 표지)도 그 공용 몸통 하나가 진다 — 호스트별 재구현이 있으면
+    한쪽만 두 벌 확인 모달을 세운다. 편집기 호스트는 그 위에 발신을 편집 체인(`EDIT_CHAIN`)
+    으로 태워 이 화면의 다른 왕복과 순서를 나눠 갖는다.
   - **「고를 수 있는가」와 그 사유는 Python 행 필드**다(`selectable`·`select_block_reason`):
     좌는 `screen_template`(링1 `TemplateRow.select_block_reason` — 변환 전 RAW·PARTIAL 은
-    비활성 + 사유), 우는 `screen_pool.select_block_reason`(보관·끊김·나라). 표면이 `state`·
+    비활성 + 사유), 우는 `screen_pool.select_block_reason`(보관·끊김·나라). **hwpx·txt 두
+    밴드가 같은 링1 성형 함수를 지난다**(`TemplateRow.from_text` — `detail_line`·
+    `select_block_reason` 공유): 갈리는 축은 변환 축의 유무 하나이고 그것이 `media` 다.
+    링2 가 매체별로 문장을 다시 지으면 링1 문안을 고쳐도 TXT 밴드만 옛말을 계속 한다. 표면이 `state`·
     `status`·`missing` 으로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다 — 그래서 링2 의
     재판정(구 `pool_option_block`·웹 `usableReason`)은 사슬째 걷혔고, 못 고르는 항목의
     클릭·드롭은 조용히 삼켜지지 않고 그 사유를 인라인으로 재진술한다.
+  - **고르는 제스처는 좌·우가 한 규칙이다**(리뷰 1·2·5·10). 클릭도 끌어 놓기도 컨트롤러의
+    같은 한 자리(`chooseTemplate`/`chooseData`)를 지나고, 그 자리가 셋을 함께 진다:
+    ① **이미 고른 것을 다시 고르면 무동작**이다 — 통과시키면 `new_job_session` 이 이름·
+    매핑·단계를 통째로 끊는다(누른 사람은 「이미 고른 것을 다시 골랐을」 뿐이다). 판정은
+    표면과 `_do_use_library_template` **둘 다**에 선다(표면만 막으면 프로브·다른 호출자가
+    뚫는다). ② **교체는 데이터 교체와 같은 확인 왕복**을 지난다 — 수치는 Python 이 지금
+    판정하고(`mapping_reset_stakes`) 확인 UI 만 웹이 짓는다. 같은 파괴에 두 규칙을 두지
+    않는다. ③ **목록에서 사라진 키도 사유를 낸다** — 드롭 도중 push 가 끼면 손에 든 키가
+    지금 목록에 없을 수 있고, 그때 말없이 반환하면 끌어 놓기의 반쪽만 성사한 채 화면이
+    아무 말도 하지 않는다. 끌어 놓기는 두 반쪽의 거절을 **한 문장으로** 말한다(알림 채널이
+    1슬롯이라 각자 쓰면 앞 문장이 조용히 사라진다).
   - **연결 카드의 수치는 출처를 명시로 든다**(`pairing.basis`). 1단계는 매핑 모델을 **만들지
     않는다**: 생성은 2단계 진입의 `_ensure_model` 하나가 지고, 카드가 미리 만들면 고르기를
     바꿔 보는 것만으로 「전원 미확정 재생성」 전이가 돌아 확정이 조용히 무너진다. 그래서
     모델이 있고 그 키가 지금 선택과 같으면 모델의 실제 수치(`basis="model"`, 라벨 「확인」),
     아니면 순수 함수 `gui.mapping_state.pairing_preview` 를 읽기 전용으로 돌린 미리보기
     (`basis="preview"`, 라벨 「자동 연결」)다. 2단계가 실제로 세울 제안과 **같은 함수**라
-    수치가 갈리지 않는다.
+    수치가 갈리지 않는다. `suggest_mappings` 는 필드×열 SequenceMatcher 라 **고르기 단계
+    에서만** 세고 같은 정체 키에서는 memoize 한다 — 세지 않은 자리는 `basis=""` 로 그
+    사실을 말하고 표면은 그때 수치 줄을 세우지 않는다(0 을 사실처럼 말하지 않는다).
+  - **`ready` 는 「짝이 실제로 섰는가」다** — 경로 둘 + **필드 1개 이상**. 경로만 보면 채울
+    필드가 0 인 템플릿(hwpx RAW · 토큰 0 인 TXT)에서도 참이 되어 「필드 0개 · 자동 연결 0」
+    카드가 비활성 CTA 위에 선다(화면이 「짝이 섰다」고 말하면서 다음으로 못 가는 자리).
+    그 사유는 링1 문안 하나(`RAW_BLOCK_MESSAGE`/`TXT_RAW_BLOCK`)가 낸다.
   - **초안의 전진 게이트가 데이터까지 요구한다**(`can_advance("template")` = 템플릿 준비 +
     데이터 마운트). 이 단계가 묻는 질문이 하나이므로 반쪽만 고르고 지나가면 그 단계가 두
     질문을 가진 것이 되고, 데이터 관문이 2단계 머리에서 걷힌 뒤로는 고칠 표면이 없는 화면에
@@ -665,7 +688,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   변이시키는 tpl 동사는 이 세션의 스키마·게이트를 흔들 수 있어 종전대로 재당김 하나를
   태운다. 재스캔 트리거는 **1단계 진입당 한 번**이다(신규 초안·`load_job`·1단계 재진입) —
   렌더마다 훑지도, 영영 안 읽지도 않는다(U6 §2.3 「화면 진입 시 diff + 수동 새로 읽기」).
-  같은 진입이 `pool/refresh` 도 한 발 보낸다(CLI·다른 창의 등록이 목록에 서지 않으면 같은 침묵이다).
+  같은 진입이 `pool/refresh` 도 한 발 보낸다(CLI·다른 창의 등록이 목록에 서지 않으면 같은
+  침묵이다). **트리거는 스냅샷이 아니라 사건에 걸린다**: 셸이 편집기 화면에 들어설 때 부르는
+  `rerender`(`shell/nav.ts`)와 같은 세션 안의 `gotoSection("template")` 둘이다. 마지막으로 본
+  `(세션, 단계)` 를 기억해 전이를 유도하면 **초안의 세션 표지가 언제나 `"draft"`** 라
+  「초안 → 취소 → 새 초안」이 같은 값으로 읽혀 두 번째 새 작업부터 재스캔이 조용히 빠진다.
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
   (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_decompile_all`·`slot_remove`
   확정 · `txt_edit`) 그 성공 **직후**

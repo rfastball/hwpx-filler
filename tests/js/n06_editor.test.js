@@ -156,21 +156,136 @@ test("init 2회 — initial 추가 등록 0, 같은 promise 공유", async () =>
   assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독 재유입 0");
 });
 
-test("1단계 진입은 두 풀을 한 번씩만 다시 읽는다 — 렌더마다 재스캔 0", async () => {
+/** 재스캔 발신만 뽑는다 — 채널 순서(tpl → pool)까지 계약이다. */
+const rescansOf = (h) => h.trace
+  .filter((row) => row[0] === "dispatch" && row[2] === "refresh")
+  .map((row) => row[1]);
+
+test("재스캔은 **진입 사건**에 걸린다 — 렌더가 아니라(U6-B 리뷰 4)", async () => {
   const h = harness();
   await h.controller.init();
-  const rescans = () => h.trace.filter(
-    (row) => row[0] === "dispatch" && row[2] === "refresh").map((row) => row[1]);
-  assert.deepEqual(rescans(), ["tpl", "pool"], "진입 한 번에 채널별 한 발");
+  /* 부팅 당김 자체는 진입이 아니다: 셸이 편집기 화면에 들어설 때 `rerender` 가 그 문이다. */
+  assert.deepEqual(rescansOf(h), [], "스냅샷 도착만으로는 디스크를 훑지 않는다");
+
+  await h.controller.rerender();                      // 셸의 편집기 착지(shell/nav.ts)
+  assert.deepEqual(rescansOf(h), ["tpl", "pool"], "진입 한 번에 채널별 한 발");
 
   /* 같은 단계에서 스냅샷이 다시 와도 재스캔이 늘지 않는다(진입 수 ≠ 렌더 수). */
   h.store.ingest("editor", snap({ name: "다른 이름" }));
-  assert.deepEqual(rescans(), ["tpl", "pool"], "렌더마다 디스크를 훑지 않는다");
-
-  /* 2단계로 갔다 1단계로 돌아오면 **재진입**이라 다시 읽는다. */
   h.store.ingest("editor", snap({ section: "binding" }));
   h.store.ingest("editor", snap({ section: "template" }));
-  assert.deepEqual(rescans(), ["tpl", "pool", "tpl", "pool"], "재진입은 다시 읽는다");
+  assert.deepEqual(rescansOf(h), ["tpl", "pool"], "렌더마다 디스크를 훑지 않는다");
+
+  /* 같은 세션 안의 1단계 재진입은 **이동 동사**가 낸다. */
+  await h.controller.gotoSection("template");
+  assert.deepEqual(rescansOf(h), ["tpl", "pool", "tpl", "pool"], "재진입은 다시 읽는다");
+  await h.controller.gotoSection("binding");
+  assert.deepEqual(rescansOf(h), ["tpl", "pool", "tpl", "pool"], "2단계 진입은 훑지 않는다");
+});
+
+test("초안 → 취소 → 새 초안: 두 번째 새 작업도 재스캔한다(리뷰 4 회귀 심)", async () => {
+  /* 종전 트리거는 마지막으로 본 `(editorSession(), section)` 을 기억했는데 초안의 세션
+     표지는 **언제나 `"draft"`** 라 두 초안이 같은 값으로 읽혔다 — 두 번째 새 작업부터
+     재스캔이 조용히 빠졌다(선언은 살고 결과가 죽는 자리). */
+  const h = harness({ initial: async () => snap({ is_draft: true }) });
+  h.ports.editorEntry.bind({
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
+    restoreEntryFocus() {},
+  });
+  await h.controller.init();
+
+  await h.controller.rerender();                      // 첫 초안 진입
+  assert.equal(rescansOf(h).length, 2);
+
+  await h.controller.cancelNewDraft();                // 취소 — 편집기를 떠난다
+  assert.equal(rescansOf(h).length, 2, "이탈은 재스캔이 아니다");
+
+  await h.controller.rerender();                      // 두 번째 새 초안 진입
+  assert.deepEqual(rescansOf(h), ["tpl", "pool", "tpl", "pool"],
+    "같은 세션 표지의 두 번째 진입이 조용히 빠졌습니다");
+});
+
+test("같은 템플릿 재선택은 아무 일도 하지 않는다(리뷰 1)", async () => {
+  const h = harness({
+    initial: async () => snap({ template_path: "C:/lib/a.hwpx" }),
+    tpl: tplSnap({
+      hwpx: {
+        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+        sections: [{
+          group: "", collapsed: false, count: 1,
+          items: [{
+            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
+            actions: [], selectable: true, select_block_reason: "",
+          }],
+        }],
+      },
+    }),
+  });
+  await h.controller.init();
+
+  await h.controller.chooseTemplate("a.hwpx");
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor");
+  assert.deepEqual(sent, [], "이미 고른 템플릿을 다시 눌러 세션이 끊겼습니다");
+});
+
+test("템플릿 **교체**는 데이터 교체와 같은 확인 왕복을 지난다(리뷰 2)", async () => {
+  const h = harness({
+    initial: async () => snap({ template_path: "C:/lib/a.hwpx" }),
+    tpl: tplSnap({
+      hwpx: {
+        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
+        sections: [{
+          group: "", collapsed: false, count: 1,
+          items: [{
+            key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx", detail: "필드 3개",
+            actions: [], selectable: true, select_block_reason: "",
+          }],
+        }],
+      },
+    }),
+    call: async (_screen, action) => (
+      action === "mapping_reset_stakes" ? { human: 2 } : {}),
+    confirm: () => false,
+  });
+  await h.controller.init();
+
+  await h.controller.chooseTemplate("b.hwpx");
+  const actions = h.trace
+    .filter((row) => row[0] === "dispatch" && row[1] === "editor").map((row) => row[2]);
+  assert.deepEqual(actions, ["mapping_reset_stakes"],
+    "확정 매핑을 확인 없이 버렸습니다(데이터 교체와 다른 규칙)");
+  const asked = h.trace.find((row) => row[0] === "modal.confirm");
+  assert.ok(asked && asked[1].body.includes("템플릿을 바꾸면"), "확인 문안이 서지 않았습니다");
+
+  /* 승낙하면 그때 발행한다 — 순서가 계약이다(승인 뒤 발신). */
+  const yes = harness({
+    initial: async () => snap({ template_path: "C:/lib/a.hwpx" }),
+    tpl: h.store.get("tpl"),
+    call: async (_screen, action) => (
+      action === "mapping_reset_stakes" ? { human: 2 } : {}),
+    confirm: () => true,
+  });
+  await yes.controller.init();
+  await yes.controller.chooseTemplate("b.hwpx");
+  assert.deepEqual(
+    yes.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor").map((row) => row[2]),
+    ["mapping_reset_stakes", "use_library_template"]);
+});
+
+test("목록에서 사라진 키는 조용히 반환하지 않는다 + 끌어 놓기는 한 문장으로 말한다(리뷰 5)", async () => {
+  const h = harness({ tpl: tplSnap(), pool: { rows: [], duplicates: [], corrupted: [] } });
+  await h.controller.init();
+
+  await h.controller.chooseData("사라진키");
+  const first = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(first && first.text.includes("목록이 바뀌었습니다"), "조용히 삼켰습니다");
+
+  /* 끌어 놓기의 두 반쪽이 각자 쓰면 앞 문장이 사라진다 — 하나로 모아 말한다. */
+  await h.controller.dropPair("tpl", "없는템플릿", "없는데이터");
+  const both = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(both.text.includes("템플릿을 찾을 수 없습니다"), both.text);
+  assert.ok(both.text.includes("데이터를 찾을 수 없습니다"), both.text);
+  assert.deepEqual(h.notices, [], "구조화 거절은 window.alert 로 새지 않는다");
 });
 
 test("tpl 재스캔은 editor 재당김을 태우지 않고, 변이 동사는 정확히 한 번 태운다", async () => {

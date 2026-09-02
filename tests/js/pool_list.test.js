@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { PoolSections, dragProps } from "../../frontend/src/screens/pool_list.ts";
+import { PoolSections, createPoolVerbs, dragProps } from "../../frontend/src/screens/pool_list.ts";
 
 const ROW = {
   key: "k1", name: "7월 공고목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
@@ -194,4 +194,73 @@ test("드래그 결속이 없는 호스트는 끌기 props 를 하나도 얹지 
   const markup = render(host());
   assert.equal(markup.includes('data-side="dat"'), false,
     "다이얼로그 호스트에 끌기 좌표가 새 나왔습니다");
+});
+
+/* ---------------- 관리 동사의 연타 차단(U6-B #976 리뷰 6) ---------------- */
+
+test("동사 연타는 한 번만 발신된다 — in-flight 표지는 몸통이 든다", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const sent = [];
+  const errors = [];
+  const verbs = createPoolVerbs({
+    dispatch: async (screen, action, payload) => {
+      sent.push([screen, action, payload]);
+      await gate;
+      return {};
+    },
+    modal: { confirm: async () => false },
+    onError: (message) => errors.push(message),
+    onUse: () => {},
+    openRelink: () => {},
+  });
+
+  /* 같은 틱의 두 번째 클릭 — 표지가 첫 await 앞에서 서므로 여기로 새지 않는다. */
+  const first = verbs.poolAction("archive", { key: "k1" });
+  const second = verbs.poolAction("archive", { key: "k1" });
+  await second;
+  assert.equal(sent.length, 1, "연타가 두 번 발신됐습니다");
+  assert.equal(errors.length, 1, "두 번째 클릭이 조용히 삼켜졌습니다");
+  assert.ok(errors[0].includes("아직 끝나지 않았습니다"), errors[0]);
+
+  release();
+  await first;
+  /* 끝나면 다시 받는다 — 표지가 걸린 채 남으면 화면이 영영 잠긴다. */
+  await verbs.poolAction("archive", { key: "k1" });
+  assert.equal(sent.length, 2, "왕복이 끝났는데도 다음 동사를 거절했습니다");
+});
+
+test("중복 정리도 같은 표지를 공유한다 — 두 벌 확인 모달을 세우지 않는다", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const sent = [];
+  const errors = [];
+  const verbs = createPoolVerbs({
+    dispatch: async (screen, action) => { sent.push(action); await gate; return {}; },
+    modal: { confirm: async () => false },
+    onError: (message) => errors.push(message),
+    onUse: () => {},
+    openRelink: () => {},
+  });
+
+  const first = verbs.resolveDuplicate("k1");
+  await verbs.poolAction("delete", { key: "k2" });   // 다른 동사도 같은 표지를 본다
+  assert.deepEqual(sent, ["resolve_duplicate"]);
+  assert.equal(errors.length, 1);
+  release();
+  await first;
+});
+
+test("호스트 사유가 있으면 그것이 먼저다 — 몸통 문안이 덮지 않는다", async () => {
+  const errors = [];
+  const verbs = createPoolVerbs({
+    dispatch: async () => ({}),
+    modal: { confirm: async () => false },
+    onError: (message) => errors.push(message),
+    onUse: () => {},
+    openRelink: () => {},
+    busyReason: () => "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다.",
+  });
+  await verbs.poolAction("archive", { key: "k1" });
+  assert.deepEqual(errors, ["불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."]);
 });

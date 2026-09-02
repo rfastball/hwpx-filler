@@ -2118,6 +2118,40 @@ export function createEditorWorkbenchDataProbes() {
             const notice = byId(ctx, "save-msg");
             out.blocked_notice = !!notice && !isHidden(ctx, notice)
               && notice.textContent.indexOf("누름틀·구간 변환") !== -1;
+
+            /* ⑥ 이미 고른 항목 재선택 = **무동작**(리뷰 1). 종전 표면에서는 현재 항목이
+               클릭 핸들러 없는 span 이라 불가능했고, 통과시키면 세션이 통째로 끊긴다. */
+            ctx.push("editor", editorBase({
+              template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
+              pairing: {
+                ready: false, template_name: "a.hwpx", data_name: "",
+                field_count: 3, column_count: 0, auto_count: 0, confirm_count: 0,
+                basis: "", advance_block_reason: "오른쪽에서 데이터를 고르세요.",
+              },
+            }));
+            await settleUntil(ctx, () => !!host.querySelector(
+              '.pitem[data-side="tpl"][aria-pressed="true"]'));
+            sent.length = 0;
+            host.querySelector('.pitem[data-side="tpl"][data-key="a.hwpx"]').click();
+            await settleRender(ctx);
+            out.reselect_calls = sent.length;
+            out.reselect_keeps_mark = host.querySelectorAll(
+              '.pitem[data-side="tpl"][aria-pressed="true"]').length;
+
+            /* ⑦ 관리 동사 연타 = **한 번만** 발신(리뷰 6). 같은 틱의 두 클릭이라
+               in-flight 표지가 첫 await 앞에서 서지 않으면 둘 다 나간다. */
+            sent.length = 0;
+            const archive = host.querySelector(
+              '[data-side="dat"][data-key="d1"] [data-act="archive"]');
+            out.manage_verb_present = !!archive;
+            if (archive) {
+              archive.click();
+              archive.click();
+              await settleUntil(ctx, () => sent.length > 0);
+              await settleRender(ctx);
+              out.double_fire_calls = sent
+                .filter((row) => row[1] === "archive").length;
+            }
           } finally {
             stub.restore();
           }

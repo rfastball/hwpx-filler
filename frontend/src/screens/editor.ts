@@ -211,31 +211,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     return model.getSnapshot() || {};
   }
 
-  /* 마지막으로 본 (세션, 단계) — 1단계 **진입**을 세는 자리다. 렌더 수가 아니라 진입
-     수를 세야 「세션 진입당 한 번」이 참이 된다(U6-B 재스캔 트리거). */
-  let seenSession = "";
-  let seenSection = "";
-
-  /** 고르기 단계 진입 = 두 풀을 **한 번** 다시 읽는다(U6-B #976).
-   *
-   *  「읽는 시점은 화면 진입 시 diff + 수동 새로 읽기」(U6 §2.3 · 폴더=라이브러리 관례).
-   *  렌더마다 재스캔하면 타이핑 한 번에 디스크를 훑고, 아예 안 하면 탐색기에서 넣은 파일이
-   *  영영 안 보인다. 그 사이가 이 자리다 — 신규 초안·`load_job`·1단계 재진입에서 한 발씩.
-   *  풀도 함께 읽는다: CLI·다른 창의 등록이 목록에 서지 않으면 같은 침묵이다. */
-  function refreshPoolsOnStageEntry(session: string, section: string): void {
-    const entered = section === "template"
-      && (session !== seenSession || seenSection !== "template");
-    seenSession = session;
-    seenSection = section;
-    if (!entered) return;
-    void dispatch("tpl", "refresh", {}).catch((error) => {
-      noticeSave(`서식 폴더를 다시 읽지 못했습니다: ${String((error as Obj)?.message || error)}`);
-    });
-    void dispatch("pool", "refresh", {}).catch((error) => {
-      noticeSave(`고정한 데이터를 다시 읽지 못했습니다: ${String((error as Obj)?.message || error)}`);
-    });
-  }
-
   /* 스냅샷 흡수 — 전송 값만 갈아 끼우고 사용자가 들고 있는 값은 건드리지 않는다. */
   function absorb(): void {
     const current = model.getSnapshot();
@@ -250,7 +225,6 @@ export function createEditorController(deps: EditorControllerDeps) {
       values: editorServerValues(current),
     });
     emitDraft();
-    refreshPoolsOnStageEntry(String(editorSession(current)), String(current.section || ""));
   }
   const dispatch = async (screen: string, action: string, payload: Obj = {}): Promise<Obj> => {
     const call = deps.client.dispatch as unknown as (
@@ -264,14 +238,34 @@ export function createEditorController(deps: EditorControllerDeps) {
     return value;
   };
 
-  /* 구독은 `dispatch` **뒤에** 선다 — 흡수가 단계 진입 재스캔을 태우므로 그 이름이
-     이미 서 있어야 한다. 순서 안전을 주석 관례가 아니라 배치가 진다. */
   model.subscribe(absorb);
   absorb();
 
   const invoke = async (
     method: Parameters<BridgeClient["invoke"]>[0], ...args: unknown[]
   ): Promise<unknown> => expectHostValue(await deps.client.invoke(method, ...args), method);
+
+  /** 고르기 단계에 **들어설 때** 두 풀을 다시 읽는다(U6-B #976 · 리뷰 4).
+   *
+   *  「읽는 시점은 화면 진입 시 diff + 수동 새로 읽기」(U6 §2.3 · 폴더=라이브러리 관례).
+   *  렌더마다 재스캔하면 타이핑 한 번에 디스크를 훑고, 아예 안 하면 탐색기에서 넣은 파일이
+   *  영영 안 보인다.
+   *
+   *  **결속 대상은 사건이지 스냅샷이 아니다.** 종전에는 마지막으로 본
+   *  `(editorSession(), section)` 을 기억해 전이를 유도했는데, 초안의 세션 표지는 **언제나
+   *  `"draft"`** 라 「초안 → 취소 → 새 초안」이 같은 값으로 읽혔다 — 두 번째 새 작업부터
+   *  재스캔이 조용히 빠진다(선언은 살고 결과가 죽는 자리). 지금 부르는 자리는 둘이고 둘 다
+   *  실제 진입이다: 셸이 편집기 화면에 들어설 때마다 부르는 `rerender`(`shell/nav.ts`)와,
+   *  같은 세션 안에서 1단계로 돌아오는 `gotoSection("template")`. 각 호출이 채널당 한 발이라
+   *  탭 왕복 한 번에 한 번이다. */
+  function rescanPools(): void {
+    void dispatch("tpl", "refresh", {}).catch((error) => {
+      noticeSave(`서식 폴더를 다시 읽지 못했습니다: ${String((error as Obj)?.message || error)}`);
+    });
+    void dispatch("pool", "refresh", {}).catch((error) => {
+      noticeSave(`고정한 데이터를 다시 읽지 못했습니다: ${String((error as Obj)?.message || error)}`);
+    });
+  }
 
   /** 편집 변이 — 전부 한 체인에 선다(순서에 기대는 질의도 포함). */
   function sendEdit(action: string, payload: Obj = {}): Promise<Obj> {
@@ -889,6 +883,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (!target) return;
     await flushPendingEdits();
     await sendEdit("goto_section", { section: target });
+    /* 같은 세션 안의 1단계 **재진입** — 화면 진입과 같은 사건이라 같은 재스캔을 지난다
+       (리뷰 4). 이동이 거절되면 여기 닿지 않는다(`sendEdit` 가 던진다). */
+    if (target === "template") rescanPools();
   }
 
   function neighbour(delta: number): string {
@@ -937,8 +934,19 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 본문 행동 ---- */
 
-  async function useLibraryTemplate(path: string): Promise<void> {
+  /** 템플릿 채택 — **같은 템플릿이면 아무 일도 하지 않고**, 교체면 먼저 묻는다.
+   *
+   *  둘 다 고르기 화면이 연 자리다(U6-B #976 리뷰 1·2). 종전 표면에서는 현재 항목이 클릭
+   *  핸들러 없는 span 이라 재선택이 구조적으로 불가능했고, 교체 확인은 데이터 쪽에만 있었다
+   *  — 이제 같은 제스처(클릭·끌어 놓기)가 좌·우에 다 서므로 규칙도 하나여야 한다.
+   *  수치는 Python 이 **지금** 판정한다(`mapping_reset_stakes` — 웹 지역 스냅샷 금지),
+   *  확인 UI 만 여기서 짓는다. 백엔드도 같은 no-op 을 진다(표면만 막으면 뚫린다). */
+  async function useLibraryTemplate(path: string): Promise<boolean> {
+    if (path === String(snapshot().template_path || "")) return true;
+    if (snapshot().template_path
+      && !(await confirmMappingResetIfConfirmed("템플릿을 바꾸면"))) return false;
     await sendEdit("use_library_template", { path });
+    return true;
   }
 
   async function importTemplate(): Promise<void> {
@@ -965,43 +973,66 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /** 고정한 데이터 하나를 이 작업의 데이터로 — 파일 피커와 **같은 선행 규율**을 지킨다:
    *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지). */
-  async function usePoolData(key: string): Promise<void> {
-    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
+  async function usePoolData(key: string): Promise<boolean> {
+    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return false;
     const result = await sendEdit("use_pool_data", { key });
     if (result.ok === false) {
       noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
+      return false;
     }
+    return true;
   }
 
-  /** 고를 수 없는 항목의 클릭·드롭 — **조용히 무시하지 않는다**(U6-B).
+  /** 고를 수 없는 항목의 클릭·드롭 문안 — **조용히 무시하지 않는다**(U6-B).
    *
    *  사유는 Python 이 행에 실어 보낸 것을 그대로 재진술한다: 여기서 문장을 다시 지으면
    *  같은 상태가 부제와 알림에서 두 어휘를 갖는다. */
-  function refuseSelection(name: string, reason: string): void {
-    noticeSave(`'${name}' 은(는) 고를 수 없습니다. ${reason}`);
+  function refusalText(name: string, reason: string): string {
+    return `'${name}' 은(는) 고를 수 없습니다. ${reason}`;
   }
 
-  /** 좌 열 선택 — 클릭도 드롭도 **이 한 자리**를 지난다(같은 액션, 같은 거절). */
-  async function chooseTemplate(key: string): Promise<void> {
+  function refuseSelection(name: string, reason: string): void {
+    noticeSave(refusalText(name, reason));
+  }
+
+  /** 목록에서 사라진 키의 사유 — **조용한 반환 금지**(리뷰 5).
+   *
+   *  드롭 도중 `tpl`·`pool` push 가 끼면 손에 든 키가 지금 목록에 없을 수 있다. 그때
+   *  말없이 반환하면 끌어 놓기의 반쪽만 성사하고 나머지 반쪽은 아무 말도 남기지 않는다 —
+   *  이 저장소가 금지하는 무반응이다. */
+  const GONE_FROM_LIST = "목록이 바뀌었습니다. 다시 고르세요.";
+
+  /** 좌 열 선택 — 클릭도 드롭도 **이 한 자리**를 지난다(같은 액션, 같은 거절).
+   *
+   *  ``refusals`` 를 받으면 거절을 그 배열에 담고 알림은 **호출자가** 낸다(끌어 놓기는 두
+   *  반의 결과를 한 문장으로 말해야 하고, 알림 채널이 1슬롯이라 각자 쓰면 앞 문장이 사라진다).
+   *  반환값은 「이 반쪽이 적용됐는가」다. */
+  async function chooseTemplate(key: string, refusals?: string[]): Promise<boolean> {
     const item = libItems().find((row) => String(row.key) === key);
-    if (item === undefined) return;
+    const refuse = (text: string): boolean => {
+      if (refusals) refusals.push(text); else noticeSave(text);
+      return false;
+    };
+    if (item === undefined) return refuse(`템플릿을 찾을 수 없습니다. ${GONE_FROM_LIST}`);
     if (!item.selectable) {
-      refuseSelection(String(item.name), String(item.select_block_reason || ""));
-      return;
+      return refuse(refusalText(String(item.name), String(item.select_block_reason || "")));
     }
-    await useLibraryTemplate(String(item.path));
+    return useLibraryTemplate(String(item.path));
   }
 
   /** 우 열 선택 — 좌 열과 대칭. */
-  async function chooseData(key: string): Promise<void> {
+  async function chooseData(key: string, refusals?: string[]): Promise<boolean> {
     const rows = ((poolModel.getSnapshot() || {}).rows || []) as Obj[];
     const row = rows.find((item) => String(item.key) === key);
-    if (row === undefined) return;
+    const refuse = (text: string): boolean => {
+      if (refusals) refusals.push(text); else noticeSave(text);
+      return false;
+    };
+    if (row === undefined) return refuse(`데이터를 찾을 수 없습니다. ${GONE_FROM_LIST}`);
     if (!row.selectable) {
-      refuseSelection(String(row.name), String(row.select_block_reason || ""));
-      return;
+      return refuse(refusalText(String(row.name), String(row.select_block_reason || "")));
     }
-    await usePoolData(key);
+    return usePoolData(key);
   }
 
   /** 끌어 놓기 성사 — **클릭이 발행하는 액션 두 번**이다(새 액션 0).
@@ -1011,14 +1042,26 @@ export function createEditorController(deps: EditorControllerDeps) {
   async function dropPair(sourceSide: string, sourceKey: string, targetKey: string): Promise<void> {
     const [templateKey, dataKey] = sourceSide === "tpl"
       ? [sourceKey, targetKey] : [targetKey, sourceKey];
-    await chooseTemplate(templateKey);
-    await chooseData(dataKey);
+    /* 거절은 **모아서 한 번** 말한다(리뷰 5): 알림 채널이 1슬롯이라 두 반쪽이 각자 쓰면
+       먼저 쓴 문장이 조용히 사라지고, 사람은 무엇이 반만 바뀌었는지 알 수 없다. */
+    const refusals: string[] = [];
+    const gotTemplate = await chooseTemplate(templateKey, refusals);
+    const gotData = await chooseData(dataKey, refusals);
+    if (refusals.length === 0) return;
+    const applied = [gotTemplate ? "템플릿" : "", gotData ? "데이터" : ""].filter(Boolean);
+    noticeSave(applied.length
+      ? `${applied.join("·")}만 바뀌었습니다. ${refusals.join(" ")}`
+      : refusals.join(" "));
   }
 
   /* 관리 동사 한 벌은 데이터 선택 다이얼로그와 **같은 몸통**이다(U6-B) — 같은 `pool`
      채널·같은 확인 왕복. 갈리는 것은 「사용」의 발행과 실패가 착지하는 자리뿐이다. */
   const { poolAction, resolveDuplicate } = createPoolVerbs({
-    dispatch,
+    /* 관리 동사도 **편집 체인**에 선다(리뷰 6): 이 화면의 다른 발신과 순서를 나눠 갖지
+       않으면 보관·삭제가 마운트·저장 왕복 사이로 끼어든다. 연타 차단은 공용 몸통의
+       in-flight 가드가 지고(다이얼로그와 같은 자리), 체인은 그 위의 직렬화다. */
+    dispatch: (screen: string, action: string, payload: Obj = {}) =>
+      deps.chain.chained(EDIT_CHAIN, () => dispatch(screen, action, payload)),
     modal: deps.modal,
     onError: noticeSave,
     onUse: (row: Obj) => usePoolData(String(row.key)),
@@ -1128,8 +1171,14 @@ export function createEditorController(deps: EditorControllerDeps) {
          기억을 지우므로 별도 init/wired 호환 가드는 필요 없다. */
       return deps.runtime.loadInitial(SCREEN);
     },
-    /** 현 스냅샷 재당김 — 편집 모드 복귀 때 공유 그룹 접힘을 반영한다(#138 F12). */
-    rerender(): Promise<unknown> { return deps.runtime.refresh(SCREEN); },
+    /** 현 스냅샷 재당김 — **셸이 편집기 화면에 들어설 때마다** 부른다(`shell/nav.ts`).
+     *
+     *  그 자리가 곧 「고르기 단계 진입」이라 두 풀 재스캔이 여기 붙는다(리뷰 4): 신규
+     *  초안·저장본 편집·취소 뒤 재진입이 전부 이 문을 지난다. */
+    rerender(): Promise<unknown> {
+      rescanPools();
+      return deps.runtime.refresh(SCREEN);
+    },
     leaveTo,
     aimAt,
     consumeAim,
@@ -1346,7 +1395,10 @@ function PoolItem(props: {
           side: "tpl",
           onDrop: (sourceSide: string, sourceKey: string, targetKey: string) =>
             controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
-          onRefuse: (why: string) => controller.refuseSelection(String(item.name), why),
+          /* 거절도 **클릭과 같은 한 자리**를 지난다(리뷰 10 — 우 열과 대칭):
+             `chooseTemplate` 이 행을 다시 찾아 이름과 Python 사유로 재진술한다. */
+          onRefuse: (_why: string, refusedKey: string) =>
+            controller.guarded(() => controller.chooseTemplate(refusedKey)),
         },
         key, selectable, reason,
       ),

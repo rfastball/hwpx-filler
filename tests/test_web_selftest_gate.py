@@ -1800,6 +1800,16 @@ class TestWebSelftestGate:
         assert e["pool_current_marked"] == 1, (
             f"겨눈 풀 항목의 선택 표지가 다릅니다: {e['pool_current_marked']!r}"
         )
+        # 이미 고른 항목 재선택은 **무동작**이다(리뷰 1) — 통과시키면 세션이 통째로 끊긴다.
+        assert e["reselect_calls"] == 0, (
+            f"이미 고른 템플릿을 다시 눌러 발신이 나갔습니다: {e['reselect_calls']!r}"
+        )
+        assert e["reselect_keeps_mark"] == 1, "재선택이 선택 표지를 흔들었습니다."
+        # 관리 동사 연타는 한 번만 나간다(리뷰 6) — 두 벌 확인 모달·두 번 확정 금지.
+        assert e["manage_verb_present"] is True, "우 열에 관리 동사가 서지 않았습니다."
+        assert e["double_fire_calls"] == 1, (
+            f"동사 연타가 두 번 발신됐습니다: {e['double_fire_calls']!r}"
+        )
         # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
         assert e["half_cta_disabled"] is True, (
             "데이터 없이 「연결 확인으로」가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."
