@@ -159,26 +159,6 @@ async function settleUntil(ctx, ready, turns = 12) {
   return !!ready();
 }
 
-/** 합성 스냅샷을 **끝까지 지킨다** — 늦게 도착한 실 스냅샷이 덮으면 다시 민다.
- *
- *  이 클러스터의 목록은 프로브가 심은 값인데, 편집기 화면 진입은 실 백엔드에
- *  `tpl/refresh`·`pool/refresh` 를 낸다(U6-B #976). 그 답은 **자기 프로브의 진입에서만**
- *  오지 않는다 — 다른 클러스터의 프로브도 편집기로 들어서고(`boot_routing_overlay`·`job`),
- *  그 답의 도착 시점은 불특정이다. 한 번 밀고 한 turn 재면 실 서식 폴더의 빈 목록이 합성
- *  항목을 지운 뒤를 읽는다(실측: `editor_txt_band` 의 TXT 항목이 그렇게 사라졌다).
- *
- *  **거짓 초록을 만들지 않는다**: 조건이 영영 안 서면 그대로 빨강이고(배선이 죽으면 여기서
- *  잡힌다), 조건이 서면 즉시 끝나 고정 지연이 아니다. 다시 미는 것은 우리가 심은 **같은**
- *  값이라 관측 대상을 바꾸지 않는다. */
-async function holdSnapshot(ctx, screen, snapshot, ready, turns = 24) {
-  for (let turn = 0; turn < turns; turn += 1) {
-    if (ready()) return true;
-    ctx.push(screen, snapshot);
-    await ctx.sleep(0);
-  }
-  return !!ready();
-}
-
 /** 모달 닫힘 전이(CSS opacity)를 정착시킨다. 카드가 없으면 이미 정착한 것으로 본다. */
 function settleModal(ctx, id) {
   const card = ctx.doc.querySelector(`#${id} .modal-card`);
@@ -216,27 +196,6 @@ function stubBridgeCall(ctx, make) {
       if (typedMine && Client.dispatch === typedMine) Client.dispatch = realDispatch;
     },
   };
-}
-
-/** 편집기 진입의 **재스캔 두 발**을 삼킨다(U6-B #976).
- *
- *  편집기는 화면에 들어설 때 `tpl/refresh`·`pool/refresh` 를 한 번씩 보내고, 그 답이 실
- *  서식 폴더·실 풀의 스냅샷으로 도착한다. 이 클러스터의 목록은 **합성 스냅샷**이라 그 답이
- *  우리 값을 덮으면 프로브가 자기가 심은 것을 못 보고 조용히 0 을 읽는다(`data_picker` 의
- *  `refreshStub` 이 같은 이유로 서 있다).
- *
- *  **편집기로 들어서는 프로브는 전부 이것을 세운다** — 자기 단언이 tpl·pool 을 안 보더라도
- *  그렇다. 재스캔의 답은 비동기라 **다음 프로브가 심은 목록을** 덮고, 그 오염은 원인 프로브가
- *  아니라 남의 계약에서 빨강으로 터진다(실측: `editor_txt_band` 의 TXT 항목이 앞 프로브의
- *  늦은 답에 지워졌다). 나머지 발신은 그대로 통과한다 — 삼키는 것은 두 동사뿐이다. */
-function stubStageRescan(ctx) {
-  return stubBridgeCall(ctx, (real) => function (screen, action, payload) {
-    if (action === "refresh" && (screen === "tpl" || screen === "pool")) {
-      return Promise.resolve({});
-    }
-    if (typeof real === "function") return real(screen, action, payload);
-    return Promise.resolve({});
-  });
 }
 
 /** 직접 bridge 메서드도 R4 `Client.invoke(snake_name, …)`와 한 수명으로 교체한다. */
@@ -767,7 +726,6 @@ export function createEditorWorkbenchDataProbes() {
           return Promise.resolve({});
         });
         ctx.state.stub = stub;
-        ctx.state.rescanStub = stubStageRescan(ctx);
 
         try {
           Nav.go("editor", { force: true });
@@ -807,7 +765,6 @@ export function createEditorWorkbenchDataProbes() {
         return { editor_tab_autodiscard: out };
       },
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         if (ctx.state.stub) ctx.state.stub.restore();
         restoreShell(ctx, ctx.state.out || {});
       },
@@ -874,7 +831,6 @@ export function createEditorWorkbenchDataProbes() {
           return Promise.resolve({});
         });
         ctx.state.stub = stub;
-        ctx.state.rescanStub = stubStageRescan(ctx);
 
         try {
           Nav.go("editor", { force: true });
@@ -932,7 +888,6 @@ export function createEditorWorkbenchDataProbes() {
         return { editor_discard_immediate: out };
       },
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         if (ctx.state.stub) ctx.state.stub.restore();
         restoreShell(ctx, ctx.state.out || {});
       },
@@ -967,8 +922,6 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = { pending: true };
         ctx.state.out = out;
-        const rescanStub = stubStageRescan(ctx);
-        ctx.state.rescanStub = rescanStub;
         try {
           Nav.go("editor", { force: true });
           const base = editorBase({
@@ -999,8 +952,15 @@ export function createEditorWorkbenchDataProbes() {
           });
           ctx.push("pool", poolBase([]));
           ctx.push("editor", base);
-          await holdSnapshot(ctx, "tpl", txtTpl,
-            () => ctx.doc.querySelectorAll("#editorTplList .pitem").length > 0);
+          ctx.push("tpl", txtTpl);
+          /* 고르기 존의 **첫 마운트**는 세 store(editor·tpl·pool)를 한꺼번에 구독하므로
+             커밋이 한 turn 에 끝나지 않는다 — 한 turn 만 재면 목록이 아직 없는 순간을 읽고
+             「배선이 죽었다」로 착지한다(실측). `ctx.waitFor` 는 **무엇을 기다리다 죽었는지**
+             를 남긴다(러너의 `waitState`) — 이름 없는 매달림은 정보가 0 이다. */
+          await ctx.waitFor(
+            () => ctx.doc.querySelectorAll("#editorTplList .pitem").length > 0,
+            { what: "좌 열 템플릿 항목 렌더", timeoutMs: 2000 },
+          );
           /* 매체 구획(`HWPX 서식`·`TXT 기안` 캡션)은 U6-B 에서 사라졌다 — **음성 단언**으로
              남긴다(되살아나면 두 열 그림이 다시 갈린다). */
           const caps = Array.prototype.map.call(
@@ -1022,12 +982,10 @@ export function createEditorWorkbenchDataProbes() {
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));
         }
-        rescanStub.restore();
         out.pending = false;
         return { editor_txt_band: out };
       },
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         restoreShell(ctx, ctx.state.out || {});
       },
     },
@@ -1173,7 +1131,6 @@ export function createEditorWorkbenchDataProbes() {
       /* 이탈은 이 프로브의 **측정 대상**이라 본문에 남는다. 정리는 그 이탈이 실제로 셸을
          되돌렸는지 확인하는 자리다 — 안 돌아왔으면 뒤 프로브가 상단 탭을 「사라졌다」고 읽는다. */
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         if (ctx.state.stub) ctx.state.stub.restore();
         restoreShell(ctx, ctx.state.out || {});
       },
@@ -1253,7 +1210,6 @@ export function createEditorWorkbenchDataProbes() {
         return { sheet_gate: out };
       },
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         if (ctx.state.restoreLoad) ctx.state.restoreLoad();
       },
     },
@@ -1281,7 +1237,6 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
-        ctx.state.rescanStub = stubStageRescan(ctx);
         try {
           Nav.go("editor", { force: true });
           out.editor_screen_on = byId(ctx, "scr-editor").classList.contains("on");
@@ -1355,11 +1310,6 @@ export function createEditorWorkbenchDataProbes() {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
         }
         return { job_editmode: out };
-      },
-      teardown(ctx) {
-        /* 세운 스텁은 **반드시** 되돌린다 — 남기면 뒤 프로브 전부가 재스캔을 조용히
-           삼키고, 그 침묵은 배선 부재와 구별되지 않는다. */
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
       },
     },
 
@@ -1568,7 +1518,6 @@ export function createEditorWorkbenchDataProbes() {
         return { data_picker: out };
       },
       teardown(ctx) {
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         if (ctx.state.restorePick) ctx.state.restorePick();
       },
     },
@@ -1626,8 +1575,7 @@ export function createEditorWorkbenchDataProbes() {
             preview_index: 1, preview_count: 3,
             is_complete: false, schema_only: false,
           });
-          ctx.state.rescanStub = stubStageRescan(ctx);
-          Nav.go("editor", { force: true });
+            Nav.go("editor", { force: true });
           ctx.push("editor", snap);
           await settleRender(ctx);
           const root = byId(ctx, "scr-editor");
@@ -1664,11 +1612,6 @@ export function createEditorWorkbenchDataProbes() {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
         }
         return { editor_chip: out };
-      },
-      teardown(ctx) {
-        /* 세운 스텁은 **반드시** 되돌린다 — 남기면 뒤 프로브 전부가 재스캔을 조용히
-           삼키고, 그 침묵은 배선 부재와 구별되지 않는다. */
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
       },
     },
 
@@ -1708,8 +1651,7 @@ export function createEditorWorkbenchDataProbes() {
             preview_index: 0, preview_count: 0,
             is_complete: true, schema_only: true,
           });
-          ctx.state.rescanStub = stubStageRescan(ctx);
-          Nav.go("editor", { force: true });
+            Nav.go("editor", { force: true });
           ctx.push("editor", snap);
           await settleRender(ctx);
           const saveBtn = () => ctx.doc.querySelector('#editor-foot [data-act="save"]');
@@ -1803,11 +1745,6 @@ export function createEditorWorkbenchDataProbes() {
         }
         return { editor_save_gate: out };
       },
-      teardown(ctx) {
-        /* 세운 스텁은 **반드시** 되돌린다 — 남기면 뒤 프로브 전부가 재스캔을 조용히
-           삼키고, 그 침묵은 배선 부재와 구별되지 않는다. */
-        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
-      },
     },
 
     /* ── editor_lib_manage (app.py:2506 상수 · 3966 호출) ─────────────────────
@@ -1821,8 +1758,13 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3966,
-      deadlineMs: 0,
-      deadlineRationale: "동기 evaluate_js 한 번(app.py:3966) — 레거시에도 폴링이 없다.",
+      deadlineMs: 2500,
+      deadlineRationale:
+        "종전 0 은 **감시견이 아예 없다는 뜻**이다(runner.js: `deadlineMs <= 0` 이면"
+        + " withDeadline 이 그대로 통과시킨다). 이 프로브는 목록 렌더·확인 왕복·구간 동사"
+        + " 발신을 기다리므로, 조건이 안 서면 러너가 끝나지 않고 프로세스 예산까지 매달린다"
+        + " — 그 착지가 `run_hung`(exit 8, 보고서 없음)이라 정보가 0 이다. 공용"
+        + " `_probe_late` 예산 2.5초를 그대로 쓴다(늘리는 것이 아니라 **없던 상한을** 세운다).",
       after: ["editor_save_gate"],
       afterReason: "레거시 드라이버 순서 그대로(3961 → 3966).",
       note:
@@ -1833,7 +1775,6 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
-        const rescanStub = stubStageRescan(ctx);
         try {
           Nav.go("editor", { force: true });
           const acts = [{ key: "compile", label: "누름틀·구간 변환" }, { key: "review", label: "검토" }];
@@ -1894,8 +1835,11 @@ export function createEditorWorkbenchDataProbes() {
           });
           ctx.push("editor", draft);
           const host = byId(ctx, "scr-editor");
-          await holdSnapshot(ctx, "tpl", manageTpl,
-            () => host.querySelectorAll("#editorTplList .pitem").length === 5);
+          ctx.push("tpl", manageTpl);
+          await ctx.waitFor(
+            () => host.querySelectorAll("#editorTplList .pitem").length === 5,
+            { what: "좌 열 항목 5건(hwpx 4 + txt 1) 렌더", timeoutMs: 2000 },
+          );
           /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
              머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
              부재를 음성으로도 잰다. */
@@ -2008,16 +1952,18 @@ export function createEditorWorkbenchDataProbes() {
               sections: [{ group: "", collapsed: false, count: 1, items: [H("d.hwpx")] }],
             },
           });
-          await holdSnapshot(ctx, "tpl", degenerate,
-            () => host.querySelectorAll("#editorTplList .pitem").length === 1);
+          ctx.push("tpl", degenerate);
+          await ctx.waitFor(
+            () => host.querySelectorAll("#editorTplList .pitem").length === 1,
+            { what: "퇴화 목록 1건 렌더", timeoutMs: 2000 },
+          );
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll("#editorTplList .pitem").length;
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
         } finally {
-          rescanStub.restore();
-        }
+          }
         return { editor_lib_manage: out };
       },
     },
@@ -2046,7 +1992,6 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
-        const rescanStub = stubStageRescan(ctx);
         try {
           Nav.go("editor", { force: true });
           const it = (name, badge, level, blocked) => ({
@@ -2089,10 +2034,13 @@ export function createEditorWorkbenchDataProbes() {
           });
           ctx.push("editor", blank);
           const host = byId(ctx, "scr-editor");
-          await holdSnapshot(ctx, "tpl", pickTpl,
-            () => host.querySelectorAll('.pitem[data-side="tpl"]').length === 3);
-          await holdSnapshot(ctx, "pool", pickPool,
-            () => host.querySelectorAll('[data-side="dat"]').length === 2);
+          ctx.push("tpl", pickTpl);
+          ctx.push("pool", pickPool);
+          await ctx.waitFor(
+            () => host.querySelectorAll('.pitem[data-side="tpl"]').length === 3
+              && host.querySelectorAll('[data-side="dat"]').length === 2,
+            { what: "고르기 두 열 렌더(좌 3 · 우 2)", timeoutMs: 2000 },
+          );
 
           /* ① 두 열이 각자 채널로 선다 — 좌는 `.pitem[data-side=tpl]`, 우는 공유 컴포넌트
              (`.pk-row[data-side=dat]`). 구획 헤더는 없다(U4 §2-30 음성 단언). */
@@ -2252,8 +2200,7 @@ export function createEditorWorkbenchDataProbes() {
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
         } finally {
-          rescanStub.restore();
-        }
+          }
         return { editor_lib: out };
       },
     },

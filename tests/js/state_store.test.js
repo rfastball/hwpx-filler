@@ -248,3 +248,61 @@ test("제품 snapshot delivery는 교체된 push port를 우회하지 않는다"
   assert.deepEqual(observed, [["job", { rows: 1 }]]);
   assert.deepEqual(arrived, []);
 });
+
+
+/* ─────────── 프로브가 심은 채널의 소유(U6-B #976 — 교차 프로브 오염) ─────────── */
+
+test("프로브가 심은 채널에는 늦게 도착한 호스트 푸시가 닿지 않는다", () => {
+  /* **재현**: U6-B 이후 편집기 진입은 실 `tpl/refresh`·`pool/refresh` 를 낸다. 그 응답은
+     호스트 푸시로 돌아오는데, 도착 시점이 불특정이라 **다음 프로브**가 심은 합성 목록을
+     덮는다(CI 실측: `data_picker` 의 `rows` 가 3 → 0). 프로브 푸시는 `active` 를 직접
+     부르고 호스트 푸시는 `dispatch` 로 들어오므로 출처가 구조적으로 갈린다 — 그 자리에서
+     막는다. 프로브마다 stub 을 덧대는 것은 같은 결함이 다음 파일에서 또 나는 길이다. */
+  const arrived = [];
+  const port = createPushPort((screen, snapshot) => arrived.push([screen, snapshot]));
+
+  port.dispatch("pool", { rows: [], late: false });   // 클레임 전 호스트 푸시는 그대로 지난다
+  port.claim("pool");
+  port.active("pool", { rows: [1, 2, 3] });           // 프로브가 심은 값
+  port.dispatch("pool", { rows: [], late: true });    // 앞 프로브가 낸 왕복의 **늦은 응답**
+  port.dispatch("job", { other: true });              // 다른 채널은 막지 않는다
+
+  assert.deepEqual(arrived, [
+    ["pool", { rows: [], late: false }],
+    ["pool", { rows: [1, 2, 3] }],
+    ["job", { other: true }],
+  ], "늦은 호스트 푸시가 프로브의 합성 목록을 덮었습니다");
+
+  port.releaseClaims();
+  port.dispatch("pool", { rows: [], after: true });   // 프로브가 끝나면 다시 정상 통로다
+  assert.deepEqual(arrived[arrived.length - 1], ["pool", { rows: [], after: true }]);
+});
+
+test("통로를 든 프로브는 호스트 푸시를 계속 본다 — 관측자를 막지 않는다", () => {
+  /* `job_mirror`·`job_result` 는 **도착하는 호스트 푸시를 세는 것**이 목적이라 통로를
+     갈아끼운다(N-07 #379 §5). 클레임이 그것까지 삼키면 측정기가 조용히 0 을 읽는다 —
+     그때 그 침묵은 배선 부재로 읽힌다. 그래서 필터는 **교체가 없을 때만** 선다. */
+  const arrived = [];
+  const observed = [];
+  const port = createPushPort((...args) => arrived.push(args));
+
+  port.claim("job");
+  port.override((...args) => observed.push(args));
+  port.dispatch("job", { fromHost: 1 });
+
+  assert.deepEqual(observed, [["job", { fromHost: 1 }]], "관측자가 호스트 푸시를 잃었습니다");
+  assert.deepEqual(arrived, []);
+});
+
+test("restore 는 클레임을 건드리지 않는다 — 둘은 다른 축이다", () => {
+  const arrived = [];
+  const port = createPushPort((...args) => arrived.push(args));
+  port.claim("pool");
+  port.override(() => {});
+  port.restore();                                     // 통로만 되돌린다
+  port.dispatch("pool", { late: true });
+  assert.deepEqual(arrived, [], "클레임이 restore 로 조용히 풀렸습니다");
+  port.releaseClaims();
+  port.dispatch("pool", { ok: true });
+  assert.deepEqual(arrived, [["pool", { ok: true }]]);
+});
