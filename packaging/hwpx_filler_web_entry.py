@@ -10,49 +10,86 @@ from __future__ import annotations
 import sys
 
 
-def _selfcheck() -> int:
-    import os
-    import tempfile
-    from datetime import datetime
-    from pathlib import Path
+def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
+    """번들에서 **화면 컨트롤러 두 개와 링1 VM 이 실제로 도는가** — 창 없이 한 바퀴.
 
-    from hwpxfiller.external.text_registry import TextTemplateRegistry
+    ``(vm_ok, txt_names, field_count)`` 을 돌려준다. 순수 파이썬이라 `--selfcheck` 밖에서도
+    부를 수 있고, 그것이 요점이다: 이 스모크가 읽는 **스냅샷 계약**이 갈리면
+    ``tests/repo_contract`` 가 순수 레인에서 먼저 빨강이 된다. 종전에는 이 함수가 `--selfcheck`
+    안에만 살아서, U6-B 가 편집기 스냅샷의 ``library`` 존을 퇴역시켰을 때 **아무 게이트도
+    보지 못했다** — Ruff·pytest 는 `packaging/` 을 안 보고(CLAUDE.md), 실제로 그 KeyError 는
+    창 없는 exe 의 예외 대화상자로 나타나 CI 잡을 30분 상한까지 매달았다.
+
+    목록의 정본은 U6-B 이후 ``tpl`` 채널이다 — 편집기 스냅샷이 목록을 한 번 더 성형하던
+    존은 사라졌다. 그래서 여기서도 그 채널을 세워 읽는다(제품이 읽는 자리를 그대로 읽는다).
+    """
+    from datetime import datetime
+
+    from hwpxfiller.external.dataset_store import DatasetPoolRegistry
     from hwpxfiller.external.job_store import JobRegistry
+    from hwpxfiller.external.template_files import TemplateFileStore
     from hwpxfiller.external.template_inspection import (
         HWPX_TEMPLATE_OPS,
         inspect_hwpx_template,
     )
+    from hwpxfiller.external.template_root import TemplateRoot
+    from hwpxfiller.external.text_registry import TextTemplateRegistry
     from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
-    from hwpxfiller.webapp.app import web_artifact
     from hwpxfiller.webapp.screen_editor import EditorController
+    from hwpxfiller.webapp.screen_template import TemplateController
 
-    tmp = Path(tempfile.mkdtemp())
+    tmp.mkdir(parents=True, exist_ok=True)   # 호출자가 만든 자리든 아니든 여기서 선다
     (tmp / "샘플.txt").write_text("제목: {{공고명}} / 담당: {{담당자}}", encoding="utf-8")
 
-    pushes: list = []
-    # 편집기 TXT 매체 분기(F6 PR-B — 구 「기안」 스모크의 승계처)로 스모크한다: 번들에서
-    # 브리지 없는 컨트롤러+링1 VM(스키마 동형 성형)이 실제로 도는지를 TXT 로드 한 바퀴로 본다.
+    root = TemplateRoot(default_root=tmp)
+    registry = TextTemplateRegistry(root.path)
+    # 좌 열 목록의 정본(U6-B #976) — 링1 행 성형(`TemplateRow.from_text`)까지 여기서 돈다.
+    tpl = TemplateController(
+        registry,
+        lambda screen, snap: None,
+        file_store=TemplateFileStore(root.path, registry),
+        template_root=root,
+        pool_registry=DatasetPoolRegistry(tmp / "datasets"),
+    )
+    txt_band = tpl.snapshot()["txt"]
+    txt_names = [it["name"] for sec in txt_band["sections"] for it in sec["items"]]
+
+    # 편집기 TXT 매체 분기(F6 PR-B — 구 「기안」 스모크의 승계처): 브리지 없는 컨트롤러 +
+    # 링1 VM(스키마 동형 성형)이 실제로 도는지를 TXT 로드 한 바퀴로 본다.
     ctrl = EditorController(
         JobRegistry(tmp / "jobs"),
-        lambda s, snap: pushes.append((s, snap)),
+        lambda screen, snap: None,
         clock=datetime.now,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
             file_ops=HWPX_TEMPLATE_OPS,
         ),
-        text_registry=TextTemplateRegistry(tmp),
+        text_registry=registry,
     )
     ctrl.dispatch("use_library_template", {"path": str(tmp / "샘플.txt")})
     snap = ctrl.snapshot()
-    txt_names = [
-        it["name"] for sec in snap["library"]["txt"]["sections"] for it in sec["items"]
-    ]
     vm_ok = (
         "샘플" in txt_names
         and snap["sections"] == ["template", "binding"]
         and any(f["name"] == "공고명" for f in snap["fields"])
+        # 고르기 단계의 연결 카드(U6-B) — 템플릿만 골랐으니 짝은 아직 서지 않고, 사유는
+        # 링1 문안 그대로다. 존이 사라지거나 모양이 갈리면 여기서 잡힌다.
+        and snap["pairing"]["template_name"] == "샘플.txt"
+        and snap["pairing"]["ready"] is False
     )
+    return vm_ok, txt_names, len(snap["fields"])
+
+
+def _selfcheck() -> int:
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from hwpxfiller.webapp.app import web_artifact
+
+    tmp = Path(tempfile.mkdtemp())
+    vm_ok, txt_names, field_count = viewmodel_smoke(tmp)
 
     # ``web_artifact()`` 는 fail-closed 다 — seal 과 전체 트리 검증에 실패하면 값을 돌려주는
     # 대신 예외를 던진다. 그래서 여기 도달했다는 것 자체가 판정이고, 별도 boolean 을 두면
@@ -86,11 +123,52 @@ def _selfcheck() -> int:
         )
 
     print(
-        f"selfcheck: txt_templates={txt_names} fields={len(snap['fields'])} "
+        f"selfcheck: txt_templates={txt_names} fields={field_count} "
         f"artifact_id={artifact.artifact_id} "
         f"tree_sha256={artifact.tree_sha256} -> {'OK' if vm_ok else 'FAIL'}"
     )
     return 0 if vm_ok else 1
+
+
+def _selfcheck_guarded() -> int:
+    """스모크의 **예외를 유한한 실패로** 바꾼다 — 창 없는 exe 는 매달리면 안 된다.
+
+    이 exe 는 ``console=False`` 라 처리되지 않은 예외가 PyInstaller 의 traceback **대화상자**로
+    뜬다. 아무도 누를 수 없는 그 창은 프로세스를 영영 붙들고, 호출자(`packaging/build.ps1` 의
+    ``Start-Process -Wait``)에는 시한이 없어 CI 잡 상한(30분)이 유일한 그물이 된다 — 실측으로
+    한 번 그렇게 취소됐다(KeyError 하나가 29분 침묵으로 나타났다).
+
+    사유는 증거 파일과 stderr **둘 다**에 남긴다: 파일은 게이트가 읽고 stderr 는 사람이 읽는다.
+    """
+    import os
+    import traceback
+
+    try:
+        return _selfcheck()
+    except BaseException:  # noqa: BLE001 — 창 없는 프로세스의 마지막 그물(대화상자 금지)
+        detail = traceback.format_exc()
+        evidence_path = os.environ.get("HWPX_SELFCHECK_OUT")
+        if evidence_path:
+            import json
+            from pathlib import Path
+
+            try:
+                target = Path(evidence_path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    json.dumps(
+                        {"error": detail, "viewmodel_ok": False},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            except Exception:  # noqa: BLE001 — 증거를 못 써도 종료는 해야 한다
+                pass
+        sys.stderr.write(detail)
+        sys.stderr.flush()
+        return 2
 
 
 if __name__ == "__main__":
@@ -100,7 +178,7 @@ if __name__ == "__main__":
     unblock_bundle()
 
     if len(sys.argv) == 2 and sys.argv[1] == "--selfcheck":
-        raise SystemExit(_selfcheck())
+        raise SystemExit(_selfcheck_guarded())
     from hwpxfiller.webapp.app import main
 
     raise SystemExit(main())
