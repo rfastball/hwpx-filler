@@ -1508,7 +1508,10 @@ function DataPool(props: {
       side: "dat",
       onDrop: (sourceSide: string, sourceKey: string, targetKey: string) =>
         controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
-      onRefuse: (why: string) => controller.refuseSelection("이 데이터", why),
+      /* 거절도 **클릭과 같은 한 자리**를 지난다 — `chooseData` 가 행을 다시 찾아 이름과
+         Python 사유로 재진술한다(문형 두 벌 금지). */
+      onRefuse: (_why: string, key: string) =>
+        controller.guarded(() => controller.chooseData(key)),
     },
     client: controller.client,
     notify: controller.notify,

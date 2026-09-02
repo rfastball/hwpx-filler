@@ -26,8 +26,10 @@ export type PoolDragBinding = {
   side: string;
   /** 드롭 성사 — 발행은 **클릭과 같은 액션 두 번**이다(새 액션 없음). */
   onDrop(sourceSide: string, sourceKey: string, targetKey: string): void;
-  /** 고를 수 없는 항목 위 드롭·클릭 — 조용히 삼키지 않고 사유를 재진술한다. */
-  onRefuse(reason: string): void;
+  /** 고를 수 없는 항목 위 드롭 — 조용히 삼키지 않고 사유를 재진술한다.
+   *  `key` 를 함께 주는 이유는 호스트가 **이름까지** 말할 수 있어야 하기 때문이다
+   *  (「'X' 은(는) 고를 수 없습니다. …」 — 클릭 거절과 같은 문형). */
+  onRefuse(reason: string, key: string): void;
 };
 
 export type PoolListHost = {
@@ -138,10 +140,10 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
 
 /** 끌어 놓기 props — 좌·우 두 열이 **같은 규칙**을 쓴다(`editor.ts` 의 템플릿 열도 이것).
  *
- *  드롭 대상은 **상대 열의 고를 수 있는 항목**이다: 같은 열끼리는 짝이 아니고, 비활성
- *  항목은 놓아도 고를 수 없으므로 받지 않는다(거절은 조용하지 않고 사유를 남긴다).
- *  강조는 클래스 하나(`.drop-target`)이고 애니메이션이 없다 — 정적이라
- *  `prefers-reduced-motion` 과 무관하다. */
+ *  성사하는 드롭은 **상대 열의 고를 수 있는 항목** 위에서만이다: 같은 열끼리는 짝이 아니라
+ *  무동작이고, 비활성 항목은 받되 **사유와 함께 거절**한다(조용한 무시 금지 — 아래
+ *  `onDragOver` 주석이 그 순서의 근거를 진다). 강조는 클래스 하나(`.drop-target`)이고
+ *  애니메이션이 없다 — 정적이라 `prefers-reduced-motion` 과 무관하다. */
 export function dragProps(
   binding: PoolDragBinding | undefined,
   key: string,
@@ -165,13 +167,19 @@ export function dragProps(
       const transfer = event.dataTransfer;
       if (!transfer) return;
       /* 어느 열에서 왔는지는 `dragover` 에서 값을 읽을 수 없다(브라우저가 막는다) —
-         읽을 수 있는 것은 **형식**뿐이라 side 대조는 `drop` 이 진다. 여기서 거르는 것은
-         이 자리가 애초에 받을 수 있는가(고를 수 있는 항목인가) 하나다. */
+         읽을 수 있는 것은 **형식**뿐이라 side 대조는 `drop` 이 진다.
+
+         **비활성 항목 위에서도 놓을 수는 있게 한다**: 안 받으면 `drop` 이 아예 안 와서
+         손을 놓은 사람에게 화면이 아무 말도 못 한다(이 저장소가 금지하는 조용한 무시).
+         받되 거절하고 사유를 남긴다 — 강조(`.drop-target`)는 **성사할 자리에만** 서므로
+         「놓을 수 있다」는 약속과 「받는다」는 사실이 갈리지 않는다. */
       if (!Array.prototype.includes.call(transfer.types, "text/plain")) return;
-      if (!selectable) return;
       event.preventDefault();
+      /* `dropEffect` 는 "link" 로 둔다 — "none" 이면 브라우저가 드롭을 **취소**해
+         `drop` 이 아예 오지 않고, 그러면 위의 이유가 그대로 되살아난다(HTML 드래그
+         모델). 「받을 수 없다」는 강조 부재와 항목 자체의 비활성 표시가 말한다. */
       transfer.dropEffect = "link";
-      event.currentTarget.classList.add("drop-target");
+      if (selectable) event.currentTarget.classList.add("drop-target");
     },
     onDragLeave: clear,
     onDrop: (event: Obj) => {
@@ -183,7 +191,7 @@ export function dragProps(
       const sourceSide = payload.slice(0, at);
       const sourceKey = payload.slice(at + 1);
       if (sourceSide === binding.side) return;      // 같은 열끼리는 짝이 아니다
-      if (!selectable) { binding.onRefuse(blockReason); return; }
+      if (!selectable) { binding.onRefuse(blockReason, key); return; }
       binding.onDrop(sourceSide, sourceKey, key);
     },
   };

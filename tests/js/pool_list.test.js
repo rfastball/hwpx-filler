@@ -145,20 +145,25 @@ test("고를 수 없는 항목은 끌 수도 놓을 수도 없고, 거절은 사
   const refused = [];
   const dropped = [];
   const props = dragProps(
-    { side: "dat", onDrop: (...args) => dropped.push(args), onRefuse: (why) => refused.push(why) },
+    { side: "dat", onDrop: (...args) => dropped.push(args), onRefuse: (...args) => refused.push(args) },
     "k2", false, "참조가 끊겼습니다.",
   );
   assert.equal(props.draggable, false, "끌 수 있으면 놓을 수 있다고 읽힙니다");
 
+  /* **받되 거절한다**: 안 받으면 `drop` 이 안 와서 손을 놓은 사람에게 아무 말도 못 한다.
+     강조는 성사할 자리에만 서므로 「놓을 수 있다」는 약속이 서지 않는다. */
   const over = fakeEvent("tpl:t1");
   props.onDragOver(over);
-  assert.equal(over.prevented, false, "받을 수 없는 자리가 드롭을 허용했습니다");
-  assert.equal(over.classes.has("drop-target"), false);
+  assert.equal(over.prevented, true, "놓아도 아무 말이 없는 자리를 만들었습니다");
+  /* "none" 이면 브라우저가 드롭을 취소해 `drop` 이 오지 않는다 — 사유를 낼 자리가
+     사라지므로 "link" 를 둔다(강조 부재가 「성사하지 않는다」를 말한다). */
+  assert.equal(over.dataTransfer.dropEffect, "link");
+  assert.equal(over.classes.has("drop-target"), false, "성사하지 못할 자리를 강조했습니다");
 
   const drop = fakeEvent("tpl:t1");
   props.onDrop(drop);
   assert.deepEqual(dropped, [], "고를 수 없는 항목이 발신을 냈습니다");
-  assert.deepEqual(refused, ["참조가 끊겼습니다."], "조용히 삼켰습니다");
+  assert.deepEqual(refused, [["참조가 끊겼습니다.", "k2"]], "조용히 삼켰습니다");
 });
 
 test("같은 열끼리는 짝이 아니고, 상대 열의 드롭만 액션을 낸다", () => {
