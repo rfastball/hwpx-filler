@@ -2138,7 +2138,9 @@ export function createEditorWorkbenchDataProbes() {
           }));
           ctx.push("pool", poolBase([]));
           const draft = editorBase({
-            template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
+            /* 1단계 게이트 존은 **세션이 스키마를 읽었을 때** 선다 — `field_count` 가 그
+               조건이다(U6-E #979). 합성 스냅샷도 그 사실을 실어야 존이 그려진다. */
+            template_path: "C:/lib/a.hwpx", template_name: "a.hwpx", field_count: 3,
             pairing: {
               ready: false, template_name: "a.hwpx", data_name: "",
               field_count: 3, column_count: 0, auto_count: 0, confirm_count: 0,
