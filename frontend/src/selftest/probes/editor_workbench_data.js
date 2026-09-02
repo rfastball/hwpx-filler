@@ -159,6 +159,26 @@ async function settleUntil(ctx, ready, turns = 12) {
   return !!ready();
 }
 
+/** 합성 스냅샷을 **끝까지 지킨다** — 늦게 도착한 실 스냅샷이 덮으면 다시 민다.
+ *
+ *  이 클러스터의 목록은 프로브가 심은 값인데, 편집기 화면 진입은 실 백엔드에
+ *  `tpl/refresh`·`pool/refresh` 를 낸다(U6-B #976). 그 답은 **자기 프로브의 진입에서만**
+ *  오지 않는다 — 다른 클러스터의 프로브도 편집기로 들어서고(`boot_routing_overlay`·`job`),
+ *  그 답의 도착 시점은 불특정이다. 한 번 밀고 한 turn 재면 실 서식 폴더의 빈 목록이 합성
+ *  항목을 지운 뒤를 읽는다(실측: `editor_txt_band` 의 TXT 항목이 그렇게 사라졌다).
+ *
+ *  **거짓 초록을 만들지 않는다**: 조건이 영영 안 서면 그대로 빨강이고(배선이 죽으면 여기서
+ *  잡힌다), 조건이 서면 즉시 끝나 고정 지연이 아니다. 다시 미는 것은 우리가 심은 **같은**
+ *  값이라 관측 대상을 바꾸지 않는다. */
+async function holdSnapshot(ctx, screen, snapshot, ready, turns = 24) {
+  for (let turn = 0; turn < turns; turn += 1) {
+    if (ready()) return true;
+    ctx.push(screen, snapshot);
+    await ctx.sleep(0);
+  }
+  return !!ready();
+}
+
 /** 모달 닫힘 전이(CSS opacity)를 정착시킨다. 카드가 없으면 이미 정착한 것으로 본다. */
 function settleModal(ctx, id) {
   const card = ctx.doc.querySelector(`#${id} .modal-card`);
@@ -964,7 +984,7 @@ export function createEditorWorkbenchDataProbes() {
           });
           /* 좌 열의 정본은 **`tpl` 채널**이다(U6-B #976) — 매체는 구획이 아니라 pill 로
              갈린다. hwpx·txt 가 한 목록에 서는지, TXT 항목이 실제로 고를 수 있는지를 잰다. */
-          ctx.push("tpl", tplBase({
+          const txtTpl = tplBase({
             txt: {
               flat: true, count: 1, dir: "C:/lib", empty_hint: "",
               sections: [{
@@ -976,15 +996,11 @@ export function createEditorWorkbenchDataProbes() {
                 }],
               }],
             },
-          }));
+          });
           ctx.push("pool", poolBase([]));
           ctx.push("editor", base);
-          /* 고르기 존의 **첫 마운트**는 세 store(editor·tpl·pool)를 한꺼번에 구독하므로
-             커밋이 한 turn 에 끝나지 않는다 — `settleRender` 하나(= sleep(0))로 읽으면
-             목록이 아직 없는 순간을 재고 「배선이 죽었다」로 오해한다(실측). 조건이 서면
-             즉시 끝나고 안 서면 그대로 빨강이라 고정 지연이 아니다(형제 프로브와 같은 방어선). */
-          await settleUntil(
-            ctx, () => ctx.doc.querySelectorAll("#editorTplList .pitem").length > 0);
+          await holdSnapshot(ctx, "tpl", txtTpl,
+            () => ctx.doc.querySelectorAll("#editorTplList .pitem").length > 0);
           /* 매체 구획(`HWPX 서식`·`TXT 기안` 캡션)은 U6-B 에서 사라졌다 — **음성 단언**으로
              남긴다(되살아나면 두 열 그림이 다시 갈린다). */
           const caps = Array.prototype.map.call(
@@ -1831,7 +1847,7 @@ export function createEditorWorkbenchDataProbes() {
             selectable: !blocked,
             select_block_reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
-          ctx.push("tpl", tplBase({
+          const manageTpl = tplBase({
             hwpx: {
               flat: true, count: 4, dir: "C:/lib", empty_hint: "",
               sections: [{
@@ -1866,7 +1882,7 @@ export function createEditorWorkbenchDataProbes() {
               }],
               diagnostics: [],
             },
-          }));
+          });
           ctx.push("pool", poolBase([]));
           const draft = editorBase({
             template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
@@ -1877,9 +1893,9 @@ export function createEditorWorkbenchDataProbes() {
             },
           });
           ctx.push("editor", draft);
-          await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
-          await settleUntil(ctx, () => host.querySelectorAll(".pitem").length > 0);
+          await holdSnapshot(ctx, "tpl", manageTpl,
+            () => host.querySelectorAll("#editorTplList .pitem").length === 5);
           /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
              머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
              부재를 음성으로도 잰다. */
@@ -1986,13 +2002,14 @@ export function createEditorWorkbenchDataProbes() {
             slotStub.restore();
           }
           /* 퇴화 — 목록 1건 + 구간 항목 없음. 헤더 축은 애초에 없다(음성 단언 유지). */
-          ctx.push("tpl", tplBase({
+          const degenerate = tplBase({
             hwpx: {
               flat: true, count: 1, dir: "C:/lib", empty_hint: "",
               sections: [{ group: "", collapsed: false, count: 1, items: [H("d.hwpx")] }],
             },
-          }));
-          await settleUntil(ctx, () => host.querySelectorAll("#editorTplList .pitem").length === 1);
+          });
+          await holdSnapshot(ctx, "tpl", degenerate,
+            () => host.querySelectorAll("#editorTplList .pitem").length === 1);
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll("#editorTplList .pitem").length;
           out.error = null;
@@ -2038,7 +2055,7 @@ export function createEditorWorkbenchDataProbes() {
             selectable: !blocked,
             select_block_reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
-          ctx.push("tpl", tplBase({
+          const pickTpl = tplBase({
             hwpx: {
               flat: true, count: 3, dir: "C:/lib", empty_hint: "",
               sections: [{
@@ -2049,7 +2066,7 @@ export function createEditorWorkbenchDataProbes() {
                 ],
               }],
             },
-          }));
+          });
           /* 우 열 — 데이터 선택 다이얼로그와 **같은 스냅샷 모양**. 끊긴 항목 하나를 함께
              세워 「숨기지 않고 비활성 + 사유」가 두 표면에서 같은 값으로 서는지 본다. */
           const datRow = (key, name, blocked) => ({
@@ -2060,9 +2077,9 @@ export function createEditorWorkbenchDataProbes() {
             selectable: !blocked,
             select_block_reason: blocked ? "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다." : "",
           });
-          ctx.push("pool", poolBase([
+          const pickPool = poolBase([
             datRow("d1", "7월목록"), datRow("d2", "지난목록", true),
-          ]));
+          ]);
           const blank = editorBase({
             pairing: {
               ready: false, template_name: "", data_name: "",
@@ -2071,9 +2088,11 @@ export function createEditorWorkbenchDataProbes() {
             },
           });
           ctx.push("editor", blank);
-          await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
-          await settleUntil(ctx, () => host.querySelectorAll(".pitem").length > 0);
+          await holdSnapshot(ctx, "tpl", pickTpl,
+            () => host.querySelectorAll('.pitem[data-side="tpl"]').length === 3);
+          await holdSnapshot(ctx, "pool", pickPool,
+            () => host.querySelectorAll('[data-side="dat"]').length === 2);
 
           /* ① 두 열이 각자 채널로 선다 — 좌는 `.pitem[data-side=tpl]`, 우는 공유 컴포넌트
              (`.pk-row[data-side=dat]`). 구획 헤더는 없다(U4 §2-30 음성 단언). */
