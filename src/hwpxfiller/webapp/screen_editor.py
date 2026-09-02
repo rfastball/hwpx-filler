@@ -808,16 +808,21 @@ class EditorController:
         # 위생은 tpl 채널의 snapshot() 이 계속 소유한다(부분 목록 reconcile 이 살아있는
         # 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
         result = self._library_result() if self._library_result is not None else {}
+        # 빈 목록 안내는 링1 하나가 정본이다(U6-A #975): 루트가 하나라 원인도 하나이고,
+        # 두 밴드가 각자 문안을 지으면 「폴더가 없다」와 「비어 있다」가 갈린다.
+        empty_hint = self.template_library.empty_hint()
         return {
             "hwpx": {
                 "sections": sections, "flat": flat,
                 "count": len(items),
                 "dir": str(root) if root is not None else "",
+                "empty_hint": empty_hint,
             },
             "txt": {
                 "sections": txt_sections, "flat": txt_flat,
                 "count": len(txt_rows),
                 "dir": str(self.text_registry.directory),
+                "empty_hint": empty_hint,
             },
             "result": {
                 "text": str(result.get("text", "") or ""),

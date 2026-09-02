@@ -1336,7 +1336,10 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         "누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다."),
       h(LibraryBand as any, {
         band: hwpx, media: "hwpx", controller,
-        emptyText: "라이브러리에 템플릿이 없습니다. '가져오기…'로 하나씩, '폴더에서 가져오기…'로 한꺼번에 추가하세요.",
+        /* 빈 사유는 **Python 이 낸다**(U6-A #975 — 링1 `empty_hint`): 미지정·폴더 없음·빈
+           폴더는 서로 다른 사유이고, 여기서 한 문장으로 접으면 사라진 폴더가 「비었다」로
+           읽힌다. 스냅샷이 아직 없을 때만 이 자리 문안이 선다. */
+        emptyText: String(hwpx.empty_hint || "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요."),
       })),
     h("div", { className: "grp" },
       h(BandCap as any, { label: "TXT 기안", band: txt }),
@@ -1344,7 +1347,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         "채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다."),
       h(LibraryBand as any, {
         band: txt, media: "txt", controller,
-        emptyText: "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.",
+        emptyText: String(txt.empty_hint || "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…'로 추가하세요."),
       })),
     slots ? h(SlotBand as any, { slots, controller }) : null,
     result.text ? h("div", {
