@@ -1724,11 +1724,12 @@ export function createEditorWorkbenchDataProbes() {
           /* ⑧-b 표시형 select 가 **유형 그룹**을 그리고 한 쌍을 원자적으로 낸다(리뷰 1).
              유형 열이 걷힌 뒤 유일하게 남은 유형 축이라, 여기가 죽으면 이름 추론이 틀린 행은
              날짜·금액 서식을 영영 못 고른다. */
-          out.display_groups = Array.prototype.map.call(
-            root.querySelectorAll('table.map [data-act="row-fmt"] optgroup'),
-            (g) => g.getAttribute("label"));
-          calls.length = 0;
+          /* 그룹은 **한 행의 select** 에서 센다 — 표 전체를 훑으면 행 수만큼 곱해져
+             「3개」라는 계약이 12개로 읽힌다(측정 대상이 아니라 표본이 바뀐 자리). */
           const fmtSelect = root.querySelectorAll('table.map [data-act="row-fmt"]')[0];
+          out.display_groups = Array.prototype.map.call(
+            fmtSelect.querySelectorAll("optgroup"), (g) => g.getAttribute("label"));
+          calls.length = 0;
           typeValue(ctx, fmtSelect, "date:");
           fire(ctx, fmtSelect, "change");
           await settleUntil(ctx, () => calls.length > 0);
