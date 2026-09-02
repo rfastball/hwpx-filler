@@ -1535,8 +1535,11 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3959,
-      deadlineMs: 0,
-      deadlineRationale: "동기 evaluate_js 한 번(app.py:3959) — 레거시에도 폴링이 없다.",
+      deadlineMs: 2500,
+      deadlineRationale:
+        "공용 `_probe_late` 예산 2.5초 그대로. 종전 `editor_chip` 은 동기 evaluate_js 한 번"
+        + " 이라 `deadlineMs: 0` 이었지만 이 프로브는 클릭·발신·재렌더를 **기다린다** —"
+        + " 감시견 없는 대기는 매달림을 이름 없는 `run_hung` 으로 만든다(U6-B 교훈).",
       after: ["data_picker"],
       afterReason:
         "app.py:3957 의 0.4초 정산이 이 둘 **사이**에 있다 — data_picker 가 닫은 모달의"
@@ -1546,6 +1549,12 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = {};
         let stub = null;
+        /* `guarded` 의 catch 백스톱은 `window.alert` 다 — 이 창에서 그것이 뜨면 JS 가 멈춰
+           프로브가 아니라 **런 전체**가 매달린다(감시견도 JS 쪽이라 못 깨운다). 세어서
+           단언하고 되돌린다: 0 이 아니면 어딘가가 던졌다는 뜻이고 그건 이름 있는 빨강이다. */
+        const realAlert = ctx.win.alert;
+        let alerts = 0;
+        ctx.win.alert = function () { alerts += 1; };
         try {
           /* 발신을 가로채 **무엇이 나갔는지**를 센다. 백엔드 왕복을 실제로 태우면 합성
              스냅샷이 실 컨트롤러 상태와 어긋나 이후 단계가 남의 세계를 잰다. */
@@ -1719,7 +1728,9 @@ export function createEditorWorkbenchDataProbes() {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
         } finally {
           if (stub) stub.restore();
+          ctx.win.alert = realAlert;
         }
+        out.alerts = alerts;
         return { editor_binding: out };
       },
     },
@@ -1813,9 +1824,12 @@ export function createEditorWorkbenchDataProbes() {
             },
             rows: [{
               index: 0, template_field: "품명", inferred_type: "text", context: "", source: "",
-              type: "const", const: "고정값", fmt: "", confirmed: false, touched: true,
-              has_content: true, suggestion_score: 0, preview: "고정값", preview_empty: false,
-              preview_error: false, row_state: "unconfirmed",
+              type: "const", const: "고정값", fmt: "", fmt_options: [],
+              confirmed: false, touched: true,
+              has_content: true, confirmable: true, suggestion_score: 0,
+              preview: "고정값", preview_kind: "value", preview_empty: false,
+              preview_error: false, row_state: "edited", state_label: "확인 필요",
+              source_kind: "const", source_value: "sp:const", source_missing_label: "",
             }],
           });
           ctx.push("editor", rowSnap);

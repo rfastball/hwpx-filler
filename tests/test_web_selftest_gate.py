@@ -1476,6 +1476,9 @@ class TestWebSelftestGate:
         assert e["revert_same_line"] is True, (
             "재제안 버튼과 select 의 세로 중심이 어긋났습니다 — 줄이 갈렸습니다."
         )
+        # `guarded` 의 catch 백스톱(`window.alert`)이 한 번도 뜨지 않았다 — 이 창에서 그것이
+        # 뜨면 JS 가 멈춰 프로브가 아니라 런 전체가 매달린다(감시견도 JS 쪽이라 못 깨운다).
+        assert e["alerts"] == 0, f"편집 발신 어딘가가 던졌습니다(alert {e['alerts']}회)."
 
     def test_editor_save_gate_opens_on_typing_not_on_blur(self, selftest_result: dict) -> None:
         """편집(탭)의 「변경 저장」이 **타이핑 시점에** 열린다(U2 §2.4 게이트 · 리뷰 R2).
