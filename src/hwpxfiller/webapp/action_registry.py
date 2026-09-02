@@ -111,9 +111,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # (구 `skip_data` 는 여기서 사라졌다 — 데이터 결속이 저장 게이트가 된 이상
         #  「데이터 없이 진행」은 저장할 수 없는 세션으로 가는 링크였다.)
         "use_pool_data": _schema("key"),
-        "use_all_headers": _schema(),
-        "use_none": _schema(),
-        "toggle_source_active": _schema("field"),
+        # (구 `use_all_headers`·`use_none`·`toggle_source_active` 는 U6-C(#977 · U6 §2.5)
+        #  에서 사슬째 퇴역 — 「사용할 데이터 열」 선별의 전제(스키마 재활용)가 사라졌고,
+        #  매핑되지 않은 열은 자연히 쓰이지 않는다.)
         "mapping_reset_stakes": _schema(),
         "set_source": _schema("index source"),
         "revert_source": _schema("index"),
@@ -122,8 +122,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_fmt": _schema("index fmt"),
         "set_const": _schema("index const"),
         "set_confirmed": _schema("index confirmed"),
-        "confirm_all": _schema(),
-        "confirm_blanks": _schema(optional="fields"),
+        # 이 필드는 채우지 않는다 — 행별 비움 선언(U6-C #977). 구 `confirm_all` +
+        # `confirm_blanks`(이름 재진술 모달) 두 발이 각각 `confirm_suggested` 와 이것으로
+        # 갈렸다: 일괄 승격은 **자동 제안만** 건드리고, 비움은 고른 그 행의 선언이다.
+        "set_blank": _schema("index"),
+        "confirm_suggested": _schema(),
         "unconfirm_all": _schema(),
         "restore_confirmed": _schema(),
         "step_preview": _schema("delta"),

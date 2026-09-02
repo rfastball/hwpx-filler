@@ -34,7 +34,7 @@ export const SELFTEST_MODES = Object.freeze({
     /** 44키. 순서는 알파벳 — 드라이버 실행 순서가 아니다(그건 runner 의 `legacySite`). */
     keys: Object.freeze([
       "action_roundtrip", "chain_recovery", "data_picker", "data_picker_buttons",
-      "data_sheet", "editor_chip", "editor_discard_immediate", "editor_lib",
+      "data_sheet", "editor_binding", "editor_discard_immediate", "editor_lib",
       "editor_lib_manage", "editor_save_gate", "editor_tab_autodiscard", "editor_txt_band",
       "grid_narrow", "grid_wide", "home_screen_gone", "job_active_card",
       "job_data_first", "job_density_narrow", "job_editmode", "job_inherited",
@@ -273,7 +273,7 @@ export const SELFTEST_KEYS = Object.freeze({
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "D",
   }),
-  editor_chip: key({
+  editor_binding: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "D",

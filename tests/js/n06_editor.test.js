@@ -545,24 +545,24 @@ test("#945 F4 인라인 알림에는 닫기 단추가 서고 눌리면 채널이
   assert.equal(after.includes('id="saveMsgClose"'), false);
 });
 
-test("#323 구조화 거절(전체 미사용 선차단)도 인라인 채널로 간다", async () => {
-  // `useNone` 의 확정 선차단은 던져진 예외가 아니라 **판정 결과**다. catch 백스톱
-  // (`deps.notify`)이 아니라 화면이 붙들 수 있는 자리로 가야 한다.
+test("#323 구조화 거절(무동작 일괄 재제안)도 인라인 채널로 간다", async () => {
+  // 「돌릴 행이 없다」는 던져진 예외가 아니라 **판정 결과**다. catch 백스톱(`deps.notify`)이
+  // 아니라 화면이 붙들 수 있는 자리로 가야 한다(무동작을 조용히 넘기지 않는다).
   const h = harness({
     initial: async () => snap({ section: "binding" }),
-    call: async (_screen, action) => (
-      action === "mapping_reset_stakes" ? { confirmed: 2, human: 2 } : {}
-    ),
+    call: async (_screen, action) => {
+      if (action === "mapping_reset_stakes") return { resuggest_manual: 0, confirmed: 3 };
+      if (action === "resuggest_all") return { resuggested: 0, kept_confirmed: 3 };
+      return {};
+    },
   });
   await h.controller.init();
 
-  await h.controller.useNone();
+  await h.controller.handleBindingMenu("resuggest-all");
 
   const message = h.controller.viewModel.getSnapshot().saveMessage;
-  assert.ok(message && message.text.includes("확정한 매핑 2개"));
+  assert.ok(message && message.text.includes("확정한 3개는 그대로 둡니다"));
   assert.deepEqual(h.notices, []);
-  const actions = h.trace.filter((row) => row[0] === "dispatch").map((row) => row[2]);
-  assert.equal(actions.includes("use_none"), false, "선차단이므로 파괴 동사는 안 나간다");
 });
 
 test("#323 던져진 예외는 여전히 catch 백스톱(window.alert)이 받는다", async () => {
@@ -1532,4 +1532,163 @@ test("loadInitial 은 호스트 준비 뒤에만 initial 을 부른다 — 순�
   release();
   await pending;
   assert.equal(h.counts.initial, 1, "준비 뒤에는 정확히 한 번 나간다.");
+});
+
+/* ───────────────────────── U6-C 연결 확인 표(#977) ─────────────────────────
+   판정은 전부 링1·링2 에 있다(`gui/mapping_state.py`·`webapp/screen_editor.py`). 여기서
+   재는 것은 **표면이 그 값을 그대로 쓰는가**와 **어느 액션으로 갈리는가** 둘뿐이다. */
+
+const BIND_OPTIONS = [
+  { value: "", label: "열을 고르세요", kind: "none", field: "" },
+  { value: "col:업체명", label: "업체명", kind: "column", field: "업체명" },
+  { value: "col:금액", label: "금액", kind: "column", field: "금액" },
+  { value: "sp:const", label: "고정값…", kind: "const", field: "" },
+  { value: "sp:today", label: "오늘 날짜", kind: "today", field: "" },
+  { value: "sp:blank", label: "비워 둠", kind: "blank", field: "" },
+];
+
+function bindRow(index, field, state, over) {
+  return Object.assign({
+    index, template_field: field, inferred_type: "text", context: "",
+    source: "", type: "text", const: "", fmt: "", fmt_options: [],
+    confirmed: state === "confirmed", touched: state === "edited",
+    has_content: state !== "needs_source", confirmable: state !== "needs_source",
+    suggestion_score: 0, preview: "값", preview_kind: "value",
+    preview_empty: false, preview_error: false,
+    row_state: state,
+    state_label: {
+      suggested: "제안", edited: "확인 필요", confirmed: "확인", needs_source: "확인 필요",
+    }[state],
+    source_kind: state === "needs_source" ? "" : "column",
+    source_value: state === "needs_source" ? "" : "col:업체명",
+    source_missing_label: "",
+  }, over || {});
+}
+
+function bindSnap(extra) {
+  return snap(Object.assign({
+    section: "binding", record_count: 3, preview_index: 1, preview_count: 3,
+    source_fields: ["업체명", "금액"], data_column_options: BIND_OPTIONS,
+    sample_rows: [], schema_only: false, is_complete: false,
+    binding_head: {
+      suggested: 1, needs_confirm: 1, const: 0,
+      promote_label: "제안 1건 모두 확인", promoted_label: "제안을 모두 확인했습니다",
+      unused_columns: 2,
+    },
+    rows: [
+      bindRow(0, "업체", "suggested", { source: "업체명" }),
+      bindRow(1, "담당자", "needs_source", { preview: "", preview_kind: "none" }),
+    ],
+  }, extra || {}));
+}
+
+test("U6-C 특수 항목 선택은 열 이름 공간을 지나지 않고 자기 액션으로 갈린다", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  const sent = () => h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor")
+    .map((row) => [row[2], row[3]]);
+
+  h.controller.chooseDataColumn(1, "sp:const");
+  h.controller.chooseDataColumn(1, "sp:today");
+  h.controller.chooseDataColumn(1, "sp:blank");
+  h.controller.chooseDataColumn(1, "col:금액");
+  h.controller.chooseDataColumn(1, "");
+  await h.controller.flushPendingEdits();
+
+  assert.deepEqual(sent(), [
+    ["set_type", { index: 1, type: "const" }],
+    ["set_type", { index: 1, type: "today" }],
+    ["set_blank", { index: 1 }],
+    ["set_source", { index: 1, source: "금액" }],
+    ["set_source", { index: 1, source: "" }],
+  ]);
+  // 센티넬이 소스 값으로 새면 동명 실열을 영영 못 겨눈다(리뷰 R5) — 그 부재를 못박는다.
+  for (const [action, payload] of sent()) {
+    if (action !== "set_source") continue;
+    assert.equal(String(payload.source).startsWith("sp:"), false);
+    assert.equal(String(payload.source).startsWith("col:"), false);
+  }
+});
+
+test("U6-C 목록에 없는 항목 값은 조용히 무시되지 않는다", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  assert.throws(() => h.controller.chooseDataColumn(1, "sp:없는것"), /알 수 없는 데이터 열 항목/);
+});
+
+test("U6-C 상태 배지는 링1 라벨을 그대로 쓰고 채울 것 없는 행에서 잠긴다", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+
+  assert.ok(markup.includes('data-act="row-confirm"'), "배지 버튼이 없다");
+  assert.equal(markup.includes('type="checkbox"'), false, "확정 체크박스가 남아 있다");
+  assert.equal(markup.includes('data-act="row-type"'), false, "타입 열이 남아 있다");
+  assert.equal(markup.includes('data-act="toggle-header"'), false, "열 선별 칩이 남아 있다");
+  // 잠금은 `confirmable` 하나로 갈리고 사유를 함께 든다(말없는 무동작 금지).
+  const badges = markup.match(/<button[^>]*data-act="row-confirm"[^>]*>/g) || [];
+  assert.equal(badges.length, 2);
+  assert.equal(badges[0].includes("disabled"), false, "내용 있는 행의 배지가 잠겼다");
+  assert.ok(badges[1].includes("disabled"), "내용 없는 행의 배지가 열려 있다");
+  assert.ok(markup.includes("열을 고르거나 고정값"), "잠긴 배지가 사유를 말하지 않는다");
+  assert.ok(markup.includes(">제안<") && markup.includes(">확인 필요<"),
+    "배지 문안이 스냅샷의 `state_label` 이 아니다");
+});
+
+test("U6-C 머리 pill·일괄 승격 문안은 스냅샷 값 그대로다", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+
+  assert.ok(markup.includes("자동 제안 1"));
+  assert.ok(markup.includes("확인 필요 1"));
+  assert.ok(markup.includes("고정값 0"));
+  assert.ok(markup.includes("제안 1건 모두 확인"));
+  assert.ok(markup.includes("사용하지 않는 데이터 열 2개"));
+
+  // 승격할 제안이 0 이면 버튼은 잠기고 **다른 문안**을 든다(0 의 두 뜻을 Python 이 가른다).
+  const done = harness({
+    initial: async () => bindSnap({
+      binding_head: {
+        suggested: 0, needs_confirm: 0, const: 2,
+        promote_label: "제안 0건 모두 확인", promoted_label: "제안을 모두 확인했습니다",
+        unused_columns: 0,
+      },
+    }),
+  });
+  await done.controller.init();
+  const after = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: done.controller }),
+  );
+  assert.ok(after.includes("제안을 모두 확인했습니다"));
+  assert.equal(after.includes("제안 0건 모두 확인"), false);
+});
+
+test("U6-C 미리보기는 Python 이 낸 표식 문자열을 그대로 그린다", async () => {
+  const h = harness({
+    initial: async () => bindSnap({
+      rows: [
+        bindRow(0, "담당자", "suggested", {
+          source: "업체명", preview: "〘미입력·담당자〙", preview_kind: "missing",
+          preview_empty: true,
+        }),
+        bindRow(1, "비고", "confirmed", {
+          preview: "", preview_kind: "blank", has_content: false, confirmable: false,
+          source_kind: "blank", source_value: "sp:blank",
+        }),
+      ],
+    }),
+  });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  // 표식은 UI 문안이 아니라 **문서에 박히는 데이터**라 웹이 짓지 않는다.
+  assert.ok(markup.includes("〘미입력·담당자〙"), "빈 값이 빈칸으로 샜다");
+  assert.ok(markup.includes('class="pv missing"'));
+  assert.ok(markup.includes('class="pv blank"'));
 });

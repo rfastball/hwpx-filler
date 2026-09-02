@@ -55,6 +55,31 @@ STRUCTURE_NOTATION_BLOCK_MESSAGE = (
     "'템플릿' 탭에서 '누름틀·구간 변환'을 먼저 실행하세요."
 )
 
+#: 행 상태 4태 → 사용자가 볼 배지 문안(U6-C #977). **닫힌 집합**이고 라벨의 단일 출처다 —
+#: 종전에는 링2 표면이 `confirmed`/`touched`/`source` 세 값에서 「확정/수동/제안/후보 없음」을
+#: 스스로 조립했다. 그러면 같은 상태를 두 곳이 판정하고, 링1 이 술어를 고쳐도 표면만 옛말을
+#: 계속 한다. `edited` 와 `needs_source` 가 같은 문안인 것은 의도다: 사람이 할 일이 같다
+#: (이 행을 보고 확인해야 한다). 갈리는 것은 **왜 그런가**이고 그것은 데이터 열 칸이 말한다.
+ROW_STATUS_LABEL = {
+    "suggested": "제안",
+    "edited": "확인 필요",
+    "confirmed": "확인",
+    "needs_source": "확인 필요",
+}
+
+#: 데이터 열 select 의 **특수 항목** 문안(U6-C #977). 실제 열 이름 공간과 섞이지 않는다 —
+#: 이 셋은 열이 아니라 「값을 어디서 얻는가」의 다른 답이고, 표면은 열 선택(`set_source`)이
+#: 아니라 `set_type`/`set_blank` 로 갈라 발행한다(센티넬을 소스 값에 얹으면 동명 실열과
+#: 충돌해 그 열을 영영 못 겨눈다 — 리뷰 R5 의 근거가 그대로 산다).
+SPECIAL_SOURCE_LABEL = {
+    "const": "고정값…",
+    "today": "오늘 날짜",
+    "blank": "비워 둠",
+}
+
+#: 무결속 행의 열 placeholder — 「고르세요」는 문안이지 상태가 아니다(상태는 배지가 낸다).
+NO_SOURCE_LABEL = "열을 고르세요"
+
 
 def pairing_preview(
     template_fields: "list[str]", source_fields: "list[str]"
@@ -133,6 +158,33 @@ class RowState:
         강등·재제안·이월을 어긋나게 하는 조용한 드리프트류). 강등 조건·이월 대상이 이걸 쓴다."""
         return not self.is_system_owned()
 
+    def default_type(self) -> str:
+        """이 행의 **추정 기본 유형** — 리셋·특수 유형 해제가 되돌아갈 자리의 단일 정의.
+
+        두 자리(:meth:`reset_to_system` · :meth:`MappingModel.set_source`)가 각자 적으면
+        「되돌리기」와 「열 다시 고르기」가 서로 다른 유형에 착지한다.
+        """
+        return default_transform_for(self.spec.inferred_type if self.spec else "")
+
+    def status(self) -> str:
+        """행 상태 **4태**(U6-C #977) — ``suggested``·``edited``·``confirmed``·``needs_source``.
+
+        종전에는 링2 가 `confirmed`/`has_content`/`schema_only` 로 4태를 짓고 링2 위의 웹이
+        `!confirmed && !touched && source` 로 「제안」을 **다시** 유추했다 — 같은 상태를 세
+        층이 판정했고, 그중 하나만 고치면 표가 자기 배지와 다른 말을 한다. 판정은 여기 하나다.
+
+        축은 둘이다: **확인했는가**(confirmed)와 **채울 것이 있는가**(has_content). 내용이
+        있는데 미확정이면 그것을 누가 정했는지가 갈린다 — 시스템이면 「제안」, 사람이면
+        「확인 필요」다(사람이 손댄 값을 「제안」이라 부르면 자동 결과와 구별되지 않는다).
+        데이터 미연결(구 ``schemaonly``)은 별도 상태가 아니라 ``needs_source`` 다: 행이
+        요구하는 것은 같고, **왜 고를 열이 없는지**는 표 머리가 말한다.
+        """
+        if self.confirmed:
+            return "confirmed"
+        if not self.has_content():
+            return "needs_source"
+        return "suggested" if self.is_system_owned() else "edited"
+
     def reset_to_system(self) -> None:
         """행을 갓 제안 전의 **시스템 소유 초기 상태**로 완전 리셋 — 강등·되돌리기의 단일 정의.
 
@@ -146,7 +198,7 @@ class RowState:
         self.source = ""
         self.const = ""
         self.fmt = ""
-        self.type = default_transform_for(self.spec.inferred_type if self.spec else "")
+        self.type = self.default_type()
         self.suggestion_score = 0.0
 
     def has_content(self) -> bool:
@@ -302,7 +354,19 @@ class MappingModel:
     # 사람의 편집은 모두 ``touched=True`` — 그 행은 사람 소유가 되어 활성 헤더 변화의 라이브
     # 재제안이 덮지 못한다(칩-라이브 결정 12). 자동 제안으로 되돌리려면 ``revert_to_auto``.
     def set_source(self, index: int, source: str) -> None:
+        """열 결속 — **값을 내는 유형과 함께** 세운다(U6-C #977).
+
+        ``const``/``today`` 는 소스를 보지 않고 값을 낸다(``value_for``). 그 유형을 남긴 채
+        소스만 얹으면 표는 「이 열에서 온다」고 보이는데 산출물에는 옛 상수·오늘 날짜가
+        박힌다 — 표시와 출력이 갈리는 조용한 거짓말이다. 데이터 열을 고르는 것은 곧
+        「열에서 값을 얻겠다」는 선언이므로 특수 유형을 추정 기본형으로 되돌리고 그 유형이
+        데리고 있던 상수·표시형을 함께 걷는다.
+        """
         row = self.rows[index]
+        if row.type in ("const", "today"):
+            row.type = row.default_type()
+            row.const = ""
+            row.fmt = ""
         row.source = source
         row.confirmed = False
         row.touched = True
@@ -313,8 +377,33 @@ class MappingModel:
         row = self.rows[index]
         row.type = type_
         row.fmt = ""  # 유형이 바뀌면 이전 표시형 키는 무효 → 기본으로.
+        if type_ in ("const", "today"):
+            # 값의 출처가 열이 아니게 됐다 — 남긴 소스는 표에 「이 열」로 보이지만 값은
+            # 상수·오늘 날짜다(``set_source`` 의 짝 규칙). 되돌리기용 소스 기억이 필요한
+            # 자리는 ``set_manual`` 이고 그쪽은 이 관문을 지나지 않는다.
+            row.source = ""
         row.confirmed = False
         row.touched = True
+
+    def set_blank(self, index: int) -> None:
+        """이 필드는 **채우지 않는다**고 사람이 선언한다(U6-C #977) — 행별 비움 확정.
+
+        구 「모두 확정 → 이름 재진술 모달 → ``confirm_fields``」(ADR-E)가 하던 일을 행에서
+        직접 한다. 승격 대상을 모아 이름을 되읽어 주던 이유는 **일괄**이 반사적 dismiss 로
+        여러 필드를 한 번에 비우기 때문이었고, 행별 선언에는 그 위험이 없다(고른 행이 곧
+        확인한 행이다). 결과 상태는 그때와 같다 — ``to_profile`` 은 ``blank`` 선언으로,
+        ``declared_blank_fields`` 는 이 필드를 담는다.
+
+        ``today`` 는 소스도 상수도 없이 언제나 값을 내므로(``has_content`` 무조건 참) 여기서
+        추정 기본형으로 되돌린다. 남기면 「비워 둠」으로 확정된 행이 오늘 날짜를 찍는다.
+        """
+        row = self.rows[index]
+        row.source = ""
+        row.const = ""
+        if row.type == "today":
+            row.type = row.default_type()
+            row.fmt = ""
+        row.confirmed = True
 
     def set_fmt(self, index: int, fmt: str) -> None:
         """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
@@ -344,10 +433,6 @@ class MappingModel:
     def set_confirmed(self, index: int, confirmed: bool = True) -> None:
         """사람의 행별 확정/해제 — 빈 행 확정은 '의도적 비움'을 뜻한다."""
         self.rows[index].confirmed = confirmed
-
-    def confirm_all(self) -> None:
-        for row in self.rows:
-            row.confirmed = True
 
     def unconfirm_all(self) -> None:
         for row in self.rows:
@@ -447,43 +532,43 @@ class MappingModel:
     # 구판 ignore_source(헤더별 무차별 해제)는 칩-라이브 재배선으로 소비자가 소멸해 제거됐다
     # — 헤더 사용/미사용의 유일 관문은 apply_active_sources(결정 12·13).
 
-    # --------------------------------------------------- 대량 확정 게이트(UD-05)
-    # '모두 확정'은 ADR-D 의 '고신뢰 매칭 일괄 수락'만 담당한다: 내용 있는 행만
-    # 즉시 확정하고, 내용 없는 미매칭 행의 **의도적 비움 승격**은 뷰가 이름 재진술
-    # 확인(ADR-E)을 거쳐 confirm_fields 로 따로 확정한다(무경고 대량 우회 금지).
-    def confirm_content_rows(self) -> int:
-        """내용(소스/상수)이 있는 행만 확정한다 — 미매칭 빈 행은 건드리지 않는다.
+    # ------------------------------------------------- 일괄 승격 게이트(U6-C #977)
+    # 구 '모두 확정'(내용 있는 전 행 즉시 확정 + 비움 승격 이름게이트)의 후계다. 승격
+    # 대상을 **시스템 소유**로 좁힌 것이 유일한 의미 변화이고 그것이 이 동사가 한 질문에
+    # 답하게 만든다: 「자동 제안을 그대로 받겠다」. 사람이 손댄 행(edited)과 채울 것이 없는
+    # 행(needs_source)은 각자 다른 답을 요구하므로 이 버튼이 대신 답하지 않는다.
+    def confirm_suggested(self) -> int:
+        """**자동 제안 행만** 확정한다 — 사람이 손댄 행·열 필요 행은 건드리지 않는다.
 
-        반환값은 이번에 새로 확정 상태가 된 행 수(이미 확정된 행 제외).
+        반환값은 이번에 확정된 행 수. 승격 뒤에도 남은 행이 있으면 저장 게이트
+        (:meth:`is_complete`)가 그대로 막는다 — 이 동사는 게이트의 우회로가 아니라
+        게이트를 통과시키는 정상 경로의 한 걸음이다(명시성 원칙 불변).
         """
-        n = 0
-        for row in self.rows:
-            if row.has_content() and not row.confirmed:
-                row.confirmed = True
-                n += 1
-        return n
+        targets = [r for r in self.rows if r.is_system_owned() and r.has_content()]
+        for row in targets:
+            row.confirmed = True
+        return len(targets)
 
-    def unconfirmed_blank_fields(self) -> "list[str]":
-        """미확정이면서 내용이 없는(미매칭) 행의 템플릿 필드 이름 — 문서순.
+    def suggested_count(self) -> int:
+        """상태가 ``suggested`` 인 행 수 — 일괄 승격 버튼의 수치·머리 pill 이 같이 읽는다."""
+        return sum(1 for r in self.rows if r.status() == "suggested")
 
-        '모두 확정' 시 **의도적 비움으로 승격될 후보**다. 뷰는 이 이름들을 재진술해
-        사람에게 확인시킨 뒤에만 confirm_fields 로 확정한다(ADR-E 반사적 dismiss 봉쇄).
+    def needs_confirm_count(self) -> int:
+        """사람이 답해야 하는 행 수 = ``edited`` + ``needs_source``(일괄 승격 비대상 전부)."""
+        return sum(1 for r in self.rows if r.status() in ("edited", "needs_source"))
+
+    def const_count(self) -> int:
+        """고정값 행 수 — 데이터가 아니라 사람이 적어 넣은 값이 몇 자리인가."""
+        return sum(1 for r in self.rows if r.type == "const")
+
+    def unused_source_fields(self) -> "list[str]":
+        """어느 행도 겨누지 않는 데이터 열 — 표 바닥 한 줄이 잇는 정보(U6 §2.5).
+
+        「사용할 데이터 열」 선별이 퇴역하며 남은 질문은 이것 하나다: 안 쓰는 열이 몇인가.
+        매핑되지 않은 열은 자연히 쓰이지 않으므로 끄는 동사가 필요 없다.
         """
-        return [
-            r.template_field
-            for r in self.rows
-            if not r.confirmed and not r.has_content()
-        ]
-
-    def confirm_fields(self, fields: "Iterable[str]") -> int:
-        """이름으로 재진술·확인된 필드들만 확정한다(대량 비움 확정의 이름-게이트 경로)."""
-        names = set(fields)
-        n = 0
-        for row in self.rows:
-            if row.template_field in names and not row.confirmed:
-                row.confirmed = True
-                n += 1
-        return n
+        used = {r.source for r in self.rows if r.source}
+        return [f for f in self.source_fields if f not in used]
 
     def confirmed_count(self) -> int:
         """확정된 행 수 — '모두 해제' 파괴 확인 게이트가 파기 규모를 진술하는 근거."""

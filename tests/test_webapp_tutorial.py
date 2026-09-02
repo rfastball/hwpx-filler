@@ -400,13 +400,11 @@ def test_editor_notifies_template_pick_mapping_completion_and_txt_save(tmp_path)
     ctrl.dispatch("set_const", {"index": 0, "const": "복사기 임차"})
     ctrl.dispatch("set_type", {"index": 1, "type": "const"})
     ctrl.dispatch("set_const", {"index": 1, "const": "1,200,000"})
-    blanks = ctrl.dispatch("confirm_all", {})["blanks"]
-    if blanks:
-        ctrl.dispatch("confirm_blanks", {"fields": blanks})
+    _confirm_every_row(ctrl)
     assert ctrl.snapshot()["is_complete"] is True
     assert str(Milestone.CONFIRM_MAPPING) in seen
     before = len(seen)
-    ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_suggested", {})
     assert len(seen) == before, "이미 전확정인데 상승 모서리가 또 잡혔습니다"
 
     seen.clear()
@@ -417,6 +415,19 @@ def test_editor_notifies_template_pick_mapping_completion_and_txt_save(tmp_path)
     assert str(Milestone.SAVE_TXT_JOB) in seen
     assert str(Milestone.SAVE_JOB) not in seen
     assert reg.load("기안작업").media == "txt"
+
+
+def _confirm_every_row(ctrl) -> None:
+    """전 행 확인 — 내용 행은 배지(`set_confirmed`), 빈 행은 「비워 둠」(`set_blank`).
+
+    구 「모두 확정」 2발(`confirm_all` + 비움 이름게이트 `confirm_blanks`)의 후계다(U6-C
+    #977) — 일괄 승격은 자동 제안만 올리므로 전 행 확인은 행별 답으로 완성된다.
+    """
+    for row in ctrl.snapshot()["rows"]:
+        if row["confirmable"]:
+            ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
+        else:
+            ctrl.dispatch("set_blank", {"index": row["index"]})
 
 
 def test_blocked_save_does_not_notify(tmp_path):
@@ -432,7 +443,12 @@ def test_blocked_save_does_not_notify(tmp_path):
     assert str(Milestone.SAVE_JOB) not in seen and str(Milestone.SAVE_TXT_JOB) not in seen
 
 
-def test_confirm_blanks_notifies_only_when_rows_actually_move(tmp_path):
+def test_set_blank_notifies_only_when_a_row_actually_moves(tmp_path):
+    """T14 비움 확정의 새 자리는 행별 「비워 둠」이다(U6-C #977 — 구 `confirm_blanks` 모달).
+
+    체크는 **상태가 실제로 옮겨갔을 때만** 선다: 이미 비움 확정인 행을 다시 골라도 지나지
+    않은 게이트를 지났다고 말하면 안 된다.
+    """
     seen, notify = _collector()
     ctrl, _ = _editor(tmp_path, notify)
     tpl = _txt_template(tmp_path, "결핍", "건명: {{건명}}\n보증금: {{계약보증금}}")
@@ -440,17 +456,14 @@ def test_confirm_blanks_notifies_only_when_rows_actually_move(tmp_path):
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 1단계 게이트(U6-B #976)
     ctrl.dispatch("goto_section", {"section": "binding"})
     seen.clear()
+    index = ctrl.model.index_of("계약보증금")
 
-    # 빈 목록·이미 확정된 이름으로 온 무변이 호출에는 통지가 없다.
-    ctrl.dispatch("confirm_blanks", {"fields": []})
-    assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen
-
-    ctrl.dispatch("confirm_blanks", {"fields": ["계약보증금"]})
+    ctrl.dispatch("set_blank", {"index": index})
     assert str(Milestone.CONFIRM_EMPTY_FIELD) in seen
 
     seen.clear()
-    ctrl.dispatch("confirm_blanks", {"fields": ["계약보증금"]})
-    assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen, "이미 확정된 행이 다시 게이트를 켰습니다"
+    ctrl.dispatch("set_blank", {"index": index})
+    assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen, "이미 비운 행이 다시 게이트를 켰습니다"
 
 
 # ============================================================ 5. workbench 배선(T11)

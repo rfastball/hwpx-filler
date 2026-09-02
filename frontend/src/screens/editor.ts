@@ -78,18 +78,22 @@ export type EditorControllerDeps = {
 const SCREEN = "editor";
 const EDIT_CHAIN = "editor:mutate";
 
-/* 표시형·타입 라벨은 표현 계층이라 여기 산다(Qt mapping_table 의 웹 짝). */
-const TYPE_LABEL: Record<string, string> = {
-  text: "텍스트", date: "날짜", amount: "금액", const: "고정값", today: "오늘 날짜",
-};
 const INFERRED_LABEL: Record<string, string> = {
   text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호",
 };
-/** 매핑 행 상태 → class. Python 이 내는 닫힌 집합 넷과 1:1(발명·누락 금지). */
+/** 매핑 행 상태 → class. Python 이 내는 닫힌 집합 넷과 1:1(발명·누락 금지).
+ *  **라벨은 여기 없다** — 배지 문안은 링1 `ROW_STATUS_LABEL` 이 스냅샷에 실어 보낸다
+ *  (U6-C #977: 같은 상태를 두 층이 문안화하면 한쪽만 옛말을 계속 한다). */
 const ROW_STATE_CLASS: Record<string, string> = {
-  confirmed: "r-confirmed", unconfirmed: "r-unconfirmed",
-  schemaonly: "r-schemaonly", unmatched: "r-unmatched",
+  suggested: "r-suggested", edited: "r-edited",
+  confirmed: "r-confirmed", needs_source: "r-needs-source",
 };
+/** 행 상태 → 배지 색 class(제안=액센트 · 확인=완료 · 확인 필요=주의). */
+const ROW_BADGE_CLASS: Record<string, string> = {
+  suggested: "sugg", edited: "warn", confirmed: "ok", needs_source: "warn",
+};
+/** 확정 배지가 잠기는 이유 — 눌러도 되는 자리와 안 되는 자리를 말없이 가르지 않는다. */
+const NOT_CONFIRMABLE_HINT = "열을 고르거나 고정값·오늘 날짜·비워 둠을 고르세요";
 
 /* 단계 이름은 **각 단계가 묻는 질문**이다(U6 §2.2 · U6-B #976). section id 는 계약이라
    그대로이고 바뀐 것은 라벨뿐이다 — 「템플릿」은 이제 절반만 말하고(오른쪽에서 데이터도
@@ -150,8 +154,9 @@ type LibMenu = {
 
 type ViewState = {
   libMenu: LibMenu | null;
+  /** 2단계 머리의 ⋯ 메뉴가 열려 있는가 — 항목·위치는 공용 `ContextMenu` 가 소유한다. */
+  bindingMenu: boolean;
   txtEdit: TxtEditState | null;
-  foldOpen: boolean;
   tokFoldOpen: boolean;
   saveMessage: { text: string; level: string } | null;
   invalidField: string;
@@ -191,11 +196,12 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
-    libMenu: null, txtEdit: null,
-    foldOpen: false, tokFoldOpen: false, saveMessage: null,
+    libMenu: null, bindingMenu: false, txtEdit: null,
+    tokFoldOpen: false, saveMessage: null,
     invalidField: "", aim: "", aimed: "",
   };
   const libContextMenu = createContextMenu();
+  const bindingContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
   const viewListeners = new Set<Listener>();
 
@@ -347,12 +353,55 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (field === PATTERN_FIELD) void commit(field, "set_pattern", { pattern: state.draftValue });
   }
 
+  /** 데이터 열 항목 값 → 발행할 액션(U6-C #977).
+   *
+   *  **값을 파싱하지 않는다** — Python 이 낸 항목 목록에서 그 값을 찾아 `kind` 를 읽는다.
+   *  접두 규칙(`col:`/`sp:`)을 여기서 다시 해석하면 그 규칙을 두 곳이 소유하게 되고,
+   *  Python 이 이름 공간을 바꾸는 날 웹만 옛 규칙으로 남는다. 목록에 없는 값은 조용히
+   *  무시하지 않고 시끄럽게 던진다(선택지에 없는 것이 선택됐다 = 배선 결함). */
+  function commitDataColumn(index: number, value: string): void {
+    const field = rowField(index, "source");
+    const options = (snapshot().data_column_options || []) as Obj[];
+    const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
+    /* 「데이터에 없음」 항목은 그 행에만 서는 자리라 공용 목록에 없다 — 지금 값 그대로
+       되보내는 무동작이므로 발신하지 않는다(같은 열을 다시 고른 것과 같다). */
+    if (row && row.source_missing_label && value === String(row.source_value)) return;
+    const picked = options.find((option) => String(option.value) === value);
+    if (picked === undefined) throw new Error(`알 수 없는 데이터 열 항목입니다: ${value}`);
+    const kind = String(picked.kind);
+    if (kind === "column") {
+      void commit(field, "set_source", { index, source: String(picked.field) });
+    } else if (kind === "none") {
+      void commit(field, "set_source", { index, source: "" });
+    } else if (kind === "blank") {
+      void commit(field, "set_blank", { index });
+    } else {
+      void commit(field, "set_type", { index, type: kind });
+    }
+  }
+
   function commitRowValue(index: number, axis: RowAxis, value: string): void {
     const field = rowField(index, axis);
-    if (axis === "source") void commit(field, "set_source", { index, source: value });
+    if (axis === "source") commitDataColumn(index, value);
     if (axis === "type") void commit(field, "set_type", { index, type: value });
     if (axis === "fmt") void commit(field, "set_fmt", { index, fmt: value });
     if (axis === "const") void commit(field, "set_const", { index, const: value });
+  }
+
+  /** 데이터 열 select 의 change — 값을 draft 에 올리고 그 자리에서 발행한다.
+   *
+   *  「고정값…」을 고르면 뒤이어 그 칸의 상수 입력에 초점을 준다. 값을 적을 자리가 생겼는데
+   *  커서가 다른 데 있으면 사람은 골라 놓고 다음 동작을 한 번 더 찾아야 한다. 초점은 **다음
+   *  렌더 뒤**에 선다(지금 DOM 에는 그 입력이 아직 없다). */
+  function chooseDataColumn(index: number, value: string): void {
+    commitRow(index, "source", value);
+    const options = (snapshot().data_column_options || []) as Obj[];
+    const picked = options.find((option) => String(option.value) === value);
+    if (picked === undefined || String(picked.kind) !== "const") return;
+    queueMicrotask(() => {
+      deps.doc.querySelector<HTMLElement>(
+        `#editor-body [data-act="row-const"][data-index="${index}"]`)?.focus();
+    });
   }
 
   function commitRow(index: number, axis: RowAxis, value: string): void {
@@ -1093,22 +1142,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     });
   }
 
-  async function useNone(): Promise<void> {
-    /* 확정 존재는 확인 **전에** 선차단한다(파괴를 승인시킨 뒤 거부하는 순서 금지). */
-    const stakes = await sendEdit("mapping_reset_stakes", {});
-    if (stakes.confirmed) {
-      noticeSave(`확정한 매핑 ${stakes.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
-      return;
-    }
-    const manual = Number(stakes.use_none_manual || 0);
-    if (manual && !(await deps.modal.confirm({
-      body: `전체 미사용하면 직접 소스를 고른 매핑 ${manual}개의 수동 지정이 해제됩니다` +
-        `(자동 제안으로만 복원).\n\n계속할까요?`,
-      confirmLabel: "전체 미사용", cancelLabel: "취소",
-    }))) return;
-    await sendEdit("use_none", {});
-  }
-
   async function resuggestAll(): Promise<void> {
     /* 수치는 **이 관문의 것**을 읽는다 — 관문마다 자기 수치를 읽는다. */
     const stakes = await sendEdit("mapping_reset_stakes", {});
@@ -1128,16 +1161,50 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
-  /** 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트. */
-  async function confirmAll(): Promise<void> {
-    const result = await sendEdit("confirm_all", {});
-    const blanks = (result.blanks || []) as string[];
-    if (!blanks.length) return;
-    const accepted = await deps.modal.confirm({
-      body: `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`,
-      confirmLabel: "비움으로 확정", cancelLabel: "취소",
-    });
-    if (accepted) await sendEdit("confirm_blanks", { fields: blanks });
+  /** 「제안 n건 모두 확인」 — 자동 제안 행만 승격한다(U6-C #977).
+   *
+   *  확인 왕복이 없는 이유: 이 동사는 **잃을 것을 만들지 않는다**(미확정 → 확정 한 방향
+   *  이고, 되돌리는 동사가 ⋯ 메뉴에 그대로 있다). 종전 「모두 확정」이 이름 재진술 모달을
+   *  세운 것은 채울 것이 없는 행까지 한 번에 비움 확정으로 밀어 넣었기 때문이고, 그 승격은
+   *  이제 행별 「비워 둠」 선언이 진다. 승격한 수치는 배지·pill 이 그 자리에서 말한다. */
+  async function confirmSuggested(): Promise<void> {
+    await sendEdit("confirm_suggested", {});
+  }
+
+  /* ---- 2단계 머리의 드문 동사(⋯) ---- */
+
+  function bindingMenuItems(snap: Obj): ContextMenuItem[] {
+    const items: ContextMenuItem[] = [
+      { action: "resuggest-all", label: "자동 제안 다시 받기" },
+      { action: "unconfirm-all", label: "모두 해제", danger: true },
+    ];
+    const undo = Number(snap.unconfirm_undo_count || 0);
+    if (undo) {
+      items.push({
+        action: "restore-confirmed", label: `직전 확인 ${undo}개 복원`,
+        separatorBefore: true,
+      });
+    }
+    return items;
+  }
+
+  function closeBindingMenu(): void {
+    patchView({ bindingMenu: false });
+    bindingContextMenu.close();
+  }
+
+  function toggleBindingMenu(trigger: HTMLElement): void {
+    if (view.bindingMenu) { closeBindingMenu(); return; }
+    patchView({ bindingMenu: true });
+    bindingContextMenu.open(trigger, bindingMenuItems(snapshot()));
+  }
+
+  async function handleBindingMenu(action: string): Promise<void> {
+    closeBindingMenu();
+    if (action === "resuggest-all") { await resuggestAll(); return; }
+    if (action === "unconfirm-all") { await sendEdit("unconfirm_all", {}); return; }
+    if (action === "restore-confirmed") { await sendEdit("restore_confirmed", {}); return; }
+    throw new Error(`알 수 없는 연결 확인 메뉴 동작: ${action}`);
   }
 
   /** 변경 버리기 — 발신 **전에** 대기 중 편집을 정산한다(정산하지 않으면 방금 친 글자가
@@ -1201,7 +1268,6 @@ export function createEditorController(deps: EditorControllerDeps) {
      *  JS 전용 상태라 백엔드 왕복이 없다. */
     clearSaveMessage,
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
-    setFold(open: boolean): void { patchView({ foldOpen: open }); },
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
     toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
     isLibMenuOpen: (): boolean => view.libMenu !== null,
@@ -1215,7 +1281,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
     poolAction, resolveDuplicate, openPin, openPclm, openSettings,
     tplModel, poolModel,
-    useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
+    confirmSuggested, chooseDataColumn, discardPatch, cancelNewDraft,
+    toggleBindingMenu, closeBindingMenu, handleBindingMenu, bindingContextMenu,
+    isBindingMenuOpen: (): boolean => view.bindingMenu,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
     guarded,
     doc: deps.doc,
@@ -1737,58 +1805,81 @@ function PairingStage(props: {
       ? h(TemplateSlotSummary as any, { slots: snapshot.template_slots }) : null);
 }
 
-function HeaderSelect(props: { snapshot: Obj; view: ViewState; controller: EditorController }): ReactNode {
-  const { snapshot, view, controller } = props;
-  const all = (snapshot.source_fields || []) as string[];
-  if (!all.length || !snapshot.record_count) return null;
-  const active = new Set((snapshot.active_source_fields || []) as string[]);
-  const ignored = (snapshot.ignored_source_fields || []) as string[];
-  const activeChips = all.filter((field) => active.has(field));
-  return h("div", { className: "grp" },
-    h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
-      h("span", { className: "cap" }, "사용할 데이터 열"),
-      h("span", { className: "muted", style: { marginLeft: "var(--sp-8)" } },
-        `${all.length}개 중 ${snapshot.active_count}개 사용`),
-      h("span", { className: "spacer" }),
-      snapshot.ignored_count ? h("button", {
-        className: "btn sm", "data-act": "use-all-headers",
-        onClick: () => controller.guarded(() => controller.sendEdit("use_all_headers", {})),
-      }, "전체 사용") : null,
-      h("button", {
-        className: "btn sm", "data-act": "use-none",
-        onClick: () => controller.guarded(() => controller.useNone()),
-      }, "전체 미사용")),
-    h("div", { className: "hchips" },
-      ...(activeChips.length
-        ? activeChips.map((field) => h("button", {
-          className: "hchip on", "data-act": "toggle-header", "data-field": field, key: field,
-          title: "클릭 = 미사용으로",
-          onClick: () => controller.guarded(() => controller.sendEdit("toggle_source_active", { field })),
-        }, field))
-        : [h("span", { className: "muted", key: "none" },
-          "사용 중인 데이터 열이 없습니다. 아래 미사용 목록에서 골라 켜세요.")])),
-    ignored.length ? h("details", {
-      className: "hidden-hdrs ign-fold",
-      open: !!(snapshot.ignored_expanded || view.foldOpen),
-      onToggle: (event: Obj) => controller.setFold(!!event.currentTarget.open),
-    },
-    h("summary", null, `미사용 ${ignored.length}개 (펼쳐 다시 사용)`),
-    h("div", { className: "hchips" },
-      ...ignored.map((field) => h("button", {
-        className: "hchip ign", "data-act": "toggle-header", "data-field": field, key: field,
-        title: "클릭 = 다시 사용",
-        onClick: () => controller.guarded(() => controller.sendEdit("toggle_source_active", { field })),
-      }, field))),
-    h("p", { className: "hint", style: { marginTop: "var(--sp-4)" } },
-      "미사용 데이터 열은 자동 매핑 제안·소스 후보에서 빠집니다.")) : null);
+/** 데이터 열 칸 — select(실 열 + 특수 항목) · 고정값 인라인 입력 · 상태 배지 버튼.
+ *
+ *  이 칸 하나가 종전 세 열(데이터 열 · 타입/고정값 · 확정 체크)을 흡수한다(U6 §2.2 · 동결
+ *  시안 장면 2). 흡수의 조건은 **판정이 늘지 않는 것**이었다: 항목의 `kind` 도, 배지의
+ *  문안·가부도, 「데이터에 없음」 표기도 전부 Python 이 낸 값이고 여기서는 그리기만 한다. */
+function DataColumnCell(props: {
+  row: Obj; snapshot: Obj; draft: DraftState; controller: EditorController;
+}): ReactNode {
+  const { row, snapshot, draft, controller } = props;
+  const index = Number(row.index);
+  const options = (snapshot.data_column_options || []) as Obj[];
+  const value = valueOf(draft, rowField(index, "source"));
+  const missingLabel = String(row.source_missing_label || "");
+  const nodes: ReactNode[] = options.map((option) => h("option", {
+    value: String(option.value), key: String(option.value),
+    title: String(option.label), "data-kind": String(option.kind),
+  }, String(option.label)));
+  /* 현재 데이터에 없는 결속은 목록에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
+     드러낸다(문안은 Python). 이 항목을 다시 고르는 것은 무동작이다. */
+  if (missingLabel) {
+    nodes.push(h("option", {
+      value: String(row.source_value), key: "missing", title: missingLabel,
+      "data-kind": "column",
+    }, missingLabel));
+  }
+  const confirmable = !!row.confirmable;
+  return h("div", { className: "srccell" },
+    h("select", {
+      className: `sel${row.row_state === "needs_source" ? " empty" : ""}`,
+      "data-act": "row-source", "data-index": index, value,
+      onChange: (event: Obj) => controller.guarded(
+        () => controller.chooseDataColumn(index, String(event.currentTarget.value))),
+    }, ...nodes),
+    row.source_kind === "const" ? h("input", {
+      className: "sel", "data-act": "row-const", "data-index": index, placeholder: "고정값",
+      value: valueOf(draft, rowField(index, "const")),
+      onChange: (event: Obj) => controller.type(rowField(index, "const"), String(event.currentTarget.value)),
+      onFocus: () => controller.focus(rowField(index, "const"), true),
+      onBlur: () => {
+        controller.focus(rowField(index, "const"), false);
+        controller.commitRowOnBlur(index, "const");
+      },
+      onCompositionStart: () => controller.compose(rowField(index, "const"), true),
+      onCompositionEnd: () => controller.compose(rowField(index, "const"), false),
+    }) : null,
+    h("button", {
+      className: `badge ${ROW_BADGE_CLASS[String(row.row_state)]}`,
+      type: "button", "data-act": "row-confirm", "data-index": index,
+      disabled: !confirmable,
+      title: confirmable ? "" : NOT_CONFIRMABLE_HINT,
+      "aria-pressed": !!row.confirmed,
+      onClick: () => controller.guarded(() => controller.sendEdit(
+        "set_confirmed", { index, confirmed: !row.confirmed })),
+    }, String(row.state_label)),
+    /* 수동·미확정 행만 자동 제안 복귀(↻) — 확정 행은 제외(확인 해제가 의식적 1단계). */
+    row.touched && !row.confirmed && snapshot.record_count ? h("button", {
+      className: "btn icon", "data-act": "revert-source", "data-index": index,
+      title: "자동 제안으로 되돌리기", "aria-label": "이 행 자동 제안 다시 받기",
+      onClick: () => controller.guarded(() => controller.sendEdit("revert_source", { index })),
+    }, "↻") : null);
 }
 
-function OwnerTag(props: { row: Obj; snapshot: Obj }): ReactNode {
-  const { row, snapshot } = props;
-  if (row.confirmed) return h("span", { className: "tag conf" }, "확정");
-  if (row.touched) return h("span", { className: "tag man" }, "수동");
-  if (row.source) return h("span", { className: "tag sugg" }, "제안");
-  return h("span", { className: "tag none" }, snapshot.record_count ? "후보 없음" : "—");
+/** 미리보기 셀 — **산출물이 담을 것**을 그대로 말한다(U6 §2.2).
+ *
+ *  빈 값이 빈칸으로 새지 않는 것이 이 칸의 존재 이유다: 결속됐는데 이 행에서 값이 없으면
+ *  Python 이 실제 표식(`domain/job.MISSING_MARKER`)을 실어 보내고 여기서는 그 문자열을
+ *  그대로 그린다(웹이 문안을 짓지 않는다 — 그건 UI 문구가 아니라 문서에 박히는 데이터다). */
+function PreviewCell(props: { row: Obj }): ReactNode {
+  const { row } = props;
+  const kind = String(row.preview_kind);
+  if (kind === "error") return h("span", { className: "pv err" }, "(미리보기 오류)");
+  if (kind === "missing") return h("span", { className: "pv missing" }, String(row.preview));
+  if (kind === "blank") return h("span", { className: "pv blank" }, "");
+  if (kind === "none") return h("span", { className: "pv none" }, "—");
+  return h("span", { className: "pv" }, String(row.preview));
 }
 
 function MapRow(props: {
@@ -1796,72 +1887,18 @@ function MapRow(props: {
 }): ReactNode {
   const { row, snapshot, draft, controller } = props;
   const index = Number(row.index);
-  const candidates = (snapshot.active_source_fields || snapshot.source_fields || []) as string[];
-  const sourceValue = valueOf(draft, rowField(index, "source"));
-  const known = candidates.includes(sourceValue);
-  const sourceOptions: ReactNode[] = [h("option", { value: "", key: "" }, "(비움)")];
-  for (const field of candidates) {
-    sourceOptions.push(h("option", { value: field, title: field, key: field }, field));
-  }
-  /* 현재 데이터에 없는 소스를 (비움)으로 오표시하지 않고 명시 옵션으로 드러낸다. */
-  if (sourceValue && !known) {
-    sourceOptions.push(h("option", {
-      value: sourceValue, title: "현재 데이터에 없는 소스", key: `missing:${sourceValue}`,
-    }, `${sourceValue} (데이터에 없음)`));
-  }
-  const typeValue = valueOf(draft, rowField(index, "type"));
-  const formats = ((snapshot.fmt_options || {})[typeValue] || []) as Obj[];
-  const preview = row.preview_error
-    ? h("span", { className: "pv emptyval" }, "(미리보기 오류)")
-    : (row.preview_empty
-      ? h("span", { className: "pv emptyval" }, "(이 행에서 빈 값)")
-      : h("span", { className: "pv" }, row.preview));
+  const formats = (row.fmt_options || []) as Obj[];
   /* 행 상태 class 는 **닫힌 집합**이다(Python `screen_editor.py` 가 넷 중 하나를 낸다).
      보간으로 지으면 이름이 코드에 안 남아 CSS 고아 검사가 이 자리를 통째로 건너뛴다 —
      넷을 리터럴로 적어 그 검사에 들게 하고, 계약 밖 값은 조용히 무-class 로 접지 않는다. */
   const rowClass = ROW_STATE_CLASS[String(row.row_state)];
   if (rowClass === undefined) throw new Error(`알 수 없는 행 상태: ${row.row_state}`);
   return h("tr", { className: rowClass, "data-field": row.template_field, key: index },
-    h("td", null, h("input", {
-      type: "checkbox", className: "cbx", "data-act": "row-confirm", "data-index": index,
-      checked: !!row.confirmed,
-      onChange: (event: Obj) => controller.guarded(() => controller.sendEdit(
-        "set_confirmed", { index, confirmed: !!event.currentTarget.checked })),
-    })),
     h("td", null,
       h("span", { className: "fname", title: row.context || row.template_field }, row.template_field),
       h("span", { className: "tbadge" },
         `[추정: ${INFERRED_LABEL[row.inferred_type] || row.inferred_type || ""}]`)),
-    h("td", null, h("div", { className: "srcwrap" },
-      h("select", {
-        className: "sel", "data-act": "row-source", "data-index": index, value: sourceValue,
-        onChange: (event: Obj) => controller.commitRow(index, "source", String(event.currentTarget.value)),
-      }, ...sourceOptions),
-      /* 수동·미확정 행만 자동 제안 복귀(↻) — 확정 행은 제외(확정 해제가 의식적 1단계). */
-      row.touched && !row.confirmed && snapshot.record_count ? h("button", {
-        className: "btn icon", "data-act": "revert-source", "data-index": index,
-        title: "자동 제안으로 되돌리기", "aria-label": "이 행 자동 제안 다시 받기",
-        onClick: () => controller.guarded(() => controller.sendEdit("revert_source", { index })),
-      }, "↻") : null)),
-    h("td", null,
-      h("select", {
-        className: "sel", "data-act": "row-type", "data-index": index, value: typeValue,
-        onChange: (event: Obj) => controller.commitRow(index, "type", String(event.currentTarget.value)),
-      }, ...((snapshot.type_options || []) as string[]).map((type) =>
-        h("option", { value: type, key: type }, TYPE_LABEL[type] || type))),
-      " ",
-      typeValue === "const" ? h("input", {
-        className: "sel", "data-act": "row-const", "data-index": index, placeholder: "고정값",
-        value: valueOf(draft, rowField(index, "const")),
-        onChange: (event: Obj) => controller.type(rowField(index, "const"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(rowField(index, "const"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "const"), false);
-          controller.commitRowOnBlur(index, "const");
-        },
-        onCompositionStart: () => controller.compose(rowField(index, "const"), true),
-        onCompositionEnd: () => controller.compose(rowField(index, "const"), false),
-      }) : null),
+    h("td", null, h(DataColumnCell as any, { row, snapshot, draft, controller })),
     h("td", null, h("select", {
       className: "sel", "data-act": "row-fmt", "data-index": index,
       value: valueOf(draft, rowField(index, "fmt")), disabled: !formats.length,
@@ -1869,95 +1906,95 @@ function MapRow(props: {
     }, ...(formats.length
       ? formats.map((format) => h("option", { value: format.code, key: format.code }, format.label))
       : [h("option", { value: "", key: "" }, "—")]))),
-    h("td", null, preview),
-    h("td", null, h(OwnerTag as any, { row, snapshot })));
+    h("td", null, h(PreviewCell as any, { row })));
+}
+
+/** 표 머리 — pill 3개 · 일괄 승격 · 드문 동사 ⋯. 수치도 문안도 Python 이 낸다. */
+function BindingHead(props: { snapshot: Obj; controller: EditorController }): ReactNode {
+  const { snapshot, controller } = props;
+  const head = (snapshot.binding_head || {}) as Obj;
+  const suggested = Number(head.suggested || 0);
+  return h("div", { className: "bindbar" },
+    h("span", { className: "pill acc", "data-pill": "suggested" }, `자동 제안 ${suggested}`),
+    h("span", { className: "pill warn", "data-pill": "needs-confirm" },
+      `확인 필요 ${Number(head.needs_confirm || 0)}`),
+    h("span", { className: "pill muted", "data-pill": "const" },
+      `고정값 ${Number(head.const || 0)}`),
+    h("span", { className: "spacer" }),
+    h("button", {
+      className: "btn sm", "data-act": "confirm-suggested", type: "button",
+      disabled: !suggested,
+      onClick: () => controller.guarded(() => controller.confirmSuggested()),
+    }, String(suggested ? head.promote_label : head.promoted_label)),
+    h("button", {
+      className: "btn sm icon binding-more", "data-act": "binding-more", type: "button",
+      "aria-label": "연결 확인 그 밖의 동작", "aria-haspopup": "menu",
+      "aria-expanded": controller.isBindingMenuOpen(),
+      onClick: (event: Obj) => controller.guarded(
+        () => controller.toggleBindingMenu(event.currentTarget as HTMLElement)),
+    }, "⋯"));
 }
 
 function MappingStage(props: {
   snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController;
 }): ReactNode {
-  const { snapshot, draft, view, controller } = props;
+  const { snapshot, draft, controller } = props;
   const rows = (snapshot.rows || []) as Obj[];
-  const counts = snapshot.counts;
-  const emptyNote = snapshot.preview_empties && snapshot.preview_empties.length
-    ? ` (${snapshot.preview_empties.join(", ")})` : "";
+  const head = (snapshot.binding_head || {}) as Obj;
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "binding")),
-    h("p", { className: "wsub" }, "필드마다 데이터 열을 지정하고 전 행을 확정하세요."),
-    h(HeaderSelect as any, { snapshot, view, controller }),
+    h("p", { className: "wsub" }, "필드마다 데이터 열을 정하고 전 행을 확인하세요."),
     /* 처방은 **저장 게이트와 같은 말**이어야 한다(#945 F8). U4-C 이후 데이터 연결은 저장의
        하드 게이트라(`gui/job_editor_state.validate_save`), 종전의 "고정값을 넣거나 비움으로
        확정하세요"는 그대로 따라도 저장이 막히는 거짓 처방이었다. 같은 상태를 두 어휘로
-       판정하지 않는다 — 여기서 말하는 것은 그 게이트의 사실과 고칠 자리(바로 위 관문)다. */
+       판정하지 않는다 — 여기서 말하는 것은 그 게이트의 사실과 고칠 자리(1단계)다. */
     snapshot.schema_only ? h("p", { className: "note warnbox" },
       "데이터를 연결하지 않아 지금은 저장할 수 없습니다. '고르기' 단계에서 데이터를 고르세요.") : null,
+    h(BindingHead as any, { snapshot, controller }),
     h("div", { className: "tblwrap" }, h("table", { className: "map" },
       h("thead", null, h("tr", null,
-        h("th", null, "확정"), h("th", null, "템플릿 필드 · 추정"), h("th", null, "데이터 열"),
-        h("th", null, "타입 / 고정값"), h("th", null, "표시형"), h("th", null, "미리보기"),
-        h("th", null, "상태"))),
+        h("th", null, "템플릿 필드"),
+        h("th", null, "데이터 열"),
+        h("th", null, "표시형"),
+        h("th", null, "미리보기",
+          h("span", { className: "stepper" }, ...(snapshot.preview_count
+            ? [
+              h("button", {
+                className: "btn sm", "data-act": "prev-rec", type: "button",
+                "aria-label": "이전 행", key: "prev",
+                onClick: () => controller.guarded(() => controller.sendEdit("step_preview", { delta: -1 })),
+              }, "◀"),
+              h("span", { className: "mono", key: "at" },
+                `행 ${snapshot.preview_index} / ${snapshot.preview_count}`),
+              h("button", {
+                className: "btn sm", "data-act": "next-rec", type: "button",
+                "aria-label": "다음 행", key: "next",
+                onClick: () => controller.guarded(() => controller.sendEdit("step_preview", { delta: 1 })),
+              }, "▶"),
+            ]
+            : [h("span", { className: "muted", key: "none" }, "행 0 / 0 · 데이터 없음")]))))),
       h("tbody", null, ...rows.map((row) =>
-        h(MapRow as any, { key: row.index, row, snapshot, draft, controller }))))),
-    h("div", { className: "stepper" },
-      snapshot.preview_count
-        /* `.stepper` 는 flex 다 — 셋을 감싸면 세 항목이 하나가 돼 간격이 무너진다. */
-        ? createElement(Fragment, null,
-          h("button", {
-            className: "btn sm", "data-act": "prev-rec",
-            onClick: () => controller.guarded(() => controller.sendEdit("step_preview", { delta: -1 })),
-          }, "◀ 이전 행"),
-          h("span", { className: "mono" }, `행 ${snapshot.preview_index}/${snapshot.preview_count}`),
-          h("button", {
-            className: "btn sm", "data-act": "next-rec",
-            onClick: () => controller.guarded(() => controller.sendEdit("step_preview", { delta: 1 })),
-          }, "다음 행 ▶"))
-        : h("span", { className: "muted" }, "행 0/0 · 데이터 없음(템플릿 필드만)"),
-      h("span", { className: "spacer" }),
-      counts ? h("span", { className: "muted" },
-        `채움 ${counts.filled} · 빈 값 ${counts.empty} · 미매핑 ${counts.unmapped}${emptyNote}`) : null),
-    h("div", { className: "gate" },
-      h("span", { className: `gatecount ${snapshot.is_complete ? "ok" : "pend"}` },
-        `확정 ${rows.filter((row) => row.confirmed).length}/${rows.length}`),
-      h("span", { className: "spacer" }),
-      h("button", {
-        className: "btn", "data-act": "confirm-all",
-        onClick: () => controller.guarded(() => controller.confirmAll()),
-      }, "모두 확정"),
-      h("button", {
-        className: "btn", "data-act": "unconfirm-all",
-        onClick: () => controller.guarded(() => controller.sendEdit("unconfirm_all", {})),
-      }, "모두 해제"),
-      h("button", {
-        className: "btn", "data-act": "resuggest-all",
-        onClick: () => controller.guarded(() => controller.resuggestAll()),
-      }, "자동 제안 다시 받기"),
-      snapshot.unconfirm_undo_count ? h("button", {
-        className: "btn", "data-act": "restore-confirmed",
-        onClick: () => controller.guarded(() => controller.sendEdit("restore_confirmed", {})),
-      }, `직전 확정 ${snapshot.unconfirm_undo_count}개 복원`) : null),
+        h(MapRow as any, { key: row.index, row, snapshot, draft, controller }))),
+      h("tfoot", null, h("tr", null, h("td", { colSpan: 4 },
+        `미리보기는 실제 행입니다 · 사용하지 않는 데이터 열 ${Number(head.unused_columns || 0)}개`))))),
     h(DataPreview as any, { snapshot }));
 }
 
 function DataPreview(props: { snapshot: Obj }): ReactNode {
   const { snapshot } = props;
   if (!snapshot.record_count) return null;
-  const all = (snapshot.source_fields || []) as string[];
-  const active = new Set((snapshot.active_source_fields || all) as string[]);
-  const columns = all.map((name, index) => ({ name, index })).filter((column) => active.has(column.name));
+  const columns = (snapshot.source_fields || []) as string[];
   const sample = (snapshot.sample_rows || []) as any[][];
-  const hidden = all.length - columns.length;
-  const columnNote = hidden
-    ? ` · 열 ${columns.length}/${all.length} (미사용 ${hidden}열 제외)`
-    : ` · 전체 ${all.length}열`;
   return h("div", null,
-    h("p", { className: "fields-head" }, `${snapshot.record_count}행 불러옴${columnNote}.`),
+    h("p", { className: "fields-head" },
+      `${snapshot.record_count}행 불러옴 · 전체 ${columns.length}열.`),
     h("div", { className: "tblwrap" }, h("table", { className: "data-preview" },
-      h("thead", null, h("tr", null, ...columns.map((column) =>
-        h("th", { title: column.name, key: column.name }, column.name)))),
+      h("thead", null, h("tr", null, ...columns.map((name) =>
+        h("th", { title: name, key: name }, name)))),
       h("tbody", null, ...sample.map((row, rowIndex) =>
-        h("tr", { key: rowIndex }, ...columns.map((column) => {
-          const value = row[column.index];
-          return h("td", { key: column.name }, (value === "" || value === null || value === undefined)
+        h("tr", { key: rowIndex }, ...columns.map((name, columnIndex) => {
+          const value = row[columnIndex];
+          return h("td", { key: name }, (value === "" || value === null || value === undefined)
             ? h("span", { className: "pv emptyval" }, "(빈 값)")
             : h("span", { className: "pv" }, value));
         })))))),
@@ -2164,6 +2201,17 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
       triggerSelector: "#scr-editor .job-more",
       onDismiss: controller.closeLibMenu,
       onSelect: (action: string) => { void controller.handleLibMenu(action); },
+    }),
+    /* 2단계 머리의 드문 동사 — 「제안 n건 모두 확인」 옆에 늘어놓지 않는다(§6: 같은
+       선택지를 모든 문맥에 나열하지 않는다). 되돌리는 동사는 필요할 때 찾을 수 있으면
+       된다. 트리거 selector 가 lib 쪽과 갈리는 것이 두 메뉴의 dismissal 을 나눈다. */
+    h(ContextMenu as any, {
+      id: "bindingMoreMenu",
+      controller: controller.bindingContextMenu,
+      popover: controller.popover,
+      triggerSelector: "#scr-editor .binding-more",
+      onDismiss: controller.closeBindingMenu,
+      onSelect: (action: string) => { controller.guarded(() => controller.handleBindingMenu(action)); },
     }));
 }
 

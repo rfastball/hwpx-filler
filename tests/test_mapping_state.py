@@ -18,6 +18,7 @@ from hwpxfiller.external.mapping_store import load_mapping_profile, save_mapping
 from hwpxfiller.domain.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import (
+    ROW_STATUS_LABEL,
     MappingModel,
     RowState,
     default_transform_for,
@@ -95,7 +96,7 @@ def test_is_complete_requires_every_single_row_confirmed():
 def test_editing_a_confirmed_row_resets_confirmation():
     """확정 후 소스/유형/상수를 바꾸면 재확정 필요."""
     model = _model()
-    model.confirm_all()
+    _confirm_every_row(model)
     model.set_source(0, "bidNtceOrd")
     assert not model.rows[0].confirmed
     model.set_confirmed(0)
@@ -158,8 +159,9 @@ def test_demotion_fully_resets_type_and_const():
     # 차선이 실제로 다시 서야 하는 테스트라 어간이 긴 필드 + 표기 변형으로 세운다(#908).
     model = _pum_model(["계약금액", "계약_금액"], field="계약금액")
     model.set_source(0, "계약금액")
-    model.set_type(0, "const")                             # 소스는 남는다(set_type 은 소스 불변)
-    model.set_const(0, "X")
+    # 상수 + 소스 기억이 함께 사는 자리는 `set_manual`(직접 입력) 하나다 — U6-C 이후
+    # `set_type("const")` 은 소스를 비운다(표시와 출력이 갈리지 않게).
+    model.set_manual(0, "X")
     demoted = model.apply_active_sources(["계약_금액"])     # '계약금액' 끔 → 사람 소유 강등
     assert demoted == ["계약금액"]
     row = model.rows[0]
@@ -248,10 +250,10 @@ def test_carry_profile_skips_contentless_touched_rows():
     assert carried[0].is_blank                             # blank 선언으로 영속
 
 
-def test_confirm_all_via_apply_active_sources_still_clears_matching():
+def test_confirmed_rows_via_apply_active_sources_still_clear_matching():
     """구 ignore_source 계약 승계 확인: 확정 행의 소스를 끄면 그 행만 해제·이름 반환, 나머지 불변."""
     model = _model()
-    model.confirm_all()                                    # 전 행 확정(사람 소유)
+    _confirm_every_row(model)                                    # 전 행 확정(사람 소유)
     active = [s for s in list(NARA_ALIASES) if s != "bidNtceNo"]  # bidNtceNo 만 끔
     demoted = model.apply_active_sources(active)
     assert demoted == ["입찰공고번호"]                      # 그 소스 쓰던 확정 행만 강등
@@ -263,14 +265,14 @@ def test_confirm_all_via_apply_active_sources_still_clears_matching():
 def test_emits_any_value_counts_only_confirmed_content():
     """비움 확정·미확정 내용은 빼고 확정된 소스·상수만 방출로 센다."""
     blank = MappingModel(rows=[RowState("공고명"), RowState("비고")])
-    blank.confirm_all()
+    _confirm_every_row(blank)
     assert blank.is_complete() and blank.to_profile().mappings
     assert not blank.to_profile().template_fields()
     assert not blank.emits_any_value()
 
     source = MappingModel(rows=[RowState("공고명"), RowState("비고")])
     source.set_source(0, "bidNtceNm")
-    source.confirm_all()
+    _confirm_every_row(source)
     assert source.emits_any_value()
     const_model = MappingModel(rows=[RowState("계약방법", type="const", const="수의계약")])
     const_model.set_confirmed(0)
@@ -279,34 +281,123 @@ def test_emits_any_value_counts_only_confirmed_content():
     assert not unconfirmed.emits_any_value()
 
 
-def test_confirm_all_and_unconfirm_all():
+def test_row_confirmation_and_unconfirm_all():
     model = _model()
-    model.confirm_all()
+    _confirm_every_row(model)
     assert model.is_complete()
     model.unconfirm_all()
     assert not model.is_complete()
     assert all(not r.confirmed for r in model.rows)
 
 
-# --------------------------------------------------- 대량 확정 게이트(UD-05, 링1)
-def test_bulk_confirmation_restates_and_promotes_only_named_blanks():
-    """'모두 확정'의 내용-행 단계: 내용 있는 행만 확정, 미매칭 빈 행은 미확정 유지."""
-    model = _model()  # 4 매칭(내용) + 1 미매칭(빈) 행
-    n = model.confirm_content_rows()
-    assert n == 4                       # 내용 있는 4행만 새로 확정
-    assert not model.is_complete()      # 미매칭 빈 행이 남아 게이트 닫힘
+# ------------------------------------------------- 행 상태 4태·일괄 승격(U6-C #977)
+def _confirm_every_row(model) -> None:
+    """전 행 확정 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 「비워 둠」)의 축약.
+
+    구 `MappingModel.confirm_all()`(무차별 확정)은 U6-C 에서 퇴역했다: 제품에 그 동사가
+    없는데 테스트에만 남기면 테스트가 없는 경로로 상태를 만든다.
+    """
+    for index, row in enumerate(model.rows):
+        if row.has_content():
+            model.set_confirmed(index)
+        else:
+            model.set_blank(index)
+
+
+def test_row_status_is_a_closed_set_of_four():
+    """`status()` 는 확인 축 × 내용 축 × 소유 축에서 닫힌 4태를 낸다 — 판정의 단일 출처."""
+    model = _model()  # 4 매칭(내용, 미접촉) + 1 미매칭(빈) 행
     rows = {r.template_field: r for r in model.rows}
-    assert rows["입찰공고번호"].confirmed
-    assert not rows["존재하지않는들판xyz"].confirmed
-    # 재호출은 이미 확정된 행을 다시 세지 않는다(증분 반환).
-    assert model.confirm_content_rows() == 0
-    assert model.unconfirmed_blank_fields() == ["존재하지않는들판xyz"]
-    blanks = model.unconfirmed_blank_fields()
-    assert model.confirm_fields(blanks) == 1
-    assert model.is_complete()
-    # 존재하지 않는 이름은 무시(우발 확정 없음).
-    assert model.confirm_fields(["없는필드"]) == 0
-    assert model.confirmed_count() == len(model.rows)
+    assert rows["입찰공고번호"].status() == "suggested"      # 내용 있음 + 시스템 소유
+    assert rows["존재하지않는들판xyz"].status() == "needs_source"  # 채울 것이 없다
+    model.set_source(model.index_of("입찰공고번호"), "bidNtceNo")  # 사람이 직접 골랐다
+    assert rows["입찰공고번호"].status() == "edited"
+    model.set_confirmed(model.index_of("입찰공고번호"))
+    assert rows["입찰공고번호"].status() == "confirmed"
+    # 데이터 미연결(구 `schemaonly`)도 별도 상태가 아니다 — 요구하는 것이 같다.
+    lonely = MappingModel(rows=[RowState("공고명")])
+    assert lonely.is_schema_only() and lonely.rows[0].status() == "needs_source"
+    assert {ROW_STATUS_LABEL[k] for k in
+            ("suggested", "edited", "confirmed", "needs_source")} == {"제안", "확인 필요", "확인"}
+
+
+def test_confirm_suggested_promotes_only_system_owned_content_rows():
+    """일괄 승격은 **자동 제안만** 건드린다 — 사람이 손댄 행·열 필요 행은 그대로 남는다."""
+    model = _model()  # 4 매칭(제안) + 1 미매칭
+    model.set_source(model.index_of("공고명"), "bidNtceNm")   # 사람이 손댐 → edited
+    assert model.suggested_count() == 3
+    assert model.needs_confirm_count() == 2                  # edited 1 + needs_source 1
+    assert model.suggested_count() + model.needs_confirm_count() + \
+        model.confirmed_count() == len(model.rows)
+
+    assert model.confirm_suggested() == 3
+    assert not model.is_complete(), "일괄 승격이 명시성 게이트를 우회하면 안 된다"
+    rows = {r.template_field: r for r in model.rows}
+    assert rows["공고명"].status() == "edited", "사람이 손댄 행을 대신 확정했다"
+    assert rows["존재하지않는들판xyz"].status() == "needs_source"
+    assert model.confirm_suggested() == 0, "재호출은 승격할 것이 없다"
+
+    # 남은 둘을 사람이 직접 답하면 그때 게이트가 열린다.
+    model.set_confirmed(model.index_of("공고명"))
+    model.set_blank(model.index_of("존재하지않는들판xyz"))
+    assert model.is_complete() and model.needs_confirm_count() == 0
+
+
+def test_set_blank_declares_intentional_emptiness():
+    """행별 「비워 둠」 = 구 `confirm_fields` 비움 승격과 **같은 결과**(blank 선언 영속)."""
+    model = _model()
+    index = model.index_of("존재하지않는들판xyz")
+    model.set_blank(index)
+    assert model.rows[index].status() == "confirmed"
+    assert model.declared_blank_fields() == ["존재하지않는들판xyz"]
+    _confirm_every_row(model)
+    blank = [m for m in model.to_profile().mappings
+             if m.template_field == "존재하지않는들판xyz"][0]
+    assert blank.is_blank
+
+    # 결속·상수를 든 행도 비울 수 있다 — 그때 값의 출처가 함께 걷힌다.
+    bound = MappingModel(rows=[RowState("금액", source="amount", type="amount")])
+    bound.set_blank(0)
+    assert bound.rows[0].source == "" and bound.rows[0].is_empty_confirmed()
+
+    # `today` 는 소스도 상수도 없이 값을 낸다 — 남기면 「비워 둠」이 오늘 날짜를 찍는다.
+    dated = MappingModel(rows=[RowState("작성일", type="today")])
+    dated.set_blank(0)
+    assert dated.rows[0].type != "today" and dated.rows[0].is_empty_confirmed()
+
+
+def test_special_types_and_column_binding_do_not_coexist():
+    """열을 고르면 특수 유형이 풀리고, 특수 유형을 고르면 열이 풀린다(표시 ≠ 출력 금지)."""
+    model = MappingModel(rows=[RowState("금액", spec=FieldSpec("금액", "amount", 1, False))])
+    model.set_type(0, "const")
+    model.set_const(0, "일금")
+    assert model.rows[0].source == ""
+    model.set_source(0, "amount")
+    assert model.rows[0].type == "amount", "const 가 남으면 산출물에 옛 상수가 박힌다"
+    assert model.rows[0].const == "" and model.rows[0].source == "amount"
+
+    model.set_type(0, "today")
+    assert model.rows[0].source == "", "today 는 소스를 보지 않는다"
+    model.set_source(0, "amount")
+    assert model.rows[0].type == "amount" and model.rows[0].source == "amount"
+
+
+def test_unused_source_fields_are_the_columns_no_row_aims_at():
+    """표 바닥 한 줄이 잇는 정보 — 열 선별(#49)이 퇴역하고 남은 유일한 질문."""
+    model = MappingModel(
+        rows=[RowState("업체", source="업체명"), RowState("담당자")],
+        source_fields=["업체명", "금액", "비고"],
+    )
+    assert model.unused_source_fields() == ["금액", "비고"]
+    model.set_source(1, "비고")
+    assert model.unused_source_fields() == ["금액"]
+
+
+def test_const_count_sees_hand_written_values():
+    model = MappingModel(rows=[RowState("가"), RowState("나"), RowState("다")])
+    model.set_type(0, "const")
+    model.set_type(1, "const")
+    assert model.const_count() == 2
 
 
 # ------------------------------------------------------------------ to_profile
@@ -561,7 +652,7 @@ def test_real_fixture_record_keys_produce_korean_field_drafts():
     assert rows["공고명"].source == "bidNtceNm"
     assert rows["추정가격"].source == "presmptPrce"
     # 초안 그대로 확정하면 실레코드 값이 나온다.
-    model.confirm_all()
+    _confirm_every_row(model)
     out = model.to_profile().apply(record)
     assert out["입찰공고번호"] == "R26BK01561738"
     assert out["추정가격"] == "65,454,545원"

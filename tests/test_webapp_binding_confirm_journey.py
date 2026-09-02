@@ -103,6 +103,21 @@ def _wire(tmp_path: Path):
     return job_ctrl, editor, tpl, reg
 
 
+def _confirm_every_row(ctrl) -> None:
+    """전 행 확인 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 「비워 둠」)의 축약.
+
+    구 「모두 확정」 2발(`confirm_all` + 비움 이름게이트 `confirm_blanks`)의 후계다(U6-C
+    #977). 일괄 승격(`confirm_suggested`)은 **자동 제안만** 올리므로 전 행 확인은 남은 행을
+    행별로 답해야 완성된다 — 그것이 이 표면의 실제 동선이고, 테스트가 제품에 없는 동사로
+    상태를 만들지 않게 하는 자리다.
+    """
+    for row in ctrl.snapshot()["rows"]:
+        if row["confirmable"]:
+            ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
+        else:
+            ctrl.dispatch("set_blank", {"index": row["index"]})
+
+
 def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:
     """마법사 한 바퀴 — 템플릿·데이터를 고르고 전 필드를 고정값으로 확정한 뒤 저장.
 
@@ -118,8 +133,7 @@ def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:
     for index in range(len(editor.model.rows)):
         editor.dispatch("set_type", {"index": index, "type": "const"})
         editor.dispatch("set_const", {"index": index, "const": f"v{index}"})
-    result = editor.dispatch("confirm_all", {})
-    editor.dispatch("confirm_blanks", {"fields": result["blanks"]})
+    _confirm_every_row(editor)
     editor.dispatch("set_name", {"name": name})
     editor.dispatch("set_pattern", {"pattern": "doc-{{seq:001}}"})
     return editor.dispatch("save", {})

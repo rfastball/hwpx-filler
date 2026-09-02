@@ -219,7 +219,11 @@ export function editorServerValues(snapshot: Record<string, any>): ServerValues 
   };
   for (const row of (snapshot.rows || []) as Array<Record<string, any>>) {
     const index = Number(row.index);
-    values[rowField(index, "source")] = String(row.source ?? "");
+    /* 「데이터 열」 칸의 전송 값은 열 이름이 아니라 **select 항목 값**이다(U6-C #977):
+       실 열(`col:…`)과 특수 항목(`sp:const|today|blank`)이 한 칸을 나눠 쓰고, 그 둘의
+       이름 공간은 Python 이 접두로 가른다. 여기 열 이름을 담으면 「고정값…」을 고른 칸이
+       다음 push 에서 빈 값으로 되돌아 보인다(dirty 대조가 다른 축을 잰다). */
+    values[rowField(index, "source")] = String(row.source_value ?? "");
     values[rowField(index, "type")] = String(row.type ?? "");
     values[rowField(index, "fmt")] = String(row.fmt ?? "");
     values[rowField(index, "const")] = String(row.const ?? "");
