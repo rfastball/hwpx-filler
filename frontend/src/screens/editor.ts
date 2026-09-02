@@ -1408,9 +1408,12 @@ function TemplatePool(props: {
         className: "btn sm", "data-act": "import-template",
         onClick: () => controller.guarded(() => controller.importTemplate()),
       }, "파일 가져오기…"),
+      /* 「폴더에서 보기」 — 삭제 동사의 승계처다(U6 §2.3: 앱은 사용자 서식 폴더에 쓰지
+         않는다). 열기·경로 복사는 여기서 세우지 않는다: 이 줄이 답하는 것은 「그 폴더를
+         어떻게 여나」 하나이고, 나머지는 설정 모달의 서식 폴더 행이 이미 든다. */
       h(PathActions as any, {
         client: controller.client, path: String(root.directory || ""),
-        notify: controller.notify,
+        only: ["reveal"], notify: controller.notify,
       }),
       h("button", {
         className: "btn sm", "data-act": "open-settings",

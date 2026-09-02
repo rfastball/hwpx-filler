@@ -198,6 +198,23 @@ function stubBridgeCall(ctx, make) {
   };
 }
 
+/** 고르기 단계 진입의 **재스캔 두 발**을 삼킨다(U6-B #976).
+ *
+ *  편집기는 1단계에 들어설 때 `tpl/refresh`·`pool/refresh` 를 한 번씩 보내고, 그 답이
+ *  실 서식 폴더·실 풀의 스냅샷으로 도착한다. 이 클러스터의 목록은 **합성 스냅샷**이라
+ *  그 답이 우리 값을 덮으면 프로브가 자기가 심은 것을 못 보고 조용히 0 을 읽는다
+ *  (`data_picker` 의 `refreshStub` 이 같은 이유로 서 있다). 나머지 발신은 그대로 통과시킨다
+ *  — 삼키는 것은 「목록을 다시 읽어 오는」 두 동사뿐이다. */
+function stubStageRescan(ctx) {
+  return stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+    if (action === "refresh" && (screen === "tpl" || screen === "pool")) {
+      return Promise.resolve({});
+    }
+    if (typeof real === "function") return real(screen, action, payload);
+    return Promise.resolve({});
+  });
+}
+
 /** 직접 bridge 메서드도 R4 `Client.invoke(snake_name, …)`와 한 수명으로 교체한다. */
 function stubBridgeInvoke(ctx, bridgeName, contractName, make) {
   const Bridge = service(ctx, "Bridge");
@@ -922,6 +939,8 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = { pending: true };
         ctx.state.out = out;
+        const rescanStub = stubStageRescan(ctx);
+        ctx.state.rescanStub = rescanStub;
         try {
           Nav.go("editor", { force: true });
           const base = editorBase({
@@ -974,10 +993,12 @@ export function createEditorWorkbenchDataProbes() {
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));
         }
+        rescanStub.restore();
         out.pending = false;
         return { editor_txt_band: out };
       },
       teardown(ctx) {
+        if (ctx.state.rescanStub) ctx.state.rescanStub.restore();
         restoreShell(ctx, ctx.state.out || {});
       },
     },
@@ -1762,6 +1783,7 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
+        const rescanStub = stubStageRescan(ctx);
         try {
           Nav.go("editor", { force: true });
           const acts = [{ key: "compile", label: "누름틀·구간 변환" }, { key: "review", label: "검토" }];
@@ -1942,6 +1964,8 @@ export function createEditorWorkbenchDataProbes() {
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
+        } finally {
+          rescanStub.restore();
         }
         return { editor_lib_manage: out };
       },
@@ -1971,6 +1995,7 @@ export function createEditorWorkbenchDataProbes() {
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
+        const rescanStub = stubStageRescan(ctx);
         try {
           Nav.go("editor", { force: true });
           const it = (name, badge, level, blocked) => ({
@@ -2139,6 +2164,8 @@ export function createEditorWorkbenchDataProbes() {
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
+        } finally {
+          rescanStub.restore();
         }
         return { editor_lib: out };
       },
