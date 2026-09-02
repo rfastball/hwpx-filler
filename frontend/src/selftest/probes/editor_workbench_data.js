@@ -979,7 +979,12 @@ export function createEditorWorkbenchDataProbes() {
           }));
           ctx.push("pool", poolBase([]));
           ctx.push("editor", base);
-          await settleRender(ctx);
+          /* 고르기 존의 **첫 마운트**는 세 store(editor·tpl·pool)를 한꺼번에 구독하므로
+             커밋이 한 turn 에 끝나지 않는다 — `settleRender` 하나(= sleep(0))로 읽으면
+             목록이 아직 없는 순간을 재고 「배선이 죽었다」로 오해한다(실측). 조건이 서면
+             즉시 끝나고 안 서면 그대로 빨강이라 고정 지연이 아니다(형제 프로브와 같은 방어선). */
+          await settleUntil(
+            ctx, () => ctx.doc.querySelectorAll("#editorTplList .pitem").length > 0);
           /* 매체 구획(`HWPX 서식`·`TXT 기안` 캡션)은 U6-B 에서 사라졌다 — **음성 단언**으로
              남긴다(되살아나면 두 열 그림이 다시 갈린다). */
           const caps = Array.prototype.map.call(
