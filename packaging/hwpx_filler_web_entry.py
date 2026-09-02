@@ -65,18 +65,25 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
             inspect_template=inspect_hwpx_template,
             file_ops=HWPX_TEMPLATE_OPS,
         ),
+        template_root=root,
         text_registry=registry,
     )
     ctrl.dispatch("use_library_template", {"path": str(tmp / "샘플.txt")})
     snap = ctrl.snapshot()
     vm_ok = (
         "샘플" in txt_names
-        and snap["sections"] == ["template", "binding"]
+        # TXT 도 3단계다(U6-D #978) — 셋째가 「이름·저장」이 되면서 매체가 정하는 것은
+        # 단계가 아니라 그 안의 문서 파일 이름 행 하나로 좁아졌다.
+        and snap["sections"] == ["template", "binding", "filename"]
         and any(f["name"] == "공고명" for f in snap["fields"])
         # 고르기 단계의 연결 카드(U6-B) — 템플릿만 골랐으니 짝은 아직 서지 않고, 사유는
-        # 링1 문안 그대로다. 존이 사라지거나 모양이 갈리면 여기서 잡힌다.
-        and snap["pairing"]["template_name"] == "샘플.txt"
+        # 링1 문안 그대로다. 존이 사라지거나 모양이 갈리면 여기서 잡힌다. 이름은
+        # **표시명**이다(U6-D): 루트 상대·확장자 없음 — 좌 열 목록이 부르는 그 이름.
+        and snap["pairing"]["template_name"] == "샘플"
         and snap["pairing"]["ready"] is False
+        # 이름 기본값 도출(U6-D) — 데이터가 아직 없으니 템플릿 표시명 하나다.
+        and snap["name"] == "샘플"
+        and snap["job_name_is_derived"] is True
     )
     return vm_ok, txt_names, len(snap["fields"])
 

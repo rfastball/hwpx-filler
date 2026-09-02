@@ -95,11 +95,13 @@ const ROW_BADGE_CLASS: Record<string, string> = {
 /** 확정 배지가 잠기는 이유 — 눌러도 되는 자리와 안 되는 자리를 말없이 가르지 않는다. */
 const NOT_CONFIRMABLE_HINT = "열을 고르거나 고정값·오늘 날짜·비워 둠을 고르세요";
 
-/* 단계 이름은 **각 단계가 묻는 질문**이다(U6 §2.2 · U6-B #976). section id 는 계약이라
-   그대로이고 바뀐 것은 라벨뿐이다 — 「템플릿」은 이제 절반만 말하고(오른쪽에서 데이터도
-   고른다), 「필드 연결·표시」는 그 단계가 하는 일(맞는지 보는 것)보다 넓었다. */
+/* 단계 이름은 **각 단계가 묻는 질문**이다(U6 §2.2 · U6-B #976 · U6-D #978). section id 는
+   계약이라 그대로이고 바뀐 것은 라벨뿐이다 — 「템플릿」은 이제 절반만 말하고(오른쪽에서
+   데이터도 고른다), 「필드 연결·표시」는 그 단계가 하는 일(맞는지 보는 것)보다 넓었으며,
+   「파일 이름」은 작업 이름이 그 단계로 오면서 절반만 말하게 됐다.
+   **Python `SECTION_LABELS` 와 글자가 같아야 한다** — 되돌림 notice 가 그 표를 쓴다. */
 const SECTION_TITLES: Record<string, string> = {
-  template: "고르기", binding: "연결 확인", filename: "파일 이름",
+  template: "고르기", binding: "연결 확인", filename: "이름·저장",
 };
 
 const ENTRY_LEAD: Record<string, string> = {
@@ -900,11 +902,18 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (view.saveMessage !== null) patchView({ saveMessage: null });
   }
 
-  /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다. */
+  /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다.
+   *
+   *  **겨눔은 단계를 옮기지 않는다.** 이름·패턴은 둘 다 3단계 「이름·저장」 폼에 살지만
+   *  (U6-D #978), 거절당한 저장이 사람을 그 단계로 데려가면 지나온 단계의 patch 가 탭 이동의
+   *  자동 버리기에 걸린다 — 연결 확인에서 방금 선언한 「비워 둠」이 저장 거절 하나로 사라지는
+   *  자리다. 거절은 아무것도 파괴하지 않는다. 그래서 다른 단계에 있으면 문구만 남기고, 어느
+   *  단계인지는 링1 차단 문안이 말한다(`'이름·저장' 단계에서 …`). */
   function aimAtBlockedField(field: string): void {
     /* 데이터 미연결(#932 U4-C S2-3)의 「칸」은 입력이 아니라 **고르기 단계 우 열**이다
        (U6-B #976 — 2단계 머리의 관문이 걷혔다). 그 단계에 있지 않으면 겨눌 노드가 없으므로
-       문구만 남긴다(패턴 칸과 같은 규율). */
+       문구만 남긴다: 1단계로 되돌리는 것은 사람이 지금 보고 있는 표를 걷어내는 큰 이동이라
+       거절 하나로 자동 수행할 일이 아니다. */
     if (field === "data") {
       if (snapshot().section !== "template") return;
       const browse = deps.doc.querySelector<HTMLElement>("#editorPoolBrowse");
@@ -912,7 +921,9 @@ export function createEditorController(deps: EditorControllerDeps) {
       return;
     }
     if (field !== NAME_FIELD && field !== PATTERN_FIELD) return;
-    if (field === PATTERN_FIELD && snapshot().section !== "filename") return;
+    /* 표지는 **그 칸이 보이는 단계에서만** 선다. 안 보이는 칸에 `aria-invalid` 를 남기면
+       다음에 그 단계로 갔을 때 고치지도 않은 칸이 빨갛게 서 있다(끈적한 표지). */
+    if (snapshot().section !== "filename") return;
     patchView({ invalidField: field });
     const element = field === NAME_FIELD
       ? deps.doc.getElementById("editorName")
@@ -939,6 +950,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
     if (result.ok) {
       clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
+      /* 겨눔 표지도 같은 전이에서 걷는다: 사유가 사라졌는데 칸만 빨갛게 남으면 화면이
+         「저장됐다」와 「이 칸이 잘못됐다」를 동시에 말한다. */
+      if (view.invalidField !== "") patchView({ invalidField: "" });
       /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
       void deps.ports.jobRead.current().refreshList();
       return true;
@@ -960,6 +974,38 @@ export function createEditorController(deps: EditorControllerDeps) {
     return false;
   }
 
+  /** 「저장하고 문서 만들기로」 — 저장 성공 뒤 이 작업이 **선 상태로** 문서 만들기에 착석한다.
+   *
+   *  세 가지가 계약이다.
+   *
+   *  ① **`leaveTo` 를 타지 않는다.** 그 출구는 나가기 전에 `discard_patch`/`new_session` 을
+   *     먼저 쏜다 — 방금 저장한 세션에 그것을 보내면 저장 착지 상태를 진입 시점으로
+   *     되돌리게 된다. 저장 직후 세션은 clean 이라 버릴 것도 없다(가드 없는 이동이 안전한
+   *     것도 그래서다).
+   *  ② **3분기 판정은 Python `prefer_work` 가 진다**(§19.8) — 라이브러리 「문서 만들기에서
+   *     사용」과 **같은 순서**로 보낸다. 여기서 `select_job` 을 직접 쏘면 준비·호환 판정이
+   *     표면에 한 벌 더 생긴다.
+   *  ③ **이동만 실패해도 저장 성공을 숨기지 않는다.** 착지가 안 되면 머무르며 그 사실을
+   *     `#save-msg` 로 재진술한다 — 저장은 이미 일어났고 사람이 다시 누를 일이 아니다. */
+  async function saveAndOpen(): Promise<void> {
+    if (!(await doSave({}))) return;
+    const name = String(snapshot().name || "");
+    let result: Obj;
+    try {
+      result = await dispatch("job", "prefer_work", { name });
+      await deps.navigation.refresh("job");
+    } catch (error) {
+      noticeSave("저장했습니다. '문서 만들기' 로 이동하지 못했습니다: "
+        + String((error as Obj)?.message || error));
+      return;
+    }
+    deps.navigation.go("job", { force: true, refreshed: true });
+    deps.ports.editorEntry.current().restoreEntryFocus();
+    if (result && result.reason === "incompatible") {
+      await deps.ports.jobRead.current().openBrowseNeedsAction(name);
+    }
+  }
+
   /** 탭 이동 — 정산하고 한 발 보낸다. 막는 patch 의 처분은 Python 이 진다(계약 §5.2).
    *
    *  종전에는 여기서 3택(저장하고 이동·버리고 이동·머무르기)을 받고 처분 표지를 실어 같은
@@ -969,6 +1015,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (!target) return;
     await flushPendingEdits();
     await sendEdit("goto_section", { section: target });
+    /* 단계를 옮기면 겨눔 표지는 뜻을 잃는다 — 안 보이는 칸의 `aria-invalid` 는 다음에 그
+       단계로 돌아왔을 때 고치지도 않은 칸을 나무란다. */
+    if (view.invalidField !== "") patchView({ invalidField: "" });
     /* 같은 세션 안의 1단계 **재진입** — 화면 진입과 같은 사건이라 같은 재스캔을 지난다
        (리뷰 4). 이동이 거절되면 여기 닿지 않는다(`sendEdit` 가 던진다). */
     if (target === "template") rescanPools();
@@ -1322,7 +1371,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     discardPatch, cancelNewDraft,
     toggleBindingMenu, closeBindingMenu, handleBindingMenu, bindingContextMenu,
     isBindingMenuOpen: (): boolean => view.bindingMenu,
-    gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
+    gotoSection, neighbour, doSave, saveAndOpen, returnScreen, flushPendingEdits, sendEdit,
     guarded,
     doc: deps.doc,
     client: deps.client,
@@ -1371,8 +1420,15 @@ function pairLine(snapshot: Obj): string {
   return "템플릿과 데이터를 하나씩 고르세요.";
 }
 
-function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController }): ReactNode {
-  const { snapshot, draft, view, controller } = props;
+/** 머리 — 이 세션이 **무엇을 편집 중인가**와 그 저장 상태.
+ *
+ *  작업 이름 입력은 U6-D(#978)에서 3단계 「이름·저장」 폼으로 옮겼다. 라벨 없이 제목 자리에
+ *  사는 입력이라 저장 게이트가 「작업 이름을 입력하세요」라고 말해도 사람이 찾지 못하던
+ *  자리다(`SaveVerdict.blocked_field` 의 주석이 그 사실을 적고 있었다). 머리에 남은 것은
+ *  제목(부제와 같은 짝 한 줄)과 상태 pill 이고, **소유는 여전히 세션**이다 — 이름은 어느
+ *  section patch 에도 속하지 않아 탭 이동의 자동 버리기가 건드리지 않는다(판정 L). */
+function EditorHead(props: { snapshot: Obj; controller: EditorController }): ReactNode {
+  const { snapshot } = props;
   const dirty = !!snapshot.dirty;
   const level = snapshot.is_draft ? "idle" : (dirty ? "warn" : "idle");
   /* 머리는 **상태만** 말한다(#945 F5). 저장 세대 카운터(`revisions`)는 규칙이 갈릴 때 오르는
@@ -1384,18 +1440,9 @@ function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; 
   return h("header", { className: "scr-head editor-head" },
     h("div", null,
       h("p", { className: "eyebrow" }, "문서 작업 편집기"),
-      h("h1", { id: "editorTitle" },
-        h("input", {
-          className: "field title-input", id: "editorName", type: "text", "data-act": "name",
-          placeholder: "작업 이름을 입력하세요", "aria-label": "작업 이름",
-          value: valueOf(draft, NAME_FIELD),
-          "aria-invalid": view.invalidField === NAME_FIELD ? "true" : undefined,
-          onChange: (event: Obj) => controller.type(NAME_FIELD, String(event.currentTarget.value)),
-          onFocus: () => controller.focus(NAME_FIELD, true),
-          onBlur: () => { controller.focus(NAME_FIELD, false); controller.commitField(NAME_FIELD); },
-          onCompositionStart: () => controller.compose(NAME_FIELD, true),
-          onCompositionEnd: () => controller.compose(NAME_FIELD, false),
-        })),
+      /* 제목은 **읽기 전용 정체**다. 초안은 아직 이름이 없을 수 있어(고르기 전) 그때는
+         이름 없는 새 작업이라고 말한다 — 빈 제목은 화면이 무엇을 편집 중인지 말하지 않는다. */
+      h("h1", { id: "editorTitle" }, String(snapshot.name || "새 작업")),
       h("p", { className: "sub", id: "editorSubtitle" }, pairLine(snapshot))),
     h("div", { className: "status", id: "editorSaveState", "data-level": level }, stateText));
 }
@@ -2072,10 +2119,28 @@ function fnPreviewText(row: Obj, snapshot: Obj): ReactNode {
   return h("span", { className: "pv" }, display);
 }
 
-function FilenameStage(props: {
+/** 3단계 「이름·저장」 — 「뭐라고 부르고 뭐라고 저장하나?」(U6 §2.2 · 동결 시안 장면 3).
+ *
+ *  행 셋이고 그 셋이 이 단계가 묻는 전부다: **작업 이름**(두 매체 공통) · **문서 파일
+ *  이름**(hwpx 만 — TXT 는 파일을 만들지 않는다) · **저장 폴더**(읽기 전용 재진술).
+ *
+ *  이름은 여기 그려지지만 **`filename` section patch 에 속하지 않는다**(§10.13 판정 L):
+ *  탭 이동의 자동 버리기와 `discard_patch {section}` 은 패턴만 되돌리고 이름은 그대로 둔다.
+ *  같은 화면에 그린다고 같은 거래에 드는 것이 아니다.
+ *
+ *  저장 폴더는 **여기서 바꾸지 않는다** — 전역 설정이라 고르는 자리가 하나여야 한다(#968).
+ *  값·출처·하향 사유는 Python 이 작업 화면과 같은 함수로 낸다(웹 재조립 0). */
+function NameSaveStage(props: {
   snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController;
 }): ReactNode {
   const { snapshot, draft, view, controller } = props;
+  /* 문서 파일 이름 행은 **매체 파생**이다(§3.2) — TXT 작업은 파일을 만들지 않는다.
+     단계 자체는 두 매체가 함께 갖는다(U6-D): 이름은 매체와 무관한 저장 게이트 술어다. */
+  const hasPattern = snapshot.template_media !== "txt";
+  /* 저장 폴더 행은 **Python 이 존을 낼 때만** 선다(U6-D #978 리뷰 4). TXT 는 파일을 만들지
+     않아 폴더가 축이 아니고(`UI_CONTRACT` 「폴더가 축이 아니다」), 그때 존은 `null` 이다 —
+     웹이 매체로 다시 판정하면 같은 사실을 두 곳이 답한다. */
+  const folder = (snapshot.output_folder || null) as Obj | null;
   const rows = ((snapshot.rows || []) as Obj[]).filter((row) => row.has_content);
   const tokens: ReactNode[] = [];
   rows.forEach((row, index) => {
@@ -2087,21 +2152,45 @@ function FilenameStage(props: {
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "filename")),
     h("p", { className: "wsub" },
-      "이 작업이 만드는 파일의 이름 규칙입니다. HWPX 작업의 영구 규칙이고, 이번 생성에서만 쓸 값은 여기 두지 않습니다."),
+      "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."),
     h("div", { className: "row" },
-      h("span", { className: "lbl lbl-fixed" }, "파일명 패턴"),
+      h("span", { className: "lbl lbl-fixed" }, "작업 이름"),
+      h("input", {
+        className: "field", id: "editorName", type: "text", "data-act": "name",
+        placeholder: "작업 이름을 입력하세요", "aria-label": "작업 이름",
+        value: valueOf(draft, NAME_FIELD),
+        "aria-invalid": view.invalidField === NAME_FIELD ? "true" : undefined,
+        onChange: (event: Obj) => controller.type(NAME_FIELD, String(event.currentTarget.value)),
+        onFocus: () => controller.focus(NAME_FIELD, true),
+        onBlur: () => { controller.focus(NAME_FIELD, false); controller.commitField(NAME_FIELD); },
+        onCompositionStart: () => controller.compose(NAME_FIELD, true),
+        onCompositionEnd: () => controller.compose(NAME_FIELD, false),
+      })),
+    /* 힌트는 **Python 표지 하나**가 세운다(`job_name_is_derived`). 웹이 「이름이 도출값과
+       같은가」로 되유추하면 사람이 우연히 같은 이름을 지은 순간 힌트가 되살아난다. */
+    snapshot.name_hint
+      ? h("p", { className: "hint", id: "editorNameHint", style: { marginTop: 0 } },
+        String(snapshot.name_hint))
+      : null,
+    hasPattern ? h("div", { className: "row" },
+      h("span", { className: "lbl lbl-fixed" }, "문서 파일 이름"),
       h("input", {
         className: "field mono", "data-act": "pattern", value: valueOf(draft, PATTERN_FIELD),
+        "aria-label": "문서 파일 이름",
         "aria-invalid": view.invalidField === PATTERN_FIELD ? "true" : undefined,
         onChange: (event: Obj) => controller.type(PATTERN_FIELD, String(event.currentTarget.value)),
         onFocus: () => controller.focus(PATTERN_FIELD, true),
         onBlur: () => { controller.focus(PATTERN_FIELD, false); controller.commitField(PATTERN_FIELD); },
         onCompositionStart: () => controller.compose(PATTERN_FIELD, true),
         onCompositionEnd: () => controller.compose(PATTERN_FIELD, false),
-      })),
-    snapshot.pattern_preview ? h("p", { className: "hint mono", style: { marginTop: 0 } },
-      `예: ${snapshot.pattern_preview}${snapshot.record_count ? " (표본 1행 기준)" : ""}`) : null,
-    h("details", {
+      })) : null,
+    /* 예시는 **연번째로** Python 이 만든다(`pattern_preview`) — 여기서 「· 002 · 003」을
+       조립하면 seq 토큰이 없는 패턴에서도 연번이 있는 것처럼 그려진다. */
+    (hasPattern && snapshot.pattern_preview)
+      ? h("p", { className: "hint mono", id: "editorPatternPreview", style: { marginTop: 0 } },
+        `예: ${snapshot.pattern_preview}${snapshot.record_count ? " (표본 1행 기준)" : ""}`)
+      : null,
+    hasPattern ? h("details", {
       className: "hidden-hdrs tok-fold", open: view.tokFoldOpen,
       onToggle: (event: Obj) => controller.setTokFold(!!event.currentTarget.open),
     },
@@ -2114,7 +2203,28 @@ function FilenameStage(props: {
       "날짜: ", h("code", null, "{{date}}"), " → 생성 날짜(YYYYMMDD) · ",
       h("code", null, "{{date:YYYY-MM-DD}}"), " → 하이픈 포함 날짜", h("br", null),
       "순번: ", h("code", null, "{{seq}}"), " → 1부터 증가 · ",
-      h("code", null, "{{seq:001}}"), " → 001부터 세 자리로 증가")));
+      h("code", null, "{{seq:001}}"), " → 001부터 세 자리로 증가")) : null,
+    folder ? h("div", { className: "row", id: "editorOutFolderRow" },
+      h("span", { className: "lbl lbl-fixed" }, "저장 폴더"),
+      h("input", {
+        className: "field ro mono", id: "editorOutDir", type: "text", readOnly: true,
+        "aria-label": "저장 폴더", tabIndex: -1,
+        value: String(folder.directory || "아직 정해지지 않았습니다"),
+      }),
+      folder.source_label
+        ? h("span", { className: "muted capnote", id: "editorOutDirSource" },
+          String(folder.source_label))
+        : null,
+      h("button", {
+        className: "btn linklike", type: "button", "data-act": "open-settings",
+        id: "editorOpenFolderSettings",
+        onClick: () => controller.openSettings(),
+      }, "설정에서 바꾸기")) : null,
+    /* 설정한 폴더가 사라져 기본값으로 내려간 사유 — 조용한 하향 금지(문안은 링0 소유). */
+    (folder && folder.notice)
+      ? h("p", { className: "hint", id: "editorOutDirNotice", style: { marginTop: 0 } },
+        String(folder.notice))
+      : null);
 }
 
 /** 인라인 알림 노드(#323) — **셸 레벨**이라 세 탭이 공유하고 본문 재렌더에 증발하지 않는다.
@@ -2164,11 +2274,12 @@ function EditorFooter(props: {
           String(confirm.hint || ""))
         : null,
       h("button", {
-        className: "btn primary", "data-act": "save",
+        className: "btn", "data-act": "save",
         "data-confirm-binding": confirmOnly ? "1" : null,
         disabled: !(armed || confirmPending),
         onClick: () => controller.guarded(() => controller.doSave({})),
-      }, confirmOnly ? String(confirm.label || "") : "변경 저장"));
+      }, confirmOnly ? String(confirm.label || "") : "변경 저장"),
+      saveAndOpenButton(armed || confirmPending, controller));
   }
   const last = here >= sections.length - 1;
   const can = !!(snapshot.reachable || {})[snapshot.section];
@@ -2187,13 +2298,29 @@ function EditorFooter(props: {
     (!last && !can) ? h("span", { className: "muted capnote" }, gateHint(snapshot)) : null,
     last
       ? h("button", {
-        className: "btn primary", "data-act": "save",
+        className: "btn", "data-act": "save",
         onClick: () => controller.guarded(() => controller.doSave({})),
       }, "작업 저장")
+      : null,
+    last
+      ? saveAndOpenButton(true, controller)
       : h("button", {
         className: "btn primary", "data-act": "next", disabled: !can,
         onClick: () => controller.guarded(() => controller.gotoSection(controller.neighbour(1))),
       }, "다음 ▶"));
+}
+
+/** 「저장하고 문서 만들기로」 — 마지막 단계의 **주 행동**(U6 §2.2 · 동결 시안 장면 3).
+ *
+ *  저장 자체는 두 동사 모두 같은 `doSave` 를 지난다(게이트·덮어쓰기 확인·차단 조준 공유).
+ *  갈리는 것은 **성사 뒤에 어디에 서는가** 하나다: 「작업 저장」은 제자리(결정 40 불변),
+ *  이 동사는 문서 만들기에 그 작업이 선 상태로 착석한다. 무장 술어는 옆 동사와 **같은
+ *  값**을 받는다 — 두 술어를 두면 한쪽만 눌리는 상태가 실재한다. */
+function saveAndOpenButton(armed: boolean, controller: EditorController): ReactNode {
+  return h("button", {
+    className: "btn primary", "data-act": "save-and-open", disabled: !armed,
+    onClick: () => controller.guarded(() => controller.saveAndOpen()),
+  }, "저장하고 문서 만들기로");
 }
 
 export function EditorScreen(props: { controller: EditorController }): ReactNode {
@@ -2230,13 +2357,13 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
     body = h(PairingStage as any, { snapshot, tpl, pool, controller });
   }
   else if (snapshot.section === "binding") body = h(MappingStage as any, { snapshot, draft, view, controller });
-  else body = h(FilenameStage as any, { snapshot, draft, view, controller });
+  else body = h(NameSaveStage as any, { snapshot, draft, view, controller });
   return h("div", { className: "editor-shell" },
     h("button", {
       className: "btn sm back", id: "editorBack", type: "button",
       onClick: () => controller.guarded(() => controller.leaveTo(controller.returnScreen())),
     }, "← 원래 업무로 돌아가기"),
-    h(EditorHead as any, { snapshot, draft, view, controller }),
+    h(EditorHead as any, { snapshot, controller }),
     h(ContextBanner as any, { snapshot, controller }),
     h(StepHeader as any, { snapshot, controller }),
     h("div", { className: "wbody", id: "editor-body", "data-preserve-scroll": true },

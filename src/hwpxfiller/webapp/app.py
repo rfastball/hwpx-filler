@@ -449,6 +449,15 @@ class WebFrontend:
                 # 고르는 표면이 됐다. 편집기는 읽기만 한다(등록·다시 연결·삭제는 그 면의 일).
                 pool_registry=pool_registry,
                 template_library=tpl_ctrl.vm,
+                # 서식 폴더 권위도 **같은 홀더**다(U6-A #975 · U6-D #978): 목록이 부르는
+                # 표시명(루트 상대·확장자 없음)을 편집기가 그대로 말하려면 루트가 하나여야
+                # 한다. 두 홀더를 두면 재지정 직후 한쪽만 새 루트를 보고, 같은 파일이 두
+                # 이름으로 불린다.
+                template_root=self._template_root,
+                # **전역 저장 폴더의 소유자는 작업 컨트롤러 하나다**(U6-D #978 리뷰 3):
+                # 편집기 3단계의 재진술은 그 메모리 값을 **읽기만** 한다. 편집기가 설정 파일을
+                # 따로 읽으면 설정 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다.
+                remembered_output_directory=job_ctrl.remembered_output_directory,
                 # TXT 레지스트리는 tpl 화면과 **같은 단일 실체**다 — 경로 화이트리스트
                 # (`assert_library_path`)가 목록과 같은 스캔을 봐야 방금 사라진 파일을
                 # 통과시키지 않는다. (그룹 모델 주입은 U6-B 에서 소비자 0 으로 퇴역.)

@@ -58,6 +58,17 @@ def pattern_uses_seq(pattern: str) -> bool:
     return _SEQ_TOKEN.search(pattern) is not None
 
 
+def seq_token_pads(pattern: str) -> "list[str | None]":
+    """패턴의 ``{{seq}}`` 토큰들이 선언한 **자릿수 리터럴**(문서순). ``{{seq}}`` 는 ``None``.
+
+    :func:`pattern_uses_seq` 와 **같은 판정기**(:data:`_SEQ_TOKEN`)를 쓴다 — 「연번이 있는가」와
+    「어떤 폭인가」가 다른 정규식을 보면 한쪽만 고친 날 둘이 갈린다. 값은
+    :func:`~hwpxfiller.domain.output_name.format_seq_token` 이 그대로 받는 리터럴이라,
+    이것을 읽는 쪽이 폭을 다시 세지 않는다.
+    """
+    return [match.group(1) for match in _SEQ_TOKEN.finditer(pattern)]
+
+
 def make_output_filename(
     pattern: str,
     data: "dict[str, object]",

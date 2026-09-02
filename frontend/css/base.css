@@ -185,7 +185,10 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .lbl{font-size:var(--fs-body);color:var(--n-header-ink);white-space:nowrap}
-.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 저장 단계) — 구조 치수 */
+/* 폼 라벨 열 고정폭(편집기 3단계 「이름·저장」) — 구조 치수. 76px 은 「파일명 패턴」 한
+   라벨만 서던 시절의 값이고, U6-D(#978)가 그 열에 「문서 파일 이름」(7자)을 들이면서
+   줄바꿈이 났다. 가장 긴 라벨이 한 줄에 서는 값으로 올린다. */
+.lbl-fixed{width:96px}
 
 /* ---- 배치 유틸(R-css 전수조사) — 인라인 style 리터럴 대체 ---- */
 .spacer{flex:1}                       /* flex 스페이서(<span style="flex:1"> 대체) */

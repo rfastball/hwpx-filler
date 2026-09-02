@@ -13,6 +13,7 @@ import pytest
 
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.external.job_store import JobRegistry, encode_job
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_inspection import (
@@ -50,7 +51,8 @@ def _confirm_every_row(ctrl) -> None:
 
 
 def _controller(
-    tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None
+    tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None,
+    pool_registry=None, remembered_output_directory=None,
 ) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
@@ -65,6 +67,8 @@ def _controller(
             file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        pool_registry=pool_registry,
+        remembered_output_directory=remembered_output_directory,
         after_mapping_saved=after_mapping_saved,
         binding_confirm_pending=binding_confirm_pending,
     )
@@ -327,9 +331,11 @@ def test_new_draft_with_data_anchors_the_mounted_data_in_the_same_wizard(tmp_pat
     snap = pushes[-1][1]
     assert snap["is_draft"] is True and snap["editing_origin"] == ""
     assert snap["section"] == "template"          # 마법사는 1단계부터 — 순서 의존은 그대로
-    assert snap["template_path"] == "" and snap["name"] == ""
+    assert snap["template_path"] == ""
+    # 이름 기본값은 지금 있는 절반에서 나온다(U6-D #978) — 템플릿이 없으면 데이터 이름 하나.
+    assert snap["name"] == "multi_sheet" and snap["job_name_is_derived"] is True
     # 2단계 관문 앵커(dataGateway 가 그리는 값) — 「이 데이터로」가 실제로 그 데이터다.
-    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["data_name"] == "multi_sheet" and snap["data_sheet"] == "낙찰현황"
     assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
     assert snap["record_count"] == 3
     ctx = snap["context"]
@@ -381,18 +387,19 @@ def test_anchored_draft_survives_the_real_template_pick(tmp_path):
 
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
     snap = ctrl.snapshot()
-    assert snap["template_name"] == TPL_COMPILED.name
-    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["template_name"] == TPL_COMPILED.stem
+    assert snap["data_name"] == "multi_sheet" and snap["data_sheet"] == "낙찰현황"
     assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
     assert snap["record_count"] == 3
     assert snap["context"]["entry_reason"] == "document_browser_new_work"
     assert snap["context"]["evidence"] == {"데이터": "multi_sheet.xlsx"}
-    assert snap["name"] == ""            # 이름·매핑은 종전대로 끊긴다(혼합 세션 금지)
+    # 이름·매핑은 종전대로 끊긴다(혼합 세션 금지) — 그 자리에 도출 기본값이 선다(U6-D).
+    assert snap["name"] == f"{TPL_COMPILED.stem} · multi_sheet"
 
     # 마음을 바꿔 다른 템플릿을 골라도 앵커는 산다 — 문맥까지 되살아나야 성립하는 성질이다.
     ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
     snap = ctrl.snapshot()
-    assert snap["data_name"] == "multi_sheet.xlsx"
+    assert snap["data_name"] == "multi_sheet"
     assert snap["context"]["entry_reason"] == "document_browser_new_work"
 
     # 대조군: 앵커 없이 시작한 보통 초안은 종전대로 데이터가 끊긴다(계약 무변경).
@@ -420,12 +427,12 @@ def test_repair_entry_data_also_survives_the_template_pick(tmp_path):
         return_context={"surface": "data"},
         source_ref={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
     )
-    assert ctrl.snapshot()["data_name"] == "multi_sheet.xlsx"
+    assert ctrl.snapshot()["data_name"] == "multi_sheet"
 
     ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})   # 실 UX 경로
     snap = ctrl.snapshot()
-    assert snap["template_name"] == TPL_PARTIAL.name
-    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["template_name"] == TPL_PARTIAL.stem
+    assert snap["data_name"] == "multi_sheet" and snap["data_sheet"] == "낙찰현황"
     assert snap["record_count"] == 3
     assert snap["context"]["entry_reason"] == "document_browser_repair"
 
@@ -655,7 +662,7 @@ def test_handed_over_data_is_the_draft_baseline_not_an_unsaved_change(tmp_path):
     assert ctrl.snapshot()["dirty"] is False              # 스냅샷의 얼굴도 같은 값
 
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
-    assert ctrl.snapshot()["data_name"] == "multi_sheet.xlsx"  # 앵커 생존(계약 무변경)
+    assert ctrl.snapshot()["data_name"] == "multi_sheet"  # 앵커 생존(계약 무변경)
     assert ctrl.has_unsaved_work() is False, "템플릿만 고른 진행이 미저장으로 섭니다."
 
     ctrl.dispatch("set_name", {"name": "손댄 이름"})       # 양성 대조 — 손대면 즉시 미저장
@@ -688,7 +695,9 @@ def test_new_job_session_atomically_clears_prior_session_and_blocks_mixed_save(t
     ctrl.new_job_session(str(TPL_PARTIAL))               # 다른 템플릿으로 새 세션
     snap = ctrl.snapshot()
     assert snap["section"] == "template"                             # 단계 초기화
-    assert snap["name"] == ""                            # 이름 소거(A 잔존 없음)
+    # 이름은 A 의 잔존이 아니라 **새 템플릿에서 도출한 기본값**이다(U6-D #978): 세션을
+    # 끊었다는 사실은 「A 의 이름이 사라졌다」로 확인한다.
+    assert snap["name"] == "template_v1" and snap["job_name_is_derived"] is True
     assert snap["rows"] == [] and snap["is_complete"] is False  # 구 매핑 모델 폐기
     assert snap["data_path"] == ""                       # 데이터 소거
     res = ctrl.dispatch("save", {})
@@ -2077,7 +2086,7 @@ def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
     snap = ctrl.snapshot()
     assert snap["template_path"] == str(TPL_COMPILED)   # 선택 경로 하나가 좌 열의 `aria-pressed`
-    assert snap["pairing"]["template_name"] == TPL_COMPILED.name
+    assert snap["pairing"]["template_name"] == TPL_COMPILED.stem
     assert snap["pairing"]["advance_block_reason"] == "오른쪽에서 데이터를 고르세요."
 
 
@@ -2213,7 +2222,8 @@ def test_adopt_starts_txt_session_with_media_branch(tmp_path):
     ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
     assert ctrl.adopt_imported_template(str(doc)) == "협조전.txt"
     assert ctrl.template_path == str(doc)
-    assert ctrl.snapshot()["sections"] == ["template", "binding"]      # TXT 매체 탭(§3.2)
+    # 단계 집합은 두 매체가 같다(U6-D #978) — 갈리는 것은 3단계 안의 문서 파일 이름 행이다.
+    assert ctrl.snapshot()["sections"] == ["template", "binding", "filename"]
 
 
 def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
@@ -2229,7 +2239,8 @@ def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
     _confirm_every_row(ctrl)
     ctrl.dispatch("goto_section", {"section": "filename"})
     ctrl.dispatch("set_pattern", {"pattern": f"x-{{{{{field}}}}}-{{{{seq:001}}}}"})
-    assert ctrl.snapshot()["pattern_preview"] == "x-수기값-001.hwpx"
+    # 예시는 seq 1·2·3 을 실제로 만들어 달라지는 부분만 잇는다(U6-D #978).
+    assert ctrl.snapshot()["pattern_preview"] == "x-수기값-001.hwpx · 002 · 003"
     ctrl.dispatch("goto_section", {"section": "binding"})
     assert ctrl.snapshot()["pattern_preview"] == ""                    # 저장 분류 밖은 미계산
 
@@ -2566,7 +2577,7 @@ def test_txt_template_loads_with_token_schema_and_two_tabs(tmp_path):
     path = _txt_template(tmp_path)  # 건명(2회)·금액
     ctrl.dispatch("use_library_template", {"path": str(path)})
     snap = ctrl.snapshot()
-    assert snap["sections"] == ["template", "binding"]
+    assert snap["sections"] == ["template", "binding", "filename"]   # U6-D: 두 매체 3단계
     assert snap["template_media"] == "txt"
     assert snap["field_count"] == 2 and snap["gate"] is None and not snap["gate_error"]
     by_name = {f["name"]: f for f in snap["fields"]}
@@ -2575,8 +2586,14 @@ def test_txt_template_loads_with_token_schema_and_two_tabs(tmp_path):
     assert ctrl.can_advance("template") is False        # 데이터가 남았다(U6-B)
     _mount_data(ctrl)
     assert ctrl.can_advance("template") is True
-    with pytest.raises(ValueError, match="'filename' 탭이 없습니다"):
+    # TXT 도 3단계를 갖는다(U6-D #978) — 막는 것은 「탭이 없다」가 아니라 전진 게이트다.
+    with pytest.raises(ValueError, match="채우지 못해"):
         ctrl.dispatch("goto_section", {"section": "filename"})
+    # 그 단계에 서면 **문서 파일 이름 축은 없다**: 매체가 정하는 것은 이제 그 행 하나다.
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    _confirm_every_row(ctrl)
+    ctrl.dispatch("goto_section", {"section": "filename"})
+    assert ctrl.snapshot()["pattern_preview"] == ""
 
 
 def test_txt_band_lists_templates_and_reads_errors_loud(tmp_path):
@@ -2651,7 +2668,7 @@ def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path
 
     ctrl.load_job("TXT기안작업")
     snap = ctrl.snapshot()
-    assert snap["sections"] == ["template", "binding"]
+    assert snap["sections"] == ["template", "binding", "filename"]   # U6-D: 두 매체 3단계
     assert snap["section"] == "binding" and snap["editing_origin"] == "TXT기안작업"
 
 
@@ -2925,7 +2942,9 @@ def test_use_pool_data_mounts_a_pclm_view_and_the_save_carries_the_binding(tmp_p
     snap = ctrl.snapshot()
     assert snap["data_pool_key"] == key
     assert snap["pairing"]["ready"] is True
-    assert snap["pairing"]["data_name"] == Path(db).name
+    # 풀 항목의 표시명은 **등록명**이다(U6-D #978) — 경로에서 되짚으면 사람이 붙인 이름이
+    # 사라져 목록이 「계약목록」이라 부르던 것이 여기서는 「pclm」이 된다.
+    assert snap["pairing"]["data_name"] == "계약목록"
     assert snap["pairing"]["column_count"] == 2
 
     ctrl.dispatch("goto_section", {"section": "binding"})
@@ -3040,7 +3059,8 @@ def test_reselecting_the_same_template_is_a_no_op(tmp_path):
     ctrl2.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
     ctrl2.dispatch("set_name", {"name": "끊길 이름"})
     ctrl2.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
-    assert ctrl2.snapshot()["name"] == ""
+    # 사람이 지은 이름은 끊기고 새 템플릿의 도출값이 그 자리에 선다(U6-D #978).
+    assert ctrl2.snapshot()["name"] == "template_v1"
 
 
 def test_pairing_is_not_ready_when_the_template_has_no_fields(tmp_path):
@@ -3186,3 +3206,301 @@ def test_revertable_is_the_same_predicate_the_action_enforces(tmp_path):
     assert ctrl.snapshot()["rows"][0]["revertable"] is False
     with pytest.raises(ValueError, match="확정을 먼저 해제"):        # 안 서면 실제로 거절한다
         ctrl.dispatch("revert_source", {"index": 0})
+
+
+# ───────────────────────────────── 이름 기본값·3단계 이름·저장(U6-D #978)
+def test_draft_name_is_derived_from_both_display_names(tmp_path):
+    """초안의 이름은 **고르기가 채운다** — 사람이 방금 고른 두 이름의 재진술이다.
+
+    빈 필수 입력으로 두면 저장 게이트의 「작업 이름을 입력하세요」가 거의 모든 초안에서
+    서고, 사람은 화면이 이미 머리에서 말하고 있는 두 이름을 손으로 다시 적는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["name"] == ""             # 아직 고른 것이 없다 — 도출 재료 0
+
+    ctrl.load_template_path(str(TPL_COMPILED))
+    snap = ctrl.snapshot()
+    assert snap["name"] == TPL_COMPILED.stem         # 절반만 있으면 그것 하나
+    assert snap["job_name_is_derived"] is True and snap["name_hint"]
+
+    _mount_data(ctrl)
+    assert ctrl.snapshot()["name"] == f"{TPL_COMPILED.stem} · multi_sheet"
+
+
+def test_derived_name_follows_the_pick_until_a_person_writes_one(tmp_path):
+    """표지가 꺼지는 자리는 `set_name` **하나**다 — 사람이 지은 이름은 덮지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    _mount_other_data(ctrl)                          # 공고목록 시트
+    assert ctrl.snapshot()["name"].endswith("multi_sheet")
+
+    ctrl.dispatch("set_name", {"name": "내가 지은 이름"})
+    snap = ctrl.snapshot()
+    assert snap["job_name_is_derived"] is False and snap["name_hint"] == ""
+
+    _mount_data(ctrl)                                # 데이터를 갈아 끼워도
+    assert ctrl.snapshot()["name"] == "내가 지은 이름"   # 조용한 소실 없음
+
+
+def test_a_saved_job_name_is_never_re_derived(tmp_path):
+    """저장본의 이름은 사람이 한 번 지어 저장한 것이다 — 어떤 고르기도 그것을 덮지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    _build_complete_session(ctrl, "저장된작업")
+    assert ctrl.dispatch("save", {})["ok"] is True
+    assert ctrl.snapshot()["job_name_is_derived"] is False
+
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    assert ctrl.snapshot()["name"] == "저장된작업"
+
+
+def test_the_derived_name_is_not_an_unsaved_change(tmp_path):
+    """도출값은 **변경이 아니다** — 기준선이 그 값이라 초안이 이름 때문에 더러워지지 않는다.
+
+    빈 문자열을 기준으로 두면 템플릿을 고르는 정상 진행이 이름을 채우는 순간 「저장하지 않은
+    변경」이 켜지고, 아무것도 손대지 않은 초안이 이탈에서 잃을 것이 있다고 주장한다
+    (헛확인의 발화 지점). 데이터 축의 기준선은 종전 그대로다(#945 F7) — 갈리는 것은 이름
+    하나이므로 여기서는 그 축만 움직인다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.snapshot()["name"] == TPL_COMPILED.stem   # 도출값이 실제로 채워졌고
+    assert ctrl.has_unsaved_work() is False               # 그것이 미저장을 만들지 않는다
+
+    ctrl.dispatch("set_name", {"name": "손으로 지은 이름"})
+    assert ctrl.has_unsaved_work() is True                # 사람이 고치면 종전 규칙 그대로
+
+
+def test_the_anchored_draft_stays_clean_while_the_name_fills_itself(tmp_path):
+    """무조작 진입의 두 축(데이터·이름)이 **함께** 기준선이다(#945 F7 + U6-D #978).
+
+    한쪽만 면제하면 「이 데이터로 새 작업」에서 템플릿을 고르는 순간 이름이 채워지며 세션이
+    미저장이 되고, 첫 이탈부터 헛확인이 뜬다 — 고친 것이 하나도 없는 사람에게.
+    """
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        entry_reason="document_browser_new_work",
+        return_context={"surface": "data"},
+    )
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+
+    snap = ctrl.snapshot()
+    assert snap["name"] == f"{TPL_COMPILED.stem} · multi_sheet"
+    assert snap["job_name_is_derived"] is True
+    assert snap["dirty"] is False
+
+
+def test_the_pool_display_name_is_the_registered_name_not_the_file(tmp_path):
+    """풀 항목의 표시명은 **등록명**이다 — 같은 파일을 다른 이름으로 둘 이상 고정할 수 있다."""
+    ctrl, pool = _pool_editor(tmp_path)
+    key = pool.add(DatasetReference(
+        name="7월 발주", kind="excel", opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    ))
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("use_pool_data", {"key": key})["ok"] is True
+
+    snap = ctrl.snapshot()
+    assert snap["data_name"] == "7월 발주"
+    assert snap["name"] == f"{TPL_COMPILED.stem} · 7월 발주"
+
+
+def test_the_name_survives_a_section_patch_revert(tmp_path):
+    """이름은 3단계에 그려지지만 `filename` patch 에 **속하지 않는다**(§10.13 판정 L).
+
+    같은 화면에 그린다고 같은 거래에 드는 것이 아니다 — 탭을 옮겼을 뿐인 사람에게 알린 적
+    없는 손실을 만들지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _build_complete_session(ctrl, "원래이름")
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    ctrl.dispatch("goto_section", {"section": "filename"})
+    ctrl.dispatch("set_name", {"name": "고친 이름"})
+    ctrl.dispatch("set_pattern", {"pattern": "바꾼패턴-{{seq}}"})
+    ctrl.dispatch("goto_section", {"section": "binding"})     # 자동 버리기
+
+    snap = ctrl.snapshot()
+    assert snap["name"] == "고친 이름"                          # 이름은 산다
+    assert snap["pattern"] != "바꾼패턴-{{seq}}"                # 그 자리 patch 만 되돌아간다
+
+
+def test_the_save_stage_carries_the_same_output_folder_zone_as_the_job_screen(tmp_path):
+    """저장 폴더는 **읽기 전용 재진술**이고 그 값은 공용 함수가 낸다(재조립 금지).
+
+    「기억한 지정」은 작업 화면의 **메모리 값**을 콜러블로 읽는다(리뷰 3) — 편집기가 설정
+    파일을 직접 읽으면 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다.
+    """
+    from hwpxfiller.webapp.output_folder_zone import output_folder_zone
+
+    picked = tmp_path / "고른폴더"
+    picked.mkdir()
+    ctrl, _ = _controller(tmp_path, remembered_output_directory=lambda: str(picked))
+    ctrl.load_template_path(str(TPL_COMPILED))
+
+    assert ctrl.snapshot()["output_folder"] == output_folder_zone(
+        template_path=str(TPL_COMPILED), remembered_directory=str(picked),
+    )
+
+
+def test_the_editor_never_reads_the_output_folder_setting_itself(tmp_path):
+    """소유자는 작업 화면 하나다(리뷰 3) — 미주입이면 **추측하지 않는다**.
+
+    설정 파일을 여기서 다시 읽으면 값의 출처가 둘이 되고, 쓰기 실패 한 번에 두 표면이
+    갈린다. 주입이 없으면 도출 재료가 없는 것이고 기본값(템플릿 옆 Results)이 그 자리를
+    잇는다 — 없는 값을 조용히 채우지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)                    # 주입 없음
+    ctrl.load_template_path(str(TPL_COMPILED))
+
+    zone = ctrl.snapshot()["output_folder"]
+    assert zone["source"] == "template_default"
+    assert zone["directory"] == str(TPL_COMPILED.parent / "Results")
+
+
+def test_a_txt_session_has_no_output_folder_row(tmp_path):
+    """TXT 는 파일을 만들지 않아 **폴더가 축이 아니다**(리뷰 4) — 존 자체가 서지 않는다.
+
+    빈 재진술을 세우면 만들지 않을 파일이 어디에 저장되는지를 말하게 된다.
+    """
+    ctrl, _ = _controller(tmp_path, remembered_output_directory=lambda: str(tmp_path))
+    ctrl.dispatch("use_library_template", {"path": str(_txt_template(tmp_path))})
+
+    assert ctrl.snapshot()["output_folder"] is None
+    ctrl.load_template_path(str(TPL_COMPILED))         # 대조군 — hwpx 는 선다
+    assert ctrl.snapshot()["output_folder"] is not None
+
+
+def test_the_registered_data_name_survives_save_and_reopen(tmp_path):
+    """등록명은 **결속의 정체성**에서 온다 — 세션 표지가 아니다(리뷰 2).
+
+    「방금 풀에서 골랐다」를 세션에 기억하면 저장하고 다시 연 세션은 그 표지가 없어(``_reset``)
+    같은 데이터를 다른 이름으로 부른다. 결속은 durable 인데 이름만 세션 수명이 되는 자리다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    key = pool.add(DatasetReference(
+        name="7월 발주", kind="excel", opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    ))
+    ctrl, _ = _controller(tmp_path, pool_registry=pool)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("use_pool_data", {"key": key})["ok"] is True
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    _confirm_every_row(ctrl)
+    ctrl.dispatch("set_name", {"name": "발주작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    ctrl.load_job("발주작업")                            # 저장본 재열기
+    assert ctrl.snapshot()["data_name"] == "7월 발주"
+
+
+def test_the_derived_name_never_carries_a_folder_separator(tmp_path):
+    """하위 폴더 템플릿의 도출 이름은 **마지막 세그먼트**다(리뷰 6).
+
+    표시명은 루트 상대경로라 ``온나라/기안`` 이고, 그 슬래시가 작업 이름에 들어가면 레지스트리
+    slug 가 경로 구분자를 접어 서로 다른 두 이름이 같은 파일로 저장될 수 있다. 목록이 부르는
+    이름과 **작업의 이름**은 답하는 질문이 다르다.
+    """
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    nested = root / "온나라" / "기안.txt"
+    nested.write_text("수신: {{수신}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.load_template_path(str(nested))
+
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "온나라/기안"        # 목록 어휘는 경로를 병기한다
+    assert "/" not in snap["name"] and snap["name"] == "기안"
+
+
+def test_the_provenance_dataset_matches_the_name_on_screen(tmp_path):
+    """작성 출처의 데이터 이름은 **화면이 부르는 그 이름**이다(리뷰 7).
+
+    여기서 stem 을 따로 지으면 같은 세션이 화면과 기록에서 데이터를 다른 이름으로 부른다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    key = pool.add(DatasetReference(
+        name="7월 발주", kind="excel", opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    ))
+    ctrl, _ = _controller(tmp_path, pool_registry=pool)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    _confirm_every_row(ctrl)
+    ctrl.dispatch("set_name", {"name": "출처작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    saved = JobRegistry(tmp_path / "jobs").load("출처작업")
+    assert saved.mapping.provenance["dataset"] == "7월 발주"
+
+
+def test_a_changed_display_input_does_not_dirty_an_untouched_draft(tmp_path):
+    """dirty 기준선은 **재도출 시점에 기록한 값**이다(리뷰 9).
+
+    기준선을 매번 다시 도출하면 도출의 입력이 바뀌는 순간(서식 폴더 재지정으로 표시명이
+    갈리면) 기준선과 현재값이 서로 다른 시점의 도출이 되어, 손대지도 않은 초안이 「저장하지
+    않은 변경」으로 선다.
+    """
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    nested = root / "온나라" / "기안.txt"
+    nested.write_text("수신: {{수신}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.load_template_path(str(nested))
+    assert ctrl.has_unsaved_work() is False
+
+    # 루트가 바뀌어 표시명이 갈린다 — 사람은 아무것도 하지 않았다.
+    ctrl._template_root_holder = TemplateRoot(load=lambda: "", save=lambda p: None)
+    assert ctrl.has_unsaved_work() is False
+
+
+@pytest.mark.parametrize(
+    ("first", "pattern", "expected"),
+    [
+        # 자릿수 있는 연번 — 토큰이 아는 폭 그대로.
+        ("공고서-001.hwpx", "공고서-{{seq:001}}", "공고서-001.hwpx · 002 · 003"),
+        # 폭 없는 연번.
+        ("x-1.hwpx", "x-{{seq}}", "x-1.hwpx · 2 · 3"),
+        # **연번에 붙은 데이터 값**(리뷰 5의 발화 지점): 종전 휴리스틱은 공통 앞을 숫자 자리로
+        # 되감아 「20262·20263」을 냈다 — 값이 그대로인데 연도가 매 건 바뀐다고 말하는 예시다.
+        ("A20261.hwpx", "A{{연도}}{{seq}}", "A20261.hwpx · 2 · 3"),
+        # seq 토큰이 없으면 첫 이름 하나 — 없는 연번을 그리면 충돌하는 자리를 정상으로 보인다.
+        ("a.hwpx", "a", "a.hwpx"),
+        ("", "{{seq}}", ""),
+    ],
+)
+def test_sequence_example_reads_the_token_not_the_rendered_names(first, pattern, expected):
+    """연번 예시의 판정도 서식도 **패턴이 낸다** — 문자열에서 되추측하지 않는다(리뷰 5)."""
+    from hwpxfiller.webapp.screen_editor import _sequence_example
+
+    assert _sequence_example(first, pattern) == expected
+
+
+def test_the_templates_root_is_read_once_until_it_is_reset(tmp_path):
+    """루트 도출은 **1회 memo** 이고 무효화는 :meth:`TemplateRoot.set` 하나다(리뷰 8).
+
+    편집기 스냅샷이 표시명을 짓느라 홀더를 여러 번 지나므로, 재판독이면 푸시 한 번이 같은
+    답을 사러 디스크에 여러 번 간다. 홀더가 루트의 단일 권위라 그 사이 값이 바뀌지 않는다.
+    """
+    reads: "list[int]" = []
+    saved: "list[str]" = [""]
+
+    def _load() -> str:
+        reads.append(1)
+        return saved[-1]
+
+    root = TemplateRoot(load=_load, save=saved.append, default_root=tmp_path)
+    root.path()
+    root.path()
+    root.resolution()
+    assert len(reads) == 1, "도출이 스냅샷마다 설정을 다시 읽습니다."
+
+    other = tmp_path / "다른루트"
+    other.mkdir()
+    root.set(str(other))
+    assert len(reads) == 2, "재지정이 memo 를 비우지 않았습니다 — 옛 루트를 계속 말합니다."
+    assert root.path() == other

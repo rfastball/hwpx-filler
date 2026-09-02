@@ -127,6 +127,19 @@ def judge(report: dict, *, mode: str) -> Verdict:
         failures.append("빈 값 확정 이름게이트가 묻지 않았습니다")
     if observed.get("empty_value_surfaced") is not True:
         failures.append("작업대에 〈빈 값〉 표면이 서지 않았습니다")
+    # 두 저장 동사 중 나머지 한쪽(U6-D #978) — 저장 성공 뒤 그 작업이 「문서 만들기」에
+    # **선 상태로** 착석한다. 「작업 저장」의 제자리 착지는 위 hwpx 갈래가 이미 찍었다.
+    if observed.get("save_and_open_seated") is not True:
+        failures.append("「저장하고 문서 만들기로」가 작업을 착석시키지 못했습니다")
+    # 연번 예시의 **두 값 대조**(U6-D #978). 한 값만 재면 규칙이 검사되지 않는다: 예시를
+    # 아예 안 그려도 양성만 빨강이고, 없는 연번을 늘 그려도 음성만 빨강이다. 둘을 함께
+    # 걸어야 「seq 토큰이 있을 때만 선다」가 실제로 판정된다.
+    positive = str(observed.get("seq_example_positive") or "")
+    if "· 002 · 003" not in positive:
+        failures.append(f"seq 토큰이 있는데 연번 예시가 서지 않았습니다: {positive!r}")
+    negative = str(observed.get("seq_example_negative") or "")
+    if not negative or "· 002" in negative:
+        failures.append(f"seq 토큰이 없는데 연번 예시가 그려졌습니다: {negative!r}")
 
     shots = tuple(report.get("shots") or ())
     if shots != CAPTURE_POINTS:

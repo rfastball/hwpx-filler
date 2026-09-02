@@ -590,7 +590,8 @@ test("#323 던져진 예외는 여전히 catch 백스톱(window.alert)이 받는
    그대로 남았다(컨트롤러는 부팅 1회 싱글턴이다). 사유가 해소되는 세 자리에서 걷는다. */
 
 test("#874 겨눈 칸을 고치면 그 차단 알림이 사라진다 — 겨눔과 사유를 함께 걷는다", async () => {
-  const h = blockedSaveHarness("template");
+  /* 겨눔은 그 칸이 **보이는 단계**에서만 선다(U6-D #978) — 이름은 3단계 폼에 산다. */
+  const h = blockedSaveHarness("filename");
   await h.controller.init();
 
   assert.equal(await h.controller.doSave({}), false);
@@ -602,6 +603,50 @@ test("#874 겨눈 칸을 고치면 그 차단 알림이 사라진다 — 겨눔�
   const view = h.controller.viewModel.getSnapshot();
   assert.equal(view.saveMessage, null, "고친 칸을 계속 나무라지 않는다");
   assert.equal(view.invalidField, "");
+});
+
+test("U6-D 거절된 저장은 단계를 옮기지 않는다 — 지나온 단계의 편집을 파괴하지 않는다", async () => {
+  /* 표면이 사람을 3단계로 데려가면 Python `_do_goto_section` 이 지나온 단계의 patch 를
+     자동으로 버린다 — 연결 확인에서 방금 선언한 「비워 둠」이 **저장 거절 하나로** 사라진다.
+     거절은 아무것도 파괴하지 않는 전이라 이동은 사람의 몫이고, 어느 단계인지는 차단 문안이
+     말한다. 여기서 재는 것은 발신 집합(음성)과 화면 상태의 불변이다. */
+  const calls = [];
+  const h = harness({
+    initial: async () => snap({
+      section: "binding", is_draft: false, editing_origin: "공고서", dirty: true,
+      reachable: { template: true, binding: true, filename: true },
+    }),
+    call: async (_screen, action) => {
+      calls.push(action);
+      return action === "save"
+        ? { ok: false, block_reason: "'이름·저장' 단계에서 작업 이름을 입력하세요.", blocked_field: "name" }
+        : {};
+    },
+  });
+  h.ports.jobRead.bind({ refreshList() {}, openBrowseNeedsAction: async () => {} });
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), false);
+
+  assert.ok(!calls.includes("goto_section"),
+    `거절이 단계 이동을 발신했습니다: ${calls.join(",")} — 그 이동이 지나온 patch 를 버립니다`);
+  assert.equal(h.controller.model.getSnapshot().section, "binding", "화면이 옮겨갔습니다");
+  assert.equal(h.controller.viewModel.getSnapshot().invalidField, "",
+    "안 보이는 칸에 표지를 남기면 다음에 그 단계로 갔을 때 고치지도 않은 칸이 빨갛습니다");
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("'이름·저장' 단계"),
+    `차단 문안이 고칠 단계를 지목하지 않습니다: ${message && message.text}`);
+});
+
+test("U6-D 단계를 옮기면 겨눔 표지가 걷힌다 — 끈적한 aria-invalid 금지", async () => {
+  const h = blockedSaveHarness("filename");
+  await h.controller.init();
+  assert.equal(await h.controller.doSave({}), false);
+  assert.equal(h.controller.viewModel.getSnapshot().invalidField, NAME_FIELD);
+
+  await h.controller.gotoSection("binding");
+
+  assert.equal(h.controller.viewModel.getSnapshot().invalidField, "");
 });
 
 test("#874 저장 성공은 앞선 차단 알림을 걷는다 — 겨눔 없는 차단도 성사에서 사라진다", async () => {

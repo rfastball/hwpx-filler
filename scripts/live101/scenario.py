@@ -256,21 +256,61 @@ def run(ctx: ScenarioContext) -> dict:
     s.scroll_to("#scr-editor .bindbar")
     ctx.shoot("mapping-confirm")
 
-    # ---- S4 「파일 이름」 탭: 이름·패턴 → 저장 ------------------------------
-    # 파일 이름은 F7 에서 **전용 탭**으로 승격했고(대조표 20행), 작업 이름은 화면 머리의
-    # 인라인 입력이다(「저장」 분류 사망의 승계 — §10.13.3).
+    # ---- S4 「이름·저장」 단계: 이름·파일 이름·저장 폴더 → 저장 --------------
+    # 3단계가 묻는 것은 셋이다(U6-D #978): 작업 이름(이제 이 폼에 산다 — 머리의 인라인
+    # 입력이 여기로 왔다) · 문서 파일 이름 · 저장 폴더(읽기 전용 재진술).
     s.click_text("#scr-editor", "다음 ▶")
     s.wait(
-        "!!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
-        "파일 이름 탭",
-        requires=['#scr-editor input[data-act="pattern"]'],
+        "!!document.getElementById('editorName')"
+        " && !!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
+        "이름·저장 단계",
+        requires=["#editorName", '#scr-editor input[data-act="pattern"]'],
+    )
+    # 이름은 이미 도출돼 있다 — 여기서 덮어쓰는 것이 곧 「고쳐도 된다」의 실주행이다.
+    s.wait(
+        "document.getElementById('editorName').value.length > 0"
+        " && !!document.getElementById('editorNameHint')",
+        "이름 기본값·힌트",
+        requires=["#editorName"],
     )
     s.set_value("#editorName", "발주요청서")
+    # 연번 예시는 **패턴에 seq 토큰이 있을 때만** 선다(U6-D #978). 그래서 한 값만 재면
+    # 규칙이 검사되지 않는다 — 있는 자리에서 서는 것과 없는 자리에서 **안 서는** 것을
+    # 두 값으로 각각 세운다(모션 층의 `prefers-reduced-motion` 대조와 같은 규율).
+    #
+    # ① 양성 — seq 토큰이 있으면 첫 이름 + 달라지는 부분이 잇는다.
+    s.set_value(
+        '#scr-editor input[data-act="pattern"]', "발주요청서-{{공고번호}}-{{seq:001}}"
+    )
+    s.wait(
+        "document.getElementById('editorPatternPreview').textContent"
+        ".includes('발주요청서-2026-001-001.hwpx · 002 · 003')",
+        "파일명 라이브 예시 — 연번 양성",
+        requires=["#editorPatternPreview"],
+    )
+    seen["seq_example_positive"] = s.js(
+        "document.getElementById('editorPatternPreview').textContent.trim()"
+    )
+    # ② 음성 — seq 토큰을 걷으면 첫 이름 하나만 남는다. 없는 연번을 그리면 실제로는 이름
+    #    셋이 충돌하는 자리를 정상으로 보인다. 이 패턴이 이 작업이 실제로 저장할 값이다.
     s.set_value('#scr-editor input[data-act="pattern"]', "발주요청서-{{공고번호}}")
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('발주요청서-2026-001')",
-        "파일명 라이브 예시",
-        requires=["#scr-editor"],
+        "document.getElementById('editorPatternPreview').textContent"
+        ".includes('발주요청서-2026-001')"
+        " && !document.getElementById('editorPatternPreview').textContent"
+        ".includes('· 002')",
+        "파일명 라이브 예시 — 연번 음성",
+        requires=["#editorPatternPreview"],
+    )
+    seen["seq_example_negative"] = s.js(
+        "document.getElementById('editorPatternPreview').textContent.trim()"
+    )
+    # 저장 폴더는 읽기 전용 재진술이고 바꾸러 갈 문이 하나 있다(#968 전역 값).
+    s.wait(
+        "document.getElementById('editorOutDir').value.length > 0"
+        " && !!document.getElementById('editorOpenFolderSettings')",
+        "저장 폴더 재진술",
+        requires=["#editorOutDir"],
     )
     ctx.shoot("save-job")
     s.click_text("#scr-editor", "작업 저장")
@@ -482,11 +522,12 @@ def run(ctx: ScenarioContext) -> dict:
         '#editorTplList .pitem[data-path*="발주요청_기안"]',
         what="TXT 템플릿 채택",
     )
-    # TXT 세션 = 탭 2개(고르기·연결 확인) — 파일 이름 탭이 없다(§3.2, 파일을 만들지 않는 작업).
+    # TXT 세션도 **탭 3개**다(U6-D #978) — 셋째가 「이름·저장」이 되면서 매체가 정하는 것은
+    # 단계가 아니라 그 안의 문서 파일 이름 행 하나로 좁아졌다(그 부재는 아래 3단계에서 잰다).
     s.wait(
-        "document.querySelectorAll('#editor-steps .wstep-tab').length === 2"
+        "document.querySelectorAll('#editor-steps .wstep-tab').length === 3"
         " && document.querySelector('#scr-editor').textContent.includes('공고번호')",
-        "TXT 스키마·탭 2개",
+        "TXT 스키마·탭 3개",
         requires=["#editor-steps"],
     )
     ctx.queue_file_answer(ctx.csv_path)
@@ -504,10 +545,24 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#scr-editor"],
     )
     s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(TXT)")
+    # 「확인 필요 0」 pill 은 **사람이 손댄 미확인 행**만 센다 — 자동 제안만 있는 표에서는
+    # 승격 **전에도** 0 이라 이 문안만 기다리면 왕복이 도착하기 전에 지나간다(공허한 대기).
+    # 배지 전건을 되읽어 전 행 확인을 실제로 잰다(S4 와 같은 형).
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')",
+        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
+        " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
+        ".every((b) => b.textContent.trim() === '확인')",
         "TXT 전 행 확인",
         requires=["#scr-editor"],
+    )
+    # TXT 도 3단계를 갖는다(U6-D #978) — 다른 것은 그 단계에 **문서 파일 이름 행이 없다**는
+    # 것 하나다(파일을 만들지 않는 작업).
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!document.getElementById('editorName')"
+        " && document.querySelector('#scr-editor input[data-act=\"pattern\"]') === null",
+        "이름·저장 단계(TXT — 파일 이름 행 없음)",
+        requires=["#editorName"],
     )
     s.set_value("#editorName", "발주요청 기안")
     s.click_text("#scr-editor", "작업 저장")
@@ -632,6 +687,18 @@ def run(ctx: ScenarioContext) -> dict:
         "매핑표(오류 연습)", requires=["#scr-editor"],
     )
     s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(오류 연습)")
+    # **승격이 실제로 도착했는지 먼저 잰다.** 이 다음 걸음은 표의 select 를 만지는데, 승격
+    # 왕복이 아직 오지 않았으면 그 사이의 재렌더가 방금 넣은 값을 서버 값으로 되돌린다 —
+    # `set_value` 는 값 넣기와 커밋을 **두 번의 왕복**으로 하므로 그 사이가 곧 창이다(실측:
+    # 비움 선언이 통째로 증발해 「확인 필요 1」로 남았다). 아래 「배지 disabled」 조건은 승격
+    # 전에도 참이라(내용 없는 행은 처음부터 못 누른다) 그 자리를 지켜 주지 못한다.
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('자동 제안 0')"
+        " && document.querySelector('#scr-editor').textContent"
+        ".includes('제안을 모두 확인했습니다')",
+        "일괄 승격 착지(오류 연습)",
+        requires=["#scr-editor"],
+    )
     # 데이터에 없는 「담당연락처」는 일괄 승격이 **건드리지 않는다**(U6-C #977) — 사람이 그
     # 행에서 「비워 둠」을 골라야 넘어간다. 확인의 자리가 모달에서 그 행으로 옮겨 왔고,
     # 요구 자체(사람이 명시로 비운다)는 그대로다.
@@ -644,25 +711,30 @@ def run(ctx: ScenarioContext) -> dict:
     )
     seen["empty_value_gate_asked"] = True
     s.set_value(empty_row + ' select[data-act="row-source"]', "sp:blank")
+    # 같은 이유로 배지 전건을 함께 잰다 — pill 만 보면 비움 선언이 도착하기 전에 지나간다.
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')",
+        "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
+        " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
+        ".every((b) => b.textContent.trim() === '확인')",
         "오류 연습 전 행 확인",
         requires=["#scr-editor"],
     )
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait("!!document.getElementById('editorName')", "이름·저장 단계(오류 연습)",
+           requires=["#editorName"])
     s.set_value("#editorName", "오류연습")
-    s.click_text("#scr-editor", "작업 저장")
+    # **두 저장 동사 중 나머지 한쪽**을 여기서 실주행한다(U6-D #978). 「작업 저장」은
+    # 제자리 착지라 S4·트랙 B 가 이미 찍었고, 이 동사가 약속하는 절반은 그 다음이다:
+    # 저장 성공 뒤 `prefer_work` 로 「문서 만들기」에 그 작업이 **선 상태로** 착석한다.
+    s.click_text("#scr-editor", "저장하고 문서 만들기로")
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
-        "오류 연습 저장 착지",
+        "document.querySelector('#scr-job.on') !== null"
+        " && document.getElementById('jobActionName').textContent.trim() === '오류연습'",
+        "저장 뒤 문서 만들기 착석",
         timeout=30.0,
-        requires=["#scr-editor"],
+        requires=["#scr-job", "#jobActionName"],
     )
-    s.click_sel("#editorBack", what="편집기 출구(오류 연습)")
-    s.wait(
-        "document.querySelector('#scr-job.on') !== null",
-        "편집기 이탈(오류 연습)",
-        requires=["#scr-job"],
-    )
+    seen["save_and_open_seated"] = True
     s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(오류 연습 실행)")
     s.wait(
         "!!document.querySelector('#libraryList [data-work=\"오류연습\"]')",

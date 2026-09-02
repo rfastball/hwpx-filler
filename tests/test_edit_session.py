@@ -59,12 +59,17 @@ def _edited(**field_over) -> Job:
 
 # ------------------------------------------------------------------ 탭 구성
 def test_sections_are_derived_from_media_and_never_guessed():
-    """§3.1·§3.2 — TXT 는 파일 이름 탭이 없고, 모르는 매체를 HWPX 로 추측하지 않는다(§19.11-2).
+    """§3.1·§3.2 — 두 매체가 같은 세 단계이고, 모르는 매체는 추측하지 않는다(§19.11-2).
+
+    TXT 가 셋째를 갖게 된 것은 그 단계가 「이름·저장」이 되면서다(U6-D #978): **작업 이름**
+    은 매체와 무관한 저장 게이트 술어라 없는 단계에 세우면 TXT 초안이 이름을 넣을 표면 없이
+    차단만 받는다. 매체가 정하는 것은 이제 그 단계 안의 문서 파일 이름 행 하나다.
 
     「시험」은 어느 매체에도 없다: F8 이 세우기 전까지 빈 탭을 두지 않는다(§8.2 ②).
     """
     assert sections_for("hwpx") == ("template", "binding", "filename")
-    assert sections_for("txt") == ("template", "binding")
+    assert sections_for("txt") == ("template", "binding", "filename")
+    # 미상 매체의 폴백은 그대로다 — 집합이 같아졌다고 「모르면 세 단계」가 되지 않는다.
     assert sections_for("") == ("template",)
     assert all("test" not in sections_for(m) for m in ("hwpx", "txt", ""))
 

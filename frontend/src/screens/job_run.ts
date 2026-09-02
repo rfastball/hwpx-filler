@@ -525,7 +525,12 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       if (result === null || result === undefined) return;
       const text = String(result);
       // 고른 폴더는 저장 폴더 표시가 그대로 보인다(무착지) — 오류만 알림 채널로 간다.
-      if (text.startsWith("ERROR:")) deps.notify(`폴더 오류: ${text.slice(6).trim()}`);
+      if (text.startsWith("ERROR:")) { deps.notify(`폴더 오류: ${text.slice(6).trim()}`); return; }
+      /* 저장 폴더를 **재진술하는 표면이 둘**이 됐다(U6-D #978): 이 화면과 편집기 3단계다.
+         이 왕복은 `job` 컨트롤러만 밀므로 편집기는 자기 다음 푸시까지 옛 경로를 그린다 —
+         설정에서 방금 바꾼 값을 읽기 전용 칸이 부정하는 자리다. 그래서 편집기도 재당긴다
+         (재당김은 스냅샷 조회 하나라 세션 상태를 건드리지 않는다). */
+      void deps.runtime.refresh("editor");
     },
     /** 배달 blocker 의 착지 — 저장 폴더를 바꾸러 갈 문을 연다(막다른 경보 금지).
      *  여는 것만 안다: 모달의 내용·현재값·잠금은 전부 설정 면이 진다. */

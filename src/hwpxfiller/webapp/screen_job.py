@@ -107,8 +107,8 @@ from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨�
 from ..domain.output_folder_default import (
     SOURCE_REMEMBERED as OUTPUT_FOLDER_SOURCE_SETTING,
     OutputFolderResolution,
-    resolve_output_folder,
 )
+from .output_folder_zone import output_folder_resolution, output_folder_zone
 from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
@@ -2130,21 +2130,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _output_folder_resolution(self) -> OutputFolderResolution:
         """실제로 쓸 저장 폴더 + 출처 + 사유 — ① 설정한 전역 폴더 ② 템플릿 옆 Results.
 
-        판정은 링0 순수 함수(:func:`resolve_output_folder`)가 지고 이 메서드는 **관찰만** 한다:
-        설정한 폴더가 지금도 있는지는 파일 시스템이 답한다. 도출 결과는 스냅샷에 실려 저장 폴더
-        표시·생성 예정 문서 계획·설정 모달에 그대로 나간다 — 조용한 추측이 아니라 표시된 값이다.
+        판정은 링0 순수 함수(:func:`resolve_output_folder`)가 지고 관찰(설정한 폴더가 지금도
+        있는가)은 공용 함수 :func:`~hwpxfiller.webapp.output_folder_zone.output_folder_resolution`
+        이 진다 — 편집기 3단계의 읽기 전용 재진술이 **같은 함수**를 부른다(U6-D #978). 도출
+        결과는 스냅샷에 실려 저장 폴더 표시·생성 예정 문서 계획·설정 모달에 그대로 나간다 —
+        조용한 추측이 아니라 표시된 값이다.
 
         **도출의 단일 출입구다.** managed 축의 delivery intent 도, 구식 축의 ``out_dir`` 도
         여기를 지나야 한다 — 한쪽만 다른 자리에서 경로를 조립하면 두 축이 같은 상태를 두
         답으로 말한다(그것이 종전 세션 명시 지정 축에서 실제로 샜던 자리다).
         """
-        remembered = self._remembered_output_directory
-        return resolve_output_folder(
-            remembered_directory=remembered,
-            remembered_exists=bool(remembered) and Path(remembered).is_dir(),
-            template_path=(
-                self.vm.job.template_path if self.vm is not None else ""
-            ),
+        return output_folder_resolution(
+            template_path=(self.vm.job.template_path if self.vm is not None else ""),
+            remembered_directory=self._remembered_output_directory,
         )
 
     def _effective_delivery(self) -> "tuple[RunDeliveryIntent | None, OutputFolderResolution]":
@@ -2167,15 +2165,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """실제로 쓰이는 intent만 — 출처가 필요한 호출부는 :meth:`_effective_delivery` 를 쓴다."""
         return self._effective_delivery()[0]
 
+    def remembered_output_directory(self) -> str:
+        """설정된 **전역 저장 폴더**의 지금 값 — 읽기 전용 공개 seam(U6-D #978 리뷰 3).
+
+        이 값의 소유자는 이 컨트롤러 하나다(부팅 1회 판독 + :meth:`set_output_folder` 만이
+        바꾼다). 편집기 3단계의 읽기 전용 재진술이 이것을 콜러블로 받아 읽는다 — 그쪽이
+        설정 파일을 따로 읽으면 쓰기가 실패한 순간 두 표면이 서로 다른 폴더를 말한다(한쪽은
+        방금 고른 값, 한쪽은 디스크의 옛 값). 도출·존 성형은 여전히 공용 함수가 진다.
+        """
+        return self._remembered_output_directory
+
     def _output_folder_dict(self) -> dict:
-        """스냅샷의 ``output_folder`` 존 — 표면은 읽기만 하고 재판정·재조립하지 않는다."""
-        resolution = self._output_folder_resolution()
-        return {
-            "directory": resolution.directory,
-            "source": resolution.source,
-            "source_label": resolution.source_label,
-            "notice": resolution.notice,
-        }
+        """스냅샷의 ``output_folder`` 존 — 성형도 **공용 함수 하나**다(U6-D #978).
+
+        존의 모양(키 넷)을 화면마다 다시 적으면 링0 판정이 하나여도 한쪽만 하향 사유를
+        빠뜨리는 자리가 생긴다.
+        """
+        return output_folder_zone(
+            template_path=(self.vm.job.template_path if self.vm is not None else ""),
+            remembered_directory=self._remembered_output_directory,
+        )
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 **전역** 저장 폴더를 세운다.

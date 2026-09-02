@@ -1280,8 +1280,26 @@ class TestWebSelftestGate:
         assert b["txt_media_pill"] == "TXT", (
             f"매체를 가르는 pill 이 TXT 를 말하지 않습니다: {b['txt_media_pill']!r}"
         )
-        assert b["txt_tabs"] == 2, (
-            f"TXT 세션 탭 수가 2가 아닙니다(파일 이름 탭은 HWPX 속성): {b['txt_tabs']!r}"
+        # U6-D(#978): 단계 집합은 두 매체가 같다 — 갈리는 것은 3단계 **안의 행**이다.
+        assert b["txt_tabs"] == 3, (
+            f"TXT 세션 탭 수가 3이 아닙니다(두 매체가 같은 세 단계): {b['txt_tabs']!r}"
+        )
+        # 초안의 단계 표지는 순번 span(`.k`)을 앞에 두므로 꼬리로 잰다 — 재는 것은 라벨이다.
+        assert b["txt_step3_label"].endswith("이름·저장"), (
+            f"3단계 라벨이 화면과 Python `SECTION_LABELS` 사이에서 갈렸습니다: "
+            f"{b['txt_step3_label']!r}"
+        )
+        assert b["txt_name_input"] is True, (
+            "TXT 3단계에 작업 이름 입력이 없습니다 — 이름은 매체와 무관한 저장 게이트 술어라"
+            " 그 표면이 없으면 TXT 초안은 차단만 받고 고칠 자리가 없습니다."
+        )
+        assert b["txt_out_dir_row"] is False, (
+            "TXT 3단계에 저장 폴더 행이 섰습니다 — TXT 작업은 파일을 만들지 않으므로 그 줄은"
+            " 만들지 않을 파일이 어디에 저장되는지를 말합니다(폴더가 축이 아니다)."
+        )
+        assert b["txt_pattern_input"] is False, (
+            "TXT 3단계에 문서 파일 이름 입력이 섰습니다 — TXT 작업은 파일을 만들지 않으므로"
+            " 그 칸은 만들지 않을 파일의 규칙을 편집시킵니다(§3.2)."
         )
 
     def test_txt_authoring_lintpad_mounts_lints_and_yields_escape(
@@ -1382,7 +1400,13 @@ class TestWebSelftestGate:
         )
         # 머리 — 이름은 안정 입력이고 저장 상태는 **상태만** 말한다(#945 F5). 판본(저장 세대
         # 카운터)은 내부 어휘라 머리에서 걷혔다: 음성 단언을 함께 둬야 표기가 되살아나도 잡힌다.
-        assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"
+        # 이름 입력은 3단계 「이름·저장」 폼으로 갔다(U6-D #978) — 머리는 읽기 전용 정체다.
+        # 양성(제목이 이름을 말한다)과 음성(머리에 입력이 없다)을 함께 잰다: 한쪽만 재면
+        # 두 자리에 입력이 서 있어도 초록이다.
+        assert j["head_title"] == "공고서", f"머리가 이 세션의 정체를 말하지 않습니다: {j!r}"
+        assert j["name_input_in_head"] is False, (
+            "머리에 작업 이름 입력이 남아 있습니다 — 같은 값을 고치는 칸이 두 자리에 섭니다."
+        )
         assert "저장됨" in j["save_state"], (
             f"손대지 않은 세션의 머리가 「저장됨」이라 말하지 않습니다: {j['save_state']!r}"
         )
@@ -1544,6 +1568,65 @@ class TestWebSelftestGate:
         )
         assert g["gone_control_disables"] is True, (
             "되돌릴 자리가 사라졌는데 저장이 열린 채입니다 — 없는 편집을 있다고 말합니다."
+        )
+
+    def test_editor_name_save_stage_stands_and_leads_to_document_creation(
+        self, selftest_result: dict
+    ) -> None:
+        """3단계 「이름·저장」 폼이 **실물로** 서고 두 동사가 각자의 착지를 갖는가(U6-D #978).
+
+        정적 계약이 못 보는 넷을 실 WebView2 에서 되읽는다. ①이름 입력이 머리를 떠나 본문에
+        섰는가(옮김은 양성·음성을 함께 재야 성립한다) ②힌트가 **Python 표지**를 따르는가
+        (웹이 「이름이 도출값과 같은가」로 되유추하면 이 음성이 뒤집힌다) ③읽기 전용 저장 폴더
+        칸에서 바꾸러 갈 문이 실제로 열리는가(막다른 재진술 금지) ④「저장하고 문서 만들기로」가
+        `save` → `prefer_work` **순서로** 보내고 작업 화면에 착지하는가(뒤집히면 저장되지
+        않은 작업을 착석시키려 든다).
+        """
+        g = probe(selftest_result, "editor_save_gate")
+        assert g["name_in_body"] is True, (
+            "3단계 본문에 작업 이름 입력이 없습니다 — 이름을 넣을 표면이 사라졌습니다."
+        )
+        assert g["name_in_head"] is False, (
+            "머리에 작업 이름 입력이 남아 있습니다 — 같은 값을 고치는 칸이 두 자리에 섭니다."
+        )
+        assert g["derived_name_value"] == "공고서 · 대장", (
+            f"도출된 이름이 칸에 실리지 않았습니다: {g['derived_name_value']!r}"
+        )
+        assert g["name_hint_shown"] is True, (
+            "도출 표지가 참인데 힌트가 서지 않습니다 — 미리 채운 값이 사용자가 쓴 값처럼 보입니다."
+        )
+        assert g["name_hint_gone_when_edited"] is True, (
+            "표지를 껐는데 힌트가 남았습니다 — 사람이 지은 이름을 「미리 채웠다」고 말합니다."
+        )
+        assert g["seq_example"].endswith("· 002 · 003"), (
+            f"연번 예시가 서지 않습니다(수치는 Python 이 만든다): {g['seq_example']!r}"
+        )
+        assert g["out_dir_value"] == "D:/문서/Results", (
+            f"저장 폴더 칸이 값을 받지 않습니다: {g['out_dir_value']!r}"
+        )
+        assert g["out_dir_readonly"] is True, (
+            "저장 폴더 칸이 편집 가능합니다 — 전역 값을 고치는 자리가 둘이 됩니다(#968)."
+        )
+        assert g["out_dir_source"] == "설정한 저장 폴더", (
+            f"저장 폴더의 출처가 재진술되지 않습니다: {g['out_dir_source']!r}"
+        )
+        assert g["folder_settings_opens"] is True, (
+            "「설정에서 바꾸기」가 설정 모달을 열지 않습니다 — 읽기 전용 재진술이 막다른"
+            " 경보가 됩니다(바꿀 길이 화면 어디에도 없습니다)."
+        )
+        assert g["settings_closed_after"] is True, (
+            "설정 모달이 열린 채 남았습니다 — 뒤 프로브의 클릭을 백드롭이 가립니다."
+        )
+        assert g["save_and_open_present"] is True and g["save_and_open_enabled"] is True, (
+            f"「저장하고 문서 만들기로」가 없거나 잠겼습니다: {g!r}"
+        )
+        assert g["save_before_prefer"] is True, (
+            f"발신 순서가 저장→착석이 아닙니다: {g['save_and_open_calls']!r} — 저장되지 않은"
+            " 작업을 「문서 만들기」에 앉히려 듭니다."
+        )
+        assert g["landed_on_job"] is True, (
+            "저장은 됐는데 「문서 만들기」에 착지하지 않았습니다 — 이 동사가 약속한 절반이"
+            " 조용히 빠졌습니다."
         )
 
     def test_editor_notice_channel_is_inline_on_every_tab(self, selftest_result: dict) -> None:

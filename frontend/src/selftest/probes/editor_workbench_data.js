@@ -451,6 +451,107 @@ async function measureNoticeChannel(ctx, baseSnap, saveBtn) {
   return out;
 }
 
+/** 3단계 「이름·저장」 폼의 실물 확인(U6-D #978) — `editor_save_gate` 의 뒷단계.
+ *
+ *  **새 창을 늘리지 않는다**: 이미 선 편집기 세션 위에 단계를 얹는다(실창 게이트 규율).
+ *  재는 것 넷은 전부 정적 계약이 못 보는 것들이다.
+ *
+ *  ① 이름 입력이 **본문에** 서고 머리에는 없다 — 옮김은 양성·음성을 함께 재야 성립한다.
+ *  ② 힌트는 **Python 표지**(`job_name_is_derived`)를 따른다: 표지를 끄면 사라진다.
+ *     웹이 「이름이 도출값과 같은가」로 되유추하면 이 음성이 초록으로 뒤집힌다.
+ *  ③ 저장 폴더 칸이 값·출처를 받고 「설정에서 바꾸기」가 **실제로** 설정 모달을 연다
+ *     (막다른 재진술 금지 — 바꿀 길이 없는 읽기 전용 칸은 그 자체로 결함이다).
+ *  ④ 「저장하고 문서 만들기로」가 `save` → `prefer_work` **순서로** 보내고 작업 화면에
+ *     착지한다. 순서가 뒤집히면 저장되지 않은 작업을 착석시키려 든다. */
+async function measureNameSaveStage(ctx, baseSnap, out) {
+  const Nav = service(ctx, "Nav");
+  const stage = Object.assign({}, baseSnap, {
+    section: "filename", dirty: true,
+    name: "공고서 · 대장", job_name_is_derived: true,
+    name_hint: "템플릿과 데이터 이름에서 미리 채웠습니다. 고쳐도 됩니다.",
+    pattern: "공고서-{{seq:001}}",
+    pattern_preview: "공고서-001.hwpx · 002 · 003",
+    output_folder: {
+      directory: "D:/문서/Results", source: "remembered",
+      source_label: "설정한 저장 폴더", notice: "",
+    },
+  });
+  ctx.push("editor", stage);
+  await settleRender(ctx);
+  out.name_in_body = !!ctx.doc.querySelector("#editor-body #editorName");
+  out.name_in_head = !!ctx.doc.querySelector(".editor-head #editorName");
+  const nameEl = byId(ctx, "editorName");
+  out.derived_name_value = nameEl ? nameEl.value : null;
+  out.name_hint_shown = !!byId(ctx, "editorNameHint");
+  out.seq_example = textOf(byId(ctx, "editorPatternPreview")).trim();
+  const dirEl = byId(ctx, "editorOutDir");
+  out.out_dir_value = dirEl ? dirEl.value : null;
+  out.out_dir_readonly = !!(dirEl && dirEl.readOnly);
+  out.out_dir_source = textOf(byId(ctx, "editorOutDirSource")).trim();
+  /* 표지를 끄면 힌트가 사라진다(음성) — 같은 스냅샷의 다른 한 키만 움직인다. */
+  ctx.push("editor", Object.assign({}, stage, {
+    job_name_is_derived: false, name_hint: "", name: "손으로 지은 이름",
+  }));
+  await settleRender(ctx);
+  out.name_hint_gone_when_edited = !byId(ctx, "editorNameHint");
+  ctx.push("editor", stage);
+  await settleRender(ctx);
+  /* 「설정에서 바꾸기」 — 여는 것만 잰다(모달의 내용·잠금은 설정 면 소관). */
+  const gate = byId(ctx, "editorOpenFolderSettings");
+  out.folder_settings_trigger = !!gate;
+  if (gate) {
+    gate.click();
+    const opened = () => {
+      const modal = byId(ctx, "settingsModal");
+      return !!modal && !modal.classList.contains("hidden");
+    };
+    await ctx.waitFor(opened, { what: "설정 모달 열림", timeoutMs: 1500 });
+    out.folder_settings_opens = opened();
+    service(ctx, "Modal").close("settingsModal");
+    settleModal(ctx, "settingsModal");
+    await settleRender(ctx);
+    const modal = byId(ctx, "settingsModal");
+    out.settings_closed_after = !!modal && modal.classList.contains("hidden");
+  }
+  /* 「저장하고 문서 만들기로」 — 발신 순서와 착지. 나머지 발신은 삼킨다: 실 백엔드가
+     응답하면 합성 스냅샷을 덮어 프로브가 자기가 심은 것을 못 본다. */
+  const calls = [];
+  const stub = stubBridgeCall(ctx, () => function (screen, action) {
+    calls.push(`${screen}/${action}`);
+    if (screen === "editor" && action === "save") return Promise.resolve({ ok: true });
+    if (screen === "job" && action === "prefer_work") {
+      return Promise.resolve({ ok: true, reason: "ready" });
+    }
+    return Promise.resolve({});
+  });
+  try {
+    const openBtn = ctx.doc.querySelector('#editor-foot [data-act="save-and-open"]');
+    out.save_and_open_present = !!openBtn;
+    if (openBtn) {
+      out.save_and_open_enabled = !openBtn.disabled;
+      openBtn.click();
+      await ctx.waitFor(
+        () => calls.indexOf("job/prefer_work") >= 0,
+        { what: "저장 뒤 prefer_work 발신", timeoutMs: 2000 },
+      );
+      out.save_and_open_calls = calls.join(",");
+      out.save_before_prefer =
+        calls.indexOf("editor/save") >= 0
+        && calls.indexOf("editor/save") < calls.indexOf("job/prefer_work");
+      await ctx.waitFor(
+        () => byId(ctx, "scr-job").classList.contains("on"),
+        { what: "문서 만들기 착지", timeoutMs: 2000 },
+      );
+      out.landed_on_job = byId(ctx, "scr-job").classList.contains("on");
+    }
+  } finally {
+    stub.restore();
+  }
+  Nav.go("editor", { force: true });   // 뒤 프로브의 전제(편집기 활성)를 되돌려 놓는다
+  ctx.push("editor", baseSnap);
+  await settleRender(ctx);
+}
+
 /* ────────────────────────── 프로브 정의 ────────────────────────── */
 
 /** 클러스터 D 의 프로브 전수를 **정의 데이터**로 낸다. 부작용 없음 — 부르기 전엔 아무 일도
@@ -971,12 +1072,30 @@ export function createEditorWorkbenchDataProbes() {
           out.txt_media_pill = txtItem
             ? (txtItem.querySelector(".pill") || {}).textContent : "";
           await probeLintpad(ctx, out);
-          ctx.push("editor", Object.assign({}, base, {
-            sections: ["template", "binding"], template_path: "C:/t/기안.txt",
-            template_name: "기안.txt", template_media: "txt",
-          }));
+          /* TXT 도 3단계다(U6-D #978) — 갈리는 것은 3단계 **안의 문서 파일 이름 행**이다.
+             그래서 탭 수만 세면 그 사실이 안 드러난다: 그 단계에 실제로 세워 패턴 입력이
+             **없다**는 것을 함께 잰다(양성 없는 음성은 배선이 죽어도 초록이다). */
+          const txtSnap = Object.assign({}, base, {
+            sections: ["template", "binding", "filename"], template_path: "C:/t/기안.txt",
+            template_name: "기안", template_media: "txt",
+          });
+          ctx.push("editor", txtSnap);
           await settleRender(ctx);
           out.txt_tabs = ctx.doc.querySelectorAll("#editor-steps .wstep-tab").length;
+          out.txt_step3_label = textOf(
+            ctx.doc.querySelectorAll("#editor-steps .wstep-tab")[2]).trim();
+          /* TXT 는 파일을 만들지 않아 **저장 폴더가 축이 아니다**(U6-D #978 리뷰 4) —
+             Python 이 존을 `null` 로 내고 표면은 그 행을 세우지 않는다. 합성값도 그대로 `null`
+             이어야 프로브가 재는 것이 제품의 계약이 된다(빈 사전을 밀면 없는 상태를 재게 된다). */
+          ctx.push("editor", Object.assign({}, txtSnap, {
+            section: "filename", name: "기안 · 대장", job_name_is_derived: false,
+            name_hint: "", pattern_preview: "", output_folder: null,
+          }));
+          await settleRender(ctx);
+          out.txt_name_input = !!ctx.doc.querySelector("#editor-body #editorName");
+          out.txt_pattern_input = !!ctx.doc.querySelector(
+            '#editor-body input[data-act="pattern"]');
+          out.txt_out_dir_row = !!byId(ctx, "editorOutFolderRow");
           out.why = "완료";
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));
@@ -1281,7 +1400,7 @@ export function createEditorWorkbenchDataProbes() {
             out.save_enabled_dirty = !!(saveOf() && !saveOf().disabled);
             return ctx.doc.querySelectorAll("#editor-steps button.wstep-tab.dirty").length;
           })();
-          /* 머리 — 이름(안정 입력)과 저장 상태. 상태는 **상태만** 말한다(#945 F5): 저장 세대
+          /* 머리 — 정체(제목)와 저장 상태. 상태는 **상태만** 말한다(#945 F5): 저장 세대
              카운터는 내부 어휘라 머리에서 걷혔고, 손댄 갈래(위 dirty_head)와 여기 두 값으로
              양성·음성을 각각 잰다. */
           draft.name = "공고서";
@@ -1289,7 +1408,11 @@ export function createEditorWorkbenchDataProbes() {
           draft.dirty = false;
           ctx.push("editor", draft);
           await settleRender(ctx);
-          out.name_input_value = byId(ctx, "editorName").value;
+          /* 머리는 **읽기 전용**이다(U6-D #978) — 이름 입력이 3단계 폼으로 갔다. 옮겼다는
+             사실은 양성(제목이 이름을 말한다)과 음성(머리에 입력이 없다)을 함께 재야
+             성립한다: 한쪽만 재면 두 자리에 입력이 서 있어도 초록이다. */
+          out.head_title = textOf(byId(ctx, "editorTitle")).trim();
+          out.name_input_in_head = !!ctx.doc.querySelector(".editor-head #editorName");
           out.save_state = textOf(byId(ctx, "editorSaveState"));
           /* 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다. */
           out.ctx_hidden_when_voluntary = isHidden(ctx, byId(ctx, "editorContext"));
@@ -1774,8 +1897,14 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3961,
-      deadlineMs: 0,
-      deadlineRationale: "동기 evaluate_js 한 번(app.py:3961-3963) — 레거시에도 폴링이 없다.",
+      deadlineMs: 2500,
+      deadlineRationale:
+        "종전 0 은 **감시견이 아예 없다는 뜻**이다(runner.js: `deadlineMs <= 0` 이면"
+        + " withDeadline 이 그대로 통과시킨다). 레거시가 동기 evaluate_js 한 번이던 시절엔"
+        + " 그것이 맞았지만, 이 프로브는 이제 클릭·발신·모달 열림을 **기다린다**(U6-D #978"
+        + " 3단계 폼 단계). 조건이 안 서면 러너가 끝나지 않고 프로세스 예산까지 매달리며,"
+        + " 그 착지가 `run_hung`(exit 8, 보고서 없음)이라 정보가 0 이다. 공용 `_probe_late`"
+        + " 예산 2.5초를 그대로 쓴다 — 늘리는 것이 아니라 **없던 상한을** 세운다.",
       after: ["editor_binding"],
       afterReason: "레거시 드라이버 순서 그대로(3959 → 3961) — 같은 편집기 표면을 잇달아 쓴다.",
       async run(ctx) {
@@ -1899,6 +2028,10 @@ export function createEditorWorkbenchDataProbes() {
              샜다 — 정적 계약은 노드의 존재만 보고 **어느 탭에서** 서는지는 못 본다.
              `click` 은 hidden 도 통과하므로 가시성을 계산 스타일 + offsetParent 로 명시한다. */
           out.notice_channel = await measureNoticeChannel(ctx, rowSnap, saveBtn);
+          /* ⑨ 3단계 「이름·저장」 폼(U6-D #978) — 폼 셋과 두 동사가 실물로 서는가.
+             정적 계약은 「스냅샷 키를 읽는다」까지만 본다: 힌트가 표지와 무관하게 상주해도,
+             저장 폴더 칸이 값을 못 받아도, 「설정에서 바꾸기」가 아무 데도 안 열려도 초록이다. */
+          await measureNameSaveStage(ctx, snap, out);
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
