@@ -285,6 +285,9 @@ class EditorController:
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
+        # 연결 카드 미리보기 수치의 memo(리뷰 7) — `(정체 키 + 활성 헤더, (자동, 확인 필요))`.
+        # 세션 리셋이 함께 비운다: 남기면 새 짝의 카드가 지난 짝의 수치를 말한다.
+        self._pairing_cache: "tuple[tuple, tuple[int, int]] | None" = None
         self.preview_index = 0
         self.job_name = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
@@ -452,15 +455,19 @@ class EditorController:
             return self.raw_block
         if self.gate_error:
             return "템플릿 상태를 확인할 수 없습니다."
+        if not self.template_path:
+            return "왼쪽에서 템플릿을 고르세요."
+        # 채울 대상이 0 인 템플릿의 사유는 **링1 문안 하나**다(리뷰 3): 아래 미해결 토큰
+        # 문장을 돌려쓰면 「토큰을 확인하라」고 말해 놓고 확인할 토큰이 없는 화면을 준다.
+        if self.schema is None or not self.schema.fields:
+            return RAW_BLOCK_MESSAGE
         if not self._template_ready():
-            if not self.template_path:
-                return "왼쪽에서 템플릿을 고르세요."
             return "이 템플릿은 아직 진행할 수 없습니다. 미해결 토큰을 확인하세요."
         if not self.data_path:
             return "오른쪽에서 데이터를 고르세요."
         return ""
 
-    def _pairing_snapshot(self) -> dict:
+    def _pairing_snapshot(self, active_sources: "list[str]") -> dict:
         """고르기 단계 연결 카드 — 「무엇과 무엇이 붙었고 몇 개가 자동으로 이어지는가」.
 
         **수치의 출처를 명시로 든다**(``basis``). 1단계는 매핑 모델을 만들지 않는다:
@@ -474,8 +481,15 @@ class EditorController:
           (:func:`~hwpxfiller.gui.mapping_state.pairing_preview`)를 읽기 전용으로 한 번
           돌린 미리보기. 2단계가 실제로 세울 제안과 같은 함수라 수치가 갈리지 않는다.
 
-        둘 중 하나가 비면 수치를 말하지 않는다(``ready=False``) — 없는 짝의 자동 연결
-        건수는 사실이 아니다.
+        **``ready`` 는 「짝이 실제로 섰는가」다**(리뷰 3): 경로 둘만 보면 채울 필드가 0 인
+        템플릿(hwpx RAW · 토큰 0 인 TXT)에서도 참이 되어 「필드 0개 · 자동 연결 0」 카드가
+        비활성 CTA 위에 선다 — 화면이 「짝이 섰다」고 말하면서 다음으로 못 가는 자리다.
+        그래서 필드 1개 이상까지가 조건이고, 그 사유는 ``advance_block_reason`` 이 진다.
+
+        **수치는 이 단계에서만 센다**(리뷰 7): ``suggest_mappings`` 는 필드×열 SequenceMatcher
+        라 매핑 편집의 잦은 push 마다 지불할 것이 아니다. 고르기 단계 밖에서는 세지 않고
+        ``basis=""`` 로 **세지 않았음을 명시**한다(0 을 사실처럼 말하지 않는다). 같은 단계
+        안의 재렌더는 정체 키(:meth:`_model_key_now`)로 memoize 한다.
         """
         template_name = (
             self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
@@ -486,16 +500,17 @@ class EditorController:
             if self.data_path else ""
         )
         field_names = [f.name for f in self.schema.fields] if self.schema else []
-        ready = bool(self.template_path) and bool(self.data_path)
+        ready = bool(self.template_path) and bool(self.data_path) and bool(field_names)
         auto = confirm = 0
         basis = ""
-        if ready and field_names:
+        if ready and self.section == SECTION_TEMPLATE:
             if self.model is not None and self._model_key == self._model_key_now():
+                # 모델 수치는 확정 토글마다 바뀌므로 memoize 하지 않는다(행 합 하나라 싸다).
                 auto = sum(1 for r in self.model.rows if r.confirmed)
                 confirm = len(self.model.rows) - auto
                 basis = "model"
             else:
-                auto, confirm = pairing_preview(field_names, self._active_sources())
+                auto, confirm = self._pairing_preview_cached(field_names, active_sources)
                 basis = "preview"
         return {
             "ready": ready,
@@ -508,6 +523,27 @@ class EditorController:
             "basis": basis,
             "advance_block_reason": self._advance_block_reason(),
         }
+
+    def _pairing_preview_cached(
+        self, field_names: "list[str]", active_sources: "list[str]"
+    ) -> "tuple[int, int]":
+        """읽기 전용 미리보기 수치 — 같은 정체 키에서는 **한 번만** 센다(리뷰 7).
+
+        캐시 키는 매핑 모델의 정체 키(:meth:`_model_key_now`)와 같다: 그 키가 곧
+        「무엇과 무엇을 붙였는가」이고, 제안 결과가 달라질 수 있는 축이 정확히 그 성분들이다
+        (템플릿·데이터 경로·시트·헤더 행·소스 헤더). 별도 키를 지으면 성분 하나를 빠뜨린
+        날 카드가 옛 수치를 계속 말한다 — 그래서 있는 키를 그대로 쓴다.
+
+        미사용 헤더(#49) 토글은 이 키에 없지만 ``active_sources`` 를 바꾼다. 그래서 캐시는
+        키와 **활성 헤더 튜플**을 함께 든다(둘 다 같아야 재사용).
+        """
+        key = (self._model_key_now(), tuple(active_sources))
+        cached = self._pairing_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        counts = pairing_preview(field_names, active_sources)
+        self._pairing_cache = (key, counts)
+        return counts
 
     def _draft_job(self) -> "Job":
         """지금 세션이 저장한다면 나올 규칙만 담은 Job — patch 유도의 오른쪽 항.
@@ -750,7 +786,7 @@ class EditorController:
             # 재진술하고 전진 게이트의 사유를 함께 싣는다. 목록 자체는 여기 없다: 좌 열은
             # `tpl` 채널 스냅샷이, 우 열은 `pool` 채널 스냅샷이 정본이고 편집기가 그것을
             # 다시 성형하면 같은 목록을 두 컨트롤러가 그린다(구 `library` 존이 그랬다).
-            "pairing": self._pairing_snapshot(),
+            "pairing": self._pairing_snapshot(active_sources),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
             "pattern_preview": (
                 self._pattern_preview() if self.section == SECTION_FILENAME else ""
@@ -906,8 +942,14 @@ class EditorController:
         템플릿→에디터 진입(템플릿 관리 '작업 만들기', 에디터 0단계 피커)의 단일 seam.
         ``load_template_path`` 만 부르면 이름·데이터·매핑·단계가 이전 세션 값으로 남아
         새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
-        먼저 끊는다. 앞선 세션의 미저장 변경은 **묻지 않고 버린다**(자동 버리기 계약):
-        호출측이 확인을 대신 물어 주는 선판단 자리는 더 이상 없다.
+        먼저 끊는다.
+
+        **무엇을 묻고 무엇을 안 묻는가**(U6-B #976 리뷰 2 — 종전 두 독스트링이 서로 다른
+        말을 하던 자리): section patch 류의 미저장 편집은 **묻지 않고 버린다**(자동 버리기
+        계약). 갈리는 것은 **확정하거나 직접 편집한 매핑** 하나다 — 그것은 데이터 교체와
+        똑같이 표면이 :meth:`_do_mapping_reset_stakes` 로 수치를 받아 먼저 확인을 치른다.
+        두 제스처(좌 열 클릭 · 끌어 놓기)가 같은 규칙을 지나야 하고, 데이터 쪽만 묻고
+        템플릿 쪽은 안 묻는 상태는 같은 파괴에 두 규칙을 두는 것이다.
 
         **예외 하나 — 데이터를 들고 온 진입**(U2 §2.4 · #349 리뷰 3R, #878): 그 세션의 데이터는
         「이전 세션의 잔재」가 아니라 **이 세션이 존재하는 이유**다. 1단계에서 템플릿을 고르는
@@ -1020,10 +1062,25 @@ class EditorController:
         """라이브러리 목록에서 고른 템플릿으로 새 작업 세션(신규 1단계 정본 경로).
 
         경로 화이트리스트는 :meth:`assert_library_path` 공용 seam(리뷰 F4 — 크로스스크린
-        진입과 단일 정의). 미저장·편집 맥락 확인은 호출측(웹)이 선판단한다.
+        진입과 단일 정의).
+
+        **이미 그 템플릿이면 아무 일도 하지 않는다**(U6-B #976 리뷰 1). 종전 표면에서는
+        현재 항목이 클릭 핸들러 없는 span 이라 이 호출이 구조적으로 불가능했는데, 고르기
+        화면은 현재 항목도 누를 수 있고 끌어 놓을 수도 있다 — 통과시키면
+        :meth:`new_job_session` 이 이름·매핑·단계를 통째로 끊는다(누른 사람은 「이미 고른
+        것을 다시 골랐을」 뿐이다). 프런트도 같은 자리를 막지만 판정은 **여기도** 선다:
+        표면만 막으면 프로브·다른 호출자가 그대로 뚫는다.
+
+        확인은 여기서 묻지 않는다 — 확정 매핑이 걸린 **교체**의 확인 왕복은 호출측(웹)이
+        :meth:`_do_mapping_reset_stakes` 로 수치를 받아 먼저 치른다(데이터 교체와 같은
+        규율). 그 밖의 미저장 편집은 :meth:`new_job_session` 이 묻지 않고 버린다.
         """
         path = str(p["path"])
         self.assert_library_path(path)
+        if self.template_path and norm_library_path(path) == norm_library_path(
+            self.template_path
+        ):
+            return  # 같은 템플릿 재선택 — 세션을 끊을 이유가 없다(리뷰 1)
         self.new_job_session(path)
         # T1 템플릿 고르기(#894) — 세션에 템플릿이 실제로 앉은 뒤다. 자산 정체성(예제인가)은
         # 따지지 않는다: 루프를 돈 것이 판정이지 예제 강제가 아니다(§3.1-4 비강제).

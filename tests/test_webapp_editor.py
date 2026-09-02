@@ -3153,3 +3153,106 @@ def test_new_work_handoff_carries_the_pclm_kind_across_the_two_screens(tmp_path)
 
     assert fresh.data_kind == "pclm" and fresh.data_path == db
     assert fresh.source_fields == ["계약건명", "계약금액"]
+
+
+# ------------------------------- U6-B 리뷰 반영(#976 리뷰 1·3·7)
+def test_reselecting_the_same_template_is_a_no_op(tmp_path):
+    """이미 고른 템플릿을 다시 고르면 **세션을 끊지 않는다**(리뷰 1).
+
+    종전 표면에서는 현재 항목이 클릭 핸들러 없는 span 이라 이 호출이 구조적으로
+    불가능했다. 고르기 화면은 현재 항목도 누를 수 있고 끌어 놓을 수도 있어, 통과시키면
+    :meth:`new_job_session` 이 이름·매핑·단계를 통째로 끊는다 — 누른 사람은 「이미 고른
+    것을 다시 골랐을」 뿐이다. 판정은 **표면과 여기 둘 다**에 선다: 표면만 막으면
+    프로브·다른 호출자가 그대로 뚫는다.
+    """
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    _mount_data(ctrl)
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    ctrl.dispatch("set_name", {"name": "지켜야 할 이름"})
+
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 같은 템플릿 재선택
+
+    snap = ctrl.snapshot()
+    assert snap["section"] == "binding"                    # 단계가 1단계로 되감기지 않는다
+    assert snap["name"] == "지켜야 할 이름"
+    assert snap["data_path"] == str(MULTI_SHEET)
+    assert snap["rows"][0]["confirmed"] is True            # 확정이 살아 있다
+    # 대조군 — 다른 템플릿이면 종전대로 새 세션이다.
+    ctrl2, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl2.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl2.dispatch("set_name", {"name": "끊길 이름"})
+    ctrl2.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    assert ctrl2.snapshot()["name"] == ""
+
+
+def test_pairing_is_not_ready_when_the_template_has_no_fields(tmp_path):
+    """경로가 둘 다 있어도 **채울 필드가 0 이면 짝이 선 것이 아니다**(리뷰 3).
+
+    종전에는 경로 유무만 봐서 「필드 0개 · 자동 연결 0」 카드가 비활성 CTA 위에 섰다 —
+    화면이 「짝이 섰다」고 말하면서 다음으로 못 가는 자리다. 사유는 링1 문안 하나가 낸다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    txt = _txt_template(tmp_path, "빈템플릿", "토큰이 하나도 없는 본문")
+    ctrl.dispatch("use_library_template", {"path": str(txt)})
+    _mount_data(ctrl)
+
+    pairing = ctrl.snapshot()["pairing"]
+    assert pairing["template_name"] and pairing["data_name"]   # 둘 다 골랐다는 사실은 그대로
+    assert pairing["ready"] is False, "채울 필드가 0 인데 짝이 섰다고 말합니다"
+    assert pairing["field_count"] == 0
+    assert (pairing["auto_count"], pairing["confirm_count"], pairing["basis"]) == (0, 0, "")
+    from hwpxfiller.webapp.screens import TXT_RAW_BLOCK
+    assert pairing["advance_block_reason"] == TXT_RAW_BLOCK   # 링1 문안 그대로
+    assert ctrl.can_advance("template") is False
+
+
+def test_pairing_counts_are_computed_only_on_the_choosing_stage(tmp_path, monkeypatch):
+    """수치는 **고르기 단계에서만** 세고 같은 짝에서는 한 번만 센다(리뷰 7).
+
+    ``suggest_mappings`` 는 필드×열 SequenceMatcher 라 매핑 편집의 잦은 push 마다 지불할
+    것이 아니다. 세지 않은 자리는 ``basis=""`` 로 **세지 않았음을 명시**한다 — 0 을 사실처럼
+    말하지 않는다.
+    """
+    calls: list = []
+    import hwpxfiller.webapp.screen_editor as mod
+
+    real = mod.pairing_preview
+
+    def counted(fields, sources):
+        calls.append((tuple(fields), tuple(sources)))
+        return real(fields, sources)
+
+    monkeypatch.setattr(mod, "pairing_preview", counted)
+
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    _mount_data(ctrl)
+    assert ctrl.snapshot()["pairing"]["basis"] == "preview"
+    assert len(calls) == 1
+    ctrl.snapshot()
+    ctrl.snapshot()
+    assert len(calls) == 1, f"같은 짝에서 다시 셌습니다: {calls!r}"
+
+    # 2단계에서는 아예 세지 않는다 — 그리고 그 사실을 `basis` 가 말한다.
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    binding = ctrl.snapshot()["pairing"]
+    assert binding["basis"] == "" and binding["ready"] is True
+    assert (binding["auto_count"], binding["confirm_count"]) == (0, 0)
+    assert len(calls) == 1
+
+    # 데이터를 갈아타면 정체 키가 움직여 다시 센다(캐시가 옛 수치를 말하지 않는다).
+    # 모델이 서기 전 갈래를 재야 하므로 2단계를 다녀오지 않은 세션으로 본다 — 모델이
+    # 있으면 수치의 출처가 `model` 로 갈리고(그쪽은 memo 대상이 아니다) 이 축이 안 보인다.
+    fresh, _ = _controller_lib(tmp_path / "fresh", paths=[TPL_COMPILED])
+    fresh.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    fresh.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 마운트 push 가 한 번 센다
+    settled = len(calls)
+    assert fresh.snapshot()["pairing"]["basis"] == "preview"
+    assert len(calls) == settled, "같은 짝에서 다시 셌습니다"
+
+    fresh.load_data_path(str(MULTI_SHEET))            # 다른 시트 = 다른 정체 키
+    counts = fresh.snapshot()["pairing"]
+    assert counts["basis"] == "preview" and counts["column_count"] == 2
+    assert len(calls) > settled, "짝이 바뀌었는데 옛 수치를 재사용했습니다"
