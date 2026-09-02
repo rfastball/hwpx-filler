@@ -65,7 +65,12 @@ table.map .sel{width:100%}
 /* 「데이터 열」 칸은 select·고정값 입력·상태 배지·재제안 버튼이 **한 줄에** 선다(U2 §2.6).
    flex 는 **`td` 가 아니라 안쪽 래퍼**에 건다: `td` 에 직접 걸면 `table-layout:fixed` 의
    열 정렬이 깨진다. */
-table.map .srccell{display:flex;align-items:center;gap:var(--sp-4)}
+table.map .srccell{--srccell-ctl-h:22px;display:flex;align-items:center;gap:var(--sp-4)}
+/* 칸 안의 컨트롤 셋(select·고정값 입력·배지·↻)은 **같은 높이**로 선다. 하나만 더 크면 그
+   행의 칸만 커져 이웃 행·sticky 표 머리와 기준면을 잃는다 — 정적 CSS 검사로는 못 보고
+   실렌더 기하(`editor_binding` 의 칸 높이 대조)에서만 드러나는 갈림이다(실측: ↻ 가 있는
+   행 35px ↔ 없는 행 33px). 높이를 이름 있는 값 하나로 묶어 그 자리를 닫는다. */
+table.map .srccell>*{height:var(--srccell-ctl-h);box-sizing:border-box}
 table.map .srccell .sel{flex:1;min-width:0;width:auto}
 /* 버튼 글자는 표 본문(--fs-dense 13px)에 맞춘다 — .btn 기본은 --fs-body(14px) 라 표 안에서
    혼자 크다. 폭은 .btn.icon 이 좌우 패딩을 줄여 벌어 준다. */
