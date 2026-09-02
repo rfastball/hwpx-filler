@@ -1525,9 +1525,12 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        assert t["toolbar"] == [True, True, True, True], (
-            "상단 행동 줄(가져오기·폴더에서 가져오기(#339)·새 TXT·새로고침 — .tpl-libbar"
-            f" 승계) 소실: {t['toolbar']!r}"
+        assert t["toolbar"] == [True, True, True], (
+            "상단 행동 줄(가져오기·새 TXT·새로고침 — .tpl-libbar 승계) 소실:"
+            f" {t['toolbar']!r}"
+        )
+        assert t["retired_folder_import"] is True, (
+            "「폴더에서 가져오기…」가 남아 있습니다 — U6-A(#975)에서 퇴역한 동사입니다."
         )
         # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
         assert t["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {t!r}"
@@ -1541,15 +1544,16 @@ class TestWebSelftestGate:
         assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
         assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
         assert t["band_caption"] is True, "밴드 캡션(개수·루트 경로 — 점검표 10행)이 없습니다."
-        # HWPX 행 ⋮ = [링1 상태 동사, 삭제] — 소비 동사 없음(행 버튼 소유, 같은 동사 2벌
-        # 금지). TXT 행 ⋮ = [내용 편집, 삭제]. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서 사망.
+        # HWPX 행 ⋮ = [링1 상태 동사] — 소비 동사 없음(행 버튼 소유, 같은 동사 2벌 금지).
+        # TXT 행 ⋮ = [내용 편집]. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서, 「삭제」는
+        # U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
         assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "delete"], (
-            f"HWPX 행 ⋮ 구성이 [변환·검토·삭제]와 다릅니다: {t['hwpx_menu_items']!r}"
+        assert t["hwpx_menu_items"] == ["act:compile", "act:review"], (
+            f"HWPX 행 ⋮ 구성이 [변환·검토]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
-        assert t["txt_menu_items"] == ["edit", "delete"], (
-            f"TXT 행 ⋮ 구성이 [내용 편집·삭제]와 다릅니다: {t['txt_menu_items']!r}"
+        assert t["txt_menu_items"] == ["edit"], (
+            f"TXT 행 ⋮ 구성이 [내용 편집]과 다릅니다: {t['txt_menu_items']!r}"
         )
         # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 같은 창에 얹은 단계다.
         assert t["slot_rows"] == 1, f"구간 항목 목록이 렌더되지 않았습니다: {t!r}"

@@ -1758,9 +1758,12 @@ export function createEditorWorkbenchDataProbes() {
           await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
           await settleUntil(ctx, () => host.querySelectorAll(".libselrow").length > 0);
-          /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침. */
-          out.toolbar = ["import-template", "import-folder", "lib-new-txt", "lib-refresh"]
+          /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·새 TXT·새로고침.
+             「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다: 폴더가 곧 풀이 된 뒤로
+             「폴더에서 한 벌 복사해 온다」는 동사의 전제가 사라졌다. 부재를 음성으로도 잰다. */
+          out.toolbar = ["import-template", "lib-new-txt", "lib-refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
+          out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
           // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
@@ -1784,8 +1787,8 @@ export function createEditorWorkbenchDataProbes() {
               (button) => button.dataset.contextMenuAction,
             );
           };
-          /* HWPX 행 ⋮ = [링1 상태 동사(변환·검토), 삭제] — 소비 동사 없음.
-             「이동」은 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
+          /* HWPX 행 ⋮ = [링1 상태 동사(변환·검토)] — 소비 동사 없음. 「이동」은 U4 §2-30 에서,
+             「삭제」는 U6-A(#975)에서 사라졌다(앱은 사용자 서식 폴더에 쓰지 않는다). */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
           await settleRender(ctx);
@@ -1796,7 +1799,7 @@ export function createEditorWorkbenchDataProbes() {
           await settleRender(ctx);
           const closedMenu = byId(ctx, "tplRowMenu");
           out.menu_closed = !closedMenu || isHidden(ctx, closedMenu);
-          /* TXT 행 ⋮ = [내용 편집, 삭제]. */
+          /* TXT 행 ⋮ = [내용 편집] — 삭제는 U6-A 에서 퇴역했다. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="메모.txt"]').click();
           await settleRender(ctx);
