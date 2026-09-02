@@ -1752,10 +1752,15 @@ class TestWebSelftestGate:
         assert e["fname_ellipsis"] == "ellipsis", (
             f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
         )
-        # ② 클릭 둘 = 등록된 액션 둘(템플릿 먼저).
-        assert e["click_calls"] == [["editor", "use_library_template"], ["editor", "use_pool_data"]], (
-            f"클릭 둘이 발행한 액션이 계약과 다릅니다: {e['click_calls']!r}"
-        )
+        # ② 클릭 둘 = 등록된 액션 둘(템플릿 먼저). 사이의 `mapping_reset_stakes` 는 **질의**다:
+        #    확정 매핑이 걸린 데이터 교체는 고르기 **전에** 한 번 묻는다는 선행 규율이고,
+        #    수치를 Python 이 지금 판정하므로(웹 지역 스냅샷 금지) 왕복이 하나 앞선다.
+        #    순서가 계약이다 — 이 질의가 `use_pool_data` 뒤로 가면 파괴를 승인시킨 뒤 묻는 꼴이다.
+        assert e["click_calls"] == [
+            ["editor", "use_library_template"],
+            ["editor", "mapping_reset_stakes"],
+            ["editor", "use_pool_data"],
+        ], f"클릭 둘이 발행한 액션이 계약과 다릅니다: {e['click_calls']!r}"
         # ③ 끌어 놓기 = **같은 액션 두 번**(새 액션 0). 형식·강조·정리까지 되읽는다.
         assert e["drag_payload"] == "tpl:c.hwpx", (
             f"dataTransfer 형식이 `<side>:<key>` 가 아닙니다: {e['drag_payload']!r}"
