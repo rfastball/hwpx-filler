@@ -25,10 +25,9 @@ quickstart-101/
 ├─ reset-101.cmd             ← 더블클릭 = 실습 생성물·설정만 지우고 처음 상태로
 ├─ README.md                 ← 지금 이 문서(101 따라 하기)
 ├─ PATTERNS.md               102 — 세 가지 실전 조합(여러 템플릿·여러 데이터·작업 전환)
-├─ templates/                누름틀 템플릿(.hwpx) — 앱의 템플릿 라이브러리에 자동으로 뜬다
+├─ templates/                **서식 폴더** — hwpx·txt 가 한 폴더에 함께 산다(U6-A #975)
 │   ├─ 발주요청서.hwpx        6필드 템플릿
-│   └─ 구매요청서.hwpx        4필드 부분집합(102 용)
-├─ text_templates/           평문 {{필드}} 초안 — 편집기 「＋ 새 작업」의 TXT 구획에 뜬다
+│   ├─ 구매요청서.hwpx        4필드 부분집합(102 용)
 │   ├─ 발주요청_기안.txt      정상 초안(6필드 전부 CSV 에 있음)
 │   └─ 오류연습_미치환.txt    ⚠ 일부러 없는 토큰을 넣은 오류 연습용(비움 확정·빈 값 표면)
 ├─ data/                     채울 값(한글 헤더 = 필드 이름 → 직접 매칭)
@@ -326,7 +325,7 @@ macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfille
 uv run python examples/quickstart-101/make_template.py
 ```
 
-`text_templates/*.txt` 는 평문이라 스크립트 없이 그냥 손으로 편집하면 된다
+`templates/*.txt` 는 평문이라 스크립트 없이 그냥 손으로 편집하면 된다
 (단, 정상 초안의 토큰은 `FIELDS` 에 있는 이름만 써야 채워진다 —
 `오류연습_미치환.txt` 만 예외로, 없는 토큰 `{{담당연락처}}` 를 **일부러** 갖고 있다).
 

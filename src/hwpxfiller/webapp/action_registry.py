@@ -292,8 +292,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 계약이다(빈 값·오타난 id 가 「전부」로 접히는 경로를 만들지 않는다).
         "slot_decompile_all": _schema("path", "confirm"),
         "slot_remove": _schema("path slot_id", "confirm"),
-        "delete": _schema("media path", "confirm"),
-        "undo_delete": _schema(),
         "txt_new": _schema("name content"),
         # 저장은 편집 창이 열릴 때 읽은 원문(`baseline`)을 함께 싣는다 — 그 사이 밖에서
         # 바뀌었으면 확인 왕복(`confirm_fingerprint` 2차 호출)으로만 덮는다(#216 이월 2).

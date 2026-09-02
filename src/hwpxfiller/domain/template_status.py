@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
+from pathlib import Path
 
 from hwpxcore.text_extract import require_package
 from hwpxfiller.domain.authoring import scan_structure, scan_tokens
@@ -36,11 +37,32 @@ from hwpxfiller.domain.schema import extract_schema
 # 저장 위치가 같은 이름을 봐야 어긋나지 않아 여기 단일 출처로 둔다.
 OUTPUT_SUBDIR_NAME = "Results"
 
-# 템플릿 삭제의 30일 휴지통 하위폴더 이름(screen_template._do_delete). 파일은 매체 루트 밑
-# ``.trash`` 로 이동만 하므로, 재귀 스캔이 이 하위트리를 제외하지 않으면 삭제한 템플릿이
-# ``타임스탬프-uuid-이름`` 으로 즉시 목록에 재등장한다(#267 리뷰). 저장 위치와 스캔 제외가
-# 같은 이름을 봐야 하므로 여기 단일 출처로 둔다.
+# 옛 삭제 동사가 만들던 휴지통 하위폴더 이름. **앱은 더 이상 이 폴더를 만들지 않는다**
+# (U6 §2.3 — 사용자 서식 폴더에 쓰지 않는다: 삭제·복원 동사는 U6-A 에서 퇴역했다). 그래도
+# 상수와 스캔 제외는 남는다: 옛 홈 폴더에 이미 만들어진 ``.trash`` 가 있고, 그것을 걸러내지
+# 않으면 지웠던 템플릿이 ``타임스탬프-uuid-이름`` 으로 목록에 재등장한다(#267 리뷰).
 TRASH_DIR_NAME = ".trash"
+
+
+def library_display_name(root: "Path | None", path: "str | Path") -> str:
+    """서식 폴더 항목의 **표시명** — 루트 상대경로, 확장자 제외, POSIX(``온나라/기안``).
+
+    U6-A(#975)의 통일 규칙이다. 종전에는 hwpx 가 basename(``공고서.hwpx``), txt 가 루트
+    상대경로(``온나라/기안``)를 이름으로 써서 같은 폴더의 두 파일이 다른 문법으로 불렸다 —
+    루트가 재귀이고 하위폴더가 정리 축인 이상 basename 은 **유일하지도 않다**(``a/계약``과
+    ``b/계약``이 한 이름으로 접힌다). 파일명 기반 정체성(``rel_key``)은 이 규칙과 별개로
+    불변이다: 이름은 사람이 읽는 것이고 키는 기계가 무는 것이다.
+
+    ``root`` 가 ``None`` 이거나 경로가 루트 밖이면 확장자 없는 basename 으로 강등한다 —
+    루트를 모르는 자리(명시 경로 주입)에서 이름이 통째로 비는 것을 막는다.
+    """
+    target = Path(path)
+    if root is not None:
+        try:
+            return target.relative_to(Path(root)).with_suffix("").as_posix()
+        except ValueError:
+            pass
+    return target.stem
 
 
 # (default_templates_dir 는 P2-21(#569)에서 Host 로 승격 —

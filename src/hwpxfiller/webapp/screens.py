@@ -64,7 +64,7 @@ def unwired_tutorial(milestone: object) -> bool:
 #: 그 kind 의 전수 — 파일이 제자리에서 **바뀜**(누름틀 변환·TXT 내용 저장) · **사라짐**
 #: (휴지통 이동) · **돌아옴**(복원) 셋뿐이다. 새 durable 변이 동사를 더하면 여기 이름을 먼저
 #: 정하고 그 성공 직후에 통지한다 — 이름 없는 kind 는 양쪽 다 시끄럽게 거절한다.
-MUTATION_KINDS: "tuple[str, ...]" = ("mutated", "deleted", "restored")
+MUTATION_KINDS: "tuple[str, ...]" = ("mutated", "deleted")
 
 # ------------------------------------------------- 등록 데이터(풀) 겨눔 공유 관문(#26/#6)
 # 나라장터 소스 동결 결정(2026-07-16): 내부망 API 미확인으로 매몰비용이 가장 큰 영역이라

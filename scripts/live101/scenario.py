@@ -85,6 +85,42 @@ def _set_output_folder(
     )
 
 
+def _set_templates_root(
+    s: Surface, ctx: "ScenarioContext", directory: str, *, what: str
+) -> None:
+    """서식 폴더를 지정한다(U6-A #975) — 저장 폴더 왕복과 **같은 형상**의 한 걸음.
+
+    겨누는 값은 **지금 쓰이는 그 폴더**다: 이 걸음이 재는 것은 「피커 응답이 Python 에 닿아
+    설정에 앉고 그 도출이 설정 면의 경로 칸으로 돌아오는가」이고, 다른 폴더로 옮기면 뒤
+    걸음의 템플릿 풀이 통째로 비어 그 뒤 대본이 전부 무의미해진다(무착지 클릭 금지).
+    """
+    s.click_sel("#settingsOpen", what=f"설정 열기({what})")
+    s.wait(
+        "!document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 열림({what})",
+        requires=["#settingsModal"],
+    )
+    ctx.queue_folder_answer(directory)
+    s.click_sel("#settingsPickTplFolder", what=what)
+    s.wait(
+        "(document.getElementById('settingsTplDir')||{}).value === "
+        + json.dumps(directory, ensure_ascii=False),
+        f"설정 모달이 지정한 서식 폴더를 되읽음({what})",
+        requires=["#settingsTplDir"],
+    )
+    s.wait(
+        "(document.getElementById('settingsTplDirSource')||{}).textContent === '설정한 폴더'",
+        f"서식 폴더 출처가 「설정한 폴더」로 승격({what})",
+        requires=["#settingsTplDirSource"],
+    )
+    s.click_sel("#settingsClose", what=f"설정 닫기({what})")
+    s.wait(
+        "document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 닫힘({what})",
+        requires=["#settingsModal"],
+    )
+
+
 def _rejection_message(value: object) -> str:
     if not isinstance(value, dict):
         return ""
@@ -107,6 +143,8 @@ class ScenarioContext:
     stage_data: "Callable[[str], str]"
     stage_context: "Callable[[str], None]"
     output_dir: str
+    #: 서식 폴더(U6-A #975) — 이 홈의 ``templates``. 재지정 왕복이 겨누는 **그 폴더**다.
+    templates_root: str
     prepare_output: "Callable[[], str]"
     create_collision: "Callable[[str], None]"
     output_manifest: "Callable[[], dict[str, str]]"
@@ -1170,6 +1208,9 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 제품은 계획 대신 배달 blocker 를 세우므로(`job_run.ts:869-878`) `#jobPlannedDocuments` 는
     # 아예 서지 않고, 그 부재는 「계획이 늦다」가 아니라 「고른 것이 0건이다」라는 뜻이다.
     _ensure_all_selected(s, "전환 뒤 record 재선택")
+    # 서식 폴더 왕복(U6-A #975) — 저장 폴더와 같은 면·같은 형상. 새 창을 만들지 않는다.
+    _set_templates_root(s, ctx, ctx.templates_root, what="서식 폴더 지정")
+    seen["templates_root_roundtrip"] = ctx.templates_root
     output_dir = ctx.prepare_output()
     _set_output_folder(s, ctx, output_dir, what="managed output folder 선택")
     try:

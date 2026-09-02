@@ -18,6 +18,7 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 
@@ -38,7 +39,7 @@ from hwpxfiller.domain.job import (
 )
 from hwpxfiller.domain.mapping import MappingProfile
 from hwpxfiller.host.job_writer_lease import job_write_lock
-from hwpxfiller.host.locations import library_root_for
+from .template_root import TemplateRoot
 
 # 레지스트리 파일명 slug — 파일시스템 금지문자만 정리(naming.clean_filename 과 동일 규칙).
 _INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
@@ -135,30 +136,61 @@ def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
     return key
 
 
-def library_key_for(template_path: str) -> str:
-    """템플릿 경로 → 라이브러리 루트 상대키. 루트 밖·미상 매체는 ``""``(승격 실패 = 절대경로 유지)."""
-    return library_rel_key(template_path, library_root_for(template_path)) or ""
+def _media_root(path: str, root: "Path | None") -> "Path | None":
+    """매체를 아는 경로에만 루트를 준다 — 모르는 확장자는 ``None``(승격도 해석도 없음).
+
+    U6-A(#975) 전에는 이 함수 자리에 매체별 루트 해석기(``host.locations.library_root_for``)
+    가 있었다. 루트가 **하나**가 되면서 고를 것은 사라졌지만 매체 게이트는 남는다:
+    ``.docx`` 같은 미상 확장자는 이 앱의 템플릿이 아니라 승격 대상이 아니고, 그 fail-closed
+    는 :func:`~hwpxfiller.domain.job.work_mode` 와 같은 규율이다.
+    """
+    return root if template_media(path) in ("hwpx", "txt") else None
 
 
-def resolve_library_key(key: str) -> str:
-    """상대키 → **지금** 홈 기준 절대경로 문자열. 빈 키·미상 매체는 ``""``(호출측이 옛 경로 폴백).
+def _resolved_root(root: "Path | None") -> Path:
+    """루트 미주입 시의 폴백 — 프로세스의 서식 폴더 권위 하나(U6-A).
+
+    명시 주입이 정본이다(:class:`JobRegistry` 는 생성자 콜러블로 받는다). 이 폴백은 모듈
+    함수를 직접 부르는 자리(도구·테스트)가 **다른 루트를 지어내지 않게** 하는 것이고, 값은
+    같은 홀더에서 나온다 — 두 번째 정본이 생기지 않는다.
+    """
+    return Path(root) if root is not None else TemplateRoot().path()
+
+
+def library_key_for(template_path: str, root: "Path | None" = None) -> str:
+    """템플릿 경로 → 서식 폴더 상대키. 루트 밖·미상 매체는 ``""``(승격 실패 = 절대경로 유지).
+
+    루트는 **명시 인자**다(U6-A #975): 사용자가 고르는 값이 됐으므로 이 함수가 스스로
+    해석하면 호출자마다 다른 시점의 설정을 볼 수 있다.
+    """
+    resolved = _resolved_root(root)
+    return library_rel_key(template_path, _media_root(template_path, resolved)) or ""
+
+
+def resolve_library_key(key: str, root: "Path | None" = None) -> str:
+    """상대키 → **지금** 서식 폴더 기준 절대경로 문자열. 빈 키·미상 매체는 ``""``.
 
     해석은 순수 경로 계산이다 — 파일이 실제로 있는지는 보지 않는다(부재는 라이브러리의
     「연결 안 됨」 표면이 이미 말한다). 디스크를 읽지도 쓰지도 않으므로 **읽기가 조용히
     저장을 승격시키는 일이 없다**: 승격은 :func:`encode_job` 을 지나는 저장에서만 일어난다.
+    루트를 바꾸면 같은 키가 새 루트의 파일로 해석된다 — 이 함수가 이식성의 경첩이다.
     """
     if not key:
         return ""
     _reject_unsafe_key(key)
-    root = library_root_for(key)
-    if root is None:
+    media_root = _media_root(key, _resolved_root(root))
+    if media_root is None:
         return ""
-    return str(root / key)
+    return str(media_root / key)
 
 
 # ------------------------------------------------------------------ 직렬화
-def encode_job(job: Job) -> dict:
-    """구 ``Job.to_dict`` — dict 키 순서·값 완전 동일(bytes 불변, P2-21 #569)."""
+def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
+    """구 ``Job.to_dict`` — dict 키 순서·값 완전 동일(bytes 불변, P2-21 #569).
+
+    ``root`` 는 ``template_key`` 승격이 기준으로 삼을 서식 폴더다(U6-A #975). 미주입이면
+    프로세스의 루트 권위(:func:`_resolved_root`)를 쓴다.
+    """
     return {
         "version": job.version,
         "name": job.name,
@@ -166,7 +198,7 @@ def encode_job(job: Job) -> dict:
         # 라이브러리 루트 상대키(#348) — **가산** 필드다: 절대경로도 그대로 함께 쓴다.
         # 구 코드는 새 키를 무시하고 경로로 계속 열리고, 신 코드는 키를 우선해 홈이
         # 옮겨져도 해석된다. 루트 밖 템플릿에선 ``""`` 라 경로만이 링크다(폴백 없음).
-        "template_key": library_key_for(job.template_path),
+        "template_key": library_key_for(job.template_path, root),
         "filename_pattern": job.filename_pattern,
         "mapping": job.mapping.to_dict(),
         # 데이터 결속 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
@@ -216,7 +248,7 @@ def _rules_values_or_raise(raw: object) -> dict:
     return {"template": template, "filename": filename, "fields": out_fields}
 
 
-def decode_job(d: dict) -> Job:
+def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
     """durable 로드 경계(구 ``Job.from_dict``) — 누락 필드는 ``.get(기본값)`` 으로 하위호환
     (구 JSON→기본값)하되, **존재하는데 타입이 깨진** durable 값(문자열 계약 필드가
     int/list/null 등)은 조용히 통과시키지 않고 loud 하게 던진다. 앱은 늘 str/에스케이프된
@@ -286,7 +318,7 @@ def decode_job(d: dict) -> Job:
     # 템플릿 링크 해석(#348): 상대키가 있으면 **지금** 홈 기준으로 풀고, 없으면(구 JSON·
     # 루트 밖 템플릿) 옛 절대경로를 그대로 쓴다. 마이그레이션은 없다 — 읽는 김에 디스크를
     # 고치지 않고(조용한 변이 금지), 승격은 저장이 지나갈 때만 일어난다.
-    template_path = resolve_library_key(_str("template_key")) or _str("template_path")
+    template_path = resolve_library_key(_str("template_key"), root) or _str("template_path")
     return Job(
         name=_str("name"),
         template_path=template_path,
@@ -319,17 +351,21 @@ def decode_job(d: dict) -> Job:
     )
 
 
-def save_job(path: "str | Path", job: Job) -> None:
+def save_job(path: "str | Path", job: Job, *, root: "Path | None" = None) -> None:
     """구 ``Job.save`` — 원자 쓰기(RC-01): 재저장 중 실패가 기존 작업 JSON 을 절단하지 않는다."""
-    write_text_atomic(path, json.dumps(encode_job(job), ensure_ascii=False, indent=2))
+    write_text_atomic(
+        path, json.dumps(encode_job(job, root=root), ensure_ascii=False, indent=2)
+    )
 
 
-def load_job(path: "str | Path") -> Job:
+def load_job(path: "str | Path", *, root: "Path | None" = None) -> Job:
     """구 ``Job.load`` — durable JSON 을 읽어 :func:`decode_job` 경계를 통과시킨다."""
-    return decode_job(json.loads(Path(path).read_text(encoding="utf-8")))
+    return decode_job(
+        json.loads(Path(path).read_text(encoding="utf-8")), root=root
+    )
 
 
-def content_fingerprint(job: Job) -> str:
+def content_fingerprint(job: Job, *, root: "Path | None" = None) -> str:
     """저장 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
 
     태그·마지막 실행·즐겨찾기·그룹은 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로
@@ -342,7 +378,7 @@ def content_fingerprint(job: Job) -> str:
     세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
     변경'으로 확인을 요구해야 한다(무확인 파괴 금지). 에디터·「기안」 저장 두 표면이 같은
     지문을 쓰도록 한 곳에 둔다(복붙하면 한쪽만 고쳐지는 드리프트가 곧 조용한 파괴다)."""
-    d = encode_job(job)
+    d = encode_job(job, root=root)
     d.pop("tags", None)
     d.pop("last_run_at", None)
     d.pop("favorited_at", None)
@@ -380,8 +416,18 @@ class JobRegistry:
     SUFFIX = ".job.json"
     TRASH_RETENTION_DAYS = 30
 
-    def __init__(self, directory: "str | Path"):
+    def __init__(
+        self,
+        directory: "str | Path",
+        *,
+        template_root: "Callable[[], Path] | None" = None,
+    ):
         self.directory = Path(directory)
+        # 서식 폴더 권위 주입(U6-A #975) — ``template_key`` 승격·해석의 기준 루트다.
+        # 미주입이면 프로세스 홀더를 쓴다(두 번째 정본이 아니라 **같은** 홀더).
+        self._template_root: "Callable[[], Path]" = (
+            template_root if template_root is not None else TemplateRoot().path
+        )
         # **쓰기 직렬화 잠금**(RLock) — pywebview 는 API 호출을 스레드별로 돌리므로 서로 다른
         # 표면의 저장이 진짜로 겹친다. 이 잠금이 덮는 것은 단순 저장이 아니라 **읽기-수정-쓰기
         # 임계구역**이다(#129 리뷰 2R P1): 생성 스레드가 A 를 읽는 사이 에디터가 A 를 저장하면
@@ -414,10 +460,10 @@ class JobRegistry:
             path = self.path_for(job.name)
             if not allow_overwrite:
                 guard_slug_collision(
-                    path, job.name, lambda p: load_job(p).name, kind="작업"
+                    path, job.name, lambda p: self._load(p).name, kind="작업"
                 )
             advance_revisions(job, self._previous_at(path))
-            save_job(path, job)
+            save_job(path, job, root=self._template_root())
 
     def _previous_at(self, path: Path) -> "Job | None":
         """저장 대상 자리의 직전 판본 — 없거나 **읽을 수 없으면** ``None``.
@@ -427,9 +473,13 @@ class JobRegistry:
         대신 인메모리 값으로 새로 세운다(없는 것을 지어내지 않는다).
         """
         try:
-            return load_job(path)
+            return self._load(path)
         except Exception:  # noqa: BLE001 — 부재·손상·권한: 잇지 않는다(위 docstring)
             return None
+
+    def _load(self, path: "str | Path") -> Job:
+        """이 레지스트리의 루트로 읽는다 — 모듈 함수를 그냥 부르면 루트가 갈린다(U6-A)."""
+        return load_job(path, root=self._template_root())
 
     def write_lock(self):
         """읽기-수정-쓰기 임계구역을 감쌀 디렉터리 공유 잠금.
@@ -569,12 +619,12 @@ class JobRegistry:
         return self.path_for(name).exists()
 
     def load(self, name: str) -> Job:
-        return load_job(self.path_for(name))
+        return self._load(self.path_for(name))
 
     def content_fingerprint(self, job: Job) -> str:
         """모듈 함수 :func:`content_fingerprint` 의 포트 표면(P2-24) — 지문의 정의역이
         「저장이 덮어쓰는 것」이라 codec 소유자(저장소)가 계약으로 낸다."""
-        return content_fingerprint(job)
+        return content_fingerprint(job, root=self._template_root())
 
     def clone(self, name: str) -> str:
         """작업 복제 — '<이름> (복사본[ N])' 유일 이름으로 저장하고 새 이름을 반환(F22).
@@ -731,7 +781,7 @@ class JobRegistry:
                 raise ValueError("같은 이름의 작업이 이미 있어 복원할 수 없습니다.")
             self.directory.mkdir(parents=True, exist_ok=True)
             trashed.replace(src)
-            return load_job(src).name
+            return self._load(src).name
 
     def _purge_trash(self, trash: Path) -> None:
         cutoff = time.time() - self.TRASH_RETENTION_DAYS * 24 * 60 * 60
@@ -761,8 +811,13 @@ class JobRegistry:
         집계)에선 제외를 허용한다(데이터셋 풀은 이 관용이 C5 로 봉합돼 미전달=raise —
         비대칭 유의).
         """
+        # 루트는 스캔 **한 번에 한 번** 읽는다 — 파일마다 설정을 다시 여는 대신 같은 값을
+        # 전 항목이 공유한다(도중 재지정이 한 목록 안에서 두 뜻을 만들지 않는다).
+        root = self._template_root()
         jobs: "list[Job]" = load_isolated(
-            self._files(), load_job, corrupted if corrupted is not None else []
+            self._files(),
+            lambda path: load_job(path, root=root),
+            corrupted if corrupted is not None else [],
         )
         return sorted(jobs, key=lambda j: j.name)
 

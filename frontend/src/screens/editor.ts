@@ -51,7 +51,6 @@ type ModalPort = {
   close(id: string): void;
 };
 
-type UndoPort = { show(message: string, action: () => unknown): void };
 /** 발신 직렬화 — legacy `Intent` 를 그대로 주입받는다(기제를 두 벌 만들지 않는다). */
 type ChainPort = {
   chained<T>(key: string, send: () => Promise<T>): Promise<T>;
@@ -65,7 +64,6 @@ export type EditorControllerDeps = {
   ports: ScreenPorts;
   services: ServiceHandoffPorts;
   modal: ModalPort;
-  undo: UndoPort;
   popover: ContextMenuPopoverPort;
   chain: ChainPort;
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
@@ -144,7 +142,6 @@ type LibMenu = {
 
 type ViewState = {
   libMenu: LibMenu | null;
-  folderImportInFlight: boolean;
   txtEdit: TxtEditState | null;
   foldOpen: boolean;
   tokFoldOpen: boolean;
@@ -180,7 +177,7 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
-    libMenu: null, folderImportInFlight: false, txtEdit: null,
+    libMenu: null, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, poolPick: null,
     invalidField: "", aim: "", aimed: "",
   };
@@ -432,12 +429,11 @@ export function createEditorController(deps: EditorControllerDeps) {
       ? ((item && item.actions) || []).map((action: Obj) =>
         ({ action: `act:${String(action.key)}`, label: String(action.label) }))
       : (item && !item.error ? [{ action: "edit", label: "내용 편집" }] : []);
-    const items: ContextMenuItem[] = [...repairs, {
-      action: "delete",
-      label: "삭제",
-      danger: true,
-      separatorBefore: repairs.length > 0,
-    }];
+    /* 삭제 동사는 U6-A 에서 퇴역했다(U6 §2.3 — 앱은 사용자 서식 폴더에 쓰지 않는다).
+       그래서 수선 동사가 하나도 없으면 열 메뉴가 **없다**: 빈 팝오버를 띄우면 사용자는
+       무엇이 가능한지 묻고 아무 답도 받지 못한다. */
+    if (repairs.length === 0) return;
+    const items: ContextMenuItem[] = [...repairs];
     patchView({ libMenu: { media, kind: "row", key: id, item, trigger } });
     libContextMenu.open(trigger, items);
   }
@@ -453,8 +449,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (menu === null) return;
     closeLibMenu();
     try {
-      if (action === "delete") await deleteLibTemplate(menu.media, menu.item || null);
-      else if (action === "edit") {
+      if (action === "edit") {
         const item = menu.item || {};
         const result = await dispatch("tpl", "txt_content", { path: item.path });
         openTxtEdit("edit", item.path, item.name, String(result.content || ""), menu.trigger);
@@ -550,18 +545,6 @@ export function createEditorController(deps: EditorControllerDeps) {
       else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
     } catch (error) {
       noticeSave(String((error as Obj)?.message || error));
-    }
-  }
-
-  async function deleteLibTemplate(media: string, item: Obj | null): Promise<void> {
-    if (item === null) return;
-    const result = await dispatch("tpl", "delete", { media, path: item.path });
-    /* 「휴지통」이라 말하지 않는다(U2 §2.12) — 보존은 실재하나 도달 표면이 아직 없다. */
-    if (result.undo) {
-      deps.undo.show(`템플릿 '${item.name}' 을(를) 삭제했습니다.`, async () => {
-        const restored = await dispatch("tpl", "undo_delete", {});
-        if (restored.ok === false) throw new Error(String(restored.error));
-      });
     }
   }
 
@@ -914,29 +897,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (typeof result === "string" && result !== "") await deps.runtime.refresh(SCREEN);
   }
 
-  /** 폴더 일괄 가져오기 — 어포던스 잠금은 클릭을 삼키는 문이고, 정본 거절은 Python 이다. */
-  async function importFolder(trigger: HTMLElement): Promise<void> {
-    if (view.folderImportInFlight) return;
-    patchView({ folderImportInFlight: true });
-    try {
-      const scanned = await invoke("import_templates_folder", null, false, null) as Obj;
-      if (!scanned) return;                                    // 피커 취소
-      if (scanned.error) { noticeSave(String(scanned.error)); return; }
-      if (!scanned.needs_confirm) return;
-      if (!(await deps.modal.confirm({
-        body: `${scanned.confirm_text}\n\n지금 가져올까요?`,
-        confirmLabel: "가져오기", cancelLabel: "취소", returnFocus: trigger,
-      }))) return;
-      /* 확정 실행은 **재진술된 후보 목록**을 그대로 나른다 — 재스캔이면 확인 안 된 파일이 따라 든다. */
-      const done = await invoke(
-        "import_templates_folder", scanned.folder, true, scanned.files) as Obj;
-      if (done && done.error) noticeSave(String(done.error));
-      else if (done) await deps.runtime.refresh(SCREEN);
-    } finally {
-      patchView({ folderImportInFlight: false });              // 어느 출구든 해제
-    }
-  }
-
   async function pickData(): Promise<void> {
     if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
     let result = await invoke("pick_data_file", SCREEN) as any;
@@ -1091,7 +1051,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
-    useLibraryTemplate, importTemplate, importFolder, pickData,
+    useLibraryTemplate, importTemplate, pickData,
     openPoolData, usePoolData, closePoolData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
@@ -1361,10 +1321,6 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         className: "btn sm", "data-act": "import-template",
         onClick: () => controller.guarded(() => controller.importTemplate()),
       }, "가져오기…"),
-      h("button", {
-        className: "btn sm", "data-act": "import-folder",
-        onClick: (event: Obj) => controller.guarded(() => controller.importFolder(event.currentTarget)),
-      }, "폴더에서 가져오기…"),
       h("button", {
         className: "btn sm", "data-act": "lib-new-txt",
         onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),

@@ -4,16 +4,17 @@
 기본값 해석은 실행 환경(``HWPXFILLER_HOME``)을 읽는 Host 책임이라 Domain 모듈이 아니라
 여기 산다(:mod:`hwpxfiller.host.boot_budget` 선례). 홈 해석도 이 모듈이 단일 출처로 소유한다.
 
-템플릿 기본 루트(:func:`default_templates_dir`)와 Job 직렬화의 「이식성의 경첩」
-(:func:`library_root_for`)은 P2-21(#569)에서 core 영속 경계와 함께 여기로 승계됐다.
+템플릿 기본 루트(:func:`default_templates_dir`)는 P2-21(#569)에서 core 영속 경계와 함께
+여기로 승계됐다. 매체별 루트 해석기 둘(``default_text_templates_dir``·``library_root_for``)은
+U6-A(#975)에서 **삭제**됐다 — 서식 폴더가 사용자가 고르는 단일 루트가 되면서 「어느 매체의
+어느 루트인가」라는 질문 자체가 사라졌고, 지금 그 자리는 런타임 홀더
+:class:`hwpxfiller.external.template_root.TemplateRoot` 하나다(이식성의 경첩도 거기다).
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-
-from hwpxfiller.domain.job import template_media
 
 #: 홈 재지정 환경변수 이름 — 테스트 격리·CI·다중 프로필.
 HOME_ENV_VAR = "HWPXFILLER_HOME"
@@ -83,15 +84,11 @@ def default_template_authority_dir() -> Path:
     return home_dir() / "template_authority"
 
 
-def default_text_templates_dir() -> Path:
-    """txt 기안 템플릿 기본 루트 — 사용자 홈 아래 ``text_templates``."""
-    return home_dir() / "text_templates"
-
-
 def default_example_data_dir() -> Path:
     """동봉 예제 데이터(CSV)의 착지 자리 — 사용자 홈 아래 ``example_data``.
 
-    템플릿은 매체별 라이브러리 루트로 가지만(:func:`library_root_for`) 데이터는 **경로 참조**
+    템플릿은 서식 폴더(:class:`~hwpxfiller.external.template_root.TemplateRoot`)로 가지만
+    데이터는 **경로 참조**
     로만 고정되므로(``external/dataset_store``: 풀은 파일을 품지 않고 다시 여는 법만 안다)
     실물이 앉을 durable 자리가 따로 필요하다. 다른 홈 자산과 같은 관례이고
     ``HWPXFILLER_HOME`` 을 존중한다(해석은 :func:`home_dir`). **설치 전에는 만들지 않는다**
@@ -99,19 +96,3 @@ def default_example_data_dir() -> Path:
     누르기 전에 홈을 건드리지 않는 것이 온보딩 D1 의 계약이다(#891).
     """
     return home_dir() / "example_data"
-
-
-def library_root_for(template_path: str) -> "Path | None":
-    """매체별 라이브러리 루트(hwpx=``templates``/txt=``text_templates``) — 확장자에서만 고른다.
-
-    I/O 없음. 미상 확장자·빈 경로는 ``None``(승격도 해석도 하지 않는다 — 모르는 것을 추측하지
-    않는다는 :func:`~hwpxfiller.domain.job.work_mode` 와 같은 fail-closed). 두 루트 모두
-    ``HWPXFILLER_HOME`` 을 존중하는 기본 해석기라 **홈을 옮기면 같은 키가 새 홈의 파일로
-    해석된다** — 이 함수가 이식성의 경첩이다.
-    """
-    media = template_media(template_path)
-    if media == "hwpx":
-        return default_templates_dir()
-    if media == "txt":
-        return default_text_templates_dir()
-    return None

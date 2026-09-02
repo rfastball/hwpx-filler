@@ -234,7 +234,7 @@ export function bootProduct() {
   const EditorController = createEditorController({
     doc: document,
     runtime, client, ports: screenPorts, services: servicePorts,
-    modal: Modal, undo: UndoToast, popover: Popover, chain: Intent,
+    modal: Modal, popover: Popover, chain: Intent,
     navigation,
     notify: (message) => window.alert(message),
   });
@@ -479,6 +479,16 @@ export function bootProduct() {
           {
             theme: Theme, personalization: Personalization, modal: Modal,
             job: JobRunController,
+            /* 서식 폴더 행(U6-A #975) — 값의 주인은 tpl 채널이라 그 모델을 그대로 구독한다.
+               화면 컨트롤러를 하나 더 세우지 않는 이유는 이 면이 tpl 의 **한 존**만 읽기
+               때문이다(같은 상태를 두 곳이 판정하지 않는다). */
+            templates: {
+              subscribe: (listener) => runtime.model("tpl").subscribe(listener),
+              getSnapshot: () => runtime.model("tpl").getSnapshot(),
+              init: () => runtime.loadInitial("tpl"),
+              pickTemplatesRoot: () => bridge.pickTemplatesRoot("tpl"),
+              refreshCurrentScreen: () => runtime.refresh(Nav.currentScreen()),
+            },
           }),
       ],
     },

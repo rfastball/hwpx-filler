@@ -1248,9 +1248,9 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
     real_unlink = Path.unlink
     real_replace = Path.replace
 
-    def spy_write(path, job):
+    def spy_write(path, job, **kwargs):
         _probe(f"save:{job.name}")
-        return real_write(path, job)
+        return real_write(path, job, **kwargs)
 
     def spy_unlink(self, *a, **kw):
         if str(self).endswith(JobRegistry.SUFFIX):
@@ -1475,10 +1475,11 @@ def test_previous_revision_snapshot_advances_per_axis(tmp_path):
 # ------------------------------------------------- 라이브러리 상대키(#348, U2 §5.3 판정 B)
 @pytest.fixture()
 def library_home(tmp_path, monkeypatch):
-    """``HWPXFILLER_HOME`` 을 못박고 두 매체 루트를 실제로 만든 홈 — 이식성 회귀의 무대."""
+    """``HWPXFILLER_HOME`` 을 못박고 서식 폴더를 실제로 만든 홈 — 이식성 회귀의 무대.
+
+    U6-A(#975) 이후 루트는 **하나**다: hwpx·txt 가 같은 ``templates`` 아래 산다."""
     home = tmp_path / "home-A"
     (home / "templates" / "조달").mkdir(parents=True)
-    (home / "text_templates").mkdir(parents=True)
     monkeypatch.setenv("HWPXFILLER_HOME", str(home))
     return home
 
@@ -1490,19 +1491,22 @@ def test_template_link_is_stored_as_a_library_relative_key(library_home):
     매체를 선언하는 새 필드는 없다. 신규 durable 필드는 상대키 하나뿐이다.
     """
     hwpx = library_home / "templates" / "조달" / "공고서.hwpx"
-    txt = library_home / "text_templates" / "안내문.txt"
+    txt = library_home / "templates" / "안내문.txt"
+    root = library_home / "templates"
 
     job = Job(name="a", template_path=str(hwpx))
-    assert library_key_for(job.template_path) == "조달/공고서.hwpx"          # 하위폴더까지 POSIX 한 값
-    assert encode_job(job)["template_key"] == "조달/공고서.hwpx"
-    assert encode_job(job)["template_path"] == str(hwpx)     # 절대경로는 **가산으로 유지**
+    assert library_key_for(job.template_path, root) == "조달/공고서.hwpx"    # 하위폴더까지 POSIX
+    assert encode_job(job, root=root)["template_key"] == "조달/공고서.hwpx"
+    assert encode_job(job, root=root)["template_path"] == str(hwpx)  # 절대경로는 **가산으로 유지**
 
-    # 루트가 확장자로 갈린다 — txt 는 text_templates 기준.
-    assert library_key_for(str(txt)) == "안내문.txt"
+    # 루트는 **하나**다(U6-A) — txt 도 같은 서식 폴더 기준이다.
+    assert library_key_for(str(txt), root) == "안내문.txt"
     # 매체 미상은 승격하지 않는다(모르는 것을 추측하지 않는다).
     docx = library_home / "templates" / "x.docx"
-    assert library_key_for(str(docx)) == ""
-    assert library_key_for("") == ""
+    assert library_key_for(str(docx), root) == ""
+    assert library_key_for("", root) == ""
+    # 루트 미주입은 프로세스 홀더로 떨어진다 — 두 번째 정본을 지어내지 않는다.
+    assert library_key_for(job.template_path) == "조달/공고서.hwpx"
 
 
 def test_moving_the_home_keeps_the_keyed_template_resolved(library_home, tmp_path, monkeypatch):
@@ -1601,8 +1605,9 @@ def test_lexical_path_components_are_normalized_before_promotion(library_home):
     noisy = library_home / "templates" / "조달" / "sub" / ".." / "공고서.hwpx"
 
     job = Job(name="a", template_path=str(noisy))
-    assert library_key_for(job.template_path) == "조달/공고서.hwpx"          # `..` 가 걷힌 키
-    _reject_unsafe_key(library_key_for(job.template_path))                    # 읽기 방어를 통과하는 값이다
+    root = library_home / "templates"
+    assert library_key_for(job.template_path, root) == "조달/공고서.hwpx"    # `..` 가 걷힌 키
+    _reject_unsafe_key(library_key_for(job.template_path, root))                    # 읽기 방어를 통과하는 값이다
 
     reg = JobRegistry(library_home / "jobs")
     reg.save(job)
@@ -1618,7 +1623,7 @@ def test_normalization_does_not_loosen_the_outside_the_root_judgment(library_hom
     됐다. 어휘 정규화 뒤 그 경로는 정직하게 루트 밖으로 판정돼 승격되지 않는다.
     """
     escaping = library_home / "templates" / ".." / "바깥" / "공고서.hwpx"
-    assert library_key_for(str(escaping)) == ""
+    assert library_key_for(str(escaping), library_home / "templates") == ""
     # 루트 밖 판정은 그대로 절대경로 유지로 이어진다(폴백 없음).
     assert encode_job(Job(name="a", template_path=str(escaping)))["template_path"] == str(escaping)
 
@@ -1633,7 +1638,8 @@ def test_promotion_is_abandoned_when_normalization_would_name_another_file(
     좌우되므로 그 실측 지점(``realpath``)을 대신 못박는다 — 조용한 재결속이 없다는 것이 계약이다.
     """
     noisy = library_home / "templates" / "조달" / "link" / ".." / "공고서.hwpx"
-    assert library_key_for(str(noisy)) == "조달/공고서.hwpx"
+    root = library_home / "templates"
+    assert library_key_for(str(noisy), root) == "조달/공고서.hwpx"
 
     real = os.path.realpath
 
@@ -1644,7 +1650,7 @@ def test_promotion_is_abandoned_when_normalization_would_name_another_file(
         return real(p)
 
     monkeypatch.setattr(os.path, "realpath", _as_if_link_were_a_symlink)
-    assert library_key_for(str(noisy)) == "", (
+    assert library_key_for(str(noisy), root) == "", (
         "정규화가 다른 파일을 이름하는데 승격했습니다 — 조용한 재결속입니다."
     )
 

@@ -109,7 +109,8 @@ PRACTICE_STATE = [
 REFUSE_STATE = [p for p in PRACTICE_STATE if p != "webview"]
 
 #: 임시 홈에 시딩하는 커밋된 자산 — 사용자가 받는 것과 **같은 파일**이라야 검사가 의미를 갖는다.
-SEED_ASSETS = ["data", "templates", "text_templates"]
+#: U6-A(#975) 이후 hwpx·txt 는 한 서식 폴더(``templates``)에 함께 산다.
+SEED_ASSETS = ["data", "templates"]
 
 #: 이 하니스가 아는 실행 phase 전집 — 값이 곧 대본 선택자다.
 #:
@@ -754,6 +755,7 @@ def _run_with_home(
                 stage_data=stage_data,
                 stage_context=stage_context,
                 output_dir=str(home / SX_OUTPUT_REL),
+                templates_root=str(home / "templates"),
                 prepare_output=prepare_output,
                 create_collision=create_collision,
                 output_manifest=lambda: filesystem_manifest(home / SX_OUTPUT_REL),

@@ -26,6 +26,7 @@ from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.host.locations import default_example_data_dir, home_dir
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -37,22 +38,18 @@ def _controller(tmp_path):
     """tpl 컨트롤러 1대 — 라이브러리 루트는 tmp, 홈(설정·데이터 자리)은 conftest 격리분."""
     lib = tmp_path / "lib"
     lib.mkdir()
-    txt_dir = tmp_path / "txt"
-    txt_dir.mkdir()
-    registry = TextTemplateRegistry(txt_dir)
+    # U6-A(#975): 두 매체가 **같은 서식 폴더**를 쓴다 — 매체별 루트 축은 사라졌다.
+    root = TemplateRoot(default_root=lib)
+    registry = TextTemplateRegistry(root.path)
     pushes: list = []
     ctrl = TemplateController(
         registry,
         lambda screen, snap: pushes.append((screen, snap)),
-        # 시계는 **실시간**이다: 휴지통 이동이 30일 컷오프 정리를 함께 지므로, 먼 미래로
-        # 못박으면 방금 넣은 항목이 다음 이동에서 만료로 지워져 제거 검증이 허수가 된다.
-        file_store=TemplateFileStore(
-            lib, registry, clock=time.time, new_id=lambda: "fixedid"
-        ),
-        library_dir=lib,
+        file_store=TemplateFileStore(root.path, registry),
+        template_root=root,
         pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
     )
-    return ctrl, lib, txt_dir, pushes
+    return ctrl, lib, lib, pushes
 
 
 def _installed_names(lib: Path, txt_dir: Path) -> "set[str]":
@@ -62,12 +59,9 @@ def _installed_names(lib: Path, txt_dir: Path) -> "set[str]":
     }
 
 
-def _trashed_names(root: Path) -> "set[str]":
-    """휴지통에 실제로 앉은 원본 이름들 — 이동 몸통이 붙이는 ``<시각>-<id>-`` 접두를 뗀다."""
-    trash = root / TRASH_DIR_NAME
-    if not trash.exists():
-        return set()
-    return {p.name.split("-", 2)[2] for p in trash.iterdir() if p.is_file()}
+def _trash_dir_exists(root: Path) -> bool:
+    """U6-A(#975): 앱은 사용자 서식 폴더에 ``.trash`` 를 **만들지 않는다** — 제거는 삭제다."""
+    return (root / TRASH_DIR_NAME).exists()
 
 
 def _group_of(ctrl, media: str, name: str) -> str:
@@ -330,9 +324,9 @@ def test_confirmed_removal_sweeps_every_manifest_entry_and_returns_the_empty_sta
     assert done == {"ok": True, "removed": len(ALL_ASSETS)}
 
     assert _installed_names(lib, txt_dir) == set()
-    # 템플릿은 **지워지지 않고** 매체별 휴지통으로 갔다(기존 삭제 기제 재사용).
-    assert _trashed_names(lib) == set(example_pack.HWPX_ASSETS)
-    assert _trashed_names(txt_dir) == set(example_pack.TXT_ASSETS)
+    # 템플릿도 **지워진다**(U6-A) — 되돌리기는 재설치라 잃는 원본이 없고, 앱은 사용자
+    # 서식 폴더에 휴지통을 만들지 않는다.
+    assert not _trash_dir_exists(lib)
     # 데이터는 파일이 지워지고 풀 고정도 풀린다(풀은 파일을 품지 않으므로 둘 다 걷어야 한다).
     assert list(default_example_data_dir().glob("*")) == []
     assert pool.list_items() == []
@@ -379,7 +373,7 @@ def test_files_outside_the_manifest_are_untouchable(tmp_path):
     assert mine_hwpx.read_bytes() == b"my own edit of the example"
     assert mine_txt.is_file()
     assert _installed_names(lib, txt_dir) == {mine_hwpx.name, mine_txt.name}
-    assert _trashed_names(lib) == set(example_pack.HWPX_ASSETS)  # 남의 파일은 휴지통에도 없다
+    assert not _trash_dir_exists(lib)  # 지운다 — 휴지통을 만들지 않는다
     # 그룹은 해산됐고 파일은 남았다 — 확인은 동결 모델에서 한다(표면은 그룹을 안 싣는다).
     assert ctrl.hwpx_groups.existing_groups() == []
 
@@ -488,7 +482,7 @@ def test_a_malformed_manifest_field_refuses_before_touching_anything(tmp_path, m
 
     assert ctrl.snapshot()["result"]["level"] == "danger"
     assert _installed_names(lib, txt_dir) == {mine.name}
-    assert _trashed_names(lib) == set()
+    assert not _trash_dir_exists(lib)
     assert settings.load_tutorial_manifest() is not None  # 지우지 못했으면 기재도 남는다
 
 
@@ -533,7 +527,7 @@ def test_entries_already_gone_are_restated_not_failed(tmp_path):
     # 남은 것은 전부 걷혔다: 템플릿 4(=5-1)·데이터 1(=2-1).
     assert done["removed"] == len(ALL_ASSETS) - 2
     assert _installed_names(lib, txt_dir) == set()
-    assert _trashed_names(lib) == set(example_pack.HWPX_ASSETS[1:])
+    assert not _trash_dir_exists(lib)
     assert list(default_example_data_dir().glob("*")) == []
     assert pool.list_items() == []
     assert settings.load_tutorial_manifest() is None

@@ -1,0 +1,145 @@
+"""서식 폴더 런타임 홀더 + 레거시 TXT 1회 이관(U6-A · #975).
+
+**이 클래스 인스턴스 하나가 프로세스의 템플릿 루트 권위**다. 종전에는 매체마다 다른 기본
+해석기(:func:`~hwpxfiller.host.locations.default_templates_dir` / 삭제된
+``default_text_templates_dir``)를 소비자가 각자 불러 세 자리가 같은 질문에 각자 답했다 —
+루트를 바꿀 수 있게 되는 순간 그 셋이 갈린다. 그래서 hwpx 목록·txt 목록·가져오기 복사·
+Job 링크 해석이 전부 이 홀더(또는 그 :meth:`TemplateRoot.path` 콜러블)를 지난다.
+
+판정은 여기 없다 — 도출은 링0
+(:func:`hwpxfiller.domain.template_root_default.resolve_templates_root`)이 하고 이 모듈은
+설정 읽기·존재 관찰·쓰기 같은 **효과**만 진다.
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+from hwpxfiller.domain.template_root_default import (
+    SOURCE_DEFAULT,
+    TemplateRootResolution,
+    resolve_templates_root,
+)
+from hwpxfiller.domain.template_status import TRASH_DIR_NAME
+from hwpxfiller.domain.text_template import TEXT_TEMPLATE_SUFFIX
+from hwpxfiller.host.locations import default_templates_dir
+
+from .settings import load_templates_root, save_templates_root
+
+#: 매체별 루트가 둘이던 시절의 txt 루트 폴더 이름(앱 홈 아래). 지금은 **이관의 출발지로만**
+#: 산다 — 해석기(``host.locations.default_text_templates_dir``)는 U6-A 에서 삭제됐다.
+LEGACY_TEXT_TEMPLATES_DIRNAME = "text_templates"
+
+
+class TemplateRoot:
+    """설정 + 존재 관찰 + 링0 도출을 묶은 루트 권위. 상태를 캐시하지 않는다.
+
+    캐시하지 않는 이유는 「설정 변경 뒤 옛 값을 든 사본」이 이 저장소의 지배 결함류이기
+    때문이다 — 매 호출이 설정을 다시 읽으므로 :meth:`set` 직후의 첫 스냅샷이 곧 새 루트다.
+    """
+
+    def __init__(
+        self,
+        *,
+        load: "Callable[[], str]" = load_templates_root,
+        save: "Callable[[str], None]" = save_templates_root,
+        default_root: "Path | None" = None,
+        exists: "Callable[[Path], bool]" = Path.is_dir,
+    ) -> None:
+        self._load = load
+        self._save = save
+        self._default_root = Path(default_root) if default_root is not None else None
+        self._exists = exists
+
+    def default_root(self) -> Path:
+        """지정이 없을 때의 루트 — 주입이 없으면 앱 홈 ``templates``."""
+        if self._default_root is not None:
+            return self._default_root
+        return default_templates_dir()
+
+    def resolution(self) -> TemplateRootResolution:
+        """지금의 루트 도출 — 설정 읽기 + 존재 관찰을 링0 판정에 먹인다."""
+        configured = self._load()
+        configured_exists = bool(configured) and self._exists(Path(configured))
+        return resolve_templates_root(
+            configured=configured,
+            configured_exists=configured_exists,
+            default_root=str(self.default_root()),
+        )
+
+    def path(self) -> Path:
+        """도출된 루트 경로 — 소비자에 주입되는 콜러블이 이것이다."""
+        return Path(self.resolution().directory)
+
+    def set(self, path: str) -> TemplateRootResolution:
+        """서식 폴더 재지정 — 영속 뒤 **다시 도출한** 값을 돌려준다(사본 반환 금지)."""
+        self._save(path)
+        return self.resolution()
+
+
+@dataclass(frozen=True)
+class TextTemplatesMigration:
+    """레거시 TXT 이관 결과 — 옮긴 상대경로와 옮기지 못한 것(사유 병기)."""
+
+    moved: "list[str]" = field(default_factory=list)
+    skipped: "list[tuple[str, str]]" = field(default_factory=list)
+
+    @property
+    def happened(self) -> bool:
+        """재진술할 것이 있는가 — 조용한 이관은 없다."""
+        return bool(self.moved or self.skipped)
+
+    def restate(self, root: Path) -> str:
+        """부팅 뒤 한 번 재진술할 문안. 아무 일도 없었으면 ``""``."""
+        if not self.happened:
+            return ""
+        lines: "list[str]" = []
+        if self.moved:
+            lines.append(f"TXT 템플릿 {len(self.moved)}건을 서식 폴더로 옮겼습니다: {root}")
+        if self.skipped:
+            names = ", ".join(name for name, _reason in self.skipped)
+            lines.append(
+                f"옮기지 못한 파일 {len(self.skipped)}건 — 같은 이름이 이미 있습니다: {names}"
+            )
+        return "\n".join(lines)
+
+
+_ALREADY_THERE = "같은 이름이 이미 있습니다"
+
+
+def migrate_legacy_text_templates(
+    *, home: Path, root: TemplateRoot,
+) -> TextTemplatesMigration:
+    """앱 홈 ``text_templates/**/*.txt`` 를 기본 루트로 **1회 이관**한다(U6-A §4).
+
+    설정 키가 지정돼 있으면 아무것도 하지 않는다 — 사용자가 고른 폴더에 앱이 파일을 넣지
+    않는다. 지정이 없어 기본 루트를 쓰는 경우에만, 같은 상대 경로로 **옮긴다**(복사가 아니라
+    이동이라 다음 부팅에는 걷을 것이 남지 않는다). 대상에 같은 이름이 이미 있으면 그 파일은
+    건드리지 않고 사유에 남긴다(조용한 덮어쓰기 금지). ``.trash`` 아래는 삭제 보관소라 함께
+    옮기지 않는다.
+    """
+    if root.resolution().source != SOURCE_DEFAULT:
+        return TextTemplatesMigration()
+    legacy = Path(home) / LEGACY_TEXT_TEMPLATES_DIRNAME
+    if not legacy.is_dir():
+        return TextTemplatesMigration()
+    destination = root.path()
+    moved: "list[str]" = []
+    skipped: "list[tuple[str, str]]" = []
+    for source in sorted(legacy.rglob("*" + TEXT_TEMPLATE_SUFFIX)):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(legacy)
+        if TRASH_DIR_NAME in relative.parts:
+            continue
+        target = destination / relative
+        if target.exists():
+            skipped.append((relative.as_posix(), _ALREADY_THERE))
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        moved.append(relative.as_posix())
+    return TextTemplatesMigration(moved, skipped)

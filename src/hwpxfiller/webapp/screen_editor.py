@@ -68,7 +68,7 @@ from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry, content_fingerprint
-from ..host.locations import default_templates_dir, default_text_templates_dir
+from ..external.template_root import TemplateRoot
 from ..gui.edit_session import (
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
@@ -377,10 +377,14 @@ class EditorController:
 
     @property
     def template_library(self) -> TemplateManagerViewModel:
-        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 표준 라이브러리로 지연 생성(리뷰 F5)."""
+        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 서식 폴더 홀더로 지연 생성(리뷰 F5).
+
+        홀더의 ``path`` **콜러블**을 준다(U6-A #975): 루트는 설정으로 바뀌는 값이라 Path 를
+        굳혀 들면 재지정 뒤에도 옛 폴더를 나열한다.
+        """
         if self._template_library is None:
             self._template_library = TemplateManagerViewModel(
-                default_templates_dir(),
+                TemplateRoot().path,
                 inspect_template=inspect_hwpx_template,
                 file_ops=HWPX_TEMPLATE_OPS,
             )
@@ -395,9 +399,12 @@ class EditorController:
 
     @property
     def text_registry(self) -> TextTemplateRegistry:
-        """TXT 템플릿 레지스트리 — 미주입이면 표준 루트 지연 생성(hwpx 라이브러리 VM 대칭)."""
+        """TXT 템플릿 레지스트리 — 미주입이면 서식 폴더 홀더로 지연 생성(hwpx VM 대칭).
+
+        루트는 hwpx 와 **같다**(U6-A #975) — 매체별 루트 축은 사라졌다.
+        """
         if self._text_registry is None:
-            self._text_registry = TextTemplateRegistry(default_text_templates_dir())
+            self._text_registry = TextTemplateRegistry(TemplateRoot().path)
         return self._text_registry
 
     @property
@@ -1224,10 +1231,11 @@ class EditorController:
         내 세션에 통지를 남기면 사용자는 자기가 만지지도 않은 파일의 경고를 읽는다. 대조는
         :func:`~hwpxfiller.webapp.template_groups.norm_library_path` 단일 술어다.
 
-        ``deleted`` 는 ``template_path`` 를 **지우지 않는다**: 되돌리기가 같은 경로로 파일을
-        돌려놓고 ``restored`` 가 이 세션을 되살린다. 경로를 비우면 그 복원이 닿을 자리가
-        사라져, 사용자는 실수로 지운 템플릿을 되살려도 세션을 처음부터 다시 세워야 한다.
-        저장은 그동안 :meth:`_missing_template_block` 이 심층 방어로 막는다.
+        ``deleted`` 는 ``template_path`` 를 **지우지 않는다**: 사용자가 탐색기에서 파일을
+        되돌려 놓으면 같은 경로가 다시 살아난다. 경로를 비우면 그 복귀가 닿을 자리가 사라져
+        세션을 처음부터 다시 세워야 한다. 저장은 그동안 :meth:`_missing_template_block` 이
+        심층 방어로 막는다. (앱 안의 복원 동사는 U6-A 에서 퇴역했다 — ``restored`` 종류도
+        생산자 0 으로 함께 걷혔고, 남은 ``deleted`` 생산자는 동결 온보딩의 예제 제거다.)
         """
         if kind not in MUTATION_KINDS:  # 오타·미지 종류는 조용히 무시하지 않는다
             raise ValueError(f"알 수 없는 템플릿 변이 종류: {kind!r}")

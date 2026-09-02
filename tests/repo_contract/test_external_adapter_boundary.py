@@ -39,6 +39,9 @@ PUBLIC_API = (
     # U3-06(#879): 마지막 명시 지정 저장 폴더 — 관리 축 기본값 도출의 후보 ②.
     "load_last_output_directory",
     "save_last_output_directory",
+    # U6-A(#975): 전역 서식 폴더(템플릿 단일 루트) — 도출은 domain/template_root_default.
+    "load_templates_root",
+    "save_templates_root",
     # U3-07(#880): 마지막으로 성사된 데이터 마운트 성분 — 부팅 자동 마운트의 재료.
     "VALID_DATA_SOURCES",
     "load_last_data_source",

@@ -22,6 +22,7 @@ import {
   OUTPUT_FOLDER_BUSY_REASON,
   SETTINGS_MODAL_ID,
   SettingsSheetView,
+  TEMPLATES_ROOT_BUSY_REASON,
   THEME_LABELS,
 } from "../../frontend/src/screens/settings_sheet.ts";
 
@@ -32,8 +33,15 @@ const FOLDER = Object.freeze({
   busy: false,
 });
 
-function ports(theme = "system", scale = "normal", folder = FOLDER) {
-  const calls = { theme: [], scale: [], closed: [], picked: 0 };
+const ROOT = Object.freeze({
+  directory: "D:\서식",
+  sourceLabel: "설정한 폴더",
+  notice: "",
+  busy: false,
+});
+
+function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT) {
+  const calls = { theme: [], scale: [], closed: [], picked: 0, pickedRoot: 0, refreshed: 0 };
   return {
     calls,
     props: {
@@ -50,16 +58,24 @@ function ports(theme = "system", scale = "normal", folder = FOLDER) {
         client: { invoke: () => null },
         notify: () => {},
       },
+      templates: {
+        subscribe: () => () => {},
+        getSnapshot: () => null,
+        init: () => Promise.resolve(null),
+        pickTemplatesRoot: () => { calls.pickedRoot += 1; return "D:\새서식"; },
+        refreshCurrentScreen: () => { calls.refreshed += 1; },
+      },
       currentTheme: theme,
       currentScale: scale,
       outputFolder: folder,
+      templatesRoot: root,
     },
   };
 }
 
-function markup(theme, scale, folder) {
+function markup(theme, scale, folder, root) {
   return renderToStaticMarkup(
-    createElement(SettingsSheetView, ports(theme, scale, folder).props),
+    createElement(SettingsSheetView, ports(theme, scale, folder, root).props),
   );
 }
 
@@ -70,11 +86,11 @@ function pressedPairs(html, axis) {
     .map((m) => [m[1], m[2]]);
 }
 
-test("설정 모달은 테마·글자 크기·저장 폴더 세 행을 편다", () => {
+test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더 네 행을 편다", () => {
   const html = markup();
   assert.match(html, /<h3 id="settingsTitle">설정<\/h3>/);
   assert.match(html, /id="settingsClose"/);
-  assert.equal(html.split('class="settings-row').length - 1, 3, "설정 행이 셋이 아닙니다.");
+  assert.equal(html.split('class="settings-row').length - 1, 4, "설정 행이 넷이 아닙니다.");
 
   assert.deepEqual(pressedPairs(html, "data-set-theme").map((p) => p[0]),
     ["system", "light", "dark"]);
@@ -193,4 +209,59 @@ test("클릭은 셸 서비스로 그대로 나간다 — 이 면은 판정을 �
   const close = buttons.find((p) => p.id === "settingsClose");
   close.onClick();
   assert.deepEqual(calls.closed, [SETTINGS_MODAL_ID]);
+});
+
+test("서식 폴더 행은 backend 도출을 그대로 그린다 — 경로·출처·사유", () => {
+  const html = markup(undefined, undefined, undefined, {
+    directory: "D:\없는서식",
+    sourceLabel: "설정한 폴더",
+    notice: "설정한 서식 폴더를 찾을 수 없습니다: D:\없는서식",
+    busy: false,
+  });
+  assert.match(html, /id="settingsTplDirLabel">서식 폴더</);
+  assert.ok(html.includes('id="settingsTplDir"'));
+  assert.ok(html.includes('id="settingsPickTplFolder"'));
+  assert.ok(html.includes("설정한 폴더"), "출처 라벨이 없습니다.");
+  /* 기본값으로 **내려가지 않는다** — 사라진 폴더도 그대로 서고 사유만 병기된다. */
+  assert.ok(html.includes('value="D:\없는서식"'));
+  assert.ok(html.includes('id="settingsTplDirNotice"'));
+  assert.ok(html.includes("설정한 서식 폴더를 찾을 수 없습니다"));
+});
+
+test("생성 중에는 서식 폴더 찾아보기도 비활성 + 사유 병기 — 저장 폴더와 같은 술어", () => {
+  const open = markup(undefined, undefined, undefined, { ...ROOT, busy: false });
+  assert.equal(open.includes(TEMPLATES_ROOT_BUSY_REASON), false);
+
+  const busy = markup(undefined, undefined, undefined, { ...ROOT, busy: true });
+  const button = busy.split('id="settingsPickTplFolder"')[1].split("</button>")[0];
+  assert.ok(button.includes("disabled"), "생성 중인데 서식 폴더 찾아보기가 열려 있습니다.");
+  assert.ok(busy.includes(TEMPLATES_ROOT_BUSY_REASON));
+  assert.ok(busy.includes('id="settingsPickTplFolderReason"'));
+});
+
+test("서식 폴더 찾아보기는 브리지 왕복 뒤 지금 화면을 다시 당긴다", async () => {
+  const { calls, props } = ports();
+  const tree = SettingsSheetView(props);
+  const buttons = [];
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === "function") {
+      let rendered;
+      try { rendered = node.type(node.props); } catch { return; }
+      walk(rendered);
+      return;
+    }
+    if (node.props) {
+      if (node.props.onClick) buttons.push(node.props);
+      walk(node.props.children);
+    }
+  };
+  walk(tree);
+  const pick = buttons.find((p) => p.id === "settingsPickTplFolder");
+  assert.ok(pick, "서식 폴더 찾아보기 버튼이 없습니다.");
+  pick.onClick();
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  assert.equal(calls.pickedRoot, 1);
+  assert.equal(calls.refreshed, 1, "재지정 성사 뒤 화면 재당김이 없습니다.");
 });

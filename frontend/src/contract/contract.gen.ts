@@ -220,8 +220,6 @@ export const SCREEN_ACTIONS = {
     slot_decompile: { required: ["path", "slot_id"], optional: ["confirm"] },
     slot_decompile_all: { required: ["path"], optional: ["confirm"] },
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
-    delete: { required: ["media", "path"], optional: ["confirm"] },
-    undo_delete: { required: [], optional: [] },
     txt_new: { required: ["content", "name"], optional: [] },
     txt_edit: { required: ["baseline", "content", "path"], optional: ["confirm_fingerprint"] },
     txt_content: { required: ["path"], optional: [] },
@@ -248,7 +246,7 @@ export const HOST_METHODS = [
   "set_font_scale",
   "set_master_width",
   "import_template_file",
-  "import_templates_folder",
+  "pick_templates_root",
   "pick_data_file",
   "load_data_sheet",
   "copy_clipboard",
@@ -284,7 +282,7 @@ export interface HostApi {
   set_font_scale(scale: unknown): unknown;
   set_master_width(width: unknown): unknown;
   import_template_file(screen: unknown): unknown;
-  import_templates_folder(folder?: unknown, confirm?: unknown, files?: unknown): unknown;
+  pick_templates_root(screen: unknown): unknown;
   pick_data_file(screen: unknown): unknown;
   load_data_sheet(screen: unknown, path: unknown, sheet: unknown): unknown;
   copy_clipboard(screen: unknown, token?: unknown): unknown;

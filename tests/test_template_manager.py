@@ -106,7 +106,9 @@ def test_library_scan_is_recursive(tmp_path):
         file_ops=HWPX_TEMPLATE_OPS,
     )
     names = {r.name for r in vm.rows()}
-    assert names == {"루트.hwpx", "하위.hwpx"}  # 하위폴더 파일도 평평하게 올라온다
+    # 표시명은 **루트 상대경로·확장자 제외**다(U6-A #975 — txt 와 같은 규칙): 재귀 루트에서
+    # basename 은 유일하지 않으므로 하위폴더가 이름에 남아야 두 파일이 구분된다.
+    assert names == {"루트", "탐색기묶음/하위"}
 
 
 def test_library_scan_excludes_results_output_subtree(tmp_path):
@@ -127,7 +129,7 @@ def test_library_scan_excludes_results_output_subtree(tmp_path):
         inspect_template=inspect_hwpx_template,
         file_ops=HWPX_TEMPLATE_OPS,
     )
-    assert {r.name for r in vm.rows()} == {"서식.hwpx"}  # 산출물은 목록에 없다
+    assert {r.name for r in vm.rows()} == {"서식"}  # 산출물은 목록에 없다
 
 
 def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
@@ -163,15 +165,15 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert sorted(inspected) == expected_paths
     assert sorted(opened) == expected_paths
 
-    assert by_name["raw.hwpx"].state == CompileState.RAW
-    assert [a.key for a in by_name["raw.hwpx"].actions()] == ["compile"]
-    assert by_name["comp.hwpx"].state == CompileState.COMPILED
-    assert [a.key for a in by_name["comp.hwpx"].actions()] == ["preview", "make_job"]
-    assert by_name["fill.hwpx"].state == CompileState.FILLED
-    assert [a.key for a in by_name["fill.hwpx"].actions()] == ["preview"]
+    assert by_name["raw"].state == CompileState.RAW
+    assert [a.key for a in by_name["raw"].actions()] == ["compile"]
+    assert by_name["comp"].state == CompileState.COMPILED
+    assert [a.key for a in by_name["comp"].actions()] == ["preview", "make_job"]
+    assert by_name["fill"].state == CompileState.FILLED
+    assert [a.key for a in by_name["fill"].actions()] == ["preview"]
     # 배지·상세가 성형돼 표현 계층이 읽을 수 있다.
-    assert by_name["raw.hwpx"].badge_label == "원문"
-    assert "필드" in by_name["comp.hwpx"].detail_line()
+    assert by_name["raw"].badge_label == "원문"
+    assert "필드" in by_name["comp"].detail_line()
 
 
 # ================================ 수용기준 2 — dry-run 무변형 → 적용 시 상태 진행
@@ -644,10 +646,10 @@ def test_rows_carry_fill_precheck_warns(tmp_path):
     )
     vm.refresh()
     by_name = {r.name: r for r in vm.rows()}
-    assert len(by_name["marker.hwpx"].fill_warns) == 1
-    assert "markpenBegin" in by_name["marker.hwpx"].fill_warns[0]
-    assert "제거됩니다" in by_name["marker.hwpx"].fill_warns[0]  # 사전형 문안
-    assert by_name["clean.hwpx"].fill_warns == ()  # 과경고 금지
+    assert len(by_name["marker"].fill_warns) == 1
+    assert "markpenBegin" in by_name["marker"].fill_warns[0]
+    assert "제거됩니다" in by_name["marker"].fill_warns[0]  # 사전형 문안
+    assert by_name["clean"].fill_warns == ()  # 과경고 금지
 
 
 # ============================ 구간 표기 잔존의 행 전파(S8-04 #835 — 표면 전파)
