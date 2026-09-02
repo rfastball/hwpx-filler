@@ -320,10 +320,13 @@ class WebFrontend:
         self._text_templates_migration = migrate_legacy_text_templates(
             home=home_dir(), root=self._template_root
         )
-        if self._text_templates_migration.happened:
-            settings.alert(
-                self._text_templates_migration.restate(self._template_root.path())
-            )
+        # 재진술은 **두 채널**이 받는다: 내구성 로그(경보)와 화면(서식 폴더 존의 사유).
+        # 로그만 두면 사용자는 자기 TXT 가 옮겨진 사실을 영영 모른다(조용한 이동 금지).
+        migration_notice = self._text_templates_migration.restate(
+            self._template_root.path()
+        )
+        if migration_notice:
+            settings.alert(migration_notice)
         registry = TextTemplateRegistry(self._template_root.path)
         job_registry = JobRegistry(
             default_jobs_dir(), template_root=self._template_root.path
@@ -400,6 +403,7 @@ class WebFrontend:
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups,
                 template_root=self._template_root,
+                migration_notice=migration_notice,
                 # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
                 pool_registry=pool_registry,
                 tutorial=tutorial,

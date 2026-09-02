@@ -23,7 +23,7 @@ from hwpxfiller.domain.template_root_default import (
     TemplateRootResolution,
     resolve_templates_root,
 )
-from hwpxfiller.domain.template_status import TRASH_DIR_NAME
+from hwpxfiller.domain.template_status import is_excluded_subtree
 from hwpxfiller.domain.text_template import TEXT_TEMPLATE_SUFFIX
 from hwpxfiller.host.locations import default_templates_dir
 
@@ -99,15 +99,17 @@ class TextTemplatesMigration:
         lines: "list[str]" = []
         if self.moved:
             lines.append(f"TXT 템플릿 {len(self.moved)}건을 서식 폴더로 옮겼습니다: {root}")
-        if self.skipped:
-            names = ", ".join(name for name, _reason in self.skipped)
-            lines.append(
-                f"옮기지 못한 파일 {len(self.skipped)}건 — 같은 이름이 이미 있습니다: {names}"
-            )
+        # 사유가 여럿일 수 있다(이름 충돌 · 나열이 거르는 하위트리) — 사유별로 한 줄씩 낸다:
+        # 한 줄로 뭉치면 안 옮긴 이유가 파일마다 다른데 하나로 읽힌다.
+        for reason in dict.fromkeys(item_reason for _n, item_reason in self.skipped):
+            same = [name for name, item_reason in self.skipped if item_reason == reason]
+            lines.append(f"옮기지 못한 파일 {len(same)}건 — {reason}: {', '.join(same)}")
         return "\n".join(lines)
 
 
 _ALREADY_THERE = "같은 이름이 이미 있습니다"
+#: 나열이 어차피 걸러 낼 하위트리(``Results``·``.trash``) — 옮기면 **옮긴 뒤 사라진다**.
+_EXCLUDED_SUBTREE = "서식 폴더가 읽지 않는 하위 폴더입니다"
 
 
 def migrate_legacy_text_templates(
@@ -118,8 +120,12 @@ def migrate_legacy_text_templates(
     설정 키가 지정돼 있으면 아무것도 하지 않는다 — 사용자가 고른 폴더에 앱이 파일을 넣지
     않는다. 지정이 없어 기본 루트를 쓰는 경우에만, 같은 상대 경로로 **옮긴다**(복사가 아니라
     이동이라 다음 부팅에는 걷을 것이 남지 않는다). 대상에 같은 이름이 이미 있으면 그 파일은
-    건드리지 않고 사유에 남긴다(조용한 덮어쓰기 금지). ``.trash`` 아래는 삭제 보관소라 함께
-    옮기지 않는다.
+    건드리지 않고 사유에 남긴다(조용한 덮어쓰기 금지).
+
+    **나열이 거르는 하위트리는 옮기지 않는다**(``Results``·``.trash`` —
+    :func:`~hwpxfiller.domain.template_status.is_excluded_subtree` 와 **같은 술어**): 옮겨 봐야
+    새 루트에서도 걸러져 목록에서 사라진다. 사라지는 것이 아니라 **안 옮겼다는 사실**이
+    남아야 하므로 ``skipped`` 에 사유와 함께 싣는다(조용한 증발 금지).
     """
     if root.resolution().source != SOURCE_DEFAULT:
         return TextTemplatesMigration()
@@ -133,7 +139,8 @@ def migrate_legacy_text_templates(
         if not source.is_file():
             continue
         relative = source.relative_to(legacy)
-        if TRASH_DIR_NAME in relative.parts:
+        if is_excluded_subtree(relative.parts):
+            skipped.append((relative.as_posix(), _EXCLUDED_SUBTREE))
             continue
         target = destination / relative
         if target.exists():

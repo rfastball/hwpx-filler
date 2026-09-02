@@ -52,7 +52,9 @@ def _write_compiled(path: Path) -> Path:
     return path
 
 
-def _controller(tmp_path: Path, monkeypatch) -> "tuple[TemplateController, Path, list]":
+def _controller(
+    tmp_path: Path, monkeypatch, *, migration_notice: str = ""
+) -> "tuple[TemplateController, Path, list]":
     """HWPX 라이브러리 + TXT 레지스트리를 tmp 에 꾸리고 컨트롤러를 만든다.
 
     그룹 상태는 설정 영속이라 ``HWPXFILLER_HOME`` 을 tmp 로 격리한 **뒤** 컨트롤러를 만든다
@@ -74,6 +76,7 @@ def _controller(tmp_path: Path, monkeypatch) -> "tuple[TemplateController, Path,
         template_root=root,
         pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
         example_data_dir=tmp_path / "example_data",
+        migration_notice=migration_notice,
     )
     return ctrl, tmp_path, pushes
 
@@ -736,3 +739,25 @@ def test_retired_verbs_are_refused_by_the_action_registry():
     for action in ("delete", "undo_delete", "scan_import_folder", "import_folder"):
         with pytest.raises(ValueError):
             validate_dispatch("tpl", action, {})
+
+
+def test_migration_restatement_rides_the_templates_root_notice(tmp_path, monkeypatch):
+    """이관 재진술은 **화면에 닿는다**(U6-A 리뷰) — 로그만 두면 사용자는 영영 모른다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch, migration_notice="TXT 템플릿 2건을 옮겼습니다")
+    assert ctrl.snapshot()["templates_root"]["notice"] == "TXT 템플릿 2건을 옮겼습니다"
+
+
+def test_a_missing_root_notice_and_the_migration_notice_stand_together(tmp_path, monkeypatch):
+    """도출 사유와 이관 재진술은 서로를 지우지 않는다 — 하나가 덮으면 조용한 소실이다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch, migration_notice="옮겼습니다")
+    ctrl.set_templates_root(str(tp / "사라진서식"))
+
+    notice = ctrl.snapshot()["templates_root"]["notice"]
+    assert "찾을 수 없습니다" in notice and "옮겼습니다" in notice
+    assert notice.splitlines() == [notice.splitlines()[0], "옮겼습니다"]
+
+
+def test_no_migration_leaves_the_notice_untouched(tmp_path, monkeypatch):
+    """이관이 없었으면 사유도 없다 — 빈 문자열을 줄바꿈으로 실어 빈 줄을 만들지 않는다."""
+    ctrl, _tp, _ = _controller(tmp_path, monkeypatch)
+    assert ctrl.snapshot()["templates_root"]["notice"] == ""

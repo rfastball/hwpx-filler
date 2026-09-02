@@ -63,6 +63,8 @@ function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT)
         getSnapshot: () => null,
         pickTemplatesRoot: () => { calls.pickedRoot += 1; return "D:\새서식"; },
         refreshCurrentScreen: () => { calls.refreshed += 1; },
+        client: { invoke: () => null },
+        notify: () => {},
       },
       currentTheme: theme,
       currentScale: scale,
@@ -263,4 +265,43 @@ test("서식 폴더 찾아보기는 브리지 왕복 뒤 지금 화면을 다시
   await new Promise((resolve) => { setTimeout(resolve, 0); });
   assert.equal(calls.pickedRoot, 1);
   assert.equal(calls.refreshed, 1, "재지정 성사 뒤 화면 재당김이 없습니다.");
+});
+
+test("두 폴더 행은 **같은 팩토리**가 그린다 — 좌표만 다르고 형상은 같다", () => {
+  const html = markup();
+  /* 사본이면 한쪽에만 붙는 어포던스·잠금 사유가 생긴다. 형상 동형을 구조로 잰다:
+     같은 클래스·같은 자식 구성이 두 번 나오고 id 만 갈린다. */
+  assert.equal(html.split('class="settings-row settings-row-folder"').length - 1, 2);
+  assert.equal(html.split('class="settings-folder-row"').length - 1, 2);
+  for (const id of ["settingsOutDir", "settingsTplDir",
+    "settingsPickFolder", "settingsPickTplFolder",
+    "settingsOutDirSource", "settingsTplDirSource"]) {
+    assert.ok(html.includes(`id="${id}"`), `좌표 소실: ${id}`);
+  }
+  // 경로 어포던스도 두 행 모두에 선다(빌려 쓰지 않고 각자 포트의 client 를 쓴다).
+  assert.equal(html.split('data-track-act="reveal"').length - 1, 2);
+});
+
+test("서식 폴더 행의 경로 어포던스는 **자기 포트**의 client·notify 를 쓴다", () => {
+  const { props } = ports();
+  const seen = [];
+  props.templates.client = { invoke: (...args) => { seen.push(args); return null; } };
+  const tree = SettingsSheetView(props);
+  const rows = [];
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === "function") {
+      if (node.props && node.props.pathId === "settingsTplDir") rows.push(node.props);
+      let rendered;
+      try { rendered = node.type(node.props); } catch { return; }
+      walk(rendered);
+      return;
+    }
+    if (node.props) walk(node.props.children);
+  };
+  walk(tree);
+  assert.equal(rows.length, 1, "서식 폴더 행이 팩토리로 서지 않았습니다.");
+  assert.equal(rows[0].client, props.templates.client, "남의 컨트롤러 client 를 빌렸습니다.");
+  assert.equal(rows[0].notify, props.templates.notify);
 });

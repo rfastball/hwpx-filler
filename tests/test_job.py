@@ -25,6 +25,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.external.template_inspection import template_compile_status
+from hwpxfiller.external import settings
 from hwpxfiller.external.job_store import (
     JobRegistry,
     JobSlugCollisionError,
@@ -1510,21 +1511,67 @@ def test_template_link_is_stored_as_a_library_relative_key(library_home):
 
 
 def test_moving_the_home_keeps_the_keyed_template_resolved(library_home, tmp_path, monkeypatch):
-    """홈을 옮겨도 상대키를 가진 작업의 템플릿은 계속 해석된다 — 이 이슈의 존재 이유.
+    """홈을 **옮기면** 상대키가 작업의 템플릿을 계속 해석한다 — 이 이슈의 존재 이유.
 
     레지스트리는 원래 위치-불가지였는데 **내용물이 절대경로로 위치에 묶여** 홈 이동이 모든
     작업의 링크를 한꺼번에 끊었다. 키는 기계 고유 부분을 이름으로 치환해 그 결속을 끊는다.
+
+    **진짜 이사로 잰다**(복사가 아니라): 키가 서는 조건은 「옛 절대경로가 죽었다」이고,
+    복사본에서 재면 원본이 살아 있어 이 단언이 재는 것이 무엇인지 모호해진다.
     """
     tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    tpl.write_bytes(b"")                                  # 실재하는 템플릿이라야 링크가 산다
     JobRegistry(library_home / "jobs").save(Job(name="a", template_path=str(tpl)))
 
     moved = tmp_path / "home-B"
     shutil.copytree(library_home, moved)                  # 홈 통째 이사(백업 복원·PC 교체)
+    shutil.rmtree(library_home)                           # 옛 자리는 사라진다 — 그게 이사다
     monkeypatch.setenv("HWPXFILLER_HOME", str(moved))
 
     job = JobRegistry(moved / "jobs").load("a")
     assert job.template_path == str(moved / "templates" / "조달" / "공고서.hwpx")
     assert job.media == "hwpx"                            # 표면 파생(매체·방식)은 그대로 성립
+
+
+def test_a_live_absolute_path_beats_the_key_when_the_root_changes(
+    library_home, tmp_path
+):
+    """서식 폴더를 바꿔도 **살아 있는 절대경로**가 이긴다 — 조용한 재결속 금지(U6-A #975).
+
+    루트가 사용자가 고르는 값이 되면서 「같은 키 = 같은 파일」 전제가 깨졌다. 새 루트에 같은
+    이름 파일이 있다고 작업이 그쪽으로 갈아타면, 법적 효력이 있는 문서를 **다른 서식**으로
+    만들게 된다. 그래서 키는 절대경로가 죽었을 때만 선다.
+    """
+    tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    tpl.write_bytes(b"A")
+    JobRegistry(library_home / "jobs").save(Job(name="a", template_path=str(tpl)))
+
+    # 사용자가 서식 폴더를 옮긴다 — 새 루트에 **같은 이름**의 남의 파일이 있다.
+    other = tmp_path / "새서식"
+    (other / "조달").mkdir(parents=True)
+    (other / "조달" / "공고서.hwpx").write_bytes(b"B")
+    settings.save_templates_root(str(other))
+
+    assert JobRegistry(library_home / "jobs").load("a").template_path == str(tpl)
+
+
+def test_a_dead_absolute_path_does_not_fall_onto_a_same_named_file_in_the_new_root(
+    library_home, tmp_path
+):
+    """옛 파일이 사라져도 새 루트의 동명 파일로 **갈아타지 않는다** — 끊긴 대로 보인다."""
+    tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    tpl.write_bytes(b"")
+    JobRegistry(library_home / "jobs").save(Job(name="a", template_path=str(tpl)))
+    tpl.unlink()                                          # 사용자가 옛 서식을 지웠다
+
+    other = tmp_path / "새서식"
+    (other / "조달").mkdir(parents=True)
+    (other / "조달" / "공고서.hwpx").write_bytes(b"B")   # 붙으면 안 되는 미끼
+    settings.save_templates_root(str(other))
+
+    reloaded = JobRegistry(library_home / "jobs").load("a")
+    assert reloaded.template_path == str(tpl)             # 끊긴 옛 자리 그대로(relink 동선)
+    assert reloaded.template_path != str(other / "조달" / "공고서.hwpx")
 
 
 def test_template_outside_the_root_fails_promotion_without_a_filename_fallback(
@@ -1611,7 +1658,9 @@ def test_lexical_path_components_are_normalized_before_promotion(library_home):
 
     reg = JobRegistry(library_home / "jobs")
     reg.save(job)
-    assert reg.load("a").template_path == str(tpl)          # 해석은 같은 파일을 가리킨다
+    # 해석은 **같은 파일**을 가리킨다. 문자열까지 정규화되지는 않는다(U6-A): 살아 있는
+    # 절대경로는 저장된 그대로 이기고, 읽기가 durable 값을 손보지 않는다.
+    assert os.path.normpath(reg.load("a").template_path) == str(tpl)
     assert reg.list_jobs()[0].name == "a"                   # '손상됨' 으로 떨어지지 않는다
 
 
@@ -1855,3 +1904,23 @@ def test_corruption_surface_gives_values_and_removal_rejudges_membership(tmp_pat
     reg.remove_corrupt_entry(str(bad))
     assert not bad.exists()
     assert reg.list_jobs_with_corruption()[1] == []  # 해소가 다음 스캔에 보인다
+
+
+def test_save_reads_the_template_root_exactly_once(tmp_path):
+    """한 저장은 루트를 **한 번** 읽는다 — 임계구역 안에서 세 번 읽으면 그 사이 재지정이
+    끼어 한 저장이 두 루트를 뜻할 수 있다(U6-A 리뷰)."""
+    reads: "list[int]" = []
+    root = tmp_path / "서식"
+    root.mkdir()
+
+    def watched():
+        reads.append(1)
+        return root
+
+    reg = JobRegistry(tmp_path / "jobs", template_root=watched)
+    reg.save(Job(name="A", template_path=str(root / "t.hwpx")))
+    assert len(reads) == 1, f"저장 한 번에 루트를 {len(reads)}회 읽었습니다."
+
+    reads.clear()
+    reg.save(Job(name="A", template_path=str(root / "t.hwpx")))   # 자기 갱신(직전 판본 읽기 포함)
+    assert len(reads) == 1, f"재저장 한 번에 루트를 {len(reads)}회 읽었습니다."

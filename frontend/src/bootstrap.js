@@ -292,9 +292,9 @@ export function bootProduct() {
   }));
 
   const initSequence = [
-    /* 서식 폴더 행(U6-A #975)이 읽는 `tpl` 첫 스냅샷 — **여기서** 당긴다. 설정 오버레이는
-       부팅 상주 마운트라 그 컴포넌트의 effect 에서 부르면 호출이 `pywebviewready` 앞에 서고,
-       실측에서 그 순서가 WebView2 창을 못 뜨게 했다. 이 시퀀스는 호스트 준비 뒤에만 돈다. */
+    /* 서식 폴더 행(U6-A #975)이 읽는 `tpl` 첫 스냅샷 — 다른 화면 init 과 같은 줄에 세운다.
+       (호스트 준비 대기 자체는 `runtime.loadInitial` 이 구조로 진다 — 이 자리에 있는 것은
+       순서 안전이 아니라 「부팅에 당기는 채널 전수」를 한 표로 읽히게 하려는 것이다.) */
     () => runtime.loadInitial("tpl"),
     () => LibraryController.init(),
     () => EditorController.init(),
@@ -491,6 +491,10 @@ export function bootProduct() {
               getSnapshot: () => runtime.model("tpl").getSnapshot(),
               pickTemplatesRoot: () => bridge.pickTemplatesRoot("tpl"),
               refreshCurrentScreen: () => runtime.refresh(Nav.currentScreen()),
+              /* 경로 어포던스의 전송 표면은 이 포트가 직접 든다 — 저장 폴더 포트의 것을
+                 빌리면 서식 폴더 행이 남의 컨트롤러에 묶인다. */
+              client,
+              notify: (message) => window.alert(message),
             },
           }),
       ],

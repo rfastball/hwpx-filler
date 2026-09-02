@@ -43,6 +43,17 @@ OUTPUT_SUBDIR_NAME = "Results"
 # 않으면 지웠던 템플릿이 ``타임스탬프-uuid-이름`` 으로 목록에 재등장한다(#267 리뷰).
 TRASH_DIR_NAME = ".trash"
 
+#: 재귀 나열·이관에서 건너뛰는 하위트리 이름 — 산출물(``Results``)과 옛 삭제 보관소
+#: (``.trash``). **두 매체 walker 와 레거시 이관이 이 하나를 본다**: U6-A(#975) 이후 hwpx·txt
+#: 가 사용자가 고른 같은 루트를 읽으므로, 한쪽만 거르면 같은 폴더가 매체마다 다르게 보인다.
+EXCLUDED_DIR_NAMES: "tuple[str, ...]" = (TRASH_DIR_NAME, OUTPUT_SUBDIR_NAME)
+
+
+def is_excluded_subtree(relative_parts: "tuple[str, ...]") -> bool:
+    """루트 상대 경로 성분에 제외 하위트리가 끼어 있는가 — 술어도 한 곳이다."""
+    return any(name in relative_parts for name in EXCLUDED_DIR_NAMES)
+
+
 
 def library_display_name(root: "Path | None", path: "str | Path") -> str:
     """서식 폴더 항목의 **표시명** — 루트 상대경로, 확장자 제외, POSIX(``온나라/기안``).

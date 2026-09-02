@@ -67,7 +67,7 @@ from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
-from ..external.job_store import JobRegistry, content_fingerprint
+from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
 from ..gui.edit_session import (
     DATA_ANCHORED_ENTRY_REASONS,
@@ -839,8 +839,11 @@ class EditorController:
     def _txt_library_rows(self) -> "list[dict]":
         """TXT 밴드 행 — tpl 화면 ``_txt_rows`` 성형 미러(선택 전용 최소분 + current 표지).
 
-        손상(비 UTF-8 등)은 삭제 가능한 오류 행으로 loud 노출한다(숨기면 관리 화면과 다른
-        목록을 조용히 보인다). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은 로드가 맡는다.
+        손상(비 UTF-8 등)은 **사유를 단 오류 행**으로 loud 노출한다(숨기면 관리 화면과 다른
+        목록을 조용히 보인다). 그 행에 남는 동사는 없다 — 삭제는 U6-A(#975)에서 퇴역했고
+        내용 편집은 읽히지 않는 파일에 설 수 없어, 표면의 행 ⋮ 는 비활성 + 사유로 선다
+        (`editor.ts` 의 `libRowMenuItems`). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은
+        로드가 맡는다.
         """
         root = self.text_registry.directory
         rows: "list[dict]" = []
@@ -1570,7 +1573,7 @@ class EditorController:
         self._preserved_meta = _preserved_meta(job)
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
-        self._editing_fingerprint = content_fingerprint(job)
+        self._editing_fingerprint = self.registry.content_fingerprint(job)
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
@@ -2283,7 +2286,7 @@ class EditorController:
                 "내용을 확인할 수 없습니다.\n지금 저장하면 그 자리를 이 편집 세션의 "
                 "상태로 덮어씁니다."
             )
-        if content_fingerprint(current) != self._editing_fingerprint:
+        if self.registry.content_fingerprint(current) != self._editing_fingerprint:
             return (
                 f"편집 중 외부 변경: 작업 '{self._editing_origin}' 이 이 편집 세션을 "
                 "여는 사이 다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 "

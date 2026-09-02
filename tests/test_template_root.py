@@ -21,6 +21,7 @@ from hwpxfiller.external import settings
 from hwpxfiller.external.template_root import (
     LEGACY_TEXT_TEMPLATES_DIRNAME,
     TemplateRoot,
+    TextTemplatesMigration,
     migrate_legacy_text_templates,
 )
 
@@ -185,3 +186,40 @@ def test_display_name_is_the_root_relative_posix_stem():
     # 루트 밖·루트 미상은 확장자 없는 basename 으로 강등한다(이름이 통째로 비지 않게).
     assert library_display_name(root, Path("E:/남의/문서.hwpx")) == "문서"
     assert library_display_name(None, Path("E:/남의/문서.hwpx")) == "문서"
+
+
+def test_migration_skips_subtrees_the_listing_would_filter_out(tmp_path):
+    """``Results``·``.trash`` 는 옮기지 않는다 — 옮기면 새 루트에서도 걸러져 사라진다.
+
+    나열 술어(:func:`is_excluded_subtree`)와 **같은 목록**을 쓰는지까지 잰다: 한쪽만 알면
+    「옮겼다고 했는데 목록에 없다」가 된다.
+    """
+    home = tmp_path / "home"
+    root = TemplateRoot(default_root=home / "templates")
+    _legacy(home, "Results/완성문서.txt")
+    _legacy(home, ".trash/0-old-지운기안.txt")
+    _legacy(home, "살아있는.txt")
+
+    done = migrate_legacy_text_templates(home=home, root=root)
+
+    assert done.moved == ["살아있는.txt"]
+    assert dict(done.skipped) == {
+        "Results/완성문서.txt": "서식 폴더가 읽지 않는 하위 폴더입니다",
+        ".trash/0-old-지운기안.txt": "서식 폴더가 읽지 않는 하위 폴더입니다",
+    }
+    # 안 옮긴 것은 **제자리에 그대로** 남는다(조용한 증발 금지).
+    assert (home / LEGACY_TEXT_TEMPLATES_DIRNAME / "Results" / "완성문서.txt").exists()
+    assert not (home / "templates" / "Results").exists()
+
+
+def test_restate_gives_one_line_per_reason(tmp_path):
+    """사유가 둘이면 줄도 둘 — 한 줄로 뭉치면 안 옮긴 이유가 하나로 읽힌다."""
+    done = TextTemplatesMigration(
+        moved=["가.txt"],
+        skipped=[("나.txt", "같은 이름이 이미 있습니다"),
+                 ("Results/다.txt", "서식 폴더가 읽지 않는 하위 폴더입니다")],
+    )
+    lines = done.restate(tmp_path / "templates").splitlines()
+    assert len(lines) == 3
+    assert "같은 이름이 이미 있습니다: 나.txt" in lines[1]
+    assert "읽지 않는 하위 폴더입니다: Results/다.txt" in lines[2]

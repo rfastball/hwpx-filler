@@ -1715,10 +1715,10 @@ export function createEditorWorkbenchDataProbes() {
         try {
           Nav.go("editor", { force: true });
           const acts = [{ key: "compile", label: "누름틀 변환" }, { key: "review", label: "검토" }];
-          const H = (name, cur, warns) => ({
+          const H = (name, cur, warns, rowActs) => ({
             key: name, name, path: `C:/lib/${name}`,
             badge_label: "누름틀", badge_level: "ok", is_error: false, detail: "필드 3개",
-            fill_warns: warns || [], actions: acts, current: !!cur,
+            fill_warns: warns || [], actions: rowActs || acts, current: !!cur,
           });
           const draft = editorBase({
             library: {
@@ -1728,7 +1728,10 @@ export function createEditorWorkbenchDataProbes() {
                 sections: [{
                   group: "", collapsed: false, count: 4,
                   items: [
-                    H("a.hwpx", true), H("b.hwpx", false), H("c.hwpx", false),
+                    H("a.hwpx", true), H("b.hwpx", false),
+                    /* 동사 0 인 행(COMPILED·FILLED 의 실제 모양) — U6-A 에서 삭제가
+                       퇴역하면서 생긴 상태다. ⋮ 는 서되 **비활성 + 사유**여야 한다. */
+                    H("c.hwpx", false, null, []),
                     H("d.hwpx", false, ["빈 값 2건은 공란으로 채워집니다"]),
                   ],
                 }],
@@ -1769,6 +1772,13 @@ export function createEditorWorkbenchDataProbes() {
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
           out.rows_visible = host.querySelectorAll(".libselrow").length;      // 접힘 없음 → 전부
           out.row_more = host.querySelectorAll('[data-act="lib-more"]').length;  // 모든 가시 행
+          /* 동작 0 인 행의 ⋮ 는 **비활성 + 사유**다(U6-A 리뷰): 종전에는 멀쩡히 서 있고
+             클릭이 조용히 삼켜졌다. 동작 있는 행은 그대로 열린다 — 양성·음성 대조. */
+          const moreFor = (key) =>
+            host.querySelector(`[data-act="lib-more"][data-key="${key}"]`);
+          out.dead_row_more_disabled = !!moreFor("c.hwpx") && moreFor("c.hwpx").disabled;
+          out.dead_row_more_reason = (moreFor("c.hwpx") || {}).title || "";
+          out.live_row_more_enabled = !!moreFor("b.hwpx") && !moreFor("b.hwpx").disabled;
           out.grp_more = host.querySelectorAll(".grp-more").length;
           out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length;
           out.fill_warn = /빈 값 2건/.test(host.textContent);                 // #154 사전 고지 승계

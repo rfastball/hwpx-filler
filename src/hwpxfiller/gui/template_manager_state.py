@@ -31,10 +31,9 @@ from ..domain.fields import FillNote
 from ..domain.lint import LintReport, SchemaDrift
 from ..domain.slot import Slot
 from ..domain.template_status import (
-    OUTPUT_SUBDIR_NAME,
-    TRASH_DIR_NAME,
     CompileState,
     TemplateStatus,
+    is_excluded_subtree,
     library_display_name,
 )
 
@@ -446,8 +445,7 @@ class TemplateManagerViewModel:
                     p
                     for p in root.rglob("*.hwpx")
                     if p.is_file()
-                    and OUTPUT_SUBDIR_NAME not in p.relative_to(root).parts
-                    and TRASH_DIR_NAME not in p.relative_to(root).parts
+                    and not is_excluded_subtree(p.relative_to(root).parts)
                 ),
                 key=lambda p: (p.name, str(p)),
             )

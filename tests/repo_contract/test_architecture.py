@@ -332,3 +332,24 @@ def test_packaging_entry_imports_resolve() -> None:
                 if symbol and not hasattr(imported, symbol):
                     failures.append(f"{path.name}:{lineno}: {module}.{symbol}")
     assert not failures, "\n".join(failures)
+
+
+def test_job_content_fingerprints_go_through_the_registry_port():
+    """지문은 **주입된 루트**를 지난 레지스트리 포트로만 낸다(U6-A 리뷰).
+
+    모듈 함수를 직접 부르면 그 호출만 프로세스 기본 루트로 떨어져, 같은 작업의 지문을 두
+    루트가 판정한다 — 「같은 상태를 두 곳이 판정하지 않는다」의 직접 위반이고, 증상은
+    「열어 둔 편집 세션이 이유 없이 외부 변경 확인을 띄운다」로 나온다.
+    """
+    import re
+
+    bare = re.compile(r"(?<![.\w])content_fingerprint\s*\(")
+    offenders: "list[str]" = []
+    for path in (ROOT / "src" / "hwpxfiller" / "webapp").glob("*.py"):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if bare.search(line) and not line.lstrip().startswith(("#", "def ", "*")):
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
+    assert offenders == [], (
+        "링2 가 job_store.content_fingerprint 를 직접 부릅니다 — "
+        f"registry.content_fingerprint 로 보내세요: {offenders}"
+    )

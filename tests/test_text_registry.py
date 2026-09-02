@@ -4,6 +4,8 @@ U6-A(#975) 이후 루트는 hwpx 와 **같은 서식 폴더**다 — 매체별 �
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
@@ -118,3 +120,44 @@ def test_load_unknown_name_falls_back_to_root_path(tmp_path):
     d = _seed(tmp_path)
     t = TextTemplateRegistry(d).load("없는이름")
     assert t.path == d / "없는이름.txt"
+
+
+def test_the_root_callable_is_evaluated_once_per_scan(tmp_path):
+    """스캔은 루트를 **한 번** 읽는다 — 항목마다 설정을 다시 여는 비용도, 스캔 중간에
+    루트가 갈려 한 목록이 두 루트를 뜻하는 일도 없다(U6-A 리뷰)."""
+    root = tmp_path / "서식"
+    (root / "온나라").mkdir(parents=True)
+    (root / "가.txt").write_text("{{x}}", encoding="utf-8")
+    (root / "온나라" / "나.txt").write_text("{{y}}", encoding="utf-8")
+    reads = []
+
+    def watched():
+        reads.append(1)
+        return root
+
+    assert TextTemplateRegistry(watched).names() == ["가", "온나라/나"]
+    assert len(reads) == 1, f"루트를 {len(reads)}회 읽었습니다 — 스캔당 1회여야 합니다."
+
+
+def test_a_root_switch_mid_scan_drops_that_file_instead_of_killing_the_list(tmp_path):
+    """고정한 루트 밖 경로가 튀어나와도 목록 전체가 예외로 죽지 않는다(그 파일만 건너뛴다)."""
+    root = tmp_path / "서식"
+    root.mkdir()
+    (root / "가.txt").write_text("{{x}}", encoding="utf-8")
+    outside = tmp_path / "남의곳" / "나.txt"
+    outside.parent.mkdir()
+    outside.write_text("{{y}}", encoding="utf-8")
+
+    reg = TextTemplateRegistry(root)
+    real_rglob = Path.rglob
+
+    def rglob_with_a_stray(self, pattern):
+        return [*real_rglob(self, pattern), outside]   # 스캔 도중 루트가 갈린 세상
+
+    reg_names = None
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "rglob", rglob_with_a_stray)
+        reg_names = reg.names()
+    assert reg_names == ["가"]

@@ -47,6 +47,9 @@ function harness(cfg) {
   const notices = [];
   const counts = { initial: 0 };
   const client = {
+    /* 대역도 포트를 온전히 만족해야 한다 — `loadInitial` 은 호스트 준비를 **구조로**
+       기다린다(U6-A 리뷰: 관례 주석이 아니라 코드가 순서를 진다). */
+    whenReady: () => (opts.whenReady ? opts.whenReady() : Promise.resolve()),
     async initial(screen) {
       counts.initial += 1;
       trace.push(["initial", screen]);
@@ -1345,3 +1348,22 @@ test("S10-05 스팬→데코 투영은 문서 밖·겹침·미지 kind 를 버�
 /* ⑧ 동봉 예제 상시 진입점(#891·#892)의 렌더·확인 왕복 계약은 여기 있었다 — 튜토리얼
    진입 표면과 함께 배포본에서 걷혔다(#941). `tpl` 채널의 `install_examples`·
    `remove_examples` 액션과 스냅샷 축 `library.examples` 는 동결로 남는다. */
+
+/* ---------------- ⑦ 부팅 당김의 호스트 준비 게이트(U6-A 리뷰) ---------------- */
+
+test("loadInitial 은 호스트 준비 뒤에만 initial 을 부른다 — 순서는 구조가 진다", async () => {
+  let release;
+  const ready = new Promise((resolve) => { release = resolve; });
+  const h = harness({ whenReady: () => ready });
+
+  const pending = h.controller.init();
+  await Promise.resolve();
+  await Promise.resolve();
+  /* 준비 전에는 **한 번도** 부르지 않는다. 종전에는 「initSequence 에 넣어라」는 관례가
+     유일한 방어였고, 그것을 모르는 호출자 하나가 실 WebView2 창을 못 뜨게 했다. */
+  assert.equal(h.counts.initial, 0, "호스트 준비 전에 initial 이 나갔습니다.");
+
+  release();
+  await pending;
+  assert.equal(h.counts.initial, 1, "준비 뒤에는 정확히 한 번 나간다.");
+});

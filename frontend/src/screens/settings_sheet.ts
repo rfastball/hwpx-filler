@@ -88,6 +88,10 @@ export type SettingsTemplatesRootPort = {
   pickTemplatesRoot(): unknown;
   /** 재지정 성사 뒤 지금 화면을 다시 당긴다 — 목록의 정본은 각 화면 스냅샷이다. */
   refreshCurrentScreen(): unknown;
+  /** 경로 어포던스(폴더에서 보기·경로 복사)가 쓰는 전송 표면. **이 포트가 직접 든다** —
+   *  저장 폴더 포트의 것을 빌려 쓰면 두 행이 남의 컨트롤러에 묶인다. */
+  client: BridgeClient;
+  notify(message: string): void;
 };
 
 /** 생성 중에 서식 폴더를 못 바꾸는 사유 — 저장 폴더와 같은 규율(조용히 막지 않는다). */
@@ -154,6 +158,68 @@ function Segment(props: SegmentProps): ReactNode {
       "aria-pressed": props.current === value ? "true" : "false",
       onClick: () => { props.onPick(value); },
     }, props.labels[value] || value)));
+}
+
+/** 폴더 행 하나 — 라벨 + 읽기 전용 경로 + 「찾아보기…」 + 출처·사유 + 경로 어포던스.
+ *
+ *  **저장 폴더와 서식 폴더가 이 하나를 부른다.** 둘은 값의 채널과 도출 규칙만 다르고 형상은
+ *  같다 — 사본으로 두면 한쪽에만 붙는 어포던스·잠금 사유가 생기고, 그 어긋남은 눈으로만
+ *  잡힌다. DOM `id` 는 계약 좌표라 **호출자가 명시로 싣는다**(파생 조립 금지 — 프로브·
+ *  게이트·live 대본이 그 문자열을 그대로 문다).
+ *
+ *  판정은 하나도 여기 없다: 경로·출처·사유는 Python 도출의 투영이고, `busy` 는 호출자가
+ *  이미 읽은 실행 상태다. 이 면은 그리기와 클릭 전달만 한다. */
+function FolderRow(props: {
+  label: string;
+  labelId: string;
+  pathId: string;
+  pickId: string;
+  sourceId: string;
+  noticeId: string;
+  reasonId: string;
+  view: OutputFolderView;
+  emptyText: string;
+  busyReason: string;
+  onPick(): void;
+  client: BridgeClient;
+  notify(message: string): void;
+}): ReactNode {
+  const { view } = props;
+  return h("div", { className: "settings-row settings-row-folder" },
+    h("span", { className: "settings-label", id: props.labelId }, props.label),
+    h("div", { className: "settings-folder" },
+      h("div", { className: "settings-folder-row" },
+        h("input", {
+          className: "field ro", id: props.pathId, type: "text", readOnly: true,
+          "aria-labelledby": props.labelId,
+          value: view.directory,
+          placeholder: props.emptyText,
+        }),
+        h("button", {
+          className: "btn sm", id: props.pickId, type: "button",
+          /* 생성 중에는 잠근다 — 이번 실행이 겨눈 폴더가 도중에 갈리면 결과가 어디서 왔고
+             어디로 갔는지 말할 수 없다. 잠그되 **사유를 병기**한다(조용히 막지 않는다). */
+          disabled: view.busy,
+          title: view.busy ? props.busyReason : undefined,
+          onClick: () => { props.onPick(); },
+        }, "찾아보기…"),
+        view.directory
+          ? createElement(PathActions as any, {
+            client: props.client,
+            path: view.directory,
+            only: ["reveal", "copy"],
+            notify: props.notify,
+          })
+          : null),
+      view.sourceLabel
+        ? h("span", { className: "muted capnote", id: props.sourceId }, view.sourceLabel)
+        : null,
+      view.notice
+        ? h("p", { className: "warn capnote", id: props.noticeId }, view.notice)
+        : null,
+      view.busy
+        ? h("p", { className: "muted capnote", id: props.reasonId }, props.busyReason)
+        : null));
 }
 
 /** 저장 폴더 행이 그리는 값 — 전부 Python 도출의 투영이다(여기서 판정하지 않는다). */
@@ -265,83 +331,24 @@ export function SettingsSheetView(props: {
           current: currentScale,
           onPick: (value: string) => { personalization.setFontScale(value); },
         })),
-      /* 저장 폴더 — 앞 두 행과 달리 **전역이면서 제품 값**이다. 여기 선 이유는 하나다:
-         작업마다 다시 고르던 축이 폐지되면서 고를 자리가 앱에 한 곳만 남았다. */
-      h("div", { className: "settings-row settings-row-folder" },
-        h("span", { className: "settings-label", id: "settingsFolderLabel" }, "저장 폴더"),
-        h("div", { className: "settings-folder" },
-          h("div", { className: "settings-folder-row" },
-            h("input", {
-              className: "field ro", id: "settingsOutDir", type: "text", readOnly: true,
-              "aria-labelledby": "settingsFolderLabel",
-              value: folder.directory,
-              placeholder: OUTPUT_FOLDER_EMPTY_TEXT,
-            }),
-            h("button", {
-              className: "btn sm", id: "settingsPickFolder", type: "button",
-              /* 생성 중에는 잠근다 — 이번 실행이 겨눈 폴더가 실행 도중 갈리면 결과가 어디로
-                 갔는지 말할 수 없게 된다. 잠그되 **사유를 병기**한다(조용히 막지 않는다). */
-              disabled: folder.busy,
-              title: folder.busy ? OUTPUT_FOLDER_BUSY_REASON : undefined,
-              onClick: () => { void job.pickOutputFolder(); },
-            }, "찾아보기…"),
-            folder.directory
-              ? createElement(PathActions as any, {
-                client: job.client,
-                path: folder.directory,
-                only: ["reveal", "copy"],
-                notify: job.notify,
-              })
-              : null),
-          folder.sourceLabel
-            ? h("span", { className: "muted capnote", id: "settingsOutDirSource" },
-              folder.sourceLabel)
-            : null,
-          folder.notice
-            ? h("p", { className: "warn capnote", id: "settingsOutDirNotice" }, folder.notice)
-            : null,
-          folder.busy
-            ? h("p", { className: "muted capnote", id: "settingsPickFolderReason" },
-              OUTPUT_FOLDER_BUSY_REASON)
-            : null)),
-      /* 서식 폴더 — 저장 폴더 행과 **같은 형상**이다(U6-A #975). 다른 점은 도출 하나뿐:
-         설정한 폴더가 없어도 기본 폴더로 내려가지 않고 사유만 병기한다(고른 것과 다른
-         템플릿 집합을 보여주지 않는다). 그 판정은 링0 이 하고 여기는 그린다. */
-      h("div", { className: "settings-row settings-row-folder" },
-        h("span", { className: "settings-label", id: "settingsTplDirLabel" }, "서식 폴더"),
-        h("div", { className: "settings-folder" },
-          h("div", { className: "settings-folder-row" },
-            h("input", {
-              className: "field ro", id: "settingsTplDir", type: "text", readOnly: true,
-              "aria-labelledby": "settingsTplDirLabel",
-              value: root.directory,
-              placeholder: TEMPLATES_ROOT_EMPTY_TEXT,
-            }),
-            h("button", {
-              className: "btn sm", id: "settingsPickTplFolder", type: "button",
-              /* 저장 폴더와 같은 술어로 잠근다 — 실행 중에 읽는 서식이 갈리면 이번 실행이
-                 무엇으로 만들어졌는지 말할 수 없다. 잠그되 **사유를 병기**한다. */
-              disabled: root.busy,
-              title: root.busy ? TEMPLATES_ROOT_BUSY_REASON : undefined,
-              onClick: () => { void pickRoot(); },
-            }, "찾아보기…"),
-            root.directory
-              ? createElement(PathActions as any, {
-                client: job.client,
-                path: root.directory,
-                only: ["reveal", "copy"],
-                notify: job.notify,
-              })
-              : null),
-          root.sourceLabel
-            ? h("span", { className: "muted capnote", id: "settingsTplDirSource" },
-              root.sourceLabel)
-            : null,
-          root.notice
-            ? h("p", { className: "warn capnote", id: "settingsTplDirNotice" }, root.notice)
-            : null,
-          root.busy
-            ? h("p", { className: "muted capnote", id: "settingsPickTplFolderReason" },
-              TEMPLATES_ROOT_BUSY_REASON)
-            : null))));
+      createElement(FolderRow as any, {
+        label: "저장 폴더", labelId: "settingsFolderLabel",
+        pathId: "settingsOutDir", pickId: "settingsPickFolder",
+        sourceId: "settingsOutDirSource", noticeId: "settingsOutDirNotice",
+        reasonId: "settingsPickFolderReason",
+        view: folder, emptyText: OUTPUT_FOLDER_EMPTY_TEXT,
+        busyReason: OUTPUT_FOLDER_BUSY_REASON,
+        onPick: () => { void job.pickOutputFolder(); },
+        client: job.client, notify: job.notify,
+      }),
+      createElement(FolderRow as any, {
+        label: "서식 폴더", labelId: "settingsTplDirLabel",
+        pathId: "settingsTplDir", pickId: "settingsPickTplFolder",
+        sourceId: "settingsTplDirSource", noticeId: "settingsTplDirNotice",
+        reasonId: "settingsPickTplFolderReason",
+        view: root, emptyText: TEMPLATES_ROOT_EMPTY_TEXT,
+        busyReason: TEMPLATES_ROOT_BUSY_REASON,
+        onPick: () => { void pickRoot(); },
+        client: templates.client, notify: templates.notify,
+      })));
 }

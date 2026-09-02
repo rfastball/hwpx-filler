@@ -84,18 +84,24 @@ class TextTemplateRegistry:
         파일은 ``하위폴더/이름``. 재귀가 ``a/동명.txt``·``b/동명.txt`` 를 stem 하나로 노출하면
         :meth:`load` 가 첫 파일만 열어 다른 항목을 골라도 조용히 첫 내용이 열린다(#136 리뷰 F1).
         상대경로 이름은 유일하므로 목록·선택·load 계약이 두 파일을 별개로 구분한다. 이름순 정렬."""
-        if not self.directory.exists():
+        # 루트는 **스캔 시작에 한 번** 고정한다(U6-A 리뷰): 콜러블 주입이면 매 평가가 설정
+        # 파일 읽기라 항목 수에 비례해 되풀이되고, 더 나쁘게는 스캔 도중 재지정이 끼면 한
+        # 목록이 두 루트를 뜻하게 된다(이름은 A 기준, 경로는 B 기준).
+        root = self.directory
+        if not root.exists():
             return []
+        found: "list[Path]" = []
+        for path in root.rglob("*" + self.SUFFIX):
+            try:
+                if path.is_file() and is_live_text_template(root, path):
+                    found.append(path)
+            except ValueError:
+                # 고정한 루트 밖의 경로 — 스캔 중 루트가 갈렸다는 뜻이다. 그 한 파일을
+                # 건너뛸 뿐 목록 전체를 예외로 죽이지 않는다(다음 스냅샷이 새 루트로 온다).
+                continue
         return [
-            TextTemplate(text_template_name(self.directory, p), p)
-            for p in sorted(
-                (
-                    p
-                    for p in self.directory.rglob("*" + self.SUFFIX)
-                    if p.is_file() and is_live_text_template(self.directory, p)
-                ),
-                key=lambda p: (p.name, str(p)),
-            )
+            TextTemplate(text_template_name(root, path), path)
+            for path in sorted(found, key=lambda p: (p.name, str(p)))
         ]
 
     def names(self) -> "list[str]":

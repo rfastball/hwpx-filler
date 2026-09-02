@@ -1538,6 +1538,15 @@ class TestWebSelftestGate:
         assert t["rows_visible"] == 5, f"평면 밴드의 행이 전부 서지 않았습니다: {t!r}"
         assert t["grp_more"] == 0, "그룹 ⋮ 가 남아 있습니다 — U4 §2-30 에서 걷혔습니다."
         assert t["row_more"] == 5, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
+        # 동작 0 인 행(U6-A 에서 삭제가 퇴역해 생긴 상태)은 **비활성 + 사유**다 — 버튼이
+        # 서 있는데 클릭이 조용히 삼켜지는 무반응은 이 저장소가 금지한다.
+        assert t["dead_row_more_disabled"] is True, (
+            "동작 0 인 행의 ⋮ 가 활성입니다 — 누르면 아무 일도 없습니다."
+        )
+        assert "할 수 있는 작업이 없습니다" in t["dead_row_more_reason"], (
+            f"비활성 사유가 병기되지 않았습니다: {t['dead_row_more_reason']!r}"
+        )
+        assert t["live_row_more_enabled"] is True, "동사가 있는 행까지 잠갔습니다(과잠금)."
         assert t["assign_chips"] == 0, (
             "＋그룹지정 칩이 남아 있습니다 — 그룹 표면은 U4 §2-30 에서 걷혔습니다."
         )

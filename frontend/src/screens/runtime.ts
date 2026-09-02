@@ -92,12 +92,20 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     };
   }
 
+  /** 부팅 당김 — 화면당 한 번. **호스트 준비를 구조로 기다린다**(U6-A 리뷰).
+   *
+   *  종전에는 「`initSequence` 에 넣어라」는 관례가 유일한 방어였다. 그 관례를 모르는
+   *  호출자(부팅에 상주 마운트되는 오버레이의 effect 하나)가 `pywebviewready` **앞**에서
+   *  부르자 실 WebView2 가 창을 아예 못 띄웠다(`loaded` 미발화 ·
+   *  `Main window failed to start`). 규칙을 주석에 두는 대신 여기서 줄 세운다 — 어느
+   *  호출자든 안전하다. 이미 준비됐으면 즉시 resolve 라 부팅 지연은 없다. */
   function loadInitial(screen: ScreenName): Promise<unknown> {
     ensure(screen);
     const pending = initials.get(screen);
     if (pending !== undefined) return pending;
     const sinceRevision = store.revision(screen);
-    const started = client.initial(screen)
+    const started = client.whenReady()
+      .then(() => client.initial(screen))
       .then((result) => {
         const value = expectHostValue(result, `${screen} initial`);
         store.ingestPulled(screen, value, sinceRevision);

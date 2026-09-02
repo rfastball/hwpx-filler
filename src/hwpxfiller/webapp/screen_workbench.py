@@ -32,7 +32,7 @@ from pathlib import Path
 from ..application.jobs import stamp_run_completion
 from ..domain.format_engine import presets as format_presets
 from ..domain.job import Job, work_mode
-from ..external.job_store import JobRegistry, content_fingerprint
+from ..external.job_store import JobRegistry
 from ..domain.mapping import TYPES, MappingProfile
 from ..domain.text_render import template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
@@ -713,10 +713,11 @@ class WorkbenchController(MappingVerbsMixin):
         )
         if self.base_job is None:
             return base
-        if content_fingerprint(current) == content_fingerprint(self.base_job):
+        if (self.registry.content_fingerprint(current)
+                == self.registry.content_fingerprint(self.base_job)):
             return base
         digest = hashlib.sha256(
-            content_fingerprint(current).encode("utf-8")
+            self.registry.content_fingerprint(current).encode("utf-8")
         ).hexdigest()[:8]
         return (
             f"열어 둔 사이 작업 '{current.name}' 이(가) 다른 곳에서 바뀌었습니다"

@@ -51,6 +51,53 @@ JOB_NAMES: "tuple[str, ...]" = ("발주요청서", "발주요청 기안", "오�
 EXPECTED_HWPX = 3
 
 
+def _set_folder_in_settings(
+    s: Surface,
+    ctx: "ScenarioContext",
+    directory: str,
+    *,
+    what: str,
+    kind: str,
+    pick: str,
+    field: str,
+    extra: "list[tuple[str, str, str]] | None" = None,
+) -> None:
+    """설정 모달에서 폴더 하나를 지정하고 **되읽는다** — 저장 폴더·서식 폴더 공용 몸통.
+
+    두 행은 형상이 같다(⚙ → 모달 → 「찾아보기…」 → 경로 칸 되읽기 → 닫기). 사본으로 두면
+    한쪽에만 붙는 걸음이 생기고, 그 어긋남은 실패했을 때만 드러난다. 다른 것은 좌표와
+    문안뿐이라 인자로 받는다.
+
+    모달은 **닫고 나온다**: 열린 채 두면 뒤 걸음의 클릭을 가린다. 되읽기까지가 이 걸음이다 —
+    피커 응답이 Python 에 닿아 도출이 다시 서고 그 값이 경로 칸으로 돌아오는 것을 보고
+    나서야 다음으로 간다(무착지 클릭 금지).
+
+    ``extra`` 는 그 행에만 있는 추가 되읽기다: ``(표현식, 걸음 이름, 필요 좌표)``.
+    """
+    s.click_sel("#settingsOpen", what=f"설정 열기({what})")
+    s.wait(
+        "!document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 열림({what})",
+        requires=["#settingsModal"],
+    )
+    ctx.queue_folder_answer(directory)
+    s.click_sel(pick, what=what)
+    s.wait(
+        f"(document.getElementById('{field.lstrip('#')}')||{{}}).value === "
+        + json.dumps(directory, ensure_ascii=False),
+        f"설정 모달이 지정한 {kind}를 되읽음({what})",
+        requires=[field],
+    )
+    for expression, step, coordinate in extra or []:
+        s.wait(expression, f"{step}({what})", requires=[coordinate])
+    s.click_sel("#settingsClose", what=f"설정 닫기({what})")
+    s.wait(
+        "document.getElementById('settingsModal').classList.contains('hidden')",
+        f"설정 모달 닫힘({what})",
+        requires=["#settingsModal"],
+    )
+
+
 def _set_output_folder(
     s: Surface, ctx: "ScenarioContext", directory: str, *, what: str
 ) -> None:
@@ -58,66 +105,34 @@ def _set_output_folder(
 
     종전 대본은 작업 화면의 `#jobManagedPickFolder` 를 눌렀다. 저장 폴더가 작업 속성이 아니라
     앱 설정이 되면서 그 단추가 사라졌고, 지금 길은 토바 ⚙ → 설정 모달 → 「찾아보기…」다.
-    모달은 **닫고 나온다**: 열린 채 두면 뒤 걸음의 클릭을 가린다.
-
-    되읽기까지가 이 걸음이다 — 폴더 응답이 Python 에 닿아 도출이 다시 서고 그 값이 설정 면의
-    경로 칸으로 돌아오는 것을 보고 나서야 다음으로 간다(무착지 클릭 금지).
     """
-    s.click_sel("#settingsOpen", what=f"설정 열기({what})")
-    s.wait(
-        "!document.getElementById('settingsModal').classList.contains('hidden')",
-        f"설정 모달 열림({what})",
-        requires=["#settingsModal"],
-    )
-    ctx.queue_folder_answer(directory)
-    s.click_sel("#settingsPickFolder", what=what)
-    s.wait(
-        "(document.getElementById('settingsOutDir')||{}).value === "
-        + json.dumps(directory, ensure_ascii=False),
-        f"설정 모달이 지정한 저장 폴더를 되읽음({what})",
-        requires=["#settingsOutDir"],
-    )
-    s.click_sel("#settingsClose", what=f"설정 닫기({what})")
-    s.wait(
-        "document.getElementById('settingsModal').classList.contains('hidden')",
-        f"설정 모달 닫힘({what})",
-        requires=["#settingsModal"],
+    _set_folder_in_settings(
+        s, ctx, directory, what=what, kind="저장 폴더",
+        pick="#settingsPickFolder", field="#settingsOutDir",
     )
 
 
 def _set_templates_root(
     s: Surface, ctx: "ScenarioContext", directory: str, *, what: str
 ) -> None:
-    """서식 폴더를 지정한다(U6-A #975) — 저장 폴더 왕복과 **같은 형상**의 한 걸음.
+    """서식 폴더를 지정한다(U6-A #975) — 저장 폴더 왕복과 **같은 몸통**의 한 걸음.
 
     겨누는 값은 **지금 쓰이는 그 폴더**다: 이 걸음이 재는 것은 「피커 응답이 Python 에 닿아
     설정에 앉고 그 도출이 설정 면의 경로 칸으로 돌아오는가」이고, 다른 폴더로 옮기면 뒤
-    걸음의 템플릿 풀이 통째로 비어 그 뒤 대본이 전부 무의미해진다(무착지 클릭 금지).
+    걸음의 템플릿 풀이 통째로 비어 그 뒤 대본이 전부 무의미해진다.
+
+    출처 승격까지 함께 본다 — 같은 폴더를 겨눴어도 「기본 폴더」에서 「설정한 폴더」로
+    바뀌는 것이 이 왕복이 실제로 영속에 닿았다는 증거다(경로만 보면 무변화와 구분되지 않는다).
     """
-    s.click_sel("#settingsOpen", what=f"설정 열기({what})")
-    s.wait(
-        "!document.getElementById('settingsModal').classList.contains('hidden')",
-        f"설정 모달 열림({what})",
-        requires=["#settingsModal"],
-    )
-    ctx.queue_folder_answer(directory)
-    s.click_sel("#settingsPickTplFolder", what=what)
-    s.wait(
-        "(document.getElementById('settingsTplDir')||{}).value === "
-        + json.dumps(directory, ensure_ascii=False),
-        f"설정 모달이 지정한 서식 폴더를 되읽음({what})",
-        requires=["#settingsTplDir"],
-    )
-    s.wait(
-        "(document.getElementById('settingsTplDirSource')||{}).textContent === '설정한 폴더'",
-        f"서식 폴더 출처가 「설정한 폴더」로 승격({what})",
-        requires=["#settingsTplDirSource"],
-    )
-    s.click_sel("#settingsClose", what=f"설정 닫기({what})")
-    s.wait(
-        "document.getElementById('settingsModal').classList.contains('hidden')",
-        f"설정 모달 닫힘({what})",
-        requires=["#settingsModal"],
+    _set_folder_in_settings(
+        s, ctx, directory, what=what, kind="서식 폴더",
+        pick="#settingsPickTplFolder", field="#settingsTplDir",
+        extra=[(
+            "(document.getElementById('settingsTplDirSource')||{}).textContent"
+            " === '설정한 폴더'",
+            "서식 폴더 출처가 「설정한 폴더」로 승격",
+            "#settingsTplDirSource",
+        )],
     )
 
 

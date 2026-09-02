@@ -315,8 +315,15 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   그 당김은 **셸 부팅 시퀀스**(`bootstrap.js` 의 `initSequence`)가 진다 — 이 오버레이는 부팅
   상주 마운트라 컴포넌트 effect 에서 호스트를 부르면 그 호출이 `pywebviewready` **앞**에 서고,
   실측에서 그 순서가 WebView2 창을 아예 못 뜨게 했다(`loaded` 미발화 ·
-  `Main window failed to start`). 재지정 성사 뒤에는 지금 화면을 한 번 다시 당긴다(목록의
-  정본은 각 화면 스냅샷이다).
+  `Main window failed to start`). 그 순서 안전은 지금 **구조가 진다**: `runtime.loadInitial`
+  이 `client.whenReady()` 뒤에 당김을 줄 세우므로 어느 호출자든 안전하고, `initSequence` 의
+  자리는 「부팅에 당기는 채널 전수」를 한 표로 읽히게 하는 몫만 남는다. 재지정 성사 뒤에는
+  지금 화면을 한 번 다시 당긴다(목록의 정본은 각 화면 스냅샷이다).
+- **두 폴더 행은 팩토리 하나**(`FolderRow`)가 그린다 — 라벨·읽기 전용 경로·「찾아보기…」·
+  출처·사유·경로 어포던스의 형상이 같고 다른 것은 좌표와 값의 채널뿐이다. DOM `id` 는
+  계약 좌표라 **호출자가 명시로 싣는다**(파생 조립 금지 — 프로브·게이트·live 대본이 그
+  문자열을 그대로 문다). 서식 폴더 포트는 `client`·`notify` 를 **직접** 들어 경로 어포던스가
+  남의 컨트롤러에 묶이지 않는다.
 - **검증**: 렌더·발신 계약은 `tests/js/settings_sheet.test.js`(행 넷·두 폴더 행의 경로·출처·
   사유·잠금 사유·발신 목적지), 실 WebView2 왕복(⚙ 클릭 →
   열림 → 세그먼트 클릭 → `documentElement[data-theme]` 반영 → 원래 값 복원 → 닫힘 → 초점
@@ -1408,7 +1415,16 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   폴백 둘(`template_library`·`text_registry`) ⑤ `JobRegistry(template_root=…)` 의
   `template_key` 승격·해석(`job_store.library_key_for`/`resolve_library_key` 는 루트를 **명시
   인자**로 받는다). `host/locations` 의 `default_text_templates_dir`·`library_root_for` 는
-  **삭제**됐다.
+  **삭제**됐다. 루트는 **읽는 구간마다 한 번**만 평가한다(스캔 시작·저장 임계구역 진입) —
+  항목마다 다시 읽으면 도중의 재지정이 한 목록·한 저장을 두 루트의 뜻으로 쪼갠다.
+- **루트 재지정이 작업을 재결속하지 않는다**(#983 리뷰 차단 1). 저장된 링크는 둘이고
+  (`template_path` 절대경로 + `template_key` 루트 상대키) 해석 순서는
+  `job_store._resolve_template_link` 하나가 진다: **살아 있는 절대경로가 언제나 이긴다**.
+  키는 「살던 자리가 통째로 사라졌을 때」만 서고(그 자리는 저장된 경로에서 키를 떼어
+  되짚는다 — `_former_root_of`), 그것이 #348 이 겨눈 홈 이동·백업 복원의 정확한 모양이다.
+  파일 하나가 지워진 경우는 **끊긴 링크로 남는다** — 새 루트의 동명 파일로 갈아타면 작업이
+  조용히 다른 서식으로 문서를 만든다(법적 효력 문서에서 최악의 조용한 재결속). 읽기는
+  여전히 디스크를 고치지 않는다(존재를 묻기만 한다).
 - **재지정 동사는 하나**다: 직접 브리지 `pick_templates_root` → `TemplateController.set_templates_root`.
   빈 값·파일 경로는 loud 거절이고, 성공은 **한 번의 푸시**로 두 밴드와 `templates_root` 존을
   함께 옮긴다(소비자가 전부 홀더를 지나므로 갈아 끼울 두 번째 자리가 없다). 편집 세션에는
@@ -1420,19 +1436,25 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - **표시명 규칙은 하나**다: `domain/template_status.library_display_name` — 루트 상대 경로,
   확장자 제외, POSIX(`온나라/기안`). 재귀 루트에서 basename 은 유일하지 않으므로 하위폴더가
   이름에 남아야 두 파일이 구분된다. 파일명 기반 **정체성**(`rel_key`·`template_key`)은 불변이다.
-- **나열 제외는 두 매체 공통**이다: `Results`(산출물)·`.trash`(옛 삭제 보관소). 이름의 단일
-  출처는 `domain/template_status` 의 `OUTPUT_SUBDIR_NAME`·`TRASH_DIR_NAME` 이고, txt 쪽은
-  `domain/text_template.EXCLUDED_DIR_NAMES` 로 그 둘을 그대로 참조한다(문자열 재선언 금지).
+- **나열 제외는 두 매체 공통**이다: `Results`(산출물)·`.trash`(옛 삭제 보관소). 목록과 술어의
+  단일 출처는 `domain/template_status` 의 `EXCLUDED_DIR_NAMES`·`is_excluded_subtree` 이고,
+  hwpx walker·txt walker·레거시 이관 **셋이 그 하나를 부른다**(문자열·조건 재선언 금지).
 - **레거시 TXT 는 1회 이관된다**: 설정 키가 비어 기본 루트를 쓰는 경우에만, 부팅 시
   `home/text_templates/**/*.txt` 를 같은 상대 경로로 `home/templates/` 로 **옮긴다**(복사가
   아니다 — 다음 부팅에 걷을 것이 남지 않는다). 이름이 이미 있으면 그 파일은 건드리지 않고
-  사유에 남긴다. 결과가 있으면 부팅 뒤 **경보 채널**(`settings.alert` — stderr + 홈
-  `webapp-alerts.log`)로 한 번 재진술한다. 사용자가 루트를 지정했으면 이관하지 않는다(고른
-  폴더에 앱이 파일을 넣지 않는다).
+  사유에 남긴다. 나열이 거르는 하위트리(`Results`·`.trash`)는 **옮기지 않고** `skipped` 에
+  사유로 남긴다 — 옮겨 봐야 새 루트에서도 걸러져 목록에서 사라진다. 재진술은 **두 채널**이
+  받는다: 내구성 로그(`settings.alert` — stderr + 홈 `webapp-alerts.log`)와 **화면**(`tpl`
+  스냅샷 `templates_root.notice` 에 이 프로세스 수명 동안 병기 — 도출 사유가 이미 있으면
+  줄바꿈으로 둘 다). 로그만 두면 사용자는 자기 TXT 가 옮겨진 사실을 영영 모른다. 사용자가
+  루트를 지정했으면 이관하지 않는다(고른 폴더에 앱이 파일을 넣지 않는다).
 - **퇴역한 동사**(같은 슬라이스): 폴더 일괄 가져오기(`import_templates_folder` 브리지 ·
   `tpl/scan_import_folder`·`import_folder` · 링1 후보 몸통 · 「폴더에서 가져오기…」 버튼)와
   삭제·휴지통(`tpl/delete`·`undo_delete` · `TemplateFileStore.trash`/`restore` · 30일 정리 ·
-  행 메뉴의 「삭제」). 앱은 사용자 폴더에 `.trash` 를 만들지 않는다 — 「폴더에서 보기」가
+  행 메뉴의 「삭제」). 삭제가 걷히면서 **동사가 0 인 행**이 생겼다(COMPILED·FILLED hwpx ·
+  판독 실패 TXT) — 그 행의 ⋮ 는 **비활성 + 사유**(`LIB_ROW_NO_ACTION_REASON`)이고, 메뉴를
+  여는 쪽과 트리거를 잠그는 쪽이 `libRowMenuItems` **한 술어**를 본다(누르면 아무 일도 없는
+  버튼 금지). 앱은 사용자 폴더에 `.trash` 를 만들지 않는다 — 「폴더에서 보기」가
   삭제 동사를 대신한다. 단건 「가져오기…」(`import_template_file` → 루트 직속 복사 + `이름 (2)`
   접미)는 **유지**된다. 남은 `deleted` 통지 생산자는 동결 온보딩의 예제 일괄 제거뿐이다.
 - **동결 그룹 정리는 허용한다**: 루트를 바꾸면 첫 스냅샷의 `TemplateGroupModel.reconcile` 이

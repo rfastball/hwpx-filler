@@ -20,7 +20,7 @@ import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .atomic import write_text_atomic
 from hwpxfiller.application.jobs import (
@@ -184,6 +184,56 @@ def resolve_library_key(key: str, root: "Path | None" = None) -> str:
     return str(media_root / key)
 
 
+def _former_root_of(template_path: str, template_key: str) -> "Path | None":
+    """저장된 절대경로에서 **그것이 살던 루트**를 되짚는다 — 키가 그 경로의 꼬리이므로 가능하다.
+
+    ``.../templates/조달/공고서.hwpx`` 와 키 ``조달/공고서.hwpx`` 에서 ``.../templates`` 를
+    얻는다. 꼬리가 맞지 않으면(구 JSON·손편집) ``None`` — 모르는 것을 추측하지 않는다.
+    """
+    if not template_path or not template_key:
+        return None
+    normal = _lexically_normal(template_path)
+    tail = PurePosixPath(template_key).parts
+    if len(tail) > len(normal.parts):
+        return None
+    if tuple(os.path.normcase(p) for p in normal.parts[-len(tail):]) != tuple(
+        os.path.normcase(p) for p in tail
+    ):
+        return None
+    return Path(*normal.parts[: len(normal.parts) - len(tail)])
+
+
+def _resolve_template_link(
+    template_path: str, template_key: str, root: "Path | None"
+) -> str:
+    """저장된 링크 둘(절대경로 + 상대키)에서 **지금 열 파일**을 고른다(#348 · U6-A #975).
+
+    **살아 있는 절대경로가 언제나 이긴다.** U6-A 전에는 키가 무조건 이겼고, 그때 키가 푸는
+    루트는 앱 홈 하나뿐이라 「같은 키 = 같은 파일」이 사실상 참이었다. 루트가 **사용자가
+    고르는 값**이 되면서 그 전제가 깨졌다: 서식 폴더를 바꾸고 새 폴더에 같은 이름 파일이
+    있으면 키 해석이 성공해 작업이 조용히 **다른 템플릿**으로 문서를 만든다 — 법적 효력이
+    있는 문서에서 최악의 조용한 재결속이다.
+
+    **키는 「살던 자리가 통째로 사라졌을 때」만 선다.** 그것이 #348 이 겨눈 시나리오
+    (홈 이동·백업 복원·PC 교체)의 정확한 모양이고, 파일 하나가 지워진 것과 구분된다:
+    후자는 끊긴 링크로 남아 기존 relink 동선이 받는다(새 루트의 동명 파일로 갈아타지 않는다).
+    살던 자리는 :func:`_former_root_of` 가 저장된 경로에서 되짚는다.
+
+    **읽기는 디스크를 고치지 않는다**(불변): 존재를 *묻기만* 하고 승격은 :func:`encode_job`
+    을 지나는 저장에서만 일어난다.
+    """
+    if template_path and Path(template_path).exists():
+        return template_path
+    former_root = _former_root_of(template_path, template_key)
+    location_is_gone = former_root is None or not former_root.is_dir()
+    if location_is_gone:
+        resolved = resolve_library_key(template_key, root)
+        if resolved:
+            return resolved
+    # 살던 자리는 남았는데 파일만 없다 — 끊긴 링크를 정직하게 그대로 낸다.
+    return template_path
+
+
 # ------------------------------------------------------------------ 직렬화
 def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
     """구 ``Job.to_dict`` — dict 키 순서·값 완전 동일(bytes 불변, P2-21 #569).
@@ -315,10 +365,9 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
         if not isinstance(k, str) or not isinstance(v, str):
             raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
         tags[k] = v
-    # 템플릿 링크 해석(#348): 상대키가 있으면 **지금** 홈 기준으로 풀고, 없으면(구 JSON·
-    # 루트 밖 템플릿) 옛 절대경로를 그대로 쓴다. 마이그레이션은 없다 — 읽는 김에 디스크를
-    # 고치지 않고(조용한 변이 금지), 승격은 저장이 지나갈 때만 일어난다.
-    template_path = resolve_library_key(_str("template_key"), root) or _str("template_path")
+    template_path = _resolve_template_link(
+        _str("template_path"), _str("template_key"), root
+    )
     return Job(
         name=_str("name"),
         template_path=template_path,
@@ -456,16 +505,20 @@ class JobRegistry:
         스탬프도 직렬화한다).
         """
         with self._write_lock:
+            # 루트는 임계구역 **시작에 한 번** 읽는다(U6-A 리뷰): 충돌 검사·직전 판본 읽기·
+            # 쓰기가 각자 읽으면 그 사이 재지정이 끼어 한 저장이 두 루트를 뜻할 수 있고,
+            # 매 저장이 설정 파일을 세 번 여는 값도 아니다.
+            root = self._template_root()
             self.directory.mkdir(parents=True, exist_ok=True)
             path = self.path_for(job.name)
             if not allow_overwrite:
                 guard_slug_collision(
-                    path, job.name, lambda p: self._load(p).name, kind="작업"
+                    path, job.name, lambda p: load_job(p, root=root).name, kind="작업"
                 )
-            advance_revisions(job, self._previous_at(path))
-            save_job(path, job, root=self._template_root())
+            advance_revisions(job, self._previous_at(path, root=root))
+            save_job(path, job, root=root)
 
-    def _previous_at(self, path: Path) -> "Job | None":
+    def _previous_at(self, path: Path, *, root: "Path | None" = None) -> "Job | None":
         """저장 대상 자리의 직전 판본 — 없거나 **읽을 수 없으면** ``None``.
 
         손상 파일 위에 저장하는 경로(``allow_overwrite=True``)에서 예외를 올리면 저장 자체가
@@ -473,7 +526,7 @@ class JobRegistry:
         대신 인메모리 값으로 새로 세운다(없는 것을 지어내지 않는다).
         """
         try:
-            return self._load(path)
+            return load_job(path, root=root if root is not None else self._template_root())
         except Exception:  # noqa: BLE001 — 부재·손상·권한: 잇지 않는다(위 docstring)
             return None
 
