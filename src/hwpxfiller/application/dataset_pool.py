@@ -553,14 +553,16 @@ class DatasetPoolViewModel:
     모르고, 잠금도 잡지 않는다 — 원자성이 필요한 전이는 포트의 semantic op 하나로
     완결된다(#570).
 
-    ``source_factory`` 는 :meth:`review` 만 쓰는 두 번째 포트다(고르기 열 공용 ④). 기본이
-    ``None`` 인 이유는 이 VM 의 다른 전건이 데이터를 **열지 않기** 때문이고(등록은 참조만
-    저장한다), 미주입 상태의 :meth:`review` 는 조용히 빈 열 목록을 내지 않고 시끄럽게
-    거절한다.
+    ``source_factory`` 는 :meth:`review` 가 쓰는 두 번째 포트이고 ``registry`` 와 같은
+    **필수 주입**이다(기본값·service locator 금지 — :func:`hwpxfiller.gui.run_state
+    .resolve_file_source` 와 같은 규율). 종전에는 기본이 ``None`` 이고 :meth:`review` 가
+    미주입을 런타임에 거절했는데, 그 갈래는 **조립 실수를 사용자에게 미루는 자리**였다:
+    조립하는 곳은 하나(:mod:`hwpxfiller.webapp.app`)이고 거기서 늘 넘기므로, 부재는
+    사용자가 「자세히…」를 누르는 순간이 아니라 조립하는 순간 드러나야 한다.
     """
 
     def __init__(
-        self, registry: DatasetPoolPort, *, source_factory: "DatasetSourcePort | None" = None
+        self, registry: DatasetPoolPort, *, source_factory: "DatasetSourcePort"
     ):
         self.registry = registry
         self._source_factory = source_factory
@@ -635,10 +637,10 @@ class DatasetPoolViewModel:
     def count_label(self) -> str:
         """고르기 열 머리의 개수 — 분류사는 **항목의 것**이다(``개``).
 
-        소비자가 하나(고르기 열)로 좁혀지며 좌 열과 같은 분류사로 통일했다: 두 열이 한
-        컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면, 같은 자리의 같은 사실이
-        표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터 행)의 분류사이고
-        여기서 세는 것은 등록 항목이다.
+        좌 열(:meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.count_label`)과
+        **같은 형**이다: 두 열이 한 컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면 같은
+        자리의 같은 사실이 표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터
+        행)의 분류사이고 여기서 세는 것은 등록 항목이다.
         """
         return f"{len(self._rows)}개" if self._rows else ""
 
@@ -657,13 +659,9 @@ class DatasetPoolViewModel:
 
         상세 시트가 서는 이유의 절반이 바로 그 실패다(끊긴 참조·오타난 시트·손상 파일).
         예외로 올리면 답할 것이 있는 그 항목에서 시트가 영영 안 열린다 —
-        :meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerState.detail_view` 의
+        :meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.detail_view` 의
         ``_failed_detail`` 과 같은 처분이고, 접는 자리도 같은 이유로 여기 하나다.
         """
-        if self._source_factory is None:
-            raise RuntimeError(
-                "데이터 소스 복원기가 주입되지 않아 등록 데이터를 검토할 수 없습니다."
-            )
         try:
             return tuple(self._source_factory(item).fields()), ""
         except Exception as exc:  # noqa: BLE001 — 읽기 실패는 사유를 단 상세로(봉투 밖 금지)

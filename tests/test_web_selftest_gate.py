@@ -447,6 +447,41 @@ class TestWebSelftestGate:
             "needsAction",
         ]
 
+    def test_the_pairing_handle_is_the_one_door_back_to_choosing(
+        self, selftest_result: dict
+    ) -> None:
+        """연결 손잡이가 실렌더에서 서고, 눌리고, 편집기 1단계 「고르기」로 간다.
+
+        이 화면에서 조합을 다시 고르는 문은 **하나뿐**이다(2026-09-03 재판정에서 「템플릿
+        재선택」·「데이터 재선택」 두 버튼이 이 손잡이로 접혔다). 그 하나가 죽으면 사용자는
+        그 작업의 조합을 바꿀 자리를 잃는데, 마크업 문자열 단언은 그것을 못 본다 — 정적
+        계약은 규칙의 존재를 보고 **결과를 못 본다**. 그래서 실렌더가 진다.
+
+        두 갈래를 함께 읽는 것이 계약이다: 수치를 센 갈래(``counted``)와 세지 못한 갈래는
+        가운데 문안이 갈리지만 **손잡이는 둘 다 선다**. 한쪽만 재면 어포던스 소실이 절반의
+        초록으로 지나간다.
+        """
+        pair = selftest_result["library_pairing_edit"]
+
+        # ① 결속 갈래 — 수치가 서고 손잡이도 선다.
+        assert pair["bound_present"] is True, pair
+        assert pair["bound_title"] == "고르기에서 조합을 바꿉니다", pair
+        assert pair["bound_nums"] == "연결 3 / 4", pair
+
+        # ② 클릭의 착지 — 편집기 진입 포트가 **1단계 고르기**를 겨눠 정확히 한 번 불린다.
+        assert pair["entry_calls"] == 1, pair
+        assert pair["entry_name"] == "연결손잡이검증", pair
+        assert pair["entry_section"] == "template", pair
+        # 진입 사유는 이탈 가드·복귀 좌표가 읽는 축이라 함께 실린다(#966 deep-link 불변).
+        assert pair["entry_reason"] == "library", pair
+
+        # ③ 세지 못한 갈래 — 수치 대신 동사 하나이고, 문은 그대로 남는다.
+        assert pair["uncounted_present"] is True, pair
+        assert pair["uncounted_title"] == "고르기에서 조합을 바꿉니다", pair
+        assert pair["uncounted_label"] == "조합 보기", pair
+        # 데이터 미결속은 빈칸이 아니라 **동선**이다 — 그 두 번째 문도 실물로 선다.
+        assert pair["connect_data"] == "연결손잡이검증", pair
+
     def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
         """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
 

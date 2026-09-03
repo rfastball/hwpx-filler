@@ -24,15 +24,22 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.webapp.screen_pool import PoolController
 
 
 def _controller(tmp_path: Path) -> "tuple[PoolController, DatasetPoolRegistry, list]":
+    """소스 복원기는 레지스트리와 같은 **필수 주입**이다(공용 ⑤ 리뷰) — 기본값을 두면 조립
+    실수가 사용자가 「자세히…」를 누르는 순간까지 미뤄진다. composition root 가 주는 그
+    함수를 그대로 준다(대역을 세우면 계약이 아니라 대역을 재게 된다)."""
     pushes: list = []
     reg = DatasetPoolRegistry(tmp_path / "datasets")
-    ctrl = PoolController(reg, lambda s, snap: pushes.append((s, snap)))
+    ctrl = PoolController(
+        reg, lambda s, snap: pushes.append((s, snap)),
+        source_factory=source_from_pool_item,
+    )
     return ctrl, reg, pushes
 
 
@@ -277,8 +284,6 @@ def test_rows_surface_a_broken_reference_and_the_prefill_comes_from_review(tmp_p
     두 자리가 갈린 것이 슬라이스 ⑤ 의 착지다: 좁은 열 계약에는 프리필 축(시트·메모)이 없고,
     「다시 연결」이 요구하는 그 셋은 ``review`` 한 왕복이 세우는 상세 투영 하나가 든다.
     """
-    from hwpxfiller.data.factory import source_from_pool_item
-
     ctrl, reg, _ = _controller(tmp_path)
     live = tmp_path / "살아있는.csv"
     live.write_text("a,b\n1,2\n", encoding="utf-8")
@@ -1118,18 +1123,6 @@ def test_column_row_of_a_kind_without_its_own_icon_stands_as_other(tmp_path):
 # ------------------------------------------------- 항목 상세 시트(고르기 열 공용 ④)
 
 
-def _review_controller(tmp_path) -> "tuple[PoolController, DatasetPoolRegistry, list]":
-    """상세 투영까지 도는 컨트롤러 — 소스 복원기는 composition root 가 주는 함수 그대로다."""
-    from hwpxfiller.data.factory import source_from_pool_item
-
-    pushes: list = []
-    reg = DatasetPoolRegistry(tmp_path / "datasets")
-    ctrl = PoolController(
-        reg, lambda s, snap: pushes.append((s, snap)), source_factory=source_from_pool_item
-    )
-    return ctrl, reg, pushes
-
-
 def _fixture_xlsx() -> str:
     return str(Path(__file__).parent / "fixtures" / "multi_sheet.xlsx")
 
@@ -1148,7 +1141,7 @@ def _pclm_db(path: Path) -> str:
 
 def test_review_publishes_the_detail_zone_and_a_result_line(tmp_path):
     """검토 한 왕복이 상세 존을 세운다(tpl 미러) — 시트가 두 왕복으로 채워지지 않는다."""
-    ctrl, _, pushes = _review_controller(tmp_path)
+    ctrl, _, pushes = _controller(tmp_path)
     ctrl.dispatch(
         "register_excel",
         {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "낙찰현황", "note": "분기"},
@@ -1172,7 +1165,7 @@ def test_review_publishes_the_detail_zone_and_a_result_line(tmp_path):
 
 def test_review_of_a_broken_reference_opens_the_sheet_with_the_reason(tmp_path):
     """끊긴 참조도 시트가 선다 — 거절이 아니라 **사유를 단 상세**다(막다른 경보 금지)."""
-    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "사라진", "path": str(tmp_path / "없다.xlsx")})
     key = _rows(ctrl)[0]["key"]
 
@@ -1188,7 +1181,7 @@ def test_review_of_a_broken_reference_opens_the_sheet_with_the_reason(tmp_path):
 
 def test_review_of_a_contract_list_titles_the_view(tmp_path):
     """계약 목록 상세 — 시트 자리에 뷰가 서고 내부 이름은 표면 문안으로 새지 않는다."""
-    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch(
         "register_pclm",
         {"name": "계약", "db": _pclm_db(tmp_path / "pclm.db"), "view": "v_통합_v1"},
@@ -1204,7 +1197,7 @@ def test_review_of_a_contract_list_titles_the_view(tmp_path):
 
 def test_review_of_an_unknown_key_is_refused_and_the_list_is_reread(tmp_path):
     """없는 키는 다른 stale 카드와 **같은 문안**으로 거절한다(조용한 무반응 금지)."""
-    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl, _, _ = _controller(tmp_path)
     result = ctrl.dispatch("review", {"key": "없는키"})
     assert result["ok"] is False and "찾을 수 없습니다" in result["error"]
     assert ctrl.snapshot()["detail"] is None
@@ -1213,7 +1206,7 @@ def test_review_of_an_unknown_key_is_refused_and_the_list_is_reread(tmp_path):
 
 def test_detail_is_dropped_when_its_item_leaves_the_list(tmp_path):
     """겨눈 항목이 사라지면 상세도 걷는다 — 죽은 키를 겨눈 동사 버튼을 남기지 않는다."""
-    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "물품"})
     key = _rows(ctrl)[0]["key"]
     ctrl.dispatch("review", {"key": key})
@@ -1226,7 +1219,7 @@ def test_detail_is_dropped_when_its_item_leaves_the_list(tmp_path):
 
 def test_state_verbs_reproject_the_open_detail(tmp_path):
     """보관·활성화 뒤 열려 있는 상세는 **다시 선다** — 옛 배지를 이고 있지 않는다."""
-    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "물품"})
     key = _rows(ctrl)[0]["key"]
     ctrl.dispatch("review", {"key": key})
@@ -1242,11 +1235,3 @@ def test_state_verbs_reproject_the_open_detail(tmp_path):
     ctrl.dispatch("archive", {"key": other})
     assert ctrl.snapshot()["detail"]["key"] == key
 
-
-def test_review_without_a_source_factory_does_not_fake_an_empty_column_list(tmp_path):
-    """복원기 미주입 컨트롤러의 검토는 조용히 「열 0개」로 착지하지 않는다."""
-    ctrl, _, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel", {"name": "A", "path": _fixture_xlsx(), "sheet": "물품"})
-    key = _rows(ctrl)[0]["key"]
-    with pytest.raises(RuntimeError, match="복원기"):
-        ctrl.dispatch("review", {"key": key})

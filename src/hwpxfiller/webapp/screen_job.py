@@ -286,7 +286,6 @@ from .data_zone import (
     EMPTY_TABLE as _EMPTY_TABLE,
     DataZoneMixin,
 )
-from .pool_column import session_data_row
 from .screens import (
     NO_ROWS_TEXT,
     PoolTargetingMixin,
@@ -1892,7 +1891,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         풀 경로는 :func:`~hwpxfiller.webapp.screens.load_pool_into` 의 거절(나라 동결·삭제된
         항목·죽은 참조·0행)이, 파일·계약 목록 경로는 소스 해석 예외와 :data:`NO_ROWS_TEXT`
         가 낸다. 파일 부재만 마운트를 시도하기 전에 가른다 — 판정은 풀 목록의 「끊김」
-        배지와 **같은 술어**(:func:`~hwpxfiller.webapp.screens.reference_missing`)이고,
+        배지와 **같은 술어**(:func:`~hwpxfiller.application.dataset_pool.reference_missing`)이고,
         계약 목록 db 도 그 술어의 대상이다(가리키는 것이 파일이면 종류를 묻지 않는다).
         """
         if descriptor["source"] == "pool":

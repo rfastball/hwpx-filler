@@ -38,7 +38,7 @@ import { PathActions, invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
 import {
   PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
-  dataRowMenuItems, poolRefusalText,
+  dataRowMenuItems, mergeSessionRow, poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
@@ -622,50 +622,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     else throw new Error(`알 수 없는 항목 동사입니다: ${action}`);
   }
 
-  /** 우 열 행 동사 — 링1 상태 동사 · 경로 문 · 「자세히…」. **닫힌 집합**은 좌 열과 같다.
-   *
-   *  프리필 재료를 **검토 왕복이 낸다**(고르기 열 공용 ④): 「다시 연결」은 `path`·`sheet`·
-   *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다(계약이 좁다 — 그 키를 얹으면 좌
-   *  열이 모르는 축이 열 형에 생긴다). 그 재료는 `pool/review` 가 세우는 상세 투영
-   *  하나다. */
-  async function runDataVerb(
-    action: string, row: Obj, trigger: HTMLElement,
-  ): Promise<void> {
-    if (action === "reveal") {
-      await invokePathAction({
-        client: deps.client, path: String(row.path || ""),
-        action: "reveal", notify: deps.notify,
-      });
-      return;
-    }
-    const key = String(row.key || "");
-    if (action === "detail") { await deps.poolRegistration.openDetail(key, trigger); return; }
-    if (!action.startsWith("act:")) {
-      throw new Error(`알 수 없는 데이터 동사입니다: ${action}`);
-    }
-    if (action === "act:relink") {
-      const detail = await reviewPoolItem(key);
-      if (detail === null) return;
-      await poolAction("relink", detail);
-      return;
-    }
-    await poolAction(action.slice(4), row);
-  }
-
-  /** 검토 왕복 → 그 항목의 상세 투영(못 세우면 사유를 남기고 ``null``).
-   *
-   *  키 대조가 계약이다: 왕복 사이에 다른 push 가 끼면 스냅샷의 상세가 남의 항목일 수 있고,
-   *  그 값을 프리필로 쓰면 사람이 겨눈 적 없는 등록을 덮어쓴다. */
-  async function reviewPoolItem(key: string): Promise<Obj | null> {
-    await dispatch("pool", "review", { key });
-    const detail = ((poolModel.getSnapshot() || {}).detail || null) as Obj | null;
-    if (detail === null || String(detail.key) !== key) {
-      noticeSave(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
-      return null;
-    }
-    return detail;
-  }
-
   async function handleLibMenu(action: string): Promise<void> {
     const menu = view.libMenu;
     if (menu === null) return;
@@ -674,19 +630,13 @@ export function createEditorController(deps: EditorControllerDeps) {
     const side = menu.side;
     closeLibMenu();
     try {
-      if (side === "dat") await runDataVerb(action, item, trigger);
+      /* 우 열 분기표는 **공용 몸통 하나**다(공용 ⑤ 리뷰) — 이 화면이 데이터 동사를
+         발명하지 않는다. 좌 열(`runItemVerb`)은 tpl 채널이라 여기 남는다. */
+      if (side === "dat") await poolVerbs.runVerb(action, item, trigger);
       else await runItemVerb(action, item, trigger);
     } catch (error) {
       deps.notify(String((error as Obj)?.message || error));
     }
-  }
-
-  /** 존 통지가 든 동사 — 지금은 중복 정리 하나다. **모르는 키는 시끄럽게 거절한다**:
-   *  조용히 떨어뜨리면 Python 이 통지에 동사를 더한 날 「눌렀는데 아무 일도 없다」가 된다.
-   *  payload 키는 `pool/resolve_duplicate` 스키마 그대로(`keep`)다. */
-  function poolNoticeAction(key: string, payload: Obj): void {
-    if (key === "resolve_duplicate") { void resolveDuplicate(String(payload.keep || "")); return; }
-    deps.notify(`알 수 없는 통지 동사입니다: ${key}`);
   }
 
   /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(U6-E #979).
@@ -1333,9 +1283,10 @@ export function createEditorController(deps: EditorControllerDeps) {
       : refusals.join(" "));
   }
 
-  /* 관리 동사 한 벌은 데이터 선택 다이얼로그와 **같은 몸통**이다(U6-B) — 같은 `pool`
-     채널·같은 확인 왕복. 갈리는 것은 「사용」의 발행과 실패가 착지하는 자리뿐이다. */
-  const { poolAction, resolveDuplicate } = createPoolVerbs({
+  /* 동사 한 벌은 데이터 선택 다이얼로그와 **같은 몸통**이다(U6-B · 공용 ⑤ 리뷰) — 같은
+     `pool` 채널·같은 확인 왕복·같은 분기표·같은 검토 왕복·같은 통지 동사. 갈리는 것은
+     「사용」의 발행과 실패가 착지하는 자리, 그리고 네 포트뿐이다. */
+  const poolVerbs = createPoolVerbs({
     /* 관리 동사도 **편집 체인**에 선다(리뷰 6): 이 화면의 다른 발신과 순서를 나눠 갖지
        않으면 보관·삭제가 마운트·저장 왕복 사이로 끼어든다. 연타 차단은 공용 몸통의
        in-flight 가드가 지고(다이얼로그와 같은 자리), 체인은 그 위의 직렬화다. */
@@ -1350,7 +1301,15 @@ export function createEditorController(deps: EditorControllerDeps) {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
     }),
+    poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
+    reveal: (path: string) => invokePathAction({
+      client: deps.client, path, action: "reveal", notify: deps.notify,
+    }),
+    /* 시트의 주인은 데이터 선택 컨트롤러다 — 이 화면은 문만 연다(두 번째 구현 금지). */
+    openDetail: (key: string, trigger: HTMLElement | null) =>
+      deps.poolRegistration.openDetail(key, trigger),
   });
+  const { poolAction, resolveDuplicate } = poolVerbs;
 
   /** 「서식 폴더 설정」 — **기존 설정 모달을 그대로 연다**(새 표면 0).
    *
@@ -1517,7 +1476,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     refreshPool: (): Promise<Obj> => dispatch("pool", "refresh", {}),
     useLibraryTemplate, importTemplate, pickData,
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
-    poolAction, resolveDuplicate, poolNoticeAction, findDataItem,
+    poolAction, resolveDuplicate, poolNoticeAction: poolVerbs.noticeAction, findDataItem,
     openPin, openPclm, openSettings,
     tplModel, poolModel,
     confirmSuggested, chooseDataColumn, chooseDisplay, takePendingConstFocus,
@@ -1788,20 +1747,18 @@ function DataPool(props: {
   const column = ((pool || {}).column || null) as Obj | null;
   const pairing = (snapshot.pairing || {}) as Obj;
   const sessionRow = (pairing.data_row || null) as Obj | null;
-  /* 두 벌의 **순수 이어붙이기**다 — 판정은 없다. 두 행 다 Python 이 같은 계약으로 냈고,
-     여기서 정하는 것은 「세션 행이 먼저」라는 순서 하나뿐이다(지금 쓰는 것이 맨 위). */
-  const merged = column === null
-    ? (sessionRow ? { rows: [sessionRow], notices: [], empty_hint: "", count_label: "", result: {} } : null)
-    : { ...column, rows: sessionRow ? [sessionRow, ...(column.rows || [])] : (column.rows || []) };
+  /* 이어붙이기는 **공용 순수 함수 하나**다(공용 ⑤ 리뷰) — 데이터 선택 다이얼로그와 같은
+     목록이라 같은 순서·같은 최소 열을 써야 한다. */
+  const merged = mergeSessionRow(column, sessionRow);
   const host: PoolColumnHost = {
     side: "dat",
     rootId: "editorDataPool",
     listId: "editorDataList",
     title: "데이터",
-    headSub: column === null ? "읽는 중…" : String(column.count_label || ""),
+    headSub: poolHeadSub(column),
     /* 고름 표지의 정본은 편집기 스냅샷이다: 풀 결속이면 그 슬롯 키, 파일 결속이면 세션
        행이다. 두 축이 배타라 한 줄로 접힌다(둘 다 서는 상태는 Python 이 만들지 않는다). */
-    selectedKey: String(pairing.data_key || (sessionRow ? "session" : "")),
+    selectedKey: String(pairing.data_key || (sessionRow ? SESSION_DATA_KEY : "")),
     choose: (key: string) => controller.guarded(() => controller.chooseData(key)),
     drop: (sourceSide: string, sourceKey: string, targetKey: string) =>
       controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
@@ -1951,10 +1908,12 @@ export function TplDetailSheet(props: { controller: EditorController }): ReactNo
     .filter((entry) => entry.action !== "detail");
   return h(DetailSheetFrame as any, Object.assign({}, shared, {
     title: String(detail.name || ""),
-    /* TXT 는 말할 상태 축이 없어 매체 표지가 그 자리에 선다(링1 이 배지를 비운 이유). */
+    /* 배지의 저자는 **링1 하나**다(공용 ⑤ 리뷰) — TXT 는 말할 상태 축이 없어 그 자리에
+       매체 표지가 서지만, 그 판정도 문안도 `compile_badge` 가 낸다. 종전에는 여기서
+       `media === "txt"` 를 다시 판정해 문자열을 지었다(같은 상태 두 곳 판정). */
     pill: {
-      label: media === "txt" ? "TXT" : String(detail.badge_label || ""),
-      level: media === "txt" ? "muted" : String(detail.badge_level || "muted"),
+      label: String(detail.badge_label || ""),
+      level: String(detail.badge_level || "muted"),
     },
     path: String(detail.path || ""),
     /* 판독 실패·구간 진단은 숨기지 않는다 — 오류 행에서 「자세히…」가 서는 이유가 이것이다. */

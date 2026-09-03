@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.gui.compile_badge import TEXT_BADGE_LABEL, TEXT_BADGE_LEVEL
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
@@ -235,7 +236,11 @@ def test_review_of_a_txt_item_answers_with_fields_and_no_convert_axis(tmp_path, 
     ctrl.dispatch("review", {"path": path})
 
     detail = ctrl.snapshot()["detail"]
-    assert detail["media"] == "txt" and detail["state"] == "" and detail["badge_label"] == ""
+    assert detail["media"] == "txt" and detail["state"] == ""
+    # 상태 축이 없는 자리에는 **매체 표지**가 선다(고르기 열 공용 ⑤ 리뷰) — 그 어휘의 저자는
+    # 링1 `compile_badge` 하나이고, 웹은 `media` 로 다시 판정하지 않는다.
+    assert detail["badge_label"] == TEXT_BADGE_LABEL
+    assert detail["badge_level"] == TEXT_BADGE_LEVEL
     assert [f["name"] for f in detail["fields"]] == ["공고명"]
     assert detail["slots"] is None and detail["actions"] == []
     assert "검토" in _result(ctrl)["text"]

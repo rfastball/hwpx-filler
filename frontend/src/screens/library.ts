@@ -389,8 +389,9 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
       h("th", null, "표시형"), h("th", null, "첫 행"))),
     h("tbody", null,
       /* 행 자체가 손잡이다. `role="button"` 은 **얹지 않는다** — `tr` 의 암묵 role 을 덮으면
-         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + 제목으로 어포던스를
-         세우고, 무엇이 일어나는지는 계획 줄이 한 번 더 말한다. */
+         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + `title` 이 어포던스를
+         세우고, 무엇이 일어나는지도 그 `title` 하나가 말한다(종전에는 표 아래 계획 줄이
+         한 번 더 말했고, 그 줄은 2026-09-03 재판정에서 걷혔다). */
       ...rows.map((row) => h("tr", {
         key: String(row.template_field), "data-field": row.template_field,
         tabIndex: 0, title: `'${row.template_field}' 연결을 편집기에서 확인합니다`,
@@ -429,8 +430,10 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
       onClick: () => { void controller.relink(detail.name); },
     }, "템플릿 다시 연결…") : null) : null;
   /* 상세 하단은 U6-F(#980)에서 연결 그림이 됐다 — 종전의 사실 3행(dl)이 답하던 정체는
-     카드가 지고, 「이 작업은 무엇을 무엇으로 채워 어떤 파일을 만드나」를 표와 계획 줄이
-     잇는다. 표가 서지 않는 갈래(템플릿을 읽을 수 없음)에서도 카드는 남는다. */
+     카드가 지고, 「무엇을 무엇으로 채우나」는 연결 카드가, 「어느 필드가 어디에 붙었나」는
+     읽기 전용 4열 표가 답한다. 면은 그 표와 프레임 밖 건수 꼬리로 끝난다(파일 이름 계획
+     줄은 2026-09-03 재판정에서 걷혔다). 표가 서지 않는 갈래(템플릿을 읽을 수 없음)에서도
+     카드는 남는다. */
   const zone = (detail.pairing_detail || {}) as Obj;
   const card = (zone.card || {}) as Obj;
   const rows = (zone.rows || []) as Obj[];

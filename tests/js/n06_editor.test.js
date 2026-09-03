@@ -1885,8 +1885,12 @@ test("우 열 존 통지의 동사는 `pool/resolve_duplicate` 로 나가고 미
       .map((row) => [row[2], row[3]]),
     [["resolve_duplicate", { keep: "d1" }]]);
 
+  /* 미지 키의 사유는 다른 우 열 동사 실패와 **같은 채널**에 선다(공용 ⑤ 리뷰): 통지는 열
+     안에 서므로 그 거절도 열을 보고 있는 사람의 면(`#save-msg`)에 남아야 한다 — 종전에는
+     이 한 갈래만 토스트로 새 나갔다. */
   h.controller.poolNoticeAction("없는통지동사", {});
-  assert.ok(h.notices.some((text) => text.includes("알 수 없는 통지 동사")), h.notices);
+  const refusal = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(refusal && refusal.text.includes("알 수 없는 통지 동사"), JSON.stringify(refusal));
 });
 
 /* ---------------- ⑧ TXT 저작 린트메모장(S10-05 #862 · #299 회수) ---------------- */

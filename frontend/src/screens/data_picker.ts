@@ -13,7 +13,8 @@ import type { PoolColumnHost } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
-  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, dataRowMenuItems, poolRefusalText,
+  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
+  poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 
 type Obj = Record<string, any>;
@@ -298,10 +299,10 @@ export function createDataPickerController(args: {
     }
   }
 
-  /* 관리 동사 한 벌은 **고르기 화면과 공유**한다(U6-B #976) — 같은 `pool` 채널, 같은
-     확인 왕복, 같은 지문 되싣기. 갈리는 것은 실패가 착지하는 자리와 「사용」의 몸통뿐이라
-     그 둘만 주입한다. */
-  const { poolAction, resolveDuplicate } = createPoolVerbs({
+  /* 동사 한 벌은 **고르기 화면과 공유**한다(U6-B #976 · 공용 ⑤ 리뷰) — 같은 `pool` 채널,
+     같은 확인 왕복, 같은 지문 되싣기, 같은 분기표·검토 왕복·통지 동사. 갈리는 것은 실패가
+     착지하는 자리와 네 포트뿐이라 그것만 주입한다. */
+  const poolVerbs = createPoolVerbs({
     dispatch,
     modal,
     onError: refuseVerb,
@@ -312,10 +313,17 @@ export function createDataPickerController(args: {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
     }),
+    poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
+    reveal: (path: string) => invokePathAction({
+      client, path, action: "reveal", notify,
+    }),
+    /* 시트의 주인이 이 컨트롤러다 — 고르기 화면은 `PoolRegistrationPort` 로 같은 문을 부른다. */
+    openDetail: (key: string, trigger: HTMLElement | null) => openDetail(key, trigger),
     busyReason: () => (
       state.loading ? "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다." : ""
     ),
   });
+  const { poolAction, resolveDuplicate } = poolVerbs;
 
   function refuse(message: string): void {
     patch({ status: `⚠ ${message}`, level: "danger" });
@@ -374,40 +382,15 @@ export function createDataPickerController(args: {
     rowContextMenu.open(trigger, items);
   }
 
-  /** 행 동사 — **닫힌 집합**이다(모르는 키는 시끄럽게 거절한다).
-   *
-   *  프리필 재료를 **검토 왕복이 낸다**(고르기 열 공용 ④): 「다시 연결」은 `path`·`sheet`·
-   *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다. */
-  async function runRowVerb(
-    action: string, row: Obj, trigger: HTMLElement | null,
-  ): Promise<void> {
-    if (action === "reveal") {
-      await invokePathAction({
-        client, path: String(row.path || ""), action: "reveal", notify,
-      });
-      return;
-    }
-    const key = String(row.key || "");
-    if (action === "detail") { await openDetail(key, trigger); return; }
-    if (!action.startsWith("act:")) {
-      throw new Error(`알 수 없는 데이터 동사입니다: ${action}`);
-    }
-    if (action === "act:relink") {
-      const detail = await reviewPoolItem(key);
-      if (detail === null) return;
-      await poolAction("relink", detail);
-      return;
-    }
-    await poolAction(action.slice(4), row);
-  }
-
   async function handleRowMenu(action: string): Promise<void> {
     const row = menuRow;
     const trigger = menuTrigger;
     if (row === null) return;
     closeRowMenu();
     try {
-      await runRowVerb(action, row, trigger);
+      /* 분기표는 **공용 몸통 하나**다(공용 ⑤ 리뷰) — 이 면이 동사를 발명하지 않는다.
+         갈리는 것은 던진 것을 받는 자리뿐이고, 그 자리가 여기다. */
+      await poolVerbs.runVerb(action, row, trigger);
     } catch (error) {
       refuse(String((error as Obj)?.message || error));
     }
@@ -418,26 +401,12 @@ export function createDataPickerController(args: {
      여는 문이 둘(고르기 우 열·이 다이얼로그)이라, 두 번째 구현을 세우면 동사의 착지와
      메시지 채널이 갈린다. 고르기 화면은 `PoolRegistrationPort` 로 이 문을 부른다. */
 
-  /** 검토 왕복 → 그 항목의 상세 투영(못 세우면 사유를 남기고 ``null``).
-   *
-   *  키 대조가 계약이다: 왕복 사이에 다른 push 가 끼면 스냅샷의 상세가 남의 항목일 수 있고,
-   *  그 값을 프리필로 쓰면 사람이 겨눈 적 없는 등록을 덮어쓴다. */
-  async function reviewPoolItem(key: string): Promise<Obj | null> {
-    await dispatch("pool", "review", { key });
-    const detail = ((poolModel.getSnapshot() || {}).detail || null) as Obj | null;
-    if (detail === null || String(detail.key) !== key) {
-      refuseVerb(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
-      return null;
-    }
-    return detail;
-  }
-
   /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(tpl 미러).
    *
    *  순서가 계약이다: 먼저 열면 지난 항목의 상세가 한 프레임 서 있다가 갈리고, 검토가
-   *  거절되면 빈 시트만 남는다. */
+   *  거절되면 빈 시트만 남는다. 검토 왕복 자체(키 대조 포함)는 공용 몸통이 진다. */
   async function openDetail(key: string, trigger: HTMLElement | null): Promise<void> {
-    const detail = await reviewPoolItem(key);
+    const detail = await poolVerbs.review(key);
     if (detail === null) return;
     patch({ detailOpen: true, detailMessage: "" });
     modal.open("poolDetailModal", {
@@ -463,20 +432,13 @@ export function createDataPickerController(args: {
       return;
     }
     try {
-      await runRowVerb(action, detail, trigger);
+      await poolVerbs.runVerb(action, detail, trigger);
     } catch (error) {
       refuseVerb(String((error as Obj)?.message || error));
     }
   }
 
   function closeDetail(): void { modal.close("poolDetailModal"); }
-
-  /** 존 통지가 든 동사 — 지금은 중복 정리 하나다. **모르는 키는 시끄럽게 거절한다**:
-   *  조용히 떨어뜨리면 Python 이 통지에 동사를 더한 날 「눌렀는데 아무 일도 없다」가 된다. */
-  function noticeAction(key: string, payload: Obj): void {
-    if (key === "resolve_duplicate") { void resolveDuplicate(String(payload.keep || "")); return; }
-    refuse(`알 수 없는 통지 동사입니다: ${key}`);
-  }
 
   return {
     init(): Promise<unknown> { return args.runtime.loadInitial("pool"); },
@@ -533,7 +495,7 @@ export function createDataPickerController(args: {
     refresh: (): Promise<Obj> => dispatch("pool", "refresh", {}),
     poolAction,
     resolveDuplicate,
-    noticeAction,
+    noticeAction: poolVerbs.noticeAction,
     rowContextMenu,
     toggleRowMenu,
     closeRowMenu,
@@ -579,7 +541,7 @@ function dialogHost(
     rootId: "dataPickerPool",
     listId: "dataPickerPinned",
     title: "데이터",
-    headSub: column === null ? "읽는 중…" : String(column.count_label || ""),
+    headSub: poolHeadSub(column),
     /* 고름 표지의 정본은 **작업 스냅샷**이다: 풀 겨눔이면 그 슬롯 키, 아니면 세션 행이다.
        세션이 슬롯 키를 지어내지 않는다(추측 금지) — Python 이 이미 아는 사실이다. */
     selectedKey: seen.data_pool_key || (sessionRow ? SESSION_DATA_KEY : ""),
@@ -625,16 +587,9 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
     controller.poolModel.getSnapshot);
   const seen = state.session ? state.session.read() : NO_SESSION_DATA();
   const column = ((pool || {}).column || null) as Obj | null;
-  /* 두 벌의 **순수 이어붙이기**다 — 판정은 없다(고르기 우 열과 같은 규율). 두 행 다 Python
-     이 같은 계약으로 냈고, 여기서 정하는 것은 「세션 행이 먼저」라는 순서 하나뿐이다. */
-  const merged = column === null
-    ? (seen.data_row
-      ? { rows: [seen.data_row], notices: [], empty_hint: "", count_label: "", result: {} }
-      : null)
-    : {
-      ...column,
-      rows: seen.data_row ? [seen.data_row, ...(column.rows || [])] : (column.rows || []),
-    };
+  /* 이어붙이기는 **공용 순수 함수 하나**다(공용 ⑤ 리뷰) — 고르기 우 열과 같은 목록이라
+     같은 순서·같은 최소 열을 써야 한다. */
+  const merged = mergeSessionRow(column, seen.data_row);
   return h("div", { className: "modal-card data-picker" },
     h("h3", { id: "dataPickerTitle" }, "데이터 선택"),
     h("p", { id: "dataPickerNote", className: `note ${state.level === "danger" ? "dangerbox" : state.level === "ok" ? "okbox" : ""}`,

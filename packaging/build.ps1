@@ -743,8 +743,8 @@ foreach ($key in $plan) {
             $responsibilities = @(
                 $evidence.PSObject.Properties.Name | Where-Object { $_ -ne 'runtime' }
             )
-            if ($responsibilities.Count -ne 43) {
-                throw "기존 selftest responsibility 수 불일치: $($responsibilities.Count) != 43"
+            if ($responsibilities.Count -ne 44) {
+                throw "기존 selftest responsibility 수 불일치: $($responsibilities.Count) != 44"
             }
             $falseResponsibilities = @(
                 foreach ($name in $responsibilities) {

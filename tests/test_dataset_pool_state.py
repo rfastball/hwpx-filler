@@ -13,6 +13,7 @@ from hwpxfiller.application.dataset_pool import (
     available_actions,
     reference_summary,
 )
+from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
@@ -24,14 +25,16 @@ from hwpxfiller.external.template_inspection import template_compile_status
 
 
 def _vm(tmp_path):
-    return DatasetPoolViewModel(DatasetPoolRegistry(tmp_path))
+    """소스 복원기는 ``registry`` 와 같은 **필수 주입**이다(공용 ⑤ 리뷰) — 기본값을 두면
+    조립 실수가 사용자가 「자세히…」를 누르는 순간까지 미뤄진다."""
+    return DatasetPoolViewModel(
+        DatasetPoolRegistry(tmp_path), source_factory=source_from_pool_item
+    )
 
 
 def test_register_excel_stores_complete_reference_and_restores_sheet(tmp_path):
     """T2 — 확정 시트가 풀 항목 opts 에 임베딩되고, 복원이 그 시트 레코드를 준다."""
     from pathlib import Path
-
-    from hwpxfiller.data.factory import source_from_pool_item
 
     fixture = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
     vm = _vm(tmp_path)
@@ -102,7 +105,7 @@ def test_stale_reference_update_does_not_resurrect_deleted_item(tmp_path):
     """확인 전에 읽은 항목이 삭제되면 갱신은 loud 실패하고 신규 항목으로 부활하지 않는다."""
     directory = tmp_path / "datasets"
     reg = DatasetPoolRegistry(directory)
-    vm = DatasetPoolViewModel(reg)
+    vm = DatasetPoolViewModel(reg, source_factory=source_from_pool_item)
     vm.register_excel("D", "/old.xlsx")
     key = vm.rows()[0].key
     DatasetPoolRegistry(directory).delete(key)
@@ -155,8 +158,12 @@ def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
     from hwpxfiller.external import dataset_store
 
     directory = tmp_path / "datasets"
-    vm_a = DatasetPoolViewModel(DatasetPoolRegistry(directory))
-    vm_b = DatasetPoolViewModel(DatasetPoolRegistry(directory))
+    vm_a = DatasetPoolViewModel(
+        DatasetPoolRegistry(directory), source_factory=source_from_pool_item
+    )
+    vm_b = DatasetPoolViewModel(
+        DatasetPoolRegistry(directory), source_factory=source_from_pool_item
+    )
     vm_a.register_excel("A", "/a.xlsx")
     vm_a.register_excel("B", "/b.xlsx")
     rows = {r.name: r for r in vm_a.rows()}
@@ -198,7 +205,9 @@ def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
         if it.opts.get("path") == "/target.xlsx"
     ]
     assert [k for k, _ in winners] == [rows["A"].key]       # 같은 정체성 슬롯은 1개뿐
-    assert DatasetPoolViewModel(reg).duplicates() == []      # 불변식 유지(중복 그룹 0)
+    assert DatasetPoolViewModel(
+        reg, source_factory=source_from_pool_item
+    ).duplicates() == []      # 불변식 유지(중복 그룹 0)
 
 
 def test_duplicates_surface_from_legacy_files(tmp_path):
@@ -259,7 +268,7 @@ def test_pipeline_row_renders_kind_label_and_summary(tmp_path):
     )
     reg = DatasetPoolRegistry(tmp_path)
     reg.add(it)
-    vm = DatasetPoolViewModel(reg)
+    vm = DatasetPoolViewModel(reg, source_factory=source_from_pool_item)
     r = vm.rows()[0]
     assert r.kind_label == "파이프라인"
     assert "소스 2개" in r.reference and "merge" in r.reference
@@ -271,7 +280,7 @@ def test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero(tmp_path):
     from hwpxfiller.gui.home_state import HomeViewModel
 
     pool = DatasetPoolRegistry(tmp_path / "datasets")
-    pvm = DatasetPoolViewModel(pool)
+    pvm = DatasetPoolViewModel(pool, source_factory=source_from_pool_item)
     pvm.register_excel("A", "/a.xlsx")
     pvm.register_excel("B", "/b.xlsx")
     key_b = next(r.key for r in pvm.rows() if r.name == "B")
@@ -389,15 +398,6 @@ def _pclm_db(path) -> str:
     return str(path)
 
 
-def _review_vm(tmp_path):
-    """상세 투영까지 도는 VM — 소스 복원기는 composition root 가 주는 그 함수 그대로다."""
-    from hwpxfiller.data.factory import source_from_pool_item
-
-    return DatasetPoolViewModel(
-        DatasetPoolRegistry(tmp_path), source_factory=source_from_pool_item
-    )
-
-
 def test_review_reads_columns_and_restates_the_reference_facts(tmp_path):
     """엑셀 참조 하나의 상세 — 열 목록·정체 줄·동사가 **한 번 연 결과**에서 나온다(④).
 
@@ -407,7 +407,7 @@ def test_review_reads_columns_and_restates_the_reference_facts(tmp_path):
     from pathlib import Path
 
     fixture = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
-    vm = _review_vm(tmp_path)
+    vm = _vm(tmp_path)
     vm.register_excel("다중시트", str(fixture), sheet="낙찰현황", note="분기 집계")
     key = vm.rows()[0].key
 
@@ -427,7 +427,7 @@ def test_review_reads_columns_and_restates_the_reference_facts(tmp_path):
 
 def test_review_of_a_broken_reference_is_a_reason_not_an_exception(tmp_path):
     """읽기 실패는 **사유를 단 상세**다 — 그 자리가 「다시 연결」에 닿는 유일한 문이다."""
-    vm = _review_vm(tmp_path)
+    vm = _vm(tmp_path)
     vm.register_excel("사라진", str(tmp_path / "없는파일.xlsx"))
 
     detail = vm.review(vm.rows()[0].key)
@@ -442,7 +442,7 @@ def test_review_of_a_broken_reference_is_a_reason_not_an_exception(tmp_path):
 
 def test_review_of_a_contract_list_titles_the_view_and_reads_its_columns(tmp_path):
     """계약 목록 상세 — 시트 자리에 **뷰**가 서고 제목화는 링0 하나를 지난다."""
-    vm = _review_vm(tmp_path)
+    vm = _vm(tmp_path)
     vm.register_pclm("계약 목록", _pclm_db(tmp_path / "pclm.db"), view="v_통합_v1")
 
     detail = vm.review(vm.rows()[0].key)
@@ -457,14 +457,7 @@ def test_review_of_a_contract_list_titles_the_view_and_reads_its_columns(tmp_pat
 
 def test_review_of_an_unknown_key_is_loud(tmp_path):
     """없는 키는 시끄럽다 — 빈 상세를 지어내면 그 행의 문은 눌러도 답이 없다."""
-    vm = _review_vm(tmp_path)
+    vm = _vm(tmp_path)
     with pytest.raises(FileNotFoundError):
         vm.review("없는키")
 
-
-def test_review_without_a_source_factory_refuses_instead_of_faking_empty(tmp_path):
-    """복원기 미주입은 **거절**이다 — 빈 열 목록으로 조용히 착지하지 않는다."""
-    vm = _vm(tmp_path)
-    vm.register_excel("A", "/a.xlsx")
-    with pytest.raises(RuntimeError, match="복원기"):
-        vm.review(vm.rows()[0].key)

@@ -106,12 +106,14 @@ class PoolController:
         registry: DatasetPoolPort,
         push: PushSink,
         *,
-        source_factory: "DatasetSourcePort | None" = None,
+        source_factory: "DatasetSourcePort",
     ) -> None:
         self._push_sink = push
         # 레지스트리는 composition root(webapp.app)가 주입한다 — 자기 생성 폴백은 #570 에서
         # 제거됐다(locator 뒷문 금지: 기본값이 있으면 링2 가 구체 저장을 조용히 재선택한다).
-        # 소스 복원기도 같은 자리에서 온다(고르기 열 공용 ④) — 「자세히…」의 열 목록만 쓴다.
+        # 소스 복원기도 같은 자리에서 온다(고르기 열 공용 ④) — 「자세히…」의 열 목록만 쓰지만
+        # 기본값은 두지 않는다: 조립 실수는 사용자가 시트를 여는 순간이 아니라 조립하는
+        # 순간 드러나야 한다(공용 ⑤ 리뷰).
         self.vm = DatasetPoolViewModel(registry, source_factory=source_factory)
         # 마지막 결과 문구(등록·전이·삭제) — 성과별 심각도 채널(UD-07, tpl 미러).
         self.result_text = ""

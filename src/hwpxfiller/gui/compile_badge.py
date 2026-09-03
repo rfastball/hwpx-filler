@@ -38,6 +38,13 @@ BADGE_LEVELS: "dict[CompileState, str]" = {
 ERROR_BADGE_LABEL = "오류"
 ERROR_BADGE_LEVEL = "danger"
 
+# TXT 는 **변환 축이 없는 매체**라 상태 배지가 설 자리에 매체 표지가 선다. 상태 배지와 같은
+# 자리·같은 형(라벨+레벨)이므로 어휘의 저자도 여기 하나다 — 종전에는 링2(`screen_template`)와
+# 웹(`editor.ts` 의 `media === "txt" ? "TXT" : …`)이 각자 들고 있었고, 그러면 한 자리만 고쳐도
+# 다른 자리가 옛말을 계속 한다. 심각도는 없다(정상 상태다) — `muted`.
+TEXT_BADGE_LABEL = "TXT"
+TEXT_BADGE_LEVEL = "muted"
+
 
 def badge_label(state: "CompileState | None") -> str:
     """상태의 배지 라벨. ``None``(부재/오류)은 시끄러운 오류 라벨."""

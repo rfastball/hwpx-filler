@@ -67,10 +67,6 @@ from .template_groups import (
     validate_template_name,
 )
 
-#: 고르기 좌 열에서 TXT 행이 다는 매체 표지. 링1 행은 상태 축이 없어 배지를 비우므로
-#: (`TemplateRow.from_text`) 목록이 hwpx·txt 한 벌이 되는 이 자리에서만 필요하다.
-TXT_BADGE_LABEL = "TXT"
-
 
 class TemplateController:
     """템플릿 라이브러리 채널 — HWPX 라이브러리 VM + TXT 레지스트리 + 매체별 그룹 모델(webview 비의존)."""
@@ -217,9 +213,10 @@ class TemplateController:
         ``select_block_reason`` 의 재구현이었다. 링1 문안을 고치면 TXT 밴드만 옛말을 계속
         하는 자리라 :meth:`TemplateRow.from_text` 하나로 모은다.
 
-        열 행의 배지는 **매체 표지**다: 링1 TXT 행은 상태 축이 없어 배지를 비우고
-        (:meth:`TemplateRow.from_text` — 없는 상태를 지어내지 않는다), 좌 열은 hwpx·txt 를
-        한 목록으로 세우므로 그 자리에서 매체를 읽을 표지가 필요하다.
+        열 행의 배지는 **매체 표지**이고 그 어휘의 저자도 링1 이다(공용 ⑤ 리뷰): TXT 행은
+        상태 축이 없어 상태 배지가 설 자리에 ``TXT`` 가 서고, 그 값을
+        :meth:`TemplateRow.from_text` 가 이미 들고 온다 — 이 자리는 hwpx 와 **같은 문장**으로
+        옮기기만 한다(종전의 링2 리터럴은 같은 표지의 두 번째 저자였다).
         """
         root = self.text_registry.directory
         rows: "list[dict]" = []
@@ -238,8 +235,8 @@ class TemplateController:
                 reason=row.select_block_reason(),
                 # TXT 에는 채움 축이 없다 — 없는 고지를 지어내지 않는다.
                 warns=[],
-                badge_label=TXT_BADGE_LABEL,
-                badge_level="muted",
+                badge_label=row.badge_label,
+                badge_level=row.badge_level,
                 icon="txt",
                 path=str(t.path),
                 # TXT 에는 상태 게이트 동사가 없다(변환 축이 없다) — 없는 동사를 지어
@@ -277,7 +274,10 @@ class TemplateController:
                 # `templates_root.notice` 가 이미 지고, 그 자리를 둘로 늘리지 않는다.
                 notices=[],
                 empty_hint=hint,
-                count_label=f"{len(column_rows)}개",
+                # 분류사의 저자는 **링1 하나**다(고르기 열 공용 ⑤ 리뷰): 좌 열은 hwpx·txt 를
+                # 한 목록으로 세워 VM 이 아는 수와 머리의 수가 다르지만, 그렇다고 여기서
+                # 문안을 지으면 우 열(`DatasetPoolViewModel.count_label`)과 갈리는 날이 온다.
+                count_label=self.vm.count_label_for(len(column_rows)),
                 result={"text": self.result_text, "level": self.result_level},
             ),
             # 서식 폴더 존(U6-A #975) — 저장 폴더의 최상위 `output_folder` 존과 **동형**이다.
