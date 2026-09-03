@@ -113,3 +113,49 @@ def _as_ref(ref):
     if hasattr(ref, "kind") and hasattr(ref, "opts"):
         return ref
     return SimpleNamespace(kind=ref.get("kind", ""), opts=dict(ref.get("opts") or {}))
+
+
+
+def pclm_reference(db: str, view: str) -> SimpleNamespace:
+    """계약 목록(pclm) 마운트가 넘길 **참조 형상** 한 자리.
+
+    작업의 durable 결속(:func:`~hwpxfiller.domain.job.data_binding_of`)과 부팅 기억은 풀
+    슬롯이 아니라 db+뷰를 든다 — 그것으로 소스를 복원하려면 :func:`source_from_pool_item`
+    이 읽는 덕타입(``.kind``/``.opts``)이 필요하다. 세 소비자(작업 마운트·편집기 복원·결속
+    참조 해석)가 각자 조립하면 opts 키 이름이 갈리는 날 한쪽만 조용히 기본 db 를 읽는다.
+
+    (U6-F #980 에서 ``webapp.screens`` 에서 이사했다 — 이 형상을 읽는 함수도 그것으로
+    소스를 세우는 분기도 이 모듈에 있다.)
+    """
+    return SimpleNamespace(kind="pclm", opts={"db": db, "view": view})
+
+
+def source_for_binding(ref: "dict") -> DataSource:
+    """작업의 durable 데이터 결속 참조(``{path, sheet, header_row, kind}``) → DataSource.
+
+    **종류가 해석기를 가르는 자리는 여기 하나다**(U6-F #980): ``""`` 는 파일(엑셀/CSV),
+    ``"pclm"`` 은 계약 목록(db+뷰)이다. 종전에는 편집기의 인계 복원
+    (:meth:`~hwpxfiller.webapp.screen_editor.EditorController._load_source_ref`)만 이 분기를
+    들었는데, 「문서 작업」 상세가 같은 참조로 첫 행을 읽게 되면서 소비자가 둘이 됐다 —
+    입구마다 분기를 적으면 한쪽만 db 경로를 엑셀로 오파싱하거나 조용히 빈 세션에 착지한다.
+
+    이름 없는 종류는 시끄럽게 거절한다(조용한 추측 금지). 참조를 낸 곳
+    (:func:`~hwpxfiller.domain.job.data_binding_of`)이 네 성분을 한 벌로 들고 오므로 여기서
+    성분을 되추측하지 않는다 — ``header_row`` 를 흘리면 다른 헤더에 앵커가 걸리고 그
+    어긋남은 화면 어디에도 표시가 없다(#349 리뷰 P1).
+    """
+    path = str(ref.get("path") or "")
+    if not path:
+        raise ValueError("데이터 참조에 경로가 없습니다.")
+    kind = str(ref.get("kind") or "")
+    sheet = str(ref.get("sheet") or "")
+    if kind == "pclm":
+        # 계약면에는 헤더 행 축이 없다 — 참조 형상·복원 모두 풀 항목과 **같은 함수**를 지난다.
+        return source_from_pool_item(pclm_reference(path, sheet))
+    if kind:
+        raise ValueError(f"'{kind}' 데이터 결속은 파일로 복원할 수 없습니다.")
+    header = ref.get("header_row")
+    opts: "dict[str, object]" = {"sheet": sheet or None}
+    if isinstance(header, int) and not isinstance(header, bool) and header:
+        opts["header_row"] = header
+    return source_for_path(path, **opts)

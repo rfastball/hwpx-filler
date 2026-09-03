@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
 from ..domain.engine import HwpxEngine
-from ..domain.fill_ledger import template_path_drift
+from ..domain.fill_ledger import TemplateStructureDrift, template_path_drift
 from ..domain.job import (
     Job,
     data_binding_label,
@@ -128,6 +128,13 @@ class JobRow:
     # 눌러 보고서야 안다. compile_status 와 같은 compute-not-store 원칙(재편집 드리프트가
     # 나므로 저장하지 않는다) — 그 대가로 hwpx 행마다 템플릿을 한 번 더 읽는다.
     structure_drift: bool = False
+    # 그 재계산의 **결과 자체**(U6-F #980) — 상세의 연결 카드·표가 읽는다. `structure_drift`
+    # 는 「어긋났는가」 하나로 접힌 값이라 「무엇이 몇 개 어긋났는가」를 답하지 못하고, 저장된
+    # 프로파일은 확정 행만 담아 「확인 필요 k」를 거기서 셀 수도 없다 — 그 사실은 현재
+    # 템플릿과의 대칭차에만 있다. 수치를 따로 복사하지 않고 **원본을 든다**: 사본을 만들면
+    # 「읽지 못했다」와 「읽었는데 0 이다」를 가르는 축(`readable`)이 옮겨 오다 빠진다.
+    # 템플릿을 읽지 않는 갈래(미연결·부재·손상·TXT)는 ``None`` 이다.
+    structure: "TemplateStructureDrift | None" = None
     # txt 템플릿을 지금 읽을 수 있는가(리뷰 P2). 파일이 "있다"는 것과 "열린다"는 것은 다르다 —
     # 깨진 인코딩·`.txt` 로 끝나는 디렉터리는 존재하지만 여는 순간 실패한다.
     txt_readable: bool = True
@@ -170,12 +177,16 @@ class JobRow:
         # 실행 게이트와 **같은 몸통**을 쓴다(두 표면이 같은 상태를 다르게 부르지 않게).
         name_tokens = bool(unresolved_name_tokens_for(job)) if job.media == "hwpx" else False
         drift = False
+        structure = None
         if job.media == "hwpx" and compile_state is not None:
             # 읽을 수 있는 템플릿에서만 본다(못 읽는 건 이미 danger 로 말한다). 매핑이 비어
             # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
             # 건강 보기가 침묵하면 숨은 차단이 된다. 다만 **부르는 이름은 다르다** — 아직 안
             # 맞춘 것은 "달라졌다"가 아니다(사유는 library_health 가 가른다).
-            drift = template_path_drift(tpath, job.mapping, engine=engine).has_drift
+            # 카드·표가 읽을 것도 **이 한 번의 재계산**에서 나온다(U6-F #980) — 상세가 따로
+            # 템플릿을 다시 읽으면 hwpx 행마다 zip 파싱이 한 번 더 든다.
+            structure = template_path_drift(tpath, job.mapping, engine=engine)
+            drift = structure.has_drift
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
@@ -191,6 +202,7 @@ class JobRow:
             media=job.media,
             template_linked=bool(tpath),
             structure_drift=drift,
+            structure=structure,
             txt_readable=txt_readable,
             unresolved_name_tokens=name_tokens,
             mapping_empty=not job.mapping.mappings,
@@ -215,6 +227,43 @@ class JobRow:
         이 한 술어를 공유해 같은 액션의 두 경로가 다른 판정을 내지 않는다(자기 모순 해소).
         """
         return badge_level(self.compile_state) != ERROR_BADGE_LEVEL
+
+    # ── 연결 카드·표가 읽는 구조 사실(U6-F #980) — 전부 `structure` 하나에서 파생한다 ──
+    @property
+    def structure_readable(self) -> bool:
+        """현재 템플릿의 누름틀 구조를 **실제로 읽었는가**.
+
+        거짓이면 아래 수치는 「0 개」가 아니라 「모른다」다 — 표면은 그 갈래에서 수치를
+        말하지 않는다(0 을 사실처럼 말하지 않는다).
+        """
+        return bool(self.structure is not None and self.structure.readable)
+
+    @property
+    def template_fields(self) -> "tuple[str, ...]":
+        """현재 템플릿의 누름틀 이름(문서순). 못 읽었으면 빈 튜플."""
+        return self.structure.template_fields if self.structure is not None else ()
+
+    @property
+    def template_field_count(self) -> int:
+        return len(self.template_fields)
+
+    @property
+    def unbound_fields(self) -> "tuple[str, ...]":
+        """템플릿에 있는데 매핑이 커버하지 못하는 필드 — 카드의 「확인 필요 k」."""
+        return self.structure.template_only if self.structure is not None else ()
+
+    @property
+    def unbound_field_count(self) -> int:
+        return len(self.unbound_fields)
+
+    @property
+    def stale_mapping_fields(self) -> "tuple[str, ...]":
+        """매핑에는 있는데 현재 템플릿에서 사라진 필드 — 표 밖에서 **이름으로** 말한다."""
+        return self.structure.mapping_only if self.structure is not None else ()
+
+    @property
+    def stale_mapping_count(self) -> int:
+        return len(self.stale_mapping_fields)
 
 
 @dataclass
@@ -391,9 +440,12 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
 
 
 # 라이브러리 상세의 「필드 연결」 표(``FieldBindingRow``·``field_binding_rows`` 와 그 표시
-# 어휘 상수들)는 표면과 함께 철거됐다 — 매핑의 정본은 편집기 「필드 연결」 탭이고, 읽기 전용
-# 사본을 상세에 한 벌 더 두면 같은 상태를 두 자리가 말한다. 되살릴 일이 생기면 소비 표면과
-# 함께 다시 세운다(소비자 0 인 산출자는 남기지 않는다 — R5-99 B2 전례).
+# 어휘 상수들)는 표면과 함께 철거됐다(#966) — 되살리지 않는다. **U6-F(#980)가 그 표를 다시
+# 세웠지만 이 산출자를 되살린 것이 아니다**: #966 이 걷은 것은 별도 라벨 사전을 든 사슬이었고,
+# 지금 상세가 그리는 것은 편집기 2단계와 **같은 링1 투영**
+# (:func:`~hwpxfiller.gui.mapping_state.row_projection`)·같은 라벨 상수를 두 번째 호스트가
+# 소비하는 것이라 「같은 상태를 두 곳이 판정」이 아니다. 스냅샷 키도 ``bindings`` 가 아니라
+# ``pairing_detail`` 이다 — 옛 이름을 되살리면 옛 사슬과 구별되지 않는다.
 
 
 class HomeViewModel:

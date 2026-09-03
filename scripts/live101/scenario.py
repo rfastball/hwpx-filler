@@ -351,6 +351,15 @@ def run(ctx: ScenarioContext) -> dict:
         "상세 상시 행동",
         requires=["#libraryDetail"],
     )
+    # 「첫 행」은 데이터 파일을 읽어야 채워진다(U6-F #980) — 읽기는 워커에서 돌고 끝나면 전체
+    # 스냅샷이 다시 온다. 그 전에 찍으면 캡처가 사용자 여정이 아니라 **중간 상태**의 그림이
+    # 된다(전부 「—」인 표). 기다리는 것은 「pending 이 아님」이지 「ready」가 아니다 —
+    # 읽기가 실패한 여정도 그 사유와 함께 실물로 남아야 한다.
+    s.wait(
+        "!!document.querySelector('#libraryPairRows:not([data-first-row=\"pending\"])')",
+        "상세 첫 행 채움",
+        requires=["#libraryPairRows"],
+    )
     ctx.shoot("library-detail")
     s.click_sel('#libraryDetail [data-use="발주요청서"]', what="문서 만들기에서 사용")
     # **작업이 자기 데이터를 끌고 온다**(U4 §2.4 · #932 U4-C — U2 §5.3 판정 D 의 명시 철회).

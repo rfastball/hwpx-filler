@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ..domain.authoring import scan_tokens
+from ..domain.format_engine import presets as format_presets
+from ..domain.job import MISSING_MARKER
 from ..domain.lint import similarity
 from ..domain.mapping import (
     SUGGEST_THRESHOLD,
@@ -95,6 +97,24 @@ TYPE_GROUP_LABEL = {
 #: 열에서 값을 받는 행이 고를 수 있는 유형 축(문서순 = 그룹 표시순).
 DISPLAY_TYPE_GROUPS = ("text", "date", "amount")
 
+#: 표시형 프리셋은 유형별 고정이라 한 번 계산한다(코어 라벨 그대로). 행 투영이 소비하므로
+#: 투영과 같은 자리에 산다 — 종전 자리는 링2(`screen_editor._FMT_OPTIONS`)였고 투영이 링1 로
+#: 올라오면서 그 상수도 따라왔다(투영이 자기 재료를 링2 에서 import 하면 링이 뒤집힌다).
+_FMT_OPTIONS = {
+    t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES
+}
+
+#: 「첫 행」 미리보기의 **읽기 상태** 3태(U6-F #980). 편집기는 데이터를 이미 들고 있어
+#: ``ready`` 만 내지만, 「문서 작업」 상세는 선택 직후 아직 파일을 안 읽었고(``pending``)
+#: 읽다 실패할 수도 있다(``error``). ``record={}`` 로 미읽음을 흉내 내지 않는 것이 이 축의
+#: 존재 이유다 — 빈 레코드는 :data:`~hwpxfiller.domain.job.MISSING_MARKER` 를 찍어 「산출물이
+#: 담을 것」과 「아직 모름」을 한 표식으로 접는다(조용한 거짓말).
+FIRST_ROW_STATES = ("ready", "pending", "error")
+
+#: 아직 읽지 않은 첫 행 칸의 표식. 홑 문자 하나짜리 **빈 칸 마커**라
+#: ``docs/COPY_STYLE_GUIDE.md`` §3-1(문장 안 em dash 금지)의 예외다 — 문장이 아니다.
+PENDING_PREVIEW_MARK = "—"
+
 
 def pairing_preview(
     template_fields: "list[str]", source_fields: "list[str]"
@@ -136,6 +156,199 @@ def profile_source_vocabulary(profile) -> "list[str]":
         if not m.is_blank and m.source:
             seen.setdefault(m.source, None)
     return list(seen)
+
+
+# ── 행 투영(U6-F #980) — 편집기 2단계 표와 「문서 작업」 상세 표가 **같은 함수**를 부른다 ──
+# 종전에는 링2 컨트롤러(`screen_editor._row_snapshot`)가 이 성형을 소유했고, 두 번째 호스트가
+# 생기는 순간 그 사본이 하나 더 생길 자리였다. #966 이 라이브러리 상세의 「필드 연결」 표를
+# 걷은 이유가 바로 그 사본(별도 라벨 사전을 든 payload 사슬)이었으므로, 되살리는 길은 하나다:
+# 투영과 라벨을 링1 로 올려 **두 표면이 같은 값을 소비**하게 한다.
+
+
+def source_kind_of(row: "RowState") -> str:
+    """이 행의 데이터 열 칸이 지금 무엇을 들고 있는가 — ``column``/``const``/``today``/
+    ``blank``/``""``.
+
+    「비워 둠」이 먼저다: 유형은 남아 있어도 사람이 「채우지 않는다」고 선언한 행은 그
+    선언으로 보여야 한다.
+    """
+    if row.is_empty_confirmed():
+        return "blank"
+    if row.type == "const":
+        return "const"
+    if row.type == "today":
+        return "today"
+    return "column" if row.source else ""
+
+
+def source_option_value(row: "RowState", source_kind: str) -> str:
+    """데이터 열 select 가 지금 고르고 있는 **항목 값**.
+
+    실 열은 ``col:``, 특수 항목은 ``sp:`` 접두다 — 두 이름 공간이 구조적으로 갈리므로
+    「고정값…」이라는 이름의 실제 열이 있어도 충돌하지 않는다(센티넬을 소스 값에 얹지
+    않는다는 규칙의 집행). 웹은 이 값을 파싱하지 않고 항목의 ``kind`` 로 발행 액션을 가른다.
+    """
+    if source_kind == "column":
+        return f"col:{row.source}"
+    if source_kind in ("const", "today", "blank"):
+        return f"sp:{source_kind}"
+    return ""
+
+
+def display_options(row: "RowState", source_kind: str) -> "list[dict]":
+    """이 행의 표시형 select 항목 — **유형 그룹**으로 묶인다(U6-C 리뷰 1).
+
+    값은 ``"<유형>:<표시형 코드>"`` 한 쌍이고 항목이 ``type``·``fmt`` 를 따로 들어 웹이 그
+    문자열을 파싱하지 않는다(데이터 열 항목과 같은 규율).
+
+    그룹 집합은 **값의 출처**가 가른다: 열에서 받는 행은 텍스트·날짜·금액 셋을 고를 수
+    있고(이 select 가 곧 유형 축이다), 「오늘 날짜」 행은 날짜 어휘 하나뿐이며(값은 실행
+    시각이지만 표시형 표는 같다 — U4 §2.14 판정 1), 「고정값」 행은 프리셋이 없어 빈
+    목록이다(표면은 비활성 「—」로 접는다).
+    """
+    if source_kind == "const":
+        return []
+    kinds = ("today",) if source_kind == "today" else DISPLAY_TYPE_GROUPS
+    groups: "list[dict]" = []
+    for kind in kinds:
+        options = [
+            {"value": f"{kind}:{o['code']}", "label": o["label"], "type": kind, "fmt": o["code"]}
+            for o in _FMT_OPTIONS.get(kind, [])
+        ]
+        if options:
+            groups.append({"label": TYPE_GROUP_LABEL[kind], "options": options})
+    return groups
+
+
+def row_projection(
+    row: "RowState",
+    record: "dict",
+    *,
+    index: int,
+    source_fields: "list[str]",
+    has_records: bool,
+    now: "datetime | None" = None,
+    first_row_state: str = "ready",
+) -> dict:
+    """행 1개의 표 투영 — 편집기 2단계와 「문서 작업」 상세가 공유하는 **순수 함수**.
+
+    ``now`` 는 ``today``(오늘 날짜) 미리보기의 기준 시각이다 — 호출자가 **스냅샷당 1회**
+    잡아 전 행이 공유한다(RC-02 확장, `screen_job` 의 `_names_now` 규율). 행마다 clock 을
+    다시 부르면 한 표 안에서 서로 다른 시각이 서고, 하위-일 서식에서 그 차이가 눈에 보인다.
+
+    **행 상태와 그 라벨은 링1 이 낸다**(U6-C #977): ``row_state`` 는 닫힌 집합 4태이고
+    ``state_label`` 은 그 문안이다.
+
+    **미리보기는 산출물이 담을 것을 그대로 말한다.** 결속됐는데 이 행에서 값이 비면 빈칸이
+    아니라 :data:`~hwpxfiller.domain.job.MISSING_MARKER` 다 — 생성이 그 자리에 실제로 넣는
+    문자열이라 UI 문안이 아니라 데이터다.
+
+    ``first_row_state`` 는 **레코드를 실제로 읽었는가**를 명시로 받는다(U6-F #980):
+    ``pending``·``error`` 면 ``record`` 를 보지 않고 미리보기 칸만 그 상태로 낸다. 이 인자가
+    없으면 호출자가 빈 레코드로 미읽음을 흉내 내게 되고, 그 순간 표는 「아직 모름」을
+    「미입력 표식이 박힐 자리」로 말한다.
+    """
+    if first_row_state not in FIRST_ROW_STATES:
+        raise ValueError(f"알 수 없는 첫 행 상태: {first_row_state!r}")
+    preview_error = False
+    empty = False
+    if first_row_state == "pending":
+        preview_kind, preview = "pending", PENDING_PREVIEW_MARK
+    elif first_row_state == "error":
+        # 사유는 호출자가 존 수준에서 싣는다 — 행마다 같은 문장을 복제하지 않는다.
+        preview_kind, preview, preview_error = "error", "", True
+    else:
+        try:
+            preview = row.to_mapping().value_for(record, now=now)
+        except ValueError:
+            preview, preview_error = "", True
+        empty = bool(row.has_content()) and preview == ""
+        if preview_error:
+            preview_kind, preview = "error", ""
+        elif row.has_content():
+            preview_kind = "missing" if empty else "value"
+            if empty:
+                preview = MISSING_MARKER.format(field=row.template_field)
+        elif row.is_empty_confirmed():
+            preview_kind, preview = "blank", ""
+        else:
+            preview_kind, preview = "none", ""
+    source_kind = source_kind_of(row)
+    state = row.status()
+    inferred = getattr(row.spec, "inferred_type", "") if row.spec else ""
+    return {
+        "index": index,
+        "template_field": row.template_field,
+        "inferred_type": inferred,
+        "context": getattr(row.spec, "context", "") if row.spec else "",
+        "source": row.source,
+        "type": row.type,
+        "const": row.const,
+        "fmt": row.fmt,
+        # 이 행의 표시형 후보 — **유형 축을 흡수한 그룹 목록**이다(U6-C 리뷰 1). 유형별 표를
+        # 웹이 되짚지 않는다(유형이 행 축이므로 후보도 행 축이다).
+        "display_options": display_options(row, source_kind),
+        "display_value": f"{row.type}:{row.fmt}",
+        "confirmed": row.confirmed,
+        "touched": row.touched,
+        "has_content": row.has_content(),
+        # 배지 버튼이 눌리는가 — 채울 것이 없고 **확인도 안 된** 행만 잠긴다(U6-C 리뷰 4).
+        # 비움 확정 행은 채울 것이 없어도 확인을 **풀 수 있어야** 한다: 잠그면 「확인」 배지가
+        # 비활성으로 서서 「열을 고르세요」라고 말하는, 자기 상태와 어긋난 손잡이가 된다.
+        "confirmable": row.has_content() or row.confirmed,
+        # ↻(자동 제안 되돌리기)가 서는가 — `_do_revert_source` 가 확정 행을 거절하는 것과
+        # **같은 술어**다(U6-C 리뷰 9). 웹이 다시 조립하면 거절과 어포던스가 갈린다.
+        "revertable": row.touched and not row.confirmed and has_records,
+        "suggestion_score": round(row.suggestion_score, 3),
+        "preview": preview,
+        "preview_kind": preview_kind,
+        "preview_empty": empty,
+        "preview_error": preview_error,
+        "row_state": state,
+        "state_label": ROW_STATUS_LABEL[state],
+        "source_kind": source_kind,
+        "source_value": source_option_value(row, source_kind),
+        # 결속 열이 지금 데이터에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
+        # 드러낸다(문안은 여기, 렌더는 웹).
+        "source_missing_label": (
+            f"{row.source} (데이터에 없음)"
+            if source_kind == "column" and row.source not in source_fields else ""
+        ),
+    }
+
+
+def source_cell_label(projection: "dict") -> str:
+    """읽기 전용 표의 「데이터 열」 칸 문안 — :func:`row_projection` 결과 하나를 읽는다.
+
+    편집하는 표는 select 라 항목이 자기 라벨을 들고 오지만, 읽기 전용 표는 **해소된 라벨**이
+    필요하다. 그것을 웹에서 지으면 특수 항목 문안 표(:data:`SPECIAL_SOURCE_LABEL`)가 링1 밖에
+    한 벌 더 생긴다 — #966 이 걷은 그 사슬이 이름만 바꿔 돌아오는 자리다.
+    """
+    if projection["source_missing_label"]:
+        return projection["source_missing_label"]
+    kind = projection["source_kind"]
+    if kind == "column":
+        return projection["source"]
+    if kind == "const":
+        # 고정값은 「무엇으로 고정했는가」가 곧 그 칸의 내용이다.
+        return f"{SPECIAL_SOURCE_LABEL['const']} {projection['const']}".rstrip()
+    if kind in SPECIAL_SOURCE_LABEL:
+        return SPECIAL_SOURCE_LABEL[kind]
+    return NO_SOURCE_LABEL
+
+
+def display_cell_label(projection: "dict") -> str:
+    """읽기 전용 표의 「표시형」 칸 문안 — 고른 표시형의 라벨(없으면 빈 칸 마커).
+
+    프리셋 표를 **직접** 본다(투영이 든 그룹 목록을 훑지 않는다): 후보 목록은 select 를
+    그리려고 있는 것이고, 여기 필요한 것은 (유형, 표시형) 한 쌍의 이름 하나다. 고정값 행은
+    프리셋이 없어 고를 것도 없다(편집기에서 비활성 「—」로 접히는 그 자리).
+    """
+    kind, _, code = str(projection["display_value"]).partition(":")
+    for option in _FMT_OPTIONS.get(kind, ()):
+        if option["code"] == code:
+            return option["label"]
+    return PENDING_PREVIEW_MARK
 
 
 @dataclass
@@ -682,6 +895,29 @@ class MappingModel:
         filled = content_rows - len(empties)
         unmapped = len(self.rows) - content_rows
         return filled, len(empties), unmapped
+
+    def name_token_values(
+        self, record: "dict[str, object]", *, now: "datetime | None" = None
+    ) -> "dict[str, object]":
+        """파일 이름 토큰이 읽을 ``{템플릿필드: 값}`` — 내용 있는 행만(U6-F #980).
+
+        파일 이름 예시를 내는 두 표면(편집기 3단계의 라이브 예시 · 「문서 작업」 상세의
+        계획 한 줄)이 **같은 재료**로 같은 이름을 말하게 하는 자리다. 이름 자체는 실제
+        생성기와 같은 함수(:func:`~hwpxfiller.naming.make_output_filename`)가 만들고, 여기서
+        갈릴 수 있는 것은 그 함수에 무엇을 먹이느냐 하나뿐이라 그것을 여기 모은다.
+
+        값 계산이 실패한 행은 빈 문자열이다 — 표시 전용 경로이고, 토큰이 통째로 빠지면
+        미치환 토큰이 그대로 노출돼 예시가 실제 산출물과 다른 모양이 된다.
+        """
+        data: "dict[str, object]" = {}
+        for row in self.rows:
+            if not row.has_content():
+                continue
+            try:
+                data[row.template_field] = row.to_mapping().value_for(record, now=now)
+            except ValueError:
+                data[row.template_field] = ""
+        return data
 
     # ------------------------------------------------------- 프로파일 입출력
     def to_profile(self, name: str = "") -> MappingProfile:

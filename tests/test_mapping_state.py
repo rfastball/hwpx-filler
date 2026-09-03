@@ -850,3 +850,110 @@ def test_pairing_preview_is_all_confirm_without_sources():
     fields = [f.name for f in _schema().fields]
     assert pairing_preview(fields, []) == (0, len(fields))
     assert pairing_preview([], ["아무거나"]) == (0, 0)
+
+
+# ── 행 투영(U6-F #980) — 편집기 2단계와 「문서 작업」 상세가 공유하는 순수 함수 ──────────
+
+def _projection_rows() -> "list[RowState]":
+    """네 갈래 한 벌 — 열 결속 · 값이 빈 열 · 오늘 날짜 · 아무것도 없는 행."""
+    return [
+        RowState(template_field="계약명", source="사업명", confirmed=True, touched=True),
+        RowState(template_field="금액", source="빈열", type="amount", confirmed=True,
+                 touched=True),
+        RowState(template_field="작성일", type="today", confirmed=True, touched=True),
+        RowState(template_field="담당자"),
+    ]
+
+
+def test_row_projection_matches_what_the_editor_snapshot_used_to_build():
+    """투영이 링1 로 올라와도 편집기 스냅샷의 키·값은 그대로다(회귀 대조).
+
+    이 표를 읽기 전용으로 한 번 더 세우려는 표면이 자기 사본을 만들 수밖에 없던 것이
+    #966 이 걷은 사슬의 뿌리였다 — 투영이 하나이므로 두 표면이 다른 말을 할 자리가 없다.
+    """
+    from hwpxfiller.gui.mapping_state import row_projection
+
+    rows = _projection_rows()
+    record = {"사업명": "청사 냉난방 교체", "빈열": ""}
+    projections = [
+        row_projection(r, record, index=i, source_fields=["사업명", "빈열"],
+                       has_records=True, now=_TODAY_NOW)
+        for i, r in enumerate(rows)
+    ]
+    assert [p["template_field"] for p in projections] == ["계약명", "금액", "작성일", "담당자"]
+    assert [p["preview_kind"] for p in projections] == ["value", "missing", "value", "none"]
+    # 빈 값은 빈칸으로 새지 않는다 — 생성이 실제로 박는 표식이 그대로 온다.
+    assert projections[1]["preview"] == "〘미입력·금액〙"
+    assert projections[2]["preview"] == "2026. 6. 15. 18:04"   # today 기본 표시형
+    assert [p["row_state"] for p in projections] == [
+        "confirmed", "confirmed", "confirmed", "needs_source"]
+    assert [p["state_label"] for p in projections] == [
+        ROW_STATUS_LABEL["confirmed"]] * 3 + [ROW_STATUS_LABEL["needs_source"]]
+    assert projections[0]["source_value"] == "col:사업명"
+    assert projections[2]["source_value"] == "sp:today"
+    # 「데이터에 없음」은 실 헤더를 알 때만 선다.
+    gone = row_projection(rows[0], record, index=0, source_fields=["다른열"],
+                          has_records=True, now=_TODAY_NOW)
+    assert gone["source_missing_label"] == "사업명 (데이터에 없음)"
+
+
+def test_row_projection_states_pending_and_error_instead_of_faking_a_record():
+    """첫 행을 아직 못 읽었으면 그렇게 말한다 — 빈 레코드로 흉내 내지 않는다(U6-F 함정 3).
+
+    ``record={}`` 로 미읽음을 흉내 내면 미입력 표식이 찍혀 「산출물이 담을 것」과 「아직
+    모름」이 한 글자로 접힌다. 사유는 호출자가 존 수준에서 싣고 행은 상태만 낸다.
+    """
+    from hwpxfiller.gui.mapping_state import PENDING_PREVIEW_MARK, row_projection
+
+    row = _projection_rows()[0]
+    pending = row_projection(row, {}, index=0, source_fields=["사업명"], has_records=False,
+                             now=_TODAY_NOW, first_row_state="pending")
+    assert pending["preview_kind"] == "pending"
+    assert pending["preview"] == PENDING_PREVIEW_MARK
+    assert pending["preview_error"] is False and pending["preview_empty"] is False
+    # 나머지 축(결속·상태·표시형)은 저장본만으로 그려지므로 pending 에서도 그대로 산다.
+    assert pending["row_state"] == "confirmed" and pending["source_value"] == "col:사업명"
+
+    failed = row_projection(row, {}, index=0, source_fields=["사업명"], has_records=False,
+                            now=_TODAY_NOW, first_row_state="error")
+    assert failed["preview_kind"] == "error" and failed["preview"] == ""
+
+    with pytest.raises(ValueError, match="알 수 없는 첫 행 상태"):
+        row_projection(row, {}, index=0, source_fields=[], has_records=False,
+                       now=_TODAY_NOW, first_row_state="loaded")
+
+
+def test_read_only_cell_labels_come_from_the_ring1_vocabulary():
+    """읽기 전용 표의 두 칸 문안은 링1 조회다 — 웹이 특수 항목 표를 한 벌 더 들지 않는다."""
+    from hwpxfiller.gui.mapping_state import (
+        PENDING_PREVIEW_MARK,
+        display_cell_label,
+        row_projection,
+        source_cell_label,
+    )
+
+    rows = _projection_rows() + [
+        RowState(template_field="비고", type="const", const="해당 없음", confirmed=True),
+        RowState(template_field="여백", confirmed=True),          # 비움 확정
+    ]
+    projections = [
+        row_projection(r, {"사업명": "값"}, index=i, source_fields=["사업명", "빈열"],
+                       has_records=True, now=_TODAY_NOW)
+        for i, r in enumerate(rows)
+    ]
+    assert [source_cell_label(p) for p in projections] == [
+        "사업명", "빈열", "오늘 날짜", "열을 고르세요", "고정값… 해당 없음", "비워 둠",
+    ]
+    # 표시형은 고른 항목의 라벨이고, 프리셋이 없는 고정값 행은 빈 칸 마커다.
+    assert display_cell_label(projections[0]) == "원문"
+    assert display_cell_label(projections[4]) == PENDING_PREVIEW_MARK
+
+
+def test_name_token_values_feed_both_filename_previews():
+    """파일 이름 토큰 재료는 한 자리다 — 내용 있는 행만, 실패는 빈 문자열."""
+    model = MappingModel(rows=_projection_rows())
+    values = model.name_token_values({"사업명": "청사 냉난방 교체", "빈열": ""},
+                                     now=_TODAY_NOW)
+    assert values == {
+        "계약명": "청사 냉난방 교체", "금액": "", "작성일": "2026. 6. 15. 18:04",
+    }

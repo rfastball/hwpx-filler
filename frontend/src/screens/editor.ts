@@ -34,6 +34,7 @@ import type {
 } from "./context_menu.ts";
 import { NoticeBox } from "./notice_box.ts";
 import { PathActions } from "./path_actions.ts";
+import { PreviewCell } from "./preview_cell.ts";
 import { PoolSections, createPoolVerbs, dragProps } from "./pool_list.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolListHost, PoolRegistrationPort } from "./pool_list.ts";
@@ -2141,21 +2142,6 @@ function DataColumnCell(props: {
       title: "자동 제안으로 되돌리기", "aria-label": "이 행 자동 제안 다시 받기",
       onClick: () => controller.guarded(() => controller.sendEdit("revert_source", { index })),
     }, "↻") : null);
-}
-
-/** 미리보기 셀 — **산출물이 담을 것**을 그대로 말한다(U6 §2.2).
- *
- *  빈 값이 빈칸으로 새지 않는 것이 이 칸의 존재 이유다: 결속됐는데 이 행에서 값이 없으면
- *  Python 이 실제 표식(`domain/job.MISSING_MARKER`)을 실어 보내고 여기서는 그 문자열을
- *  그대로 그린다(웹이 문안을 짓지 않는다 — 그건 UI 문구가 아니라 문서에 박히는 데이터다). */
-function PreviewCell(props: { row: Obj }): ReactNode {
-  const { row } = props;
-  const kind = String(row.preview_kind);
-  if (kind === "error") return h("span", { className: "pv err" }, "(미리보기 오류)");
-  if (kind === "missing") return h("span", { className: "pv missing" }, String(row.preview));
-  if (kind === "blank") return h("span", { className: "pv blank" }, "");
-  if (kind === "none") return h("span", { className: "pv none" }, "—");
-  return h("span", { className: "pv" }, String(row.preview));
 }
 
 function MapRow(props: {

@@ -21,6 +21,7 @@ from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.external.settings import load_last_data_source, save_last_data_source
@@ -378,6 +379,10 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=lock,
+        # 상세 연결 존의 필수 주입(U6-F #980) — 저장 폴더의 소유자는 여전히 작업 컨트롤러
+        # 하나이고 라이브러리는 그 값을 읽기만 한다.
+        template_root=TemplateRoot(default_root=tmp_path / "templates"),
+        remembered_output_directory=lambda: "",
     )
     assert lock.acquire(blocking=False)
     try:
@@ -3593,6 +3598,9 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=ctrl._generation_lock,
+        # 상세 연결 존의 필수 주입(U6-F #980) — 이 시험이 재는 것은 검색 도달성이다.
+        template_root=TemplateRoot(default_root=tmp_path / "templates"),
+        remembered_output_directory=lambda: "",
     )
     library.dispatch("set_query", {"text": "공고서"})
     visible = [

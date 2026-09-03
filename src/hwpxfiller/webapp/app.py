@@ -367,38 +367,50 @@ class WebFrontend:
             save_progress=settings.save_tutorial_progress,
         )
         tutorial = tutorial_ctrl.notify
+        # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
+        # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
+        # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
+        # **목록보다 먼저 세운다**(U6-F #980): 전역 저장 폴더의 소유자가 이 컨트롤러라
+        # 라이브러리 상세도 그 값을 콜러블로 받는다. 화면 **순서**는 아래 목록이 그대로
+        # 진다(닫기 가드 질의 순서라 이유 없이 갈리면 안 된다).
+        job_ctrl = JobController(job_registry, self._push, pool_registry=pool_registry,
+            clock=datetime.now,
+            generation_lock=generation_lock, engine=hwpx_engine,
+            text_registry=registry,
+            file_source_factory=source_for_path,
+            pool_source_factory=source_from_pool_item,
+            existing_outputs=existing_output_paths,
+            ensure_output_dir=ensure_output_directory,
+            template_change=TemplateChangeCoordinator(
+                job_registry,
+                root=default_template_authority_dir(),
+                clock=datetime.now,
+            ),
+            slot_configuration=slot_configuration,
+            # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
+            # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
+            # fence 아래에서 exact execution plan 을 봉인·관찰한다(dispatch 배선은 SX-03).
+            seal_execution=seal_execution,
+            # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
+            # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
+            workbench_observation=WorkbenchObservationProduct(),
+            tutorial=tutorial)
+
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
             # 레지스트리는 편집기·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
             LibraryController(job_registry, registry, self._push, pool_registry=pool_registry,
-                              generation_lock=generation_lock, engine=hwpx_engine),
-            # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
-            # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
-            # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
-            JobController(job_registry, self._push, pool_registry=pool_registry,
-                          clock=datetime.now,
-                          generation_lock=generation_lock, engine=hwpx_engine,
-                          text_registry=registry,
-                          file_source_factory=source_for_path,
-                          pool_source_factory=source_from_pool_item,
-                          existing_outputs=existing_output_paths,
-                          ensure_output_dir=ensure_output_directory,
-                          template_change=TemplateChangeCoordinator(
-                              job_registry,
-                              root=default_template_authority_dir(),
-                              clock=datetime.now,
-                          ),
-                          slot_configuration=slot_configuration,
-                          # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
-                          # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
-                          # fence 아래에서 exact execution plan 을 봉인·관찰한다(dispatch 배선은 SX-03).
-                          seal_execution=seal_execution,
-                          # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
-                          # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
-                          workbench_observation=WorkbenchObservationProduct(),
-                          tutorial=tutorial),
+                              generation_lock=generation_lock, engine=hwpx_engine,
+                              # 서식 폴더 권위는 **같은 홀더**다(U6-A #975) — 상세 연결 카드의
+                              # 템플릿 표시명이 목록·편집기와 같은 이름이어야 한다.
+                              template_root=self._template_root,
+                              # 전역 저장 폴더는 「문서 만들기」가 소유하고 여기서는 읽기만
+                              # 한다(U6-D #978 리뷰 3 — 설정 파일을 두 곳이 읽지 않는다).
+                              remembered_output_directory=job_ctrl.remembered_output_directory,
+                              clock=datetime.now),
+            job_ctrl,
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups,
@@ -436,7 +448,6 @@ class WebFrontend:
         # 레지스트리를 같은 인스턴스로 넘겨 스캔 캐시가 갈라지지 않게 했고, 이제는 판정
         # 자체를 넘겨 **두 곳이 같은 상태를 판정하는 일**이 없다.
         tpl_ctrl = next(c for c in controllers if c.name == "tpl")
-        job_ctrl = next(c for c in controllers if c.name == "job")
         controllers.insert(
             2,
             EditorController(

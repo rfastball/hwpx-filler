@@ -17,6 +17,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
+import { BLANK_MARK, PreviewCell } from "./preview_cell.ts";
 
 type Obj = Record<string, any>;
 
@@ -267,6 +268,138 @@ function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
   }, children);
 }
 
+/** 연결 카드의 한 축(템플릿 / 데이터) — 항목 + 경로 동사 + 재선택 바로가기.
+ *
+ *  재선택은 **정체를 보는 자리에서 그 정체를 바꾸러 가는 길**이다. 착지 탭은 Python 이
+ *  아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로 싣고, 진입
+ *  가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
+function PairSide(props: {
+  name: string; sub: ReactNode; path: string; warn?: boolean;
+  controller: LibraryController; action: ReactNode;
+}): ReactNode {
+  const { name, sub, path, warn, controller, action } = props;
+  return h("div", { className: "side" },
+    h("div", { className: `lib-pitem${warn ? " warn" : ""}` },
+      h("span", { className: "ic" }),
+      h("span", { className: "lib-pitem-text" },
+        h("span", { className: "nm" }, name || BLANK_MARK),
+        h("span", { className: "sb" }, sub)),
+      path ? h(PathActions as any, {
+        client: controller.client, path, notify: controller.notify,
+      }) : null),
+    action);
+}
+
+/** 연결 카드 — 「무엇과 무엇이 붙었나」. 좁은 상세 패널이라 편집기의 가로 3열을 **눕힌다**:
+ *  같은 링1 투영, 다른 배치다(동결 시안 장면 4). 수치는 Python 이 세고 여기서는 그리기만
+ *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치 줄을 세우지 않는다(0 을 사실처럼 말하지
+ *  않는다). 표가 서지 않는 갈래에서도 이 카드는 남는다: 고치러 갈 동사가 여기 있다. */
+function PairCard(props: {
+  detail: Obj; card: Obj; staleFields: string[]; controller: LibraryController;
+}): ReactNode {
+  const { detail, card, staleFields, controller } = props;
+  const dataBound = detail.data_bound;
+  return h("div", { className: "lib-paircard", id: "libraryPairCard" },
+    h(PairSide as any, {
+      name: String(card.template_name || ""),
+      sub: card.counted ? `필드 ${card.template_field_count}개` : "",
+      path: String(detail.template_path || ""),
+      warn: !!card.template_missing || !card.template_bound,
+      controller,
+      action: h("button", { className: "btn sm", id: "libraryRepickTemplate", "data-repick": "template",
+        onClick: () => controller.editWork(detail.name, {
+          "여기서 할 것": "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요",
+        }, { section: "template" }) }, "템플릿 재선택…"),
+    }),
+    h("div", { className: "mid" },
+      h("span", { className: "vwire", "aria-hidden": "true" }),
+      card.counted ? h("span", { className: "nums" },
+        h("b", null, `연결 ${card.mapped_count} / ${card.template_field_count}`),
+        ` · 확인 필요 ${card.unbound_count}`,
+        /* 템플릿에서 사라진 연결은 숨기지 않는다 — 실행 게이트가 막는 상태이고,
+           목록이 침묵하면 사용자는 눌러 보고서야 안다. */
+        card.stale_count ? h("span", { className: "stale" },
+          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null) : null),
+    /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
+       한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
+    h(PairSide as any, {
+      name: dataBound ? String(card.data_name || "") : "",
+      sub: dataBound
+        ? String(detail.data_label || "")
+        : h("span", { className: "why" }, "데이터를 연결해야 문서를 만들 수 있습니다."),
+      path: dataBound ? String(detail.data_path || "") : "",
+      warn: !dataBound,
+      controller,
+      action: dataBound
+        ? h("button", { className: "btn sm", id: "libraryRepickData", "data-repick": "data",
+          onClick: () => controller.editWork(detail.name, {
+            "여기서 할 것": "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요",
+          }, { section: "binding" }) }, "데이터 재선택…")
+        : h("button", { className: "btn sm", "data-connect-data": detail.name,
+          onClick: () => controller.editWork(detail.name, {
+            "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
+          }) }, "데이터 연결하기…"),
+    }));
+}
+
+/** 읽기 전용 4열 표 — 필드 · 데이터 열 · 표시형 · 첫 행.
+ *
+ *  행은 편집기 2단계와 **같은 링1 투영**이고 두 라벨도 Python 이 해소해 보낸다. 행을 누르면
+ *  같은 배관으로 편집기 2단계의 그 행에 착지한다(`target: binding/<필드>` — 배선은 이미 서
+ *  있다: `app.py` `ctx.target` → `load_job(target=…)` → `aimAtTarget`). */
+function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryController }): ReactNode {
+  const { detail, zone, controller } = props;
+  const firstRow = (zone.first_row || {}) as Obj;
+  const rows = (zone.rows || []) as Obj[];
+  const more = (zone.more_fields || []) as string[];
+  const open = (field: string) => controller.editWork(detail.name, {
+    "여기서 할 것": "「연결 확인」에서 이 행의 데이터 열을 확인하세요",
+  }, { target: `binding/${field}` });
+  return h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
+    h("thead", null, h("tr", null,
+      h("th", null, "템플릿 필드"), h("th", null, "데이터 열"),
+      h("th", null, "표시형"), h("th", null, "첫 행"))),
+    h("tbody", null,
+      /* 행 자체가 손잡이다. `role="button"` 은 **얹지 않는다** — `tr` 의 암묵 role 을 덮으면
+         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + 제목으로 어포던스를
+         세우고, 무엇이 일어나는지는 계획 줄이 한 번 더 말한다. */
+      ...rows.map((row) => h("tr", {
+        key: String(row.template_field), "data-field": row.template_field,
+        tabIndex: 0, title: `'${row.template_field}' 연결을 편집기에서 확인합니다`,
+        onClick: () => open(String(row.template_field)),
+        onKeyDown: (event: Obj) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault(); open(String(row.template_field));
+        },
+      },
+      h("td", { className: "f" }, String(row.template_field)),
+      h("td", null, String(row.source_label || "")),
+      h("td", null, String(row.display_label || "")),
+      /* 첫 행 칸은 편집기 「미리보기」 열과 **같은 렌더러**다 — 닫힌 집합을 두 곳에서
+         스위치하면 그 집합이 갈린다. 갈리는 것은 오류의 문장 하나이고, 그것은 행마다 같은
+         문장이라 존 수준에서 받는다. */
+      h("td", null, h(PreviewCell as any, {
+        row, errorText: firstRow.state === "error" ? String(firstRow.reason || "") : "",
+      })))),
+      /* 프레임 밖 행은 스크롤로 조용히 감추지 않고 **이름으로** 말한다(시안 944). */
+      more.length ? h("tr", { className: "more-row" },
+        h("td", { colSpan: 4 }, `그 밖에 ${more.length}행: ${more.join(" · ")}`)) : null));
+}
+
+/** 계획 한 줄 — 「이 작업이 만들 파일」. 이름은 실제 생성기와 같은 함수가 만든 것이고,
+ *  아직 못 읽었으면 이름 대신 **규칙**을 말한다(아는 것만 말한다). */
+function PlanLine(props: { zone: Obj }): ReactNode {
+  const plan = (props.zone.plan || {}) as Obj;
+  const folder = (props.zone.output_folder || {}) as Obj;
+  const ready = plan.state === "ready";
+  return h("p", { className: "plan-line", id: "libraryPlanLine" },
+    "문서 파일 이름 ",
+    ready ? h("b", null, String(plan.first_name || "")) : h("span", { className: "muted" }, `규칙 ${plan.pattern || ""}`),
+    ready ? ` · ${plan.count}건` : "",
+    folder.directory ? h("span", null, " · 저장 폴더 ", h("b", null, String(folder.directory))) : null,
+    " · 행을 누르면 편집기 '연결 확인' 으로 갑니다.");
+}
+
 function LibraryDetail(props: { detail: Obj | null; controller: LibraryController }): ReactNode {
   const { detail, controller } = props;
   if (!detail) return h(LibraryDetailRoot as any, null,
@@ -280,43 +413,27 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
       className: "btn sm", "data-relink": detail.name,
       onClick: () => { void controller.relink(detail.name); },
     }, "템플릿 다시 연결…") : null) : null;
-  /* 재선택 바로가기 — 정체를 보는 자리에서 그 정체를 **바꾸러 가는** 길이다. 착지 탭은
-     Python 이 아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로
-     싣고, 진입 가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다. */
-  const facts = h("dl", { className: "lib-detail-facts" },
-    h("dt", null, "템플릿"),
-    h("dd", null, detail.template_name, " ",
-      h(PathActions as any, { client: controller.client, path: detail.template_path, notify: controller.notify }),
-      " ",
-      h("button", { className: "btn sm", id: "libraryRepickTemplate", "data-repick": "template",
-        onClick: () => controller.editWork(detail.name, {
-          "여기서 할 것": "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요",
-        }, { section: "template" }) }, "템플릿 재선택…")),
-    /* 데이터 축은 템플릿 바로 아래다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
-       한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**으로
-       말한다: 빈칸은 「아직 못 읽었다」와 구별되지 않는다. */
-    h("dt", null, "데이터"),
-    detail.data_bound
-      ? h("dd", null, String(detail.data_label || ""), " ",
-        h(PathActions as any, { client: controller.client, path: detail.data_path, notify: controller.notify }),
-        " ",
-        h("button", { className: "btn sm", id: "libraryRepickData", "data-repick": "data",
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요",
-          }, { section: "binding" }) }, "데이터 재선택…"))
-      : h("dd", { className: "lib-detail-unbound" },
-        h("span", { className: "pill warn" }, "연결 필요"),
-        " 데이터를 연결해야 문서를 만들 수 있습니다. ",
-        h("button", { className: "btn sm", "data-connect-data": detail.name,
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
-          }) }, "데이터 연결하기…")),
-    detail.filename_pattern ? h("dt", null, "파일 이름 규칙") : null,
-    detail.filename_pattern ? h("dd", null, detail.filename_pattern) : null);
+  /* 상세 하단은 U6-F(#980)에서 연결 그림이 됐다 — 종전의 사실 3행(dl)이 답하던 정체는
+     카드가 지고, 「이 작업은 무엇을 무엇으로 채워 어떤 파일을 만드나」를 표와 계획 줄이
+     잇는다. 표가 서지 않는 갈래(템플릿을 읽을 수 없음)에서도 카드는 남는다. */
+  const zone = (detail.pairing_detail || {}) as Obj;
+  const card = (zone.card || {}) as Obj;
+  const rows = (zone.rows || []) as Obj[];
   const scroll = h("div", { className: "lib-detail-scroll", "data-preserve-scroll": true },
     h("h2", { className: "lib-detail-name" }, detail.name),
     h("p", { className: "lib-detail-sub" }, detail.mode_label),
-    health, facts);
+    health,
+    h(PairCard as any, {
+      detail, card, controller,
+      staleFields: (zone.stale_fields || []) as string[],
+    }),
+    /* 행의 출처가 저장본이면 **그렇다고 말한다** — 표가 템플릿의 현재 모습인 척하면
+       사라진 필드·새 필드를 조용히 감춘다(문안은 Python 이 아니라 여기 하나뿐이라 상수로
+       올리지 않는다 — `docs/UI_CONTRACT.md` 단일 출처 규칙). */
+    zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
+      "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
+    rows.length ? h(PairTable as any, { detail, zone, controller }) : null,
+    rows.length && zone.plan ? h(PlanLine as any, { zone }) : null);
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),
