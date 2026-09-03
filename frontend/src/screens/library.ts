@@ -3,6 +3,7 @@
    이벤트, pending search 수명주기는 React가 단독 소유한다. */
 import {
   createElement,
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -268,19 +269,35 @@ function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
   }, children);
 }
 
-/** 연결 카드의 한 축(템플릿 / 데이터) — 항목 + 경로 동사 + 재선택 바로가기.
+/** 축의 정체 글리프 — 빈 사각형은 「무엇의 자리인가」를 말하지 않는다. 템플릿은 문서장,
+ *  데이터는 표. `path_actions.ts` 의 `icon()` 과 같은 어휘(20 viewBox · 선만)를 쓴다. */
+function pairGlyph(kind: "template" | "data"): ReactNode {
+  const common = { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" };
+  if (kind === "template") {
+    return h("svg", common,
+      h("path", { d: "M5 2.5h7l4 4v11H5z" }),
+      h("path", { d: "M12 2.5v4h4" }));
+  }
+  return h("svg", common,
+    h("rect", { x: "3", y: "4", width: "14", height: "12", rx: "1" }),
+    h("path", { d: "M3 9h14M8 4v12" }));
+}
+
+/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사 + 재선택 바로가기.
+ *  항목과 재선택 버튼은 한 줄에 눕고(CSS `.side`) 두 축의 버튼이 같은 열에 선다.
  *
  *  재선택은 **정체를 보는 자리에서 그 정체를 바꾸러 가는 길**이다. 착지 탭은 Python 이
  *  아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로 싣고, 진입
  *  가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
 function PairSide(props: {
+  kind: "template" | "data";
   name: string; sub: ReactNode; path: string; warn?: boolean;
   controller: LibraryController; action: ReactNode;
 }): ReactNode {
-  const { name, sub, path, warn, controller, action } = props;
+  const { kind, name, sub, path, warn, controller, action } = props;
   return h("div", { className: "side" },
     h("div", { className: `lib-pitem${warn ? " warn" : ""}` },
-      h("span", { className: "ic" }),
+      h("span", { className: "ic", "aria-hidden": "true" }, pairGlyph(kind)),
       h("span", { className: "lib-pitem-text" },
         h("span", { className: "nm" }, name || BLANK_MARK),
         h("span", { className: "sb" }, sub)),
@@ -301,6 +318,7 @@ function PairCard(props: {
   const dataBound = detail.data_bound;
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
+      kind: "template",
       name: String(card.template_name || ""),
       sub: card.counted ? `필드 ${card.template_field_count}개` : "",
       path: String(detail.template_path || ""),
@@ -323,6 +341,7 @@ function PairCard(props: {
     /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
     h(PairSide as any, {
+      kind: "data",
       name: dataBound ? String(card.data_name || "") : "",
       sub: dataBound
         ? String(detail.data_label || "")
@@ -342,11 +361,15 @@ function PairCard(props: {
     }));
 }
 
-/** 읽기 전용 4열 표 — 필드 · 데이터 열 · 표시형 · 첫 행.
+/** 읽기 전용 4열 표 + 프레임 밖 행의 건수 꼬리.
  *
  *  행은 편집기 2단계와 **같은 링1 투영**이고 두 라벨도 Python 이 해소해 보낸다. 행을 누르면
  *  같은 배관으로 편집기 2단계의 그 행에 착지한다(`target: binding/<필드>` — 배선은 이미 서
- *  있다: `app.py` `ctx.target` → `load_job(target=…)` → `aimAtTarget`). */
+ *  있다: `app.py` `ctx.target` → `load_job(target=…)` → `aimAtTarget`).
+ *
+ *  프레임 밖 행은 이름을 나열하지 않고 **건수**로 말한다(2026-09-03 재판정) — 좁은 상세에서
+ *  그 목록이 표만큼 길어져 정작 표를 밀어냈다. `more_fields` 는 페이로드에 그대로 남고 여기서
+ *  길이만 읽는다(이름이 필요한 자리는 표 밖 소멸분 줄이 따로 진다). */
 function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryController }): ReactNode {
   const { detail, zone, controller } = props;
   const firstRow = (zone.first_row || {}) as Obj;
@@ -355,7 +378,7 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
   const open = (field: string) => controller.editWork(detail.name, {
     "여기서 할 것": "「연결 확인」에서 이 행의 데이터 열을 확인하세요",
   }, { target: `binding/${field}` });
-  return h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
+  const table = h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
     h("thead", null, h("tr", null,
       h("th", null, "템플릿 필드"), h("th", null, "데이터 열"),
       h("th", null, "표시형"), h("th", null, "첫 행"))),
@@ -380,24 +403,45 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
          문장이라 존 수준에서 받는다. */
       h("td", null, h(PreviewCell as any, {
         row, errorText: firstRow.state === "error" ? String(firstRow.reason || "") : "",
-      })))),
-      /* 프레임 밖 행은 스크롤로 조용히 감추지 않고 **이름으로** 말한다(시안 944). */
-      more.length ? h("tr", { className: "more-row" },
-        h("td", { colSpan: 4 }, `그 밖에 ${more.length}행: ${more.join(" · ")}`)) : null));
+      }))))));
+  /* 프레임 밖 행은 스크롤로 조용히 감추지 않는다 — 표 밖 한 줄이 **몇 개 중 몇 개**를 말한다. */
+  return createElement(Fragment, null, table,
+    more.length ? h("p", { className: "lib-rows-tail", id: "libraryRowsTail" },
+      `필드 ${rows.length + more.length}개 중 ${rows.length}개`) : null);
 }
 
-/** 계획 한 줄 — 「이 작업이 만들 파일」. 이름은 실제 생성기와 같은 함수가 만든 것이고,
- *  아직 못 읽었으면 이름 대신 **규칙**을 말한다(아는 것만 말한다). */
-function PlanLine(props: { zone: Obj }): ReactNode {
+/** 경로의 표시용 줄임 — 마지막 3마디만 남긴다. 판정이 아니라 **그리기**이고, 온전한 경로는
+ *  언제나 `title` 에 있다(잘린 값을 사실처럼 말하지 않는다). */
+function shortPath(path: string): string {
+  const sep = path.includes("\\") ? "\\" : "/";
+  const parts = path.split(/[\\/]/);
+  return parts.length > 3 ? `…${sep}${parts.slice(-3).join(sep)}` : path;
+}
+
+/** 계획 — 「이 작업이 만들 파일」. 한 문장이 아니라 **라벨 2행**이다(2026-09-03 재판정):
+ *  파일 이름과 저장 폴더는 서로 다른 질문이라 한 줄에 가운뎃점으로 이으면 어느 값이 무엇의
+ *  답인지가 읽는 사람 몫이 된다. 이름은 실제 생성기와 같은 함수가 만든 것이고, 아직 못
+ *  읽었으면 이름 대신 **규칙**을 말한다(아는 것만 말한다). 행 클릭 안내는 행마다 `title` 이
+ *  이미 지므로 여기서 되풀이하지 않는다. */
+function PlanLine(props: { zone: Obj; controller: LibraryController }): ReactNode {
+  const { controller } = props;
   const plan = (props.zone.plan || {}) as Obj;
   const folder = (props.zone.output_folder || {}) as Obj;
   const ready = plan.state === "ready";
-  return h("p", { className: "plan-line", id: "libraryPlanLine" },
-    "문서 파일 이름 ",
-    ready ? h("b", null, String(plan.first_name || "")) : h("span", { className: "muted" }, `규칙 ${plan.pattern || ""}`),
-    ready ? ` · ${plan.count}건` : "",
-    folder.directory ? h("span", null, " · 저장 폴더 ", h("b", null, String(folder.directory))) : null,
-    " · 행을 누르면 편집기 '연결 확인' 으로 갑니다.");
+  const firstName = String(plan.first_name || "");
+  const directory = String(folder.directory || "");
+  return h("dl", { className: "lib-plan", id: "libraryPlanLine" },
+    h("dt", null, "파일 이름"),
+    h("dd", null,
+      ready ? h("b", { title: firstName }, firstName)
+        : h("span", { className: "muted" }, `규칙 ${plan.pattern || ""}`),
+      ready && Number(plan.count) > 1 ? h("span", null, ` 외 ${Number(plan.count) - 1}건`) : null),
+    directory ? h("dt", null, "저장 폴더") : null,
+    directory ? h("dd", null,
+      h("b", { title: directory }, shortPath(directory)),
+      h(PathActions as any, {
+        client: controller.client, path: directory, notify: controller.notify, only: ["open"],
+      })) : null);
 }
 
 function LibraryDetail(props: { detail: Obj | null; controller: LibraryController }): ReactNode {
@@ -433,7 +477,7 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
       "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
     rows.length ? h(PairTable as any, { detail, zone, controller }) : null,
-    rows.length && zone.plan ? h(PlanLine as any, { zone }) : null);
+    rows.length && zone.plan ? h(PlanLine as any, { zone, controller }) : null);
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),

@@ -292,11 +292,17 @@ test("상세 연결 존 — 카드 수치·4열 표·계획 줄을 스냅샷 그
   assert.ok(markup.includes('data-field="공고명"'));
   assert.ok(markup.includes("1,234,567원"));                   // 표시형 라벨도 Python 이 낸다
   assert.ok(markup.includes("48,500,000원"));
-  assert.ok(markup.includes("공고-1-001.hwpx") && markup.includes("120건"));
+  /* 계획은 라벨 2행이다(2026-09-03) — 첫 이름 + 나머지 건수, 그리고 저장 폴더. 경로는
+     표시용으로만 줄고 온전한 값은 `title` 에 선다. */
+  assert.ok(markup.includes('id="libraryPlanLine"'));
+  assert.ok(markup.includes("공고-1-001.hwpx") && markup.includes("외 119건"));
+  assert.ok(markup.includes('title="D:\\문서\\Results"'));
   assert.ok(markup.includes("D:\\문서\\Results"));
 });
 
-test("상세 연결 존 — 프레임 밖 행은 이름으로 명시한다(스크롤로 감추지 않는다)", () => {
+test("상세 연결 존 — 프레임 밖 행은 건수로 명시한다(스크롤로 감추지 않는다)", () => {
+  /* 2026-09-03 재판정: 이름 나열은 좁은 상세에서 표만큼 길어져 표를 밀어냈다. 표 밖 한 줄이
+     「몇 개 중 몇 개」를 말하고 이름은 페이로드에만 남는다(숨기는 것이 아니라 세는 것이다). */
   const h = build({
     snapshot: detailSnapshot({
       ...BOUND_DETAIL,
@@ -304,7 +310,15 @@ test("상세 연결 존 — 프레임 밖 행은 이름으로 명시한다(스�
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes("그 밖에 2행: 담당자 · 연락처"));
+  assert.ok(markup.includes('id="libraryRowsTail"'));
+  assert.ok(markup.includes("필드 4개 중 2개"));            // 행 2 + 프레임 밖 2
+  assert.ok(!markup.includes("담당자"));                    // 이름은 더 그리지 않는다
+});
+
+test("상세 연결 존 — 프레임 밖 행이 없으면 꼬리 줄도 없다", () => {
+  const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });   // more_fields: []
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(!markup.includes('id="libraryRowsTail"'));
 });
 
 test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 실패는 사유다", () => {
