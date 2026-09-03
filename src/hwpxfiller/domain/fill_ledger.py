@@ -34,12 +34,25 @@ class ValueState(str, Enum):
 
 @dataclass(frozen=True)
 class TemplateStructureDrift:
-    """현재 템플릿 누름틀과 매핑 커버의 양방향 대칭차."""
+    """현재 템플릿 누름틀과 매핑 커버의 양방향 대칭차.
+
+    ``readable`` 는 **구조를 실제로 읽었는가**이고 기본값이 거짓이다(U6-F #980). 대칭차만
+    보면 「읽고 나서 아무 차이도 없었다」와 「읽지 못해 아무것도 모른다」가 같은 모양(전부
+    빈 튜플)이라, 그 위에 수치를 세우는 표면이 「연결 n / n · 확인 필요 0」을 지어낸다.
+    빈 인스턴스(원장 기본값)는 아직 아무것도 읽지 않은 상태이므로 거짓이 옳은 기본이다 —
+    참으로 만들려면 :func:`template_structure_drift` 를 실제로 지나야 한다.
+
+    ``template_fields`` 는 그때 읽은 누름틀 이름의 **문서순**이다. 같은 재계산에서 이미
+    손에 있던 값이라, 이것을 버리면 「그 템플릿에 무슨 필드가 있나」를 묻는 표면이 파일을
+    한 번 더 연다.
+    """
 
     template_only: "tuple[str, ...]" = ()
     mapping_only: "tuple[str, ...]" = ()
     conflicting: "tuple[str, ...]" = ()
     read_error: str = ""
+    readable: bool = False
+    template_fields: "tuple[str, ...]" = ()
 
     @property
     def has_drift(self) -> bool:
@@ -99,6 +112,9 @@ def template_structure_drift(
         template_only=tuple(f for f in template_order if f not in cover_set),
         mapping_only=tuple(f for f in cover_order if f not in template_set),
         conflicting=tuple(mapping.coverage_conflicts()),
+        # 여기까지 왔다는 것이 곧 「구조를 읽었다」다 — 실패 갈래는 위에서 read_error 로 돈다.
+        readable=True,
+        template_fields=tuple(template_order),
     )
 
 

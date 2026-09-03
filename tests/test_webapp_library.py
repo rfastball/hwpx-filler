@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -637,7 +638,8 @@ def _hwpx_template(path, fields) -> None:
 
 
 def _bound_registry(tmp_path, *, fields=("공고번호", "사업명", "금액"), rows=2,
-                    data_name="계약.csv", extra_mapping=()) -> "tuple[JobRegistry, str]":
+                    data_name="계약.csv", extra_mapping=(),
+                    mapping_fields=None) -> "tuple[JobRegistry, str]":
     """템플릿·데이터가 실제로 서 있는 작업 하나 — 상세 존을 재는 표본."""
     tpl_dir = tmp_path / "templates"
     tpl_dir.mkdir(exist_ok=True)
@@ -653,7 +655,8 @@ def _bound_registry(tmp_path, *, fields=("공고번호", "사업명", "금액"),
     reg.save(Job(
         name="공고서 작업", template_path=str(tpl),
         mapping=MappingProfile(mappings=[
-            *(FieldMapping(template_field=f, source=f) for f in fields),
+            *(FieldMapping(template_field=f, source=f)
+              for f in (fields if mapping_fields is None else mapping_fields)),
             *extra_mapping,
         ]),
         filename_pattern="공고-{{공고번호}}-{{seq:001}}",
@@ -877,3 +880,174 @@ def test_renaming_the_selected_work_restarts_the_first_row_read(tmp_path):
     ctrl.dispatch("refresh", {"select": "새 이름"})
     zone = ctrl.snapshot()["detail"]["pairing_detail"]
     assert zone["first_row"]["state"] == "ready"
+
+
+# ── U6-F 리뷰 회수(#990) ───────────────────────────────────────────────────────
+
+def test_table_and_card_speak_of_the_same_field_set(tmp_path):
+    """표의 행은 **템플릿 누름틀**에서 서고 저장 매핑을 얹는다(리뷰 1 · 편집기와 같은 규칙).
+
+    저장 프로파일만으로 행을 세우면 표가 카드와 다른 집합을 말한다: 매핑 안 된 템플릿
+    필드(카드의 「확인 필요 k」)는 행이 아예 없고, 템플릿에서 사라진 옛 연결은 템플릿
+    필드인 척 선다. 소멸분은 표 밖에서 **이름으로** 말한다.
+    """
+    reg, _ = _bound_registry(
+        tmp_path, fields=("공고번호", "사업명", "금액"),
+        # 저장 매핑은 셋 중 둘만 덮고, 대신 템플릿에 없는 옛 연결 하나를 든다.
+        mapping_fields=("공고번호", "사업명"),
+        extra_mapping=(FieldMapping(template_field="옛필드", source="사업명"),),
+    )
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+
+    assert zone["rows_basis"] == "template"
+    # 미커버 필드도 **행으로** 선다 — 클릭 한 번으로 편집기의 그 행에 갈 수 있어야 한다.
+    assert [r["template_field"] for r in zone["rows"]] == ["공고번호", "사업명", "금액"]
+    assert zone["rows"][2]["row_state"] == "needs_source"
+    assert zone["rows"][2]["state_label"] == "확인 필요"
+    assert zone["rows"][0]["row_state"] == "confirmed"
+    # 표에 섞이지 않고 밖에서 이름을 말한다(숨기지 않는다).
+    assert zone["stale_fields"] == ["옛필드"]
+    assert "옛필드" not in [r["template_field"] for r in zone["rows"]]
+    # 카드 수치와 표의 집합이 같은 사실을 말한다.
+    card = zone["card"]
+    assert (card["template_field_count"], card["mapped_count"],
+            card["unbound_count"], card["stale_count"]) == (3, 2, 1, 1)
+
+
+def test_an_unreadable_template_falls_back_to_the_saved_bindings_and_says_so(tmp_path):
+    """템플릿을 못 읽으면 저장된 연결만 그리고 **그 사실을 명시**한다(리뷰 1·4·5).
+
+    수치는 세지 않았다고 말한다 — `read_error` 갈래의 대칭차는 전부 비어 있어서, 그 위에
+    카드를 세우면 「연결 n / n · 확인 필요 0」을 지어낸다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    job = reg.load("공고서 작업")
+    broken = tmp_path / "templates" / "깨진.hwpx"
+    broken.write_bytes(b"not a zip")                  # 존재하지만 열 수 없다
+    reg.save(Job(
+        name=job.name, template_path=str(broken), mapping=job.mapping,
+        filename_pattern=job.filename_pattern,
+        data_path=job.data_path, data_sheet=job.data_sheet,
+    ))
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert zone["rows_basis"] == "profile"
+    assert [r["template_field"] for r in zone["rows"]] == ["공고번호", "사업명", "금액"]
+    assert zone["card"]["counted"] is False
+    assert zone["card"]["template_field_count"] == 0
+
+
+def test_the_read_starts_from_the_snapshot_not_from_one_action(tmp_path):
+    """읽기 시작 판정은 **스냅샷 산출 하나**다(리뷰 2).
+
+    핸들러마다 시작을 걸면 상태를 바꾸는 경로가 늘 때(다시 연결·복원·복제) 그 자리를 하나씩
+    더 기억해야 한다. 여기서는 `select_work` 를 한 번도 쓰지 않고 겨눔만 세운다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("refresh", {"select": "공고서 작업"})
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["first_row"]["state"] == "ready"
+
+
+@pytest.mark.parametrize("verb", ["relink_template", "undo_delete_job", "clone_job"])
+def test_state_changing_verbs_never_strand_the_panel_in_pending(tmp_path, verb):
+    """다시 연결·복원·복제 뒤에도 첫 행이 채워진다 — 어느 경로든 다음 스냅샷이 알아챈다."""
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    if verb == "relink_template":
+        other = tmp_path / "templates" / "다른.hwpx"
+        _hwpx_template(other, ["공고번호", "사업명", "금액"])
+        ctrl.dispatch(verb, {"name": "공고서 작업", "path": str(other), "confirm": True})
+        target = "공고서 작업"
+    elif verb == "undo_delete_job":
+        ctrl.dispatch("delete_job", {"name": "공고서 작업", "confirm": True})
+        ctrl.dispatch(verb, {})
+        ctrl.dispatch("refresh", {"select": "공고서 작업"})
+        target = "공고서 작업"
+    else:
+        cloned = ctrl.dispatch(verb, {"name": "공고서 작업"})["cloned"]
+        # 복제본은 **이름이 달라** 캐시가 차갑다 — 시작 판정이 선택 동사 밖에도 산다는 증거다.
+        ctrl.dispatch("refresh", {"select": cloned})
+        target = cloned
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert ctrl.snapshot()["detail"]["name"] == target
+    assert zone["first_row"]["state"] == "ready", zone["first_row"]
+
+
+def test_a_changed_data_file_is_read_again(tmp_path):
+    """캐시 키의 **파일 지문**이 낡음을 구조적으로 막는다(리뷰 3b).
+
+    참조가 그대로여도 사람이 엑셀을 고쳐 저장하면 첫 행이 달라진다 — 지문이 없으면 상세는
+    앱을 다시 켤 때까지 옛 값을 말한다.
+    """
+    reg, data = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["rows"][0]["preview"] == "공고번호-1"
+
+    path = Path(data)
+    path.write_text("공고번호,사업명,금액\n바뀐값,B,C\n", encoding="utf-8-sig")
+    stamp = path.stat()
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["rows"][0]["preview"] == "바뀐값"
+
+
+def test_a_failed_read_is_retried_on_the_next_explicit_selection(tmp_path):
+    """실패는 캐시에 남되(스냅샷 무한 재시도 금지) 명시 선택이 그것을 걷는다(리뷰 3a)."""
+    reg, data = _bound_registry(tmp_path)
+    Path(data).unlink()
+    reads: list = []
+    ctrl, _ = _controller(tmp_path, registry=reg,
+                          runner=lambda work: (reads.append(1), work()))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["first_row"]["state"] == "error"
+    ctrl.snapshot(); ctrl.snapshot()
+    assert len(reads) == 1, "스냅샷이 실패를 무한히 재시도한다"
+
+    Path(data).write_text("공고번호,사업명,금액\n다시,B,C\n", encoding="utf-8-sig")
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})   # 사람이 다시 누른다 = 다시 읽어라
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["first_row"]["state"] == "ready"
+
+
+def test_one_binding_is_never_read_by_two_workers_at_once(tmp_path):
+    """진행 중 집합이 중복 기동을 막는다(리뷰 6) — 같은 작업 재선택·재렌더가 겹쳐 뜨지 않는다."""
+    reg, _ = _bound_registry(tmp_path)
+    started: list = []
+    ctrl, _ = _controller(tmp_path, registry=reg, runner=lambda w: started.append(w))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    ctrl.snapshot()
+    assert len(started) == 1, "같은 결속에 워커가 겹쳐 떴다"
+    started.pop()()
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["first_row"]["state"] == "ready"
+
+
+def test_the_zone_is_not_rebuilt_while_nothing_it_reads_has_changed(tmp_path):
+    """검색 한 글자마다 전 행 투영·폴더 stat 을 다시 지불하지 않는다(리뷰 9).
+
+    memo 의 안전 조건은 **키가 존의 재료를 빠짐없이 덮는가**이므로, 재료가 바뀌면 결과도
+    바뀌는 쪽을 함께 잰다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    first = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert ctrl.snapshot()["detail"]["pairing_detail"] is first     # 재료 불변 = 같은 값
+    ctrl.dispatch("set_query", {"text": "공"})
+    assert ctrl.snapshot()["detail"]["pairing_detail"] is first
+
+    job = reg.load("공고서 작업")
+    reg.save(Job(
+        name=job.name, template_path=job.template_path,
+        mapping=MappingProfile(mappings=[FieldMapping("공고번호", "금액")]),
+        filename_pattern=job.filename_pattern,
+        data_path=job.data_path, data_sheet=job.data_sheet,
+    ))
+    ctrl.dispatch("refresh", {})
+    rebuilt = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert rebuilt is not first
+    assert rebuilt["rows"][0]["source"] == "금액"

@@ -202,7 +202,7 @@ function pairingDetail(over = {}) {
       { template_field: "계약금액", source_label: "금액", display_label: "1,234,567원",
         preview: "48,500,000원", preview_kind: "value" },
     ],
-    more_fields: [],
+    more_fields: [], stale_fields: [], rows_basis: "template",
     first_row: { state: "ready", reason: "", record_count: 120 },
     plan: { state: "ready", pattern: "공고-{{ID}}", first_name: "공고-1-001.hwpx", count: 120 },
     output_folder: { directory: "D:\\문서\\Results", source: "default",
@@ -353,7 +353,8 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 �
         card: { template_name: "공고서", template_bound: true, template_missing: true,
           data_name: "월별", counted: false, template_field_count: 0, mapped_count: 0,
           unbound_count: 0, stale_count: 0 },
-        rows: [], more_fields: [], first_row: null, plan: null, output_folder: null,
+        rows: [], more_fields: [], stale_fields: [], rows_basis: "",
+        first_row: null, plan: null, output_folder: null,
       },
     }),
   });
@@ -363,16 +364,61 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 �
   assert.ok(!markup.includes("연결 0 / 0"));                   // 세지 않은 수치를 말하지 않는다
 });
 
-test("상세 연결 존 — 템플릿에서 사라진 연결은 숨기지 않는다", () => {
+test("상세 연결 존 — 템플릿에서 사라진 연결은 이름까지 말한다", () => {
+  /* 표에 섞으면 템플릿 필드인 척하므로 표 밖에서 말한다 — 건수만 말하면 무엇을 고쳐야
+     하는지가 다시 숨는다(실행 게이트가 막는 상태다). */
   const h = build({
     snapshot: detailSnapshot({
       ...BOUND_DETAIL, pairing_detail: pairingDetail({
         card: { ...pairingDetail().card, stale_count: 2 },
+        stale_fields: ["옛필드", "지운필드"],
       }),
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes("템플릿에 없는 연결 2건"));
+  assert.ok(markup.includes("템플릿에 없는 연결 2건: 옛필드 · 지운필드"));
+});
+
+test("상세 연결 존 — 저장본으로 그린 표는 그 사실을 말한다", () => {
+  /* 템플릿을 읽지 못한 갈래. 표가 「템플릿의 현재 모습」인 척하면 사라진 필드·새 필드가
+     조용히 감춰진다. */
+  const h = build({
+    snapshot: detailSnapshot({
+      ...BOUND_DETAIL,
+      pairing_detail: pairingDetail({
+        rows_basis: "profile",
+        card: { ...pairingDetail().card, counted: false, template_field_count: 0 },
+      }),
+    }),
+  });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes("템플릿을 읽지 못해 저장된 연결만 보여 줍니다."));
+  assert.ok(!markup.includes("연결 2 / 3"));                   // 세지 않은 수치는 말하지 않는다
+});
+
+test("첫 행 칸 — 편집기 「미리보기」와 **같은 렌더러**라 닫힌 집합이 갈리지 않는다", () => {
+  /* 두 벌의 스위치는 실제로 갈렸다(한쪽이 `blank` 와 `none` 을 한 문자로 접었다).
+     비움 확정(`blank`)은 빈 칸이고, 결속이 없는 행(`none`)만 마커를 쓴다 — 「채우지
+     않기로 했다」와 「아직 안 골랐다」는 다른 상태다. */
+  const h = build({
+    snapshot: detailSnapshot({
+      ...BOUND_DETAIL,
+      pairing_detail: pairingDetail({
+        rows: [
+          { template_field: "여백", source_label: "비워 둠", display_label: "—",
+            preview: "", preview_kind: "blank" },
+          { template_field: "담당자", source_label: "열을 고르세요", display_label: "원문",
+            preview: "", preview_kind: "none" },
+          { template_field: "금액", source_label: "금액", display_label: "원문",
+            preview: "〘미입력·금액〙", preview_kind: "missing" },
+        ],
+      }),
+    }),
+  });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes('<span class="pv blank"></span>'));
+  assert.ok(markup.includes('<span class="pv none">—</span>'));
+  assert.ok(markup.includes('<span class="pv missing">〘미입력·금액〙</span>'));
 });
 
 test("표의 행 클릭 — 편집기 2단계의 그 행을 겨눈 `target` 이 문맥에 실린다", async () => {

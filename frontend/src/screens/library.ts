@@ -17,6 +17,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
+import { BLANK_MARK, PreviewCell } from "./preview_cell.ts";
 
 type Obj = Record<string, any>;
 
@@ -267,11 +268,6 @@ function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
   }, children);
 }
 
-/** 빈 칸 마커 — 홑 글자 하나라 `docs/COPY_STYLE_GUIDE.md` §3-1(문장 안 em dash 금지)의
- *  예외다. 문장이 아니라 「여기 값이 없다」는 표식이고, 값이 **없는** 것과 **아직 모르는**
- *  것을 가르는 문장은 Python 이 따로 싣는다(`first_row.reason`). */
-const BLANK_MARK = "—";
-
 /** 연결 카드의 한 축(템플릿 / 데이터) — 항목 + 경로 동사 + 재선택 바로가기.
  *
  *  재선택은 **정체를 보는 자리에서 그 정체를 바꾸러 가는 길**이다. 착지 탭은 Python 이
@@ -298,8 +294,10 @@ function PairSide(props: {
  *  같은 링1 투영, 다른 배치다(동결 시안 장면 4). 수치는 Python 이 세고 여기서는 그리기만
  *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치 줄을 세우지 않는다(0 을 사실처럼 말하지
  *  않는다). 표가 서지 않는 갈래에서도 이 카드는 남는다: 고치러 갈 동사가 여기 있다. */
-function PairCard(props: { detail: Obj; card: Obj; controller: LibraryController }): ReactNode {
-  const { detail, card, controller } = props;
+function PairCard(props: {
+  detail: Obj; card: Obj; staleFields: string[]; controller: LibraryController;
+}): ReactNode {
+  const { detail, card, staleFields, controller } = props;
   const dataBound = detail.data_bound;
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
@@ -321,7 +319,7 @@ function PairCard(props: { detail: Obj; card: Obj; controller: LibraryController
         /* 템플릿에서 사라진 연결은 숨기지 않는다 — 실행 게이트가 막는 상태이고,
            목록이 침묵하면 사용자는 눌러 보고서야 안다. */
         card.stale_count ? h("span", { className: "stale" },
-          `템플릿에 없는 연결 ${card.stale_count}건`) : null) : null),
+          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null) : null),
     /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
     h(PairSide as any, {
@@ -342,17 +340,6 @@ function PairCard(props: { detail: Obj; card: Obj; controller: LibraryController
             "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
           }) }, "데이터 연결하기…"),
     }));
-}
-
-/** 첫 행 칸 — 아직 못 읽었으면 빈 칸 마커, 실패면 **사유**(조용한 빈칸 금지).
- *  사유는 행마다 같으므로 존 수준의 한 문장을 그대로 쓴다(행마다 복제하지 않는다). */
-function FirstRowCell(props: { row: Obj; firstRow: Obj }): ReactNode {
-  const kind = String(props.row.preview_kind);
-  if (kind === "pending") return h("span", { className: "pv pending" }, BLANK_MARK);
-  if (kind === "error") return h("span", { className: "pv err" }, String(props.firstRow.reason || ""));
-  if (kind === "missing") return h("span", { className: "pv missing" }, String(props.row.preview));
-  if (kind === "blank" || kind === "none") return h("span", { className: "pv none" }, BLANK_MARK);
-  return h("span", { className: "pv" }, String(props.row.preview));
 }
 
 /** 읽기 전용 4열 표 — 필드 · 데이터 열 · 표시형 · 첫 행.
@@ -388,7 +375,12 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
       h("td", { className: "f" }, String(row.template_field)),
       h("td", null, String(row.source_label || "")),
       h("td", null, String(row.display_label || "")),
-      h("td", null, h(FirstRowCell as any, { row, firstRow })))),
+      /* 첫 행 칸은 편집기 「미리보기」 열과 **같은 렌더러**다 — 닫힌 집합을 두 곳에서
+         스위치하면 그 집합이 갈린다. 갈리는 것은 오류의 문장 하나이고, 그것은 행마다 같은
+         문장이라 존 수준에서 받는다. */
+      h("td", null, h(PreviewCell as any, {
+        row, errorText: firstRow.state === "error" ? String(firstRow.reason || "") : "",
+      })))),
       /* 프레임 밖 행은 스크롤로 조용히 감추지 않고 **이름으로** 말한다(시안 944). */
       more.length ? h("tr", { className: "more-row" },
         h("td", { colSpan: 4 }, `그 밖에 ${more.length}행: ${more.join(" · ")}`)) : null));
@@ -431,7 +423,15 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     h("h2", { className: "lib-detail-name" }, detail.name),
     h("p", { className: "lib-detail-sub" }, detail.mode_label),
     health,
-    h(PairCard as any, { detail, card, controller }),
+    h(PairCard as any, {
+      detail, card, controller,
+      staleFields: (zone.stale_fields || []) as string[],
+    }),
+    /* 행의 출처가 저장본이면 **그렇다고 말한다** — 표가 템플릿의 현재 모습인 척하면
+       사라진 필드·새 필드를 조용히 감춘다(문안은 Python 이 아니라 여기 하나뿐이라 상수로
+       올리지 않는다 — `docs/UI_CONTRACT.md` 단일 출처 규칙). */
+    zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
+      "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
     rows.length ? h(PairTable as any, { detail, zone, controller }) : null,
     rows.length && zone.plan ? h(PlanLine as any, { zone }) : null);
   const actions = h("div", { className: "lib-detail-acts" },

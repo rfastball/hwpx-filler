@@ -338,16 +338,16 @@ def source_cell_label(projection: "dict") -> str:
 
 
 def display_cell_label(projection: "dict") -> str:
-    """읽기 전용 표의 「표시형」 칸 문안 — 고른 항목의 라벨(없으면 빈 칸 마커).
+    """읽기 전용 표의 「표시형」 칸 문안 — 고른 표시형의 라벨(없으면 빈 칸 마커).
 
-    후보 목록은 이미 투영이 들고 있으므로 판정이 아니라 **조회**다. 고정값 행은 프리셋이
-    없어 고를 것도 없다(편집기에서 비활성 「—」로 접히는 그 자리).
+    프리셋 표를 **직접** 본다(투영이 든 그룹 목록을 훑지 않는다): 후보 목록은 select 를
+    그리려고 있는 것이고, 여기 필요한 것은 (유형, 표시형) 한 쌍의 이름 하나다. 고정값 행은
+    프리셋이 없어 고를 것도 없다(편집기에서 비활성 「—」로 접히는 그 자리).
     """
-    value = projection["display_value"]
-    for group in projection["display_options"]:
-        for option in group["options"]:
-            if option["value"] == value:
-                return option["label"]
+    kind, _, code = str(projection["display_value"]).partition(":")
+    for option in _FMT_OPTIONS.get(kind, ()):
+        if option["code"] == code:
+            return option["label"]
     return PENDING_PREVIEW_MARK
 
 

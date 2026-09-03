@@ -802,6 +802,8 @@ def test_structure_counts_come_from_the_same_recomputation_as_drift(tmp_path):
         reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
 
     matched = rows["맞춘작업"]
+    assert matched.structure_readable is True
+    assert matched.template_fields == ("계약명",)
     assert (matched.template_field_count, matched.unbound_field_count,
             matched.stale_mapping_count) == (1, 0, 0)
 
@@ -811,9 +813,39 @@ def test_structure_counts_come_from_the_same_recomputation_as_drift(tmp_path):
     drifted = rows["어긋난작업"]
     assert (drifted.template_field_count, drifted.unbound_field_count,
             drifted.stale_mapping_count) == (1, 1, 1)
+    # 이름도 함께 온다 — 표는 미커버 필드를 **행으로** 세우고 소멸분은 표 밖에서 말한다.
+    assert drifted.unbound_fields == ("계약명",)
+    assert drifted.stale_mapping_fields == ("없는필드",)
 
     # 템플릿을 읽지 못한 갈래는 세지 않았다 — 0 이 「필드가 0 개」라는 뜻이 아니라
-    # 「세지 않았다」는 뜻이고, 그 사실은 상세의 `counted` 가 말한다.
+    # 「세지 않았다」는 뜻이다. 그 둘을 가르는 축은 수치가 아니라 `structure_readable` 이고,
+    # 수치만으로 가르려 하면 「필드 0 개인 hwpx」와 「못 읽은 템플릿」이 한 모양이 된다.
     unlinked = rows["미연결"]
+    assert unlinked.structure_readable is False and unlinked.structure is None
     assert (unlinked.template_field_count, unlinked.unbound_field_count,
             unlinked.stale_mapping_count) == (0, 0, 0)
+
+
+def test_an_unreadable_template_is_not_a_zero_field_template(tmp_path):
+    """읽기 실패 드리프트는 **세지 않았다**고 말한다(U6-F 리뷰 4·5).
+
+    종전 모양에서는 `read_error` 갈래의 대칭차가 전부 빈 튜플이라 「읽고 나서 아무 차이도
+    없었다」와 구별되지 않았다 — 그 위에 수치를 세우는 카드가 「연결 n / n · 확인 필요 0」을
+    지어낸다. 명시 boolean 이 그 자리를 막는다.
+    """
+    reg = JobRegistry(tmp_path / "broken")
+    bad = tmp_path / "깨진.hwpx"
+    bad.write_bytes(b"not a zip")                      # 존재하지만 열 수 없다
+    reg.save(Job(name="손상템플릿", template_path=str(bad),
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
+    row = HomeViewModel(reg, engine=make_hwpx_engine(),
+                        inspect_status=template_compile_status).rows()[0]
+    assert row.structure_readable is False
+    assert row.template_field_count == 0
+
+    # 대조: **읽을 수 있는데 필드가 0 개**인 템플릿은 세었다고 말한다(0 도 사실이다).
+    empty = JobRegistry(tmp_path / "emptyfields")
+    empty.save(Job(name="필드없음", template_path=_raw_hwpx(tmp_path)))
+    empty_row = HomeViewModel(empty, engine=make_hwpx_engine(),
+                              inspect_status=template_compile_status).rows()[0]
+    assert empty_row.structure_readable is True and empty_row.template_field_count == 0
