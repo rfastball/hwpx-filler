@@ -3486,3 +3486,90 @@ def test_the_templates_root_is_read_once_until_it_is_reset(tmp_path):
     root.set(str(other))
     assert len(reads) == 2, "재지정이 memo 를 비우지 않았습니다 — 옛 루트를 계속 말합니다."
     assert root.path() == other
+
+
+# ========================= U6-E 리뷰 회수(#989) — 게이트 존이 지는 두 사실
+def test_the_gate_zone_says_when_the_sheet_cannot_be_opened(tmp_path):
+    """시트는 `tpl` 이 아는 항목만 연다 — 열리지 않는 문은 **사유와 함께** 잠긴다(리뷰 5).
+
+    저장본이 든 절대경로는 루트 재지정·폴더 이동 뒤에도 살아 있을 수 있다. 그 상태에서
+    문을 열어 두면 누를 때마다 거절만 돌아오고, 그 무반응이 이 저장소가 금지하는 것이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))          # 격리 서식 폴더 **밖**
+
+    outside = ctrl.snapshot()["session_detail"]
+    assert outside["available"] is False
+    assert "서식 폴더" in outside["reason"]
+
+    # 같은 파일을 폴더 안으로 들이면 그대로 열린다 — 판정 축은 소속 하나다.
+    root = tmp_path / "text_templates"
+    root.mkdir(parents=True, exist_ok=True)
+    inside = root / TPL_COMPILED.name
+    shutil.copy2(TPL_COMPILED, inside)
+    ctrl.load_template_path(str(inside))
+    assert ctrl.snapshot()["session_detail"] == {"available": True, "reason": ""}
+
+
+def test_the_gate_zone_asks_the_library_once_per_template(tmp_path):
+    """관문 질의는 스냅샷마다 지불하지 않는다 — 입력은 세션 템플릿 경로 하나다(리뷰 5)."""
+    asked: "list[str]" = []
+    gate = _tpl_channel(tmp_path / "text_templates", tmp_path).is_live_path
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, clock=_clock,
+        is_library_path=lambda media, path: (asked.append(path), gate(media, path))[1],
+        template_root=TemplateRoot(default_root=tmp_path / "text_templates"),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    asked.clear()
+
+    for _ in range(3):
+        ctrl.snapshot()
+    assert asked == [], "스냅샷마다 서식 폴더를 물었습니다"
+
+    ctrl.load_template_path(str(TPL_PARTIAL))           # 경로가 바뀌면 다시 묻는다
+    ctrl.snapshot()
+    assert asked == [str(TPL_PARTIAL)]
+
+
+def test_the_sheet_door_is_shut_when_the_gate_is_unwired(tmp_path):
+    """관문 미배선은 통과가 아니다 — 없는 관문을 「열려 있다」로 접지 않는다."""
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, clock=_clock,
+        template_root=TemplateRoot(default_root=tmp_path / "text_templates"),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    zone = ctrl.snapshot()["session_detail"]
+    assert zone["available"] is False and "배선" in zone["reason"]
+
+
+def test_provenance_drift_is_a_session_judgement(tmp_path):
+    """작성 출처 드리프트 경고는 **세션 판정**이라 게이트 존에 산다(리뷰 6).
+
+    걷힌 「작성 출처」 블록이 이 경고를 이고 있었다 — 블록이 사라지며 함께 사라졌던 사실을
+    되살린다. 비교하는 두 값은 저장이 찍은 필드 지문과 지금 연 파일의 필드이고, 둘 다
+    같은 구분자로 이어야 같은 스키마가 두 문법으로 적히지 않는다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "출처드리프트")
+    ctrl.dispatch("save", {})
+
+    ctrl.load_job("출처드리프트")
+    assert ctrl.snapshot()["schema_drift"] == "", "손대지 않은 재진입이 경고를 세웠습니다"
+
+    # 저장된 지문만 다른 스키마로 바꿔 둔다 — 파일은 그대로이므로 갈린 것은 기록뿐이다.
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("출처드리프트")
+    job.mapping.provenance = dict(job.mapping.provenance, template_fields="옛필드 · 지난필드")
+    reg.save(job)
+
+    ctrl.load_job("출처드리프트")
+    drift = ctrl.snapshot()["schema_drift"]
+    assert "매핑 재검토" in drift, f"드리프트를 말하지 않았습니다: {drift!r}"
+
+
+def test_a_draft_without_provenance_never_claims_drift(tmp_path):
+    """기록이 없으면 비교할 것도 없다 — 초안이 「달라졌다」고 말하지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.snapshot()["schema_drift"] == ""

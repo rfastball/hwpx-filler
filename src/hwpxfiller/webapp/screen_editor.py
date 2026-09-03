@@ -158,6 +158,23 @@ _EMPTY_PRESERVED: "dict[str, object]" = {
 POOL_UNWIRED_TEXT = "등록 데이터 목록을 읽을 수 없습니다."
 
 
+#: 세션 템플릿이 서식 폴더 밖이라 항목 상세를 열 수 없을 때의 사유(U6-E 리뷰 5).
+#: 저장본이 든 절대경로는 루트 재지정·폴더 이동 뒤에도 살아 있을 수 있는데, 시트는 `tpl`
+#: 채널이 아는 항목만 연다 — 조용히 실패하는 버튼 대신 비활성 + 사유를 세운다.
+SESSION_DETAIL_OUTSIDE_TEXT = (
+    "서식 폴더 밖의 템플릿이라 항목 상세를 열 수 없습니다. 설정에서 서식 폴더를 확인하세요."
+)
+#: 관문 미배선(테스트 단독 구동·비완전 조립)의 사유 — 없는 표면을 있다고 말하지 않는다.
+SESSION_DETAIL_UNWIRED_TEXT = "템플릿 라이브러리 관문이 배선되지 않아 항목 상세를 열 수 없습니다."
+
+#: 작성 당시와 지금의 템플릿 필드 구성이 갈렸을 때의 경고(#53-C 승계 · U6-E 리뷰 6).
+#: **세션 판정**이라 풀 항목 시트가 아니라 1단계 게이트 존에 선다: 이 작업이 저장될 때
+#: 기록한 필드 지문과 지금 연 파일의 필드가 다르다는 뜻이고, 그건 이 세션의 사실이다.
+PROVENANCE_DRIFT_TEXT = (
+    "작성 당시와 템플릿 필드 구성이 다릅니다. 매핑 재검토가 필요할 수 있습니다."
+)
+
+
 #: 연번 예시의 이름 구분자 — 이름 기본값과 **같은 글자**다(문장 안 em dash 금지, §3-1).
 _EXAMPLE_SEPARATOR = " · "
 
@@ -388,6 +405,11 @@ class EditorController:
         # 판정은 durable 저장소를 mutation fence 안에서 읽는 일이라 렌더 경로에서 반복하면
         # 타이핑 한 번마다 그 값을 문다.
         self._binding_confirm_pending = False
+        # 게이트 존 「자세히…」 가부의 memo(U6-E 리뷰 5) — `(경로, 판정)` 한 벌.
+        # 관문 질의는 서식 폴더 스캔을 물 수 있어 스냅샷마다 지불할 것이 아니다. 무효화는
+        # 템플릿이 바뀌는 두 자리(:meth:`load_template_path` · 세션 리셋)뿐이고, 그것이 곧
+        # 이 판정의 입력이 바뀌는 전부다.
+        self._session_detail_cache: "tuple[str, dict] | None" = None
 
     def _refresh_binding_confirm_pending(self) -> None:
         """저장본 기준으로 연결 확정 대기를 다시 잰다 — 진입·저장 착지 두 자리에서만 부른다.
@@ -964,6 +986,11 @@ class EditorController:
             # 판독이고 이것은 이 편집 세션이 든 스키마다.
             "fields": [f.to_dict() for f in self.schema.fields] if self.schema else [],
             "raw_block": self.raw_block,
+            # 게이트 존의 「자세히…」 가부 + 사유(U6-E 리뷰 5) — 서식 폴더 밖 템플릿에서
+            # 열리지 않는 문을 세우지 않는다. 판정·문안은 Python 이고 웹은 비활성 + title.
+            "session_detail": self._session_detail(),
+            # 작성 출처 드리프트 경고(#53-C 승계 · 리뷰 6) — **세션 판정**이라 여기 산다.
+            "schema_drift": self._provenance_drift(),
             "gate": self._gate_snapshot(),
             "gate_error": self.gate_error,
             "data_path": self.data_path,
@@ -1200,6 +1227,54 @@ class EditorController:
             ["" if (v := rec.get(col)) is None else str(v) for col in self.source_fields]
             for rec in self.records[:_SAMPLE_ROWS]
         ]
+
+    def _session_detail(self) -> dict:
+        """게이트 존 「자세히…」의 가부와 사유(U6-E 리뷰 5) — **판정은 여기 하나**다.
+
+        시트는 `tpl` 채널이 아는 항목만 연다(그 왕복이 경로 관문을 지난다). 저장본이 든
+        절대경로는 루트 재지정·폴더 이동 뒤에도 살아 있을 수 있으므로, 그 상태에서 문을
+        열어 두면 누를 때마다 거절만 돌아온다 — 비활성 + 사유가 이 저장소의 처분이다.
+
+        **memo 는 경로 하나**다: 관문 질의가 서식 폴더 스캔을 물 수 있어 스냅샷마다 지불할
+        것이 아니고, 판정의 입력은 세션 템플릿 경로 하나다.
+        """
+        if not self.template_path:
+            return {"available": False, "reason": ""}
+        cached = self._session_detail_cache
+        if cached is not None and cached[0] == self.template_path:
+            return cached[1]
+        gate = self._is_library_path
+        if gate is None:
+            value = {"available": False, "reason": SESSION_DETAIL_UNWIRED_TEXT}
+        else:
+            try:
+                live = bool(gate(template_media(self.template_path), self.template_path))
+            except Exception:  # noqa: BLE001 — 판정 불가 = 문을 열지 않는다(fail-closed)
+                live = False
+            value = (
+                {"available": True, "reason": ""} if live
+                else {"available": False, "reason": SESSION_DETAIL_OUTSIDE_TEXT}
+            )
+        self._session_detail_cache = (self.template_path, value)
+        return value
+
+    def _provenance_drift(self) -> str:
+        """작성 당시와 지금의 템플릿 필드 구성이 갈렸으면 경고, 아니면 ``""``(#53-C 승계).
+
+        **세션 판정이다**(U6-E 리뷰 6): 비교하는 것은 이 작업이 저장될 때 찍은 필드 지문
+        (:meth:`_build_provenance` 의 ``template_fields``)과 **지금 연 파일**의 필드다. 풀
+        항목의 사실이 아니므로 항목 상세 시트가 아니라 1단계 게이트 존에 선다 — 종전에는
+        걷힌 「작성 출처」 블록이 이 경고를 이고 있어서 그 블록과 함께 사라졌다.
+
+        지문은 저장 경로와 **같은 구분자**로 잇는다(`' · '`) — 여기서 다시 지으면 같은
+        스키마가 두 문법으로 적혀 늘 다르다고 말한다.
+        """
+        recorded = self._loaded_provenance.get("template_fields", "")
+        if not recorded or self.schema is None or not self.schema.fields:
+            return ""
+        if recorded == " · ".join(self.schema.field_names()):
+            return ""
+        return PROVENANCE_DRIFT_TEXT
 
     def _gate_snapshot(self) -> "dict | None":
         g = self.gate
@@ -1466,6 +1541,7 @@ class EditorController:
         extract_schema 는 hwpx 전용이라 txt 에선 서지 않는다(누름틀이 없는 매체다).
         """
         self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
+        self._session_detail_cache = None  # 경로가 바뀌면 시트 가부도 다시 묻는다(리뷰 5)
         self.template_path = path
         # 이름 기본값 재도출(U6-D #978) — 표지가 참일 때만 실제로 바뀐다. 스키마·게이트보다
         # **앞**인 이유는 이름이 경로 하나에서 나오기 때문이다: 아래 갈래는 RAW·판독 실패로

@@ -581,8 +581,20 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     갔다(아래 「항목 상세 시트」 절). 남은 게이트 존 `#editorTplGate` 는 **세션 판정**이라
     1단계에 산다 — `raw_block` · `gate_error` · `gate{message,unmet,acked}` + `ack-gate` 는
     종전 그대로이고, 스키마 표가 시트로 가면서 이 자리가 말하는 수치는 `field_count` 하나로
-    좁아졌다. 그 옆의 `data-act="session-detail"` 이 **세션 템플릿의 시트**를 연다(행 ⋮ 의
-    「자세히…」와 같은 한 문 — `openDetail`).
+    좁아졌다. 존이 지는 것 넷:
+    - **머리는 상태와 무관하게 선다**(#989 리뷰 8): 표시명 + `PathActions(reveal)` +
+      「자세히…」. 「파일을 고치세요」라고 말하는 바로 그 상태(RAW·판독 실패)에서 고치러 갈
+      길이 그 문장 옆에 없으면 안 된다. 아래 몸통만 상태로 갈린다.
+    - **시트 문의 가부는 Python 이 낸다**(`session_detail{available,reason}` · 리뷰 5):
+      시트는 `tpl` 이 아는 항목만 여는데(그 왕복이 경로 관문을 지난다) 저장본이 든 절대경로는
+      루트 재지정·폴더 이동 뒤에도 살아 있을 수 있다. 열리지 않는 문은 **비활성 + 사유**이고
+      (`#editorTplDetailBlock`) 판정은 세션 템플릿 경로 하나로 memo 된다 — 관문 질의가 서식
+      폴더 스캔을 물 수 있어 스냅샷마다 지불할 것이 아니다. 관문 미배선도 「닫힘 + 사유」다.
+    - **작성 출처 드리프트 경고가 여기 산다**(`schema_drift` · 리뷰 6 · #53-C 승계): 저장이
+      찍은 필드 지문(`provenance.template_fields`)과 **지금 연 파일**의 필드가 갈리면 warn 한
+      줄(`#editorSchemaDrift`). 풀 항목이 아니라 **세션**의 사실이라 시트가 아니라 이 자리다.
+      판정·문안 모두 Python(`_provenance_drift`)이고 웹은 필드 목록을 다시 대조하지 않는다.
+    - `data-act="session-detail"` 은 행 ⋮ 의 「자세히…」와 **같은 한 문**이다(`openDetail`).
 - **2단계 「연결 확인」은 4열 표 하나다**(U6-C #977 · U6 §2.2 · 동결 시안 장면 2). 열은
   템플릿 필드 · 데이터 열 · 표시형 · 미리보기이고, 종전 7열의 나머지 셋은 흡수됐다:
   「확정」 체크는 데이터 열 칸의 **상태 배지 버튼**(`data-act="row-confirm"`)으로,
@@ -779,11 +791,17 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     세운다(U6-E #979 — 종전 `slots` 존의 확장):
     `{path, name, media, state, badge_label, badge_level, field_count, field_summary,
     fields[{name,type_hint}], actions[{key,label}], diagnostics, slots{summary,rows}, error}`.
-    투영·성형은 링1(`TemplateDetail`·`SlotView`) 소유이고 **파일을 한 번만 연다** — 상태·
-    배지·필드·구간 항목·진단이 같은 판독 스냅샷에서 나온다(시트 한 장 안에 갈린 사실이 서지
-    않는다). 매체를 가른다: TXT 는 상태도 구간 축도 없어 필드 목록과 판독 실패 사유뿐이다.
-    진입은 **경로 관문**(`is_live_path`)을 지나고, 겨눈 파일이 목록에서 사라지면 스냅샷이
-    스스로 `null` 로 걷는다(죽은 경로를 겨눈 버튼 금지).
+    투영·성형은 링1(`TemplateDetail`·`SlotView`) 소유이고 **파일을 한 번만 연다** — 판독과
+    lint 가 한 포트(`TemplateFileOps.inspect_and_lint`)를 지나므로 상태·배지·필드·구간 항목·
+    진단·위생 점검이 같은 스냅샷에서 나온다(#989 리뷰 7: 두 번 열면 시트 한 장이 두 스냅샷을
+    이고, 비용도 두 배다). **판독 예외는 링1 한 자리에서 사유로 접힌다**(`review_view` →
+    `TemplateDetail.error`, 리뷰 1) — `zipfile.BadZipFile` 은 `ValueError` 가 아니라 dispatch
+    의 거절 봉투를 벗어나고, 그러면 오류 행의 「자세히…」가 영영 시트를 못 연다. 못 읽은
+    파일에 lint 는 없다(`None`)이고 결과 줄이 그 사유를 재진술한다.
+    매체를 가른다: TXT 는 상태도 구간 축도 없어 필드 목록과 판독 실패 사유뿐이고, **조회가
+    곧 소속 판정**이라 레지스트리를 한 번만 훑는다. hwpx 진입은 **경로 관문**
+    (`is_live_path`)을 지나고, 겨눈 파일이 목록에서 사라지면 스냅샷이 스스로 `null` 로
+    걷는다(죽은 경로를 겨눈 버튼 금지).
   - **표면은 항목 상세 시트 `#tplDetailModal` 하나다**(U6-E #979). 정적 target 은
     `frontend/index.html` 에 서고 **비어 있어야** 한다(`requireEmptyTarget` fail-closed),
     내용은 React `screens/editor.ts` 의 `TplDetailSheet` portal 이며 등록은
@@ -795,8 +813,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     구간 진단 → 필드 표(`.schema-fields` — #16 「나열식 금지」의 좌표) → 구간 항목 표
     (`#tplDetailSlots`) → 동사 줄(`#tplDetailVerbs`)이다.
   - **행 ⋮ 목록과 시트의 동사 줄은 같은 함수가 짓는다**(`libRowMenuItems`) — 시트는 자기
-    자신을 여는 「자세히…」만 걷는다. 그 목록은 **닫힌 집합**이고 처리기가 모르는 키는 조용히
-    떨어지지 않고 던진다(`handleLibMenu`·`handleDetailVerb`). 「자세히…」는 **모든 행에**
+    자신을 여는 「자세히…」만 걷는다. 그 목록은 **닫힌 집합**이고, 처리도 분기표 하나
+    (`runItemVerb`)를 지난다(#989 리뷰 9 — 두 진입이 정하는 것은 대상과 실패의 착지뿐이다).
+    모르는 키는 조용히 떨어지지 않고 던진다. **`act:review` 는 없다**(리뷰 10): 검토 왕복은
+    「자세히…」 하나가 지고, 링1 `_STATE_ACTIONS` 는 **수선 동사만** 든다
+    (RAW→`compile` / PARTIAL→`compile` / COMPILED·FILLED→없음). 「자세히…」는 **모든 행에**
     서므로 동사 0 인 행이 없다 — U6-A 의 「동사 0 → ⋮ 비활성 + 사유」 판정은 그 근거와 함께
     걷혔고(`LIB_ROW_NO_ACTION_REASON` 삭제), 그 판정이 막던 무반응은 그대로 막힌다: 어느
     행이든 누르면 답할 것이 있고, 오류 행에서는 시트가 그 사유를 보인다.
@@ -814,14 +835,26 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     (각 `path`·`slot_id`·`confirm`) + `slot_decompile_all`(`path`·`confirm`)이고 넷 다 경로가
     **현재 HWPX 라이브러리 목록**에 있어야 한다(임의 파일 변이 권한 승격 차단. 관문 몸통은
     공개 술어 `TemplateController.is_live_path` 하나이고 `_slot_path` 가 그것을 지나며 행
-    동사는 그 위에 id 검사를 얹는다).
+    동사는 그 위에 id 검사를 얹는다). 그 관문의 규칙 둘(#989 리뷰 4·7): **캐시 적중 + 파일
+    존재 검사로 끝내고 재스캔은 부재를 만났을 때만** 한다(무조건 재스캔하면 「자세히…」 한
+    번이 폴더 전건 판독을 물어 온다 — 200개면 200 inspect), 그리고 **부재로 확정되면 거절
+    전에 갱신된 목록을 민다**(`tpl` push). 거절 문구가 「목록을 새로 고쳤으니 다시 고르세요」
+    라고 말하는데 좌 열에 그 행이 남아 있으면 사람은 같은 클릭을 반복한다 — 목록의 정본이
+    이 채널이므로 그 push 도 여기서 나가야 한다.
     풀기 몸통은 External 이 지고(`decompile_structure` = `decompile_slot` 문서 순서 반복 +
     문서 단위 원자성), 링1 은 `decompile_all_slots`·`confirm_decompile_all_text` 를 소유한다.
-  - **동사 실행 뒤 시트는 tpl 푸시로 스스로 재렌더된다**: `_after_slot_mutation` 이 상세
-    **한 벌 전체**를 다시 투영한다(목록만 갈아 끼우면 새 항목 목록 위에 옛 상태 배지가
-    선다). 세션이 연 파일과 같은 경로면 기존 seam(`mutation_sinks` →
-    `reconcile_template_mutation`)이 편집 세션 무효화 + notice 를 세운다 — **이 사슬은
-    불변**이고, 시트는 그때 닫히지 않는다(편집기 notice 가 말한다).
+  - **파일을 바꾼 tpl 동사는 전부 상세를 다시 투영한다**(`_reproject_detail` · #989 리뷰 2):
+    slot 동사 넷 + 「누름틀·구간 변환」(`mutated` 갈래) + TXT 저장. 상세 **한 벌 전체**를
+    다시 세우는 이유는 변환이 상태·배지·필드·항목을 한꺼번에 바꾸기 때문이다(목록만 갈아
+    끼우면 새 항목 목록 위에 옛 상태 배지가 선다). **다른 파일의 변이는 시트를 건드리지
+    않는다** — 대조는 이 채널의 정규화 술어 하나를 지난다. 세션이 연 파일과 같은 경로면 기존
+    seam(`mutation_sinks` → `reconcile_template_mutation`)이 편집 세션 무효화 + notice 를
+    세운다 — **이 사슬은 불변**이고, 시트는 그때 닫히지 않는다(편집기 notice 가 말한다).
+  - **시트가 열려 있는 동안의 결과·실패는 그 면 안에 선다**(#989 리뷰 3): `tpl.result` 는
+    `#tplDetailResult`, 동사 실패는 `#tplDetailMsg`. 시트는 스크림으로 화면을 덮으므로 좌 열
+    바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다 — 값의 정본은 그대로 `tpl.result` 이고
+    바뀌는 것은 **그리는 자리** 하나다. 열림 표지와 그 사유는 모달 엔진의 `beforeClose` 한
+    자리가 함께 걷는다(다음 열림에 지난 사유가 남지 않는다).
   - **편집기의 구간 축 요약(구 `template_slots`·`#editorSlotSummary`)은 퇴역했다**(U6-E
     #979 · 판정 승계는 `UX_FEEDBACK_U6` §2.9). U4 §2.15 가 그 존을 읽기 전용으로 둔 근거는
     「저장 전 초안은 템플릿 파일을 변이시키지 않는다」였고 그것은 **동사 부재** 판정이었다.

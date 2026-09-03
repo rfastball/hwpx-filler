@@ -1403,6 +1403,7 @@ test("U6-E 게이트 존은 필드 수 한 줄 + 「자세히…」로 접힌다
   const h = harness({
     initial: async () => slotSnap({
       template_path: "C:/lib/a.hwpx", template_name: "a", field_count: 3,
+      session_detail: { available: true, reason: "" },
     }),
     tpl: tplSnap(),
   });
@@ -1412,12 +1413,149 @@ test("U6-E 게이트 존은 필드 수 한 줄 + 「자세히…」로 접힌다
   assert.ok(markup.includes('id="editorTplGate"'), "게이트 존이 서야 한다");
   assert.ok(markup.includes("필드 3개"), "남는 수치는 field_count 하나다");
   assert.ok(markup.includes('data-act="session-detail"'), "세션 템플릿의 시트 문이 서야 한다");
+  assert.equal(markup.includes('data-act="session-detail" disabled'), false,
+    "열 수 있는 항목의 문을 잠그지 않는다");
   /* 걷힌 표면들 — 되살아나면 같은 사실이 두 자리에서 그려진다. */
   assert.equal(markup.includes('class="schema-fields"'), false, "스키마 표는 시트로 갔다");
   assert.equal(markup.includes('id="tplSlots"'), false, "구간 항목 밴드는 시트로 갔다");
   assert.equal(markup.includes('id="editorSlotSummary"'), false, "구간 요약은 시트로 갔다");
   assert.equal(markup.includes("작성 출처"), false, "작성 출처 블록은 퇴역했다");
   assert.equal(markup.includes('class="filechip"'), false, "선택 chip 은 퇴역했다");
+});
+
+test("U6-E 리뷰 5 — 서식 폴더 밖 템플릿은 시트 문이 잠기고 사유가 병기된다", async () => {
+  const h = harness({
+    initial: async () => slotSnap({
+      template_path: "C:/밖/저장본.hwpx", template_name: "저장본", field_count: 3,
+      session_detail: { available: false, reason: "서식 폴더 밖의 템플릿이라 …" },
+    }),
+    tpl: tplSnap(),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  const button = markup.slice(markup.indexOf('data-act="session-detail"'));
+  assert.ok(button.slice(0, button.indexOf("</button>")).includes("disabled"),
+    "열리지 않는 문을 활성으로 두지 않는다");
+  assert.ok(markup.includes('id="editorTplDetailBlock"') && markup.includes("서식 폴더 밖"),
+    "사유를 병기해야 한다(조용히 잠그지 않는다)");
+});
+
+test("U6-E 리뷰 6 — 작성 출처 드리프트 경고는 세션 게이트 존에 산다", async () => {
+  const h = harness({
+    initial: async () => slotSnap({
+      template_path: "C:/lib/a.hwpx", template_name: "a", field_count: 3,
+      session_detail: { available: true, reason: "" },
+      schema_drift: "작성 당시와 템플릿 필드 구성이 다릅니다. 매핑 재검토가 필요할 수 있습니다.",
+    }),
+    tpl: tplSnap(),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes('id="editorSchemaDrift"'), "경고 자리가 실재해야 한다");
+  assert.ok(markup.includes("매핑 재검토가 필요할 수 있습니다"), "문안은 Python 값 그대로다");
+  /* 판정이 없으면 자리도 서지 않는다 — 웹이 필드 목록을 다시 대조하지 않는다. */
+  const quiet = harness({
+    initial: async () => slotSnap({
+      template_path: "C:/lib/a.hwpx", template_name: "a", field_count: 3,
+      session_detail: { available: true, reason: "" }, schema_drift: "",
+    }),
+    tpl: tplSnap(),
+  });
+  await quiet.controller.init();
+  assert.equal(renderEditor(quiet).includes('id="editorSchemaDrift"'), false);
+});
+
+test("U6-E 리뷰 8 — RAW·판독 실패에서도 이름과 「폴더에서 보기」가 남는다", async () => {
+  for (const state of [
+    { raw_block: "누름틀이 없는 원본입니다.", gate_error: false },
+    { raw_block: "", gate_error: true },
+  ]) {
+    const h = harness({
+      initial: async () => slotSnap(Object.assign({
+        template_path: "C:/lib/원본.hwpx", template_name: "원본", field_count: 0,
+        session_detail: { available: true, reason: "" },
+      }, state)),
+      tpl: tplSnap(),
+    });
+    await h.controller.init();
+
+    const markup = renderEditor(h);
+    assert.ok(markup.includes('id="editorTplGate"'), "게이트 존이 서야 한다");
+    assert.ok(markup.includes("원본"), "고칠 파일의 이름이 그 문장 옆에 있어야 한다");
+    assert.ok(markup.includes("폴더에서 보기"),
+      "「파일을 고치세요」라고 말하면서 고치러 갈 길을 지우지 않는다");
+    assert.ok(markup.includes('data-act="session-detail"'), "시트 문도 그대로 선다");
+  }
+});
+
+test("U6-E 리뷰 3 — 시트가 열려 있으면 결과·동사 실패가 그 면 안에 선다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: detailTpl(),
+    prompt: () => "새 이름",
+    call: async (_screen, action) => {
+      if (action === "slot_rename") throw new Error("항목이 없습니다");
+      return {};
+    },
+  });
+  await h.controller.init();
+  await h.controller.openDetail("C:/lib/구간.hwpx", {});
+
+  await h.controller.handleSlotVerb("rename", "특약", {});
+
+  const markup = renderSheet(h);
+  assert.ok(markup.includes('id="tplDetailMsg"') && markup.includes("항목이 없습니다"),
+    "시트가 덮은 화면 뒤가 아니라 시트 안에 서야 한다");
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null,
+    "스크림 뒤 채널(#save-msg)에는 쓰지 않는다");
+  assert.deepEqual(h.notices, [], "구조화 실패는 window.alert 로 새지 않는다");
+});
+
+test("U6-E 리뷰 3 — 시트는 tpl 결과 줄을 자기 안에 그린다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: tplSnap({ result: { text: "변환할 수 없습니다 구간.hwpx: …", level: "warn" } }),
+  });
+  await h.controller.init();
+
+  const markup = renderSheet(h);
+  assert.ok(markup.includes('id="tplDetailResult"'), "시트 결과 줄이 실재해야 한다");
+  assert.ok(markup.includes("변환할 수 없습니다"), "문안은 Python 값 그대로다");
+});
+
+test("U6-E 리뷰 3 — 시트가 닫히면 그 면의 사유는 남지 않는다", async () => {
+  const h = harness({ initial: async () => slotSnap(), tpl: detailTpl() });
+  await h.controller.init();
+  await h.controller.openDetail("C:/lib/구간.hwpx", {});
+  const opened = h.trace.find((row) => row[0] === "modal.open");
+
+  /* 닫힘은 모달 엔진의 `beforeClose` 가 지른다 — 그 한 자리가 열림 표지와 사유를 함께 걷는다. */
+  opened[2].beforeClose();
+
+  assert.equal(h.controller.viewModel.getSnapshot().detailOpen, false);
+  assert.equal(h.controller.viewModel.getSnapshot().detailMessage, null);
+});
+
+test("U6-E 리뷰 9·10 — 행 ⋮ 와 시트 동사 줄이 같은 분기표를 지난다", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    tpl: detailTpl(),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+  await h.controller.openDetail("C:/lib/구간.hwpx", {});
+
+  /* 같은 모르는 키가 두 진입에서 **둘 다** 던진다(한쪽만 조용하지 않다). */
+  await h.controller.handleDetailVerb("act:없는동사", {});
+  assert.ok(String(h.controller.viewModel.getSnapshot().detailMessage || "")
+    .includes("알 수 없는 항목 동사"), "시트 동사의 미지 키가 조용히 떨어졌습니다");
+
+  /* `act:review` 는 퇴역했다 — 검토 왕복은 「자세히…」 하나가 진다(리뷰 10). */
+  await h.controller.handleDetailVerb("act:review", {});
+  assert.ok(String(h.controller.viewModel.getSnapshot().detailMessage || "")
+    .includes("알 수 없는 항목 동사"), "act:review 가 살아 있습니다");
 });
 
 test("U6-E 결과 줄은 관리 동사가 나가는 좌 열 바닥에 선다", async () => {

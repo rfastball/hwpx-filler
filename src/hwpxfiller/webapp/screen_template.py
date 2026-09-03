@@ -517,6 +517,9 @@ class TemplateController:
             # 서면 거짓 경보이고, 필드만 저장된 뒤 구간이 실패한 갈래에서 통지가 빠지면
             # 세션이 낡은 스키마로 남는다. 판정 축은 링1 의 ``mutated`` 하나다.
             if result.mutated:
+                # 열려 있는 시트가 그 파일이면 상태·배지·필드·구간 항목이 방금 전부
+                # 달라졌다 — 목록만 두고 나오면 시트가 낡은 채로 선다(리뷰 2).
+                self._reproject_detail(path)
                 self._notify_mutation("mutated", path)
                 # T15 누름틀 변환(#894) — 통지 축은 위와 **같은 ``mutated``** 하나다: 무변이
                 # 거절에서 체크가 서면 하지 않은 일을 했다고 말하는 것이고, 필드만 저장되고
@@ -559,23 +562,37 @@ class TemplateController:
         """
         path = str(p["path"])
         media = template_media(path)
-        if not self.is_live_path(media, path):
-            raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
         if media == "txt":
+            # TXT 는 **조회가 곧 소속 판정**이다(리뷰 7): 레지스트리 스캔 한 번이 「목록에
+            # 있는가」와 「무엇이 들어 있는가」를 함께 답하므로 관문을 따로 돌리지 않는다.
             detail = self._txt_detail(path)
+            if detail is None:
+                self._push()  # 갱신된 목록을 먼저 보인다 — 거절 문구가 실행 가능해진다
+                raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
             self._detail = detail
             self._set_result(
                 _danger(f"검토 {detail.name}: {detail.error}") if detail.error
                 else _ok(f"검토 {detail.name}: {detail.field_summary()}")
             )
             return {"ok": True}
-        report = self.vm.lint(path)
-        self._set_result(self.vm.format_lint_result(path, report))
-        self._detail = self.vm.detail_view(path)
+        if not self.is_live_path(media, path):
+            raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
+        detail, report = self.vm.review_view(path)
+        self._detail = detail
+        # 판독이 실패했으면 lint 는 없다 — 못 읽은 파일을 위생 점검할 수 없고, 그 사실은
+        # 상세의 사유가 이미 말한다. 결과 줄은 그 사유를 그대로 재진술한다(조용한 성공 금지).
+        self._set_result(
+            self.vm.format_lint_result(path, report) if report is not None
+            else _danger(f"검토 {detail.name}: {detail.error}")
+        )
         return {"ok": True}
 
-    def _txt_detail(self, path: str) -> TemplateDetail:
-        """TXT 항목 하나의 상세 — 성형은 링1(:meth:`TemplateDetail.from_text`) 소유.
+    def _txt_detail(self, path: str) -> "TemplateDetail | None":
+        """TXT 항목 하나의 상세(목록에 없으면 ``None``) — 성형은 링1 소유.
+
+        **레지스트리를 한 번만 훑는다**(리뷰 7): 이 조회가 곧 소속 판정이라 호출자가 관문을
+        따로 돌리지 않는다. 부재를 ``None`` 으로 답하는 이유는 그 처분이 호출자마다 다르기
+        때문이다 — 검토 진입은 거절이고, 동사 뒤 재투영은 그냥 걷는 것이다.
 
         토큰 판독 실패를 예외로 올리지 않고 사유로 싣는 것은 밴드 행(:meth:`_txt_rows`)과
         같은 처분이다: 손상 파일도 목록에 서므로 그 행의 「자세히…」도 답할 것이 있어야 한다.
@@ -589,9 +606,7 @@ class TemplateController:
                 return TemplateDetail.from_text(template.path, template.fields(), root=root)
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 사유를 단 상세로 loud 노출
                 return TemplateDetail.from_text(template.path, (), str(exc), root=root)
-        # 관문(`is_live_path`)을 지나 왔으므로 실제로는 오지 않는다 — 와도 조용히 빈 상세를
-        # 지어내지 않는다.
-        raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
+        return None
 
     # ---- 컴파일된 Slot 관리 동사(S8-03 #834)
     def _slot_path(self, p: dict) -> str:
@@ -617,14 +632,28 @@ class TemplateController:
             raise ValueError("대상 항목 id 가 비어 있습니다.")
         return path, slot_id
 
-    def _after_slot_mutation(self, path: str, view, text: str) -> dict:
-        """Slot 동사 성공 뒤 공통 후처리 — 상세 재투영·결과 줄·재정산 통지.
+    def _reproject_detail(self, path: "str | Path") -> None:
+        """파일을 바꾼 동사 뒤 — 열려 있는 상세가 **그 파일**이면 다시 세운다(리뷰 2).
 
-        **재투영은 상세 한 벌 전체**다(U6-E #979): 표기로 되돌리면 그 파일은 COMPILED 에서
-        PARTIAL 로 내려가고 필드 수·동사 목록까지 달라진다. 목록만 갈아 끼우면 열려 있는
-        시트가 새 항목 목록 위에 옛 상태 배지를 이고 선다.
+        **재투영은 상세 한 벌 전체**다: 표기로 되돌리면 그 파일은 COMPILED 에서 PARTIAL 로
+        내려가고 필드 수·동사 목록까지 달라진다. 목록만 갈아 끼우면 열려 있는 시트가 새 항목
+        목록 위에 옛 상태 배지를 이고 선다.
+
+        **다른 파일이면 아무 일도 하지 않는다**: 지금 보고 있는 항목과 무관한 변이가 시트를
+        갈아 끼우면 사람이 연 적 없는 항목이 눈앞에서 바뀐다. 대조는 이 채널의 단일
+        정규화 술어(:meth:`_norm`)를 지난다.
         """
-        self._detail = self.vm.detail_view(path)
+        view = self._detail
+        if view is None or self._norm(view.path) != self._norm(path):
+            return
+        self._detail = (
+            self._txt_detail(str(path)) if view.media == "txt"
+            else self.vm.detail_view(str(path))
+        )
+
+    def _after_slot_mutation(self, path: str, view, text: str) -> dict:
+        """Slot 동사 성공 뒤 공통 후처리 — 상세 재투영·결과 줄·재정산 통지."""
+        self._reproject_detail(path)
         self._set_result(self.vm.format_slot_result(path, text))
         # bytes 변이 = 같은 파일을 든 편집 세션의 스키마가 방금 달라졌다(S8G-00 seam).
         self._notify_mutation("mutated", path)
@@ -714,13 +743,27 @@ class TemplateController:
         편집기가 자기 VM·자기 TXT 레지스트리를 따로 들고 같은 술어를 다시 썼고, 그래서
         같은 질문에 답하는 스캔이 둘이었다 — 한쪽만 최신인 순간이 실재했다.
 
-        **판정 전에 재스캔한다**(hwpx): 방금 탐색기에서 사라진 파일을 통과시키지 않는 것이
-        이 관문의 존재 이유다. TXT 레지스트리는 캐시 없이 매번 디스크를 훑으므로 판정
-        자체가 이미 최신이다.
+        **재스캔은 부재를 만났을 때만 한다**(리뷰 7): 캐시된 목록에 있으면 그것이 답이고,
+        없을 때만 한 번 다시 훑어 「방금 들어온 파일」과 「방금 사라진 파일」을 가른다.
+        무조건 재스캔하면 「자세히…」 한 번이 라이브러리 전건 판독을 물어 온다(200개 폴더면
+        200 inspect). TXT 레지스트리는 캐시 없이 매번 디스크를 훑으므로 첫 판정이 이미 최신이다.
+
+        **부재로 확정되면 갱신된 목록을 먼저 민다**(리뷰 4): 거절 문구가 「목록을 새로
+        고쳤으니 다시 고르세요」라고 말하는데 정작 좌 열에 그 행이 남아 있으면, 사람은 같은
+        클릭을 반복한다. 목록의 정본이 이 채널이므로 그 push 도 여기서 나가야 한다.
         """
+        target = self._norm(path)
+        # 캐시 적중은 「목록에 있다」까지만 말한다 — 그 파일이 지금 디스크에 있는지는 파일
+        # 하나의 존재 검사(O(1))가 답한다. 이 한 줄이 없으면 탐색기에서 방금 지운 파일이
+        # 다음 재스캔까지 통과하고, 그것이 이 관문이 막으려던 바로 그 결함이다(리뷰 F7).
+        if target in self._live_paths(media) and Path(path).is_file():
+            return True
         if media == "hwpx":
             self.vm.refresh()
-        return self._norm(path) in self._live_paths(media)
+            if target in self._live_paths("hwpx"):
+                return True
+        self._push()
+        return False
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
     def _do_txt_new(self, p: dict) -> dict:
@@ -766,7 +809,9 @@ class TemplateController:
             }
         path = result
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
-        # 내용이 바뀌면 토큰 집합이 바뀐다 — 편집 세션의 스키마가 방금 낡았다(#320).
+        # 내용이 바뀌면 토큰 집합이 바뀐다 — 열려 있는 시트의 필드 목록도 방금 낡았다(리뷰 2).
+        self._reproject_detail(path)
+        # 편집 세션의 스키마도 방금 낡았다(#320).
         self._notify_mutation("mutated", path)
         return {"ok": True}
 

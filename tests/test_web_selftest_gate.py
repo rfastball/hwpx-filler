@@ -1701,15 +1701,21 @@ class TestWebSelftestGate:
         assert t["gate_zone"] is True, (
             "1단계 게이트 존(#editorTplGate)과 세션 「자세히…」 문이 서지 않았습니다."
         )
+        # U6-E 리뷰 8: 「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길을 지우지 않는다.
+        assert t["gate_zone_pathtrack"] is True, (
+            "게이트 존에 「폴더에서 보기」가 없습니다 — 상태와 무관하게 서야 합니다."
+        )
         # 행 ⋮ 구성 — 링1 상태 동사 + 「자세히…」. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서,
         # 「삭제」는 U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
         assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "detail"], (
-            f"HWPX 행 ⋮ 구성이 [변환·검토·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
+        # U6-E 리뷰 10: 상태 게이트는 **수선 동사**만 들고 검토 왕복은 「자세히…」가 진다 —
+        # 같은 왕복을 부르는 메뉴 항목을 둘 두지 않는다.
+        assert t["hwpx_menu_items"] == ["act:compile", "detail"], (
+            f"HWPX 행 ⋮ 구성이 [변환·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
-        assert t["compiled_menu_items"] == ["act:review", "detail"], (
-            f"COMPILED 행 ⋮ 구성이 [검토·자세히]와 다릅니다: {t['compiled_menu_items']!r}"
+        assert t["compiled_menu_items"] == ["detail"], (
+            f"COMPILED 행 ⋮ 구성이 [자세히]와 다릅니다: {t['compiled_menu_items']!r}"
         )
         assert t["txt_menu_items"] == ["edit", "detail"], (
             f"TXT 행 ⋮ 구성이 [내용 편집·자세히]와 다릅니다: {t['txt_menu_items']!r}"
@@ -1730,9 +1736,10 @@ class TestWebSelftestGate:
         assert t["sheet_field_names"] == ["계약명", "계약일"], (
             f"필드 표가 스냅샷 값을 그대로 그리지 않았습니다: {t['sheet_field_names']!r}"
         )
-        assert t["sheet_verbs"] == ["detail-act:review"], (
-            "시트 동사 줄이 행 ⋮ 목록에서 「자세히…」만 걷은 것과 다릅니다:"
-            f" {t['sheet_verbs']!r}"
+        # COMPILED 는 수선할 것이 없으므로 동사 줄이 서지 않는다 — 시트가 실제로 세우는
+        # 동사는 그 아래 구간 항목 표의 것들이다(리뷰 10).
+        assert t["sheet_verbs"] == [], (
+            f"시트 동사 줄이 링1 상태 게이트와 다릅니다: {t['sheet_verbs']!r}"
         )
         # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 시트 안으로 이주한 좌표다.
         assert t["slot_rows"] == 1, f"구간 항목 목록이 렌더되지 않았습니다: {t!r}"
@@ -1754,8 +1761,16 @@ class TestWebSelftestGate:
         assert t["slot_dispatch"] == [
             ["tpl", "slot_rename", "C:/lib/구간.hwpx", "특약", "특약 사항"]
         ], f"개명 발신이 계약과 다릅니다: {t['slot_dispatch']!r}"
+        # U6-E 리뷰 3: 시트가 열려 있으면 동사의 실패도 **그 면 안**에 선다 — 스크림 뒤
+        # 채널(#save-msg)에 쓴 문장은 읽는 사람에게 닿지 않는다.
         assert t["slot_notice_inline"] is True, (
-            "동사 실패가 인라인 채널(#save-msg)에 보이게 서지 않았습니다(#323 라우팅)."
+            "동사 실패가 시트 안(#tplDetailMsg)에 보이게 서지 않았습니다(#323 라우팅)."
+        )
+        assert t["slot_notice_not_behind_scrim"] is True, (
+            "같은 사유가 스크림 뒤 채널에도 실렸습니다 — 한 사실은 한 자리에 남깁니다."
+        )
+        assert t["sheet_result_inside"] is True, (
+            "관리 동사의 결과 줄이 시트 안(#tplDetailResult)에 서지 않았습니다."
         )
         # 시트는 뒤 프로브의 클릭을 가리지 않게 닫힌 채 끝난다(교차 프로브 오염 금지).
         assert t["sheet_closed"] is True, "항목 상세 시트가 열린 채 남았습니다."

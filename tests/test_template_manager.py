@@ -79,14 +79,14 @@ def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
     # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
     # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
-    # U6-E(#979): 그때 0 이 된 COMPILED·FILLED 의 동사 자리에 `review` 가 섰다. 그 두 상태
-    # 에서만 존재하는 구간 항목 동사(개명·표기로 되돌리기·삭제)가 `review` 가 세우는 상세
-    # 위에 사는데, 정작 그 상태에서 도달성이 0 이던 구멍을 메운다.
+    # U6-E(#979): 그때 0 이 된 COMPILED·FILLED 의 도달성 구멍은 **상태 동사가 아니라**
+    # 「자세히…」가 메운다 — 그 항목이 `tpl/review` 왕복을 지고 상세 시트를 연다(웹이 모든
+    # 행에 덧붙인다). 그래서 이 표가 드는 것은 상태가 허용하는 **수선 동사**뿐이다.
     expected = {
         CompileState.RAW: ["compile"],
-        CompileState.PARTIAL: ["compile", "review"],
-        CompileState.COMPILED: ["review"],
-        CompileState.FILLED: ["review"],
+        CompileState.PARTIAL: ["compile"],
+        CompileState.COMPILED: [],
+        CompileState.FILLED: [],
         None: [],
     }
     for state, keys in expected.items():
@@ -98,7 +98,7 @@ def test_action_matrix_and_vm_delegation():
     vm = TemplateManagerViewModel(
         paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
     )
-    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["review"]
+    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == []
 
 
 def test_library_scan_is_recursive(tmp_path):
@@ -175,9 +175,9 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert by_name["raw"].state == CompileState.RAW
     assert [a.key for a in by_name["raw"].actions()] == ["compile"]
     assert by_name["comp"].state == CompileState.COMPILED
-    assert [a.key for a in by_name["comp"].actions()] == ["review"]
+    assert [a.key for a in by_name["comp"].actions()] == []
     assert by_name["fill"].state == CompileState.FILLED
-    assert [a.key for a in by_name["fill"].actions()] == ["review"]
+    assert [a.key for a in by_name["fill"].actions()] == []
     # U6-B: 「고를 수 있는가」와 사유도 같은 행이 진다 — 변환 전은 비활성 + 사유다.
     assert by_name["comp"].select_block_reason() == ""
     assert "누름틀·구간 변환" in by_name["raw"].select_block_reason()
@@ -208,7 +208,7 @@ def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
     assert template_compile_status(str(path)).state == CompileState.COMPILED
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
-    assert [a.key for a in row.actions()] == ["review"]
+    assert [a.key for a in row.actions()] == []
     assert row.select_block_reason() == ""   # 변환을 마쳤으니 고를 수 있다
 
 
@@ -690,7 +690,7 @@ def test_row_surfaces_residual_structure_notation_with_repair_verb(tmp_path):
     assert row.badge_label == "부분 변환" and row.badge_level == "warn"
     assert row.structure_marker_n == 2
     assert "구간 표기 2개" in row.detail_line()
-    assert [a.label for a in row.actions()] == ["마저 변환", "검토"]
+    assert [a.label for a in row.actions()] == ["마저 변환"]
 
 
 def test_row_without_notation_says_nothing_about_it(tmp_path):
@@ -821,3 +821,44 @@ def test_the_convert_label_has_one_source():
     """가져오기 채택의 RAW 거절 문안이 지목하는 라벨은 `_STATE_ACTIONS` 의 그 값이다."""
     raw = available_actions(CompileState.RAW)
     assert [a.label for a in raw] == [CONVERT_ACTION_LABEL]
+
+
+def test_review_view_reads_the_file_once_and_folds_read_failures(tmp_path):
+    """검토 투영은 **판독+lint 한 포트**를 지나고, 읽기 예외를 사유로 접는다(U6-E 리뷰 1·7).
+
+    나눠 열면 둘을 잃는다: 시트 한 장이 두 스냅샷을 얹고(그 사이의 변경이 갈린 사실로 선다),
+    라이브러리가 클수록 「자세히…」 한 번의 비용이 두 배가 된다. 그리고 접는 자리가 없으면
+    ``BadZipFile`` 이 dispatch 의 거절 봉투를 벗어나 시트가 영영 안 열린다.
+    """
+    import dataclasses
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    path = _write_compiled(
+        lib / "계약.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+    )
+    calls: "list[str]" = []
+    ops = dataclasses.replace(
+        HWPX_TEMPLATE_OPS,
+        inspect_and_lint=lambda target, vocabulary=None: (
+            calls.append(str(target)),
+            HWPX_TEMPLATE_OPS.inspect_and_lint(target, vocabulary=vocabulary),
+        )[1],
+        lint=lambda *a, **k: pytest.fail("검토가 lint 로 파일을 한 번 더 열었습니다"),
+    )
+    vm = TemplateManagerViewModel(
+        library_dir=lib, inspect_template=inspect_hwpx_template, file_ops=ops
+    )
+
+    detail, report = vm.review_view(str(path))
+
+    assert calls == [str(path)]
+    assert report is not None and detail.error == ""
+    assert [f.name for f in detail.fields] == ["계약명"]
+
+    broken = lib / "깨진.hwpx"
+    broken.write_bytes(b"not a hwpx zip!!")
+    failed, no_report = vm.review_view(str(broken))
+    assert no_report is None, "못 읽은 파일을 위생 점검한 척하지 않는다"
+    assert failed.error and failed.slots is None and failed.actions == ()

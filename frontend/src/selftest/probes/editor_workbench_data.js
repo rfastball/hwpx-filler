@@ -2068,7 +2068,9 @@ export function createEditorWorkbenchDataProbes() {
         const out = {};
         try {
           Nav.go("editor", { force: true });
-          const acts = [{ key: "compile", label: "누름틀·구간 변환" }, { key: "review", label: "검토" }];
+          /* 링1 상태 게이트가 드는 것은 **수선 동사**뿐이다(U6-E 리뷰 10) — 검토 왕복은
+             웹이 모든 행에 덧붙이는 「자세히…」가 진다. */
+          const acts = [{ key: "compile", label: "누름틀·구간 변환" }];
           const H = (name, warns, rowActs, blocked) => ({
             key: name, name, path: `C:/lib/${name}`,
             badge_label: blocked ? "변환 필요" : "누름틀",
@@ -2095,10 +2097,10 @@ export function createEditorWorkbenchDataProbes() {
                   H("a.hwpx"), H("b.hwpx"),
                   /* COMPILED 의 실제 모양 — U6-B 뒤 동사가 0 이던 행이다. U6-E(#979)가 그
                      자리에 「검토」를 세웠고, 「자세히…」는 어느 행에서든 선다. */
-                  H("c.hwpx", null, [{ key: "review", label: "검토" }]),
+                  H("c.hwpx", null, []),
                   H("d.hwpx", ["빈 값 2건은 공란으로 채워집니다"]),
                   /* 「자세히…」의 왕복을 실제로 태울 행 — 검토가 상세를 채운다. */
-                  H("구간.hwpx", null, [{ key: "review", label: "검토" }]),
+                  H("구간.hwpx", null, []),
                 ],
               }],
             },
@@ -2124,7 +2126,7 @@ export function createEditorWorkbenchDataProbes() {
                 { name: "계약명", type_hint: "text" },
                 { name: "계약일", type_hint: "date" },
               ],
-              actions: [{ key: "review", label: "검토" }],
+              actions: [],
               diagnostics: [],
               slots: {
                 summary: "항목 1개 · 선택 1개",
@@ -2141,6 +2143,8 @@ export function createEditorWorkbenchDataProbes() {
             /* 1단계 게이트 존은 **세션이 스키마를 읽었을 때** 선다 — `field_count` 가 그
                조건이다(U6-E #979). 합성 스냅샷도 그 사실을 실어야 존이 그려진다. */
             template_path: "C:/lib/a.hwpx", template_name: "a.hwpx", field_count: 3,
+            /* 시트 문의 가부·사유는 Python 판정이다(리뷰 5) — 합성 스냅샷도 그것을 싣는다. */
+            session_detail: { available: true, reason: "" },
             pairing: {
               ready: false, template_name: "a.hwpx", data_name: "",
               field_count: 3, column_count: 0, auto_count: 0, confirm_count: 0,
@@ -2192,8 +2196,13 @@ export function createEditorWorkbenchDataProbes() {
             schema_table: !host.querySelector("#scr-editor .schema-fields"),
           };
           /* 게이트 존은 필드 수 한 줄 + 「자세히…」로 접혔다(세션 판정은 1단계에 남는다). */
-          out.gate_zone = !!byId(ctx, "editorTplGate")
-            && !!host.querySelector('[data-act="session-detail"]');
+          const sessionDoor = host.querySelector('[data-act="session-detail"]');
+          out.gate_zone = !!byId(ctx, "editorTplGate") && !!sessionDoor
+            && !sessionDoor.disabled;
+          /* 게이트 존은 상태와 무관하게 **이름과 「폴더에서 보기」**를 남긴다(리뷰 8) —
+             「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길이 사라지지 않는다. */
+          out.gate_zone_pathtrack = !!byId(ctx, "editorTplGate")
+            .querySelector('[data-track-act="reveal"]');
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };
@@ -2307,19 +2316,37 @@ export function createEditorWorkbenchDataProbes() {
             out.slot_dispatch = slotSent.map(([screen, action, payload]) => [
               screen, action, payload.path, payload.slot_id, payload.label,
             ]);
-            /* 실패는 인라인 채널로 간다(#323) — 앞선 프로브가 남긴 문안과 섞이지 않게
-               우리 사유가 실렸는지로 본다. */
+            /* 실패는 **시트 안**에 선다(U6-E 리뷰 3): 시트가 스크림으로 화면을 덮는 동안
+               `#save-msg` 에 쓴 문장은 그 뒤에 그려진다. 앞선 프로브가 남긴 문안과 섞이지
+               않게 우리 사유가 실렸는지로 본다. */
             await settleUntil(ctx, () => {
-              const node = byId(ctx, "save-msg");
+              const node = byId(ctx, "tplDetailMsg");
               return !!node && node.textContent.indexOf("SLOT_PROBE_REFUSAL") !== -1;
             });
-            const notice = byId(ctx, "save-msg");
+            const notice = byId(ctx, "tplDetailMsg");
             out.slot_notice_inline = !!notice
               && notice.textContent.indexOf("SLOT_PROBE_REFUSAL") !== -1
               && !isHidden(ctx, notice);
+            /* 스크림 뒤 채널에는 같은 문장을 쓰지 않는다(같은 사실을 두 자리에 두지 않는다). */
+            const behind = byId(ctx, "save-msg");
+            out.slot_notice_not_behind_scrim = !behind
+              || behind.textContent.indexOf("SLOT_PROBE_REFUSAL") === -1;
           } finally {
             slotStub.restore();
           }
+          /* 결과 줄도 시트 안에 선다 — 관리 동사의 성과가 스크림 뒤로 가지 않는다(리뷰 3).
+             값은 `tpl.result` 그대로이므로 푸시 한 번으로 재현한다(새 창 0). */
+          ctx.push("tpl", tplBase(Object.assign({}, detailTpl, {
+            result: { text: "SHEET_RESULT_PROBE", level: "warn" },
+          })));
+          await settleUntil(ctx, () => {
+            const node = byId(ctx, "tplDetailResult");
+            return !!node && node.textContent.indexOf("SHEET_RESULT_PROBE") !== -1;
+          });
+          const sheetResult = byId(ctx, "tplDetailResult");
+          out.sheet_result_inside = !!sheetResult
+            && sheetResult.textContent.indexOf("SHEET_RESULT_PROBE") !== -1
+            && !isHidden(ctx, sheetResult);
           service(ctx, "Modal").close("tplDetailModal");
           settleModal(ctx, "tplDetailModal");
           await settleRender(ctx);

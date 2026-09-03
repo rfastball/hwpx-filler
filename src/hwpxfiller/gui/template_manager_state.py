@@ -74,6 +74,10 @@ class TemplateFileOps:
     scan_tokens: "Callable[[str], list[TokenSite]]"
     compile_file: "Callable[[str], CompileReport]"   # 같은 경로에 컴파일·저장(변경 시만)
     lint: "Callable[..., LintReport]"                # (path, vocabulary=None)
+    #: 판독 + lint 를 **파일 한 번 열기**로 함께 낸다(U6-E 리뷰 7). 「자세히…」 한 번이
+    #: `inspect` 와 `lint` 를 각각 열면 라이브러리가 클수록 그 왕복이 두 배로 든다 —
+    #: 무엇보다 **두 스냅샷**을 한 시트에 얹게 되어 그 사이의 변경이 갈린 사실로 선다.
+    inspect_and_lint: "Callable[..., tuple[TemplateInspection, LintReport]]"
     diff: "Callable[[str, str], SchemaDrift]"
     read_fields: "Callable[[str], dict[str, str]]"
     # 구간 표기 축(S8-03 #834). 컴파일 리포트·Slot 동사의 concrete 는 External 이 소유하고
@@ -121,9 +125,9 @@ class TemplateAction:
 
 # 상태 → 허용 액션(순수 함수의 단일 출처). C5 수용기준 1이 이 표를 못박는다.
 #   RAW      → [누름틀·구간 변환]
-#   PARTIAL  → [마저 변환] [검토]
-#   COMPILED → [검토]
-#   FILLED   → [검토]
+#   PARTIAL  → [마저 변환]
+#   COMPILED → (없음)
+#   FILLED   → (없음)
 #
 # RAW 라벨은 S8-03 에서 「누름틀 변환」→「누름틀·구간 변환」이 됐다: 같은 한 동사가 필드
 # 토큰과 **구간 표기**를 함께 변환하므로(:meth:`TemplateManagerViewModel.apply_convert`)
@@ -137,11 +141,13 @@ class TemplateAction:
 # (`_HIDDEN_ACTIONS`·`_PICKER_HIDDEN_ACTIONS`)로 걷고 있었다 — 링2 두 곳이 링1 목록을
 # 다시 판정하던 자리다. 필터를 지우고 목록 자체를 줄였다.
 #
-# **U6-E(#979) — COMPILED·FILLED 에 `review` 가 선다**: U6-B 이후 그 두 상태의 동사가 0 이
-# 되면서 **완전 변환된 템플릿의 구간 항목에 닿을 길이 사라졌다**(개명·표기로 되돌리기·
-# 삭제는 전부 `review` 가 세우는 목록 위에 산다 — 변환이 끝난 파일에서만 존재하는 동사인데
-# 정작 그 상태에서 도달성이 0 이었다). `review` 는 읽기 전용이고 이제 **항목 상세 시트의
-# 재료**(진단·필드·구간 항목)를 채우므로 어느 상태에서든 물을 수 있다.
+# **U6-E(#979) — `review` 도 이 표에서 걷혔다**: U6-B 이후 COMPILED·FILLED 의 동사가 0 이
+# 되면서 **완전 변환된 템플릿의 구간 항목에 닿을 길이 사라졌는데**(개명·표기로 되돌리기·
+# 삭제는 전부 검토가 세우는 목록 위에 산다), 그 구멍을 메우는 것은 상태 동사가 아니라
+# **「자세히…」 하나**다. 그 항목이 `tpl/review` 왕복을 지고 항목 상세 시트를 연다 —
+# 같은 왕복을 부르는 메뉴 항목을 둘 두면 사람이 「검토」와 「자세히…」의 차이를 물어야 한다.
+# 그래서 이 표는 **수선 동사만** 든다: 상태가 허용하는 것은 변환뿐이고, 「자세히…」는 상태와
+# 무관하게 웹이 모든 행에 덧붙인다(:func:`libRowMenuItems`).
 #: 변환 동사의 라벨 — 표가 정본이고 여기 이름을 붙이는 이유는 **밖에서 지목**하는 자리가
 #: 있기 때문이다(U6-E #979): 가져오기 채택의 RAW 거절 문안이 「무엇을 거쳐야 하는가」로 이
 #: 동사를 지목한다. 리터럴로 다시 쓰면 라벨을 고치는 날 그 문장만 옛말을 계속 한다.
@@ -149,12 +155,9 @@ CONVERT_ACTION_LABEL = "누름틀·구간 변환"
 
 _STATE_ACTIONS: "dict[CompileState, tuple[TemplateAction, ...]]" = {
     CompileState.RAW: (TemplateAction("compile", CONVERT_ACTION_LABEL),),
-    CompileState.PARTIAL: (
-        TemplateAction("compile", "마저 변환"),
-        TemplateAction("review", "검토"),
-    ),
-    CompileState.COMPILED: (TemplateAction("review", "검토"),),
-    CompileState.FILLED: (TemplateAction("review", "검토"),),
+    CompileState.PARTIAL: (TemplateAction("compile", "마저 변환"),),
+    CompileState.COMPILED: (),
+    CompileState.FILLED: (),
 }
 
 
@@ -837,29 +840,27 @@ class TemplateManagerViewModel:
             diagnostics=tuple(item.message for item in inspection.diagnostics),
         )
 
-    def detail_view(self, path: str) -> TemplateDetail:
-        """한 템플릿의 **상세 투영**(읽기 전용) — 「자세히…」 시트가 그릴 원료 한 벌.
+    def _detail_name(self, path: str) -> str:
+        """상세 머리의 표시명 — 목록 행과 **같은 어휘**(루트 상대·확장자 없음)."""
+        return library_display_name(self.library_dir, Path(str(path)))
 
-        **파일을 한 번만 연다**: 상태·배지·필드·구간 항목·진단이 전부 같은 판독 스냅샷에서
-        나온다. 나눠 읽으면 시트 한 장 안에서 「필드는 있는데 상태는 없다」 같은 갈린 사실이
-        설 수 있다(:meth:`~hwpxfiller.webapp.screen_editor.EditorController.load_template_path`
-        가 스키마·게이트·구간을 한 pkg 위에 세우는 것과 같은 규율).
+    def _failed_detail(self, path: str, reason: str) -> TemplateDetail:
+        """판독이 실패한 항목의 상세 — 감추지 않고 **사유를 단** 한 벌을 돌려준다.
 
-        판독이 예외로 끝나면 **감추지 않고 사유를 단 상세**를 돌려준다 — 목록의 오류 행
-        (:meth:`TemplateRow.from_error`)과 같은 처분이다. 그 행에서도 「자세히…」는 서고,
-        시트가 답할 것은 사유 하나다.
+        목록의 오류 행(:meth:`TemplateRow.from_error`)과 같은 처분이다: 그 행에서도
+        「자세히…」는 서고, 시트가 답할 것은 사유 하나다. 빈 상세를 지어내면 그 행의 문은
+        눌러도 아무 말이 없다.
         """
+        return TemplateDetail(
+            path=str(path), name=self._detail_name(path), media="hwpx", state=None,
+            badge_label=_badge_label(None), badge_level=_badge_level(None),
+            error=reason,
+        )
+
+    def _detail_of(self, path: str, inspection: TemplateInspection) -> TemplateDetail:
+        """판독 결과 → 상세 투영(순수 성형) — 판정은 하나도 여기서 새로 하지 않는다."""
         target = str(path)
-        root = self.library_dir
-        name = library_display_name(root, Path(target))
-        try:
-            inspection = self._inspect_template(target)
-        except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게(빈 상세 금지)
-            return TemplateDetail(
-                path=target, name=name, media="hwpx", state=None,
-                badge_label=_badge_label(None), badge_level=_badge_level(None),
-                error=str(exc),
-            )
+        name = self._detail_name(target)
         state = inspection.status.state
         diagnostics = tuple(item.message for item in inspection.diagnostics)
         return TemplateDetail(
@@ -879,6 +880,43 @@ class TemplateManagerViewModel:
                 diagnostics=diagnostics,
             ),
         )
+
+    def detail_view(self, path: str) -> TemplateDetail:
+        """한 템플릿의 **상세 투영**(읽기 전용) — 「자세히…」 시트가 그릴 원료 한 벌.
+
+        **파일을 한 번만 연다**: 상태·배지·필드·구간 항목·진단이 전부 같은 판독 스냅샷에서
+        나온다. 나눠 읽으면 시트 한 장 안에서 「필드는 있는데 상태는 없다」 같은 갈린 사실이
+        설 수 있다.
+
+        판독 예외는 여기서 **사유로 접는다**(:meth:`_failed_detail`). 이 자리가 그 접기의
+        단일 지점인 이유는 호출자가 셋이기 때문이다(검토 진입·동사 뒤 재투영·시트 재당김) —
+        갈래마다 접으면 한 갈래에서 예외가 봉투 밖으로 새어 시트가 영영 안 열린다.
+        """
+        try:
+            inspection = self._inspect_template(str(path))
+        except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게(빈 상세 금지)
+            return self._failed_detail(path, str(exc))
+        return self._detail_of(path, inspection)
+
+    def review_view(
+        self, path: str, vocabulary=None
+    ) -> "tuple[TemplateDetail, LintReport | None]":
+        """검토 한 왕복 — 상세와 lint 리포트를 **파일 한 번 열기**로 함께 낸다(리뷰 7).
+
+        나눠 열면 두 가지를 잃는다: 같은 시트가 두 스냅샷을 얹게 되고(그 사이의 변경이 갈린
+        사실로 선다), 라이브러리가 클수록 「자세히…」 한 번의 비용이 두 배가 된다.
+
+        판독이 예외면 **lint 는 없다**(``None``): 못 읽은 파일을 위생 점검할 수는 없고, 그
+        사실은 상세의 ``error`` 가 이미 말한다. 예외를 여기서 접는 것이 계약이다 —
+        ``zipfile.BadZipFile`` 은 ``ValueError`` 가 아니라 dispatch 의 거절 봉투를 벗어난다.
+        """
+        try:
+            inspection, report = self._file_ops.inspect_and_lint(
+                str(path), vocabulary=vocabulary
+            )
+        except Exception as exc:  # noqa: BLE001 — 읽기 실패는 사유를 단 상세로(봉투 밖 금지)
+            return self._failed_detail(path, str(exc)), None
+        return self._detail_of(path, inspection), report
 
     def rename_slot(self, path: str, slot_id: str, label: "str | None") -> SlotView:
         """Slot label 변경(구조 무변형) — 저장 후 목록을 다시 투영한다."""

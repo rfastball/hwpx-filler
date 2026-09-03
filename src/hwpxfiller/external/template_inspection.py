@@ -2431,6 +2431,27 @@ def inspect_hwpx_template(path: str) -> TemplateInspection:
     )
 
 
+def inspect_and_lint_hwpx_template(
+    path: str, vocabulary: "list[str] | set[str] | None" = None
+) -> "tuple[TemplateInspection, LintReport]":
+    """경로를 **한 번** 열고 판독과 위생 점검을 같은 패키지 스냅샷에서 낸다(U6-E 리뷰 7).
+
+    「자세히…」 한 번이 :func:`inspect_hwpx_template` 와 :func:`lint_template_file` 을 각각
+    부르면 같은 파일을 두 번 연다 — 비용도 두 배지만, 무엇보다 **두 스냅샷**이 한 시트에
+    얹혀 그 사이의 변경이 갈린 사실로 선다. 판정은 둘 다 기존 순수 함수 그대로다.
+    """
+    package = read_hwpx_package(path)
+    slots, diagnostics = inspect_slots(package)
+    inspection = TemplateInspection(
+        status=compile_status(package),
+        precheck_notes=tuple(fill_precheck(package)),
+        fields=tuple(extract_schema(package).field_names()),
+        slots=slots,
+        diagnostics=diagnostics,
+    )
+    return inspection, lint_template(package, vocabulary=vocabulary)
+
+
 def template_compile_status(path: str) -> TemplateStatus:
     """경로 → 컴파일 수명주기 상태(C2). 홈/라이브러리 배지 파생 포트의 concrete."""
     return compile_status(read_hwpx_package(path))
@@ -2512,6 +2533,7 @@ HWPX_TEMPLATE_OPS = TemplateFileOps(
     scan_tokens=scan_template_tokens,
     compile_file=compile_template_file,
     lint=lint_template_file,
+    inspect_and_lint=inspect_and_lint_hwpx_template,
     diff=diff_template_schemas,
     read_fields=read_template_fields,
     scan_structure=scan_template_structure,
