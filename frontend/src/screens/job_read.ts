@@ -258,7 +258,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     if (!name) return;
     await deps.ports.editorEntry.current().openGuarded(String(name), {
       entry_reason: "library",
-      evidence: { "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요" },
+      evidence: {},
       return_context: { surface: "data" },
     });
   }
@@ -390,7 +390,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     }
     return deps.ports.editorEntry.current().newDraftFromData({
       entry_reason: "document_browser_new_work",
-      evidence: { "데이터": current?.data_source_label || "", ...extraEvidence },
+      /* 고른 데이터의 이름은 편집기 1단계 우 열이 선택 상태로 이미 보인다 — 배너에
+         한 번 더 쓰지 않는다(2026-09-03). */
+      evidence: { ...extraEvidence },
       return_context: { surface: "data" },
     });
   }

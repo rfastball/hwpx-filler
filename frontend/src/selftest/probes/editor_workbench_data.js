@@ -1412,7 +1412,8 @@ export function createEditorWorkbenchDataProbes() {
           out.head_title = textOf(byId(ctx, "editorTitle")).trim();
           out.name_input_in_head = !!ctx.doc.querySelector(".editor-head #editorName");
           out.save_state = textOf(byId(ctx, "editorSaveState"));
-          /* 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다. */
+          /* 진입 문맥 배너 — **증거**가 있으면 서고 없으면 침묵한다(사유 문장·복귀 버튼은
+             2026-09-03 재판정으로 걷혔다 — 복귀는 `#editorBack` 하나). */
           out.ctx_hidden_when_voluntary = isHidden(ctx, byId(ctx, "editorContext"));
           draft.context = {
             entry_reason: "run_failure", evidence: { "실패한 행": "4 / 12" },
@@ -1423,6 +1424,7 @@ export function createEditorWorkbenchDataProbes() {
           out.ctx_shown = !isHidden(ctx, byId(ctx, "editorContext"));
           out.ctx_text = textOf(byId(ctx, "editorContext"));
           out.ctx_return_btn = !!ctx.doc.querySelector('#editorContext [data-act="context-return"]');
+          out.back_btn = !!ctx.doc.querySelector("#editorBack");
           /* 나간 뒤엔 셸이 돌아온다 — 몰입이 영구 은닉이 되면 다른 화면으로 갈 길이 사라진다. */
           Nav.go("job", { force: true });
           out.nav_back_after_leave = !isHidden(ctx, ctx.doc.querySelector(".nav"));

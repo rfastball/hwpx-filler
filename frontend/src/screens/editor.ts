@@ -105,19 +105,10 @@ const SECTION_TITLES: Record<string, string> = {
   template: "고르기", binding: "연결 확인", filename: "이름·저장",
 };
 
-const ENTRY_LEAD: Record<string, string> = {
-  library: "「문서 작업」에서 열었습니다.",
-  run_failure: "생성 실패 결과에서 열었습니다.",
-  output_result: "생성 결과에서 열었습니다.",
-  document_browser_repair: "실행을 막는 문제를 고치러 열었습니다.",
-  document_browser_new_work: "고른 데이터로 새 작업을 시작합니다.",
-};
-const RETURN_LABEL: Record<string, string> = {
-  data: "문서 만들기로 돌아가기",
-  result: "결과로 돌아가기", library: "「문서 작업」으로 돌아가기",
-  documents: "문서 탐색으로 돌아가기",
-};
-/* 복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다. */
+/* (진입 사유 문장 `ENTRY_LEAD` 과 배너의 복귀 버튼 `RETURN_LABEL` 은 2026-09-03 재판정으로
+   걷혔다 — 「어디서 열었나」는 방금 거기서 온 사람에게 새 정보가 아니고, 복귀는 왼쪽 위
+   「← 원래 업무로 돌아가기」 하나가 이미 같은 곳으로 간다. 두 번째 버튼은 동작 하나를 더할 뿐이다.)
+   복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다. */
 const RETURN_SCREEN: Record<string, string> = {
   data: "job", result: "job", documents: "job", library: "library",
 };
@@ -1492,15 +1483,14 @@ function gateHint(snapshot: Obj): string {
 /** 머리 부제 — 「{템플릿} ⟷ {데이터}」 한 줄(동결 시안 장면 2·3 머리와 같다).
  *
  *  1단계에서는 연결 카드가 같은 말을 하지만 2·3단계에는 그 카드가 없다. 단계마다 다른
- *  문형을 세우면 같은 사실이 두 어휘를 갖는다 — 한 줄로 통일한다. */
+ *  문형을 세우면 같은 사실이 두 어휘를 갖는다 — 한 줄로 통일한다. **짝이 다 서기 전에는
+ *  침묵한다**(2026-09-03 재판정): 「템플릿을 아직 고르지 않았습니다 ⟷ gg」 는 1단계 연결
+ *  카드가 이미 하는 말의 되풀이였다. */
 function pairLine(snapshot: Obj): string {
   const pairing = (snapshot.pairing || {}) as Obj;
   const template = String(pairing.template_name || "");
   const data = String(pairing.data_name || "");
-  if (template && data) return `${template} ⟷ ${data}`;
-  if (template) return `${template} ⟷ 데이터를 아직 고르지 않았습니다`;
-  if (data) return `템플릿을 아직 고르지 않았습니다 ⟷ ${data}`;
-  return "템플릿과 데이터를 하나씩 고르세요.";
+  return template && data ? `${template} ⟷ ${data}` : "";
 }
 
 /** 머리 — 이 세션이 **무엇을 편집 중인가**와 그 저장 상태.
@@ -1526,29 +1516,24 @@ function EditorHead(props: { snapshot: Obj; controller: EditorController }): Rea
       /* 제목은 **읽기 전용 정체**다. 초안은 아직 이름이 없을 수 있어(고르기 전) 그때는
          이름 없는 새 작업이라고 말한다 — 빈 제목은 화면이 무엇을 편집 중인지 말하지 않는다. */
       h("h1", { id: "editorTitle" }, String(snapshot.name || "새 작업")),
-      h("p", { className: "sub", id: "editorSubtitle" }, pairLine(snapshot))),
+      pairLine(snapshot) ? h("p", { className: "sub", id: "editorSubtitle" }, pairLine(snapshot)) : null),
     h("div", { className: "status", id: "editorSaveState", "data-level": level }, stateText));
 }
 
-function ContextBanner(props: { snapshot: Obj; controller: EditorController }): ReactNode {
-  const { snapshot, controller } = props;
-  const context = snapshot.context || {};
-  const lead = ENTRY_LEAD[context.entry_reason];
-  if (!lead) {
+/** 진입 문맥 배너 — **증거가 있을 때만** 선다(2026-09-03 재판정). 사유 문장(「…에서
+ *  열었습니다」)과 복귀 버튼은 걷혔다: 방금 거기서 온 사람에게 출처는 새 정보가 아니고, 복귀는
+ *  왼쪽 위 「← 원래 업무로 돌아가기」 가 같은 곳으로 간다. 남는 것은 진입이 실어 온 **사실**
+ *  (실패한 행 · 입력이 필요한 항목 · 고칠 것)뿐이고, 값이 빈 증거는 줄을 세우지 않는다. */
+function ContextBanner(props: { snapshot: Obj }): ReactNode {
+  const context = props.snapshot.context || {};
+  const evidence = (context.evidence || {}) as Obj;
+  const rows = Object.keys(evidence).filter((key) => String(evidence[key] ?? "") !== "")
+    .map((key) => h("span", { key }, h("b", null, key), " ", String(evidence[key])));
+  if (!rows.length) {
     return h("section", { className: "note ctxbanner", id: "editorContext", style: { display: "none" } });
   }
-  const evidence = context.evidence || {};
-  const surface = (context.return_context || {}).surface;
-  const label = RETURN_LABEL[surface];
-  const rows = Object.keys(evidence).map((key) =>
-    h("span", { key }, h("b", null, key), " ", String(evidence[key])));
   return h("section", { className: "note ctxbanner", id: "editorContext" },
-    h("div", { className: "row" }, h("b", null, lead), h("span", { className: "spacer" }),
-      label ? h("button", {
-        className: "btn sm", "data-act": "context-return",
-        onClick: () => controller.guarded(() => controller.leaveTo(controller.returnScreen())),
-      }, label) : null),
-    rows.length ? h("div", { className: "ctx-ev" }, ...rows) : null);
+    h("div", { className: "ctx-ev" }, ...rows));
 }
 
 function StepHeader(props: { snapshot: Obj; controller: EditorController }): ReactNode {
@@ -2529,7 +2514,7 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
       onClick: () => controller.guarded(() => controller.leaveTo(controller.returnScreen())),
     }, "← 원래 업무로 돌아가기"),
     h(EditorHead as any, { snapshot, controller }),
-    h(ContextBanner as any, { snapshot, controller }),
+    h(ContextBanner as any, { snapshot }),
     h(StepHeader as any, { snapshot, controller }),
     h("div", { className: "wbody", id: "editor-body", "data-preserve-scroll": true },
       /* 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄.

@@ -330,9 +330,7 @@ function PairCard(props: {
 }): ReactNode {
   const { detail, card, staleFields, controller } = props;
   const dataBound = detail.data_bound;
-  const openPairing = () => controller.editWork(detail.name, {
-    "여기서 할 것": "「고르기」에서 템플릿·데이터 조합을 바꾸세요",
-  }, { section: "template" });
+  const openPairing = () => controller.editWork(detail.name, {}, { section: "template" });
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
       kind: "template",
@@ -370,9 +368,7 @@ function PairCard(props: {
       controller,
       action: dataBound ? null
         : h("button", { className: "btn sm", "data-connect-data": detail.name,
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
-          }) }, "데이터 연결하기…"),
+          onClick: () => controller.editWork(detail.name) }, "데이터 연결하기…"),
     }));
 }
 
@@ -390,9 +386,7 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
   const firstRow = (zone.first_row || {}) as Obj;
   const rows = (zone.rows || []) as Obj[];
   const more = (zone.more_fields || []) as string[];
-  const open = (field: string) => controller.editWork(detail.name, {
-    "여기서 할 것": "「연결 확인」에서 이 행의 데이터 열을 확인하세요",
-  }, { target: `binding/${field}` });
+  const open = (field: string) => controller.editWork(detail.name, {}, { target: `binding/${field}` });
   const table = h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
     h("thead", null, h("tr", null,
       h("th", null, "템플릿 필드"), h("th", null, "데이터 열"),

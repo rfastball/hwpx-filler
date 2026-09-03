@@ -1413,14 +1413,17 @@ class TestWebSelftestGate:
         assert "r" not in j["save_state"], (
             f"머리가 내부 판본 표기를 말합니다 — 읽는 사람에게 행동이 없는 어휘다: {j['save_state']!r}"
         )
-        # 진입 문맥 — 자발적 진입이면 침묵, 사유가 있으면 증거·복귀 버튼과 함께 선다.
+        # 진입 문맥 — 증거가 없으면 침묵, 있으면 증거만 선다. 사유 문장·복귀 버튼은 걷혔다
+        # (2026-09-03 재판정): 복귀는 `#editorBack` 하나다.
         assert j["ctx_hidden_when_voluntary"] is True, "할 말이 없는데 배너가 섰습니다."
-        assert j["ctx_shown"] is True and j["ctx_return_btn"] is True, (
-            f"진입 문맥 배너·복귀 버튼이 서지 않습니다: {j!r}"
+        assert j["ctx_shown"] is True and j["ctx_return_btn"] is False, (
+            f"진입 문맥 배너가 서지 않거나 걷힌 복귀 버튼이 되살아났습니다: {j!r}"
         )
-        assert "생성 실패 결과에서 열었습니다" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
-            f"배너가 사유·증거를 말하지 않습니다: {j['ctx_text']!r}"
+        assert "실패한 행" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
+            f"배너가 증거를 말하지 않습니다: {j['ctx_text']!r}"
         )
+        assert "열었습니다" not in j["ctx_text"], f"걷힌 사유 문장이 되살아났습니다: {j['ctx_text']!r}"
+        assert j["back_btn"] is True, "왼쪽 위 복귀 버튼이 없습니다."
         assert j["nav_back_after_leave"] is True, (
             "편집기를 나온 뒤에도 상단 2탭이 숨어 있습니다 — 몰입이 영구 은닉이 됐습니다."
         )

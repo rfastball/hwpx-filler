@@ -1249,7 +1249,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 여기서 마법사 문안을 겨누면 없는 버튼을 기다리게 된다.
     s.click_text("#scr-editor", "변경 저장")
     s.wait("document.querySelector('#scr-editor').textContent.includes('저장했습니다')", "Binding 저장", timeout=30.0, requires=["#scr-editor"])
-    s.click_text("#editorContext", "문서 만들기로 돌아가기")
+    s.click_sel("#editorBack", what="편집기 복귀")
     s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
     binding_after = _workbench(_snapshot(s))
     # U3-03(#876): 「입력이 필요한 항목」 존은 조치 필요만 싣는다 — 수리된 Active Field 는 활성
