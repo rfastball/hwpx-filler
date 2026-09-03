@@ -227,11 +227,14 @@ def run(ctx: ScenarioContext) -> dict:
     # 데이터 고르기가 2단계 머리에서 1단계 우 열로 옮겨 왔다(U6 §2.2) — 「다음 ▶」 앞이다.
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기")
+    # 파일로 연 데이터는 우 열 목록 **맨 위의 행**으로 선다(고르기 열 공용 ③a — 종전의
+    # 「현재 데이터」 카드 승계처). 연결 카드만 보면 그 행이 사라져도 초록이라 함께 잰다.
     s.wait(
         "document.querySelector('#editorLinkCard').textContent.includes('⟷')"
-        " && document.querySelector('#editorLinkCta').disabled === false",
-        "연결 카드·전진 게이트 개방",
-        requires=["#editorLinkCard", "#editorLinkCta"],
+        " && document.querySelector('#editorLinkCta').disabled === false"
+        " && !!document.querySelector('#editorDataList .pitem[data-key=\"session\"]')",
+        "연결 카드·전진 게이트 개방·현재 데이터 행",
+        requires=["#editorLinkCard", "#editorLinkCta", "#editorDataList"],
     )
     # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 연결 카드는 두 열 사이라 기본
     # 스크롤에서 폴드 밖일 수 있고, 위 조건은 그 상태에서도 참이다. 겨눠 스크롤한다.

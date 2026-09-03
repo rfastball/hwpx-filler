@@ -86,6 +86,64 @@ function tplSnap(extra) {
   return snapshot;
 }
 
+/** `pool` 채널 스냅샷 — 고르기 단계 **우 열**이 구독하는 정본.
+ *
+ *  좌 열과 같은 이유로 존을 **유도한다**(`tplSnap` 주석 참조): 옛 목록 키(`rows`)는 아직
+ *  관리 동사의 프리필 재료라 살아 있고, 우 열이 그리는 것은 공용 열 존(`column`)이다. 두
+ *  존을 픽스처가 따로 쓰면 실제로는 있을 수 없는 상태(목록에 있는 행이 열에는 없는)를
+ *  시험하게 된다. 손으로 준 `column` 은 그대로 존중한다. */
+function poolSnap(rows, extra) {
+  const list = rows || [];
+  const snapshot = Object.assign({
+    rows: list, count: `${list.length}건`, empty: !list.length,
+    corrupted: [], duplicates: [],
+    pclm: { default_db: "C:/d/pclm.db", views: [], titles: {} },
+    result: { text: "", level: "muted" },
+  }, extra || {});
+  if (snapshot.column === undefined) {
+    snapshot.column = {
+      rows: (snapshot.rows || []).map((row) => ({
+        key: row.key, name: row.name, sub: row.reference || "",
+        reason: row.select_block_reason || "", warns: [],
+        badge_label: row.badge_label || "", badge_level: row.badge_level || "muted",
+        icon: row.kind === "pclm" ? "pclm" : "excel",
+        selectable: !!row.selectable, path: row.locate_path || "",
+        actions: row.actions || [],
+      })),
+      notices: (snapshot.duplicates || []).map((group) => ({
+        level: "warn",
+        text: `같은 데이터(${group.reference})를 가리키는 등록이 ${group.entries.length}건입니다.`,
+        actions: group.entries.map((entry) => ({
+          key: "resolve_duplicate", label: `'${entry.name}' 남기기`,
+          payload: { keep: entry.key },
+        })),
+      })),
+      empty_hint: "고정한 데이터가 없습니다.",
+      count_label: snapshot.count, result: snapshot.result,
+    };
+  }
+  return snapshot;
+}
+
+/** 파일로 연 데이터의 세션 행 — Python `pairing.data_row` 와 **같은 계약**이다(③a). */
+function sessionRow(extra) {
+  return Object.assign({
+    key: "session", name: "7월목록", sub: "시트: 물품 · 헤더 1행 · 12행",
+    reason: "", warns: [], badge_label: "사용 중", badge_level: "ok",
+    icon: "excel", selectable: true, path: "C:/d/7월목록.xlsx", actions: [],
+  }, extra || {});
+}
+
+/** 1단계 pairing 존 — 두 열의 선택 표지가 여기서 온다. */
+function pairing(extra) {
+  return Object.assign({
+    ready: false, template_name: "", data_name: "",
+    template_key: "", data_key: "", data_row: null,
+    field_count: 0, column_count: 0, auto_count: 0, confirm_count: 0,
+    basis: "", advance_block_reason: "왼쪽에서 템플릿을 고르세요.",
+  }, extra || {});
+}
+
 function harness(cfg) {
   const opts = cfg || {};
   const trace = [];
@@ -309,7 +367,7 @@ test("템플릿 **교체**는 데이터 교체와 같은 확인 왕복을 지난
 });
 
 test("목록에서 사라진 키는 조용히 반환하지 않는다 + 끌어 놓기는 한 문장으로 말한다(리뷰 5)", async () => {
-  const h = harness({ tpl: tplSnap(), pool: { rows: [], duplicates: [], corrupted: [] } });
+  const h = harness({ tpl: tplSnap(), pool: poolSnap([]) });
   await h.controller.init();
 
   await h.controller.chooseData("사라진키");
@@ -1456,7 +1514,7 @@ test("U6-E 행 ⋮ 의 모르는 키는 조용히 떨어지지 않는다(닫힌 
     }),
   });
   await h.controller.init();
-  h.controller.toggleLibMenu("hwpx", "a.hwpx", { });
+  h.controller.toggleLibMenu("tpl", "hwpx", "a.hwpx", { });
 
   await h.controller.handleLibMenu("act:없는동사");
 
@@ -1637,6 +1695,195 @@ test("U6-E 결과 줄은 관리 동사가 나가는 좌 열 바닥에 선다", a
   const result = markup.indexOf("run-result");
   assert.ok(pool < result && result < data,
     "결과 줄이 좌 열 안에 서야 한다(고르기 존 아래가 아니다)");
+});
+
+/* ------- ⑦b 우 데이터 열 — 좌 열과 **같은 컴포넌트**(고르기 열 공용 ③a) ------- */
+
+/** 우 열 픽스처 한 벌 — 활성 1 · 끊김 1(고를 수 없는 행). */
+const DAT_ROWS = [
+  {
+    key: "d1", name: "7월목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
+    badge_label: "활성", badge_level: "ok", reference: "파일: 7월목록.xlsx · 시트 물품",
+    locate_path: "C:/d/7월목록.xlsx", sheet: "물품", note: "", missing: false,
+    actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
+    selectable: true, select_block_reason: "",
+  },
+  {
+    key: "d2", name: "지난목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
+    badge_label: "참조 끊김", badge_level: "danger", reference: "파일: 지난목록.xlsx",
+    locate_path: "C:/d/지난목록.xlsx", sheet: "", note: "", missing: true,
+    actions: [{ key: "relink", label: "다시 연결…" }],
+    selectable: false,
+    select_block_reason: "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다.",
+  },
+];
+
+test("우 열은 `pool.column` 을 좌 열과 같은 `.pitem` 문법으로 그린다", async () => {
+  const h = harness({
+    initial: async () => snap({ pairing: pairing({ data_key: "d1" }) }),
+    tpl: tplSnap(),
+    pool: poolSnap(DAT_ROWS),
+  });
+  await h.controller.init();
+  const markup = renderEditor(h);
+
+  assert.ok(markup.includes('id="editorDataList"'), "우 열 목록 좌표가 없습니다");
+  const marked = markup.match(/data-side="dat"/g) || [];
+  /* 항목 2 × (본체 + ⋮) + 머리의 「새로 읽기」 1 = 5 — 두 열이 같은 컴포넌트라 ⋮ 도
+     「새로 읽기」도 대칭으로 서고, 셋 다 자기 side 를 말한다. */
+  assert.equal(marked.length, 5, markup.slice(markup.indexOf('id="editorDataPool"'), 400));
+  assert.ok(markup.includes('data-key="d1"') && markup.includes('data-key="d2"'));
+  /* 고름 표지는 **키 대조 하나**다(pairing.data_key). */
+  const d1 = markup.slice(markup.indexOf('data-key="d1"') - 300, markup.indexOf('data-key="d1"'));
+  assert.ok(d1.includes('aria-pressed="true"'), "겨눈 풀 행에 고름 표지가 없습니다");
+  /* 못 고르는 행은 **숨기지 않고 눌린다** — `disabled` 면 사유를 말할 자리가 없다. */
+  const d2 = markup.slice(markup.indexOf('data-key="d2"') - 300, markup.indexOf('data-key="d2"'));
+  assert.ok(d2.includes('aria-disabled="true"'), "끊긴 행이 비활성 표시를 잃었습니다");
+  assert.ok(!d2.includes(" disabled"), "끊긴 행이 `disabled` 라 클릭이 오지 않습니다");
+  assert.ok(markup.includes("참조가 끊겼습니다"), "사유가 목록에서 사라졌습니다");
+  /* 바닥 동사 줄 — 좌표는 불변이고, 「이 데이터 고정…」은 세션 행이 없으면 서지 않는다. */
+  assert.ok(markup.includes('id="editorPoolBrowse"') && markup.includes('id="editorPoolPclm"'));
+  assert.equal(markup.includes('id="editorPoolPin"'), false,
+    "고정할 것이 없는데 「이 데이터 고정…」이 섰습니다");
+  /* 「새로 읽기」도 대칭이다 — 우 열에도 같은 문이 선다. */
+  assert.ok(markup.includes('data-act="refresh" data-side="dat"'), "우 열 「새로 읽기」 부재");
+});
+
+test("파일로 연 데이터는 세션 행으로 **맨 위**에 서고 「이 데이터 고정…」을 세운다", async () => {
+  const h = harness({
+    initial: async () => snap({
+      data_path: "C:/d/7월목록.xlsx",
+      pairing: pairing({ data_key: "", data_row: sessionRow() }),
+    }),
+    tpl: tplSnap(),
+    pool: poolSnap(DAT_ROWS),
+  });
+  await h.controller.init();
+  const markup = renderEditor(h);
+
+  const session = markup.indexOf('data-key="session"');
+  assert.ok(session > 0 && session < markup.indexOf('data-key="d1"'),
+    "세션 행이 목록 맨 위에 서지 않았습니다");
+  assert.ok(markup.includes("시트: 물품 · 헤더 1행 · 12행"),
+    "현재 데이터의 재진술(시트·헤더 행·행 수)이 사라졌습니다");
+  assert.ok(markup.includes("사용 중"), "「사용 중」 배지가 사라졌습니다");
+  const head = markup.slice(session - 300, session);
+  assert.ok(head.includes('aria-pressed="true"'), "세션 행에 고름 표지가 없습니다");
+  assert.ok(markup.includes('id="editorPoolPin"'),
+    "파일로 연 데이터인데 「이 데이터 고정…」이 서지 않았습니다");
+});
+
+test("세션 행은 다시 눌러도 **무동작**이다(거절도 발신도 없다)", async () => {
+  const h = harness({
+    initial: async () => snap({
+      data_path: "C:/d/7월목록.xlsx",
+      pairing: pairing({ data_key: "", data_row: sessionRow() }),
+    }),
+    tpl: tplSnap(), pool: poolSnap(DAT_ROWS),
+  });
+  await h.controller.init();
+
+  assert.equal(await h.controller.chooseData("session"), false);
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null,
+    "지금 쓰고 있는 데이터를 「고를 수 없다」고 말했습니다");
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor"), [],
+    "세션 행 재선택이 세션을 다시 마운트했습니다");
+
+  /* 끌어 놓기의 상대가 세션 행이면 **템플릿만** 바뀐다(데이터는 그대로). */
+  await h.controller.dropPair("tpl", "없는템플릿", "session");
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("템플릿을 찾을 수 없습니다"), message);
+  assert.ok(!message.text.includes("데이터를 찾을 수 없습니다"),
+    "세션 행을 「사라진 데이터」로 거절했습니다");
+});
+
+test("고를 수 없는 우 열 행의 클릭은 조용히 삼켜지지 않는다(Python 사유 재진술)", async () => {
+  const h = harness({
+    initial: async () => snap({ pairing: pairing() }),
+    tpl: tplSnap(), pool: poolSnap(DAT_ROWS),
+  });
+  await h.controller.init();
+
+  assert.equal(await h.controller.chooseData("d2"), false);
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("'지난목록' 은(는) 고를 수 없습니다"), message);
+  assert.ok(message.text.includes("참조가 끊겼습니다"), "Python 사유가 재진술되지 않았습니다");
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor"), [],
+    "고를 수 없는 행이 발신을 냈습니다");
+});
+
+test("우 열 ⋯ 는 링1 동사 뒤에 「폴더에서 보기」를 세운다(세션 행은 그 문 하나)", async () => {
+  const h = harness({
+    initial: async () => snap({
+      data_path: "C:/d/7월목록.xlsx",
+      pairing: pairing({ data_key: "", data_row: sessionRow() }),
+    }),
+    tpl: tplSnap(), pool: poolSnap(DAT_ROWS),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+  const items = () => (h.controller.libContextMenu.model.getSnapshot() || {}).items || [];
+
+  h.controller.toggleLibMenu("dat", "excel", "d1", {});
+  assert.deepEqual(items().map((item) => item.action),
+    ["act:archive", "act:delete", "reveal"],
+    "링1 동사 목록을 표면이 다시 지었습니다");
+  assert.deepEqual(items().map((item) => item.label), ["보관", "삭제", "폴더에서 보기"]);
+
+  /* 세션 행은 풀 항목이 아니라 상태 동사가 없다 — 남는 것은 경로 문 하나다. */
+  h.controller.toggleLibMenu("dat", "excel", "session", {});
+  assert.deepEqual(items().map((item) => item.action), ["reveal"]);
+
+  /* 상태 동사는 공용 `pool` 채널로 나간다(다이얼로그와 같은 몸통). */
+  h.controller.toggleLibMenu("dat", "excel", "d1", {});
+  await h.controller.handleLibMenu("act:archive");
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool")
+      .map((row) => [row[2], row[3]]),
+    [["archive", { key: "d1" }]]);
+
+  /* 「폴더에서 보기」는 좌 열 바닥 동사와 **같은 브리지**를 지난다. */
+  h.controller.toggleLibMenu("dat", "excel", "session", {});
+  await h.controller.handleLibMenu("reveal");
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "invoke" && row[1] === "reveal_path"),
+    [["invoke", "reveal_path", "C:/d/7월목록.xlsx"]]);
+
+  /* 모르는 키는 조용히 떨어지지 않는다(좌 열과 같은 닫힌 집합 규율). */
+  h.controller.toggleLibMenu("dat", "excel", "d1", {});
+  await h.controller.handleLibMenu("없는동사");
+  assert.ok(h.notices.some((text) => text.includes("알 수 없는 데이터 동사")), h.notices);
+});
+
+test("우 열 존 통지의 동사는 `pool/resolve_duplicate` 로 나가고 미지 키는 시끄럽다", async () => {
+  const h = harness({
+    initial: async () => snap({ pairing: pairing() }),
+    tpl: tplSnap(),
+    pool: poolSnap(DAT_ROWS, {
+      duplicates: [{
+        reference: "파일: 7월목록.xlsx · 시트 물품",
+        entries: [{ key: "d1", name: "7월목록" }, { key: "d3", name: "7월분" }],
+      }],
+    }),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  assert.ok(markup.includes("같은 데이터"), "중복 통지가 우 열에 서지 않았습니다");
+  assert.ok(markup.includes('data-notice-act="resolve_duplicate"'), "정리 동사가 없습니다");
+
+  h.controller.poolNoticeAction("resolve_duplicate", { keep: "d1" });
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool")
+      .map((row) => [row[2], row[3]]),
+    [["resolve_duplicate", { keep: "d1" }]]);
+
+  h.controller.poolNoticeAction("없는통지동사", {});
+  assert.ok(h.notices.some((text) => text.includes("알 수 없는 통지 동사")), h.notices);
 });
 
 /* ---------------- ⑧ TXT 저작 린트메모장(S10-05 #862 · #299 회수) ---------------- */

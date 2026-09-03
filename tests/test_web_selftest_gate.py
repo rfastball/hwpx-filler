@@ -1974,24 +1974,40 @@ class TestWebSelftestGate:
         )
         assert e["wire_live"] is True, "둘 다 골랐는데 연결선이 살아나지 않았습니다."
         assert e["cta_enabled"] is True, "둘 다 골랐는데 「연결 확인으로」가 잠겨 있습니다."
+        # 「현재 데이터」 카드는 목록 **맨 위의 행 하나**로 접혔다(고르기 열 공용 ③a) —
+        # 문장을 짓는 자리가 Python(`pairing.data_row.sub`)이고 표면은 그리기만 한다.
         assert "시트: 물품" in e["current_restated"], (
-            f"현재 데이터가 시트를 재진술하지 않습니다: {e['current_restated']!r}"
+            f"세션 행이 시트를 재진술하지 않습니다: {e['current_restated']!r}"
         )
         assert "헤더 1행" in e["current_restated"] and "12행" in e["current_restated"], (
-            f"현재 데이터가 헤더 행·행 수를 재진술하지 않습니다: {e['current_restated']!r}"
+            f"세션 행이 헤더 행·행 수를 재진술하지 않습니다: {e['current_restated']!r}"
+        )
+        assert "사용 중" in e["current_restated"], (
+            f"세션 행의 「사용 중」 배지가 사라졌습니다: {e['current_restated']!r}"
         )
         assert e["pool_current_marked"] == 1, (
-            f"겨눈 풀 항목의 선택 표지가 다릅니다: {e['pool_current_marked']!r}"
+            f"겨눈 행의 선택 표지가 다릅니다(양쪽 열이 같은 `aria-pressed` 축을 씁니다):"
+            f" {e['pool_current_marked']!r}"
+        )
+        assert e["pin_btn"] is True, (
+            "파일로 연 데이터인데 「이 데이터 고정…」이 서지 않았습니다 —"
+            " 그 문은 세션 행이 있을 때만, 그리고 있으면 반드시 섭니다."
         )
         # 이미 고른 항목 재선택은 **무동작**이다(리뷰 1) — 통과시키면 세션이 통째로 끊긴다.
         assert e["reselect_calls"] == 0, (
             f"이미 고른 템플릿을 다시 눌러 발신이 나갔습니다: {e['reselect_calls']!r}"
         )
         assert e["reselect_keeps_mark"] == 1, "재선택이 선택 표지를 흔들었습니다."
-        # 관리 동사 연타는 한 번만 나간다(리뷰 6) — 두 벌 확인 모달·두 번 확정 금지.
-        assert e["manage_verb_present"] is True, "우 열에 관리 동사가 서지 않았습니다."
-        assert e["double_fire_calls"] == 1, (
-            f"동사 연타가 두 번 발신됐습니다: {e['double_fire_calls']!r}"
+        # 우 열의 관리 동사는 좌 열과 **같은 ⋯ 메뉴**를 지난다(③a): 링1 이 낸 동사 뒤에
+        # 경로 문 하나. 표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이지 않는다.
+        # (연타 차단은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫힌다. 공용 몸통
+        #  `createPoolVerbs` 의 in-flight 계약은 `tests/js/pool_list.test.js` 가 계속 진다.)
+        assert e["manage_verb_present"] is True, "우 열 행에 ⋯ 가 서지 않았습니다."
+        assert e["dat_menu_items"] == ["act:archive", "reveal"], (
+            f"우 열 ⋯ 의 동사 목록이 계약과 다릅니다: {e['dat_menu_items']!r}"
+        )
+        assert e["manage_verb_calls"] == 1, (
+            f"⋯ 의 관리 동사가 `pool` 채널로 한 번 나가지 않았습니다: {e['manage_verb_calls']!r}"
         )
         # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
         assert e["half_cta_disabled"] is True, (

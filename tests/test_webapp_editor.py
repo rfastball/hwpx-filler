@@ -2067,7 +2067,7 @@ def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
     assert "library" not in snap
     assert snap["pairing"] == {
         "ready": False, "template_name": "", "data_name": "",
-        "template_key": "", "data_key": "",
+        "template_key": "", "data_key": "", "data_row": None,
         "field_count": 0, "column_count": 0, "auto_count": 0, "confirm_count": 0,
         "basis": "", "advance_block_reason": "왼쪽에서 템플릿을 고르세요.",
     }
@@ -2932,9 +2932,75 @@ def test_pairing_names_the_selected_row_of_each_column_by_key(tmp_path):
     ctrl._data_name_cache = None
     assert ctrl.snapshot()["pairing"]["data_key"] == key
 
-    # 파일에서 온 결속은 우 열에 겨눌 행이 없다.
+    # 파일에서 온 결속은 우 열에 겨눌 **풀 행**이 없다(대신 `data_row` 가 선다).
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     assert ctrl.snapshot()["pairing"]["data_key"] == ""
+
+
+def test_file_origin_data_stands_as_a_column_row_at_the_top(tmp_path):
+    """파일로 연 데이터는 우 열 **행 하나**로 선다(고르기 열 공용 ③a).
+
+    「현재 데이터」 카드가 답하던 사실(무엇을 쓰는가 · 시트 · 헤더 행 · 행 수)이 같은
+    행 계약으로 옮겨 온다 — 한 열에 두 문법을 세우지 않는다. 키는 ``session`` 고정이고,
+    부제는 **여기서** 조립한다(종전엔 웹이 이었다).
+    """
+    ctrl, _pool = _pool_editor(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+
+    # 아직 데이터가 없으면 행도 없다 — 빈 행을 세우지 않는다.
+    assert ctrl.snapshot()["pairing"]["data_row"] is None
+
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    row = ctrl.snapshot()["pairing"]["data_row"]
+    assert row["key"] == "session"
+    assert row["name"] == ctrl.data_display_name()
+    assert row["badge_label"] == "사용 중" and row["badge_level"] == "ok"
+    # 세션 어휘의 `""` 는 파일 소스(엑셀/CSV)다 — 미지(`other`)로 접으면 화면이 거짓말한다.
+    assert row["icon"] == "excel"
+    assert row["selectable"] is True and row["reason"] == "" and row["warns"] == []
+    assert row["path"] == str(MULTI_SHEET) and row["actions"] == []
+    assert row["sub"] == f"시트: 낙찰현황 · {len(ctrl.records)}행"
+
+
+def test_pool_origin_data_has_no_session_row(tmp_path):
+    """풀 등록 결속에는 ``data_row`` 가 서지 않는다 — 같은 결속이 두 행으로 서지 않는다."""
+    ctrl, pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = pool.add(
+        DatasetReference(name="계약목록", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+
+    pairing = ctrl.snapshot()["pairing"]
+    assert pairing["data_key"] == key
+    assert pairing["data_row"] is None, "풀 행과 세션 행이 같은 결속을 두 번 세웠습니다"
+
+
+def test_session_row_titles_a_pclm_view_and_carries_the_header_row(tmp_path):
+    """계약 목록 뷰의 **내부 이름**은 제목으로 옮겨 그린다(#937 — 표에 없으면 원문).
+
+    이 옮김이 종전에는 웹(`pool_list.ts`)에서 스냅샷 제목표를 다시 조회하며 일어났다.
+    행이 하나가 된 이상 문장도 한 층이 짓는다.
+    """
+    ctrl, _pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl._adopt_pclm(db, _PCLM_VIEW)
+
+    row = ctrl.snapshot()["pairing"]["data_row"]
+    assert row["icon"] == "pclm"
+    # 계약면에는 헤더 행 축이 없다(0 = 해당 없음) — 없는 축을 0 으로 말하지 않는다.
+    assert row["sub"] == f"시트: 통합 · {len(ctrl.records)}행"
+
+    # 표에 없는 이름은 감추지 않고 원문 그대로 남긴다.
+    ctrl.data_sheet = "v_손편집_v9"
+    ctrl._data_name_cache = None
+    assert ctrl.snapshot()["pairing"]["data_row"]["sub"].startswith("시트: v_손편집_v9 · ")
+
+    # 헤더 행은 0 보다 클 때만 선다(엑셀 결속의 승계 자리).
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황", header_row=2)
+    assert "헤더 2행" in ctrl.snapshot()["pairing"]["data_row"]["sub"]
 
 
 def test_reopening_a_pclm_bound_job_restores_the_view(tmp_path):

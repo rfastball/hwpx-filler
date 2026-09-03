@@ -15,6 +15,7 @@ from hwpxfiller.webapp.pool_column import (
     POOL_NOTICE_LEVELS,
     POOL_ROW_KEYS,
     pool_column_view,
+    pool_icon_for_kind,
     pool_row_view,
 )
 
@@ -57,6 +58,17 @@ def test_unknown_icon_is_refused_loudly():
 def test_every_declared_icon_is_accepted():
     for icon in POOL_ICONS:
         assert _row(icon=icon)["icon"] == icon
+
+
+def test_kind_to_icon_is_one_gate_and_unknown_kinds_land_on_other():
+    """종류→표지 접기는 **한 자리**다(③a) — 소비자가 둘이라(풀 행·세션 행) 각자 접으면
+    미지 종류의 처분이 한쪽에서만 늙는다."""
+    for kind in ("excel", "pclm", "nara"):
+        assert pool_icon_for_kind(kind) == kind
+    assert pool_icon_for_kind("pipeline") == "other"
+    assert pool_icon_for_kind("") == "other"
+    # 접은 값은 행이 그대로 받는다 — 두 함수가 같은 표를 본다.
+    assert _row(icon=pool_icon_for_kind("pipeline"))["icon"] == "other"
 
 
 def test_column_view_carries_exactly_five_zones_and_copies_notices():

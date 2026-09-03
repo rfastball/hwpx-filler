@@ -48,6 +48,21 @@ POOL_ICONS = ("hwpx", "txt", "excel", "pclm", "nara", "other")
 POOL_NOTICE_LEVELS = ("warn", "danger")
 
 
+def pool_icon_for_kind(kind: str) -> str:
+    """참조 종류 → 열 행 표지(:data:`POOL_ICONS`).
+
+    자기 표지가 없는 종류(조립 파이프라인)와 손편집이 남긴 미지 종류는 ``other`` 로 선다 —
+    다른 표지로 접으면 화면이 거짓말을 하고, 거절로 존을 죽이면 그 행이 **숨겨진다**.
+    고를 수 없다는 사실과 그 사유는 이미 행의 ``reason`` 이 진다.
+
+    이 접기가 여기 있는 이유: 데이터 종류를 표지로 옮기는 자리가 둘이다(풀 목록 행과,
+    파일로 연 세션의 「현재 데이터」 행). 각자 접으면 미지 종류의 처분이 한쪽에서만
+    늙는다 — 표에 없는 값을 ``ValueError`` 로 거절하는 :func:`pool_row_view` 와 짝이 되는
+    **유일한 관문**이다.
+    """
+    return kind if kind in POOL_ICONS else "other"
+
+
 def pool_row_view(
     *,
     key: str,
@@ -136,5 +151,6 @@ __all__ = [
     "POOL_NOTICE_LEVELS",
     "POOL_ROW_KEYS",
     "pool_column_view",
+    "pool_icon_for_kind",
     "pool_row_view",
 ]

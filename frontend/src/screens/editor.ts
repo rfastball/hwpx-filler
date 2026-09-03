@@ -33,11 +33,11 @@ import type {
   ContextMenuPopoverPort,
 } from "./context_menu.ts";
 import { NoticeBox } from "./notice_box.ts";
-import { PathActions } from "./path_actions.ts";
+import { PathActions, invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
-import { PoolSections, createPoolVerbs } from "./pool_list.ts";
+import { PCLM_UNAVAILABLE, createPoolVerbs } from "./pool_list.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
-import type { PoolListHost, PoolRegistrationPort } from "./pool_list.ts";
+import type { PoolRegistrationPort } from "./pool_list.ts";
 import { PoolColumn } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
 import {
@@ -141,6 +141,9 @@ type TxtEditState = {
 };
 
 type LibMenu = {
+  /** 어느 열의 행인가 — 두 열이 같은 ⋯ 를 쓰므로 **동사표가 이 값으로 갈린다**(③a).
+   *  키만으로는 가를 수 없다: 좌는 루트 상대경로, 우는 풀 슬롯 키라 우연히 같을 수 있다. */
+  side: "tpl" | "dat";
   media: string;
   kind: "row";
   key?: string;
@@ -550,27 +553,46 @@ export function createEditorController(deps: EditorControllerDeps) {
       (row) => String(row.key) === key && String(row.icon || "") === media) || null;
   }
 
+  /** 우 열 항목 하나 — 목록 행(`pool.column.rows`)과 세션 행(`pairing.data_row`)의 합.
+   *
+   *  세션 행은 풀에 없는 결속(파일로 연 데이터)이라 `pool` 채널에 없다. 그 행을 여기서
+   *  찾지 못하면 그 행의 ⋯ 가 조용히 빈 메뉴가 된다 — 두 출처를 같은 자리에서 본다. */
+  function findDataItem(key: string): Obj | null {
+    if (key === SESSION_DATA_KEY) {
+      return ((snapshot().pairing || {}) as Obj).data_row as Obj | null || null;
+    }
+    const rows = (((poolModel.getSnapshot() || {}).column || {}).rows || []) as Obj[];
+    return rows.find((row) => String(row.key) === key) || null;
+  }
+
   function closeLibMenu(): void {
     patchView({ libMenu: null });
     libContextMenu.close();
   }
 
   /* 겨눔은 **행 하나**다 — 그룹 갈래는 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
-  function openLibMenu(media: string, id: string, trigger: HTMLElement): void {
-    const item = findLibItem(media, id);
-    const items: ContextMenuItem[] = libRowMenuItems(media, item);
+  function openLibMenu(
+    side: "tpl" | "dat", media: string, id: string, trigger: HTMLElement,
+  ): void {
+    const item = side === "tpl" ? findLibItem(media, id) : findDataItem(id);
+    const items: ContextMenuItem[] = side === "tpl"
+      ? libRowMenuItems(media, item) : dataRowMenuItems(item);
     /* 동작이 0 이면 애초에 트리거가 비활성이라 여기 오지 않는다(어포던스는 `LibRowTail`
        이 같은 술어로 잠근다) — 그래도 방어로 남긴다: 빈 팝오버는 「눌렀는데 아무 일도
        없다」라서 조용한 no-op 이다. */
     if (items.length === 0) return;
-    patchView({ libMenu: { media, kind: "row", key: id, item, trigger } });
+    patchView({ libMenu: { side, media, kind: "row", key: id, item, trigger } });
     libContextMenu.open(trigger, items);
   }
 
-  function toggleLibMenu(media: string, id: string, trigger: HTMLElement): void {
+  function toggleLibMenu(
+    side: "tpl" | "dat", media: string, id: string, trigger: HTMLElement,
+  ): void {
     const open = view.libMenu;
-    if (open !== null && open.media === media && open.key === id) { closeLibMenu(); return; }
-    openLibMenu(media, id, trigger);
+    if (open !== null && open.side === side && open.media === media && open.key === id) {
+      closeLibMenu(); return;
+    }
+    openLibMenu(side, media, id, trigger);
   }
 
   /** 항목 동사의 **단일 분기표**(U6-E 리뷰 9) — 행 ⋯ 와 시트 동사 줄이 같은 것을 본다.
@@ -596,17 +618,54 @@ export function createEditorController(deps: EditorControllerDeps) {
     else throw new Error(`알 수 없는 항목 동사입니다: ${action}`);
   }
 
+  /** 우 열 행 동사 — 링1 상태 동사와 경로 문 하나. **닫힌 집합**은 좌 열과 같은 규율이다.
+   *
+   *  상태 동사의 몸통은 공용 `poolAction` 이고 그것이 받는 행은 **옛 `pool.rows` 의 것**이다:
+   *  「다시 연결」 프리필이 `locate_path`·`sheet`·`note` 를 요구하는데 공용 열 행은 그 셋을
+   *  들지 않는다(계약이 좁다 — 그 키를 얹으면 좌 열이 모르는 축이 열 형에 생긴다). 다이얼로그
+   *  까지 같은 열로 합류하는 ③b 에서 그 프리필의 재료를 함께 정리한다. */
+  async function runDataVerb(action: string, row: Obj): Promise<void> {
+    if (action === "reveal") {
+      await invokePathAction({
+        client: deps.client, path: String(row.path || ""),
+        action: "reveal", notify: deps.notify,
+      });
+      return;
+    }
+    if (!action.startsWith("act:")) {
+      throw new Error(`알 수 없는 데이터 동사입니다: ${action}`);
+    }
+    const key = String(row.key || "");
+    const legacy = (((poolModel.getSnapshot() || {}).rows || []) as Obj[])
+      .find((entry) => String(entry.key) === key);
+    if (legacy === undefined) {
+      noticeSave(`데이터를 찾을 수 없습니다. ${GONE_FROM_LIST}`);
+      return;
+    }
+    await poolAction(action.slice(4), legacy);
+  }
+
   async function handleLibMenu(action: string): Promise<void> {
     const menu = view.libMenu;
     if (menu === null) return;
     const item = (menu.item || {}) as Obj;
     const trigger = menu.trigger;
+    const side = menu.side;
     closeLibMenu();
     try {
-      await runItemVerb(action, item, trigger);
+      if (side === "dat") await runDataVerb(action, item);
+      else await runItemVerb(action, item, trigger);
     } catch (error) {
       deps.notify(String((error as Obj)?.message || error));
     }
+  }
+
+  /** 존 통지가 든 동사 — 지금은 중복 정리 하나다. **모르는 키는 시끄럽게 거절한다**:
+   *  조용히 떨어뜨리면 Python 이 통지에 동사를 더한 날 「눌렀는데 아무 일도 없다」가 된다.
+   *  payload 키는 `pool/resolve_duplicate` 스키마 그대로(`keep`)다. */
+  function poolNoticeAction(key: string, payload: Obj): void {
+    if (key === "resolve_duplicate") { void resolveDuplicate(String(payload.keep || "")); return; }
+    deps.notify(`알 수 없는 통지 동사입니다: ${key}`);
   }
 
   /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(U6-E #979).
@@ -1221,8 +1280,14 @@ export function createEditorController(deps: EditorControllerDeps) {
     return useLibraryTemplate(String(item.path));
   }
 
-  /** 우 열 선택 — 좌 열과 대칭. */
+  /** 우 열 선택 — 좌 열과 대칭.
+   *
+   *  세션 행(파일로 연 데이터)은 **무동작**이다(③a): 이미 이 작업의 데이터라 다시 마운트할
+   *  것이 없고, 풀에 없으니 「목록에서 사라졌다」도 아니다. 거절 문장을 세우면 지금 쓰고
+   *  있는 것을 못 고른다고 말하는 꼴이 된다 — 좌 열의 「이미 고른 항목 재선택 = 무동작」과
+   *  같은 자리다. */
   async function chooseData(key: string, refusals?: string[]): Promise<boolean> {
+    if (key === SESSION_DATA_KEY) return false;
     const rows = ((poolModel.getSnapshot() || {}).rows || []) as Obj[];
     const row = rows.find((item) => String(item.key) === key);
     const refuse = (text: string): boolean => {
@@ -1239,7 +1304,10 @@ export function createEditorController(deps: EditorControllerDeps) {
   /** 끌어 놓기 성사 — **클릭이 발행하는 액션 두 번**이다(새 액션 0).
    *
    *  순서는 템플릿 먼저다: 템플릿이 필드를 정하고 그 위에 데이터가 온다(U4 §2.4). 뒤집으면
-   *  데이터 마운트가 모델 재조립을 태운 뒤 템플릿 교체가 그것을 또 무너뜨린다. */
+   *  데이터 마운트가 모델 재조립을 태운 뒤 템플릿 교체가 그것을 또 무너뜨린다.
+   *
+   *  우 열의 세션 행(`session`)이 상대가 되면 **데이터 쪽은 그대로 둔다**(③a) — 「지금 쓰는
+   *  데이터에 이 템플릿을 붙인다」는 뜻이고, 그 무동작은 `chooseData` 하나가 진다(거절 0). */
   async function dropPair(sourceSide: string, sourceKey: string, targetKey: string): Promise<void> {
     const [templateKey, dataKey] = sourceSide === "tpl"
       ? [sourceKey, targetKey] : [targetKey, sourceKey];
@@ -1433,9 +1501,12 @@ export function createEditorController(deps: EditorControllerDeps) {
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
+    /** 우 열의 같은 문(pool 채널) — 두 열이 대칭이라 「새로 읽기」도 양쪽에 선다(③a). */
+    refreshPool: (): Promise<Obj> => dispatch("pool", "refresh", {}),
     useLibraryTemplate, importTemplate, pickData,
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
-    poolAction, resolveDuplicate, openPin, openPclm, openSettings,
+    poolAction, resolveDuplicate, poolNoticeAction, findDataItem,
+    openPin, openPclm, openSettings,
     tplModel, poolModel,
     confirmSuggested, chooseDataColumn, chooseDisplay, takePendingConstFocus,
     discardPatch, cancelNewDraft,
@@ -1585,6 +1656,29 @@ export function libRowMenuItems(media: string, item: Obj | null): ContextMenuIte
   return unreadable ? [detail] : [{ action: "edit", label: "내용 편집" }, detail];
 }
 
+/** 파일로 연 데이터가 우 열에 서는 행의 키 — Python 이 짓는 값과 **같은 글자**여야 한다
+ *  (`screen_editor._pairing_data_row`). 이 키를 든 행은 풀 항목이 아니므로 상태 동사가 없고,
+ *  다시 고를 수도 없다(이미 그것을 쓰고 있다). */
+export const SESSION_DATA_KEY = "session";
+
+/** 우 열 행 ⋯ 가 열 동사 목록 — 링1 동사 + 「폴더에서 보기」.
+ *
+ *  **상태 동사는 링1 소유다**(`row.actions` — 다시 연결·보관/활성화·삭제). 종전 카드가
+ *  하던 「엑셀이면 다시 연결을 하나 더 붙인다」는 표면 판정은 함께 사라졌다(같은 상태를 두
+ *  곳이 판정하지 않는다): 그 목록은 이제 `screen_pool` 이 전수로 낸다.
+ *
+ *  「폴더에서 보기」는 경로가 있을 때만 선다 — 좌 열이 바닥 동사 줄에서 같은 문을 여는 것과
+ *  같은 어포던스이고, 링1 동사가 아니라 표면이 든다(경로 하나로 답이 끝난다).
+ *
+ *  세션 행에는 상태 동사가 없다(`actions` 가 빈 목록) — 남는 것은 그 문 하나다. */
+export function dataRowMenuItems(row: Obj | null): ContextMenuItem[] {
+  if (row === null || row === undefined) return [];
+  const items: ContextMenuItem[] = ((row.actions || []) as Obj[]).map((action: Obj) =>
+    ({ action: `act:${String(action.key)}`, label: String(action.label) }));
+  if (row.path) items.push({ action: "reveal", label: "폴더에서 보기" });
+  return items;
+}
+
 /** 좌 열 — 「템플릿」 풀. 정본은 `tpl` 채널 스냅샷의 **공용 열 존**(`column`)이고 선택
  *  표지만 편집기 스냅샷이 준다(`pairing.template_key`).
  *
@@ -1617,7 +1711,7 @@ function TemplatePool(props: {
     /* ⋮ 가 겨누는 매체는 행이 든 표지 그대로다(`icon` = `hwpx`/`txt`) — 표면이 밴드로
        매체를 유도하지 않는다. */
     onMore: (row: Obj, trigger: HTMLElement) =>
-      controller.toggleLibMenu(String(row.icon || ""), String(row.key), trigger),
+      controller.toggleLibMenu("tpl", String(row.icon || ""), String(row.key), trigger),
     reload: () => controller.guarded(() => controller.refreshLibrary()),
     acts: createElement(Fragment, null,
       h("button", {
@@ -1691,59 +1785,66 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
       "끌어다 놓아도 같은 결과입니다."));
 }
 
-/** 우 열 — 데이터 풀. 「데이터 선택」 다이얼로그와 **같은 컴포넌트**다(U6 §2.4).
+/** 우 열 — 「데이터」 풀. 좌 열과 **같은 컴포넌트의 다른 인스턴스**다(고르기 열 공용 ③a).
  *
- *  갈리는 것은 1차 동사의 라벨(「이 데이터로」)과 그것이 발행하는 액션
- *  (`editor/use_pool_data`)뿐이다. 관리 동사는 두 자리 모두 같은 `pool` 채널이고, 판정·
- *  배지·사유는 전부 `screen_pool.py` 가 낸다. */
+ *  종전에는 이 자리가 「데이터 선택」 다이얼로그의 세 구획(`PoolSections`)을 그렸다. 같은
+ *  컴포넌트를 나눠 쓰는 것 자체는 옳았지만 **나눌 상대가 틀렸다**: 우 열의 이웃은 다이얼로그가
+ *  아니라 **좌 열**이고, 그래서 「고를 수 있는가」의 시각적 얼굴·⋯ 메뉴·새로 읽기가 한쪽에만
+ *  있었다. 이제 두 열이 같은 것을 그린다 — 갈리는 것은 바닥 동사 줄 하나다.
+ *
+ *  「현재 데이터」 카드는 **행 하나로 접혔다**: 파일로 연 데이터는 Python 이 같은 행 계약으로
+ *  내려주고(`pairing.data_row` · 키 `session`) 그것이 목록 맨 위에 선다. 풀에 등록된 결속은
+ *  그 행이 없다(`data_row === null`) — 풀 행이 이미 그것을 들고 있어 두 번 세우지 않는다. */
 function DataPool(props: {
   pool: Obj | null; snapshot: Obj; controller: EditorController;
 }): ReactNode {
   const { pool, snapshot, controller } = props;
-  const host: PoolListHost = {
-    idPrefix: "editorPool",
-    chooseLabel: "이 데이터로",
-    onChoose: (row: Obj) => controller.guarded(() => controller.chooseData(String(row.key))),
-    /* 시트·헤더 행은 데이터 항목이 이미 든 정체성 축이라 **다시 묻지 않고 재진술**한다
-       (U4 §2.4). 값은 전부 Python 스냅샷이고 여기서는 줄로 잇기만 한다. */
-    current: snapshot.data_path ? {
-      label: snapshot.data_name,
-      detail: [
-        snapshot.data_header_row ? `헤더 ${snapshot.data_header_row}행` : "",
-        `${snapshot.record_count}행`,
-      ].filter(Boolean).join(" · "),
-      path: snapshot.data_path,
-      sheet: snapshot.data_sheet || "",
-      kind: snapshot.data_kind || "",
-      origin: snapshot.data_pool_key ? "pool" : "file",
-    } : {},
-    currentKey: String(snapshot.data_pool_key || ""),
-    openPin: controller.openPin,
-    browse: () => controller.guarded(() => controller.pickData()),
-    openPclm: controller.openPclm,
-    poolAction: (action: string, row: Obj) => { void controller.poolAction(action, row); },
-    resolveDuplicate: (keep: string) => { void controller.resolveDuplicate(keep); },
-    drag: {
-      side: "dat",
-      onDrop: (sourceSide: string, sourceKey: string, targetKey: string) =>
-        controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
-      /* 거절도 **클릭과 같은 한 자리**를 지난다 — `chooseData` 가 행을 다시 찾아 이름과
-         Python 사유로 재진술한다(문형 두 벌 금지). */
-      onRefuse: (_why: string, key: string) =>
-        controller.guarded(() => controller.chooseData(key)),
-    },
-    client: controller.client,
-    notify: controller.notify,
+  const column = ((pool || {}).column || null) as Obj | null;
+  const pairing = (snapshot.pairing || {}) as Obj;
+  const sessionRow = (pairing.data_row || null) as Obj | null;
+  /* 두 벌의 **순수 이어붙이기**다 — 판정은 없다. 두 행 다 Python 이 같은 계약으로 냈고,
+     여기서 정하는 것은 「세션 행이 먼저」라는 순서 하나뿐이다(지금 쓰는 것이 맨 위). */
+  const merged = column === null
+    ? (sessionRow ? { rows: [sessionRow], notices: [], empty_hint: "", count_label: "", result: {} } : null)
+    : { ...column, rows: sessionRow ? [sessionRow, ...(column.rows || [])] : (column.rows || []) };
+  const host: PoolColumnHost = {
+    side: "dat",
+    rootId: "editorDataPool",
+    listId: "editorDataList",
+    title: "데이터",
+    headSub: column === null ? "읽는 중…" : String(column.count_label || ""),
+    /* 고름 표지의 정본은 편집기 스냅샷이다: 풀 결속이면 그 슬롯 키, 파일 결속이면 세션
+       행이다. 두 축이 배타라 한 줄로 접힌다(둘 다 서는 상태는 Python 이 만들지 않는다). */
+    selectedKey: String(pairing.data_key || (sessionRow ? "session" : "")),
+    choose: (key: string) => controller.guarded(() => controller.chooseData(key)),
+    drop: (sourceSide: string, sourceKey: string, targetKey: string) =>
+      controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
+    onMore: (row: Obj, trigger: HTMLElement) =>
+      controller.toggleLibMenu("dat", String(row.icon || ""), String(row.key), trigger),
+    reload: () => controller.guarded(() => controller.refreshPool()),
+    onNoticeAction: (key: string, payload: Obj) => controller.poolNoticeAction(key, payload),
+    acts: createElement(Fragment, null,
+      h("button", {
+        className: "btn sm", id: "editorPoolBrowse", "data-busy-lock": true, key: "browse",
+        onClick: () => controller.guarded(() => controller.pickData()),
+      }, "파일 찾아보기…"),
+      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
+         둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
+         「눌러도 아무 일 없음」이 결함으로 읽힌다. */
+      h("button", {
+        className: "btn sm", id: "editorPoolPclm", "data-busy-lock": true, key: "pclm",
+        disabled: !(pool || {}).pclm, title: (pool || {}).pclm ? "" : PCLM_UNAVAILABLE,
+        onClick: () => controller.openPclm(),
+      }, "계약 목록(.db) 등록…"),
+      /* 「이 데이터 고정…」은 **고정할 것이 있을 때만** 선다 — 풀에서 고른 데이터는 이미
+         고정돼 있고, 아무것도 안 골랐으면 겨눌 것이 없다. 그 사실을 드는 값이 곧 세션 행이다. */
+      sessionRow ? h("button", {
+        className: "btn sm", id: "editorPoolPin", "data-busy-lock": true, key: "pin",
+        onClick: () => controller.openPin(),
+      }, "이 데이터 고정…") : null),
+    emptyFallback: "고정한 데이터를 아직 읽지 못했습니다.",
   };
-  /* `poolcol` — 열 문법(머리·목록·바닥·결과 줄)의 CSS 는 공용 열 컴포넌트가 소유한다.
-     우 열은 ③에서 그 컴포넌트로 합류하고, 그때까지는 클래스만 먼저 나눠 쓴다. */
-  return h("section", {
-    className: "pool poolcol", id: "editorDataPool", "aria-label": "데이터",
-  },
-    h("div", { className: "pool-head" },
-      h("h2", null, "데이터"),
-      h("span", { className: "sub" }, `${((pool || {}).rows || []).length}건`)),
-    h("div", { className: "pool-list" }, h(PoolSections as any, { host, pool })));
+  return h(PoolColumn as any, { host, column: merged });
 }
 
 /** 항목 상세 시트의 **구간 항목 표** — 행 동사 3종 + 밴드 동사 1종(S8-03 · U4-E3 #939).

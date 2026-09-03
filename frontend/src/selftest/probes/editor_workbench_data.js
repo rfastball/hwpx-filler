@@ -416,13 +416,30 @@ function tplBase(overrides) {
   return snapshot;
 }
 
-/** `pool` 채널 스냅샷 — 고르기 단계 우 열의 정본(데이터 선택 다이얼로그와 같은 값). */
+/** `pool` 채널 스냅샷 — 고르기 단계 우 열의 정본(데이터 선택 다이얼로그와 같은 값).
+ *
+ *  좌 열과 같은 이유로 공용 열 존(`column`)을 **유도한다**(고르기 열 공용 ③a): 우 열이
+ *  그리는 것은 그 존이고 옛 목록 키(`rows`)는 관리 동사의 프리필 재료로 남아 있다. 두
+ *  존을 따로 쓰면 실제로는 있을 수 없는 상태(목록에 있는 행이 열에는 없는)를 시험한다. */
 function poolBase(rows) {
+  const list = rows || [];
   return {
-    rows: rows || [], count: `${(rows || []).length}건`, empty: !(rows || []).length,
+    rows: list, count: `${list.length}건`, empty: !list.length,
     corrupted: [], duplicates: [],
     pclm: { default_db: "C:/d/pclm.db", views: [], titles: {} },
     result: { text: "", level: "muted" },
+    column: {
+      rows: list.map((row) => ({
+        key: row.key, name: row.name, sub: row.reference || "",
+        reason: row.select_block_reason || "", warns: [],
+        badge_label: row.badge_label || "", badge_level: row.badge_level || "muted",
+        icon: row.kind === "pclm" ? "pclm" : "excel",
+        selectable: !!row.selectable, path: row.locate_path || "",
+        actions: row.actions || [],
+      })),
+      notices: [], empty_hint: "고정한 데이터가 없습니다.",
+      count_label: `${list.length}건`, result: { text: "", level: "muted" },
+    },
   };
 }
 
@@ -2475,15 +2492,15 @@ export function createEditorWorkbenchDataProbes() {
           ctx.push("pool", pickPool);
           await ctx.waitFor(
             () => host.querySelectorAll('.pitem[data-side="tpl"]').length === 3
-              && host.querySelectorAll('[data-side="dat"]').length === 2,
+              && host.querySelectorAll('.pitem[data-side="dat"]').length === 2,
             { what: "고르기 두 열 렌더(좌 3 · 우 2)", timeoutMs: 2000 },
           );
 
-          /* ① 두 열이 각자 채널로 선다 — 좌는 `.pitem[data-side=tpl]`, 우는 공유 컴포넌트
-             (`.pk-row[data-side=dat]`). 구획 헤더는 없다(U4 §2-30 음성 단언). */
+          /* ① 두 열이 각자 채널로 선다 — **같은 컴포넌트의 두 인스턴스**라 문법도 하나다
+             (`.pitem[data-side=…]` · 고르기 열 공용 ③a). 구획 헤더는 없다(U4 §2-30 음성 단언). */
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
           out.tpl_items = host.querySelectorAll('.pitem[data-side="tpl"]').length;
-          out.dat_items = host.querySelectorAll('[data-side="dat"]').length;
+          out.dat_items = host.querySelectorAll('.pitem[data-side="dat"]').length;
           out.import_btn = !!host.querySelector('button[data-act="import-template"]');
           out.browse_btn = !!byId(ctx, "editorPoolBrowse");
           /* 매체 고지 두 줄(F6 PR-B)은 U6-B 에서 사라졌다 — 매체는 pill 하나가 말한다. */
@@ -2506,7 +2523,7 @@ export function createEditorWorkbenchDataProbes() {
           });
           try {
             host.querySelector('.pitem[data-side="tpl"][data-key="a.hwpx"]').click();
-            host.querySelector('[data-side="dat"][data-key="d1"] [data-act="use"]').click();
+            host.querySelector('.pitem[data-side="dat"][data-key="d1"]').click();
             await settleUntil(ctx, () => sent.length >= 2);
             out.click_calls = sent.map((row) => [row[0], row[1]]);
 
@@ -2524,7 +2541,7 @@ export function createEditorWorkbenchDataProbes() {
               return event;
             };
             const source = host.querySelector('.pitem[data-side="tpl"][data-key="c.hwpx"]');
-            const target = host.querySelector('[data-side="dat"][data-key="d1"]');
+            const target = host.querySelector('.pitem[data-side="dat"][data-key="d1"]');
             fire(source, "dragstart");
             out.drag_payload = transfer.getData("text/plain");
             const over = fire(target, "dragover");
@@ -2579,19 +2596,37 @@ export function createEditorWorkbenchDataProbes() {
             out.reselect_keeps_mark = host.querySelectorAll(
               '.pitem[data-side="tpl"][aria-pressed="true"]').length;
 
-            /* ⑦ 관리 동사 연타 = **한 번만** 발신(리뷰 6). 같은 틱의 두 클릭이라
-               in-flight 표지가 첫 await 앞에서 서지 않으면 둘 다 나간다. */
+            /* ⑦ 우 열의 관리 동사는 좌 열과 **같은 ⋯ 메뉴**를 지난다(③a) — 종전의 카드
+               인라인 버튼은 사라졌다. 링1 이 낸 동사 뒤에 경로 문(「폴더에서 보기」)이 서고,
+               고른 항목은 공용 `pool` 채널로 나간다(다이얼로그와 같은 몸통).
+
+               연타 차단(in-flight)은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫히므로 같은
+               틱의 두 번째 클릭이 존재하지 않는다. 그 몸통 계약은 `tests/js/pool_list.test.js`
+               가 계속 진다(공용 `createPoolVerbs`). */
             sent.length = 0;
-            const archive = host.querySelector(
-              '[data-side="dat"][data-key="d1"] [data-act="archive"]');
-            out.manage_verb_present = !!archive;
-            if (archive) {
-              archive.click();
-              archive.click();
-              await settleUntil(ctx, () => sent.length > 0);
+            ctx.doc.body.click();
+            const datMore = host.querySelector(
+              '[data-act="lib-more"][data-side="dat"][data-key="d1"]');
+            out.manage_verb_present = !!datMore;
+            if (datMore) {
+              datMore.click();
               await settleRender(ctx);
-              out.double_fire_calls = sent
-                .filter((row) => row[1] === "archive").length;
+              const datMenu = byId(ctx, "tplRowMenu");
+              out.dat_menu_items = datMenu ? Array.prototype.map.call(
+                datMenu.querySelectorAll("button[data-context-menu-action]"),
+                (button) => button.dataset.contextMenuAction) : [];
+              const archive = datMenu && datMenu.querySelector(
+                '[data-context-menu-action="act:archive"]');
+              if (archive) {
+                archive.click();
+                await settleUntil(ctx, () => sent.length > 0);
+                await settleRender(ctx);
+                out.manage_verb_calls = sent
+                  .filter((row) => row[0] === "pool" && row[1] === "archive").length;
+              }
+              ctx.doc.body.dispatchEvent(
+                new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
+              await settleRender(ctx);
             }
           } finally {
             stub.restore();
@@ -2602,11 +2637,20 @@ export function createEditorWorkbenchDataProbes() {
           ctx.push("editor", editorBase({
             template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
             data_path: "C:/d/7월목록.xlsx", data_name: "7월목록.xlsx",
-            data_sheet: "물품", data_header_row: 1, data_pool_key: "d1",
+            data_sheet: "물품", data_header_row: 1, data_pool_key: "",
             record_count: 12,
             reachable: { template: true, binding: false, filename: false },
             pairing: {
               ready: true, template_name: "a.hwpx", data_name: "7월목록.xlsx",
+              /* 파일로 연 데이터라 겨눌 **풀 행**이 없다 — 대신 Python 이 같은 행 계약으로
+                 낸 세션 행이 목록 맨 위에 선다(③a). 「현재 데이터」 카드의 승계처다. */
+              template_key: "a.hwpx", data_key: "",
+              data_row: {
+                key: "session", name: "7월목록.xlsx",
+                sub: "시트: 물품 · 헤더 1행 · 12행", reason: "", warns: [],
+                badge_label: "사용 중", badge_level: "ok", icon: "excel",
+                selectable: true, path: "C:/d/7월목록.xlsx", actions: [],
+              },
               field_count: 12, column_count: 18, auto_count: 10, confirm_count: 2,
               basis: "preview", advance_block_reason: "",
             },
@@ -2619,10 +2663,18 @@ export function createEditorWorkbenchDataProbes() {
           out.card_text = card.textContent.replace(/\s+/g, " ").trim();
           out.wire_live = byId(ctx, "editorWire").classList.contains("live");
           out.cta_enabled = !byId(ctx, "editorLinkCta").disabled;
-          /* 우 열의 「현재 데이터」가 시트·헤더 행을 **다시 묻지 않고 재진술**한다. */
-          out.current_restated = textOf(byId(ctx, "editorPoolCurrent"));
-          out.pool_current_marked =
-            host.querySelectorAll('[data-side="dat"][aria-current="true"]').length;
+          /* 세션 행이 시트·헤더 행·행 수를 **다시 묻지 않고 재진술**한다 — 문장을 짓는
+             자리가 Python 으로 갔고(③a), 여기서 되읽는 것은 그 값이 실제로 서는가다. */
+          await ctx.waitFor(
+            () => !!host.querySelector('#editorDataList .pitem[data-key="session"]'),
+            { what: "세션 행(현재 데이터) 렌더", timeoutMs: 2000 },
+          );
+          out.current_restated = textOf(
+            host.querySelector('#editorDataList .pitem[data-key="session"]'));
+          out.pool_current_marked = host.querySelectorAll(
+            '.pitem[data-side="dat"][aria-pressed="true"]').length;
+          /* 「이 데이터 고정…」은 고정할 것이 있을 때만 선다 — 그 사실을 드는 값이 세션 행이다. */
+          out.pin_btn = !!byId(ctx, "editorPoolPin");
 
           /* ⑦ 반쪽만 고른 스냅샷 → CTA 비활성 + **Python 이 낸 사유**. */
           ctx.push("editor", editorBase({

@@ -513,8 +513,27 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     항목 상세(`detail` 존)도 같은 이유로 `tpl` 스냅샷을 직접 읽는다(중계 seam
     `library_result`·`library_slots` 폐기). **결과 줄의 자리는 좌 열 바닥**이다(U6-E #979) —
     관리 동사가 전부 그 열에서 나가므로 성과도 같은 열에서 읽힌다.
-  - **우 열은 「데이터 선택」 다이얼로그와 같은 컴포넌트**다(`frontend/src/screens/pool_list.ts`).
-    갈리는 것은 셋뿐이다 — 1차 동사의 라벨(「이 데이터로」 ↔ 「이 데이터 사용」), 그것이
+  - **우 열도 공용 `PoolColumn` 이다**(고르기 열 공용 계약 ③a — 종전에는 이 자리가 「데이터
+    선택」 다이얼로그의 세 구획 `PoolSections` 였다). 우 열의 이웃은 다이얼로그가 아니라
+    **좌 열**이라, 두 열이 같은 컴포넌트의 두 인스턴스로 서고 `pool.column` 을 그린다
+    (`#editorDataPool` 뿌리 · `#editorDataList` 목록 · `.pitem[data-side="dat"]` 행).
+    갈리는 것은 바닥 동사 줄 하나다 — `#editorPoolBrowse`(파일 찾아보기…) ·
+    `#editorPoolPclm`(계약 목록(.db) 등록… — 스냅샷에 `pclm` 이 없으면 숨기지 않고 비활성 +
+    사유) · `#editorPoolPin`(이 데이터 고정…). **우 열도 「새로 읽기」(`pool/refresh`)와 행
+    ⋯ 를 가진다**: ⋯ 는 링1 이 낸 `actions`(다시 연결·보관/활성화·삭제) 다음에 「폴더에서
+    보기」를 세우고, 그 동사들은 좌 열 ⋯ 와 **같은 팝오버**(`#tplRowMenu`)를 쓴다 — 열림
+    상태가 `(side, media, key)` 로 갈리는 이유는 두 열의 키 공간이 다르기 때문이다.
+    표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이던 자리는 함께 사라졌다.
+  - **파일로 연 데이터는 목록 맨 위의 행 하나다**(같은 행 계약, 키 `session`). 정본은 편집기
+    스냅샷 `pairing.data_row` 이고(`screen_editor._pairing_data_row`), 부제(「시트: … · 헤더
+    n행 · m행」 — 계약 목록의 뷰 이름은 `PCLM_VIEW_TITLES` 로 제목화)도 Python 이 짓는다.
+    종전 「현재 데이터」 카드의 승계처이고, 한 열에 두 문법을 세우지 않으려는 것이 이유다.
+    **풀 등록 결속에는 서지 않는다**(`data_key` 와 배타 — 같은 결속이 두 행으로 서지 않는다).
+    그 행은 다시 눌러도 **무동작**이고(이미 이 작업의 데이터다 — 거절도 발신도 없다), 끌어
+    놓기의 상대가 되면 템플릿 쪽만 바뀐다. 「이 데이터 고정…」은 **그 행이 있을 때만** 바닥
+    동사 줄에 선다(풀에서 고른 데이터는 이미 고정돼 있다).
+  - **다이얼로그는 아직 `pool_list.ts` 다**(슬라이스 ③b). 그때까지 갈리는 것은 셋이다 —
+    1차 동사의 라벨(「이 데이터로」 ↔ 「이 데이터 사용」), 그것이
     발행하는 액션(`editor/use_pool_data` ↔ `job/load_pool`), DOM id 접두(`editorPool` ↔
     `dataPicker`). `load_pool` 을 `editor` 채널에 넣지 않는다: 화면별 허용 목록이 곧 경계의
     정의라 같은 이름이 두 화면에 걸리면 「누가 무엇을 받는가」가 이름 하나로는 안 읽힌다.
@@ -538,25 +557,30 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     `selectable` 은 `reason` 의 파생이지 두 번째 판정이 아니다). 좌 열은 hwpx 다음 txt 를
     **한 목록**으로 싣고, 우 열은 손상 격리(danger)·중복 등록(warn)을 존 통지로 싣는다 —
     종전에 웹이 리터럴로 짓던 그 문장들이다. 옛 밴드·행 키(`hwpx`/`txt`/`rows`/`corrupted`/
-    `duplicates`…)는 웹이 이 존으로 옮겨 갈 때까지(슬라이스 ③) 그대로 산다. 그때까지
-    `pool` 행의 옛 `actions` 는 **상태표 그대로**이고(웹이 「다시 연결…」을 아직 자기
-    판정으로 덧붙인다) 전수 목록은 `column` 행이 든다. 두 열의 「지금 선 행」은
-    `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의 `key` 와 같은 축 —
-    좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값).
-  - **좌 열은 공용 `PoolColumn` 이 그린다**(`frontend/src/screens/pool_column.ts` — 고르기 열
-    공용 계약 ②): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
+    `duplicates`…)는 **다이얼로그**가 이 존으로 옮겨 갈 때까지(슬라이스 ③b) 그대로 산다 —
+    그 화면이 「다시 연결…」을 아직 자기 판정으로 덧붙이므로 `pool` 행의 옛 `actions` 는
+    **상태표 그대로**이고, 전수 목록은 `column` 행이 든다. 고르기 우 열은 이미 후자를
+    읽는다(관리 동사의 프리필 재료 `locate_path`·`sheet`·`note` 만 옛 행에서 집어 온다 —
+    좁은 열 계약에 그 축을 얹지 않으려는 것이고, ③b 가 그 자리를 정리한다). 두 열의
+    「지금 선 행」은 `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의
+    `key` 와 같은 축 — 좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값 +
+    `pairing.data_row` 의 `session` 행).
+  - **두 열은 공용 `PoolColumn` 이 그린다**(`frontend/src/screens/pool_column.ts` — 고르기 열
+    공용 계약 ②·③a): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
     바닥 `.run-result`)과 행 계약(`.pitem-wrap` > `button.pitem[data-act="pick"]` + 형제
     `button.job-more[data-act="lib-more"]`)이 여기 **한 벌**이고, 그것이 읽는 것은 `tpl.column`
-    하나다. 행의 상태도 하나다 — 고를 수 있음(`aria-pressed="false"`) / 고름
-    (`aria-pressed="true"`, `pairing.template_key` 가 이름한다) / 못 고름(`aria-disabled="true"`
+    (좌) 또는 `pool.column`+세션 행(우) 하나다. 행의 상태도 하나다 — 고를 수 있음
+    (`aria-pressed="false"`) / 고름(`aria-pressed="true"`, `pairing.template_key`·
+    `pairing.data_key`(파일 결속이면 `session`)가 이름한다) / 못 고름(`aria-disabled="true"`
     + 부제 자리의 사유). **못 고르는 행은 `disabled` 가 아니다**: 눌리지 않으면 사유를 말할
     자리가 없어 조용한 무시가 되므로, 클릭도 드롭 거절도 호스트의 같은 한 자리(`choose`)로
     가서 이름과 Python 사유로 재진술된다. 사전 고지(`warns` — #154)는 사유와 **다른 줄**로
     선다(고를 수 있는 행도 미리 알릴 것이 있고, 한 축으로 접으면 한쪽이 사라진다). 행 앞머리
     글리프는 `poolGlyph()` 한 어휘이고 상세 패널의 연결 카드(`library.ts` `pairGlyph`)가 같은
-    것을 쓴다 — 같은 것을 가리키는 그림이 두 자리에서 갈리지 않는다. 우 열과 「데이터 선택」
-    다이얼로그는 아직 `pool_list.ts` 이고 **③에서 이 컴포넌트로 합류한다**(그래서 CSS 뿌리가
-    `.pairzone` 이 아니라 `.poolcol` 이다 — 존 배치만 `.pairzone` 이 계속 소유한다).
+    것을 쓴다 — 같은 것을 가리키는 그림이 두 자리에서 갈리지 않는다. **못 고르는 행은 양쪽
+    열 다 눌리되 거절을 말한다** — 그 대칭이 이 컴포넌트를 나눠 쓰는 이유다. 「데이터 선택」
+    다이얼로그만 아직 `pool_list.ts` 이고 ③b 에서 합류한다(CSS 뿌리가 `.pairzone` 이 아니라
+    `.poolcol` 인 이유 — 존 배치만 `.pairzone` 이 계속 소유한다).
   - **고르는 제스처는 좌·우가 한 규칙이다**(리뷰 1·2·5·10). 클릭도 끌어 놓기도 컨트롤러의
     같은 한 자리(`chooseTemplate`/`chooseData`)를 지나고, 그 자리가 셋을 함께 진다:
     ① **이미 고른 것을 다시 고르면 무동작**이다 — 통과시키면 `new_job_session` 이 이름·
@@ -952,9 +976,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 | 고정한 데이터 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) + 사용·보관·활성화·삭제·다시 연결 + 손상 격리 | `pool` 컨트롤러 스냅샷·액션 **그대로** |
 | 다른 데이터 | 파일 찾아보기(1회용) → 다중 시트면 시트 확정 게이트 · **「계약 목록(.db) 등록…」**(`#dataPickerPclm` → `#poolRegModal` pclm 모드) | 호스트 `pick_data_file`/`load_data_sheet` · `pool/register_pclm` |
 
-- **몸통은 편집기 우 열과 같은 컴포넌트다**(U6-B #976 · U6 §2.4): 모달 껍데기(제목·상태줄·
-  닫기)만 이 파일이 지고, 세 구획(현재 데이터 · 고정한 데이터 · 다른 데이터)은
-  `frontend/src/screens/pool_list.ts` 의 `PoolSections` 하나가 낸다. 좌표는 **불변**이다 —
+- **몸통은 `pool_list.ts` 의 `PoolSections` 다**: 모달 껍데기(제목·상태줄·닫기)만 이 파일이
+  지고, 세 구획(현재 데이터 · 고정한 데이터 · 다른 데이터)은 그 컴포넌트 하나가 낸다.
+  편집기 우 열은 U6-B(#976)에서 같은 몸통을 나눠 썼다가 **고르기 열 공용 ③a 에서 갈렸다** —
+  우 열의 이웃은 이 다이얼로그가 아니라 좌 템플릿 열이었고, 그래서 지금 이 파일의 소비자는
+  다이얼로그 하나다(③b 에서 이 화면도 `PoolColumn` 으로 합류한다). 좌표는 **불변**이다 —
   접두 `dataPicker` 가 종전 id 를 글자 그대로 재생산하므로 `#dataPickerCurrent`·
   `#dataPickerPinned`·`#dataPickerBrowse`·`#dataPickerPclm` 을 겨눈 게이트가 그대로 산다.
   편집기 축약판 `PoolPickList`(`#editorPoolPick`·`pick-pool-data`·`pool-pick-close`)와 그

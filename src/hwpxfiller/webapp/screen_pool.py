@@ -71,7 +71,7 @@ from ..domain.pclm_views import (
     PCLM_VIEWS,
     default_pclm_db,
 )
-from .pool_column import POOL_ICONS, pool_column_view, pool_row_view
+from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
 from .screens import PushSink
 
 __all__ = [
@@ -86,16 +86,6 @@ __all__ = [
 def display_reference(item: DatasetReference) -> str:
     """재진술 문안에 쓰는 **표시용** 참조 요약 — 결속 재료가 아니다(모듈 독스트링 참조)."""
     return reference_summary(item)
-
-
-def _row_icon(kind: str) -> str:
-    """참조 종류 → 고르기 열 행 표지(:data:`~hwpxfiller.webapp.pool_column.POOL_ICONS`).
-
-    자기 표지가 없는 종류(조립 파이프라인)와 손편집이 남긴 미지 종류는 ``other`` 로 선다 —
-    다른 표지로 접으면 화면이 거짓말을 하고, 거절로 존을 죽이면 그 행이 **숨겨진다**.
-    고를 수 없다는 사실과 그 사유는 이미 행의 ``reason`` 이 진다.
-    """
-    return kind if kind in POOL_ICONS else "other"
 
 
 class PoolController:
@@ -182,7 +172,7 @@ class PoolController:
                 warns=[],
                 badge_label=r.badge_label,
                 badge_level=r.badge_level,
-                icon=_row_icon(r.kind),
+                icon=pool_icon_for_kind(r.kind),
                 path=r.locate_path,
                 actions=[{"key": a.key, "label": a.label} for a in r.actions()],
             ))

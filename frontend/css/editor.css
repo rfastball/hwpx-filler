@@ -270,10 +270,5 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
 .linkcard .warnline{color:var(--a-warn);font-weight:700}
 .linkzone .cta{width:100%}
 
-/* 우 열은 「데이터 선택」 다이얼로그와 **같은 컴포넌트**라 카드 형(`.tplcard.pk-row`)이다 —
-   여기서는 구획 제목을 걷고 카드를 좁혀 좌 열과 같은 리듬으로 읽히게만 한다. */
-.pairzone .picker-sec{margin:0}
-.pairzone .picker-sec+.picker-sec{margin-top:var(--sp-10)}
-.pairzone .pk-row{padding:var(--sp-8) var(--sp-10)}
-.pairzone .pk-row[aria-current="true"]{background:var(--a-sel);border-color:var(--a-primary)}
-.pairzone .pk-row[aria-disabled="true"]{opacity:.62}
+/* 우 열의 카드 형 덮어쓰기(`.picker-sec`·`.pk-row`)는 소비자가 사라져 걷혔다(③a) — 두 열이
+   같은 컴포넌트(`.poolcol` · `.pitem`)라 이 존만의 리듬 보정이 필요 없다. */
