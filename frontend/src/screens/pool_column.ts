@@ -257,7 +257,6 @@ export function PoolColumn(props: { host: PoolColumnHost; column: Obj | null }):
     h("span", { className: "sub", title: host.headSubTitle }, host.headSub),
     host.reload ? h("button", {
       className: "btn sm reload", "data-act": "refresh", "data-side": host.side,
-      title: "다시 읽습니다",
       onClick: () => { host.reload?.(); },
     }, "새로 읽기") : null),
   h("div", { className: "pool-list", id: host.listId },

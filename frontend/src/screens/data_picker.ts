@@ -13,7 +13,7 @@ import type { PoolColumnHost } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
-  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
+  PCLM_UNAVAILABLE, POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
   poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 
@@ -344,7 +344,7 @@ export function createDataPickerController(args: {
   function choose(key: string): void {
     if (key === SESSION_DATA_KEY) return;
     const row = columnRows().find((entry) => String(entry.key) === key);
-    if (row === undefined) { refuse(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`); return; }
+    if (row === undefined) { refuse(POOL_DATA_GONE); return; }
     if (!row.selectable) {
       refuse(poolRefusalText(String(row.name), String(row.reason || "")));
       return;
@@ -428,7 +428,7 @@ export function createDataPickerController(args: {
   ): Promise<void> {
     const detail = ((poolModel.getSnapshot() || {}).detail || null) as Obj | null;
     if (detail === null) {
-      refuseVerb(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+      refuseVerb(POOL_DATA_GONE);
       return;
     }
     try {

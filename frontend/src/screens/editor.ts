@@ -32,12 +32,12 @@ import type {
   ContextMenuItem,
   ContextMenuPopoverPort,
 } from "./context_menu.ts";
-import { DetailSheetFrame } from "./detail_sheet.ts";
+import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { NoticeBox } from "./notice_box.ts";
 import { PathActions, invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
 import {
-  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
+  PCLM_UNAVAILABLE, POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
   dataRowMenuItems, mergeSessionRow, poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
@@ -1254,7 +1254,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       if (refusals) refusals.push(text); else noticeSave(text);
       return false;
     };
-    if (row === null) return refuse(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+    if (row === null) return refuse(POOL_DATA_GONE);
     if (!row.selectable) {
       return refuse(poolRefusalText(String(row.name), String(row.reason || "")));
     }
@@ -1896,7 +1896,7 @@ export function TplDetailSheet(props: { controller: EditorController }): ReactNo
   if (detail === null) {
     return h(DetailSheetFrame as any, Object.assign({}, shared, {
       title: "항목 상세",
-      empty: "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히…」를 누르세요.",
+      empty: DETAIL_SHEET_EMPTY,
     }));
   }
   const media = String(detail.media || "hwpx");

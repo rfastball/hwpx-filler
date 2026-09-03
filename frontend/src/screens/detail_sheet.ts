@@ -19,6 +19,9 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { ContextMenuItem } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
 
+/** 상세가 없을 때의 한 문장 — 템플릿·데이터 두 시트가 같은 말을 한다(문장 두 벌 금지). */
+export const DETAIL_SHEET_EMPTY = "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히…」를 누르세요.";
+
 type Obj = Record<string, any>;
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {

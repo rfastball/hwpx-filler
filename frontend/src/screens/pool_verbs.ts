@@ -52,6 +52,8 @@ export const PCLM_UNAVAILABLE =
  *  말없이 반환하면 누른 사람에게 화면이 아무 말도 남기지 않는다 — 이 저장소가 금지하는
  *  무반응이다. */
 export const POOL_GONE_FROM_LIST = "목록이 바뀌었습니다. 다시 고르세요.";
+/** 키로 겨눈 데이터가 지금 목록에 없을 때의 한 문장 — 세 호스트가 같은 말을 한다. */
+export const POOL_DATA_GONE = `데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`;
 
 /** 고를 수 없는 항목의 클릭·드롭 문안 — **조용히 무시하지 않는다**(U6-B).
  *
@@ -206,7 +208,7 @@ export function createPoolVerbs(deps: PoolVerbDeps) {
     await deps.dispatch("pool", "review", { key });
     const detail = ((deps.poolSnapshot() || {}).detail || null) as Obj | null;
     if (detail === null || String(detail.key) !== key) {
-      deps.onError(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+      deps.onError(POOL_DATA_GONE);
       return null;
     }
     return detail;

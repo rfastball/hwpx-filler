@@ -15,7 +15,7 @@ import { createElement, Fragment, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { createDataPickerController } from "./data_picker.ts";
-import { DetailSheetFrame } from "./detail_sheet.ts";
+import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { dataRowMenuItems } from "./pool_verbs.ts";
 
 type Obj = Record<string, any>;
@@ -76,7 +76,7 @@ export function PoolDetailSheet(props: { controller: PoolDetailController }): Re
   if (detail === null) {
     return h(DetailSheetFrame as any, Object.assign({}, shared, {
       title: "데이터 상세",
-      empty: "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히…」를 누르세요.",
+      empty: DETAIL_SHEET_EMPTY,
     }));
   }
   /* 동사 줄은 행 ⋮ 와 **같은 함수**가 짓는다(같은 상태 두 곳 판정 금지) — 지금 서 있는
