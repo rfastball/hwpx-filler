@@ -204,7 +204,6 @@ function pairingDetail(over = {}) {
     ],
     more_fields: [], stale_fields: [], rows_basis: "template",
     first_row: { state: "ready", reason: "", record_count: 120 },
-    plan: { state: "ready", pattern: "공고-{{ID}}", first_name: "공고-1-001.hwpx", count: 120 },
     ...over,
   };
 }
@@ -292,11 +291,10 @@ test("상세 연결 존 — 카드 수치·4열 표·계획 줄을 스냅샷 그
   assert.ok(markup.includes('data-field="공고명"'));
   assert.ok(markup.includes("1,234,567원"));                   // 표시형 라벨도 Python 이 낸다
   assert.ok(markup.includes("48,500,000원"));
-  /* 계획은 라벨 한 행이다(2026-09-03) — 첫 이름 + 나머지 건수. 저장 폴더는 전역 설정이라
-     상세에 재진술되지 않는다. */
-  assert.ok(markup.includes('id="libraryPlanLine"'));
-  assert.ok(markup.includes("공고-1-001.hwpx") && markup.includes("외 119건"));
-  assert.ok(!markup.includes("저장 폴더"));
+  /* 파일 이름 계획·저장 폴더는 상세에 없다(2026-09-03 재판정 ④·⑥) — 이름 예시는 편집기
+     3단계와 생성 결과가, 저장 폴더는 설정 창이 말한다. */
+  assert.ok(!markup.includes('id="libraryPlanLine"'));
+  assert.ok(!markup.includes("저장 폴더") && !markup.includes("파일 이름"));
 });
 
 test("상세 연결 존 — 프레임 밖 행은 건수로 명시한다(스크롤로 감추지 않는다)", () => {
@@ -328,7 +326,6 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
         rows: [{ template_field: "공고명", source_label: "사업명", display_label: "원문",
           preview: "—", preview_kind: "pending" }],
         first_row: { state: "pending", reason: "", record_count: 0 },
-        plan: { state: "pending", pattern: "공고-{{ID}}", first_name: "", count: 0 },
       }),
     }),
   });
@@ -336,8 +333,6 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
     createElement(LibraryScreen, { controller: pending.controller }));
   assert.ok(pendingMarkup.includes('data-first-row="pending"'));
   assert.ok(pendingMarkup.includes('class="pv pending"'));
-  assert.ok(pendingMarkup.includes("규칙 공고-{{ID}}"));       // 이름 대신 아는 것을 말한다
-  assert.ok(!pendingMarkup.includes("120건"));
 
   const failed = build({
     snapshot: detailSnapshot({
@@ -367,7 +362,7 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 연결 손�
           data_name: "월별", counted: false, template_field_count: 0, mapped_count: 0,
           unbound_count: 0, stale_count: 0 },
         rows: [], more_fields: [], stale_fields: [], rows_basis: "",
-        first_row: null, plan: null,
+        first_row: null,
       },
     }),
   });

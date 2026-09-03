@@ -159,15 +159,6 @@ table.ro .pv.err{color:var(--a-warn);white-space:normal;word-break:keep-all}
 .lib-rows-tail{margin:calc(-1 * var(--sp-6)) 0 var(--sp-10);text-align:right;
   font-size:var(--fs-caption);color:var(--a-muted)}
 
-/* 계획 — 「이 작업이 만들 파일」. 한 문장이 아니라 **라벨 2행**이다: 파일 이름과 저장 폴더는
-   서로 다른 질문이고, 경로가 길어도 패널을 넓히지 않는다. */
-.lib-plan{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:var(--sp-10);
-  row-gap:var(--sp-4);align-items:center;margin:0 0 var(--sp-8);
-  border-top:1px solid var(--a-border);padding-top:var(--sp-8);font-size:var(--fs-caption)}
-.lib-plan dt{margin:0;color:var(--a-muted)}
-.lib-plan dd{margin:0;min-width:0;display:flex;align-items:center;gap:var(--sp-6)}
-.lib-plan dd b{color:var(--a-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lib-plan .muted{color:var(--a-muted)}
 .lib-tags{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin:var(--sp-4) 0 0}
 .lib-detail-acts{flex:none;display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;
   border-top:1px solid var(--a-border);padding:var(--sp-10) var(--sp-16)}
