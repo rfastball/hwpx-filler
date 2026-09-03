@@ -82,13 +82,20 @@
 .lib-paircard{display:flex;flex-direction:column;gap:var(--sp-6);margin:0 0 var(--sp-12);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-10);background:var(--n-surface-alt)}
-/* 항목과 재선택 버튼은 **같은 줄**이다 — 세로로 쌓으면 두 축의 버튼이 서로 다른 x 에 서서
-   눈이 그 둘을 한 열로 읽지 못한다. */
+/* 항목 줄 — 차단 해소 동사(「데이터 연결하기…」)가 있을 때만 항목 옆에 선다. */
 .lib-paircard .side{min-width:0;display:flex;align-items:center;gap:var(--sp-8)}
 .lib-paircard .side .lib-pitem{flex:1;min-width:0}
 .lib-paircard .side > .btn{flex:none}
-.lib-paircard .mid{display:flex;align-items:center;gap:var(--sp-8);
-  font-size:var(--fs-caption);color:var(--n-ink-soft);padding-left:var(--sp-10)}
+/* 가운데 「연결」 줄이 **유일한 손잡이**다(2026-09-03) — 두 항목 사이의 관계가 곧 편집 대상이라
+   그 관계를 그린 줄이 들어가는 문이 된다. 버튼이되 줄처럼 보이고, hover·초점에서만 면이 든다. */
+.lib-paircard .mid{width:100%;display:flex;align-items:center;gap:var(--sp-8);
+  border:0;background:none;font:inherit;font-size:var(--fs-caption);color:var(--n-ink-soft);
+  text-align:left;cursor:pointer;border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-8) var(--sp-4) var(--sp-10)}
+.lib-paircard .mid:hover{background:var(--n-hover)}
+.lib-paircard .mid:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.lib-paircard .mid .go{margin-left:auto;flex:none;color:var(--a-muted);font-size:var(--fs-strong);
+  line-height:1}
 /* 세로 연결선 — 두 항목을 잇는 그림이고 상태를 말하지 않는다(수치가 그 일을 한다). */
 .lib-paircard .vwire{flex:none;width:2px;height:26px;background:var(--a-primary);
   border-radius:1px;margin-left:9px}

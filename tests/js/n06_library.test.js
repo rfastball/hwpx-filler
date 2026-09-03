@@ -216,13 +216,16 @@ const BOUND_DETAIL = {
   health_causes: [], pairing_detail: pairingDetail(),
 };
 
-test("상세 재선택 — 템플릿·데이터 두 축이 각자 바로가기를 든다", () => {
+test("상세 연결 손잡이 — 가운데 「연결」 줄 하나가 편집기로 가는 문이다(재선택 버튼 없음)", () => {
+  /* 2026-09-03 재판정: 「데이터 재선택」 은 「작업 편집」·표 행 클릭과 같은 단계에 착지하던
+     중복이었고, 템플릿 교체는 「작업 편집」 → 템플릿 탭이 진다. 두 항목 사이의 관계 줄이
+     들어가는 문이다. */
   const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));
-  assert.ok(markup.includes("템플릿 재선택…"));
-  assert.ok(markup.includes('id="libraryRepickData"'));
-  assert.ok(markup.includes("데이터 재선택…"));
+  assert.ok(markup.includes('id="libraryPairingEdit"'));
+  assert.ok(markup.includes("연결 12 / 12"));
+  assert.ok(!markup.includes("재선택"));
+  assert.ok(!markup.includes('id="libraryRepickTemplate"') && !markup.includes('id="libraryRepickData"'));
 });
 
 test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐이다(재선택 버튼 없음)", () => {
@@ -232,13 +235,13 @@ test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐�
   }) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
   assert.ok(markup.includes("데이터 연결하기…"));
-  assert.ok(!markup.includes('id="libraryRepickData"'));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));   // 템플릿 축은 그대로 선다
+  assert.ok(markup.includes('id="libraryPairingEdit"'));       // 연결 손잡이는 미결속에도 선다
+  assert.ok(!markup.includes("재선택"));
 });
 
 test("editWork — section extra가 EditorEntry 문맥에 합류한다(착지 탭 deep-link)", async () => {
-  /* 두 재선택 버튼의 onClick 이 부르는 그 경로다. 섹션 어휘는 Python 이 아는 값
-     (`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
+  /* 연결 손잡이의 onClick 이 부르는 그 경로다(`section: "binding"`). 섹션 어휘는 Python 이
+     아는 값(`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
   const h = build();
   await h.controller.editWork("작업A", { "여기서 할 것": "고르세요" }, { section: "template" });
   await h.controller.editWork("작업A", {}, { section: "binding" });
@@ -354,7 +357,7 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
   assert.ok(failedMarkup.includes("경로를 찾을 수 없음: C:/월별.xlsx"));
 });
 
-test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 동사는 남는다", () => {
+test("상세 연결 존 — 표가 없는 갈래에서도 카드와 연결 손잡이는 남는다", () => {
   /* 템플릿을 읽을 수 없으면 구조(표)는 못 그리지만 정체(카드)는 답할 수 있고, 무엇보다
      **고치러 가는 동사**가 카드에 있다 — 접으면 그 길이 함께 접힌다. */
   const h = build({
@@ -370,7 +373,7 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 �
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));
+  assert.ok(markup.includes('id="libraryPairingEdit"') && markup.includes("연결 확인"));
   assert.ok(!markup.includes('id="libraryPairRows"'));
   assert.ok(!markup.includes("연결 0 / 0"));                   // 세지 않은 수치를 말하지 않는다
 });

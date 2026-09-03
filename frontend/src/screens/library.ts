@@ -283,16 +283,13 @@ function pairGlyph(kind: "template" | "data"): ReactNode {
     h("path", { d: "M3 9h14M8 4v12" }));
 }
 
-/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사 + 재선택 바로가기.
- *  항목과 재선택 버튼은 한 줄에 눕고(CSS `.side`) 두 축의 버튼이 같은 열에 선다.
- *
- *  재선택은 **정체를 보는 자리에서 그 정체를 바꾸러 가는 길**이다. 착지 탭은 Python 이
- *  아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로 싣고, 진입
- *  가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
+/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사. `action` 은 차단
+ *  상태를 푸는 동사(데이터 미결속의 「연결하기」)만 싣는다 — 정체를 바꾸는 길은 카드가 아니라
+ *  가운데 연결 손잡이와 「작업 편집」 이 진다(2026-09-03 재판정). */
 function PairSide(props: {
   kind: "template" | "data";
   name: string; sub: ReactNode; path: string; warn?: boolean;
-  controller: LibraryController; action: ReactNode;
+  controller: LibraryController; action?: ReactNode;
 }): ReactNode {
   const { kind, name, sub, path, warn, controller, action } = props;
   return h("div", { className: "side" },
@@ -304,18 +301,28 @@ function PairSide(props: {
       path ? h(PathActions as any, {
         client: controller.client, path, notify: controller.notify,
       }) : null),
-    action);
+    action ?? null);
 }
 
 /** 연결 카드 — 「무엇과 무엇이 붙었나」. 좁은 상세 패널이라 편집기의 가로 3열을 **눕힌다**:
  *  같은 링1 투영, 다른 배치다(동결 시안 장면 4). 수치는 Python 이 세고 여기서는 그리기만
- *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치 줄을 세우지 않는다(0 을 사실처럼 말하지
- *  않는다). 표가 서지 않는 갈래에서도 이 카드는 남는다: 고치러 갈 동사가 여기 있다. */
+ *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치를 세우지 않는다(0 을 사실처럼 말하지
+ *  않는다).
+ *
+ *  **손잡이는 가운데 「연결」 줄 하나다**(2026-09-03 재판정). 종전의 「템플릿 재선택」·「데이터
+ *  재선택」 두 버튼은 대칭인 듯 보였지만 실제 착지는 달랐다 — 데이터 재선택은 편집기 필드
+ *  연결 단계(= 「작업 편집」 기본 착지 = 표 행 클릭의 단계)라 완전한 중복이었고, 템플릿 교체는
+ *  정체를 바꾸는 드문 일이라 「작업 편집」 → 템플릿 탭이 진다. 두 항목 사이의 관계가 곧
+ *  편집 대상이므로 그 관계를 그린 줄이 들어가는 문이다. 진입 가드·데이터 인계는 `editWork`
+ *  → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
 function PairCard(props: {
   detail: Obj; card: Obj; staleFields: string[]; controller: LibraryController;
 }): ReactNode {
   const { detail, card, staleFields, controller } = props;
   const dataBound = detail.data_bound;
+  const openPairing = () => controller.editWork(detail.name, {
+    "여기서 할 것": "「필드 연결」에서 연결을 확인하세요",
+  }, { section: "binding" });
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
       kind: "template",
@@ -324,12 +331,11 @@ function PairCard(props: {
       path: String(detail.template_path || ""),
       warn: !!card.template_missing || !card.template_bound,
       controller,
-      action: h("button", { className: "btn sm", id: "libraryRepickTemplate", "data-repick": "template",
-        onClick: () => controller.editWork(detail.name, {
-          "여기서 할 것": "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요",
-        }, { section: "template" }) }, "템플릿 재선택…"),
     }),
-    h("div", { className: "mid" },
+    h("button", {
+      type: "button", className: "mid", id: "libraryPairingEdit",
+      title: "연결을 편집기에서 확인합니다", onClick: openPairing,
+    },
       h("span", { className: "vwire", "aria-hidden": "true" }),
       card.counted ? h("span", { className: "nums" },
         h("b", null, `연결 ${card.mapped_count} / ${card.template_field_count}`),
@@ -337,7 +343,10 @@ function PairCard(props: {
         /* 템플릿에서 사라진 연결은 숨기지 않는다 — 실행 게이트가 막는 상태이고,
            목록이 침묵하면 사용자는 눌러 보고서야 안다. */
         card.stale_count ? h("span", { className: "stale" },
-          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null) : null),
+          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null)
+        /* 세지 못한 갈래에도 문은 남는다 — 수치 대신 동사 하나. */
+        : h("span", { className: "nums" }, h("b", null, "연결 확인")),
+      h("span", { className: "go", "aria-hidden": "true" }, "›")),
     /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
     h(PairSide as any, {
@@ -349,11 +358,7 @@ function PairCard(props: {
       path: dataBound ? String(detail.data_path || "") : "",
       warn: !dataBound,
       controller,
-      action: dataBound
-        ? h("button", { className: "btn sm", id: "libraryRepickData", "data-repick": "data",
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요",
-          }, { section: "binding" }) }, "데이터 재선택…")
+      action: dataBound ? null
         : h("button", { className: "btn sm", "data-connect-data": detail.name,
           onClick: () => controller.editWork(detail.name, {
             "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
