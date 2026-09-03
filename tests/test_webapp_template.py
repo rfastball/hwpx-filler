@@ -81,45 +81,60 @@ def _controller(
     return ctrl, tmp_path, pushes
 
 
-def _items(band: dict) -> "list[dict]":
-    return [it for sec in band["sections"] for it in sec["items"]]
+def _items(snap: dict) -> "list[dict]":
+    """고르기 좌 열의 행 전수 — hwpx 다음 txt 로 **한 목록**이다(`column.rows`).
+
+    옛 매체 밴드(`hwpx`/`txt` 의 `sections[].items[]`)는 웹 소비자 0 으로 걷혔다
+    (슬라이스 ⑤). 매체는 구획이 아니라 행이 든 표지(`icon`)가 가른다.
+    """
+    return snap["column"]["rows"]
 
 
-def _names(band: dict) -> "set[str]":
-    return {it["name"] for it in _items(band)}
+def _media(snap: dict, icon: str) -> "list[dict]":
+    """그 매체의 행만 — 구획 대신 행 표지로 가른다."""
+    return [it for it in _items(snap) if it["icon"] == icon]
 
 
-def _item(band: dict, name: str) -> dict:
-    return next(it for it in _items(band) if it["name"] == name)
+def _names(snap: dict, icon: "str | None" = None) -> "set[str]":
+    rows = _items(snap) if icon is None else _media(snap, icon)
+    return {it["name"] for it in rows}
+
+
+def _item(snap: dict, name: str) -> dict:
+    return next(it for it in _items(snap) if it["name"] == name)
+
+
+def _result(ctrl: TemplateController) -> dict:
+    """결과 줄 — 열의 일부다(목록과 같은 존에서 온다)."""
+    return ctrl.snapshot()["column"]["result"]
 
 
 # ============================================================ 목록·배지·액션
-def test_initial_serializes_bands_and_ring1_actions(tmp_path, monkeypatch):
+def test_initial_serializes_one_column_and_ring1_actions(tmp_path, monkeypatch):
     ctrl, _, _ = _controller(tmp_path, monkeypatch)
     snap = ctrl.initial()
-    assert _names(snap["hwpx"]) == {"raw", "comp"}
-    assert _names(snap["txt"]) == {"온나라_기안"}
-    assert _item(snap["txt"], "온나라_기안")["field_count"] == 1
-    assert snap["hwpx"]["count"] == 2 and snap["txt"]["count"] == 1
-    # 그룹 0개 = 퇴화 평면.
-    # 밴드는 언제나 평면이고 그룹 후보 목록은 싣지 않는다(U4 §2-30).
-    assert snap["hwpx"]["flat"] is True and "group_names" not in snap["hwpx"]
-    assert snap["result"]["text"] == ""
+    assert _names(snap, "hwpx") == {"raw", "comp"}
+    assert _names(snap, "txt") == {"온나라_기안"}
+    assert _item(snap, "온나라_기안")["sub"] == "필드 1개"
+    # 개수는 **한 목록**의 것이다(매체별 구획이 없다 — 슬라이스 ⑤).
+    assert snap["column"]["count_label"] == "3개"
+    # 그룹 표면은 U4 §2-30 에서 동결이고 그 투영도 없다.
+    assert "group_names" not in snap and "sections" not in snap
+    assert snap["column"]["result"]["text"] == ""
     # 드리프트 UI 미노출(10F2FF98-D) — 스냅샷에 drift 표면이 없다.
     assert "drift" not in snap and not any("drift" in k for k in snap)
-    band = snap["hwpx"]
     # U6-B(#976): 링2 필터가 사라지고 목록은 **링1 그대로**다 — `preview`·`make_job` 은
     # 소비자 0 이라 링1 에서 사슬째 걷혔다. U6-E(#979)는 `review` 까지 걷었다: 상태 게이트가
     # 드는 것은 **수선 동사**뿐이고, 검토 왕복은 웹이 모든 행에 덧붙이는 「자세히…」가 진다.
-    assert [a["key"] for a in _item(band, "comp")["actions"]] == []
-    assert [a["key"] for a in _item(band, "raw")["actions"]] == ["compile"]
+    assert [a["key"] for a in _item(snap, "comp")["actions"]] == []
+    assert [a["key"] for a in _item(snap, "raw")["actions"]] == ["compile"]
     # 「고를 수 있는가」 + 사유는 행이 진다(고르기 좌 열의 단일 판정 출처).
-    assert _item(band, "comp")["selectable"] is True
-    assert _item(band, "comp")["select_block_reason"] == ""
-    assert _item(band, "raw")["selectable"] is False
-    assert "누름틀·구간 변환" in _item(band, "raw")["select_block_reason"]
-    txt_row = _item(snap["txt"], "온나라_기안")
-    assert txt_row["selectable"] is True and txt_row["detail"] == "필드 1개"
+    assert _item(snap, "comp")["selectable"] is True
+    assert _item(snap, "comp")["reason"] == ""
+    assert _item(snap, "raw")["selectable"] is False
+    assert "누름틀·구간 변환" in _item(snap, "raw")["reason"]
+    txt_row = _item(snap, "온나라_기안")
+    assert txt_row["selectable"] is True and txt_row["sub"] == "필드 1개"
 
 
 def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):
@@ -127,18 +142,19 @@ def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):
     raw = str(tp / "lib" / "raw.hwpx")
     before = (tp / "lib" / "raw.hwpx").read_bytes()
     review = ctrl.dispatch("review", {"path": raw})
-    assert review["ok"] is True and "검토" in ctrl.snapshot()["result"]["text"]
+    assert review["ok"] is True and "검토" in _result(ctrl)["text"]
     res1 = ctrl.dispatch("compile", {"path": raw})
     # 확인 본문은 두 축을 함께 재진술한다(S8-03) — 「항목 n · 선택 m · 누름틀 k」.
     assert res1["needs_confirm"] is True and "누름틀 1개" in res1["confirm_text"]
     assert (tp / "lib" / "raw.hwpx").read_bytes() == before  # dry-run 무변형
     res2 = ctrl.dispatch("compile", {"path": raw, "confirm": True})
     assert res2["applied"] is True and res2["refused"] is False
-    assert ctrl.snapshot()["result"]["level"] == "ok"
-    assert _item(ctrl.snapshot()["hwpx"], "raw")["state"] == "compiled"
+    assert _result(ctrl)["level"] == "ok"
+    # 상태는 배지가 말한다(링1 `compile_badge` 단일 출처) — 행에 별도 상태 축이 없다.
+    assert _item(ctrl.snapshot(), "raw")["badge_label"] == "변환됨"
     res = ctrl.dispatch("compile", {"path": str(tp / "lib" / "comp.hwpx")})
     assert res.get("needs_confirm") is not True and res["applied"] is False
-    assert "변환할 토큰과 구간이 없습니다" in ctrl.snapshot()["result"]["text"]
+    assert "변환할 토큰과 구간이 없습니다" in _result(ctrl)["text"]
 
 
 # ============================================= S8-03 구간 표기 변환 · Slot 관리 동사
@@ -176,7 +192,7 @@ def test_compile_refuses_a_notation_diagnostic_without_asking(tmp_path, monkeypa
     result = ctrl.dispatch("compile", {"path": broken})
 
     assert result == {"ok": True, "applied": False, "blocked": True}
-    assert "변환할 수 없습니다" in ctrl.snapshot()["result"]["text"]
+    assert "변환할 수 없습니다" in _result(ctrl)["text"]
     assert Path(broken).read_bytes() == before
 
 
@@ -222,7 +238,7 @@ def test_review_of_a_txt_item_answers_with_fields_and_no_convert_axis(tmp_path, 
     assert detail["media"] == "txt" and detail["state"] == "" and detail["badge_label"] == ""
     assert [f["name"] for f in detail["fields"]] == ["공고명"]
     assert detail["slots"] is None and detail["actions"] == []
-    assert "검토" in ctrl.snapshot()["result"]["text"]
+    assert "검토" in _result(ctrl)["text"]
 
 
 def test_review_of_a_broken_txt_answers_with_the_reason(tmp_path, monkeypatch):
@@ -242,7 +258,7 @@ def test_review_of_a_broken_txt_answers_with_the_reason(tmp_path, monkeypatch):
     assert detail["media"] == "txt" and detail["error"]
     assert detail["fields"] == [] and detail["slots"] is None
     assert detail["field_summary"].startswith("읽기 실패: ")
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert _result(ctrl)["level"] == "danger"
 
 
 def test_review_rejects_paths_outside_the_live_library(tmp_path, monkeypatch):
@@ -286,7 +302,7 @@ def test_slot_rename_is_a_single_round_trip(tmp_path, monkeypatch):
 
     assert result == {"ok": True, "slot_count": 1}
     assert ctrl.snapshot()["detail"]["slots"]["rows"][0]["label"] == "새 이름"
-    assert "항목 이름을 바꿨습니다" in ctrl.snapshot()["result"]["text"]
+    assert "항목 이름을 바꿨습니다" in _result(ctrl)["text"]
     # 빈 label 은 이름을 뗀다.
     ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "  "})
     assert ctrl.snapshot()["detail"]["slots"]["rows"][0]["label"] == ""
@@ -307,7 +323,7 @@ def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
 
     ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약", "confirm": True})
     assert ctrl.snapshot()["detail"]["slots"]["rows"] == []
-    assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
+    assert "표기로 되돌렸습니다" in _result(ctrl)["text"]
 
     # 다시 변환한 뒤 삭제 왕복.
     ctrl.dispatch("compile", {"path": path, "confirm": True})
@@ -358,10 +374,10 @@ def test_slot_decompile_all_takes_two_round_trips(tmp_path, monkeypatch):
 
     assert result == {"ok": True, "slot_count": 0}
     assert ctrl.snapshot()["detail"]["slots"]["rows"] == []
-    assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
+    assert "표기로 되돌렸습니다" in _result(ctrl)["text"]
     # 되돌린 템플릿은 다시 PARTIAL 이다 — 「변환 전까지 못 만든다」는 확인 문안의 재확인.
-    row = next(r for r in _items(ctrl.snapshot()["hwpx"]) if r["path"] == path)
-    assert row["state"] == "partial"
+    row = next(r for r in _items(ctrl.snapshot()) if r["path"] == path)
+    assert row["badge_label"] == "부분 변환"
 
 
 def test_slot_decompile_all_guards_the_same_paths_as_the_row_verbs(tmp_path, monkeypatch):
@@ -566,7 +582,7 @@ def test_txt_edit_drift_gate_does_not_notify_the_editing_session(tmp_path, monke
     })
 
     assert seen == []
-    assert "저장했습니다" not in ctrl.snapshot()["result"]["text"]
+    assert "저장했습니다" not in _result(ctrl)["text"]
 
 
 def test_orphan_group_returns_to_ungrouped_after_delete(tmp_path, monkeypatch):
@@ -602,8 +618,8 @@ def test_import_routes_by_extension_and_is_independent(tmp_path, monkeypatch):
     assert (tp / "lib" / "협조전.txt").read_text(encoding="utf-8") == "원본"
     # 사본은 「그룹 없음」에서 시작.
     snap = ctrl.snapshot()
-    assert "group" not in _item(snap["txt"], "협조전")
-    assert "group" not in _item(snap["hwpx"], "용역")
+    assert "group" not in _item(snap, "협조전")
+    assert "group" not in _item(snap, "용역")
 
 
 def test_import_name_collision_suffixes(tmp_path, monkeypatch):
@@ -662,8 +678,8 @@ def test_legacy_trash_subtree_is_not_rediscovered_as_template(tmp_path, monkeypa
     (trash / "0-old-지운기안.txt").write_text("{{옛것}}", encoding="utf-8")
 
     snap = ctrl.snapshot()
-    assert _names(snap["hwpx"]) == {"comp", "raw"}
-    assert _names(snap["txt"]) == {"온나라_기안"}
+    assert _names(snap, "hwpx") == {"comp", "raw"}
+    assert _names(snap, "txt") == {"온나라_기안"}
 
 
 def test_unknown_tpl_action_is_loud(tmp_path, monkeypatch):
@@ -684,9 +700,9 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
     ctrl.dispatch("refresh", {})
 
     snap = ctrl.snapshot()
-    warns = _item(snap["hwpx"], "marker")["fill_warns"]
+    warns = _item(snap, "marker")["warns"]
     assert len(warns) == 1 and "markpenBegin" in warns[0]
-    assert _item(snap["hwpx"], "comp")["fill_warns"] == []
+    assert _item(snap, "comp")["warns"] == []
 
 
 # (고지 ②(휘발 「기안」 폐지 재진술) 테스트 삭제 — 문안이 tpl 화면과 함께 사망(F8
@@ -754,12 +770,12 @@ def test_snapshot_carries_the_templates_root_zone(tmp_path, monkeypatch):
         "source_label": "기본 폴더",
         "notice": "",
     }
-    # 두 밴드의 `dir` 도 같은 값이다 — 매체별 루트 축은 사라졌다.
-    snap = ctrl.snapshot()
-    assert snap["hwpx"]["dir"] == snap["txt"]["dir"] == str(tp / "lib")
+    # 「어느 폴더를 읽고 있는가」의 자리는 이 존 **하나**다 — 매체별 루트 축도, 목록 안
+    # 사본도 없다(슬라이스 ⑤ 에서 옛 밴드의 `dir` 이 함께 걷혔다).
+    assert "dir" not in ctrl.snapshot()["column"]
 
 
-def test_set_templates_root_moves_both_bands_in_one_push(tmp_path, monkeypatch):
+def test_set_templates_root_moves_both_media_in_one_push(tmp_path, monkeypatch):
     """재지정 동사는 **홀더 하나**다 — 한 번의 푸시로 hwpx·txt 목록이 새 루트를 본다."""
     ctrl, tp, pushes = _controller(tmp_path, monkeypatch)
     other = tp / "다른서식"
@@ -773,8 +789,8 @@ def test_set_templates_root_moves_both_bands_in_one_push(tmp_path, monkeypatch):
     assert result == {"ok": True, "directory": str(other)}
     assert len(pushes) == 1, "재지정이 한 번의 푸시로 끝나지 않았습니다"
     _screen, snap = pushes[0]
-    assert _names(snap["hwpx"]) == {"새서식"}
-    assert _names(snap["txt"]) == {"새기안"}
+    assert _names(snap, "hwpx") == {"새서식"}
+    assert _names(snap, "txt") == {"새기안"}
     assert snap["templates_root"]["source_label"] == "설정한 폴더"
     assert settings.load_templates_root() == str(other)   # 영속까지 갔다
 
@@ -789,10 +805,10 @@ def test_a_missing_configured_root_shows_an_empty_list_with_a_reason(tmp_path, m
     snap = ctrl.snapshot()
     assert snap["templates_root"]["directory"] == str(gone)   # 옛 루트로 되돌아가지 않는다
     assert "찾을 수 없습니다" in snap["templates_root"]["notice"]
-    assert _names(snap["hwpx"]) == set() and _names(snap["txt"]) == set()
-    # 빈 목록 문안은 링1 하나가 정본이고 두 밴드가 같은 말을 한다.
-    assert snap["hwpx"]["empty_hint"] == snap["txt"]["empty_hint"] == ctrl.vm.empty_hint()
-    assert "서식 폴더가 없습니다" in snap["hwpx"]["empty_hint"]
+    assert _items(snap) == []
+    # 빈 목록 문안은 링1 하나가 정본이고 열이 그 값을 그대로 옮긴다.
+    assert snap["column"]["empty_hint"] == ctrl.vm.empty_hint()
+    assert "서식 폴더가 없습니다" in snap["column"]["empty_hint"]
 
 
 def test_set_templates_root_rejects_empty_and_file_paths_loudly(tmp_path, monkeypatch):
@@ -815,8 +831,8 @@ def test_display_names_follow_the_same_rule_for_both_media(tmp_path, monkeypatch
     ctrl.dispatch("refresh", {})
 
     snap = ctrl.snapshot()
-    assert "온나라/공고서" in _names(snap["hwpx"])
-    assert "온나라/기안" in _names(snap["txt"])
+    assert "온나라/공고서" in _names(snap, "hwpx")
+    assert "온나라/기안" in _names(snap, "txt")
 
 
 def test_retired_verbs_are_refused_by_the_action_registry():
@@ -872,7 +888,7 @@ def test_review_of_a_corrupt_hwpx_answers_with_the_reason_not_an_exception(
     assert detail["state"] == "" and detail["fields"] == [] and detail["slots"] is None
     assert detail["field_summary"].startswith("읽기 실패: ")
     # 결과 줄도 성공으로 접히지 않는다 — 못 읽었다는 사실이 그 자리에서 재진술된다.
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert _result(ctrl)["level"] == "danger"
 
 
 def test_convert_reprojects_the_open_detail(tmp_path, monkeypatch):
@@ -936,10 +952,7 @@ def test_a_rejected_path_pushes_the_refreshed_list_first(tmp_path, monkeypatch):
     assert ctrl.is_live_path("hwpx", str(ghost)) is False
 
     assert pushes, "거절 전에 갱신된 목록을 밀지 않았습니다"
-    names = {
-        item["name"] for section in pushes[-1][1]["hwpx"]["sections"]
-        for item in section["items"]
-    }
+    names = {row["name"] for row in pushes[-1][1]["column"]["rows"]}
     assert "comp" not in names, f"사라진 행이 그대로 실렸습니다: {names!r}"
 
 
@@ -989,7 +1002,8 @@ def test_column_zone_is_one_list_of_hwpx_then_txt_in_the_shared_shape(tmp_path, 
     """좌 열은 hwpx 다음 txt 로 **한 목록**이다 — TXT 는 별도 밴드가 아니라 같은 줄의 pill.
 
     키 집합의 정본은 `webapp/pool_column.py` 하나이고 우 열(`pool` 채널)이 같은 형으로
-    선다. 옛 밴드 키(`hwpx`·`txt`)는 웹이 이 존으로 옮겨 갈 때까지 그대로 산다.
+    선다. 옛 밴드 키(`hwpx`·`txt`)는 웹 소비자 0 으로 걷혔다(슬라이스 ⑤) — 최상위 존은
+    이제 넷뿐이다.
     """
     from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS
 
@@ -1001,10 +1015,11 @@ def test_column_zone_is_one_list_of_hwpx_then_txt_in_the_shared_shape(tmp_path, 
     assert all(tuple(r) == POOL_ROW_KEYS for r in column["rows"])
     assert {r["name"] for r in column["rows"]} == {"raw", "comp", "온나라_기안"}
     assert column["count_label"] == "3개"
-    # 결과 줄·빈 상태 문안은 옛 키와 **같은 값**이다(두 곳이 다른 말을 하지 않는다).
-    assert column["result"] == snap["result"]
-    assert column["empty_hint"] == snap["hwpx"]["empty_hint"] == snap["txt"]["empty_hint"]
+    # 결과 줄·빈 상태 문안의 자리는 이 존 안 하나다(같은 사실을 두 곳이 말하지 않는다).
+    assert column["empty_hint"] == ctrl.vm.empty_hint()
     assert column["notices"] == []
+    # 최상위 존 전수 — 옛 밴드·결과 사슬은 걷혔다(소비자 0).
+    assert tuple(snap) == ("column", "templates_root", "detail", "examples")
 
 
 def test_column_row_carries_the_ring1_verdict_and_the_media_badge(tmp_path, monkeypatch):
@@ -1020,15 +1035,15 @@ def test_column_row_carries_the_ring1_verdict_and_the_media_badge(tmp_path, monk
     assert (txt["badge_label"], txt["badge_level"], txt["icon"]) == ("TXT", "muted", "txt")
     assert txt["actions"] == [] and txt["sub"] == "필드 1개"
     assert txt["selectable"] is True
-    # 채움 사전 고지(#154)는 hwpx 행만 드는 축이고 밴드 행과 **같은 값**이다 — 좌 열이
-    # 그것을 잃으면 「골라도 되지만 이렇게 된다」가 목록에서 조용히 사라진다.
-    band = {r["name"]: r for r in ctrl.initial()["hwpx"]["sections"][0]["items"]}
-    assert rows["raw"]["warns"] == band["raw"]["fill_warns"]
+    # 채움 사전 고지(#154)는 hwpx 행만 드는 축이고 링1 값 그대로다 — 좌 열이 그것을 잃으면
+    # 「골라도 되지만 이렇게 된다」가 목록에서 조용히 사라진다.
+    ring1 = {r.name: r for r in ctrl.vm.rows()}
+    assert rows["raw"]["warns"] == list(ring1["raw"].fill_warns)
     assert txt["warns"] == []
 
 
 def test_the_row_verdict_is_computed_once_per_row(tmp_path, monkeypatch):
-    """옛 밴드 행과 새 열 행은 **한 판정**에서 갈라진다 — 두 번 부르면 둘이 갈릴 자리가 난다."""
+    """행마다 링1 판정은 **한 번**이다 — 두 번 부르면 그 둘이 갈릴 자리가 난다."""
     from hwpxfiller.gui.template_manager_state import TemplateRow
 
     ctrl, _, _ = _controller(tmp_path, monkeypatch)

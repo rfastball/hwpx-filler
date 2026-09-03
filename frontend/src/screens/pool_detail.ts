@@ -62,13 +62,14 @@ export function PoolDetailSheet(props: { controller: PoolDetailController }): Re
     controller.model.subscribe, controller.model.getSnapshot,
     controller.model.getSnapshot) as Obj;
   const detail = (((pool || {}) as Obj).detail || null) as Obj | null;
-  const result = (((pool || {}) as Obj).result || {}) as Obj;
+  const result = ((((pool || {}) as Obj).column || {}) as Obj).result || {};
   const shared = {
     idPrefix: "poolDetail",
     client: controller.client,
     notify: controller.notify,
     message: String(view.detailMessage || ""),
-    /* 성과 줄의 정본은 그대로 `pool.result`(Python) 다 — 여기서 다시 짓는 문안은 없다. */
+    /* 성과 줄의 정본은 고르기 열 존(`pool.column.result`, Python)이다 — 결과 줄은 열의
+       일부라 목록과 **같은 존**에서 온다. 여기서 다시 짓는 문안은 없다. */
     result,
     onClose: (): void => { controller.closeDetail(); },
   };

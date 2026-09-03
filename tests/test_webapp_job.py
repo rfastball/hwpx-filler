@@ -1623,6 +1623,7 @@ def test_pclm_mount_data_row_titles_the_view_in_the_subtitle(tmp_path):
     """계약 목록 — 부제의 시트 이름은 **제목**이다(내부 이름은 성분에만 산다).
 
     이 옮김이 종전에는 웹에서 스냅샷 제목표(`pool.pclm.titles`)를 다시 조회하며 일어났다.
+    그 표는 소비자 0 으로 퇴역했고 제목화는 링0 ``sheet_title`` 하나가 진다.
     """
     ctrl, _ = _controller(tmp_path)
     db = _pclm_db(tmp_path)

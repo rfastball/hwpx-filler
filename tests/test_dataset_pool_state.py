@@ -41,7 +41,9 @@ def test_register_excel_stores_complete_reference_and_restores_sheet(tmp_path):
     row = vm.rows()[0]
     assert row.kind == "excel" and row.status == STATUS_ACTIVE
     assert "multi_sheet.xlsx" in row.reference and "낙찰현황" in row.reference
-    assert vm.count_label() == "1건"
+    # 분류사는 **항목의 것**이다(`개`) — 소비자가 고르기 열 하나로 좁혀지며 좌 열과
+    # 통일했다(`건` 은 이 제품에서 레코드의 분류사다).
+    assert vm.count_label() == "1개"
     # 복원 경로(source_from_pool_item)는 무수정 통과 — opts 그대로 관통해
     # 지정 시트 레코드가 온다(실행 시점 재읽기=싱크).
     src = source_from_pool_item(item)

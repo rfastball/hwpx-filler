@@ -43,44 +43,36 @@ function snap(extra) {
   }, extra || {});
 }
 
-/** 밴드 행 → 공용 열 행(`webapp/pool_column.py` 의 키 집합).
+/** 좌 열 행 하나 — 키 집합은 `webapp/pool_column.py` 의 `POOL_ROW_KEYS` 그대로다.
  *
- *  Python 이 하는 접기를 여기서 되풀이하는 이유는 하나다: 이 파일의 픽스처가 오래전부터
- *  밴드로 쓰여 있고, 좌 열이 `column` 존으로 옮겨 갔어도 **같은 사실**을 말해야 한다.
- *  두 존이 어긋난 픽스처는 실제로는 있을 수 없는 상태를 시험하는 것이다. */
-function columnRowOf(item, icon) {
-  return {
-    key: item.key, name: item.name, sub: item.detail || "",
-    reason: item.select_block_reason || "", warns: item.fill_warns || [],
-    badge_label: icon === "txt" ? "TXT" : (item.badge_label || ""),
-    badge_level: icon === "txt" ? "muted" : (item.badge_level || "muted"),
-    icon, selectable: !!item.selectable, path: item.path, actions: item.actions || [],
-  };
+ *  픽스처가 **열 행을 직접 쓴다**: 옛 밴드(`hwpx`/`txt`)가 퇴역해(슬라이스 ⑤) 유도할 원본이
+ *  없고, 유도가 남아 있으면 픽스처가 제 손으로 접은 모양을 되읽는 무동작 측정이 된다. */
+function tplRow(extra) {
+  return Object.assign({
+    key: "a.hwpx", name: "a", sub: "필드 3개", reason: "", warns: [],
+    badge_label: "누름틀", badge_level: "ok", icon: "hwpx",
+    selectable: true, path: "C:/lib/a.hwpx", actions: [],
+  }, extra || {});
 }
 
 /** `tpl` 채널 스냅샷 — 고르기 단계 좌 열이 구독하는 정본.
  *
- *  좌 열의 정본은 **공용 열 존**(`column`)이고 옛 밴드(`hwpx`·`txt`)는 아직 다른 소비자가
- *  있다. 픽스처가 둘을 따로 쓰면 갈리므로 밴드에서 존을 **유도한다**(명시로 준 `column`
- *  은 그대로 존중한다 — 어긋남 자체를 시험하는 자리가 있을 수 있다). */
+ *  좌 열이 그리는 것은 **공용 열 존**(`column`) 하나다. `rows`(열 행 목록)와 `result` 를
+ *  주면 존을 세우고, 그 밖의 키(`detail` 등)는 그대로 실린다. 손으로 준 `column` 은 그대로
+ *  존중한다 — 어긋남 자체를 시험하는 자리가 있을 수 있다. */
 function tplSnap(extra) {
+  const opts = Object.assign({}, extra || {});
+  const rows = opts.rows || [];
+  delete opts.rows;
   const snapshot = Object.assign({
-    hwpx: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
-    txt: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
     templates_root: { directory: "C:/lib", source: "settings", source_label: "설정", notice: "" },
-    result: { text: "", level: "muted" },
     detail: null,
-  }, extra || {});
+  }, opts);
+  const result = opts.result || { text: "", level: "muted" };
   if (snapshot.column === undefined) {
-    const rows = [];
-    for (const icon of ["hwpx", "txt"]) {
-      for (const section of (snapshot[icon] || {}).sections || []) {
-        for (const item of section.items || []) rows.push(columnRowOf(item, icon));
-      }
-    }
     snapshot.column = {
-      rows, notices: [], empty_hint: (snapshot.hwpx || {}).empty_hint || "",
-      count_label: `${rows.length}개`, result: snapshot.result,
+      rows, notices: [], empty_hint: rows.length ? "" : "비었습니다",
+      count_label: `${rows.length}개`, result,
     };
   }
   return snapshot;
@@ -88,38 +80,25 @@ function tplSnap(extra) {
 
 /** `pool` 채널 스냅샷 — 고르기 단계 **우 열**이 구독하는 정본.
  *
- *  좌 열과 같은 이유로 존을 **유도한다**(`tplSnap` 주석 참조): 옛 목록 키(`rows`)는 아직
- *  관리 동사의 프리필 재료라 살아 있고, 우 열이 그리는 것은 공용 열 존(`column`)이다. 두
- *  존을 픽스처가 따로 쓰면 실제로는 있을 수 없는 상태(목록에 있는 행이 열에는 없는)를
- *  시험하게 된다. 손으로 준 `column` 은 그대로 존중한다. */
+ *  좌 열과 같다: 우 열이 그리는 것은 공용 열 존(`column`) 하나이고 `rows` 는 그 존의 행
+ *  목록(열 계약)이다. 옛 목록 키(`rows`·`count`·`duplicates`…)는 소비자 0 으로 퇴역했다
+ *  (슬라이스 ⑤). 손으로 준 `column` 은 그대로 존중한다. */
 function poolSnap(rows, extra) {
   const list = rows || [];
+  const opts = Object.assign({}, extra || {});
+  const notices = opts.notices || [];
+  const result = opts.result || { text: "", level: "muted" };
+  delete opts.notices;
+  delete opts.result;
   const snapshot = Object.assign({
-    rows: list, count: `${list.length}건`, empty: !list.length,
-    corrupted: [], duplicates: [],
-    pclm: { default_db: "C:/d/pclm.db", views: [], titles: {} },
-    result: { text: "", level: "muted" },
-  }, extra || {});
+    pclm: { default_db: "C:/d/pclm.db", views: [] },
+    detail: null,
+  }, opts);
   if (snapshot.column === undefined) {
     snapshot.column = {
-      rows: (snapshot.rows || []).map((row) => ({
-        key: row.key, name: row.name, sub: row.reference || "",
-        reason: row.select_block_reason || "", warns: [],
-        badge_label: row.badge_label || "", badge_level: row.badge_level || "muted",
-        icon: row.kind === "pclm" ? "pclm" : "excel",
-        selectable: !!row.selectable, path: row.locate_path || "",
-        actions: row.actions || [],
-      })),
-      notices: (snapshot.duplicates || []).map((group) => ({
-        level: "warn",
-        text: `같은 데이터(${group.reference})를 가리키는 등록이 ${group.entries.length}건입니다.`,
-        actions: group.entries.map((entry) => ({
-          key: "resolve_duplicate", label: `'${entry.name}' 남기기`,
-          payload: { keep: entry.key },
-        })),
-      })),
-      empty_hint: "고정한 데이터가 없습니다.",
-      count_label: snapshot.count, result: snapshot.result,
+      rows: list, notices,
+      empty_hint: list.length ? "" : "고정한 데이터가 없습니다.",
+      count_label: `${list.length}개`, result,
     };
   }
   return snapshot;
@@ -303,18 +282,7 @@ test("초안 → 취소 → 새 초안: 두 번째 새 작업도 재스캔한다
 test("같은 템플릿 재선택은 아무 일도 하지 않는다(리뷰 1)", async () => {
   const h = harness({
     initial: async () => snap({ template_path: "C:/lib/a.hwpx" }),
-    tpl: tplSnap({
-      hwpx: {
-        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
-        sections: [{
-          group: "", collapsed: false, count: 1,
-          items: [{
-            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
-            actions: [], selectable: true, select_block_reason: "",
-          }],
-        }],
-      },
-    }),
+    tpl: tplSnap({ rows: [tplRow()] }),
   });
   await h.controller.init();
 
@@ -326,18 +294,7 @@ test("같은 템플릿 재선택은 아무 일도 하지 않는다(리뷰 1)", a
 test("템플릿 **교체**는 데이터 교체와 같은 확인 왕복을 지난다(리뷰 2)", async () => {
   const h = harness({
     initial: async () => snap({ template_path: "C:/lib/a.hwpx" }),
-    tpl: tplSnap({
-      hwpx: {
-        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
-        sections: [{
-          group: "", collapsed: false, count: 1,
-          items: [{
-            key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx", detail: "필드 3개",
-            actions: [], selectable: true, select_block_reason: "",
-          }],
-        }],
-      },
-    }),
+    tpl: tplSnap({ rows: [tplRow({ key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx" })] }),
     call: async (_screen, action) => (
       action === "mapping_reset_stakes" ? { human: 2 } : {}),
     confirm: () => false,
@@ -1425,19 +1382,7 @@ test("U6-E 「자세히…」는 어떤 행에서도 선다(동사 0 인 행이 
 test("U6-E 동사 0 인 행의 ⋮ 도 활성이다(비활성 + 사유는 근거와 함께 걷혔다)", async () => {
   const h = harness({
     initial: async () => slotSnap({ template_path: "C:/lib/a.hwpx" }),
-    tpl: tplSnap({
-      hwpx: {
-        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
-        sections: [{
-          group: "", collapsed: false, count: 1,
-          items: [{
-            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
-            badge_label: "누름틀", badge_level: "ok",
-            actions: [], selectable: true, select_block_reason: "",
-          }],
-        }],
-      },
-    }),
+    tpl: tplSnap({ rows: [tplRow()] }),
   });
   await h.controller.init();
 
@@ -1450,20 +1395,10 @@ test("U6-E 동사 0 인 행의 ⋮ 도 활성이다(비활성 + 사유는 근거
 
 test("좌 열의 고른 행은 `pairing.template_key` 가 정한다(경로 대조를 표면이 다시 하지 않는다)", async () => {
   const twoRows = tplSnap({
-    hwpx: {
-      flat: true, count: 2, dir: "C:/lib", empty_hint: "",
-      sections: [{
-        group: "", collapsed: false, count: 2,
-        items: [
-          { key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
-            badge_label: "누름틀", badge_level: "ok",
-            actions: [], selectable: true, select_block_reason: "" },
-          { key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx", detail: "필드 1개",
-            badge_label: "누름틀", badge_level: "ok",
-            actions: [], selectable: true, select_block_reason: "" },
-        ],
-      }],
-    },
+    rows: [
+      tplRow(),
+      tplRow({ key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx", sub: "필드 1개" }),
+    ],
   });
   const h = harness({
     initial: async () => slotSnap({
@@ -1501,18 +1436,7 @@ test("U6-E 「자세히…」는 검토 왕복 뒤에 시트를 연다(순서가
 test("U6-E 행 ⋮ 의 모르는 키는 조용히 떨어지지 않는다(닫힌 집합)", async () => {
   const h = harness({
     initial: async () => slotSnap(),
-    tpl: tplSnap({
-      hwpx: {
-        flat: true, count: 1, dir: "C:/lib", empty_hint: "",
-        sections: [{
-          group: "", collapsed: false, count: 1,
-          items: [{
-            key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
-            actions: [], selectable: true, select_block_reason: "",
-          }],
-        }],
-      },
-    }),
+    tpl: tplSnap({ rows: [tplRow()] }),
   });
   await h.controller.init();
   h.controller.toggleLibMenu("tpl", "hwpx", "a.hwpx", { });
@@ -1700,22 +1624,19 @@ test("U6-E 결과 줄은 관리 동사가 나가는 좌 열 바닥에 선다", a
 
 /* ------- ⑦b 우 데이터 열 — 좌 열과 **같은 컴포넌트**(고르기 열 공용 ③a) ------- */
 
-/** 우 열 픽스처 한 벌 — 활성 1 · 끊김 1(고를 수 없는 행). */
+/** 우 열 픽스처 한 벌 — 활성 1 · 끊김 1(고를 수 없는 행). 키 집합은 좌 열과 같다. */
 const DAT_ROWS = [
   {
-    key: "d1", name: "7월목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
-    badge_label: "활성", badge_level: "ok", reference: "파일: 7월목록.xlsx · 시트 물품",
-    locate_path: "C:/d/7월목록.xlsx", sheet: "물품", note: "", missing: false,
+    key: "d1", name: "7월목록", sub: "파일: 7월목록.xlsx · 시트 물품", reason: "", warns: [],
+    badge_label: "활성", badge_level: "ok", icon: "excel", selectable: true,
+    path: "C:/d/7월목록.xlsx",
     actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
-    selectable: true, select_block_reason: "",
   },
   {
-    key: "d2", name: "지난목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
-    badge_label: "참조 끊김", badge_level: "danger", reference: "파일: 지난목록.xlsx",
-    locate_path: "C:/d/지난목록.xlsx", sheet: "", note: "", missing: true,
-    actions: [{ key: "relink", label: "다시 연결…" }],
-    selectable: false,
-    select_block_reason: "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다.",
+    key: "d2", name: "지난목록", sub: "파일: 지난목록.xlsx", warns: [],
+    reason: "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다.",
+    badge_label: "참조 끊김", badge_level: "danger", icon: "excel", selectable: false,
+    path: "C:/d/지난목록.xlsx", actions: [{ key: "relink", label: "다시 연결…" }],
   },
 ];
 
@@ -1936,10 +1857,17 @@ test("우 열 존 통지의 동사는 `pool/resolve_duplicate` 로 나가고 미
   const h = harness({
     initial: async () => snap({ pairing: pairing() }),
     tpl: tplSnap(),
+    /* 통지·동사·문안은 전부 Python 이 짓는다(`_column_notices`) — 픽스처는 그 값을
+       그대로 옮기고, 여기서 재는 것은 「존 통지가 우 열에 서고 동사가 발신되는가」다. */
     pool: poolSnap(DAT_ROWS, {
-      duplicates: [{
-        reference: "파일: 7월목록.xlsx · 시트 물품",
-        entries: [{ key: "d1", name: "7월목록" }, { key: "d3", name: "7월분" }],
+      notices: [{
+        level: "warn",
+        text: "같은 데이터(파일: 7월목록.xlsx · 시트 물품)를 가리키는 등록이 2건입니다."
+          + " 남길 등록을 골라 정리하세요.",
+        actions: [
+          { key: "resolve_duplicate", label: "'7월목록' 남기기", payload: { keep: "d1" } },
+          { key: "resolve_duplicate", label: "'7월분' 남기기", payload: { keep: "d3" } },
+        ],
       }],
     }),
     call: async () => ({}),

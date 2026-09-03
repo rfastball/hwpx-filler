@@ -218,7 +218,7 @@ def test_field_mutation_notifies_even_when_the_structure_step_raises(tmp_path):
     assert seen == [("mutated", str(raw))]  # 변이가 있었으니 통지가 선다
     assert _field_names(editor) == ["계약명"]  # 세션이 새 스키마로 다시 섰다
     assert editor.snapshot()["notice"]["level"] == "warn"
-    result = tpl.snapshot()["result"]
+    result = tpl.snapshot()["column"]["result"]
     assert result["level"] == "danger"
     assert "구간 커널이 멈췄습니다" in result["text"]
 
@@ -246,7 +246,7 @@ def test_zero_mutation_refusal_notifies_nothing(tmp_path):
     assert after["notice"] == before_snapshot["notice"]
     assert after["rows"] == before_snapshot["rows"]
     assert _field_names(editor) == []
-    result = tpl.snapshot()["result"]
+    result = tpl.snapshot()["column"]["result"]
     assert result["level"] == "warn" and "구간 변환은 하지 못했습니다" in result["text"]
 
 

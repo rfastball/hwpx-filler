@@ -306,8 +306,8 @@ export function createDataPickerController(args: {
     modal,
     onError: refuseVerb,
     onUse: (row: Obj) => mountPinned(row.key, row.name),
-    /* 프리필 재료는 **검토 왕복이 낸 상세 투영**이다(고르기 열 공용 ④) — 옛 `pool.rows`
-       곁눈질이 사라진 자리다. 키 이름도 그 투영 그대로(`path`·`sheet`·`note`)다. */
+    /* 프리필 재료는 **검토 왕복이 낸 상세 투영**이다(고르기 열 공용 ④) — 키 이름도
+       그 투영 그대로(`path`·`sheet`·`note`)다. */
     openRelink: (row: Obj) => openRegDialog({
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
@@ -377,8 +377,7 @@ export function createDataPickerController(args: {
   /** 행 동사 — **닫힌 집합**이다(모르는 키는 시끄럽게 거절한다).
    *
    *  프리필 재료를 **검토 왕복이 낸다**(고르기 열 공용 ④): 「다시 연결」은 `path`·`sheet`·
-   *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다. 종전에는 옛 `pool.rows` 를
-   *  곁눈질했고, 그것이 같은 목록을 두 존으로 들던 마지막 자리였다. */
+   *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다. */
   async function runRowVerb(
     action: string, row: Obj, trigger: HTMLElement | null,
   ): Promise<void> {

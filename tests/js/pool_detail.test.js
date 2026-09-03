@@ -130,14 +130,19 @@ test("PoolDetailSheet — 읽기 실패는 숨기지 않고 사유 상자로 선
 });
 
 test("PoolDetailSheet — 상세가 없으면 빈 면 안내가 선다", () => {
-  const markup = renderSheet({ detail: null, result: {} });
+  const markup = renderSheet({ detail: null, column: { result: {} } });
   assert.ok(markup.includes('id="poolDetailEmpty"'), markup);
   assert.ok(markup.includes("자세히…"), "빈 면 안내가 여는 길을 말하지 않습니다");
 });
 
+/* 성과 줄은 **고르기 열 존 안**에서 온다(`pool.column.result`) — 목록과 결과 줄이 한 존이라
+   시트가 최상위를 곁눈질하면 열이 말하는 것과 시트가 말하는 것이 갈릴 자리가 생긴다. */
 test("PoolDetailSheet — 성과·실패 두 줄은 각자 채널로 선다", () => {
   const markup = renderSheet(
-    { detail: detailFixture(), result: { text: "데이터셋을 보관했습니다", level: "ok" } },
+    {
+      detail: detailFixture(),
+      column: { result: { text: "데이터셋을 보관했습니다", level: "ok" } },
+    },
     { detailMessage: "VERB_REFUSAL" });
   assert.ok(markup.includes('id="poolDetailResult"') && markup.includes("데이터셋을 보관했습니다"));
   assert.ok(markup.includes('id="poolDetailMsg"') && markup.includes("VERB_REFUSAL"));

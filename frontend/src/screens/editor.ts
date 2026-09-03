@@ -626,9 +626,8 @@ export function createEditorController(deps: EditorControllerDeps) {
    *
    *  프리필 재료를 **검토 왕복이 낸다**(고르기 열 공용 ④): 「다시 연결」은 `path`·`sheet`·
    *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다(계약이 좁다 — 그 키를 얹으면 좌
-   *  열이 모르는 축이 열 형에 생긴다). 종전에는 옛 `pool.rows` 를 곁눈질해 채웠고, 그것이
-   *  같은 목록을 두 존으로 들던 마지막 자리였다. 이제 그 재료는 `pool/review` 가 세우는
-   *  상세 투영 하나이고, 웹에는 `pool.rows` 소비자가 없다. */
+   *  열이 모르는 축이 열 형에 생긴다). 그 재료는 `pool/review` 가 세우는 상세 투영
+   *  하나다. */
   async function runDataVerb(
     action: string, row: Obj, trigger: HTMLElement,
   ): Promise<void> {
@@ -1298,8 +1297,8 @@ export function createEditorController(deps: EditorControllerDeps) {
    *  같은 자리다. */
   async function chooseData(key: string, refusals?: string[]): Promise<boolean> {
     if (key === SESSION_DATA_KEY) return false;
-    /* 재료는 **그리고 있는 그 열**이다(고르기 열 공용 ④): 종전에는 옛 `pool.rows` 를 봤고,
-       그러면 화면에 선 사유와 거절이 재진술하는 사유가 서로 다른 존에서 온다. */
+    /* 재료는 **그리고 있는 그 열**이다(고르기 열 공용 ④) — 다른 존을 곁눈질하면 화면에
+       선 사유와 거절이 재진술하는 사유가 서로 다른 출처에서 온다. */
     const row = findDataItem(key);
     const refuse = (text: string): boolean => {
       if (refusals) refusals.push(text); else noticeSave(text);
@@ -1346,7 +1345,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     onError: noticeSave,
     onUse: (row: Obj) => usePoolData(String(row.key)),
     /* 프리필 재료는 **검토 왕복이 낸 상세 투영**이다(고르기 열 공용 ④) — 키 이름도
-       그 투영 그대로(`path`·`sheet`·`note`)이고, 옛 `pool.rows` 곁눈질은 사라졌다. */
+       그 투영 그대로(`path`·`sheet`·`note`)다. */
     openRelink: (row: Obj) => deps.poolRegistration.openRegDialog({
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
@@ -1922,12 +1921,12 @@ export function TplDetailSheet(props: { controller: EditorController }): ReactNo
     controller.tplModel.subscribe, controller.tplModel.getSnapshot,
     controller.tplModel.getSnapshot);
   /* 동사의 성과와 실패가 **이 면 안**에 선다(U6-E 리뷰 3): 시트는 스크림으로 화면을
-     덮으므로 좌 열 바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다. 값의 정본은 그대로
-     `tpl.result`(Python) 이고, 여기서 다시 짓는 문안은 없다. */
+     덮으므로 좌 열 바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다. 값의 정본은 고르기 열
+     존(`tpl.column.result`, Python)이고, 여기서 다시 짓는 문안은 없다. */
   const view = useSyncExternalStore(
     controller.viewModel.subscribe, controller.viewModel.getSnapshot,
     controller.viewModel.getSnapshot);
-  const result = (((tpl || {}) as Obj).result || {}) as Obj;
+  const result = ((((tpl || {}) as Obj).column || {}) as Obj).result || {};
   const detail = (((tpl || {}) as Obj).detail || null) as Obj | null;
   const shared = {
     idPrefix: "tplDetail",

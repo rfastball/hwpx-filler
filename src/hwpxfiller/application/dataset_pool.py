@@ -633,7 +633,14 @@ class DatasetPoolViewModel:
         return not self._rows
 
     def count_label(self) -> str:
-        return f"{len(self._rows)}건" if self._rows else ""
+        """고르기 열 머리의 개수 — 분류사는 **항목의 것**이다(``개``).
+
+        소비자가 하나(고르기 열)로 좁혀지며 좌 열과 같은 분류사로 통일했다: 두 열이 한
+        컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면, 같은 자리의 같은 사실이
+        표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터 행)의 분류사이고
+        여기서 세는 것은 등록 항목이다.
+        """
+        return f"{len(self._rows)}개" if self._rows else ""
 
     def empty_hint(self) -> str:
         """빈 목록의 안내(비어 있지 않으면 ``""``) — 템플릿 쪽 ``empty_hint`` 의 거울.

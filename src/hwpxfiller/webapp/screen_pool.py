@@ -3,8 +3,8 @@
 웹 패리티 회수(#26 단위 A, #4). Application VM 을 **그대로 임포트**해 구동한다: 풀 항목
 목록·상태 배지·상태별 게이트 액션(보관/활성화/삭제)·참조 등록은
 :class:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel`(Qt-free)가 소유한다.
-표현 계층(카드 렌더·확인 라운드트립)만 웹(js/data_picker.js)으로 이식한다 — VM 로직
-재구현이 아니다.
+표현 계층(열 렌더·확인 라운드트립)만 웹(`frontend/src/screens/data_picker.ts`)으로 이식한다
+— VM 로직 재구현이 아니다.
 
 **정체성 = 경로+시트, 이름 = 라벨**(U2 §5.3 판정 C, #347): 항목 조작은 슬롯 ``key`` 로,
 중복 판정은 정체성으로 한다. 종전의 「동명 재등록 = 참조 재지정」 확인 게이트는 **정체성
@@ -15,8 +15,9 @@
 - **같은 데이터 재등록은 라벨 갱신 확정**: 기존 이름을 재진술하고 확인 후 갱신한다.
   아무것도 안 바뀌는 재등록(같은 이름·빈 메모)은 「이미 고정돼 있습니다」로 조용히 성사.
 - **구판 마이그레이션의 병합**: 다른 이름·같은 경로 2건(이름=키 시절의 잔재)은 조용히
-  하나 버리지 않고 스냅샷 ``duplicates`` 로 표면화, 남길 1건을 사용자가 확정한 뒤에만
-  나머지를 삭제한다(``resolve_duplicate`` — 무손실이 아니므로 자동 병합 금지).
+  하나 버리지 않고 고르기 열 존 통지(``column.notices`` 의 warn)로 표면화, 남길 1건을
+  사용자가 확정한 뒤에만 나머지를 삭제한다(``resolve_duplicate`` — 무손실이 아니므로 자동
+  병합 금지). 그 통지가 남길 1건을 고르는 동사를 **같은 자리**에 함께 세운다.
 
 **확정 결속(코덱스 2R·3R 근본 조치, P2-22 #570 하강)**: 이 컨트롤러의 **파괴·덮어쓰기
 확정 왕복 넷**(``delete`` · ``register_excel`` 의 라벨 갱신 · ``relink`` ·
@@ -41,7 +42,7 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 **계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
 소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **스냅샷**(등록 폼이 물어야
-할 기본 DB 자리와 뷰 전수)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
+할 기본 DB 자리와 고르게 할 뷰)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
 둘은 폼(``#dataPickerPclm`` → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
 (``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
@@ -57,7 +58,6 @@ from ..application.dataset_pool import (
     DatasetPoolViewModel,
     DatasetSourcePort,
     StaleConfirmError,
-    available_actions,
     bound_state,
     confirm_basis,
     kind_transition_clause,
@@ -70,7 +70,6 @@ from ..domain.pclm_views import (
     PCLM_DOC_VIEWS,
     PCLM_VIEW_DESCS,
     PCLM_VIEW_TITLES,
-    PCLM_VIEWS,
     default_pclm_db,
 )
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
@@ -93,8 +92,11 @@ def display_reference(item: DatasetReference) -> str:
 class PoolController:
     """등록 데이터 수명 — 데이터셋 풀 VM 위임(webview 비의존).
 
-    **소비 표면은 데이터 선택 다이얼로그**(`frontend/js/data_picker.js`)다 — 「데이터 관리」
-    화면은 F1 에서 죽었고 이 컨트롤러만 살아남아 그 다이얼로그가 스냅샷·액션을 소비한다.
+    **소비 표면은 둘이고 같은 존을 그린다**: 편집기 1단계 고르기의 우 열
+    (`frontend/src/screens/editor.ts`)과 데이터 선택 다이얼로그
+    (`frontend/src/screens/data_picker.ts`) — 둘 다 공용 열 컴포넌트
+    (`frontend/src/screens/pool_column.ts`)의 인스턴스라 스냅샷도 `column` 하나다.
+    「데이터 관리」 화면은 F1 에서 죽었고 이 컨트롤러만 살아남았다.
     """
 
     name = "pool"
@@ -124,39 +126,6 @@ class PoolController:
     def _set_result(self, text: str, level: str = "ok") -> None:
         self.result_text = text
         self.result_level = level
-
-    # ------------------------------------------------------------- 스냅샷
-    def _rows(self) -> "list[dict]":
-        return [self._row(r) for r in self.vm.rows()]
-
-    def _row(self, r) -> dict:
-        reason = r.select_block_reason()
-        return {
-            "key": r.key,  # 슬롯 키(§5.3) — 행동(사용·보관·활성화·삭제·다시 연결)의 겨눔 대상
-            "name": r.name,
-            "kind": r.kind,
-            "kind_label": r.kind_label,
-            "status": r.status,
-            "badge_label": r.badge_label,
-            "badge_level": r.badge_level,
-            "reference": r.reference,
-            "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
-            "sheet": r.sheet,  # 다시 연결 프리필(#67)
-            # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
-            # 판정은 공유 술어(U3-07 #880) — 부팅 자동 마운트가 같은 것을 본다.
-            "missing": r.missing,
-            "note": r.note,
-            # **과도기 목록**이다: 웹의 두 목록은 이제 아래 `column` 존만 그리고(③b — 옛 행을
-            # 그리는 자리는 하나도 없다), 옛 행이 남아 있는 이유는 「다시 연결」 폼의 프리필
-            # 재료(`locate_path`·`sheet`·`note`)뿐이다. 좁은 열 계약에 그 축을 얹지 않으려는
-            # 것이고, 슬라이스 ⑤ 가 그 자리를 정리하며 이 키를 함께 걷는다.
-            "actions": [
-                {"key": a.key, "label": a.label} for a in available_actions(r.status)
-            ],
-            # 「이 데이터를 작업에 쓸 수 있는가」 + 사유 — 판정 자리는 하나다(U6-B #976).
-            "selectable": not reason,
-            "select_block_reason": reason,
-        }
 
     # ------------------------------------------------- 고르기 열 공용 존(슬라이스 ①)
     def _column_rows(self) -> "list[dict]":
@@ -219,38 +188,19 @@ class PoolController:
             })
         return notices
 
-    def _corrupted_rows(self) -> "list[dict]":
-        """격리된 손상 파일을 웹이 시끄럽게 표면화할 행으로(RC-05 — 조용한 은닉 금지)."""
-        return [
-            {"file": entry.file_name, "error": entry.error}
-            for entry in self.vm.corrupted()
-        ]
-
-    def _duplicate_groups(self) -> "list[dict]":
-        """같은 데이터(경로+시트) 등록 2+건 — 구판(이름=키) 마이그레이션의 병합 대상(§5.3).
-
-        조용히 하나 버리지 않는다: 그룹째 표면화하고 남길 1건의 확정(``resolve_duplicate``)
-        을 기다린다. 각 항목은 여전히 목록 행으로도 산다(숨김 금지 — 병합 전에도 쓸 수 있다).
-        """
-        return [
-            {
-                "reference": group[0].reference,
-                "entries": [{"key": r.key, "name": r.name} for r in group],
-            }
-            for group in self.vm.duplicates()
-        ]
-
     def _pclm_block(self) -> dict:
-        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고르게 할 뷰**, 그리고 제목표.
+        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고르게 할 뷰**.
 
         웹이 뷰 목록을 리터럴로 들지 않는다: 허용목록도 그 문안도 링0 단일 출처
         (:mod:`hwpxfiller.domain.pclm_views`)이고, 여기 스냅샷은 그 값을 옮기기만 한다 —
         표면이 목록을 복제하면 뷰가 늘거나 문안이 갈릴 때 한쪽만 늙는다.
 
-        두 목록이 **다른 일**을 한다: ``views`` 는 새로 고를 수 있는 것
-        (:data:`~hwpxfiller.domain.pclm_views.PCLM_DOC_VIEWS`)이고, ``titles`` 는 이미 선
-        마운트를 이름 대신 제목으로 그리기 위한 **뷰 전수** 매핑이다. 후자를 좁히면 CLI 로
-        등록한 품목 마운트가 카드에서 내부 이름(``v_품목_v1``)으로 새 나간다.
+        ``views`` 는 **새로 고를 수 있는 것**이다
+        (:data:`~hwpxfiller.domain.pclm_views.PCLM_DOC_VIEWS`). 종전에 함께 실리던 뷰 전수
+        제목표(``titles``)는 웹 소비자가 0 이라 슬라이스 ⑤ 에서 걷혔다 — 이미 선 마운트의
+        제목화는 Python 이 세션 행 부제를 지을 때 링0
+        :func:`~hwpxfiller.domain.pclm_views.sheet_title` 하나로 끝난다(웹은 그 문장을 옮기기만
+        한다). 표를 웹에 다시 내리면 같은 제목화가 두 층에서 갈린다.
         """
         return {
             "default_db": str(default_pclm_db()),
@@ -258,23 +208,17 @@ class PoolController:
                 {"name": v, "title": PCLM_VIEW_TITLES[v], "desc": PCLM_VIEW_DESCS[v]}
                 for v in PCLM_DOC_VIEWS
             ],
-            "titles": {v: PCLM_VIEW_TITLES[v] for v in PCLM_VIEWS},
         }
 
     def snapshot(self) -> dict:
         return {
-            "rows": self._rows(),
-            "count": self.vm.count_label(),
-            "empty": self.vm.is_empty(),
-            "corrupted": self._corrupted_rows(),
-            "duplicates": self._duplicate_groups(),
             "pclm": self._pclm_block(),
-            "result": {"text": self.result_text, "level": self.result_level},
             # 항목 상세 시트의 재료 한 벌(고르기 열 공용 ④) — `review` 가 세우고 상태 동사가
             # 다시 세운다. 좌 열(`tpl.detail`)과 **같은 자리·같은 수명**이다.
             "detail": self.detail_snapshot(),
-            # 고르기 우 열(슬라이스 ①) — 좌 열(`tpl` 채널)과 **같은 형**이다. 위의 옛 키들은
-            # 웹이 이 존으로 옮겨 갈 때(슬라이스 ③)까지 그대로 산다.
+            # 고르기 우 열 — 좌 열(`tpl` 채널)과 **같은 형**이다. 옛 목록 키
+            # (`rows`·`count`·`empty`·`corrupted`·`duplicates`·최상위 `result`)는 웹 소비자가
+            # 0 이 되어 슬라이스 ⑤ 에서 걷혔다: 목록·통지·개수·결과 줄이 전부 이 존 안이다.
             "column": pool_column_view(
                 rows=self._column_rows(),
                 notices=self._column_notices(),

@@ -332,18 +332,19 @@ FILLED 행의 동사가 0 이 됐는데, 구간 항목 동사(개명·표기로 
   힌트와 「데이터: 등록 데이터: gg」 증거는 발신 쪽에서 걷혔다. selftest 가 복귀 버튼 부재와
   `#editorBack` 존재를 함께 잰다.
 
-- **고르기 열 통합(2026-09-04 · ①~④)**. 원인은 두 열이 다른 뿌리에서 왔다는 것이다 — 좌
+- **고르기 열 통합(2026-09-04 · 완주)**. 원인은 두 열이 다른 뿌리에서 왔다는 것이다 — 좌
   템플릿 열은 편집기 전용으로 새로 세웠고, 우 데이터 열은 「데이터 선택」 다이얼로그의 세
   구획을 이식했다. 그래서 같은 「고를 수 있는가」가 카드와 행 두 문법을 갖고 ⋯·새로 읽기가
-  한쪽에만 있었다. 판정: **열은 하나, 내용은 둘**이다 — 상태기는 셋(고를 수 있음/고름/못 고름),
+  한쪽에만 있었다. 판정: **열은 하나, 내용은 둘**이다 — 상태는 셋(고를 수 있음/고름/못 고름),
   판정과 문안은 링1, 행·존의 키 집합은 `webapp/pool_column.py` 하나, 그림은
-  `frontend/src/screens/pool_column.ts` 하나. 「현재 데이터」 카드는 **Python 이 낸 행**으로
-  접혔고(`session_data_row` — 편집기 `pairing.data_row` · 작업 `data_row` 가 같은 함수를
-  부른다) 다이얼로그도 그 열로 합류해 `pool_list.ts` 가 퇴역했다(관리 동사는 `pool_verbs.ts`).
-  ④ 는 그 대칭을 항목 하나까지 밀었다: 데이터 행 ⋯ 도 「자세히…」로 끝나고
-  (`#poolDetailModal` · `pool/review` · 링1 `DatasetDetail`), 두 시트의 골격은
-  `detail_sheet.ts` 하나이며, 「다시 연결」 프리필이 상세를 읽게 되면서 옛 `pool.rows` 의
-  **웹 소비자가 0** 이 됐다. 남은 것: ⑤ 그 스냅샷 키 퇴역과 그 문서화.
+  `frontend/src/screens/pool_column.ts` 하나. 착지: 「현재 데이터」 카드는 **Python 이 낸 행**
+  으로 접혔고(`session_data_row`), 다이얼로그도 그 열로 합류해 `pool_list.ts` 가 퇴역했으며
+  (관리 동사는 `pool_verbs.ts`), 데이터 행 ⋯ 도 「자세히…」로 끝난다(`#poolDetailModal` ·
+  `pool/review` · 링1 `DatasetDetail` · 두 시트 공용 골격 `detail_sheet.ts`). 마지막으로 소비자
+  0 이 된 옛 payload 사슬을 걷었다 — `tpl` 의 매체 밴드(`hwpx`/`txt`)와 그룹 투영, `pool` 의
+  `rows`·`count`·`empty`·`corrupted`·`duplicates`, 두 채널의 최상위 `result`, `pclm.titles`.
+  개수 라벨의 분류사도 두 열이 `n개` 로 통일됐다(`건` 은 레코드의 분류사다). 승계 대조표는
+  `docs/UI_CONTRACT.md` 「퇴역 목록」이 진다. 남은 것: 없다.
 
 ## 6. 아직 서지 않은 것
 

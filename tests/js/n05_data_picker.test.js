@@ -42,8 +42,9 @@ function sessionRead(value) {
 
 /** 스냅샷이 내려주는 계약 목록 블록(실 백엔드 `_pclm_block` 과 같은 모양).
  *
- * `views` 는 **새로 고르게 할** 것이고(품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지 제외),
- * `titles` 는 이미 선 마운트를 제목으로 그리기 위한 **뷰 전수** 매핑이라 넷이다. */
+ * `views` 는 **새로 고르게 할** 것이다(품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지 제외).
+ * 뷰 전수 제목표(`titles`)는 웹 소비자 0 으로 퇴역했다 — 이미 선 마운트의 제목화는 Python 이
+ * 세션 행 부제를 지을 때 끝난다(`pool_column.session_data_row`). */
 const PCLM_BLOCK = {
   default_db: "C:/AppData/Local/Pclm/pclm.db",
   views: [
@@ -51,13 +52,10 @@ const PCLM_BLOCK = {
     { name: "v_공고_v1", title: "공고", desc: "공고 정보" },
     { name: "v_계약_v1", title: "계약", desc: "계약 정보" },
   ],
-  titles: {
-    "v_통합_v1": "통합", "v_공고_v1": "공고", "v_계약_v1": "계약", "v_품목_v1": "품목",
-  },
 };
 
 function build(options = {}) {
-  let pool = options.pool ?? { rows: [], duplicates: [], corrupted: [] };
+  let pool = options.pool ?? { pclm: null };
   const poolListeners = new Set();
   const dispatchCalls = [];
   const invokeCalls = [];
@@ -425,7 +423,7 @@ test("중복 정리 — 남길 key와 basis를 보존한 2단 왕복이다", asy
 /* ── 계약 목록(pclm) 등록 — 엑셀과 좌표만 다른 거울(#937) ──────────────────────────── */
 
 test("계약 목록 진입 — pclm 모드로 열고 기본 DB 자리를 프리필하며 시트는 비운다", async () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const h = build({ pool: { pclm: PCLM_BLOCK } });
   const { result } = await opened(h);
   h.controller.openPclm();
   const reg = h.controller.regModel.getSnapshot();
@@ -437,7 +435,7 @@ test("계약 목록 진입 — pclm 모드로 열고 기본 DB 자리를 프리�
 });
 
 test("계약 목록 진입 — 스냅샷에 블록이 없으면 열지 않고 사유를 말한다", async () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [] } });
+  const h = build({ pool: { pclm: null } });
   const { result } = await opened(h);
   h.controller.openPclm();
   assert.equal(h.controller.regModel.getSnapshot(), null);
@@ -446,7 +444,7 @@ test("계약 목록 진입 — 스냅샷에 블록이 없으면 열지 않고 �
 });
 
 test("계약 목록 등록 — register_pclm payload는 name·db·view·note다", async () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const h = build({ pool: { pclm: PCLM_BLOCK } });
   h.controller.openRegDialog({ mode: "pclm", name: " 계약 ", db: " C:/d/pclm.db ", note: " 메모 " });
   h.controller.patchReg({ view: "v_공고_v1" });
   await h.controller.submitReg();
@@ -485,7 +483,7 @@ test("계약 목록 등록 — 라벨 갱신 확정도 같은 basis 왕복을 �
 });
 
 test("계약 목록 폼 렌더 — db 프리필·시트 select(placeholder 포함)가 서고 경로·시트칸은 없다", () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const h = build({ pool: { pclm: PCLM_BLOCK } });
   h.controller.openRegDialog({ mode: "pclm", db: PCLM_BLOCK.default_db });
   const markup = renderToStaticMarkup(
     createElement(PoolRegistrationDialog, { controller: h.controller }));
@@ -510,7 +508,7 @@ test("계약 목록 폼 렌더 — db 프리필·시트 select(placeholder 포�
 });
 
 test("엑셀 폼 렌더 — 기존 좌표만 서고 pclm 필드는 나오지 않는다", () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const h = build({ pool: { pclm: PCLM_BLOCK } });
   h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
   const markup = renderToStaticMarkup(
     createElement(PoolRegistrationDialog, { controller: h.controller }));
@@ -521,7 +519,7 @@ test("엑셀 폼 렌더 — 기존 좌표만 서고 pclm 필드는 나오지 않
 });
 
 test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활성이고 사유를 병기한다", async () => {
-  const withBlock = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const withBlock = build({ pool: { pclm: PCLM_BLOCK } });
   const a = await opened(withBlock);
   const on = renderToStaticMarkup(
     createElement(DataPickerDialog, { controller: withBlock.controller }));
@@ -536,7 +534,7 @@ test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활
   assert.equal(on.includes("DB 자리와 뷰로 가리킵니다"), false);
   withBlock.controller.close(); await a.result;
 
-  const without = build({ pool: { rows: [], duplicates: [], corrupted: [] } });
+  const without = build({ pool: { pclm: null } });
   const b = await opened(without);
   const off = renderToStaticMarkup(
     createElement(DataPickerDialog, { controller: without.controller }));
@@ -551,9 +549,9 @@ test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활
    (`webapp/pool_column.session_data_row` · 계약은 `tests/test_webapp_job.py`). 여기서 재는
    것은 이 면이 그 문장을 **그대로 옮기는가** 하나다. */
 test("현재 데이터 행 — 부제는 Python 문안 그대로이고 웹이 제목표를 다시 조회하지 않는다", async () => {
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const h = build({ pool: { pclm: PCLM_BLOCK } });
   /* 양성·음성 한 쌍: 스냅샷이 이미 제목으로 옮긴 부제는 그대로 서고, 스냅샷이 원문
-     그대로 둔 이름(구판·손편집)도 **감추거나 다시 옮기지 않는다**. 웹이 `pclm.titles` 를
+     그대로 둔 이름(구판·손편집)도 **감추거나 다시 옮기지 않는다**. 웹이 제목표를
      다시 조회하고 있으면 아래 둘째 단언이 빨강이 된다(같은 상태 두 곳 판정). */
   const { result } = await opened(h, {
     session: sessionRead({
@@ -565,7 +563,7 @@ test("현재 데이터 행 — 부제는 Python 문안 그대로이고 웹이 �
   assert.equal(markup.includes("v_통합_v1"), false, "내부 이름은 행에 서지 않는다");
   h.controller.close(); await result;
 
-  const legacy = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const legacy = build({ pool: { pclm: PCLM_BLOCK } });
   const b = await opened(legacy, {
     session: sessionRead({ data_row: sessionRow({ sub: "시트: v_구판 · 3행", icon: "pclm" }) }),
   });
@@ -584,7 +582,7 @@ test("고름 표지는 작업 스냅샷이 정한다 — 풀 겨눔이면 그 �
     }],
     notices: [], empty_hint: "", count_label: "1개", result: { text: "", level: "muted" },
   };
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], column } });
+  const h = build({ pool: { pclm: PCLM_BLOCK, column } });
   const { result } = await opened(h, {
     session: sessionRead({ data_row: sessionRow({ name: "7월 공고목록" }), data_pool_key: "k1" }),
   });
@@ -611,8 +609,7 @@ function poolWithDetail(overrides) {
     error: "",
   }, overrides || {});
   return {
-    /* 옛 목록은 **비운다**: 이 면이 그쪽을 곁눈질하면 프리필·동사가 여기서 갈린다. */
-    rows: [], duplicates: [], corrupted: [], detail,
+    pclm: PCLM_BLOCK, detail,
     column: {
       rows: [{
         key: "k1", name: "7월 공고목록", sub: "파일: 7월.xlsx · 시트 물품", reason: "",

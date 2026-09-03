@@ -139,8 +139,8 @@ def test_confirmed_install_lands_templates_groups_data_and_manifest(tmp_path):
         assert _group_of(ctrl, "txt", name) == example_pack.EXAMPLE_GROUP
     assert snap["examples"]["installed"] is True
     assert snap["examples"]["label"] == "예제 다시 설치…"
-    assert snap["result"]["level"] == "ok"
-    assert "5건" in snap["result"]["text"] and "2건" in snap["result"]["text"]
+    assert snap["column"]["result"]["level"] == "ok"
+    assert "5건" in snap["column"]["result"]["text"] and "2건" in snap["column"]["result"]["text"]
 
     # 데이터는 홈의 예제 자리로 복사되고 풀에 **고정**된다(경로 참조 — 풀은 파일을 품지 않는다).
     data_dir = default_example_data_dir()
@@ -233,7 +233,7 @@ def test_a_users_own_file_with_the_same_name_is_not_clobbered(tmp_path):
 
     ctrl.dispatch("install_examples", {"confirm": True})
     assert mine.read_bytes() == b"my own template"
-    assert "같은 이름의 파일이 있어" in ctrl.snapshot()["result"]["text"]
+    assert "같은 이름의 파일이 있어" in ctrl.snapshot()["column"]["result"]["text"]
     installed = {Path(t["path"]).name for t in settings.load_tutorial_manifest()["templates"]}
     assert f"{Path(example_pack.HWPX_ASSETS[0]).stem} (2).hwpx" in installed
 
@@ -246,7 +246,7 @@ def test_missing_assets_refuse_loudly_before_touching_home(tmp_path, monkeypatch
     result = ctrl.dispatch("install_examples", {"confirm": True})
     assert result["ok"] is False
     assert "동봉 예제 자산을 찾지 못했습니다" in result["error"]
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert ctrl.snapshot()["column"]["result"]["level"] == "danger"
     assert _installed_names(lib, txt_dir) == set()
     assert settings.load_tutorial_manifest() is None
     assert not default_example_data_dir().exists()
@@ -333,13 +333,13 @@ def test_confirmed_removal_sweeps_every_manifest_entry_and_returns_the_empty_sta
     assert settings.load_tutorial_manifest() is None
 
     snap = ctrl.snapshot()
-    assert snap["hwpx"]["count"] == 0 and snap["txt"]["count"] == 0
+    assert snap["column"]["rows"] == []          # 두 매체 다 0건(목록은 한 벌이다)
     assert example_pack.EXAMPLE_GROUP not in ctrl.hwpx_groups.existing_groups()
     assert example_pack.EXAMPLE_GROUP not in ctrl.txt_groups.existing_groups()
     assert snap["examples"]["installed"] is False
     assert snap["examples"]["removable"] is False
-    assert snap["result"]["level"] == "ok"
-    assert "되돌리려면 다시 설치하세요" in snap["result"]["text"]
+    assert snap["column"]["result"]["level"] == "ok"
+    assert "되돌리려면 다시 설치하세요" in snap["column"]["result"]["text"]
 
 
 def test_removal_notifies_each_open_session_per_template(tmp_path):
@@ -407,7 +407,7 @@ def test_a_manifest_path_outside_its_root_is_refused_loudly(tmp_path):
     done = ctrl.dispatch("remove_examples", {"confirm": True})
     assert done["ok"] is False
     assert outside.read_bytes() == b"not mine to delete"
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert ctrl.snapshot()["column"]["result"]["level"] == "danger"
     assert settings.load_tutorial_manifest() is not None  # 지우지 못했으면 기재도 남는다
 
 
@@ -480,7 +480,7 @@ def test_a_malformed_manifest_field_refuses_before_touching_anything(tmp_path, m
     done = ctrl.dispatch("remove_examples", {"confirm": True})
     assert done["ok"] is False and reason in done["error"]
 
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert ctrl.snapshot()["column"]["result"]["level"] == "danger"
     assert _installed_names(lib, txt_dir) == {mine.name}
     assert not _trash_dir_exists(lib)
     assert settings.load_tutorial_manifest() is not None  # 지우지 못했으면 기재도 남는다
@@ -532,7 +532,7 @@ def test_entries_already_gone_are_restated_not_failed(tmp_path):
     assert pool.list_items() == []
     assert settings.load_tutorial_manifest() is None
 
-    text = ctrl.snapshot()["result"]["text"]
+    text = ctrl.snapshot()["column"]["result"]["text"]
     assert "이미 없던 항목" in text
     assert gone_template.name in text and gone_data.name in text
 
@@ -557,8 +557,8 @@ def test_a_filesystem_failure_mid_removal_is_restated_and_keeps_the_manifest(tmp
     assert result["ok"] is False
     assert "다른 프로그램이 파일을 사용 중입니다" in result["error"]
     snap = ctrl.snapshot()
-    assert snap["result"]["level"] == "danger"
-    assert "예제를 제거하지 못했습니다" in snap["result"]["text"]
+    assert snap["column"]["result"]["level"] == "danger"
+    assert "예제를 제거하지 못했습니다" in snap["column"]["result"]["text"]
     assert settings.load_tutorial_manifest() is not None
     assert snap["examples"]["removable"] is True  # 다시 시도할 어포던스가 살아 있다
     assert _installed_names(lib, txt_dir) == set(
@@ -580,7 +580,7 @@ def test_a_corrupted_pool_slot_is_left_alone_and_said_out_loud(tmp_path):
 
     ctrl.dispatch("remove_examples", {"confirm": True})
     assert pool.slot_path(broken).exists()  # 판독 못 한 것을 지웠다고 말하지 않는다
-    assert broken in ctrl.snapshot()["result"]["text"]
+    assert broken in ctrl.snapshot()["column"]["result"]["text"]
     assert len(pool.list_items(corrupted=[])) == 0  # 성한 예제 고정 1건은 풀렸다
 
 
@@ -597,7 +597,7 @@ def test_a_relinked_pin_is_left_alone_and_said_out_loud(tmp_path):
     ctrl.dispatch("remove_examples", {"confirm": True})
     assert pool.exists(key)                      # 남의 참조는 조용히 지우지 않는다
     assert pool.load(key).name == "내 데이터"
-    assert "다시 연결된 고정은 남겼습니다" in ctrl.snapshot()["result"]["text"]
+    assert "다시 연결된 고정은 남겼습니다" in ctrl.snapshot()["column"]["result"]["text"]
     assert len(pool.list_items()) == 1           # 예제 쪽 고정 1건만 풀렸다
 
 
@@ -673,7 +673,7 @@ def test_removing_when_nothing_is_installed_refuses_loudly(tmp_path):
     ctrl, _lib, _txt, _ = _controller(tmp_path)
     result = ctrl.dispatch("remove_examples", {})
     assert result == {"ok": False, "error": "설치된 예제가 없습니다."}
-    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert ctrl.snapshot()["column"]["result"]["level"] == "danger"
 
 
 def test_library_empty_state_reads_the_same_entry_point_source(tmp_path):

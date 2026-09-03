@@ -461,7 +461,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 
 상단 토바 탭은 `job` 「문서 만들기」와 `library` 「문서 작업」 두 개이고, 최상위 제품 화면은
 `library`, `job`, `editor`, `workbench` 네 개다. 「기안」(`draft`)은 F6 PR-B 에서
-사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
+사망했다(승계처 = 편집기 좌 열의 TXT 행 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
 `frontend/src/shell/app.ts`의 앱 셸이 내는 `Nav.go`가 전환을 요청한다(주입으로 전달되는
 구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다. R3-02 부터 판정은 셸 상태기계
@@ -487,7 +487,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
 | 셸 설정 모달(화면 아님 · 셸 전역) | `#settingsModal`, `src/screens/settings_sheet.ts` | — (host method `set_theme`·`set_font_scale` 직접 브리지) | `src/shell/preferences.ts`(Theme·Personalization 서비스) |
 | 항목 상세 시트(화면 아님 · U6-E #979) | `#tplDetailModal`, `src/screens/editor.ts`(`TplDetailSheet`) | `TemplateController`(`detail` 존) | `TemplateDetail`·`SlotView`(`gui/template_manager_state.py`) |
-| 데이터 상세 시트(화면 아님 · 고르기 열 공용 ④) | `#poolDetailModal`, `src/screens/pool_detail.ts`(`PoolDetailSheet`) | `PoolController`(`detail` 존) | `DatasetDetail`(`application/dataset_pool.py`) |
+| 데이터 상세 시트(화면 아님 · 고르기 열 공용 계약) | `#poolDetailModal`, `src/screens/pool_detail.ts`(`PoolDetailSheet`) | `PoolController`(`detail` 존) | `DatasetDetail`(`application/dataset_pool.py`) |
 
 두 상세 시트의 **골격은 하나다**(`src/screens/detail_sheet.ts` `DetailSheetFrame`): 머리
 (이름+배지) · 경로 줄과 그 문(`PathActions`) · 오류 상자 · 진단 · 몸통 · 성과/실패 두 줄 ·
@@ -522,8 +522,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     항목 상세(`detail` 존)도 같은 이유로 `tpl` 스냅샷을 직접 읽는다(중계 seam
     `library_result`·`library_slots` 폐기). **결과 줄의 자리는 좌 열 바닥**이다(U6-E #979) —
     관리 동사가 전부 그 열에서 나가므로 성과도 같은 열에서 읽힌다.
-  - **우 열도 공용 `PoolColumn` 이다**(고르기 열 공용 계약 ③a — 종전에는 이 자리가 「데이터
-    선택」 다이얼로그의 세 구획 `PoolSections` 였다). 우 열의 이웃은 다이얼로그가 아니라
+  - **우 열도 공용 `PoolColumn` 이다**(고르기 열 공용 계약). 우 열의 이웃은 다이얼로그가 아니라
     **좌 열**이라, 두 열이 같은 컴포넌트의 두 인스턴스로 서고 `pool.column` 을 그린다
     (`#editorDataPool` 뿌리 · `#editorDataList` 목록 · `.pitem[data-side="dat"]` 행).
     갈리는 것은 바닥 동사 줄 하나다 — `#editorPoolBrowse`(파일 찾아보기…) ·
@@ -533,7 +532,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     보기」를 세우고, 그 동사들은 좌 열 ⋯ 와 **같은 팝오버**(`#tplRowMenu`)를 쓴다 — 열림
     상태가 `(side, media, key)` 로 갈리는 이유는 두 열의 키 공간이 다르기 때문이다.
     표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이던 자리는 함께 사라졌다.
-    **⋯ 의 마지막은 「자세히…」다**(고르기 열 공용 ④ — 좌 열과 같은 순서: 링1 동사 · 경로
+    **⋯ 의 마지막은 「자세히…」다**(좌 열과 같은 순서: 링1 동사 · 경로
     문 · 상세). 목록을 짓는 함수는 두 호스트 공용 하나이고(`pool_verbs.dataRowMenuItems`),
     그 문이 여는 것이 `#poolDetailModal` 이다. **세션 행에는 그 항목이 서지 않는다** —
     풀에 없는 결속이라 검토할 항목 자체가 없다(음성 계약).
@@ -545,7 +544,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     그 행은 다시 눌러도 **무동작**이고(이미 이 작업의 데이터다 — 거절도 발신도 없다), 끌어
     놓기의 상대가 되면 템플릿 쪽만 바뀐다. 「이 데이터 고정…」은 **그 행이 있을 때만** 바닥
     동사 줄에 선다(풀에서 고른 데이터는 이미 고정돼 있다).
-  - **다이얼로그도 같은 `PoolColumn` 이다**(슬라이스 ③b — 인스턴스 셋). 갈리는 것은 넷이다 —
+  - **다이얼로그도 같은 `PoolColumn` 이다**(인스턴스 셋). 갈리는 것은 넷이다 —
     1차 동사가 **행 클릭 하나**이고 그것이 발행하는 액션(`editor/use_pool_data` ↔
     `job/load_pool`), DOM 좌표(`editorDataPool`/`editorDataList` ↔
     `dataPickerPool`/`dataPickerPinned`), 바닥 동사 줄의 id 접두, 그리고 다이얼로그에는 짝
@@ -559,34 +558,47 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - **「고를 수 있는가」와 그 사유는 Python 행 필드**다(`selectable`·`select_block_reason`):
     좌는 `screen_template`(링1 `TemplateRow.select_block_reason` — 변환 전 RAW·PARTIAL 은
     비활성 + 사유), 우는 링1 `DatasetPoolRow.select_block_reason`(보관·끊김·나라). **hwpx·txt 두
-    밴드가 같은 링1 성형 함수를 지난다**(`TemplateRow.from_text` — `detail_line`·
+    매체가 같은 링1 성형 함수를 지난다**(`TemplateRow.from_text` — `detail_line`·
     `select_block_reason` 공유): 갈리는 축은 변환 축의 유무 하나이고 그것이 `media` 다.
-    링2 가 매체별로 문장을 다시 지으면 링1 문안을 고쳐도 TXT 밴드만 옛말을 계속 한다. 표면이 `state`·
+    링2 가 매체별로 문장을 다시 지으면 링1 문안을 고쳐도 TXT 행만 옛말을 계속 한다. 표면이 `state`·
     `status`·`missing` 으로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다 — 그래서 링2 의
     재판정(구 `pool_option_block`·웹 `usableReason`)은 사슬째 걷혔고, 못 고르는 항목의
     클릭·드롭은 조용히 삼켜지지 않고 그 사유를 인라인으로 재진술한다.
-  - **두 채널이 공용 `column` 존을 함께 낸다**(고르기 열 공용 계약 ① — 좌·우가 한 컴포넌트의
-    두 인스턴스가 되는 자리). 행·존의 키 집합은 `webapp/pool_column.py` 하나가 소유하고
+  - **두 채널이 공용 `column` 존을 함께 낸다** — 좌·우가 한 컴포넌트의 두 인스턴스가 되는
+    자리다. 행·존의 키 집합은 `webapp/pool_column.py` 하나가 소유하고
     (`POOL_ROW_KEYS` · `{rows, notices, empty_hint, count_label, result}`), 판정은 그대로
     링1 이 낸다(`TemplateRow.select_block_reason` / `DatasetPoolRow.select_block_reason` —
     `selectable` 은 `reason` 의 파생이지 두 번째 판정이 아니다). 좌 열은 hwpx 다음 txt 를
     **한 목록**으로 싣고, 우 열은 손상 격리(danger)·중복 등록(warn)을 존 통지로 싣는다 —
-    종전에 웹이 리터럴로 짓던 그 문장들이다. 옛 밴드·행 키(`hwpx`/`txt`/`rows`/`corrupted`/
-    `duplicates`…)는 **다이얼로그**가 이 존으로 옮겨 갈 때까지(슬라이스 ③b) 그대로 산다 —
-    그 화면이 「다시 연결…」을 아직 자기 판정으로 덧붙이므로 `pool` 행의 옛 `actions` 는
-    **상태표 그대로**이고, 전수 목록은 `column` 행이 든다. 고르기 우 열은 이미 후자를
-    읽는다(관리 동사의 프리필 재료 `locate_path`·`sheet`·`note` 만 옛 행에서 집어 온다 —
-    좁은 열 계약에 그 축을 얹지 않으려는 것이고, ③b 가 그 자리를 정리한다). 두 열의
-    「지금 선 행」은 `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의
-    `key` 와 같은 축 — 좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값 +
-    `pairing.data_row` 의 `session` 행). 옛 행(`rows`)의 **웹 소비자는 0 이다**(고르기 열
-    공용 ④): 마지막 소비자였던 「다시 연결」 폼의 프리필은 이제 `pool/review` 가 세우는
-    상세 투영(`detail`)을 읽는다 — 두 호스트가 같은 왕복·같은 키 이름(`path`·`sheet`·
-    `note`)을 쓰고, 왕복이 낸 상세의 `key` 가 겨눈 키와 다르면 폼을 열지 않고 거절한다
-    (그 사이 push 가 끼면 남의 등록을 덮어쓸 수 있다). `pool` 스냅샷의 `rows` 키 자체는
-    슬라이스 ⑤ 가 걷는다.
+    종전에 웹이 리터럴로 짓던 그 문장들이고, 중복 통지는 그 처분(`resolve_duplicate` +
+    `payload.keep`)을 같은 자리에 함께 세운다. 개수 라벨의 분류사는 두 열 다 **항목의
+    것**(`n개`)이다 — `건` 은 이 제품에서 레코드(데이터 행)의 분류사라 열 머리에서 쓰면 같은
+    자리의 두 인스턴스가 다른 말을 한다. 결과 줄(`column.result`)도 이 존 안이다: 목록과
+    성과가 한 열의 두 부분이라 갈릴 자리를 만들지 않는다.
+    두 열의 「지금 선 행」은 `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열
+    행의 `key` 와 같은 축 — 좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값 +
+    `pairing.data_row` 의 `session` 행).
+    **좁은 열 계약에 프리필 축을 얹지 않는다**: 「다시 연결」이 요구하는 `path`·`sheet`·
+    `note` 는 `pool/review` 가 세우는 상세 투영(`detail`)이 든다 — 두 호스트가 같은 왕복·
+    같은 키 이름을 쓰고, 왕복이 낸 상세의 `key` 가 겨눈 키와 다르면 폼을 열지 않고 거절한다
+    (그 사이 push 가 끼면 남의 등록을 덮어쓸 수 있다).
+  - **퇴역 목록 — 무엇이 무엇을 승계했나**(#993). 같은 목록을 두 모양으로 들던 사슬은 전부
+    걷혔다. 소비자 0 인 payload 를 남겨 두면 두 벌이 갈린 채 늙는다(U5 선례 —
+    `UX_FEEDBACK_U6` §2.6):
+    - `pool_list.ts` 의 `PoolSections`(카드 + 행 안 버튼 다섯) → 공용 `PoolColumn` 인스턴스
+      셋. 관리 동사 한 벌은 `pool_verbs.ts` 가 계속 공유한다.
+    - `.tplcard` 묶음(구 `tpl` 화면의 카드 문법) → `.pitem` 행 하나.
+    - `tpl` 스냅샷의 매체 밴드 `hwpx`/`txt`(각 `sections`/`flat`/`count`/`dir`/`empty_hint`)
+      → `tpl.column`(매체는 구획이 아니라 행 표지 `icon`) + 최상위 `templates_root`.
+      동결된 그룹 모델(`TemplateGroupModel`)은 **영속과 유령 지정 정리만** 남고 투영은 없다.
+    - `tpl`·`pool` 최상위 `result` → 각 채널의 `column.result`(상세 시트도 그것을 읽는다).
+    - `pool` 스냅샷의 `rows`·`count`·`empty`·`corrupted`·`duplicates` → `pool.column` 의
+      `rows`·`count_label`·`empty_hint`·`notices`(danger/warn) + 프리필은 `pool.detail`.
+    - `pool.pclm.titles`(뷰 전수 제목표) → 없음. 이미 선 마운트의 제목화는 Python 이 세션 행
+      부제를 지을 때 링0 `pclm_views.sheet_title` 하나로 끝난다 — 표를 웹에 내리면 같은
+      제목화가 두 층에서 갈린다. `pclm` 이 남기는 것은 `default_db`·`views` 둘이다.
   - **두 열은 공용 `PoolColumn` 이 그린다**(`frontend/src/screens/pool_column.ts` — 고르기 열
-    공용 계약 ②·③a): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
+    공용 계약): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
     바닥 `.run-result`)과 행 계약(`.pitem-wrap` > `button.pitem[data-act="pick"]` + 형제
     `button.job-more[data-act="lib-more"]`)이 여기 **한 벌**이고, 그것이 읽는 것은 `tpl.column`
     (좌) 또는 `pool.column`+세션 행(우) 하나다. 행의 상태도 하나다 — 고를 수 있음
@@ -600,7 +612,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     것을 쓴다 — 같은 것을 가리키는 그림이 두 자리에서 갈리지 않는다. **못 고르는 행은 세 자리
     다 눌리되 거절을 말한다** — 그 대칭이 이 컴포넌트를 나눠 쓰는 이유이고, 거절의 문형도
     한 벌이다(`pool_verbs.poolRefusalText`·`POOL_GONE_FROM_LIST`). 「데이터 선택」
-    다이얼로그가 ③b 에서 합류해 인스턴스는 셋이다(CSS 뿌리가 `.pairzone` 이 아니라
+    다이얼로그도 합류해 인스턴스는 셋이다(CSS 뿌리가 `.pairzone` 이 아니라
     `.poolcol` 인 이유 — 존 배치만 `.pairzone` 이 계속 소유하고, 다이얼로그는 목록 높이만
     `.data-picker .pool-list` 로 제 사정에 맞춘다). 행의 정체 좌표(`data-key`)는 끌기 결속과
     **무관하게** 행 자신이 든다 — 끌기가 없는 호스트의 행도 자기 키를 말해야 한다.
@@ -899,7 +911,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     삭제는 `needs_confirm` 왕복이다 — **확인 본문은 Python 이 싣는다**(되돌리기는 「다시 변환
     전까지 문서를 만들 수 없다」는 전이 결과를, 삭제는 손실 집합을 재진술한다). 판독 진단이
     있으면 사유만 서고 동사 버튼은 아예 없다.
-  - **밴드 동사 하나가 더 선다**(U4-E3 #939 · `UX_FEEDBACK_U4` §2.16): 표 머리의
+  - **표 머리 동사 하나가 더 선다**(U4-E3 #939 · `UX_FEEDBACK_U4` §2.16): 표 머리의
     `data-act="slot-decompile-all"`(「전부 표기로 되돌리기」)는 항목이 아니라 **파일**을
     겨눈다 — `data-slot` 이 없고 payload 에 `slot_id` 가 없다. 노출 술어는 행 동사와 **같다**
     (진단 0 · 행 1건 이상 — 개수 문턱을 따로 두지 않는다). 확인 문안은 단건 문형 승계로
@@ -923,10 +935,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     않는다** — 대조는 이 채널의 정규화 술어 하나를 지난다. 세션이 연 파일과 같은 경로면 기존
     seam(`mutation_sinks` → `reconcile_template_mutation`)이 편집 세션 무효화 + notice 를
     세운다 — **이 사슬은 불변**이고, 시트는 그때 닫히지 않는다(편집기 notice 가 말한다).
-  - **시트가 열려 있는 동안의 결과·실패는 그 면 안에 선다**(#989 리뷰 3): `tpl.result` 는
-    `#tplDetailResult`, 동사 실패는 `#tplDetailMsg`. 시트는 스크림으로 화면을 덮으므로 좌 열
-    바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다 — 값의 정본은 그대로 `tpl.result` 이고
-    바뀌는 것은 **그리는 자리** 하나다. 열림 표지와 그 사유는 모달 엔진의 `beforeClose` 한
+  - **시트가 열려 있는 동안의 결과·실패는 그 면 안에 선다**(#989 리뷰 3):
+    `tpl.column.result` 는 `#tplDetailResult`, 동사 실패는 `#tplDetailMsg`. 시트는 스크림으로
+    화면을 덮으므로 좌 열 바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다 — 값의 정본은 그대로
+    고르기 열 존의 결과 줄이고 바뀌는 것은 **그리는 자리** 하나다(등록 데이터 시트도
+    `pool.column.result` 로 같은 대칭이다). 열림 표지와 그 사유는 모달 엔진의 `beforeClose` 한
     자리가 함께 걷는다(다음 열림에 지난 사유가 남지 않는다).
   - **편집기의 구간 축 요약(구 `template_slots`·`#editorSlotSummary`)은 퇴역했다**(U6-E
     #979 · 판정 승계는 `UX_FEEDBACK_U6` §2.9). U4 §2.15 가 그 존을 읽기 전용으로 둔 근거는
@@ -992,7 +1005,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 데이터 선택은 「문서 만들기」 세션 표면이 여는 **한 오버레이**(`#dataPickerModal`,
 `frontend/src/screens/data_picker.ts`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과
 `pool` 화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 **고르기 열 하나**로
-흡수됐다(고르기 열 공용 ③b — 종전의 세 구획 「현재 데이터 / 고정한 데이터 / 다른 데이터」가
+흡수됐다(고르기 열 공용 계약 — 종전의 세 구획 「현재 데이터 / 고정한 데이터 / 다른 데이터」가
 목록 한 벌 + 바닥 동사 줄이 됐다):
 
 | 자리 | 내용 | 백엔드 |
@@ -1009,8 +1022,8 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   **퇴역**했고 관리 동사 한 벌(`createPoolVerbs`·`PCLM_UNAVAILABLE`·`PoolRegistrationPort`·
   거절 문형)은 `frontend/src/screens/pool_verbs.ts` 로 옮겨 두 호스트가 계속 공유한다 —
   그리는 일과 발신하는 일은 애초에 다른 관심사다.
-- **행 ⋯ 의 목록은 두 호스트 공용 하나다**(`pool_verbs.dataRowMenuItems` — 고르기 열 공용
-  ④): 링1 `actions` · 경로가 있을 때 「폴더에서 보기」 · 마지막에 「자세히…」(세션 행 제외).
+- **행 ⋯ 의 목록은 두 호스트 공용 하나다**(`pool_verbs.dataRowMenuItems`): 링1 `actions` ·
+  경로가 있을 때 「폴더에서 보기」 · 마지막에 「자세히…」(세션 행 제외).
   이 파일이 같은 규칙을 다시 적던 지역 `rowMenuItems` 는 그와 함께 걷혔다.
 - **등록 데이터 상세 시트(`#poolDetailModal`)의 주인도 이 컨트롤러다**(등록 폼과 같은 근거 —
   overlay 는 셸 레벨 하나이고 여는 문이 둘이다). 고르기 우 열은 `PoolRegistrationPort.
@@ -1057,11 +1070,12 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   같은 데이터 재등록은 2건이 아니라 기존 등록의 라벨·메모 갱신(확인 승격) 또는 「이미
   고정돼 있습니다」 재진술로 접힌다.
   `relink`(`key`+새 참조)는 같은 슬롯의 참조 교체(수명 보존)이고 확인 왕복을 거친다.
-  구판(이름=키)이 남긴 **같은 정체성 등록 2+건**은 스냅샷 `duplicates` 로 loud 표면화되고
-  `resolve_duplicate`(남길 `keep` 확정, 확인 왕복)로만 정리된다 — 조용한 자동 병합 금지.
+  구판(이름=키)이 남긴 **같은 정체성 등록 2+건**은 고르기 열 존 통지(`column.notices` 의
+  warn)로 loud 표면화되고 `resolve_duplicate`(남길 `keep` 확정, 확인 왕복)로만 정리된다 —
+  조용한 자동 병합 금지. 그 통지가 후보마다 「'이름' 남기기」 동사를 같은 자리에 세운다.
 - **계약 목록(pclm) 행의 규약**(#937): 목록에 종류 배지(`계약 목록`)와 참조 요약
-  (`DB: … · 시트 …` — 면 이름은 제목으로 옮긴다)으로 서고, `locate_path` 는 db 파일이라
-  끊김 배지·열기·폴더보기가 엑셀과 같게 산다. 활성·파일 존재면 「이 데이터 사용」이 그대로 열린다. **「다시 연결」은 서지
+  (`DB: … · 시트 …` — 면 이름은 제목으로 옮긴다)으로 서고, 행의 `path` 는 db 파일이라
+  끊김 사유·열기·폴더보기가 엑셀과 같게 산다. 활성·파일 존재면 「이 데이터 사용」이 그대로 열린다. **「다시 연결」은 서지
   않는다** — 그 동사는 경로+시트 좌표(`relink_excel`)의 엑셀 전용이라 pclm 행에 세우면 누를
   수 있는 거짓 어포던스가 된다(표면 조건은 `row.kind === "excel"`).
 - **`#poolRegModal` 은 모드를 명시로 든다**(`RegState.mode` — `excel`|`pclm`). pclm 모드는
@@ -1083,8 +1097,9 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   한 계약이 여러 줄로 오는 유일한 뷰인데 한 문서 안에 N 줄을 반복 표로 펴는 기능이 아직
   없어서, 지금 고르게 하면 품목 1줄이 문서 1건이 된다. 좁히는 것은 **새로 고르는 자리**
   하나이고 허용목록(`PCLM_VIEWS`)·CLI·겨눔 백스톱은 넷 그대로다 — 그래서 이미 등록된 품목
-  참조도 조용히 못 읽는 것이 되지 않고, 그 마운트는 `pclm.titles`(뷰 전수 제목표)로 제목을
-  얻는다.
+  참조도 조용히 못 읽는 것이 되지 않고, 그 마운트의 제목은 **Python 이 짓는다**(링0
+  `pclm_views.sheet_title` — 세션 행 부제와 상세 투영이 같은 함수를 지난다). 웹으로 내려가던
+  뷰 전수 제목표(`pclm.titles`)는 그래서 소비자 0 으로 걷혔다.
 - **파괴·덮어쓰기 확정은 「보여준 상태의 지문」에 결속된다** — 이 화면의 확정 왕복
   **다섯 전부**(`delete` · `register_excel` 의 라벨 갱신 · `register_pclm` 의 라벨 갱신 ·
   `relink` · `resolve_duplicate`)가 기제 하나를 공유한다. 종류가 늘어도 왕복은 늘지 않는다:
@@ -1816,9 +1831,9 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - **기본값으로 내려가지 않는다** — 저장 폴더 도출과 갈리는 유일한 지점이다. 설정한 폴더가
   사라져도 그 경로가 그대로 루트이고 `notice` 만 붙는다. 내려가면 사용자가 고른 것과 **다른
   템플릿 집합**이 목록에 서고, 그것으로 문서를 만드는 것이 곧 조용한 추측이다. 빈 목록의
-  안내는 링1 `TemplateManagerViewModel.empty_hint()` 가 정본이고 두 밴드가 같은 말을 한다 —
-  `tpl` 과 편집기 「템플릿」 탭 둘 다 스냅샷 키 `empty_hint` 로 그 문안을 싣고, 프런트의
-  `emptyText` 는 스냅샷이 아직 없을 때의 자리 문안으로만 남는다.
+  안내는 링1 `TemplateManagerViewModel.empty_hint()` 가 정본이고 고르기 열 존이 그 값을 그대로
+  옮긴다(`tpl.column.empty_hint` — 루트가 하나라 원인도 하나다). 프런트의 `emptyText` 는
+  스냅샷이 아직 없을 때의 자리 문안으로만 남는다.
 - **영속은 설정 키 `templates_root` 하나**(`external/settings.py`, 기본 `""` = 미지정).
 - **런타임 권위는 `external/template_root.TemplateRoot` 인스턴스 하나**다. 캐시하지 않는다 —
   매 판독이 설정을 다시 읽으므로 재지정 직후의 첫 스냅샷이 곧 새 루트다. 아래 **다섯 자리**가
@@ -1840,13 +1855,15 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   조용히 다른 서식으로 문서를 만든다(법적 효력 문서에서 최악의 조용한 재결속). 읽기는
   여전히 디스크를 고치지 않는다(존재를 묻기만 한다).
 - **재지정 동사는 하나**다: 직접 브리지 `pick_templates_root` → `TemplateController.set_templates_root`.
-  빈 값·파일 경로는 loud 거절이고, 성공은 **한 번의 푸시**로 두 밴드와 `templates_root` 존을
+  빈 값·파일 경로는 loud 거절이고, 성공은 **한 번의 푸시**로 좌 열 목록과 `templates_root` 존을
   함께 옮긴다(소비자가 전부 홀더를 지나므로 갈아 끼울 두 번째 자리가 없다). 편집 세션에는
   변이 통지를 보내지 않는다 — 파일은 하나도 바뀌지 않았고, 폴더 경로를 경로 대조 seam
   (`mutation_sinks`)에 실으면 어느 세션과도 맞지 않는 조용한 무효 통지가 된다. 목록 갱신은
   이 푸시 + 호출자(설정 시트)의 화면 재당김이 진다.
 - **스냅샷은 `tpl` 최상위 `templates_root` 존**(`directory`·`source`·`source_label`·`notice`)
-  이고 저장 폴더의 `output_folder` 존과 동형이다. 두 밴드의 `dir` 도 같은 값을 싣는다.
+  이고 저장 폴더의 `output_folder` 존과 동형이다. 「어느 폴더를 읽고 있는가」의 자리는 그
+  존 **하나**다 — 목록이 비어도, 작업이 없어도 답할 수 있는 사실이라 열 안 사본을 두지 않는다
+  (옛 밴드의 `dir` 은 그 사본이었고 함께 걷혔다).
 - **표시명 규칙은 하나**다: `domain/template_status.library_display_name` — 루트 상대 경로,
   확장자 제외, POSIX(`온나라/기안`). 재귀 루트에서 basename 은 유일하지 않으므로 하위폴더가
   이름에 남아야 두 파일이 구분된다. 파일명 기반 **정체성**(`rel_key`·`template_key`)은 불변이다.
