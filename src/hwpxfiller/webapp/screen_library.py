@@ -77,7 +77,6 @@ from ..gui.mapping_state import (
 )
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
 from ..naming import make_output_filename
-from .output_folder_zone import output_folder_zone
 from .screens import (
     NO_ROWS_TEXT,
     PushSink,
@@ -270,7 +269,6 @@ class LibraryController:
                  pool_registry: DatasetPoolRegistry,
                  generation_lock: "threading.Lock",
                  template_root: TemplateRoot,
-                 remembered_output_directory: "Callable[[], str]",
                  clock: "Callable[[], datetime]" = datetime.now,
                  first_row_runner: "Callable[[Callable[[], None]], None]"
                  = run_in_worker_thread) -> None:
@@ -302,9 +300,6 @@ class LibraryController:
         # 서식 폴더 권위(U6-A #975 · U6-D #978) — 템플릿 표시명을 목록·편집기와 **같은
         # 홀더**로 짓는다. 두 홀더를 두면 재지정 직후 같은 파일이 두 이름으로 불린다.
         self._template_root = template_root
-        # 전역 저장 폴더의 소유자는 「문서 만들기」 컨트롤러 하나다(U6-D #978 리뷰 3) —
-        # 여기서는 그 값을 **읽기만** 한다(설정 파일 재판독 금지).
-        self._remembered_output_directory = remembered_output_directory
         self._clock = clock
         # 「첫 행」 지연 읽기의 **사적 캐시**(U6-F #980). 키는 결속 상관 키이고 값은 실제
         # 읽기 결과다. 이 캐시가 없으면 검색 타이핑의 재렌더마다 엑셀을 다시 연다.
@@ -405,8 +400,7 @@ class LibraryController:
             # 표·첫 행·계획은 전부 **연결된 템플릿**을 전제한다. 그 갈래의 답은 건강
             # 원인과 카드의 재선택 동사다.
             return {"card": card, "rows": [], "more_fields": [], "stale_fields": [],
-                    "rows_basis": "", "first_row": None, "plan": None,
-                    "output_folder": None}
+                    "rows_basis": "", "first_row": None, "plan": None}
         is_txt = row.media == "txt"
         read = self._first_row_cache.get(key) if key else None
         if key is None:
@@ -462,12 +456,8 @@ class LibraryController:
             "plan": None if is_txt else self._plan_line(
                 job, model, record, state, record_count, now=now
             ),
-            # TXT 는 파일을 만들지 않아 폴더가 축이 아니다(§ 「저장 폴더 — 전역 단일 값」의
-            # 표와 같은 판정) — 빈 재진술을 세우면 만들지 않을 파일의 저장 위치를 말한다.
-            "output_folder": None if is_txt else output_folder_zone(
-                template_path=job.template_path,
-                remembered_directory=self._remembered_output_directory(),
-            ),
+            # 저장 폴더는 여기 없다(2026-09-03 재판정) — 전역 단일 값이라 설정 창이 소유하고
+            # 작업 상세가 그 값을 재진술하지 않는다(재진술은 소유자를 둘로 보이게 한다).
         }
 
     def _plan_line(
@@ -521,7 +511,6 @@ class LibraryController:
             ),
             row.structure, row.template_missing, row.template_linked, row.media,
             None if read is None else (read.state, read.reason, read.record_count),
-            self._remembered_output_directory(),
             self._clock().replace(second=0, microsecond=0),
         )
 

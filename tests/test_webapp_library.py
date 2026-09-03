@@ -22,7 +22,6 @@ from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
-from hwpxfiller.webapp.output_folder_zone import output_folder_zone
 from hwpxfiller.webapp.screen_library import (
     UNBOUND_FIRST_ROW_REASON,
     LibraryController,
@@ -70,13 +69,12 @@ def _detail_deps(tmp_path) -> dict:
     """
     return {
         "template_root": TemplateRoot(default_root=tmp_path / "templates"),
-        "remembered_output_directory": lambda: "",
         "clock": lambda: datetime(2026, 9, 2, 10, 0, 0),
         "first_row_runner": lambda work: work(),
     }
 
 
-def _controller(tmp_path, *, registry=None, runner=None, remembered="")         -> "tuple[LibraryController, list]":
+def _controller(tmp_path, *, registry=None, runner=None)         -> "tuple[LibraryController, list]":
     """헤드리스 컨트롤러 + 푸시 수집 리스트.
 
     ``runner`` 는 첫 행 읽기의 **실행 자리**다(U6-F #980). 기본은 즉시 실행이라 이 파일의
@@ -90,7 +88,6 @@ def _controller(tmp_path, *, registry=None, runner=None, remembered="")         
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock(),
                           template_root=TemplateRoot(default_root=tmp_path / "templates"),
-                          remembered_output_directory=lambda: remembered,
                           clock=lambda: datetime(2026, 9, 2, 10, 0, 0),
                           first_row_runner=runner or (lambda work: work()))
     return ctrl, pushes
@@ -672,7 +669,7 @@ def test_pairing_detail_draws_the_card_table_and_plan_from_one_ring1_projection(
     조회다 — 웹이 라벨 표를 한 벌 더 들면 #966 이 걷은 사슬이 이름만 바꿔 돌아온다.
     """
     reg, _ = _bound_registry(tmp_path)
-    ctrl, _ = _controller(tmp_path, registry=reg, remembered=str(tmp_path))
+    ctrl, _ = _controller(tmp_path, registry=reg)
     ctrl.dispatch("select_work", {"name": "공고서 작업"})
     zone = ctrl.snapshot()["detail"]["pairing_detail"]
 
@@ -696,11 +693,8 @@ def test_pairing_detail_draws_the_card_table_and_plan_from_one_ring1_projection(
     assert zone["plan"] == {
         "state": "ready", "pattern": "공고-{{공고번호}}-{{seq:001}}",
         "first_name": "공고-공고번호-1-001.hwpx", "count": 2}
-    # 저장 폴더는 작업 화면·편집기와 **같은 함수**가 낸다(존 모양이 화면마다 다시 쓰이지 않는다).
-    assert zone["output_folder"] == output_folder_zone(
-        template_path=str(tmp_path / "templates" / "공고서.hwpx"),
-        remembered_directory=str(tmp_path),
-    )
+    # 저장 폴더는 상세에 없다 — 전역 단일 값이라 설정 창이 소유한다(2026-09-03 재판정).
+    assert "output_folder" not in zone
 
 
 def test_pairing_detail_names_the_rows_the_frame_cannot_hold(tmp_path):
@@ -817,13 +811,13 @@ def test_an_unreadable_template_keeps_the_card_but_draws_no_table(tmp_path):
         zone = ctrl.snapshot()["detail"]["pairing_detail"]
         assert zone["rows"] == [] and zone["more_fields"] == []
         assert zone["first_row"] is None and zone["plan"] is None
-        assert zone["output_folder"] is None
+        assert "output_folder" not in zone
         assert zone["card"]["counted"] is False
         assert zone["card"]["template_bound"] is bound       # 부재와 미연결은 다른 상태다
     assert ctrl.snapshot()["detail"]["pairing_detail"]["card"]["template_name"] == ""
 
 
-def test_txt_work_has_no_file_plan_and_no_output_folder(tmp_path):
+def test_txt_work_has_no_file_plan(tmp_path):
     """TXT 복사 작업은 파일을 만들지 않는다 — 계획도 저장 폴더도 세우지 않는다.
 
     만들지 않을 파일의 이름과 저장 위치를 말하는 것이 곧 조용한 거짓말이다(§ 「저장 폴더 —
@@ -839,10 +833,10 @@ def test_txt_work_has_no_file_plan_and_no_output_folder(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping("사업명", "사업명")]),
         data_path=str(data), data_sheet="",
     ))
-    ctrl, _ = _controller(tmp_path, registry=reg, remembered=str(tmp_path))
+    ctrl, _ = _controller(tmp_path, registry=reg)
     ctrl.dispatch("select_work", {"name": "기안 작업"})
     zone = ctrl.snapshot()["detail"]["pairing_detail"]
-    assert zone["plan"] is None and zone["output_folder"] is None
+    assert zone["plan"] is None and "output_folder" not in zone
     assert zone["card"]["counted"] is False                  # hwpx 대칭차가 없는 갈래
     assert zone["rows"][0]["preview"] == "청사 냉난방"
 

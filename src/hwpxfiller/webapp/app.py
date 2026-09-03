@@ -406,9 +406,6 @@ class WebFrontend:
                               # 서식 폴더 권위는 **같은 홀더**다(U6-A #975) — 상세 연결 카드의
                               # 템플릿 표시명이 목록·편집기와 같은 이름이어야 한다.
                               template_root=self._template_root,
-                              # 전역 저장 폴더는 「문서 만들기」가 소유하고 여기서는 읽기만
-                              # 한다(U6-D #978 리뷰 3 — 설정 파일을 두 곳이 읽지 않는다).
-                              remembered_output_directory=job_ctrl.remembered_output_directory,
                               clock=datetime.now),
             job_ctrl,
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).

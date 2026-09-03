@@ -205,8 +205,6 @@ function pairingDetail(over = {}) {
     more_fields: [], stale_fields: [], rows_basis: "template",
     first_row: { state: "ready", reason: "", record_count: 120 },
     plan: { state: "ready", pattern: "공고-{{ID}}", first_name: "공고-1-001.hwpx", count: 120 },
-    output_folder: { directory: "D:\\문서\\Results", source: "default",
-      source_label: "기본값", notice: "" },
     ...over,
   };
 }
@@ -292,12 +290,11 @@ test("상세 연결 존 — 카드 수치·4열 표·계획 줄을 스냅샷 그
   assert.ok(markup.includes('data-field="공고명"'));
   assert.ok(markup.includes("1,234,567원"));                   // 표시형 라벨도 Python 이 낸다
   assert.ok(markup.includes("48,500,000원"));
-  /* 계획은 라벨 2행이다(2026-09-03) — 첫 이름 + 나머지 건수, 그리고 저장 폴더. 경로는
-     표시용으로만 줄고 온전한 값은 `title` 에 선다. */
+  /* 계획은 라벨 한 행이다(2026-09-03) — 첫 이름 + 나머지 건수. 저장 폴더는 전역 설정이라
+     상세에 재진술되지 않는다. */
   assert.ok(markup.includes('id="libraryPlanLine"'));
   assert.ok(markup.includes("공고-1-001.hwpx") && markup.includes("외 119건"));
-  assert.ok(markup.includes('title="D:\\문서\\Results"'));
-  assert.ok(markup.includes("D:\\문서\\Results"));
+  assert.ok(!markup.includes("저장 폴더"));
 });
 
 test("상세 연결 존 — 프레임 밖 행은 건수로 명시한다(스크롤로 감추지 않는다)", () => {
@@ -368,7 +365,7 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 �
           data_name: "월별", counted: false, template_field_count: 0, mapped_count: 0,
           unbound_count: 0, stale_count: 0 },
         rows: [], more_fields: [], stale_fields: [], rows_basis: "",
-        first_row: null, plan: null, output_folder: null,
+        first_row: null, plan: null,
       },
     }),
   });

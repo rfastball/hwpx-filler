@@ -410,38 +410,21 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
       `필드 ${rows.length + more.length}개 중 ${rows.length}개`) : null);
 }
 
-/** 경로의 표시용 줄임 — 마지막 3마디만 남긴다. 판정이 아니라 **그리기**이고, 온전한 경로는
- *  언제나 `title` 에 있다(잘린 값을 사실처럼 말하지 않는다). */
-function shortPath(path: string): string {
-  const sep = path.includes("\\") ? "\\" : "/";
-  const parts = path.split(/[\\/]/);
-  return parts.length > 3 ? `…${sep}${parts.slice(-3).join(sep)}` : path;
-}
-
-/** 계획 — 「이 작업이 만들 파일」. 한 문장이 아니라 **라벨 2행**이다(2026-09-03 재판정):
- *  파일 이름과 저장 폴더는 서로 다른 질문이라 한 줄에 가운뎃점으로 이으면 어느 값이 무엇의
- *  답인지가 읽는 사람 몫이 된다. 이름은 실제 생성기와 같은 함수가 만든 것이고, 아직 못
- *  읽었으면 이름 대신 **규칙**을 말한다(아는 것만 말한다). 행 클릭 안내는 행마다 `title` 이
- *  이미 지므로 여기서 되풀이하지 않는다. */
-function PlanLine(props: { zone: Obj; controller: LibraryController }): ReactNode {
-  const { controller } = props;
+/** 계획 — 「이 작업이 만들 파일」. 라벨 한 행(2026-09-03 재판정): 첫 이름 + 나머지 건수.
+ *  이름은 실제 생성기와 같은 함수가 만든 것이고, 아직 못 읽었으면 이름 대신 **규칙**을
+ *  말한다(아는 것만 말한다). 저장 폴더는 여기 없다 — 전역 단일 값이라 설정 창이 소유하고
+ *  작업 상세가 재진술하지 않는다. 행 클릭 안내는 행마다 `title` 이 이미 지므로 여기서
+ *  되풀이하지 않는다. */
+function PlanLine(props: { zone: Obj }): ReactNode {
   const plan = (props.zone.plan || {}) as Obj;
-  const folder = (props.zone.output_folder || {}) as Obj;
   const ready = plan.state === "ready";
   const firstName = String(plan.first_name || "");
-  const directory = String(folder.directory || "");
   return h("dl", { className: "lib-plan", id: "libraryPlanLine" },
     h("dt", null, "파일 이름"),
     h("dd", null,
       ready ? h("b", { title: firstName }, firstName)
         : h("span", { className: "muted" }, `규칙 ${plan.pattern || ""}`),
-      ready && Number(plan.count) > 1 ? h("span", null, ` 외 ${Number(plan.count) - 1}건`) : null),
-    directory ? h("dt", null, "저장 폴더") : null,
-    directory ? h("dd", null,
-      h("b", { title: directory }, shortPath(directory)),
-      h(PathActions as any, {
-        client: controller.client, path: directory, notify: controller.notify, only: ["open"],
-      })) : null);
+      ready && Number(plan.count) > 1 ? h("span", null, ` 외 ${Number(plan.count) - 1}건`) : null));
 }
 
 function LibraryDetail(props: { detail: Obj | null; controller: LibraryController }): ReactNode {
@@ -477,7 +460,7 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
       "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
     rows.length ? h(PairTable as any, { detail, zone, controller }) : null,
-    rows.length && zone.plan ? h(PlanLine as any, { zone, controller }) : null);
+    rows.length && zone.plan ? h(PlanLine as any, { zone }) : null);
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),
