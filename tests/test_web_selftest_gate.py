@@ -318,16 +318,24 @@ class TestWebSelftestGate:
         정적 DOM 계약이 못 잡는 세 승계 의무를 실 렌더로 못박는다: 보관 항목이 목록에
         남아 `활성화` 에 도달 가능할 것(§10.7.2 C), 손상 격리가 상주 재진술될 것(RC-05),
         「이 데이터 고정」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
+
+        이 면은 고르기 열 공용 ③b 에서 **공용 `PoolColumn`** 이 됐다 — 카드·행 안 버튼이
+        `.pitem` 행과 ⋯ 메뉴로 승계됐고, 「현재 데이터」 구획은 목록 첫 행이 됐다. 재는
+        의무는 한 건도 줄지 않는다(도달성·비활성 정직·프리필 그대로).
         """
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
         assert probe["opened"] is True, probe
-        assert probe["rows"] == 3, probe
+        # 풀 3행 + 「지금 쓰는 데이터」 세션 행 — 그 행이 목록 맨 위에 함께 선다.
+        assert probe["rows"] == 4, probe
+        assert "대장.xlsx" in probe["session_row"], probe
         # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
         assert probe["use_active_enabled"] is True, probe
         assert probe["use_archived_disabled"] is True, probe
+        # 상태 동사의 도달처는 행 ⋯ 메뉴다(고르기 열과 같은 어포던스).
         assert probe["activate_reachable"] is True, probe
         assert probe["relink_reachable"] is True, probe
+        assert probe["reveal_reachable"] is True, probe
         assert probe["corrupt_shown"] is True, probe
         # 고정 = 등록 모달 재사용이되 진입 사유가 제목·프리필로 드러난다.
         assert probe["pin_offered"] is True, probe
@@ -341,7 +349,9 @@ class TestWebSelftestGate:
         """데이터 선택 면 단일 경로화(U2 §2.7) — 문안이 약속한 고정 기회가 실제로 선다.
 
         찾아보기 성사 뒤에도 면이 열려 있고 「이 데이터 고정」이 **가시**여야 한다(1행) —
-        프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다.
+        프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다. 그 적재의
+        증언은 면 안 문안이다(③b): 세션 행은 이제 작업 스냅샷이 내므로, 브리지를 스텁한
+        이 창에서 행이 바뀌기를 재면 프로브가 제 손으로 세운 값을 되읽게 된다.
         「＋ 직접 등록…」은 소멸(4행), pin 모드의 path·sheet 는 읽기전용 + 폼 안
         찾아보기 감춤(5행)이다.
         """
@@ -2001,7 +2011,7 @@ class TestWebSelftestGate:
         # 우 열의 관리 동사는 좌 열과 **같은 ⋯ 메뉴**를 지난다(③a): 링1 이 낸 동사 뒤에
         # 경로 문 하나. 표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이지 않는다.
         # (연타 차단은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫힌다. 공용 몸통
-        #  `createPoolVerbs` 의 in-flight 계약은 `tests/js/pool_list.test.js` 가 계속 진다.)
+        #  `createPoolVerbs` 의 in-flight 계약은 `tests/js/pool_verbs.test.js` 가 계속 진다.)
         assert e["manage_verb_present"] is True, "우 열 행에 ⋯ 가 서지 않았습니다."
         assert e["dat_menu_items"] == ["act:archive", "reveal"], (
             f"우 열 ⋯ 의 동사 목록이 계약과 다릅니다: {e['dat_menu_items']!r}"

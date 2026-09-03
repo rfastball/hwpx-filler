@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { PoolColumn } from "../../frontend/src/screens/pool_column.ts";
+import { PoolColumn, dragProps } from "../../frontend/src/screens/pool_column.ts";
 
 const ROW = {
   key: "a.hwpx", name: "공고서", sub: "필드 3개", reason: "", warns: [],
@@ -174,6 +174,122 @@ test("결과 줄은 스냅샷의 레벨을 그대로 입고 `muted` 는 클래�
 
   assert.equal(render(host()).includes("run-result"), false,
     "말할 결과가 없으면 줄도 서지 않습니다");
+});
+
+test("세 번째 인스턴스(다이얼로그)도 같은 행 DOM 을 낸다 — 갈리는 것은 좌표·끌기뿐", () => {
+  /* 「데이터 선택」 다이얼로그가 합류한 자리(③b). 종전에는 같은 등록 목록을 두 컴포넌트가
+     각자 그렸고(카드 vs 행), 그래서 「고를 수 있는가」의 얼굴과 행 동사가 화면마다 갈렸다.
+     좌표와 끌기 props 를 걷어 내면 **한 글자도 다르지 않아야** 한다. */
+  const editor = render(host({
+    side: "dat", rootId: "editorDataPool", listId: "editorDataList", title: "데이터",
+    headSub: "2개", headSubTitle: undefined, onMore() {}, reload() {},
+  }));
+  const dialog = render(host({
+    side: "dat", rootId: "dataPickerPool", listId: "dataPickerPinned", title: "데이터",
+    headSub: "2개", headSubTitle: undefined, onMore() {}, reload() {}, drop: undefined,
+  }));
+
+  const rowsOf = (markup) => markup.slice(markup.indexOf("pitem-wrap"));
+  const stripped = rowsOf(editor)
+    .replace(/ draggable="[^"]*"/g, "")
+    .replaceAll(' data-side="dat"', "");
+  assert.equal(
+    rowsOf(dialog).replaceAll(' data-side="dat"', ""), stripped,
+    "같은 존을 받은 두 인스턴스가 다른 행을 그렸습니다",
+  );
+  /* 끌기 결속이 없는 호스트는 끌기 좌표·핸들을 **하나도** 얹지 않는다: 놓을 자리가 없는데
+     끌 수 있으면 화면이 지키지 못할 약속을 한다. 행의 정체 좌표(`data-key`)는 그와 무관하게
+     선다 — 그 키를 겨눈 게이트가 두 자리에 다 있다. */
+  assert.equal(dialog.includes("draggable"), false, "다이얼로그 행이 끌 수 있게 섰습니다");
+  assert.ok(dialog.includes('data-key="a.hwpx"'), "행이 자기 키를 말하지 않았습니다");
+});
+
+/* ---------------- 끌어 놓기 — 클릭이 발행하는 같은 액션 두 번 ---------------- */
+
+function fakeEvent(payload) {
+  const classes = new Set();
+  const transfer = {
+    data: {}, types: payload === undefined ? [] : ["text/plain"],
+    effectAllowed: "", dropEffect: "",
+    setData(kind, value) { this.data[kind] = value; this.types = ["text/plain"]; },
+    getData(kind) { return this.data[kind] ?? (payload || ""); },
+  };
+  return {
+    prevented: false,
+    preventDefault() { this.prevented = true; },
+    dataTransfer: transfer,
+    currentTarget: { classList: {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      has: (name) => classes.has(name),
+    } },
+    classes,
+  };
+}
+
+test("dragstart 는 `<side>:<key>` 한 형식만 싣는다", () => {
+  const props = dragProps({ side: "dat", onDrop() {}, onRefuse() {} }, "k1", true, "");
+  assert.equal(props["data-side"], "dat");
+  assert.equal(props.draggable, true);
+  const event = fakeEvent();
+  props.onDragStart(event);
+  assert.equal(event.dataTransfer.getData("text/plain"), "dat:k1");
+  assert.equal(event.dataTransfer.effectAllowed, "link");
+});
+
+test("고를 수 없는 항목은 끌 수도 놓을 수도 없고, 거절은 사유를 남긴다", () => {
+  const refused = [];
+  const dropped = [];
+  const props = dragProps(
+    { side: "dat", onDrop: (...args) => dropped.push(args), onRefuse: (...args) => refused.push(args) },
+    "k2", false, "참조가 끊겼습니다.",
+  );
+  assert.equal(props.draggable, false, "끌 수 있으면 놓을 수 있다고 읽힙니다");
+
+  /* **받되 거절한다**: 안 받으면 `drop` 이 안 와서 손을 놓은 사람에게 아무 말도 못 한다.
+     강조는 성사할 자리에만 서므로 「놓을 수 있다」는 약속이 서지 않는다. */
+  const over = fakeEvent("tpl:t1");
+  props.onDragOver(over);
+  assert.equal(over.prevented, true, "놓아도 아무 말이 없는 자리를 만들었습니다");
+  /* "none" 이면 브라우저가 드롭을 취소해 `drop` 이 오지 않는다 — 사유를 낼 자리가
+     사라지므로 "link" 를 둔다(강조 부재가 「성사하지 않는다」를 말한다). */
+  assert.equal(over.dataTransfer.dropEffect, "link");
+  assert.equal(over.classes.has("drop-target"), false, "성사하지 못할 자리를 강조했습니다");
+
+  const drop = fakeEvent("tpl:t1");
+  props.onDrop(drop);
+  assert.deepEqual(dropped, [], "고를 수 없는 항목이 발신을 냈습니다");
+  assert.deepEqual(refused, [["참조가 끊겼습니다.", "k2"]], "조용히 삼켰습니다");
+});
+
+test("같은 열끼리는 짝이 아니고, 상대 열의 드롭만 액션을 낸다", () => {
+  const dropped = [];
+  const refused = [];
+  const props = dragProps(
+    { side: "dat", onDrop: (...args) => dropped.push(args), onRefuse: (why) => refused.push(why) },
+    "k1", true, "",
+  );
+
+  const same = fakeEvent("dat:k9");
+  props.onDrop(same);
+  assert.deepEqual(dropped, [], "같은 열 안에서 액션이 나갔습니다");
+  assert.deepEqual(refused, [], "같은 열 드롭은 거절 문안이 아니라 무동작이다");
+
+  const other = fakeEvent("tpl:t1");
+  props.onDragOver(other);
+  assert.equal(other.prevented, true);
+  assert.equal(other.dataTransfer.dropEffect, "link");
+  assert.equal(other.classes.has("drop-target"), true, "드롭 대상 강조가 서지 않았습니다");
+  props.onDrop(other);
+  assert.deepEqual(dropped, [["tpl", "t1", "k1"]]);
+  assert.equal(other.classes.has("drop-target"), false, "드롭 뒤 강조가 남았습니다");
+});
+
+test("드래그 결속이 없는 호스트는 끌기 props 를 하나도 얹지 않는다", () => {
+  assert.deepEqual(dragProps(undefined, "k1", true, ""), {});
+  const markup = render(host({ drop: undefined }));
+  assert.equal(markup.includes('data-side="tpl"'), false,
+    "다이얼로그 호스트에 끌기 좌표가 새 나왔습니다");
 });
 
 test("⋮ 와 「새로 읽기」는 호스트가 줄 때만 선다 — 죽은 어포던스를 만들지 않는다", () => {

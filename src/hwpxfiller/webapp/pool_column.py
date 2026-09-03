@@ -21,6 +21,13 @@
 """
 from __future__ import annotations
 
+from ..domain.pclm_views import PCLM_VIEW_TITLES
+
+#: 지금 세션이 쓰고 있는 데이터가 목록 맨 위에 서는 행의 키 — **웹과 같은 글자**다
+#: (``frontend/src/screens/editor.ts`` 의 ``SESSION_DATA_KEY``). 풀 슬롯 키 공간과 겹치지
+#: 않는다: 슬롯 키는 등록이 낳고 이 값은 여기 리터럴 하나다.
+SESSION_DATA_KEY = "session"
+
 #: 열 행 하나가 드는 키 **전부**. 순서는 문서 순서일 뿐이고 계약은 집합이다.
 POOL_ROW_KEYS = (
     "key",
@@ -146,11 +153,65 @@ def pool_column_view(
     }
 
 
+def session_data_row(
+    *,
+    name: str,
+    kind: str,
+    path: str,
+    sheet: str,
+    header_row: int,
+    record_count: int,
+) -> dict:
+    """지금 쓰고 있는 데이터의 **열 행 하나**(키 :data:`SESSION_DATA_KEY`).
+
+    이 행이 승계한 것은 종전 「현재 데이터」 카드다. 한 열에 카드와 행 두 문법을 세우면
+    「지금 쓰는 것」과 「고를 수 있는 것」이 서로 다른 모양이 되고, 그 차이는 아무 사실도
+    말하지 않는다 — 그래서 같은 행 계약으로 접었다.
+
+    **자리가 둘이라 여기 하나가 짓는다**: 편집기 고르기 우 열(``screen_editor``)과 데이터
+    선택 다이얼로그(``screen_job``)가 같은 사실을 말한다. 각자 부제를 이으면 「시트: …」의
+    어휘·순서·계약 목록 제목화가 한쪽에서만 늙는다.
+
+    부제 성분은 셋이고 없는 것은 **줄에서 빠진다**(빈 값으로 새지 않는다): 시트(계약 목록의
+    뷰 이름은 :data:`~hwpxfiller.domain.pclm_views.PCLM_VIEW_TITLES` 로 제목화하되 표에 없는
+    이름은 원문 그대로 — 구판·손편집을 조용히 지우지 않는다) · 헤더 행(0 = 어댑터 기본이라
+    말할 것이 없다) · 행 수.
+    """
+    sheet_title = PCLM_VIEW_TITLES.get(sheet, sheet) if kind == "pclm" else sheet
+    parts = [
+        f"시트: {sheet_title}" if sheet_title else "",
+        f"헤더 {header_row}행" if header_row > 0 else "",
+        f"{record_count}행",
+    ]
+    return pool_row_view(
+        key=SESSION_DATA_KEY,
+        name=name,
+        sub=" · ".join(p for p in parts if p),
+        # 지금 쓰고 있는 것이라 고를 수 없는 사유가 없다(눌러도 무동작이 아니라
+        # 「이미 이것」이라는 뜻이다 — 표면이 다시 발신하지 않는다).
+        reason="",
+        warns=[],
+        badge_label="사용 중",
+        badge_level="ok",
+        # 세션 어휘와 풀 어휘가 **한 글자 다르다**: 세션의 `""` 는 「미지」가 아니라 파일
+        # 소스(엑셀/CSV)이고(`load_data_path` — 그 관문은 늘 파일이다), 풀 참조는 같은 것을
+        # `"excel"` 이라 부른다. 그대로 넘기면 표에 없는 값이 되어 엑셀 파일이 민 종이
+        # (`other`)로 서고, 화면이 종류를 모른다고 말하게 된다.
+        icon=pool_icon_for_kind(kind or "excel"),
+        path=path,
+        # 풀 항목이 아니므로 상태 동사(보관·삭제·다시 연결)가 없다 — 「폴더에서 보기」와
+        # 「이 데이터 고정…」은 링1 동사가 아니라 표면 어포던스라 여기 싣지 않는다.
+        actions=[],
+    )
+
+
 __all__ = [
     "POOL_ICONS",
     "POOL_NOTICE_LEVELS",
     "POOL_ROW_KEYS",
+    "SESSION_DATA_KEY",
     "pool_column_view",
     "pool_icon_for_kind",
     "pool_row_view",
+    "session_data_row",
 ]

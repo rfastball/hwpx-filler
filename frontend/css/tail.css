@@ -31,10 +31,12 @@
 
 /* ---- 내부 스크롤포트 인벤토리(H-07) ----
    캡+헤더 지속 표: .tblwrap(위저드 3벌), #wbMapPanel(작업대 좌 pane), .jobtbwrap.
-   캡 목록: .tpllist, .sheet-list, .colpanel .cp-vals. 이 여섯 종류만 이 계약의 내부
-   스크롤을 소유한다. stable gutter 로 행 수 변화의 폭 점프를 막고, 경계에서 바깥
-   .wbody/.job-panel/.stage 로 휠·터치 스크롤이 연쇄되지 않게 contain 한다. */
-.tblwrap,.jobtbwrap,#wbMapPanel,.tpllist,.sheet-list,.colpanel .cp-vals{
+   캡 목록: .pool-list(고르기 열 — 세 인스턴스), .sheet-list, .colpanel .cp-vals. 이 여섯
+   종류만 이 계약의 내부 스크롤을 소유한다(구 .tpllist 는 마지막 소비자인 데이터 선택
+   다이얼로그가 공용 열로 합류하며 걷혔고, 그 자리를 .pool-list 가 잇는다). stable gutter 로
+   행 수 변화의 폭 점프를 막고, 경계에서 바깥 .wbody/.job-panel/.stage 로 휠·터치 스크롤이
+   연쇄되지 않게 contain 한다. */
+.tblwrap,.jobtbwrap,#wbMapPanel,.poolcol .pool-list,.sheet-list,.colpanel .cp-vals{
   scrollbar-gutter:stable;overscroll-behavior:contain}
 
 

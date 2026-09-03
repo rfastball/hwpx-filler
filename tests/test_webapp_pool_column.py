@@ -14,9 +14,11 @@ from hwpxfiller.webapp.pool_column import (
     POOL_ICONS,
     POOL_NOTICE_LEVELS,
     POOL_ROW_KEYS,
+    SESSION_DATA_KEY,
     pool_column_view,
     pool_icon_for_kind,
     pool_row_view,
+    session_data_row,
 )
 
 
@@ -103,3 +105,47 @@ def test_unknown_notice_level_is_refused_loudly():
             empty_hint="", count_label="", result={"text": "", "level": "muted"},
         )
     assert POOL_NOTICE_LEVELS == ("warn", "danger")
+
+
+# ------------------------------------------- 「지금 쓰는 데이터」 행(③b — 소비자 둘의 단일 출처)
+def _session(**over) -> dict:
+    base = dict(
+        name="7월목록.xlsx", kind="", path="C:/d/7월목록.xlsx", sheet="물품",
+        header_row=1, record_count=12,
+    )
+    base.update(over)
+    return session_data_row(**base)
+
+
+def test_session_row_is_the_same_shape_as_a_pool_row():
+    """같은 열에 두 문법을 세우지 않는다 — 세션 행도 풀 행과 **한 키 집합**이다."""
+    row = _session()
+    assert tuple(row) == POOL_ROW_KEYS
+    assert row["key"] == SESSION_DATA_KEY
+    assert (row["badge_label"], row["badge_level"]) == ("사용 중", "ok")
+    # 풀 항목이 아니라 상태 동사가 없고, 지금 쓰는 것이라 고를 수 없는 사유도 없다.
+    assert row["actions"] == [] and row["reason"] == "" and row["selectable"] is True
+
+
+def test_session_row_subtitle_drops_the_parts_that_have_nothing_to_say():
+    """없는 성분은 **줄에서 빠진다** — 빈 값이 빈 칸으로 새지 않는다."""
+    assert _session()["sub"] == "시트: 물품 · 헤더 1행 · 12행"
+    # 헤더 0 = 어댑터 기본이라 말할 것이 없고, CSV 에는 시트 축 자체가 없다.
+    assert _session(header_row=0)["sub"] == "시트: 물품 · 12행"
+    assert _session(sheet="", header_row=0)["sub"] == "12행"
+
+
+def test_session_row_titles_a_contract_list_view_but_only_for_that_kind():
+    """계약 목록의 뷰 이름만 제목으로 옮긴다 — 엑셀 시트명은 그대로가 정답이다."""
+    assert _session(kind="pclm", sheet="v_통합_v1", header_row=0)["sub"] == "시트: 통합 · 12행"
+    # 표에 없는 이름(구판·손편집)은 감추지 않고 원문 그대로.
+    assert "v_구판" in _session(kind="pclm", sheet="v_구판")["sub"]
+    # 종류가 엑셀이면 같은 글자라도 옮기지 않는다(제목표는 계약 목록의 어휘다).
+    assert "v_통합_v1" in _session(sheet="v_통합_v1")["sub"]
+
+
+def test_session_row_folds_the_file_kind_into_the_excel_glyph():
+    """세션 어휘 `""` 는 「미지」가 아니라 파일 소스다 — 민 종이로 서면 화면이 거짓말한다."""
+    assert _session(kind="")["icon"] == "excel"
+    assert _session(kind="pclm")["icon"] == "pclm"
+    assert _session(kind="pipeline")["icon"] == "other"

@@ -222,7 +222,7 @@ export function bootProduct() {
   });
   const DataPicker = createDataPickerController({
     doc: document,
-    runtime, client, services: servicePorts, modal: Modal,
+    runtime, client, services: servicePorts, modal: Modal, popover: Popover,
     notify: (message) => window.alert(message),
   });
   const JobRead = createJobReadController({

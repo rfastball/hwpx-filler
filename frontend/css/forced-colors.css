@@ -13,8 +13,7 @@
   .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
   .btn.danger:not(:disabled){background:Mark;color:MarkText;border-color:Mark}
 
-  .jcard[aria-current="true"],.tplcard[aria-current="true"]{
-    border-left-color:Highlight}
+  .jcard[aria-current="true"]{border-left-color:Highlight}
   .jcard.corrupt{border-left-color:Mark}
 
   /* 매핑 행 상태 4태(U6-C #977) — 틴트는 forced-colors 에서 통째로 사라지므로 상태 축을

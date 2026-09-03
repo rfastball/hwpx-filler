@@ -1733,11 +1733,14 @@ test("우 열은 `pool.column` 을 좌 열과 같은 `.pitem` 문법으로 그�
      「새로 읽기」도 대칭으로 서고, 셋 다 자기 side 를 말한다. */
   assert.equal(marked.length, 5, markup.slice(markup.indexOf('id="editorDataPool"'), 400));
   assert.ok(markup.includes('data-key="d1"') && markup.includes('data-key="d2"'));
-  /* 고름 표지는 **키 대조 하나**다(pairing.data_key). */
-  const d1 = markup.slice(markup.indexOf('data-key="d1"') - 300, markup.indexOf('data-key="d1"'));
+  /* 고름 표지는 **키 대조 하나**다(pairing.data_key). 행의 정체 좌표(`data-key`)는 끌기
+     결속과 무관하게 행 자신이 들므로(③b) 상태 축은 그 **뒤**에 선다. */
+  const from = (key) => markup.slice(markup.indexOf(`data-key="${key}"`),
+    markup.indexOf(`data-key="${key}"`) + 300);
+  const d1 = from("d1");
   assert.ok(d1.includes('aria-pressed="true"'), "겨눈 풀 행에 고름 표지가 없습니다");
   /* 못 고르는 행은 **숨기지 않고 눌린다** — `disabled` 면 사유를 말할 자리가 없다. */
-  const d2 = markup.slice(markup.indexOf('data-key="d2"') - 300, markup.indexOf('data-key="d2"'));
+  const d2 = from("d2");
   assert.ok(d2.includes('aria-disabled="true"'), "끊긴 행이 비활성 표시를 잃었습니다");
   assert.ok(!d2.includes(" disabled"), "끊긴 행이 `disabled` 라 클릭이 오지 않습니다");
   assert.ok(markup.includes("참조가 끊겼습니다"), "사유가 목록에서 사라졌습니다");
@@ -1767,7 +1770,7 @@ test("파일로 연 데이터는 세션 행으로 **맨 위**에 서고 「이 �
   assert.ok(markup.includes("시트: 물품 · 헤더 1행 · 12행"),
     "현재 데이터의 재진술(시트·헤더 행·행 수)이 사라졌습니다");
   assert.ok(markup.includes("사용 중"), "「사용 중」 배지가 사라졌습니다");
-  const head = markup.slice(session - 300, session);
+  const head = markup.slice(session, session + 300);
   assert.ok(head.includes('aria-pressed="true"'), "세션 행에 고름 표지가 없습니다");
   assert.ok(markup.includes('id="editorPoolPin"'),
     "파일로 연 데이터인데 「이 데이터 고정…」이 서지 않았습니다");

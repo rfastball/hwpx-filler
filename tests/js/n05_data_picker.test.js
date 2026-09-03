@@ -16,9 +16,28 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 const SURFACE = [
   "init", "poolModel", "model", "regModel", "open", "close", "browseFile", "openPin",
-  "openPclm", "poolAction", "resolveDuplicate", "openRegDialog", "patchReg", "closeReg",
-  "browseRegPath", "submitReg", "client", "notify",
+  "openPclm", "choose", "refresh", "poolAction", "resolveDuplicate", "noticeAction",
+  "rowContextMenu", "toggleRowMenu", "closeRowMenu", "handleRowMenu", "popover",
+  "openRegDialog", "patchReg", "closeReg", "browseRegPath", "submitReg", "client", "notify",
 ];
+
+/** 스냅샷이 낸 세션 행 하나(`webapp/pool_column.session_data_row` 와 같은 키 집합).
+ *
+ *  **부제는 Python 이 짓는다** — 이 파일이 시트·헤더 행·행 수를 잇지 않는 것이 계약이다. */
+function sessionRow(overrides) {
+  return Object.assign({
+    key: "session", name: "대장.xlsx", sub: "시트: 물품 · 3행", reason: "", warns: [],
+    badge_label: "사용 중", badge_level: "ok", icon: "excel", selectable: true,
+    path: "C:/d/대장.xlsx", actions: [],
+  }, overrides || {});
+}
+
+/** 여는 쪽이 넘기는 세션 판독기 — 값이 아니라 **함수**다(면 안에서 마운트가 바뀐다). */
+function sessionRead(value) {
+  return () => Object.assign(
+    { data_row: null, data_pool_key: "", sheet: "" }, value || {},
+  );
+}
 
 /** 스냅샷이 내려주는 계약 목록 블록(실 백엔드 `_pclm_block` 과 같은 모양).
  *
@@ -75,6 +94,7 @@ function build(options = {}) {
   };
   const controller = createDataPickerController({
     doc: { getElementById: (id) => ({ id }) },
+    popover: { place: () => {}, wireDismiss: () => () => {} },
     runtime: {
       model: () => ({
         getSnapshot: () => pool,
@@ -122,8 +142,11 @@ test("controller model — subscribe 해제 뒤에는 알림이 오지 않는다
 
 test("open — session을 만들고 dataPickerModal을 연다", async () => {
   const h = build();
-  const { result } = await opened(h, { current: { label: "현재" } });
-  assert.equal(h.controller.model.getSnapshot().session.current.label, "현재");
+  const { result } = await opened(h, {
+    session: sessionRead({ data_row: sessionRow({ name: "현재" }) }),
+  });
+  assert.equal(
+    h.controller.model.getSnapshot().session.read().data_row.name, "현재");
   assert.equal(h.modalCalls[0][1], "dataPickerModal");
   h.controller.close();
   await result;
@@ -147,31 +170,49 @@ test("close — 미선택 session은 null로 정확히 한 번 settle된다", as
 });
 
 /* 전환 착지의 **증언자**를 못박는다(#728 H7 오진의 자리).
-   이 면은 열릴 때 `current: currentData()` 로 *이전* 데이터의 카드를 이미 세운다. 그래서
-   「.tplcard-name 이 있다」·「고정 버튼이 있다」는 새 적재를 증언하지 못한다 — 실 대본이 그
-   존재로 기다리면 즉시 통과해 적재 도중에 [닫기]를 누르고, 그 닫기는 busy 계약대로 거절된다
-   (바로 위 테스트가 그 거절을 이미 못박는다). 이번 적재를 증언하는 것은 **문안** 하나뿐이다:
+   이 면은 열릴 때 세션 행(`data_row`)으로 *이전* 데이터를 이미 세운다. 그래서 「세션 행이
+   있다」·「고정 버튼이 있다」는 새 적재를 증언하지 못한다 — 실 대본이 그 존재로 기다리면
+   즉시 통과해 적재 도중에 [닫기]를 누르고, 그 닫기는 busy 계약대로 거절된다(바로 위
+   테스트가 그 거절을 이미 못박는다). 이번 적재를 증언하는 것은 **문안** 하나뿐이다:
    open 이 `status:""` 로 비워 두므로 「불러왔습니다」는 이번 browse 가 끝났을 때만 선다. */
-test("전환 착지 표식 — 이전 카드는 여는 순간 이미 서 있고, 이번 적재는 문안만 증언한다", async () => {
+test("전환 착지 표식 — 이전 행은 여는 순간 이미 서 있고, 이번 적재는 문안만 증언한다", async () => {
   const h = build({ invoke: async () => ({ label: "파일: 새.csv", rows: 3, path: "C:/새.csv" }) });
   const { result } = await opened(h, {
-    current: { label: "파일: 이전.csv", origin: "file", path: "C:/이전.csv" },
+    session: sessionRead({ data_row: sessionRow({ name: "이전.csv", path: "C:/이전.csv" }) }),
   });
 
-  // 여는 순간: 카드를 그리는 값(`current.label`/`origin`/`path`)이 **이미** 차 있다. 이 값들이
-  // `.tplcard-name` 과 `#dataPickerPin` 을 세우므로, 그 둘의 존재는 새 적재를 증언하지 못한다.
+  // 여는 순간: 행을 그리는 값이 **이미** 차 있다. 그 존재는 새 적재를 증언하지 못한다.
   const atOpen = h.controller.model.getSnapshot();
   assert.equal(atOpen.current === undefined, true);
-  assert.equal(atOpen.session.current.label, "파일: 이전.csv");
-  assert.equal(atOpen.session.current.origin, "file");
+  assert.equal(atOpen.session.read().data_row.name, "이전.csv");
   assert.equal(atOpen.status, "", "open 은 문안을 비운다 — 그래서 문안만이 이번 적재를 증언한다");
 
   await h.controller.browseFile();
 
   const landed = h.controller.model.getSnapshot();
   assert.match(landed.status, /불러왔습니다/, "적재 완료 문안이 실 대본의 착지 표식이다");
-  assert.equal(landed.session.current.label, "파일: 새.csv", "카드가 새 데이터로 재진술된다");
   assert.equal(landed.loading, false, "착지 문안이 선 시점에 loading 은 이미 풀려 있다");
+
+  h.controller.close();
+  await result;
+});
+
+/* 세션 행은 **여는 순간의 사본이 아니다**(③b): 이 면 안에서 파일을 새로 열면 마운트가
+   바뀌고 작업 스냅샷이 다시 온다. 값으로 얼려 두면 목록 맨 위 행이 이제는 쓰지 않는
+   데이터를 「사용 중」이라 말한다 — 조용히 틀리는 자리라 판독기를 함수로 받는다. */
+test("세션 행은 렌더마다 다시 읽는다 — 여는 순간의 값을 얼리지 않는다", async () => {
+  const h = build();
+  let seen = { data_row: sessionRow({ name: "이전.csv" }), data_pool_key: "", sheet: "" };
+  const { result } = await opened(h, { session: () => seen });
+  const before = renderToStaticMarkup(
+    createElement(DataPickerDialog, { controller: h.controller }));
+  assert.ok(before.includes("이전.csv"));
+
+  seen = { data_row: sessionRow({ name: "새.csv" }), data_pool_key: "", sheet: "" };
+  const after = renderToStaticMarkup(
+    createElement(DataPickerDialog, { controller: h.controller }));
+  assert.ok(after.includes("새.csv"), "새 마운트가 행에 서지 않았습니다");
+  assert.equal(after.includes("이전.csv"), false, "옛 마운트가 「사용 중」으로 남았습니다");
 
   h.controller.close();
   await result;
@@ -231,12 +272,14 @@ test("다중 시트 취소 — 데이터는 그대로이고 면은 열린다", a
   h.controller.close(); await result;
 });
 
-test("다중 시트 성사 — 선택 결과를 현재 session에 싣는다", async () => {
+test("다중 시트 성사 — 확정한 시트의 마운트가 이 session의 착지가 된다", async () => {
   const chosen = { label: "목록.xlsx / S2", rows: 3, path: "C:/목록.xlsx", sheet: "S2" };
   const h = build({ invoke: async () => ({ needs_sheet: true }), choose: async () => chosen });
   const { result } = await opened(h);
   await h.controller.browseFile();
-  assert.equal(h.controller.model.getSnapshot().session.current.sheet, "S2");
+  /* 확정한 시트를 이 면이 따로 기억하지 않는다(③b) — 마운트는 Python 에서 성사했고
+     그 재진술은 작업 스냅샷이 든다. 여기 남는 것은 이 세션의 착지 라벨 하나다. */
+  assert.match(h.controller.model.getSnapshot().status, /불러왔습니다/);
   h.controller.close();
   assert.equal(await result, chosen.label);
 });
@@ -284,15 +327,21 @@ test("mount 진행 중 close — 닫지 않고 busy 오류를 재진술한다", 
 
 test("이 데이터 고정 — 현재 path가 없으면 등록면을 열지 않는다", async () => {
   const h = build();
-  const { result } = await opened(h, { current: { label: "현재" } });
+  const { result } = await opened(h, {
+    session: sessionRead({ data_row: sessionRow({ name: "현재", path: "" }) }),
+  });
   h.controller.openPin();
   assert.equal(h.controller.regModel.getSnapshot(), null);
   h.controller.close(); await result;
 });
 
-test("이 데이터 고정 — 현재 label/path/sheet를 registration state로 옮긴다", async () => {
+test("이 데이터 고정 — 세션 행의 이름·경로와 스냅샷 시트를 registration state로 옮긴다", async () => {
   const h = build();
-  const { result } = await opened(h, { current: { label: "현재", path: "C:/a.xlsx", sheet: "S1" } });
+  const { result } = await opened(h, {
+    session: sessionRead({
+      data_row: sessionRow({ name: "현재", path: "C:/a.xlsx" }), sheet: "S1",
+    }),
+  });
   h.controller.openPin();
   assert.deepEqual(
     Object.fromEntries(Object.entries(h.controller.regModel.getSnapshot()).filter(([key]) => ["name", "path", "sheet", "pinMode"].includes(key))),
@@ -496,38 +545,54 @@ test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활
   without.controller.close(); await b.result;
 });
 
-test("현재 데이터 카드 — 계약 목록 마운트도 「시트」로 말하고 값은 제목으로 옮긴다", async () => {
+/* 「현재 데이터」는 목록 **첫 행**이다(③b) — 종전 카드의 승계처다. 그 행이 무엇을 말하는지
+   (시트·헤더 행·행 수, 계약 목록의 뷰 이름 제목화)는 **Python 이 짓는다**
+   (`webapp/pool_column.session_data_row` · 계약은 `tests/test_webapp_job.py`). 여기서 재는
+   것은 이 면이 그 문장을 **그대로 옮기는가** 하나다. */
+test("현재 데이터 행 — 부제는 Python 문안 그대로이고 웹이 제목표를 다시 조회하지 않는다", async () => {
   const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  /* 양성·음성 한 쌍: 스냅샷이 이미 제목으로 옮긴 부제는 그대로 서고, 스냅샷이 원문
+     그대로 둔 이름(구판·손편집)도 **감추거나 다시 옮기지 않는다**. 웹이 `pclm.titles` 를
+     다시 조회하고 있으면 아래 둘째 단언이 빨강이 된다(같은 상태 두 곳 판정). */
   const { result } = await opened(h, {
-    current: {
-      label: "계약 목록", path: "C:/d/pclm.db", sheet: "v_통합_v1",
-      origin: "pclm", kind: "pclm",
-    },
+    session: sessionRead({
+      data_row: sessionRow({ name: "계약 목록", sub: "시트: 통합 · 12행", icon: "pclm" }),
+    }),
   });
   const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
-  assert.ok(markup.includes("시트: 통합"), markup);
-  assert.equal(markup.includes("v_통합_v1"), false, "내부 이름은 카드에 서지 않는다");
+  assert.ok(markup.includes("시트: 통합 · 12행"), markup);
+  assert.equal(markup.includes("v_통합_v1"), false, "내부 이름은 행에 서지 않는다");
   h.controller.close(); await result;
+
+  const legacy = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+  const b = await opened(legacy, {
+    session: sessionRead({ data_row: sessionRow({ sub: "시트: v_구판 · 3행", icon: "pclm" }) }),
+  });
+  const raw = renderToStaticMarkup(
+    createElement(DataPickerDialog, { controller: legacy.controller }));
+  assert.ok(raw.includes("시트: v_구판 · 3행"), raw);
+  legacy.controller.close(); await b.result;
 });
 
-test("현재 데이터 카드 — 제목표에 없는 면 이름은 감추지 않고 원문 그대로 남긴다", async () => {
-  /* CLI·손편집이 남긴 구판 이름은 조용히 지우는 대신 그대로 보인다(조용한 추측 금지). */
-  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], pclm: PCLM_BLOCK } });
+test("고름 표지는 작업 스냅샷이 정한다 — 풀 겨눔이면 그 슬롯 행이 선다", async () => {
+  const column = {
+    rows: [{
+      key: "k1", name: "7월 공고목록", sub: "C:/d/7월.xlsx (물품)", reason: "", warns: [],
+      badge_label: "활성", badge_level: "ok", icon: "excel", selectable: true,
+      path: "C:/d/7월.xlsx", actions: [{ key: "archive", label: "보관" }],
+    }],
+    notices: [], empty_hint: "", count_label: "1개", result: { text: "", level: "muted" },
+  };
+  const h = build({ pool: { rows: [], duplicates: [], corrupted: [], column } });
   const { result } = await opened(h, {
-    current: { label: "계약 목록", path: "C:/d/pclm.db", sheet: "v_구판", origin: "pclm", kind: "pclm" },
+    session: sessionRead({ data_row: sessionRow({ name: "7월 공고목록" }), data_pool_key: "k1" }),
   });
   const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
-  assert.ok(markup.includes("시트: v_구판"), markup);
-  h.controller.close(); await result;
-});
-
-test("현재 데이터 카드 — 엑셀 마운트는 그대로 「시트」로 말한다", async () => {
-  const h = build();
-  const { result } = await opened(h, {
-    current: { label: "대장.xlsx", path: "C:/d/대장.xlsx", sheet: "물품", origin: "file", kind: "" },
-  });
-  const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
-  assert.ok(markup.includes("시트: 물품"), markup);
+  /* 겨눔이 있는 마운트는 그 슬롯 행이 고름 표지를 든다(세션 행이 아니다) — 그리고 이미
+     고정된 참조라 「이 데이터 고정…」은 서지 않는다(같은 파일의 참조가 둘로 갈린다). */
+  const pressed = markup.slice(markup.indexOf('aria-pressed="true"'));
+  assert.ok(markup.includes('data-key="k1"') && pressed.includes("7월 공고목록"));
+  assert.equal(markup.includes('id="dataPickerPin"'), false, "이미 고정된 참조에 고정 문이 섰습니다");
   h.controller.close(); await result;
 });
 

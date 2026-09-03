@@ -183,12 +183,12 @@ table.ro .pv.err{color:var(--a-warn);white-space:normal;word-break:keep-all}
 .route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 
-/* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다. */
-.jcard:hover,.tplcard:hover{background:var(--n-hover)}
-.jcard[aria-current="true"],.tplcard[aria-current="true"]{
-  background:var(--a-sel);border-left-color:var(--a-primary)}
+/* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다.
+   (짝이던 `.tplcard` 는 마지막 소비자인 데이터 선택 다이얼로그가 공용 고르기 열로
+   합류하며 걷혔다 — 그 열의 상태 어휘는 `.poolcol .pitem` 이 진다.) */
+.jcard:hover{background:var(--n-hover)}
+.jcard[aria-current="true"]{background:var(--a-sel);border-left-color:var(--a-primary)}
 .jcard.corrupt{border-left-color:var(--a-danger)}
-.jcard:focus-visible,.tplcard:focus-visible{
-  outline:2px solid var(--a-primary);outline-offset:2px}
+.jcard:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 /* R4 화면 portal wrapper는 정적 화면 root의 레이아웃 자식 관계를 보존한다. */
 .library-react-surface{display:contents}

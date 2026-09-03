@@ -1,4 +1,5 @@
-/* 고르기 1단계의 **열 하나** — 좌(템플릿)·우(데이터)가 이 컴포넌트의 두 인스턴스다.
+/* 고르기의 **열 하나** — 세 자리가 이 컴포넌트의 세 인스턴스다: 1단계의 좌(템플릿)·
+ * 우(데이터) 열과 「데이터 선택」 다이얼로그(`data_picker.ts` — ③b 에서 합류).
  *
  * 동결 시안 `docs/u6-mockups/pairing-flow.html` 장면 1 의 문법(`.pool` · `.pool-head` ·
  * `.pool-list` · `.pitem` · `.pool-acts`)이 여기 한 벌로 선다. 종전에는 같은 그림을 두
@@ -8,8 +9,8 @@
  *
  * **판정은 하나도 여기 없다.** 행이 드는 값은 전부 Python 이 낸 공용 존
  * (:mod:`hwpxfiller.webapp.pool_column`)이고 이 파일은 그것을 그린 뒤 호스트 콜백으로
- * 되쏜다. 갈리는 것은 셋뿐이다 — 이 열이 어느 쪽인가(`side`), DOM 좌표(`rootId`·`listId`),
- * 그리고 바닥에 서는 동사 줄(`acts`).
+ * 되쏜다. 갈리는 것은 넷뿐이다 — 이 열이 어느 쪽인가(`side`), DOM 좌표(`rootId`·`listId`),
+ * 바닥에 서는 동사 줄(`acts`), 그리고 짝 지을 상대 열이 있는가(`drop`).
  *
  * 못 고르는 행은 **숨기지 않고 서되 눌리면 사유를 말한다**: `aria-disabled` 이지 `disabled`
  * 가 아니고, 클릭도 끌어놓기 거절도 호스트의 같은 한 자리(`choose`)를 지난다 — 이름과
@@ -19,6 +20,12 @@ import { createElement } from "react";
 import type { ReactNode } from "react";
 
 type Obj = Record<string, any>;
+
+/** 지금 쓰고 있는 데이터가 목록 맨 위에 서는 행의 키 — Python 이 짓는 값과 **같은 글자**여야
+ *  한다(`webapp/pool_column.SESSION_DATA_KEY`). 이 키를 든 행은 풀 항목이 아니라 상태 동사가
+ *  없고 다시 고를 수도 없다(이미 그것을 쓰고 있다). 소비자가 셋(편집기 우 열·데이터 선택
+ *  다이얼로그·행 계약 자신)이라 행 계약이 사는 이 파일이 든다. */
+export const SESSION_DATA_KEY = "session";
 
 /** 드래그 결속(U6-B) — 고르기 화면에서만 선다. 다이얼로그 호스트는 넘기지 않는다. */
 export type PoolDragBinding = {
@@ -50,8 +57,12 @@ export type PoolColumnHost = {
   selectedKey: string;
   /** 고름·거절이 지나는 **한 자리**. 클릭도 드롭 거절도 여기로 온다. */
   choose(key: string): void;
-  /** 끌어놓기 성사 — 두 열의 키를 그대로 넘긴다. */
-  drop(sourceSide: string, sourceKey: string, targetKey: string): void;
+  /** 끌어놓기 성사 — 두 열의 키를 그대로 넘긴다.
+   *
+   *  **없으면 끌기 props 를 하나도 얹지 않는다**: 데이터 선택 다이얼로그에는 상대 열이
+   *  없어서 짝 지을 것이 없다. 결속 없이 `draggable` 만 서면 「끌 수 있다」는 약속이 서고
+   *  놓을 자리는 어디에도 없다(빈 약속 금지 — 좌표 `data-side` 도 그때만 선다). */
+  drop?(sourceSide: string, sourceKey: string, targetKey: string): void;
   /** 행 ⋮ — 없으면 그 버튼 자체가 서지 않는다(죽은 어포던스를 만들지 않는다). */
   onMore?(row: Obj, trigger: HTMLElement): void;
   /** 존 통지가 든 동사(중복 정리 등)의 발행 — payload 는 그 채널 스키마 그대로다. */
@@ -118,7 +129,6 @@ export function dragProps(
   };
   return {
     "data-side": binding.side,
-    "data-key": key,
     draggable: selectable,
     onDragStart: (event: Obj) => {
       if (!selectable || !event.dataTransfer) return;
@@ -172,13 +182,17 @@ function PoolRow(props: { row: Obj; host: PoolColumnHost }): ReactNode {
   return h("div", { className: "pitem-wrap" },
     h("button", {
       type: "button", className: "pitem", "data-act": "pick", "data-path": row.path,
+      /* 행의 **정체 좌표** — 끌기 결속과 무관하게 선다. 종전에는 이 값을 `dragProps` 가
+         얹어서, 끌기가 없는 호스트(다이얼로그)의 행은 자기 키를 말하지 못했다(같은 행을
+         겨눈 게이트가 좌표를 잃는 자리). 끌기 쪽이 드는 것은 `data-side` 하나다. */
+      "data-key": key,
       /* 못 고르는 행도 **눌린다** — `disabled` 면 클릭이 오지 않아 사유를 말할 자리가
          없다. 「고름」 축은 고를 수 있는 행에서만 의미가 있어 그때만 선다. */
       "aria-pressed": selectable ? (current ? "true" : "false") : undefined,
       "aria-disabled": selectable ? undefined : "true",
       onClick: () => { host.choose(key); },
       ...dragProps(
-        {
+        host.drop === undefined ? undefined : {
           side: host.side,
           onDrop: host.drop,
           /* 거절도 **클릭과 같은 한 자리**를 지난다: 호스트가 행을 다시 찾아 이름과

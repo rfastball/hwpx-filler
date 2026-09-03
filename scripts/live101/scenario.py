@@ -835,8 +835,8 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
     )
     s.click_sel("#dataPickerBrowse", what="SX-05 데이터 파일 찾아보기")
     # 착지는 **이번 찾아보기가 낸 말**로 잰다. 전환에서 이 면은 열리는 순간 이미 *이전* 데이터의
-    # 카드를 세우므로(`open({current: currentData()})`), 「.tplcard-name 이 있다」·「문안이 비어
-    # 있지 않다」는 새 적재를 증언하지 못한다 — 둘 다 여는 순간·진행 문안에서 이미 참이다.
+    # 세션 행을 세우므로(`open({session: currentData})` — 작업 스냅샷의 `data_row`), 「세션 행이
+    # 있다」·「문안이 비어 있지 않다」는 새 적재를 증언하지 못한다 — 둘 다 여는 순간·진행 문안에서 이미 참이다.
     # 그 vacuous 대기가 적재 도중에 [닫기]를 누르게 하고, 그 닫기는 「불러오는 중」 계약대로
     # **거절**된다(제품이 옳다). 거절 문안은 곧 성공 문안에 덮여 증거가 「닫히지 않은 면」만
     # 남는다 — #728 이 이 자리를 overlay 결함으로 오진한 출처가 그것이다.
@@ -857,7 +857,7 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
             # 「아무 말도 없었다」가 같은 빨강이 된다 — 그 둘은 전혀 다른 사건이다.
             state = s.js(
                 "(function(){var n=document.getElementById('dataPickerNote');"
-                "var c=document.querySelector('#dataPickerCurrent .tplcard-name');"
+                "var c=document.querySelector('#dataPickerPinned .pitem[data-key=\"session\"] .nm');"
                 "return {note:n?n.textContent.trim():null, note_shown:n?n.style.display!=='none':null,"
                 " current:c?c.textContent.trim():null};})()"
             )
@@ -870,12 +870,12 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
             "(function(){"
             "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
             "if(!document.getElementById('dataPickerNote').textContent.includes('불러왔습니다'))return false;"
-            "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
+            "if(!document.querySelector('#dataPickerPinned .pitem[data-key=\"session\"] .nm'))return false;"
             "const b=document.getElementById('dataPickerPin');"
             "return !!b && getComputedStyle(b).display !== 'none';})()",
             "데이터 전환 착지",
             timeout=25.0,
-            requires=["#dataPickerModal", "#dataPickerNote", "#dataPickerCurrent"],
+            requires=["#dataPickerModal", "#dataPickerNote", "#dataPickerPinned"],
         )
     s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
     try:

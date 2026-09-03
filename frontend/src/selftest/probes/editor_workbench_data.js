@@ -1518,18 +1518,26 @@ export function createEditorWorkbenchDataProbes() {
             return Promise.resolve({});
           });
           try {
+            /* 「지금 쓰는 데이터」는 **작업 스냅샷이 낸 행**이다(③b) — 종전의 카드 값
+               (`current`)이 아니라 `pool_row_view` 와 같은 키 집합의 행 하나다. 실 백엔드는
+               이 창에서 데이터를 마운트하지 않으므로 그 행을 여기서 합성해 넘긴다. */
             DataPicker.open({
               screen: "job",
-              current: {
-                label: "파일: 대장.xlsx", detail: "3건", path: "C:/d/대장.xlsx",
-                sheet: "물품", origin: "file",
-              },
+              session: () => ({
+                data_row: {
+                  key: "session", name: "대장.xlsx", sub: "시트: 물품 · 3행", reason: "",
+                  warns: [], badge_label: "사용 중", badge_level: "ok", icon: "excel",
+                  selectable: true, path: "C:/d/대장.xlsx", actions: [],
+                },
+                data_pool_key: "",
+                sheet: "물품",
+              }),
             });
           } finally {
             refreshStub.restore();
           }
           /* controller 외부 스토어는 같은 호출 스택에서 갱신되지만 concurrent React root의
-             portal DOM 커밋은 다음 turn일 수 있다. 현재 데이터 카드·고정 버튼을 읽기 전에
+             portal DOM 커밋은 다음 turn일 수 있다. 세션 행·고정 버튼을 읽기 전에
              고정 지연 없이 한 turn만 넘긴다. */
           await ctx.sleep(0);
           out.opened = !byId(ctx, "dataPickerModal").classList.contains("hidden");
@@ -1548,6 +1556,20 @@ export function createEditorWorkbenchDataProbes() {
             select_block_reason: status === "active"
               ? "" : "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다.",
           });
+          /* 공용 열 행(`webapp/pool_column.POOL_ROW_KEYS`) — 옛 행과 **같은 사실**을 좁은
+             키 집합으로 든다. 두 벌을 다 싣는 이유는 실 스냅샷이 그렇기 때문이다: 목록은
+             `column` 이 그리고, 「다시 연결」 프리필 재료(locate_path·sheet·note)만 옛 행이
+             계속 든다(슬라이스 ⑤가 그 자리를 정리한다). */
+          const colRow = (legacy, icon) => ({
+            key: legacy.key, name: legacy.name, sub: legacy.reference,
+            reason: legacy.select_block_reason, warns: [],
+            badge_label: legacy.badge_label, badge_level: legacy.badge_level,
+            icon: icon || "excel", selectable: legacy.selectable,
+            path: legacy.locate_path,
+            actions: legacy.kind === "excel"
+              ? [...legacy.actions, { key: "relink", label: "다시 연결…" }]
+              : legacy.actions,
+          });
           /* 계약 목록(pclm) 행 — 좌표가 DB+뷰라 「다시 연결」(엑셀 전용 동사)이 서지 않고,
              파일이 살아 있으면 그냥 쓸 수 있다(#937). */
           const pclmRow = {
@@ -1558,14 +1580,40 @@ export function createEditorWorkbenchDataProbes() {
             actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
             selectable: true, select_block_reason: "",
           };
+          const legacyRows = [
+            row("k1", "7월 공고목록", "active", "활성", "ok",
+              [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }]),
+            row("k2", "6월 보관분", "archived", "보관", "muted",
+              [{ key: "activate", label: "활성화" }, { key: "delete", label: "삭제" }]),
+            pclmRow,
+          ];
           ctx.push("pool", {
-            rows: [
-              row("k1", "7월 공고목록", "active", "활성", "ok",
-                [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }]),
-              row("k2", "6월 보관분", "archived", "보관", "muted",
-                [{ key: "activate", label: "활성화" }, { key: "delete", label: "삭제" }]),
-              pclmRow,
-            ],
+            rows: legacyRows,
+            /* 목록이 읽는 것은 이 존 하나다(고르기 열 공용 ①) — 통지(손상 격리·중복 등록)도
+               여기 실린다. 옛 `corrupted`/`duplicates` 키는 소비자가 없어도 실 스냅샷 모양
+               그대로 함께 싣는다(⑤ 퇴역 대상). */
+            column: {
+              rows: [
+                colRow(legacyRows[0]), colRow(legacyRows[1]), colRow(pclmRow, "pclm"),
+              ],
+              notices: [
+                {
+                  level: "danger",
+                  text: "⚠ 손상된 등록 데이터: broken.dataset.json — JSON 을 읽을 수 없습니다",
+                  actions: [],
+                },
+                {
+                  level: "warn",
+                  text: "같은 데이터(파일: 대장.xlsx · 시트 물품)를 가리키는 등록이 2건입니다."
+                    + " 남길 등록을 골라 정리하세요.",
+                  actions: [
+                    { key: "resolve_duplicate", label: "'7월 공고목록' 남기기", payload: { keep: "k1" } },
+                    { key: "resolve_duplicate", label: "'6월 보관분' 남기기", payload: { keep: "k2" } },
+                  ],
+                },
+              ],
+              empty_hint: "", count_label: "3건", result: { text: "", level: "muted" },
+            },
             /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
                새로 고르게 할 것(품목 제외 3건)이고 `titles` 는 이미 선 마운트를 제목으로
                그리기 위한 뷰 전수 매핑이다. */
@@ -1596,25 +1644,50 @@ export function createEditorWorkbenchDataProbes() {
           });
           await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
           const host = byId(ctx, "dataPickerPinned");
-          out.rows = host.querySelectorAll(".tplcard").length;
-          const uses = host.querySelectorAll('[data-act="use"]');
-          out.use_active_enabled = uses.length > 0 && !uses[0].disabled;
-          out.use_archived_disabled = uses.length > 1 && !!uses[1].disabled;
-          out.activate_reachable = !!host.querySelector('[data-act="activate"]');
-          out.relink_reachable = !!host.querySelector('[data-act="relink"]');
+          /* 목록은 공용 고르기 열이다(③b) — 카드가 아니라 `.pitem` 행이고, 「지금 쓰는
+             데이터」의 세션 행이 맨 위에 함께 선다(3 + 1). */
+          out.rows = host.querySelectorAll(".pitem").length;
+          out.session_row = textOf(host.querySelector('.pitem[data-key="session"]'));
+          const pitem = (key) => host.querySelector(`.pitem[data-key="${key}"]`);
+          /* 「고를 수 있는가」는 행 자체가 말한다 — 보관 항목은 숨기지 않고 `aria-disabled`
+             이고 `disabled` 가 아니다(눌리지 않으면 사유를 말할 자리가 없다). */
+          out.use_active_enabled = !!pitem("k1") && !pitem("k1").hasAttribute("aria-disabled");
+          out.use_archived_disabled = !!pitem("k2")
+            && pitem("k2").getAttribute("aria-disabled") === "true"
+            && !pitem("k2").disabled;
+          /* 상태 동사는 행 안 버튼이 아니라 ⋯ 메뉴가 든다(고르기 열과 같은 어포던스).
+             실클릭으로 열어 그 목록을 되읽는다 — 목록을 짓는 자리와 여는 자리가 갈리면
+             메뉴에 항목을 더하고 배선을 잊은 날이 조용히 지나간다. */
+          const rowMenu = async (key) => {
+            host.querySelector(`.job-more[data-key="${key}"]`).click();
+            await ctx.sleep(0);
+            const menu = ctx.doc.getElementById("dataPickerRowMenu");
+            const labels = menu
+              ? Array.prototype.map.call(menu.querySelectorAll("button"), (b) => textOf(b))
+              : [];
+            host.querySelector(`.job-more[data-key="${key}"]`).click();  // 같은 트리거 = 닫기
+            await ctx.sleep(0);
+            return labels;
+          };
+          const k1Menu = await rowMenu("k1");
+          const k2Menu = await rowMenu("k2");
+          out.activate_reachable = k2Menu.indexOf("활성화") >= 0;
+          out.relink_reachable = k1Menu.indexOf("다시 연결…") >= 0;
+          out.reveal_reachable = k1Menu.indexOf("폴더에서 보기") >= 0;
           /* 계약 목록 행(#937) — 종류가 달라도 목록에서 그냥 쓸 수 있고, 엑셀 전용 동사인
              「다시 연결」(경로+시트 좌표)은 그 행에 서지 않는다. */
-          const pclmCard = host.querySelector('[data-row="k3"]');
-          const pclmUse = pclmCard && pclmCard.querySelector('[data-act="use"]');
-          out.pclm_row_usable = !!pclmUse && !pclmUse.disabled;
-          out.pclm_no_relink = !!pclmCard && !pclmCard.querySelector('[data-act="relink"]');
-          /* 행동 버튼이 슬롯 키를 겨눈다(§5.3 — 이름은 라벨). 키 없는 버튼은 남의 항목을 겨눈다. */
-          out.use_targets_key = uses.length > 0 && uses[0].dataset.key === "k1";
-          out.corrupt_shown = textOf(byId(ctx, "dataPickerCorrupt")).indexOf("손상") >= 0;
-          /* 병합 대상(같은 데이터 등록 2건) — 숨김·자동 정리 금지: 카드와 확정 버튼이 선다. */
-          const dupes = byId(ctx, "dataPickerDupes");
-          out.dupes_shown = textOf(dupes).indexOf("같은 데이터") >= 0
-            && dupes.querySelectorAll("[data-dup-keep]").length === 2;
+          const k3Menu = await rowMenu("k3");
+          out.pclm_row_usable = !!pitem("k3") && !pitem("k3").hasAttribute("aria-disabled");
+          out.pclm_no_relink = k3Menu.join("|").indexOf("다시 연결") < 0;
+          /* 행이 슬롯 키를 겨눈다(§5.3 — 이름은 라벨). 키 없는 행은 남의 항목을 겨눈다. */
+          out.use_targets_key = host.querySelectorAll(".pitem")[1].dataset.key === "k1";
+          /* 손상 격리·중복 등록은 목록 **안**의 존 통지다(문안·수치는 Python). 병합 대상은
+             숨김·자동 정리 금지 — 통지와 그 확정 버튼이 같은 자리에 선다. */
+          const danger = host.querySelector('[data-notice="danger"]');
+          out.corrupt_shown = !!danger && textOf(danger).indexOf("손상") >= 0;
+          const dupes = host.querySelector('[data-notice="warn"]');
+          out.dupes_shown = !!dupes && textOf(dupes).indexOf("같은 데이터") >= 0
+            && dupes.querySelectorAll('[data-notice-act="resolve_duplicate"]').length === 2;
           /* 「이 데이터 고정」 = 등록 모달 재사용(현재 대상 프리필) — 제목·프리필까지 되읽는다. */
           byId(ctx, "dataPickerPin").click();
           await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
@@ -1669,7 +1742,11 @@ export function createEditorWorkbenchDataProbes() {
             pickStub.restore();
           }
           out.browse_kept_open = !byId(ctx, "dataPickerModal").classList.contains("hidden");
-          out.browse_restated = textOf(byId(ctx, "dataPickerCurrent")).indexOf("새목록.xlsx") >= 0;
+          /* 이번 적재의 증언은 **면 안 문안** 하나다(③b). 세션 행은 이제 작업 스냅샷이 낸
+             `data_row` 이고 이 창에서는 브리지가 스텁이라 그 push 가 없다 — 여기서 행이
+             바뀌기를 재면 프로브가 제 손으로 세운 값을 되읽는 hollow measurement 가 된다.
+             행이 실제 마운트를 따라가는지는 Python 계약(`tests/test_webapp_job.py`)이 진다. */
+          out.browse_restated = textOf(byId(ctx, "dataPickerNote")).indexOf("새목록.xlsx") >= 0;
           const pin2 = byId(ctx, "dataPickerPin");
           /* 가시성까지 단언한다 — click 은 hidden 을 통과하므로 존재만으론 눈과 다른 결론이 난다. */
           out.browse_pin_visible = !!pin2 && !isHidden(ctx, pin2) && pin2.offsetParent !== null;
@@ -2601,7 +2678,7 @@ export function createEditorWorkbenchDataProbes() {
                고른 항목은 공용 `pool` 채널로 나간다(다이얼로그와 같은 몸통).
 
                연타 차단(in-flight)은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫히므로 같은
-               틱의 두 번째 클릭이 존재하지 않는다. 그 몸통 계약은 `tests/js/pool_list.test.js`
+               틱의 두 번째 클릭이 존재하지 않는다. 그 몸통 계약은 `tests/js/pool_verbs.test.js`
                가 계속 진다(공용 `createPoolVerbs`). */
             sent.length = 0;
             ctx.doc.body.click();

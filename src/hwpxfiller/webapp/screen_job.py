@@ -286,6 +286,7 @@ from .data_zone import (
     EMPTY_TABLE as _EMPTY_TABLE,
     DataZoneMixin,
 )
+from .pool_column import session_data_row
 from .screens import (
     NO_ROWS_TEXT,
     PoolTargetingMixin,
@@ -1509,8 +1510,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
-            # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 「현재 데이터」·고정 프리필.
+            # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 고정 프리필.
             "data_target": self._data_target(),
+            # 지금 쓰는 데이터의 **열 행 하나**(고르기 열 공용 ③b) — 데이터 선택 다이얼로그가
+            # 공용 `PoolColumn` 으로 합류하면서 종전 「현재 데이터」 카드가 이 행으로 접혔다.
+            # 형·부제는 편집기 우 열과 **같은 함수**가 짓는다(두 자리가 같은 사실을 말한다).
+            "data_row": self._data_row(),
+            # 그 마운트가 **풀 슬롯에서 왔는가**(왔으면 그 키, 아니면 ""). 다이얼로그의 고름
+            # 표지와 「이 데이터 고정…」 가부가 이 한 값으로 갈린다 — 표면이 경로 모양이나
+            # 라벨 접두로 되추측하면 같은 사실을 두 곳이 판정한다. 조회는 없다: 겨눔이
+            # 성사되는 자리(`_do_load_pool`)가 이미 세션에 세워 둔 값이다.
+            "data_pool_key": self.data_pool_key,
             # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 없으면 None.
             "data_notice": (
                 {"level": notice_level, "text": notice_text}

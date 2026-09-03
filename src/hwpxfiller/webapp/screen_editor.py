@@ -59,10 +59,8 @@ from ..domain.job import (
     template_media,
 )
 from ..domain.mapping import MappingProfile
-from ..domain.pclm_views import PCLM_VIEW_TITLES
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import library_display_name
-
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import (
     pclm_reference,
@@ -109,7 +107,7 @@ from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 �
 from ..domain.output_name import format_seq_token
 from ..naming import make_output_filename, pattern_uses_seq, seq_token_pads
 from .output_folder_zone import output_folder_zone
-from .pool_column import pool_icon_for_kind, pool_row_view
+from .pool_column import session_data_row
 from .screens import (
     MUTATION_KINDS,
     NO_ROWS_TEXT,
@@ -696,41 +694,21 @@ class EditorController:
         **풀 등록 결속에는 서지 않는다**(``data_key`` 와 배타). 풀 행이 이미 그 데이터를
         들고 있으므로 여기서 한 행 더 내면 같은 결속이 목록에 두 번 선다.
 
-        부제는 여기서 짓는다. 종전에는 웹이 시트·헤더 행·행 수를 줄로 이었고, 계약 목록의
-        뷰 이름을 제목으로 옮기는 표(``PCLM_VIEW_TITLES``)도 스냅샷으로 실어 웹이 다시
-        조회했다 — 같은 문장을 두 층이 조립하던 자리다. 표에 없는 이름(손편집·구판)은
-        감추지 않고 원문 그대로 남긴다.
+        부제는 **웹이 짓지 않는다**. 종전에는 웹이 시트·헤더 행·행 수를 줄로 이었고, 계약
+        목록의 뷰 이름을 제목으로 옮기는 표(``PCLM_VIEW_TITLES``)도 스냅샷으로 실어 웹이 다시
+        조회했다 — 같은 문장을 두 층이 조립하던 자리다. 짓는 자리는 이제 공용 열 형
+        (:func:`~hwpxfiller.webapp.pool_column.session_data_row`) 하나이고, 데이터 선택
+        다이얼로그(``screen_job``)가 그 같은 함수를 부른다.
         """
         if not self.data_path or self._registered_data_entry()[0]:
             return None
-        sheet_title = (
-            PCLM_VIEW_TITLES.get(self.data_sheet, self.data_sheet)
-            if self.data_kind == "pclm" else self.data_sheet
-        )
-        parts = [
-            f"시트: {sheet_title}" if sheet_title else "",
-            f"헤더 {self.data_header_row}행" if self.data_header_row > 0 else "",
-            f"{len(self.records)}행",
-        ]
-        return pool_row_view(
-            key="session",
+        return session_data_row(
             name=self.data_display_name(),
-            sub=" · ".join(p for p in parts if p),
-            # 지금 쓰고 있는 것이라 고를 수 없는 사유가 없다(눌러도 무동작이 아니라
-            # 「이미 이것」이라는 뜻이다 — 표면이 다시 발신하지 않는다).
-            reason="",
-            warns=[],
-            badge_label="사용 중",
-            badge_level="ok",
-            # 세션 어휘와 풀 어휘가 **한 글자 다르다**: 세션의 `""` 는 「미지」가 아니라
-            # 파일 소스(엑셀/CSV)이고(`load_data_path` — 그 관문은 늘 파일이다), 풀 참조는
-            # 같은 것을 `"excel"` 이라 부른다. 그대로 넘기면 표에 없는 값이 되어 엑셀 파일이
-            # 민 종이(`other`)로 서고, 화면이 종류를 모른다고 말하게 된다.
-            icon=pool_icon_for_kind(self.data_kind or "excel"),
+            kind=self.data_kind,
             path=self.data_path,
-            # 풀 항목이 아니므로 상태 동사(보관·삭제·다시 연결)가 없다 — 「폴더에서 보기」와
-            # 「이 데이터 고정…」은 링1 동사가 아니라 표면 어포던스라 여기 싣지 않는다.
-            actions=[],
+            sheet=self.data_sheet,
+            header_row=self.data_header_row,
+            record_count=len(self.records),
         )
 
     def _pairing_preview_cached(self, field_names: "list[str]") -> "tuple[int, int]":

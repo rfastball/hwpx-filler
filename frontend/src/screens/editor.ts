@@ -35,10 +35,12 @@ import type {
 import { NoticeBox } from "./notice_box.ts";
 import { PathActions, invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
-import { PCLM_UNAVAILABLE, createPoolVerbs } from "./pool_list.ts";
+import {
+  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, poolRefusalText,
+} from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
-import type { PoolRegistrationPort } from "./pool_list.ts";
-import { PoolColumn } from "./pool_column.ts";
+import type { PoolRegistrationPort } from "./pool_verbs.ts";
+import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
 import {
   NAME_FIELD, PATTERN_FIELD, editorRevision, editorServerValues, editorSession,
@@ -639,7 +641,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     const legacy = (((poolModel.getSnapshot() || {}).rows || []) as Obj[])
       .find((entry) => String(entry.key) === key);
     if (legacy === undefined) {
-      noticeSave(`데이터를 찾을 수 없습니다. ${GONE_FROM_LIST}`);
+      noticeSave(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
       return;
     }
     await poolAction(action.slice(4), legacy);
@@ -1243,24 +1245,12 @@ export function createEditorController(deps: EditorControllerDeps) {
     return true;
   }
 
-  /** 고를 수 없는 항목의 클릭·드롭 문안 — **조용히 무시하지 않는다**(U6-B).
-   *
-   *  사유는 Python 이 행에 실어 보낸 것을 그대로 재진술한다: 여기서 문장을 다시 지으면
-   *  같은 상태가 부제와 알림에서 두 어휘를 갖는다. */
-  function refusalText(name: string, reason: string): string {
-    return `'${name}' 은(는) 고를 수 없습니다. ${reason}`;
-  }
-
+  /* 고를 수 없는 항목의 거절 문안과 「목록에서 사라졌다」는 **데이터 선택 다이얼로그와
+     공용**이다(③b — 두 자리가 같은 열을 그리므로 거절의 문형도 한 벌이다). 사유 자체는
+     Python 이 행에 실어 보낸 것을 그대로 재진술한다. */
   function refuseSelection(name: string, reason: string): void {
-    noticeSave(refusalText(name, reason));
+    noticeSave(poolRefusalText(name, reason));
   }
-
-  /** 목록에서 사라진 키의 사유 — **조용한 반환 금지**(리뷰 5).
-   *
-   *  드롭 도중 `tpl`·`pool` push 가 끼면 손에 든 키가 지금 목록에 없을 수 있다. 그때
-   *  말없이 반환하면 끌어 놓기의 반쪽만 성사하고 나머지 반쪽은 아무 말도 남기지 않는다 —
-   *  이 저장소가 금지하는 무반응이다. */
-  const GONE_FROM_LIST = "목록이 바뀌었습니다. 다시 고르세요.";
 
   /** 좌 열 선택 — 클릭도 드롭도 **이 한 자리**를 지난다(같은 액션, 같은 거절).
    *
@@ -1273,9 +1263,9 @@ export function createEditorController(deps: EditorControllerDeps) {
       if (refusals) refusals.push(text); else noticeSave(text);
       return false;
     };
-    if (item === undefined) return refuse(`템플릿을 찾을 수 없습니다. ${GONE_FROM_LIST}`);
+    if (item === undefined) return refuse(`템플릿을 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
     if (!item.selectable) {
-      return refuse(refusalText(String(item.name), String(item.reason || "")));
+      return refuse(poolRefusalText(String(item.name), String(item.reason || "")));
     }
     return useLibraryTemplate(String(item.path));
   }
@@ -1294,9 +1284,9 @@ export function createEditorController(deps: EditorControllerDeps) {
       if (refusals) refusals.push(text); else noticeSave(text);
       return false;
     };
-    if (row === undefined) return refuse(`데이터를 찾을 수 없습니다. ${GONE_FROM_LIST}`);
+    if (row === undefined) return refuse(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
     if (!row.selectable) {
-      return refuse(refusalText(String(row.name), String(row.select_block_reason || "")));
+      return refuse(poolRefusalText(String(row.name), String(row.select_block_reason || "")));
     }
     return usePoolData(key);
   }
@@ -1655,11 +1645,6 @@ export function libRowMenuItems(media: string, item: Obj | null): ContextMenuIte
   const unreadable = !!item.error || !!item.reason;
   return unreadable ? [detail] : [{ action: "edit", label: "내용 편집" }, detail];
 }
-
-/** 파일로 연 데이터가 우 열에 서는 행의 키 — Python 이 짓는 값과 **같은 글자**여야 한다
- *  (`screen_editor._pairing_data_row`). 이 키를 든 행은 풀 항목이 아니므로 상태 동사가 없고,
- *  다시 고를 수도 없다(이미 그것을 쓰고 있다). */
-export const SESSION_DATA_KEY = "session";
 
 /** 우 열 행 ⋯ 가 열 동사 목록 — 링1 동사 + 「폴더에서 보기」.
  *
