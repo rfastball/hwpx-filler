@@ -193,6 +193,8 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   둘 이상이 공유하는 것만 공용 상수 모듈로 올린다(승격 대상이 없으면 모듈도 없다 —
   R5-99 B2 에서 `frontend/js/copy.js` 가 소비자 0 으로 삭제된 전례). 문형·금지어는
   `docs/COPY_STYLE_GUIDE.md`, 용어는 `docs/UI_VOCABULARY.md`.
+  문장 수준 문안은 `docs/ui_copy_census.toml` 이 allowlist 이고
+  `scripts/ui_copy_census.py --check` 가 대조한다(새 문장 기본 0).
 - 확장자 필터(`gui/file_filters.py`), 작업 방식 라벨(`gui/work_mode.py`), 식별 요약
   (`domain/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.
 
@@ -229,6 +231,9 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
     새 UI 컨트롤의 기존 열거형(busy/disabled 잠금 id 목록 등) 등록, 프론트 트리거↔백엔드
     액션의 양방향 존재, 기존 공유 팩토리·상수·헬퍼의 인라인 재구현 여부, 문서화된 seam
     계약(docstring 의 접근 제한 등) 우회 여부.
+  - 사용자 문안 예산: executor 스펙은 새 사용자 문장(종결어미 문장)을 **전문 열거**한다.
+    열거 밖 문장은 산출물에 넣지 않는다 — 0 이 기본값이고, 화면이 보여주는 것·정상 완료·
+    전제 조건을 문장으로 낭독하지 않는다(`docs/COPY_STYLE_GUIDE.md` §1·§8).
 - 링1 공개 API 를 바꾸면 소비 컨트롤러와 헤드리스 테스트를 같은 변경에 담는다. DOM `id`·
   `data-*`·script 순서·화면 루트를 바꾸면 **그 좌표를 든 게이트를 같은 변경에 담는다** —
   지금 그것을 지키는 것은 selftest 프로브(`frontend/src/selftest/probes/`)·live101 대본

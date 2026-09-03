@@ -30,6 +30,7 @@
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
+| `ui_copy_census.toml` | 화면 문장의 allowlist(기계 판독). 규범 정본은 [화면 문안 스타일](COPY_STYLE_GUIDE.md) §8, 짝 게이트는 `tests/repo_contract/test_ui_copy_census.py` |
 | `module_rings.toml` | 모듈별 ring 좌표(목표 권위)·source write set·behavior oracle. 안쪽→바깥쪽 의존 금지선의 **유일한** 정본이라 물리 이관 완료까지 영속(#542 H-2). 유래한 P1 계측 서사는 Git 이력이, 미이행 obligation 은 이슈 #582 가 소유 |
 | `tests/architecture_contract.toml` | P3-07(#587)의 **영속 architecture 계약** — root 공개 표면, module-key 제품 vendor 정책, frontend vendor 배치·lifecycle owner를 정본화한다. 짝 게이트는 `tests/repo_contract/test_p3_forbidden_edges.py` |
 

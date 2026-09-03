@@ -2166,7 +2166,8 @@ function MappingStage(props: {
   const head = (snapshot.binding_head || {}) as Obj;
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "binding")),
-    h("p", { className: "wsub" }, "필드마다 데이터 열을 정하고 전 행을 확인하세요."),
+    /* 부제는 걷혔다 — 제목·표 머리·배지가 이미 「필드마다 데이터 열을 정한다」를 보여준다
+       (`docs/COPY_STYLE_GUIDE.md` §1·§2: 상시 부제 기본 0). */
     /* 처방은 **저장 게이트와 같은 말**이어야 한다(#945 F8). U4-C 이후 데이터 연결은 저장의
        하드 게이트라(`gui/job_editor_state.validate_save`), 종전의 "고정값을 넣거나 비움으로
        확정하세요"는 그대로 따라도 저장이 막히는 거짓 처방이었다. 같은 상태를 두 어휘로
@@ -2198,8 +2199,12 @@ function MappingStage(props: {
             : [h("span", { className: "muted", key: "none" }, "행 0 / 0 · 데이터 없음")]))))),
       h("tbody", null, ...rows.map((row) =>
         h(MapRow as any, { key: row.index, row, snapshot, draft, controller }))),
-      h("tfoot", null, h("tr", null, h("td", { colSpan: 4 },
-        `미리보기는 실제 행입니다 · 사용하지 않는 데이터 열 ${Number(head.unused_columns || 0)}개`))))),
+      /* 바닥은 **수치 하나**다(§8 낭독 패턴 3): 「미리보기는 실제 행입니다」는 시스템 원칙
+         낭독이라 걷혔고, 안 쓰는 열이 0 이면 말할 것이 없어 줄 자체가 서지 않는다. */
+      Number(head.unused_columns || 0) > 0
+        ? h("tfoot", null, h("tr", null, h("td", { colSpan: 4 },
+          `사용하지 않는 데이터 열 ${Number(head.unused_columns)}개`)))
+        : null)),
     h(DataPreview as any, { snapshot }));
 }
 
@@ -2371,12 +2376,13 @@ function EditorFooter(props: {
   if (isEditing(snapshot)) {
     /* 저장·버리기는 **같은 합성 술어**로 상시 표시 + 상태 비활성이다(U2 §2.4·§2.17). */
     const armed = !!snapshot.dirty || hasPendingEdits(draft);
-    /* 연결 확정 대기(#911)는 무장 사유를 **더한다**. 판정·라벨·설명은 Python 이 실어 보낸
+    /* 연결 확정 대기(#911)는 무장 사유를 **더한다**. 판정·라벨은 Python 이 실어 보낸
        것을 그대로 읽는다 — 「저장 안 됨」 같은 인접 사실로 확정 필요를 여기서 추론하지 않는다.
        바꿀 것이 없는데 관리 검토가 확정을 기다리면 dirty 는 영영 거짓이고, 그 상태에서
        두 동사가 모두 잠겨 사슬을 닫을 길이 없었다. 버리기는 그대로 dirty 술어다(확정
        대기는 버릴 것을 만들지 않는다). 라벨이 갈리는 자리는 **무변경 확정 하나**다:
-       손댄 것이 있으면 그 저장이 확정도 겸하므로 「변경 저장」이 여전히 참말이다. */
+       손댄 것이 있으면 그 저장이 확정도 겸하므로 「변경 저장」이 여전히 참말이다.
+       설명 줄은 걷혔다(§8 낭독 패턴 1) — 전제 조건은 라벨이 말하고 사유는 blocker 가 든다. */
     const confirm = (snapshot.binding_confirm || {}) as Obj;
     const confirmPending = !!confirm.pending;
     const confirmOnly = confirmPending && !armed;
@@ -2386,10 +2392,6 @@ function EditorFooter(props: {
         onClick: () => controller.guarded(() => controller.discardPatch()),
       }, "변경 버리기"),
       h("span", { className: "spacer" }),
-      confirmPending
-        ? h("span", { className: "muted capnote", "data-role": "binding-confirm-hint" },
-          String(confirm.hint || ""))
-        : null,
       h("button", {
         className: "btn", "data-act": "save",
         "data-confirm-binding": confirmOnly ? "1" : null,

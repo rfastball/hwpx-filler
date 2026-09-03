@@ -1937,7 +1937,7 @@ async function footMarkup(bindingConfirm, extra) {
   return renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
 }
 
-const CONFIRM = { pending: true, label: "연결 확정", hint: "바꿀 것이 없어도 지금 연결을 확정해야 합니다." };
+const CONFIRM = { pending: true, label: "연결 확정" };
 
 test("#911 확정 대기가 참이면 손대지 않은 세션에서도 저장 동사가 활성이다", async () => {
   const markup = await footMarkup(CONFIRM);
@@ -1947,7 +1947,6 @@ test("#911 확정 대기가 참이면 손대지 않은 세션에서도 저장 �
     "확정을 요구받는데 그 확정을 수행할 동사가 잠겨 있다(#911 그 결함)");
   assert.ok(markup.includes("연결 확정"), "무변경 확정을 「변경 저장」이라 부르지 않는다");
   assert.equal(markup.includes("변경 저장"), false);
-  assert.ok(markup.includes(CONFIRM.hint), "왜 눌러야 하는지는 Python 문안 그대로 선다");
 });
 
 test("#911 확정 대기여도 「변경 버리기」는 dirty 술어 그대로다", async () => {
@@ -1966,13 +1965,12 @@ test("#911 손댄 세션은 확정 대기여도 「변경 저장」으로 남는
 });
 
 test("#911 확정 대기가 거짓이면 종전 무장 술어가 그대로다(무회귀)", async () => {
-  const markup = await footMarkup({ pending: false, label: "연결 확정", hint: "…" });
+  const markup = await footMarkup({ pending: false, label: "연결 확정" });
 
   const save = markup.slice(markup.indexOf('data-act="save"'));
   assert.ok(save.slice(0, save.indexOf(">")).includes("disabled"),
     "클린 세션의 저장은 버리기와 같은 술어여야 한다");
-  assert.equal(markup.includes('data-role="binding-confirm-hint"'), false,
-    "대기가 아니면 설명 줄도 서지 않는다");
+  assert.ok(markup.includes("변경 저장"), "대기가 아니면 저장 동사는 종전 라벨 그대로다");
 });
 
 test("#911 스냅샷에 사실이 없으면 프런트가 확정을 발명하지 않는다", async () => {
