@@ -223,7 +223,7 @@ test("상세 연결 손잡이 — 가운데 「연결」 줄 하나가 편집기
   const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
   assert.ok(markup.includes('id="libraryPairingEdit"'));
-  assert.ok(markup.includes("연결 12 / 12"));
+  assert.ok(markup.includes("연결 2 / 3") && markup.includes("확인 필요 1"));
   assert.ok(!markup.includes("재선택"));
   assert.ok(!markup.includes('id="libraryRepickTemplate"') && !markup.includes('id="libraryRepickData"'));
 });
