@@ -382,7 +382,6 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
         # 상세 연결 존의 필수 주입(U6-F #980) — 저장 폴더의 소유자는 여전히 작업 컨트롤러
         # 하나이고 라이브러리는 그 값을 읽기만 한다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
-        remembered_output_directory=lambda: "",
     )
     assert lock.acquire(blocking=False)
     try:
@@ -3600,7 +3599,6 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
         generation_lock=ctrl._generation_lock,
         # 상세 연결 존의 필수 주입(U6-F #980) — 이 시험이 재는 것은 검색 도달성이다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
-        remembered_output_directory=lambda: "",
     )
     library.dispatch("set_query", {"text": "공고서"})
     visible = [

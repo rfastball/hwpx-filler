@@ -654,7 +654,6 @@ def test_a_job_left_pointing_at_a_removed_example_uses_the_existing_alarm(tmp_pa
         generation_lock=threading.Lock(),
         # 상세 연결 존의 필수 주입(U6-F #980) — 이 시험이 재는 것은 경보 하나라 밀폐값이다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
-        remembered_output_directory=lambda: "",
     )
     assert library.snapshot()["alerts"]["missing_template_count"] == 0
 
