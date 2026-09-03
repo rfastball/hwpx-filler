@@ -26,10 +26,16 @@ from hwpxfiller.external.template_inspection import (
     inspect_hwpx_template,
     template_compile_status,
 )
+from hwpxfiller.gui.compile_badge import (
+    ERROR_BADGE_LEVEL,
+    TEXT_BADGE_LABEL,
+    TEXT_BADGE_LEVEL,
+)
 from hwpxfiller.gui.template_manager_state import (
     CONVERT_ACTION_LABEL,
     TemplateDetail,
     TemplateManagerViewModel,
+    TemplateRow,
     available_actions,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -309,6 +315,35 @@ def test_empty_library_is_empty(tmp_path):
     )
     assert vm.is_empty()
     assert vm.count_label() == ""
+
+
+def test_column_count_label_has_one_classifier_and_one_author(tmp_path):
+    """고르기 열 머리의 개수 — 분류사는 ``개`` 하나이고 저자도 하나다(공용 ⑤ 리뷰).
+
+    좌 열은 hwpx 와 TXT 를 한 목록으로 세우므로 머리의 수가 이 VM 이 아는 수와 다르다.
+    그렇다고 링2 가 문안을 지으면 우 열(``DatasetPoolViewModel.count_label``)과 갈리는 날이
+    온다 — 수만 넘기고 문안은 링1 이 낸다. 두 열은 한 컴포넌트의 두 인스턴스라 **같은 형**을
+    써야 하고, 그 동일성을 여기서 값으로 못박는다.
+    """
+    from hwpxfiller.application.dataset_pool import DatasetPoolViewModel
+    from hwpxfiller.data.factory import source_from_pool_item
+    from hwpxfiller.domain.dataset_reference import DatasetReference
+    from hwpxfiller.external.dataset_store import DatasetPoolRegistry
+
+    vm = TemplateManagerViewModel(
+        paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
+    )
+    assert vm.count_label_for(3) == "3개"
+    # 0 은 빈 문자열이다 — 「0개」를 세우면 빈 목록 안내와 같은 사실을 두 번 말한다.
+    assert vm.count_label_for(0) == ""
+    assert vm.count_label() == ""            # 목록이 비었으므로 머리도 비운다
+
+    registry = DatasetPoolRegistry(tmp_path)
+    pool = DatasetPoolViewModel(registry, source_factory=source_from_pool_item)
+    assert pool.count_label() == vm.count_label_for(0) == ""
+    registry.add(DatasetReference(name="7월목록", kind="excel", opts={"path": "x.xlsx"}))
+    pool.refresh()
+    assert pool.count_label() == vm.count_label_for(1) == "1개"
 
 
 def test_unreadable_file_surfaced_as_error_row_not_hidden(tmp_path):
@@ -808,13 +843,29 @@ def test_text_detail_has_no_convert_axis_and_no_slots():
     detail = TemplateDetail.from_text(
         Path("C:/lib/온나라/기안.txt"), ["공고명"], root=Path("C:/lib")
     )
-    assert detail.media == "txt" and detail.state is None and detail.badge_label == ""
+    assert detail.media == "txt" and detail.state is None
     assert detail.name == "온나라/기안"
     assert [f.name for f in detail.fields] == ["공고명"]
     assert detail.to_dict()["slots"] is None and detail.to_dict()["actions"] == []
 
     empty = TemplateDetail.from_text(Path("C:/lib/빈.txt"), [])
     assert empty.field_summary() == "채울 필드가 없습니다."
+
+
+def test_text_media_badge_has_one_author(tmp_path):
+    """TXT 매체 표지의 저자는 :mod:`compile_badge` 하나다(고르기 열 공용 ⑤ 리뷰).
+
+    종전에는 링1 이 배지를 비우고 링2(``screen_template.TXT_BADGE_LABEL``)와 웹
+    (``editor.ts`` 의 ``media === "txt" ? "TXT" : …``)이 각자 그 자리를 채웠다 — 같은 상태를
+    두 곳이 판정하던 자리다. 행과 상세가 **같은 상수**를 들어야 목록 pill 과 시트 pill 이
+    갈리지 않는다.
+    """
+    row = TemplateRow.from_text(Path("C:/lib/기안.txt"), 3)
+    detail = TemplateDetail.from_text(Path("C:/lib/기안.txt"), ["공고명"])
+    assert row.badge_label == detail.badge_label == TEXT_BADGE_LABEL == "TXT"
+    assert row.badge_level == detail.badge_level == TEXT_BADGE_LEVEL == "muted"
+    # 상태 배지의 심각도 어휘와 같은 정의역이다 — 매체 표지는 주의가 아니다.
+    assert TEXT_BADGE_LEVEL != ERROR_BADGE_LEVEL
 
 
 def test_the_convert_label_has_one_source():

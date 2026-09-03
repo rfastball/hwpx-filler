@@ -227,11 +227,14 @@ def run(ctx: ScenarioContext) -> dict:
     # 데이터 고르기가 2단계 머리에서 1단계 우 열로 옮겨 왔다(U6 §2.2) — 「다음 ▶」 앞이다.
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기")
+    # 파일로 연 데이터는 우 열 목록 **맨 위의 행**으로 선다(고르기 열 공용 ③a — 종전의
+    # 「현재 데이터」 카드 승계처). 연결 카드만 보면 그 행이 사라져도 초록이라 함께 잰다.
     s.wait(
         "document.querySelector('#editorLinkCard').textContent.includes('⟷')"
-        " && document.querySelector('#editorLinkCta').disabled === false",
-        "연결 카드·전진 게이트 개방",
-        requires=["#editorLinkCard", "#editorLinkCta"],
+        " && document.querySelector('#editorLinkCta').disabled === false"
+        " && !!document.querySelector('#editorDataList .pitem[data-key=\"session\"]')",
+        "연결 카드·전진 게이트 개방·현재 데이터 행",
+        requires=["#editorLinkCard", "#editorLinkCta", "#editorDataList"],
     )
     # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 연결 카드는 두 열 사이라 기본
     # 스크롤에서 폴드 밖일 수 있고, 위 조건은 그 상태에서도 참이다. 겨눠 스크롤한다.
@@ -832,8 +835,8 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
     )
     s.click_sel("#dataPickerBrowse", what="SX-05 데이터 파일 찾아보기")
     # 착지는 **이번 찾아보기가 낸 말**로 잰다. 전환에서 이 면은 열리는 순간 이미 *이전* 데이터의
-    # 카드를 세우므로(`open({current: currentData()})`), 「.tplcard-name 이 있다」·「문안이 비어
-    # 있지 않다」는 새 적재를 증언하지 못한다 — 둘 다 여는 순간·진행 문안에서 이미 참이다.
+    # 세션 행을 세우므로(`open({session: currentData})` — 작업 스냅샷의 `data_row`), 「세션 행이
+    # 있다」·「문안이 비어 있지 않다」는 새 적재를 증언하지 못한다 — 둘 다 여는 순간·진행 문안에서 이미 참이다.
     # 그 vacuous 대기가 적재 도중에 [닫기]를 누르게 하고, 그 닫기는 「불러오는 중」 계약대로
     # **거절**된다(제품이 옳다). 거절 문안은 곧 성공 문안에 덮여 증거가 「닫히지 않은 면」만
     # 남는다 — #728 이 이 자리를 overlay 결함으로 오진한 출처가 그것이다.
@@ -854,7 +857,7 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
             # 「아무 말도 없었다」가 같은 빨강이 된다 — 그 둘은 전혀 다른 사건이다.
             state = s.js(
                 "(function(){var n=document.getElementById('dataPickerNote');"
-                "var c=document.querySelector('#dataPickerCurrent .tplcard-name');"
+                "var c=document.querySelector('#dataPickerPinned .pitem[data-key=\"session\"] .nm');"
                 "return {note:n?n.textContent.trim():null, note_shown:n?n.style.display!=='none':null,"
                 " current:c?c.textContent.trim():null};})()"
             )
@@ -867,12 +870,12 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
             "(function(){"
             "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
             "if(!document.getElementById('dataPickerNote').textContent.includes('불러왔습니다'))return false;"
-            "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
+            "if(!document.querySelector('#dataPickerPinned .pitem[data-key=\"session\"] .nm'))return false;"
             "const b=document.getElementById('dataPickerPin');"
             "return !!b && getComputedStyle(b).display !== 'none';})()",
             "데이터 전환 착지",
             timeout=25.0,
-            requires=["#dataPickerModal", "#dataPickerNote", "#dataPickerCurrent"],
+            requires=["#dataPickerModal", "#dataPickerNote", "#dataPickerPinned"],
         )
     s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
     try:
@@ -1249,7 +1252,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 여기서 마법사 문안을 겨누면 없는 버튼을 기다리게 된다.
     s.click_text("#scr-editor", "변경 저장")
     s.wait("document.querySelector('#scr-editor').textContent.includes('저장했습니다')", "Binding 저장", timeout=30.0, requires=["#scr-editor"])
-    s.click_text("#editorContext", "문서 만들기로 돌아가기")
+    s.click_sel("#editorBack", what="편집기 복귀")
     s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
     binding_after = _workbench(_snapshot(s))
     # U3-03(#876): 「입력이 필요한 항목」 존은 조치 필요만 싣는다 — 수리된 Active Field 는 활성

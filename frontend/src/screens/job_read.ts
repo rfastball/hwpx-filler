@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import { SCREEN_ACTIONS } from "../contract/contract.gen.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
-import type { DataPickerController } from "./data_picker.ts";
+import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
@@ -224,20 +224,25 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     }
   }
 
-  function currentData(): Obj {
+  /** 데이터 선택 면이 「지금 쓰는 데이터」로 읽는 **Python 값 셋**(고르기 열 공용 ③b).
+   *
+   *  종전에는 이 함수가 라벨·부제·경로·시트·종류를 조립해 카드 값을 지었다 — 그 카드가
+   *  목록 첫 행으로 접히면서(스냅샷 `data_row`) 조립이 통째로 Python 으로 갔다. 여기 남은
+   *  일은 **옮기기**뿐이다.
+   *
+   *  값이 아니라 **함수로** 건넨다: 면 안에서 파일을 새로 열면 마운트가 바뀌고 스냅샷이
+   *  다시 오는데, 여는 순간의 값을 얼려 두면 그 행이 이제는 쓰지 않는 데이터를 「사용
+   *  중」이라 말한다. */
+  const currentData: PickerSessionRead = () => {
     const current = snapshot();
-    const target = current?.data_target || {};
     return {
-      label: current?.data_source_label || "",
-      detail: current?.has_data ? `${current.record_count}건` : "",
-      path: target.path || "",
-      sheet: target.sheet || "",
-      origin: target.origin || "",
-      /* `sheet` 자리가 무엇을 뜻하는지(엑셀=시트 / 계약 목록=뷰)는 호스트가 말한다(#937) —
-         떨어뜨리면 선택 면이 경로 모양으로 되추측하게 된다. */
-      kind: target.kind || "",
+      data_row: current?.data_row || null,
+      data_pool_key: current?.data_pool_key || "",
+      /* 「이 데이터 고정…」 프리필의 시트 자리 — 그 값이 무엇을 뜻하는지(엑셀=시트 /
+         계약 목록=뷰)는 마운트가 이미 안다(#937). 표면이 경로 모양으로 되추측하지 않는다. */
+      sheet: (current?.data_target || {}).sheet || "",
     };
-  }
+  };
 
   async function confirmDataSwap(): Promise<boolean> {
     return deps.ports.jobRunCoordination.current().confirmDestructiveIfArmed(
@@ -258,7 +263,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     if (!name) return;
     await deps.ports.editorEntry.current().openGuarded(String(name), {
       entry_reason: "library",
-      evidence: { "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요" },
+      evidence: {},
       return_context: { surface: "data" },
     });
   }
@@ -390,7 +395,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     }
     return deps.ports.editorEntry.current().newDraftFromData({
       entry_reason: "document_browser_new_work",
-      evidence: { "데이터": current?.data_source_label || "", ...extraEvidence },
+      /* 고른 데이터의 이름은 편집기 1단계 우 열이 선택 상태로 이미 보인다 — 배너에
+         한 번 더 쓰지 않는다(2026-09-03). */
+      evidence: { ...extraEvidence },
       return_context: { surface: "data" },
     });
   }
@@ -479,7 +486,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     openDataPicker(): void {
       void deps.dataPicker.open({
         screen: "job",
-        current: currentData(),
+        session: currentData,
         confirmSwap: confirmDataSwap,
       });
     },

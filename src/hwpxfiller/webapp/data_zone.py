@@ -40,6 +40,7 @@ from ..gui.filter_state import (
     sniff_column_kinds,
 )
 from ..gui.selection_state import SelectionModel
+from .pool_column import session_data_row
 
 # 데이터 미겨눔 상태의 필터/테이블 빈 골격 — 표면이 분기 없이 그린다.
 EMPTY_FILTER = {
@@ -134,6 +135,32 @@ class DataZoneMixin:
             "origin": self.data_source,
             "kind": self.data_kind,
         }
+
+    def _data_row(self) -> "dict | None":
+        """지금 쓰는 데이터의 **고르기 열 행 하나** — 마운트가 없으면 ``None``.
+
+        데이터 선택 다이얼로그가 공용 ``PoolColumn`` 으로 합류하면서(고르기 열 공용 ③b) 종전
+        「현재 데이터」 카드가 이 행으로 접혔다. 서는 조건은 그 카드와 **같다**
+        (``data_source`` 가 비어 있지 않을 때 = 어떤 마운트든 성사한 뒤) — 술어를 바꾸면
+        카드가 답하던 자리에서 행이 조용히 사라지는 상태가 생긴다.
+
+        풀 겨눔에도 선다(편집기 우 열과 갈리는 유일한 자리다). 이 목록에서는 그 슬롯 행도
+        함께 서 있어야 「보관·삭제·다시 연결」에 닿는데, 지금 쓰는 것이 무엇인지는 그 행의
+        고름 표지(``data_pool_key``)와 이 행이 **함께** 말한다 — 종전 세 구획의 「현재
+        데이터」와 「고정한 데이터」가 같은 등록을 동시에 그리던 것과 같은 사실이다.
+
+        형·부제는 공용 함수(:func:`~hwpxfiller.webapp.pool_column.session_data_row`)가 짓는다.
+        """
+        if not self.data_source:
+            return None
+        return session_data_row(
+            name=self.data_label,
+            kind=self.data_kind,
+            path=self.data_path,
+            sheet=self.data_sheet,
+            header_row=self.data_header_row,
+            record_count=len(self._records()),
+        )
 
     def new_work_handoff(self) -> "tuple[dict, str]":
         """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.

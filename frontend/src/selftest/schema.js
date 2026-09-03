@@ -31,14 +31,15 @@ export const SELFTEST_MODES = Object.freeze({
     env: null,
     kind: "key-set",
     baseMode: null,
-    /** 44키. 순서는 알파벳 — 드라이버 실행 순서가 아니다(그건 runner 의 `legacySite`). */
+    /** 45키. 순서는 알파벳 — 드라이버 실행 순서가 아니다(그건 runner 의 `legacySite`). */
     keys: Object.freeze([
       "action_roundtrip", "chain_recovery", "data_picker", "data_picker_buttons",
       "data_sheet", "editor_binding", "editor_discard_immediate", "editor_lib",
       "editor_lib_manage", "editor_save_gate", "editor_tab_autodiscard", "editor_txt_band",
       "grid_narrow", "grid_wide", "home_screen_gone", "job_active_card",
       "job_data_first", "job_density_narrow", "job_editmode", "job_inherited",
-      "job_mirror", "job_on", "job_result", "library_surface", "library_view_tabs",
+      "job_mirror", "job_on", "job_result", "library_pairing_edit", "library_surface",
+      "library_view_tabs",
       "milestone_h_overlay", "milestone_h_wave1", "modal_a11y", "modal_confirm_serial",
       "nav_count", "personalization_persist", "preserve", "preserve_real",
       "range_draft", "react_runtime", "runtime", "sheet_gate", "shell_settings",
@@ -172,7 +173,7 @@ function key(descriptor) {
   });
 }
 
-/** 성공 경로 48키의 전수 서술. `error` 는 여기 **없다** — 부재 계약이라 따로 산다. */
+/** 성공 경로 49키의 전수 서술. `error` 는 여기 **없다** — 부재 계약이라 따로 산다. */
 export const SELFTEST_KEYS = Object.freeze({
   // ── 클러스터 E(이 레인) ──────────────────────────────────────────
   url: key({
@@ -357,6 +358,11 @@ export const SELFTEST_KEYS = Object.freeze({
     consumedBy: ["tests/test_web_selftest_gate.py"],
     cluster: "C",
   }),
+  library_pairing_edit: key({
+    kind: "object", modes: ["full"], owner: "frontend",
+    consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
+  }),
   library_surface: key({
     kind: "boolean", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
@@ -476,9 +482,9 @@ export const ERROR_CONTRACT = Object.freeze({
 export const BUILD_INVARIANTS = Object.freeze({
   responsibilityCount: Object.freeze({
     source: "packaging/build.ps1:436-437",
-    expected: 43,
+    expected: 44,
     excludes: Object.freeze(["runtime"]),
-    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 43. 키를 더하거나 빼면 릴리스가 죽는다.",
+    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 44. 키를 더하거나 빼면 릴리스가 죽는다.",
   }),
   noTopLevelBooleanFalse: Object.freeze({
     source: "packaging/build.ps1:439-450",

@@ -3,7 +3,8 @@
 **화면은 죽고 채널은 산다(F8 §10.17.2 판정 B — F1 pool 선례)**: 「템플릿 관리」 화면
 (scr-tpl·template.js)은 사망했고, 이 컨트롤러의 액션·잠금 규율·경로 검증은
 편집기 「템플릿」 탭(editor.js)이 리터럴 `Bridge.call("tpl", …)` 로 그대로 소비한다.
-push 스냅샷의 생존 소비자 = 편집기 결과 줄(result) + 재당김 신호.
+push 스냅샷의 생존 소비자 = 고르기 좌 열(`column` — 결과 줄 포함) + 상세 시트(`detail`)
++ 서식 폴더 존(`templates_root`) + 재당김 신호.
 
 링1 VM 을 **그대로 임포트**해 구동한다: HWPX 라이브러리 상태·상태별 게이트 액션·2단계
 fieldize(스캔→적용)·lint 는
@@ -12,9 +13,11 @@ TXT 관리는 코어 :class:`~hwpxfiller.external.text_registry.TextTemplateRegi
 쓴다. 표현 계층(행 렌더·확인 라운드트립)은 편집기 「템플릿」 탭(editor.js)이 소유한다.
 
 **R-info 2부 개편(정본 `docs/R_INFO_JOB_HOME.md` 2부)**:
-- **매체 = 구조, 그룹 = 그 안**(결정 3): HWPX/TXT 는 소비 동사를 가르는 경성 축이라 구획으로,
-  그 안에서 **작업과 같은 그룹+접힘 모델**(결정 2). 그룹 상태는 매체별
-  :class:`~hwpxfiller.webapp.template_groups.TemplateGroupModel` 이 소유(설정 영속).
+- **매체 = 구조, 그룹 = 그 안**(결정 3): 종전에는 HWPX/TXT 가 각자 구획(밴드)으로 서고 그
+  안에서 **작업과 같은 그룹+접힘 모델**(결정 2)이 돌았다. 두 축 다 표면이 걷혔다 — 매체는
+  고르기 열 한 목록의 pill 이 되었고(U6-B), 그룹 표면은 U4 §2-30 에서 동결됐다. 남는 것은
+  매체별 :class:`~hwpxfiller.webapp.template_groups.TemplateGroupModel` 의 **영속과 유령
+  지정 정리**뿐이고 스냅샷 투영은 없다(슬라이스 ⑤).
 - **식별키 = 루트 상대경로**(결정 8): 그룹 지정·이동·삭제의 대상 키. Explorer 개명·이동 시
   고아→「그룹 없음」 복귀(build_sections 가 live 행만 묶음 + reconcile 정리).
 - **가져오기 = 루트로 복사**: 「파일 가져오기…」 단건 하나. 「그룹 없음」에서 시작.
@@ -48,6 +51,7 @@ from ..gui.template_manager_state import (
     TemplateRow,
 )
 from ..gui.tutorial_state import Milestone
+from .pool_column import pool_column_view, pool_row_view
 from .screens import (
     MUTATION_KINDS,
     CompileSink,
@@ -62,6 +66,7 @@ from .template_groups import (
     rel_key,
     validate_template_name,
 )
+
 
 class TemplateController:
     """템플릿 라이브러리 채널 — HWPX 라이브러리 VM + TXT 레지스트리 + 매체별 그룹 모델(webview 비의존)."""
@@ -170,42 +175,48 @@ class TemplateController:
 
     # ------------------------------------------------------------- 스캔·행
     def _hwpx_rows(self) -> "list[dict]":
+        """HWPX 행의 **고르기 열 투영** — 한 스캔에서 한 번만 판정한다.
+
+        링1 판정은 행마다 **한 번**만 돌아야 한다(리뷰 9): 두 번 부르면 같은 판정이 두 번
+        돌고 그 사이에 갈릴 자리가 생긴다. 행의 형은
+        :mod:`~hwpxfiller.webapp.pool_column` 이 소유한다(우 열과 같은 키 집합) — 옛 밴드
+        투영(``hwpx``/``txt``)은 웹 소비자가 0 이 되어 슬라이스 ⑤ 에서 걷혔다.
+        """
         root = self.vm.library_dir
-        rows: "list[dict]" = []
-        for r in self.vm.rows():
-            key = rel_key(r.path, root)
-            # 사유는 **한 번** 짓고 그 값에서 가부를 파생한다(`screen_pool._row` 규율,
-            # 리뷰 9): 두 번 부르면 같은 판정이 두 번 돌고 그 둘이 갈릴 자리가 생긴다.
-            block = r.select_block_reason()
-            rows.append({
-                "key": key,
-                "name": r.name,
-                "path": r.path,
-                "state": r.state.value if r.state is not None else "",
-                "badge_label": r.badge_label,
-                "badge_level": r.badge_level,
-                "detail": r.detail_line(),
-                "is_error": r.is_error,
-                # 채움 완화 사전 고지(#154) — 문안은 링1(describe_precheck_note) 확정.
-                "fill_warns": list(r.fill_warns),
+        return [
+            pool_row_view(
+                key=rel_key(r.path, root),
+                name=r.name,
+                sub=r.detail_line(),
+                reason=r.select_block_reason(),
+                # 채움 완화 사전 고지(#154) — 사유와 **다른 축**이라 함께 싣는다: 고를 수
+                # 있는 행도 「골랐을 때 이렇게 된다」를 말해야 하고, 사유 한 줄로 접으면
+                # 그 고지가 목록에서 조용히 사라진다.
+                warns=list(r.fill_warns),
+                badge_label=r.badge_label,
+                badge_level=r.badge_level,
+                icon="hwpx",
+                path=r.path,
                 # 링1 목록 **그대로**다(U6-B #976): `preview`·`make_job` 은 소비자 0 이라
                 # 링1 에서 사슬째 걷혔고, 링2 필터는 그와 함께 사라졌다.
-                "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
-                # 「이 템플릿으로 작업을 시작할 수 있는가」 — 판정·문안은 링1 하나(U6-B).
-                # 편집기 1단계 좌 열이 이 두 값으로 비활성 + 사유를 그린다.
-                "selectable": not block,
-                "select_block_reason": block,
-            })
-        return rows
+                actions=[{"key": a.key, "label": a.label} for a in r.actions()],
+            )
+            for r in self.vm.rows()
+        ]
 
     def _txt_rows(self) -> "list[dict]":
-        """TXT 밴드 행 — 성형은 hwpx 와 **같은 링1 함수**를 지난다(U6-B #976 리뷰 8).
+        """TXT 행의 고르기 열 투영 — 성형은 hwpx 와 **같은 링1 함수**를 지난다(U6-B #976 리뷰 8).
 
         종전에는 이 자리가 「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」
         를 리터럴로 다시 지었고, 그 셋이 곧
         :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.detail_line` ·
         ``select_block_reason`` 의 재구현이었다. 링1 문안을 고치면 TXT 밴드만 옛말을 계속
         하는 자리라 :meth:`TemplateRow.from_text` 하나로 모은다.
+
+        열 행의 배지는 **매체 표지**이고 그 어휘의 저자도 링1 이다(공용 ⑤ 리뷰): TXT 행은
+        상태 축이 없어 상태 배지가 설 자리에 ``TXT`` 가 서고, 그 값을
+        :meth:`TemplateRow.from_text` 가 이미 들고 온다 — 이 자리는 hwpx 와 **같은 문장**으로
+        옮기기만 한다(종전의 링2 리터럴은 같은 표지의 두 번째 저자였다).
         """
         root = self.text_registry.directory
         rows: "list[dict]" = []
@@ -217,58 +228,61 @@ class TemplateController:
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 사유를 단 행으로 loud 노출
                 error = str(exc)
             row = TemplateRow.from_text(t.path, field_count, error, root=root)
-            block = row.select_block_reason()
-            rows.append({
-                "key": rel_key(t.path, root),
-                "name": t.name,
-                "path": str(t.path),
-                "field_count": field_count,
-                "error": error,
-                # hwpx 밴드와 **같은 두 축**(U6-B #976) — 고르기 좌 열은 매체를 pill 로만
-                # 가르고 「고를 수 있나」는 한 어휘로 읽는다.
-                "selectable": not block,
-                "select_block_reason": block,
-                "detail": row.detail_line(),
-            })
+            rows.append(pool_row_view(
+                key=rel_key(t.path, root),
+                name=t.name,
+                sub=row.detail_line(),
+                reason=row.select_block_reason(),
+                # TXT 에는 채움 축이 없다 — 없는 고지를 지어내지 않는다.
+                warns=[],
+                badge_label=row.badge_label,
+                badge_level=row.badge_level,
+                icon="txt",
+                path=str(t.path),
+                # TXT 에는 상태 게이트 동사가 없다(변환 축이 없다) — 없는 동사를 지어
+                # 세우지 않는다. 「자세히…」는 모든 행에 서는 표면 어포던스다.
+                actions=[],
+            ))
         return rows
 
-    def _media_snapshot(self, media: str, rows: "list[dict]", model: TemplateGroupModel) -> dict:
-        """한 매체 구획의 스냅샷 — U4 §2-30 이후 **언제나 평면**이다.
+    def _reconcile_groups(self, media: str, rows: "list[dict]") -> None:
+        """동결된 그룹 모델의 유령 지정 정리 — U4 §2-30 이후 **투영 없이 이것만** 남는다.
 
-        구획을 만들던 축은 템플릿 그룹 하나였고 그 표면이 걷혔다. 모델은 동결이라 유령 지정
-        정리(``reconcile``)는 계속 돌린다 — 저장된 지정이 스캔과 어긋난 채 굳는 것이 되살릴
-        때의 부채다. 다만 **구획으로 묻지 않는다**(``grouped_view=False``).
+        구획을 만들던 축은 템플릿 그룹 하나였고 그 표면이 걷혔다(``build_sections`` 투영은
+        웹 소비자 0 이라 슬라이스 ⑤ 에서 함께 걷혔다). 모델은 동결이라 정리는 계속 돌린다 —
+        저장된 지정이 스캔과 어긋난 채 굳는 것이 되살릴 때의 부채다.
         """
-        model.reconcile([r["key"] for r in rows])
-        sections, flat = model.build_sections(
-            rows, key_of=lambda r: r["key"], grouped_view=False
-        )
-        return {
-            "sections": sections,
-            "flat": flat,
-            "count": len(rows),
-        }
+        self._model(media).reconcile([r["key"] for r in rows])
 
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
         hwpx_rows = self._hwpx_rows()
         txt_rows = self._txt_rows()
-        hwpx = self._media_snapshot("hwpx", hwpx_rows, self.hwpx_groups)
-        txt = self._media_snapshot("txt", txt_rows, self.txt_groups)
+        self._reconcile_groups("hwpx", hwpx_rows)
+        self._reconcile_groups("txt", txt_rows)
         resolution = self._template_root.resolution()
-        hwpx["dir"] = resolution.directory
-        txt["dir"] = resolution.directory
         # 빈 목록 안내는 U6-A 에서 **링1 하나가 정본**이 됐다(`empty_hint`) — 루트가 하나라
-        # 원인도 하나이고, 두 밴드가 각자 문안을 지으면 같은 사실을 두 곳이 판정한다.
+        # 원인도 하나이고, 두 자리가 각자 문안을 지으면 같은 사실을 두 곳이 판정한다.
         hint = self.vm.empty_hint()
-        hwpx["empty_hint"] = hint
-        txt["empty_hint"] = hint
+        # 고르기 좌 열 — hwpx 다음 txt 로 **한 목록**이다(U6 동결 시안 장면 1: TXT 는 별도
+        # 밴드가 아니라 같은 목록의 pill 로 선다). 우 열(`pool` 채널)과 같은 형이다.
+        column_rows = [*hwpx_rows, *txt_rows]
         return {
-            "hwpx": hwpx,
-            "txt": txt,
+            "column": pool_column_view(
+                rows=column_rows,
+                # 좌 열의 존 통지는 아직 없다 — 서식 폴더 도출 사유·이관 재진술은
+                # `templates_root.notice` 가 이미 지고, 그 자리를 둘로 늘리지 않는다.
+                notices=[],
+                empty_hint=hint,
+                # 분류사의 저자는 **링1 하나**다(고르기 열 공용 ⑤ 리뷰): 좌 열은 hwpx·txt 를
+                # 한 목록으로 세워 VM 이 아는 수와 머리의 수가 다르지만, 그렇다고 여기서
+                # 문안을 지으면 우 열(`DatasetPoolViewModel.count_label`)과 갈리는 날이 온다.
+                count_label=self.vm.count_label_for(len(column_rows)),
+                result={"text": self.result_text, "level": self.result_level},
+            ),
             # 서식 폴더 존(U6-A #975) — 저장 폴더의 최상위 `output_folder` 존과 **동형**이다.
             # 「어느 폴더를 읽고 있는가」는 목록이 비어도, 작업이 없어도 답할 수 있는 사실이라
-            # 밴드 안이 아니라 최상위가 진다. 판정·라벨·사유는 전부 링0 도출 그대로다.
+            # 열 안이 아니라 최상위가 진다. 판정·라벨·사유는 전부 링0 도출 그대로다.
             "templates_root": {
                 "directory": resolution.directory,
                 "source": resolution.source,
@@ -279,7 +293,6 @@ class TemplateController:
                     text for text in (resolution.notice, self._migration_notice) if text
                 ),
             },
-            "result": {"text": self.result_text, "level": self.result_level},
             # 항목 상세 시트의 재료 한 벌(U6-E #979) — `review` 가 세우고 slot 동사가 다시
             # 세운다. 시트가 열려 있지 않아도 값은 산다(수명은 검토 왕복이지 창이 아니다).
             "detail": self.detail_snapshot(),

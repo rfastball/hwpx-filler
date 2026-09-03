@@ -406,9 +406,6 @@ class WebFrontend:
                               # 서식 폴더 권위는 **같은 홀더**다(U6-A #975) — 상세 연결 카드의
                               # 템플릿 표시명이 목록·편집기와 같은 이름이어야 한다.
                               template_root=self._template_root,
-                              # 전역 저장 폴더는 「문서 만들기」가 소유하고 여기서는 읽기만
-                              # 한다(U6-D #978 리뷰 3 — 설정 파일을 두 곳이 읽지 않는다).
-                              remembered_output_directory=job_ctrl.remembered_output_directory,
                               clock=datetime.now),
             job_ctrl,
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
@@ -421,7 +418,11 @@ class WebFrontend:
                 tutorial=tutorial,
             ),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
-            PoolController(pool_registry, self._push),
+            # 「자세히…」의 열 목록만 쓰는 복원기를 함께 준다(고르기 열 공용 ④) — 작업
+            # 마운트가 쓰는 것과 **같은 함수**다(복원 규칙이 두 벌이 되지 않는다).
+            PoolController(
+                pool_registry, self._push, source_factory=source_from_pool_item
+            ),
             # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면
             # 여기로 온다. 대상 글꼴(TargetFontSetting)은 앱 전역 영속 선언의 단일 실체다.
             # 「포함할 내용」 투영(S10-03 #860)은 **읽기 포트 하나**로 붙는다: 작업대는 Product

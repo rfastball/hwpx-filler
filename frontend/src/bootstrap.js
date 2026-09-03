@@ -222,7 +222,7 @@ export function bootProduct() {
   });
   const DataPicker = createDataPickerController({
     doc: document,
-    runtime, client, services: servicePorts, modal: Modal,
+    runtime, client, services: servicePorts, modal: Modal, popover: Popover,
     notify: (message) => window.alert(message),
   });
   const JobRead = createJobReadController({
@@ -242,6 +242,9 @@ export function bootProduct() {
     poolRegistration: {
       openRegDialog: (options) => DataPicker.openRegDialog(options),
       openPclm: () => DataPicker.openPclm(),
+      /* 「자세히…」의 시트도 같은 근거로 그 컨트롤러가 진다(고르기 열 공용 ④) —
+         `#poolDetailModal` 은 셸 레벨 overlay 하나이고 여는 문이 둘이다. */
+      openDetail: (key, trigger) => DataPicker.openDetail(key, trigger),
     },
     notify: (message) => window.alert(message),
   });
@@ -482,6 +485,11 @@ export function bootProduct() {
            받지만 그리는 값은 `tpl` 채널 스냅샷 한 존(`detail`)이다. */
         productOverlayComponent("tplDetailModal", PRODUCT_OVERLAY_COMPONENTS.TplDetailSheet,
           { controller: EditorController }),
+        /* 등록 데이터 상세 시트(고르기 열 공용 ④) — 우 열 행 ⋯ 의 「자세히…」가 여는 면.
+           데이터 선택 컨트롤러를 받지만(등록 폼과 같은 주인) 그리는 값은 `pool` 채널
+           스냅샷 한 존(`detail`)이다. */
+        productOverlayComponent("poolDetailModal", PRODUCT_OVERLAY_COMPONENTS.PoolDetailSheet,
+          { controller: DataPicker }),
         productOverlayComponent("sheetModal", PRODUCT_OVERLAY_COMPONENTS.SheetPickerDialog,
           { controller: SheetPickerController }),
         productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,

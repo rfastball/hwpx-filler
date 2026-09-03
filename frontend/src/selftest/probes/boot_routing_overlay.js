@@ -61,7 +61,8 @@ export const B_CLUSTER = "B";
  *  스키마의 `keysForCluster("B")` 와는 정렬 뒤 같아야 하고, 그 동일성은 테스트가 센다. */
 export const B_KEYS = Object.freeze([
   "title_dom", "nav_count", "tpl_options", "job_on",
-  "home_screen_gone", "library_surface", "library_view_tabs", "data_picker_buttons",
+  "home_screen_gone", "library_surface", "library_pairing_edit",
+  "library_view_tabs", "data_picker_buttons",
   "action_roundtrip", "modal_a11y", "modal_confirm_serial",
   "preserve", "preserve_real", "milestone_h_wave1", "milestone_h_overlay",
   "shell_settings",
@@ -78,6 +79,52 @@ const LIBRARY_SURFACE_IDS = Object.freeze([
 
 /** 데이터 선택 단일 출구(app.py:3739). 구 2버튼·pool 화면 사망의 승계 지점. */
 const DATA_PICKER_BUTTON_IDS = Object.freeze(["jobBtnPickData"]);
+
+/** 연결 손잡이 실렌더 픽스처가 쓰는 작업 이름 — 진입 왕복이 되받는 값이라 대조에 쓴다. */
+const PAIRING_WORK_NAME = "연결손잡이검증";
+
+/** 연결 카드 한 장이 서는 최소 `library` 스냅샷(고르기 열 공용 ⑤ 리뷰).
+ *
+ *  `counted` 는 **Python 이 세었는가**의 축이다: 참이면 카드 가운데가 수치를 말하고, 거짓이면
+ *  「조합 보기」 동사 하나만 남는다(0 을 사실처럼 말하지 않는다). 두 갈래 다 손잡이는 서야
+ *  한다 — 그것이 이 화면에서 조합을 다시 고를 **유일한 문**이라, 어느 갈래에서 사라지면
+ *  사용자는 그 작업의 조합을 바꿀 자리를 잃는다.
+ *
+ *  문안·판정은 여기서 짓지 않는다(픽스처는 Python 계약의 축만 든다) — 재는 것은 「그 축이
+ *  이 DOM 을 세우고 그 클릭이 편집기 진입 포트에 닿는가」 하나다. */
+function libraryPairingSnap(counted) {
+  const card = counted
+    ? {
+      counted: true, template_bound: true, template_missing: false,
+      template_name: "발주요청서", template_field_count: 4,
+      mapped_count: 3, unbound_count: 1, stale_count: 0, data_name: "7월목록",
+    }
+    : {
+      counted: false, template_bound: true, template_missing: false,
+      template_name: "발주요청서",
+    };
+  return {
+    view: "all", mode: "all", query: "", is_empty: false,
+    counts: { all: 1, recent: 0, favorites: 0, needsAction: counted ? 0 : 1 },
+    sections: [{
+      count: 1,
+      rows: [{
+        name: PAIRING_WORK_NAME, mode_label: "HWPX 문서 생성",
+        data_bound: counted, favorited: false,
+      }],
+    }],
+    selected: PAIRING_WORK_NAME,
+    alerts: {}, corrupt_rows: [],
+    detail: {
+      name: PAIRING_WORK_NAME, mode_label: "HWPX 문서 생성",
+      data_bound: counted, template_path: "", data_path: "",
+      data_label: "7월목록 · 물품",
+      primary: { label: "문서 만들기에서 사용", hint: "" },
+      health_causes: [],
+      pairing_detail: { card, rows: [], stale_fields: [], more_fields: [] },
+    },
+  };
+}
 
 /** 액션 왕복 네 군(app.py:2978-2982) — `[family, screen, action]`. 순서까지 원문 그대로. */
 const ACTION_ROUNDTRIP_SPECS = Object.freeze([
@@ -245,25 +292,90 @@ export function createBootRoutingOverlayProbes() {
       },
     },
 
-    /* ── library_surface (app.py:3728) — 승계 표면 ── */
+    /* ── library_surface + library_pairing_edit (app.py:3728) — 승계 표면 ── */
     {
       name: "library_surface",
-      keys: ["library_surface"],
+      keys: ["library_surface", "library_pairing_edit"],
       cluster: B_CLUSTER,
       owner: "frontend",
       modes: ["full"],
       legacySite: 3728,
-      deadlineMs: 0,
-      deadlineRationale: "id 전수 존재 확인 — 동기 읽기.",
+      deadlineMs: 4000,
+      deadlineRationale:
+        "id 전수 존재는 동기 읽기지만, 연결 손잡이 축은 push 두 번과 클릭 한 번의 **실렌더"
+        + " 왕복**이다(React 커밋이 다음 turn). 조건이 서면 즉시 진행하므로 고정 지연이 아니고,"
+        + " 시한은 매달림을 유한 시간에 빨강으로 만드는 몫만 한다.",
       after: ["home_screen_gone"],
       afterReason:
         "죽은 표면 ↔ 승계 표면은 **한 쌍**이다. 승계 쪽을 먼저 읽고 만족해 버리면 둘 다 서"
         + " 있는 반쪽 이주가 초록으로 지나간다 — 사망 확인을 앞에 세워 순서로 못 박는다.",
-      run(ctx) {
+      note:
+        "새 창을 세우지 않는다(CLAUDE.md) — 이미 서 있는 이 프로브에 단계를 붙인다. 자기가"
+        + " 민 픽스처는 자기가 걷는다: setup 이 실 스냅샷을 당겨 두고 run 말미에 되민다.",
+      setup(ctx) {
+        const api = ctx.win.pywebview && ctx.win.pywebview.api;
+        if (!api || typeof api.initial !== "function") {
+          ctx.fail(ERROR_CODES.CONTRACT, "pywebview.api.initial 이 없습니다 — 스냅샷을 당길 수 없습니다.");
+        }
+        ctx.state.realLibrary = null;
+        api.initial("library").then((s) => { ctx.state.realLibrary = s; });
+      },
+      /* 「고르기에서 조합을 바꾸는 문」은 이 화면에 **하나뿐**이다(2026-09-03 재판정에서 두
+         재선택 버튼이 이 손잡이 하나로 접혔다). 마크업 문자열 단언만으로는 「그 버튼이 실제로
+         눌리고 편집기 1단계로 간다」를 못 본다 — 정적 계약은 규칙의 존재를 보고 결과를 못
+         본다는 이 저장소의 결함류라, 그 결과를 실렌더에서 잰다. */
+      async run(ctx) {
         const doc = ctx.doc;
-        return {
+        const out = {
           library_surface: LIBRARY_SURFACE_IDS.every((id) => !!doc.getElementById(id)),
         };
+        /* 진입 포트를 **프로퍼티 교체**로 관측한다(`services.Bridge.call = stub` 선례):
+           실제로 열면 이 프로브가 몰입 편집기를 남기고, 없는 작업이라 거절 문안만 남는다. */
+        const entry = requireService(ctx, "EditorEntry", ["openGuarded"]);
+        const original = entry.openGuarded;
+        const calls = [];
+        entry.openGuarded = (...args) => { calls.push(args); return Promise.resolve(true); };
+        const pair = {};
+        try {
+          ctx.push("library", libraryPairingSnap(true));
+          await ctx.waitFor(() => !!doc.getElementById("libraryPairingEdit"), {
+            what: "연결 손잡이 렌더", timeoutMs: 1500,
+          });
+          const bound = doc.getElementById("libraryPairingEdit");
+          pair.bound_present = true;
+          pair.bound_title = bound.title;
+          pair.bound_nums = (bound.querySelector(".nums b") || {}).textContent || "";
+          bound.click();
+          await ctx.waitFor(() => calls.length > 0, {
+            what: "편집기 진입 포트 호출", timeoutMs: 1500,
+          });
+          pair.entry_calls = calls.length;
+          pair.entry_name = String(calls[0][0]);
+          pair.entry_section = String((calls[0][1] || {}).section || "");
+          pair.entry_reason = String((calls[0][1] || {}).entry_reason || "");
+
+          /* 세지 못한 갈래에도 문은 남는다 — 수치 대신 동사 하나. 여기서 사라지면 그 작업의
+             조합을 바꿀 자리가 없어진다(어포던스 소실은 조용한 결함이다). */
+          ctx.push("library", libraryPairingSnap(false));
+          await ctx.waitFor(
+            () => !!doc.querySelector("#libraryPairCard [data-connect-data]"),
+            { what: "미결속 갈래 렌더", timeoutMs: 1500 },
+          );
+          const uncounted = doc.getElementById("libraryPairingEdit");
+          pair.uncounted_present = !!uncounted;
+          pair.uncounted_title = uncounted ? uncounted.title : "";
+          pair.uncounted_label =
+            uncounted ? (uncounted.querySelector(".nums b") || {}).textContent || "" : "";
+          pair.connect_data = doc
+            .querySelector("#libraryPairCard [data-connect-data]")
+            .getAttribute("data-connect-data");
+        } finally {
+          entry.openGuarded = original;
+          /* 자기 판을 자기가 걷는다 — 픽스처를 남기면 뒤 프로브가 없는 작업을 잰다. */
+          if (ctx.state.realLibrary) ctx.push("library", ctx.state.realLibrary);
+        }
+        out.library_pairing_edit = pair;
+        return out;
       },
     },
 

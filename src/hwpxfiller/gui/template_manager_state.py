@@ -40,6 +40,7 @@ from ..domain.template_status import (
 
 # 상태 → 배지 (라벨, 레벨)은 :mod:`compile_badge` 가 단일 출처 — 홈 카드 배지와
 # 같은 상태에 같은 심각도 신호를 낸다(RC-29, 이중화 금지).
+from .compile_badge import TEXT_BADGE_LABEL, TEXT_BADGE_LEVEL
 from .compile_badge import badge_label as _badge_label
 from .compile_badge import badge_level as _badge_level
 from .result_errors import describe_precheck_note
@@ -408,18 +409,20 @@ class TemplateDetail:
         *,
         root: "Path | None" = None,
     ) -> "TemplateDetail":
-        """TXT 템플릿 1건 — 상태·배지·구간 항목이 없는 매체(:meth:`TemplateRow.from_text` 동형).
+        """TXT 템플릿 1건 — 상태·구간 항목이 없는 매체(:meth:`TemplateRow.from_text` 동형).
 
-        배지를 비우는 이유도 같다: 매체 표지는 표면의 pill 이 지고 이 항목은 말할 상태 축이
-        없다(없는 상태를 지어내지 않는다).
+        배지의 처분도 같다: 말할 상태 축이 없으므로 그 자리에 **매체 표지**가 선다
+        (:data:`~hwpxfiller.gui.compile_badge.TEXT_BADGE_LABEL`). 종전에는 여기를 비우고
+        표면이 ``media === "txt"`` 를 다시 판정해 pill 을 지었다 — 같은 상태를 두 곳이
+        판정하던 자리라 배지를 링1 이 채운다.
         """
         return cls(
             path=str(path),
             name=library_display_name(root, path),
             media="txt",
             state=None,
-            badge_label="",
-            badge_level="muted",
+            badge_label=TEXT_BADGE_LABEL,
+            badge_level=TEXT_BADGE_LEVEL,
             fields=tuple(FieldRow.of(name) for name in fields),
             error=error,
         )
@@ -539,15 +542,16 @@ class TemplateRow:
         종전에는 링2 가 「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」를
         각자 리터럴로 지었다. 그 세 문장이 곧 :meth:`detail_line` ·
         :meth:`select_block_reason` 의 재구현이라, 링1 문안을 고치면 TXT 밴드만 옛말을
-        계속 하게 된다. 배지는 비운다 — 매체 표지는 표면의 pill 이 지고 이 행은 상태를
-        말할 축이 없다(없는 상태를 지어내지 않는다).
+        계속 하게 된다. 배지도 같은 이유로 여기서 채운다 — 이 행은 상태를 말할 축이 없어
+        그 자리에 **매체 표지**가 서고, 그 어휘의 저자는
+        :data:`~hwpxfiller.gui.compile_badge.TEXT_BADGE_LABEL` 하나다.
         """
         return cls(
             name=library_display_name(root, path),
             path=str(path),
             state=None,
-            badge_label="",
-            badge_level="muted",
+            badge_label=TEXT_BADGE_LABEL,
+            badge_level=TEXT_BADGE_LEVEL,
             field_count=field_count,
             compilable_n=0,
             skipped_n=0,
@@ -698,8 +702,25 @@ class TemplateManagerViewModel:
     def is_empty(self) -> bool:
         return not self._rows
 
+    def count_label_for(self, total: int) -> str:
+        """열 머리의 개수 문안 — **세는 대상이 이 VM 밖까지 걸치는 자리**의 같은 저자.
+
+        고르기 좌 열은 hwpx 와 TXT 를 **한 목록**으로 세우는데(링2 ``_txt_rows`` 는 이 VM 이
+        모르는 레지스트리에서 온다) 머리의 수는 이 VM 이 아는 수와 다르다. 그렇다고 링2 가
+        ``f"{n}개"`` 를 리터럴로 쓰면 같은 분류사에 저자가 둘 생긴다 — **수만 받고 문안은
+        여기가 낸다**.
+        """
+        return f"{total}개" if total > 0 else ""
+
     def count_label(self) -> str:
-        return f"{len(self._rows)}건" if self._rows else ""
+        """고르기 열 머리의 개수 — 분류사는 **항목의 것**이다(``개``).
+
+        우 열(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.count_label`)과
+        **같은 형**이다: 두 열이 한 컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면 같은
+        자리의 같은 사실이 표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터
+        행)의 분류사이고 여기서 세는 것은 등록 항목이다.
+        """
+        return self.count_label_for(len(self._rows))
 
     def row_for(self, path: str) -> "TemplateRow | None":
         for r in self._rows:

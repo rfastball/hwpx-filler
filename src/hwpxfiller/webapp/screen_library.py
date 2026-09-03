@@ -76,8 +76,6 @@ from ..gui.mapping_state import (
     source_cell_label,
 )
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
-from ..naming import make_output_filename
-from .output_folder_zone import output_folder_zone
 from .screens import (
     NO_ROWS_TEXT,
     PushSink,
@@ -138,8 +136,9 @@ def run_in_worker_thread(work: "Callable[[], None]") -> None:
 
 
 #: 상세 표가 프레임 안에 두는 행 수(동결 시안 장면 4). 나머지는 스크롤로 조용히 감추지
-#: 않고 **이름으로 명시**한다 — 「그 밖에 n행」이 이름을 들지 않으면 표가 자기 일부를
-#: 숨기고도 그 사실을 말하지 않는다.
+#: 않는다 — 표가 자기 일부를 숨기고도 그 사실을 말하지 않으면 안 된다. 페이로드
+#: (`more_fields`)는 **이름을 그대로 싣고**, 웹 상세는 2026-09-03 재판정으로 그 이름 대신
+#: 건수(「필드 N개 중 n개」)를 그린다 — 좁은 패널에서 이름 나열이 표를 밀어냈다.
 DETAIL_ROW_LIMIT = 8
 
 #: 결속이 없는 작업의 「첫 행」 사유. 실패가 아니라 저작 중 상태이지만, 빈 칸으로 두면
@@ -269,7 +268,6 @@ class LibraryController:
                  pool_registry: DatasetPoolRegistry,
                  generation_lock: "threading.Lock",
                  template_root: TemplateRoot,
-                 remembered_output_directory: "Callable[[], str]",
                  clock: "Callable[[], datetime]" = datetime.now,
                  first_row_runner: "Callable[[Callable[[], None]], None]"
                  = run_in_worker_thread) -> None:
@@ -301,9 +299,6 @@ class LibraryController:
         # 서식 폴더 권위(U6-A #975 · U6-D #978) — 템플릿 표시명을 목록·편집기와 **같은
         # 홀더**로 짓는다. 두 홀더를 두면 재지정 직후 같은 파일이 두 이름으로 불린다.
         self._template_root = template_root
-        # 전역 저장 폴더의 소유자는 「문서 만들기」 컨트롤러 하나다(U6-D #978 리뷰 3) —
-        # 여기서는 그 값을 **읽기만** 한다(설정 파일 재판독 금지).
-        self._remembered_output_directory = remembered_output_directory
         self._clock = clock
         # 「첫 행」 지연 읽기의 **사적 캐시**(U6-F #980). 키는 결속 상관 키이고 값은 실제
         # 읽기 결과다. 이 캐시가 없으면 검색 타이핑의 재렌더마다 엑셀을 다시 연다.
@@ -404,9 +399,7 @@ class LibraryController:
             # 표·첫 행·계획은 전부 **연결된 템플릿**을 전제한다. 그 갈래의 답은 건강
             # 원인과 카드의 재선택 동사다.
             return {"card": card, "rows": [], "more_fields": [], "stale_fields": [],
-                    "rows_basis": "", "first_row": None, "plan": None,
-                    "output_folder": None}
-        is_txt = row.media == "txt"
+                    "rows_basis": "", "first_row": None}
         read = self._first_row_cache.get(key) if key else None
         if key is None:
             state, reason, record_count = "error", UNBOUND_FIRST_ROW_REASON, 0
@@ -431,7 +424,7 @@ class LibraryController:
         else:
             model = MappingModel.from_profile(job.mapping)
             basis = "profile"
-        # 「오늘 날짜」 미리보기와 파일 이름 계획이 **한 시각**을 말하게 1회만 찍는다(#957).
+        # 「오늘 날짜」 미리보기가 행마다 다른 시각을 말하지 않게 1회만 찍는다(#957).
         now = self._clock()
         # 자르기가 **투영보다 먼저**다(리뷰 9): 프레임 밖 행은 이름만 쓰이므로 100 필드짜리
         # 템플릿에서 92 벌의 값 계산·라벨 조회를 지불할 이유가 없다.
@@ -456,71 +449,31 @@ class LibraryController:
             # 말한다(숨기지 않는다: 실행 게이트가 막는 상태다).
             "stale_fields": list(row.stale_mapping_fields),
             "first_row": {"state": state, "reason": reason, "record_count": record_count},
-            # TXT 는 계획이 없다 — 파일을 만들지 않는 작업이라 이름 규칙이 저장돼 있어도
-            # (durable 기본값) 그것으로 만들 파일이 없다.
-            "plan": None if is_txt else self._plan_line(
-                job, model, record, state, record_count, now=now
-            ),
-            # TXT 는 파일을 만들지 않아 폴더가 축이 아니다(§ 「저장 폴더 — 전역 단일 값」의
-            # 표와 같은 판정) — 빈 재진술을 세우면 만들지 않을 파일의 저장 위치를 말한다.
-            "output_folder": None if is_txt else output_folder_zone(
-                template_path=job.template_path,
-                remembered_directory=self._remembered_output_directory(),
-            ),
+            # 파일 이름 계획·저장 폴더는 여기 없다(2026-09-03 재판정 ④·⑥) — 이름 예시는
+            # 편집기 3단계와 생성 결과가, 저장 폴더는 설정 창이 말한다. 상세가 재진술하면
+            # 같은 값을 말하는 자리가 둘이 되어 한쪽이 늙는다.
         }
-
-    def _plan_line(
-        self, job: "Job", model: MappingModel, record: "dict", state: str,
-        record_count: int, *, now: datetime,
-    ) -> "dict | None":
-        """「이 작업이 만들 파일」 한 줄 — 이름은 **실제 생성기와 같은 함수**가 만든다.
-
-        패턴이 비면 ``None`` 이다 — 만들지 않을 파일의 이름을 계획으로 말하지 않는다.
-        ``pattern`` 을 함께 싣는 이유는 첫 행을 아직 못 읽은 동안에도 **규칙은 참**이기
-        때문이다(상세의 옛 「파일 이름 규칙」 행이 여기로 내려왔다 — 규칙과 실제 이름을
-        두 자리에서 말하면 한쪽이 늙는다).
-        (매체 판정은 호출자가 진다: TXT 는 durable 기본 패턴을 들고 있어도 파일을 만들지
-        않으므로 패턴 유무로 갈리지 않는다.) 첫 행을 아직 못 읽었으면 이름도 아직 없다 —
-        같은 수명이다: 데이터 토큰이 빈 이름을 지어 보이면 그 예시가 산출물과 다르다.
-        """
-        if not job.filename_pattern:
-            return None
-        if state != "ready":
-            # 규칙은 지금도 참이다 — 이름을 아직 못 지었을 뿐이라 규칙으로 답한다.
-            return {"state": state, "pattern": job.filename_pattern,
-                    "first_name": "", "count": 0}
-        try:
-            first = make_output_filename(
-                job.filename_pattern, model.name_token_values(record, now=now),
-                seq=1, now=now,
-            )
-        except Exception:  # noqa: BLE001 — 표시 전용(패턴 검증은 저장 게이트 소관)
-            first = ""
-        return {"state": state, "pattern": job.filename_pattern,
-                "first_name": first, "count": record_count}
 
     def _zone_identity(self, row: JobRow, job: "Job", key: "tuple | None") -> tuple:
         """연결 존을 **다시 지을 이유**의 전부 — 이것이 같으면 결과도 같다(리뷰 9).
 
-        존 하나를 짓는 값은 전 행 투영(행마다 값 계산)과 저장 폴더 관찰(디렉터리 stat)이다.
-        검색 한 글자마다 그것을 다시 지불할 이유가 없으므로 memo 를 두되, **키가 존의 재료를
-        빠짐없이 덮는가**가 그 memo 의 안전 조건이다. 그래서 파생값이 아니라 재료를 그대로
-        적는다: 정체(이름·경로·결속 지문) · 매핑 내용 전부 · 파일 이름 규칙 · 템플릿 구조
-        재계산 결과 · 첫 행 읽기 결과 · 전역 저장 폴더 · 분 단위 시각.
+        존 하나를 짓는 값은 전 행 투영(행마다 값 계산)이다. 검색 한 글자마다 그것을 다시
+        지불할 이유가 없으므로 memo 를 두되, **키가 존의 재료를 빠짐없이 덮는가**가 그 memo 의
+        안전 조건이다. 그래서 파생값이 아니라 재료를 그대로 적는다: 정체(이름·경로·결속
+        지문) · 매핑 내용 전부 · 템플릿 구조 재계산 결과 · 첫 행 읽기 결과 · 분 단위 시각.
 
         시각을 분으로 자르는 이유는 「오늘 날짜」 표시형의 가장 짧은 단위가 분이기 때문이다 —
         더 잘게 넣으면 memo 가 영영 맞지 않고, 빼면 자정을 넘겨도 어제를 말한다.
         """
         read = self._first_row_cache.get(key) if key else None
         return (
-            row.name, job.template_path, key, job.filename_pattern,
+            row.name, job.template_path, key,
             tuple(
                 (m.template_field, m.source, m.type, m.const, m.fmt, m.is_blank)
                 for m in job.mapping.mappings
             ),
             row.structure, row.template_missing, row.template_linked, row.media,
             None if read is None else (read.state, read.reason, read.record_count),
-            self._remembered_output_directory(),
             self._clock().replace(second=0, microsecond=0),
         )
 
@@ -577,9 +530,9 @@ class LibraryController:
             # 링0 단일 출처(`data_binding_label`)라 표면이 basename·시트 표기를 안 짓는다.
             "data_label": row.data_label,
             "data_path": job.data_path,
-            # (`filename_pattern` 은 U6-F(#980)에서 계획 존으로 내려갔다 — 「이 작업이
-            #  만들 파일」을 말하는 자리가 하나여야 규칙과 실제 이름이 갈리지 않는다.
-            #  TXT 의 「실행 방식」 문구는 그보다 앞서 걷혔다: 방식은 부제가 이미 말한다.)
+            # (`filename_pattern` 은 상세에 없다 — U6-F(#980)가 계획 존으로 내렸고 그 존은
+            #  2026-09-03 재판정 ⑥으로 퇴역했다. 규칙은 편집기 3단계만 말한다. TXT 의
+            #  「실행 방식」 문구는 그보다 앞서 걷혔다: 방식은 부제가 이미 말한다.)
             "health_causes": [
                 {"severity": s, "text": t} for s, t in library_health_causes(row)
             ],

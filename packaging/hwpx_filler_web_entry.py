@@ -20,8 +20,9 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
     보지 못했다** — Ruff·pytest 는 `packaging/` 을 안 보고(CLAUDE.md), 실제로 그 KeyError 는
     창 없는 exe 의 예외 대화상자로 나타나 CI 잡을 30분 상한까지 매달았다.
 
-    목록의 정본은 U6-B 이후 ``tpl`` 채널이다 — 편집기 스냅샷이 목록을 한 번 더 성형하던
-    존은 사라졌다. 그래서 여기서도 그 채널을 세워 읽는다(제품이 읽는 자리를 그대로 읽는다).
+    목록의 정본은 U6-B 이후 ``tpl`` 채널이고, 그 채널 안의 자리는 **고르기 열 존**
+    (``column``) 하나다 — 매체별 밴드(``hwpx``/``txt``)는 웹 소비자 0 으로 걷혔다. 그래서
+    여기서도 그 존을 읽는다(제품이 읽는 자리를 그대로 읽는다).
     """
     from datetime import datetime
 
@@ -46,8 +47,9 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
         template_root=root,
         pool_registry=DatasetPoolRegistry(tmp / "datasets"),
     )
-    txt_band = tpl.snapshot()["txt"]
-    txt_names = [it["name"] for sec in txt_band["sections"] for it in sec["items"]]
+    txt_names = [
+        row["name"] for row in tpl.snapshot()["column"]["rows"] if row["icon"] == "txt"
+    ]
 
     # 편집기 TXT 매체 분기(F6 PR-B — 구 「기안」 스모크의 승계처): 브리지 없는 컨트롤러 +
     # 링1 VM(스키마 동형 성형)이 실제로 도는지를 TXT 로드 한 바퀴로 본다.

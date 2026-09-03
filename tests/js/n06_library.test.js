@@ -204,9 +204,6 @@ function pairingDetail(over = {}) {
     ],
     more_fields: [], stale_fields: [], rows_basis: "template",
     first_row: { state: "ready", reason: "", record_count: 120 },
-    plan: { state: "ready", pattern: "공고-{{ID}}", first_name: "공고-1-001.hwpx", count: 120 },
-    output_folder: { directory: "D:\\문서\\Results", source: "default",
-      source_label: "기본값", notice: "" },
     ...over,
   };
 }
@@ -218,13 +215,15 @@ const BOUND_DETAIL = {
   health_causes: [], pairing_detail: pairingDetail(),
 };
 
-test("상세 재선택 — 템플릿·데이터 두 축이 각자 바로가기를 든다", () => {
+test("상세 연결 손잡이 — 가운데 「연결」 줄 하나가 편집기로 가는 문이다(재선택 버튼 없음)", () => {
+  /* 2026-09-03 재판정: 「데이터 재선택」 은 「작업 편집」·표 행 클릭과 같은 단계에 착지하던
+     중복이었다. 두 항목 사이의 선이 문이고 착지는 그 둘을 고르는 「고르기」 단계다. */
   const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));
-  assert.ok(markup.includes("템플릿 재선택…"));
-  assert.ok(markup.includes('id="libraryRepickData"'));
-  assert.ok(markup.includes("데이터 재선택…"));
+  assert.ok(markup.includes('id="libraryPairingEdit"'));
+  assert.ok(markup.includes("연결 2 / 3") && markup.includes("확인 필요 1"));
+  assert.ok(!markup.includes("재선택"));
+  assert.ok(!markup.includes('id="libraryRepickTemplate"') && !markup.includes('id="libraryRepickData"'));
 });
 
 test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐이다(재선택 버튼 없음)", () => {
@@ -234,13 +233,13 @@ test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐�
   }) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
   assert.ok(markup.includes("데이터 연결하기…"));
-  assert.ok(!markup.includes('id="libraryRepickData"'));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));   // 템플릿 축은 그대로 선다
+  assert.ok(markup.includes('id="libraryPairingEdit"'));       // 연결 손잡이는 미결속에도 선다
+  assert.ok(!markup.includes("재선택"));
 });
 
 test("editWork — section extra가 EditorEntry 문맥에 합류한다(착지 탭 deep-link)", async () => {
-  /* 두 재선택 버튼의 onClick 이 부르는 그 경로다. 섹션 어휘는 Python 이 아는 값
-     (`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
+  /* 연결 손잡이의 onClick 이 부르는 그 경로다(`section: "template"` = 「고르기」). 섹션 어휘는
+     Python 이 아는 값(`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
   const h = build();
   await h.controller.editWork("작업A", { "여기서 할 것": "고르세요" }, { section: "template" });
   await h.controller.editWork("작업A", {}, { section: "binding" });
@@ -292,11 +291,15 @@ test("상세 연결 존 — 카드 수치·4열 표·계획 줄을 스냅샷 그
   assert.ok(markup.includes('data-field="공고명"'));
   assert.ok(markup.includes("1,234,567원"));                   // 표시형 라벨도 Python 이 낸다
   assert.ok(markup.includes("48,500,000원"));
-  assert.ok(markup.includes("공고-1-001.hwpx") && markup.includes("120건"));
-  assert.ok(markup.includes("D:\\문서\\Results"));
+  /* 파일 이름 계획·저장 폴더는 상세에 없다(2026-09-03 재판정 ④·⑥) — 이름 예시는 편집기
+     3단계와 생성 결과가, 저장 폴더는 설정 창이 말한다. */
+  assert.ok(!markup.includes('id="libraryPlanLine"'));
+  assert.ok(!markup.includes("저장 폴더") && !markup.includes("파일 이름"));
 });
 
-test("상세 연결 존 — 프레임 밖 행은 이름으로 명시한다(스크롤로 감추지 않는다)", () => {
+test("상세 연결 존 — 프레임 밖 행은 건수로 명시한다(스크롤로 감추지 않는다)", () => {
+  /* 2026-09-03 재판정: 이름 나열은 좁은 상세에서 표만큼 길어져 표를 밀어냈다. 표 밖 한 줄이
+     「몇 개 중 몇 개」를 말하고 이름은 페이로드에만 남는다(숨기는 것이 아니라 세는 것이다). */
   const h = build({
     snapshot: detailSnapshot({
       ...BOUND_DETAIL,
@@ -304,7 +307,15 @@ test("상세 연결 존 — 프레임 밖 행은 이름으로 명시한다(스�
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes("그 밖에 2행: 담당자 · 연락처"));
+  assert.ok(markup.includes('id="libraryRowsTail"'));
+  assert.ok(markup.includes("필드 4개 중 2개"));            // 행 2 + 프레임 밖 2
+  assert.ok(!markup.includes("담당자"));                    // 이름은 더 그리지 않는다
+});
+
+test("상세 연결 존 — 프레임 밖 행이 없으면 꼬리 줄도 없다", () => {
+  const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });   // more_fields: []
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(!markup.includes('id="libraryRowsTail"'));
 });
 
 test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 실패는 사유다", () => {
@@ -315,7 +326,6 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
         rows: [{ template_field: "공고명", source_label: "사업명", display_label: "원문",
           preview: "—", preview_kind: "pending" }],
         first_row: { state: "pending", reason: "", record_count: 0 },
-        plan: { state: "pending", pattern: "공고-{{ID}}", first_name: "", count: 0 },
       }),
     }),
   });
@@ -323,8 +333,6 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
     createElement(LibraryScreen, { controller: pending.controller }));
   assert.ok(pendingMarkup.includes('data-first-row="pending"'));
   assert.ok(pendingMarkup.includes('class="pv pending"'));
-  assert.ok(pendingMarkup.includes("규칙 공고-{{ID}}"));       // 이름 대신 아는 것을 말한다
-  assert.ok(!pendingMarkup.includes("120건"));
 
   const failed = build({
     snapshot: detailSnapshot({
@@ -343,7 +351,7 @@ test("상세 연결 존 — 아직 못 읽은 첫 행은 빈 칸 마커, 읽기 
   assert.ok(failedMarkup.includes("경로를 찾을 수 없음: C:/월별.xlsx"));
 });
 
-test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 동사는 남는다", () => {
+test("상세 연결 존 — 표가 없는 갈래에서도 카드와 연결 손잡이는 남는다", () => {
   /* 템플릿을 읽을 수 없으면 구조(표)는 못 그리지만 정체(카드)는 답할 수 있고, 무엇보다
      **고치러 가는 동사**가 카드에 있다 — 접으면 그 길이 함께 접힌다. */
   const h = build({
@@ -354,12 +362,12 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 재선택 �
           data_name: "월별", counted: false, template_field_count: 0, mapped_count: 0,
           unbound_count: 0, stale_count: 0 },
         rows: [], more_fields: [], stale_fields: [], rows_basis: "",
-        first_row: null, plan: null, output_folder: null,
+        first_row: null,
       },
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('id="libraryRepickTemplate"'));
+  assert.ok(markup.includes('id="libraryPairingEdit"') && markup.includes("조합 보기"));
   assert.ok(!markup.includes('id="libraryPairRows"'));
   assert.ok(!markup.includes("연결 0 / 0"));                   // 세지 않은 수치를 말하지 않는다
 });

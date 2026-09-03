@@ -26,6 +26,7 @@ from hwpxfiller.application.dataset_pool import (
     bound_state,
     confirm_basis,
 )
+from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
@@ -184,6 +185,16 @@ def registry(request, tmp_path):
     return InMemoryDatasetPool()
 
 
+def _vm(registry) -> DatasetPoolViewModel:
+    """소스 복원기는 ``registry`` 와 같은 **필수 주입**이다(공용 ⑤ 리뷰).
+
+    이 파일의 전건은 참조만 만지므로(등록은 데이터를 열지 않는다) 복원기가 불려 갈 일이
+    없지만, 기본값을 두지 않는 것이 계약이라 조립도 여기서 한 번만 한다 — 포트가 늘면
+    이 한 자리가 먼저 부러진다.
+    """
+    return DatasetPoolViewModel(registry, source_factory=source_from_pool_item)
+
+
 def _seed_slot(registry, name: str, path: str) -> str:
     """중복 정체성도 심을 수 있는 저장층 직접 시드(구판 잔재 시뮬레이션) — 키를 돌려준다."""
     ref = DatasetReference(name=name, kind="excel", opts={"path": path})
@@ -199,7 +210,7 @@ def _seed_slot(registry, name: str, path: str) -> str:
 
 def test_lifecycle_and_identity_reject_hold_for_both_ports(registry):
     """등록→보관→활성화→삭제 수명 + 같은 정체성 loud 거절이 두 구현에서 같다."""
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     vm.register_excel("7월", "/a.xlsx", note="첫 등록")
     key = vm.rows()[0].key
     with pytest.raises(ValueError, match="이미"):
@@ -223,7 +234,7 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
 
     item = vm.register_pclm("계약 목록", view="v_통합_v1", note="기본 자리")
     assert item.kind == "pclm"
@@ -242,7 +253,7 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
 
 def test_register_pclm_is_fail_closed_on_name_view_and_duplicate(registry, tmp_path):
     """빈 이름·미지 뷰·같은 정체성 재등록은 전부 loud — 죽은 참조를 조용히 만들지 않는다."""
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     db = str(tmp_path / "pclm.db")
     with pytest.raises(ValueError, match="이름"):
         vm.register_pclm("  ", db, view="v_통합_v1")
@@ -261,7 +272,7 @@ def test_register_pclm_is_fail_closed_on_name_view_and_duplicate(registry, tmp_p
 
 def test_relabel_confirmed_raw_binds_pclm_to_shown_state(registry, tmp_path):
     """정체성 판 확정 왕복이 계약 목록에도 같은 결속으로 선다(종류별 확정 경로 복제 금지)."""
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     db = str(tmp_path / "pclm.db")
     vm.register_pclm("계약 목록", db, view="v_통합_v1")
     key = vm.rows()[0].key
@@ -297,7 +308,7 @@ def test_duplicate_pclm_registrations_merge_by_identity(registry, tmp_path):
         registry.slots["최신"] = keep_ref
         keep = "최신"
 
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     group = vm.duplicate_group(keep)
     assert group is not None and len(group) == 2
     basis = confirm_basis([bound_state(k, it) for k, it in group])
@@ -307,7 +318,7 @@ def test_duplicate_pclm_registrations_merge_by_identity(registry, tmp_path):
 
 
 def test_relabel_confirmed_binds_to_shown_state(registry):
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     vm.register_excel("발주", "/a.xlsx")
     key = vm.rows()[0].key
     _item, basis = vm.inspect(key)
@@ -326,7 +337,7 @@ def test_relabel_confirmed_binds_to_shown_state(registry):
 
 
 def test_relink_confirmed_keeps_slot_and_rejects_identity_theft(registry):
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     vm.register_excel("A", "/a.xlsx", note="6월분")
     vm.register_excel("B", "/b.xlsx")
     rows = {r.name: r for r in vm.rows()}
@@ -351,7 +362,7 @@ def test_relink_confirmed_keeps_slot_and_rejects_identity_theft(registry):
 
 
 def test_delete_confirmed_is_fail_closed_without_fresh_basis(registry):
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     vm.register_excel("발주", "/a.xlsx")
     key = vm.rows()[0].key
     _item, basis = vm.inspect(key)
@@ -370,7 +381,7 @@ def test_resolve_duplicates_contract_holds_for_both_ports(registry):
     """중복 그룹 표면화→확정 병합→그룹 소멸이 두 구현에서 같은 계약으로 선다."""
     _seed_slot(registry, "7월 공고", "/same.xlsx")
     keep = _seed_slot(registry, "공고 최신", "/same.xlsx")
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     assert len(vm.duplicates()) == 1
     group = vm.duplicate_group(keep)
     assert group is not None and len(group) == 2
@@ -399,7 +410,7 @@ def test_relink_and_relabel_carry_sheet_note_name_for_both_ports(registry):
     비어 있으면 기존 값 보존(조용한 소거 금지), 있으면 그 확정에 함께 착지한다 —
     kind/opts 정합(하이브리드 손상 금지)까지 두 구현이 같은 계약이다.
     """
-    vm = DatasetPoolViewModel(registry)
+    vm = _vm(registry)
     vm.register_excel("발주", "/a.xlsx")
     key = vm.rows()[0].key
     _item, basis = vm.inspect(key)

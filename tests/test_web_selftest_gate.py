@@ -318,16 +318,24 @@ class TestWebSelftestGate:
         정적 DOM 계약이 못 잡는 세 승계 의무를 실 렌더로 못박는다: 보관 항목이 목록에
         남아 `활성화` 에 도달 가능할 것(§10.7.2 C), 손상 격리가 상주 재진술될 것(RC-05),
         「이 데이터 고정」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
+
+        이 면은 고르기 열 공용 ③b 에서 **공용 `PoolColumn`** 이 됐다 — 카드·행 안 버튼이
+        `.pitem` 행과 ⋯ 메뉴로 승계됐고, 「현재 데이터」 구획은 목록 첫 행이 됐다. 재는
+        의무는 한 건도 줄지 않는다(도달성·비활성 정직·프리필 그대로).
         """
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
         assert probe["opened"] is True, probe
-        assert probe["rows"] == 3, probe
+        # 풀 3행 + 「지금 쓰는 데이터」 세션 행 — 그 행이 목록 맨 위에 함께 선다.
+        assert probe["rows"] == 4, probe
+        assert "대장.xlsx" in probe["session_row"], probe
         # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
         assert probe["use_active_enabled"] is True, probe
         assert probe["use_archived_disabled"] is True, probe
+        # 상태 동사의 도달처는 행 ⋯ 메뉴다(고르기 열과 같은 어포던스).
         assert probe["activate_reachable"] is True, probe
         assert probe["relink_reachable"] is True, probe
+        assert probe["reveal_reachable"] is True, probe
         assert probe["corrupt_shown"] is True, probe
         # 고정 = 등록 모달 재사용이되 진입 사유가 제목·프리필로 드러난다.
         assert probe["pin_offered"] is True, probe
@@ -341,7 +349,9 @@ class TestWebSelftestGate:
         """데이터 선택 면 단일 경로화(U2 §2.7) — 문안이 약속한 고정 기회가 실제로 선다.
 
         찾아보기 성사 뒤에도 면이 열려 있고 「이 데이터 고정」이 **가시**여야 한다(1행) —
-        프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다.
+        프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다. 그 적재의
+        증언은 면 안 문안이다(③b): 세션 행은 이제 작업 스냅샷이 내므로, 브리지를 스텁한
+        이 창에서 행이 바뀌기를 재면 프로브가 제 손으로 세운 값을 되읽게 된다.
         「＋ 직접 등록…」은 소멸(4행), pin 모드의 path·sheet 는 읽기전용 + 폼 안
         찾아보기 감춤(5행)이다.
         """
@@ -436,6 +446,41 @@ class TestWebSelftestGate:
             "favorites",
             "needsAction",
         ]
+
+    def test_the_pairing_handle_is_the_one_door_back_to_choosing(
+        self, selftest_result: dict
+    ) -> None:
+        """연결 손잡이가 실렌더에서 서고, 눌리고, 편집기 1단계 「고르기」로 간다.
+
+        이 화면에서 조합을 다시 고르는 문은 **하나뿐**이다(2026-09-03 재판정에서 「템플릿
+        재선택」·「데이터 재선택」 두 버튼이 이 손잡이로 접혔다). 그 하나가 죽으면 사용자는
+        그 작업의 조합을 바꿀 자리를 잃는데, 마크업 문자열 단언은 그것을 못 본다 — 정적
+        계약은 규칙의 존재를 보고 **결과를 못 본다**. 그래서 실렌더가 진다.
+
+        두 갈래를 함께 읽는 것이 계약이다: 수치를 센 갈래(``counted``)와 세지 못한 갈래는
+        가운데 문안이 갈리지만 **손잡이는 둘 다 선다**. 한쪽만 재면 어포던스 소실이 절반의
+        초록으로 지나간다.
+        """
+        pair = selftest_result["library_pairing_edit"]
+
+        # ① 결속 갈래 — 수치가 서고 손잡이도 선다.
+        assert pair["bound_present"] is True, pair
+        assert pair["bound_title"] == "고르기에서 조합을 바꿉니다", pair
+        assert pair["bound_nums"] == "연결 3 / 4", pair
+
+        # ② 클릭의 착지 — 편집기 진입 포트가 **1단계 고르기**를 겨눠 정확히 한 번 불린다.
+        assert pair["entry_calls"] == 1, pair
+        assert pair["entry_name"] == "연결손잡이검증", pair
+        assert pair["entry_section"] == "template", pair
+        # 진입 사유는 이탈 가드·복귀 좌표가 읽는 축이라 함께 실린다(#966 deep-link 불변).
+        assert pair["entry_reason"] == "library", pair
+
+        # ③ 세지 못한 갈래 — 수치 대신 동사 하나이고, 문은 그대로 남는다.
+        assert pair["uncounted_present"] is True, pair
+        assert pair["uncounted_title"] == "고르기에서 조합을 바꿉니다", pair
+        assert pair["uncounted_label"] == "조합 보기", pair
+        # 데이터 미결속은 빈칸이 아니라 **동선**이다 — 그 두 번째 문도 실물로 선다.
+        assert pair["connect_data"] == "연결손잡이검증", pair
 
     def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
         """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
@@ -1413,14 +1458,17 @@ class TestWebSelftestGate:
         assert "r" not in j["save_state"], (
             f"머리가 내부 판본 표기를 말합니다 — 읽는 사람에게 행동이 없는 어휘다: {j['save_state']!r}"
         )
-        # 진입 문맥 — 자발적 진입이면 침묵, 사유가 있으면 증거·복귀 버튼과 함께 선다.
+        # 진입 문맥 — 증거가 없으면 침묵, 있으면 증거만 선다. 사유 문장·복귀 버튼은 걷혔다
+        # (2026-09-03 재판정): 복귀는 `#editorBack` 하나다.
         assert j["ctx_hidden_when_voluntary"] is True, "할 말이 없는데 배너가 섰습니다."
-        assert j["ctx_shown"] is True and j["ctx_return_btn"] is True, (
-            f"진입 문맥 배너·복귀 버튼이 서지 않습니다: {j!r}"
+        assert j["ctx_shown"] is True and j["ctx_return_btn"] is False, (
+            f"진입 문맥 배너가 서지 않거나 걷힌 복귀 버튼이 되살아났습니다: {j!r}"
         )
-        assert "생성 실패 결과에서 열었습니다" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
-            f"배너가 사유·증거를 말하지 않습니다: {j['ctx_text']!r}"
+        assert "실패한 행" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
+            f"배너가 증거를 말하지 않습니다: {j['ctx_text']!r}"
         )
+        assert "열었습니다" not in j["ctx_text"], f"걷힌 사유 문장이 되살아났습니다: {j['ctx_text']!r}"
+        assert j["back_btn"] is True, "왼쪽 위 복귀 버튼이 없습니다."
         assert j["nav_back_after_leave"] is True, (
             "편집기를 나온 뒤에도 상단 2탭이 숨어 있습니다 — 몰입이 영구 은닉이 됐습니다."
         )
@@ -1971,25 +2019,70 @@ class TestWebSelftestGate:
         )
         assert e["wire_live"] is True, "둘 다 골랐는데 연결선이 살아나지 않았습니다."
         assert e["cta_enabled"] is True, "둘 다 골랐는데 「연결 확인으로」가 잠겨 있습니다."
+        # 「현재 데이터」 카드는 목록 **맨 위의 행 하나**로 접혔다(고르기 열 공용 ③a) —
+        # 문장을 짓는 자리가 Python(`pairing.data_row.sub`)이고 표면은 그리기만 한다.
         assert "시트: 물품" in e["current_restated"], (
-            f"현재 데이터가 시트를 재진술하지 않습니다: {e['current_restated']!r}"
+            f"세션 행이 시트를 재진술하지 않습니다: {e['current_restated']!r}"
         )
         assert "헤더 1행" in e["current_restated"] and "12행" in e["current_restated"], (
-            f"현재 데이터가 헤더 행·행 수를 재진술하지 않습니다: {e['current_restated']!r}"
+            f"세션 행이 헤더 행·행 수를 재진술하지 않습니다: {e['current_restated']!r}"
+        )
+        assert "사용 중" in e["current_restated"], (
+            f"세션 행의 「사용 중」 배지가 사라졌습니다: {e['current_restated']!r}"
         )
         assert e["pool_current_marked"] == 1, (
-            f"겨눈 풀 항목의 선택 표지가 다릅니다: {e['pool_current_marked']!r}"
+            f"겨눈 행의 선택 표지가 다릅니다(양쪽 열이 같은 `aria-pressed` 축을 씁니다):"
+            f" {e['pool_current_marked']!r}"
+        )
+        assert e["pin_btn"] is True, (
+            "파일로 연 데이터인데 「이 데이터 고정…」이 서지 않았습니다 —"
+            " 그 문은 세션 행이 있을 때만, 그리고 있으면 반드시 섭니다."
         )
         # 이미 고른 항목 재선택은 **무동작**이다(리뷰 1) — 통과시키면 세션이 통째로 끊긴다.
         assert e["reselect_calls"] == 0, (
             f"이미 고른 템플릿을 다시 눌러 발신이 나갔습니다: {e['reselect_calls']!r}"
         )
         assert e["reselect_keeps_mark"] == 1, "재선택이 선택 표지를 흔들었습니다."
-        # 관리 동사 연타는 한 번만 나간다(리뷰 6) — 두 벌 확인 모달·두 번 확정 금지.
-        assert e["manage_verb_present"] is True, "우 열에 관리 동사가 서지 않았습니다."
-        assert e["double_fire_calls"] == 1, (
-            f"동사 연타가 두 번 발신됐습니다: {e['double_fire_calls']!r}"
+        # 우 열의 관리 동사는 좌 열과 **같은 ⋯ 메뉴**를 지난다(③a): 링1 이 낸 동사 뒤에
+        # 경로 문 하나. 표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이지 않는다.
+        # (연타 차단은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫힌다. 공용 몸통
+        #  `createPoolVerbs` 의 in-flight 계약은 `tests/js/pool_verbs.test.js` 가 계속 진다.)
+        assert e["manage_verb_present"] is True, "우 열 행에 ⋯ 가 서지 않았습니다."
+        # 「자세히…」는 **마지막**이다(좌 열과 같은 순서: 링1 동사 · 경로 문 · 상세).
+        assert e["dat_menu_items"] == ["act:archive", "reveal", "detail"], (
+            f"우 열 ⋯ 의 동사 목록이 계약과 다릅니다: {e['dat_menu_items']!r}"
         )
+        assert e["manage_verb_calls"] == 1, (
+            f"⋯ 의 관리 동사가 `pool` 채널로 한 번 나가지 않았습니다: {e['manage_verb_calls']!r}"
+        )
+        # ⑧ 데이터 행의 「자세히…」 → 등록 데이터 상세 시트(고르기 열 공용 ④). 좌 열 시트와
+        # **같은 골격**이라 좌표도 접두어만 다르고, 실렌더에서 그 사실을 되읽는다(새 창 0).
+        assert e["dat_detail_item_visible"] is True, (
+            "우 열 ⋯ 에 「자세히…」가 보이지 않습니다 — 등록 항목의 상세로 가는 문입니다."
+        )
+        assert e["dat_detail_dispatch"] == [["pool", "review", "d1"]], (
+            f"「자세히…」가 검토 왕복을 내지 않았습니다: {e['dat_detail_dispatch']!r}"
+        )
+        assert e["pool_sheet_open"] is True, (
+            "등록 데이터 상세 시트(#poolDetailModal)가 열리지 않았습니다."
+        )
+        assert e["pool_sheet_columns"] == 3, (
+            f"열 표의 행 수가 스냅샷 열 수와 다릅니다: {e['pool_sheet_columns']!r}"
+        )
+        assert e["pool_sheet_column_names"] == ["공고명", "금액", "기관"], (
+            f"열 이름이 스냅샷 값 그대로가 아닙니다: {e['pool_sheet_column_names']!r}"
+        )
+        assert "열 3개" in e["pool_sheet_summary"], (
+            f"열 표 머리가 Python 문안 그대로가 아닙니다: {e['pool_sheet_summary']!r}"
+        )
+        # 정체 줄 성분도 링1 이 짓는다 — 표면이 어휘·순서를 다시 조립하지 않는다.
+        assert "시트: 물품" in e["pool_sheet_facts"] and "헤더 2행" in e["pool_sheet_facts"], (
+            f"정체 줄이 Python 성분 그대로가 아닙니다: {e['pool_sheet_facts']!r}"
+        )
+        assert e["pool_sheet_verbs"] == ["detail-act:archive", "detail-reveal"], (
+            f"시트 동사 줄이 행 ⋯ 와 같은 목록에서 나오지 않았습니다: {e['pool_sheet_verbs']!r}"
+        )
+        assert e["pool_sheet_closed"] is True, "상세 시트가 닫히지 않았습니다."
         # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
         assert e["half_cta_disabled"] is True, (
             "데이터 없이 「연결 확인으로」가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."

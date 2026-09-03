@@ -48,6 +48,7 @@ from ..domain.pclm_views import (
     PCLM_VIEW_TITLES,
     PCLM_VIEWS,
     default_pclm_db,
+    sheet_title,
 )
 from .nara_acquire import validate_range
 
@@ -228,8 +229,36 @@ _STATE_ACTIONS = {
 }
 
 
+#: 참조 교체(#67) — **상태가 아니라 종류**가 가르는 관리 동사라 상태표 밖에 선다. 엑셀
+#: 참조만 새 파일로 갈아 끼울 수 있고(계약 목록·나라·조립은 그 동사가 없다), 그래서
+#: :data:`_STATE_ACTIONS` 의 「상태 → 액션」 축으로는 표현되지 않는다.
+RELINK_ACTION = PoolAction("relink", "다시 연결…")
+
+#: ``relink`` 를 가질 수 있는 참조 종류 — 대상이 「사람이 고를 파일 하나」인 것뿐이다.
+_RELINKABLE_KINDS = ("excel",)
+
+
 def available_actions(status: str) -> "list[PoolAction]":
     return list(_STATE_ACTIONS.get(status, ()))
+
+
+def reference_missing(path: str) -> bool:
+    """가리키는 파일이 자리에 없는가 — **참조 끊김 판정의 단일 출처**(#67 · U3-07 #880).
+
+    풀 행의 「끊김」 배지·고르기 판정(:meth:`DatasetPoolRow.select_block_reason`)과 부팅
+    자동 마운트(:mod:`~hwpxfiller.webapp.screen_job`)가 같은 술어를 본다. 사이트마다
+    ``exists()`` 를 다시 적으면 한쪽만 빈 경로를 끊김으로 세거나 한쪽만 폴더를 파일로 세는
+    표류가 난다. 경로 없음(``""``)은 **끊김이 아니다**: 파일로 가리킬 수 없는 참조(조립
+    파이프라인 등)는 애초에 이 판정의 대상이 아니라 배지도 서지 않는다.
+
+    자리가 링2(구 ``webapp.screens``)에서 여기로 내려온 이유는 그 판정을 쓰는 자리가
+    **고르기 판정**이기 때문이다(고르기 열 공용 계약 ①): 좌·우 열이 한 컴포넌트가 되는
+    이상 두 열의 판정은 같은 링에 서야 하고, 데이터 쪽 판정의 재료가 링2 에 남아 있으면
+    링1 이 자기 판정을 완결하지 못한다. 링2 는 이름만 재수출한다.
+
+    렌더당 I/O 가 아니다 — 호출자는 사건 시점(풀 액션·부팅)에만 지불한다.
+    """
+    return bool(path) and not Path(path).exists()
 
 
 def resolve_pclm_db(db: str) -> str:
@@ -238,8 +267,8 @@ def resolve_pclm_db(db: str) -> str:
     등록(:meth:`DatasetPoolViewModel.register_pclm`)과 그 전 중복 조회가 **같은 자리**를
     봐야 한다. 두 곳이 각자 빈 값을 해석하면 조회는 기본 자리를, 등록은 빈 문자열을 보고
     같은 데이터가 2건이 된다. 존재 검사는 하지 않는다 — 참조 등록은 파일을 열지 않고,
-    끊김은 배지(:func:`~hwpxfiller.webapp.screens.reference_missing`)와 실행 시점 재읽기가
-    말한다(``register_excel`` 과 같은 규율).
+    끊김은 배지(:func:`reference_missing`)와 실행 시점 재읽기가 말한다(``register_excel``
+    과 같은 규율).
     """
     return os.path.abspath(db) if db else str(default_pclm_db())
 
@@ -322,7 +351,55 @@ class DatasetPoolRow:
     sheet: str = ""
 
     def actions(self) -> "list[PoolAction]":
-        return available_actions(self.status)
+        """이 행의 ⋯ 메뉴가 세울 관리 동사 **전부** — 표면이 제 판정으로 더하지 않는다.
+
+        순서는 ``[다시 연결…] · [보관|활성화] · [삭제]`` 다: 참조를 고치는 동사가 먼저,
+        수명 전이가 가운데, 파괴가 끝이다. 종전에는 상태표(:func:`available_actions`)가
+        내는 둘만 스냅샷에 실리고 「다시 연결…」은 표면이 ``kind === "excel"`` 로 **다시
+        판정해** 덧붙였다 — 좌·우 열이 한 컴포넌트가 되면 그 재판정이 곧 두 열의 어긋남이라
+        목록을 여기 하나로 모은다(고르기 열 공용 계약 ①).
+
+        키는 ``pool`` 채널 액션 이름 그대로다(``relink``·``archive``·``activate``·
+        ``delete``) — 표면이 키→액션 표를 따로 들면 그 표가 늙는다.
+        """
+        gated = available_actions(self.status)
+        if self.kind in _RELINKABLE_KINDS:
+            return [RELINK_ACTION, *gated]
+        return gated
+
+    @property
+    def missing(self) -> bool:
+        """이 참조가 가리키는 파일이 자리에 없는가(:func:`reference_missing` 위임)."""
+        return reference_missing(self.locate_path)
+
+    def select_block_reason(self) -> str:
+        """이 등록 데이터를 작업 데이터로 쓸 수 **없으면** 사유, 쓸 수 있으면 ``""``.
+
+        **판정 자리는 여기 하나**다(U6-B #976 → 고르기 열 공용 계약 ①). 종전에는 셋이 각자
+        답했다: 데이터 선택 다이얼로그의 웹 함수(``usableReason`` — ``status``·``missing``
+        으로 문장을 다시 지었다), 편집기 축약 목록의 ``screen_editor.pool_option_block``,
+        그리고 실제 마운트 관문(``screens.load_pool_into``). 앞의 둘은 같은 상태를 서로 다른
+        어휘로 말했고, 두 표면이 한 컴포넌트가 되면서 그 어긋남이 곧 화면 안에서 드러난다.
+        그래서 **행이** 판정을 진다 — 그 행이 링1 에 있으므로 판정도 링1 이다(템플릿 쪽
+        :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.select_block_reason` 과
+        같은 링에 세우려고 링2 자유함수에서 이 자리로 내려왔다). 마운트 관문은 그대로
+        남는다(표면 판정은 심층 방어가 아니다).
+
+        **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5 · 나라장터 동결 규율과 같은 줄):
+        목록에서 지우면 「활성화」·「다시 연결」 동사에 닿을 길이 함께 사라진다.
+
+        **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
+        행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다.
+        """
+        if self.kind not in ("excel", "pclm"):
+            return f"{self.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
+        if self.status != STATUS_ACTIVE:
+            return "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다."
+        if self.missing:
+            if self.kind == "pclm":
+                return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
+            return "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다."
+        return ""
 
     @classmethod
     def from_item(cls, key: str, item: DatasetReference) -> "DatasetPoolRow":
@@ -348,16 +425,147 @@ class DatasetPoolRow:
         )
 
 
+def reference_sheet(item: DatasetReference) -> str:
+    """참조가 가리키는 **면 하나** — 엑셀은 시트, 계약 목록은 뷰. 나머지는 ``""``.
+
+    :attr:`DatasetPoolRow.sheet` 가 엑셀만 드는 것과 달리 여기는 종류를 가로지른다: 상세
+    시트가 「시트: …」 한 줄로 말하는 것이 계약 목록에서는 뷰이기 때문이고, 그 두 좌표를
+    한 축으로 접는 자리가 하나여야 제목화(:func:`~hwpxfiller.domain.pclm_views.sheet_title`)
+    도 한 번만 지난다. 다시 연결은 엑셀에만 있는 동사라 두 값이 갈리는 자리가 없다.
+    """
+    opts = item.opts if isinstance(item.opts, dict) else {}
+    raw = opts.get("sheet") if item.kind == "excel" else (
+        opts.get("view") if item.kind == "pclm" else None
+    )
+    return raw if isinstance(raw, str) else ""
+
+
+def reference_header_row(item: DatasetReference) -> int:
+    """참조가 든 헤더 행(없거나 0 이면 ``0`` = 어댑터 기본, 말할 것이 없다)."""
+    opts = item.opts if isinstance(item.opts, dict) else {}
+    raw = opts.get("header_row")
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0 else 0
+
+
+class DatasetSourcePort(Protocol):
+    """참조 하나를 실 데이터 소스로 복원하는 효과 — composition root 가 주입한다.
+
+    concrete 는 :func:`~hwpxfiller.data.factory.source_from_pool_item` 이고, Application 은
+    바깥 링을 import 할 수 없으므로(``tests/repo_contract/test_application_boundary.py``)
+    이 포트로만 닿는다. 상세 투영이 요구하는 것은 :meth:`fields` 하나뿐이라 계약도 그
+    하나다 — 레코드를 요구하면 「열 목록을 보려고 표 전체를 읽는」 계약이 굳는다.
+    """
+
+    def __call__(self, item: DatasetReference) -> "DatasetFieldsPort": ...
+
+
+class DatasetFieldsPort(Protocol):
+    def fields(self) -> "list[str]": ...
+
+
+@dataclass(frozen=True)
+class DatasetDetail:
+    """등록 데이터 1항목의 **상세 투영** — 「자세히…」 시트가 그릴 원료 한 벌(고르기 열 ④).
+
+    템플릿 쪽 :class:`~hwpxfiller.gui.template_manager_state.TemplateDetail` 의 거울이고
+    규율도 같다 — **재조립 금지**: 배지·상태·동사 목록은 :class:`DatasetPoolRow` 와 같은
+    출처(`_STATE_ACTIONS` · :meth:`DatasetPoolRow.actions`)이고, 시트 제목화는 링0
+    (:func:`~hwpxfiller.domain.pclm_views.sheet_title`) 그대로다. 이 클래스가 새로 판정하는
+    것은 하나도 없다 — 참조 하나를 한 번 열어 본 결과를 한 모양으로 편다.
+
+    ``error`` 는 **읽기 실패의 사유**다(파일 부재·시트 오타·손상). 그때 ``columns`` 는 비고,
+    그 사실은 :meth:`column_summary` 가 재진술한다 — 빈 열 목록을 「열이 없다」로 접으면
+    못 읽은 것과 비어 있는 것이 같은 문장이 된다(조용히 틀리지 않는다).
+    """
+
+    key: str
+    name: str
+    kind: str
+    kind_label: str
+    status: str
+    badge_label: str
+    badge_level: str
+    path: str = ""          # locate_path — 파일을 가리키는 참조만(엑셀 path·계약 목록 db)
+    sheet: str = ""         # 확정 면(엑셀 시트 / 계약 목록 뷰) — 다시 연결 프리필의 재료
+    sheet_title: str = ""   # 그 면의 표시명(계약 목록 뷰만 제목화)
+    header_row: int = 0
+    note: str = ""
+    columns: "tuple[str, ...]" = ()
+    error: str = ""
+    actions: "tuple[PoolAction, ...]" = ()
+
+    def column_summary(self) -> str:
+        """열 표 머리 한 줄 — 나열하지 않는다(바로 아래 표가 전부 말한다).
+
+        읽기 실패는 **수치 대신 사유의 존재**를 말한다: 사유 원문은 시트의 오류 상자가 이미
+        들고 있으므로 여기서 되풀이하지 않고, 「0개」로 접지도 않는다.
+        """
+        if self.error:
+            return "열 목록을 읽지 못했습니다"
+        if not self.columns:
+            return "열이 없습니다."
+        return f"열 {len(self.columns)}개"
+
+    def facts(self) -> "list[str]":
+        """정체 한 줄의 성분 — 없는 것은 **줄에서 빠진다**(빈 값이 빈칸으로 새지 않는다).
+
+        문장을 여기서 짓는 이유는 열 행 부제(:func:`~hwpxfiller.webapp.pool_column.
+        session_data_row`)와 같다: 「시트: …」·「헤더 N행」의 어휘와 순서가 표면에 있으면
+        같은 사실이 두 자리에서 다른 말이 된다. 웹은 잇기만 한다.
+        """
+        return [text for text in (
+            f"종류 {self.kind_label}",
+            f"시트: {self.sheet_title}" if self.sheet_title else "",
+            f"헤더 {self.header_row}행" if self.header_row > 0 else "",
+            f"메모: {self.note}" if self.note else "",
+        ) if text]
+
+    def to_dict(self) -> dict:
+        """웹 스냅샷 성형 — 형은 하나다(``TemplateDetail.to_dict`` 와 같은 규율)."""
+        return {
+            "key": self.key,
+            "name": self.name,
+            "kind": self.kind,
+            "kind_label": self.kind_label,
+            "status": self.status,
+            "badge_label": self.badge_label,
+            "badge_level": self.badge_level,
+            "path": self.path,
+            "sheet": self.sheet,
+            "sheet_title": self.sheet_title,
+            "header_row": self.header_row,
+            "note": self.note,
+            "facts": self.facts(),
+            "column_count": len(self.columns),
+            "column_summary": self.column_summary(),
+            "columns": list(self.columns),
+            # 시트의 동사 줄이 읽는 목록 — 행 ⋯ 메뉴와 **같은 값**이다(같은 상태 두 곳
+            # 판정 금지). 웹은 이 목록에서 자기가 지금 서 있는 「자세히…」만 걷어 그린다.
+            "actions": [{"key": a.key, "label": a.label} for a in self.actions],
+            "error": self.error,
+        }
+
+
 class DatasetPoolViewModel:
     """데이터셋 풀 상태 + 오케스트레이션. 웹 컨트롤러는 결과를 읽어 렌더한다(Qt 비의존).
 
     ``registry`` 는 외부 composition root 가 주입한다. Application 은 구체 저장 구현을
     모르고, 잠금도 잡지 않는다 — 원자성이 필요한 전이는 포트의 semantic op 하나로
     완결된다(#570).
+
+    ``source_factory`` 는 :meth:`review` 가 쓰는 두 번째 포트이고 ``registry`` 와 같은
+    **필수 주입**이다(기본값·service locator 금지 — :func:`hwpxfiller.gui.run_state
+    .resolve_file_source` 와 같은 규율). 종전에는 기본이 ``None`` 이고 :meth:`review` 가
+    미주입을 런타임에 거절했는데, 그 갈래는 **조립 실수를 사용자에게 미루는 자리**였다:
+    조립하는 곳은 하나(:mod:`hwpxfiller.webapp.app`)이고 거기서 늘 넘기므로, 부재는
+    사용자가 「자세히…」를 누르는 순간이 아니라 조립하는 순간 드러나야 한다.
     """
 
-    def __init__(self, registry: DatasetPoolPort):
+    def __init__(
+        self, registry: DatasetPoolPort, *, source_factory: "DatasetSourcePort"
+    ):
         self.registry = registry
+        self._source_factory = source_factory
         self._rows: "list[DatasetPoolRow]" = []
         # 손상 파일 격리 목록(RC-05) — refresh 가 채우고 표현 계층이 시끄럽게 표면화한다.
         self._corrupted: "list[CorruptDatasetEntry]" = []
@@ -427,7 +635,70 @@ class DatasetPoolViewModel:
         return not self._rows
 
     def count_label(self) -> str:
-        return f"{len(self._rows)}건" if self._rows else ""
+        """고르기 열 머리의 개수 — 분류사는 **항목의 것**이다(``개``).
+
+        좌 열(:meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.count_label`)과
+        **같은 형**이다: 두 열이 한 컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면 같은
+        자리의 같은 사실이 표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터
+        행)의 분류사이고 여기서 세는 것은 등록 항목이다.
+        """
+        return f"{len(self._rows)}개" if self._rows else ""
+
+    def empty_hint(self) -> str:
+        """빈 목록의 안내(비어 있지 않으면 ``""``) — 템플릿 쪽 ``empty_hint`` 의 거울.
+
+        종전에는 이 문장을 웹이 리터럴로 들었다(``pool_list.ts``). 좌·우 열이 한 컴포넌트가
+        되면 빈 상태 문안도 한 자리에서 나와야 한다 — 한쪽만 Python 이 내면 같은 존의 두
+        인스턴스가 서로 다른 층에서 말한다(고르기 열 공용 계약 ①).
+        """
+        return "고정한 데이터가 없습니다." if self.is_empty() else ""
+
+    # ---------------------------------------------------------- 상세 투영(읽기 전용)
+    def _read_columns(self, item: DatasetReference) -> "tuple[tuple[str, ...], str]":
+        """참조가 가리키는 데이터의 열 이름 — 실패는 **예외가 아니라 사유**로 낸다.
+
+        상세 시트가 서는 이유의 절반이 바로 그 실패다(끊긴 참조·오타난 시트·손상 파일).
+        예외로 올리면 답할 것이 있는 그 항목에서 시트가 영영 안 열린다 —
+        :meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.detail_view` 의
+        ``_failed_detail`` 과 같은 처분이고, 접는 자리도 같은 이유로 여기 하나다.
+        """
+        try:
+            return tuple(self._source_factory(item).fields()), ""
+        except Exception as exc:  # noqa: BLE001 — 읽기 실패는 사유를 단 상세로(봉투 밖 금지)
+            return (), str(exc)
+
+    def review(self, key: str) -> DatasetDetail:
+        """등록 데이터 하나의 **상세 투영**(읽기 전용) — 「자세히…」 시트가 그릴 원료 한 벌.
+
+        **참조를 한 번만 연다**: 배지·동사는 목록 행과 같은 성형(:meth:`DatasetPoolRow.
+        from_item`)에서, 열 목록은 그 참조를 복원한 소스 한 번에서 나온다. 나눠 읽으면 시트
+        한 장 안에서 「열은 읽었는데 상태는 옛것」 같은 갈린 사실이 설 수 있다.
+
+        **없는 키는 시끄럽다**: 레지스트리가 ``FileNotFoundError`` 를 올리고 호출자(링2
+        컨트롤러)가 stale 항목으로 재진술한다 — 빈 상세를 지어내면 그 행의 문은 눌러도
+        아무 말이 없다.
+        """
+        item = self.registry.load(key)
+        row = DatasetPoolRow.from_item(key, item)
+        columns, error = self._read_columns(item)
+        sheet = reference_sheet(item)
+        return DatasetDetail(
+            key=key,
+            name=row.name,
+            kind=row.kind,
+            kind_label=row.kind_label,
+            status=row.status,
+            badge_label=row.badge_label,
+            badge_level=row.badge_level,
+            path=row.locate_path,
+            sheet=sheet,
+            sheet_title=sheet_title(row.kind, sheet),
+            header_row=reference_header_row(item),
+            note=row.note,
+            columns=columns,
+            error=error,
+            actions=tuple(row.actions()),
+        )
 
     # ---------------------------------------------------------- 등록(참조만)
     def find_same_data(
@@ -665,8 +936,12 @@ class DatasetPoolViewModel:
 __all__ = [
     "BOUND_FIELDS",
     "CorruptDatasetEntry",
+    "DatasetDetail",
+    "DatasetFieldsPort",
     "DatasetPoolPort",
+    "DatasetSourcePort",
     "PoolAction",
+    "RELINK_ACTION",
     "DatasetPoolRow",
     "DatasetPoolViewModel",
     "StaleConfirmError",
@@ -674,6 +949,9 @@ __all__ = [
     "bound_state",
     "confirm_basis",
     "kind_transition_clause",
+    "reference_header_row",
+    "reference_missing",
+    "reference_sheet",
     "reference_summary",
     "resolve_pclm_db",
 ]

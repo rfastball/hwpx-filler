@@ -23,6 +23,7 @@ __all__ = [
     "PCLM_VIEW_LABELS",
     "PCLM_VIEW_TITLES",
     "default_pclm_db",
+    "sheet_title",
 ]
 
 # 뷰 하나가 지는 정보 한 벌 — (제목, 설명, 한 줄의 뜻).
@@ -64,6 +65,21 @@ PCLM_DOC_VIEWS: "tuple[str, ...]" = ("v_통합_v1", "v_공고_v1", "v_계약_v1"
 
 # 가장 자주 쓰는 시트: 계약 1건 + 이어진 공고. 한 줄이 계약 하나다.
 DEFAULT_PCLM_VIEW = "v_통합_v1"
+
+
+def sheet_title(kind: str, sheet: str) -> str:
+    """표면이 부를 **면 하나**의 이름 — 계약 목록의 뷰만 제목으로 옮긴다.
+
+    소비자가 둘이라 여기 하나가 진다(고르기 열 공용 ④): 지금 쓰고 있는 데이터의 열 행
+    (:func:`~hwpxfiller.webapp.pool_column.session_data_row`)과 등록 항목의 상세 투영
+    (:class:`~hwpxfiller.application.dataset_pool.DatasetDetail`)이 같은 사실을 말한다.
+    각자 적으면 한쪽만 내부 이름(``v_품목_v1``)을 새 나가게 하는 날이 온다.
+
+    **미지 이름은 원문 그대로**다: 표에 없는 뷰(구판·손편집)를 지우면 그 항목이 무엇을
+    가리키는지 화면이 말하지 못한다. 엑셀 시트 이름은 애초에 사람이 지은 것이라 옮길
+    표가 없다(``kind`` 가 그 갈래를 진다).
+    """
+    return PCLM_VIEW_TITLES.get(sheet, sheet) if kind == "pclm" else sheet
 
 
 def _configured_data_dir() -> "Path | None":

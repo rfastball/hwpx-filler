@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
+from ..application.dataset_pool import reference_missing  # 재수출 — 몸통은 링1(고르기 판정)
 from ..application.jobs import CrossMediaRelinkError, relink_template
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference, reference_identity
@@ -174,20 +175,6 @@ def validate_owned_path(path: str, owned: "set[str]", *, base_dir: "str | Path")
     return path
 
 
-def reference_missing(path: str) -> bool:
-    """가리키는 파일이 자리에 없는가 — **참조 끊김 판정의 단일 출처**(#67 · U3-07 #880).
-
-    풀 목록의 「끊김」 배지(:mod:`~hwpxfiller.webapp.screen_pool`)와 부팅 자동 마운트
-    (:mod:`~hwpxfiller.webapp.screen_job`)가 같은 술어를 본다. 사이트마다 ``exists()`` 를
-    다시 적으면 한쪽만 빈 경로를 끊김으로 세거나 한쪽만 폴더를 파일로 세는 표류가 난다.
-    경로 없음(``""``)은 **끊김이 아니다**: 파일로 가리킬 수 없는 참조(조립 파이프라인 등)는
-    애초에 이 판정의 대상이 아니라 배지도 서지 않는다.
-
-    렌더당 I/O 가 아니다 — 호출자는 사건 시점(풀 액션·부팅)에만 지불한다.
-    """
-    return bool(path) and not Path(path).exists()
-
-
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetReference:
@@ -344,18 +331,32 @@ def dataset_reference_identity(*, path: str, sheet: str, kind: str) -> str:
     )) or ""
 
 
-def registered_dataset_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:
-    """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``)."""
+def registered_dataset_entry(
+    pool_registry, *, path: str, sheet: str, kind: str
+) -> "tuple[str, str]":
+    """이 결속이 풀에 등록돼 있으면 ``(슬롯 키, 등록명)``, 아니면 ``("", "")``.
+
+    **한 조회가 둘을 답한다**: 이름은 사람이 읽는 자리(머리 부제·연결 카드)가, 키는 우 열이
+    「지금 선 행」을 표시할 때 쓴다(슬롯 키가 겨눔의 정체다 — U2 §5.3). 둘을 따로 조회하면
+    같은 풀 폴더 스캔을 두 번 지불하고, 그 사이에 갈린 상태가 이름과 표시행을 어긋나게 한다.
+    """
     if pool_registry is None:
-        return ""
+        return "", ""
     ident = dataset_reference_identity(path=path, sheet=sheet, kind=kind)
     if not ident:
-        return ""
+        return "", ""
     try:
         found = pool_registry.find_identity_raw(ident)
     except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
         found = None
-    return found[1].name if found else ""
+    return (found[0], found[1].name) if found else ("", "")
+
+
+def registered_dataset_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:
+    """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``) — 조회 몸통은 하나다."""
+    return registered_dataset_entry(
+        pool_registry, path=path, sheet=sheet, kind=kind
+    )[1]
 
 
 def source_label(source: str, data_label: str) -> str:

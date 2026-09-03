@@ -33,6 +33,7 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp import screen_job as screen_job_module
+from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS, session_data_row
 from hwpxfiller.webapp import template_change as template_change_module
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator, TemplateChangeError
@@ -382,7 +383,6 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
         # 상세 연결 존의 필수 주입(U6-F #980) — 저장 폴더의 소유자는 여전히 작업 컨트롤러
         # 하나이고 라이브러리는 그 값을 읽기만 한다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
-        remembered_output_directory=lambda: "",
     )
     assert lock.acquire(blocking=False)
     try:
@@ -1560,6 +1560,102 @@ def test_load_pool_targets_excel_reference(tmp_path):
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 7월공고"
     assert snap["record_count"] == 2
+
+
+# ---------------------------------------------------------------- 「지금 쓰는 데이터」 행(③b)
+# 데이터 선택 다이얼로그가 공용 고르기 열이 되면서 종전 「현재 데이터」 카드가 **스냅샷의 행
+# 하나**로 접혔다. 웹이 라벨·시트·행 수를 잇던 자리가 여기로 왔으므로, 그 문장과 「어느 행이
+# 지금 것인가」의 두 축을 이 층이 진다.
+def test_data_row_is_absent_until_something_is_mounted(tmp_path):
+    """마운트가 없으면 행도 없다 — 빈 카드 대신 **행 부재**다(빈 값이 새지 않는다)."""
+    ctrl, _ = _controller(tmp_path)
+
+    snap = ctrl.snapshot()
+
+    assert snap["data_row"] is None
+    assert snap["data_pool_key"] == ""
+
+
+def test_file_mount_data_row_states_the_mount_and_leaves_the_pool_key_empty(tmp_path):
+    """파일 마운트 — 행 하나 + 빈 슬롯 키(고정할 수 있는 상태의 정체).
+
+    키 집합은 공용 열 형이 소유하고(`webapp/pool_column.POOL_ROW_KEYS`) 부제는 Python 이
+    짓는다: 웹이 시트·행 수를 다시 이으면 같은 문장을 두 층이 조립한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+
+    snap = ctrl.snapshot()
+    row = snap["data_row"]
+
+    assert set(row) == set(POOL_ROW_KEYS)
+    assert row["key"] == "session"
+    assert row["name"] == "d.csv"
+    # CSV 에는 시트도 헤더 행 옵션도 없다 — 없는 성분은 줄에서 **빠진다**.
+    assert row["sub"] == "2행"
+    assert (row["badge_label"], row["badge_level"]) == ("사용 중", "ok")
+    # 파일 마운트의 종류 어휘는 ""(엑셀/CSV)다 — 표지로 옮길 때 민 종이가 되면 안 된다.
+    assert row["icon"] == "excel"
+    assert row["selectable"] is True and row["reason"] == ""
+    assert row["path"] == _data_csv(tmp_path) and row["actions"] == []
+    # 풀에서 오지 않은 마운트라 겨눈 슬롯이 없다 — 「이 데이터 고정…」이 서는 상태다.
+    assert snap["data_pool_key"] == ""
+
+
+def test_pool_mount_data_row_stands_beside_its_slot_key(tmp_path):
+    """풀 겨눔 — 행은 그대로 서고(무엇을 쓰는지) 슬롯 키가 **어느 행이 그것인지**를 말한다.
+
+    편집기 우 열과 갈리는 유일한 자리다(저쪽은 풀 결속에서 행을 내지 않는다): 이 목록에는
+    그 슬롯 행도 함께 서 있어야 보관·삭제·다시 연결에 닿는다.
+    """
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+
+    ctrl.dispatch("load_pool", {"key": key})
+    snap = ctrl.snapshot()
+
+    assert snap["data_pool_key"] == key
+    assert snap["data_row"]["name"] == "7월공고"     # 라벨은 등록명(개명 자유)
+    assert snap["data_row"]["key"] == "session"
+
+
+def test_pclm_mount_data_row_titles_the_view_in_the_subtitle(tmp_path):
+    """계약 목록 — 부제의 시트 이름은 **제목**이다(내부 이름은 성분에만 산다).
+
+    이 옮김이 종전에는 웹에서 스냅샷 제목표(`pool.pclm.titles`)를 다시 조회하며 일어났다.
+    그 표는 소비자 0 으로 퇴역했고 제목화는 링0 ``sheet_title`` 하나가 진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    db = _pclm_db(tmp_path)
+
+    ctrl._mount_pclm(db, _PCLM_VIEW)
+    row = ctrl.snapshot()["data_row"]
+
+    assert row["sub"] == f"시트: {_PCLM_TITLE} · 2행"
+    assert "v_" not in row["sub"]
+    assert row["icon"] == "pclm"
+
+
+def test_pclm_mount_data_row_keeps_an_unknown_view_name_verbatim(tmp_path):
+    """제목표에 없는 이름(구판·손편집)은 감추지 않고 원문 그대로 — 조용한 추측 금지."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl._mount_pclm(_pclm_db(tmp_path), _PCLM_VIEW)
+    ctrl.data_sheet = "v_구판"
+
+    assert ctrl.snapshot()["data_row"]["sub"] == "시트: v_구판 · 2행"
+
+
+def test_data_row_is_the_same_composition_as_the_editor_column(tmp_path):
+    """두 표면이 **같은 함수**를 부른다 — 부제 문형이 화면마다 갈리지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    row = ctrl.snapshot()["data_row"]
+
+    assert row == session_data_row(
+        name=ctrl.data_label, kind=ctrl.data_kind, path=ctrl.data_path,
+        sheet=ctrl.data_sheet, header_row=ctrl.data_header_row,
+        record_count=len(ctrl.records),
+    )
 
 
 def test_new_work_handoff_carries_the_reference_or_refuses_out_loud(tmp_path):
@@ -3600,7 +3696,6 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
         generation_lock=ctrl._generation_lock,
         # 상세 연결 존의 필수 주입(U6-F #980) — 이 시험이 재는 것은 검색 도달성이다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
-        remembered_output_directory=lambda: "",
     )
     library.dispatch("set_query", {"text": "공고서"})
     visible = [

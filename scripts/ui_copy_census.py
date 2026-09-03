@@ -31,7 +31,14 @@ ALLOWLIST = ROOT / "docs" / "ui_copy_census.toml"
 
 # ── 스캔 범위 — 사용자 문안 생산자만 ────────────────────────────────────────────────
 #: 링1 상태 모델과 링2 컨트롤러. 도메인(`domain/`·`hwpxcore`)은 문안을 짓지 않는다.
-PY_GLOBS = ("src/hwpxfiller/gui/**/*.py", "src/hwpxfiller/webapp/**/*.py")
+PY_GLOBS = (
+    "src/hwpxfiller/gui/**/*.py",
+    "src/hwpxfiller/webapp/**/*.py",
+    # 데이터 풀 VM 은 `application/` 에 살지만 링1 판정·문안(고르기 거절 사유·빈 목록 안내)을
+    # 짓는다 — 고르기 열 통합(PR #995)에서 그 문장들이 `webapp/screen_pool.py` 에서 여기로
+    # 내려왔다. 범위 밖으로 흘리면 census 가 그 문장들을 「사라졌다」고만 말한다.
+    "src/hwpxfiller/application/dataset_pool.py",
+)
 #: 프런트 source. `frontend/src/selftest/**` 는 프로브·픽스처라 제품 문안이 아니다.
 JS_GLOBS = ("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/src/**/*.js",
             "frontend/js/*.js")

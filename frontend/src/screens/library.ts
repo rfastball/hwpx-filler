@@ -3,6 +3,7 @@
    이벤트, pending search 수명주기는 React가 단독 소유한다. */
 import {
   createElement,
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
+import { poolGlyph } from "./pool_column.ts";
 import { BLANK_MARK, PreviewCell } from "./preview_cell.ts";
 
 type Obj = Record<string, any>;
@@ -268,61 +270,91 @@ function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
   }, children);
 }
 
-/** 연결 카드의 한 축(템플릿 / 데이터) — 항목 + 경로 동사 + 재선택 바로가기.
- *
- *  재선택은 **정체를 보는 자리에서 그 정체를 바꾸러 가는 길**이다. 착지 탭은 Python 이
- *  아는 편집기 섹션 어휘(`gui/edit_session.py`: template / binding)를 그대로 싣고, 진입
- *  가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
+/** 축의 정체 글리프 — 빈 사각형은 「무엇의 자리인가」를 말하지 않는다. 템플릿은 문서장,
+ *  데이터는 표. `path_actions.ts` 의 `icon()` 과 같은 어휘(20 viewBox · 선만)를 쓴다. */
+function pairGlyph(kind: "template" | "data"): ReactNode {
+  /* 글리프 어휘의 정본은 고르기 열 컴포넌트 하나다(고르기 열 공용 ②): 이 패널의 연결
+     카드와 편집기 1단계의 두 열은 **같은 것을 가리키므로 같은 그림**이어야 하고, 두
+     자리가 각자 SVG 를 들면 한쪽만 바뀌는 날이 온다. */
+  return poolGlyph(kind === "template" ? "hwpx" : "excel");
+}
+
+/** 연결 손잡이의 픽토그램 — 두 블록을 잇는 선. 「고르기」 단계의 그림(템플릿 블록 · 연결 ·
+ *  데이터 블록)을 한 글자로 줄인 것이라 손잡이가 어디로 가는지를 모양이 먼저 말한다. */
+function pairingGlyph(): ReactNode {
+  return h("svg", { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" },
+    h("rect", { x: "2", y: "6", width: "5", height: "8", rx: "1" }),
+    h("rect", { x: "13", y: "6", width: "5", height: "8", rx: "1" }),
+    h("path", { d: "M7 10h6" }));
+}
+
+/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사. `action` 은 차단
+ *  상태를 푸는 동사(데이터 미결속의 「연결하기」)만 싣는다 — 정체를 바꾸는 길은 카드가 아니라
+ *  가운데 연결 손잡이와 「작업 편집」 이 진다(2026-09-03 재판정). */
 function PairSide(props: {
+  kind: "template" | "data";
   name: string; sub: ReactNode; path: string; warn?: boolean;
-  controller: LibraryController; action: ReactNode;
+  controller: LibraryController; action?: ReactNode;
 }): ReactNode {
-  const { name, sub, path, warn, controller, action } = props;
+  const { kind, name, sub, path, warn, controller, action } = props;
   return h("div", { className: "side" },
     h("div", { className: `lib-pitem${warn ? " warn" : ""}` },
-      h("span", { className: "ic" }),
+      h("span", { className: "ic", "aria-hidden": "true" }, pairGlyph(kind)),
       h("span", { className: "lib-pitem-text" },
         h("span", { className: "nm" }, name || BLANK_MARK),
         h("span", { className: "sb" }, sub)),
       path ? h(PathActions as any, {
         client: controller.client, path, notify: controller.notify,
       }) : null),
-    action);
+    action ?? null);
 }
 
 /** 연결 카드 — 「무엇과 무엇이 붙었나」. 좁은 상세 패널이라 편집기의 가로 3열을 **눕힌다**:
  *  같은 링1 투영, 다른 배치다(동결 시안 장면 4). 수치는 Python 이 세고 여기서는 그리기만
- *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치 줄을 세우지 않는다(0 을 사실처럼 말하지
- *  않는다). 표가 서지 않는 갈래에서도 이 카드는 남는다: 고치러 갈 동사가 여기 있다. */
+ *  한다 — 세지 못한 갈래(`counted` 거짓)에는 수치를 세우지 않는다(0 을 사실처럼 말하지
+ *  않는다).
+ *
+ *  **손잡이는 가운데 「연결」 줄 하나다**(2026-09-03 재판정). 종전의 「템플릿 재선택」·「데이터
+ *  재선택」 두 버튼은 대칭인 듯 보였지만 실제 착지는 달랐다 — 데이터 재선택은 편집기 필드
+ *  연결 단계(= 「작업 편집」 기본 착지 = 표 행 클릭의 단계)라 완전한 중복이었다. 두 항목
+ *  **사이의 선**을 누르는 것이므로 착지는 그 두 항목을 고르는 그림, 편집기 1단계 「고르기」
+ *  (`section: "template"` — 좌 템플릿 풀 · 연결 카드 · 우 데이터 풀)다. 표 행 클릭만 2단계
+ *  「연결 확인」 으로 간다. 힌트는 선 위의 원형 노드가 진다(선 위의 노드 = 그 선의 손잡이).
+ *  진입 가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
 function PairCard(props: {
   detail: Obj; card: Obj; staleFields: string[]; controller: LibraryController;
 }): ReactNode {
   const { detail, card, staleFields, controller } = props;
   const dataBound = detail.data_bound;
+  const openPairing = () => controller.editWork(detail.name, {}, { section: "template" });
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
+      kind: "template",
       name: String(card.template_name || ""),
       sub: card.counted ? `필드 ${card.template_field_count}개` : "",
       path: String(detail.template_path || ""),
       warn: !!card.template_missing || !card.template_bound,
       controller,
-      action: h("button", { className: "btn sm", id: "libraryRepickTemplate", "data-repick": "template",
-        onClick: () => controller.editWork(detail.name, {
-          "여기서 할 것": "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요",
-        }, { section: "template" }) }, "템플릿 재선택…"),
     }),
-    h("div", { className: "mid" },
-      h("span", { className: "vwire", "aria-hidden": "true" }),
+    h("button", {
+      type: "button", className: "mid", id: "libraryPairingEdit",
+      title: "고르기에서 조합을 바꿉니다", onClick: openPairing,
+    },
+      h("span", { className: "knot", "aria-hidden": "true" },
+        h("span", { className: "node" }, pairingGlyph())),
       card.counted ? h("span", { className: "nums" },
         h("b", null, `연결 ${card.mapped_count} / ${card.template_field_count}`),
         ` · 확인 필요 ${card.unbound_count}`,
         /* 템플릿에서 사라진 연결은 숨기지 않는다 — 실행 게이트가 막는 상태이고,
            목록이 침묵하면 사용자는 눌러 보고서야 안다. */
         card.stale_count ? h("span", { className: "stale" },
-          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null) : null),
+          `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null)
+        /* 세지 못한 갈래에도 문은 남는다 — 수치 대신 동사 하나. */
+        : h("span", { className: "nums" }, h("b", null, "조합 보기"))),
     /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
     h(PairSide as any, {
+      kind: "data",
       name: dataBound ? String(card.data_name || "") : "",
       sub: dataBound
         ? String(detail.data_label || "")
@@ -330,39 +362,36 @@ function PairCard(props: {
       path: dataBound ? String(detail.data_path || "") : "",
       warn: !dataBound,
       controller,
-      action: dataBound
-        ? h("button", { className: "btn sm", id: "libraryRepickData", "data-repick": "data",
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요",
-          }, { section: "binding" }) }, "데이터 재선택…")
+      action: dataBound ? null
         : h("button", { className: "btn sm", "data-connect-data": detail.name,
-          onClick: () => controller.editWork(detail.name, {
-            "여기서 할 것": "「필드 연결」 탭에서 데이터를 고르고 저장하세요",
-          }) }, "데이터 연결하기…"),
+          onClick: () => controller.editWork(detail.name) }, "데이터 연결하기…"),
     }));
 }
 
-/** 읽기 전용 4열 표 — 필드 · 데이터 열 · 표시형 · 첫 행.
+/** 읽기 전용 4열 표 + 프레임 밖 행의 건수 꼬리.
  *
  *  행은 편집기 2단계와 **같은 링1 투영**이고 두 라벨도 Python 이 해소해 보낸다. 행을 누르면
  *  같은 배관으로 편집기 2단계의 그 행에 착지한다(`target: binding/<필드>` — 배선은 이미 서
- *  있다: `app.py` `ctx.target` → `load_job(target=…)` → `aimAtTarget`). */
+ *  있다: `app.py` `ctx.target` → `load_job(target=…)` → `aimAtTarget`).
+ *
+ *  프레임 밖 행은 이름을 나열하지 않고 **건수**로 말한다(2026-09-03 재판정) — 좁은 상세에서
+ *  그 목록이 표만큼 길어져 정작 표를 밀어냈다. `more_fields` 는 페이로드에 그대로 남고 여기서
+ *  길이만 읽는다(이름이 필요한 자리는 표 밖 소멸분 줄이 따로 진다). */
 function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryController }): ReactNode {
   const { detail, zone, controller } = props;
   const firstRow = (zone.first_row || {}) as Obj;
   const rows = (zone.rows || []) as Obj[];
   const more = (zone.more_fields || []) as string[];
-  const open = (field: string) => controller.editWork(detail.name, {
-    "여기서 할 것": "「연결 확인」에서 이 행의 데이터 열을 확인하세요",
-  }, { target: `binding/${field}` });
-  return h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
+  const open = (field: string) => controller.editWork(detail.name, {}, { target: `binding/${field}` });
+  const table = h("table", { className: "ro", id: "libraryPairRows", "data-first-row": String(firstRow.state || "") },
     h("thead", null, h("tr", null,
       h("th", null, "템플릿 필드"), h("th", null, "데이터 열"),
       h("th", null, "표시형"), h("th", null, "첫 행"))),
     h("tbody", null,
       /* 행 자체가 손잡이다. `role="button"` 은 **얹지 않는다** — `tr` 의 암묵 role 을 덮으면
-         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + 제목으로 어포던스를
-         세우고, 무엇이 일어나는지는 계획 줄이 한 번 더 말한다. */
+         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + `title` 이 어포던스를
+         세우고, 무엇이 일어나는지도 그 `title` 하나가 말한다(종전에는 표 아래 계획 줄이
+         한 번 더 말했고, 그 줄은 2026-09-03 재판정에서 걷혔다). */
       ...rows.map((row) => h("tr", {
         key: String(row.template_field), "data-field": row.template_field,
         tabIndex: 0, title: `'${row.template_field}' 연결을 편집기에서 확인합니다`,
@@ -380,24 +409,11 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
          문장이라 존 수준에서 받는다. */
       h("td", null, h(PreviewCell as any, {
         row, errorText: firstRow.state === "error" ? String(firstRow.reason || "") : "",
-      })))),
-      /* 프레임 밖 행은 스크롤로 조용히 감추지 않고 **이름으로** 말한다(시안 944). */
-      more.length ? h("tr", { className: "more-row" },
-        h("td", { colSpan: 4 }, `그 밖에 ${more.length}행: ${more.join(" · ")}`)) : null));
-}
-
-/** 계획 한 줄 — 「이 작업이 만들 파일」. 이름은 실제 생성기와 같은 함수가 만든 것이고,
- *  아직 못 읽었으면 이름 대신 **규칙**을 말한다(아는 것만 말한다). */
-function PlanLine(props: { zone: Obj }): ReactNode {
-  const plan = (props.zone.plan || {}) as Obj;
-  const folder = (props.zone.output_folder || {}) as Obj;
-  const ready = plan.state === "ready";
-  return h("p", { className: "plan-line", id: "libraryPlanLine" },
-    "문서 파일 이름 ",
-    ready ? h("b", null, String(plan.first_name || "")) : h("span", { className: "muted" }, `규칙 ${plan.pattern || ""}`),
-    ready ? ` · ${plan.count}건` : "",
-    folder.directory ? h("span", null, " · 저장 폴더 ", h("b", null, String(folder.directory))) : null,
-    " · 행을 누르면 편집기 '연결 확인' 으로 갑니다.");
+      }))))));
+  /* 프레임 밖 행은 스크롤로 조용히 감추지 않는다 — 표 밖 한 줄이 **몇 개 중 몇 개**를 말한다. */
+  return createElement(Fragment, null, table,
+    more.length ? h("p", { className: "lib-rows-tail", id: "libraryRowsTail" },
+      `필드 ${rows.length + more.length}개 중 ${rows.length}개`) : null);
 }
 
 function LibraryDetail(props: { detail: Obj | null; controller: LibraryController }): ReactNode {
@@ -414,8 +430,10 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
       onClick: () => { void controller.relink(detail.name); },
     }, "템플릿 다시 연결…") : null) : null;
   /* 상세 하단은 U6-F(#980)에서 연결 그림이 됐다 — 종전의 사실 3행(dl)이 답하던 정체는
-     카드가 지고, 「이 작업은 무엇을 무엇으로 채워 어떤 파일을 만드나」를 표와 계획 줄이
-     잇는다. 표가 서지 않는 갈래(템플릿을 읽을 수 없음)에서도 카드는 남는다. */
+     카드가 지고, 「무엇을 무엇으로 채우나」는 연결 카드가, 「어느 필드가 어디에 붙었나」는
+     읽기 전용 4열 표가 답한다. 면은 그 표와 프레임 밖 건수 꼬리로 끝난다(파일 이름 계획
+     줄은 2026-09-03 재판정에서 걷혔다). 표가 서지 않는 갈래(템플릿을 읽을 수 없음)에서도
+     카드는 남는다. */
   const zone = (detail.pairing_detail || {}) as Obj;
   const card = (zone.card || {}) as Obj;
   const rows = (zone.rows || []) as Obj[];
@@ -432,8 +450,7 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
        올리지 않는다 — `docs/UI_CONTRACT.md` 단일 출처 규칙). */
     zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
       "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
-    rows.length ? h(PairTable as any, { detail, zone, controller }) : null,
-    rows.length && zone.plan ? h(PlanLine as any, { zone }) : null);
+    rows.length ? h(PairTable as any, { detail, zone, controller }) : null);
   const actions = h("div", { className: "lib-detail-acts" },
     h("button", { className: "btn primary sm", "data-use": detail.name, title: primary.hint,
       onClick: () => { void controller.runPrimary(detail.name); } }, primary.label),
