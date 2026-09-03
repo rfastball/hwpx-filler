@@ -283,6 +283,15 @@ function pairGlyph(kind: "template" | "data"): ReactNode {
     h("path", { d: "M3 9h14M8 4v12" }));
 }
 
+/** 연결 손잡이의 픽토그램 — 두 블록을 잇는 선. 「고르기」 단계의 그림(템플릿 블록 · 연결 ·
+ *  데이터 블록)을 한 글자로 줄인 것이라 손잡이가 어디로 가는지를 모양이 먼저 말한다. */
+function pairingGlyph(): ReactNode {
+  return h("svg", { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" },
+    h("rect", { x: "2", y: "6", width: "5", height: "8", rx: "1" }),
+    h("rect", { x: "13", y: "6", width: "5", height: "8", rx: "1" }),
+    h("path", { d: "M7 10h6" }));
+}
+
 /** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사. `action` 은 차단
  *  상태를 푸는 동사(데이터 미결속의 「연결하기」)만 싣는다 — 정체를 바꾸는 길은 카드가 아니라
  *  가운데 연결 손잡이와 「작업 편집」 이 진다(2026-09-03 재판정). */
@@ -311,18 +320,19 @@ function PairSide(props: {
  *
  *  **손잡이는 가운데 「연결」 줄 하나다**(2026-09-03 재판정). 종전의 「템플릿 재선택」·「데이터
  *  재선택」 두 버튼은 대칭인 듯 보였지만 실제 착지는 달랐다 — 데이터 재선택은 편집기 필드
- *  연결 단계(= 「작업 편집」 기본 착지 = 표 행 클릭의 단계)라 완전한 중복이었고, 템플릿 교체는
- *  정체를 바꾸는 드문 일이라 「작업 편집」 → 템플릿 탭이 진다. 두 항목 사이의 관계가 곧
- *  편집 대상이므로 그 관계를 그린 줄이 들어가는 문이다. 진입 가드·데이터 인계는 `editWork`
- *  → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
+ *  연결 단계(= 「작업 편집」 기본 착지 = 표 행 클릭의 단계)라 완전한 중복이었다. 두 항목
+ *  **사이의 선**을 누르는 것이므로 착지는 그 두 항목을 고르는 그림, 편집기 1단계 「고르기」
+ *  (`section: "template"` — 좌 템플릿 풀 · 연결 카드 · 우 데이터 풀)다. 표 행 클릭만 2단계
+ *  「연결 확인」 으로 간다. 힌트는 선 위의 원형 노드가 진다(선 위의 노드 = 그 선의 손잡이).
+ *  진입 가드·데이터 인계는 `editWork` → `openGuarded` 가 종전대로 진다(#966 deep-link 불변). */
 function PairCard(props: {
   detail: Obj; card: Obj; staleFields: string[]; controller: LibraryController;
 }): ReactNode {
   const { detail, card, staleFields, controller } = props;
   const dataBound = detail.data_bound;
   const openPairing = () => controller.editWork(detail.name, {
-    "여기서 할 것": "「필드 연결」에서 연결을 확인하세요",
-  }, { section: "binding" });
+    "여기서 할 것": "「고르기」에서 템플릿·데이터 조합을 바꾸세요",
+  }, { section: "template" });
   return h("div", { className: "lib-paircard", id: "libraryPairCard" },
     h(PairSide as any, {
       kind: "template",
@@ -334,9 +344,10 @@ function PairCard(props: {
     }),
     h("button", {
       type: "button", className: "mid", id: "libraryPairingEdit",
-      title: "연결을 편집기에서 확인합니다", onClick: openPairing,
+      title: "고르기에서 조합을 바꿉니다", onClick: openPairing,
     },
-      h("span", { className: "vwire", "aria-hidden": "true" }),
+      h("span", { className: "knot", "aria-hidden": "true" },
+        h("span", { className: "node" }, pairingGlyph())),
       card.counted ? h("span", { className: "nums" },
         h("b", null, `연결 ${card.mapped_count} / ${card.template_field_count}`),
         ` · 확인 필요 ${card.unbound_count}`,
@@ -345,8 +356,7 @@ function PairCard(props: {
         card.stale_count ? h("span", { className: "stale" },
           `템플릿에 없는 연결 ${card.stale_count}건: ${staleFields.join(" · ")}`) : null)
         /* 세지 못한 갈래에도 문은 남는다 — 수치 대신 동사 하나. */
-        : h("span", { className: "nums" }, h("b", null, "연결 확인")),
-      h("span", { className: "go", "aria-hidden": "true" }, "›")),
+        : h("span", { className: "nums" }, h("b", null, "조합 보기"))),
     /* 데이터 축은 템플릿 바로 옆이다(#932 U4-C) — 「무엇으로 만드는가」의 두 축이라
        한쪽만 보이면 상세가 절반만 말한다. 미결속은 빈칸이 아니라 **사유와 동선**이다. */
     h(PairSide as any, {

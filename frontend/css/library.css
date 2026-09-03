@@ -86,19 +86,29 @@
 .lib-paircard .side{min-width:0;display:flex;align-items:center;gap:var(--sp-8)}
 .lib-paircard .side .lib-pitem{flex:1;min-width:0}
 .lib-paircard .side > .btn{flex:none}
-/* 가운데 「연결」 줄이 **유일한 손잡이**다(2026-09-03) — 두 항목 사이의 관계가 곧 편집 대상이라
-   그 관계를 그린 줄이 들어가는 문이 된다. 버튼이되 줄처럼 보이고, hover·초점에서만 면이 든다. */
+/* 가운데 「연결」 줄이 **유일한 손잡이**다(2026-09-03) — 두 항목 사이의 선을 누르는 것이라
+   착지는 그 둘을 고르는 그림(편집기 「고르기」)이다. 힌트는 **선 위의 원형 노드**가 진다:
+   다이어그램 문법에서 선 위의 노드는 그 선의 손잡이라 신호가 자리에서 나온다. 줄 전체가
+   버튼이고 hover 에 노드가 primary 로 찬다. */
 .lib-paircard .mid{width:100%;display:flex;align-items:center;gap:var(--sp-8);
   border:0;background:none;font:inherit;font-size:var(--fs-caption);color:var(--n-ink-soft);
   text-align:left;cursor:pointer;border-radius:var(--rad-control);
-  padding:var(--sp-4) var(--sp-8) var(--sp-4) var(--sp-10)}
+  padding:var(--sp-2) var(--sp-8) var(--sp-2) var(--sp-10)}
 .lib-paircard .mid:hover{background:var(--n-hover)}
 .lib-paircard .mid:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
-.lib-paircard .mid .go{margin-left:auto;flex:none;color:var(--a-muted);font-size:var(--fs-strong);
-  line-height:1}
-/* 세로 연결선 — 두 항목을 잇는 그림이고 상태를 말하지 않는다(수치가 그 일을 한다). */
-.lib-paircard .vwire{flex:none;width:2px;height:26px;background:var(--a-primary);
-  border-radius:1px;margin-left:9px}
+/* 매듭 — 세로 선(::before) 위에 노드 하나. 선의 x 는 항목 글리프 열의 중심과 맞춘다. */
+.lib-paircard .knot{position:relative;flex:none;width:22px;height:34px;display:grid;
+  place-items:center;margin-left:-1px}
+.lib-paircard .knot::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;
+  transform:translateX(-50%);background:var(--a-primary);border-radius:1px}
+.lib-paircard .node{position:relative;width:22px;height:22px;border-radius:50%;
+  border:1.5px solid var(--a-primary);background:var(--a-card);color:var(--a-primary);
+  display:grid;place-items:center;transition:background-color .12s,color .12s}
+.lib-paircard .node svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.lib-paircard .mid:hover .node,.lib-paircard .mid:focus-visible .node{background:var(--a-primary);
+  color:var(--a-on-accent)}
+@media (prefers-reduced-motion:reduce){.lib-paircard .node{transition:none}}
 .lib-paircard .nums{min-width:0}
 .lib-paircard .nums b{font-variant-numeric:tabular-nums;font-size:var(--fs-body);
   color:var(--a-ink)}

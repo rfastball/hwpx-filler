@@ -218,8 +218,7 @@ const BOUND_DETAIL = {
 
 test("상세 연결 손잡이 — 가운데 「연결」 줄 하나가 편집기로 가는 문이다(재선택 버튼 없음)", () => {
   /* 2026-09-03 재판정: 「데이터 재선택」 은 「작업 편집」·표 행 클릭과 같은 단계에 착지하던
-     중복이었고, 템플릿 교체는 「작업 편집」 → 템플릿 탭이 진다. 두 항목 사이의 관계 줄이
-     들어가는 문이다. */
+     중복이었다. 두 항목 사이의 선이 문이고 착지는 그 둘을 고르는 「고르기」 단계다. */
   const h = build({ snapshot: detailSnapshot(BOUND_DETAIL) });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
   assert.ok(markup.includes('id="libraryPairingEdit"'));
@@ -240,8 +239,8 @@ test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐�
 });
 
 test("editWork — section extra가 EditorEntry 문맥에 합류한다(착지 탭 deep-link)", async () => {
-  /* 연결 손잡이의 onClick 이 부르는 그 경로다(`section: "binding"`). 섹션 어휘는 Python 이
-     아는 값(`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
+  /* 연결 손잡이의 onClick 이 부르는 그 경로다(`section: "template"` = 「고르기」). 섹션 어휘는
+     Python 이 아는 값(`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
   const h = build();
   await h.controller.editWork("작업A", { "여기서 할 것": "고르세요" }, { section: "template" });
   await h.controller.editWork("작업A", {}, { section: "binding" });
@@ -373,7 +372,7 @@ test("상세 연결 존 — 표가 없는 갈래에서도 카드와 연결 손�
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('id="libraryPairingEdit"') && markup.includes("연결 확인"));
+  assert.ok(markup.includes('id="libraryPairingEdit"') && markup.includes("조합 보기"));
   assert.ok(!markup.includes('id="libraryPairRows"'));
   assert.ok(!markup.includes("연결 0 / 0"));                   // 세지 않은 수치를 말하지 않는다
 });
