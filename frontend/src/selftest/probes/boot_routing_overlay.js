@@ -703,8 +703,12 @@ export function createBootRoutingOverlayProbes() {
           } catch (e) { out[scr] = "throw:" + (e && e.message); }
         });
 
-        /* 편집기 스크롤 보존 end-to-end. 스냅샷에 필드를 주입하는 이유는 재렌더가 innerHTML 을
-           다시 짓기 때문이다 — DOM 에만 spacer 를 꽂으면 재렌더가 걷어 가 측정이 성립 안 한다. */
+        /* 편집기 스크롤 보존 end-to-end. 넘침의 재료를 **스냅샷 값**으로 세우는 이유는 재렌더가
+           본문을 다시 짓기 때문이다 — DOM 에만 spacer 를 꽂으면 재렌더가 걷어 가 측정이 성립
+           안 한다. 종전 재료는 40행짜리 스키마 표였고, U6-E(#979)가 그 표를 항목 상세 시트로
+           옮기면서 1단계 게이트 존의 **차단 문안**(`raw_block` — `white-space: pre-line` 이라
+           줄이 그대로 높이가 된다)으로 갈아탄다. 재는 것은 그대로다: 재렌더를 가로질러
+           `#editor-body` 의 scrollTop 이 사는가. */
         try {
           const snap = snaps.editor;
           if (!snap) {
@@ -713,20 +717,15 @@ export function createBootRoutingOverlayProbes() {
                않는다**. 고치지 않는다: 거동을 바꾸면 이식이 아니라 수리가 된다. */
             return { preserve_real: out };
           }
-          const fields = [];
-          for (let i = 0; i < 40; i += 1) {
-            fields.push({
-              name: "필드" + i, inferred_type: "text", in_table: false,
-              occurrences: 1, context: "",
-            });
-          }
+          const lines = [];
+          for (let i = 0; i < 60; i += 1) lines.push("스크롤 보존 검증 줄 " + i);
           snap.section = "template";
           snap.template_path = "C:/t/스크롤검증.hwpx";
           snap.template_name = "스크롤검증.hwpx";
           snap.template_media = "hwpx";
-          snap.field_count = fields.length;
-          snap.fields = fields;
-          snap.schema_summary = "필드 40개";
+          snap.field_count = 0;
+          snap.fields = [];
+          snap.raw_block = lines.join("\n");
           ctx.push("editor", snap);
           /* R4-02 — 본문이 React 소유가 되면서 커밋이 다음 turn 이다. 커밋 전에 scrollTop 을
              쓰면 아직 넘칠 내용이 없어 **0 으로 클램프**되고, 그 0 이 「보존 실패」로 읽힌다.

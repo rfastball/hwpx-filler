@@ -161,6 +161,11 @@ type ViewState = {
   /** 「고정값…」을 고른 행 — 그 입력이 **실제로 선 렌더**에서 초점을 받는다(리뷰 8). */
   pendingConstFocus: number | null;
   txtEdit: TxtEditState | null;
+  /** 항목 상세 시트가 열려 있는가(U6-E 리뷰 3) — 동사의 결과가 **어느 채널로 갈지**를 가른다.
+   *  시트가 스크림으로 화면을 덮는 동안 `#save-msg` 에 쓰면 그 문장은 뒤에 그려진다. */
+  detailOpen: boolean;
+  /** 시트가 열려 있는 동안의 동사 실패 문안 — 닫히면 걷힌다(다음 열림에 남지 않는다). */
+  detailMessage: string | null;
   tokFoldOpen: boolean;
   saveMessage: { text: string; level: string } | null;
   invalidField: string;
@@ -201,6 +206,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
     libMenu: null, bindingMenu: false, pendingConstFocus: null, txtEdit: null,
+    detailOpen: false, detailMessage: null,
     tokFoldOpen: false, saveMessage: null,
     invalidField: "", aim: "", aimed: "",
   };
@@ -579,20 +585,67 @@ export function createEditorController(deps: EditorControllerDeps) {
     openLibMenu(media, id, trigger);
   }
 
+  /** 항목 동사의 **단일 분기표**(U6-E 리뷰 9) — 행 ⋯ 와 시트 동사 줄이 같은 것을 본다.
+   *
+   *  갈리는 것은 **대상과 실패의 착지**뿐이라 둘 다 인자로 받는다: 행 메뉴는 눌린 행을
+   *  겨누고 예외를 경보 백스톱으로 보내며, 시트는 열려 있는 항목을 겨누고 사유를 시트 안에
+   *  남긴다. 표를 복제하면 한쪽에만 동사가 늘어나는 날이 온다.
+   *
+   *  **닫힌 집합이다**: 모르는 키를 조용히 떨어뜨리면 메뉴에 항목을 더하고 배선을 잊은 날
+   *  「눌렀는데 아무 일도 없다」가 된다. 목록을 짓는 곳(`libRowMenuItems`)과 여기가 같은
+   *  집합을 봐야 하고, 어긋남은 던진다. `act:review` 가 없는 것은 계약이다 — 검토 왕복은
+   *  「자세히…」 하나가 진다(리뷰 10).
+   */
+  async function runItemVerb(
+    action: string, target: Obj, trigger: HTMLElement,
+  ): Promise<void> {
+    const path = String(target.path || "");
+    if (action === "edit") {
+      const result = await dispatch("tpl", "txt_content", { path });
+      openTxtEdit("edit", path, String(target.name || ""), String(result.content || ""), trigger);
+    } else if (action === "detail") await openDetail(path, trigger);
+    else if (action === "act:compile") await compileTemplate(path);
+    else throw new Error(`알 수 없는 항목 동사입니다: ${action}`);
+  }
+
   async function handleLibMenu(action: string): Promise<void> {
     const menu = view.libMenu;
     if (menu === null) return;
+    const item = (menu.item || {}) as Obj;
+    const trigger = menu.trigger;
     closeLibMenu();
     try {
-      if (action === "edit") {
-        const item = menu.item || {};
-        const result = await dispatch("tpl", "txt_content", { path: item.path });
-        openTxtEdit("edit", item.path, item.name, String(result.content || ""), menu.trigger);
-      } else if (action === "act:compile") await compileTemplate((menu.item || {}).path);
-      else if (action === "act:review") await dispatch("tpl", "review", { path: (menu.item || {}).path });
+      await runItemVerb(action, item, trigger);
     } catch (error) {
       deps.notify(String((error as Obj)?.message || error));
     }
+  }
+
+  /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(U6-E #979).
+   *
+   *  순서가 계약이다: 먼저 열면 지난 항목의 상세가 한 프레임 서 있다가 갈리고, 검토가
+   *  거절되면 빈 시트만 남는다. 실패는 왕복이 던지므로 호출자의 백스톱까지 올라간다.
+   *
+   *  열림·닫힘을 뷰 상태로 드는 이유는 **동사 결과의 채널**이 그 사실로 갈리기 때문이다
+   *  (리뷰 3): 시트가 화면을 덮는 동안 `#save-msg` 에 쓴 문장은 스크림 뒤에 그려진다. */
+  async function openDetail(path: string, trigger: HTMLElement): Promise<void> {
+    await dispatch("tpl", "review", { path });
+    patchView({ detailOpen: true, detailMessage: null });
+    deps.modal.open("tplDetailModal", {
+      returnFocus: trigger,
+      beforeClose: () => {
+        patchView({ detailOpen: false, detailMessage: null });
+        return true;
+      },
+    });
+  }
+
+  /** 동사 실패의 착지 — 시트가 열려 있으면 **시트 안**, 아니면 인라인 채널(#323).
+   *
+   *  같은 문장을 두 자리에 쓰지 않는다: 읽는 사람이 지금 보고 있는 면에 남긴다. */
+  function noticeVerb(message: string): void {
+    if (view.detailOpen) patchView({ detailMessage: message });
+    else noticeSave(message);
   }
 
   /** 누름틀·구간 변환 — 2단계(스캔 dry-run → 확인 왕복 → 제자리 적용).
@@ -613,23 +666,34 @@ export function createEditorController(deps: EditorControllerDeps) {
      배포본에서 걷혔고(#941), `tpl` 채널의 `install_examples`·`remove_examples` 액션과 그
      스냅샷 축(`library.examples`)은 동결로 남는다 — 되살릴 때 이 자리에서 다시 소비한다. */
 
-  /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ---- */
+  /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ----
+     동사가 서는 자리는 U6-E(#979)에서 **항목 상세 시트** 안으로 옮겼다. 겨누는 경로·목록은
+     그래서 `tpl` 채널의 `detail` 존이 낸다 — 시트가 그리는 것과 동사가 겨누는 것이 같은
+     값이어야 「보이는 항목과 다른 파일을 바꾸는」 자리가 생기지 않는다. */
+
+  /** 시트가 지금 겨눈 상세(없으면 빈 객체) — 동사와 렌더가 같은 값을 읽는 단일 자리. */
+  function detailZone(): Obj {
+    return ((tplModel.getSnapshot() || {}).detail || {}) as Obj;
+  }
+
+  function detailPath(): string {
+    return String(detailZone().path || "");
+  }
 
   /** 항목 이름 바꾸기 — 파괴가 아니라 프롬프트 하나다(확인 왕복 없음). */
   async function renameSlot(slotId: string, label: string, trigger: HTMLElement): Promise<void> {
-    const slots = (tplModel.getSnapshot() || {}).slots || {};
     const value = await deps.modal.prompt({
       /* 빈 문자열도 유효한 답이다(이름 없는 항목으로 되돌리기) — 검증을 걸지 않는다. */
       title: "항목 이름 바꾸기", body: `'${slotId}' 의 새 이름`, value: label,
       returnFocus: trigger,
     });
     if (value === null) return;
-    await dispatch("tpl", "slot_rename", { path: String(slots.path || ""), slot_id: slotId, label: value });
+    await dispatch("tpl", "slot_rename", { path: detailPath(), slot_id: slotId, label: value });
   }
 
   /** 항목을 표기로 되돌리기 — 확인 본문(전이 결과 재진술)은 Python 이 싣는다. */
   async function decompileSlot(slotId: string, trigger: HTMLElement): Promise<void> {
-    const path = String(((tplModel.getSnapshot() || {}).slots || {}).path || "");
+    const path = detailPath();
     const result = await dispatch("tpl", "slot_decompile", { path, slot_id: slotId });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n되돌릴까요?`,
@@ -641,7 +705,7 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /** 이 템플릿의 항목을 전부 표기로 되돌리기 — 대상이 항목이 아니라 파일이라 `slot_id` 가 없다. */
   async function decompileAllSlots(trigger: HTMLElement): Promise<void> {
-    const path = String(((tplModel.getSnapshot() || {}).slots || {}).path || "");
+    const path = detailPath();
     const result = await dispatch("tpl", "slot_decompile_all", { path });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n되돌릴까요?`,
@@ -653,13 +717,25 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /** 항목 삭제 — 내용째 사라지는 파괴 확정. */
   async function removeSlot(slotId: string, trigger: HTMLElement): Promise<void> {
-    const path = String(((tplModel.getSnapshot() || {}).slots || {}).path || "");
+    const path = detailPath();
     const result = await dispatch("tpl", "slot_remove", { path, slot_id: slotId });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n지울까요?`,
       confirmLabel: "삭제", cancelLabel: "취소", returnFocus: trigger, danger: true,
     })) {
       await dispatch("tpl", "slot_remove", { path, slot_id: slotId, confirm: true });
+    }
+  }
+
+  /** 상세 시트 동사 줄의 단일 진입 — 겨누는 것은 **시트가 지금 든 항목**이다(리뷰 9).
+   *
+   *  분기표는 행 ⋮ 와 공유하고(`runItemVerb`) 여기가 정하는 것은 대상과 실패의 착지뿐이다. */
+  async function handleDetailVerb(action: string, trigger: HTMLElement): Promise<void> {
+    patchView({ detailMessage: null });   // 새 동사는 지난 사유를 이고 가지 않는다
+    try {
+      await runItemVerb(action, detailZone(), trigger);
+    } catch (error) {
+      noticeVerb(String((error as Obj)?.message || error));
     }
   }
 
@@ -672,14 +748,16 @@ export function createEditorController(deps: EditorControllerDeps) {
     try {
       if (verb === "decompile-all") await decompileAllSlots(trigger);
       else if (verb === "rename") {
-        const rows = (((tplModel.getSnapshot() || {}).slots || {}).rows || []) as Obj[];
+        const rows = ((detailZone().slots || {}).rows || []) as Obj[];
         const row = rows.find((item) => String(item.id) === slotId);
         await renameSlot(slotId, String((row || {}).label || ""), trigger);
       } else if (verb === "decompile") await decompileSlot(slotId, trigger);
       else if (verb === "remove") await removeSlot(slotId, trigger);
       else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
     } catch (error) {
-      noticeSave(String((error as Obj)?.message || error));
+      /* 구간 동사는 **시트 안**에 서므로 실패도 그 면에 남는다(리뷰 3) — 시트가 닫혀 있는
+         호출(프로브·직접 호출)에서는 종전대로 인라인 채널이 받는다. */
+      noticeVerb(String((error as Obj)?.message || error));
     }
   }
 
@@ -1356,6 +1434,10 @@ export function createEditorController(deps: EditorControllerDeps) {
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
     toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
+    /** 항목 상세 시트(U6-E #979) — 여는 자리 둘(행 ⋮ · 게이트 존)이 같은 한 문을 지난다. */
+    openDetail,
+    closeDetail: (): void => { deps.modal.close("tplDetailModal"); },
+    handleDetailVerb,
     isLibMenuOpen: (): boolean => view.libMenu !== null,
     libContextMenu,
     findLibItem,
@@ -1487,39 +1569,43 @@ function StepHeader(props: { snapshot: Obj; controller: EditorController }): Rea
     ...children);
 }
 
-/** 행 ⋮ 가 열 동사 목록 — **한 술어**다. 메뉴를 여는 쪽과 트리거를 잠그는 쪽이 같은 값을
+/** 항목 상세 시트를 여는 메뉴 항목의 라벨 — 메뉴와 시트 안내가 같은 글자를 쓴다. */
+export const LIB_ROW_DETAIL_LABEL = "자세히…";
+
+/** 행 ⋮ 가 열 동사 목록 — **한 술어**다. 메뉴를 여는 쪽·시트의 동사 줄·트리거가 같은 값을
  *  봐야 「버튼은 있는데 눌러도 아무 일도 없다」가 생기지 않는다(같은 상태 두 곳 판정 금지).
  *
- *  목록·라벨은 링1 소유다 — hwpx 는 스냅샷 `actions`(상태 게이트가 낸 수선 동사)를 그대로
- *  그리고, txt 는 읽을 수 있을 때만 「내용 편집」이 선다. 삭제는 U6-A(#975)에서 퇴역했으므로
- *  COMPILED·FILLED hwpx 행과 판독 실패 txt 행은 동사가 **0** 이다. */
+ *  목록·라벨은 링1 소유다 — hwpx 는 스냅샷 `actions`(상태 게이트가 낸 동사)를 그대로 그리고,
+ *  txt 는 읽을 수 있을 때만 「내용 편집」이 선다.
+ *
+ *  **「자세히…」는 모든 행에 선다**(U6-E #979). 그래서 동사 0 인 행이 없고, 종전의
+ *  「동사 0 → ⋮ 비활성 + 사유」(U6-A 판정)는 「상시 활성」으로 대체됐다 — 그 판정이 막던
+ *  결함(무반응 버튼)은 여전히 막힌다: 어느 행에서든 누르면 답할 것이 있다. 오류 행에서는
+ *  그 하나만 서고, 시트가 답하는 것이 바로 그 오류 사유다.
+ *
+ *  이 함수는 목록 행(`item`)과 상세 투영(`detail`) 둘 다 받는다 — 두 자리가 읽는 두 값이
+ *  같은 두 축(`actions`·`error`)을 들기 때문이고, 그래서 동사 목록을 두 번 짓지 않는다. */
 export function libRowMenuItems(media: string, item: Obj | null): ContextMenuItem[] {
   if (item === null || item === undefined) return [];
+  const detail: ContextMenuItem = { action: "detail", label: LIB_ROW_DETAIL_LABEL };
   if (media === "hwpx") {
-    return ((item.actions || []) as Obj[]).map((action: Obj) =>
-      ({ action: `act:${String(action.key)}`, label: String(action.label) }));
+    return [
+      ...((item.actions || []) as Obj[]).map((action: Obj) =>
+        ({ action: `act:${String(action.key)}`, label: String(action.label) })),
+      detail,
+    ];
   }
-  return item.error ? [] : [{ action: "edit", label: "내용 편집" }];
+  return item.error ? [detail] : [{ action: "edit", label: "내용 편집" }, detail];
 }
-
-/** 동작 0 인 행의 ⋮ 에 붙는 사유 — 조용히 죽은 버튼을 두지 않는다. */
-export const LIB_ROW_NO_ACTION_REASON = "이 항목에 지금 할 수 있는 작업이 없습니다.";
 
 function LibRowTail(props: { media: string; item: Obj; controller: EditorController }): ReactNode {
   const { media, item, controller } = props;
-  /* 동작이 하나도 없으면 **비활성 + 사유**다(U6-A 리뷰): 종전에는 버튼이 멀쩡히 서 있고
-     클릭이 조용히 삼켜졌다 — 이 저장소가 금지하는 무반응이다. 버튼을 아예 지우지 않는
-     이유는 행마다 꼬리 폭이 달라져 목록이 들쭉날쭉해지기 때문이고, 비활성은 「지금은
-     없다」를 말하면서 자리를 지킨다. */
-  const disabled = libRowMenuItems(media, item).length === 0;
   /* legacy 는 두 버튼을 감싸지 않고 이어 붙였다 — 요소 트리에서 감싸면 `.libselrow` 의
      flex 자식 수가 바뀌어 배치가 달라진다. Fragment 는 DOM 노드를 만들지 않는다. */
   return createElement(Fragment, null,
     h("button", {
       className: "job-more", "data-act": "lib-more", "data-media": media, "data-key": item.key,
       "aria-haspopup": "true", "aria-label": "항목 관리",
-      disabled,
-      title: disabled ? LIB_ROW_NO_ACTION_REASON : undefined,
       onClick: (event: Obj) => controller.toggleLibMenu(media, item.key, event.currentTarget),
     }, "⋮"));
 }
@@ -1578,6 +1664,7 @@ function TemplatePool(props: {
   tpl: Obj | null; snapshot: Obj; controller: EditorController;
 }): ReactNode {
   const { tpl, snapshot, controller } = props;
+  const result = ((tpl || {}).result || {}) as Obj;
   const hwpx = (tpl || {}).hwpx || {};
   const txt = (tpl || {}).txt || {};
   const rowsOf = (band: Obj): Obj[] => (band.sections || [])
@@ -1627,7 +1714,13 @@ function TemplatePool(props: {
       h("button", {
         className: "btn sm", "data-act": "lib-new-txt",
         onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
-      }, "새 TXT 템플릿…")));
+      }, "새 TXT 템플릿…")),
+    /* 결과 줄 — 정본은 `tpl` 채널이고 자리는 **이 열의 바닥**이다(U6-E #979). 관리 동사가
+       전부 이 열(행 ⋯ · 상세 시트)에서 나가므로 그 성과도 같은 열에서 읽힌다. 종전에는
+       고르기 존 **아래**에 서서, 왼쪽에서 누른 변환의 결과가 세 열 밑에 떨어져 있었다. */
+    result.text ? h("div", {
+      className: `run-result${result.level && result.level !== "muted" ? " " + result.level : ""}`,
+    }, String(result.text)) : null);
 }
 
 /** 중앙 — 연결 카드. **수치도 그 출처(`basis`)도 Python 이 낸다**(U6-B #976).
@@ -1728,10 +1821,20 @@ function DataPool(props: {
     h("div", { className: "pool-list" }, h(PoolSections as any, { host, pool })));
 }
 
-function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNode {
-  const { slots, controller } = props;
+/** 항목 상세 시트의 **구간 항목 표** — 행 동사 3종 + 밴드 동사 1종(S8-03 · U4-E3 #939).
+ *
+ *  좌표(`data-act="slot-*"` · `data-slot=<id>`)와 왕복은 U6-E(#979)에서 **그대로** 시트 안으로
+ *  옮겼다 — 바뀐 것은 이 표가 서는 자리 하나다. 그 이동이 메운 구멍은 도달성이다: U6-B 뒤
+ *  COMPILED 행의 동사가 0 이 되면서, 완전 변환된 템플릿에서만 존재하는 이 동사들에 닿을 길이
+ *  없었다.
+ *
+ *  진단이 있으면 목록 대신 사유가 서고 동사는 하나도 서지 않는다(못 믿는 구조 위에서 변이를
+ *  권하지 않는다 — 진단 우선 규율). */
+function SlotTable(props: {
+  slots: Obj; diagnostics: string[]; controller: EditorController;
+}): ReactNode {
+  const { slots, diagnostics, controller } = props;
   const rows = (slots.rows || []) as Obj[];
-  const diagnostics = (slots.diagnostics || []) as string[];
   const verb = (row: Obj, act: string, label: string, danger?: boolean): ReactNode =>
     h("button", {
       className: `btn sm${danger ? " danger" : ""}`, key: act,
@@ -1745,14 +1848,11 @@ function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNod
     onClick: (event: Obj) => controller.guarded(
       () => controller.handleSlotVerb("decompile-all", "", event.currentTarget)),
   }, "전부 표기로 되돌리기");
-  return h("div", { className: "grp", id: "tplSlots" },
+  return h("div", { className: "grp", id: "tplDetailSlots" },
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
       h("span", { className: "cap" }, "구간 항목"),
-      h("span", { className: "muted capnote" }, String(slots.name || "")),
       h("span", { className: "muted capnote" }, String(slots.summary || "")),
       bandVerb),
-    ...diagnostics.map((text, index) =>
-      h("div", { className: "hint danger", key: `diag-${index}` }, text)),
     ...(diagnostics.length ? [] : rows.map((row) => h("div", {
       className: "slotrow", key: String(row.id), "data-slot": String(row.id),
     },
@@ -1764,107 +1864,200 @@ function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNod
     verb(row, "remove", "삭제", true)))));
 }
 
-/** 이 세션이 연 템플릿의 구간(항목·선택) 축 요약 — **읽기 전용**(U4-E2 #939).
+/** 항목 상세 시트의 **필드 표** — 나열식 금지(#16 판정)의 좌표 `.schema-fields` 를 잇는다.
  *
- *  `SlotBand`(tpl 검토)와 값의 모양은 같지만 동사가 없다: 편집기는 저장 전 초안 세션이라
- *  템플릿 파일을 변이시키지 않는다. 요약 문자열·행·진단은 Python 투영 그대로 그린다 —
- *  여기서 개수를 다시 세지 않는다. 진단이 있으면 목록 대신 사유가 선다(진단 우선).
- *  존 자체의 유무는 판정이 아니다: 스냅샷이 `null` 이면 서지 않는다. */
-function TemplateSlotSummary(props: { slots: Obj }): ReactNode {
-  const { slots } = props;
-  const rows = (slots.rows || []) as Obj[];
-  const diagnostics = (slots.diagnostics || []) as string[];
-  return h("div", { className: "grp", id: "editorSlotSummary" },
-    h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
-      h("span", { className: "cap" }, "구간 항목"),
-      h("span", { className: "muted capnote" }, String(slots.summary || ""))),
+ *  값의 주인은 `tpl` 채널이다(`detail.fields` — 이름과 링0 추정 유형). 편집기가 자기 세션
+ *  스키마로 그리던 종전 표와 겨누는 대상이 다르다: 이 표가 말하는 것은 **풀 항목(파일)** 이고,
+ *  그래서 세션이 아직 그 템플릿을 고르지 않았어도 답할 수 있다. */
+function DetailFields(props: { detail: Obj }): ReactNode {
+  const fields = (props.detail.fields || []) as Obj[];
+  return createElement(Fragment, null,
+    h("p", { className: "fields-head", id: "tplDetailFieldSummary" },
+      String(props.detail.field_summary || "")),
+    fields.length
+      ? h("div", { className: "tblwrap" },
+        h("table", { className: "schema-fields" },
+          h("thead", null, h("tr", null,
+            h("th", null, "필드"), h("th", null, "추정 타입"))),
+          h("tbody", null, ...fields.map((field: Obj, index: number) =>
+            h("tr", { key: index },
+              h("td", null, h("span", { className: "fname" }, String(field.name))),
+              h("td", null, h("span", { className: "tbadge" },
+                INFERRED_LABEL[String(field.type_hint)] || String(field.type_hint || ""))))))))
+      : null);
+}
+
+/** 「자세히…」가 여는 **항목 상세 시트**(U6-E #979 · `#tplDetailModal`).
+ *
+ *  편집기 고르기 존 아래에 흩어져 있던 관리 표면(선택 chip + 경로 동사 · 작성 출처 · 스키마
+ *  표 · 구간 항목 밴드 · 구간 요약)이 여기 하나로 모였다. 모을 때의 규율 둘:
+ *
+ *  - **재료는 `tpl` 채널 존 하나**다(`detail`). 시트가 두 스냅샷을 합성하면 그 사이에 갈린
+ *    사실이 한 장에 함께 선다(상태 배지는 옛것, 항목 목록은 새것).
+ *  - **겨누는 것은 세션이 아니라 파일**이다. 그래서 편집 중인 템플릿이든 아니든 같은 시트가
+ *    서고, 마침 같은 파일이면 변이 통지 seam(`mutation_sinks` → `reconcile_template_mutation`)
+ *    이 편집 세션을 스스로 다시 세운다 — 시트는 닫지 않는다(편집기 notice 가 말한다). */
+export function TplDetailSheet(props: { controller: EditorController }): ReactNode {
+  const { controller } = props;
+  /* 세 번째 인자(getServerSnapshot)는 `EditorScreen` 과 같은 이유로 선다 — 없으면 이 창이
+     `react-dom/server` 로 한 번도 렌더되지 못해 노드 배치를 단위층에서 잴 수 없다. */
+  const tpl = useSyncExternalStore(
+    controller.tplModel.subscribe, controller.tplModel.getSnapshot,
+    controller.tplModel.getSnapshot);
+  /* 동사의 성과와 실패가 **이 면 안**에 선다(U6-E 리뷰 3): 시트는 스크림으로 화면을
+     덮으므로 좌 열 바닥 결과 줄도 `#save-msg` 도 그 뒤에 그려진다. 값의 정본은 그대로
+     `tpl.result`(Python) 이고, 여기서 다시 짓는 문안은 없다. */
+  const view = useSyncExternalStore(
+    controller.viewModel.subscribe, controller.viewModel.getSnapshot,
+    controller.viewModel.getSnapshot);
+  const result = (((tpl || {}) as Obj).result || {}) as Obj;
+  const message = view.detailMessage;
+  const feedback = [
+    message
+      ? h("p", { className: "note dangerbox", id: "tplDetailMsg", role: "alert", key: "msg" },
+        String(message))
+      : null,
+    result.text
+      ? h("div", {
+        key: "result",
+        className: `run-result${result.level && result.level !== "muted" ? " " + result.level : ""}`,
+        id: "tplDetailResult",
+      }, String(result.text))
+      : null,
+  ];
+  const detail = (((tpl || {}) as Obj).detail || null) as Obj | null;
+  const close = h("button", {
+    className: "btn", id: "tplDetailClose", type: "button",
+    onClick: () => { controller.closeDetail(); },
+  }, "닫기");
+  if (detail === null) {
+    return h("div", { className: "modal-card" },
+      h("h3", { id: "tplDetailTitle" }, "항목 상세"),
+      h("p", { className: "note", id: "tplDetailEmpty" },
+        "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히…」를 누르세요."),
+      ...feedback,
+      h("div", { className: "modal-actions" }, close));
+  }
+  const media = String(detail.media || "hwpx");
+  const diagnostics = (detail.diagnostics || []) as string[];
+  const slots = (detail.slots || null) as Obj | null;
+  /* 동사 줄은 행 ⋮ 와 **같은 함수**가 짓는다(같은 상태 두 곳 판정 금지) — 지금 서 있는
+     「자세히…」 자신만 걷는다. */
+  const verbs = libRowMenuItems(media, detail)
+    .filter((entry) => entry.action !== "detail");
+  return h("div", { className: "modal-card tpl-detail" },
+    h("div", { className: "row" },
+      h("h3", { id: "tplDetailTitle" }, String(detail.name || "")),
+      h("span", {
+        className: `pill ${media === "txt" ? "muted" : (detail.badge_level || "muted")}`,
+      }, media === "txt" ? "TXT" : String(detail.badge_label || "")),
+      h("span", { className: "spacer" }),
+      close),
+    h("p", { className: "muted capnote", id: "tplDetailPath" }, String(detail.path || "")),
+    h(PathActions as any, {
+      client: controller.client, path: String(detail.path || ""), notify: controller.notify,
+    }),
+    /* 판독 실패·구간 진단은 숨기지 않는다 — 오류 행에서 「자세히…」가 서는 이유가 이것이다. */
+    detail.error
+      ? h("p", { className: "note dangerbox", id: "tplDetailError" }, String(detail.error))
+      : null,
     ...diagnostics.map((text, index) =>
-      h("div", { className: "hint danger", key: `diag-${index}` }, text)),
-    ...(diagnostics.length ? [] : rows.map((row) => h("div", {
-      className: "slotrow", key: String(row.id), "data-slot": String(row.id),
-    },
-    h("span", { className: "fname" }, String(row.label || row.id)),
-    h("span", { className: "tbadge", title: (row.options || []).join(" · ") },
-      `선택 ${row.option_count}`)))));
+      h("p", { className: "note warnbox", key: `diag-${index}` }, text)),
+    h(DetailFields as any, { detail }),
+    slots ? h(SlotTable as any, { slots, diagnostics, controller }) : null,
+    ...feedback,
+    verbs.length
+      ? h("div", { className: "modal-actions", id: "tplDetailVerbs" },
+        ...verbs.map((entry) => h("button", {
+          className: "btn", key: entry.action, "data-act": `detail-${entry.action}`,
+          onClick: (event: Obj) => controller.guarded(
+            () => controller.handleDetailVerb(entry.action, event.currentTarget)),
+        }, entry.label)))
+      : null);
 }
 
-function SchemaTable(props: { snapshot: Obj }): ReactNode {
-  const { snapshot } = props;
-  return h("div", null,
-    h("p", { className: "fields-head" }, snapshot.schema_summary),
-    h("div", { className: "tblwrap" },
-      h("table", { className: "schema-fields" },
-        h("thead", null, h("tr", null,
-          h("th", null, "필드"), h("th", null, "추정 타입"), h("th", null, "위치"), h("th", null, "문맥"))),
-        h("tbody", null, ...(snapshot.fields || []).map((field: Obj, index: number) =>
-          h("tr", { key: index },
-            h("td", null, h("span", { className: "fname" }, field.name)),
-            h("td", null, h("span", { className: "tbadge" },
-              INFERRED_LABEL[field.inferred_type] || field.inferred_type || "")),
-            h("td", { className: "muted" }, field.in_table ? "표 안" : "본문"),
-            h("td", { className: "fctx" }, field.context
-              ? h("span", { title: field.context }, field.context)
-              : h("span", { className: "pv emptyval" }, "—"))))))));
-}
-
-function Provenance(props: { snapshot: Obj }): ReactNode {
-  const { snapshot } = props;
-  const provenance = snapshot.provenance;
-  if (!provenance) return null;
-  const when = provenance.updated_at
-    ? (provenance.authored_at && provenance.authored_at !== provenance.updated_at
-      ? `작성 ${provenance.authored_at} · 갱신 ${provenance.updated_at}`
-      : `작성 ${provenance.updated_at}`)
-    : "";
-  const line = (label: string, value: unknown): ReactNode => value
-    ? h("div", { className: "hint", style: { marginTop: 0 }, key: label },
-      h("b", null, label), " ", String(value))
-    : null;
-  const fields = (snapshot.fields || []) as Obj[];
-  const drift = provenance.template_fields && fields.length
-    && provenance.template_fields !== fields.map((field) => field.name).join(" · ");
-  return h("div", { className: "grp" },
-    h("span", { className: "cap" }, "작성 출처"),
-    line("템플릿", provenance.template),
-    line("데이터", provenance.dataset),
-    line("템플릿 필드", provenance.template_fields),
-    line("데이터 열", provenance.source_keys),
-    when ? h("div", { className: "hint muted", style: { marginTop: 0 } }, when) : null,
-    drift ? h("div", { className: "hint danger", style: { marginTop: "var(--sp-4)" } },
-      "⚠ 작성 당시와 템플릿 필드 구성이 다릅니다. 매핑 재검토가 필요할 수 있습니다.") : null);
+/** 1단계 게이트 존 — **세션 판정**이라 고르기 단계에 남되 한 줄이다(U6-E #979).
+ *
+ *  이 존이 답하는 것은 「지금 고른 템플릿으로 진행할 수 있는가」 하나다. 「그 템플릿에 무엇이
+ *  들어 있는가」(스키마 표·구간 요약·작성 출처)는 그 답 뒤에 묻는 별개의 질문이고, 그 자리는
+ *  「자세히…」가 여는 시트다 — 그래서 여기 남는 수치는 `field_count` 하나다.
+ *
+ *  RAW 차단·판독 실패 사유는 Python 문안 그대로이고, 「비우고 진행 확인」의 조건도 종전과
+ *  같다(`gate` 가 서고 아직 확인 전). */
+function TemplateGate(props: { snapshot: Obj; controller: EditorController }): ReactNode {
+  const { snapshot, controller } = props;
+  if (!snapshot.template_path) return null;
+  const detail = (snapshot.session_detail || {}) as Obj;
+  const available = !!detail.available;
+  const reason = String(detail.reason || "");
+  const gate = snapshot.gate;
+  const drift = String(snapshot.schema_drift || "");
+  /* 머리는 **상태와 무관하게** 선다(U6-E 리뷰 8): 「파일을 고치세요」라고 말하는 바로 그
+     상태(RAW·판독 실패)에서 이름과 「폴더에서 보기」가 사라지면, 고치러 갈 길이 그 문장
+     옆에 없다. 아래 몸통만 상태로 갈린다. */
+  const head = h("div", { className: "row" },
+    h("span", { className: "cap" }, "선택한 템플릿"),
+    h("span", { className: "muted capnote" }, String(snapshot.template_name || "")),
+    snapshot.field_count
+      ? h("span", { className: "muted capnote" }, `필드 ${snapshot.field_count}개`)
+      : null,
+    h("span", { className: "spacer" }),
+    h(PathActions as any, {
+      client: controller.client, path: String(snapshot.template_path || ""),
+      only: ["reveal"], notify: controller.notify,
+    }),
+    /* 시트는 `tpl` 이 아는 항목만 연다 — 가부·사유는 Python 판정이고 여기는 잠금과 병기만
+       한다(리뷰 5). 조용히 열리지 않는 문을 두지 않는다. */
+    h("button", {
+      className: "btn sm", "data-act": "session-detail",
+      disabled: !available, title: available ? undefined : reason,
+      onClick: (event: Obj) => controller.guarded(
+        () => controller.openDetail(String(snapshot.template_path || ""), event.currentTarget)),
+    }, LIB_ROW_DETAIL_LABEL));
+  let body: ReactNode = null;
+  if (snapshot.raw_block) {
+    body = h("p", { className: "note dangerbox", style: { whiteSpace: "pre-line" } },
+      String(snapshot.raw_block));
+  } else if (snapshot.gate_error) {
+    body = h("p", { className: "note dangerbox" },
+      "템플릿 상태를 확인할 수 없습니다. 진행할 수 없습니다.");
+  }
+  return h("div", { className: "grp", id: "editorTplGate" },
+    head,
+    !available && reason
+      ? h("p", { className: "muted capnote", id: "editorTplDetailBlock" }, reason)
+      : null,
+    body,
+    /* 작성 출처 드리프트(#53-C 승계 · 리뷰 6) — **세션 판정**이라 이 자리다. 판정도 문안도
+       Python 이 낸다(웹이 필드 목록을 다시 대조하지 않는다). */
+    drift
+      ? h("p", { className: "note warnbox", id: "editorSchemaDrift" }, drift)
+      : null,
+    gate
+      ? h("div", { className: "note warnbox", style: { whiteSpace: "pre-line" } }, gate.message)
+      : null,
+    gate && !gate.acked
+      ? h("button", {
+        className: "btn", "data-act": "ack-gate",
+        onClick: () => controller.guarded(() => controller.sendEdit("ack_gate", {})),
+      }, `비우고 진행 확인 (${gate.unmet.length}개 토큰)`)
+      : null);
 }
 
 /** 1단계 「고르기」 — 좌 템플릿 풀 · 중앙 연결 카드 · 우 데이터 풀(U6 §2.2 · #976).
  *
- *  **이 단계가 묻는 질문은 하나**다: 「어느 템플릿을 어느 데이터에?」. 그 아래에 남은 것들
- *  (선택 템플릿 chip·작성 출처·스키마 표·게이트·구간 항목 요약)은 그 질문의 답이 아니라
- *  **답한 뒤에 드러나는 사실**이라 고르기 존 아래에 그대로 선다 — 옮기는 것은 U6-E 소관이고
- *  이 슬라이스는 좌표(id·data-act)를 건드리지 않는다.
+ *  **이 단계가 묻는 질문은 하나**다: 「어느 템플릿을 어느 데이터에?」. U6-E(#979)가 그 아래에
+ *  남아 있던 것들을 걷었다 — 선택 chip + 경로 동사 · 작성 출처 · 스키마 표 · 구간 항목 밴드 ·
+ *  구간 요약은 전부 항목 상세 시트로 갔고, 결과 줄은 관리 동사가 나가는 좌 열 바닥으로 갔다.
+ *  존 아래에 남은 것은 세션 판정 한 줄(`TemplateGate`)뿐이다.
  *
- *  구 `DataGateway`(2단계 머리의 데이터 관문)와 축약 목록 `PoolPickList` 는 여기서 사슬째
+ *  구 `DataGateway`(2단계 머리의 데이터 관문)와 축약 목록 `PoolPickList` 는 U6-B 에서 사슬째
  *  퇴역했다: 데이터를 고르는 자리가 우 열 하나가 됐고, 그 열은 「데이터 선택」 다이얼로그와
  *  같은 컴포넌트라 같은 상태를 두 표면이 다르게 그릴 길이 없다. */
 function PairingStage(props: {
   snapshot: Obj; tpl: Obj | null; pool: Obj | null; controller: EditorController;
 }): ReactNode {
   const { snapshot, tpl, pool, controller } = props;
-  const slots = (tpl || {}).slots || null;
-  const result = (tpl || {}).result || {};
-  let gate: ReactNode = null;
-  if (snapshot.raw_block) {
-    gate = h("p", { className: "note dangerbox", style: { whiteSpace: "pre-line" } }, snapshot.raw_block);
-  } else if (snapshot.gate_error) {
-    gate = h("p", { className: "note dangerbox" }, "템플릿 상태를 확인할 수 없습니다. 진행할 수 없습니다.");
-  } else if (snapshot.field_count) {
-    gate = h("div", null,
-      h(SchemaTable as any, { snapshot }),
-      snapshot.gate ? h("div", { className: "note warnbox", style: { whiteSpace: "pre-line" } },
-        snapshot.gate.message) : null,
-      snapshot.gate && !snapshot.gate.acked ? h("button", {
-        className: "btn", "data-act": "ack-gate",
-        onClick: () => controller.guarded(() => controller.sendEdit("ack_gate", {})),
-      }, `비우고 진행 확인 (${snapshot.gate.unmet.length}개 토큰)`) : null);
-  }
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "template")),
     h("p", { className: "wsub" }, "템플릿과 데이터를 하나씩 고르세요."),
@@ -1872,23 +2065,9 @@ function PairingStage(props: {
       h(TemplatePool as any, { tpl, snapshot, controller }),
       h(LinkCard as any, { snapshot, controller }),
       h(DataPool as any, { pool, snapshot, controller })),
-    /* 결과 줄·구간 항목 목록의 정본은 `tpl` 채널이다(U6-B) — 편집기 스냅샷이 같은 값을
-       한 번 더 실어 나르던 중계는 함께 걷혔다. 좌표(`#tplSlots`·`.run-result`)는 불변. */
-    result.text ? h("div", {
-      className: `run-result${result.level && result.level !== "muted" ? " " + result.level : ""}`,
-    }, result.text) : null,
-    slots ? h(SlotBand as any, { slots, controller }) : null,
-    snapshot.template_name ? h("div", { className: "row" },
-      h("span", { className: "lbl" }, "선택한 템플릿"),
-      h("span", { className: "filechip" }, h("b", null, snapshot.template_name)),
-      h(PathActions as any, {
-        client: controller.client, path: snapshot.template_path, notify: controller.notify,
-      })) : null,
-    snapshot.template_name ? h(Provenance as any, { snapshot }) : null,
-    gate,
-    snapshot.template_slots
-      ? h(TemplateSlotSummary as any, { slots: snapshot.template_slots }) : null);
+    h(TemplateGate as any, { snapshot, controller }));
 }
+
 
 /** 데이터 열 칸 — select(실 열 + 특수 항목) · 고정값 인라인 입력 · 상태 배지 버튼.
  *

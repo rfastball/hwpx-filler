@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..domain.job import template_media
 from ..domain.text_structure import scan_text_structure, scan_text_token_spans
 from ..host.locations import default_example_data_dir
 from ..external import example_pack
@@ -41,7 +42,11 @@ from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
-from ..gui.template_manager_state import SlotView, TemplateManagerViewModel, TemplateRow
+from ..gui.template_manager_state import (
+    TemplateDetail,
+    TemplateManagerViewModel,
+    TemplateRow,
+)
 from ..gui.tutorial_state import Milestone
 from .screens import (
     MUTATION_KINDS,
@@ -119,9 +124,12 @@ class TemplateController:
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
-        # 마지막으로 검토한 템플릿의 Slot 목록(S8-03) — 결과 줄과 같은 수명의 관측 채널이다.
-        # 「어느 템플릿의 목록인가」를 뷰가 추측하지 않게 경로·이름을 함께 싣는다.
-        self._slot_view: "SlotView | None" = None
+        # 마지막으로 검토한 템플릿의 **상세 투영**(S8-03 → U6-E #979) — 결과 줄과 같은 수명의
+        # 관측 채널이다. 「어느 템플릿의 상세인가」를 뷰가 추측하지 않게 경로·이름을 함께 싣는다.
+        # 종전에는 구간 항목 목록(`slots`)만 실었고, U6-E 에서 항목 상세 시트가 요구하는 나머지
+        # (상태·배지·필드 표·진단·동사)가 같은 왕복에 합류했다 — 시트 한 장이 두 왕복으로
+        # 채워지면 그 사이에 갈린 사실이 한 화면에 선다.
+        self._detail: "TemplateDetail | None" = None
         # 템플릿 bytes 변이 통지 sink(S8G-00 #320) — 이 채널이 파일을 실제로 바꾼 **직후**,
         # 같은 파일을 든 다른 표면(편집 세션)이 스스로 재정산할 수 있게 알린다. 서명은
         # ``(kind, path)`` 이고 kind 는 :data:`MUTATION_KINDS` 셋 중 하나다. 배선은 앱
@@ -272,26 +280,28 @@ class TemplateController:
                 ),
             },
             "result": {"text": self.result_text, "level": self.result_level},
-            "slots": self.slot_snapshot(),
+            # 항목 상세 시트의 재료 한 벌(U6-E #979) — `review` 가 세우고 slot 동사가 다시
+            # 세운다. 시트가 열려 있지 않아도 값은 산다(수명은 검토 왕복이지 창이 아니다).
+            "detail": self.detail_snapshot(),
             # 동봉 예제 진입점(#891 · §4.1) — 라벨·설치 여부는 **Python 이 낸다**. 링2 가
             # 「이미 설치됨」을 다시 판정하면 같은 사실을 두 곳이 말하게 된다. 판정 몸통은
             # ``example_pack.entry_point_state`` 하나이고 라이브러리 빈 상태도 그것을 읽는다.
             "examples": example_pack.entry_point_state(),
         }
 
-    def slot_snapshot(self) -> "dict | None":
-        """검토한 템플릿의 Slot 목록 투영(없으면 ``None``) — 편집기 밴드도 이 값을 읽는다.
+    def detail_snapshot(self) -> "dict | None":
+        """검토한 템플릿의 상세 투영(없으면 ``None``) — 항목 상세 시트가 이 값을 읽는다.
 
-        목록이 가리키는 파일이 라이브러리에서 사라졌으면 스스로 걷는다: 죽은 경로를 겨눈
-        동사 버튼을 남기면 누를 때야 실패한다.
+        가리키는 파일이 라이브러리에서 사라졌으면 스스로 걷는다: 죽은 경로를 겨눈 동사
+        버튼을 남기면 누를 때야 실패한다.
         """
-        view = self._slot_view
+        view = self._detail
         if view is None:
             return None
-        if self._norm(view.path) not in self._live_paths("hwpx"):
-            self._slot_view = None
+        if self._norm(view.path) not in self._live_paths(view.media):
+            self._detail = None
             return None
-        return view.to_dict()  # 성형은 링1 소유(U4-E2 #939) — 편집기 요약과 같은 모양이다
+        return view.to_dict()  # 성형은 링1 소유(U4-E2 #939 · U6-E #979)
 
     def initial(self) -> dict:
         return self.snapshot()
@@ -507,6 +517,9 @@ class TemplateController:
             # 서면 거짓 경보이고, 필드만 저장된 뒤 구간이 실패한 갈래에서 통지가 빠지면
             # 세션이 낡은 스키마로 남는다. 판정 축은 링1 의 ``mutated`` 하나다.
             if result.mutated:
+                # 열려 있는 시트가 그 파일이면 상태·배지·필드·구간 항목이 방금 전부
+                # 달라졌다 — 목록만 두고 나오면 시트가 낡은 채로 선다(리뷰 2).
+                self._reproject_detail(path)
                 self._notify_mutation("mutated", path)
                 # T15 누름틀 변환(#894) — 통지 축은 위와 **같은 ``mutated``** 하나다: 무변이
                 # 거절에서 체크가 서면 하지 않은 일을 했다고 말하는 것이고, 필드만 저장되고
@@ -533,26 +546,78 @@ class TemplateController:
         return {"ok": True, "needs_confirm": True, "confirm_text": "\n".join(lines), "path": path}
 
     def _do_review(self, p: dict) -> dict:
-        """lint 점검(읽기 전용) → 결과 문구 + **Slot 목록 투영**(S8-03).
+        """읽기 전용 검토 → 결과 문구 + **항목 상세 투영**(S8-03 → U6-E #979).
 
-        검토는 「이 템플릿이 지금 어떤가」를 묻는 자리라 컴파일된 구간 항목 목록도 같은
-        왕복에서 선다. 목록·진단은 링1 투영 그대로다(판정 재조립 금지).
+        검토는 「이 항목이 지금 어떤가」를 묻는 자리다. U6-E 에서 그 답이 시트 한 장이
+        됐으므로(상태·경로·필드 표·구간 항목·진단) 재료도 이 한 왕복에서 선다 — 시트를
+        두 왕복으로 채우면 그 사이에 갈린 사실이 한 화면에 함께 설 수 있다.
+
+        **매체를 가른다**(U6-E): TXT 는 누름틀도 구간도 없어 lint 가 겨눌 축 자체가 없다.
+        답할 것은 토큰 목록과 판독 실패 사유 둘뿐이고, 그 둘도 숨기지 않는다 — 오류 행에서
+        「자세히…」가 서는 이유가 바로 그 사유를 보이기 위해서다.
+
+        **경로 관문을 지난다**: 시트의 동사가 전부 이 투영의 경로를 겨누므로, 라이브러리
+        밖 경로로 상세를 세우면 그 뒤 동사들이 관문 밖 파일을 가리키게 된다(slot 동사의
+        ``_slot_path`` 와 같은 술어를 진입에서 한 번 더 세운다).
         """
-        path = p["path"]
-        report = self.vm.lint(path)
-        self._set_result(self.vm.format_lint_result(path, report))
-        self._slot_view = self.vm.slot_view(path)
+        path = str(p["path"])
+        media = template_media(path)
+        if media == "txt":
+            # TXT 는 **조회가 곧 소속 판정**이다(리뷰 7): 레지스트리 스캔 한 번이 「목록에
+            # 있는가」와 「무엇이 들어 있는가」를 함께 답하므로 관문을 따로 돌리지 않는다.
+            detail = self._txt_detail(path)
+            if detail is None:
+                self._push()  # 갱신된 목록을 먼저 보인다 — 거절 문구가 실행 가능해진다
+                raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
+            self._detail = detail
+            self._set_result(
+                _danger(f"검토 {detail.name}: {detail.error}") if detail.error
+                else _ok(f"검토 {detail.name}: {detail.field_summary()}")
+            )
+            return {"ok": True}
+        if not self.is_live_path(media, path):
+            raise ValueError("현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다.")
+        detail, report = self.vm.review_view(path)
+        self._detail = detail
+        # 판독이 실패했으면 lint 는 없다 — 못 읽은 파일을 위생 점검할 수 없고, 그 사실은
+        # 상세의 사유가 이미 말한다. 결과 줄은 그 사유를 그대로 재진술한다(조용한 성공 금지).
+        self._set_result(
+            self.vm.format_lint_result(path, report) if report is not None
+            else _danger(f"검토 {detail.name}: {detail.error}")
+        )
         return {"ok": True}
+
+    def _txt_detail(self, path: str) -> "TemplateDetail | None":
+        """TXT 항목 하나의 상세(목록에 없으면 ``None``) — 성형은 링1 소유.
+
+        **레지스트리를 한 번만 훑는다**(리뷰 7): 이 조회가 곧 소속 판정이라 호출자가 관문을
+        따로 돌리지 않는다. 부재를 ``None`` 으로 답하는 이유는 그 처분이 호출자마다 다르기
+        때문이다 — 검토 진입은 거절이고, 동사 뒤 재투영은 그냥 걷는 것이다.
+
+        토큰 판독 실패를 예외로 올리지 않고 사유로 싣는 것은 밴드 행(:meth:`_txt_rows`)과
+        같은 처분이다: 손상 파일도 목록에 서므로 그 행의 「자세히…」도 답할 것이 있어야 한다.
+        """
+        root = self.text_registry.directory
+        target = self._norm(path)
+        for template in self.text_registry.list_templates():
+            if self._norm(template.path) != target:
+                continue
+            try:
+                return TemplateDetail.from_text(template.path, template.fields(), root=root)
+            except Exception as exc:  # noqa: BLE001 — 손상 파일도 사유를 단 상세로 loud 노출
+                return TemplateDetail.from_text(template.path, (), str(exc), root=root)
+        return None
 
     # ---- 컴파일된 Slot 관리 동사(S8-03 #834)
     def _slot_path(self, p: dict) -> str:
         """대상 경로 검증 — 라이브러리 밖 임의 파일 변이 권한 승격을 막는다.
 
-        ``_do_delete`` 와 같은 술어다: 경로가 이 매체 라이브러리의 **현재 목록**에 실재해야
-        한다. 항목을 겨누지 않는 문서 단위 동사(전체판 풀기)도 같은 관문을 지난다.
+        술어는 공개 관문 하나다(:meth:`is_live_path`): 경로가 이 매체 라이브러리의 **현재
+        목록**에 실재해야 한다. 항목을 겨누지 않는 문서 단위 동사(전체판 풀기)도, 편집기의
+        템플릿 채택도 같은 관문을 지난다(U6-E #979 — 같은 질문에 답하는 스캔은 하나다).
         """
         path = str(p["path"])
-        if self._norm(path) not in self._live_paths("hwpx"):
+        if not self.is_live_path("hwpx", path):
             raise ValueError("현재 라이브러리 목록에 없는 경로는 바꿀 수 없습니다.")
         return path
 
@@ -567,9 +632,28 @@ class TemplateController:
             raise ValueError("대상 항목 id 가 비어 있습니다.")
         return path, slot_id
 
+    def _reproject_detail(self, path: "str | Path") -> None:
+        """파일을 바꾼 동사 뒤 — 열려 있는 상세가 **그 파일**이면 다시 세운다(리뷰 2).
+
+        **재투영은 상세 한 벌 전체**다: 표기로 되돌리면 그 파일은 COMPILED 에서 PARTIAL 로
+        내려가고 필드 수·동사 목록까지 달라진다. 목록만 갈아 끼우면 열려 있는 시트가 새 항목
+        목록 위에 옛 상태 배지를 이고 선다.
+
+        **다른 파일이면 아무 일도 하지 않는다**: 지금 보고 있는 항목과 무관한 변이가 시트를
+        갈아 끼우면 사람이 연 적 없는 항목이 눈앞에서 바뀐다. 대조는 이 채널의 단일
+        정규화 술어(:meth:`_norm`)를 지난다.
+        """
+        view = self._detail
+        if view is None or self._norm(view.path) != self._norm(path):
+            return
+        self._detail = (
+            self._txt_detail(str(path)) if view.media == "txt"
+            else self.vm.detail_view(str(path))
+        )
+
     def _after_slot_mutation(self, path: str, view, text: str) -> dict:
-        """Slot 동사 성공 뒤 공통 후처리 — 목록 재투영·결과 줄·재정산 통지."""
-        self._slot_view = view
+        """Slot 동사 성공 뒤 공통 후처리 — 상세 재투영·결과 줄·재정산 통지."""
+        self._reproject_detail(path)
         self._set_result(self.vm.format_slot_result(path, text))
         # bytes 변이 = 같은 파일을 든 편집 세션의 스키마가 방금 달라졌다(S8G-00 seam).
         self._notify_mutation("mutated", path)
@@ -651,6 +735,36 @@ class TemplateController:
             return {self._norm(r.path) for r in self.vm.rows()}
         return {self._norm(t.path) for t in self.text_registry.list_templates()}
 
+    def is_live_path(self, media: str, path: str) -> bool:
+        """이 경로가 **지금** 서식 폴더 목록에 있는가 — 라이브러리 소속 판정의 공개 관문.
+
+        판정을 공개하는 이유는 소비자가 둘이기 때문이다(U6-E #979): 이 채널의 slot·검토
+        동사(``_slot_path``)와 편집기의 템플릿 채택(``assert_library_path``). 종전에는
+        편집기가 자기 VM·자기 TXT 레지스트리를 따로 들고 같은 술어를 다시 썼고, 그래서
+        같은 질문에 답하는 스캔이 둘이었다 — 한쪽만 최신인 순간이 실재했다.
+
+        **재스캔은 부재를 만났을 때만 한다**(리뷰 7): 캐시된 목록에 있으면 그것이 답이고,
+        없을 때만 한 번 다시 훑어 「방금 들어온 파일」과 「방금 사라진 파일」을 가른다.
+        무조건 재스캔하면 「자세히…」 한 번이 라이브러리 전건 판독을 물어 온다(200개 폴더면
+        200 inspect). TXT 레지스트리는 캐시 없이 매번 디스크를 훑으므로 첫 판정이 이미 최신이다.
+
+        **부재로 확정되면 갱신된 목록을 먼저 민다**(리뷰 4): 거절 문구가 「목록을 새로
+        고쳤으니 다시 고르세요」라고 말하는데 정작 좌 열에 그 행이 남아 있으면, 사람은 같은
+        클릭을 반복한다. 목록의 정본이 이 채널이므로 그 push 도 여기서 나가야 한다.
+        """
+        target = self._norm(path)
+        # 캐시 적중은 「목록에 있다」까지만 말한다 — 그 파일이 지금 디스크에 있는지는 파일
+        # 하나의 존재 검사(O(1))가 답한다. 이 한 줄이 없으면 탐색기에서 방금 지운 파일이
+        # 다음 재스캔까지 통과하고, 그것이 이 관문이 막으려던 바로 그 결함이다(리뷰 F7).
+        if target in self._live_paths(media) and Path(path).is_file():
+            return True
+        if media == "hwpx":
+            self.vm.refresh()
+            if target in self._live_paths("hwpx"):
+                return True
+        self._push()
+        return False
+
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
     def _do_txt_new(self, p: dict) -> dict:
         """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기.
@@ -695,7 +809,9 @@ class TemplateController:
             }
         path = result
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
-        # 내용이 바뀌면 토큰 집합이 바뀐다 — 편집 세션의 스키마가 방금 낡았다(#320).
+        # 내용이 바뀌면 토큰 집합이 바뀐다 — 열려 있는 시트의 필드 목록도 방금 낡았다(리뷰 2).
+        self._reproject_detail(path)
+        # 편집 세션의 스키마도 방금 낡았다(#320).
         self._notify_mutation("mutated", path)
         return {"ok": True}
 

@@ -6,22 +6,22 @@
 """
 from __future__ import annotations
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
+from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.job_store import JobRegistry, encode_job
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
-from hwpxfiller.external.template_inspection import (
-    HWPX_TEMPLATE_OPS,
-    inspect_hwpx_template,
-)
-from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
+from hwpxfiller.gui.template_manager_state import CONVERT_ACTION_LABEL
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.webapp.screen_editor import EditorController
+from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.template_groups import TemplateGroupModel
 
 REPO = REPO_ROOT
@@ -50,23 +50,39 @@ def _confirm_every_row(ctrl) -> None:
             ctrl.dispatch("set_blank", {"index": row["index"]})
 
 
+def _tpl_channel(root_dir: Path, tmp_path: Path) -> TemplateController:
+    """격리 서식 폴더 위의 **실 `tpl` 컨트롤러** — 편집기의 경로 관문이 위임하는 그 판정.
+
+    U6-E(#979) 이후 편집기는 자기 hwpx VM 도 자기 TXT 레지스트리도 들지 않는다. 소속 판정은
+    :meth:`~hwpxfiller.webapp.screen_template.TemplateController.is_live_path` 하나이고, 그
+    자리에 대역 술어를 지어 넣으면 시험이 제품이 지나는 판정과 **다른 것**을 재게 된다.
+    그래서 격리 루트 위에 실 컨트롤러를 세워 그 메서드를 그대로 넘긴다.
+    """
+    registry = TextTemplateRegistry(root_dir)
+    return TemplateController(
+        registry,
+        lambda s, snap: None,
+        file_store=TemplateFileStore(root_dir, registry),
+        template_root=TemplateRoot(default_root=root_dir),
+        pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
+    )
+
+
 def _controller(
     tmp_path: Path, *, after_mapping_saved=None, binding_confirm_pending=None,
     pool_registry=None, remembered_output_directory=None,
 ) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
-    # 빈 라이브러리 VM·격리 TXT 레지스트리 주입 — 기본(표준 라이브러리 지연 생성)이 실
-    # 사용자 폴더를 스캔하면 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
+    # 빈 라이브러리 위의 격리 관문 — 기본(표준 홈 스캔)이 실 사용자 폴더를 훑으면 테스트가
+    # 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성). TXT 픽스처(`_txt_template`)가
+    # 쓰는 폴더가 곧 이 루트다(U6-A: hwpx·txt 가 같은 서식 폴더).
     ctrl = EditorController(
         reg, lambda s, snap: pushes.append((s, snap)),
         clock=_clock,
-        template_library=TemplateManagerViewModel(
-            paths=[],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        ),
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=_tpl_channel(tmp_path / "text_templates", tmp_path).is_live_path,
+        # 표시명 도출의 루트도 그 관문과 같은 폴더다(U6-A: 루트 권위는 인스턴스 하나).
+        template_root=TemplateRoot(default_root=tmp_path / "text_templates"),
         pool_registry=pool_registry,
         remembered_output_directory=remembered_output_directory,
         after_mapping_saved=after_mapping_saved,
@@ -127,8 +143,9 @@ def test_compiled_template_opens_advance_gate(tmp_path):
 def test_snapshot_exposes_structured_fields(tmp_path):
     """1단계 구조화 표(#16 98DDFE96) — 스냅샷이 필드별 명세를 실어야 한다.
 
-    나열식 요약(schema_summary)은 헤더로 존치하되, 표 렌더가 소비할 fields 배열이
-    필드 수만큼·정해진 키로 있어야 한다. 템플릿 로드 전엔 빈 배열.
+    나열식 요약(구 `schema_summary`)은 U6-E(#979)에서 퇴역했다 — 승계처는 항목 상세 시트의
+    필드 표 머리이고 성형은 링1 `TemplateDetail.field_summary` 하나다. 여기 남는 것은 이
+    세션이 **연 파일**의 필드 명세다(패키징 스모크가 읽는 그 배열).
     """
     ctrl, pushes = _controller(tmp_path)
     assert ctrl.snapshot()["fields"] == []  # 스키마 없으면 빈 배열
@@ -136,7 +153,7 @@ def test_snapshot_exposes_structured_fields(tmp_path):
     snap = pushes[-1][1]
     fields = snap["fields"]
     assert isinstance(fields, list) and len(fields) == snap["field_count"]
-    assert snap["schema_summary"]  # 헤더 요약은 존치
+    assert "schema_summary" not in snap, "나열식 요약은 U6-E 에서 퇴역했습니다."
     for f in fields:
         assert set(f) >= {"name", "inferred_type", "in_table", "occurrences", "context"}
         assert isinstance(f["name"], str) and f["name"]
@@ -385,7 +402,7 @@ def test_anchored_draft_survives_the_real_template_pick(tmp_path):
     )
     ctrl.dispatch("set_name", {"name": "쓰던 이름"})
 
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})   # 실 UX 경로
     snap = ctrl.snapshot()
     assert snap["template_name"] == TPL_COMPILED.stem
     assert snap["data_name"] == "multi_sheet" and snap["data_sheet"] == "낙찰현황"
@@ -397,7 +414,7 @@ def test_anchored_draft_survives_the_real_template_pick(tmp_path):
     assert snap["name"] == f"{TPL_COMPILED.stem} · multi_sheet"
 
     # 마음을 바꿔 다른 템플릿을 골라도 앵커는 산다 — 문맥까지 되살아나야 성립하는 성질이다.
-    ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_PARTIAL))})
     snap = ctrl.snapshot()
     assert snap["data_name"] == "multi_sheet"
     assert snap["context"]["entry_reason"] == "document_browser_new_work"
@@ -405,7 +422,7 @@ def test_anchored_draft_survives_the_real_template_pick(tmp_path):
     # 대조군: 앵커 없이 시작한 보통 초안은 종전대로 데이터가 끊긴다(계약 무변경).
     plain, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
     plain.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    plain.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    plain.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     assert plain.snapshot()["data_name"] == ""
 
 
@@ -420,7 +437,7 @@ def test_repair_entry_data_also_survives_the_template_pick(tmp_path):
     from hwpxfiller.domain.job import Job
 
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
-    ctrl.registry.save(Job(name="수리대상", template_path=str(TPL_COMPILED)))
+    ctrl.registry.save(Job(name="수리대상", template_path=str(_at(tmp_path, TPL_COMPILED))))
     ctrl.load_job(
         "수리대상",
         entry_reason="document_browser_repair",
@@ -429,7 +446,7 @@ def test_repair_entry_data_also_survives_the_template_pick(tmp_path):
     )
     assert ctrl.snapshot()["data_name"] == "multi_sheet"
 
-    ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})   # 실 UX 경로
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_PARTIAL))})   # 실 UX 경로
     snap = ctrl.snapshot()
     assert snap["template_name"] == TPL_PARTIAL.stem
     assert snap["data_name"] == "multi_sheet" and snap["data_sheet"] == "낙찰현황"
@@ -438,10 +455,10 @@ def test_repair_entry_data_also_survives_the_template_pick(tmp_path):
 
     # 대조군: 사람이 관문에서 고른 데이터는 종전대로 끊긴다(계약 무변경).
     plain, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
-    plain.registry.save(Job(name="자발", template_path=str(TPL_COMPILED)))
+    plain.registry.save(Job(name="자발", template_path=str(_at(tmp_path, TPL_COMPILED))))
     plain.load_job("자발")
     plain.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    plain.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    plain.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_PARTIAL))})
     assert plain.snapshot()["data_name"] == ""
 
 
@@ -661,7 +678,7 @@ def test_handed_over_data_is_the_draft_baseline_not_an_unsaved_change(tmp_path):
     assert ctrl.has_unsaved_work() is False               # 사람이 손댄 것은 없다
     assert ctrl.snapshot()["dirty"] is False              # 스냅샷의 얼굴도 같은 값
 
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})   # 실 UX 경로
     assert ctrl.snapshot()["data_name"] == "multi_sheet"  # 앵커 생존(계약 무변경)
     assert ctrl.has_unsaved_work() is False, "템플릿만 고른 진행이 미저장으로 섭니다."
 
@@ -762,55 +779,25 @@ def _structured_template(tmp_path: Path, name: str = "구간템플릿") -> Path:
     return path
 
 
-def test_template_slots_stand_for_a_structured_template(tmp_path):
-    """구조를 가진 템플릿을 열면 슬롯 축 요약이 선다 — 요약·행은 링1 투영 그대로.
+def test_the_editor_no_longer_carries_a_slot_zone(tmp_path):
+    """구간 축 요약(`template_slots`)은 U6-E(#979)에서 **항목 상세 시트로 이주**했다.
 
-    컨트롤러가 개수를 다시 세지 않는다는 것이 이 단언의 요점이다: 요약 문자열은
-    `SlotView.summary()` 소유이고 스냅샷은 그 값을 그대로 나른다.
+    판정의 승계는 `docs/UX_FEEDBACK_U6.md` §2.9 다: U4 §2.15 가 이 존을 읽기 전용으로 둔
+    근거는 「저장 전 초안은 템플릿 파일을 변이시키지 않는다」였고, 그것은 **동사 부재**
+    판정이었다. 이제 동사는 편집 세션이 아니라 풀 항목(파일)을 겨누는 시트에 서고, 세션과
+    같은 파일일 때의 무효화는 변이 seam 이 그대로 진다(아래 재정산 시험이 그 불변을 잰다).
+
+    키가 되살아나면 같은 사실이 두 스냅샷에 실린다 — 그래서 부재를 음성으로 못박는다.
     """
     ctrl, pushes = _controller(tmp_path)
     tpl = _structured_template(tmp_path)
     ctrl.load_template_path(str(tpl))
 
-    slots = pushes[-1][1]["template_slots"]
-    assert slots is not None
-    assert slots["summary"] == "항목 1개 · 선택 2개"
-    assert slots["path"] == str(tpl) and slots["name"] == tpl.name
-    assert slots["diagnostics"] == []
-    assert [(r["id"], r["label"], r["option_count"]) for r in slots["rows"]] == [
-        ("특약", "특약 사항", 2)
-    ]
-    assert slots["rows"][0]["options"] == ["지체상금 조항", "하자보수 조항"]
-    # tpl 검토가 내는 것과 **같은 모양**이어야 한다(프런트가 스키마를 둘 배우지 않는다).
-    assert set(slots) == {"path", "name", "summary", "rows", "diagnostics"}
-
-
-def test_template_without_structure_stands_no_slot_zone(tmp_path):
-    """구조가 없으면 ``None`` — 확인할 것이 없으면 숨긴다(U3 #876)."""
-    ctrl, pushes = _controller(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    assert pushes[-1][1]["template_slots"] is None
-    # 템플릿 이전(빈 세션)에도 서지 않는다.
-    ctrl2, _ = _controller(tmp_path)
-    assert ctrl2.snapshot()["template_slots"] is None
-
-
-def test_template_slots_die_with_the_template_swap_and_the_session_reset(tmp_path):
-    """수명은 편집 세션 소유 — 템플릿 교체와 세션 초기화가 각각 걷는다."""
-    ctrl, pushes = _controller(tmp_path)
-    tpl = _structured_template(tmp_path)
-    ctrl.load_template_path(str(tpl))
-    assert pushes[-1][1]["template_slots"] is not None
-
-    ctrl.load_template_path(str(TPL_COMPILED))            # 구조 없는 템플릿으로 교체
-    assert pushes[-1][1]["template_slots"] is None
-    assert ctrl.template_slots is None
-
-    ctrl.load_template_path(str(tpl))                     # 다시 세우고
-    assert ctrl.template_slots is not None
-    ctrl.dispatch("new_session", {})                      # _reset 이 지운다
-    assert pushes[-1][1]["template_slots"] is None
-    assert ctrl.template_slots is None
+    snap = pushes[-1][1]
+    assert "template_slots" not in snap
+    assert not hasattr(ctrl, "template_slots")
+    # 시트가 그 자리를 잇는다: 같은 파일의 구간 항목은 `tpl` 채널 `detail` 이 낸다
+    # (투영 계약은 `test_webapp_template` 소관).
 
 
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
@@ -856,12 +843,7 @@ def _controller26(tmp_path: Path):
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
         clock=_clock,
-        template_library=TemplateManagerViewModel(
-            paths=[],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        ),
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=_tpl_channel(tmp_path / "text_templates", tmp_path).is_live_path,
     )
     return ctrl, pushes
 
@@ -1185,7 +1167,8 @@ def test_edit_save_preserves_authored_at_updates_updated_at(tmp_path):
     authored = first["authored_at"]
 
     ctrl.load_job("출처편집")
-    assert ctrl.snapshot()["provenance"]["template"].endswith(".hwpx")  # 편집 모드 표시
+    # (스냅샷 키 `provenance` 는 U6-E(#979)에서 퇴역했다 — 표면 소비자가 0 이 됐다.
+    #  **생산은 그대로**라 저장된 mapping 이 그 사실의 정본이다.)
     ctrl.dispatch("set_pattern", {"pattern": "새-{{수요기관}}"})
     ctrl.dispatch("save", {"confirm_overwrite": True})
     second = JobRegistry(tmp_path / "jobs").load("출처편집").mapping.provenance
@@ -1196,7 +1179,8 @@ def test_new_session_has_no_provenance(tmp_path):
     """저장 전(신규 세션)엔 표시할 작성 출처가 없다."""
     ctrl, _ = _controller26(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
-    assert ctrl.snapshot()["provenance"] is None
+    # 스냅샷 키는 U6-E 에서 퇴역했다 — 초안이 「출처가 없다」를 말할 표면 자체가 없다.
+    assert "provenance" not in ctrl.snapshot()
 
 
 # ------------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 D)
@@ -2032,40 +2016,43 @@ def test_resuggest_all_reports_zero_when_everything_is_confirmed(tmp_path):
     }
 
 
+def _at(tmp_path: Path, fixture: Path) -> Path:
+    """`_controller_lib` 이 격리 서식 폴더에 **복사해 둔** 픽스처의 자리.
+
+    U6-E(#979) 뒤 라이브러리 소속은 「그 폴더에 그 파일이 있는가」로만 성립한다(관문이 실
+    `tpl` 술어다). 저장소 픽스처를 제자리에서 가리키던 종전 방식(명시 경로 VM)은 그 술어를
+    우회해야 성립했으므로, 시험도 제품과 같은 규율(가져오기=복사)을 지난다.
+    """
+    return tmp_path / "lib" / fixture.name
+
+
 def _controller_lib(tmp_path, paths=None, lib_dir=None):
+    """서식 폴더가 실재하는 편집기 — 관문은 그 폴더를 읽는 실 `tpl` 컨트롤러가 진다."""
     pushes: list = []
-    vm = (
-        TemplateManagerViewModel(
-            lib_dir,
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        )
-        if lib_dir is not None
-        else TemplateManagerViewModel(
-            paths=paths or [],
-            inspect_template=inspect_hwpx_template,
-            file_ops=HWPX_TEMPLATE_OPS,
-        )
-    )
+    root = Path(lib_dir) if lib_dir is not None else tmp_path / "lib"
+    root.mkdir(parents=True, exist_ok=True)
+    for fixture in paths or []:
+        shutil.copy2(fixture, root / Path(fixture).name)
+    tpl = _tpl_channel(root, tmp_path)
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
         clock=_clock,
-        template_library=vm,
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=tpl.is_live_path,
+        template_root=TemplateRoot(default_root=root),
     )
     return ctrl, pushes
 
 
 def _lib_rows(ctrl, media="hwpx"):
-    """좌 열이 실제로 읽는 목록 — **`tpl` 채널 행 성형**과 같은 술어(U6-B #976).
+    """좌 열이 실제로 읽는 목록 — 정본은 `tpl` 채널 하나다(U6-B #976 · U6-E #979).
 
-    편집기 스냅샷의 구 `library` 존은 퇴역했다: 목록 정본이 하나가 됐으므로 여기서는 그
-    정본이 세우는 것과 같은 VM 행을 읽는다(스냅샷 계약은 `test_webapp_template` 소관).
+    편집기는 이제 목록도 VM 도 들지 않으므로 이 헬퍼는 **폴더를 직접** 훑는다: 재는 것은
+    「그 폴더에 무엇이 있는가」이고, 스냅샷 성형 계약은 `test_webapp_template` 소관이다.
     """
-    return ctrl.template_library.rows() if media == "hwpx" else list(
-        ctrl.text_registry.list_templates()
-    )
+    root = ctrl.template_root.path()
+    suffix = ".hwpx" if media == "hwpx" else ".txt"
+    return sorted(p for p in root.rglob(f"*{suffix}") if p.is_file())
 
 
 def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
@@ -2083,9 +2070,9 @@ def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
         "field_count": 0, "column_count": 0, "auto_count": 0, "confirm_count": 0,
         "basis": "", "advance_block_reason": "왼쪽에서 템플릿을 고르세요.",
     }
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     snap = ctrl.snapshot()
-    assert snap["template_path"] == str(TPL_COMPILED)   # 선택 경로 하나가 좌 열의 `aria-pressed`
+    assert snap["template_path"] == str(_at(tmp_path, TPL_COMPILED))   # 선택 경로 하나가 좌 열의 `aria-pressed`
     assert snap["pairing"]["template_name"] == TPL_COMPILED.stem
     assert snap["pairing"]["advance_block_reason"] == "오른쪽에서 데이터를 고르세요."
 
@@ -2099,7 +2086,7 @@ def test_pairing_counts_are_a_readonly_preview_until_the_model_exists(tmp_path):
     서 있으면 그 모델의 실제 수치를 낸다. 라벨이 갈리는 근거가 이 한 축이다.
     """
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     pairing = ctrl.snapshot()["pairing"]
     assert pairing["ready"] is True and pairing["basis"] == "preview"
@@ -2117,30 +2104,22 @@ def test_pairing_counts_are_a_readonly_preview_until_the_model_exists(tmp_path):
     assert (pairing["auto_count"], pairing["confirm_count"]) == (1, 9)
 
 
-def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
-    """#137·#138 리뷰 F8 — 공유 VM refresh 가 좌 열에 즉시 반영된다(별도 행 캐시 0).
+def test_the_library_gate_sees_the_folder_as_it_is_now(tmp_path):
+    """#137·#138 리뷰 F8 의 승계 — 목록 실체가 하나가 된 뒤의 재겨눔(U6-E #979).
 
-    U6-B 이후 그 반영은 `tpl` 채널 push 하나가 진다: 편집기는 목록을 성형하지 않고 같은
-    VM 을 겨눌 뿐이라, 여기서 재는 것은 **주입이 단일 실체인가**다.
+    종전 계약은 「편집기와 tpl 이 **같은 VM 인스턴스**를 봐야 한다」였다. 그 위험(두 스캔
+    캐시가 갈린다)은 편집기가 VM 을 아예 들지 않게 되면서 구조적으로 사라졌고, 남은 질문은
+    하나다: 관문이 **지금** 폴더를 답하는가. hwpx 는 판정 전에 재스캔하므로 방금 떨어진
+    파일도 그 한 호출에서 보인다.
     """
-    import shutil
-
     lib = tmp_path / "lib"
     lib.mkdir()
-    vm = TemplateManagerViewModel(
-        library_dir=lib,
-        inspect_template=inspect_hwpx_template,
-        file_ops=HWPX_TEMPLATE_OPS,
-    )  # 빈 라이브러리로 시작
-    ctrl = EditorController(
-        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm,
-        clock=_clock,
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
-    )
+    ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
     assert _lib_rows(ctrl) == []
-    shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")  # 관리 화면 가져오기 시뮬레이션
-    vm.refresh()
-    assert "새서식" in {row.name for row in _lib_rows(ctrl)}
+
+    shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")   # 탐색기에서 떨군 서식
+    ctrl.assert_library_path(str(lib / "새서식.hwpx"))  # 거절하지 않는다 = 관문이 최신이다
+    assert [p.stem for p in _lib_rows(ctrl)] == ["새서식"]
 
 
 def test_use_library_template_rejects_paths_outside_library(tmp_path):
@@ -2148,7 +2127,7 @@ def test_use_library_template_rejects_paths_outside_library(tmp_path):
     파일 직접 로드 경로가 부활하지 않는다(2부: 가져오기=복사가 유일한 바깥 입구)."""
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_PARTIAL])
     with pytest.raises(ValueError, match="라이브러리에 없는"):
-        ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+        ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
 
 
 def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
@@ -2173,8 +2152,8 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
         clock=_clock,
-        template_library=tpl.vm,          # 앱 조립과 같은 단일 실체 공유
-        text_registry=txt_reg,
+        is_library_path=tpl.is_live_path,   # 앱 조립과 같은 단일 관문(U6-E #979)
+        template_root=root,
     )
     dest = tpl.import_into_library(str(TPL_COMPILED))
     assert dest == str(lib / TPL_COMPILED.name)                        # 전체 경로 반환
@@ -2188,8 +2167,8 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
 
 def test_adopt_defers_raw_and_broken_copies_with_repair_notice(tmp_path):
     """§10.17.2 판정 C — 시작 불가 사본(RAW·손상·비 UTF-8 TXT)은 **세션 없이 목록 합류** +
-    notice 가 수선 경로(행 ⋮ 변환·삭제)를 지목한다. 종전 선거부(무잔재)의 근거는 행 ⋮
-    삭제가 서면서 소멸 — 사본은 남고, 지울 수 있고, 세션은 서지 않는다."""
+    notice 가 수선 경로(행 ⋮ 의 변환·「자세히…」)를 지목한다. 종전 선거부(무잔재)의 근거는
+    행 ⋮ 가 서면서 소멸 — 사본은 남고, 세션만 서지 않는다."""
     from test_webapp_template import _write_raw
 
     lib = tmp_path / "lib"
@@ -2200,7 +2179,10 @@ def test_adopt_defers_raw_and_broken_copies_with_repair_notice(tmp_path):
     bad_txt = lib / "잘못.txt"
     bad_txt.write_bytes(b"\xff\xfe\x00 invalid utf8 \x80")
     ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
-    for dest, needle in ((raw, "누름틀로 변환"), (junk, "읽을 수 없습니다"),
+    # 사유 문안은 **살아 있는 동사만** 지목한다(U6-E #979): 라벨은 링1 상수에서 오고
+    # (「누름틀·구간 변환」 — 구 「누름틀로 변환」은 S8-03 에서 개명됐다) 퇴역한 삭제 동사
+    # 대신 「자세히…」·「폴더에서 보기」를 가리킨다.
+    for dest, needle in ((raw, CONVERT_ACTION_LABEL), (junk, "읽을 수 없습니다"),
                          (bad_txt, "읽을 수 없습니다")):
         assert ctrl.adopt_imported_template(str(dest)) == dest.name
         assert ctrl.template_path == ""                                # 세션 없음
@@ -2258,7 +2240,7 @@ def test_use_library_rejection_refreshes_stale_list(tmp_path):
     ghost = lib / "유령.hwpx"
     ghost.write_bytes(TPL_COMPILED.read_bytes())
     ctrl, pushes = _controller_lib(tmp_path, lib_dir=lib)
-    assert [row.name for row in _lib_rows(ctrl)] == ["유령"]
+    assert [p.stem for p in _lib_rows(ctrl)] == ["유령"]
     ghost.unlink()                                                     # 외부 삭제
     before = len(pushes)
     with pytest.raises(ValueError, match="라이브러리에 없는"):
@@ -2603,10 +2585,11 @@ def test_txt_band_lists_templates_and_reads_errors_loud(tmp_path):
     (tmp_path / "text_templates" / "손상.txt").write_bytes("한글".encode("cp949"))
     # 목록 성형은 U6-B 에서 `tpl` 채널 하나로 모였다(`test_webapp_template` 소관) —
     # 여기서는 편집기가 **같은 레지스트리를 겨눈다**는 것과 선택 표지를 잰다.
-    by_name = {t.name: t for t in _lib_rows(ctrl, "txt")}
-    assert len(by_name["기안"].fields()) == 2
+    by_stem = {p.stem: p for p in _lib_rows(ctrl, "txt")}
+    assert set(by_stem) == {"기안", "손상"}
+    assert len(template_fields(by_stem["기안"].read_text(encoding="utf-8"))) == 2
     with pytest.raises(UnicodeDecodeError):
-        by_name["손상"].fields()                        # 판독 실패는 숨기지 않는다
+        by_stem["손상"].read_text(encoding="utf-8")     # 판독 실패는 숨기지 않는다
     ctrl.dispatch("use_library_template", {"path": str(path)})
     assert ctrl.snapshot()["template_path"] == str(path)
 
@@ -2877,10 +2860,7 @@ def _pool_editor(tmp_path: Path):
         lambda s, snap: pushes.append((s, snap)),
         clock=_clock,
         pool_registry=pool,
-        template_library=TemplateManagerViewModel(
-            paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS,
-        ),
-        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        is_library_path=_tpl_channel(tmp_path / "text_templates", tmp_path).is_live_path,
     )
     return ctrl, pool
 
@@ -3041,13 +3021,13 @@ def test_reselecting_the_same_template_is_a_no_op(tmp_path):
     프로브·다른 호출자가 그대로 뚫는다.
     """
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
     ctrl.dispatch("set_name", {"name": "지켜야 할 이름"})
 
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 같은 템플릿 재선택
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})   # 같은 템플릿 재선택
 
     snap = ctrl.snapshot()
     assert snap["section"] == "binding"                    # 단계가 1단계로 되감기지 않는다
@@ -3056,9 +3036,9 @@ def test_reselecting_the_same_template_is_a_no_op(tmp_path):
     assert snap["rows"][0]["confirmed"] is True            # 확정이 살아 있다
     # 대조군 — 다른 템플릿이면 종전대로 새 세션이다.
     ctrl2, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
-    ctrl2.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl2.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     ctrl2.dispatch("set_name", {"name": "끊길 이름"})
-    ctrl2.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    ctrl2.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_PARTIAL))})
     # 사람이 지은 이름은 끊기고 새 템플릿의 도출값이 그 자리에 선다(U6-D #978).
     assert ctrl2.snapshot()["name"] == "template_v1"
 
@@ -3103,7 +3083,7 @@ def test_pairing_counts_are_computed_only_on_the_choosing_stage(tmp_path, monkey
     monkeypatch.setattr(mod, "pairing_preview", counted)
 
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
     _mount_data(ctrl)
     assert ctrl.snapshot()["pairing"]["basis"] == "preview"
     assert len(calls) == 1
@@ -3122,7 +3102,9 @@ def test_pairing_counts_are_computed_only_on_the_choosing_stage(tmp_path, monkey
     # 모델이 서기 전 갈래를 재야 하므로 2단계를 다녀오지 않은 세션으로 본다 — 모델이
     # 있으면 수치의 출처가 `model` 로 갈리고(그쪽은 memo 대상이 아니다) 이 축이 안 보인다.
     fresh, _ = _controller_lib(tmp_path / "fresh", paths=[TPL_COMPILED])
-    fresh.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    fresh.dispatch(
+        "use_library_template", {"path": str(_at(tmp_path / "fresh", TPL_COMPILED))}
+    )
     fresh.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 마운트 push 가 한 번 센다
     settled = len(calls)
     assert fresh.snapshot()["pairing"]["basis"] == "preview"
@@ -3282,7 +3264,7 @@ def test_the_anchored_draft_stays_clean_while_the_name_fills_itself(tmp_path):
         entry_reason="document_browser_new_work",
         return_context={"surface": "data"},
     )
-    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    ctrl.dispatch("use_library_template", {"path": str(_at(tmp_path, TPL_COMPILED))})
 
     snap = ctrl.snapshot()
     assert snap["name"] == f"{TPL_COMPILED.stem} · multi_sheet"
@@ -3504,3 +3486,90 @@ def test_the_templates_root_is_read_once_until_it_is_reset(tmp_path):
     root.set(str(other))
     assert len(reads) == 2, "재지정이 memo 를 비우지 않았습니다 — 옛 루트를 계속 말합니다."
     assert root.path() == other
+
+
+# ========================= U6-E 리뷰 회수(#989) — 게이트 존이 지는 두 사실
+def test_the_gate_zone_says_when_the_sheet_cannot_be_opened(tmp_path):
+    """시트는 `tpl` 이 아는 항목만 연다 — 열리지 않는 문은 **사유와 함께** 잠긴다(리뷰 5).
+
+    저장본이 든 절대경로는 루트 재지정·폴더 이동 뒤에도 살아 있을 수 있다. 그 상태에서
+    문을 열어 두면 누를 때마다 거절만 돌아오고, 그 무반응이 이 저장소가 금지하는 것이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))          # 격리 서식 폴더 **밖**
+
+    outside = ctrl.snapshot()["session_detail"]
+    assert outside["available"] is False
+    assert "서식 폴더" in outside["reason"]
+
+    # 같은 파일을 폴더 안으로 들이면 그대로 열린다 — 판정 축은 소속 하나다.
+    root = tmp_path / "text_templates"
+    root.mkdir(parents=True, exist_ok=True)
+    inside = root / TPL_COMPILED.name
+    shutil.copy2(TPL_COMPILED, inside)
+    ctrl.load_template_path(str(inside))
+    assert ctrl.snapshot()["session_detail"] == {"available": True, "reason": ""}
+
+
+def test_the_gate_zone_asks_the_library_once_per_template(tmp_path):
+    """관문 질의는 스냅샷마다 지불하지 않는다 — 입력은 세션 템플릿 경로 하나다(리뷰 5)."""
+    asked: "list[str]" = []
+    gate = _tpl_channel(tmp_path / "text_templates", tmp_path).is_live_path
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, clock=_clock,
+        is_library_path=lambda media, path: (asked.append(path), gate(media, path))[1],
+        template_root=TemplateRoot(default_root=tmp_path / "text_templates"),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    asked.clear()
+
+    for _ in range(3):
+        ctrl.snapshot()
+    assert asked == [], "스냅샷마다 서식 폴더를 물었습니다"
+
+    ctrl.load_template_path(str(TPL_PARTIAL))           # 경로가 바뀌면 다시 묻는다
+    ctrl.snapshot()
+    assert asked == [str(TPL_PARTIAL)]
+
+
+def test_the_sheet_door_is_shut_when_the_gate_is_unwired(tmp_path):
+    """관문 미배선은 통과가 아니다 — 없는 관문을 「열려 있다」로 접지 않는다."""
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, clock=_clock,
+        template_root=TemplateRoot(default_root=tmp_path / "text_templates"),
+    )
+    ctrl.load_template_path(str(TPL_COMPILED))
+    zone = ctrl.snapshot()["session_detail"]
+    assert zone["available"] is False and "배선" in zone["reason"]
+
+
+def test_provenance_drift_is_a_session_judgement(tmp_path):
+    """작성 출처 드리프트 경고는 **세션 판정**이라 게이트 존에 산다(리뷰 6).
+
+    걷힌 「작성 출처」 블록이 이 경고를 이고 있었다 — 블록이 사라지며 함께 사라졌던 사실을
+    되살린다. 비교하는 두 값은 저장이 찍은 필드 지문과 지금 연 파일의 필드이고, 둘 다
+    같은 구분자로 이어야 같은 스키마가 두 문법으로 적히지 않는다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "출처드리프트")
+    ctrl.dispatch("save", {})
+
+    ctrl.load_job("출처드리프트")
+    assert ctrl.snapshot()["schema_drift"] == "", "손대지 않은 재진입이 경고를 세웠습니다"
+
+    # 저장된 지문만 다른 스키마로 바꿔 둔다 — 파일은 그대로이므로 갈린 것은 기록뿐이다.
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("출처드리프트")
+    job.mapping.provenance = dict(job.mapping.provenance, template_fields="옛필드 · 지난필드")
+    reg.save(job)
+
+    ctrl.load_job("출처드리프트")
+    drift = ctrl.snapshot()["schema_drift"]
+    assert "매핑 재검토" in drift, f"드리프트를 말하지 않았습니다: {drift!r}"
+
+
+def test_a_draft_without_provenance_never_claims_drift(tmp_path):
+    """기록이 없으면 비교할 것도 없다 — 초안이 「달라졌다」고 말하지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.snapshot()["schema_drift"] == ""

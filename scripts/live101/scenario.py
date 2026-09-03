@@ -213,10 +213,14 @@ def run(ctx: ScenarioContext) -> dict:
         '#editorTplList .pitem[data-path*="발주요청서"]',
         what="발주요청서 템플릿 채택",
     )
+    # 스키마를 읽었다는 증거는 **게이트 존의 필드 수**다(U6-E #979): 필드 표는 항목 상세
+    # 시트로 갔고 1단계에 남은 것은 세션 판정 한 줄이다. 이름을 찾던 종전 조건은 그 표의
+    # 셀을 보던 것이었고, 같은 사실을 지금 서는 자리에서 읽는다.
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        "!!document.querySelector('#editorTplGate')"
+        " && /필드 [1-9]/.test(document.querySelector('#editorTplGate').textContent)",
         "템플릿 선택·필드 스키마",
-        requires=["#scr-editor"],
+        requires=["#scr-editor", "#editorTplGate"],
     )
 
     # ---- S3 같은 단계의 오른쪽: 데이터 연결 → 「연결 확인」으로 --------------
@@ -526,9 +530,10 @@ def run(ctx: ScenarioContext) -> dict:
     # 단계가 아니라 그 안의 문서 파일 이름 행 하나로 좁아졌다(그 부재는 아래 3단계에서 잰다).
     s.wait(
         "document.querySelectorAll('#editor-steps .wstep-tab').length === 3"
-        " && document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        " && /필드 [1-9]/.test("
+        "(document.querySelector('#editorTplGate') || {}).textContent || '')",
         "TXT 스키마·탭 3개",
-        requires=["#editor-steps"],
+        requires=["#editor-steps", "#editorTplGate"],
     )
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기(TXT)")
@@ -669,10 +674,12 @@ def run(ctx: ScenarioContext) -> dict:
         '#editorTplList .pitem[data-path*="오류연습_미치환"]',
         what="오류 연습 템플릿 채택",
     )
+    # 위와 같은 좌표다(U6-E #979) — 스키마를 읽었다는 증거는 게이트 존의 필드 수다.
     s.wait(
-        "document.querySelector('#scr-editor').textContent.includes('담당연락처')",
+        "!!document.querySelector('#editorTplGate')"
+        " && /필드 [1-9]/.test(document.querySelector('#editorTplGate').textContent)",
         "오류 연습 스키마",
-        requires=["#scr-editor"],
+        requires=["#scr-editor", "#editorTplGate"],
     )
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기(오류 연습)")

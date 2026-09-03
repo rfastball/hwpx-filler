@@ -109,7 +109,8 @@ def test_initial_serializes_bands_and_ring1_actions(tmp_path, monkeypatch):
     assert "drift" not in snap and not any("drift" in k for k in snap)
     band = snap["hwpx"]
     # U6-B(#976): 링2 필터가 사라지고 목록은 **링1 그대로**다 — `preview`·`make_job` 은
-    # 소비자 0 이라 링1 에서 사슬째 걷혔으므로 COMPILED 행의 동사는 0 이다.
+    # 소비자 0 이라 링1 에서 사슬째 걷혔다. U6-E(#979)는 `review` 까지 걷었다: 상태 게이트가
+    # 드는 것은 **수선 동사**뿐이고, 검토 왕복은 웹이 모든 행에 덧붙이는 「자세히…」가 진다.
     assert [a["key"] for a in _item(band, "comp")["actions"]] == []
     assert [a["key"] for a in _item(band, "raw")["actions"]] == ["compile"]
     # 「고를 수 있는가」 + 사유는 행이 진다(고르기 좌 열의 단일 판정 출처).
@@ -179,21 +180,99 @@ def test_compile_refuses_a_notation_diagnostic_without_asking(tmp_path, monkeypa
     assert Path(broken).read_bytes() == before
 
 
-def test_review_projects_the_slot_list(tmp_path, monkeypatch):
-    """검토가 Slot 목록을 스냅샷에 세운다(판정 재조립 없이 투영 그대로)."""
+def test_review_projects_the_detail_zone(tmp_path, monkeypatch):
+    """검토가 **항목 상세 한 벌**을 스냅샷에 세운다(U6-E #979 — 판정 재조립 없이 투영 그대로).
+
+    시트가 그릴 것이 한 왕복에서 다 선다: 머리(표시명·상태 배지·경로) · 필드 표 · 구간 항목
+    표 · 동사 줄. 두 왕복으로 채우면 그 사이에 갈린 사실이 한 화면에 함께 설 수 있다.
+    """
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     path = _notation_template(ctrl, tp)
     ctrl.dispatch("compile", {"path": path, "confirm": True})
 
-    assert ctrl.snapshot()["slots"] is None  # 검토 전에는 목록이 서지 않는다
+    assert ctrl.snapshot()["detail"] is None  # 검토 전에는 상세가 서지 않는다
     ctrl.dispatch("review", {"path": path})
 
-    slots = ctrl.snapshot()["slots"]
-    assert slots["path"] == path and slots["name"] == "구간.hwpx"
-    assert slots["rows"] == [
+    detail = ctrl.snapshot()["detail"]
+    assert detail["path"] == path and detail["name"] == "구간"
+    assert detail["media"] == "hwpx" and detail["state"] == "compiled"
+    assert detail["badge_label"] and detail["error"] == ""
+    # 필드 표 — 편집기 스키마 표가 그리던 것과 같은 내용(이름 + 링0 추정 유형).
+    assert {f["name"] for f in detail["fields"]} == {"지체상금률", "수요기관"}
+    assert detail["field_summary"] == f"필드 {detail['field_count']}개"
+    assert all(f["type_hint"] for f in detail["fields"])
+    # 동사 줄은 링1 상태 게이트 그대로다 — COMPILED 는 수선할 것이 없으므로 **0** 이고,
+    # 시트가 실제로 세우는 동사는 그 아래 구간 항목 표의 것들이다(U6-E #979 리뷰 10).
+    assert [a["key"] for a in detail["actions"]] == []
+    assert detail["slots"]["rows"] == [
         {"id": "특약", "label": "특약 사항", "option_count": 1, "options": ["지체상금 조항"]}
     ]
-    assert slots["summary"] == "항목 1개 · 선택 1개" and slots["diagnostics"] == []
+    assert detail["slots"]["summary"] == "항목 1개 · 선택 1개"
+    assert detail["diagnostics"] == []
+
+
+def test_review_of_a_txt_item_answers_with_fields_and_no_convert_axis(tmp_path, monkeypatch):
+    """TXT 상세는 필드 목록과 판독 사유뿐이다 — 없는 상태·구간 축을 지어내지 않는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = str(tp / "lib" / "온나라_기안.txt")
+
+    ctrl.dispatch("review", {"path": path})
+
+    detail = ctrl.snapshot()["detail"]
+    assert detail["media"] == "txt" and detail["state"] == "" and detail["badge_label"] == ""
+    assert [f["name"] for f in detail["fields"]] == ["공고명"]
+    assert detail["slots"] is None and detail["actions"] == []
+    assert "검토" in ctrl.snapshot()["result"]["text"]
+
+
+def test_review_of_a_broken_txt_answers_with_the_reason(tmp_path, monkeypatch):
+    """판독 실패 행의 「자세히…」가 답할 것은 **사유 하나**다 — 예외로 새지 않는다.
+
+    그 행에서 ⋮ 가 여는 항목은 「자세히…」뿐이고(내용 편집은 못 읽는 파일에 서지 않는다),
+    시트가 보이는 것이 이 사유다. 검토가 던지면 그 자리는 영영 답이 없다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    broken = tp / "lib" / "손상.txt"
+    broken.write_bytes("한글".encode("cp949"))
+    path = str(broken)
+
+    ctrl.dispatch("review", {"path": path})
+
+    detail = ctrl.snapshot()["detail"]
+    assert detail["media"] == "txt" and detail["error"]
+    assert detail["fields"] == [] and detail["slots"] is None
+    assert detail["field_summary"].startswith("읽기 실패: ")
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+def test_review_rejects_paths_outside_the_live_library(tmp_path, monkeypatch):
+    """상세의 경로가 곧 시트 동사들의 대상이다 — 진입에서 같은 관문을 지난다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    foreign = tp / "foreign.hwpx"
+    write_hwpx_package(foreign, _pkg(_TOKEN_BODY))
+
+    with pytest.raises(ValueError, match="현재 라이브러리 목록에 없는"):
+        ctrl.dispatch("review", {"path": str(foreign)})
+    assert ctrl.snapshot()["detail"] is None
+
+
+def test_is_live_path_is_the_one_membership_gate(tmp_path, monkeypatch):
+    """편집기의 경로 화이트리스트가 위임하는 공개 관문(U6-E #979).
+
+    hwpx 는 **판정 전에 재스캔**한다 — 방금 폴더에 떨어진 파일도, 방금 사라진 파일도 그
+    한 호출 안에서 최신으로 답해야 편집기 거절 문구가 실행 가능해진다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    live = str(tp / "lib" / "comp.hwpx")
+    assert ctrl.is_live_path("hwpx", live) is True
+    assert ctrl.is_live_path("txt", str(tp / "lib" / "온나라_기안.txt")) is True
+    assert ctrl.is_live_path("hwpx", str(tp / "foreign.hwpx")) is False
+
+    fresh = tp / "lib" / "새로온.hwpx"
+    _write_compiled(fresh)
+    assert ctrl.is_live_path("hwpx", str(fresh)) is True, "판정 전 재스캔이 빠졌습니다"
+    Path(live).unlink()
+    assert ctrl.is_live_path("hwpx", live) is False
 
 
 def test_slot_rename_is_a_single_round_trip(tmp_path, monkeypatch):
@@ -206,11 +285,11 @@ def test_slot_rename_is_a_single_round_trip(tmp_path, monkeypatch):
     result = ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "새 이름"})
 
     assert result == {"ok": True, "slot_count": 1}
-    assert ctrl.snapshot()["slots"]["rows"][0]["label"] == "새 이름"
+    assert ctrl.snapshot()["detail"]["slots"]["rows"][0]["label"] == "새 이름"
     assert "항목 이름을 바꿨습니다" in ctrl.snapshot()["result"]["text"]
     # 빈 label 은 이름을 뗀다.
     ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "  "})
-    assert ctrl.snapshot()["slots"]["rows"][0]["label"] == ""
+    assert ctrl.snapshot()["detail"]["slots"]["rows"][0]["label"] == ""
 
 
 def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
@@ -227,7 +306,7 @@ def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
     assert Path(path).read_bytes() == before
 
     ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약", "confirm": True})
-    assert ctrl.snapshot()["slots"]["rows"] == []
+    assert ctrl.snapshot()["detail"]["slots"]["rows"] == []
     assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
 
     # 다시 변환한 뒤 삭제 왕복.
@@ -236,7 +315,7 @@ def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
     ask = ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약"})
     assert ask["needs_confirm"] is True and "사라지는 것:" in ask["confirm_text"]
     ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약", "confirm": True})
-    assert ctrl.snapshot()["slots"]["rows"] == []
+    assert ctrl.snapshot()["detail"]["slots"]["rows"] == []
 
 
 #: 항목 2개짜리 표기 문서 — 「전부 되돌리기」가 재는 대상(단건과 구별되려면 2건이어야 한다).
@@ -262,7 +341,7 @@ def test_slot_decompile_all_takes_two_round_trips(tmp_path, monkeypatch):
     path = _notation_template(ctrl, tp, _TWO_SLOT_BODY)
     ctrl.dispatch("compile", {"path": path, "confirm": True})
     ctrl.dispatch("review", {"path": path})
-    assert [row["id"] for row in ctrl.snapshot()["slots"]["rows"]] == ["특약", "부기"]
+    assert [row["id"] for row in ctrl.snapshot()["detail"]["slots"]["rows"]] == ["특약", "부기"]
     before = Path(path).read_bytes()
 
     ask = ctrl.dispatch("slot_decompile_all", {"path": path})
@@ -278,7 +357,7 @@ def test_slot_decompile_all_takes_two_round_trips(tmp_path, monkeypatch):
     result = ctrl.dispatch("slot_decompile_all", {"path": path, "confirm": True})
 
     assert result == {"ok": True, "slot_count": 0}
-    assert ctrl.snapshot()["slots"]["rows"] == []
+    assert ctrl.snapshot()["detail"]["slots"]["rows"] == []
     assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
     # 되돌린 템플릿은 다시 PARTIAL 이다 — 「변환 전까지 못 만든다」는 확인 문안의 재확인.
     row = next(r for r in _items(ctrl.snapshot()["hwpx"]) if r["path"] == path)
@@ -335,20 +414,20 @@ def test_slot_verbs_reject_paths_outside_the_live_library(tmp_path, monkeypatch)
         ctrl.dispatch("slot_rename", {"path": path, "slot_id": "  ", "label": "x"})
 
 
-def test_slot_list_is_dropped_when_its_template_disappears(tmp_path, monkeypatch):
+def test_detail_is_dropped_when_its_template_disappears(tmp_path, monkeypatch):
     """목록이 죽은 경로를 겨눈 채 남지 않는다(누를 때야 실패하는 버튼 금지)."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     path = _notation_template(ctrl, tp)
     ctrl.dispatch("compile", {"path": path, "confirm": True})
     ctrl.dispatch("review", {"path": path})
-    assert ctrl.snapshot()["slots"] is not None
+    assert ctrl.snapshot()["detail"] is not None
 
     # 삭제 동사는 U6-A 에서 퇴역했다 — 파일이 사라지는 길은 이제 탐색기(밖)뿐이고,
     # 목록이 그 부재를 스스로 알아채는 것이 이 계약이다.
     Path(path).unlink()
     ctrl.dispatch("refresh", {})
 
-    assert ctrl.snapshot()["slots"] is None
+    assert ctrl.snapshot()["detail"] is None
 
 
 # ================================================================ TXT 저작
@@ -769,3 +848,137 @@ def test_no_migration_leaves_the_notice_untouched(tmp_path, monkeypatch):
     """이관이 없었으면 사유도 없다 — 빈 문자열을 줄바꿈으로 실어 빈 줄을 만들지 않는다."""
     ctrl, _tp, _ = _controller(tmp_path, monkeypatch)
     assert ctrl.snapshot()["templates_root"]["notice"] == ""
+
+
+# ================================ U6-E 리뷰 회수(#989) — 시트의 수명·비용·봉투
+def test_review_of_a_corrupt_hwpx_answers_with_the_reason_not_an_exception(
+    tmp_path, monkeypatch
+):
+    """판독 실패는 **봉투 안**에 머문다(리뷰 1).
+
+    ``zipfile.BadZipFile`` 은 ``ValueError`` 가 아니라 dispatch 의 거절 봉투를 벗어난다 —
+    그러면 오류 행의 「자세히…」가 영영 시트를 못 연다. 접는 자리는 링1 한 곳이고
+    (:meth:`TemplateManagerViewModel.review_view`) 여기서 재는 것은 그 결과다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    broken = tp / "lib" / "깨진.hwpx"
+    broken.write_bytes(b"not a hwpx zip!!")
+    ctrl.dispatch("refresh", {})
+
+    assert ctrl.dispatch("review", {"path": str(broken)}) == {"ok": True}
+
+    detail = ctrl.snapshot()["detail"]
+    assert detail["path"] == str(broken) and detail["error"]
+    assert detail["state"] == "" and detail["fields"] == [] and detail["slots"] is None
+    assert detail["field_summary"].startswith("읽기 실패: ")
+    # 결과 줄도 성공으로 접히지 않는다 — 못 읽었다는 사실이 그 자리에서 재진술된다.
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+def test_convert_reprojects_the_open_detail(tmp_path, monkeypatch):
+    """파일을 바꾼 동사 뒤 시트는 낡지 않는다(리뷰 2).
+
+    변환은 상태·배지·필드·구간 항목을 한꺼번에 바꾼다. 목록만 두고 나오면 열려 있는 시트가
+    새 항목 목록 위에 옛 상태 배지를 이고 선다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("review", {"path": path})
+    before = ctrl.snapshot()["detail"]
+    assert before["state"] == "raw" and before["slots"]["rows"] == []
+
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+
+    after = ctrl.snapshot()["detail"]
+    assert after["state"] == "compiled", "변환 뒤 상태가 시트에 반영되지 않았습니다"
+    assert [row["id"] for row in after["slots"]["rows"]] == ["특약"]
+    assert [a["key"] for a in after["actions"]] == []      # 수선할 것이 없다(리뷰 10)
+
+
+def test_txt_edit_reprojects_the_open_detail(tmp_path, monkeypatch):
+    """TXT 저장도 같은 후처리를 지난다 — 토큰 집합이 바뀌면 시트의 필드 표도 낡는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = str(tp / "lib" / "온나라_기안.txt")
+    ctrl.dispatch("review", {"path": path})
+    assert [f["name"] for f in ctrl.snapshot()["detail"]["fields"]] == ["공고명"]
+
+    ctrl.dispatch("txt_edit", {
+        "path": path, "content": "제목: {{공고명}} / 담당: {{담당자}}",
+        "baseline": "제목: {{공고명}}",
+    })
+
+    assert [f["name"] for f in ctrl.snapshot()["detail"]["fields"]] == ["공고명", "담당자"]
+
+
+def test_a_mutation_elsewhere_does_not_swap_the_open_detail(tmp_path, monkeypatch):
+    """지금 보고 있는 항목과 무관한 변이는 시트를 갈아 끼우지 않는다(리뷰 2 반대편)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("review", {"path": path})
+
+    ctrl.dispatch("compile", {"path": str(tp / "lib" / "raw.hwpx"), "confirm": True})
+
+    assert ctrl.snapshot()["detail"]["path"] == path
+
+
+def test_a_rejected_path_pushes_the_refreshed_list_first(tmp_path, monkeypatch):
+    """「목록을 새로 고쳤으니 다시 고르세요」는 **참말이어야 한다**(리뷰 4).
+
+    목록의 정본이 이 채널이므로 그 push 도 여기서 나가야 좌 열이 사라진 행을 지운다.
+    나가지 않으면 사람은 같은 행을 다시 눌러 같은 거절만 받는다.
+    """
+    ctrl, tp, pushes = _controller(tmp_path, monkeypatch)
+    ghost = tp / "lib" / "comp.hwpx"
+    ctrl.dispatch("refresh", {})
+    pushes.clear()
+    ghost.unlink()                                   # 탐색기에서 사라졌다
+
+    assert ctrl.is_live_path("hwpx", str(ghost)) is False
+
+    assert pushes, "거절 전에 갱신된 목록을 밀지 않았습니다"
+    names = {
+        item["name"] for section in pushes[-1][1]["hwpx"]["sections"]
+        for item in section["items"]
+    }
+    assert "comp" not in names, f"사라진 행이 그대로 실렸습니다: {names!r}"
+
+
+def test_the_live_gate_does_not_rescan_on_a_cache_hit(tmp_path, monkeypatch):
+    """관문 한 번이 라이브러리 전건 판독을 물어 오지 않는다(리뷰 7).
+
+    무조건 재스캔하면 「자세히…」 한 번이 폴더의 모든 파일을 다시 연다(200개면 200 inspect).
+    캐시 적중은 **파일 하나의 존재 검사**로 마무리하고, 재스캔은 부재를 만났을 때만 한다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("refresh", {})
+    scans = []
+    real = ctrl.vm.refresh
+    monkeypatch.setattr(ctrl.vm, "refresh", lambda: (scans.append(1), real())[1])
+
+    assert ctrl.is_live_path("hwpx", str(tp / "lib" / "comp.hwpx")) is True
+    assert scans == [], "캐시 적중에서 전체 재스캔을 물었습니다"
+
+    # 목록에 없는 경로에서만 한 번 다시 훑는다 — 방금 들어온 파일을 통과시키는 자리다.
+    fresh = _write_compiled(tp / "lib" / "새로온.hwpx")
+    assert ctrl.is_live_path("hwpx", str(fresh)) is True
+    assert len(scans) == 1
+
+
+def test_review_opens_the_file_once(tmp_path, monkeypatch):
+    """검토 한 왕복이 판독과 lint 로 파일을 **두 번** 열지 않는다(리뷰 7)."""
+    import hwpxfiller.external.template_inspection as inspection_module
+
+    opens: "list[str]" = []
+    real = inspection_module.read_hwpx_package
+    monkeypatch.setattr(
+        inspection_module, "read_hwpx_package",
+        lambda path, *a, **k: (opens.append(str(path)), real(path, *a, **k))[1],
+    )
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = str(tp / "lib" / "comp.hwpx")
+    ctrl.dispatch("refresh", {})
+    opens.clear()
+
+    ctrl.dispatch("review", {"path": path})
+
+    assert opens.count(path) == 1, f"같은 파일을 여러 번 열었습니다: {opens!r}"

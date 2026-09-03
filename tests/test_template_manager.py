@@ -27,6 +27,8 @@ from hwpxfiller.external.template_inspection import (
     template_compile_status,
 )
 from hwpxfiller.gui.template_manager_state import (
+    CONVERT_ACTION_LABEL,
+    TemplateDetail,
     TemplateManagerViewModel,
     available_actions,
 )
@@ -77,10 +79,12 @@ def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
     # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
     # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
-    # 그래서 COMPILED·FILLED 는 동사가 없고 표면은 그 사실을 비활성 + 사유로 그린다.
+    # U6-E(#979): 그때 0 이 된 COMPILED·FILLED 의 도달성 구멍은 **상태 동사가 아니라**
+    # 「자세히…」가 메운다 — 그 항목이 `tpl/review` 왕복을 지고 상세 시트를 연다(웹이 모든
+    # 행에 덧붙인다). 그래서 이 표가 드는 것은 상태가 허용하는 **수선 동사**뿐이다.
     expected = {
         CompileState.RAW: ["compile"],
-        CompileState.PARTIAL: ["compile", "review"],
+        CompileState.PARTIAL: ["compile"],
         CompileState.COMPILED: [],
         CompileState.FILLED: [],
         None: [],
@@ -686,7 +690,7 @@ def test_row_surfaces_residual_structure_notation_with_repair_verb(tmp_path):
     assert row.badge_label == "부분 변환" and row.badge_level == "warn"
     assert row.structure_marker_n == 2
     assert "구간 표기 2개" in row.detail_line()
-    assert [a.label for a in row.actions()] == ["마저 변환", "검토"]
+    assert [a.label for a in row.actions()] == ["마저 변환"]
 
 
 def test_row_without_notation_says_nothing_about_it(tmp_path):
@@ -737,3 +741,124 @@ def test_text_rows_share_the_ring1_wording_with_hwpx(tmp_path):
         name="x", path="x", state=None, badge_label="", badge_level="muted",
         field_count=0, compilable_n=0, skipped_n=0, stray_n=0,
     ).select_block_reason()
+
+
+# =============================== U6-E #979 — 항목 상세 투영(「자세히…」 시트의 재료)
+def test_detail_view_projects_one_read_of_the_file(tmp_path):
+    """상태·배지·필드·구간 항목·동사가 **한 판독**에서 나온다(갈린 사실 금지).
+
+    시트 한 장이 두 왕복으로 채워지면 그 사이에 파일이 바뀔 때 「상태는 옛것, 항목 목록은
+    새것」이 한 화면에 함께 선다. 그래서 이 투영은 파일을 한 번만 연다.
+    """
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    path = _write_compiled(
+        lib / "구매요청.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}} / 작성일자: {{작성일자}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(
+        library_dir=lib,
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+
+    detail = vm.detail_view(str(path))
+
+    assert detail.media == "hwpx" and detail.state == CompileState.COMPILED
+    assert detail.name == "구매요청"                      # 루트 상대·확장자 없음(목록과 같은 이름)
+    assert [f.name for f in detail.fields] == ["계약명", "작성일자"]
+    # 유형은 링0 추정 그대로다 — 표면이 이름에서 되유추하면 두 화면이 갈린다.
+    assert [f.type_hint for f in detail.fields] == ["text", "date"]
+    assert detail.field_summary() == "필드 2개"
+    # 동사 목록은 링1 상태 게이트 하나에서 온다(여기서 다시 조립하지 않는다).
+    assert [a.key for a in detail.actions] == [a.key for a in available_actions(detail.state)]
+    assert detail.slots is not None and detail.slots.rows == ()
+    assert detail.error == "" and detail.diagnostics == ()
+
+    projected = detail.to_dict()
+    assert projected["state"] == "compiled"
+    assert projected["fields"] == [
+        {"name": "계약명", "type_hint": "text"}, {"name": "작성일자", "type_hint": "date"}
+    ]
+    # `slots` 는 요약·행만 든다 — 경로·이름·진단은 최상위가 이미 든 사실이다(이중 기재 금지).
+    assert set(projected["slots"]) == {"summary", "rows"}
+
+
+def test_detail_view_carries_the_reason_when_the_file_cannot_be_read(tmp_path):
+    """판독 실패는 감추지 않고 **사유를 단 상세**로 돌려준다(오류 행의 「자세히…」가 답할 것)."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    broken = lib / "깨진.hwpx"
+    broken.write_bytes(b"not a hwpx zip")
+    vm = TemplateManagerViewModel(
+        library_dir=lib,
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+
+    detail = vm.detail_view(str(broken))
+
+    assert detail.error and detail.state is None
+    assert detail.fields == () and detail.slots is None and detail.actions == ()
+    assert detail.field_summary().startswith("읽기 실패: ")
+
+
+def test_text_detail_has_no_convert_axis_and_no_slots():
+    """TXT 는 상태도 구간 항목도 없다 — 없는 축을 지어내지 않는다(`TemplateRow.from_text` 동형)."""
+    detail = TemplateDetail.from_text(
+        Path("C:/lib/온나라/기안.txt"), ["공고명"], root=Path("C:/lib")
+    )
+    assert detail.media == "txt" and detail.state is None and detail.badge_label == ""
+    assert detail.name == "온나라/기안"
+    assert [f.name for f in detail.fields] == ["공고명"]
+    assert detail.to_dict()["slots"] is None and detail.to_dict()["actions"] == []
+
+    empty = TemplateDetail.from_text(Path("C:/lib/빈.txt"), [])
+    assert empty.field_summary() == "채울 필드가 없습니다."
+
+
+def test_the_convert_label_has_one_source():
+    """가져오기 채택의 RAW 거절 문안이 지목하는 라벨은 `_STATE_ACTIONS` 의 그 값이다."""
+    raw = available_actions(CompileState.RAW)
+    assert [a.label for a in raw] == [CONVERT_ACTION_LABEL]
+
+
+def test_review_view_reads_the_file_once_and_folds_read_failures(tmp_path):
+    """검토 투영은 **판독+lint 한 포트**를 지나고, 읽기 예외를 사유로 접는다(U6-E 리뷰 1·7).
+
+    나눠 열면 둘을 잃는다: 시트 한 장이 두 스냅샷을 얹고(그 사이의 변경이 갈린 사실로 선다),
+    라이브러리가 클수록 「자세히…」 한 번의 비용이 두 배가 된다. 그리고 접는 자리가 없으면
+    ``BadZipFile`` 이 dispatch 의 거절 봉투를 벗어나 시트가 영영 안 열린다.
+    """
+    import dataclasses
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    path = _write_compiled(
+        lib / "계약.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+    )
+    calls: "list[str]" = []
+    ops = dataclasses.replace(
+        HWPX_TEMPLATE_OPS,
+        inspect_and_lint=lambda target, vocabulary=None: (
+            calls.append(str(target)),
+            HWPX_TEMPLATE_OPS.inspect_and_lint(target, vocabulary=vocabulary),
+        )[1],
+        lint=lambda *a, **k: pytest.fail("검토가 lint 로 파일을 한 번 더 열었습니다"),
+    )
+    vm = TemplateManagerViewModel(
+        library_dir=lib, inspect_template=inspect_hwpx_template, file_ops=ops
+    )
+
+    detail, report = vm.review_view(str(path))
+
+    assert calls == [str(path)]
+    assert report is not None and detail.error == ""
+    assert [f.name for f in detail.fields] == ["계약명"]
+
+    broken = lib / "깨진.hwpx"
+    broken.write_bytes(b"not a hwpx zip!!")
+    failed, no_report = vm.review_view(str(broken))
+    assert no_report is None, "못 읽은 파일을 위생 점검한 척하지 않는다"
+    assert failed.error and failed.slots is None and failed.actions == ()

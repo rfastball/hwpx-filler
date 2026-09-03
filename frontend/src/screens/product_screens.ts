@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 
 import { DataPickerDialog, PoolRegistrationDialog } from "./data_picker.ts";
 import type { DataPickerController } from "./data_picker.ts";
-import { EditorScreen, TxtEditDialog } from "./editor.ts";
+import { EditorScreen, TplDetailSheet, TxtEditDialog } from "./editor.ts";
 import type { EditorController } from "./editor.ts";
 import {
   JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeader, JobNoDataExit,
@@ -207,6 +207,9 @@ export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
   JobDataBody,
   JobBrowseDialog,
   TxtEditDialog,
+  /* 항목 상세 시트(U6-E #979) — 편집기 컨트롤러를 받되 읽는 것은 `tpl` 채널 스냅샷이다.
+     화면 넷 중 편집기에서만 열리지만 overlay 라 target 은 셸 레벨에 선다. */
+  TplDetailSheet,
   SheetPickerDialog,
   JobArtifactSheet,
   /* 셸 설정 모달 — 화면 컨트롤러가 아니라 셸 서비스(Theme·Personalization·Modal)를 받는

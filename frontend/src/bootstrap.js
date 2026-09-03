@@ -478,6 +478,10 @@ export function bootProduct() {
           { controller: JobRead }),
         productOverlayComponent("txtEditModal", PRODUCT_OVERLAY_COMPONENTS.TxtEditDialog,
           { controller: EditorController }),
+        /* 항목 상세 시트(U6-E #979) — 행 ⋮ 의 「자세히…」가 여는 면. 편집기 컨트롤러를
+           받지만 그리는 값은 `tpl` 채널 스냅샷 한 존(`detail`)이다. */
+        productOverlayComponent("tplDetailModal", PRODUCT_OVERLAY_COMPONENTS.TplDetailSheet,
+          { controller: EditorController }),
         productOverlayComponent("sheetModal", PRODUCT_OVERLAY_COMPONENTS.SheetPickerDialog,
           { controller: SheetPickerController }),
         productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,
