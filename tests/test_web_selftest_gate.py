@@ -2013,12 +2013,41 @@ class TestWebSelftestGate:
         # (연타 차단은 이 좌표에서 잴 수 없다 — 메뉴는 고르면 닫힌다. 공용 몸통
         #  `createPoolVerbs` 의 in-flight 계약은 `tests/js/pool_verbs.test.js` 가 계속 진다.)
         assert e["manage_verb_present"] is True, "우 열 행에 ⋯ 가 서지 않았습니다."
-        assert e["dat_menu_items"] == ["act:archive", "reveal"], (
+        # 「자세히…」는 **마지막**이다(좌 열과 같은 순서: 링1 동사 · 경로 문 · 상세).
+        assert e["dat_menu_items"] == ["act:archive", "reveal", "detail"], (
             f"우 열 ⋯ 의 동사 목록이 계약과 다릅니다: {e['dat_menu_items']!r}"
         )
         assert e["manage_verb_calls"] == 1, (
             f"⋯ 의 관리 동사가 `pool` 채널로 한 번 나가지 않았습니다: {e['manage_verb_calls']!r}"
         )
+        # ⑧ 데이터 행의 「자세히…」 → 등록 데이터 상세 시트(고르기 열 공용 ④). 좌 열 시트와
+        # **같은 골격**이라 좌표도 접두어만 다르고, 실렌더에서 그 사실을 되읽는다(새 창 0).
+        assert e["dat_detail_item_visible"] is True, (
+            "우 열 ⋯ 에 「자세히…」가 보이지 않습니다 — 등록 항목의 상세로 가는 문입니다."
+        )
+        assert e["dat_detail_dispatch"] == [["pool", "review", "d1"]], (
+            f"「자세히…」가 검토 왕복을 내지 않았습니다: {e['dat_detail_dispatch']!r}"
+        )
+        assert e["pool_sheet_open"] is True, (
+            "등록 데이터 상세 시트(#poolDetailModal)가 열리지 않았습니다."
+        )
+        assert e["pool_sheet_columns"] == 3, (
+            f"열 표의 행 수가 스냅샷 열 수와 다릅니다: {e['pool_sheet_columns']!r}"
+        )
+        assert e["pool_sheet_column_names"] == ["공고명", "금액", "기관"], (
+            f"열 이름이 스냅샷 값 그대로가 아닙니다: {e['pool_sheet_column_names']!r}"
+        )
+        assert "열 3개" in e["pool_sheet_summary"], (
+            f"열 표 머리가 Python 문안 그대로가 아닙니다: {e['pool_sheet_summary']!r}"
+        )
+        # 정체 줄 성분도 링1 이 짓는다 — 표면이 어휘·순서를 다시 조립하지 않는다.
+        assert "시트: 물품" in e["pool_sheet_facts"] and "헤더 2행" in e["pool_sheet_facts"], (
+            f"정체 줄이 Python 성분 그대로가 아닙니다: {e['pool_sheet_facts']!r}"
+        )
+        assert e["pool_sheet_verbs"] == ["detail-act:archive", "detail-reveal"], (
+            f"시트 동사 줄이 행 ⋯ 와 같은 목록에서 나오지 않았습니다: {e['pool_sheet_verbs']!r}"
+        )
+        assert e["pool_sheet_closed"] is True, "상세 시트가 닫히지 않았습니다."
         # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
         assert e["half_cta_disabled"] is True, (
             "데이터 없이 「연결 확인으로」가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."

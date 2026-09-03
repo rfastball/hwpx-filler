@@ -113,12 +113,14 @@
 .slotrow .tbadge,.slotrow .btn{flex:none}
 /* 항목 상세 시트(U6-E #979) — 필드 표와 구간 항목 표를 함께 이는 면이라 표준 모달보다 넓고,
    목록이 길어도 창을 넘지 않게 **자기 안에서** 스크롤한다(면이 넘치면 닫기가 밀려난다). */
-.modal-card.tpl-detail{width:min(720px,94vw);max-height:86vh;overflow-y:auto}
-.tpl-detail>.row:first-child h3{margin:0}
+/* 두 시트(서식 항목·등록 데이터)가 **같은 골격**이라 규칙도 하나다(고르기 열 공용 ④ —
+   생산자는 `frontend/src/screens/detail_sheet.ts`). 종전 `.tpl-detail` 의 승계처다. */
+.modal-card.detail-sheet{width:min(720px,94vw);max-height:86vh;overflow-y:auto}
+.detail-sheet>.row:first-child h3{margin:0}
 /* `.grp` 의 노치 라벨은 화면 배경 위에 앉는 전제라 카드 위에서는 배경을 카드로 맞춘다. */
-.tpl-detail .grp{margin-top:var(--sp-16)}
-.tpl-detail .grp>.cap{background:var(--a-card)}
-.tpl-detail #tplDetailPath{margin:var(--sp-6) 0 0;word-break:break-all}
+.detail-sheet .grp{margin-top:var(--sp-16)}
+.detail-sheet .grp>.cap{background:var(--a-card)}
+.detail-sheet .detail-path{margin:var(--sp-6) 0 0;word-break:break-all}
 
 /* ---- 데이터 선택 다이얼로그 (재작성 F1 — v6 dataPickerDialog) ----
    몸통은 공용 고르기 열 하나다(`.poolcol` — 고르기 열 공용 ③b). 종전의 카드 어휘

@@ -197,6 +197,7 @@ export const SCREEN_ACTIONS = {
   },
   pool: {
     refresh: { required: [], optional: [] },
+    review: { required: ["key"], optional: [] },
     archive: { required: ["key"], optional: [] },
     activate: { required: ["key"], optional: [] },
     delete: { required: ["key"], optional: ["basis", "confirm"] },

@@ -21,7 +21,7 @@
 """
 from __future__ import annotations
 
-from ..domain.pclm_views import PCLM_VIEW_TITLES
+from ..domain.pclm_views import sheet_title
 
 #: 지금 세션이 쓰고 있는 데이터가 목록 맨 위에 서는 행의 키 — **웹과 같은 글자**다
 #: (``frontend/src/screens/editor.ts`` 의 ``SESSION_DATA_KEY``). 풀 슬롯 키 공간과 겹치지
@@ -172,14 +172,14 @@ def session_data_row(
     선택 다이얼로그(``screen_job``)가 같은 사실을 말한다. 각자 부제를 이으면 「시트: …」의
     어휘·순서·계약 목록 제목화가 한쪽에서만 늙는다.
 
-    부제 성분은 셋이고 없는 것은 **줄에서 빠진다**(빈 값으로 새지 않는다): 시트(계약 목록의
-    뷰 이름은 :data:`~hwpxfiller.domain.pclm_views.PCLM_VIEW_TITLES` 로 제목화하되 표에 없는
-    이름은 원문 그대로 — 구판·손편집을 조용히 지우지 않는다) · 헤더 행(0 = 어댑터 기본이라
-    말할 것이 없다) · 행 수.
+    부제 성분은 셋이고 없는 것은 **줄에서 빠진다**(빈 값으로 새지 않는다): 시트(제목화는
+    링0 :func:`~hwpxfiller.domain.pclm_views.sheet_title` 하나가 진다 — 등록 항목의 상세
+    투영이 같은 사실을 말하므로 규칙이 두 벌이면 한쪽만 늙는다) · 헤더 행(0 = 어댑터
+    기본이라 말할 것이 없다) · 행 수.
     """
-    sheet_title = PCLM_VIEW_TITLES.get(sheet, sheet) if kind == "pclm" else sheet
+    title = sheet_title(kind, sheet)
     parts = [
-        f"시트: {sheet_title}" if sheet_title else "",
+        f"시트: {title}" if title else "",
         f"헤더 {header_row}행" if header_row > 0 else "",
         f"{record_count}행",
     ]

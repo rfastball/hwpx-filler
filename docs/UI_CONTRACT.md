@@ -487,6 +487,15 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
 | 셸 설정 모달(화면 아님 · 셸 전역) | `#settingsModal`, `src/screens/settings_sheet.ts` | — (host method `set_theme`·`set_font_scale` 직접 브리지) | `src/shell/preferences.ts`(Theme·Personalization 서비스) |
 | 항목 상세 시트(화면 아님 · U6-E #979) | `#tplDetailModal`, `src/screens/editor.ts`(`TplDetailSheet`) | `TemplateController`(`detail` 존) | `TemplateDetail`·`SlotView`(`gui/template_manager_state.py`) |
+| 데이터 상세 시트(화면 아님 · 고르기 열 공용 ④) | `#poolDetailModal`, `src/screens/pool_detail.ts`(`PoolDetailSheet`) | `PoolController`(`detail` 존) | `DatasetDetail`(`application/dataset_pool.py`) |
+
+두 상세 시트의 **골격은 하나다**(`src/screens/detail_sheet.ts` `DetailSheetFrame`): 머리
+(이름+배지) · 경로 줄과 그 문(`PathActions`) · 오류 상자 · 진단 · 몸통 · 성과/실패 두 줄 ·
+관리 동사 줄 · 닫기. 좌표는 접두어만 다르다 — `${idPrefix}` + `Title`·`Path`·`Error`·`Msg`·
+`Result`·`Verbs`·`Close`·`Empty`(`tplDetail`·`poolDetail`). CSS 도 한 규칙(`.detail-sheet` —
+종전 `.tpl-detail` 의 승계처)이다. 갈리는 것은 몸통 하나다: 저쪽이 필드 표·구간 항목,
+이쪽이 정체 줄(`#poolDetailFacts`)·열 표 머리(`#poolDetailColumnSummary`)·열 표
+(`#poolDetailColumns`)다.
 
 화면을 추가·삭제·이름 변경할 때는 `PRODUCT_SCREEN_IDS`, ProductScreens wrapper, visibility
 store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로
@@ -524,6 +533,10 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     보기」를 세우고, 그 동사들은 좌 열 ⋯ 와 **같은 팝오버**(`#tplRowMenu`)를 쓴다 — 열림
     상태가 `(side, media, key)` 로 갈리는 이유는 두 열의 키 공간이 다르기 때문이다.
     표면이 「엑셀이면 다시 연결을 하나 더」 같은 판정을 덧붙이던 자리는 함께 사라졌다.
+    **⋯ 의 마지막은 「자세히…」다**(고르기 열 공용 ④ — 좌 열과 같은 순서: 링1 동사 · 경로
+    문 · 상세). 목록을 짓는 함수는 두 호스트 공용 하나이고(`pool_verbs.dataRowMenuItems`),
+    그 문이 여는 것이 `#poolDetailModal` 이다. **세션 행에는 그 항목이 서지 않는다** —
+    풀에 없는 결속이라 검토할 항목 자체가 없다(음성 계약).
   - **파일로 연 데이터는 목록 맨 위의 행 하나다**(같은 행 계약, 키 `session`). 정본은 편집기
     스냅샷 `pairing.data_row` 이고(`screen_editor._pairing_data_row`), 부제(「시트: … · 헤더
     n행 · m행」 — 계약 목록의 뷰 이름은 `PCLM_VIEW_TITLES` 로 제목화)도 Python 이 짓는다.
@@ -566,9 +579,12 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     좁은 열 계약에 그 축을 얹지 않으려는 것이고, ③b 가 그 자리를 정리한다). 두 열의
     「지금 선 행」은 `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의
     `key` 와 같은 축 — 좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값 +
-    `pairing.data_row` 의 `session` 행). 옛 행(`rows`)의 남은 소비자는 **「다시 연결」 폼의
-    프리필**(`locate_path`·`sheet`·`note`) 하나이고, 두 호스트가 같은 자리에서 같은 재료를
-    집는다 — 좁은 열 계약에 그 축을 얹지 않으려는 것이고 슬라이스 ⑤ 가 그 자리를 정리한다.
+    `pairing.data_row` 의 `session` 행). 옛 행(`rows`)의 **웹 소비자는 0 이다**(고르기 열
+    공용 ④): 마지막 소비자였던 「다시 연결」 폼의 프리필은 이제 `pool/review` 가 세우는
+    상세 투영(`detail`)을 읽는다 — 두 호스트가 같은 왕복·같은 키 이름(`path`·`sheet`·
+    `note`)을 쓰고, 왕복이 낸 상세의 `key` 가 겨눈 키와 다르면 폼을 열지 않고 거절한다
+    (그 사이 push 가 끼면 남의 등록을 덮어쓸 수 있다). `pool` 스냅샷의 `rows` 키 자체는
+    슬라이스 ⑤ 가 걷는다.
   - **두 열은 공용 `PoolColumn` 이 그린다**(`frontend/src/screens/pool_column.ts` — 고르기 열
     공용 계약 ②·③a): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
     바닥 `.run-result`)과 행 계약(`.pitem-wrap` > `button.pitem[data-act="pick"]` + 형제
@@ -982,7 +998,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 | 자리 | 내용 | 백엔드 |
 |---|---|---|
 | 목록 첫 행(키 `session`) | 지금 쓰는 데이터의 재진술(이름 + 「시트: … · 헤더 n행 · m행」 — 계약 목록의 뷰 이름은 **Python 이** 제목으로 옮기고 표에 없는 이름은 원문 그대로) + 「사용 중」 배지 | 작업 스냅샷 `data_row`(`webapp/pool_column.session_data_row`) |
-| 나머지 행 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) — 클릭이 곧 「이 데이터 사용」이고 관리 동사(보관·활성화·삭제·다시 연결)와 「폴더에서 보기」는 행 ⋯(`#dataPickerRowMenu`) | `pool` 컨트롤러 `column` 존·액션 **그대로** |
+| 나머지 행 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) — 클릭이 곧 「이 데이터 사용」이고 관리 동사(보관·활성화·삭제·다시 연결) · 「폴더에서 보기」 · 「자세히…」는 행 ⋯(`#dataPickerRowMenu`) | `pool` 컨트롤러 `column`·`detail` 존·액션 **그대로** |
 | 목록 안 통지 | 손상 격리(danger)·중복 등록(warn)과 그 정리 동사 — `[data-notice]` | `pool.column.notices`(문안·수치는 Python) |
 | 바닥 동사 줄 | 파일 찾아보기(1회용, `#dataPickerBrowse`) → 다중 시트면 시트 확정 게이트 · **「계약 목록(.db) 등록…」**(`#dataPickerPclm` → `#poolRegModal` pclm 모드) · 「이 데이터 고정…」(`#dataPickerPin`) | 호스트 `pick_data_file`/`load_data_sheet` · `pool/register_pclm`/`register_excel` |
 
@@ -993,6 +1009,15 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   **퇴역**했고 관리 동사 한 벌(`createPoolVerbs`·`PCLM_UNAVAILABLE`·`PoolRegistrationPort`·
   거절 문형)은 `frontend/src/screens/pool_verbs.ts` 로 옮겨 두 호스트가 계속 공유한다 —
   그리는 일과 발신하는 일은 애초에 다른 관심사다.
+- **행 ⋯ 의 목록은 두 호스트 공용 하나다**(`pool_verbs.dataRowMenuItems` — 고르기 열 공용
+  ④): 링1 `actions` · 경로가 있을 때 「폴더에서 보기」 · 마지막에 「자세히…」(세션 행 제외).
+  이 파일이 같은 규칙을 다시 적던 지역 `rowMenuItems` 는 그와 함께 걷혔다.
+- **등록 데이터 상세 시트(`#poolDetailModal`)의 주인도 이 컨트롤러다**(등록 폼과 같은 근거 —
+  overlay 는 셸 레벨 하나이고 여는 문이 둘이다). 고르기 우 열은 `PoolRegistrationPort.
+  openDetail(key, trigger)` 로 그 문을 부른다. 순서가 계약이다 — `pool/review` 가 먼저 상세를
+  세우고 **그 뒤에** 시트가 열린다(먼저 열면 지난 항목의 상세가 한 프레임 선다). 시트가 열려
+  있는 동안 동사의 실패는 **시트 안**(`#poolDetailMsg`)에 서고 이 면의 상태줄에는 쓰지
+  않는다 — 스크림 뒤 채널에 같은 문장을 두지 않는다.
 - **좌표**: 살아 있는 것은 `#dataPickerModal`·`#dataPickerTitle`·`#dataPickerNote`·
   `#dataPickerClose`·`#dataPickerPinned`(목록)·`#dataPickerBrowse`·`#dataPickerPclm`·
   `#dataPickerPin` 이다. 카드 시절의 `#dataPickerCurrent`·`#dataPickerDupes`·

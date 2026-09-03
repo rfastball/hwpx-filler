@@ -9,7 +9,38 @@
  * **판정·문안·`basis` 는 전부 Python 이 낸다**(`screen_pool.py`). 여기 있는 것은 확인 UI 와
  * 발신뿐이고, 그래서 종류가 늘어도 이 파일은 늘지 않는다.
  */
+import type { ContextMenuItem } from "./context_menu.ts";
+import { SESSION_DATA_KEY } from "./pool_column.ts";
+
 type Obj = Record<string, any>;
+
+/** 항목 상세 시트를 여는 메뉴 항목의 라벨 — 좌·우 두 열과 시트 안내가 같은 글자를 쓴다. */
+export const ROW_DETAIL_LABEL = "자세히…";
+
+/** 우 열 행 ⋯ 가 열 동사 목록 — 링1 동사 + 「폴더에서 보기」 + 「자세히…」.
+ *
+ *  **두 호스트가 같은 함수를 부른다**(고르기 열 공용 ④): 편집기 우 열과 데이터 선택
+ *  다이얼로그는 같은 열을 그리므로 그 행의 ⋯ 목록도 한 벌이어야 한다. 종전에는 두 파일이
+ *  같은 규칙을 각자 적었고(다이얼로그의 지역 `rowMenuItems`), 그러면 항목이 하나 늘 때
+ *  한쪽에만 서는 날이 온다 — 지금 늘어난 「자세히…」가 바로 그 항목이다.
+ *
+ *  **상태 동사는 링1 소유다**(`row.actions` — 다시 연결·보관/활성화·삭제). 종전 카드가
+ *  하던 「엑셀이면 다시 연결을 하나 더 붙인다」는 표면 판정은 함께 사라졌다(같은 상태를 두
+ *  곳이 판정하지 않는다): 그 목록은 이제 `screen_pool` 이 전수로 낸다.
+ *
+ *  「폴더에서 보기」는 경로가 있을 때만, 「자세히…」는 **등록 항목**에만 선다: 세션 행(파일로
+ *  연 데이터)은 풀에 없어 검토할 항목 자체가 없고, 서게 두면 눌러도 답할 것이 없다.
+ *  순서는 좌 열과 같다 — 링1 동사 · 경로 문 · 「자세히…」가 마지막이다. */
+export function dataRowMenuItems(row: Obj | null): ContextMenuItem[] {
+  if (row === null || row === undefined) return [];
+  const items: ContextMenuItem[] = ((row.actions || []) as Obj[]).map((action: Obj) =>
+    ({ action: `act:${String(action.key)}`, label: String(action.label) }));
+  if (row.path) items.push({ action: "reveal", label: "폴더에서 보기" });
+  if (String(row.key || "") !== SESSION_DATA_KEY) {
+    items.push({ action: "detail", label: ROW_DETAIL_LABEL });
+  }
+  return items;
+}
 
 /** 계약 목록 블록이 아직 없을 때의 사유 — 죽은 버튼 대신 비활성 + `title`. */
 export const PCLM_UNAVAILABLE =
@@ -38,6 +69,11 @@ export function poolRefusalText(name: string, reason: string): string {
 export type PoolRegistrationPort = {
   openRegDialog(options: Obj): void;
   openPclm(): void;
+  /** 등록 데이터 「자세히…」 — 시트의 주인도 데이터 선택 컨트롤러다(등록 폼과 같은 근거).
+   *
+   *  `#poolDetailModal` 은 셸 레벨 overlay 하나이고, 그것을 여는 문이 두 곳(고르기 우 열·
+   *  다이얼로그)이다. 두 번째 구현을 세우면 시트의 동사 착지·메시지 채널이 갈린다. */
+  openDetail(key: string, trigger: HTMLElement | null): Promise<void>;
 };
 
 export type PoolVerbDeps = {

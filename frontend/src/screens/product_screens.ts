@@ -19,6 +19,7 @@ import { JobContentSelection } from "./job_content_selection.ts";
 import type { JobContentSelectionController } from "./job_content_selection.ts";
 import { JobArtifactSheet } from "./job_artifact.ts";
 import { JobResultZone } from "./job_result.ts";
+import { PoolDetailSheet } from "./pool_detail.ts";
 import {
   JobActionBar, JobDangerBanner, JobDelivery, JobOutFolderLine, JobPreflight, JobRunCap,
   JobTemplateChange, JobWorkbenchStatus,
@@ -210,6 +211,10 @@ export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
   /* 항목 상세 시트(U6-E #979) — 편집기 컨트롤러를 받되 읽는 것은 `tpl` 채널 스냅샷이다.
      화면 넷 중 편집기에서만 열리지만 overlay 라 target 은 셸 레벨에 선다. */
   TplDetailSheet,
+  /* 등록 데이터 상세 시트(고르기 열 공용 ④) — 좌 열 시트의 거울이고 골격도 같다
+     (`detail_sheet.ts`). 컨트롤러는 데이터 선택(등록 폼의 주인)이고 읽는 것은 `pool`
+     채널 스냅샷 한 존(`detail`)이다. 여는 문은 둘(고르기 우 열·다이얼로그)이다. */
+  PoolDetailSheet,
   SheetPickerDialog,
   JobArtifactSheet,
   /* 셸 설정 모달 — 화면 컨트롤러가 아니라 셸 서비스(Theme·Personalization·Modal)를 받는

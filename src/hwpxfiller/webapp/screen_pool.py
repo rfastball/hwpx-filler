@@ -52,8 +52,10 @@ from __future__ import annotations
 
 from ..application.dataset_pool import (
     BOUND_FIELDS,
+    DatasetDetail,
     DatasetPoolPort,
     DatasetPoolViewModel,
+    DatasetSourcePort,
     StaleConfirmError,
     available_actions,
     bound_state,
@@ -101,14 +103,19 @@ class PoolController:
         self,
         registry: DatasetPoolPort,
         push: PushSink,
+        *,
+        source_factory: "DatasetSourcePort | None" = None,
     ) -> None:
         self._push_sink = push
         # 레지스트리는 composition root(webapp.app)가 주입한다 — 자기 생성 폴백은 #570 에서
         # 제거됐다(locator 뒷문 금지: 기본값이 있으면 링2 가 구체 저장을 조용히 재선택한다).
-        self.vm = DatasetPoolViewModel(registry)
+        # 소스 복원기도 같은 자리에서 온다(고르기 열 공용 ④) — 「자세히…」의 열 목록만 쓴다.
+        self.vm = DatasetPoolViewModel(registry, source_factory=source_factory)
         # 마지막 결과 문구(등록·전이·삭제) — 성과별 심각도 채널(UD-07, tpl 미러).
         self.result_text = ""
         self.result_level = "muted"
+        # 검토한 항목의 상세 투영(U6-E 의 tpl 미러) — 시트가 열려 있지 않아도 값은 산다.
+        self._detail: "DatasetDetail | None" = None
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -263,6 +270,9 @@ class PoolController:
             "duplicates": self._duplicate_groups(),
             "pclm": self._pclm_block(),
             "result": {"text": self.result_text, "level": self.result_level},
+            # 항목 상세 시트의 재료 한 벌(고르기 열 공용 ④) — `review` 가 세우고 상태 동사가
+            # 다시 세운다. 좌 열(`tpl.detail`)과 **같은 자리·같은 수명**이다.
+            "detail": self.detail_snapshot(),
             # 고르기 우 열(슬라이스 ①) — 좌 열(`tpl` 채널)과 **같은 형**이다. 위의 옛 키들은
             # 웹이 이 존으로 옮겨 갈 때(슬라이스 ③)까지 그대로 산다.
             "column": pool_column_view(
@@ -273,6 +283,35 @@ class PoolController:
                 result={"text": self.result_text, "level": self.result_level},
             ),
         }
+
+    def detail_snapshot(self) -> "dict | None":
+        """검토한 등록 데이터의 상세 투영(없으면 ``None``) — 상세 시트가 이 값을 읽는다.
+
+        가리키는 항목이 목록에서 사라졌으면 스스로 걷는다(tpl 미러): 죽은 키를 겨눈 동사
+        버튼을 남기면 누를 때야 실패한다.
+        """
+        view = self._detail
+        if view is None:
+            return None
+        if all(row.key != view.key for row in self.vm.rows()):
+            self._detail = None
+            return None
+        return view.to_dict()  # 성형은 링1 소유
+
+    def _reproject_detail(self, key: str) -> None:
+        """항목을 바꾼 동사 뒤 — 열려 있는 상세가 **그 항목**이면 다시 세운다(tpl 미러).
+
+        **다른 항목이면 아무 일도 하지 않는다**: 지금 보고 있는 것과 무관한 변이가 시트를
+        갈아 끼우면 사람이 연 적 없는 항목이 눈앞에서 바뀐다. 재투영이 실패하면(그 사이
+        삭제됐다) 상세를 걷는다 — 옛 배지를 이고 선 시트를 남기지 않는다.
+        """
+        view = self._detail
+        if view is None or view.key != key:
+            return
+        try:
+            self._detail = self.vm.review(key)
+        except FileNotFoundError:
+            self._detail = None
 
     def initial(self) -> dict:
         return self.snapshot()
@@ -320,12 +359,40 @@ class PoolController:
         row = next((r for r in self.vm.rows() if r.key == key), None)
         return row.name if row is not None else key
 
+    # ---- 읽기 전용 검토(상세 시트의 재료)
+    def _do_review(self, p: dict) -> dict:
+        """등록 데이터 하나를 열어 **상세 투영**을 세운다(고르기 열 공용 ④ · tpl 미러).
+
+        검토는 「이 항목이 지금 어떤가」를 묻는 자리이고 답은 시트 한 장이다 — 배지·경로·
+        시트·헤더 행·메모·열 표·읽기 실패 사유. 재료가 이 한 왕복에서 서는 이유는 tpl 과
+        같다: 두 왕복으로 채우면 그 사이에 갈린 사실이 한 화면에 함께 설 수 있다.
+
+        **읽기 실패는 거절이 아니다**: 끊긴 참조·오타난 시트도 시트가 열려 사유를 말한다
+        (그 자리가 「다시 연결」 동사에 닿는 유일한 문이기도 하다). 거절은 **없는 키** 하나이고,
+        그때는 다른 stale 카드와 같은 문안으로 재진술하며 목록을 새로 읽는다.
+        """
+        key = str(p["key"])
+        name = self._row_name(key)
+        try:
+            detail = self.vm.review(key)
+        except FileNotFoundError:
+            self._detail = None
+            return self._stale_item_result(name)
+        self._detail = detail
+        self._set_result(
+            f"검토 {detail.name}: {detail.error}" if detail.error
+            else f"검토 {detail.name}: {detail.column_summary()}",
+            "danger" if detail.error else "ok",
+        )
+        return {"ok": True}
+
     def _do_archive(self, p: dict) -> dict:
         name = self._row_name(p["key"])
         try:
             self.vm.archive(p["key"])
         except FileNotFoundError:
             return self._stale_item_result(name)
+        self._reproject_detail(str(p["key"]))
         self._set_result(f"데이터셋을 보관했습니다: {name}")
         return {"ok": True}
 
@@ -335,6 +402,7 @@ class PoolController:
             self.vm.activate(p["key"])
         except FileNotFoundError:
             return self._stale_item_result(name)
+        self._reproject_detail(str(p["key"]))
         self._set_result(f"데이터셋을 활성화했습니다: {name}")
         return {"ok": True}
 
@@ -610,6 +678,7 @@ class PoolController:
             msg = f"등록 데이터 저장에 실패했습니다: {exc}"
             self._set_result(msg, "danger")
             return {"ok": False, "error": msg}
+        self._reproject_detail(str(key))
         self._set_result(
             f"참조를 다시 연결했습니다: {updated.name} ({reference_summary(updated)})"
         )

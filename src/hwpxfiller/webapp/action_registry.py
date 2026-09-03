@@ -263,6 +263,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # fail-closed 거절이다(고지 없는 삭제·덮어쓰기 봉쇄). 넷이 기제 하나를 공유한다.
     "pool": {
         "refresh": _schema(),
+        # 읽기 전용 검토 → **항목 상세 투영**(고르기 열 공용 ④). `tpl/review` 의 거울이고
+        # 좌표만 다르다(경로 ↔ 슬롯 키) — 시트 골격이 하나이므로 그것을 채우는 왕복도
+        # 화면마다 발명하지 않는다.
+        "review": _schema("key"),
         "archive": _schema("key"),
         "activate": _schema("key"),
         "delete": _schema("key", "confirm basis"),

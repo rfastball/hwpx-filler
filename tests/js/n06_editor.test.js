@@ -207,6 +207,7 @@ function harness(cfg) {
     poolRegistration: {
       openRegDialog: (options) => { trace.push(["poolReg.open", options]); },
       openPclm: () => { trace.push(["poolReg.pclm"]); },
+      openDetail: async (key) => { trace.push(["poolReg.detail", key]); },
     },
     notify: (message) => notices.push(String(message)),
   });
@@ -1817,7 +1818,7 @@ test("고를 수 없는 우 열 행의 클릭은 조용히 삼켜지지 않는�
     "고를 수 없는 행이 발신을 냈습니다");
 });
 
-test("우 열 ⋯ 는 링1 동사 뒤에 「폴더에서 보기」를 세운다(세션 행은 그 문 하나)", async () => {
+test("우 열 ⋯ 는 링1 동사 · 「폴더에서 보기」 · 「자세히…」 순이다(세션 행에는 그 문이 없다)", async () => {
   const h = harness({
     initial: async () => snap({
       data_path: "C:/d/7월목록.xlsx",
@@ -1830,12 +1831,15 @@ test("우 열 ⋯ 는 링1 동사 뒤에 「폴더에서 보기」를 세운다(
   const items = () => (h.controller.libContextMenu.model.getSnapshot() || {}).items || [];
 
   h.controller.toggleLibMenu("dat", "excel", "d1", {});
+  /* 「자세히…」는 **마지막**이다(좌 열과 같은 순서: 링1 동사 · 경로 문 · 상세). */
   assert.deepEqual(items().map((item) => item.action),
-    ["act:archive", "act:delete", "reveal"],
+    ["act:archive", "act:delete", "reveal", "detail"],
     "링1 동사 목록을 표면이 다시 지었습니다");
-  assert.deepEqual(items().map((item) => item.label), ["보관", "삭제", "폴더에서 보기"]);
+  assert.deepEqual(items().map((item) => item.label),
+    ["보관", "삭제", "폴더에서 보기", "자세히…"]);
 
-  /* 세션 행은 풀 항목이 아니라 상태 동사가 없다 — 남는 것은 경로 문 하나다. */
+  /* 세션 행은 풀 항목이 아니라 상태 동사가 없고, **검토할 항목도 없다** — 「자세히…」를
+     세우면 눌러도 답할 것이 없다(음성 대조). 남는 것은 경로 문 하나다. */
   h.controller.toggleLibMenu("dat", "excel", "session", {});
   assert.deepEqual(items().map((item) => item.action), ["reveal"]);
 
@@ -1858,6 +1862,74 @@ test("우 열 ⋯ 는 링1 동사 뒤에 「폴더에서 보기」를 세운다(
   h.controller.toggleLibMenu("dat", "excel", "d1", {});
   await h.controller.handleLibMenu("없는동사");
   assert.ok(h.notices.some((text) => text.includes("알 수 없는 데이터 동사")), h.notices);
+});
+
+test("우 열 「자세히…」는 상세 시트 포트로 위임한다(시트의 주인은 하나다)", async () => {
+  const h = harness({
+    initial: async () => snap({ pairing: pairing() }),
+    tpl: tplSnap(), pool: poolSnap(DAT_ROWS),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+
+  h.controller.toggleLibMenu("dat", "excel", "d1", {});
+  await h.controller.handleLibMenu("detail");
+
+  /* 이 화면은 시트를 **두 번째로 구현하지 않는다** — 등록 폼과 같은 근거로 포트 하나다. */
+  assert.deepEqual(h.trace.filter((row) => row[0] === "poolReg.detail"),
+    [["poolReg.detail", "d1"]]);
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool"), [],
+    "위임한 화면이 검토 왕복까지 스스로 냈습니다");
+});
+
+test("우 열 「다시 연결」 프리필은 `pool/review` 가 낸 상세를 읽는다(옛 목록 소비 0)", async () => {
+  const detail = {
+    key: "d2", name: "지난목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
+    badge_label: "활성", badge_level: "ok", path: "C:/d/지난목록.xlsx", sheet: "물품",
+    sheet_title: "물품", header_row: 2, note: "지난 분기", facts: [], column_count: 0,
+    column_summary: "열 목록을 읽지 못했습니다", columns: [],
+    actions: [{ key: "relink", label: "다시 연결…" }], error: "파일이 없습니다",
+  };
+  const h = harness({
+    initial: async () => snap({ pairing: pairing() }),
+    tpl: tplSnap(),
+    /* 옛 목록(`rows`)에는 **다른 값**을 심는다: 프리필이 그쪽을 곁눈질하면 여기서 갈린다. */
+    pool: poolSnap(DAT_ROWS, { detail }),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+
+  h.controller.toggleLibMenu("dat", "excel", "d2", {});
+  await h.controller.handleLibMenu("act:relink");
+
+  assert.deepEqual(
+    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool")
+      .map((row) => [row[2], row[3]]),
+    [["review", { key: "d2" }]],
+    "다시 연결 앞에 검토 왕복이 서지 않았습니다");
+  assert.deepEqual(h.trace.filter((row) => row[0] === "poolReg.open").map((row) => row[1]), [{
+    title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: "d2",
+    name: "지난목록", path: "C:/d/지난목록.xlsx", sheet: "물품", note: "지난 분기",
+  }]);
+});
+
+test("상세가 다른 항목을 가리키면 다시 연결 폼을 열지 않는다(겨눔 어긋남은 시끄럽게)", async () => {
+  const h = harness({
+    initial: async () => snap({ pairing: pairing() }),
+    tpl: tplSnap(),
+    pool: poolSnap(DAT_ROWS, { detail: { key: "다른키", name: "남의 등록" } }),
+    call: async () => ({}),
+  });
+  await h.controller.init();
+
+  h.controller.toggleLibMenu("dat", "excel", "d2", {});
+  await h.controller.handleLibMenu("act:relink");
+
+  assert.deepEqual(h.trace.filter((row) => row[0] === "poolReg.open"), [],
+    "남의 항목 값으로 다시 연결 폼이 열렸습니다");
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("데이터를 찾을 수 없습니다"), message);
 });
 
 test("우 열 존 통지의 동사는 `pool/resolve_duplicate` 로 나가고 미지 키는 시끄럽다", async () => {

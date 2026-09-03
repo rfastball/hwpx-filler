@@ -6,14 +6,14 @@ import type { ReactNode } from "react";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
 import { ContextMenu, createContextMenu } from "./context_menu.ts";
-import type { ContextMenuItem, ContextMenuPopoverPort } from "./context_menu.ts";
+import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { invokePathAction } from "./path_actions.ts";
 import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
-  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, poolRefusalText,
+  PCLM_UNAVAILABLE, POOL_GONE_FROM_LIST, createPoolVerbs, dataRowMenuItems, poolRefusalText,
 } from "./pool_verbs.ts";
 
 type Obj = Record<string, any>;
@@ -71,6 +71,12 @@ type PickerState = {
   loading: boolean;
   status: string;
   level: "" | "ok" | "danger";
+  /** 등록 데이터 상세 시트가 지금 화면을 덮고 있는가 — **동사 결과의 채널**이 이 사실로
+   *  갈린다(tpl 시트 리뷰 3 과 같은 근거): 시트가 스크림을 세우는 동안 이 면의 상태줄에
+   *  쓴 문장은 그 뒤에 그려진다. */
+  detailOpen: boolean;
+  /** 그 시트 안에 서는 실패 재진술(`#poolDetailMsg`). */
+  detailMessage: string;
 };
 
 /* 등록면은 종류를 **명시로** 든다(#937). `mode` 가 없으면 표면이 어느 좌표를 물어야 할지를
@@ -110,7 +116,10 @@ export function createDataPickerController(args: {
 }) {
   const { client, services, modal, notify } = args;
   const poolModel = args.runtime.model<Obj | null>("pool");
-  let state: PickerState = { session: null, loading: false, status: "", level: "" };
+  let state: PickerState = {
+    session: null, loading: false, status: "", level: "",
+    detailOpen: false, detailMessage: "",
+  };
   let reg: RegState | null = null;
   const listeners = new Set<Listener>();
   const regListeners = new Set<Listener>();
@@ -295,11 +304,13 @@ export function createDataPickerController(args: {
   const { poolAction, resolveDuplicate } = createPoolVerbs({
     dispatch,
     modal,
-    onError: (message: string) => { patch({ status: `⚠ ${message}`, level: "danger" }); },
+    onError: refuseVerb,
     onUse: (row: Obj) => mountPinned(row.key, row.name),
+    /* 프리필 재료는 **검토 왕복이 낸 상세 투영**이다(고르기 열 공용 ④) — 옛 `pool.rows`
+       곁눈질이 사라진 자리다. 키 이름도 그 투영 그대로(`path`·`sheet`·`note`)다. */
     openRelink: (row: Obj) => openRegDialog({
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
-      name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,
+      name: row.name, path: row.path, sheet: row.sheet, note: row.note,
     }),
     busyReason: () => (
       state.loading ? "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다." : ""
@@ -308,6 +319,14 @@ export function createDataPickerController(args: {
 
   function refuse(message: string): void {
     patch({ status: `⚠ ${message}`, level: "danger" });
+  }
+
+  /** 동사 실패의 착지 — 시트가 열려 있으면 **시트 안**, 아니면 이 면의 상태줄(tpl 미러).
+   *
+   *  같은 문장을 두 자리에 쓰지 않는다: 읽는 사람이 지금 보고 있는 면에 남긴다. */
+  function refuseVerb(message: string): void {
+    if (state.detailOpen) patch({ detailMessage: message });
+    else refuse(message);
   }
 
   /** 열 행 하나를 고름 — **클릭 하나가 1차 동사**다(③b: 종전의 행 안 「이 데이터 사용」 버튼).
@@ -334,65 +353,124 @@ export function createDataPickerController(args: {
      각자 든다. 항목 목록은 링1 동사 + 「폴더에서 보기」이고 이 파일이 동사를 발명하지 않는다. */
   const rowContextMenu = createContextMenu();
   let menuRow: Obj | null = null;
-
-  /** ⋯ 가 열 동사 — 편집기 우 열(`dataRowMenuItems`)과 **같은 규칙**이다: 링1 `actions`
-   *  다음에 경로가 있을 때만 「폴더에서 보기」. 세션 행은 상태 동사가 없어 그 하나만 선다. */
-  function rowMenuItems(row: Obj): ContextMenuItem[] {
-    const items: ContextMenuItem[] = ((row.actions || []) as Obj[]).map((action: Obj) =>
-      ({ action: `act:${String(action.key)}`, label: String(action.label) }));
-    if (row.path) items.push({ action: "reveal", label: "폴더에서 보기" });
-    return items;
-  }
+  /** 시트를 닫을 때 초점이 돌아갈 자리 — 메뉴를 연 그 ⋯ 다(초점이 문서 처음으로 튀지 않게). */
+  let menuTrigger: HTMLElement | null = null;
 
   function closeRowMenu(): void {
     menuRow = null;
+    menuTrigger = null;
     rowContextMenu.close();
   }
 
   function toggleRowMenu(row: Obj, trigger: HTMLElement): void {
     if (menuRow !== null && String(menuRow.key) === String(row.key)) { closeRowMenu(); return; }
-    const items = rowMenuItems(row);
+    /* 목록은 **공용 함수 하나**가 짓는다(고르기 열 공용 ④) — 고르기 우 열과 같은 행을
+       그리므로 그 ⋯ 도 같은 목록이어야 한다. 이 파일이 동사를 발명하지 않는다. */
+    const items = dataRowMenuItems(row);
     /* 빈 팝오버는 「눌렀는데 아무 일도 없다」라서 조용한 no-op 이다 — 열지 않는다. */
     if (items.length === 0) return;
     menuRow = row;
+    menuTrigger = trigger;
     rowContextMenu.open(trigger, items);
   }
 
   /** 행 동사 — **닫힌 집합**이다(모르는 키는 시끄럽게 거절한다).
    *
-   *  상태 동사의 몸통은 공용 `poolAction` 이고 그것이 받는 행은 **옛 `pool.rows` 의 것**이다:
-   *  「다시 연결」 프리필이 `locate_path`·`sheet`·`note` 를 요구하는데 공용 열 행은 그 셋을
-   *  들지 않는다(계약이 좁다 — 그 키를 얹으면 좌 열이 모르는 축이 열 형에 생긴다). 고르기
-   *  우 열도 같은 자리에서 같은 재료를 집는다. */
-  async function runRowVerb(action: string, row: Obj): Promise<void> {
+   *  프리필 재료를 **검토 왕복이 낸다**(고르기 열 공용 ④): 「다시 연결」은 `path`·`sheet`·
+   *  `note` 를 요구하는데 공용 열 행은 그 셋을 들지 않는다. 종전에는 옛 `pool.rows` 를
+   *  곁눈질했고, 그것이 같은 목록을 두 존으로 들던 마지막 자리였다. */
+  async function runRowVerb(
+    action: string, row: Obj, trigger: HTMLElement | null,
+  ): Promise<void> {
     if (action === "reveal") {
       await invokePathAction({
         client, path: String(row.path || ""), action: "reveal", notify,
       });
       return;
     }
+    const key = String(row.key || "");
+    if (action === "detail") { await openDetail(key, trigger); return; }
     if (!action.startsWith("act:")) {
       throw new Error(`알 수 없는 데이터 동사입니다: ${action}`);
     }
-    const legacy = ((poolModel.getSnapshot() || {}).rows || [] as Obj[])
-      .find((entry: Obj) => String(entry.key) === String(row.key));
-    if (legacy === undefined) {
-      refuse(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+    if (action === "act:relink") {
+      const detail = await reviewPoolItem(key);
+      if (detail === null) return;
+      await poolAction("relink", detail);
       return;
     }
-    await poolAction(action.slice(4), legacy);
+    await poolAction(action.slice(4), row);
   }
 
   async function handleRowMenu(action: string): Promise<void> {
     const row = menuRow;
+    const trigger = menuTrigger;
     if (row === null) return;
     closeRowMenu();
     try {
-      await runRowVerb(action, row);
+      await runRowVerb(action, row, trigger);
     } catch (error) {
       refuse(String((error as Obj)?.message || error));
     }
   }
+
+  /* ---- 등록 데이터 상세 시트(`#poolDetailModal` — 고르기 열 공용 ④) ----------------
+     시트의 주인이 이 컨트롤러인 이유는 등록 폼과 같다: overlay 는 셸 레벨 하나이고 그것을
+     여는 문이 둘(고르기 우 열·이 다이얼로그)이라, 두 번째 구현을 세우면 동사의 착지와
+     메시지 채널이 갈린다. 고르기 화면은 `PoolRegistrationPort` 로 이 문을 부른다. */
+
+  /** 검토 왕복 → 그 항목의 상세 투영(못 세우면 사유를 남기고 ``null``).
+   *
+   *  키 대조가 계약이다: 왕복 사이에 다른 push 가 끼면 스냅샷의 상세가 남의 항목일 수 있고,
+   *  그 값을 프리필로 쓰면 사람이 겨눈 적 없는 등록을 덮어쓴다. */
+  async function reviewPoolItem(key: string): Promise<Obj | null> {
+    await dispatch("pool", "review", { key });
+    const detail = ((poolModel.getSnapshot() || {}).detail || null) as Obj | null;
+    if (detail === null || String(detail.key) !== key) {
+      refuseVerb(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+      return null;
+    }
+    return detail;
+  }
+
+  /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(tpl 미러).
+   *
+   *  순서가 계약이다: 먼저 열면 지난 항목의 상세가 한 프레임 서 있다가 갈리고, 검토가
+   *  거절되면 빈 시트만 남는다. */
+  async function openDetail(key: string, trigger: HTMLElement | null): Promise<void> {
+    const detail = await reviewPoolItem(key);
+    if (detail === null) return;
+    patch({ detailOpen: true, detailMessage: "" });
+    modal.open("poolDetailModal", {
+      initialFocus: args.doc.getElementById("poolDetailClose"),
+      returnFocus: trigger || undefined,
+      beforeClose: () => {
+        patch({ detailOpen: false, detailMessage: "" });
+        return true;
+      },
+    });
+  }
+
+  /** 시트의 동사 줄 — 행 ⋯ 와 **같은 분기표**를 지난다(같은 상태 두 곳 판정 금지).
+   *
+   *  겨누는 것은 지금 시트가 그리는 상세다: 그 사이 항목이 사라졌으면 상세도 걷혔으므로
+   *  시트가 빈 면이 되고, 여기서는 사유를 남긴다(조용한 무동작 금지). */
+  async function handleDetailVerb(
+    action: string, trigger: HTMLElement | null,
+  ): Promise<void> {
+    const detail = ((poolModel.getSnapshot() || {}).detail || null) as Obj | null;
+    if (detail === null) {
+      refuseVerb(`데이터를 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
+      return;
+    }
+    try {
+      await runRowVerb(action, detail, trigger);
+    } catch (error) {
+      refuseVerb(String((error as Obj)?.message || error));
+    }
+  }
+
+  function closeDetail(): void { modal.close("poolDetailModal"); }
 
   /** 존 통지가 든 동사 — 지금은 중복 정리 하나다. **모르는 키는 시끄럽게 거절한다**:
    *  조용히 떨어뜨리면 Python 이 통지에 동사를 더한 날 「눌렀는데 아무 일도 없다」가 된다. */
@@ -461,6 +539,10 @@ export function createDataPickerController(args: {
     toggleRowMenu,
     closeRowMenu,
     handleRowMenu,
+    /* 등록 데이터 상세 시트 — 고르기 화면도 `PoolRegistrationPort` 로 이 셋을 부른다. */
+    openDetail,
+    closeDetail,
+    handleDetailVerb,
     popover: args.popover,
     openRegDialog,
     patchReg,

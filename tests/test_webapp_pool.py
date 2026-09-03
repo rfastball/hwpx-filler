@@ -1051,3 +1051,140 @@ def test_column_row_of_a_kind_without_its_own_icon_stands_as_other(tmp_path):
     row = ctrl.snapshot()["column"]["rows"][0]
     assert row["icon"] == "other"
     assert "작업 데이터로 연결할 수 없습니다" in row["reason"]
+
+
+# ------------------------------------------------- 항목 상세 시트(고르기 열 공용 ④)
+
+
+def _review_controller(tmp_path) -> "tuple[PoolController, DatasetPoolRegistry, list]":
+    """상세 투영까지 도는 컨트롤러 — 소스 복원기는 composition root 가 주는 함수 그대로다."""
+    from hwpxfiller.data.factory import source_from_pool_item
+
+    pushes: list = []
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    ctrl = PoolController(
+        reg, lambda s, snap: pushes.append((s, snap)), source_factory=source_from_pool_item
+    )
+    return ctrl, reg, pushes
+
+
+def _fixture_xlsx() -> str:
+    return str(Path(__file__).parent / "fixtures" / "multi_sheet.xlsx")
+
+
+def _pclm_db(path: Path) -> str:
+    import sqlite3
+
+    connection = sqlite3.connect(path)
+    connection.execute('CREATE TABLE 계약 ("계약번호" TEXT, "계약건명" TEXT);')
+    connection.execute('INSERT INTO 계약 VALUES ("R1", "육군 조달");')
+    connection.execute('CREATE VIEW "v_통합_v1" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(path)
+
+
+def test_review_publishes_the_detail_zone_and_a_result_line(tmp_path):
+    """검토 한 왕복이 상세 존을 세운다(tpl 미러) — 시트가 두 왕복으로 채워지지 않는다."""
+    ctrl, _, pushes = _review_controller(tmp_path)
+    ctrl.dispatch(
+        "register_excel",
+        {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "낙찰현황", "note": "분기"},
+    )
+    assert ctrl.snapshot()["detail"] is None  # 검토 전에는 볼 항목이 없다
+
+    key = ctrl.snapshot()["rows"][0]["key"]
+    assert ctrl.dispatch("review", {"key": key}) == {"ok": True}
+
+    detail = pushes[-1][1]["detail"]
+    assert detail["key"] == key and detail["name"] == "다중시트"
+    assert "업체명" in detail["columns"]
+    assert detail["column_count"] == len(detail["columns"])
+    assert detail["column_summary"] == f"열 {len(detail['columns'])}개"
+    assert detail["facts"] == ["종류 엑셀/CSV", "시트: 낙찰현황", "메모: 분기"]
+    # 동사 목록은 행 ⋯ 와 같은 값이다(같은 상태 두 곳 판정 금지).
+    assert [a["key"] for a in detail["actions"]] == ["relink", "archive", "delete"]
+    result = ctrl.snapshot()["result"]
+    assert result["level"] == "ok" and "검토 다중시트" in result["text"]
+
+
+def test_review_of_a_broken_reference_opens_the_sheet_with_the_reason(tmp_path):
+    """끊긴 참조도 시트가 선다 — 거절이 아니라 **사유를 단 상세**다(막다른 경보 금지)."""
+    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "사라진", "path": str(tmp_path / "없다.xlsx")})
+    key = ctrl.snapshot()["rows"][0]["key"]
+
+    assert ctrl.dispatch("review", {"key": key}) == {"ok": True}
+    detail = ctrl.snapshot()["detail"]
+    assert detail["error"] != "" and detail["columns"] == []
+    assert detail["column_summary"] == "열 목록을 읽지 못했습니다"
+    # 배지는 링1 이 낸 그대로이고 「다시 연결」 동사도 살아 있다(고칠 길이 그 자리에 있다).
+    assert detail["badge_label"] == "활성"
+    assert "relink" in [a["key"] for a in detail["actions"]]
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+def test_review_of_a_contract_list_titles_the_view(tmp_path):
+    """계약 목록 상세 — 시트 자리에 뷰가 서고 내부 이름은 표면 문안으로 새지 않는다."""
+    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl.dispatch(
+        "register_pclm",
+        {"name": "계약", "db": _pclm_db(tmp_path / "pclm.db"), "view": "v_통합_v1"},
+    )
+    key = ctrl.snapshot()["rows"][0]["key"]
+    ctrl.dispatch("review", {"key": key})
+
+    detail = ctrl.snapshot()["detail"]
+    assert detail["sheet"] == "v_통합_v1" and detail["sheet_title"] == "통합"
+    assert "시트: 통합" in detail["facts"]
+    assert detail["columns"] == ["계약번호", "계약건명"]
+
+
+def test_review_of_an_unknown_key_is_refused_and_the_list_is_reread(tmp_path):
+    """없는 키는 다른 stale 카드와 **같은 문안**으로 거절한다(조용한 무반응 금지)."""
+    ctrl, _, _ = _review_controller(tmp_path)
+    result = ctrl.dispatch("review", {"key": "없는키"})
+    assert result["ok"] is False and "찾을 수 없습니다" in result["error"]
+    assert ctrl.snapshot()["detail"] is None
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+def test_detail_is_dropped_when_its_item_leaves_the_list(tmp_path):
+    """겨눈 항목이 사라지면 상세도 걷는다 — 죽은 키를 겨눈 동사 버튼을 남기지 않는다."""
+    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "물품"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    ctrl.dispatch("review", {"key": key})
+    assert ctrl.snapshot()["detail"] is not None
+
+    first = ctrl.dispatch("delete", {"key": key})
+    ctrl.dispatch("delete", {"key": key, "confirm": True, "basis": first["basis"]})
+    assert ctrl.snapshot()["detail"] is None
+
+
+def test_state_verbs_reproject_the_open_detail(tmp_path):
+    """보관·활성화 뒤 열려 있는 상세는 **다시 선다** — 옛 배지를 이고 있지 않는다."""
+    ctrl, _, _ = _review_controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "다중시트", "path": _fixture_xlsx(), "sheet": "물품"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    ctrl.dispatch("review", {"key": key})
+
+    ctrl.dispatch("archive", {"key": key})
+    detail = ctrl.snapshot()["detail"]
+    assert detail["badge_label"] == "보관"
+    assert [a["key"] for a in detail["actions"]] == ["relink", "activate", "delete"]
+
+    # 다른 항목을 겨눈 변이는 이 시트를 갈아 끼우지 않는다(눈앞에서 바뀌는 항목 금지).
+    ctrl.dispatch("register_excel", {"name": "다른것", "path": str(tmp_path / "b.xlsx")})
+    other = next(r["key"] for r in ctrl.snapshot()["rows"] if r["name"] == "다른것")
+    ctrl.dispatch("archive", {"key": other})
+    assert ctrl.snapshot()["detail"]["key"] == key
+
+
+def test_review_without_a_source_factory_does_not_fake_an_empty_column_list(tmp_path):
+    """복원기 미주입 컨트롤러의 검토는 조용히 「열 0개」로 착지하지 않는다."""
+    ctrl, _, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "A", "path": _fixture_xlsx(), "sheet": "물품"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    with pytest.raises(RuntimeError, match="복원기"):
+        ctrl.dispatch("review", {"key": key})

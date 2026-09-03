@@ -421,13 +421,15 @@ function tplBase(overrides) {
  *  좌 열과 같은 이유로 공용 열 존(`column`)을 **유도한다**(고르기 열 공용 ③a): 우 열이
  *  그리는 것은 그 존이고 옛 목록 키(`rows`)는 관리 동사의 프리필 재료로 남아 있다. 두
  *  존을 따로 쓰면 실제로는 있을 수 없는 상태(목록에 있는 행이 열에는 없는)를 시험한다. */
-function poolBase(rows) {
+function poolBase(rows, extra) {
   const list = rows || [];
   return {
     rows: list, count: `${list.length}건`, empty: !list.length,
     corrupted: [], duplicates: [],
     pclm: { default_db: "C:/d/pclm.db", views: [], titles: {} },
     result: { text: "", level: "muted" },
+    /* 항목 상세 존(고르기 열 공용 ④) — 검토 전에는 `null` 이 정상이다. */
+    detail: (extra || {}).detail || null,
     column: {
       rows: list.map((row) => ({
         key: row.key, name: row.name, sub: row.reference || "",
@@ -2704,6 +2706,75 @@ export function createEditorWorkbenchDataProbes() {
               ctx.doc.body.dispatchEvent(
                 new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
               await settleRender(ctx);
+            }
+
+            /* ⑧ 우 열 행의 「자세히…」 → 등록 데이터 상세 시트(고르기 열 공용 ④). 좌 열
+               시트와 **같은 골격**(`detail_sheet.ts`)이라 좌표도 접두어만 다르다. 같은
+               창에 얹는 단계다(새 부팅 0) — 발신은 위 스텁이 계속 가로챈다.
+
+               상세를 **먼저 push** 하는 것이 실 경로의 재현이다: 실제 백엔드는 `review`
+               핸들러 안에서 스냅샷을 밀고 그 뒤에 왕복이 정산되므로, 웹이 상세를 읽을
+               때 값은 이미 서 있다. */
+            sent.length = 0;
+            ctx.push("pool", poolBase(
+              [datRow("d1", "7월목록"), datRow("d2", "지난목록", true)],
+              {
+                detail: {
+                  key: "d1", name: "7월목록", kind: "excel", kind_label: "엑셀/CSV",
+                  status: "active", badge_label: "활성", badge_level: "ok",
+                  path: "C:/d/7월목록.xlsx", sheet: "물품", sheet_title: "물품",
+                  header_row: 2, note: "분기 집계",
+                  facts: ["종류 엑셀/CSV", "시트: 물품", "헤더 2행", "메모: 분기 집계"],
+                  column_count: 3, column_summary: "열 3개",
+                  columns: ["공고명", "금액", "기관"],
+                  actions: [{ key: "archive", label: "보관" }],
+                  error: "",
+                },
+              },
+            ));
+            await settleRender(ctx);
+            ctx.doc.body.click();
+            const detailMore = host.querySelector(
+              '[data-act="lib-more"][data-side="dat"][data-key="d1"]');
+            detailMore.click();
+            await settleRender(ctx);
+            const detailItem = byId(ctx, "tplRowMenu")
+              .querySelector('button[data-context-menu-action="detail"]');
+            out.dat_detail_item_visible = !!detailItem && !isHidden(ctx, detailItem);
+            if (detailItem) {
+              detailItem.click();
+              await settleUntil(ctx, () => sent.length > 0);
+              out.dat_detail_dispatch = sent.map(([screen, action, payload]) => [
+                screen, action, payload.key,
+              ]);
+              await ctx.waitFor(
+                () => {
+                  const node = byId(ctx, "poolDetailModal");
+                  return !!node && !isHidden(ctx, node)
+                    && !!node.querySelector("#poolDetailColumns tbody tr");
+                },
+                { what: "등록 데이터 상세 시트 렌더(#poolDetailModal)", timeoutMs: 2000 },
+              );
+              const poolSheet = byId(ctx, "poolDetailModal");
+              out.pool_sheet_open = !!poolSheet && !isHidden(ctx, poolSheet);
+              out.pool_sheet_columns = poolSheet
+                .querySelectorAll("#poolDetailColumns tbody tr").length;
+              out.pool_sheet_column_names = Array.prototype.map.call(
+                poolSheet.querySelectorAll("#poolDetailColumns tbody .fname"),
+                (node) => String(node.textContent),
+              );
+              out.pool_sheet_summary = textOf(byId(ctx, "poolDetailColumnSummary"));
+              out.pool_sheet_facts = textOf(byId(ctx, "poolDetailFacts"));
+              /* 동사 줄은 행 ⋯ 와 같은 목록에서 「자세히…」만 걷은 것이다(좌 열과 같은 규율). */
+              out.pool_sheet_verbs = Array.prototype.map.call(
+                poolSheet.querySelectorAll("#poolDetailVerbs button"),
+                (button) => button.dataset.act,
+              );
+              service(ctx, "Modal").close("poolDetailModal");
+              settleModal(ctx, "poolDetailModal");
+              await settleRender(ctx);
+              const closedPoolSheet = byId(ctx, "poolDetailModal");
+              out.pool_sheet_closed = !closedPoolSheet || isHidden(ctx, closedPoolSheet);
             }
           } finally {
             stub.restore();

@@ -369,3 +369,100 @@ def test_empty_hint_speaks_only_while_the_pool_is_empty(tmp_path):
     assert vm.empty_hint() == "고정한 데이터가 없습니다."
     vm.register_excel("A", "/a.xlsx")
     assert vm.empty_hint() == ""
+
+
+# ---------------------------------------------------------------- 상세 투영(④)
+
+
+def _pclm_db(path) -> str:
+    """계약 목록이 내는 모양을 흉내 낸 DB — 표 하나 위에 계약면 뷰 하나(`test_data_pclm` 동형)."""
+    import sqlite3
+
+    connection = sqlite3.connect(path)
+    connection.execute('CREATE TABLE 계약 ("계약번호" TEXT, "계약건명" TEXT);')
+    connection.execute('INSERT INTO 계약 VALUES ("R1", "육군 조달");')
+    connection.execute('CREATE VIEW "v_통합_v1" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(path)
+
+
+def _review_vm(tmp_path):
+    """상세 투영까지 도는 VM — 소스 복원기는 composition root 가 주는 그 함수 그대로다."""
+    from hwpxfiller.data.factory import source_from_pool_item
+
+    return DatasetPoolViewModel(
+        DatasetPoolRegistry(tmp_path), source_factory=source_from_pool_item
+    )
+
+
+def test_review_reads_columns_and_restates_the_reference_facts(tmp_path):
+    """엑셀 참조 하나의 상세 — 열 목록·정체 줄·동사가 **한 번 연 결과**에서 나온다(④).
+
+    수치·문안은 이 투영이 새로 판정하지 않는다: 배지·동사는 목록 행과 같은 출처이고
+    시트 제목화는 링0 이다. 여기서 재는 것은 그 값들이 한 벌로 서는가다.
+    """
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
+    vm = _review_vm(tmp_path)
+    vm.register_excel("다중시트", str(fixture), sheet="낙찰현황", note="분기 집계")
+    key = vm.rows()[0].key
+
+    detail = vm.review(key)
+    assert detail.key == key and detail.name == "다중시트"
+    assert detail.error == ""
+    assert "업체명" in detail.columns
+    assert detail.column_summary() == f"열 {len(detail.columns)}개"
+    # 배지·동사는 목록 행과 **같은 값**이다(같은 상태 두 곳 판정 금지).
+    row = vm.rows()[0]
+    assert (detail.badge_label, detail.badge_level) == (row.badge_label, row.badge_level)
+    assert [a.key for a in detail.actions] == [a.key for a in row.actions()]
+    # 정체 줄 성분은 없는 것이 빠진다 — 헤더 행 0 은 어댑터 기본이라 말할 것이 없다.
+    assert detail.facts() == ["종류 엑셀/CSV", "시트: 낙찰현황", "메모: 분기 집계"]
+    assert detail.to_dict()["column_count"] == len(detail.columns)
+
+
+def test_review_of_a_broken_reference_is_a_reason_not_an_exception(tmp_path):
+    """읽기 실패는 **사유를 단 상세**다 — 그 자리가 「다시 연결」에 닿는 유일한 문이다."""
+    vm = _review_vm(tmp_path)
+    vm.register_excel("사라진", str(tmp_path / "없는파일.xlsx"))
+
+    detail = vm.review(vm.rows()[0].key)
+    assert detail.error != ""
+    assert detail.columns == ()
+    # 「0개」로 접지 않는다 — 못 읽은 것과 비어 있는 것은 다른 사건이다.
+    assert detail.column_summary() == "열 목록을 읽지 못했습니다"
+    # 배지는 그대로 링1 이 낸 것이고, 동사 목록도 살아 있다(막다른 경보 금지).
+    assert detail.badge_label == "활성"
+    assert "relink" in [a.key for a in detail.actions]
+
+
+def test_review_of_a_contract_list_titles_the_view_and_reads_its_columns(tmp_path):
+    """계약 목록 상세 — 시트 자리에 **뷰**가 서고 제목화는 링0 하나를 지난다."""
+    vm = _review_vm(tmp_path)
+    vm.register_pclm("계약 목록", _pclm_db(tmp_path / "pclm.db"), view="v_통합_v1")
+
+    detail = vm.review(vm.rows()[0].key)
+    assert detail.error == ""
+    assert detail.sheet == "v_통합_v1"          # 값·SELECT 는 실이름으로 간다
+    assert detail.sheet_title == "통합"          # 표면은 제목으로 말한다
+    assert "시트: 통합" in detail.facts()
+    assert list(detail.columns) == ["계약번호", "계약건명"]
+    # 계약 목록에는 참조 교체 동사가 없다(종류가 가르는 축) — 상세도 목록 행과 같다.
+    assert [a.key for a in detail.actions] == ["archive", "delete"]
+
+
+def test_review_of_an_unknown_key_is_loud(tmp_path):
+    """없는 키는 시끄럽다 — 빈 상세를 지어내면 그 행의 문은 눌러도 답이 없다."""
+    vm = _review_vm(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        vm.review("없는키")
+
+
+def test_review_without_a_source_factory_refuses_instead_of_faking_empty(tmp_path):
+    """복원기 미주입은 **거절**이다 — 빈 열 목록으로 조용히 착지하지 않는다."""
+    vm = _vm(tmp_path)
+    vm.register_excel("A", "/a.xlsx")
+    with pytest.raises(RuntimeError, match="복원기"):
+        vm.review(vm.rows()[0].key)

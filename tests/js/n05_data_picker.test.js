@@ -17,7 +17,8 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const SURFACE = [
   "init", "poolModel", "model", "regModel", "open", "close", "browseFile", "openPin",
   "openPclm", "choose", "refresh", "poolAction", "resolveDuplicate", "noticeAction",
-  "rowContextMenu", "toggleRowMenu", "closeRowMenu", "handleRowMenu", "popover",
+  "rowContextMenu", "toggleRowMenu", "closeRowMenu", "handleRowMenu",
+  "openDetail", "closeDetail", "handleDetailVerb", "popover",
   "openRegDialog", "patchReg", "closeReg", "browseRegPath", "submitReg", "client", "notify",
 ];
 
@@ -593,6 +594,112 @@ test("고름 표지는 작업 스냅샷이 정한다 — 풀 겨눔이면 그 �
   const pressed = markup.slice(markup.indexOf('aria-pressed="true"'));
   assert.ok(markup.includes('data-key="k1"') && pressed.includes("7월 공고목록"));
   assert.equal(markup.includes('id="dataPickerPin"'), false, "이미 고정된 참조에 고정 문이 섰습니다");
+  h.controller.close(); await result;
+});
+
+/* ── 등록 데이터 「자세히…」 — 시트의 주인은 이 컨트롤러다(고르기 열 공용 ④) ─────────── */
+
+/** 열 행 하나 + 그 항목의 상세 투영을 든 `pool` 스냅샷(실 백엔드 `screen_pool` 과 같은 모양). */
+function poolWithDetail(overrides) {
+  const detail = Object.assign({
+    key: "k1", name: "7월 공고목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
+    badge_label: "활성", badge_level: "ok", path: "C:/d/7월.xlsx", sheet: "물품",
+    sheet_title: "물품", header_row: 2, note: "분기 집계", column_count: 2,
+    facts: ["종류 엑셀/CSV", "시트: 물품", "헤더 2행", "메모: 분기 집계"],
+    column_summary: "열 2개", columns: ["공고명", "금액"],
+    actions: [{ key: "relink", label: "다시 연결…" }, { key: "archive", label: "보관" }],
+    error: "",
+  }, overrides || {});
+  return {
+    /* 옛 목록은 **비운다**: 이 면이 그쪽을 곁눈질하면 프리필·동사가 여기서 갈린다. */
+    rows: [], duplicates: [], corrupted: [], detail,
+    column: {
+      rows: [{
+        key: "k1", name: "7월 공고목록", sub: "파일: 7월.xlsx · 시트 물품", reason: "",
+        warns: [], badge_label: "활성", badge_level: "ok", icon: "excel", selectable: true,
+        path: "C:/d/7월.xlsx",
+        actions: [{ key: "relink", label: "다시 연결…" }, { key: "archive", label: "보관" }],
+      }],
+      notices: [], empty_hint: "", count_label: "1개", result: { text: "", level: "muted" },
+    },
+  };
+}
+
+test("행 ⋯ 는 공용 목록 하나다 — 링1 동사 · 「폴더에서 보기」 · 「자세히…」", async () => {
+  const h = build({ pool: poolWithDetail() });
+  const { result } = await opened(h);
+  const row = h.controller.poolModel.getSnapshot().column.rows[0];
+
+  h.controller.toggleRowMenu(row, { id: "more" });
+  const items = h.controller.rowContextMenu.model.getSnapshot().items;
+  assert.deepEqual(items.map((item) => item.action),
+    ["act:relink", "act:archive", "reveal", "detail"]);
+  assert.equal(items.at(-1).label, "자세히…");
+  h.controller.closeRowMenu();
+  h.controller.close(); await result;
+});
+
+test("「자세히…」 — 검토 왕복 뒤에 시트를 연다(순서가 계약)", async () => {
+  const h = build({ pool: poolWithDetail() });
+  const { result } = await opened(h);
+  h.dispatchCalls.length = 0;
+  h.modalCalls.length = 0;
+
+  await h.controller.openDetail("k1", null);
+
+  assert.deepEqual(h.dispatchCalls.map((row) => [row[0], row[1], row[2]]),
+    [["pool", "review", { key: "k1" }]]);
+  assert.deepEqual(h.modalCalls.map((row) => [row[0], row[1]]), [["open", "poolDetailModal"]]);
+  h.controller.close(); await result;
+});
+
+test("「자세히…」 — 상세가 남의 항목이면 시트를 열지 않고 사유를 남긴다", async () => {
+  const h = build({ pool: poolWithDetail({ key: "다른키" }) });
+  const { result } = await opened(h);
+  h.modalCalls.length = 0;
+
+  await h.controller.openDetail("k1", null);
+
+  assert.deepEqual(h.modalCalls, [], "남의 항목 상세 위에 시트가 섰습니다");
+  assert.ok(h.controller.model.getSnapshot().status.includes("데이터를 찾을 수 없습니다"));
+  h.controller.close(); await result;
+});
+
+test("다이얼로그 「다시 연결」 프리필도 상세 투영을 읽는다(옛 목록 소비 0)", async () => {
+  const h = build({ pool: poolWithDetail() });
+  const { result } = await opened(h);
+  const row = h.controller.poolModel.getSnapshot().column.rows[0];
+  h.dispatchCalls.length = 0;
+
+  h.controller.toggleRowMenu(row, { id: "more" });
+  await h.controller.handleRowMenu("act:relink");
+
+  assert.deepEqual(h.dispatchCalls.map((row) => [row[1], row[2]]),
+    [["review", { key: "k1" }]]);
+  const reg = h.controller.regModel.getSnapshot();
+  assert.deepEqual(
+    [reg.targetKey, reg.name, reg.path, reg.sheet, reg.note],
+    ["k1", "7월 공고목록", "C:/d/7월.xlsx", "물품", "분기 집계"]);
+  h.controller.close(); await result;
+});
+
+test("시트가 열려 있는 동안 동사 실패는 **시트 안**에 선다(스크림 뒤 채널 금지)", async () => {
+  const h = build({
+    pool: poolWithDetail(),
+    dispatch: async (_screen, action) => {
+      if (action === "archive") throw new Error("ARCHIVE_REFUSAL");
+      return {};
+    },
+  });
+  const { result } = await opened(h);
+  await h.controller.openDetail("k1", null);
+
+  await h.controller.handleDetailVerb("act:archive", null);
+
+  const state = h.controller.model.getSnapshot();
+  assert.ok(state.detailMessage.includes("ARCHIVE_REFUSAL"), state.detailMessage);
+  assert.equal(state.status.includes("ARCHIVE_REFUSAL"), false,
+    "같은 문장이 스크림 뒤 상태줄에도 섰습니다");
   h.controller.close(); await result;
 });
 
