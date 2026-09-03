@@ -861,7 +861,8 @@ def test_load_job_restores_edit_session(tmp_path):
     assert snap["editing_origin"] == "원본작업"
     assert snap["is_complete"] is True                   # 1 const + 9 blank 전부 확정 복원
     assert snap["rows"][0]["type"] == "const" and snap["rows"][0]["const"] == "v"
-    assert snap["notice"] and "편집합니다" in snap["notice"]["text"]
+    # 정상 복원은 **무음**이다(COPY_STYLE_GUIDE §1·§8): 이름·행수는 화면이 이미 그린다.
+    assert snap["notice"] is None
 
 
 def test_new_session_action_clears_edit_mode(tmp_path):
@@ -1402,7 +1403,8 @@ def test_a_job_without_a_binding_opens_quietly(tmp_path):
     """구판 작업(결속 없음)은 조용히 열린다(#932 U4-C S2-2) — 여기서 경보를 세우지 않는다.
 
     「데이터 연결 필요」는 저장 게이트의 문장이라 진입이 그것을 미리 말하면 같은 상태를
-    두 곳이 판정한다. 진입은 기존 통지 채널(복원 재진술)을 그대로 쓴다.
+    두 곳이 판정한다. 진입 통지는 **이탈에만** 선다(COPY_STYLE_GUIDE §1·§8) — 드리프트도
+    재읽기 실패도 없는 복원은 아무 줄도 세우지 않는다.
     """
     ctrl, _ = _controller(tmp_path)
     assert _save_named(ctrl, "구판작업")["ok"] is True
@@ -1417,8 +1419,7 @@ def test_a_job_without_a_binding_opens_quietly(tmp_path):
     ctrl.load_job("구판작업")
     snap = ctrl.snapshot()
     assert snap["data_path"] == "" and snap["record_count"] == 0
-    assert snap["notice"]["level"] == "ok"        # 드리프트 없는 복원은 그대로 ok
-    assert "다시 읽지 못했습니다" not in snap["notice"]["text"]
+    assert snap["notice"] is None                 # 드리프트 없는 복원은 무음이다
 
 
 def test_save_landing_restates_a_binding_that_cannot_be_reread(tmp_path):
@@ -2725,8 +2726,10 @@ def test_binding_confirm_pending_is_absent_for_an_ordinary_job(tmp_path) -> None
 
     snap = ctrl.snapshot()
     assert snap["binding_confirm"]["pending"] is False
-    # 라벨·설명은 대기 여부와 무관하게 늘 실린다(표면이 문안을 발명하지 않는다).
-    assert snap["binding_confirm"]["label"] and snap["binding_confirm"]["hint"]
+    # 라벨은 대기 여부와 무관하게 늘 실린다(표면이 문안을 발명하지 않는다).
+    assert snap["binding_confirm"]["label"]
+    # 설명 줄은 없다 — 전제 조건 낭독은 걷혔다(COPY_STYLE_GUIDE §8 낭독 패턴 1).
+    assert "hint" not in snap["binding_confirm"]
 
 
 def test_binding_confirm_pending_survives_a_clean_reentry_and_clears_on_confirm(

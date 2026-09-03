@@ -82,7 +82,6 @@ from ..gui.edit_session import (
     sections_for,
 )
 from ..gui.job_editor_state import (
-    BINDING_CONFIRM_HINT,
     BINDING_CONFIRM_LABEL,
     NAME_DERIVED_HINT,
     derive_job_name,
@@ -905,12 +904,12 @@ class EditorController:
             "output_folder": self._output_folder_zone(),
             # 연결 확정 대기(#911) — footer 무장 사유를 **더한다**(빼지 않는다). dirty 기반
             # 무장은 그대로고, 바꿀 것이 없는데 관리 검토가 확정을 기다리는 상태에서만 이
-            # 사실이 참이다. 판정·라벨·설명은 전부 여기서 실어 보낸다: 표면이 「저장 안 됨」
+            # 사실이 참이다. 판정·라벨은 전부 여기서 실어 보낸다: 표면이 「저장 안 됨」
             # 같은 인접 사실로 확정 필요를 추론하면 두 곳이 같은 상태를 다르게 답한다.
+            # (설명 줄 `hint` 는 걷혔다 — 전제 조건 낭독은 라벨과 blocker 사유가 진다.)
             "binding_confirm": {
                 "pending": self._binding_confirm_pending,
                 "label": BINDING_CONFIRM_LABEL,
-                "hint": BINDING_CONFIRM_HINT,
             },
             "unconfirm_undo_count": len(self._unconfirm_undo),
             # #26 편집 모드·프로파일 표면. (dataset_name·default_dataset 스냅샷 키는 #347
@@ -1810,7 +1809,7 @@ class EditorController:
         if not carried_data:
             self.source_fields = profile_source_vocabulary(job.mapping)
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
-        applied = self.model.apply_profile(job.mapping, require_source=carried_data)
+        self.model.apply_profile(job.mapping, require_source=carried_data)
         self._model_key = self._model_key_now()
         # 거래 상태 — base = **이 스냅샷**(§5.2 baseSnapshot). patch 는 여기서부터의 차이다.
         # 문맥의 대상은 늘 **지금 열려 있는 작업**이다: 초안이 저장으로 작업이 되는 전이에서
@@ -1846,31 +1845,31 @@ class EditorController:
             r.template_field for r in self.model.rows
             if not r.confirmed and r.template_field in saved_fields
         ]
-        # 사용자 어휘 재진술(F17) — "매핑 N행 복원" 같은 로그 어휘를 UI 로 내보내지 않는다.
-        notice = f"'{job.name}' 을(를) 편집합니다. 저장된 매핑 {applied}행을 불러왔습니다."
+        # 정상 경로는 무음이다(`docs/COPY_STYLE_GUIDE.md` §1·§8): 이름·복원 행수는 화면이
+        # 이미 그리므로 진입 자체를 낭독하지 않는다. 이 줄이 서는 자리는 **이탈**뿐이고,
+        # 사용자 어휘 재진술(F17)은 그 이탈 줄에 그대로 산다("매핑 N행 복원" 금지).
+        lines: list[str] = []
         if dropped:
-            notice += (
-                f"\n템플릿에 더는 없는 저장 필드 {len(dropped)}개는 제외했습니다: "
+            lines.append(
+                f"템플릿에 더는 없는 저장 필드 {len(dropped)}개는 제외했습니다: "
                 + ", ".join(dropped)
             )
         if fresh:
-            notice += (
-                f"\n템플릿에 새로 생긴 필드 {len(fresh)}개는 확정이 필요합니다: "
+            lines.append(
+                f"템플릿에 새로 생긴 필드 {len(fresh)}개는 확정이 필요합니다: "
                 + ", ".join(fresh)
             )
         if detached:
-            notice += (
-                f"\n불러온 데이터에 없는 열을 쓰던 필드 {len(detached)}개는 확정이 필요합니다: "
+            lines.append(
+                f"불러온 데이터에 없는 열을 쓰던 필드 {len(detached)}개는 확정이 필요합니다: "
                 + ", ".join(detached)
             )
         # 실패 사유는 값으로도 든다 — 저장 착지는 이 notice 를 자기 문안으로 덮으므로,
         # 값이 없으면 그 갈래에서 사유가 조용히 사라진다(#932 U4-C S2-1).
         self._reload_failure = handoff_failure
         if handoff_failure:
-            notice += f"\n연결된 데이터를 다시 읽지 못했습니다: {handoff_failure}"
-        self._set_notice(
-            notice, "warn" if (dropped or fresh or detached or handoff_failure) else "ok"
-        )
+            lines.append(f"연결된 데이터를 다시 읽지 못했습니다: {handoff_failure}")
+        self._set_notice("\n".join(lines), "warn" if lines else "ok")
         # 복원 직후 = 디스크 저장본과 동일(클린) — 손대기 전 전환·새 작업이 "저장하지 않은
         # 세션" 헛확인을 띄우지 않는다(리뷰). 내부의 load_template_path 가 표지를 껐으므로
         # 마지막에 켠다. 드리프트 경고(warn)가 있어도 내용 동일성은 참이다.
