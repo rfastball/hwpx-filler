@@ -1,0 +1,2895 @@
+# 사용자 문안 census. 생성: uv run python scripts/ui_copy_census.py --write
+# 검사: --check (tests/repo_contract/test_ui_copy_census.py 가 같은 것을 본다)
+# 규범: docs/COPY_STYLE_GUIDE.md §1·§2·§8. 새 문장은 기본 0 이고, 등재는 사유가 PR 에 서야 한다.
+
+[[sentence]]
+file = "frontend/js/bridge.js"
+text = "Python dispatch 거절 봉투가 손상되었습니다."
+
+[[sentence]]
+file = "frontend/js/undo_toast.js"
+text = "UndoToast: host 부재 — 되돌리기 어포던스 없이 재진술합니다."
+
+[[sentence]]
+file = "frontend/src/domain/canonical_execution_encoding.ts"
+text = "undefined 는 canonical 값이 아니다"
+
+[[sentence]]
+file = "frontend/src/overlay/engine.ts"
+text = "보유하지 않은 promise 다이얼로그 직렬화를 해제했습니다 — acquire/release 는 짝이어야 합니다."
+
+[[sentence]]
+file = "frontend/src/overlay/engine.ts"
+text = "이미 해제된 overlay 엔진 구독입니다 — 해제는 등록마다 정확히 1회여야 합니다."
+
+[[sentence]]
+file = "frontend/src/overlay/host.ts"
+text = "overlay host 골격에 #{} 가 없습니다 — 렌더 계약이 깨졌습니다."
+
+[[sentence]]
+file = "frontend/src/overlay/host.ts"
+text = "overlay host 골격이 마운트되지 않았습니다 — 렌더 계약이 깨졌습니다."
+
+[[sentence]]
+file = "frontend/src/overlay/host.ts"
+text = "확인 창 직렬화가 어긋났습니다 — 요청을 실행하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/overlay/instance.ts"
+text = "overlay 다이얼로그 host 가 이미 서 있습니다 — 두 번째 마운트는 두 번째 실행 경로입니다."
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = ".modal.hidden 전용이라 .hidden 토글이 조용한 no-op 이 됩니다. 거절합니다."
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = "다른 확인 창이 이미 열려 있습니다. 먼저 끝내세요."
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = "선택 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요."
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = "에 .modal 클래스가 없습니다 — 숨김 규칙은"
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요."
+
+[[sentence]]
+file = "frontend/src/overlay/modal.js"
+text = "확인 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요."
+
+[[sentence]]
+file = "frontend/src/push_port.js"
+text = "createPushPort: 기반 푸시가 함수가 아닙니다."
+
+[[sentence]]
+file = "frontend/src/react/boot.ts"
+text = "React root 컨테이너(#{})가 문서에 없습니다 — 마운트를 건너뛰지 않고 실패로 보고합니다."
+
+[[sentence]]
+file = "frontend/src/react/boot.ts"
+text = "React 요소 factory 가 늦은 결속 슬롯 밖에서 불렸습니다."
+
+[[sentence]]
+file = "frontend/src/react/boundary.ts"
+text = "화면 일부를 그리지 못했습니다 — 앱을 다시 시작해 주세요."
+
+[[sentence]]
+file = "frontend/src/react/root.ts"
+text = "React root 가 이미 커밋된 채 살아 있습니다 — unmount 정산 전의 재부팅은 두 번째 실행 경로입니다."
+
+[[sentence]]
+file = "frontend/src/react/root.ts"
+text = "정산할 React root 가 없습니다 — unmount 는 정확히 1회여야 합니다."
+
+[[sentence]]
+file = "frontend/src/runtime/adapter.ts"
+text = "Python dispatch 거절 봉투가 손상되었습니다."
+
+[[sentence]]
+file = "frontend/src/runtime/adapter.ts"
+text = "호스트(pywebview)가 없어 {} 를 부를 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/runtime/adapter.ts"
+text = "호스트에 {} 가 없습니다 — 계약(HOST_METHODS)과 호스트가 어긋났습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요."
+legacy = true
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "⚠ 불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "⚠ 불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "데이터 선택 창이 이미 열려 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "등록하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "시트 선택을 취소했습니다 — 데이터는 그대로입니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "시트를 고르세요"
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "이름과 파일 경로를 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "이름을 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "읽을 시트를 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "파일 선택 창에서 파일을 고르세요…"
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "job table segment 형식이 손상됐습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "{}: 객체가 아닙니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "데이터에 행이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "보기에서만 숨깁니다. 생성에는 그대로 쓰입니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "열 {}개 숨김 — 생성에는 그대로 쓰입니다"
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "표의 정렬 순서를 바꿉니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "'{}' 은(는) 고를 수 없습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "(값은 이월). 계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} ⟷ 데이터를 아직 고르지 않았습니다"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 덮어쓸까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 되돌릴까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 되돌릴까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 지금 변환할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 지울까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{} 확정했거나 직접 편집한 매핑 {}개가 전부 미확정으로 돌아갑니다"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "{}만 바뀌었습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "「문서 작업」에서 열었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "고른 데이터로 새 작업을 시작합니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "끌어다 놓아도 같은 결과입니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "데이터를 연결하지 않아 지금은 저장할 수 없습니다. '고르기' 단계에서 데이터를 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "데이터를 찾을 수 없습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "등록 데이터를 불러올 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "목록이 바뀌었습니다. 다시 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히…」를 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "생성 결과에서 열었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "생성 실패 결과에서 열었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "서식 폴더를 다시 읽습니다"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "서식 폴더를 아직 읽지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "실행을 막는 문제를 고치러 열었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "아직 정해지지 않았습니다"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "열을 고르거나 고정값·오늘 날짜·비워 둠을 고르세요"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "왼쪽과 오른쪽에서 하나씩 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "자동 제안을 다시 받을 행이 없습니다. 확정한 {}개는 그대로 둡니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "작업 이름을 입력하세요"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장하지 않은 템플릿 내용이 사라집니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장했습니다. '문서 만들기' 로 이동하지 못했습니다:"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "저장했습니다. 작업에 반영하려면 「변경사항 확인」 다음 「변경사항 적용」을 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "전 행을 확정해야 진행할 수 있습니다"
+legacy = true
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "직접 입력한 상수·유형·표시형도 함께 지워집니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "직접 편집한 매핑 {}개가 자동 제안으로 돌아갑니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "템플릿 상태를 확인할 수 없습니다. 진행할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "템플릿과 데이터를 하나씩 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "템플릿과 데이터를 하나씩 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "템플릿을 아직 고르지 않았습니다 ⟷ {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "템플릿을 찾을 수 없습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor.ts"
+text = "확정한 {}개는 그대로 둡니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_state.ts"
+text = "편집 field '{}' 가 스냅샷에 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_artifact.ts"
+text = "만들어진 문서를 다시 읽어 그린 내용입니다. 글꼴과 쪽 모양은 그리지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_artifact.ts"
+text = "문서를 확인하지 못했습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_artifact.ts"
+text = "없음. 문서 전체를 구조로 읽었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_artifact.ts"
+text = "이 문서에는 여기서 그리지 못한 구간이 있습니다({}). 실제 문서를 열어 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "'{}' 이름으로 보관했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "'{}' 이름의 프리셋이 이미 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "'{}' 이름의 프리셋이 이미 있어 저장하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "{}개를 적용했고 {}개는 현재 문서에 적용되지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "{}개를 적용했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "같은 이름이 이미 있습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "고른 내용이 없어 저장하지 않았습니다. 먼저 포함할 내용을 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "그 프리셋을 읽을 수 없어 적용하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "그 프리셋을 찾을 수 없습니다. 목록을 다시 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "다시 선택해야 하는 항목이 있습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "다시 선택해야 합니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "덮어쓰면 그 프리셋에 보관된 이전 선택은 사라지고 되돌릴 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "보관된 선택이 아직 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "선택이 필요한 항목이 있습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "선택이 필요합니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "선택할 수 있는 항목이 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "설정이 갱신되어 최신 내용을 다시 불러왔습니다"
+legacy = true
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "오류가 발생했습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이 문서 작업에는 선택할 내용이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이 항목은 현재 방식에서 선택할 수 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이름 입력 창을 열 수 없어 저장하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이름을 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이전에 고르신 항목 {}개가 이 템플릿에는 없습니다. 현재 문서에는 반영되지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이전에 이 항목에서 {}개를 고르셨습니다. 템플릿이 바뀌어 다시 확인이 필요합니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이전에 이 항목에서 고르신 것이 이 템플릿에는 없습니다. 다른 것을 골라 주세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "이전에 이 항목에서 고르신 것이 있으나, 이 템플릿에서는 선택할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "적용된 항목이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "지금 고른 내용을 어떤 이름으로 보관할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "파일이 손상돼 적용할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "프리셋을 저장하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_content_selection.ts"
+text = "프리셋을 적용하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "'{}' 작업은 템플릿 파일을 찾을 수 없어 바로 선택할 수 없습니다. 템플릿을 다시 연결하면 이어서 이 작업을 선택합니다. 실패하면 선택하지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "'{}' 작업의 템플릿 파일을 찾을 수 없어 문서를 만들 수 없습니다. 템플릿을 다시 연결하면 작업을 다시 불러옵니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobReadPort: 빈 작업 이름은 열 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobReadPort: 탐색 닫힘 뒤 흐름이 이미 예약돼 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobReadPort: 확인할 작업 이름이 비었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobRunPort: attach release는 정확히 한 번입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobRunPort: attach 전 full 전달입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobRunPort: attach 전 progress 전달입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "JobRunPort: run callback은 정확히 한 번 attach합니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "job snapshot: has_data/has_job 판정이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "{} 다시 읽을까요?"
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "{}: snapshot 객체가 아닙니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "「필드 연결」 탭에서 데이터를 고르고 저장하세요"
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "같은 파일을 디스크에서 다시 읽습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "검색으로 {}건이 목록에서 빠졌습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작업이 여기에 표시됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "데이터를 선택하세요"
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "쓸 작업을 이미 알고 있다면 「문서 작업」에서 고른 뒤 문서 만들기에서 사용을 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "이 데이터로 새 작업을 만들 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "이 데이터에 연결된 문서 작업이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "이 데이터에 연결된 작업이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "이름이 일치하는 작업이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "즐겨찾기를 바꾸지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "편집한 범위를 버릴까요?"
+
+[[sentence]]
+file = "frontend/src/screens/job_read.ts"
+text = "확인이 필요한 작업이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_relink.ts"
+text = "{} 계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/job_relink.ts"
+text = "다시 연결을 취소했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_relink.ts"
+text = "다시 연결하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_result.ts"
+text = "미착수 {}건 — 중단 요청 시점에 아직 시작하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_result.ts"
+text = "원인 진단 미연결 — 확인된 원인이 없어 받은 메시지를 그대로 보여줍니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_result.ts"
+text = "이 결과는 '{}' 실행입니다. 지금은 그 작업이 열려 있지 않아 여기서 이어서 손볼 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_result.ts"
+text = "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "JobRunPort: run callback은 정확히 한 번 attach합니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "{} 이 세션의 선택이 사라집니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "{}{} 나머지 {}건은 새 파일입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "{}건을 생성합니다. 이 중 {}건이 기존 파일을 덮어씁니다:"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "{}건의 데이터를 확인했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다)."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "문서 내용이 만든 직후와 다릅니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "문서 파일을 찾을 수 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "문서를 다시 열지 못했습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "문서를 확인하지 못했습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "문제 위치가 현재 표에 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "변경된 템플릿이 검사를 통과하지 못했습니다. 기존 템플릿이 계속 사용됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "변경사항을 적용했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "변경사항을 확인하는 중입니다…"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "변경사항을 확인하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "변경사항이 없습니다 — 지금 템플릿이 이미 적용된 상태입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "새 확인이 시작되어 이 결과는 대체되었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "새 확인이 시작되어 이 변경사항은 대체되었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "생성 예정 문서가 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "생성하지 않았습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "실행 응답에 상관 토큰이 없습니다(계약 위반) — 결과를 신뢰할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이 결과는 '{}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이 문서는 지금 결과에 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이 변경사항은 더 이상 적용할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이 변경사항은 더 이상 적용할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이 변경사항은 적용된 뒤 다른 적용이 이어졌습니다. 현재 상태로 다시 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "이미 적용되어 있는 변경사항입니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "작업대를 열지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "작업이 선택돼 있지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "저장을 취소했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "저장하지 못했습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "저장하지 못했습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "저장할 문서를 확인할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "적용할 수 있는 변경사항이 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. 어긋난 필드:"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "템플릿 상태를 확인해 주세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "템플릿을 수정하거나 다시 연결한 뒤 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. 남는 토큰:"
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "현재 데이터를 확인할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인 이후 작업 상태가 바뀌어 이 변경사항은 적용할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인 이후 작업 상태가 바뀌어 적용하지 못했습니다. 현재 상태로 다시 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인 중 오류가 났습니다. 다시 확인해 주세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인이 끝나기 전에 중단되었습니다. 다시 확인해 주세요."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인하는 동안 작업의 템플릿 상태가 바뀌었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인하는 동안 템플릿 연결이 바뀌었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인한 변경사항이 현재 작업에 적용되어 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run.ts"
+text = "확인할 데이터가 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "다른 실행의 토큰입니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "세션이 바뀌었습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "이미 종료된 실행입니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "이미 종료된 실행입니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "화면 세대가 바뀌었습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_run_state.ts"
+text = "활성 실행이 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/job_slot_config.ts"
+text = "configuration_token 이 없습니다 — 먼저 구성을 열어야 합니다"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "'{}' 연결을 편집기에서 확인합니다"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "'{}' 의 새 이름을 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "'{}' 작업의 현재 상태를 읽지 못해 중단했습니다. 목록을 새로 고친 뒤 다시 시도하세요."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "· 행을 누르면 편집기 '연결 확인' 으로 갑니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "「연결 확인」에서 이 행의 데이터 열을 확인하세요"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "「템플릿」 탭에서 다른 템플릿을 고르고 저장하세요"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "「필드 연결」 탭에서 다른 데이터를 고르고 저장하세요"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "「필드 연결」 탭에서 데이터를 고르고 저장하세요"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "데이터를 연결해야 문서를 만들 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "데이터를 연결해야 문서를 만들 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "보기·작업 방식·검색 중 하나가 목록을 비웠습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "손상된 등록 데이터 {}건이 있습니다. 「문서 만들기」의 [데이터 선택…]에서 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "왼쪽에서 작업을 고르면 상세가 열립니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "이 작업은 아직 「문서 만들기」가 받을 수 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "이름을 바꾸지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "작업 '{}' 을(를) 삭제했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "작업 '{}' 이(가) 문서 만들기 화면에 진행 중인 세션으로 열려 있습니다. 삭제하면 그 세션의 선택·데이터·진행이 함께 사라집니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "저장된 문서 작업을 찾고 상태를 확인합니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "저장된 작업이 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "저장된 작업이 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "조건에 맞는 작업이 없습니다"
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "즐겨찾기를 바꾸지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "템플릿과 매핑을 묶어 첫 작업을 만드세요. 데이터·행은 문서를 만들 때 고릅니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "템플릿을 읽지 못해 저장된 연결만 보여 줍니다."
+
+[[sentence]]
+file = "frontend/src/screens/library.ts"
+text = "템플릿이 연결되지 않은 작업 {}건이 있습니다. 「확인 필요」 보기에서 조치하세요."
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "{} 삭제할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "{} 정리할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "⚠ 같은 데이터({})를 가리키는 등록이 {}건입니다. 남길 등록을 골라 정리하세요:"
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요."
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "고정한 데이터가 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "아직 데이터가 없습니다. 아래에서 고르세요."
+
+[[sentence]]
+file = "frontend/src/screens/pool_list.ts"
+text = "앞선 요청이 아직 끝나지 않았습니다. 잠시 뒤 다시 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/ports.ts"
+text = "{}: 구현은 정확히 한 번만 결속할 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/ports.ts"
+text = "{}: 구현이 결속되지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/product_screen_executor.ts"
+text = "제품 화면 stage(main.stage)가 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/product_screens.ts"
+text = "데이터를 고르고, 그 데이터로 쓸 문서 작업을 실행합니다."
+
+[[sentence]]
+file = "frontend/src/screens/runtime.ts"
+text = "screen model subscribe가 초기화되지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/runtime.ts"
+text = "screen model 구독은 정확히 한 번 해제해야 합니다."
+
+[[sentence]]
+file = "frontend/src/screens/runtime.ts"
+text = "screen model 구독자가 함수가 아닙니다."
+
+[[sentence]]
+file = "frontend/src/screens/runtime.ts"
+text = "{}: 호스트 결과가 손상되었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/settings_sheet.ts"
+text = "문서를 만드는 중에는 서식 폴더를 바꿀 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/settings_sheet.ts"
+text = "문서를 만드는 중에는 저장 폴더를 바꿀 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/settings_sheet.ts"
+text = "아직 읽지 못했습니다 — 폴더를 선택하세요."
+
+[[sentence]]
+file = "frontend/src/screens/settings_sheet.ts"
+text = "아직 정해지지 않았습니다 — 폴더를 선택하세요."
+
+[[sentence]]
+file = "frontend/src/screens/sheet_picker.ts"
+text = "시트 선택 창이 이미 열려 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/sheet_picker.ts"
+text = "에 시트가 여러 개입니다. 채울 시트를 선택하세요."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "{} 확정-비움으로 선언한 항목은 여기 세지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "{}행을 복사했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "기본 규칙으로 저장할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "비우기로 확정한 값입니다. 복사 전 확인에서 제외됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "선택 당시 표시순서로 고정된 항목만 검토합니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "연속 공백을 전각으로 바꿔 복사합니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "이 글꼴에서는 연속 공백이 밀릴 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "이대로 복사할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "이름이 비슷한 열입니다"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "작업대를 나갈까요?"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "작업대를 나갈까요?"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "작업점이 그사이 바뀌어 복사하지 않았습니다. 카드를 확인하고 다시 복사하세요."
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "직접 입력한 값을 덮어쓸까요?"
+
+[[sentence]]
+file = "frontend/src/screens/workbench.ts"
+text = "확정하지 않은 편집이 있습니다"
+
+[[sentence]]
+file = "frontend/src/shell/app.ts"
+text = "master splitter 대상(.app)이 없습니다."
+
+[[sentence]]
+file = "frontend/src/shell/app.ts"
+text = "master splitter 대상(.app)이 없습니다."
+
+[[sentence]]
+file = "frontend/src/shell/app.ts"
+text = "그래도 종료할까요?"
+
+[[sentence]]
+file = "frontend/src/shell/nav.ts"
+text = "보유하지 않은 종료 확인 직렬화를 해제했습니다 — begin/end 는 짝이어야 합니다."
+
+[[sentence]]
+file = "frontend/src/shell/nav.ts"
+text = "셸 집행자가 결속되지 않았습니다 — bindExecutor 가 판정보다 먼저여야 합니다."
+
+[[sentence]]
+file = "frontend/src/shell/nav.ts"
+text = "셸 집행자가 이미 결속돼 있습니다 — 두 번째 구성은 두 번째 실행 경로입니다."
+
+[[sentence]]
+file = "frontend/src/shell/nav.ts"
+text = "이미 해제된 셸 구독입니다 — 해제는 등록마다 정확히 1회여야 합니다."
+
+[[sentence]]
+file = "frontend/src/shell/preferences.ts"
+text = "셸 개인화 대상(.app)이 없습니다."
+
+[[sentence]]
+file = "frontend/src/state/store.ts"
+text = "snapshot store 구독자가 함수가 아닙니다."
+
+[[sentence]]
+file = "frontend/src/state/store.ts"
+text = "이미 해제된 구독입니다 — 해제는 등록마다 정확히 1회여야 합니다."
+
+[[sentence]]
+file = "frontend/src/tutorial/panel.ts"
+text = "튜토리얼 초기 상태를 불러오지 못했습니다 — {}"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/filter_state.py"
+text = "'{}' 을(를) {}(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요({})."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/filter_state.py"
+text = "범위 값 {} 을(를) 해석할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/filter_state.py"
+text = "범위 값 {} 을(를) 해석할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/filter_state.py"
+text = "범위 조건의 둘째 절 형식이 잘못됐습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/filter_state.py"
+text = "범위 조건의 첫 절이 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "매핑을 아직 확정하지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "지원하지 않는 작업 방식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "태그는 {축: 값} 사전이어야 합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "태그의 축·값은 비어 있지 않은 문자열이어야 합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿 구조가 확정 매핑과 달라졌습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿 파일을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿에 확인할 항목이 남아 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿을 아직 연결하지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "템플릿을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/home_state.py"
+text = "파일명 패턴의 토큰을 채우지 못합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "'이름·저장' 단계에서 문서 파일 이름을 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "'이름·저장' 단계에서 작업 이름을 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "데이터를 연결해야 작업을 저장할 수 있습니다. '고르기' 단계에서 데이터를 고르세요."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "매핑이 현재 템플릿 스키마와 일치하지 않습니다. 템플릿을 다시 로드한 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "모든 매핑 행을 확정해야 작업을 저장할 수 있습니다."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "작업 '{}' 의 저장 위치에 기존 작업 파일이 있습니다(손상되어 어떤 작업인지 확인할 수 없습니다). 계속하면 그 파일을 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "작업 '{}' 이(가) 이미 있습니다. 계속하면 기존 작업을 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "작업 이름 '{}' 은(는) 기존 작업 '{}' 과(와) 같은 파일로 저장됩니다. 계속하면 작업 '{}' 을(를) 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "템플릿과 데이터 이름에서 미리 채웠습니다. 고쳐도 됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "파일명 패턴의 {} 에 채울 값이 없습니다. 매핑에서 그 항목을 연결하거나 패턴에서 지운 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/job_editor_state.py"
+text = "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/mapping_state.py"
+text = "구간 표기가 아직 변환되지 않았습니다. '템플릿' 탭에서 '누름틀·구간 변환'을 먼저 실행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/mapping_state.py"
+text = "열을 고르세요"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/mapping_state.py"
+text = "이 템플릿에는 누름틀 필드가 없어 진행할 수 없습니다. 한글에서 누름틀을 삽입하거나 누름틀 변환으로 토큰을 바꾼 템플릿을 쓰세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/mapping_state.py"
+text = "진행 차단: 값이 채워지지 않는 토큰 {}개가 남아 있습니다({}). [여기서 누름틀 변환]으로 누름틀로 바꾸거나, 비움을 확정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "경로를 찾을 수 없습니다. 저장 폴더가 이동·삭제되지 않았는지 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "누름틀 '{field}' 값 안에 인라인 요소({kinds})가 있습니다. 다른 값을 채우면 값과 함께 제거됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "누름틀 '{field}' 값 안의 인라인 요소({kinds})를 값과 함께 제거하고 채웠습니다. 형광펜 등 표식이 사라졌을 수 있으니 산출물을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "누름틀 '{field}' 자리 중 구조상 기입할 수 없는 곳이 있습니다. 그 자리는 채워지지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "누름틀 '{field}' 자리 중 구조상 기입할 수 없는 곳이 있어 건너뛰었습니다. 산출물에서 해당 자리를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "디스크 공간이 부족합니다. 공간을 비우거나 다른 저장 폴더를 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "빈 누름틀 '{field}' 에 값 자리를 새로 만들어 채웠습니다. 서식은 누름틀 주변 서식을 따릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "빈 누름틀 '{field}': 채울 때 값 자리를 새로 만듭니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "파일 접근이 거부됐습니다. 같은 이름의 문서가 다른 프로그램(한글 등)에 열려 있지 않은지, 폴더 쓰기 권한이 있는지 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/result_errors.py"
+text = "파일이 다른 프로그램(한글 등)에 열려 있습니다. 해당 문서를 닫은 뒤 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/review_state.py"
+text = "마지막 실행 이후 바뀐 규칙이 있습니다: {}. 결과 문서를 열어 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/review_state.py"
+text = "마지막 실행에 쓴 규칙을 확인할 수 없습니다. 결과 문서를 열어 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 문서 {}건. 저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "나라장터 취득 어댑터가 주입되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "먼저 데이터를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "먼저 데이터를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "생성할 문서를 최소 1건 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "생성할 문서를 최소 1건 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "이 작업의 필드 {}개 중 {}개가 문서에 있습니다. 이미 값이 있는 겹침 필드는 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "이 작업의 필드가 이 문서에 하나도 없습니다. 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "이어채울 기존 문서(.hwpx)를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "이어채울 기존 문서(.hwpx)를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "저장 폴더를 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "저장 폴더를 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "템플릿 경로가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해야 생성할 수 있습니다."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 수 있습니다:"
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/run_state.py"
+text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "'{}' 항목을 구간 표기로 되돌립니다. 되돌린 뒤: '{}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다. 한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "'{}' 항목을 지웁니다. 사라지는 것: 항목 범위의 본문{} 대상 파일: {}"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "구간 변환이 중단됐습니다 {}: 누름틀 {}개는 저장됐습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "구간 변환이 중단됐습니다 {}: 파일은 바뀌지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "누름틀 변환 {}: 변환 가능한 토큰이 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "누름틀·구간 변환을 해야 고를 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "미리보기 {}: 누름틀 값이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "변환 {}: 변환할 토큰과 구간이 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "변환할 수 없습니다 {}: 구간 표기를 고친 뒤 다시 시도하세요. {}"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "상태를 확인할 수 없어 고를 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "서식 폴더가 없습니다: {} 설정에서 서식 폴더를 다시 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "서식 폴더가 지정되지 않았습니다. 설정에서 서식 폴더를 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "채울 필드가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "표시할 템플릿이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/template_manager_state.py"
+text = "항목 {}개를 전부 구간 표기로 되돌립니다. 되돌린 뒤: '{}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다. 한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'계약목록_2.csv'로 데이터를 바꾸세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'계약안내_기안'으로 TXT 작업을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'공고서_연습' 행의 더보기에서 누름틀 변환을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'문서 만들기'에서 이번에 쓸 데이터를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'문서 작업'의 빈 목록에서 '예제로 시작하기'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'새 작업'에서 '계약체결안내'를 '이 템플릿으로' 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'오류연습_보증금' TXT 작업을 저장하며 비움 확정을 지나세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'이 작업으로 문서 생성'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "'포함할 내용'에서 항목의 갈래를 바꿔 생성하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "갈래를 바꾸자 그 절이 빠진 문서가 나왔습니다. 같은 서식에서 구성만 골라 다른 문서를 만드는 것이 구간의 쓰임입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "같은 데이터가 TXT 산출도 냅니다. TXT는 파일 대신 복사로 건넵니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "같은 작업으로 다시 생성하고 '덮어쓰고 생성'으로 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "거의 같은 서식이 여러 벌로 갈라져 있다면, 구간이 그것을 한 벌로 만듭니다. 고르지 않아도 됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "고른 행만 만듭니다. 선택은 데이터를 바꾸기 전까지 그대로 남습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "기본·응용·고급을 모두 마쳤습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "다시 볼 과정을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "당신의 서식을 가져와 같은 변환을 할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터 파일로 '계약목록.csv'를 고르고 필드마다 데이터 열을 확정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터가 바뀌어도, 산출이 여러 가지여도 리듬은 같습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터가 화면에 올라왔습니다. 다음 실행부터는 마지막 데이터가 자동으로 올라옵니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터를 그대로 둔 채 '구매추진안내'로 두 번째 작업을 만들어 생성하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터를 다시 고르지 않았습니다. 데이터는 작업이 아니라 화면이 들고 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터를 바꾸자 선택이 0건에서 다시 시작했습니다. 앞 데이터의 선택을 새 행에 물려주지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "데이터에 열 자체가 없는 항목은 저장할 때 한 번 비움을 확정합니다. 값이 빈 것과 열이 없는 것은 확인받는 자리가 다릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "만들 이름과 값을 확인하고 '이 이름과 값으로 승인'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "모든 단계를 마쳤습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "변환된 템플릿으로 작업을 만들고, '변경사항 확인'으로 '포함할 내용'을 세운 뒤 검토를 확정하고 생성하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "변환의 출구가 첫 티어의 입구였고, 이 템플릿의 첫 작업은 확인을 몇 걸음 더 물었습니다. 이제 당신의 서식 파일을 '가져오기…'로 들여와 같은 변환을 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "복사가 곧 완료 표시입니다. 남은 행은 목록이 계속 셉니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "빈 값이 있는 행을 선택하고 지목된 '납품조건'을 확인한 뒤 다시 승인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "서식이 갈라질 이유가 갈래로 접힙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "승인이 생성을 열었습니다. 무엇이 어떤 이름으로 나가는지 먼저 보고 확정합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "심화까지 다 걸었습니다. 지난 걸음은 언제든 다시 볼 수 있고, 튜토리얼을 닫아도 지금까지의 기록은 남습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "연결한 데이터를 그대로 두고 산출을 늘려 봅니다. 데이터 교체도 여기서 만납니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "예제 서식과 데이터가 들어왔습니다. 연습용 환경이 아니라 평소 쓰는 화면 그대로입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "예제 서식과 데이터로 첫 문서를 만듭니다. 15분이면 충분합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "예제 설치부터 작업 저장까지는 안내만 다시 볼 수 있습니다. 이미 만든 작업은 그대로 남아 있어, 같은 걸음을 다시 걸으면 두 번째 작업이 생깁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "예제로 배울 것은 여기까지입니다. 선택 과정인 심화가 남아 있고, 지난 걸음은 언제든 다시 볼 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "이 작업으로 언제든 다시 만들 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "이번 실행에 빈 값이 있어 승인이 다시 섰습니다. 빈 값은 빈칸으로 새지 않고 {} 표식으로 남습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "이번에는 승인을 묻지 않았습니다. 규칙 승인은 작업당 한 번이고, 같은 이름의 파일만 덮기 전에 확인을 받습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "작업 이름과 파일명 규칙을 정하고 '작업 저장'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "작업 카드를 고르고 '전체 선택'으로 만들 행을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "작업대에서 행을 넘기며 '복사'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "정의는 한 번입니다. 이제 데이터만 바꿔 몇 번이든 다시 만듭니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "직접 쓴 서식을 템플릿으로 바꿉니다. 이 앱을 당신의 문서에 쓰는 길입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "첫 문서가 만들어졌습니다. 같은 작업으로 한 바퀴 더 돌면 리듬이 손에 붙습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "타이핑한 서식이 템플릿이 됐습니다. 필드 토큰과 구간 표기를 함께 지났습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "템플릿의 필드가 그대로 올라왔습니다. 다음은 필드마다 데이터 열을 지정합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/tutorial_state.py"
+text = "헤더 이름이 필드와 같아 자동으로 제안됐습니다. 확정은 검토를 대신하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "데이터 파일을 먼저 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "데이터 파일을 먼저 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "문서 작업을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "선택한 항목을 작업대에서 검토하고 복사합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "이 데이터에 연결된 문서 작업이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. 템플릿을 다시 연결한 뒤 진행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "처리할 항목을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "처리할 항목을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/gui/work_candidates.py"
+text = "템플릿 파일을 찾을 수 없습니다. 템플릿을 다시 연결한 뒤 진행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "'{}' 화면은 클립보드 복사 거래를 소유하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "ERROR: '{}' 시트를 찾을 수 없습니다. 시트를 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "WebView2 selftest {}: 전체 예산 안에 종료되지 않았습니다 [예산 {}s · {} · evidence={}]"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "새 작업을 시작하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "이 문서는 지금 세션의 생성 결과에 없습니다. 문서를 다시 만든 뒤에 저장할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "저장된 창 위치가 현재 화면 밖이라 기본 위치로 복원합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "편집기를 여세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "호출 화면 이름이 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/blocker_affordance.py"
+text = "「변경사항 확인」이 이 요구를 지운다(적용은 그 다음 동사라 여기 아니다)."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/blocker_affordance.py"
+text = "런타임이 이 실행을 받지 못하는 상태 — 사용자 행동으로 바뀌지 않는다. POLICY_BLOCKED 와 같은 이유로 알림 설계이고, 사유는 「현재 환경에서는 문서를 만들 수 없습니다」다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/blocker_affordance.py"
+text = "이름 충돌은 U4 계열2-27 이후 blocker 가 아니다(기본이 덮어쓰기이고 파괴 확인은 생성 호출의 `needs_overwrite` 왕복이 진다 — #957). 그래서 이 자리에 남는 원인은 「그 이름이 덮어쓸 수 없는 물건(폴더·바로가기)에 걸렸다」이고, 그것을 지우는 동사는 저장 폴더를 바꾸는 것이다 — 네이티브 피커라 직접 브리지 경로다. **그 동사는 작업 화면에 없다**: 저장 폴더의 작업 세션별 지정이 폐지되면서 고르는 자리가 전역 설정 모달의 저장 폴더 행 하나로 접혔고, 그래서 좌표가 `#jobManagedPickFolder` 에서 `#settingsPickFolder` 로 옮겼다(브리지 메서드는 그대로다 — 이사한 것은 자리이지 동사가 아니다). 화면 쪽 착지는 `#jobOpenFolderSettings`(「저장 폴더 설정 열기…」)가 지는데, 그것은 문일 뿐 복구 동사가 아니라 여기 실리지 않는다 — blocker 를 지우는 것은 폴더를 실제로 바꾸는 쪽이다. 파일 이름 규칙 자체의 미해소는 저장 시점 게이트(U4 계열4-4 `validate_save`)가 앱 안에서 만들어지는 것을 막고, 앱 밖에서 편집된 작업이 그것을 들고 오면 사유를 `#jobDeliveryBlockers` 가 병기한다. 종전 좌표 `#jobRefreshDelivery` 는 「목록 새로 확인」이었는데, 그 동사는 충돌 갈래에서만 참이었고 나머지 원인에는 아무 일도 하지 않았다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/blocker_affordance.py"
+text = "자동 확인이 진행 중이라 누를 것이 없다. 숨기지 않고 비활성 + 사유(「설정을 확인하고 있습니다」)로 서고, 링1 의 `resolve_execution_disabled_reason` 이 그 사유의 단일 출처다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/blocker_affordance.py"
+text = "정책이 거절한 상태라 사용자가 지금 지울 수단이 없다. 동사를 세우면 누를 수 있다는 거짓을 말하게 된다 — 그 자리는 생성 버튼의 사유 병기(「정책상 지금은 문서를 만들 수 없습니다」)가 맡는다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "'{}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "(검색 일부 조건은 열이 사라져 복원하지 못했습니다)"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "데이터를 먼저 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "데이터를 먼저 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "재적용할 직전 필터가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "펼친 화면은 전체 열을 보여줍니다 — 열 숨기기는 인라인 표에서 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "필터를 지운 뒤에 재적용할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/job_list.py"
+text = "· 확인 시점 {}건과 다릅니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "host_wait_grace_s 는 0 이상의 유한한 수여야 합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "드라이버 서명을 읽을 수 없습니다({}) — 계약을 확인할 수 없는 것은 통과시키지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "드라이버가 *args 를 받습니다: {}{} — 위치 인자 튜플 관용의 재발입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "드라이버가 필수 키워드 인자를 요구합니다: {} — 봉투는 하나입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "실행 이름이 비어 있습니다 — 증거가 무엇의 것인지 잃습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/live_run.py"
+text = "컨텍스트에 종결자가 없습니다 — 증거도 종료도 잃습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/mapping_verbs.py"
+text = "{{{}}} 에 직접 입력한 값 '{}'은 '{}' 열의 값으로 바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 은 누름틀이 없는 원본(RAW)입니다. 목록의 행 ⋮ → '{}'을 거친 뒤 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 은(는) 파일 참조가 아니라 연결할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 을 가져왔지만 읽을 수 없습니다(UTF-8 아님). 목록의 행 ⋮ → '자세히…'에서 사유를 보거나 '폴더에서 보기'로 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 을 가져왔지만 읽을 수 없습니다. 목록의 행 ⋮ → '자세히…'에서 사유를 보거나 '폴더에서 보기'로 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 을 라이브러리로 복사해 시작합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "「{}」 에서 바꾼 것만 되돌렸습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "「{}」 에서 바꾼 것을 되돌리지 못해 이동할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "「{}」 조건을 아직 채우지 못해 다음으로 갈 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "고른 데이터도 함께 내려놨습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "데이터도 이 작업에 연결된 것으로 되돌렸습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "등록 데이터 목록을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "바꾼 내용을 버리고 저장된 상태로 되돌렸습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "서식 폴더 밖의 템플릿이라 항목 상세를 열 수 없습니다. 설정에서 서식 폴더를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "아직 저장하지 않은 새 작업이라 되돌릴 이전 상태가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "오른쪽에서 데이터를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "왼쪽에서 템플릿을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "이 작업에는 '{}' 탭이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "이 작업에는 '{}' 탭이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "이 템플릿은 아직 진행할 수 없습니다. 미해결 토큰을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "작성 당시와 템플릿 필드 구성이 다릅니다. 매핑 재검토가 필요할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "작업 '{}' 을(를) 저장했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "작업 '{}' 을(를) 저장했습니다. 연결된 데이터를 다시 읽지 못했습니다: {}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "작업 '{}' 파일이 편집을 여는 사이 손상돼 현재 내용을 확인할 수 없습니다. 지금 저장하면 그 자리를 이 편집 세션의 상태로 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "작업 이름 '{}' 은(는) 이미 '{}' 작업입니다. 형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 기존 작업을 삭제한 뒤 다시 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "제안을 모두 확인했습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿 라이브러리 관문이 배선되지 않아 경로를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿 라이브러리 관문이 배선되지 않아 항목 상세를 열 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿 상태를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿 상태를 확인할 수 없어 편집을 열 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿 파일을 찾을 수 없습니다: {} 파일을 되돌리거나, 홈/작업 화면의 [템플릿 다시 연결…]로 경로를 바꾸세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 확정했거나 직접 편집한 {}개 행의 소스·유형·서식은 이월했지만, 저장하려면 전 행을 다시 확정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "템플릿이 로드되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "편집 중 외부 변경: 작업 '{}' 이 이 편집 세션을 여는 사이 다른 곳에서 바뀌었습니다. 지금 저장하면 그 변경 내용을 이 편집 세션의 상태로 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "편집 중인 템플릿 파일이 바뀌어 세션을 다시 읽었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "편집 중인 템플릿 파일이 바뀌어 채울 항목이 없어졌습니다. 되돌리거나 다른 템플릿을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "편집 중인 템플릿이 삭제됐습니다. 되돌리거나 다른 템플릿을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "확인할 제안이 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "확인할 항목이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_editor.py"
+text = "확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "'{name}' 작업에는 연결된 데이터가 없습니다. 데이터를 고른 뒤 편집기에서 저장하면 다음부터 이 작업과 함께 열립니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "'{}' 작업을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "'{}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "'{}' 작업이 이미 열려 있어 '{}' 으로 바꾸지 않았습니다. {}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "'문서 작업'에서 직접 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "TXT 검토·복사 작업이 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "TXT 검토·복사 작업이 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "{} 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "{}행 {} 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "「문서 작업」에서 고른 '{}' 은(는) 이 데이터와 구조가 맞지 않습니다. 필요한 열을 갖춘 데이터를 고르거나 편집기에서 연결을 고치세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "「문서 작업」에서 고른 '{}' 작업을 다시 확인할 수 없습니다. 아래 후보에서 문서 작업을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "「문서 작업」에서 고른 '{}' 작업이 더는 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "값 형식이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "검증 완료. 생성할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "겨눌 작업 이름이 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "다시 읽을 데이터가 없습니다. 데이터를 먼저 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터 문제를 사용자 문안으로 표시할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터 항목 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터가 다시 불러와져 선택한 값을 함께 확인할 수 없습니다. 다시 시도해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. 지금 데이터에서 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 다시 읽으면 지금 고른 {count}건의 선택과 필터 초안이 초기화됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 다시 읽지 못했습니다. {reason}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 먼저 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 바꾸세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 바꾸세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "데이터를 바꾸세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 데이터 문제를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 문서 작업을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 작업을 선택하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 작업을 선택하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 작업을 선택하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "먼저 작업을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 구성 기능이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 {}."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 {}."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 {}."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문서를 만들지 못했습니다. 대상 {}건이 모두 생성되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 데이터의 원본 항목을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 데이터의 필드를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 데이터의 항목 위치를 복원할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 위치 정보가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 항목이 숨겨져 있습니다. 열을 다시 표시한 뒤 이동해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "문제 행이 현재 검색 결과에 없습니다. 검색 조건을 해제해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "범위 편집기가 열려 있지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "범위 편집기를 닫은 뒤에 실패분을 선택할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "범위 편집을 먼저 적용하거나 취소한 뒤 작업대를 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "범위를 편집하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "빈 값 {}칸이 있습니다. 문서에는 미입력 표식이 들어갑니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. 문서 만들기를 다시 실행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "생성 예정 문서 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "생성을 중단했습니다 · {}개 완료"
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "생성을 진행할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "생성할 데이터를 먼저 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "선택한 데이터 위치를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "실행 준비가 현재 확인 상태와 달라 생성하지 않았습니다. 변경사항을 다시 확인해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "실행 확인 기능이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "완료. 성공 {}/{}, 실패 1. 문서는 만들었지만 만든 뒤 다시 읽어 확인하는 데 실패했습니다({}). 해당 파일을 직접 열어 내용을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "완료. 성공 {}/{}, 실패 1. 미착수 {}건 — 앉은 문서는 그대로 유지됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 값을 문서 내용으로 해석할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 문서는 지금 세션의 생성 결과에 없습니다. 문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 작업에 연결된 데이터 '{label}' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {path}. 데이터를 다시 고른 뒤 작업을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 작업에 연결된 데이터를 불러오지 못했습니다. {reason}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이 항목에 연결한 데이터 열이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이미 문서를 생성하고 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이전 문서 작업은 다른 데이터에 연결돼 있어 선택을 해제했습니다. 아래 후보를 선택하거나 「문서 작업」에서 그 작업을 여세요.{}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이전 문서 작업을 다시 확인할 수 없어 선택을 해제했습니다. 문서 작업을 다시 선택하세요.{}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이전 문서 작업이 같은 작업인지 확인할 수 없어 선택을 해제했습니다. 문서 작업을 다시 선택하세요.{}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "이전에 고른 '{}' 작업을 이 데이터로 쓸 수 있습니다. {}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "작업대 Observation 기능이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "작업대 컨트롤러가 배선되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "작업대를 여세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "작업을 전환하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "저장 폴더는 전체 경로여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "저장 폴더를 만들 수 없습니다. 다른 폴더를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "저장 폴더를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "저장된 TXT 작업이 아직 없습니다. '문서 작업'의 [＋ 새 작업] 템플릿 탭에서 TXT 템플릿을 골라 작업으로 저장하면 여기 후보로 서고, 검토·복사 작업대로 이어집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "적용하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "중단했습니다. 시도 {}/{}건 — 안착 전이라 문서는 만들지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "중단했습니다. 완료 {}/{}건(성공 {}, 실패 {}), 미착수 {}건. 완료된 문서는 그대로 유지됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "지난번에 사용한 데이터 파일을 찾을 수 없습니다: {path}. 데이터를 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "지난번에 사용한 데이터를 다시 불러오지 못했습니다. {reason}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿 변경 기능이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿 변경 기능이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿 변경사항을 적용하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿을 다시 연결하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿을 다시 연결했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니 데이터와 저장 폴더 선택을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿을 읽을 수 없습니다: {}. 템플릿을 다시 연결한 뒤 진행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "파일 이름 규칙이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "파일 이름에 사용할 값을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "포함할 내용을 바꾸세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "포함할 내용을 불러오지 못했습니다. 다시 불러오세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "프리셋을 적용하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "필요한 준비를 먼저 완료해 주세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "필요한 준비를 먼저 완료해 주세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 데이터 확인 결과가 없습니다. 다시 확인해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 설정을 먼저 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 실행 맥락을 복원하지 못했습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 파일 이름에 사용할 항목 연결을 복원할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 환경에서는 문서를 만들 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "현재 환경에서는 문서를 만들 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "확인 중 데이터나 작업 설정이 바뀌었습니다. 다시 시도해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "데이터를 연결해야 첫 행을 채울 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "복원할 최근 작업이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "손상된 작업 파일을 삭제합니다(복구 불가): {} 내용을 확인하려면 먼저 '폴더 열기'로 살펴보세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "지원하지 않는 작업 방식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "템플릿을 다시 연결했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_library.py"
+text = "템플릿을 연결해야 문서를 만들 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "'{}' 의 참조를 새 파일로 바꿉니다. 기존: {} 새 파일: {}{}{}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "{} 참조라 작업 데이터로 연결할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "같은 데이터({})를 가리키는 등록 {}건을 '{}' 하나로 합칩니다. 삭제되는 등록: {} — 그 이름·메모는 사라집니다(원본 파일은 지우지 않습니다)."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "등록 데이터 참조를 삭제합니다(원본 파일은 지우지 않습니다): {} ({})"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {}. 목록을 새로 읽었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "새 파일 경로가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "이름도 '{}' → '{}' 으로 바뀝니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "중복 등록 {}건을 정리하고 '{}' 을(를) 남겼습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "확인하는 사이 이 데이터의 등록 상태가 바뀌어 실행하지 않았습니다. 목록을 새로 읽었으니 다시 확인해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "'{}' 을 라이브러리로 가져왔습니다{}. '그룹 없음'에서 시작합니다."
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "HWPX 라이브러리 루트가 정해져 있지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "대상 항목 id 가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "로 넣었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "서식 폴더 경로가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "설치된 예제가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "설치된 예제가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "예제 템플릿 {}건과 데이터 {}건을 걷고 고정 {}건을 해제했습니다. 되돌리려면 다시 설치하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "예제 템플릿 {}건을 '{}' 그룹에 넣고 데이터 {}건을 고정했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "전 항목을 표기로 되돌렸습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "편집 중 외부 변경: TXT 템플릿 '{}' 이 이 편집 창을 여는 사이 다른 곳에서 바뀌었습니다. 지금 저장하면 그 변경 내용을 이 편집 창의 내용으로 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "항목 이름을 바꿨습니다 '{}'"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "항목 이름을 지웠습니다 '{}'"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "항목을 지웠습니다 '{}'"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "항목을 표기로 되돌렸습니다 '{}'"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "현재 라이브러리 목록에 없는 경로는 검토할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_template.py"
+text = "현재 라이브러리 목록에 없는 경로는 바꿀 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "· 복사한 {}건은 다시 확인이 필요합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "구간 표기가 있는 템플릿의 복사 준비가 이 창에 연결되지 않았습니다. '문서 만들기'에서 다시 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "규칙이 바뀌어 다시 확인해야 하는 항목 {}건 — 나가면 그 표시가 사라집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "기본 규칙을 저장했습니다 · 연결 r{}"
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "다음 항목의 연결·표시가 이 작업의 기본 규칙이 됩니다: {} 이미 복사한 항목은 다시 확인이 필요해집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "복사 진행 {}/{}건 — 나가면 이 진행은 사라집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "열어 둔 사이 작업 '{}' 이(가) 다른 곳에서 바뀌었습니다 (현재 내용 #{}). 지금 저장하면 그 변경 위에 아래 연결을 덮어씁니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "원문 보기에서는 복사하지 않습니다. 「채운 모습」으로 바꾼 뒤 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "작업 '{}' 을(를) 더는 읽을 수 없습니다 — 다른 곳에서 지웠거나 파일이 손상됐습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "작업대 세션이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "작업대 세션이 없습니다. 「문서 만들기」에서 다시 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "저장할 변경이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "포함할 내용을 불러오지 못해 템플릿 원문 그대로 보여 줍니다. '문서 만들기'에서 템플릿을 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "화면에 보이는 문장과 실제로 만들어진 문서가 다릅니다. 「기본 규칙으로 저장」으로 연결을 확정하거나 전각 정렬을 끈 뒤 다시 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "확정하지 않은 편집이 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "확정하지 않은 편집이 있습니다. 각 행의 확정 열을 켠 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다: {} 매핑을 다시 확정하기 전에는 생성이 차단됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "경로가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "나라장터 소스는 현재 웹에서 지원되지 않습니다. 파일 또는 엑셀 참조 등록 데이터를 사용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "데이터에 행이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "등록 데이터 '{}' 에 시트가 지정되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "등록 데이터 '{}' 의 계약 목록 뷰가 올바르지 않습니다. 쓸 수 있는 뷰:"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "새 템플릿 경로가 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "새 템플릿이 HWPX 도 온나라 기안 TXT 도 아닙니다. HWPX 또는 TXT 파일을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "이 경로는 앱이 추적하는 참조가 아니라 열 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "작업 '{}' 은(는) '{}' 작업이라 {} 템플릿을 연결할 수 없습니다. 작업 방식을 바꾸려면 이 작업을 삭제하고 새로 만드세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "작업 '{}' 의 템플릿 연결을 바꿉니다. 기존: {} 새 파일: {}{}{}"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "채울 {{토큰}}이 없는 TXT 템플릿입니다. 목록의 행 ⋮ → '내용 편집'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screens.py"
+text = "형식을 확인할 수 없던 작업이라 최근 사용 기록은 함께 지워집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. 이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "current Active Field를 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "current Application structure를 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "legacy Mapping basis가 capture 이후 이동했습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
+text = "legacy blank omission에 대한 명시 결정이 필요합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/selftest_api.py"
+text = "제시한 토큰이 이 호스트의 것이 아니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "이 템플릿 구조에서는 포함할 내용을 선택할 수 없습니다. 다른 템플릿을 적용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "적용된 템플릿 파일을 확인할 수 없어 포함할 내용을 불러오지 못했습니다. 템플릿을 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "템플릿 구조를 확인할 수 없어 포함할 내용을 불러오지 못했습니다. 템플릿을 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "템플릿 확인이 끝나지 않아 포함할 내용을 불러오지 못했습니다. 템플릿을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "템플릿이 바뀌어 포함할 내용을 불러오지 못했습니다. 템플릿을 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "포함할 내용을 불러오지 못했습니다. 문서 작업을 다시 열고 템플릿을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/slot_configuration_product.py"
+text = "현재 문서 작업과 템플릿이 맞지 않아 포함할 내용을 불러오지 못했습니다. 문서 작업을 다시 연 뒤 템플릿을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "actor {} 는 이 Work 에 접근할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "문서 작업 권위를 다시 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "문서 작업 권위를 다시 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "원본 파일을 읽지 못해 편집 여부를 확인할 수 없습니다. 파일 위치와 접근 권한을 확인한 뒤 「변경사항 확인」을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. 편집분을 반영하려면 「변경사항 확인」 뒤 적용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "이 변경사항은 현재 작업의 것이 아닙니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_change.py"
+text = "적용 무결성 확인에 실패했습니다 — 저장된 확인 결과를 신뢰할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_groups.py"
+text = "그룹 이름이 비어 있습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_groups.py"
+text = "대상 그룹 이름이 비어 있습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_groups.py"
+text = "대상 그룹 이름이 비어 있습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_groups.py"
+text = "템플릿 이름을 입력해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/template_groups.py"
+text = "확장자와 경로 문자를 제외한 이름만 입력해 주세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/txt_materialization.py"
+text = "TXT 작업이 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/txt_materialization.py"
+text = "봉인 결과에 실행 payload 가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/txt_materialization.py"
+text = "실행 계획을 봉인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/txt_materialization.py"
+text = "이 작업의 실행 권위를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/txt_materialization.py"
+text = "이 작업의 템플릿 확인이 아직 끝나지 않았습니다."
