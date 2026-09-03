@@ -18,6 +18,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
+import { poolGlyph } from "./pool_column.ts";
 import { BLANK_MARK, PreviewCell } from "./preview_cell.ts";
 
 type Obj = Record<string, any>;
@@ -272,15 +273,10 @@ function LibraryDetailRoot({ children }: { children: ReactNode }): ReactNode {
 /** 축의 정체 글리프 — 빈 사각형은 「무엇의 자리인가」를 말하지 않는다. 템플릿은 문서장,
  *  데이터는 표. `path_actions.ts` 의 `icon()` 과 같은 어휘(20 viewBox · 선만)를 쓴다. */
 function pairGlyph(kind: "template" | "data"): ReactNode {
-  const common = { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" };
-  if (kind === "template") {
-    return h("svg", common,
-      h("path", { d: "M5 2.5h7l4 4v11H5z" }),
-      h("path", { d: "M12 2.5v4h4" }));
-  }
-  return h("svg", common,
-    h("rect", { x: "3", y: "4", width: "14", height: "12", rx: "1" }),
-    h("path", { d: "M3 9h14M8 4v12" }));
+  /* 글리프 어휘의 정본은 고르기 열 컴포넌트 하나다(고르기 열 공용 ②): 이 패널의 연결
+     카드와 편집기 1단계의 두 열은 **같은 것을 가리키므로 같은 그림**이어야 하고, 두
+     자리가 각자 SVG 를 들면 한쪽만 바뀌는 날이 온다. */
+  return poolGlyph(kind === "template" ? "hwpx" : "excel");
 }
 
 /** 연결 손잡이의 픽토그램 — 두 블록을 잇는 선. 「고르기」 단계의 그림(템플릿 블록 · 연결 ·

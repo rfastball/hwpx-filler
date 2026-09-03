@@ -177,6 +177,9 @@ class PoolController:
                 name=r.name,
                 sub=sub,
                 reason=r.select_block_reason(),
+                # 데이터 등록에는 채움 사전 고지 축이 없다(#154 는 템플릿 필드의 것) —
+                # 없는 축을 지어 세우지 않는다.
+                warns=[],
                 badge_label=r.badge_label,
                 badge_level=r.badge_level,
                 icon=_row_icon(r.kind),

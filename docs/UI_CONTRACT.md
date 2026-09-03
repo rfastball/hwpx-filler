@@ -508,8 +508,8 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   우 데이터 풀(`#editorDataPool`)을 든다. 소유는 이렇게 갈린다:
   - **좌 열의 정본은 `tpl` 채널 스냅샷**이다(아래 「tpl→editor」 절). 편집기 스냅샷이 목록을
     한 번 더 성형하던 `library` 존은 **퇴역**했다(구 `_library_snapshot`) — 같은 목록을 두
-    컨트롤러가 그리면 tpl 의 변환·검토가 두 경로로 도착한다. 편집기가 내는 것은 선택 경로
-    (`template_path`) 하나이고 항목은 그것으로 `aria-pressed` 를 그린다. 결과 줄(`.run-result`)과
+    컨트롤러가 그리면 tpl 의 변환·검토가 두 경로로 도착한다. 편집기가 내는 것은 선택 키
+    (`pairing.template_key`) 하나이고 항목은 그것으로 `aria-pressed` 를 그린다. 결과 줄(`.run-result`)과
     항목 상세(`detail` 존)도 같은 이유로 `tpl` 스냅샷을 직접 읽는다(중계 seam
     `library_result`·`library_slots` 폐기). **결과 줄의 자리는 좌 열 바닥**이다(U6-E #979) —
     관리 동사가 전부 그 열에서 나가므로 성과도 같은 열에서 읽힌다.
@@ -543,6 +543,20 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     판정으로 덧붙인다) 전수 목록은 `column` 행이 든다. 두 열의 「지금 선 행」은
     `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의 `key` 와 같은 축 —
     좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값).
+  - **좌 열은 공용 `PoolColumn` 이 그린다**(`frontend/src/screens/pool_column.ts` — 고르기 열
+    공용 계약 ②): 열 하나의 문법(`.poolcol` 뿌리 · `.pool-head` · `.pool-list` · `.pool-acts` ·
+    바닥 `.run-result`)과 행 계약(`.pitem-wrap` > `button.pitem[data-act="pick"]` + 형제
+    `button.job-more[data-act="lib-more"]`)이 여기 **한 벌**이고, 그것이 읽는 것은 `tpl.column`
+    하나다. 행의 상태도 하나다 — 고를 수 있음(`aria-pressed="false"`) / 고름
+    (`aria-pressed="true"`, `pairing.template_key` 가 이름한다) / 못 고름(`aria-disabled="true"`
+    + 부제 자리의 사유). **못 고르는 행은 `disabled` 가 아니다**: 눌리지 않으면 사유를 말할
+    자리가 없어 조용한 무시가 되므로, 클릭도 드롭 거절도 호스트의 같은 한 자리(`choose`)로
+    가서 이름과 Python 사유로 재진술된다. 사전 고지(`warns` — #154)는 사유와 **다른 줄**로
+    선다(고를 수 있는 행도 미리 알릴 것이 있고, 한 축으로 접으면 한쪽이 사라진다). 행 앞머리
+    글리프는 `poolGlyph()` 한 어휘이고 상세 패널의 연결 카드(`library.ts` `pairGlyph`)가 같은
+    것을 쓴다 — 같은 것을 가리키는 그림이 두 자리에서 갈리지 않는다. 우 열과 「데이터 선택」
+    다이얼로그는 아직 `pool_list.ts` 이고 **③에서 이 컴포넌트로 합류한다**(그래서 CSS 뿌리가
+    `.pairzone` 이 아니라 `.poolcol` 이다 — 존 배치만 `.pairzone` 이 계속 소유한다).
   - **고르는 제스처는 좌·우가 한 규칙이다**(리뷰 1·2·5·10). 클릭도 끌어 놓기도 컨트롤러의
     같은 한 자리(`chooseTemplate`/`chooseData`)를 지나고, 그 자리가 셋을 함께 진다:
     ① **이미 고른 것을 다시 고르면 무동작**이다 — 통과시키면 `new_job_session` 이 이름·

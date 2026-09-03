@@ -1020,6 +1020,11 @@ def test_column_row_carries_the_ring1_verdict_and_the_media_badge(tmp_path, monk
     assert (txt["badge_label"], txt["badge_level"], txt["icon"]) == ("TXT", "muted", "txt")
     assert txt["actions"] == [] and txt["sub"] == "필드 1개"
     assert txt["selectable"] is True
+    # 채움 사전 고지(#154)는 hwpx 행만 드는 축이고 밴드 행과 **같은 값**이다 — 좌 열이
+    # 그것을 잃으면 「골라도 되지만 이렇게 된다」가 목록에서 조용히 사라진다.
+    band = {r["name"]: r for r in ctrl.initial()["hwpx"]["sections"][0]["items"]}
+    assert rows["raw"]["warns"] == band["raw"]["fill_warns"]
+    assert txt["warns"] == []
 
 
 def test_the_row_verdict_is_computed_once_per_row(tmp_path, monkeypatch):

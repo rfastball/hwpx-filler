@@ -27,6 +27,7 @@ POOL_ROW_KEYS = (
     "name",
     "sub",
     "reason",
+    "warns",
     "badge_label",
     "badge_level",
     "icon",
@@ -58,12 +59,18 @@ def pool_row_view(
     icon: str,
     path: str,
     actions: "list[dict]",
+    warns: "list[str]",
 ) -> dict:
     """열 행 하나 — 키 집합은 :data:`POOL_ROW_KEYS` 그대로다.
 
     ``reason`` 은 링1 이 낸 「고를 수 없는 사유」이고 ``selectable`` 은 그 값에서 파생한다.
     두 축을 따로 받지 않는 이유가 여기 있다: 따로 받으면 사유가 서 있는데 고를 수 있다고
     말하는 행이 만들어질 수 있고, 그 모순은 화면에서만 드러난다.
+
+    ``warns`` 는 **고를 수 있는 행이 그래도 미리 알려야 하는 것**이다(채움 완화 사전
+    고지 #154). ``reason`` 과 한 축으로 접지 않는 이유는 둘이 서로 다른 말을 하기
+    때문이다 — 사유는 「못 고른다」이고 고지는 「골라도 되지만 이렇게 된다」다. 접으면
+    한쪽이 조용히 사라진다(빈 값이 빈칸으로 새지 않는다는 계약의 목록 쪽 얼굴).
 
     ``actions`` 는 ``{"key","label"}`` 목록이고 링1 행이 낸 것을 옮기기만 한다(표면이 제
     판정으로 동사를 더하지 않는다는 계약의 백엔드 쪽 자리).
@@ -75,6 +82,7 @@ def pool_row_view(
         "name": name,
         "sub": sub,
         "reason": reason,
+        "warns": [str(w) for w in warns],
         "badge_label": badge_label,
         "badge_level": badge_level,
         "icon": icon,

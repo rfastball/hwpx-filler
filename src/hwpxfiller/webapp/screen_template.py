@@ -217,6 +217,10 @@ class TemplateController:
                 name=r.name,
                 sub=detail,
                 reason=block,
+                # 채움 완화 사전 고지(#154) — 사유와 **다른 축**이라 함께 싣는다: 고를 수
+                # 있는 행도 「골랐을 때 이렇게 된다」를 말해야 하고, 사유 한 줄로 접으면
+                # 그 고지가 목록에서 조용히 사라진다.
+                warns=list(r.fill_warns),
                 badge_label=r.badge_label,
                 badge_level=r.badge_level,
                 icon="hwpx",
@@ -269,6 +273,8 @@ class TemplateController:
                 name=t.name,
                 sub=detail,
                 reason=block,
+                # TXT 에는 채움 축이 없다 — 없는 고지를 지어내지 않는다.
+                warns=[],
                 badge_label=TXT_BADGE_LABEL,
                 badge_level="muted",
                 icon="txt",

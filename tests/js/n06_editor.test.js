@@ -43,15 +43,47 @@ function snap(extra) {
   }, extra || {});
 }
 
-/** `tpl` 채널 스냅샷 — 고르기 단계 좌 열이 구독하는 정본. */
+/** 밴드 행 → 공용 열 행(`webapp/pool_column.py` 의 키 집합).
+ *
+ *  Python 이 하는 접기를 여기서 되풀이하는 이유는 하나다: 이 파일의 픽스처가 오래전부터
+ *  밴드로 쓰여 있고, 좌 열이 `column` 존으로 옮겨 갔어도 **같은 사실**을 말해야 한다.
+ *  두 존이 어긋난 픽스처는 실제로는 있을 수 없는 상태를 시험하는 것이다. */
+function columnRowOf(item, icon) {
+  return {
+    key: item.key, name: item.name, sub: item.detail || "",
+    reason: item.select_block_reason || "", warns: item.fill_warns || [],
+    badge_label: icon === "txt" ? "TXT" : (item.badge_label || ""),
+    badge_level: icon === "txt" ? "muted" : (item.badge_level || "muted"),
+    icon, selectable: !!item.selectable, path: item.path, actions: item.actions || [],
+  };
+}
+
+/** `tpl` 채널 스냅샷 — 고르기 단계 좌 열이 구독하는 정본.
+ *
+ *  좌 열의 정본은 **공용 열 존**(`column`)이고 옛 밴드(`hwpx`·`txt`)는 아직 다른 소비자가
+ *  있다. 픽스처가 둘을 따로 쓰면 갈리므로 밴드에서 존을 **유도한다**(명시로 준 `column`
+ *  은 그대로 존중한다 — 어긋남 자체를 시험하는 자리가 있을 수 있다). */
 function tplSnap(extra) {
-  return Object.assign({
+  const snapshot = Object.assign({
     hwpx: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
     txt: { flat: true, count: 0, dir: "C:/lib", empty_hint: "비었습니다", sections: [] },
     templates_root: { directory: "C:/lib", source: "settings", source_label: "설정", notice: "" },
     result: { text: "", level: "muted" },
     detail: null,
   }, extra || {});
+  if (snapshot.column === undefined) {
+    const rows = [];
+    for (const icon of ["hwpx", "txt"]) {
+      for (const section of (snapshot[icon] || {}).sections || []) {
+        for (const item of section.items || []) rows.push(columnRowOf(item, icon));
+      }
+    }
+    snapshot.column = {
+      rows, notices: [], empty_hint: (snapshot.hwpx || {}).empty_hint || "",
+      count_label: `${rows.length}개`, result: snapshot.result,
+    };
+  }
+  return snapshot;
 }
 
 function harness(cfg) {
@@ -1355,6 +1387,39 @@ test("U6-E 동사 0 인 행의 ⋮ 도 활성이다(비활성 + 사유는 근거
   assert.ok(more, "행 ⋮ 가 서야 한다");
   assert.equal(more.slice(0, more.indexOf("</button>")).includes("disabled"), false,
     "동사 0 인 행이 없으므로 ⋮ 를 잠그지 않는다");
+});
+
+test("좌 열의 고른 행은 `pairing.template_key` 가 정한다(경로 대조를 표면이 다시 하지 않는다)", async () => {
+  const twoRows = tplSnap({
+    hwpx: {
+      flat: true, count: 2, dir: "C:/lib", empty_hint: "",
+      sections: [{
+        group: "", collapsed: false, count: 2,
+        items: [
+          { key: "a.hwpx", name: "a", path: "C:/lib/a.hwpx", detail: "필드 3개",
+            badge_label: "누름틀", badge_level: "ok",
+            actions: [], selectable: true, select_block_reason: "" },
+          { key: "b.hwpx", name: "b", path: "C:/lib/b.hwpx", detail: "필드 1개",
+            badge_label: "누름틀", badge_level: "ok",
+            actions: [], selectable: true, select_block_reason: "" },
+        ],
+      }],
+    },
+  });
+  const h = harness({
+    initial: async () => slotSnap({
+      template_path: "C:/lib/a.hwpx",
+      /* 경로는 a 를 가리키는데 키는 b 다 — 표면이 경로로 다시 판정하면 여기서 갈린다. */
+      pairing: { template_key: "b.hwpx", data_key: "", ready: false },
+    }),
+    tpl: twoRows,
+  });
+  await h.controller.init();
+
+  const markup = renderEditor(h);
+  const pressed = markup.match(/data-key="([^"]+)"[^>]*aria-pressed="true"|aria-pressed="true"[^>]*data-key="([^"]+)"/g) || [];
+  assert.equal(pressed.length, 1, "고른 행은 하나여야 한다");
+  assert.ok(/b\.hwpx/.test(pressed[0]), `키가 정한 행이 서야 한다: ${pressed[0]}`);
 });
 
 test("U6-E 「자세히…」는 검토 왕복 뒤에 시트를 연다(순서가 계약)", async () => {

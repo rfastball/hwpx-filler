@@ -380,7 +380,7 @@ function tplBase(overrides) {
   const band = (items) => ({ flat: true, count: items.length, dir: "C:/lib",
     empty_hint: "서식 폴더에 템플릿이 없습니다: C:/lib",
     sections: [{ group: "", collapsed: false, count: items.length, items }] });
-  return Object.assign({
+  const snapshot = Object.assign({
     hwpx: band([]), txt: band([]),
     templates_root: {
       directory: "C:/lib", source: "settings", source_label: "설정", notice: "",
@@ -389,6 +389,31 @@ function tplBase(overrides) {
     detail: null,
     examples: { installed: false, removable: false, remove_label: "", remove_hint: "" },
   }, overrides || {});
+  /* 좌 열의 정본은 **공용 열 존**(`column`)이다(고르기 열 공용 ②) — 좌·우 두 열이 한
+     컴포넌트가 되면서 밴드를 한 목록으로 접는 일이 Python 으로 갔다. 프로브 픽스처는
+     아직 밴드로 쓰여 있으므로 여기서 **유도한다**: 두 존을 따로 쓰면 실제로는 있을 수
+     없는 상태(밴드에 있는 행이 열에는 없는)를 시험하게 된다. 덮어쓴 밴드가 있어도
+     마지막 값에서 다시 유도하므로 존이 뒤처지지 않는다. */
+  const rows = [];
+  for (const icon of ["hwpx", "txt"]) {
+    for (const section of (snapshot[icon] || {}).sections || []) {
+      for (const item of section.items || []) {
+        rows.push({
+          key: item.key, name: item.name, sub: item.detail || "",
+          reason: item.select_block_reason || "", warns: item.fill_warns || [],
+          badge_label: icon === "txt" ? "TXT" : (item.badge_label || ""),
+          badge_level: icon === "txt" ? "muted" : (item.badge_level || "muted"),
+          icon, selectable: !!item.selectable, path: item.path,
+          actions: item.actions || [],
+        });
+      }
+    }
+  }
+  snapshot.column = {
+    rows, notices: [], empty_hint: (snapshot.hwpx || {}).empty_hint || "",
+    count_label: `${rows.length}개`, result: snapshot.result,
+  };
+  return snapshot;
 }
 
 /** `pool` 채널 스냅샷 — 고르기 단계 우 열의 정본(데이터 선택 다이얼로그와 같은 값). */
@@ -2163,7 +2188,10 @@ export function createEditorWorkbenchDataProbes() {
           /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
              머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
              부재를 음성으로도 잰다. */
-          out.toolbar = ["import-template", "open-settings", "lib-new-txt", "lib-refresh"]
+          /* 「새로 읽기」의 `data-act` 는 좌 열 전용 이름(`lib-refresh`)에서 공용 열의
+             `refresh` 로 바뀌었다(고르기 열 공용 ②) — 같은 컴포넌트의 두 인스턴스가
+             자기 side 를 `data-side` 로 말한다. */
+          out.toolbar = ["import-template", "open-settings", "lib-new-txt", "refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
           out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
@@ -2535,6 +2563,9 @@ export function createEditorWorkbenchDataProbes() {
               template_path: "C:/lib/a.hwpx", template_name: "a.hwpx",
               pairing: {
                 ready: false, template_name: "a.hwpx", data_name: "",
+                /* 고름 표지의 정본은 **키**다(고르기 열 공용 ①·②) — 표면이 경로를 다시
+                   대조하지 않으므로 합성 스냅샷도 그 사실을 실어야 표지가 선다. */
+                template_key: "a.hwpx", data_key: "",
                 field_count: 3, column_count: 0, auto_count: 0, confirm_count: 0,
                 basis: "", advance_block_reason: "오른쪽에서 데이터를 고르세요.",
               },

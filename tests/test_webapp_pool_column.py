@@ -21,7 +21,7 @@ from hwpxfiller.webapp.pool_column import (
 
 def _row(**over) -> dict:
     base = dict(
-        key="a.hwpx", name="공고서", sub="필드 3개", reason="",
+        key="a.hwpx", name="공고서", sub="필드 3개", reason="", warns=[],
         badge_label="변환 완료", badge_level="ok", icon="hwpx",
         path="C:/lib/a.hwpx", actions=[{"key": "compile", "label": "누름틀·구간 변환"}],
     )
@@ -33,6 +33,14 @@ def test_row_view_carries_exactly_the_declared_keys():
     row = _row()
     assert tuple(row) == POOL_ROW_KEYS
     assert row["actions"] == [{"key": "compile", "label": "누름틀·구간 변환"}]
+
+
+def test_warns_stand_beside_the_reason_not_folded_into_it():
+    """사전 고지는 사유와 **다른 축**이다 — 고를 수 있는 행도 미리 알릴 것이 있다."""
+    row = _row(warns=["빈 값 2건은 표식으로 남습니다."])
+    assert row["selectable"] is True
+    assert row["warns"] == ["빈 값 2건은 표식으로 남습니다."]
+    assert _row()["warns"] == []
 
 
 def test_selectable_is_derived_from_the_reason_not_received_twice():

@@ -975,6 +975,8 @@ def test_column_zone_has_exactly_five_keys_and_rows_of_the_shared_shape(tmp_path
     assert row["sub"].startswith("파일: 발주.xlsx") and row["sub"].endswith("7월분")
     # 동사 전수는 링1 이 낸다 — 표면이 「다시 연결…」을 자기 판정으로 덧붙이지 않는다.
     assert [a["key"] for a in row["actions"]] == ["relink", "archive", "delete"]
+    # 채움 사전 고지 축은 템플릿 필드의 것이라 데이터 행에는 없다 — 지어내지 않는다.
+    assert row["warns"] == []
     assert column["count_label"] == "1건" and column["empty_hint"] == ""
 
 
