@@ -781,3 +781,39 @@ def test_residual_structure_notation_shows_a_warning_badge_with_its_count(tmp_pa
     assert row.compile_state == CompileState.PARTIAL
     assert row.compile_badge == "⚠ 미확인 토큰 2개"   # 여는·닫는 마커, 이중 계상 없음
     assert row.is_runnable() is True                  # 차단은 생성 admission 이 진다
+
+
+def test_structure_counts_come_from_the_same_recomputation_as_drift(tmp_path):
+    """연결 카드 수치 m·k·s 는 드리프트 재계산 **한 번**에서 나온다(U6-F #980).
+
+    저장된 프로파일은 확정 행만 담으므로 「확인 필요 k」를 프로파일에서 셀 수 없다 — 그
+    수치는 현재 템플릿과의 대칭차에만 있다. 템플릿 필드 수 m 은 커버·소멸·미커버에서
+    유도하고(필드 목록을 한 벌 더 나르지 않는다), 읽지 못한 갈래는 0 으로 남아 상세가
+    수치를 말하지 않는다.
+    """
+    reg = JobRegistry(tmp_path / "counts")
+    tpl = _compiled_hwpx(tmp_path, "counts.hwpx")          # 템플릿 필드 = 계약명 하나
+    reg.save(Job(name="맞춘작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
+    reg.save(Job(name="어긋난작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("없는필드", "src")])))
+    reg.save(Job(name="미연결", template_path=""))
+    rows = {r.name: r for r in HomeViewModel(
+        reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
+
+    matched = rows["맞춘작업"]
+    assert (matched.template_field_count, matched.unbound_field_count,
+            matched.stale_mapping_count) == (1, 0, 0)
+
+    # 매핑이 템플릿에 없는 필드를 가리키면 **둘 다** 선다: 템플릿의 계약명은 미커버(k=1)이고
+    # 매핑의 없는필드는 소멸분(s=1)이다. m 은 여전히 1 — 템플릿 쪽 사실이라 매핑이 흔들지
+    # 못한다(커버 1 − 소멸 1 + 미커버 1).
+    drifted = rows["어긋난작업"]
+    assert (drifted.template_field_count, drifted.unbound_field_count,
+            drifted.stale_mapping_count) == (1, 1, 1)
+
+    # 템플릿을 읽지 못한 갈래는 세지 않았다 — 0 이 「필드가 0 개」라는 뜻이 아니라
+    # 「세지 않았다」는 뜻이고, 그 사실은 상세의 `counted` 가 말한다.
+    unlinked = rows["미연결"]
+    assert (unlinked.template_field_count, unlinked.unbound_field_count,
+            unlinked.stale_mapping_count) == (0, 0, 0)

@@ -36,7 +36,10 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from ..application.jobs import (
     CORRUPT_PATH_REJECT,
@@ -46,10 +49,14 @@ from ..application.jobs import (
     set_favorite,
     soft_delete_job,
 )
+from ..data.factory import source_for_binding
 from ..domain.engine import HwpxEngine
+from ..domain.job import Job, data_binding_of, has_data_binding, template_media
+from ..domain.template_status import library_display_name
 from ..external import example_pack
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
+from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import template_compile_status
 from ..gui.compile_badge import badge_level
@@ -61,8 +68,17 @@ from ..gui.home_state import (
     library_health_causes,
     library_mode_of,
 )
+from ..gui.mapping_state import (
+    MappingModel,
+    display_cell_label,
+    profile_source_vocabulary,
+    row_projection,
+    source_cell_label,
+)
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
-from .screens import PushSink, relink_job_template
+from ..naming import make_output_filename
+from .output_folder_zone import output_folder_zone
+from .screens import NO_ROWS_TEXT, PushSink, dataset_display_name, relink_job_template
 
 def mode_label(filter_value: str) -> str:
     """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.gui.work_mode`) 위임.
@@ -104,6 +120,82 @@ def primary_action(row: JobRow) -> dict:
         return {"target": "editor", "label": "작업 편집에서 확인",
                 "hint": "지원하지 않는 작업 방식입니다."}
     return {"target": "job", "label": "문서 만들기에서 사용", "hint": ""}
+
+
+def run_in_worker_thread(work: "Callable[[], None]") -> None:
+    """첫 행 읽기의 **제품 실행 자리** — 데몬 워커 하나(U6-F #980).
+
+    읽기는 파일 IO 라 창을 붙들면 목록이 그동안 얼어붙는다. 이 함수가 하는 일은 실행 위치를
+    바꾸는 것뿐이고 판정·상관 키 대조는 호출자가 그대로 진다.
+    """
+    threading.Thread(target=work, name="library-first-row", daemon=True).start()
+
+
+#: 상세 표가 프레임 안에 두는 행 수(동결 시안 장면 4). 나머지는 스크롤로 조용히 감추지
+#: 않고 **이름으로 명시**한다 — 「그 밖에 n행」이 이름을 들지 않으면 표가 자기 일부를
+#: 숨기고도 그 사실을 말하지 않는다.
+DETAIL_ROW_LIMIT = 8
+
+#: 결속이 없는 작업의 「첫 행」 사유. 실패가 아니라 저작 중 상태이지만, 빈 칸으로 두면
+#: 「아직 못 읽었다」와 구별되지 않아 사유를 그 자리에 적는다.
+UNBOUND_FIRST_ROW_REASON = "데이터를 연결해야 첫 행을 채울 수 있습니다."
+
+
+@dataclass(frozen=True)
+class FirstRowRead:
+    """데이터 참조 1벌을 실제로 읽은 결과 — 「문서 작업」 상세의 첫 행 재료(U6-F #980).
+
+    ``state`` 는 ``ready``/``error`` 둘뿐이다(``pending`` 은 **결과가 없다**는 뜻이라 캐시에
+    들어오지 않는다). 실패는 삼키지 않고 ``reason`` 으로 재진술한다 — 이 값이 곧 표의 첫
+    행 칸에 서는 문장이다.
+    """
+
+    state: str
+    reason: str = ""
+    record: "dict" = field(default_factory=dict)
+    headers: "tuple[str, ...]" = ()
+    record_count: int = 0
+
+
+def _binding_key(name: str, job: "Job") -> "tuple | None":
+    """이 작업의 데이터 결속 상관 키 — 미결속이면 ``None``.
+
+    작업 이름까지 무는 이유는 캐시가 상세 패널의 것이기 때문이다: 같은 파일을 두 작업이
+    가리켜도 시트·헤더 행이 같으면 값은 같지만, 늦게 도착한 결과를 **어느 선택에 대한
+    답인지** 대조하려면 선택 정체가 키에 들어야 한다(`_push_progress` 의 ``run_token``
+    규율과 같은 자리).
+    """
+    if not has_data_binding(job):
+        return None
+    return (name, *data_binding_of(job))
+
+
+def _read_first_row(job: "Job") -> FirstRowRead:
+    """결속 참조로 데이터를 **읽어** 첫 레코드·헤더·건수를 낸다(워커 스레드에서 돈다).
+
+    읽기는 전량이다 — 어댑터에 ``limit`` API 가 없고 이 슬라이스가 만들지도 않는다.
+    라이브러리 선택은 사용자 행위 1회이고, 검색 타이핑의 재렌더가 파일을 다시 읽지 않게
+    막는 것은 호출자의 캐시다.
+
+    실패는 사유와 함께 ``error`` 로 돌아온다(예외를 밖으로 던지지 않는다 — 이 결과가 향하는
+    곳은 표의 한 칸이고, 거기서 조용한 빈칸이 되는 것만 금지된다).
+    """
+    path, sheet, header_row, kind = data_binding_of(job)
+    if not Path(path).exists():
+        return FirstRowRead(state="error", reason=f"경로를 찾을 수 없음: {path}")
+    try:
+        source = source_for_binding(
+            {"path": path, "sheet": sheet, "header_row": header_row, "kind": kind}
+        )
+        records = source.records()
+        headers = tuple(source.fields())
+    except Exception as exc:  # noqa: BLE001 — 시트 부재·손상·권한: 사유를 그대로 나른다
+        return FirstRowRead(state="error", reason=str(exc))
+    if not records:
+        return FirstRowRead(state="error", reason=NO_ROWS_TEXT, headers=headers)
+    return FirstRowRead(
+        state="ready", record=records[0], headers=headers, record_count=len(records),
+    )
 
 
 def _job_row_dict(r: JobRow) -> dict:
@@ -149,7 +241,12 @@ class LibraryController:
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
                  push: PushSink, *, engine: HwpxEngine,
                  pool_registry: DatasetPoolRegistry,
-                 generation_lock: "threading.Lock") -> None:
+                 generation_lock: "threading.Lock",
+                 template_root: TemplateRoot,
+                 remembered_output_directory: "Callable[[], str]",
+                 clock: "Callable[[], datetime]" = datetime.now,
+                 first_row_runner: "Callable[[Callable[[], None]], None]"
+                 = run_in_worker_thread) -> None:
         # pool_registry 는 손상 등록 데이터 경보(#45) 용 — composition root(webapp.app)가
         # 주입한다(자기 생성 폴백은 #570 에서 제거 — locator 뒷문 금지).
         # text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다.
@@ -163,6 +260,8 @@ class LibraryController:
         # test_architecture)와 정합: seam 밖 durable 뮤테이션은 공유 게이트
         # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
         self._job_registry = registry
+        # 데이터 풀 — 연결 카드의 **등록명** 조회(같은 인스턴스라 등록·개명이 즉시 보인다).
+        self._pool_registry = pool_registry
         self._engine = engine
         # 「문서 만들기」와 **같은** 생성 자물쇠(9R P1) — 이 화면의 재연결도 durable 규칙을
         # 쓰므로 진행 중 런과 겹치면 안 된다. **필수 주입**이다(P2-24 폴백 제거): 화면이
@@ -173,6 +272,24 @@ class LibraryController:
         # 상세 패널이 겨눈 작업(§19.6 ``selectedWorkId``) — **활성 작업과 무관**하다.
         # 여기서 행을 골라도 「문서 만들기」의 선택·데이터·승인은 불변이다(§19.6 서문).
         self.selected_work: str = ""
+        # 서식 폴더 권위(U6-A #975 · U6-D #978) — 템플릿 표시명을 목록·편집기와 **같은
+        # 홀더**로 짓는다. 두 홀더를 두면 재지정 직후 같은 파일이 두 이름으로 불린다.
+        self._template_root = template_root
+        # 전역 저장 폴더의 소유자는 「문서 만들기」 컨트롤러 하나다(U6-D #978 리뷰 3) —
+        # 여기서는 그 값을 **읽기만** 한다(설정 파일 재판독 금지).
+        self._remembered_output_directory = remembered_output_directory
+        self._clock = clock
+        # 「첫 행」 지연 읽기의 **사적 캐시**(U6-F #980). 키는 결속 상관 키이고 값은 실제
+        # 읽기 결과다. 이 캐시가 없으면 검색 타이핑의 재렌더마다 엑셀을 다시 연다.
+        # 캐시는 `refresh` 로 비우지 않는다 — 참조가 같으면 값도 같고, 참조가 바뀌면
+        # (다시 연결·데이터 재선택 뒤 저장) 키가 달라져 자연히 미스가 난다.
+        self._first_row_cache: "dict[tuple, FirstRowRead]" = {}
+        # 지금 겨눈 결속의 상관 키 — 늦게 끝난 읽기가 자기 답을 밀어도 되는지의 판정 재료.
+        self._selected_binding_key: "tuple | None" = None
+        # 읽기를 **어디서 돌리는가**. 제품은 워커 스레드(창을 막지 않는다), 헤드리스
+        # 테스트는 완료 시점을 손에 쥐려고 즉시·지연 실행을 주입한다(푸시 sink 주입과 같은
+        # 규율 — 판정은 여기 그대로 두고 실행 자리만 갈아끼운다).
+        self._first_row_runner = first_row_runner
         # 타 화면 무장 세션 가드 조회 함수들(#268 리뷰) — app.py 가 작업·기안 컨트롤러의
         # ``session_guard_for`` 를 배선한다(생성 순서상 이 화면이 먼저라 사후 배선).
         self.session_guards: "list" = []
@@ -204,6 +321,129 @@ class LibraryController:
             })
         return out
 
+    # ------------------------------------------------- 상세 연결 존(U6-F #980)
+    def _pairing_detail(self, row: JobRow, job: "Job") -> dict:
+        """상세 하단의 **연결 카드 + 읽기 전용 4열 표 + 계획 한 줄**.
+
+        §19.6 이 오래 「상세는 매핑 사본을 싣지 않는다」고 못 박아 온 자리다. 그 금지가
+        겨눈 것은 **별도 라벨 사전을 든 payload 사슬**(#966 이 걷은 `detail.bindings`)이었지
+        정보 자체가 아니었다 — 여기서 그리는 행은 편집기 2단계와 **같은 링1 투영**
+        (:func:`~hwpxfiller.gui.mapping_state.row_projection`)이고 라벨도 그 한 자리에서
+        온다. 판정이 하나이므로 두 표면이 서로 다른 말을 할 자리가 없다.
+
+        **카드와 표는 답하는 질문이 다르다.** 카드는 정체(무엇과 무엇이 붙었나)이고 그것은
+        템플릿을 못 읽어도 답할 수 있다 — 게다가 그 정체를 **바꾸러 가는 동사**(재선택)가
+        거기 있어서, 템플릿이 사라진 갈래에서 카드를 접으면 고치러 갈 길이 함께 접힌다.
+        표는 구조(어느 필드가 어느 열에서 오나)이고 현재 템플릿과의 대칭차 없이는 「확인
+        필요 k」를 말할 수 없으므로, 못 읽는 갈래에서는 **빈 행 목록**으로 서지 않는다
+        (수치가 상태를 참칭하지 않게 `counted` 도 거짓이다).
+        """
+        card = {
+            # 표시명은 목록·편집기와 **같은 규칙**이다(U6-A·U6-D) — 같은 파일을 화면마다
+            # 다른 문법으로 부르지 않는다.
+            "template_name": library_display_name(
+                self._template_root.path(), job.template_path
+            ) if job.template_path else "",
+            "template_bound": row.template_linked,
+            "template_missing": row.template_missing,
+            "data_name": dataset_display_name(
+                self._pool_registry,
+                path=job.data_path, sheet=job.data_sheet, kind=job.data_kind,
+            ),
+            # 수치는 **현재 템플릿과의 대칭차**에서 온다(링1 `JobRow`) — 저장된 프로파일은
+            # 확정 행만 담아 「확인 필요」를 셀 수 없다. 세지 못한 갈래는 세지 않았다는
+            # 사실을 `counted` 로 말한다(0 을 사실처럼 말하지 않는다).
+            "counted": row.template_field_count > 0,
+            "template_field_count": row.template_field_count,
+            "mapped_count": row.template_field_count - row.unbound_field_count,
+            "unbound_count": row.unbound_field_count,
+            "stale_count": row.stale_mapping_count,
+        }
+        if not row.template_linked or row.template_missing:
+            # 표·첫 행·계획은 전부 **읽을 수 있는 템플릿**을 전제한다. 그 갈래의 답은
+            # 건강 원인과 카드의 재선택 동사다.
+            return {"card": card, "rows": [], "more_fields": [],
+                    "first_row": None, "plan": None, "output_folder": None}
+        is_txt = template_media(job.template_path) == "txt"
+        binding_key = _binding_key(row.name, job)
+        read = self._first_row_cache.get(binding_key) if binding_key else None
+        if binding_key is None:
+            state, reason, record_count = "error", UNBOUND_FIRST_ROW_REASON, 0
+        elif read is None:
+            state, reason, record_count = "pending", "", 0
+        else:
+            state, reason, record_count = read.state, read.reason, read.record_count
+        record = read.record if (read is not None and read.state == "ready") else {}
+        # 실 헤더는 **읽었을 때만** 선다 — 못 읽었는데 프로파일 어휘를 헤더인 척 쓰면
+        # 「데이터에 없음」 판정이 언제나 거짓이 되어 사라진 열을 조용히 넘긴다.
+        source_fields = (
+            list(read.headers) if (read is not None and read.headers)
+            else profile_source_vocabulary(job.mapping)
+        )
+        model = MappingModel.from_profile(job.mapping)
+        # 「오늘 날짜」 미리보기와 파일 이름 계획이 **한 시각**을 말하게 1회만 찍는다(#957).
+        now = self._clock()
+        rows = [
+            row_projection(
+                r, record, index=i, source_fields=source_fields,
+                has_records=bool(record_count), now=now, first_row_state=state,
+            )
+            for i, r in enumerate(model.rows)
+        ]
+        for projection in rows:
+            # 읽기 전용 칸이 필요한 것은 **해소된 라벨**이다(select 는 항목이 자기 라벨을
+            # 들고 오지만 이 표에는 select 가 없다). 지어내지 않고 링1 조회로 받는다.
+            projection["source_label"] = source_cell_label(projection)
+            projection["display_label"] = display_cell_label(projection)
+        shown, rest = rows[:DETAIL_ROW_LIMIT], rows[DETAIL_ROW_LIMIT:]
+        return {
+            "card": card,
+            "rows": shown,
+            "more_fields": [r["template_field"] for r in rest],
+            "first_row": {"state": state, "reason": reason, "record_count": record_count},
+            # TXT 는 계획이 없다 — 파일을 만들지 않는 작업이라 이름 규칙이 저장돼 있어도
+            # (durable 기본값) 그것으로 만들 파일이 없다.
+            "plan": None if is_txt else self._plan_line(
+                job, model, record, state, record_count, now=now
+            ),
+            # TXT 는 파일을 만들지 않아 폴더가 축이 아니다(§ 「저장 폴더 — 전역 단일 값」의
+            # 표와 같은 판정) — 빈 재진술을 세우면 만들지 않을 파일의 저장 위치를 말한다.
+            "output_folder": None if is_txt else output_folder_zone(
+                template_path=job.template_path,
+                remembered_directory=self._remembered_output_directory(),
+            ),
+        }
+
+    def _plan_line(
+        self, job: "Job", model: MappingModel, record: "dict", state: str,
+        record_count: int, *, now: datetime,
+    ) -> "dict | None":
+        """「이 작업이 만들 파일」 한 줄 — 이름은 **실제 생성기와 같은 함수**가 만든다.
+
+        패턴이 비면 ``None`` 이다 — 만들지 않을 파일의 이름을 계획으로 말하지 않는다.
+        ``pattern`` 을 함께 싣는 이유는 첫 행을 아직 못 읽은 동안에도 **규칙은 참**이기
+        때문이다(상세의 옛 「파일 이름 규칙」 행이 여기로 내려왔다 — 규칙과 실제 이름을
+        두 자리에서 말하면 한쪽이 늙는다).
+        (매체 판정은 호출자가 진다: TXT 는 durable 기본 패턴을 들고 있어도 파일을 만들지
+        않으므로 패턴 유무로 갈리지 않는다.) 첫 행을 아직 못 읽었으면 이름도 아직 없다 —
+        같은 수명이다: 데이터 토큰이 빈 이름을 지어 보이면 그 예시가 산출물과 다르다.
+        """
+        if not job.filename_pattern:
+            return None
+        if state != "ready":
+            # 규칙은 지금도 참이다 — 이름을 아직 못 지었을 뿐이라 규칙으로 답한다.
+            return {"state": state, "pattern": job.filename_pattern,
+                    "first_name": "", "count": 0}
+        try:
+            first = make_output_filename(
+                job.filename_pattern, model.name_token_values(record, now=now),
+                seq=1, now=now,
+            )
+        except Exception:  # noqa: BLE001 — 표시 전용(패턴 검증은 저장 게이트 소관)
+            first = ""
+        return {"state": state, "pattern": job.filename_pattern,
+                "first_name": first, "count": record_count}
+
     def _detail(self) -> "dict | None":
         """선택 행의 상세(§19.6) — 없거나 사라졌으면 ``None``(표면이 빈 상태를 그린다).
 
@@ -223,7 +463,10 @@ class LibraryController:
         return {
             **_job_row_dict(row),
             "primary": primary_action(row),
-            "template_name": row.template_name,
+            # (`template_name`(확장자 붙은 basename)은 U6-F(#980)에서 걷혔다 — 상세가
+            #  템플릿을 부르는 이름은 연결 카드의 표시명 하나이고, 목록·편집기와 같은
+            #  규칙(`library_display_name`)이다. 두 어휘를 한 패널에 두면 같은 파일이
+            #  두 이름으로 불린다.)
             # 템플릿 전체 경로(U2 §2.20, #342) — 상세의 「열기」·「폴더에서 보기」가 겨눈다.
             # 경보(템플릿 미연결 N건)는 이 화면이 내는데 파일을 열거나 폴더로 갈 길이 이
             # 화면에 없었다(계기판의 짝). 경로 검증은 백엔드 화이트리스트(app.py
@@ -234,13 +477,16 @@ class LibraryController:
             # 링0 단일 출처(`data_binding_label`)라 표면이 basename·시트 표기를 안 짓는다.
             "data_label": row.data_label,
             "data_path": job.data_path,
-            # §19.6: HWPX 는 파일 이름 규칙을 보여준다. TXT 의 「실행 방식」 문구는 걷혔다 —
-            # 방식 자체는 부제(`mode_label`)가 이미 말하고, 같은 사실을 한 상세에서 두 번
-            # 말하면 읽을 것만 늘고 새로 아는 것이 없다.
-            "filename_pattern": row.filename_pattern if mode == "hwpx" else "",
+            # (`filename_pattern` 은 U6-F(#980)에서 계획 존으로 내려갔다 — 「이 작업이
+            #  만들 파일」을 말하는 자리가 하나여야 규칙과 실제 이름이 갈리지 않는다.
+            #  TXT 의 「실행 방식」 문구는 그보다 앞서 걷혔다: 방식은 부제가 이미 말한다.)
             "health_causes": [
                 {"severity": s, "text": t} for s, t in library_health_causes(row)
             ],
+            # 상세 하단의 연결 그림(U6-F #980 · §2.6). 건강 원인과 **섞지 않는다**: 저쪽은
+            # 「이 작업이 지금 돌 수 있는가」이고 이쪽은 「무엇을 무엇으로 채워 어떤 파일을
+            # 만드는가」다. 첫 행 읽기 실패도 그래서 여기 안에서 말한다(§19.7 분리).
+            "pairing_detail": self._pairing_detail(row, job),
         }
 
     def snapshot(self) -> dict:
@@ -312,8 +558,56 @@ class LibraryController:
 
         빈 이름은 선택 해제다. 여기서 다른 작업을 열어도 「문서 만들기」의 선택·데이터·
         승인 상태는 유지된다(§19.6 서문 · 화면 머리 문안이 그 사실을 사용자에게 말한다).
+
+        선택은 **읽기를 시작**한다(U6-F #980): 상세의 「첫 행」 열은 데이터 파일을 열어야
+        채워지므로 여기서 워커를 띄우고, 이 디스패치의 푸시는 ``pending`` 인 채로 먼저
+        나간다. 그 읽기가 「문서 만들기」의 마운트·선택·필터를 건드리지 않는 것이
+        「선택 ≠ 착석」 불변의 이 슬라이스 판이다 — 편집기·작업 화면의 ``load_data_path``
+        계열은 여기서 **절대** 재사용하지 않는다.
         """
         self.selected_work = str(p.get("name", ""))
+        self._begin_first_row_read()
+
+    def _begin_first_row_read(self) -> None:
+        """선택한 작업의 첫 행을 **워커 스레드**에서 읽어 두 번째 푸시로 채운다.
+
+        캐시 히트·미결속·읽을 수 없는 작업은 아무것도 시작하지 않는다(스냅샷이 이미 그
+        사실을 말한다). 늦게 끝난 읽기는 **상관 키**를 다시 대조한 뒤에만 푸시한다
+        (`_push_progress` 의 ``run_token`` 규율 선례): 그사이 다른 행을 골랐으면 결과는
+        캐시에만 들어가고, 그 행을 다시 고르는 순간 히트로 즉시 선다.
+
+        푸시는 **전체 스냅샷**이다 — 부분 dict 델타는 job 채널만 허용한다(런타임 reduce).
+        """
+        # 겨눔이 바뀌는 **모든** 갈래에서 먼저 지운다 — 캐시 히트·미결속으로 일찍 돌아가는
+        # 자리에 옛 키가 남으면 앞 선택의 늦은 워커가 지금 화면에 자기 답을 민다.
+        self._selected_binding_key = None
+        name = self.selected_work
+        if not name:
+            return
+        row = next((r for r in self.vm.rows() if r.name == name), None)
+        if row is None or not row.template_linked or row.template_missing:
+            return
+        try:
+            job = load_job(self._job_registry, name)
+        except Exception:  # noqa: BLE001 — 상세 자체가 None 으로 정직하게 그려진다
+            return
+        key = _binding_key(name, job)
+        self._selected_binding_key = key
+        if key is None or key in self._first_row_cache:
+            return
+
+        def work() -> None:
+            result = _read_first_row(job)
+            self._first_row_cache[key] = result
+            # 이 답이 **지금 화면의 질문**에 대한 것일 때만 푸시한다: 이름과 참조 4벌이
+            # 그대로여야 한다(이름만 보면 그사이 데이터를 바꿔 저장한 같은 이름의 작업에
+            # 옛 데이터의 첫 행을 그린다). 아니면 캐시에만 남고, 그 행을 다시 고르는
+            # 순간 히트로 즉시 선다.
+            if self._selected_binding_key == key:
+                self._push()
+
+        self._selected_binding_key = key
+        self._first_row_runner(work)
 
     def _do_toggle_favorite(self, p: dict) -> dict:
         """즐겨찾기 지정/해제(§18.5·§19.6 행) — 정렬 메타만 바꾼다.

@@ -128,6 +128,15 @@ class JobRow:
     # 눌러 보고서야 안다. compile_status 와 같은 compute-not-store 원칙(재편집 드리프트가
     # 나므로 저장하지 않는다) — 그 대가로 hwpx 행마다 템플릿을 한 번 더 읽는다.
     structure_drift: bool = False
+    # 같은 재계산에서 나오는 **수치 셋**(U6-F #980) — 상세의 연결 카드가 읽는다.
+    # `structure_drift` 는 「어긋났는가」 하나로 접힌 값이라 「몇 개가 어긋났는가」를 답하지
+    # 못한다. 그런데 저장된 프로파일은 **확정 행만** 담으므로 「확인 필요 k」를 프로파일에서
+    # 셀 수 없다 — 그 수치는 현재 템플릿과의 대칭차에만 있다(그것이 여기 사는 이유다).
+    # 템플릿을 읽지 못한 갈래(미연결·부재·손상·TXT)는 셋 다 0 이고, 그 갈래에서는 상세가
+    # 카드 대신 건강 원인을 그린다(0 을 사실처럼 말하지 않는다).
+    template_field_count: int = 0     # m — 현재 템플릿의 누름틀 필드 수
+    unbound_field_count: int = 0      # k — 템플릿에 있는데 매핑이 커버 못 하는 필드 수
+    stale_mapping_count: int = 0      # s — 매핑에 있는데 템플릿에서 사라진 필드 수
     # txt 템플릿을 지금 읽을 수 있는가(리뷰 P2). 파일이 "있다"는 것과 "열린다"는 것은 다르다 —
     # 깨진 인코딩·`.txt` 로 끝나는 디렉터리는 존재하지만 여는 순간 실패한다.
     txt_readable: bool = True
@@ -170,12 +179,21 @@ class JobRow:
         # 실행 게이트와 **같은 몸통**을 쓴다(두 표면이 같은 상태를 다르게 부르지 않게).
         name_tokens = bool(unresolved_name_tokens_for(job)) if job.media == "hwpx" else False
         drift = False
+        unbound = stale = template_fields = 0
         if job.media == "hwpx" and compile_state is not None:
             # 읽을 수 있는 템플릿에서만 본다(못 읽는 건 이미 danger 로 말한다). 매핑이 비어
             # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
             # 건강 보기가 침묵하면 숨은 차단이 된다. 다만 **부르는 이름은 다르다** — 아직 안
             # 맞춘 것은 "달라졌다"가 아니다(사유는 library_health 가 가른다).
-            drift = template_path_drift(tpath, job.mapping, engine=engine).has_drift
+            structure = template_path_drift(tpath, job.mapping, engine=engine)
+            drift = structure.has_drift
+            # 수치는 **같은 한 번의 재계산**에서 나온다(U6-F #980) — 카드가 따로 템플릿을
+            # 다시 읽으면 hwpx 행마다 zip 파싱이 한 번 더 든다. 템플릿 필드 수 m 은 대칭차와
+            # 커버에서 유도한다: 커버 중 템플릿에 남아 있는 것이 n(= 커버 − 소멸분)이고,
+            # 거기에 미커버 k 를 더한 것이 곧 m 이다(필드 목록을 한 벌 더 나르지 않는다).
+            unbound = len(structure.template_only)
+            stale = len(structure.mapping_only)
+            template_fields = len(job.mapping.cover_fields()) - stale + unbound
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
@@ -191,6 +209,9 @@ class JobRow:
             media=job.media,
             template_linked=bool(tpath),
             structure_drift=drift,
+            template_field_count=template_fields,
+            unbound_field_count=unbound,
+            stale_mapping_count=stale,
             txt_readable=txt_readable,
             unresolved_name_tokens=name_tokens,
             mapping_empty=not job.mapping.mappings,
@@ -391,9 +412,12 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
 
 
 # 라이브러리 상세의 「필드 연결」 표(``FieldBindingRow``·``field_binding_rows`` 와 그 표시
-# 어휘 상수들)는 표면과 함께 철거됐다 — 매핑의 정본은 편집기 「필드 연결」 탭이고, 읽기 전용
-# 사본을 상세에 한 벌 더 두면 같은 상태를 두 자리가 말한다. 되살릴 일이 생기면 소비 표면과
-# 함께 다시 세운다(소비자 0 인 산출자는 남기지 않는다 — R5-99 B2 전례).
+# 어휘 상수들)는 표면과 함께 철거됐다(#966) — 되살리지 않는다. **U6-F(#980)가 그 표를 다시
+# 세웠지만 이 산출자를 되살린 것이 아니다**: #966 이 걷은 것은 별도 라벨 사전을 든 사슬이었고,
+# 지금 상세가 그리는 것은 편집기 2단계와 **같은 링1 투영**
+# (:func:`~hwpxfiller.gui.mapping_state.row_projection`)·같은 라벨 상수를 두 번째 호스트가
+# 소비하는 것이라 「같은 상태를 두 곳이 판정」이 아니다. 스냅샷 키도 ``bindings`` 가 아니라
+# ``pairing_detail`` 이다 — 옛 이름을 되살리면 옛 사슬과 구별되지 않는다.
 
 
 class HomeViewModel:

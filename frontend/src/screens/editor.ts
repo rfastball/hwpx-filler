@@ -2151,6 +2151,10 @@ function DataColumnCell(props: {
 function PreviewCell(props: { row: Obj }): ReactNode {
   const { row } = props;
   const kind = String(row.preview_kind);
+  /* `pending`(첫 행을 아직 못 읽음)은 이 화면에서 **나오지 않는다** — 편집기는 데이터를
+     이미 들고 있다. 그래도 여기 서는 이유는 `preview_kind` 가 닫힌 집합 **하나**이기
+     때문이다(U6-F #980): 두 호스트가 같은 링1 투영을 소비하므로 집합을 아는 자리도 하나다. */
+  if (kind === "pending") return h("span", { className: "pv pending" }, String(row.preview));
   if (kind === "error") return h("span", { className: "pv err" }, "(미리보기 오류)");
   if (kind === "missing") return h("span", { className: "pv missing" }, String(row.preview));
   if (kind === "blank") return h("span", { className: "pv blank" }, "");

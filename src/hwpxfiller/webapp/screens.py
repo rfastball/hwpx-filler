@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Callable, Iterable, Protocol
 
 from ..application.jobs import CrossMediaRelinkError, relink_template
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference
+from ..domain.dataset_reference import DatasetReference, reference_identity
 from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
@@ -307,15 +306,56 @@ def pool_reference_quad(item: "DatasetReference") -> "tuple[str, str, int, str]"
     return (path, sheet, header_row, "")
 
 
-def pclm_reference(db: str, view: str) -> SimpleNamespace:
-    """풀 슬롯 없는 계약 목록 마운트가 링1 리졸버에 넘길 **참조 형상** 한 자리.
+# (`pclm_reference`(계약 목록 참조 형상)는 U6-F(#980)에서 :mod:`hwpxfiller.data.factory` 로
+#  이사했다 — 그 형상을 읽는 것도, 그것으로 소스를 세우는 분기도 전부 데이터층에 있어서
+#  형상만 링2 에 남으면 결속 하나가 두 층에 걸친다.)
 
-    작업의 durable 결속(:func:`~hwpxfiller.domain.job.data_binding_of`)과 부팅 기억은 슬롯이
-    아니라 db+뷰를 든다 — 그것으로 소스를 복원하려면 :func:`~hwpxfiller.data.factory.
-    source_from_pool_item` 이 읽는 덕타입(``.kind``/``.opts``)이 필요하다. 두 화면(작업 마운트·
-    편집기 복원)이 각자 조립하면 opts 키 이름이 갈리는 날 한쪽만 조용히 기본 db 를 읽는다.
+
+def dataset_display_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:
+    """결속된 데이터의 **표시명** — 풀에 등록돼 있으면 등록명, 아니면 확장자 없는 basename.
+
+    풀 항목의 정체는 사람이 붙인 이름이다(같은 파일을 다른 이름으로 둘 이상 고정할 수 있다).
+    경로에서 되짚으면 그 이름이 사라지고, 목록에서 「7월 발주」로 부르던 것이 다른 화면에서는
+    「대장」이 된다. 그래서 이름을 말하는 표면 둘(편집기 머리·「문서 작업」 상세 연결 카드)이
+    같은 함수를 부른다(U6-F #980 — 종전에는 편집기 메서드 하나뿐이었다).
+
+    정체성 규칙은 등록 게이트가 쓰는 것 하나
+    (:func:`~hwpxfiller.domain.dataset_reference.reference_identity`)를 그대로 지난다 —
+    경로·시트·종류 세 성분이 여기서 다시 조립되지 않는다. 조회 실패는 표시명 하나 때문에
+    화면을 막지 않는다(basename 으로 강등).
     """
-    return SimpleNamespace(kind="pclm", opts={"db": db, "view": view})
+    if not path:
+        return ""
+    registered = registered_dataset_name(
+        pool_registry, path=path, sheet=sheet, kind=kind
+    )
+    return registered or Path(path).stem
+
+
+def dataset_reference_identity(*, path: str, sheet: str, kind: str) -> str:
+    """결속 3성분 → 풀 등록 정체성 문자열. 파일을 가리키지 않는 참조는 ``""``(조회 불가)."""
+    return reference_identity(DatasetReference(
+        name="",
+        kind="pclm" if kind == "pclm" else "excel",
+        opts=(
+            {"db": path, "view": sheet} if kind == "pclm"
+            else {"path": path, "sheet": sheet}
+        ),
+    )) or ""
+
+
+def registered_dataset_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:
+    """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``)."""
+    if pool_registry is None:
+        return ""
+    ident = dataset_reference_identity(path=path, sheet=sheet, kind=kind)
+    if not ident:
+        return ""
+    try:
+        found = pool_registry.find_identity_raw(ident)
+    except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
+        found = None
+    return found[1].name if found else ""
 
 
 def source_label(source: str, data_label: str) -> str:

@@ -30,7 +30,9 @@
 .library-detail{min-width:0;background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-surface);display:flex;flex-direction:column}
 @media(min-width:921px) and (min-height:760px){
-  .library-browser{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
+  /* 좌:우 비율은 U6-F(#980)에서 **뒤집혔다**(동결 시안 장면 4): 상세가 연결 카드·4열 표·
+     계획 줄을 지면서 넓은 쪽이 필요해졌고, 목록은 이름 한 줄+배지라 좁아도 읽힌다. */
+  .library-browser{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
     /* 상단 토바(구조 치수 · §19.12) + 화면 헤더·경보·도구줄이 먹는 높이를 뺀 나머지를 두
        pane 이 나눠 갖는다. 토바 높이는 변수 단일 출처라 셸이 바뀌면 여기가 같이 따라온다 —
        리터럴로 베끼면 셸 교체 때 페이지가 조용히 스크롤한다(§19.6 명문 위반, §10.9 판정 G). */
@@ -71,13 +73,59 @@
 .lib-detail-name{margin:0}
 .lib-detail-sub{font-size:var(--fs-body);color:var(--a-muted);margin:var(--sp-2) 0 var(--sp-10)}
 .lib-causes{margin:var(--sp-4) 0 var(--sp-8);padding-left:var(--sp-16)}
-.lib-detail-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-2) var(--sp-10);
-  margin:0 0 var(--sp-12);font-size:var(--fs-body)}
-.lib-detail-facts dt{color:var(--a-muted)}
-.lib-detail-facts dd{margin:0}
-/* 미결속 데이터 줄(#932 U4-C) — 배지·사유·동사가 한 줄에서 줄바꿈으로 눕는다.
-   상세 facts 는 2열 그리드라 dd 안에서 흐르게 두는 편이 열 폭을 안 흔든다. */
-.lib-detail-unbound{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
+/* 연결 카드(U6-F #980 · 동결 시안 장면 4) — 편집기 1단계의 가로 3열을 **눕힌 판**이다.
+   좁은 상세 패널에 그 가로 배치를 그대로 넣으면 이름이 배지와 겹치고 부제가 말줄임된다.
+   같은 링1 투영, 다른 배치. (구 사실 3행 `.lib-detail-facts` 와 미결속 줄
+   `.lib-detail-unbound` 는 이 카드가 승계하며 표면과 함께 사라졌다.) */
+.lib-paircard{display:flex;flex-direction:column;gap:var(--sp-6);margin:0 0 var(--sp-12)}
+.lib-paircard .side{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
+.lib-paircard .mid{display:flex;align-items:center;gap:var(--sp-8);
+  font-size:var(--fs-body);color:var(--a-muted);padding-left:var(--sp-10)}
+/* 세로 연결선 — 두 항목을 잇는 그림이고 상태를 말하지 않는다(수치가 그 일을 한다). */
+.lib-paircard .vwire{flex:none;width:2px;height:22px;background:var(--a-border)}
+.lib-paircard .nums{min-width:0}
+.lib-paircard .nums b{font-variant-numeric:tabular-nums}
+.lib-paircard .nums .stale{display:block;color:var(--a-warn)}
+.lib-pitem{align-self:stretch;display:grid;grid-template-columns:20px minmax(0,1fr) auto;
+  gap:var(--sp-8);align-items:center;border:1px solid var(--a-border);
+  border-radius:var(--rad-control);background:var(--a-card);padding:var(--sp-8) var(--sp-10)}
+.lib-pitem.warn{border-color:var(--a-warn)}
+.lib-pitem .ic{width:16px;height:19px;border:1.5px solid var(--a-muted);border-radius:2px}
+.lib-pitem-text{min-width:0;display:block}
+.lib-pitem .nm{display:block;font-size:var(--fs-body);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 부제는 **사유를 진다** — 말줄임하면 그 사유가 사라진다(편집기 풀 항목과 같은 규율). */
+.lib-pitem .sb{display:block;font-size:var(--fs-caption);color:var(--a-muted);
+  white-space:normal;word-break:keep-all}
+.lib-pitem .sb .why{color:var(--a-warn)}
+
+/* 읽기 전용 4열 표 — 폭이 고정이라 잘림·겹침이 나지 않는다(좁은 패널 계약). */
+table.ro{width:100%;table-layout:fixed;border-collapse:collapse;font-size:var(--fs-body);
+  margin:0 0 var(--sp-10)}
+table.ro th,table.ro td{text-align:left;padding:var(--sp-4) var(--sp-6);
+  border-bottom:1px solid var(--a-border);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+table.ro th{font-size:var(--fs-caption);color:var(--a-muted);font-weight:600}
+table.ro th:nth-child(1),table.ro td:nth-child(1){width:24%}
+table.ro th:nth-child(2),table.ro td:nth-child(2){width:22%}
+table.ro th:nth-child(3),table.ro td:nth-child(3){width:22%}
+table.ro th:nth-child(4),table.ro td:nth-child(4){width:32%}
+table.ro td.f{font-weight:600}
+table.ro tbody tr[data-field]{cursor:pointer}
+table.ro tbody tr[data-field]:hover{background:var(--n-hover)}
+table.ro tbody tr:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+/* 프레임 밖 행의 이름 줄 — 여기만 줄바꿈한다(이름을 잘라 내면 명시가 아니다). */
+table.ro tr.more-row td{white-space:normal;word-break:keep-all;color:var(--a-muted);
+  font-size:var(--fs-caption)}
+/* 첫 행 칸의 색은 `.pv` 어휘를 그대로 쓴다(editor.css 단일 선언) — 갈리는 것 하나는
+   읽기 실패 사유다: **문장**이라 줄바꿈해야 하고, 행 하나의 값 오류(danger)가 아니라
+   데이터를 못 읽었다는 경고다. */
+table.ro .pv.err{color:var(--a-warn);white-space:normal;word-break:keep-all}
+
+/* 계획 한 줄 — 「이 작업이 만들 파일」. 경로가 길어도 패널을 넓히지 않는다. */
+.plan-line{margin:0 0 var(--sp-8);font-size:var(--fs-caption);color:var(--a-muted);
+  word-break:break-all}
+.plan-line b{color:var(--a-ink)}
 .lib-tags{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin:var(--sp-4) 0 0}
 .lib-detail-acts{flex:none;display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;
   border-top:1px solid var(--a-border);padding:var(--sp-10) var(--sp-16)}

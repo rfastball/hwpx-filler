@@ -70,6 +70,8 @@ from ..application.execution_contract_set import (
     plan_semantic_digest,
 )
 from ..domain.identity_summary import identity_summary
+# 계약 목록 참조 **형상**만 든다 — 구체 소스 조립은 여전히 주입된 factory 의 몫이다(P2-16).
+from ..data.factory import pclm_reference
 from ..external.artifact_observation import (
     ArtifactObservationRefused,
     observe_delivered_artifact,
@@ -289,7 +291,6 @@ from .screens import (
     PoolTargetingMixin,
     PushSink,
     TutorialSink,
-    pclm_reference,
     pool_reference_quad,
     reference_missing,
     relink_job_template,
@@ -1960,8 +1961,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         **소스는 링1 리졸버를 지난다**(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)
         — 구체 선택은 유일한 제품 조립점이 주입한 factory 의 몫이라(P2-16), 여기서
         ``PclmDataSource`` 를 직접 만들면 링2 가 구체를 조용히 재선택하는 뒷문이 된다.
-        풀 슬롯이 없는 마운트라 참조 형상은 :func:`~hwpxfiller.webapp.screens.
-        pclm_reference` 가 짓는다.
+        풀 슬롯이 없는 마운트라 참조 형상은 :func:`~hwpxfiller.data.factory.
+        pclm_reference` 가 짓는다(U6-F #980 이사 — 형상·복원이 한 층에 산다).
 
         읽기 실패(db 부재·뷰 손상·미지 뷰)는 삼키지 않고 그대로 올린다 — 호출자
         (결속 마운트·부팅 복원·재마운트)가 자기 채널의 문안으로 재진술한다.

@@ -50,26 +50,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..domain.dataset_reference import (
-    STATUS_ACTIVE,
-    DatasetReference,
-    reference_identity,
-)
-from ..domain.format_engine import presets as format_presets
+from ..domain.dataset_reference import STATUS_ACTIVE
 from ..domain.job import (
     DEFAULT_FILENAME_PATTERN,
-    MISSING_MARKER,
     Job,
     data_binding_of,
     has_data_binding,
     template_media,
 )
-from ..domain.mapping import TYPES, MappingProfile
+from ..domain.mapping import MappingProfile
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import library_display_name
 
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
-from ..data.factory import source_for_path, source_from_pool_item
+from ..data.factory import (
+    pclm_reference,
+    source_for_binding,
+    source_for_path,
+    source_from_pool_item,
+)
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
@@ -92,17 +91,15 @@ from ..gui.job_editor_state import (
     validate_save,
 )
 from ..gui.mapping_state import (
-    DISPLAY_TYPE_GROUPS,
     NO_SOURCE_LABEL,
     RAW_BLOCK_MESSAGE,
-    ROW_STATUS_LABEL,
     SPECIAL_SOURCE_LABEL,
-    TYPE_GROUP_LABEL,
     MappingModel,
     PartialGate,
     gate_for_template,
     pairing_preview,
     profile_source_vocabulary,
+    row_projection,
 )
 from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
@@ -117,16 +114,14 @@ from .screens import (
     TXT_RAW_BLOCK,
     PushSink,
     TutorialSink,
+    dataset_reference_identity,
     load_pool_into,
-    pclm_reference,
     pool_reference_quad,
+    registered_dataset_name,
     reference_missing,
     unwired_tutorial,
 )
 from .template_groups import norm_library_path
-
-# 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
-_FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
 
 # 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
@@ -471,25 +466,18 @@ class EditorController:
         """
         if self._pool_registry is None:
             return ""
-        ident = reference_identity(DatasetReference(
-            name="",
-            kind="pclm" if self.data_kind == "pclm" else "excel",
-            opts=(
-                {"db": self.data_path, "view": self.data_sheet}
-                if self.data_kind == "pclm"
-                else {"path": self.data_path, "sheet": self.data_sheet}
-            ),
-        ))
+        ident = dataset_reference_identity(
+            path=self.data_path, sheet=self.data_sheet, kind=self.data_kind
+        )
         if not ident:
             return ""
         cached = self._data_name_cache
         if cached is not None and cached[0] == ident:
             return cached[1]
-        try:
-            found = self._pool_registry.find_identity_raw(ident)
-        except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
-            found = None
-        name = found[1].name if found else ""
+        name = registered_dataset_name(
+            self._pool_registry,
+            path=self.data_path, sheet=self.data_sheet, kind=self.data_kind,
+        )
         self._data_name_cache = (ident, name)
         return name
 
@@ -809,134 +797,23 @@ class EditorController:
     def _row_snapshot(
         self, index: int, row, record: "dict", *, now: "datetime | None" = None,
     ) -> dict:
-        """행 1개의 스냅샷. ``now`` 는 ``today``(오늘 날짜) 미리보기의 기준 시각이다 —
-        :meth:`snapshot` 이 **스냅샷당 1회** 잡아 전 행이 공유한다(RC-02 확장, `screen_job`
-        의 `_names_now` 규율 승계). 행마다 clock 을 다시 부르면 한 표 안에서 서로 다른
-        시각이 서고, 하위-일 서식에서 그 차이가 눈에 보인다.
+        """행 1개의 스냅샷 — 링1 투영(:func:`~hwpxfiller.gui.mapping_state.row_projection`)
+        의 얇은 래퍼다(U6-F #980).
 
-        **행 상태와 그 라벨은 링1 이 낸다**(U6-C #977): ``row_state`` 는 닫힌 집합 4태이고
-        ``state_label`` 은 그 문안이다. 종전에는 여기서 4태를 짓고 웹이 그 위에 「제안」을
-        한 번 더 유추했다 — 판정이 셋이면 그중 둘은 언젠가 옛말을 한다.
+        성형이 여기 있던 동안에는 이 표를 읽기 전용으로 한 번 더 세우려는 표면이 **자기
+        사본**을 만들 수밖에 없었다(#966 이 라이브러리 상세에서 걷은 그 사슬). 투영이 링1 로
+        올라가면서 두 표면이 같은 값을 소비한다 — 이 화면이 더하는 것은 세션 사실 둘
+        (지금 헤더·레코드 유무)과 스냅샷당 한 번 찍은 시각뿐이다.
 
-        **미리보기는 산출물이 담을 것을 그대로 말한다.** 결속됐는데 이 행에서 값이 비면
-        빈칸이 아니라 :data:`~hwpxfiller.domain.job.MISSING_MARKER` 다 — 생성이 그 자리에
-        실제로 넣는 문자열이라 UI 문안이 아니라 데이터이고, 그래서 여기서 새로 짓지 않고
-        링0 상수를 포맷한다(빈칸으로 새면 「조용히 틀리지 않는다」가 바로 깨지는 자리다).
+        편집기는 데이터를 이미 들고 있으므로 첫 행 상태는 언제나 ``ready`` 다.
         """
-        try:
-            preview = row.to_mapping().value_for(record, now=now)
-            preview_error = False
-        except ValueError:
-            preview, preview_error = "", True
-        empty = bool(row.has_content()) and preview == ""
-        blank = row.is_empty_confirmed()
-        if preview_error:
-            preview_kind, preview = "error", ""
-        elif row.has_content():
-            preview_kind = "missing" if empty else "value"
-            if empty:
-                preview = MISSING_MARKER.format(field=row.template_field)
-        elif blank:
-            preview_kind, preview = "blank", ""
-        else:
-            preview_kind, preview = "none", ""
-        # 데이터 열 칸이 지금 무엇을 들고 있는가 — 「비워 둠」이 먼저다: 유형은 남아 있어도
-        # 사람이 「채우지 않는다」고 선언한 행은 그 선언으로 보여야 한다.
-        if blank:
-            source_kind = "blank"
-        elif row.type == "const":
-            source_kind = "const"
-        elif row.type == "today":
-            source_kind = "today"
-        elif row.source:
-            source_kind = "column"
-        else:
-            source_kind = ""
-        state = row.status()
-        inferred = getattr(row.spec, "inferred_type", "") if row.spec else ""
-        return {
-            "index": index,
-            "template_field": row.template_field,
-            "inferred_type": inferred,
-            "context": getattr(row.spec, "context", "") if row.spec else "",
-            "source": row.source,
-            "type": row.type,
-            "const": row.const,
-            "fmt": row.fmt,
-            # 이 행의 표시형 후보 — **유형 축을 흡수한 그룹 목록**이다(리뷰 1). 유형별 표를
-            # 웹이 되짚지 않는다(유형이 행 축이므로 후보도 행 축이다). 종전의 스냅샷 전역
-            # `fmt_options`·`type_options` 는 유형 열과 함께 퇴역했다.
-            "display_options": self._display_options(row, source_kind),
-            "display_value": f"{row.type}:{row.fmt}",
-            "confirmed": row.confirmed,
-            "touched": row.touched,
-            "has_content": row.has_content(),
-            # 배지 버튼이 눌리는가 — 채울 것이 없고 **확인도 안 된** 행만 잠긴다(리뷰 4).
-            # 비움 확정 행은 채울 것이 없어도 확인을 **풀 수 있어야** 한다: 잠그면 「확인」
-            # 배지가 비활성으로 서서 「열을 고르세요」라고 말하는, 자기 상태와 어긋난 손잡이가
-            # 된다. 술어를 웹이 다시 지으면 배지와 게이트가 갈린다.
-            "confirmable": row.has_content() or row.confirmed,
-            # ↻(자동 제안 되돌리기)가 서는가 — `_do_revert_source` 가 확정 행을 거절하는 것과
-            # **같은 술어**다(리뷰 9). 웹이 `touched && !confirmed && record_count` 로 다시
-            # 조립하면 거절과 어포던스가 갈려 「눌렀는데 거절당하는」 버튼이 남는다.
-            "revertable": row.touched and not row.confirmed and bool(self.records),
-            "suggestion_score": round(row.suggestion_score, 3),
-            "preview": preview,
-            "preview_kind": preview_kind,
-            "preview_empty": empty,
-            "preview_error": preview_error,
-            "row_state": state,
-            "state_label": ROW_STATUS_LABEL[state],
-            "source_kind": source_kind,
-            "source_value": self._source_option_value(row, source_kind),
-            # 결속 열이 지금 데이터에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
-            # 드러낸다(문안은 여기, 렌더는 웹).
-            "source_missing_label": (
-                f"{row.source} (데이터에 없음)"
-                if source_kind == "column" and row.source not in self.source_fields else ""
-            ),
-        }
-
-    @staticmethod
-    def _display_options(row, source_kind: str) -> "list[dict]":
-        """이 행의 표시형 select 항목 — **유형 그룹**으로 묶인다(리뷰 1).
-
-        값은 ``"<유형>:<표시형 코드>"`` 한 쌍이고 항목이 ``type``·``fmt`` 를 따로 들어
-        웹이 그 문자열을 파싱하지 않는다(데이터 열 항목과 같은 규율).
-
-        그룹 집합은 **값의 출처**가 가른다: 열에서 받는 행은 텍스트·날짜·금액 셋을 고를 수
-        있고(이 select 가 곧 유형 축이다), 「오늘 날짜」 행은 날짜 어휘 하나뿐이며(값은 실행
-        시각이지만 표시형 표는 같다 — U4 §2.14 판정 1), 「고정값」 행은 프리셋이 없어 빈
-        목록이다(표면은 비활성 「—」로 접는다).
-        """
-        if source_kind == "const":
-            return []
-        kinds = ("today",) if source_kind == "today" else DISPLAY_TYPE_GROUPS
-        groups: "list[dict]" = []
-        for kind in kinds:
-            options = [
-                {"value": f"{kind}:{o['code']}", "label": o["label"],
-                 "type": kind, "fmt": o["code"]}
-                for o in _FMT_OPTIONS.get(kind, [])
-            ]
-            if options:
-                groups.append({"label": TYPE_GROUP_LABEL[kind], "options": options})
-        return groups
-
-    @staticmethod
-    def _source_option_value(row, source_kind: str) -> str:
-        """데이터 열 select 가 지금 고르고 있는 **항목 값**.
-
-        실 열은 ``col:``, 특수 항목은 ``sp:`` 접두다 — 두 이름 공간이 구조적으로 갈리므로
-        「고정값…」이라는 이름의 실제 열이 있어도 충돌하지 않는다(센티넬을 소스 값에 얹지
-        않는다는 규칙의 집행). 웹은 이 값을 파싱하지 않고 항목의 ``kind`` 로 발행 액션을
-        가른다.
-        """
-        if source_kind == "column":
-            return f"col:{row.source}"
-        if source_kind in ("const", "today", "blank"):
-            return f"sp:{source_kind}"
-        return ""
+        return row_projection(
+            row, record,
+            index=index,
+            source_fields=self.source_fields,
+            has_records=bool(self.records),
+            now=now,
+        )
 
     def snapshot(self) -> dict:
         sections = self.sections()
@@ -1171,14 +1048,11 @@ class EditorController:
         # 파일명 날짜 토큰이 예시 안에서 갈리면 예시가 거짓말한다.
         now = self._clock()
         if self.model is not None:
-            record = self.records[0] if self.records else {}
-            for row in self.model.rows:
-                if not row.has_content():
-                    continue
-                try:
-                    data[row.template_field] = row.to_mapping().value_for(record, now=now)
-                except ValueError:
-                    data[row.template_field] = ""
+            # 토큰 재료도 링1 하나다(U6-F #980) — 「문서 작업」 상세의 계획 한 줄이 같은
+            # 재료로 같은 이름을 말한다(두 곳이 각자 모으면 한쪽만 빈 값 갈래를 흘린다).
+            data = self.model.name_token_values(
+                self.records[0] if self.records else {}, now=now
+            )
         try:
             first = make_output_filename(self.pattern, data, seq=1, now=now)
         except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
@@ -1690,7 +1564,7 @@ class EditorController:
     def _adopt_pclm(self, db: str, view: str, *, emit_push: bool = True) -> None:
         """계약 목록(pclm) 뷰를 이 세션의 데이터로 — :meth:`load_data_path` 의 자매(#937).
 
-        참조 형상은 :func:`~hwpxfiller.webapp.screens.pclm_reference` 하나가 짓는다(「문서
+        참조 형상은 :func:`~hwpxfiller.data.factory.pclm_reference` 하나가 짓는다(「문서
         만들기」의 마운트와 같은 한 벌) — 두 화면이 각자 덕타입을 조립하면 opts 키가
         갈리는 날 한쪽만 조용히 기본 db 를 읽는다. 복원은 풀 항목 복원과 **같은 함수**를
         지난다: 참조로부터 소스를 세우는 규칙이 이 저장소에 두 벌이 되지 않게.
@@ -1765,26 +1639,26 @@ class EditorController:
         (:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`)이다.
 
         ``kind`` 가 **해석기를 가른다**(#937): ``""`` 는 파일(엑셀/CSV), ``"pclm"`` 은 계약
-        목록(db+뷰)이다. 이름 없는 종류는 시끄럽게 거절한다 — 그냥 넘기면 db 경로를 엑셀로
-        오파싱하거나 빈 세션으로 조용히 착지한다. 이 한 자리가 작업 열기 복원·「이 데이터로
-        새 작업」·수리 진입을 전부 받으므로, 종류 해석을 여기 밖에 두면 입구마다 갈린다.
+        목록(db+뷰)이다. 그 분기 자체는 데이터층 하나가 진다
+        (:func:`~hwpxfiller.data.factory.source_for_binding` — U6-F #980 승격): 「문서 작업」
+        상세도 같은 참조로 첫 행을 읽게 되면서 소비자가 둘이 됐고, 입구마다 분기를 적으면
+        한쪽만 db 경로를 엑셀로 오파싱한다. 이름 없는 종류는 그 함수가 시끄럽게 거절한다.
+        여기 남는 것은 **채택**(세션 성분 한 벌 대입)이고 그것은 종류와 무관한 공용 몸통이다.
         """
-        path = str(source_ref.get("path") or "")
-        if not path:
-            raise ValueError("데이터 참조에 경로가 없습니다.")
-        kind = str(source_ref.get("kind") or "")
-        sheet = str(source_ref.get("sheet") or "")
-        if kind == "pclm":
-            self._adopt_pclm(path, sheet, emit_push=emit_push)
-            return
-        if kind:
-            raise ValueError(f"'{kind}' 데이터 결속은 편집기에서 복원할 수 없습니다.")
+        source = source_for_binding(source_ref)
         header = source_ref.get("header_row")
-        self.load_data_path(
-            path,
-            sheet=sheet or None,
-            header_row=header if isinstance(header, int) and not isinstance(header, bool) else 0,
-            emit_push=emit_push,
+        kind = str(source_ref.get("kind") or "")
+        self._adopt_datasource(
+            source, source.records(),
+            path=str(source_ref.get("path") or ""),
+            sheet=str(source_ref.get("sheet") or ""),
+            # 계약면에는 헤더 행 축이 없다(0 = 해당 없음).
+            header_row=(
+                header
+                if not kind and isinstance(header, int) and not isinstance(header, bool)
+                else 0
+            ),
+            kind=kind, emit_push=emit_push,
         )
 
     # ------------------------------------------------------- 편집 모드(#26 #1)

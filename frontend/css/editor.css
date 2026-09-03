@@ -107,6 +107,9 @@ tr.r-suggested td{background:var(--a-card)}
 /* 미리보기 4갈래 — 표식(문서에 박히는 문자열)은 주의색, 열 필요·오류는 중립·경보. */
 .pv.missing{color:var(--a-warn);font-weight:600}
 .pv.none{color:var(--a-muted)}
+/* 아직 못 읽은 첫 행(U6-F #980) — 편집기에서는 나오지 않지만 `preview_kind` 는 **닫힌
+   집합 하나**라 그 값도 여기 선다(두 호스트가 같은 투영을 소비한다). */
+.pv.pending{color:var(--a-muted)}
 .pv.err{color:var(--a-danger);font-weight:600}
 
 /* (실행 화면(#18) 전용 레이아웃 규칙 .run-jobbar/.run-jobmeta/.jm-line/.run-body 삭제 —

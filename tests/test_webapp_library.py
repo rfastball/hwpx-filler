@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -15,9 +17,16 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.text_registry import TextTemplateRegistry
-from hwpxfiller.webapp.screen_library import LibraryController
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
+from hwpxfiller.webapp.output_folder_zone import output_folder_zone
+from hwpxfiller.webapp.screen_library import (
+    UNBOUND_FIRST_ROW_REASON,
+    LibraryController,
+)
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
 def _pool(tmp_path) -> DatasetPoolRegistry:
@@ -52,13 +61,37 @@ def _text_reg(tmp_path) -> TextTemplateRegistry:
     return TextTemplateRegistry(d)
 
 
-def _controller(tmp_path) -> "tuple[LibraryController, list]":
+def _detail_deps(tmp_path) -> dict:
+    """상세 연결 존(U6-F #980)이 요구하는 주입 한 벌 — 서식 폴더 권위·전역 저장 폴더·시계.
+
+    **필수 주입**이라 폴백이 없다(#570 규율): 화면이 자기 홀더를 세우면 루트·저장 폴더의
+    제2 정본이 된다. 시험은 그 셋을 밀폐값으로 고정한다.
+    """
+    return {
+        "template_root": TemplateRoot(default_root=tmp_path / "templates"),
+        "remembered_output_directory": lambda: "",
+        "clock": lambda: datetime(2026, 9, 2, 10, 0, 0),
+        "first_row_runner": lambda work: work(),
+    }
+
+
+def _controller(tmp_path, *, registry=None, runner=None, remembered="")         -> "tuple[LibraryController, list]":
+    """헤드리스 컨트롤러 + 푸시 수집 리스트.
+
+    ``runner`` 는 첫 행 읽기의 **실행 자리**다(U6-F #980). 기본은 즉시 실행이라 이 파일의
+    옛 단언들이 그대로 결정론이고, 두 번째 푸시를 관측하는 시험만 지연 러너를 넣는다 —
+    제품은 워커 스레드이고 갈리는 것은 「어디서 도는가」 하나다.
+    """
     pushes: list = []
-    ctrl = LibraryController(_reg(tmp_path), _text_reg(tmp_path),
+    ctrl = LibraryController(registry or _reg(tmp_path), _text_reg(tmp_path),
                           lambda s, snap: pushes.append((s, snap)),
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          template_root=TemplateRoot(default_root=tmp_path / "templates"),
+                          remembered_output_directory=lambda: remembered,
+                          clock=lambda: datetime(2026, 9, 2, 10, 0, 0),
+                          first_row_runner=runner or (lambda work: work()))
     return ctrl, pushes
 
 
@@ -109,7 +142,8 @@ def test_empty_registry_is_loudly_empty(tmp_path):
                           lambda s, snap: pushes.append((s, snap)),
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          **_detail_deps(tmp_path))
     snap = ctrl.initial()
     assert snap["is_empty"] is True
     assert snap["counts"]["all"] == 0
@@ -129,7 +163,8 @@ def test_sections_are_always_one_headless_flat_partition(tmp_path):
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          **_detail_deps(tmp_path))
     secs = ctrl.snapshot()["sections"]
     assert [(s["value"], s["count"], s["headed"], s["collapsed"]) for s in secs] == [
         ("", 2, False, False),
@@ -230,7 +265,8 @@ def _corrupt_file(tmp_path) -> "tuple[LibraryController, str]":
                           lambda s, snap: pushes.append((s, snap)),
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          **_detail_deps(tmp_path))
     rows = ctrl.snapshot()["corrupt_rows"]
     assert len(rows) == 1 and rows[0]["path"]            # 경로가 조치용으로 노출된다(#8)
     return ctrl, rows[0]["path"]
@@ -419,11 +455,15 @@ def test_detail_of_an_unbound_job_states_the_gap_instead_of_a_blank(tmp_path):
     assert d["data_bound"] is False and d["data_label"] == "" and d["data_path"] == ""
 
 
-def test_detail_carries_every_health_cause_but_no_mapping_copy(tmp_path):
-    """§19.7 "상세에서 모든 실제 원인" + 상세는 매핑 사본을 싣지 않는다.
+def test_detail_carries_every_health_cause_and_never_the_old_binding_chain(tmp_path):
+    """§19.7 "상세에서 모든 실제 원인" + 옛 `detail.bindings` 사슬은 되살아나지 않는다.
 
-    「필드 연결」 표와 TXT 「실행 방식」 문구는 표면과 payload 에서 함께 걷혔다 — 매핑의
-    정본은 편집기 탭이고, 방식은 부제(`mode_label`)가 이미 말한다. 판본 열은 F7 까지 만들지
+    **U6-F(#980)에서 뒤집은 단언**: 종전 이 시험은 「상세는 매핑 사본을 싣지 않는다」였다.
+    #966 이 걷은 것은 정보가 아니라 **별도 라벨 사전을 든 payload 사슬**이었고, U6-F 가
+    다시 세운 표는 편집기 2단계와 **같은 링1 투영**(`row_projection`)·같은 라벨 상수를
+    두 번째 호스트가 소비하는 것이라 「같은 상태를 두 곳이 판정」이 아니다. 그래서 남는
+    금지는 하나다 — 키 이름 `bindings` 는 되살리지 않는다(옛 사슬과 구별되지 않는다).
+    TXT 「실행 방식」 문구는 그대로 걷혀 있고(부제가 이미 말한다), 판본 열은 F7 까지 만들지
     않는다(판정 D).
     """
     ctrl, _ = _controller(tmp_path)
@@ -435,9 +475,11 @@ def test_detail_carries_every_health_cause_but_no_mapping_copy(tmp_path):
     # 목록 배지는 최고 심각도 1건이지만 상세는 두 계보를 함께 본다.
     assert "템플릿 파일을 찾을 수 없습니다." in causes
     assert "파일명 패턴의 토큰을 채우지 못합니다." in causes
-    assert d["filename_pattern"] == "공고-{{ID}}"      # HWPX 는 파일 이름 규칙
+    assert "filename_pattern" not in d                  # 규칙은 계획 존으로 내려갔다
     # 걷힌 축은 빈 값이 아니라 **부재**다 — 빈 값을 남기면 표면이 자리를 다시 그리는 미끼다.
-    assert "bindings" not in d
+    assert "bindings" not in d                          # 옛 사슬의 키는 되살리지 않는다
+    # 새 존은 이름이 다르고, 이 표본은 템플릿이 부재라 표를 그리지 않는다(카드만 남는다).
+    assert d["pairing_detail"]["rows"] == []
     assert "run_note" not in d
     assert "last_run_display" not in d
     assert "revision" not in d                          # 판본은 F7 — 빈 자리도 두지 않는다
@@ -513,7 +555,8 @@ def test_txt_work_joins_the_document_picker(tmp_path):
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          **_detail_deps(tmp_path))
     assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
 
 
@@ -539,7 +582,8 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
                           engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
-                          generation_lock=threading.Lock())
+                          generation_lock=threading.Lock(),
+                          **_detail_deps(tmp_path))
     rows = {r.name: r for r in ctrl.vm.rows()}
     targets = {n: primary_action(r)["target"] for n, r in rows.items()}
     assert targets == {"미연결": "editor", "기안문": "job", "미상": "editor"}
@@ -564,3 +608,252 @@ def test_detail_carries_the_primary_action(tmp_path):
     ctrl.dispatch("select_work", {"name": "공고서"})
     primary = ctrl.snapshot()["detail"]["primary"]
     assert primary["target"] == "job" and primary["label"] == "문서 만들기에서 사용"
+
+
+# ── 상세 연결 존(U6-F #980 · §2.6) ─────────────────────────────────────────────
+# #966 이 걷은 것은 **별도 라벨 사전을 든 payload 사슬**(`detail.bindings`)이었지 정보
+# 자체가 아니었다. 여기서 재는 것은 그 사슬이 돌아오지 않았다는 사실이다: 행은 편집기와
+# 같은 링1 투영이고 라벨도 그 한 자리에서 오며, 키 이름은 `pairing_detail` 이다.
+
+
+def _hwpx_template(path, fields) -> None:
+    """누름틀만 든 최소 HWPX — 변환이 끝난 템플릿의 형상."""
+    body = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{n}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{n}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for n in fields
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + "</hp:p></hs:sec>"
+    ).encode()
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
+
+
+def _bound_registry(tmp_path, *, fields=("공고번호", "사업명", "금액"), rows=2,
+                    data_name="계약.csv", extra_mapping=()) -> "tuple[JobRegistry, str]":
+    """템플릿·데이터가 실제로 서 있는 작업 하나 — 상세 존을 재는 표본."""
+    tpl_dir = tmp_path / "templates"
+    tpl_dir.mkdir(exist_ok=True)
+    tpl = tpl_dir / "공고서.hwpx"
+    _hwpx_template(tpl, list(fields))
+    data = tmp_path / data_name
+    header = ",".join(fields)
+    body = "\n".join(
+        ",".join(f"{f}-{i}" for f in fields) for i in range(1, rows + 1)
+    )
+    data.write_text(f"{header}\n{body}\n", encoding="utf-8-sig")
+    reg = JobRegistry(tmp_path / "bound")
+    reg.save(Job(
+        name="공고서 작업", template_path=str(tpl),
+        mapping=MappingProfile(mappings=[
+            *(FieldMapping(template_field=f, source=f) for f in fields),
+            *extra_mapping,
+        ]),
+        filename_pattern="공고-{{공고번호}}-{{seq:001}}",
+        data_path=str(data), data_sheet="",
+    ))
+    return reg, str(data)
+
+
+def test_pairing_detail_draws_the_card_table_and_plan_from_one_ring1_projection(tmp_path):
+    """상세 하단은 연결 카드 + 읽기 전용 4열 표 + 계획 한 줄이다(U6-F #980 · §2.6).
+
+    행은 편집기 2단계와 **같은 투영**(`row_projection`)이고 두 읽기 전용 칸의 문안도 링1
+    조회다 — 웹이 라벨 표를 한 벌 더 들면 #966 이 걷은 사슬이 이름만 바꿔 돌아온다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg, remembered=str(tmp_path))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+
+    card = zone["card"]
+    assert card["template_name"] == "공고서"          # 루트 상대·확장자 없음(U6-A 규칙)
+    assert card["data_name"] == "계약"                # 풀 미등록 → 확장자 없는 basename
+    assert card["counted"] is True
+    assert (card["template_field_count"], card["mapped_count"],
+            card["unbound_count"], card["stale_count"]) == (3, 3, 0, 0)
+
+    assert [r["template_field"] for r in zone["rows"]] == ["공고번호", "사업명", "금액"]
+    assert [r["source_label"] for r in zone["rows"]] == ["공고번호", "사업명", "금액"]
+    assert [r["display_label"] for r in zone["rows"]] == ["원문"] * 3
+    assert zone["more_fields"] == []
+    # 첫 행은 실제로 읽은 첫 레코드다(전량 읽기라 건수도 함께 온다).
+    assert zone["first_row"] == {"state": "ready", "reason": "", "record_count": 2}
+    assert [r["preview"] for r in zone["rows"]] == ["공고번호-1", "사업명-1", "금액-1"]
+    assert all(r["preview_kind"] == "value" for r in zone["rows"])
+
+    # 계획은 **실제 생성기와 같은 함수**가 만든 이름이다(예시가 산출물과 어긋나지 않는다).
+    assert zone["plan"] == {
+        "state": "ready", "pattern": "공고-{{공고번호}}-{{seq:001}}",
+        "first_name": "공고-공고번호-1-001.hwpx", "count": 2}
+    # 저장 폴더는 작업 화면·편집기와 **같은 함수**가 낸다(존 모양이 화면마다 다시 쓰이지 않는다).
+    assert zone["output_folder"] == output_folder_zone(
+        template_path=str(tmp_path / "templates" / "공고서.hwpx"),
+        remembered_directory=str(tmp_path),
+    )
+
+
+def test_pairing_detail_names_the_rows_the_frame_cannot_hold(tmp_path):
+    """8행 + 「그 밖에」 이름 명시 — 스크롤로 조용히 감추지 않는다(동결 시안 장면 4)."""
+    fields = [f"필드{i}" for i in range(1, 13)]
+    reg, _ = _bound_registry(tmp_path, fields=tuple(fields))
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert len(zone["rows"]) == 8
+    assert zone["more_fields"] == fields[8:]
+    assert zone["card"]["template_field_count"] == 12
+
+
+def test_first_row_is_pending_until_the_worker_answers_then_the_whole_snapshot_repushes(tmp_path):
+    """선택 직후엔 「아직 모름」, 읽기가 끝나면 **전체 스냅샷**을 다시 민다(U6-F §3).
+
+    부분 dict 델타는 job 채널만 허용한다(런타임 reduce) — 여기서 미는 것은 언제나 온전한
+    라이브러리 스냅샷이다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    pending_work: list = []
+    ctrl, pushes = _controller(tmp_path, registry=reg,
+                               runner=lambda work: pending_work.append(work))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+
+    assert len(pushes) == 1
+    zone = pushes[0][1]["detail"]["pairing_detail"]
+    assert zone["first_row"] == {"state": "pending", "reason": "", "record_count": 0}
+    assert [r["preview"] for r in zone["rows"]] == ["—", "—", "—"]
+    assert all(r["preview_kind"] == "pending" for r in zone["rows"])
+    # 아직 못 읽었어도 저장본만으로 그려지는 축은 이미 서 있다(빈 패널을 보이지 않는다).
+    assert zone["card"]["mapped_count"] == 3
+    assert zone["plan"] == {
+        "state": "pending", "pattern": "공고-{{공고번호}}-{{seq:001}}",
+        "first_name": "", "count": 0}
+
+    pending_work.pop()()                                   # 워커가 끝난 순간
+    assert len(pushes) == 2 and pushes[1][0] == "library"
+    ready = pushes[1][1]["detail"]["pairing_detail"]
+    assert ready["first_row"]["state"] == "ready"
+    assert ready["rows"][0]["preview"] == "공고번호-1"
+    # 전체 스냅샷이다 — 목록·필터 축이 함께 실려 온다(부분 dict 금지).
+    assert set(pushes[1][1]) >= {"sections", "counts", "view", "detail"}
+
+
+def test_a_late_first_row_read_lands_in_the_cache_but_never_on_another_selection(tmp_path):
+    """늦게 끝난 읽기는 **상관 키 대조** 뒤에만 화면에 선다(`run_token` 규율 선례).
+
+    그사이 다른 행을 골랐으면 결과는 캐시에만 들어가고, 그 행을 다시 고르는 순간 캐시
+    히트로 즉시 선다 — 다시 읽지 않는다(러너가 한 번도 더 불리지 않는 것이 그 증거다).
+    """
+    reg, _ = _bound_registry(tmp_path)
+    reg.save(Job(name="다른작업", template_path=""))
+    started: list = []
+    ctrl, pushes = _controller(tmp_path, registry=reg, runner=lambda w: started.append(w))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    ctrl.dispatch("select_work", {"name": "다른작업"})       # 겨눔이 바뀐다
+    before = len(pushes)
+
+    started.pop()()                                          # 뒤늦게 끝난 앞 선택의 읽기
+    assert len(pushes) == before, "다른 행을 겨눈 화면에 옛 답을 밀었다"
+
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})     # 다시 고르면 캐시 히트
+    assert started == [], "캐시가 있는데 다시 읽었다"
+    assert pushes[-1][1]["detail"]["pairing_detail"]["first_row"]["state"] == "ready"
+
+
+def test_first_row_failure_states_the_reason_in_place(tmp_path):
+    """읽기 실패는 조용한 빈칸이 아니라 사유다 — 건강 원인과는 **섞지 않는다**(§19.7)."""
+    reg, data = _bound_registry(tmp_path)
+    Path(data).unlink()
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    detail = ctrl.snapshot()["detail"]
+    zone = detail["pairing_detail"]
+    assert zone["first_row"]["state"] == "error"
+    assert zone["first_row"]["reason"] == f"경로를 찾을 수 없음: {data}"
+    assert all(r["preview_kind"] == "error" for r in zone["rows"])
+    assert zone["plan"]["state"] == "error" and zone["plan"]["first_name"] == ""
+    # 호환성·건강 축은 이 실패를 모른다(상세 판정과 분리 — §19.7 명문).
+    assert all("찾을 수 없음" not in c["text"] for c in detail["health_causes"])
+
+
+def test_an_unbound_job_says_why_the_first_row_is_empty(tmp_path):
+    """결속이 없으면 첫 행 자리에 **사유**가 선다(빈칸은 「아직 못 읽었다」와 구별되지 않는다)."""
+    reg, _ = _bound_registry(tmp_path)
+    job = reg.load("공고서 작업")
+    reg.save(Job(
+        name=job.name, template_path=job.template_path, mapping=job.mapping,
+        filename_pattern=job.filename_pattern,
+    ))
+    started: list = []
+    ctrl, _ = _controller(tmp_path, registry=reg, runner=lambda w: started.append(w))
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert zone["first_row"]["reason"] == UNBOUND_FIRST_ROW_REASON
+    # 결속 유무는 상세가 이미 든 사실이다 — 카드가 사본을 만들지 않는다.
+    assert ctrl.snapshot()["detail"]["data_bound"] is False
+    assert started == [], "읽을 참조가 없는데 워커를 띄웠다"
+
+
+def test_an_unreadable_template_keeps_the_card_but_draws_no_table(tmp_path):
+    """정체(카드)는 남고 구조(표)는 서지 않는다 — 답하는 질문이 다르기 때문이다.
+
+    카드가 정체를 **바꾸러 가는 동사**(재선택)를 들고 있어서, 템플릿이 사라진 갈래에서
+    카드를 접으면 고치러 갈 길이 함께 접힌다. 반대로 표는 현재 템플릿과의 대칭차 없이는
+    「확인 필요 k」를 말할 수 없으므로 빈 행 목록으로 서지 않고, 세지 않았다는 사실을
+    `counted` 가 말한다(0 을 사실처럼 말하지 않는다).
+    """
+    ctrl, _ = _controller(tmp_path)                          # 기본 표본: 템플릿 부재·미연결
+    for name, bound in (("공고서", True), ("낙찰", False)):
+        ctrl.dispatch("select_work", {"name": name})
+        zone = ctrl.snapshot()["detail"]["pairing_detail"]
+        assert zone["rows"] == [] and zone["more_fields"] == []
+        assert zone["first_row"] is None and zone["plan"] is None
+        assert zone["output_folder"] is None
+        assert zone["card"]["counted"] is False
+        assert zone["card"]["template_bound"] is bound       # 부재와 미연결은 다른 상태다
+    assert ctrl.snapshot()["detail"]["pairing_detail"]["card"]["template_name"] == ""
+
+
+def test_txt_work_has_no_file_plan_and_no_output_folder(tmp_path):
+    """TXT 복사 작업은 파일을 만들지 않는다 — 계획도 저장 폴더도 세우지 않는다.
+
+    만들지 않을 파일의 이름과 저장 위치를 말하는 것이 곧 조용한 거짓말이다(§ 「저장 폴더 —
+    전역 단일 값」의 표와 같은 판정). 표 자체는 선다: 결속과 첫 행은 TXT 에도 있다.
+    """
+    txt = tmp_path / "기안.txt"
+    txt.write_text("제목: {{사업명}}", encoding="utf-8")
+    data = tmp_path / "계약.csv"
+    data.write_text("사업명\n청사 냉난방\n", encoding="utf-8-sig")
+    reg = JobRegistry(tmp_path / "txtjobs")
+    reg.save(Job(
+        name="기안 작업", template_path=str(txt),
+        mapping=MappingProfile(mappings=[FieldMapping("사업명", "사업명")]),
+        data_path=str(data), data_sheet="",
+    ))
+    ctrl, _ = _controller(tmp_path, registry=reg, remembered=str(tmp_path))
+    ctrl.dispatch("select_work", {"name": "기안 작업"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert zone["plan"] is None and zone["output_folder"] is None
+    assert zone["card"]["counted"] is False                  # hwpx 대칭차가 없는 갈래
+    assert zone["rows"][0]["preview"] == "청사 냉난방"
+
+
+def test_selecting_a_work_never_mounts_data_into_another_screen(tmp_path):
+    """「선택 ≠ 착석」 불변(§19.6 서문)은 지연 읽기가 생겨도 그대로다.
+
+    상세가 데이터를 읽는 것은 **표의 한 칸**을 채우려는 것이고, 그 읽기는 자기 캐시에만
+    남는다. 이 컨트롤러는 다른 화면의 마운트 경로를 부르지 않고 자기 채널만 민다.
+    """
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, pushes = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    assert {screen for screen, _ in pushes} == {"library"}
+    source = Path("src/hwpxfiller/webapp/screen_library.py").read_text(encoding="utf-8")
+    for mount in ("load_data_path(", "_adopt_datasource(", "new_work_handoff("):
+        assert mount not in source, f"상세가 다른 화면의 마운트 경로를 재사용한다: {mount}"
