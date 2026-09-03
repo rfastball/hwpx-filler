@@ -117,11 +117,11 @@ from .screens import (
     dataset_reference_identity,
     load_pool_into,
     pool_reference_quad,
-    registered_dataset_name,
     reference_missing,
+    registered_dataset_entry,
     unwired_tutorial,
 )
-from .template_groups import norm_library_path
+from .template_groups import norm_library_path, rel_key
 
 # 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
@@ -337,7 +337,7 @@ class EditorController:
         # 지불하지 않는다. 마운트와 세션 리셋이 비우고, 그 둘이 정체성이 바뀌는 전부다.
         # (세션 표지 `data_pool_name` 은 여기서 사망했다: 「방금 풀에서 골랐다」를 세션에
         #  기억하면 저장하고 다시 연 세션이 같은 데이터를 다른 이름으로 부른다.)
-        self._data_name_cache: "tuple[str, str] | None" = None
+        self._data_name_cache: "tuple[str, str, str] | None" = None
         # 이 세션이 **서 있는 기준**의 데이터(#878) — 진입이 들고 온 것이면 그 참조, 사람이
         # 관문에서 고른 것이면 빈 값. `_extras_of` 의 기준값이라 「저장본과 다르다」의 뜻이
         # 여기서 갈린다: 인계 데이터를 변경으로 세면 손대지도 않은 진입이 곧바로 미저장이 돼
@@ -457,29 +457,38 @@ class EditorController:
         registered = self._registered_data_name()
         return registered or Path(self.data_path).stem
 
-    def _registered_data_name(self) -> str:
-        """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``).
+    def _registered_data_entry(self) -> "tuple[str, str]":
+        """이 결속이 풀에 등록돼 있으면 ``(슬롯 키, 등록명)``(아니면 ``("", "")``).
 
         결과는 결속 정체성으로 memo 한다 — 조회가 풀 폴더 스캔이라 스냅샷마다 지불할 것이
         아니다. 무효화는 마운트(:meth:`_adopt_datasource`)와 세션 리셋 두 자리이고, 그것이
         곧 정체성이 바뀔 수 있는 전부다.
+
+        키와 이름을 **한 조회로** 낸다: 우 열은 「지금 선 행」을 키로 겨누고 머리 부제는
+        이름을 부른다. 둘을 따로 조회하면 같은 스캔을 두 번 지불하고, 세션 표지
+        (``data_pool_key``)로 대신하면 저장하고 다시 연 세션에서 그 표지가 없어 같은
+        데이터가 「고른 적 없음」으로 보인다(등록명이 세션 값이 아닌 것과 같은 근거).
         """
         if self._pool_registry is None:
-            return ""
+            return "", ""
         ident = dataset_reference_identity(
             path=self.data_path, sheet=self.data_sheet, kind=self.data_kind
         )
         if not ident:
-            return ""
+            return "", ""
         cached = self._data_name_cache
         if cached is not None and cached[0] == ident:
-            return cached[1]
-        name = registered_dataset_name(
+            return cached[1], cached[2]
+        key, name = registered_dataset_entry(
             self._pool_registry,
             path=self.data_path, sheet=self.data_sheet, kind=self.data_kind,
         )
-        self._data_name_cache = (ident, name)
-        return name
+        self._data_name_cache = (ident, key, name)
+        return key, name
+
+    def _registered_data_name(self) -> str:
+        """이 결속이 풀에 등록돼 있으면 그 등록명(아니면 ``""``) — 조회는 한 자리다."""
+        return self._registered_data_entry()[1]
 
     def _derived_job_name(self) -> str:
         """지금 고르기로부터 나오는 이름 기본값(링1 순수 함수의 호출 한 줄).
@@ -654,6 +663,16 @@ class EditorController:
             "ready": ready,
             "template_name": template_name,
             "data_name": data_name,
+            # 좌·우 열이 「지금 선 행」을 표시하는 **같은 축**(고르기 열 공용 계약 ①): 두 열의
+            # 행 식별자가 `key` 하나이므로 선택 표시도 키 대조 하나다. 종전에 좌는 경로
+            # (`template_path`), 우는 세션 표지(`data_pool_key`)로 갈려 있었고 — 그래서 한
+            # 열은 경로 정규화를, 다른 열은 「방금 골랐는가」를 판정 재료로 썼다.
+            "template_key": (
+                rel_key(self.template_path, self.template_root.path())
+                if self.template_path else ""
+            ),
+            # 풀에 등록된 결속만 우 열에 행이 있다 — 파일 마운트는 겨눌 행이 없어 "".
+            "data_key": self._registered_data_entry()[0],
             "field_count": len(field_names),
             "column_count": len(self.source_fields),
             "auto_count": auto,

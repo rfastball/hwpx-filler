@@ -950,3 +950,102 @@ def test_frozen_source_rows_are_refused_loudly_not_hidden(tmp_path):
     row = {r["name"]: r for r in ctrl.snapshot()["rows"]}["나라 참조"]
     assert row["selectable"] is False
     assert "작업 데이터로 연결할 수 없습니다" in row["select_block_reason"]
+
+
+# ---------------------------- 고르기 우 열 공용 존(고르기 열 공용 계약 ①)
+def test_column_zone_has_exactly_five_keys_and_rows_of_the_shared_shape(tmp_path):
+    """우 열은 좌 열과 **같은 형**으로 선다 — 키 집합의 정본은 `webapp/pool_column.py`.
+
+    옛 키(`rows`·`count`·`duplicates`…)는 웹이 이 존으로 옮겨 갈 때까지 그대로 산다.
+    여기서 못박는 것은 새 존이 그 형을 정확히 지킨다는 것이다(몰래 얹은 키가 두 열이
+    갈리는 첫 자리다).
+    """
+    from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS
+
+    ctrl, _, _ = _controller(tmp_path)
+    live = tmp_path / "발주.xlsx"
+    live.write_bytes(b"x")
+    ctrl.dispatch("register_excel", {"name": "발주", "path": str(live), "sheet": "s",
+                                     "note": "7월분"})
+    column = ctrl.snapshot()["column"]
+    assert tuple(column) == ("rows", "notices", "empty_hint", "count_label", "result")
+    row = column["rows"][0]
+    assert tuple(row) == POOL_ROW_KEYS
+    assert row["icon"] == "excel" and row["path"] == str(live)
+    assert row["sub"].startswith("파일: 발주.xlsx") and row["sub"].endswith("7월분")
+    # 동사 전수는 링1 이 낸다 — 표면이 「다시 연결…」을 자기 판정으로 덧붙이지 않는다.
+    assert [a["key"] for a in row["actions"]] == ["relink", "archive", "delete"]
+    assert column["count_label"] == "1건" and column["empty_hint"] == ""
+
+
+def test_column_rows_mirror_the_ring1_verdict_for_archived_and_missing(tmp_path):
+    """`reason`·`selectable` 은 링1 판정 그대로다 — 링2 가 다시 짓지 않는다."""
+    from hwpxfiller.application.dataset_pool import DatasetPoolRow
+
+    ctrl, reg, _ = _controller(tmp_path)
+    live = tmp_path / "발주.xlsx"
+    live.write_bytes(b"x")
+    ctrl.dispatch("register_excel", {"name": "살아있음", "path": str(live), "sheet": "s"})
+    ctrl.dispatch(
+        "register_excel", {"name": "끊김", "path": str(tmp_path / "없음.xlsx"), "sheet": "s"}
+    )
+    ctrl.dispatch("archive", {
+        "key": next(r["key"] for r in ctrl.snapshot()["rows"] if r["name"] == "살아있음"),
+    })
+
+    for row in ctrl.snapshot()["column"]["rows"]:
+        ring1 = next(r for r in ctrl.vm.rows() if r.key == row["key"])
+        assert row["reason"] == ring1.select_block_reason()
+        assert row["selectable"] is (not ring1.select_block_reason())
+    by_name = {r["name"]: r for r in ctrl.snapshot()["column"]["rows"]}
+    assert "보관한 항목입니다" in by_name["살아있음"]["reason"]
+    assert "참조가 끊겼습니다" in by_name["끊김"]["reason"]
+    assert isinstance(DatasetPoolRow.missing, property)   # 판정 재료도 링1 행이 든다
+
+
+def test_column_notice_restates_a_corrupted_entry_as_danger(tmp_path):
+    """손상 격리는 존 통지로 선다 — 종전 웹 리터럴(`pool_list.ts`)이 여기로 왔다."""
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.add(DatasetReference(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
+    (reg.directory / ("깨진" + reg.SUFFIX)).write_text("{ not json", encoding="utf-8")
+    ctrl.dispatch("refresh", {})
+    notices = ctrl.snapshot()["column"]["notices"]
+    corrupt = ctrl.snapshot()["corrupted"][0]
+    assert notices == [{
+        "level": "danger",
+        "text": f"⚠ 손상된 등록 데이터: {corrupt['file']} — {corrupt['error']}",
+        "actions": [],
+    }]
+
+
+def test_column_notice_offers_one_keep_verb_per_duplicate_entry(tmp_path):
+    """중복 통지는 처분을 **같은 자리**에 세운다 — 「골라 정리하세요」의 고를 자리."""
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    notice = ctrl.snapshot()["column"]["notices"][0]
+    assert notice["level"] == "warn"
+    assert "등록이 2건입니다" in notice["text"] and "same.xlsx" in notice["text"]
+    assert {a["label"] for a in notice["actions"]} == {"'7월 공고' 남기기", "'공고 최신' 남기기"}
+    assert {a["key"] for a in notice["actions"]} == {"resolve_duplicate"}
+    keys = {r["key"] for r in ctrl.snapshot()["column"]["rows"]}
+    # payload 키는 `pool/resolve_duplicate` 스키마 그대로이고 값은 슬롯 키다.
+    assert {a["payload"]["keep"] for a in notice["actions"]} == keys
+
+
+def test_column_empty_hint_speaks_only_while_the_pool_is_empty(tmp_path):
+    ctrl, _, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["column"]["empty_hint"] == "고정한 데이터가 없습니다."
+    ctrl.dispatch("register_excel", {"name": "A", "path": "C:/a.xlsx", "sheet": "s"})
+    assert ctrl.snapshot()["column"]["empty_hint"] == ""
+
+
+def test_column_row_of_a_kind_without_its_own_icon_stands_as_other(tmp_path):
+    """자기 표지가 없는 종류(조립)는 숨기지도, 다른 표지로 접지도 않는다 — `other` 로 선다."""
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.add(DatasetReference(name="조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    ctrl.dispatch("refresh", {})
+    row = ctrl.snapshot()["column"]["rows"][0]
+    assert row["icon"] == "other"
+    assert "작업 데이터로 연결할 수 없습니다" in row["reason"]

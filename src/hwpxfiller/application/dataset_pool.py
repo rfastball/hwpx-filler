@@ -228,8 +228,36 @@ _STATE_ACTIONS = {
 }
 
 
+#: 참조 교체(#67) — **상태가 아니라 종류**가 가르는 관리 동사라 상태표 밖에 선다. 엑셀
+#: 참조만 새 파일로 갈아 끼울 수 있고(계약 목록·나라·조립은 그 동사가 없다), 그래서
+#: :data:`_STATE_ACTIONS` 의 「상태 → 액션」 축으로는 표현되지 않는다.
+RELINK_ACTION = PoolAction("relink", "다시 연결…")
+
+#: ``relink`` 를 가질 수 있는 참조 종류 — 대상이 「사람이 고를 파일 하나」인 것뿐이다.
+_RELINKABLE_KINDS = ("excel",)
+
+
 def available_actions(status: str) -> "list[PoolAction]":
     return list(_STATE_ACTIONS.get(status, ()))
+
+
+def reference_missing(path: str) -> bool:
+    """가리키는 파일이 자리에 없는가 — **참조 끊김 판정의 단일 출처**(#67 · U3-07 #880).
+
+    풀 행의 「끊김」 배지·고르기 판정(:meth:`DatasetPoolRow.select_block_reason`)과 부팅
+    자동 마운트(:mod:`~hwpxfiller.webapp.screen_job`)가 같은 술어를 본다. 사이트마다
+    ``exists()`` 를 다시 적으면 한쪽만 빈 경로를 끊김으로 세거나 한쪽만 폴더를 파일로 세는
+    표류가 난다. 경로 없음(``""``)은 **끊김이 아니다**: 파일로 가리킬 수 없는 참조(조립
+    파이프라인 등)는 애초에 이 판정의 대상이 아니라 배지도 서지 않는다.
+
+    자리가 링2(구 ``webapp.screens``)에서 여기로 내려온 이유는 그 판정을 쓰는 자리가
+    **고르기 판정**이기 때문이다(고르기 열 공용 계약 ①): 좌·우 열이 한 컴포넌트가 되는
+    이상 두 열의 판정은 같은 링에 서야 하고, 데이터 쪽 판정의 재료가 링2 에 남아 있으면
+    링1 이 자기 판정을 완결하지 못한다. 링2 는 이름만 재수출한다.
+
+    렌더당 I/O 가 아니다 — 호출자는 사건 시점(풀 액션·부팅)에만 지불한다.
+    """
+    return bool(path) and not Path(path).exists()
 
 
 def resolve_pclm_db(db: str) -> str:
@@ -238,8 +266,8 @@ def resolve_pclm_db(db: str) -> str:
     등록(:meth:`DatasetPoolViewModel.register_pclm`)과 그 전 중복 조회가 **같은 자리**를
     봐야 한다. 두 곳이 각자 빈 값을 해석하면 조회는 기본 자리를, 등록은 빈 문자열을 보고
     같은 데이터가 2건이 된다. 존재 검사는 하지 않는다 — 참조 등록은 파일을 열지 않고,
-    끊김은 배지(:func:`~hwpxfiller.webapp.screens.reference_missing`)와 실행 시점 재읽기가
-    말한다(``register_excel`` 과 같은 규율).
+    끊김은 배지(:func:`reference_missing`)와 실행 시점 재읽기가 말한다(``register_excel``
+    과 같은 규율).
     """
     return os.path.abspath(db) if db else str(default_pclm_db())
 
@@ -322,7 +350,55 @@ class DatasetPoolRow:
     sheet: str = ""
 
     def actions(self) -> "list[PoolAction]":
-        return available_actions(self.status)
+        """이 행의 ⋯ 메뉴가 세울 관리 동사 **전부** — 표면이 제 판정으로 더하지 않는다.
+
+        순서는 ``[다시 연결…] · [보관|활성화] · [삭제]`` 다: 참조를 고치는 동사가 먼저,
+        수명 전이가 가운데, 파괴가 끝이다. 종전에는 상태표(:func:`available_actions`)가
+        내는 둘만 스냅샷에 실리고 「다시 연결…」은 표면이 ``kind === "excel"`` 로 **다시
+        판정해** 덧붙였다 — 좌·우 열이 한 컴포넌트가 되면 그 재판정이 곧 두 열의 어긋남이라
+        목록을 여기 하나로 모은다(고르기 열 공용 계약 ①).
+
+        키는 ``pool`` 채널 액션 이름 그대로다(``relink``·``archive``·``activate``·
+        ``delete``) — 표면이 키→액션 표를 따로 들면 그 표가 늙는다.
+        """
+        gated = available_actions(self.status)
+        if self.kind in _RELINKABLE_KINDS:
+            return [RELINK_ACTION, *gated]
+        return gated
+
+    @property
+    def missing(self) -> bool:
+        """이 참조가 가리키는 파일이 자리에 없는가(:func:`reference_missing` 위임)."""
+        return reference_missing(self.locate_path)
+
+    def select_block_reason(self) -> str:
+        """이 등록 데이터를 작업 데이터로 쓸 수 **없으면** 사유, 쓸 수 있으면 ``""``.
+
+        **판정 자리는 여기 하나**다(U6-B #976 → 고르기 열 공용 계약 ①). 종전에는 셋이 각자
+        답했다: 데이터 선택 다이얼로그의 웹 함수(``usableReason`` — ``status``·``missing``
+        으로 문장을 다시 지었다), 편집기 축약 목록의 ``screen_editor.pool_option_block``,
+        그리고 실제 마운트 관문(``screens.load_pool_into``). 앞의 둘은 같은 상태를 서로 다른
+        어휘로 말했고, 두 표면이 한 컴포넌트가 되면서 그 어긋남이 곧 화면 안에서 드러난다.
+        그래서 **행이** 판정을 진다 — 그 행이 링1 에 있으므로 판정도 링1 이다(템플릿 쪽
+        :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.select_block_reason` 과
+        같은 링에 세우려고 링2 자유함수에서 이 자리로 내려왔다). 마운트 관문은 그대로
+        남는다(표면 판정은 심층 방어가 아니다).
+
+        **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5 · 나라장터 동결 규율과 같은 줄):
+        목록에서 지우면 「활성화」·「다시 연결」 동사에 닿을 길이 함께 사라진다.
+
+        **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
+        행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다.
+        """
+        if self.kind not in ("excel", "pclm"):
+            return f"{self.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
+        if self.status != STATUS_ACTIVE:
+            return "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다."
+        if self.missing:
+            if self.kind == "pclm":
+                return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
+            return "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다."
+        return ""
 
     @classmethod
     def from_item(cls, key: str, item: DatasetReference) -> "DatasetPoolRow":
@@ -428,6 +504,15 @@ class DatasetPoolViewModel:
 
     def count_label(self) -> str:
         return f"{len(self._rows)}건" if self._rows else ""
+
+    def empty_hint(self) -> str:
+        """빈 목록의 안내(비어 있지 않으면 ``""``) — 템플릿 쪽 ``empty_hint`` 의 거울.
+
+        종전에는 이 문장을 웹이 리터럴로 들었다(``pool_list.ts``). 좌·우 열이 한 컴포넌트가
+        되면 빈 상태 문안도 한 자리에서 나와야 한다 — 한쪽만 Python 이 내면 같은 존의 두
+        인스턴스가 서로 다른 층에서 말한다(고르기 열 공용 계약 ①).
+        """
+        return "고정한 데이터가 없습니다." if self.is_empty() else ""
 
     # ---------------------------------------------------------- 등록(참조만)
     def find_same_data(
@@ -667,6 +752,7 @@ __all__ = [
     "CorruptDatasetEntry",
     "DatasetPoolPort",
     "PoolAction",
+    "RELINK_ACTION",
     "DatasetPoolRow",
     "DatasetPoolViewModel",
     "StaleConfirmError",
@@ -674,6 +760,7 @@ __all__ = [
     "bound_state",
     "confirm_basis",
     "kind_transition_clause",
+    "reference_missing",
     "reference_summary",
     "resolve_pclm_db",
 ]

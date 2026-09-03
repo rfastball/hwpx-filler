@@ -55,6 +55,7 @@ from ..application.dataset_pool import (
     DatasetPoolPort,
     DatasetPoolViewModel,
     StaleConfirmError,
+    available_actions,
     bound_state,
     confirm_basis,
     kind_transition_clause,
@@ -62,7 +63,7 @@ from ..application.dataset_pool import (
     resolve_pclm_db,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import STATUS_ACTIVE, DatasetReference, pclm_identity
+from ..domain.dataset_reference import DatasetReference, pclm_identity
 from ..domain.pclm_views import (
     PCLM_DOC_VIEWS,
     PCLM_VIEW_DESCS,
@@ -70,7 +71,8 @@ from ..domain.pclm_views import (
     PCLM_VIEWS,
     default_pclm_db,
 )
-from .screens import PushSink, reference_missing
+from .pool_column import POOL_ICONS, pool_column_view, pool_row_view
+from .screens import PushSink
 
 __all__ = [
     "BOUND_FIELDS",
@@ -78,7 +80,6 @@ __all__ = [
     "bound_state",
     "confirm_basis",
     "display_reference",
-    "select_block_reason",
 ]
 
 
@@ -87,31 +88,14 @@ def display_reference(item: DatasetReference) -> str:
     return reference_summary(item)
 
 
-def select_block_reason(row) -> str:
-    """이 등록 데이터를 작업 데이터로 쓸 수 **없으면** 사유, 쓸 수 있으면 ``""``.
+def _row_icon(kind: str) -> str:
+    """참조 종류 → 고르기 열 행 표지(:data:`~hwpxfiller.webapp.pool_column.POOL_ICONS`).
 
-    **판정 자리는 여기 하나**다(U6-B #976). 종전에는 셋이 각자 답했다: 데이터 선택
-    다이얼로그의 웹 함수(`usableReason` — `status`·`missing` 으로 문장을 다시 지었다),
-    편집기 축약 목록의 `screen_editor.pool_option_block`, 그리고 실제 마운트 관문
-    (`screens.load_pool_into`). 앞의 둘은 같은 상태를 서로 다른 어휘로 말했고, 두 표면이
-    한 컴포넌트가 되면서 그 어긋남이 곧 화면 안에서 드러난다 — 그래서 스냅샷 행이
-    판정을 진다. 마운트 관문은 그대로 남는다(표면 판정은 심층 방어가 아니다).
-
-    **숨기지 않고 비활성 + 사유 병기**다(#932 U4-C S2-5 · 나라장터 동결 규율과 같은 줄):
-    목록에서 지우면 「활성화」·「다시 연결」 동사에 닿을 길이 함께 사라진다.
-
-    **끊김 처방은 종류가 가른다**(#937): 엑셀 참조에는 「다시 연결」 동사가 있고 계약 목록
-    행에는 없다 — 없는 동사를 지시하는 문안은 사람을 있지도 않은 버튼으로 보낸다.
+    자기 표지가 없는 종류(조립 파이프라인)와 손편집이 남긴 미지 종류는 ``other`` 로 선다 —
+    다른 표지로 접으면 화면이 거짓말을 하고, 거절로 존을 죽이면 그 행이 **숨겨진다**.
+    고를 수 없다는 사실과 그 사유는 이미 행의 ``reason`` 이 진다.
     """
-    if row.kind not in ("excel", "pclm"):
-        return f"{row.kind_label} 참조라 작업 데이터로 연결할 수 없습니다."
-    if row.status != STATUS_ACTIVE:
-        return "보관한 항목입니다. '활성화' 뒤에 쓸 수 있습니다."
-    if reference_missing(row.locate_path):
-        if row.kind == "pclm":
-            return "참조가 끊겼습니다. 계약 목록 DB 파일이 그 자리에 있는지 확인하세요."
-        return "참조가 끊겼습니다. '다시 연결' 뒤에 쓸 수 있습니다."
-    return ""
+    return kind if kind in POOL_ICONS else "other"
 
 
 class PoolController:
@@ -149,7 +133,7 @@ class PoolController:
         return [self._row(r) for r in self.vm.rows()]
 
     def _row(self, r) -> dict:
-        reason = select_block_reason(r)
+        reason = r.select_block_reason()
         return {
             "key": r.key,  # 슬롯 키(§5.3) — 행동(사용·보관·활성화·삭제·다시 연결)의 겨눔 대상
             "name": r.name,
@@ -163,13 +147,78 @@ class PoolController:
             "sheet": r.sheet,  # 다시 연결 프리필(#67)
             # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
             # 판정은 공유 술어(U3-07 #880) — 부팅 자동 마운트가 같은 것을 본다.
-            "missing": reference_missing(r.locate_path),
+            "missing": r.missing,
             "note": r.note,
-            "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
+            # **과도기 목록**이다: 이 옛 키의 소비자(현 `pool_list.ts`)는 「다시 연결…」을
+            # 아직 자기 판정으로 덧붙이므로, 여기에 링1 의 전수 목록을 실으면 그 화면에
+            # 같은 버튼이 둘 선다. 그래서 옛 키는 **상태표 그대로**를 유지하고, 전수 목록은
+            # 아래 `column` 존이 든다 — 웹이 그 존으로 옮겨 갈 때(슬라이스 ③) 이 키와 함께
+            # 웹의 덧붙임도 사라진다.
+            "actions": [
+                {"key": a.key, "label": a.label} for a in available_actions(r.status)
+            ],
             # 「이 데이터를 작업에 쓸 수 있는가」 + 사유 — 판정 자리는 하나다(U6-B #976).
             "selectable": not reason,
             "select_block_reason": reason,
         }
+
+    # ------------------------------------------------- 고르기 열 공용 존(슬라이스 ①)
+    def _column_rows(self) -> "list[dict]":
+        """우 열 행 — 형은 :mod:`~hwpxfiller.webapp.pool_column` 이 소유한다.
+
+        ``sub`` 는 참조 요약이고 메모가 있으면 병기한다: 메모는 사람이 그 등록을 가르려고
+        적은 것이라 목록에서 지우면 같은 파일을 가리키는 두 등록이 한 줄로 보인다.
+        """
+        rows: "list[dict]" = []
+        for r in self.vm.rows():
+            sub = f"{r.reference} · {r.note}" if r.note else r.reference
+            rows.append(pool_row_view(
+                key=r.key,
+                name=r.name,
+                sub=sub,
+                reason=r.select_block_reason(),
+                badge_label=r.badge_label,
+                badge_level=r.badge_level,
+                icon=_row_icon(r.kind),
+                path=r.locate_path,
+                actions=[{"key": a.key, "label": a.label} for a in r.actions()],
+            ))
+        return rows
+
+    def _column_notices(self) -> "list[dict]":
+        """존 통지 — 손상 격리(danger)와 중복 등록(warn). **문안은 여기가 짓는다**.
+
+        종전에는 두 문장 다 웹 리터럴이었다(``pool_list.ts``). 좌·우 열이 한 컴포넌트가
+        되는 이상 통지도 한 층에서 나와야 한다 — 수치(``{n}건``)를 든 문장이 표면에 있으면
+        판정과 문안이 갈린 채 늙는다. 중복 통지의 동사는 그 자리에 함께 세운다: 「골라
+        정리하세요」라고 말하면서 고를 자리가 없으면 사람이 지시를 실행할 수 없다.
+        """
+        notices: "list[dict]" = [
+            {
+                "level": "danger",
+                "text": f"⚠ 손상된 등록 데이터: {entry.file_name} — {entry.error}",
+                "actions": [],
+            }
+            for entry in self.vm.corrupted()
+        ]
+        for group in self.vm.duplicates():
+            notices.append({
+                "level": "warn",
+                "text": (
+                    f"같은 데이터({group[0].reference})를 가리키는 등록이 "
+                    f"{len(group)}건입니다. 남길 등록을 골라 정리하세요."
+                ),
+                "actions": [
+                    {
+                        "key": "resolve_duplicate",
+                        "label": f"'{row.name}' 남기기",
+                        # payload 키는 `pool/resolve_duplicate` 스키마 그대로(`keep`).
+                        "payload": {"keep": row.key},
+                    }
+                    for row in group
+                ],
+            })
+        return notices
 
     def _corrupted_rows(self) -> "list[dict]":
         """격리된 손상 파일을 웹이 시끄럽게 표면화할 행으로(RC-05 — 조용한 은닉 금지)."""
@@ -222,6 +271,15 @@ class PoolController:
             "duplicates": self._duplicate_groups(),
             "pclm": self._pclm_block(),
             "result": {"text": self.result_text, "level": self.result_level},
+            # 고르기 우 열(슬라이스 ①) — 좌 열(`tpl` 채널)과 **같은 형**이다. 위의 옛 키들은
+            # 웹이 이 존으로 옮겨 갈 때(슬라이스 ③)까지 그대로 산다.
+            "column": pool_column_view(
+                rows=self._column_rows(),
+                notices=self._column_notices(),
+                empty_hint=self.vm.empty_hint(),
+                count_label=self.vm.count_label(),
+                result={"text": self.result_text, "level": self.result_level},
+            ),
         }
 
     def initial(self) -> dict:

@@ -284,3 +284,88 @@ def test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero(tmp_path):
         JobRegistry(tmp_path / "jobs-without-pool"),
         engine=make_hwpx_engine(), inspect_status=template_compile_status,
     ).kpi().pool_count == 0
+
+
+# ------------------------- 고르기 판정·동사 목록의 단일 자리(고르기 열 공용 계약 ①)
+def test_select_block_reason_admits_pclm_and_speaks_its_own_broken_line(tmp_path):
+    """「이 데이터를 쓸 수 있는가」의 판정 자리는 **행 하나**다(U6-B #976 → 링1 이동).
+
+    종전에는 셋이 각자 답했다: 데이터 선택 다이얼로그의 웹 함수(`usableReason`), 편집기
+    축약 목록의 `screen_editor.pool_option_block`, 그리고 마운트 관문. 앞의 둘이 한
+    컴포넌트가 되면서 그 어긋남이 화면 안에서 드러나므로 판정을 행으로 올렸고, 좌 열의
+    판정(`TemplateRow.select_block_reason`)과 **같은 링**에 서려고 링2 자유함수에서 여기로
+    내려왔다.
+
+    **끊김 처방은 종류가 가른다**(#937): 엑셀에는 「다시 연결」이 있고 계약 목록에는 없다.
+    """
+    db = tmp_path / "pclm.db"
+    db.write_bytes(b"x")
+    live = DatasetPoolRow.from_item(
+        "k1", DatasetReference(name="계약목록", kind="pclm", opts={"db": str(db), "view": "v"})
+    )
+    assert live.select_block_reason() == ""
+    assert live.missing is False
+
+    gone = DatasetPoolRow.from_item(
+        "k2",
+        DatasetReference(
+            name="사라진목록", kind="pclm",
+            opts={"db": str(tmp_path / "none.db"), "view": "v"},
+        ),
+    )
+    reason = gone.select_block_reason()
+    assert gone.missing is True
+    assert "참조가 끊겼습니다" in reason
+    assert "계약 목록 DB 파일" in reason      # 엑셀 전용 동사(「다시 연결」)를 지시하지 않는다
+    assert "다시 연결" not in reason
+
+    frozen = DatasetPoolRow.from_item(
+        "k3", DatasetReference(name="나라", kind="nara", opts={})
+    )
+    assert "작업 데이터로 연결할 수 없습니다" in frozen.select_block_reason()
+    # 파일을 가리키지 않는 참조는 끊김 판정의 대상이 아니다(빈 경로 = 끊김 아님).
+    assert frozen.missing is False
+
+
+def test_archived_row_is_disabled_with_the_activate_verb_not_hidden(tmp_path):
+    """보관 항목은 숨기지 않고 **비활성 + 사유**로 선다 — 그 사유가 같은 행의 동사를 지목한다."""
+    vm = _vm(tmp_path)
+    live = tmp_path / "발주.xlsx"
+    live.write_bytes(b"x")
+    vm.register_excel("발주", str(live), sheet="s")
+    row = vm.rows()[0]
+    assert row.select_block_reason() == ""
+    vm.archive(row.key)
+    archived = vm.rows()[0]
+    assert "보관한 항목입니다" in archived.select_block_reason()
+    assert "활성화" in archived.select_block_reason()
+    assert "activate" in [a.key for a in archived.actions()]
+
+
+def test_row_actions_carry_every_verb_the_column_menu_will_show(tmp_path):
+    """행이 ⋯ 메뉴의 동사 **전부**를 낸다 — 표면이 자기 판정으로 더하지 않는다.
+
+    「다시 연결…」은 **종류**가 가르고(엑셀만) 보관·활성화는 **상태**가 가른다. 종전에는
+    앞의 것만 표면이 `kind === "excel"` 로 다시 판정해 덧붙였고, 좌·우 열이 한 컴포넌트가
+    되면 그 재판정이 곧 두 열의 어긋남이 된다. 키는 `pool` 채널 액션 이름 그대로다.
+    """
+    vm = _vm(tmp_path)
+    vm.register_excel("엑셀", "/a.xlsx", sheet="s")
+    vm.register_pclm("계약", str(tmp_path / "pclm.db"), view="v_통합_v1")
+    rows = {r.name: r for r in vm.rows()}
+    assert [a.key for a in rows["엑셀"].actions()] == ["relink", "archive", "delete"]
+    assert [a.label for a in rows["엑셀"].actions()][0] == "다시 연결…"
+    # 계약 목록에는 그 동사가 없다 — 참조 교체 대상이 「사람이 고를 파일 하나」가 아니다.
+    assert [a.key for a in rows["계약"].actions()] == ["archive", "delete"]
+
+    vm.archive(rows["엑셀"].key)
+    archived = {r.name: r for r in vm.rows()}["엑셀"]
+    assert [a.key for a in archived.actions()] == ["relink", "activate", "delete"]
+
+
+def test_empty_hint_speaks_only_while_the_pool_is_empty(tmp_path):
+    """빈 상태 문안은 Python 이 낸다(종전 `pool_list.ts` 리터럴) — 비어 있지 않으면 침묵."""
+    vm = _vm(tmp_path)
+    assert vm.empty_hint() == "고정한 데이터가 없습니다."
+    vm.register_excel("A", "/a.xlsx")
+    assert vm.empty_hint() == ""

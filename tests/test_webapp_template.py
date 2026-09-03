@@ -982,3 +982,58 @@ def test_review_opens_the_file_once(tmp_path, monkeypatch):
     ctrl.dispatch("review", {"path": path})
 
     assert opens.count(path) == 1, f"같은 파일을 여러 번 열었습니다: {opens!r}"
+
+
+# ---------------------------- 고르기 좌 열 공용 존(고르기 열 공용 계약 ①)
+def test_column_zone_is_one_list_of_hwpx_then_txt_in_the_shared_shape(tmp_path, monkeypatch):
+    """좌 열은 hwpx 다음 txt 로 **한 목록**이다 — TXT 는 별도 밴드가 아니라 같은 줄의 pill.
+
+    키 집합의 정본은 `webapp/pool_column.py` 하나이고 우 열(`pool` 채널)이 같은 형으로
+    선다. 옛 밴드 키(`hwpx`·`txt`)는 웹이 이 존으로 옮겨 갈 때까지 그대로 산다.
+    """
+    from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS
+
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+    snap = ctrl.initial()
+    column = snap["column"]
+    assert tuple(column) == ("rows", "notices", "empty_hint", "count_label", "result")
+    assert [r["icon"] for r in column["rows"]] == ["hwpx", "hwpx", "txt"]
+    assert all(tuple(r) == POOL_ROW_KEYS for r in column["rows"])
+    assert {r["name"] for r in column["rows"]} == {"raw", "comp", "온나라_기안"}
+    assert column["count_label"] == "3개"
+    # 결과 줄·빈 상태 문안은 옛 키와 **같은 값**이다(두 곳이 다른 말을 하지 않는다).
+    assert column["result"] == snap["result"]
+    assert column["empty_hint"] == snap["hwpx"]["empty_hint"] == snap["txt"]["empty_hint"]
+    assert column["notices"] == []
+
+
+def test_column_row_carries_the_ring1_verdict_and_the_media_badge(tmp_path, monkeypatch):
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+    rows = {r["name"]: r for r in ctrl.initial()["column"]["rows"]}
+    # 변환 전은 숨기지 않고 비활성 + 사유(링1 문안 그대로).
+    assert rows["raw"]["reason"] == "누름틀·구간 변환을 해야 고를 수 있습니다."
+    assert rows["raw"]["selectable"] is False
+    assert [a["key"] for a in rows["raw"]["actions"]] == ["compile"]
+    assert rows["comp"]["selectable"] is True and rows["comp"]["reason"] == ""
+    # TXT 는 상태 축이 없어 링1 배지가 비어 있다 — 한 목록에 서므로 매체 표지를 단다.
+    txt = rows["온나라_기안"]
+    assert (txt["badge_label"], txt["badge_level"], txt["icon"]) == ("TXT", "muted", "txt")
+    assert txt["actions"] == [] and txt["sub"] == "필드 1개"
+    assert txt["selectable"] is True
+
+
+def test_the_row_verdict_is_computed_once_per_row(tmp_path, monkeypatch):
+    """옛 밴드 행과 새 열 행은 **한 판정**에서 갈라진다 — 두 번 부르면 둘이 갈릴 자리가 난다."""
+    from hwpxfiller.gui.template_manager_state import TemplateRow
+
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+    calls: list = []
+    original = TemplateRow.select_block_reason
+
+    def counted(self):
+        calls.append(self.path)
+        return original(self)
+
+    monkeypatch.setattr(TemplateRow, "select_block_reason", counted)
+    snap = ctrl.snapshot()
+    assert len(calls) == len(snap["column"]["rows"]) == 3

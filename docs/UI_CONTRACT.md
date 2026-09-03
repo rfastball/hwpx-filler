@@ -524,13 +524,25 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     으로 태워 이 화면의 다른 왕복과 순서를 나눠 갖는다.
   - **「고를 수 있는가」와 그 사유는 Python 행 필드**다(`selectable`·`select_block_reason`):
     좌는 `screen_template`(링1 `TemplateRow.select_block_reason` — 변환 전 RAW·PARTIAL 은
-    비활성 + 사유), 우는 `screen_pool.select_block_reason`(보관·끊김·나라). **hwpx·txt 두
+    비활성 + 사유), 우는 링1 `DatasetPoolRow.select_block_reason`(보관·끊김·나라). **hwpx·txt 두
     밴드가 같은 링1 성형 함수를 지난다**(`TemplateRow.from_text` — `detail_line`·
     `select_block_reason` 공유): 갈리는 축은 변환 축의 유무 하나이고 그것이 `media` 다.
     링2 가 매체별로 문장을 다시 지으면 링1 문안을 고쳐도 TXT 밴드만 옛말을 계속 한다. 표면이 `state`·
     `status`·`missing` 으로 문장을 다시 지으면 같은 상태가 두 어휘를 갖는다 — 그래서 링2 의
     재판정(구 `pool_option_block`·웹 `usableReason`)은 사슬째 걷혔고, 못 고르는 항목의
     클릭·드롭은 조용히 삼켜지지 않고 그 사유를 인라인으로 재진술한다.
+  - **두 채널이 공용 `column` 존을 함께 낸다**(고르기 열 공용 계약 ① — 좌·우가 한 컴포넌트의
+    두 인스턴스가 되는 자리). 행·존의 키 집합은 `webapp/pool_column.py` 하나가 소유하고
+    (`POOL_ROW_KEYS` · `{rows, notices, empty_hint, count_label, result}`), 판정은 그대로
+    링1 이 낸다(`TemplateRow.select_block_reason` / `DatasetPoolRow.select_block_reason` —
+    `selectable` 은 `reason` 의 파생이지 두 번째 판정이 아니다). 좌 열은 hwpx 다음 txt 를
+    **한 목록**으로 싣고, 우 열은 손상 격리(danger)·중복 등록(warn)을 존 통지로 싣는다 —
+    종전에 웹이 리터럴로 짓던 그 문장들이다. 옛 밴드·행 키(`hwpx`/`txt`/`rows`/`corrupted`/
+    `duplicates`…)는 웹이 이 존으로 옮겨 갈 때까지(슬라이스 ③) 그대로 산다. 그때까지
+    `pool` 행의 옛 `actions` 는 **상태표 그대로**이고(웹이 「다시 연결…」을 아직 자기
+    판정으로 덧붙인다) 전수 목록은 `column` 행이 든다. 두 열의 「지금 선 행」은
+    `pairing.template_key`·`pairing.data_key` 가 이름한다(둘 다 열 행의 `key` 와 같은 축 —
+    좌는 루트 상대경로, 우는 풀 슬롯 키이고 파일 결속이면 빈 값).
   - **고르는 제스처는 좌·우가 한 규칙이다**(리뷰 1·2·5·10). 클릭도 끌어 놓기도 컨트롤러의
     같은 한 자리(`chooseTemplate`/`chooseData`)를 지나고, 그 자리가 셋을 함께 진다:
     ① **이미 고른 것을 다시 고르면 무동작**이다 — 통과시키면 `new_job_session` 이 이름·

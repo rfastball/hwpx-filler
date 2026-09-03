@@ -345,6 +345,12 @@ source_write_set = ["src/hwpxfiller/webapp/output_folder_zone.py"]
 oracle_nodeid = "tests/test_output_folder_zone.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.pool_column"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/pool_column.py"]
+oracle_nodeid = "tests/test_webapp_pool_column.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.product_api"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/product_api.py"]

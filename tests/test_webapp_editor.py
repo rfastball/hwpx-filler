@@ -2067,6 +2067,7 @@ def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
     assert "library" not in snap
     assert snap["pairing"] == {
         "ready": False, "template_name": "", "data_name": "",
+        "template_key": "", "data_key": "",
         "field_count": 0, "column_count": 0, "auto_count": 0, "confirm_count": 0,
         "basis": "", "advance_block_reason": "왼쪽에서 템플릿을 고르세요.",
     }
@@ -2074,6 +2075,8 @@ def test_editor_snapshot_drops_the_library_zone_and_carries_pairing(tmp_path):
     snap = ctrl.snapshot()
     assert snap["template_path"] == str(_at(tmp_path, TPL_COMPILED))   # 선택 경로 하나가 좌 열의 `aria-pressed`
     assert snap["pairing"]["template_name"] == TPL_COMPILED.stem
+    # 좌 열의 행 식별자와 **같은 키**다(고르기 열 공용 계약 ① — 루트 상대경로).
+    assert snap["pairing"]["template_key"] == TPL_COMPILED.name
     assert snap["pairing"]["advance_block_reason"] == "오른쪽에서 데이터를 고르세요."
 
 
@@ -2865,43 +2868,6 @@ def _pool_editor(tmp_path: Path):
     return ctrl, pool
 
 
-def test_pool_select_block_reason_admits_pclm_and_speaks_its_own_broken_line(tmp_path):
-    """「이 데이터를 쓸 수 있는가」의 판정 자리는 **`pool` 스냅샷 하나**다(U6-B #976).
-
-    종전에는 셋이 각자 답했다: 데이터 선택 다이얼로그의 웹 함수(`usableReason`), 편집기
-    축약 목록의 `screen_editor.pool_option_block`, 그리고 마운트 관문. 앞의 둘이 한
-    컴포넌트가 되면서 그 어긋남이 화면 안에서 드러나므로 판정을 스냅샷 행으로 올렸다.
-
-    **끊김 처방은 종류가 가른다**(#937): 엑셀에는 「다시 연결」이 있고 계약 목록에는 없다.
-    """
-    from hwpxfiller.application.dataset_pool import DatasetPoolRow
-    from hwpxfiller.webapp.screen_pool import select_block_reason
-
-    db = tmp_path / "pclm.db"
-    db.write_bytes(b"x")
-    live = DatasetPoolRow.from_item(
-        "k1", DatasetReference(name="계약목록", kind="pclm", opts={"db": str(db), "view": "v"})
-    )
-    assert select_block_reason(live) == ""
-
-    gone = DatasetPoolRow.from_item(
-        "k2",
-        DatasetReference(
-            name="사라진목록", kind="pclm",
-            opts={"db": str(tmp_path / "none.db"), "view": "v"},
-        ),
-    )
-    reason = select_block_reason(gone)
-    assert "참조가 끊겼습니다" in reason
-    assert "계약 목록 DB 파일" in reason      # 엑셀 전용 동사(「다시 연결」)를 지시하지 않는다
-    assert "다시 연결" not in reason
-
-    frozen = DatasetPoolRow.from_item(
-        "k3", DatasetReference(name="나라", kind="nara", opts={})
-    )
-    assert "작업 데이터로 연결할 수 없습니다" in select_block_reason(frozen)
-
-
 def test_use_pool_data_mounts_a_pclm_view_and_the_save_carries_the_binding(tmp_path):
     """고르기 → 마운트 → 저장 한 바퀴 — 저장본이 db·뷰·0·pclm 을 그대로 든다."""
     ctrl, pool = _pool_editor(tmp_path)
@@ -2938,6 +2904,37 @@ def test_use_pool_data_mounts_a_pclm_view_and_the_save_carries_the_binding(tmp_p
     assert (job.data_path, job.data_sheet, job.data_header_row, job.data_kind) == (
         db, _PCLM_VIEW, 0, "pclm",
     )
+
+
+def test_pairing_names_the_selected_row_of_each_column_by_key(tmp_path):
+    """좌·우 열의 「지금 선 행」은 **키 하나**로 표시된다(고르기 열 공용 계약 ①).
+
+    ``data_key`` 는 세션 표지(``data_pool_key``)가 아니라 **등록 조회**다: 저장하고 다시 연
+    세션에는 그 표지가 없어, 표지로 그리면 결속이 살아 있는데도 우 열이 「고른 적 없음」이
+    된다(등록명이 세션 값이 아닌 것과 같은 근거, U6-D #978 리뷰 2). 풀에 없는 파일 결속은
+    겨눌 행이 없으므로 ``""`` 다 — 0 을 사실처럼 말하지 않는 것과 같은 규율이다.
+    """
+    ctrl, pool = _pool_editor(tmp_path)
+    db = _pclm_db(tmp_path)
+    key = pool.add(
+        DatasetReference(name="계약목록", kind="pclm", opts={"db": db, "view": _PCLM_VIEW}),
+    )
+    # 아무것도 안 골랐으면 두 키 다 빈 값이다(선택 없음을 빈 문자열로 못박는다).
+    assert ctrl.snapshot()["pairing"]["template_key"] == ""
+    assert ctrl.snapshot()["pairing"]["data_key"] == ""
+
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("use_pool_data", {"key": key})
+    pairing = ctrl.snapshot()["pairing"]
+    assert pairing["data_key"] == key
+    # 등록 결속은 세션이 아니라 풀 조회로 답한다 — 세션 표지를 지워도 키는 그대로다.
+    ctrl.data_pool_key = ""
+    ctrl._data_name_cache = None
+    assert ctrl.snapshot()["pairing"]["data_key"] == key
+
+    # 파일에서 온 결속은 우 열에 겨눌 행이 없다.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    assert ctrl.snapshot()["pairing"]["data_key"] == ""
 
 
 def test_reopening_a_pclm_bound_job_restores_the_view(tmp_path):
