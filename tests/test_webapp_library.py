@@ -857,3 +857,23 @@ def test_selecting_a_work_never_mounts_data_into_another_screen(tmp_path):
     source = Path("src/hwpxfiller/webapp/screen_library.py").read_text(encoding="utf-8")
     for mount in ("load_data_path(", "_adopt_datasource(", "new_work_handoff("):
         assert mount not in source, f"상세가 다른 화면의 마운트 경로를 재사용한다: {mount}"
+
+
+def test_renaming_the_selected_work_restarts_the_first_row_read(tmp_path):
+    """이름 변경의 착지(`refresh(select=…)`)도 겨눔을 바꾼다 — 읽기를 다시 건다.
+
+    상관 키에 작업 이름이 들어 있으므로 개명 뒤에는 캐시가 미스다. 여기서 읽기를 다시 걸지
+    않으면 그 상세는 영영 「아직 모름」에 머문다(사라진 데이터가 아니라 우리가 안 물은 것).
+    """
+    reg, _ = _bound_registry(tmp_path)
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "공고서 작업"})
+    job = reg.load("공고서 작업")
+    reg.save(Job(
+        name="새 이름", template_path=job.template_path, mapping=job.mapping,
+        filename_pattern=job.filename_pattern,
+        data_path=job.data_path, data_sheet=job.data_sheet,
+    ))
+    ctrl.dispatch("refresh", {"select": "새 이름"})
+    zone = ctrl.snapshot()["detail"]["pairing_detail"]
+    assert zone["first_row"]["state"] == "ready"

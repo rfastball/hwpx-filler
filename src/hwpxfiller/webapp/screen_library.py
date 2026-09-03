@@ -645,6 +645,8 @@ class LibraryController:
         if name == self.selected_work:
             self.selected_work = ""  # 유령 상세 금지 — 사라진 행을 겨눈 채로 두지 않는다.
         self.vm.refresh()
+        # 상관 키도 함께 걷는다 — 겨눔이 사라졌는데 앞선 읽기가 자기 답을 밀면 안 된다.
+        self._begin_first_row_read()
         return {"ok": True, "undo": True, "name": name}
 
     def _do_undo_delete_job(self, p: dict) -> dict:
@@ -704,6 +706,9 @@ class LibraryController:
         sel = str(p.get("select", "") or "")
         if sel and any(r.name == sel for r in self.vm.rows()):
             self.selected_work = sel
+        # 겨눔이 여기서도 바뀐다(이름 변경의 착지) — 읽기를 다시 걸지 않으면 그 상세는
+        # 영영 「아직 모름」에 머문다. 캐시 히트면 아무것도 시작하지 않는다.
+        self._begin_first_row_read()
 
     # ------------------------------------------------- 손상 작업 조치(#26 #8·UD-44)
     def validate_corrupt_path(self, raw: str) -> Path:

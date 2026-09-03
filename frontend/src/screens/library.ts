@@ -373,9 +373,12 @@ function PairTable(props: { detail: Obj; zone: Obj; controller: LibraryControlle
       h("th", null, "템플릿 필드"), h("th", null, "데이터 열"),
       h("th", null, "표시형"), h("th", null, "첫 행"))),
     h("tbody", null,
+      /* 행 자체가 손잡이다. `role="button"` 은 **얹지 않는다** — `tr` 의 암묵 role 을 덮으면
+         표의 구조가 보조기술에서 무너진다. 초점 가능 + Enter/Space + 제목으로 어포던스를
+         세우고, 무엇이 일어나는지는 계획 줄이 한 번 더 말한다. */
       ...rows.map((row) => h("tr", {
         key: String(row.template_field), "data-field": row.template_field,
-        tabIndex: 0, role: "button",
+        tabIndex: 0, title: `'${row.template_field}' 연결을 편집기에서 확인합니다`,
         onClick: () => open(String(row.template_field)),
         onKeyDown: (event: Obj) => {
           if (event.key !== "Enter" && event.key !== " ") return;
