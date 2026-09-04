@@ -71,12 +71,12 @@ def test_needs_action_lists_missing_keys_in_document_order():
     assert compat.missing == ("bidNtceNm", "presmptPrce")
 
 
-def test_blank_declaration_does_not_break_compatibility():
-    """§18.4: blank 선언 필드는 소스 요구가 아니다 — malformed 잔존 source 도 무시."""
+def test_empty_constant_declaration_does_not_break_compatibility():
+    """§18.4: 빈 고정값 선언 필드는 소스 요구가 아니다."""
     job = _hwpx_job(
         "공고서",
         FieldMapping("공고명", source="bidNtceNm"),
-        FieldMapping("비고", source="잔존소스", type="blank"),
+        FieldMapping("비고", type="const"),
     )
     compat = compatibility_for(job, ["bidNtceNm"])
     assert compat.kind == KIND_AVAILABLE

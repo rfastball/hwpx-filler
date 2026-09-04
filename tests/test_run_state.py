@@ -226,14 +226,20 @@ def test_field_states_empty_without_data(tmp_path):
     assert vm.blank_fields([0]) == []
 
 
-def test_declared_blank_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
+def test_declared_empty_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
+    """명시적 비움(빈 고정값)은 조용하다 — 값을 선언한 자리라 미입력 축에 서지 않는다.
+
+    필드축 상태 어휘에서 ``blank`` 는 퇴역했다: 빈 고정값은 채워지는 값(빈 문자열)이라
+    ``filled`` 이고, 갈리는 것은 데이터가 비어 생긴 ``missing`` 뿐이다.
+    """
     job = _job(tmp_path)
-    job.mapping.mappings[1] = FieldMapping("추정가격", type="blank")
+    job.mapping.mappings[1] = FieldMapping("추정가격", type="const")
     vm = RunViewModel(job, engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     states = {s.name: s.state for s in vm.field_states([0])}
-    assert states == {"공고명": "filled", "추정가격": "blank"}
+    assert states == {"공고명": "filled", "추정가격": "filled"}
+    assert "추정가격" not in vm.blank_fields([0])
     assert vm.validate_generate([0], "out") == []
 
     _write_template(job.template_path, ["공고명", "추정가격", "신규필드"])
@@ -523,13 +529,13 @@ def test_source_pointer_falls_back_to_path_then_type_name(tmp_path):
 
 # ------------------------------------------------ 파일명 토큰 계약 게이트(F34, RC-20 GUI 짝)
 def _job_with_pattern(tmp_path, pattern, *, blank_price=False):
-    """파일명 패턴만 바꾼 실행 작업 — blank_price=True 면 추정가격을 '비움' 선언."""
+    """파일명 패턴만 바꾼 실행 작업 — blank_price=True 면 추정가격을 빈 고정값으로 선언."""
     job = _job(tmp_path)
     job.filename_pattern = pattern
     if blank_price:
         job.mapping = MappingProfile(mappings=[
             FieldMapping(template_field="공고명", source="bidNtceNm"),
-            FieldMapping(template_field="추정가격", type="blank"),
+            FieldMapping(template_field="추정가격", type="const"),
         ])
     return job
 
@@ -569,8 +575,8 @@ def test_unresolved_name_token_blocks_generate_backstop(tmp_path):
     assert errors and errors[0].level == "danger" and "{{ID}}" in errors[0].message
 
 
-def test_blank_declared_field_token_is_unresolved(tmp_path):
-    """'비움' 선언 필드의 토큰도 미해소다 — 매핑 출력 dict 에서 빠져 리터럴로 남는다(F34)."""
+def test_declared_empty_field_token_is_unresolved(tmp_path):
+    """비움 선언(빈 고정값) 필드의 토큰도 미해소다 — 값이 빈 문자열이라 이름을 못 짓는다(F34)."""
     vm = RunViewModel(_job_with_pattern(tmp_path, "doc-{{추정가격}}", blank_price=True), engine=make_hwpx_engine())
     assert vm.unresolved_name_tokens() == ["추정가격"]
 

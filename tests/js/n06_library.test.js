@@ -397,16 +397,16 @@ test("상세 연결 존 — 저장본으로 그린 표는 그 사실을 말한�
 });
 
 test("첫 행 칸 — 편집기 「미리보기」와 **같은 렌더러**라 닫힌 집합이 갈리지 않는다", () => {
-  /* 두 벌의 스위치는 실제로 갈렸다(한쪽이 `blank` 와 `none` 을 한 문자로 접었다).
-     비움 확정(`blank`)은 빈 칸이고, 결속이 없는 행(`none`)만 마커를 쓴다 — 「채우지
+  /* 두 벌의 스위치는 실제로 갈렸다(한쪽이 값 없는 칸과 `none` 을 한 문자로 접었다).
+     빈 고정값(`value`)은 빈 칸이고, 결속이 없는 행(`none`)만 마커를 쓴다 — 「채우지
      않기로 했다」와 「아직 안 골랐다」는 다른 상태다. */
   const h = build({
     snapshot: detailSnapshot({
       ...BOUND_DETAIL,
       pairing_detail: pairingDetail({
         rows: [
-          { template_field: "여백", source_label: "비워 둠", display_label: "—",
-            preview: "", preview_kind: "blank" },
+          { template_field: "여백", source_label: "고정값…", display_label: "—",
+            preview: "", preview_kind: "value" },
           { template_field: "담당자", source_label: "열을 고르세요", display_label: "원문",
             preview: "", preview_kind: "none" },
           { template_field: "금액", source_label: "금액", display_label: "원문",
@@ -416,7 +416,7 @@ test("첫 행 칸 — 편집기 「미리보기」와 **같은 렌더러**라 �
     }),
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('<span class="pv blank"></span>'));
+  assert.ok(markup.includes('<span class="pv"></span>'));
   assert.ok(markup.includes('<span class="pv none">—</span>'));
   assert.ok(markup.includes('<span class="pv missing">〘미입력·금액〙</span>'));
 });

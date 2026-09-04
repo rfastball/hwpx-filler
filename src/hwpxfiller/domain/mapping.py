@@ -37,7 +37,8 @@ from .lint import similarity
 # domain/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다. ``today`` 는
 # 데이터 열 없이 **실행 시각의 날짜**를 내는 시스템 토큰(U4-E1 #939)이고 표시형은
 # ``date`` 와 **같은 어휘**를 쓴다(:func:`apply_transform` 이 date 로 렌더).
-# ``blank`` 는 empty-confirmed 행의 내부 영속 마커라 공용 UI 목록에 노출하지 않는다.
+# 「비워 둠」 표시형(옛 ``blank``)은 퇴역했다 — 비우려는 필드는 ``const`` 에 빈 문자열을
+# 적는 것으로 표현하고, 그 자리는 누름틀을 건드리지 않는 대신 **빈 문자열을 써 넣는다**.
 TYPES = ("text", "date", "amount", "const", "today")
 
 # 원본 소스 값을 **나르지 않는** 유형 — 값이 ``source`` 와 무관하다. ``const`` 는 리터럴을,
@@ -47,8 +48,7 @@ TYPES = ("text", "date", "amount", "const", "today")
 _NON_CARRIER_TYPES = ("const", "today")
 
 # 원본 소스 값을 실제로 나르는 유형. '파일명이 이 열을 나르는가'(식별 요약 토큰 모드 등)를
-# 묻는 곳의 단일 출처 — 화이트리스트를 곳곳에 재적지 않는다. ``blank`` 은 TYPES 에 없는
-# 내부 마커라 자연히 제외된다.
+# 묻는 곳의 단일 출처 — 화이트리스트를 곳곳에 재적지 않는다.
 SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t not in _NON_CARRIER_TYPES)
 
 
@@ -61,17 +61,13 @@ def apply_transform(
 
     ``fmt`` 는 유형 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
     코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). text/date/amount/today
-    가 표시형을 가지며, const 는 리터럴을, blank 는 언제나 빈 값을 낸다.
+    가 표시형을 가지며, const 는 리터럴을 낸다(빈 리터럴이면 빈 문자열).
 
     ``now`` 는 ``today`` 의 기준 시각이다. ``None`` 이면 ``datetime.now()`` 로 폴백한다
     (선례: :func:`~hwpxfiller.application.generation.direct_plan` 의 "now=None 은 생성
     시각"). 파일명 날짜 토큰과 **같은 값**을 넘겨야 확인 대상과 생성 대상이 하위-일
     경계에서 갈라지지 않는다(RC-02).
     """
-    if kind == "blank":
-        # 의도적 공란은 값 추론이 아니라 매핑 계약의 명시적 선언이다. 단독
-        # FieldMapping 평가도 언제나 빈 값이어야 한다.
-        return ""
     if kind == "const":
         return const
     if kind == "today":
@@ -98,9 +94,14 @@ class FieldMapping:
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
 
     @property
-    def is_blank(self) -> bool:
-        """이 항목이 템플릿 필드를 의도적으로 비운다는 명시적 선언인가."""
-        return self.type == "blank"
+    def is_declared_empty(self) -> bool:
+        """이 항목이 템플릿 필드를 **빈 문자열로 채운다**는 명시적 선언인가.
+
+        옛 ``blank`` 유형(누름틀을 손대지 않는 키 누락)의 후계다. 비우려는 필드는
+        「직접 입력(고정값)에 아무것도 적지 않는다」로 표현하고, 그 결과는 누름틀에
+        빈 문자열이 실제로 써지는 것이다(S5 ``EXACT_BLANK_POLICY`` 와 같은 의미).
+        """
+        return self.type == "const" and self.const == ""
 
     def value_for(
         self, record: "dict[str, object]", *, now: "datetime | None" = None
@@ -120,12 +121,19 @@ class FieldMapping:
 
     @classmethod
     def from_dict(cls, d: dict) -> "FieldMapping":
+        """읽기 시점 마이그레이션: 옛 ``blank`` 유형은 빈 ``const`` 로 도착한다.
+
+        디스크에 남은 옛 저장물(``type="blank"``)을 거부하면 그 작업을 열 수 없어진다 —
+        이미 사람이 「이 필드는 비운다」고 확정한 선언이므로 같은 뜻의 현행 표현(빈 고정값)
+        으로 옮겨 읽는다. 그 밖의 미지 유형은 여전히 시끄럽게 거부한다.
+        """
         type_ = d.get("type", "text")
+        if type_ == "blank":
+            return cls(template_field=d["template_field"], type="const")
         # 직렬화 경계 검증(RC-10): 손 편집·버전 스큐로 들어온 미지 유형을 조용히
         # 수용하면 뷰 크래시·서식 미적용 값 무경고 주입으로 이어진다 — 로드 시점에
-        # 시끄럽게 거부한다(호출자의 '로드 실패' 경로가 수용). ``blank`` 는 명시적
-        # 공란 선언의 내부 영속 마커라 허용한다.
-        if type_ not in TYPES and type_ != "blank":
+        # 시끄럽게 거부한다(호출자의 '로드 실패' 경로가 수용).
+        if type_ not in TYPES:
             raise ValueError(f"지원하지 않는 유형: {type_!r} (지원: {TYPES})")
         return cls(
             template_field=d["template_field"],
@@ -150,24 +158,26 @@ class MappingProfile:
     provenance: "dict[str, str]" = field(default_factory=dict)
 
     def template_fields(self) -> "list[str]":
-        """실제로 값을 방출하는 필드(기존 엔진/ADR-E 계약).
+        """**빈 값 검사가 요구하는** 필드(기존 엔진/ADR-E 계약).
 
-        명시적 공란은 커버에는 속하지만 출력 데이터에는 없어야 한다. 따라서 기존
-        호출자가 보던 이 메서드는 값 매핑만 반환하고, 구조 계약에는
-        :meth:`cover_fields` 를 사용한다.
+        명시적 빈 고정값은 커버에는 속하지만 여기 들지 않는다 — 사람이 「이 필드는
+        비운다」고 이미 답한 자리라 미입력·빈 값 경고의 대상이 아니다(데이터 구멍이
+        아니다). 구조 계약에는 :meth:`cover_fields` 를 사용한다.
         """
-        return [m.template_field for m in self.mappings if not m.is_blank]
+        return [m.template_field for m in self.mappings if not m.is_declared_empty]
 
     def mapped_fields(self) -> "list[str]":
         """값을 채우는 매핑 필드 집합(문서순, 중복 제거)."""
         return list(dict.fromkeys(self.template_fields()))
 
-    def blank_fields(self) -> "list[str]":
-        """사람이 명시적으로 '비움'을 선언한 필드 집합."""
-        return list(dict.fromkeys(m.template_field for m in self.mappings if m.is_blank))
+    def declared_empty_fields(self) -> "list[str]":
+        """사람이 명시적으로 '비움'(빈 고정값)을 선언한 필드 집합."""
+        return list(
+            dict.fromkeys(m.template_field for m in self.mappings if m.is_declared_empty)
+        )
 
     def cover_fields(self) -> "list[str]":
-        """매핑 계약이 전건 커버하는 필드(``mapped ∪ blank``), 선언순."""
+        """매핑 계약이 전건 커버하는 필드, 선언순."""
         return list(dict.fromkeys(m.template_field for m in self.mappings))
 
     def coverage_set(self) -> "set[str]":
@@ -175,18 +185,24 @@ class MappingProfile:
         return set(self.cover_fields())
 
     def coverage_conflicts(self) -> "list[str]":
-        """값 매핑과 공란 선언이 동시에 존재하는 모순 필드(선언순)."""
-        mapped = set(self.mapped_fields())
-        blanks = set(self.blank_fields())
-        return [f for f in self.cover_fields() if f in mapped and f in blanks]
+        """한 필드를 두 항목이 겹쳐 선언한 모순 필드(선언순).
+
+        1:1 계약이므로 같은 템플릿 필드에 매핑이 둘 이상이면 어느 쪽이 이기는지가
+        선언에 없다 — 조용한 추측 대신 드리프트로 세운다.
+        """
+        seen: "dict[str, int]" = {}
+        for m in self.mappings:
+            seen[m.template_field] = seen.get(m.template_field, 0) + 1
+        return [f for f in self.cover_fields() if seen[f] > 1]
 
     def apply(
         self, record: "dict[str, object]", *, now: "datetime | None" = None
     ) -> "dict[str, str]":
         """소스 레코드 1건 → {템플릿필드: 값}. 엔진/배치가 그대로 소비한다.
 
-        명시적 공란은 구조 계약에만 남고 출력 dict 에서는 빠진다. 이는 L1 이전의
-        '미매핑 필드는 엔진에 전달하지 않아 누름틀을 그대로 둔다'는 동작을 보존한다.
+        **어떤 항목도 빠지지 않는다.** 명시적 빈 고정값도 키를 남겨 빈 문자열을 내므로
+        누름틀에 빈 문자열이 실제로 써진다 — 「비우겠다」는 선언이 누름틀을 손대지 않는
+        누락으로 새지 않는다.
 
         ``now`` 는 ``today`` 유형의 기준 시각(:func:`apply_transform`) — 호출측이 파일명
         날짜 토큰과 같은 값을 관통시킨다(RC-02).
@@ -194,7 +210,6 @@ class MappingProfile:
         return {
             m.template_field: m.value_for(record, now=now)
             for m in self.mappings
-            if not m.is_blank
         }
 
     def apply_all(

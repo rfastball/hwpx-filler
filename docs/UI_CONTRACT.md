@@ -606,9 +606,9 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     세 층이 판정했다). 데이터 미연결은 별도 상태가 **아니다**: 행이 요구하는 것은 같고
     (`needs_source`), 고를 열이 왜 없는지는 표 머리·1단계가 말한다.
   - **특수 항목은 열 이름 공간에 얹지 않는다.** `data_column_options` 의 항목은 실 열
-    (`col:<이름>`, `kind="column"`)과 특수 셋(`sp:const`·`sp:today`·`sp:blank`)으로 갈리고,
+    (`col:<이름>`, `kind="column"`)과 특수 **둘**(`sp:const`·`sp:today`)로 갈리고,
     웹은 값을 파싱하지 않고 `kind` 로 발행 액션을 가른다 — 열은 `set_source`, 고정값·오늘
-    날짜는 `set_type`, 비워 둠은 `set_blank`. `set_source` 에 센티넬이 가지 않는 것이 계약
+    날짜는 `set_display`. `set_source` 에 센티넬이 가지 않는 것이 계약
     이다(리뷰 R5: 같은 이름의 실 열이 있으면 그 열을 영영 못 겨눈다). 링1 도 그 짝을 지킨다:
     열을 고르면 `const`/`today` 가 추정 기본형으로 풀리고, 특수 유형을 고르면 소스가 풀린다
     (표시와 출력이 갈리지 않게).
@@ -642,10 +642,11 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - **일괄 승격 뒤 저장하면 `field:*:source`/`:format` 지문 키가 한 번에 N개 등장하고
     `binding_revision` 이 1 오른다 — 의도된 결과다**(F-06 지문 2축 불변). 명시성 게이트의
     정상 산출이고, `reviewed_rules` 기준선은 완주 런만 쓴다.
-  - **미리보기는 산출물이 담을 것을 그대로 말한다**(`preview_kind` 5갈래): `value` 는 실제
-    값, `missing` 은 결속됐는데 이 행에서 빈 값 — 문자열이 `domain/job.MISSING_MARKER` **그
+  - **미리보기는 산출물이 담을 것을 그대로 말한다**(`preview_kind` 4갈래 + 상세 전용
+    `pending`): `value` 는 실제 값(명시적 비움은 값이 빈 문자열이라 여기 든다 — 빈 셀),
+    `missing` 은 결속됐는데 이 행에서 빈 값 — 문자열이 `domain/job.MISSING_MARKER` **그
     자체**다(생성이 그 자리에 넣는 바로 그 문자열이라 UI 문안이 아니라 데이터이고, 그래서
-    웹이 짓지 않는다), `blank` 는 비워 둠(빈 셀 + 배지 「확인」), `none` 은 열 필요(「—」),
+    웹이 짓지 않는다), `none` 은 열 필요(「—」),
     `error` 는 「(미리보기 오류)」. 스테퍼(`prev-rec`/`next-rec`)는 표 머리 `th` 안에 서고
     `step_preview` 는 종전 그대로다(표시순서 투영 없음).
   - **드문 동사는 머리 우측 `⋯` 메뉴**(`data-act="binding-more"` → `#bindingMoreMenu`)다 —
@@ -661,7 +662,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     없다. 모델 API `apply_active_sources` 는 **남는다** — 데이터 재겨눔의 어휘 재동기화가
     계속 그 관문을 쓴다.
   - 구 `confirm_all`·`confirm_blanks`(ADR-E 이름 재진술 모달)는 사슬째 사라졌다: 일괄 승격이
-    앞 절반을, 행별 「비워 둠」 선언이 뒤 절반을 진다. 이름을 되읽어 주던 이유는 **일괄**이
+    앞 절반을, 행별 답(열을 고르거나 **빈 고정값**을 선언)이 뒤 절반을 진다. 이름을 되읽어 주던 이유는 **일괄**이
     반사적 dismiss 로 여러 필드를 한 번에 비우기 때문이었고, 행별 선언에는 그 위험이 없다
     (고른 행이 곧 확인한 행이다).
 - **저장 단위는 한 section 의 patch**(§13-16). 다른 탭으로 가는 길을 막는 patch 는 **묻지
@@ -752,7 +753,7 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     두 동사의 무장 술어는 **같은 값**이다(둘을 따로 세면 한쪽만 눌리는 상태가 실재한다).
   - **차단 조준은 단계를 옮기지 않는다**(`aimAtBlockedField`). `name`·`pattern` 은 둘 다
     3단계에 살지만, 거절당한 저장이 사람을 그 단계로 데려가면 지나온 단계의 patch 가 탭 이동의
-    **자동 버리기**에 걸린다 — 연결 확인에서 방금 선언한 「비워 둠」이 저장 거절 하나로
+    **자동 버리기**에 걸린다 — 연결 확인에서 방금 선언한 비움이 저장 거절 하나로
     사라지는 자리다. 거절은 아무것도 파괴하지 않는 전이여야 하므로 이동은 사람이 하고, 어느
     단계인지는 **링1 차단 문안**이 말한다(`'이름·저장' 단계에서 …`). 표지(`invalidField`)는
     그 칸이 보이는 단계에서만 서고 성공 저장·단계 전환·그 칸 입력에서 걷힌다(안 보이는 칸에
@@ -1902,7 +1903,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   전 행 투영과 폴더 stat 을 다시 지불하지 않는다.
 - **미리보기 칸의 렌더러는 하나다**(`frontend/src/screens/preview_cell.ts`). 편집기 2단계의
   「미리보기」 열과 이 표의 「첫 행」 열이 같은 `preview_kind` 닫힌 집합을 받으므로 스위치를
-  두 벌 두면 그 집합이 갈린다(실제로 갈렸다 — 한쪽이 `blank` 와 `none` 을 한 문자로 접었다).
+  두 벌 두면 그 집합이 갈린다(실제로 갈렸다 — 한쪽이 값 없는 칸과 `none` 을 한 문자로 접었다).
   호스트마다 갈리는 것은 오류의 **문장** 하나이고 그것만 인자로 받는다.
 - 카드의 두 항목은 이름 곁에 **「열기」·「폴더에서 보기」**(PathActions 아이콘,
   `detail.template_path`·`detail.data_path` 겨눔)를 싣는다(U2 §2.20, #342) — 경보(템플릿 미연결
@@ -1963,7 +1964,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 | T1 템플릿 적용 | `screen_editor._do_use_library_template` — `new_job_session` 뒤 |
 | T2 매핑 전확정 | `screen_editor.dispatch` 꼬리 — 링1 `is_complete()` 의 **false→true 상승 모서리** |
 | T3/T10 작업 저장 | `screen_editor._do_save` — 레지스트리 쓰기 성립 뒤. HWPX/TXT 갈림은 `Job.media` |
-| T14 비움 확정 | `screen_editor._do_set_blank` — 그 행이 **실제로 비움 확정으로 옮겨갔을 때**(U6-C: 구 `confirm_blanks` 모달의 후계) |
+| T14 비움 확정 | `screen_editor._do_set_confirmed` — **빈 고정값 행이 미확인→확인으로 옮겨갔을 때**(「비워 둠」 표시형 퇴역 뒤의 그 선언 자리) |
 | T4/T12 마운트·교체 | `screen_job._remember_data_source` — 세 마운트 경로가 모이는 한 자리. T12 는 **이 세션 안에서의** 2번째 마운트 |
 | T5 작업·행 선택 | `screen_job.dispatch` 꼬리 — `job_name` ∧ `selection.selected_count() ≥ 1` |
 | T6 승인 | **발신자 없음**(#957 — 승인 사건 소멸). 링1 단계 정의는 동결 자산이라 그대로 선다 |

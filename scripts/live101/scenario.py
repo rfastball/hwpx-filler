@@ -716,8 +716,9 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#scr-editor"],
     )
     # 데이터에 없는 「담당연락처」는 일괄 승격이 **건드리지 않는다**(U6-C #977) — 사람이 그
-    # 행에서 「비워 둠」을 골라야 넘어간다. 확인의 자리가 모달에서 그 행으로 옮겨 왔고,
-    # 요구 자체(사람이 명시로 비운다)는 그대로다.
+    # 행에서 「고정값…」을 고르고 **아무것도 적지 않아야** 넘어간다(U6 §2.10 — 「비워 둠」
+    # 표시형 퇴역). 확인의 자리가 모달에서 그 행으로 옮겨 왔고, 요구 자체(사람이 명시로
+    # 비운다)는 그대로다.
     empty_row = '#scr-editor table.map tr[data-field="담당연락처"]'
     s.wait(
         f'!!document.querySelector({json.dumps(empty_row)})'
@@ -726,7 +727,14 @@ def run(ctx: ScenarioContext) -> dict:
         "비움 선언을 기다리는 행", requires=["#scr-editor"],
     )
     seen["empty_value_gate_asked"] = True
-    s.set_value(empty_row + ' select[data-act="row-source"]', "sp:blank")
+    s.set_value(empty_row + ' select[data-act="row-source"]', "sp:const")
+    # 빈 고정값은 값 선언이라 배지가 열린다 — 그것을 눌러야 「확인」이 된다.
+    s.wait(
+        f'document.querySelector({json.dumps(empty_row)}).querySelector'
+        '(\'[data-act="row-confirm"]\').disabled === false',
+        "빈 고정값 선언 착지", requires=["#scr-editor"],
+    )
+    s.click_sel(empty_row + ' [data-act="row-confirm"]', what="빈 고정값 행 확인")
     # 같은 이유로 배지 전건을 함께 잰다 — pill 만 보면 비움 선언이 도착하기 전에 지나간다.
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"

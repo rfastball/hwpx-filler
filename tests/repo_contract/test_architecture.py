@@ -37,6 +37,33 @@ def test_python_package_dependencies_point_inward() -> None:
     assert not failures, "\n".join(failures)
 
 
+#: 「비워 둠」 표시형 퇴역(U6 §2.10)이 남긴 **소비자 0** 심볼 — 되살아나면 같은 상태를 두
+#: 이름이 판정한다(빈 고정값과 별도 유형). 산출물 소스 전역에서 0 이어야 한다.
+RETIRED_BLANK_SYMBOLS = ("set_blank", "sp:blank", "is_blank", "declared_blank_fields")
+
+
+def test_retired_blank_type_symbols_have_zero_producers_and_consumers() -> None:
+    """`blank` 유형의 심볼이 src·frontend 어디에도 남지 않는다(U6 §2.10).
+
+    문서는 대상이 아니다 — 퇴역 판정을 설명하려면 그 이름을 불러야 한다.
+    """
+    failures: list[str] = []
+    for root in (ROOT / "src", ROOT / "frontend"):
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".py", ".ts", ".tsx", ".js", ".css", ".html"}:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                for symbol in RETIRED_BLANK_SYMBOLS:
+                    if symbol in line:
+                        rel = path.relative_to(ROOT).as_posix()
+                        failures.append(f"{rel}:{lineno}: {symbol}")
+    assert not failures, "\n".join(failures)
+
+
 def test_web_controllers_use_ring1_public_seams() -> None:
     library = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_library.py"
     library_tree = ast.parse(library.read_text(encoding="utf-8"), filename=str(library))

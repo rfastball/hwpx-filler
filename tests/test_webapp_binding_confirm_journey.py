@@ -115,7 +115,7 @@ def _wire(tmp_path: Path):
 
 
 def _confirm_every_row(ctrl) -> None:
-    """전 행 확인 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 「비워 둠」)의 축약.
+    """전 행 확인 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 빈 고정값 선언)의 축약.
 
     구 「모두 확정」 2발(`confirm_all` + 비움 이름게이트 `confirm_blanks`)의 후계다(U6-C
     #977). 일괄 승격(`confirm_suggested`)은 **자동 제안만** 올리므로 전 행 확인은 남은 행을
@@ -123,10 +123,10 @@ def _confirm_every_row(ctrl) -> None:
     상태를 만들지 않게 하는 자리다.
     """
     for row in ctrl.snapshot()["rows"]:
-        if row["confirmable"]:
-            ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
-        else:
-            ctrl.dispatch("set_blank", {"index": row["index"]})
+        if not row["confirmable"]:
+            # 채울 것이 없는 행의 답은 **빈 고정값 선언**이다(「비워 둠」 표시형 퇴역).
+            ctrl.dispatch("set_display", {"index": row["index"], "type": "const", "fmt": ""})
+        ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
 
 
 def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:

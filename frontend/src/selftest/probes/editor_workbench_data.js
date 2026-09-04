@@ -1646,7 +1646,7 @@ export function createEditorWorkbenchDataProbes() {
        2단계 「연결 확인」 표(U6-C #977 · 동결 시안 장면 2). 합성 매핑 스냅샷을 실 render()
        에 흘려 되읽는다: (a) 4열이 서는가, (b) 머리 pill 셋이 Python 수치를 그대로 말하는가,
        (c) 「제안 n건 모두 확인」이 **제안만** 승격하는가(양성·음성 한 쌍), (d) 특수 항목이
-       `set_display`/`set_blank` 로 갈리고 `set_source` 에는 센티넬이 가지 않는가, (e) 배지
+       `set_display` 로 갈리고 `set_source` 에는 센티넬이 가지 않는가, (e) 배지
        클릭이 행별 확인을 내는가, (f) 스테퍼가 왕복하는가, (g) 데이터 열 칸 높이가 행마다
        같은가(실렌더 기하 — 구 프로브의 단언 승계). */
     {
@@ -1700,7 +1700,6 @@ export function createEditorWorkbenchDataProbes() {
             .concat([
               { value: "sp:const", label: "고정값…", kind: "const", field: "" },
               { value: "sp:today", label: "오늘 날짜", kind: "today", field: "" },
-              { value: "sp:blank", label: "비워 둠", kind: "blank", field: "" },
             ]);
           /* 행 4개 = 상태 4태 전수. `state_label`·`confirmable`·`preview_kind` 는 전부
              Python 이 낸 값이고 프로브는 그것이 화면에 그대로 서는지만 본다. */
@@ -1825,8 +1824,9 @@ export function createEditorWorkbenchDataProbes() {
           ctx.push("editor", snap);
           await settleRender(ctx);
           /* ⑧ 특수 항목의 액션 분기 — 「고정값…」·「오늘 날짜」는 `set_display`(유형·표시형
-             한 쌍), 「비워 둠」은 `set_blank`. `set_source` 에 `sp:` 가 실려 나가면 여기서
-             빨강이다(센티넬 금지의 실측). */
+             한 쌍)로 갈린다. `set_source` 에 `sp:` 가 실려 나가면 여기서 빨강이다
+             (센티넬 금지의 실측). 「비워 둠」 항목은 퇴역했다 — 비우려는 자리는 고정값에
+             아무것도 안 적는 것이고, 아래 `option_values` 가 그 부재를 단언한다. */
           const pick = async (index, value) => {
             calls.length = 0;
             const select = root.querySelectorAll('table.map [data-act="row-source"]')[index];
@@ -1835,12 +1835,14 @@ export function createEditorWorkbenchDataProbes() {
             await settleUntil(ctx, () => calls.length > 0);
             return calls[0] || "";
           };
+          out.option_values = Array.prototype.map.call(
+            root.querySelectorAll('table.map [data-act="row-source"]')[3].options,
+            (o) => o.value);
           out.pick_const = await pick(3, "sp:const");
-          out.pick_blank = await pick(3, "sp:blank");
           out.pick_today = await pick(3, "sp:today");
           out.pick_column = await pick(3, "col:수량");
           out.sentinel_in_set_source = [
-            out.pick_const, out.pick_blank, out.pick_today,
+            out.pick_const, out.pick_today,
           ].some((call) => call.indexOf("set_source") === 0);
           /* ⑧-b 표시형 select 가 **유형 그룹**을 그리고 한 쌍을 원자적으로 낸다(리뷰 1).
              유형 열이 걷힌 뒤 유일하게 남은 유형 축이라, 여기가 죽으면 이름 추론이 틀린 행은

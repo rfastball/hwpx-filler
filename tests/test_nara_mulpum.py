@@ -27,6 +27,8 @@ generate_batch = partial(
     ensure_output_dir=ensure_output_directory,
 )
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.domain.fields import read_fields
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.mapping_store import load_mapping_profile
 
@@ -46,8 +48,13 @@ def _by_no() -> "dict[str, dict[str, str]]":
     return {r["bidNtceNo"]: r for r in recs}
 
 
-def test_empty_date_record_fills_without_crash_and_keeps_placeholder(tmp_path):
-    """F1: 입찰일자 통째 결측 레코드 — 크래시 없이 빈 날짜는 스킵(누름틀 잔존)."""
+def test_empty_date_record_fills_without_crash_and_writes_the_field_empty(tmp_path):
+    """F1: 입찰일자 통째 결측 레코드 — 크래시 없이 빈 값이 그대로 주입된다.
+
+    U6 §2.10 에서 엔진의 「빈 값 스킵」이 죽었다: 주어진 키는 전부 주입한다. 값이 없어
+    비는 자리를 시끄럽게 만드는 것은 이제 스킵이 아니라 표식(`MISSING_MARKER`)이고, 그
+    표식은 이 함수보다 **위**(`mapped_records`·CLI `--ack-empty`)에서 붙는다.
+    """
     rec = _by_no()[EMPTY_DATE_NO]
     mapped = PROFILE.apply(rec)
     # 빈 소스 날짜는 표시형 변환에서 '' 로 degrade(크래시 아님).
@@ -57,11 +64,10 @@ def test_empty_date_record_fills_without_crash_and_keeps_placeholder(tmp_path):
     batch = generate_batch(BID_NOTICE, [mapped], str(tmp_path), "f1-{{입찰공고번호}}", engine=make_hwpx_engine())
     res = batch.results[0]
     assert res.ok and res.error == ""          # 생성 자체가 성공(무크래시)
-    # 빈 날짜는 엔진 active 에서 제외 → 누름틀 잔존(applied 에 없음).
-    assert "입찰개시일자" not in res.applied
-    assert "입찰개시시각" not in res.applied
-    # 값이 있는 날짜(개찰일자)는 정상 주입 — 빈값만 골라 스킵함을 대조.
-    assert "개찰일자" in res.applied
+    # 빈 날짜도 주입된다 — 누름틀 안내 문구가 산출물에 실려 나가지 않는다.
+    assert {"입찰개시일자", "입찰개시시각", "개찰일자"} <= res.applied
+    values = read_fields(read_hwpx_package(res.output_path))
+    assert values["입찰개시일자"] == "" and values["입찰개시시각"] == ""
 
 
 def test_duplicate_notice_names_yield_distinct_files_no_loss(tmp_path):
