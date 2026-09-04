@@ -1012,10 +1012,10 @@ class EditorController:
         return snap
 
     def _data_column_options(self) -> "list[dict]":
-        """데이터 열 select 의 항목 전수 — 실 열 + 특수 항목 3개(U6-C #977).
+        """데이터 열 select 의 항목 전수 — 실 열 + 특수 항목 2개(U6-C #977).
 
         ``kind`` 가 곧 **발행할 액션**이다: ``column``→``set_source`` ·
-        ``const``/``today``→``set_display`` · ``blank``→``set_blank`` · ``none``→결속 해제.
+        ``const``/``today``→``set_display`` · ``none``→결속 해제.
         특수 항목을 소스 값으로 실어 보내지 않는 이유는 리뷰 R5 그대로다 — 같은 이름의 실
         열이 있으면 그 열을 영영 못 겨눈다. 그래서 값의 이름 공간을 접두로 가른다.
         """
@@ -1029,7 +1029,7 @@ class EditorController:
         options.extend(
             {"value": f"sp:{kind}", "label": SPECIAL_SOURCE_LABEL[kind], "kind": kind,
              "field": ""}
-            for kind in ("const", "today", "blank")
+            for kind in ("const", "today")
         )
         return options
 
@@ -1983,7 +1983,7 @@ class EditorController:
         was_complete = self._mapping_complete()
         result = handler(payload)
         # T2 매핑 전확정(#894) — **상승 모서리**로 통지한다. 확정은 한 액션이 아니라 여러 갈래
-        # (`confirm_suggested`·`set_blank`·행별 `set_confirmed`·`restore_confirmed`)로 도달하므로
+        # (`confirm_suggested`·행별 `set_confirmed`·`restore_confirmed`)로 도달하므로
         # 액션마다 훅을 달면 그 목록이 곧 두 번째 판정자가 된다. 판정 자체는 링1
         # ``MappingModel.is_complete()`` 하나이고 여기는 그 값의 false→true 만 읽는다.
         if not was_complete and self._mapping_complete():
@@ -2402,7 +2402,15 @@ class EditorController:
         self.model.set_const(int(p["index"]), p["const"])
 
     def _do_set_confirmed(self, p: dict) -> None:
-        self.model.set_confirmed(int(p["index"]), bool(p["confirmed"]))
+        index, confirmed = int(p["index"]), bool(p["confirmed"])
+        row = self.model.rows[index]
+        # T14 비움 확정(#894) — 「비워 둠」 표시형이 퇴역해 그 선언의 자리는 **빈 고정값을
+        # 확인하는 것**이다. **상태가 실제로 옮겨갔을 때만** 체크가 선다(무변이 재확인은
+        # 지나지 않은 게이트를 지났다고 말하게 된다).
+        moved = confirmed and not row.confirmed and row.is_declared_empty()
+        self.model.set_confirmed(index, confirmed)
+        if moved:
+            self._tutorial(Milestone.CONFIRM_EMPTY_FIELD)
 
     def _do_confirm_suggested(self, p: dict) -> dict:
         """자동 제안 행 **일괄 승격**(U6-C #977) — 사람이 손댄 행·열 필요 행은 안 건드린다.
@@ -2412,16 +2420,6 @@ class EditorController:
         pill 「확인 필요 n」이 말한다 — 부분 동작을 조용히 하지 않는다.
         """
         return {"promoted": self.model.confirm_suggested()}
-
-    def _do_set_blank(self, p: dict) -> None:
-        """이 행은 채우지 않는다 — 행별 비움 선언(U6-C #977)."""
-        index = int(p["index"])
-        already = self.model.rows[index].is_empty_confirmed()
-        self.model.set_blank(index)
-        # T14 비움 확정(#894) — **상태가 실제로 옮겨갔을 때만**이다: 이미 비움 확정인 행을
-        # 다시 고른 무변이 호출에서 체크가 서면 지나지 않은 게이트를 지났다고 말하게 된다.
-        if not already:
-            self._tutorial(Milestone.CONFIRM_EMPTY_FIELD)
 
     def _do_unconfirm_all(self, p: dict) -> dict:
         self._unconfirm_undo = [i for i, row in enumerate(self.model.rows) if row.confirmed]

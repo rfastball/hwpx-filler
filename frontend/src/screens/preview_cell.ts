@@ -3,7 +3,7 @@
  *  두 호스트가 이 한 렌더러를 쓴다(U6-F #980 리뷰 8): 편집기 2단계의 「미리보기」 열과
  *  「문서 작업」 상세의 「첫 행」 열이다. 둘 다 같은 링1 투영(`row_projection`)의 같은
  *  `preview_kind` 를 받으므로, 스위치를 두 벌 두면 **닫힌 집합이 두 곳에서 갈린다** —
- *  실제로 갈렸다(한쪽이 `blank` 와 `none` 을 한 문자로 접었다).
+ *  실제로 갈렸다(한쪽이 값 없는 칸과 `none` 을 한 문자로 접었다).
  *
  *  빈 값이 빈칸으로 새지 않는 것이 이 칸의 존재 이유다: 결속됐는데 이 행에서 값이 없으면
  *  Python 이 실제 표식(`domain/job.MISSING_MARKER`)을 실어 보내고 여기서는 그 문자열을
@@ -34,7 +34,6 @@ export function PreviewCell(props: { row: Obj; errorText?: string }): ReactNode 
   if (kind === "pending") return span("pv pending", String(row.preview || BLANK_MARK));
   if (kind === "error") return span("pv err", props.errorText || PREVIEW_ERROR_TEXT);
   if (kind === "missing") return span("pv missing", String(row.preview));
-  if (kind === "blank") return span("pv blank", "");
   if (kind === "none") return span("pv none", BLANK_MARK);
   return span("pv", String(row.preview));
 }

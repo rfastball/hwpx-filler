@@ -78,7 +78,7 @@ def gate_empty_fields(report: "RenderReport", mapping) -> "list[str]":
     렌더는 확정-비움도 〈빈 값〉으로 **그대로 그린다** — 갈리는 것은 "보이는가"가 아니라
     "확인해야 하는가"다. 데이터가 비어서 생긴 빈 값은 선언이 아니라 그 행의 사실이라
     남는다. 판정 단일 출처는 :meth:`~hwpxfiller.gui.mapping_state.MappingModel.
-    declared_blank_fields` 이고, 카드 스냅샷의 게이트 집합도 같은 술어를 쓴다.
+    declared_empty_fields` 이고, 카드 스냅샷의 게이트 집합도 같은 술어를 쓴다.
     """
-    declared = set(mapping.declared_blank_fields())
+    declared = set(mapping.declared_empty_fields())
     return [f for f in report.empty_fields if f not in declared]

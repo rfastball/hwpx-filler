@@ -54,8 +54,12 @@ class HwpxEngine[PackageT]:
 
         applied: set[str] = set()
         notes: "list[FillNote]" = []
-        # 값이 있는 필드만 주입(원본과 동일: 빈 값은 건너뜀)
-        active = {k: str(v) for k, v in data.items() if str(v).strip() != ""}
+        # **주어진 키는 전부 주입한다** — 빈 값도 값이다(U6 §2.10). 종전에는 VBA 판박이로
+        # 빈 값을 건너뛰어 누름틀 안내 문구가 그대로 남았는데, 그 자리가 이제 사람의 명시
+        # 선언(빈 고정값)이 도착하는 자리다. 「비운다」는 답이 「손대지 않는다」로 새면 문서에
+        # 안내 문구가 실려 나간다. 값이 없어 비는 자리는 여기 오기 전에 표식(MISSING_MARKER)
+        # 으로 바뀌므로, 여기 남은 빈 문자열은 언제나 선언이다.
+        active = {k: str(v) for k, v in data.items()}
 
         try:
             for name in field_xml_names(pkg):

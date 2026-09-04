@@ -402,17 +402,17 @@ def test_preserved_inactive_rule_follows_the_current_mapping_decision(tmp_path) 
     assert values["금액"] == "고침-금액"
 
 
-def test_inactive_blank_mapping_keeps_the_committed_rule_without_blocking(
+def test_inactive_unsupported_mapping_keeps_the_committed_rule_without_blocking(
     tmp_path,
 ) -> None:
-    # 비활성 Field 가 blank 로 바뀌어도 확정을 막지 않는다(명시 결정은 활성 Field 의 몫) —
-    # 판본은 이전에 확정한 규칙을 그대로 보존한다.
+    # 비활성 Field 가 옮길 수 없는 유형(「오늘 날짜」)으로 바뀌어도 확정을 막지 않는다
+    # (명시 결정은 활성 Field 의 몫) — 판본은 이전에 확정한 규칙을 그대로 보존한다.
     root, registry, service, slots = _roundtrip_world(tmp_path)
     service.commit_current_mapping(WORK_REF, "commit-o1")
     _select_option(slots, "o2", "select-o2")
 
     job = registry.load(WORK_REF)
-    job.mapping.mappings[2] = FieldMapping("항목", type="blank")
+    job.mapping.mappings[2] = FieldMapping("항목", type="today")
     registry.save(job, allow_overwrite=True)
     committed = service.commit_current_mapping(WORK_REF, "commit-o2-blank")
     assert committed is not None
@@ -424,20 +424,28 @@ def test_inactive_blank_mapping_keeps_the_committed_rule_without_blocking(
     assert kept["항목"].canonical_constant_value.text == "v-항목"
 
 
-def test_blank_legacy_mapping_stays_review_required_and_writes_nothing(tmp_path) -> None:
+def test_empty_constant_mapping_commits_as_an_exact_empty_text_rule(tmp_path) -> None:
+    """빈 고정값은 모호하지 않다 — ``ExactText("")`` 규칙으로 그대로 확정된다.
+
+    옛 ``blank``(출력 제외)는 Intentional Blank 와 뜻이 갈려 명시 결정을 요구했다. 그
+    유형이 퇴역하고 「빈 문자열을 써 넣는다」 하나만 남으면서 그 모호함도 함께 죽었다.
+    """
     root = tmp_path / "authority"
     _seed_v2_work(root, with_binding=False)
     registry = _registry(tmp_path)
     job = registry.load(WORK_REF)
     job.mapping = _complete_mapping()
-    job.mapping.mappings[2] = FieldMapping("\ud56d\ubaa9", type="blank")
+    job.mapping.mappings[2] = FieldMapping("\ud56d\ubaa9", type="const")
     registry.save(job, allow_overwrite=True)
     service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
 
-    with pytest.raises(FieldBindingReviewRequired, match="explicit|\\uba85\\uc2dc"):
-        service.commit_current_mapping(WORK_REF, "binding-blank")
-
-    assert not WorkFieldBindingStore(root / "field_bindings").exists(WORK)
+    assert service.commit_current_mapping(WORK_REF, "binding-empty-const") is not None
+    revision = load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    )
+    assert revision is not None
+    rule = {r.field_id: r for r in revision.binding_rules}["\ud56d\ubaa9"]
+    assert rule.canonical_constant_value.text == ""
 
 
 def test_mapping_basis_change_during_commit_writes_no_revision(

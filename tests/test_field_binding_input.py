@@ -162,14 +162,20 @@ def test_prepare_surfaces_implicit_strip_as_explicit_policy_candidate() -> None:
     assert draft.blockers == ()
 
 
-def test_blank_omission_is_blocker_not_auto_intentional_blank() -> None:
+def test_empty_constant_is_an_exact_empty_text_candidate_not_a_blocker() -> None:
+    """빈 고정값은 모호하지 않다 — ``ExactText("")`` 후보로 곧장 간다.
+
+    옛 ``blank``(출력 제외)만이 Intentional Blank 와 뜻이 갈려 명시 결정을 요구했고, 그
+    유형이 퇴역하면서 그 blocker(``AMBIGUOUS_BLANK_OMISSION``)도 함께 죽었다.
+    """
     draft = _legacy([
-        LegacyFieldBindingEntry("빈칸", "blank", "", "", ""),
+        LegacyFieldBindingEntry("빈칸", "const", "", "", ""),
         LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
     ])
-    # blank 는 후보 규칙으로 자동 변환되지 않는다(candidate 에 없다).
-    assert all(c.field_id != "빈칸" for c in draft.candidate_rules)
-    assert [b.field_id for b in draft.blockers] == ["빈칸"]
+    by_field = {c.field_id: c for c in draft.candidate_rules}
+    assert by_field["빈칸"].binding_kind == CONSTANT
+    assert by_field["빈칸"].canonical_constant_value == ExactText("")
+    assert draft.blockers == ()
 
 
 def test_today_is_blocker_not_a_false_source_or_constant_rule() -> None:
@@ -198,7 +204,7 @@ def test_prepare_rejects_unknown_legacy_type() -> None:
 
 def test_migration_commit_decision_paths() -> None:
     draft = _legacy([
-        LegacyFieldBindingEntry("빈칸", "blank", "", "", ""),
+        LegacyFieldBindingEntry("빈칸", "today", "", "", ""),
         LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
     ])
     basis = draft.legacy_basis_fingerprint

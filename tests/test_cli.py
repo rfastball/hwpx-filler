@@ -41,10 +41,10 @@ def _outputs(d: Path) -> "list[str]":
 
 
 def _covered_profile(*mappings: FieldMapping, name: str = "p") -> MappingProfile:
-    """실 코퍼스 전 필드를 값 매핑 또는 명시 blank로 전건 확정한 프로파일."""
+    """실 코퍼스 전 필드를 값 매핑 또는 **빈 고정값**으로 전건 확정한 프로파일."""
     covered = {m.template_field for m in mappings}
     blanks = [
-        FieldMapping(field, type="blank")
+        FieldMapping(field, type="const")
         for field in make_hwpx_engine().required_fields(TEMPLATE)
         if field not in covered
     ]

@@ -37,7 +37,7 @@ from hwpxfiller.domain.field_binding import (
     validate_source_schema_keys,
 )
 
-#: 소스 값을 나르는 legacy 유형(나머지는 const·blank·today 로 따로 갈린다). 값 유형 어휘가
+#: 소스 값을 나르는 legacy 유형(나머지는 const·today 로 따로 갈린다). 값 유형 어휘가
 #: 사라졌으므로 이 집합은 "SOURCE 후보인가"만 가른다 — 미지 유형은 조용히 확장하지 않고
 #: 시끄럽게 거절한다.
 _LEGACY_SOURCE_TYPES = ("text", "date", "amount")
@@ -52,7 +52,6 @@ NEW_ACTIVE_FIELD = "NEW_ACTIVE_FIELD"
 INACTIVE_ONLY = "INACTIVE_ONLY"
 
 # migration blocker 어휘.
-AMBIGUOUS_BLANK_OMISSION = "AMBIGUOUS_BLANK_OMISSION"
 #: legacy ``today``(오늘 날짜, U4-E1 #939) — 값이 **실행 시각**에서 나오므로 SOURCE(데이터
 #: 열)도 CONSTANT(고정 리터럴)도 아니다. 이 slice 는 binding kind 어휘를 늘리지 않으므로
 #: 후보 규칙을 짓지 않고 blocker 로 남긴다. SOURCE(빈 source_key)나 CONSTANT(그때의 렌더값)로
@@ -290,7 +289,7 @@ class LegacyFieldBindingEntry:
     """legacy Mapping 한 항목의 exact capture(재해석 없음)."""
 
     template_field: str
-    legacy_type: str  # text·date·amount·const·blank
+    legacy_type: str  # text·date·amount·const·today
     source: str
     const: str
     fmt: str
@@ -363,19 +362,13 @@ def prepare_legacy_field_binding_migration(
     """legacy Mapping 을 exact capture 해 후보 규칙·명시 결정·blocker 를 계산한다.
 
     - text/date/amount 의 암묵 strip 을 **명시 whitespace 정책 후보**(legacy-strip)로 옮긴다.
-    - const 는 canonicalization 후보(ExactText)로 옮긴다.
-    - blank omission 은 자동으로 Intentional Blank 로 바꾸지 않고 **명시 결정**으로 blocker 로 남긴다.
+    - const 는 canonicalization 후보(ExactText)로 옮긴다 — 빈 const 는 ``ExactText("")``,
+      곧 「빈 문자열을 써 넣는다」는 선언 그대로다(옛 blank omission 의 후계라 모호하지 않다).
     """
     entries = tuple(legacy_entries)
     candidates: list[MigrationCandidateRule] = []
     blockers: list[MigrationBlocker] = []
     for entry in entries:
-        if entry.legacy_type == "blank":
-            # legacy 는 blank 를 "출력 제외(omission)"로 다뤘다 — Intentional Blank 와 다르다.
-            blockers.append(
-                MigrationBlocker(entry.template_field, AMBIGUOUS_BLANK_OMISSION)
-            )
-            continue
         if entry.legacy_type == "const":
             candidates.append(
                 MigrationCandidateRule(

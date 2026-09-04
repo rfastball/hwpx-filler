@@ -100,7 +100,7 @@ const ROW_BADGE_CLASS: Record<string, string> = {
   suggested: "sugg", edited: "warn", confirmed: "ok", needs_source: "warn",
 };
 /** 확정 배지가 잠기는 이유 — 눌러도 되는 자리와 안 되는 자리를 말없이 가르지 않는다. */
-const NOT_CONFIRMABLE_HINT = "열을 고르거나 고정값·오늘 날짜·비워 둠을 고르세요";
+const NOT_CONFIRMABLE_HINT = "열을 고르거나 고정값·오늘 날짜를 고르세요";
 
 /* 단계 이름은 **각 단계가 묻는 질문**이다(U6 §2.2 · U6-B #976 · U6-D #978). section id 는
    계약이라 그대로이고 바뀐 것은 라벨뿐이다 — 「템플릿」은 이제 절반만 말하고(오른쪽에서
@@ -407,8 +407,6 @@ export function createEditorController(deps: EditorControllerDeps) {
       sendRowChoice("set_source", { index, source: String(picked.field) });
     } else if (kind === "none") {
       sendRowChoice("set_source", { index, source: "" });
-    } else if (kind === "blank") {
-      sendRowChoice("set_blank", { index });
     } else {
       /* 「고정값…」을 고르면 값을 적을 자리가 새로 생긴다. 그 입력은 **서버가 이 행을
          const 로 인정한 뒤에야** 렌더되므로 지금 DOM 에는 없다 — 마이크로태스크로 겨누면

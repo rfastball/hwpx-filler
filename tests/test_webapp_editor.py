@@ -36,7 +36,7 @@ def _clock() -> datetime:
 
 
 def _confirm_every_row(ctrl) -> None:
-    """전 행 확인 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 「비워 둠」)의 축약.
+    """전 행 확인 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 빈 고정값 선언)의 축약.
 
     구 「모두 확정」 2발(`confirm_all` + 비움 이름게이트 `confirm_blanks`)의 후계다(U6-C
     #977). 일괄 승격(`confirm_suggested`)은 **자동 제안만** 올리므로 전 행 확인은 남은 행을
@@ -44,10 +44,10 @@ def _confirm_every_row(ctrl) -> None:
     상태를 만들지 않게 하는 자리다.
     """
     for row in ctrl.snapshot()["rows"]:
-        if row["confirmable"]:
-            ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
-        else:
-            ctrl.dispatch("set_blank", {"index": row["index"]})
+        if not row["confirmable"]:
+            # 채울 것이 없는 행의 답은 **빈 고정값 선언**이다(「비워 둠」 표시형 퇴역).
+            ctrl.dispatch("set_display", {"index": row["index"], "type": "const", "fmt": ""})
+        ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
 
 
 def _tpl_channel(root_dir: Path, tmp_path: Path) -> TemplateController:
@@ -558,12 +558,16 @@ def test_save_gate_blocks_incomplete_and_unnamed(tmp_path):
     # 미확정 매핑 → 저장 차단(구체 사유 재진술).
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "확정" in res["block_reason"]
-    # 전부 비움 확정(내용 0) → 이름 있어도 '채울 값 없음' 차단.
-    _confirm_every_row(ctrl)  # 내용 0 → 전 행 「비워 둠」 선언
+    # 전 필드를 빈 고정값으로 확정해도 저장된다 — 「비워 둠」 퇴역 뒤 그것도 값 선언이다
+    # (누름틀에 빈 문자열을 실제로 써 넣는다). 남은 게이트는 이름·파일 이름이다.
+    _confirm_every_row(ctrl)
     ctrl.dispatch("set_name", {"name": "빈작업"})
+    # 빈 고정값 필드는 파일 이름 토큰을 해소하지 못한다 — 그 자리는 여전히 시끄럽다.
     ctrl.dispatch("set_pattern", {"pattern": "x-{{수요기관}}"})
     res = ctrl.dispatch("save", {})
-    assert res["ok"] is False and "비움" in res["block_reason"]
+    assert res["ok"] is False and "수요기관" in res["block_reason"]
+    ctrl.dispatch("set_pattern", {"pattern": "빈-{{seq:001}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
 
 
 def test_overwrite_confirm_flow(tmp_path):
@@ -3213,24 +3217,32 @@ def test_display_options_carry_the_type_axis_the_column_dropped(tmp_path):
             ctrl.dispatch(gone, {"index": 0, "type": "text", "fmt": ""})
 
 
-def test_blank_confirmed_row_keeps_a_way_to_unconfirm(tmp_path):
-    """비움 확정 행의 배지는 눌린다(리뷰 4) — 잠그면 「확인」이 비활성으로 서서 자기 상태와
-    어긋난 손잡이가 된다(그 툴팁은 「열을 고르세요」라고 말한다)."""
+def test_declaring_an_empty_constant_is_the_only_way_to_answer_an_empty_row(tmp_path):
+    """비우려는 자리의 답은 **아무것도 안 적은 고정값**이다(「비워 둠」 항목 퇴역).
+
+    그 행은 값을 선언했으므로 확인할 수 있고(배지 잠금 해제), 미리보기는 미입력 표식이
+    아니라 빈 칸이며, 데이터 열 select 에는 더 이상 `sp:blank` 항목이 없다.
+    """
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     _mount_data(ctrl)
     ctrl.dispatch("goto_section", {"section": "binding"})
+    values = [o["value"] for o in ctrl.snapshot()["data_column_options"]]
+    assert "sp:blank" not in values and "sp:const" in values
+    # 액션도 함께 죽었다 — 레지스트리 밖 액션은 조용히 무시되지 않고 거절된다.
+    with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
+        ctrl.dispatch("set_blank", {"index": 0})
     index = next(r["index"] for r in ctrl.snapshot()["rows"] if not r["has_content"])
-    assert ctrl.snapshot()["rows"][index]["confirmable"] is False   # 아직 채울 것이 없다
+    assert ctrl.snapshot()["rows"][index]["confirmable"] is False   # 아직 답하지 않았다
 
-    ctrl.dispatch("set_blank", {"index": index})
+    ctrl.dispatch("set_display", {"index": index, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_confirmed", {"index": index, "confirmed": True})
     row = ctrl.snapshot()["rows"][index]
-    assert row["has_content"] is False and row["confirmed"] is True
+    assert row["has_content"] is True and row["confirmed"] is True
     assert row["confirmable"] is True, "확인을 풀 길이 없다"
-    assert row["source_kind"] == "blank" and row["state_label"] == "확인"
-    # 그 유형 축도 특수 유형으로 남지 않는다(리뷰 5) — 「고정값 n」 pill 이 과다해진다.
-    assert row["type"] not in ("const", "today")
-    assert ctrl.snapshot()["binding_head"]["const"] == 0
+    assert row["source_kind"] == "const" and row["state_label"] == "확인"
+    assert row["preview"] == "" and row["preview_kind"] != "missing"
+    assert ctrl.snapshot()["binding_head"]["const"] == 1
 
 
 def test_revertable_is_the_same_predicate_the_action_enforces(tmp_path):

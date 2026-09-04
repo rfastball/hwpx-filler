@@ -118,10 +118,10 @@ def test_record_range_draft_is_isolated_and_detects_dirty_changes() -> None:
     assert committed.selection.selected_indices() == [1]
 
 
-def test_txt_card_helpers_share_visible_text_and_declared_blank_gate() -> None:
+def test_txt_card_helpers_share_visible_text_and_declared_empty_gate() -> None:
     segments = [SimpleNamespace(text="A"), SimpleNamespace(text="B")]
     report = SimpleNamespace(empty_fields=["optional", "required"])
-    mapping = SimpleNamespace(declared_blank_fields=lambda: ["optional"])
+    mapping = SimpleNamespace(declared_empty_fields=lambda: ["optional"])
 
     assert card_text(segments) == "AB"
     assert gate_empty_fields(report, mapping) == ["required"]
