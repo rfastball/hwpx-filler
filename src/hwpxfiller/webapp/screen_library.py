@@ -469,7 +469,7 @@ class LibraryController:
         return (
             row.name, job.template_path, key,
             tuple(
-                (m.template_field, m.source, m.type, m.const, m.fmt, m.is_blank)
+                (m.template_field, m.source, m.type, m.const, m.fmt)
                 for m in job.mapping.mappings
             ),
             row.structure, row.template_missing, row.template_linked, row.media,

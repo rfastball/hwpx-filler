@@ -2161,7 +2161,6 @@ const BIND_OPTIONS = [
   { value: "col:금액", label: "금액", kind: "column", field: "금액" },
   { value: "sp:const", label: "고정값…", kind: "const", field: "" },
   { value: "sp:today", label: "오늘 날짜", kind: "today", field: "" },
-  { value: "sp:blank", label: "비워 둠", kind: "blank", field: "" },
 ];
 
 const BIND_DISPLAY_GROUPS = [
@@ -2225,7 +2224,6 @@ test("U6-C 특수 항목 선택은 열 이름 공간을 지나지 않고 자기 
 
   h.controller.chooseDataColumn(1, "sp:const");
   h.controller.chooseDataColumn(1, "sp:today");
-  h.controller.chooseDataColumn(1, "sp:blank");
   h.controller.chooseDataColumn(1, "col:금액");
   h.controller.chooseDataColumn(1, "");
   await h.controller.flushPendingEdits();
@@ -2233,7 +2231,6 @@ test("U6-C 특수 항목 선택은 열 이름 공간을 지나지 않고 자기 
   assert.deepEqual(sent(), [
     ["set_display", { index: 1, type: "const", fmt: "" }],
     ["set_display", { index: 1, type: "today", fmt: "" }],
-    ["set_blank", { index: 1 }],
     ["set_source", { index: 1, source: "금액" }],
     ["set_source", { index: 1, source: "" }],
   ]);
@@ -2312,8 +2309,8 @@ test("U6-C 미리보기는 Python 이 낸 표식 문자열을 그대로 그린�
           preview_empty: true,
         }),
         bindRow(1, "비고", "confirmed", {
-          preview: "", preview_kind: "blank", has_content: false, confirmable: false,
-          source_kind: "blank", source_value: "sp:blank",
+          preview: "", preview_kind: "none", has_content: false, confirmable: false,
+          source_kind: "", source_value: "",
         }),
       ],
     }),
@@ -2325,7 +2322,7 @@ test("U6-C 미리보기는 Python 이 낸 표식 문자열을 그대로 그린�
   // 표식은 UI 문안이 아니라 **문서에 박히는 데이터**라 웹이 짓지 않는다.
   assert.ok(markup.includes("〘미입력·담당자〙"), "빈 값이 빈칸으로 샜다");
   assert.ok(markup.includes('class="pv missing"'));
-  assert.ok(markup.includes('class="pv blank"'));
+  assert.ok(markup.includes('class="pv none"'));
 });
 
 test("U6-C 지연 flush 는 행의 열 축을 절대 다루지 않는다 — 항목 값이 set_source 로 새던 자리", async () => {
@@ -2375,14 +2372,14 @@ test("U6-C 표시형 select 가 유형 축을 든다 — 그룹 + (유형, 표�
   assert.throws(() => h.controller.chooseDisplay(0, "date:없는것"), /알 수 없는 표시형 항목/);
 });
 
-test("U6-C 비움 확정 행의 배지는 눌린다 — 확인을 풀 길이 있어야 한다", async () => {
+test("U6-C 확정 행의 배지는 눌린다 — 확인을 풀 길이 있어야 한다", async () => {
   // `confirmable` 이 `has_content()` 뿐이면 「확인」 배지가 비활성으로 서서
   // 「열을 고르세요」라고 말한다 — 자기 상태와 어긋난 손잡이다.
   const h = harness({
     initial: async () => bindSnap({
       rows: [bindRow(0, "비고", "confirmed", {
-        has_content: false, confirmable: true, source_kind: "blank",
-        source_value: "sp:blank", preview: "", preview_kind: "blank",
+        has_content: false, confirmable: true, source_kind: "",
+        source_value: "", preview: "", preview_kind: "none",
       })],
     }),
   });
@@ -2391,7 +2388,7 @@ test("U6-C 비움 확정 행의 배지는 눌린다 — 확인을 풀 길이 있
     createElement(EditorScreen, { controller: h.controller }),
   );
   const badge = (markup.match(/<button[^>]*data-act="row-confirm"[^>]*>/g) || [])[0];
-  assert.ok(badge && !badge.includes("disabled"), `비움 확정 배지가 잠겼다: ${badge}`);
+  assert.ok(badge && !badge.includes("disabled"), `확정 행 배지가 잠겼다: ${badge}`);
 });
 
 test("U6-C ↻ 의 노출은 Python 술어 하나가 진다 — 웹이 재판정하지 않는다", async () => {

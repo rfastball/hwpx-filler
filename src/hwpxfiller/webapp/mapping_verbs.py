@@ -98,7 +98,7 @@ class MappingVerbsMixin:
         """행별 확정 토글(#148 슬라이스 4, 결정 12) — 확정+무내용 = 확정-비움(「비운다」 선언).
 
         확정-비움은 렌더가 데이터-빈값 ``blank`` 와 같되(〈빈 값〉) 복사 전 빈칸 게이트에서
-        빠진다(:meth:`MappingModel.declared_blank_fields` 가 가른다).
+        빠진다(:meth:`MappingModel.declared_empty_fields` 가 가른다).
         """
         self.mapping.set_confirmed(self.mapping.index_of(p["name"]), bool(p.get("value")))
         self._after_mapping_edit()

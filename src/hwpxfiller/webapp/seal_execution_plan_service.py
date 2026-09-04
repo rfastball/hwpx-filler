@@ -35,7 +35,6 @@ from typing import Callable
 
 from ..application.document_creation_workbench import InputRequirement
 from ..application.field_binding_input import (
-    AMBIGUOUS_BLANK_OMISSION,
     RUNTIME_TODAY_UNSUPPORTED,
     CurrentApplicationFieldStructure,
     FieldBindingMigrationDraft,
@@ -487,7 +486,7 @@ def _preserved_inactive_rules(
     (review 의 INACTIVE_ONLY 분류)가 정하고, 그 Field 의 값 결정은 그것이 아직 Mapping 에 살아
     있으면 **현재 Mapping** 이 정한다. 이전 규칙을 무조건 그대로 박으면 편집기가 보여주는 값과
     판본이 조용히 갈라진다 — 같은 상태를 두 곳이 판정하지 않게 Mapping 을 우선한다. Mapping 에서
-    사라졌거나 명시 결정이 남은 blank 항목은 이전 규칙을 그대로 보존한다(비활성이라 실행에 참여
+    사라졌거나 명시 결정이 남은 항목은 이전 규칙을 그대로 보존한다(비활성이라 실행에 참여
     하지 않고, 다시 활성이 되면 그때 review·commit 이 명시 결정을 요구한다).
 
     BROKEN(템플릿에서 사라진 Field)은 보존 대상이 아니다 — review 분류가 이미 갈라 두었고,
@@ -512,7 +511,6 @@ def _preserved_inactive_rules(
 # migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기
 # 한 곳에서만 조립한다(같은 사유를 두 자리가 다른 말로 하지 않게).
 _MIGRATION_BLOCKER_TEXT = {
-    AMBIGUOUS_BLANK_OMISSION: "legacy blank omission에 대한 명시 결정이 필요합니다",
     RUNTIME_TODAY_UNSUPPORTED: (
         "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. "
         "이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
@@ -533,8 +531,8 @@ def _resolved_rules(
     """현재 활성 Field 의 규칙 — 현재 Mapping 결정을 그대로 upsert 한다."""
     candidates = {item.field_id: item for item in draft.candidate_rules}
     # 후보가 없는 Field 는 draft 가 **왜** 못 지었는지를 blocker 로 이미 말했다 — 그
-    # 사유를 그대로 재진술한다. 종전에는 사유를 묻지 않고 언제나 'blank omission' 으로
-    # 적어, 다른 원인(「오늘 날짜」 유형)까지 엉뚜한 이름으로 보고했다.
+    # 사유를 그대로 재진술한다 — 사유를 묻지 않고 한 이름으로 적으면 다른 원인
+    # (「오늘 날짜」 유형)까지 엉뚱한 이름으로 보고된다.
     reasons = {item.field_id: item.reason for item in draft.blockers}
     rules: list[FieldBindingRule] = []
     for entry in entries:

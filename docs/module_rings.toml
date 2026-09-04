@@ -198,7 +198,7 @@ oracle_nodeid = "tests/test_job_editor_state.py::test_overwrite_confirm_only_whe
 module = "hwpxfiller.gui.mapping_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/mapping_state.py"]
-oracle_nodeid = "tests/test_job_editor_state.py::test_validate_save_blocks_all_blank_job"
+oracle_nodeid = "tests/test_job_editor_state.py::test_all_fields_declared_empty_is_savable_but_a_void_row_is_not"
 
 [[unit]]
 module = "hwpxfiller.gui.record_range"

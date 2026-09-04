@@ -119,7 +119,6 @@ export const SCREEN_ACTIONS = {
     set_display: { required: ["index", "type"], optional: ["fmt"] },
     set_const: { required: ["const", "index"], optional: [] },
     set_confirmed: { required: ["confirmed", "index"], optional: [] },
-    set_blank: { required: ["index"], optional: [] },
     confirm_suggested: { required: [], optional: [] },
     unconfirm_all: { required: [], optional: [] },
     restore_confirmed: { required: [], optional: [] },

@@ -273,8 +273,8 @@ def test_raw_view_shows_tokens_without_filling_them(tmp_path):
         _send(ctrl, "set_view", {"view": "엉뚱"})
 
 
-def test_copy_gate_excludes_declared_blanks(tmp_path):
-    """확정-비움은 복사 전 확인에서 빠진다(결정 12) — 렌더에는 그대로 보인다."""
+def test_copy_gate_excludes_declared_empty_constants(tmp_path):
+    """확정된 빈 고정값은 복사 전 확인에서 빠진다(결정 12) — 렌더에는 그대로 보인다."""
     ctrl, _, _ = _ctrl(tmp_path)
     reg = JobRegistry(tmp_path / "jobs")
     job = _job(tmp_path)
@@ -285,8 +285,8 @@ def test_copy_gate_excludes_declared_blanks(tmp_path):
     # 결속을 **둔 채** 확정하는 것은 선언이 아니다 — 그 빈 값은 그 행의 사실이라 남는다.
     _send(ctrl, "set_confirmed", {"name": "건명", "value": True})
     assert _send(ctrl, "copy_precheck", {})["empty_fields"] == ["건명"]
-    # 결속을 풀고 확정해야 「비운다」 선언이 된다(결정 12).
-    _send(ctrl, "set_source", {"name": "건명", "col": ""})
+    # 「직접 입력」에 아무것도 안 적고 확정해야 「비운다」 선언이 된다(결정 12).
+    _send(ctrl, "set_map_value", {"name": "건명", "text": ""})
     _send(ctrl, "set_confirmed", {"name": "건명", "value": True})
     idx = [r["name"] for r in ctrl.snapshot()["rows"]].index("건명")
     assert ctrl.snapshot()["rows"][idx]["blank_declared"] is True
@@ -636,23 +636,24 @@ def test_a_stale_token_never_reaches_the_clipboard(tmp_path):
     assert reg.load("발주요청_기안").last_run_at == ""
 
 
-def test_declaring_a_blank_changes_the_copied_text_and_the_badge(tmp_path):
-    """확정은 **복사되는 문자열의 축**이기도 하다(5R P2).
+def test_declaring_an_empty_value_changes_the_copied_text_and_the_badge(tmp_path):
+    """비움 선언은 **복사되는 문자열의 축**이기도 하다(5R P2).
 
-    무결속·미확정 행은 `live_profile` 에서 빠져 토큰이 `{{이름}}` 그대로 복사되고, 확정하면
-    확정-비움이 되어 빈 문자열이 된다. 2R 에서 "확정을 켜도 문장은 그대로"라고 단정한 것이
-    틀렸다 — 계약(`live_profile` 문서)이 반대로 적고 있었다.
+    무결속 행은 `live_profile` 에서 빠져 토큰이 `{{이름}}` 그대로 복사되고, 「직접 입력」에
+    아무것도 안 적으면 빈 고정값이 되어 빈 문자열이 된다(「비워 둠」 표시형 퇴역 뒤 그
+    선언의 자리).
     """
     ctrl, _, _ = _open(tmp_path)
     _send(ctrl, "set_source", {"name": "건명", "col": ""})
     _send(ctrl, "set_confirmed", {"name": "건명", "value": False})
     before, _ = ctrl.render()
-    assert "{{건명}}" in before                      # 미확정 = 토큰이 그대로 나간다
+    assert "{{건명}}" in before                      # 무결속 = 토큰이 그대로 나간다
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    _send(ctrl, "set_map_value", {"name": "건명", "text": ""})
     _send(ctrl, "set_confirmed", {"name": "건명", "value": True})
     after, _ = ctrl.render()
-    assert "{{건명}}" not in after                   # 확정-비움 = 빈 문자열
+    assert "{{건명}}" not in after                   # 빈 고정값 = 빈 문자열
     assert ctrl.snapshot()["card"]["review_state"] == "recheck"
 
 

@@ -77,7 +77,7 @@ class FieldState:
     승인 1번이 겸한다."""
 
     name: str
-    state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
+    state: str            # "filled" | "missing" | "drift"(구조 불일치)
 
 
 #: 이 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C). 축 이름이 따로 필요한
@@ -244,7 +244,8 @@ def unresolved_name_tokens_in(
     """파일명 패턴이 요구하는데 이 매핑이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
 
     생성 파일명은 **매핑 적용 후** 레코드({템플릿필드: 값})에서 해소되므로 해소 가능 집합 =
-    비움 아닌 매핑 커버 필드다(blank 선언 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다).
+    빈 고정값이 아닌 매핑 커버 필드다(명시적 빈 고정값은 값이 빈 문자열이라 토큰을 해소하지
+    못한다 — 이름이 조용히 뭉개지는 대신 미해소로 시끄럽게 선다).
     매핑 적용 키는 전 레코드 균일이라 CLI 의 '일부 레코드 누락' 경고 분기는 GUI 에 원리적으로
     없다.
 
@@ -253,7 +254,7 @@ def unresolved_name_tokens_in(
     같은 몸통을 부를 수 있게 프로파일 수준으로 둔다 — 저장 게이트가 이 술어를 다시 지으면
     같은 상태를 두 곳이 판정한다.
     """
-    resolved = set(mapping.cover_fields()) - set(mapping.blank_fields())
+    resolved = set(mapping.cover_fields()) - set(mapping.declared_empty_fields())
     return [t for t in pattern_field_tokens(filename_pattern) if t not in resolved]
 
 
@@ -472,8 +473,8 @@ class RunViewModel:
         req = self.request(idx)
         src = req.source_report()
         out = req.output_report()
-        drift, current_fields = self._structure_snapshot()
-        states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
+        drift, _current_fields = self._structure_snapshot()
+        states = self._compose_field_states(set(out.empty_valued), drift)
         # 이름 계획은 **대상이 있으면** 낸다(폴더가 없어도 이름은 보여 준다).
         # 경로 길이만 폴더에 의존하고, 폴더가 없으면 잴 경로가 없어 조용하다.
         # ``mapped`` 는 호출측이 이미 만든 매핑 결과 — 넘겨받아 같은 계산을 두 번 하지 않는다.
@@ -517,10 +518,9 @@ class RunViewModel:
         return template_structure_drift(fields, self.job.mapping), set(fields)
 
     def _compose_field_states(
-        self, empty: "set[str]", drift: TemplateStructureDrift, current_fields: "set[str]"
+        self, empty: "set[str]", drift: TemplateStructureDrift
     ) -> "list[FieldState]":
         drift_fields = drift.symmetric_difference | set(drift.conflicting)
-        blanks = {f for f in self.job.mapping.blank_fields() if f in current_fields}
         # 매핑 계약순 뒤에 템플릿 신규 유입순을 붙인다. 사라진 값 매핑도 drift 하나로
         # 표시해 filled/missing과 중복·모순되지 않게 한다.
         order = list(self.job.mapping.cover_fields()) + list(drift.template_only)
@@ -528,8 +528,6 @@ class RunViewModel:
         for name in dict.fromkeys(order):
             if name in drift_fields:
                 states.append(FieldState(name, "drift"))
-            elif name in blanks:
-                states.append(FieldState(name, "blank"))
             else:
                 states.append(FieldState(name, "missing" if name in empty else "filled"))
         return states

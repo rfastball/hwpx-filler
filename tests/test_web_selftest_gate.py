@@ -1500,7 +1500,7 @@ class TestWebSelftestGate:
         assert e["badge_disabled"] == [False, False, False, True], (
             f"배지 잠금 규칙이 `confirmable` 과 어긋납니다: {e['badge_disabled']!r}"
         )
-        assert e["badge_hint"] and "비워 둠" in e["badge_hint"], (
+        assert e["badge_hint"] and "고정값" in e["badge_hint"], (
             f"잠긴 배지가 사유를 말하지 않습니다: {e['badge_hint']!r}"
         )
         assert e["empty_select"] is True, "무결속 행의 열 칸이 조용합니다(경고 표지 부재)."
@@ -1520,7 +1520,9 @@ class TestWebSelftestGate:
         assert e["pick_const"].startswith("set_display:"), f"고정값 분기: {e['pick_const']!r}"
         assert '"const"' in e["pick_const"], f"고정값 분기 payload: {e['pick_const']!r}"
         assert e["pick_today"].startswith("set_display:"), f"오늘 날짜 분기: {e['pick_today']!r}"
-        assert e["pick_blank"].startswith("set_blank:"), f"비워 둠 분기: {e['pick_blank']!r}"
+        assert "sp:blank" not in e["option_values"], (
+            f"퇴역한 「비워 둠」 항목이 남아 있습니다: {e['option_values']!r}"
+        )
         assert e["pick_column"] == 'set_source:{"index":3,"source":"수량"}', (
             f"열 선택이 실 열 이름으로 가지 않습니다: {e['pick_column']!r}"
         )

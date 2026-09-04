@@ -471,7 +471,9 @@ class WorkbenchController(MappingVerbsMixin):
                 "suggest": suggestions.get(r.template_field, ""),
                 "can_revert": r.type == "const" and bool(r.source),
                 "confirmed": r.confirmed,
-                "blank_declared": r.is_empty_confirmed(),
+                # 「비운다」 선언 = **확정된 빈 고정값** — 게이트가 빼는 집합
+                # (`declared_empty_fields`)과 같은 술어여야 표지와 게이트가 갈리지 않는다.
+                "blank_declared": r.confirmed and r.is_declared_empty(),
             }
             for r in self.mapping.rows
         ]
