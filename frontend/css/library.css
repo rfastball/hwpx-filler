@@ -176,10 +176,10 @@ table.ro .pv.err{color:var(--a-warn);white-space:normal;word-break:keep-all}
 .jcard .jr{font-size:var(--fs-caption);color:var(--a-muted)}
 
 /* 빈 상태(온보딩) */
-.empty{background:var(--a-card);border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+.library-empty{background:var(--a-card);border:1px dashed var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-24);text-align:center;margin-top:var(--sp-6)}
-.empty .heading{font-size:var(--fs-strong);font-weight:700;color:var(--a-ink);margin-bottom:var(--sp-6)}
-.empty p{color:var(--a-muted);font-size:var(--fs-body);margin:0 0 var(--sp-16);white-space:pre-line}
+.library-empty .heading{font-size:var(--fs-strong);font-weight:700;color:var(--a-ink);margin-bottom:var(--sp-6)}
+.library-empty p{color:var(--a-muted);font-size:var(--fs-body);margin:0 0 var(--sp-16);white-space:pre-line}
 .route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 

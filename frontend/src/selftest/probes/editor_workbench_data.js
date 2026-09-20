@@ -1865,6 +1865,8 @@ export function createEditorWorkbenchDataProbes() {
             ? Math.round(cells[0].getBoundingClientRect().height) : -1;
           out.src_cell_h_manual = cells[2]
             ? Math.round(cells[2].getBoundingClientRect().height) : -1;
+          out.src_cell_h_unselected = cells[3]
+            ? Math.round(cells[3].getBoundingClientRect().height) : -1;
           out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
           const wrap = cells[2] && cells[2].querySelector(".srccell");
           const sel = wrap && wrap.querySelector(".sel");

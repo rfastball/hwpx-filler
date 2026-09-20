@@ -1553,6 +1553,10 @@ class TestWebSelftestGate:
             "데이터 열 칸의 컨트롤이 둘째 줄로 밀렸습니다 — 수동 행과 제안 행의 칸 높이가 "
             f"다릅니다({e['src_cell_h_manual']} vs {e['src_cell_h_suggested']})."
         )
+        assert e["src_cell_h_unselected"] == e["src_cell_h_suggested"], (
+            "미선택 데이터 열에 다른 빈 상태 스타일이 섞여 행 높이가 늘어났습니다: "
+            f"{e['src_cell_h_unselected']} vs {e['src_cell_h_suggested']}"
+        )
         assert e["revert_same_line"] is True, (
             "재제안 버튼과 select 의 세로 중심이 어긋났습니다 — 줄이 갈렸습니다."
         )
