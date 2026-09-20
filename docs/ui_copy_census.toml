@@ -257,10 +257,6 @@ text = "왼쪽과 오른쪽에서 하나씩 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
-text = "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
 text = "자동 제안을 다시 받을 행이 없습니다. 확정한 {}개는 그대로 둡니다."
 
 [[sentence]]

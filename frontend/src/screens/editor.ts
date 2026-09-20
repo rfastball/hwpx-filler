@@ -2256,8 +2256,6 @@ function NameSaveStage(props: {
   });
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "filename")),
-    h("p", { className: "wsub" },
-      "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."),
     h("div", { className: "row" },
       h("span", { className: "lbl lbl-fixed" }, "작업 이름"),
       h("input", {
