@@ -1714,7 +1714,7 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
             h("span", { className: "n" }, String(pairing.confirm_count)))
           : createElement(Fragment, null, "확인 필요 ",
             h("span", { className: "n" }, "0")))
-      : h("span", { className: "empty" }, "왼쪽과 오른쪽에서 하나씩 고르세요.")),
+      : h("span", { className: "linkcard-placeholder" }, "왼쪽과 오른쪽에서 하나씩 고르세요.")),
     h("button", {
       className: "btn primary cta", id: "editorLinkCta", "data-act": "goto-binding",
       disabled: !can, title: can ? "" : blockReason,
@@ -1723,9 +1723,7 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
     !can && blockReason
       ? h("p", { className: "note quiet", id: "editorLinkBlock", style: { textAlign: "center" } },
         blockReason)
-      : null,
-    h("p", { className: "note quiet", style: { textAlign: "center", marginTop: 0 } },
-      "끌어다 놓아도 같은 결과입니다."));
+      : null);
 }
 
 /** 우 열 — 「데이터」 풀. 좌 열과 **같은 컴포넌트의 다른 인스턴스**다(고르기 열 공용 ③a).

@@ -229,10 +229,6 @@ text = "고정한 데이터를 아직 읽지 못했습니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
-text = "끌어다 놓아도 같은 결과입니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
 text = "데이터를 연결하지 않아 지금은 저장할 수 없습니다. '고르기' 단계에서 데이터를 고르세요."
 
 [[sentence]]
