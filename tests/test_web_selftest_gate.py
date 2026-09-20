@@ -1356,17 +1356,15 @@ class TestWebSelftestGate:
         # 우회돼도 전부 초록이다(U2 §2.11 표본과 같은 결함류).
         b = selftest_result["editor_txt_band"]
         assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
-        assert b["lintpad_trigger"] is True, "「새 TXT 템플릿…」 진입점이 없습니다."
+        assert b["lintpad_trigger"] is True, "TXT 행의 「내용 편집」 진입점이 없습니다."
         assert b["lintpad_mounted"] is True, (
             "TXT 저작 창에 CodeMirror 가 마운트되지 않았습니다(모듈은 있고 화면은 빈 상태)."
         )
         assert b["lintpad_content_editable"] is True, (
             f"#txtEditContent 가 편집 가능한 표면이 아닙니다: {b!r}"
         )
-        # 새 생성 창의 첫 초점은 이름 칸이다 — 메모장이 마운트에서 가로채면 초기 초점의
-        # 주인이 둘이 되고, 이기는 쪽이 효과 순서에 따라 갈린다.
-        assert b["lintpad_focus"] == "txtEditName", (
-            f"새 TXT 창의 첫 초점이 이름 칸이 아닙니다: {b['lintpad_focus']!r}"
+        assert b["lintpad_focus"] == "txtEditContent", (
+            f"TXT 편집 창의 첫 초점이 본문이 아닙니다: {b['lintpad_focus']!r}"
         )
         assert b["lintpad_focusable"] == "txtEditContent", (
             f"메모장이 초점을 받을 수 있는 표면이 아닙니다: {b['lintpad_focusable']!r}"
@@ -1712,10 +1710,9 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        # U6-B(#976): 좌 열 동사는 넷이다 — 바닥의 「파일 가져오기…」·「서식 폴더 설정」·
-        # 「새 TXT 템플릿…」과 머리의 「새로 읽기」. 「폴더에서 보기」는 PathActions 가 진다.
-        assert t["toolbar"] == [True, True, True, True], (
-            "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기) 소실:"
+        # 고르기 열에는 가져오기·새로 읽기만 둔다. 폴더 보기는 PathActions 가 진다.
+        assert t["toolbar"] == [True, False, False, True], (
+            "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기)이 규약과 다릅니다:"
             f" {t['toolbar']!r}"
         )
         assert t["retired_folder_import"] is True, (

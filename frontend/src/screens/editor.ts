@@ -1309,11 +1309,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   });
   const { poolAction, resolveDuplicate } = poolVerbs;
 
-  /** 「서식 폴더 설정」 — **기존 설정 모달을 그대로 연다**(새 표면 0).
-   *
-   *  이 화면은 몰입 표면이라 셸 토바의 `#settingsOpen` 이 덮여 있다: 문이 없는 것이지 다른
-   *  문이 필요한 것이 아니라, 같은 모달을 여기서 한 번 더 연다. 서식 폴더 행의 판정·문안·
-   *  브리지(`pick_templates_root`)는 전부 그 모달이 계속 소유한다(U6-A #975). */
+  /** 저장 폴더 변경은 기존 설정 모달을 연다. */
   function openSettings(): void {
     deps.modal.open(SETTINGS_MODAL_ID, {});
   }
@@ -1630,8 +1626,7 @@ export function libRowMenuItems(media: string, item: Obj | null): ContextMenuIte
  *  무엇이 있나」를 사람이 두 번 훑게 된다. 그 목록을 **한 목록으로 접는 일도 이제 Python
  *  이 한다** — 이 자리는 호스트만 세운다(고르기 열 공용 ②).
  *
- *  갈리는 것은 바닥 동사 줄 하나다: 「파일 가져오기…」·「폴더에서 보기」·「서식 폴더 설정」·
- *  「새 TXT 템플릿…」은 서식 폴더에만 있는 동사라 우 열과 공유할 것이 없다. */
+ *  바닥에는 「파일 가져오기…」·「폴더에서 보기」만 둔다. */
 function TemplatePool(props: {
   tpl: Obj | null; snapshot: Obj; controller: EditorController;
 }): ReactNode {
@@ -1667,15 +1662,7 @@ function TemplatePool(props: {
       h(PathActions as any, {
         client: controller.client, path: String(root.directory || ""),
         only: ["reveal"], notify: controller.notify, key: "reveal",
-      }),
-      h("button", {
-        className: "btn sm", "data-act": "open-settings", key: "settings",
-        onClick: () => controller.openSettings(),
-      }, "서식 폴더 설정"),
-      h("button", {
-        className: "btn sm", "data-act": "lib-new-txt", key: "new-txt",
-        onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
-      }, "새 TXT 템플릿…")),
+      })),
     emptyFallback: "서식 폴더를 아직 읽지 못했습니다.",
   };
   return h(PoolColumn as any, { host, column: ((tpl || {}).column || null) as Obj | null });

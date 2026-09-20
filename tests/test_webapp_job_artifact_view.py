@@ -398,28 +398,37 @@ def test_tampered_original_yields_the_observation_refusal_not_a_save(
     assert calls == []  # 관찰이 서기 전에는 저장 피커를 열지 않는다
 
 
-def test_delivered_paths_enter_the_owned_whitelist_without_weakening_it(
+def test_owned_paths_enter_the_whitelist_without_weakening_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """행 어포던스(폴더에서 보기·경로 복사)가 결과 파일을 겨눌 수 있는 유일한 근거.
+    """행 어포던스(폴더에서 보기·경로 복사)가 결과 파일·현재 서식 폴더를 겨눈다.
 
-    등록의 원천은 「앱 자신이 그 파일을 냈다」는 사실이고, 판정은 그대로 exact 대조다 —
-    같은 폴더의 남의 파일은 여전히 거절된다(화이트리스트가 넓어질 뿐 검증이 약해지지 않는다).
+    결과 파일은 앱이 냈다는 사실, 서식 폴더는 현재 단일 루트라는 사실이 근거다. 판정은
+    그대로 exact 대조라 같은 폴더의 남의 파일은 여전히 거절된다.
     """
     from hwpxfiller.external.dataset_store import DatasetPoolRegistry
     from hwpxfiller.external.job_store import JobRegistry
 
     ctrl, out = _ready_controller(tmp_path)
     documents, _ = _completed(tmp_path, ctrl, out, monkeypatch)
+    template_root = tmp_path / "templates"
+    template_root.mkdir()
 
     class _Editor:
         template_path = ""
         data_path = ""
 
+    class _TemplateRoot:
+        def path(self) -> Path:
+            return template_root
+
+    template_root_holder = _TemplateRoot()
+
     class _Owner:
         _job_registry = JobRegistry(tmp_path / "owned-jobs")
         _pool_registry = DatasetPoolRegistry(tmp_path / "owned-pool")
         _owned_path_base = str(tmp_path)
+        _template_root = template_root_holder
         _validate_owned = app_module.WebFrontend._validate_owned
 
         def _controller(self, screen: str):
@@ -427,11 +436,14 @@ def test_delivered_paths_enter_the_owned_whitelist_without_weakening_it(
 
     owner = _Owner()
     assert owner._validate_owned(documents[0].absolute_path) == documents[0].absolute_path
+    assert owner._validate_owned(str(template_root)) == str(template_root)
 
     stranger = out / "남의문서.hwpx"
     stranger.write_bytes(b"not ours")
     with pytest.raises(ValueError):
         owner._validate_owned(str(stranger))
+    with pytest.raises(ValueError):
+        owner._validate_owned(str(template_root / "남의서식.hwpx"))
 
     # 좌표가 죽으면 어포던스의 근거도 죽는다 — 같은 수명이다.
     ctrl._discard_delivered_artifacts()

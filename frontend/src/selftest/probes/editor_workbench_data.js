@@ -292,16 +292,28 @@ async function waitFor(ctx, ready, tries = 30, ms = 40) {
  *  가깝다. 새 창을 늘리지 않는다: 이 단계는 이미 서 있는 편집기 세션 위에 얹힌다. */
 async function probeLintpad(ctx, out) {
   const doc = ctx.doc;
-  const trigger = doc.querySelector('#editor-body [data-act="lib-new-txt"]');
-  out.lintpad_trigger = !!trigger;
-  if (!trigger) return;
-  trigger.click();
-  out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
+  const rowMenu = doc.querySelector('#editorTplList [data-act="lib-more"][data-key="기안.txt"]');
+  if (!rowMenu) { out.lintpad_trigger = false; return; }
+  doc.body.click();
+  rowMenu.click();
+  const editSelector = '#tplRowMenu [data-context-menu-action="edit"]';
+  out.lintpad_trigger = await waitFor(ctx, () => !!doc.querySelector(editSelector));
+  if (!out.lintpad_trigger) return;
+  // 합성 TXT의 본문만 대역으로 읽고, 린트는 실제 Python 왕복을 유지한다.
+  const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+    if (screen === "tpl" && action === "txt_content") return Promise.resolve({ content: "" });
+    return real.call(this, screen, action, payload);
+  });
+  try {
+    doc.querySelector(editSelector).click();
+    out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
+  } finally {
+    stub.restore();
+  }
   if (!out.lintpad_mounted) return;
   const content = doc.getElementById("txtEditContent");
   out.lintpad_content_editable = !!content && content.isContentEditable === true;
-  /* 새 생성 창의 첫 초점은 **이름 칸**이다(메모장이 마운트에서 가로채면 여기가 갈린다).
-     메모장 자신이 초점 대상이 되는지는 바로 아래에서 따로 잰다. */
+  /* 기존 TXT 편집 창은 본문에 초점을 둔다. */
   out.lintpad_focus = doc.activeElement ? doc.activeElement.id : "";
   content.focus();
   out.lintpad_focusable = doc.activeElement ? doc.activeElement.id : "";
@@ -2212,9 +2224,7 @@ export function createEditorWorkbenchDataProbes() {
             () => host.querySelectorAll("#editorTplList .pitem").length === 7,
             { what: "좌 열 항목 7건(hwpx 5 + txt 2) 렌더", timeoutMs: 2000 },
           );
-          /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
-             머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
-             부재를 음성으로도 잰다. */
+          /* 고르기 열은 가져오기·폴더 보기·새로 읽기만 남긴다. */
           /* 「새로 읽기」의 `data-act` 는 좌 열 전용 이름(`lib-refresh`)에서 공용 열의
              `refresh` 로 바뀌었다(고르기 열 공용 ②) — 같은 컴포넌트의 두 인스턴스가
              자기 side 를 `data-side` 로 말한다. */
