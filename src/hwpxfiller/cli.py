@@ -533,7 +533,10 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     gate_mapping = profile or MappingProfile(
         mappings=[FieldMapping(f, f) for f in required]
     )
-    report = validate(required, records)
+    # 명시적 비움(빈 고정값)은 빈 값 게이트의 대상이 아니다 — 사람이 이미 「이 필드는
+    # 비운다」고 답한 자리라, 표식도 붙이지 않고 확인도 다시 묻지 않는다.
+    checked = [f for f in required if f not in set(gate_mapping.declared_empty_fields())]
+    report = validate(checked, records)
     if report.missing_columns:
         print(f"[경고] 데이터에 없는 필드(빈 값 생성): {', '.join(report.missing_columns)}",
               file=sys.stderr)
@@ -551,7 +554,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                   file=sys.stderr)
             return 1
         marker = MISSING_MARKER
-        records = mark_missing_values(records, marker, fields=required)
+        records = mark_missing_values(records, marker, fields=checked)
         print(f"[안내] 미입력 표식 주입: {', '.join(report.empty_valued)}", file=sys.stderr)
 
     # 파일명 계약 사전검증(RC-20) — 미치환 {{토큰}}이 조용히 실파일명이 되는 경로 차단.

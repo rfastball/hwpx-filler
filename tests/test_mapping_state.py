@@ -21,6 +21,7 @@ from hwpxfiller.domain.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import (
     ROW_STATUS_LABEL,
+    SPECIAL_SOURCE_LABEL,
     MappingModel,
     RowState,
     default_transform_for,
@@ -237,7 +238,7 @@ def test_carry_profile_skips_contentless_touched_rows():
 
     담으면 apply_profile 이 touched 를 재날인해 그 필드가 새 데이터에서 영구히 라이브
     재제안 제외(조용한 동결)된다 — 시스템 소유로 낙착시켜 자동 제안을 다시 받게 한다.
-    비움 **확정**(blank 선언)은 확정이라 계속 담는다(의도적 비움의 영속, L1)."""
+    비움 **확정**(빈 고정값)은 확정이라 계속 담는다(의도적 비움의 영속)."""
     schema = TemplateSchema(fields=[
         FieldSpec("품명", "text", 1, False),
         FieldSpec("비고", "text", 1, False),
@@ -246,10 +247,11 @@ def test_carry_profile_skips_contentless_touched_rows():
     model.set_source(0, "품명")
     model.set_source(0, "")                                # 사람이 비움(미확정) — 내용 없음
     assert model.rows[0].touched and not model.rows[0].has_content()
-    model.rows[1].confirmed = True                         # 비움 확정(blank 선언) — 담는다
+    model.set_display(1, "const", "")                      # 빈 고정값 = 비움 선언
+    model.set_confirmed(1)
     carried = model.carry_profile().mappings
     assert [m.template_field for m in carried] == ["비고"]  # 내용 없는 touched 는 제외
-    assert carried[0].is_blank                             # blank 선언으로 영속
+    assert carried[0].is_declared_empty                    # 빈 고정값으로 영속
 
 
 def test_confirmed_rows_via_apply_active_sources_still_clear_matching():
@@ -264,13 +266,18 @@ def test_confirmed_rows_via_apply_active_sources_still_clear_matching():
     assert rows["추정가격"].source == "presmptPrce" and rows["추정가격"].confirmed is True
 
 
-def test_emits_any_value_counts_only_confirmed_content():
-    """비움 확정·미확정 내용은 빼고 확정된 소스·상수만 방출로 센다."""
-    blank = MappingModel(rows=[RowState("공고명"), RowState("비고")])
-    _confirm_every_row(blank)
-    assert blank.is_complete() and blank.to_profile().mappings
-    assert not blank.to_profile().template_fields()
-    assert not blank.emits_any_value()
+def test_emits_any_value_counts_confirmed_declarations_including_empty_const():
+    """빈 고정값도 값 선언이다 — 누름틀에 빈 문자열을 실제로 써 넣는다.
+
+    「비워 둠」 유형이 퇴역하면서 '전부 비움 = 무의미 저장' 이라는 옛 판정이 함께 죽었다.
+    남은 가드는 확정 행이 하나도 없는 작업이다(`is_complete` 와 짝).
+    """
+    empty = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    _confirm_every_row(empty)
+    assert empty.is_complete() and empty.to_profile().mappings
+    assert not empty.to_profile().template_fields()
+    assert empty.emits_any_value()
+    assert not MappingModel(rows=[RowState("공고명")]).emits_any_value()
 
     source = MappingModel(rows=[RowState("공고명"), RowState("비고")])
     source.set_source(0, "bidNtceNm")
@@ -294,16 +301,16 @@ def test_row_confirmation_and_unconfirm_all():
 
 # ------------------------------------------------- 행 상태 4태·일괄 승격(U6-C #977)
 def _confirm_every_row(model) -> None:
-    """전 행 확정 — 표면이 실제로 밟는 경로(내용 행은 배지, 빈 행은 「비워 둠」)의 축약.
+    """전 행 확정 — 표면이 실제로 밟는 경로의 축약.
 
-    구 `MappingModel.confirm_all()`(무차별 확정)은 U6-C 에서 퇴역했다: 제품에 그 동사가
-    없는데 테스트에만 남기면 테스트가 없는 경로로 상태를 만든다.
+    내용 행은 배지(`set_confirmed`), 채울 것이 없는 행은 **빈 고정값 선언**(`set_display`
+    로 「고정값…」을 고르고 아무것도 안 적음) 뒤 배지다. 구 `MappingModel.confirm_all()`
+    (무차별 확정)은 U6-C 에서, 「비워 둠」 표시형은 그 뒤에 퇴역했다.
     """
     for index, row in enumerate(model.rows):
-        if row.has_content():
-            model.set_confirmed(index)
-        else:
-            model.set_blank(index)
+        if not row.has_content():
+            model.set_display(index, "const", "")
+        model.set_confirmed(index)
 
 
 def test_row_status_is_a_closed_set_of_four():
@@ -341,42 +348,42 @@ def test_confirm_suggested_promotes_only_system_owned_content_rows():
 
     # 남은 둘을 사람이 직접 답하면 그때 게이트가 열린다.
     model.set_confirmed(model.index_of("공고명"))
-    model.set_blank(model.index_of("존재하지않는들판xyz"))
+    empty_index = model.index_of("존재하지않는들판xyz")
+    model.set_display(empty_index, "const", "")
+    model.set_confirmed(empty_index)
     assert model.is_complete() and model.needs_confirm_count() == 0
 
 
-def test_set_blank_declares_intentional_emptiness():
-    """행별 「비워 둠」 = 구 `confirm_fields` 비움 승격과 **같은 결과**(blank 선언 영속)."""
+def test_empty_const_declares_intentional_emptiness():
+    """비움 선언 = **아무것도 안 적은 고정값**(「비워 둠」 표시형 퇴역 후의 유일한 길)."""
     model = _model()
     index = model.index_of("존재하지않는들판xyz")
-    model.set_blank(index)
+    model.set_display(index, "const", "")
+    model.set_confirmed(index)
     assert model.rows[index].status() == "confirmed"
-    assert model.declared_blank_fields() == ["존재하지않는들판xyz"]
+    assert model.declared_empty_fields() == ["존재하지않는들판xyz"]
     _confirm_every_row(model)
-    blank = [m for m in model.to_profile().mappings
-             if m.template_field == "존재하지않는들판xyz"][0]
-    assert blank.is_blank
+    declared = [m for m in model.to_profile().mappings
+                if m.template_field == "존재하지않는들판xyz"][0]
+    assert declared.is_declared_empty
 
-    # 결속·상수를 든 행도 비울 수 있다 — 그때 값의 출처가 함께 걷힌다.
+    # 결속·상수를 든 행도 비울 수 있다 — 고정값을 고르면 값의 출처가 함께 걷힌다.
     bound = MappingModel(rows=[RowState("금액", source="amount", type="amount")])
-    bound.set_blank(0)
-    assert bound.rows[0].source == "" and bound.rows[0].is_empty_confirmed()
+    bound.set_display(0, "const", "")
+    assert bound.rows[0].source == "" and bound.rows[0].is_declared_empty()
 
-    # 특수 유형 둘은 추정 기본형으로 되돌아간다(리뷰 5). `today` 를 남기면 「비워 둠」이
-    # 오늘 날짜를 찍고, `const` 를 남기면 채우지 않는 행이 「고정값 n」 pill 에 세어지고
-    # 확인을 푼 순간 데이터 열 칸이 「고정값…」으로 되살아난다.
-    for kind in ("today", "const"):
-        row = MappingModel(rows=[RowState("작성일", type=kind, const="x")])
-        row.set_blank(0)
-        assert row.rows[0].type not in ("today", "const"), kind
-        assert row.rows[0].const == "" and row.rows[0].is_empty_confirmed()
+    # `today` 에서 고정값으로 옮기면 오늘 날짜를 더는 찍지 않는다.
+    row = MappingModel(rows=[RowState("작성일", type="today")])
+    row.set_display(0, "const", "")
+    assert row.rows[0].is_declared_empty()
 
 
-def test_set_blank_is_a_human_edit_so_resuggestion_cannot_undo_it():
-    """「비워 둠」은 사람의 편집이다(리뷰 3) — ``touched`` 를 안 세우면 확인을 푼 순간
+def test_empty_const_is_a_human_edit_so_resuggestion_cannot_undo_it():
+    """비움 선언은 사람의 편집이다(리뷰 3) — ``touched`` 를 안 세우면 확인을 푼 순간
     시스템 소유로 돌아가 라이브 재제안·일괄 승격이 그 선언을 조용히 덮는다."""
     model = _pum_model(["품명", "세부품명"])
-    model.set_blank(0)
+    model.set_display(0, "const", "")
+    model.set_confirmed(0)
     assert model.rows[0].touched is True and model.rows[0].is_human_owned()
 
     model.set_confirmed(0, False)                       # 「모두 해제」 뒤
@@ -443,19 +450,22 @@ def test_const_count_sees_hand_written_values():
 
 
 # ------------------------------------------------------------------ to_profile
-def test_to_profile_includes_confirmed_rows_and_persists_blank_intent():
-    """미확정 행은 제외하고 비움 확정 행은 명시적 blank 선언으로 저장."""
+def test_to_profile_includes_confirmed_rows_and_persists_empty_declaration():
+    """미확정 행은 제외하고 비움 선언 행은 빈 고정값으로 저장 — 값도 빈 문자열로 나간다."""
     model = _model()
     rows = {r.template_field: i for i, r in enumerate(model.rows)}
     model.set_confirmed(rows["입찰공고번호"])       # 확정 + 소스 있음 → 포함
-    model.set_confirmed(rows["존재하지않는들판xyz"])  # 비움 확정 → blank 선언
+    model.set_display(rows["존재하지않는들판xyz"], "const", "")   # 비움 선언
+    model.set_confirmed(rows["존재하지않는들판xyz"])
     # 공고명·추정가격·개찰일시는 초안이 있어도 미확정 → 제외
     profile = model.to_profile("p")
     assert profile.name == "p"
     assert profile.template_fields() == ["입찰공고번호"]
-    assert profile.blank_fields() == ["존재하지않는들판xyz"]
+    assert profile.declared_empty_fields() == ["존재하지않는들판xyz"]
     assert profile.cover_fields() == ["입찰공고번호", "존재하지않는들판xyz"]
-    assert profile.apply(_nara_record()) == {"입찰공고번호": "R26BK01561738"}
+    assert profile.apply(_nara_record()) == {
+        "입찰공고번호": "R26BK01561738", "존재하지않는들판xyz": "",
+    }
 
 
 def test_to_profile_includes_confirmed_const_row_without_source():
@@ -467,32 +477,32 @@ def test_to_profile_includes_confirmed_const_row_without_source():
     assert profile.apply({}) == {"계약방법": "수의계약"}
 
 
-def test_apply_profile_restores_explicit_blank_and_roundtrips():
-    profile = MappingProfile(mappings=[FieldMapping("비고", "malformed", type="blank")])
+def test_apply_profile_restores_explicit_empty_and_roundtrips():
+    profile = MappingProfile(mappings=[FieldMapping("비고", type="const")])
     model = MappingModel(rows=[RowState("비고")])
     assert model.apply_profile(profile) == 1
     row = model.rows[0]
-    assert row.confirmed and row.is_empty_confirmed()
-    assert row.source == "" and row.type == "text"
+    assert row.confirmed and row.is_declared_empty()
+    assert row.source == "" and row.type == "const"
     restored = model.to_profile()
-    assert restored.blank_fields() == ["비고"]
-    assert restored.apply({}) == {}
+    assert restored.declared_empty_fields() == ["비고"]
+    assert restored.apply({}) == {"비고": ""}
 
 
 def test_today_row_has_content_without_source_or_const():
     """U4-E1 #939 회귀: today 는 소스·상수 없이 **언제나** 값을 방출한다.
 
-    has_content 를 소스 유무로 재면 확정 시 to_profile 이 blank 로 강등해 값이 통째
-    소실된다(조용한 값 소실) — 그 강등이 일어나지 않음을 저장 산출물로 확인한다.
+    has_content 를 소스 유무로 재면 확정 행이 값 없는 행으로 오분류된다 — 그렇지 않음을
+    저장 산출물로 확인한다.
     """
     model = MappingModel(rows=[RowState("작성일", type="today", fmt="%Y-%m-%d")])
     row = model.rows[0]
     assert row.has_content()
     model.set_confirmed(0)
-    assert not row.is_empty_confirmed()
+    assert not row.is_declared_empty()
     assert model.emits_any_value()
     profile = model.to_profile()
-    assert profile.blank_fields() == []
+    assert profile.declared_empty_fields() == []
     assert profile.template_fields() == ["작성일"]
     assert profile.mappings[0].type == "today"
     assert profile.apply({}, now=_TODAY_NOW) == {"작성일": "2026-06-15"}
@@ -517,21 +527,24 @@ def test_default_transform_never_infers_today():
         assert default_transform_for(inferred) != "today"
 
 
-def test_blank_is_internal_marker_not_selectable_type():
+def test_blank_is_not_a_selectable_type_and_never_reaches_the_picker():
+    """「비워 둠」은 유형에도, 데이터 열 특수 항목 문안 표에도 없다(퇴역)."""
     from hwpxfiller.domain.mapping import TYPES
 
     assert "blank" not in TYPES
+    assert "blank" not in SPECIAL_SOURCE_LABEL
 
 
-def test_from_profile_malformed_blank_does_not_leak_source_vocabulary():
+def test_from_profile_restores_an_empty_const_as_a_confirmed_declaration():
     profile = MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("비고", "ghost_source", type="blank"),
+        FieldMapping("비고", type="const"),
     ])
     model = MappingModel.from_profile(profile)
     assert model.source_fields == ["name"]
-    blank = {r.template_field: r for r in model.rows}["비고"]
-    assert blank.source == "" and blank.type == "text" and blank.is_empty_confirmed()
+    declared = {r.template_field: r for r in model.rows}["비고"]
+    assert declared.source == "" and declared.type == "const"
+    assert declared.confirmed and declared.is_declared_empty()
 
 
 # --------------------------------------------------------------------- preview
@@ -755,48 +768,49 @@ def test_live_profile_applies_all_content_rows_not_just_confirmed():
     assert "빈자리" not in m2.live_profile().apply({"명": "x"})
 
 
-def test_live_profile_renders_confirmed_blank_as_empty_not_missing():
-    """확정-비움(#148 슬라이스 4, 결정 12) — 확정+무내용은 blank 방출(키 유지 → 〈빈 값〉).
+def test_live_profile_renders_an_empty_const_as_empty_not_missing():
+    """빈 고정값은 키를 남겨 〈빈 값〉으로 그려진다 — 무결속 미확정만 missing 으로 남는다.
 
-    미확정 무내용은 프로파일에서 빠져 missing({{}} 빨강)으로 남지만, 사람이 「비운다」고
-    확정한 자리는 빈 값으로 **담겨** render_segments 가 blank(empty)로 표지한다 — 렌더는
-    데이터-빈값과 같고 게이트 제외만 declared_blank_fields 가 가른다. type='blank' 이 아니라
-    빈 text 로 담아야 MappingProfile.apply 의 is_blank 드롭에 키가 사라지지 않는다."""
+    게이트 제외만 `declared_empty_fields` 가 가른다(렌더는 데이터-빈값과 같다).
+    """
     m = MappingModel.from_field_names(["명", "비고"], source_fields=["명"])
     out_before = m.live_profile().apply({"명": "값"})
     assert "비고" not in out_before                      # 미확정 무내용 → 빠짐(missing)
-    m.set_confirmed(m.index_of("비고"), True)             # 「비운다」 확정
+    m.set_manual(m.index_of("비고"), "")                 # 「비운다」 선언(빈 고정값)
     out_after = m.live_profile().apply({"명": "값"})
-    assert out_after["비고"] == ""                        # 확정-비움 → 키 유지·빈 값(blank)
+    assert out_after["비고"] == ""                        # 키 유지·빈 값(blank)
 
 
-def test_has_content_const_ignores_remembered_source():
-    """const(man) 행의 내용 판정은 리터럴 기준 — 기억된 소스는 되돌리기용이지 출력이 아니다(Codex F2).
+def test_empty_const_is_content_even_with_a_remembered_source():
+    """빈 고정값은 **값 선언**이다 — 기억된 소스와 무관하게 빈 문자열을 방출한다.
 
-    결속 값을 비우면 소스를 기억한 채 빈 상수가 되는데, 소스를 내용으로 세면 값을 비우고
-    확정해도 확정-비움으로 인식되지 않아 게이트가 계속 묻는다."""
+    「비워 둠」 퇴역 뒤 빈 상수는 더 이상 '내용 없음'이 아니다: 사람이 답한 자리이므로
+    확인할 수 있어야 하고(배지 잠금 해제), 게이트는 `declared_empty_fields` 로 뺀다.
+    """
     m = MappingModel.from_field_names(["명"], source_fields=["명"], col_kinds={"명": "text"})
     m.set_manual(m.index_of("명"), "")                # 결속 값 비움 → const="" (소스 「명」 기억)
     row = m.rows[m.index_of("명")]
     assert row.type == "const" and row.source == "명" and row.const == ""
-    assert row.has_content() is False                # 빈 상수는 내용 아님(소스 기억 무관)
-    m.set_confirmed(m.index_of("명"), True)
-    assert row.is_empty_confirmed() is True           # 확정-비움으로 인식
-    # 값 있는 상수는 여전히 내용이다(회귀 방지).
-    m.set_manual(m.index_of("명"), "김민수")
     assert row.has_content() is True
+    assert row.to_mapping().value_for({"명": "무시"}) == ""
+    m.set_confirmed(m.index_of("명"), True)
+    assert row.is_declared_empty() is True
+    # 값 있는 상수는 비움 선언이 아니다(회귀 방지).
+    m.set_manual(m.index_of("명"), "김민수")
+    assert row.has_content() is True and row.is_declared_empty() is False
 
 
-def test_declared_blank_fields_only_confirmed_empty():
-    """declared_blank_fields = 확정+무내용만 — 내용 있는 확정 행·미확정 빈 행은 빠진다."""
+def test_declared_empty_fields_only_confirmed_empty_const():
+    """declared_empty_fields = 확정된 빈 고정값만 — 내용 있는 확정 행·미확정 행은 빠진다."""
     m = MappingModel.from_field_names(["명", "비고", "인"], source_fields=["명"])
-    m.set_confirmed(m.index_of("명"), True)               # 결속 내용 있음 → 확정-비움 아님
-    m.set_confirmed(m.index_of("비고"), True)             # 무내용 확정 → 확정-비움
-    # 인: 미확정 무내용 → 확정-비움 아님(그 행의 사실이지 선언 아님)
-    assert m.declared_blank_fields() == ["비고"]
-    # 확정-비움에 값을 채우면(내용 생김) 선언이 풀린다 — set_manual 이 confirmed 도 해제.
+    m.set_confirmed(m.index_of("명"), True)               # 결속 내용 있음 → 선언 아님
+    m.set_manual(m.index_of("비고"), "")                  # 빈 고정값
+    m.set_confirmed(m.index_of("비고"), True)
+    m.set_manual(m.index_of("인"), "")                    # 빈 고정값이지만 미확정
+    assert m.declared_empty_fields() == ["비고"]
+    # 값을 채우면 선언이 풀린다 — set_manual 이 confirmed 도 해제.
     m.set_manual(m.index_of("비고"), "값")
-    assert m.declared_blank_fields() == []
+    assert m.declared_empty_fields() == []
 
 
 def test_set_manual_then_revert_binding_round_trip():
@@ -934,7 +948,7 @@ def test_read_only_cell_labels_come_from_the_ring1_vocabulary():
 
     rows = _projection_rows() + [
         RowState(template_field="비고", type="const", const="해당 없음", confirmed=True),
-        RowState(template_field="여백", confirmed=True),          # 비움 확정
+        RowState(template_field="여백", type="const", confirmed=True),  # 비움 선언(빈 고정값)
     ]
     projections = [
         row_projection(r, {"사업명": "값"}, index=i, source_fields=["사업명", "빈열"],
@@ -942,7 +956,7 @@ def test_read_only_cell_labels_come_from_the_ring1_vocabulary():
         for i, r in enumerate(rows)
     ]
     assert [source_cell_label(p) for p in projections] == [
-        "사업명", "빈열", "오늘 날짜", "열을 고르세요", "고정값… 해당 없음", "비워 둠",
+        "사업명", "빈열", "오늘 날짜", "열을 고르세요", "고정값… 해당 없음", "고정값…",
     ]
     # 표시형은 고른 항목의 라벨이고, 프리셋이 없는 고정값 행은 빈 칸 마커다.
     assert display_cell_label(projections[0]) == "원문"

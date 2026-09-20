@@ -127,7 +127,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 이 필드는 채우지 않는다 — 행별 비움 선언(U6-C #977). 구 `confirm_all` +
         # `confirm_blanks`(이름 재진술 모달) 두 발이 각각 `confirm_suggested` 와 이것으로
         # 갈렸다: 일괄 승격은 **자동 제안만** 건드리고, 비움은 고른 그 행의 선언이다.
-        "set_blank": _schema("index"),
         "confirm_suggested": _schema(),
         "unconfirm_all": _schema(),
         "restore_confirmed": _schema(),

@@ -424,16 +424,15 @@ def test_editor_notifies_template_pick_mapping_completion_and_txt_save(tmp_path)
 
 
 def _confirm_every_row(ctrl) -> None:
-    """전 행 확인 — 내용 행은 배지(`set_confirmed`), 빈 행은 「비워 둠」(`set_blank`).
+    """전 행 확인 — 내용 행은 배지(`set_confirmed`), 빈 행은 빈 고정값 선언 뒤 배지.
 
     구 「모두 확정」 2발(`confirm_all` + 비움 이름게이트 `confirm_blanks`)의 후계다(U6-C
     #977) — 일괄 승격은 자동 제안만 올리므로 전 행 확인은 행별 답으로 완성된다.
     """
     for row in ctrl.snapshot()["rows"]:
-        if row["confirmable"]:
-            ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
-        else:
-            ctrl.dispatch("set_blank", {"index": row["index"]})
+        if not row["confirmable"]:
+            ctrl.dispatch("set_display", {"index": row["index"], "type": "const", "fmt": ""})
+        ctrl.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
 
 
 def test_blocked_save_does_not_notify(tmp_path):
@@ -449,10 +448,10 @@ def test_blocked_save_does_not_notify(tmp_path):
     assert str(Milestone.SAVE_JOB) not in seen and str(Milestone.SAVE_TXT_JOB) not in seen
 
 
-def test_set_blank_notifies_only_when_a_row_actually_moves(tmp_path):
-    """T14 비움 확정의 새 자리는 행별 「비워 둠」이다(U6-C #977 — 구 `confirm_blanks` 모달).
+def test_confirming_an_empty_constant_notifies_only_when_a_row_actually_moves(tmp_path):
+    """T14 비움 확정의 새 자리는 **빈 고정값을 확인하는 것**이다(「비워 둠」 항목 퇴역).
 
-    체크는 **상태가 실제로 옮겨갔을 때만** 선다: 이미 비움 확정인 행을 다시 골라도 지나지
+    체크는 **상태가 실제로 옮겨갔을 때만** 선다: 이미 확인한 행을 다시 확인해도 지나지
     않은 게이트를 지났다고 말하면 안 된다.
     """
     seen, notify = _collector()
@@ -464,11 +463,13 @@ def test_set_blank_notifies_only_when_a_row_actually_moves(tmp_path):
     seen.clear()
     index = ctrl.model.index_of("계약보증금")
 
-    ctrl.dispatch("set_blank", {"index": index})
+    ctrl.dispatch("set_display", {"index": index, "type": "const", "fmt": ""})
+    assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen, "확인 전에 게이트가 켜졌습니다"
+    ctrl.dispatch("set_confirmed", {"index": index, "confirmed": True})
     assert str(Milestone.CONFIRM_EMPTY_FIELD) in seen
 
     seen.clear()
-    ctrl.dispatch("set_blank", {"index": index})
+    ctrl.dispatch("set_confirmed", {"index": index, "confirmed": True})
     assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen, "이미 비운 행이 다시 게이트를 켰습니다"
 
 

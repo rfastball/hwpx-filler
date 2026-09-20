@@ -70,13 +70,12 @@ ROW_STATUS_LABEL = {
 }
 
 #: 데이터 열 select 의 **특수 항목** 문안(U6-C #977). 실제 열 이름 공간과 섞이지 않는다 —
-#: 이 셋은 열이 아니라 「값을 어디서 얻는가」의 다른 답이고, 표면은 열 선택(`set_source`)이
-#: 아니라 `set_display`/`set_blank` 로 갈라 발행한다(센티넬을 소스 값에 얹으면 동명 실열과
+#: 이 둘은 열이 아니라 「값을 어디서 얻는가」의 다른 답이고, 표면은 열 선택(`set_source`)이
+#: 아니라 `set_display` 로 갈라 발행한다(센티넬을 소스 값에 얹으면 동명 실열과
 #: 충돌해 그 열을 영영 못 겨눈다 — 리뷰 R5 의 근거가 그대로 산다).
 SPECIAL_SOURCE_LABEL = {
     "const": "고정값…",
     "today": "오늘 날짜",
-    "blank": "비워 둠",
 }
 
 #: 무결속 행의 열 placeholder — 「고르세요」는 문안이지 상태가 아니다(상태는 배지가 낸다).
@@ -146,14 +145,12 @@ def default_transform_for(inferred_type: str) -> str:
 def profile_source_vocabulary(profile) -> "list[str]":
     """프로파일이 참조하는 소스 키 합집합 — 선언순·중복 제거(단일 출처).
 
-    malformed blank+source(구/훼손 프로파일이 blank 선언에 source 를 남긴 경우)는
-    어휘에 흘리지 않는다 — 유령 키가 소스 피커 후보로 오표시되는 것을 막는다.
     :meth:`MappingModel.from_profile` 과 에디터 편집 모드 복원(``load_job``)이 같은
     합집합을 써야 드롭다운 오표시가 표류하지 않아 여기 한 곳에 모은다.
     """
     seen: "dict[str, None]" = {}
     for m in profile.mappings:
-        if not m.is_blank and m.source:
+        if m.source:
             seen.setdefault(m.source, None)
     return list(seen)
 
@@ -166,14 +163,11 @@ def profile_source_vocabulary(profile) -> "list[str]":
 
 
 def source_kind_of(row: "RowState") -> str:
-    """이 행의 데이터 열 칸이 지금 무엇을 들고 있는가 — ``column``/``const``/``today``/
-    ``blank``/``""``.
+    """이 행의 데이터 열 칸이 지금 무엇을 들고 있는가 — ``column``/``const``/``today``/``""``.
 
-    「비워 둠」이 먼저다: 유형은 남아 있어도 사람이 「채우지 않는다」고 선언한 행은 그
-    선언으로 보여야 한다.
+    비우려는 필드는 별도 종이 아니라 **아무것도 안 적은 고정값**이다(「비워 둠」 표시형
+    퇴역) — 그래서 여기 답도 ``const`` 하나다.
     """
-    if row.is_empty_confirmed():
-        return "blank"
     if row.type == "const":
         return "const"
     if row.type == "today":
@@ -190,7 +184,7 @@ def source_option_value(row: "RowState", source_kind: str) -> str:
     """
     if source_kind == "column":
         return f"col:{row.source}"
-    if source_kind in ("const", "today", "blank"):
+    if source_kind in ("const", "today"):
         return f"sp:{source_kind}"
     return ""
 
@@ -262,15 +256,15 @@ def row_projection(
             preview = row.to_mapping().value_for(record, now=now)
         except ValueError:
             preview, preview_error = "", True
-        empty = bool(row.has_content()) and preview == ""
+        # 명시적 빈 고정값은 「값이 없다」가 아니라 **빈 값이라는 답**이라 표식이 서지
+        # 않는다 — 사람이 이미 그 질문에 답했다(미입력 표식은 답이 없는 자리의 것이다).
+        empty = bool(row.has_content()) and preview == "" and not row.is_declared_empty()
         if preview_error:
             preview_kind, preview = "error", ""
         elif row.has_content():
             preview_kind = "missing" if empty else "value"
             if empty:
                 preview = MISSING_MARKER.format(field=row.template_field)
-        elif row.is_empty_confirmed():
-            preview_kind, preview = "blank", ""
         else:
             preview_kind, preview = "none", ""
     source_kind = source_kind_of(row)
@@ -355,9 +349,8 @@ def display_cell_label(projection: "dict") -> str:
 class RowState:
     """템플릿 필드 1개의 매핑 편집 상태 — 단일 ``source`` 를 ``type`` 으로 서식.
 
-    ``confirmed=True`` 인데 채울 내용이 없으면(소스도 상수도 없음) **의도적 비움
-    확정** — "이 필드는 채우지 않는다"를 사람이 명시한 상태다(``to_profile`` 이
-    명시적 ``blank`` 선언으로 영속화 — L1).
+    비우려는 필드는 별도 상태가 아니라 **빈 고정값**(``type="const"``, ``const=""``)이다 —
+    사람이 「직접 입력」에서 아무것도 적지 않으면 그 필드는 빈 문자열로 채워진다.
     ``suggestion_score`` 는 자동 제안의 유사도(0=제안 없음) — 뷰가 신뢰도 툴팁에 쓴다.
 
     **소유권(칩-라이브 계약, R-flow 슬라이스 5 블록 2 결정 12)**: ``touched`` 는 사람이 소스/
@@ -434,28 +427,25 @@ class RowState:
 
         ``const``(man)는 리터럴만 방출하므로(``value_for`` 는 ``source`` 를 무시하고 ``const``
         를 낸다) 기억된 소스는 내용이 아니다 — 결속 값을 비운 자리는 되돌리기 위해 소스를
-        기억할 뿐, 출력은 빈 문자열이다(Codex F2). 그걸 내용으로 세면 값을 비우고 확정해도
-        :meth:`is_empty_confirmed` 가 거짓이라 확정-비움으로 인식되지 않아 게이트가 계속
-        묻는다. 그 외 유형은 결속 소스가 곧 내용이다.
+        기억할 뿐, 출력은 상수다. **빈 상수도 값 선언이다**(「비워 둠」 표시형 퇴역): 아무것도
+        안 적은 고정값은 「이 필드는 빈 문자열로 채운다」는 답이므로 내용이 있다.
 
         ``today``(오늘 날짜)는 소스도 상수도 없이 **언제나** 실행 시각의 날짜를 방출한다
-        — 소스 유무로 재면 내용 없음이 되어 확정 시 ``to_profile`` 이 ``blank`` 로 강등해
-        값이 통째 소실된다(조용한 값 소실). 그래서 무조건 참이다."""
-        if self.type == "today":
+        — 소스 유무로 재면 내용 없음이 되어 확정 게이트가 값 없는 행으로 오분류한다.
+        그래서 무조건 참이다."""
+        if self.type in ("today", "const"):
             return True
-        if self.type == "const":
-            return self.const != ""
         return bool(self.source)
 
-    def is_empty_confirmed(self) -> bool:
-        """의도적 비움 확정 — 확정됐지만 채울 내용이 없음."""
-        return self.confirmed and not self.has_content()
+    def is_declared_empty(self) -> bool:
+        """명시적 비움 — 아무것도 적지 않은 고정값(``FieldMapping.is_declared_empty`` 미러)."""
+        return self.type == "const" and self.const == ""
 
-    def to_mapping(self, *, blank: bool = False) -> FieldMapping:
+    def to_mapping(self) -> FieldMapping:
         return FieldMapping(
             template_field=self.template_field,
-            source="" if blank else self.source,
-            type="blank" if blank else self.type,
+            source=self.source,
+            type=self.type,
             const=self.const,
             fmt=self.fmt,
         )
@@ -564,13 +554,12 @@ class MappingModel:
         """
         rows: "list[RowState]" = []
         for m in profile.mappings:
-            is_blank = m.is_blank
             rows.append(RowState(
                 template_field=m.template_field,
-                source="" if is_blank else m.source,
-                type="text" if is_blank else m.type,
-                const="" if is_blank else m.const,
-                fmt="" if is_blank else m.fmt,
+                source=m.source,
+                type=m.type,
+                const=m.const,
+                fmt=m.fmt,
                 confirmed=True,  # 베이스는 확정본
                 touched=True,  # 사람 소유(과거 확정 산출물) — 라이브 재제안 비대상(결정 12)
             ))
@@ -611,34 +600,6 @@ class MappingModel:
             # 자리는 ``set_manual`` 이고 그쪽은 이 관문을 지나지 않는다.
             row.source = ""
         row.confirmed = False
-        row.touched = True
-
-    def set_blank(self, index: int) -> None:
-        """이 필드는 **채우지 않는다**고 사람이 선언한다(U6-C #977) — 행별 비움 확정.
-
-        구 「모두 확정 → 이름 재진술 모달 → ``confirm_fields``」(ADR-E)가 하던 일을 행에서
-        직접 한다. 승격 대상을 모아 이름을 되읽어 주던 이유는 **일괄**이 반사적 dismiss 로
-        여러 필드를 한 번에 비우기 때문이었고, 행별 선언에는 그 위험이 없다(고른 행이 곧
-        확인한 행이다). 결과 상태는 그때와 같다 — ``to_profile`` 은 ``blank`` 선언으로,
-        ``declared_blank_fields`` 는 이 필드를 담는다.
-
-        **특수 유형은 추정 기본형으로 되돌린다**(리뷰 5). ``today`` 는 소스도 상수도 없이
-        언제나 값을 내므로(``has_content`` 무조건 참) 남기면 「비워 둠」으로 확정된 행이
-        오늘 날짜를 찍는다. ``const`` 는 값이야 안 내지만(상수를 비웠다) 유형이 남으면 머리
-        pill 「고정값 n」이 채우지 않는 행까지 세고, 확인을 풀면 데이터 열 칸이 「고정값…」
-        으로 되살아나 사람이 고른 적 없는 상태를 보여 준다.
-
-        **사람의 편집이므로 ``touched=True`` 다**(리뷰 3 · :class:`RowState` 소유권 규율).
-        빼면 확인을 푼 순간 그 행이 시스템 소유로 돌아가 라이브 재제안·일괄 승격이 조용히
-        덮는다 — 「채우지 않는다」는 선언이 사람 모르게 뒤집히는 자리다.
-        """
-        row = self.rows[index]
-        row.source = ""
-        row.const = ""
-        if row.type in ("const", "today"):
-            row.type = row.default_type()
-            row.fmt = ""
-        row.confirmed = True
         row.touched = True
 
     def set_fmt(self, index: int, fmt: str) -> None:
@@ -848,12 +809,11 @@ class MappingModel:
         return bool(self.rows) and all(r.confirmed for r in self.rows)
 
     def emits_any_value(self) -> bool:
-        """확정된 행 중 실제 값을 방출하는 행이 하나라도 있는가 — '전부 비움' 저장 가드.
+        """값을 선언한 확정 행이 하나라도 있는가 — 저장 가드.
 
-        전 행을 비움 확정하면 ``is_complete`` 는 통과하지만 ``to_profile`` 은 blank
-        선언만 담아 어떤 누름틀에도 값을 주입하지 않는다(RC-08). blank 도 mappings 에
-        영속화되므로(L1) 뷰는 자료구조 내부(``profile.mappings``)가 아니라 이 질의로
-        무의미 작업 저장을 판단한다.
+        「비워 둠」 퇴역 후 **빈 고정값도 값 선언**이다(누름틀에 빈 문자열을 실제로 써
+        넣는다) — 그러므로 전 필드를 빈 고정값으로 확정한 작업도 저장된다. 이 가드가
+        여전히 막는 것은 확정 행이 하나도 없는 작업이다(``is_complete`` 와 짝).
         """
         return any(r.confirmed and r.has_content() for r in self.rows)
 
@@ -921,13 +881,10 @@ class MappingModel:
 
     # ------------------------------------------------------- 프로파일 입출력
     def to_profile(self, name: str = "") -> MappingProfile:
-        """확정된 전 행을 프로파일로. 빈 행은 명시적 ``blank`` 선언으로 영속화한다."""
+        """확정된 전 행을 프로파일로. 빈 고정값 행은 그대로 빈 고정값으로 영속화한다."""
         return MappingProfile(
             name=name,
-            mappings=[
-                r.to_mapping(blank=r.is_empty_confirmed())
-                for r in self.rows if r.confirmed
-            ],
+            mappings=[r.to_mapping() for r in self.rows if r.confirmed],
         )
 
     # -------------------------------------------------- 휘발 렌더·결속(#148 슬라이스 3b·4)
@@ -941,30 +898,25 @@ class MappingModel:
         토큰이 ``missing``({{토큰}} 빨강)으로 남고, 결속 열 값이 비면 키는 있고 값이 빈
         ``blank``(〈빈 값〉)이 된다.
 
-        **확정-비움(#148 슬라이스 4, 결정 12)**: 확정됐는데 채울 내용이 없는 행(사람이
-        「이 필드는 비운다」를 명시)은 **빈 값 방출**로 담는다 — 렌더는 데이터-빈값 ``blank`` 와
-        **같게**(〈빈 값〉·클립보드 빈 문자열) 보이되, 게이트 제외는 소비자(작업대 `gate_empty_fields`)가
-        :meth:`declared_blank_fields` 로 가른다. ``type="blank"`` 이 아니라 **빈 text 매핑**으로
-        방출하는 이유: :meth:`MappingProfile.apply` 는 ``is_blank`` 를 값 사전에서 **드롭**하므로
-        (hwpx 누름틀은 손대지 말라는 계약) blank 로 담으면 키가 사라져 ``missing`` 으로 렌더된다 —
-        txt 는 누름틀이 없고 선언된 비움은 빈 문자열이라, 키를 남겨 ``blank`` 로 표지돼야 한다."""
-        mappings: "list[FieldMapping]" = []
-        for r in self.rows:
-            if r.has_content():
-                mappings.append(r.to_mapping())
-            elif r.is_empty_confirmed():
-                # 확정-비움 → 빈 값 방출(키 유지 → render_segments 가 blank 로 표지).
-                mappings.append(FieldMapping(template_field=r.template_field, type="text"))
-        return MappingProfile(name=name, mappings=mappings)
+        **명시적 비움**은 별도 경로가 아니다(「비워 둠」 표시형 퇴역): 빈 고정값 행은
+        :meth:`RowState.has_content` 가 참이라 그대로 담기고, 값이 빈 문자열이라 렌더는
+        데이터-빈값 ``blank`` 와 **같게** 보인다(〈빈 값〉·클립보드 빈 문자열). 게이트 제외만
+        소비자(작업대 `gate_empty_fields`)가 :meth:`declared_empty_fields` 로 가른다."""
+        return MappingProfile(
+            name=name,
+            mappings=[r.to_mapping() for r in self.rows if r.has_content()],
+        )
 
-    def declared_blank_fields(self) -> "list[str]":
-        """확정-비움(확정·무내용) 필드 이름 — 렌더는 ``blank`` 지만 빈칸 게이트에서 빠진다(결정 12).
+    def declared_empty_fields(self) -> "list[str]":
+        """확정된 빈 고정값 필드 이름 — 렌더는 ``blank`` 지만 빈칸 게이트에서 빠진다(결정 12).
 
         「확인한 것은 다시 묻지 않는다」(ADR-E ack 동형)의 큐 판: 사람이 「비운다」고 선언한
         토큰은 복사 전 빈칸 게이트·완료 노트·빈칸 지도에서 제외된다. 데이터가 비어 생긴
         ``blank`` 는 사람의 선언이 아니라 그 행의 사실이므로 여기 들지 않고 게이트에 **남는다** —
         두 무결속 상태의 구분이 여기서 값을 한다."""
-        return [r.template_field for r in self.rows if r.is_empty_confirmed()]
+        return [
+            r.template_field for r in self.rows if r.confirmed and r.is_declared_empty()
+        ]
 
     def index_of(self, template_field: str) -> int:
         """토큰 이름 → 행 인덱스(없으면 ValueError) — 디스패치가 이름으로 겨눈다."""
@@ -1079,7 +1031,7 @@ class MappingModel:
         소유)은 담지 않는다 — 새 데이터 기준으로 재제안돼야 하므로. ``apply_profile(confirm=False)``
         로 적용해 값만 이월하고 전 행 미확정으로 착지시킨다(사람 재검토 강제).
 
-        단 **내용 없는 touched 미확정 행은 담지 않는다**(리뷰 반영): 비움 확정(blank 선언)도
+        단 **내용 없는 touched 미확정 행은 담지 않는다**(리뷰 반영): 확정된 선언도
         아니고 이월할 값도 없는데 담으면, ``apply_profile`` 이 touched 를 재날인해 그 필드가
         새 데이터에서 **영구히 라이브 재제안에서 제외**된다(조용한 동결). 그런 행은 시스템
         소유로 낙착시켜 새 데이터 기준 자동 제안을 다시 받게 한다.
@@ -1087,7 +1039,7 @@ class MappingModel:
         return MappingProfile(
             name=name,
             mappings=[
-                r.to_mapping(blank=r.is_empty_confirmed())
+                r.to_mapping()
                 for r in self.human_owned_rows()
                 if r.confirmed or r.has_content()
             ],
@@ -1125,17 +1077,16 @@ class MappingModel:
             m = by_field.get(row.template_field)
             if m is None:
                 continue
-            row.source = "" if m.is_blank else m.source
-            row.type = "text" if m.is_blank else m.type
-            row.const = "" if m.is_blank else m.const
-            row.fmt = "" if m.is_blank else m.fmt
+            row.source = m.source
+            row.type = m.type
+            row.const = m.const
+            row.fmt = m.fmt
             # 프로파일 복원/이월된 행은 **사람 소유**(과거 확정 산출물 또는 touched 이월) —
             # touched=True 로 라이브 재제안이 덮지 못하게 한다(칩-라이브 결정 12). 확정 여부는
             # confirm 인자·missing_source 가 따로 결정한다(값 복원 ≠ 확정 도착).
             row.touched = True
             missing_source = (
                 require_source
-                and not m.is_blank
                 and bool(m.source)
                 and m.source not in available
             )

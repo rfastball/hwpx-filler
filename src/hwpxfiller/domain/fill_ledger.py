@@ -189,7 +189,7 @@ def build_fill_ledger(
     if source_fields is not None:
         available = set(source_fields)
         required = list(dict.fromkeys(
-            m.source for m in mapping.mappings if not m.is_blank and m.source
+            m.source for m in mapping.mappings if m.source
         ))
         missing_sources = tuple(s for s in required if s not in available)
     return FillLedger(
@@ -256,9 +256,10 @@ def manifest_rows(
     drift_fields = drift.symmetric_difference | set(drift.conflicting)
     value_maps: "dict[str, FieldMapping]" = {}
     for m in mapping.mappings:
-        if not m.is_blank:
-            value_maps.setdefault(m.template_field, m)
-    blanks = set(mapping.blank_fields())
+        value_maps.setdefault(m.template_field, m)
+    # 명시적 빈 고정값은 「빈 미리보기로 채워짐」이 아니라 ``blank`` 로 남는다 —
+    # filled 로 세면 원장이 조용한 값 누출처럼 읽힌다(선언이었음을 지운다).
+    blanks = set(mapping.declared_empty_fields())
     rows: "list[LedgerRow]" = []
     order = list(mapping.cover_fields()) + list(drift.template_only)
     for name in dict.fromkeys(order):
@@ -270,7 +271,7 @@ def manifest_rows(
         if name in drift_fields:
             rows.append(LedgerRow(name, "drift", source, type_, fmt, value))
         elif name in blanks:
-            rows.append(LedgerRow(name, "blank", type="blank"))
+            rows.append(LedgerRow(name, "blank", type="const"))
         else:
             is_missing = value == "" or (
                 bool(missing_marker) and value == missing_marker.format(field=name)

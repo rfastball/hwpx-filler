@@ -43,7 +43,7 @@ def _template(path, fields):
 def _mapping():
     return MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("비고", type="blank"),
+        FieldMapping("비고", type="const"),   # 명시적 비움 = 빈 고정값
     ])
 
 
@@ -78,10 +78,10 @@ def test_structure_and_value_axes_are_independent():
     assert both.structure_state is StructureState.TEMPLATE_AND_SOURCE_DRIFT
 
 
-def test_mapping_blank_conflict_fails_closed():
+def test_mapping_duplicate_conflict_fails_closed():
     mapping = MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("공고명", type="blank"),
+        FieldMapping("공고명", type="const"),
     ])
     drift = template_structure_drift(["공고명"], mapping)
     assert drift.has_drift and drift.conflicting == ("공고명",)

@@ -76,11 +76,10 @@ def _mounted_txt_session(frontend, path: Path):
     editor.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
     editor.dispatch("set_const", {"index": 0, "const": "총무과"})
     for row in editor.snapshot()["rows"]:
-        # 전 행 확인 — 내용 행은 배지, 빈 행은 「비워 둠」(U6-C #977: 「모두 확정」 2발의 후계).
-        if row["confirmable"]:
-            editor.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
-        else:
-            editor.dispatch("set_blank", {"index": row["index"]})
+        # 전 행 확인 — 내용 행은 배지, 빈 행은 빈 고정값 선언(「비워 둠」 항목 퇴역).
+        if not row["confirmable"]:
+            editor.dispatch("set_display", {"index": row["index"], "type": "const", "fmt": ""})
+        editor.dispatch("set_confirmed", {"index": row["index"], "confirmed": True})
     return editor
 
 

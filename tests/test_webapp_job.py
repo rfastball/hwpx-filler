@@ -1221,11 +1221,44 @@ def _mirror_job(tmp_path) -> JobRegistry:
         mapping=MappingProfile(mappings=[
             FieldMapping(template_field="공고명", source="bidNtceNm"),
             FieldMapping(template_field="추정가격", source="presmptPrce", type="amount"),
-            FieldMapping(template_field="비고", type="blank"),
+            FieldMapping(template_field="비고", type="const"),   # 명시적 비움
         ]),
         filename_pattern="doc-{{seq:001}}",
     ))
     return reg
+
+
+def test_a_declared_empty_field_is_written_empty_without_a_marker(tmp_path):
+    """U6 §2.10 — 명시적 비움(빈 고정값)은 **빈 문자열이 실제로 써지고** 표식이 없다.
+
+    옛 `blank` 는 값 사전에서 키를 빼 누름틀을 손대지 않았다. 지금은 키가 남아 빈 값이
+    들어가고, 그 자리는 사람이 이미 답했으므로 사전검증 경고·완료 요약·미입력 표식 어디에도
+    지목되지 않는다(같은 질문을 두 번 묻지 않는다).
+    """
+    from hwpxfiller.domain.fields import read_fields
+
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_deps(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+
+    snap = ctrl.snapshot()
+    assert "비고" not in snap["preflight"]["text"]
+    assert "추정가격" in snap["preflight"]["text"]
+
+    res = ctrl.generate()
+    assert res["ok"] is True and res["succeeded"] == 2
+    assert "빈 값 표시 필드 1개(추정가격)." in res["summary"]
+
+    docs = [
+        read_fields(read_hwpx_package(str(out / name)))
+        for name in ("doc-001.hwpx", "doc-002.hwpx")
+    ]
+    # 두 문서 모두 「비고」는 빈 문자열이다 — 누름틀 안내 문구가 남지 않는다.
+    assert [d["비고"] for d in docs] == ["", ""]
+    # 데이터가 비어 생긴 자리는 여전히 표식이다(두 축이 갈린다는 것이 이 단언이다).
+    assert any(d["추정가격"] == "〘미입력·추정가격〙" for d in docs)
 
 
 def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):

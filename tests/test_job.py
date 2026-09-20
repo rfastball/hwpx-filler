@@ -369,10 +369,11 @@ def test_source_keys_dedupes_across_mappings_preserving_order():
     assert job.source_keys() == ["d", "t"]
 
 
-def test_source_keys_skips_even_malformed_blank_source():
+def test_source_keys_ignores_fields_that_declare_an_empty_constant():
+    """빈 고정값은 데이터 열을 요구하지 않는다 — 소스 키에 유령이 서지 않는다."""
     job = Job(mapping=MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("비고", "must_not_be_required", type="blank"),
+        FieldMapping("비고", type="const"),
     ]))
     assert job.source_keys() == ["name"]
 
@@ -585,8 +586,8 @@ def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
     assert not report.empty_valued  # 표식은 비어 있지 않은 값 — 엔진 빈값 스킵 통과
 
 
-def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
-    """blank는 RunRequest 표식 대상에도 엔진 입력에도 없고 실제 누름틀 값이 보존된다."""
+def test_declared_empty_skips_the_marker_and_writes_empty_into_a_real_hwpx(tmp_path):
+    """빈 고정값은 표식 대상이 아니고, 산출물에는 **빈 문자열**로 들어간다(U6 §2.10)."""
     from pathlib import Path
 
     from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -596,10 +597,10 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     template = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_under100m.hwpx"
     mapping = MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("입찰공고번호", type="blank"),
-        FieldMapping("계약방법", type="blank"),
-        FieldMapping("추정가격", type="blank"),
-        FieldMapping("개찰일시", type="blank"),
+        FieldMapping("입찰공고번호", type="const"),
+        FieldMapping("계약방법", type="const"),
+        FieldMapping("추정가격", type="const"),
+        FieldMapping("개찰일시", type="const"),
     ])
     req = RunRequest(
         Job(template_path=str(template), mapping=mapping),
@@ -607,7 +608,11 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
         [0],
     )
     marked = req.mapped_records(mark_missing=MISSING_MARKER)[0]
-    assert marked == {"공고명": "〘미입력·공고명〙"}
+    # 빈 고정값 선언은 표식이 아니라 빈 문자열이다 — 사람이 이미 답한 자리라 미입력이 아니다.
+    assert marked == {
+        "공고명": "〘미입력·공고명〙", "입찰공고번호": "", "계약방법": "",
+        "추정가격": "", "개찰일시": "",
+    }
 
     before = read_fields(read_hwpx_package(template))
     out = tmp_path / "marked.hwpx"
@@ -615,8 +620,9 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     assert result.ok
     after = read_fields(read_hwpx_package(out))
     assert after["공고명"] == "〘미입력·공고명〙"
-    for blank in ["입찰공고번호", "계약방법", "추정가격", "개찰일시"]:
-        assert after[blank] == before[blank]
+    for declared in ["입찰공고번호", "계약방법", "추정가격", "개찰일시"]:
+        assert before[declared] != ""          # 전제: 템플릿에 안내 문구가 있었다
+        assert after[declared] == ""           # 선언한 비움은 실제로 비워진다
 
 
 def test_default_jobs_dir_honors_env_override(monkeypatch, tmp_path):

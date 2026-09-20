@@ -72,10 +72,15 @@ def test_apply_transform_raises_on_unknown_kind():
         apply_transform("amonut", "123456789", fmt="{:,}")
 
 
-def test_apply_transform_known_kinds_and_blank():
-    """지원 유형(+내부 blank)은 단일값 기반으로 동작. blank 는 언제나 빈 값."""
+def test_apply_transform_known_kinds_and_empty_const():
+    """지원 유형은 단일값 기반으로 동작. 빈 고정값은 빈 문자열을 낸다.
+
+    「비워 둠」 유형은 퇴역했다 — 비우려는 자리는 아무것도 안 적은 고정값이다.
+    """
     assert apply_transform("text", "가나") == "가나"
-    assert apply_transform("blank", "무시") == ""
+    assert apply_transform("const", "무시", const="") == ""
+    with pytest.raises(ValueError, match="blank"):
+        apply_transform("blank", "무시")
 
 
 # ------------------------------------------------------ 오늘 날짜(today, U4-E1 #939)
@@ -341,28 +346,40 @@ def test_profile_save_load_roundtrip(tmp_path):
     assert m.fmt == "{:,}"
 
 
-def test_explicit_blank_is_covered_but_not_emitted_and_roundtrips(tmp_path):
+def test_declared_empty_is_covered_and_written_empty_and_roundtrips(tmp_path):
+    """명시적 비움 = 빈 고정값 — 커버에 들고, 빈 값 검사에서는 빠지며, **빈 문자열을 쓴다**."""
     profile = MappingProfile(mappings=[
         FieldMapping("공고명", "bidNtceNm"),
-        FieldMapping("비고", type="blank"),
+        FieldMapping("비고", type="const"),
     ])
     assert profile.template_fields() == ["공고명"]
     assert profile.mapped_fields() == ["공고명"]
-    assert profile.blank_fields() == ["비고"]
+    assert profile.declared_empty_fields() == ["비고"]
     assert profile.cover_fields() == ["공고명", "비고"]
-    assert profile.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
+    # 옛 blank 는 키를 뺐다 — 지금은 키를 남겨 누름틀에 빈 문자열을 써 넣는다.
+    assert profile.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰", "비고": ""}
 
     path = tmp_path / "blank.json"
     save_mapping_profile(profile, path)
     loaded = load_mapping_profile(path)
-    assert loaded.blank_fields() == ["비고"]
-    assert loaded.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
+    assert loaded.declared_empty_fields() == ["비고"]
+    assert loaded.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰", "비고": ""}
 
 
-def test_mapped_and_blank_duplicate_is_reported_as_conflict():
+def test_legacy_blank_type_migrates_to_empty_const_on_read():
+    """디스크의 옛 ``type="blank"`` 는 읽는 순간 빈 고정값으로 도착한다(거부하지 않는다)."""
+    m = FieldMapping.from_dict({
+        "template_field": "비고", "type": "blank", "source": "잔재", "fmt": "phone",
+    })
+    assert (m.type, m.const, m.source, m.fmt) == ("const", "", "", "")
+    assert m.is_declared_empty is True
+    assert m.value_for({"잔재": "무시"}) == ""
+
+
+def test_duplicate_mapping_for_one_field_is_reported_as_conflict():
     profile = MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
-        FieldMapping("공고명", type="blank"),
+        FieldMapping("공고명", type="const"),
     ])
     assert profile.coverage_conflicts() == ["공고명"]
 
@@ -373,9 +390,9 @@ def test_from_dict_rejects_unknown_type():
         FieldMapping.from_dict({"template_field": "추정가격", "type": "amonut"})
 
 
-def test_from_dict_accepts_all_supported_types_and_blank():
-    """지원 유형 전부 + 내부 마커 blank 는 종전대로 로드된다."""
-    for t in (*TYPES, "blank"):
+def test_from_dict_accepts_all_supported_types():
+    """지원 유형 전부가 로드된다(퇴역한 blank 는 const 로 옮겨 도착한다 — 위 마이그레이션 테스트)."""
+    for t in TYPES:
         assert FieldMapping.from_dict({"template_field": "f", "type": t}).type == t
 
 
@@ -424,14 +441,14 @@ def test_provenance_rejects_corrupt_type():
         MappingProfile.from_dict({**base, "provenance": {"template": 5}})
 
 
-def test_missing_type_defaults_to_text_not_blank():
-    """type 생략은 값 매핑 text literal 이며 blank 선언이 아니다."""
+def test_missing_type_defaults_to_text_not_declared_empty():
+    """type 생략은 값 매핑 text literal 이며 비움 선언이 아니다."""
     loaded = MappingProfile.from_dict({"mappings": [{
         "template_field": "비고", "source": ""
     }]})
     assert loaded.mappings[0].type == "text"
-    assert not loaded.mappings[0].is_blank
-    assert loaded.blank_fields() == []
+    assert not loaded.mappings[0].is_declared_empty
+    assert loaded.declared_empty_fields() == []
     assert loaded.apply({}) == {"비고": ""}
 
 

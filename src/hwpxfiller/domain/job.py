@@ -342,10 +342,6 @@ class Job:
         """매핑이 읽는 소스 키 전체(문서순 중복제거). 실 DataSource 정합 검증의 대상."""
         seen: "dict[str, None]" = {}
         for m in self.mapping.mappings:
-            if m.is_blank:
-                # malformed/구 프로파일이 blank에 source를 남겨도 의도 선언은
-                # 소스 요구가 아니다. source drift와 실제 출력이 갈리지 않게 제외.
-                continue
             if m.source:
                 seen.setdefault(m.source, None)
         return list(seen)
@@ -397,8 +393,9 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
 
 
 #: 필드별 규칙 축 — :func:`rules_values` 가 내는 사전의 키(표면·테스트가 문자열을 재조립하지
-#: 않게). ``blank`` 는 ``"blank"``/``""`` 두 값만 갖는다(지문 문자열과 같은 표기를 쓴다 —
-#: 표기를 바꾸면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다).
+#: 않게). ``blank`` 축은 「비워 둠」 유형 퇴역 후 **언제나 ``""``** 이지만 자리는 남긴다 —
+#: 축을 빼면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다(옛 blank
+#: 선언을 든 작업은 값이 바뀌므로 어차피 한 번 재검토 대상이 된다).
 RULE_AXES = ("source", "type", "const", "blank", "fmt")
 
 
@@ -512,7 +509,9 @@ def rules_values(job: "Job") -> "dict":
                 "source": m.source,
                 "type": m.type,
                 "const": m.const,
-                "blank": "blank" if m.is_blank else "",
+                # 「비워 둠」 유형 퇴역 후 이 축은 **언제나 빈 문자열**이다 — 디스크의
+                # 기존 검토 기준선과 표기를 맞추려고 자리만 남긴다(RULE_AXES 주석).
+                "blank": "",
                 "fmt": m.fmt,
             }
             for m in job.mapping.mappings
@@ -602,8 +601,8 @@ class RunRequest:
 
         ``mark_missing`` 이 주어지면(예: :data:`MISSING_MARKER`) **값이 빈 키만**
         ``mark_missing.format(field=키)`` 표식으로 치환한다 — 능동 빈칸 게이트의
-        "표식 넣고 생성" 경로. 의도적 공란(매핑 비움 확정)은 프로파일이 키 자체를
-        제외하므로 자동으로 표식이 없다. 표식은 비어 있지 않은 값이라 엔진의 빈값
+        "표식 넣고 생성" 경로. 대상은 ``job.template_fields()`` 이므로 명시적 빈 고정값
+        선언은 표식을 받지 않는다 — 사람이 이미 답한 자리이지 미입력이 아니다. 표식은 비어 있지 않은 값이라 엔진의 빈값
         스킵을 통과해 누름틀에 주입되고, 누적치환 다음 패스에서 매핑되면 덮인다.
         기본값(빈 문자열)이면 기존 동작 그대로.
 
@@ -616,7 +615,7 @@ class RunRequest:
         mapped = self.job.mapping.apply_all(self.selected_records(), now=now)
         if not mark_missing:
             return mapped
-        return mark_missing_values(mapped, mark_missing)
+        return mark_missing_values(mapped, mark_missing, fields=self.job.template_fields())
 
     def source_report(self) -> ValidationReport:
         """소스키 사전검증 — 겨눈 DataSource 가 매핑이 읽는 키를 제공하는가.

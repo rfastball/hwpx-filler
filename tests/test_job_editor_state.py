@@ -32,7 +32,17 @@ def _content_row(name: str = "공고명", confirmed: bool = True) -> RowState:
 
 
 def _blank_row(name: str = "비고") -> RowState:
-    return RowState(template_field=name, confirmed=True)  # 의도적 비움 확정
+    # 의도적 비움 = 아무것도 안 적은 고정값(「비워 둠」 표시형 퇴역).
+    return RowState(template_field=name, type="const", confirmed=True)
+
+
+def _void_row(name: str = "허공") -> RowState:
+    """확정됐지만 **아무것도 선언하지 않은** 행 — 열도 고정값도 없다.
+
+    지금 표면은 이런 행을 만들지 못한다(배지가 잠긴다). 저장 게이트는 그 자리를
+    방어층으로 계속 막는다 — 앱 밖에서 편집된 세션이 조용히 통과하지 않게.
+    """
+    return RowState(template_field=name, confirmed=True)
 
 
 # ------------------------------------------------------------------ validate_save
@@ -72,13 +82,23 @@ def test_validate_save_pattern_gate_is_media_aware():
     서지 않는다. 없는 규칙의 차단 문구는 고칠 표면이 없는 문구다. 그 외 게이트는 동일."""
     assert validate_save(_model(_content_row()), "작업1", "", media="txt", data_path=BOUND).ok
     assert "이름" in validate_save(_model(_content_row()), "", "", media="txt", data_path=BOUND).block_reason
-    assert "전부 비움" in validate_save(_model(_blank_row()), "작업1", "", media="txt", data_path=BOUND).block_reason
+    assert "전부 비움" in validate_save(_model(_void_row()), "작업1", "", media="txt", data_path=BOUND).block_reason
 
 
-def test_validate_save_blocks_all_blank_job():
-    """RC-08 회귀 — 전부 비움 확정 작업은 emits_any_value 질의로 시끄럽게 차단."""
+def test_all_fields_declared_empty_is_savable_but_a_void_row_is_not():
+    """「비워 둠」 퇴역 뒤 빈 고정값은 값 선언이다 — 전 필드가 그것이어도 저장된다.
+
+    누름틀에 빈 문자열을 실제로 써 넣는 작업이라 무의미하지 않다. 남은 차단은 아무것도
+    선언하지 않은 확정 행이다(RC-08 방어층).
+    """
+    ok = validate_save(
+        _model(_blank_row("갑"), _blank_row("을")), "작업1", "doc-{{seq:001}}",
+        data_path=BOUND,
+    )
+    assert ok.ok and ok.profile is not None
+
     verdict = validate_save(
-        _model(_blank_row("갑"), _blank_row("을")), "작업1", "doc-{{ID}}", data_path=BOUND
+        _model(_void_row("갑"), _void_row("을")), "작업1", "doc-{{ID}}", data_path=BOUND
     )
     assert not verdict.ok
     assert "전부 비움" in verdict.block_reason
@@ -106,8 +126,8 @@ def test_validate_save_blocks_a_filename_token_nothing_can_fill():
     assert verdict.profile is None
 
 
-def test_a_blank_declared_field_cannot_carry_a_filename_token():
-    """명시 비움 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다 — 그래서 미해소다."""
+def test_a_declared_empty_field_cannot_carry_a_filename_token():
+    """명시 비움 필드는 값이 빈 문자열이라 이름을 짓지 못한다 — 그래서 미해소다."""
     verdict = validate_save(_model(_content_row(), _blank_row()), "작업1", "doc-{{비고}}", data_path=BOUND)
     assert not verdict.ok
     assert "{{비고}}" in verdict.block_reason
@@ -136,7 +156,7 @@ def test_blocked_field_names_the_input_to_fix():
     assert validate_save(_model(_content_row()), "작업1", "", media="txt", data_path=BOUND).ok
     for verdict in (
         validate_save(_model(_content_row(confirmed=False)), "작업1", "doc-{{ID}}", data_path=BOUND),
-        validate_save(_model(_blank_row()), "작업1", "doc-{{ID}}", data_path=BOUND),
+        validate_save(_model(_void_row()), "작업1", "doc-{{ID}}", data_path=BOUND),
     ):
         assert not verdict.ok and verdict.blocked_field == ""
 
@@ -166,7 +186,7 @@ def test_validate_save_predicate_order_is_stable():
     """
     unconfirmed = _model(_content_row(confirmed=False))
     assert "모든 매핑 행" in validate_save(unconfirmed, "", "", data_path="").block_reason
-    all_blank = _model(_blank_row())
+    all_blank = _model(_void_row())
     assert "데이터를 연결" in validate_save(all_blank, "", "", data_path="").block_reason
     assert validate_save(all_blank, "", "", data_path=BOUND).blocked_field == "name"
     assert validate_save(
