@@ -446,6 +446,7 @@ class RunViewModel:
         review_notice: "ReviewRequirement | None" = None,
         mapped: "list[dict] | None" = None,
         now: "datetime | None" = None,
+        configuration_gate: "GateState | None" = None,
     ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
@@ -462,12 +463,18 @@ class RunViewModel:
         다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 게이트 서열에
         끼지 않는다 — #957 정책 선회로 검토는 차단이 아니라 사전검증의 비차단 고지이고,
         승인이라는 해소 사건 자체가 없어져 「미승인분」이라는 축도 함께 사라졌다.
+
+        ``configuration_gate`` 는 실제 생성 admission과 같은 출처 판정이다. 템플릿 적용
+        뒤 실행 구성이 아직 확정되지 않았으면 사전검증과 버튼이 함께 그 사유를 표시한다.
         """
         name_gate = self._name_token_gate()
         if self.datasource is None:
             return RunStatus(
-                PreflightResult(), (),
-                name_gate or GateState(False, "warn", "먼저 데이터를 선택하세요."),
+                PreflightResult(
+                    level=configuration_gate.level, text=configuration_gate.text,
+                ) if configuration_gate else PreflightResult(), (),
+                name_gate or configuration_gate
+                or GateState(False, "warn", "먼저 데이터를 선택하세요."),
             )
         idx = list(indices)
         req = self.request(idx)
@@ -489,11 +496,11 @@ class RunViewModel:
         return RunStatus(
             preflight=self._compose_preflight(
                 src, out, drift, name_gate is not None, len(audit.too_long),
-                review_notice,
+                review_notice, configuration_gate,
             ),
             field_states=tuple(states),
             gate=self._compose_gate(
-                states, drift, idx, out_dir, name_gate, audit,
+                states, drift, idx, out_dir, name_gate, audit, configuration_gate,
             ),
             audit=audit,
         )
@@ -536,9 +543,10 @@ class RunViewModel:
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
         audit: "OutputNameAudit | None" = None,
+        configuration_gate: "GateState | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
-        **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
+        실행 구성(warn) > **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
 
         결속 단이 세션 전제조건보다 앞선 이유는 **고칠 자리가 다르기** 때문이다(U4 §2.4):
         저장 폴더·행 선택은 이 화면에서 지우지만 결속은 편집기를 지난다. 세션을 다 갖춰도
@@ -572,6 +580,8 @@ class RunViewModel:
             )
         if name_gate is not None:
             return name_gate
+        if configuration_gate is not None:
+            return configuration_gate
         # 데이터 결속은 **작업 정의 수준의 결핍**이다(U4 §2.4 · #932 U4-C): 저장 게이트가
         # 요구하는 것을 실행 게이트가 통과시키면 「필수」는 한 자리에서만 참인 말이 되고,
         # 그 작업은 매 세션 데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다.
@@ -600,8 +610,11 @@ class RunViewModel:
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
         long_paths: int = 0, review_notice: "ReviewRequirement | None" = None,
+        configuration_gate: "GateState | None" = None,
     ) -> PreflightResult:
         parts: "list[str]" = []
+        if configuration_gate is not None:
+            parts.append(configuration_gate.text)
         if src.missing_columns:
             parts.append(
                 "[치명] 데이터에 없는 항목입니다(빈 값 생성됨): " + ", ".join(src.missing_columns)
@@ -638,7 +651,7 @@ class RunViewModel:
             parts.extend(notices)
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
-        elif out.empty_valued or long_paths:
+        elif out.empty_valued or long_paths or configuration_gate is not None:
             level = "warn"
         else:
             # 고지만 있는 실행은 **등급을 올리지 않는다** — 「알려주되 막지 않는다」는

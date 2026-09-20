@@ -125,6 +125,7 @@ from ..gui.review_state import (
 )
 from ..gui.run_state import (
     FileSourceFactoryPort,
+    GateState,
     PoolSourceFactoryPort,
     RunViewModel,
     resolve_file_source,
@@ -1706,9 +1707,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
         # 요구 자체가 사전검증 고지의 입력이다.
+        configuration_gate = None
+        if (
+            self._template_change is not None
+            and job.media == "hwpx" and not base["managed_hwpx"]
+            and self.vm.template_override is None
+        ):
+            verdict = self._template_change.generation_provenance_verdict(self.job_name)
+            if verdict != "EXECUTION_ALLOWED":
+                configuration_gate = GateState(
+                    False, "warn", _ADMISSION_REJECT_TEXT[verdict], reason=verdict,
+                )
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_notice=req, mapped=run_mapped,
-            now=self._names_now,
+            now=self._names_now, configuration_gate=configuration_gate,
         )
         # 통과 문구는 링2 어휘로 갈아끼우되 **고지는 잃지 않는다**: 치명·경고가 하나도
         # 없어도 검토 고지는 사용자가 봐야 하는 사실이라 통과 문구 아래 붙인다.
