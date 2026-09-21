@@ -630,10 +630,10 @@ def test_inactive_source_missing_key_unresolved() -> None:
 
 def test_output_name_value_resolution_failed_code_is_retired() -> None:
     """타입 대조가 유일 생산자였다 — 어휘째 퇴역하고 문안도 함께 걷혔다."""
-    from hwpxfiller.webapp.screen_job import _DELIVERY_BLOCKER_PHRASES
+    from hwpxfiller.webapp.current_execution_preparation import DELIVERY_BLOCKER_PHRASES
 
     assert not hasattr(gd, "OUTPUT_NAME_VALUE_RESOLUTION_FAILED")
-    assert "OUTPUT_NAME_VALUE_RESOLUTION_FAILED" not in _DELIVERY_BLOCKER_PHRASES
+    assert "OUTPUT_NAME_VALUE_RESOLUTION_FAILED" not in DELIVERY_BLOCKER_PHRASES
 
 
 def test_inactive_constant_token_resolves() -> None:

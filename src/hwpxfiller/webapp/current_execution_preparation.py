@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +17,7 @@ from ..application.document_creation_workbench import (
     RecordValidationAdvisory,
     RecordValidationIssue,
     RecordValidationSummary,
+    RecordRecoveryTarget,
     WorkbenchContextIntegrity,
 )
 from ..application.execution_semantic_kernel import SealedExecutionPlanValue
@@ -37,6 +38,9 @@ from ..application.generation_delivery import (
 from ..application.record_validation import (
     CurrentValidatedDataRecord,
     MISSING_VALUE_MARKED,
+    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
+    RECORD_REQUIRED_VALUE_MISSING,
+    RECORD_VALUE_FORMAT_INVALID,
     RecordValidationBlocked,
     RecordValidationBlocker,
     RecordValidationContextError,
@@ -78,8 +82,58 @@ class CurrentRecordCaptureError(ValueError):
     pass
 
 
+RECORD_BLOCKER_PHRASES = {
+    RECORD_REQUIRED_VALUE_MISSING: "이 항목에 연결한 데이터 열이 없습니다.",
+    RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
+    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
+}
+
+
 def current_record_identity(snapshot_generation: int, model_index: int) -> str:
     return f"current-record/{snapshot_generation}/{model_index}"
+
+
+def record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
+    for requirement in plan.active_field_requirements:
+        if requirement.get("field_id") != field_id:
+            continue
+        value_expression = requirement.get("value_expression")
+        if isinstance(value_expression, Mapping):
+            source_key = value_expression.get("source_key")
+            if isinstance(source_key, str) and source_key:
+                return source_key
+    raise CurrentRecordCaptureError("문제 데이터의 원본 항목을 확인할 수 없습니다.")
+
+
+def record_issue(
+    *,
+    plan: SealedExecutionPlanValue,
+    blocker: RecordValidationBlocker,
+    generation: int,
+    model_index: int,
+    record_identity: str,
+    columns: list[str],
+) -> RecordValidationIssue:
+    if not isinstance(blocker.field_id, str):
+        raise CurrentRecordCaptureError("문제 데이터의 필드를 확인할 수 없습니다.")
+    message = RECORD_BLOCKER_PHRASES.get(blocker.code)
+    if message is None:
+        raise CurrentRecordCaptureError("데이터 문제를 사용자 문안으로 표시할 수 없습니다.")
+    source_key = record_source_key(plan, blocker.field_id)
+    return RecordValidationIssue(
+        record_identity=record_identity,
+        record_display_locator=f"데이터 {model_index + 1}행",
+        field_id=blocker.field_id,
+        field_display_label=source_key,
+        message=message,
+        recovery_target=RecordRecoveryTarget(
+            snapshot_generation=generation,
+            record_identity=record_identity,
+            model_index=model_index,
+            field_id=source_key,
+            target_kind="cell" if source_key in columns else "row",
+        ),
+    )
 
 
 def capture_source_value(value: object) -> SourceNull | SourceText:
@@ -361,5 +415,7 @@ __all__ = [
     "observe_path_occupancy",
     "prepare_current_delivery",
     "prepare_current_records",
+    "record_issue",
+    "record_source_key",
     "unresolved_delivery",
 ]

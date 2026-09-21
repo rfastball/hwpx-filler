@@ -178,18 +178,11 @@ from ..application.automatic_seal_orchestration import (
     request_manual_recovery,
 )
 from ..application.template_change_product import workbench_template_change_verdict
-from ..application.workbench_execution_status import (
-    CHECKING as EXECUTION_STATUS_CHECKING,
-    NO_EVIDENCE as EXECUTION_STATUS_NO_EVIDENCE,
-    STALE as EXECUTION_STATUS_STALE,
-)
 from ..application.document_creation_workbench import (
     ActiveWorkContext,
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
     HistoricalOutcomeSummary,
-    RecordRecoveryTarget,
-    RecordValidationIssue,
     RecordValidationSummary,
     RELEASE,
     WorkbenchContextIntegrity,
@@ -207,13 +200,6 @@ from ..application.fresh_execution_observation import (
     ExecutionObservationContextError,
     FreshExecutionObservation,
 )
-from ..application.execution_semantic_kernel import SealedExecutionPlanValue
-from ..application.record_validation import (
-    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
-    RECORD_REQUIRED_VALUE_MISSING,
-    RECORD_VALUE_FORMAT_INVALID,
-    RecordValidationBlocker,
-)
 from ..application.run_delivery_intent import (
     DEFAULT_COLLISION_POLICY,
     RunDeliveryIntent,
@@ -226,7 +212,6 @@ from ..domain.field_binding import FieldBindingError
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
 from .current_execution_preparation import (
-    DELIVERY_BLOCKER_PHRASES as _DELIVERY_BLOCKER_PHRASES,
     CurrentDeliveryPreparation as _CurrentDeliveryPreparation,
     CurrentRecordCaptureError as _CurrentRecordCaptureError,
     CurrentRecordPreparation as _CurrentRecordPreparation,
@@ -235,20 +220,23 @@ from .current_execution_preparation import (
     delivery_projection,
     prepare_current_delivery,
     prepare_current_records,
+    record_issue,
     unresolved_delivery,
 )
 from .managed_run_result import (
-    ADMISSION_REJECT_TEXT as _ADMISSION_REJECT_TEXT,
+    ADMISSION_REJECT_TEXT,
     project_managed_run_result,
-    run_title as _run_title,
 )
-
-#: 확인 동사(`#jobResolveExecution`)가 실려야 하는 execution status(#912 D1). 세 상태는
-#: 「확인이 이 상태를 지운다」는 공통점으로 묶인다 — CHECKING 은 자동 확인이 이미 그 일을 하는
-#: 중이라 링1 이 비활성 + 사유로 낸다. 나머지 넷(CURRENT/DOMAIN_BLOCKED/POLICY_BLOCKED/
-#: CONTEXT_ERROR)은 확인이 답이 아니라 여기 들지 않는다.
-_EXECUTION_RESOLVABLE_STATUS_CODES = frozenset(
-    (EXECUTION_STATUS_NO_EVIDENCE, EXECUTION_STATUS_CHECKING, EXECUTION_STATUS_STALE)
+from .job_presentation import (
+    browse_row,
+    candidate_card,
+    failed_result,
+    failure_rows,
+    generation_result,
+    overwrite_response,
+    record_rows,
+    review_payload,
+    serialize_observation,
 )
 
 from ..external.settings import (
@@ -354,51 +342,6 @@ ARTIFACT_OBSERVED = "observed"
 VIEW_ORDER_DESC = "sourceDesc"
 VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
-
-
-# 행 안의 빈 값(explicit null·공백)은 #957 이후 여기 없다 — 차단이 아니라 표식이라
-# advisory 문안(`_record_advisory_notice`)이 그 자리를 진다. 여기 남은 것은 **열이 없는
-# 것**과 값을 문서 내용으로 해석조차 못 하는 것, 곧 데이터↔작업 결속의 구조 결함이다.
-_RECORD_BLOCKER_PHRASES = {
-    RECORD_REQUIRED_VALUE_MISSING: "이 항목에 연결한 데이터 열이 없습니다.",
-    RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
-    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
-}
-
-
-def _record_advisory_notice(summary: RecordValidationSummary) -> str:
-    """비차단 record 사실의 한 줄 — 수치는 링1(:attr:`marked_value_count`)이 낸다.
-
-    「빈 값이 있다」가 아니라 「표식이 들어간다」로 말한다: 사용자가 결과 문서에서 무엇을
-    보게 되는지가 이 고지의 요점이고, 그게 곧 생성을 막지 않아도 되는 이유다.
-    문형은 `docs/COPY_STYLE_GUIDE.md` §1(em dash 금지) — 두 문장으로 나눈다.
-    """
-    if not summary.advisories:
-        return ""
-    return (
-        f"빈 값 {summary.marked_value_count}칸이 있습니다. "
-        "문서에는 미입력 표식이 들어갑니다."
-    )
-
-
-# (결과 3태 판정은 :func:`hwpxfiller.application.generation.run_status` 가 소유한다 —
-#  P2-23. 여기는 그 태 facts 를 받아 문안만 조립한다.)
-def _needs_overwrite_result(*, total: int, conflict_names: "list[str]") -> dict:
-    """덮어쓰기 확인 왕복의 응답 — **managed·legacy 공용 단일 출처**(#957).
-
-    두 갈래가 각자 조립하면 같은 확인창이 경로에 따라 다른 수치를 말한다(파괴분·신규분
-    스왑이 대표 결함류다). 키 집합은 웹의 본문 합성기(`overwriteBody`)가 읽는 그대로다 —
-    총량·파괴분·신규분·이름 표본(최대 10)·나머지 수. ``run_token`` 은 여기서 싣지 않는다:
-    되돌림은 :meth:`JobController.generate` 의 단일 출구가 모든 갈래에 찍는다.
-    """
-    return {
-        "ok": False, "needs_overwrite": True,
-        "total": total,                                       # 총량
-        "overwrite_count": len(conflict_names),               # 파괴분(기존 덮어씀)
-        "new_count": max(0, total - len(conflict_names)),      # 신규분(새 파일)
-        "conflict_names": conflict_names[:10],                 # 파괴분 표본
-        "conflict_more": max(0, len(conflict_names) - 10),
-    }
 
 
 class JobController(DataZoneMixin, PoolTargetingMixin):
@@ -1003,21 +946,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         bl = list(target.blank_fields(idx)) if blanks is None else list(blanks)
         return review_requirement(target.job, blank_fields=tuple(bl))
 
-    def _review_payload(self, req: ReviewRequirement) -> dict:
-        """검토 요구의 표면 몫 — **요구의 사실**만 싣는다.
-
-        ``approved`` 축은 #957 에서 사망했다: 승인이라는 사건이 없으므로 "승인했다"를 말할
-        상태가 없고, 언제나 거짓인 필드를 실으면 표면이 그 거짓으로 갈라진다.
-        """
-        return {
-            "required": req.required,
-            "risk": req.risk_class,
-            "targets": list(req.changed_targets),
-            "first_run": req.first_run,
-            "unknown_baseline": req.unknown_baseline,
-            "structure_changed": req.structure_changed,
-        }
-
     def _bound_jobs(self, jobs):
         """이 마운트에 결속된 작업만 — 후보·탐색이 **같은 한 관문**을 지난다.
 
@@ -1086,30 +1014,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 판정은 파일 존재 검사 하나라 이미 싸다 — 판정 F). 술어·문안은 `_template_conn`
             # 단일 출처다: 세션 축과 문자열이 갈리면 같은 상태를 두 이름으로 부른다.
             missing, conn_label = _template_conn(job.template_path)
-            top.append({
-                "name": r.name,
-                "tier": r.tier,
-                "favorited": bool(job.favorited_at),
+            top.append(candidate_card(
+                name=r.name,
+                tier=r.tier,
+                favorited=bool(job.favorited_at),
                 # 원시 ISO — 표시 문안(자릿수·구분자)은 표면이 만든다(판정만 Python).
                 # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
-                "last_run_at": job.last_run_at,
-                "suggested": r.name == suggested,
+                last_run_at=job.last_run_at,
+                suggested=r.name == suggested,
                 # 작업 방식(§19.1) + 그 표시 문구 — 카드 부제와 구획 판단이 소비한다(§19.3).
                 # 라벨을 표면이 짓지 않는 이유는 같은 축을 그리는 표면이 셋이기 때문이다
                 # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
-                "mode": r.mode,
-                "mode_label": work_mode_label(r.mode, short=True),
+                mode=r.mode,
+                mode_label=work_mode_label(r.mode, short=True),
                 # (`last_run_label` 은 U4 계열2-31 에서 걷혔다 — 후보 카드는 「이 데이터로
                 #  무엇을 만들 수 있는가」를 말하는 자리이고 실행 이력은 그 판단에 안 든다.
                 #  라이브러리 목록·상세의 같은 문안도 뒤이어 걷혀, 실행 이력을 문구로 말하는
                 #  표면은 이제 없다 — 남은 소비자는 「최근 사용」 보기의 정렬뿐이다.)
                 # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
                 # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
-                "template_name": Path(job.template_path).name if job.template_path else "",
-                "template_path": job.template_path,
-                "template_missing": missing,
-                "conn_label": conn_label,
-            })
+                template_path=job.template_path,
+                template_missing=missing,
+                conn_label=conn_label,
+            ))
         needs = sorted(
             (
                 {"name": j.name, "missing": list(c.missing)}
@@ -1172,8 +1099,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._bound_jobs(jobs), list(self.records[0].keys()),
             tab=self.browse_tab, query=self.browse_query,
         )
-        rows = [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
-                for r in res.rows]
+        rows = [
+            browse_row(r, mode_label=work_mode_label(r["mode"], short=True))
+            for r in res.rows
+        ]
         return {
             "tab": res.tab,
             "query": self.browse_query,
@@ -1257,15 +1186,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 선택 표지는 **존 대상**(초안이 열려 있으면 초안)이다: 표는 사용자가 지금 편집하는
         # 것을 그린다(F3 판정 D 경계표 1행).
         zone_sel = self._zone_sel()
-        return [
-            {
-                "index": i,
-                "selected": zone_sel.is_selected(i),
-                "name": names.get(i, ""),
-                "summary": isum.display_for(self.records[i]),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
-            }
-            for i in self._display_indices(list(range(len(self.records))))
-        ]
+        display_order = self._display_indices(list(range(len(self.records))))
+        return record_rows(
+            records=self.records,
+            display_order=display_order,
+            selected_indices={index for index in display_order if zone_sel.is_selected(index)},
+            planned_filenames=names,
+            identity=isum,
+        )
 
     # ---- 위험 배너의 재료 ------------------------------------------------------
     # 구 거울 테이블(_mirror·_field_value_display·_formatted_fields)은 필드축 ack 폐기와
@@ -1351,9 +1279,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         함께 사망했다(F2 PR-B, 지도 §10.9 판정 F): 아무도 그리지 않는 페이로드가 남으면 다음
         세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은 「문서 작업」 소관이다.
         """
-        # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
-        # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
-        # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
+        # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 저장 작업 전체를 한 번만 읽는다.
         registry_notice_text = ""
         try:
             jobs = list_jobs(self.registry)
@@ -1363,6 +1289,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "문서 작업 목록을 다시 확인할 수 없습니다. "
                 "잠시 뒤 다시 시도하세요."
             )
+        base = self._snapshot_base(jobs, registry_notice_text)
+        if self.job_is_txt:
+            return self._snapshot_txt(base, jobs)
+        if self.vm is None:
+            return self._snapshot_without_vm(base, jobs)
+        return self._snapshot_hwpx(base)
+
+    def _snapshot_base(self, jobs: list[Job], registry_notice_text: str) -> dict:
         notice_text = " ".join(
             filter(None, (self.data_notice_text, registry_notice_text))
         )
@@ -1465,125 +1399,119 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 분기에서만 키가 생겨, 다른 분기의 스냅샷은 「드리프트 없음」과 「키 없음」이 구별되지
         # 않았다(키 부재 분기 금지 — template_change 와 같은 근거).
         base["source_drift"] = None
-        # S4 Working Slot Configuration 존 기본값(SX-02 #725) — TXT·미선택·미상 매체는 명시적
-        # 미지원(키 부재 분기 금지, template_change 선례). hwpx 분기가 실제 fresh view 로 덮는다.
+        # S4 Working Slot Configuration 존 기본값(SX-02 #725) — 미선택·미상 매체는 명시적
+        # 미지원(키 부재 분기 금지). TXT·HWPX 지원 갈래가 실제 fresh view 로 덮는다.
         base["slot_configuration"] = self._slot_blank_zone()
         # Selection Preset 목록 존 기본값(S9-03 #829) — 같은 이유로 키 부재 분기를 만들지 않는다.
         base["content_presets"] = self._content_presets_blank()
-        if self.job_is_txt:
-            # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
-            # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
-            # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
-            zone_indices = self._zone_indices()
-            record_rows = self._record_rows(zone_indices, [])
-            filter_snap, table_snap, guard_snap = self._filter_sections(
-                zone_indices, record_rows
-            )
-            # 템플릿 정체는 **이번 스캔의 목록**에서 집는다 — 세션이 Job 사본을 들지 않으므로
-            # (1R P2) 이름 변경·재연결이 자동으로 반영되고, 추가 I/O 도 없다(목록은 위에서
-            # 이미 읽었다). 그사이 삭제됐으면 정직하게 「템플릿 없음」으로 그린다 —
-            # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
-            txt_job = next((j for j in jobs if j.name == self.job_name), None)
-            tpath = txt_job.template_path if txt_job is not None else ""
-            # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
-            # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
-            tmissing, tconn = _template_conn(tpath)
-            # 템플릿 변경 존은 **매체를 가리지 않는다**(S10-02 #859) — TXT 템플릿도 같은
-            # S2/S3 생애주기(확인 → immutable Candidate → Qualification → 적용)를 탄다.
-            # 사건 경계·문안·token 은 전부 코디네이터 소유라 여기는 존을 앉히기만 한다.
-            self._seat_template_change_zone(base, template_media(tpath), tmissing)
-            # 「포함할 내용」·Preset 존도 매체를 가리지 않는다(S10-03 #860) — S4 아래(선택
-            # 언어·context·store·command·projection·Preset)에는 어디에도 매체가 없고, 존의
-            # 자격 판정은 그 함수들이 `SUPPORTED_MEDIA` 하나로 진다. 그러니 여기는 hwpx
-            # 분기와 **같은 두 줄**을 앉히기만 한다(가지마다 다른 조립을 만들지 않는다).
-            slot_zone = self._slot_configuration_zone(tmissing)
-            base["slot_configuration"] = slot_zone
-            base["content_presets"] = self._content_presets_zone(
-                tmissing, savable_selection=self._savable_selection(slot_zone)
-            )
-            g = workbench_entry_gate(
-                has_data=self.datasource is not None,
-                selected_count=self.selection.selected_count(),
-                template_ready=not tmissing,
-            )
-            base.update({
-                "template_name": Path(tpath).name if tpath else "",
-                "template_path": tpath,
-                "template_missing": tmissing,
-                "conn_label": tconn,
-                # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
-                # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
-                "filename_pattern": "",
-                "has_data": self.datasource is not None,
-                "record_count": len(self.records),
-                "selected_count": self.selection.selected_count(),
-                "records": record_rows,
-                "preflight": {"level": "", "text": ""},
-                # 빈 값 표지·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값
-                # 확인을 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
-                "blank_fields": [], "drift": [], "name_tokens": [],
-                "filter": filter_snap, "table": table_snap,
-                "guard": guard_snap,
-                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
-                         "reason": g.reason},
-                # 검토 요구는 **배제 선언**(지도 §10.15 판정 J): 작업대가 이미 레코드
-                # 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
-                # 키 부재로 갈라지지 않게 한다.
-                "review": self._review_payload(ReviewRequirement()),
-            })
-            return base
-        if self.vm is None:
-            # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
-            zone_indices = self._zone_indices()
-            record_rows = self._record_rows(zone_indices, [])
-            filter_snap, table_snap, guard_snap = self._filter_sections(
-                zone_indices, record_rows
-            )
-            g = prework_gate(
-                has_data=self.datasource is not None,
-                selected_count=self.selection.selected_count(),
-                # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
-                # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
-                # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
-                has_candidates=bool(base["candidates"]["top"]),
-            )
-            # **미상 매체는 「작업 미선택」이 아니다**: 작업은 골라져 있고(`has_job`) 실행
-            # 표면만 없다. prework 문안("먼저 문서 작업을 선택하세요")을 그대로 쓰면 이미
-            # 고른 사람에게 이행 불가능한 지시를 주고, 화면은 「작업 있음」과 「없음」을
-            # 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
-            unsup_job = (
-                next((j for j in jobs if j.name == self.job_name), None)
-                if self.job_unsupported else None
-            )
-            utpath = unsup_job.template_path if unsup_job is not None else ""
-            if self.job_unsupported:
-                # 막는 축은 템플릿이다 — 게이트 문안·사유는 링1 단일 산출(P2-24).
-                g = unsupported_media_gate()
-            # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
-            # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
-            umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
-            base.update({
-                "template_name": Path(utpath).name if utpath else "",
-                "template_path": utpath,
-                "filename_pattern": "",
-                "template_missing": umissing,
-                "conn_label": uconn,
-                "has_data": self.datasource is not None,
-                "record_count": len(self.records),
-                "selected_count": self.selection.selected_count(),
-                "records": record_rows,
-                "preflight": {"level": "", "text": ""},
-                "blank_fields": [], "drift": [], "name_tokens": [],
-                "filter": filter_snap, "table": table_snap,
-                "guard": guard_snap,
-                # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
-                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
-                         "reason": g.reason},
-                # 작업이 없으면 검토할 규칙이 없다 — 뼈대만 실어 표면이 키 부재로
-                # 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
-                "review": self._review_payload(ReviewRequirement()),
-            })
-            return base
+        return base
+
+    def _snapshot_txt(self, base: dict, jobs: list[Job]) -> dict:
+        # TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
+        # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
+        # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
+        zone_indices = self._zone_indices()
+        record_rows = self._record_rows(zone_indices, [])
+        filter_snap, table_snap, guard_snap = self._filter_sections(
+            zone_indices, record_rows
+        )
+        # 템플릿 정체는 **이번 스캔의 목록**에서 집는다 — 세션이 Job 사본을 들지 않으므로
+        # (1R P2) 이름 변경·재연결이 자동으로 반영되고, 추가 I/O 도 없다(목록은 위에서
+        # 이미 읽었다). 그사이 삭제됐으면 정직하게 「템플릿 없음」으로 그린다 —
+        # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
+        txt_job = next((j for j in jobs if j.name == self.job_name), None)
+        tpath = txt_job.template_path if txt_job is not None else ""
+        # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
+        # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
+        tmissing, tconn = _template_conn(tpath)
+        self._seat_configuration_zones(base, template_media(tpath), tmissing)
+        g = workbench_entry_gate(
+            has_data=self.datasource is not None,
+            selected_count=self.selection.selected_count(),
+            template_ready=not tmissing,
+        )
+        base.update({
+            "template_name": Path(tpath).name if tpath else "",
+            "template_path": tpath,
+            "template_missing": tmissing,
+            "conn_label": tconn,
+            # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
+            # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
+            "filename_pattern": "",
+            "has_data": self.datasource is not None,
+            "record_count": len(self.records),
+            "selected_count": self.selection.selected_count(),
+            "records": record_rows,
+            "preflight": {"level": "", "text": ""},
+            # 빈 값 표지·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값
+            # 확인을 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
+            "blank_fields": [], "drift": [], "name_tokens": [],
+            "filter": filter_snap, "table": table_snap,
+            "guard": guard_snap,
+            "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
+                     "reason": g.reason},
+            # 검토 요구는 **배제 선언**(지도 §10.15 판정 J): 작업대가 이미 레코드
+            # 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
+            # 키 부재로 갈라지지 않게 한다.
+            "review": review_payload(ReviewRequirement()),
+        })
+        return base
+
+    def _snapshot_without_vm(self, base: dict, jobs: list[Job]) -> dict:
+        # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
+        zone_indices = self._zone_indices()
+        record_rows = self._record_rows(zone_indices, [])
+        filter_snap, table_snap, guard_snap = self._filter_sections(
+            zone_indices, record_rows
+        )
+        g = prework_gate(
+            has_data=self.datasource is not None,
+            selected_count=self.selection.selected_count(),
+            # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
+            # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
+            # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
+            has_candidates=bool(base["candidates"]["top"]),
+        )
+        # **미상 매체는 「작업 미선택」이 아니다**: 작업은 골라져 있고(`has_job`) 실행
+        # 표면만 없다. prework 문안("먼저 문서 작업을 선택하세요")을 그대로 쓰면 이미
+        # 고른 사람에게 이행 불가능한 지시를 주고, 화면은 「작업 있음」과 「없음」을
+        # 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
+        unsup_job = (
+            next((j for j in jobs if j.name == self.job_name), None)
+            if self.job_unsupported else None
+        )
+        utpath = unsup_job.template_path if unsup_job is not None else ""
+        if self.job_unsupported:
+            # 막는 축은 템플릿이다 — 게이트 문안·사유는 링1 단일 산출(P2-24).
+            g = unsupported_media_gate()
+        # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
+        # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
+        umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
+        base.update({
+            "template_name": Path(utpath).name if utpath else "",
+            "template_path": utpath,
+            "filename_pattern": "",
+            "template_missing": umissing,
+            "conn_label": uconn,
+            "has_data": self.datasource is not None,
+            "record_count": len(self.records),
+            "selected_count": self.selection.selected_count(),
+            "records": record_rows,
+            "preflight": {"level": "", "text": ""},
+            "blank_fields": [], "drift": [], "name_tokens": [],
+            "filter": filter_snap, "table": table_snap,
+            "guard": guard_snap,
+            # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
+            "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
+                     "reason": g.reason},
+            # 작업이 없으면 검토할 규칙이 없다 — 뼈대만 실어 표면이 키 부재로
+            # 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
+            "review": review_payload(ReviewRequirement()),
+        })
+        return base
+
+    def _snapshot_hwpx(self, base: dict) -> dict:
+        assert self.vm is not None
         job = self.vm.job
         # S6-05(#812) 의미 3 파생 전환: bool(authority_id) 는 slotless 발급 작업까지 managed 로
         # 취급해 generate-once 트랩(#806 R1)의 곱 반대편 항이었다. managed 는 「materialization
@@ -1632,7 +1560,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             verdict = self._template_change.generation_provenance_verdict(self.job_name)
             if verdict != "EXECUTION_ALLOWED":
                 configuration_gate = GateState(
-                    False, "warn", _ADMISSION_REJECT_TEXT[verdict], reason=verdict,
+                    False, "warn", ADMISSION_REJECT_TEXT[verdict], reason=verdict,
                 )
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_notice=req, mapped=run_mapped,
@@ -1666,19 +1594,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 문안은 `_template_conn` 단일 출처이고, 이 축이 **재연결 도달 보장**을 진다
         # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
         tmissing, tconn = _template_conn(job.template_path)
-        # 템플릿 변경 존(S3-09) — 판정·token·epoch 전부 코디네이터 소유(링2 재조립 금지).
-        self._seat_template_change_zone(base, job.media, tmissing)
-        # S4 Working Slot Configuration 존(SX-02 #725) — projection·token·상태 전부 Product 소유
-        # (링2 재조립 금지). fresh current view 를 매 스냅샷 조회한다: open 은 무변이라 늘 fresh
-        # view+새 token 을 낸다(F1/F2 fence). preserved/broken/detached 분리는 projection 이 이미 진다.
-        slot_zone = self._slot_configuration_zone(tmissing)
-        base["slot_configuration"] = slot_zone
-        # Selection Preset 목록 존(S9-03 #829) — 같은 지원 조건에서 함께 선다. 손상 항목은
-        # 숨기지 않고 함께 실려 표면이 비활성 + 사유 병기로 재진술한다. 노출 술어(U4 13번)는
-        # 「지금 저장할 선택이 있는가」를 함께 묻는다 — 그 사실은 방금 세운 slot 존이 든다.
-        base["content_presets"] = self._content_presets_zone(
-            tmissing, savable_selection=self._savable_selection(slot_zone)
-        )
+        self._seat_configuration_zones(base, job.media, tmissing)
         # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
@@ -1727,7 +1643,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "reason": status.gate.reason,
             },
             # 검토 요구(F5) — 비차단 고지의 재료이고, 문안은 사전검증이 이미 실었다.
-            "review": self._review_payload(req),
+            "review": review_payload(req),
             # **규칙의 지문**도 실행 입력의 정체다(6R P2). 결과가 「지금 결과」로 남으려면
             # 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서 매핑·파일 이름을 고치고
             # 돌아오면 재적재(`_reload_active_job`)가 규칙을 갈아 끼우는데, 세션 지문에 규칙이
@@ -3403,7 +3319,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         run_now = now if now is not None else self._clock()
         if overwriting and not confirm_overwrite:
             self._arm_overwrite_now_pin(run_now)
-            return _needs_overwrite_result(
+            return overwrite_response(
                 total=len(prep.record_preparation.ordered_model_indices),
                 conflict_names=[Path(name).name for name in overwriting],
             )
@@ -3507,7 +3423,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if isinstance(exc, SlotlessRunAdmissionError):
                 return {
                     "ok": False, "level": "warn",
-                    "error": _ADMISSION_REJECT_TEXT.get(
+                    "error": ADMISSION_REJECT_TEXT.get(
                         exc.code, "생성을 진행할 수 없습니다."
                     ),
                 }
@@ -3554,7 +3470,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 이 판정이 쓴 시각을 핀으로 남긴다(#957): 확인 재호출이 같은 시각으로 다시
             # 계획해야 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 갈리지 않는다.
             self._arm_overwrite_now_pin(now)
-            return _needs_overwrite_result(
+            return overwrite_response(
                 total=len(indices),
                 conflict_names=[Path(p).name for p in decision.conflicts],
             )
@@ -3578,9 +3494,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
             # 지도 §10.10 판정 C. 결과 구획으로 회수한다(브리지 rejection 으로 새지 않게).
             self._last_failed = list(indices)
-            return self._failed_result(
-                indices, plan.out_dir,
-                str(outcome.error) or outcome.error.__class__.__name__,
+            return failed_result(
+                indices=indices,
+                out_dir=plan.out_dir,
+                message=str(outcome.error) or outcome.error.__class__.__name__,
+                failed_indices=self._last_failed,
+                revisions=self._run_revisions,
             )
 
         # 완료 이벤트 = 가드 무장 해제(결정 27) — **완주**(전건 성공)만이다(고효율 리뷰
@@ -3597,149 +3516,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 self._last_generated = None
             run_vm.job = outcome.stamped_job
 
-        cancelled = outcome.cancelled
-        if cancelled:
-            summary = (
-                f"중단했습니다. 완료 {outcome.attempted}/{outcome.total}건"
-                f"(성공 {outcome.succeeded}, 실패 {outcome.failed}), "
-                f"미착수 {outcome.unstarted}건. 완료된 문서는 그대로 유지됩니다."
-            )
-        else:
-            summary = (
-                f"완료. 성공 {outcome.succeeded}/{outcome.total}, 실패 {outcome.failed}."
-            )
-        if blanks:
-            summary += f" 빈 값 표시 필드 {len(blanks)}개({', '.join(blanks)})."
-        if outcome.stamp_error:
-            # 기록 실패의 loud surface(confirm-or-alarm) — 문서는 이미 만들어졌으므로
-            # 완료 서사를 날리지 않고 사유를 완료 요약에 병기한다.
-            summary += (
-                " 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다"
-                f"({outcome.stamp_error})."
-            )
-        # 실패 항목은 **구조화**해 넘긴다(§10.10 판정 E) — 파일명만으로 부르면 "어느
-        # 행인가"를 사용자가 표에서 되찾아야 한다. 원본 index 는 「실패한 N건만 선택」의
-        # 입력이기도 하다(판정 F). ``outcome.results`` 는 ``plan.records`` 와 같은 순서이고
-        # 그 순서는 ``indices`` 다(build_generation_plan 이 같은 리스트로 짓는다).
-        failures = self._failure_rows(indices, list(outcome.results))
-        self._last_failed = [f["index"] for f in failures]
-        # 채움 완화 사실(#154)은 완료 표면에 시끄럽게 — 파괴적 의미론(인라인 요소
-        # 제거·값 런 합성)이 무경고면 조용한 데이터 손실이다(confirm-or-alarm).
-        # 템플릿 구조 속성이라 레코드 수와 무관하게 한 번씩(순서 보존 dedupe).
-        fill_notes = [
-            describe_fill_note(n)
-            for n in dict.fromkeys(
-                n for r in outcome.results if r.ok for n in r.notes
-            )
-        ]
-        if fill_notes:
-            summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
-        return {
-            "ok": True,
-            "status": outcome.status,
-            "title": _run_title(
-                outcome.status, cancelled, outcome.succeeded, outcome.failed
-            ),
-            # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
-            # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
-            "stage": "",
-            "message": "",
-            "known": True,
-            "summary": summary,
-            "level": (
-                "warn" if cancelled
-                else (
-                    "ok" if outcome.failed == 0 and not outcome.stamp_error
-                    else "danger"
+        results = list(outcome.results)
+        failures = failure_rows(
+            records=self.records,
+            indices=indices,
+            results=results,
+            filename_source_columns=(
+                self._filename_source_columns()
+                if any(
+                    not result.ok
+                    for _index, result in zip(indices, results, strict=False)
                 )
+                else []
             ),
-            "out_dir": plan.out_dir,
-            "succeeded": outcome.succeeded,
-            "failed": outcome.failed,
-            # 「실패한 N건만 선택」의 노출·라벨은 **이 수치**가 정한다(1R P2): 실패 행
-            # 목록에서 파생하면, 행 없이 전량이 실패하는 런(배치 진입 전 실패)에서 복구
-            # 행동이 통째로 숨는다 — 뒤에 선택을 바꾸면 대상 집합을 되찾을 길이 없다.
-            # index 를 Python 이 소유하기로 한 이상(판정 F) 그 개수도 Python 이 낸다.
-            "failed_selectable": len(self._last_failed),
-            "total": outcome.total,
-            "failures": failures,
-            "fill_notes": fill_notes,
-            "cancelled": cancelled,
-            "attempted": outcome.attempted,
-            "unstarted": outcome.unstarted,
-            "revisions": dict(self._run_revisions),
-        }
-
-    def _failure_rows(self, indices: "list[int]", results: list) -> "list[dict]":
-        """실패 레코드 = 원본 index + 식별 요약 + 실파일명 + 사유(+원인 확정 여부).
-
-        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.domain.identity_summary.identity_summary`,
-        결정 37)를 재사용한다 — 표 「문서」 열과 **같은 판정**이라 사용자가 결과에서 본
-        이름으로 표에서 그 행을 찾는다(§10.10 판정 E: 어느 열로 부를지 재구현 금지).
-        ``results`` 는 취소 런에서 ``indices`` 보다 짧다 — zip 이 짧은 쪽에서 멈추는 것이
-        곧 "시도한 것만 결과가 있다"는 뜻이다(미착수는 실패가 아니다).
-        """
-        # strict=False 는 의도다(위 문단) — 취소 런의 짧은 results 가 정상 입력이다.
-        pairs = [(i, r) for i, r in zip(indices, results, strict=False) if not r.ok]
-        if not pairs:
-            return []
-        isum = identity_summary(
-            self.records, filename_tokens=self._filename_source_columns()
         )
-        rows = []
-        for i, res in pairs:
-            reason, known = classify_result_error(res.error)
-            rows.append({
-                "index": i,
-                "identity": (
-                    isum.display_for(self.records[i])
-                    if 0 <= i < len(self.records) else ""
-                ),
-                "filename": Path(res.output_path).name,
-                "reason": reason,
-                "known": known,
-            })
-        return rows
-
-    def _failed_result(self, indices: "list[int]", out_dir: str, message: str) -> dict:
-        """배치 진입 전 실패 → ``failed`` 태 결과(§10.10 판정 C).
-
-        계약 §10.3 이 요구하는 것을 그대로 싣는다: **실패 단계·영향 레코드·받은 메시지**
-        와 원인 확정 여부. 원인을 꾸며내지 않으므로 아는 패턴이 없으면 ``known=False`` 로
-        표면이 「원인 진단 미연결」을 세운다. ``ok=True`` 인 이유: 이것은 게이트 거절
-        (실행하지 않음)이 아니라 **실행하다 실패**라서 결과 구획의 소관이다.
-
-        ``failures`` 는 비어 있다 — 레코드별 시도가 없었으므로 행별 사유를 지어내지
-        않는다. 영향 레코드는 수치(``failed``·``failed_selectable``)와 복구 행동으로
-        나른다: 행이 없다고 「실패한 N건만 선택」까지 숨으면 전량 실패에서 대상 집합을
-        되찾을 길이 사라진다(1R P2).
-        """
-        reason, known = classify_result_error(message)
-        n = len(indices)
-        return {
-            "ok": True,
-            "status": "failed",
-            "title": _run_title("failed", False, 0, n),
-            "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
-            "level": "danger",
-            "stage": "생성 시작 전",
-            "message": reason,
-            "known": known,
-            "out_dir": out_dir,
-            "succeeded": 0,
-            "failed": n,
-            "failed_selectable": len(self._last_failed),
-            "total": n,
-            "failures": [],
-            "fill_notes": [],
-            "cancelled": False,
-            "attempted": 0,
-            "unstarted": n,
-            # 계약 §10.3 이 원인 미확정 화면에 **명시적으로** 요구하는 증거다("사용한
-            # Template·Binding 판본") — 원인을 모를수록 아는 사실을 빠짐없이 대야 한다.
-            "revisions": dict(self._run_revisions),
-        }
-
+        self._last_failed = [failure["index"] for failure in failures]
+        return generation_result(
+            outcome,
+            blanks=blanks,
+            failures=failures,
+            failed_indices=self._last_failed,
+            out_dir=plan.out_dir,
+            revisions=self._run_revisions,
+        )
     # ----------------------------------- S4 Working Slot Configuration(SX-02 #725)
     # 4개 command 는 전부 **dispatch 경로**다(직접 브리지 아님). work_ref 는 세션의 현재 작업
     # (payload 에 없음, template_check 선례). configuration_token 은 opaque(프런트가 직전 응답의 새
@@ -3768,6 +3567,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "refresh_required": False,
             "error": None,
         }
+    def _seat_configuration_zones(
+        self, base: dict, media: str, tmissing: bool
+    ) -> None:
+        """Seat template change, slot configuration, then presets in one order."""
+        self._seat_template_change_zone(base, media, tmissing)
+        slot_zone = self._slot_configuration_zone(tmissing)
+        base["slot_configuration"] = slot_zone
+        base["content_presets"] = self._content_presets_zone(
+            tmissing, savable_selection=self._savable_selection(slot_zone)
+        )
 
     def _seat_template_change_zone(self, base: dict, media: str, tmissing: bool) -> None:
         """스냅샷의 ``template_change`` 존 + ``source_drift`` 표식을 앉힌다(매체 무관).
@@ -3904,179 +3713,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
 
     def _serialize_observation(self, observation) -> dict:
-        """`DocumentCreationWorkbenchObservation | ...ContextError` → JSON-safe dict(재판정 0).
-
-        context error 는 user-fixable blocker 로 낮추지 않는다(kind=context_error, user_fixable=False).
-        observation 은 blocker/primary_action/disabled_reason/deep-link + 이미 판정된 execution
-        verdict(admission/readiness) + 7상태(code+phrase)를 성형한다. R2(#740): currentness 축은
-        7상태(CURRENT/STALE)로 흡수돼 별도 키가 없다.
-        """
-        code, phrase = self._workbench_observation.execution_status(
+        """Keep the existing controller seam while delegating pure JSON projection."""
+        execution_status = self._workbench_observation.execution_status(
             orchestration=self._session_orchestration,
             fresh_observation=self._last_fresh_observation,
         )
-        if isinstance(observation, DocumentCreationWorkbenchContextError):
-            return {
-                "kind": "context_error",
-                "code": observation.code,
-                "detail": observation.detail,
-                "user_fixable": observation.user_fixable,
-                "primary_action": observation.primary_action,
-                "execution_status_code": code,
-                "execution_status_phrase": phrase,
-                # 복구 동사(#912 D4). 종전에는 context error 가 danger 문안만 내고 그것을
-                # 지울 동사가 화면에 없었다 — `refresh_observation` 은 registry·핸들러 양쪽에
-                # 있었는데 프런트 호출자가 0 인 단방향 배선이었다. 언제나 활성인 이유: 다시
-                # 관찰하는 것은 어느 실패에서든 시도할 수 있고, 실패하면 조용히 유지하지 않고
-                # 새 context error 로 교체된다(`_do_refresh_observation`).
-                "recover_action": {
-                    "label": "\ub2e4\uc2dc \ud655\uc778",
-                    "enabled": True,
-                    "disabled_reason": None,
-                },
-                "create_action": {
-                    "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
-                    "enabled": False,
-                    "disabled_reason": phrase,
-                },
-            }
-        return {
-            "kind": "observation",
-            "primary_action": observation.primary_action,
-            "primary_action_enabled": observation.primary_action_enabled,
-            "disabled_reason": observation.disabled_reason,
-            # 확인 축이 화면에 서 있는 동안(NO_EVIDENCE/CHECKING/STALE) 그것을 지울 동사를
-            # **언제나** 싣는다(#912 D1). 종전에는 Primary Action 이 RESOLVE_EXECUTION 일 때만
-            # 실었는데, 데이터·레코드처럼 앞선 blocker 가 하나라도 있으면 그 조건이 거짓이 돼
-            # 「현재 설정을 확인해야 합니다」가 지울 수단 없이 화면에 남았다. 활성 여부는 링1 이
-            # 판정한다(재조립 0).
-            "execution_action": (
-                {
-                    "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
-                    "enabled": observation.resolve_execution_disabled_reason is None,
-                    "disabled_reason": observation.resolve_execution_disabled_reason,
-                }
-                if code in _EXECUTION_RESOLVABLE_STATUS_CODES
-                else None
-            ),
-            "create_action": {
-                "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
-                "enabled": observation.create_documents_enabled,
-                "disabled_reason": observation.create_documents_disabled_reason,
-            },
-            "blockers": list(observation.blockers),
-            "deep_link_targets": [
-                {"blocker_code": t.blocker_code, "route": t.route}
-                for t in observation.deep_link_targets
-            ],
-            "execution_status_code": code,
-            "execution_status_phrase": phrase,
-            "materialization_readiness": observation.materialization_readiness,
-            "admission": {
-                "state": observation.admission.state,
-                "reasons": list(observation.admission.reasons),
-            },
-            # S6-05(#812): 세션 실행 증거 — 부차 키(Primary Action·문안을 결정하지 않는다).
-            "historical_outcome": (
-                {
-                    "outcome_kind": observation.historical_outcome.outcome_kind,
-                    "observed_at": observation.historical_outcome.observed_at,
-                }
-                if observation.historical_outcome is not None
-                else None
-            ),
-            "active_field_requirement_ids": list(observation.active_field_requirement_ids),
-            # U3-03(#876): 「입력이 필요한 항목」은 **조치가 필요한 항목만** 싣는다. 링1 의
-            # ``input_requirements`` 는 현재 활성 누름틀 전건의 분류표라 그대로 실으면 손댈 것이
-            # 없는 상태에서도 구획이 상시로 뜬다. 술어는 링1 이 이미 소유한 ``action_required``
-            # 를 그대로 쓴다 — 여기서 분류값(BROKEN 등)을 재해석하지 않는다. 표시 필터는 이
-            # 한 자리뿐이고, 프런트는 실린 항목을 그대로 그린다(0건이면 구획을 안 세운다).
-            "input_requirements": [
-                {
-                    "field_id": item.field_id,
-                    "display_label": item.display_label,
-                    "binding_state": item.binding_state,
-                    "action_required": item.action_required,
-                    "exact_target": item.exact_target,
-                }
-                for item in observation.input_requirements
-                if item.action_required
-            ],
-            "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
-            "record_validation": {
-                "validated_count": observation.record_validation.validated_count,
-                "blocked_count": observation.record_validation.blocked_count,
-                "issue_count": observation.record_validation.issue_count,
-                "issues": [
-                    {
-                        "record_identity": issue.record_identity,
-                        "record_display_locator": issue.record_display_locator,
-                        "field_id": issue.field_id,
-                        "field_display_label": issue.field_display_label,
-                        "message": issue.message,
-                        "recovery_target": asdict(issue.recovery_target),
-                    }
-                    for issue in observation.record_validation.issues
-                ],
-                # 비차단 축(#957) — blocker 와 **다른 키**로 싣는다. 프런트가 하나의
-                # 목록으로 합치면 "막힌다"와 "알린다"가 같은 자리에서 같은 색이 된다.
-                "advisory_count": observation.record_validation.marked_value_count,
-                "advisory_notice": _record_advisory_notice(observation.record_validation),
-                "advisories": [
-                    {
-                        "code": advisory.code,
-                        "field_id": advisory.field_id,
-                        "marked_record_count": advisory.marked_record_count,
-                    }
-                    for advisory in observation.record_validation.advisories
-                ],
-            },
-            "run_delivery_intent": (
-                {
-                    "output_directory": observation.run_delivery_intent.output_directory,
-                    "collision_policy": observation.run_delivery_intent.collision_policy,
-                }
-                if observation.run_delivery_intent is not None
-                else None
-            ),
-            "delivery": {
-                "resolvable": observation.delivery.resolvable,
-                "planned_documents": [
-                    {
-                        "record_identity": item.record_identity,
-                        "item_ordinal": item.item_ordinal,
-                        "relative_path": item.relative_path,
-                        "collision_disposition": item.collision_disposition,
-                    }
-                    for item in observation.delivery.planned_documents
-                ],
-                "blockers": [
-                    {
-                        "code": blocker.code,
-                        "message": blocker.message,
-                        "item_ordinal": blocker.item_ordinal,
-                        "field_id": blocker.field_id,
-                        "conflicting_relative_path": blocker.conflicting_relative_path,
-                    }
-                    for blocker in observation.delivery.blockers
-                ],
-            },
-            # 사용자 문안 축(vocabulary 정본 — 내부어 0).
-            "content_section_label": observation.content_section_label,
-            "input_requirements_label": observation.input_requirements_label,
-            "delivery_label": observation.delivery_label,
-            # 이미 정한 것 요약.
-            "active_work": {
-                "active": observation.active_work.active,
-                "work_ref": observation.active_work.work_ref,
-            },
-            "data_scope": {
-                "mounted": observation.data_scope.mounted,
-                "selected_record_count": observation.data_scope.selected_record_count,
-                "total_record_count": observation.data_scope.total_record_count,
-            },
-        }
-
+        return serialize_observation(observation, execution_status=execution_status)
     def _require_slot_configuration(self) -> None:
         if self._slot_configuration is None:
             raise ValueError("문서 구성 기능이 조립되지 않았습니다")
@@ -4501,50 +4143,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             )
         return generation, indices, captured
 
-    @staticmethod
-    def _record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
-        for requirement in plan.active_field_requirements:
-            if requirement.get("field_id") != field_id:
-                continue
-            value_expression = requirement.get("value_expression")
-            if isinstance(value_expression, Mapping):
-                source_key = value_expression.get("source_key")
-                if isinstance(source_key, str) and source_key:
-                    return source_key
-        raise _CurrentRecordCaptureError("문제 데이터의 원본 항목을 확인할 수 없습니다.")
-
-    def _record_issue(
-        self,
-        *,
-        plan: SealedExecutionPlanValue,
-        blocker: RecordValidationBlocker,
-        generation: int,
-        model_index: int,
-        record_identity: str,
-    ) -> RecordValidationIssue:
-        if not isinstance(blocker.field_id, str):
-            raise _CurrentRecordCaptureError("문제 데이터의 필드를 확인할 수 없습니다.")
-        message = _RECORD_BLOCKER_PHRASES.get(blocker.code)
-        if message is None:
-            raise _CurrentRecordCaptureError("데이터 문제를 사용자 문안으로 표시할 수 없습니다.")
-        source_key = self._record_source_key(plan, blocker.field_id)
-        columns = self.filter.columns if self.filter is not None else []
-        target = RecordRecoveryTarget(
-            snapshot_generation=generation,
-            record_identity=record_identity,
-            model_index=model_index,
-            field_id=source_key,
-            target_kind='cell' if source_key in columns else 'row',
-        )
-        return RecordValidationIssue(
-            record_identity=record_identity,
-            record_display_locator=f"데이터 {model_index + 1}행",
-            field_id=blocker.field_id,
-            field_display_label=source_key,
-            message=message,
-            recovery_target=target,
-        )
-
     def _current_record_validation(
         self,
     ) -> tuple[RecordValidationSummary, WorkbenchContextIntegrity | None]:
@@ -4578,12 +4176,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 plan=plan,
                 raw_records=raw_records,
                 project_issue=lambda blocker, model_index, record_identity: (
-                    self._record_issue(
+                    record_issue(
                         plan=plan,
                         blocker=blocker,
                         generation=generation,
                         model_index=model_index,
                         record_identity=record_identity,
+                        columns=self.filter.columns if self.filter is not None else [],
                     )
                 ),
             )

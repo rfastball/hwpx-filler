@@ -12,9 +12,60 @@ dead guard)이 그 사각에서 시그널 없이 썩은 실증이다(RC-28). 저
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
+from ..domain.job import Job
 from ..domain.mapping import MappingProfile
+from .mapping_state import profile_source_vocabulary
 from .run_state import unresolved_name_tokens_in
+
+
+EMPTY_PRESERVED: dict[str, object] = {
+    "tags": {},
+    "last_run_at": "",
+    "group": "",
+    "favorited_at": "",
+    "reviewed_rules": {},
+    "authority_id": "",
+}
+
+
+def preserved_meta(job: Job) -> dict[str, object]:
+    """Return the durable metadata that editor saves carry forward."""
+    return {
+        "tags": dict(job.tags),
+        "last_run_at": job.last_run_at,
+        "group": job.group,
+        "favorited_at": job.favorited_at,
+        "reviewed_rules": dict(job.reviewed_rules),
+        "authority_id": job.authority_id,
+    }
+
+
+def build_provenance(
+    *,
+    template_path: str,
+    template_field_names: list[str] | None,
+    profile: MappingProfile,
+    dataset_name: str,
+    loaded_provenance: dict[str, str],
+    now: datetime,
+) -> dict[str, str]:
+    """Build editor provenance while retaining the original authored time."""
+    timestamp = now.isoformat(timespec="seconds")
+    provenance = {
+        "template": template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
+        "authored_at": loaded_provenance.get("authored_at") or timestamp,
+        "updated_at": timestamp,
+    }
+    if template_field_names is not None:
+        provenance["template_fields"] = " · ".join(template_field_names)
+    source_keys = profile_source_vocabulary(profile)
+    if source_keys:
+        provenance["source_keys"] = " · ".join(source_keys)
+    if dataset_name:
+        provenance["dataset"] = dataset_name
+    return provenance
 
 # ── 연결 확정 대기(#911) ────────────────────────────────────────────────────────────────
 # 「변경 저장」과 **다른 동사**다. 관리 검토가 연결 확정을 요구하는데 매핑이 이미 옳으면

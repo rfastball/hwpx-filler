@@ -82,16 +82,17 @@ from ..gui.edit_session import (
 )
 from ..gui.job_editor_state import (
     BINDING_CONFIRM_LABEL,
+    EMPTY_PRESERVED,
     NAME_DERIVED_HINT,
+    build_provenance,
     derive_job_name,
     needs_overwrite_confirm,
     overwrite_confirm_text,
+    preserved_meta,
     validate_save,
 )
 from ..gui.mapping_state import (
-    NO_SOURCE_LABEL,
     RAW_BLOCK_MESSAGE,
-    SPECIAL_SOURCE_LABEL,
     MappingModel,
     PartialGate,
     gate_for_template,
@@ -103,8 +104,12 @@ from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
-from ..domain.output_name import format_seq_token
-from ..naming import make_output_filename, pattern_uses_seq, seq_token_pads
+from .editor_presentation import (
+    binding_head,
+    data_column_options,
+    pattern_preview,
+    sample_rows,
+)
 from .output_folder_zone import output_folder_zone
 from .pool_column import session_data_row
 from .screens import (
@@ -129,23 +134,6 @@ _SAMPLE_ROWS = 3
 # TXT 판 RAW 차단 문안은 `screens.TXT_RAW_BLOCK` 단일 출처 — 재연결 게이트와 같은 판정
 # 같은 문안(리뷰 2R P1). 아래 import 로 이 모듈의 옛 소비자(테스트 포함)도 그대로 산다.
 
-# 이 화면이 **편집하지 않는** durable 메타 — 저장이 Job 을 새로 조립하므로 여기 열거되지
-# 않은 필드는 조용히 기본값으로 떨어진다. 태그·마지막 실행만 열거하던 시절 그룹이 실제로
-# 그렇게 소실됐다(편집 한 번에 좌 목록 구획이 「그룹 없음」으로 초기화). 필드를 늘릴 땐 이
-# 한 곳만 고치면 되도록 사전으로 모은다 — 즐겨찾기(슬라이스 2)가 같은 함정을 밟지 않게.
-_EMPTY_PRESERVED: "dict[str, object]" = {
-    "tags": {}, "last_run_at": "", "group": "", "favorited_at": "",
-    # 검토 기준선(재작성 F5)도 **비-편집 메타**다: 에디터가 소유하는 것은 규칙(템플릿·매핑·
-    # 파일명)이고, "마지막 완주가 그중 무엇을 썼는가"는 실행 이력의 일이다. 안 되싣으면
-    # 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비어(§13-2 의 조용한 반복이 깨지고)
-    # 다음 실행이 가장 무거운 검토를 다시 요구한다(3R P2).
-    "reviewed_rules": {},
-    # S3 권위 Work identity(S3-09) — 에디터가 소유하는 것은 규칙이고 identity 결속은
-    # 템플릿 변경 코디네이터의 일이다. 안 되싣으면 규칙 저장 한 번이 작업의 적용
-    # 이력(epoch·Preparation)을 조용히 끊는다.
-    "authority_id": "",
-}
-
 
 #: 풀 seam 미배선(테스트 단독 구동·비완전 조립)의 거절 문구 — 없는 표면을 있다고 말하지
 #: 않는다. 제품 조립은 늘 배선돼 있어 이 문구는 오배선의 신호다.
@@ -169,37 +157,6 @@ PROVENANCE_DRIFT_TEXT = (
 )
 
 
-#: 연번 예시의 이름 구분자 — 이름 기본값과 **같은 글자**다(문장 안 em dash 금지, §3-1).
-_EXAMPLE_SEPARATOR = " · "
-
-
-def _sequence_example(first: str, pattern: str) -> str:
-    """첫 이름 + **연번 자리의 다음 두 값**(순수) — ``X-001.hwpx · 002 · 003``.
-
-    이 규칙이 만드는 것은 파일 하나가 아니라 여러 건이고, 첫 이름만 보면 「번호가 어디에
-    붙는가」를 모른 채 저장한다. 그래서 뒤 둘을 잇는다.
-
-    **판정도 서식도 패턴이 낸다**(리뷰 5): 연번이 있는지는
-    :func:`~hwpxfiller.naming.pattern_uses_seq`(토큰 판정기 단일 출처)가 답하고, 붙는 모양은
-    그 토큰의 폭(:func:`~hwpxfiller.domain.output_name.format_seq_token`)이 답한다. 종전에는
-    만들어진 이름 셋의 공통 앞·뒤를 걷고 숫자 자리를 되감아 「달라지는 부분」을 유추했는데,
-    그 휴리스틱은 **연번에 붙어 있는 데이터 값**을 연번으로 오인한다 —
-    ``A{{연도}}{{seq}}`` 는 ``A20261.hwpx · 20262 · 20263`` 이 되어 연도가 매 건 바뀐다고
-    말한다(값이 그대로인데). 토큰이 아는 것을 문자열에서 되추측하지 않는다.
-
-    seq 토큰이 없으면 **첫 이름 하나**만 낸다: 없는 연번을 있는 것처럼 그리면 실제로는
-    이름 셋이 충돌하는 자리를 정상으로 보이게 한다.
-    """
-    if not first or not pattern_uses_seq(pattern):
-        return first
-    pads = seq_token_pads(pattern)
-    # 폭은 **첫 토큰**의 것이다 — 한 패턴에 seq 가 둘 이상이면 같은 값이 같은 폭으로 두 번
-    # 박히므로 어느 쪽을 읽어도 같고, 없으면 폭 0(``{{seq}}``)이다.
-    pad = pads[0] if pads else None
-    tails = [format_seq_token(pad, n) for n in (2, 3)]
-    return _EXAMPLE_SEPARATOR.join([first, *tails])
-
-
 def _binding_source_ref(job: "Job") -> "dict | None":
     """저장본의 데이터 결속을 **인계 참조 한 벌**로 — 미결속이면 ``None``.
 
@@ -213,25 +170,6 @@ def _binding_source_ref(job: "Job") -> "dict | None":
         return None
     path, sheet, header_row, kind = data_binding_of(job)
     return {"path": path, "sheet": sheet, "header_row": header_row, "kind": kind}
-
-
-def _preserved_meta(job: "Job") -> "dict[str, object]":
-    """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기·검토 기준선).
-
-    이 목록이 **완전한지**는 산문이 아니라 구조 가드가 답한다
-    (``test_job_editor_state`` 의 durable 필드 분류 가드): durable Job 필드는 저장이
-    **다시 짓거나**(편집 대상) **보존하거나**(비-편집 메타) 둘 중 하나여야 하고, 새 필드가
-    어느 쪽인지 선언되지 않으면 테스트가 실패한다. 그룹(슬라이스 2)·검토 기준선(F5 3R)이
-    같은 자리에서 조용히 사라졌다 — 두 번 같은 결함이면 목록이 아니라 규율이 문제다.
-    """
-    return {
-        "tags": dict(job.tags),
-        "last_run_at": job.last_run_at,
-        "group": job.group,
-        "favorited_at": job.favorited_at,
-        "reviewed_rules": dict(job.reviewed_rules),
-        "authority_id": job.authority_id,
-    }
 
 
 class EditorController:
@@ -370,10 +308,10 @@ class EditorController:
         # (dataset_name·default_dataset_ref·_dataset_existing 은 #347 에서 사망 — 저장 시
         #  데이터 자동등록(#18·#26)과 작업↔데이터 결속(#53-A)이 U2 §5.3 판정 D 로 폐기됐다.
         #  등록은 데이터 선택 면의 「이 데이터 고정」 명시 행동 하나다.)
-        # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(:func:`_preserved_meta`) —
+        # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(`preserved_meta`) —
         # 편집 저장이 브라우저 태그·이력·구획·순위를 조용히 소실시키지 않는다.
         self._editing_origin = ""
-        self._preserved_meta: "dict[str, object]" = dict(_EMPTY_PRESERVED)
+        self._preserved_meta: "dict[str, object]" = dict(EMPTY_PRESERVED)
         # 로드 시점 작업 내용 지문(태그·마지막 실행 제외) — 자기-갱신 저장이 편집 중
         # 외부 변경을 무확인으로 덮지 않게 하는 근거(_do_save 확인 게이트).
         self._editing_fingerprint = ""
@@ -933,10 +871,10 @@ class EditorController:
             "source_fields": self.source_fields,
             # 데이터 열 select 의 항목 전수(U6-C #977) — 실 열 + 특수 항목 3개. 특수 항목은
             # 열 이름 공간에 얹지 않고 `kind` 로 갈린다(웹이 그 값으로 발행 액션을 가른다).
-            "data_column_options": self._data_column_options(),
+            "data_column_options": data_column_options(self.source_fields),
             # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
-            "sample_rows": self._sample_rows(),
+            "sample_rows": sample_rows(self.source_fields, self.records, _SAMPLE_ROWS),
             "name": self.job_name,
             # 지금 이름이 도출값인가(U6-D #978) — 힌트가 서는 조건이자 재도출의 조건이다.
             # 웹이 「이름이 {템플릿} · {데이터} 와 같은가」로 되유추하면 사람이 우연히 같은
@@ -966,7 +904,7 @@ class EditorController:
             "editing_origin": self._editing_origin,
             # (작성 출처 `provenance` 스냅샷 키는 U6-E(#979)에서 퇴역했다 — 고르기 존 아래의
             #  「작성 출처」 블록이 걷히며 소비자가 0 이 됐다. **생산은 그대로 산다**: 저장
-            #  경로가 `_build_provenance` 로 mapping 에 찍고, 그 값은 durable 이라 편집 재저장의
+            #  경로가 `build_provenance` 로 mapping 에 찍고, 그 값은 durable 이라 편집 재저장의
             #  최초 작성시각 보존(`_loaded_provenance`)도 불변이다.)
             # 고르기 단계의 **연결 카드**(U6-B #976) — 좌·우에서 하나씩 고른 결과를 한 줄로
             # 재진술하고 전진 게이트의 사유를 함께 싣는다. 목록 자체는 여기 없다: 좌 열은
@@ -978,9 +916,12 @@ class EditorController:
             # 만들지 않으므로 그 단계에 서 있어도 보여줄 이름이 없다: 계산하면 화면이 만들지
             # 않을 파일의 이름을 예시로 말한다.
             "pattern_preview": (
-                self._pattern_preview()
+                pattern_preview(
+                    self.pattern, self.model, self.records, self._clock()
+                )
                 if self.section == SECTION_FILENAME
                 and template_media(self.template_path) != "txt"
+                and self.pattern
                 else ""
             ),
             "notice": (
@@ -1004,61 +945,12 @@ class EditorController:
             snap["preview_count"] = len(self.records)
             snap["is_complete"] = self.model.is_complete()
             snap["schema_only"] = schema_only
-            snap["binding_head"] = self._binding_head()
+            snap["binding_head"] = binding_head(self.model)
         else:
             snap["rows"] = []
             snap["is_complete"] = False
-            snap["binding_head"] = self._binding_head()
+            snap["binding_head"] = binding_head(self.model)
         return snap
-
-    def _data_column_options(self) -> "list[dict]":
-        """데이터 열 select 의 항목 전수 — 실 열 + 특수 항목 2개(U6-C #977).
-
-        ``kind`` 가 곧 **발행할 액션**이다: ``column``→``set_source`` ·
-        ``const``/``today``→``set_display`` · ``none``→결속 해제.
-        특수 항목을 소스 값으로 실어 보내지 않는 이유는 리뷰 R5 그대로다 — 같은 이름의 실
-        열이 있으면 그 열을 영영 못 겨눈다. 그래서 값의 이름 공간을 접두로 가른다.
-        """
-        options: "list[dict]" = [
-            {"value": "", "label": NO_SOURCE_LABEL, "kind": "none", "field": ""},
-        ]
-        options.extend(
-            {"value": f"col:{name}", "label": name, "kind": "column", "field": name}
-            for name in self.source_fields
-        )
-        options.extend(
-            {"value": f"sp:{kind}", "label": SPECIAL_SOURCE_LABEL[kind], "kind": kind,
-             "field": ""}
-            for kind in ("const", "today")
-        )
-        return options
-
-    def _binding_head(self) -> dict:
-        """2단계 머리 — pill 3개 + 일괄 승격 버튼의 **수치와 문안**(U6-C #977).
-
-        수치는 전부 링1 질의이고 문안도 여기서 완성해 보낸다: 「제안 n건 모두 확인」의 n 은
-        곧 이 동사가 실제로 확정할 행 수라 웹이 따로 세면 버튼이 약속과 다른 일을 한다.
-        승격할 것이 없을 때의 문안(``promoted_label``)이 두 갈래인 이유는 0 의 뜻이 둘이기
-        때문이다 — 다 확인한 0 과 애초에 제안이 없던 0 은 같은 문장으로 말할 수 없다.
-        """
-        model = self.model
-        if model is None:
-            return {
-                "suggested": 0, "needs_confirm": 0, "const": 0,
-                "promote_label": "", "promoted_label": "", "unused_columns": 0,
-            }
-        suggested = model.suggested_count()
-        return {
-            "suggested": suggested,
-            "needs_confirm": model.needs_confirm_count(),
-            "const": model.const_count(),
-            "promote_label": f"제안 {suggested}건 모두 확인",
-            "promoted_label": (
-                "제안을 모두 확인했습니다" if model.confirmed_count()
-                else "확인할 제안이 없습니다"
-            ),
-            "unused_columns": len(model.unused_source_fields()),
-        }
 
     def _output_folder_zone(self) -> "dict[str, str] | None":
         """3단계의 저장 폴더 존 — TXT 면 ``None``(폴더가 축이 아니다 · 리뷰 4).
@@ -1075,80 +967,11 @@ class EditorController:
             remembered_directory=remembered() if remembered is not None else "",
         )
 
-    def _pattern_preview(self) -> str:
-        """F26 — 파일명 패턴의 라이브 예시(표본 고정 = 첫 레코드, seq=1 + 연번 두 자리).
-
-        **실제 생성기와 같은 함수**(:func:`make_output_filename`)로 만들어 예시가 거짓말하지
-        않는다(별도 구현이면 예시·산출물이 조용히 어긋난다 — 단일 출처). 값은 현 매핑의
-        표본 첫 행 기준(데이터 없으면 필드 토큰 미치환 그대로 노출 = 정직). 표시 전용이라
-        실패는 빈 문자열(패턴 검증은 저장 게이트 소관).
-
-        **한 건이 아니라 연번을 보여준다**(U6-D #978 · 동결 시안 장면 3): 이 규칙이 만드는
-        것은 파일 하나가 아니라 여러 건이고, 첫 이름만 보면 「번호가 어디에 붙는가」를
-        모른 채 저장한다. 첫 이름은 실제 생성기가 만들고, 뒤 둘은 **seq 토큰 자체의 서식**이
-        낸다(:func:`_sequence_example`) — 프런트가 번호를 조립하면 seq 토큰이 없는 패턴에서도
-        「· 002 · 003」이 서서, 실제로는 이름 셋이 충돌하는 자리를 정상으로 그린다.
-        """
-        if not self.pattern:
-            return ""
-        data: "dict[str, object]" = {}
-        # 값과 이름이 **한 시각**을 말하게 1회만 찍는다(RC-02) — 본문의 「오늘 날짜」와
-        # 파일명 날짜 토큰이 예시 안에서 갈리면 예시가 거짓말한다.
-        now = self._clock()
-        if self.model is not None:
-            # 토큰 재료도 링1 하나다(U6-F #980) — 「문서 작업」 상세의 계획 한 줄이 같은
-            # 재료로 같은 이름을 말한다(두 곳이 각자 모으면 한쪽만 빈 값 갈래를 흘린다).
-            data = self.model.name_token_values(
-                self.records[0] if self.records else {}, now=now
-            )
-        try:
-            first = make_output_filename(self.pattern, data, seq=1, now=now)
-        except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
-            return ""
-        return _sequence_example(first, self.pattern)
-
     # (_default_dataset_snapshot(#53-A 기본 데이터 연결 상태 재진술)은 #347 에서 삭제 —
     #  작업↔데이터 결속이 폐기돼 재진술할 참조 자체가 없다. U2 §5.3 판정 D.)
 
     # (`_schema_summary`(나열식 필드 요약)는 U6-E(#979)에서 퇴역했다 — 그 문장의 승계처는
     #  항목 상세 시트의 필드 표 머리이고, 성형은 링1 `TemplateDetail.field_summary` 하나다.)
-
-    def _build_provenance(self, profile) -> "dict[str, str]":
-        """작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향, 실행 게이트는 여전히
-        라이브 검증). 최초 작성시각(authored_at)은 편집 재저장에도 보존하고 updated_at 만
-        갱신한다(태그·이력 보존 선례). 템플릿/데이터 스키마 지문은 ' · ' 결합 필드명."""
-        now = self._clock().isoformat(timespec="seconds")
-        created = self._loaded_provenance.get("authored_at") or now
-        prov: "dict[str, str]" = {
-            "template": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
-            "authored_at": created,
-            "updated_at": now,
-        }
-        if self.schema is not None:
-            prov["template_fields"] = " · ".join(self.schema.field_names())
-        src = profile_source_vocabulary(profile)
-        if src:
-            prov["source_keys"] = " · ".join(src)
-        # 데이터 표시명: 이번에 데이터를 골랐으면 **화면이 부르는 그 이름**(리뷰 7 — 등록명이
-        # 있으면 등록명), 아니면(편집 저장) 복원 출처 보존. 여기서 stem 을 따로 지으면 같은
-        # 세션이 화면과 출처 기록에서 데이터를 다른 이름으로 부른다.
-        dataset = (
-            self.data_display_name() if self.data_path
-            else self._loaded_provenance.get("dataset", "")
-        )
-        if dataset:
-            prov["dataset"] = dataset
-        return prov
-
-    def _sample_rows(self) -> "list[list[str]]":
-        """2단계 미리보기용 샘플 행 — source_fields 순서로 투영한 문자열 셀.
-
-        빈 셀은 ``""`` 로 남겨 렌더가 "(빈 값)"으로 시끄럽게 표기하게 한다(ADR-B).
-        """
-        return [
-            ["" if (v := rec.get(col)) is None else str(v) for col in self.source_fields]
-            for rec in self.records[:_SAMPLE_ROWS]
-        ]
 
     def _session_detail(self) -> dict:
         """게이트 존 「자세히…」의 가부와 사유(U6-E 리뷰 5) — **판정은 여기 하나**다.
@@ -1184,7 +1007,7 @@ class EditorController:
         """작성 당시와 지금의 템플릿 필드 구성이 갈렸으면 경고, 아니면 ``""``(#53-C 승계).
 
         **세션 판정이다**(U6-E 리뷰 6): 비교하는 것은 이 작업이 저장될 때 찍은 필드 지문
-        (:meth:`_build_provenance` 의 ``template_fields``)과 **지금 연 파일**의 필드다. 풀
+        (:func:`build_provenance` 의 ``template_fields``)과 **지금 연 파일**의 필드다. 풀
         항목의 사실이 아니므로 항목 상세 시트가 아니라 1단계 게이트 존에 선다 — 종전에는
         걷힌 「작성 출처」 블록이 이 경고를 이고 있어서 그 블록과 함께 사라졌다.
 
@@ -1845,7 +1668,7 @@ class EditorController:
         self._job_name_is_derived = False
         self.pattern = job.filename_pattern
         self._editing_origin = job.name
-        self._preserved_meta = _preserved_meta(job)
+        self._preserved_meta = preserved_meta(job)
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = self.registry.content_fingerprint(job)
@@ -2577,21 +2400,21 @@ class EditorController:
         target = self.job_name
         if self._editing_origin and target == self._editing_origin:
             try:
-                return _preserved_meta(self.registry.load(self._editing_origin))
+                return preserved_meta(self.registry.load(self._editing_origin))
             except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
                 return dict(self._preserved_meta)
         if self.registry.exists(target):
             try:
-                return _preserved_meta(self.registry.load(target))
+                return preserved_meta(self.registry.load(target))
             except Exception:  # noqa: BLE001 — 손상 파일: 추측 대신 빈 메타로 새로 시작
-                return dict(_EMPTY_PRESERVED)
+                return dict(EMPTY_PRESERVED)
         origin = dict(self._preserved_meta)
         if self._editing_origin:
             try:
-                origin = _preserved_meta(self.registry.load(self._editing_origin))
+                origin = preserved_meta(self.registry.load(self._editing_origin))
             except Exception:  # noqa: BLE001
                 pass
-        return {**_EMPTY_PRESERVED, "tags": dict(origin["tags"]),  # type: ignore[arg-type]
+        return {**EMPTY_PRESERVED, "tags": dict(origin["tags"]),  # type: ignore[arg-type]
                 "group": origin["group"]}
 
     def _do_save(self, p: dict) -> dict:
@@ -2715,21 +2538,35 @@ class EditorController:
         #  이 게이트의 발화였고, 발화 지점째 사라졌다.)
         preserved = self._preserved_for_target()
         # 작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향). 저장 매핑에 새긴다.
-        verdict.profile.provenance = self._build_provenance(verdict.profile)
+        provenance_now = self._clock()
+        verdict.profile.provenance = build_provenance(
+            template_path=self.template_path,
+            template_field_names=(
+                self.schema.field_names() if self.schema is not None else None
+            ),
+            profile=verdict.profile,
+            dataset_name=(
+                self.data_display_name()
+                if self.data_path
+                else self._loaded_provenance.get("dataset", "")
+            ),
+            loaded_provenance=self._loaded_provenance,
+            now=provenance_now,
+        )
         job = Job(
             name=self.job_name,
             template_path=self.template_path,
             mapping=verdict.profile,
             filename_pattern=self.pattern,
             # 데이터 결속은 이 화면이 **다시 짓는** 것이다(U4 §2.4, #932 U4-C) —
-            # 그래서 ``_preserved_meta`` 가 아니라 세션 값을 싣는다. 결속을 쓰는 자리는
+            # 그래서 ``preserved_meta`` 가 아니라 세션 값을 싣는다. 결속을 쓰는 자리는
             # 저장 하나뿐이라(사용자 확정 2026-08-29) 「데이터 바꾸기 → 저장」이 결속
             # 변경의 유일 동선이다.
             data_path=self.data_path,
             data_sheet=self.data_sheet,
             data_header_row=self.data_header_row,
             data_kind=self.data_kind,
-            # 비-편집 메타는 사전 하나에서 통째로 되싣는다(_preserved_meta 단일 출처) —
+            # 비-편집 메타는 사전 하나에서 통째로 되싣는다(`preserved_meta` 단일 출처) —
             # 편집이 그룹·즐겨찾기를 조용히 초기화하던 자리(슬라이스 2 인접 수선).
             last_run_at=str(preserved["last_run_at"]),
             tags=dict(preserved["tags"]),  # type: ignore[arg-type]

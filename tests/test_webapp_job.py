@@ -4043,14 +4043,14 @@ def test_result_three_states_are_python_judged(tmp_path, monkeypatch):
     (P2-23) 문안(제목)은 종전대로 링2 가 조립한다 — old→new 책임 승계.
     """
     from hwpxfiller.application.generation import run_status
-    from hwpxfiller.webapp.screen_job import _run_title
+    from hwpxfiller.webapp.managed_run_result import run_title
 
     assert run_status(2, 2) == "completed"
     assert run_status(1, 2) == "partiallyCompleted"
     assert run_status(0, 2) == "failed"
     # 취소는 네 번째 태가 아니라 부분의 변종 — 태는 그대로, 제목이 중단을 먼저 말한다.
-    assert _run_title("partiallyCompleted", True, 1, 0).startswith("생성을 중단했습니다")
-    assert "1개 성공" in _run_title("partiallyCompleted", False, 1, 1)
+    assert run_title("partiallyCompleted", True, 1, 0).startswith("생성을 중단했습니다")
+    assert "1개 성공" in run_title("partiallyCompleted", False, 1, 1)
     # 첫 레코드 전에 멈춘 런: 성공 0·실패 0이다. 성공 수만 보면 failed 가 되어 "중단
     # 했습니다"라는 제목 옆에서 태가 없던 실패를 지어낸다(1R P2).
     assert run_status(0, 3, True) == "partiallyCompleted"
@@ -6118,7 +6118,7 @@ def test_generation_is_refused_while_structure_notation_is_uncompiled(tmp_path):
         SlotlessRunAdmissionError,
     )
     from hwpxfiller.domain.template_status import CompileState
-    from hwpxfiller.webapp.screen_job import _ADMISSION_REJECT_TEXT
+    from hwpxfiller.webapp.managed_run_result import ADMISSION_REJECT_TEXT
 
     reg = _registry(tmp_path)
     template = tmp_path / "notation.hwpx"
@@ -6133,7 +6133,7 @@ def test_generation_is_refused_while_structure_notation_is_uncompiled(tmp_path):
 
     assert exc.value.code == STRUCTURE_NOTATION_UNCOMPILED
     # 코드 → 문안 맵이 이 거절을 재진술한다(조용한 fallback 「생성을 진행할 수 없습니다」 금지).
-    text = _ADMISSION_REJECT_TEXT[exc.value.code]
+    text = ADMISSION_REJECT_TEXT[exc.value.code]
     assert "구간 표기" in text and "변환" in text
 
 

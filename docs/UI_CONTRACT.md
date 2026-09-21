@@ -508,6 +508,12 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 
 #### 문서 작업 편집기 = 몰입 표면 + section patch 거래 (F7 PR-A — 지도 §10.13)
 
+`EditorController`는 세션 상태·시계 캡처·레지스트리 재읽기와 잠금·저장·push를 소유한다.
+`editor_presentation.py`는 컨트롤러가 넘긴 열·레코드·모델·시각으로 선택 항목, 연결 머리,
+샘플 행, 파일명 예시를 순수 성형한다. 저장 판정과 비편집 메타 보존·작성 출처 계산은
+`gui/job_editor_state.py`가 소유하며, 컨트롤러는 저장 시점의 경로·필드·데이터 표시명·시각을
+명시해 넘긴다.
+
 - **탭은 계약 §5.1 의 section 문자열**(`template`·`binding`·`filename`, 「시험」은 F8)이고
   **집합은 매체 파생**이다(TXT 는 파일 이름 탭 없음 — §3.2). 정수 단계 어휘는 사망했다:
   patch 의 키와 탭이 같은 문자열이라야 같은 상태를 두 표면이 다르게 부르지 않는다.
@@ -1201,11 +1207,16 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 
 #### 생성 결과 존의 문서 목록과 산출물 관찰 시트 (S7-03 · #825)
 
-실행 준비 계산은 `current_execution_preparation.py`, managed 결과의 화면 표현은
-`managed_run_result.py`가 소유한다. 두 모듈은 전달받은 값으로 계산하며 세션을 소유하지
-않는다. `JobController`는 데이터·선택·표시 순서, 캐시와 무효화, 캡처 전후의 세대·records
-identity·선택 대조, 생성 잠금·취소·덮어쓰기 확인, 실제 실행·원장 기록·결과 반영·push를
-계속 소유한다. 복구 위치·문안과 전체 `snapshot()` 조립도 컨트롤러에 남는다.
+실행 준비 계산과 검증 문제의 복구 위치·문안은 `current_execution_preparation.py`, managed 결과의
+화면 표현은 `managed_run_result.py`가 소유한다. `job_presentation.py`는 후보 카드·탐색/레코드 행·
+검토 요구·덮어쓰기 응답과 workbench 관찰 JSON, legacy 생성 실패 행·요약·결과 dict를 이미
+판정된 값으로 성형한다. 이 모듈들은 전달받은 값으로 계산하며 세션을 소유하지 않는다.
+`JobController`는 레지스트리·파일·템플릿 연결 읽기, 후보 판정·순위, 데이터·선택·표시 순서,
+캐시와 무효화, 캡처 전후의 세대·records identity·선택 대조, 생성 잠금·취소·덮어쓰기 확인,
+실제 실행·원장 기록·결과 반영·push와 실패가 있을 때만 하는 파일명 열 계산을 계속 소유한다.
+전체 `snapshot()` 조립도 컨트롤러에 남는다. 스냅샷은 작업 목록을 한 번만 읽고 base를 만든 뒤
+TXT·미선택/미지원·HWPX 세 갈래가 그 값을 완성한다; 각 갈래가 레지스트리를 다시 읽거나 세션을
+복사하지 않는다.
 거절·취소는 기존 실행 증거를 유지하고, 안착 결과는 원장 기록 전에 산출물 좌표를 갱신하며
 열린 관찰을 닫는다. 원장 기록 실패도 이미 안착한 문서 사실을 되돌리지 않는다.
 
