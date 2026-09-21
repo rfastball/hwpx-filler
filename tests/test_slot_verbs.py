@@ -22,7 +22,8 @@ import pytest
 
 from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.package import HwpxPackage
-import hwpxfiller.external.template_inspection as template_inspection
+import hwpxfiller.external.hwpx_product_inspection as hwpx_product_inspection
+import hwpxfiller.external.hwpx_structure_ops as hwpx_structure_ops
 from hwpxfiller.domain.authoring import (
     PLACEMENT_OPTION,
     PLACEMENT_SLOT,
@@ -197,7 +198,7 @@ def test_decompile_refuses_an_option_that_lives_in_another_entry(
     pkg = _notation_package()
     compile_structure(pkg)
     before = dict(pkg.entries)
-    original = template_inspection._inspect_slot_snapshot
+    original = hwpx_product_inspection._inspect_slot_snapshot
 
     def relocated(package):
         snapshot = original(package)
@@ -206,7 +207,7 @@ def test_decompile_refuses_an_option_that_lives_in_another_entry(
             for key, region in snapshot.option_regions.items()
         })
 
-    monkeypatch.setattr(template_inspection, "_inspect_slot_snapshot", relocated)
+    monkeypatch.setattr(hwpx_product_inspection, "_inspect_slot_snapshot", relocated)
     with pytest.raises(ValueError, match="lives in another entry"):
         decompile_slot(pkg, "특약")
     assert pkg.entries == before  # 좌표를 세우다 멈췄다 — 변이 0
@@ -277,14 +278,14 @@ def test_decompile_structure_rolls_back_every_slot_when_one_fails(
     """
     pkg = _two_slot_package()
     before = dict(pkg.entries)
-    original = template_inspection.begin_marker_text
+    original = hwpx_structure_ops.begin_marker_text
 
     def biased(kind, identifier, label=None):
         if identifier == "부기":
             return "{{#항목 다른항목}}"
         return original(kind, identifier, label)
 
-    monkeypatch.setattr(template_inspection, "begin_marker_text", biased)
+    monkeypatch.setattr(hwpx_structure_ops, "begin_marker_text", biased)
     with pytest.raises(ValueError, match="postcondition \\(notation\\)"):
         decompile_structure(pkg)
 
@@ -358,7 +359,7 @@ def test_decompile_rolls_back_when_the_notation_cannot_be_read_back(
     compile_structure(pkg)
     before = dict(pkg.entries)
     monkeypatch.setattr(
-        template_inspection,
+        hwpx_structure_ops,
         "begin_marker_text",
         lambda kind, identifier, label=None: "{{#항목 다른항목}}",
     )
@@ -375,7 +376,7 @@ def test_decompile_rolls_back_when_a_region_would_be_lost(
     pkg = _notation_package()
     compile_structure(pkg)
     before = dict(pkg.entries)
-    original = template_inspection._region_identity_counter
+    original = hwpx_structure_ops._region_identity_counter
     calls: "list[int]" = []
 
     def drifting(regions):
@@ -385,7 +386,7 @@ def test_decompile_rolls_back_when_a_region_would_be_lost(
             shape[("drift",)] = 1
         return shape
 
-    monkeypatch.setattr(template_inspection, "_region_identity_counter", drifting)
+    monkeypatch.setattr(hwpx_structure_ops, "_region_identity_counter", drifting)
     with pytest.raises(ValueError, match="pre-existing regions"):
         decompile_slot(pkg, "특약")
     assert pkg.entries == before
@@ -402,7 +403,7 @@ def test_structure_postcondition_is_loud_when_a_declaration_is_lost() -> None:
 
     phantom = (*declared, Slot("없는항목", (), None))
     with pytest.raises(ValueError, match="postcondition \\(notation\\)"):
-        template_inspection._assert_decompile_structure_postconditions(
+        hwpx_structure_ops._assert_decompile_structure_postconditions(
             pkg, phantom, Counter(), Counter()
         )
 
@@ -411,12 +412,12 @@ def test_structure_postcondition_is_loud_when_a_region_would_be_lost() -> None:
     """종료 대조 ⓒ — 비제품 region 이 기대만큼 남지 않으면 멈춘다."""
     pkg = _two_slot_package()
     declared = inspect_slots(pkg)[0]
-    before = template_inspection._region_identity_counter(resolve_bookmark_topology(pkg))
+    before = hwpx_structure_ops._region_identity_counter(resolve_bookmark_topology(pkg))
     decompile_structure(pkg)
 
     # 걷힌 제품 region 을 `removed` 에서 빼먹으면 `before - removed` 가 실제와 갈린다.
     with pytest.raises(ValueError, match="pre-existing regions"):
-        template_inspection._assert_decompile_structure_postconditions(
+        hwpx_structure_ops._assert_decompile_structure_postconditions(
             pkg, declared, before, Counter()
         )
 

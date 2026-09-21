@@ -935,6 +935,10 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
     이 채널이므로 그 push 도 여기서 나가야 한다.
     풀기 몸통은 External 이 지고(`decompile_structure` = `decompile_slot` 문서 순서 반복 +
     문서 단위 원자성), 링1 은 `decompile_all_slots`·`confirm_decompile_all_text` 를 소유한다.
+    External 내부에서 제품 구조 판독은 `hwpx_product_inspection`, 읽기 전용 자격 검사는
+    `hwpx_qualification`, 열린 package 변이·사후조건·롤백은 `hwpx_structure_ops`가 소유한다.
+    경로 입출력·공개 진입점·`HWPX_TEMPLATE_OPS`·qualification profile은
+    `template_inspection`에 유지하며, 검사와 lint는 한 번 연 같은 package를 사용한다.
   - **파일을 바꾼 tpl 동사는 전부 상세를 다시 투영한다**(`_reproject_detail` · #989 리뷰 2):
     slot 동사 넷 + 「누름틀·구간 변환」(`mutated` 갈래) + TXT 저장. 상세 **한 벌 전체**를
     다시 세우는 이유는 변환이 상태·배지·필드·항목을 한꺼번에 바꾸기 때문이다(목록만 갈아

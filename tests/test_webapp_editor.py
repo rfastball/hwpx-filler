@@ -771,7 +771,8 @@ def _structured_template(tmp_path: Path, name: str = "구간템플릿") -> Path:
     순서를 뒤집으면 구조 안의 `{{필드}}` 가 depth>0 이 되어 필드 컴파일에서 조용히 빠진다
     (`docs/UI_CONTRACT.md` 의 변환 순서 계약과 같은 이유). 표기 원본은 S8-02 헬퍼 재사용.
     """
-    from hwpxfiller.external.template_inspection import compile_document, compile_structure
+    from hwpxfiller.domain.authoring import compile_document
+    from hwpxfiller.external.template_inspection import compile_structure
     from test_structure_compile import NOTATION, _pkg, _text  # noqa: E402 rootdir 임포트
 
     pkg = _pkg(*(_text(line) for line in NOTATION))

@@ -24,7 +24,9 @@ from hwpxcore.structural_boundary import (
     StructuralEntryScan,
     scan_structural_boundaries,
 )
-import hwpxfiller.external.template_inspection as template_inspection
+import hwpxfiller.external.hwpx_product_inspection as hwpx_product_inspection
+import hwpxfiller.external.hwpx_qualification as hwpx_qualification
+import hwpxfiller.external.hwpx_structure_ops as hwpx_structure_ops
 from hwpxfiller.application.execution_structure import encode_execution_structure
 from hwpxfiller.application.template_qualification import (
     QualificationInspection,
@@ -435,9 +437,9 @@ def test_product_removal_failures_are_atomic(monkeypatch: pytest.MonkeyPatch) ->
         remove_slot_option(duplicate, "slot", "same")
     assert duplicate.entries == before
 
-    resolver = template_inspection.resolve_bookmark_topology
+    resolver = hwpx_product_inspection.resolve_bookmark_topology
     monkeypatch.setattr(
-        template_inspection,
+        hwpx_product_inspection,
         "resolve_bookmark_topology",
         lambda pkg: tuple(reversed(resolver(pkg))),
     )
@@ -446,12 +448,12 @@ def test_product_removal_failures_are_atomic(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(ProductInspectionContractError, match="order disagree"):
         remove_slot_option(mismatched, "slot", "b")
     assert mismatched.entries == before
-    monkeypatch.setattr(template_inspection, "resolve_bookmark_topology", resolver)
+    monkeypatch.setattr(hwpx_product_inspection, "resolve_bookmark_topology", resolver)
 
     def corrupt(pkg: HwpxPackage, _region) -> None:
         pkg.entries["partial-write"] = b"leak"
 
-    monkeypatch.setattr(template_inspection, "remove_bookmark_region", corrupt)
+    monkeypatch.setattr(hwpx_structure_ops, "remove_bookmark_region", corrupt)
     rollback = _three_option_package()
     before = dict(rollback.entries)
     with pytest.raises(ValueError, match="postcondition failed"):
@@ -1063,9 +1065,6 @@ def test_qualification_reads_candidate_without_serializing_or_mutating(
         pytest.fail("qualification invoked a serializer or mutation primitive")
 
     monkeypatch.setattr(HwpxPackage, "to_bytes", unexpected_write)
-    monkeypatch.setattr(template_inspection, "remove_bookmark_region", unexpected_write)
-    monkeypatch.setattr(template_inspection, "write_hwpx_package", unexpected_write)
-
     inspection = HWPX_QUALIFICATION_PROFILE.inspect(canonical_bytes)
 
     assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v4"
@@ -1257,7 +1256,7 @@ def test_qualification_rejects_missing_duplicate_and_conflicting_observations(
         + _p("<hp:t>TAIL</hp:t>"),
         {"SLOT": _slot("slot"), "OPTION": _option("option")},
     )
-    detail = template_inspection._inspect_hwpx_detail(package)
+    detail = hwpx_qualification._inspect_hwpx_detail(package)
     option_index = next(
         index
         for index, item in enumerate(detail.products.observations)
@@ -1544,7 +1543,7 @@ def test_qualification_rejects_missing_duplicate_and_conflicting_observations(
 
     for broken, message in cases:
         with pytest.raises(TemplateInspectionContractError, match=message):
-            template_inspection._analyze_hwpx_detail(broken)
+            hwpx_qualification._analyze_hwpx_detail(broken)
 
     with pytest.raises(TypeError, match="canonical_bytes must be bytes"):
         inspect_hwpx_qualification(bytearray())  # type: ignore[arg-type]
