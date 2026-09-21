@@ -2268,10 +2268,25 @@ export function createEditorWorkbenchDataProbes() {
           const sessionDoor = host.querySelector('[data-act="session-detail"]');
           out.gate_zone = !!byId(ctx, "editorTplGate") && !!sessionDoor
             && !sessionDoor.disabled;
-          /* 게이트 존은 상태와 무관하게 **이름과 「폴더에서 보기」**를 남긴다(리뷰 8) —
-             「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길이 사라지지 않는다. */
-          out.gate_zone_pathtrack = !!byId(ctx, "editorTplGate")
-            .querySelector('[data-track-act="reveal"]');
+          const folderButtons = host.querySelectorAll('[data-act="open-template-folder"]');
+          out.template_folder_single = folderButtons.length === 1
+            && !host.querySelector('[data-track-act="reveal"]');
+          out.template_folder_visible = !!folderButtons[0] && !isHidden(ctx, folderButtons[0]);
+          const folderCalls = [];
+          const folderStubs = ["open", "reveal"].map((action) => stubBridgeInvoke(
+            ctx, `${action}Path`, `${action}_path`, () => async (path) => {
+              folderCalls.push([action, path]);
+              return null;
+            },
+          ));
+          try {
+            ctx.doc.body.click();
+            folderButtons[0].click();
+            await settleRender(ctx);
+            out.template_folder_calls = folderCalls;
+          } finally {
+            folderStubs.reverse().forEach((stub) => stub.restore());
+          }
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };

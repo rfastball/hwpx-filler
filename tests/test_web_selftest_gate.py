@@ -1714,7 +1714,7 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        # 고르기 열에는 가져오기·새로 읽기만 둔다. 폴더 보기는 PathActions 가 진다.
+        # 가져오기·새로 읽기는 유지하고, 서식 폴더 열기는 아래에서 경로와 동작까지 잰다.
         assert t["toolbar"] == [True, False, False, True], (
             "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기)이 규약과 다릅니다:"
             f" {t['toolbar']!r}"
@@ -1752,9 +1752,10 @@ class TestWebSelftestGate:
         assert t["gate_zone"] is True, (
             "1단계 게이트 존(#editorTplGate)과 세션 「자세히…」 문이 서지 않았습니다."
         )
-        # U6-E 리뷰 8: 「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길을 지우지 않는다.
-        assert t["gate_zone_pathtrack"] is True, (
-            "게이트 존에 「폴더에서 보기」가 없습니다 — 상태와 무관하게 서야 합니다."
+        assert t["template_folder_single"] is True, "서식 폴더 버튼은 하나만 남아야 합니다."
+        assert t["template_folder_visible"] is True, "서식 폴더 버튼이 보이지 않습니다."
+        assert t["template_folder_calls"] == [["open", "C:/lib"]], (
+            "서식 폴더의 상위를 선택하지 않고 루트 안을 바로 열어야 합니다."
         )
         # 행 ⋮ 구성 — 링1 상태 동사 + 「자세히…」. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서,
         # 「삭제」는 U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).
