@@ -34,7 +34,7 @@ import type {
 } from "./context_menu.ts";
 import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { NoticeBox } from "./notice_box.ts";
-import { PathActions, invokePathAction } from "./path_actions.ts";
+import { invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
 import {
   PCLM_UNAVAILABLE, POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
@@ -1309,11 +1309,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   });
   const { poolAction, resolveDuplicate } = poolVerbs;
 
-  /** 「서식 폴더 설정」 — **기존 설정 모달을 그대로 연다**(새 표면 0).
-   *
-   *  이 화면은 몰입 표면이라 셸 토바의 `#settingsOpen` 이 덮여 있다: 문이 없는 것이지 다른
-   *  문이 필요한 것이 아니라, 같은 모달을 여기서 한 번 더 연다. 서식 폴더 행의 판정·문안·
-   *  브리지(`pick_templates_root`)는 전부 그 모달이 계속 소유한다(U6-A #975). */
+  /** 저장 폴더 변경은 기존 설정 모달을 연다. */
   function openSettings(): void {
     deps.modal.open(SETTINGS_MODAL_ID, {});
   }
@@ -1630,8 +1626,7 @@ export function libRowMenuItems(media: string, item: Obj | null): ContextMenuIte
  *  무엇이 있나」를 사람이 두 번 훑게 된다. 그 목록을 **한 목록으로 접는 일도 이제 Python
  *  이 한다** — 이 자리는 호스트만 세운다(고르기 열 공용 ②).
  *
- *  갈리는 것은 바닥 동사 줄 하나다: 「파일 가져오기…」·「폴더에서 보기」·「서식 폴더 설정」·
- *  「새 TXT 템플릿…」은 서식 폴더에만 있는 동사라 우 열과 공유할 것이 없다. */
+ *  바닥에는 「파일 가져오기…」·「서식 폴더 열기」만 둔다. */
 function TemplatePool(props: {
   tpl: Obj | null; snapshot: Obj; controller: EditorController;
 }): ReactNode {
@@ -1655,27 +1650,21 @@ function TemplatePool(props: {
        매체를 유도하지 않는다. */
     onMore: (row: Obj, trigger: HTMLElement) =>
       controller.toggleLibMenu("tpl", String(row.icon || ""), String(row.key), trigger),
-    reload: () => controller.guarded(() => controller.refreshLibrary()),
+    reload: () => controller.refreshLibrary(),
+    notify: controller.notify,
     acts: createElement(Fragment, null,
       h("button", {
         className: "btn sm", "data-act": "import-template", key: "import",
         onClick: () => controller.guarded(() => controller.importTemplate()),
       }, "파일 가져오기…"),
-      /* 「폴더에서 보기」 — 삭제 동사의 승계처다(U6 §2.3: 앱은 사용자 서식 폴더에 쓰지
-         않는다). 열기·경로 복사는 여기서 세우지 않는다: 이 줄이 답하는 것은 「그 폴더를
-         어떻게 여나」 하나이고, 나머지는 설정 모달의 서식 폴더 행이 이미 든다. */
-      h(PathActions as any, {
-        client: controller.client, path: String(root.directory || ""),
-        only: ["reveal"], notify: controller.notify, key: "reveal",
-      }),
       h("button", {
-        className: "btn sm", "data-act": "open-settings", key: "settings",
-        onClick: () => controller.openSettings(),
-      }, "서식 폴더 설정"),
-      h("button", {
-        className: "btn sm", "data-act": "lib-new-txt", key: "new-txt",
-        onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
-      }, "새 TXT 템플릿…")),
+        className: "btn sm", "data-act": "open-template-folder", key: "open-folder",
+        disabled: !root.directory, title: String(root.directory || ""),
+        onClick: () => { void invokePathAction({
+          client: controller.client, path: String(root.directory || ""),
+          action: "open", notify: controller.notify,
+        }); },
+      }, "서식 폴더 열기")),
     emptyFallback: "서식 폴더를 아직 읽지 못했습니다.",
   };
   return h(PoolColumn as any, { host, column: ((tpl || {}).column || null) as Obj | null });
@@ -1714,7 +1703,7 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
             h("span", { className: "n" }, String(pairing.confirm_count)))
           : createElement(Fragment, null, "확인 필요 ",
             h("span", { className: "n" }, "0")))
-      : h("span", { className: "empty" }, "왼쪽과 오른쪽에서 하나씩 고르세요.")),
+      : h("span", { className: "linkcard-placeholder" }, "왼쪽과 오른쪽에서 하나씩 고르세요.")),
     h("button", {
       className: "btn primary cta", id: "editorLinkCta", "data-act": "goto-binding",
       disabled: !can, title: can ? "" : blockReason,
@@ -1723,9 +1712,7 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
     !can && blockReason
       ? h("p", { className: "note quiet", id: "editorLinkBlock", style: { textAlign: "center" } },
         blockReason)
-      : null,
-    h("p", { className: "note quiet", style: { textAlign: "center", marginTop: 0 } },
-      "끌어다 놓아도 같은 결과입니다."));
+      : null);
 }
 
 /** 우 열 — 「데이터」 풀. 좌 열과 **같은 컴포넌트의 다른 인스턴스**다(고르기 열 공용 ③a).
@@ -1762,7 +1749,8 @@ function DataPool(props: {
       controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
     onMore: (row: Obj, trigger: HTMLElement) =>
       controller.toggleLibMenu("dat", String(row.icon || ""), String(row.key), trigger),
-    reload: () => controller.guarded(() => controller.refreshPool()),
+    reload: () => controller.refreshPool(),
+    notify: controller.notify,
     onNoticeAction: (key: string, payload: Obj) => controller.poolNoticeAction(key, payload),
     acts: createElement(Fragment, null,
       h("button", {
@@ -1943,9 +1931,7 @@ function TemplateGate(props: { snapshot: Obj; controller: EditorController }): R
   const reason = String(detail.reason || "");
   const gate = snapshot.gate;
   const drift = String(snapshot.schema_drift || "");
-  /* 머리는 **상태와 무관하게** 선다(U6-E 리뷰 8): 「파일을 고치세요」라고 말하는 바로 그
-     상태(RAW·판독 실패)에서 이름과 「폴더에서 보기」가 사라지면, 고치러 갈 길이 그 문장
-     옆에 없다. 아래 몸통만 상태로 갈린다. */
+  /* 머리는 상태와 무관하게 선택한 템플릿을 식별한다. 폴더 열기는 좌 열의 루트 버튼이 맡는다. */
   const head = h("div", { className: "row" },
     h("span", { className: "cap" }, "선택한 템플릿"),
     h("span", { className: "muted capnote" }, String(snapshot.template_name || "")),
@@ -1953,10 +1939,6 @@ function TemplateGate(props: { snapshot: Obj; controller: EditorController }): R
       ? h("span", { className: "muted capnote" }, `필드 ${snapshot.field_count}개`)
       : null,
     h("span", { className: "spacer" }),
-    h(PathActions as any, {
-      client: controller.client, path: String(snapshot.template_path || ""),
-      only: ["reveal"], notify: controller.notify,
-    }),
     /* 시트는 `tpl` 이 아는 항목만 연다 — 가부·사유는 Python 판정이고 여기는 잠금과 병기만
        한다(리뷰 5). 조용히 열리지 않는 문을 두지 않는다. */
     h("button", {
@@ -2271,8 +2253,6 @@ function NameSaveStage(props: {
   });
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "filename")),
-    h("p", { className: "wsub" },
-      "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."),
     h("div", { className: "row" },
       h("span", { className: "lbl lbl-fixed" }, "작업 이름"),
       h("input", {

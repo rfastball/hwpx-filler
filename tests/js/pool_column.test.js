@@ -301,5 +301,8 @@ test("⋮ 와 「새로 읽기」는 호스트가 줄 때만 선다 — 죽은 �
   assert.equal((full.match(/data-act="lib-more"/g) || []).length, 2,
     "⋮ 는 모든 행에 섭니다(동사 0 인 행이 없다)");
   assert.ok(full.includes('data-media="hwpx"') && full.includes('data-key="a.hwpx"'));
-  assert.ok(full.includes('data-act="refresh"') && full.includes("새로 읽기"));
+  assert.ok(full.includes('data-act="refresh"') && full.includes('aria-label="템플릿 새로고침"'));
+  assert.ok(full.includes('title="템플릿 새로고침"'));
+  assert.match(full, /class="btn sm reload refresh-button"[^>]*><svg/);
+  assert.equal(full.includes("새로 읽기"), false);
 });

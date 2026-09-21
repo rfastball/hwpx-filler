@@ -240,11 +240,11 @@ function LibraryList(props: { snapshot: Obj; controller: LibraryController }): R
     /* 빈 상태의 출구는 하나다 — 직접 만들기. 동봉 예제로 시작하는 두 번째 출구(#891)는
        튜토리얼 진입 표면과 함께 배포본에서 걷혔다(#941). 스냅샷의 `examples` 축은 그대로
        서 있으므로 되살릴 때 이 자리에서 다시 소비하면 된다. */
-    content = h("div", { className: "empty" }, h("div", { className: "heading" }, "저장된 작업이 없습니다"),
+    content = h("div", { className: "library-empty" }, h("div", { className: "heading" }, "저장된 작업이 없습니다"),
       h("p", null, "템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 문서를 만들 때 고릅니다."),
       h("button", { className: "btn primary", "data-new-work": true, onClick: controller.newWork }, "＋ 첫 작업 만들기"));
   } else if (!shown) {
-    content = h("div", { className: "empty" }, h("div", { className: "heading" }, "조건에 맞는 작업이 없습니다"),
+    content = h("div", { className: "library-empty" }, h("div", { className: "heading" }, "조건에 맞는 작업이 없습니다"),
       h("p", null, "보기·작업 방식·검색 중 하나가 목록을 비웠습니다."),
       h("button", { className: "btn", "data-clear-filters": true, onClick: () => { void controller.axis("clear_filters"); } },
         "필터 지우고 전체 보기"));

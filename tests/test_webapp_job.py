@@ -5415,6 +5415,35 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     assert ctrl.snapshot()["template_change"]["epoch"] == 2
 
 
+@pytest.mark.parametrize("verdict", ["NEEDS_CONFIGURATION", "NEEDS_CONFIGURATION_REVIEW"])
+def test_slotless_configuration_verdict_controls_preflight_and_gate(
+    tmp_path, monkeypatch, verdict,
+):
+    """생성 admission의 provenance 거절은 클릭 전 사전검증과 버튼에도 반영된다."""
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    pick_output_folder(ctrl, tmp_path / "out")
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    monkeypatch.setattr(coordinator, "generation_provenance_verdict", lambda _: verdict)
+
+    blocked = ctrl.snapshot()
+    assert blocked["gate"]["enabled"] is False
+    assert blocked["gate"]["reason"] == verdict
+    assert blocked["preflight"]["level"] == "warn"
+    assert blocked["gate"]["text"] in blocked["preflight"]["text"]
+    assert "검증 완료. 생성할 수 있습니다." not in blocked["preflight"]["text"]
+
+    monkeypatch.setattr(
+        coordinator, "generation_provenance_verdict", lambda _: "EXECUTION_ALLOWED",
+    )
+    ready = ctrl.snapshot()
+    assert ready["gate"]["enabled"] is True
+    assert ready["preflight"]["level"] == "ok"
+
+
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
 def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_path):
     """**#806 R1 의 뒤집힘 — S6-05(#812)가 트랩을 구조로 해소했다.**

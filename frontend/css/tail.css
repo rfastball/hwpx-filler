@@ -15,8 +15,8 @@
   font-size:var(--fs-caption);padding:var(--sp-2) var(--sp-4);cursor:pointer}
 .colpanel .cp-vals input{accent-color:var(--a-primary)}
 .colpanel .cp-range-row{display:flex;gap:var(--sp-4);align-items:center}
-.colpanel .cp-range-row select{flex:none}
-.colpanel .cp-range-row input{flex:1;min-width:0}
+.colpanel .cp-range-row select{flex:none;width:auto}
+.colpanel .cp-range-row input{flex:1;min-width:0;width:auto}
 .colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
 .colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
 

@@ -229,10 +229,6 @@ text = "고정한 데이터를 아직 읽지 못했습니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
-text = "끌어다 놓아도 같은 결과입니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
 text = "데이터를 연결하지 않아 지금은 저장할 수 없습니다. '고르기' 단계에서 데이터를 고르세요."
 
 [[sentence]]
@@ -258,10 +254,6 @@ text = "열을 고르거나 고정값·오늘 날짜를 고르세요"
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
 text = "왼쪽과 오른쪽에서 하나씩 고르세요."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "이 작업을 뭐라고 부를지, 만든 문서를 어떤 이름으로 저장할지 정합니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
@@ -516,10 +508,6 @@ text = "{} 다시 읽을까요?"
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
 text = "{}: snapshot 객체가 아닙니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
-text = "같은 파일을 디스크에서 다시 읽습니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
@@ -2377,7 +2365,7 @@ text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "저장된 TXT 작업이 아직 없습니다. '문서 작업'의 [＋ 새 작업] 템플릿 탭에서 TXT 템플릿을 골라 작업으로 저장하면 여기 후보로 서고, 검토·복사 작업대로 이어집니다."
+text = "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 TXT 템플릿을 선택하고 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"

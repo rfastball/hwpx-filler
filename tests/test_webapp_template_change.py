@@ -17,6 +17,7 @@ import pytest
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.application.prepare_orchestration import APPLY_INTEGRITY_ERROR, ApplyOutcome
 from hwpxfiller.application.selection_compatibility import REVIEW_REQUIRED
+from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
 from hwpxfiller.application.template_change_product import (
     PRODUCT_PREPARATION_STATUSES,
     SOURCE_DRIFT_CHANGED,
@@ -28,6 +29,11 @@ from hwpxfiller.application.template_change_product import (
     template_change_zone_actionable,
     workbench_template_change_verdict,
 )
+from hwpxfiller.application.work_bootstrap import (
+    EXECUTION_ALLOWED,
+    NEEDS_CONFIGURATION,
+    NEEDS_CONFIGURATION_REVIEW,
+)
 from hwpxfiller.application.work_template_state import (
     CHANGE_APPLIED,
     CHANGE_CONFLICTED,
@@ -38,9 +44,11 @@ from hwpxfiller.application.work_template_state import (
 )
 from hwpxfiller.application.jobs import load_job
 from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.webapp import template_change as tc
+from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
     SUPPORTED_MEDIA,
@@ -205,6 +213,59 @@ def test_apply_resend_is_already_applied(tmp_path):
     again = coord.apply("공고서", token)  # 응답 유실 후 재요청 경로
     assert again["status"] == "already_applied"
     assert again["current_template_application_epoch"] == 2
+
+
+def test_generation_uses_the_field_binding_confirmed_for_each_current_application(
+    tmp_path,
+):
+    """Apply 뒤 current binding 확정만 실행 출처를 전진시키고 다음 Apply가 다시 닫는다."""
+    reg, tpl = _seed(tmp_path)
+    root = tmp_path / "authority"
+    coord = TemplateChangeCoordinator(reg, root=root, clock=_clock())
+
+    # 조회는 bootstrap을 대신 수행하지 않는다. 첫 생성이 세울 상태이므로 이때만 허용이다.
+    assert coord.generation_provenance_verdict("공고서") == EXECUTION_ALLOWED
+    assert not (root / "works").exists()
+    coord.check("공고서", "k1")
+    assert coord.generation_provenance_verdict("공고서") == EXECUTION_ALLOWED
+
+    _write_template(tpl, ["공고명", "추정가격"])
+    token = coord.check("공고서", "k2")["preparation"]["change_token"]
+    coord.apply("공고서", token)
+    assert coord.generation_provenance_verdict("공고서") == NEEDS_CONFIGURATION
+    with pytest.raises(SlotlessRunAdmissionError) as blocked:
+        coord.resolve_generation_template("공고서")
+    assert blocked.value.code == NEEDS_CONFIGURATION
+
+    reg.mutate(
+        "공고서",
+        lambda job: setattr(
+            job,
+            "mapping",
+            MappingProfile(
+                mappings=[
+                    FieldMapping("공고명", type="const", const="공고"),
+                    FieldMapping("추정가격", type="const", const="1000"),
+                ]
+            ),
+        ),
+    )
+    seal = SealExecutionPlanService(reg, root=root, clock=_clock())
+    assert seal.commit_current_mapping("공고서", "binding-a2") is not None
+    assert coord.generation_provenance_verdict("공고서") == EXECUTION_ALLOWED
+    assert Path(coord.resolve_generation_template("공고서")).is_file()
+
+    _write_template(tpl, ["공고명", "추정가격", "담당자"])
+    token = coord.check("공고서", "k3")["preparation"]["change_token"]
+    coord.apply("공고서", token)
+    assert coord.generation_provenance_verdict("공고서") == NEEDS_CONFIGURATION
+
+    work_id = load_job(reg, "공고서").authority_id
+    (root / "field_bindings" / f"{work_id}.json").write_text("{", encoding="utf-8")
+    assert coord.generation_provenance_verdict("공고서") == NEEDS_CONFIGURATION_REVIEW
+    with pytest.raises(SlotlessRunAdmissionError) as blocked:
+        coord.resolve_generation_template("공고서")
+    assert blocked.value.code == NEEDS_CONFIGURATION_REVIEW
 
 
 def test_restored_prepared_change_applies_after_restart(tmp_path):

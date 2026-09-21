@@ -18,6 +18,7 @@
  */
 import { createElement } from "react";
 import type { ReactNode } from "react";
+import { RefreshButton } from "./refresh_button.ts";
 
 type Obj = Record<string, any>;
 
@@ -67,8 +68,9 @@ export type PoolColumnHost = {
   onMore?(row: Obj, trigger: HTMLElement): void;
   /** 존 통지가 든 동사(중복 정리 등)의 발행 — payload 는 그 채널 스키마 그대로다. */
   onNoticeAction?(key: string, payload: Obj): void;
-  /** 「새로 읽기」 — 없으면 머리에 그 버튼이 서지 않는다. */
-  reload?(): void;
+  /** 새로고침 — 없으면 머리에 그 버튼이 서지 않는다. */
+  reload?(): Promise<unknown> | void;
+  notify(message: string): void;
   /** 바닥 동사 줄 — 열마다 다른 유일한 덩어리다. */
   acts?: ReactNode;
   /** 스냅샷이 **아직 없을 때**의 문안. 빈 목록의 사유는 Python 이 낸다(`empty_hint`). */
@@ -255,10 +257,10 @@ export function PoolColumn(props: { host: PoolColumnHost; column: Obj | null }):
   h("div", { className: "pool-head" },
     h("h2", null, host.title),
     h("span", { className: "sub", title: host.headSubTitle }, host.headSub),
-    host.reload ? h("button", {
-      className: "btn sm reload", "data-act": "refresh", "data-side": host.side,
-      onClick: () => { host.reload?.(); },
-    }, "새로 읽기") : null),
+    host.reload ? createElement(RefreshButton, {
+      label: `${host.title} 새로고침`, side: host.side,
+      onRefresh: host.reload, notify: host.notify,
+    }) : null),
   h("div", { className: "pool-list", id: host.listId },
     ...notices.map((notice: Obj, index: number) =>
       h(PoolNotice as any, { key: `notice-${index}`, notice, host })),

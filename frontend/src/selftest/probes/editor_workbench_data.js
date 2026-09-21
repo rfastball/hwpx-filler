@@ -292,16 +292,28 @@ async function waitFor(ctx, ready, tries = 30, ms = 40) {
  *  가깝다. 새 창을 늘리지 않는다: 이 단계는 이미 서 있는 편집기 세션 위에 얹힌다. */
 async function probeLintpad(ctx, out) {
   const doc = ctx.doc;
-  const trigger = doc.querySelector('#editor-body [data-act="lib-new-txt"]');
-  out.lintpad_trigger = !!trigger;
-  if (!trigger) return;
-  trigger.click();
-  out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
+  const rowMenu = doc.querySelector('#editorTplList [data-act="lib-more"][data-key="기안.txt"]');
+  if (!rowMenu) { out.lintpad_trigger = false; return; }
+  doc.body.click();
+  rowMenu.click();
+  const editSelector = '#tplRowMenu [data-context-menu-action="edit"]';
+  out.lintpad_trigger = await waitFor(ctx, () => !!doc.querySelector(editSelector));
+  if (!out.lintpad_trigger) return;
+  // 합성 TXT의 본문만 대역으로 읽고, 린트는 실제 Python 왕복을 유지한다.
+  const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+    if (screen === "tpl" && action === "txt_content") return Promise.resolve({ content: "" });
+    return real.call(this, screen, action, payload);
+  });
+  try {
+    doc.querySelector(editSelector).click();
+    out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
+  } finally {
+    stub.restore();
+  }
   if (!out.lintpad_mounted) return;
   const content = doc.getElementById("txtEditContent");
   out.lintpad_content_editable = !!content && content.isContentEditable === true;
-  /* 새 생성 창의 첫 초점은 **이름 칸**이다(메모장이 마운트에서 가로채면 여기가 갈린다).
-     메모장 자신이 초점 대상이 되는지는 바로 아래에서 따로 잰다. */
+  /* 기존 TXT 편집 창은 본문에 초점을 둔다. */
   out.lintpad_focus = doc.activeElement ? doc.activeElement.id : "";
   content.focus();
   out.lintpad_focusable = doc.activeElement ? doc.activeElement.id : "";
@@ -1853,6 +1865,8 @@ export function createEditorWorkbenchDataProbes() {
             ? Math.round(cells[0].getBoundingClientRect().height) : -1;
           out.src_cell_h_manual = cells[2]
             ? Math.round(cells[2].getBoundingClientRect().height) : -1;
+          out.src_cell_h_unselected = cells[3]
+            ? Math.round(cells[3].getBoundingClientRect().height) : -1;
           out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
           const wrap = cells[2] && cells[2].querySelector(".srccell");
           const sel = wrap && wrap.querySelector(".sel");
@@ -2212,15 +2226,44 @@ export function createEditorWorkbenchDataProbes() {
             () => host.querySelectorAll("#editorTplList .pitem").length === 7,
             { what: "좌 열 항목 7건(hwpx 5 + txt 2) 렌더", timeoutMs: 2000 },
           );
-          /* 좌 열 바닥 동사 — 「파일 가져오기…」·「서식 폴더 설정」·「새 TXT 템플릿…」 +
-             머리의 「새로 읽기」. 「폴더에서 가져오기…」(#339)는 U6-A(#975)에서 퇴역했다.
-             부재를 음성으로도 잰다. */
+          /* 고르기 열은 가져오기·폴더 보기·새로 읽기만 남긴다. */
           /* 「새로 읽기」의 `data-act` 는 좌 열 전용 이름(`lib-refresh`)에서 공용 열의
              `refresh` 로 바뀌었다(고르기 열 공용 ②) — 같은 컴포넌트의 두 인스턴스가
              자기 side 를 `data-side` 로 말한다. */
           out.toolbar = ["import-template", "open-settings", "lib-new-txt", "refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
           out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
+          const refreshButton = host.querySelector('[data-act="refresh"][data-side="tpl"]');
+          const refreshRect = refreshButton.getBoundingClientRect();
+          out.refresh_hit_area = !isHidden(ctx, refreshButton)
+            && refreshRect.width >= 44 && refreshRect.height >= 44;
+          let finishRefresh;
+          let refreshCalls = 0;
+          const refreshResult = new Promise((resolve) => { finishRefresh = resolve; });
+          const refreshStub = stubBridgeCall(ctx, (real) => (screen, action, payload) => {
+            if (screen !== "tpl" || action !== "refresh") return real(screen, action, payload);
+            refreshCalls += 1;
+            return refreshResult;
+          });
+          try {
+            ctx.doc.body.click();
+            refreshButton.click();
+            refreshButton.click();
+            await settleRender(ctx);
+            out.refresh_locked = refreshButton.disabled
+              && refreshButton.getAttribute("aria-busy") === "true" && refreshCalls === 1;
+            out.refresh_motion = styleOf(ctx, refreshButton.querySelector("svg")).animationName
+              === (ctx.win.matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "refresh-spin");
+            finishRefresh({ ok: true });
+            await settleUntil(ctx, () => !refreshButton.disabled);
+            out.refresh_reenabled = refreshButton.getAttribute("aria-busy") === "false";
+            out.refresh_completed = refreshButton.getAttribute("data-refresh-done") === "true"
+              && refreshButton.getAttribute("aria-label") === "템플릿 새로고침 완료"
+              && styleOf(ctx, refreshButton.querySelector("svg")).animationName === "none";
+          } finally {
+            finishRefresh({ ok: true });
+            refreshStub.restore();
+          }
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
           // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;
@@ -2256,10 +2299,25 @@ export function createEditorWorkbenchDataProbes() {
           const sessionDoor = host.querySelector('[data-act="session-detail"]');
           out.gate_zone = !!byId(ctx, "editorTplGate") && !!sessionDoor
             && !sessionDoor.disabled;
-          /* 게이트 존은 상태와 무관하게 **이름과 「폴더에서 보기」**를 남긴다(리뷰 8) —
-             「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길이 사라지지 않는다. */
-          out.gate_zone_pathtrack = !!byId(ctx, "editorTplGate")
-            .querySelector('[data-track-act="reveal"]');
+          const folderButtons = host.querySelectorAll('[data-act="open-template-folder"]');
+          out.template_folder_single = folderButtons.length === 1
+            && !host.querySelector('[data-track-act="reveal"]');
+          out.template_folder_visible = !!folderButtons[0] && !isHidden(ctx, folderButtons[0]);
+          const folderCalls = [];
+          const folderStubs = ["open", "reveal"].map((action) => stubBridgeInvoke(
+            ctx, `${action}Path`, `${action}_path`, () => async (path) => {
+              folderCalls.push([action, path]);
+              return null;
+            },
+          ));
+          try {
+            ctx.doc.body.click();
+            folderButtons[0].click();
+            await settleRender(ctx);
+            out.template_folder_calls = folderCalls;
+          } finally {
+            folderStubs.reverse().forEach((stub) => stub.restore());
+          }
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };
@@ -2420,6 +2478,10 @@ export function createEditorWorkbenchDataProbes() {
           );
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll("#editorTplList .pitem").length;
+          await ctx.waitFor(() => refreshButton.getAttribute("data-refresh-done") === "false", {
+            what: "새로고침 완료 표시 자동 복귀", timeoutMs: 1000,
+          });
+          out.refresh_restored = refreshButton.getAttribute("aria-label") === "템플릿 새로고침";
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));

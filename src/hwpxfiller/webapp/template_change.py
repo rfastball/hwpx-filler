@@ -68,8 +68,11 @@ from ..application.template_change_product import (
 )
 from ..application.work_bootstrap import (
     BOOTSTRAP_OK,
+    EXECUTION_ALLOWED,
+    NEEDS_CONFIGURATION_REVIEW,
     TEMPLATE_INITIALIZATION_REQUIRED,
     BootstrapOutcome,
+    evaluate_execution_provenance,
 )
 from ..application.slot_selection_input import SlotSelectionCaptureError
 from ..application.slotless_run_bridge import (
@@ -85,12 +88,17 @@ from ..application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from ..external.candidate_store import CandidateObjectStore
+from ..external.field_binding_store import (
+    WorkFieldBindingStore,
+    WorkFieldBindingStoreError,
+    load_current_revision,
+)
 from ..external.slot_command_runner import admit_managed_slotless_run
 from ..external.work_configuration_store import (
     WorkSlotConfigurationStore,
     WorkspaceMetadataStore,
 )
-from ..external.work_template_store import WorkAggregateNotFound
+from ..external.work_template_store import WorkAggregateNotFound, WorkTemplateStoreError
 from ..external.prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -237,23 +245,40 @@ class _WorkStateReadPort:
             return None
 
 
-class _InitialApplicationProvenance:
-    """execution-config base = bootstrap 시 확립된 INITIALIZATION Application.
+class _ExecutionConfigurationProvenance:
+    """실행 구성의 exact Template Application base를 기존 권위에서 복원한다.
 
-    Mapping·execution 구성은 bootstrap 시점 Application 에 대고 세워졌고, 그 base 를 다른
-    Application 으로 다시 지정하는 review command 는 아직 없다(#681 비범위) — 그러니 지금은
-    INITIALIZATION Application 이 정본 base 다. S3 Apply 로 current 가 앞서면 base≠current 라
-    guard 가 NEEDS_CONFIGURATION 으로 막는다. 별도 durable 필드는 두지 않는다(초기 Application
-    이 이미 그 base 를 영속한다). Work 미부트스트랩 → None(UNKNOWN, 정직).
+    INITIALIZATION Application 은 bootstrap 때 legacy 실행 구성을 함께 확립했으므로 그대로
+    허용한다. Apply 뒤에는 current Application 에 명시 확정된 Field Binding revision만 새
+    base가 된다. current revision 부재는 INITIALIZATION base를 유지해 NEEDS_CONFIGURATION,
+    저장소 손상은 UNKNOWN으로 닫아 NEEDS_CONFIGURATION_REVIEW가 되게 한다.
     """
 
-    def __init__(self, works: "AtomicWorkTemplateStateStore") -> None:
+    def __init__(
+        self,
+        works: "AtomicWorkTemplateStateStore",
+        field_bindings: "WorkFieldBindingStore",
+    ) -> None:
         self._works = works
+        self._field_bindings = field_bindings
 
     def resolve_base_template_application_id(self, work_id: str) -> "str | None":
         if not self._works.exists(work_id):
             return None
-        for app in self._works.load(work_id).applications:
+        aggregate = self._works.load(work_id)
+        current_id = aggregate.work.current_template_application_id
+        current = find_application(aggregate, current_id)
+        if current.origin == INITIALIZATION:
+            return current_id
+        try:
+            revision = load_current_revision(
+                self._field_bindings, work_id, current_id
+            )
+        except (OSError, UnicodeError, WorkFieldBindingStoreError):
+            return None
+        if revision is not None:
+            return revision.base_template_application_id
+        for app in aggregate.applications:
             if app.origin == INITIALIZATION:
                 return app.application_id
         return None
@@ -272,6 +297,10 @@ class TemplateChangeCoordinator:
         self._registry = registry
         self._root = Path(root)
         self._works = AtomicWorkTemplateStateStore(self._root / "works")
+        self._field_bindings = WorkFieldBindingStore(self._root / "field_bindings")
+        self._generation_provenance = _ExecutionConfigurationProvenance(
+            self._works, self._field_bindings
+        )
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
         self._workspace = WorkspaceMetadataStore(self._root)
@@ -709,6 +738,27 @@ class TemplateChangeCoordinator:
         """
         return self.resolve_generation_template_for_seated_context(job_name)
 
+    def generation_provenance_verdict(self, job_name: str) -> str:
+        """현재 생성 구성의 Template Application 출처 판정(read-only).
+
+        아직 Work가 없으면 실제 생성 경로의 bootstrap-on-demand가 provenance를 세우므로
+        허용한다. durable 권위 읽기가 실패하면 snapshot 전체를 깨지 않고 UNKNOWN 판정으로
+        닫는다. 이 조회는 bootstrap·staging·workspace 발급을 하지 않는다.
+        """
+        try:
+            job = load_job(self._registry, job_name)
+            work_id = job.authority_id or None
+            if not work_id or not self._works.exists(work_id):
+                return EXECUTION_ALLOWED
+            aggregate = self._works.load(work_id)
+            current_id = aggregate.work.current_template_application_id
+            base_id = self._generation_provenance.resolve_base_template_application_id(
+                work_id
+            )
+        except (OSError, UnicodeError, ValueError, WorkTemplateStoreError):
+            return NEEDS_CONFIGURATION_REVIEW
+        return evaluate_execution_provenance(base_id, current_id)
+
     def resolve_generation_template_for_seated_context(
         self,
         job_name: str,
@@ -747,7 +797,7 @@ class TemplateChangeCoordinator:
                 WorkSlotConfigurationStore(self._root / "slot_configs"),
                 _WorkStateReadPort(self._works),
                 self._quals, self._candidates, self._candidates,
-                _InitialApplicationProvenance(self._works),
+                self._generation_provenance,
                 str(self._root),
                 workspace_instance_id=ws,
                 expected_work_authority_id=work_id,

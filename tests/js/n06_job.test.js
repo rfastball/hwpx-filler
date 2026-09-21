@@ -854,4 +854,7 @@ test('#945 F4 통지가 없으면 닫기도 없다', () => {
     }),
   }));
   assert.equal(markup.includes('jobDataNoticeClose'), false);
+  assert.match(markup, /class="zone-cap job-data-heading"[\s\S]*id="jobBtnRemountData"[\s\S]*<svg/);
+  assert.ok(markup.includes('aria-label="데이터 새로고침"'));
+  assert.equal(markup.includes('>다시 읽기<'), false);
 });

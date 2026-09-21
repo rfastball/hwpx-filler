@@ -1356,17 +1356,15 @@ class TestWebSelftestGate:
         # 우회돼도 전부 초록이다(U2 §2.11 표본과 같은 결함류).
         b = selftest_result["editor_txt_band"]
         assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
-        assert b["lintpad_trigger"] is True, "「새 TXT 템플릿…」 진입점이 없습니다."
+        assert b["lintpad_trigger"] is True, "TXT 행의 「내용 편집」 진입점이 없습니다."
         assert b["lintpad_mounted"] is True, (
             "TXT 저작 창에 CodeMirror 가 마운트되지 않았습니다(모듈은 있고 화면은 빈 상태)."
         )
         assert b["lintpad_content_editable"] is True, (
             f"#txtEditContent 가 편집 가능한 표면이 아닙니다: {b!r}"
         )
-        # 새 생성 창의 첫 초점은 이름 칸이다 — 메모장이 마운트에서 가로채면 초기 초점의
-        # 주인이 둘이 되고, 이기는 쪽이 효과 순서에 따라 갈린다.
-        assert b["lintpad_focus"] == "txtEditName", (
-            f"새 TXT 창의 첫 초점이 이름 칸이 아닙니다: {b['lintpad_focus']!r}"
+        assert b["lintpad_focus"] == "txtEditContent", (
+            f"TXT 편집 창의 첫 초점이 본문이 아닙니다: {b['lintpad_focus']!r}"
         )
         assert b["lintpad_focusable"] == "txtEditContent", (
             f"메모장이 초점을 받을 수 있는 표면이 아닙니다: {b['lintpad_focusable']!r}"
@@ -1555,6 +1553,10 @@ class TestWebSelftestGate:
             "데이터 열 칸의 컨트롤이 둘째 줄로 밀렸습니다 — 수동 행과 제안 행의 칸 높이가 "
             f"다릅니다({e['src_cell_h_manual']} vs {e['src_cell_h_suggested']})."
         )
+        assert e["src_cell_h_unselected"] == e["src_cell_h_suggested"], (
+            "미선택 데이터 열에 다른 빈 상태 스타일이 섞여 행 높이가 늘어났습니다: "
+            f"{e['src_cell_h_unselected']} vs {e['src_cell_h_suggested']}"
+        )
         assert e["revert_same_line"] is True, (
             "재제안 버튼과 select 의 세로 중심이 어긋났습니다 — 줄이 갈렸습니다."
         )
@@ -1712,15 +1714,20 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        # U6-B(#976): 좌 열 동사는 넷이다 — 바닥의 「파일 가져오기…」·「서식 폴더 설정」·
-        # 「새 TXT 템플릿…」과 머리의 「새로 읽기」. 「폴더에서 보기」는 PathActions 가 진다.
-        assert t["toolbar"] == [True, True, True, True], (
-            "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기) 소실:"
+        # 가져오기·새로 읽기는 유지하고, 서식 폴더 열기는 아래에서 경로와 동작까지 잰다.
+        assert t["toolbar"] == [True, False, False, True], (
+            "좌 열 동사 줄(가져오기·서식 폴더 설정·새 TXT·새로 읽기)이 규약과 다릅니다:"
             f" {t['toolbar']!r}"
         )
         assert t["retired_folder_import"] is True, (
             "「폴더에서 가져오기…」가 남아 있습니다 — U6-A(#975)에서 퇴역한 동사입니다."
         )
+        assert t["refresh_hit_area"] is True, "새로고침 클릭 영역은 44px 이상이어야 합니다."
+        assert t["refresh_locked"] is True, "새로고침 처리 중 중복 클릭이 허용됐습니다."
+        assert t["refresh_reenabled"] is True, "완료 후 새로고침 버튼이 다시 활성화되지 않았습니다."
+        assert t["refresh_motion"] is True, "새로고침 회전 또는 동작 줄이기 설정이 적용되지 않았습니다."
+        assert t["refresh_completed"] is True, "새로고침 완료 표시가 나타나지 않았습니다."
+        assert t["refresh_restored"] is True, "새로고침 아이콘이 자동 복귀하지 않았습니다."
         # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
         assert t["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {t!r}"
         # 접힘이 없으니 두 밴드의 행이 전부 선다(hwpx 5 + txt 2).
@@ -1751,9 +1758,10 @@ class TestWebSelftestGate:
         assert t["gate_zone"] is True, (
             "1단계 게이트 존(#editorTplGate)과 세션 「자세히…」 문이 서지 않았습니다."
         )
-        # U6-E 리뷰 8: 「파일을 고치세요」라고 말하는 자리에서 고치러 갈 길을 지우지 않는다.
-        assert t["gate_zone_pathtrack"] is True, (
-            "게이트 존에 「폴더에서 보기」가 없습니다 — 상태와 무관하게 서야 합니다."
+        assert t["template_folder_single"] is True, "서식 폴더 버튼은 하나만 남아야 합니다."
+        assert t["template_folder_visible"] is True, "서식 폴더 버튼이 보이지 않습니다."
+        assert t["template_folder_calls"] == [["open", "C:/lib"]], (
+            "서식 폴더의 상위를 선택하지 않고 루트 안을 바로 열어야 합니다."
         )
         # 행 ⋮ 구성 — 링1 상태 동사 + 「자세히…」. 「이동」과 그룹 헤더 ⋮ 는 U4 §2-30 에서,
         # 「삭제」는 U6-A(#975)에서 사망했다(앱은 사용자 서식 폴더에 쓰지 않는다).

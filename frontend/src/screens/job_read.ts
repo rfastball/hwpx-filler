@@ -16,6 +16,7 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
 import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
+import { RefreshButton } from "./refresh_button.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
 import type { JobRunCallbacks, ScreenPorts } from "./ports.ts";
@@ -268,7 +269,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     });
   }
 
-  async function remountData(): Promise<void> {
+  async function remountData(): Promise<Obj | false> {
     const first = await zone("remount_data", {});
     if (first.needs_confirm) {
       const accepted = await deps.modal.confirm({
@@ -278,9 +279,10 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 다시 읽을까요?`,
         confirmLabel: "다시 읽기", cancelLabel: "취소", danger: true,
       });
-      if (!accepted) return;
-      await zone("remount_data", { confirm: true });
+      if (!accepted) return false;
+      return zone("remount_data", { confirm: true });
     }
+    return first;
   }
 
   async function openDataSheet(trigger: HTMLElement | null): Promise<void> {
@@ -562,7 +564,11 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
     // 「펼쳐서 행 고르기 ⤢」는 여기 없다(U4 10번) — 표를 여는 동사라 표 머리로 갔다.
     // 옮긴 것은 **진입점뿐**이고 초안 거래(`RecordRangeDraft`·존 13액션·「적용 전 메인 범위
     // 불변」 §18.11-21)와 면 수명주기는 그대로다.
-    h("div", { className: "zone-cap" }, h("span", null, "현재 데이터")),
+    h("div", { className: "zone-cap job-data-heading" }, h("span", null, "현재 데이터"),
+      createElement(RefreshButton, {
+        id: "jobBtnRemountData", label: "데이터 새로고침", disabled: !snapshot.has_data,
+        onRefresh: props.controller.remountData, notify: props.controller.notify,
+      })),
     /* 라벨은 확장자를 세지 않는다 — 마운트되는 종류가 엑셀/CSV 하나가 아니게 됐고(#937
        계약 목록), 여기 서는 값은 종류를 이미 말한다(`data_source_label`). */
     h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터"),
@@ -570,10 +576,6 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
         value: snapshot.data_source_label || "", placeholder: "데이터를 선택하세요" }),
       h("button", { className: "btn primary", id: "jobBtnPickData", "data-busy-lock": true,
         onClick: props.controller.openDataPicker }, "데이터 선택…"),
-      h("button", { className: "btn sm", id: "jobBtnRemountData", type: "button",
-        "data-busy-lock": true, disabled: !snapshot.has_data,
-        title: "같은 파일을 디스크에서 다시 읽습니다.",
-        onClick: () => { void props.controller.remountData(); } }, "다시 읽기"),
       /* 결속 부재의 복구 동사(#932 U4-C) — 판정은 Python 한 자리(`job_data_unbound`)이고
          여기서는 그리기만 한다. 데이터 머리에 두는 이유는 이 상태가 **작업의 데이터**에
          관한 사실이라서다: 게이트가 「현재 데이터」 구획을 지목하면 눈이 닿는 자리가

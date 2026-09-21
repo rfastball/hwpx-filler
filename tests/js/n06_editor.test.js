@@ -1515,7 +1515,7 @@ test("U6-E 리뷰 6 — 작성 출처 드리프트 경고는 세션 게이트 �
   assert.equal(renderEditor(quiet).includes('id="editorSchemaDrift"'), false);
 });
 
-test("U6-E 리뷰 8 — RAW·판독 실패에서도 이름과 「폴더에서 보기」가 남는다", async () => {
+test("RAW·판독 실패에서도 이름과 루트 폴더 열기 하나가 남는다", async () => {
   for (const state of [
     { raw_block: "누름틀이 없는 원본입니다.", gate_error: false },
     { raw_block: "", gate_error: true },
@@ -1532,8 +1532,10 @@ test("U6-E 리뷰 8 — RAW·판독 실패에서도 이름과 「폴더에서 �
     const markup = renderEditor(h);
     assert.ok(markup.includes('id="editorTplGate"'), "게이트 존이 서야 한다");
     assert.ok(markup.includes("원본"), "고칠 파일의 이름이 그 문장 옆에 있어야 한다");
-    assert.ok(markup.includes("폴더에서 보기"),
-      "「파일을 고치세요」라고 말하면서 고치러 갈 길을 지우지 않는다");
+    assert.equal((markup.match(/data-act="open-template-folder"/g) || []).length, 1,
+      "고치러 갈 루트 폴더 버튼은 하나만 남긴다");
+    assert.equal(markup.includes("폴더에서 보기"), false,
+      "선택한 템플릿의 중복 폴더 버튼은 제거됐다");
     assert.ok(markup.includes('data-act="session-detail"'), "시트 문도 그대로 선다");
   }
 });

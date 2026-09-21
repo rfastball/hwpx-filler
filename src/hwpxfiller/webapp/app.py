@@ -909,7 +909,7 @@ class WebFrontend:
         return {"ok": True, "status": "saved", "detail": "", "path": chosen}
 
     def _validate_owned(self, path: str) -> str:
-        """소유 화이트리스트(작업 템플릿·등록 데이터·현재 세션 경로)로 검증 — 순수 로직은
+        """소유 화이트리스트(서식 폴더·작업 템플릿·등록 데이터·현재 세션 경로)로 검증 — 순수 로직은
         :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상).
 
         이 세션이 **방금 만들어 앉힌** 문서의 절대경로도 세션 성분으로 든다(S7-03 · #825):
@@ -919,8 +919,15 @@ class WebFrontend:
         """
         ed = self._controller("editor")
         job = self._controller("job")
-        session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
-                   getattr(job, "out_dir", ""), *job.delivered_artifact_paths()]
+        # 서식 폴더는 앱이 추적·관리하는 단일 루트라 그 폴더 자체도 로케이트 대상이다.
+        # 하위 파일을 넓게 허용하지 않고 exact 경로 하나만 보탠다.
+        session = [
+            str(self._template_root.path()),
+            getattr(ed, "template_path", ""),
+            getattr(ed, "data_path", ""),
+            getattr(job, "out_dir", ""),
+            *job.delivered_artifact_paths(),
+        ]
         owned = collect_owned_paths(
             self._job_registry, self._pool_registry, session, base_dir=self._owned_path_base
         )
