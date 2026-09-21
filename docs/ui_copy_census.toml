@@ -1774,6 +1774,46 @@ file = "src/hwpxfiller/webapp/blocker_affordance.py"
 text = "정책이 거절한 상태라 사용자가 지금 지울 수단이 없다. 동사를 세우면 누를 수 있다는 거짓을 말하게 된다 — 그 자리는 생성 버튼의 사유 병기(「정책상 지금은 문서를 만들 수 없습니다」)가 맡는다."
 
 [[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "{}행 {} 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "데이터 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "데이터 항목 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "생성 예정 문서 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "선택한 데이터 위치를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "저장 폴더는 전체 경로여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "파일 이름 규칙이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "파일 이름에 사용할 값을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/current_execution_preparation.py"
+text = "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/webapp/data_zone.py"
 text = "'{}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
 
@@ -1828,6 +1868,52 @@ text = "실행 이름이 비어 있습니다 — 증거가 무엇의 것인지 �
 [[sentence]]
 file = "src/hwpxfiller/webapp/live_run.py"
 text = "컨텍스트에 종결자가 없습니다 — 증거도 종료도 잃습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "생성을 중단했습니다 · {}개 완료"
+legacy = true
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "완료. 성공 {}/{}, 실패 1. 문서는 만들었지만 만든 뒤 다시 읽어 확인하는 데 실패했습니다({}). 해당 파일을 직접 열어 내용을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "완료. 성공 {}/{}, 실패 1. 미착수 {}건 — 앉은 문서는 그대로 유지됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "중단했습니다. 시도 {}/{}건 — 안착 전이라 문서는 만들지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/managed_run_result.py"
+text = "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다."
+legacy = true
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/mapping_verbs.py"
@@ -2035,10 +2121,6 @@ text = "{} 선택을 해제했습니다. 문서 작업을 다시 선택하세요
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "{}행 {} 값을 정확히 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "「문서 작업」에서 고른 '{}' 은(는) 이 데이터와 구조가 맞지 않습니다. 필요한 열을 갖춘 데이터를 고르거나 편집기에서 연결을 고치세요."
 
 [[sentence]]
@@ -2067,15 +2149,7 @@ text = "다시 읽을 데이터가 없습니다. 데이터를 먼저 고르세�
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "데이터 값을 정확히 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "데이터 문제를 사용자 문안으로 표시할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "데이터 항목 이름을 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
@@ -2235,15 +2309,6 @@ text = "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합�
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "생성 예정 문서 이름을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "생성을 중단했습니다 · {}개 완료"
-legacy = true
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "생성을 진행할 수 없습니다."
 
 [[sentence]]
@@ -2252,31 +2317,11 @@ text = "생성할 데이터를 먼저 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "선택한 데이터 위치를 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "실행 준비가 현재 확인 상태와 달라 생성하지 않았습니다. 변경사항을 다시 확인해 주세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "실행 확인 기능이 조립되지 않았습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "완료. 성공 {}/{}, 실패 1. 문서는 만들었지만 만든 뒤 다시 읽어 확인하는 데 실패했습니다({}). 해당 파일을 직접 열어 내용을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "완료. 성공 {}/{}, 실패 1. 미착수 {}건 — 앉은 문서는 그대로 유지됩니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
@@ -2298,14 +2343,6 @@ text = "이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {pa
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "이 작업에 연결된 데이터를 불러오지 못했습니다. {reason}"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
@@ -2349,10 +2386,6 @@ text = "작업을 전환하세요"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "저장 폴더는 전체 경로여야 합니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "저장 폴더를 만들 수 없습니다. 다른 폴더를 선택하세요."
 
 [[sentence]]
@@ -2361,27 +2394,11 @@ text = "저장 폴더를 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 TXT 템플릿을 선택하고 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "적용하세요"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "중단했습니다. 시도 {}/{}건 — 안착 전이라 문서는 만들지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
@@ -2422,23 +2439,6 @@ text = "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "템플릿을 읽을 수 없습니다: {}. 템플릿을 다시 연결한 뒤 진행하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다."
-legacy = true
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "파일 이름 규칙이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "파일 이름에 사용할 값을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
