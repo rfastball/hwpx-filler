@@ -5434,7 +5434,7 @@ def test_slotless_configuration_verdict_controls_preflight_and_gate(
     assert blocked["gate"]["reason"] == verdict
     assert blocked["preflight"]["level"] == "warn"
     assert blocked["gate"]["text"] in blocked["preflight"]["text"]
-    assert "생성할 수 있습니다" not in blocked["preflight"]["text"]
+    assert "검증 완료. 생성할 수 있습니다." not in blocked["preflight"]["text"]
 
     monkeypatch.setattr(
         coordinator, "generation_provenance_verdict", lambda _: "EXECUTION_ALLOWED",
