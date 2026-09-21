@@ -489,6 +489,10 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 항목 상세 시트(화면 아님 · U6-E #979) | `#tplDetailModal`, `src/screens/editor.ts`(`TplDetailSheet`) | `TemplateController`(`detail` 존) | `TemplateDetail`·`SlotView`(`gui/template_manager_state.py`) |
 | 데이터 상세 시트(화면 아님 · 고르기 열 공용 계약) | `#poolDetailModal`, `src/screens/pool_detail.ts`(`PoolDetailSheet`) | `PoolController`(`detail` 존) | `DatasetDetail`(`application/dataset_pool.py`) |
 
+편집기의 React 화면·오버레이는 `src/screens/editor.ts`, 브리지 발신·편집 정산·이탈 확인과
+TXT lint 타이머는 `src/screens/editor_controller.ts`가 소유한다. 화면은 컨트롤러를 소비하고
+컨트롤러는 React 화면을 import하지 않는다. 커밋 전 초안의 정본은 `editor_state.ts` 그대로다.
+
 두 상세 시트의 **골격은 하나다**(`src/screens/detail_sheet.ts` `DetailSheetFrame`): 머리
 (이름+배지) · 경로 줄과 그 문(`PathActions`) · 오류 상자 · 진단 · 몸통 · 성과/실패 두 줄 ·
 관리 동사 줄 · 닫기. 좌표는 접두어만 다르다 — `${idPrefix}` + `Title`·`Path`·`Error`·`Msg`·

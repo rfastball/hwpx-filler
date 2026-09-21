@@ -99,7 +99,7 @@ import { createJobRunController } from "./screens/job_run.ts";
 import { createSlotConfigService } from "./screens/job_slot_config.ts";
 import { createJobContentSelectionController } from "./screens/job_content_selection.ts";
 import { createJobRelink } from "./screens/job_relink.ts";
-import { createEditorController } from "./screens/editor.ts";
+import { createEditorController } from "./screens/editor_controller.ts";
 import { createEditorEntry } from "./screens/editor_entry.ts";
 import { createWorkbenchController } from "./screens/workbench.ts";
 import { createSheetPickerController } from "./screens/sheet_picker.ts";
