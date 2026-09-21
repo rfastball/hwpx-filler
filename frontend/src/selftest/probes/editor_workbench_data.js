@@ -2252,9 +2252,14 @@ export function createEditorWorkbenchDataProbes() {
             await settleRender(ctx);
             out.refresh_locked = refreshButton.disabled
               && refreshButton.getAttribute("aria-busy") === "true" && refreshCalls === 1;
+            out.refresh_motion = styleOf(ctx, refreshButton.querySelector("svg")).animationName
+              === (ctx.win.matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "refresh-spin");
             finishRefresh({ ok: true });
             await settleUntil(ctx, () => !refreshButton.disabled);
             out.refresh_reenabled = refreshButton.getAttribute("aria-busy") === "false";
+            out.refresh_completed = refreshButton.getAttribute("data-refresh-done") === "true"
+              && refreshButton.getAttribute("aria-label") === "템플릿 새로고침 완료"
+              && styleOf(ctx, refreshButton.querySelector("svg")).animationName === "none";
           } finally {
             finishRefresh({ ok: true });
             refreshStub.restore();
@@ -2473,6 +2478,10 @@ export function createEditorWorkbenchDataProbes() {
           );
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll("#editorTplList .pitem").length;
+          await ctx.waitFor(() => refreshButton.getAttribute("data-refresh-done") === "false", {
+            what: "새로고침 완료 표시 자동 복귀", timeoutMs: 1000,
+          });
+          out.refresh_restored = refreshButton.getAttribute("aria-label") === "템플릿 새로고침";
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));

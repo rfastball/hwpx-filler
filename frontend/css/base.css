@@ -164,6 +164,10 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .btn.sm{font-size:var(--fs-body);padding:var(--sp-4) var(--sp-10)}
 .refresh-button{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .refresh-button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.refresh-button[aria-busy="true"] svg{animation:refresh-spin .8s linear infinite}
+.refresh-button[data-refresh-done="true"] svg{color:var(--a-ok)}
+@keyframes refresh-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.refresh-button[aria-busy="true"] svg{animation:none}}
 .btn.icon{padding:var(--sp-4) var(--sp-8)}
 .btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600;padding:var(--sp-6) var(--sp-16)}
 .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}

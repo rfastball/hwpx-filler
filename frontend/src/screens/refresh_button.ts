@@ -1,4 +1,4 @@
-import { createElement, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 /** 목록과 현재 데이터의 공통 새로고침 동사. */
@@ -11,10 +11,15 @@ export function RefreshButton(props: {
   disabled?: boolean;
 }): ReactNode {
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const pending = useRef(false);
+  const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(completionTimer.current), []);
   async function refresh(): Promise<void> {
     if (pending.current || props.disabled) return;
     pending.current = true;
+    clearTimeout(completionTimer.current);
+    setDone(false);
     setBusy(true);
     try {
       const result = await props.onRefresh();
@@ -22,7 +27,8 @@ export function RefreshButton(props: {
       if (result && typeof result === "object" && "ok" in result && result.ok === false) {
         throw new Error("error" in result ? String(result.error) : `${props.label} 실패`);
       }
-      props.notify(`${props.label} 완료`);
+      setDone(true);
+      completionTimer.current = setTimeout(() => setDone(false), 700);
     } catch (error) {
       props.notify(`${props.label} 실패: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -34,9 +40,12 @@ export function RefreshButton(props: {
     className: "btn sm reload refresh-button", type: "button", id: props.id,
     "data-act": props.side ? "refresh" : undefined, "data-side": props.side,
     "data-busy-lock": true, disabled: props.disabled || busy,
-    title: props.label, "aria-label": props.label, "aria-busy": busy,
+    title: props.label, "aria-label": done ? `${props.label} 완료` : props.label,
+    "aria-busy": busy, "data-refresh-done": done,
     onClick: () => { void refresh(); },
   }, createElement("svg", {
     viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false",
-  }, createElement("path", { d: "M20 7v5h-5M20 12a8 8 0 1 0-2.3 5.7" })));
+  }, createElement("path", {
+    d: done ? "M5 12l4 4L19 6" : "M20 7v5h-5M20 12a8 8 0 1 0-2.3 5.7",
+  })));
 }
