@@ -185,55 +185,11 @@ text = "볼 항목이 없습니다. 목록에서 항목의 ⋮ → 「자세히�
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
-text = "(값은 이월). 계속할까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 계속할까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 덮어쓸까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 되돌릴까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 되돌릴까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 지금 변환할까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 지울까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{} 확정했거나 직접 편집한 매핑 {}개가 전부 미확정으로 돌아갑니다"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "{}만 바뀌었습니다. {}"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "계속할까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
 text = "고정한 데이터를 아직 읽지 못했습니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
 text = "데이터를 연결하지 않아 지금은 저장할 수 없습니다. '고르기' 단계에서 데이터를 고르세요."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "등록 데이터를 불러올 수 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
@@ -257,48 +213,12 @@ text = "왼쪽과 오른쪽에서 하나씩 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
-text = "자동 제안을 다시 받을 행이 없습니다. 확정한 {}개는 그대로 둡니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
 text = "작업 이름을 입력하세요"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장하지 않은 템플릿 내용이 사라집니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장할 수 없습니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장했습니다. '문서 만들기' 로 이동하지 못했습니다:"
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "저장했습니다. 작업에 반영하려면 「변경사항 확인」 다음 「변경사항 적용」을 누르세요."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
 text = "전 행을 확정해야 진행할 수 있습니다"
 legacy = true
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "직접 입력한 상수·유형·표시형도 함께 지워집니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor.ts"
-text = "직접 편집한 매핑 {}개가 자동 제안으로 돌아갑니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor.ts"
@@ -309,11 +229,91 @@ file = "frontend/src/screens/editor.ts"
 text = "템플릿과 데이터를 하나씩 고르세요."
 
 [[sentence]]
-file = "frontend/src/screens/editor.ts"
+file = "frontend/src/screens/editor_controller.ts"
+text = "(값은 이월). 계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 덮어쓸까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 되돌릴까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 되돌릴까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 지금 변환할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 지울까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{} 확정했거나 직접 편집한 매핑 {}개가 전부 미확정으로 돌아갑니다"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "{}만 바뀌었습니다. {}"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "계속할까요?"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "등록 데이터를 불러올 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "자동 제안을 다시 받을 행이 없습니다. 확정한 {}개는 그대로 둡니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장하지 않은 템플릿 내용이 사라집니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장했습니다. '문서 만들기' 로 이동하지 못했습니다:"
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "저장했습니다. 작업에 반영하려면 「변경사항 확인」 다음 「변경사항 적용」을 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "직접 입력한 상수·유형·표시형도 함께 지워집니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
+text = "직접 편집한 매핑 {}개가 자동 제안으로 돌아갑니다."
+
+[[sentence]]
+file = "frontend/src/screens/editor_controller.ts"
 text = "템플릿을 찾을 수 없습니다. {}"
 
 [[sentence]]
-file = "frontend/src/screens/editor.ts"
+file = "frontend/src/screens/editor_controller.ts"
 text = "확정한 {}개는 그대로 둡니다."
 
 [[sentence]]
