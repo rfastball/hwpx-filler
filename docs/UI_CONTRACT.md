@@ -442,6 +442,11 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 판정을 그 파일 하나가 소유한다. 프로브 정의는 `frontend/src/selftest/probes/` 45개이고
 러너는 `frontend/src/selftest/runner.js`다.
 
+호스트 쪽 모드 선택·비노출/전역 델타 증거·드라이버 본문은
+`webapp/selftest_runner.py`가 소유한다. `app.py`는 제품 창 조립, 능력 결정, 호스트 연산,
+산출물 재검증과 종료를 맡고 기존 `_selftest_drive`·예산 이름은 그 러너의 import seam으로
+남긴다.
+
 #### 푸시는 단일 활성 통로를 지난다
 
 제품 `snapshot` 처리기와 selftest 프로브는 **같은 포트**(`frontend/src/push_port.js`)를
