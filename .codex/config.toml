@@ -1,0 +1,19 @@
+# >>> codex-orchestration:root >>>
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+agents.max_concurrent_threads_per_session = 4
+# <<< codex-orchestration:root <<<
+
+# >>> codex-orchestration:roles >>>
+[agents.sol]
+description = "Lead default implementation and integration; solve ambiguous or high-impact work."
+config_file = "./agents/sol.toml"
+
+[agents.terra]
+description = "Implement clearly easy bounded changes; analyze, review, or verify bounded tasks."
+config_file = "./agents/terra.toml"
+
+[agents.luna]
+description = "Search, inventory, extract, or perform a mechanical transform."
+config_file = "./agents/luna.toml"
+# <<< codex-orchestration:roles <<<
