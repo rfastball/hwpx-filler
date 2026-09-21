@@ -1230,9 +1230,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.text_registry.count() == 0:
             return ""
         return (
-            "저장된 TXT 작업이 아직 없습니다. '문서 작업'의 [＋ 새 작업] 템플릿 탭에서 "
-            "TXT 템플릿을 골라 작업으로 저장하면 여기 후보로 서고, 검토·복사 작업대로 "
-            "이어집니다."
+            "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 "
+            "TXT 템플릿을 선택하고 저장하세요."
         )
 
     def _browse_payload(self, jobs) -> dict:
