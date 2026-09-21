@@ -511,10 +511,6 @@ text = "{}: snapshot 객체가 아닙니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
-text = "같은 파일을 디스크에서 다시 읽습니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
 text = "검색으로 {}건이 목록에서 빠졌습니다."
 
 [[sentence]]

@@ -1650,7 +1650,8 @@ function TemplatePool(props: {
        매체를 유도하지 않는다. */
     onMore: (row: Obj, trigger: HTMLElement) =>
       controller.toggleLibMenu("tpl", String(row.icon || ""), String(row.key), trigger),
-    reload: () => controller.guarded(() => controller.refreshLibrary()),
+    reload: () => controller.refreshLibrary(),
+    notify: controller.notify,
     acts: createElement(Fragment, null,
       h("button", {
         className: "btn sm", "data-act": "import-template", key: "import",
@@ -1748,7 +1749,8 @@ function DataPool(props: {
       controller.guarded(() => controller.dropPair(sourceSide, sourceKey, targetKey)),
     onMore: (row: Obj, trigger: HTMLElement) =>
       controller.toggleLibMenu("dat", String(row.icon || ""), String(row.key), trigger),
-    reload: () => controller.guarded(() => controller.refreshPool()),
+    reload: () => controller.refreshPool(),
+    notify: controller.notify,
     onNoticeAction: (key: string, payload: Obj) => controller.poolNoticeAction(key, payload),
     acts: createElement(Fragment, null,
       h("button", {

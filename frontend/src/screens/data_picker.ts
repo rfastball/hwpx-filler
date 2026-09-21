@@ -549,7 +549,8 @@ function dialogHost(
     /* `drop` 없음 = 끌기 props 0. 이 면에는 짝 지을 상대 열이 없다. */
     onMore: (row: Obj, trigger: HTMLElement) => { controller.toggleRowMenu(row, trigger); },
     onNoticeAction: controller.noticeAction,
-    reload: () => { void controller.refresh(); },
+    reload: () => controller.refresh(),
+    notify: controller.notify,
     acts: createElement(Fragment, null,
       h("button", {
         className: "btn sm", id: "dataPickerBrowse", "data-busy-lock": true, key: "browse",

@@ -2233,6 +2233,32 @@ export function createEditorWorkbenchDataProbes() {
           out.toolbar = ["import-template", "open-settings", "lib-new-txt", "refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
           out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
+          const refreshButton = host.querySelector('[data-act="refresh"][data-side="tpl"]');
+          const refreshRect = refreshButton.getBoundingClientRect();
+          out.refresh_hit_area = !isHidden(ctx, refreshButton)
+            && refreshRect.width >= 44 && refreshRect.height >= 44;
+          let finishRefresh;
+          let refreshCalls = 0;
+          const refreshResult = new Promise((resolve) => { finishRefresh = resolve; });
+          const refreshStub = stubBridgeCall(ctx, (real) => (screen, action, payload) => {
+            if (screen !== "tpl" || action !== "refresh") return real(screen, action, payload);
+            refreshCalls += 1;
+            return refreshResult;
+          });
+          try {
+            ctx.doc.body.click();
+            refreshButton.click();
+            refreshButton.click();
+            await settleRender(ctx);
+            out.refresh_locked = refreshButton.disabled
+              && refreshButton.getAttribute("aria-busy") === "true" && refreshCalls === 1;
+            finishRefresh({ ok: true });
+            await settleUntil(ctx, () => !refreshButton.disabled);
+            out.refresh_reenabled = refreshButton.getAttribute("aria-busy") === "false";
+          } finally {
+            finishRefresh({ ok: true });
+            refreshStub.restore();
+          }
           // 구획 헤더·그룹 ⋮·＋그룹지정 칩은 U4 §2-30 에서 사라졌다 — 셋 다 **음성 단언**으로
           // 남긴다(0 이 아니게 되면 걷힌 표면이 되살아났다는 뜻이다).
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;

@@ -1722,6 +1722,9 @@ class TestWebSelftestGate:
         assert t["retired_folder_import"] is True, (
             "「폴더에서 가져오기…」가 남아 있습니다 — U6-A(#975)에서 퇴역한 동사입니다."
         )
+        assert t["refresh_hit_area"] is True, "새로고침 클릭 영역은 44px 이상이어야 합니다."
+        assert t["refresh_locked"] is True, "새로고침 처리 중 중복 클릭이 허용됐습니다."
+        assert t["refresh_reenabled"] is True, "완료 후 새로고침 버튼이 다시 활성화되지 않았습니다."
         # U4 §2-30: 구획 헤더는 없다(밴드는 언제나 평면) — 행은 하나도 접히지 않는다.
         assert t["grp_heads"] == 0, f"그룹 헤더가 남아 있습니다: {t!r}"
         # 접힘이 없으니 두 밴드의 행이 전부 선다(hwpx 5 + txt 2).
