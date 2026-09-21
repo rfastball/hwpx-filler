@@ -26,7 +26,8 @@ from hwpxcore.bookmark_region import (
     resolve_bookmark_topology,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
-import hwpxfiller.external.template_inspection as template_inspection
+import hwpxfiller.external.hwpx_structure_ops as hwpx_structure_ops
+import hwpxfiller.external.hwpx_product_inspection as hwpx_product_inspection
 from hwpxfiller.domain.authoring import scan_structure
 from hwpxfiller.domain.slot import Slot, SlotOption
 from hwpxfiller.external.template_inspection import (
@@ -454,7 +455,7 @@ def test_postcondition_a_failure_rolls_back_without_deformation(
     pkg = _notation_package()
     before = dict(pkg.entries)
     monkeypatch.setattr(
-        template_inspection, "serialize_slot_metatag", _twisted_metatag
+        hwpx_product_inspection, "serialize_slot_metatag", _twisted_metatag
     )
     with pytest.raises(ValueError, match="postcondition A"):
         compile_structure(pkg)
@@ -468,7 +469,7 @@ def test_postcondition_b_failure_rolls_back_without_deformation(
     pkg = _notation_package()
     before = dict(pkg.entries)
     monkeypatch.setattr(
-        template_inspection,
+        hwpx_structure_ops,
         "remove_top_level_paragraph",
         lambda *_args, **_kwargs: None,
     )
@@ -483,7 +484,7 @@ def test_postcondition_c_failure_rolls_back_without_deformation(
     """ⓒ 기존 region 대조가 어긋나면 롤백한다(판정 자체를 비틀어 재현)."""
     pkg = _notation_package()
     before = dict(pkg.entries)
-    original = template_inspection._non_product_region_shape
+    original = hwpx_structure_ops._non_product_region_shape
     calls: "list[int]" = []
 
     def drifting(regions, created):
@@ -494,7 +495,7 @@ def test_postcondition_c_failure_rolls_back_without_deformation(
         return shape
 
     monkeypatch.setattr(
-        template_inspection, "_non_product_region_shape", drifting
+        hwpx_structure_ops, "_non_product_region_shape", drifting
     )
     with pytest.raises(ValueError, match="postcondition C"):
         compile_structure(pkg)
@@ -514,7 +515,7 @@ def test_ambiguous_created_region_name_stops_before_committing(
     )
     before = dict(pkg.entries)
     monkeypatch.setattr(
-        template_inspection, "structure_region_name", lambda *_args: "SAME"
+        hwpx_structure_ops, "structure_region_name", lambda *_args: "SAME"
     )
     with pytest.raises(ValueError, match="not uniquely resolvable"):
         compile_structure(pkg)
