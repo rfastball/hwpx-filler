@@ -3536,9 +3536,9 @@ def test_a_changed_display_input_does_not_dirty_an_untouched_draft(tmp_path):
 )
 def test_sequence_example_reads_the_token_not_the_rendered_names(first, pattern, expected):
     """연번 예시의 판정도 서식도 **패턴이 낸다** — 문자열에서 되추측하지 않는다(리뷰 5)."""
-    from hwpxfiller.webapp.screen_editor import _sequence_example
+    from hwpxfiller.webapp.editor_presentation import sequence_example
 
-    assert _sequence_example(first, pattern) == expected
+    assert sequence_example(first, pattern) == expected
 
 
 def test_the_templates_root_is_read_once_until_it_is_reset(tmp_path):

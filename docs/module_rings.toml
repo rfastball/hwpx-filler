@@ -327,10 +327,22 @@ source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
 oracle_kind = "structural"
 
 [[unit]]
+module = "hwpxfiller.webapp.editor_presentation"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/editor_presentation.py"]
+oracle_nodeid = "tests/test_webapp_editor.py::test_sequence_example_reads_the_token_not_the_rendered_names"
+
+[[unit]]
 module = "hwpxfiller.webapp.job_list"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_list.py"]
 oracle_kind = "structural"
+
+[[unit]]
+module = "hwpxfiller.webapp.job_presentation"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/job_presentation.py"]
+oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.live_run"
@@ -427,6 +439,12 @@ module = "hwpxfiller.webapp.selftest_api"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
 oracle_nodeid = "tests/test_selftest_api.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.selftest_runner"
+target = "HOST"
+source_write_set = ["src/hwpxfiller/webapp/selftest_runner.py"]
+oracle_nodeid = "tests/test_live_run_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.seal_execution_plan_product"

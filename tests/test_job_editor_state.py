@@ -255,7 +255,7 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     from dataclasses import fields as dataclass_fields
 
     from hwpxfiller.domain.job import Job
-    from hwpxfiller.webapp.screen_editor import _EMPTY_PRESERVED, _preserved_meta
+    from hwpxfiller.gui.job_editor_state import EMPTY_PRESERVED, preserved_meta
 
     durable = {f.name for f in dataclass_fields(Job)}
     classified = _EDITOR_REBUILDS | _EDITOR_PRESERVES | _REGISTRY_DERIVES
@@ -270,8 +270,8 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     assert not (_EDITOR_REBUILDS & _EDITOR_PRESERVES)
     assert not (_REGISTRY_DERIVES & (_EDITOR_REBUILDS | _EDITOR_PRESERVES))
     # 선언과 실물이 갈리지 않게: 보존 목록의 두 표현(빈 기본값·추출기)이 같은 키를 든다.
-    assert set(_EMPTY_PRESERVED) == _EDITOR_PRESERVES
-    assert set(_preserved_meta(Job(name="x"))) == _EDITOR_PRESERVES
+    assert set(EMPTY_PRESERVED) == _EDITOR_PRESERVES
+    assert set(preserved_meta(Job(name="x"))) == _EDITOR_PRESERVES
 
 
 # ─────────────────────────────────────────────── 이름 기본값 도출(U6-D #978)

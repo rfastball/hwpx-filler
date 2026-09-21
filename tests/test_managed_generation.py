@@ -223,7 +223,7 @@ def test_uncompiled_structure_notation_refuses_the_managed_run(tmp_path) -> None
 
     from hwpxfiller.application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
     from hwpxfiller.gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
-    from hwpxfiller.webapp.screen_job import _ADMISSION_REJECT_TEXT
+    from hwpxfiller.webapp.managed_run_result import ADMISSION_REJECT_TEXT
 
     spec = replace(
         _one_of_two(), notation_lines=("{{#항목 특약 특약 사항}}", "{{/항목}}")
@@ -245,7 +245,7 @@ def test_uncompiled_structure_notation_refuses_the_managed_run(tmp_path) -> None
     assert "2건" in result.detail  # 스캐너 단일 출처 수치의 재진술
     assert list(out.iterdir()) == []  # 검문은 안착 전이다 — write 0
     # 같은 차단을 같은 문장으로: legacy admission 과 managed 거절이 한 맵을 탄다.
-    assert _ADMISSION_REJECT_TEXT[result.code] == STRUCTURE_NOTATION_BLOCK_MESSAGE
+    assert ADMISSION_REJECT_TEXT[result.code] == STRUCTURE_NOTATION_BLOCK_MESSAGE
 
 
 def test_marker_free_slot_bearing_run_passes_the_notation_gate(tmp_path) -> None:
