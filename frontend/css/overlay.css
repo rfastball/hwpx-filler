@@ -73,7 +73,8 @@
 .settings-row-folder{align-items:flex-start}
 .settings-folder{display:flex;flex-direction:column;gap:var(--sp-4);flex:1 1 auto;min-width:0}
 .settings-folder-row{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
-.settings-folder-row .field{flex:1 1 auto;min-width:0}
+.settings-folder-row .field{flex:1;min-width:0;width:auto}
+.settings-folder-row>:not(.field){flex:none;white-space:nowrap}
 
 /* ---- 템플릿 관리(#13) ---- */
 /* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.
