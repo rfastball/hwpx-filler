@@ -80,7 +80,6 @@ from ..external.delivery_coordinator import (
     DeliveredDocument,
     DeliveryAborted,
     DeliveryCompleted,
-    DeliveryRefused,
 )
 from ..gui.artifact_view_state import observed_artifact_snapshot
 from ..external.ledger_export import write_managed_delivery_ledger
@@ -91,8 +90,6 @@ from ..external.seal_execution_capture_runner import (
 )
 from .managed_generation import (
     ManagedReadBackFailed,
-    ManagedRunCancelled,
-    ManagedRunRefused,
     run_managed_generation,
 )
 from ..domain.job import (
@@ -170,7 +167,7 @@ from ..application.slotless_run_bridge import (
 )
 from ..gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
 # S4 Working Slot Configuration 배선(SX-02 #725) — Product/Observation 소비만(재구현 금지).
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import uuid
 from ..application.automatic_seal_orchestration import (
     FAILED as ORCHESTRATION_FAILED,
@@ -188,13 +185,10 @@ from ..application.workbench_execution_status import (
 )
 from ..application.document_creation_workbench import (
     ActiveWorkContext,
-    DeliveryPreviewBlocker,
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
     HistoricalOutcomeSummary,
-    PlannedDocumentSummary,
     RecordRecoveryTarget,
-    RecordValidationAdvisory,
     RecordValidationIssue,
     RecordValidationSummary,
     RELEASE,
@@ -202,18 +196,9 @@ from ..application.document_creation_workbench import (
     decide_active_work_after_data_transition,
 )
 from ..application.generation_delivery import (
-    DeliveryPlanBlocked,
     DeliveryPlanContextError,
-    FILENAME_PATTERN_CONTRACT_ID,
-    GenerationDeliveryBindingBasis,
-    NON_REGULAR,
-    PathOccupancyEntry,
-    PathOccupancyObservation,
-    REGULAR_FILE,
     WRITE_OVERWRITE,
     CurrentResolvedDelivery,
-    build_delivery_binding_basis,
-    resolve_current_generation_delivery,
 )
 from ..application.preset_command import preset_list_actionable
 from ..application.fresh_execution_observation import (
@@ -224,33 +209,39 @@ from ..application.fresh_execution_observation import (
 )
 from ..application.execution_semantic_kernel import SealedExecutionPlanValue
 from ..application.record_validation import (
-    CurrentValidatedDataRecord,
-    MISSING_VALUE_MARKED,
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
     RECORD_REQUIRED_VALUE_MISSING,
     RECORD_VALUE_FORMAT_INVALID,
-    RecordValidationBlocked,
-    RecordValidationContextError,
     RecordValidationBlocker,
-    marked_missing_fields,
-    validate_data_records_against_current_value,
 )
 from ..application.run_delivery_intent import (
     DEFAULT_COLLISION_POLICY,
     RunDeliveryIntent,
 )
-from ..application.field_binding_input import FieldBindingInput
 from ..domain.raw_data_record import (
     RawDataRecordSnapshot,
     RawDataRecordError,
-    RawRecordCaptureProvenance,
-    SourceNull,
-    SourceText,
-    build_raw_record_snapshot,
 )
 from ..domain.field_binding import FieldBindingError
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
+from .current_execution_preparation import (
+    DELIVERY_BLOCKER_PHRASES as _DELIVERY_BLOCKER_PHRASES,
+    CurrentDeliveryPreparation as _CurrentDeliveryPreparation,
+    CurrentRecordCaptureError as _CurrentRecordCaptureError,
+    CurrentRecordPreparation as _CurrentRecordPreparation,
+    capture_selected_records,
+    current_record_identity,
+    delivery_projection,
+    prepare_current_delivery,
+    prepare_current_records,
+    unresolved_delivery,
+)
+from .managed_run_result import (
+    ADMISSION_REJECT_TEXT as _ADMISSION_REJECT_TEXT,
+    project_managed_run_result,
+    run_title as _run_title,
+)
 
 #: 확인 동사(`#jobResolveExecution`)가 실려야 하는 execution status(#912 D1). 세 상태는
 #: 「확인이 이 상태를 지운다」는 공통점으로 묶인다 — CHECKING 은 자동 확인이 이미 그 일을 하는
@@ -260,22 +251,6 @@ _EXECUTION_RESOLVABLE_STATUS_CODES = frozenset(
     (EXECUTION_STATUS_NO_EVIDENCE, EXECUTION_STATUS_CHECKING, EXECUTION_STATUS_STALE)
 )
 
-# managed 생성 admission 차단 코드 → 사용자 문안(confirm-or-alarm — 조용한 fallback 없음).
-_ADMISSION_REJECT_TEXT = {
-    "TEMPLATE_INITIALIZATION_REQUIRED": "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요.",
-    "NEEDS_CONFIGURATION_REVIEW": "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요.",
-    "NEEDS_CONFIGURATION": "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다.",
-    "STALE_TEMPLATE_APPLICATION": "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다.",
-    # 실사유는 「미지원」이 아니라 「이 작업의 문서 구성이 아직 안 잡혔다」다(#907·#912) —
-    # slot-bearing 템플릿인데 구성 capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 닫힌 자리다.
-    # 「아직 지원하지 않습니다」는 S5/S6 미출하 시절의 전제라 S6 완주 이후로는 거짓이고,
-    # 사용자에게 다음 행동도 주지 못한다.
-    "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요.",
-    "SLOTLESS_SELECTION_CONTEXT_REQUIRED": "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다.",
-    "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR": "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다.",
-    # 문안은 링1 단일 원천 — 편집 게이트와 생성 차단이 같은 상태를 같은 문장으로 말한다(S8-04).
-    STRUCTURE_NOTATION_UNCOMPILED: STRUCTURE_NOTATION_BLOCK_MESSAGE,
-}
 from ..external.settings import (
     load_last_data_source,
     load_last_output_directory,
@@ -381,40 +356,6 @@ VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
 
-@dataclass(frozen=True)
-class _CurrentRecordPreparation:
-    snapshot_generation: int
-    work_ref: str
-    ordered_model_indices: tuple[int, ...]
-    execution_value: SealedExecutionPlanValue
-    raw_records: tuple[RawDataRecordSnapshot, ...]
-    validated_records: tuple[CurrentValidatedDataRecord, ...]
-    record_validation: RecordValidationSummary
-
-
-@dataclass(frozen=True)
-class _CurrentDeliveryPreparation:
-    record_preparation: _CurrentRecordPreparation
-    current_field_binding: FieldBindingInput
-    exact_pattern: str
-    run_delivery_intent: RunDeliveryIntent
-    captured_delivery_clock: str
-    result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
-
-
-class _CurrentRecordCaptureError(ValueError):
-    pass
-
-
-def _capture_source_value(value: object):
-    """데이터 칸 하나를 exact source 값으로 고정한다 — 값은 언제나 타입 없는 텍스트다."""
-    if value is None:
-        return SourceNull()
-    if isinstance(value, str):
-        return SourceText(value)
-    raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
-
-
 # 행 안의 빈 값(explicit null·공백)은 #957 이후 여기 없다 — 차단이 아니라 표식이라
 # advisory 문안(`_record_advisory_notice`)이 그 자리를 진다. 여기 남은 것은 **열이 없는
 # 것**과 값을 문서 내용으로 해석조차 못 하는 것, 곧 데이터↔작업 결속의 구조 결함이다.
@@ -440,15 +381,6 @@ def _record_advisory_notice(summary: RecordValidationSummary) -> str:
     )
 
 
-_DELIVERY_BLOCKER_PHRASES = {
-    "OUTPUT_NAME_TOKEN_UNRESOLVED": "파일 이름에 사용할 값을 확인할 수 없습니다.",
-    "OUTPUT_NAME_BINDING_AMBIGUOUS": "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다.",
-    "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
-    "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 파일이 있습니다:",
-    "OUTPUT_PATH_NON_REGULAR_CONFLICT": "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:",
-}
-
-
 # (결과 3태 판정은 :func:`hwpxfiller.application.generation.run_status` 가 소유한다 —
 #  P2-23. 여기는 그 태 facts 를 받아 문안만 조립한다.)
 def _needs_overwrite_result(*, total: int, conflict_names: "list[str]") -> dict:
@@ -467,21 +399,6 @@ def _needs_overwrite_result(*, total: int, conflict_names: "list[str]") -> dict:
         "conflict_names": conflict_names[:10],                 # 파괴분 표본
         "conflict_more": max(0, len(conflict_names) - 10),
     }
-
-
-def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str:
-    """3태 제목 — 취소는 태를 바꾸지 않고 제목이 그 사실을 **먼저** 말한다.
-
-    문안이 Python 에 있는 이유는 요약(``summary``)과 같다: 같은 수치를 두 층이 따로
-    조립하면 제목과 요약이 갈라진다(공유 합성기 규율).
-    """
-    if cancelled:
-        return f"생성을 중단했습니다 · {succeeded}개 완료"
-    if status == "completed":
-        return f"문서 생성 완료 · {succeeded}개"
-    if status == "partiallyCompleted":
-        return f"{succeeded}개 성공 · {failed}개 실패"
-    return "문서 생성 실패"
 
 
 class JobController(DataZoneMixin, PoolTargetingMixin):
@@ -3510,184 +3427,47 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _managed_result_dict(self, outcome, prep, payload, context, now: str) -> dict:
         """managed 실행 결과 → legacy 와 같은 키 집합의 결과 dict(JobResultZone 무변경)."""
-        indices = list(prep.record_preparation.ordered_model_indices)
-        total = len(indices)
-        # 표식 병기는 legacy 완료 요약과 **같은 문형**이다(#957): 같은 사실이 경로에 따라
-        # 다른 말을 하면 사용자는 다른 상태로 읽는다. 필드 이름은 준비가 이미 센 값에서
-        # 온다 — 결과 자리에서 문서를 다시 훑지 않는다.
-        blank_note = self._managed_blank_note(prep.record_preparation.record_validation)
-        if isinstance(outcome, (ManagedRunRefused, DeliveryRefused)):
-            # admission 어휘를 쓰는 거절은 legacy 갈래와 **같은 문장**으로 나간다(S8-F1
-            # · #852) — 같은 차단이 경로에 따라 다른 말을 하면 사용자는 다른 상태로 읽는다.
-            # 맵에 없는 코드는 상류 판정의 재진술(detail)이 그대로 사유다.
-            return {
-                "ok": False,
-                "error": _ADMISSION_REJECT_TEXT.get(outcome.code, outcome.detail),
-                "level": "warn",
-            }
-        if isinstance(outcome, ManagedRunCancelled):
-            summary = (
-                f"중단했습니다. 시도 {outcome.attempted}/{outcome.total}건 — 안착 전이라 "
-                "문서는 만들지 않았습니다."
-            ) + blank_note
-            return {
-                "ok": True, "status": "cancelled",
-                "title": _run_title("cancelled", True, 0, 0),
-                "stage": "", "message": "", "known": True, "summary": summary,
-                "level": "warn", "out_dir": prep.result.output_directory,
-                "succeeded": 0, "failed": 0, "failed_selectable": 0,
-                "total": outcome.total, "failures": [], "fill_notes": [],
-                "cancelled": True, "attempted": outcome.attempted,
-                "unstarted": outcome.total - outcome.attempted,
-                "revisions": dict(self._run_revisions),
-            }
-        # DeliveryCompleted | ManagedReadBackFailed | DeliveryAborted — 앉은 문서까지는
-        # 유효하다(되읽기 실패도 안착 사실을 부정하지 않는다 — S7-01 · #823).
-        delivered = list(outcome.delivered)
-        succeeded = len(delivered)
-        # 세션이 앉힌 문서 좌표를 여기서 세운다(S7-03 · #825) — 되읽기 실패·중단 갈래도
-        # **앉은 것까지는** 유효하므로 같은 자리에서 실린다. 결과 dict 의 목록은 그
-        # 좌표의 투영이고 bytes 는 어느 쪽도 들지 않는다(#820 D1·D2).
-        self._last_delivered = tuple(delivered)
-        self._artifact_view = None  # 새 실행 = 열려 있던 관찰은 앞선 실행의 것이다
-        delivered_rows = [
-            {
-                "ordinal": doc.item_ordinal,
-                "filename": doc.relative_path,
-                "disposition": doc.collision_disposition,
-                "path": doc.absolute_path,
-            }
-            for doc in delivered
-        ]
-        fill_notes = [
-            describe_fill_note(note)
-            for note in dict.fromkeys(
-                note for doc in delivered for note in doc.execution_notes
-            )
-        ]
+        delivered_outcome = isinstance(
+            outcome, (DeliveryCompleted, DeliveryAborted, ManagedReadBackFailed)
+        )
         ledger_note = ""
-        try:
-            write_managed_delivery_ledger(
-                prep.result.output_directory,
-                generated_at=now,
-                work_authority_id=context.work_authority_id,
-                execution_basis_digest=self._last_sealed_basis_digest or "",
-                plan_semantic_digest=plan_semantic_digest(payload),
-                result=outcome,
-            )
-        except OSError as exc:
-            # 기록 실패의 loud surface — 문서는 이미 앉았으므로 요약에 병기한다.
-            ledger_note = f" 문서는 만들어졌지만 실행 기록 저장에 실패했습니다({exc})."
-        if isinstance(outcome, DeliveryCompleted):
-            self._last_generated = set(indices)
-            self._last_failed = []
-            self._last_managed_outcome = HistoricalOutcomeSummary(
-                "DOCUMENTS_DELIVERED", now
-            )
-            summary = f"완료. 성공 {succeeded}/{total}, 실패 0." + blank_note
-            if fill_notes:
-                summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
-            summary += ledger_note
-            return {
-                "ok": True, "status": "completed",
-                "title": _run_title("completed", False, succeeded, 0),
-                "stage": "", "message": "", "known": True, "summary": summary,
-                "level": "ok" if not ledger_note else "danger",
-                "out_dir": outcome.output_directory,
-                "succeeded": succeeded, "failed": 0, "failed_selectable": 0,
-                "total": total, "failures": [], "fill_notes": fill_notes,
-                "cancelled": False, "attempted": total, "unstarted": 0,
-                "revisions": dict(self._run_revisions),
-                "delivered": delivered_rows,
-            }
-        if isinstance(outcome, ManagedReadBackFailed):
-            # 안착은 전건 됐고, 그중 하나를 되읽어 확인하는 데 실패했다(#818 회수) — 실패
-            # 항목도 disk 에 있으므로 미착수는 0 이고 성공 수에서만 빠진다.
-            succeeded -= 1
-            failed_index, failure = self._managed_failure_row(
-                prep, indices, outcome.failed_item_ordinal, outcome.detail
-            )
-            self._last_failed = [failed_index]
-            status = "partiallyCompleted" if succeeded else "failed"
-            summary = (
-                f"완료. 성공 {succeeded}/{total}, 실패 1. 문서는 만들었지만 만든 뒤 다시 "
-                f"읽어 확인하는 데 실패했습니다({outcome.code}). 해당 파일을 직접 열어 "
-                "내용을 확인하세요."
-            ) + blank_note + ledger_note
-            return {
-                "ok": True, "status": status,
-                "title": _run_title(status, False, succeeded, 1),
-                "stage": "", "message": "", "known": True, "summary": summary,
-                "level": "danger", "out_dir": prep.result.output_directory,
-                "succeeded": succeeded, "failed": 1,
-                "failed_selectable": len(self._last_failed),
-                "total": total, "failures": [failure], "fill_notes": fill_notes,
-                "cancelled": False, "attempted": total, "unstarted": 0,
-                "revisions": dict(self._run_revisions),
-                "delivered": delivered_rows,
-            }
-        # DeliveryAborted — 실패 항목에서 멈췄다(항목별 원자, 사실 그대로 표면화).
-        failed_index, failure = self._managed_failure_row(
-            prep, indices, outcome.failed_item_ordinal, outcome.detail
-        )
-        failures = [failure]
-        self._last_failed = [failed_index]
-        unstarted = total - succeeded - 1
-        status = "partiallyCompleted" if succeeded else "failed"
-        summary = (
-            f"완료. 성공 {succeeded}/{total}, 실패 1. 미착수 {unstarted}건 — "
-            "앉은 문서는 그대로 유지됩니다."
-        ) + blank_note + ledger_note
-        return {
-            "ok": True, "status": status,
-            "title": _run_title(status, False, succeeded, 1),
-            "stage": "", "message": "", "known": True, "summary": summary,
-            "level": "danger", "out_dir": prep.result.output_directory,
-            "succeeded": succeeded, "failed": 1,
-            "failed_selectable": len(self._last_failed),
-            "total": total, "failures": failures, "fill_notes": fill_notes,
-            "cancelled": False, "attempted": succeeded + 1, "unstarted": unstarted,
-            "revisions": dict(self._run_revisions),
-            "delivered": delivered_rows,
-        }
-
-    @staticmethod
-    def _managed_blank_note(summary: RecordValidationSummary) -> str:
-        """완료 요약의 표식 병기 — legacy 갈래(`" 빈 값 표시 필드 N개(…)."`)와 같은 문형.
-
-        수치는 **필드 수**다: legacy 가 세는 것도 「빈 값이 난 필드」의 수라, 여기서 칸 수를
-        쓰면 같은 실행이 경로에 따라 다른 숫자를 말한다(managed 는 필드×문서를 아는 반면
-        legacy 는 필드 집합만 안다 — 겹치는 축으로 맞춘다).
-        """
-        fields = [advisory.field_id for advisory in summary.advisories]
-        if not fields:
-            return ""
-        return f" 빈 값 표시 필드 {len(fields)}개({', '.join(fields)})."
-
-    def _managed_failure_row(
-        self, prep, indices, failed_ordinal: int, reason: str
-    ) -> "tuple[int, dict]":
-        """managed 실패 항목 하나 → legacy 실패 행(안착 중단·되읽기 실패가 같은 투영을 쓴다).
-
-        identity 는 legacy 와 같은 링1 표시명(§10.10 판정 E) — 내부 locator 를 노출하지 않는다.
-        """
-        failed_index = (
-            indices[failed_ordinal] if failed_ordinal < len(indices) else failed_ordinal
-        )
-        failed_item = prep.result.ordered_items[failed_ordinal]
-        isum = identity_summary(
-            self.records, filename_tokens=self._filename_source_columns()
-        )
-        return failed_index, {
-            "index": failed_index,
-            "identity": (
-                isum.display_for(self.records[failed_index])
-                if 0 <= failed_index < len(self.records) else ""
+        if delivered_outcome:
+            # 새 실행의 산출물 좌표와 관찰 폐기는 원장 callback보다 먼저 보인다(기존 순서).
+            self._last_delivered = tuple(outcome.delivered)
+            self._artifact_view = None
+            try:
+                write_managed_delivery_ledger(
+                    prep.result.output_directory,
+                    generated_at=now,
+                    work_authority_id=context.work_authority_id,
+                    execution_basis_digest=self._last_sealed_basis_digest or "",
+                    plan_semantic_digest=plan_semantic_digest(payload),
+                    result=outcome,
+                )
+            except OSError as exc:
+                ledger_note = (
+                    f" 문서는 만들어졌지만 실행 기록 저장에 실패했습니다({exc})."
+                )
+        projection = project_managed_run_result(
+            outcome=outcome,
+            preparation=prep,
+            records=self.records,
+            filename_source_columns=(
+                self._filename_source_columns()
+                if isinstance(outcome, (ManagedReadBackFailed, DeliveryAborted))
+                else []
             ),
-            "filename": failed_item.resolved_output_relative_path,
-            "reason": reason,
-            "known": True,
-        }
+            run_revisions=self._run_revisions,
+            generated_at=now,
+            ledger_note=ledger_note,
+        )
+        if projection.generated_indices is not None:
+            self._last_generated = set(projection.generated_indices)
+        if projection.failed_indices is not None:
+            self._last_failed = list(projection.failed_indices)
+        if projection.historical_outcome is not None:
+            self._last_managed_outcome = projection.historical_outcome
+        return projection.result
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":
         """managed Product Work(HWPX 새 문서) 생성이 겨눌 템플릿을 current Application 의
@@ -4687,7 +4467,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     @staticmethod
     def _current_record_identity(snapshot_generation: int, model_index: int) -> str:
-        return f"current-record/{snapshot_generation}/{model_index}"
+        return current_record_identity(snapshot_generation, model_index)
 
     def _capture_current_selected_records(
         self,
@@ -4704,33 +4484,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             else ()
         )
         captured_at = self._clock().isoformat(timespec="seconds")
-        captured: list[RawDataRecordSnapshot] = []
-        for model_index in indices:
-            if not 0 <= model_index < len(rows):
-                raise _CurrentRecordCaptureError("선택한 데이터 위치를 확인할 수 없습니다.")
-            source_values = []
-            for key, value in rows[model_index].items():
-                if not isinstance(key, str):
-                    raise _CurrentRecordCaptureError("데이터 항목 이름을 확인할 수 없습니다.")
-                if value is None or isinstance(value, str):
-                    source_value = _capture_source_value(value)
-                else:
-                    raise _CurrentRecordCaptureError(
-                        f"{model_index + 1}행 {key} 값을 정확히 읽을 수 없습니다."
-                    )
-                source_values.append((key, source_value))
-            captured.append(
-                build_raw_record_snapshot(
-                    source_schema_keys=schema,
-                    source_values=source_values,
-                    record_identity=self._current_record_identity(generation, model_index),
-                    capture_provenance=RawRecordCaptureProvenance(
-                        source_adapter_contract_id="job-current-record-capture/v1",
-                        captured_at=captured_at,
-                        source_observation_ref=f"job-snapshot/{generation}",
-                    ),
-                )
-            )
+        captured = capture_selected_records(
+            snapshot_generation=generation,
+            ordered_model_indices=indices,
+            rows=rows,
+            source_schema_keys=schema,
+            captured_at=captured_at,
+        )
         if (
             generation != self._snapshot_gen
             or rows is not self.records
@@ -4739,7 +4499,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise _CurrentRecordCaptureError(
                 "데이터가 다시 불러와져 선택한 값을 함께 확인할 수 없습니다. 다시 시도해 주세요."
             )
-        return generation, indices, tuple(captured)
+        return generation, indices, captured
 
     @staticmethod
     def _record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
@@ -4811,41 +4571,30 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             generation, captured_indices, raw_records = (
                 self._capture_current_selected_records()
             )
-            results = validate_data_records_against_current_value(
+            preparation = prepare_current_records(
+                snapshot_generation=generation,
+                work_ref=work_ref,
+                ordered_model_indices=captured_indices,
                 plan=plan,
-                snapshots=raw_records,
-                validated_at=raw_records[0].capture_provenance.captured_at,
+                raw_records=raw_records,
+                project_issue=lambda blocker, model_index, record_identity: (
+                    self._record_issue(
+                        plan=plan,
+                        blocker=blocker,
+                        generation=generation,
+                        model_index=model_index,
+                        record_identity=record_identity,
+                    )
+                ),
             )
-            validated: list[CurrentValidatedDataRecord] = []
-            issues: list[RecordValidationIssue] = []
-            blocked_count = 0
-            for model_index, snapshot, result in zip(
-                captured_indices, raw_records, results, strict=True
-            ):
-                if isinstance(result, RecordValidationContextError):
-                    return RecordValidationSummary(), WorkbenchContextIntegrity(
-                        restore_failure=True, code=result.code, detail=result.detail
-                    )
-                if isinstance(result, RecordValidationBlocked):
-                    blocked_count += 1
-                    issues.extend(
-                        self._record_issue(
-                            plan=plan,
-                            blocker=blocker,
-                            generation=generation,
-                            model_index=model_index,
-                            record_identity=snapshot.record_identity,
-                        )
-                        for blocker in result.blockers
-                    )
-                else:
-                    validated.append(result)
         except (_CurrentRecordCaptureError, RawDataRecordError, FieldBindingError) as exc:
             return RecordValidationSummary(), WorkbenchContextIntegrity(
                 restore_failure=True,
                 code="CURRENT_RECORD_CAPTURE_STALE",
                 detail=str(exc),
             )
+        if isinstance(preparation, WorkbenchContextIntegrity):
+            return RecordValidationSummary(), preparation
         if (
             generation != self._snapshot_gen
             or captured_indices != tuple(self._indices())
@@ -4857,34 +4606,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 code="CURRENT_RECORD_PREPARATION_STALE",
                 detail="확인 중 데이터나 작업 설정이 바뀌었습니다. 다시 시도해 주세요.",
             )
-        # 표식 사실 집계(#957) — **차단분과 다른 통**이다. 필드별 문서 수로 접는 이유는
-        # 사용자가 고칠 자리가 「그 열」이라서다: 칸 수만 말하면 어느 열을 손봐야 하는지
-        # 말하지 않고, 문서마다 한 줄씩 세우면 100건 선택에서 목록이 사실을 덮는다.
-        marked_counts: dict[str, int] = {}
-        for record in validated:
-            for field_id in marked_missing_fields(record.validation_provenance):
-                marked_counts[field_id] = marked_counts.get(field_id, 0) + 1
-        summary = RecordValidationSummary(
-            has_blocking_issues=bool(issues),
-            issue_count=len(issues),
-            validated_count=len(validated),
-            blocked_count=blocked_count,
-            issues=tuple(issues),
-            advisories=tuple(
-                RecordValidationAdvisory(MISSING_VALUE_MARKED, field_id, count)
-                for field_id, count in marked_counts.items()
-            ),
-        )
-        self._current_record_preparation = _CurrentRecordPreparation(
-            snapshot_generation=generation,
-            work_ref=work_ref,
-            ordered_model_indices=captured_indices,
-            execution_value=plan,
-            raw_records=raw_records,
-            validated_records=tuple(validated),
-            record_validation=summary,
-        )
-        return summary, None
+        self._current_record_preparation = preparation
+        return preparation.record_validation, None
 
     def _do_recover_record_issue(self, p: dict) -> dict:
         target = p.get("target")
@@ -4945,86 +4668,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     _do_recover_record_issue.is_query = True
 
-    @staticmethod
-    def _unresolved_delivery(code: str, message: str) -> DeliveryPreviewSummary:
-        return DeliveryPreviewSummary(
-            resolvable=False,
-            blockers=(DeliveryPreviewBlocker(code=code, message=message),),
-        )
-
-    @staticmethod
-    def _observe_path_occupancy(
-        intent: RunDeliveryIntent,
-        observed_at: str,
-        *,
-        allow_missing: bool = False,
-    ) -> PathOccupancyObservation:
-        """저장 폴더의 현재 점유 관찰. 폴더를 만들지 않는다(관찰은 관찰이다).
-
-        ``allow_missing`` 은 **도출한 기본값**에만 선다(U3-06 #879): 아직 없는 폴더는 점유가
-        비어 있다는 사실이고, 그 폴더는 생성이 만든다. 그 밖의 판독 실패(권한·잠김)는 이 완화를
-        받지 않는다 — 설정한 저장 폴더는 도출이 이미 존재를 확인했으므로, 여기서 읽히지 않는
-        것은 「아직 없다」가 아니라 「읽을 수 없다」다.
-        """
-        root = Path(intent.output_directory)
-        if not root.is_absolute():
-            raise ValueError("저장 폴더는 전체 경로여야 합니다.")
-        if allow_missing and not root.exists():
-            return PathOccupancyObservation(intent.output_directory, (), observed_at)
-        try:
-            entries = tuple(
-                sorted(
-                    (
-                        PathOccupancyEntry(
-                            entry.name,
-                            REGULAR_FILE
-                            if not entry.is_symlink() and entry.is_file()
-                            else NON_REGULAR,
-                        )
-                        for entry in root.iterdir()
-                    ),
-                    key=lambda entry: entry.relative_name.casefold(),
-                )
-            )
-        except OSError as exc:
-            raise ValueError("저장 폴더의 현재 파일 목록을 읽을 수 없습니다.") from exc
-        return PathOccupancyObservation(intent.output_directory, entries, observed_at)
-
-    @staticmethod
-    def _delivery_projection(
-        result: CurrentResolvedDelivery | DeliveryPlanBlocked,
-    ) -> DeliveryPreviewSummary:
-        if isinstance(result, DeliveryPlanBlocked):
-            return DeliveryPreviewSummary(
-                resolvable=False,
-                blockers=tuple(
-                    DeliveryPreviewBlocker(
-                        code=blocker.code,
-                        message=_DELIVERY_BLOCKER_PHRASES.get(
-                            blocker.code, "생성 예정 문서 이름을 확인할 수 없습니다."
-                        ),
-                        item_ordinal=blocker.item_ordinal,
-                        field_id=blocker.field_id,
-                        conflicting_relative_path=blocker.conflicting_relative_path,
-                    )
-                    for blocker in result.blockers
-                ),
-            )
-        planned = tuple(
-            PlannedDocumentSummary(
-                record_identity=item.record_identity,
-                item_ordinal=item.item_ordinal,
-                relative_path=item.resolved_output_relative_path,
-                collision_disposition=item.collision_disposition,
-            )
-            for item in result.ordered_items
-        )
-        return DeliveryPreviewSummary(
-            resolvable=True,
-            planned_output_names=tuple(item.relative_path for item in planned),
-            planned_documents=planned,
-        )
-
     def _invalidate_current_preparations(self) -> None:
         self._current_record_preparation = None
         self._current_delivery_preparation = None
@@ -5037,12 +4680,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 도출 재료조차 없을 때(템플릿 경로 부재)만 지정이 전제조건으로 남는다.
         intent, folder_resolution = self._effective_delivery()
         if intent is None:
-            return self._unresolved_delivery(
+            return unresolved_delivery(
                 "OUTPUT_DIRECTORY_REQUIRED", "저장 폴더를 선택하세요."
             ), None
         preparation = self._current_record_preparation
         if record_validation.has_blocking_issues:
-            return self._unresolved_delivery(
+            return unresolved_delivery(
                 "RECORD_VALIDATION_REQUIRED", "먼저 데이터 문제를 확인하세요."
             ), None
         if (
@@ -5052,12 +4695,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or preparation.ordered_model_indices != tuple(self._indices())
             or not preparation.validated_records
         ):
-            return self._unresolved_delivery(
+            return unresolved_delivery(
                 "CURRENT_RECORD_PREPARATION_REQUIRED", "생성할 데이터를 먼저 선택하세요."
             ), None
         fresh = self._last_fresh_observation
         if not isinstance(fresh, CurrentSealedPlanObservation):
-            return self._unresolved_delivery(
+            return unresolved_delivery(
                 "CURRENT_EXECUTION_REQUIRED", "현재 설정을 먼저 확인하세요."
             ), None
         current_field_binding = fresh.current_field_binding
@@ -5082,72 +4725,28 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     code=cached.result.code,
                     detail=cached.result.detail,
                 )
-            return self._delivery_projection(cached.result), None
+            return delivery_projection(cached.result), None
 
         captured_clock = self._clock().isoformat(timespec="seconds")
-        basis = build_delivery_binding_basis(
-            base_template_application_id=current_field_binding.base_template_application_id,
-            field_binding_authority_revision=(
-                current_field_binding.field_binding_authority_revision
-            ),
-            filename_pattern_contract_id=FILENAME_PATTERN_CONTRACT_ID,
-            exact_pattern=exact_pattern,
-            active_field_ids=(
-                str(requirement["field_id"])
-                for requirement in preparation.execution_value.active_field_requirements
-            ),
-            binding_rules=current_field_binding.binding_rules,
-            document_value_resolution_contract_id=(
-                preparation.execution_value.contract_semantics
-                .document_value_resolution_contract_id
-            ),
-        )
-        result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
-        if isinstance(basis, (DeliveryPlanBlocked, DeliveryPlanContextError)):
-            result = basis
-        else:
-            assert isinstance(basis, GenerationDeliveryBindingBasis)
-            try:
-                occupancy = self._observe_path_occupancy(
-                    intent,
-                    captured_clock,
-                    # 도출한 기본값은 **아직 없을 수 있다**(템플릿 옆 Results 첫 실행) —
-                    # 없는 폴더에 걸릴 이름은 없으므로 빈 점유로 관찰하고, 실제 폴더는
-                    # 생성이 만든다. **설정한** 폴더가 그사이 사라진 것은 다른 사실이라
-                    # 그대로 시끄럽게 남긴다(조용한 재생성 금지). 전역화 전에는 이 자리가
-                    # 「이번 세션의 명시 지정」을 겨눴고, 그 축의 승계자가 설정한 저장 폴더다.
-                    allow_missing=(
-                        folder_resolution.source != OUTPUT_FOLDER_SOURCE_SETTING
-                    ),
-                )
-            except ValueError as exc:
-                result = DeliveryPlanContextError(
-                    "PATH_OCCUPANCY_OBSERVATION_FAILED", str(exc)
-                )
-            else:
-                result = resolve_current_generation_delivery(
-                    sealed_execution_plan=preparation.execution_value,
-                    ordered_validated_records=preparation.validated_records,
-                    ordered_raw_snapshots=preparation.raw_records,
-                    delivery_binding_basis=basis,
-                    exact_pattern=exact_pattern,
-                    captured_delivery_clock=captured_clock,
-                    run_delivery_intent=intent,
-                    path_occupancy=occupancy,
-                )
-        self._current_delivery_preparation = _CurrentDeliveryPreparation(
+        prepared = prepare_current_delivery(
             record_preparation=preparation,
             current_field_binding=current_field_binding,
             exact_pattern=exact_pattern,
             run_delivery_intent=intent,
             captured_delivery_clock=captured_clock,
-            result=result,
+            # 도출한 기본 폴더는 아직 없을 수 있다. 설정한 폴더가 사라지거나 읽히지 않는
+            # 경우는 다른 사실이라 완화하지 않는다.
+            allow_missing_output_directory=(
+                folder_resolution.source != OUTPUT_FOLDER_SOURCE_SETTING
+            ),
         )
+        self._current_delivery_preparation = prepared
+        result = prepared.result
         if isinstance(result, DeliveryPlanContextError):
             return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
                 restore_failure=True, code=result.code, detail=result.detail
             )
-        return self._delivery_projection(result), None
+        return delivery_projection(result), None
 
     def workbench_observation(self):
         """세션 사실 + seal 서비스 fresh observation → 작업대 Observation(SX-01 #724 · SX-03 #726).

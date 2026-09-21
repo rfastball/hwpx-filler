@@ -315,6 +315,12 @@ source_write_set = ["src/hwpxfiller/webapp/boot_budget.py"]
 oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
+module = "hwpxfiller.webapp.current_execution_preparation"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/current_execution_preparation.py"]
+oracle_nodeid = "tests/test_webapp_job_binding_review.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.data_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
@@ -331,6 +337,12 @@ module = "hwpxfiller.webapp.live_run"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/live_run.py"]
 oracle_nodeid = "tests/test_live_run_contract.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.managed_run_result"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/managed_run_result.py"]
+oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.mapping_verbs"

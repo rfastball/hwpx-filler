@@ -1201,6 +1201,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 
 #### 생성 결과 존의 문서 목록과 산출물 관찰 시트 (S7-03 · #825)
 
+실행 준비 계산은 `current_execution_preparation.py`, managed 결과의 화면 표현은
+`managed_run_result.py`가 소유한다. 두 모듈은 전달받은 값으로 계산하며 세션을 소유하지
+않는다. `JobController`는 데이터·선택·표시 순서, 캐시와 무효화, 캡처 전후의 세대·records
+identity·선택 대조, 생성 잠금·취소·덮어쓰기 확인, 실제 실행·원장 기록·결과 반영·push를
+계속 소유한다. 복구 위치·문안과 전체 `snapshot()` 조립도 컨트롤러에 남는다.
+거절·취소는 기존 실행 증거를 유지하고, 안착 결과는 원장 기록 전에 산출물 좌표를 갱신하며
+열린 관찰을 닫는다. 원장 기록 실패도 이미 안착한 문서 사실을 되돌리지 않는다.
+
 좌 열 `#jobResult` 의 결과 3태 안에서, 이 실행이 **실제로 disk 에 앉힌** 문서를 개별 단위로
 나열한다(`#jobResultDocs`). 범위는 **현재 세션 결과**뿐이다(#820 D5 — 원장 되읽기·과거
 브라우징은 비범위). 목록의 원천은 결과 dict 의 `delivered` 하나이고, 폴더를 훑어 유추하지

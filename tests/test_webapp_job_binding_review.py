@@ -18,6 +18,7 @@ import dataclasses
 import threading
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,6 +44,7 @@ from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp import screen_job as sj
+from hwpxfiller.webapp import current_execution_preparation as execution_preparation
 from hwpxfiller.external.delivery_coordinator import DeliveredDocument, DeliveryCompleted
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.application.fresh_execution_observation import (
@@ -52,7 +54,10 @@ from hwpxfiller.application.fresh_execution_observation import (
 )
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
 from hwpxfiller.application.execution_structure import ExecutionStructureError
-from hwpxfiller.application.document_creation_workbench import InputRequirement
+from hwpxfiller.application.document_creation_workbench import (
+    HistoricalOutcomeSummary,
+    InputRequirement,
+)
 from hwpxfiller.application.field_binding_input import (
     BROKEN,
     INACTIVE_ONLY,
@@ -79,6 +84,7 @@ from hwpxfiller.webapp.workbench_observation_product import (
     content_selection_from_view,
     execution_verdicts_from_fresh,
 )
+from hwpxfiller.webapp.managed_generation import ManagedRunCancelled, ManagedRunRefused
 
 from tests.test_execution_compilation import WORK
 from tests.test_seal_execution_capture_runner import _seed_v2_work
@@ -260,7 +266,7 @@ def test_generation_move_rejects_mixed_capture(
     fresh = ctrl._last_fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     _mount_rows(ctrl, [{"name": "A"}, {"name": "B"}])
-    original = screen_job_module.build_raw_record_snapshot
+    original = execution_preparation.build_raw_record_snapshot
     calls = 0
 
     def moving_capture(**kwargs):
@@ -271,7 +277,7 @@ def test_generation_move_rejects_mixed_capture(
             ctrl._snapshot_gen += 1
         return result
 
-    monkeypatch.setattr(screen_job_module, "build_raw_record_snapshot", moving_capture)
+    monkeypatch.setattr(execution_preparation, "build_raw_record_snapshot", moving_capture)
     with pytest.raises(ValueError, match="다시 불러와져"):
         ctrl._capture_current_selected_records()
     assert ctrl._current_record_preparation is None
@@ -917,7 +923,7 @@ def test_delivery_intent_changes_reuse_record_preparation(
     assert record_preparation is not None
 
     monkeypatch.setattr(
-        screen_job_module,
+        execution_preparation,
         "validate_data_records_against_current_value",
         lambda **_kwargs: pytest.fail("delivery change reran record validation"),
     )
@@ -1033,12 +1039,12 @@ def test_path_occupancy_classifies_symlink_without_following_it(
             raise AssertionError("symlink target was followed")
 
     monkeypatch.setattr(Path, "iterdir", lambda _path: iter((SymlinkEntry(),)))
-    observation = JobController._observe_path_occupancy(
+    observation = execution_preparation.observe_path_occupancy(
         RunDeliveryIntent(str(out)), NOW.isoformat()
     )
 
     assert observation.occupied_entries[0].relative_name == SymlinkEntry.name
-    assert observation.occupied_entries[0].kind == screen_job_module.NON_REGULAR
+    assert observation.occupied_entries[0].kind == execution_preparation.NON_REGULAR
 
 
 def test_inactive_filename_uses_frozen_record_without_source_reread(
@@ -1277,6 +1283,82 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     assert captured["current_basis_digest_reader"]() == ctrl._last_sealed_basis_digest
     # 실행 증거가 작업대의 부차 축으로 남는다(S7 선행 없이 세션 요약만).
     assert _zone(ctrl)["historical_outcome"]["outcome_kind"] == "DOCUMENTS_DELIVERED"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "result_key", "result_value"),
+    [
+        (ManagedRunRefused("REFUSED", "거절됨"), "error", "거절됨"),
+        (ManagedRunCancelled(attempted=1, total=2), "status", "cancelled"),
+    ],
+)
+def test_managed_pre_delivery_outcomes_keep_prior_session_evidence(
+    tmp_path: Path, outcome, result_key: str, result_value: str
+) -> None:
+    """안착 전 거절·취소는 앞선 실행의 산출물·복구 대상을 지우지 않는다."""
+    ctrl, out = _delivery_controller(tmp_path)
+    pick_output_folder(ctrl, out)
+    _zone(ctrl)
+    prep = ctrl._current_delivery_preparation
+    assert prep is not None
+    prior = DeliveredDocument(
+        0, "prior", "prior.hwpx", str(out / "prior.hwpx"),
+        "WRITE_NEW", "sha256:" + "0" * 64, (),
+    )
+    artifact_view = object()
+    ctrl._last_delivered = (prior,)
+    ctrl._artifact_view = artifact_view
+    ctrl._last_generated = {9}
+    ctrl._last_failed = [7]
+    prior_history = HistoricalOutcomeSummary("PRIOR_OUTCOME", NOW.isoformat())
+    ctrl._last_managed_outcome = prior_history
+    result = ctrl._managed_result_dict(outcome, prep, None, None, NOW.isoformat())
+
+    assert result[result_key] == result_value
+    assert result["level"] == "warn"
+    if isinstance(outcome, ManagedRunCancelled):
+        assert (result["attempted"], result["unstarted"]) == (1, 1)
+        assert (result["succeeded"], result["failed"], result["total"]) == (0, 0, 2)
+    assert ctrl._last_delivered == (prior,)
+    assert ctrl._artifact_view is artifact_view
+    assert ctrl._last_generated == {9}
+    assert ctrl._last_failed == [7]
+    assert ctrl._last_managed_outcome is prior_history
+
+
+def test_managed_ledger_failure_keeps_success_and_warns_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    pick_output_folder(ctrl, out)
+    _zone(ctrl)
+    prep = ctrl._current_delivery_preparation
+    assert prep is not None
+    delivered = DeliveredDocument(
+        0, "rec-0", "a.hwpx", str(out / "a.hwpx"),
+        "WRITE_NEW", "sha256:" + "0" * 64, (),
+    )
+    outcome = DeliveryCompleted(str(out), (delivered,))
+    context = SimpleNamespace(work_authority_id=WORK)
+    payload = ctrl._last_sealed_plan_payload
+    assert payload is not None
+    ctrl._artifact_view = object()
+
+    def fail_ledger(*_args, **_kwargs):
+        assert ctrl._last_delivered == (delivered,)
+        assert ctrl._artifact_view is None
+        raise OSError("ledger denied")
+
+    monkeypatch.setattr(screen_job_module, "write_managed_delivery_ledger", fail_ledger)
+
+    result = ctrl._managed_result_dict(outcome, prep, payload, context, NOW.isoformat())
+
+    assert result["status"] == "completed" and result["level"] == "danger"
+    assert "실행 기록 저장에 실패했습니다(ledger denied)" in result["summary"]
+    assert ctrl._last_delivered == (delivered,)
+    assert ctrl._last_generated == set(prep.record_preparation.ordered_model_indices)
+    assert ctrl._last_failed == []
+    assert ctrl._last_managed_outcome is not None
 
 
 def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
