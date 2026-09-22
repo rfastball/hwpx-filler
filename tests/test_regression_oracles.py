@@ -9,13 +9,14 @@ import pytest
 from hwpxfiller.host.native import debug
 import hwpxfiller.domain.inline as domain_inline
 from hwpxfiller.domain.inline import InlineDataSource
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 from hwpxfiller.gui.record_range import RecordRange, RecordRangeDraft
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_card import card_text, gate_empty_fields
 from hwpxfiller.webapp import screen_editor
 from hwpxfiller.webapp.app import WebFrontend
-from hwpxfiller.webapp.data_zone import DataZoneMixin
+from hwpxfiller.webapp.data_zone import JobDataSession
 from hwpxfiller.webapp.job_list import drift_note
 from hwpxfiller.webapp.mapping_verbs import MappingVerbsMixin
 
@@ -127,24 +128,14 @@ def test_txt_card_helpers_share_visible_text_and_declared_empty_gate() -> None:
     assert gate_empty_fields(report, mapping) == ["required"]
 
 
-class _DataZoneHarness(DataZoneMixin):
-    def _records(self) -> list:
-        return []
-
-
-def test_data_zone_handoff_fails_closed_and_preserves_reference_tuple() -> None:
-    zone = _DataZoneHarness()
-    zone.data_source = ""
-    zone.data_path = ""
-    zone.data_label = ""
-    zone.data_sheet = ""
-    zone.data_header_row = 0
+def test_data_zone_handoff_fails_closed_and_preserves_reference_tuple(tmp_path) -> None:
+    zone = JobDataSession(DatasetPoolRegistry(tmp_path / "pool"))
     assert zone.new_work_handoff() == ({}, "데이터를 먼저 고르세요.")
 
-    zone.data_source = "file"
-    zone.data_path = "C:/data/source.xlsx"
-    zone.data_sheet = "Sheet2"
-    zone.data_header_row = 3
+    zone.source_kind = "file"
+    zone.path = "C:/data/source.xlsx"
+    zone.sheet = "Sheet2"
+    zone.header_row = 3
     handoff, error = zone.new_work_handoff()
     assert error == ""
     assert handoff == {

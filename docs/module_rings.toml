@@ -222,7 +222,7 @@ oracle_nodeid = "tests/test_review_state.py"
 module = "hwpxfiller.gui.run_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/run_state.py"]
-oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_excel_live"
+oracle_nodeid = "tests/test_run_state.py::test_data_input_is_explicit_and_vm_owns_no_data"
 
 [[unit]]
 module = "hwpxfiller.gui.selection_state"
@@ -327,10 +327,28 @@ source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
 oracle_kind = "structural"
 
 [[unit]]
+module = "hwpxfiller.webapp.active_work_session"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/active_work_session.py"]
+oracle_kind = "structural"
+
+[[unit]]
+module = "hwpxfiller.webapp.document_run_coordinator"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/document_run_coordinator.py"]
+oracle_kind = "structural"
+
+[[unit]]
 module = "hwpxfiller.webapp.editor_presentation"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/editor_presentation.py"]
 oracle_nodeid = "tests/test_webapp_editor.py::test_sequence_example_reads_the_token_not_the_rendered_names"
+
+[[unit]]
+module = "hwpxfiller.webapp.editor_session"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/editor_session.py"]
+oracle_nodeid = "tests/test_webapp_editor.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.job_list"
@@ -342,6 +360,12 @@ oracle_kind = "structural"
 module = "hwpxfiller.webapp.job_presentation"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_presentation.py"]
+oracle_nodeid = "tests/test_webapp_job_binding_review.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.job_execution_session"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/job_execution_session.py"]
 oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]

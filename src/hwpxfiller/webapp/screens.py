@@ -267,9 +267,8 @@ def pool_reference_quad(item: "DatasetReference") -> "tuple[str, str, int, str]"
     참조와 **같은 자리를 다른 이름으로** 쓴다(db=파일, 뷰=시트)이고 헤더 행 축이 없으므로
     0 이 곧 「해당 없음」이다.
 
-    소비자는 둘이다 — 실행 표면의 겨눔(:meth:`PoolTargetingMixin._do_load_pool`)과 편집기의
-    데이터 결속(:meth:`~hwpxfiller.webapp.screen_editor.EditorController._mount_pool_item`,
-    #932 U4-C). 두 자리가 각자 뽑으면 한쪽만 헤더 행을 흘려도 아무도 모른다.
+    실행 화면의 데이터 마운트와 편집기의 데이터 결속이 함께 소비한다. 두 자리가 각자
+    뽑으면 한쪽만 헤더 행을 흘려도 아무도 모른다.
     """
     opts = item.opts if isinstance(item.opts, dict) else {}
     if item.kind == "pclm":
@@ -489,71 +488,6 @@ def relink_job_template(
         # 사본이라 경합에 진 경우 실제로 부딪힌 상대와 다르다.
         return {"ok": False, "error": _cross_media_refusal(name, exc.old_path, exc.new_media)}
     return {"ok": True, "relinked": True, "name": name, "old": old, "path": path}
-
-
-class PoolTargetingMixin:
-    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_load_pool`` 화면 동형.
-
-    예전엔 이 래퍼가 실행 표면 컨트롤러들에 독스트링('(#26/#6)')까지 복붙돼
-    있었다 — 게이트 실행부(:func:`load_pool_into`)만 공용이고 래퍼는 여러 벌. 여기로 수렴하고
-    화면별 차이는 두 훅으로만 남긴다:
-
-    - :meth:`_pool_guard` — 겨눔 전제 미충족 시 사용자 문구 반환(기본 없음, run=작업 선택).
-    - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run=행 선택 초기화).
-
-    요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``·
-    ``data_path``/``data_sheet``/``data_header_row``/``data_kind``
-    (:class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 소유).
-    """
-
-    pool_registry: DatasetPoolRegistry
-    data_label: str
-    # ''(미겨눔) | 'file' | 'pool' | 'pclm' — 라벨은 source_label 이 합성(K8)
-    data_source: str
-    # 겨눈 풀 슬롯 키(U2 §5.3) — 라벨은 개명 자유라 세션이 참조 정체를 따로 든다.
-    data_pool_key: str = ""
-
-    def _pool_guard(self) -> "str | None":
-        """겨눔 전제조건 검사 — 미충족이면 사용자 문구, 충족이면 None."""
-        return None
-
-    def _after_pool_load(self, records: list) -> None:
-        """겨눔 성공 후 화면별 후처리(행 선택 초기화 등). 기본 no-op."""
-
-    def _pool_loader(self):
-        """겨눔 로더 — 기본은 링1 VM(작업-앵커 화면). 세션 소유 화면(데이터-우선 「작업」)은
-        vm 없이도 겨눌 수 있게 재정의한다."""
-        return self.vm.load_pool_item
-
-    def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 슬롯 키로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
-
-        겨눔의 정체는 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 같은 이름 2건을
-        구별하지 못한다). 실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로
-        표시) — generate 계열과 같은 문법. 성공 시 라벨은 스냅샷이 소스 플래그로 합성해
-        반영한다(K8).
-        """
-        blocked = self._pool_guard()
-        if blocked:
-            return {"ok": False, "error": blocked}
-        key = p["key"]
-        res = load_pool_into(self.pool_registry, key, self._pool_loader())
-        if not res["ok"]:
-            return res
-        item = res["item"]
-        self.data_label = item.name
-        self.data_source = "pool"
-        self.data_pool_key = key
-        # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은
-        # 뜨지 않지만(이미 고정된 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야
-        # 한다. 포획은 한 벌짜리 단일 출처(:func:`pool_reference_quad`)를 지난다 — 종류도
-        # 그 한 벌의 성분이다(#937): 슬롯 정체(`data_source`)는 여전히 「등록 데이터」이고
-        # 갈리는 것은 그 슬롯이 **무엇을 가리키는가**라, 두 축을 한 값으로 뭉개지 않는다.
-        (
-            self.data_path, self.data_sheet, self.data_header_row, self.data_kind,
-        ) = pool_reference_quad(item)
-        self._after_pool_load(res["records"])
-        return {"ok": True, "label": source_label("pool", item.name)}
 
 
 class ScreenController(Protocol):

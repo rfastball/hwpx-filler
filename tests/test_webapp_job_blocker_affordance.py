@@ -69,7 +69,7 @@ def test_context_error_carries_an_enabled_recovery_verb(tmp_path: Path) -> None:
     행동이 없다.
     """
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl._last_fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
+    ctrl.execution.fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
     zone = _zone(ctrl)
     assert zone["kind"] == "context_error"
     assert zone["primary_action"] == "RECOVER_CONTEXT"
@@ -99,7 +99,7 @@ def test_the_recovery_verb_round_trips_through_the_registered_action(
     assert action in ACTION_REGISTRY[screen]
 
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl._last_fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
+    ctrl.execution.fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
     assert _zone(ctrl)["kind"] == "context_error"
 
     ctrl.dispatch(action, {})

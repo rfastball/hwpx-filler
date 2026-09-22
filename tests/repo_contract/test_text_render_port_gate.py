@@ -10,7 +10,7 @@ slot-bearing TXT 의 산출물은 이제 **Sealed Plan 이 정한 물질화**를
 - 정의 모듈과 그 링1 래퍼(:mod:`hwpxfiller.gui.txt_card`)
 - TXT materializer — 치환의 단일 원천을 소비하는 정당한 주체
 - 작업대(:mod:`hwpxfiller.webapp.screen_workbench`) — 원문 보기와 slotless 카드
-- 편집기(:mod:`hwpxfiller.webapp.screen_editor`) — 토큰 **미리보기**(빈 레코드), 문서를
+- 편집 세션(:mod:`hwpxfiller.webapp.editor_session`) — 토큰 **미리보기**(빈 레코드), 문서를
   만들지 않는다
 - CLI(:mod:`hwpxfiller.cli`) — slotless 전용(구간 표기가 있으면 시끄럽게 거절한다)
 
@@ -50,7 +50,7 @@ ALLOWED_MODULES = frozenset(
         "src/hwpxfiller/external/text_materialization_conformance.py",
         # 표시 표면(원문 보기·카드·토큰 미리보기)
         "src/hwpxfiller/webapp/screen_workbench.py",
-        "src/hwpxfiller/webapp/screen_editor.py",
+        "src/hwpxfiller/webapp/editor_session.py",
         # slotless 전용 CLI
         "src/hwpxfiller/cli.py",
     }

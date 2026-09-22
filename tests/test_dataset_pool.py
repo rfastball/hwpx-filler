@@ -30,7 +30,6 @@ from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource, make_nara_acquirer
 from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
-from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 _LIVE_KEY = "aB3+xY/z9Q==pLm4Kn7"
@@ -513,32 +512,18 @@ def test_restore_nara_item_without_key_fails_loudly():
         source_from_pool_item(it, secret_store=MemorySecretStore())  # 키 미등록
 
 
-# --------------------------------------------- 실행 시점 겨눔(RunViewModel, Qt 무관)
-def _job():
-    from hwpxfiller.domain.job import Job
-    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-
-    return Job(
-        name="실행", template_path="/t.hwpx",
-        mapping=MappingProfile(mappings=[
-            FieldMapping(template_field="공고명", source="bidNtceNm"),
-        ]),
-        filename_pattern="doc-{{공고명}}",
-    )
-
-
+# --------------------------------------------- 실행 시점 풀 소스 리졸버(Qt 무관)
 def _forbidden_pool_factory(item, *, secret_store=None, fetcher=None):
     """나라 항목 겨눔은 풀 소스 factory 를 타면 안 된다(P2-16 — nara 분기가 선점)."""
     raise AssertionError("나라 항목이 pool source factory 로 샜다")
 
 
-def test_run_load_pool_item_excel_live(tmp_path):
-    from hwpxfiller.gui.run_state import RunViewModel
+def test_resolve_pool_source_excel_live(tmp_path):
+    from hwpxfiller.gui.run_state import resolve_pool_source
 
     csv = tmp_path / "d.csv"
     csv.write_text("ID,공고명\n1,전산장비\n", encoding="utf-8")
     it = DatasetReference(name="엑셀", kind="excel", opts={"path": str(csv)})
-    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     # 주입 seam 봉인(P2-16): concrete 만 넣으면 잔존 내부 import 우회를 놓친다 —
     # 주입 factory 경유 1회 + item/kwargs 관통을 기록으로 확인한다.
     calls: list = []
@@ -547,29 +532,28 @@ def test_run_load_pool_item_excel_live(tmp_path):
         calls.append((item, secret_store, fetcher))
         return source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
 
-    recs = vm.load_pool_item(it, source_factory=recording_factory)
+    source, recs = resolve_pool_source(it, source_factory=recording_factory)
     assert len(recs) == 1 and recs[0]["공고명"] == "전산장비"
-    assert vm.datasource is not None
+    assert source is not None
     assert calls == [(it, None, None)]
 
 
-def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
+def test_resolve_pool_source_returns_specified_sheet_records():
     """T2 — sheet 임베딩 풀 항목의 run 겨눔이 지정 시트 레코드를 반환한다."""
-    from hwpxfiller.gui.run_state import RunViewModel
+    from hwpxfiller.gui.run_state import resolve_pool_source
 
     it = DatasetReference(
         name="다중", kind="excel",
         opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
     )
-    vm = RunViewModel(_job(), engine=make_hwpx_engine())
-    recs = vm.load_pool_item(it, source_factory=source_from_pool_item)
+    _source, recs = resolve_pool_source(it, source_factory=source_from_pool_item)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
 
 
-def test_run_load_pool_item_nara_snapshots_once(tmp_path):
+def test_resolve_pool_source_nara_snapshots_once():
     """나라 풀 항목 겨눔 = 1회 취득 후 키 없는 스냅샷 — 반복 records() 가 재-fetch 안 함."""
     from hwpxfiller.application.nara_acquire import AcquiredNaraData
-    from hwpxfiller.gui.run_state import RunViewModel
+    from hwpxfiller.gui.run_state import resolve_pool_source
 
     calls = {"n": 0}
 
@@ -582,8 +566,7 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
-    vm = RunViewModel(_job(), engine=make_hwpx_engine())
-    recs = vm.load_pool_item(
+    source, recs = resolve_pool_source(
         it,
         secret_store=store,
         fetcher=counting_fetch,
@@ -591,18 +574,18 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
         source_factory=_forbidden_pool_factory,  # 나라 = 풀 factory 미호출 계약(P2-16)
     )
     assert len(recs) == 2
-    assert isinstance(vm.datasource, AcquiredNaraData)  # 스냅샷으로 고정
+    assert isinstance(source, AcquiredNaraData)  # 스냅샷으로 고정
     # 실행뷰의 반복 조회를 흉내내도 fetcher 는 최초 1회만 불린다(스냅샷 캐시).
     for _ in range(5):
-        vm.datasource.records()
+        source.records()
     assert calls["n"] == 1
     # 스냅샷 어디에도 키가 없다.
-    assert _LIVE_KEY not in repr(vm.datasource.__dict__)
+    assert _LIVE_KEY not in repr(source.__dict__)
 
 
-def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
+def test_resolve_pool_source_nara_auth_failure_is_loud():
     """만료·인증실패 키(resultCode '07')는 조용한 '0건'이 아니라 시끄러운 실패 — 키 비노출."""
-    from hwpxfiller.gui.run_state import RunViewModel
+    from hwpxfiller.gui.run_state import resolve_pool_source
 
     auth_fail = (
         b'{"response":{"header":{"resultCode":"07",'
@@ -613,9 +596,8 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
-    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     with pytest.raises(RuntimeError) as ei:
-        vm.load_pool_item(
+        resolve_pool_source(
             it,
             secret_store=store,
             fetcher=lambda _url: auth_fail,
@@ -624,19 +606,17 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
         )
     assert "07" in str(ei.value)
     assert _LIVE_KEY not in str(ei.value)
-    assert vm.datasource is None  # 실패면 datasource 미할당(조용한 진행 금지)
 
 
-def test_run_load_pool_item_nara_no_key_is_loud(tmp_path):
-    from hwpxfiller.gui.run_state import RunViewModel
+def test_resolve_pool_source_nara_no_key_is_loud():
+    from hwpxfiller.gui.run_state import resolve_pool_source
 
     it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
-    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     with pytest.raises(RuntimeError, match="서비스키"):
-        vm.load_pool_item(
+        resolve_pool_source(
             it,
             secret_store=MemorySecretStore(),
             nara_factory=make_nara_acquirer,

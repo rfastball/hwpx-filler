@@ -70,7 +70,7 @@ def _mounted_txt_session(frontend, path: Path):
     도달하지 않는다(앞선 술어가 뒤의 술어를 가린다).
     """
     editor = frontend.controllers["editor"]
-    editor.load_template_path(str(path))
+    editor.loader.load_template_path(str(path))
     editor.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     editor.dispatch("goto_section", {"section": "binding"})
     editor.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
@@ -84,7 +84,7 @@ def _mounted_txt_session(frontend, path: Path):
 
 
 def _field_names(editor) -> "list[str]":
-    return [f.name for f in editor.schema.fields] if editor.schema else []
+    return [f.name for f in editor.edit.schema.fields] if editor.edit.schema else []
 
 
 def _row(editor, field: str) -> dict:
@@ -133,12 +133,12 @@ def test_delete_marks_the_session_danger_and_blocks_save_loudly(tmp_path):
     notice = editor.snapshot()["notice"]
     assert notice["level"] == "danger" and "삭제됐습니다" in notice["text"]
     # 복원 왕복이 닿을 자리는 남긴다 — 경로를 비우면 되돌리기가 세션을 못 살린다.
-    assert editor.template_path == str(path)
+    assert editor.edit.template_path == str(path)
 
     result = editor.dispatch("save", {})
     assert result["ok"] is False
     assert "템플릿 파일이 없어 저장하지 않았습니다" in result["block_reason"]
-    assert editor.registry.exists("발주 기안") is False
+    assert editor.loader.registry.exists("발주 기안") is False
 
 
 # ==================================================== ③ 복원 왕복
@@ -150,8 +150,8 @@ def test_compile_apply_reruns_the_session_schema(tmp_path):
     raw = _raw_hwpx()
     fe.controllers["tpl"].dispatch("refresh", {})
     editor = fe.controllers["editor"]
-    editor.load_template_path(str(raw))
-    assert editor.schema is None and editor.snapshot()["raw_block"]  # RAW = 채울 대상 0
+    editor.loader.load_template_path(str(raw))
+    assert editor.edit.schema is None and editor.snapshot()["raw_block"]  # RAW = 채울 대상 0
 
     fe.controllers["tpl"].dispatch("compile", {"path": str(raw), "confirm": True})
 
@@ -201,8 +201,8 @@ def test_field_mutation_notifies_even_when_the_structure_step_raises(tmp_path):
     raw = _raw_hwpx()
     fe.controllers["tpl"].dispatch("refresh", {})
     editor = fe.controllers["editor"]
-    editor.load_template_path(str(raw))
-    assert editor.schema is None  # RAW
+    editor.loader.load_template_path(str(raw))
+    assert editor.edit.schema is None  # RAW
 
     tpl = fe.controllers["tpl"]
     seen: list[tuple[str, str]] = []
@@ -229,7 +229,7 @@ def test_zero_mutation_refusal_notifies_nothing(tmp_path):
     tpl = fe.controllers["tpl"]
     tpl.dispatch("refresh", {})
     editor = fe.controllers["editor"]
-    editor.load_template_path(str(target))
+    editor.loader.load_template_path(str(target))
     before_snapshot = editor.snapshot()
     before_bytes = target.read_bytes()
     seen: list[tuple[str, str]] = []
@@ -308,7 +308,7 @@ def test_raw_downgrade_drops_the_stale_model_loudly(tmp_path):
     _txt_edit(fe, path, "토큰 없는 안내문")
 
     snap = editor.snapshot()
-    assert editor.model is None and editor.schema is None
+    assert editor.edit.model is None and editor.edit.schema is None
     assert snap["rows"] == [] and snap["is_complete"] is False
     assert snap["raw_block"]
     assert snap["notice"]["level"] == "danger"

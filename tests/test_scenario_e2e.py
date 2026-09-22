@@ -120,7 +120,7 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
         mapping=_identity_profile(src.fields()),
         filename_pattern="입찰공고서-{{입찰공고번호}}",
     )
-    req = RunRequest(job, src, selected_indices=[0, 1, 2])
+    req = RunRequest(job, tuple(src.records()), selected_indices=[0, 1, 2])
 
     # 사전검증: 소스가 매핑이 읽는 키를 모두 제공(빠진 소스키 없음).
     assert req.source_report().missing_columns == []
@@ -156,7 +156,7 @@ def test_today_token_fills_document_body_with_the_filename_clock(tmp_path):
         mapping=MappingProfile(name="today", mappings=mappings),
         filename_pattern="공고-{{date:%Y-%m-%d}}-{{입찰공고번호}}",
     )
-    req = RunRequest(job, src, selected_indices=[0])
+    req = RunRequest(job, tuple(src.records()), selected_indices=[0])
     mapped = req.mapped_records(now=now)
 
     # 값의 출처는 **실행 시각** 하나다 — 같은 이름의 데이터 열이 있어도 읽지 않는다.
@@ -200,7 +200,7 @@ def test_nara_mapping_fills_bid_notice_with_formatting(tmp_path):
         mapping=_nara_profile(),
         filename_pattern="공고서-{{입찰공고번호}}",
     )
-    req = RunRequest(job, src, selected_indices=[0, 1])
+    req = RunRequest(job, tuple(src.records()), selected_indices=[0, 1])
     assert req.source_report().missing_columns == []  # 매핑이 읽는 영문 키 모두 존재
 
     out = tmp_path / "out"
@@ -229,7 +229,8 @@ def test_thin_source_leaves_unmapped_fields_unfilled(tmp_path):
     드러난다 — 더 풍부한 CSV 소스를 선호할 실증 근거.
     """
     nara_job = Job(template_path=BID_NOTICE, mapping=_nara_profile())
-    nara_req = RunRequest(nara_job, _nara_source(), [0])
+    nara_source = _nara_source()
+    nara_req = RunRequest(nara_job, tuple(nara_source.records()), [0])
     # 매핑이 방출하는 필드 집합에 세부품명은 없다(나라장터 소스에 원천 부재).
     assert "세부품명" not in nara_job.template_fields()
     assert "세부품명" not in nara_req.mapped_records()[0]

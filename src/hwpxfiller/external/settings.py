@@ -406,8 +406,8 @@ def load_last_data_source() -> "dict | None":
     """마지막으로 **성사된** 데이터 마운트의 성분 — 없으면 ``None``(U3-07 · #880).
 
     성분은 세션이 마운트 시점에 한 벌로 포획하는 그것이다(``path``·``sheet``·
-    ``header_row``·``pool_key`` + 출처 축) — :meth:`~hwpxfiller.webapp.data_zone.
-    DataZoneMixin.new_work_handoff` 가 내는 참조와 같은 재료다. 앱 시작 시 이 성분으로
+    ``header_row``·``pool_key`` + 출처 축) — ``JobDataSession.new_work_handoff``가 내는
+    참조와 같은 재료다. 앱 시작 시 이 성분으로
     다시 마운트하는 것이 매 세션 데이터를 다시 고르게 하던 결함(#880)의 조치다.
 
     **판정은 여기 없다**: 그 파일이 지금도 있는지·읽히는지는 마운트가 답하고, 실패는 조용한

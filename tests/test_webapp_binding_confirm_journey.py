@@ -138,10 +138,10 @@ def _wizard_save(editor: EditorController, tpl: Path, name: str) -> dict:
     data = tpl.parent / "행목록.csv"
     if not data.exists():
         data.write_text("항목,수량\n연필,3\n", encoding="utf-8-sig")
-    editor.load_template_path(str(tpl))
+    editor.loader.load_template_path(str(tpl))
     editor.load_data_path(str(data))
     editor.dispatch("goto_section", {"section": "binding"})
-    for index in range(len(editor.model.rows)):
+    for index in range(len(editor.edit.model.rows)):
         editor.dispatch("set_display", {"index": index, "type": "const", "fmt": ""})
         editor.dispatch("set_const", {"index": index, "const": f"v{index}"})
     _confirm_every_row(editor)
@@ -161,7 +161,7 @@ def test_converted_template_journey_closes_review_binding_with_an_unchanged_conf
     job_ctrl, editor, tpl, reg = _wire(tmp_path)
     committed: list[str] = []
     commit = job_ctrl.on_editor_mapping_saved
-    editor._after_mapping_saved = lambda ref: (committed.append(ref), commit(ref))[1]
+    editor.save_operation._after_mapping_saved = lambda ref: (committed.append(ref), commit(ref))[1]
 
     # ① 마법사 저장 — 권위가 아직 없어 결속 확정은 **부르지 않는다**(가드 존치, 오커밋 방지).
     assert _wizard_save(editor, tpl, WORK)["ok"] is True

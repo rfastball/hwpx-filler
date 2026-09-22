@@ -6,6 +6,7 @@ GUI/CLI 가 생성 전에 사용자에게 경고를 띄우기 위한 구조화�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 
@@ -21,7 +22,7 @@ class ValidationReport:
         return bool(self.missing_columns or self.empty_valued)
 
 
-def validate(required_fields: "list[str]", records: "list[dict]") -> ValidationReport:
+def validate(required_fields: "list[str]", records: "Sequence[dict]") -> ValidationReport:
     """템플릿 요구 필드 대비 레코드 목록을 검증한다.
 
     - records: 문서 1건 = dict(필드명 -> 값)

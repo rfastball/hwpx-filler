@@ -247,7 +247,8 @@ txt 트랙에 자연스럽게 들어맞는다. txt에 GUI를 붙일 때의 진�
 **정직한 단서 / 격차.** 값 수준 겹침 감지(대상 필드가 *이미* 채워졌는지)는 종전 field-value
 read API 부재로 파킹됐다(`run_view` 파킹). 전제였던 API는 C1 `read_field`/`read_fields`
 (`domain/fields.py`, 커밋 `b76e247`)로 확보됨 — 단 **격상 구현 자체는 미착**이라 현 단계 loud
-신호는 여전히 필드명 수준까지만 정확하다(`run_state.set_prev_output` 교집합 고지).
+이전 `set_prev_output`은 현재 API가 아니다. 현재 `RunViewModel`은 호출자가 준 `RunDataInput`만
+소비하며, 누적 UI를 다시 열 때 값 수준 겹침 계약을 그 경계에서 새로 확정한다.
 batch-cumulative(이전출력↔레코드 file-key 매칭)는 실데이터 확보 시 착수.
 
 **트레이드오프.** 필드명 겹침을 loud로 올리면 서로소 설계를 이미 한 사용자에겐 마찰. 그러나
@@ -521,11 +522,11 @@ loud하나 **템플릿측엔 대칭 계약이 없었다**(`output_report`가 `jo
   (URL 내 ServiceKey 유출 방지 — 원장 export가 새 유출면).
 - **전방(J3 대비) — 커버/드리프트는 유효 매핑에서 평가.** J3 매핑 = base ⊕ overlay 착지 시에도 안
   깨지도록 전건 커버·대칭차는 **합성된 effective mapping** 기준으로 평가한다(지금 명시 → J3 재작업 0).
-- **사후 검증 실화(C1 착지).** `set_prev_output`(`run_state.py:218`)가 "값 읽기 API 부재"로 파킹했던
-  값 수준 검사가 **C1 `read_field` 착지(커밋 `b76e247`)로 해동** → 원장 사후 닫음이
+- **사후 검증 실화(C1 착지).** 과거 `set_prev_output`이 "값 읽기 API 부재"로 파킹했던
+  값 수준 검사는 **C1 `read_field` 착지(커밋 `b76e247`)로 해동** → 원장 사후 닫음이
   `GenerateResult.applied`(엔진의 주장)를 넘어 **생성물 실값 되읽기(증거)**로 검증한다 — L2
-  `verify_output`(`domain/fill_ledger.py`)이 구현. ADR G 값겹침 격상은 같은 API를 공유하되 **미착**
-  (openQuestions G 후속).
+  `verify_output`(`domain/fill_ledger.py`)이 구현. 현재 실행뷰는 명시적 `RunDataInput`만 소비하므로
+  ADR G 값겹침 UI는 누적 기능 재도입 때 그 입력 경계에서 다시 정한다.
 
 **잔여(L 축) — 구현으로 전부 확정(L2 `367e949`).** (축1) 원장 export **열 집합** = `LedgerRow.to_dict`
 의 8필드 {field·status·sources·transform·fmt·preview_text·injected·read_back}, `export_run_ledger`
@@ -659,7 +660,8 @@ falsify하지 못했을 뿐, **수요 자체는 이미 운용 관측으로 성�
 - **확정은 하류 계약에 관통한다.** ① 매핑 초안 캐시 키(`wizard.py` RC-09 키)에 시트를
   포함 — 같은 경로·같은 헤더의 **다른 시트** 재선택이 옛 초안으로 조용히 구동되지 않는다.
   ② 풀 항목 `opts`에 시트 임베드(ADR K 선확정 계약 병기 참조) — 복원이 재질문 없이 같은
-  시트를 겨눈다. ③ VM은 확정된 값만 수취: `load_data(path, sheet=None)` 키워드 확장
+  시트를 겨눈다. ③ `JobDataSession`은 확정된 값만 수취하고 `RunViewModel`에는 불변
+  `RunDataInput`으로 전달
   ([UI_CONTRACT.md](UI_CONTRACT.md) 데이터 겨눔 콜백, 다이얼로그는 링2 —
   [ARCH_UI_SEPARATION.md](ARCH_UI_SEPARATION.md)).
 
@@ -772,10 +774,10 @@ pclm_identity`): 접두가 없으면 `pclm.db` 를 파일로 등록한 엑셀 �
 
 ## 미결 (openQuestions)
 
-- **G 후속.** 값 수준 겹침 감지(대상 필드가 이미 채워졌는지)의 전제였던 field-value read API는
-  **C1 `read_field`/`read_fields`(`domain/fields.py`, `b76e247`)로 확보됨** — 단 격상 구현 자체는
-  **미착**(`run_state.set_prev_output`은 여전히 필드명 교집합 고지까지); batch-cumulative는
-  실데이터 확보 시 착수.
+- **G 후속.** 값 수준 겹침 감지의 field-value read API는
+  **C1 `read_field`/`read_fields`(`domain/fields.py`, `b76e247`)로 확보됐다. 현재 실행뷰에는
+  누적 입력 API가 없으므로 누적 UI 재도입 시 `RunDataInput` 경계에서 계약을 확정한다;
+  batch-cumulative는 실데이터 확보 시 착수.
 - **E 교차점.** 강제 상호작용과 상시 인라인 패널의 결합 형태 — 직접 실험 부재, 프로토타입으로
   검증 권장.
 - **A 경첩 관찰.** 재사용률이 실사용에서 유지되는지 — 하락 시 문서-우선으로 재검토.

@@ -99,9 +99,12 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 않는다 — 호환 판정(`compatibility_for`)은 결속된 파일의 열이 사라진 경우를 잡는 실행
 게이트로만 산다. 결속을 쓰는 자리는 **편집기 저장 하나**다.
 
-그 위에서 세션 소유권은 그대로다: 마운트된 데이터·선택·필터는 `JobController` 세션 소유이고
-작업 전환에서 생존한다(잃는 것은 실행 증거뿐). 마운트 직후 선택은 0건이고, 실행 입력 순서는
-표시순서 투영(`_display_indices`)을 통과한다 — 표·거울·파일 이름 계획이 전부 같은 투영을 쓴다.
+세션 소유권은 분리한다: `JobDataSession`이 마운트 데이터·선택·필터·범위를, `ActiveWorkSession`이
+작업 identity·선택·재로드·재연결·탐색을, `JobExecutionSession`이 구성·봉인·관찰·준비를,
+`DocumentRunCoordinator`가 생성 잠금·취소·입력·덮어쓰기·결과·배달을 소유한다. `JobController`는
+얇은 브리지 조정자다. 마운트 직후 선택은 0건이고 실행 입력 순서는 표시순서 투영을 통과한다.
+`snapshot()`은 준비된 분리 view의 순수 성형이며 IO 갱신은 공개 경계 `refresh_panel()`에서만 한다.
+브리지는 `mounted_data_descriptor`와 `owned_session_paths`로 마운트 데이터와 세션 소유 경로만 연다.
 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md` 는 **역사 기록**이고 그 「데이터-우선」 전제는
 위 재판정이 대체했다 — 동결 문서는 고치지 않고 승계 진술을 `docs/UI_CONTRACT.md` 가 진다.
 

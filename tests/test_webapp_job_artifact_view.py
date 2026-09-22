@@ -35,9 +35,9 @@ from hwpxfiller.external.delivery_coordinator import (
 )
 from hwpxfiller.gui.artifact_view_state import ARTIFACT_PARTIAL_COVERAGE
 from hwpxfiller.webapp import app as app_module
-from hwpxfiller.webapp import screen_job as screen_job_module
+from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
 from hwpxfiller.webapp.managed_generation import ManagedReadBackFailed
-from hwpxfiller.webapp.screen_job import (
+from hwpxfiller.webapp.document_run_coordinator import (
     ARTIFACT_NOT_IN_SESSION,
     ARTIFACT_OBSERVED,
 )
@@ -96,9 +96,7 @@ def _ready_controller(tmp_path: Path):
         def records(self) -> list[dict]:
             return rows
 
-    ctrl.datasource = Source()
-    assert ctrl.vm is not None
-    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    ctrl.data.datasource = Source()
     out = tmp_path / "delivery"
     out.mkdir()
     pick_output_folder(ctrl, out)
@@ -106,7 +104,9 @@ def _ready_controller(tmp_path: Path):
 
 
 def _run_with(ctrl, monkeypatch, outcome):
-    monkeypatch.setattr(screen_job_module, "run_managed_generation", lambda **kw: outcome)
+    monkeypatch.setattr(
+        run_coordinator_module, "run_managed_generation", lambda **kw: outcome
+    )
     return ctrl.generate(run_token="tk-artifact")
 
 
@@ -285,7 +285,8 @@ def test_data_swap_discards_the_delivered_coordinates(
     _completed(tmp_path, ctrl, out, monkeypatch)
     ctrl.dispatch("artifact_open", {"ordinal": 0})
 
-    ctrl._init_filter()  # 데이터 교체가 지나는 자리(필터 재생성 = 새 레코드 집합)
+    ctrl.runs.invalidate_data_results()
+    ctrl.refresh_panel()
 
     assert ctrl.delivered_artifact_paths() == ()
     assert ctrl.snapshot()["artifact_view"]["open"] is False
@@ -415,8 +416,9 @@ def test_owned_paths_enter_the_whitelist_without_weakening_it(
     template_root.mkdir()
 
     class _Editor:
-        template_path = ""
-        data_path = ""
+        @staticmethod
+        def owned_session_paths() -> tuple[str, ...]:
+            return ()
 
     class _TemplateRoot:
         def path(self) -> Path:
@@ -446,7 +448,7 @@ def test_owned_paths_enter_the_whitelist_without_weakening_it(
         owner._validate_owned(str(template_root / "남의서식.hwpx"))
 
     # 좌표가 죽으면 어포던스의 근거도 죽는다 — 같은 수명이다.
-    ctrl._discard_delivered_artifacts()
+    ctrl.runs.discard_delivery()
     with pytest.raises(ValueError):
         owner._validate_owned(documents[0].absolute_path)
 
