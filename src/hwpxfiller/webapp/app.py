@@ -75,9 +75,10 @@ from ..host.native.debug import log
 from ..host.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from ..host.native.reveal import open_path as _native_open_path
 from ..host.native.reveal import reveal_in_explorer as _native_reveal
+from .document_run_coordinator import ARTIFACT_NOT_IN_SESSION
 from .screen_editor import EditorController
 from .screen_library import LibraryController
-from .screen_job import ARTIFACT_NOT_IN_SESSION, JobController
+from .screen_job import JobController
 from .template_change import TemplateChangeCoordinator
 from .slot_configuration_product import (
     SlotConfigurationProduct,
@@ -97,7 +98,6 @@ from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
     collect_owned_paths,
-    source_label,
     validate_owned_path,
 )
 
@@ -624,13 +624,7 @@ class WebFrontend:
         발신 순서에 기대는 배선([[bridge-call-ordering-contract]] 결함류). label 은
         :func:`~hwpxfiller.webapp.screens.source_label` 합성 그대로(링2 재조립 금지).
         """
-        controller = self._controller(screen)
-        return {
-            "label": source_label("file", Path(path).name),
-            "path": path,
-            "sheet": sheet,
-            "rows": len(getattr(controller, "records", []) or []),
-        }
+        return self._controller(screen).mounted_data_descriptor(path, sheet)
 
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
@@ -925,10 +919,8 @@ class WebFrontend:
         # 하위 파일을 넓게 허용하지 않고 exact 경로 하나만 보탠다.
         session = [
             str(self._template_root.path()),
-            getattr(ed, "template_path", ""),
-            getattr(ed, "data_path", ""),
-            getattr(job, "out_dir", ""),
-            *job.delivered_artifact_paths(),
+            *ed.owned_session_paths(),
+            *job.owned_session_paths(),
         ]
         owned = collect_owned_paths(
             self._job_registry, self._pool_registry, session, base_dir=self._owned_path_base

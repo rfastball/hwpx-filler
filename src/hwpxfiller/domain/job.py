@@ -5,12 +5,11 @@
 **행은** 매 실행 일회성이라 작업에 저장하지 않는다 — 저장되는 것은 「어느 파일·시트·헤더 행을
 쓰는가」이지 그 내용이 아니다(U4 §2.4 재판정, #932 U4-C — U2 §5.3 판정 D 의 명시 철회).
 
-- **한 겹.** 데이터 측은 :class:`~hwpxfiller.domain.data_source.DataSource` 이음새로 추상 참조한다.
-  누적치환(이전 출력을 소스로)·API 직결(미래)은 그 이음새 뒤의 *소스 종류*일 뿐 — 여기서 조인/
-  데이터-뷰 계층을 세우지 않는다.
+- **한 겹.** 데이터 로더는 :class:`~hwpxfiller.domain.data_source.DataSource` 이음새 뒤에 있고,
+  실행 판정은 호출자가 고정해 건넨 레코드 스냅샷만 읽는다.
 - **매핑은 작업 정의 때 1회 확정**(에디터의 명시성 게이트). 실행은 사전검증만 한다.
 - ``source_shape``는 매핑 프로파일에 내포된다(별도 필드 없음) — :meth:`Job.source_keys` 가
-  실행 시점에 그 형태를 실 DataSource 와 대조한다.
+  실행 시점에 그 형태를 명시 레코드 스냅샷과 대조한다.
 
 직렬화·레지스트리(durable JSON encode/decode·원자 쓰기 개시·디렉터리 레지스트리)는
 P2-21(#569)에서 :mod:`hwpxfiller.external.job_store` 로, writer lease(프로세스 소유권)는
@@ -27,10 +26,8 @@ from .dataset_reference import excel_identity
 from .mapping import MappingProfile
 from ..domain.validation import ValidationReport, validate
 
-if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
+if TYPE_CHECKING:
     from datetime import datetime
-
-    from ..domain.data_source import DataSource
 
 # 미충족 공란 표식 — grep 가능 표적의 단일 출처(로드맵 ⑤ 출력검증 = 이 표식 grep).
 # "누락은 시끄럽게"의 출력 짝: 있어야 할 값이 빈 필드에만 주입되고(의도적 공란은 매핑이
@@ -257,8 +254,8 @@ class Job:
     # 무영향이라 내용 지문에서 빠진다(favorited_at 과 같은 줄).
     authority_id: str = ""
     # 이 작업이 쓰는 **데이터 결속**(U4 §2.4 재판정, #932 U4-C). 마운트 시점에 한 벌로
-    # 포획한 참조 그대로다 — :meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff`
-    # ·설정의 ``last_data_source`` 와 **같은 세 성분**이라 새 형상을 발명하지 않는다.
+    # 포획한 참조 그대로다. JobDataSession handoff와 설정의 ``last_data_source``가 쓰는
+    # **같은 세 성분**이라 새 형상을 발명하지 않는다.
     #
     # **U2 §5.3 판정 D 의 명시 철회다.** 그 판정은 ``default_dataset_ref`` 를 폐기하며
     # *"데이터↔작업 결속은 어느 방향으로도 다시 들이지 않는다"* 라고 적었다(#347). 실사용
@@ -579,7 +576,7 @@ def advance_revisions(job: "Job", previous: "Job | None") -> None:
 # ------------------------------------------------------------ 실행(Run) 요청
 @dataclass
 class RunRequest:
-    """한 작업의 1회 실행 — 일회성(저장 안 함). 데이터 겨눔 + 행 선택을 담는다.
+    """한 작업의 1회 실행 — 일회성(저장 안 함). 레코드 스냅샷 + 행 선택을 담는다.
 
     실행 로직(선택·매핑 적용·사전검증)을 Qt 밖에 두어 헤드리스 테스트한다
     (:class:`MappingModel`·:class:`SelectionModel` 이 위저드에 한 역할). 뷰(run_view)는 이
@@ -587,12 +584,11 @@ class RunRequest:
     """
 
     job: Job
-    datasource: "DataSource"
+    records: "tuple[dict, ...]"
     selected_indices: "list[int]"
 
     def selected_records(self) -> "list[dict]":
-        recs = self.datasource.records()
-        return [recs[i] for i in self.selected_indices]
+        return [self.records[i] for i in self.selected_indices]
 
     def mapped_records(
         self, *, mark_missing: str = "", now: "datetime | None" = None
@@ -618,13 +614,13 @@ class RunRequest:
         return mark_missing_values(mapped, mark_missing, fields=self.job.template_fields())
 
     def source_report(self) -> ValidationReport:
-        """소스키 사전검증 — 겨눈 DataSource 가 매핑이 읽는 키를 제공하는가.
+        """소스키 사전검증 — 명시 스냅샷이 매핑이 읽는 키를 제공하는가.
 
-        내포된 ``source_shape`` 를 실 소스와 대조하는 지점. 빠진 소스키는 *소스 수준*
+        내포된 ``source_shape`` 를 현재 레코드와 대조하는 지점. 빠진 소스키는 *소스 수준*
         ``missing_columns`` 로 뜬다(매핑 출력만 보면 익명의 빈 필드로 뭉개져 어느 소스가
         빠졌는지 잃는다).
         """
-        return validate(self.job.source_keys(), self.datasource.records())
+        return validate(self.job.source_keys(), self.records)
 
     def output_report(self) -> ValidationReport:
         """출력 사전검증 — 매핑된 결과에 빈 값 필드. 실행 시점 '빈칸 허용?' 게이트의 근거.

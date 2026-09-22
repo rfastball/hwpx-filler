@@ -1,7 +1,10 @@
 """Screen-scoped WebView dispatch registry completeness and rejection gates."""
 from __future__ import annotations
 
+import ast
+import inspect
 import re
+import textwrap
 
 import pytest
 
@@ -15,6 +18,9 @@ from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_tutorial import TutorialController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
+from hwpxfiller.gui.edit_session import EditSession
+from hwpxfiller.webapp.editor_session import EditorLoader
+from hwpxfiller.webapp.data_zone import JobDataSession
 
 
 CONTROLLERS = {
@@ -53,12 +59,56 @@ _LITERAL_CALL = re.compile(
 def _controller_actions(controller: type) -> set[str]:
     """Collect the effective dispatch surface, including inherited mixins."""
 
+    if controller is EditorController:
+        return _editor_actions()
+
+    owners = controller.__mro__
+    if controller is JobController:
+        owners = (*owners, JobDataSession)
     return {
         name.removeprefix("_do_")
-        for cls in controller.__mro__
+        for cls in owners
         for name in vars(cls)
         if name.startswith("_do_")
     }
+
+
+def _editor_actions() -> set[str]:
+    """Read the editor's split loader/session/controller dispatch owners."""
+    actions = {
+        name.removeprefix("_do_")
+        for name in vars(EditorLoader)
+        if name.startswith("_do_")
+    }
+    controller_tree = ast.parse(textwrap.dedent(inspect.getsource(EditorController._dispatch)))
+    session_tree = ast.parse(textwrap.dedent(inspect.getsource(EditSession.apply_mapping_action)))
+    for tree in (controller_tree, session_tree):
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Compare)
+                and isinstance(node.left, ast.Name)
+                and node.left.id == "action"
+            ):
+                actions.update(
+                    comparator.value
+                    for comparator in node.comparators
+                    if isinstance(comparator, ast.Constant)
+                    and isinstance(comparator.value, str)
+                )
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "mapping_actions"
+                    for target in node.targets
+                )
+                and isinstance(node.value, (ast.Set, ast.Tuple, ast.List))
+            ):
+                actions.update(
+                    item.value
+                    for item in node.value.elts
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                )
+    return actions
 
 
 def test_registry_has_exactly_the_runtime_controller_surface() -> None:

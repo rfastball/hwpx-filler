@@ -1,63 +1,22 @@
-"""「작업」 화면 컨트롤러 — 좌 작업 목록 + 우 세션 패널 4존(webview 비의존).
-
-R-flow 구현 라운드(에픽 #90). R-info 1부가 확정한 「작업」 화면(변형 B master-detail: 좌
-목록 + 우 4존 세션 패널)의 착지. 이 컨트롤러는 **링2 표면**이다 — 실행 화면(``screen_run.py``,
-슬라이스 3에서 사망)을 재사용하지 않고 링1 VM 을 **직접 임포트**해 구동한다(부록 A: "계약
-대부분은 링1이 소유하고, 죽는 것은 링2 표면뿐" — 그 링2 표면이 죽어 이제 여기가 유일 소비처).
-실행 결정(데이터 로드·사전검증·3상태 배지·강제 확인 게이트·생성 계획)은
-:class:`~hwpxfiller.gui.run_state.RunViewModel`(Qt-free), 레코드 선택은
-:class:`~hwpxfiller.gui.selection_state.SelectionModel`(Qt-free)이 소유한다 — 재구현 금지(#87).
-
-**4존 스냅샷**: 헤더(작업 정체)·데이터(겨눔·행 선택)·본문(필드 배지 거울·게이트)·완료(생성
-결과 세션 스코프). 존은 표현 구조라 job.js 가 필드를 배치한다 — 스냅샷 필드는 실행 화면과
-평행해 링1 배선이 감사 가능하다(같은 refresh/게이트/생성 계약 소비).
-
-**네이티브 표면 동형**: ``load_data_path``·``set_output_folder``·``generate``·``render`` 시그니처를
-실행 화면과 같게 유지해 브리지(:mod:`~hwpxfiller.webapp.app`)의 화면-파라미터 네이티브 헬퍼
-(``pick_data_file``·``load_data_sheet``·``pick_output_folder``·``generate``)를 등록 한 줄로 재사용한다.
-
-**후속 슬라이스**(confirm-or-alarm: 없는 기능을 있는 척하지 않는다) — 아직 이 패널에 없는 것:
-- 좌 목록의 2구획 틴트·group-by 렌즈·컴파일 배지 등 풍부화(홈 브라우저 VM 채택).
-- 건 연속성 직전 필터 재적용(블록 4 결정 28, PR-4)·txt 큐(블록 3)·빠른 기안(블록 5).
-- 세션 가드의 유보 성분: **T2**(마법사 인계 비파괴화 — 에디터 접합, 슬라이스 5)·수동 필드
-  입력 성분(블록 5, 슬라이스 7). **T3**(큐 부분 진행)은 검토·복사 작업대가 진다(F6 —
-  구 기안 세션 공용 본체의 승계처). 술어 몸통은 이 화면과
-  공유(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin._selection_guard`).
-(슬라이스 2 착지분 — 게이트 재진술 블록·거울 채움 테이블·덮어쓰기 modal.js 수치 합성·식별
-요약 링1 :func:`~hwpxfiller.domain.identity_summary.identity_summary`(#88, A-1-15) — 과
-슬라이스 4 착지분 — 필터 선언 표면(결정 23~25)·세션 가드 T1+데이터 재겨눔(결정 26·27,
-T4=가드 불요·T5=수용 손실) — 은 본문에 배선돼 있다.)
-
-**스코프 경계 — 미구현 명시(#89, A-4-33)**: ``screen_run.py`` 경계 절을 승계한다 — 나라·
-RC-06·생성 원장 항은 **원문 그대로**, 이어채우기 항만 실행 화면 사망으로 맥락을 반영해
-**재기술**했다(원문의 "실행 화면에선 강등/숨김"이 이제 거짓이라 verbatim 불가). 아래는 링1
-seam 은 존치하나 이 패널이 노출하지 않는다. "없는 기능을 있는 척하지 않는다"의 명문이며,
-표면(실행 화면)이 죽어도 이 경계 선언은 죽지 않는다(F40 전례 방지):
-- 나라장터 소스 겨눔(동결 해제 시 재배선)·나라 애드혹 취득.
-- 기존 문서 이어채우기(#18 결정으로 강등/숨김 — seam 은 링1 ``target_mode``/``set_prev_output``
-  게이트 술어에 잔존, A-4-32).
-- 생성 원장 opt-in. 협조적 취소(RC-06)는 #220에서 건 경계 중단으로 배선됐다.
-덮어쓰기 확인·미입력 강제 확인 게이트·구조 드리프트 차단·미입력 표식·다중 시트 확정
-게이트(#33)는 모두 포함한다.
+"""문서 생성 화면의 dispatch·refresh·push를 조정한다.
+데이터는 ``JobDataSession``, 작업은 ``ActiveWorkSession``이 소유한다.
+준비·봉인은 ``JobExecutionSession``, 실행 수명은 ``DocumentRunCoordinator``가 소유한다.
+컨트롤러는 주입된 의존성을 안쪽 소유자와 순수 presentation에 연결한다.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 import threading
 
 from ..application.generation import (
-    GenerationRun,
     blank_marker,
-    plan_generation,
-    run_generation,
-    start_run,
 )
 from ..application.jobs import (
     JobStorePort,
-    job_content_fingerprint,
-    job_exists,
     job_names,
     list_jobs,
     load_job,
@@ -67,41 +26,22 @@ from ..application.jobs import (
 from ..domain.engine import HwpxEngine
 from ..application.execution_contract_set import (
     execution_basis_digest,
-    plan_semantic_digest,
 )
-from ..domain.identity_summary import identity_summary
-# 계약 목록 참조 **형상**만 든다 — 구체 소스 조립은 여전히 주입된 factory 의 몫이다(P2-16).
+
+# 구체 데이터 소스는 composition root가 주입한다.
 from ..data.factory import pclm_reference
-from ..external.artifact_observation import (
-    ArtifactObservationRefused,
-    observe_delivered_artifact,
-)
 from ..external.delivery_coordinator import (
     DeliveredDocument,
-    DeliveryAborted,
-    DeliveryCompleted,
 )
-from ..gui.artifact_view_state import observed_artifact_snapshot
-from ..external.ledger_export import write_managed_delivery_ledger
-from ..external.output_files import ensure_output_directory
 from ..external.seal_execution_capture_runner import (
     CONTEXT_ERROR_TYPES,
     context_error_code,
 )
-from .managed_generation import (
-    ManagedReadBackFailed,
-    run_managed_generation,
-)
 from ..domain.job import (
     Job,
-    data_binding_matches,
-    data_binding_of,
-    has_data_binding,
-    rules_fingerprints,
     template_media,
     work_mode,
 )
-from ..domain.mapping import SOURCE_CARRIER_TYPES
 from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨은 내부 이름을 안 든다
 from ..domain.output_folder_default import (
     SOURCE_REMEMBERED as OUTPUT_FOLDER_SOURCE_SETTING,
@@ -112,10 +52,7 @@ from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
     KIND_TEXT,
-    FilterModel,
 )
-from ..gui.result_errors import classify_result_error, describe_fill_note
-from ..gui.record_range import RecordRange, RecordRangeDraft
 from ..gui.review_state import (
     ReviewRequirement,
     review_requirement,
@@ -124,81 +61,44 @@ from ..gui.run_state import (
     FileSourceFactoryPort,
     GateState,
     PoolSourceFactoryPort,
-    RunViewModel,
+    RunDataInput,
     resolve_file_source,
     resolve_pool_source,
     template_missing,
 )
-from ..gui.selection_state import SelectionModel
 from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import (
     WORK_MODE_TEXT,
-    mode_sections,
     seat_kinds,
-    work_mode_label,
 )
 from ..gui.work_candidates import (
-    KIND_AVAILABLE,
-    KIND_NEEDS_ACTION,
-    MAIN_TOP_N,
-    TAB_AVAILABLE,
-    TAB_NEEDS_ACTION,
-    browse_candidates,
-    candidate_rows,
-    compatibility_for,
-    bound_jobs,
     prework_gate,
     unsupported_media_gate,
     workbench_entry_gate,
-    preferred_promotion,
-    rank_available,
-    suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
+from .active_work_session import ActiveWorkSession
 from .template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
-    SUPPORTED_MEDIA,
     TemplateChangeError,
     unsupported_zone,
 )
 from ..application.slotless_run_bridge import (
-    STRUCTURE_NOTATION_UNCOMPILED,
     SlotlessRunAdmissionError,
 )
-from ..gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
-# S4 Working Slot Configuration 배선(SX-02 #725) — Product/Observation 소비만(재구현 금지).
 from dataclasses import asdict
-import uuid
-from ..application.automatic_seal_orchestration import (
-    FAILED as ORCHESTRATION_FAILED,
-    SETTLED_CURRENT as ORCHESTRATION_SETTLED_CURRENT,
-    AutomaticSealOrchestration,
-    on_durable_command_settled,
-    on_seal_settled,
-    request_manual_recovery,
-)
 from ..application.template_change_product import workbench_template_change_verdict
 from ..application.document_creation_workbench import (
-    ActiveWorkContext,
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
-    HistoricalOutcomeSummary,
     RecordValidationSummary,
-    RELEASE,
     WorkbenchContextIntegrity,
-    decide_active_work_after_data_transition,
 )
 from ..application.generation_delivery import (
-    DeliveryPlanContextError,
-    WRITE_OVERWRITE,
     CurrentResolvedDelivery,
 )
-from ..application.preset_command import preset_list_actionable
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
-    CurrentWorkExecutionObservation,
-    ExecutionObservationContextError,
-    FreshExecutionObservation,
 )
 from ..application.run_delivery_intent import (
     DEFAULT_COLLISION_POLICY,
@@ -209,34 +109,27 @@ from ..domain.raw_data_record import (
     RawDataRecordError,
 )
 from ..domain.field_binding import FieldBindingError
-from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
 from .current_execution_preparation import (
-    CurrentDeliveryPreparation as _CurrentDeliveryPreparation,
     CurrentRecordCaptureError as _CurrentRecordCaptureError,
-    CurrentRecordPreparation as _CurrentRecordPreparation,
     capture_selected_records,
     current_record_identity,
-    delivery_projection,
-    prepare_current_delivery,
-    prepare_current_records,
     record_issue,
-    unresolved_delivery,
 )
+from .job_execution_session import JobExecutionSession
 from .managed_run_result import (
     ADMISSION_REJECT_TEXT,
-    project_managed_run_result,
 )
 from .job_presentation import (
-    browse_row,
-    candidate_card,
-    failed_result,
-    failure_rows,
-    generation_result,
-    overwrite_response,
-    record_rows,
+    base_panel_snapshot,
+    browse_payload,
+    candidate_payload,
+    filename_source_columns,
+    record_table_rows,
     review_payload,
     serialize_observation,
+    connection_label,
+    work_panel_snapshot,
 )
 
 from ..external.settings import (
@@ -245,118 +138,50 @@ from ..external.settings import (
     save_last_data_source,
     save_last_output_directory,
 )
-from .data_zone import (
-    EMPTY_FILTER as _EMPTY_FILTER,
-    EMPTY_TABLE as _EMPTY_TABLE,
-    DataZoneMixin,
+from .data_zone import JobDataSession
+from .document_run_coordinator import (
+    DocumentRunCoordinator,
+    ManagedRunInput,
+    RunInputCapture,
 )
 from .screens import (
     NO_ROWS_TEXT,
-    PoolTargetingMixin,
     PushSink,
     TutorialSink,
+    load_pool_into,
     pool_reference_quad,
     reference_missing,
-    relink_job_template,
     source_label,
     unwired_tutorial,
 )
 from .tutorial_loop import GenerationLoopLedger
 
-#: 부팅 자동 마운트 실패 재진술(U3-07 · #880) — 기억한 데이터를 다시 세우지 못했을 때 첫
-#: 화면이 조용한 빈 상태로 서지 않게 하는 문안. 사유는 기존 로드 관문(파일 부재·나라 동결·
-#: 0행·죽은 참조)이 낸 문장을 **그대로** 이어 붙인다: 여기서 다시 조립하면 같은 실패가 두
-#: 문안을 갖는다. 두 상수뿐이라 공용 모듈로 올리지 않는다(소비자 1 = 이 화면).
+#: 부팅 복원 실패를 빈 화면으로 숨기지 않고 기존 로드 사유와 함께 알린다.
 _REMEMBERED_DATA_MISSING = (
     "지난번에 사용한 데이터 파일을 찾을 수 없습니다: {path}. 데이터를 다시 고르세요."
 )
 _REMEMBERED_DATA_FAILED = "지난번에 사용한 데이터를 다시 불러오지 못했습니다. {reason}"
 
-#: 작업의 데이터 결속을 세우는 세 결과의 문안(U4 §2.4 · #932 U4-C). 부재·실패 두 갈래는
-#: 위 부팅 복원과 **같은 사유 채널**을 쓴다(같은 실패가 두 문안을 갖지 않게). 성사 문안이
-#: 따로 있는 이유는 그것이 실패 재진술이 아니라 **초기화 고지**이기 때문이다 — 마운트는
-#: 선택·필터·열 선별을 되돌리므로 조용히 지나가면 사용자가 고른 행이 말없이 사라진다.
-_JOB_BINDING_MISSING = (
-    "이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {path}. "
-    "데이터를 다시 고른 뒤 작업을 저장하세요."
-)
-_JOB_BINDING_FAILED = "이 작업에 연결된 데이터를 불러오지 못했습니다. {reason}"
-_JOB_BINDING_MOUNTED = (
-    "이 작업에 연결된 데이터 '{label}' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
-)
-_JOB_BINDING_ABSENT = (
-    "'{name}' 작업에는 연결된 데이터가 없습니다. 데이터를 고른 뒤 편집기에서 저장하면 "
-    "다음부터 이 작업과 함께 열립니다."
-)
-
-#: 데이터 새로고침(U4 항목 5)의 파괴 확인 문안과 실패 재진술. 확인 문안이 **수치**를 드는
-#: 이유는 「선택이 사라진다」가 추상이면 사용자가 무엇을 잃는지 못 재기 때문이다.
-_REMOUNT_CONFIRM = (
-    "데이터를 다시 읽으면 지금 고른 {count}건의 선택과 필터 초안이 초기화됩니다."
-)
+#: 재마운트는 사라질 선택 수를 확인 문안에 포함하고 실패 사유를 그대로 재진술한다.
+_REMOUNT_CONFIRM = "데이터를 다시 읽으면 지금 고른 {count}건의 선택과 필터 초안이 초기화됩니다."
 _REMOUNT_FAILED = "데이터를 다시 읽지 못했습니다. {reason}"
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
 
-#: 「연결 상태」 문안(U2 §4 판정 C, #342) — 텍스트가 정본이고 색은 강조다. 세션 축과 후보
-#: 카드가 **같은 문자열**을 써야 같은 상태를 두 이름으로 부르지 않는다.
-_CONN_MISSING_LABEL = "템플릿 없음"
 
-
-def _template_conn(path: str) -> "tuple[bool, str]":
-    """템플릿 연결 상태 ``(부재인가, 「연결 상태」 문안)`` — **단일 술어·단일 문안**.
-
-    #342 리뷰 3라운드의 근본 조치다. 종전엔 같은 질문을 세 자리가 각자 답했고 술어까지
-    갈렸다 — 스냅샷 vm-None 가지는 ``bool(path) and not exists`` 라 **빈 경로를 정상**으로
-    보고했는데, 후보 카드는 ``not path or not exists`` 라 같은 작업을 「템플릿 없음」으로
-    그렸다. 사망 점검표는 「찾을 수 없음」과 「경로가 비어 있음」을 **한 축**(연결 상태)에
-    승계시켰으므로 술어도 하나여야 한다: 둘 다 "이 작업으로는 문서를 만들 수 없다"이고
-    복구 동선도 같은 재연결이다. 술어 몸통은 링1
-    (:func:`~hwpxfiller.gui.run_state.template_missing`)이 소유하고(P2-24), 여기는 문안만.
-
-    호출측이 ``has_job`` 을 이미 알고 있다(작업이 없으면 물을 대상 자체가 없다).
-    """
-    missing = template_missing(path)
-    return missing, (_CONN_MISSING_LABEL if missing else "")
-
-
-#: 산출물 관찰이 **세션 좌표에서** 서지 않았다(S7-03 · #825). 커널 거절 셋
-#: (:mod:`~hwpxfiller.external.artifact_observation`)과 겹치지 않는 넷째 상태다: 파일이
-#: 어떤가를 묻기도 전에 「그 문서가 이 세션 결과에 없다」로 끝난 경우다. 조용한 무시로
-#: 접지 않는 이유는 #775 교훈 그대로 — 준비 안 됨과 무결성 실패는 같은 빈 화면이 아니다.
-ARTIFACT_NOT_IN_SESSION = "ARTIFACT_NOT_IN_SESSION"
-
-#: 관찰이 성립한 상태의 이름표. 거절 코드와 같은 축에 실려 화면이 한 값으로 분기한다.
-ARTIFACT_OBSERVED = "observed"
-
-# 선택 유래 재진술(``restate``) 스냅샷 축은 존 재편에서 **퇴역**했다. 그 값을 소비하던 표면은
-# 인라인 재진술 블록(`#jobRestate`) 하나였고, 그 블록이 말하던 세 가지(선택 N행·생성 N건·저장
-# 폴더)는 각각 표 머리·배달 계획·저장 폴더 표시 줄이 이미 말하는 사실이었다. 유래 수치를 정말
-# 다시 물어야 하는 자리는 선택을 파기하는 전이의 확인 모달 하나이고, 거기는 ``guard`` 축이
-# (같은 `in_def`/`extra` 수치를 들고) 계속 진다 — 그래서 여기서 죽는 것은 재진술 축 하나다.
-
-# 전체 표시순서 2값(§18.10) — ``snapshotOrdinal``(=로드 순서 index) 내림/오름차순.
-# 정렬 키가 정수라 **동률이 원리적으로 없다** — 2차 정렬 규칙이 필요 없고 두 값은 정확한
-# 역이다(지도 §10.11.1 정밀도 면). 새 값을 늘리려면 그 성질부터 다시 센다.
-VIEW_ORDER_DESC = "sourceDesc"
-VIEW_ORDER_ASC = "sourceAsc"
-VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
-
-
-class JobController(DataZoneMixin, PoolTargetingMixin):
-    """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
-
-    실행 화면(``screen_run.py``) 사망(슬라이스 3) 이후 **링1 실행 결정을 소비하는 유일 세션
-    표면**이다. 슬라이스 1 시절 존재하던 RunController 와의 링2 배선 중복(``load_data_path``·
-    ``dispatch``·``_do_*``·``_auto_aim_default``·``snapshot`` 골자)은 실행 화면 제거로 **자연 소멸**했다
-    (#94 종결 — 공유 베이스 추출 대신 중복 유발 표면을 제거하는 결정의 귀결). 남은 소비 표면이
-    하나뿐이라 링2 재구현을 막을 별도 가드는 불요 — 링1 결정(사전검증·게이트 단일 산출·생성 계획·
-    ack 상태기계)은 여전히 :class:`~hwpxfiller.gui.run_state.RunViewModel`/:class:`~hwpxfiller.gui.
-    selection_state.SelectionModel` 이 소유하고, ``test_job_panel_imports_ring1_and_does_not_
-    reimplement``(#87)가 이 컨트롤러의 링1 메서드 재구현을 계속 막는다."""
+# 전체 표시순서는 로드 순서 index의 내림/오름차순이라 동률이 없다.
+class JobController:
+    """문서 생성 전이를 조정하고 판정은 링1 모델에 위임한다."""
 
     name = "job"
+    _DATA_ACTIONS = frozenset(ZONE_MUTATIONS) | {
+        "filter_panel",
+        "range_draft_open",
+        "range_draft_apply",
+        "range_draft_cancel",
+        "set_selected_only",
+    }
 
     def __init__(
         self,
@@ -382,1150 +207,389 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._push_sink = push
         self._clock = clock
         self._engine = engine
-        # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이가 가장 많다: 마운트(T4/T12)·
-        # 작업+행 선택(T5)·생성 완주(T7/T8/T9/T16/T17). 전부 이미 성립한 전이 지점이고,
-        # 어느 것도 여기서 다시 판정하지 않는다. 승인축(T6/T13)의 **발신자**는 #957 에서
-        # 사라졌다 — 링1 단계 정의는 동결 자산이라 그대로 두고(#941) 여기 통지만 없다.
+        # 튜토리얼에는 이미 성립한 전이만 통지하며 여기서 다시 판정하지 않는다.
         self._tutorial = tutorial
-        # 루프 감지의 세션 이력(#894) — 앱이 들고 있지 않은 사실 넷(같은 작업 반복·같은 마운트
-        # 위 작업 전환·갈래 구성 변화·이 세션의 누름틀 변환)을 세는 기억이다. 판정이 아니라
-        # 기억이라 튜토리얼 모듈이 소유하고 이 컨트롤러는 한 칸으로 든다(모듈 독스트링 참조).
+        # 반복 실행 이력의 판정은 GenerationLoopLedger가 소유한다.
         self._tutorial_loop = GenerationLoopLedger()
-        # 이 **세션에서** 마지막으로 성립한 마운트(§3.4 T12 교체 판정의 왼쪽 항).
-        # `_remembered_data_source` 를 쓰지 않는 이유는 그 칸이 부팅 때 지난 세션 값으로 이미
-        # 차 있어 첫 마운트가 교체로 읽히기 때문이다(:meth:`_remember_data_source` 주석).
+        # 지난 프로세스의 기억과 섞지 않는 현재 세션의 마지막 마운트다.
         self._tutorial_last_mount: "dict | None" = None
-        # 템플릿 변경 확인·적용 코디네이터(S3-09 #659) — 조립은 webapp.app 이 한다.
-        # opaque token·bootstrap·S3 스토어 소유는 전부 저쪽이고 이 컨트롤러는 세션의
-        # 현재 작업 이름을 붙여 관통만 한다(판정을 링2 에서 재조립하지 않는다).
-        # 미주입(None)이면 존은 unsupported·동사는 loud 거절 — text_registry 선례(위)와
-        # 같은 이유로 무관 테스트·CLI 소비자에 S3 스토어 조립을 물리지 않는다.
+        # 템플릿 변경·슬롯 구성·관찰·봉인 서비스는 app이 조립한다. 컨트롤러는 현재 작업
+        # 이름만 붙여 호출하며, 미주입 기능은 unsupported 또는 loud 거절로 드러낸다.
         self._template_change = template_change
-        # S4 Working Slot Configuration Product(SX-02 #679·#725) — durable slot command·HMAC token·
-        # fresh view 소유는 저쪽이고 이 컨트롤러는 세션의 현재 작업 이름을 붙여 관통만 한다. 미주입
-        # (None)이면 존은 unsupported·동사는 loud 거절(template_change 선례) — 무관 테스트·CLI 소비자에
-        # S4 스토어 조립을 물리지 않는다. 판정·문안·token 을 링2 에서 재조립하지 않는다(재판정 금지).
-        self._slot_configuration = slot_configuration
-        # 작업대 Observation 합성 Product(SX-01 #724 소비 어댑터) — S3/S4/S5 권위를 사용자 작업대 상태로
-        # 합성한다. SX-02 는 content/data/active/orchestration 축만 채우고 나머지는 seam 이라, 이
-        # Observation 은 아직 사용자 실행 표면이 아니다(snapshot 에 노출하지 않는다 — SX-03/04/05 소관).
-        self._workbench_observation = workbench_observation
-        # SealExecutionPlan production 서비스(SX-SEAL #719 결선) — 조립·store 소유는 webapp.app 이
-        # 진다. 이 컨트롤러는 참조만 보관하고, dispatch·automatic 트리거·snapshot 노출 배선은 SX-03
-        # 소관이라 여기서 하지 않는다(미주입이면 seal 표면 부재).
-        self._seal_execution = seal_execution
-        # session-scoped automatic seal orchestration 상태(SX-01 #724 §4). durable current state 가
-        # 아니라 세션 진행 값이다. SX-SEAL 이 seal 인프라를 배선했으므로(#719) SX-03 이 자동 확인
-        # 트리거를 아래 `_maybe_auto_check` 로 배선한다(수동 seal 버튼 0).
-        self._session_orchestration = AutomaticSealOrchestration()
-        self._current_record_preparation: _CurrentRecordPreparation | None = None
-        # 세션 충돌 처리(U3-06 #879) — 저장 폴더와 **독립한 축**이다. 사용자가 고르는 값이
-        # 아니게 된 뒤(U4 계열2-27)에도 세션 값으로 남고, 작업 해제에서 기본값으로 돌아간다.
-        self._run_delivery_collision = DEFAULT_COLLISION_POLICY
-        # **전역 저장 폴더**(U3-06 #879 → 전역화) — 설정 층 소유의 도출 재료다. 종전 이 자리
-        # 위에는 session-scoped 명시 지정(`_run_delivery_intent`)이 한 층 더 있었고 작업
-        # 전환·해제에서 소거됐다. 저장 폴더가 작업이 아니라 앱의 설정이 되면서 그 층이
-        # 걷혔으므로 지금 축은 이 값 하나다. 부팅 1회 판독 — 앱은 홈당 단일 인스턴스라 이
-        # 값을 바꾸는 것은 아래 `set_output_folder` 뿐이다.
+        self.execution = JobExecutionSession(
+            slot_configuration=slot_configuration,
+            workbench_observation=workbench_observation,
+            seal_execution=seal_execution,
+        )
+        self.work = ActiveWorkSession(
+            registry,
+            template_change,
+            engine,
+            self.execution.invalidate,
+        )
+        self.data = JobDataSession(pool_registry)
+        self.runs = DocumentRunCoordinator(generation_lock)
+        # 저장 폴더와 마지막 데이터는 부팅 때 읽고 각 전용 동사만 갱신한다.
         self._remembered_output_directory = load_last_output_directory()
-        # 마지막으로 **성사된** 데이터 마운트 성분(U3-07 #880) — 부팅 자동 마운트의 재료.
-        # 저장 폴더 기억과 같은 설정 층이고 같은 이유로 부팅 1회 판독이다(앱은 홈당 단일
-        # 인스턴스라 이 값을 바꾸는 것은 아래 `_remember_data_source` 뿐).
         self._remembered_data_source = load_last_data_source()
-        # 자동 마운트는 **부팅 1회**다(`initial` 재호출로 사용자가 지금 고른 데이터를
-        # 되돌리지 않는다). 재시도의 단위는 프로세스이지 화면 재진입이 아니다.
+        # 자동 복원은 부팅 1회만 수행해 현재 사용자의 선택을 되돌리지 않는다.
         self._boot_data_restored = False
-        # 자동 마운트 중에는 푸시를 접는다 — 결과는 첫 스냅샷 **자체**로 전달되고, 그
-        # 전에 미는 스냅샷은 아직 화면을 세우지 않은 프런트에 같은 상태를 한 번 더 던진다.
+        # 자동 복원 결과는 첫 스냅샷으로만 전달한다.
         self._boot_restore_in_progress = False
-        self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
-        # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
-        # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
-        # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
-        # (UI 가 basis 를 계산하지 않는다).
-        self._last_sealed_basis_digest: "str | None" = None
-        # 마지막 seal/observe 의 fresh observation(CurrentSealedPlanObservation/CurrentWorkExecutionObservation/
-        # ExecutionObservationContextError). 작업대 Observation 의 admission/readiness/7상태를
-        # 여기서 **소비만** 한다(재판정 0). None = 아직 확인 증거 없음(NO_EVIDENCE).
-        self._last_fresh_observation: "FreshExecutionObservation | None" = None
-        # 마지막 seal 이 봉인한 plan payload(S6-05 · #812) — identity 가 아니라 화물이다.
-        # basis digest 와 **같은 응답**에서 짝으로 보관해 managed 실행이 재판정 없이 소비한다.
-        self._last_sealed_plan_payload = None
-        # 마지막 managed 완주의 실행 증거(S6-05) — 작업대 historical_outcome 으로만 나른다.
-        self._last_managed_outcome: "HistoricalOutcomeSummary | None" = None
-        # 직전 managed 실행이 **실제로 disk 에 앉힌** 문서들(S7-03 · #825). 결과 존의 문서
-        # 목록과 산출물 관찰·「다른 이름으로 저장」이 겨누는 좌표이고, 범위는 **현재 세션
-        # 결과**뿐이다(#820 D5 — 원장 되읽기는 이 슬라이스 밖). bytes 는 들지 않는다:
-        # 관찰이 필요할 때마다 커널을 다시 부른다(#820 D1 — 캐시는 관찰 권위가 못 된다).
-        # 수명은 `_last_generated` 와 같은 자리다 — 데이터 교체·작업 전환에서 비운다.
-        self._last_delivered: "tuple[DeliveredDocument, ...]" = ()
-        # 산출물 관찰 시트의 **열림과 결과**(S7-03) — 열림·값이 전부 Python 소유다.
-        # DOM 이 들면 push 재렌더가 면을 조용히 닫거나 남의 문서를 그린다.
-        self._artifact_view: "dict | None" = None
-        # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
-        # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
-        # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
+        # 데이터 소스 구현은 필수 주입해 링2의 service locator 뒷문을 막는다.
         self._file_source_factory = file_source_factory
         self._pool_source_factory = pool_source_factory
         self._existing_outputs = existing_outputs
         self._ensure_output_dir = ensure_output_dir
-        # TXT 템플릿 레지스트리(F6 PR-B 고지 ①) — 후보 TXT 구획 빈 상태의 술어에만 쓴다
-        # (txt 템플릿 有 ∧ txt 작업 0건). 앱 조립에선 tpl·편집기와 같은 인스턴스를 주입한다.
-        # 미주입(None)이면 술어가 항상 거짓 — 테스트·CLI 소비자에 실 홈 스캔을 물리지 않는다.
+        # TXT 템플릿은 빈 후보 안내에만 쓰며 미주입 시 실 홈을 스캔하지 않는다.
         self.text_registry = text_registry
-        self.vm: "RunViewModel | None" = None
-        # 명시 선택 시점에 seated VM이 가리키던 기존 durable identity의
-        # 세션 래치. 새 identity를 만들거나 영속하지 않는다.
-        self._seated_template_application_id: "str | None" = None
-        # 세션 소유 데이터(data-first 봉합, §18.2 보존 계약) — 마운트된 datasource·records 는
-        # 컨트롤러(세션)가 보유해 **작업 전환에서 생존**한다. vm 은 재생성 시
-        # ``set_acquired`` 로 이 상태를 주입받는 소비자다(RC-22 원자 진입점 재사용).
-        self.datasource = None
-        self.records: "list[dict]" = []
-        self.selection = SelectionModel(0)
-        # 전문 범위 편집기 초안(§18.10, 재작성 F3) — 열려 있으면 존 13액션이 **이것**을
-        # 편집하고 커밋된 범위는 그대로 선다(불변식 §18.11-21). 스냅샷 세대는 초안이 어느
-        # 레코드 집합 위에서 열렸는지의 표식이다(적용 시점 정합 판정).
-        self.range_draft: "RecordRangeDraft | None" = None
-        self._snapshot_gen = 0
-        # 존 변이의 **대상 세계 세대**(리뷰 4R) — 초안이 열리거나 닫히거나(적용·취소) 데이터가
-        # 갈릴 때 오른다. 웹은 발신 시점에 보고 있던 세대를 실어 보내고, 세대가 다른 변이는
-        # **남의 세계의 편집**이라 적용하지 않는다: 느린 출구 뒤에 줄 선 편집이 초안이 사라진
-        # 커밋 범위에 착지하던 창을 원천에서 닫는다(경계의 시간 축, 지도 §10.11.9).
-        self.zone_epoch = 0
-        # 전체 표시순서(§18.10 ``recordRange.viewOrder``, 재작성 F3 — 지도 §10.11).
-        # **데이터 귀속** 상태다: 새 스냅샷은 기본값으로 돌아간다(불변식 §18.11-13 "새
-        # 스냅샷은 최신 행 먼저"). 개인화 설정으로 승격하지 않는다 — 순서가 파일명의
-        # 함수라(§2 충돌 B) 지난 데이터의 순서를 새 데이터가 물고 오면 이름이 조용히 갈린다.
-        self.view_order = VIEW_ORDER_DESC
-        # 필터 선언 상태(블록 4, 결정 23~25) — 스코프 = 세션(작업×데이터, 결정 24).
-        # 데이터 겨눔 시 생성, 작업 전환·데이터 교체 시 재생성(전환 인계는 PR-4 결정 28).
-        self.filter: "FilterModel | None" = None
-        # 마지막 생성 완주 집합(결정 27) — 완료 이벤트 = 무장 해제(내역은 완료 존이 담보).
-        self._last_generated: "set[int] | None" = None
-        # 직전 런의 실패 레코드 원본 index(지도 §10.10 판정 F) — 「실패한 N건만 선택」의
-        # 소재. **Python 이 소유**한다: 웹이 들고 있다 되돌려주면 그 사이의 데이터 교체·
-        # 표시순서 변경이 남의 행을 고른다. 수명 = 이 데이터·이 작업(둘 중 하나가 바뀌면 비운다).
-        self._last_failed: "list[int]" = []
-        # 직전 런의 **주체**(3R P2 근본 조치) — 결과는 그 실행의 것이고 세션은 그 뒤로도
-        # 움직인다. 그 정체를 결과 payload(한 번 찍고 안 변하는 값)에 넣으면 **정체의
-        # 변화**(이름 변경)를 따라가지 못해 같은 작업이 남처럼 보인다. 그래서 주체 추적은
-        # 세션 상태의 일이고, 표면은 이 값과 `job_name` — **둘 다 Python 이 낸 값** — 만
-        # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
-        # 다르다"를 말할 수 있다.
-        self._last_run_job = ""
-        # 직전 런이 **고정한** 판본(재작성 F7 판정 I·§13-7). 런 시작 시점에 찍고 그 뒤
-        # 디스크를 다시 읽지 않는다 — 결과가 대는 근거는 그 런이 실제로 쓴 규칙의 세대다.
-        self._run_revisions: "dict[str, int]" = {}
-        # 덮어쓰기 확인 왕복이 붙드는 실행 시각(#957) — `(세대 키, 그 판정이 쓴 시각)`.
-        # `needs_overwrite` 를 낸 호출이 세우고 확인 재호출이 **소비하며 소거**한다. 세대
-        # 키가 어긋나면(존 변이·데이터 교체·작업 전환) 그 핀은 이미 다른 세계의 것이라
-        # 버린다 — 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 갈리는 길을 막는다.
-        self._overwrite_now_pin: "tuple[str, datetime] | None" = None
-        # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
-        # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
-        self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
-        self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
-        self.job_name = ""  # 후보·탐색에서 겨눈 작업(패널 세션의 주체)
-        # **선택된 작업이 TXT 인가**(재작성 F6) — `vm` 은 hwpx 실행뷰라 TXT 에선 None 이다.
-        # 두 축을 가르는 이유(지도 §10.15 판정 A 의 표면판): F6 이전에는 `vm is None` 이
-        # 곧 「작업 미선택」이었는데, TXT 가 합류하면서 그 술어에 뜻이 둘 생겼다. 그래서
-        # **선택 여부는 `job_name`, hwpx 실행뷰 존재는 `vm`, 매체는 이 플래그**다.
-        #
-        # **Job 사본을 들지 않는다**(1R P2 근본 조치). 첫 판은 여기에 `txt_job: Job` 을 들었고,
-        # 그 순간 durable 사실의 **제2 정본**이 생겨 이름 변경·재연결·재적재가 전부 조용한
-        # 구멍이 됐다(그 경로들은 `vm.job` 만 유지한다). 이 저장소가 이미 적어 둔 규율과
-        # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`recollapse_job_group`).
-        # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
-        # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
-        # 열린 작업이 데이터에 연결돼 있지 않다(U4 §2.4 · #932 U4-C) — 착석이 세우고
-        # 해제가 되돌리는 래치. 매체 래치(`job_is_txt`)와 같은 자리에서 산다.
-        self.job_data_unbound = False
-        self.job_is_txt = False
-        # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
-        # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(링1 `seat_kinds`).
-        self.job_unsupported = False
-        # 작업대 세션 개시 handoff(사후 주입 — 라이브러리 `session_guards` 선례). 진입
-        # 판정은 이 컨트롤러가 내고 세션 개시만 위임한다. **컨트롤러 객체가 아니라
-        # callable** 이다(P2-24): 화면 간 결합은 조립부(webapp.app)가 결선하는 이 한
-        # 이음새뿐이고, 이 화면은 상대 화면의 형체(클래스·메서드 표면)를 모른다.
+        # 화면 간 작업대 진입은 composition root가 callable로 결선한다.
         self.workbench_open: "Callable[[Job, list], None] | None" = None
-        # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
-        # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
-        # 프런트 소유(React reconciliation + 화면 전환 executor 의 보존)라 여기 두지 않는다.
-        self.browse_tab = TAB_AVAILABLE
-        self.browse_query = ""
-        # preferredWorkId(§18.3 개정 1행) — 라이브러리 「문서 만들기에서 사용」이 낸 **명시
-        # 사건**을 데이터가 준비되는 시점까지 들고 있는 자리. 슬2가 규칙만 박제하고 비워
-        # 뒀던 seam 이며, 그 사건의 유일한 원천이 F2 에서 섰다. 승격·소비 규칙은
-        # :meth:`_apply_preferred_work`.
-        self.preferred_work = ""
-        self.data_label = ""
-        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
-        self.data_pool_key = ""  # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
-        # 저장 폴더는 부팅 시점부터 값이 있다 — 전역 설정이라 작업이 앉기를 기다리지 않는다.
-        # 세우는 자리가 넷(부팅·착석·해제·설정 변경)이어도 도출은 하나를 지난다.
-        self.out_dir = self._output_folder_resolution().directory
-        # 표시용 날짜 토큰의 기준 시각 — **스냅샷당 1회** 캡처한다(#957). 한 스냅샷 안의
-        # 소비처(게이트 감사·표 「문서」 열·이름 계획)가 같은 시각을 말하게 하는 값이고,
-        # 생성은 이 값을 소비하지 않는다: 실행은 진입 시점에 자기 시각을 1회 캡처한다.
-        # None=아직 스냅샷을 그린 적 없음(헤드리스 직행).
+        # 전역 저장 폴더는 작업 선택 전에도 유효하다.
+        self.runs.out_dir = self._output_folder_resolution().directory
+        # 표시 이름은 스냅샷당 한 시각을 공유하고 실행은 진입 시각을 별도로 잡는다.
         self._names_now: "datetime | None" = None
-        # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 성공(ok)/실패(warn)를 스냅샷에 노출.
-        self.data_notice_text = ""
-        self.data_notice_level = ""
-        # 진행 중인 run 의 **핸들**(P2-23) — 정본(주체·판본·규칙 지문·cancel Event·상관
-        # 토큰)은 Application :class:`~hwpxfiller.application.generation.GenerationRun`
-        # 이 소유하고, 컨트롤러는 취소 요청·진행 델타 이름표 조회(transport)만 한다.
-        # 토큰(R4-03)은 표면이 낸 불투명 문자열이라 여기서 파생·검증·정규화하지 않는다.
-        self._run: "GenerationRun | None" = None
-        # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠는 **필수 주입**이다(9R P1 →
-        # P2-24 폴백 제거) — 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·
-        # 라이브러리 재연결) 그쪽이 같은 자물쇠를 봐야 하고, 화면이 자기 것을 세우면
-        # run transaction 상태의 제2 정본이 된다(#570 pool_registry 폴백 제거와 같은 규율).
-        self._generation_lock = generation_lock
-        # 등록 데이터(풀) 겨눔(#26/#6) — composition root(webapp.app)가 주입한다.
-        # 자기 생성 폴백은 #570 에서 제거됐다(주석 304-305 의 금지 선언과 자기모순이던
-        # locator 뒷문 — 기본값이 있으면 링2 가 구체 저장을 조용히 재선택한다).
-        self.pool_registry = pool_registry
+        self._panel_snapshot: dict = {}
 
-    # --------------------------------------------- 진행 중인 런과의 경합 거절(9R P1)
+    # --------------------------------------------- 진행 중인 런과의 경합 거절
     def raise_if_generating(self, then_do: str) -> None:
-        """진행 중인 런과 겹치면 안 되는 전이의 **단일 거절**.
+        """실행이 고정한 입력·규칙을 바꾸는 전이를 공용 lock 판정으로 거절한다.
 
-        이 거절이 필요한 자리의 공통 형상: 진행 중 배치가 **고정한 입력**(vm·데이터·범위)을
-        그 배치가 끝나기 전에 갈아치우는 전이다. 그러면 결과가 어느 입력으로 만들어진 것인지
-        갈리고, 최악은 결과가 **디스크에 없는 세대**를 자기 근거로 대는 것이다(§13-7).
-
-        **왜 한 정의로 모으는가**(9R P1): 같은 판정이 표면마다 인라인 사본으로 흩어져 있었고,
-        그래서 이 화면 밖에 있는 규칙 쓰기 경로(편집기 진입·라이브러리 재연결)가 조용히
-        빠져 있었다 — 열거가 흩어지면 한 자리가 빠진다는 F7 의 반복 기제와 같은 형태다
-        (지도 §10.13.14). 새 규칙 쓰기 표면은 이 메서드를 부르면 된다.
-
-        ``then_do`` = 「끝난 뒤에 ___」에 들어갈 사람 어휘(무엇을 못 했는지 재진술).
+        ``then_do``는 끝난 뒤 가능한 행동을 사용자 어휘로 재진술한다.
         """
-        if self._generation_lock.locked():
-            raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
+        self.runs.raise_if_generating(then_do)
 
     def raise_if_generating_before_swap(self, then_do: str) -> None:
-        """위와 같은 거절의 **교체 계열 문안** — 중단이라는 출구를 함께 재진술한다.
-
-        데이터·작업 교체는 진행 중 배치를 기다릴 것 없이 **중단**해도 되는 전이라, 거절이
-        기다림만 말하면 사람이 쥔 출구 하나를 숨기는 셈이 된다(과소 안내).
-        """
-        if self._generation_lock.locked():
-            raise ValueError(f"문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 {then_do}.")
+        """데이터·작업 교체 거절에는 기다림과 중단 출구를 함께 재진술한다."""
+        self.runs.raise_if_generating(then_do, swap=True)
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
         if self._boot_restore_in_progress:
             return  # 부팅 자동 마운트(U3-07 #880)의 결과는 첫 스냅샷이 나른다.
-        self._push_sink(self.name, self.snapshot())
+        self._push_sink(self.name, self.refresh_panel())
 
     # ------------------------------------------------------------- 스냅샷
     # -------------------------------------------- 범위 상태 접근(커밋 vs 초안, 판정 A·D)
-    def _committed_range(self) -> RecordRange:
-        """세션의 커밋된 범위 — 실행 입력·게이트·거울·세션 가드가 보는 유일한 값."""
-        return RecordRange(self.selection, self.filter, self.view_order)
-
-    def _zone_range(self) -> RecordRange:
-        """존(표·필터·스트립·재진술)이 편집·표시하는 범위 — 초안이 열려 있으면 초안."""
-        return self.range_draft.range if self.range_draft else self._committed_range()
-
-    def _zone_sel(self) -> SelectionModel:
-        return self._zone_range().selection
-
-    def _zone_flt(self) -> "FilterModel | None":
-        return self._zone_range().filter
-
-    def _zone_set_flt(self, model: FilterModel) -> None:
-        if self.range_draft is not None:
-            self.range_draft.range.filter = model
-        else:
-            self.filter = model
-
-    def _zone_visible(self, view) -> "list[int]":
-        """「선택된 항목만 보기」(초안 전용 보기) — 검색·열 필터를 **일시적으로 적용하지 않고**
-        초안 선택 집합만 그린다. 필터 정의는 살아 있고(칩 줄 유지) 판정은 필터 가시 집합을
-        계속 쓴다 — 보기 상태가 판정을 물들이면 "선택만 보는 중"이 "정의-유래 선택"으로
-        오독된다(재진술 유래가 뒤집힌다)."""
-        if self.range_draft is not None and self.range_draft.selected_only:
-            return self.range_draft.range.selection.selected_indices()
-        return view.visible_indices()
-
-    def _zone_hidden(self) -> "set[str]":
-        """사용자 열 선별의 적용 범위(U2 §2.19, #341) — **인라인 표 한정**.
-
-        ⤢ 시트(범위 초안)는 전 열·원본 순서다(#271 "시트 = 전체 진실" 유지): 초안이 열려
-        있으면 숨김을 적용하지 않는다. 세션 숨김 집합 자체는 살아 있어 시트를 닫으면
-        인라인이 다시 선별을 따른다 — 적용 여부의 판정이 Python 한 곳이라 인라인·시트·칩이
-        각자 답을 갖지 않는다.
-        """
-        return set() if self.range_draft is not None else set(self.hidden_columns)
-
-    def _hide_allowed(self) -> bool:
-        """「이 열 숨기기」 제공 여부 — 시트로 이사한 패널에는 항목이 서지 않는다(#341)."""
-        return self.range_draft is None
-
-    @staticmethod
-    def _ordered(view_order: str, indices: "list[int]") -> "list[int]":
-        """표시 순서 투영의 몸통 — 축 값 하나에 대한 순수 함수(커밋·초안이 같이 쓴다)."""
-        return sorted(indices, reverse=view_order == VIEW_ORDER_DESC)
-
-    def _display_indices(self, indices: "list[int]") -> "list[int]":
-        """**존 표시** 순서(§18.10, 충돌 B 확정 2026-07-26) — 초안이 열려 있으면 초안의 축.
-
-        기본 `sourceDesc` 는 최신 행(마지막 원본 행)이 먼저다. 표 렌더·필터 밖 선택 스트립·
-        파일 이름 미리보기가 **이 한 훅을 공유**한다(보이는 것 = 만들어지는 것) — 축을
-        사용자에게 연 뒤에도 소비처를 늘리지 않는 것이 WYSIWYG 의 담보다(지도 §10.11.1
-        도달성 면). 실행 입력만은 이 훅을 타지 않는다: :meth:`_indices` 는 **커밋된** 축으로
-        직접 투영한다(초안이 실행 순서를 미리 바꾸면 불변식 §18.11-21 이 깨진다).
-        """
-        return self._ordered(self._zone_range().view_order, indices)
-
-    def _reset_range_for_snapshot(self, count: int) -> None:
-        """새 스냅샷(데이터 마운트·교체) = 범위 상태 초기화 — 선택 0건 + 기본 표시순서.
-
-        불변식 §18.11-12(commit 뒤 최초 선택 0건)·13(새 스냅샷은 최신 행 먼저)의 단일 이행
-        지점이다. 두 마운트 경로(파일·풀)가 같은 seam 을 타야 한 쪽만 고쳐지는 드리프트가
-        안 생긴다. **작업 선택은 이 seam 을 타지 않는다** — 불변식 §18.11-23(문서 작업 선택은
-        `RecordRangeState` 를 바꾸지 않는다). 필터 재생성(`_init_filter`)은 작업 선택도
-        조건부로 타므로 그쪽에 얹지 않는다.
-        """
-        self.selection = SelectionModel(count, all_selected=False)
-        self.view_order = VIEW_ORDER_DESC
-        # 사용자 열 선별도 데이터 교체에 소멸한다(U2 §2.19, #341 — 필터와 같은 계층: 열
-        # 지형이 바뀐다). 작업 선택의 조건부 필터 재생성(`_init_filter` 유형 재조정)은 이
-        # seam 을 타지 않으므로 선별이 생존한다 — 숨김은 데이터의 축이지 작업의 축이 아니다.
-        self.hidden_columns = set()
-        # 세대를 올리고 초안을 버린다(판정 J): 초안의 index 는 죽은 스냅샷의 좌표다. 세대는
-        # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
-        self._snapshot_gen += 1
-        self._invalidate_current_preparations()
-        self.range_draft = None
-        self.zone_epoch += 1
-
-    def _do_set_view_order(self, p: dict) -> None:
-        """표시순서 전환 — 미지 값은 시끄럽게 거절한다(조용한 기본값 강등 금지).
-
-        선택 집합은 **건드리지 않는다**: 순서는 투영이고 선택은 집합이라 축이 바뀌어도
-        같은 행이 남는다(§18.10 "검색과 필터는 가시성만"의 정렬판). 바뀌는 것은 생성
-        **순서**와 그 함수인 파일명 순번이며, 그 사실은 스위치 자신의 title 이 진다
-        (구 상시 재진술 문안 `order_note` 는 간소화 라운드에서 걷혔다).
-        """
-        value = str(p.get("value", ""))
-        if value not in VIEW_ORDERS:
-            raise ValueError(f"알 수 없는 표시순서: {value!r}")
-        if self.range_draft is not None:  # 축도 초안이 덮는다(판정 B) — 적용해야 실행에 든다
-            self.range_draft.range.view_order = value
-        else:
-            self.view_order = value
-
-    # --------------------------------- 전문 범위 편집기 초안(§18.10, 지도 §10.11 판정 A·F)
-    def _draft_or_raise(self) -> RecordRangeDraft:
-        if self.range_draft is None:  # 표면 오배선 — 초안 없는 초안 액션은 프로그램 결함
-            raise ValueError("범위 편집기가 열려 있지 않습니다.")
-        return self.range_draft
-
-    # ---- 산출물 관찰(S7-03 · #825, #820 D1·D4) --------------------------------
     def delivered_artifact(self, ordinal: int) -> "DeliveredDocument | None":
-        """이 세션이 앉힌 문서 중 ``item_ordinal`` 이 맞는 것 — 없으면 ``None``.
-
-        겨눔의 정체가 **ordinal** 인 이유는 표시 index·파일명이 그 사이 갈릴 수 있는 값이기
-        때문이다(선택·표시순서·재실행). ordinal 은 그 실행이 고정한 좌표다.
-        """
-        return next(
-            (d for d in self._last_delivered if d.item_ordinal == ordinal), None
-        )
+        return self.runs.delivered_artifact(ordinal)
 
     def delivered_artifact_paths(self) -> "tuple[str, ...]":
-        """이 세션이 **앱 자신이 내준** 문서의 절대경로 전수.
+        """앱이 이 세션에서 배달한 경로만 소유 경로 화이트리스트에 제공한다."""
+        return self.runs.delivered_paths()
 
-        소유 경로 화이트리스트(``webapp.app.WebFrontend._validate_owned``)의 세션 성분이다 —
-        행 어포던스(폴더에서 보기·경로 복사)가 결과 문서를 겨눌 수 있는 유일한 근거이고,
-        등록의 원천은 「이 앱이 방금 그 파일을 만들었다」는 사실 하나다(검증 완화 아님).
-        """
-        return tuple(d.absolute_path for d in self._last_delivered)
+    def mounted_data_descriptor(self, path: str, sheet: str = "") -> dict:
+        """브리지가 방금 성립한 파일 마운트를 되돌려줄 명시 값."""
+        return {
+            "label": source_label("file", Path(path).name),
+            "path": path,
+            "sheet": sheet,
+            "rows": len(self.data.records),
+        }
 
-    def _discard_delivered_artifacts(self) -> None:
-        """배달 좌표와 열린 관찰 면을 **함께** 놓는다.
-
-        좌표만 비우고 면을 남기면 그 면은 이미 없는 실행의 문서를 계속 그리고, 면만 닫고
-        좌표를 남기면 저장·관찰이 남의 데이터 좌표를 가리킨다. 둘은 한 수명이다.
-        """
-        self._last_delivered = ()
-        self._artifact_view = None
-
-    def _artifact_view_payload(self) -> dict:
-        """관찰 시트의 스냅샷 투영 — 닫힌 상태도 **키를 갖춰** 낸다(키 부재 분기 금지)."""
-        view = self._artifact_view
-        if view is None:
-            return {
-                "open": False, "ordinal": -1, "filename": "",
-                "status": "", "detail": "", "structure": None,
-            }
-        return dict(view)
+    def owned_session_paths(self) -> "tuple[str, ...]":
+        """경로 어포던스가 허용할 실행 세션의 정확한 좌표."""
+        return (self.runs.out_dir, *self.runs.delivered_paths())
 
     def _do_artifact_open(self, p: dict) -> dict:
-        """배달 문서 하나를 **다시 관찰해** 시트를 연다(#820 D1).
+        """배달 문서를 디스크에서 다시 관찰하고 실패도 열린 시트에서 재진술한다.
 
-        성립 경로는 커널 재호출 하나뿐이다 — 세션이 bytes 를 들고 있다가 내주는 길은 없다.
-        서지 않는 경우(세션 좌표 밖·파일 부재·digest 불일치·재파싱 실패)는 전부 **면을 열어
-        사유를 말한다**: 조용히 무시하면 사용자는 「눌렀는데 아무 일도 없다」만 보고, 그것은
-        준비 안 됨과 무결성 실패를 같은 침묵으로 접는 것이다(#775 교훈).
+        세션은 문서 bytes를 캐시하지 않는다.
         """
-        ordinal = int(p["ordinal"])
-        doc = self.delivered_artifact(ordinal)
-        if doc is None:
-            self._artifact_view = {
-                "open": True, "ordinal": ordinal, "filename": "",
-                "status": ARTIFACT_NOT_IN_SESSION,
-                "detail": (
-                    "이 문서는 지금 세션의 생성 결과에 없습니다. "
-                    "문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
-                ),
-                "structure": None,
-            }
-            return {"ok": True}
-        observed = observe_delivered_artifact(
-            absolute_path=doc.absolute_path, recorded_digest=doc.output_digest
-        )
-        if isinstance(observed, ArtifactObservationRefused):
-            # 사유는 커널 실측의 재진술이다 — 여기서 다시 짓지 않는다(판정 단일 출처).
-            self._artifact_view = {
-                "open": True, "ordinal": ordinal, "filename": doc.relative_path,
-                "status": observed.code, "detail": observed.detail, "structure": None,
-            }
-            return {"ok": True}
-        self._artifact_view = {
-            "open": True, "ordinal": ordinal, "filename": doc.relative_path,
-            "status": ARTIFACT_OBSERVED, "detail": "",
-            "structure": observed_artifact_snapshot(observed.package),
-        }
+        self.runs.open_artifact(int(p["ordinal"]))
         return {"ok": True}
 
     def _do_artifact_close(self, p: dict) -> None:
-        self._artifact_view = None
-
-    def _do_range_draft_open(self, p: dict) -> dict:
-        """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
-
-        재진입이 복제를 갱신하면 왕복 지연 중 두 번 눌린 출구가 사용자의 편집을 조용히
-        되돌린다(멱등). 생성 중 진입은 거절한다 — 초안 적용은 실행 입력을 바꾸는 전이라
-        진행 중인 런과 겹치면 어느 범위로 만든 결과인지 갈린다.
-        """
-        self.raise_if_generating("범위를 편집하세요")
-        if self.datasource is None or not self.records:
-            raise ValueError("데이터를 먼저 선택하세요.")
-        if self.range_draft is None:
-            committed = self._committed_range()
-            self.range_draft = RecordRangeDraft(
-                range=committed.copy(),
-                snapshot_gen=self._snapshot_gen,
-                base_fingerprint=committed.fingerprint(),
-            )
-            self.zone_epoch += 1     # 이 순간부터 존 변이의 대상은 초안이다
-        return {"ok": True, "epoch": self.zone_epoch}
-
-    def _do_range_draft_apply(self, p: dict) -> dict:
-        """적용 = 초안을 커밋으로 원자 교체. 세대가 다르면 **거절하고 면을 닫지 않는다**.
-
-        세대 불일치(적용 전 데이터가 갈림)에서 조용히 커밋하면 죽은 스냅샷의 index 로 남의
-        행을 고른다 — F4 판정 F("웹이 인덱스를 들고 있다 되돌려주면")와 같은 뿌리다.
-        실행 증거의 처리는 여기서 하지 않는다: 지문이 갈리면 결과가 「직전 실행」으로
-        **강등**되고(F4 판정 G) 그 판정은 스냅샷을 보는 표면이 이미 갖고 있다 — 폐기는
-        「결과 닫기」 하나뿐이라는 규칙을 초안이 되돌리지 않는다.
-        """
-        draft = self._draft_or_raise()
-        self.raise_if_generating("적용하세요")
-        if draft.snapshot_gen != self._snapshot_gen:
-            raise ValueError(
-                "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. "
-                "지금 데이터에서 다시 고르세요."
-            )
-        self.selection = draft.range.selection
-        self.filter = draft.range.filter
-        self.view_order = draft.range.view_order
-        self.range_draft = None
-        self.zone_epoch += 1     # 초안 세계는 여기서 끝난다 — 뒤늦은 편집은 남의 것
-        return {"ok": True}
-
-    def _do_range_draft_cancel(self, p: dict) -> dict:
-        """취소 = 초안만 버린다(불변식 §18.11-21) — 메인 범위·실행 증거는 그대로다."""
-        self.range_draft = None
-        self.zone_epoch += 1     # 적용과 같다: 버린 세계의 편집이 커밋에 착지하지 않게
-        return {"ok": True}
-
-    def _do_set_selected_only(self, p: dict) -> None:
-        """「선택된 항목만 보기」 — 초안 안에서만 사는 **보기** 상태(판정 B, 적용 대상 아님)."""
-        self._draft_or_raise().selected_only = bool(p.get("value"))
-
-    def _indices(self) -> "list[int]":
-        """실행 입력 = OrderedSelection(§2): 선택 집합을 **전체 표시순서에 투영**한다.
-
-        생성·미리보기·거울이 전부 이 순서를 소비한다 — 순번 토큰(``{{seq}}``)과 동명
-        꼬리표(``naming._dedupe``)가 화면에 보이는 위→아래 순서를 그대로 따른다(WYSIWYG).
-        같은 선택이라도 표시 순서가 다르면 파일명이 달라질 수 있다 — 인지하고 수용한
-        확정(봉합 지도 §2)이며, 완화는 파일명 미리보기가 같은 투영을 보여주는 것이다.
-
-        **커밋된 범위로만** 투영한다(F3 판정 D): 초안이 열려 있어도 실행 입력은 움직이지
-        않는다 — 적용 전 메인 범위 불변이 불변식 §18.11-21 이다.
-        """
-        return self._ordered(self.view_order, self.selection.selected_indices())
-
-    def _zone_indices(self) -> "list[int]":
-        """존이 그리는 선택 투영 — 표의 파일 이름 미리보기와 재진술이 소비한다.
-
-        초안이 열려 있으면 **초안 기준**이다: 이름이 커밋 기준으로 남으면 편집기 안에서
-        순서를 바꿔도 「문서」 열이 안 움직여, 판정 I 의 완화("표가 새 이름을 즉시
-        보여준다")가 하필 그 축을 만지는 자리에서 죽는다.
-        """
-        zone = self._zone_range()
-        return self._ordered(zone.view_order, zone.selection.selected_indices())
-
-    def _range_draft_payload(self) -> dict:
-        """범위 초안 구획 — 열림·변경 여부·초안 수치·보기 상태.
-
-        ``dirty`` 는 **연 뒤 내가 바꿨는가**다(이탈 가드의 무장 조건, 판정 F). ``sel_count``
-        는 초안 기준이라 면 footer 의 「선택 적용: N건」이 커밋 수치와 갈리지 않는다 —
-        표면이 행을 세지 않는다(F4 3R 근본원인: 정합을 표면이 재판정하게 두지 않는다).
-        """
-        draft = self.range_draft
-        if draft is None:
-            return {
-                "open": False, "dirty": False, "sel_count": 0,
-                "selected_only": False, "view_order": self.view_order,
-            }
-        return {
-            "open": True,
-            "dirty": draft.is_dirty(),
-            "sel_count": draft.range.selection.selected_count(),
-            "selected_only": draft.selected_only,
-            "view_order": draft.range.view_order,
-        }
+        self.runs.close_artifact()
 
     def _selection_key(self) -> str:
-        """**커밋된** 실행 입력의 지문 — 결과 강등 판정(F4)이 소비한다.
+        """파일명에 영향을 주는 표시순서까지 담은 커밋 선택 지문을 낸다."""
+        return ",".join(str(i) for i in self.data.selected_indices())
 
-        순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도 다른
-        실행 입력이다(§2 충돌 B). 소비처가 각자 조립하면 그 순간 지문이 두 벌이 된다
-        (F3 리뷰 1R 이 표면의 자체 조립에서 났던 자리) — 그래서 메서드 하나가 낸다.
-        """
-        return ",".join(str(i) for i in self._indices())
+    def _run_data(self) -> RunDataInput:
+        return RunDataInput(self.data.datasource, tuple(self.data.records))
 
-    def _run_marker(self, indices: "list[int]") -> str:
-        """이 실행 입력에 실제로 붙을 미입력 표식 — 표시와 생성의 **단일 술어**.
-
-        조건은 「빈 값이 있으면」 하나다(U2 §2.13 재정의) — 필드축 ack 가 폐기되면서
-        「확인 안 된 빈 값」이라는 중간 상태 자체가 사라졌고, #957 이후 동의 사건도 없다
-        (표식이 문서에 박히는 것 자체가 고지다). 이 조건이 두 자리에서 갈리면 표가 그리는
-        실행 입력과 실제로 만들어지는 문서가 어긋난다(1R P2 · 4R P2).
-        """
-        if self.vm is None or not indices:
+    def _run_marker(self, indices: "list[int]", data: "RunDataInput | None" = None) -> str:
+        """표시와 생성이 공유하는 미입력 표식을 현재 실행 입력에서 계산한다."""
+        if self.work.vm is None or not indices:
             return ""
-        return blank_marker(self.vm.blank_fields(indices))
+        return blank_marker(self.work.vm.blank_fields(data or self._run_data(), indices))
 
     def _review(
-        self, vm=None, indices: "list[int] | None" = None,
+        self,
+        vm=None,
+        indices: "list[int] | None" = None,
         blanks: "list[str] | None" = None,
+        data: "RunDataInput | None" = None,
     ) -> ReviewRequirement:
-        """지금 이 실행 입력의 검토 요구 — **고지의 입력**이지 게이트의 입력이 아니다.
+        """검토 고지의 입력을 계산하며 생성 게이트로 쓰지 않는다.
 
-        #957 정책 선회 이후 승인이라는 해소 사건이 없다. 그래서 「미승인분」을 따로 내지
-        않고 요구 자체를 그대로 돌려준다 — 사전검증 고지(:func:`review_notice_text`)가 그
-        요구를 재진술하고, 확인의 자리는 만들어진 문서다.
-
-        ``vm``·``indices``·``blanks`` 를 받는 이유(1R P1): 실행 경로는 **그 런의 주체**로
-        물어야 한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재
-        상태를 읽으면 남의 작업의 사실로 이 런을 설명하게 된다.
+        실행 경로는 고정한 vm·행·빈값을 넘겨 세션 이동 뒤에도 같은 런을 설명한다.
         """
-        target = self.vm if vm is None else vm
+        target = self.work.vm if vm is None else vm
         if target is None:
             return ReviewRequirement()
-        idx = self._indices() if indices is None else indices
-        bl = list(target.blank_fields(idx)) if blanks is None else list(blanks)
+        idx = self.data.selected_indices() if indices is None else indices
+        bl = (
+            list(target.blank_fields(data or self._run_data(), idx))
+            if blanks is None
+            else list(blanks)
+        )
         return review_requirement(target.job, blank_fields=tuple(bl))
 
-    def _bound_jobs(self, jobs):
-        """이 마운트에 결속된 작업만 — 후보·탐색이 **같은 한 관문**을 지난다.
-
-        판정 자체는 링1(:func:`~hwpxfiller.gui.work_candidates.bound_jobs`)이 지고 여기는
-        세션이 포획해 둔 참조 한 벌을 넘길 뿐이다. 두 표면(후보 줄·문서 탐색)이 각자
-        필터를 쓰면 같은 데이터에 대해 다른 목록을 말한다(판정 단일 출처).
-
-        참조를 여기서 다시 조립하지 않는다 — ``data_path``·``data_sheet``·
-        ``data_header_row``·``data_kind`` 는 마운트가 성사되는 자리에서 한 벌로 포획된
-        값이고, 나중에 슬롯·파일을 다시 읽어 판정하면 지금 화면에 없는 데이터를 답한다
-        (#349 리뷰 2R).
-        """
-        return bound_jobs(
-            jobs, self.data_path, self.data_sheet, self.data_header_row,
-            kind=self.data_kind,
-        )
-
-    def _candidate_payload(self, jobs) -> dict:
-        """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
-        링1 단일 출처 소비.
-
-        데이터 미준비면 빈 구획(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 문서 탐색과
-        같은 스캔 1회 결과를 받아 목록·후보가 갈라지지 않는다. fields 는 필터 열 파생과
-        같은 원천(``records[0].keys``) — 표시와 판정이 같은 열 집합을 본다.
-
-        반환 5구획:
-
-        - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
-          순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
-          이 구획은 **투영**이다 — 데이터 마운트·호환성·순위 슬라이스 셋에 걸린다. 그래서
-          재연결 도달 보장을 여기 얹지 않는다(#342 리뷰 3라운드 근본 조치): 조건마다 구멍이
-          하나씩 나므로 그 의무는 조건이 없는 **세션 축**(``template_missing``·``conn_label``
-          → 액션바)이 진다. 카드의 「연결 상태」·경고 클릭은 *렌더된 카드에 대한* 계약이다.
-        - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
-          전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
-        - ``needs``·``needs_more`` = 확인 필요(needs_action) 이름순 상위 N + 잘린 수.
-          메인 순위엔 못 들어가지만(§18.5) 전용 표면(확인 필요 탭)이 생기기 전까지 막힌
-          이유를 여기서 계속 말한다(삭제는 의무를 상속한다). available 과 같은 상한을
-          두는 건 데이터 존이 비활성 칩으로 넘치지 않게 하기 위함이고, 잘린 만큼은
-          available 과 똑같이 수치로 고지한다.
-        - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
-        """
-        empty = {
-            "top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": "",
-            "txt_note": "",
-        }
-        if self.datasource is None or not self.records:
-            return empty
-        fields = list(self.records[0].keys())
-        # **후보 축은 결속 역인덱스다**(U4 §2.4, #932 U4-C — U2 §5.3 판정 D 폐기).
-        # 종전에는 스키마 호환 전체가 후보였다: 「이 데이터로 쓸 수 있는 작업」. 지금은
-        # 「이 데이터로 만드는 작업」이고, 새 데이터를 처음 마운트하면 후보 0건이 정상이다
-        # (그 자리는 「＋ 이 데이터로 새 작업」이 진다). 호환 판정은 죽지 않고 **좁혀진
-        # 목록 안에서** available/needs 를 계속 가른다 — 결속된 파일의 열이 사라지는 일은
-        # 여전히 일어나고, 그때 조용히 목록에서 빠지면 사용자는 사유를 못 듣는다.
-        bound = self._bound_jobs(jobs)
-        by_name = {j.name: j for j in bound}
-        ranked = rank_available(bound, fields)
-        suggested = suggested_work(ranked, active=self.job_name)
-
-        top = []
-        for r in ranked[:MAIN_TOP_N]:
-            job = by_name[r.name]
-            # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 렌더된 카드는 자기 작업의 연결
-            # 상태를 말한다(§18.4 는 Template 읽기를 available 판정 밖에 뒀지만, 부재
-            # 판정은 파일 존재 검사 하나라 이미 싸다 — 판정 F). 술어·문안은 `_template_conn`
-            # 단일 출처다: 세션 축과 문자열이 갈리면 같은 상태를 두 이름으로 부른다.
-            missing, conn_label = _template_conn(job.template_path)
-            top.append(candidate_card(
-                name=r.name,
-                tier=r.tier,
-                favorited=bool(job.favorited_at),
-                # 원시 ISO — 표시 문안(자릿수·구분자)은 표면이 만든다(판정만 Python).
-                # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
-                last_run_at=job.last_run_at,
-                suggested=r.name == suggested,
-                # 작업 방식(§19.1) + 그 표시 문구 — 카드 부제와 구획 판단이 소비한다(§19.3).
-                # 라벨을 표면이 짓지 않는 이유는 같은 축을 그리는 표면이 셋이기 때문이다
-                # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
-                mode=r.mode,
-                mode_label=work_mode_label(r.mode, short=True),
-                # (`last_run_label` 은 U4 계열2-31 에서 걷혔다 — 후보 카드는 「이 데이터로
-                #  무엇을 만들 수 있는가」를 말하는 자리이고 실행 이력은 그 판단에 안 든다.
-                #  라이브러리 목록·상세의 같은 문안도 뒤이어 걷혀, 실행 이력을 문구로 말하는
-                #  표면은 이제 없다 — 남은 소비자는 「최근 사용」 보기의 정렬뿐이다.)
-                # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
-                # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
-                template_path=job.template_path,
-                template_missing=missing,
-                conn_label=conn_label,
-            ))
-        needs = sorted(
-            (
-                {"name": j.name, "missing": list(c.missing)}
-                for j, c in candidate_rows(bound, fields)
-                if c.kind == KIND_NEEDS_ACTION
-            ),
-            key=lambda d: d["name"],
-        )
-        return {
-            "top": top,
-            # 작업 방식 구획(§19.3) — **판정은 여기**서 하고 표면은 머리글을 그릴지만 정한다.
-            # 순서는 첫 등장 순 = 각 구획 최고 순위의 위치이고, 한 방식뿐이면 구획이 1개라
-            # 표면이 평면으로 퇴화한다(카드 부제의 방식 텍스트는 그때도 남는다).
-            "sections": mode_sections(top),
-            "more": max(0, len(ranked) - MAIN_TOP_N),
-            # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
-            # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
-            "needs_count": len(needs),
-            "suggested": suggested,
-            "txt_note": self._txt_onboarding_note(jobs),
-        }
-
-    def _txt_onboarding_note(self, jobs) -> str:
-        """후보 TXT 구획 빈 상태 고지(F6 PR-B 고지 ① — §10.15.15 판정 A) — 대체 경로 재진술.
-
-        술어: **txt 템플릿 有 ∧ txt 방식 작업 0건**. 휘발 「기안」만 쓰던 사용자에게 정확히
-        발화하고, 순수 HWPX 사용자(템플릿 0 = 아래 스캔이 빈 목록으로 즉시 끝난다)와 이미
-        TXT 작업을 가진 사용자(in-memory 선판정으로 스캔 자체가 없다)에겐 0 소음이다.
-        상시 배너·1회 다이얼로그·영속 플래그를 두지 않는다 — 매 스냅샷 파생(결정 2).
-        """
-        if self.text_registry is None:
-            return ""
-        if any(work_mode(j.template_path) == WORK_MODE_TEXT for j in jobs):
-            return ""
-        if self.text_registry.count() == 0:
-            return ""
-        return (
-            "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 "
-            "TXT 템플릿을 선택하고 저장하세요."
-        )
-
-    def _browse_payload(self, jobs) -> dict:
-        """문서 탐색 구획(§18.6·§19.5) — 탭·검색 판정은 링1 단일 출처 소비.
-
-        데이터 미준비면 빈 골격이다(§18.1 — 후보를 계산하지 않으므로 탐색도 없다). 시트가
-        열려 있는지는 표면 상태라 여기서 모른다: 판정은 언제나 최신이고, 열지 않았으면
-        아무도 안 본다(스냅샷 분기보다 단순한 쪽).
-        """
-        empty = {
-            "tab": self.browse_tab, "query": self.browse_query, "rows": [], "sections": [],
-            "available_count": 0, "needs_count": 0, "filtered_out": 0,
-        }
-        if self.datasource is None or not self.records:
-            return empty
-        # 탐색 시트도 **같은 결속 관문**을 지난다(#932 U4-C): 후보 줄이 결속만 보는데
-        # 여기서 전체를 보이면 같은 화면의 두 목록이 서로 다른 관계를 말한다. 다른 데이터에
-        # 결속된 작업으로 가는 길은 이 시트가 아니라 「문서 작업」 화면이고(그쪽의
-        # 「문서 만들기에서 사용」이 그 작업의 데이터를 세운다) 빈 상태가 그리로 보낸다.
-        res = browse_candidates(
-            self._bound_jobs(jobs), list(self.records[0].keys()),
-            tab=self.browse_tab, query=self.browse_query,
-        )
-        rows = [
-            browse_row(r, mode_label=work_mode_label(r["mode"], short=True))
-            for r in res.rows
-        ]
-        return {
-            "tab": res.tab,
-            "query": self.browse_query,
-            # 행은 링1이 실은 `mode` 를 그대로 나른다 — 탭 **안**의 구획 판단용(§19.5).
-            "rows": rows,
-            # 탭 **안**의 방식 구획(§19.5) — 탭이 primary classification 이라 방식을 탭으로
-            # 올리지 않는다. 같은 퇴화 규칙(1방식 = 평면)이 여기도 그대로 선다.
-            "sections": mode_sections(rows),
-            "available_count": res.available_count,
-            "needs_count": res.needs_count,
-            "filtered_out": res.filtered_out,
-        }
-
-    def _filename_source_columns(self) -> "list[str]":
-        """파일명 패턴이 이미 나르는 **원본 데이터 열** — 식별 요약 토큰 모드 입력(결정 37).
-
-        파일명 토큰은 **매핑 후 템플릿 필드** 네임스페이스인데(파일명은 매핑 적용 후 레코드에서
-        해소, :meth:`~hwpxfiller.gui.run_state.RunViewModel.unresolved_name_tokens`), 식별
-        요약은 **원본 레코드**(사용자가 데이터에서 본 열)를 소비한다. 그래서 파일명이 요구하는
-        템플릿 필드를 매핑의 ``source`` 로 역해소해 원본 열로 돌려준다 — 그렇지 않으면 토큰
-        모드가 엉뚱한 네임스페이스로 오발한다(confirm-or-alarm).
-
-        **원본 열을 실제로 나르는 유형만** 대상이다(:data:`~hwpxfiller.domain.mapping.
-        SOURCE_CARRIER_TYPES`). ``const`` 은 리터럴을, ``today`` 는 실행 시각을 방출해 둘 다
-        ``source`` 값과 무관하고(옛 매핑에서 ``source`` 가 남아 있어도 파일명은 그 열을 나르지
-        않는다), ``blank`` 은 빈 값이다 — 셋 중 하나라도 나르는 열로 오인하면 구별 열이 토큰
-        모드로 침묵 배제된다(리뷰 반영). 원본 레코드에 실재하는 열만 반환한다(부재 열 헛발 방지).
-        """
-        from ..naming import pattern_field_tokens
-
-        if self.vm is None:
-            return []  # 작업 미선택 = 파일명 네임스페이스 부재 — 토큰 모드 입력 없음
-        tokens = set(pattern_field_tokens(self.vm.job.filename_pattern))
-        present = set(self.records[0].keys()) if self.records else set()
-        cols: "list[str]" = []
-        for m in self.vm.job.mapping.mappings:
-            # source 유래 유형만 파일명이 그 열을 나른다(단일 출처 SOURCE_CARRIER_TYPES).
-            if (m.template_field in tokens and m.type in SOURCE_CARRIER_TYPES
-                    and m.source in present and m.source not in cols):
-                cols.append(m.source)
-        return cols
-
-    def _record_rows(self, indices: "list[int]", mapped: "list[dict]") -> "list[dict]":
-        """각 레코드 = 원본 식별 요약 + 그 행이 만들 **실**파일명 미리보기(F33).
-
-        ``indices``·``mapped`` 는 :meth:`snapshot` 가 1회 계산해 넘긴다(``_mirror`` 와 공유 —
-        매핑 이중 적용 방지, 리뷰 반영).
-
-        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.domain.identity_summary.identity_summary`,
-        결정 37·A-1-15)가 **전체 레코드 집합 위에서 1회** 판정한다 — 어느 열로 요약할지는
-        집합 의존(중복 해소·토큰 모드)이라 선택과 무관하게 안정적이어야 한다. 표면은 표현만
-        입히고 '어느 열'은 재구현하지 않는다(부록 A-1-15).
-
-        파일명은 생성과 동일 규칙으로 계산한다(:func:`~hwpxfiller.naming.plan_output_names`).
-        ``{{seq}}``·충돌 접미사는 최종 선택 집합에 따라 달라지므로 **선택된** 레코드에만 이름을
-        계산한다(미선택 행에 확정되지 않은 이름을 지어내지 않는다 — confirm-or-alarm). 날짜
-        토큰 기준 시각은 :meth:`snapshot` 이 스냅샷당 1회 캡처한 ``_names_now`` 를 쓴다 —
-        한 스냅샷의 소비처들이 같은 시각을 말하게 하는 값이다(#957).
-        """
-        if not self.records:
-            return []
-        from ..naming import plan_output_names
-
-        names: "dict[int, str]" = {}
-        if indices and self.vm is not None:  # 파일명은 작업 속성 — 미선택이면 미리보기 없음
-            # 시각은 **이 스냅샷이 잡아 둔 것**을 쓴다(2R P2): 여기서 따로 찍으면 같은
-            # 스냅샷 안에서 게이트 감사(refresh)와 표 「문서」 열이 다른 시각을 갖고,
-            # `{{date:SS}}` 같은 하위-일 토큰이 초 경계를 넘는 순간 한 화면이 두 이름을
-            # 말한다. 캡처는 :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접
-            # 호출(테스트) 경로용이다.
-            if self._names_now is None:
-                self._names_now = self._clock()
-            planned = plan_output_names(
-                self.vm.job.filename_pattern, mapped, now=self._names_now,
-            )
-            names = dict(zip(indices, planned, strict=True))
-        isum = identity_summary(
-            self.records, filename_tokens=self._filename_source_columns()
-        )
-        # 목록 순서 = 표시순 투영 — 각 행은 원본 index 를 지녀 선택·토글이 안전하다.
-        # 선택 표지는 **존 대상**(초안이 열려 있으면 초안)이다: 표는 사용자가 지금 편집하는
-        # 것을 그린다(F3 판정 D 경계표 1행).
-        zone_sel = self._zone_sel()
-        display_order = self._display_indices(list(range(len(self.records))))
-        return record_rows(
-            records=self.records,
-            display_order=display_order,
-            selected_indices={index for index in display_order if zone_sel.is_selected(index)},
-            planned_filenames=names,
-            identity=isum,
-        )
-
     # ---- 위험 배너의 재료 ------------------------------------------------------
-    # 구 거울 테이블(_mirror·_field_value_display·_formatted_fields)은 필드축 ack 폐기와
-    # 함께 사망했고, 그 뒤를 이은 요약 한 줄도 존 재편에서 걷혔다(사전검증과 같은 사실의
-    # 두 번째 발화). 여기 남는 것은 danger 차단 배너의 재료(drift 필드)와, 표식이 붙는
-    # 필드 집합(blank_fields)뿐이다.
     @staticmethod
     def _drift_fields(status) -> "list[str]":
         """구조 불일치 필드 — 선택과 무관하게 차단 배너로 발화한다(결정 36·RC-23)."""
         return [st.name for st in status.field_states if st.state == "drift"]
 
-    def _filter_sections(
-        self, indices: "list[int]", record_rows: "list[dict]"
-    ) -> "tuple[dict, dict, dict]":
-        """필터·테이블·세션 가드 스냅샷(블록 4) — 합성은 공유 믹스인(:class:`~hwpxfiller.
-        webapp.data_zone.DataZoneMixin`), 여기는 화면 몫(선두 「문서」 열 소재·가드)만 얹는다.
-
-        - **table/filter**: :meth:`_zone_sections` 가 FilterView 1회 평가(캐시 계약)로 합성.
-          선두 「문서」 열 소재(이름·요약)는 ``record_rows`` 재사용(F33 승계 — 조용한 드롭 아님).
-        - **guard**: 무장 판정은 **커밋된** 범위의 것이라 초안 유무로 소재가 갈린다(아래).
-
-        종전 셋째 산출이던 재진술 유래(``restate``)는 그 소비 표면과 함께 퇴역했다 — 유래
-        수치를 다시 묻는 자리는 파괴 확인 모달 하나이고 그것은 ``guard`` 가 든다.
-        """
-        if self.filter is None:  # 데이터 미겨눔 — 작업 미선택은 무관(데이터 존은 세션 소유)
-            return _EMPTY_FILTER, _EMPTY_TABLE, self._guard_state()
-        # 선두 열 소재는 ``record_rows`` 재사용 — 이 화면은 그 목록을 스냅샷 ``records`` 로도
-        # 싣기 때문에 이미 전량 지어져 있다(믹스인은 실리는 행에만 이 조회를 부른다).
-        rows_by_index = {r["index"]: r for r in record_rows}
-        filter_snap, table_snap, view, visible = self._zone_sections(
-            indices, rows_by_index.__getitem__
-        )
-        assert view is not None  # filter 존재를 위에서 확인 — 믹스인 빈 골격 분기 아님
-        # 가드 수치는 **필터의 가시 집합**을 쓴다 — 렌더용 `visible` 은 「선택된 항목만
-        # 보기」에서 갈아끼워지므로(F3), 그걸로 재면 보기 상태가 판정을 물들인다.
-        vis_set = set(view.visible_indices())
-        # 세션 가드는 **커밋된** 범위의 판정이다(F3 판정 D): 초안이 열려 있으면 위 view 는
-        # 초안 필터의 것이라 가시 집합을 물려주면 남의 정의로 커밋 선택을 잰다. 그때만
-        # 재평가한다(평시엔 이중 평가 금지 계약 그대로 — 리뷰 #7).
-        guard = (
-            self._guard_state() if self.range_draft is not None
-            else self._guard_state(vis_set=vis_set)
-        )
-        return filter_snap, table_snap, guard
-
     # ------------------------------------------------- 세션 가드(블록 4, 결정 26·27)
     def _guard_state(self, vis_set: "set[int] | None" = None) -> dict:
-        """무장 판정 = 집합 비교(결정 27) — "재현 불가능한 수작업"이 있는가.
+        """마지막 완주 집합과 현재 선택을 비교해 재현 불가능한 수작업을 판정한다.
 
-        술어 몸통은 :meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin._selection_guard` 공유
-        (txt T3 가드와 단일 출처, 슬라이스 6 PR-4) — 여기선 이 화면의 **완료 이벤트가 설명하는
-        집합**만 댄다: 마지막 생성분(생성 = 무장 해제). 수동 필드 입력 성분은 빠른 기안
-        표면(블록 5)이 슬라이스 7 에서 합류한다.
-
-        ``vis_set`` 은 렌더 경로(:meth:`_filter_sections`)가 이미 산출한 가시 집합 —
-        스냅샷에서 필터를 이중 평가하지 않기 위한 전달이다(FilterView 캐시 계약,
-        고효율 리뷰 #7). 디스패치 단발 판정(select_job·guard_state)은 생략하고 직접 평가.
-
-        구 ``ack_count`` 열거 성분은 필드축 ack 폐기(U2 §2.13)와 함께 걷혔다 — 세워 둔
-        확인이라는 상태 자체가 없어졌으므로, 남겨 두면 가드가 **존재하지 않는 것을
-        잃는다고** 말한다(과경고는 경보를 싸구려로 만든다).
+        렌더 경로는 이미 계산한 ``vis_set``을 넘겨 필터를 이중 평가하지 않는다.
         """
-        return self._selection_guard(
-            settled=set(self._last_generated or ()), vis_set=vis_set
+        return self.data.selection_guard(
+            settled=set(self.runs.last_generated or ()), vis_set=vis_set
         )
 
     def _do_guard_state(self, p: dict) -> dict:
-        """무장 상태 실시간 질의 — 표면의 파괴 전이 사전 확인(데이터 재겨눔·재연결)이 소비.
+        """파괴 전이 직전에 현재 무장 상태를 다시 계산한다.
 
-        스냅샷 캐시(LAST.guard)는 왕복 지연·무푸시 경로(``generate`` 는 dispatch 밖이라
-        push 가 없다)에서 stale 이 된다 — 판정은 항상 Python 이 지금 내린다(고효율 리뷰
-        #4: 완주 직후 데이터 재겨눔에 거짓 확인 모달·#3: 무장 직후 창에 무확인 통과).
+        생성은 push 없이 끝날 수 있어 캐시된 guard를 신뢰하지 않는다.
         """
         return self._guard_state()
 
     _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     def snapshot(self) -> dict:
-        """세션 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능).
+        """마지막으로 준비한 패널을 IO나 상태 변경 없이 복사해 반환한다."""
+        return deepcopy(self._panel_snapshot)
 
-        존 배치는 job.js 소관(현재 데이터·거울·결과 / side-card 후보·정체·생성 준비).
-        좌 목록 4키(``job_rows``·``job_sections``·``job_flat``·``job_group_names``)는 표면과
-        함께 사망했다(F2 PR-B, 지도 §10.9 판정 F): 아무도 그리지 않는 페이로드가 남으면 다음
-        세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은 「문서 작업」 소관이다.
-        """
-        # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 저장 작업 전체를 한 번만 읽는다.
+    def refresh_panel(self) -> dict:
+        """외부 상태를 읽고 실행 준비를 갱신한 뒤 패널 읽기 모델을 설치한다."""
+        self._panel_snapshot = deepcopy(self._prepare_panel_snapshot())
+        return self.snapshot()
+
+    def _prepare_panel_snapshot(self) -> dict:
+        """외부 작업 목록을 한 번 읽고 매체별 패널 projection을 준비한다."""
         registry_notice_text = ""
         try:
             jobs = list_jobs(self.registry)
         except Exception:  # noqa: BLE001 — 조회 장애는 빈 후보 + loud 안내로 표면화한다.
             jobs = []
             registry_notice_text = (
-                "문서 작업 목록을 다시 확인할 수 없습니다. "
-                "잠시 뒤 다시 시도하세요."
+                "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
             )
-        base = self._snapshot_base(jobs, registry_notice_text)
-        if self.job_is_txt:
-            return self._snapshot_txt(base, jobs)
-        if self.vm is None:
-            return self._snapshot_without_vm(base, jobs)
-        return self._snapshot_hwpx(base)
+        base = self._prepare_base_panel(jobs, registry_notice_text)
+        if self.work.is_txt:
+            return self._prepare_txt_panel(base, jobs)
+        if self.work.vm is None:
+            return self._prepare_empty_panel(base, jobs)
+        return self._prepare_hwpx_panel(base)
 
-    def _snapshot_base(self, jobs: list[Job], registry_notice_text: str) -> dict:
-        notice_text = " ".join(
-            filter(None, (self.data_notice_text, registry_notice_text))
+    def _prepare_base_panel(self, jobs: list[Job], registry_notice_text: str) -> dict:
+        """Prepare branch-independent values and hand JSON shaping to the presenter."""
+        notice_text = " ".join(filter(None, (self.data.notice_text, registry_notice_text)))
+        notice_level = "warn" if registry_notice_text else self.data.notice_level
+        run_action = self._run_action()
+        output_folder = self._output_folder_dict()
+        selection_key = self._selection_key()
+        data_target = self.data.data_target()
+        data_row = self.data.data_row()
+        artifact_view = self.runs.artifact_payload()
+        _handoff, blocked = self.new_work_handoff()
+        fields = (
+            list(self.data.records[0])
+            if self.data.datasource is not None and self.data.records
+            else None
         )
-        notice_level = "warn" if registry_notice_text else self.data_notice_level
-        base = {
-            "job_name": self.job_name,
-            # managed HWPX comes from durable Work identity, never a suffix heuristic.
-            "managed_hwpx": False,
-            # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
-            # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
-            "last_run_job": self._last_run_job,
-            # 작업이 선택됐는가 — **`vm` 이 아니라 이름**이다(F6): TXT 는 hwpx 실행뷰를
-            # 세우지 않으므로 `vm is not None` 은 "선택됨"이 아니라 "hwpx 로 실행한다"다.
-            "has_job": bool(self.job_name),
-            # 열린 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C).
-            # **판정은 여기 하나**다 — 표면이 `data_label` 유무로 유추하면 세션 마운트가
-            # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다). 실행 게이트
-            # (`run_state`)와 같은 술어를 쓰므로 두 자리가 같은 상태를 다르게 부르지 않는다.
-            "job_data_unbound": self.job_data_unbound,
-            # 실행 행동 = **매체 파생 2분기**(F6 판정 D). 라벨과 행동 키를 Python 이 낸다 —
-            # 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
-            "run_action": self._run_action(),
-            # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
-            # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
-            "guard": {
-                "armed": False, "sel_count": 0, "in_def": 0, "extra": 0,
-                "filter_active": False, "filter_parts": 0,
-            },
-            "out_dir": self.out_dir,
-            # 저장 폴더 도출은 **작업 유무와 무관하게 상시** 실린다(전역화) — 설정 모달이
-            # 이 값을 읽고, 작업 화면의 두 갈래(managed·구식)도 여기서만 읽는다. 종전에는
-            # 관리 축의 작업대 존에만 실려 작업이 없으면 답이 없었다.
-            "output_folder": self._output_folder_dict(),
-            # 전체 표시순서 축(§18.10). 값은 데이터 귀속이라 작업 미선택 상태에서도 실린다
-            # — 축은 데이터의 성질이지 작업의 성질이 아니다. (옆 상시 재진술 `order_note` 는
-            # 간소화 라운드에서 걷혔다: 표가 그리는 순서가 곧 생성 순서라는 사실은 스위치
-            # 자신의 title 이 말한다.)
-            "view_order": self.view_order,
-            # 존 표 머리의 「선택 N/M」 — **존 대상**의 수치다(리뷰 3R). `selected_count` 는
-            # 커밋 수치로 남아 게이트 지목 같은 판정이 계속 소비한다: 같은 이름의 값 하나가
-            # 두 세계를 겸하면, 초안 체크박스와 footer 는 3건인데 표 머리만 5건인 자리가 난다.
-            "zone_selected_count": self._zone_sel().selected_count(),
-            # 존 변이가 되실어 보낼 대상 세계 세대(리뷰 4R) — 웹은 판정하지 않고 나른다.
-            "zone_epoch": self.zone_epoch,
-            # **커밋된** 실행 입력의 지문 — 완료 결과의 세션 판정(F4 판정 G 강등)이 소비한다.
-            # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
-            # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
-            # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
-            # 다른 실행 입력이다(§2 충돌 B).
-            "selection_key": self._selection_key(),
-            # **이 마운트의 정체**(#363 리뷰 P2) — 결과 처분(§2.18)의 데이터 성분이 소비한다.
-            # 표시 라벨(`data_source_label`)로는 못 가른다: 같은 basename 의 다른 파일·같은
-            # 통합문서의 다른 시트·같은 경로의 바뀐 내용이 전부 같은 문자열이라, 데이터를
-            # 갈아 끼워도 「교체」로 안 읽히고 결과가 남의 데이터에 붙은 채 남는다.
-            # 값은 **마운트 세대**다(`_reset_range_for_snapshot` 단조 증가 — 호출자는
-            # `load_data_path`·`_after_pool_load` 둘뿐이라 마운트 ⟺ 세대 변화). 경로·시트
-            # 정체를 여기서 다시 조립하지 않는 이유가 둘: ①어느 파일인가와 무관하게
-            # **다시 읽었다**는 사실 자체가 교체이므로 세대가 더 정확하다(같은 경로 재읽기도
-            # 새 레코드다) ②경로 정체성 축은 §5.3/#347 이 재편 중이라 두 정의가 생긴다.
-            "data_mount": self._snapshot_gen,
-            "data_label": self.data_label,
-            # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
-            "data_source_label": source_label(self.data_source, self.data_label),
-            # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 고정 프리필.
-            "data_target": self._data_target(),
-            # 지금 쓰는 데이터의 **열 행 하나**(고르기 열 공용 ③b) — 데이터 선택 다이얼로그가
-            # 공용 `PoolColumn` 으로 합류하면서 종전 「현재 데이터」 카드가 이 행으로 접혔다.
-            # 형·부제는 편집기 우 열과 **같은 함수**가 짓는다(두 자리가 같은 사실을 말한다).
-            "data_row": self._data_row(),
-            # 그 마운트가 **풀 슬롯에서 왔는가**(왔으면 그 키, 아니면 ""). 다이얼로그의 고름
-            # 표지와 「이 데이터 고정…」 가부가 이 한 값으로 갈린다 — 표면이 경로 모양이나
-            # 라벨 접두로 되추측하면 같은 사실을 두 곳이 판정한다. 조회는 없다: 겨눔이
-            # 성사되는 자리(`_do_load_pool`)가 이미 세션에 세워 둔 값이다.
-            "data_pool_key": self.data_pool_key,
-            # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 없으면 None.
-            "data_notice": (
-                {"level": notice_level, "text": notice_text}
-                if notice_text else None
-            ),
+        bound = self.data.bound_jobs(jobs) if fields is not None else []
+        txt_template_count = 0
+        if (
+            fields is not None
+            and self.text_registry is not None
+            and not any(work_mode(job.template_path) == WORK_MODE_TEXT for job in jobs)
+        ):
+            txt_template_count = self.text_registry.count()
+        template_missing_by_path = {
+            job.template_path: template_missing(job.template_path) for job in bound
         }
-        # 산출물 관찰 시트(S7-03 · #825) — 열림·대상·판정·수치는 전부 Python 이 낸다.
-        # 어느 갈래로 빠져나가든 키가 있어야 표면이 키 부재로 갈라지지 않으므로 `base` 에 산다.
-        base["artifact_view"] = self._artifact_view_payload()
-        # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
-        # 표면이 `data_target.path` 유무로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가
-        # 거절하는 어긋남이 난다. 막힐 땐 숨기지 않고 비활성 + 사유 병기(조용한 무동작 금지).
-        _handoff, _blocked = self.new_work_handoff()
-        base["new_work"] = {"can": not _blocked, "reason": _blocked}
-        # 후보(§18.4) — 데이터 준비 시에만 계산(§18.1: 미준비면 계산 자체를 하지 않는다).
-        # 판정 fields 는 필터 열 파생과 같은 원천(records[0].keys — 표시=판정 정합).
-        base["candidates"] = self._candidate_payload(jobs)
-        # 문서 탐색(§18.6) — 후보 줄의 「외 N건」·「확인 필요」가 여기로 이어진다.
-        base["browse"] = self._browse_payload(jobs)
-        # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
-        base["range_draft"] = self._range_draft_payload()
-        # 템플릿 변경 존(S3-09) 기본값 — 미상 매체·미선택은 명시적 unsupported(키 부재 분기
-        # 금지). 지원 매체 분기(hwpx·txt)가 실제 capability·현재 Preparation 으로 덮어쓴다.
-        base["template_change"] = unsupported_zone()
-        # 원본 드리프트 표식도 **같은 자리**에서 기본값을 갖는다(S10-02 #859): 종전에는 hwpx
-        # 분기에서만 키가 생겨, 다른 분기의 스냅샷은 「드리프트 없음」과 「키 없음」이 구별되지
-        # 않았다(키 부재 분기 금지 — template_change 와 같은 근거).
-        base["source_drift"] = None
-        # S4 Working Slot Configuration 존 기본값(SX-02 #725) — 미선택·미상 매체는 명시적
-        # 미지원(키 부재 분기 금지). TXT·HWPX 지원 갈래가 실제 fresh view 로 덮는다.
-        base["slot_configuration"] = self._slot_blank_zone()
-        # Selection Preset 목록 존 기본값(S9-03 #829) — 같은 이유로 키 부재 분기를 만들지 않는다.
-        base["content_presets"] = self._content_presets_blank()
-        return base
+        candidates = candidate_payload(
+            jobs=jobs,
+            bound=bound,
+            fields=fields,
+            active_name=self.work.name,
+            txt_template_count=txt_template_count,
+            template_missing_by_path=template_missing_by_path,
+        )
+        browse = browse_payload(
+            bound=bound,
+            fields=fields,
+            browse_tab=self.work.browse_tab,
+            browse_query=self.work.browse_query,
+        )
+        return base_panel_snapshot(
+            job_name=self.work.name,
+            last_run_job=self.runs.last_run_job,
+            job_data_unbound=self.work.data_unbound,
+            run_action=run_action,
+            out_dir=self.runs.out_dir,
+            output_folder=output_folder,
+            view_order=self.data.view_order,
+            zone_selected_count=self.data.zone_selected_count(),
+            zone_epoch=self.data.zone_epoch,
+            selection_key=selection_key,
+            data_mount=self.data.snapshot_generation,
+            data_label=self.data.label,
+            data_source_label=source_label(self.data.source_kind, self.data.label),
+            data_target=data_target,
+            data_row=data_row,
+            data_pool_key=self.data.pool_key,
+            data_notice=({"level": notice_level, "text": notice_text} if notice_text else None),
+            artifact_view=artifact_view,
+            new_work={"can": not blocked, "reason": blocked},
+            candidates=candidates,
+            browse=browse,
+            range_draft=self.data.range_draft_payload(),
+            template_change=unsupported_zone(),
+            slot_configuration=self.execution.blank_slot_zone(),
+            content_presets=self.execution.blank_presets_zone(),
+        )
 
-    def _snapshot_txt(self, base: dict, jobs: list[Job]) -> dict:
-        # TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
-        # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
-        # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
-        zone_indices = self._zone_indices()
-        record_rows = self._record_rows(zone_indices, [])
-        filter_snap, table_snap, guard_snap = self._filter_sections(
-            zone_indices, record_rows
+    def _prepare_txt_panel(self, base: dict, jobs: list[Job]) -> dict:
+        zone_indices = self.data.zone_indices()
+        display_order = self.data.display_indices(list(range(len(self.data.records))))
+        record_rows = record_table_rows(
+            records=self.data.records,
+            display_order=display_order,
+            selected_indices={i for i in display_order if self.data.zone_selected(i)},
+            selected_model_indices=zone_indices,
+            mapped_records=[],
+            filename_pattern=None,
+            names_now=None,
+            filename_source_columns=[],
         )
-        # 템플릿 정체는 **이번 스캔의 목록**에서 집는다 — 세션이 Job 사본을 들지 않으므로
-        # (1R P2) 이름 변경·재연결이 자동으로 반영되고, 추가 I/O 도 없다(목록은 위에서
-        # 이미 읽었다). 그사이 삭제됐으면 정직하게 「템플릿 없음」으로 그린다 —
-        # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
-        txt_job = next((j for j in jobs if j.name == self.job_name), None)
-        tpath = txt_job.template_path if txt_job is not None else ""
-        # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
-        # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
-        tmissing, tconn = _template_conn(tpath)
-        self._seat_configuration_zones(base, template_media(tpath), tmissing)
-        g = workbench_entry_gate(
-            has_data=self.datasource is not None,
-            selected_count=self.selection.selected_count(),
-            template_ready=not tmissing,
+        filter_snapshot, table_snapshot, guard_snapshot = self.data.panel_sections(
+            zone_indices,
+            record_rows,
+            settled=set(self.runs.last_generated or ()),
         )
-        base.update({
-            "template_name": Path(tpath).name if tpath else "",
-            "template_path": tpath,
-            "template_missing": tmissing,
-            "conn_label": tconn,
-            # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
-            # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
-            "filename_pattern": "",
-            "has_data": self.datasource is not None,
-            "record_count": len(self.records),
-            "selected_count": self.selection.selected_count(),
-            "records": record_rows,
-            "preflight": {"level": "", "text": ""},
-            # 빈 값 표지·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값
-            # 확인을 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
-            "blank_fields": [], "drift": [], "name_tokens": [],
-            "filter": filter_snap, "table": table_snap,
-            "guard": guard_snap,
-            "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
-                     "reason": g.reason},
-            # 검토 요구는 **배제 선언**(지도 §10.15 판정 J): 작업대가 이미 레코드
-            # 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
-            # 키 부재로 갈라지지 않게 한다.
-            "review": review_payload(ReviewRequirement()),
-        })
-        return base
+        txt_job = next((job for job in jobs if job.name == self.work.name), None)
+        template_path = txt_job.template_path if txt_job is not None else ""
+        is_template_missing = template_missing(template_path)
+        configuration_zones = self._configuration_zones(
+            template_media(template_path), is_template_missing
+        )
+        gate = workbench_entry_gate(
+            has_data=self.data.datasource is not None,
+            selected_count=self.data.selection.selected_count(),
+            template_ready=not is_template_missing,
+        )
+        return work_panel_snapshot(
+            base,
+            managed_hwpx=False,
+            template_path=template_path,
+            template_missing=is_template_missing,
+            connection_label=connection_label(is_template_missing),
+            filename_pattern="",
+            has_data=self.data.datasource is not None,
+            record_count=len(self.data.records),
+            selected_count=self.data.selection.selected_count(),
+            records=record_rows,
+            filter_snapshot=filter_snapshot,
+            table_snapshot=table_snapshot,
+            guard_snapshot=guard_snapshot,
+            preflight={"level": "", "text": ""},
+            blank_fields=[],
+            drift=[],
+            name_tokens=[],
+            gate={
+                "enabled": gate.enabled,
+                "level": gate.level,
+                "text": gate.text,
+                "reason": gate.reason,
+            },
+            review=review_payload(ReviewRequirement()),
+            configuration_zones=configuration_zones,
+        )
 
-    def _snapshot_without_vm(self, base: dict, jobs: list[Job]) -> dict:
-        # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
-        zone_indices = self._zone_indices()
-        record_rows = self._record_rows(zone_indices, [])
-        filter_snap, table_snap, guard_snap = self._filter_sections(
-            zone_indices, record_rows
+    def _prepare_empty_panel(self, base: dict, jobs: list[Job]) -> dict:
+        zone_indices = self.data.zone_indices()
+        display_order = self.data.display_indices(list(range(len(self.data.records))))
+        record_rows = record_table_rows(
+            records=self.data.records,
+            display_order=display_order,
+            selected_indices={i for i in display_order if self.data.zone_selected(i)},
+            selected_model_indices=zone_indices,
+            mapped_records=[],
+            filename_pattern=None,
+            names_now=None,
+            filename_source_columns=[],
         )
-        g = prework_gate(
-            has_data=self.datasource is not None,
-            selected_count=self.selection.selected_count(),
-            # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
-            # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
-            # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
+        filter_snapshot, table_snapshot, guard_snapshot = self.data.panel_sections(
+            zone_indices,
+            record_rows,
+            settled=set(self.runs.last_generated or ()),
+        )
+        gate = prework_gate(
+            has_data=self.data.datasource is not None,
+            selected_count=self.data.selection.selected_count(),
             has_candidates=bool(base["candidates"]["top"]),
         )
-        # **미상 매체는 「작업 미선택」이 아니다**: 작업은 골라져 있고(`has_job`) 실행
-        # 표면만 없다. prework 문안("먼저 문서 작업을 선택하세요")을 그대로 쓰면 이미
-        # 고른 사람에게 이행 불가능한 지시를 주고, 화면은 「작업 있음」과 「없음」을
-        # 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
-        unsup_job = (
-            next((j for j in jobs if j.name == self.job_name), None)
-            if self.job_unsupported else None
+        unsupported_job = (
+            next((job for job in jobs if job.name == self.work.name), None)
+            if self.work.unsupported
+            else None
         )
-        utpath = unsup_job.template_path if unsup_job is not None else ""
-        if self.job_unsupported:
-            # 막는 축은 템플릿이다 — 게이트 문안·사유는 링1 단일 산출(P2-24).
-            g = unsupported_media_gate()
-        # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
-        # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
-        umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
-        base.update({
-            "template_name": Path(utpath).name if utpath else "",
-            "template_path": utpath,
-            "filename_pattern": "",
-            "template_missing": umissing,
-            "conn_label": uconn,
-            "has_data": self.datasource is not None,
-            "record_count": len(self.records),
-            "selected_count": self.selection.selected_count(),
-            "records": record_rows,
-            "preflight": {"level": "", "text": ""},
-            "blank_fields": [], "drift": [], "name_tokens": [],
-            "filter": filter_snap, "table": table_snap,
-            "guard": guard_snap,
-            # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
-            "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
-                     "reason": g.reason},
-            # 작업이 없으면 검토할 규칙이 없다 — 뼈대만 실어 표면이 키 부재로
-            # 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
-            "review": review_payload(ReviewRequirement()),
-        })
-        return base
+        template_path = unsupported_job.template_path if unsupported_job is not None else ""
+        if self.work.unsupported:
+            gate = unsupported_media_gate()
+        is_template_missing = template_missing(template_path) if self.work.name else False
+        return work_panel_snapshot(
+            base,
+            managed_hwpx=False,
+            template_path=template_path,
+            template_missing=is_template_missing,
+            connection_label=connection_label(is_template_missing),
+            filename_pattern="",
+            has_data=self.data.datasource is not None,
+            record_count=len(self.data.records),
+            selected_count=self.data.selection.selected_count(),
+            records=record_rows,
+            filter_snapshot=filter_snapshot,
+            table_snapshot=table_snapshot,
+            guard_snapshot=guard_snapshot,
+            preflight={"level": "", "text": ""},
+            blank_fields=[],
+            drift=[],
+            name_tokens=[],
+            gate={
+                "enabled": gate.enabled,
+                "level": gate.level,
+                "text": gate.text,
+                "reason": gate.reason,
+            },
+            review=review_payload(ReviewRequirement()),
+        )
 
-    def _snapshot_hwpx(self, base: dict) -> dict:
-        assert self.vm is not None
-        job = self.vm.job
+    def _prepare_hwpx_panel(self, base: dict) -> dict:
+        assert self.work.vm is not None
+        job = self.work.vm.job
         # S6-05(#812) 의미 3 파생 전환: bool(authority_id) 는 slotless 발급 작업까지 managed 로
         # 취급해 generate-once 트랩(#806 R1)의 곱 반대편 항이었다. managed 는 「materialization
         # 대상인가」= slot-bearing 사실(링1 projection 이 이미 소유)에서 파생한다.
-        base["managed_hwpx"] = self._is_managed_hwpx_work(job)
-        indices = self._indices()
+        managed_hwpx = self._is_managed_hwpx_work(job)
+        indices = self.data.selected_indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
         # 요구 판정(blank_set)까지 전부 이 한 집합을 소비한다. 표식이 붙으면 파일명 패턴이
         # 그 필드를 참조할 때 이름·수렴·경로 길이가 전부 달라진다(1R P2 · 4R P2) —
         # 표시와 생성이 같은 술어를 공유해야 하는 이유.
-        blanks = self.vm.blank_fields(indices) if indices else []
+        run_data = self._run_data()
+        blanks = self.work.vm.blank_fields(run_data, indices) if indices else []
         marker = blank_marker(blanks)
         # 검토 요구(F5) — 판정은 durable 기준선이 진다(승인 대조는 #957 에서 사망).
-        req = self._review(indices=indices, blanks=blanks)
+        req = self._review(indices=indices, blanks=blanks, data=run_data)
         # 파일명 날짜 토큰의 기준 시각 — **이 스냅샷의 것**이다(#957 재정의).
         #
         # 종전엔 미리보기가 본 이름을 붙들려고 「보는 동안·승인이 서 있는 동안·본 뒤 입력이
@@ -1544,115 +608,120 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 본문의 ``today``(오늘 날짜) 유형도 **이 시각**을 쓴다(U4-E1 #939): 위에서 파일명
         # 날짜 토큰용으로 캡처한 값을 그대로 넘겨 한 스냅샷 안에서 이름과 본문이 한 시각을
         # 말한다. 여기서 따로 찍으면 표 「문서」 열과 본문 미리 값이 하위-일 경계에서 갈린다.
-        mapped = self.vm.mapped_records(indices, now=self._names_now) if indices else []
+        mapped = (
+            self.work.vm.mapped_records(run_data, indices, now=self._names_now) if indices else []
+        )
         run_mapped = (
-            self.vm.mapped_records(indices, marker, now=self._names_now)
-            if marker else mapped
+            self.work.vm.mapped_records(run_data, indices, marker, now=self._names_now)
+            if marker
+            else mapped
         )
         # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
         # 요구 자체가 사전검증 고지의 입력이다.
         configuration_gate = None
-        if (
-            self._template_change is not None
-            and job.media == "hwpx" and not base["managed_hwpx"]
-            and self.vm.template_override is None
-        ):
-            verdict = self._template_change.generation_provenance_verdict(self.job_name)
+        if self._template_change is not None and job.media == "hwpx" and not managed_hwpx:
+            verdict = self._template_change.generation_provenance_verdict(self.work.name)
             if verdict != "EXECUTION_ALLOWED":
                 configuration_gate = GateState(
-                    False, "warn", ADMISSION_REJECT_TEXT[verdict], reason=verdict,
+                    False,
+                    "warn",
+                    ADMISSION_REJECT_TEXT[verdict],
+                    reason=verdict,
                 )
-        status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
-            indices, self.out_dir, review_notice=req, mapped=run_mapped,
-            now=self._names_now, configuration_gate=configuration_gate,
+        status = self.work.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
+            run_data,
+            indices,
+            self.runs.out_dir,
+            review_notice=req,
+            mapped=run_mapped,
+            now=self._names_now,
+            configuration_gate=configuration_gate,
         )
         # 통과 문구는 링2 어휘로 갈아끼우되 **고지는 잃지 않는다**: 치명·경고가 하나도
         # 없어도 검토 고지는 사용자가 봐야 하는 사실이라 통과 문구 아래 붙인다.
         preflight_text = (
             "\n".join((_PREFLIGHT_OK_TEXT, *status.preflight.notices))
-            if status.preflight.level == "ok" else status.preflight.text
+            if status.preflight.level == "ok"
+            else status.preflight.text
         )
         drift_fields = self._drift_fields(status)
         # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
         # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
         # 이미 계산한 실행 입력·매핑을 그대로 재사용한다(평시 추가 비용 0).
-        zone_indices = self._zone_indices()
+        zone_indices = self.data.zone_indices()
         zone_mapped = run_mapped
-        if self.range_draft is not None:
+        if self.data.range_draft is not None:
             # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
-            zone_marker = self._run_marker(zone_indices)
+            zone_marker = self._run_marker(zone_indices, run_data)
             zone_mapped = (
-                self.vm.mapped_records(zone_indices, zone_marker, now=self._names_now)
-                if zone_indices else []
+                self.work.vm.mapped_records(
+                    run_data, zone_indices, zone_marker, now=self._names_now
+                )
+                if zone_indices
+                else []
             )
-        record_rows = self._record_rows(zone_indices, zone_mapped)
-        filter_snap, table_snap, guard_snap = self._filter_sections(
-            zone_indices, record_rows
+        display_order = self.data.display_indices(list(range(len(self.data.records))))
+        record_rows = record_table_rows(
+            records=self.data.records,
+            display_order=display_order,
+            selected_indices={i for i in display_order if self.data.zone_selected(i)},
+            selected_model_indices=zone_indices,
+            mapped_records=zone_mapped,
+            filename_pattern=job.filename_pattern,
+            names_now=self._names_now,
+            filename_source_columns=filename_source_columns(
+                job,
+                tuple(self.data.records[0]) if self.data.records else (),
+            ),
+        )
+        filter_snap, table_snap, guard_snap = self.data.panel_sections(
+            zone_indices,
+            record_rows,
+            settled=set(self.runs.last_generated or ()),
         )
         # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭. 술어·
         # 문안은 `_template_conn` 단일 출처이고, 이 축이 **재연결 도달 보장**을 진다
         # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
-        tmissing, tconn = _template_conn(job.template_path)
-        self._seat_configuration_zones(base, job.media, tmissing)
+        tmissing = template_missing(job.template_path)
+        tconn = connection_label(tmissing)
+        configuration_zones = self._configuration_zones(job.media, tmissing)
         # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
-        base["workbench_observation"] = self._workbench_observation_zone(tmissing)
-        base.update({
-            "template_name": Path(job.template_path).name if job.template_path else "",
-            "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
-            "template_missing": tmissing,
-            "conn_label": tconn,
-            "filename_pattern": job.filename_pattern,
-            "has_data": self.datasource is not None,
-            "record_count": len(self.records),
-            "selected_count": self.selection.selected_count(),
-            "records": record_rows,
-            # 필터 상태·데이터 테이블·가드(블록 4) — 표면은 받은 것을 그리기만.
-            "filter": filter_snap,
-            "table": table_snap,
-            "guard": guard_snap,
-            "preflight": {"level": status.preflight.level, "text": preflight_text},
-            # 이번 실행 입력에서 값이 빈 **필드 이름 목록**. 값은 싣지 않는다 — 값을 말하는
-            # 표면은 만들어진 문서다(#957). 이 목록은 위 `blanks` 한 집합에서 나오고, 같은
-            # 집합이 표식(marker)과 검토 요구를 짓는다: 존 재편 뒤 화면은 이 사실을 사전검증
-            # 문안으로 읽지만, 스냅샷 축은 **표식이 실제로 어느 필드에 붙는가**의 관측면이라
-            # 남는다(표시와 생성이 한 술어를 공유하는지 계약 테스트가 여기서 잰다).
-            "blank_fields": list(blanks),
-            "drift": drift_fields,
-            # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서
-            # 차단 배너 + 행동 링크로 발화한다. 종전엔 게이트 캡션 한 줄뿐이라 거울은 전 행
-            # 「채움」으로 건강해 보이고 재진술은 말없이 사라지는, 신호 없는 차단이었다.
-            #
-            # **게이트가 실제로 이 사유로 막을 때만** 싣는다(리뷰 F2): 토큰 미해소는 템플릿을
-            # 못 읽는 상태에서도 참이라, 사실만 보고 그리면 게이트는 "구조를 읽을 수 없다"고
-            # 막는데 거울은 크게 "파일명을 고치라"고 말한다 — 사용자를 엉뚱한 수리로 보내고,
-            # #128 이 없앤 바로 그 어긋남(문안 ≠ 실제 집합)을 반대 방향으로 되살린다.
-            # 서열 판정은 run_state 단일 출처(gate.reason)를 소비하고 여기서 재유도하지 않는다.
-            "name_tokens": (
-                self.vm.unresolved_name_tokens()
-                if status.gate.reason == "name_tokens" else []
-            ),
-            # `reason` 도 함께 싣는다(리뷰 R1) — 표지 문안이 게이트 서열을 **재유도하지 않고**
-            # 이 이름 하나만 읽게 하려고 링1 이 낸 필드다.
-            "gate": {
+        workbench_observation = self._workbench_observation_zone(tmissing)
+        name_tokens = (
+            self.work.vm.unresolved_name_tokens() if status.gate.reason == "name_tokens" else []
+        )
+        return work_panel_snapshot(
+            base,
+            managed_hwpx=managed_hwpx,
+            template_path=job.template_path,
+            template_missing=tmissing,
+            connection_label=tconn,
+            filename_pattern=job.filename_pattern,
+            has_data=self.data.datasource is not None,
+            record_count=len(self.data.records),
+            selected_count=self.data.selection.selected_count(),
+            records=record_rows,
+            filter_snapshot=filter_snap,
+            table_snapshot=table_snap,
+            guard_snapshot=guard_snap,
+            preflight={"level": status.preflight.level, "text": preflight_text},
+            blank_fields=blanks,
+            drift=drift_fields,
+            name_tokens=name_tokens,
+            gate={
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,
                 "text": status.gate.text,
                 "reason": status.gate.reason,
             },
-            # 검토 요구(F5) — 비차단 고지의 재료이고, 문안은 사전검증이 이미 실었다.
-            "review": review_payload(req),
-            # **규칙의 지문**도 실행 입력의 정체다(6R P2). 결과가 「지금 결과」로 남으려면
-            # 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서 매핑·파일 이름을 고치고
-            # 돌아오면 재적재(`_reload_active_job`)가 규칙을 갈아 끼우는데, 세션 지문에 규칙이
-            # 없으면 **다른 규칙으로 만든 결과가 「지금 결과」로 남아** 후속 행동(실패분 선택·
-            # 파일 이름 수리)까지 열린 채다. 값은 검토 요구가 이미 계산한 그 지문을 쓴다 —
-            # 같은 상태를 두 번 세지 않는다(판정 단일 출처).
-            "rules_key": req.rules_key,
-        })
-        return base
+            review=review_payload(req),
+            rules_key=req.rules_key,
+            workbench_observation=workbench_observation,
+            configuration_zones=configuration_zones,
+        )
 
     def initial(self) -> dict:
         """화면 부팅 스냅샷 — 기억한 데이터를 **먼저** 마운트한다(U3-07 · #880).
@@ -1663,7 +732,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         그려진다.
         """
         self._restore_remembered_data()
-        return self.snapshot()
+        return self.refresh_panel()
 
     # ------------------------------- 마지막 사용 데이터 기억·복원(U3-07 · #880)
     def _remember_data_source(self) -> None:
@@ -1673,18 +742,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         풀 겨눔 → :meth:`_after_pool_load`, 계약 목록 → :meth:`_mount_pclm`). 계약 목록은
         슬롯이 없어 파일 갈래와 같은 성분(``path``=db·``sheet``=뷰)을 쓰고, 출처 축
         (``source``)이 그 성분을 **어느 어댑터로 읽을지**를 말한다(#937). 성분은 세션이 그 마운트 시점에 포획해 둔
-        것을 그대로 읽는다(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.
-        new_work_handoff` 와 같은 재료) — 여기서 슬롯이나 파일을 다시 읽어 조립하면 지금
+        것을 그대로 읽는다(``JobDataSession.new_work_handoff``와 같은 재료) — 여기서
+        슬롯이나 파일을 다시 읽어 조립하면 지금
         화면에 없는 데이터를 기억하게 된다.
 
         기억은 **설정 층 소유**다: 풀 스키마(``DatasetReference``)는 건드리지 않는다.
         """
         descriptor = {
-            "source": self.data_source,
-            "path": self.data_path,
-            "sheet": self.data_sheet,
-            "header_row": self.data_header_row,
-            "pool_key": self.data_pool_key,
+            "source": self.data.source_kind,
+            "path": self.data.path,
+            "sheet": self.data.sheet,
+            "header_row": self.data.header_row,
+            "pool_key": self.data.pool_key,
         }
         self._remembered_data_source = descriptor
         save_last_data_source(**descriptor)
@@ -1717,7 +786,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return
         self._boot_data_restored = True
         descriptor = self._remembered_data_source
-        if not descriptor or self.data_source:
+        if not descriptor or self.data.source_kind:
             return  # 기억 없음(기존 settings.json) 또는 이미 마운트됨 = 기존 부팅 그대로
         self._boot_restore_in_progress = True
         try:
@@ -1725,8 +794,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         finally:
             self._boot_restore_in_progress = False
         if refusal:
-            self.data_notice_text = refusal
-            self.data_notice_level = "warn"
+            self.data.notice_text = refusal
+            self.data.notice_level = "warn"
 
     def _mount_remembered_data(self, descriptor: dict) -> str:
         """기억한 성분으로 마운트 — 성사면 ``""``, 실패면 **사유 문구**(상태는 빈 채).
@@ -1757,14 +826,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return _REMEMBERED_DATA_FAILED.format(reason=exc)
         return ""
 
+    def new_work_handoff(self) -> "tuple[dict, str]":
+        """현재 마운트의 작업 생성용 데이터 참조를 반환한다."""
+        return self.data.new_work_handoff()
+
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(
-        self, path: str, *, sheet: "str | None" = None, header_row: int = 0,
+        self,
+        path: str,
+        *,
+        sheet: "str | None" = None,
+        header_row: int = 0,
     ) -> None:
         """선택된 데이터 파일을 세션에 마운트. 레코드 0건이면 시끄럽게 실패.
 
-        **데이터-우선(§18.2)**: 작업 미선택에도 마운트할 수 있다 — 데이터는 세션 소유고
-        vm 은 있으면 ``set_acquired`` 로 주입받는다. 마운트 직후 선택은 **0건**이다
+        **데이터-우선(§18.2)**: 작업 미선택에도 마운트할 수 있다. 데이터는 세션이 소유하고
+        VM 평가는 그 세션에서 포획한 ``RunDataInput``을 받는다. 마운트 직후 선택은 **0건**이다
         (§18.2 commit 뒤 초기화 — 구 전체선택 계약의 개정, 봉합 지도 충돌 A).
 
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
@@ -1777,27 +854,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_file_source(
-            path, sheet=sheet, header_row=header_row,
+            path,
+            sheet=sheet,
+            header_row=header_row,
             source_factory=self._file_source_factory,
         )  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
-        self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
-        self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self._commit_data_transition(
-            source, records, (path, sheet or "", header_row, ""),
+        self.runs.last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
+        self._commit_data_mount(
+            datasource=source,
+            records=records,
+            incoming=(path, sheet or "", header_row, ""),
+            label=Path(path).name,
+            source_kind="file",
+            path=path,
+            sheet=sheet or "",
+            header_row=header_row,
+            kind="",
+            data_key=self.data.file_key(path, sheet),
         )
-        self.data_label = Path(path).name
-        self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
-        self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
-        self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
-        # 헤더 행은 **마운트 성분 한 벌**로 갈린다(리뷰 2R): 풀 겨눔·작업 결속이 포획해 둔
-        # 값이 다음 파일 겨눔에 남지 않게, 넘어온 값을 같은 자리에서 그대로 세운다.
-        self.data_header_row = header_row
-        self.data_kind = ""  # 파일 마운트 = 엑셀/CSV — 이전 마운트의 종류가 남지 않게 같은 자리에서.
-        self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
-        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
-        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         try:
             self._remember_data_source()  # 다음 부팅 자동 마운트의 재료(U3-07 #880)
         finally:
@@ -1822,28 +898,30 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_pool_source(
-            pclm_reference(db, view), source_factory=self._pool_source_factory,
+            pclm_reference(db, view),
+            source_factory=self._pool_source_factory,
         )
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
-        self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
-        self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self._commit_data_transition(source, records, (db, view, 0, "pclm"))
+        self.runs.last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
         # 라벨에 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으로는 **무엇이 서
         # 있는지**를 말하지 못한다(엑셀의 `data_binding_label` 이 시트를 병기하는 것과 같은
         # 규율). 스냅샷 `data_target` 과 겹치는 것이 아니라, 저쪽은 성분이고 이쪽은 한 줄이다.
         # 병기하는 것은 **제목**이다: 라벨은 사람이 읽는 한 줄이라 내부 이름(`v_통합_v1`)이
         # 여기로 새면 결속 마운트 notice·소스 라벨까지 그 이름을 지고 다닌다. 미지 이름은
         # 감추지 않고 원문 그대로 남긴다(구판·손편집을 조용히 지우지 않는다).
-        self.data_label = f"{Path(db).name} · {PCLM_VIEW_TITLES.get(view, view)}"
-        self.data_source = "pclm"  # 병기 라벨은 스냅샷이 합성(#26·K8)
-        self.data_pool_key = ""  # 슬롯 없는 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
-        self.data_path, self.data_sheet = db, view  # db=파일 · 뷰=시트 자리 재사용
-        self.data_header_row = 0  # 계약면에는 헤더 행 축이 없다 — 0 이 곧 「해당 없음」
-        self.data_kind = "pclm"
-        self._data_key = self._pclm_key(db, view)  # 소스 일치 게이트(결정 28)
-        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
-        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
+        self._commit_data_mount(
+            datasource=source,
+            records=records,
+            incoming=(db, view, 0, "pclm"),
+            label=f"{Path(db).name} · {PCLM_VIEW_TITLES.get(view, view)}",
+            source_kind="pclm",
+            path=db,
+            sheet=view,
+            header_row=0,
+            kind="pclm",
+            data_key=self.data.pclm_key(db, view),
+        )
         try:
             self._remember_data_source()  # 다음 부팅 자동 마운트의 재료(U3-07 #880)
         finally:
@@ -1863,122 +941,45 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(f"알 수 없는 데이터 결속 종류입니다: {kind!r}")
         self.load_data_path(path, sheet=sheet or None, header_row=header_row)
 
-    def _commit_data_transition(
-        self, source, records: list, incoming: "tuple[str, str, int, str]",
+    def _commit_data_mount(
+        self,
+        *,
+        datasource,
+        records: list,
+        incoming: "tuple[str, str, int, str]",
+        label: str,
+        source_kind: str,
+        path: str,
+        sheet: str,
+        header_row: int,
+        kind: str,
+        data_key: str,
+        pool_key: str = "",
     ) -> None:
-        """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다.
-
-        ``incoming`` 은 **지금 들어오는** 데이터의 참조 한 벌
-        ``(path, sheet, header_row, kind)`` 이다(#932 U4-C). 세션 필드
-        (``self.data_path`` …)를 읽으면 안 되는 이유는 순서다: 마운트는 이 판정을 먼저
-        지나고 성분을 **그 뒤에** 세운다(파일·풀 두 경로 모두). 여기서 세션을 읽으면
-        「직전 데이터에 결속됐나」를 묻게 돼 판정이 한 걸음 늦는다.
-        """
-        work_ref = self.job_name
-        seated_job = self.vm.job if self.vm is not None else None
-        active_job = None
-        restored_template_application_id = None
-        restore_failed = False
-        exact_context_restorable = False
-        if work_ref:
-            try:
-                active_job = load_job(self.registry, work_ref)
-                if self._template_change is not None:
-                    restored_template_application_id = (
-                        self._template_change.current_template_application_id(
-                            active_job.authority_id or None
-                        )
-                    )
-                    if (
-                        active_job.authority_id
-                        and restored_template_application_id is None
-                    ):
-                        restore_failed = True
-                exact_context_restorable = bool(
-                    seated_job is not None
-                    # 빈 값끼리의 equality 는 identity 증거가 아니다.
-                    and seated_job.authority_id
-                    and active_job.authority_id == seated_job.authority_id
-                    and self._same_work_snapshot(seated_job, active_job)
-                    and (
-                        self._template_change is None
-                        or bool(
-                            restored_template_application_id
-                            and self._seated_template_application_id
-                            and restored_template_application_id
-                            == self._seated_template_application_id
-                        )
-                    )
-                )
-            except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
-                active_job = None
-                restore_failed = True
-        context = ActiveWorkContext(
-            active=bool(work_ref),
-            work_ref=work_ref or None,
-            template_application_ref=restored_template_application_id,
-            exact_context_restorable=exact_context_restorable,
-            # **결속이 판정 축이다**(U4 §2.4, #932 U4-C): 종전 술어는 「이 데이터로 쓸 수
-            # 있나」(스키마 호환)였고 지금은 「이 작업이 이 데이터를 쓰나」다. 데이터를
-            # 갈아 끼우면 그 작업은 자기 데이터를 잃은 것이므로 놓아 준다 — 호환은 우연히
-            # 맞을 수 있고, 우연한 일치로 남의 데이터를 물린 채 실행에 들어가는 것이
-            # 이 라운드가 없애는 조용한 어긋남이다.
-            bound_to_current_data=(
-                active_job is not None
-                and data_binding_matches(
-                    active_job, *incoming[:3], kind=incoming[3]
-                )
-            ),
-        )
-        decision = decide_active_work_after_data_transition(context)
-        self._clear_data_notice()
-        if decision.disposition == RELEASE and work_ref:
+        """Work 재조정 뒤 데이터 마운트 한 벌을 원자 커밋한다."""
+        reconciliation = self.work.reconcile_data_transition(incoming)
+        self.data.clear_notice()
+        if reconciliation.release:
             self._release_active_work()
-        self.datasource = source
-        self.records = records
-        if self.vm is not None:
-            self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
+        self.data.commit_mount(
+            datasource=datasource,
+            records=records,
+            label=label,
+            source_kind=source_kind,
+            path=path,
+            sheet=sheet,
+            header_row=header_row,
+            kind=kind,
+            pool_key=pool_key,
+            data_key=data_key,
+        )
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
-        preferred_restatement = (
-            f" {self.data_notice_text}" if self.data_notice_text else ""
-        )
-        if restore_failed:
-            self.data_notice_text = (
-                "이전 문서 작업을 다시 확인할 수 없어 선택을 해제했습니다. "
-                f"문서 작업을 다시 선택하세요.{preferred_restatement}"
-            )
-            self.data_notice_level = "warn"
-
-        elif active_job is not None and not exact_context_restorable:
-            self.data_notice_text = (
-                "이전 문서 작업이 같은 작업인지 확인할 수 없어 선택을 해제했습니다. "
-                f"문서 작업을 다시 선택하세요.{preferred_restatement}"
-            )
-            self.data_notice_level = "warn"
-        elif active_job is not None and not context.bound_to_current_data:
-            self.data_notice_text = (
-                "이전 문서 작업은 다른 데이터에 연결돼 있어 선택을 해제했습니다. "
-                "아래 후보를 선택하거나 「문서 작업」에서 그 작업을 여세요."
-                f"{preferred_restatement}"
-            )
-            self.data_notice_level = "warn"
-
-    def _same_work_snapshot(self, seated: Job, restored: Job) -> bool:
-        """authority 외 실행 문맥이 같은 registry Job snapshot인지 판정한다."""
-        return (
-            job_content_fingerprint(self.registry, restored)
-            == job_content_fingerprint(self.registry, seated)
-            and restored.template_revision == seated.template_revision
-            and restored.binding_revision == seated.binding_revision
-            and restored.previous_rules == seated.previous_rules
-        )
-
-    def _can_adopt_seated_identity(self, seated: Job, restored: Job) -> bool:
-        """identity 미발급 seat만 exact same snapshot의 durable identity를 받을 수 있다."""
-        return (
-            (not seated.authority_id or seated.authority_id == restored.authority_id)
-            and self._same_work_snapshot(seated, restored)
-        )
+        self.data.install_filter(self.data.records, self._data_filter_hints())
+        if reconciliation.warning:
+            preferred = f" {self.data.notice_text}" if self.data.notice_text else ""
+            self.data.notice_text = reconciliation.warning + preferred
+            self.data.notice_level = "warn"
+        self._invalidate_data_results()
 
     # ── 저장 폴더 도출(U3-06 · #879 → 전역화) ────────────────────────────────────
     def _output_folder_resolution(self) -> OutputFolderResolution:
@@ -1995,7 +996,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         답으로 말한다(그것이 종전 세션 명시 지정 축에서 실제로 샜던 자리다).
         """
         return output_folder_resolution(
-            template_path=(self.vm.job.template_path if self.vm is not None else ""),
+            template_path=(self.work.vm.job.template_path if self.work.vm is not None else ""),
             remembered_directory=self._remembered_output_directory,
         )
 
@@ -2011,7 +1012,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not resolution.resolved:
             return None, resolution
         return (
-            RunDeliveryIntent(resolution.directory, self._run_delivery_collision),
+            RunDeliveryIntent(resolution.directory, self.runs.delivery_collision),
             resolution,
         )
 
@@ -2036,7 +1037,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         빠뜨리는 자리가 생긴다.
         """
         return output_folder_zone(
-            template_path=(self.vm.job.template_path if self.vm is not None else ""),
+            template_path=(self.work.vm.job.template_path if self.work.vm is not None else ""),
             remembered_directory=self._remembered_output_directory,
         )
 
@@ -2058,11 +1059,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         메모리에 유효하고 화면도 그것을 그려야 하므로, 재도출·push 를 끝낸 뒤에 던진다.
         """
         # delivery preparation 은 폴더에 매인 관찰이다 — 폴더가 갈리면 무효다(재관찰 유발).
-        self._current_delivery_preparation = None
+        self.execution.invalidate_delivery()
         try:
             self._remember_output_folder(path)
         finally:
-            self.out_dir = self._output_folder_resolution().directory
+            self.runs.out_dir = self._output_folder_resolution().directory
             self._push()
 
     def _remember_output_folder(self, path: str) -> None:
@@ -2075,14 +1076,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
-        handler = getattr(self, f"_do_{action}", None)
+        if self.data.is_stale_edit(action, payload, set(ZONE_MUTATIONS)):
+            return {"stale": True, "epoch": self.data.zone_epoch}
+        owner = self.data if action in self._DATA_ACTIONS else self
+        handler = getattr(owner, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 작업 화면 액션: {action!r}")
-        if self._is_stale_zone_edit(action, payload):
-            # 조용한 무시가 아니라 **명시 판정**이다: 사용자는 그 세계를 이미 버렸고(취소·
-            # 적용·데이터 교체는 전부 명시 행동), 버린 세계의 편집을 지금 세계에 적용하는
-            # 것이야말로 조용한 파괴다. 상태는 그대로라 push 도 하지 않는다.
-            return {"stale": True, "epoch": self.zone_epoch}
+        if action in {"range_draft_open", "range_draft_apply"}:
+            self.raise_if_generating(
+                "범위를 편집하세요" if action.endswith("open") else "적용하세요"
+            )
         result = handler(payload)
         # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — is_query 표식 핸들러(순수 질의:
         # filter_panel·guard_state). 동일 스냅샷 전량 재계산+재렌더 낭비 제거.
@@ -2096,29 +1099,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 에서 세워지므로(작업 카드 선택 vs 존 변이 13종), 액션마다 훅을 달면 그 목록이 곧
         # 두 번째 판정자가 된다. 스냅샷이 이미 같은 두 값을 읽어 `has_job`·`selected_count`
         # 로 싣고 있으므로, 여기서는 그 둘을 그대로 조회해 동시 성립만 본다.
-        if not is_query and bool(self.job_name) and self.selection.selected_count() >= 1:
+        if not is_query and bool(self.work.name) and self.data.selection.selected_count() >= 1:
             self._tutorial(Milestone.SELECT_ROWS)
         if not is_query:
             self._push()
         return result
 
-    def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
-        """이 존 변이가 **남의 세계**를 겨누고 있는가(리뷰 4R).
-
-        세대를 안 실은 발신은 검사하지 않는다 — 존을 공유하는 「기안」 화면과 초안 개념이
-        없는 호출부는 세대를 모른다(무검사 통과가 그들에게는 정답이다).
-        """
-        if action not in ZONE_MUTATIONS or "epoch" not in payload:
-            return False
-        try:
-            return int(payload["epoch"]) != self.zone_epoch
-        except (TypeError, ValueError):
-            return True   # 해석 불가 = 정체 불명 → 적용하지 않는다(안전 방향)
-
     def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).
 
-        레지스트리(``registry.names()``)와 세션 패널(``self.vm``)이 갈라지지 않게 조정한다: 선택된
+        레지스트리(``registry.names()``)와 세션 패널(``self.work.vm``)이 갈라지지 않게 조정한다: 선택된
         작업이 다른 화면에서 삭제·개명돼 레지스트리에서 사라졌으면 세션을 무효화한다 — 안 그러면
         존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께 남아 유령 작업에서 생성된다
         (리뷰 #2). 조용히 두지 않고 빈 패널로 재진술(후보·라이브러리에서도 사라져 상실이 보인다).
@@ -2127,16 +1117,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
         names = job_names(self.registry)
-        if self.job_name and self.job_name in names:
+        if self.work.name and self.work.name in names:
             # **열린 작업의 규칙이 밖에서 바뀌었으면 다시 읽는다**(4R P1). 편집기가 자기
-            # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.vm` 은 선택 시점의
+            # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.work.vm` 은 선택 시점의
             # 인메모리 사본이라 그대로 두면 **저장한 사람이 옛 규칙으로 미리보고 옛 규칙으로
             # 생성한다** — 영속·실행 경로가 화면 사이에서 갈리는 자리다. 세션(데이터·선택·
             # 필터·저장 폴더)은 그대로 두고 규칙만 갈아 끼운다.
             self._reload_active_job()
             return None
-        if self.job_name and self.job_name not in names:
-            lost = self.job_name
+        if self.work.name and self.work.name not in names:
+            lost = self.work.name
             # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
             # 레지스트리에서 사라져 가드로 잡아둘 대상이 없다(잡으면 유령 세션 좌초).
             self._do_select_job({"name": "", "confirm": True})
@@ -2146,107 +1136,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return None
 
     def _reload_active_job(self) -> bool:
-        """디스크의 최신 규칙으로 활성 VM 을 다시 세운다 — 바뀐 게 없으면 아무것도 안 한다.
-
-        **지문이 갈릴 때만** 손대는 이유(4R P1): 이 경로는 화면 전환마다 발화한다
-        (`REFRESH_ON_NAV`). 무조건 재구성하면 평시 왕복이 실행 증거를 매번 되돌려,
-        아무 일도 없었는데 게이트가 다시 닫히는 것처럼 보인다.
-
-        갈렸을 때 버리는 것은 계약이 버리라는 것뿐이다(§19.10): **완주 담보**(그 규칙으로
-        만든 문서가 담보하던 것)와 그 규칙이 앉힌 문서 좌표다.
-        """
-        if not self.job_name:
+        """durable Work 변경을 실제 seat 소유자에게 반영한다."""
+        outcome = self.work.reload()
+        if not outcome.changed:
             return False
-        try:
-            job = load_job(self.registry, self.job_name)
-        except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
-            return False
-        # **자리가 갈렸으면 다시 앉힌다**(2R P2 → §10.16 판정 E 정정, 리뷰 1R P2). 매체
-        # 교차 방어는 게이트가 원천 차단해 이 분기의 옛 역할은 죽었지만, 게이트가 **허용**하는
-        # 복구 전이(미상 `.docx` 구작업 → 라이브러리 relink 로 hwpx/txt 에 앉힘)가 자리를
-        # 갈고, 그 변화는 이 화면 밖에서 일어난다 — 여기서 안 받으면 화면이 유효해진 템플릿을
-        # 재선택 전까지 unsupported 라고 계속 주장한다. 지문 대조는 unsupported 세션(vm 없음)
-        # 을 못 보므로 대체가 아니다.
-        if seat_kinds(job.template_path) != (self.job_is_txt, self.job_unsupported):
-            self._seat_active_job(job)
-            self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
-            self._discard_delivered_artifacts()  # 배달 좌표도 그 표면의 것이다(S7-03)
-            return True
-        # TXT 세션은 여기서 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로
-        # 다음 스냅샷이 목록에서 최신값을 집는다. 할 일이 없는 것이 정상이지 누락이 아니다.
-        if self.vm is None:
-            return False
-        # **판본 메타까지 본다**(7R P2). `content_fingerprint` 는 판본 3필드를 일부러 뺀다
-        # (편집 세션에 거짓 파괴 확인을 띄우지 않으려고) — 그래서 그것만으로는 "지금 것인가"를
-        # 답할 수 없다: 규칙이 A→B→A 로 돌아온 저장은 내용 지문이 같지만 세대는 앞서 있고,
-        # 그 상태로 실행하면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
-        # 직전 판본 값도 같은 이유로 센다 — before/after 증거의 원천이다.
-        same_rules = job_content_fingerprint(self.registry, job) == job_content_fingerprint(
-            self.registry, self.vm.job
-        )
-        same_generation = (
-            job.template_revision == self.vm.job.template_revision
-            and job.binding_revision == self.vm.job.binding_revision
-            and job.previous_rules == self.vm.job.previous_rules
-        )
-        if same_rules and same_generation:
-            return False
-        self._seat_active_job(job)
-        if not same_rules:
-            # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
-            # 실행 입력이 그대로라 완주 담보를 되돌릴 이유가 없다(과잉 리셋 금지).
-            self._last_generated = None
-            self._discard_delivered_artifacts()  # 옛 규칙으로 만든 문서다(S7-03)
+        if outcome.rules_changed:
+            self.runs.last_generated = None
+            self.runs.discard_delivery()
         return True
-
-    def _seat_active_job(self, job: Job) -> None:
-        """활성 작업의 **매체와 실행뷰를 함께** 세운다 — 둘이 갈라질 자리를 남기지 않는다.
-
-        매체 파생 2분기(F6 판정 D): TXT 는 hwpx 실행뷰를 세우지 않는다(`RunViewModel` 이
-        템플릿을 hwpx 로 파싱하므로 진입 가드가 loud 거부한다).
-
-        **왜 함수 하나인가**(2R P2 근본 조치): 1R 에서 Job 사본을 지웠지만 그 자리에 매체
-        **래치**가 남았고, 그 래치는 「작업 선택」 사건에서만 갱신됐다. durable 템플릿 경로는
-        그 사건 **밖에서도** 바뀐다(라이브러리 재연결 — 같은 매체 재연결과 미상 구작업의
-        복구가 경로를 갈아 끼운다; 교차는 §10.16 판정 C 가 게이트에서 차단). 값이 갈라진
-        상태는 실행 버튼이 엉뚱한 표면을 광고하거나 재적재가 `RunViewModel` 을 세우려다
-        터지는 형태로 나타났다. 두 값을 **한 자리에서만** 세우면 갈라질 수가 없고, 갱신이
-        필요한 곳은 이 함수를 부르면 된다.
-        """
-        job_is_txt, job_unsupported = seat_kinds(job.template_path)
-        # 결속 유무도 **여기서 한 번** 판정한다(U4 §2.4 · #932 U4-C): 매체·실행뷰 유무와
-        # 무관한 작업 사실이라 vm 을 조건으로 걸면 TXT 만 이 축을 잃는다. 스냅샷마다
-        # 디스크를 다시 읽지 않으려는 이유도 같다 — 착석이 유일한 진입점이다.
-        self.job_data_unbound = not has_data_binding(job)
-        vm = (
-            None
-            if (job_is_txt or job_unsupported)
-            else RunViewModel(job, engine=self._engine)
-        )
-        # 착석 시점 Template Application 정체는 **실행뷰 유무와 무관**하다(S10-02 #859):
-        # TXT 작업도 같은 S3 권위를 지므로 vm 부재를 조건으로 걸면 매체 하나만 정체를
-        # 들고 다니게 된다. 조회는 durable id 가 있을 때만 store 를 읽는 read-only 다
-        # (미발급 Work 는 None — write-on-read 없음).
-        seated_template_application_id = (
-            self._template_change.current_template_application_id(
-                job.authority_id or None
-            )
-            if self._template_change is not None
-            else None
-        )
-        # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
-        # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
-        # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
-        if vm is not None and self.records:
-            vm.set_acquired(self.datasource, self.records)  # 데이터 귀속 원자 진입점(RC-22)
-        self.job_is_txt, self.job_unsupported = job_is_txt, job_unsupported
-        self.vm = vm
-        self._seated_template_application_id = seated_template_application_id
 
     def _run_action(self) -> dict:
         """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
-        if self.job_is_txt:
-            n = self.selection.selected_count()
+        if self.work.is_txt:
+            n = self.data.selection.selected_count()
             return {"key": "workbench", "label": f"검토·복사 시작 · {n}건"}
         return {"key": "generate", "label": "이 작업으로 문서 생성"}
 
@@ -2259,15 +1161,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         입력의 사본을 뜬다 — 적용도 안 한 편집으로 사본을 뜨면 어느 범위인지 갈린다) ·
         게이트 미충족(선택 0건에서 첫 레코드를 대신 쓰지 않는다, §18.10 수용 6).
         """
-        if not self.job_is_txt or not self.job_name:
+        if not self.work.is_txt or not self.work.name:
             return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
         self.raise_if_generating_before_swap("작업대를 여세요")
-        if self.range_draft is not None:
-            return {"ok": False,
-                    "error": "범위 편집을 먼저 적용하거나 취소한 뒤 작업대를 여세요."}
+        if self.data.range_draft is not None:
+            return {"ok": False, "error": "범위 편집을 먼저 적용하거나 취소한 뒤 작업대를 여세요."}
         gate = workbench_entry_gate(
-            has_data=self.datasource is not None,
-            selected_count=self.selection.selected_count(),
+            has_data=self.data.datasource is not None,
+            selected_count=self.data.selection.selected_count(),
         )
         if not gate.enabled:
             return {"ok": False, "error": gate.text}
@@ -2276,17 +1177,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # Job 은 **쓰는 순간** 읽는다(1R P2) — 세션이 사본을 들고 있으면 그사이 이름이
         # 바뀌거나 규칙이 저장된 것을 못 본다. 여기가 유일한 소비처라 I/O 도 1회다.
         try:
-            job = load_job(self.registry, self.job_name)
+            job = load_job(self.registry, self.work.name)
         except (FileNotFoundError, ValueError) as exc:
-            return {"ok": False, "error": (
-                f"작업 '{self.job_name}' 을(를) 읽을 수 없습니다: {exc}")}
+            return {
+                "ok": False,
+                "error": (f"작업 '{self.work.name}' 을(를) 읽을 수 없습니다: {exc}"),
+            }
         # fail-closed 재확인(매체가 갈렸다면) — 판정은 링1 착석 분류(`seat_kinds`)와 같은
         # 술어다: 작업대의 진입 자격을 상대 화면에 물으면 화면 간 결합이 되살아난다(P2-24).
         if not seat_kinds(job.template_path)[0]:
             return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
-        indices = self._indices()
+        indices = self.data.selected_indices()
         try:
-            self.workbench_open(job, [(i, self.records[i]) for i in indices])
+            self.workbench_open(job, [(i, self.data.records[i]) for i in indices])
         except (OSError, UnicodeDecodeError) as exc:
             # 템플릿이 그사이 사라졌거나 읽을 수 없다 — **화면 안에서** 사유를 말한다(5R P2).
             # 날것 예외로 올리면 호출부(.then)가 못 받아 아무 설명 없이 아무 일도 안 난 것처럼
@@ -2297,8 +1200,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 기안 txt 는 ANSI/CP949 로 저장돼 오기 쉽고, 게이트는 파일 **존재**만 세므로
             # 버튼은 열려 있다. `OSError` 가 아니라 `ValueError` 계열이라 잡지 않으면 사유를
             # 말할 자리를 그대로 지나쳐, 열리는 척하던 버튼이 아무 말도 없이 끝난다.
-            return {"ok": False, "error": (
-                f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요.")}
+            return {
+                "ok": False,
+                "error": (f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요."),
+            }
         return {"ok": True, "count": len(indices)}
 
     def _do_remount_data(self, p: dict) -> dict:
@@ -2325,74 +1230,59 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         열거**한 뒤에만 실행한다. 0건이면 잃을 것이 없으므로 바로 돈다(없는 위험에
         확인을 물리면 그 확인이 다음 진짜 확인의 무게를 깎는다).
         """
-        if not self.data_source:
+        if not self.data.source_kind:
             return {"ok": False, "error": "다시 읽을 데이터가 없습니다. 데이터를 먼저 고르세요."}
-        selected = self.selection.selected_count()
+        selected = self.data.selection.selected_count()
         if selected and not p.get("confirm"):
             return {
-                "ok": True, "needs_confirm": True,
+                "ok": True,
+                "needs_confirm": True,
                 "confirm_text": _REMOUNT_CONFIRM.format(count=selected),
             }
-        if self.data_source == "pool":
-            return self._do_load_pool({"key": self.data_pool_key})
+        if self.data.source_kind == "pool":
+            return self._do_load_pool({"key": self.data.pool_key})
         try:
-            if self.data_source == "pclm":
+            if self.data.source_kind == "pclm":
                 # 슬롯 없는 마운트라 되돌려 줄 진입점이 파일 갈래가 아니다(#937) — 성분은
                 # 여기서도 세션이 포획해 둔 것을 그대로 쓴다(재조립 금지, 위 규율 그대로).
-                self._mount_pclm(self.data_path, self.data_sheet)
+                self._mount_pclm(self.data.path, self.data.sheet)
             else:
                 self.load_data_path(
-                    self.data_path, sheet=self.data_sheet or None,
-                    header_row=self.data_header_row,
+                    self.data.path,
+                    sheet=self.data.sheet or None,
+                    header_row=self.data.header_row,
                 )
         except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술
             return {"ok": False, "error": _REMOUNT_FAILED.format(reason=exc)}
-        return {"ok": True, "label": source_label(self.data_source, self.data_label)}
+        return {"ok": True, "label": source_label(self.data.source_kind, self.data.label)}
 
-    def _mount_job_binding(self, job) -> str:
-        """이 작업의 결속 데이터를 세션에 세운다 — 성사·무변화면 ``""``, 아니면 **사유**.
-
-        U4 §2.4(#932 U4-C)의 「작업 → 데이터」 방향이 사는 자리다. 세 갈래뿐이다:
-
-        - **결속 없음**(구판 작업·앱 밖 편집분) — 데이터는 세우지 않되 **그 사실을 말한다**.
-          U4-C 마이그레이션의 유일한 표면이라 여기서 침묵하면 사용자는 자기 작업이 왜
-          매번 데이터를 다시 묻는지 영영 모른다. 세션 게이트(「데이터를 고르세요」)와
-          겹치지 않는다: 저쪽은 지금 무엇이 마운트됐는가의 사실이고 이쪽은 이 작업이
-          무엇을 기억하는가의 사실이다.
-        - **이미 그 데이터가 서 있음** — 다시 읽지 않는다. 재마운트는 선택·필터·열 선별을
-          초기화하므로(`_reset_range_for_snapshot`), 아무것도 바꾸지 않는 재읽기로 사용자의
-          선택을 지우는 것은 그 자체로 조용한 파기다. 「새로 읽기」는 명시 동사의 일이다.
-        - **다른 데이터** — 마운트한다. 마운트는 선택·필터를 초기화하는 전이라 그 사실을
-          호출측이 재진술하도록 문구를 돌려준다(조용한 초기화 금지).
-
-        실패(파일 부재·0행·읽기 오류)는 삼키지 않고 사유를 그대로 올린다 — 기존 로드
-        관문이 이미 낸 문장을 쓰고 여기서 새 문안을 발명하지 않는다. 실패해도 선택 자체는
-        진행한다: 작업을 못 여는 것이 아니라 데이터가 없는 것이고, 그 상태의 정도는
-        게이트가 말한다.
-        """
-        if not has_data_binding(job):
-            return _JOB_BINDING_ABSENT.format(name=job.name)
-        # ``kind`` 는 결속의 종류 축이다 — 마운트 갈래를 가르는 것이 그 값이고(#937), 부재
-        # 판정은 종류와 무관하다: 계약 목록 db 도 사라질 수 있는 **파일**이라 같은 술어가 센다.
-        path, sheet, header_row, kind = data_binding_of(job)
-        if data_binding_matches(
-            job, self.data_path, self.data_sheet, self.data_header_row,
-            kind=self.data_kind,
-        ):
-            return ""
-        if reference_missing(path):
-            return _JOB_BINDING_MISSING.format(path=path)
+    def _mount_job_binding(self, job: Job) -> str:
+        """선택 작업의 결속 판정에 따라 필요한 데이터 마운트만 실행한다."""
+        decision = self.work.data_binding_mount(
+            job,
+            (self.data.path, self.data.sheet, self.data.header_row, self.data.kind),
+        )
+        if decision.action != "mount":
+            return decision.notice
         try:
-            self._mount_by_kind(path, sheet, header_row, kind)
-        except Exception as exc:  # noqa: BLE001 — 사유 불문 loud 재진술(조용한 빈 상태 금지)
-            return _JOB_BINDING_FAILED.format(reason=exc)
-        return _JOB_BINDING_MOUNTED.format(label=self.data_label)
+            self._mount_by_kind(
+                decision.path,
+                decision.sheet,
+                decision.header_row,
+                decision.kind,
+            )
+        except Exception as exc:  # noqa: BLE001 - the successful Work selection remains usable.
+            return f"이 작업에 연결된 데이터를 불러오지 못했습니다. {exc}"
+        return (
+            f"이 작업에 연결된 데이터 '{self.data.label}' 을(를) 불러왔습니다. "
+            "항목 선택은 초기화됐습니다."
+        )
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
 
         **데이터-우선 보존 계약(§18.2)**: 데이터·선택·필터는 세션 소유라 작업 전환에서
-        **생존**한다 — 전환은 vm 만 재생성하고 세션 데이터를 ``set_acquired`` 로 주입한다.
+        **생존**한다. 전환은 작업 규칙을 담은 VM만 재생성한다.
         전환이 잃는 것은 실행 증거(완주 담보)뿐이고(§19.10) 게이트가 재검증을 강제하므로
         조용한 소실이 없다. 구 T1 스위치 가드(전환=세션 파기 재확인)는 파기 자체가 사라져
         함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
@@ -2408,24 +1298,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
         # 조용한 무시가 아니라 시끄러운 거부(raise → 셸 rejection 백스톱이 표면화).
         self.raise_if_generating_before_swap("작업을 전환하세요")
-        self._clear_data_notice()
+        self.data.clear_notice()
         # 사용자가 직접 골랐다 = 보관된 명시 사건보다 최신 의사. 들고 있으면 다음 마운트에서
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
-        self.preferred_work = ""
+        self.work.preferred = ""
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self._release_active_work()
             return
-        self._discard_active_work_session_evidence()
-        job = load_job(self.registry, name)
-        # 결속 데이터를 먼저 세운다 — vm 을 앉히기 **전**이어야 한다: 마운트는 세션
-        # 데이터 전이라 `set_acquired` 주입 대상이 갈리고, 뒤에 세우면 방금 앉힌 작업이
-        # 자기 마운트의 전이 판정에 걸려 스스로 해제된다.
+        self.runs.invalidate_work_results()
+        job = self.work.load(name)
+        # 결속 데이터를 먼저 세운다. 뒤에 마운트하면 방금 앉힌 작업이 데이터 전이 판정에
+        # 걸려 스스로 해제되므로 작업 착석 전에 coherent data state를 확정한다.
         mount_notice = self._mount_job_binding(job)
         # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
         # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
         # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
-        self._last_failed = []
+        self.runs.last_failed = []
         # **준비는 착석 앞이다**(#932 B5). 「변경사항 확인」이 겸직하던 최초 준비를 여기로
         # 옮기되, 착석 **뒤**에 두면 vm 은 준비 전 사본을 들고 앉는다 — 그러면 권위·
         # Application 정체가 세션에 안 서고, 생성 시점의 채택 대조가 그 간극을 「외부에서
@@ -2433,24 +1322,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 로 하던 일을 `_seat_active_job` 이 그대로 하므로, 순서만 맞추면 같은 상태가 선다.
         # 실패는 삼키지 않는다: durable 실패 기록이 남고 템플릿 존이 비활성 + 진단으로
         # 재진술하며, 같은 실물로는 되돌지 않는다.
-        was_prepared = bool(job.authority_id)
-        if self._template_change is not None:
-            self._template_change.ensure_bootstrapped(name)
-            job = load_job(self.registry, name)  # 준비가 발급한 권위를 들고 앉는다
-        self._seat_active_job(job)
-        self.job_name = name
-        if self.records and self.vm is not None:
+        job, was_prepared = self.work.prepare_for_seat(job)
+        self.work.select(job)
+        if self.data.records and self.work.vm is not None:
             # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
             # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**
             # 재생성한다: 사용자가 이미 만든 정의는 유형 재판정이 술어를 조용히 떨어뜨릴
             # 수 있어 그대로 둔다(사용자 확정 > 유형 힌트 — 조작 순서 의존을 정의 유무의
             # 명시 규칙으로 환원).
-            if self.filter is not None and not self.filter.is_active():
-                self._init_filter()
+            if self.data.filter is not None and not self.data.filter.is_active():
+                self.data.install_filter(self.data.records, self._data_filter_hints())
         # 저장 폴더는 두 축이 **같은 도출**을 지난다(U3-06 #879 → 전역화) — 여기서 템플릿 옆
         # 기본값을 직접 조립하면 설정한 전역 폴더가 작업 선택에서 조용히 덮인다(그것이 종전
         # 이 줄의 실제 거동이었고, 전역화가 지운 결함이다).
-        self.out_dir = self._output_folder_resolution().directory
+        self.runs.out_dir = self._output_folder_resolution().directory
         # **최초 준비는 선택이 진다**(#932 B5). 종전에는 이름이 전혀 다른 「변경사항 확인」
         # 단추가 그 겸직을 졌고, 그래서 갓 저장한 작업은 그걸 누르기 전까지 「포함할 내용」이
         # 서지 않았다 — 구간이 서려면 준비가 필요하고 생성이 열리려면 구간이 필요한 교착이라
@@ -2465,191 +1350,53 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
-            self.data_notice_text = mount_notice
-            self.data_notice_level = "warn"
+            self.data.notice_text = mount_notice
+            self.data.notice_level = "warn"
 
     def _release_active_work(self) -> None:
         """현재 active Work만 해제한다. 데이터와 후보는 그대로 둔다."""
-        self._discard_active_work_session_evidence()
-        self.vm = None
-        self._seated_template_application_id = None
+        self.runs.invalidate_work_results()
         # 충돌 처리는 세션 축이라 작업 해제에서 기본값으로 돌아간다. 저장 폴더는 **같이 죽지
         # 않는다** — 전역 설정이라 작업이 없어도 값이 서 있고, 아래 재도출이 그것을 말한다.
-        self._run_delivery_collision = DEFAULT_COLLISION_POLICY
-        self.job_is_txt = False
-        self.job_unsupported = False
-        self.job_name = ""
-        self.job_data_unbound = False  # 작업이 없으면 물을 대상 자체가 없다
+        self.runs.delivery_collision = DEFAULT_COLLISION_POLICY
+        self.work.clear()
         # 템플릿이 사라졌으므로 기본값 ②는 도출 불가가 되지만, 설정한 전역 폴더는 그대로
         # 산다 — 같은 함수를 지나 그 사실이 반영된다(여기서 ``""`` 로 지우지 않는다).
-        self.out_dir = self._output_folder_resolution().directory
-        self._last_failed = []
+        self.runs.out_dir = self._output_folder_resolution().directory
+        self.runs.last_failed = []
 
     def _release_changed_active_work(self, reason: str) -> None:
         """외부 권위 변경으로 stale해진 active Work를 loud RELEASE한다."""
         self._release_active_work()
-        self.data_notice_text = f"{reason} 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
-        self.data_notice_level = "warn"
-
-    def _discard_active_work_session_evidence(self) -> None:
-        """active Work에 묶인 실행 증거만 버린다."""
-        self._last_generated = None
-        # 배달 좌표는 **그 작업의 실행**이 낸 것이다(S7-03) — 작업이 바뀌면 남의 문서를
-        # 가리키게 되므로 완주 담보와 같은 자리에서 놓는다.
-        self._discard_delivered_artifacts()
-        # 덮어쓰기 확인 핀도 그 작업의 것이다 — 남기면 다음 작업의 확인 왕복이 남의 시각을
-        # 소비한다(세대 키가 이미 막지만, 수명을 같은 자리에 두어 뜻을 분명히 한다).
-        self._overwrite_now_pin = None
+        self.data.notice_text = f"{reason} 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+        self.data.notice_level = "warn"
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
-    def _ranked_now(self) -> list:
-        """현재 데이터에 **결속된** 작업의 순위 — 후보 구획과 같은 링1 판정을 재사용한다."""
-        if self.datasource is None or not self.records:
-            return []
-        fields = list(self.records[0].keys())
-        return rank_available(self._bound_jobs(list_jobs(self.registry)), fields)
-
-    def _ranked_by_schema_now(self) -> list:
-        """현재 데이터와 **구조가 맞는** 작업의 순위 — 결속 관문을 지나지 않는다.
-
-        결속 축(:meth:`_ranked_now`)과 나란히 두는 이유는 소비자가 하나뿐이기 때문이다:
-        **결속이 없는 구판 작업**(U4-C 이전에 저장됐거나 앱 밖에서 편집된 것)의 보관된
-        명시 사건. 그 작업은 정의상 어떤 마운트에도 결속되지 않아 결속 축 순위에 영영
-        서지 못하므로, 결속 축으로 판정하면 「고를 수 있다」가 **도달 불가 분기**가 되고
-        구판 작업은 편집기에서 수리하기 전까지 좌초한다. 마이그레이션은 사용자를 가두지
-        않는다 — 결속이 없는 동안은 종전대로 스키마가 답하고, 그 사실은 「데이터 연결
-        필요」 재진술이 따로 말한다.
-
-        결속 **있는** 작업은 여기 오지 않는다: :meth:`_do_prefer_work` 가 그 갈래를 먼저
-        `select_job` 으로 소비한다(자기 데이터를 끌고 오므로 지금 데이터의 호환을 물을
-        이유가 없다).
-        """
-        if self.datasource is None or not self.records:
-            return []
-        fields = list(self.records[0].keys())
-        return rank_available(list_jobs(self.registry), fields)
-
     def _do_prefer_work(self, p: dict) -> dict:
-        """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 분기를 **Python 이 가른다**.
-
-        분기 판정(결속 유무·현재 데이터 호환)은 링1 술어가 이미 소유하므로 표면이 다시
-        계산하면 같은 상태를 두 곳이 판정하게 된다(판정 단일 출처). 웹은 반환된 ``reason``
-        으로 라우팅만 한다.
-
-        ```text
-        결속 있음             → 명시 선택(select_job) 자체가 승격이자 마운트다(U4 §2.4).
-                               지금 어떤 데이터가 서 있든 그 작업이 제 데이터를 끌고 온다.
-        결속 없음 + 현재 데이터 호환   → 명시 선택(select_job) — RecordRangeState 는
-                               세션 소유라 생존
-        결속 없음 + 현재 데이터 비호환 → 활성 불변 + 보관. 표면이 「확인 필요」 탭에서
-                               사유를 보인다
-        결속 없음 + 데이터 없음        → 보관 후 안내 하나 — 데이터 선택을 반드시 지난다.
-                               마운트 시 _apply_preferred_work 가 판정한다
-        ```
-
-        **「데이터 없음」 분기는 결속 있는 작업에서 죽는다**(#932 U4-C): 종전에는 무데이터
-        상태가 모든 작업을 보관+안내로 미뤘지만, 결속이 durable 이 된 지금 그 작업은 자기
-        데이터를 들고 오므로 여기서 미룰 이유가 없다 — 미루면 승격을 한 박자 늦추는 것뿐이고
-        늦춘 자리에 아무 새 정보도 없다. 결속이 **없는** 구판 작업만 여전히 「지금 서 있는
-        데이터」에 기대야 하므로 구 분기(무데이터 보관·비호환 보관)를 그대로 잇는다.
-
-        (구 ``default_data`` 분기 — 작업의 기본 데이터 참조(#53-A)를 무데이터에서 자동
-        마운트 — 는 U2 §5.3 판정 D 로 결속 자체가 폐기되며 죽었다. F2 PR-B 판정 I 가
-        걱정한 「#53-A 도달 불가능」은 #53-A 자체가 죽어 소멸. 이후 U4-C 가 결속을 durable
-        축으로 다시 들였지만 방향은 반대다 — 작업이 데이터를 조준하는 것이 아니라 작업
-        **자신**이 데이터를 소유한다.)
-
-        **비호환에서 활성으로 세우지 않는 이유**: 게이트가 닫힌 채 화면이 "이걸 만들 참"이라고
-        말하게 된다. 계약도 그 경우 선택이 아니라 **사유 표면**으로 보내라고 적는다(§19.8).
-        """
+        """라이브러리의 명시 선택을 active Work 세션 판정으로 착지한다."""
         name = str(p.get("name", "")).strip()
-        if not name:
-            raise ValueError("겨눌 작업 이름이 비어 있습니다.")
-        if not job_exists(self.registry, name):
-            raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
-        job = load_job(self.registry, name)
-        if has_data_binding(job):
-            # select_job 자체가 그 작업의 결속 데이터를 세운다(§2.4) — 여기서 다시
-            # 호환·유무를 판정하면 같은 상태를 두 곳이 재는 것이 된다.
-            self.preferred_work = ""
-            self._do_select_job({"name": name})
-            return {"promoted": True, "name": name}
-        self.preferred_work = name
-        if self.datasource is None or not self.records:
-            return {"stored": True, "reason": "no_binding", "name": name}
-        # 결속 없는 작업의 판정 축은 **스키마**다(_ranked_by_schema_now): 결속 축으로
-        # 물으면 미결속 작업은 영영 서지 못해 이 승격이 도달 불가 분기가 되고, 구판
-        # 작업이 편집기 수리 전까지 좌초한다.
-        if any(r.name == name for r in self._ranked_by_schema_now()):
-            self.preferred_work = ""  # 소비 — 지금 이뤄졌다
-            self._do_select_job({"name": name})
-            return {"promoted": True, "name": name}
-        return {"stored": True, "reason": "incompatible", "name": name}
+        fields = (
+            list(self.data.records[0])
+            if self.data.datasource is not None and self.data.records
+            else None
+        )
+        decision = self.work.request_preferred(name, present_fields=fields)
+        if decision.action == "select":
+            self._do_select_job({"name": decision.name})
+            return {"promoted": True, "name": decision.name}
+        return {
+            "stored": True,
+            "reason": decision.reason,
+            "name": decision.name,
+        }
 
     def _apply_preferred_work(self) -> None:
-        """마운트 직후 보관된 명시 사건을 재진술한다. **1회 소비**, 자동 선택은 하지 않는다.
-
-        호환 판정은 링1(:func:`preferred_promotion`)이 내고 여기서는 후보 안내만 한다.
-        보관분은 **비운다** — 다음 마운트까지 들고 있으면
-        사용자가 잊은 의도가 나중에 조용히 발화한다(지연된 조용한 추측 금지).
-
-        선택하지 않은 사유는 삼키지 않는다: 사용자가 방금 「이 작업을 쓰겠다」고 눌렀는데
-        아무 일도 안 일어나면 그게 조용한 소실이다. 기존 활성 작업이 있어 계약이 유지를
-        지시한 경우(§18.3 2행)와 결속이 없어 이 데이터로 열 수 없는 경우를 갈라 재진술한다.
-
-        **이 자리에 남는 것은 항상 결속 없는 작업이다**(#932 U4-C): 결속 있는 작업은
-        `_do_prefer_work` 가 즉시 `select_job` 으로 소비해 여기까지 오지 않는다(자기
-        데이터를 끌고 오므로 「지금 데이터」의 호환을 물을 필요가 없다). 그래서 순위도
-        결속 축이 아니라 **스키마 축**(`_ranked_by_schema_now`)으로 매긴다 — 결속 축으로
-        물으면 미결속 작업은 영영 서지 못해 승격이 도달 불가 분기가 된다.
-
-        선택되지 못한 사유는 갈라 말한다: 지금 데이터와 구조가 맞지 않으면 「확인 필요」로,
-        맞는데도 활성 작업이 있어 안 바꿨으면 그 사실로. 결속 자체가 없다는 사실은 별개
-        축이라 선택 뒤 게이트가 말한다 — 여기서 겹쳐 말하면 같은 상태를 두 곳이 판정한다.
-        """
-        name, self.preferred_work = self.preferred_work, ""
-        if not name:
-            return
-        try:
-            exists = job_exists(self.registry, name)
-            ranked = self._ranked_by_schema_now() if exists else []
-        except Exception:  # noqa: BLE001 — 후보 조회 실패는 성공한 데이터 마운트를 되돌리지 않는다.
-            self.data_notice_text = (
-                f"「문서 작업」에서 고른 '{name}' 작업을 다시 확인할 수 없습니다. "
-                "아래 후보에서 문서 작업을 다시 선택하세요."
-            )
-            self.data_notice_level = "warn"
-            return
-        if not exists:  # 그사이 삭제·개명 — 유령을 겨누지 않는다
-            self.data_notice_text = (
-                f"「문서 작업」에서 고른 '{name}' 작업이 더는 없습니다."
-            )
-            self.data_notice_level = "warn"
-            return
-        promoted = preferred_promotion(
-            ranked, active=self.job_name, preferred=name,
-        )
-        # 다음 걸음은 **언제나 「문서 작업」**이다(#932 U4-C). 종전에는 「상위 후보에 있으면
-        # 아래에서 고르세요」로 갈랐지만, 후보 줄은 결속 축이라 결속 없는 이 작업은 거기
-        # 서지 않는다 — 없는 자리를 가리키는 안내는 이행 불가능한 지시다.
-        next_action = "'문서 작업'에서 직접 선택하세요."
-        if promoted:
-            self.data_notice_text = (
-                f"이전에 고른 '{promoted}' 작업을 이 데이터로 쓸 수 있습니다. {next_action}"
-            )
-            self.data_notice_level = "warn"
-            return
-        if self.job_name:
-            self.data_notice_text = (
-                f"'{self.job_name}' 작업이 이미 열려 있어 '{name}' 으로 바꾸지 않았습니다. "
-                f"{next_action}"
-            )
-        else:
-            self.data_notice_text = (
-                f"「문서 작업」에서 고른 '{name}' 은(는) 이 데이터와 구조가 맞지 않습니다. "
-                "필요한 열을 갖춘 데이터를 고르거나 편집기에서 연결을 고치세요."
-            )
-        self.data_notice_level = "warn"
+        """마운트 뒤 보관 선택을 한 번 소비해 세션 소유 문안을 싣는다."""
+        fields = list(self.data.records[0]) if self.data.records else []
+        notice = self.work.consume_preferred(present_fields=fields)
+        if notice is not None:
+            self.data.notice_text = notice.text
+            self.data.notice_level = notice.level
 
     def _do_toggle_favorite(self, p: dict) -> dict:
         """즐겨찾기 지정/해제(§18.5) — 정렬 메타만 바꾸고 세션은 건드리지 않는다.
@@ -2672,8 +1419,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         try:
             set_favorite(self.registry, name, bool(p["value"]))
         except (FileNotFoundError, ValueError) as exc:
-            return {"ok": False,
-                    "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
+            return {"ok": False, "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
         return {"ok": True}
 
     def _do_browse_tab(self, p: dict) -> None:
@@ -2682,13 +1428,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         미지 값은 링1이 사용 가능으로 퇴화시키므로(표면 오타가 빈 화면을 만들지 않는다)
         여기서는 받은 값을 그대로 세션에 둔다.
         """
-        self.browse_tab = (
-            TAB_NEEDS_ACTION if p.get("tab") == TAB_NEEDS_ACTION else TAB_AVAILABLE
-        )
+        self.work.set_browse_tab(str(p.get("tab", "")))
 
     def _do_browse_query(self, p: dict) -> None:
         """문서 탐색 검색어 갱신 — 대상은 작업 표시 이름만(§18.6, 판정은 링1)."""
-        self.browse_query = str(p.get("text", ""))
+        self.work.set_browse_query(p.get("text", ""))
 
     def _do_dismiss_data_notice(self, p: dict) -> None:
         """데이터 통지 닫기(U4 §2.12 · #945) — 세우는 자리의 짝.
@@ -2701,11 +1445,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         레지스트리 조회 실패 경고는 여기서 지우지 않는다(지울 수도 없다) — 그 문안은
         스냅샷마다 실측에서 다시 합성되는 자동 소멸분이라 이 문의 대상이 아니다.
         """
-        self._clear_data_notice()
-
-    def _clear_data_notice(self) -> None:
-        self.data_notice_text = ""
-        self.data_notice_level = ""
+        self.data.clear_notice()
 
     # (_auto_aim_default(#53-A 기본 데이터셋 자동 조준)는 U2 §5.3 판정 D 로 삭제 —
     #  작업↔데이터 결속이 폐기돼 작업 선택이 데이터를 세우지 않는다. #347.)
@@ -2721,22 +1461,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         자기 근거로 댄다. 편집기 진입과 같은 부류라 같은 술어를 쓴다.
         """
         self.raise_if_generating("템플릿을 다시 연결하세요")
-        res = relink_job_template(
-            self.registry, p["name"], p.get("path", ""),
-            engine=self._engine, confirm=bool(p.get("confirm")),
+        res = self.work.relink_template(
+            p["name"],
+            p.get("path", ""),
+            confirm=bool(p.get("confirm")),
         )
-        # 「지금 열어 둔 작업인가」는 **이름**으로 묻는다(1R P2) — `self.vm.job.name` 은 hwpx
+        # 「지금 열어 둔 작업인가」는 **이름**으로 묻는다(1R P2) — `self.work.vm.job.name` 은 hwpx
         # 세션에서만 참이라 TXT 를 재연결하면 세션이 옛 템플릿을 그대로 그린다. 같은 질문에
         # 매체별 술어를 쓰면 그게 곧 구멍이다.
-        if res.get("relinked") and self.job_name == p["name"]:
-            self._invalidate_execution_evidence()
+        if res.get("relinked") and res.pop("active"):
+            self.execution.invalidate()
             self._do_select_job({"name": p["name"]})
             res["restated"] = (
                 "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니 데이터와 저장 폴더 "
                 "선택을 확인하세요."
             )
         elif res.get("relinked"):
+            res.pop("active", None)
             res["restated"] = "템플릿을 다시 연결했습니다."
+        else:
+            res.pop("active", None)
         return res
 
     def _do_template_check(self, p: dict) -> dict:
@@ -2748,18 +1492,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self._template_change is None:
             raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
-        if not self.job_name:
+        if not self.work.name:
             raise ValueError("먼저 작업을 선택하세요")
-        result, restored_job, application_id = (
-            self._template_change.check_for_seated_context(
-                self.job_name, str(p.get("request_id", ""))
-            )
+        result, restored_job, application_id = self._template_change.check_for_seated_context(
+            self.work.name, str(p.get("request_id", ""))
         )
         if result.get("reason") == "work_context_changed":
             self._release_changed_active_work("문서 작업이 변경되어")
             result["error"] = (
-                "문서 작업이 변경되어 선택을 해제했습니다. "
-                "문서 작업을 다시 선택하세요."
+                "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
             )
             return result
         if result.get("ok") is True and not self._seat_is_identified():
@@ -2769,8 +1510,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     "ok": False,
                     "reason": "work_context_changed",
                     "error": (
-                        "문서 작업이 변경되어 선택을 해제했습니다. "
-                        "문서 작업을 다시 선택하세요."
+                        "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
                     ),
                 }
         return result
@@ -2778,7 +1518,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _seat_is_identified(self) -> bool:
         """착석한 Work 의 durable 정체가 이미 서 있는가 — **실행뷰 유무와 무관**(S10-03 #860).
 
-        종전에는 채택 자체가 ``self.vm is not None`` 아래 있어서, 실행뷰를 세우지 않는 TXT 는
+        종전에는 채택 자체가 ``self.work.vm is not None`` 아래 있어서, 실행뷰를 세우지 않는 TXT 는
         확인을 통과해도 `_seated_template_application_id` 가 세션 내내 ``None`` 이었다
         (`_seat_active_job` 은 이미 매체와 무관하게 그것을 세우는데, 확인이 **바꾼** 값을 다시
         받지 못했다). 매체 하나만 자기 정체를 들고 다니는 상태다.
@@ -2787,9 +1527,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         선 것이고, TXT 는 그 사본 자체가 없어(Job 은 쓸 때마다 registry 에서 다시 읽는다)
         세션이 드는 정체가 이 id 하나다.
         """
-        if self._seated_template_application_id is None:
+        if self.work.seated_template_application_id is None:
             return False
-        return self.vm is None or bool(self.vm.job.authority_id)
+        return self.work.vm is None or bool(self.work.vm.job.authority_id)
 
     def _adopt_seated_identity(
         self, restored_job: "Job | None", application_id: "str | None"
@@ -2803,15 +1543,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if application_id is None:
             return False
-        if self.vm is None:
-            self._seated_template_application_id = application_id
+        if self.work.vm is None:
+            self.work.seated_template_application_id = application_id
             return True
-        if restored_job is None or not self._can_adopt_seated_identity(
-            self.vm.job, restored_job
+        if restored_job is None or not self.work.can_adopt_seated_identity(
+            self.work.vm.job, restored_job
         ):
             return False
-        self.vm.job.authority_id = restored_job.authority_id
-        self._seated_template_application_id = application_id
+        self.work.vm.job.authority_id = restored_job.authority_id
+        self.work.seated_template_application_id = application_id
         return True
 
     def _do_template_apply(self, p: dict) -> dict:
@@ -2823,17 +1563,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self._template_change is None:
             raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
-        if not self.job_name:
+        if not self.work.name:
             raise ValueError("먼저 작업을 선택하세요")
         self.raise_if_generating("템플릿 변경사항을 적용하세요")
-        result, committed_application_id = (
-            self._template_change.apply_for_seated_context(
-                self.job_name, str(p.get("change_token", ""))
-            )
+        result, committed_application_id = self._template_change.apply_for_seated_context(
+            self.work.name, str(p.get("change_token", ""))
         )
         if result.get("is_current") is True:
-            self._seated_template_application_id = committed_application_id
-            self._invalidate_execution_evidence()
+            self.work.seated_template_application_id = committed_application_id
+            self.execution.invalidate()
             self._maybe_auto_check(effective_basis_changed=True)
         elif result.get("status") == "applied_then_advanced":
             self._release_changed_active_work("문서 작업에 다른 변경이 이어져")
@@ -2858,14 +1596,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         new_clean = new.strip()
-        if self.job_name == name:
-            self.job_name = new_clean
-            if self.vm is not None:
-                self.vm.job.name = new_clean
+        self.work.rename(name, new_clean)
         # 직전 런의 주체도 **같은 전이에서** 추종한다(3R P2) — 안 따라가면 같은 작업의
         # 결과가 남의 것으로 판정돼 복구 행동이 사라지고 강등 문구가 거짓말을 한다.
-        if self._last_run_job == name:
-            self._last_run_job = new_clean
+        if self.runs.last_run_job == name:
+            self.runs.last_run_job = new_clean
         # (템플릿 권위 identity 는 Job durable 필드(`authority_id`)라 개명을 저절로
         #  따라간다 — 여기서 옮길 인덱스가 없다, S3-09 리뷰 P1.)
         return {"ok": True}
@@ -2880,7 +1615,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """타 화면(홈) 삭제 가드 조회(#268 리뷰) — 이 화면이 ``name`` 에 무장 세션을 열어
         두었으면 가드 수치(+``screen``)를 돌려준다. 판정·수치는 :meth:`_guard_state` 단일
         출처를 재사용한다(문안이 실제 소실 집합과 어긋나지 않게)."""
-        if name and name == self.job_name:
+        if name and name == self.work.name:
             g = self._guard_state()
             if g["armed"]:
                 return {"screen": self.name, **g}
@@ -2888,9 +1623,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _do_cancel_generation(self, p: dict) -> dict:
         """진행 중인 문서를 완결한 뒤 다음 레코드부터 중단하도록 요청한다."""
-        run = self._run
-        if run is not None:
-            run.request_cancel()
+        self.runs.request_cancel()
         return {"ok": True}
 
     def _do_select_failed(self, p: dict) -> dict:
@@ -2910,14 +1643,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         직접 교체**하는 결과 구획의 행동이라, 초안 아래에서 커밋을 갈면 사용자가 보고 있는
         범위와 적용 대상이 조용히 갈린다. 표면상 모달에 가려 닿지 않지만 잠금은 상태가 진다.
         """
-        if self.range_draft is not None:
+        if self.data.range_draft is not None:
             raise ValueError("범위 편집기를 닫은 뒤에 실패분을 선택할 수 있습니다.")
-        idx = [i for i in self._last_failed if 0 <= i < len(self.records)]
+        idx = [i for i in self.runs.last_failed if 0 <= i < len(self.data.records)]
         if not idx:
             return {"selected": 0}
-        self.selection.set_none()
+        self.data.selection.set_none()
         for i in idx:
-            self.selection.toggle(i, True)
+            self.data.selection.toggle(i, True)
         return {"selected": len(idx)}
 
     # 그룹 지정·개명·해산 동사는 U4 §2-30 에서 표면과 함께 걷혔다. 판정 몸통
@@ -2925,66 +1658,52 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     # (`settings.recollapse_job_group`)은 **동결**로 남는다 — 지우지 않되 제품이 부르지
     # 않는다. 되살리면 이 화면이 다시 소유자다(열린 세션의 정체와 결속된 동사라서).
 
-    # (행 선택 4액션·필터 12액션·직전 필터 슬롯·소스 키는 DataZoneMixin 으로 이동 —
-    #  슬라이스 6 PR-2b: txt 큐가 같은 존을 재사용한다. data_zone.py 가 정본.)
-
-    def _records(self) -> list:
-        return self.records  # 세션 소유(데이터-우선) — vm 은 주입 소비자일 뿐
-
-    def _init_filter(self) -> None:
-        """데이터 겨눔 시 필터 신설(결정 24) — 설치는 믹스인, 힌트(매핑 확정 유형)는 화면 몫.
-
-        작업 미선택 마운트(데이터-우선)에선 힌트 없이 값 스니핑만 쓴다 — 작업을 나중에
-        선택해도 필터는 데이터 스코프라 재생성하지 않는다(§18.10: 필터는 가시성만).
-        """
-        hints = {
+    def _data_filter_hints(self) -> "dict[str, str]":
+        return {
             m.source: m.type
-            for m in (self.vm.job.mapping.mappings if self.vm is not None else [])
+            for m in (self.work.vm.job.mapping.mappings if self.work.vm is not None else [])
             if m.source and m.type in (KIND_TEXT, KIND_DATE, KIND_AMOUNT)
         }
-        self._install_filter(self.records, hints)
-        self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
-        self._discard_delivered_artifacts()  # 배달 좌표도 이전 데이터의 것이다(S7-03)
-        self._overwrite_now_pin = None       # 확인 왕복의 시각도 이전 데이터의 것이다
+
+    def _invalidate_data_results(self) -> None:
+        self.execution.invalidate_preparations()
+        self.runs.invalidate_data_results()
 
     # (_do_ack_field·_do_unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13.
     #  빈 값은 #957 이후 차단이 아니라 표식이라 동의 사건 자체가 없다.)
 
-    # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
-    def _pool_loader(self):
-        """세션 소유 풀 로더(데이터-우선) — 작업 미선택에도 겨눌 수 있다."""
-        return self._load_pool_records
+    def _do_load_pool(self, p: dict) -> dict:
+        key = p["key"]
+        resolved: list = []
 
-    def _load_pool_records(self, item) -> list:
-        """풀 항목 → 세션 마운트. 0건이면 상태 불변(공용 관문이 문구 재진술).
+        def load(item) -> list:
+            self.raise_if_generating_before_swap("데이터를 바꾸세요")
+            source, records = resolve_pool_source(item, source_factory=self._pool_source_factory)
+            resolved.append(source)
+            return records
 
-        링1 리졸버(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)를 직접 소비한다 —
-        vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
-        있으면 같은 데이터를 ``set_acquired`` 로 주입(데이터 귀속 원자 진입점, RC-22).
-        """
-        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
-        source, records = resolve_pool_source(
-            item, source_factory=self._pool_source_factory
+        res = load_pool_into(self.data.pool_registry, key, load)
+        if not res["ok"]:
+            return res
+        item = res["item"]
+        records = res["records"]
+        path, sheet, header_row, kind = pool_reference_quad(item)
+        self.runs.last_failed = []
+        self._commit_data_mount(
+            datasource=resolved[0],
+            records=records,
+            incoming=(path, sheet, header_row, kind),
+            label=item.name,
+            source_kind="pool",
+            path=path,
+            sheet=sheet,
+            header_row=header_row,
+            kind=kind,
+            pool_key=key,
+            data_key=self.data.pool_key_for(key, item),
         )
-        if not records:
-            return []
-        # 풀 겨눔도 **같은 시점의 한 벌**을 판정에 넘긴다 — 믹스인이 이 호출 뒤에 세션
-        # 성분을 세우므로(순서 계약) 여기서 세션을 읽으면 직전 데이터를 묻게 된다.
-        # 종류도 그 한 벌의 성분이다(#937) — 참조가 가리키는 것이 엑셀 파일인지 계약 목록
-        # db 인지를 여기서 흘리면 결속 판정이 경로 문자열 하나로 두 종류를 뭉갠다.
-        self._commit_data_transition(source, records, pool_reference_quad(item))
-        return records
-
-    def _after_pool_load(self, records: list) -> None:
-        """풀 겨눔도 파일과 동일하게 새 데이터 = 선택 0건(§18.2)·ack·필터 초기화를 탄다."""
-        self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
-        self._last_failed = []  # 파일 마운트와 같은 수명(§10.10 판정 F)
-        self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
-        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
-        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
-        # 파일 마운트와 **같은 한 자리**를 부른다(U3-07 #880) — 성분은 믹스인이 이 호출
-        # 직전에 한 벌로 포획해 뒀다(경로·시트·헤더 행·슬롯 키).
         self._remember_data_source()
+        return {"ok": True, "label": source_label("pool", item.name)}
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:
@@ -2995,13 +1714,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         가정하면 새 실행이 시작된 뒤 도착한 앞선 런의 델타가 새 진행바를 뒤로 돌린다 —
         토큰 대조가 그 창을 닫는다. 값은 이 컨트롤러가 만들지 않고 되돌리기만 한다.
         """
-        run = self._run
-        self._push_sink(self.name, {
-            "progress": {
-                "done": done, "total": total,
-                "run_token": run.token if run is not None else "",
+        run = self.runs.run
+        self._push_sink(
+            self.name,
+            {
+                "progress": {
+                    "done": done,
+                    "total": total,
+                    "run_token": run.token if run is not None else "",
+                },
             },
-        })
+        )
 
     def generate(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
         """게이트 통과 시 동기 생성 → 결과 dict. 덮어쓰기는 웹 재진술 후 재호출(RC-02).
@@ -3035,82 +1758,78 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         버린다 — 세대 자체를 지키는 것은 각 갈래의 stale 검사(managed 는 sealed basis
         digest·prep 캐시, legacy 는 `plan_generation` 재계획)다.
         """
-        return "|".join((
-            self.job_name,
-            self._data_key,
-            str(self._snapshot_gen),
-            str(self.zone_epoch),
-            ",".join(str(i) for i in self._indices()),
-            self._last_sealed_basis_digest or "-",
-        ))
-
-    def _arm_overwrite_now_pin(self, now: "datetime") -> None:
-        """이 판정이 쓴 시각을 확인 재호출 몫으로 남긴다 — 소비는 :meth:`_capture_run_now`."""
-        self._overwrite_now_pin = (self._overwrite_pin_key(), now)
-
-    def _capture_run_now(self, confirm_overwrite: bool) -> "datetime | None":
-        """실행 진입 시각 **1회** 캡처(#957) — 런 안의 이름·본문·충돌 판정이 한 시각을 쓴다.
-
-        확인 재호출이면 그 판정이 쓴 시각을 되쓴다(핀). 핀은 어느 갈래로 끝나든 **소비하며
-        소거**한다: 남겨 두면 다음 실행이 지난 왕복의 시각으로 날짜 토큰을 늙힌다.
-
-        ``None`` 은 **낡은 확인**이다: 물어본 세계와 대답이 돌아온 세계가 다르다(존 변이·선택
-        변경·데이터 교체·작업 전환). 확인은 예약이 아니라 **그 배치에 대한** 동의라, 그대로
-        진행하면 사용자가 본 적 없는 파괴가 「확인했다」를 업고 통과한다. 핀이 아예 없는
-        확인은 거절하지 않는다 — 그것은 왕복이 아니라 호출자의 명시 선언이다(CLI·테스트).
-        """
-        pin = self._overwrite_now_pin
-        self._overwrite_now_pin = None
-        if confirm_overwrite and pin is not None:
-            return pin[1] if pin[0] == self._overwrite_pin_key() else None
-        return self._clock()
+        return "|".join(
+            (
+                self.work.name,
+                self.data.data_key,
+                str(self.data.snapshot_generation),
+                str(self.data.zone_epoch),
+                ",".join(str(i) for i in self.data.selected_indices()),
+                self.execution.sealed_basis_digest or "-",
+            )
+        )
 
     def _generate_with_token(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
         """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
-        if self.vm is None:
+        if self.work.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
-        job = self.vm.job
+        job = self.work.vm.job
         # S6-05(#812): S6-absent \uac00\ub4dc(authority_id \ub2e8\ub3c5 \ud544\ud130)\ub294 \ucca0\uac70\ub410\ub2e4 \u2014 \uc2e4\ud589 \uacbd\ub85c \uc120\ud0dd
         # (\uc758\ubbf8 4)\uc740 \uc544\ub798\uc5d0\uc11c managed_hwpx \ud30c\uc0dd\uacfc \uac19\uc740 \uc6d0\ucc9c\uc73c\ub85c \uac08\ub9ac\uace0, managed \uac08\ub798\uc758
         # \uc2dc\uc791 \uc790\uaca9\uc740 start gate \uac00, slot-bearing \uc758 legacy \uc720\uc785\uc740 admission \uc774 \uac01\uc790 \uc18c\uc720\ud55c
         # \uc0ac\uc720\ub85c \ub2eb\ub294\ub2e4(#806 R1\u00b7R2 \uac00 \ub51b\ub294 \uc0ac\uc2e4).
 
-        if self.range_draft is not None:
+        if self.data.range_draft is not None:
             # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
             # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
             # 계약면 2). 거절 문안이 다음 행동(적용 또는 취소)을 지목한다.
             return {
-                "ok": False, "level": "warn",
+                "ok": False,
+                "level": "warn",
                 "error": "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요.",
             }
-        if not self._generation_lock.acquire(blocking=False):
-            return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
-        # 이 런의 주체를 **자물쇠를 쥔 직후에 붙들고 이후 라이브 세션을 다시 읽지 않는다**
-        # (#302 P1): 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로
-        # 새고, 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다. 주체·판본·규칙 지문·
-        # cancel Event·상관 토큰의 정본은 Application run 객체다(P2-23) — 진행 델타의
-        # 이름표는 자물쇠를 쥔 런만 세우고, 끝나면 핸들을 비운다(남은 이름표는 어떤 런도
-        # 겨누지 않는다).
-        run_vm = self.vm
-        run = start_run(
-            getattr(run_vm, "job", None), job_name=self.job_name, token=run_token
-        )
-        self._run = run
+        run_vm = self.work.vm
         visible_identity_before = (
-            self.vm,
-            getattr(getattr(self.vm, "job", None), "authority_id", None),
-            self._seated_template_application_id,
-            self.job_name,
+            self.work.vm,
+            getattr(getattr(self.work.vm, "job", None), "authority_id", None),
+            self.work.seated_template_application_id,
+            self.work.name,
         )
+        run = self.runs.begin(
+            getattr(run_vm, "job", None), job_name=self.work.name, token=run_token
+        )
+        if run is None:
+            return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
         try:
             try:
-                run_now = self._capture_run_now(confirm_overwrite)
+                # 잠금 직후 VM·데이터·출력 폴더를 한 번만 붙든다.
+                run_input = self.runs.capture_input(
+                    datasource=self.data.datasource,
+                    records=self.data.records,
+                    indices=self.data.selected_indices(),
+                    snapshot_generation=self.data.snapshot_generation,
+                    work_ref=self.work.name,
+                    source_schema_keys=(
+                        tuple(self.data.filter.columns)
+                        if self.data.filter is not None
+                        else tuple(self.data.records[0].keys())
+                        if self.data.records
+                        else ()
+                    ),
+                    output_directory=self.runs.out_dir,
+                )
+                run_now = self.runs.capture_now(
+                    confirm_overwrite=confirm_overwrite,
+                    pin_key=self._overwrite_pin_key(),
+                    clock=self._clock,
+                )
                 if run_now is None:
                     # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
                     # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
                     visible_identity_changed = False
                     result = {
-                        "ok": False, "level": "warn",
+                        "ok": False,
+                        "level": "warn",
                         "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
                         "문서 만들기를 다시 실행하세요.",
                     }
@@ -3119,43 +1838,48 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     # 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
                     visible_identity_changed = False
                     result = self._generate_managed_locked(
-                        run, run_vm, confirm_overwrite=confirm_overwrite, now=run_now,
+                        run,
+                        run_vm,
+                        run_input,
+                        confirm_overwrite=confirm_overwrite,
+                        now=run_now,
                     )
                 else:
                     reject = self._resolve_managed_template(run_vm)
                     visible_identity_changed = (
-                        self.vm,
-                        getattr(getattr(self.vm, "job", None), "authority_id", None),
-                        self._seated_template_application_id,
-                        self.job_name,
+                        self.work.vm,
+                        getattr(getattr(self.work.vm, "job", None), "authority_id", None),
+                        self.work.seated_template_application_id,
+                        self.work.name,
                     ) != visible_identity_before
                     result = (
                         reject
                         if reject is not None
                         else self._generate_locked(
-                            run, run_vm,
-                            confirm_overwrite=confirm_overwrite, now=run_now,
+                            run,
+                            run_vm,
+                            run_input,
+                            confirm_overwrite=confirm_overwrite,
+                            now=run_now,
                         )
                     )
             finally:
-                self._run = None
                 # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
                 # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
                 managed = (
-                    run_vm is not None
-                    and getattr(run_vm, "_managed_template", None) is not None
+                    run_vm is not None and getattr(run_vm, "_managed_template", None) is not None
                 )
                 if run_vm is not None:
                     run_vm._managed_template = None
                 if managed and self._template_change is not None:
                     self._template_change.clear_generation_staging()
-                self._generation_lock.release()
+                self.runs.finish()
         except Exception:
             if (
-                self.vm,
-                getattr(getattr(self.vm, "job", None), "authority_id", None),
-                self._seated_template_application_id,
-                self.job_name,
+                self.work.vm,
+                getattr(getattr(self.work.vm, "job", None), "authority_id", None),
+                self.work.seated_template_application_id,
+                self.work.name,
             ) != visible_identity_before:
                 self._push()
             raise
@@ -3189,13 +1913,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         조회만으로 durable 표식이 생긴다. 실패는 「구성 없음」이 아니라 「모른다」라서
         ``None`` 이고, 그 경우 T17 은 서지 않는다(추측으로 체크하지 않는다).
         """
-        if self._slot_configuration is None or not self.job_name:
+        if self.execution.slot_configuration is None or not self.work.name:
             return None
-        job = getattr(self.vm, "job", None)
+        job = getattr(self.work.vm, "job", None)
         if job is None or job.media != "hwpx" or not job.authority_id:
             return None
         try:
-            response = self._slot_configuration.current_slot_configuration_view(self.job_name)
+            response = self.execution.current_slot_view(self.work.name)
         except SlotConfigurationProductError:
             return None
         projection = response.current_view.projection
@@ -3215,14 +1939,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if int(result.get("succeeded", 0) or 0) < 1:
             return
-        job = self._last_run_job or self.job_name
+        job = self.runs.last_run_job or self.work.name
         if not job:
             return
         self._tutorial(Milestone.GENERATE)
         if self._tutorial_loop.was_compiled(self._current_template_path()):
             self._tutorial(Milestone.GENERATE_FROM_COMPILED)
         facts = self._tutorial_loop.note_generated(
-            job, mount_key=self._data_key, slot_shape=self._tutorial_slot_shape(),
+            job,
+            mount_key=self.data.data_key,
+            slot_shape=self._tutorial_slot_shape(),
         )
         if facts.repeat_job:
             self._tutorial(Milestone.SECOND_LAP)
@@ -3233,25 +1959,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _current_template_path(self) -> str:
         """이번 실행이 쓴 템플릿 경로 — 세션 VM 이 든 값(없으면 빈 문자열)."""
-        job = getattr(self.vm, "job", None)
+        job = getattr(self.work.vm, "job", None)
         return str(getattr(job, "template_path", "") or "")
 
     def _generate_managed_locked(
-        self, run, run_vm, *, confirm_overwrite: bool = False,
+        self,
+        run,
+        run_vm,
+        run_input: RunInputCapture,
+        *,
+        confirm_overwrite: bool = False,
         now: "datetime | None" = None,
     ) -> dict:
-        """managed HWPX 실행(S6-05 · #812) — legacy generator 를 부르지 않는다(S6-9).
-
-        판정 재조립 0(S6-10): 준비 판정은 workbench observation 이, payload↔digest 짝은
-        같은 seal 응답 출처가, 시작 자격은 start gate 가, 안착은 delivery coordinator 가
-        소유한다. 거절 문안은 observation 의 disabled_reason 재진술이다(구 가드와 같은
-        원천, 다른 자리). 취소는 record 경계에서만 읽고 write 0 이다(legacy 의 부분 유지와
-        다름을 요약이 말한다).
-        """
-        self._last_run_job = run.job_name
-        self._run_revisions = dict(run.revisions)
+        """확인된 managed 준비 값을 실행 coordinator에 넘긴다."""
+        self.runs.adopt_run_metadata(run)
         try:
-            observation = self.workbench_observation()
+            observation = self.workbench_observation(
+                run_input=run_input,
+                filename_pattern=run_vm.job.filename_pattern,
+            )
         except ValueError:
             return {
                 "ok": False,
@@ -3265,10 +1991,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 or "필요한 준비를 먼저 완료해 주세요",
                 "level": "warn",
             }
-        payload = self._last_sealed_plan_payload
+        payload = self.execution.sealed_plan_payload
         if payload is None or (
-            execution_basis_digest(payload.execution_basis)
-            != self._last_sealed_basis_digest
+            execution_basis_digest(payload.execution_basis) != self.execution.sealed_basis_digest
         ):
             return {
                 "ok": False,
@@ -3276,27 +2001,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "변경사항을 다시 확인해 주세요.",
                 "level": "warn",
             }
-        prep = self._current_delivery_preparation
+        prep = self.execution.delivery_preparation
         if prep is None or not isinstance(prep.result, CurrentResolvedDelivery):
             return {
                 "ok": False,
                 "error": "필요한 준비를 먼저 완료해 주세요",
                 "level": "warn",
             }
-        # 도출한 기본 폴더는 이 순간까지 없을 수 있다(U3-06 #879) — 문서를 만들기로 한 지금
-        # 만든다(구식 축의 `ensure_output_directory` 와 같은 함수·같은 시점). 못 만들면 조용한
-        # 실패로 흘리지 않고 사유를 돌려준다.
-        try:
-            ensure_output_directory(prep.result.output_directory)
-        except OSError:
-            return {
-                "ok": False,
-                "error": "저장 폴더를 만들 수 없습니다. 다른 폴더를 선택하세요.",
-                "level": "warn",
-            }
+        output_error = self.runs.prepare_managed_output(prep)
+        if output_error is not None:
+            return output_error
         context = (
-            self._seal_execution.managed_run_context(self.job_name)
-            if self._seal_execution is not None
+            self.execution.managed_run_context(run_input.work_ref)
+            if self.execution.seal_execution is not None
             else None
         )
         if context is None:
@@ -3305,85 +2022,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "error": "현재 환경에서는 문서를 만들 수 없습니다",
                 "level": "warn",
             }
-        # 파괴 확인은 legacy 와 **같은 왕복**이다(#957): 덮어쓸 항목이 하나라도 서면 첫
-        # 호출은 만들지 않고 수치를 재진술해 돌아가고, 확인 뒤 같은 토큰의 재호출만 앉힌다.
-        # 판정 재조립 0 — 처분은 이미 delivery 가 항목마다 확정한 사실(`WRITE_OVERWRITE`)을
-        # 세기만 한다. 되읽는 prep 은 **첫 호출과 같은 캐시**라(record/binding/pattern/intent
-        # 가 그대로면 재사용) 확인창이 말한 집합과 앉히는 집합이 같다 — 그 사이 세계가
-        # 바뀌면 위 `create_documents_enabled`·basis digest·prep 검사가 먼저 닫는다.
-        overwriting = [
-            item.resolved_output_relative_path
-            for item in prep.result.ordered_items
-            if item.collision_disposition == WRITE_OVERWRITE
-        ]
-        run_now = now if now is not None else self._clock()
-        if overwriting and not confirm_overwrite:
-            self._arm_overwrite_now_pin(run_now)
-            return overwrite_response(
-                total=len(prep.record_preparation.ordered_model_indices),
-                conflict_names=[Path(name).name for name in overwriting],
-            )
-        validated_at = run_now.isoformat(timespec="seconds")
-        outcome = run_managed_generation(
-            root=context.root,
-            workspace_instance_id=context.workspace_instance_id,
-            work_authority_id=context.work_authority_id,
-            plan_payload=payload,
-            ordered_raw_snapshots=prep.record_preparation.raw_records,
-            resolved_delivery=prep.result,
-            validated_at=validated_at,
-            runtime_registry=context.runtime_registry,
-            runtime_capability_manifest_digest=(
-                context.runtime_capability_manifest_digest
+        result = self.runs.run_managed(
+            run,
+            ManagedRunInput(
+                payload=payload,
+                preparation=prep,
+                context=context,
+                sealed_basis_digest=self.execution.sealed_basis_digest or "",
+                capture=run_input,
+                filename_source_columns=filename_source_columns(
+                    run_vm.job, run_input.source_schema_keys
+                ),
             ),
-            current_basis_digest_reader=context.current_basis_digest_reader,
-            cancel_requested=run.cancel.is_set,
+            now=now if now is not None else self._clock(),
+            confirm_overwrite=confirm_overwrite,
+            overwrite_pin_key=self._overwrite_pin_key(),
         )
-        return self._managed_result_dict(outcome, prep, payload, context, validated_at)
-
-    def _managed_result_dict(self, outcome, prep, payload, context, now: str) -> dict:
-        """managed 실행 결과 → legacy 와 같은 키 집합의 결과 dict(JobResultZone 무변경)."""
-        delivered_outcome = isinstance(
-            outcome, (DeliveryCompleted, DeliveryAborted, ManagedReadBackFailed)
-        )
-        ledger_note = ""
-        if delivered_outcome:
-            # 새 실행의 산출물 좌표와 관찰 폐기는 원장 callback보다 먼저 보인다(기존 순서).
-            self._last_delivered = tuple(outcome.delivered)
-            self._artifact_view = None
-            try:
-                write_managed_delivery_ledger(
-                    prep.result.output_directory,
-                    generated_at=now,
-                    work_authority_id=context.work_authority_id,
-                    execution_basis_digest=self._last_sealed_basis_digest or "",
-                    plan_semantic_digest=plan_semantic_digest(payload),
-                    result=outcome,
-                )
-            except OSError as exc:
-                ledger_note = (
-                    f" 문서는 만들어졌지만 실행 기록 저장에 실패했습니다({exc})."
-                )
-        projection = project_managed_run_result(
-            outcome=outcome,
-            preparation=prep,
-            records=self.records,
-            filename_source_columns=(
-                self._filename_source_columns()
-                if isinstance(outcome, (ManagedReadBackFailed, DeliveryAborted))
-                else []
-            ),
-            run_revisions=self._run_revisions,
-            generated_at=now,
-            ledger_note=ledger_note,
-        )
-        if projection.generated_indices is not None:
-            self._last_generated = set(projection.generated_indices)
-        if projection.failed_indices is not None:
-            self._last_failed = list(projection.failed_indices)
-        if projection.historical_outcome is not None:
-            self._last_managed_outcome = projection.historical_outcome
-        return projection.result
+        if result.historical_outcome is not None:
+            self.execution.record_managed_outcome(result.historical_outcome)
+        return result.payload
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":
         """managed Product Work(HWPX 새 문서) 생성이 겨눌 템플릿을 current Application 의
@@ -3394,151 +2051,72 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if (
             self._template_change is None
-            or getattr(run_vm, "template_override", None) is not None  # 이어채우기=이전 출력
             or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
         ):
             return None
 
         def synchronize_seated_identity(restored_job: Job, application_id: str) -> None:
-            if self.vm is run_vm and (
-                not run_vm.job.authority_id
-                or self._seated_template_application_id is None
+            if self.work.vm is run_vm and (
+                not run_vm.job.authority_id or self.work.seated_template_application_id is None
             ):
-                if not self._can_adopt_seated_identity(run_vm.job, restored_job):
+                if not self.work.can_adopt_seated_identity(run_vm.job, restored_job):
                     self._release_changed_active_work("문서 작업이 변경되어")
                     raise TemplateChangeError(
-                        "문서 작업이 변경되어 선택을 해제했습니다. "
-                        "문서 작업을 다시 선택하세요."
+                        "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
                     )
                 run_vm.job.authority_id = restored_job.authority_id
-                self._seated_template_application_id = application_id
+                self.work.seated_template_application_id = application_id
 
         try:
             run_vm._managed_template = (
                 self._template_change.resolve_generation_template_for_seated_context(
-                    self.job_name, on_context=synchronize_seated_identity
+                    self.work.name, on_context=synchronize_seated_identity
                 )
             )
         except (SlotlessRunAdmissionError, TemplateChangeError) as exc:
             if isinstance(exc, SlotlessRunAdmissionError):
                 return {
-                    "ok": False, "level": "warn",
-                    "error": ADMISSION_REJECT_TEXT.get(
-                        exc.code, "생성을 진행할 수 없습니다."
-                    ),
+                    "ok": False,
+                    "level": "warn",
+                    "error": ADMISSION_REJECT_TEXT.get(exc.code, "생성을 진행할 수 없습니다."),
                 }
             return {"ok": False, "level": "warn", "error": str(exc)}
         return None
 
     def _generate_locked(
-        self, run, run_vm, *, confirm_overwrite: bool = False,
+        self,
+        run,
+        run_vm,
+        run_input: RunInputCapture,
+        *,
+        confirm_overwrite: bool = False,
         now: "datetime | None" = None,
     ) -> dict:
-        """단일 생성 실행의 링2 결선 — 판정·척추는 Application use case 가 소유한다(P2-23).
-
-        ``run`` 은 :func:`~hwpxfiller.application.generation.start_run` 이 시작 시점에
-        고정한 주체·판본·규칙 지문의 정본, ``run_vm`` 은 같은 시점에 붙든 실행뷰다 —
-        이후 라이브 세션(self.vm)을 판정 입력으로 다시 읽지 않는다(#302 P1). 여기 남는
-        것은 게이트 선언(검토 판정기·확정 여부)과 facts→payload/문안 투영뿐이다.
-        """
-        self._last_run_job = run.job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
-        self._run_revisions = dict(run.revisions)  # §13-7 시작 시점 고정(F7 판정 I)
-        indices = self._indices()
-        out_dir = self.out_dir
-
-        # 게이트 판정 순서(①가드 ②빈 값 ③표식 ④덮어쓰기 ⑤불변 계획)는 Application 이
-        # 소유한다. 종전 ③이던 검토 백스톱은 #957 정책 선회로 사망했다 — 바뀐 규칙·첫
-        # 실행은 사전검증 고지로 나가고 확인의 자리는 결과 문서다.
-        # 날짜 토큰 시각은 **이 런이 진입 시점에 캡처한 값**이다(#957) — 이름·본문·충돌
-        # 판정이 한 시각을 쓴다. 덮어쓰기 확인 왕복이면 그 판정이 쓴 시각이 핀으로 되돌아온다.
-        now = now if now is not None else self._clock()
-        decision = plan_generation(
-            run_vm, indices, out_dir, now=now,
+        """고정 런 입력을 legacy 실행 coordinator에 전달한다."""
+        run_now = now if now is not None else self._clock()
+        result = self.runs.run_legacy(
+            run,
+            run_vm,
+            run_input,
+            now=run_now,
             confirm_overwrite=confirm_overwrite,
+            overwrite_pin_key=self._overwrite_pin_key(),
             existing_outputs=self._existing_outputs,
-        )
-        if decision.rejection is not None:
-            return {
-                "ok": False,
-                "error": decision.rejection.message,
-                "level": decision.rejection.level,
-            }
-        blanks = list(decision.blanks)
-        if decision.needs_overwrite:
-            # 수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다.
-            # 표면(job_run.ts)이 이 수치로 modal.js 본문을 합성한다 — 문안은 웹 소유(RC-02).
-            # 이 판정이 쓴 시각을 핀으로 남긴다(#957): 확인 재호출이 같은 시각으로 다시
-            # 계획해야 확인창이 재진술한 파괴 집합과 실제 파괴 집합이 갈리지 않는다.
-            self._arm_overwrite_now_pin(now)
-            return overwrite_response(
-                total=len(indices),
-                conflict_names=[Path(p).name for p in decision.conflicts],
-            )
-        plan = decision.plan
-        assert plan is not None  # PlanDecision 3태의 잔여 갈래 — 위 두 갈래가 소진했다
-
-        # materialize → 완주 판정 → durable 기록 요청 → facts (Application 척추).
-        # 엔진(zip IO)은 Host 가 조립해 여기로 관통시키고, 완주 기록은 use case 가
-        # `application.jobs.stamp_run_completion` 으로 요청한다(controller 직접 쓰기 0).
-        outcome = run_generation(
-            run, plan,
             engine=self._engine,
             progress=self._push_progress,
-            capture=(ValueError, OSError),
             store=self.registry,
             completed_at=lambda: self._clock().isoformat(timespec="seconds"),
-            existing_outputs=self._existing_outputs,
             ensure_output_dir=self._ensure_output_dir,
-        )
-        if outcome.error is not None:
-            # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
-            # 지도 §10.10 판정 C. 결과 구획으로 회수한다(브리지 rejection 으로 새지 않게).
-            self._last_failed = list(indices)
-            return failed_result(
-                indices=indices,
-                out_dir=plan.out_dir,
-                message=str(outcome.error) or outcome.error.__class__.__name__,
-                failed_indices=self._last_failed,
-                revisions=self._run_revisions,
-            )
-
-        # 완료 이벤트 = 가드 무장 해제(결정 27) — **완주**(전건 성공)만이다(고효율 리뷰
-        # #1). 완주 술어는 스탬프와 한 곳(:func:`run_completed`)을 공유한다(#129) —
-        # 둘로 갈라지면 홈 이력과 가드가 서로 다른 실행을 완료로 부른다.
-        if outcome.completed:
-            self._last_generated = set(indices)
-        # 인메모리 사본은 **그 런의 VM 이 아직 현 세션일 때만** 동기화한다(디스크와
-        # 갈라지지 않게) — 세션이 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
-        # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
-        # 방금 완주한 규칙을 여전히 「미검토」로 읽는다.
-        if outcome.stamped_job is not None and run_vm is self.vm:
-            if rules_fingerprints(outcome.stamped_job) != run.rules:
-                self._last_generated = None
-            run_vm.job = outcome.stamped_job
-
-        results = list(outcome.results)
-        failures = failure_rows(
-            records=self.records,
-            indices=indices,
-            results=results,
-            filename_source_columns=(
-                self._filename_source_columns()
-                if any(
-                    not result.ok
-                    for _index, result in zip(indices, results, strict=False)
-                )
-                else []
+            filename_source_columns=filename_source_columns(
+                run_vm.job, run_input.source_schema_keys
             ),
         )
-        self._last_failed = [failure["index"] for failure in failures]
-        return generation_result(
-            outcome,
-            blanks=blanks,
-            failures=failures,
-            failed_indices=self._last_failed,
-            out_dir=plan.out_dir,
-            revisions=self._run_revisions,
-        )
+        if result.stamped_job is not None and run_vm is self.work.vm:
+            if result.stamped_rules_changed:
+                self.runs.last_generated = None
+            run_vm.job = result.stamped_job
+        return result.payload
+
     # ----------------------------------- S4 Working Slot Configuration(SX-02 #725)
     # 4개 command 는 전부 **dispatch 경로**다(직접 브리지 아님). work_ref 는 세션의 현재 작업
     # (payload 에 없음, template_check 선례). configuration_token 은 opaque(프런트가 직전 응답의 새
@@ -3556,53 +2134,31 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         return asdict(response)
 
-    @staticmethod
-    def _slot_blank_zone() -> dict:
-        """미지원 slot_configuration 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
+    def _configuration_zones(self, media: str, template_missing: bool) -> dict:
+        """Prepare the three configuration zones in their required dependency order."""
+        template_change = unsupported_zone()
+        if self._template_change is not None:
+            drift = (
+                NO_SOURCE_DRIFT_JUDGMENT
+                if template_missing
+                else self._template_change.source_drift(self.work.name)
+            )
+            template_change = self._template_change.zone(
+                self.work.name,
+                media,
+                template_missing,
+                source_drift=drift,
+            )
+        slot_configuration = self._slot_configuration_zone(template_missing)
+        content_presets = self._content_presets_zone(
+            template_missing,
+            savable_selection=self._savable_selection(slot_configuration),
+        )
         return {
-            "supported": False,
-            "initialized": False,
-            "mutation_outcome": None,
-            "current_view": None,
-            "refresh_required": False,
-            "error": None,
+            "template_change": template_change,
+            "slot_configuration": slot_configuration,
+            "content_presets": content_presets,
         }
-    def _seat_configuration_zones(
-        self, base: dict, media: str, tmissing: bool
-    ) -> None:
-        """Seat template change, slot configuration, then presets in one order."""
-        self._seat_template_change_zone(base, media, tmissing)
-        slot_zone = self._slot_configuration_zone(tmissing)
-        base["slot_configuration"] = slot_zone
-        base["content_presets"] = self._content_presets_zone(
-            tmissing, savable_selection=self._savable_selection(slot_zone)
-        )
-
-    def _seat_template_change_zone(self, base: dict, media: str, tmissing: bool) -> None:
-        """스냅샷의 ``template_change`` 존 + ``source_drift`` 표식을 앉힌다(매체 무관).
-
-        **매체 분기를 여기서 만들지 않는다**(S10-02 #859): 지원 매체 판정은 코디네이터의
-        단일 출처(:data:`~hwpxfiller.webapp.template_change.SUPPORTED_MEDIA`)가 지고 이
-        함수는 현재 작업의 매체를 그대로 전달한다. 매체 가지마다 이 두 줄을 복붙하면
-        새 매체가 설 때 한 가지만 늙는다 — 그것이 지금 TXT 가 서지 못하던 이유였다.
-
-        ``source_drift`` 는 템플릿 부재면 계산하지 않는다: 없는 파일과 캡처본을 비교해
-        「편집됐다」고 말하면 사유가 틀린 경보다(부재는 연결 축이 이미 말한다).
-        """
-        if self._template_change is None:
-            return
-        # 드리프트는 **한 번만** 판정하고 **한 자리에만** 실린다(#932 B5). 종전에는 존과
-        # 나란히 top-level `source_drift` 가 같은 사실을 들었는데 그 키의 웹 소비자는 0 이었다
-        # — 생산자만 살아 있고 화면엔 안 붙은 상태다. 이제 그 사실이 존의 노출 술어 자체라
-        # 존이 든다(원본 편집분은 생성이 캡처본을 쓰므로 시끄럽게 선다, #681 F1).
-        drift = (
-            NO_SOURCE_DRIFT_JUDGMENT
-            if tmissing
-            else self._template_change.source_drift(self.job_name)
-        )
-        base["template_change"] = self._template_change.zone(
-            self.job_name, media, tmissing, source_drift=drift
-        )
 
     def _is_managed_hwpx_work(self, job) -> bool:
         """의미 3(managed_hwpx)의 파생(S6-05 · #812) — 실행 경로 의미와 한 원천에서 나온다.
@@ -3613,18 +2169,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         slot-bearing 이 잘못 legacy 로 가도 admission 이 제 사유로 loud 거절한다(#806 R2 백스톱).
         조회는 read-only projection(#744)이라 렌더 부작용이 없다.
         """
-        if job.media != "hwpx" or not job.authority_id:
-            return False
-        if self._slot_configuration is None or not self.job_name:
-            return False
-        try:
-            response = self._slot_configuration.current_slot_configuration_view(
-                self.job_name
-            )
-        except SlotConfigurationProductError:
-            return False
-        projection = response.current_view.projection
-        return projection is not None and bool(projection.slots)
+        return self.execution.is_managed_hwpx(self.work.name, job)
 
     # `_seat_is_managed_hwpx` 는 여기 있었다(#905) — 명령 좌표가 managed 갈래인지 묻는 술어였고
     # 유일한 소비자가 `set_output_folder` 의 갈래 분기였다. 저장 폴더가 전역화되면서 그 분기
@@ -3645,35 +2190,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         자격 심사하는가」 하나뿐이라 그 표(`SUPPORTED_MEDIA`)가 이 존의 자격도 진다. 여기서
         문자열을 다시 조립하면 새 매체가 설 때 한 가지만 늙는다.
         """
-        blank = self._slot_blank_zone()
-        if self._slot_configuration is None or not self.job_name or tmissing:
-            return blank
-        job = load_job(self.registry, self.job_name)
-        if job.media not in SUPPORTED_MEDIA:
-            return blank
-        if not job.authority_id:
-            # 템플릿 확인(bootstrap) 전 — 지원은 하되 아직 조회하지 않는다(durable id 미발급 보존).
-            return {**blank, "supported": True}
-        try:
-            response = self._slot_configuration.current_slot_configuration_view(self.job_name)
-        except SlotConfigurationProductError as exc:
-            # 정상 미초기화와 실패를 구분한다. 진단 code 는 보존하되 사용자 표면에는 snapshot
-            # 재당김만 권한다 — Slot Product refresh 는 durable reconciliation 을 할 수 있다.
-            return {
-                **blank,
-                "supported": True,
-                "error": {
-                    "code": exc.code,
-                    "message": "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
-                    "action": {"key": "refresh", "label": "다시 불러오기"},
-                },
-            }
-        return {
-            "supported": True,
-            "initialized": True,
-            "error": None,
-            **self._slot_response_dict(response),
-        }
+        job = (
+            load_job(self.registry, self.work.name)
+            if self.execution.slot_configuration is not None and self.work.name and not tmissing
+            else None
+        )
+        return self.execution.slot_zone(self.work.name, job, tmissing)
 
     # ── 작업대 Observation 존(SX-03 #726) — 합성 observation → JSON-safe dict ───────────────
     @staticmethod
@@ -3695,7 +2217,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         는 앞의 절반을 blank 로 접고 뒤의 절반으로는 스냅샷 조립을 통째로 죽였다. 집합 **밖**의
         예외는 그대로 전파한다 — 모르는 실패를 조용한 화면 값으로 바꾸지 않는다.
         """
-        if self._workbench_observation is None or not self.job_name or tmissing:
+        if self.execution.workbench_product is None or not self.work.name or tmissing:
             return self._workbench_observation_blank()
         try:
             observation = self.workbench_observation()
@@ -3709,21 +2231,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 그대로이고(context error 로 관찰이 무너져도 "어디에 저장되는가"는 답할 수 있다),
             # 지금은 작업 유무와도 무관해야 해서 존이 아니라 최상위가 그것을 진다.
             "supported": True,
-            **self._serialize_observation(observation),
+            **serialize_observation(
+                observation, execution_status=self.execution.execution_status()
+            ),
         }
-
-    def _serialize_observation(self, observation) -> dict:
-        """Keep the existing controller seam while delegating pure JSON projection."""
-        execution_status = self._workbench_observation.execution_status(
-            orchestration=self._session_orchestration,
-            fresh_observation=self._last_fresh_observation,
-        )
-        return serialize_observation(observation, execution_status=execution_status)
-    def _require_slot_configuration(self) -> None:
-        if self._slot_configuration is None:
-            raise ValueError("문서 구성 기능이 조립되지 않았습니다")
-        if not self.job_name:
-            raise ValueError("먼저 작업을 선택하세요")
 
     def _do_open_slot_configuration(self, p: dict) -> dict:
         """현재 작업의 S4 Working Configuration 을 열어 fresh projection + 새 token 을 낸다(무변이).
@@ -3731,10 +2242,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         React 가 stored configuration·Template 구조를 직접 조립하지 않는다 — Product 가 낸
         authoritative view 하나를 그대로 소비한다.
         """
-        self._require_slot_configuration()
-        return self._slot_response_dict(
-            self._slot_configuration.open_slot_configuration(self.job_name)
-        )
+        return self._slot_response_dict(self.execution.open_slot_configuration(self.work.name))
 
     def _do_refresh_slot_configuration(self, p: dict) -> dict:
         """현재 configuration 을 새로 고쳐 fresh current view 를 되받는다(무변이).
@@ -3742,11 +2250,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         optional ``configuration_token`` 을 실으면 Product 가 그 token 의 Application 과 현재
         Application 을 대조해 stale 여부(``refresh_required``)를 판정한다 — 미실으면 최초 조회다.
         """
-        self._require_slot_configuration()
         token = p.get("configuration_token")
         token = str(token) if token is not None else None
         return self._slot_response_dict(
-            self._slot_configuration.refresh_slot_configuration(self.job_name, token)
+            self.execution.refresh_slot_configuration(self.work.name, token)
         )
 
     def _do_select_slot_option(self, p: dict) -> dict:
@@ -3767,11 +2274,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         (`raise_if_generating_before_swap` 가 같은 lock 을 검사)도 끼지 못한다. 생성 중이면
         non-blocking 실패로 시끄럽게 거절한다.
         """
-        self._require_slot_configuration()
         response = self._slot_command_serialized_with_generation(
             "포함할 내용을 바꾸세요",
-            lambda: self._slot_configuration.select_slot_option(
-                self.job_name,
+            lambda: self.execution.select_slot_option(
+                self.work.name,
                 str(p["configuration_token"]),
                 str(p["slot_id"]),
                 str(p["option_id"]),
@@ -3786,20 +2292,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         generate 와 같은 lock 을 non-blocking 으로 잡아 상호배제한다 — 잡히면 mutation·auto-check
         를 하고 반드시 놓는다. 이미 생성 중이면 시끄럽게 거절한다(`raise_if_generating` 문안 동형).
         """
-        if not self._generation_lock.acquire(blocking=False):
+        if not self.runs.lock.acquire(blocking=False):
             raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
         try:
-            work_at_start = self.job_name
+            work_at_start = self.work.name
             response = run()
             # auto-check 를 이 mutation 의 exact Work 에 결속한다(#725 재리뷰 P1). 작업 전환
             # (`select_job`)은 check-then-act 라 이 임계구역 사이에 job_name 을 바꿀 수 있다 —
             # 그러면 바뀐 Work 를 seal 하게 된다. Work 가 그대로일 때만 auto-check 하고, 바뀌었으면
             # 건너뛴다(변경된 Work 는 자기 command 가 몰고, 이 Work 는 다음 관찰에서 fresh 재계산).
-            if self.job_name == work_at_start:
+            if self.work.name == work_at_start:
                 self._maybe_auto_check(response)
             return response
         finally:
-            self._generation_lock.release()
+            self.runs.lock.release()
 
     # `_do_clear_slot_selection` 은 #903 에서 제거됐다 — 유일한 트리거였던 detached 정리 버튼이
     # SG-01(#733) 이후 렌더될 수 없었고, EXACTLY_ONE 제어면에 「선택 비우기」 사용자 목적이 없다.
@@ -3809,16 +2315,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     # 두 동사도 **dispatch 경로**다(직접 브리지 신설 0). 수치(적용 n·깨짐 m)는 S9-02
     # `PresetApplyDecision` 값이 Product 를 지나 그대로 실린다 — 여기서도 프런트에서도 slot
     # 목록을 다시 훑어 세지 않는다(같은 상태의 두 판정 금지).
-    @staticmethod
-    def _content_presets_blank() -> dict:
-        """미지원 content_presets 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
-        return {
-            "supported": False, "items": [], "corrupt": [],
-            "list_actionable": False, "save_actionable": False,
-            # 「지금 적용돼 있는 항목」도 모든 갈래가 같은 키로 낸다(키 부재 분기 금지).
-            "applied_key": None,
-        }
-
     @staticmethod
     def _savable_selection(slot_zone: dict) -> bool:
         """방금 조립한 slot 존에서 「지금 저장할 선택이 있는가」를 집는다(판정 0 — 운반).
@@ -3849,40 +2345,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         존은 어느 Work 를 대고 물을지만 정한다(호환을 여기서 다시 세지 않는다). 걸러진 항목의
         저장 파일은 그대로다(목록의 좁힘이지 삭제가 아니다).
         """
-        blank = self._content_presets_blank()
-        if self._slot_configuration is None or not self.job_name or tmissing:
-            return blank
-        job = load_job(self.registry, self.job_name)
-        if job.media not in SUPPORTED_MEDIA:
-            return blank
-        # 템플릿 확인(bootstrap) 전이면 durable Work id 가 아직 없다 — 렌더에서 발급하지
-        # 않는다(`_slot_configuration_zone` 과 같은 write-on-read 회피). 그 상태에는 대고 물을
-        # 구조가 없으므로 Work 를 넘기지 않고, Product 가 호환 항목 0 으로 접는다.
-        listing = self._slot_configuration.list_selection_presets(
-            self.job_name if job.authority_id else None
+        job = (
+            load_job(self.registry, self.work.name)
+            if self.execution.slot_configuration is not None and self.work.name and not tmissing
+            else None
         )
-        return {
-            "supported": True,
-            "items": [
-                {"key": item.key, "name": item.name, "created_at": item.created_at}
-                for item in listing.items
-            ],
-            "corrupt": [
-                {"file_name": entry.file_name, "error": entry.error}
-                for entry in listing.corrupt
-            ],
-            "corrupt_code": listing.corrupt_code,
-            # 노출 술어는 Python 이 낸다(U4 13번) — 링2 는 목록 길이를 다시 세지 않는다.
-            # 14~17 에서 **두 술어로 갈렸다**: 목록(적용)은 슬롯 위, 저장은 슬롯 아래에 서므로
-            # 한 구획이 아니라 두 구획이고, 각자의 성격이 각자의 술어를 갖는다.
-            "list_actionable": preset_list_actionable(listing),
-            # 저장 구획의 술어는 저장 게이트 **그 자체**다(`has_declared_selection`) — 보이는
-            # 단추가 곧 이행되는 단추라는 13번의 결속을 그대로 잇는다.
-            "save_actionable": savable_selection,
-            # 「어떤 프리셋이 지금 서 있는가」의 단일 출처(#945 F3). 종전에는 이 상태가 어디에도
-            # 없어 직전 왕복의 휘발 재진술이 그 자리를 대신 서 있었다. 웹은 표지만 그린다.
-            "applied_key": listing.applied_key,
-        }
+        return self.execution.presets_zone(
+            self.work.name,
+            job,
+            tmissing,
+            savable_selection=savable_selection,
+        )
 
     def _do_save_selection_preset(self, p: dict) -> dict:
         """현재 선택을 이름 붙여 보관한다 — 조용한 덮기 경로 0(이름 충돌은 확인 왕복).
@@ -3891,10 +2364,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         레지스트리로 간다. 생성 중 배치가 고정한 실행 입력과 어긋날 것이 없다(select/clear
         와 갈리는 지점이고, 그 이유가 이 주석이다).
         """
-        self._require_slot_configuration()
         confirmed = p.get("confirmed_overwrite_key")
-        result = self._slot_configuration.save_selection_preset(
-            self.job_name,
+        result = self.execution.save_selection_preset(
+            self.work.name,
             str(p["configuration_token"]),
             str(p["name"]),
             str(confirmed) if confirmed is not None else None,
@@ -3909,43 +2381,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         같은 형이라 그 판정이 그대로 선다). 응답은 outcome·fresh view·새 token 에 적용 n·
         깨짐 m 을 얹은 것이고, 수치는 backend 값 그대로다.
         """
-        self._require_slot_configuration()
         response = self._slot_command_serialized_with_generation(
             "프리셋을 적용하세요",
-            lambda: self._slot_configuration.apply_selection_preset(
-                self.job_name,
+            lambda: self.execution.apply_selection_preset(
+                self.work.name,
                 str(p["configuration_token"]),
                 str(p["preset_key"]),
             ),
         )
         return self._slot_response_dict(response)
-
-    # ── 세션 주체(Work) 정체 — 전환 시 실행 증거 무효화 ──────────────────────────────────
-    @property
-    def job_name(self) -> str:
-        return self._job_name
-
-    @job_name.setter
-    def job_name(self, value: str) -> None:
-        """세션 주체 Work. 다른 Work 로 바뀌면 세션 실행 증거를 함께 버린다.
-
-        orchestration·fresh observation·basis digest 는 그것을 만든 Work 에 묶인다 — A 를 확인해
-        SETTLED_CURRENT 로 둔 뒤 B 로 전환하면, B 는 아직 확인 전이므로 A 의 관찰로 B 를 CURRENT 라
-        하지 않는다(조용히 틀리지 않는다). 같은 값 재대입은 재설정하지 않는다.
-        """
-        prior = getattr(self, "_job_name", None)
-        self._job_name = value
-        if prior is not None and value != prior:
-            self._invalidate_execution_evidence()
-
-    def _invalidate_execution_evidence(self) -> None:
-        """Drop session-only execution evidence after its Work basis moves."""
-        self._session_orchestration = AutomaticSealOrchestration()
-        self._last_fresh_observation = None
-        self._last_sealed_basis_digest = None
-        self._last_sealed_plan_payload = None
-        self._last_managed_outcome = None
-        self._invalidate_current_preparations()
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def editor_binding_confirm_pending(self, work_ref: str) -> bool:
@@ -3966,10 +2410,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         대상이 다르면 이 세션은 그 작업에 대해 아는 것이 없다(정직한 거짓).
         """
         if (
-            self._seal_execution is None
-            or self._workbench_observation is None
+            self.execution.seal_execution is None
+            or self.execution.workbench_product is None
             or not work_ref
-            or work_ref != self.job_name
+            or work_ref != self.work.name
         ):
             return False
         try:
@@ -3978,86 +2422,50 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return False
         if job.media != "hwpx" or not job.authority_id:
             return False
-        projection = self._binding_review_projection()
-        return self._workbench_observation.binding_review_pending(
-            fresh_observation=self._last_fresh_observation,
-            input_requirements=(
-                projection.input_requirements if projection is not None else ()
-            ),
+        projection = self.execution.binding_review_projection(self.work.name)
+        return self.execution.binding_review_pending(
+            input_requirements=(projection.input_requirements if projection is not None else ()),
         )
-
-    def _binding_review_projection(self):
-        """관찰이 결속 분류표를 **읽는 조건**(#911 로 한 자리로 모음).
-
-        봉인된 계획은 분류표를 보지 않는다 — 그 Work 의 실행 계획이 이미 durable 결속 위에
-        서 있다는 뜻이라, legacy Mapping 기준 재분류를 얹으면 확정된 작업에 확정을 다시
-        묻는다. 이 가드가 관찰과 편집기 두 자리에 흩어져 있으면 한쪽만 갱신되는 날 두 표면이
-        같은 작업을 다르게 답한다.
-        """
-        if (
-            self._seal_execution is None
-            or not self.job_name
-            or not isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
-        ):
-            return None
-        return self._seal_execution.current_binding_review(self.job_name)
 
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
         job = load_job(self.registry, work_ref)
         if job.media != "hwpx" or not job.authority_id:
             return {"binding_commit_ok": False, "binding_revision_id": None}
-        if self._seal_execution is None:
+        if self.execution.seal_execution is None:
             raise ValueError("Field Binding is not configured.")
-        if not self._generation_lock.acquire(blocking=False):
+        if not self.runs.lock.acquire(blocking=False):
             raise ValueError(
                 "\ubb38\uc11c \uc0dd\uc131\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4. \ub05d\ub09c \ub4a4\uc5d0 Mapping\uc744 \uc800\uc7a5\ud558\uc138\uc694."
             )
         try:
-            result = self._seal_execution.commit_current_mapping(
-                work_ref, uuid.uuid4().hex
-            )
-            if result is not None and self.job_name == work_ref:
+            result = self.execution.commit_current_mapping(work_ref)
+            if result is not None and self.work.name == work_ref:
                 self._maybe_auto_check(effective_basis_changed=result.changed)
             return {
                 "binding_commit_ok": result is not None,
                 "binding_revision_id": result.revision_id if result is not None else None,
             }
         finally:
-            self._generation_lock.release()
+            self.runs.lock.release()
 
     def _maybe_auto_check(
         self, slot_response=None, *, effective_basis_changed: "bool | None" = None
     ) -> None:
-        """durable slot mutation 뒤 자동 확인 진입 — mutation 이 CHANGED 일 때만(#724 §4).
+        """HWPX의 durable basis가 실제로 바뀐 뒤에만 자동 봉인을 시작한다.
 
-        R2(#740): seal 은 durable side effect 없는 순수 재계산이고 opaque Plan ref 로 same-basis 를
-        미리 엿보던 경로가 사라졌다 — durable 변경이 CHANGED 면 항상 재확인한다(``effective_basis_changed
-        =True``). 미변경(open/ensure)은 아래 guard 로 걸러 blanket reseal 을 막는다. seal product
-        미주입이면 자동 확인 없음(honest — 표면 부재).
-
-        **HWPX 전용이다**(S10-03 #860). TXT 도 이제 같은 durable command 로 「포함할 내용」을
-        고르지만, 그 선택의 산출은 문서 생성이 아니라 작업대 복사이고 물질화는 S10-04 소관이다.
-        여기에 들여보내면 seal 이 있지도 않은 실행 계획을 세우려다 실패하고, 그 실패가 화면에
-        「확인 실패」로 재진술된다 — 짓지 않은 축에 거짓 실패를 기록하는 쪽이 조용한 누락보다
-        나쁘다. 매체는 registry Job 이 단일 출처다(경로 파생 래치를 여기서 다시 읽지 않는다).
+        미변경 명령과 TXT 작업은 실행 계획의 basis가 아니므로 봉인하지 않는다.
         """
-        if self._seal_execution is None or not self.job_name:
+        if self.execution.seal_execution is None or not self.work.name:
             return
-        if load_job(self.registry, self.job_name).media != "hwpx":
+        if load_job(self.registry, self.work.name).media != "hwpx":
             return
         if effective_basis_changed is None:
             outcome = slot_response.mutation_outcome
             effective_basis_changed = outcome is not None and outcome.changed
         if not effective_basis_changed:
             return  # 무변이(open/ensure)·미변경 mutation → 반응할 basis 변경 없음.
-        transition = on_durable_command_settled(
-            self._session_orchestration,
-            durable_command_succeeded=True,
-            effective_basis_changed=True,
-        )
-        self._session_orchestration = transition.next_state
-        if transition.should_start_seal:
+        if self.execution.start_after_durable_change():
             self._run_automatic_seal()
 
     def _run_automatic_seal(self) -> None:
@@ -4067,63 +2475,37 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         route/context 예외는 seal 실패(연속 실패 수 상한 → 수동 복구)로, 반환된 terminal outcome 은
         '실행됨'으로 본다(qualification/policy block 은 실패가 아니라 not-current 로 알린다).
         """
-        assert self._seal_execution is not None
-        for _ in range(self._MAX_AUTO_SEAL_COALESCE):
-            try:
-                resp = self._seal_execution.seal_execution_plan(
-                    self.job_name, uuid.uuid4().hex
-                )
-            except Exception:  # noqa: BLE001 — route/auth/context 예외 = 전이 실패(수동 복구 상한).
-                transition = on_seal_settled(
-                    self._session_orchestration,
-                    seal_succeeded=False,
-                    resulting_currentness_current=False,
-                )
-                self._session_orchestration = transition.next_state
-                return
-            self._absorb_seal_response(resp)
-            transition = on_seal_settled(
-                self._session_orchestration,
-                seal_succeeded=True,
-                resulting_currentness_current=self._fresh_is_current(resp.fresh_observation),
-            )
-            self._session_orchestration = transition.next_state
-            if not transition.should_start_seal:
-                return
+        self.execution.run_automatic_seal(
+            self.work.name, max_coalesced=self._MAX_AUTO_SEAL_COALESCE
+        )
 
     #: 진행 중 seal 위에 coalesce 로 이어붙는 연속 확인의 상한(무한 루프 방지).
     _MAX_AUTO_SEAL_COALESCE = 4
 
-    def _absorb_seal_response(self, resp) -> None:
-        """seal 응답 흡수 — fresh observation 보관 + sealed 면 basis digest·plan payload 를
-        같은 응답에서 짝으로 갱신한다(S6-05 — 대조가 유의미하려면 출처가 같아야 한다)."""
-        self._last_fresh_observation = resp.fresh_observation
-        if isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome):
-            self._last_sealed_basis_digest = resp.command_outcome.execution_basis_digest
-            self._last_sealed_plan_payload = resp.command_outcome.plan_payload
-
-    @staticmethod
-    def _fresh_is_current(fresh: "FreshExecutionObservation") -> bool:
-        # R2(#740): current sealable value 가 관찰되면 그 값이 곧 현재다(currentness 축 흡수).
-        return isinstance(fresh, CurrentSealedPlanObservation)
-
-    @staticmethod
-    def _current_record_identity(snapshot_generation: int, model_index: int) -> str:
-        return current_record_identity(snapshot_generation, model_index)
-
     def _capture_current_selected_records(
         self,
+        run_input: RunInputCapture | None = None,
     ) -> tuple[int, tuple[int, ...], tuple[RawDataRecordSnapshot, ...]]:
         """선택 행을 frozen snapshot 으로 고정한다 — Plan 을 보지 않는다(값은 타입 없는 텍스트)."""
-        generation = self._snapshot_gen
-        indices = tuple(self._indices())
-        rows = self.records
+        generation = (
+            run_input.snapshot_generation
+            if run_input is not None
+            else self.data.snapshot_generation
+        )
+        indices = (
+            run_input.indices if run_input is not None else tuple(self.data.selected_indices())
+        )
+        rows = run_input.source_records if run_input is not None else self.data.records
         schema = (
-            tuple(self.filter.columns)
-            if self.filter is not None
-            else tuple(rows[0].keys())
-            if rows
-            else ()
+            run_input.source_schema_keys
+            if run_input is not None
+            else (
+                tuple(self.data.filter.columns)
+                if self.data.filter is not None
+                else tuple(rows[0].keys())
+                if rows
+                else ()
+            )
         )
         captured_at = self._clock().isoformat(timespec="seconds")
         captured = capture_selected_records(
@@ -4134,9 +2516,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             captured_at=captured_at,
         )
         if (
-            generation != self._snapshot_gen
-            or rows is not self.records
-            or indices != tuple(self._indices())
+            generation != self.data.snapshot_generation
+            or rows is not self.data.records
+            or indices != tuple(self.data.selected_indices())
         ):
             raise _CurrentRecordCaptureError(
                 "데이터가 다시 불러와져 선택한 값을 함께 확인할 수 없습니다. 다시 시도해 주세요."
@@ -4145,45 +2527,50 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _current_record_validation(
         self,
+        run_input: RunInputCapture | None = None,
     ) -> tuple[RecordValidationSummary, WorkbenchContextIntegrity | None]:
-        fresh = self._last_fresh_observation
-        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
+        fresh = self.execution.fresh_observation
+        if not self.execution.is_settled_current:
             return RecordValidationSummary(), None
         if not isinstance(fresh, CurrentSealedPlanObservation):
             return RecordValidationSummary(), None
         plan = fresh.sealed_plan_value
-        work_ref = self.job_name
-        indices = tuple(self._indices())
-        cached = self._current_record_preparation
-        if (
-            cached is not None
-            and cached.snapshot_generation == self._snapshot_gen
-            and cached.work_ref == work_ref
-            and cached.ordered_model_indices == indices
-            and cached.execution_value == plan
-        ):
+        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        indices = (
+            run_input.indices if run_input is not None else tuple(self.data.selected_indices())
+        )
+        generation = (
+            run_input.snapshot_generation
+            if run_input is not None
+            else self.data.snapshot_generation
+        )
+        cached = self.execution.cached_records(
+            snapshot_generation=generation,
+            work_ref=work_ref,
+            ordered_model_indices=indices,
+            plan=plan,
+        )
+        if cached is not None:
             return cached.record_validation, None
         if not indices:
             return RecordValidationSummary(), None
         try:
-            generation, captured_indices, raw_records = (
-                self._capture_current_selected_records()
+            generation, captured_indices, raw_records = self._capture_current_selected_records(
+                run_input
             )
-            preparation = prepare_current_records(
+            preparation = self.execution.prepare_records(
                 snapshot_generation=generation,
                 work_ref=work_ref,
                 ordered_model_indices=captured_indices,
                 plan=plan,
                 raw_records=raw_records,
-                project_issue=lambda blocker, model_index, record_identity: (
-                    record_issue(
-                        plan=plan,
-                        blocker=blocker,
-                        generation=generation,
-                        model_index=model_index,
-                        record_identity=record_identity,
-                        columns=self.filter.columns if self.filter is not None else [],
-                    )
+                project_issue=lambda blocker, model_index, record_identity: record_issue(
+                    plan=plan,
+                    blocker=blocker,
+                    generation=generation,
+                    model_index=model_index,
+                    record_identity=record_identity,
+                    columns=self.data.filter.columns if self.data.filter is not None else [],
                 ),
             )
         except (_CurrentRecordCaptureError, RawDataRecordError, FieldBindingError) as exc:
@@ -4195,25 +2582,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if isinstance(preparation, WorkbenchContextIntegrity):
             return RecordValidationSummary(), preparation
         if (
-            generation != self._snapshot_gen
-            or captured_indices != tuple(self._indices())
-            or work_ref != self.job_name
-            or fresh != self._last_fresh_observation
+            generation != self.data.snapshot_generation
+            or captured_indices != tuple(self.data.selected_indices())
+            or work_ref != self.work.name
+            or fresh != self.execution.fresh_observation
         ):
             return RecordValidationSummary(), WorkbenchContextIntegrity(
                 restore_failure=True,
                 code="CURRENT_RECORD_PREPARATION_STALE",
                 detail="확인 중 데이터나 작업 설정이 바뀌었습니다. 다시 시도해 주세요.",
             )
-        self._current_record_preparation = preparation
+        self.execution.install_records(preparation)
         return preparation.record_validation, None
 
     def _do_recover_record_issue(self, p: dict) -> dict:
         target = p.get("target")
         if not isinstance(target, Mapping):
             raise ValueError("문제 위치 정보가 올바르지 않습니다.")
-        preparation = self._current_record_preparation
-        target_kind = target.get('target_kind')
+        preparation = self.execution.record_preparation
+        target_kind = target.get("target_kind")
         if preparation is None:
             raise ValueError("현재 데이터 확인 결과가 없습니다. 다시 확인해 주세요.")
         exact_targets = tuple(
@@ -4232,31 +2619,38 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or type(model_index) is not int
             or not isinstance(record_identity, str)
             or not isinstance(field_id, str)
-            or target_kind not in ('cell', 'row')
-            or generation != self._snapshot_gen
-            or model_index not in tuple(self._indices())
-            or record_identity != self._current_record_identity(generation, model_index)
-            or preparation.work_ref != self.job_name
-            or self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT
-            or not isinstance(self._last_fresh_observation, CurrentSealedPlanObservation)
-            or preparation.execution_value != self._last_fresh_observation.sealed_plan_value
+            or target_kind not in ("cell", "row")
+            or generation != self.data.snapshot_generation
+            or model_index not in tuple(self.data.selected_indices())
+            or record_identity != current_record_identity(generation, model_index)
+            or preparation.work_ref != self.work.name
+            or not self.execution.is_settled_current
+            or not isinstance(
+                self.execution.fresh_observation,
+                CurrentSealedPlanObservation,
+            )
+            or preparation.execution_value != self.execution.fresh_observation.sealed_plan_value
         ):
             raise ValueError(
                 "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
             )
-        columns = self.filter.columns if self.filter is not None else []
-        if target_kind == 'cell' and field_id not in columns:
+        columns = self.data.filter.columns if self.data.filter is not None else []
+        if target_kind == "cell" and field_id not in columns:
             raise ValueError("문제 데이터의 항목 위치를 복원할 수 없습니다.")
-        if target_kind == 'cell' and field_id in self.hidden_columns:
+        if target_kind == "cell" and field_id in self.data.hidden_columns:
             raise ValueError("문제 항목이 숨겨져 있습니다. 열을 다시 표시한 뒤 이동해 주세요.")
-        visible = self.filter.visible_indices(self.records) if self.filter is not None else []
+        visible = (
+            self.data.filter.visible_indices(self.data.records)
+            if self.data.filter is not None
+            else []
+        )
         if model_index not in visible:
             raise ValueError("문제 행이 현재 검색 결과에 없습니다. 검색 조건을 해제해 주세요.")
-        if target_kind == 'row':
+        if target_kind == "row":
             return {
-                'ok': True,
-                'element_id': f'jobRow-{model_index}',
-                'fallback_element_id': f'jobRow-{model_index}',
+                "ok": True,
+                "element_id": f"jobRow-{model_index}",
+                "fallback_element_id": f"jobRow-{model_index}",
             }
         column_index = columns.index(field_id)
         return {
@@ -4267,165 +2661,107 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     _do_recover_record_issue.is_query = True
 
-    def _invalidate_current_preparations(self) -> None:
-        self._current_record_preparation = None
-        self._current_delivery_preparation = None
-
     def _current_delivery(
         self,
         record_validation: RecordValidationSummary,
+        *,
+        run_input: RunInputCapture | None = None,
+        filename_pattern: str | None = None,
     ) -> tuple[DeliveryPreviewSummary, WorkbenchContextIntegrity | None]:
-        # 저장 폴더 미지정은 더 이상 차단 사유가 아니다(U3-06 #879) — 도출한 기본값으로 선다.
-        # 도출 재료조차 없을 때(템플릿 경로 부재)만 지정이 전제조건으로 남는다.
         intent, folder_resolution = self._effective_delivery()
-        if intent is None:
-            return unresolved_delivery(
-                "OUTPUT_DIRECTORY_REQUIRED", "저장 폴더를 선택하세요."
-            ), None
-        preparation = self._current_record_preparation
-        if record_validation.has_blocking_issues:
-            return unresolved_delivery(
-                "RECORD_VALIDATION_REQUIRED", "먼저 데이터 문제를 확인하세요."
-            ), None
-        if (
-            preparation is None
-            or preparation.snapshot_generation != self._snapshot_gen
-            or preparation.work_ref != self.job_name
-            or preparation.ordered_model_indices != tuple(self._indices())
-            or not preparation.validated_records
-        ):
-            return unresolved_delivery(
-                "CURRENT_RECORD_PREPARATION_REQUIRED", "생성할 데이터를 먼저 선택하세요."
-            ), None
-        fresh = self._last_fresh_observation
-        if not isinstance(fresh, CurrentSealedPlanObservation):
-            return unresolved_delivery(
-                "CURRENT_EXECUTION_REQUIRED", "현재 설정을 먼저 확인하세요."
-            ), None
-        current_field_binding = fresh.current_field_binding
-        if current_field_binding is None:
-            return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
-                restore_failure=True,
-                code="CURRENT_DELIVERY_BINDING_CONTEXT_MISSING",
-                detail="현재 파일 이름에 사용할 항목 연결을 복원할 수 없습니다.",
-            )
-        exact_pattern = self.vm.job.filename_pattern if self.vm is not None else ""
-        cached = self._current_delivery_preparation
-        if (
-            cached is not None
-            and cached.record_preparation is preparation
-            and cached.current_field_binding == current_field_binding
-            and cached.exact_pattern == exact_pattern
-            and cached.run_delivery_intent == intent
-        ):
-            if isinstance(cached.result, DeliveryPlanContextError):
-                return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
-                    restore_failure=True,
-                    code=cached.result.code,
-                    detail=cached.result.detail,
-                )
-            return delivery_projection(cached.result), None
-
-        captured_clock = self._clock().isoformat(timespec="seconds")
-        prepared = prepare_current_delivery(
-            record_preparation=preparation,
-            current_field_binding=current_field_binding,
-            exact_pattern=exact_pattern,
+        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        generation = (
+            run_input.snapshot_generation
+            if run_input is not None
+            else self.data.snapshot_generation
+        )
+        indices = (
+            run_input.indices if run_input is not None else tuple(self.data.selected_indices())
+        )
+        exact_pattern = (
+            filename_pattern
+            if filename_pattern is not None
+            else self.work.vm.job.filename_pattern
+            if self.work.vm is not None
+            else ""
+        )
+        return self.execution.resolve_delivery(
+            record_validation=record_validation,
+            snapshot_generation=generation,
+            work_ref=work_ref,
+            ordered_model_indices=indices,
+            fresh_observation=self.execution.fresh_observation,
             run_delivery_intent=intent,
-            captured_delivery_clock=captured_clock,
-            # 도출한 기본 폴더는 아직 없을 수 있다. 설정한 폴더가 사라지거나 읽히지 않는
-            # 경우는 다른 사실이라 완화하지 않는다.
+            exact_pattern=exact_pattern,
+            capture_delivery_clock=lambda: self._clock().isoformat(timespec="seconds"),
             allow_missing_output_directory=(
                 folder_resolution.source != OUTPUT_FOLDER_SOURCE_SETTING
             ),
         )
-        self._current_delivery_preparation = prepared
-        result = prepared.result
-        if isinstance(result, DeliveryPlanContextError):
-            return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
-                restore_failure=True, code=result.code, detail=result.detail
-            )
-        return delivery_projection(result), None
 
-    def workbench_observation(self):
-        """세션 사실 + seal 서비스 fresh observation → 작업대 Observation(SX-01 #724 · SX-03 #726).
-
-        admission/readiness/7상태는 세션이 든 마지막 fresh observation
-        (``_last_fresh_observation``)을 **소비만** 한다 — composer/status 함수가 재라벨하고 이 화면은
-        재판정하지 않는다(CURRENT/STALE 은 orchestration 축이 나른다). fresh observation 이 없으면
-        NO_EVIDENCE(정직한 disabled). SX-04 축
-        (record/delivery)은 seam 유지 — delivery anchor 가 CREATE 로의 누수를 막는다.
-        """
-        if self._workbench_observation is None:
+    def workbench_observation(
+        self,
+        *,
+        run_input: RunInputCapture | None = None,
+        filename_pattern: str | None = None,
+    ):
+        """현재 config를 읽고 레코드·배달 준비를 갱신해 Observation을 만든다."""
+        if self.execution.workbench_product is None:
             raise ValueError("작업대 Observation 기능이 조립되지 않았습니다")
-        slot_view = None
-        if self._slot_configuration is not None and self.job_name:
-            job = load_job(self.registry, self.job_name)
-            if job.media == "hwpx" and job.authority_id:
-                try:
-                    # #744: 관찰은 읽기다 — read-only projection 을 쓴다. open(ensure)은 stored
-                    # config 부재 시 successor reconciliation 을 durable 하게 물질화하므로 render
-                    # 경로에서 부르면 authority 를 mutate 한다(그 basis 변경은 관찰과도 어긋난다).
-                    resp = self._slot_configuration.current_slot_configuration_view(self.job_name)
-                except SlotConfigurationProductError:
-                    resp = None
-                if resp is not None:
-                    slot_view = resp.current_view.projection
-        binding_projection = self._binding_review_projection()
-        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
-            self._invalidate_current_preparations()
-        record_validation, context_integrity = self._current_record_validation()
+        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        job = (
+            load_job(self.registry, work_ref)
+            if self.execution.slot_configuration is not None and work_ref
+            else None
+        )
+        configuration = self.execution.capture_workbench_configuration(job=job, work_ref=work_ref)
+        if not self.execution.is_settled_current:
+            self.execution.invalidate_preparations()
+        record_validation, context_integrity = self._current_record_validation(run_input)
         if context_integrity is None:
-            delivery, delivery_context = self._current_delivery(record_validation)
-            context_integrity = delivery_context
+            delivery, context_integrity = self._current_delivery(
+                record_validation,
+                run_input=run_input,
+                filename_pattern=filename_pattern,
+            )
         else:
             delivery = DeliveryPreviewSummary(resolvable=False)
-        return self._workbench_observation.compose(
-            data_mounted=self.datasource is not None,
-            selected_record_count=self.selection.selected_count(),
-            total_record_count=len(self.records),
-            active_work_ref=self.job_name or None,
-            active_work_data_bound=not self.job_data_unbound,
-            slot_view=slot_view,
-            orchestration=self._session_orchestration,
-            fresh_observation=self._last_fresh_observation,
-            active_field_requirement_ids=(
-                binding_projection.active_field_ids if binding_projection is not None else ()
+        return self.execution.build_workbench_observation(
+            configuration=configuration,
+            work_ref=work_ref,
+            data_mounted=(
+                run_input.data.datasource is not None
+                if run_input is not None
+                else self.data.datasource is not None
             ),
-            input_requirements=(
-                binding_projection.input_requirements if binding_projection is not None else ()
+            selected_record_count=(
+                len(run_input.indices)
+                if run_input is not None
+                else self.data.selection.selected_count()
             ),
+            total_record_count=(
+                len(run_input.data.records) if run_input is not None else len(self.data.records)
+            ),
+            active_work_data_bound=not self.work.data_unbound,
             record_validation=record_validation,
             delivery=delivery,
             template_change_verdict=self._template_change_verdict(),
-            # S6-05(#812): 세션의 managed 실행 증거 — 부차 축(Primary Action 불결정).
-            historical_outcome=self._last_managed_outcome,
-            # 표면이 보는 것은 **실제로 쓰일** 폴더다(U3-06 #879) — 명시 지정이 없을 때
-            # 빈칸을 그리면 "아직 안 정했다"로 읽혀 도출된 기본값이 조용한 추측이 된다.
             run_delivery_intent=self._effective_run_delivery_intent(),
             context_integrity=context_integrity,
         )
 
     def _template_change_verdict(self) -> "str | None":
-        """현재 작업의 템플릿 확인 상태 → 작업대 ``template_change_verdict``(#912 D2).
+        """현재 작업의 템플릿 확인 상태를 읽기 전용으로 투영한다.
 
-        composer 의 ``REVIEW_TEMPLATE_CHANGE`` 축은 정의·소비·통로가 다 있는데 **프로덕션
-        전달자가 0** 이었다. 그래서 「확인이 끝나지 않았다」는 사실이 템플릿 구획에만 서고
-        작업대 관찰에는 못 서서, 사용자는 생성을 눌러 실패한 뒤에야 그것을 알았다.
-
-        **읽기 전용이다**(#804 규율): 권위 발급을 겸하는 호출(``seat_job_authority_id`` 계열)을
-        쓰지 않고 이미 결속된 Work 의 current Preparation 만 되읽는다 — 렌더 경로가 durable
-        권위를 만들면 실패했을 때 되돌릴 근거를 그 자리에서 잃는다. status → verdict 판정은
-        :func:`~hwpxfiller.application.template_change_product.workbench_template_change_verdict`
-        하나가 지고 여기서 status 문자열을 다시 분기하지 않는다.
+        렌더 경로에서 권위를 만들지 않으며 status 판정은 application 함수에 위임한다.
         """
-        if self._template_change is None or not self.job_name:
+        if self._template_change is None or not self.work.name:
             return None
         try:
-            if load_job(self.registry, self.job_name).media != "hwpx":
+            if load_job(self.registry, self.work.name).media != "hwpx":
                 return None
             preparation = self._template_change.get_current_template_change_preparation(
-                self.job_name
+                self.work.name
             )
         except Exception:  # noqa: BLE001 — 조회 실패는 확인 요구가 아니다(context 축 소관).
             return None
@@ -4437,54 +2773,31 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _source_drift_state(self) -> "str | None":
         """현재 작업의 원본 드리프트 상태 — 읽기 전용(digest 비교뿐, 권위 발급 없음)."""
-        if self._template_change is None or not self.job_name:
+        if self._template_change is None or not self.work.name:
             return None
         try:
-            return self._template_change.source_drift(self.job_name).state
+            return self._template_change.source_drift(self.work.name).state
         except Exception:  # noqa: BLE001 — 조회 실패는 요구가 아니다(context 축 소관).
             return None
 
     def _do_resolve_execution(self, p: dict) -> dict:
-        """'현재 설정 확인' Primary Action(EXECUTION_CHECKING/STALE·NO_EVIDENCE) — 자동 확인의 명시 재실행.
+        """사용자 요청으로 자동 봉인 경로를 다시 시작한다.
 
-        수동 seal 관리 동사가 아니다: automatic checking 과 **같은 seal 경로**를 사용자가 명시로
-        재개할 뿐이다(§4 "수동 복구 요구를 상태로 표현"). FAILED 면 먼저 수동 복구(IDLE)로 되돌린 뒤
-        CHECKING 진입 → 실 seal. seal 미주입이면 loud 거절(조용한 no-op 금지).
+        실패 상태는 수동 복구 전이를 먼저 거치며, 서비스 미주입은 명시적으로 거절한다.
         """
-        if self._seal_execution is None:
+        if self.execution.seal_execution is None:
             raise ValueError("실행 확인 기능이 조립되지 않았습니다")
-        if not self.job_name:
+        if not self.work.name:
             raise ValueError("먼저 문서 작업을 선택하세요.")
-        if self._session_orchestration.state == ORCHESTRATION_FAILED:
-            self._session_orchestration = request_manual_recovery(self._session_orchestration)
-        transition = on_durable_command_settled(
-            self._session_orchestration,
-            durable_command_succeeded=True,
-            effective_basis_changed=True,
-        )
-        self._session_orchestration = transition.next_state
-        if transition.should_start_seal:
+        if self.execution.start_manual_recovery():
             self._run_automatic_seal()
         return {"ok": True}
 
     def _do_refresh_observation(self, p: dict) -> dict:
-        """현재 설정의 관찰을 '지금 이 순간'으로 새로 고친다(orchestration 전이 없음).
+        """orchestration 전이 없이 fresh observation을 다시 계산한다.
 
-        R2(#740): observation 은 current authority 의 재계산이라 seal 과 하나다 — 별도의 'seal 없이
-        관찰' 경로가 없다. seal 은 durable side effect 없는 순수 재계산이므로 다시 돌려
-        ``_last_fresh_observation``·basis digest 만 교체하고 orchestration 상태는 건드리지 않는다
-        (자동 확인 궤도와 분리). **확인이 실패하면 마지막 관찰을 조용히 유지하지 않고** context error 로
-        교체한다 — refresh 가 route/store/무결성 오류로 실패했는데 이전 CURRENT 를 계속 주장하지
-        않는다(조용히 틀리지 않는다). 미주입·미선택이면 no-op.
+        실패하면 이전 CURRENT를 유지하지 않고 context error로 교체한다. 미주입·미선택은
+        기존 계약대로 무동작이다.
         """
-        if self._seal_execution is not None and self.job_name:
-            try:
-                resp = self._seal_execution.seal_execution_plan(
-                    self.job_name, uuid.uuid4().hex
-                )
-                self._absorb_seal_response(resp)
-            except Exception as exc:  # noqa: BLE001 — 확인 실패를 시끄럽게(CURRENT 유지 금지).
-                self._last_fresh_observation = ExecutionObservationContextError(
-                    "OBSERVATION_REFRESH_FAILED", str(exc)
-                )
+        self.execution.refresh_observation(self.work.name)
         return {"ok": True}

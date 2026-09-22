@@ -221,7 +221,7 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert [s["name"] for s in result["sheets"]] == ["공고목록", "낙찰현황"]
     assert result["sheets"][0]["rows"] and result["sheets"][0]["cols"]  # 행×열 근사 동반
     # 핵심: 아직 아무 것도 로드하지 않았다(조용한 첫 시트 강등 없음).
-    assert frontend.controllers["editor"].data_path == ""
+    assert frontend.controllers["editor"].edit.data_path == ""
 
 
 def test_pick_data_file_cancel_preserves_committed_job_session(tmp_path, monkeypatch):
@@ -238,11 +238,23 @@ def test_pick_data_file_cancel_preserves_committed_job_session(tmp_path, monkeyp
     data.write_text("항목\n이전 값\n", encoding="utf-8")
     ctrl.load_data_path(str(data))
     ctrl.dispatch("select_job", {"name": "기안"})
-    before = (ctrl.datasource, ctrl.records, ctrl.selection, ctrl.job_name, ctrl._snapshot_gen)
+    before = (
+        ctrl.data.datasource,
+        ctrl.data.records,
+        ctrl.data.selection,
+        ctrl.work.name,
+        ctrl.data.snapshot_generation,
+    )
 
     monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: None)
     assert frontend.pick_data_file("job") is None
-    assert (ctrl.datasource, ctrl.records, ctrl.selection, ctrl.job_name, ctrl._snapshot_gen) == before
+    assert (
+        ctrl.data.datasource,
+        ctrl.data.records,
+        ctrl.data.selection,
+        ctrl.work.name,
+        ctrl.data.snapshot_generation,
+    ) == before
 
 
 @pytest.mark.parametrize("screen", ["editor", "job"])
@@ -277,7 +289,7 @@ def test_load_data_sheet_threads_confirmed_sheet_into_job_controller(tmp_path, m
         "rows": 3,
     }
     job = frontend.controllers["job"]
-    assert job.data_label == "multi_sheet.xlsx"
+    assert job.data.label == "multi_sheet.xlsx"
     # 첫 시트(공고목록, 2건)가 아니라 확정 시트(낙찰현황, 3건)가 실렸는가 — 조용한 강등 아님.
     assert job.snapshot()["record_count"] == 3
 
@@ -298,7 +310,7 @@ def test_pick_data_file_corrupt_workbook_returns_error_not_raise(tmp_path, monke
     assert isinstance(result, str) and result.startswith("ERROR:"), (
         f"손상 워크북이 ERROR: 로 안 돌아옴(날것 예외 유출 위험): {result!r}"
     )
-    assert frontend.controllers["editor"].data_path == ""  # 로드 안 됨
+    assert frontend.controllers["editor"].edit.data_path == ""  # 로드 안 됨
 
 
 def test_load_data_sheet_vanished_file_returns_error_not_raise(tmp_path, monkeypatch):
@@ -325,7 +337,7 @@ def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
     # 성사 반환 = descriptor(U2 §2.7 3행): label 은 링1 합성(source_label) 그대로,
     # path 는 「이 데이터 고정」이 서는 근거다(푸시 도착에 기대지 않는다).
     assert result == {"label": "파일: d.csv", "path": str(csv), "sheet": "", "rows": 1}
-    assert frontend.controllers["editor"].data_path == str(csv)
+    assert frontend.controllers["editor"].edit.data_path == str(csv)
 
 
 def test_load_data_sheet_loads_confirmed_sheet(tmp_path, monkeypatch):
@@ -334,7 +346,7 @@ def test_load_data_sheet_loads_confirmed_sheet(tmp_path, monkeypatch):
     result = frontend.load_data_sheet("editor", str(MULTI_SHEET), "낙찰현황")
     assert isinstance(result, dict) and result["label"] == "파일: multi_sheet.xlsx"
     assert result["sheet"] == "낙찰현황"
-    assert frontend.controllers["editor"].source_fields == ["업체명", "낙찰금액", "계약일"]
+    assert frontend.controllers["editor"].edit.source_fields == ["업체명", "낙찰금액", "계약일"]
 
 
 def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
@@ -343,7 +355,7 @@ def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
     result = frontend.load_data_sheet("editor", str(MULTI_SHEET), "없는시트")
     assert isinstance(result, str) and result.startswith("ERROR:")
     assert "없는시트" in result
-    assert frontend.controllers["editor"].data_path == ""  # 로드되지 않음
+    assert frontend.controllers["editor"].edit.data_path == ""  # 로드되지 않음
 
 
 def test_web_assets_present_and_wired():
@@ -380,8 +392,7 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     """풀 겨눔 — 정상 참조는 읽되 직접·조립 속 나라 소스는 loader 전에 동결 거절.
 
-    (구 「기안」 표본의 이식 — F6 PR-B) 믹스인 계약(PoolTargetingMixin._do_load_pool)의
-    생존 소비자는 「문서 만들기」 하나 — 실 사용자 풀을 건드리지 않게 tmp 레지스트리로
+    데이터 마운트 계약의 실행 화면 소비자를 실 사용자 풀과 분리하려고 tmp 레지스트리로
     직접 조립한다(브리지 dispatch 검증은 registry 완결성 테스트가 별도로 진다).
     """
     from hwpxfiller.external.job_store import JobRegistry
@@ -426,11 +437,11 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
 
     load_calls = []
 
-    def forbidden_loader(item):
+    def forbidden_loader(item, **_kwargs):
         load_calls.append(item)
         raise AssertionError("나라 동결 관문 뒤 loader가 호출됐습니다.")
 
-    monkeypatch.setattr(ctrl, "_load_pool_records", forbidden_loader)
+    monkeypatch.setattr("hwpxfiller.webapp.screen_job.resolve_pool_source", forbidden_loader)
 
     direct = ctrl.dispatch("load_pool", {"key": nara_key})
     nested = ctrl.dispatch("load_pool", {"key": nested_nara_key})
@@ -560,7 +571,7 @@ def test_new_job_from_data_starts_the_wizard_on_the_mounted_data(tmp_path, monke
     # ① 마운트 전 — 시끄럽게 거절하고 편집 세션은 손대지 않는다.
     out = frontend.new_job_from_data({"entry_reason": "document_browser_new_work"})
     assert isinstance(out, str) and out.startswith("ERROR:") and "데이터" in out
-    assert editor.data_path == ""
+    assert editor.edit.data_path == ""
 
     csv = tmp_path / "발주.csv"
     csv.write_text("부서,사업명\n총무과,책상\n회계과,복사기\n", encoding="utf-8")
@@ -569,7 +580,7 @@ def test_new_job_from_data_starts_the_wizard_on_the_mounted_data(tmp_path, monke
     # ② 미배선 사유는 링1 이 fail-closed 로 거절하고 그 거절이 그대로 올라온다.
     bad = frontend.new_job_from_data({"entry_reason": "workbench_result"})
     assert isinstance(bad, str) and bad.startswith("ERROR:")
-    assert editor.data_path == ""            # 거절이면 세션은 그대로
+    assert editor.edit.data_path == ""            # 거절이면 세션은 그대로
 
     # ③ 성사 — 편집기 초안이 **그 파일**을 들고 서고 진입 문맥이 살아 있다.
     ok = frontend.new_job_from_data({
@@ -578,13 +589,13 @@ def test_new_job_from_data_starts_the_wizard_on_the_mounted_data(tmp_path, monke
         "return_context": {"surface": "data"},
     })
     assert ok == str(csv)
-    assert editor.data_path == str(csv)
-    assert editor.source_fields == ["부서", "사업명"]
+    assert editor.edit.data_path == str(csv)
+    assert editor.edit.source_fields == ["부서", "사업명"]
     snap = editor.snapshot()
     assert snap["is_draft"] is True and snap["template_path"] == ""
     assert snap["context"]["entry_reason"] == "document_browser_new_work"
     # 「문서 만들기」 세션은 이 진입으로 흔들리지 않는다(데이터·선택은 그 화면 소유).
-    assert job.data_path == str(csv)
+    assert job.data.path == str(csv)
 
 
 def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path, monkeypatch):
@@ -603,7 +614,7 @@ def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path
     a, b = tmp_path / "a.csv", tmp_path / "b.csv"
     a.write_text("id,부서\n1,총무과\n", encoding="utf-8")
     b.write_text("id,사업명\n1,책상\n", encoding="utf-8")
-    key = job.pool_registry.add(DatasetReference(name="6월 조립", kind="pipeline", opts={
+    key = job.data.pool_registry.add(DatasetReference(name="6월 조립", kind="pipeline", opts={
         "sources": [
             {"kind": "excel", "opts": {"path": str(a)}},
             {"kind": "excel", "opts": {"path": str(b)}},
@@ -618,7 +629,7 @@ def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path
     out = frontend.new_job_from_data({"entry_reason": "document_browser_new_work"})
     assert isinstance(out, str) and out.startswith("ERROR:")
     assert snap["new_work"]["reason"] in out, "버튼의 사유와 진입 거절 문구가 갈립니다."
-    assert editor.data_path == ""                        # 조용한 빈 초안으로 가지 않는다
+    assert editor.edit.data_path == ""                        # 조용한 빈 초안으로 가지 않는다
 
 
 def _repairable_job(frontend, tmp_path, *, name: str = "공고문") -> "Path":
@@ -632,7 +643,7 @@ def _repairable_job(frontend, tmp_path, *, name: str = "공고문") -> "Path":
 
     tpl = tmp_path / f"{name}.txt"
     tpl.write_text("수신: {{수신}}\n사업: {{사업명}}", encoding="utf-8")
-    frontend.controllers["editor"].registry.save(Job(
+    frontend.controllers["editor"].loader.registry.save(Job(
         name=name, template_path=str(tpl),
         mapping=MappingProfile(mappings=[FieldMapping(template_field="수신", source="부서")]),
     ))
@@ -677,7 +688,7 @@ def test_repair_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatc
     assert editor.has_unsaved_work() is False and snap["dirty"] is False
     assert snap["context"]["entry_reason"] == "document_browser_repair"
     # 「문서 만들기」의 세션은 이 왕복으로 흔들리지 않는다(데이터는 그 화면 소유).
-    assert job.data_path == str(csv)
+    assert job.data.path == str(csv)
 
 
 def test_repair_entry_without_a_mount_keeps_the_empty_data_gate(tmp_path, monkeypatch):
@@ -770,7 +781,7 @@ def test_library_entry_does_not_pick_up_the_mounted_data(tmp_path, monkeypatch):
 
     frontend.open_job_in_editor("공고문", {"entry_reason": "library"})
 
-    assert editor.data_path == "" and editor.source_fields == ["부서"]
+    assert editor.edit.data_path == "" and editor.edit.source_fields == ["부서"]
 
 
 def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, monkeypatch):

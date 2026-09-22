@@ -97,8 +97,8 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     # 착석이 준비를 지게 된 뒤로(#932 B5) 이 고리는 「준비가 없던 작업의 첫 생성」에서만
     # 재진다 — 고리 자체(발급이 성사 전에 일어난다)는 그대로라 상태만 명시로 되만든다.
     ctrl.registry.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
-    if ctrl.vm is not None:
-        ctrl.vm.job.authority_id = ""
+    if ctrl.work.vm is not None:
+        ctrl.work.vm.job.authority_id = ""
     assert ctrl.registry.load("공고서").authority_id == ""
     ctrl.dispatch("set_none", {})
 
@@ -109,7 +109,7 @@ def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path
     assert ctrl.registry.load("공고서").authority_id.startswith("w-")
     # 발급됐어도 관리 작업이 아니다 — 판정의 원천은 slot 보유이고, projection 이 그 사실을
     # 스스로 말한다(미주입 우회가 아니라 「구간 0개」).
-    view = ctrl._slot_configuration.current_slot_configuration_view("공고서")
+    view = ctrl.execution.slot_configuration.current_slot_configuration_view("공고서")
     projection = view.current_view.projection
     assert projection is not None and projection.slots == ()
     assert ctrl.snapshot()["managed_hwpx"] is False
@@ -157,7 +157,7 @@ def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path
 
     picked = tmp_path / "picked"
     pick_output_folder(ctrl, picked)
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
 
     assert ctrl.generate()["ok"] is True
 

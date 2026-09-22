@@ -1,7 +1,8 @@
 """현재 선택 레코드와 배달 계획의 값 계산.
 
-세션의 currentness, 캐시 수명, 실행 잠금은 ``JobController``가 소유한다. 이 모듈은
-컨트롤러가 고정해 넘긴 값만 캡처·검증하고 저장 폴더를 읽기 전용으로 관찰한다.
+세션의 currentness와 캐시 수명은 ``JobExecutionSession``이, 실행 잠금과 라이브 상태의
+재검사는 ``JobController``가 소유한다. 이 모듈은 고정된 값만 계산하고 저장 폴더를 읽기
+전용으로 관찰한다.
 """
 
 from __future__ import annotations
@@ -347,7 +348,7 @@ def prepare_current_delivery(
 ) -> CurrentDeliveryPreparation:
     """고정된 record·binding·pattern·intent로 현재 배달 계획을 한 번 계산한다.
 
-    캐시의 currentness와 수명은 컨트롤러가 판단한다. 여기서는 점유를 읽기만 하고 폴더를
+    캐시의 currentness와 수명은 실행 세션이 판단한다. 여기서는 점유를 읽기만 하고 폴더를
     만들지 않으며, 도출한 기본 폴더의 부재만 빈 점유로 허용한다.
     """
     basis = build_delivery_binding_basis(

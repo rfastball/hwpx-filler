@@ -8,7 +8,7 @@ Primary Action 이 CREATE_DOCUMENTS 로 조용히 새지 않고, (4) snapshot �
 
 R2(#740): currentness 축이 orchestration 으로 흡수됐다 — CURRENT/STALE 은 orchestration 상태가
 나르고, opaque Plan ref·resolve_plan_reference·Profile admission store 는 사라졌다. seal 은 durable
-side effect 없는 순수 재계산이라 마지막 sealed basis 는 digest 로만 잡힌다(_last_sealed_basis_digest).
+side effect 없는 순수 재계산이라 마지막 sealed basis 는 digest 로만 잡힌다(execution.sealed_basis_digest).
 
 **하드코딩 0**: admission/readiness/7상태는 전부 seal 서비스 fresh_observation 소비다.
 """
@@ -18,7 +18,6 @@ import dataclasses
 import threading
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -42,9 +41,12 @@ from hwpxfiller.external.settings import (
 from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp import screen_job as sj
+from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
+from hwpxfiller.webapp.document_run_coordinator import ManagedRunInput
 from hwpxfiller.webapp import current_execution_preparation as execution_preparation
+from hwpxfiller.webapp.current_execution_preparation import current_record_identity
+from hwpxfiller.webapp.job_presentation import serialize_observation
 from hwpxfiller.external.delivery_coordinator import DeliveredDocument, DeliveryCompleted
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.application.fresh_execution_observation import (
@@ -142,7 +144,7 @@ def _controller(
     if wire_seal:
         kwargs["seal_execution"] = SealExecutionPlanService(reg, root=root, clock=datetime.now)
     ctrl = JobController(reg, lambda s, snap: None, **kwargs)
-    ctrl.job_name = WORK_REF
+    ctrl.work.name = WORK_REF
     return ctrl
 
 
@@ -162,7 +164,7 @@ def _folder(ctrl) -> dict:
 # ── 확인 증거 없음 → NO_EVIDENCE(정직한 disabled) ─────────────────────────────────────────────
 def _wire_source_plan(ctrl: JobController) -> None:
     ctrl.dispatch("resolve_execution", {})
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     requirement = {
         "field_id": "f_name",
@@ -175,14 +177,14 @@ def _wire_source_plan(ctrl: JobController) -> None:
         fresh.sealed_plan_value,
         active_field_requirements=(requirement,),
     )
-    ctrl._last_fresh_observation = dataclasses.replace(fresh, sealed_plan_value=plan)
+    ctrl.execution.fresh_observation = dataclasses.replace(fresh, sealed_plan_value=plan)
 
 
 def _mount_rows(ctrl: JobController, rows: list[dict]) -> None:
-    ctrl.datasource = object()
-    ctrl.records = rows
-    ctrl.selection = SelectionModel(len(rows))
-    ctrl._install_filter(rows, {})
+    ctrl.data.datasource = object()
+    ctrl.data.records = rows
+    ctrl.data.selection = SelectionModel(len(rows))
+    ctrl.data.install_filter(rows, {})
 
 
 def test_no_evidence_before_any_check(tmp_path: Path) -> None:
@@ -238,19 +240,19 @@ def test_selected_record_capture_preserves_order_and_never_rereads_source(
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     rows = [{"name": "A"}, {"name": "B"}, {"name": "C"}]
     _mount_rows(ctrl, rows)
-    ctrl.view_order = "sourceDesc"
+    ctrl.data.view_order = "sourceDesc"
 
     class NoReadSource:
         def __getattribute__(self, name):
             raise AssertionError(f"mutable source reread: {name}")
 
-    ctrl.datasource = NoReadSource()
+    ctrl.data.datasource = NoReadSource()
     generation, indices, snapshots = ctrl._capture_current_selected_records()
-    assert generation == ctrl._snapshot_gen
+    assert generation == ctrl.data.snapshot_generation
     assert indices == (2, 1, 0)
     assert [snapshot.value_for("name").text for snapshot in snapshots] == ["C", "B", "A"]
     rows[2]["name"] = "changed after capture"
@@ -263,7 +265,7 @@ def test_generation_move_rejects_mixed_capture(
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     _mount_rows(ctrl, [{"name": "A"}, {"name": "B"}])
     original = execution_preparation.build_raw_record_snapshot
@@ -274,20 +276,20 @@ def test_generation_move_rejects_mixed_capture(
         calls += 1
         result = original(**kwargs)
         if calls == 1:
-            ctrl._snapshot_gen += 1
+            ctrl.data.snapshot_generation += 1
         return result
 
     monkeypatch.setattr(execution_preparation, "build_raw_record_snapshot", moving_capture)
     with pytest.raises(ValueError, match="다시 불러와져"):
         ctrl._capture_current_selected_records()
-    assert ctrl._current_record_preparation is None
+    assert ctrl.execution.record_preparation is None
 
 
 def test_capture_freezes_every_column_as_untyped_text(tmp_path: Path) -> None:
     """구 date/amount 열의 표시형 값도 해석 없이 그대로 언다 — 통과에 열 이름이 필요 없다."""
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     requirements = tuple(
         {
@@ -302,7 +304,7 @@ def test_capture_freezes_every_column_as_untyped_text(tmp_path: Path) -> None:
     plan = dataclasses.replace(
         fresh.sealed_plan_value, active_field_requirements=requirements
     )
-    ctrl._last_fresh_observation = dataclasses.replace(
+    ctrl.execution.fresh_observation = dataclasses.replace(
         fresh, sealed_plan_value=plan
     )
     _mount_rows(ctrl, [{'amount': '1,500,000', 'date': '계약 후 90일 이내'}])
@@ -318,7 +320,7 @@ def test_shared_source_column_reaches_every_requirement_verbatim(
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     requirements = tuple(
         {
@@ -333,14 +335,14 @@ def test_shared_source_column_reaches_every_requirement_verbatim(
     plan = dataclasses.replace(
         fresh.sealed_plan_value, active_field_requirements=requirements
     )
-    ctrl._last_fresh_observation = dataclasses.replace(
+    ctrl.execution.fresh_observation = dataclasses.replace(
         fresh, sealed_plan_value=plan
     )
     _mount_rows(ctrl, [{'value': '1'}])
 
     zone = _zone(ctrl)
     assert zone['record_validation']['validated_count'] == 1
-    preparation = ctrl._current_record_preparation
+    preparation = ctrl.execution.record_preparation
     assert preparation is not None
     assert preparation.validated_records[0].document_values_in_order() == (
         ('f_text', '1'),
@@ -372,8 +374,8 @@ def test_current_record_blocker_projects_exact_backend_target(
     target = issue["recovery_target"]
     assert target == {
         'target_kind': 'cell',
-        "snapshot_generation": ctrl._snapshot_gen,
-        "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+        "snapshot_generation": ctrl.data.snapshot_generation,
+        "record_identity": current_record_identity(ctrl.data.snapshot_generation, 1),
         "model_index": 1,
         "field_id": "name",
     }
@@ -382,7 +384,7 @@ def test_current_record_blocker_projects_exact_backend_target(
         "element_id": "jobCell-1-0",
         "fallback_element_id": "jobRow-1",
     }
-    ctrl._snapshot_gen += 1
+    ctrl.data.snapshot_generation += 1
     with pytest.raises(ValueError, match="위치를 복원할 수 없습니다"):
         ctrl.dispatch("recover_record_issue", {"target": target})
 
@@ -404,7 +406,7 @@ def test_blank_row_value_is_a_non_blocking_advisory(tmp_path: Path) -> None:
         "빈 값 1칸이 있습니다. 문서에는 미입력 표식이 들어갑니다."
     )
     # 표식은 유효 값이라 record 는 통과한다 — 문서 텍스트로 그 사실이 남는다.
-    preparation = ctrl._current_record_preparation
+    preparation = ctrl.execution.record_preparation
     assert preparation is not None
     assert {
         dict(record.document_values_in_order())["f_name"]
@@ -440,7 +442,7 @@ def test_stale_orchestration_hides_old_record_validation_and_target(
     _mount_rows(ctrl, [{'other': '값'}])
     target = _zone(ctrl)['record_validation']['issues'][0]['recovery_target']
 
-    ctrl._session_orchestration = AutomaticSealOrchestration(state='STALE')
+    ctrl.execution.orchestration = AutomaticSealOrchestration(state='STALE')
     assert _zone(ctrl)['record_validation']['issue_count'] == 0
     with pytest.raises(ValueError, match='현재 데이터 확인 결과가 없습니다'):
         ctrl.dispatch('recover_record_issue', {'target': target})
@@ -454,17 +456,17 @@ def test_current_preparation_is_reused_until_existing_basis_moves(
     rows = [{"name": "정상"}, {"name": " "}]
     _mount_rows(ctrl, rows)
     assert _zone(ctrl)["record_validation"]["advisory_count"] == 1
-    first = ctrl._current_record_preparation
+    first = ctrl.execution.record_preparation
     rows[1]["name"] = "원본에서 수정됨"
     assert _zone(ctrl)["record_validation"]["advisory_count"] == 1
-    assert ctrl._current_record_preparation is first
+    assert ctrl.execution.record_preparation is first
 
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     moved = dataclasses.replace(fresh.sealed_plan_value, qualification_profile_id="profile-moved")
-    ctrl._last_fresh_observation = dataclasses.replace(fresh, sealed_plan_value=moved)
+    ctrl.execution.fresh_observation = dataclasses.replace(fresh, sealed_plan_value=moved)
     assert _zone(ctrl)["record_validation"]["validated_count"] == 2
-    assert ctrl._current_record_preparation is not first
+    assert ctrl.execution.record_preparation is not first
 
 
 def _delivery_controller(
@@ -480,12 +482,34 @@ def _delivery_controller(
         def records(self) -> list[dict]:
             return rows
 
-    ctrl.datasource = Source()
-    assert ctrl.vm is not None
-    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    ctrl.data.datasource = Source()
     out = tmp_path / "delivery"
     out.mkdir()
     return ctrl, out
+
+
+def _managed_input(ctrl: JobController, prep) -> ManagedRunInput:
+    payload = ctrl.execution.sealed_plan_payload
+    context = ctrl.execution.managed_run_context(ctrl.work.name)
+    assert payload is not None and context is not None
+    schema = tuple(ctrl.data.records[0]) if ctrl.data.records else ()
+    capture = ctrl.runs.capture_input(
+        datasource=ctrl.data.datasource,
+        records=ctrl.data.records,
+        indices=ctrl.data.selected_indices(),
+        snapshot_generation=ctrl.data.snapshot_generation,
+        work_ref=ctrl.work.name,
+        source_schema_keys=schema,
+        output_directory=ctrl.runs.out_dir,
+    )
+    return ManagedRunInput(
+        payload=payload,
+        preparation=prep,
+        context=context,
+        sealed_basis_digest=ctrl.execution.sealed_basis_digest or "",
+        capture=capture,
+        filename_source_columns=[],
+    )
 
 
 def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
@@ -498,7 +522,7 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
     zone = _zone(ctrl)
     # 두 축이 **같은 도출**을 지난다(전역화) — 종전 이 자리는 구식 축이 그대로 두는 것을
     # 쟀고, 그 갈라짐이 「고른 폴더가 갈래에 따라 무시된다」(#905)의 자리였다.
-    assert ctrl.out_dir == str(out)
+    assert ctrl.runs.out_dir == str(out)
     assert zone["run_delivery_intent"] == {
         "output_directory": str(out),
         "collision_policy": DEFAULT_COLLISION_POLICY,
@@ -507,13 +531,13 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
         "resolvable": True,
         "planned_documents": [
             {
-                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+                "record_identity": current_record_identity(ctrl.data.snapshot_generation, 1),
                 "item_ordinal": 0,
                 "relative_path": "공고서-20260818-001.hwpx",
                 "collision_disposition": "WRITE_NEW",
             },
             {
-                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 0),
+                "record_identity": current_record_identity(ctrl.data.snapshot_generation, 0),
                 "item_ordinal": 1,
                 "relative_path": "공고서-20260818-002.hwpx",
                 "collision_disposition": "WRITE_NEW",
@@ -623,7 +647,7 @@ def test_both_axes_derive_the_same_folder(tmp_path: Path) -> None:
 
     pick_output_folder(ctrl, picked)
 
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
     assert _zone(ctrl)["run_delivery_intent"]["output_directory"] == str(picked)
     assert _folder(ctrl)["directory"] == str(picked)
 
@@ -640,18 +664,18 @@ def test_a_pick_without_a_seated_work_is_valid_and_survives_seating(
     template = tmp_path / "서고" / "managed.hwpx"
     template.parent.mkdir(parents=True, exist_ok=True)
     ctrl = _controller(tmp_path, with_binding=True, template_path=str(template))
-    assert ctrl.vm is None  # 아직 아무 작업도 앉지 않았다
+    assert ctrl.work.vm is None  # 아직 아무 작업도 앉지 않았다
     picked = tmp_path / "작업-전에-고른-폴더"
 
     pick_output_folder(ctrl, picked)
 
     assert _folder(ctrl)["directory"] == str(picked)
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
     assert ctrl.snapshot()["output_folder"]["directory"] == str(picked)
 
     ctrl.dispatch("select_job", {"name": WORK_REF})
 
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
     assert _folder(ctrl)["source"] == "remembered"
 
 
@@ -731,9 +755,9 @@ def test_releasing_the_work_keeps_the_global_folder(
 
     ctrl.dispatch("select_job", {"name": ""})
 
-    assert ctrl._run_delivery_collision == DEFAULT_COLLISION_POLICY
+    assert ctrl.runs.delivery_collision == DEFAULT_COLLISION_POLICY
     assert load_last_output_directory() == str(picked)
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
     assert _folder(ctrl)["directory"] == str(picked)
 
 
@@ -754,9 +778,8 @@ def test_managed_generation_creates_the_derived_default_folder(
         def records(self) -> list[dict]:
             return rows
 
-    ctrl.datasource = Source()
-    assert ctrl.vm is not None
-    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    ctrl.data.datasource = Source()
+    assert ctrl.work.vm is not None
 
     captured: dict = {}
 
@@ -771,7 +794,7 @@ def test_managed_generation_creates_the_derived_default_folder(
             ),
         )
 
-    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", fake_run)
     assert not results.exists()
 
     result = ctrl.generate(run_token="tk-default")
@@ -797,7 +820,7 @@ def test_managed_overwrite_needs_confirmation_before_anything_is_written(
     _zone(ctrl)
 
     ran: list = []
-    monkeypatch.setattr(sj, "run_managed_generation", lambda **kw: ran.append(kw))
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", lambda **kw: ran.append(kw))
 
     asked = ctrl.generate(run_token="tk-1")
 
@@ -808,7 +831,7 @@ def test_managed_overwrite_needs_confirmation_before_anything_is_written(
     assert asked["overwrite_count"] == 1 and asked["new_count"] == 1
     assert asked["conflict_names"] == ["공고서-20260818-001.hwpx"]
     assert asked["conflict_more"] == 0
-    assert ctrl._overwrite_now_pin is not None
+    assert ctrl.runs.overwrite_now_pin is not None
 
 
 def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
@@ -824,7 +847,7 @@ def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
     pick_output_folder(ctrl, out)
     asked = ctrl.generate(run_token="tk-1")
     assert asked["needs_overwrite"] is True
-    prep_before = ctrl._current_delivery_preparation
+    prep_before = ctrl.execution.delivery_preparation
 
     captured: dict = {}
 
@@ -839,16 +862,16 @@ def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
             ),
         )
 
-    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", fake_run)
     result = ctrl.generate(confirm_overwrite=True, run_token="tk-1")
 
     assert result["ok"] is True, result.get("error")
-    assert ctrl._current_delivery_preparation is prep_before, "확인 왕복이 배치를 갈아치웠습니다."
+    assert ctrl.execution.delivery_preparation is prep_before, "확인 왕복이 배치를 갈아치웠습니다."
     assert [
         item.resolved_output_relative_path
         for item in captured["resolved_delivery"].ordered_items
     ] == ["공고서-20260818-001.hwpx", "공고서-20260818-002.hwpx"]
-    assert ctrl._overwrite_now_pin is None      # 소비했으면 놓는다
+    assert ctrl.runs.overwrite_now_pin is None      # 소비했으면 놓는다
 
 
 def test_managed_overwrite_confirmation_is_refused_when_the_zone_moved(
@@ -866,7 +889,7 @@ def test_managed_overwrite_confirmation_is_refused_when_the_zone_moved(
     assert ctrl.generate(run_token="tk-1")["needs_overwrite"] is True
 
     ran: list = []
-    monkeypatch.setattr(sj, "run_managed_generation", lambda **kw: ran.append(kw))
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", lambda **kw: ran.append(kw))
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})   # 존 변이
 
     refused = ctrl.generate(confirm_overwrite=True, run_token="tk-1")
@@ -874,7 +897,7 @@ def test_managed_overwrite_confirmation_is_refused_when_the_zone_moved(
     assert ran == [], "낡은 확인이 실행기까지 갔습니다."
     assert refused["ok"] is False and "needs_overwrite" not in refused
     assert refused["level"] == "warn" and refused["error"]
-    assert ctrl._overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
+    assert ctrl.runs.overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
 
 
 def test_managed_run_without_any_overwrite_never_asks(
@@ -885,14 +908,14 @@ def test_managed_run_without_any_overwrite_never_asks(
     pick_output_folder(ctrl, out)
 
     monkeypatch.setattr(
-        sj, "run_managed_generation",
+        run_coordinator_module, "run_managed_generation",
         lambda **kw: DeliveryCompleted(output_directory=str(out), delivered=()),
     )
     result = ctrl.generate(run_token="tk-1")
 
     assert "needs_overwrite" not in result
     assert result["ok"] is True
-    assert ctrl._overwrite_now_pin is None
+    assert ctrl.runs.overwrite_now_pin is None
 
 
 def test_non_regular_collision_keeps_delivery_ahead_of_the_run(tmp_path: Path) -> None:
@@ -919,7 +942,7 @@ def test_delivery_intent_changes_reuse_record_preparation(
     second_out.mkdir()
     pick_output_folder(ctrl, first_out)
     _zone(ctrl)
-    record_preparation = ctrl._current_record_preparation
+    record_preparation = ctrl.execution.record_preparation
     assert record_preparation is not None
 
     monkeypatch.setattr(
@@ -929,10 +952,10 @@ def test_delivery_intent_changes_reuse_record_preparation(
     )
     pick_output_folder(ctrl, second_out)
     _zone(ctrl)
-    assert ctrl._current_record_preparation is record_preparation
+    assert ctrl.execution.record_preparation is record_preparation
     pick_output_folder(ctrl, second_out)
     _zone(ctrl)
-    assert ctrl._current_record_preparation is record_preparation
+    assert ctrl.execution.record_preparation is record_preparation
 
 
 def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) -> None:
@@ -951,18 +974,18 @@ def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) ->
     # 폴더를 갈면 preparation 이 무효화된다(그것이 재관찰의 전이다) — 종전에는 세션 intent 를
     # 직접 갈아끼우고 무효화도 손으로 했다. 전역화 뒤에는 지정 자체가 그 둘을 다 한다.
     pick_output_folder(ctrl, second_out)
-    assert ctrl._current_delivery_preparation is None
+    assert ctrl.execution.delivery_preparation is None
     record_validation, context = ctrl._current_record_validation()
     assert context is None
     calls = 0
     ctrl._current_delivery(record_validation)
     assert calls == 1
-    prepared = ctrl._current_delivery_preparation
+    prepared = ctrl.execution.delivery_preparation
     ctrl._current_delivery(record_validation)
     assert calls == 1
-    assert ctrl._current_delivery_preparation is prepared
+    assert ctrl.execution.delivery_preparation is prepared
     pick_output_folder(ctrl, first_out)
-    assert ctrl._current_delivery_preparation is not prepared
+    assert ctrl.execution.delivery_preparation is not prepared
 
 
 def test_delivery_occupancy_is_read_only_and_name_conflicts_are_not_blockers(
@@ -986,7 +1009,7 @@ def test_delivery_occupancy_is_read_only_and_name_conflicts_are_not_blockers(
     assert zone["delivery"]["resolvable"] is True
     assert zone["delivery"]["blockers"] == []
     assert zone["delivery"]["planned_documents"][0] == {
-        "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+        "record_identity": current_record_identity(ctrl.data.snapshot_generation, 1),
         "item_ordinal": 0,
         "relative_path": "공고서-20260818-001.hwpx",
         "collision_disposition": "WRITE_OVERWRITE",
@@ -1053,7 +1076,7 @@ def test_inactive_filename_uses_frozen_record_without_source_reread(
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("select_job", {"name": WORK_REF})
     _wire_source_plan(ctrl)
-    fresh = ctrl._last_fresh_observation
+    fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
     binding = fresh.current_field_binding
     assert binding is not None
@@ -1072,12 +1095,12 @@ def test_inactive_filename_uses_frozen_record_without_source_reread(
         raw_record_contract_id=binding.raw_record_contract_id,
         captured_at=binding.captured_at,
     )
-    ctrl._last_fresh_observation = dataclasses.replace(
+    ctrl.execution.fresh_observation = dataclasses.replace(
         fresh, current_field_binding=current_binding
     )
     _mount_rows(ctrl, [{"name": "A", "typed_date": "2026-08-20"}])
-    assert ctrl.vm is not None
-    ctrl.vm.job.filename_pattern = "{{f_date}}"
+    assert ctrl.work.vm is not None
+    ctrl.work.vm.job.filename_pattern = "{{f_date}}"
 
     class NoReadSource:
         def __getattribute__(self, name):
@@ -1087,7 +1110,7 @@ def test_inactive_filename_uses_frozen_record_without_source_reread(
     out.mkdir()
     record_validation, context = ctrl._current_record_validation()
     assert context is None
-    ctrl.datasource = NoReadSource()
+    ctrl.data.datasource = NoReadSource()
     # 설정 층을 직접 세운다 — `set_output_folder` 는 push 를 동반하고, 이 대역은 **어떤**
     # 속성 접근에도 폭발하도록 만들어졌기 때문이다(재읽기 0 을 재는 것이 이 테스트의 축).
     # 전역화 전 이 자리는 같은 이유로 세션 intent 를 직접 대입했다.
@@ -1115,7 +1138,7 @@ def test_delivery_unreadable_directory_is_loud_and_never_created(
     ctrl, _out = _delivery_controller(tmp_path)
     picked = tmp_path / "읽을-수-없는-출력-폴더"
     pick_output_folder(ctrl, picked)
-    assert ctrl.out_dir == str(picked)
+    assert ctrl.runs.out_dir == str(picked)
 
     def refuse_listing(_self):
         raise PermissionError("access denied")
@@ -1136,11 +1159,11 @@ def test_stale_projects_backend_execution_action_when_it_is_primary(
         AutomaticSealOrchestration,
     )
 
-    ctrl.datasource = object()
-    ctrl.records = [{}]
-    ctrl.selection = SelectionModel(1)
+    ctrl.data.datasource = object()
+    ctrl.data.records = [{}]
+    ctrl.data.selection = SelectionModel(1)
 
-    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
+    ctrl.execution.orchestration = AutomaticSealOrchestration(state="STALE")
     zone = _zone(ctrl)
 
     assert zone["primary_action"] == "RESOLVE_EXECUTION"
@@ -1153,7 +1176,7 @@ def test_stale_projects_backend_execution_action_when_it_is_primary(
 
 def test_select_managed_work_automatically_prepares_current_value(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl.job_name = ""
+    ctrl.work.name = ""
 
     ctrl.dispatch("select_job", {"name": WORK_REF})
 
@@ -1171,7 +1194,7 @@ def test_resolve_execution_reaches_current_admitted_ready(tmp_path: Path) -> Non
     assert zone["admission"]["state"] == "ADMITTED"
     assert zone["materialization_readiness"] == "READY"
     # seal 루프가 닫혔다: 마지막 sealed basis digest 가 세션에 잡혔다(durable 아님).
-    assert ctrl._last_sealed_basis_digest is not None
+    assert ctrl.execution.sealed_basis_digest is not None
     # runtime 이 열려도 CREATE 로 조용히 새지 않는다 — 데이터 미장착이 다음 정직한 blocker 다.
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
     assert zone["create_action"] == {
@@ -1233,7 +1256,7 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("select_job", {"name": WORK_REF})
     ctrl.dispatch("resolve_execution", {})  # 실 seal — payload·digest·workspace 가 세션에 선다
-    assert ctrl._last_sealed_plan_payload is not None
+    assert ctrl.execution.sealed_plan_payload is not None
     rows = [{"이름": "A"}, {"이름": "B"}]  # 실 plan 의 source schema 그대로
     _mount_rows(ctrl, rows)
 
@@ -1241,9 +1264,8 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
         def records(self) -> list[dict]:
             return rows
 
-    ctrl.datasource = Source()
-    assert ctrl.vm is not None
-    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    ctrl.data.datasource = Source()
+    assert ctrl.work.vm is not None
     out = tmp_path / "delivery"
     out.mkdir()
     pick_output_folder(ctrl, out)
@@ -1262,7 +1284,7 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
             ),
         )
 
-    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", fake_run)
 
     def forbidden(*args, **kwargs):
         pytest.fail("managed 갈래가 legacy generator 에 도달했다")
@@ -1274,13 +1296,13 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     assert (result["succeeded"], result["failed"], result["total"]) == (2, 0, 2)
     assert result["run_token"] == "tk-1"
     # 세션 사실이 재조립 없이 그대로 넘어갔다.
-    assert captured["plan_payload"] is ctrl._last_sealed_plan_payload
-    prep = ctrl._current_delivery_preparation
+    assert captured["plan_payload"] is ctrl.execution.sealed_plan_payload
+    prep = ctrl.execution.delivery_preparation
     assert prep is not None
     assert captured["ordered_raw_snapshots"] == prep.record_preparation.raw_records
     assert captured["resolved_delivery"] is prep.result
     # reader 는 실 authority 관찰이다 — 방금 봉인된 digest 와 동치(자기 비교가 아니다).
-    assert captured["current_basis_digest_reader"]() == ctrl._last_sealed_basis_digest
+    assert captured["current_basis_digest_reader"]() == ctrl.execution.sealed_basis_digest
     # 실행 증거가 작업대의 부차 축으로 남는다(S7 선행 없이 세션 요약만).
     assert _zone(ctrl)["historical_outcome"]["outcome_kind"] == "DOCUMENTS_DELIVERED"
 
@@ -1299,31 +1321,34 @@ def test_managed_pre_delivery_outcomes_keep_prior_session_evidence(
     ctrl, out = _delivery_controller(tmp_path)
     pick_output_folder(ctrl, out)
     _zone(ctrl)
-    prep = ctrl._current_delivery_preparation
+    prep = ctrl.execution.delivery_preparation
     assert prep is not None
     prior = DeliveredDocument(
         0, "prior", "prior.hwpx", str(out / "prior.hwpx"),
         "WRITE_NEW", "sha256:" + "0" * 64, (),
     )
     artifact_view = object()
-    ctrl._last_delivered = (prior,)
-    ctrl._artifact_view = artifact_view
-    ctrl._last_generated = {9}
-    ctrl._last_failed = [7]
+    ctrl.runs.delivered = (prior,)
+    ctrl.runs.artifact_view = artifact_view
+    ctrl.runs.last_generated = {9}
+    ctrl.runs.last_failed = [7]
     prior_history = HistoricalOutcomeSummary("PRIOR_OUTCOME", NOW.isoformat())
-    ctrl._last_managed_outcome = prior_history
-    result = ctrl._managed_result_dict(outcome, prep, None, None, NOW.isoformat())
+    ctrl.execution.managed_outcome = prior_history
+    projection = ctrl.runs.project_managed_result(
+        outcome, _managed_input(ctrl, prep), generated_at=NOW.isoformat()
+    )
+    result = projection.payload
 
     assert result[result_key] == result_value
     assert result["level"] == "warn"
     if isinstance(outcome, ManagedRunCancelled):
         assert (result["attempted"], result["unstarted"]) == (1, 1)
         assert (result["succeeded"], result["failed"], result["total"]) == (0, 0, 2)
-    assert ctrl._last_delivered == (prior,)
-    assert ctrl._artifact_view is artifact_view
-    assert ctrl._last_generated == {9}
-    assert ctrl._last_failed == [7]
-    assert ctrl._last_managed_outcome is prior_history
+    assert ctrl.runs.delivered == (prior,)
+    assert ctrl.runs.artifact_view is artifact_view
+    assert ctrl.runs.last_generated == {9}
+    assert ctrl.runs.last_failed == [7]
+    assert ctrl.execution.managed_outcome is prior_history
 
 
 def test_managed_ledger_failure_keeps_success_and_warns_loudly(
@@ -1332,33 +1357,33 @@ def test_managed_ledger_failure_keeps_success_and_warns_loudly(
     ctrl, out = _delivery_controller(tmp_path)
     pick_output_folder(ctrl, out)
     _zone(ctrl)
-    prep = ctrl._current_delivery_preparation
+    prep = ctrl.execution.delivery_preparation
     assert prep is not None
     delivered = DeliveredDocument(
         0, "rec-0", "a.hwpx", str(out / "a.hwpx"),
         "WRITE_NEW", "sha256:" + "0" * 64, (),
     )
     outcome = DeliveryCompleted(str(out), (delivered,))
-    context = SimpleNamespace(work_authority_id=WORK)
-    payload = ctrl._last_sealed_plan_payload
-    assert payload is not None
-    ctrl._artifact_view = object()
+    ctrl.runs.artifact_view = object()
 
     def fail_ledger(*_args, **_kwargs):
-        assert ctrl._last_delivered == (delivered,)
-        assert ctrl._artifact_view is None
+        assert ctrl.runs.delivered == (delivered,)
+        assert ctrl.runs.artifact_view is None
         raise OSError("ledger denied")
 
-    monkeypatch.setattr(screen_job_module, "write_managed_delivery_ledger", fail_ledger)
+    monkeypatch.setattr(run_coordinator_module, "write_managed_delivery_ledger", fail_ledger)
 
-    result = ctrl._managed_result_dict(outcome, prep, payload, context, NOW.isoformat())
+    projection = ctrl.runs.project_managed_result(
+        outcome, _managed_input(ctrl, prep), generated_at=NOW.isoformat()
+    )
+    result = projection.payload
 
     assert result["status"] == "completed" and result["level"] == "danger"
     assert "실행 기록 저장에 실패했습니다(ledger denied)" in result["summary"]
-    assert ctrl._last_delivered == (delivered,)
-    assert ctrl._last_generated == set(prep.record_preparation.ordered_model_indices)
-    assert ctrl._last_failed == []
-    assert ctrl._last_managed_outcome is not None
+    assert ctrl.runs.delivered == (delivered,)
+    assert ctrl.runs.last_generated == set(prep.record_preparation.ordered_model_indices)
+    assert ctrl.runs.last_failed == []
+    assert projection.historical_outcome is not None
 
 
 def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
@@ -1384,9 +1409,8 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
         def records(self) -> list[dict]:
             return rows
 
-    ctrl.datasource = Source()
-    assert ctrl.vm is not None
-    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    ctrl.data.datasource = Source()
+    assert ctrl.work.vm is not None
     out = tmp_path / "delivery"
     out.mkdir()
     pick_output_folder(ctrl, out)
@@ -1406,7 +1430,7 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
             delivered=delivered,
         )
 
-    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    monkeypatch.setattr(run_coordinator_module, "run_managed_generation", fake_run)
     result = ctrl.generate(run_token="tk-rb")
 
     assert result["ok"] is True, result.get("error")
@@ -1417,7 +1441,7 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
     assert (result["unstarted"], result["attempted"]) == (0, 2)
     assert len(result["failures"]) == 1
     failure = result["failures"][0]
-    prep = ctrl._current_delivery_preparation
+    prep = ctrl.execution.delivery_preparation
     assert prep is not None
     # ordinal → 표시 index·파일 이름 투영은 실 준비의 것이다(중단 갈래와 같은 방식).
     assert failure["index"] == prep.record_preparation.ordered_model_indices[1]
@@ -1442,7 +1466,7 @@ def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -
     assert zone["execution_status_code"] in ("DOMAIN_BLOCKED", "POLICY_BLOCKED", "NO_EVIDENCE", "STALE")
     assert zone["materialization_readiness"] == "NOT_READY"
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
-    assert ctrl._last_sealed_basis_digest is None  # sealed 안 됨 → digest 없음
+    assert ctrl.execution.sealed_basis_digest is None  # sealed 안 됨 → digest 없음
     assert "REVIEW_BINDING" in zone["blockers"]
     assert zone["input_requirements"]
     assert all(item["binding_state"] == "NEW_ACTIVE_FIELD" for item in zone["input_requirements"])
@@ -1474,7 +1498,9 @@ def test_input_requirements_zone_carries_only_action_required_items(tmp_path: Pa
         )
     )
     mixed_observation = dataclasses.replace(observation, input_requirements=mixed)
-    zone = ctrl._serialize_observation(mixed_observation)
+    zone = serialize_observation(
+        mixed_observation, execution_status=ctrl.execution.execution_status()
+    )
 
     assert [item["field_id"] for item in zone["input_requirements"]] == ["깨짐", "신규"]
     assert all(item["action_required"] is True for item in zone["input_requirements"])
@@ -1502,10 +1528,10 @@ def test_sealed_current_input_requirements_zone_is_empty(tmp_path: Path) -> None
 def test_refresh_observation_reobserves_current(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
-    digest_after_seal = ctrl._last_sealed_basis_digest
+    digest_after_seal = ctrl.execution.sealed_basis_digest
     ctrl.dispatch("refresh_observation", {})
     # 재관찰은 같은 basis 를 재계산한다(같은 digest) — orchestration 은 SETTLED_CURRENT 유지.
-    assert ctrl._last_sealed_basis_digest == digest_after_seal
+    assert ctrl.execution.sealed_basis_digest == digest_after_seal
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
@@ -1516,19 +1542,19 @@ def test_refresh_observation_standalone_observes_without_orchestration_transitio
     # 사전 resolve 없이 refresh 만 해도 seal(순수 재계산)이 돌아 관찰을 얻는다 — orchestration 은
     # 건드리지 않으므로 IDLE 유지(자동 확인 궤도와 분리).
     ctrl.dispatch("refresh_observation", {})
-    assert ctrl._last_fresh_observation is not None
-    assert ctrl._session_orchestration.state == "IDLE"
+    assert ctrl.execution.fresh_observation is not None
+    assert ctrl.execution.orchestration.state == "IDLE"
 
 
 # ── 반복 resolve 는 same-basis 를 같은 digest 로 재봉인(recompute 안정성) ──────────────────────────
 def test_repeated_resolve_keeps_stable_basis_digest(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
-    first = ctrl._last_sealed_basis_digest
+    first = ctrl.execution.sealed_basis_digest
     ctrl.dispatch("resolve_execution", {})
     # basis 가 안 움직였으면 순수 재계산은 같은 execution_basis_digest 를 낸다.
-    assert ctrl._last_sealed_basis_digest == first
-    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.sealed_basis_digest == first
+    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
 
 
 # ── 미주입 loud 거절(조용한 no-op 금지) ─────────────────────────────────────────────────────────
@@ -1623,9 +1649,9 @@ def test_changed_slot_mutation_triggers_auto_seal(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     # durable mutation CHANGED → effective_basis_changed True → CHECKING → seal → SETTLED_CURRENT.
     ctrl._maybe_auto_check(_SlotResp(changed=True))
-    assert ctrl._last_fresh_observation is not None
-    assert ctrl._last_sealed_basis_digest is not None  # binding 있으니 sealed
-    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.fresh_observation is not None
+    assert ctrl.execution.sealed_basis_digest is not None  # binding 있으니 sealed
+    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
@@ -1633,16 +1659,16 @@ def test_unchanged_slot_mutation_does_not_trigger_seal(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl._maybe_auto_check(_SlotResp(changed=False))
     # 무변경 mutation → 반응할 basis 변경 없음(seal 미실행, 증거 없음 유지).
-    assert ctrl._last_fresh_observation is None
-    assert ctrl._session_orchestration.state == "IDLE"
+    assert ctrl.execution.fresh_observation is None
+    assert ctrl.execution.orchestration.state == "IDLE"
 
 
 def test_changed_mutation_without_binding_settles_not_current(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=False)
     ctrl._maybe_auto_check(_SlotResp(changed=True))
     # seal 은 돌았지만 binding 미검토 → 미봉인(current-work 관찰). CURRENT 아님, digest 없음.
-    assert ctrl._last_fresh_observation is not None
-    assert ctrl._last_sealed_basis_digest is None
+    assert ctrl.execution.fresh_observation is not None
+    assert ctrl.execution.sealed_basis_digest is None
     assert _zone(ctrl)["execution_status_code"] != "CURRENT"
 
 
@@ -1650,13 +1676,13 @@ def test_auto_check_noop_without_seal_service(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True, wire_seal=False)
     # seal 미주입이면 자동 확인 없음(honest — 표면 부재, 조용한 crash 아님).
     ctrl._maybe_auto_check(_SlotResp(changed=True))
-    assert ctrl._last_fresh_observation is None
+    assert ctrl.execution.fresh_observation is None
 
 
 # ── context error 를 user-fixable blocker 로 낮추지 않는다(§즉시 상향 계약) ──────────────────────
 def test_context_error_observation_is_not_lowered_to_user_blocker(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl._last_fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
+    ctrl.execution.fresh_observation = ExecutionObservationContextError("E_CTX", "복원 실패")
     zone = _zone(ctrl)
     assert zone["kind"] == "context_error"
     assert zone["user_fixable"] is False
@@ -1666,7 +1692,7 @@ def test_context_error_observation_is_not_lowered_to_user_blocker(tmp_path: Path
 def test_zone_blank_without_selected_job(tmp_path: Path) -> None:
     """blank 는 **pre-guard 만** 잰다 — 미선택은 준비 부족이지 무결성 실패가 아니다(#775)."""
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl.job_name = ""  # 미선택 → unsupported(조용히 비우지 않는다).
+    ctrl.work.name = ""  # 미선택 → unsupported(조용히 비우지 않는다).
     zone = _zone(ctrl)
     assert zone["supported"] is False and zone["kind"] is None
 
@@ -1688,12 +1714,12 @@ class _RaisingBindingReview:
 
 def _wire_raising_binding_review(ctrl: JobController, exc: Exception) -> None:
     # 분류표를 **읽는 조건**을 세운다(봉인 계획이 아닌 current-work 관찰).
-    ctrl._last_fresh_observation = CurrentWorkExecutionObservation(
+    ctrl.execution.fresh_observation = CurrentWorkExecutionObservation(
         work_authority_ref=WORK,
         current_sealability="DOMAIN_BLOCKED",
         observed_at=NOW.isoformat(),
     )
-    ctrl._seal_execution = _RaisingBindingReview(exc)
+    ctrl.execution.seal_execution = _RaisingBindingReview(exc)
 
 
 def test_zone_surfaces_value_error_integrity_failure_as_context_error(
@@ -1715,6 +1741,7 @@ def test_zone_surfaces_value_error_integrity_failure_as_context_error(
     # 저장 폴더 사실은 관찰이 무너져도 실린다(U3-06 #879 계약 유지) — 다만 그 자리는
     # 존이 아니라 스냅샷 최상위다(전역화: 작업 유무·관찰 성패와 무관한 사실이라서).
     assert "output_folder" not in zone
+    ctrl.refresh_panel()
     assert "output_folder" in ctrl.snapshot()
 
 
@@ -1728,6 +1755,7 @@ def test_zone_surfaces_non_value_error_integrity_failure_without_killing_snapsho
     assert not isinstance(exc, ValueError)  # 옛 그물(except ValueError)이 못 잡던 절반
     ctrl.dispatch("select_job", {"name": WORK_REF})  # 실 스냅샷 조립 경로를 탄다
     _wire_raising_binding_review(ctrl, exc)
+    ctrl.refresh_panel()
     zone = ctrl.snapshot()["workbench_observation"]
     assert zone["supported"] is True and zone["kind"] == "context_error"
     assert zone["code"] == FieldBindingInputIntegrityError.code
@@ -1748,12 +1776,12 @@ def test_resolve_execution_recovers_from_failed(tmp_path: Path) -> None:
     from hwpxfiller.application.automatic_seal_orchestration import AutomaticSealOrchestration
 
     ctrl = _controller(tmp_path, with_binding=True)
-    ctrl._session_orchestration = AutomaticSealOrchestration(
+    ctrl.execution.orchestration = AutomaticSealOrchestration(
         state="FAILED", consecutive_seal_failures=3
     )
     ctrl.dispatch("resolve_execution", {})
     # FAILED → 수동 복구(IDLE) → CHECKING → 실 seal → SETTLED_CURRENT(binding 있음).
-    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
@@ -1767,18 +1795,18 @@ class _RaisingSeal:
 
 def test_auto_seal_failure_leaves_last_observation(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True, wire_seal=False)
-    ctrl._seal_execution = _RaisingSeal()
+    ctrl.execution.seal_execution = _RaisingSeal()
     # route/context 예외 = 전이 실패(수동 복구 상한). 조용한 crash 아님, 마지막 관찰 보존(None).
     ctrl._maybe_auto_check(_SlotResp(changed=True))
-    assert ctrl._last_fresh_observation is None
+    assert ctrl.execution.fresh_observation is None
 
 
 def test_refresh_observation_failure_surfaces_context_error(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True, wire_seal=False)
-    ctrl._seal_execution = _RaisingSeal()
+    ctrl.execution.seal_execution = _RaisingSeal()
     # 확인 실패를 조용히 이전 관찰로 두지 않는다 — context error 로 시끄럽게(CURRENT 유지 금지).
     ctrl.dispatch("refresh_observation", {})
-    assert isinstance(ctrl._last_fresh_observation, ExecutionObservationContextError)
+    assert isinstance(ctrl.execution.fresh_observation, ExecutionObservationContextError)
     assert _zone(ctrl)["kind"] == "context_error"
     zone = _zone(ctrl)
     assert zone["execution_status_code"] == "CONTEXT_ERROR"
@@ -1792,7 +1820,7 @@ def test_refresh_failure_after_current_does_not_keep_claiming_current(tmp_path: 
     ctrl.dispatch("resolve_execution", {})
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
     # 이후 refresh 가 실패하면 이전 CURRENT 를 계속 주장하지 않고 context error 로 전환.
-    ctrl._seal_execution = _RaisingSeal()
+    ctrl.execution.seal_execution = _RaisingSeal()
     ctrl.dispatch("refresh_observation", {})
     assert _zone(ctrl)["kind"] == "context_error"
 
@@ -1802,21 +1830,21 @@ def test_work_switch_resets_execution_evidence(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
-    assert ctrl._last_sealed_basis_digest is not None
+    assert ctrl.execution.sealed_basis_digest is not None
     # 다른 Work 로 전환 → 세션 실행 증거 무효화(orchestration IDLE·관찰/디지스트 None).
-    ctrl.job_name = "다른작업"
-    assert ctrl._last_fresh_observation is None
-    assert ctrl._last_sealed_basis_digest is None
-    assert ctrl._session_orchestration.state == "IDLE"
+    ctrl.work.name = "다른작업"
+    assert ctrl.execution.fresh_observation is None
+    assert ctrl.execution.sealed_basis_digest is None
+    assert ctrl.execution.orchestration.state == "IDLE"
 
 
 def test_same_work_reassignment_keeps_evidence(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
-    obs = ctrl._last_fresh_observation
-    ctrl.job_name = WORK_REF  # 같은 값 재대입은 재설정하지 않는다.
-    assert ctrl._last_fresh_observation is obs
-    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    obs = ctrl.execution.fresh_observation
+    ctrl.work.name = WORK_REF  # 같은 값 재대입은 재설정하지 않는다.
+    assert ctrl.execution.fresh_observation is obs
+    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
 
 
 # ── 사용자 문안 내부어 노출 0(#725 §테스트 12 계약 유지) ─────────────────────────────────────────
@@ -1903,8 +1931,8 @@ def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) ->
     result = ctrl.on_editor_mapping_saved(WORK_REF)
 
     assert result["binding_commit_ok"] is True
-    assert ctrl._last_sealed_basis_digest is not None
-    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.sealed_basis_digest is not None
+    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
@@ -1915,20 +1943,20 @@ def test_binding_commit_for_other_work_does_not_absorb_observation(
     job = ctrl.registry.load(WORK_REF)
     job.mapping = _saved_active_mapping()
     ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.job_name = "\ub2e4\ub978\uc791\uc5c5"
+    ctrl.work.name = "\ub2e4\ub978\uc791\uc5c5"
 
     result = ctrl.on_editor_mapping_saved(WORK_REF)
 
     assert result["binding_commit_ok"] is True
-    assert ctrl._last_fresh_observation is None
-    assert ctrl._last_sealed_basis_digest is None
-    assert ctrl._session_orchestration.state == "IDLE"
+    assert ctrl.execution.fresh_observation is None
+    assert ctrl.execution.sealed_basis_digest is None
+    assert ctrl.execution.orchestration.state == "IDLE"
 
 
 def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
-    before = ctrl._last_fresh_observation
+    before = ctrl.execution.fresh_observation
 
     class AppliedTemplateChange:
         @staticmethod
@@ -1940,5 +1968,5 @@ def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) ->
     result = ctrl.dispatch("template_apply", {"change_token": "token"})
 
     assert result["status"] == "applied"
-    assert ctrl._last_fresh_observation is not before
+    assert ctrl.execution.fresh_observation is not before
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"

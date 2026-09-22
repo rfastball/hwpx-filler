@@ -36,7 +36,7 @@ from .jobs import JobStorePort, stamp_run_completion
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ..gui.run_state import GateError, RunViewModel
+    from ..gui.run_state import GateError, RunDataInput, RunViewModel
 
 
 def blank_marker(blanks: "list[str] | tuple[str, ...]") -> str:
@@ -136,6 +136,7 @@ class PlanDecision:
 
 def plan_generation(
     vm: "RunViewModel",
+    data: "RunDataInput",
     indices: "list[int]",
     out_dir: str,
     *,
@@ -156,14 +157,15 @@ def plan_generation(
     ``now`` 는 날짜 토큰 기준 시각 — 확인이 조회한 대상과 실제 생성이 같은 값을 쓰도록
     호출자가 고정해 넘긴다(RC-02, 미리보기 핀은 호출자 소유).
     """
-    errors = vm.validate_generate(indices, out_dir)
+    errors = vm.validate_generate(data, indices, out_dir)
     if errors:
         return PlanDecision(rejection=errors[0])
 
-    blanks = list(vm.blank_fields(indices))
+    blanks = list(vm.blank_fields(data, indices))
     marker = blank_marker(blanks)
     conflicts = vm.output_conflicts(
-        indices, out_dir, mark_missing=marker, now=now, existing_outputs=existing_outputs
+        data, indices, out_dir, mark_missing=marker, now=now,
+        existing_outputs=existing_outputs,
     )
     if conflicts and not confirm_overwrite:
         return PlanDecision(
@@ -171,7 +173,7 @@ def plan_generation(
             conflicts=tuple(conflicts), needs_overwrite=True,
         )
     plan = vm.build_generation_plan(
-        indices, out_dir, marker=marker, overwrite=bool(conflicts), now=now
+        data, indices, out_dir, marker=marker, overwrite=bool(conflicts), now=now
     )
     return PlanDecision(
         plan=plan, blanks=tuple(blanks), marker=marker, conflicts=tuple(conflicts),

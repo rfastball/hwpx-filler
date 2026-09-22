@@ -105,8 +105,9 @@ def _controller(tmp_path: Path, *, wire: bool = True, bootstrap: bool = True):
         ctrl.dispatch("template_check", {"request_id": "k1"})
     else:
         reg.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
-        if ctrl.vm is not None:
-            ctrl.vm.job.authority_id = ""
+        if ctrl.work.vm is not None:
+            ctrl.work.vm.job.authority_id = ""
+        ctrl.refresh_panel()
     return ctrl, pushes
 
 
@@ -196,7 +197,7 @@ def test_snapshot_projects_slot_initialization_failure_and_read_only_recovery(
         "message": "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
         "action": {"key": "refresh", "label": "다시 불러오기"},
     }
-    zone = ctrl.snapshot()["slot_configuration"]
+    zone = ctrl.refresh_panel()["slot_configuration"]
     assert zone["supported"] is True and zone["initialized"] is False
     assert zone["current_view"] is None
     assert zone["error"] == expected_error
@@ -204,7 +205,7 @@ def test_snapshot_projects_slot_initialization_failure_and_read_only_recovery(
     assert ctrl.snapshot()["slot_configuration"]["error"] == expected_error
 
     secret_path.write_text(original, "utf-8")
-    recovered = ctrl.snapshot()["slot_configuration"]
+    recovered = ctrl.refresh_panel()["slot_configuration"]
     assert recovered["initialized"] is True
     assert recovered["error"] is None
     assert recovered["current_view"]["view_status"] == "CURRENT"
@@ -282,7 +283,7 @@ def test_slot_mutation_rejected_while_generating(tmp_path: Path) -> None:
     # 거절한다 — 실행 중 배치가 고정한 immutable 입력과 화면 구성이 어긋나지 않게. 조용한 통과 0.
     ctrl, _ = _controller(tmp_path)
     token = ctrl.dispatch("open_slot_configuration", {})["current_view"]["new_configuration_token"]
-    acquired = ctrl._generation_lock.acquire(blocking=False)
+    acquired = ctrl.runs.lock.acquire(blocking=False)
     assert acquired  # 테스트가 생성 중 상태를 만든다
     try:
         with pytest.raises(ValueError, match="문서 생성이 진행 중"):
@@ -291,7 +292,7 @@ def test_slot_mutation_rejected_while_generating(tmp_path: Path) -> None:
                 "request_id": "r1",
             })
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
 
 
 # ── stale / cross-Work (Product 규율 소비) ────────────────────────────────────────────────
@@ -528,7 +529,7 @@ def test_source_drift_stands_in_the_workbench_observation(tmp_path: Path) -> Non
     assert isinstance(drifted, DocumentCreationWorkbenchObservation)
     assert "REVIEW_TEMPLATE_CHANGE" in drifted.blockers
     # 지시가 겨누는 자리가 실제로 선다 — 없는 자리를 가리키지 않는다(#912 결함류).
-    zone = ctrl.snapshot()["template_change"]
+    zone = ctrl.refresh_panel()["template_change"]
     assert zone["source_drift"] == "changed" and zone["actionable"] is True
     assert zone["checkable"] is True
 
@@ -569,7 +570,7 @@ def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
     assert guarded["ok"] is False
 
     # (2) 가드 아래 — 같은 작업을 admission 이 **제 사유로** 거절한다(가드가 없어도 안전).
-    reject = ctrl._resolve_managed_template(ctrl.vm)
+    reject = ctrl._resolve_managed_template(ctrl.work.vm)
     assert reject is not None, "slot-bearing 은 legacy generator 로 통과되면 안 된다"
     assert reject["ok"] is False
     # (3) 사유는 실사유여야 한다(#907·#912). 「아직 지원하지 않습니다」는 S5/S6 미출하 시절의
@@ -661,7 +662,7 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is False
 
     _two_slot_template(tpl)  # 안내대로 원본을 고친다 — 실물 서명이 달라진다
-    reopened = ctrl.snapshot()["template_change"]
+    reopened = ctrl.refresh_panel()["template_change"]
     assert reopened["checkable"] is True and reopened["diagnostics"] == []
 
     assert ctrl.dispatch("template_check", {"request_id": "k3"})["ok"] is True
@@ -867,19 +868,19 @@ def test_txt_check_seats_the_template_application_identity(tmp_path: Path) -> No
         template_change=coord,
     )
     ctrl.dispatch("select_job", {"name": "안내문"})
-    assert ctrl.vm is None and ctrl.job_is_txt is True  # 실행뷰 없음(§F6 판정 D)
+    assert ctrl.work.vm is None and ctrl.work.is_txt is True  # 실행뷰 없음(§F6 판정 D)
     # 착석이 준비를 진다(#932 B5) — TXT 도 같은 배선이라 여기서 이미 정체가 선다.
     # 이 테스트가 재는 것은 그 **매체 무관성**과 재확인의 무-흔들림이다: 종전 결함은
     # 채택이 `self.vm is not None` 아래 있어 실행뷰 없는 TXT 만 정체를 못 들던 것이었다.
-    seated = ctrl._seated_template_application_id
+    seated = ctrl.work.seated_template_application_id
     assert seated
 
     assert ctrl.dispatch("template_check", {"request_id": "k1"})["ok"] is True
-    assert ctrl._seated_template_application_id == seated
-    assert ctrl.job_name == "안내문"  # 조용한 해제 0
+    assert ctrl.work.seated_template_application_id == seated
+    assert ctrl.work.name == "안내문"  # 조용한 해제 0
     # 재확인은 이미 선 정체를 흔들지 않는다(중복 채택 0).
     assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
-    assert ctrl._seated_template_application_id == seated
+    assert ctrl.work.seated_template_application_id == seated
 
 
 def test_content_selection_reader_hands_the_workbench_effective_choices(

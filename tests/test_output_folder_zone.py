@@ -65,7 +65,8 @@ def test_both_screens_read_the_same_function(tmp_path) -> None:
         JobRegistry(tmp_path / "jobs"), lambda screen, snap: None, clock=datetime.now,
         remembered_output_directory=lambda: str(picked),
     )
-    editor.template_path = str(template)
+    editor.edit.template_path = str(template)
+    editor.refresh_panel()
 
     assert editor.snapshot()["output_folder"] == output_folder_zone(
         template_path=str(template), remembered_directory=str(picked),

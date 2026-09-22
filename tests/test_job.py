@@ -46,8 +46,10 @@ class _FakeSource:
 
     def __init__(self, records: "list[dict]"):
         self._records = records
+        self.record_calls = 0
 
     def records(self) -> "list[dict]":
+        self.record_calls += 1
         return self._records
 
     def fields(self) -> "list[str]":
@@ -529,7 +531,7 @@ def test_run_request_selected_and_mapped_records():
             {"bidNtceNm": "다", "presmptPrce": "3000"},
         ]
     )
-    req = RunRequest(_job(), src, [0, 2])
+    req = RunRequest(_job(), tuple(src.records()), [0, 2])
     assert req.selected_records() == [
         {"bidNtceNm": "가", "presmptPrce": "1000"},
         {"bidNtceNm": "다", "presmptPrce": "3000"},
@@ -538,12 +540,13 @@ def test_run_request_selected_and_mapped_records():
         {"공고명": "가", "추정가격": "1,000"},
         {"공고명": "다", "추정가격": "3,000"},
     ]
+    assert src.record_calls == 1  # request는 명시 스냅샷을 쓰고 소스를 재조회하지 않는다
 
 
 def test_run_request_source_report_flags_missing_source_key():
     """겨눈 소스에 매핑이 읽는 소스키가 없으면 소스 수준 missing_columns 로 뜬다."""
     src = _FakeSource([{"bidNtceNm": "가"}])  # presmptPrce 부재
-    report = RunRequest(_job(), src, [0]).source_report()
+    report = RunRequest(_job(), tuple(src.records()), [0]).source_report()
     assert report.missing_columns == ["presmptPrce"]
     assert report.empty_valued == []
 
@@ -551,7 +554,7 @@ def test_run_request_source_report_flags_missing_source_key():
 def test_run_request_output_report_flags_empty_value():
     """매핑된 출력에 빈 값이 있으면 template_field 이름으로 empty_valued."""
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])  # 공고명 빈값
-    report = RunRequest(_job(), src, [0]).output_report()
+    report = RunRequest(_job(), tuple(src.records()), [0]).output_report()
     assert report.missing_columns == []
     assert report.empty_valued == ["공고명"]
 
@@ -561,7 +564,7 @@ def test_mapped_records_mark_missing_only_empty_values():
     from hwpxfiller.domain.job import MISSING_MARKER
 
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
-    req = RunRequest(_job(), src, [0])
+    req = RunRequest(_job(), tuple(src.records()), [0])
 
     marked = req.mapped_records(mark_missing=MISSING_MARKER)
     assert marked[0]["공고명"] == "〘미입력·공고명〙"       # 미충족 공란 → 표식
@@ -576,7 +579,7 @@ def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
     from hwpxfiller.domain.validation import validate
 
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
-    req = RunRequest(_job(), src, [0])
+    req = RunRequest(_job(), tuple(src.records()), [0])
 
     plain = req.mapped_records()
     assert plain[0]["공고명"] == ""  # 기본값이면 그대로(하위호환)
@@ -604,7 +607,7 @@ def test_declared_empty_skips_the_marker_and_writes_empty_into_a_real_hwpx(tmp_p
     ])
     req = RunRequest(
         Job(template_path=str(template), mapping=mapping),
-        _FakeSource([{"name": ""}]),
+        ({"name": ""},),
         [0],
     )
     marked = req.mapped_records(mark_missing=MISSING_MARKER)[0]

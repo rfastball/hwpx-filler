@@ -1,8 +1,8 @@
-"""실행(Run) 화면 ViewModel — Qt 비의존 실행 결정(데이터·대상·사전검증·게이트).
+"""실행(Run) 화면 ViewModel — Qt 비의존 실행 결정(사전검증·게이트·계획).
 
 웹 작업 컨트롤러(:class:`~hwpxfiller.webapp.screen_job.JobController`)는 이 뷰모델에 실행 결정을
-위임한다. ``DataSource`` 포트(팩토리 경유)·``HwpxEngine``·``RunRequest`` 는 이 뷰모델만
-만지고, 컨트롤러는 렌더·확인·파일 선택 같은 UI 오케스트레이션을 맡는다(링1: PySide6 금지).
+위임한다. 컨트롤러가 소유한 현재 데이터는 :class:`RunDataInput` 으로 매 호출 명시하고,
+이 뷰모델은 ``HwpxEngine``·``RunRequest`` 로 판정만 한다(링1: PySide6 금지).
 **매핑 재확정 없음** — 매핑은 작업 정의 때 확정됐고 여기선 사전검증만 한다.
 
 이 뷰모델 표면(dataclass 결과 + 메서드)이 목업 실행 화면이 겨누는 seam 계약이다.
@@ -52,14 +52,6 @@ class PreflightResult:
     def issues(self) -> "list[str]":
         """로그용 이슈 목록(데이터 항목 누락 + 빈값, 문서순 중복제거)."""
         return list(dict.fromkeys(list(self.missing_columns) + list(self.empty_valued)))
-
-
-@dataclass
-class PrevNote:
-    """기존 문서 이어채우기 정합 고지(비차단)."""
-
-    text: str
-    level: str  # ""/"warn"/"danger"
 
 
 @dataclass
@@ -121,6 +113,14 @@ class RunStatus:
     #: **같은 산출**을 재사용한다 — 표면이 따로 계획하면 화면이 실행과 다른 이름을 말할 수
     #: 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
     audit: OutputNameAudit = field(default_factory=OutputNameAudit)
+
+
+@dataclass(frozen=True)
+class RunDataInput:
+    """실행 판정에 명시적으로 건네는 현재 데이터 스냅샷."""
+
+    datasource: object | None
+    records: "tuple[dict, ...]"
 
 
 @dataclass(frozen=True)
@@ -270,7 +270,7 @@ def unresolved_name_tokens_for(job: "Job") -> "list[str]":
 
 
 class RunViewModel:
-    """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
+    """작업 1건의 실행 판정. 현재 데이터는 호출자가 명시적으로 건넨다."""
 
     def __init__(self, job: Job, *, engine: HwpxEngine):
         # 진입 가드(3부 결정 13 · 2층): 실행뷰는 hwpx 생성 경로다 — HwpxEngine.required_fields·
@@ -281,121 +281,33 @@ class RunViewModel:
         # zip IO 가 결속된 엔진은 Host/ring 2 가 주입한다(P3-03 — 링1 은 concrete package
         # read/write adapter를 모른다. P2-16 source factory 주입과 같은 seam).
         self._engine = engine
-        self.datasource = None                 # DataSource 포트(팩토리가 생성)
-        self.records: "list[dict]" = []
-        # 이어채우기: 기존 문서가 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
-        self.template_override: "str | None" = None
         # managed Product Work 생성이 고정한 exact applied bytes staged 경로(#681 G11) —
-        # mutable job.template_path 대신 이걸 소비한다. 이어채우기(override)가 우선한다.
+        # mutable job.template_path 대신 이걸 소비한다.
         self._managed_template: "str | None" = None
-        self.target_mode = "new"               # "new" | "continue"
 
     # ------------------------------------------------------------ 대상 문서
     def effective_template(self) -> str:
-        """생성이 겨눌 문서 — 이어채우기면 이전 출력, managed 생성이면 staged exact bytes,
-        아니면 작업 템플릿."""
-        return self.template_override or self._managed_template or self.job.template_path
-
-    def set_target_mode(self, mode: str) -> None:
-        """새 문서/기존 문서 이어채우기 전환. 새 문서 복귀 시 override 해제."""
-        self.target_mode = mode
-        if mode != "continue":
-            self.template_override = None
-
-    def set_prev_output(self, path: str) -> PrevNote:
-        """기존 문서를 겨누고 정합 고지를 계산한다(값 겹침 덮어씀을 시끄럽게 — ADR G).
-
-        누름틀은 채운 뒤에도 재발견되므로(engine.required_fields) 교집합으로 판정.
-        값 수준 '이미 채워짐' 검사는 필드 값 읽기 API 부재로 파킹.
-        """
-        self.template_override = path
-        try:
-            doc_fields = set(self._engine.required_fields(path))
-        except Exception as exc:  # noqa: BLE001
-            return PrevNote(f"기존 문서를 읽을 수 없습니다: {exc}", "danger")
-        ours = set(self.job.template_fields())
-        inter = doc_fields & ours
-        if not inter:
-            return PrevNote("이 작업의 필드가 이 문서에 하나도 없습니다. 파일을 확인하세요.", "danger")
-        return PrevNote(
-            f"이 작업의 필드 {len(ours)}개 중 {len(inter)}개가 문서에 있습니다. "
-            "이미 값이 있는 겹침 필드는 덮어씁니다.",
-            "warn" if len(inter) < len(ours) else "",
-        )
-
-    # ------------------------------------------------------------ 데이터
-    def load_data(
-        self, path: str, *, sheet: "str | None" = None,
-        source_factory: FileSourceFactoryPort,
-    ) -> "list[dict]":
-        """겨눈 경로에서 레코드를 읽는다(주입된 factory 가 종류 선택). 로드 실패는 raise,
-        레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(표현 계층이 경고).
-        ``sheet`` 는 사용자가 확정한 시트명(T2) — None 이면 기본(첫/유일 시트)."""
-        source, records = resolve_file_source(path, sheet=sheet, source_factory=source_factory)
-        if not records:
-            return []
-        self.datasource = source
-        self.records = records
-        return records
-
-    def load_pool_item(
-        self, item, *, secret_store=None, fetcher=None, nara_factory=None,
-        source_factory: PoolSourceFactoryPort,
-    ) -> "list[dict]":
-        """데이터셋 풀 항목(참조)을 복원해 겨눈다 — 실행 시점 재읽기가 곧 "싱크".
-
-        - **나라장터**: 주입된 N2 취득 factory 경로를
-          재사용한다 — 기간(1개월) 재검증·``resultCode`` 정합('00'만 성공)·키 마스킹을 그대로
-          관통시켜, 만료·인증실패 키가 조용한 "0건"이 아니라 **시끄러운 API 오류**로 실패하게
-          한다(acquire 경로와 동일 엄격도). 성공 결과는 **키 없는 스냅샷**(``as_datasource``)이라
-          실행뷰의 반복 조회가 재-fetch·키 재사용을 하지 않는다("싱크 = 의도적 1회 재읽기").
-        - **엑셀 등 파일 소스**: 주입된 ``source_factory``(Host 가 조립한 풀 복원 factory)로
-          라이브 소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
-
-        키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
-        **마스킹된 채** raise(표현 계층이 시끄럽게 표시), 레코드 0건이면 상태 불변(표현 계층이 경고).
-        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source` 가 한다."""
-        source, records = resolve_pool_source(
-            item,
-            secret_store=secret_store,
-            fetcher=fetcher,
-            nara_factory=nara_factory,
-            source_factory=source_factory,
-        )
-        if not records:
-            return []
-        self.datasource = source
-        self.records = records
-        return records
-
-    def set_acquired(self, datasource, records: "list[dict]") -> None:
-        """이미 만들어진(키 없는) 소스·레코드를 직접 겨눈다 — 나라 애드혹 취득 등.
-
-        데이터 귀속 상태의 원자 진입점(RC-22)으로 남는다. 종전에 여기서 재평가하던
-        빈 값 확인(ack)은 폐기됐다(U2 §2.13) — 빈 값 집합은 이제 승인 지문의 성분이라
-        데이터가 갈리면 승인이 키 결속으로 자동 무효가 된다(별도 리셋 코드 불요).
-        """
-        self.datasource = datasource
-        self.records = list(records)
+        """생성이 겨눌 문서 — managed staged bytes가 있으면 우선한다."""
+        return self._managed_template or self.job.template_path
 
     # ------------------------------------------------------------ 사전검증
-    def request(self, indices: "list[int]") -> RunRequest:
-        return RunRequest(self.job, self.datasource, list(indices))
+    def request(self, data: RunDataInput, indices: "list[int]") -> RunRequest:
+        return RunRequest(self.job, data.records, list(indices))
 
-    def preflight(self, indices: "list[int]") -> PreflightResult:
+    def preflight(self, data: RunDataInput, indices: "list[int]") -> PreflightResult:
         """데이터에 없는 항목(치명)·구조 드리프트(치명)·빈값(경고) 판정(재확정 아님).
 
         표현 계층은 level/text 를 **그대로** 렌더한다(RC-23) — 드리프트 차단 중에 상단만
         '통과' 녹색으로 남는 모순 신호를 여기서 차단한다.
         """
-        return self.refresh(indices).preflight
+        return self.refresh(data, indices).preflight
 
-    def blank_fields(self, indices: "list[int]") -> "list[str]":
+    def blank_fields(self, data: RunDataInput, indices: "list[int]") -> "list[str]":
         """선택분에서 값이 빈 필드 — 표식(`MISSING_MARKER`)·빈 값 표지·승인 지문
         성분(`blank_set`, U2 §2.13)의 단일 원천. 데이터 없으면 빈 목록."""
-        if self.datasource is None:
+        if data.datasource is None:
             return []
-        return list(self.request(indices).output_report().empty_valued)
+        return list(self.request(data, indices).output_report().empty_valued)
 
     # ------------------------------------------------------- 상시 인라인 필드 상태(ADR-E)
     def _template_fields(self) -> "list[str]":
@@ -411,14 +323,14 @@ class RunViewModel:
             self.effective_template(), self.job.mapping, engine=self._engine
         )
 
-    def field_states(self, indices: "list[int]") -> "list[FieldState]":
+    def field_states(self, data: RunDataInput, indices: "list[int]") -> "list[FieldState]":
         """필드별 3상태(채움/의도적 빈칸/미입력) — 상시 인라인 배지의 원천.
 
         채움/미입력은 값 매핑 출력에서, 의도적 빈칸은 매핑의 ``blank`` 선언에서 온다.
         템플릿↔커버 대칭차는 ``drift`` 로 별도 표시해 의도적 공란으로 오라벨하지 않는다.
         데이터 미겨눔이면 빈 목록(패널 비움).
         """
-        return list(self.refresh(indices).field_states)
+        return list(self.refresh(data, indices).field_states)
 
     # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
     def unresolved_name_tokens(self) -> "list[str]":
@@ -442,7 +354,7 @@ class RunViewModel:
         )
 
     def refresh(
-        self, indices: "list[int]", out_dir: str = "", *,
+        self, data: RunDataInput, indices: "list[int]", out_dir: str = "", *,
         review_notice: "ReviewRequirement | None" = None,
         mapped: "list[dict] | None" = None,
         now: "datetime | None" = None,
@@ -468,7 +380,7 @@ class RunViewModel:
         뒤 실행 구성이 아직 확정되지 않았으면 사전검증과 버튼이 함께 그 사유를 표시한다.
         """
         name_gate = self._name_token_gate()
-        if self.datasource is None:
+        if data.datasource is None:
             return RunStatus(
                 PreflightResult(
                     level=configuration_gate.level, text=configuration_gate.text,
@@ -477,7 +389,7 @@ class RunViewModel:
                 or GateState(False, "warn", "먼저 데이터를 선택하세요."),
             )
         idx = list(indices)
-        req = self.request(idx)
+        req = self.request(data, idx)
         src = req.source_report()
         out = req.output_report()
         drift, _current_fields = self._structure_snapshot()
@@ -488,7 +400,7 @@ class RunViewModel:
         audit = (
             audit_output_names(
                 self.job.filename_pattern,
-                self.mapped_records(idx, now=now) if mapped is None else mapped,
+                self.mapped_records(data, idx, now=now) if mapped is None else mapped,
                 out_dir,
                 now=now,
             ) if idx else OutputNameAudit()
@@ -505,9 +417,11 @@ class RunViewModel:
             audit=audit,
         )
 
-    def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:
+    def gate_state(
+        self, data: RunDataInput, indices: "list[int]", out_dir: str = ""
+    ) -> GateState:
         """생성 게이트 표시 결정(활성/level/text)의 단일 통합(RC-23)."""
-        return self.refresh(indices, out_dir).gate
+        return self.refresh(data, indices, out_dir).gate
 
     def _structure_snapshot(self) -> "tuple[TemplateStructureDrift, set[str]]":
         """템플릿 구조 1회 재읽기 → (드리프트, 현재 누름틀 집합).
@@ -558,13 +472,11 @@ class RunViewModel:
         의 비차단 고지가 됐다. 빈 값도 게이트가 아니다 — 표식이 문서에 박히므로 조용한
         통과가 아니고, 확인은 결과 문서에서 한다.
 
-        UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
+        UD-06: 저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
         재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
         ``validate_generate`` 의 모달 백스톱에 남긴다.
         """
-        if self.target_mode == "continue" and not self.template_override:
-            return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
         if drift.has_drift:
             if drift.read_error:
                 return GateState(
@@ -600,11 +512,6 @@ class RunViewModel:
             return GateState(False, "warn", "저장 폴더를 지정하세요.")
         if not indices:
             return GateState(False, "warn", "생성할 문서를 최소 1건 선택하세요.")
-        if self.template_override and len(indices) != 1:
-            return GateState(
-                False, "warn",
-                "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
-            )
         return GateState(True, "", "")
 
     def _compose_preflight(
@@ -669,13 +576,13 @@ class RunViewModel:
     #  표식 삽입 동의는 승인(빈 값 집합이 지문 성분)이 겸한다.)
 
     # ------------------------------------------------------------ 생성 게이트
-    def validate_generate(self, indices: "list[int]", out_dir: str) -> "list[GateError]":
+    def validate_generate(
+        self, data: RunDataInput, indices: "list[int]", out_dir: str
+    ) -> "list[GateError]":
         """생성 전 가드 — 첫 차단 사유만 반환(없으면 빈 목록)."""
         indices = list(indices)
-        if self.datasource is None:
+        if data.datasource is None:
             return [GateError("먼저 데이터를 선택하세요.", "warn")]
-        if self.target_mode == "continue" and not self.template_override:
-            return [GateError("이어채울 기존 문서(.hwpx)를 선택하세요.", "warn")]
         template = self.effective_template()
         if template and not Path(template).exists():
             return [GateError(f"템플릿을 찾을 수 없습니다:\n{template}", "danger")]
@@ -696,15 +603,10 @@ class RunViewModel:
             return [GateError("저장 폴더를 지정하세요.", "warn")]
         if not indices:
             return [GateError("생성할 문서를 최소 1건 선택하세요.", "warn")]
-        if self.template_override and len(indices) != 1:
-            # 누적 v1 = 단건. 배치 누적(이전출력↔레코드 파일키 매칭)은 별개 설계 — 파킹.
-            return [GateError(
-                "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
-                "warn")]
         return []
 
     def mapped_records(
-        self, indices: "list[int]", mark_missing: str = "",
+        self, data: RunDataInput, indices: "list[int]", mark_missing: str = "",
         *, now: "datetime | None" = None,
     ) -> "list[dict]":
         """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입.
@@ -712,10 +614,10 @@ class RunViewModel:
         ``now`` 는 ``today``(오늘 날짜) 유형의 기준 시각 — 파일명 날짜 토큰에 넘긴 값과
         같아야 본문과 이름이 갈라지지 않는다(RC-02). 미지정이면 적용 시점으로 폴백한다.
         """
-        return self.request(indices).mapped_records(mark_missing=mark_missing, now=now)
+        return self.request(data, indices).mapped_records(mark_missing=mark_missing, now=now)
 
     def blank_record_positions(
-        self, indices: "list[int]", mapped: "list[dict] | None" = None
+        self, data: RunDataInput, indices: "list[int]", mapped: "list[dict] | None" = None
     ) -> "list[int]":
         """빈 값이 있는 건의 **표시순 자리** 목록 — 「빈 값 있는 건만 보기」의 판정 원천.
 
@@ -725,14 +627,14 @@ class RunViewModel:
         자체를 제외하므로 자동으로 세지 않는다. ``mapped`` 는 호출측이 이미 계산한 같은
         출력의 관통(이중 적용 방지)이다.
         """
-        recs = self.mapped_records(indices) if mapped is None else mapped
+        recs = self.mapped_records(data, indices) if mapped is None else mapped
         return [
             i for i, rec in enumerate(recs)
             if any(not str(v).strip() for v in rec.values())
         ]
 
     def output_conflicts(
-        self, indices: "list[int]", out_dir: str, *, mark_missing: str = "",
+        self, data: RunDataInput, indices: "list[int]", out_dir: str, *, mark_missing: str = "",
         now: "datetime | None" = None,
         existing_outputs: "Callable[[str, list[str]], list[str]]",
     ) -> "list[str]":
@@ -746,13 +648,13 @@ class RunViewModel:
         """
         names = plan_output_names(
             self.job.filename_pattern,
-            self.mapped_records(indices, mark_missing, now=now),
+            self.mapped_records(data, indices, mark_missing, now=now),
             now=now,
         )
         return existing_outputs(out_dir, names)
 
     def output_name_audit(
-        self, indices: "list[int]", out_dir: str = "", *,
+        self, data: RunDataInput, indices: "list[int]", out_dir: str = "", *,
         mark_missing: str = "", now: "datetime | None" = None,
     ) -> OutputNameAudit:
         """이 실행이 발급할 이름의 집합 감사(C-01, 지도 §10.12 판정 K).
@@ -762,13 +664,14 @@ class RunViewModel:
         """
         return audit_output_names(
             self.job.filename_pattern,
-            self.mapped_records(indices, mark_missing, now=now),
+            self.mapped_records(data, indices, mark_missing, now=now),
             out_dir, now=now,
         )
 
     # ------------------------------------------------------------ 생성 계획(RC-07)
     def build_generation_plan(
         self,
+        data: RunDataInput,
         indices: "list[int]",
         out_dir: str,
         *,
@@ -787,29 +690,31 @@ class RunViewModel:
         이름과 본문이 다른 시각을 말하지 않는다(U4-E1 #939).
         """
         idx = list(indices)
-        labels_fn = getattr(self.datasource, "field_labels", None)
+        labels_fn = getattr(data.datasource, "field_labels", None)
         labels = labels_fn() if callable(labels_fn) else {}
         return GenerationPlan(
             template=self.effective_template(),
-            records=tuple(self.mapped_records(idx, marker, now=now)),
+            records=tuple(self.mapped_records(data, idx, marker, now=now)),
             out_dir=out_dir,
             pattern=self.job.filename_pattern,
             marker=marker,
             indices=tuple(idx),
-            source_pointer=self.source_pointer(),
+            source_pointer=self.source_pointer(data),
             overwrite=overwrite,
             now=now,
             ledger=ledger,
             job_name=self.job.name,
             mapping=self.job.mapping,
             template_fields=tuple(self._template_fields()),
-            source_records=tuple(self.request(idx).selected_records()),
+            source_records=tuple(
+                dict(record) for record in self.request(data, idx).selected_records()
+            ),
             source_keys=tuple(self.job.source_keys()),
             labels=dict(labels),
         )
 
     # ------------------------------------------------------------ 생성 원장(L2)
-    def source_pointer(self) -> str:
+    def source_pointer(self, data: RunDataInput) -> str:
         """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다.
 
         소스가 자기 표기를 선언하면(``source_pointer()`` — :mod:`hwpxfiller.domain.data_source`
@@ -817,7 +722,7 @@ class RunViewModel:
         않는다 — 클래스 개명이 원장 침묵 오기록이 되지 않게(RC-25). 미선언 소스는
         ``path`` 속성(``file:<경로>``) → 타입명 순으로 강등 표기.
         """
-        src = self.datasource
+        src = data.datasource
         if src is None:
             return ""
         pointer_fn = getattr(src, "source_pointer", None)

@@ -219,6 +219,7 @@ def test_corrupt_entry_is_listed_beside_healthy_items_and_rejects_on_apply(
         json.dumps({"schema_version": "selection-preset/v1", "name": "망가진 것"}),
         encoding="utf-8",
     )
+    ctrl.refresh_panel()
 
     zone = _presets_zone(ctrl)
     assert [item["name"] for item in zone["items"]] == ["표준 구성"]  # 정상 항목은 그대로
@@ -241,14 +242,14 @@ def test_apply_rejected_while_generating(tmp_path: Path) -> None:
     key = ctrl.dispatch("save_selection_preset", {
         "configuration_token": token, "name": "표준 구성",
     })["saved_key"]
-    assert ctrl._generation_lock.acquire(blocking=False)
+    assert ctrl.runs.lock.acquire(blocking=False)
     try:
         with pytest.raises(ValueError, match="문서 생성이 진행 중"):
             ctrl.dispatch("apply_selection_preset", {
                 "configuration_token": token, "preset_key": key,
             })
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
 
 
 def test_zone_unsupported_without_selected_job(tmp_path: Path) -> None:
@@ -418,8 +419,9 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     # 준비는 착석이 진다(#932 B5). 이 테스트가 재는 것은 **렌더가 발급하지 않는다**이므로
     # 준비의 산물만 걷어 그 규율을 그대로 겨눈다(스냅샷은 여전히 아무것도 발급하지 않는다).
     ctrl.registry.mutate(clone, lambda job: setattr(job, "authority_id", ""))
-    if ctrl.vm is not None:
-        ctrl.vm.job.authority_id = ""
+    if ctrl.work.vm is not None:
+        ctrl.work.vm.job.authority_id = ""
+    ctrl.refresh_panel()
 
     # 대고 물을 구조가 없으면 보관 0 · 손상 0 이고, 저장할 선택도 없다 → 두 구획 다 안 선다.
     assert _presets_zone(ctrl) == {
@@ -451,7 +453,7 @@ def test_product_claims_no_compatible_item_when_the_structure_cannot_be_resolved
     _two_slot_template(unchecked)
     ctrl.registry.save(Job(name="미확인", template_path=str(unchecked)))
 
-    listing = ctrl._slot_configuration.list_selection_presets("미확인")
+    listing = ctrl.execution.slot_configuration.list_selection_presets("미확인")
     assert listing.items == ()
     assert listing.corrupt_count == 1 and listing.corrupt[0].error
 

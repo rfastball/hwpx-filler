@@ -33,7 +33,9 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp import screen_job as screen_job_module
+from hwpxfiller.webapp import active_work_session as active_work_module
 from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS, session_data_row
+from hwpxfiller.webapp.job_presentation import filename_source_columns
 from hwpxfiller.webapp import template_change as template_change_module
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator, TemplateChangeError
@@ -173,9 +175,9 @@ def _data_csv(tmp_path) -> str:
 
 def _mount_all(ctrl, path, *, sheet=None) -> None:
     """마운트 + 명시 Work 재선택 + 전체 선택 — legacy 생성 시나리오의 공통 준비."""
-    selected_work = ctrl.job_name
+    selected_work = ctrl.work.name
     ctrl.load_data_path(path, sheet=sheet)
-    if selected_work and not ctrl.job_name:
+    if selected_work and not ctrl.work.name:
         ctrl.dispatch("select_job", {"name": selected_work})
     ctrl.dispatch("set_all", {})
 
@@ -332,18 +334,18 @@ def test_job_selection_reconciles_filter_kinds_unless_defined(tmp_path):
     단 정의가 있는 필터는 그대로(사용자 확정 > 유형 힌트 — 술어 조용한 소실 금지)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_data_path(_data_csv(tmp_path))            # 무작업 마운트 = 스니핑만
-    assert ctrl.filter is not None
-    assert ctrl.filter.kind("presmptPrce") == "amount"  # 수치 값 → 스니핑 판정
+    assert ctrl.data.filter is not None
+    assert ctrl.data.filter.kind("presmptPrce") == "amount"  # 수치 값 → 스니핑 판정
     ctrl.dispatch("select_job", {"name": "공고서"})     # 정의 없음 → 힌트 반영 재생성
-    assert ctrl.filter.kind("presmptPrce") == "text"    # 매핑 확정 유형(text) 우선
+    assert ctrl.data.filter.kind("presmptPrce") == "text"    # 매핑 확정 유형(text) 우선
     # 정의가 있으면 재생성하지 않는다 — 술어·유형 그대로 생존.
     ctrl2, _ = _controller(tmp_path)
     ctrl2.load_data_path(_data_csv(tmp_path))
     ctrl2.dispatch("filter_search", {"text": "전산"})
-    kinds_before = {c: ctrl2.filter.kind(c) for c in ctrl2.filter.columns}
+    kinds_before = {c: ctrl2.data.filter.kind(c) for c in ctrl2.data.filter.columns}
     ctrl2.dispatch("select_job", {"name": "공고서"})
-    assert ctrl2.filter.is_active()                     # 정의 생존
-    assert {c: ctrl2.filter.kind(c) for c in ctrl2.filter.columns} == kinds_before
+    assert ctrl2.data.filter.is_active()                     # 정의 생존
+    assert {c: ctrl2.data.filter.kind(c) for c in ctrl2.data.filter.columns} == kinds_before
 
 
 def test_generation_in_flight_blocks_switch_and_remount(tmp_path):
@@ -352,14 +354,14 @@ def test_generation_in_flight_blocks_switch_and_remount(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    assert ctrl._generation_lock.acquire(blocking=False)
+    assert ctrl.runs.lock.acquire(blocking=False)
     try:
         with pytest.raises(ValueError, match="생성이 진행 중"):
             ctrl.dispatch("select_job", {"name": ""})
         with pytest.raises(ValueError, match="생성이 진행 중"):
             ctrl.load_data_path(_data_csv(tmp_path))
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
 
 
 def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
@@ -554,7 +556,7 @@ def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
     assert card["conn_label"] == ""                            # 정상은 조용히(F30 동형)
 
     Path(card["template_path"]).unlink()                       # 템플릿 파일 소실 재현
-    after = ctrl.snapshot()["candidates"]["top"][0]
+    after = ctrl.refresh_panel()["candidates"]["top"][0]
     assert after["template_missing"] is True                   # available 은 유지(§18.4)
     assert after["conn_label"] == "템플릿 없음"                # 경고 문안도 Python 정본
 
@@ -605,7 +607,7 @@ def test_relink_stays_reachable_for_the_active_job_in_every_state(
     ctrl.dispatch("select_job", {"name": "공고서"})
     Path(ctrl.snapshot()["template_path"]).unlink()            # 템플릿 소실 재현
 
-    snap = ctrl.snapshot()
+    snap = ctrl.refresh_panel()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
     assert snap["template_missing"] is True, (
         f"[{label}] 세션 축이 템플릿 부재를 말하지 않습니다 — 재연결 도달 보장 소멸."
@@ -647,7 +649,7 @@ def test_blocked_axis_name_follows_the_gate_order_not_template_state(tmp_path):
     ctrl.dispatch("select_job", {"name": "기안작업"})
     txt.unlink()                                        # 템플릿 부재 + 선택 0건
 
-    blocked = ctrl.snapshot()
+    blocked = ctrl.refresh_panel()
     assert blocked["template_missing"] is True          # 부재는 부재대로 참이고
     assert blocked["gate"]["reason"] == "no_rows", (     # 그래도 먼저 할 일은 행 선택이다
         "템플릿 부재가 행 선택 안내의 축 이름을 덮었습니다(게이트 서열 무시)."
@@ -837,7 +839,10 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
     # 것은 파일명 source 역해소이므로, 데이터 뒤 사용자가 Work를 명시 선택한다.
     ctrl.dispatch("select_job", {"name": "공고서"})
     # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
-    assert ctrl._filename_source_columns() == ["bidNtceNm"]
+    assert ctrl.work.vm is not None
+    assert filename_source_columns(
+        ctrl.work.vm.job, tuple(ctrl.data.records[0])
+    ) == ["bidNtceNm"]
 
 
 # ---------------------------------------------------------------- 게이트·생성(링1 계약)
@@ -923,11 +928,11 @@ def test_generate_rejects_concurrent_entry(tmp_path):
     """생성 잠금이 잡힌 동안 두 번째 실행은 파일 작업 전에 시끄럽게 거부한다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    assert ctrl._generation_lock.acquire(blocking=False)
+    assert ctrl.runs.lock.acquire(blocking=False)
     try:
         result = ctrl.generate()
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
     assert result == {
         "ok": False,
         "error": "이미 문서를 생성하고 있습니다.",
@@ -960,7 +965,7 @@ def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
     # 소비처(home_state·screen_library)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
     assert datetime.fromisoformat(stamped)
     assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
-    assert ctrl.vm.job is stamped_jobs[0]                       # 필드 목록 없이 최신 사본 전체 승계
+    assert ctrl.work.vm.job is stamped_jobs[0]                       # 필드 목록 없이 최신 사본 전체 승계
 
 
 def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
@@ -989,8 +994,8 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     after = ctrl.registry.load("공고서")
     assert after.filename_pattern == "edited-{{seq:001}}"       # 디스크 편집 보존
     assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
-    assert ctrl.vm.job.filename_pattern == after.filename_pattern  # 최신 Job 전체 승계
-    assert ctrl._last_generated is None                          # 새 규칙은 실행되지 않았다
+    assert ctrl.work.vm.job.filename_pattern == after.filename_pattern  # 최신 Job 전체 승계
+    assert ctrl.runs.last_generated is None                       # 새 규칙은 실행되지 않았다
     assert ctrl.snapshot()["guard"]["armed"] is True             # 수작업 선택 보호 복구
 
 
@@ -1022,7 +1027,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     assert ctrl.generate()["ok"] is True
     assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
     assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
-    assert ctrl.vm is not None and ctrl.vm.job.name == "공고서"  # 세션 불변(거부됐으니)
+    assert ctrl.work.vm is not None and ctrl.work.vm.job.name == "공고서"  # 세션 불변(거부됐으니)
 
 
 def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
@@ -1152,18 +1157,18 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
     # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표(run 핸들)가 서 있는 상태.
     from hwpxfiller.application.generation import GenerationRun
 
-    assert ctrl._generation_lock.acquire(blocking=False)
-    ctrl._run = GenerationRun(token="run-first")
+    assert ctrl.runs.lock.acquire(blocking=False)
+    ctrl.runs.run = GenerationRun(token="run-first")
     try:
         rejected = ctrl.generate(run_token="run-second")
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
 
     # 거절 응답은 **자기** 토큰을 단다 — 그래야 둘째를 누른 표면이 자기 거절을 알아본다.
     assert rejected["ok"] is False and "이미" in rejected["error"]
     assert rejected["run_token"] == "run-second"
     # 그리고 도는 런의 이름표는 **그대로다**. 이 한 줄이 이 테스트의 이유다.
-    assert ctrl._run is not None and ctrl._run.token == "run-first", (
+    assert ctrl.runs.run is not None and ctrl.runs.run.token == "run-first", (
         "진 호출이 이긴 런의 이름표를 갈아치웠습니다 — 그 런의 결과가 남의 것으로 폐기됩니다."
     )
 
@@ -1176,7 +1181,7 @@ def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
     pick_output_folder(ctrl, tmp_path / "out")
 
     assert ctrl.generate(run_token="run-9")["ok"] is True
-    assert ctrl._run is None
+    assert ctrl.runs.run is None
 
 
 def test_progress_delta_carries_the_run_token(tmp_path):
@@ -1344,7 +1349,7 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
     template.write_bytes(b"not a zip")                      # 템플릿 손상 → 구조 재읽기 실패
-    snap = ctrl.snapshot()
+    snap = ctrl.refresh_panel()
     assert snap["gate"]["level"] == "danger" and "읽을 수 없어" in snap["gate"]["text"]
     assert snap["name_tokens"] == [], (
         "템플릿을 못 읽는데 거울이 파일명 토큰 배너를 세웁니다 — 게이트와 다른 수리를 지시."
@@ -1417,18 +1422,18 @@ def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_pa
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     before = ctrl.snapshot()
-    out_dir, records = ctrl.out_dir, before["record_count"]
-    assert ctrl.vm.job.filename_pattern != "새규칙-{{공고명}}"
+    out_dir, records = ctrl.runs.out_dir, before["record_count"]
+    assert ctrl.work.vm.job.filename_pattern != "새규칙-{{공고명}}"
 
     job = reg.load("공고서")                      # 다른 화면(편집기)이 규칙을 바꿔 저장
     job.filename_pattern = "새규칙-{{공고명}}"
     reg.save(job, allow_overwrite=True)
 
     assert ctrl.dispatch("refresh", {}) is None    # 삭제가 아니므로 고지는 없다
-    assert ctrl.vm.job.filename_pattern == "새규칙-{{공고명}}"   # 규칙은 새것
+    assert ctrl.work.vm.job.filename_pattern == "새규칙-{{공고명}}"   # 규칙은 새것
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["record_count"] == records   # 세션은 그대로
-    assert ctrl.out_dir == out_dir
+    assert ctrl.runs.out_dir == out_dir
 
 
 def test_reload_is_a_no_op_without_a_job_or_with_a_corrupt_file(tmp_path):
@@ -1483,7 +1488,7 @@ def test_reload_also_follows_revision_metadata_that_the_content_fingerprint_hide
     reg = ctrl.registry
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl._last_generated = {0}                          # 완주 담보가 서 있는 상태
+    ctrl.runs.last_generated = {0}                     # 완주 담보가 서 있는 상태
 
     job = reg.load("공고서")
     original = job.filename_pattern
@@ -1496,8 +1501,8 @@ def test_reload_also_follows_revision_metadata_that_the_content_fingerprint_hide
     assert disk.binding_revision == 3                    # 세대는 앞서 있다
 
     assert ctrl._reload_active_job() is True
-    assert ctrl.vm.job.binding_revision == 3             # 실행이 대는 판본이 디스크와 같다
-    assert ctrl._last_generated == {0}                   # 실행 입력은 그대로 → 담보 유지
+    assert ctrl.work.vm.job.binding_revision == 3             # 실행이 대는 판본이 디스크와 같다
+    assert ctrl.runs.last_generated == {0}              # 실행 입력은 그대로 → 담보 유지
 
 
 def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path):
@@ -1509,9 +1514,9 @@ def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path)
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    vm_before = ctrl.vm
+    vm_before = ctrl.work.vm
     assert ctrl.dispatch("refresh", {}) is None
-    assert ctrl.vm is vm_before                    # 같은 정체를 그대로 들고 있다
+    assert ctrl.work.vm is vm_before                    # 같은 정체를 그대로 들고 있다
 
 
 def test_unknown_action_is_loud(tmp_path):
@@ -1535,8 +1540,8 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
     """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    assert isinstance(ctrl.vm, RunViewModel)
-    assert isinstance(ctrl.selection, SelectionModel)
+    assert isinstance(ctrl.work.vm, RunViewModel)
+    assert isinstance(ctrl.data.selection, SelectionModel)
 
 
 # ---------------------------------------------------------------- #26 #6 — 2소스(등록 데이터)
@@ -1603,7 +1608,7 @@ def test_data_row_is_absent_until_something_is_mounted(tmp_path):
     """마운트가 없으면 행도 없다 — 빈 카드 대신 **행 부재**다(빈 값이 새지 않는다)."""
     ctrl, _ = _controller(tmp_path)
 
-    snap = ctrl.snapshot()
+    snap = ctrl.refresh_panel()
 
     assert snap["data_row"] is None
     assert snap["data_pool_key"] == ""
@@ -1673,9 +1678,9 @@ def test_pclm_mount_data_row_keeps_an_unknown_view_name_verbatim(tmp_path):
     """제목표에 없는 이름(구판·손편집)은 감추지 않고 원문 그대로 — 조용한 추측 금지."""
     ctrl, _ = _controller(tmp_path)
     ctrl._mount_pclm(_pclm_db(tmp_path), _PCLM_VIEW)
-    ctrl.data_sheet = "v_구판"
+    ctrl.data.sheet = "v_구판"
 
-    assert ctrl.snapshot()["data_row"]["sub"] == "시트: v_구판 · 2행"
+    assert ctrl.refresh_panel()["data_row"]["sub"] == "시트: v_구판 · 2행"
 
 
 def test_data_row_is_the_same_composition_as_the_editor_column(tmp_path):
@@ -1685,9 +1690,9 @@ def test_data_row_is_the_same_composition_as_the_editor_column(tmp_path):
     row = ctrl.snapshot()["data_row"]
 
     assert row == session_data_row(
-        name=ctrl.data_label, kind=ctrl.data_kind, path=ctrl.data_path,
-        sheet=ctrl.data_sheet, header_row=ctrl.data_header_row,
-        record_count=len(ctrl.records),
+        name=ctrl.data.label, kind=ctrl.data.kind, path=ctrl.data.path,
+        sheet=ctrl.data.sheet, header_row=ctrl.data.header_row,
+        record_count=len(ctrl.data.records),
     )
 
 
@@ -1765,11 +1770,11 @@ def test_new_work_handoff_is_captured_at_mount_not_reread_from_the_slot(tmp_path
     b.write_text("담당자,품목\n김주무관,의자\n", encoding="utf-8")
     key = _pool_add(pool, "7월공고", {"path": str(a)})
     assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
-    mounted = list(ctrl.records[0].keys())
+    mounted = list(ctrl.data.records[0].keys())
 
     # 같은 슬롯을 B 로 다시 연결 — **재마운트는 하지 않는다**(화면은 여전히 A 를 보여 준다).
     pool.mutate(key, lambda it: it.opts.update({"path": str(b)}))
-    assert list(ctrl.records[0].keys()) == mounted        # 표시는 그대로 A
+    assert list(ctrl.data.records[0].keys()) == mounted        # 표시는 그대로 A
 
     ref, blocked = ctrl.new_work_handoff()
     assert blocked == ""
@@ -1780,7 +1785,7 @@ def test_new_work_handoff_is_captured_at_mount_not_reread_from_the_slot(tmp_path
     # 재마운트하면 그때는 B 로 간다(재연결을 막는 조치가 아니다 — 정상 수명 사건).
     assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     ref2, _ = ctrl.new_work_handoff()
-    assert source_for_path(ref2["path"]).fields() == list(ctrl.records[0].keys())
+    assert source_for_path(ref2["path"]).fields() == list(ctrl.data.records[0].keys())
     assert ref2["path"] != ref["path"]
 
 
@@ -1859,7 +1864,7 @@ def test_remount_reads_the_same_reference_again_and_picks_up_new_rows(tmp_path):
     ctrl, _ = _controller(tmp_path)
     csv = Path(_data_csv(tmp_path))
     ctrl.load_data_path(str(csv))
-    assert len(ctrl.records) == 2
+    assert len(ctrl.data.records) == 2
     csv.write_text(
         "bidNtceNm,presmptPrce\n전산장비,\n사무비품,2000000\n추가건,3000000\n",
         encoding="utf-8",
@@ -1867,7 +1872,7 @@ def test_remount_reads_the_same_reference_again_and_picks_up_new_rows(tmp_path):
 
     res = ctrl.dispatch("remount_data", {})    # 선택 0건이라 확인 없이 곧바로 돈다
     assert res["ok"] is True and "needs_confirm" not in res
-    assert len(ctrl.records) == 3
+    assert len(ctrl.data.records) == 3
 
 
 def test_remount_states_what_it_clears_before_it_clears_it(tmp_path):
@@ -1962,7 +1967,7 @@ def test_dismiss_data_notice_clears_the_channel(tmp_path):
     assert ctrl.snapshot()["data_notice"] is None
     assert pushes and pushes[-1]["data_notice"] is None
     # 닫기는 통지 채널만 만진다 — 작업 선택·데이터 상태는 그대로다.
-    assert ctrl.job_name == "공고서"
+    assert ctrl.work.name == "공고서"
 
 
 def test_mounted_session_data_survives_job_selection(tmp_path):
@@ -2034,7 +2039,7 @@ def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
         "relink_template", {"name": "공고서", "path": str(new_tpl), "confirm": True})
     assert res["relinked"] is True
     assert "다시 불러왔으니" in res["restated"]             # 조용한 상태 소실 금지(재적재 재진술)
-    assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
+    assert ctrl.work.vm.job.template_path == str(new_tpl)       # VM 재구성
 
 
 def test_relink_first_link_of_unlinked_job_is_allowed(tmp_path):
@@ -2222,14 +2227,14 @@ def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
     assert ctrl.generate()["ok"] is True
     first = sorted(p.name for p in out.glob("*.hwpx"))
     assert first == ["doc-090000-1.hwpx", "doc-090000-2.hwpx"]
-    assert ctrl._overwrite_now_pin is None   # 파괴 없는 첫 실행은 핀을 세우지 않는다
+    assert ctrl.runs.overwrite_now_pin is None  # 파괴 없는 첫 실행은 핀을 세우지 않는다
 
     # 같은 시각·같은 폴더로 다시 — 파괴 집합이 서므로 확인 왕복이 열린다.
     asked = ctrl.generate()
     assert asked["needs_overwrite"] is True
     assert asked["total"] == 2 and asked["overwrite_count"] == 2 and asked["new_count"] == 0
     assert sorted(asked["conflict_names"]) == first and asked["conflict_more"] == 0
-    assert ctrl._overwrite_now_pin is not None
+    assert ctrl.runs.overwrite_now_pin is not None
 
     # 확인 재호출 **직전에 초 경계를 넘긴다**. 핀이 없으면 재호출은 새 시각으로 계획해
     # 아무것도 덮지 않고 새 파일 2건을 더 만든다 — 확인창이 거짓말이 되는 바로 그 자리다.
@@ -2239,7 +2244,7 @@ def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
     assert sorted(p.name for p in out.glob("*.hwpx")) == first, (
         "확인 재호출이 재진술한 집합과 다른 이름을 만들었습니다."
     )
-    assert ctrl._overwrite_now_pin is None              # 소비했으면 놓는다
+    assert ctrl.runs.overwrite_now_pin is None          # 소비했으면 놓는다
 
 
 def test_the_overwrite_pin_is_dropped_when_the_zone_changes_between_the_roundtrip(tmp_path):
@@ -2255,20 +2260,24 @@ def test_the_overwrite_pin_is_dropped_when_the_zone_changes_between_the_roundtri
     pick_output_folder(ctrl, out)
     assert ctrl.generate()["ok"] is True
     assert ctrl.generate()["needs_overwrite"] is True
-    assert ctrl._overwrite_now_pin is not None
+    assert ctrl.runs.overwrite_now_pin is not None
 
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})   # 존 변이 — 선택이 갈렸다
+    ctrl.runs.last_run_job = "prior-result"
+    ctrl.runs.run_revisions = {"prior": 7}
     refused = ctrl.generate(confirm_overwrite=True)
 
     assert refused["ok"] is False and "needs_overwrite" not in refused
     assert "다시 받아야" in refused["error"] and refused["level"] == "warn"
-    assert ctrl._overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
+    assert ctrl.runs.overwrite_now_pin is None, "낡은 세계의 시각이 살아남았습니다."
+    assert ctrl.runs.last_run_job == "prior-result"
+    assert ctrl.runs.run_revisions == {"prior": 7}
     # 새 배치로 다시 물으면 왕복이 정상적으로 다시 열린다(막다른 거절이 아니다).
     assert ctrl.generate()["needs_overwrite"] is True
 
 
-def test_the_display_timestamp_is_captured_once_per_snapshot(tmp_path):
-    """표시 시각은 **스냅샷당 1회** 캡처다 — 한 스냅샷의 소비처가 서로 맞는다(#957).
+def test_the_display_timestamp_is_captured_once_per_refresh(tmp_path):
+    """표시 시각은 **refresh당 1회** 캡처다 — 한 읽기 모델의 소비처가 서로 맞는다(#957).
 
     반대 방향도 함께 잰다: 스냅샷을 다시 그리면 새로 찍는다(오래 열어 둔 세션의 날짜가
     늙지 않게). 종전의 「보는 동안 얼린다」 규칙은 그 값에 기대던 확인 면과 함께 죽었다.
@@ -2282,13 +2291,33 @@ def test_the_display_timestamp_is_captured_once_per_snapshot(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
 
     ctrl._clock = lambda: datetime(2026, 7, 21, 9, 0, 0)
-    snap = ctrl.snapshot()
+    snap = ctrl.refresh_panel()
     assert ctrl._names_now == datetime(2026, 7, 21, 9, 0, 0)
     # 한 스냅샷 안: 표 「문서」 열의 이름이 그 시각으로 계획된다(캡처가 1회라 서로 맞는다).
     assert [r["name"] for r in snap["records"]] == ["doc-090000-1.hwpx", "doc-090000-2.hwpx"]
 
+    prepared_state = (
+        ctrl.data.snapshot_generation,
+        ctrl.execution.record_preparation,
+        ctrl.execution.delivery_preparation,
+        ctrl._names_now,
+    )
+    snap["records"][0]["name"] = "mutated-by-caller"
+    snap["candidates"]["top"].clear()
+    ctrl._clock = lambda: pytest.fail("snapshot must not read the clock")
+    cached = ctrl.snapshot()
+    assert cached["records"][0]["name"] == "doc-090000-1.hwpx"
+    assert cached["candidates"]["top"]
+    assert prepared_state == (
+        ctrl.data.snapshot_generation,
+        ctrl.execution.record_preparation,
+        ctrl.execution.delivery_preparation,
+        ctrl._names_now,
+    )
+
     ctrl._names_now = datetime(2020, 1, 1)       # 늙은 값을 심는다
-    ctrl.snapshot()
+    ctrl._clock = lambda: datetime(2026, 7, 21, 9, 0, 1)
+    ctrl.refresh_panel()
     assert ctrl._names_now != datetime(2020, 1, 1)
 
 
@@ -2302,7 +2331,7 @@ def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
     snap = ctrl.snapshot()
     assert snap["template_missing"] is False               # 정상 = 복구 동선 숨김
     Path(snap["template_path"]).unlink()                    # 템플릿 파일 소실 재현
-    assert ctrl.snapshot()["template_missing"] is True      # 부재 = 복구 동선 노출
+    assert ctrl.refresh_panel()["template_missing"] is True # 부재 = 복구 동선 노출
 
 
 # ------------------------------------------------- 필터 배선
@@ -2318,21 +2347,21 @@ def test_filter_lifecycle_data_scoped(tmp_path):
     """필터 = 데이터 스코프(§18.10, 결정 24 개정): 데이터 겨눔에 생성, **작업 전환·해제에
     생존**(데이터-우선 — 필터는 가시성만이라 작업과 무관), 데이터 교체에 재생성."""
     ctrl, _ = _session(tmp_path)
-    assert ctrl.filter is not None
+    assert ctrl.data.filter is not None
     # 매핑 확정 유형(text)이 힌트로 우선한다 — 수치 열이어도 사용자 확정 존중.
     snap = ctrl.snapshot()
     kinds = {c["name"]: c["kind"] for c in snap["filter"]["columns"]}
     assert kinds == {"bidNtceNm": "text", "presmptPrce": "text"}
     ctrl.dispatch("filter_search", {"text": "전산"})
-    assert ctrl.filter.is_active()
+    assert ctrl.data.filter.is_active()
     ctrl.dispatch("select_job", {"name": ""})  # 작업 해제 — 데이터 존은 그대로(§18.2)
-    assert ctrl.filter is not None and ctrl.filter.is_active()
+    assert ctrl.data.filter is not None and ctrl.data.filter.is_active()
     assert ctrl.snapshot()["filter"]["active"] is True
     # 데이터 교체 = 필터 재생성(열 지형이 바뀐다 — 결정 24의 존속 부분).
     other = tmp_path / "e.csv"
     other.write_text("다른열\n값\n", encoding="utf-8")
     ctrl.load_data_path(str(other))
-    assert ctrl.filter is not None and not ctrl.filter.is_active()
+    assert ctrl.data.filter is not None and not ctrl.data.filter.is_active()
 
 
 def test_filter_search_shapes_table_and_chips(tmp_path):
@@ -2488,7 +2517,7 @@ def test_hiding_is_inline_only_the_sheet_shows_every_column(tmp_path):
     assert t["hidden_columns"] == []                       # 시트에는 표지도 서지 않는다
     assert ctrl.dispatch("filter_panel", {"column": "presmptPrce"})["can_hide"] is False
     with pytest.raises(ValueError, match="전체 열"):       # 오배선 호출도 시끄럽게
-        ctrl.dispatch("hide_column", {"column": "bidNtceNm", "epoch": ctrl.zone_epoch})
+        ctrl.dispatch("hide_column", {"column": "bidNtceNm", "epoch": ctrl.data.zone_epoch})
     ctrl.dispatch("range_draft_cancel", {})
     t = ctrl.snapshot()["table"]
     assert t["hidden_columns"] == ["presmptPrce"]          # 인라인은 선별을 따른다
@@ -2498,8 +2527,8 @@ def test_hiding_is_inline_only_the_sheet_shows_every_column(tmp_path):
 def test_lead_identity_and_unknown_columns_cannot_be_hidden(tmp_path):
     """선두 식별 열(#271 스캔 앵커)은 데이터 열이 아니라 숨김 지형 밖 — 미지 이름은 loud."""
     ctrl, _ = _session(tmp_path)
-    assert ctrl.filter is not None
-    assert "문서" not in ctrl.filter.columns               # 선두 열은 열 지형에 없다(구조 배제)
+    assert ctrl.data.filter is not None
+    assert "문서" not in ctrl.data.filter.columns               # 선두 열은 열 지형에 없다(구조 배제)
     with pytest.raises(ValueError, match="숨길 수 없는 열"):
         ctrl.dispatch("hide_column", {"column": "문서"})
     with pytest.raises(ValueError, match="숨길 수 없는 열"):
@@ -2513,7 +2542,7 @@ def test_column_hiding_dies_with_the_data_and_never_persists(tmp_path):
     축이 아니다). stale 세대의 늦은 숨김은 남의 세계의 편집이라 적용되지 않는다.
     """
     ctrl, _ = _session(tmp_path)
-    old_epoch = ctrl.zone_epoch
+    old_epoch = ctrl.data.zone_epoch
     ctrl.dispatch("hide_column", {"column": "presmptPrce"})
     ctrl.dispatch("select_job", {"name": ""})              # 작업 해제 — 선별 생존
     assert ctrl.snapshot()["table"]["hidden_columns"] == ["presmptPrce"]
@@ -2524,7 +2553,7 @@ def test_column_hiding_dies_with_the_data_and_never_persists(tmp_path):
     assert t["hidden_columns"] == [] and all(c["visible"] for c in t["columns"])
     # 죽은 세계의 늦은 숨김은 stale 재진술 — 새 데이터의 동명 열을 조용히 숨기지 않는다.
     res = ctrl.dispatch("hide_column", {"column": "presmptPrce", "epoch": old_epoch})
-    assert res == {"stale": True, "epoch": ctrl.zone_epoch}
+    assert res == {"stale": True, "epoch": ctrl.data.zone_epoch}
     assert ctrl.snapshot()["table"]["hidden_columns"] == []
     # durable 0곳 — 저장 작업(job JSON)에는 숨김이 어떤 형태로도 실리지 않는다.
     raw = "".join(
@@ -2555,8 +2584,8 @@ def test_set_all_reports_added_count_for_dead_button_honesty(tmp_path):
 def test_table_cell_preserves_falsy_values(tmp_path):
     """셀 텍스트 = cell_text 단일 출처(리뷰 #8) — 0 이 빈칸으로 붕괴하지 않는다."""
     ctrl, _ = _session(tmp_path)
-    ctrl.vm.records[1]["presmptPrce"] = 0                    # 풀(JSON) 유래 수치형 재현
-    snap = ctrl.snapshot()
+    ctrl.data.records[1]["presmptPrce"] = 0                    # 풀(JSON) 유래 수치형 재현
+    snap = ctrl.refresh_panel()
     row1 = next(r for r in snap["table"]["rows"] if r["index"] == 1)
     assert row1["cells"][1] == [("0", False)]                # 필터가 보는 그대로 표면도
 
@@ -2586,10 +2615,10 @@ def test_session_guard_for_cross_screen_query(tmp_path):
     """#268 리뷰 — 홈 삭제 가드 조회(session_guard_for): 이 화면이 무장 세션으로 겨눈
     작업명에만 가드 수치(+screen)를 내고, 비무장·타 작업·빈 이름은 None(홈 즉시 삭제)."""
     ctrl, _ = _session(tmp_path)
-    assert ctrl.session_guard_for(ctrl.job_name) is None      # 비무장(전체 선택) = None
+    assert ctrl.session_guard_for(ctrl.work.name) is None      # 비무장(전체 선택) = None
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
-    g = ctrl.session_guard_for(ctrl.job_name)
+    g = ctrl.session_guard_for(ctrl.work.name)
     assert g is not None and g["screen"] == "job" and g["armed"] is True
     assert g["sel_count"] == 1
     assert ctrl.session_guard_for("다른작업") is None
@@ -3308,27 +3337,27 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
             lambda job: setattr(job, "filename_pattern", original),
         )
 
-    old_records = ctrl.records
+    old_records = ctrl.data.records
     old_observation = object()
-    ctrl._last_fresh_observation = old_observation
-    ctrl._current_record_preparation = object()
-    ctrl._current_delivery_preparation = object()
-    old_generation = ctrl._snapshot_gen
+    ctrl.execution.fresh_observation = old_observation
+    ctrl.execution.record_preparation = object()
+    ctrl.execution.delivery_preparation = object()
+    old_generation = ctrl.data.snapshot_generation
     calls = []
-    decide = screen_job_module.decide_active_work_after_data_transition
+    decide = active_work_module.decide_active_work_after_data_transition
 
     def recording_decision(context):
         calls.append(context)
         return decide(context)
 
     monkeypatch.setattr(
-        screen_job_module, "decide_active_work_after_data_transition", recording_decision
+        active_work_module, "decide_active_work_after_data_transition", recording_decision
     )
     if case == "reload_error":
         def fail_active_work_reload(store, name):
             raise ValueError("internal registry detail")
 
-        monkeypatch.setattr(screen_job_module, "load_job", fail_active_work_reload)
+        monkeypatch.setattr(active_work_module, "load_job", fail_active_work_reload)
     # "bound_elsewhere" 를 제외한 모든 케이스는 old_path 가 이미 active_name 의 기본
     # 결속 경로(`_data_csv_path`) 였다 — `_data_csv` 가 **같은 자리**에 새 내용을 덮어써
     # 결속은 그대로 둔 채 관측 전환만 새로 세운다(usable=True 를 결속 정직하게 재현).
@@ -3345,15 +3374,15 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert calls[0].template_application_ref == expected_application_ref
     assert calls[0].exact_context_restorable is restorable
     assert calls[0].bound_to_current_data is usable
-    assert ctrl.job_name == expected_name
-    assert ctrl.records is not old_records
-    assert ctrl._snapshot_gen == old_generation + 1
-    assert ctrl._current_record_preparation is None
-    assert ctrl._current_delivery_preparation is None
-    assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
+    assert ctrl.work.name == expected_name
+    assert ctrl.data.records is not old_records
+    assert ctrl.data.snapshot_generation == old_generation + 1
+    assert ctrl.execution.record_preparation is None
+    assert ctrl.execution.delivery_preparation is None
+    assert ctrl.execution.fresh_observation is (old_observation if expected_name else None)
     # 저장 폴더는 **전역 설정**이라 작업이 풀려도 산다(전역화) — 종전 이 자리는 session-scoped
     # 명시 지정이 작업과 함께 죽는 것을 쟀고, 그 축 자체가 사라졌다.
-    assert ctrl.out_dir == picked_folder
+    assert ctrl.runs.out_dir == picked_folder
     snap = ctrl.snapshot()
     if notice is None:
         assert snap["data_notice"] is None
@@ -3363,7 +3392,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
         assert snap["data_notice"]["level"] == "warn"
     if case == "bound_elsewhere":
         assert snap["candidates"]["suggested"] == "공고서"
-        assert ctrl.job_name == ""  # 유일 후보도 자동 활성화하지 않는다.
+        assert ctrl.work.name == ""  # 유일 후보도 자동 활성화하지 않는다.
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
@@ -3390,14 +3419,14 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
     observation = object()
     record_preparation = object()
     delivery_preparation = object()
-    ctrl._last_fresh_observation = observation
-    ctrl._current_record_preparation = record_preparation
-    ctrl._current_delivery_preparation = delivery_preparation
-    old_source = ctrl.datasource
-    old_records = ctrl.records
-    old_selection = ctrl.selection
-    old_vm = ctrl.vm
-    old_generation = ctrl._snapshot_gen
+    ctrl.execution.fresh_observation = observation
+    ctrl.execution.record_preparation = record_preparation
+    ctrl.execution.delivery_preparation = delivery_preparation
+    old_source = ctrl.data.datasource
+    old_records = ctrl.data.records
+    old_selection = ctrl.data.selection
+    old_vm = ctrl.work.vm
+    old_generation = ctrl.data.snapshot_generation
 
     if target == "file":
         with pytest.raises(ValueError, match="broken file"):
@@ -3407,15 +3436,15 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
         result = ctrl.dispatch("load_pool", {"key": key})
         assert result["ok"] is False and "broken pool" in result["error"]
 
-    assert ctrl.datasource is old_source
-    assert ctrl.records is old_records
-    assert ctrl.selection is old_selection
-    assert ctrl.vm is old_vm
-    assert ctrl.job_name == "공고서"
-    assert ctrl._snapshot_gen == old_generation
-    assert ctrl._last_fresh_observation is observation
-    assert ctrl._current_record_preparation is record_preparation
-    assert ctrl._current_delivery_preparation is delivery_preparation
+    assert ctrl.data.datasource is old_source
+    assert ctrl.data.records is old_records
+    assert ctrl.data.selection is old_selection
+    assert ctrl.work.vm is old_vm
+    assert ctrl.work.name == "공고서"
+    assert ctrl.data.snapshot_generation == old_generation
+    assert ctrl.execution.fresh_observation is observation
+    assert ctrl.execution.record_preparation is record_preparation
+    assert ctrl.execution.delivery_preparation is delivery_preparation
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
@@ -3436,8 +3465,8 @@ def test_data_transition_uses_template_application_identity(
     ctrl.load_data_path(_data_csv(tmp_path))
     authority_id = registry.load("공고서").authority_id
     seated_application_id = coordinator.current_template_application_id(authority_id)
-    assert seated_application_id == ctrl._seated_template_application_id
-    assert ctrl.job_name == "공고서"  # exact application은 KEEP
+    assert seated_application_id == ctrl.work.seated_template_application_id
+    assert ctrl.work.name == "공고서"  # exact application은 KEEP
 
     template = Path(registry.load("공고서").template_path)
     _write_template(template, ["공고명", "추정가격", "비고"])
@@ -3464,14 +3493,14 @@ def test_data_transition_uses_template_application_identity(
     assert restored_application_id != seated_application_id
 
     contexts = []
-    decide = screen_job_module.decide_active_work_after_data_transition
+    decide = active_work_module.decide_active_work_after_data_transition
 
     def recording_decision(context):
         contexts.append(context)
         return decide(context)
 
     monkeypatch.setattr(
-        screen_job_module, "decide_active_work_after_data_transition", recording_decision
+        active_work_module, "decide_active_work_after_data_transition", recording_decision
     )
     new_path = _data_csv(tmp_path)
     if target == "file":
@@ -3483,8 +3512,8 @@ def test_data_transition_uses_template_application_identity(
     assert contexts[0].template_application_ref == restored_application_id
     assert contexts[0].exact_context_restorable is applied_locally
     assert contexts[0].bound_to_current_data is True
-    assert ctrl.job_name == ("공고서" if applied_locally else "")
-    assert ctrl._seated_template_application_id == (
+    assert ctrl.work.name == ("공고서" if applied_locally else "")
+    assert ctrl.work.seated_template_application_id == (
         restored_application_id if applied_locally else None
     )
     notice = ctrl.snapshot()["data_notice"]
@@ -3508,14 +3537,14 @@ def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transitio
     )
     ctrl.dispatch("select_job", {"name": "공고서"})
     _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
-    assert ctrl.vm is not None and not ctrl.vm.job.authority_id
-    assert ctrl._seated_template_application_id is None
+    assert ctrl.work.vm is not None and not ctrl.work.vm.job.authority_id
+    assert ctrl.work.seated_template_application_id is None
 
     result = ctrl.dispatch("template_check", {"request_id": "bootstrap"})
     restored = registry.load("공고서")
     assert result["ok"] is True and restored.authority_id
-    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
-    assert ctrl._seated_template_application_id == (
+    assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
+    assert ctrl.work.seated_template_application_id == (
         coordinator.current_template_application_id(restored.authority_id)
     )
 
@@ -3525,7 +3554,7 @@ def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transitio
     else:
         key = _pool_add(pool, "새 데이터", {"path": new_path})
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
-    assert ctrl.job_name == "공고서"
+    assert ctrl.work.name == "공고서"
     assert ctrl.snapshot()["data_notice"] is None
 
 
@@ -3562,8 +3591,8 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
 
     assert result["ok"] is False and "변경되어 선택을 해제" in result["error"]
     assert registry.load("공고서").authority_id  # 새 registry Work는 bootstrap됨
-    assert ctrl.job_name == "" and ctrl.vm is None
-    assert ctrl._seated_template_application_id is None
+    assert ctrl.work.name == "" and ctrl.work.vm is None
+    assert ctrl.work.seated_template_application_id is None
     assert "문서 작업이 변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
     if action == "generate":
         assert len(pushes) == 1
@@ -3599,8 +3628,8 @@ def test_applied_then_advanced_releases_instead_of_adopting_the_later_applicatio
 
     assert result["status"] == "applied_then_advanced"
     assert result["is_current"] is False
-    assert ctrl.job_name == "" and ctrl.vm is None
-    assert ctrl._seated_template_application_id is None
+    assert ctrl.work.name == "" and ctrl.work.vm is None
+    assert ctrl.work.seated_template_application_id is None
     assert "다른 변경이 이어져 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
 
 
@@ -3618,13 +3647,13 @@ def test_seating_identity_read_failure_does_not_split_the_active_work(
         tmp_path, registry=registry, template_change=coordinator
     )
     ctrl.dispatch("select_job", {"name": "공고서"})
-    old_vm = ctrl.vm
+    old_vm = ctrl.work.vm
     old_seat = (
-        ctrl.job_name,
-        ctrl.job_is_txt,
-        ctrl.job_unsupported,
-        ctrl.out_dir,
-        ctrl._seated_template_application_id,
+        ctrl.work.name,
+        ctrl.work.is_txt,
+        ctrl.work.unsupported,
+        ctrl.runs.out_dir,
+        ctrl.work.seated_template_application_id,
     )
 
     def fail_identity_read(_work_id):
@@ -3636,13 +3665,13 @@ def test_seating_identity_read_failure_does_not_split_the_active_work(
     with pytest.raises(ValueError, match="authority store broken"):
         ctrl.dispatch("select_job", {"name": "계약서"})
 
-    assert ctrl.vm is old_vm
+    assert ctrl.work.vm is old_vm
     assert (
-        ctrl.job_name,
-        ctrl.job_is_txt,
-        ctrl.job_unsupported,
-        ctrl.out_dir,
-        ctrl._seated_template_application_id,
+        ctrl.work.name,
+        ctrl.work.is_txt,
+        ctrl.work.unsupported,
+        ctrl.runs.out_dir,
+        ctrl.work.seated_template_application_id,
     ) == old_seat
 
 
@@ -3650,12 +3679,12 @@ def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
     """§19.8 1분기 — 명시 선택과 같다. 데이터·선택은 세션 소유라 **생존**한다."""
     ctrl, _ = _controller(tmp_path)
     _mount_all(ctrl, _data_csv(tmp_path))
-    before = ctrl.selection.selected_count()
+    before = ctrl.data.selection.selected_count()
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
     assert res == {"promoted": True, "name": "공고서"}
-    assert ctrl.job_name == "공고서"
-    assert ctrl.preferred_work == ""              # 지금 이뤄졌으니 보관하지 않는다
-    assert ctrl.selection.selected_count() == before  # RecordRangeState 생존
+    assert ctrl.work.name == "공고서"
+    assert ctrl.work.preferred == ""              # 지금 이뤄졌으니 보관하지 않는다
+    assert ctrl.data.selection.selected_count() == before  # RecordRangeState 생존
 
 
 def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_path):
@@ -3677,19 +3706,19 @@ def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_pat
     # 결속 있는 작업 — 무데이터에서도 prefer_work 자체가 승격이자 마운트다.
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
     assert res == {"promoted": True, "name": "공고서"}
-    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""
+    assert ctrl.work.name == "공고서" and ctrl.work.preferred == ""
     assert ctrl.snapshot()["has_data"] is True  # 자기 결속 데이터를 끌고 왔다
 
     # 결속 없는 구판 작업 + 지금 데이터와 구조 불일치 → 보관 후 안내(활성 불변).
     _extra_job(ctrl, "구판", sources=("없는열A", "없는열B"), bound=False)
     res = ctrl.dispatch("prefer_work", {"name": "구판"})
     assert res == {"stored": True, "reason": "incompatible", "name": "구판"}
-    assert ctrl.job_name == "공고서" and ctrl.preferred_work == "구판"  # 활성 작업 불변
+    assert ctrl.work.name == "공고서" and ctrl.work.preferred == "구판"  # 활성 작업 불변
 
     other = tmp_path / "other.csv"
     other.write_text("bidNtceNm,presmptPrce\n다른데이터,1\n", encoding="utf-8")
     ctrl.load_data_path(str(other))
-    assert ctrl.preferred_work == ""              # 1회 소비
+    assert ctrl.work.preferred == ""              # 1회 소비
     snap = ctrl.snapshot()
     # 결속 축 후보에는 영영 서지 않는다 — 그래서 안내도 「아래 후보」가 아니라
     # 「문서 작업」을 가리킨다(없는 자리를 가리키는 지시는 이행 불가능하다).
@@ -3717,16 +3746,15 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
     top = [row["name"] for row in snap["candidates"]["top"]]
-    ranked = [row.name for row in ctrl._ranked_now()]
-    assert top == ranked[:MAIN_TOP_N] == ["작업5", "작업4", "작업3", "작업2", "작업1"]
+    assert top == ["작업5", "작업4", "작업3", "작업2", "작업1"]
     assert "공고서" not in top  # 결속은 있지만 순위 밖(§2.4 — 순위는 후보 통로가 아니다)
-    assert snap["candidates"]["more"] == len(ranked) - MAIN_TOP_N == 2
+    assert snap["candidates"]["more"] == 2
 
     library = LibraryController(
         ctrl.registry, TextTemplateRegistry(tmp_path / "txt"), lambda _s, _snap: None,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
-        generation_lock=ctrl._generation_lock,
+        generation_lock=ctrl.runs.lock,
         # 상세 연결 존의 필수 주입(U6-F #980) — 이 시험이 재는 것은 검색 도달성이다.
         template_root=TemplateRoot(default_root=tmp_path / "templates"),
     )
@@ -3738,12 +3766,12 @@ def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path)
     library.dispatch("select_work", {"name": "공고서"})
     primary = library.snapshot()["detail"]["primary"]
     assert primary == {"target": "job", "label": "문서 만들기에서 사용", "hint": ""}
-    assert ctrl.job_name == ""  # 라이브러리 행 선택은 active authority가 아니다.
+    assert ctrl.work.name == ""  # 라이브러리 행 선택은 active authority가 아니다.
 
     assert ctrl.dispatch("prefer_work", {"name": "공고서"}) == {
         "promoted": True, "name": "공고서",
     }
-    assert ctrl.job_name == "공고서"
+    assert ctrl.work.name == "공고서"
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
@@ -3764,29 +3792,28 @@ def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     def fail_registry_list(_store):
         raise ValueError("internal candidate detail")
 
-    monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
+    monkeypatch.setattr(active_work_module, "list_jobs", fail_registry_list)
     new_path = _data_csv(tmp_path)
     if target == "file":
         ctrl.load_data_path(new_path)
-        assert ctrl.data_source == "file" and ctrl.data_label == Path(new_path).name
+        assert ctrl.data.source_kind == "file" and ctrl.data.label == Path(new_path).name
     else:
         key = _pool_add(pool, "새 데이터", {"path": new_path})
         assert ctrl.dispatch("load_pool", {"key": key}) == {
             "ok": True,
             "label": "등록 데이터: 새 데이터",
         }
-        assert ctrl.data_source == "pool" and ctrl.data_pool_key == key
+        assert ctrl.data.source_kind == "pool" and ctrl.data.pool_key == key
 
-    assert ctrl.records and ctrl.selection.selected_count() == 0
-    assert ctrl.preferred_work == ""
+    assert ctrl.data.records and ctrl.data.selection.selected_count() == 0
+    assert ctrl.work.preferred == ""
     notice = ctrl.snapshot()["data_notice"]
     assert notice["level"] == "warn"
     assert "고른 '공고서' 작업을 다시 확인할 수 없습니다" in notice["text"]
-    assert "문서 작업 목록을 다시 확인할 수 없습니다" in notice["text"]
     assert "internal candidate detail" not in notice["text"]
 
 
-def test_snapshot_registry_warning_composes_and_clears_on_recovery(
+def test_refresh_registry_warning_composes_and_clears_on_recovery(
     tmp_path, monkeypatch,
 ):
     """Registry 경고는 기존 notice와 합성하되 복구 뒤 영속하지 않는다."""
@@ -3799,13 +3826,13 @@ def test_snapshot_registry_warning_composes_and_clears_on_recovery(
     def fail_registry_list(_store):
         raise ValueError("internal registry detail")
 
-    assert ctrl.snapshot()["data_notice"] is None
+    assert ctrl.refresh_panel()["data_notice"] is None
     monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
-    assert ctrl.snapshot()["data_notice"] == {
+    assert ctrl.refresh_panel()["data_notice"] == {
         "level": "warn", "text": registry_warning,
     }
     monkeypatch.setattr(screen_job_module, "list_jobs", list_jobs)
-    assert ctrl.snapshot()["data_notice"] is None
+    assert ctrl.refresh_panel()["data_notice"] is None
 
     existing_notices = (
         (
@@ -3820,17 +3847,17 @@ def test_snapshot_registry_warning_composes_and_clears_on_recovery(
         ),
     )
     for existing_text, existing_level in existing_notices:
-        ctrl.data_notice_text = existing_text
-        ctrl.data_notice_level = existing_level
+        ctrl.data.notice_text = existing_text
+        ctrl.data.notice_level = existing_level
         monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
-        assert ctrl.snapshot()["data_notice"] == {
+        assert ctrl.refresh_panel()["data_notice"] == {
             "level": "warn", "text": f"{existing_text} {registry_warning}",
         }
-        assert (ctrl.data_notice_text, ctrl.data_notice_level) == (
+        assert (ctrl.data.notice_text, ctrl.data.notice_level) == (
             existing_text, existing_level,
         )
         monkeypatch.setattr(screen_job_module, "list_jobs", list_jobs)
-        assert ctrl.snapshot()["data_notice"] == {
+        assert ctrl.refresh_panel()["data_notice"] == {
             "level": existing_level, "text": existing_text,
         }
 
@@ -3870,7 +3897,7 @@ def test_release_notice_preserves_the_pending_preferred_work_restatement(
         key = _pool_add(pool, "계약 데이터", {"path": str(new_path)})
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
 
-    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert ctrl.work.name == "" and ctrl.work.preferred == ""
     notice = ctrl.snapshot()["data_notice"]
     assert "공고서" not in notice["text"]
     assert "다른 데이터에 연결돼 있어 선택을 해제했습니다" in notice["text"]
@@ -3901,13 +3928,13 @@ def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
 
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
     assert res == {"stored": True, "reason": "no_binding", "name": "공고서"}
-    assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"  # 보관 — 자동 마운트 없음
+    assert ctrl.work.name == "" and ctrl.work.preferred == "공고서"  # 보관 — 자동 마운트 없음
     assert ctrl.snapshot()["has_data"] is False
     # 데이터를 명시로 골라도 active Work 선택은 **별도 명시 사건**이다(§18.3 개정) —
     # 보관분은 소비되지만 자동 선택은 없고, 쓸 수 있다는 사실만 재진술한다. 결속 없는
     # 구판 작업의 판정 축은 스키마라 이 데이터로는 실제로 쓸 수 있다(#932 U4-C).
     ctrl.load_data_path(_data_csv(tmp_path))
-    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert ctrl.work.name == "" and ctrl.work.preferred == ""
     notice = ctrl.snapshot()["data_notice"]["text"]
     assert "이 데이터로 쓸 수 있습니다" in notice and "공고서" in notice
     # 결속 축 후보에는 못 서므로 안내는 「아래 후보」가 아니라 「문서 작업」을 가리킨다.
@@ -3923,11 +3950,11 @@ def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
     ctrl.registry.assign_authority_id("공고서", "authority-old")
     ctrl.dispatch("prefer_work", {"name": "공고서"})
     ctrl.dispatch("select_job", {"name": "공고서"})   # 명시 선택 = 보관분 소비
-    assert ctrl.preferred_work == ""
-    ctrl.preferred_work = "공고서"                     # 활성이 있는 채로 보관분이 남은 상태
+    assert ctrl.work.preferred == ""
+    ctrl.work.preferred = "공고서"                     # 활성이 있는 채로 보관분이 남은 상태
     ctrl.load_data_path(_data_csv(_p))
     snap = ctrl.snapshot()
-    assert ctrl.job_name == "공고서"
+    assert ctrl.work.name == "공고서"
     assert "이미 열려" in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
 
@@ -3944,8 +3971,8 @@ def test_prefer_work_does_not_activate_an_incompatible_work(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     res = ctrl.dispatch("prefer_work", {"name": "계약서"})
     assert res == {"stored": True, "reason": "incompatible", "name": "계약서"}
-    assert ctrl.job_name == ""                    # 활성 불변 — 조용한 승격 없음
-    assert ctrl.preferred_work == "계약서"
+    assert ctrl.work.name == ""                    # 활성 불변 — 조용한 승격 없음
+    assert ctrl.work.preferred == "계약서"
 
 
 def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp_path):
@@ -3963,7 +3990,7 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     ctrl.dispatch("prefer_work", {"name": "계약서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
-    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert ctrl.work.name == "" and ctrl.work.preferred == ""
     assert "구조가 맞지 않습니다" in snap["data_notice"]["text"]
     assert "직접 선택하세요" not in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
@@ -3983,7 +4010,7 @@ def test_stored_preference_pointing_at_a_deleted_work_is_loud(tmp_path):
     ctrl.registry.delete("공고서")
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
-    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert ctrl.work.name == "" and ctrl.work.preferred == ""
     assert "더는 없습니다" in snap["data_notice"]["text"]
     assert "선택하세요" not in snap["data_notice"]["text"]
 
@@ -4172,7 +4199,7 @@ def test_failed_job_switch_keeps_the_recovery_target(tmp_path, monkeypatch):
     assert ctrl.dispatch("select_failed", {})["selected"] == 1
     with pytest.raises(OSError):                         # 사라진·읽을 수 없는 작업
         ctrl.dispatch("select_job", {"name": "없는작업", "confirm": True})
-    assert ctrl.job_name == "공고서"                      # 세션 불변
+    assert ctrl.work.name == "공고서"                      # 세션 불변
     assert ctrl.dispatch("select_failed", {})["selected"] == 1   # 복구 대상도 불변
     # 전환이 실제로 성사되면 그때 비운다(다른 작업의 실패를 고르지 않는다).
     ctrl.registry.save(Job(name="둘째"))
@@ -4270,10 +4297,10 @@ def test_every_order_consumer_shares_the_one_axis(tmp_path):
         snap = ctrl.snapshot()
         seen = _axis(snap)
         assert seen["strip"] == expect, f"{value}: 스트립이 표와 다른 축을 말합니다"
-        assert ctrl._indices() == ([2, 1, 0] if value == "sourceDesc" else [0, 1, 2])
+        assert ctrl.data.selected_indices() == ([2, 1, 0] if value == "sourceDesc" else [0, 1, 2])
         # 파일 이름은 실행 입력 순서를 따라 발급된다({{seq:001}}) — 표의 「문서」 열이 증거.
         names = {r["index"]: r["name"] for r in snap["records"]}
-        assert names[ctrl._indices()[0]].startswith("doc-001")
+        assert names[ctrl.data.selected_indices()[0]].startswith("doc-001")
 
 
 def test_view_order_change_moves_no_row_in_or_out(tmp_path):
@@ -4281,9 +4308,9 @@ def test_view_order_change_moves_no_row_in_or_out(tmp_path):
     ctrl, _ = _order_session(tmp_path)
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})
-    before = ctrl.selection.selected_indices()
+    before = ctrl.data.selection.selected_indices()
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    assert ctrl.selection.selected_indices() == before
+    assert ctrl.data.selection.selected_indices() == before
 
 
 def test_new_snapshot_returns_to_the_default_axis(tmp_path):
@@ -4342,8 +4369,8 @@ def test_range_draft_edits_do_not_touch_the_committed_range(tmp_path):
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     snap = ctrl.snapshot()
     # 커밋 = 3건 그대로 · 실행 입력도 그대로 · 게이트 문안 불변
-    assert ctrl.selection.selected_count() == 3 and snap["selected_count"] == 3
-    assert ctrl._indices() == [2, 1, 0]
+    assert ctrl.data.selection.selected_count() == 3 and snap["selected_count"] == 3
+    assert ctrl.data.selected_indices() == [2, 1, 0]
     assert snap["gate"]["text"] == before_gate
     # 초안 = 1건, 표는 초안을 그린다(판정 D 경계표 1행)
     assert snap["range_draft"] == {
@@ -4361,27 +4388,27 @@ def test_range_draft_apply_commits_atomically(tmp_path):
     ctrl.dispatch("toggle_record", {"index": 2, "value": True})
     ctrl.dispatch("filter_search", {"text": "책상"})
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    assert ctrl.view_order == "sourceDesc"           # 축도 초안이 덮는다(판정 B)
+    assert ctrl.data.view_order == "sourceDesc"           # 축도 초안이 덮는다(판정 B)
     assert ctrl.dispatch("range_draft_apply", {}) == {"ok": True}
     snap = ctrl.snapshot()
-    assert ctrl.selection.selected_indices() == [2]
-    assert ctrl.view_order == "sourceAsc" and snap["view_order"] == "sourceAsc"
-    assert ctrl.filter is not None and ctrl.filter.search_text == "책상"
+    assert ctrl.data.selection.selected_indices() == [2]
+    assert ctrl.data.view_order == "sourceAsc" and snap["view_order"] == "sourceAsc"
+    assert ctrl.data.filter is not None and ctrl.data.filter.search_text == "책상"
     assert snap["range_draft"]["open"] is False
 
 
 def test_range_draft_cancel_discards_only_the_draft(tmp_path):
     """수용 기준 5(§18.10) — 취소는 메인 범위와 실행 증거를 바꾸지 않는다."""
     ctrl, _ = _draft_session(tmp_path)
-    before = (ctrl.selection.selected_indices(), ctrl.view_order, ctrl.filter.export_state())
+    before = (ctrl.data.selection.selected_indices(), ctrl.data.view_order, ctrl.data.filter.export_state())
     ctrl.dispatch("range_draft_open", {})
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("filter_search", {"text": "없는값"})
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
     ctrl.dispatch("range_draft_cancel", {})
-    assert (ctrl.selection.selected_indices(), ctrl.view_order,
-            ctrl.filter.export_state()) == before
-    assert ctrl.range_draft is None
+    assert (ctrl.data.selection.selected_indices(), ctrl.data.view_order,
+            ctrl.data.filter.export_state()) == before
+    assert ctrl.data.range_draft is None
 
 
 def test_range_draft_open_is_idempotent(tmp_path):
@@ -4409,13 +4436,13 @@ def test_stale_draft_is_refused_instead_of_committing_someone_elses_rows(tmp_pat
     ctrl, _ = _draft_session(tmp_path)
     ctrl.dispatch("range_draft_open", {})
     ctrl.dispatch("set_none", {})
-    draft = ctrl.range_draft
+    draft = ctrl.data.range_draft
     ctrl.load_data_path(_data_csv(tmp_path))     # 새 스냅샷 = 초안 폐기 + 세대 증가(판정 J)
-    assert ctrl.range_draft is None
-    ctrl.range_draft = draft                     # 초안이 살아남는 경로를 가정한 백스톱
+    assert ctrl.data.range_draft is None
+    ctrl.data.range_draft = draft                     # 초안이 살아남는 경로를 가정한 백스톱
     with pytest.raises(ValueError, match="데이터가 바뀌"):
         ctrl.dispatch("range_draft_apply", {})
-    assert ctrl.selection.selected_count() == 0  # 마운트 직후 상태 그대로 — 커밋 안 됨
+    assert ctrl.data.selection.selected_count() == 0  # 마운트 직후 상태 그대로 — 커밋 안 됨
 
 
 def test_new_data_discards_the_open_draft(tmp_path):
@@ -4438,12 +4465,12 @@ def test_generation_is_refused_while_the_draft_is_open(tmp_path):
 
 def test_draft_cannot_open_during_generation(tmp_path):
     ctrl, _ = _draft_session(tmp_path)
-    ctrl._generation_lock.acquire()
+    ctrl.runs.lock.acquire()
     try:
         with pytest.raises(ValueError, match="생성이 진행 중"):
             ctrl.dispatch("range_draft_open", {})
     finally:
-        ctrl._generation_lock.release()
+        ctrl.runs.lock.release()
 
 
 def test_selected_only_swaps_visibility_without_touching_judgment(tmp_path):
@@ -4474,7 +4501,7 @@ def test_draft_table_previews_the_names_the_draft_would_produce(tmp_path):
     rows = ctrl.snapshot()["records"]
     assert rows[0]["index"] == 0 and rows[0]["name"].startswith("doc-001")
     # 커밋된 실행 입력은 그대로 — 미리보기는 "적용하면 이렇게 된다"이지 실행 예약이 아니다.
-    assert ctrl._indices() == [2, 1, 0]
+    assert ctrl.data.selected_indices() == [2, 1, 0]
 
 
 def test_draft_does_not_leak_into_the_session_guard_or_filter_slot(tmp_path):
@@ -4488,7 +4515,7 @@ def test_draft_does_not_leak_into_the_session_guard_or_filter_slot(tmp_path):
     # 커밋은 여전히 전체 선택(1클릭 재현) = 비무장. 초안의 수작업 선택이 새면 무장한다.
     assert guard["armed"] is False and guard["sel_count"] == 3
     assert guard["filter_active"] is False, "초안 필터가 세션 가드로 샜습니다."
-    assert ctrl._filter_desc == "", "초안 정의가 직전 필터 슬롯 소재로 샜습니다."
+    assert ctrl.data._filter_desc == "", "초안 정의가 직전 필터 슬롯 소재로 샜습니다."
 
 
 def test_selection_key_is_committed_only_so_a_draft_cannot_stale_a_result(tmp_path):
@@ -4521,7 +4548,7 @@ def test_selection_key_follows_the_display_axis(tmp_path):
 def test_failed_selection_is_refused_while_a_draft_is_open(tmp_path):
     """결과 구획의 선택 교체는 **커밋** 대상 동사라 초안 아래에서 돌지 않는다(F3)."""
     ctrl, _ = _draft_session(tmp_path)
-    ctrl._last_failed = [0]
+    ctrl.runs.last_failed = [0]
     ctrl.dispatch("range_draft_open", {})
     with pytest.raises(ValueError, match="범위 편집기"):
         ctrl.dispatch("select_failed", {})
@@ -4596,23 +4623,23 @@ def test_zone_edit_from_a_dead_world_is_not_applied(tmp_path):
     ctrl.dispatch("range_draft_open", {})
     stale = ctrl.snapshot()["zone_epoch"]          # 초안 세계의 세대
     ctrl.dispatch("range_draft_cancel", {})        # 출구 — 세대가 오른다
-    before = ctrl.selection.selected_indices()
+    before = ctrl.data.selection.selected_indices()
     res = ctrl.dispatch("set_none", {"epoch": stale})
-    assert res == {"stale": True, "epoch": ctrl.zone_epoch}
-    assert ctrl.selection.selected_indices() == before, "죽은 세계의 편집이 커밋에 착지했습니다."
+    assert res == {"stale": True, "epoch": ctrl.data.zone_epoch}
+    assert ctrl.data.selection.selected_indices() == before, "죽은 세계의 편집이 커밋에 착지했습니다."
     # 축도 같은 자격이다 — 버린 세계의 순서가 생성 순서를 정하지 않는다.
     assert ctrl.dispatch("set_view_order", {"value": "sourceAsc", "epoch": stale})["stale"]
-    assert ctrl.view_order == "sourceDesc"
+    assert ctrl.data.view_order == "sourceDesc"
     # 지금 세계의 편집은 통과한다(세대 검사가 정상 편집을 막지 않는다).
-    ctrl.dispatch("set_none", {"epoch": ctrl.zone_epoch})
-    assert ctrl.selection.selected_count() == 0
+    ctrl.dispatch("set_none", {"epoch": ctrl.data.zone_epoch})
+    assert ctrl.data.selection.selected_count() == 0
 
 
 def test_zone_epoch_check_skips_callers_that_do_not_know_worlds(tmp_path):
     """세대를 안 싣는 발신은 무검사 통과 — 존을 공유하는 「기안」 화면의 정답이다."""
     ctrl, _ = _draft_session(tmp_path)
     ctrl.dispatch("set_none", {})
-    assert ctrl.selection.selected_count() == 0
+    assert ctrl.data.selection.selected_count() == 0
 
 
 def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
@@ -4621,7 +4648,7 @@ def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
     stale = ctrl.snapshot()["zone_epoch"]
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.dispatch("toggle_record", {"index": 0, "value": True, "epoch": stale})["stale"]
-    assert ctrl.selection.selected_count() == 0
+    assert ctrl.data.selection.selected_count() == 0
 
 
 # ------------------------- 검토 요구와 승인(재작성 F5, 지도 §10.12 판정 B·F·I·N)
@@ -4763,7 +4790,7 @@ def test_a_rule_change_no_longer_refuses_the_run(tmp_path):
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "다른-{{seq:001}}"
     ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
+    ctrl.work.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
     snap = ctrl.snapshot()
     assert snap["review"]["required"] is True           # 요구는 서고
     assert snap["gate"]["enabled"] is True              # 게이트는 열려 있다
@@ -4774,7 +4801,7 @@ def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
     """1R P1 — 배치 중 착지한 에디터 저장이 **한 번도 실행된 적 없는 규칙**을 검토받은
     것으로 만들면 안 된다(조용한 승계). 런의 규칙을 찍으면 요구가 그대로 선다."""
     ctrl, _ = _unreviewed_session(tmp_path)
-    ran_pattern = ctrl.vm.job.filename_pattern
+    ran_pattern = ctrl.work.vm.job.filename_pattern
     # 배치가 도는 사이 같은 프로세스의 에디터가 저장한 상황을 스탬프 직전에 재현한다.
     real_stamp = ctrl.registry.stamp_last_run
 
@@ -4949,7 +4976,7 @@ def test_selecting_a_txt_work_does_not_build_an_hwpx_run_view(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     snap = ctrl.snapshot()
-    assert ctrl.vm is None and ctrl.job_is_txt is True
+    assert ctrl.work.vm is None and ctrl.work.is_txt is True
     assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
     assert snap["run_action"] == {"key": "workbench", "label": "검토·복사 시작 · 2건"}
     # 파일 이름 규칙 축은 이 매체에 **없다**(§3.2) — 빈 값이 "아직 안 정했다"가 아니다.
@@ -4965,10 +4992,10 @@ def test_switching_back_to_an_hwpx_work_restores_the_run_view(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     ctrl.dispatch("select_job", {"name": "공고서"})
-    assert ctrl.vm is not None and ctrl.job_is_txt is False
+    assert ctrl.work.vm is not None and ctrl.work.is_txt is False
     assert ctrl.snapshot()["run_action"]["key"] == "generate"
     ctrl.dispatch("select_job", {"name": ""})
-    assert ctrl.vm is None and ctrl.job_is_txt is False
+    assert ctrl.work.vm is None and ctrl.work.is_txt is False
     assert ctrl.snapshot()["has_job"] is False
 
 
@@ -5025,7 +5052,7 @@ def test_candidate_sections_stand_only_when_both_modes_are_present(tmp_path):
     only_hwpx = ctrl.snapshot()["candidates"]["sections"]
     assert len(only_hwpx) == 1 and only_hwpx[0]["mode"] == "hwpx_generate"
     _txt_job(ctrl, tmp_path)
-    both = ctrl.snapshot()["candidates"]["sections"]
+    both = ctrl.refresh_panel()["candidates"]["sections"]
     assert {s["mode"] for s in both} == {"hwpx_generate", "text_review_copy"}
     # 구획 순서는 순위의 함수다 — 전체 순위를 구획으로 자를 뿐 방식별 자리 보장은 없다.
     top_names = [c["name"] for c in ctrl.snapshot()["candidates"]["top"]]
@@ -5094,7 +5121,7 @@ def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     ctrl.dispatch("rename_job", {"name": "발주요청_기안", "new": "발주요청_기안 v2"})
-    assert ctrl.job_name == "발주요청_기안 v2" and ctrl.job_is_txt is True
+    assert ctrl.work.name == "발주요청_기안 v2" and ctrl.work.is_txt is True
     wb = WorkbenchController(
         ctrl.registry, lambda s, snap: None, clock=datetime.now,
         target_font=TargetFontSetting())
@@ -5157,7 +5184,7 @@ def test_cross_media_relink_is_rejected_and_the_session_keeps_its_seat(tmp_path)
         {"name": "발주요청_기안", "path": str(tmp_path / "t.hwpx"), "confirm": True})
     assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
     ctrl.dispatch("refresh", {})
-    assert ctrl.job_is_txt is True and ctrl.vm is None      # 자리 불변(재착석 사건 없음)
+    assert ctrl.work.is_txt is True and ctrl.work.vm is None      # 자리 불변(재착석 사건 없음)
     assert ctrl.snapshot()["run_action"]["key"] == "workbench"
     assert ctrl.registry.load("발주요청_기안").template_path.endswith(".txt")
 
@@ -5200,8 +5227,8 @@ def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
     odd.write_text("x", encoding="utf-8")
     ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(odd)))
     ctrl.dispatch("refresh", {})                       # 예외 없이 자리를 다시 앉힌다
-    assert ctrl.job_is_txt is False and ctrl.vm is None
-    assert ctrl.job_unsupported is True
+    assert ctrl.work.is_txt is False and ctrl.work.vm is None
+    assert ctrl.work.unsupported is True
 
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
@@ -5215,7 +5242,7 @@ def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
         "발주요청_기안",
         lambda j: setattr(j, "template_path", str(tmp_path / "발주요청_기안.txt")))
     ctrl.dispatch("refresh", {})
-    assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
+    assert (ctrl.work.is_txt, ctrl.work.unsupported) == (True, False)
 
 
 def test_recovery_relink_reseats_the_active_session(tmp_path):
@@ -5234,13 +5261,13 @@ def test_recovery_relink_reseats_the_active_session(tmp_path):
         mapping=ctrl.registry.load("공고서").mapping))
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "깨진작업"})
-    assert ctrl.job_unsupported is True and ctrl.vm is None
+    assert ctrl.work.unsupported is True and ctrl.work.vm is None
 
     # 라이브러리 복구 relink 의 화면 밖 durable 변경을 시뮬레이트(같은 게이트 경로는 T4 가 가드).
     ctrl.registry.mutate(
         "깨진작업", lambda j: setattr(j, "template_path", str(tmp_path / "t.hwpx")))
     ctrl.dispatch("refresh", {})
-    assert ctrl.job_unsupported is False and ctrl.vm is not None
+    assert ctrl.work.unsupported is False and ctrl.work.vm is not None
     assert ctrl.snapshot()["run_action"]["key"] == "generate"
 
 
@@ -5256,7 +5283,7 @@ def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     assert ctrl.snapshot()["gate"]["enabled"] is True
     (tmp_path / "발주요청_기안.txt").unlink()          # 다른 곳에서 템플릿이 사라졌다
-    snap = ctrl.snapshot()
+    snap = ctrl.refresh_panel()
     assert snap["gate"]["enabled"] is False and "템플릿" in snap["gate"]["text"]
     ctrl.workbench_open = WorkbenchController(
         ctrl.registry, lambda s, n: None, clock=datetime.now,
@@ -5282,12 +5309,12 @@ def test_candidates_txt_note_speaks_only_to_the_volatile_draft_audience(tmp_path
     assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ① 템플릿 0 = 침묵
     txt_dir.mkdir()
     (txt_dir / "기안.txt").write_text("{{공고명}}", encoding="utf-8")
-    note = ctrl.snapshot()["candidates"]["txt_note"]
+    note = ctrl.refresh_panel()["candidates"]["txt_note"]
     assert "저장" in note and "＋ 새 작업" in note               # ② 발화 = 대체 경로 재진술
     tpl = tmp_path / "기안틀.txt"
     tpl.write_text("{{공고명}}", encoding="utf-8")
     reg.save(Job(name="기안작업", template_path=str(tpl)))
-    assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ③ txt 작업 有 = 침묵
+    assert ctrl.refresh_panel()["candidates"]["txt_note"] == "" # ③ txt 작업 有 = 침묵
 
 
 def test_candidates_txt_note_is_silent_without_an_injected_registry(tmp_path):
@@ -5331,9 +5358,9 @@ def _unprepared_after_select(ctrl, name="공고서"):
     여기서 명시로 만든다(전제가 바뀌었을 때 단언을 지우지 않고 새 계약으로 옮긴다).
     """
     ctrl.registry.mutate(name, lambda job: setattr(job, "authority_id", ""))
-    if ctrl.vm is not None:
-        ctrl.vm.job.authority_id = ""
-    ctrl._seated_template_application_id = None
+    if ctrl.work.vm is not None:
+        ctrl.work.vm.job.authority_id = ""
+    ctrl.work.seated_template_application_id = None
 
 
 def test_selecting_a_job_prepares_it_without_a_button(tmp_path):
@@ -5357,12 +5384,12 @@ def test_selecting_a_job_prepares_it_without_a_button(tmp_path):
 def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     ctrl, pushes = _template_change_controller(tmp_path)
     # 작업 미선택 — 존은 부재가 아니라 명시적 unsupported 다(분기별 키 동형).
-    assert ctrl.snapshot()["template_change"]["supported"] is False
+    assert ctrl.refresh_panel()["template_change"]["supported"] is False
     ctrl.dispatch("select_job", {"name": "공고서"})
-    seated_job = ctrl.vm.job
+    seated_job = ctrl.work.vm.job
     # 착석이 준비를 진다(#932 B5) — 정체는 여기서 이미 서고, 확인은 그것을 흔들지 않는다.
     assert seated_job.authority_id == ctrl.registry.load("공고서").authority_id != ""
-    seated_application = ctrl._seated_template_application_id
+    seated_application = ctrl.work.seated_template_application_id
     assert seated_application
     zone = ctrl.snapshot()["template_change"]
     assert zone["supported"] is True and zone["checkable"] is True
@@ -5372,7 +5399,7 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     assert result["preparation"]["status"] == "no_change"
     final_job = ctrl.registry.load("공고서")
     assert seated_job.authority_id == final_job.authority_id
-    assert ctrl._seated_template_application_id == seated_application
+    assert ctrl.work.seated_template_application_id == seated_application
     # 비-query 동사라 push 가 일어나 존이 최신 Preparation 을 실었다.
     assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
     # 개명이 권위 인덱스를 추종한다 — epoch 이 살아 있으면 재-bootstrap 이 아니다.
@@ -5392,7 +5419,7 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     txt.write_text("본문 {{공고명}}\n", encoding="utf-8")
     ctrl.registry.save(Job(name="안내문", template_path=str(txt)))
     ctrl.dispatch("select_job", {"name": "안내문"})
-    assert ctrl.job_is_txt and ctrl.vm is None  # TXT 는 hwpx 실행뷰를 세우지 않는다
+    assert ctrl.work.is_txt and ctrl.work.vm is None  # TXT 는 hwpx 실행뷰를 세우지 않는다
 
     snap = ctrl.snapshot()
     zone = snap["template_change"]
@@ -5429,7 +5456,7 @@ def test_slotless_configuration_verdict_controls_preflight_and_gate(
     assert coordinator is not None
     monkeypatch.setattr(coordinator, "generation_provenance_verdict", lambda _: verdict)
 
-    blocked = ctrl.snapshot()
+    blocked = ctrl.refresh_panel()
     assert blocked["gate"]["enabled"] is False
     assert blocked["gate"]["reason"] == verdict
     assert blocked["preflight"]["level"] == "warn"
@@ -5439,7 +5466,7 @@ def test_slotless_configuration_verdict_controls_preflight_and_gate(
     monkeypatch.setattr(
         coordinator, "generation_provenance_verdict", lambda _: "EXECUTION_ALLOWED",
     )
-    ready = ctrl.snapshot()
+    ready = ctrl.refresh_panel()
     assert ready["gate"]["enabled"] is True
     assert ready["preflight"]["level"] == "ok"
 
@@ -5479,22 +5506,22 @@ def test_template_check_validation_failure_precedes_durable_commit(tmp_path):
     """Commit 전 validation 실패는 authority/Application과 seated identity를 바꾸지 않는다."""
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    old_vm = ctrl.vm
+    old_vm = ctrl.work.vm
     push_count = len(pushes)
     # 기준선은 **착석 직후 상태**다(#932 B5): 선택이 준비를 지게 되며 「durable 이 비어
     # 있다」는 더 이상 이 테스트의 전제가 아니고, 재는 것은 애초에 「실패한 확인이 그것을
     # 움직이지 않는다」였다 — 기준선을 상수에서 관측으로 바꾼다.
     baseline_authority = ctrl.registry.load("공고서").authority_id
     baseline_works = sorted((tmp_path / "authority" / "works").glob("*"))
-    baseline_application = ctrl._seated_template_application_id
+    baseline_application = ctrl.work.seated_template_application_id
 
     with pytest.raises(TemplateChangeError, match="잘못된 확인 요청 키"):
         ctrl.dispatch("template_check", {"request_id": "한글키"})
 
     assert ctrl.registry.load("공고서").authority_id == baseline_authority
     assert sorted((tmp_path / "authority" / "works").glob("*")) == baseline_works
-    assert ctrl.vm is old_vm
-    assert ctrl._seated_template_application_id == baseline_application
+    assert ctrl.work.vm is old_vm
+    assert ctrl.work.seated_template_application_id == baseline_application
     assert len(pushes) == push_count
 
 
@@ -5549,8 +5576,8 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
     ).load(durable_job.authority_id)
     application_id = durable.work.current_template_application_id
     assert len(durable.applications) == 1 and len(durable.preparations) == 1
-    assert ctrl.vm is not None and ctrl.vm.job.authority_id == durable_job.authority_id
-    assert ctrl._seated_template_application_id == application_id
+    assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == durable_job.authority_id
+    assert ctrl.work.seated_template_application_id == application_id
     assert state["post_commit_reads"] == 0
     assert final_job_snapshots[-1] is not None
     assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
@@ -5634,10 +5661,10 @@ def test_template_check_returns_the_application_seen_by_final_gate(
 
     result = ctrl.dispatch("template_check", {"request_id": "application-race"})
 
-    assert result["ok"] is True and ctrl._seated_template_application_id
-    assert ctrl._seated_template_application_id != later_application_ids[0]
+    assert result["ok"] is True and ctrl.work.seated_template_application_id
+    assert ctrl.work.seated_template_application_id != later_application_ids[0]
     ctrl.load_data_path(_data_csv(tmp_path))
-    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl.work.name == "" and ctrl.work.vm is None
     assert "같은 작업인지 확인할 수 없어" in ctrl.snapshot()["data_notice"]["text"]
 
 
@@ -5648,7 +5675,7 @@ def test_template_check_releases_when_rules_change_before_final_gate(
     ctrl, _pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
-    seated_job = ctrl.vm.job
+    seated_job = ctrl.work.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
     admit = template_change_module.admit_preparation
@@ -5669,7 +5696,7 @@ def test_template_check_releases_when_rules_change_before_final_gate(
     assert result["ok"] is False and result["reason"] == "work_context_changed"
     assert seated_job.authority_id == ""  # B identity adoption 0
     assert ctrl.registry.load("공고서").binding_revision > seated_job.binding_revision
-    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl.work.name == "" and ctrl.work.vm is None
     assert "변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
 
 
@@ -5680,7 +5707,7 @@ def test_template_check_releases_same_name_recreation_seen_by_final_gate(
     ctrl, _pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
-    seated_job = ctrl.vm.job
+    seated_job = ctrl.work.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
     admit = template_change_module.admit_preparation
@@ -5701,8 +5728,8 @@ def test_template_check_releases_same_name_recreation_seen_by_final_gate(
     assert result["ok"] is False and result["reason"] == "work_context_changed"
     assert seated_job.authority_id == ""  # replacement identity adoption 0
     assert ctrl.registry.load("공고서").authority_id == "authority-replacement"
-    assert ctrl.job_name == "" and ctrl.vm is None
-    assert ctrl._seated_template_application_id is None
+    assert ctrl.work.name == "" and ctrl.work.vm is None
+    assert ctrl.work.seated_template_application_id is None
 
 
 def test_template_check_final_gate_read_failure_prevents_admission_commit(
@@ -5712,7 +5739,7 @@ def test_template_check_final_gate_read_failure_prevents_admission_commit(
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _unprepared_after_select(ctrl)  # 확인이 최초 채택자인 경로(#932 B5)
-    seated_job = ctrl.vm.job
+    seated_job = ctrl.work.vm.job
     coordinator = ctrl._template_change
     assert coordinator is not None
     admit = template_change_module.admit_preparation
@@ -5744,8 +5771,8 @@ def test_template_check_final_gate_read_failure_prevents_admission_commit(
     work_id = ctrl.registry.load("공고서").authority_id
     assert coordinator._works.load(work_id) == before_gate[0]
     assert before_gate[0].prepared_changes == ()
-    assert seated_job.authority_id == "" and ctrl._seated_template_application_id is None
-    assert ctrl.vm is not None and len(pushes) == push_count
+    assert seated_job.authority_id == "" and ctrl.work.seated_template_application_id is None
+    assert ctrl.work.vm is not None and len(pushes) == push_count
 
 
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
@@ -5753,7 +5780,7 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존).
 
     재는 축은 managed 생성 배선이지 결속(#932 U4-C)이 아니다 — 결말의 KEEP 단언
-    (`ctrl.job_name == "공고서"`)이 성립하려면 clean.csv 가 이 작업의 결속이어야 한다.
+    (`ctrl.work.name == "공고서"`)이 성립하려면 clean.csv 가 이 작업의 결속이어야 한다.
     기본 결속(`_registry` 의 d.csv, 이 테스트엔 없는 경로)에 남아 있으면 재마운트마다
     RELEASE 된다. select 전에 결속해야 seated 지문이 그 결속으로 시작해 이후 재마운트가
     `content_fingerprint`(U4 §2.4)의 결속 3성분과 계속 일치한다.
@@ -5774,13 +5801,13 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert len(snapshots) == 1 and snapshots[0] == ctrl.snapshot()
     assert len(list((tmp_path / "out").glob("*.hwpx"))) == 2  # 실제 산출물
     restored = ctrl.registry.load("공고서")
-    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
-    assert ctrl._seated_template_application_id is not None
+    assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
+    assert ctrl.work.seated_template_application_id is not None
     pushes.clear()
     assert ctrl.generate()["ok"] is False
     assert pushes == []  # visible identity 무변경 rejection은 extra push 0
     ctrl.load_data_path(str(clean))
-    assert ctrl.job_name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
+    assert ctrl.work.name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
 def test_managed_generation_pushes_adopted_identity_before_a_plan_rejection(tmp_path):
@@ -5868,7 +5895,7 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     구조화된 제품 상태(ok:False)로 거절한다.
 
     재는 축은 admission 거절 뒤 KEEP 배선이지 결속(#932 U4-C)이 아니다 — 결말의
-    `ctrl.job_name == "공고서"` 단언이 성립하려면 c.csv 가 이 작업의 결속이어야 한다
+    `ctrl.work.name == "공고서"` 단언이 성립하려면 c.csv 가 이 작업의 결속이어야 한다
     (`test_managed_generation_routes_through_exact_applied_bytes_no_regression` 과 같은 사유).
     """
     import hwpxfiller.webapp.template_change as tc
@@ -5894,14 +5921,14 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
     assert len(pushes) == 1 and pushes[-1][1] == ctrl.snapshot()
     restored = ctrl.registry.load("공고서")
-    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
-    assert ctrl._seated_template_application_id is not None
+    assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
+    assert ctrl.work.seated_template_application_id is not None
     if target == "file":
         ctrl.load_data_path(str(clean))
     else:
-        key = _pool_add(ctrl.pool_registry, "거절 뒤 데이터", {"path": str(clean)})
+        key = _pool_add(ctrl.data.pool_registry, "거절 뒤 데이터", {"path": str(clean)})
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
-    assert ctrl.job_name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
+    assert ctrl.work.name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
 
 
 @pytest.mark.parametrize("failpoint", ["manifest", "workspace", "staging"])
@@ -5914,7 +5941,7 @@ def test_managed_generation_exception_pushes_only_changed_identity(
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     coordinator = ctrl._template_change
-    assert coordinator is not None and ctrl.vm is not None
+    assert coordinator is not None and ctrl.work.vm is not None
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
 
@@ -5944,13 +5971,13 @@ def test_managed_generation_exception_pushes_only_changed_identity(
     assert len(pushes) == int(adopted)
     if adopted:
         restored = ctrl.registry.load("공고서")
-        assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
-        assert ctrl._seated_template_application_id is not None
+        assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
+        assert ctrl.work.seated_template_application_id is not None
         assert pushes[-1][1] == current
-    assert ctrl._run is None and ctrl.vm is not None
-    assert ctrl.vm._managed_template is None
-    assert ctrl._generation_lock.acquire(blocking=False)
-    ctrl._generation_lock.release()
+    assert ctrl.runs.run is None and ctrl.work.vm is not None
+    assert ctrl.work.vm._managed_template is None
+    assert ctrl.runs.lock.acquire(blocking=False)
+    ctrl.runs.lock.release()
     staging = tmp_path / "authority" / "run_staging"
     assert not staging.exists() or not list(staging.iterdir())
 
@@ -5959,7 +5986,7 @@ def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
     """RELEASE 뒤 cleanup 예외도 has_job=false를 한 번만 밀고 원래 예외를 유지한다."""
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    run_vm = ctrl.vm
+    run_vm = ctrl.work.vm
     assert run_vm is not None
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -5982,7 +6009,7 @@ def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
             raise OSError("generation lock cleanup failed")
 
     lock = ReleaseErrorLock()
-    ctrl._generation_lock = lock
+    ctrl.runs.lock = lock
     _unprepared_after_select(ctrl)  # RELEASE 는 발급 순간의 대조에서 난다(#932 B5)
     pushes.clear()
 
@@ -5992,7 +6019,7 @@ def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
     current = ctrl.snapshot()
     assert current["has_job"] is False and current["job_name"] == ""
     assert len(pushes) == 1 and pushes[-1][1] == current
-    assert ctrl._run is None and run_vm._managed_template is None
+    assert ctrl.runs.run is None and run_vm._managed_template is None
     assert lock.released is True
 
 
@@ -6018,8 +6045,8 @@ def test_generation_recovers_after_repairing_bad_template(tmp_path):
 
 
 def _drift(ctrl):
-    """스냅샷이 실은 드리프트 (상태, 문안) — 존이 그 사실의 단일 자리다(#932 B5)."""
-    zone = ctrl.snapshot()["template_change"]
+    """새로 관찰한 드리프트 (상태, 문안) — 존이 그 사실의 단일 자리다(#932 B5)."""
+    zone = ctrl.refresh_panel()["template_change"]
     return zone["source_drift"], zone["source_drift_note"]
 
 
@@ -6186,7 +6213,7 @@ def test_restart_mounts_the_remembered_file_on_the_first_snapshot(tmp_path):
     ctrl.load_data_path(path)
 
     fresh, pushes = _controller(tmp_path)
-    assert fresh.snapshot()["has_data"] is False  # 마운트는 initial 이 한다
+    assert fresh.refresh_panel()["has_data"] is False  # 마운트는 initial 이 한다
     snap = fresh.initial()
 
     assert snap["has_data"] is True and snap["record_count"] == 2
@@ -6350,8 +6377,8 @@ def test_pool_targeting_a_pclm_reference_captures_the_kind_with_the_reference(tm
     res = ctrl.dispatch("load_pool", {"key": key})
 
     assert res == {"ok": True, "label": "등록 데이터: 계약목록"}
-    assert ctrl.data_source == "pool" and ctrl.data_pool_key == key
-    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
+    assert ctrl.data.source_kind == "pool" and ctrl.data.pool_key == key
+    assert (ctrl.data.path, ctrl.data.sheet, ctrl.data.header_row, ctrl.data.kind) == (
         db, _PCLM_VIEW, 0, "pclm",
     )
     snap = ctrl.snapshot()
@@ -6368,20 +6395,20 @@ def test_mount_pclm_seats_every_session_component(tmp_path):
 
     ctrl._mount_pclm(db, _PCLM_VIEW)
 
-    assert ctrl.data_source == "pclm" and ctrl.data_pool_key == ""
-    assert (ctrl.data_path, ctrl.data_sheet, ctrl.data_header_row, ctrl.data_kind) == (
+    assert ctrl.data.source_kind == "pclm" and ctrl.data.pool_key == ""
+    assert (ctrl.data.path, ctrl.data.sheet, ctrl.data.header_row, ctrl.data.kind) == (
         db, _PCLM_VIEW, 0, "pclm",
     )
     # 라벨은 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으론 무엇이 섰는지 모른다.
     # 병기하는 것은 제목이다: 사람이 읽는 한 줄이라 내부 이름(v_…)이 새면 안 된다.
-    assert ctrl.data_label == f"pclm.db · {_PCLM_TITLE}"
+    assert ctrl.data.label == f"pclm.db · {_PCLM_TITLE}"
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == f"계약 목록: pclm.db · {_PCLM_TITLE}"
     assert "v_" not in snap["data_source_label"]
     assert snap["record_count"] == 2 and snap["selected_count"] == 0
     assert snap["data_target"]["kind"] == "pclm"
     # 소스 일치 키는 파일 접두와 갈린다(결정 28) — 종류가 정체의 성분이다.
-    assert ctrl._data_key.startswith("pclm:") and _PCLM_VIEW in ctrl._data_key
+    assert ctrl.data.data_key.startswith("pclm:") and _PCLM_VIEW in ctrl.data.data_key
 
 
 def test_mount_pclm_refuses_an_empty_view_before_destroying_the_current_mount(tmp_path):
@@ -6393,7 +6420,7 @@ def test_mount_pclm_refuses_an_empty_view_before_destroying_the_current_mount(tm
     with pytest.raises(ValueError, match="행이 없습니다"):
         ctrl._mount_pclm(empty, _PCLM_VIEW)
 
-    assert ctrl.data_source == "file" and ctrl.snapshot()["record_count"] == 2
+    assert ctrl.data.source_kind == "file" and ctrl.snapshot()["record_count"] == 2
 
 
 def test_mount_pclm_lets_a_missing_database_speak_for_itself(tmp_path):
@@ -6412,7 +6439,7 @@ def test_selecting_a_pclm_bound_job_mounts_its_view_and_then_stands_still(tmp_pa
 
     ctrl.dispatch("select_job", {"name": "공고서"})
 
-    assert ctrl.data_kind == "pclm" and ctrl.records[0]["bidNtceNm"] == "전산장비"
+    assert ctrl.data.kind == "pclm" and ctrl.data.records[0]["bidNtceNm"] == "전산장비"
     assert ctrl.snapshot()["data_notice"]["text"] == (
         f"이 작업에 연결된 데이터 'pclm.db · {_PCLM_TITLE}' 을(를) 불러왔습니다. "
         "항목 선택은 초기화됐습니다."
@@ -6435,7 +6462,7 @@ def test_selecting_a_pclm_bound_job_with_a_missing_db_reuses_the_missing_text(tm
 
     ctrl.dispatch("select_job", {"name": "공고서"})
 
-    assert ctrl.data_source == ""  # 마운트 없음(작업 선택 자체는 성사)
+    assert ctrl.data.source_kind == ""  # 마운트 없음(작업 선택 자체는 성사)
     assert ctrl.snapshot()["data_notice"] == {
         "level": "warn",
         "text": (
@@ -6458,7 +6485,7 @@ def test_binding_mount_refuses_an_unknown_kind_out_loud(tmp_path):
 
     ctrl.dispatch("select_job", {"name": "공고서"})
 
-    assert ctrl.data_source == ""
+    assert ctrl.data.source_kind == ""
     assert "알 수 없는 데이터 결속 종류입니다" in ctrl.snapshot()["data_notice"]["text"]
 
 
@@ -6535,11 +6562,11 @@ def test_a_pclm_bound_job_is_no_candidate_for_an_excel_mount_of_the_same_path(tm
 
     # 같은 경로를 엑셀 종류로 마운트한 것처럼 세션 성분만 세운다(파일 파싱은 이 축이 아니다).
     ctrl.load_data_path(_data_csv(tmp_path))
-    ctrl.data_path, ctrl.data_sheet, ctrl.data_kind = db, _PCLM_VIEW, ""
-    assert [j.name for j in ctrl._bound_jobs(list(ctrl.registry.list_jobs()))] == []
+    ctrl.data.path, ctrl.data.sheet, ctrl.data.kind = db, _PCLM_VIEW, ""
+    assert [j.name for j in ctrl.data.bound_jobs(list(ctrl.registry.list_jobs()))] == []
 
-    ctrl.data_kind = "pclm"
-    assert [j.name for j in ctrl._bound_jobs(list(ctrl.registry.list_jobs()))] == ["공고서"]
+    ctrl.data.kind = "pclm"
+    assert [j.name for j in ctrl.data.bound_jobs(list(ctrl.registry.list_jobs()))] == ["공고서"]
 
 
 def test_a_pclm_bound_job_that_lost_a_column_stays_visible_as_needs_action(tmp_path):

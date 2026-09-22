@@ -283,9 +283,8 @@ def test_every_milestone_has_a_notifying_site_in_the_product():
     아무도 안 쓰면, 나중에 배선을 빠뜨려도 아무 테스트도 울지 않는다").
     """
     root = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp"
-    text = "\n".join(
-        p.read_text(encoding="utf-8") for p in sorted(root.glob("screen_*.py"))
-    )
+    notification_owners = (*sorted(root.glob("screen_*.py")), root / "editor_session.py")
+    text = "\n".join(path.read_text(encoding="utf-8") for path in notification_owners)
     missing = [
         step.milestone.name for step in STEPS
         if f"Milestone.{step.milestone.name}" not in text
@@ -461,7 +460,8 @@ def test_confirming_an_empty_constant_notifies_only_when_a_row_actually_moves(tm
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 1단계 게이트(U6-B #976)
     ctrl.dispatch("goto_section", {"section": "binding"})
     seen.clear()
-    index = ctrl.model.index_of("계약보증금")
+    assert ctrl.edit.model is not None
+    index = ctrl.edit.model.index_of("계약보증금")
 
     ctrl.dispatch("set_display", {"index": index, "type": "const", "fmt": ""})
     assert str(Milestone.CONFIRM_EMPTY_FIELD) not in seen, "확인 전에 게이트가 켜졌습니다"

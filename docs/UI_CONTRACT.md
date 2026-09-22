@@ -485,8 +485,8 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
 | `library` 문서 작업(전역 라이브러리) | `#scr-library`, `src/screens/library.ts` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
-| `job` 문서 만들기(데이터·실행) | `#scr-job`, `src/screens/product_screens.ts`(+`job_read.ts`·`job_run.ts`·`job_result.ts`) | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
-| `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `src/screens/editor.ts`(+`editor_state.ts`·`editor_entry.ts`·`group_move_dialog.ts`) | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정 (템플릿 라이브러리 VM 은 U6-E 에서 `tpl` 채널 단독 소유 — 편집기는 관문 `is_live_path` 만 받는다) |
+| `job` 문서 만들기(데이터·실행) | `#scr-job`, `src/screens/product_screens.ts`(+`job_read.ts`·`job_run.ts`·`job_result.ts`) | 얇은 `JobController` | `JobDataSession`, `ActiveWorkSession`, `JobExecutionSession`, `DocumentRunCoordinator`, `RunViewModel` |
+| `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `src/screens/editor.ts`(+`editor_state.ts`·`editor_entry.ts`·`group_move_dialog.ts`) | 얇은 `EditorController` | `EditSession`·`EditContext`·`EditSaveOperation`, `EditorLoader`·`EditorProjection` |
 | `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `src/screens/workbench.ts`(+`workbench_state.ts`·`segment_view.ts`) | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `src/screens/data_picker.ts` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
@@ -513,7 +513,10 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 
 #### 문서 작업 편집기 = 몰입 표면 + section patch 거래 (F7 PR-A — 지도 §10.13)
 
-`EditorController`는 세션 상태·시계 캡처·레지스트리 재읽기와 잠금·저장·push를 소유한다.
+`EditSession`은 초안·매핑·section patch의 유일한 소유자이고, `EditSaveOperation`은 저장의
+APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`·`EditorProjection`은
+링2 어댑터로서 복원과 JSON 성형만 수행하며, `EditorDataSnapshot`은 복원할 데이터 참조·열·레코드
+한 벌을 든다. `EditorController`는 브리지 입력 검증·전이 호출·push만 맡는다.
 `editor_presentation.py`는 컨트롤러가 넘긴 열·레코드·모델·시각으로 선택 항목, 연결 머리,
 샘플 행, 파일명 예시를 순수 성형한다. 저장 판정과 비편집 메타 보존·작성 출처 계산은
 `gui/job_editor_state.py`가 소유하며, 컨트롤러는 저장 시점의 경로·필드·데이터 표시명·시각을
@@ -1212,16 +1215,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 
 #### 생성 결과 존의 문서 목록과 산출물 관찰 시트 (S7-03 · #825)
 
-실행 준비 계산과 검증 문제의 복구 위치·문안은 `current_execution_preparation.py`, managed 결과의
-화면 표현은 `managed_run_result.py`가 소유한다. `job_presentation.py`는 후보 카드·탐색/레코드 행·
-검토 요구·덮어쓰기 응답과 workbench 관찰 JSON, legacy 생성 실패 행·요약·결과 dict를 이미
-판정된 값으로 성형한다. 이 모듈들은 전달받은 값으로 계산하며 세션을 소유하지 않는다.
-`JobController`는 레지스트리·파일·템플릿 연결 읽기, 후보 판정·순위, 데이터·선택·표시 순서,
-캐시와 무효화, 캡처 전후의 세대·records identity·선택 대조, 생성 잠금·취소·덮어쓰기 확인,
-실제 실행·원장 기록·결과 반영·push와 실패가 있을 때만 하는 파일명 열 계산을 계속 소유한다.
-전체 `snapshot()` 조립도 컨트롤러에 남는다. 스냅샷은 작업 목록을 한 번만 읽고 base를 만든 뒤
-TXT·미선택/미지원·HWPX 세 갈래가 그 값을 완성한다; 각 갈래가 레지스트리를 다시 읽거나 세션을
-복사하지 않는다.
+`JobExecutionSession`은 구성·봉인·관찰·준비 캐시를, `DocumentRunCoordinator`는 생성 잠금·취소·
+실행 입력·덮어쓰기·결과·배달을 소유한다. `ActiveWorkSession`은 작업 identity·선택·재로드·
+재연결·탐색 상태를, `JobDataSession`은 마운트 데이터·선택·필터·범위를 각각 소유한다.
+`RunViewModel`은 명시적 `RunDataInput`만 받고 데이터 로더·레코드·계속 실행 API를 소유하지 않는다;
+도메인 `RunRequest`는 레코드 튜플과 선택 인덱스만 든다. `snapshot()`은 준비된 분리 view의 순수
+성형이고, IO는 공개 경계의 `refresh_panel()`에서만 갱신한다. `JobController`는 브리지 검증·전이
+조정·push만 맡는다. 이 분리는 legacy slotless·managed slot-bearing·TXT의 사용자 동작, wire 형식,
+저장소와 CLI 계약을 바꾸지 않는다.
 거절·취소는 기존 실행 증거를 유지하고, 안착 결과는 원장 기록 전에 산출물 좌표를 갱신하며
 열린 관찰을 닫는다. 원장 기록 실패도 이미 안착한 문서 사실을 되돌리지 않는다.
 
@@ -1636,10 +1637,13 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 
 ### `job` 화면의 세션·결속 계약 (U4 §2.4 재판정 — data-first 봉합 승계)
 
-`JobController` 는 마운트된 데이터(`datasource`·`records`)·선택(`SelectionModel`)·필터를
-**세션(컨트롤러) 소유**로 보유한다. 배경은 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`
+`JobDataSession`은 마운트된 데이터(`datasource`·`records`)·선택(`SelectionModel`)·필터·범위를
+**유일하게 소유**한다. `JobController`는 그 세션을 바꾸는 브리지 경계일 뿐이다. 배경은 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`
 이지만 **방향 판정은 이 절이 승계한다** — 그 동결 문서가 세운 「데이터-우선」 전제는
 `docs/UX_FEEDBACK_U4.md` §2.4(#932 U4-C)가 뒤집었고, 동결 문서는 고치지 않는다.
+
+브리지는 `mounted_data_descriptor()`로 현재 마운트 좌표를 읽고, `owned_session_paths()`로
+현재 세션이 소유한 경로만 연다. 둘 다 세션 상태를 복제하거나 경로를 추측하지 않는다.
 
 - **작업은 데이터를 durable 로 든다**(`Job.data_path`·`data_sheet`·`data_header_row`·
   `data_kind` — 마운트 시점에 **한 벌**로 포획한 참조, 링0 접근자는 `data_binding_of`).
@@ -1716,7 +1720,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   **추천은 표지일 뿐 전이가 아니다** — `job_name` 은 사용자 클릭(`select_job`)으로만 바뀐다
   (§18.3 개정, v6 상태전이 리뷰 F-02). 순위·추천 계산은 전부 링1이 하고 JS 는 그리기만 한다.
 - 스냅샷은 `browse`(문서 탐색 §18.6·§19.5 — 탭·검색어·행·탭 건수·검색으로 걸러낸 수)도
-  싣는다. 탭·검색어는 **세션 소유**(`JobController`)라 탭을 옮겨도 검색어가 살고 시트를
+  싣는다. 탭·검색어는 **`ActiveWorkSession` 소유**라 탭을 옮겨도 검색어가 살고 시트를
   닫았다 열어도 찾던 자리로 돌아온다. 검색 대상은 작업 표시 이름만이고 일치 규칙은 앱 전역
   자모 부분일치(`domain.jamo`)다. 탭 건수는 **검색 전** 값 — 탭 라벨은 데이터에 대한 사실이다.
   액션 `browse_tab`(`tab`)·`browse_query`(`text`). 탐색 면도 후보 줄과 **같은 결속 관문**을
@@ -1728,7 +1732,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   않는다: 1은 실행 게이트가, 2·3은 데이터 축이 이미 풀고, 5는 후보 목록의 정체를 바꾸는
   별개 결정, 6은 계약이 리다이렉트를 금지한다. 같은 마법사의 다른 입구가 후보 줄의
   「＋ 이 데이터로 새 작업」(`#jobCandNewWork`, §2.4)이고 **흐름 몸통은 하나**다.
-- 그 입구의 **가부·참조는 한 판정**이 낸다 — `DataZoneMixin.new_work_handoff()` 가
+- 그 입구의 **가부·참조는 한 판정**이 낸다 — `JobDataSession.new_work_handoff()` 가
   `({path, sheet, header_row, kind}, "")` 또는 `({}, 사유)` 를 돌려주고, 스냅샷 `new_work`
   (`{can, reason}`)와 브리지 `new_job_from_data` 가 **같은 값**을 읽는다. 표면이
   `data_target.path` 유무로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가 거절한다

@@ -1,28 +1,9 @@
-"""데이터 존 공용 믹스인 — 필터 선언·행 선택 표면의 컨트롤러 몫(블록 3·4, 슬라이스 6 PR-2b).
+"""문서 생성 화면의 마운트 데이터·선택·필터·범위 세션.
 
-웹 쪽 ``frontend/js/datazone.js`` 팩토리(PR-2a)의 Python 짝이다: 「작업」 화면(블록 4)이 착지한
-필터·선택 디스패치와 스냅샷 합성을 txt 일괄 큐(블록 3)가 재사용한다 — 컨트롤러마다 복붙하면
-JS 에서 막은 #94(링2 400줄 중복)와 동형의 드리프트가 Python 에서 재발한다. 판정은 전부 링1
-(:class:`~hwpxfiller.gui.filter_state.FilterModel`·:class:`~hwpxfiller.gui.selection_state.
-SelectionModel`)이 소유하고, 여기는 디스패치 위임과 스냅샷 성형만 든다(#87 경계 유지).
-
-## 소비 컨트롤러가 대는 표면
-
-- ``self.selection``(:class:`SelectionModel`) · ``self.filter``(:class:`FilterModel` | None —
-  데이터 미겨눔이면 None) · ``self._last_filter``/``self._data_key``(결정 28 직전 필터 슬롯·
-  소스 일치 키 — 데이터 겨눔 경로가 :meth:`_stash_filter` 후 :meth:`_file_key`/:meth:`_pool_key`
-  로 갱신) · ``self.pool_registry``/``self.data_pool_key``(풀 키 정체 해소 — §5.3 재편으로
-  라벨이 아니라 슬롯 키가 정체다).
-- :meth:`_records` — 현 데이터소스의 원본 레코드(미겨눔이면 빈 리스트).
-
-## 스냅샷 계약(웹 datazone.js 와 쌍)
-
-:meth:`_zone_sections` 이 ``filter``/``table`` 스냅샷을 합성한다 — 선두 열 소재(작업=파일명·
-식별 요약, txt=큐 표지)는 컨트롤러가 ``rows_by_index`` 로 주입하고, 셀은 하이라이트 세그먼트
-(Python 이 잘라 조각으로 — 매치 인덱스를 웹에 건네지 않는다, jamo 계약)로 실린다. 평가는
-FilterView 1회(캐시 계약) — 반환된 view 를 컨트롤러가 재진술·가드 판정에 재사용해 이중
-평가를 피한다(작업 화면 리뷰 #7).
+데이터 교체로 함께 죽는 상태를 한 객체가 소유한다. 컨트롤러는 로드와 active Work 전환의
+순서만 조정하고, 행 좌표나 필터 상태를 복제하지 않는다.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,58 +21,251 @@ from ..gui.filter_state import (
     sniff_column_kinds,
 )
 from ..gui.selection_state import SelectionModel
+from ..gui.record_range import RecordRange, RecordRangeDraft
+from ..gui.work_candidates import bound_jobs
 from .pool_column import session_data_row
 
 # 데이터 미겨눔 상태의 필터/테이블 빈 골격 — 표면이 분기 없이 그린다.
 EMPTY_FILTER = {
-    "active": False, "reapply_available": False, "reapply_hint": "", "search": "",
-    "chips": [], "definition": "", "branches": [], "columns": [],
+    "active": False,
+    "reapply_available": False,
+    "reapply_hint": "",
+    "search": "",
+    "chips": [],
+    "definition": "",
+    "branches": [],
+    "columns": [],
 }
 EMPTY_TABLE = {
-    "columns": [], "rows": [], "visible_count": 0, "hidden_selected": [],
+    "columns": [],
+    "rows": [],
+    "visible_count": 0,
+    "hidden_selected": [],
     "hidden_columns": [],
 }
 
 
-class DataZoneMixin:
-    """필터·선택 디스패치(``_do_*``)와 존 스냅샷 합성 — 컨트롤러 공유 표면(모듈 독스트링 참조)."""
+VIEW_ORDER_DESC = "sourceDesc"
+VIEW_ORDER_ASC = "sourceAsc"
+VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
-    #: 현 세션 필터 정의줄의 **살아있는 데이터 기준** 문안(:meth:`_zone_sections` 가 갱신).
-    #: 슬롯 스태시가 이걸 복사해 간다 — 스태시 시점엔 레코드가 이미 교체됐을 수 있어서
-    #: 그때 새로 지으면 남의 데이터로 죽은 세션을 묘사하게 된다(리뷰 F1). 미겨눔·무정의는 "".
-    _filter_desc: str = ""
 
-    #: 사용자 열 선별(U2 §2.19, #341) — **표시 축뿐**이다: 숨긴 열도 필터·검색·매핑·생성에
-    #: 그대로 참여한다(숨김 ≠ 제외). 수명은 세션 소유(필터와 같은 계층)라 소비 컨트롤러가
-    #: 데이터 교체 seam 에서 비운다 — durable 저장은 어디에도 없다.
-    hidden_columns: "frozenset[str] | set[str]" = frozenset()  # 클래스 기본만 불변(인스턴스는 set)
+class JobDataSession:
+    """마운트와 그 위의 데이터 존 상태를 원자적으로 소유한다."""
 
-    selection: SelectionModel
-    filter: "FilterModel | None"
-    _last_filter: "dict | None"   # {"source_key": str, "state": dict} — 결정 28 슬롯
-    # 현 데이터 소스 정체(file:경로 | pool:참조 | pclm:db#뷰) — 소스 일치 판정
-    _data_key: str
-    pool_registry: DatasetPoolRegistry
-    data_label: str
-    data_source: str              # ''(미겨눔) | 'file' | 'pool' | 'pclm'
-    data_pool_key: str            # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
-    #: 현 마운트 대상의 참조 정체(겨눔 시점 캐시) — 데이터 선택 다이얼로그 「현재 데이터」와
-    #: 「이 데이터 고정」 프리필의 소재(재작성 F1). 라벨(파일명)만으론 고정할 참조를 지을 수
-    #: 없어서 경로·확정 시트를 함께 남긴다(에디터 ``data_path``/``data_sheet`` 선례).
-    data_path: str = ""
-    data_sheet: str = ""
-    #: 헤더 행(엑셀 참조 옵션) — 0 = 미지정(어댑터 기본 1행). ``data_path``/``data_sheet`` 와
-    #: **같은 시점에 같은 이유로** 포획한다(#349 리뷰 2R): 참조는 슬롯에 살고 슬롯은 변한다
-    #: (「다시 연결」은 정상 수명 사건, #347). 마운트가 성사된 그 순간의 참조가 곧 지금 화면에
-    #: 보이는 레코드를 만든 참조이므로, 승계는 슬롯을 다시 읽지 않고 이 포획분만 읽는다.
-    data_header_row: int = 0
-    #: 마운트의 **종류**(""=엑셀/CSV, 그 밖은 그 소스의 코드) — 위 세 성분과 **같은 시점에
-    #: 같은 이유로** 포획한다. 종류를 흘리면 같은 경로 문자열이 두 뜻을 갖고, 승계·결속
-    #: 판정이 어느 어댑터로 읽을지를 추측하게 된다.
-    data_kind: str = ""
+    def __init__(self, pool_registry: DatasetPoolRegistry) -> None:
+        self.pool_registry = pool_registry
+        self.datasource = None
+        self.records: "list[dict]" = []
+        self.selection = SelectionModel(0)
+        self.filter: "FilterModel | None" = None
+        self.range_draft: "RecordRangeDraft | None" = None
+        self.view_order = VIEW_ORDER_DESC
+        self.hidden_columns: "set[str]" = set()
+        self.snapshot_generation = 0
+        self.zone_epoch = 0
+        self._last_filter: "dict | None" = None
+        self._filter_desc = ""
+        self.data_key = ""
+        self.label = ""
+        self.source_kind = ""
+        self.pool_key = ""
+        self.path = ""
+        self.sheet = ""
+        self.header_row = 0
+        self.kind = ""
+        self.notice_text = ""
+        self.notice_level = ""
 
-    def _records(self) -> list:
-        raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
+    def committed_range(self) -> RecordRange:
+        return RecordRange(self.selection, self.filter, self.view_order)
+
+    def _zone_range(self) -> RecordRange:
+        return self.range_draft.range if self.range_draft else self.committed_range()
+
+    @staticmethod
+    def _ordered(view_order: str, indices: "list[int]") -> "list[int]":
+        return sorted(indices, reverse=view_order == VIEW_ORDER_DESC)
+
+    def selected_indices(self) -> "list[int]":
+        """실행 입력은 커밋된 선택을 표시 순서로 투영한다."""
+        return self._ordered(self.view_order, self.selection.selected_indices())
+
+    def zone_indices(self) -> "list[int]":
+        zone = self._zone_range()
+        return self._ordered(zone.view_order, zone.selection.selected_indices())
+
+    def zone_selected(self, index: int) -> bool:
+        return self._zone_sel().is_selected(index)
+
+    def zone_selected_count(self) -> int:
+        return self._zone_sel().selected_count()
+
+    def panel_sections(
+        self,
+        indices: list[int],
+        record_rows: list[dict],
+        *,
+        settled: set[int],
+    ) -> tuple[dict, dict, dict]:
+        """Project filter, table, and guard from one evaluated data view."""
+        if self.filter is None:
+            return EMPTY_FILTER, EMPTY_TABLE, self.selection_guard(settled=settled)
+        rows_by_index = {row["index"]: row for row in record_rows}
+        filter_snapshot, table_snapshot, view, _visible = self.zone_sections(
+            indices, rows_by_index.__getitem__
+        )
+        assert view is not None
+        visible = None if self.range_draft is not None else set(view.visible_indices())
+        guard = self.selection_guard(settled=settled, vis_set=visible)
+        return filter_snapshot, table_snapshot, guard
+
+    def reset_for_mount(self, count: int) -> None:
+        self.selection = SelectionModel(count, all_selected=False)
+        self.view_order = VIEW_ORDER_DESC
+        self.hidden_columns = set()
+        self.snapshot_generation += 1
+        self.range_draft = None
+        self.zone_epoch += 1
+
+    def commit_mount(
+        self,
+        *,
+        datasource,
+        records: "list[dict]",
+        label: str,
+        source_kind: str,
+        path: str,
+        sheet: str,
+        header_row: int,
+        kind: str,
+        pool_key: str = "",
+        data_key: str,
+        hints: "dict[str, str] | None" = None,
+    ) -> None:
+        """성공한 마운트와 그 좌표에 결속된 보기 상태를 함께 교체한다."""
+        self.stash_filter()
+        self.datasource = datasource
+        self.records = records
+        self.label = label
+        self.source_kind = source_kind
+        self.path = path
+        self.sheet = sheet
+        self.header_row = header_row
+        self.kind = kind
+        self.pool_key = pool_key
+        self.data_key = data_key
+        self.reset_for_mount(len(records))
+        self.install_filter(records, hints or {})
+
+    def clear_notice(self) -> None:
+        self.notice_text = ""
+        self.notice_level = ""
+
+    def bound_jobs(self, jobs):
+        """현재 마운트 좌표에 결속된 작업만 반환한다."""
+        return bound_jobs(
+            jobs,
+            self.path,
+            self.sheet,
+            self.header_row,
+            kind=self.kind,
+        )
+
+    def set_notice(self, text: str, level: str = "warn") -> None:
+        self.notice_text = text
+        self.notice_level = level
+
+    def set_view_order(self, value: str) -> None:
+        if value not in VIEW_ORDERS:
+            raise ValueError(f"알 수 없는 표시순서: {value!r}")
+        if self.range_draft is None:
+            self.view_order = value
+        else:
+            self.range_draft.range.view_order = value
+
+    def _do_set_view_order(self, payload: dict) -> None:
+        self.set_view_order(str(payload.get("value", "")))
+
+    def open_range_draft(self) -> None:
+        if self.datasource is None or not self.records:
+            raise ValueError("데이터를 먼저 선택하세요.")
+        if self.range_draft is None:
+            committed = self.committed_range()
+            self.range_draft = RecordRangeDraft(
+                range=committed.copy(),
+                snapshot_gen=self.snapshot_generation,
+                base_fingerprint=committed.fingerprint(),
+            )
+            self.zone_epoch += 1
+
+    def _do_range_draft_open(self, payload: dict) -> dict:
+        self.open_range_draft()
+        return {"ok": True, "epoch": self.zone_epoch}
+
+    def apply_range_draft(self) -> None:
+        draft = self._draft_or_raise()
+        if draft.snapshot_gen != self.snapshot_generation:
+            raise ValueError(
+                "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. 지금 데이터에서 다시 고르세요."
+            )
+        self.selection = draft.range.selection
+        self.filter = draft.range.filter
+        self.view_order = draft.range.view_order
+        self.range_draft = None
+        self.zone_epoch += 1
+
+    def _do_range_draft_apply(self, payload: dict) -> dict:
+        self.apply_range_draft()
+        return {"ok": True}
+
+    def cancel_range_draft(self) -> None:
+        self.range_draft = None
+        self.zone_epoch += 1
+
+    def _do_range_draft_cancel(self, payload: dict) -> dict:
+        self.cancel_range_draft()
+        return {"ok": True}
+
+    def _do_set_selected_only(self, payload: dict) -> None:
+        self._draft_or_raise().selected_only = bool(payload.get("value"))
+
+    def _draft_or_raise(self) -> RecordRangeDraft:
+        if self.range_draft is None:
+            raise ValueError("범위 편집기가 열려 있지 않습니다.")
+        return self.range_draft
+
+    def range_draft_payload(self) -> dict:
+        draft = self.range_draft
+        if draft is None:
+            return {
+                "open": False,
+                "dirty": False,
+                "sel_count": 0,
+                "selected_only": False,
+                "view_order": self.view_order,
+            }
+        return {
+            "open": True,
+            "dirty": draft.is_dirty(),
+            "sel_count": draft.range.selection.selected_count(),
+            "selected_only": draft.selected_only,
+            "view_order": draft.range.view_order,
+        }
+
+    def is_stale_edit(self, action: str, payload: dict, mutations: "set[str]") -> bool:
+        if action not in mutations or "epoch" not in payload:
+            return False
+        try:
+            return int(payload["epoch"]) != self.zone_epoch
+        except (TypeError, ValueError):
+            return True
+
+    def dispatch(self, action: str, payload: dict):
+        handler = getattr(self, f"_do_{action}", None)
+        if handler is None:
+            raise ValueError(f"알 수 없는 데이터 존 액션: {action!r}")
+        return handler(payload)
 
     # ------------------------------------- 존이 편집·렌더하는 대상(재작성 F3 판정 A·D)
     # 13액션과 존 렌더는 **여기를 통해서만** 선택·필터에 닿는다. 기본은 커밋된 세션 상태이고,
@@ -99,14 +273,17 @@ class DataZoneMixin:
     # (같은 동사가 대상만 바꾼다) **경계가 코드에 한 번만** 적힌다. 반대로 실행 입력·게이트·
     # 거울·세션 가드는 이 훅을 쓰지 않는다(불변식 §18.11-21: 적용 전 메인 범위 불변).
     def _zone_sel(self) -> SelectionModel:
-        return self.selection
+        return self._zone_range().selection
 
     def _zone_flt(self) -> "FilterModel | None":
-        return self.filter
+        return self._zone_range().filter
 
     def _zone_set_flt(self, model: FilterModel) -> None:
         """필터 **원자 교체**의 착지처(직전 필터 재적용) — 소유자를 한 곳에서 답한다."""
-        self.filter = model
+        if self.range_draft is None:
+            self.filter = model
+        else:
+            self.range_draft.range.filter = model
 
     def _zone_visible(self, view: FilterView) -> "list[int]":
         """존 표에 실제로 그릴 행(필터 판정 전) — 기본은 필터 가시 집합 그대로.
@@ -116,9 +293,11 @@ class DataZoneMixin:
         집합을 쓴다 — 보기와 판정을 같은 값으로 뭉개면 "선택만 보는 중"이 곧 "정의-유래
         선택"으로 오독된다.
         """
+        if self.range_draft is not None and self.range_draft.selected_only:
+            return self.range_draft.range.selection.selected_indices()
         return view.visible_indices()
 
-    def _data_target(self) -> dict:
+    def data_target(self) -> dict:
         """마운트 대상 재진술 ``{path, sheet, origin, kind}`` — 스냅샷 동봉(신설 상태 아님, 파생).
 
         「이 데이터 고정」은 ``origin == 'file'`` 에서만 뜬다: 등록 데이터 출처는 **이미
@@ -130,13 +309,13 @@ class DataZoneMixin:
         같은 상태를 두 곳이 판정하게 된다 — 종류는 마운트가 이미 아는 사실이다.
         """
         return {
-            "path": self.data_path,
-            "sheet": self.data_sheet,
-            "origin": self.data_source,
-            "kind": self.data_kind,
+            "path": self.path,
+            "sheet": self.sheet,
+            "origin": self.source_kind,
+            "kind": self.kind,
         }
 
-    def _data_row(self) -> "dict | None":
+    def data_row(self) -> "dict | None":
         """지금 쓰는 데이터의 **고르기 열 행 하나** — 마운트가 없으면 ``None``.
 
         데이터 선택 다이얼로그가 공용 ``PoolColumn`` 으로 합류하면서(고르기 열 공용 ③b) 종전
@@ -151,15 +330,15 @@ class DataZoneMixin:
 
         형·부제는 공용 함수(:func:`~hwpxfiller.webapp.pool_column.session_data_row`)가 짓는다.
         """
-        if not self.data_source:
+        if not self.source_kind:
             return None
         return session_data_row(
-            name=self.data_label,
-            kind=self.data_kind,
-            path=self.data_path,
-            sheet=self.data_sheet,
-            header_row=self.data_header_row,
-            record_count=len(self._records()),
+            name=self.label,
+            kind=self.kind,
+            path=self.path,
+            sheet=self.sheet,
+            header_row=self.header_row,
+            record_count=len(self.records),
         )
 
     def new_work_handoff(self) -> "tuple[dict, str]":
@@ -186,29 +365,26 @@ class DataZoneMixin:
         데이터 관문은 파일 참조를 여는 표면이고, 여기서 조용히 빈 초안으로 보내면
         「이 데이터로」라는 문안 자체가 거짓이 된다. 술어는 포획된 ``data_path`` 하나다 —
         그 필드의 뜻이 이미 「이 마운트를 파일로 가리킬 수 있는가」이기 때문이다
-        (:meth:`~hwpxfiller.webapp.screens.PoolTargetingMixin._do_load_pool` 이 **파일을
-        가리키는 참조**에만 채운다 — 엑셀은 ``path``, 계약 목록은 ``db``).
+        (마운트 관문이 **파일을 가리키는 참조**에만 채운다 — 엑셀은 ``path``, 계약
+        목록은 ``db``).
         """
-        if not self.data_source:
+        if not self.source_kind:
             return {}, "데이터를 먼저 고르세요."
-        if not self.data_path:
+        if not self.path:
             return {}, (
-                f"'{self.data_label}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 "
+                f"'{self.label}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 "
                 "없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
             )
         return {
-            "path": self.data_path,
-            "sheet": self.data_sheet,
-            "header_row": self.data_header_row,
+            "path": self.path,
+            "sheet": self.sheet,
+            "header_row": self.header_row,
             # 종류도 한 벌의 성분이다 — 받는 쪽이 경로 모양으로 종류를 되추측하지 않게.
-            "kind": self.data_kind,
+            "kind": self.kind,
         }, ""
 
-    def _display_indices(self, indices: "list[int]") -> "list[int]":
-        """표시 순서 투영 훅 — 기본 항등(원본 오름차순). 데이터-우선 「작업」 화면이
-        sourceDesc(§18.10)로 재정의한다. 표·실행 입력이 같은 훅을 소비해 보이는 순서와
-        생성 순서가 갈라지지 않는다(WYSIWYG)."""
-        return indices
+    def display_indices(self, indices: "list[int]") -> "list[int]":
+        return self._ordered(self._zone_range().view_order, indices)
 
     # -------------------------------------------- 사용자 열 선별(U2 §2.19, #341)
     def _zone_hidden(self) -> "set[str]":
@@ -218,11 +394,11 @@ class DataZoneMixin:
         진실" 유지)라 초안이 열려 있으면 빈 집합을 답한다 — 선별은 인라인 표 한정이다.
         판정이 Python 한 곳이라 인라인·시트·칩이 각자 답을 갖지 않는다.
         """
-        return set(self.hidden_columns)
+        return set() if self.range_draft is not None else set(self.hidden_columns)
 
     def _hide_allowed(self) -> bool:
         """지금 열을 숨길 수 있는 표면인가 — 「작업」 화면이 시트(초안) 열림에서 닫는다."""
-        return True
+        return self.range_draft is None
 
     def _do_hide_column(self, p: dict) -> None:
         """「이 열 숨기기」(열 패널) — **보기에서만** 숨긴다. 필터·검색·매핑·생성 불변.
@@ -266,7 +442,7 @@ class DataZoneMixin:
         sel, fm = self._zone_sel(), self._zone_flt()
         before = sel.selected_count()
         if fm is not None and fm.is_active():
-            for i in fm.visible_indices(self._records()):
+            for i in fm.visible_indices(self.records):
                 sel.toggle(i, True)
         else:
             sel.set_all()
@@ -314,7 +490,8 @@ class DataZoneMixin:
                 first=RangeClause(first["op"], str(first["operand"]).strip()),
                 second=(
                     RangeClause(second["op"], str(second["operand"]).strip())
-                    if second and str(second.get("operand", "")).strip() else None
+                    if second and str(second.get("operand", "")).strip()
+                    else None
                 ),
                 joiner=p.get("joiner", "and"),
             )
@@ -325,7 +502,7 @@ class DataZoneMixin:
 
     def _do_filter_prune(self, p: dict) -> None:
         """가지 쳐내기 — 마지막 가지면 그룹 해산(시안 동형, filter_state 소관)."""
-        self._filter_or_raise().prune_branch(p["column"], self._records())
+        self._filter_or_raise().prune_branch(p["column"], self.records)
 
     def _do_filter_clear(self, p: dict) -> None:
         self._filter_or_raise().clear()
@@ -346,8 +523,8 @@ class DataZoneMixin:
             "column": col,
             "kind": fm.kind(col),
             "text": state["text"],
-            "checked": state["values"],    # None=(전체)
-            "options": fm.view(self._records()).column_values(col),
+            "checked": state["values"],  # None=(전체)
+            "options": fm.view(self.records).column_values(col),
             "range": state["range"],
             # 「이 열 숨기기」 항목의 유무(#341) — 판정은 Python(시트로 이사한 패널에는
             # 항목이 서지 않는다). 표면은 이 값을 그리기만 한다.
@@ -357,20 +534,20 @@ class DataZoneMixin:
     _do_filter_panel.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     # ------------------------------------------- 직전 필터 재적용(건 연속성, 결정 28)
-    def _stash_filter(self) -> None:
+    def stash_filter(self) -> None:
         """죽는 세션의 활성 필터 정의를 직전 슬롯에 덮어쓴다(결정 28 — 1칸, 직전성).
 
         **정의 가진 세션이 죽을 때만** 덮어쓴다 — 정의 없는 세션의 죽음은 슬롯을 보존한다
         (직전 "정의"의 연속성이지 직전 "세션"의 연속성이 아니다). 저장이 아니라 전달
         (결정 8 예외) — 컨트롤러 수명(앱 수명)뿐, 디스크에 남지 않는다.
         """
-        if self.filter is not None and self.filter.is_active() and self._data_key:
+        if self.filter is not None and self.filter.is_active() and self.data_key:
             self._last_filter = {
-                "source_key": self._data_key,
+                "source_key": self.data_key,
                 "state": self.filter.export_state(),
                 # 정의줄은 **직전 스냅샷이 지어 둔 것**을 쓴다(리뷰 F1). 여기서 새로 지으면
-                # 안 된다: 데이터 겨눔 경로는 `vm.load_data()` 로 레코드를 **먼저 갈아치운
-                # 뒤** 이 함수를 부르므로(옛 소스 키를 쓰기 위한 순서), 지금 view 를 지으면
+                # 안 된다: 마운트 경로는 레코드를 **먼저 갈아치운 뒤** 이 함수를 부르므로
+                # (옛 소스 키를 쓰기 위한 순서), 지금 view 를 지으면
                 # 죽는 세션의 정의를 **새 데이터**에 대고 묘사하게 된다 — 「매치 없음」이나
                 # 남의 데이터 가지 이름이 슬롯에 박혀, 원 소스로 돌아왔을 때 버튼이 거짓을
                 # 업고 뜬다. 캐시는 그 스냅샷이 이미 계산한 값이라 추가 비용도 없다.
@@ -395,8 +572,8 @@ class DataZoneMixin:
         """
         return (
             self._last_filter is not None
-            and bool(self._data_key)
-            and self._last_filter["source_key"] == self._data_key
+            and bool(self.data_key)
+            and self._last_filter["source_key"] == self.data_key
             and self._current_filter_empty()
         )
 
@@ -427,9 +604,9 @@ class DataZoneMixin:
             return {
                 "ok": False,
                 "error": "직전 필터의 조건이 현재 데이터 열에 하나도 남지 않아 재적용하지 "
-                         "못했습니다: " + ", ".join(dropped),
+                "못했습니다: " + ", ".join(dropped),
             }
-        records = self._records()
+        records = self.records
         if probe.search_text and not probe.view(records).branches:
             unpruned = FilterModel(fm.columns, kinds)
             unpruned.apply_state(dict(state, pruned=[]))
@@ -441,7 +618,7 @@ class DataZoneMixin:
 
     # ------------------------------------------------------- 데이터 소스 정체(결정 28)
     @staticmethod
-    def _file_key(path: str, sheet: "str | None") -> str:
+    def file_key(path: str, sheet: "str | None") -> str:
         """파일 소스 키 — 정규화 경로(resolve+casefold) + 시트 병기(리뷰 #0·#8).
 
         시트가 다르면 다른 소스다(같은 워크북의 1월/2월 시트에 같은 정의 재적용은 결정
@@ -452,7 +629,7 @@ class DataZoneMixin:
         return f"file:{norm}" + (f"::{sheet}" if sheet else "")
 
     @staticmethod
-    def _pclm_key(db: str, view: str) -> str:
+    def pclm_key(db: str, view: str) -> str:
         """계약 목록 소스 키 — 정규화 db 경로 + 뷰, **``file:`` 과 다른 접두**(#937).
 
         정규화는 :meth:`_file_key` 와 같은 이유로 같은 규칙(resolve+casefold)을 쓴다. 접두를
@@ -465,26 +642,14 @@ class DataZoneMixin:
         norm = str(Path(db).resolve()).casefold()
         return f"pclm:{norm}::{view}"
 
-    def _pool_key(self) -> str:
-        """풀 소스 키 — 슬롯 키 + **참조 정체**(kind+opts) 병기(리뷰 #6 · §5.3 재편).
-
-        라벨은 개명 자유라 키에 들지 않는다(들면 이름만 바꿔도 결정 28 게이트가 조용히
-        닫힌다). 참조 정체를 병기하는 이유는 다시 연결이다: 같은 슬롯이 다른 파일을
-        가리키게 되면 다른 소스다. 참조 해소 실패 시(경합 삭제 등)는 빈 정체로 강등 —
-        게이트가 닫히는 안전 방향.
-        """
-        # 지연 임포트 — screens.py 가 이 믹스인을 소비하므로 모듈 상단 상호 임포트는 순환.
-        from .screens import load_pool_item_checked
-
-        try:
-            item = load_pool_item_checked(self.pool_registry, self.data_pool_key)
-            ident = f"{item.kind}:{json.dumps(item.opts, sort_keys=True, ensure_ascii=False)}"
-        except Exception:  # noqa: BLE001 — 정체 불명 = 게이트 닫힘(안전 강등)
-            ident = ""
-        return f"pool:{self.data_pool_key}:{ident}"
+    @staticmethod
+    def pool_key_for(key: str, item) -> str:
+        """이미 해소한 풀 항목으로 소스 키를 만든다."""
+        ident = f"{item.kind}:{json.dumps(item.opts, sort_keys=True, ensure_ascii=False)}"
+        return f"pool:{key}:{ident}"
 
     # ------------------------------------------------------------- 필터 설치·스냅샷
-    def _install_filter(self, records: list, hints: "dict[str, str]") -> None:
+    def install_filter(self, records: list, hints: "dict[str, str]") -> None:
         """데이터 겨눔 시 필터 신설(결정 24) — 열 유형은 힌트 우선 + 값 스니핑.
 
         힌트는 컨트롤러 소관(작업=매핑 확정 유형, txt=없음). 데이터 교체 = 필터 재생성
@@ -494,13 +659,13 @@ class DataZoneMixin:
         self.filter = FilterModel(columns, sniff_column_kinds(records, hints))
 
     # ------------------------------------------------- 세션 가드 술어(블록 4, 결정 26·27)
-    def _selection_guard(
+    def selection_guard(
         self,
         *,
         settled: "set[int] | None" = None,
         vis_set: "set[int] | None" = None,
     ) -> dict:
-        """"재현 불가능한 수작업 선택"이 있는가 — 세션 가드 술어의 **선택 성분**(결정 27).
+        """ "재현 불가능한 수작업 선택"이 있는가 — 세션 가드 술어의 **선택 성분**(결정 27).
 
         무장 조건: 선택이 비어 있지 않고 ∧ ``settled``(그 화면의 완료 이벤트가 설명하는
         집합 — 작업=마지막 생성분, txt=완주한 큐)와 다르고 ∧ **정의-유래**(현 필터 매치
@@ -516,23 +681,20 @@ class DataZoneMixin:
 
         수치는 modal.js 재진술 본문 소재(결정 27 "종류별 수치 재진술") — 표면이 합성한다.
         """
-        records = self._records()
+        records = self.records
         sel = set(self.selection.selected_indices())
         f_active = self.filter is not None and self.filter.is_active()
         filter_parts = 0
         if self.filter is not None and f_active:
-            filter_parts = sum(
-                1 for c in self.filter.columns if self.filter.has_condition(c)
-            ) + (1 if self.filter.search_text else 0)
+            filter_parts = sum(1 for c in self.filter.columns if self.filter.has_condition(c)) + (
+                1 if self.filter.search_text else 0
+            )
         in_def = extra = 0
         armed = False
         if sel and sel != (settled or set()) and len(sel) != len(records):
             if f_active:
                 assert self.filter is not None
-                vis = (
-                    vis_set if vis_set is not None
-                    else set(self.filter.visible_indices(records))
-                )
+                vis = vis_set if vis_set is not None else set(self.filter.visible_indices(records))
                 armed = sel != vis  # 정의-유래(매치 전체)는 정의줄이 재현을 담보
                 in_def, extra = len(sel & vis), len(sel - vis)
             else:
@@ -546,7 +708,7 @@ class DataZoneMixin:
             "filter_parts": filter_parts,
         }
 
-    def _zone_sections(
+    def zone_sections(
         self, indices: "list[int]", lead_for: "Callable[[int], dict]"
     ) -> "tuple[dict, dict, FilterView | None, list[int]]":
         """필터·테이블 스냅샷 합성 — ``(filter, table, view|None, visible)`` 반환.
@@ -563,7 +725,7 @@ class DataZoneMixin:
         if fm is None:
             self._filter_desc = ""
             return EMPTY_FILTER, EMPTY_TABLE, None, []
-        records = self._records()
+        records = self.records
         view = fm.view(records)  # 가지 1회 산출 — 렌더 경로 캐시 계약(filter_state)
         # 슬롯 스태시가 복사해 갈 정의줄 — **지금 살아있는 데이터 기준**으로 여기서만 짓는다
         # (리뷰 F1: 스태시 시점엔 레코드가 이미 교체됐다). 아래 "definition" 과 같은 값이다.
@@ -571,7 +733,7 @@ class DataZoneMixin:
         # 적용된 적 없는 정의를 직전 슬롯에 박아, 원 소스로 돌아왔을 때 버튼이 거짓을 업는다.
         if fm is self.filter:
             self._filter_desc = view.describe() if fm.is_active() else ""
-        visible = self._display_indices(self._zone_visible(view))  # 표 순서 = 표시순 투영
+        visible = self.display_indices(self._zone_visible(view))  # 표 순서 = 표시순 투영
         vis_set = set(visible)
         columns = fm.columns
         table_rows = [
@@ -590,15 +752,15 @@ class DataZoneMixin:
             # 그 버튼이 설치할 정의(#127) — 어포던스가 살아있을 때만 싣는다.
             "reapply_hint": (
                 self._last_filter.get("summary", "")
-                if self._reapply_available() and self._last_filter else ""
+                if self._reapply_available() and self._last_filter
+                else ""
             ),
             "search": fm.search_text,
-            "chips": view.describe_parts(),   # 칩 줄 문안(정의줄 단일 출처, 결정 4)
+            "chips": view.describe_parts(),  # 칩 줄 문안(정의줄 단일 출처, 결정 4)
             "definition": view.describe(),
-            "branches": view.branches,        # 가지 칩(× 프루닝)
+            "branches": view.branches,  # 가지 칩(× 프루닝)
             "columns": [
-                {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)}
-                for c in columns
+                {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)} for c in columns
             ],
         }
         # 사용자 열 선별(U2 §2.19, #341) — **표시 여부를 여기서 판정**해 얹는다. 숨김은
@@ -611,8 +773,7 @@ class DataZoneMixin:
             # ``visible`` 은 표시 축 판정(#341) — 표면은 이 플래그로 그릴지만 정하고,
             # ``cells`` 는 전 열을 실어 열 index 정렬(ci)을 지킨다.
             "columns": [
-                {"name": c, "kind": fm.kind(c), "visible": c not in hidden}
-                for c in columns
+                {"name": c, "kind": fm.kind(c), "visible": c not in hidden} for c in columns
             ],
             # 숨김 표지 칩의 소재 — 0개가 아니면 칩이 선다(상시, confirm-or-alarm).
             "hidden_columns": [c for c in columns if c in hidden],

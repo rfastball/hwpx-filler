@@ -29,11 +29,41 @@ section 으로 가려면 지금 patch 를 저장하거나 버려야 한다. 그�
 차이」가 성립하지 않고, 세션 전체가 하나의 초안이다. 그 세션의 폐기는 종전대로 세션 폐기
 확인이 지킨다.
 """
+
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, ContextManager, Protocol
 
-from ..domain.job import Job, rules_values
+from ..domain.job import DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
+from ..domain.mapping import MappingProfile
+from .job_editor_state import (
+    EMPTY_PRESERVED,
+    build_provenance,
+    needs_overwrite_confirm,
+    overwrite_confirm_text,
+    preserved_meta,
+    validate_save,
+)
+from .work_mode import work_mode_label
+
+if TYPE_CHECKING:
+    from ..domain.schema import TemplateSchema
+    from .mapping_state import MappingModel, PartialGate
+
+
+class EditorSavePort(Protocol):
+    """Storage operations required by the atomic editor-save use case."""
+
+    def exists(self, name: str) -> bool: ...
+    def load(self, name: str) -> Job: ...
+    def content_fingerprint(self, job: Job) -> str: ...
+    def write_lock(self) -> ContextManager[None]: ...
+    def save(self, job: Job, *, allow_overwrite: bool = False) -> None: ...
+
 
 #: 편집기 section — 계약 §5.1 의 값 그대로다. 정수 단계 어휘는 F7 에서 사망했다(§10.13
 #: 판정 B): patch 의 키와 화면의 탭이 같은 문자열을 써야 "같은 상태를 두 표면이 다르게
@@ -58,9 +88,15 @@ _SECTIONS_BY_MEDIA = {
 #: 계약 §5.1 의 진입 사유 10종 — **전부** 열거한다. 지금 배선된 것만 적으면 나중에 표면이
 #: 생겼을 때 사유를 새로 발명하게 되고, 발명된 어휘는 계약과 갈린다.
 ENTRY_REASONS = (
-    "voluntary", "library", "schema_new_field", "schema_missing_field",
-    "run_failure", "output_result", "workbench_result",
-    "document_browser_repair", "document_browser_new_work",
+    "voluntary",
+    "library",
+    "schema_new_field",
+    "schema_missing_field",
+    "run_failure",
+    "output_result",
+    "workbench_result",
+    "document_browser_repair",
+    "document_browser_new_work",
 )
 
 #: 이 슬라이스가 **실제로 세우는** 사유 — 보내는 표면이 존재하는 것들.
@@ -69,10 +105,16 @@ ENTRY_REASONS = (
 #: 「이 데이터로 신규 작업」(후보 줄)과 확인 필요 행 클릭이 **같은 한 흐름**의 두 입구로
 #: 섰다. 유보 근거였던 F8 은 종결됐고, 선행이던 저장 시 데이터 자동등록은 #347 이 없앴다
 #: (그 자동등록이 새 진입점을 전원 파괴 확인으로 끝내던 원인이다).
-LIVE_ENTRY_REASONS = frozenset({
-    "voluntary", "library", "run_failure", "output_result",
-    "document_browser_repair", "document_browser_new_work",
-})
+LIVE_ENTRY_REASONS = frozenset(
+    {
+        "voluntary",
+        "library",
+        "run_failure",
+        "output_result",
+        "document_browser_repair",
+        "document_browser_new_work",
+    }
+)
 
 #: 「문서 만들기」의 **마운트 데이터를 들고 서는** 진입 사유(#349 · #878).
 #:
@@ -87,10 +129,12 @@ LIVE_ENTRY_REASONS = frozenset({
 #: 든 화면에서 **그 데이터에 열을 붙이러** 가는 왕복이다. 인계가 없으면 편집기의 소스 어휘가
 #: 저장 매핑이 참조하던 키뿐이라(§ ``profile_source_vocabulary``) 새 필드에 붙일 열이 아예
 #: 없고, 사람이 같은 파일을 한 번 더 고르게 된다.
-DATA_ANCHORED_ENTRY_REASONS = frozenset({
-    "document_browser_new_work",
-    "document_browser_repair",
-})
+DATA_ANCHORED_ENTRY_REASONS = frozenset(
+    {
+        "document_browser_new_work",
+        "document_browser_repair",
+    }
+)
 
 #: 배제 **선언**(§10.13 판정 K): 조용한 무시와 선언된 배제는 다르다. 여기 사유로 진입하면
 #: fail-closed 로 거절되고, 그 표면을 짓는 슬라이스가 이 표에서 자기 줄을 지운다.
@@ -152,7 +196,7 @@ def target_or_raise(target: str) -> str:
     """
     if not target or target == TARGET_FILENAME:
         return target
-    if target.startswith(_TARGET_BINDING_PREFIX) and target[len(_TARGET_BINDING_PREFIX):]:
+    if target.startswith(_TARGET_BINDING_PREFIX) and target[len(_TARGET_BINDING_PREFIX) :]:
         return target
     raise ValueError(f"알 수 없는 deep-link target: {target!r}")
 
@@ -205,7 +249,10 @@ def make_context(
         raise ValueError(f"알 수 없는 복귀 표면: {surface!r}")
     ev = {str(k): str(v) for k, v in (evidence or {}).items()}
     return EditContext(
-        work=work, entry_reason=reason, evidence=ev, return_context=ret,
+        work=work,
+        entry_reason=reason,
+        evidence=ev,
+        return_context=ret,
         target=target_or_raise(target),
     )
 
@@ -257,22 +304,57 @@ def dirty_sections(
 
 @dataclass
 class EditSession:
-    """한 편집 진입의 거래 상태 — 계약 §5.2 `editSession`.
+    """편집 진입의 단일 상태 소유자.
 
-    `base`(진입 시점 디스크 스냅샷)만 들고 patch 는 유도한다(모듈 docstring 2절).
-
-    계약 §5.2 의 합성 3층(`base + inheritedRunOverrides + patch`) 중 **가운데 층은 서지
-    않는다** — `runOverrides` 는 기각됐다(지도 §10.14): override 로 풀리는 실패가 이 제품에
-    없고(확정 실패 원인 4종은 권한·점유·공간·경로라 규칙과 무관하며, 이름 충돌은 실행 전
-    계획·원자 차단으로 애초에 실패가 되지 않는다), 실패 복구를 빼고 남는 용도는 *파일에
-    남지 않는 규칙으로 문서를 만드는 층*이라 재현 가능성과 검토 게이트를 동시에 깎는다.
-    따라서 유효 초안은 `base + patch` 2층이 최종형이고, §13-14·15 는 금지할 상태가 없어
-    **공허참**이다(불변식을 부정한 것이 아니라 그 전제를 짓지 않았다).
+    기준 작업과 현재 탭뿐 아니라 템플릿, 데이터, 매핑 초안, 복원 메타를 한 수명으로 묶는다.
+    patch와 dirty 값은 이 상태와 ``base``의 차이에서 유도한다.
     """
 
     context: EditContext
     base: "Job | None" = None
     section: str = SECTION_BINDING
+    template_path: str = ""
+    schema: "TemplateSchema | None" = None
+    gate: "PartialGate | None" = None
+    gate_error: bool = False
+    raw_block: str = ""
+    data_path: str = ""
+    data_sheet: str = ""
+    data_header_row: int = 0
+    data_kind: str = ""
+    data_pool_key: str = ""
+    data_name_cache: "tuple[str, str, str] | None" = None
+    entry_data: "dict[str, str]" = field(
+        default_factory=lambda: {"data_path": "", "data_sheet": ""}
+    )
+    source_fields: "list[str]" = field(default_factory=list)
+    records: "list[dict]" = field(default_factory=list)
+    model: "MappingModel | None" = None
+    model_key: "tuple | None" = None
+    pairing_cache: "tuple[tuple, tuple[int, int]] | None" = None
+    preview_index: int = 0
+    job_name: str = ""
+    job_name_is_derived: bool = True
+    derived_name_baseline: str = ""
+    pattern: str = DEFAULT_FILENAME_PATTERN
+    editing_origin: str = ""
+    preserved_meta: "dict[str, object]" = field(default_factory=lambda: deepcopy(EMPTY_PRESERVED))
+    editing_fingerprint: str = ""
+    loaded_provenance: "dict[str, str]" = field(default_factory=dict)
+    reload_failure: str = ""
+    notice_text: str = ""
+    notice_level: str = "muted"
+    clean: bool = False
+    unconfirm_undo: "list[int]" = field(default_factory=list)
+    binding_confirm_pending: bool = False
+    session_detail_cache: "tuple[str, dict] | None" = None
+
+    SESSION_EXTRAS = ("job_name", "data_path", "data_sheet")
+
+    def reset(self, *, context: "EditContext | None" = None) -> None:
+        """같은 세션 객체를 빈 신규 초안으로 되돌린다."""
+        fresh = type(self)(context=context or make_context(""), section=SECTION_TEMPLATE)
+        self.__dict__.update(fresh.__dict__)
 
     @property
     def is_draft(self) -> bool:
@@ -285,9 +367,7 @@ class EditSession:
     def dirty(self, draft: "Job", *, pending_binding: bool = False) -> "tuple[str, ...]":
         return dirty_sections(self.base, draft, pending_binding=pending_binding)
 
-    def blocking_section(
-        self, draft: "Job", target: str, *, pending_binding: bool = False
-    ) -> str:
+    def blocking_section(self, draft: "Job", target: str, *, pending_binding: bool = False) -> str:
         """`target` 으로 이동하기 전에 처분해야 할 section(없으면 ``""``).
 
         초안 세션은 ``""`` 다 — 초안의 탭 이동은 한 초안 안의 이동이라 잃을 것이 없다
@@ -299,3 +379,386 @@ class EditSession:
             if section != target:
                 return section
         return ""
+
+    def draft_job(self) -> Job:
+        return Job(
+            template_path=self.template_path,
+            mapping=self.model.to_profile() if self.model is not None else MappingProfile(),
+            filename_pattern=self.pattern,
+        )
+
+    def pending_binding(self) -> bool:
+        return self.model is not None and any(
+            row.touched and not row.confirmed for row in self.model.rows
+        )
+
+    def dirty_sections(self) -> "tuple[str, ...]":
+        return self.dirty(self.draft_job(), pending_binding=self.pending_binding())
+
+    def extras_now(self) -> "dict[str, str]":
+        return {
+            "job_name": self.job_name,
+            "data_path": self.data_path,
+            "data_sheet": self.data_sheet,
+        }
+
+    def extras_of(self, base: "Job | None") -> "dict[str, str]":
+        name = (
+            self.derived_name_baseline
+            if self.job_name_is_derived
+            else (base.name if base is not None else "")
+        )
+        return {"job_name": name, **self.entry_data}
+
+    def extras_diff(self, base: "Job | None") -> "tuple[str, ...]":
+        now, was = self.extras_now(), self.extras_of(base)
+        return tuple(key for key in self.SESSION_EXTRAS if now[key] != was[key])
+
+    def dirty_extras(self) -> "tuple[str, ...]":
+        return () if self.base is None else self.extras_diff(self.base)
+
+    def has_unsaved_work(self) -> bool:
+        if self.base is not None:
+            return bool(self.dirty_sections() or self.dirty_extras())
+        if self.clean:
+            return False
+        return bool(self.extras_diff(None)) or self.model is not None
+
+    def model_key_now(self) -> tuple:
+        return (
+            self.template_path,
+            self.data_path,
+            self.data_sheet,
+            self.data_header_row,
+            tuple(self.source_fields),
+        )
+
+    def current_record(self) -> dict:
+        if not self.records:
+            return {}
+        return self.records[self.preview_index % len(self.records)]
+
+    def mapping_complete(self) -> bool:
+        return self.model is not None and self.model.is_complete()
+
+    def apply_mapping_action(self, action: str, payload: dict) -> "tuple[bool, object, bool]":
+        """Apply an editor-only state transition.
+
+        Returns ``(handled, result, confirmed_empty)``; the last fact lets the screen
+        publish the tutorial milestone without owning the mapping transition.
+        """
+        if action == "mapping_reset_stakes":
+            if self.model is None:
+                return True, {"human": 0, "resuggest_manual": 0, "confirmed": 0}, False
+            targets = self._resuggest_targets()
+            rows = [
+                row for row in self.model.human_owned_rows() if row.confirmed or row.has_content()
+            ]
+            return (
+                True,
+                {
+                    "human": len(rows),
+                    "resuggest_manual": sum(self.model.rows[i].touched for i in targets),
+                    "confirmed": self.model.confirmed_count(),
+                },
+                False,
+            )
+        if action == "step_preview":
+            if self.records:
+                self.preview_index = (self.preview_index + int(payload["delta"])) % len(
+                    self.records
+                )
+            return True, None, False
+        if action == "set_name":
+            self.job_name = payload["name"]
+            self.job_name_is_derived = False
+            return True, None, False
+        if action == "set_pattern":
+            self.pattern = payload["pattern"]
+            return True, None, False
+
+        mapping_actions = {
+            "set_source",
+            "revert_source",
+            "resuggest_all",
+            "set_display",
+            "set_const",
+            "set_confirmed",
+            "confirm_suggested",
+            "unconfirm_all",
+            "restore_confirmed",
+        }
+        if action not in mapping_actions:
+            return False, None, False
+        if self.model is None:
+            raise ValueError("매핑 모델이 준비되지 않았습니다.")
+        index = int(payload.get("index", 0))
+        if action == "set_source":
+            self.model.set_source(index, payload["source"])
+        elif action == "revert_source":
+            if self.model.rows[index].confirmed:
+                raise ValueError("확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요.")
+            self.model.revert_to_auto(index)
+            self.model.resuggest_row(index, self.source_fields)
+        elif action == "resuggest_all":
+            targets = self._resuggest_targets()
+            for target in targets:
+                self.model.revert_to_auto(target)
+                self.model.resuggest_row(target, self.source_fields)
+            return (
+                True,
+                {
+                    "resuggested": len(targets),
+                    "kept_confirmed": len(self.model.rows) - len(targets),
+                },
+                False,
+            )
+        elif action == "set_display":
+            self.model.set_display(index, str(payload["type"]), str(payload.get("fmt") or ""))
+        elif action == "set_const":
+            self.model.set_const(index, payload["const"])
+        elif action == "set_confirmed":
+            confirmed = bool(payload["confirmed"])
+            row = self.model.rows[index]
+            confirmed_empty = confirmed and not row.confirmed and row.is_declared_empty()
+            self.model.set_confirmed(index, confirmed)
+            return True, None, confirmed_empty
+        elif action == "confirm_suggested":
+            return True, {"promoted": self.model.confirm_suggested()}, False
+        elif action == "unconfirm_all":
+            self.unconfirm_undo = [i for i, row in enumerate(self.model.rows) if row.confirmed]
+            self.model.unconfirm_all()
+            return True, {"undo_count": len(self.unconfirm_undo)}, False
+        elif action == "restore_confirmed":
+            restored = 0
+            for target in self.unconfirm_undo:
+                if target < len(self.model.rows):
+                    self.model.set_confirmed(target, True)
+                    restored += 1
+            self.unconfirm_undo = []
+            return True, {"restored": restored}, False
+        return True, None, False
+
+    def _resuggest_targets(self) -> "list[int]":
+        if self.model is None:
+            return []
+        return [i for i, row in enumerate(self.model.rows) if not row.confirmed]
+
+
+class EditSaveOperation:
+    def __init__(
+        self,
+        edit: EditSession,
+        store: "EditorSavePort",
+        *,
+        clock: "Callable[[], datetime]",
+        template_exists: "Callable[[str], bool]",
+        data_display_name: "Callable[[], str]",
+        restore_saved: "Callable[[Job], None]",
+        refresh_binding: "Callable[[], None]",
+        saved: "Callable[[Job], None]",
+        after_mapping_saved: "Callable[[str], object] | None" = None,
+    ) -> None:
+        self.edit = edit
+        self.store = store
+        self._clock = clock
+        self._template_exists = template_exists
+        self._data_display_name = data_display_name
+        self._restore_saved = restore_saved
+        self._refresh_binding = refresh_binding
+        self._saved = saved
+        self._after_mapping_saved = after_mapping_saved
+
+    def _set_notice(self, text: str, level: str = "muted") -> None:
+        self.edit.notice_text = text
+        self.edit.notice_level = level
+
+    def _editing_drift_text(self) -> str:
+        if not self.store.exists(self.edit.editing_origin):
+            return ""
+        try:
+            current = self.store.load(self.edit.editing_origin)
+        except Exception:
+            return f"작업 '{self.edit.editing_origin}' 파일이 편집을 여는 사이 손상돼 현재 내용을 확인할 수 없습니다.\n지금 저장하면 그 자리를 이 편집 세션의 상태로 덮어씁니다."
+        if self.store.content_fingerprint(current) != self.edit.editing_fingerprint:
+            return f"편집 중 외부 변경: 작업 '{self.edit.editing_origin}' 이 이 편집 세션을 여는 사이 다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 이 편집 세션의 상태로 덮어씁니다."
+        return ""
+
+    def _overwrite_gate(self) -> str:
+        self_update = (
+            bool(self.edit.editing_origin) and self.edit.job_name == self.edit.editing_origin
+        )
+        if self_update:
+            return self._editing_drift_text()
+        if not needs_overwrite_confirm(
+            self.edit.job_name, None, self.store.exists(self.edit.job_name)
+        ):
+            return ""
+        try:
+            victim = self.store.load(self.edit.job_name).name
+        except Exception:
+            victim = ""
+        return overwrite_confirm_text(self.edit.job_name, victim)
+
+    def _missing_template_block(self) -> str:
+        if not self.edit.template_path:
+            return ""
+        if self._template_exists(self.edit.template_path):
+            return ""
+        return f"'{Path(self.edit.template_path).name}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
+
+    def _cross_media_block(self) -> str:
+        if not self.store.exists(self.edit.job_name):
+            return ""
+        try:
+            victim = self.store.load(self.edit.job_name)
+        except Exception:
+            return ""
+        draft_media = template_media(self.edit.template_path) if self.edit.template_path else "hwpx"
+        if victim.media != draft_media:
+            victim_label = work_mode_label(victim.work_mode)
+            return f"작업 이름 '{self.edit.job_name}' 은(는) 이미 '{victim_label}' 작업입니다. 형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 기존 작업을 삭제한 뒤 다시 저장하세요."
+        return ""
+
+    def _preserved_for_target(self) -> "dict[str, object]":
+        target = self.edit.job_name
+        if self.edit.editing_origin and target == self.edit.editing_origin:
+            try:
+                return preserved_meta(self.store.load(self.edit.editing_origin))
+            except Exception:
+                return dict(self.edit.preserved_meta)
+        if self.store.exists(target):
+            try:
+                return preserved_meta(self.store.load(target))
+            except Exception:
+                return dict(EMPTY_PRESERVED)
+        origin = dict(self.edit.preserved_meta)
+        if self.edit.editing_origin:
+            try:
+                origin = preserved_meta(self.store.load(self.edit.editing_origin))
+            except Exception:
+                pass
+        return {**EMPTY_PRESERVED, "tags": dict(origin["tags"]), "group": origin["group"]}
+
+    def save(self, p: dict) -> dict:
+        verdict = self._validate_save_request()
+        if not verdict.ok:
+            return {
+                "ok": False,
+                "block_reason": verdict.block_reason,
+                "blocked_field": verdict.blocked_field,
+            }
+        # Target reread, confirmation check, preserved metadata, write, and landing reload
+        # share one lock; splitting them permits a concurrent writer to be silently lost.
+        with self.store.write_lock():
+            result = self._save_locked(p, verdict)
+        saved_job = self.store.load(str(result["saved_name"])) if result.get("ok") else None
+        return self._sync_saved_mapping(result, saved_job)
+
+    def _validate_save_request(self):
+        return validate_save(
+            self.edit.model,
+            self.edit.job_name,
+            self.edit.pattern,
+            schema=self.edit.schema,
+            data_path=self.edit.data_path,
+            media=template_media(self.edit.template_path) if self.edit.template_path else "hwpx",
+        )
+
+    def _sync_saved_mapping(self, result: dict, saved_job: "Job | None") -> dict:
+        if saved_job is not None:
+            self._saved(saved_job)
+        if (
+            not result.get("ok")
+            or self._after_mapping_saved is None
+            or (
+                not (
+                    self.edit.context.target.startswith("binding/")
+                    or (
+                        saved_job is not None
+                        and saved_job.media == "hwpx"
+                        and bool(saved_job.authority_id)
+                    )
+                )
+            )
+        ):
+            self._refresh_binding()
+            return result
+        try:
+            self._after_mapping_saved(str(result["saved_name"]))
+        except Exception as exc:
+            # The job write is already committed. Report partial success instead of pretending
+            # that a binding follow-up failure rolled durable storage back.
+            message = f"작업 Mapping은 저장됐지만 Field Binding 검토를 완료하지 못했습니다: {exc}"
+            self._set_notice(message, "danger")
+            self._refresh_binding()
+            return {
+                "ok": False,
+                "legacy_saved": True,
+                "binding_commit_ok": False,
+                "saved_name": result["saved_name"],
+                "block_reason": message,
+            }
+        self._refresh_binding()
+        return result
+
+    def _save_locked(self, p: dict, verdict) -> dict:
+        missing = self._missing_template_block()
+        if missing:
+            return {"ok": False, "block_reason": missing}
+        blocked = self._cross_media_block()
+        if blocked:
+            return {"ok": False, "block_reason": blocked}
+        gate_text = self._overwrite_gate()
+        # Match the exact text the user confirmed; disk state may have changed while the
+        # confirmation dialog was open, in which case a new confirmation is required.
+        if gate_text and (
+            not p.get("confirm_overwrite") or p.get("confirmed_overwrite_text", "") != gate_text
+        ):
+            return {"ok": False, "needs_overwrite": True, "overwrite_text": gate_text}
+        preserved = self._preserved_for_target()
+        provenance_now = self._clock()
+        verdict.profile.provenance = build_provenance(
+            template_path=self.edit.template_path,
+            template_field_names=self.edit.schema.field_names()
+            if self.edit.schema is not None
+            else None,
+            profile=verdict.profile,
+            dataset_name=self._data_display_name()
+            if self.edit.data_path
+            else self.edit.loaded_provenance.get("dataset", ""),
+            loaded_provenance=self.edit.loaded_provenance,
+            now=provenance_now,
+        )
+        job = Job(
+            name=self.edit.job_name,
+            template_path=self.edit.template_path,
+            mapping=verdict.profile,
+            filename_pattern=self.edit.pattern,
+            data_path=self.edit.data_path,
+            data_sheet=self.edit.data_sheet,
+            data_header_row=self.edit.data_header_row,
+            data_kind=self.edit.data_kind,
+            last_run_at=str(preserved["last_run_at"]),
+            tags=dict(preserved["tags"]),
+            group=str(preserved["group"]),
+            favorited_at=str(preserved["favorited_at"]),
+            reviewed_rules=dict(preserved["reviewed_rules"]),
+            authority_id=str(preserved["authority_id"]),
+        )
+        self.store.save(job, allow_overwrite=True)
+        saved = self.edit.job_name
+        return self._land_saved_job_locked(saved)
+
+    def _land_saved_job_locked(self, saved: str) -> dict:
+        saved_job = self.store.load(saved)
+        self._restore_saved(saved_job)
+        if self.edit.reload_failure:
+            self._set_notice(
+                f"작업 '{saved}' 을(를) 저장했습니다.\n"
+                f"연결된 데이터를 다시 읽지 못했습니다: {self.edit.reload_failure}",
+                "warn",
+            )
+        else:
+            self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
+        return {"ok": True, "saved_name": saved}

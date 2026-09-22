@@ -24,7 +24,7 @@ from hwpxfiller.application.generation import (
 from hwpxfiller.batch import OutputCollisionError
 from hwpxfiller.domain.engine import GenerateResult
 from hwpxfiller.domain.job import MISSING_MARKER, Job, rules_fingerprints
-from hwpxfiller.gui.run_state import GateError
+from hwpxfiller.gui.run_state import GateError, RunDataInput
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
 plan_generation = partial(_plan_generation, existing_outputs=existing_output_paths)
@@ -77,21 +77,23 @@ class _VM:
         self.trace = []
         self.plan_kwargs = None
 
-    def validate_generate(self, indices, out_dir):
+    def validate_generate(self, data, indices, out_dir):
         self.trace.append("validate")
         return list(self.errors)
 
-    def blank_fields(self, indices):
+    def blank_fields(self, data, indices):
         self.trace.append("blanks")
         return list(self.blanks)
 
     def output_conflicts(
-        self, indices, out_dir, *, mark_missing="", now=None, existing_outputs=None
+        self, data, indices, out_dir, *, mark_missing="", now=None, existing_outputs=None
     ):
         self.trace.append(("conflicts", mark_missing, now))
         return list(self.conflicts)
 
-    def build_generation_plan(self, indices, out_dir, *, marker="", overwrite=False, now=None):
+    def build_generation_plan(
+        self, data, indices, out_dir, *, marker="", overwrite=False, now=None
+    ):
         self.trace.append("plan")
         self.plan_kwargs = {"marker": marker, "overwrite": overwrite, "now": now}
         return direct_plan(
@@ -110,11 +112,12 @@ def _plan(tmp_path, n=2):
 
 # ------------------------------------------------------------------ 게이트 판정 순서
 _NOW = datetime(2026, 8, 10, 9, 0, 0)
+_DATA = RunDataInput(None, ())
 
 
 def test_gate_order_rejection_stops_before_anything_else():
     vm = _VM(errors=[GateError("먼저 데이터를 선택하세요.", "warn")])
-    decision = plan_generation(vm, [0], "out", now=_NOW)
+    decision = plan_generation(vm, _DATA, [0], "out", now=_NOW)
     assert decision.rejection is vm.errors[0] and decision.plan is None
     assert vm.trace == ["validate"]              # 빈 값·충돌 조회조차 하지 않는다
 
@@ -127,7 +130,7 @@ def test_blank_values_no_longer_hold_the_plan():
     낸다 — 빈 값 사실은 사라지지 않고 ``blanks``·``marker`` 로 남는다.
     """
     vm = _VM(blanks=["담당자"])
-    decision = plan_generation(vm, [0], "out", now=_NOW)
+    decision = plan_generation(vm, _DATA, [0], "out", now=_NOW)
     assert decision.blanks == ("담당자",) and decision.marker == MISSING_MARKER
     assert decision.plan is not None and "plan" in vm.trace
 
@@ -135,14 +138,16 @@ def test_blank_values_no_longer_hold_the_plan():
 def test_overwrite_needs_confirmation_then_builds_the_plan():
     now = _NOW
     vm = _VM(blanks=["담당자"], conflicts=["out/doc-001.hwpx"])
-    held = plan_generation(vm, [0, 1], "out", now=now)
+    held = plan_generation(vm, _DATA, [0, 1], "out", now=now)
     assert held.needs_overwrite and held.plan is None
     assert held.conflicts == ("out/doc-001.hwpx",)
     assert held.marker == MISSING_MARKER         # 확인 왕복에도 표식 사실은 이미 확정
     assert ("conflicts", MISSING_MARKER, now) in vm.trace  # 확인=생성 동일 시각·표식(RC-02)
 
     vm2 = _VM(blanks=[], conflicts=["out/doc-001.hwpx"])
-    done = plan_generation(vm2, [0, 1], "out", now=now, confirm_overwrite=True)
+    done = plan_generation(
+        vm2, _DATA, [0, 1], "out", now=now, confirm_overwrite=True
+    )
     assert done.plan is not None and done.plan.overwrite is True
     assert vm2.plan_kwargs == {"marker": "", "overwrite": True, "now": now}
 

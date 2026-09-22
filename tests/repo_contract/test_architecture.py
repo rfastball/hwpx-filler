@@ -80,12 +80,6 @@ def test_web_controllers_use_ring1_public_seams() -> None:
 
     job = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_job.py"
     job_tree = ast.parse(job.read_text(encoding="utf-8"), filename=str(job))
-    imported = {
-        alias.name
-        for node in ast.walk(job_tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-    }
     forbidden = {
         "refresh",
         "gate_state",
@@ -99,18 +93,73 @@ def test_web_controllers_use_ring1_public_seams() -> None:
         "_compose_field_states",
         "_compose_preflight",
     }
+    session_paths = [
+        ROOT / "src" / "hwpxfiller" / "webapp" / name
+        for name in (
+            "active_work_session.py",
+            "document_run_coordinator.py",
+            "job_execution_session.py",
+        )
+    ]
+    session_trees = [
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path)) for path in session_paths
+    ]
     defined = {
         item.name
-        for node in ast.walk(job_tree)
+        for tree in (job_tree, *session_trees)
+        for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef)
         for item in node.body
         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     assert not bypasses, f"screen_library.py가 vm.registry를 직접 사용한다: {bypasses}"
-    assert {"RunViewModel", "SelectionModel"} <= imported
+    owner_imports = {
+        path.name: {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+        }
+        for path, tree in zip(session_paths, session_trees, strict=True)
+    }
+    data_zone = ROOT / "src" / "hwpxfiller" / "webapp" / "data_zone.py"
+    data_imports = {
+        alias.name
+        for node in ast.walk(ast.parse(data_zone.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    assert "RunViewModel" in owner_imports["active_work_session.py"]
+    assert "SelectionModel" in data_imports
     assert not (forbidden & defined), (
-        f"screen_job.py가 링1 판정을 재구현한다: {sorted(forbidden & defined)}"
+        f"job controller/session 모듈이 링1 판정을 재구현한다: {sorted(forbidden & defined)}"
     )
+    presentation = ROOT / "src" / "hwpxfiller" / "webapp" / "job_presentation.py"
+    presentation_tree = ast.parse(
+        presentation.read_text(encoding="utf-8"), filename=str(presentation)
+    )
+    io_calls = [
+        node.lineno
+        for node in ast.walk(presentation_tree)
+        if isinstance(node, ast.Call)
+        and (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "open"
+            or isinstance(node.func, ast.Attribute)
+            and node.func.attr
+            in {
+                "exists",
+                "is_file",
+                "open",
+                "read_bytes",
+                "read_text",
+                "stat",
+                "now",
+                "utcnow",
+            }
+        )
+    ]
+    assert not io_calls, f"job_presentation.py가 IO/clock을 읽는다: {io_calls}"
 
 
 def test_screen_controllers_stay_transport_thin() -> None:
@@ -125,7 +174,8 @@ def test_screen_controllers_stay_transport_thin() -> None:
        ``webapp.app`` 의 앱 전역 Lock 하나와 ``application.generation.GenerationRun`` 의
        Event 다. 판정은 파일명 allowlist 가 아니라 AST 의미다: ``threading.Event`` 생성은
        전 화면 금지, ``threading.Lock`` 생성은 ``generation_lock`` 을 아는(주입받는) 화면
-       금지(화면-국소 직렬화 자물쇠는 그 심볼을 모른다).
+       금지(화면-국소 직렬화 자물쇠는 그 심볼을 모른다). 세션 소유 모듈은 잠금 자체를
+       만들지 않는다.
     ④ concrete HWPX engine 조립은 ``webapp.app`` 만 소유하고 화면은 주입분을
        관통한다(``external.hwpx_engine`` 재유입 금지).
     """
@@ -137,7 +187,14 @@ def test_screen_controllers_stay_transport_thin() -> None:
     )
     forbidden_engine = "hwpxfiller.external.hwpx_engine"
     failures: list[str] = []
-    for path in sorted(webapp.glob("screen*.py")):
+    session_modules = {
+        webapp / "active_work_session.py",
+        webapp / "document_run_coordinator.py",
+        webapp / "editor_session.py",
+        webapp / "job_execution_session.py",
+    }
+    controller_modules = set(webapp.glob("screen*.py")) | session_modules
+    for path in sorted(controller_modules):
         rel = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         refs_generation_lock = any(
@@ -150,11 +207,14 @@ def test_screen_controllers_stay_transport_thin() -> None:
             if isinstance(node, ast.Import):
                 modules = [(alias.name, node.lineno) for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
-                base = "hwpxfiller.webapp" if node.level == 1 else (
-                    "hwpxfiller" if node.level == 2 else (node.module or "")
+                base = (
+                    "hwpxfiller.webapp"
+                    if node.level == 1
+                    else ("hwpxfiller" if node.level == 2 else (node.module or ""))
                 )
                 full = (
-                    f"{base}.{node.module}" if node.level and node.module
+                    f"{base}.{node.module}"
+                    if node.level and node.module
                     else (base if node.level else (node.module or ""))
                 )
                 # alias 도 정규화한다(코덱스 #581 P2) — `from . import screen_workbench`·
@@ -170,9 +230,12 @@ def test_screen_controllers_stay_transport_thin() -> None:
                     failures.append(f"{rel}:{lineno}: 화면 간 직접 import {module}")
                 if module == forbidden_engine or module.startswith(forbidden_engine + "."):
                     failures.append(f"{rel}:{lineno}: concrete engine 조립 import {module}")
-                if path.name == "screen_job.py" and any(
-                    module == f or module.startswith(f + ".") for f in forbidden_for_job
-                ):
+                if path.name in {
+                    "active_work_session.py",
+                    "document_run_coordinator.py",
+                    "job_execution_session.py",
+                    "screen_job.py",
+                } and any(module == f or module.startswith(f + ".") for f in forbidden_for_job):
                     failures.append(f"{rel}:{lineno}: concrete 모듈 import {module}")
             if (
                 isinstance(node, ast.Call)
@@ -181,7 +244,10 @@ def test_screen_controllers_stay_transport_thin() -> None:
                 and node.func.value.id == "threading"
                 and (
                     node.func.attr == "Event"
-                    or (node.func.attr == "Lock" and refs_generation_lock)
+                    or (
+                        node.func.attr == "Lock"
+                        and (refs_generation_lock or path in session_modules)
+                    )
                 )
             ):
                 failures.append(
