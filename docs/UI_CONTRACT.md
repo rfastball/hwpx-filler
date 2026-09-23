@@ -761,7 +761,8 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
   - **드문 동사는 머리 우측 `⋯` 메뉴**(`data-act="binding-more"` → `#bindingMoreMenu`)다 —
     「자동 제안 다시 받기」·「모두 해제」·「직전 확인 n개 복원」. 컨트롤러 함수도 확인 왕복도
     종전 그대로이고 바뀐 것은 **어디에 서는가**뿐이다(§6: 같은 선택지를 모든 문맥에
-    나열하지 않는다).
+    나열하지 않는다). 복원은 자동확정 근거와 수동 소유권도 되살리고, 해제 뒤 행을 편집하거나
+    모델을 재생성하면 직전 복원 슬롯을 버린다.
   - **「사용할 데이터 열」 선별은 사슬째 퇴역했다**(U6 §2.5 사용자 확정): 세션 상태
     (`_ignored_sources`·펼침 힌트) · 스냅샷 키 5개(`active_source_fields`·
     `ignored_source_fields`·`active_count`·`ignored_count`·`ignored_expanded`) · 액션 3개

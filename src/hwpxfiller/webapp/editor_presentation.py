@@ -47,7 +47,7 @@ def binding_head(model) -> dict:
         "promote_label": f"제안 {suggested}건 모두 확인",
         "promoted_label": (
             "제안을 모두 확인했습니다"
-            if model.confirmed_count()
+            if any(row.confirmed and not row.auto_confirmed_exact for row in model.rows)
             else "확인할 제안이 없습니다"
         ),
         "unused_columns": len(model.unused_source_fields()),

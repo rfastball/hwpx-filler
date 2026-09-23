@@ -322,6 +322,7 @@ def test_unconfirm_all_restores_exact_previous_confirmed_set(tmp_path):
     ctrl.dispatch("goto_section", {"section": "binding"})
     ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
     ctrl.dispatch("set_confirmed", {"index": 4, "confirmed": True})
+    assert ctrl.snapshot()["binding_head"]["promoted_label"] == "제안을 모두 확인했습니다"
     result = ctrl.dispatch("unconfirm_all", {})
     assert result == {"undo_count": 2}
     assert ctrl.snapshot()["unconfirm_undo_count"] == 2
@@ -330,6 +331,40 @@ def test_unconfirm_all_restores_exact_previous_confirmed_set(tmp_path):
     rows = ctrl.snapshot()["rows"]
     assert [i for i, row in enumerate(rows) if row["confirmed"]] == [1, 4]
     assert ctrl.snapshot()["unconfirm_undo_count"] == 0
+
+
+def test_unconfirm_restore_keeps_exact_auto_confirmation_provenance(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path, body="{{업체명}}")
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    row = ctrl.edit.model.rows[0]
+    assert row.confirmed and row.auto_confirmed_exact and not row.touched
+    assert ctrl.snapshot()["binding_head"]["promoted_label"] == "확인할 제안이 없습니다"
+
+    assert ctrl.dispatch("unconfirm_all", {}) == {"undo_count": 1}
+    assert row.manual_unconfirmed and row.touched and not row.auto_confirmed_exact
+    assert ctrl.dispatch("restore_confirmed", {}) == {"restored": 1}
+    assert row.confirmed and row.auto_confirmed_exact and not row.touched
+    assert not row.manual_unconfirmed and ctrl.edit.model.carry_profile().mappings == []
+    assert ctrl.snapshot()["rows"][0]["state_label"] == "자동확정 · 이름 일치"
+
+
+def test_unconfirm_restore_slot_expires_when_mapping_is_edited(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path, body="{{업체명}}")
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("unconfirm_all", {})
+    ctrl.dispatch("set_display", {"index": 0, "type": "const", "fmt": ""})
+    ctrl.dispatch("set_const", {"index": 0, "const": "직접 입력"})
+    assert ctrl.snapshot()["unconfirm_undo_count"] == 0
+    assert ctrl.dispatch("restore_confirmed", {}) == {"restored": 0}
+    row = ctrl.edit.model.rows[0]
+    assert not row.confirmed and not row.auto_confirmed_exact
+    assert row.type == "const" and row.const == "직접 입력"
 
 
 def test_unconfirm_undo_slot_dies_with_model_rebuild(tmp_path):
