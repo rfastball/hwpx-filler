@@ -9,8 +9,8 @@
  *
  * **판정은 여기 없다.** 무엇이 필드 토큰이고 무엇이 구간 마커인지, 표기가 어디서 깨졌는지는
  * 전부 Python 이 말한다(`tpl/txt_lint` → 링0 `scan_text_structure` ·
- * `scan_text_token_spans`). 이 모듈이 하는 일은 그 **문자 오프셋을 데코레이션으로 얹는
- * 것**뿐이다 — 여기서 `{{…}}` 를 다시 정규식으로 가르면 sigil 선행 분류가 두 곳에서
+ * `scan_text_token_spans`). 브리지가 UTF-16 으로 번역한 오프셋을 데코레이션으로 얹는
+ * 것뿐이다 — 여기서 `{{…}}` 를 다시 정규식으로 가르면 sigil 선행 분류가 두 곳에서
  * 갈리고, 같은 토큰이 표면과 백엔드에서 다른 것이 된다.
  *
  * **키맵을 세우지 않는다.** `@codemirror/commands` 를 들이지 않으므로 Escape·Tab 은
@@ -23,11 +23,11 @@ import type { Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 
-/** Python 이 낸 토큰 좌표 1건 — `domain/text_structure.py::TextTokenSpan` 의 JSON 얼굴. */
+/** Python 브리지가 UTF-16 으로 번역한 토큰 좌표 1건. */
 export type LintpadSpan = {
   /** `"field"`(누름틀 토큰) 또는 `"marker"`(구간 표기). 여기서 판정하지 않는다. */
   kind: string;
-  /** 0-기반 문자 오프셋(반열린 구간). */
+  /** 0-기반 UTF-16 코드 단위 오프셋(반열린 구간). */
   start: number;
   end: number;
 };

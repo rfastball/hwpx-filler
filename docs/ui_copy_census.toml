@@ -2075,7 +2075,7 @@ text = "템플릿 파일을 찾을 수 없습니다: {} 파일을 되돌리거�
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/editor_session.py"
-text = "템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 확정했거나 직접 편집한 {}개 행의 소스·유형·서식은 이월했지만, 저장하려면 전 행을 다시 확정하세요."
+text = "템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 직접 확인하거나 편집한 {}개 행의 소스·유형·서식은 이월했습니다. 확인이 필요한 행을 다시 확정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/editor_session.py"

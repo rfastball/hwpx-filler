@@ -275,6 +275,41 @@ def test_notation_diagnostic_refuses_with_zero_mutation() -> None:
     assert pkg.entries == before
 
 
+@pytest.mark.parametrize(
+    "object_xml",
+    ('<hp:pic marker="KEEP"/>', '<hp:ctrl><hp:bookmark marker="KEEP"/></hp:ctrl>'),
+)
+def test_marker_with_nontext_object_refuses_without_deleting_it(object_xml: str) -> None:
+    pkg = _pkg(
+        _p(f"<hp:t>{{{{#항목 특약}}}}</hp:t>{object_xml}"),
+        _text("본문"),
+        _text("{{/항목}}"),
+    )
+    before = dict(pkg.entries)
+
+    assert scan_structure(pkg).diagnostics[0].kind.value == "marker_not_alone"
+    report = compile_structure(pkg)
+
+    assert report.modified is False
+    assert report.refusal is not None
+    assert (report.refusal[0].kind, report.refusal[0].code) == (
+        Refusal.NOTATION_DIAGNOSTIC, "marker_not_alone"
+    )
+    assert pkg.entries == before
+
+
+def test_marker_with_layout_cache_still_compiles() -> None:
+    marker = (
+        '<hp:p><hp:run charPrIDRef="0"><hp:t>{{#항목 특약}}</hp:t></hp:run>'
+        '<hp:linesegarray/></hp:p>'
+    )
+    pkg = _pkg(marker, _text("본문"), _text("{{/항목}}"))
+
+    assert scan_structure(pkg).diagnostics == ()
+    assert compile_structure(pkg).modified is True
+    assert inspect_slots(pkg)[0] == (Slot("특약", ()),)
+
+
 # ------------------------------------------------- 4. preflight blocker → 변이 0
 def test_preflight_refuses_unusable_field_pairing() -> None:
     """짝 없는 fieldEnd 하나로 entry 급 신뢰가 무너지면 컴파일하지 않는다."""

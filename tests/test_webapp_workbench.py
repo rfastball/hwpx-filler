@@ -97,6 +97,23 @@ def test_session_lifecycle_is_closed_at_boot_and_after_close(tmp_path):
     assert ctrl.snapshot()["open"] is False and ctrl.can_copy() is False
 
 
+def test_txt_exact_column_auto_confirms_with_visible_reason_until_manual_edit(tmp_path):
+    ctrl, _, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    job.mapping = MappingProfile()
+    ctrl.open(job, [(0, {"수신": "회계과", "사업명": "복사기 임차"})])
+    rows = {row["name"]: row for row in ctrl.snapshot()["rows"]}
+    assert rows["수신"]["confirmed"] is True
+    assert rows["수신"]["auto_confirmation_label"] == "자동확정 · 이름 일치"
+    assert rows["건명"]["confirmed"] is False
+    _send(ctrl, "set_confirmed", {"name": "수신", "value": False})
+    row = next(row for row in ctrl.snapshot()["rows"] if row["name"] == "수신")
+    assert not row["confirmed"] and row["auto_confirmation_label"] == ""
+    _send(ctrl, "set_map_value", {"name": "수신", "text": "손입력"})
+    row = next(row for row in ctrl.snapshot()["rows"] if row["name"] == "수신")
+    assert not row["confirmed"] and row["auto_confirmation_label"] == ""
+
+
 def test_open_takes_a_frozen_copy_that_outside_changes_cannot_touch(tmp_path):
     """§13-13 — 진입 시 사본을 뜬다. 바깥 레코드를 고쳐도 세션의 순서·값이 안 바뀐다."""
     ctrl, reg, _ = _ctrl(tmp_path)

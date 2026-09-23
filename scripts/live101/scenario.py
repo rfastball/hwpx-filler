@@ -249,13 +249,14 @@ def run(ctx: ScenarioContext) -> dict:
         "「연결 확인」 단계·매핑표 미리보기",
         requires=["#scr-editor"],
     )
-    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인")
+    if not s.js('document.querySelector(\'#scr-editor [data-act="confirm-suggested"]\').disabled'):
+        s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인")
     # 「확정 6/6」 게이트 줄은 머리 pill 로 접혔다 — 남은 행이 0 이면 전 행 확인이다.
     # 배지 전건을 함께 되읽어 pill 만 초록인 자리를 막는다(수치와 행이 갈리지 않는다).
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
         " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
-        ".every((b) => b.textContent.trim() === '확인')",
+        ".every((b) => b.getAttribute('aria-pressed') === 'true')",
         "전 행 확인",
         requires=["#scr-editor"],
     )
@@ -561,14 +562,15 @@ def run(ctx: ScenarioContext) -> dict:
         "TXT 매핑표 미리보기",
         requires=["#scr-editor"],
     )
-    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(TXT)")
+    if not s.js('document.querySelector(\'#scr-editor [data-act="confirm-suggested"]\').disabled'):
+        s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(TXT)")
     # 「확인 필요 0」 pill 은 **사람이 손댄 미확인 행**만 센다 — 자동 제안만 있는 표에서는
     # 승격 **전에도** 0 이라 이 문안만 기다리면 왕복이 도착하기 전에 지나간다(공허한 대기).
     # 배지 전건을 되읽어 전 행 확인을 실제로 잰다(S4 와 같은 형).
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
         " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
-        ".every((b) => b.textContent.trim() === '확인')",
+        ".every((b) => b.getAttribute('aria-pressed') === 'true')",
         "TXT 전 행 확인",
         requires=["#scr-editor"],
     )
@@ -705,7 +707,8 @@ def run(ctx: ScenarioContext) -> dict:
         '!!document.querySelector(\'#scr-editor [data-act="confirm-suggested"]\')',
         "매핑표(오류 연습)", requires=["#scr-editor"],
     )
-    s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(오류 연습)")
+    if not s.js('document.querySelector(\'#scr-editor [data-act="confirm-suggested"]\').disabled'):
+        s.click_sel('#scr-editor [data-act="confirm-suggested"]', what="제안 일괄 확인(오류 연습)")
     # **승격이 실제로 도착했는지 먼저 잰다.** 이 다음 걸음은 표의 select 를 만지는데, 승격
     # 왕복이 아직 오지 않았으면 그 사이의 재렌더가 방금 넣은 값을 서버 값으로 되돌린다 —
     # `set_value` 는 값 넣기와 커밋을 **두 번의 왕복**으로 하므로 그 사이가 곧 창이다(실측:
@@ -713,8 +716,8 @@ def run(ctx: ScenarioContext) -> dict:
     # 전에도 참이라(내용 없는 행은 처음부터 못 누른다) 그 자리를 지켜 주지 못한다.
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('자동 제안 0')"
-        " && document.querySelector('#scr-editor').textContent"
-        ".includes('제안을 모두 확인했습니다')",
+        " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
+        ".every((b) => b.disabled || b.getAttribute('aria-pressed') === 'true')",
         "일괄 승격 착지(오류 연습)",
         requires=["#scr-editor"],
     )
@@ -742,7 +745,7 @@ def run(ctx: ScenarioContext) -> dict:
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('확인 필요 0')"
         " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
-        ".every((b) => b.textContent.trim() === '확인')",
+        ".every((b) => b.getAttribute('aria-pressed') === 'true')",
         "오류 연습 전 행 확인",
         requires=["#scr-editor"],
     )

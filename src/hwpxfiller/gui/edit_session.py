@@ -345,7 +345,8 @@ class EditSession:
     notice_text: str = ""
     notice_level: str = "muted"
     clean: bool = False
-    unconfirm_undo: "list[int]" = field(default_factory=list)
+    # index + 확인 전 소유권/근거 — 모두 해제의 짧은 복원 슬롯.
+    unconfirm_undo: "list[tuple[int, bool, bool, bool]]" = field(default_factory=list)
     binding_confirm_pending: bool = False
     session_detail_cache: "tuple[str, dict] | None" = None
 
@@ -451,13 +452,10 @@ class EditSession:
             if self.model is None:
                 return True, {"human": 0, "resuggest_manual": 0, "confirmed": 0}, False
             targets = self._resuggest_targets()
-            rows = [
-                row for row in self.model.human_owned_rows() if row.confirmed or row.has_content()
-            ]
             return (
                 True,
                 {
-                    "human": len(rows),
+                    "human": len(self.model.carry_profile().mappings),
                     "resuggest_manual": sum(self.model.rows[i].touched for i in targets),
                     "confirmed": self.model.confirmed_count(),
                 },
@@ -493,6 +491,8 @@ class EditSession:
         if self.model is None:
             raise ValueError("매핑 모델이 준비되지 않았습니다.")
         index = int(payload.get("index", 0))
+        if action not in ("unconfirm_all", "restore_confirmed"):
+            self.unconfirm_undo = []  # 뒤따른 편집 뒤에는 옛 확인 근거를 되살리지 않는다.
         if action == "set_source":
             self.model.set_source(index, payload["source"])
         elif action == "revert_source":
@@ -526,14 +526,21 @@ class EditSession:
         elif action == "confirm_suggested":
             return True, {"promoted": self.model.confirm_suggested()}, False
         elif action == "unconfirm_all":
-            self.unconfirm_undo = [i for i, row in enumerate(self.model.rows) if row.confirmed]
+            self.unconfirm_undo = [
+                (i, row.touched, row.auto_confirmed_exact, row.manual_unconfirmed)
+                for i, row in enumerate(self.model.rows) if row.confirmed
+            ]
             self.model.unconfirm_all()
             return True, {"undo_count": len(self.unconfirm_undo)}, False
         elif action == "restore_confirmed":
             restored = 0
-            for target in self.unconfirm_undo:
+            for target, touched, auto_exact, manual_unconfirmed in self.unconfirm_undo:
                 if target < len(self.model.rows):
-                    self.model.set_confirmed(target, True)
+                    row = self.model.rows[target]
+                    row.confirmed = True
+                    row.touched = touched
+                    row.auto_confirmed_exact = auto_exact
+                    row.manual_unconfirmed = manual_unconfirmed
                     restored += 1
             self.unconfirm_undo = []
             return True, {"restored": restored}, False

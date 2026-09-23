@@ -257,9 +257,10 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
     model = MappingModel.from_field_names(tokens, headers)
     by_field = {row.template_field: row for row in model.rows}
 
-    # 나머지 두 토큰은 헤더와 정확 일치라 자동 결속된다(결정 30) — 대조군.
+    # 정확 일치 토큰은 자동 결속·확정된다 — 결핍 자리의 대조군.
     assert by_field["공고번호"].source == "공고번호"
     assert by_field["계약상대자"].source == "계약상대자"
+    assert sum(row.auto_confirmed_exact for row in model.rows) == 3
 
     # 결핍 자리: 결속도 제안도 없다. 특히 '계약금액' 이 밀려들지 않는다.
     deposit = by_field["계약보증금"]
@@ -271,11 +272,13 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
     # 넘어간다. 일괄 승격(`confirm_suggested`)은 이 행을 건드리지 않는다(U6-C #977 —
     # 구 ADR-E 이름게이트의 후계: 확인의 자리가 모달에서 그 행으로 옮겨 왔다).
     assert deposit.status() == "needs_source"
-    assert model.confirm_suggested() == 3 and deposit.is_declared_empty() is False
+    assert model.confirm_suggested() == 0 and deposit.is_declared_empty() is False
+    assert not model.is_complete()
     index = model.index_of("계약보증금")
     model.set_display(index, "const", "")
     model.set_confirmed(index)
     assert deposit.is_declared_empty() is True
+    assert model.is_complete()
 
 
 # ------------------------------------------- 5. 값 정합은 사람 몫(#915 게이트 퇴역)

@@ -1167,14 +1167,15 @@ export function createEditorWorkbenchDataProbes() {
           notice: { text: "", level: "muted" },
           total: 3, copied_count: 1, is_complete: false,
           revision: { template: 1, binding: 4 },
-          source_fields: ["부서", "사업명"],
+          source_fields: ["수신", "사업명"],
           fmt_options: { text: [{ code: "plain", label: "그대로" }] },
           type_options: [{ code: "text", label: "텍스트" }],
           rows: [
             {
-              name: "수신", state: "fill", source: "부서", own: "auto", manual: false,
+              name: "수신", state: "fill", source: "수신", own: "auto", manual: false,
               value: "회계과", fmt_kind: "text", fmt_code: "plain", suggest: "",
               can_revert: false, confirmed: true, blank_declared: false,
+              auto_confirmation_label: "자동확정 · 이름 일치",
             },
             {
               name: "비고", state: "blank", source: "", own: "", manual: false, value: "",
@@ -1214,6 +1215,8 @@ export function createEditorWorkbenchDataProbes() {
           out.dirty_note = textOf(byId(ctx, "wbDirtyNote"));
           out.review = textOf(byId(ctx, "wbReview"));
           out.map_rows = ctx.doc.querySelectorAll("#wbMapPanel tbody tr").length;
+          out.exact_badge = textOf(ctx.doc.querySelector("#wbMapPanel .map-auto-exact")).trim();
+          out.exact_checked = !!ctx.doc.querySelector('#wbMapPanel [data-name="수신"].mapck:checked');
           out.declared = ctx.doc.querySelectorAll("#wbMapPanel .mapval-declared").length;
           out.card_fill = ctx.doc.querySelectorAll("#wbCard .seg-fill").length;
           out.card_blank = ctx.doc.querySelectorAll("#wbCard .seg-blank").length;
@@ -1896,6 +1899,22 @@ export function createEditorWorkbenchDataProbes() {
           ctx.push("editor", promoted);
           await settleRender(ctx);
           out.badges_after = Array.prototype.map.call(badges(), (b) => textOf(b).trim());
+          const exactRow = Object.assign({}, rows[0], {
+            confirmed: true, row_state: "confirmed", state_label: "자동확정 · 이름 일치",
+          });
+          ctx.push("editor", Object.assign({}, snap, { rows: [exactRow, ...rows.slice(1)] }));
+          await settleRender(ctx);
+          const exactBadge = badges()[0];
+          const exactCell = root.querySelector("table.map tbody tr td:nth-child(2)");
+          const exactSelect = exactCell && exactCell.querySelector(".srccell .sel");
+          out.exact_badge = textOf(exactBadge).trim();
+          out.exact_pressed = exactBadge && exactBadge.getAttribute("aria-pressed");
+          out.exact_select_width = exactSelect ? Math.round(exactSelect.getBoundingClientRect().width) : 0;
+          out.exact_cell_h = exactCell ? Math.round(exactCell.getBoundingClientRect().height) : 0;
+          out.exact_badge_inside = !!(exactBadge && exactCell &&
+            exactBadge.getBoundingClientRect().right <= exactCell.getBoundingClientRect().right + 1);
+          ctx.push("editor", promoted);
+          await settleRender(ctx);
           out.promote_disabled_after = !!root.querySelector(
             '[data-act="confirm-suggested"]').disabled;
           out.promoted_label_after = textOf(
@@ -2152,14 +2171,14 @@ export function createEditorWorkbenchDataProbes() {
           /* 링1 상태 게이트가 드는 것은 **수선 동사**뿐이다(U6-E 리뷰 10) — 검토 왕복은
              웹이 모든 행에 덧붙이는 「자세히…」가 진다. */
           const acts = [{ key: "compile", label: "누름틀·구간 변환" }];
-          const H = (name, warns, rowActs, blocked) => tplRow({
+          const H = (name, warns, rowActs, blockedLabel) => tplRow({
             key: name, name, path: `C:/lib/${name}`,
-            badge_label: blocked ? "변환 필요" : "누름틀",
-            badge_level: blocked ? "warn" : "ok",
+            badge_label: blockedLabel || "누름틀",
+            badge_level: blockedLabel === "원문" ? "muted" : blockedLabel ? "warn" : "ok",
             warns: warns || [],
             actions: rowActs === undefined ? acts : rowActs,
-            selectable: !blocked,
-            reason: blocked ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
+            selectable: !blockedLabel,
+            reason: blockedLabel ? "누름틀·구간 변환을 해야 고를 수 있습니다." : "",
           });
           const txtRow = (name, error) => tplRow({
             key: name, name: name.replace(/\.txt$/, ""), path: `C:/txt/${name}`,
@@ -2170,11 +2189,12 @@ export function createEditorWorkbenchDataProbes() {
           });
           const manageTpl = tplBase({
             rows: [
-              H("a.hwpx"), H("b.hwpx"),
+              H("a.hwpx"), H("b.hwpx", null, undefined, "원문"),
               /* COMPILED 의 실제 모양 — U6-B 뒤 동사가 0 이던 행이다. U6-E(#979)가 그
                  자리에 「검토」를 세웠고, 「자세히…」는 어느 행에서든 선다. */
               H("c.hwpx", null, []),
-              H("d.hwpx", ["빈 값 2건은 공란으로 채워집니다"]),
+              H("d.hwpx", ["빈 값 2건은 공란으로 채워집니다"],
+                [{ key: "compile", label: "마저 변환" }], "부분 변환"),
               /* 「자세히…」의 왕복을 실제로 태울 행 — 검토가 상세를 채운다. */
               H("구간.hwpx", null, []),
               /* 판독 실패 행도 목록에 선다(숨기지 않는다) — 그 행의 ⋮ 는 「자세히…」
@@ -2235,8 +2255,10 @@ export function createEditorWorkbenchDataProbes() {
           out.retired_folder_import = !host.querySelector('button[data-act="import-folder"]');
           const refreshButton = host.querySelector('[data-act="refresh"][data-side="tpl"]');
           const refreshRect = refreshButton.getBoundingClientRect();
-          out.refresh_hit_area = !isHidden(ctx, refreshButton)
-            && refreshRect.width >= 44 && refreshRect.height >= 44;
+          const refreshIconStyle = styleOf(ctx, refreshButton.querySelector("svg"));
+          out.refresh_compact = !isHidden(ctx, refreshButton)
+            && Math.abs(refreshRect.width - 28) < .5 && Math.abs(refreshRect.height - 28) < .5
+            && refreshIconStyle.width === "14px" && refreshIconStyle.height === "14px";
           let finishRefresh;
           let refreshCalls = 0;
           const refreshResult = new Promise((resolve) => { finishRefresh = resolve; });
@@ -2277,6 +2299,16 @@ export function createEditorWorkbenchDataProbes() {
           out.detail_always_available = [
             "a.hwpx", "b.hwpx", "c.hwpx", "d.hwpx", "구간.hwpx", "메모.txt", "깨진.txt",
           ].every((key) => !!moreFor(key) && !moreFor(key).disabled);
+          const moreVisibleOnFocus = (key) => {
+            const more = moreFor(key);
+            const pick = more?.closest(".pitem-wrap")?.querySelector(".pitem");
+            pick?.focus();
+            return !!more && !!pick && ctx.doc.activeElement === pick
+              && styleOf(ctx, more).visibility === "visible"
+              && more.offsetParent !== null && !more.disabled;
+          };
+          out.partial_more_visible = moreVisibleOnFocus("d.hwpx");
+          out.raw_more_visible = moreVisibleOnFocus("b.hwpx");
           out.grp_more = host.querySelectorAll(".grp-more").length;
           out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length;
           out.fill_warn = /빈 값 2건/.test(host.textContent);                 // #154 사전 고지 승계
@@ -2351,6 +2383,7 @@ export function createEditorWorkbenchDataProbes() {
           const closedMenu = byId(ctx, "tplRowMenu");
           out.menu_closed = !closedMenu || isHidden(ctx, closedMenu);
           /* COMPILED 의 실제 모양(동사 0 이던 행) — 이제 「검토」와 「자세히…」가 선다. */
+          out.partial_menu_items = await openRowMenu("d.hwpx");
           out.compiled_menu_items = await openRowMenu("c.hwpx");
           out.txt_menu_items = await openRowMenu("메모.txt");
           out.txt_error_menu_items = await openRowMenu("깨진.txt");

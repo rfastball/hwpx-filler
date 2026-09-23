@@ -842,15 +842,22 @@ class TemplateController:
 
         진단은 링0 스캐너(:func:`~hwpxfiller.domain.text_structure.scan_text_structure`)가
         낸 것을 **그대로** 싣는다. 표면은 ``message`` 를 재진술만 하고 ``kind`` 로 문안을
-        다시 짓지 않는다. 강조 좌표도 마찬가지로
-        :func:`~hwpxfiller.domain.text_structure.scan_text_token_spans` 가 낸 문자
-        오프셋이다 — 웹이 토큰 정규식을 다시 쓰면 sigil 선행 분류가 두 곳에서 갈린다.
+        다시 짓지 않는다. 강조 구간은
+        :func:`~hwpxfiller.domain.text_structure.scan_text_token_spans` 가 판정한다.
+        도메인의 Python 문자 좌표만 웹 편집기의 UTF-16 코드 단위 좌표로 번역한다 —
+        웹이 토큰 정규식을 다시 쓰면 sigil 선행 분류가 두 곳에서 갈린다.
         """
         content = p.get("content", "")
         scan = scan_text_structure(content)
+        offsets = [0]
+        for char in content:
+            offsets.append(offsets[-1] + (2 if ord(char) > 0xFFFF else 1))
         return {
             **scan.to_dict(),
-            "spans": [span.to_dict() for span in scan_text_token_spans(content)],
+            "spans": [
+                span.to_dict() | {"start": offsets[span.start], "end": offsets[span.end]}
+                for span in scan_text_token_spans(content)
+            ],
         }
 
 

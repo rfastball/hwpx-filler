@@ -38,7 +38,7 @@ from ..domain.text_render import template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..gui.filter_state import sniff_column_kinds
-from ..gui.mapping_state import MappingModel
+from ..gui.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel
 from ..gui.selection_state import SelectionModel
 from ..gui.txt_card import card_text, gate_empty_fields, render_card
 from ..gui.tutorial_state import Milestone
@@ -471,6 +471,7 @@ class WorkbenchController(MappingVerbsMixin):
                 "suggest": suggestions.get(r.template_field, ""),
                 "can_revert": r.type == "const" and bool(r.source),
                 "confirmed": r.confirmed,
+                "auto_confirmation_label": AUTO_CONFIRM_EXACT_LABEL if r.auto_confirmed_exact else "",
                 # 「비운다」 선언 = **확정된 빈 고정값** — 게이트가 빼는 집합
                 # (`declared_empty_fields`)과 같은 술어여야 표지와 게이트가 갈리지 않는다.
                 "blank_declared": r.confirmed and r.is_declared_empty(),
