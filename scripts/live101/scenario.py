@@ -716,8 +716,8 @@ def run(ctx: ScenarioContext) -> dict:
     # 전에도 참이라(내용 없는 행은 처음부터 못 누른다) 그 자리를 지켜 주지 못한다.
     s.wait(
         "document.querySelector('#scr-editor').textContent.includes('자동 제안 0')"
-        " && document.querySelector('#scr-editor').textContent"
-        ".includes('제안을 모두 확인했습니다')",
+        " && [...document.querySelectorAll('#scr-editor [data-act=\"row-confirm\"]')]"
+        ".every((b) => b.disabled || b.getAttribute('aria-pressed') === 'true')",
         "일괄 승격 착지(오류 연습)",
         requires=["#scr-editor"],
     )
