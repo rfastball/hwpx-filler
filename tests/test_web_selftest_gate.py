@@ -1510,6 +1510,13 @@ class TestWebSelftestGate:
         assert e["badges_after"] == ["확인", "확인", "확인 필요", "확인 필요"], (
             f"일괄 승격이 확인 필요 행까지 건드렸거나 제안을 안 올렸습니다: {e['badges_after']!r}"
         )
+        assert e["exact_badge"] == "자동확정 · 이름 일치" and e["exact_pressed"] == "true"
+        assert e["exact_badge_inside"] and e["exact_select_width"] >= 40, (
+            f"자동확정 근거가 열 밖으로 넘치거나 열 선택을 눌렀습니다: {e!r}"
+        )
+        assert e["exact_cell_h"] == e["src_cell_h_suggested"], (
+            f"자동확정 배지가 데이터 열 행을 늘렸습니다: {e!r}"
+        )
         assert e["promote_disabled_after"] is True, "승격할 제안이 0 인데 버튼이 열려 있습니다."
         assert e["promoted_label_after"] == "제안을 모두 확인했습니다", (
             f"승격 뒤 문안이 Python 값이 아닙니다: {e['promoted_label_after']!r}"
@@ -1722,7 +1729,7 @@ class TestWebSelftestGate:
         assert t["retired_folder_import"] is True, (
             "「폴더에서 가져오기…」가 남아 있습니다 — U6-A(#975)에서 퇴역한 동사입니다."
         )
-        assert t["refresh_hit_area"] is True, "새로고침 클릭 영역은 44px 이상이어야 합니다."
+        assert t["refresh_compact"] is True, "새로고침 버튼은 28×28px, 아이콘은 14×14px여야 합니다."
         assert t["refresh_locked"] is True, "새로고침 처리 중 중복 클릭이 허용됐습니다."
         assert t["refresh_reenabled"] is True, "완료 후 새로고침 버튼이 다시 활성화되지 않았습니다."
         assert t["refresh_motion"] is True, "새로고침 회전 또는 동작 줄이기 설정이 적용되지 않았습니다."
@@ -1739,6 +1746,9 @@ class TestWebSelftestGate:
         # 그대로 막힌다(어느 행이든 누르면 답할 것이 있다).
         assert t["detail_always_available"] is True, (
             "「자세히…」가 없는 행이 있습니다 — 그 행의 ⋮ 는 눌러도 아무 일도 없습니다."
+        )
+        assert t["raw_more_visible"] is True and t["partial_more_visible"] is True, (
+            "원문/부분 변환 행의 ⋮ 가 키보드 초점에서 보이지 않습니다 — 숨은 버튼도 click 은 통과합니다."
         )
         assert t["assign_chips"] == 0, (
             "＋그룹지정 칩이 남아 있습니다 — 그룹 표면은 U4 §2-30 에서 걷혔습니다."
@@ -1770,6 +1780,9 @@ class TestWebSelftestGate:
         # 같은 왕복을 부르는 메뉴 항목을 둘 두지 않는다.
         assert t["hwpx_menu_items"] == ["act:compile", "detail"], (
             f"HWPX 행 ⋮ 구성이 [변환·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
+        )
+        assert t["partial_menu_items"] == ["act:compile", "detail"], (
+            f"부분 변환 행에서 마저 변환 메뉴에 닿지 못합니다: {t['partial_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
         assert t["compiled_menu_items"] == ["detail"], (
@@ -2165,6 +2178,7 @@ class TestWebSelftestGate:
         assert w["save_enabled"] is True
         # 좌 pane: 확정-비움은 입력칸이 아니라 **선언 표지**로 그려진다(결정 12).
         assert w["map_rows"] == 2 and w["declared"] == 1
+        assert w["exact_badge"] == "자동확정 · 이름 일치" and w["exact_checked"]
         # 우 pane: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
         assert w["card_fill"] == 1 and w["card_blank"] == 1
         assert w["lint_shown"] is True

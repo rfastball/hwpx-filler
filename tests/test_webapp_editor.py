@@ -341,7 +341,8 @@ def test_unconfirm_undo_slot_dies_with_model_rebuild(tmp_path):
     _mount_other_data(ctrl)                              # 1단계 게이트(U6-B) — 갈아탈 첫 결속
     ctrl.dispatch("goto_section", {"section": "binding"})
     ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
-    assert ctrl.dispatch("unconfirm_all", {}) == {"undo_count": 1}
+    confirmed_before = sum(row["confirmed"] for row in ctrl.snapshot()["rows"])
+    assert ctrl.dispatch("unconfirm_all", {}) == {"undo_count": confirmed_before}
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 키 변경 → 모델 재생성
     assert ctrl.snapshot()["unconfirm_undo_count"] == 0      # 슬롯 소멸(버튼 근거 사라짐)
     assert ctrl.dispatch("restore_confirmed", {}) == {"restored": 0}
@@ -1060,6 +1061,28 @@ def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_p
     assert snap["is_complete"] is False                  # 재확정 없이는 저장 게이트 미통과
     assert snap["notice"] and "다시 확정" in snap["notice"]["text"]
     assert "다시 확정" in snap["notice"]["text"]         # 재확정 필요를 loud 재진술
+
+
+def test_exact_auto_confirmation_rebuild_warns_on_lost_source_and_keeps_manual_release(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path, body="{{업체명}}")
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    row = ctrl.snapshot()["rows"][0]
+    assert row["source"] == "업체명" and row["confirmed"]
+    assert row["state_label"] == "자동확정 · 이름 일치"
+
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    snap = ctrl.snapshot()
+    assert not snap["rows"][0]["confirmed"]
+    assert snap["notice"] and "다시 확정" in snap["notice"]["text"]
+
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    assert not ctrl.snapshot()["rows"][0]["confirmed"]
 
 
 # --------------------------------------- 선언 데이터 자동등록의 사망(#347, U2 §5.3 D)
@@ -1882,6 +1905,14 @@ def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
     assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
     assert stakes["resuggest_manual"] == 0                             # 확정 행은 재제안 비대상
     assert stakes["confirmed"] == ctrl.snapshot()["field_count"]       # 교체 확인 수치
+
+    exact, _ = _controller(tmp_path / "exact")
+    path = _txt_template(tmp_path / "exact", body="{{업체명}}")
+    exact.dispatch("use_library_template", {"path": str(path)})
+    exact.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    exact.dispatch("goto_section", {"section": "binding"})
+    stakes = exact.dispatch("mapping_reset_stakes", {})
+    assert stakes["confirmed"] == 1 and stakes["human"] == 0  # 자동확정은 값 이월 대상 아님
 
 
 def test_resuggest_stakes_count_every_row_the_loop_resets(tmp_path):

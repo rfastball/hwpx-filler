@@ -945,6 +945,22 @@ class _StructureReader(StructureReader):
                 context,
             )
             return
+        # 마커 문단은 컴파일 때 통째로 지운다. 그림·제어 등 텍스트에 안 잡히는
+        # 내용도 단독 마커로 오인하면 함께 사라지므로 여기서 먼저 거절한다.
+        if any(
+            child.tag not in (_hp("run"), _hp("linesegarray"))
+            or (
+                child.tag == _hp("run")
+                and any(node.tag != _hp("t") for node in child.iterdescendants())
+            )
+            for child in p_el
+        ):
+            self.note(
+                StructureDiagnosticKind.MARKER_NOT_ALONE,
+                "마커는 문단을 단독으로 차지해야 합니다.",
+                context,
+            )
+            return
         self.read_marker(match.group(1), context)
 
 

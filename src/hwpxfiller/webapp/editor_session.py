@@ -1006,18 +1006,30 @@ class EditorLoader:
         if self.edit.model is not None and self.edit.model_key == key:
             return
         prior = None
+        unconfirmed_fields = set()
+        lost_auto_source = False
         if self.edit.model is not None:
+            unconfirmed_fields = {
+                row.template_field for row in self.edit.model.rows if row.manual_unconfirmed
+            }
+            lost_auto_source = any(
+                row.auto_confirmed_exact and row.source not in self.edit.source_fields
+                for row in self.edit.model.rows
+            )
             carried_prior = self.edit.model.carry_profile()
             if carried_prior.mappings:
                 prior = carried_prior
         self.edit.model = MappingModel.from_suggestions(self.edit.schema, self.edit.source_fields)
         self.edit.unconfirm_undo = []
-        if prior is not None:
-            carried = self.edit.model.apply_profile(prior, confirm=False)
+        carried = self.edit.model.apply_profile(prior, confirm=False) if prior is not None else 0
+        if prior is not None or lost_auto_source:
             self._set_notice(
-                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 확정했거나 직접 편집한 {carried}개 행의 소스·유형·서식은 이월했지만, 저장하려면 전 행을 다시 확정하세요.",
+                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 직접 확인하거나 편집한 {carried}개 행의 소스·유형·서식은 이월했습니다. 확인이 필요한 행을 다시 확정하세요.",
                 "warn",
             )
+        for index, row in enumerate(self.edit.model.rows):
+            if row.template_field in unconfirmed_fields:
+                self.edit.model.set_confirmed(index, False)
         self.edit.model_key = key
 
 

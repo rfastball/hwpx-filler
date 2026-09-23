@@ -284,7 +284,7 @@ def suggest_mappings(
     aliases: "dict[str, str] | None" = None,
     threshold: float = SUGGEST_THRESHOLD,
 ) -> "list[FieldMapping]":
-    """템플릿 필드 ↔ 소스 키를 퍼지로 1:1 자동 제안(초안). 사람이 확정·보정한다.
+    """템플릿 필드 ↔ 소스 키를 1:1 자동 제안한다. 원본 키 정확 일치를 먼저 고른다.
 
     소스 키가 영문코드면 ``aliases``(키→한글 라벨)를 퍼지 타겟으로 쓴다. 엄격한 1:1
     이므로 초안도 필드당 최선의 단일 소스만 잡고, 유형은 기본 ``text`` — 서식이 필요한
@@ -297,6 +297,10 @@ def suggest_mappings(
     labels = {k: aliases.get(k, k) for k in source_keys}
     out: "list[FieldMapping]" = []
     for tf in template_fields:
+        # 원본 키의 완전 일치가 별칭·정규화 유사도 1.0보다 먼저다.
+        if tf in labels:
+            out.append(FieldMapping(tf, tf, type="text"))
+            continue
         best_key, best_score = None, 0.0
         for k in source_keys:
             s = similarity(tf, labels[k])

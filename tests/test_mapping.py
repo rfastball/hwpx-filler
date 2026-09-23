@@ -173,6 +173,14 @@ def test_suggest_matches_exact_aliases():
     assert sugg["추정가격"] == "presmptPrce"
 
 
+def test_suggest_prefers_exact_source_key_over_earlier_alias_match():
+    """별칭 유사도 1.0 도 원본 키의 정확 일치보다 앞서면 안 된다."""
+    matches = suggest_mappings(
+        ["공고명"], ["bidNtceNm", "공고명"], {"bidNtceNm": "공고명", "공고명": "다른 이름"}
+    )
+    assert [(m.template_field, m.source) for m in matches] == [("공고명", "공고명")]
+
+
 def test_suggest_respects_threshold():
     """유사도가 임계 미만이면 제안하지 않는다(잘못 꽂지 않음 — 사람 확정 대기)."""
     sugg = suggest_mappings(["존재하지않는들판xyz"], list(NARA_ALIASES), NARA_ALIASES, threshold=0.6)

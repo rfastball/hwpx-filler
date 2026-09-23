@@ -683,9 +683,10 @@ def test_repair_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatc
     assert snap["source_fields"] == ["부서", "사업명"]
     rows = {r["template_field"]: r for r in snap["rows"]}
     assert rows["수신"]["confirmed"] is True and rows["수신"]["source"] == "부서"
-    assert rows["사업명"]["confirmed"] is False           # 고치러 온 그 필드는 그대로 미확정
-    # 사람이 고른 적 없는 데이터를 변경으로 세지 않는다(이탈마다 헛확인 금지).
-    assert editor.has_unsaved_work() is False and snap["dirty"] is False
+    assert rows["사업명"]["confirmed"] is True            # 현재 데이터 원본 키와 정확 일치
+    assert rows["사업명"]["state_label"] == "자동확정 · 이름 일치"
+    # 새로 자동확정한 연결은 아직 저장되지 않은 매핑 변경이므로 이탈 가드가 지킨다.
+    assert editor.has_unsaved_work() is True and snap["dirty"] is True
     assert snap["context"]["entry_reason"] == "document_browser_repair"
     # 「문서 만들기」의 세션은 이 왕복으로 흔들리지 않는다(데이터는 그 화면 소유).
     assert job.data.path == str(csv)
@@ -739,8 +740,8 @@ def test_repair_entry_unconfirms_rows_whose_column_the_mounted_data_lacks(tmp_pa
     """#878 — 인계 데이터에 없는 열을 쓰던 행은 **확정 상태로 도착하지 않는다**.
 
     확정으로 도착하면 저장 게이트(`is_complete`)를 사람 검토 없이 통과해 빈 값 문서를 찍는다.
-    재진술도 사유별로 갈라야 한다 — 데이터 불일치를 "템플릿에 새로 생긴 필드"로 말하면
-    사람이 엉뚱한 곳을 고친다.
+    데이터 불일치를 "템플릿에 새로 생긴 필드"로 말하면 사람이 엉뚱한 곳을 고친다.
+    반면 현재 데이터 키와 정확히 맞는 새 필드는 자동확정해 새 필드 경고에서 제외한다.
     """
     frontend = _frontend(tmp_path, monkeypatch)
     job = frontend.controllers["job"]
@@ -761,8 +762,9 @@ def test_repair_entry_unconfirms_rows_whose_column_the_mounted_data_lacks(tmp_pa
         for line in (snap["notice"] or {}).get("text", "").split("\n") if ": " in line
     }
     assert lines["불러온 데이터에 없는 열을 쓰던 필드 1개는 확정이 필요합니다"] == "수신"
-    # 같은 미확정이라도 사유가 다른 행은 다른 줄이 말한다(뭉치면 오보가 된다).
-    assert lines["템플릿에 새로 생긴 필드 1개는 확정이 필요합니다"] == "사업명"
+    # 새 필드는 정확 일치 자동확정이라 경고하지 않는다.
+    assert "템플릿에 새로 생긴 필드 1개는 확정이 필요합니다" not in lines
+    assert rows["사업명"]["confirmed"] is True and rows["사업명"]["source"] == "사업명"
 
 
 def test_library_entry_does_not_pick_up_the_mounted_data(tmp_path, monkeypatch):

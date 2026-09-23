@@ -733,9 +733,21 @@ def test_txt_lint_restates_ring0_diagnostics_and_token_spans(tmp_path, monkeypat
         {"kind": "field", "start": 4, "end": 11, "source": "{{공고명}}"},
         {"kind": "marker", "start": 12, "end": 22, "source": "{{#항목 사유}}"},
     ]
-    # 좌표는 원문에 **그대로** 얹힌다 — 이 불변식이 깨지면 강조가 조용히 어긋난다.
+    # BMP 본문에서는 Python 문자 좌표와 웹 UTF-16 좌표가 일치한다.
     for span in result["spans"]:
         assert content[span["start"]:span["end"]] == span["source"]
+
+
+def test_txt_lint_translates_astral_offsets_for_editor(tmp_path, monkeypatch):
+    """The browser editor indexes UTF-16 units, including inside token names."""
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+
+    result = ctrl.dispatch("txt_lint", {"content": "😀 {{이름}} {{😀항목}}"})
+
+    assert result["spans"] == [
+        {"kind": "field", "start": 3, "end": 9, "source": "{{이름}}"},
+        {"kind": "field", "start": 10, "end": 18, "source": "{{😀항목}}"},
+    ]
 
 
 def test_txt_lint_on_a_clean_body_is_quiet_and_writes_nothing(tmp_path, monkeypatch):

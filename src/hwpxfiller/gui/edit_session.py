@@ -451,13 +451,10 @@ class EditSession:
             if self.model is None:
                 return True, {"human": 0, "resuggest_manual": 0, "confirmed": 0}, False
             targets = self._resuggest_targets()
-            rows = [
-                row for row in self.model.human_owned_rows() if row.confirmed or row.has_content()
-            ]
             return (
                 True,
                 {
-                    "human": len(rows),
+                    "human": len(self.model.carry_profile().mappings),
                     "resuggest_manual": sum(self.model.rows[i].touched for i in targets),
                     "confirmed": self.model.confirmed_count(),
                 },

@@ -411,7 +411,8 @@ function MapRow(props: {
     className: "ck mapck", type: "checkbox", id: `wbMap-ck-${key}`, "data-name": name,
     "aria-label": `${name} 확정`, checked: checked(draft, mapField(name, "confirmed")),
     onChange: (event: Obj) => controller.setConfirmed(name, !!event.currentTarget.checked),
-  })));
+  }), row.auto_confirmation_label
+    ? h("span", { className: "map-auto-exact" }, String(row.auto_confirmation_label)) : null));
 }
 
 export function WorkbenchScreen(props: { controller: WorkbenchController }): ReactNode {

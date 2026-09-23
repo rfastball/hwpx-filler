@@ -1,9 +1,8 @@
 """매핑 위저드 행 상태 모델 — Qt 비의존 순수 파이썬(헤드리스 단위 테스트 대상).
 
-``suggest_mappings`` 초안과 사람의 확정 사이를 잇는 계층. **명시성 원칙**
-([[hwpx-filler-scope]]): 자동 제안은 초안일 뿐이므로 초안이 채워져 있어도 모든 행은
-``confirmed=False`` 로 시작하고, 사람이 행별로 확정해야 ``is_complete()`` 가 True 가
-된다 — 위저드는 이 게이트를 통과해야만 다음(저장) 단계로 넘어간다.
+``suggest_mappings`` 초안과 확정 사이를 잇는 계층. 현재 활성 데이터의 원본 키가 템플릿
+필드명과 정확히 같을 때만 자동확정한다. 근사·별칭 제안은 사람이 확인해야 하며, 위저드는
+전 행이 확정되어야 다음(저장) 단계로 넘어간다.
 
 행 편집(소스/유형/상수 변경)은 확정을 해제한다 — 확정 후 바뀐 행은
 다시 사람의 눈을 거쳐야 한다. 저장된 프로파일의 로드(``apply_profile``)만 예외로
@@ -68,6 +67,7 @@ ROW_STATUS_LABEL = {
     "confirmed": "확인",
     "needs_source": "확인 필요",
 }
+AUTO_CONFIRM_EXACT_LABEL = "자동확정 · 이름 일치"
 
 #: 데이터 열 select 의 **특수 항목** 문안(U6-C #977). 실제 열 이름 공간과 섞이지 않는다 —
 #: 이 둘은 열이 아니라 「값을 어디서 얻는가」의 다른 답이고, 표면은 열 선택(`set_source`)이
@@ -121,7 +121,7 @@ def pairing_preview(
     """고르기 단계 연결 카드의 **읽기 전용** 수치 ``(자동 연결, 확인 필요)`` — 순수 함수.
 
     U6-B(#976). 1단계는 매핑 모델을 만들지 **않는다**: 모델 생성은 2단계 진입의
-    ``_ensure_model`` 하나가 지고(전원 미확정 재생성·값 이월 재진술이 그 자리에 걸려
+    ``_ensure_model`` 하나가 지고(정확 일치 재판정·값 이월 재진술이 그 자리에 걸려
     있다), 카드가 미리 만들면 고르기를 바꿔 보는 것만으로 그 전이가 돌아 확정이 조용히
     무너진다. 그래서 여기서는 :func:`~hwpxfiller.domain.mapping.suggest_mappings` 를
     **그대로** 한 번 돌려 세어 보기만 한다 — 같은 함수라 카드의 「자동 연결 n」과 2단계가
@@ -299,7 +299,7 @@ def row_projection(
         "preview_empty": empty,
         "preview_error": preview_error,
         "row_state": state,
-        "state_label": ROW_STATUS_LABEL[state],
+        "state_label": AUTO_CONFIRM_EXACT_LABEL if row.auto_confirmed_exact else ROW_STATUS_LABEL[state],
         "source_kind": source_kind,
         "source_value": source_option_value(row, source_kind),
         # 결속 열이 지금 데이터에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
@@ -369,6 +369,8 @@ class RowState:
     confirmed: bool = False
     suggestion_score: float = 0.0
     touched: bool = False  # 사람이 소스/내용을 직접 정함(수동=사람 소유). 미접촉=시스템 소유.
+    auto_confirmed_exact: bool = False  # 현재 활성 데이터의 원본 키와 정확히 일치한 자동확정.
+    manual_unconfirmed: bool = False  # 사람이 확인을 푼 행은 재제안·재마운트로 재확정하지 않는다.
 
     def is_system_owned(self) -> bool:
         """시스템 소유 행 — 미확정·미접촉이라 활성 헤더 따라 라이브 재제안 대상(결정 12)."""
@@ -416,6 +418,8 @@ class RowState:
         소스 재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
         self.touched = False
         self.confirmed = False
+        self.auto_confirmed_exact = False
+        self.manual_unconfirmed = False
         self.source = ""
         self.const = ""
         self.fmt = ""
@@ -475,8 +479,8 @@ class MappingModel:
         """스키마 전 필드(문서순)에 행을 만들고 ``suggest_mappings`` 초안을 얹는다.
 
         미매칭 필드도 빈 행으로 포함한다(사람이 채우거나 비움 확정). 기본 유형은
-        inferred_type 에서 유도(date→date, amount→amount, 그 외 text). 모든 행은
-        confirmed=False 로 시작한다 — 초안은 초안이다(명시성 원칙).
+        inferred_type 에서 유도(date→date, amount→amount, 그 외 text). 원본 소스 키와
+        이름이 정확히 같은 행만 자동확정하고, 근사·별칭 제안은 미확정으로 둔다.
         """
         aliases = dict(aliases or {})
         drafts = {
@@ -494,9 +498,12 @@ class MappingModel:
             if draft is not None and draft.source:
                 row.source = draft.source
                 # 제안 점수는 suggest 와 동일 방식(alias 라벨 대상 유사도)으로 복원.
-                row.suggestion_score = similarity(
+                exact = spec.name == draft.source
+                row.suggestion_score = 1.0 if exact else similarity(
                     spec.name, aliases.get(draft.source, draft.source)
                 )
+                row.confirmed = exact
+                row.auto_confirmed_exact = exact
             rows.append(row)
         return cls(rows=rows, source_fields=source_fields, aliases=aliases)
 
@@ -521,7 +528,7 @@ class MappingModel:
 
         **유형 = 결정 5 우선순위**: 자동 결속 열은 값 스니핑(``col_kinds``)이 이름 추론을
         이긴다. 무결속·스니핑 부재는 이름 휴리스틱(:func:`~hwpxfiller.domain.schema.infer_type`),
-        그마저 없으면 text. 전 행 미확정(``confirmed=False``)·미접촉으로 시작한다(초안은 초안).
+        그마저 없으면 text. 원본 키가 정확히 일치한 행은 자동확정하고 나머지는 미확정이다.
         """
         source_fields = list(source_fields or [])
         aliases = dict(aliases or {})
@@ -537,6 +544,8 @@ class MappingModel:
             if name in cols:  # 정확 일치 = 자동 결속(결정 30) — 근사는 suggestions 로
                 row.source = name
                 row.suggestion_score = 1.0
+                row.confirmed = True
+                row.auto_confirmed_exact = True
                 kind = col_kinds.get(name, "")
                 if kind:  # 값 스니핑이 이름 추론을 이긴다(결정 5) — 없으면 이름 추론 유지
                     row.type = default_transform_for(kind)
@@ -587,6 +596,7 @@ class MappingModel:
         row.source = source
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def set_type(self, index: int, type_: str) -> None:
         if type_ not in TYPES:
@@ -601,6 +611,7 @@ class MappingModel:
             row.source = ""
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def set_fmt(self, index: int, fmt: str) -> None:
         """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
@@ -608,12 +619,14 @@ class MappingModel:
         row.fmt = fmt
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def set_const(self, index: int, const: str) -> None:
         row = self.rows[index]
         row.const = const
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def set_display(self, index: int, type_: str, fmt: str) -> None:
         """**(유형, 표시형) 한 쌍을 원자적으로** 세운다(U6-C 리뷰 1) — 표시형 select 의 단일 관문.
@@ -636,6 +649,7 @@ class MappingModel:
             row.const = ""
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def revert_to_auto(self, index: int) -> None:
         """사람 소유(touched) 행을 시스템 소유로 **완전** 되돌린다 — 자동 제안에 다시 맡김(칩-라이브).
@@ -651,11 +665,20 @@ class MappingModel:
 
     def set_confirmed(self, index: int, confirmed: bool = True) -> None:
         """사람의 행별 확정/해제 — 빈 행 확정은 '의도적 비움'을 뜻한다."""
-        self.rows[index].confirmed = confirmed
+        row = self.rows[index]
+        row.confirmed = confirmed
+        row.auto_confirmed_exact = False
+        if not confirmed:
+            row.touched = True  # 명시 해제는 활성 헤더 재제안이 되돌릴 수 없다.
+        row.manual_unconfirmed = not confirmed
 
     def unconfirm_all(self) -> None:
         for row in self.rows:
+            if row.confirmed:
+                row.touched = True
+                row.manual_unconfirmed = True
             row.confirmed = False
+            row.auto_confirmed_exact = False
 
     def _score_row(self, row: "RowState", m) -> None:
         """제안 결과(FieldMapping | None)를 행에 얹는다 — 소스·제안 점수(후보 없으면 비움).
@@ -666,10 +689,17 @@ class MappingModel:
         """
         if m is not None and m.source:
             row.source = m.source
-            row.suggestion_score = similarity(row.template_field, self.aliases.get(m.source, m.source))
+            exact = row.template_field == m.source
+            row.suggestion_score = 1.0 if exact else similarity(
+                row.template_field, self.aliases.get(m.source, m.source)
+            )
+            row.confirmed = exact and not row.manual_unconfirmed
+            row.auto_confirmed_exact = row.confirmed
         else:
             row.source = ""
             row.suggestion_score = 0.0
+            row.confirmed = False
+            row.auto_confirmed_exact = False
 
     def _resuggest_system_rows(self, active_sources: "list[str]") -> None:
         """시스템 소유 행(미확정·미접촉)의 소스를 활성 헤더 중 최선으로 다시 세운다(라이브 재제안).
@@ -744,7 +774,11 @@ class MappingModel:
                 and row.source not in active_set
                 and (vocab is None or row.source in vocab)  # 어휘 밖 stale 은 불건드림(F1)
             ):
+                manually_unconfirmed = row.manual_unconfirmed
                 row.reset_to_system()
+                if manually_unconfirmed:
+                    row.manual_unconfirmed = True
+                    row.touched = True
                 demoted.append(row.template_field)
         return demoted
 
@@ -805,7 +839,7 @@ class MappingModel:
         return not self.source_fields
 
     def is_complete(self) -> bool:
-        """전 행이 사람 확정을 받았는가 — 명시성 게이트. 행이 없으면 False."""
+        """전 행이 확정됐는가 — 행이 없으면 False."""
         return bool(self.rows) and all(r.confirmed for r in self.rows)
 
     def emits_any_value(self) -> bool:
@@ -967,6 +1001,7 @@ class MappingModel:
         row.fmt = ""
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def set_manual(self, index: int, value: str) -> None:
         """직접 입력(man) — 상수 강등. **결속 소스는 기억**한다(되돌리기로 복귀, 사용자 결정).
@@ -979,6 +1014,7 @@ class MappingModel:
         row.const = value
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def freeze_to_const(self, index: int, value: str) -> None:
         """데이터 해제 시 결속 값 **평문 동결**(R-flow 결정 30) — 소스도 뗀다(``set_manual`` 과 차이).
@@ -993,6 +1029,7 @@ class MappingModel:
         row.fmt = ""
         row.confirmed = False
         row.touched = True
+        row.auto_confirmed_exact = False
 
     def revert_binding(self, index: int, kind: str = "") -> bool:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(상수 청소·유형 재유도). 소스 없으면 무동작.
@@ -1006,6 +1043,9 @@ class MappingModel:
         )
         row.const = ""
         row.fmt = ""
+        row.confirmed = False
+        row.touched = True
+        row.auto_confirmed_exact = False
         return True
 
     def unbind(self, index: int) -> None:
@@ -1029,7 +1069,7 @@ class MappingModel:
         확정 전용 :meth:`to_profile` 과 달리 **touched 미확정 행도 담는다**(리뷰 F2: 미확정
         수동 편집도 '사람 소유'라 데이터를 바꿔도 조용히 소실시키지 않는다). 미접촉 제안(시스템
         소유)은 담지 않는다 — 새 데이터 기준으로 재제안돼야 하므로. ``apply_profile(confirm=False)``
-        로 적용해 값만 이월하고 전 행 미확정으로 착지시킨다(사람 재검토 강제).
+        로 적용해 사람 소유 값만 이월하고 미확정으로 착지시킨다(사람 재검토 강제).
 
         단 **내용 없는 touched 미확정 행은 담지 않는다**(리뷰 반영): 확정된 선언도
         아니고 이월할 값도 없는데 담으면, ``apply_profile`` 이 touched 를 재날인해 그 필드가
@@ -1041,7 +1081,7 @@ class MappingModel:
             mappings=[
                 r.to_mapping()
                 for r in self.human_owned_rows()
-                if r.confirmed or r.has_content()
+                if (r.confirmed or r.has_content()) and not r.auto_confirmed_exact
             ],
         )
 
@@ -1065,9 +1105,9 @@ class MappingModel:
         영향 없음). 기본(False)은 종전 거동(전 일치 행 확정)이라 다른 호출측은 불변이다.
 
         ``confirm=False``: 값(소스/유형/상수/서식)만 이월하고 **어느 행도 확정 도착시키지
-        않는다** — 전 행 미확정 초안. 템플릿/데이터 키가 바뀐 재초안 경로가 쓴다: 같은
-        이름 컬럼이라도 새 데이터에선 의미가 다를 수 있어, 이전 확정을 확정 상태로 되살리면
-        사람 검토 없이 ``is_complete`` 를 통과해 저장·실행까지 흐른다(조용한 게이트 우회).
+        않는다** — 이월된 행은 미확정 초안. 템플릿/데이터 키가 바뀐 재초안 경로가 쓴다:
+        과거 확정을 그대로 되살리면 새 데이터의 의미 변화를 검토 없이 통과시킨다. 새 데이터의
+        원본 키와 정확히 일치하는 **시스템 소유** 행은 별도로 자동확정한다.
         기본(True)은 종전 거동(프로파일 로드=사람 확정 산출물 복원)이라 다른 호출측은 불변.
         """
         available = set(self.source_fields)
@@ -1085,6 +1125,8 @@ class MappingModel:
             # touched=True 로 라이브 재제안이 덮지 못하게 한다(칩-라이브 결정 12). 확정 여부는
             # confirm 인자·missing_source 가 따로 결정한다(값 복원 ≠ 확정 도착).
             row.touched = True
+            row.auto_confirmed_exact = False
+            row.manual_unconfirmed = False
             missing_source = (
                 require_source
                 and bool(m.source)

@@ -84,6 +84,32 @@ def test_from_suggestions_shapes_every_row_but_confirms_nothing():
     assert not model.is_complete()
 
 
+def test_from_suggestions_auto_confirms_only_exact_raw_key_not_alias_or_normalized_name():
+    schema = TemplateSchema(fields=[
+        FieldSpec("공고명", "text", 1, False),
+        FieldSpec("계약 금액", "amount", 1, False),
+    ])
+    model = MappingModel.from_suggestions(
+        schema, ["bidNtceNm", "공고명", "계약금액"],
+        {"bidNtceNm": "공고명", "공고명": "다른 이름"},
+    )
+    exact, normalized = model.rows
+    assert exact.source == "공고명" and exact.confirmed and exact.auto_confirmed_exact
+    assert normalized.source == "계약금액" and not normalized.confirmed
+    assert not normalized.auto_confirmed_exact
+
+
+def test_exact_auto_confirmation_does_not_hide_missing_record_value():
+    model = _pum_model(["품명"])
+    assert model.is_complete()
+    from hwpxfiller.gui.mapping_state import row_projection
+
+    projected = row_projection(model.rows[0], {}, index=0, source_fields=["품명"], has_records=True)
+    assert projected["row_state"] == "confirmed"
+    assert projected["state_label"] == "자동확정 · 이름 일치"
+    assert projected["preview_kind"] == "missing" and projected["preview"] == "〘미입력·품명〙"
+
+
 # --------------------------------------------------------- 명시성 게이트 회귀
 def test_is_complete_requires_every_single_row_confirmed():
     """한 행이라도 미확정이면 False, 전부 확정해야 True."""
@@ -125,7 +151,7 @@ def _pum_model(sources: "list[str]", field: str = "품명") -> MappingModel:
 
 
 def test_apply_active_sources_resuggests_system_rows_live():
-    """시스템 소유 행(미확정·미접촉)은 활성 헤더가 바뀌면 최선으로 라이브 재제안된다(결정 12).
+    """근사 제안은 활성 헤더가 바뀌면 최선으로 라이브 재제안된다(결정 12).
 
     '계약금액'은 활성에 '계약금액'이 있으면 그것(정확), 끄면 '계약_금액'(언더스코어
     표기 변형, 0.8889)으로 다시 선다 — 강등이 아니라 조용한 재제안(반환 빈 목록).
@@ -133,12 +159,13 @@ def test_apply_active_sources_resuggests_system_rows_live():
     차선을 표기 변형으로 두는 것이 #908 이후의 계약이다: 의미 축이 다른 근접쌍은
     임계 아래라 재제안 후보가 되지 못한다(그 자리는 빈 채로 남아 사람이 고른다).
     """
-    model = _pum_model(["계약금액", "계약_금액"], field="계약금액")
-    assert model.rows[0].source == "계약금액"                # 초기 최선(정확)
-    assert model.apply_active_sources(["계약_금액"]) == []    # 시스템 행 = 조용(R4 아님)
-    assert model.rows[0].source == "계약_금액"               # 활성 따라 재제안
+    model = _pum_model(["계약_금액"], field="계약금액")
+    assert model.rows[0].source == "계약_금액"               # 초기 근사 제안
     model.apply_active_sources(["계약금액", "계약_금액"])
-    assert model.rows[0].source == "계약금액"                # 복귀
+    assert model.rows[0].source == "계약금액"                # 라이브 정확 일치
+    assert model.rows[0].confirmed and model.rows[0].auto_confirmed_exact
+    assert model.apply_active_sources(["계약_금액"]) == ["계약금액"]  # 확정 소스 비활성은 loud
+    assert model.rows[0].source == "" and not model.rows[0].confirmed
 
 
 def test_apply_active_sources_r4_loud_demotes_human_owned_to_empty():
@@ -227,10 +254,46 @@ def test_carry_profile_includes_touched_unconfirmed_rows():
     ])
     model = MappingModel.from_suggestions(schema, ["품명", "수량", "규격"])
     model.set_source(1, "수량")                             # 수동 미확정(touched, 사람 소유)
-    model.rows[0].confirmed = True                         # 확정(사람 소유)
-    # 규격은 미접촉 제안(시스템 소유) → carry 제외(새 데이터 기준 재제안돼야 함).
+    model.set_confirmed(0)                                 # 사람이 직접 확정
+    # 규격은 미접촉 자동확정 → carry 제외(새 데이터 기준 다시 판정).
     carried = {m.template_field for m in model.carry_profile().mappings}
     assert carried == {"품명", "수량"}
+
+
+def test_exact_auto_confirmation_does_not_override_manual_unconfirm_on_resuggest():
+    model = _pum_model(["품명"])
+    row = model.rows[0]
+    assert row.confirmed and row.auto_confirmed_exact and not row.touched
+    model.set_confirmed(0, False)
+    assert not row.confirmed and row.touched and not row.auto_confirmed_exact
+    model.apply_active_sources(["품명"])
+    model.resuggest_row(0, ["품명"])
+    assert row.source == "품명" and not row.confirmed
+    assert [m.template_field for m in model.carry_profile().mappings] == ["품명"]
+
+
+def test_manual_unconfirm_survives_source_deactivation_and_reactivation():
+    model = _pum_model(["품명"])
+    model.set_confirmed(0, False)
+    assert model.apply_active_sources([]) == ["품명"]
+    assert model.rows[0].source == "" and model.rows[0].manual_unconfirmed
+    model.apply_active_sources(["품명"])
+    assert not model.rows[0].confirmed
+    model.revert_to_auto(0)
+    model.resuggest_row(0, ["품명"])
+    assert model.rows[0].confirmed and model.rows[0].auto_confirmed_exact
+
+
+def test_exact_auto_confirmation_is_dropped_by_manual_display_edit_and_bulk_unconfirm():
+    model = _pum_model(["품명"])
+    model.set_display(0, "text", "")
+    assert not model.rows[0].confirmed and not model.rows[0].auto_confirmed_exact
+    model.revert_to_auto(0)
+    model.resuggest_row(0, ["품명"])
+    assert model.rows[0].confirmed and model.rows[0].auto_confirmed_exact
+    model.unconfirm_all()
+    model.apply_active_sources(["품명"])
+    assert not model.rows[0].confirmed and model.rows[0].touched
 
 
 def test_carry_profile_skips_contentless_touched_rows():
@@ -744,8 +807,11 @@ def test_from_field_names_exact_autobinds_and_infers_type():
     by = {r.template_field: r for r in m.rows}
     assert by["계약명"].source == "계약명" and by["계약명"].type == "text"      # 정확 결속
     assert by["계약금액"].source == "계약금액" and by["계약금액"].type == "amount"  # 값 스니핑 우선(결정 5)
+    assert by["계약명"].confirmed and by["계약명"].auto_confirmed_exact
+    assert by["계약금액"].confirmed and by["계약금액"].auto_confirmed_exact
     # 완료일자: 근사 미결속(착수예정일과 정확 불일치) → 이름 휴리스틱(「일자」→date)이 유형을 정함.
     assert by["완료일자"].source == "" and by["완료일자"].type == "date"
+    assert not by["완료일자"].confirmed
 
 
 def test_from_field_names_suggestions_are_approximate_only():
