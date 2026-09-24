@@ -609,10 +609,11 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
    실행 코드·export·fallback은 남기지 않는다.
 */
 
-function JobTableScroll(props: { wrapRef: Obj; children?: ReactNode }): ReactNode {
+function JobTableScroll(props: { wrapRef: Obj; hidden?: boolean; children?: ReactNode }): ReactNode {
   return h("div", {
     className: "tbwrap jobtbwrap",
     id: "jobTableWrap",
+    hidden: props.hidden,
     "data-preserve-scroll": true,
     ref: props.wrapRef,
   }, props.children);
@@ -710,8 +711,11 @@ export function JobCandidates(props: { controller: JobReadController }): ReactNo
         h("button", { className: "btn sm", type: "button", id: "jobBrowseOpen", "data-browse-open": true,
           "data-busy-lock": true, onClick: (event: Obj) => { void props.controller.openBrowse(event.currentTarget); } }, "문서 작업 찾기…")) : null,
       h("span", { className: "cand-newwork" }, h(NewWorkButton as any, { snapshot, controller: props.controller })),
-      candidates.txt_note ? h("div", { className: "cand-sec", "data-cand-mode": "text" },
-        h("h3", { className: "cand-sec-cap" }, "온나라 기안"), h("span", { className: "muted" }, candidates.txt_note)) : null));
+      candidates.txt_note ? h("details", {
+        className: "cand-sec cand-txt-help", "data-cand-mode": "text",
+        open: !snapshot.has_job,
+      }, h("summary", { className: "cand-sec-cap" }, "온나라 기안"),
+      h("span", { className: "muted" }, candidates.txt_note)) : null));
 }
 
 function BrowseRow(props: { row: Obj; needs: boolean; snapshot: Obj; controller: JobReadController }): ReactNode {

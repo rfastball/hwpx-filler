@@ -83,7 +83,7 @@ function pairLine(snapshot: Obj): string {
  *  제목(부제와 같은 짝 한 줄)과 상태 pill 이고, **소유는 여전히 세션**이다 — 이름은 어느
  *  section patch 에도 속하지 않아 탭 이동의 자동 버리기가 건드리지 않는다(판정 L). */
 function EditorHead(props: { snapshot: Obj; controller: EditorController }): ReactNode {
-  const { snapshot } = props;
+  const { snapshot, controller } = props;
   const dirty = !!snapshot.dirty;
   const level = snapshot.is_draft ? "idle" : (dirty ? "warn" : "idle");
   /* 머리는 **상태만** 말한다(#945 F5). 저장 세대 카운터(`revisions`)는 규칙이 갈릴 때 오르는
@@ -93,8 +93,11 @@ function EditorHead(props: { snapshot: Obj; controller: EditorController }): Rea
     ? "아직 저장하지 않은 새 작업"
     : (dirty ? "저장하지 않은 변경" : "저장됨");
   return h("header", { className: "scr-head editor-head" },
+    h("button", {
+      className: "btn sm back", id: "editorBack", type: "button",
+      onClick: () => controller.guarded(() => controller.leaveTo(controller.returnScreen())),
+    }, "← 원래 업무로 돌아가기"),
     h("div", null,
-      h("p", { className: "eyebrow" }, "문서 작업 편집기"),
       /* 제목은 **읽기 전용 정체**다. 초안은 아직 이름이 없을 수 있어(고르기 전) 그때는
          이름 없는 새 작업이라고 말한다 — 빈 제목은 화면이 무엇을 편집 중인지 말하지 않는다. */
       h("h1", { id: "editorTitle" }, String(snapshot.name || "새 작업")),
@@ -195,8 +198,8 @@ function TemplatePool(props: {
  *  `"preview"` 면 아직 모델이 없어 순수 함수로 미리 세어 본 값이라 「자동 연결」이다.
  *  두 어휘를 하나로 뭉치면 카드가 「이미 확인했다」와 「확인하면 이렇게 될 것이다」를
  *  같은 말로 하게 된다. */
-function LinkCard(props: { snapshot: Obj; controller: EditorController }): ReactNode {
-  const { snapshot, controller } = props;
+function LinkCard(props: { snapshot: Obj }): ReactNode {
+  const { snapshot } = props;
   const pairing = (snapshot.pairing || {}) as Obj;
   const ready = !!pairing.ready;
   const blockReason = String(pairing.advance_block_reason || "");
@@ -223,11 +226,6 @@ function LinkCard(props: { snapshot: Obj; controller: EditorController }): React
           : createElement(Fragment, null, "확인 필요 ",
             h("span", { className: "n" }, "0")))
       : h("span", { className: "linkcard-placeholder" }, "왼쪽과 오른쪽에서 하나씩 고르세요.")),
-    h("button", {
-      className: "btn primary cta", id: "editorLinkCta", "data-act": "goto-binding",
-      disabled: !can, title: can ? "" : blockReason,
-      onClick: () => controller.guarded(() => controller.gotoSection("binding")),
-    }, "연결 확인으로"),
     !can && blockReason
       ? h("p", { className: "note quiet", id: "editorLinkBlock", style: { textAlign: "center" } },
         blockReason)
@@ -515,7 +513,7 @@ function PairingStage(props: {
     h("p", { className: "wsub" }, "템플릿과 데이터를 하나씩 고르세요."),
     h("div", { className: "pairzone", id: "editorPairZone" },
       h(TemplatePool as any, { tpl, snapshot, controller }),
-      h(LinkCard as any, { snapshot, controller }),
+      h(LinkCard as any, { snapshot }),
       h(DataPool as any, { pool, snapshot, controller })),
     h(TemplateGate as any, { snapshot, controller }));
 }
@@ -975,10 +973,6 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
   else if (snapshot.section === "binding") body = h(MappingStage as any, { snapshot, draft, view, controller });
   else body = h(NameSaveStage as any, { snapshot, draft, view, controller });
   return h("div", { className: "editor-shell" },
-    h("button", {
-      className: "btn sm back", id: "editorBack", type: "button",
-      onClick: () => controller.guarded(() => controller.leaveTo(controller.returnScreen())),
-    }, "← 원래 업무로 돌아가기"),
     h(EditorHead as any, { snapshot, controller }),
     h(ContextBanner as any, { snapshot }),
     h(StepHeader as any, { snapshot, controller }),

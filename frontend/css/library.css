@@ -22,21 +22,16 @@
 .library-facets{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;flex-basis:100%}
 .library-facets .pill[disabled]{opacity:.45;cursor:not-allowed}
 
-/* 2-pane — 공간 배분은 목록 길이에 끌려다니지 않는다(§19.6 마지막 문단). 넓고 높은 창에서만
-   두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는 스크롤하지 않는다. 그보다 좁거나 낮으면
-   세로 배치 + 페이지 스크롤로 퇴화한다(치수 921/760 은 계약 명문). */
+/* 2-pane — 남은 화면 높이를 셸 flex 가 배분한다. 좁은 창에서만 세로로 쌓는다. */
 .library-browser{display:grid;grid-template-columns:1fr;gap:var(--sp-16)}
 .library-list-pane{min-width:0}
 .library-detail{min-width:0;background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-surface);display:flex;flex-direction:column}
-@media(min-width:921px) and (min-height:760px){
+@media(min-width:921px){
   /* 좌:우 비율은 U6-F(#980)에서 **뒤집혔다**(동결 시안 장면 4): 상세가 연결 카드·4열 표·
      계획 줄을 지면서 넓은 쪽이 필요해졌고, 목록은 이름 한 줄+배지라 좁아도 읽힌다. */
   .library-browser{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
-    /* 상단 토바(구조 치수 · §19.12) + 화면 헤더·경보·도구줄이 먹는 높이를 뺀 나머지를 두
-       pane 이 나눠 갖는다. 토바 높이는 변수 단일 출처라 셸이 바뀌면 여기가 같이 따라온다 —
-       리터럴로 베끼면 셸 교체 때 페이지가 조용히 스크롤한다(§19.6 명문 위반, §10.9 판정 G). */
-    height:calc(100vh - var(--shell-topbar-h) - 250px);min-height:360px}
+    flex:1 1 220px;min-height:220px}
   .library-list-pane,.library-detail{height:100%;overflow:hidden;display:flex;flex-direction:column}
   .library-list{flex:1;overflow-y:auto;min-height:0}
   .lib-detail-scroll{flex:1;overflow-y:auto;min-height:0}
@@ -46,13 +41,17 @@
 
 /* 행 — 선택 버튼과 즐겨찾기는 형제다(§19.6: 선택 버튼 안에 중첩 금지) */
 .lib-row{display:flex;align-items:center;gap:var(--sp-4);border:1px solid var(--a-border);
-  border-left:3px solid transparent;border-radius:var(--rad-surface);
+  border-radius:0;
   padding:var(--sp-2) var(--sp-8) var(--sp-2) var(--sp-4);margin-bottom:var(--sp-6)}
 .lib-row:hover{background:var(--n-hover)}
-.lib-row.on{background:var(--a-sel);border-left-color:var(--a-primary)}
+.lib-row.on{background:var(--n-surface-alt);border-left-color:var(--a-primary)}
 .lib-row-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;
   border:0;background:none;font:inherit;text-align:left;cursor:pointer;padding:var(--sp-6) var(--sp-8)}
 .lib-row-name{font-weight:600;display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
+.lib-row-selected{display:inline-flex;align-items:center;gap:var(--sp-4);color:var(--a-primary);
+  font-size:var(--fs-caption);font-weight:600}
+.lib-row-selected svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
 .lib-row-meta{font-size:var(--fs-caption);color:var(--a-muted)}
 .lib-fav{flex:none;border:0;background:none;font:inherit;cursor:pointer;line-height:1;
   padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);color:var(--a-muted)}

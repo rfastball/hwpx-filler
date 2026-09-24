@@ -356,15 +356,16 @@ function MapRow(props: {
   },
   h("td", { className: "maptok", title: `{{${name}}}` }, name),
   h("td", null, h("div", { className: "mapsrc" },
-    row.own ? h("span", { className: `own ${row.own}`, title: OWN_LABEL[row.own] || "" }) : null,
-    h("select", {
+    h("div", { className: "mapsrc-primary" },
+      row.own ? h("span", { className: `own ${row.own}`, title: OWN_LABEL[row.own] || "" }) : null,
+      h("select", {
       className: "field sm mapsrc-sel", id: `wbMap-src-${key}`, "data-name": name,
       "aria-label": `${name} 데이터 열`, value: sourceValue,
       onChange: (event: Obj) => controller.guarded(
         () => controller.bindColumn(name, String(event.currentTarget.value))),
-    },
-    h("option", { value: "", key: "" }, "(직접 입력)"),
-    ...columns.map((column) => h("option", { value: column, key: column }, column))),
+      },
+      h("option", { value: "", key: "" }, "(직접 입력)"),
+      ...columns.map((column) => h("option", { value: column, key: column }, column)))),
     row.suggest && !isAuto ? h("button", {
       className: "btn sm mapsug", id: `wbMap-sug-${key}`, "data-name": name,
       title: "이름이 비슷한 열입니다",
@@ -461,11 +462,11 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
       + (lastCopy.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lastCopy.stamp_error}` : "")
     : (card.source_row ? `원본 ${card.source_row}행` : "");
   return h("div", { className: "wb-shell" },
-    h("button", {
-      className: "btn sm back", id: "wbBack", type: "button",
-      onClick: () => controller.guarded(() => controller.leaveTo("job")),
-    }, "← 문서 만들기로 돌아가기"),
     h("header", { className: "scr-head wb-head" },
+      h("button", {
+        className: "btn sm back", id: "wbBack", type: "button",
+        onClick: () => controller.guarded(() => controller.leaveTo("job")),
+      }, "← 문서 만들기로 돌아가기"),
       h("div", null,
         h("p", { className: "eyebrow", id: "wbMode" }, snapshot.mode_label || ""),
         h("h1", { id: "wbTitle" }, snapshot.job_name || "검토·복사"),

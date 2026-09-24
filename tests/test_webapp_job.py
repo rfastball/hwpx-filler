@@ -233,6 +233,7 @@ def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     assert snap["out_dir"].endswith("Results")
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 0  # 마운트 직후 선택 0건(§18.2 — 구 전체선택 개정)
+    assert "검증 완료. 생성할 수 있습니다." not in snap["preflight"]["text"]
     assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
     ctrl.dispatch("set_all", {})
     snap = ctrl.snapshot()
@@ -5469,6 +5470,12 @@ def test_slotless_configuration_verdict_controls_preflight_and_gate(
     ready = ctrl.refresh_panel()
     assert ready["gate"]["enabled"] is True
     assert ready["preflight"]["level"] == "ok"
+    assert "검증 완료. 생성할 수 있습니다." in ready["preflight"]["text"]
+    ctrl.dispatch("set_none", {})
+    unselected = ctrl.refresh_panel()
+    assert unselected["preflight"]["level"] == "ok"
+    assert unselected["gate"]["enabled"] is False
+    assert "검증 완료. 생성할 수 있습니다." not in unselected["preflight"]["text"]
 
 
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────

@@ -482,7 +482,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       const button = deps.doc.getElementById("jobGenBtn") as HTMLButtonElement | null;
       if (managedButton && !managedButton.disabled) managedButton.focus();
       else if (button && !button.disabled) button.focus();
-      else deps.doc.getElementById("jobResultZone")?.focus();
+      else deps.doc.getElementById("scr-job")?.focus();
     },
     async selectFailed(): Promise<void> {
       const res = await dispatch("select_failed", {});
@@ -777,12 +777,14 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const recordValidation = (wb.record_validation || {}) as Obj;
   const recordIssues = (recordValidation.issues || []) as Obj[];
   const recordAdvisory = String(recordValidation.advisory_notice || '');
+  const hasRecordStatus = recordIssues.length > 0
+    || Number(recordValidation.validated_count || 0) > 0 || !!recordAdvisory;
   const recordSection = wb.kind === 'context_error'
     ? createElement(Fragment, null,
         h('div', { className: 'zone-cap' }, '데이터 확인'),
         h('p', { className: 'danger capnote' },
           String(wb.detail || '현재 데이터를 확인할 수 없습니다.')))
-    : createElement(Fragment, null,
+    : !hasRecordStatus ? null : createElement(Fragment, null,
     h('div', { className: 'zone-cap' }, '데이터 확인'),
     recordIssues.length
       ? h('ul', { className: 'plain-list', id: 'jobRecordValidationIssues' },
@@ -798,10 +800,10 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
               issue.recovery_target as Obj,
             ); },
           }, '문제 위치 보기'))))
-      : h('p', { className: 'muted capnote' },
-          Number(recordValidation.validated_count || 0) > 0
-            ? `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`
-            : '확인할 데이터가 없습니다.'),
+      : Number(recordValidation.validated_count || 0) > 0
+        ? h('p', { className: 'muted capnote' },
+          `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`)
+        : null,
     // 비차단 고지(#957) — blocker 목록과 **다른 줄·다른 색**이다. 문안은 backend 가
     // 낸 것을 그대로 그린다(수치·판정을 여기서 다시 조립하지 않는다).
     recordAdvisory

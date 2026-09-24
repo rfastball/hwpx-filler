@@ -786,10 +786,6 @@ file = "frontend/src/screens/job_run.ts"
 text = "확인한 변경사항이 현재 작업에 적용되어 있습니다."
 
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
-text = "확인할 데이터가 없습니다."
-
-[[sentence]]
 file = "frontend/src/screens/job_run_state.ts"
 text = "다른 실행의 토큰입니다"
 

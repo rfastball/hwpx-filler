@@ -36,10 +36,9 @@ body{
 code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);
   background:var(--n-track);padding:1px var(--sp-4);border-radius:var(--rad-control)}
 
-/* ---- 앱 셸: 상단 토바 + 스테이지 (재작성 F2 PR-B — 좌 레일 사망, 지도 §10.9) ----
-   토바 높이 64px 은 **구조 치수**다(§19.12 명문): 라이브러리 2-pane 의 뷰포트 계산이 이 값을
-   빼 쓰므로 여기와 .library-browser 가 같은 숫자를 봐야 한다(--shell-topbar-h 단일 출처). */
+/* ---- 앱 셸: 상단 토바 + 스테이지 (재작성 F2 PR-B — 좌 레일 사망, 지도 §10.9) ---- */
 :root{--shell-topbar-h:64px}
+body.editor-open,body.workbench-open{--shell-topbar-h:44px}
 .app{display:grid;grid-template-rows:var(--shell-topbar-h) 1fr;height:100vh}
 .topbar{background:var(--n-header-bg);border-bottom:1px solid var(--a-border);
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
@@ -86,6 +85,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 
 /* ---- 스테이지 · 화면 전환 ---- */
 .stage{overflow:auto;padding:var(--sp-24) var(--sp-24) var(--sp-24);display:flex;flex-direction:column;min-height:0}
+body.editor-open .stage,body.workbench-open .stage{padding-top:var(--sp-12);padding-bottom:var(--sp-12)}
 #reactScreenStage{display:contents}
 .scr{display:none;flex:1;min-height:0;flex-direction:column}
 .scr.on{display:flex}

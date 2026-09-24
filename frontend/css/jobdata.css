@@ -5,6 +5,7 @@
    폭의 소유자는 **wrapper** 다: 아이콘이 붙으면서 `.run-row` 의 flex 자식이 input 에서 span 으로
    바뀌었으므로, 종전 `.jobsearch` 가 지던 flex·min·max 를 그 자리로 옮긴다. */
 .jobsearch-wrap{position:relative;display:flex;align-items:center;flex:1;min-width:180px;max-width:420px}
+.run-recs-head[hidden],.jobtbwrap[hidden],.fchips[hidden],.fstrip[hidden]{display:none}
 .jobsearch{flex:1;min-width:0;padding-left:calc(var(--sp-8) * 2 + 14px)}
 .jobsearch-ico{position:absolute;left:var(--sp-8);top:50%;transform:translateY(-50%);
   color:var(--a-muted);pointer-events:none;display:block}
@@ -25,6 +26,7 @@
 }
 .jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
   white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.jobtb td.col-text{max-width:360px}
 .jobtb tbody tr:last-child td{border-bottom:0}
 .jobtb tbody tr{cursor:pointer}
 .jobtb tbody tr:hover{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}

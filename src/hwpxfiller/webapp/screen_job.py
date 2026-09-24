@@ -637,13 +637,6 @@ class JobController:
             now=self._names_now,
             configuration_gate=configuration_gate,
         )
-        # 통과 문구는 링2 어휘로 갈아끼우되 **고지는 잃지 않는다**: 치명·경고가 하나도
-        # 없어도 검토 고지는 사용자가 봐야 하는 사실이라 통과 문구 아래 붙인다.
-        preflight_text = (
-            "\n".join((_PREFLIGHT_OK_TEXT, *status.preflight.notices))
-            if status.preflight.level == "ok"
-            else status.preflight.text
-        )
         drift_fields = self._drift_fields(status)
         # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
         # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
@@ -690,6 +683,18 @@ class JobController:
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
         workbench_observation = self._workbench_observation_zone(tmissing)
+        # 사전검증의 필드 판정이 통과해도 행 미선택·실행 준비 부족이면 생성 가능하다는
+        # 뜻이 아니다. 실제 생성 동사의 판정을 그대로 읽고, 비차단 고지는 보존한다.
+        if status.preflight.level == "ok":
+            can_create = status.gate.enabled and (
+                not managed_hwpx
+                or workbench_observation.get("create_action", {}).get("enabled") is True
+            )
+            preflight_text = "\n".join(
+                ((_PREFLIGHT_OK_TEXT,) if can_create else ()) + status.preflight.notices
+            )
+        else:
+            preflight_text = status.preflight.text
         name_tokens = (
             self.work.vm.unresolved_name_tokens() if status.gate.reason == "name_tokens" else []
         )

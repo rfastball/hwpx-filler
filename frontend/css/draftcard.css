@@ -11,7 +11,9 @@ table.dmap tr:last-child td{border-bottom:0}
 .dmap .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
 .dmap .maptok::after{content:"}}";color:var(--a-muted);font-weight:400}
 .mapsrc{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
-.mapsrc-sel{max-width:100%}
+.mapsrc-primary{display:flex;align-items:center;gap:var(--sp-6);width:100%;min-width:0}
+.mapsrc-sel{flex:1;min-width:8em;max-width:100%}
+#wbMapPanel .maptype-cell .field.sm{min-width:6.5em}
 /* 소유권 색 점(결정 33) — 카드 seg-fill.own-* 와 같은 색 언어(auto=파랑·man=초록). */
 .own{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
 .own.auto{background:var(--a-primary)} .own.man{background:var(--a-ok)}

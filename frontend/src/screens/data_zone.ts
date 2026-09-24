@@ -247,7 +247,7 @@ export function JobDataZone(props: {
     ? (hidden.length ? `전체 해제 (필터 밖 선택 ${hidden.length}행도 함께)` : "전체 해제")
     : (filter.active ? "보이는 행 모두 선택" : "전체 선택");
   return createElement(Fragment, null,
-    h("div", { className: "run-row run-recs-head", id: "jobRecsHead" },
+    h("div", { className: "run-row run-recs-head", id: "jobRecsHead", hidden: !snapshot.has_data },
       h("span", { className: "lbl", style: { fontWeight: 600 } }, "생성 대상 문서"),
       // 검색은 이 줄에서 **가장 자주 쓰이는 입력**인데 종전에는 라벨도 표지도 없는 좁은
       // 상자라 어디에 무엇을 넣는 자리인지 형태가 말하지 않았다. 돋보기는 장식이 아니라
@@ -286,7 +286,7 @@ export function JobDataZone(props: {
           void controller.zone("set_view_order", {
             value: viewOrder === "sourceAsc" ? "sourceDesc" : "sourceAsc",
           });
-        } }, "⇅ 정렬 순서"),
+        } }, `⇅ ${viewOrder === "sourceAsc" ? "원본 순서" : "원본 역순"}`),
       // 「펼쳐서 행 고르기」도 표를 여는 동사라 표 머리에 선다(U4 10번). **시트 안에서는
       // 그리지 않는다** — 자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의
       // 취소·적용이 이미 진다.
@@ -310,7 +310,7 @@ export function JobDataZone(props: {
         h("button", { "data-act": "unhide-cols", "data-busy-lock": true, "aria-label": "숨긴 열 모두 표시",
           onClick: () => { void controller.zone("unhide_columns", {}); } }, "×")) : null),
     h("div", { className: "jobtb-host", id: "jobTableHost" },
-      h(Scroll, { wrapRef },
+      h(Scroll, { wrapRef, hidden: !snapshot.has_data },
         h("table", { className: "tb jobtb" },
           h("thead", { id: "jobTableHead" },
             h("tr", null,
@@ -371,7 +371,10 @@ export function JobDataZone(props: {
               const column = columnMeta(table.columns[index]);
               return column.visible === false
                 ? null
-                : h("td", { className: `col-${column.kind || "text"}`, key: index },
+                : h("td", { className: `col-${column.kind || "text"}`, key: index,
+                  title: Array.isArray(cell)
+                    ? cell.map((part: unknown) => String(Array.isArray(part) ? part[0] ?? "" : "")).join("")
+                    : undefined },
                   h('span', {
                     id: `jobCell-${row.index}-${index}`, tabIndex: -1,
                   }, h(Segments as any, { value: cell })));

@@ -88,6 +88,10 @@ function createDom(options) {
   const app = new FakeEl("div");
   const topbar = new FakeEl("header");
   const body = new FakeEl("body");
+  const activeScreen = new FakeEl("section");
+  activeScreen.id = conf.activeScreen || "scr-job";
+  body.classList = { contains: (name) => !!conf.immersive && name === conf.immersive };
+  topbar.rectHeight = conf.topbarHeight === undefined ? 64 : conf.topbarHeight;
   const root = new FakeEl("html");
   root.attributes = {
     "data-theme": conf.dataTheme === undefined ? null : conf.dataTheme,
@@ -128,6 +132,7 @@ function createDom(options) {
       if (sel === ".app") return app;
       if (sel === ".shell-tool .d") return toolLabel;
       if (sel === ".topbar") return topbar;
+      if (sel === ".scr.on") return activeScreen;
       return null;
     },
     querySelectorAll(sel) {
@@ -317,16 +322,28 @@ test("personalization_persist — 기본 ↔ large/larger 대조와 본문 선�
     font_scale: "normal",
     root_px: "16px",
     topbar_h: 64,
+    active_screen: "scr-job",
+    immersive_body: false,
     master_width: 240,
     splitters: 0,
     body_overflow: false,
     selected_text: "선택 가능한 본문",
   });
-  /* 필드 순서까지 레거시 그대로. */
+  /* 셸 모드 신호와 높이는 같은 렌더 상태에서 온다. */
   assert.deepEqual(Object.keys(reportA.results.personalization_persist), [
-    "font_scale", "root_px", "topbar_h", "master_width",
+    "font_scale", "root_px", "topbar_h", "active_screen", "immersive_body", "master_width",
     "splitters", "body_overflow", "selected_text",
   ]);
+
+  const immersed = createCaps({ dom: {
+    activeScreen: "scr-workbench", immersive: "workbench-open", topbarHeight: 44,
+  } });
+  const runnerImmersed = createSelftestRunner(immersed.caps);
+  registerPersistenceGeometryProbes(runnerImmersed);
+  const reportImmersed = await settle(immersed.clock, runnerImmersed.run("full", {}));
+  assert.equal(reportImmersed.results.personalization_persist.active_screen, "scr-workbench");
+  assert.equal(reportImmersed.results.personalization_persist.immersive_body, true);
+  assert.equal(reportImmersed.results.personalization_persist.topbar_h, 44);
 
   for (const [scale, px] of [["large", "20px"], ["larger", "24px"]]) {
     const big = createCaps({ dom: { fontScale: scale, rootPx: px, masterWidth: " 333px " } });

@@ -57,8 +57,8 @@
          푸시('library', snapshot) 로 값만 채운다. 링1 HomeViewModel 의 보기 4종·작업
          방식 필터·검색·태그 facet·건강 번역을 그대로 소비 — VM 로직 재구현 없음.
          browser(좌) + detail(우) 2-pane 이고 공간 배분은 목록 길이에 끌려다니지 않는다:
-         넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
-         스크롤하지 않는다(library.css .library-browser). 이동은 주입된 Nav 로만 — 이 화면은 다른
+         폭 ≥921px 에서 두 pane 이 남은 높이를 나눠 각자 스크롤한다(library.css .library-browser).
+         이동은 주입된 Nav 로만 — 이 화면은 다른
          화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
     <!-- R4-04: 네 제품 화면의 유일한 정적 portal target. wrapper와 내부 DOM은
          ProductScreens가 한 React tree에서 mounted-hidden으로 소유한다. -->
