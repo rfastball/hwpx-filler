@@ -624,15 +624,19 @@ export function createEditorWorkbenchDataProbes() {
           .split(",").filter(Boolean);
         const axis = () => (toggle.getAttribute("aria-pressed") === "true"
           ? "sourceAsc" : "sourceDesc");
+        const label = () => toggle.textContent.trim();
         try {
           const snap = await Bridge.initial("job");
           out.control_before = axis() === snap.view_order && axis() === "sourceDesc";
+          out.label_before = label();
           toggle.click();
           await ctx.sleep(400);                       // 왕복 + push 재렌더 여유(app.py:2685)
           out.after_roundtrip = axis();               // 되돌아왔으면 'sourceDesc'
+          out.label_after_roundtrip = label();
           await Bridge.call("job", "set_view_order", { value: "sourceDesc" });
           await ctx.sleep(200);
           out.restored = axis();
+          out.label_restored = label();
         } catch (thrown) {
           /* 레거시는 `out.error` 를 담은 정상 모양 값을 그대로 내보냈다. 러너 계약은
              "프로브가 실패한 것"과 "프로브가 false 를 잰 것"을 가른다. */
@@ -1215,6 +1219,14 @@ export function createEditorWorkbenchDataProbes() {
           out.dirty_note = textOf(byId(ctx, "wbDirtyNote"));
           out.review = textOf(byId(ctx, "wbReview"));
           out.map_rows = ctx.doc.querySelectorAll("#wbMapPanel tbody tr").length;
+          out.owner_source_same_line = (() => {
+            const pair = ctx.doc.querySelector("#wbMapPanel .mapsrc-primary");
+            const dot = pair?.querySelector(".own");
+            const select = pair?.querySelector("select");
+            return !!dot && !!select
+              && Math.abs(dot.getBoundingClientRect().top + dot.getBoundingClientRect().height / 2
+                - (select.getBoundingClientRect().top + select.getBoundingClientRect().height / 2)) <= 2;
+          })();
           out.exact_badge = textOf(ctx.doc.querySelector("#wbMapPanel .map-auto-exact")).trim();
           out.exact_checked = !!ctx.doc.querySelector('#wbMapPanel [data-name="수신"].mapck:checked');
           out.declared = ctx.doc.querySelectorAll("#wbMapPanel .mapval-declared").length;
@@ -2827,7 +2839,8 @@ export function createEditorWorkbenchDataProbes() {
           const card = byId(ctx, "editorLinkCard");
           out.card_text = card.textContent.replace(/\s+/g, " ").trim();
           out.wire_live = byId(ctx, "editorWire").classList.contains("live");
-          out.cta_enabled = !byId(ctx, "editorLinkCta").disabled;
+          out.cta_enabled = !host.querySelector('.wfoot [data-act="next"]').disabled;
+          out.center_cta_absent = !byId(ctx, "editorLinkCta");
           /* 세션 행이 시트·헤더 행·행 수를 **다시 묻지 않고 재진술**한다 — 문장을 짓는
              자리가 Python 으로 갔고(③a), 여기서 되읽는 것은 그 값이 실제로 서는가다. */
           await ctx.waitFor(
@@ -2850,8 +2863,8 @@ export function createEditorWorkbenchDataProbes() {
               basis: "", advance_block_reason: "오른쪽에서 데이터를 고르세요.",
             },
           }));
-          await settleUntil(ctx, () => byId(ctx, "editorLinkCta").disabled);
-          out.half_cta_disabled = byId(ctx, "editorLinkCta").disabled;
+          await settleUntil(ctx, () => host.querySelector('.wfoot [data-act="next"]').disabled);
+          out.half_cta_disabled = host.querySelector('.wfoot [data-act="next"]').disabled;
           out.half_block_reason = textOf(byId(ctx, "editorLinkBlock"));
           out.error = null;
         } catch (thrown) {

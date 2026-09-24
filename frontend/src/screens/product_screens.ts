@@ -157,7 +157,7 @@ function JobScreen(
                 h(JobContentSelection as any, { controller: props.slotContent })),
               h("div", { className: "zone", id: "jobWorkbenchStatusZone" },
                 h(JobWorkbenchStatus as any, { controller: jobRun })),
-              h("div", { className: "zone" },
+              h("div", { className: "zone", id: "jobRunZone" },
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),
                 h("div", { className: "run-row", id: "jobOutFolderRow" },

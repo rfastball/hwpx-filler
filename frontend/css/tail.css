@@ -44,15 +44,16 @@
    (위 body.workbench-open) 본체만 2열이다. 좌 = 필드 연결(미저장 변경), 우 = 채운 모습/원문.
    좁은 폭에서는 1열로 퇴화한다 — 두 pane 이 서로를 밀어 어느 쪽도 못 읽는 것보다 낫다. */
 .wb-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
-.wb-shell .back{align-self:flex-start}
-.wb-head{padding:0;border:0;background:none}
+.wb-head{padding:0;border:0;background:none;align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-4)}
+.wb-head>.back{flex:none}
+.wb-head>div:first-of-type{flex:1;min-width:0}
 .wb-head .eyebrow{font-size:var(--fs-caption);color:var(--a-muted);margin:0;letter-spacing:.02em}
 .wb-stats{display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap}
 .wb-stats span{font-size:var(--fs-caption);color:var(--a-muted)}
 .wb-stats strong{color:var(--a-text);font-variant-numeric:tabular-nums}
 /* 두 pane 은 **끝단을 맞춘다**(U2 §2.2) — align-items:start 면 좌우가 각자 내용 높이로
    서서 아래 끝이 어긋나고, 캡이 서로 다른 두 스크롤 표면이 층계처럼 읽힌다. */
-.wb-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+.wb-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
   gap:var(--sp-4);align-items:stretch}
 /* 1열 퇴화에서는 두 면이 **세로로 줄을 선다** — 남는 높이를 나눠 가질 수 없으므로 각자
    내용 높이(캡 있음)로 서고 넘치면 본체가 스크롤한다. 두 면의 flex 되돌림은 아래 기본
@@ -60,6 +61,10 @@
    남아 면이 min-height 로 접힌다). */
 @media (max-width:920px){.wb-body{grid-template-columns:minmax(0,1fr);
   grid-auto-rows:max-content;overflow:auto}}
+@media (max-width:1400px){
+  html:is([data-font-scale="large"],[data-font-scale="larger"]) .wb-body{
+    grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;overflow:auto}
+}
 .wb-left,.wb-right{min-width:0;min-height:0;display:flex;flex-direction:column;gap:var(--sp-6)}
 .wb-left .zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-4)}
 /* 스크롤포트는 **남는 높이를 받는다** — 고정 캡이 아니다(리뷰 R1). 캡(420px)은 창이 낮아지면
@@ -90,6 +95,10 @@
 /* 1열 퇴화의 높이 되돌림(위 .wb-body 미디어 규칙의 짝) — 두 면이 세로로 줄을 서면 나눠 가질
    남는 높이가 없으므로 각자 캡을 들고, 본체가 스크롤한다. */
 @media (max-width:920px){#wbMapPanel,.wb-preview{flex:none;max-height:320px}}
+@media (max-width:1400px){
+  html:is([data-font-scale="large"],[data-font-scale="larger"]) #wbMapPanel,
+  html:is([data-font-scale="large"],[data-font-scale="larger"]) .wb-preview{flex:none;max-height:320px}
+}
 /* 토큰 조각은 소유 규칙 행으로 가는 손잡이다 — 손가락 표지는 그 행동이 **있는 곳에만** 둔다
    (같은 페인터를 쓰는 「기안」 카드에서는 눌러도 갈 곳이 없어 표지가 거짓말이 된다). */
 .wb-preview [data-token]{cursor:pointer}
@@ -107,5 +116,6 @@
 .cand-sec+.cand-sec,.browse-sec+.browse-sec{margin-top:var(--sp-6)}
 .cand-sec-cap,.browse-sec-cap{margin:0;font-size:var(--fs-caption);font-weight:600;
   color:var(--a-muted);letter-spacing:.02em}
+.cand-txt-help > summary{cursor:pointer}
 .cand-mode{color:var(--a-muted)}
 .cand-mode::after{content:" · "}

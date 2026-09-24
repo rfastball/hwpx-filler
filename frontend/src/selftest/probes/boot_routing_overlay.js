@@ -846,7 +846,8 @@ export function createBootRoutingOverlayProbes() {
           for (let turn = 0; turn < 12 && box.scrollHeight <= box.clientHeight; turn += 1) {
             await ctx.sleep(0);
           }
-          box.scrollTop = 60;                 // 오버플로 안 — 클램프 없이 남을 값
+          box.scrollTop = 60;
+          out.editor_scroll_before = box.scrollTop; // 창 높이에 따른 실제 착지값
           ctx.push("editor", snap);           // 실 재렌더 — 스크롤이 가로질러 살아야
           await ctx.sleep(0);
           out.editor_scroll_top = doc.getElementById("editor-body").scrollTop;

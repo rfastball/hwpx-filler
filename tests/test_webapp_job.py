@@ -233,6 +233,7 @@ def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     assert snap["out_dir"].endswith("Results")
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 0  # 마운트 직후 선택 0건(§18.2 — 구 전체선택 개정)
+    assert "검증 완료. 생성할 수 있습니다." not in snap["preflight"]["text"]
     assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
     ctrl.dispatch("set_all", {})
     snap = ctrl.snapshot()
@@ -2201,6 +2202,26 @@ def test_record_names_follow_selection_not_invented(tmp_path):
     assert rows[1]["name"] == "" and rows[1]["selected"] is False   # 미선택 = 이름 없음
     # 남은 1건만 생성하면 그 파일이 doc-001 — 미리보기도 같은 사실을 말한다.
     assert rows[0]["name"] == "doc-001.hwpx" and rows[0]["selected"] is True
+
+
+def test_record_names_keep_the_selection_used_for_mapping_during_refresh(tmp_path, monkeypatch):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("set_none", {})
+    assert ctrl.work.vm is not None
+    original_refresh = ctrl.work.vm.refresh
+
+    def select_during_refresh(*args, **kwargs):
+        status = original_refresh(*args, **kwargs)
+        ctrl.data.selection.set_all()
+        return status
+
+    monkeypatch.setattr(ctrl.work.vm, "refresh", select_during_refresh)
+    rows = ctrl.refresh_panel()["records"]
+    assert [(row["name"], row["selected"]) for row in rows] == [("", False), ("", False)]
+    rows = ctrl.refresh_panel()["records"]
+    assert [row["name"] for row in rows] == ["doc-001.hwpx", "doc-002.hwpx"]
 
 
 def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
@@ -5469,6 +5490,12 @@ def test_slotless_configuration_verdict_controls_preflight_and_gate(
     ready = ctrl.refresh_panel()
     assert ready["gate"]["enabled"] is True
     assert ready["preflight"]["level"] == "ok"
+    assert "검증 완료. 생성할 수 있습니다." in ready["preflight"]["text"]
+    ctrl.dispatch("set_none", {})
+    unselected = ctrl.refresh_panel()
+    assert unselected["preflight"]["level"] == "ok"
+    assert unselected["gate"]["enabled"] is False
+    assert "검증 완료. 생성할 수 있습니다." not in unselected["preflight"]["text"]
 
 
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────

@@ -787,6 +787,9 @@ async function runJobInherited(ctx) {
   await pushAndSettle(ctx, "job", empty);
   out.no_data_exit_shown = isShown(ctx, doc.getElementById("jobNoDataExit"));
   out.no_data_exit_target = !!doc.getElementById("jobPickInLibrary");
+  out.no_data_controls_hidden = !isShown(ctx, doc.getElementById("jobRecsHead"))
+    && !isShown(ctx, doc.getElementById("jobTableWrap"));
+  out.no_data_instruction_shown = isShown(ctx, doc.getElementById("jobTableEmpty"));
 
   return { job_inherited: out };
 }
@@ -886,6 +889,7 @@ async function runJobMirror(ctx) {
   enterSyntheticJob(services);
   let snap = mirrorSnapshot();
   await pushAndSettle(ctx, "job", snap);
+  out.full_cell_title = doc.getElementById("jobCell-0-0")?.parentElement?.title || "";
 
   /* `#jobMirror` 는 **danger 배너 전용 host** 다(#364). 존 재편에서 그 위에 섰던 캡션과
      요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)이 죽었으므로 여기서 재는 것은 **부재**다
@@ -1350,6 +1354,7 @@ async function runJobResult(ctx) {
   doc.getElementById("jobResultClose").click();
   await settle(ctx);
   out.closed = doc.getElementById("jobResult").hidden;
+  out.idle_zone_hidden = displayOf(ctx, doc.getElementById("jobResultZone")) === "none";
   out.close_focus = activeId(doc);
   /* 실행 기록 상자는 퇴역했다(#957) — 결과 존 아래에 그 자리가 **없다**는 사실을 단언한다.
      남아 있으면 착지 재라우팅이 반만 된 것이다. */

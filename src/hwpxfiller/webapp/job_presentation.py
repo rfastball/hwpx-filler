@@ -286,7 +286,6 @@ def record_table_rows(
     *,
     records: list[dict],
     display_order: list[int],
-    selected_indices: set[int],
     selected_model_indices: list[int],
     mapped_records: list[dict],
     filename_pattern: str | None,
@@ -304,7 +303,7 @@ def record_table_rows(
     return record_rows(
         records=records,
         display_order=display_order,
-        selected_indices=selected_indices,
+        selected_indices=set(selected_model_indices),
         planned_filenames=names,
         identity=identity_summary(records, filename_tokens=filename_source_columns),
     )

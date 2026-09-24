@@ -499,6 +499,9 @@ class TestWebSelftestGate:
         assert v["control_before"] is True, "양성대조 실패 — 렌더가 컨트롤 상태를 안 씁니다."
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
+        assert v["label_before"].endswith("원본 역순")
+        assert v["label_after_roundtrip"].endswith("원본 순서")
+        assert v["label_restored"].endswith("원본 역순")
 
     def test_range_draft_refuses_to_open_without_data(self, selftest_result: dict) -> None:
         """재작성 F3 — 데이터 없이 여는 범위 편집기는 **거절**이고, 초안은 서지 않는다.
@@ -746,12 +749,16 @@ class TestWebSelftestGate:
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
         # 실 편집기 본문(#editor-body, data-preserve-scroll)의 스크롤이 실 재렌더를 가로질러
         # 유지된다(#28) — 구 「기안」 토큰 패널 프로브의 승계(F6 PR-B). 합성 픽스처가 아닌
-        # shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이 0 으로 리셋하므로,
-        # 설정값 60 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
+        # shipped render() 경로의 end-to-end 보존 검증. 창 높이에 따라 60px 요청이
+        # 실제 최대 스크롤 위치로 클램프되므로, 재렌더 직전 착지값과 비교한다.
         p = selftest_result["preserve_real"]
+        before = p["editor_scroll_before"]
         top = p["editor_scroll_top"]
-        assert isinstance(top, (int, float)) and abs(top - 60) < 2, (
-            f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
+        assert isinstance(before, (int, float)) and before > 0, (
+            f"실화면 스크롤 검증용 넘침이 없습니다: {before!r}"
+        )
+        assert isinstance(top, (int, float)) and top > 0 and abs(top - before) < 2, (
+            f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {before!r} → {top!r}"
         )
 
     # (test_draft_expansion_sheets_move_and_restore_live_dom 삭제 — draft_sheets 프로브가
@@ -766,6 +773,7 @@ class TestWebSelftestGate:
         # danger 배너 host 하나다. 사라지는 변경이라 음성 단언이 진다(되살아나면 빨강),
         # 그리고 host 자신은 사전검증 **바로 뒤**에 살아 있어야 한다(양성 한 쌍).
         j = probe(selftest_result, "job_mirror")
+        assert j["full_cell_title"] == "전산장비", "필터 강조 조각의 전체 값이 표에서 사라졌습니다."
         assert j.get("error") is None, f"위험 배너 프로브 예외: {j.get('error')!r}"
         assert j["mirror_host_present"] is True, "위험 배너 host(#jobMirror)가 없습니다."
         assert j["mirror_follows_preflight"] is True, (
@@ -833,7 +841,8 @@ class TestWebSelftestGate:
         assert j["folder_hidden_while_running"] and j["folder_shown_on_result"], j
         # 닫기 뒤 포커스는 **실 DOM 에 착지**한다 — body 낙하가 결함이다. 게이트가 닫혀
         # 있으면 생성 버튼이 disabled 라 구획 자신이 받는다(방금 있던 문맥 유지).
-        assert j["closed"] and j["close_focus"] in {"jobGenBtn", "jobResultZone"}, j
+        assert j["closed"] and j["idle_zone_hidden"], j
+        assert j["close_focus"] in {"jobGenBtn", "scr-job"}, j
         # 실행 기록 상자는 퇴역했다(#957) — 결과 존 아래에 그 자리가 **없다**.
         assert j["runlog_absent"], j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
@@ -1246,6 +1255,9 @@ class TestWebSelftestGate:
         )
         assert j["no_data_exit_shown"] is True and j["no_data_exit_target"] is True, (
             f"데이터·작업이 둘 다 없는데 「문서 작업」 출구가 없습니다: {j!r}"
+        )
+        assert j["no_data_controls_hidden"] and j["no_data_instruction_shown"], (
+            f"데이터가 없을 때 표 조작이 남거나 빈 상태 안내가 사라졌습니다: {j!r}"
         )
 
     # (test_draft_list_groups_render_and_menu · test_milestone_l_draft_density_duo_cap_and_fallback ·
@@ -2041,7 +2053,9 @@ class TestWebSelftestGate:
             f"연결 카드 수치(basis=preview 어휘): {e['card_text']!r}"
         )
         assert e["wire_live"] is True, "둘 다 골랐는데 연결선이 살아나지 않았습니다."
-        assert e["cta_enabled"] is True, "둘 다 골랐는데 「연결 확인으로」가 잠겨 있습니다."
+        assert e["cta_enabled"] is True and e["center_cta_absent"], (
+            "고르기 단계의 다음 동사는 하단 하나여야 하며, 둘 다 고르면 열려야 합니다."
+        )
         # 「현재 데이터」 카드는 목록 **맨 위의 행 하나**로 접혔다(고르기 열 공용 ③a) —
         # 문장을 짓는 자리가 Python(`pairing.data_row.sub`)이고 표면은 그리기만 한다.
         assert "시트: 물품" in e["current_restated"], (
@@ -2108,7 +2122,7 @@ class TestWebSelftestGate:
         assert e["pool_sheet_closed"] is True, "상세 시트가 닫히지 않았습니다."
         # ⑦ 반쪽만 고르면 전진 게이트가 막고 **Python 이 낸 사유**가 선다.
         assert e["half_cta_disabled"] is True, (
-            "데이터 없이 「연결 확인으로」가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."
+            "데이터 없이 하단 다음 동사가 열려 있습니다 — 1단계 게이트가 데이터를 요구합니다."
         )
         assert "오른쪽에서 데이터를 고르세요" in e["half_block_reason"], (
             f"전진 차단 사유가 Python 문안 그대로가 아닙니다: {e['half_block_reason']!r}"
@@ -2151,8 +2165,10 @@ class TestWebSelftestGate:
         # 폭 스플리터 DOM 소비처 0 — 마지막 소비처 「기안」도 사망(F6 PR-B). 설정값(master_width)
         # 영속·CSS 변수 배선은 남아 다음 master-detail 표면이 그대로 쓴다.
         assert p["master_width"] == 240 and p["splitters"] == 0
-        # 토바 높이는 라이브러리 2-pane 계산이 소비하는 구조 치수 — 실 엔진 실측으로 핀한다.
-        assert p["topbar_h"] == 64, f"토바 높이가 구조 치수(64px)와 다릅니다: {p!r}"
+        # 토바 높이는 활성 화면의 일반/몰입 셸 치수 — 실 엔진 실측으로 핀한다.
+        immersive = p["active_screen"] in {"scr-editor", "scr-workbench"}
+        assert p["immersive_body"] is immersive, f"화면과 몰입 셸 상태가 다릅니다: {p!r}"
+        assert p["topbar_h"] == (44 if immersive else 64), f"화면별 토바 높이가 다릅니다: {p!r}"
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
         assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
 
@@ -2178,6 +2194,7 @@ class TestWebSelftestGate:
         assert w["save_enabled"] is True
         # 좌 pane: 확정-비움은 입력칸이 아니라 **선언 표지**로 그려진다(결정 12).
         assert w["map_rows"] == 2 and w["declared"] == 1
+        assert w["owner_source_same_line"], "소유권 점이 데이터 열 선택기와 다른 줄에 섰습니다."
         assert w["exact_badge"] == "자동확정 · 이름 일치" and w["exact_checked"]
         # 우 pane: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
         assert w["card_fill"] == 1 and w["card_blank"] == 1

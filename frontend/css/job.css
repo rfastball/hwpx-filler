@@ -16,7 +16,8 @@
    규칙으로 접는다 — 술어가 거짓이면 React 는 children 을 비울 뿐이고, `.zone` 의 안쪽 여백과
    `.zone + .zone` 구분선은 그대로 남아 **빈 상자**가 선다. 숨긴다고 판정해 놓고 자리만 남기면
    사용자가 보는 것은 「사라진 구획」이 아니라 「비어 있는 구획」이다. */
-#jobTplChangeZone:empty,#jobContentSelectionZone:empty{display:none}
+#jobTplChangeZone:empty,#jobContentSelectionZone:empty,#jobWorkbenchStatusZone:empty{display:none}
+#jobRunZone:has(#jobOutFolderRow:empty){display:none}
 /* 사전검증 slot은 기존 조판에 새 상자를 만들지 않는다. */
 #jobPreflight{display:contents}
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
@@ -101,6 +102,7 @@
   border:1px solid var(--a-border);background:var(--a-card);
   display:flex;flex-direction:column;gap:var(--sp-8)}
 .result3[hidden]{display:none}
+.job-result-zone:has(#jobResult[hidden]),.job-delivery-zone:empty{display:none}
 .result3[data-level="ok"]{border-color:color-mix(in srgb,var(--a-ok) 46%,var(--a-border))}
 .result3[data-level="warn"]{border-color:color-mix(in srgb,var(--a-warn) 52%,var(--a-border))}
 .result3[data-level="danger"]{border-color:color-mix(in srgb,var(--a-danger) 52%,var(--a-border))}

@@ -221,7 +221,12 @@ function LibraryRow(props: { row: Obj; selected: string; controller: LibraryCont
       "aria-current": active ? "true" : "false", "data-busy-lock": true,
       onClick: () => { void controller.axis("select_work", { name: row.name }); },
     },
-    h("span", { className: "lib-row-name" }, row.name, h(HealthPill as any, { health: row.health }), row.data_bound === false ? h("span", { className: "pill warn", title: "데이터를 연결해야 문서를 만들 수 있습니다." }, "연결 필요") : null),
+    h("span", { className: "lib-row-name" }, row.name,
+      active ? h("span", { className: "lib-row-selected" },
+        h("svg", { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" },
+          h("path", { d: "M4 10l4 4 8-9" })), "선택됨") : null,
+      h(HealthPill as any, { health: row.health }),
+      row.data_bound === false ? h("span", { className: "pill warn", title: "데이터를 연결해야 문서를 만들 수 있습니다." }, "연결 필요") : null),
     h("span", { className: "lib-row-meta" }, row.mode_label)),
     h("button", {
       className: "lib-fav", "data-fav": row.name,

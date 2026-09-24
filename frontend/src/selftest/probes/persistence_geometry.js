@@ -363,8 +363,8 @@ export function createPersistenceGeometryProbes() {
       after: ["theme_persist"],
       afterReason: "레거시 드라이버의 마지막 두 줄 순서 그대로.",
       note:
-        "topbar_h 는 라이브러리 2-pane 계산이 소비하는 **구조 치수**라 실측으로 핀한다"
-        + "(리터럴 드리프트 = 페이지가 조용히 스크롤하는 자리).",
+        "topbar_h 는 화면 상태별 셸 치수다. 일반 화면 64px, 몰입 화면 44px 을"
+        + " 현재 활성 화면과 함께 되읽는다.",
       run(ctx) {
         const doc = ctx.doc;
         const win = ctx.win;
@@ -388,6 +388,8 @@ export function createPersistenceGeometryProbes() {
             font_scale: root.getAttribute("data-font-scale"),
             root_px: win.getComputedStyle(root).fontSize,
             topbar_h: Math.round(doc.querySelector(".topbar").getBoundingClientRect().height),
+            active_screen: doc.querySelector(".scr.on")?.id || "",
+            immersive_body: body.classList.contains("editor-open") || body.classList.contains("workbench-open"),
             master_width: parseFloat(win.getComputedStyle(app).getPropertyValue("--master-width")),
             splitters: doc.querySelectorAll(".master-splitter").length,
             body_overflow: body.scrollWidth > body.clientWidth + 1,

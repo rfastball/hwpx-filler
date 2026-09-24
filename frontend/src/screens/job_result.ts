@@ -127,8 +127,8 @@ export function JobResultZone(props: { controller: JobRunController }): ReactNod
 
   // 진행 중은 결과 3태를 덮지 않는다 — 같은 구획에 `running` 태로 서고, 끝나면 Python 이
   // 낸 태가 그 자리를 받는다.
-  const shown: Obj | null = run.running && progress !== null
-    ? { running: true, title: `생성 중… ${progress.done}/${progress.total}`, summary: "" }
+  const shown: Obj | null = run.running
+    ? { running: true, title: progress ? `생성 중… ${progress.done}/${progress.total}` : "생성 중…", summary: "" }
     : r;
 
   const owner = String(snapshot?.last_run_job ?? "");

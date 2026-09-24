@@ -231,10 +231,10 @@ def run(ctx: ScenarioContext) -> dict:
     # 「현재 데이터」 카드 승계처). 연결 카드만 보면 그 행이 사라져도 초록이라 함께 잰다.
     s.wait(
         "document.querySelector('#editorLinkCard').textContent.includes('⟷')"
-        " && document.querySelector('#editorLinkCta').disabled === false"
+        " && document.querySelector('#scr-editor .wfoot [data-act=\"next\"]').disabled === false"
         " && !!document.querySelector('#editorDataList .pitem[data-key=\"session\"]')",
         "연결 카드·전진 게이트 개방·현재 데이터 행",
-        requires=["#editorLinkCard", "#editorLinkCta", "#editorDataList"],
+        requires=["#editorLinkCard", '#scr-editor .wfoot [data-act="next"]', "#editorDataList"],
     )
     # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 연결 카드는 두 열 사이라 기본
     # 스크롤에서 폴드 밖일 수 있고, 위 조건은 그 상태에서도 참이다. 겨눠 스크롤한다.
@@ -551,9 +551,9 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기(TXT)")
     s.wait(
-        "document.querySelector('#editorLinkCta').disabled === false",
+        'document.querySelector(\'#scr-editor .wfoot [data-act="next"]\').disabled === false',
         "TXT 연결 카드·전진 게이트 개방",
-        requires=["#editorLinkCta"],
+        requires=['#scr-editor .wfoot [data-act="next"]'],
     )
     s.click_text("#scr-editor", "다음 ▶")
     s.wait(
@@ -698,9 +698,9 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#editorPoolBrowse", what="파일 찾아보기(오류 연습)")
     s.wait(
-        "document.querySelector('#editorLinkCta').disabled === false",
+        'document.querySelector(\'#scr-editor .wfoot [data-act="next"]\').disabled === false',
         "연결 카드·전진 게이트 개방(오류 연습)",
-        requires=["#editorLinkCta"],
+        requires=['#scr-editor .wfoot [data-act="next"]'],
     )
     s.click_text("#scr-editor", "다음 ▶")
     s.wait(
