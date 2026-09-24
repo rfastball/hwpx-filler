@@ -23,7 +23,7 @@ from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
-from hwpxfiller.gui.tutorial_state import Milestone
+from hwpxfiller.viewmodel.tutorial_state import Milestone
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator

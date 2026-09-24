@@ -412,7 +412,7 @@ class TemplateDetail:
         """TXT 템플릿 1건 — 상태·구간 항목이 없는 매체(:meth:`TemplateRow.from_text` 동형).
 
         배지의 처분도 같다: 말할 상태 축이 없으므로 그 자리에 **매체 표지**가 선다
-        (:data:`~hwpxfiller.gui.compile_badge.TEXT_BADGE_LABEL`). 종전에는 여기를 비우고
+        (:data:`~hwpxfiller.viewmodel.compile_badge.TEXT_BADGE_LABEL`). 종전에는 여기를 비우고
         표면이 ``media === "txt"`` 를 다시 판정해 pill 을 지었다 — 같은 상태를 두 곳이
         판정하던 자리라 배지를 링1 이 채운다.
         """
@@ -544,7 +544,7 @@ class TemplateRow:
         :meth:`select_block_reason` 의 재구현이라, 링1 문안을 고치면 TXT 밴드만 옛말을
         계속 하게 된다. 배지도 같은 이유로 여기서 채운다 — 이 행은 상태를 말할 축이 없어
         그 자리에 **매체 표지**가 서고, 그 어휘의 저자는
-        :data:`~hwpxfiller.gui.compile_badge.TEXT_BADGE_LABEL` 하나다.
+        :data:`~hwpxfiller.viewmodel.compile_badge.TEXT_BADGE_LABEL` 하나다.
         """
         return cls(
             name=library_display_name(root, path),

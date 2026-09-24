@@ -277,7 +277,7 @@ def test_pipeline_row_renders_kind_label_and_summary(tmp_path):
 # ------------------------------------------------------------ home KPI (헤드리스)
 def test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero(tmp_path):
     from hwpxfiller.external.job_store import JobRegistry
-    from hwpxfiller.gui.home_state import HomeViewModel
+    from hwpxfiller.viewmodel.home_state import HomeViewModel
 
     pool = DatasetPoolRegistry(tmp_path / "datasets")
     pvm = DatasetPoolViewModel(pool, source_factory=source_from_pool_item)

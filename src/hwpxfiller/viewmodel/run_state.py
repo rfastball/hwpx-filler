@@ -251,7 +251,7 @@ def unresolved_name_tokens_in(
     없다.
 
     **데이터 없이도 판정 가능한 작업 정의 수준의 계약 검사**라 ``Job`` 이 아직 없는 자리
-    (저장 게이트 :func:`~hwpxfiller.gui.job_editor_state.validate_save`, U4 계열4-4)에서도
+    (저장 게이트 :func:`~hwpxfiller.viewmodel.job_editor_state.validate_save`, U4 계열4-4)에서도
     같은 몸통을 부를 수 있게 프로파일 수준으로 둔다 — 저장 게이트가 이 술어를 다시 지으면
     같은 상태를 두 곳이 판정한다.
     """
@@ -372,7 +372,7 @@ class RunViewModel:
         없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
         작업에 데이터부터 고르게 하지 않는다.
 
-        ``review_notice`` 는 현재 **검토 요구**(:func:`~hwpxfiller.gui.review_state.review_requirement`)
+        ``review_notice`` 는 현재 **검토 요구**(:func:`~hwpxfiller.viewmodel.review_state.review_requirement`)
         다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 게이트 서열에
         끼지 않는다 — #957 정책 선회로 검토는 차단이 아니라 사전검증의 비차단 고지이고,
         승인이라는 해소 사건 자체가 없어져 「미승인분」이라는 축도 함께 사라졌다.
@@ -550,7 +550,7 @@ class RunViewModel:
         # 검토 고지(#957) — **차단하지 않는다**. 종전에는 같은 사실이 게이트를 닫고
         # 확인 면의 승인을 요구했지만, 신뢰 정책 선회로 확인의 자리는 결과 문서다.
         # ``long_paths`` 와 같은 비차단 선례를 따른다: 침묵도 차단도 아닌 사전 고지.
-        # 문안은 링1 단일 출처(:func:`~hwpxfiller.gui.review_state.review_notice_text`)이고
+        # 문안은 링1 단일 출처(:func:`~hwpxfiller.viewmodel.review_state.review_notice_text`)이고
         # 빈 값은 여기 없다 — 그 자리는 위의 "[경고] 빈 값 필드" 가 이미 진다.
         notice = review_notice_text(review_notice) if review_notice is not None else ""
         notices: "tuple[str, ...]" = ()

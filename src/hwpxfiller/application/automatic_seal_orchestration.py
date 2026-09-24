@@ -1,6 +1,6 @@
 """automatic qualification/seal orchestration 의 상태 모델 + 전이 규칙 (SX-01 · #724 §4 · #719 D2).
 
-**순수 상태 기계 계약**이다 — store/webapp/gui/타이머/스레드/실 seal 실행을 모른다. effective
+**순수 상태 기계 계약**이다 — store/webapp/viewmodel/타이머/스레드/실 seal 실행을 모른다. effective
 execution basis 가 바뀌었는지의 **판정은 backend**(:mod:`hwpxfiller.webapp.seal_execution_plan_product`
 의 ``_classify_currentness`` / :mod:`hwpxfiller.application.fresh_execution_observation`)가 소유하므로,
 이 모듈은 그 판정을 **이미 내려진 입력 플래그**(``effective_basis_changed: bool`` 등)로 받는다 —

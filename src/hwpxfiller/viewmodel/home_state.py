@@ -443,7 +443,7 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
 # 어휘 상수들)는 표면과 함께 철거됐다(#966) — 되살리지 않는다. **U6-F(#980)가 그 표를 다시
 # 세웠지만 이 산출자를 되살린 것이 아니다**: #966 이 걷은 것은 별도 라벨 사전을 든 사슬이었고,
 # 지금 상세가 그리는 것은 편집기 2단계와 **같은 링1 투영**
-# (:func:`~hwpxfiller.gui.mapping_state.row_projection`)·같은 라벨 상수를 두 번째 호스트가
+# (:func:`~hwpxfiller.viewmodel.mapping_state.row_projection`)·같은 라벨 상수를 두 번째 호스트가
 # 소비하는 것이라 「같은 상태를 두 곳이 판정」이 아니다. 스냅샷 키도 ``bindings`` 가 아니라
 # ``pairing_detail`` 이다 — 옛 이름을 되살리면 옛 사슬과 구별되지 않는다.
 

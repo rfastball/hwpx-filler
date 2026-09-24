@@ -142,7 +142,7 @@ def template_media(template_path: str) -> str:
 # **연결 상태는 이 축이 아니다**(지도 §10.15 판정 A): 경로가 빈 저작 중 작업은 여기서
 # ``unsupported`` 로 나오지만 그것은 "고장"이 아니라 "아직 방식을 정하지 않았다"이며, 그 사실을
 # 말하는 축은 ``template_path`` 의 존재 여부다. 라이브러리 필터의 「미연결 → hwpx」 귀속
-# (:func:`~hwpxfiller.gui.home_state.library_mode_of`)은 *필터 귀속 규칙*이지 방식 파생이
+# (:func:`~hwpxfiller.viewmodel.home_state.library_mode_of`)은 *필터 귀속 규칙*이지 방식 파생이
 # 아니다 — 서로 다른 것을 같게 부르는 것도 드리프트라서 두 함수를 합치지 않는다.
 WORK_MODE_HWPX = "hwpx_generate"
 WORK_MODE_TEXT = "text_review_copy"
@@ -194,7 +194,7 @@ def require_hwpx_template(template_path: str) -> str:
 def require_hwpx(job: "Job") -> "Job":
     """작업 템플릿이 **비어있지 않은데 hwpx 가 아니면** :class:`MediaMismatchError`, 아니면 그대로 반환.
 
-    3부 결정 13 진입 가드. 실행뷰(:class:`~hwpxfiller.gui.run_state.RunViewModel`)·「작업」 화면
+    3부 결정 13 진입 가드. 실행뷰(:class:`~hwpxfiller.viewmodel.run_state.RunViewModel`)·「작업」 화면
     등 hwpx 워크플로 진입점에서 부른다. 판정은 **두 부류를 가른다**:
 
     - **빈 ``template_path`` = 통과.** 템플릿을 아직 잇지 않은 hwpx **저작 중** 작업은 정당하게
@@ -267,7 +267,7 @@ class Job:
     # ``default_dataset_ref`` 키는 그대로 폐기 — 이름 축은 되살아나지 않는다.
     #
     # **필수 성분이다**: 빈 참조는 「데이터 연결 필요」 상태이고 편집기 저장 게이트가 그것을
-    # 요구한다(:func:`~hwpxfiller.gui.job_editor_state.validate_save`). 빈 값이 유효 상태로
+    # 요구한다(:func:`~hwpxfiller.viewmodel.job_editor_state.validate_save`). 빈 값이 유효 상태로
     # 남는 이유는 구판 파일과 앱 밖 편집분뿐이다 — 조용히 추측해 채우지 않고 시끄럽게 세운다.
     #
     # **규칙 축이 아니다**: :func:`rules_values` 에 들지 않는다. 결속은 실행 **입력**이지
@@ -476,7 +476,7 @@ def rules_values(job: "Job") -> "dict":
     **바꾸지 않는다**. 근거는 셋이고, 첫째는 지적이 든 결과가 실측되지 않는다는 것이다:
 
     - **홈을 옮겨도 미리보기·검토가 강제되지 않는다.** 템플릿은 **승인 축이 아니다**(§10.12 판정 E
-      — :data:`~hwpxfiller.gui.review_state.EVIDENCE_POLICY` 서열에 없다). 지문이 갈리면
+      — :data:`~hwpxfiller.viewmodel.review_state.EVIDENCE_POLICY` 서열에 없다). 지문이 갈리면
       ``review_requirement`` 는 ``risk_class=""`` 로 ``required=False`` 를 내고 ``structure_changed``
       **병기 1비트**만 붙는다. 실제 구조 게이트(:func:`~hwpxfiller.domain.fill_ledger.template_path_drift`)
       는 경로 문자열이 아니라 **템플릿 파일을 다시 읽어** 판정하므로, 같은 파일이 새 루트에 있는

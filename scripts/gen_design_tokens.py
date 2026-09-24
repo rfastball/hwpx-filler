@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """디자인 토큰 단일 출처 → 웹 CSS + 목업 CSS 재생성/검증.
 
-색·상태색은 ``src/hwpxfiller/gui/design_tokens.json`` 한 곳에만 손으로 둔다. 이 스크립트가
+색·상태색은 ``src/hwpxfiller/viewmodel/design_tokens.json`` 한 곳에만 손으로 둔다. 이 스크립트가
 그 값을 웹 프론트엔드 CSS(``frontend/css/tokens.css``)와 목업 HTML
 (``docs/UI_PROTOTYPE_APPB.html``)의 ``<gen:tokens>`` 영역(앱윈도 ``--a-*`` CSS 변수)에 찍는다.
 디자인 색 변경 = JSON 1곳 편집 + regen. 백엔드(domain/data)는 손대지 않는다.
@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TOKENS = ROOT / "src" / "hwpxfiller" / "gui" / "design_tokens.json"
+TOKENS = ROOT / "src" / "hwpxfiller" / "viewmodel" / "design_tokens.json"
 MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
 # 웹 프론트엔드(pywebview) CSS 변수 단일 출처(에픽 #20). 실앱은 스튜디오 셸 없이 앱윈도 자체라
 # --a-* 팔레트를 주 테마로 쓰고, 배지/중성 틴트까지 토큰에서 받는다(스파이크 임시색 교체).

@@ -16,7 +16,7 @@ from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.domain.authoring import compile_document
 from hwpxfiller.domain.fields import FieldDocument
 from hwpxfiller.domain.template_status import CompileState, TemplateStatus, compile_status
-from hwpxfiller.gui.mapping_state import PartialGate, gate_for_template
+from hwpxfiller.viewmodel.mapping_state import PartialGate, gate_for_template
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
@@ -190,7 +190,7 @@ def test_residual_structure_notation_blocks_and_is_not_ackable():
     안 섰다**는 뜻이다. 확정하면 모든 선택지가 든 문서가 나오므로 게이트는 열리지 않고
     수선 동선(변환)을 재진술한다. 토큰 이름 열거로 답할 수 없어 문안도 다르다.
     """
-    from hwpxfiller.gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
+    from hwpxfiller.viewmodel.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
 
     pkg, _ = compile_document(_pkg(
         "<hp:p><hp:run><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p>"

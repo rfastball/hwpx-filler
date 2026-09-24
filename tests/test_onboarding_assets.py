@@ -40,7 +40,7 @@ from hwpxfiller.domain.raw_data_record import SourceText
 from hwpxfiller.domain.schema import extract_schema
 from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
-from hwpxfiller.gui.mapping_state import MappingModel
+from hwpxfiller.viewmodel.mapping_state import MappingModel
 from hwpxfiller.external.template_inspection import (
     compile_structure_file,
     compile_template_file,

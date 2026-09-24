@@ -9,7 +9,7 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``docs/core-workflow.md``; 봉�
   blank 선언 제외)가 현재 데이터 ``fields`` 에 존재하는가. blank 선언 필드와 데이터의
   새 열은 호환을 깨지 않는다. v6 의 "required" 는 master 어휘로 ``source_keys()`` 다 —
   blank 매핑 제외가 이미 그 안에 있고, 상수 입력의 공백은 소스 요구가 아니라
-  :class:`~hwpxfiller.gui.run_state.RunViewModel` 빈값 게이트 소관이다.
+  :class:`~hwpxfiller.viewmodel.run_state.RunViewModel` 빈값 게이트 소관이다.
 - **``available`` 은 실행 완료를 보장하지 않는다** — 권위 판정은 작업 선택 뒤
   ``RunViewModel.refresh()`` (템플릿 구조 드리프트·빈 값·출력 폴더는 거기서 본다).
   전역 작업 건강(템플릿 파손 등)과도 섞지 않는다(§19.7) — 여기는 현재 데이터 호환성만.
@@ -227,7 +227,7 @@ def preferred_promotion(
 TAB_AVAILABLE = "available"
 TAB_NEEDS_ACTION = "needs_action"
 
-# 게이트 사유 축 — :class:`~hwpxfiller.gui.run_state.GateState` 의 ``reason`` 어휘를 이 층의
+# 게이트 사유 축 — :class:`~hwpxfiller.viewmodel.run_state.GateState` 의 ``reason`` 어휘를 이 층의
 # 게이트까지 넓힌 것이다(그쪽 값: drift·template_unreadable·name_tokens).
 #
 # **왜 이름이 필요한가**: 표면은 막힌 게이트 옆에 「어느 구획으로 가야 하는가」를 붙이는데,

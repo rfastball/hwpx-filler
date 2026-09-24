@@ -1376,7 +1376,7 @@ def test_work_mode_and_media_stay_two_axes():
     그 귀속을 방식 파생이 흉내 내면 세 축이 서로를 덮어쓴다.
     """
     from hwpxfiller.domain.job import WORK_MODE_UNSUPPORTED
-    from hwpxfiller.gui.home_state import MODE_HWPX, JobRow, library_mode_of
+    from hwpxfiller.viewmodel.home_state import MODE_HWPX, JobRow, library_mode_of
 
     unlinked = Job(name="저작중", template_path="")
     assert unlinked.media == "" and unlinked.work_mode == WORK_MODE_UNSUPPORTED
@@ -1417,7 +1417,7 @@ def test_require_hwpx_job_passes_hwpx_and_authoring_rejects_nonhwpx():
 
 def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
     """실행뷰: txt·비-hwpx 는 생성 시점 loud 거부(결정 13), hwpx·빈 템플릿(저작 중)은 관용."""
-    from hwpxfiller.gui.run_state import RunViewModel
+    from hwpxfiller.viewmodel.run_state import RunViewModel
 
     RunViewModel(Job(name="공고", template_path="/x/t.hwpx"), engine=make_hwpx_engine())  # hwpx 통과
     RunViewModel(Job(name="저작중", template_path=""), engine=make_hwpx_engine())          # 빈 템플릿(저작 중) 통과

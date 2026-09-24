@@ -11,7 +11,7 @@ import json
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.domain.job import MISSING_MARKER
-from hwpxfiller.gui.artifact_view_state import (
+from hwpxfiller.viewmodel.artifact_view_state import (
     ARTIFACT_PARTIAL_COVERAGE,
     observed_artifact_snapshot,
 )

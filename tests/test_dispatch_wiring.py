@@ -18,7 +18,7 @@ from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_tutorial import TutorialController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
-from hwpxfiller.gui.edit_session import EditSession
+from hwpxfiller.viewmodel.edit_session import EditSession
 from hwpxfiller.webapp.editor_session import EditorLoader
 from hwpxfiller.webapp.data_zone import JobDataSession
 

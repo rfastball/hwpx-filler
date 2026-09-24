@@ -102,7 +102,7 @@
 
 ## 8. census 게이트
 
-`docs/ui_copy_census.toml` 이 화면 문장의 **allowlist** 이고 `tests/repo_contract/test_ui_copy_census.py`(스캐너 `scripts/ui_copy_census.py`)가 실 소스와 다중집합으로 대조한다. 세는 범위는 문안 생산자다 — `src/hwpxfiller/gui/`·`src/hwpxfiller/webapp/`(docstring 제외)·`frontend/src/`(selftest 프로브 제외)·`frontend/js/`·`frontend/index.html`. 종결어미(`니다·세요·십시오·까요·네요·군요`)로 끝나면 문장으로 센다.
+`docs/ui_copy_census.toml` 이 화면 문장의 **allowlist** 이고 `tests/repo_contract/test_ui_copy_census.py`(스캐너 `scripts/ui_copy_census.py`)가 실 소스와 다중집합으로 대조한다. 세는 범위는 문안 생산자다 — `src/hwpxfiller/viewmodel/`·`src/hwpxfiller/webapp/`(docstring 제외)·`frontend/src/`(selftest 프로브 제외)·`frontend/js/`·`frontend/index.html`. 종결어미(`니다·세요·십시오·까요·네요·군요`)로 끝나면 문장으로 센다.
 
 - **새 문장은 기본 0 이다.** 게이트가 빨강이면 먼저 걷는다. 정말 남겨야 하면 allowlist 에 등재하되 **PR 에 사유를 쓴다** — 등재는 통과 절차가 아니라 기록이다.
 - 지운 문장은 allowlist 에서도 지운다. 재생성은 `uv run python scripts/ui_copy_census.py --write`.

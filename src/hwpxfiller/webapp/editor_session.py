@@ -22,7 +22,7 @@ from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..external.hwpx_package_io import read_hwpx_package
 from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
-from ..gui.edit_session import (
+from ..viewmodel.edit_session import (
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
     SECTION_FILENAME,
@@ -31,13 +31,13 @@ from ..gui.edit_session import (
     make_context,
     sections_for,
 )
-from ..gui.job_editor_state import (
+from ..viewmodel.job_editor_state import (
     BINDING_CONFIRM_LABEL,
     NAME_DERIVED_HINT,
     derive_job_name,
     preserved_meta,
 )
-from ..gui.mapping_state import (
+from ..viewmodel.mapping_state import (
     RAW_BLOCK_MESSAGE,
     MappingModel,
     gate_for_template,
@@ -45,8 +45,8 @@ from ..gui.mapping_state import (
     profile_source_vocabulary,
     row_projection,
 )
-from ..gui.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
-from ..gui.tutorial_state import Milestone
+from ..viewmodel.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
+from ..viewmodel.tutorial_state import Milestone
 from .editor_presentation import binding_head, data_column_options, pattern_preview, sample_rows
 from .output_folder_zone import output_folder_zone
 from .pool_column import session_data_row

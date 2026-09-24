@@ -1154,575 +1154,575 @@ file = "src/hwpxfiller/application/dataset_pool.py"
 text = "파일 경로가 비어 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "매핑 모델이 준비되지 않았습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "작업 '{}' 을(를) 저장했습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "작업 '{}' 을(를) 저장했습니다. 연결된 데이터를 다시 읽지 못했습니다: {}"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "작업 '{}' 파일이 편집을 여는 사이 손상돼 현재 내용을 확인할 수 없습니다. 지금 저장하면 그 자리를 이 편집 세션의 상태로 덮어씁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "작업 이름 '{}' 은(는) 이미 '{}' 작업입니다. 형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 기존 작업을 삭제한 뒤 다시 저장하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "편집 중 외부 변경: 작업 '{}' 이 이 편집 세션을 여는 사이 다른 곳에서 바뀌었습니다. 지금 저장하면 그 변경 내용을 이 편집 세션의 상태로 덮어씁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/edit_session.py"
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/filter_state.py"
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "'{}' 을(를) {}(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요({})."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/filter_state.py"
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 값 {} 을(를) 해석할 수 없습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/filter_state.py"
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 값 {} 을(를) 해석할 수 없습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/filter_state.py"
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 조건의 둘째 절 형식이 잘못됐습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/filter_state.py"
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 조건의 첫 절이 비어 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "매핑을 아직 확정하지 않았습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "지원하지 않는 작업 방식입니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "태그는 {축: 값} 사전이어야 합니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "태그의 축·값은 비어 있지 않은 문자열이어야 합니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿 구조가 확정 매핑과 달라졌습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿 파일을 찾을 수 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿에 확인할 항목이 남아 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿을 아직 연결하지 않았습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿을 읽을 수 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "템플릿을 읽을 수 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/home_state.py"
+file = "src/hwpxfiller/viewmodel/home_state.py"
 text = "파일명 패턴의 토큰을 채우지 못합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "'이름·저장' 단계에서 문서 파일 이름을 입력하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "'이름·저장' 단계에서 작업 이름을 입력하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "데이터를 연결해야 작업을 저장할 수 있습니다. '고르기' 단계에서 데이터를 고르세요."
 legacy = true
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "매핑이 현재 템플릿 스키마와 일치하지 않습니다. 템플릿을 다시 로드한 뒤 저장하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "모든 매핑 행을 확정해야 작업을 저장할 수 있습니다."
 legacy = true
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "작업 '{}' 의 저장 위치에 기존 작업 파일이 있습니다(손상되어 어떤 작업인지 확인할 수 없습니다). 계속하면 그 파일을 덮어씁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "작업 '{}' 이(가) 이미 있습니다. 계속하면 기존 작업을 덮어씁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "작업 이름 '{}' 은(는) 기존 작업 '{}' 과(와) 같은 파일로 저장됩니다. 계속하면 작업 '{}' 을(를) 덮어씁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "템플릿과 데이터 이름에서 미리 채웠습니다. 고쳐도 됩니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "파일명 패턴의 {} 에 채울 값이 없습니다. 매핑에서 그 항목을 연결하거나 패턴에서 지운 뒤 저장하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/job_editor_state.py"
+file = "src/hwpxfiller/viewmodel/job_editor_state.py"
 text = "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/mapping_state.py"
+file = "src/hwpxfiller/viewmodel/mapping_state.py"
 text = "구간 표기가 아직 변환되지 않았습니다. '템플릿' 탭에서 '누름틀·구간 변환'을 먼저 실행하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/mapping_state.py"
+file = "src/hwpxfiller/viewmodel/mapping_state.py"
 text = "열을 고르세요"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/mapping_state.py"
+file = "src/hwpxfiller/viewmodel/mapping_state.py"
 text = "이 템플릿에는 누름틀 필드가 없어 진행할 수 없습니다. 한글에서 누름틀을 삽입하거나 누름틀 변환으로 토큰을 바꾼 템플릿을 쓰세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/mapping_state.py"
+file = "src/hwpxfiller/viewmodel/mapping_state.py"
 text = "진행 차단: 값이 채워지지 않는 토큰 {}개가 남아 있습니다({}). [여기서 누름틀 변환]으로 누름틀로 바꾸거나, 비움을 확정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "경로를 찾을 수 없습니다. 저장 폴더가 이동·삭제되지 않았는지 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "누름틀 '{field}' 값 안에 인라인 요소({kinds})가 있습니다. 다른 값을 채우면 값과 함께 제거됩니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "누름틀 '{field}' 값 안의 인라인 요소({kinds})를 값과 함께 제거하고 채웠습니다. 형광펜 등 표식이 사라졌을 수 있으니 산출물을 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "누름틀 '{field}' 자리 중 구조상 기입할 수 없는 곳이 있습니다. 그 자리는 채워지지 않습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "누름틀 '{field}' 자리 중 구조상 기입할 수 없는 곳이 있어 건너뛰었습니다. 산출물에서 해당 자리를 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "디스크 공간이 부족합니다. 공간을 비우거나 다른 저장 폴더를 지정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "빈 누름틀 '{field}' 에 값 자리를 새로 만들어 채웠습니다. 서식은 누름틀 주변 서식을 따릅니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "빈 누름틀 '{field}': 채울 때 값 자리를 새로 만듭니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "파일 접근이 거부됐습니다. 같은 이름의 문서가 다른 프로그램(한글 등)에 열려 있지 않은지, 폴더 쓰기 권한이 있는지 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/result_errors.py"
+file = "src/hwpxfiller/viewmodel/result_errors.py"
 text = "파일이 다른 프로그램(한글 등)에 열려 있습니다. 해당 문서를 닫은 뒤 다시 시도하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/review_state.py"
+file = "src/hwpxfiller/viewmodel/review_state.py"
 text = "마지막 실행 이후 바뀐 규칙이 있습니다: {}. 결과 문서를 열어 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/review_state.py"
+file = "src/hwpxfiller/viewmodel/review_state.py"
 text = "마지막 실행에 쓴 규칙을 확인할 수 없습니다. 결과 문서를 열어 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 문서 {}건. 저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "나라장터 취득 어댑터가 주입되지 않았습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "먼저 데이터를 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "먼저 데이터를 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "생성할 문서를 최소 1건 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "생성할 문서를 최소 1건 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "저장 폴더를 지정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "저장 폴더를 지정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "템플릿 경로가 비어 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해야 생성할 수 있습니다."
 legacy = true
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 수 있습니다:"
 legacy = true
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/run_state.py"
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "'{}' 항목을 구간 표기로 되돌립니다. 되돌린 뒤: '{}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다. 한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "'{}' 항목을 지웁니다. 사라지는 것: 항목 범위의 본문{} 대상 파일: {}"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "구간 변환이 중단됐습니다 {}: 누름틀 {}개는 저장됐습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "구간 변환이 중단됐습니다 {}: 파일은 바뀌지 않았습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "누름틀 변환 {}: 변환 가능한 토큰이 없습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "누름틀·구간 변환을 해야 고를 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "미리보기 {}: 누름틀 값이 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "변환 {}: 변환할 토큰과 구간이 없습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "변환할 수 없습니다 {}: 구간 표기를 고친 뒤 다시 시도하세요. {}"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "상태를 확인할 수 없어 고를 수 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "서식 폴더가 없습니다: {} 설정에서 서식 폴더를 다시 지정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "서식 폴더가 지정되지 않았습니다. 설정에서 서식 폴더를 지정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "채울 필드가 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "표시할 템플릿이 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/template_manager_state.py"
+file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "항목 {}개를 전부 구간 표기로 되돌립니다. 되돌린 뒤: '{}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다. 한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'계약목록_2.csv'로 데이터를 바꾸세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'계약안내_기안'으로 TXT 작업을 저장하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'공고서_연습' 행의 더보기에서 누름틀 변환을 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'문서 만들기'에서 이번에 쓸 데이터를 고르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'문서 작업'의 빈 목록에서 '예제로 시작하기'를 누르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'새 작업'에서 '계약체결안내'를 '이 템플릿으로' 고르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'오류연습_보증금' TXT 작업을 저장하며 비움 확정을 지나세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'이 작업으로 문서 생성'을 누르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'포함할 내용'에서 항목의 갈래를 바꿔 생성하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "갈래를 바꾸자 그 절이 빠진 문서가 나왔습니다. 같은 서식에서 구성만 골라 다른 문서를 만드는 것이 구간의 쓰임입니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "같은 데이터가 TXT 산출도 냅니다. TXT는 파일 대신 복사로 건넵니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "같은 작업으로 다시 생성하고 '덮어쓰고 생성'으로 확인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "거의 같은 서식이 여러 벌로 갈라져 있다면, 구간이 그것을 한 벌로 만듭니다. 고르지 않아도 됩니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "고른 행만 만듭니다. 선택은 데이터를 바꾸기 전까지 그대로 남습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "기본·응용·고급을 모두 마쳤습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "다시 볼 과정을 고르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "당신의 서식을 가져와 같은 변환을 할 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터 파일로 '계약목록.csv'를 고르고 필드마다 데이터 열을 확정하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터가 바뀌어도, 산출이 여러 가지여도 리듬은 같습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터가 화면에 올라왔습니다. 다음 실행부터는 마지막 데이터가 자동으로 올라옵니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터를 그대로 둔 채 '구매추진안내'로 두 번째 작업을 만들어 생성하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터를 다시 고르지 않았습니다. 데이터는 작업이 아니라 화면이 들고 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터를 바꾸자 선택이 0건에서 다시 시작했습니다. 앞 데이터의 선택을 새 행에 물려주지 않습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "데이터에 열 자체가 없는 항목은 저장할 때 한 번 비움을 확정합니다. 값이 빈 것과 열이 없는 것은 확인받는 자리가 다릅니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "만들 이름과 값을 확인하고 '이 이름과 값으로 승인'을 누르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "모든 단계를 마쳤습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "변환된 템플릿으로 작업을 만들고, '변경사항 확인'으로 '포함할 내용'을 세운 뒤 검토를 확정하고 생성하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "변환의 출구가 첫 티어의 입구였고, 이 템플릿의 첫 작업은 확인을 몇 걸음 더 물었습니다. 이제 당신의 서식 파일을 '가져오기…'로 들여와 같은 변환을 하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "복사가 곧 완료 표시입니다. 남은 행은 목록이 계속 셉니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "빈 값이 있는 행을 선택하고 지목된 '납품조건'을 확인한 뒤 다시 승인하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "서식이 갈라질 이유가 갈래로 접힙니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "승인이 생성을 열었습니다. 무엇이 어떤 이름으로 나가는지 먼저 보고 확정합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "심화까지 다 걸었습니다. 지난 걸음은 언제든 다시 볼 수 있고, 튜토리얼을 닫아도 지금까지의 기록은 남습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "연결한 데이터를 그대로 두고 산출을 늘려 봅니다. 데이터 교체도 여기서 만납니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "예제 서식과 데이터가 들어왔습니다. 연습용 환경이 아니라 평소 쓰는 화면 그대로입니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "예제 서식과 데이터로 첫 문서를 만듭니다. 15분이면 충분합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "예제 설치부터 작업 저장까지는 안내만 다시 볼 수 있습니다. 이미 만든 작업은 그대로 남아 있어, 같은 걸음을 다시 걸으면 두 번째 작업이 생깁니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "예제로 배울 것은 여기까지입니다. 선택 과정인 심화가 남아 있고, 지난 걸음은 언제든 다시 볼 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "이 작업으로 언제든 다시 만들 수 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "이번 실행에 빈 값이 있어 승인이 다시 섰습니다. 빈 값은 빈칸으로 새지 않고 {} 표식으로 남습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "이번에는 승인을 묻지 않았습니다. 규칙 승인은 작업당 한 번이고, 같은 이름의 파일만 덮기 전에 확인을 받습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "작업 이름과 파일명 규칙을 정하고 '작업 저장'을 누르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "작업 카드를 고르고 '전체 선택'으로 만들 행을 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "작업대에서 행을 넘기며 '복사'를 누르세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "정의는 한 번입니다. 이제 데이터만 바꿔 몇 번이든 다시 만듭니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "직접 쓴 서식을 템플릿으로 바꿉니다. 이 앱을 당신의 문서에 쓰는 길입니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "첫 문서가 만들어졌습니다. 같은 작업으로 한 바퀴 더 돌면 리듬이 손에 붙습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "타이핑한 서식이 템플릿이 됐습니다. 필드 토큰과 구간 표기를 함께 지났습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "템플릿의 필드가 그대로 올라왔습니다. 다음은 필드마다 데이터 열을 지정합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/tutorial_state.py"
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "헤더 이름이 필드와 같아 자동으로 제안됐습니다. 확정은 검토를 대신하지 않습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "데이터 파일을 먼저 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "데이터 파일을 먼저 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "문서 작업을 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "선택한 항목을 작업대에서 검토하고 복사합니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "이 데이터에 연결된 문서 작업이 없습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. 템플릿을 다시 연결한 뒤 진행하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "처리할 항목을 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "처리할 항목을 선택하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/gui/work_candidates.py"
+file = "src/hwpxfiller/viewmodel/work_candidates.py"
 text = "템플릿 파일을 찾을 수 없습니다. 템플릿을 다시 연결한 뒤 진행하세요."
 
 [[sentence]]

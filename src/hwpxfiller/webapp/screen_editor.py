@@ -9,13 +9,13 @@ from typing import Callable
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
-from ..gui.edit_session import (
+from ..viewmodel.edit_session import (
     SECTION_TEMPLATE,
     EditSaveOperation,
     EditSession,
     make_context,
 )
-from ..gui.tutorial_state import Milestone
+from ..viewmodel.tutorial_state import Milestone
 from .editor_session import EditorLoader, EditorProjection
 from .screens import PushSink, TutorialSink, source_label, unwired_tutorial
 

@@ -1,7 +1,7 @@
 """파일 다이얼로그 필터 단일 출처(RC-34) — 파생 검증 + 하드코딩 재유입 grep 게이트.
 
 지원 확장자의 단일 출처는 domain/data_source.py(``SUPPORTED_DATA_FILE_EXTENSIONS``)다.
-factory와 gui/file_filters.py가 함께 파생하고, 그 지점 밖의 필터 리터럴 하드코딩은
+factory와 viewmodel/file_filters.py가 함께 파생하고, 그 지점 밖의 필터 리터럴 하드코딩은
 확장자 정책 변경 시 화면별 드리프트로 이어진다(재유입 금지).
 """
 
@@ -32,7 +32,7 @@ def test_factory_alias_is_domain_canonical_tuple():
     import hwpxfiller.data as data_package
     import hwpxfiller.domain.data_source as domain_data_source
     from hwpxfiller.data.factory import EXCEL_EXTS
-    from hwpxfiller.gui.file_filters import EXCEL_EXTS as FILTER_EXTS
+    from hwpxfiller.viewmodel.file_filters import EXCEL_EXTS as FILTER_EXTS
 
     public_api = ("Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "DataSource")
     assert tuple(domain_data_source.__all__) == public_api
@@ -46,7 +46,7 @@ def test_factory_alias_is_domain_canonical_tuple():
 
 def test_excel_filter_derives_from_domain_exts():
     from hwpxfiller.domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS
-    from hwpxfiller.gui.file_filters import (
+    from hwpxfiller.viewmodel.file_filters import (
         EXCEL_FILTER,
         EXCEL_FILTER_PATTERN,
         HWPX_FILTER,
@@ -81,10 +81,10 @@ def test_no_hardcoded_file_dialog_filter_literals():
         ):
             if not pattern.search(line):
                 continue
-            if rel == "hwpxfiller/gui/file_filters.py":
+            if rel == "hwpxfiller/viewmodel/file_filters.py":
                 continue  # 단일 출처(파생 정의)
             offenders.append(f"{rel}:{lineno}: {line.strip()}")
     assert not offenders, (
         "파일 다이얼로그 필터 리터럴 하드코딩 재유입(RC-34) — "
-        "gui/file_filters.py 의 상수를 참조하라:\n" + "\n".join(offenders)
+        "viewmodel/file_filters.py 의 상수를 참조하라:\n" + "\n".join(offenders)
     )

@@ -8,7 +8,7 @@ push 스냅샷의 생존 소비자 = 고르기 좌 열(`column` — 결과 줄 �
 
 링1 VM 을 **그대로 임포트**해 구동한다: HWPX 라이브러리 상태·상태별 게이트 액션·2단계
 fieldize(스캔→적용)·lint 는
-:class:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel`(Qt-free)가 소유한다.
+:class:`~hwpxfiller.viewmodel.template_manager_state.TemplateManagerViewModel`(Qt-free)가 소유한다.
 TXT 관리는 코어 :class:`~hwpxfiller.external.text_registry.TextTemplateRegistry`(Qt-free)를 그대로
 쓴다. 표현 계층(행 렌더·확인 라운드트립)은 편집기 「템플릿」 탭(editor.js)이 소유한다.
 
@@ -45,12 +45,12 @@ from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
-from ..gui.template_manager_state import (
+from ..viewmodel.template_manager_state import (
     TemplateDetail,
     TemplateManagerViewModel,
     TemplateRow,
 )
-from ..gui.tutorial_state import Milestone
+from ..viewmodel.tutorial_state import Milestone
 from .pool_column import pool_column_view, pool_row_view
 from .screens import (
     MUTATION_KINDS,
@@ -209,7 +209,7 @@ class TemplateController:
 
         종전에는 이 자리가 「필드 n개」·「읽기 실패: …」·「읽을 수 없어 고를 수 없습니다: …」
         를 리터럴로 다시 지었고, 그 셋이 곧
-        :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.detail_line` ·
+        :meth:`~hwpxfiller.viewmodel.template_manager_state.TemplateRow.detail_line` ·
         ``select_block_reason`` 의 재구현이었다. 링1 문안을 고치면 TXT 밴드만 옛말을 계속
         하는 자리라 :meth:`TemplateRow.from_text` 하나로 모은다.
 
@@ -863,13 +863,13 @@ class TemplateController:
 
 def _ok(text: str):
     """성공 결과 라인(ok 레벨) — ResultLine 재사용을 피해 경량 성형."""
-    from ..gui.template_manager_state import ResultLine
+    from ..viewmodel.template_manager_state import ResultLine
 
     return ResultLine(text, "ok")
 
 
 def _danger(text: str):
     """거절 결과 라인(danger 레벨) — :func:`_ok` 동형. 실패를 muted 로 접지 않는다."""
-    from ..gui.template_manager_state import ResultLine
+    from ..viewmodel.template_manager_state import ResultLine
 
     return ResultLine(text, "danger")

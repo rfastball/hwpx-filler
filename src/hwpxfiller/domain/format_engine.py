@@ -32,7 +32,7 @@ class FormatEngine(Protocol):
 
 
 # ---------------------------------------------------------------- 파싱 헬퍼
-# 공개 표면 — 표시형 렌더 외에 필터 범위 비교(gui/filter_state.py, R-flow 블록 4)가
+# 공개 표면 — 표시형 렌더 외에 필터 범위 비교(viewmodel/filter_state.py, R-flow 블록 4)가
 # 피연산자·셀 파싱을 여기서 재사용한다(값 해석 단일 출처 — 표시가 읽는 대로 비교한다).
 def parse_number(value: str) -> "int | float | None":
     """문자열에서 수를 관대하게 추출('150,000,000원'→150000000). 실패 시 None."""

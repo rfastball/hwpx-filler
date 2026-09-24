@@ -2,7 +2,7 @@
 
 > **문서 상태:** 현재 정본
 > **권위 범위:** HWPX Filler 웹 UI의 레이어, 라우팅, 화면 소유권과 자동 계약 게이트
-> **후속 정본:** 구현 세부는 `web/`, `src/hwpxfiller/webapp/`, `src/hwpxfiller/gui/*_state.py`
+> **후속 정본:** 구현 세부는 `web/`, `src/hwpxfiller/webapp/`, `src/hwpxfiller/viewmodel/*_state.py`
 > **편집 정책:** 계속 갱신
 
 이 문서는 pywebview + WebView2로 배포되는 현재 UI의 계약 진입점이다. 실제 표면은
@@ -20,7 +20,7 @@
 
 1. **링0 — kernel/도메인/데이터:** `src/hwpxcore/`, `src/hwpxfiller/domain/`,
    `src/hwpxfiller/data/`. 문서 형식, 제품 모델, 데이터 소스를 소유하며 UI 런타임을 모른다.
-2. **링1 — ViewModel/상태:** `src/hwpxfiller/gui/*_state.py`의 Qt-free 모델. 링0을 호출하고
+2. **링1 — ViewModel/상태:** `src/hwpxfiller/viewmodel/*_state.py`의 Qt-free 모델. 링0을 호출하고
    상태·게이트·직렬화 가능한 값을 제공한다. DOM이나 pywebview를 임포트하지 않는다.
 3. **링2 — 웹 프레젠테이션:** `src/hwpxfiller/webapp/`의 컨트롤러·브리지와 `web/`의
    HTML/CSS/JavaScript. 링1을 호출해 JSON-safe snapshot으로 바꾸고 DOM에 렌더한다.
@@ -491,7 +491,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `src/screens/data_picker.ts` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
 | 셸 설정 모달(화면 아님 · 셸 전역) | `#settingsModal`, `src/screens/settings_sheet.ts` | — (host method `set_theme`·`set_font_scale` 직접 브리지) | `src/shell/preferences.ts`(Theme·Personalization 서비스) |
-| 항목 상세 시트(화면 아님 · U6-E #979) | `#tplDetailModal`, `src/screens/editor.ts`(`TplDetailSheet`) | `TemplateController`(`detail` 존) | `TemplateDetail`·`SlotView`(`gui/template_manager_state.py`) |
+| 항목 상세 시트(화면 아님 · U6-E #979) | `#tplDetailModal`, `src/screens/editor.ts`(`TplDetailSheet`) | `TemplateController`(`detail` 존) | `TemplateDetail`·`SlotView`(`viewmodel/template_manager_state.py`) |
 | 데이터 상세 시트(화면 아님 · 고르기 열 공용 계약) | `#poolDetailModal`, `src/screens/pool_detail.ts`(`PoolDetailSheet`) | `PoolController`(`detail` 존) | `DatasetDetail`(`application/dataset_pool.py`) |
 
 편집기의 React 화면·오버레이는 `src/screens/editor.ts`, 브리지 발신·편집 정산·이탈 확인과
@@ -519,7 +519,7 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
 한 벌을 든다. `EditorController`는 브리지 입력 검증·전이 호출·push만 맡는다.
 `editor_presentation.py`는 컨트롤러가 넘긴 열·레코드·모델·시각으로 선택 항목, 연결 머리,
 샘플 행, 파일명 예시를 순수 성형한다. 저장 판정과 비편집 메타 보존·작성 출처 계산은
-`gui/job_editor_state.py`가 소유하며, 컨트롤러는 저장 시점의 경로·필드·데이터 표시명·시각을
+`viewmodel/job_editor_state.py`가 소유하며, 컨트롤러는 저장 시점의 경로·필드·데이터 표시명·시각을
 명시해 넘긴다.
 
 - **탭은 계약 §5.1 의 section 문자열**(`template`·`binding`·`filename`, 「시험」은 F8)이고
@@ -659,7 +659,7 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
     않는다**: 생성은 2단계 진입의 `_ensure_model` 하나가 지고, 카드가 미리 만들면 고르기를
     바꿔 보는 것만으로 「전원 미확정 재생성」 전이가 돌아 확정이 조용히 무너진다. 그래서
     모델이 있고 그 키가 지금 선택과 같으면 모델의 실제 수치(`basis="model"`, 라벨 「확인」),
-    아니면 순수 함수 `gui.mapping_state.pairing_preview` 를 읽기 전용으로 돌린 미리보기
+    아니면 순수 함수 `viewmodel.mapping_state.pairing_preview` 를 읽기 전용으로 돌린 미리보기
     (`basis="preview"`, 라벨 「자동 연결」)다. 2단계가 실제로 세울 제안과 **같은 함수**라
     수치가 갈리지 않는다. `suggest_mappings` 는 필드×열 SequenceMatcher 라 **고르기 단계
     에서만** 세고 같은 정체 키에서는 memoize 한다 — 세지 않은 자리는 `basis=""` 로 그
@@ -705,7 +705,7 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
   「타입/고정값」은 그 칸 select 의 특수 항목군으로, 「상태」는 배지 문안으로.
   - **행 상태는 닫힌 4태이고 그 라벨은 링1 이 소유한다**: `suggested`(자동 제안) ·
     `edited`(사람이 손댐, 미확인) · `confirmed`(확인) · `needs_source`(채울 것 없음).
-    판정은 `RowState.status()` 하나이고 문안은 `gui.mapping_state.ROW_STATUS_LABEL` 하나다
+    판정은 `RowState.status()` 하나이고 문안은 `viewmodel.mapping_state.ROW_STATUS_LABEL` 하나다
     — 종전에는 링2 가 4태를 짓고 웹이 그 위에서 「제안」을 한 번 더 유추했다(같은 상태를
     세 층이 판정했다). 데이터 미연결은 별도 상태가 **아니다**: 행이 요구하는 것은 같고
     (`needs_source`), 고를 열이 왜 없는지는 표 머리·1단계가 말한다.
@@ -794,7 +794,7 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
   라디오를 미리 늘어놓지 않는다(§6: 같은 선택지를 모든 문맥에 나열하지 않는다).
 - **연결 확정 대기는 무장 사유를 더한다**(#911). 스냅샷 `binding_confirm`
   (`{pending, label}`)이 참이면 주 행동이 활성으로 서고, 손댄 것이 없을 때만 라벨이
-  링1 의 확정 문안(`gui/job_editor_state.BINDING_CONFIRM_LABEL`)으로 갈린다 — 무변경 확정을
+  링1 의 확정 문안(`viewmodel/job_editor_state.BINDING_CONFIRM_LABEL`)으로 갈린다 — 무변경 확정을
   「변경 저장」이라 부르지 않는다. dirty 기반 무장과 「변경 버리기」는 무변경이다(확정 대기는
   버릴 것을 만들지 않는다). 동사 실행은 **기존 저장 경로 그대로**이고 새 백엔드 동사가 없다.
   판정은 `JobController.editor_binding_confirm_pending` 이 관리 검토의
@@ -820,7 +820,7 @@ APPLICATION 포트 거래를 소유한다. `editor_session.py`의 `EditorLoader`
   - 행 셋: ①작업 이름 `#editorName`(두 매체) ②문서 파일 이름 `[data-act="pattern"]`
     (hwpx 만) + 연번 예시 ③저장 폴더 `#editorOutDir`(읽기 전용) + 출처 + 「설정에서 바꾸기」
     (`#editorOpenFolderSettings` → 설정 모달).
-  - **이름 기본값은 링1 이 도출한다**(`gui.job_editor_state.derive_job_name`):
+  - **이름 기본값은 링1 이 도출한다**(`viewmodel.job_editor_state.derive_job_name`):
     `{템플릿 이름} · {데이터 표시명}`, 한쪽만 있으면 그것 하나. 템플릿 쪽은 표시명의
     **마지막 세그먼트**다 — 표시명은 루트 상대경로(`온나라/기안`)라 그 슬래시가 작업 이름에
     들어가면 레지스트리 slug 가 경로 구분자를 접어 서로 다른 두 이름이 같은 파일로 저장될 수
@@ -1568,7 +1568,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 이 작업대(`#scr-workbench`)를 연다.
 
 - **작업 방식은 3값이고 연결 상태는 다른 축이다**(§19.1). 값·파생은 링0
-  (`work_mode`), 표시 문구는 링1(`gui/work_mode.py`) 단일 출처 — 후보 카드·문서 탐색·
+  (`work_mode`), 표시 문구는 링1(`viewmodel/work_mode.py`) 단일 출처 — 후보 카드·문서 탐색·
   라이브러리 셋이 같은 문자열을 쓴다. 라이브러리 필터의 「미연결 → hwpx」 귀속은 *필터
   규칙*이지 방식 파생이 아니다(두 함수를 합치지 않는다).
 - **후보 자격은 `unsupported` 만 가른다**: hwpx·txt 는 같은 술어(필요한 열이 현재 데이터에
@@ -1587,7 +1587,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   갈렸으면 조용히 덮지 않고 확인을 다시 받는다.
 - **승계 4종은 거처만 옮긴다**: 큐 퇴화(1건이면 큐 장치 3종 은닉) · T3 가드(복사 진행 중
   이탈) · 정렬 린트(카드와 클립보드가 같은 값) · 확정-비움(게이트에서 제외). 판정 소유자는
-  각각 `TxtQueueModel`·가드 술어·`gui/txt_card.py`·`MappingModel` 그대로다.
+  각각 `TxtQueueModel`·가드 술어·`viewmodel/txt_card.py`·`MappingModel` 그대로다.
 - **검토 요구는 배제 선언**: TXT 엔 파일 이름 축이 없고(§3.2) 작업대가 이미 레코드 전수를
   채운 모습으로 보여 주는 검토 표면이라, 같은 확인을 두 표면이 겸하지 않는다.
 - **구간 표기가 있으면 복사는 물질화 산출이다**(S10-04 · #861). 화면의 접기는 **투영**이고
@@ -1992,13 +1992,13 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   부제(`mode_label`)가 이미 말하고, 실행 이력은 「무엇으로 만드는가」의 판단에 들지 않는다
   (`screen_job` 후보 카드의 `last_run_label` 이 U4 계열2-31 에서 같은 사유로 먼저 걷혔다).
   링1 `Job.last_run_at` 은 그대로 영속하고 「최근 사용」 보기의 **정렬 재료**로만 산다 —
-  매체별 술어를 문구로 가르던 산출자(`gui/work_mode.last_use_label`)는 소비자 0 으로
+  매체별 술어를 문구로 가르던 산출자(`viewmodel/work_mode.last_use_label`)는 소비자 0 으로
   삭제됐다(R5-99 B2 전례). Template/Binding **판본** 열은 F7 신설분이라 오늘 만들지 않는다
   (빈 자리·「준비 중」 표기도 두지 않는다 — 판정 D).
 - **매핑 사본 금지는 U6-F(#980)에서 뒤집혔다 — 다만 옛 키는 되살아나지 않는다.** #966 이
   걷은 것은 정보가 아니라 **별도 라벨 사전을 든 payload 사슬**(`detail.bindings` + 링1
   `field_binding_rows`)이었다. U6-F 의 표는 편집기 2단계와 **같은 링1 순수 함수**
-  (`gui/mapping_state.row_projection`)와 **같은 라벨 상수**(`ROW_STATUS_LABEL` ·
+  (`viewmodel/mapping_state.row_projection`)와 **같은 라벨 상수**(`ROW_STATUS_LABEL` ·
   `SPECIAL_SOURCE_LABEL` · 표시형 프리셋)를 두 번째 호스트가 소비하는 것이라 「같은 상태를
   두 곳이 판정」이 아니다 — 웹은 라벨을 짓지 않고 읽기 전용 칸의 해소된 문안(`source_label`·
   `display_label`)도 링1 조회다. 존 이름은 **`pairing_detail`** 이고 `bindings` 는 되살리지
@@ -2085,7 +2085,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   버튼은 걷혔다(데이터 재선택은 「작업 편집」 기본 착지·표 행 클릭과 같은 단계였다 — 완전
   중복). 손잡이는 `editWork(name, evidence, {section: "template"})` → `EditorEntry.openGuarded`
   를 타므로 편집기
-  이탈 가드·데이터 인계는 종전대로다. `section` 어휘는 Python 단일 출처(`gui/edit_session.py`:
+  이탈 가드·데이터 인계는 종전대로다. `section` 어휘는 Python 단일 출처(`viewmodel/edit_session.py`:
   `template`/`binding`)이고 배관은 이미 서 있다 — `app.py.open_editor` 가 `ctx.section` 을
   `load_job(landing_section=…)` 으로 넘긴다(백엔드 신설 0). 항목 곁에 남는 버튼은 차단 해소
   동사뿐이다 — 미결속 데이터 갈래의 「데이터 연결하기…」(연결할 결속이 아직 없다).
@@ -2107,7 +2107,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 > 함께 걷혔다(콜드 부팅 하나 감소).
 >
 > 태그·그룹(U4 §2-30)·나라장터와 같은 처분이다: **모델·판정·영속은 지우지 않는다.** 링1
-> (`gui/tutorial_state.py`)·컨트롤러(`webapp/screen_tutorial.py`)·마일스톤 통지 seam·
+> (`viewmodel/tutorial_state.py`)·컨트롤러(`webapp/screen_tutorial.py`)·마일스톤 통지 seam·
 > 설정 영속·`external/example_pack`·`examples/onboarding/` 자산과 그 생성 스크립트·
 > 컴포넌트(`frontend/src/tutorial/panel.ts`)와 그 렌더 계약 테스트가 전부 동결로 산다. action
 > registry 의 `tutorial` 화면과 `tpl` 의 `install_examples`·`remove_examples` 도 그대로다 —
@@ -2121,7 +2121,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 없다). 같은 형상의 선례가 화면 사망 후 채널만 남은 `pool` 이다. 새 통신 경로는 만들지 않았다 —
 푸시는 기존 `window.__hwpx` 의 `snapshot` 사건에 얹힌 채널 하나다.
 
-- **판정·문안은 전부 링1**(`gui/tutorial_state.py`): 단계 T0~T17·티어 4·달성·다음 걸음·졸업·
+- **판정·문안은 전부 링1**(`viewmodel/tutorial_state.py`): 단계 T0~T17·티어 4·달성·다음 걸음·졸업·
   제안·순간 카드 문안. 링2(`webapp/screen_tutorial.py`)는 VM 하나를 **세션 소유**하고 영속
   왕복(`external/settings.load_/save_tutorial_progress`)과 스냅샷 전달만 진다. 프런트
   (`frontend/src/tutorial/panel.ts`)는 그 스냅샷을 그리기만 하고 문안을 조립하지 않는다.
@@ -2210,7 +2210,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 
 ## 디자인 토큰, CSS와 문구의 단일 출처
 
-- 원시 디자인 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
+- 원시 디자인 토큰의 단일 출처는 `src/hwpxfiller/viewmodel/design_tokens.json`이다.
   `scripts/gen_design_tokens.py`가 커밋되는 `frontend/css/tokens.css`와 동결 목업의 생성 구간을 만든다.
   생성 드리프트는 `scripts/gen_design_tokens.py --check`, 사용자 안전 대비 하한은
   `tests/repo_contract/test_contrast_wcag.py`로 나눠 확인한다.

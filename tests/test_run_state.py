@@ -14,8 +14,8 @@ from hwpxfiller.external.output_files import ensure_output_directory, existing_o
 from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path
-from hwpxfiller.gui.review_state import review_requirement
-from hwpxfiller.gui.run_state import RunDataInput, RunViewModel, resolve_file_source
+from hwpxfiller.viewmodel.review_state import review_requirement
+from hwpxfiller.viewmodel.run_state import RunDataInput, RunViewModel, resolve_file_source
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -356,7 +356,7 @@ def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
 def test_export_plan_ledger_without_mapping_snapshot_is_loud():
     """계획에 매핑 스냅샷이 없으면 증거를 추정으로 조립하지 않고 시끄럽게 거절한다."""
     from hwpxfiller.external.ledger_export import export_plan_ledger
-    from hwpxfiller.gui.run_state import GenerationPlan
+    from hwpxfiller.viewmodel.run_state import GenerationPlan
 
     plan = GenerationPlan(
         template="t.hwpx", records=(), out_dir="out", pattern="p-{{seq}}",

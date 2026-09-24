@@ -38,7 +38,7 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_root import TemplateRoot
-from hwpxfiller.gui.tutorial_state import STEPS, Milestone
+from hwpxfiller.viewmodel.tutorial_state import STEPS, Milestone
 from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_template import TemplateController

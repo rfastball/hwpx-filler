@@ -26,7 +26,7 @@ from hwpxfiller.domain.secret_redaction import redact
 from .hwpx_package_io import read_hwpx_package
 
 if TYPE_CHECKING:
-    from hwpxfiller.gui.run_state import GenerationPlan
+    from hwpxfiller.viewmodel.run_state import GenerationPlan
 
 #: 사이드카 고정 파일명 — 경로를 직접 지정하는 호출용. 실행별 사이드카(배치 저장
 #: 폴더)는 :func:`ledger_sidecar_path` 로 타임스탬프 이름을 발급받아 증거를 축적한다.
@@ -191,7 +191,7 @@ def export_batch_ledger(
 def export_plan_ledger(plan: "GenerationPlan", batch) -> str:
     """계획 스냅샷 + 배치 결과만으로 원장 사이드카 저장(RC-07) — 라이브 상태 재독 0.
 
-    :class:`~hwpxfiller.gui.run_state.GenerationPlan` 은 Application 소유의 불변 계획이고,
+    :class:`~hwpxfiller.viewmodel.run_state.GenerationPlan` 은 Application 소유의 불변 계획이고,
     이 함수는 그 계획을 증거로 기록하는 effect 접합부다. 저장 경로 반환, 실패는 raise
     (호출측 워커/뷰가 시끄럽게 표면화).
     """

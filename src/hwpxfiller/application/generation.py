@@ -10,7 +10,7 @@ use case 에 검토 판정기 선언이 없다. CLI 생성 경로의 현 의미(
 +``--ack-empty``·완주 스탬프 없음·취소 없음)는 **의도된 제품 계약**이라 CLI 는 그
 부재를 인자 생략이 아니라 선언(``store=None``)으로 말한다.
 
-:mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.gui.run_state` 는 ring 계약
+:mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.viewmodel.run_state` 는 ring 계약
 (`docs/module_rings.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
 엔진(zip IO 결속)은 Host/ring 2 가 인자로 관통시킨다 — Application 은 concrete package
 read/write adapter를 모른다(P3-03 과 같은 seam). 시각도 같다: 이 모듈은 wall clock 을 직접
@@ -30,13 +30,13 @@ from typing import TYPE_CHECKING, Any
 
 from ..batch import generate_batch
 from ..domain.job import MISSING_MARKER, Job, rules_fingerprints
-from ..gui.run_state import GenerationPlan
+from ..viewmodel.run_state import GenerationPlan
 from .jobs import JobStorePort, stamp_run_completion
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ..gui.run_state import GateError, RunDataInput, RunViewModel
+    from ..viewmodel.run_state import GateError, RunDataInput, RunViewModel
 
 
 def blank_marker(blanks: "list[str] | tuple[str, ...]") -> str:
@@ -121,7 +121,7 @@ class PlanDecision:
     """게이트 판정 1회의 facts — 거절·덮어쓰기 확인 필요·확정 plan 중 하나.
 
     문안 조립(거절 재진술·모달 수치 합성)은 Presentation 몫이고 여기는 사실만 싣는다.
-    ``rejection`` 은 링1 :class:`~hwpxfiller.gui.run_state.GateError` 관통(판정·문안
+    ``rejection`` 은 링1 :class:`~hwpxfiller.viewmodel.run_state.GateError` 관통(판정·문안
     모두 링1 소유 — 재조립 금지). 검토 미충족 갈래는 #957 정책 선회로 사망했다 —
     검토는 차단이 아니라 고지라 plan 을 짓는 데 개입하지 않는다.
     """

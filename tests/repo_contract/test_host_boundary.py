@@ -17,7 +17,7 @@ INWARD_ROOTS = (
     SRC / "hwpxfiller" / "domain",
     SRC / "hwpxfiller" / "application",
     SRC / "hwpxfiller" / "data",
-    SRC / "hwpxfiller" / "gui",
+    SRC / "hwpxfiller" / "viewmodel",
 )
 INWARD_FILES = (
     SRC / "hwpxfiller" / "batch.py",

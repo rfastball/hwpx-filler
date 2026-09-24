@@ -275,7 +275,7 @@ def update_tags(store: JobStorePort, name: str, tags: "dict[str, str]") -> Job:
     """분류 태그(축→값) 통째 교체 — 검증된 값을 받아 원자 왕복으로 저장한다.
 
     축·값 검증(비어 있지 않은 문자열·중복 축 loud)은 호출 seam
-    (:meth:`~hwpxfiller.gui.home_state.HomeViewModel.set_tags`)이 계속 소유한다.
+    (:meth:`~hwpxfiller.viewmodel.home_state.HomeViewModel.set_tags`)이 계속 소유한다.
     """
     return store.set_tags(name, tags)
 

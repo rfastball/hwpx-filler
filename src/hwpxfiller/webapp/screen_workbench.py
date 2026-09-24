@@ -36,14 +36,14 @@ from ..external.job_store import JobRegistry
 from ..domain.mapping import TYPES, MappingProfile
 from ..domain.text_render import RenderReport, template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
-from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
-from ..gui.filter_state import sniff_column_kinds
-from ..gui.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel
-from ..gui.selection_state import SelectionModel
-from ..gui.txt_card import card_text, gate_empty_fields, render_card
-from ..gui.tutorial_state import Milestone
-from ..gui.txt_queue import TxtQueueModel
-from ..gui.work_mode import WORK_MODE_TEXT, work_mode_label
+from ..viewmodel.edit_session import SECTION_BINDING, EditContext, EditSession
+from ..viewmodel.filter_state import sniff_column_kinds
+from ..viewmodel.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel
+from ..viewmodel.selection_state import SelectionModel
+from ..viewmodel.txt_card import card_text, gate_empty_fields, render_card
+from ..viewmodel.tutorial_state import Milestone
+from ..viewmodel.txt_queue import TxtQueueModel
+from ..viewmodel.work_mode import WORK_MODE_TEXT, work_mode_label
 from .mapping_verbs import MappingVerbsMixin
 from .screens import PushSink, TutorialSink, unwired_tutorial
 from ..external.settings import is_proportional_font, load_draft_target_font, save_draft_target_font

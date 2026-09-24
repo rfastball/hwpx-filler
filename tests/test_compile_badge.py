@@ -9,13 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from hwpxfiller.domain.template_status import CompileState, TemplateStatus
-from hwpxfiller.gui.compile_badge import (
+from hwpxfiller.viewmodel.compile_badge import (
     BADGE_LABELS,
     BADGE_LEVELS,
     badge_label,
     badge_level,
 )
-from hwpxfiller.gui.template_manager_state import TemplateRow
+from hwpxfiller.viewmodel.template_manager_state import TemplateRow
 
 
 def test_every_compile_state_has_label_and_level():

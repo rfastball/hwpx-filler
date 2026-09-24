@@ -21,7 +21,7 @@ UI를 바꿀 때 문서 생성·데이터 처리 정책까지 흔들리고, 색�
 
 - **링0 — 도메인/코어** (`domain/*`, `data/*`, `hwpxcore/*`): `Job`, `RunRequest`, `MappingProfile`,
   `HwpxEngine`, 데이터 소스와 영속 규칙을 소유한다. UI 이유로 정책을 바꾸지 않는다.
-- **링1 — 앱/ViewModel** (`gui/*_state.py`): `HomeViewModel`, `RunViewModel`,
+- **링1 — 앱/ViewModel** (`viewmodel/*_state.py`): `HomeViewModel`, `RunViewModel`,
   `MappingModel`, `SelectionModel`, `TxtDraftViewModel`, `TemplateManagerViewModel`,
   `DatasetPoolViewModel` 등 UI-runtime 비의존 상태·명령·게이트를 소유한다. 상태는 가능한 한
   JSON-safe 값 또는 직렬화 가능한 dataclass로 낸다.
@@ -44,7 +44,7 @@ Qt 위젯을 링2로 두었던 최초 구현은 **대체됨**이다. 현재 화�
 
 ## 토큰 파이프라인
 
-색 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
+색 토큰의 단일 출처는 `src/hwpxfiller/viewmodel/design_tokens.json`이다.
 `scripts/gen_design_tokens.py`가 `frontend/css/tokens.css`와 동결 목업의 `<gen:tokens>` 영역을
 생성한다. `scripts/gen_design_tokens.py --check`가 생성 드리프트를 확인하고,
 `tests/repo_contract/test_contrast_wcag.py`가 사용자 안전 대비 하한을 맡는다. 생성물은 패키징 입력이므로

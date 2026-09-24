@@ -14,7 +14,7 @@ from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_pa
 from hwpxfiller.external.template_inspection import template_compile_status
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.domain.template_status import CompileState
-from hwpxfiller.gui.home_state import (
+from hwpxfiller.viewmodel.home_state import (
     BADGE_ERROR,
     BADGE_MISSING,
     BADGE_RAW,
@@ -274,7 +274,7 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
 # F2 PR-A 에서 은퇴했다(지도 §10.8 판정 B · §9.4 A안): 「모든 작업」 보기의 primary grouping
 # 은 사용자 group 하나뿐이고, 태그는 좁히는 축으로만 남는다. 그래서 facet 의미론은 이제
 # ``library_sections()`` 결과로 관찰한다. 위젯 없이 링1 VM 에서 회귀를 잡는다.
-from hwpxfiller.gui.home_state import discover_tag_axes  # noqa: E402
+from hwpxfiller.viewmodel.home_state import discover_tag_axes  # noqa: E402
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
@@ -626,7 +626,7 @@ def test_health_translation_covers_every_data_independent_gate_reason():
     import re
     from pathlib import Path as _Path
 
-    root = _Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "gui"
+    root = _Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "viewmodel"
     reasons = set(re.findall(r'reason="([a-z_]+)"', (root / "run_state.py").read_text(encoding="utf-8")))
     assert reasons, "run_state 에서 게이트 사유를 찾지 못했습니다(정규식 stale)."
     covered = (root / "home_state.py").read_text(encoding="utf-8")

@@ -69,7 +69,7 @@ def source_from_pool_item(item, *, secret_store=None, fetcher=None) -> DataSourc
 
     풀 항목은 **참조만** 담는다(레코드·비밀 없음) — 복원이 실행 시점의 "재읽기(싱크)"다.
     나라장터 항목은 **opts 에 ServiceKey 가 없으므로** 이 순간 OS 자격증명 저장소(N1
-    SecretStore)에서 키를 읽어 주입한다(``gui/nara_state.py`` acquire 의 "키는 이 순간에만
+    SecretStore)에서 키를 읽어 주입한다(``viewmodel/nara_state.py`` acquire 의 "키는 이 순간에만
     읽어 넘김" 패턴 미러). 키 미등록은 **시끄럽게** 실패시킨다(조용한 빈 취득 금지).
 
     아이템은 **덕타입**(``.kind``/``.opts``)으로만 읽어 ``data``→``core`` 역의존을 만들지 않는다.

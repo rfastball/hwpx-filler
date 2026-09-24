@@ -10,10 +10,10 @@ from hwpxfiller.host.native import debug
 import hwpxfiller.domain.inline as domain_inline
 from hwpxfiller.domain.inline import InlineDataSource
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.gui.mapping_state import MappingModel, RowState
-from hwpxfiller.gui.record_range import RecordRange, RecordRangeDraft
-from hwpxfiller.gui.selection_state import SelectionModel
-from hwpxfiller.gui.txt_card import card_text, gate_empty_fields
+from hwpxfiller.viewmodel.mapping_state import MappingModel, RowState
+from hwpxfiller.viewmodel.record_range import RecordRange, RecordRangeDraft
+from hwpxfiller.viewmodel.selection_state import SelectionModel
+from hwpxfiller.viewmodel.txt_card import card_text, gate_empty_fields
 from hwpxfiller.webapp import screen_editor
 from hwpxfiller.webapp.app import WebFrontend
 from hwpxfiller.webapp.data_zone import JobDataSession

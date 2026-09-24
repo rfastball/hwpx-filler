@@ -2,7 +2,7 @@
 
 계약 §19.6(전역 문서 작업 라이브러리)·§19.7(전역 작업 건강)의 표면. **홈 화면을 대체한다**
 (재작성 F2, 지도 §10.8): 카드 나열 + group-by 렌즈였던 홈은 죽고, 저장된 작업을 찾는 자리가
-이 화면 하나로 모였다. 링1 VM(:class:`~hwpxfiller.gui.home_state.HomeViewModel`)의 라이브러리
+이 화면 하나로 모였다. 링1 VM(:class:`~hwpxfiller.viewmodel.home_state.HomeViewModel`)의 라이브러리
 투영·건강 번역을 **그대로** 소비한다 — 백엔드 판정 재구현 0.
 
 (링1 모듈은 ``home_state``·``HomeViewModel`` 이름을 유지한다 — 지도 §10.3 이 "재작성 무영향"
@@ -59,8 +59,8 @@ from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import template_compile_status
-from ..gui.compile_badge import badge_level
-from ..gui.home_state import (
+from ..viewmodel.compile_badge import badge_level
+from ..viewmodel.home_state import (
     NO_GROUP_LABEL,
     HomeViewModel,
     JobRow,
@@ -68,14 +68,14 @@ from ..gui.home_state import (
     library_health_causes,
     library_mode_of,
 )
-from ..gui.mapping_state import (
+from ..viewmodel.mapping_state import (
     MappingModel,
     display_cell_label,
     profile_source_vocabulary,
     row_projection,
     source_cell_label,
 )
-from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
+from ..viewmodel.work_mode import work_mode_label, work_mode_of_filter_value
 from .screens import (
     NO_ROWS_TEXT,
     PushSink,
@@ -85,7 +85,7 @@ from .screens import (
 )
 
 def mode_label(filter_value: str) -> str:
-    """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.gui.work_mode`) 위임.
+    """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.viewmodel.work_mode`) 위임.
 
     F6 어휘 통일(지도 §10.15 판정 A) 이전에는 이 표가 여기 링2에 있었다. TXT 가 「문서
     만들기」에 합류하면서 같은 축을 세 표면(후보 카드·문서 탐색·라이브러리)이 그리게 됐고,
@@ -358,7 +358,7 @@ class LibraryController:
         §19.6 이 오래 「상세는 매핑 사본을 싣지 않는다」고 못 박아 온 자리다. 그 금지가
         겨눈 것은 **별도 라벨 사전을 든 payload 사슬**(#966 이 걷은 `detail.bindings`)이었지
         정보 자체가 아니었다 — 여기서 그리는 행은 편집기 2단계와 **같은 링1 투영**
-        (:func:`~hwpxfiller.gui.mapping_state.row_projection`)이고 라벨도 그 한 자리에서
+        (:func:`~hwpxfiller.viewmodel.mapping_state.row_projection`)이고 라벨도 그 한 자리에서
         온다. 판정이 하나이므로 두 표면이 서로 다른 말을 할 자리가 없다.
 
         **카드와 표는 답하는 질문이 다르다.** 카드는 정체(무엇과 무엇이 붙었나)이고 그것은

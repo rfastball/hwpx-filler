@@ -19,7 +19,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile, apply_transf
 from hwpxfiller.external.mapping_store import load_mapping_profile, save_mapping_profile
 from hwpxfiller.domain.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
-from hwpxfiller.gui.mapping_state import (
+from hwpxfiller.viewmodel.mapping_state import (
     ROW_STATUS_LABEL,
     SPECIAL_SOURCE_LABEL,
     MappingModel,
@@ -102,7 +102,7 @@ def test_from_suggestions_auto_confirms_only_exact_raw_key_not_alias_or_normaliz
 def test_exact_auto_confirmation_does_not_hide_missing_record_value():
     model = _pum_model(["품명"])
     assert model.is_complete()
-    from hwpxfiller.gui.mapping_state import row_projection
+    from hwpxfiller.viewmodel.mapping_state import row_projection
 
     projected = row_projection(model.rows[0], {}, index=0, source_fields=["품명"], has_records=True)
     assert projected["row_state"] == "confirmed"
@@ -951,7 +951,7 @@ def test_row_projection_matches_what_the_editor_snapshot_used_to_build():
     이 표를 읽기 전용으로 한 번 더 세우려는 표면이 자기 사본을 만들 수밖에 없던 것이
     #966 이 걷은 사슬의 뿌리였다 — 투영이 하나이므로 두 표면이 다른 말을 할 자리가 없다.
     """
-    from hwpxfiller.gui.mapping_state import row_projection
+    from hwpxfiller.viewmodel.mapping_state import row_projection
 
     rows = _projection_rows()
     record = {"사업명": "청사 냉난방 교체", "빈열": ""}
@@ -983,7 +983,7 @@ def test_row_projection_states_pending_and_error_instead_of_faking_a_record():
     ``record={}`` 로 미읽음을 흉내 내면 미입력 표식이 찍혀 「산출물이 담을 것」과 「아직
     모름」이 한 글자로 접힌다. 사유는 호출자가 존 수준에서 싣고 행은 상태만 낸다.
     """
-    from hwpxfiller.gui.mapping_state import PENDING_PREVIEW_MARK, row_projection
+    from hwpxfiller.viewmodel.mapping_state import PENDING_PREVIEW_MARK, row_projection
 
     row = _projection_rows()[0]
     pending = row_projection(row, {}, index=0, source_fields=["사업명"], has_records=False,
@@ -1005,7 +1005,7 @@ def test_row_projection_states_pending_and_error_instead_of_faking_a_record():
 
 def test_read_only_cell_labels_come_from_the_ring1_vocabulary():
     """읽기 전용 표의 두 칸 문안은 링1 조회다 — 웹이 특수 항목 표를 한 벌 더 들지 않는다."""
-    from hwpxfiller.gui.mapping_state import (
+    from hwpxfiller.viewmodel.mapping_state import (
         PENDING_PREVIEW_MARK,
         display_cell_label,
         row_projection,

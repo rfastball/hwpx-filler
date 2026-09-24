@@ -26,12 +26,12 @@ from hwpxfiller.external.template_inspection import (
     inspect_hwpx_template,
     template_compile_status,
 )
-from hwpxfiller.gui.compile_badge import (
+from hwpxfiller.viewmodel.compile_badge import (
     ERROR_BADGE_LEVEL,
     TEXT_BADGE_LABEL,
     TEXT_BADGE_LEVEL,
 )
-from hwpxfiller.gui.template_manager_state import (
+from hwpxfiller.viewmodel.template_manager_state import (
     CONVERT_ACTION_LABEL,
     TemplateDetail,
     TemplateManagerViewModel,
@@ -477,7 +477,7 @@ class _EmptyLint:
 
 def test_format_scan_empty_result_is_inline_warn(tmp_path):
     """UD-24: '변환 가능 토큰 없음'을 인라인 결과(warn)로 성형 — 차단 모달 강등."""
-    from hwpxfiller.gui.template_manager_state import ScanPreview
+    from hwpxfiller.viewmodel.template_manager_state import ScanPreview
 
     raw = _write_raw(
         tmp_path / "onlymanual.hwpx",
@@ -572,7 +572,7 @@ def test_apply_convert_compiles_fields_before_structure(tmp_path):
 
 def test_apply_convert_restates_a_structure_refusal(tmp_path):
     """구간 컴파일 거절은 조용히 사라지지 않는다 — 결과 문구가 사유를 싣는다."""
-    from hwpxfiller.gui.template_manager_state import ConvertResult
+    from hwpxfiller.viewmodel.template_manager_state import ConvertResult
 
     vm, path = _structure_vm(tmp_path, "값: {{값}}")
     line = vm.format_convert_result(
@@ -752,7 +752,7 @@ def test_text_rows_share_the_ring1_wording_with_hwpx(tmp_path):
     갈리는 축은 **변환 축의 유무** 하나이고, 그것이 `media` 다.
     """
     from hwpxfiller.domain.template_status import TemplateStatus
-    from hwpxfiller.gui.template_manager_state import TemplateRow
+    from hwpxfiller.viewmodel.template_manager_state import TemplateRow
 
     txt_ok = TemplateRow.from_text(Path("C:/lib/기안.txt"), 3)
     hwpx_ok = TemplateRow.from_status(

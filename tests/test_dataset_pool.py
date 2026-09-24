@@ -519,7 +519,7 @@ def _forbidden_pool_factory(item, *, secret_store=None, fetcher=None):
 
 
 def test_resolve_pool_source_excel_live(tmp_path):
-    from hwpxfiller.gui.run_state import resolve_pool_source
+    from hwpxfiller.viewmodel.run_state import resolve_pool_source
 
     csv = tmp_path / "d.csv"
     csv.write_text("ID,공고명\n1,전산장비\n", encoding="utf-8")
@@ -540,7 +540,7 @@ def test_resolve_pool_source_excel_live(tmp_path):
 
 def test_resolve_pool_source_returns_specified_sheet_records():
     """T2 — sheet 임베딩 풀 항목의 run 겨눔이 지정 시트 레코드를 반환한다."""
-    from hwpxfiller.gui.run_state import resolve_pool_source
+    from hwpxfiller.viewmodel.run_state import resolve_pool_source
 
     it = DatasetReference(
         name="다중", kind="excel",
@@ -553,7 +553,7 @@ def test_resolve_pool_source_returns_specified_sheet_records():
 def test_resolve_pool_source_nara_snapshots_once():
     """나라 풀 항목 겨눔 = 1회 취득 후 키 없는 스냅샷 — 반복 records() 가 재-fetch 안 함."""
     from hwpxfiller.application.nara_acquire import AcquiredNaraData
-    from hwpxfiller.gui.run_state import resolve_pool_source
+    from hwpxfiller.viewmodel.run_state import resolve_pool_source
 
     calls = {"n": 0}
 
@@ -585,7 +585,7 @@ def test_resolve_pool_source_nara_snapshots_once():
 
 def test_resolve_pool_source_nara_auth_failure_is_loud():
     """만료·인증실패 키(resultCode '07')는 조용한 '0건'이 아니라 시끄러운 실패 — 키 비노출."""
-    from hwpxfiller.gui.run_state import resolve_pool_source
+    from hwpxfiller.viewmodel.run_state import resolve_pool_source
 
     auth_fail = (
         b'{"response":{"header":{"resultCode":"07",'
@@ -609,7 +609,7 @@ def test_resolve_pool_source_nara_auth_failure_is_loud():
 
 
 def test_resolve_pool_source_nara_no_key_is_loud():
-    from hwpxfiller.gui.run_state import resolve_pool_source
+    from hwpxfiller.viewmodel.run_state import resolve_pool_source
 
     it = DatasetReference(
         name="나라", kind="nara",

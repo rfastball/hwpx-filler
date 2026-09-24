@@ -3,7 +3,7 @@
 파서 의미론 층(schema·authoring·template_status·lint·fields)은 **열린 package 전용**이다
 (P2-19R, #576). 경로를 받아 package adapter로 한 번 열고 Domain 순수
 함수를 부르는 path 진입 함수들이 여기 산다 — ring 2/Host 는 직접 부르고, Application VM
-(gui)은 External 을 import 할 수 없어 ring 2 가 이 함수들을 포트로 결속해 주입한다
+(viewmodel)은 External 을 import 할 수 없어 ring 2 가 이 함수들을 포트로 결속해 주입한다
 (P2-12 ``inspect_hwpx_template`` 동형).
 """
 
@@ -36,7 +36,7 @@ from ..domain.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..domain.schema import extract_schema
 from ..domain.slot import Slot
 from ..domain.template_status import TemplateStatus, compile_status
-from ..gui.template_manager_state import (
+from ..viewmodel.template_manager_state import (
     TemplateFileOps,
     TemplateInspection,
 )
@@ -270,7 +270,7 @@ def read_template_fields(path: str) -> "dict[str, str]":
     return read_fields(read_hwpx_package(path))
 
 
-#: :class:`~hwpxfiller.gui.template_manager_state.TemplateFileOps` 의 concrete 결속 —
+#: :class:`~hwpxfiller.viewmodel.template_manager_state.TemplateFileOps` 의 concrete 결속 —
 #: ring 2 가 ``TemplateManagerViewModel(file_ops=HWPX_TEMPLATE_OPS)`` 로 주입한다.
 HWPX_TEMPLATE_OPS = TemplateFileOps(
     scan_tokens=scan_template_tokens,

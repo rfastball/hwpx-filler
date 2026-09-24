@@ -3,14 +3,14 @@
 정본은 :doc:`docs/ONBOARDING_TUTORIAL.md` §4.3(판정·렌더·통신)·§4.4(영속)다. 이 컨트롤러가
 지는 것은 **소유·영속·전달** 셋이고, 판정과 문안은 하나도 여기 없다:
 
-1. **세션 소유** — 앱에 :class:`~hwpxfiller.gui.tutorial_state.TutorialViewModel` 하나뿐이고
+1. **세션 소유** — 앱에 :class:`~hwpxfiller.viewmodel.tutorial_state.TutorialViewModel` 하나뿐이고
    그 하나를 이 컨트롤러가 든다. 다른 화면 컨트롤러는 VM 도 ``settings`` 도 들지 않고
    :data:`~hwpxfiller.webapp.screens.TutorialSink`
    (= :meth:`TutorialController.notify`) **콜러블 하나만** 주입받는다 —
    푸시 sink 주입과 같은 규율이다(컨트롤러는 채널도 저장소도 모른다).
 2. **영속 왕복** — 부팅 때 ``load_tutorial_progress()`` 로 복원하고, 달성·종료·재개가
    성립할 때마다 ``save_tutorial_progress()`` 로 저장한다. 값만 드나들므로 링1 은 계속
-   IO 0 이다(:mod:`~hwpxfiller.gui.tutorial_state` 머리말).
+   IO 0 이다(:mod:`~hwpxfiller.viewmodel.tutorial_state` 머리말).
 3. **스냅샷 전달** — 기존 관측 푸시(`window.__hwpx` 의 ``snapshot`` 사건) 위에 얹은
    ``tutorial`` 채널 하나다. 새 통신 경로를 만들지 않는다.
 
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from ..gui.tutorial_state import Milestone, TutorialViewModel
+from ..viewmodel.tutorial_state import Milestone, TutorialViewModel
 from .screens import PushSink
 
 __all__ = ["TutorialController"]

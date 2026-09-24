@@ -1,6 +1,6 @@
 """맞추기 표의 **동사 6종** 공용 본체 — 「기안」 세션과 검토·복사 작업대가 공유한다.
 
-두 표면은 같은 표를 그리고 같은 :class:`~hwpxfiller.gui.mapping_state.MappingModel` 을
+두 표면은 같은 표를 그리고 같은 :class:`~hwpxfiller.viewmodel.mapping_state.MappingModel` 을
 부른다. F6 PR-A 는 그걸 알면서도 작업대 쪽 핸들러를 **손으로 다시 짰고**, 리뷰 3R 이 그
 대가를 세 건으로 청구했다:
 
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..gui.mapping_state import MappingModel
+from ..viewmodel.mapping_state import MappingModel
 
 
 class _MappingVerbsHost(Protocol):

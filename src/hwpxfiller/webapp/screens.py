@@ -25,10 +25,10 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
-from ..gui.tutorial_state import Milestone
+from ..viewmodel.tutorial_state import Milestone
 from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS  # 계약 목록 뷰 백스톱
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
-from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
+from ..viewmodel.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
@@ -47,7 +47,7 @@ CompileSink = Callable[[str], None]
 # 튜토리얼 마일스톤 통지 sink(#894): 단계 식별자 → 새로 기록됐는가. 통지하는 쪽(전이를 막
 # 성립시킨 화면 컨트롤러)과 받는 쪽(:class:`~hwpxfiller.webapp.screen_tutorial.
 # TutorialController`)이 같은 어휘를 써야 해서 `MutationSink` 와 같은 자리에 둔다. 단계
-# 열거의 정본은 링1(``gui/tutorial_state.Milestone``)이고 여기는 **운반 형**만 정한다.
+# 열거의 정본은 링1(``viewmodel/tutorial_state.Milestone``)이고 여기는 **운반 형**만 정한다.
 TutorialSink = Callable[[Milestone | str], bool]
 
 
@@ -403,9 +403,9 @@ def relink_job_template(
 
     - **read_error = 하드 차단**: 읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다(알람).
       hwpx 는 드리프트 프로브가, txt 는 여는 계약과 같은 UTF-8 읽기가 판정한다
-      (:meth:`~hwpxfiller.gui.home_state.JobRow.from_job` 의 txt_readable 과 같은 규율).
+      (:meth:`~hwpxfiller.viewmodel.home_state.JobRow.from_job` 의 txt_readable 과 같은 규율).
     - **구조 드리프트(hwpx) = 재진술 확인 후 허용**: 커밋해도 생성은 기존 드리프트 게이트
-      (:meth:`~hwpxfiller.gui.run_state.RunViewModel` fail-closed)가 매핑 재확정 전까지
+      (:meth:`~hwpxfiller.viewmodel.run_state.RunViewModel` fail-closed)가 매핑 재확정 전까지
       차단하므로 안전하다. 여기서 막으면 '이동+구조 변경' 작업은 영구 복구 불능이 된다.
       txt 는 hwpx 스키마 개념인 드리프트가 없다 — 프로브에 넣으면 zip 파싱 오류로 합법
       복구가 죽는다(§10.16 후속에서 수리).

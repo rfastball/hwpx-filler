@@ -12,7 +12,7 @@ import json
 import pytest
 
 from hwpxfiller.external import settings
-from hwpxfiller.gui.tutorial_state import (
+from hwpxfiller.viewmodel.tutorial_state import (
     COMPLETION_COPY_ALL,
     COMPLETION_COPY_STANDARD,
     COMPLETION_TITLE_ALL,

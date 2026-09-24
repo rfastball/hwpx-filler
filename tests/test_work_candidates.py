@@ -11,7 +11,7 @@ from hwpxfiller.domain.job import (
     Job,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.gui.work_candidates import (
+from hwpxfiller.viewmodel.work_candidates import (
     KIND_AVAILABLE,
     KIND_EXCLUDED,
     KIND_NEEDS_ACTION,

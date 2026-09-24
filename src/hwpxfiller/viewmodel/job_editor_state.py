@@ -160,8 +160,8 @@ def validate_save(
 ) -> SaveVerdict:
     """저장 전 게이트 술어(순수) — 위젯은 ``block_reason`` 을 경고로 띄우기만 한다.
 
-    ``model`` 은 :class:`~hwpxfiller.gui.mapping_state.MappingModel`(또는 ``None``).
-    '전부 비움'은 링1 질의(:meth:`~hwpxfiller.gui.mapping_state.MappingModel.emits_any_value`)
+    ``model`` 은 :class:`~hwpxfiller.viewmodel.mapping_state.MappingModel`(또는 ``None``).
+    '전부 비움'은 링1 질의(:meth:`~hwpxfiller.viewmodel.mapping_state.MappingModel.emits_any_value`)
     로 판단한다 — 자료구조 내부 표현을 재구현하지 않는다(RC-08). 「비워 둠」 표시형 퇴역
     뒤 **빈 고정값은 값 선언**이라 전 필드를 그렇게 확정한 작업도 통과한다(누름틀에 빈
     문자열을 실제로 써 넣는다). 남은 차단은 아무것도 선언하지 않은 확정 행이라, 지금

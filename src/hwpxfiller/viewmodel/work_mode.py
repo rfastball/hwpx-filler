@@ -75,7 +75,7 @@ def work_mode_of_filter_value(value: str) -> str:
     """라이브러리 **필터 값**(매체 어휘 ``hwpx``/``txt``/``''``) → 작업 방식 코드.
 
     두 어휘가 남아 있는 이유는 축이 둘이기 때문이다(지도 §10.15 판정 A): 필터 값은
-    :func:`~hwpxfiller.gui.home_state.library_mode_of` 가 내는 **귀속**이라 미연결 작업을
+    :func:`~hwpxfiller.viewmodel.home_state.library_mode_of` 가 내는 **귀속**이라 미연결 작업을
     일부러 hwpx 로 세고, 작업 방식은 확장자에서만 파생한다. 그 귀속을 여기서 되돌리지
     않는다 — 필터가 hwpx 칸에 놓기로 한 행에 「지원 작업 방식 확인 필요」라고 쓰면 목록과
     필터가 서로 다른 말을 한다. 이 함수는 *번역*이지 재판정이 아니다.
