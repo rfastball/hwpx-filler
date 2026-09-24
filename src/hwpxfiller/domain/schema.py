@@ -19,11 +19,10 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from lxml import etree
+import lxml.etree as etree
 
 from hwpxcore.field_occurrence import FieldOccurrence, resolve_field_occurrences
 from hwpxcore.text_extract import (
-    HP_NS,
     extract_document,
     iter_paragraph_texts,
     local_name,

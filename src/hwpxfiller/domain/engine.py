@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Callable
+
+from hwpxcore.text_extract import PackageLike
 
 from .fields import FieldDocument, FillNote, field_xml_names
 
@@ -25,7 +28,7 @@ class GenerateResult:
     error: str = ""
 
 
-class HwpxEngine[PackageT]:
+class HwpxEngine[PackageT: PackageLike]:
     """단일 템플릿 + 데이터 → 단일 HWPX 파일.
 
     경로 읽기·쓰기는 주입된 ``read_package``/``write_package``가 소유한다(P3-03, #591 —
@@ -44,7 +47,7 @@ class HwpxEngine[PackageT]:
     def generate(
         self,
         template_path: str,
-        data: "dict[str, object]",
+        data: "Mapping[str, object]",
         output_path: str,
     ) -> GenerateResult:
         try:

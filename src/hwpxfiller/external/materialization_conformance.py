@@ -31,7 +31,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from lxml import etree
+import lxml.etree as etree
 
 from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.field_occurrence import resolve_field_occurrences
@@ -469,5 +469,4 @@ def _read_field_values(pkg: object) -> list[tuple[str, str]]:
         doc = FieldDocument(package.entries[name], entry=name)
         values.extend(doc.field_values())
     return values
-
 

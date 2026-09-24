@@ -42,7 +42,6 @@ from hwpxfiller.application.document_creation_workbench import (
     WorkbenchCompositionInput,
     WorkbenchContextIntegrity,
     _PRIMARY_ACTION_CHAIN,
-    compose_blockers,
     compose_document_creation_workbench,
     compose_primary_action,
     decide_active_work_after_data_transition,

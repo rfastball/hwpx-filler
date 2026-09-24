@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from lxml import etree
+import lxml.etree as etree
 
 from .text_extract import HP_NS, local_name
 

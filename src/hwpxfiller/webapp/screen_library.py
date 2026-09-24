@@ -512,7 +512,6 @@ class LibraryController:
         else:
             zone = self._pairing_detail(row, job, key)
             self._zone_memo = (identity, zone)
-        mode = library_mode_of(row)
         return {
             **_job_row_dict(row),
             "primary": primary_action(row),

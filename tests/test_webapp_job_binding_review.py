@@ -41,7 +41,6 @@ from hwpxfiller.external.settings import (
 from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp import screen_job as sj
 from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
 from hwpxfiller.webapp.document_run_coordinator import ManagedRunInput
 from hwpxfiller.webapp import current_execution_preparation as execution_preparation
@@ -1247,7 +1246,6 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     그대로 넘어가고, reader 는 실제 authority 관찰로 sealed digest 와 동치이며, legacy
     generator 는 도달 0 이고, 결과 dict 는 legacy 키 집합으로 번역된다.
     """
-    import hwpxfiller.webapp.screen_job as sj
     from hwpxfiller.external.delivery_coordinator import (
         DeliveredDocument,
         DeliveryCompleted,
@@ -1394,7 +1392,6 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
     안착은 전건 됐으므로 미착수는 0 이고 원장도 평소 경로로 기록된다 — 다른 것은 성공 수에서
     한 건이 빠지고 사유가 「만든 뒤 다시 읽어 확인」 실패로 재진술된다는 점이다.
     """
-    import hwpxfiller.webapp.screen_job as sj
     from hwpxfiller.external.artifact_observation import ARTIFACT_DIGEST_MISMATCH
     from hwpxfiller.external.delivery_coordinator import DeliveredDocument
     from hwpxfiller.webapp.managed_generation import ManagedReadBackFailed

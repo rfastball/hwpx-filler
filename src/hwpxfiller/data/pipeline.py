@@ -25,7 +25,9 @@ raw SQL 은 v1 밖(기본 노출 시 ETL 팽창 신호). **falsifiable 가드: �
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol, cast
+
+from ..domain.data_source import DataSource
 
 
 class AssemblyError(RuntimeError):
@@ -168,7 +170,7 @@ class PipelineSource:
 
     def __init__(
         self,
-        sources: "list",
+        sources: "list[DataSource]",
         steps: "list[dict]",
         *,
         engine: "AssemblyEngine | None" = None,
@@ -232,8 +234,8 @@ class PipelineSource:
         """
         labels: "dict[str, str]" = {}
         for s in self.sources:
-            fl = getattr(s, "field_labels", None)
-            if callable(fl):
-                for k, v in fl().items():
+            field_labels = getattr(s, "field_labels", None)
+            if callable(field_labels):
+                for k, v in cast("Callable[[], dict[str, str]]", field_labels)().items():
                     labels.setdefault(k, v)
         return labels

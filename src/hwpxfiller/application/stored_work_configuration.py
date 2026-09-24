@@ -202,10 +202,13 @@ def _encode_outcome(outcome: TerminalOutcome) -> dict[str, Any]:
 def _decode_outcome(data: Any) -> TerminalOutcome:
     if not isinstance(data, dict):
         raise StoredConfigurationError("terminal_outcome 표현이 malformed")
+    changed = data.get("changed")
+    if not isinstance(changed, bool):
+        raise StoredConfigurationError("changed 는 bool 이어야 한다")
     return TerminalOutcome(
-        application_id=data.get("application_id"),
-        outcome_code=data.get("outcome_code"),
-        changed=data.get("changed"),
+        application_id=_require_nonempty(data.get("application_id"), "application_id"),
+        outcome_code=_require_nonempty(data.get("outcome_code"), "outcome_code"),
+        changed=changed,
         source_configuration_version=data.get("source_configuration_version"),
         resulting_configuration_version=data.get("resulting_configuration_version"),
     )
@@ -226,12 +229,12 @@ def _decode_record(data: Any) -> IdempotencyRecord:
     if not isinstance(data, dict):
         raise StoredConfigurationError("idempotency record 표현이 malformed")
     return IdempotencyRecord(
-        request_id=data.get("request_id"),
-        fingerprint_schema_version=data.get("fingerprint_schema_version"),
-        command_fingerprint=data.get("command_fingerprint"),
+        request_id=_require_nonempty(data.get("request_id"), "request_id"),
+        fingerprint_schema_version=_require_nonempty(data.get("fingerprint_schema_version"), "fingerprint_schema_version"),
+        command_fingerprint=_require_nonempty(data.get("command_fingerprint"), "command_fingerprint"),
         terminal_outcome=_decode_outcome(data.get("terminal_outcome")),
-        request_actor_binding_digest=data.get("request_actor_binding_digest"),
-        recorded_at=data.get("recorded_at"),
+        request_actor_binding_digest=_require_nonempty(data.get("request_actor_binding_digest"), "request_actor_binding_digest"),
+        recorded_at=_require_nonempty(data.get("recorded_at"), "recorded_at"),
     )
 
 
@@ -254,10 +257,16 @@ def decode_stored(data: Any) -> StoredWorkConfiguration:
         raise StoredConfigurationError("processed_requests 는 리스트여야 한다")
     if not isinstance(data.get("configurations"), dict):
         raise StoredConfigurationError("configurations 표현이 malformed")
+    schema_version = data.get("schema_version")
+    if not isinstance(schema_version, str):
+        raise StoredConfigurationError(f"미상 store schema_version {schema_version!r}")
+    aggregate_version = data.get("aggregate_version")
+    if isinstance(aggregate_version, bool) or not isinstance(aggregate_version, int):
+        raise StoredConfigurationError("aggregate_version 은 정수여야 한다")
     return StoredWorkConfiguration(
-        schema_version=data.get("schema_version"),
-        aggregate_version=data.get("aggregate_version"),
-        workspace_instance_id=data.get("workspace_instance_id"),
+        schema_version=schema_version,
+        aggregate_version=aggregate_version,
+        workspace_instance_id=_require_nonempty(data.get("workspace_instance_id"), "workspace_instance_id"),
         configurations=decode_aggregate(data["configurations"]),
         processed_requests=tuple(
             _decode_record(r) for r in data["processed_requests"]

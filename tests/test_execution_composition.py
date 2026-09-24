@@ -26,7 +26,6 @@ from hwpxfiller.application.execution_composition import (
     CompositionPremisesBlocked,
     CompositionPremisesPassed,
     CompositionTheoremEvidenceIntegrityError,
-    CompositionTheoremEvidenceManifest,
     RuntimeMaterializerConformanceManifest,
     RuntimeMaterializerConformanceNotAdmitted,
     RuntimeMaterializerConformanceRegistry,

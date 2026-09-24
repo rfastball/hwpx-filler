@@ -29,7 +29,6 @@ from hwpxfiller.application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
     APPLY_REJECTED,
     APPLY_SUPERSEDED,
-    find_preparation,
 )
 from hwpxfiller.application.prepare_template_change import PreparePins
 from hwpxfiller.application.qualification_evidence import (
@@ -48,7 +47,6 @@ from hwpxfiller.application.template_qualification import (
 )
 from hwpxfiller.application.work_template_state import (
     CHANGE_APPLIED,
-    PREP_READY,
     PREPARED_CHANGE,
 )
 from hwpxfiller.external.candidate_store import CandidateObjectStore

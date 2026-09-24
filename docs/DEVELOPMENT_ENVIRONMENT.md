@@ -89,9 +89,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 
 ### 품질 정책
 
-- Ruff는 문법 오류, 미정의 이름과 버그 가능성이 높은 규칙을 CI에서 차단한다.
-- Pyright는 basic 모드다. 웹 브리지와 동적 payload 경계의 일부 진단은 점진 도입을
-  위해 완화되어 있다.
+- Ruff는 문법 오류, 미정의 이름, 미사용 코드와 버그 가능성이 높은 규칙을 CI에서 차단한다.
+- Pyright는 basic 모드이며 인자·할당·속성·호출·Optional 멤버 타입 오류를 검사한다.
 - 전체 포맷 마이그레이션은 기존 UI 작업과 충돌하지 않도록 별도 작업으로 분리한다.
 - coverage는 XML과 터미널 보고서를 만들고 `docs/package_coverage_floors.toml`의
   패키지별 line/branch 하한을 차단 조건으로 적용한다. 각 경로의 직접 소속 Python 파일만

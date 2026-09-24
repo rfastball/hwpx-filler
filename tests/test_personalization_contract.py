@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from _web_source import (
     REPO_ROOT,
     SOURCE_INDEX,
-    SOURCE_JS_DIR,
     app_css,
     source_text,
 )

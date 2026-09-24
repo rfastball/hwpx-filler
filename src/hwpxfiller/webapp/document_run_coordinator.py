@@ -19,6 +19,7 @@ from ..application.execution_contract_set import (
     plan_semantic_digest,
 )
 from ..application.generation_delivery import CurrentResolvedDelivery, WRITE_OVERWRITE
+from ..application.document_creation_workbench import HistoricalOutcomeSummary
 from ..application.jobs import JobStorePort
 from ..external.artifact_observation import (
     ArtifactObservationRefused,
@@ -86,7 +87,7 @@ class ManagedRunInput:
 @dataclass(frozen=True)
 class ManagedRunResult:
     payload: dict
-    historical_outcome: object | None = None
+    historical_outcome: HistoricalOutcomeSummary | None = None
 
 
 class DocumentRunCoordinator:
@@ -316,10 +317,11 @@ class DocumentRunCoordinator:
                 "error": "필요한 준비를 먼저 완료해 주세요",
                 "level": "warn",
             })
+        resolved_delivery = preparation.result
 
         overwriting = [
             item.resolved_output_relative_path
-            for item in preparation.result.ordered_items
+            for item in resolved_delivery.ordered_items
             if item.collision_disposition == WRITE_OVERWRITE
         ]
         if overwriting and not confirm_overwrite:
@@ -336,7 +338,7 @@ class DocumentRunCoordinator:
             work_authority_id=context.work_authority_id,
             plan_payload=managed.payload,
             ordered_raw_snapshots=preparation.record_preparation.raw_records,
-            resolved_delivery=preparation.result,
+            resolved_delivery=resolved_delivery,
             validated_at=validated_at,
             runtime_registry=context.runtime_registry,
             runtime_capability_manifest_digest=(
@@ -354,8 +356,11 @@ class DocumentRunCoordinator:
     @staticmethod
     def prepare_managed_output(preparation: CurrentDeliveryPreparation) -> dict | None:
         """생성 직전에만 출력 폴더를 만들고 실패 문안을 돌려준다."""
+        resolved_delivery = preparation.result
+        if not isinstance(resolved_delivery, CurrentResolvedDelivery):
+            raise ValueError("managed output requires a resolved delivery plan")
         try:
-            ensure_output_directory(preparation.result.output_directory)
+            ensure_output_directory(resolved_delivery.output_directory)
         except OSError:
             return {
                 "ok": False,
@@ -377,10 +382,13 @@ class DocumentRunCoordinator:
         )
         ledger_note = ""
         if delivered_outcome:
+            resolved_delivery = managed.preparation.result
+            if not isinstance(resolved_delivery, CurrentResolvedDelivery):
+                raise ValueError("managed result requires a resolved delivery plan")
             self.record_delivery(tuple(outcome.delivered))
             try:
                 write_managed_delivery_ledger(
-                    managed.preparation.result.output_directory,
+                    resolved_delivery.output_directory,
                     generated_at=generated_at,
                     work_authority_id=managed.context.work_authority_id,
                     execution_basis_digest=managed.sealed_basis_digest,

@@ -192,7 +192,6 @@ CORPUS_NOTICE = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_
 def test_generate_strips_stale_lineseg_from_modified_sections(tmp_path):
     """#95 실코퍼스 회귀 — 캐시를 무겁게 지닌 실제 공고서 템플릿을 채우면
     변경된 XML 의 stale 줄배치 캐시가 전량 제거되고, 미변경 XML 은 바이트 그대로다."""
-    from hwpxcore.package import HwpxPackage
 
     engine = make_hwpx_engine()
     fields = engine.required_fields(str(CORPUS_NOTICE))
@@ -221,7 +220,6 @@ def test_regenerate_same_values_is_byte_stable(tmp_path):
     엔진 쓰기 게이트가 매칭이 아닌 실변경(doc.modified)을 소비함을 핀한다:
     "재작성된 XML + 캐시 잔존" 조합은 불가능해야 한다(재작성 ⇔ modified ⇔ 스트립).
     """
-    from hwpxcore.package import HwpxPackage
 
     engine = make_hwpx_engine()
     data = {f: "값" for f in engine.required_fields(str(CORPUS_NOTICE))}

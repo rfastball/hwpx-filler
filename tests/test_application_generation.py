@@ -13,7 +13,6 @@ from functools import partial
 import pytest
 
 from hwpxfiller.application.generation import (
-    GenerationRun,
     blank_marker,
     direct_plan,
     plan_generation as _plan_generation,

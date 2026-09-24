@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from hashlib import sha256
 
-from lxml import etree
+import lxml.etree as etree
 
 from .field_occurrence import (
     FieldDiagnosticKind,
@@ -279,9 +279,10 @@ def _marker_problem(
     )
     if any(item is None or local_name(item.tag) != expected for item, expected, _ in chain):
         return StructuralDiagnosticKind.UNSUPPORTED_BOOKMARK_CONTROL_SHAPE
-    if any(item.tag != expected for item, _, expected in chain):
+    if any(
+        item is not None and item.tag != expected for item, _, expected in chain
+    ):
         return StructuralDiagnosticKind.NON_NATIVE_BOUNDARY
-    assert paragraph is not None
     if paragraph_container(paragraph, root) is None:
         return StructuralDiagnosticKind.UNSUPPORTED_BOOKMARK_TRAVERSAL_LANE
     return None

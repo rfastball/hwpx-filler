@@ -26,7 +26,6 @@ from hwpxfiller.application.fresh_execution_observation import (
 )
 from hwpxfiller.application.jobs import Job
 from hwpxfiller.application.field_binding_input import (
-    FieldBindingReviewRequired,
     StaleFieldBindingBasis,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile

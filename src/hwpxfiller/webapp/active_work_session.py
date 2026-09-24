@@ -17,6 +17,7 @@ from ..application.jobs import (
     list_jobs,
     load_job,
 )
+from ..domain.engine import HwpxEngine
 from ..domain.job import Job, data_binding_matches, data_binding_of, has_data_binding
 from ..gui.run_state import RunViewModel
 from ..gui.work_mode import seat_kinds
@@ -75,7 +76,7 @@ class ActiveWorkSession:
         self,
         registry: JobStorePort,
         template_change=None,
-        engine=None,
+        engine: HwpxEngine | None = None,
         on_work_changed: Callable[[], None] = lambda: None,
     ) -> None:
         self._registry = registry
@@ -91,6 +92,11 @@ class ActiveWorkSession:
         self.browse_tab = TAB_AVAILABLE
         self.browse_query = ""
         self.preferred = ""
+
+    def _require_engine(self) -> HwpxEngine:
+        if self._engine is None:
+            raise ValueError("문서 생성 엔진이 조립되지 않았습니다")
+        return self._engine
 
     @property
     def name(self) -> str:
@@ -117,7 +123,7 @@ class ActiveWorkSession:
         vm = (
             None
             if is_txt or unsupported
-            else RunViewModel(job, engine=self._engine)
+            else RunViewModel(job, engine=self._require_engine())
         )
         application_id = (
             self._template_change.current_template_application_id(
@@ -214,7 +220,7 @@ class ActiveWorkSession:
             self._registry,
             name,
             path,
-            engine=self._engine,
+            engine=self._require_engine(),
             confirm=confirm,
         )
         result["active"] = self.name == name

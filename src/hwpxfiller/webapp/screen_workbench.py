@@ -34,7 +34,7 @@ from ..domain.format_engine import presets as format_presets
 from ..domain.job import Job, work_mode
 from ..external.job_store import JobRegistry
 from ..domain.mapping import TYPES, MappingProfile
-from ..domain.text_render import template_fields
+from ..domain.text_render import RenderReport, template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..gui.filter_state import sniff_column_kinds
@@ -850,7 +850,7 @@ class WorkbenchController(MappingVerbsMixin):
     # ------------------------------------------------ 클립보드 브리지 계약
     # app.copy_clipboard(screen) 이 render → can_copy → note_copied 순으로 부른다.
     # 「기안」과 **같은 3메서드 계약**이라 브리지가 화면을 몰라도 된다.
-    def render(self) -> "tuple[str, object]":
+    def render(self) -> "tuple[str, RenderReport]":
         """작업점 카드의 (클립보드 텍스트, 리포트) — 카드와 **같은 통로**(링1 공유)."""
         assert self.mapping is not None
         rendered = render_card(

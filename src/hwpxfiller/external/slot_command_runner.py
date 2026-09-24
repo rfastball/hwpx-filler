@@ -83,6 +83,7 @@ from hwpxfiller.application.slot_configuration_projection import (
 )
 from hwpxfiller.application.slot_reconciliation import (
     ReconciliationApplication,
+    ReconciliationIntegrityError,
     plan_successor_reconciliation,
     resolve_slot_configuration,
 )
@@ -237,6 +238,13 @@ def _plan_new_config(
     if not plan.should_create_configuration:
         return None
     if plan.source_application_id is not None:
+        if (
+            plan.source_configuration_version is None
+            or plan.source_declared_selection_digest is None
+        ):
+            raise ReconciliationIntegrityError(
+                "reconciliation source provenance 가 불완전합니다"
+            )
         return create_reconciled(
             ctx.work_id, ctx.template_application_id, plan.initial_selections,
             plan.source_application_id, plan.source_configuration_version,

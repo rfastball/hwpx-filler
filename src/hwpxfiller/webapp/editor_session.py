@@ -3,8 +3,6 @@
 # ruff: noqa: BLE001
 from __future__ import annotations
 
-import json
-import shutil
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -17,12 +15,10 @@ from ..data.factory import (
     source_for_path,
     source_from_pool_item,
 )
-from ..domain.dataset_reference import STATUS_ACTIVE
 from ..domain.job import Job, data_binding_of, has_data_binding, template_media
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import library_display_name
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
-from ..external.dataset_store import DatasetPoolRegistry
 from ..external.hwpx_package_io import read_hwpx_package
 from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
@@ -37,14 +33,9 @@ from ..gui.edit_session import (
 )
 from ..gui.job_editor_state import (
     BINDING_CONFIRM_LABEL,
-    EMPTY_PRESERVED,
     NAME_DERIVED_HINT,
-    build_provenance,
     derive_job_name,
-    needs_overwrite_confirm,
-    overwrite_confirm_text,
     preserved_meta,
-    validate_save,
 )
 from ..gui.mapping_state import (
     RAW_BLOCK_MESSAGE,
@@ -56,7 +47,6 @@ from ..gui.mapping_state import (
 )
 from ..gui.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
 from ..gui.tutorial_state import Milestone
-from ..gui.work_mode import work_mode_label
 from .editor_presentation import binding_head, data_column_options, pattern_preview, sample_rows
 from .output_folder_zone import output_folder_zone
 from .pool_column import session_data_row
@@ -67,7 +57,6 @@ from .screens import (
     dataset_reference_identity,
     load_pool_into,
     pool_reference_quad,
-    reference_missing,
     registered_dataset_entry,
 )
 from .template_groups import norm_library_path, rel_key

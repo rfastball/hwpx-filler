@@ -358,7 +358,7 @@ def decode_selection_set(data: object) -> SlotSelectionSet:
             raise InvalidSelectionSetError("selected_option_ids 는 리스트여야 한다")
         selections.append(
             SlotSelection(
-                slot_id=entry.get("slot_id"),  # None·비문자열은 __post_init__ 이 거절
+                slot_id=_require_scalar_text(entry.get("slot_id"), "slot_id"),
                 selected_option_ids=tuple(option_ids),
             )
         )

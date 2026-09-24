@@ -44,7 +44,8 @@ from .current_execution_preparation import (
     unresolved_delivery,
 )
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
-from .slot_configuration_product import SlotConfigurationProductError
+from .slot_configuration_product import SlotConfigurationProduct, SlotConfigurationProductError
+from .seal_execution_plan_service import BindingReviewProjection
 from .template_change import SUPPORTED_MEDIA
 from ..application.preset_command import preset_list_actionable
 from ..domain.job import Job
@@ -53,7 +54,7 @@ from ..domain.job import Job
 @dataclass(frozen=True)
 class WorkbenchConfiguration:
     slot_view: object | None
-    binding_review: object | None
+    binding_review: BindingReviewProjection | None
 
 
 class JobExecutionSession:
@@ -99,11 +100,12 @@ class JobExecutionSession:
             "applied_key": None,
         }
 
-    def require_slot_configuration(self, work_ref: str) -> None:
+    def require_slot_configuration(self, work_ref: str) -> SlotConfigurationProduct:
         if self.slot_configuration is None:
             raise ValueError("문서 구성 기능이 조립되지 않았습니다")
         if not work_ref:
             raise ValueError("먼저 작업을 선택하세요")
+        return self.slot_configuration
 
     def slot_zone(self, work_ref: str, job: Job | None, template_missing: bool) -> dict:
         """현재 Work의 read-only 구성 projection을 JSON 값으로 만든다."""
@@ -153,12 +155,10 @@ class JobExecutionSession:
         return projection is not None and bool(projection.slots)
 
     def open_slot_configuration(self, work_ref: str):
-        self.require_slot_configuration(work_ref)
-        return self.slot_configuration.open_slot_configuration(work_ref)
+        return self.require_slot_configuration(work_ref).open_slot_configuration(work_ref)
 
     def refresh_slot_configuration(self, work_ref: str, token: str | None):
-        self.require_slot_configuration(work_ref)
-        return self.slot_configuration.refresh_slot_configuration(work_ref, token)
+        return self.require_slot_configuration(work_ref).refresh_slot_configuration(work_ref, token)
 
     def select_slot_option(
         self,
@@ -168,8 +168,7 @@ class JobExecutionSession:
         option_id: str,
         request_id: str,
     ):
-        self.require_slot_configuration(work_ref)
-        return self.slot_configuration.select_slot_option(
+        return self.require_slot_configuration(work_ref).select_slot_option(
             work_ref, configuration_token, slot_id, option_id, request_id
         )
 
@@ -216,16 +215,14 @@ class JobExecutionSession:
         name: str,
         confirmed_overwrite_key: str | None,
     ):
-        self.require_slot_configuration(work_ref)
-        return self.slot_configuration.save_selection_preset(
+        return self.require_slot_configuration(work_ref).save_selection_preset(
             work_ref, configuration_token, name, confirmed_overwrite_key
         )
 
     def apply_selection_preset(
         self, work_ref: str, configuration_token: str, preset_key: str
     ):
-        self.require_slot_configuration(work_ref)
-        return self.slot_configuration.apply_selection_preset(
+        return self.require_slot_configuration(work_ref).apply_selection_preset(
             work_ref, configuration_token, preset_key
         )
 

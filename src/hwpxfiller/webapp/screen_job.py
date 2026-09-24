@@ -1925,6 +1925,8 @@ class JobController:
             response = self.execution.current_slot_view(self.work.name)
         except SlotConfigurationProductError:
             return None
+        if response is None:
+            return None
         projection = response.current_view.projection
         if projection is None:
             return None
@@ -2464,6 +2466,8 @@ class JobController:
         if load_job(self.registry, self.work.name).media != "hwpx":
             return
         if effective_basis_changed is None:
+            if slot_response is None:
+                raise ValueError("슬롯 변경 결과가 없습니다")
             outcome = slot_response.mutation_outcome
             effective_basis_changed = outcome is not None and outcome.changed
         if not effective_basis_changed:

@@ -78,7 +78,7 @@ class _RegistryWriteState:
         digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]
         stream = (lock_root / f"{digest}.lock").open("a+b")
         try:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # pyright: ignore[reportAttributeAccessIssue] # POSIX-only fcntl API absent from Windows stubs.
         except OSError as exc:
             stream.close()
             raise JobRegistryOwnershipError(

@@ -259,15 +259,16 @@ def _decode_rule(data: Any) -> FieldBindingRule:
     if not isinstance(data, dict):
         raise StoredFieldBindingError("규칙 표현이 malformed")
     try:
-        policy = resolve_document_value_policy(data.get("policy_id"))
-    except FieldBindingError as exc:  # policy_id None·미지원 → fail-closed
+        policy = resolve_document_value_policy(_require_nonempty(data.get("policy_id"), "policy_id"))
+    except (FieldBindingError, StoredFieldBindingError) as exc:
+        # policy_id None·미지원 → fail-closed
         raise StoredFieldBindingError("policy_id 표현이 malformed·미지원") from exc
     constant_text = data.get("canonical_constant_text")
     if constant_text is not None and not isinstance(constant_text, str):
         raise StoredFieldBindingError("canonical_constant_text 표현이 malformed")
     return FieldBindingRule(
-        field_id=data.get("field_id"),
-        binding_kind=data.get("binding_kind"),
+        field_id=_require_nonempty(data.get("field_id"), "field_id"),
+        binding_kind=_require_nonempty(data.get("binding_kind"), "binding_kind"),
         document_content_value_policy=policy,
         source_key=data.get("source_key"),
         format_code=data.get("format_code"),
@@ -304,23 +305,29 @@ def _decode_revision(data: Any) -> FieldBindingRevision:
         raise StoredFieldBindingError("revision 규칙·스키마 표현이 malformed")
     try:
         return FieldBindingRevision(
-            work_authority_id=data.get("work_authority_id"),
-            base_template_application_id=data.get("base_template_application_id"),
-            field_binding_authority_revision=data.get(
-                "field_binding_authority_revision"
+            work_authority_id=_require_nonempty(data.get("work_authority_id"), "work_authority_id"),
+            base_template_application_id=_require_nonempty(
+                data.get("base_template_application_id"), "base_template_application_id"
             ),
-            field_binding_semantic_contract_id=data.get(
-                "field_binding_semantic_contract_id"
+            field_binding_authority_revision=_require_nonempty(
+                data.get("field_binding_authority_revision"), "field_binding_authority_revision"
             ),
-            source_schema_contract_id=data.get("source_schema_contract_id"),
-            raw_record_contract_id=data.get("raw_record_contract_id"),
+            field_binding_semantic_contract_id=_require_nonempty(
+                data.get("field_binding_semantic_contract_id"), "field_binding_semantic_contract_id"
+            ),
+            source_schema_contract_id=_require_nonempty(
+                data.get("source_schema_contract_id"), "source_schema_contract_id"
+            ),
+            raw_record_contract_id=_require_nonempty(data.get("raw_record_contract_id"), "raw_record_contract_id"),
             binding_rules=tuple(_decode_rule(r) for r in rules),
             source_schema_keys=tuple(keys),
-            canonical_binding_digest=data.get("canonical_binding_digest"),
-            canonical_source_schema_digest=data.get(
-                "canonical_source_schema_digest"
+            canonical_binding_digest=_require_nonempty(
+                data.get("canonical_binding_digest"), "canonical_binding_digest"
             ),
-            captured_at=data.get("captured_at"),
+            canonical_source_schema_digest=_require_nonempty(
+                data.get("canonical_source_schema_digest"), "canonical_source_schema_digest"
+            ),
+            captured_at=_require_nonempty(data.get("captured_at"), "captured_at"),
         )
     except FieldBindingInputIntegrityError as exc:
         # digest 유효해도 내부가 부정합이면 store 계약 오류로 정규화(fail-closed).
@@ -338,8 +345,8 @@ def _decode_pointer(data: Any) -> ApplicationRevisionPointer:
     if not isinstance(data, dict):
         raise StoredFieldBindingError("current pointer 표현이 malformed")
     return ApplicationRevisionPointer(
-        application_id=data.get("application_id"),
-        revision_id=data.get("revision_id"),
+        application_id=_require_nonempty(data.get("application_id"), "application_id"),
+        revision_id=_require_nonempty(data.get("revision_id"), "revision_id"),
     )
 
 
@@ -358,12 +365,12 @@ def _decode_draft(data: Any) -> CommittedDraftRecord:
     if not isinstance(data, dict):
         raise StoredFieldBindingError("draft record 표현이 malformed")
     return CommittedDraftRecord(
-        kind=data.get("kind"),
-        request_id=data.get("request_id"),
-        application_id=data.get("application_id"),
-        basis_fingerprint=data.get("basis_fingerprint"),
-        produced_revision_id=data.get("produced_revision_id"),
-        recorded_at=data.get("recorded_at"),
+        kind=_require_nonempty(data.get("kind"), "kind"),
+        request_id=_require_nonempty(data.get("request_id"), "request_id"),
+        application_id=_require_nonempty(data.get("application_id"), "application_id"),
+        basis_fingerprint=_require_nonempty(data.get("basis_fingerprint"), "basis_fingerprint"),
+        produced_revision_id=_require_nonempty(data.get("produced_revision_id"), "produced_revision_id"),
+        recorded_at=_require_nonempty(data.get("recorded_at"), "recorded_at"),
     )
 
 
@@ -382,12 +389,14 @@ def _decode_ledger(data: Any) -> FieldBindingIdempotencyRecord:
     if not isinstance(data, dict):
         raise StoredFieldBindingError("ledger record 표현이 malformed")
     return FieldBindingIdempotencyRecord(
-        request_id=data.get("request_id"),
-        fingerprint_schema_version=data.get("fingerprint_schema_version"),
-        command_fingerprint=data.get("command_fingerprint"),
-        produced_revision_id=data.get("produced_revision_id"),
-        outcome_code=data.get("outcome_code"),
-        recorded_at=data.get("recorded_at"),
+        request_id=_require_nonempty(data.get("request_id"), "request_id"),
+        fingerprint_schema_version=_require_nonempty(
+            data.get("fingerprint_schema_version"), "fingerprint_schema_version"
+        ),
+        command_fingerprint=_require_nonempty(data.get("command_fingerprint"), "command_fingerprint"),
+        produced_revision_id=_require_nonempty(data.get("produced_revision_id"), "produced_revision_id"),
+        outcome_code=_require_nonempty(data.get("outcome_code"), "outcome_code"),
+        recorded_at=_require_nonempty(data.get("recorded_at"), "recorded_at"),
     )
 
 
@@ -429,11 +438,17 @@ def decode_stored(data: Any) -> StoredWorkFieldBinding:
     ):
         if not isinstance(data.get(key), list):
             raise StoredFieldBindingError(f"{key} 는 리스트여야 한다")
+    schema_version = data.get("schema_version")
+    if not isinstance(schema_version, str):
+        raise StoredFieldBindingError(f"미상 store schema_version {schema_version!r}")
+    aggregate_version = data.get("aggregate_version")
+    if isinstance(aggregate_version, bool) or not isinstance(aggregate_version, int):
+        raise StoredFieldBindingError("aggregate_version 은 정수여야 한다")
     return StoredWorkFieldBinding(
-        schema_version=data.get("schema_version"),
-        aggregate_version=data.get("aggregate_version"),
-        workspace_instance_id=data.get("workspace_instance_id"),
-        work_authority_id=data.get("work_authority_id"),
+        schema_version=schema_version,
+        aggregate_version=aggregate_version,
+        workspace_instance_id=_require_nonempty(data.get("workspace_instance_id"), "workspace_instance_id"),
+        work_authority_id=_require_nonempty(data.get("work_authority_id"), "work_authority_id"),
         current_by_application=tuple(
             _decode_pointer(p) for p in data["current_by_application"]
         ),

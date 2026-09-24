@@ -17,7 +17,6 @@ from hwpxfiller.application.field_binding_input import (
     CurrentApplicationFieldStructure,
 )
 from hwpxfiller.application.stored_field_binding import (
-    APPLICATION_REVIEW,
     MIGRATION,
     ApplicationRevisionPointer,
     CommittedDraftRecord,

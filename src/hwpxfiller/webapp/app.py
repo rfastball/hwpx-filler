@@ -24,8 +24,6 @@ import os
 import shutil
 import sys
 import threading
-import time
-import uuid
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -368,7 +366,7 @@ class WebFrontend:
             load_progress=settings.load_tutorial_progress,
             save_progress=settings.save_tutorial_progress,
         )
-        tutorial = tutorial_ctrl.notify
+
         # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
         # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
         # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
@@ -396,7 +394,7 @@ class WebFrontend:
             # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
             # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
             workbench_observation=WorkbenchObservationProduct(),
-            tutorial=tutorial)
+            tutorial=tutorial_ctrl.notify)
 
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
@@ -417,7 +415,7 @@ class WebFrontend:
                 migration_notice=migration_notice,
                 # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
                 pool_registry=pool_registry,
-                tutorial=tutorial,
+            tutorial=tutorial_ctrl.notify,
             ),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             # 「자세히…」의 열 목록만 쓰는 복원기를 함께 준다(고르기 열 공용 ④) — 작업
@@ -441,7 +439,7 @@ class WebFrontend:
                                 txt_materialization=_txt_materialization_port(
                                     job_registry, seal_execution
                                 ),
-                                tutorial=tutorial),
+                                tutorial=tutorial_ctrl.notify),
             # 튜토리얼 체크리스트(#894) — 화면이 아니라 채널이다(표면은 셸 레벨 React 패널).
             # 목록 **끝**에 둔다: 앞 순서는 닫기 가드 질의 순서라 기존 화면 사이에 끼우면
             # 그 순서가 이유 없이 갈린다.
@@ -486,7 +484,7 @@ class WebFrontend:
                 # 그 확정의 **읽기 짝**(#911) — 편집기 footer 가 확정 동사를 세울지 말지는
                 # 같은 컨트롤러가 관리 검토에 쓰는 사실 하나로 정해진다(두 표면 한 판정).
                 binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,
-                tutorial=tutorial,
+                tutorial=tutorial_ctrl.notify,
             ),
         )
         self.controllers = {c.name: c for c in controllers}
@@ -1365,6 +1363,11 @@ def main(
         zoomable=False,
         hidden=True,  # 테마 주입 후 show — FOUC 은닉(#74, 아래 _apply_theme_then_show)
     )
+    if window is None:
+        _alarm("창을 만들지 못했습니다")
+        if selftest_timer is not None:
+            selftest_timer.cancel()
+        return 2
     frontend._window = window
     window.events.closing += frontend._handle_window_closing
 

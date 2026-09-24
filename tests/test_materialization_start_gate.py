@@ -8,7 +8,6 @@ materialization 은 fence 가 풀린 뒤 돈다는 것, (3) 어느 거절 갈래
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 
 import pytest
 

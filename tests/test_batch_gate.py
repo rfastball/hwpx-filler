@@ -23,7 +23,6 @@ generate_batch = partial(
 
 from hwpxfiller.domain.engine import GenerateResult
 from hwpxfiller.domain.fill_ledger import TemplateStructureDrift
-from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage

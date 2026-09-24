@@ -90,13 +90,14 @@ def _fieldize_main(argv: "list[str]") -> int:
         print("실제 변환하려면 --out <경로> 를 지정하세요.")
         return 0
 
-    pkg, report = compile_document(read_hwpx_package(args.template))
+    package = read_hwpx_package(args.template)
+    _, report = compile_document(package)
     for s in report.skipped:
         print(f"  [건너뜀] {s.name} — {s.reason}", file=sys.stderr)
     if not report.modified:
         print("변환할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).")
         return 0
-    write_hwpx_package(args.out, pkg)
+    write_hwpx_package(args.out, package)
     print(f"누름틀 변환 완료: 필드 {len(report.compiled)}개 -> {args.out}")
     return 0
 
@@ -217,11 +218,11 @@ def _render_main(argv: "list[str]") -> int:
         print(f"--record {args.record} 범위 밖(1..{len(records)}).", file=sys.stderr)
         return 1
 
-    record = records[idx]
+    record: dict[str, object] = dict(records[idx])
     if args.profile:
         from .external.mapping_store import load_mapping_profile
 
-        record = load_mapping_profile(args.profile).apply(record)  # 표시형까지 서식된 값
+        record = dict(load_mapping_profile(args.profile).apply(record))  # 표시형까지 서식된 값
 
     text, report = render_record(template, record)
     if report.missing_fields:
@@ -344,6 +345,7 @@ def _load_records(
             missing.append("서비스키(--service-key-file/--service-key/DATA_GO_KR_KEY/저장된 키)")
         if missing:
             ap.error(f"--source nara 에는 {', '.join(missing)} 가 필요합니다")
+        assert service_key is not None
         src = NaraStdDataSource(
             service_key, args.bgn, args.end,
             num_rows=args.num_rows, page_no=args.page,

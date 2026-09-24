@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol, cast
 
+from ..domain.data_source import DataSource
 from ..domain.engine import HwpxEngine
 
 if TYPE_CHECKING:
@@ -166,20 +167,20 @@ class FileSourceFactoryPort(Protocol):
 
     def __call__(
         self, path: str, *, sheet: "str | None" = None, header_row: int = 0,
-    ) -> object: ...
+    ) -> DataSource: ...
 
 
 class PoolSourceFactoryPort(Protocol):
     """풀 항목(참조) → DataSource 포트 — 복원·키 주입·pipeline 재귀는 Host 가 주입하는
     factory 의 몫이다. 나라장터 항목은 이 포트에 **오지 않는다**(아래 nara 분기가 선점)."""
 
-    def __call__(self, item, *, secret_store=None, fetcher=None) -> object: ...
+    def __call__(self, item, *, secret_store=None, fetcher=None) -> DataSource: ...
 
 
 def resolve_file_source(
     path: str, *, sheet: "str | None" = None, header_row: int = 0,
     source_factory: FileSourceFactoryPort,
-) -> "tuple[object, list[dict]]":
+) -> "tuple[DataSource, list[dict]]":
     """파일 경로 → (DataSource, records). 종류 선택은 주입된 factory. 로드 실패는 raise.
 
     ``sheet`` 는 사용자가 **확정한** 시트명(T2) — None 이면 기본(첫/유일 시트).
@@ -201,7 +202,7 @@ def resolve_file_source(
 def resolve_pool_source(
     item, *, secret_store=None, fetcher=None, nara_factory=None,
     source_factory: PoolSourceFactoryPort,
-) -> "tuple[object, list[dict]]":
+) -> "tuple[DataSource, list[dict]]":
     """데이터셋 풀 항목(참조) → (DataSource, records). 실행 시점 재읽기="싱크".
 
     나라장터는 주입된 N2 취득 factory를 재사용
@@ -691,7 +692,13 @@ class RunViewModel:
         """
         idx = list(indices)
         labels_fn = getattr(data.datasource, "field_labels", None)
-        labels = labels_fn() if callable(labels_fn) else {}
+        # Optional adapters may not expose labels; callable-only preserves that fallback while
+        # narrowing the dynamic host seam to the declared label result.
+        labels = (
+            cast("Callable[[], dict[str, str]]", labels_fn)()
+            if callable(labels_fn)
+            else {}
+        )
         return GenerationPlan(
             template=self.effective_template(),
             records=tuple(self.mapped_records(data, idx, marker, now=now)),

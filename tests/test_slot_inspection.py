@@ -29,7 +29,6 @@ import hwpxfiller.external.hwpx_qualification as hwpx_qualification
 import hwpxfiller.external.hwpx_structure_ops as hwpx_structure_ops
 from hwpxfiller.application.execution_structure import encode_execution_structure
 from hwpxfiller.application.template_qualification import (
-    QualificationInspection,
     TemplateDiagnostic,
     TemplateOption,
     TemplateInspectionContractError,

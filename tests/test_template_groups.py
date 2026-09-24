@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.external.job_store import library_rel_key
-from hwpxfiller.external import settings
 from hwpxfiller.webapp.template_groups import TemplateGroupModel, rel_key
 
 

@@ -80,15 +80,10 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E9", "F63", "F7", "F82", "B"]
+select = ["E9", "F", "B"]
 
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
 include = ["src"]
 exclude = ["build", "dist"]
-reportArgumentType = "none"
-reportAssignmentType = "none"
-reportAttributeAccessIssue = "none"
-reportCallIssue = "none"
-reportOptionalMemberAccess = "none"

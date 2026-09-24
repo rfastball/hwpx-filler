@@ -42,6 +42,7 @@ from ..domain.job import DEFAULT_FILENAME_PATTERN, Job, rules_values, template_m
 from ..domain.mapping import MappingProfile
 from .job_editor_state import (
     EMPTY_PRESERVED,
+    PreservedMeta,
     build_provenance,
     needs_overwrite_confirm,
     overwrite_confirm_text,
@@ -61,7 +62,7 @@ class EditorSavePort(Protocol):
     def exists(self, name: str) -> bool: ...
     def load(self, name: str) -> Job: ...
     def content_fingerprint(self, job: Job) -> str: ...
-    def write_lock(self) -> ContextManager[None]: ...
+    def write_lock(self) -> ContextManager[object]: ...
     def save(self, job: Job, *, allow_overwrite: bool = False) -> None: ...
 
 
@@ -338,7 +339,7 @@ class EditSession:
     derived_name_baseline: str = ""
     pattern: str = DEFAULT_FILENAME_PATTERN
     editing_origin: str = ""
-    preserved_meta: "dict[str, object]" = field(default_factory=lambda: deepcopy(EMPTY_PRESERVED))
+    preserved_meta: PreservedMeta = field(default_factory=lambda: deepcopy(EMPTY_PRESERVED))
     editing_fingerprint: str = ""
     loaded_provenance: "dict[str, str]" = field(default_factory=dict)
     reload_failure: str = ""
@@ -563,7 +564,7 @@ class EditSaveOperation:
         data_display_name: "Callable[[], str]",
         restore_saved: "Callable[[Job], None]",
         refresh_binding: "Callable[[], None]",
-        saved: "Callable[[Job], None]",
+        saved: "Callable[[Job], object]",
         after_mapping_saved: "Callable[[str], object] | None" = None,
     ) -> None:
         self.edit = edit
@@ -627,25 +628,29 @@ class EditSaveOperation:
             return f"작업 이름 '{self.edit.job_name}' 은(는) 이미 '{victim_label}' 작업입니다. 형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 기존 작업을 삭제한 뒤 다시 저장하세요."
         return ""
 
-    def _preserved_for_target(self) -> "dict[str, object]":
+    def _preserved_for_target(self) -> PreservedMeta:
         target = self.edit.job_name
         if self.edit.editing_origin and target == self.edit.editing_origin:
             try:
                 return preserved_meta(self.store.load(self.edit.editing_origin))
             except Exception:
-                return dict(self.edit.preserved_meta)
+                return PreservedMeta(**self.edit.preserved_meta)
         if self.store.exists(target):
             try:
                 return preserved_meta(self.store.load(target))
             except Exception:
-                return dict(EMPTY_PRESERVED)
-        origin = dict(self.edit.preserved_meta)
+                return PreservedMeta(**EMPTY_PRESERVED)
+        origin = PreservedMeta(**self.edit.preserved_meta)
         if self.edit.editing_origin:
             try:
                 origin = preserved_meta(self.store.load(self.edit.editing_origin))
             except Exception:
                 pass
-        return {**EMPTY_PRESERVED, "tags": dict(origin["tags"]), "group": origin["group"]}
+        return {
+            **EMPTY_PRESERVED,
+            "tags": dict(origin["tags"]),
+            "group": origin["group"],
+        }
 
     def save(self, p: dict) -> dict:
         verdict = self._validate_save_request()
