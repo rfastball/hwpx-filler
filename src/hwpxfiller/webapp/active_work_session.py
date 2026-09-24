@@ -19,9 +19,9 @@ from ..application.jobs import (
 )
 from ..domain.engine import HwpxEngine
 from ..domain.job import Job, data_binding_matches, data_binding_of, has_data_binding
-from ..gui.run_state import RunViewModel
-from ..gui.work_mode import seat_kinds
-from ..gui.work_candidates import (
+from ..viewmodel.run_state import RunViewModel
+from ..viewmodel.work_mode import seat_kinds
+from ..viewmodel.work_candidates import (
     TAB_AVAILABLE,
     TAB_NEEDS_ACTION,
     preferred_promotion,

@@ -10,7 +10,7 @@ import pytest
 
 from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.gui.edit_session import (
+from hwpxfiller.viewmodel.edit_session import (
     DEFERRED_ENTRY_REASONS,
     ENTRY_REASONS,
     LIVE_ENTRY_REASONS,
@@ -179,7 +179,7 @@ def test_make_context_validates_the_deep_link_target_fail_closed():
     """target 은 계약 §8 의 두 형태만 — 그 외는 loud(조용한 무겨눔 진입 금지)."""
     import pytest
 
-    from hwpxfiller.gui.edit_session import TARGET_FILENAME
+    from hwpxfiller.viewmodel.edit_session import TARGET_FILENAME
 
     assert make_context("작업").target == ""                       # 기본 = 겨눔 없음
     ctx = make_context("작업", target="binding/공고명")
@@ -200,7 +200,7 @@ def test_new_work_entry_is_wired_and_the_rest_stay_fail_closed():
     """
     import pytest
 
-    from hwpxfiller.gui.edit_session import (
+    from hwpxfiller.viewmodel.edit_session import (
         DEFERRED_ENTRY_REASONS,
         LIVE_ENTRY_REASONS,
         entry_reason_or_raise,

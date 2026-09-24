@@ -37,8 +37,8 @@ path = "src/hwpxfiller/data"
 line = 93
 branch = 85
 
-[packages."hwpxfiller.gui"]
-path = "src/hwpxfiller/gui"
+[packages."hwpxfiller.viewmodel"]
+path = "src/hwpxfiller/viewmodel"
 line = 96
 branch = 89
 

@@ -23,7 +23,7 @@ from hwpxfiller.application.generation import (
 from hwpxfiller.batch import OutputCollisionError
 from hwpxfiller.domain.engine import GenerateResult
 from hwpxfiller.domain.job import MISSING_MARKER, Job, rules_fingerprints
-from hwpxfiller.gui.run_state import GateError, RunDataInput
+from hwpxfiller.viewmodel.run_state import GateError, RunDataInput
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
 plan_generation = partial(_plan_generation, existing_outputs=existing_output_paths)

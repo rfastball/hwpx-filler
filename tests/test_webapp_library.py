@@ -535,7 +535,7 @@ def test_txt_work_joins_the_document_picker(tmp_path):
     남은 단언은 **합류 뒤에도 참이어야 하는 것**들이다: 방식은 라이브러리 필터에 그대로
     보이고(방식 필터의 존재 이유), 후보 판정은 hwpx 와 같은 술어를 탄다.
     """
-    from hwpxfiller.gui.work_candidates import rank_available
+    from hwpxfiller.viewmodel.work_candidates import rank_available
 
     txt = tmp_path / "안내문.txt"
     txt.write_text("제목 {{공고명}}", encoding="utf-8")
@@ -568,7 +568,7 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
     F6 PR-B: 「기안」 승계처(작업대)가 서면서 txt 도 `job` 으로 합쳐졌다 — 매체 분기는
     실행 버튼(판정 D)이 소유하고 목적지 분기는 소멸했다(§10.15.15 점검표 2행).
     """
-    from hwpxfiller.gui.work_candidates import rank_available
+    from hwpxfiller.viewmodel.work_candidates import rank_available
     from hwpxfiller.webapp.screen_library import primary_action
 
     txt = tmp_path / "안내문.txt"

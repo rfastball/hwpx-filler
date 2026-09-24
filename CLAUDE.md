@@ -59,8 +59,8 @@ CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `se
 
 1. **링0 도메인** `src/hwpxcore/`, `src/hwpxfiller/domain/`, `src/hwpxfiller/data/` — 형식
    kernel·제품 모델·데이터 소스. UI 런타임을 모른다.
-2. **링1 ViewModel** `src/hwpxfiller/gui/*_state.py` — Qt-free·DOM-free 상태 모델. 판정·게이트·
-   문안을 소유하고 직렬화 가능한 값을 낸다. 이름이 `gui` 지만 위젯이 아니다.
+2. **링1 ViewModel** `src/hwpxfiller/viewmodel/*_state.py` — Qt-free·DOM-free 상태 모델. 판정·게이트·
+   문안을 소유하고 직렬화 가능한 값을 낸다.
 3. **링2 프레젠테이션** `src/hwpxfiller/webapp/`(컨트롤러·브리지) +
    `frontend/`(유일한 HTML/CSS/JS source). 제품 런타임은 sealed `build/web/`만 소비한다.
    링1 을 불러 JSON-safe 스냅샷으로 바꿔 DOM 에 그린다.
@@ -185,7 +185,7 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
 
 바꿀 때 원천을 고치고 생성물을 커밋한다 — 생성물을 직접 고치면 드리프트 게이트가 잡는다.
 
-- 디자인 토큰: `src/hwpxfiller/gui/design_tokens.json` → `scripts/gen_design_tokens.py` →
+- 디자인 토큰: `src/hwpxfiller/viewmodel/design_tokens.json` → `scripts/gen_design_tokens.py` →
   `frontend/css/tokens.css`(+ 동결 목업 구간). 생성 드리프트는
   `scripts/gen_design_tokens.py --check`, 사용자 안전 대비 하한은
   `tests/repo_contract/test_contrast_wcag.py`가 각각 확인한다.
@@ -198,7 +198,7 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   `docs/COPY_STYLE_GUIDE.md`, 용어는 `docs/UI_VOCABULARY.md`.
   문장 수준 문안은 `docs/ui_copy_census.toml` 이 allowlist 이고
   `scripts/ui_copy_census.py --check` 가 대조한다(새 문장 기본 0).
-- 확장자 필터(`gui/file_filters.py`), 작업 방식 라벨(`gui/work_mode.py`), 식별 요약
+- 확장자 필터(`viewmodel/file_filters.py`), 작업 방식 라벨(`viewmodel/work_mode.py`), 식별 요약
   (`domain/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.
 
 ## 문서
@@ -227,8 +227,8 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
     검증한다. 승인된 스펙에 빠르게 수렴하는 executor 는 결함이 아니라 의도된 동작이다.
   - 항목별 판단이 필요한 팬아웃(리더 패널·감사·스윕)은 Sonnet 워커, 경계 지어진 기계적
     읽기·변환은 Haiku 워커. 반환은 핵심 수치·경로의 추출로 받는다 — 원문 덤프 금지.
-  - 병렬 워커는 직교성 인증이 전제다: `gui/style.py` 는 단일 소유자라 둘 이상 병렬 금지,
-    domain 변경은 `gui/*_state.py` 로 파문되므로 같은 기능은 한 워커에 묶고, `hwpxcore`
+  - 병렬 워커는 직교성 인증이 전제다: `viewmodel/run_state.py` 는 단일 소유자라 둘 이상 병렬 금지,
+    domain 변경은 `viewmodel/*_state.py` 로 파문되므로 같은 기능은 한 워커에 묶고, `hwpxcore`
     변경은 저장소 전역으로 파문되므로 단일 워커 직렬. 확신이 없으면 직렬이 기본값이다.
   - diff 리뷰는 계획 일치와 별개로 **기존 코드와의 교차 계약**을 확인한다(전부 blocker):
     새 UI 컨트롤의 기존 열거형(busy/disabled 잠금 id 목록 등) 등록, 프론트 트리거↔백엔드
@@ -254,7 +254,7 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   두되 **웹 표면에 노출하지 않는다**: 지정·개명·해산·접힘·태그 편집·태그 facet 동사가 전부
   걷혔고 링2 투영도 그 축을 묻지 않는다(`library_sections(grouped=False)` ·
   `build_sections(grouped_view=False)`). 되살릴 때 그 자리에서 다시 소비하면 된다.
-- **온보딩 튜토리얼 표면은 동결**이다(#941) — 링1(`gui/tutorial_state.py`)·컨트롤러
+- **온보딩 튜토리얼 표면은 동결**이다(#941) — 링1(`viewmodel/tutorial_state.py`)·컨트롤러
   (`webapp/screen_tutorial.py`)·마일스톤 통지 seam·설정 영속·`external/example_pack`·
   `examples/onboarding/` 자산과 컴포넌트(`frontend/src/tutorial/panel.ts`)는 지우지 않고 두되
   **웹 표면에 노출하지 않는다**: React 마운트·포트 배관·`.tut-*` CSS·예제 설치/제거 진입점이

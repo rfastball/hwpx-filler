@@ -2154,7 +2154,7 @@ test("loadInitial 은 호스트 준비 뒤에만 initial 을 부른다 — 순�
 });
 
 /* ───────────────────────── U6-C 연결 확인 표(#977) ─────────────────────────
-   판정은 전부 링1·링2 에 있다(`gui/mapping_state.py`·`webapp/screen_editor.py`). 여기서
+   판정은 전부 링1·링2 에 있다(`viewmodel/mapping_state.py`·`webapp/screen_editor.py`). 여기서
    재는 것은 **표면이 그 값을 그대로 쓰는가**와 **어느 액션으로 갈리는가** 둘뿐이다. */
 
 const BIND_OPTIONS = [

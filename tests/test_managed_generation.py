@@ -222,7 +222,7 @@ def test_uncompiled_structure_notation_refuses_the_managed_run(tmp_path) -> None
     from dataclasses import replace
 
     from hwpxfiller.application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
-    from hwpxfiller.gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
+    from hwpxfiller.viewmodel.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
     from hwpxfiller.webapp.managed_run_result import ADMISSION_REJECT_TEXT
 
     spec = replace(

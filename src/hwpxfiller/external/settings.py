@@ -486,7 +486,7 @@ def save_last_data_source(
 # 아래 ``achieved``(달성 단계 식별자)·``dismissed``(명시 종료) 두 칸. 중첩으로 두는 이유는
 # 설치 manifest 참조가 같은 top_key 아래 뒤에 붙기 때문이다(슬라이스 B 소유) — 진행 저장이
 # 그 칸을 지우지 않게 판독-보존-쓰기로 다룬다. 단계 식별자 자체는 여기서 검증하지 않는다:
-# 열거 정본은 링1(``gui/tutorial_state.py``)이고, 옛 버전이 남긴 죽은 단계 키는 그 층이
+# 열거 정본은 링1(``viewmodel/tutorial_state.py``)이고, 옛 버전이 남긴 죽은 단계 키는 그 층이
 # 복원할 때 걸러낸다(죽은 키 무시 전례). localStorage 금지(#74)는 여기서도 같다.
 def load_tutorial_progress() -> "dict":
     """튜토리얼 진행 — ``{"achieved": [단계 식별자], "dismissed": bool}``.

@@ -27,7 +27,7 @@ from hwpxfiller.external.job_store import (
     library_key_for,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.gui.review_state import (
+from hwpxfiller.viewmodel.review_state import (
     review_notice_text,
     review_requirement,
     rules_key,
@@ -221,7 +221,7 @@ def test_the_approval_axis_is_gone_from_the_repository():
     이름 하나가 조용히 돌아오면 "…승인해야 생성할 수 있습니다"라는 차단 서술도 함께 돌아오고,
     그 순간 「확인의 자리는 만들어진 문서」와 두 목소리가 된다.
     """
-    from hwpxfiller.gui import review_state
+    from hwpxfiller.viewmodel import review_state
 
     dead = (
         "ReviewState", "approval_key", "build_evidence", "previous_values",

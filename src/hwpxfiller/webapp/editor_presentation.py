@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..domain.output_name import format_seq_token
-from ..gui.mapping_state import NO_SOURCE_LABEL, SPECIAL_SOURCE_LABEL
+from ..viewmodel.mapping_state import NO_SOURCE_LABEL, SPECIAL_SOURCE_LABEL
 from ..naming import make_output_filename, pattern_uses_seq, seq_token_pads
 
 

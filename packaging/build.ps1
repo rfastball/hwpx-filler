@@ -228,9 +228,11 @@ function Test-WheelDistribution {
         finally {
             $archive.Dispose()
         }
-        $legacy = @($entries | Where-Object { $_ -like 'hwpxfiller/core/*' })
+        $legacy = @($entries | Where-Object {
+            $_ -like 'hwpxfiller/core/*' -or $_ -like 'hwpxfiller/gui/*'
+        })
         if ($legacy.Count -ne 0) {
-            throw "wheel에 퇴역 hwpxfiller/core 경로가 있습니다: $($legacy -join ', ')"
+            throw "wheel에 퇴역 hwpxfiller/core 또는 hwpxfiller/gui 경로가 있습니다: $($legacy -join ', ')"
         }
         $required = @(
             'hwpxcore/package.py',
@@ -239,7 +241,8 @@ function Test-WheelDistribution {
             'hwpxfiller/external/hwpx_package_io.py',
             'hwpxfiller/external/text_registry.py',
             'hwpxfiller/host/motw.py',
-            'hwpxfiller/host/native/single_instance.py'
+            'hwpxfiller/host/native/single_instance.py',
+            'hwpxfiller/viewmodel/run_state.py'
         )
         $missing = @($required | Where-Object { $_ -notin $entries })
         if ($missing.Count -ne 0) {
@@ -268,13 +271,15 @@ function Test-WheelDistribution {
             "'hwpxfiller.domain.validation','hwpxfiller.external.atomic'," +
             "'hwpxfiller.external.hwpx_package_io','hwpxfiller.external.job_store'," +
             "'hwpxfiller.external.text_registry','hwpxfiller.host.locations'," +
-            "'hwpxfiller.host.motw','hwpxfiller.host.native.dialogs'); " +
+            "'hwpxfiller.host.motw','hwpxfiller.host.native.dialogs'," +
+            "'hwpxfiller.viewmodel.run_state'); " +
             "[importlib.import_module(m) for m in mods]; " +
             "eps={(e.group,e.name,e.value) for e in importlib.metadata.entry_points() " +
             "if e.name in {'hwpxfiller','hwpx-filler-web'}}; " +
             "assert ('console_scripts','hwpxfiller','hwpxfiller.cli:main') in eps; " +
             "assert ('gui_scripts','hwpx-filler-web','hwpxfiller.webapp.app:main') in eps; " +
-            "assert importlib.util.find_spec('hwpxfiller.core') is None"
+            "assert importlib.util.find_spec('hwpxfiller.core') is None; " +
+            "assert importlib.util.find_spec('hwpxfiller.gui') is None"
         )
         & uv run --quiet --isolated --no-project --with $wheel.FullName -- python -I -c $smoke
         if ($LASTEXITCODE -ne 0) { throw "clean wheel canonical import smoke 실패(exit $LASTEXITCODE)" }
@@ -282,7 +287,7 @@ function Test-WheelDistribution {
         [ordered]@{
             wheel = $wheel.Name
             entry_count = $entries.Count
-            legacy_core_count = $legacy.Count
+            legacy_module_count = $legacy.Count
             required_modules = $required
             cli_help = $true
             canonical_import_smoke = $true
@@ -304,9 +309,11 @@ function Test-PyInstallerArchive([string]$ExePath, [string]$Key) {
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller archive inspection 실패($Key, exit $LASTEXITCODE)"
     }
-    $legacy = @($lines | Where-Object { $_ -match 'hwpxfiller\.core(?:\.|$)' })
+    $legacy = @($lines | Where-Object {
+        $_ -match 'hwpxfiller\.(?:core|gui)(?:\.|$)'
+    })
     if ($legacy.Count -ne 0) {
-        throw "$Key bundle에 퇴역 hwpxfiller.core module이 있습니다: $($legacy -join ', ')"
+        throw "$Key bundle에 퇴역 hwpxfiller.core 또는 hwpxfiller.gui module이 있습니다: $($legacy -join ', ')"
     }
     $required = @(
         'hwpxfiller.domain.validation',
@@ -320,7 +327,8 @@ function Test-PyInstallerArchive([string]$ExePath, [string]$Key) {
             'hwpxfiller.host.locations',
             'hwpxfiller.host.motw',
             'hwpxfiller.host.native.dialogs',
-            'hwpxfiller.host.native.single_instance'
+            'hwpxfiller.host.native.single_instance',
+            'hwpxfiller.viewmodel.run_state'
         )
     }
     $missing = @(
@@ -335,7 +343,7 @@ function Test-PyInstallerArchive([string]$ExePath, [string]$Key) {
     [ordered]@{
         target = $Key
         archive_line_count = $lines.Count
-        legacy_core_count = $legacy.Count
+        legacy_module_count = $legacy.Count
         required_modules = $required
     } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (
         Join-Path $evidenceDir "archive-$Key-summary.json"

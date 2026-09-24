@@ -48,16 +48,16 @@ from ..domain.output_folder_default import (
     OutputFolderResolution,
 )
 from .output_folder_zone import output_folder_resolution, output_folder_zone
-from ..gui.filter_state import (
+from ..viewmodel.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
     KIND_TEXT,
 )
-from ..gui.review_state import (
+from ..viewmodel.review_state import (
     ReviewRequirement,
     review_requirement,
 )
-from ..gui.run_state import (
+from ..viewmodel.run_state import (
     FileSourceFactoryPort,
     GateState,
     PoolSourceFactoryPort,
@@ -66,12 +66,12 @@ from ..gui.run_state import (
     resolve_pool_source,
     template_missing,
 )
-from ..gui.tutorial_state import Milestone
-from ..gui.work_mode import (
+from ..viewmodel.tutorial_state import Milestone
+from ..viewmodel.work_mode import (
     WORK_MODE_TEXT,
     seat_kinds,
 )
-from ..gui.work_candidates import (
+from ..viewmodel.work_candidates import (
     prework_gate,
     unsupported_media_gate,
     workbench_entry_gate,
@@ -890,7 +890,7 @@ class JobController:
         전이 판정 → 세션 성분 → 소스 키 → 범위·필터 재생성 → 기억 → 푸시. 한 자리라도
         순서를 달리하면 이 화면의 불변식이 종류별로 갈린다.
 
-        **소스는 링1 리졸버를 지난다**(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)
+        **소스는 링1 리졸버를 지난다**(:func:`~hwpxfiller.viewmodel.run_state.resolve_pool_source`)
         — 구체 선택은 유일한 제품 조립점이 주입한 factory 의 몫이라(P2-16), 여기서
         ``PclmDataSource`` 를 직접 만들면 링2 가 구체를 조용히 재선택하는 뒷문이 된다.
         풀 슬롯이 없는 마운트라 참조 형상은 :func:`~hwpxfiller.data.factory.

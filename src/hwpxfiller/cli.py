@@ -34,7 +34,7 @@ from .external.atomic import write_text_atomic
 from .external.output_files import ensure_output_directory, existing_output_paths
 from .domain.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
-from .gui.result_errors import describe_fill_note
+from .viewmodel.result_errors import describe_fill_note
 from .naming import pattern_field_tokens
 from .domain.validation import validate
 from .data.excel import ExcelDataSource, ambiguous_sheets

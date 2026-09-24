@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..external.dataset_store import DatasetPoolRegistry
-from ..gui.filter_state import (
+from ..viewmodel.filter_state import (
     FilterModel,
     FilterView,
     RangeClause,
@@ -20,9 +20,9 @@ from ..gui.filter_state import (
     cell_text,
     sniff_column_kinds,
 )
-from ..gui.selection_state import SelectionModel
-from ..gui.record_range import RecordRange, RecordRangeDraft
-from ..gui.work_candidates import bound_jobs
+from ..viewmodel.selection_state import SelectionModel
+from ..viewmodel.record_range import RecordRange, RecordRangeDraft
+from ..viewmodel.work_candidates import bound_jobs
 from .pool_column import session_data_row
 
 # 데이터 미겨눔 상태의 필터/테이블 빈 골격 — 표면이 분기 없이 그린다.

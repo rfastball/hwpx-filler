@@ -12,7 +12,7 @@
 
 - ``source_pointer() -> str`` — 생성 원장에 남길 **포인터-온리** 소스 표기(쿼리·키·값
   박제 금지). 미선언 시 소비자가 ``path`` 속성(``file:<경로>``) → 타입명 순으로 강등
-  표기한다(:meth:`hwpxfiller.gui.run_state.RunViewModel.source_pointer` 참조).
+  표기한다(:meth:`hwpxfiller.viewmodel.run_state.RunViewModel.source_pointer` 참조).
 """
 
 from __future__ import annotations

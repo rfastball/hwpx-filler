@@ -10,7 +10,7 @@ from hwpxfiller.domain.job import (
     WORK_MODE_TEXT,
     WORK_MODE_UNSUPPORTED,
 )
-from hwpxfiller.gui.work_mode import (
+from hwpxfiller.viewmodel.work_mode import (
     WORK_MODE_ORDER,
     mode_sections,
     work_mode_label,

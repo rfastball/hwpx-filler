@@ -16,7 +16,7 @@
   (:class:`RuntimePolicyAdmission` · sealability 어휘). DOMAIN/POLICY/CONTEXT 축을 나른다.
 
 여기서 새 durable state·새 semantic 을 만들지 않는다(#726 즉시 상향: "테스트 완화로만 green" 과
-같은 계열의 hollow measurement 금지). store/webapp/gui 를 import 하지 않는다(ring 경계).
+같은 계열의 hollow measurement 금지). store/webapp/viewmodel 를 import 하지 않는다(ring 경계).
 
 **7상태 machine-code 는 이 모듈이 소유한다**(vocabulary 무변경 — 이건 사용자 문안이 아니라 wire
 코드다). 사용자 문안 매핑은 :mod:`hwpxfiller.application.document_creation_vocabulary` 및

@@ -145,7 +145,7 @@ Linear 대비 검증된 추가가치가 없어 별개 방향에서 제외 — �
 
 ## 착지 경로
 
-인프라상 채택 = **`src/hwpxfiller/gui/design_tokens.json` 편집 + `scripts/gen_design_tokens.py`
+인프라상 채택 = **`src/hwpxfiller/viewmodel/design_tokens.json` 편집 + `scripts/gen_design_tokens.py`
 재생성 + `frontend/css` 조정 → `docs/UI_GALLERY.html` 라이트/다크 눈검증 + WCAG 대비 테스트**. 권장
 순서: ① 로열블루 색 착지(저위험) → ② 레일 내비 개선 → ③ #58/#59/#60 합류.
 

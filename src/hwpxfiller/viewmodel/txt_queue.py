@@ -7,7 +7,7 @@ txt 기안 세션의 데이터 존 선택은 **전-선언**이다(결정 16): �
 
 ## 계약
 
-- **레코드 정체 = 데이터소스 세션 내 인덱스**(:class:`~hwpxfiller.gui.selection_state.
+- **레코드 정체 = 데이터소스 세션 내 인덱스**(:class:`~hwpxfiller.viewmodel.selection_state.
   SelectionModel` 과 같은 키). 선택은 이 모델의 진입점이고, 복사 상태(미처리/처리)는 그 위의
   집합 구분이다. 선택·큐는 세션 휘발이라(결정 8) 데이터 교체 시 컨트롤러가 새로 만든다.
 - **표시 순서는 고정이다**(U2 §2.15, #338): :meth:`display_order` 는 편입(선언) 순서의 고정

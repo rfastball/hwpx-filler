@@ -16,8 +16,8 @@ from ..application.workbench_execution_status import CHECKING, NO_EVIDENCE, STAL
 from ..domain.job import work_mode
 from ..domain.mapping import SOURCE_CARRIER_TYPES
 from ..domain.identity_summary import identity_summary
-from ..gui.result_errors import classify_result_error, describe_fill_note
-from ..gui.work_candidates import (
+from ..viewmodel.result_errors import classify_result_error, describe_fill_note
+from ..viewmodel.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     browse_candidates,
@@ -25,7 +25,7 @@ from ..gui.work_candidates import (
     rank_available,
     suggested_work,
 )
-from ..gui.work_mode import WORK_MODE_TEXT, mode_sections, work_mode_label
+from ..viewmodel.work_mode import WORK_MODE_TEXT, mode_sections, work_mode_label
 from ..naming import pattern_field_tokens, plan_output_names
 from .managed_run_result import run_title
 

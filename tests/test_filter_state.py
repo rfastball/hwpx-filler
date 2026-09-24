@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.gui.filter_state import (
+from hwpxfiller.viewmodel.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
     KIND_TEXT,

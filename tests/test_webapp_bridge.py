@@ -225,7 +225,7 @@ def test_win32_filter_block_derives_from_exts_and_is_double_null_terminated():
     회귀 심(소이슈 ②). 확장자 단일 출처(EXCEL_EXTS)가 필터에 자동 반영되는지도 함께 가드.
     """
     from hwpxfiller.data.factory import EXCEL_EXTS
-    from hwpxfiller.gui.file_filters import EXCEL_FILTER_PATTERN
+    from hwpxfiller.viewmodel.file_filters import EXCEL_FILTER_PATTERN
     from hwpxfiller.host.native.dialogs import _filter_block
 
     for ext in EXCEL_EXTS:

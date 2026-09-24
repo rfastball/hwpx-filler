@@ -1,4 +1,4 @@
-"""전-선언 큐 모델 단위 가드 — ``hwpxfiller.gui.txt_queue`` (R-flow 블록 3 결정 16·18).
+"""전-선언 큐 모델 단위 가드 — ``hwpxfiller.viewmodel.txt_queue`` (R-flow 블록 3 결정 16·18).
 
 큐는 선택(전-선언)에 종속한다: 편입(선언) 순서 보존 + 멱등 재복사·완주 + 작업점=첫 미처리.
 미루기는 R-info 3부 결정 10 에서 사망했다(#148 슬라이스 3c) — 자유 이동(◀▶·점 클릭)이
@@ -9,8 +9,8 @@
 """
 from __future__ import annotations
 
-from hwpxfiller.gui.selection_state import SelectionModel
-from hwpxfiller.gui.txt_queue import TxtQueueModel
+from hwpxfiller.viewmodel.selection_state import SelectionModel
+from hwpxfiller.viewmodel.txt_queue import TxtQueueModel
 
 
 def make(count: int, all_selected: bool = True) -> "tuple[SelectionModel, TxtQueueModel]":

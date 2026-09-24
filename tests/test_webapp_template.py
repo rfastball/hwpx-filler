@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.domain.authoring import compile_document
-from hwpxfiller.gui.compile_badge import TEXT_BADGE_LABEL, TEXT_BADGE_LEVEL
+from hwpxfiller.viewmodel.compile_badge import TEXT_BADGE_LABEL, TEXT_BADGE_LEVEL
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
@@ -1061,7 +1061,7 @@ def test_column_row_carries_the_ring1_verdict_and_the_media_badge(tmp_path, monk
 
 def test_the_row_verdict_is_computed_once_per_row(tmp_path, monkeypatch):
     """행마다 링1 판정은 **한 번**이다 — 두 번 부르면 그 둘이 갈릴 자리가 난다."""
-    from hwpxfiller.gui.template_manager_state import TemplateRow
+    from hwpxfiller.viewmodel.template_manager_state import TemplateRow
 
     ctrl, _, _ = _controller(tmp_path, monkeypatch)
     calls: list = []

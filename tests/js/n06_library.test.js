@@ -239,7 +239,7 @@ test("상세 재선택 — 미결속 데이터는 「연결하기」 하나뿐�
 
 test("editWork — section extra가 EditorEntry 문맥에 합류한다(착지 탭 deep-link)", async () => {
   /* 연결 손잡이의 onClick 이 부르는 그 경로다(`section: "template"` = 「고르기」). 섹션 어휘는
-     Python 이 아는 값(`gui/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
+     Python 이 아는 값(`viewmodel/edit_session.py`: template / binding)이고 배관은 `app.py` 가 이미 진다. */
   const h = build();
   await h.controller.editWork("작업A", { "여기서 할 것": "고르세요" }, { section: "template" });
   await h.controller.editWork("작업A", {}, { section: "binding" });

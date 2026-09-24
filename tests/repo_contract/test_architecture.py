@@ -294,7 +294,7 @@ def test_job_registry_writes_go_through_locked_boundaries() -> None:
     pattern = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)\.(?:save|mutate)\(")
     base = ROOT / "src" / "hwpxfiller"
     offenders: list[str] = []
-    for subdir in ("webapp", "gui", "cli"):
+    for subdir in ("webapp", "viewmodel", "cli"):
         for path in sorted((base / subdir).rglob("*.py")):
             if any(word in path.name for word in other_registries):
                 continue

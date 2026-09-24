@@ -32,7 +32,7 @@ ALLOWLIST = ROOT / "docs" / "ui_copy_census.toml"
 # ── 스캔 범위 — 사용자 문안 생산자만 ────────────────────────────────────────────────
 #: 링1 상태 모델과 링2 컨트롤러. 도메인(`domain/`·`hwpxcore`)은 문안을 짓지 않는다.
 PY_GLOBS = (
-    "src/hwpxfiller/gui/**/*.py",
+    "src/hwpxfiller/viewmodel/**/*.py",
     "src/hwpxfiller/webapp/**/*.py",
     # 데이터 풀 VM 은 `application/` 에 살지만 링1 판정·문안(고르기 거절 사유·빈 목록 안내)을
     # 짓는다 — 고르기 열 통합(PR #995)에서 그 문장들이 `webapp/screen_pool.py` 에서 여기로
@@ -398,8 +398,8 @@ def _summary(counts: Counter[tuple[str, str]]) -> str:
             tree = "html"
         elif file.startswith("frontend/"):
             tree = "frontend"
-        elif file.startswith("src/hwpxfiller/gui/"):
-            tree = "gui"
+        elif file.startswith("src/hwpxfiller/viewmodel/"):
+            tree = "viewmodel"
         elif file.startswith("src/hwpxfiller/webapp/"):
             tree = "webapp"
         else:

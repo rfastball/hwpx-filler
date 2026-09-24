@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.viewmodel.selection_state import SelectionModel
 
 
 def test_defaults_and_length():

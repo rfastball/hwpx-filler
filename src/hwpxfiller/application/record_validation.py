@@ -297,7 +297,7 @@ def missing_value_marker(field_id: str) -> str:
     """빈 값 자리에 박히는 문서 텍스트 — 표식 정본은 링0 :data:`MISSING_MARKER` 하나다.
 
     문자열을 다시 적지 않는 이유가 둘이다. ①산출물 사후 관찰
-    (:mod:`hwpxfiller.gui.artifact_view_state`)이 같은 상수에서 파생한 정규식으로 표식을
+    (:mod:`hwpxfiller.viewmodel.artifact_view_state`)이 같은 상수에서 파생한 정규식으로 표식을
     세므로 문구가 갈리면 만든 문서의 표식을 우리 손으로 못 본다. ②legacy 경로
     (:func:`~hwpxfiller.domain.job.mark_missing_values`)가 **매핑 키**로 format 하는데
     그 키가 곧 Plan 의 ``field_id`` 라, 같은 입력에서 두 경로의 문서 텍스트가 같아야 한다.

@@ -18,7 +18,7 @@ from hwpxfiller.external.job_store import JobRegistry, encode_job
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_files import TemplateFileStore
-from hwpxfiller.gui.template_manager_state import CONVERT_ACTION_LABEL
+from hwpxfiller.viewmodel.template_manager_state import CONVERT_ACTION_LABEL
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -2172,7 +2172,7 @@ def test_pairing_counts_are_a_readonly_preview_until_the_model_exists(tmp_path):
 
     1단계는 매핑 모델을 만들지 않는다: 만들면 고르기를 바꿔 보는 것만으로 「전원 미확정
     재생성」 전이가 돌아 확정이 조용히 무너진다. 그래서 모델이 없거나 키가 다르면
-    :func:`~hwpxfiller.gui.mapping_state.pairing_preview` 를 읽기 전용으로 돌리고, 모델이
+    :func:`~hwpxfiller.viewmodel.mapping_state.pairing_preview` 를 읽기 전용으로 돌리고, 모델이
     서 있으면 그 모델의 실제 수치를 낸다. 라벨이 갈리는 근거가 이 한 축이다.
     """
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED])
@@ -2598,7 +2598,7 @@ def test_edit_save_preserves_the_review_baseline(tmp_path):
     썼는가"는 실행 이력의 일이다 — 그룹·태그·이력과 같은 부류의 비-편집 메타다.
     """
     from hwpxfiller.domain.job import rules_fingerprints
-    from hwpxfiller.gui.review_state import review_requirement
+    from hwpxfiller.viewmodel.review_state import review_requirement
 
     ctrl, _ = _controller26(tmp_path)
     _save_named(ctrl, "기준선작업")
@@ -2620,7 +2620,7 @@ def test_changing_the_rules_keeps_the_old_baseline_so_review_stands(tmp_path):
     """보존은 **무효화를 막지 않는다**: 기준선은 「마지막 완주가 쓴 것」 그대로 남고,
     바뀐 규칙과 어긋나 검토 요구가 선다(보존이 곧 승인은 아니다)."""
     from hwpxfiller.domain.job import rules_fingerprints
-    from hwpxfiller.gui.review_state import review_requirement
+    from hwpxfiller.viewmodel.review_state import review_requirement
 
     ctrl, _ = _controller26(tmp_path)
     _save_named(ctrl, "규칙변경작업")

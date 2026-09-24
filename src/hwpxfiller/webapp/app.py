@@ -56,7 +56,7 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
 from ..data.factory import source_for_path, source_from_pool_item
-from ..gui.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
+from ..viewmodel.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
 )
@@ -66,7 +66,7 @@ from ..external.artifact_observation import (  # 안착 문서 되읽기 커널(
 )
 from ..external.atomic import write_bytes_atomic
 # 확장자 단일 출처(RC-34) — Qt-free 상수
-from ..gui.file_filters import EXCEL_FILTER_PATTERN, HWPX_FILTER, HWPX_FILTER_PATTERN
+from ..viewmodel.file_filters import EXCEL_FILTER_PATTERN, HWPX_FILTER, HWPX_FILTER_PATTERN
 from ..host.native import single_instance
 from ..host.native.clipboard import set_clipboard_text
 from ..host.native.debug import log
@@ -970,7 +970,7 @@ class WebFrontend:
         """이 진입이 들고 갈 「문서 만들기」의 데이터 참조 — 인계가 없으면 빈 사전(#878).
 
         가부는 **두 판정의 합**이고 둘 다 이미 있는 것을 읽는다: 사유는 링1 의 목록
-        (:data:`~hwpxfiller.gui.edit_session.DATA_ANCHORED_ENTRY_REASONS`), 참조는 「문서
+        (:data:`~hwpxfiller.viewmodel.edit_session.DATA_ANCHORED_ENTRY_REASONS`), 참조는 「문서
         만들기」의 단일 판정(``new_work_handoff`` — 버튼의 가부와 같은 술어). 여기서 `data_path`
         를 따로 보고 판정하지 않는 이유는 :meth:`new_job_from_data` 와 같다.
 

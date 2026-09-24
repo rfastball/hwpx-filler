@@ -129,9 +129,9 @@ source_write_set = ["src/hwpxfiller/data/secret_store.py"]
 oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_ledger_records_marker_evidence"
 
 [[unit]]
-module = "hwpxfiller.gui"
+module = "hwpxfiller.viewmodel"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/__init__.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/__init__.py"]
 oracle_kind = "structural"
 
 [[unit]]
@@ -153,117 +153,117 @@ source_write_set = ["src/hwpxfiller/external/template_files.py"]
 oracle_nodeid = "tests/test_webapp_template.py"
 
 [[unit]]
-module = "hwpxfiller.gui.artifact_view_state"
+module = "hwpxfiller.viewmodel.artifact_view_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/artifact_view_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/artifact_view_state.py"]
 oracle_nodeid = "tests/test_artifact_view_state.py"
 
 [[unit]]
-module = "hwpxfiller.gui.compile_badge"
+module = "hwpxfiller.viewmodel.compile_badge"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/compile_badge.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/compile_badge.py"]
 oracle_nodeid = "tests/test_compile_badge.py::test_every_compile_state_has_label_and_level"
 
 [[unit]]
-module = "hwpxfiller.gui.edit_session"
+module = "hwpxfiller.viewmodel.edit_session"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/edit_session.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/edit_session.py"]
 oracle_nodeid = "tests/test_edit_session.py"
 
 [[unit]]
-module = "hwpxfiller.gui.file_filters"
+module = "hwpxfiller.viewmodel.file_filters"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/file_filters.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/file_filters.py"]
 oracle_nodeid = "tests/test_file_filters.py"
 
 [[unit]]
-module = "hwpxfiller.gui.filter_state"
+module = "hwpxfiller.viewmodel.filter_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/filter_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/filter_state.py"]
 oracle_nodeid = "tests/test_filter_state.py::test_apply_state_partial_column_loss"
 
 [[unit]]
-module = "hwpxfiller.gui.home_state"
+module = "hwpxfiller.viewmodel.home_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/home_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/home_state.py"]
 oracle_nodeid = "tests/test_dataset_pool_state.py::test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero"
 
 [[unit]]
-module = "hwpxfiller.gui.job_editor_state"
+module = "hwpxfiller.viewmodel.job_editor_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/job_editor_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/job_editor_state.py"]
 oracle_nodeid = "tests/test_job_editor_state.py::test_overwrite_confirm_only_when_covering_another_job"
 
 [[unit]]
-module = "hwpxfiller.gui.mapping_state"
+module = "hwpxfiller.viewmodel.mapping_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/mapping_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/mapping_state.py"]
 oracle_nodeid = "tests/test_job_editor_state.py::test_all_fields_declared_empty_is_savable_but_a_void_row_is_not"
 
 [[unit]]
-module = "hwpxfiller.gui.record_range"
+module = "hwpxfiller.viewmodel.record_range"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/record_range.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/record_range.py"]
 oracle_kind = "structural"
 
 [[unit]]
-module = "hwpxfiller.gui.result_errors"
+module = "hwpxfiller.viewmodel.result_errors"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/result_errors.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/result_errors.py"]
 oracle_nodeid = "tests/test_cli.py::test_fill_notes_surface_on_stderr_once_per_batch"
 
 [[unit]]
-module = "hwpxfiller.gui.review_state"
+module = "hwpxfiller.viewmodel.review_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/review_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/review_state.py"]
 oracle_nodeid = "tests/test_review_state.py"
 
 [[unit]]
-module = "hwpxfiller.gui.run_state"
+module = "hwpxfiller.viewmodel.run_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/run_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/run_state.py"]
 oracle_nodeid = "tests/test_run_state.py::test_data_input_is_explicit_and_vm_owns_no_data"
 
 [[unit]]
-module = "hwpxfiller.gui.selection_state"
+module = "hwpxfiller.viewmodel.selection_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/selection_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/selection_state.py"]
 oracle_nodeid = "tests/test_selection_state.py"
 
 [[unit]]
-module = "hwpxfiller.gui.template_manager_state"
+module = "hwpxfiller.viewmodel.template_manager_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/template_manager_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/template_manager_state.py"]
 oracle_nodeid = "tests/test_compile_badge.py::test_template_manager_rows_derive_from_single_source"
 
 [[unit]]
-module = "hwpxfiller.gui.tutorial_state"
+module = "hwpxfiller.viewmodel.tutorial_state"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/tutorial_state.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/tutorial_state.py"]
 oracle_nodeid = "tests/test_tutorial_state.py::test_every_milestone_transitions_exactly_once"
 
 [[unit]]
-module = "hwpxfiller.gui.txt_card"
+module = "hwpxfiller.viewmodel.txt_card"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/txt_card.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/txt_card.py"]
 oracle_kind = "structural"
 
 [[unit]]
-module = "hwpxfiller.gui.txt_queue"
+module = "hwpxfiller.viewmodel.txt_queue"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/txt_queue.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/txt_queue.py"]
 oracle_nodeid = "tests/test_txt_queue.py::test_advance_to_next_uncopied_is_opt_in"
 
 [[unit]]
-module = "hwpxfiller.gui.work_candidates"
+module = "hwpxfiller.viewmodel.work_candidates"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/work_candidates.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/work_candidates.py"]
 oracle_nodeid = "tests/test_webapp_job.py"
 
 [[unit]]
-module = "hwpxfiller.gui.work_mode"
+module = "hwpxfiller.viewmodel.work_mode"
 target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/work_mode.py"]
+source_write_set = ["src/hwpxfiller/viewmodel/work_mode.py"]
 oracle_nodeid = "tests/test_webapp_workbench.py"
 
 [[unit]]

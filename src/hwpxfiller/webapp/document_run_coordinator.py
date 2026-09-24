@@ -32,9 +32,9 @@ from ..external.delivery_coordinator import (
 )
 from ..external.ledger_export import write_managed_delivery_ledger
 from ..external.output_files import ensure_output_directory
-from ..gui.artifact_view_state import observed_artifact_snapshot
+from ..viewmodel.artifact_view_state import observed_artifact_snapshot
 from ..application.run_delivery_intent import DEFAULT_COLLISION_POLICY
-from ..gui.run_state import RunDataInput, RunViewModel
+from ..viewmodel.run_state import RunDataInput, RunViewModel
 from ..domain.job import Job, rules_fingerprints
 from .job_presentation import (
     failed_result,

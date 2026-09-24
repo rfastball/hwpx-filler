@@ -16,7 +16,7 @@ backend Product/Application 계약이 진다.
   (R2(#740): currentness 축은 orchestration 상태로 흡수 — 별도 입력이 없다)
   (재구현 아님). template change 는 :mod:`hwpxfiller.application.selection_compatibility` verdict, orchestration 은
   :mod:`hwpxfiller.application.automatic_seal_orchestration` 상태를 그대로 소비한다.
-- store/webapp/gui/pywebview 를 import 하지 않는다(``tests/repo_contract/test_architecture.py`` 의
+- store/webapp/viewmodel/pywebview 를 import 하지 않는다(``tests/repo_contract/test_architecture.py`` 의
   링 경계가 강제). S6-absent runtime conformance(``s6_absent_runtime_conformance``)는 webapp 소유라
   여기서 import 하지 않고, **이미 파생된** ``RuntimePolicyAdmission`` verdict 로 받는다.
 

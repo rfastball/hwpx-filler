@@ -31,7 +31,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.viewmodel.selection_state import SelectionModel
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.external.settings import (

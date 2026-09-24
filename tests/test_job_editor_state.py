@@ -7,14 +7,14 @@
 
 from __future__ import annotations
 
-from hwpxfiller.gui.job_editor_state import (
+from hwpxfiller.viewmodel.job_editor_state import (
     JOB_NAME_SEPARATOR,
     derive_job_name,
     needs_overwrite_confirm,
     overwrite_confirm_text,
     validate_save,
 )
-from hwpxfiller.gui.mapping_state import MappingModel, RowState
+from hwpxfiller.viewmodel.mapping_state import MappingModel, RowState
 
 
 #: 이 세션이 선 데이터 결속의 경로(#932 U4-C S2-3) — 저장 게이트가 요구하는 값이다.
@@ -255,7 +255,7 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     from dataclasses import fields as dataclass_fields
 
     from hwpxfiller.domain.job import Job
-    from hwpxfiller.gui.job_editor_state import EMPTY_PRESERVED, preserved_meta
+    from hwpxfiller.viewmodel.job_editor_state import EMPTY_PRESERVED, preserved_meta
 
     durable = {f.name for f in dataclass_fields(Job)}
     classified = _EDITOR_REBUILDS | _EDITOR_PRESERVES | _REGISTRY_DERIVES

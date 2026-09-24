@@ -44,7 +44,7 @@ EXPECTED_VENDOR_INTEGRATION_KEYS = {
     "packages",
     "update_owner",
 }
-RETIRED_MODULE_ROOTS = {"hwpxfiller.core"}
+RETIRED_MODULE_ROOTS = {"hwpxfiller.core", "hwpxfiller.gui"}
 FORBIDDEN_KERNEL_ROOTS = {
     "ctypes",
     "datetime",
@@ -1163,12 +1163,14 @@ def test_retired_namespace_has_no_consumer() -> None:
 
 
 def test_public_surface_is_exact_and_private_imports_are_zero() -> None:
-    legacy_root = ROOT / "src" / "hwpxfiller" / "core"
-    assert not legacy_root.exists(), "retired src/hwpxfiller/core 디렉터리가 다시 생겼습니다"
-    assert importlib.util.find_spec("hwpxfiller.core") is None
-    with pytest.raises(ModuleNotFoundError) as stopped:
-        importlib.import_module("hwpxfiller.core")
-    assert stopped.value.name == "hwpxfiller.core"
+    for retired in ("core", "gui"):
+        legacy_root = ROOT / "src" / "hwpxfiller" / retired
+        assert not legacy_root.exists(), f"retired {legacy_root} 디렉터리가 다시 생겼습니다"
+        module = f"hwpxfiller.{retired}"
+        assert importlib.util.find_spec(module) is None
+        with pytest.raises(ModuleNotFoundError) as stopped:
+            importlib.import_module(module)
+        assert stopped.value.name == module
     for module, names in _public_surface().items():
         imported, declared = _facade_exports(_source_for_module(module), module)
         expected = {f"{module}|{name}" for name in names}

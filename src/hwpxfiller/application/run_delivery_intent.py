@@ -1,6 +1,6 @@
 """session-scoped RunDeliveryIntent + delivery resolver 어댑터 (SX-01 · #724 §8 · #719 D5).
 
-**순수 application 계약**이다 — store/webapp/gui 를 모르고, 새 durable state·새 semantic rule·
+**순수 application 계약**이다 — store/webapp/viewmodel 를 모르고, 새 durable state·새 semantic rule·
 store write 를 만들지 않는다. 출력 위치와 같은 이름 처리 정책은 Document Work 기본 속성도,
 Sealed Plan/VDR identity 도 **아니다** — session-scoped 의도일 뿐이다.
 

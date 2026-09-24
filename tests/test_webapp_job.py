@@ -28,10 +28,10 @@ from hwpxfiller.external.settings import load_last_data_source, save_last_data_s
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.gui.review_state import review_requirement
-from hwpxfiller.gui.run_state import RunViewModel
-from hwpxfiller.gui.selection_state import SelectionModel
-from hwpxfiller.gui.work_candidates import MAIN_TOP_N
+from hwpxfiller.viewmodel.review_state import review_requirement
+from hwpxfiller.viewmodel.run_state import RunViewModel
+from hwpxfiller.viewmodel.selection_state import SelectionModel
+from hwpxfiller.viewmodel.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp import active_work_session as active_work_module
 from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS, session_data_row
@@ -3021,7 +3021,7 @@ def _pause_stamp(monkeypatch):
 
 
 def _home_vm(registry):
-    from hwpxfiller.gui.home_state import HomeViewModel
+    from hwpxfiller.viewmodel.home_state import HomeViewModel
 
     return HomeViewModel(
         registry, None, None,
@@ -3117,7 +3117,7 @@ def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
 def test_describe_fill_note_names_field_and_kinds():
     """완화 노트 문안(#154) — 필드·제거 종류를 명명하고 미지 종류는 원문 관통."""
     from hwpxfiller.domain.fields import FillNote
-    from hwpxfiller.gui.result_errors import describe_fill_note
+    from hwpxfiller.viewmodel.result_errors import describe_fill_note
 
     stripped = describe_fill_note(
         FillNote("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
@@ -4122,7 +4122,7 @@ def test_partial_run_reports_partial_state_and_failed_rows(tmp_path, monkeypatch
 
 def test_unknown_cause_keeps_the_undiagnosed_boundary(tmp_path, monkeypatch):
     """모르는 원인은 아는 척하지 않는다 — 계약 §10.3 「원인 진단 미연결」(판정 B)."""
-    from hwpxfiller.gui.result_errors import classify_result_error
+    from hwpxfiller.viewmodel.result_errors import classify_result_error
 
     assert classify_result_error("[WinError 5] 액세스가 거부되었습니다")[1] is True
     text, known = classify_result_error("알 수 없는 무엇")

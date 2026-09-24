@@ -1,4 +1,4 @@
-/* 생성 파일 — scripts/gen_design_tokens.py 가 src/hwpxfiller/gui/design_tokens.json 에서 찍는다.
+/* 생성 파일 — scripts/gen_design_tokens.py 가 src/hwpxfiller/viewmodel/design_tokens.json 에서 찍는다.
    직접 편집 금지. 색을 바꾸려면 JSON 을 고치고 `python scripts/gen_design_tokens.py` 실행. */
 /* <gen:tokens> */
 :root{

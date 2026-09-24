@@ -14,8 +14,8 @@ from ..external.delivery_coordinator import (
     DeliveryRefused,
 )
 from ..application.generation_delivery import CurrentResolvedDelivery
-from ..gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
-from ..gui.result_errors import describe_fill_note
+from ..viewmodel.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
+from ..viewmodel.result_errors import describe_fill_note
 from ..application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
 from .current_execution_preparation import CurrentDeliveryPreparation
 from .managed_generation import (

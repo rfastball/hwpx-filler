@@ -381,7 +381,7 @@ class DatasetPoolRow:
         그리고 실제 마운트 관문(``screens.load_pool_into``). 앞의 둘은 같은 상태를 서로 다른
         어휘로 말했고, 두 표면이 한 컴포넌트가 되면서 그 어긋남이 곧 화면 안에서 드러난다.
         그래서 **행이** 판정을 진다 — 그 행이 링1 에 있으므로 판정도 링1 이다(템플릿 쪽
-        :meth:`~hwpxfiller.gui.template_manager_state.TemplateRow.select_block_reason` 과
+        :meth:`~hwpxfiller.viewmodel.template_manager_state.TemplateRow.select_block_reason` 과
         같은 링에 세우려고 링2 자유함수에서 이 자리로 내려왔다). 마운트 관문은 그대로
         남는다(표면 판정은 심층 방어가 아니다).
 
@@ -467,7 +467,7 @@ class DatasetFieldsPort(Protocol):
 class DatasetDetail:
     """등록 데이터 1항목의 **상세 투영** — 「자세히…」 시트가 그릴 원료 한 벌(고르기 열 ④).
 
-    템플릿 쪽 :class:`~hwpxfiller.gui.template_manager_state.TemplateDetail` 의 거울이고
+    템플릿 쪽 :class:`~hwpxfiller.viewmodel.template_manager_state.TemplateDetail` 의 거울이고
     규율도 같다 — **재조립 금지**: 배지·상태·동사 목록은 :class:`DatasetPoolRow` 와 같은
     출처(`_STATE_ACTIONS` · :meth:`DatasetPoolRow.actions`)이고, 시트 제목화는 링0
     (:func:`~hwpxfiller.domain.pclm_views.sheet_title`) 그대로다. 이 클래스가 새로 판정하는
@@ -554,7 +554,7 @@ class DatasetPoolViewModel:
     완결된다(#570).
 
     ``source_factory`` 는 :meth:`review` 가 쓰는 두 번째 포트이고 ``registry`` 와 같은
-    **필수 주입**이다(기본값·service locator 금지 — :func:`hwpxfiller.gui.run_state
+    **필수 주입**이다(기본값·service locator 금지 — :func:`hwpxfiller.viewmodel.run_state
     .resolve_file_source` 와 같은 규율). 종전에는 기본이 ``None`` 이고 :meth:`review` 가
     미주입을 런타임에 거절했는데, 그 갈래는 **조립 실수를 사용자에게 미루는 자리**였다:
     조립하는 곳은 하나(:mod:`hwpxfiller.webapp.app`)이고 거기서 늘 넘기므로, 부재는
@@ -637,7 +637,7 @@ class DatasetPoolViewModel:
     def count_label(self) -> str:
         """고르기 열 머리의 개수 — 분류사는 **항목의 것**이다(``개``).
 
-        좌 열(:meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.count_label`)과
+        좌 열(:meth:`~hwpxfiller.viewmodel.template_manager_state.TemplateManagerViewModel.count_label`)과
         **같은 형**이다: 두 열이 한 컴포넌트의 두 인스턴스인데 「n건」과 「n개」로 갈리면 같은
         자리의 같은 사실이 표면마다 다른 말을 한다. ``건`` 은 이 제품에서 **레코드**(데이터
         행)의 분류사이고 여기서 세는 것은 등록 항목이다.
@@ -659,7 +659,7 @@ class DatasetPoolViewModel:
 
         상세 시트가 서는 이유의 절반이 바로 그 실패다(끊긴 참조·오타난 시트·손상 파일).
         예외로 올리면 답할 것이 있는 그 항목에서 시트가 영영 안 열린다 —
-        :meth:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel.detail_view` 의
+        :meth:`~hwpxfiller.viewmodel.template_manager_state.TemplateManagerViewModel.detail_view` 의
         ``_failed_detail`` 과 같은 처분이고, 접는 자리도 같은 이유로 여기 하나다.
         """
         try:

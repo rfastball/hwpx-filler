@@ -11,11 +11,11 @@ APPLICATION_PACKAGE = ROOT / "src" / "hwpxfiller" / "application"
 ALLOWED_INTERNAL_PREFIXES = (
     "hwpxfiller.application",
     "hwpxfiller.domain",
-    # batch.py 와 gui/run_state.py 는 handoff unit target=APPLICATION(물리 이관 전) —
+    # batch.py 와 viewmodel/run_state.py 는 handoff unit target=APPLICATION(물리 이관 전) —
     # 생성 use case(application/generation.py)의 동륜이라 직접 소비가 inward 다.
     # 물리 application/ 이관 시 이 두 줄도 옮겨 없앤다.
     "hwpxfiller.batch",
-    "hwpxfiller.gui.run_state",
+    "hwpxfiller.viewmodel.run_state",
 )
 CONCRETE_ADAPTER_ROOTS = {
     "aiohttp",
