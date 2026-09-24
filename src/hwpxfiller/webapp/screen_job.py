@@ -463,7 +463,6 @@ class JobController:
         record_rows = record_table_rows(
             records=self.data.records,
             display_order=display_order,
-            selected_indices={i for i in display_order if self.data.zone_selected(i)},
             selected_model_indices=zone_indices,
             mapped_records=[],
             filename_pattern=None,
@@ -520,7 +519,6 @@ class JobController:
         record_rows = record_table_rows(
             records=self.data.records,
             display_order=display_order,
-            selected_indices={i for i in display_order if self.data.zone_selected(i)},
             selected_model_indices=zone_indices,
             mapped_records=[],
             filename_pattern=None,
@@ -642,9 +640,10 @@ class JobController:
         # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
         # 이미 계산한 실행 입력·매핑을 그대로 재사용한다(평시 추가 비용 0).
-        zone_indices = self.data.zone_indices()
+        has_draft = self.data.range_draft is not None
+        zone_indices = self.data.zone_indices() if has_draft else indices
         zone_mapped = run_mapped
-        if self.data.range_draft is not None:
+        if has_draft:
             # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
             zone_marker = self._run_marker(zone_indices, run_data)
             zone_mapped = (
@@ -658,7 +657,6 @@ class JobController:
         record_rows = record_table_rows(
             records=self.data.records,
             display_order=display_order,
-            selected_indices={i for i in display_order if self.data.zone_selected(i)},
             selected_model_indices=zone_indices,
             mapped_records=zone_mapped,
             filename_pattern=job.filename_pattern,

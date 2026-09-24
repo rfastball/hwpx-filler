@@ -749,12 +749,16 @@ class TestWebSelftestGate:
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
         # 실 편집기 본문(#editor-body, data-preserve-scroll)의 스크롤이 실 재렌더를 가로질러
         # 유지된다(#28) — 구 「기안」 토큰 패널 프로브의 승계(F6 PR-B). 합성 픽스처가 아닌
-        # shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이 0 으로 리셋하므로,
-        # 설정값 60 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
+        # shipped render() 경로의 end-to-end 보존 검증. 창 높이에 따라 60px 요청이
+        # 실제 최대 스크롤 위치로 클램프되므로, 재렌더 직전 착지값과 비교한다.
         p = selftest_result["preserve_real"]
+        before = p["editor_scroll_before"]
         top = p["editor_scroll_top"]
-        assert isinstance(top, (int, float)) and abs(top - 60) < 2, (
-            f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
+        assert isinstance(before, (int, float)) and before > 0, (
+            f"실화면 스크롤 검증용 넘침이 없습니다: {before!r}"
+        )
+        assert isinstance(top, (int, float)) and top > 0 and abs(top - before) < 2, (
+            f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {before!r} → {top!r}"
         )
 
     # (test_draft_expansion_sheets_move_and_restore_live_dom 삭제 — draft_sheets 프로브가

@@ -2204,6 +2204,26 @@ def test_record_names_follow_selection_not_invented(tmp_path):
     assert rows[0]["name"] == "doc-001.hwpx" and rows[0]["selected"] is True
 
 
+def test_record_names_keep_the_selection_used_for_mapping_during_refresh(tmp_path, monkeypatch):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("set_none", {})
+    assert ctrl.work.vm is not None
+    original_refresh = ctrl.work.vm.refresh
+
+    def select_during_refresh(*args, **kwargs):
+        status = original_refresh(*args, **kwargs)
+        ctrl.data.selection.set_all()
+        return status
+
+    monkeypatch.setattr(ctrl.work.vm, "refresh", select_during_refresh)
+    rows = ctrl.refresh_panel()["records"]
+    assert [(row["name"], row["selected"]) for row in rows] == [("", False), ("", False)]
+    rows = ctrl.refresh_panel()["records"]
+    assert [row["name"] for row in rows] == ["doc-001.hwpx", "doc-002.hwpx"]
+
+
 def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
     """덮어쓰기 확인 왕복은 **한 시각**으로 판정하고 생성한다(#957 delta 2).
 
