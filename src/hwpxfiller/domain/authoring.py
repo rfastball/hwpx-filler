@@ -951,7 +951,10 @@ class _StructureReader(StructureReader):
             child.tag not in (_hp("run"), _hp("linesegarray"))
             or (
                 child.tag == _hp("run")
-                and any(node.tag != _hp("t") for node in child.iterdescendants())
+                and any(
+                    node.tag not in (_hp("t"), _hp("tab"), _hp("lineBreak"))
+                    for node in child.iterdescendants()
+                )
             )
             for child in p_el
         ):

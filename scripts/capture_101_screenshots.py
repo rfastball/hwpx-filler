@@ -343,7 +343,10 @@ def _publish_capture(staged: Path, target: Path) -> None:
             backup.rename(target)
         raise
     if backup.exists():
-        shutil.rmtree(backup)
+        try:
+            shutil.rmtree(backup)
+        except OSError as exc:
+            print(f"이전 캡처 정리 실패: {backup}: {exc}", file=sys.stderr)
 
 
 def _write_report(report_path: "Path | None", report_json: str) -> None:

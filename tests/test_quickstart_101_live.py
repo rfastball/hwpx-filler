@@ -805,6 +805,29 @@ def test_capture_publishes_only_a_complete_new_set(tmp_path, monkeypatch) -> Non
     assert not staged.exists()
 
 
+def test_capture_cleanup_failure_does_not_reverse_successful_publish(tmp_path, monkeypatch, capsys) -> None:
+    import capture_101_screenshots as cli
+
+    target = tmp_path / "img"
+    target.mkdir()
+    (target / "old.png").write_bytes(b"old")
+    staged = tmp_path / ".img-capture"
+    staged.mkdir()
+    for name in _expected_filenames():
+        (staged / name).write_bytes(b"new")
+
+    def fail_cleanup(_path):
+        raise OSError("cleanup denied")
+
+    monkeypatch.setattr(cli.shutil, "rmtree", fail_cleanup)
+    cli._publish_capture(staged, target)
+
+    assert sorted(path.name for path in target.iterdir()) == sorted(_expected_filenames())
+    assert not staged.exists()
+    assert (tmp_path / ".img-capture-previous" / "old.png").read_bytes() == b"old"
+    assert "이전 캡처 정리 실패" in capsys.readouterr().err
+
+
 def test_capture_uses_its_own_window_handle() -> None:
     class Handle:
         def ToInt64(self):
