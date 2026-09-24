@@ -1,0 +1,21 @@
+name: docs-review-snapshot
+on:
+  push:
+    branches: [docs/current-state-20260925]
+    paths: [.github/workflows/docs-review-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: git archive --format=tar HEAD -o source.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-review-source
+          path: source.tar
+          retention-days: 1
