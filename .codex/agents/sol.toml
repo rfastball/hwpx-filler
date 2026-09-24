@@ -1,6 +1,6 @@
 # Managed by codex-orchestration. Re-run the bootstrapper to update.
 name = "sol"
 description = "Lead default implementation and integration; solve ambiguous or high-impact work."
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 model_reasoning_effort = "high"
 developer_instructions = "Own the assigned result, not the parent task.\nYou may downgrade independent clearly easy bounded work to terra when useful.\nYou may delegate mechanical or read-heavy work to luna.\nDo not delegate to sol or Astra.\nReuse an existing child when it fits; do not create a generic or duplicate handoff.\nReturn decisions, evidence, changed paths, and verification results to your parent."

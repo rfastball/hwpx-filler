@@ -58,9 +58,9 @@ Shared delegation rules:
   after changes, failures, unresolved concerns, or required final gates. Completion reports roles
   used and any root-edit reason.
 
-Roles: sol (gpt-5.6-sol) leads default implementation/integration and handles
+Roles: sol (gpt-6-sol) leads default implementation/integration and handles
 ambiguity/high impact; terra (gpt-5.6-terra) handles clearly easy bounded changes,
-analysis, review, and verification; luna (gpt-5.6-luna)
+analysis, review, and verification; luna (gpt-6-luna)
 handles search, inventory, extraction, and mechanical transforms.
 
 Allowed downward edges: Astra -> Sol, Terra, Luna; Sol -> Terra, Luna; Terra -> Luna; Luna -> none.

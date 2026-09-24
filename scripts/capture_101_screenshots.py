@@ -9,7 +9,7 @@
     # 동작만 검사 — PNG 없음, 임시 홈, 저장소 작업트리 무오염
     uv run --with pillow --extra gui python scripts/capture_101_screenshots.py check
 
-    # 문서용 14컷 재생성 — 예제 홈(화면에 뜨는 경로가 문서와 같아야 한다)
+    # 문서용 13컷 재생성 — 예제 홈(화면에 뜨는 경로가 문서와 같아야 한다)
     uv run --extra gui python scripts/capture_101_screenshots.py capture
 
     # 실행 없이 전제만 증명(CI 선행조건 단계)
@@ -34,11 +34,13 @@ import json
 import shutil
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from live101 import driver  # noqa: E402 — sys.path 조정 뒤라야 import 된다
+from live101.scenario import CAPTURE_POINTS  # noqa: E402
 
 
 def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
@@ -98,18 +100,15 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
         help="SX-05 두 프로세스가 공유할 호출자 소유 home.",
     )
     check.add_argument(
-        # 이름이 둘인 이유는 하나가 낡았기 때문이다: phase 축은 SX-05 가 열었지만 이제
-        # ``onboarding``(#895)도 그 축에 산다 — SX-05 와 아무 관계가 없는 대본을
-        # ``--sx-phase`` 로 고르는 것은 거짓말이다. 정직한 이름을 세우되 기존 호출측
+        # ``--sx-phase`` 는 옛 이름이다. 정직한 이름을 세우되 기존 호출측
         # (`tests/test_quickstart_101_live.py`)을 깨지 않게 옛 이름을 별칭으로 남긴다.
         "--phase",
         "--sx-phase",
         dest="sx_phase",
-        choices=("journey", "restart", "onboarding"),
+        choices=("journey", "restart"),
         default=None,
         help=(
-            "실행할 대본. journey/restart 는 SX-05(101 자산 시딩 홈),"
-            " onboarding 은 #895 온보딩 여정(빈 홈)."
+            "실행할 SX-05 대본(journey/restart, 101 자산 시딩 홈)."
         ),
     )
     check.add_argument(
@@ -120,7 +119,7 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
     )
     _add_report(check)
 
-    capture = subparsers.add_parser("capture", help="문서용 14컷을 재생성한다")
+    capture = subparsers.add_parser("capture", help=f"문서용 {len(CAPTURE_POINTS)}컷을 재생성한다")
     capture.add_argument(
         "--home",
         choices=("example", "temp"),
@@ -161,20 +160,6 @@ def main(argv: "list[str] | None" = None) -> int:
     if phase == "journey" and getattr(args, "evidence_dir", None) is None:
         print("--phase journey에는 --evidence-dir가 필요합니다", file=sys.stderr)
         return driver.ExitCode.USAGE
-    if phase == "onboarding":
-        # 온보딩은 홈 전제가 반대다(빈 홈) — 그래서 시딩 임시 홈도 예제 홈도 받지 않고
-        # 호출자가 만든 **빈** 폴더만 받는다. 여기서 침묵하면 첫 걸음의 「설치 전 홈
-        # 불가침」 단언이 남의 잔재를 재며 실패하고, 그 빨강은 제품 언어로 나온다.
-        if shared_home is None:
-            print("--phase onboarding에는 --shared-home이 필요합니다", file=sys.stderr)
-            return driver.ExitCode.USAGE
-        if shared_home.is_dir() and any(shared_home.iterdir()):
-            print(
-                f"--phase onboarding의 --shared-home은 비어 있어야 합니다: {shared_home}",
-                file=sys.stderr,
-            )
-            return driver.ExitCode.USAGE
-
     if getattr(args, "preflight", False):
         problems = driver.preflight(args.mode, phase)
         for problem in problems:
@@ -196,12 +181,11 @@ def main(argv: "list[str] | None" = None) -> int:
             print(str(exc), file=sys.stderr)
             return driver.ExitCode.DIRTY_HOME
 
-    # 산출물 빌드가 **파괴보다 먼저**다 — 빌드가 실패한 뒤 스크린샷 폴더를 비우면 문서가
-    # 그림 없이 남는다. 현재 장기 하니스 계약은 tests/test_quickstart_101_live.py 가 진다.
+    # 산출물 빌드가 캡처보다 먼저다 — 실패한 빌드로 문서 그림을 바꾸지 않는다.
     #
     # 다만 불변식의 본체는 「빌드가 먼저」가 아니라 **「파괴 전에 산출물이 유효하다」** 다.
     # 빌드는 그것을 *만들어서* 지키고, `--no-build` 는 *검증해서* 지킨다 — 검증까지 건너뛰면
-    # stale seal 로 14컷을 지운 **뒤에야** 부팅이 거절된다(#430 리뷰). 이미 만든 러너(CI)가
+    # stale seal 로 컷을 찍은 **뒤에야** 부팅이 거절된다(#430 리뷰). 이미 만든 러너(CI)가
     # 두 번 만들지 않게 하려던 것이지, 보장을 빼려던 것이 아니다.
     if args.no_build:
         problems = driver.preflight(args.mode, phase)
@@ -214,9 +198,9 @@ def main(argv: "list[str] | None" = None) -> int:
 
     out_dir = None
     if args.mode == "capture":
-        out_dir = driver.IMG_DIR
-        if out_dir.exists():
-            shutil.rmtree(out_dir)  # 전량 재생성 — 스테일 프레임 잔존 금지
+        # 같은 볼륨·상속 ACL: mkdtemp의 제한된 권한을 게시 그림에 옮기지 않는다.
+        out_dir = driver.EXAMPLE_HOME / f".img-capture-{uuid.uuid4().hex}"
+        out_dir.mkdir()
 
     # 시끄럽게 알린다 — 대본이 작업대의 「복사」를 실제로 누르므로 두 모드 다 클립보드를
     # 덮어쓴다. 문서에만 적어 두면 `check` 를 "안전한 검사"로 읽는 사람이 잃는다.
@@ -250,6 +234,7 @@ def main(argv: "list[str] | None" = None) -> int:
             temp_root=temp_root,
             use_example_home=use_example_home,
             report_path=getattr(args, "report", None),
+            capture_dir=out_dir,
         )
 
     return driver.run(
@@ -270,12 +255,21 @@ def _land(
     temp_root: "Path | None",
     use_example_home: bool,
     report_path: "Path | None",
+    capture_dir: "Path | None" = None,
 ) -> int:
     """실행 하나를 마무리한다 — 보고서 쓰기 · 정리 · 요약 · 종료 코드.
 
     **여기 있는 것이 곧 착지의 정의다.** 새 책임을 더하면 정상 경로와 워치독 경로 양쪽에
     자동으로 걸린다(그것이 이 함수가 콜백인 이유다).
     """
+    if result.ok and capture_dir is not None:
+        try:
+            _publish_capture(capture_dir, driver.IMG_DIR)
+        except OSError as exc:
+            result.ok = False
+            result.error = f"캡처 그림 게시 실패: {exc}"
+            result.report["error"] = result.error
+            result.report["verdict"] = {"ok": False, "reason": result.error, "failures": [result.error]}
     report_json = json.dumps(result.report, ensure_ascii=False, indent=2)
 
     if not result.ok:
@@ -297,6 +291,8 @@ def _land(
                 file=sys.stderr,
             )
         print(f"잔재를 진단용으로 남깁니다: {home}", file=sys.stderr)
+        if capture_dir is not None and capture_dir.exists():
+            print(f"부분 캡처를 진단용으로 남깁니다: {capture_dir}", file=sys.stderr)
         _write_report(report_path, report_json)
         return result.exit_code()
 
@@ -321,13 +317,6 @@ def _land(
         )
     elif summary.get("phase") == "restart":
         print(f"완료: SX-05 restart 통과 ({summary['elapsed_s']}s)")
-    elif summary.get("phase") == "onboarding":
-        onboarding = (summary.get("observations") or {}).get("onboarding") or {}
-        achieved = onboarding.get("achieved") or []
-        print(
-            f"완료: 온보딩 여정 완주 (단계 {len(achieved)}/{onboarding.get('step_count', '?')}"
-            f" · HWPX {summary['hwpx_generated']}건 · {summary['elapsed_s']}s)"
-        )
     else:
         print(
             f"완료: 101 check 통과 (HWPX {summary['hwpx_generated']}건 ·"
@@ -336,6 +325,28 @@ def _land(
     if report_path is None and result.mode == "capture":
         print(report_json)
     return driver.ExitCode.OK
+
+
+def _publish_capture(staged: Path, target: Path) -> None:
+    """완주한 컷만 게시한다. 교체 실패 때는 이전 그림 집합을 복구한다."""
+    expected = {f"{index:02d}-{name}.png" for index, name in enumerate(CAPTURE_POINTS, 1)}
+    actual = {path.name for path in staged.iterdir()}
+    if actual != expected:
+        raise OSError(f"캡처 그림 집합 불일치: 없는 것 {expected - actual}, 남는 것 {actual - expected}")
+    backup = staged.with_name(f"{staged.name}-previous")
+    if target.exists():
+        target.rename(backup)
+    try:
+        staged.rename(target)
+    except OSError:
+        if backup.exists():
+            backup.rename(target)
+        raise
+    if backup.exists():
+        try:
+            shutil.rmtree(backup)
+        except OSError as exc:
+            print(f"이전 캡처 정리 실패: {backup}: {exc}", file=sys.stderr)
 
 
 def _write_report(report_path: "Path | None", report_json: str) -> None:
