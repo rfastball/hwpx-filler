@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..domain.job import Job, rules_fingerprints
 from ..naming import pattern_field_tokens

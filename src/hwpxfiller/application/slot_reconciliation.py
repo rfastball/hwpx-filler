@@ -36,7 +36,6 @@ from hwpxfiller.domain.slot_selection import (
     CARDINALITY_VIOLATION,
     MISSING_REQUIRED_SELECTION,
     NO_AVAILABLE_OPTIONS,
-    SATISFIED,
     SelectionSemanticContractManifest,
     SlotSelection,
     SlotSelectionSet,

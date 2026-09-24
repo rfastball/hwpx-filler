@@ -27,7 +27,6 @@ import urllib.request
 from datetime import datetime
 
 from ..application.nara_acquire import (
-    DT_FMT,
     OK_RESULT_CODE,
     NaraAcquireViewModel,
     NaraGatewayError,
@@ -333,6 +332,8 @@ class NaraStdDataSource:
             # totalCount 가 깎이면 마지막 페이지 상한이 줄어 표방된 행을 다 요청하지
             # 않고도 성공 반환한다(fail-closed 정수 스키마 위반). 정수값 실수만 통과.
             if isinstance(value, float) and not value.is_integer():
+                raise ValueError(f"{name}이 정수가 아닙니다: {value!r}")
+            if not isinstance(value, (str, int, float)):
                 raise ValueError(f"{name}이 정수가 아닙니다: {value!r}")
             try:
                 number = int(value)

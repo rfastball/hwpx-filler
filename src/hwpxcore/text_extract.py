@@ -35,7 +35,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from lxml import etree
+import lxml.etree as etree
 
 from .lineseg import LINESEG_LOCAL
 
@@ -170,7 +170,7 @@ class Cell:
     기하는 해석하지 않음 — diff/생성기가 정렬에 쓰도록).
     """
 
-    blocks: "list[object]" = field(default_factory=list)
+    blocks: "list[Paragraph | Table]" = field(default_factory=list)
     span: "dict[str, int]" = field(default_factory=dict)  # {"colSpan":n,"rowSpan":n}
     addr: "dict[str, int]" = field(default_factory=dict)  # {"colAddr":n,"rowAddr":n}
 
@@ -199,7 +199,7 @@ class Table:
 class Section:
     """섹션/머리말/꼬리말 본문. ``blocks`` 는 문서 순서의 Paragraph/Table 목록."""
 
-    blocks: "list[object]" = field(default_factory=list)
+    blocks: "list[Paragraph | Table]" = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"blocks": [b.to_dict() for b in self.blocks]}
@@ -297,13 +297,13 @@ def text_of_t(t_el: etree._Element) -> str:
 
 def _blocks_from_paragraph(
     p_el: etree._Element, ledger: CoverageLedger, path: str
-) -> "list[object]":
+) -> "list[Paragraph | Table]":
     """단일 ``hp:p`` 를 블록 목록으로 변환.
 
     문단 안에 표가 끼어들면 앞 텍스트를 Paragraph 로 flush 한 뒤 Table 을 넣어 문서
     순서를 보존한다. 텍스트도 표도 없는 문단은 빈 Paragraph 로 보존한다.
     """
-    blocks: "list[object]" = []
+    blocks: "list[Paragraph | Table]" = []
     buf: "list[str]" = []
     field_names: "list[str]" = []
     field_stack: "list[str]" = []
@@ -359,9 +359,9 @@ def _blocks_from_paragraph(
 
 def _blocks_from_container(
     container: etree._Element, ledger: CoverageLedger, path: str
-) -> "list[object]":
+) -> "list[Paragraph | Table]":
     """컨테이너(섹션 루트 또는 셀 subList)의 직속 ``hp:p`` 를 순서대로 블록화."""
-    blocks: "list[object]" = []
+    blocks: "list[Paragraph | Table]" = []
     for child in container:
         if (
             ledger.classify(child, _HANDLED_CONTAINER, _IGNORE_CONTAINER, path) == "p"
@@ -391,13 +391,13 @@ def _cell_span_addr(tc: etree._Element) -> "tuple[dict, dict]":
 
 def _caption_blocks(
     cap_el: etree._Element, ledger: CoverageLedger, path: str
-) -> "list[object]":
+) -> "list[Paragraph | Table]":
     """``hp:caption`` -> 캡션 문단 블록 목록. 텍스트는 ``hp:subList`` 밑 문단에 담긴다.
 
     캡션은 표/그림에 붙는 제목·설명(예: ``<표 1> 유압식 잭(30톤) 주요제원``)으로 본문
     텍스트다. 셀 subList 와 동형이라 같은 컨테이너 헬퍼로 문단을 복원한다.
     """
-    blocks: "list[object]" = []
+    blocks: "list[Paragraph | Table]" = []
     for sub in cap_el:
         if ledger.classify(sub, _HANDLED_CAPTION, _IGNORE_CAPTION, path) == "subList":
             blocks.extend(_blocks_from_container(sub, ledger, f"{path}/subList"))
@@ -406,14 +406,14 @@ def _caption_blocks(
 
 def _table_from_el(
     tbl_el: etree._Element, ledger: CoverageLedger, path: str
-) -> "tuple[list[object], Table]":
+) -> "tuple[list[Paragraph | Table], Table]":
     """``hp:tbl`` -> (캡션 블록, Table). 셀 내용은 ``hp:subList`` 밑 문단에서 추출(중첩 재귀).
 
     캡션 ``hp:caption`` 은 ``hp:tr`` 들의 형제로 표 앞에 온다. 문서 순서를 지키도록 캡션
     문단을 별도 블록으로 돌려주고, 호출부가 Table 앞에 배치한다.
     """
     rows: "list[list[Cell]]" = []
-    caption_blocks: "list[object]" = []
+    caption_blocks: "list[Paragraph | Table]" = []
     for child in tbl_el:
         ln = ledger.classify(child, _HANDLED_TBL, _IGNORE_TBL, path)
         if ln == "caption":
@@ -430,7 +430,7 @@ def _table_from_el(
                 continue
             tc_path = f"{tr_path}/tc"
             span, addr = _cell_span_addr(tc)
-            cell_blocks: "list[object]" = []
+            cell_blocks: "list[Paragraph | Table]" = []
             for sub in tc:
                 if (
                     ledger.classify(sub, _HANDLED_TC, _IGNORE_TC, tc_path)
@@ -499,7 +499,7 @@ def extract_document(pkg: object) -> Document:
     return doc
 
 
-def _iter_blocks(blocks: "list[object]"):
+def _iter_blocks(blocks: "list[Paragraph | Table]"):
     """블록 트리를 문서 순서로 깊이 우선 순회하며 Paragraph 를 yield."""
     for b in blocks:
         if isinstance(b, Paragraph):

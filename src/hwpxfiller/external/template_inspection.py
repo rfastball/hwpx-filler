@@ -110,7 +110,7 @@ def compile_structure_file(path: str) -> StructureCompileReport:
 
 
 def _mutate_slot_file(
-    path: str, mutate: "Callable[[object], None]"
+    path: str, mutate: "Callable[[HwpxPackage], None]"
 ) -> "tuple[Slot, ...]":
     """경로를 열어 Slot 동사 하나를 돌리고 **성공했을 때만** 같은 경로에 저장.
 
@@ -221,9 +221,10 @@ def compile_template_file(path: str) -> CompileReport:
     바뀐 게 없으면(``modified=False``) 아무것도 쓰지 않는다 — 종전
     ``TemplateManagerViewModel.apply_fieldize`` 의 저장 판정 그대로.
     """
-    pkg, report = compile_document(read_hwpx_package(path))
+    package = read_hwpx_package(path)
+    _compiled, report = compile_document(package)
     if report.modified:
-        write_hwpx_package(path, pkg)
+        write_hwpx_package(path, package)
     return report
 
 
@@ -241,13 +242,14 @@ def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | No
     (P2-19R 에서 ``domain.authoring`` 과 분리 — 경로 열기·충돌 검사·저장이 파일 IO 개시라
     Domain 에 둘 수 없다. 의미 불변.)
     """
-    pkg, report = compile_document(read_hwpx_package(path))
+    package = read_hwpx_package(path)
+    _compiled, report = compile_document(package)
     if not report.modified:
         return None, report
     compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
     if Path(compiled_path).exists() and not overwrite:
         raise FileExistsError(compiled_path)
-    write_hwpx_package(compiled_path, pkg)
+    write_hwpx_package(compiled_path, package)
     return compiled_path, report
 
 

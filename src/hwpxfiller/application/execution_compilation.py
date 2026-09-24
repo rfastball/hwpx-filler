@@ -49,7 +49,6 @@ from hwpxfiller.application.execution_composition import (
     CompositionPremisesPassed,
 )
 from hwpxfiller.application.execution_structure import (
-    OWNER_OPTION,
     OWNER_ROOT,
     OWNER_SLOT_SHARED,
     ExecutionTemplateStructure,

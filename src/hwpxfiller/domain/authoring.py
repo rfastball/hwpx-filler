@@ -46,7 +46,7 @@ import copy
 import re
 from dataclasses import dataclass, field
 
-from lxml import etree
+import lxml.etree as etree
 
 from .slot import Slot
 from .structure_scan import (
@@ -62,7 +62,7 @@ from .structure_scan import (
     StructureSummary,
     iter_field_tokens,
     iter_structure_markers,
-    is_structure_sigil,
+    is_structure_sigil as is_structure_sigil,
     normalize_field_id,
 )
 from hwpxcore.lineseg import serialize_modified_section
@@ -360,7 +360,7 @@ def _clip_t(
         if _zero_width_in_slice(base, lo, hi, keep_zero_lo, keep_zero_hi):
             return etree.Element(t_el.tag, dict(t_el.attrib))
         return None
-    items: "list[tuple[int, str, object, int]]" = []  # (pos, kind, payload, width)
+    items: "list[tuple[int, str, str | etree._Element, int]]" = []
     pos = base
     for ch in t_el.text or "":
         items.append((pos, "char", ch, 1))
@@ -375,13 +375,13 @@ def _clip_t(
 
     lead: "list[str]" = []
     kids: "list[list]" = []  # [clone, tail_chars]
-    for item_pos, kind, payload, width in items:
+    for item_pos, _kind, payload, width in items:
         if width == 0:
             if not _zero_width_in_slice(item_pos, lo, hi, keep_zero_lo, keep_zero_hi):
                 continue
         elif not (lo <= item_pos < hi):
             continue
-        if kind == "char":
+        if isinstance(payload, str):
             if kids:
                 kids[-1][1].append(payload)
             else:
@@ -951,7 +951,10 @@ class _StructureReader(StructureReader):
             child.tag not in (_hp("run"), _hp("linesegarray"))
             or (
                 child.tag == _hp("run")
-                and any(node.tag != _hp("t") for node in child.iterdescendants())
+                and any(
+                    node.tag not in (_hp("t"), _hp("tab"), _hp("lineBreak"))
+                    for node in child.iterdescendants()
+                )
             )
             for child in p_el
         ):

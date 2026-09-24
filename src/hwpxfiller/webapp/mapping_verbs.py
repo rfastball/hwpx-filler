@@ -29,6 +29,22 @@
 """
 from __future__ import annotations
 
+from typing import Protocol
+
+from ..gui.mapping_state import MappingModel
+
+
+class _MappingVerbsHost(Protocol):
+    mapping: MappingModel
+
+    def _map_source_fields(self) -> list[str]: ...
+
+    def _map_kind_of(self, source: str) -> str: ...
+
+    def _after_mapping_edit(self) -> None: ...
+
+    def snapshot(self) -> dict: ...
+
 
 class MappingVerbsMixin:
     """맞추기 표의 동사 6종 — 두 표면이 **같은 규약**으로 부른다."""
@@ -36,7 +52,7 @@ class MappingVerbsMixin:
     def _after_mapping_edit(self) -> None:
         """편집 성사 뒤 훅. 기본은 무동작 — 파생으로 dirty 를 재는 표면(작업대)용."""
 
-    def _do_set_source(self, p: dict) -> "dict | None":
+    def _do_set_source(self: _MappingVerbsHost, p: dict) -> "dict | None":
         """토큰 결속·해제(드롭다운·제안 원클릭 공유) — 결정 5·30.
 
         ``col`` = 데이터 열이면 자동 결속(auto, 유형은 값 스니핑), 빈 값이면 해제(무결속 →
@@ -63,7 +79,7 @@ class MappingVerbsMixin:
         self._after_mapping_edit()
         return None
 
-    def _do_set_map_value(self, p: dict) -> dict:
+    def _do_set_map_value(self: _MappingVerbsHost, p: dict) -> dict:
         """토큰 값 직접 입력(man) — 상수 강등. 결속 소스는 기억(되돌리기로 복귀, 사용자 결정).
 
         _NO_PUSH: 포커스된 값 입력을 서버 푸시가 재구성하지 않게 **반환 스냅샷**으로 돌려준다
@@ -76,12 +92,12 @@ class MappingVerbsMixin:
 
     _do_set_map_value.is_no_push = True  # type: ignore[attr-defined]
 
-    def _do_set_map_fmt(self, p: dict) -> None:
+    def _do_set_map_fmt(self: _MappingVerbsHost, p: dict) -> None:
         """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
         self.mapping.set_fmt_for(p["name"], p.get("code", ""))
         self._after_mapping_edit()
 
-    def _do_set_map_type(self, p: dict) -> None:
+    def _do_set_map_type(self: _MappingVerbsHost, p: dict) -> None:
         """값 유형 정정(#148 슬라이스 4, 결정 12) — 값 스니핑 오판을 사람이 이긴다.
 
         결속(auto) 값의 운반 유형(text/date/amount)을 사람이 고른다: 이름에 「금액」이 없어도
@@ -94,7 +110,7 @@ class MappingVerbsMixin:
         self.mapping.set_type(self.mapping.index_of(p["name"]), p["type"])
         self._after_mapping_edit()
 
-    def _do_set_confirmed(self, p: dict) -> None:
+    def _do_set_confirmed(self: _MappingVerbsHost, p: dict) -> None:
         """행별 확정 토글(#148 슬라이스 4, 결정 12) — 확정+무내용 = 확정-비움(「비운다」 선언).
 
         확정-비움은 렌더가 데이터-빈값 ``blank`` 와 같되(〈빈 값〉) 복사 전 빈칸 게이트에서
@@ -103,7 +119,7 @@ class MappingVerbsMixin:
         self.mapping.set_confirmed(self.mapping.index_of(p["name"]), bool(p.get("value")))
         self._after_mapping_edit()
 
-    def _do_revert_map(self, p: dict) -> None:
+    def _do_revert_map(self: _MappingVerbsHost, p: dict) -> None:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(막다른 강등 금지, 결정 31).
 
         직접 입력으로 상수 강등된 자리를 원 결속 열로 되살린다. **스니핑 유형을 함께 넘긴다**:

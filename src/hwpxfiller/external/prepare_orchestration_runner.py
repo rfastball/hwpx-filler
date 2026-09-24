@@ -226,6 +226,10 @@ def run_qualification_stage(
         raise WorkTemplateStoreError(
             f"qualification profile 이 Preparation {preparation_id} 의 pin 과 불일치"
         )
+    if prep.revision_id is None:
+        raise WorkTemplateStoreError(
+            f"qualification: Preparation {preparation_id} 에 revision pin 이 없습니다"
+        )
     manifest = qualification_store.get_manifest(prep.qualification_profile_id)
 
     revision = candidate_store.get_revision(prep.revision_id)
@@ -327,6 +331,10 @@ def admit_preparation(
         aggregate = txn.aggregate
         prep = find_preparation(aggregate, preparation_id)
         if prep.status == PREP_READY:  # idempotent — 기존 Change 반환, 무변경
+            if prep.prepared_change_id is None:
+                raise WorkTemplateStoreError(
+                    f"admission: READY Preparation {preparation_id} 에 change id 가 없습니다"
+                )
             return AdmissionResult(
                 find_change(aggregate, prep.prepared_change_id), aggregate
             )
@@ -341,6 +349,10 @@ def admit_preparation(
                 aggregate, preparation_id, terminal, completed_at=prepared_at
             )
             return AdmissionResult(None, txn.aggregate)
+        if prep.evidence_id is None:
+            raise WorkTemplateStoreError(
+                f"admission: Preparation {preparation_id} 에 PASS evidence 가 없습니다"
+            )
         txn.aggregate = plan_admission_ready(
             aggregate, preparation_id,
             prepared_change_id=prepared_change_id,

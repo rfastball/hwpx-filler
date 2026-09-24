@@ -92,7 +92,7 @@ def plan_preset_save(
     선택이 하나도 없으면(Configuration 부재 포함) :class:`PresetSaveRejected` —
     ``PRESET_EMPTY_SELECTION``. 이름 검증은 :class:`SelectionPreset` 생성이 진다.
     """
-    if not has_declared_selection(config):
+    if config is None or not has_declared_selection(config):
         raise PresetSaveRejected(
             PRESET_EMPTY_SELECTION, "저장할 선택이 없습니다(선택 0건)."
         )

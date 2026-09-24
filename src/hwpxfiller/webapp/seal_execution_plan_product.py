@@ -64,6 +64,7 @@ from ..application.fresh_execution_observation import (
     decide_runtime_policy_admission,
 )
 from ..application.seal_execution_plan import (
+    FreshWorkObservationPort,
     SealExecutionPlanCommand,
     WorkExecutionSummary,
 )
@@ -263,7 +264,7 @@ class SealExecutionPlanProduct:
         *,
         resolve_route: _Route,
         authorize: _Authorize,
-        read_summary: Callable[[str, str], WorkExecutionSummary],
+        read_summary: FreshWorkObservationPort,
         capture_under_fence: Callable[..., Any],
         resolve_shipping_policy: Callable[..., ResolvedSealPolicy],
         clock: Callable[[], str],

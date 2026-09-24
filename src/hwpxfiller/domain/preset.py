@@ -168,8 +168,8 @@ def decode_preset(data: object) -> SelectionPreset:
             "저장된 selection digest 가 복원 selection 과 불일치(손상·드리프트)"
         )
     return SelectionPreset(
-        name=data.get("name"),  # None·비문자열은 __post_init__ 이 거절
+        name=_require_nonempty(data.get("name"), "name"),
         selection_set=selection_set,
-        provenance=data.get("provenance"),
-        created_at=data.get("created_at"),
+        provenance=_normalize_provenance(data.get("provenance")),
+        created_at=_require_nonempty(data.get("created_at"), "created_at"),
     )

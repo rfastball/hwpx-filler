@@ -87,6 +87,8 @@ class DatasetReference:
         """구 retired 값을 archived로 무손실 정규화해 참조를 복원한다."""
         status = value.get("status", STATUS_ACTIVE)
         status = _LEGACY_STATUS_ALIASES.get(status, status)
+        if not isinstance(status, str):
+            raise ValueError(f"알 수 없는 데이터셋 상태입니다: {status!r}")
         return cls(
             name=value.get("name", ""),
             kind=value.get("kind", ""),

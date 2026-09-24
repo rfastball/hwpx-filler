@@ -16,8 +16,8 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
-from ..application.dataset_pool import reference_missing  # 재수출 — 몸통은 링1(고르기 판정)
 from ..application.jobs import CrossMediaRelinkError, relink_template
+from ..application.dataset_pool import reference_missing as reference_missing
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference, reference_identity
 from ..domain.engine import HwpxEngine
@@ -25,6 +25,7 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..gui.tutorial_state import Milestone
 from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS  # 계약 목록 뷰 백스톱
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
@@ -47,10 +48,10 @@ CompileSink = Callable[[str], None]
 # 성립시킨 화면 컨트롤러)과 받는 쪽(:class:`~hwpxfiller.webapp.screen_tutorial.
 # TutorialController`)이 같은 어휘를 써야 해서 `MutationSink` 와 같은 자리에 둔다. 단계
 # 열거의 정본은 링1(``gui/tutorial_state.Milestone``)이고 여기는 **운반 형**만 정한다.
-TutorialSink = Callable[[object], bool]
+TutorialSink = Callable[[Milestone | str], bool]
 
 
-def unwired_tutorial(milestone: object) -> bool:
+def unwired_tutorial(milestone: Milestone | str) -> bool:
     """미배선 기본값 — 통지를 버린다.
 
     이름이 ``_noop`` 이 아닌 이유는 이 기본값이 **정상 상태가 아니기** 때문이다: 제품 조립

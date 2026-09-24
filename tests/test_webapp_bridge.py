@@ -12,6 +12,7 @@ import sys
 import threading
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
@@ -30,6 +31,39 @@ from _web_source import (
 REPO = REPO_ROOT
 WEB = SOURCE_ROOT
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
+
+
+def test_main_alarms_and_cancels_watchdog_when_window_creation_fails(monkeypatch, tmp_path):
+    """창 생성 실패가 속성 접근 오류나 남은 selftest watchdog 으로 이어지지 않는다."""
+    from hwpxfiller.webapp import app as app_mod
+
+    events = []
+
+    class FakeTimer:
+        def __init__(self, _delay, _callback):
+            pass
+
+        def start(self):
+            events.append("timer-start")
+
+        def cancel(self):
+            events.append("timer-cancel")
+
+    fake_webview = SimpleNamespace(create_window=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "webview", fake_webview)
+    monkeypatch.setattr(app_mod, "web_artifact", lambda: SimpleNamespace(
+        artifact_id="test", tree_sha256="test", root=tmp_path, index_path=tmp_path / "index.html"
+    ))
+    monkeypatch.setattr(app_mod, "WebFrontend", object)
+    monkeypatch.setattr(app_mod, "_selftest_capability_wanted", lambda *_: False)
+    monkeypatch.setattr(app_mod, "_alarm", events.append)
+    monkeypatch.setattr(app_mod.boot_budget, "detect_runtime_version", lambda: "test")
+    monkeypatch.setattr(app_mod.boot_budget, "decide", lambda *_: (1, "test"))
+    monkeypatch.setattr(app_mod.settings, "load_window_geometry", lambda: None)
+    monkeypatch.setattr(app_mod.threading, "Timer", FakeTimer)
+
+    assert app_mod.main(["app", "--selftest"]) == 2
+    assert events == ["timer-start", "창을 만들지 못했습니다", "timer-cancel"]
 
 
 def _frontend(tmp_path, monkeypatch):

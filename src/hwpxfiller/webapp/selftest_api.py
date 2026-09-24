@@ -1083,8 +1083,11 @@ def attach_selftest_facade(target: object, facade: SelftestHostFacade) -> "tuple
     ):
         if occupied:
             raise SelftestApiError(CODE_INTERNAL, f"이미 점유된 js_api 이름: {attribute}")
-    target.selftest_claim = facade.selftest_claim
-    target.selftest_host_op = facade.selftest_host_op
+    for name, method in (
+        ("selftest_claim", facade.selftest_claim),
+        ("selftest_host_op", facade.selftest_host_op),
+    ):
+        setattr(target, name, method)
     return FACADE_ATTRIBUTES
 
 

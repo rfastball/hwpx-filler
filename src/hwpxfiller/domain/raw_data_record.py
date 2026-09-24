@@ -123,7 +123,7 @@ def decode_source_value(tagged: Mapping[str, Any]) -> CanonicalSourceValue:
         raise RawRecordIntegrityError(f"미지원 source 값 kind: {kind!r}")
     text = tagged.get("text")
     try:
-        return SourceText(text)  # 생성자가 scalar 검증(tampered text 는 여기서 닫힌다).
+        return SourceText(_require_scalar_text(text, "text", allow_empty=True))
     except Exception as exc:
         raise RawRecordIntegrityError(f"source value decode 실패: {exc}") from exc
 

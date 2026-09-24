@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from hashlib import sha256
-from types import SimpleNamespace
 
-from lxml import etree
+import lxml.etree as etree
 
 from .field_occurrence import FieldResolution, resolve_field_occurrences
 from .lineseg import serialize_modified_section
@@ -101,6 +100,16 @@ class _ResolvedRegion:
     end_child: int
     begin_order: int
     end_order: int
+
+
+@dataclass
+class _CandidatePackage:
+    """In-memory package view used to validate a prospective section mutation."""
+
+    entries: dict[str, bytes]
+
+    def content_xml_names(self) -> list[str]:
+        return section_xml_names(self)
 
 
 def _boundary_paragraph(
@@ -328,7 +337,7 @@ def _candidate_resolution(
     require_removable: bool,
 ) -> tuple[bytes, list[_ResolvedRegion]]:
     data = serialize_modified_section(root)
-    candidate = SimpleNamespace(entries={**package.entries, entry: data})
+    candidate = _CandidatePackage({**package.entries, entry: data})
     return data, _resolve(candidate, require_removable=require_removable)
 
 
@@ -497,11 +506,14 @@ def create_bookmark_region(
     end_ctrl = etree.Element(f"{_HP}ctrl")
     etree.SubElement(end_ctrl, f"{_HP}fieldEnd", beginIDRef=pairing_id)
 
-    if resolved_parent is not None and parent.start_paragraph == start_paragraph:
+    if (
+        resolved_parent is not None
+        and resolved_parent.region.start_paragraph == start_paragraph
+    ):
         parent_begin = next(
             node
             for node in parsed.root.iter(f"{_HP}fieldBegin")
-            if node.get("id") == parent._pairing_id
+            if node.get("id") == resolved_parent.region._pairing_id
         )
         parent_ctrl = parent_begin.getparent()
         assert parent_ctrl is not None
@@ -511,11 +523,14 @@ def create_bookmark_region(
     else:
         start_runs[0].insert(0, begin_ctrl)
 
-    if resolved_parent is not None and parent.end_paragraph == end_paragraph:
+    if (
+        resolved_parent is not None
+        and resolved_parent.region.end_paragraph == end_paragraph
+    ):
         parent_end = next(
             node
             for node in parsed.root.iter(f"{_HP}fieldEnd")
-            if node.get("beginIDRef") == parent._pairing_id
+            if node.get("beginIDRef") == resolved_parent.region._pairing_id
         )
         parent_ctrl = parent_end.getparent()
         assert parent_ctrl is not None

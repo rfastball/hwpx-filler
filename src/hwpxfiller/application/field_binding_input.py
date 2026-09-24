@@ -21,14 +21,13 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     FIELD_BINDING_SEMANTIC_VERSION,
-    INTENTIONAL_BLANK,
     SOURCE,
     SOURCE_SCHEMA_VERSION,
+    CanonicalBindingValue,
     ExactText,
     FieldBindingInputIntegrityError,
     FieldBindingRule,
     canonicalize_binding_rules,
-    canonicalize_source_schema,
     digest_binding_rules,
     digest_source_schema,
     require_field_binding_contract,
@@ -303,7 +302,7 @@ class MigrationCandidateRule:
     binding_kind: str
     source_key: str | None
     format_code: str | None
-    canonical_constant_value: object | None
+    canonical_constant_value: CanonicalBindingValue | None
     proposed_policy_id: str
     whitespace_decision_required: bool
 

@@ -244,9 +244,8 @@ def test_prior_applied_change_not_superseded(tmp_path):
     assert agg.prepared_changes[0].status == CHANGE_PREPARED  # Change 도 그대로
 
 
-def test_no_client_supplied_base_or_profile_channel(tmp_path):
+def test_no_client_supplied_base_or_profile_channel():
     # base 는 인자가 아니라 current application 파생이라, client 가 base 를 주입할 자리가 없다.
-    store = _fresh_work(tmp_path)
     import inspect
 
     params = set(inspect.signature(start_prepare).parameters)

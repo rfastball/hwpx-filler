@@ -223,7 +223,7 @@ def test_apply_fieldize_advances_partial_to_compiled(tmp_path):
     # 필드 1개(컴파일됨) + 같은 이름 평문 중복(미컴파일) = PARTIAL.
     inner = (
         "<hp:p><hp:run><hp:ctrl>"
-        f'<hp:fieldBegin id="1" type="CLICK_HERE" name="계약명" fieldid="2"/>'
+        '<hp:fieldBegin id="1" type="CLICK_HERE" name="계약명" fieldid="2"/>'
         "</hp:ctrl></hp:run>"
         "<hp:run><hp:t>{{계약명}}</hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\" fieldid=\"2\"/></hp:ctrl></hp:run></hp:p>"

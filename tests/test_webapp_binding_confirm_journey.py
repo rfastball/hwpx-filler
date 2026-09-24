@@ -24,7 +24,6 @@ from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
-from hwpxfiller.external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry

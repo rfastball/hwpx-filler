@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import zipfile
-from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -16,10 +15,10 @@ from hwpxcore.native_admission import (
 )
 from hwpxcore.package import HwpxPackage
 from hwpxcore.structural_boundary import (
-    BookmarkBegin, BookmarkEnd, BoundaryPairRef, ContentEntryKind, FieldBegin,
+    BookmarkBegin, BoundaryPairRef, ContentEntryKind, FieldBegin,
     FieldEnd, StructuralBoundaryScan, scan_structural_boundaries,
 )
-from hwpxcore.text_extract import require_package, section_xml_names
+from hwpxcore.text_extract import require_package
 
 from ..application.execution_composition import NATIVE_PRIMITIVE_CONTRACT_V1
 from ..application.execution_structure import (
@@ -31,7 +30,7 @@ from ..application.template_qualification import (
     QualificationInspection, TemplateDiagnostic, TemplateInspectionContractError,
     TemplateOption, TemplateSlot, TemplateStructure,
 )
-from ..domain.fields import fill_precheck, is_fill_target_field_type, normalize_field_id
+from ..domain.fields import is_fill_target_field_type, normalize_field_id
 from .hwpx_product_inspection import (
     ProductBookmarkInspection, ProductClassification, ProductScopeRole,
     ProductScopeObservation, PRODUCT_KINDS, inspect_product_bookmarks,

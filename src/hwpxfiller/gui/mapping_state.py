@@ -687,11 +687,13 @@ class MappingModel:
         ``suggest_mappings`` 가 점수를 돌려주지 않아 재계산한다(리뷰 R8: from_suggestions 와
         동일 패턴, 필드·소스 수가 작아 무시 수준). 단일 출처화로 재제안 경로가 어긋나지 않는다.
         """
-        if m is not None and m.source:
-            row.source = m.source
-            exact = row.template_field == m.source
+        source = m.source if m is not None else None
+        if source:
+            row.source = source
+            exact = row.template_field == source
+            alias = self.aliases.get(source)
             row.suggestion_score = 1.0 if exact else similarity(
-                row.template_field, self.aliases.get(m.source, m.source)
+                row.template_field, alias if alias is not None else source
             )
             row.confirmed = exact and not row.manual_unconfirmed
             row.auto_confirmed_exact = row.confirmed

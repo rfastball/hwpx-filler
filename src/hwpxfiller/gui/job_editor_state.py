@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TypedDict
 
 from ..domain.job import Job
 from ..domain.mapping import MappingProfile
@@ -20,7 +21,16 @@ from .mapping_state import profile_source_vocabulary
 from .run_state import unresolved_name_tokens_in
 
 
-EMPTY_PRESERVED: dict[str, object] = {
+class PreservedMeta(TypedDict):
+    tags: dict[str, str]
+    last_run_at: str
+    group: str
+    favorited_at: str
+    reviewed_rules: dict[str, str]
+    authority_id: str
+
+
+EMPTY_PRESERVED: PreservedMeta = {
     "tags": {},
     "last_run_at": "",
     "group": "",
@@ -30,7 +40,7 @@ EMPTY_PRESERVED: dict[str, object] = {
 }
 
 
-def preserved_meta(job: Job) -> dict[str, object]:
+def preserved_meta(job: Job) -> PreservedMeta:
     """Return the durable metadata that editor saves carry forward."""
     return {
         "tags": dict(job.tags),

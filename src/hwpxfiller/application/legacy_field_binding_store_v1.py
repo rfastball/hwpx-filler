@@ -406,11 +406,14 @@ def migrate_stored_v1(content: Mapping[str, Any]) -> StoredWorkFieldBinding:
         )
         for raw in content["current_by_application"]
     )
+    aggregate_version = content.get("aggregate_version")
+    if isinstance(aggregate_version, bool) or not isinstance(aggregate_version, int):
+        raise LegacyFieldBindingStoreV1Error("aggregate_version 은 정수여야 한다")
     return StoredWorkFieldBinding(
         schema_version=STORE_SCHEMA_VERSION,
-        aggregate_version=content.get("aggregate_version"),
-        workspace_instance_id=content.get("workspace_instance_id"),
-        work_authority_id=content.get("work_authority_id"),
+        aggregate_version=aggregate_version,
+        workspace_instance_id=_require_text(content, "workspace_instance_id"),
+        work_authority_id=_require_text(content, "work_authority_id"),
         current_by_application=pointers,
         immutable_binding_revisions=tuple(revisions),
         migration_drafts=tuple(
@@ -435,15 +438,15 @@ def _migrate_draft(raw: Any, id_map: Mapping[str, str]) -> CommittedDraftRecord:
     if not isinstance(raw, Mapping):
         raise LegacyFieldBindingStoreV1Error("v1 draft record 표현이 malformed")
     return CommittedDraftRecord(
-        kind=raw.get("kind"),
-        request_id=raw.get("request_id"),
-        application_id=raw.get("application_id"),
+        kind=_require_text(raw, "kind"),
+        request_id=_require_text(raw, "request_id"),
+        application_id=_require_text(raw, "application_id"),
         # basis_fingerprint 는 그때의 basis 를 가리키는 역사 기록이라 재계산하지 않는다.
-        basis_fingerprint=raw.get("basis_fingerprint"),
+        basis_fingerprint=_require_text(raw, "basis_fingerprint"),
         produced_revision_id=_remap(
             raw.get("produced_revision_id"), id_map, "draft record"
         ),
-        recorded_at=raw.get("recorded_at"),
+        recorded_at=_require_text(raw, "recorded_at"),
     )
 
 
@@ -453,13 +456,13 @@ def _migrate_ledger(
     if not isinstance(raw, Mapping):
         raise LegacyFieldBindingStoreV1Error("v1 ledger record 표현이 malformed")
     return FieldBindingIdempotencyRecord(
-        request_id=raw.get("request_id"),
-        fingerprint_schema_version=raw.get("fingerprint_schema_version"),
+        request_id=_require_text(raw, "request_id"),
+        fingerprint_schema_version=_require_text(raw, "fingerprint_schema_version"),
         # command_fingerprint 는 그 요청이 무엇이었는지의 역사라 v2 로 다시 계산하지 않는다.
-        command_fingerprint=raw.get("command_fingerprint"),
+        command_fingerprint=_require_text(raw, "command_fingerprint"),
         produced_revision_id=_remap(
             raw.get("produced_revision_id"), id_map, "ledger record"
         ),
-        outcome_code=raw.get("outcome_code"),
-        recorded_at=raw.get("recorded_at"),
+        outcome_code=_require_text(raw, "outcome_code"),
+        recorded_at=_require_text(raw, "recorded_at"),
     )

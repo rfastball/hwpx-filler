@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
 
-from lxml import etree
+import lxml.etree as etree
 
 from .field_occurrence import FieldOccurrence
 from .structural_boundary import (

@@ -21,7 +21,11 @@ from __future__ import annotations
 import sys
 from typing import Protocol, runtime_checkable
 
-from hwpxfiller.domain.secret_redaction import REDACTED, redact, redact_url
+from hwpxfiller.domain.secret_redaction import (
+    REDACTED as REDACTED,
+    redact as redact,
+    redact_url as redact_url,
+)
 
 # --------------------------------------------------------------------- 상수
 #: 논리적 비밀 이름(포트에 넘기는 키). Windows 타깃명·CLI 폴백이 공유하는 단일 출처.

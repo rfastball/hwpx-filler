@@ -22,7 +22,6 @@ from hwpxfiller.gui.template_manager_state import CONVERT_ACTION_LABEL
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_template import TemplateController
-from hwpxfiller.webapp.template_groups import TemplateGroupModel
 
 REPO = REPO_ROOT
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
@@ -889,7 +888,6 @@ def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
 # ============================================================ #26 패리티 회수
 # 편집 모드(#1)·선언 데이터 자동등록(#3)의 헤드리스 계약.
 from hwpxfiller.domain.dataset_reference import DatasetReference
-from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from lxml import etree
+import lxml.etree as etree
 
 # 도메인 사실의 단일 출처 — "linesegarray 는 본문 텍스트 없는 레이아웃 캐시".
 # 추출 경로(text_extract._IGNORE_P)와 스트립 경로가 함께 참조한다.

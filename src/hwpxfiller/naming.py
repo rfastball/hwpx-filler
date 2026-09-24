@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -71,7 +72,7 @@ def seq_token_pads(pattern: str) -> "list[str | None]":
 
 def make_output_filename(
     pattern: str,
-    data: "dict[str, object]",
+    data: "Mapping[str, object]",
     *,
     seq: "int | None" = None,
     now: "datetime | None" = None,
@@ -109,10 +110,10 @@ class OutputNamer:
         self._seq = 0
         self._seen: "set[str]" = set()
 
-    def next(self, data: "dict[str, object]") -> str:
+    def next(self, data: "Mapping[str, object]") -> str:
         return self.next_detail(data)[0]
 
-    def next_detail(self, data: "dict[str, object]") -> "tuple[str, bool]":
+    def next_detail(self, data: "Mapping[str, object]") -> "tuple[str, bool]":
         """``(발급한 이름, 꼬리표가 붙었는가)`` — 수렴 집계(C-01)의 원천.
 
         꼬리표 자체는 파일 소실을 막는 올바른 처분이지만, **몇 건이 수렴했는지**를 아무도
@@ -140,7 +141,7 @@ class OutputNamer:
 
 # ------------------------------------------------------- 디스크 충돌 검출(RC-02)
 def plan_output_names(
-    pattern: str, records: "list[dict[str, object]]", *, now: "datetime | None" = None
+    pattern: str, records: "Sequence[Mapping[str, object]]", *, now: "datetime | None" = None
 ) -> "list[str]":
     """배치가 발급할 파일명 전체를 미리 계산한다(:class:`OutputNamer` 와 동일 규칙·순서).
 
@@ -193,7 +194,7 @@ class OutputNameAudit:
 
 
 def audit_output_names(
-    pattern: str, records: "list[dict[str, object]]", out_dir: "str | Path" = "",
+    pattern: str, records: "Sequence[Mapping[str, object]]", out_dir: "str | Path" = "",
     *, now: "datetime | None" = None, max_path: "int | None" = None,
 ) -> OutputNameAudit:
     """:func:`plan_output_names` 와 **같은 규칙·순서**로 계산하며 집합 성질을 함께 센다.

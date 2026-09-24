@@ -1759,6 +1759,10 @@ text = "겨눌 작업 이름이 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/active_work_session.py"
+text = "문서 생성 엔진이 조립되지 않았습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/active_work_session.py"
 text = "이 작업에 연결된 데이터 파일을 찾을 수 없습니다: {}. 데이터를 다시 고른 뒤 작업을 저장하세요."
 
 [[sentence]]
@@ -1800,6 +1804,10 @@ text = "이 문서는 지금 세션의 생성 결과에 없습니다. 문서를 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
 text = "저장된 창 위치가 현재 화면 밖이라 기본 위치로 복원합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "창을 만들지 못했습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
@@ -2366,6 +2374,10 @@ text = "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합�
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "생성을 진행할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_job.py"
+text = "슬롯 변경 결과가 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"

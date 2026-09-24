@@ -23,7 +23,6 @@ from hwpxfiller.application.execution_capture import (
     APPLIED_TEMPLATE_CANDIDATE,
     MATERIALIZATION_BASE_CONTRACT_ID,
     SLOTLESS,
-    SLOTTED,
     CapturedExecutionInput,
     CapturedTemplateExecutionInput,
     ExactTemplateQualificationContext,

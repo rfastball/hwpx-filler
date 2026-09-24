@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from lxml import etree
+import lxml.etree as etree
 
 from hwpxcore.field_occurrence import FieldOccurrence, resolve_field_occurrences
 from hwpxcore.lineseg import serialize_modified_section

@@ -10,11 +10,10 @@ from ..application.document_creation_workbench import (
 )
 from ..domain.identity_summary import identity_summary
 from ..external.delivery_coordinator import (
-    DeliveredDocument,
-    DeliveryAborted,
     DeliveryCompleted,
     DeliveryRefused,
 )
+from ..application.generation_delivery import CurrentResolvedDelivery
 from ..gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
 from ..gui.result_errors import describe_fill_note
 from ..application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
@@ -77,7 +76,7 @@ def managed_blank_note(summary: RecordValidationSummary) -> str:
 
 def managed_failure_row(
     *,
-    preparation: CurrentDeliveryPreparation,
+    resolved_delivery: CurrentResolvedDelivery,
     ordered_model_indices: list[int],
     failed_ordinal: int,
     reason: str,
@@ -93,7 +92,7 @@ def managed_failure_row(
         if failed_ordinal < len(ordered_model_indices)
         else failed_ordinal
     )
-    failed_item = preparation.result.ordered_items[failed_ordinal]
+    failed_item = resolved_delivery.ordered_items[failed_ordinal]
     summary = identity_summary(records, filename_tokens=filename_source_columns)
     return failed_index, {
         "index": failed_index,
@@ -128,6 +127,9 @@ def project_managed_run_result(
             "error": ADMISSION_REJECT_TEXT.get(outcome.code, outcome.detail),
             "level": "warn",
         })
+    resolved_delivery = preparation.result
+    if not isinstance(resolved_delivery, CurrentResolvedDelivery):
+        raise ValueError("managed result requires a resolved delivery plan")
     if isinstance(outcome, ManagedRunCancelled):
         # record 경계 취소는 안착 전이라 세션의 앞선 산출물 증거를 바꾸지 않는다.
         summary = (
@@ -138,7 +140,7 @@ def project_managed_run_result(
             "ok": True, "status": "cancelled",
             "title": run_title("cancelled", True, 0, 0),
             "stage": "", "message": "", "known": True, "summary": summary,
-            "level": "warn", "out_dir": preparation.result.output_directory,
+            "level": "warn", "out_dir": resolved_delivery.output_directory,
             "succeeded": 0, "failed": 0, "failed_selectable": 0,
             "total": outcome.total, "failures": [], "fill_notes": [],
             "cancelled": True, "attempted": outcome.attempted,
@@ -192,7 +194,7 @@ def project_managed_run_result(
         # 전건 안착 뒤 하나를 되읽지 못한 상태라 미착수는 0이고 성공 수에서만 빠진다.
         succeeded -= 1
         failed_index, failure = managed_failure_row(
-            preparation=preparation,
+            resolved_delivery=resolved_delivery,
             ordered_model_indices=indices,
             failed_ordinal=outcome.failed_item_ordinal,
             reason=outcome.detail,
@@ -210,7 +212,7 @@ def project_managed_run_result(
                 "ok": True, "status": status,
                 "title": run_title(status, False, succeeded, 1),
                 "stage": "", "message": "", "known": True, "summary": summary,
-                "level": "danger", "out_dir": preparation.result.output_directory,
+                "level": "danger", "out_dir": resolved_delivery.output_directory,
                 "succeeded": succeeded, "failed": 1, "failed_selectable": 1,
                 "total": total, "failures": [failure], "fill_notes": fill_notes,
                 "cancelled": False, "attempted": total, "unstarted": 0,
@@ -222,7 +224,7 @@ def project_managed_run_result(
 
     # DeliveryAborted: 실패 항목에서 멈췄고 이미 앉은 문서는 그대로 유지된다.
     failed_index, failure = managed_failure_row(
-        preparation=preparation,
+        resolved_delivery=resolved_delivery,
         ordered_model_indices=indices,
         failed_ordinal=outcome.failed_item_ordinal,
         reason=outcome.detail,
@@ -240,7 +242,7 @@ def project_managed_run_result(
             "ok": True, "status": status,
             "title": run_title(status, False, succeeded, 1),
             "stage": "", "message": "", "known": True, "summary": summary,
-            "level": "danger", "out_dir": preparation.result.output_directory,
+            "level": "danger", "out_dir": resolved_delivery.output_directory,
             "succeeded": succeeded, "failed": 1, "failed_selectable": 1,
             "total": total, "failures": [failure], "fill_notes": fill_notes,
             "cancelled": False, "attempted": succeeded + 1, "unstarted": unstarted,
