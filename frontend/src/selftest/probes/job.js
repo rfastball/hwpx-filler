@@ -1099,6 +1099,11 @@ async function runJobResult(ctx) {
   const baseSnap = resultSnapshot();
   await pushAndSettle(ctx, "job", baseSnap);
 
+  await pushAndSettle(ctx, "job", { ...baseSnap, out_dir: "" });
+  out.run_caption_visible_without_folder = textOf(doc, "jobRunCap") === "생성 준비"
+    && displayOf(ctx, doc.getElementById("jobRunZone")) !== "none";
+  await pushAndSettle(ctx, "job", baseSnap);
+
   const partial = partialResult();
   services.JobRun.renderResult(partial);
   await settle(ctx);

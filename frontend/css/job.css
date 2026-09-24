@@ -17,7 +17,7 @@
    `.zone + .zone` 구분선은 그대로 남아 **빈 상자**가 선다. 숨긴다고 판정해 놓고 자리만 남기면
    사용자가 보는 것은 「사라진 구획」이 아니라 「비어 있는 구획」이다. */
 #jobTplChangeZone:empty,#jobContentSelectionZone:empty,#jobWorkbenchStatusZone:empty{display:none}
-#jobRunZone:has(#jobOutFolderRow:empty){display:none}
+#jobRunZone:has(#jobRunCap:empty):has(#jobOutFolderRow:empty){display:none}
 /* 사전검증 slot은 기존 조판에 새 상자를 만들지 않는다. */
 #jobPreflight{display:contents}
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
