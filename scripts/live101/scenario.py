@@ -9,7 +9,7 @@
 쓰는 것이 이 파일의 요점이고, 그래야 "찍히는 화면"과 "검사되는 화면"이 갈라지지 않는다.
 
 :data:`CAPTURE_POINTS` 는 그 이름들의 **정렬된 단일 출처**다. 종전에는 이름이 대본 안에
-14번 흩어져 있어 커밋된 ``img/`` 와 README 참조와 대본이 서로를 못 봤다 — 셋 중 하나만
+13번 흩어져 있어 커밋된 ``img/`` 와 README 참조와 대본이 서로를 못 봤다 — 셋 중 하나만
 어긋나도 아무도 모르는 상태였다. 이제 셋이 같은 목록을 본다
 (``tests/test_quickstart_101_live.py`` 의 3자 대조).
 """
@@ -26,7 +26,7 @@ from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
 
 from .surface import ScenarioFailure, StepTimeout, Surface
 
-#: 캡처 지점 14개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
+#: 캡처 지점 13개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
 #: README 참조·커밋된 ``img/*.png`` 와 3자 대조된다.
 CAPTURE_POINTS: "tuple[str, ...]" = (
     "job-landing",
@@ -163,9 +163,8 @@ class ScenarioContext:
     prepare_output: "Callable[[], str]"
     create_collision: "Callable[[str], None]"
     output_manifest: "Callable[[], dict[str, str]]"
-    #: 앱 홈 전체의 파일 census(상대경로 → sha256). 온보딩 여정의 「누르기 전에는 홈에
-    #: 아무것도 쓰지 않는다」(#891 D1)를 재는 자리이고, 그 뒤로는 설치·생성·제거가 실제로
-    #: 파일을 움직였는지의 실물 증거다 — 화면이 말하는 것과 디스크가 말하는 것을 가른다.
+    #: 앱 홈 전체의 파일 census(상대경로 → sha256). SX-05 재시작 검증에서
+    #: 화면이 말하는 것과 디스크가 말하는 것을 가른다.
     home_census: "Callable[[], dict[str, str]]"
     audit_shoot: "Callable[[str], dict]"
     #: 대본이 관측한 사실 — 드라이버가 파일 시스템 사실과 합쳐 보고서를 만든다.
@@ -260,8 +259,8 @@ def run(ctx: ScenarioContext) -> dict:
         "전 행 확인",
         requires=["#scr-editor"],
     )
-    # 머리 pill 줄이 폴드 아래로 잘리지 않게 겨눠 스크롤.
-    s.scroll_to("#scr-editor .bindbar")
+    # 편집 단계 전환은 스크롤을 보존한다. 처음으로 되돌려 제목·표 머리를 함께 찍는다.
+    s.js("document.querySelector('#scr-editor .wbody').scrollTop = 0")
     ctx.shoot("mapping-confirm")
 
     # ---- S4 「이름·저장」 단계: 이름·파일 이름·저장 폴더 → 저장 --------------
@@ -501,7 +500,9 @@ def run(ctx: ScenarioContext) -> dict:
         "본문 요약·재진술 부재 + 위험 배너 자리",
         requires=["#jobPreflight", "#jobMirror"],
     )
-    s.scroll_to("#jobPreflight")
+    # host는 display:contents여서 배치 상자가 없다. 실제 사전검증 박스를 겨눈다.
+    s.wait("!!document.querySelector('#jobPreflight .preflight')", "사전검증 박스", requires=["#jobPreflight"])
+    s.scroll_to("#jobPreflight .preflight")
     ctx.shoot("preflight-check")
 
     # ---- S7 생성 → 완료 요약 ----------------------------------------------

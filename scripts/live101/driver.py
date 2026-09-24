@@ -381,7 +381,7 @@ def build_web_artifact() -> None:
 def preflight(mode: str, phase: str = "legacy") -> "list[str]":
     """실행 없이 **전제만** 센다 — CI 가 "돌 수 있는 환경인가"를 시끄럽게 증명하는 자리.
 
-    실주행(2~4분)을 CI 단계에서 두 번 돌리지 않으려는 것이다. 실제 완주는 pytest 게이트가
+    실주행을 CI 단계에서 두 번 돌리지 않으려는 것이다. 실제 완주는 pytest 게이트가
     한 번 돌고, 이 단계는 그 게이트가 조용히 스킵될 수 없음을 앞에서 보인다.
 
     픽셀 조건은 **모드가 아니라 실제로 셔터가 서는가**로 센다. SX-05 journey 는 `check` 인데도
@@ -718,18 +718,19 @@ def _run_with_home(
             _await_window(window, *boot_wait_budget(ctx, deadline))
             state["phase"] = "bridge"
             _await_bridge(window, deadline)
+            window.restore()
             window.resize(WINDOW_W, WINDOW_H)
             time.sleep(0.6)
             surface = Surface(window, deadline)
             surface.install_helpers()
-            sink = _make_sink(mode, out_dir, webapp_app.WINDOW_TITLE)
+            sink = _make_sink(mode, out_dir, window)
             state["phase"] = "scenario"
             audit_sink = None
             if phase == "journey":
                 if evidence_dir is None:
                     raise ScenarioFailure("SX-05 journey에는 pixel evidence dir가 필요합니다")
                 audit_sink = capture_mod.Win32Sink(
-                    capture_mod.find_window(webapp_app.WINDOW_TITLE), evidence_dir
+                    capture_mod.own_window_handle(window), evidence_dir
                 )
 
             def audit_shoot(name: str) -> dict:
@@ -925,12 +926,12 @@ def _await_bridge(window: object, deadline: Deadline) -> None:
     raise ScenarioFailure(f"브리지 준비 시한 초과({budget:.0f}s) — 창은 떴으나 앱이 서지 않았습니다")
 
 
-def _make_sink(mode: str, out_dir: "Path | None", window_title: str):
+def _make_sink(mode: str, out_dir: "Path | None", window: object):
     if mode == "check":
         return capture_mod.NullSink()
     if out_dir is None:
         raise ValueError("capture 모드에는 출력 폴더가 필요합니다")
-    hwnd = capture_mod.find_window(window_title)
+    hwnd = capture_mod.own_window_handle(window)
     return capture_mod.Win32Sink(hwnd, out_dir)
 
 

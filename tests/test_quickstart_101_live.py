@@ -35,7 +35,7 @@ import _live_budget as live_budget
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from live101 import driver, report as report_mod  # noqa: E402
+from live101 import capture as capture_mod, driver, report as report_mod  # noqa: E402
 from live101.scenario import CAPTURE_POINTS, EXPECTED_HWPX  # noqa: E402
 from live101.surface import (  # noqa: E402
     Deadline,
@@ -771,6 +771,53 @@ def test_capture_points_readme_and_committed_images_are_one_set() -> None:
     assert not problems, "\n".join(problems)
 
 
+def test_capture_publishes_only_a_complete_new_set(tmp_path, monkeypatch) -> None:
+    import capture_101_screenshots as cli
+
+    target = tmp_path / "img"
+    target.mkdir()
+    (target / "old.png").write_bytes(b"old")
+    staged = tmp_path / ".img-capture"
+    staged.mkdir()
+    (staged / "01-job-landing.png").write_bytes(b"new")
+
+    with pytest.raises(OSError, match="집합 불일치"):
+        cli._publish_capture(staged, target)
+    assert (target / "old.png").read_bytes() == b"old"
+
+    for name in _expected_filenames()[1:]:
+        (staged / name).write_bytes(b"new")
+    rename = type(staged).rename
+
+    def fail_new_rename(self, destination):
+        if self == staged:
+            raise OSError("new rename failed")
+        return rename(self, destination)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(type(staged), "rename", fail_new_rename)
+        with pytest.raises(OSError, match="new rename failed"):
+            cli._publish_capture(staged, target)
+    assert (target / "old.png").read_bytes() == b"old"
+
+    cli._publish_capture(staged, target)
+    assert sorted(path.name for path in target.iterdir()) == sorted(_expected_filenames())
+    assert not staged.exists()
+
+
+def test_capture_uses_its_own_window_handle() -> None:
+    class Handle:
+        def ToInt64(self):
+            return 12345
+
+    class Window:
+        native = type("Native", (), {"Handle": Handle()})()
+
+    assert capture_mod.own_window_handle(Window()) == 12345
+    with pytest.raises(RuntimeError, match="native HWND"):
+        capture_mod.own_window_handle(object())
+
+
 @pytest.mark.parametrize(
     ("committed", "referenced", "fragment"),
     [
@@ -822,7 +869,7 @@ def test_a_healthy_report_passes_so_the_negative_controls_mean_something() -> No
 
 
 def test_zero_documents_fails_even_with_every_screenshot_present() -> None:
-    """**생성 0건이면 PNG 가 14장 있어도 실패한다** — 판정 근거는 픽셀이 아니라 실물이다."""
+    """**생성 0건이면 PNG 가 13장 있어도 실패한다** — 판정 근거는 픽셀이 아니라 실물이다."""
     verdict = report_mod.judge(_healthy_report(hwpx_generated=0), mode="capture")
 
     assert verdict.ok is False

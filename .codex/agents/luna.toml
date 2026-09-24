@@ -1,7 +1,7 @@
 # Managed by codex-orchestration. Re-run the bootstrapper to update.
 name = "luna"
 description = "Search, inventory, extract, or perform a mechanical transform."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 model_reasoning_effort = "low"
 developer_instructions = "Perform the exact bounded task and stop.\nDo not delegate.\nReturn extracted facts and paths, not raw dumps, to your parent."
 

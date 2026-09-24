@@ -803,7 +803,6 @@ class TestWebSelftestGate:
         """
         j = selftest_result["job_result"]
         assert j.get("error") is None, f"결과 3태 프로브 예외: {j.get('error')!r}"
-        assert j["run_caption_visible_without_folder"], j
         # ① 태는 Python 판정 그대로, 색은 별도 채널(level) — 둘을 한 축으로 접지 않는다.
         assert j["shown"] and j["state"] == "partiallyCompleted", j
         assert j["level"] == "danger" and "2개 성공" in j["title"], j

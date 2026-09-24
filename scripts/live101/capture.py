@@ -1,4 +1,4 @@
-"""픽셀 캡처 어댑터 — HWND 탐색 · ``PrintWindow`` · PNG 저장 · **정착 정책**(N-11A · #423).
+"""픽셀 캡처 어댑터 — 자체 창 HWND · ``PrintWindow`` · PNG 저장 · **정착 정책**(N-11A · #423).
 
 시나리오는 "여기서 찍는다"를 이름으로만 말하고, 그 이름이 무엇이 되는지는 여기가 정한다.
 ``check`` 모드는 :class:`NullSink` 를 끼워 같은 대본을 픽셀 없이 완주한다.
@@ -39,20 +39,16 @@ SETTLE_FLOOR_S = 0.35
 MAX_PNG_WIDTH = 1600
 
 
-def find_window(title: str, timeout: float = 30.0) -> int:
-    """제목으로 **보이는** 창을 찾는다 — 숨은 창을 잡으면 FOUC 은닉 상태를 찍는다."""
-    user32 = ctypes.windll.user32
-    user32.FindWindowW.restype = wintypes.HWND
-    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-    user32.IsWindowVisible.restype = wintypes.BOOL
-    user32.IsWindowVisible.argtypes = [wintypes.HWND]
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        hwnd = user32.FindWindowW(None, title)
-        if hwnd and user32.IsWindowVisible(hwnd):
-            return int(hwnd)
-        time.sleep(0.2)
-    raise RuntimeError(f"보이는 창을 찾지 못함: {title!r} (FOUC 은닉 미해제?)")
+def own_window_handle(window: object) -> int:
+    """이번 실행의 pywebview WinForms 창만 겨눈다. 제목이 같은 다른 창은 절대 찍지 않는다."""
+    native = getattr(window, "native", None)
+    handle = getattr(native, "Handle", None)
+    if handle is None:
+        raise RuntimeError("캡처 창의 native HWND가 없습니다")
+    hwnd = int(handle.ToInt64())
+    if hwnd <= 0:
+        raise RuntimeError(f"캡처 창의 native HWND가 비정상입니다: {hwnd}")
+    return hwnd
 
 
 class _BitmapInfoHeader(ctypes.Structure):
