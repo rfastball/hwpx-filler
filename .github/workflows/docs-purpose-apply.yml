@@ -1,0 +1,109 @@
+name: docs-purpose-apply
+on:
+  push:
+    branches: [docs/purpose-routing-20260925]
+    paths:
+      - .github/workflows/docs-purpose-apply.yml
+      - .docs-migration-*
+permissions:
+  contents: write
+jobs:
+  apply-verified-tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: "0.11.28"
+      - run: uv python install 3.13
+      - name: Apply exact reviewed delta and remove transport files
+        shell: bash
+        run: |
+          uv run --no-project --python 3.13 python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import lzma
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+
+          def blob(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          root = Path.cwd().resolve()
+          def safe(name):
+              p = Path(name)
+              if p.is_absolute() or '..' in p.parts or '.git' in p.parts or '\\' in name:
+                  raise ValueError(f'unsafe packet path: {name}')
+              if not (root / p).resolve().is_relative_to(root):
+                  raise ValueError(f'path escapes repository: {name}')
+              return p
+
+          payload = ''.join(Path(f'.docs-migration-{i}').read_text() for i in range(3))
+          raw = lzma.decompress(base64.b64decode(payload, validate=True))
+          expected = '4690371d82e32d9613a77ab62260d034903aa132b4f208ebd6af331fdd29a2bb'
+          if hashlib.sha256(raw).hexdigest() != expected:
+              raise ValueError('packet integrity mismatch')
+          packet = json.loads(raw)
+          if packet['base'] != '113771138c7f3ef19d2b6f3a06d4c4f1542985d5':
+              raise ValueError('unexpected base commit')
+          if git('rev-parse', packet['base'] + '^{tree}').decode().strip() != packet['base_tree']:
+              raise ValueError('base tree mismatch')
+          written = set()
+          for edit in packet['edits']:
+              target = safe(edit['path'])
+              if edit['path'] in written:
+                  raise ValueError('duplicate edit')
+              written.add(edit['path'])
+              if edit['source'] is None:
+                  before = b''
+              else:
+                  safe(edit['source'])
+                  before = git('show', packet['base'] + ':' + edit['source'])
+                  if blob(before) != edit['before']:
+                      raise ValueError(f'base blob mismatch: {target}')
+              if edit['ops']:
+                  lines = before.decode('utf-8').splitlines(keepends=True)
+                  output = []
+                  cursor = 0
+                  for start, stop, replacement in edit['ops']:
+                      if not (cursor <= start <= stop <= len(lines)):
+                          raise ValueError(f'invalid delta operation: {target}')
+                      output.extend(lines[cursor:start])
+                      output.append(replacement)
+                      cursor = stop
+                  output.extend(lines[cursor:])
+                  after = ''.join(output).encode('utf-8')
+              else:
+                  after = before
+              if blob(after) != edit['after']:
+                  raise ValueError(f'result blob mismatch: {target}')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(after)
+          for name in packet['delete']:
+              if name in written:
+                  raise ValueError(f'delete overlaps result: {name}')
+              safe(name).unlink()
+          for i in range(3):
+              Path(f'.docs-migration-{i}').unlink()
+          Path('.github/workflows/docs-purpose-apply.yml').unlink()
+          subprocess.run(['git', 'add', '-A'], check=True)
+          subprocess.run(['git', 'add', '-f', '--', *sorted(written)], check=True)
+          tree = git('write-tree').decode().strip()
+          if tree != packet['tree']:
+              raise ValueError(f'final tree mismatch: {tree} != {packet["tree"]}')
+          subprocess.run([sys.executable, 'scripts/docs_contract.py', '--check'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'commit', '-m', 'docs: 다섯 정본과 주제별 작성 라우팅 통합'], check=True)
+          subprocess.run(['git', 'push', 'origin', 'HEAD:docs/purpose-routing-20260925'], check=True)
+          print(f'Published verified tree: {tree}')
+          PY
