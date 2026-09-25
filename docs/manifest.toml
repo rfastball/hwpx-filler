@@ -105,7 +105,7 @@ role = "사용자 가시 명칭·빈 값·수량 단위"
 max_lines = 160
 sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts"]
 tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
-source_sha256 = "ae2cc3ca38d7f14fb6b93a512bd628f10f6e304b541804c27de42d20091b1350"
+source_sha256 = "d7fc4109f1bac832284b14f1dea8efa675053120664c6ac6c5271cdc805c1776"
 body_sha256 = "24c61f225c63e34347a0fc2b3442c1f3a1c54b59035a29d4bb772b0bf3fcd7e3"
 
 [[document]]
