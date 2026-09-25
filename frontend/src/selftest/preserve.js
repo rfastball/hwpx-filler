@@ -5,8 +5,8 @@
 
    남은 소비자는 `probes/boot_routing_overlay.js` 의 `preserve` 프로브 하나다 — 합성 픽스처로
    「innerHTML 재구성을 가로지르는 보존」 기제 자체를 검사한다. 실화면 보존 회귀는 이 헬퍼를
-   쓰지 않는 `preserve_real` 프로브(React 렌더 경로)가 진다. 설계 결정 원문·재고경계는
-   https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/WEB_RENDER_PRESERVATION.md.
+   쓰지 않는 `preserve_real` 프로브(React 렌더 경로)가 진다. 현재 제품 렌더 경계는
+   docs/ui/runtime.md.
 
    스크롤은 옵트인(data-preserve-scroll). 복원 대상은 재구성을 가로질러 같은 id 를 유지해야
    하며, 없으면 no-op(조용한 실패가 아니라 '보존할 것이 사라짐'이라는 정상 귀결). */
