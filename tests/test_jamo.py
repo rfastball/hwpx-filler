@@ -8,8 +8,7 @@
 """
 from __future__ import annotations
 
-import functools
-import re
+import json
 from pathlib import Path
 
 import pytest
@@ -49,8 +48,8 @@ def _mockup_table(name: str) -> "tuple[str, ...]":
     [("CHO", CHOSEONG), ("JUNG", JUNGSEONG), ("JONG", JONGSEONG)],
 )
 def test_tables_match_mockup_spec(name: str, ours: "tuple[str, ...]") -> None:
-    """자모 테이블 = 시안 테이블(충실 이식의 기계 비준 — 겹받침 확장 포함)."""
-    assert ours == _mockup_table(name)
+    """자모 테이블 = 삭제 전 시안에서 추출한 원관측 fixture(겹받침 확장 포함)."""
+    assert ours == _fixture_table(name)
 
 
 def test_table_shapes() -> None:
