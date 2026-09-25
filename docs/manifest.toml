@@ -66,7 +66,7 @@ title = "사용자 소개·실행"
 max_lines = 230
 sources = ["docs/product.md"]
 tests = ["tests/test_job.py"]
-source_sha256 = "484b5bb524c71124ee24eb255741f7c153ebc5d8cc4782d3b7967eadbaac1b91"
+source_sha256 = "9e131d33fa3d4424b3bcda1a93b5f5ab6fe3d91fc88d06ff8154e7eac43becff"
 body_sha256 = "dfe76d001c5461fc65708abdd377c662e6ba7259d68e5c1a8576183df2145b4d"
 
 [[document]]
@@ -150,14 +150,6 @@ title = "HWPX MetaTag 관측"
 max_lines = 750
 why_separate = "메타데이터 carrier의 별도 wire format과 보존성 관측"
 
-[[document]]
-path = "docs/research/document-authority.md"
-kind = "research"
-role = "research-document-authority"
-title = "문서 표현 권위 연구"
-max_lines = 1500
-why_separate = "미채택 모델의 독립 논증이며 현행 구현 보증과 구분"
-
 [[topic]]
 id = "product-purpose"
 document = "docs/product.md"
@@ -173,14 +165,6 @@ sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", 
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py"]
 source_sha256 = "606a3764be32e77c77ad0a44b897423ad639838bc6eba45ae9521bfdc144682d"
 body_sha256 = "263d2957e5c50f06ffc7d1f01c09f7df52d8c0186b718220a738c53575e60c36"
-
-[[topic]]
-id = "product-direction"
-document = "docs/product.md"
-sources = ["docs/research/document-authority.md"]
-tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "3860b8aecc261f270e40335ba29e5d2dc7e952c635630f1a2fd6b1f73b11a51c"
-body_sha256 = "4770917060dfad057618c37ee5f42a73e7d58ce7f5ca3d5183f0b2c423b523be"
 
 [[topic]]
 id = "architecture-boundaries"

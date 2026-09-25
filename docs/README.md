@@ -21,7 +21,6 @@
 |---|---|
 | `product-purpose` | [목적과 사용자](product.md#product-purpose) |
 | `product-scope` | [지원 경계](product.md#product-scope) |
-| `product-direction` | [재개 조건](product.md#product-direction) |
 | `architecture-boundaries` | [계층과 실행 자산](architecture.md#architecture-boundaries) |
 | `architecture-runtime` | [통신과 화면 수명](architecture.md#architecture-runtime) |
 | `architecture-authority` | [의미 권위와 제어면](architecture.md#architecture-authority) |
@@ -58,7 +57,6 @@
 
 - [HWPX 구조 구간 관측](evidence/hwpx-ranges.md)
 - [HWPX MetaTag 관측](evidence/hwpx-metatags.md)
-- [문서 표현 권위 연구](research/document-authority.md)
 
 기능 계획·진행·담당·완료·리뷰는 GitHub 이슈·PR, 재현 입력은 테스트 fixture에 둔다.
 작은 제안은 이슈로, 독립 장문 모델만 연구로 분리한다. 증거·연구는 현재 계약을 대신하지 않는다.
