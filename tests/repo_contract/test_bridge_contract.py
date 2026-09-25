@@ -148,7 +148,7 @@ GENERATED_CONTRACT = "frontend/src/contract/contract.gen.ts"
 
 #: production frontend 이 **값으로** 소비해야 하는 생성 계약 어휘. type-only import 는 이 집합을
 #: 못 채운다 — display 코드가 backend-파생 값을 실제로 렌더한다는 증거다(SG-03 C5). 정본
-#: `docs/CONTROL_PLANE_SCOPE.md` §backend-only semantic authority.
+#: `docs/architecture.md#architecture-authority` §backend-only semantic authority.
 _EXPECTED_CONSUMED_GENERATED_VALUES = frozenset(
     {
         "SCREEN_ACTIONS",         # 화면·액션 어휘(routing/dispatch)

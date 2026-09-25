@@ -1,13 +1,13 @@
-# HWPX native MetaTag S1 spike 관찰 기록
+# HWPX MetaTag 관측
 
-> 현재 구현 계약이 아닌 형식 관측 증거다. 현재 제품의 책임·전이는 [핵심 워크플로](core-workflow.md)와 [UI 계약](UI_CONTRACT.md)을 따른다.
+> 현재 구현 계약이 아닌 형식 관측 증거다. 현재 제품의 책임·전이는 [핵심 워크플로](../workflow.md#workflow-definition)와 [UI 계약](../architecture.md#architecture-runtime)을 따른다.
 > 아래의 시점·판정·원관측은 그 근거를 보존한 것이며, 모든 서술을 현재 제품 지원으로 읽지 않는다.
 
 
 > **문서 상태:** 형식 관측 증거
 > **권위 범위:** 한컴 native metadata carrier 의 wire format 관찰과 보존성 실험 설계
 > **후속 정본:** 우리 코드의 동작은 `tests/_hwpx_metatag_spike.py` 와 `tests/test_metatag_s1.py`,
-> 구조 범위 primitive 는 `docs/HWPX_STRUCTURAL_RANGE_S0.md`
+> 구조 범위 primitive 는 `docs/evidence/hwpx-ranges.md`
 > **편집 정책:** 새 native evidence(특히 한글 open/save 결과)가 생길 때만 판정과 근거를 함께 갱신
 
 ## 1. 목적과 비목표

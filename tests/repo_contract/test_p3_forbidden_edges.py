@@ -27,7 +27,7 @@ from _web_source import (
 
 
 ROOT = Path(__file__).parents[2]
-RINGS = ROOT / "docs" / "module_rings.toml"
+RINGS = ROOT / "tests" / "contracts" / "module-rings.toml"
 CONTRACT = ROOT / "tests" / "architecture_contract.toml"
 
 EXPECTED_SCHEMA = "architecture-contract/v1"

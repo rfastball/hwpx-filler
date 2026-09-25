@@ -1,7 +1,7 @@
 /* 고르기의 **열 하나** — 세 자리가 이 컴포넌트의 세 인스턴스다: 1단계의 좌(템플릿)·
  * 우(데이터) 열과 「데이터 선택」 다이얼로그(`data_picker.ts` — ③b 에서 합류).
  *
- * 현재 편집 계약 `docs/ui/editor.md`의 공통 열 문법(`.pool` · `.pool-head` ·
+ * 현재 편집 계약 `docs/workflow.md#workflow-definition`의 공통 열 문법(`.pool` · `.pool-head` ·
  * `.pool-list` · `.pitem` · `.pool-acts`)이 여기 한 벌로 선다. 종전에는 같은 그림을 두
  * 파일이 각자 그렸다 — 좌 열은 `editor.ts` 의 지역 `PoolItem`, 우 열은 `pool_list.ts` 의
  * 세 구획 — 그래서 「고를 수 있는가」의 시각적 얼굴(비활성 표시·사유 자리·선택 표지)이

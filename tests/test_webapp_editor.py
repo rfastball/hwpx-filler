@@ -821,7 +821,7 @@ def _structured_template(tmp_path: Path, name: str = "구간템플릿") -> Path:
 
     필드 토큰을 먼저(`compile_document`), 구간 표기를 다음(`compile_structure`)에 굽는다.
     순서를 뒤집으면 구조 안의 `{{필드}}` 가 depth>0 이 되어 필드 컴파일에서 조용히 빠진다
-    (`docs/UI_CONTRACT.md` 의 변환 순서 계약과 같은 이유). 표기 원본은 S8-02 헬퍼 재사용.
+    (`docs/architecture.md#architecture-runtime` 의 변환 순서 계약과 같은 이유). 표기 원본은 S8-02 헬퍼 재사용.
     """
     from hwpxfiller.domain.authoring import compile_document
     from hwpxfiller.external.template_inspection import compile_structure

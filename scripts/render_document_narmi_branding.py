@@ -1,6 +1,6 @@
 """문서나르미 브랜딩 자산 렌더(#258) — 심벌 PNG·파이널 보드·실행 파일 .ico.
 
-**정본은 docs/branding 의 SVG 파일이고 이 스크립트는 그것을 그대로 래스터한다.**
+**정본은 assets/branding 의 SVG 파일이고 이 스크립트는 그것을 그대로 래스터한다.**
 이전 판은 SVG 좌표를 ``STROKES`` 상수에 손으로 복제해 Pillow 원시도형으로 다시 그렸다.
 심벌이 폴리라인 세 개이던 시절엔 가능했지만, 손글씨에서 온 3단 심벌은 원시도형으로
 재작도할 수 없고 무엇보다 **재작도 자체가 드리프트의 원인**이었다(생성기와 화면이
@@ -33,7 +33,7 @@ from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "docs" / "branding"
+OUT = ROOT / "assets" / "branding"
 DEEP_BLUE = "#0E3FAE"
 BLUE = "#1857D8"
 MINT = "#43C9A8"

@@ -111,7 +111,7 @@ _FMT_OPTIONS = {
 FIRST_ROW_STATES = ("ready", "pending", "error")
 
 #: 아직 읽지 않은 첫 행 칸의 표식. 홑 문자 하나짜리 **빈 칸 마커**라
-#: ``docs/COPY_STYLE_GUIDE.md`` §3-1(문장 안 em dash 금지)의 예외다 — 문장이 아니다.
+#: ``docs/ui-style.md#ui-copy`` §3-1(문장 안 em dash 금지)의 예외다 — 문장이 아니다.
 PENDING_PREVIEW_MARK = "—"
 
 

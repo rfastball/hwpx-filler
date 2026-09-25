@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """사용자 문안 census — 화면에 서는 **문장**을 세고 allowlist 와 대조한다.
 
-새 문장은 기본 0 이다(`docs/COPY_STYLE_GUIDE.md` §1·§8). 이 스크립트는 문안 생산자
+새 문장은 기본 0 이다(`docs/ui-style.md#ui-copy`§8). 이 스크립트는 문안 생산자
 (링1 상태 모델 · 링2 컨트롤러 · 프런트 화면 · index.html)에서 종결어미로 끝나는 문자열을
-모아 `docs/ui_copy_census.toml` 과 다중집합으로 맞춘다. 문장이 늘면 게이트가 빨강이 되고,
+모아 `tests/contracts/ui-copy-census.toml` 과 다중집합으로 맞춘다. 문장이 늘면 게이트가 빨강이 되고,
 정말 남겨야 하는 문장만 PR 사유와 함께 allowlist 에 오른다.
 
     python scripts/ui_copy_census.py            # 요약 출력(쓰지 않음)
     python scripts/ui_copy_census.py --check    # allowlist 대조(어긋나면 non-zero)
     python scripts/ui_copy_census.py --write    # allowlist 재생성
 
-낭독 패턴(`NARRATION_PATTERNS`)은 `docs/COPY_STYLE_GUIDE.md` §8 의 구현이다 — 정본은 그
+낭독 패턴(`NARRATION_PATTERNS`)은 `docs/ui-style.md#ui-copy` 의 구현이다 — 정본은 그
 문서고 여기는 그것을 기계가 읽는 형태로 옮긴 것이다. 패턴에 걸리는 **기존** 문장만
 `legacy = true` 로 등재되고, 그 수는 늘지 않는다(줄이기만).
 
@@ -27,7 +27,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ALLOWLIST = ROOT / "docs" / "ui_copy_census.toml"
+ALLOWLIST = ROOT / "tests" / "contracts" / "ui-copy-census.toml"
 
 # ── 스캔 범위 — 사용자 문안 생산자만 ────────────────────────────────────────────────
 #: 링1 상태 모델과 링2 컨트롤러. 도메인(`domain/`·`hwpxcore`)은 문안을 짓지 않는다.
@@ -53,7 +53,7 @@ HTML_TEXT_ATTRS = ("title", "placeholder", "aria-label", "alt")
 #: 한국어 종결어미. `입니다·습니다·합니다·됩니다` 는 전부 `니다` 로 잡힌다.
 SENTENCE_RE = re.compile(r"(니다|세요|십시오|까요|네요|군요)(?=[.!?…)\]'\"」』]|\s|$)")
 
-#: 낭독 패턴 — 정본은 `docs/COPY_STYLE_GUIDE.md` §8. (번호, 정규식, 사유).
+#: 낭독 패턴 — 정본은 `docs/ui-style.md#ui-copy` (번호, 정규식, 사유).
 NARRATION_PATTERNS: tuple[tuple[int, re.Pattern[str], str], ...] = (
     (1, re.compile(r"해야 .{0,20}할 수 있습니다"),
      "전제 조건 낭독. 차단은 동작(비활성 + 사유)이 한다"),
@@ -320,7 +320,7 @@ def _toml_string(value: str) -> str:
 HEADER = """\
 # 사용자 문안 census. 생성: uv run python scripts/ui_copy_census.py --write
 # 검사: --check (tests/repo_contract/test_ui_copy_census.py 가 같은 것을 본다)
-# 규범: docs/COPY_STYLE_GUIDE.md §1·§2·§8. 새 문장은 기본 0 이고, 등재는 사유가 PR 에 서야 한다.
+# 규범: docs/ui-style.md#ui-copy§2·§8. 새 문장은 기본 0 이고, 등재는 사유가 PR 에 서야 한다.
 """
 
 
@@ -359,7 +359,7 @@ def write_allowlist(path: Path = ALLOWLIST) -> tuple[int, int, list[tuple[str, s
 
 ADVICE = (
     "새 문장은 기본 0 이다(COPY_STYLE_GUIDE §1·§8). 걷는 것이 먼저고, 정말 남겨야 하면 "
-    "`docs/ui_copy_census.toml` 에 등재하고 PR 에 사유를 쓴다. 지운 문장은 allowlist 에서도 지운다."
+    "`tests/contracts/ui-copy-census.toml` 에 등재하고 PR 에 사유를 쓴다. 지운 문장은 allowlist 에서도 지운다."
 )
 
 

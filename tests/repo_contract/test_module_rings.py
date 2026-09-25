@@ -1,4 +1,4 @@
-"""모듈 ring 좌표 계약(`docs/module_rings.toml`)의 게이트 — 안쪽→바깥쪽 의존을 막는다.
+"""모듈 ring 좌표 계약(`tests/contracts/module-rings.toml`)의 게이트 — 안쪽→바깥쪽 의존을 막는다.
 
 물리 패키지 경계 게이트 4종(`test_domain_boundary`·`test_application_boundary`·
 `test_external_adapter_boundary`·`test_host_boundary`)의 정의역은 각자 새 패키지뿐이라,
@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
-RINGS = ROOT / "docs" / "module_rings.toml"
+RINGS = ROOT / "tests" / "contracts" / "module-rings.toml"
 
 
 def _document() -> dict[str, object]:
@@ -124,7 +124,7 @@ def test_ring_contract_is_a_closed_minimal_inventory() -> None:
     assert not listed - census, f"인벤토리가 없는 파일을 가리킵니다: {sorted(listed - census)}"
     unregistered = {s for s in census - listed if not _is_physically_gated(s)}
     assert not unregistered, (
-        "ring 인벤토리에 없는 모듈입니다 — docs/module_rings.toml 에 등재하거나 물리 경계 "
+        "ring 인벤토리에 없는 모듈입니다 — tests/contracts/module-rings.toml 에 등재하거나 물리 경계 "
         f"패키지로 옮기세요(방향 게이트가 못 봅니다): {sorted(unregistered)}"
     )
 

@@ -160,7 +160,7 @@ jobs:
         shell: pwsh
         run: |
           uv run --no-sync python scripts/check_package_coverage.py coverage.xml `
-            --config docs/package_coverage_floors.toml `
+            --config tests/contracts/package-coverage-floors.toml `
             --markdown-output package-coverage.md
           $gateExit = $LASTEXITCODE
           Get-Content package-coverage.md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

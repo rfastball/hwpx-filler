@@ -1,6 +1,6 @@
 """데이터-우선 후보 판정(링1) — 현재 데이터 필드에 대한 저장 작업의 최소 호환성.
 
-v6 워크플로 계약 §18.4 의 이식(정본: ``docs/core-workflow.md``; 봉합 지도:
+v6 워크플로 계약 §18.4 의 이식(정본: ``docs/workflow.md#workflow-definition``; 봉합 지도:
 ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/archive/DATA_FIRST_INTEGRATION_MAP.md``).
 
 계약 국경 세 가지:

@@ -664,7 +664,7 @@ function MappingStage(props: {
   return h("div", null,
     h("div", { className: "wtitle" }, stageTitle(snapshot, "binding")),
     /* 부제는 걷혔다 — 제목·표 머리·배지가 이미 「필드마다 데이터 열을 정한다」를 보여준다
-       (`docs/COPY_STYLE_GUIDE.md` §1·§2: 상시 부제 기본 0). */
+       (`docs/ui-style.md#ui-copy`§2: 상시 부제 기본 0). */
     /* 처방은 **저장 게이트와 같은 말**이어야 한다(#945 F8). U4-C 이후 데이터 연결은 저장의
        하드 게이트라(`viewmodel/job_editor_state.validate_save`), 종전의 "고정값을 넣거나 비움으로
        확정하세요"는 그대로 따라도 저장이 막히는 거짓 처방이었다. 같은 상태를 두 어휘로
