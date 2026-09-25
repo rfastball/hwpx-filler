@@ -66,7 +66,4 @@ Work·실행 가능성의 증명이 아니다. 서명과 현재 상태 대조, �
 풀리는 문제에 durable 원장을 중복 도입하지 않는다. 미지원·손상·최신성 불명을 성공 fallback으로
 낮추지 않는다. 보수적인 선택 자동 유지 조건은 [작업 흐름](workflow.md#workflow-template)이 소유한다.
 
-[아키텍처](../tests/repo_contract/test_architecture.py), [금지 경계](../tests/repo_contract/test_p3_forbidden_edges.py),
-[브리지](../tests/repo_contract/test_bridge_contract.py), [제어면 축소](../tests/repo_contract/test_control_surface_reduction.py),
-[구성 제품](../tests/test_slot_configuration_product.py), [제어면 증거](../tests/test_control_plane_evidence.py)가
-형상과 의미 경계를 검사한다. 실제 DOM·WebView2의 결과를 정적 검사만으로 보증하지 않는다.
+실제 DOM·WebView2의 결과를 정적 검사만으로 보증하지 않는다.
