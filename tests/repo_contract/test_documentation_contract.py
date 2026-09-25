@@ -197,9 +197,12 @@ def test_review_cannot_relabel_generated_docs_as_reviewed(repo: Path) -> None:
 
 
 def test_line_endings_do_not_change_review_fingerprints(repo: Path) -> None:
-    for path in (repo / "docs/current.md", repo / "src/hwpxfiller/webapp/app.py"):
-        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-    assert docs.check(repo) == []
+    for newline in (b"\r\n", b"\n"):
+        for path in (repo / "docs/current.md", repo / "src/hwpxfiller/webapp/app.py"):
+            # Fixtures may already use CRLF on Windows; never produce CRCRLF.
+            normalized = path.read_bytes().replace(b"\r\n", b"\n")
+            path.write_bytes(normalized.replace(b"\n", newline))
+        assert docs.check(repo) == []
 
 
 def test_line_budget_fails_even_after_review(repo: Path) -> None:

@@ -135,7 +135,7 @@ role = "장기 방향과 착수 전 필요한 증거"
 max_lines = 160
 sources = ["docs/FEATURE_SCOPE.md", "docs/core-workflow.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "57754413a68af9e8fdf6763d817ea66ec8620a8ce46780c834f04148ef3ecf45"
+source_sha256 = "69631c477894a06ca327e71b0b62e966193a78190abc1537b99bcd52825066dc"
 body_sha256 = "a276bbb1172be341d2e2e75b0ec69eef7ecf1b7591cf429cdff874726872c06a"
 
 [[document]]
@@ -145,7 +145,7 @@ role = "문서 분류·재생성·의미 검토·CI 정책"
 max_lines = 160
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "546ae96007e3b2c09159899a501456a42dbeb20fa7072eb8c8741110e0bbcc59"
+source_sha256 = "014d9fe9993e19326fc86d5a1419c09a006a0f9785b8bed81c7bb60fdcdeb033"
 body_sha256 = "ffc6215d4b93d086b80d4c152a73a244fef3089508d1eecd5ff30fdb71d21167"
 
 [[document]]
@@ -185,7 +185,7 @@ role = "에이전트 공통 작업 규율"
 max_lines = 160
 sources = ["docs/DEVELOPMENT_ENVIRONMENT.md", "docs/MAINTENANCE.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "31a335b74060646258a3999e81ce76baa2fe36eb18a82726913157120cf4bedd"
+source_sha256 = "299bcbcf7245812b675064996d35b0164b355d021195dacda85c9f0d5b6715d8"
 body_sha256 = "1a1aa3fd9cfe36d88ca46c08663730c509324f9f8cc6bfd309c7c1fb4792889e"
 
 [[document]]
@@ -195,7 +195,7 @@ role = "에이전트 진입점과 위임 정책"
 max_lines = 160
 sources = ["CLAUDE.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "514f6518d476a49c73a7c694734950cbe8d40f8f345f8d78fbad1c25b72f7f50"
+source_sha256 = "6d06320f4b81bdbdacb7d98918747c224c05714aabe596de57843a45397f9ec8"
 body_sha256 = "a200ede9e07c7e4c2e88b46ab73b1ca692956461330511c6c3bdaff4d5a696d6"
 
 [[document]]
