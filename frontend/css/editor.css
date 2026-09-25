@@ -195,7 +195,7 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
 #txtLintDiag{margin:var(--sp-4) 0 0;padding-left:var(--sp-16)}
 
 
-/* ---- 1단계 「고르기」 존 — 현재 편집 계약: docs/ui/editor.md
+/* ---- 1단계 「고르기」 존 — 현재 편집 계약: docs/workflow.md#workflow-definition
    좌 템플릿 풀 · 중앙 연결 카드 · 우 데이터 풀. 세 열이 한 그림이라 컨테이너가 좁아지면
    1열로 퇴화한다 — 가로 스크롤을 만들지 않는다(반응형 계약). */
 .pairzone{display:grid;grid-template-columns:minmax(0,1fr) 288px minmax(0,1fr);

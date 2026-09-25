@@ -1,19 +1,19 @@
 <p align="center">
   <picture>
     <source media="(max-width: 520px)" srcset="./assets/readme/hero-mobile.svg">
-    <img src="./assets/readme/hero.svg" width="100%" alt="문서나르미 — 엑셀·CSV 데이터를 확인한 뒤 HWPX 문서로 일괄 생성하는 Windows 앱">
+    <img src="assets/readme/hero.svg" width="100%" alt="문서나르미 — 엑셀·CSV 데이터를 확인한 뒤 HWPX 문서로 일괄 생성하는 Windows 앱">
   </picture>
 </p>
 
 <p align="center">
   <a href="https://github.com/rfastball/hwpx-filler/releases"><img src="https://img.shields.io/github/v/release/rfastball/hwpx-filler?label=release&amp;color=2f5fbf" alt="최신 릴리스"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f5fbf" alt="MIT 라이선스"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f5fbf" alt="MIT 라이선스"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2011-2f5fbf" alt="Windows 11">
 </p>
 
 <p align="center">
   <a href="https://github.com/rfastball/hwpx-filler/releases">다운로드</a> ·
-  <a href="./examples/quickstart-101/README.md">15분 실습</a> ·
+  <a href="examples/quickstart-101/README.md">15분 실습</a> ·
   <a href="#조용히-틀리지-않는-안전장치">안전장치</a> ·
   <a href="#개발">개발</a>
 </p>
@@ -150,9 +150,9 @@ uv sync --locked --all-extras --group dev --group build
 제품 `hwpxfiller`는 형식 kernel `hwpxcore` 위에 서며 의존은 `hwpxfiller → hwpxcore`로만
 흐릅니다. kernel은 제품 로직이나 환경 효과 없이 HWPX bytes만 파싱·직렬화합니다.
 
-- [개발·빌드·배포 환경](docs/DEVELOPMENT_ENVIRONMENT.md)
+- [개발·빌드·배포 환경](CONTRIBUTING.md#development)
 - [현재 계약과 문서 지도](docs/README.md)
-- [102 실전 조합](examples/quickstart-101/PATTERNS.md)
+- [102 실전 조합](examples/quickstart-101/patterns.md)
 
 
 

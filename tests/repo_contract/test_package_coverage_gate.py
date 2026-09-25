@@ -122,7 +122,7 @@ def test_unconfigured_subpackage_fails_instead_of_silent_skip(tmp_path: Path) ->
 
 
 def test_repository_policy_has_audited_packages_only() -> None:
-    floors = gate.load_floors(ROOT / "docs" / "package_coverage_floors.toml")
+    floors = gate.load_floors(ROOT / "tests" / "contracts" / "package-coverage-floors.toml")
     assert {floor.name for floor in floors} == {
         "hwpxcore",
         "hwpxfiller",
@@ -136,6 +136,6 @@ def test_repository_policy_has_audited_packages_only() -> None:
     }
     # 미설정-실패 게이트의 저장소 allowlist 는 native 하나뿐(#255 리뷰) — 새 서브패키지를
     # 여기 늘리려면 별도 게이트 소유를 함께 증명해야 한다.
-    assert gate.load_unmatched_allow(ROOT / "docs" / "package_coverage_floors.toml") == {
+    assert gate.load_unmatched_allow(ROOT / "tests" / "contracts" / "package-coverage-floors.toml") == {
         "hwpxfiller/host/native"
     }

@@ -500,7 +500,7 @@ class SlotConfigurationProduct:
 
         SG-03(#735) C7: authorization 은 여기(job load)가 지고 ``_verify_token`` 보다 **앞선다** —
         유효 서명 token 을 쥐어도 접근 불가 work_ref 는 AUTHORIZATION_FAILURE 다. HMAC 은 authz
-        경계가 아니다(정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).
+        경계가 아니다(정본 `docs/architecture.md#architecture-authority` §HMAC).
         """
         try:
             job = load_job(self._registry, work_ref)
@@ -521,7 +521,7 @@ class SlotConfigurationProduct:
         SG-03(#735): 이 검증은 context integrity·claim authenticity·route/Work·workspace·actor
         binding 까지다. authorization 은 ``_route``(앞선다)가, currentness·expected version·per-Work
         fence·semantic validity 는 runner(`_command_context`→context resolve/CAS)가 **독립** 진다.
-        유효 token 은 이들을 대체하지 못한다(정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).
+        유효 token 은 이들을 대체하지 못한다(정본 `docs/architecture.md#architecture-authority` §HMAC).
         """
         secret = self._load_secret()
         try:

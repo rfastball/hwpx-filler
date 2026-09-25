@@ -69,6 +69,6 @@ desktop.ini
 
 # 브랜딩 초기 탐색 렌더(1MB 급 · 채택 안 된 방향) — 최종 산출물(*-final.*)과
 # 채택된 방향안(document-narmi-logo-directions-v2.*)만 저장소에 남는다.
-docs/branding/document-narmi-dashboard-mockup-*.png
-docs/branding/document-narmi-icon-direction-*.png
-docs/branding/document-narmi-abstract-icon-concepts-*.png
+assets/branding/document-narmi-dashboard-mockup-*.png
+assets/branding/document-narmi-icon-direction-*.png
+assets/branding/document-narmi-abstract-icon-concepts-*.png

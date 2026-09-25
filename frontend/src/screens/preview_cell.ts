@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 
 type Obj = Record<string, any>;
 
-/** 빈 칸 마커 — 홑 글자 하나라 `docs/COPY_STYLE_GUIDE.md` §3-1(문장 안 em dash 금지)의
+/** 빈 칸 마커 — 홑 글자 하나라 `docs/ui-style.md#ui-copy`(문장 안 em dash 금지)의
  *  예외다. 문장이 아니라 「여기 값이 없다」는 표식이다. */
 export const BLANK_MARK = "—";
 

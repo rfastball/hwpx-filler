@@ -5,7 +5,7 @@ HMAC-SHA256 서명해 integrity·authenticity 만 보장한다. token 은 Produc
 내부적으로는 평문 claims 를 담는다 — secret 없이는 위조·변조가 불가능하고(hmac.compare_digest),
 서명이 안 맞으면 fail-closed 다. native 암호 의존성·AEAD nonce·key_id·rotation 은 도입하지 않는다.
 
-**Threat model (SG-03 #735 로 동결 · 정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).** token 이
+**Threat model (SG-03 #735 로 동결 · 정본 `docs/architecture.md#architecture-authority` §HMAC).** token 이
 **증명하는 것**: backend 가 발급한 context 의 integrity, 담긴 claim 의 authenticity, route/Work
 binding 지원, stale/cross-Work 혼입 탐지. token 이 **증명하지 않는 것**: authorization, 현재
 Work/Application, 기대 aggregate version, per-Work fence 획득, semantic command validity,

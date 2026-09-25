@@ -1,6 +1,6 @@
 """SG-03(#735) control-surface reduction 정적 게이트 — C1·C2·C3·C4·C6.
 
-v1 제품 표면은 이미 **구성상** 축소돼 있다(census: `docs/CONTROL_PLANE_SCOPE.md`). 이 파일은
+v1 제품 표면은 이미 **구성상** 축소돼 있다(census: `docs/architecture.md#architecture-authority`). 이 파일은
 그 사실들을 pin 해, 미래 변경이 조용히 표면을 재확장하지 못하게 한다. 순수 static 이라 무표
 contract lane 에 산다(실 런타임·브라우저 불요). frontend import-graph 는 `tests/_web_source.py`
 의 단일 스캐너(`_frontend_sources`·`_frontend_specifiers`·`_resolve_frontend_module`)를 쓴다 —
@@ -58,7 +58,7 @@ RETAINED_CODEC_MODULES = (
 #: C1 이 막는 것은 **profile 을 고르는 제어면**이지 매체가 자기 자격 규칙을 갖는 것이 아니다 —
 #: 후자는 매체가 늘 때 정확히 하나씩 늘고, 사용자에게는 어떤 선택지도 되지 않는다(그 금지는
 #: C2 가 표면 census 로 따로 진다). S10-02(#859)가 TXT 를 S2/S3 생애주기에 인수하며 목록이
-#: 둘이 됐고, 그것은 우회가 아니라 `docs/CONTROL_PLANE_SCOPE.md` §4 「복수 shipping Profile 이
+#: 둘이 됐고, 그것은 우회가 아니라 `docs/architecture.md#architecture-authority` 「복수 shipping Profile 이
 #: 실제 사용자 흐름에 필수」의 상향 경로(#856 S10 TXT parity)를 탄 결과다. 목록에 없는 생성은
 #: 여전히 RED 이므로 「하나만」이 「아무거나」로 풀리지 않는다.
 SHIPPING_QUALIFICATION_PROFILES = [
@@ -99,7 +99,7 @@ DURABLE_AGGREGATE_MODULES = (
 #: 원장)보다 넓은 것은 census 를 이름-독립으로 돌린 실제 집합이다 — first-seen 멱등 원장 4개에
 #: 더해 revision/draft/decision/config 같은 durable append-only 사본 필드가 함께 pin 된다.
 #: **여기에 손으로 항목을 더하지 않는다.** 새 durable record 필드를 정당화하려면
-#: `docs/CONTROL_PLANE_SCOPE.md` §신규 ledger allowlist 의 외부효과/중복결과 경계에 해당함을
+#: `docs/architecture.md#architecture-authority` §신규 ledger allowlist 의 외부효과/중복결과 경계에 해당함을
 #: 이슈에서 증명하고, allowlist·baseline 을 함께 넓힌다.
 LEDGER_BASELINE = frozenset(
     {
@@ -369,7 +369,7 @@ def test_exactly_one_shipping_qualification_profile_per_media() -> None:
     constructions = _profile_constructions()
     assert sorted(constructions) == sorted(SHIPPING_QUALIFICATION_PROFILES), (
         f"shipping Profile census 가 pin 과 다르다: {constructions} — 매체마다 정확히 "
-        "하나이고, 새 매체가 아닌 이유로 늘리려면 docs/CONTROL_PLANE_SCOPE.md §4 상향 조건을 탄다"
+        "하나이고, 새 매체가 아닌 이유로 늘리려면 docs/architecture.md#architecture-authority 상향 조건을 탄다"
     )
 
     counts = _call_counts()

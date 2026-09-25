@@ -1,6 +1,6 @@
 """시스템 작업 방식의 표시 어휘(링1) — 계약 §19.1 표의 단일 출처 경계.
 
-정본: lab `docs/core-workflow.md` §19.1 · 지도 §10.15 판정 A.
+정본: lab `docs/workflow.md#workflow-definition` · 지도 §10.15 판정 A.
 """
 
 import pytest

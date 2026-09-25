@@ -55,7 +55,7 @@ quickstart-101/
 
 ## 준비 — 더블클릭으로 실행
 
-**최초 1회만** 저장소 루트에서 의존성을 받는다(docs/DEVELOPMENT_ENVIRONMENT.md 참고):
+**최초 1회만** 저장소 루트에서 의존성을 받는다(CONTRIBUTING.md#development 참고):
 
 ```powershell
 uv sync --locked --all-extras --group dev --group build
@@ -290,7 +290,7 @@ macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfille
 
 | 하고 싶은 것 | 어디로 |
 |---|---|
-| 한 데이터→여러 템플릿 / 여러 데이터→한 템플릿 / 작업 전환 | [102 — 세 가지 실전 조합](PATTERNS.md) |
+| 한 데이터→여러 템플릿 / 여러 데이터→한 템플릿 / 작업 전환 | [102 — 세 가지 실전 조합](patterns.md) |
 | 내 초안(평문 `{{토큰}}`)을 누름틀 템플릿으로 | 편집기 「고르기」의 템플릿 열 → 항목 **[누름틀 변환]** |
 | 데이터 파일을 고정해 생성 때마다 재사용 | **[데이터 선택…]** → **[이 데이터 고정…]** |
 | 템플릿이 많아지면 관리하기 | 편집기 「고르기」의 템플릿 열 → 항목 **[자세히…]** |

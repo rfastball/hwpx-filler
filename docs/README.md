@@ -1,60 +1,65 @@
 # 문서 지도
 
-> `manifest.toml`에서 생성한다. 이 파일은 직접 편집하지 않는다.
+> manifest.toml에서 생성한다. 직접 편집하지 않는다.
 
-현재 동작은 코드·테스트·빌드 설정이 최종 권위다. 현재 계약을 먼저 읽는다.
-변경 이력·완료 보고는 Git, 실행 상태는 GitHub 이슈가 소유한다.
-문서의 생성·검토·삭제 절차는 [유지 규칙](MAINTENANCE.md)을 따른다.
+현재 동작은 코드·테스트·빌드 설정이 최종 권위다. 같은 목적의 새 파일 대신 소유 절을 갱신한다.
+절차·이름·예산·검토 명령은 [기여 규칙](../CONTRIBUTING.md)을 따른다.
 
-## 현재 계약
+## 읽기와 쓰기의 다섯 목적지
 
-| 문서 | 소유하는 내용 |
+| 목적 | 정본 |
 |---|---|
-| [UI_CONTRACT.md](UI_CONTRACT.md) | 현재 UI 계약의 읽기 경로와 변경 단위 |
-| [core-workflow.md](core-workflow.md) | 개체·권위·정의에서 관찰까지의 전이 |
-| [runtime.md](ui/runtime.md) | UI 계층·통신·React·셸·오버레이 책임 |
-| [editor.md](ui/editor.md) | 작업 편집·연결 확인·저장 경계 |
-| [execution.md](ui/execution.md) | 데이터 세션·생성·산출물 관찰·TXT 복사 |
-| [storage.md](ui/storage.md) | 작업 목록·설정·출력 폴더·템플릿 루트 |
-| [CONTROL_PLANE_SCOPE.md](CONTROL_PLANE_SCOPE.md) | Profile·token·의미 판정·영속 제어면의 경계 |
-| [FEATURE_SCOPE.md](FEATURE_SCOPE.md) | 코드가 남아 있는 비노출·비출하 기능 |
-| [DESIGN_LANGUAGE.md](DESIGN_LANGUAGE.md) | 시각 원칙·토큰·상호작용 검증 책임 |
-| [UI_VOCABULARY.md](UI_VOCABULARY.md) | 사용자 가시 명칭·빈 값·수량 단위 |
-| [COPY_STYLE_GUIDE.md](COPY_STYLE_GUIDE.md) | 사용자 문장의 형식·예산·금지 패턴 |
-| [DEVELOPMENT_ENVIRONMENT.md](DEVELOPMENT_ENVIRONMENT.md) | 설치·검증·패키징·출하 절차 |
-| [ROADMAP.md](ROADMAP.md) | 장기 방향과 착수 전 필요한 증거 |
-| [MAINTENANCE.md](MAINTENANCE.md) | 문서 분류·재생성·의미 검토·CI 정책 |
-| [UI_GALLERY.html](UI_GALLERY.html) | 제품 CSS를 사용하는 시각 부품 갤러리 |
-| [README.md](../README.md) | 사용자 제품 소개·설치·실행 진입 |
-| [PRODUCT.md](../PRODUCT.md) | 제품 맥락·범위·사용 원칙 요약 |
-| [CLAUDE.md](../CLAUDE.md) | 에이전트 공통 작업 규율 |
-| [AGENTS.md](../AGENTS.md) | 에이전트 진입점과 위임 정책 |
+| `product` | [제품](product.md) |
+| `architecture` | [아키텍처](architecture.md) |
+| `workflow` | [작업 흐름](workflow.md) |
+| `ui-style` | [화면 규칙](ui-style.md) |
+| `contributing` | [기여와 검증](../CONTRIBUTING.md) |
 
-## 자동 생성 참조
+## 주제별 작성 라우팅
 
-| 문서 | 소유하는 내용 |
+| 주제 | 갱신할 절 |
 |---|---|
-| [runtime.md](reference/runtime.md) | 설정·AST에서 추출한 환경·메서드·dispatch·CI |
+| `product-purpose` | [목적과 사용자](product.md#product-purpose) |
+| `product-scope` | [지원 경계](product.md#product-scope) |
+| `product-direction` | [재개 조건](product.md#product-direction) |
+| `architecture-boundaries` | [계층과 실행 자산](architecture.md#architecture-boundaries) |
+| `architecture-runtime` | [통신과 화면 수명](architecture.md#architecture-runtime) |
+| `architecture-authority` | [의미 권위와 제어면](architecture.md#architecture-authority) |
+| `workflow-definition` | [작업 정의와 저장](workflow.md#workflow-definition) |
+| `workflow-template` | [템플릿 저작·적용·구성](workflow.md#workflow-template) |
+| `workflow-data` | [데이터 세션·선택·범위](workflow.md#workflow-data) |
+| `workflow-generation` | [생성과 덮어쓰기](workflow.md#workflow-generation) |
+| `workflow-results` | [결과 관찰과 TXT 복사](workflow.md#workflow-results) |
+| `workflow-storage` | [라이브러리·폴더·설정](workflow.md#workflow-storage) |
+| `ui-terms` | [용어·빈 값·단위](ui-style.md#ui-terms) |
+| `ui-copy` | [문안과 검수](ui-style.md#ui-copy) |
+| `ui-visual` | [시각·배치·접근성](ui-style.md#ui-visual) |
+| `development` | [환경·검증·출하](../CONTRIBUTING.md#development) |
+| `changes` | [변경과 리뷰](../CONTRIBUTING.md#changes) |
+| `documentation` | [문서 작성과 라우팅](../CONTRIBUTING.md#documentation) |
 
-## 기계 판독 정본
+## 진입점·생성 참조
 
-| 문서 | 소유하는 내용 |
-|---|---|
-| [module_rings.toml](module_rings.toml) | 제품 모듈 ring 좌표와 의존 방향 |
-| [package_coverage_floors.toml](package_coverage_floors.toml) | 패키지별 line·branch coverage 하한 |
-| [ui_copy_census.toml](ui_copy_census.toml) | 화면 문장 다중집합과 유예 예산 |
+- [런타임 참조](reference/runtime.md)
+- [Impeccable 호환 출력](../PRODUCT.md)
+- [사용자 소개·실행](../README.md)
+- [작업 진입점·Codex 설정](../AGENTS.md)
+- [Claude 진입점·도구 설정](../CLAUDE.md)
+- [시각 부품 갤러리](reference/ui-gallery.html)
 
-## 형식 관측 증거
+## 실행 가능한 원장
 
-| 문서 | 소유하는 내용 |
-|---|---|
-| [HWPX_STRUCTURAL_RANGE_S0.md](HWPX_STRUCTURAL_RANGE_S0.md) | HWPX 구조 구간의 원관측·재현 근거 |
-| [HWPX_METATAG_S1_SPIKE.md](HWPX_METATAG_S1_SPIKE.md) | MetaTag 인코딩·식별과 한글 관측 근거 |
+- [모듈 의존 좌표](../tests/contracts/module-rings.toml)
+- [패키지 coverage 하한](../tests/contracts/package-coverage-floors.toml)
+- [사용자 문장 원장](../tests/contracts/ui-copy-census.toml)
+- [공개 경계·vendor 계약](../tests/architecture_contract.toml)
 
-## 연구·제안
+## 관측과 연구
 
-| 문서 | 소유하는 내용 |
-|---|---|
-| [DOCUMENT_AUTHORITY_LAYERS.md](DOCUMENT_AUTHORITY_LAYERS.md) | 문서 표현의 권위 계층을 위한 이론·제안 |
+- [HWPX 구조 구간 관측](evidence/hwpx-ranges.md)
+- [HWPX MetaTag 관측](evidence/hwpx-metatags.md)
+- [문서 표현 권위 연구](research/document-authority.md)
 
-증거·연구는 현재 구현의 다른 정본이 아니다. 관측의 맥락과 미래 제안을 구분한다.
+기능 계획·진행·담당·완료·리뷰는 GitHub 이슈·PR, 재현 입력은 테스트 fixture에 둔다.
+작은 제안은 이슈로, 독립 장문 모델만 연구로 분리한다. 증거·연구는 현재 계약을 대신하지 않는다.
+예제 설명·코퍼스·테스트/제품 HTML도 manifest에 용도별 정확한 경로로 등록한다.

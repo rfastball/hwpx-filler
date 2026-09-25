@@ -175,7 +175,7 @@ def classify_selection(
 
     (b)는 문서 **전체** bytes 를 보므로 손대지 않은 Slot 의 선택도 재요구된다 — #719 불변식 6
     「깨진 결정만 다시 요구한다」와의 이 긴장은 알고 받아들인 것이고, 근거와 상향 조건은
-    `docs/CONTROL_PLANE_SCOPE.md` §2.5 가 진다(#806 · #729 잔여위험 5).
+    `docs/architecture.md#architecture-authority` 가 진다(#806 · #729 잔여위험 5).
     """
     target = chain_execution_structures[-1] if chain_execution_structures else None
     source = chain_execution_structures[0] if chain_execution_structures else None

@@ -452,7 +452,7 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
     }),
     /* 행의 출처가 저장본이면 **그렇다고 말한다** — 표가 템플릿의 현재 모습인 척하면
        사라진 필드·새 필드를 조용히 감춘다(문안은 Python 이 아니라 여기 하나뿐이라 상수로
-       올리지 않는다 — `docs/UI_CONTRACT.md` 단일 출처 규칙). */
+       올리지 않는다 — `docs/architecture.md#architecture-runtime` 단일 출처 규칙). */
     zone.rows_basis === "profile" ? h("p", { className: "rows-basis note warnbox" },
       "템플릿을 읽지 못해 저장된 연결만 보여 줍니다.") : null,
     rows.length ? h(PairTable as any, { detail, zone, controller }) : null);

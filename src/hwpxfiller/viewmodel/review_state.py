@@ -243,7 +243,7 @@ def review_notice_text(req: ReviewRequirement) -> str:
     남기는 이유는 아래 일반 문안이 첫 실행에 거짓말을 하기 때문이다("마지막 실행 이후
     바뀐 규칙" — 마지막 실행이 없다).
 
-    문형은 `docs/COPY_STYLE_GUIDE.md` §1 을 따른다 — em dash 대신 두 문장이다.
+    문형은 `docs/ui-style.md#ui-copy` 을 따른다 — em dash 대신 두 문장이다.
     """
     if not req.required:
         return ""

@@ -24,7 +24,7 @@
  * ## 비교 상대는 계약 파일의 핀 목록이다
  *
  * 신규 파일이 전역에 닿으면 핀에 없어 빨갛고, 핀에 있는 파일이 접촉을 잃으면 등재가
- * 실물을 앞질러 빨갛다 — 양방향 전수 대조다. `docs/UI_CONTRACT.md` 의 통로 문장은 이
+ * 실물을 앞질러 빨갛다 — 양방향 전수 대조다. `docs/architecture.md#architecture-runtime` 의 통로 문장은 이
  * 실측의 재서술이다. */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -282,7 +282,7 @@ test("실 트리 — 예약 전역에 닿는 파일 전수가 가족별 핀 목�
     assert.deepEqual(actual, allowlist, [
       `\`${name}\` 접촉 파일 전수가 핀과 다릅니다.`,
       "새 파일이 늘었다면: 그 접촉이 정말 필요한지 먼저 묻고(신규 통로는 runtime/adapter.ts",
-      "하나가 원칙), 필요하면 계약 파일의 핀과 docs/UI_CONTRACT.md 의 통로 문장을 함께 갱신하세요.",
+      "하나가 원칙), 필요하면 계약 파일의 핀과 docs/architecture.md#architecture-runtime 의 통로 문장을 함께 갱신하세요.",
       "핀의 파일이 사라졌다면: 등재가 실물을 앞지른 것이니 핀을 지우세요.",
     ].join("\n"));
   }

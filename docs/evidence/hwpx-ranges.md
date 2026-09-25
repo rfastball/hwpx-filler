@@ -1,6 +1,6 @@
-# HWPX structural range S0 관찰 기록
+# HWPX 구조 구간 관측
 
-> 현재 구현 계약이 아닌 형식 관측 증거다. 현재 제품의 책임·전이는 [핵심 워크플로](core-workflow.md)와 [UI 계약](UI_CONTRACT.md)을 따른다.
+> 현재 구현 계약이 아닌 형식 관측 증거다. 현재 제품의 책임·전이는 [핵심 워크플로](../workflow.md#workflow-definition)와 [UI 계약](../architecture.md#architecture-runtime)을 따른다.
 > 아래의 시점·판정·원관측은 그 근거를 보존한 것이며, 모든 서술을 현재 제품 지원으로 읽지 않는다.
 
 
@@ -844,8 +844,8 @@ marker 단위로 일치한다는 것이 확인됐다.
 
 매번 원본 `R5-nested.hwpx`를 새로 복제해 한글 `12, 0, 0, 4547`에서 변형 하나만 수행하고 HWPX로
 저장했다. 변형을 누적하지 않았다(S0-C와 같은 규율). 원본은 `tests/corpus/structural_range_s0/F/`에
-보존했다. 기준 구조는 `S0_SLOT`이 `p[1]~p[4](BBB~EEE)`, `S0_OPT_A`가 `p[2](CCC)`, `S0_OPT_B`가
-`p[3](DDD)`다.
+보존했다. 기준 구조는 `S0_SLOT`이 `p[1]~p[4](../BBB~EEE)`, `S0_OPT_A`가 `p[2](../CCC)`, `S0_OPT_B`가
+`p[3](../DDD)`다.
 
 | 파일 | 변형 | SHA-256 |
 |---|---|---|

@@ -1,6 +1,6 @@
 """사용자 문안 census — 화면 문장 수를 allowlist 로 못박는다.
 
-새 문장은 기본 0 이다(`docs/COPY_STYLE_GUIDE.md` §1·§8). 이 게이트가 없던 동안 화면에
+새 문장은 기본 0 이다(`docs/ui-style.md#ui-copy`§8). 이 게이트가 없던 동안 화면에
 설계 산문이 계속 쌓였다("바꿀 것이 없어도 지금 연결을 확정해야 문서를 만들 수 있습니다",
 "'{}' 을(를) 편집합니다. 저장된 매핑 N행을 불러왔습니다"). 규칙의 존재가 아니라 **결과**를
 세는 층이라 스캐너를 그대로 부르고 다중집합으로 맞춘다.
@@ -12,7 +12,7 @@ import ui_copy_census as census
 
 
 def test_census_matches_allowlist() -> None:
-    """실 스캔 다중집합 == `docs/ui_copy_census.toml` 다중집합."""
+    """실 스캔 다중집합 == `tests/contracts/ui-copy-census.toml` 다중집합."""
     problems = census.diff_report()
     assert not problems, "사용자 문안 census 불일치:\n" + "\n".join(problems)
 
