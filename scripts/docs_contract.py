@@ -42,7 +42,6 @@ SLOTS = {
     "product-adapter": ("generated", PRODUCT),
     "user-entry": ("current", "README.md"),
     "agents-entry": ("current", "AGENTS.md"),
-    "claude-entry": ("current", "CLAUDE.md"),
     "ui-gallery": ("current", "docs/reference/ui-gallery.html"),
     "module-rings": ("machine", "tests/contracts/module-rings.toml"),
     "coverage-floors": ("machine", "tests/contracts/package-coverage-floors.toml"),

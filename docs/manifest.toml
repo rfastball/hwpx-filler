@@ -73,23 +73,12 @@ body_sha256 = "dfe76d001c5461fc65708abdd377c662e6ba7259d68e5c1a8576183df2145b4d"
 path = "AGENTS.md"
 kind = "current"
 role = "agents-entry"
-title = "작업 진입점·Codex 설정"
+title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "460796b79e86be9868f0ce851423755652319d655ec18b1bcaae2314b63db616"
-body_sha256 = "3649dd2f2362d278d845872d180fd1d7fba3cf53b8a36b2d5feb9b51119034c2"
-
-[[document]]
-path = "CLAUDE.md"
-kind = "current"
-role = "claude-entry"
-title = "Claude 진입점·도구 설정"
-max_lines = 35
-sources = ["CONTRIBUTING.md"]
-tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "2a8ebe224b42818bd856093525d19c42cf3312d7840a9b22d0c8234fc773bbc5"
-body_sha256 = "dd2efd5b50358b70c35e10b066e1f7c30a77cb20d7c0c65b43b722fe3bc077ee"
+source_sha256 = "5978daf4078a11be7e2b08d32d88257d0351044ffa4786fddc58b41ccdf320a9"
+body_sha256 = "9ef81880957dc30f8e35f55fd79207a9fef9431981881abc200078cc3113ee2b"
 
 [[document]]
 path = "docs/reference/ui-gallery.html"
@@ -273,9 +262,9 @@ body_sha256 = "7e21fc0822b846326bce7540b84fc00334133864fdf0c3c0ae0d9754c5324a0f"
 [[topic]]
 id = "changes"
 document = "CONTRIBUTING.md"
-sources = ["AGENTS.md", "CLAUDE.md", "conftest.py", "tests/conftest.py", "test.ps1"]
+sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "b6ab21b5d736594a1a0375fc4f5b930e7761e331070aa5059f06f008f56d747b"
+source_sha256 = "a08654cdaa2169ea23b52a81608646abf2ac0079da09a88b13515196839c4b29"
 body_sha256 = "f64542c51616594ca2c9370c57dd2d9de851f66bddaac7b6c696d174722f5ead"
 
 [[topic]]
@@ -283,8 +272,8 @@ id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "f509f31008d650ac6d71b37f61941eeb1327eb064ed087002f98b0d1ee43a5dc"
-body_sha256 = "e3d1cb2699deaf5634f3b8665b3c76ff6e87ab0a07d48983ad6cecb3aebdccf4"
+source_sha256 = "0838b6fdc3752335c1bed99467dff59ced440cef2b899ad1f2e8c532ed327502"
+body_sha256 = "1224fc6756fb2eefe5e0fdd5785321a3542a33e5e949ab6140dc0b19cbaf243f"
 
 [[support]]
 path = "examples/quickstart-101/README.md"
