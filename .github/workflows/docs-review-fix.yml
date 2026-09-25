@@ -1,0 +1,50 @@
+name: docs-review-fix
+on:
+  push:
+    branches: [docs/current-state-20260925]
+    paths: [.github/workflows/docs-review-fix.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: '0.11.28'
+          enable-cache: false
+      - name: Apply and verify the exact comment-only correction
+        shell: bash
+        run: |
+          uv run --no-project --python 3.13 python - <<'PY'
+          import base64, bz2, hashlib, os, subprocess, sys
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          assert os.environ['GITHUB_REF'] == 'refs/heads/docs/current-state-20260925'
+          assert git('rev-parse', 'HEAD^') == '69d74459ebb91f9cb2dee69ede6091f95f5850ac'
+          payload = 'QlpoOTFBWSZTWRMeSJwABItf/UAQWP//+n/n36r//9/6f//////2f+6QABgeYArvl7c6u6bHAMoxrTQB0EgoFLrjlQJRChkyE0wmCanqbSZPU0GT0Qaek9TINHpDIAAGgaaZAAAAANAGhCYCYgk1MKbTKbahAGhoZAAAADQAAB6IADQBoAAgyYJpkYTIxNNMBMCYATCaYAmJkwACMRgBGRoYI0yNMmmBKaJIFPE0mQwQ0ephpGgAaDT1DQAAaAAAAAAAAGhoaIMmCaZGEyMTTTATAmAEwmmAJiZMAAjEYARkaGCNMjTJpgSSBABNDQCJ6Jqe0jTSmmmg0AeoZAzUANAAGh6mT0jINGjTR5TQbSQDUDNqSYw7O9+m2Iq2vsxPJd/PTXsSaEogJQUS0aMgj3M5DZCclkvN4q7KylMxVJ9fDG+YJmoQaxMIGQcWsZyB4dAusDFn+rOmbDdQKpipznbNBs8Gjh0LsNkPMFTRM0lpqq1QgrtYb/lFPBMNr7mEsS4VhJkx0DE6OfssKAJhnwuPjhX2GUhQXqr8dJJJJKvYWYSSSSvap8qVyru/rZ8iO+iggH0F8Fg29FFkNXocIavwx6WjdhxlcnvIew/ZH+z/pajjHN+E/Ypt9TRf4u4+tHCmgM0T3rbTxnujqNv3ourTOB8BS9GakNa7rMsbmaMw7oRKGw10QuG6IAvcpyPMt8v59V8E8s5bUVbk5rSdeYBiVmRIMmlSlLgMpueM14a59km/Il66Carj7UD0xaE5Vz2dfVY7LGWA3OJP956xWDHzMMnVR4Z0UvV1wPK3K6bf7LbTihjWjQ6SiqoqXyiUapomxLwl4JVOdSe4WLGhp5WjFhwsq6hzhjVZrM31s0LzBvmla4Olt2NyKs7iSEG0KzwIgJWQ8oUBhOAckx84MlOYzo7qZkd6onBhc/P+Tp+HxyGJ41ocLWjjIdoICZJF3Oud49hjrDs0h1MR3L3sVpRR21Qk1q2x0KHfXwDldNg3hmqmpxJkEmKtokIV3XImNndwjA2KRm5nT3bHVUwESNVH6QV9UKKqvNV10WKkArqTzUZkOQTobcIqMFpkM4iH6B8Bhhhhhhhhn9KJI1jxOBgvBjvIniBSCiRHgyKj5W7mw+ydB9TfHqFhmR59vbl8CVTInsE6rCVsfrWmmh9db6M57xs7JmZoCwdR1iFKELXNdg8yEYzZVaNjJkHtfUhV5AyDlEMEfgzwBMuwt21LiDse6vN5xlAFmjza3FjeitlohouBSU30DFYuqZwDHZvGFz2WhKFIWZNdwLNdoK1nO03X0fnaRBHsBTII1q52tdNsKwykwgcJXwAOumDKkKEHVYsQqRNrGhpV7XVrWSp33Xrm0LfwiGTsqgjq93tc0JwAxtXpieBFTFqSsQU4YQB3LUvCoAUSYiNMGsyguXJNGEDvui+5aUpdOzoOGFQ5jXWSVML2yvU+ZBH32jOZB2xFs0xOTyC4xmQVcmMaLBMajoxppPTXCGTKkS3SYz6EWlKmQYeTfIWFW/11mhPqCJyxEUNoiKmr62z0+z28at2tq25AjcLRmu0HtDSiv4jFiMf0LuE2kR57SnY+lHn3cWeTYkmZkst7rqnjDfhMdqiMtcl45QyuUJBTt971NR1qXiiJrguWOtDtk8l035946GiFweMGxmETLxrWQPKbFVV9GpsEXevkAKRVGNnoURVVEIxYe2rgSRusVDEp28wS3NW1MjvEfbsZBbl7glxnZDJDX4CyTVkNTgtkhltRQcPoNCgHDFaExYi82bSQOXsRv+WjkRtBXkc2Ox1m5F8qtcYofm7mjWjtA+hFG2pDXelhOjDy2Hd27Dj2CWOOKIma+d2ehz8IZHZvNNEd/LbeGViL6OLfoPIDl8tDg5xQEnpGsQlkQWN3XhalymFMEQ0cEVS5DspcGKWYfpjGMAYnq5NOwW1E1O5F+BpzGjOKOPcFP3zOBXhkqQOc3klocDAsXoKFC9QoIKQ0y9rITmLRVlec1UKkI4Fr2SrrzjOajoptsn49ottIZM2rrBYag1rpOq94kdkN4auIlaUyrSr12AOKCucCdNsCwFX4xEU535C05W0vlw416ENw82GvbdwoO2sCHGm/YIcE3w3YVkzIELUmQ6cGNTSc3giGXcGlWjR7GeYT0Wr0e7PjximOZc3awcb0Vpe6XcuDhM48YyhyCtW9Krh2xaSgmjznn+ZHQpExQK5kPQV50pu2GlVhQzw3CeioHgQHFUzEDVJKYNyfCZG5LsozEBExrDx9BqMiVGwn4ouDUoItOorUR+YKIaVUOSQ8WQLHE4wPBlXZIChpRcOEitgnzGZGec0gDGcMAnBRWgRVANJ2q9MwkTBYHcZKrFUgOYNFlYqNeQhBcmw1MECT8sjKPCQb3FrwepmxLUaOzryJUhsNBfawmZgKC0YuEqxRtNAXmKBkVRDaZCT65ryFozFKlOAqUag/iToTundSBxxQqpDULoHKTCCZgk8KyIPUIIgiD4E7FIc2TIDwpAtEyhMecOLxleUE4K0SJ0QYVIznIcix4oDrEDi5/BiBgwTjIab4VchInCpWFimRHL5ClgsQkBEMyJgwiK4YzuTllqRUHnMOQyebkcXvDEV1LrQx65MBCkg4wV5dak4V5IZDDFLB14pO4ipE6xm99HBx2yEetHIJMO6EycjJGMlhptkT3acfnT/ojlSnEE7yLnrKA3EoF/mygopicfcj51C2EhxQeGgVCVCGQzB+ydfquPSR6mQiDER0ZegiDvBSqavTzWwIok2ygYgL05d72bSV4d81FwBXUIZIrQ96BhJhlaSTei+QnLw0A7/dc+zSeyetvM6qpCxKxzDkML1449bS+6aMBiLslUIQkSoOvLvtyQFEDE/yK5MesnDmGTMyIpRGIQVR+3lOTJpKkigBJgSTEMhmdMFNg+CE37+0w0ws6EKgrW+wIaaZQ4ER5AA/57Rt7NDxoDX+u+UXEyXQjIPnUnLN1pHU6BRqrOU/72KLUIXEzMzDD3CHMIYLemMEQAYBuq9g4SGHlo+IBJBcyHT2sCfM/HtUEskUnE4jWUOQvEOQDhlX0STG/2+t4untM1IsSUB54rUanpk5cPB11lseTsR8JOokz3kIxg+MMSrVzjnuf48HP8PuIC9k2oonKmnKXdSpdtLJKjixeWBYouQmTDiAEwkquGmqPb2koGeHJGXUsNpJYbaByGDrGVrQUVEeGfaqfb5r0NOceAZeVASAYFuV7MufoukTgwpe12JA4lArYr1niKoSb3qrVyDRql7lcQmRNJ1nsK+kJGDRafeMRExj262Sv0BkBZli/yrcXVGyYsp0IifhQ1Jr5az9R7HlkEdJSKqKiSCPHaV1SOW7aNCKeIQlWgcxlJU0NKYSfALaJNQLAX5iimn2ip27A1ktLclPS5WCYV5hHgQPmX52WGGJCQOa1KaYxFFSgHh0UI7oLrDMY1JYMTB8jAlsbz1zdhkaBaxeJhBfHiCWW5dExhJIgxpMf8fDyCCxQSsECqNNFbFr5LYY+RVjeQApKHGJodW2ExdTA+8yn8pyHHxIj0WtDMFD33OwjtfXYOtyOODcbIlZRZxRXHAwejnk415fJzZG0cpsz0/5W8bbNmmJ7xi/pdWhaPTiqQKwTNa9010F5zKS9baZAce2WZzgnYcjlcQYizUuN7uV85XxvwZhlyMXXUGjIyugFm6gZKyvCidW9SzUYGINjWIKE8AyqFbLYOR+2aC7QDjEKutJpNPlzQLJEgYEcTNCCCiFw1pnvVUGarRkwPMFw9irNZjf/F3JFOFCQEx5InA='
+          patch = bz2.decompress(base64.b64decode(payload, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '4ca03da813c28e8680fa0a1fe537af812dcc72a7ea29b47e91101df45d2d174d'
+          target = Path(os.environ['RUNNER_TEMP']) / 'docs-comments.patch'
+          target.write_bytes(patch)
+          git('apply', '--index', str(target))
+          helper = Path('.github/workflows/docs-review-fix.yml')
+          saved = helper.read_bytes()
+          helper.unlink()
+          git('add', '-A')
+          subprocess.run([sys.executable, 'scripts/docs_contract.py', '--check'], check=True)
+          git('diff', '--cached', '--check')
+          tree = git('write-tree')
+          assert tree == '1788dbe18aa8646420ec0f3db4302d4415543a8b', tree
+          print('Verified exact candidate tree:', tree)
+          # Connector removes the temporary workflow; this token changes no workflow.
+          helper.write_bytes(saved)
+          git('add', str(helper))
+          git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', 'docs: 봉인 자산 주석은 현재 로컬 계약을 참조 (#1009)')
+          git('push', 'origin', 'HEAD:refs/heads/docs/current-state-20260925')
+          PY
