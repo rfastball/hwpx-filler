@@ -42,8 +42,7 @@
 - [런타임 참조](reference/runtime.md)
 - [Impeccable 호환 출력](../PRODUCT.md)
 - [사용자 소개·실행](../README.md)
-- [작업 진입점·Codex 설정](../AGENTS.md)
-- [Claude 진입점·도구 설정](../CLAUDE.md)
+- [공통 에이전트 작업 지침](../AGENTS.md)
 - [시각 부품 갤러리](reference/ui-gallery.html)
 
 ## 실행 가능한 원장

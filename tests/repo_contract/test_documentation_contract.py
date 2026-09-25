@@ -107,6 +107,30 @@ def test_repository_documentation_contract() -> None:
     assert docs.check(docs.ROOT) == []
 
 
+def test_agents_md_is_the_only_agent_entry(repo: Path) -> None:
+    assert docs.SLOTS["agents-entry"] == ("current", "AGENTS.md")
+    assert "claude-entry" not in docs.SLOTS
+    assert (repo / "AGENTS.md").is_file()
+    assert not (repo / "CLAUDE.md").exists()
+    assert docs.route(repo, "agents-entry") == ["AGENTS.md"]
+    assert "CLAUDE.md" not in docs.render_index(repo, docs.inventory(repo))
+    assert docs.check(repo) == []
+
+
+def test_agents_md_remains_required(repo: Path) -> None:
+    (repo / "AGENTS.md").unlink()
+    assert any("missing=" in p and "AGENTS.md" in p for p in docs.check(repo))
+
+
+@pytest.mark.parametrize("name", [
+    "CLAUDE.md", ".claude/CLAUDE.md", ".claude/AGENTS.md",
+    "subdir/AGENTS.md", "AGENTS.override.md",
+])
+def test_unregistered_agent_instruction_copies_are_rejected(repo: Path, name: str) -> None:
+    _put(repo, name, "# Additional agent guidance\n")
+    assert any("unregistered=" in p and name in p for p in docs.check(repo))
+
+
 def test_version_change_requires_regeneration(repo: Path) -> None:
     p = repo / "pyproject.toml"
     p.write_text(docs.read(p).replace("1.0.0", "1.1.0"), encoding="utf-8")
