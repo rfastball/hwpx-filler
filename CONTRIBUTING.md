@@ -111,7 +111,7 @@ GitHub 이슈·PR에 둔다. 작은 제안도 먼저 이슈로 기록하고, 독
 자동 추출 가능한 목록은 코드·설정을 수정한 뒤 생성한다. 재현 입력은 테스트 fixture로 보존한다.
 
 일반 문서는 영문 소문자 kebab-case다. `README.md`·`CONTRIBUTING.md`·`AGENTS.md`·`CLAUDE.md`와
-생성 호환 파일 `docs/product.md`만 루트/진입 이름의 예외다. 회차·단계·날짜·버전·final·new·completion을
+생성 호환 파일 `PRODUCT.md`만 루트/진입 이름의 예외다. 회차·단계·날짜·버전·final·new·completion을
 정본 이름에 넣지 않는다. 원관측의 날짜·환경·한계는 내용에서 보존한다. 현재 정본은 현재 규칙·
 경계·실패 처리·검증 근거와 필요한 이유만 담는다. 리뷰 라운드·착지 원장·폐기 논쟁을 누적하지 않는다.
 

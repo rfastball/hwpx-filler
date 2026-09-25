@@ -77,7 +77,7 @@ title = "작업 진입점·Codex 설정"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "db29157a87ebbf677c6215b98492f4a0e12f8e3e9d03c7bb8c383f2dc53cfd06"
+source_sha256 = "460796b79e86be9868f0ce851423755652319d655ec18b1bcaae2314b63db616"
 body_sha256 = "3649dd2f2362d278d845872d180fd1d7fba3cf53b8a36b2d5feb9b51119034c2"
 
 [[document]]
@@ -88,7 +88,7 @@ title = "Claude 진입점·도구 설정"
 max_lines = 35
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "35e9a3111d336882cbaa314fcf0fd3f7e562ecb63bf32e14d062eff0d0a5bfc1"
+source_sha256 = "2a8ebe224b42818bd856093525d19c42cf3312d7840a9b22d0c8234fc773bbc5"
 body_sha256 = "dd2efd5b50358b70c35e10b066e1f7c30a77cb20d7c0c65b43b722fe3bc077ee"
 
 [[document]]
@@ -300,7 +300,7 @@ document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
 source_sha256 = "f509f31008d650ac6d71b37f61941eeb1327eb064ed087002f98b0d1ee43a5dc"
-body_sha256 = "16105884ced264ed02211bb99684ad1195a3690bd0f7d80c95de46bd3e2552ae"
+body_sha256 = "e3d1cb2699deaf5634f3b8665b3c76ff6e87ab0a07d48983ad6cecb3aebdccf4"
 
 [[support]]
 path = "examples/quickstart-101/README.md"
