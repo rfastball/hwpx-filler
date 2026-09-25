@@ -1,6 +1,10 @@
 # HWPX native MetaTag S1 spike 관찰 기록
 
-> **문서 상태:** 유효 결정 (판정 **PASS-A (semantic)** — §12.1 의 편차 기재를 함께 읽는다)
+> 현재 구현 계약이 아닌 형식 관측 증거다. 현재 제품의 책임·전이는 [핵심 워크플로](core-workflow.md)와 [UI 계약](UI_CONTRACT.md)을 따른다.
+> 아래의 시점·판정·원관측은 그 근거를 보존한 것이며, 모든 서술을 현재 제품 지원으로 읽지 않는다.
+
+
+> **문서 상태:** 형식 관측 증거
 > **권위 범위:** 한컴 native metadata carrier 의 wire format 관찰과 보존성 실험 설계
 > **후속 정본:** 우리 코드의 동작은 `tests/_hwpx_metatag_spike.py` 와 `tests/test_metatag_s1.py`,
 > 구조 범위 primitive 는 `docs/HWPX_STRUCTURAL_RANGE_S0.md`

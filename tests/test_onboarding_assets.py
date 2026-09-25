@@ -1,4 +1,4 @@
-"""온보딩 예제 자산 계약 — `docs/ONBOARDING_TUTORIAL.md` §2 의 검사 가능한 얼굴.
+"""온보딩 예제 자산 계약 — `https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md` §2 의 검사 가능한 얼굴.
 
 지키는 것은 여섯이다.
 

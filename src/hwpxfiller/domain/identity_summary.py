@@ -35,7 +35,7 @@ Domain 단일 함수로 신설**하고 표면 재구현을 금지한다(부록 A
 
 ## 시연 JS(케이스 정본)와의 의도적 편차 2건 — 정합성 우선(PR #91 리뷰)
 
-정본 시연(``docs/r-flow-mockups/block6-d1-d2-compare-demo.html`` 부록 ``iPick``)과 4장면
+정본 시연(``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block6-d1-d2-compare-demo.html`` 부록 ``iPick``)과 4장면
 결과가 일치하되, 시연 스크립트의 잠재 결함 2건은 **고쳐서** 이식했다(4장면 결과는 불변):
 
 1. **충돌 키 구분자** — 시연 ``iColl`` 은 값을 구분자 없이 이어붙여(``join("")``)

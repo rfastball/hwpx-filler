@@ -282,7 +282,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     },
     "tpl": {
         "refresh": _schema(),
-        # 동봉 예제 세트 설치(#891 · ONBOARDING_TUTORIAL.md §4.1~4.2) — 확인 왕복. 1차는
+        # 동봉 예제 세트 설치(#891 · https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.1~4.2) — 확인 왕복. 1차는
         # 홈에 아무것도 쓰지 않고 재진술만 돌려주고, `confirm` 2차가 실행이다. 이 채널이
         # 소유하는 이유는 설치가 템플릿 라이브러리 + 그룹 지정이기 때문이고, 라이브러리 빈
         # 상태 버튼은 교차 화면 dispatch 로 부른다(library→job 전례).
@@ -310,7 +310,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 읽기 전용이라 확인 왕복이 없고, 새 TXT 창에는 경로가 아직 없으므로 키도 없다.
         "txt_lint": _schema("content"),
     },
-    # 온보딩 튜토리얼 체크리스트(#894 · ONBOARDING_TUTORIAL.md §4.3) — **화면이 아니라 채널**
+    # 온보딩 튜토리얼 체크리스트(#894 · https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.3) — **화면이 아니라 채널**
     # 이다: DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이다. 그래도 화면 키를 갖는 이유는
     # 스냅샷 채널과 디스패치 어휘가 이 표에서만 유도되기 때문이고(`SCREEN_ACTIONS` 손 목록
     # 금지), 같은 형태의 선례가 화면 사망 후 채널만 남은 `pool` 이다.

@@ -1,4 +1,4 @@
-"""온보딩 예제 자산 결정적 생성 — 정본은 ``docs/ONBOARDING_TUTORIAL.md`` §2.
+"""온보딩 예제 자산 결정적 생성 — 정본은 ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md`` §2.
 
 이 폴더의 템플릿·TXT·CSV 를 **단일 진실원**(이 스크립트에 박힌 문서 레이아웃과
 ``RECORDS``)에서 결정적으로 파생한다. 같은 입력 → 같은 bytes 라, 손으로 연 hwpx 가

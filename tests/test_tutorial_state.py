@@ -1,4 +1,4 @@
-"""진행 감지 체크리스트 링1 코어 테스트 — #893(설계 정본 ONBOARDING_TUTORIAL.md §1 D3·§3).
+"""진행 감지 체크리스트 링1 코어 테스트 — #893(설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D3·§3).
 
 못박는 것: 전 단계 전이·티어 졸업·전체 완주, 순서 비강제와 중복 통지 무해, 닫힘/재개의
 설계 결정(기록은 하되 카드는 큐잉하지 않는다), 스냅샷의 JSON 왕복, settings 왕복과 비유효

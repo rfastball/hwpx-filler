@@ -1,6 +1,6 @@
 """온보딩 튜토리얼의 **진행 감지 체크리스트** 링1 코어 — 슬라이스 D(#893).
 
-정본은 :doc:`docs/ONBOARDING_TUTORIAL.md` §1 D3(체크리스트 + 순간 카드)·§3.3–3.6(티어·단계
+정본은 :doc:`https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md` §1 D3(체크리스트 + 순간 카드)·§3.3–3.6(티어·단계
 판정표)·§4.3–4.4(구현 좌표·영속)다. 이 모듈이 소유하는 것은 셋이다.
 
 1. **단계·티어 구조** — T0~T17 과 기본/응용/고급/심화 4티어. 티어 졸업·다음 티어 제안·

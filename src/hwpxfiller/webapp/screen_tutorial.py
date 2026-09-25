@@ -1,6 +1,6 @@
 """온보딩 튜토리얼 체크리스트의 링2 컨트롤러 — 슬라이스 E(#894).
 
-정본은 :doc:`docs/ONBOARDING_TUTORIAL.md` §4.3(판정·렌더·통신)·§4.4(영속)다. 이 컨트롤러가
+정본은 :doc:`https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md` §4.3(판정·렌더·통신)·§4.4(영속)다. 이 컨트롤러가
 지는 것은 **소유·영속·전달** 셋이고, 판정과 문안은 하나도 여기 없다:
 
 1. **세션 소유** — 앱에 :class:`~hwpxfiller.viewmodel.tutorial_state.TutorialViewModel` 하나뿐이고

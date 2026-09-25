@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
-"""디자인 토큰 단일 출처 → 웹 CSS + 목업 CSS 재생성/검증.
+"""디자인 토큰 단일 출처 → 제품 CSS 재생성/검증.
 
-색·상태색은 ``src/hwpxfiller/viewmodel/design_tokens.json`` 한 곳에만 손으로 둔다. 이 스크립트가
-그 값을 웹 프론트엔드 CSS(``frontend/css/tokens.css``)와 목업 HTML
-(``docs/UI_PROTOTYPE_APPB.html``)의 ``<gen:tokens>`` 영역(앱윈도 ``--a-*`` CSS 변수)에 찍는다.
-디자인 색 변경 = JSON 1곳 편집 + regen. 백엔드(domain/data)는 손대지 않는다.
+``src/hwpxfiller/viewmodel/design_tokens.json`` 을 고친 뒤 이 생성기를 실행한다.
+출력은 ``frontend/css/tokens.css`` 이다. 런타임 생성은 하지 않는다.
 
-Qt ``style.py`` 생성 타깃은 PySide6 제거(#23)로 폐기됐다 — pywebview 웹이라 팔레트는
-CSS 변수로만 소비된다. ``web-diff/css/tokens.css`` 타깃은 hwpxdiff 저장소 분리(2026-07-29)로
-폐기됐다 — 그 사본은 이제 저쪽에서 손 소유 동결 파일이고 여기서 동기화하지 않는다.
-
-    python scripts/gen_design_tokens.py           # 두 영역 재작성
-    python scripts/gen_design_tokens.py --check    # 드리프트 검사(CI/pytest; 어긋나면 non-zero)
-
-생성물은 **커밋되는 소스**다(패키징된 exe 는 쓰기 가능한 프로젝트 폴더가 없어 런타임 생성 불가).
-이 스크립트는 dev/CI 전용이며 앱 실행 시 돌지 않는다. stdlib 만 쓴다.
+    uv run python scripts/gen_design_tokens.py
+    uv run python scripts/gen_design_tokens.py --check
 """
 from __future__ import annotations
 
@@ -26,23 +17,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOKENS = ROOT / "src" / "hwpxfiller" / "viewmodel" / "design_tokens.json"
-MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
 # 웹 프론트엔드(pywebview) CSS 변수 단일 출처(에픽 #20). 실앱은 스튜디오 셸 없이 앱윈도 자체라
 # --a-* 팔레트를 주 테마로 쓰고, 배지/중성 틴트까지 토큰에서 받는다(스파이크 임시색 교체).
 WEBCSS = ROOT / "frontend" / "css" / "tokens.css"
 
-# 목업 앱윈도 CSS 변수 이름 ← 토큰 경로(고정 팔레트; 스튜디오 셸 테마변수는 수작성 유지).
-_MOCKUP_MAP = [
-    ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
-    ("--a-warn", "color.warn"), ("--a-danger", "color.danger"),
-    ("--a-ok", "color.ok"), ("--a-muted", "color.muted"),
-    ("--a-border", "color.border"), ("--a-card", "color.card_bg"),
-    ("--a-window", "color.window_bg"), ("--a-ink", "color.ink"),
-    ("--a-unconf", "state.unconfirmed_bg"), ("--a-unmatch", "state.unmatched_bg"),
-    ("--a-empty", "state.data_empty_fg"), ("--a-sel", "state.select_bg"),
-]
-
-# 웹 CSS 변수 이름 ← 토큰 경로. --a-* 핵심 팔레트(목업과 동일)에 배지/상태/중성 틴트를 더한다.
+# 웹 CSS 변수 이름 ← 토큰 경로. --a-* 핵심 팔레트에 배지/상태/중성 틴트를 더한다.
 # 실앱 CSS(frontend/css/ 의 스타일시트들)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
 _WEB_MAP = [
     ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
@@ -116,7 +95,6 @@ _LAYER_MAP = [
 ]
 
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
-_MOCKUP_INDENT = "    "
 _WEB_INDENT = "  "
 
 
@@ -127,14 +105,6 @@ def load_tokens() -> dict:
 def _dig(tokens: dict, path: str):
     group, key = path.split(".")
     return tokens[group][key]
-
-
-def render_mockup_region(tokens: dict) -> str:
-    """목업 ``:root`` 안 ``<gen:tokens>`` 영역 전문(4칸 들여쓰기 포함)."""
-    lines = [_MOCKUP_INDENT + OPEN_CSS]
-    lines += [f"{_MOCKUP_INDENT}{name}:{_dig(tokens, path)};" for name, path in _MOCKUP_MAP]
-    lines.append(_MOCKUP_INDENT + CLOSE_CSS)
-    return "\n".join(lines)
 
 
 def _web_vars(root: dict, indent: str) -> "list[str]":
@@ -206,11 +176,10 @@ def _splice(text: str, open_m: str, close_m: str, block: str) -> str:
 
 
 def check() -> "list[str]":
-    """디스크의 두 CSS 영역이 토큰과 일치하는지. 문제 목록 반환(빈 리스트=동기화됨)."""
+    """디스크의 제품 CSS 영역이 토큰과 일치하는지. 문제 목록 반환(빈 리스트=동기화됨)."""
     tokens = load_tokens()
     problems: "list[str]" = []
     for path, open_m, close_m, render in (
-        (MOCKUP, OPEN_CSS, CLOSE_CSS, render_mockup_region),
         (WEBCSS, OPEN_CSS, CLOSE_CSS, render_web_region),
     ):
         text = path.read_text(encoding="utf-8")  # read_text 가 CRLF→\n 정규화
@@ -224,10 +193,6 @@ def check() -> "list[str]":
 
 def rewrite() -> None:
     tokens = load_tokens()
-    MOCKUP.write_text(
-        _splice(MOCKUP.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_mockup_region(tokens)),
-        encoding="utf-8", newline="\n",
-    )
     WEBCSS.write_text(
         _splice(WEBCSS.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_web_region(tokens)),
         encoding="utf-8", newline="\n",
@@ -243,10 +208,10 @@ def main(argv=None) -> int:
         if problems:
             print("토큰 드리프트:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
-        print("토큰 동기화 OK (목업 · frontend/css/tokens.css)")
+        print("토큰 동기화 OK (frontend/css/tokens.css)")
         return 0
     rewrite()
-    print("재생성 완료: docs/UI_PROTOTYPE_APPB.html · frontend/css/tokens.css")
+    print("재생성 완료: frontend/css/tokens.css")
     return 0
 
 

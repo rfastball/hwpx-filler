@@ -1,4 +1,4 @@
-"""동봉 예제 세트 설치의 헤드리스 계약(#891 · 설계 정본 ONBOARDING_TUTORIAL.md §1 D1·D4·§4.1~4.2).
+"""동봉 예제 세트 설치의 헤드리스 계약(#891 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D1·D4·§4.1~4.2).
 
 이 슬라이스의 지배 위험은 **누르기 전 홈 쓰기**다: 최초 부팅 자동 설치가 무단 쓰기라 기각되고
 「빈 상태 제안 + 명시 버튼」이 결정됐으므로(D1), 확정을 지나지 않은 어떤 경로도 홈을 건드리면

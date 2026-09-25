@@ -1,7 +1,7 @@
 """필터 선언 상태 모델 — Qt·웹 비의존 순수 파이썬(R-flow 블록 4, 결정 23~25).
 
 「작업」 세션 패널 데이터 존의 **화면 편집 주체 = 필터 상태 하나**(결정 23)의 그 상태다.
-사양 정본은 시안 ``docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의 상태 기계
+사양 정본은 시안 ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의 상태 기계
 (``colC``/``grp``/``colPass``/``grpPass``/``recomputeBranches``/``colValues``/``fullDesc``) —
 충실 이식 + 라운드에서 미결이던 3항의 확정(2026-07-19 사용자 택일)을 반영한다.
 
