@@ -1,10 +1,8 @@
 """자모 분해 부분일치 회귀 — 결정 23 · 부록 B-6·B-7 의 링1 유틸.
 
-사양 정본 = ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의
-``jamoMap``/``jamoFind``. 자모 테이블은 그 시안 HTML 에서 **그대로 회수**해 파이썬
-상수와 대조한다(식별 요약의 naraData 회수 관례 동형 — "충실 이식" 주장을 기계 비준).
-행동 케이스는 시안 걷기(「행복도ㅅ」 단계 매치)와 결정 23 문언(겹받침 성분 확장·음절
-역매핑 하이라이트)에서 왔다.
+자모 테이블은 삭제 전 시안에서 추출한 `tests/fixtures/jamo_tables.json`을 원관측 fixture로
+보존한다. 행동 케이스는 당시 시안 걷기와 결정 23의 겹받침 성분 확장·음절 역매핑
+하이라이트 계약에서 왔다.
 """
 from __future__ import annotations
 
@@ -23,24 +21,14 @@ from hwpxfiller.domain.jamo import (
     jamo_find,
 )
 
-MOCKUP = (
-    Path(__file__).resolve().parent.parent
-    / "docs" / "r-flow-mockups" / "https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html"
-)
+TABLE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "jamo_tables.json"
 
 
-# ---------------------------------------------------------------- 시안 패리티
-@functools.cache
-def _mockup_text() -> str:
-    """시안 HTML 1회 읽기 캐시 — 파라미터 케이스마다 재읽지 않는다(고효율 리뷰 #2)."""
-    return MOCKUP.read_text(encoding="utf-8")
-
-
-def _mockup_table(name: str) -> "tuple[str, ...]":
-    """시안 JS 의 ``var CHO=[...]`` 테이블을 원문에서 회수한다(줄바꿈 허용)."""
-    m = re.search(rf"var {name}=\[(.*?)\];", _mockup_text(), re.DOTALL)
-    assert m, f"시안에서 {name} 테이블을 찾지 못했습니다(사양 정본 이동?)"
-    return tuple(re.findall(r'"([^"]*)"', m.group(1)))
+# ---------------------------------------------------------------- 원관측 패리티
+def _fixture_table(name: str) -> "tuple[str, ...]":
+    """삭제 전 시안에서 추출한 자모 테이블 fixture를 읽는다."""
+    tables = json.loads(TABLE_FIXTURE.read_text(encoding="utf-8"))
+    return tuple(tables[name])
 
 
 @pytest.mark.parametrize(
