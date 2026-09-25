@@ -9,8 +9,8 @@ JS ``iPick`` 라이브 계산). 이 테스트는 그 4장면을 Domain :func:`id
 3. 토큰 모드 — 파일명이 품명을 나르면 인지층 생략, 구별층만.
 4. 진성 중복 백스톱 — 데이터가 정말 같은 두 행은 요약이 못 가른다(그래도 됨).
 
-장면 1의 나라 12행은 시연 HTML 임베드(``id="naraData"``)에서 그대로 회수해 라이브 JS
-계산과 같은 입력을 보장한다. 나머지 3장면 데이터는 시연 스크립트의 생성자와 동형이다.
+장면 1의 나라 12행은 삭제 전 시연 HTML에서 추출한 `tests/fixtures/identity_summary_nara.json`을
+원관측 fixture로 보존한다. 나머지 3장면 데이터는 당시 시연 스크립트의 생성자와 동형이다.
 """
 from __future__ import annotations
 
@@ -39,10 +39,7 @@ _PUBLIC_API = (
     "identity_summary",
 )
 
-_MOCKUP = (
-    Path(__file__).resolve().parents[1]
-    / "docs" / "r-flow-mockups" / "https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block6-d1-d2-compare-demo.html"
-)
+_NARA_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "identity_summary_nara.json"
 
 
 def test_public_api_is_the_declared_seven() -> None:
@@ -51,13 +48,9 @@ def test_public_api_is_the_declared_seven() -> None:
 
 
 def _load_nara_rows() -> list[dict]:
-    """시연 HTML 의 ``<script id="naraData">`` 에서 정본 12행을 회수(라이브 JS 와 동일 입력)."""
-    html = _MOCKUP.read_text(encoding="utf-8")
-    anchor = html.index('id="naraData"')
-    body_open = html.index(">", anchor) + 1
-    body_close = html.index("</script>", body_open)
-    rows = json.loads(html[body_open:body_close])
-    assert len(rows) == 12 and len(rows[0]) == 53  # 12행×53열 — 정본 형상 못박기
+    """삭제 전 시연에서 추출한 12행×53열 원관측 fixture를 읽는다."""
+    rows = json.loads(_NARA_FIXTURE.read_text(encoding="utf-8"))
+    assert len(rows) == 12 and len(rows[0]) == 53
     return rows
 
 
