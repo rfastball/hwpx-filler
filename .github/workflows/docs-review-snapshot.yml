@@ -1,21 +1,24 @@
-name: docs-review-snapshot
+name: docs-review-apply
 on:
   push:
     branches: [docs/current-state-20260925]
-    paths: [.github/workflows/docs-review-snapshot.yml]
+    paths:
+      - .github/workflows/docs-review-snapshot.yml
+      - .github/docs-apply.py
+      - .github/docs-change-packet.b64.*
 permissions:
-  contents: read
+  contents: write
 jobs:
-  snapshot:
+  apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: Archive tracked source only
-        run: git archive --format=tar HEAD -o source.tar
-      - uses: actions/upload-artifact@v4
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
-          name: docs-review-source
-          path: source.tar
-          retention-days: 1
+          version: '0.11.28'
+          enable-cache: false
+      - name: Apply exact verified candidate to the review branch
+        run: uv run --no-project --python 3.13 python .github/docs-apply.py
