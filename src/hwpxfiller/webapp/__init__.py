@@ -2,7 +2,7 @@
 
 스파이크(spike/pywebview-instant-draft, SPIKE_FINDINGS.md)에서 판정 `migrate` 후 승격한
 본작업 골격이다. 링0(core)·링1(viewmodel/*_state.py, Qt-free)은 **그대로 임포트**해 구동만 한다 —
-교체 대상은 링2(Qt 위젯·style.py)뿐(docs/ARCH_UI_SEPARATION.md, 에픽 #20).
+교체 대상은 링2(Qt 위젯·style.py)뿐(https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ARCH_UI_SEPARATION.md, 에픽 #20).
 
 구성:
 - :mod:`~hwpxfiller.webapp.screens` — 화면별 컨트롤러(webview 비의존, 헤드리스 테스트 가능).

@@ -482,7 +482,7 @@ def save_last_data_source(
     )
 
 
-# 온보딩 튜토리얼 진행(#893 · 설계 정본 ONBOARDING_TUTORIAL.md §4.4) — 중첩 키 ``tutorial``
+# 온보딩 튜토리얼 진행(#893 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.4) — 중첩 키 ``tutorial``
 # 아래 ``achieved``(달성 단계 식별자)·``dismissed``(명시 종료) 두 칸. 중첩으로 두는 이유는
 # 설치 manifest 참조가 같은 top_key 아래 뒤에 붙기 때문이다(슬라이스 B 소유) — 진행 저장이
 # 그 칸을 지우지 않게 판독-보존-쓰기로 다룬다. 단계 식별자 자체는 여기서 검증하지 않는다:
@@ -528,7 +528,7 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
     _mutate(mutate)
 
 
-# 예제 세트 설치 manifest(#891 · 설계 정본 ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``
+# 예제 세트 설치 manifest(#891 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``
 # 중첩 키 아래 ``manifest`` 칸이다(#893 진행 칸이 예고한 자리). 그룹은 실체가 아니라 소속이라
 # 「그룹 삭제 한 번으로 통째 제거」가 성립하지 않는다: 제거(슬라이스 C)는 **여기 기재된 항목만**
 # 걷어야 사용자가 직접 넣은 이웃 파일을 건드리지 않는다. 값의 의미(무엇을 설치하는가)는

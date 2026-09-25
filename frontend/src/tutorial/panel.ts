@@ -1,6 +1,6 @@
 /* 온보딩 튜토리얼 — 체크리스트 셸 패널 + 순간 카드 (슬라이스 E · #894).
  *
- * 정본은 `docs/ONBOARDING_TUTORIAL.md` §1 D3(체크리스트 + 순간 카드)·§4.3(렌더·통신)이다.
+ * 정본은 `https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md` §1 D3(체크리스트 + 순간 카드)·§4.3(렌더·통신)이다.
  *
  * ## 이 파일이 판정하지 않는 것 — 전부다
  *

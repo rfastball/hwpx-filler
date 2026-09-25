@@ -1,6 +1,6 @@
 """동봉 예제 세트의 설치 몸통 — 자산 해석·복사·그룹 지정·데이터 고정·설치 manifest.
 
-설계 정본은 ``docs/ONBOARDING_TUTORIAL.md`` §1 D1·§4.1~4.2·§4.5(슬라이스 B, #891).
+설계 정본은 ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md`` §1 D1·§4.1~4.2·§4.5(슬라이스 B, #891).
 D1 이 정한 주입 방식은 **빈 상태 제안 + 명시 버튼**이다: 최초 부팅 자동 설치는 사용자 홈
 무단 쓰기라, **이 모듈은 :func:`install` 이 불리기 전에는 홈에 아무것도 쓰지 않는다**
 (import 부작용 0 · :func:`asset_root` 와 :func:`entry_point_state` 는 읽기 전용).

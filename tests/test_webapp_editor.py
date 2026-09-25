@@ -839,7 +839,7 @@ def _structured_template(tmp_path: Path, name: str = "구간템플릿") -> Path:
 def test_the_editor_no_longer_carries_a_slot_zone(tmp_path):
     """구간 축 요약(`template_slots`)은 U6-E(#979)에서 **항목 상세 시트로 이주**했다.
 
-    판정의 승계는 `docs/UX_FEEDBACK_U6.md` §2.9 다: U4 §2.15 가 이 존을 읽기 전용으로 둔
+    판정의 승계는 `https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/UX_FEEDBACK_U6.md` §2.9 다: U4 §2.15 가 이 존을 읽기 전용으로 둔
     근거는 「저장 전 초안은 템플릿 파일을 변이시키지 않는다」였고, 그것은 **동사 부재**
     판정이었다. 이제 동사는 편집 세션이 아니라 풀 항목(파일)을 겨누는 시트에 서고, 세션과
     같은 파일일 때의 무효화는 변이 seam 이 그대로 진다(아래 재정산 시험이 그 불변을 잰다).

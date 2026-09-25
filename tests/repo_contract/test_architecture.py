@@ -399,9 +399,9 @@ def test_home_directory_resolution_has_one_source() -> None:
     assert not offenders, "home_dir() 우회:\n" + "\n".join(offenders)
 
 
-def test_ui_contract_documents_every_direct_bridge_method() -> None:
+def test_generated_reference_documents_every_direct_bridge_method() -> None:
     bridge = (SOURCE_JS_DIR / "bridge.js").read_text(encoding="utf-8")
-    contract = (ROOT / "docs" / "UI_CONTRACT.md").read_text(encoding="utf-8")
+    contract = (ROOT / "docs" / "reference" / "runtime.md").read_text(encoding="utf-8")
     methods = set(re.findall(r"\bapi\.(\w+)", bridge)) - {"initial", "dispatch"}
     undocumented = sorted(method for method in methods if f"`{method}`" not in contract)
     assert methods and not undocumented, f"문서화되지 않은 직접 브리지: {undocumented}"

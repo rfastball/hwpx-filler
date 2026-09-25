@@ -1,0 +1,245 @@
+# 문서 역할의 단일 목록. 날짜·완료 이력은 Git이 소유한다.
+schema = "docs-contract/v1"
+
+[[document]]
+path = "docs/README.md"
+kind = "generated"
+role = "문서의 역할별 탐색"
+max_lines = 100
+tests = ["tests/repo_contract/test_documentation_contract.py"]
+
+[[document]]
+path = "docs/UI_CONTRACT.md"
+kind = "current"
+role = "현재 UI 계약의 읽기 경로와 변경 단위"
+max_lines = 160
+sources = ["src/hwpxfiller/webapp/action_registry.py", "frontend/src/shell/nav.ts"]
+tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py"]
+source_sha256 = "0e7da0594254ab49b8debbe62c061ad72d7dff573f940b7d7d359f1e697b0df8"
+body_sha256 = "5f50b6de4711e0fd671ab67bbe5d5651da48d448f872587b7cd9f8d000fc6186"
+
+[[document]]
+path = "docs/core-workflow.md"
+kind = "current"
+role = "개체·권위·정의에서 관찰까지의 전이"
+max_lines = 160
+sources = ["src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/*.py"]
+tests = ["tests/test_application_jobs.py", "tests/test_work_slot_configuration.py"]
+source_sha256 = "07e2f5c3a4698e1c8e30a54b27fc1046f8feeea7187917faaf321fed85570cd0"
+body_sha256 = "f29772a2b24683440901a24e64c4240a3de638f19d36e5b7637dfed8c3e56795"
+
+[[document]]
+path = "docs/ui/runtime.md"
+kind = "current"
+role = "UI 계층·통신·React·셸·오버레이 책임"
+max_lines = 160
+sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
+tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
+source_sha256 = "fc0b18705422702b21870a7d1a3f2a38518d9b3600963ccdea4d90aad35bed0a"
+body_sha256 = "5df26519741b2db6700914925be976c299764862129911d3d9fbfb06f74e4fea"
+
+[[document]]
+path = "docs/ui/editor.md"
+kind = "current"
+role = "작업 편집·연결 확인·저장 경계"
+max_lines = 160
+sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py"]
+tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py"]
+source_sha256 = "9bade7332a177273e57771d12b71a8f01445f4c68c1277e97aa7194620e21415"
+body_sha256 = "3fde8d177b50b92f8af7852fbb626208dddea7a556b4ce7612798e3bf0b32e6e"
+
+[[document]]
+path = "docs/ui/execution.md"
+kind = "current"
+role = "데이터 세션·생성·산출물 관찰·TXT 복사"
+max_lines = 160
+sources = ["src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/webapp/screen_workbench.py", "frontend/src/screens/job*.ts", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/slot_configuration_projection.py", "src/hwpxfiller/application/template_change_product.py"]
+tests = ["tests/test_webapp_job.py", "tests/test_webapp_job_artifact_view.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py"]
+source_sha256 = "8124afaf8e0ceac045be43085cf73cdf0d2636cdd4c68c5526e183b9301a1dfe"
+body_sha256 = "8f32f74c751d488a3432c945418557aaee3daba548edbb240c17e754cc00e858"
+
+[[document]]
+path = "docs/ui/storage.md"
+kind = "current"
+role = "작업 목록·설정·출력 폴더·템플릿 루트"
+max_lines = 160
+sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts"]
+tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py"]
+source_sha256 = "f2d27a39095ae3293bd49777db1ae0c56f248fd53d961f01bf1bc4d24e7e1fe9"
+body_sha256 = "c3015eaea920ceb6822e57a2b7d8cdc75f84a7af1af026027b57bc10e3cca805"
+
+[[document]]
+path = "docs/CONTROL_PLANE_SCOPE.md"
+kind = "current"
+role = "Profile·token·의미 판정·영속 제어면의 경계"
+max_lines = 160
+sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/webapp/action_registry.py"]
+tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py"]
+source_sha256 = "f7d40bf9b0d6619a0d25bcf0c5e391299e2b309ecc004cff3a7f776e57cb3de3"
+body_sha256 = "b0593f355ac42b1b7e31721c63948acc8eb3edc75f56666f5de7f75446871d5a"
+
+[[document]]
+path = "docs/FEATURE_SCOPE.md"
+kind = "current"
+role = "코드가 남아 있는 비노출·비출하 기능"
+max_lines = 160
+sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "frontend/src/react/*.ts", "frontend/index.html"]
+tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py"]
+source_sha256 = "00d00c68b63d46ad119d4e06df88e95bdc3cf8e0858dbdad34a68464956ed40c"
+body_sha256 = "3779ae8977f7fd434371d3164106f827a27a08970d0430737f886be3cfc216d4"
+
+[[document]]
+path = "docs/DESIGN_LANGUAGE.md"
+kind = "current"
+role = "시각 원칙·토큰·상호작용 검증 책임"
+max_lines = 160
+sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
+tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
+source_sha256 = "fe5d6cbecb0f0c760de7f1855640a7e3ffb15a885f311fe686fe7f88b4d710e6"
+body_sha256 = "f38226a38756204c13758e0ef6187142aa00a0647e584f5c3984db5d4cf6fd6d"
+
+[[document]]
+path = "docs/UI_VOCABULARY.md"
+kind = "current"
+role = "사용자 가시 명칭·빈 값·수량 단위"
+max_lines = 160
+sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts"]
+tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
+source_sha256 = "b361e02cb6142bf7b2b8d7242f7312eb5065f84911be62e21275b3afcaa3cd65"
+body_sha256 = "24c61f225c63e34347a0fc2b3442c1f3a1c54b59035a29d4bb772b0bf3fcd7e3"
+
+[[document]]
+path = "docs/COPY_STYLE_GUIDE.md"
+kind = "current"
+role = "사용자 문장의 형식·예산·금지 패턴"
+max_lines = 160
+sources = ["scripts/ui_copy_census.py", "docs/UI_VOCABULARY.md"]
+tests = ["tests/repo_contract/test_ui_copy_census.py"]
+source_sha256 = "4c09e05c613f4229579787416fcb2eaecbed6ad4b1303ed95071b9efe4e1910e"
+body_sha256 = "57d4d3625ce0ad7b1ca289ca5ce08619dd38db061fbda39a4d9088c2a2656dee"
+
+[[document]]
+path = "docs/DEVELOPMENT_ENVIRONMENT.md"
+kind = "current"
+role = "설치·검증·패키징·출하 절차"
+max_lines = 160
+sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
+tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
+source_sha256 = "547cd7749fc2ddb721e92ecbe926a6d5f1e9fbcdd79a1fad7c45095d7a6d2cd7"
+body_sha256 = "cc0a8ebf1636f89fe11c4dec9476c0a2341a3ad5a35135da957d9282d2507b3f"
+
+[[document]]
+path = "docs/ROADMAP.md"
+kind = "current"
+role = "장기 방향과 착수 전 필요한 증거"
+max_lines = 160
+sources = ["docs/FEATURE_SCOPE.md", "docs/core-workflow.md"]
+tests = ["tests/repo_contract/test_documentation_contract.py"]
+source_sha256 = "57754413a68af9e8fdf6763d817ea66ec8620a8ce46780c834f04148ef3ecf45"
+body_sha256 = "a276bbb1172be341d2e2e75b0ec69eef7ecf1b7591cf429cdff874726872c06a"
+
+[[document]]
+path = "docs/MAINTENANCE.md"
+kind = "current"
+role = "문서 분류·재생성·의미 검토·CI 정책"
+max_lines = 160
+sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
+tests = ["tests/repo_contract/test_documentation_contract.py"]
+source_sha256 = "546ae96007e3b2c09159899a501456a42dbeb20fa7072eb8c8741110e0bbcc59"
+body_sha256 = "ffc6215d4b93d086b80d4c152a73a244fef3089508d1eecd5ff30fdb71d21167"
+
+[[document]]
+path = "docs/UI_GALLERY.html"
+kind = "current"
+role = "제품 CSS를 사용하는 시각 부품 갤러리"
+max_lines = 600
+sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
+tests = ["tests/repo_contract/test_contrast_wcag.py"]
+source_sha256 = "cca821f0a52b2c2b5b94395d7b842ead5b7ca0458fd350d8596e2a7329eca72c"
+body_sha256 = "a126d9173f74b5aa4f9a8424944ce7cae25d08c03317bc341f967d3bb7665928"
+
+[[document]]
+path = "README.md"
+kind = "current"
+role = "사용자 제품 소개·설치·실행 진입"
+max_lines = 230
+sources = ["docs/core-workflow.md", "docs/FEATURE_SCOPE.md", "src/hwpxfiller/cli.py", "src/hwpxfiller/webapp/screen_job.py", "pyproject.toml"]
+tests = ["tests/test_webapp_job.py"]
+source_sha256 = "aeb5eb1448a42fcb52cb1d1d8b4bf2a12895d0174f94b7966567f7a81c51ef47"
+body_sha256 = "a91ce0dffb03328ab1cbaf7375f17cf4a53bb25a2639f63616c16b8be88e09d2"
+
+[[document]]
+path = "PRODUCT.md"
+kind = "current"
+role = "제품 맥락·범위·사용 원칙 요약"
+max_lines = 160
+sources = ["docs/core-workflow.md", "docs/FEATURE_SCOPE.md"]
+tests = ["tests/test_job.py"]
+source_sha256 = "c1404301ec88ac0841a828ac0f2f5d4b0d76c2e478fa45ee4731ff4d65a28aaa"
+body_sha256 = "23325baf5015cec4c5e052b26d4767ac66f05dbf3b0876b978778e15eb290476"
+
+[[document]]
+path = "CLAUDE.md"
+kind = "current"
+role = "에이전트 공통 작업 규율"
+max_lines = 160
+sources = ["docs/DEVELOPMENT_ENVIRONMENT.md", "docs/MAINTENANCE.md"]
+tests = ["tests/repo_contract/test_documentation_contract.py"]
+source_sha256 = "31a335b74060646258a3999e81ce76baa2fe36eb18a82726913157120cf4bedd"
+body_sha256 = "1a1aa3fd9cfe36d88ca46c08663730c509324f9f8cc6bfd309c7c1fb4792889e"
+
+[[document]]
+path = "AGENTS.md"
+kind = "current"
+role = "에이전트 진입점과 위임 정책"
+max_lines = 160
+sources = ["CLAUDE.md"]
+tests = ["tests/repo_contract/test_documentation_contract.py"]
+source_sha256 = "514f6518d476a49c73a7c694734950cbe8d40f8f345f8d78fbad1c25b72f7f50"
+body_sha256 = "a200ede9e07c7e4c2e88b46ab73b1ca692956461330511c6c3bdaff4d5a696d6"
+
+[[document]]
+path = "docs/reference/runtime.md"
+kind = "generated"
+role = "설정·AST에서 추출한 환경·메서드·dispatch·CI"
+max_lines = 400
+tests = ["tests/repo_contract/test_documentation_contract.py", "tests/repo_contract/test_architecture.py"]
+
+[[document]]
+path = "docs/module_rings.toml"
+kind = "machine"
+role = "제품 모듈 ring 좌표와 의존 방향"
+max_lines = 600
+tests = ["tests/repo_contract/test_module_rings.py"]
+
+[[document]]
+path = "docs/package_coverage_floors.toml"
+kind = "machine"
+role = "패키지별 line·branch coverage 하한"
+max_lines = 100
+tests = ["tests/repo_contract/test_package_coverage_gate.py"]
+
+[[document]]
+path = "docs/ui_copy_census.toml"
+kind = "machine"
+role = "화면 문장 다중집합과 유예 예산"
+max_lines = 4000
+tests = ["tests/repo_contract/test_ui_copy_census.py"]
+
+[[document]]
+path = "docs/HWPX_STRUCTURAL_RANGE_S0.md"
+kind = "evidence"
+role = "HWPX 구조 구간의 원관측·재현 근거"
+max_lines = 1200
+
+[[document]]
+path = "docs/HWPX_METATAG_S1_SPIKE.md"
+kind = "evidence"
+role = "MetaTag 인코딩·식별과 한글 관측 근거"
+max_lines = 750
+
+[[document]]
+path = "docs/DOCUMENT_AUTHORITY_LAYERS.md"
+kind = "research"
+role = "문서 표현의 권위 계층을 위한 이론·제안"
+max_lines = 1500

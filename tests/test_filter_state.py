@@ -1,6 +1,6 @@
 """필터 선언 상태 모델 회귀 — R-flow 블록 4(결정 23~25) + 미결 3항 확정(2026-07-19).
 
-시안 ``block4-filter-crystallize-demo.html`` 상태 기계의 이식 검증 + 확정 편차의 명문:
+시안 ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 상태 기계의 이식 검증 + 확정 편차의 명문:
 프루닝=텍스트 수명(열 편집 생존) · 연속 검색=그룹 교체 · 가지 1 정규화 안 함 · 범위
 조건=엑셀 사용자 지정 동형(동적 프리셋 제외, 피연산자 설정 시점 시끄러운 거절).
 """

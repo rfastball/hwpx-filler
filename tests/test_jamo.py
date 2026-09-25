@@ -1,6 +1,6 @@
 """자모 분해 부분일치 회귀 — 결정 23 · 부록 B-6·B-7 의 링1 유틸.
 
-사양 정본 = ``docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의
+사양 정본 = ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의
 ``jamoMap``/``jamoFind``. 자모 테이블은 그 시안 HTML 에서 **그대로 회수**해 파이썬
 상수와 대조한다(식별 요약의 naraData 회수 관례 동형 — "충실 이식" 주장을 기계 비준).
 행동 케이스는 시안 걷기(「행복도ㅅ」 단계 매치)와 결정 23 문언(겹받침 성분 확장·음절
@@ -26,7 +26,7 @@ from hwpxfiller.domain.jamo import (
 
 MOCKUP = (
     Path(__file__).resolve().parent.parent
-    / "docs" / "r-flow-mockups" / "block4-filter-crystallize-demo.html"
+    / "docs" / "r-flow-mockups" / "https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html"
 )
 
 

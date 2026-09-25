@@ -386,7 +386,7 @@ class TemplateController:
         self.result_level = "muted"
         self.vm.refresh()
 
-    # ---- 동봉 예제 설치(#891 · ONBOARDING_TUTORIAL.md §4.1~4.2)
+    # ---- 동봉 예제 설치(#891 · https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.1~4.2)
     def _hwpx_root(self) -> Path:
         root = self.vm.library_dir
         if root is None:  # 고정 루트라 실제로는 오지 않는다 — 오면 조용히 추측하지 않는다.

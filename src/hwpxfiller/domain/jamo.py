@@ -2,7 +2,7 @@
 
 R-flow 합의문 결정 23("자모 분해 부분일치 = 산술 분해 + 겹받침 성분 확장·음절 역매핑
 하이라이트") + 부록 B-6·B-7 의 이행. **사양 정본은 시안**
-``docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의 ``jamoMap``/``jamoFind``
+``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block4-filter-crystallize-demo.html`` 의 ``jamoMap``/``jamoFind``
 (522~546행) — 이 모듈은 그 의미론의 충실 이식이다.
 
 ## 왜 자모인가

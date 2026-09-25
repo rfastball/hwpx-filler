@@ -24,11 +24,11 @@ web
 
 Windows pywebview/WebView2 안에서 실행하는 웹 UI이며, 브라우저 SaaS나 모바일 제품이 아니다. 사용자는 문서 만들기와 문서 작업을 오가며 템플릿, 매핑, 파일명을 구성한다.
 
-작업은 데이터 파일 경로·시트·헤더 행에 결속된다. 실제 데이터 내용은 작업에 넣지 않으며, 실행 시 현재 파일을 다시 읽는다. 저장된 작업과 데이터의 지속적 강결합은 [CLAUDE.md](CLAUDE.md)의 현행 계약을 따른다.
+작업은 데이터 파일 경로·시트·헤더 행·종류에 결속된다. 실제 행 내용은 작업에 저장하지 않고, 명시적 로드·새로고침으로 데이터 세션을 만든다. 실행은 선택 행의 고정 사본을 사용한다. 상세 계약은 [핵심 워크플로](docs/core-workflow.md)를 따른다.
 
 ## Capabilities and Constraints
 
-- 입력 데이터는 `.xlsx`, `.xlsm`, `.csv`를 지원한다.
+- 입력 데이터는 `.xlsx`, `.xlsm`, `.csv` 및 계약 목록 SQLite를 지원한다. 등록 가능한 계약 목록의 면과 제약은 코드의 제품 게이트가 소유한다.
 - 기준 실행 환경은 Windows 11 x64와 WebView2 Runtime이다.
 - 생성에 한글 프로그램은 필요하지 않다. 결과 HWPX를 열려면 HWPX를 지원하는 앱이 필요하다.
 - UI는 한국어다. 문안과 용어의 정본은 [COPY_STYLE_GUIDE.md](docs/COPY_STYLE_GUIDE.md), [UI_VOCABULARY.md](docs/UI_VOCABULARY.md)다.

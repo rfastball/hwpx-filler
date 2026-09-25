@@ -1,6 +1,6 @@
 """식별 요약 휴리스틱 v2 회귀 — 결정 37 · 부록 B-4 의 4장면 정본.
 
-케이스 정본 = ``docs/r-flow-mockups/block6-d1-d2-compare-demo.html`` 부록 4장면(시연
+케이스 정본 = ``https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block6-d1-d2-compare-demo.html`` 부록 4장면(시연
 JS ``iPick`` 라이브 계산). 이 테스트는 그 4장면을 Domain :func:`identity_summary` 로 이식해
 **결과 일치**를 못박는다:
 
@@ -41,7 +41,7 @@ _PUBLIC_API = (
 
 _MOCKUP = (
     Path(__file__).resolve().parents[1]
-    / "docs" / "r-flow-mockups" / "block6-d1-d2-compare-demo.html"
+    / "docs" / "r-flow-mockups" / "https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/r-flow-mockups/block6-d1-d2-compare-demo.html"
 )
 
 
