@@ -43,7 +43,6 @@ PY_GLOBS = (
 JS_GLOBS = ("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/src/**/*.js",
             "frontend/js/*.js")
 JS_EXCLUDE_PREFIXES = ("frontend/src/selftest/",)
-#: 정적 문안의 다른 단일 출처(CLAUDE.md 「단일 출처 목록」).
 HTML_FILES = ("frontend/index.html",)
 
 #: 태그 속성 중 사용자에게 읽히는 것.

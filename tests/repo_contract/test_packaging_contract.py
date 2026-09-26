@@ -708,7 +708,7 @@ def test_packaged_selfcheck_smoke_runs_on_the_current_snapshot_contract(
     """포터블 selfcheck 의 ViewModel 스모크는 **순수 레인에서** 돈다(U6-B #976).
 
     이 스모크는 `packaging/` 에 살아서 어떤 게이트도 보지 않았다 — Ruff·pytest 는 `src
-    tests scripts` 만 본다(CLAUDE.md). U6-B 가 편집기 스냅샷의 ``library`` 존을 퇴역시켰을
+    tests scripts` 만 본다(CONTRIBUTING.md#development). U6-B 가 편집기 스냅샷의 ``library`` 존을 퇴역시켰을
     때 그 사실을 아무도 못 봤고, 결과는 창 없는 exe(`console=False`)의 **예외 대화상자**였다:
     `KeyError` 하나가 29분 침묵이 되어 CI 잡 상한에 취소됐다(실측).
 

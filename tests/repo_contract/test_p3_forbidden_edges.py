@@ -581,7 +581,7 @@ RETIRED_DOCUMENT_REFERENCE = re.compile(
 
 
 def _active_document_paths() -> list[Path]:
-    paths = {ROOT / "README.md", ROOT / "CLAUDE.md"}
+    paths = set(ROOT.glob("*.md"))
     for root in ("docs", "packaging", "examples"):
         paths.update(
             path

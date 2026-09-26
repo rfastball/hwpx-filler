@@ -17,7 +17,7 @@ def viewmodel_smoke(tmp) -> "tuple[bool, list[str], int]":
     부를 수 있고, 그것이 요점이다: 이 스모크가 읽는 **스냅샷 계약**이 갈리면
     ``tests/repo_contract`` 가 순수 레인에서 먼저 빨강이 된다. 종전에는 이 함수가 `--selfcheck`
     안에만 살아서, U6-B 가 편집기 스냅샷의 ``library`` 존을 퇴역시켰을 때 **아무 게이트도
-    보지 못했다** — Ruff·pytest 는 `packaging/` 을 안 보고(CLAUDE.md), 실제로 그 KeyError 는
+    보지 못했다** — Ruff·pytest 는 `packaging/` 을 안 보고(CONTRIBUTING.md#development), 실제로 그 KeyError 는
     창 없는 exe 의 예외 대화상자로 나타나 CI 잡을 30분 상한까지 매달았다.
 
     목록의 정본은 U6-B 이후 ``tpl`` 채널이고, 그 채널 안의 자리는 **고르기 열 존**

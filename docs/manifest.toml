@@ -152,7 +152,7 @@ id = "product-scope"
 document = "docs/product.md"
 sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "frontend/src/react/*.ts", "frontend/index.html"]
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py"]
-source_sha256 = "606a3764be32e77c77ad0a44b897423ad639838bc6eba45ae9521bfdc144682d"
+source_sha256 = "9fcea2379dc1c9038d779d8f5e2eda2b1825214d550440a5712db487e266a4b7"
 body_sha256 = "263d2957e5c50f06ffc7d1f01c09f7df52d8c0186b718220a738c53575e60c36"
 
 [[topic]]
@@ -168,7 +168,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
-source_sha256 = "b40433baeab09d66133cdc225f49ed9b8fccbf1a81d2e59474daa12558b4c48b"
+source_sha256 = "00edce42c5197346c80ae92c1455ae21f34d837b7afcbec2fc5c0bb0f23954c2"
 body_sha256 = "a0d24edc34f7879ca6d01d87e8cdbd43afe75ed4e99cf95edae21de404b9d9a4"
 
 [[topic]]
@@ -240,7 +240,7 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.py"]
 tests = ["tests/repo_contract/test_ui_copy_census.py"]
-source_sha256 = "c7f6e68dd24a13e566f24e4fc4a5ee4c0fbde6017855fd7e8cb5dc2c2c7b8c31"
+source_sha256 = "5bf408ceece008eb42fe963c870ba32b8890a9e67d071482084ea4ab73d39d66"
 body_sha256 = "d65f5ecec1affc142cc9f48ac9b98dddb11e7394ceaf8e1368dcadb2191882ae"
 
 [[topic]]
@@ -256,7 +256,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "106dfc6e958622dc3ea4e7ac0073a3f8666537b7771f42c35271eed601c4e3f2"
+source_sha256 = "e3cc6042f233dc74568e96e0f8ec579f84efff639d381d776aa6f80d78160168"
 body_sha256 = "7e21fc0822b846326bce7540b84fc00334133864fdf0c3c0ae0d9754c5324a0f"
 
 [[topic]]

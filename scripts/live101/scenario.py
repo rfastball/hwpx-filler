@@ -1647,7 +1647,7 @@ def _pick_option(s: "Surface", selector: str, *, what: str) -> None:
 
     U4 14~17 로 끝난 슬롯은 접힌 채 선다(`<details>`). 닫힌 `<details>` 안의 요소는 화면에
     없지만 `el.click()` 은 **그래도 통과한다** — 그래서 대본이 「눈으로 본 것과 다른 결론」을
-    내는 자리가 생긴다(CLAUDE.md 가 selftest 클릭에 대해 경고하는 바로 그 결함류). 펼치는
+    내는 자리가 생긴다. 펼치는
     걸음을 명시로 두어, 사람이 밟는 경로와 대본이 밟는 경로를 같게 만든다.
     """
     s.js(
