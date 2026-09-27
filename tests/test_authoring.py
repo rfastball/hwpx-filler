@@ -2447,3 +2447,179 @@ def test_native_option_paste_carries_neighbour_bookmarks_without_renaming_them()
     assert detail["diagnostics"] == []
     assert [node.get("name") for node in etree.fromstring(pasted.entries[ENTRY]).iter(
         f"{{{HP}}}fieldBegin")].count("독립") == 1
+
+
+# ------------------------------------------- rhwp 왕복 사전검사: 범주별 수용/거절 쌍
+HH = "http://www.hancom.co.kr/hwpml/2011/head"
+HC = "http://www.hancom.co.kr/hwpml/2011/core"
+OPF = "http://www.idpf.org/2007/opf/"
+
+
+def _rt_pkg(**parts: str) -> HwpxPackage:
+    """이름 인자 section/header/content 로 최소 HWPX 패키지를 만든다."""
+    pkg = _pkg(parts.get("section", '<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p>'))
+    if "header" in parts:
+        pkg.entries["Contents/header.xml"] = (
+            f'<hh:head xmlns:hh="{HH}" xmlns:hc="{HC}" xmlns:hp="{HP}">{parts["header"]}'
+            "</hh:head>").encode("utf-8")
+    if "content" in parts:
+        pkg.entries["Contents/content.hpf"] = (
+            f'<opf:package xmlns:opf="{OPF}"><opf:manifest>{parts["content"]}'
+            "</opf:manifest></opf:package>").encode("utf-8")
+    return pkg
+
+
+def _rt_verdict(original: HwpxPackage, exported: HwpxPackage) -> list[tuple[str, str]]:
+    result = compare_rhwp_roundtrip(original.to_bytes(), exported.to_bytes())
+    assert result["editable"] is (not result["diagnostics"])
+    return [(item["kind"], item.get("entry", "")) for item in result["diagnostics"]]
+
+
+_EMPTY_RUN_SOURCE = (
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run><hp:run charPrIDRef="72"/></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/><hp:t/></hp:run></hp:p>'
+)
+
+
+def test_rhwp_roundtrip_accepts_empty_text_element_placement() -> None:
+    """rhwp 는 빈 run 에 ``<hp:t></hp:t>`` 를 넣고 컨트롤 뒤의 빈 ``hp:t`` 는 쓰지 않는다.
+
+    문자가 0개인 ``hp:t`` 는 run 의 텍스트·컨트롤 순서·charPrIDRef 를 바꾸지 않는다.
+    """
+    exported = (
+        '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+        '<hp:run charPrIDRef="72"><hp:t></hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>'
+    )
+    assert _rt_verdict(_rt_pkg(section=_EMPTY_RUN_SOURCE), _rt_pkg(section=exported)) == []
+
+
+@pytest.mark.parametrize("exported", [
+    # 같은 자리의 빈 run 에 글자가 들어가면 편집이다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+    '<hp:run charPrIDRef="72"><hp:t>x</hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 공백도 문자다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+    '<hp:run charPrIDRef="72"><hp:t> </hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 줄바꿈 같은 인라인 표식을 담은 hp:t 는 비어 있지 않다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+    '<hp:run charPrIDRef="72"><hp:t><hp:lineBreak/></hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 빈 run 의 글자 모양 참조가 바뀌면 편집이다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+    '<hp:run charPrIDRef="73"><hp:t></hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 빈 run 자체가 사라지면 편집이다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 텍스트가 있던 hp:t 를 비우면 편집이다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t></hp:t></hp:run>'
+    '<hp:run charPrIDRef="72"><hp:t></hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:tbl id="9"/></hp:run></hp:p>',
+    # 컨트롤과 텍스트 순서가 바뀌면 편집이다.
+    '<hp:p><hp:run charPrIDRef="3"><hp:t>앞</hp:t></hp:run>'
+    '<hp:run charPrIDRef="72"><hp:t></hp:t></hp:run></hp:p>'
+    '<hp:p><hp:run charPrIDRef="4"><hp:t>뒤</hp:t><hp:tbl id="9"/></hp:run></hp:p>',
+])
+def test_rhwp_roundtrip_empty_text_normalization_keeps_edits_visible(exported: str) -> None:
+    assert _rt_verdict(_rt_pkg(section=_EMPTY_RUN_SOURCE), _rt_pkg(section=exported)) == [
+        ("xml_changed", ENTRY)]
+
+
+def test_rhwp_roundtrip_empty_text_normalization_keeps_attributes_and_tails() -> None:
+    with_attribute = '<hp:p><hp:run charPrIDRef="1"><hp:t charPrIDRef="2"/></hp:run></hp:p>'
+    with_tail = '<hp:p><hp:run charPrIDRef="1"><hp:t/>꼬리</hp:run></hp:p>'
+    exported = '<hp:p><hp:run charPrIDRef="1"></hp:run></hp:p>'
+    for source in (with_attribute, with_tail):
+        assert _rt_verdict(_rt_pkg(section=source), _rt_pkg(section=exported)) == [
+            ("xml_changed", ENTRY)]
+
+
+# rhwp 직렬화기에서 원본 표기를 보존하도록 고친 범주다. 비교기는 이것들을 정규화하지
+# 않으므로, 직렬화기가 다시 표기를 바꾸면 편집이 차단된다(수용은 실 rhwp 왕복이 증명한다).
+_GRADATION = ('<hh:borderFill id="1"><hc:fillBrush><hc:gradation type="LINEAR" angle="0" '
+              'centerX="0" centerY="0" step="255"{} stepCenter="50" alpha="0">'
+              '<hc:color value="#F2F2F2"/><hc:color value="#D8D8D8"/></hc:gradation>'
+              '</hc:fillBrush></hh:borderFill>')
+_CASE_MARGIN = ('<hh:paraPr id="46"><hp:switch><hp:case hp:required-namespace='
+                '"http://www.hancom.co.kr/hwpml/2016/HwpUnitChar"><hh:margin>'
+                '<hc:left value="200" unit="{}"/></hh:margin></hp:case><hp:default><hh:margin>'
+                '<hc:left value="401" unit="HWPUNIT"/></hh:margin></hp:default></hp:switch>'
+                '</hh:paraPr>')
+_STRIKE = '<hh:charPr id="78"><hh:strikeout shape="{}" color="#000000"/></hh:charPr>'
+_MANIFEST = ('<opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>'
+             '<opf:item id="image1" href="BinData/image1.jpg" media-type="{}" isEmbeded="1"/>'
+             '<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>')
+_MANIFEST_REORDERED = (
+    '<opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>'
+    '<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>'
+    '<opf:item id="image1" href="BinData/image1.jpg" media-type="image/jpg" isEmbeded="1"/>')
+_CR = chr(13)
+
+
+@pytest.mark.parametrize(("part", "source", "exported"), [
+    ("header", _GRADATION.format(' colorNum="2"'), _GRADATION.format("")),
+    ("header", _CASE_MARGIN.format("CHAR"), _CASE_MARGIN.format("HWPUNIT")),
+    ("header", _STRIKE.format("3D"), _STRIKE.format("NONE")),
+    ("content", _MANIFEST.format("image/jpg"), _MANIFEST.format("image/jpeg")),
+    ("content", _MANIFEST.format("image/jpg"), _MANIFEST_REORDERED),
+    ("section",
+     '<hp:p><hp:run><hp:pic id="1"><hp:renderingInfo/><hc:img binaryItemIDRef="image1"/>'
+     '<hp:imgRect/><hp:imgDim dimwidth="1" dimheight="1"/></hp:pic></hp:run></hp:p>'
+     .replace("<hp:p>", f'<hp:p xmlns:hc="{HC}">', 1),
+     '<hp:p><hp:run><hp:pic id="1"><hp:renderingInfo/><hp:imgRect/>'
+     '<hp:imgDim dimwidth="1" dimheight="1"/><hc:img binaryItemIDRef="image1"/></hp:pic>'
+     '</hp:run></hp:p>'.replace("<hp:p>", f'<hp:p xmlns:hc="{HC}">', 1)),
+    # 원문 CRLF 는 XML 파서가 LF 로 읽지만 문자 참조 CR 은 CR 로 남는다.
+    ("section",
+     f'<hp:p><hp:run><hp:pic id="1"><hp:shapeComment>그림입니다.{_CR}\n이름</hp:shapeComment>'
+     '</hp:pic></hp:run></hp:p>',
+     '<hp:p><hp:run><hp:pic id="1"><hp:shapeComment>그림입니다.&#13;\n이름</hp:shapeComment>'
+     '</hp:pic></hp:run></hp:p>'),
+    ("section",
+     '<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="s"><hp:parameters '
+     'cnt="0" name=""/><hp:metaTag>{"name":"#hf"}</hp:metaTag></hp:fieldBegin></hp:ctrl>'
+     '</hp:run></hp:p>',
+     '<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="s"><hp:metaTag>'
+     '{"name":"#hf"}</hp:metaTag><hp:parameters cnt="0" name=""/></hp:fieldBegin></hp:ctrl>'
+     '</hp:run></hp:p>'),
+])
+def test_rhwp_roundtrip_blocks_categories_fixed_in_the_serializer(
+        part: str, source: str, exported: str) -> None:
+    entry = {"header": "Contents/header.xml", "content": "Contents/content.hpf",
+             "section": ENTRY}[part]
+    assert _rt_verdict(_rt_pkg(**{part: source}), _rt_pkg(**{part: exported})) == [
+        ("xml_changed", entry)]
+    assert _rt_verdict(_rt_pkg(**{part: source}), _rt_pkg(**{part: source})) == []
+
+
+def _rhwp_style_empty_text(section: bytes) -> bytes:
+    """rhwp 직렬화기의 빈 ``hp:t`` 배치만 흉내 낸다(다른 바이트는 원본 그대로)."""
+    root = etree.fromstring(section)
+    for run in root.iter(f"{{{HP}}}run"):
+        children = list(run)
+        if not children:
+            etree.SubElement(run, f"{{{HP}}}t")
+        elif (len(children) > 1 and children[-1].tag == f"{{{HP}}}t"
+              and not children[-1].text and not len(children[-1])
+              and children[-2].tag != f"{{{HP}}}t"):
+            run.remove(children[-1])
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
+def test_rhwp_roundtrip_real_notice_accepts_empty_text_but_blocks_one_character() -> None:
+    original = HwpxPackage.from_bytes((CORPUS / "bid_notice_limited_under100m.hwpx").read_bytes())
+    exported = HwpxPackage.from_bytes(original.to_bytes())
+    exported.entries[ENTRY] = _rhwp_style_empty_text(original.entries[ENTRY])
+    assert exported.entries[ENTRY] != original.entries[ENTRY]
+    assert _rt_verdict(original, exported) == []
+
+    edited = HwpxPackage.from_bytes(exported.to_bytes())
+    root = etree.fromstring(edited.entries[ENTRY])
+    text = next(t for t in root.iter(f"{{{HP}}}t") if t.text and t.text.strip())
+    text.text = "가" + text.text
+    edited.entries[ENTRY] = etree.tostring(root, xml_declaration=True, encoding="UTF-8",
+                                           standalone=True)
+    assert _rt_verdict(original, edited) == [("xml_changed", ENTRY)]

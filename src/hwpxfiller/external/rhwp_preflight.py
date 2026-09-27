@@ -8,10 +8,32 @@ import lxml.etree as etree  # pyright: ignore[reportMissingImports]
 
 from hwpxcore.package import HwpxPackage
 
+_HP_T = "{http://www.hancom.co.kr/hwpml/2011/paragraph}t"
+
+
+def _drop_empty_text_elements(root: etree._Element) -> None:
+    """Remove ``hp:t`` elements that hold no characters at all.
+
+    rhwp writes ``<hp:t></hp:t>`` into every run that has no content (its run
+    splitter does this on purpose so the run survives a re-import) and never
+    writes the trailing empty ``hp:t`` Hancom leaves after a control such as a
+    table. An ``hp:t`` with no attributes, no children, no text and no tail
+    contributes zero characters, so removing it cannot change a run's text,
+    its control order or its ``charPrIDRef``. Any ``hp:t`` carrying text,
+    whitespace, inline markers or attributes is kept and still compared.
+    """
+    for element in root.findall(f".//{_HP_T}"):  # descendants only: a parent always exists
+        if element.attrib or len(element) or element.text or element.tail:
+            continue
+        parent = element.getparent()
+        assert parent is not None
+        parent.remove(element)
+
 
 def _canonical_xml(data: bytes) -> bytes:
     parser = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
     root = etree.fromstring(data, parser)
+    _drop_empty_text_elements(root)
     # rhwp emits these false defaults on BOOKMARK fields even when the source
     # omits them. The observed values do not alter bookmark identity or content.
     for element in root.iter():

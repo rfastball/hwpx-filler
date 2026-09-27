@@ -992,7 +992,7 @@ index 7f52f3ec3..464e96acf 100644
          tab_extended,
          title_marks,
 diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
-index 853c5a8c6..9e1e2db7f 100644
+index 853c5a8c6..1d4d50850 100644
 --- a/src/document_core/queries/field_query.rs
 +++ b/src/document_core/queries/field_query.rs
 @@ -1504,6 +1504,8 @@ fn collect_fields_from_paragraph(
@@ -1013,6 +1013,15 @@ index 853c5a8c6..9e1e2db7f 100644
          raw_type: None,
          ctrl_data_name: if name.is_empty() {
              None
+@@ -2474,6 +2478,8 @@ mod tests {
+             field_id: ctrl_id,
+             ctrl_id,
+             instance_id: None,
++            hwpx_extra_attributes: Vec::new(),
++            hwpx_meta_tags: Vec::new(),
+             raw_type: None,
+             ctrl_data_name: None,
+             memo_index: 0,
 diff --git a/src/model/control.rs b/src/model/control.rs
 index 6b4954217..a5874cf73 100644
 --- a/src/model/control.rs
@@ -1028,6 +1037,21 @@ index 6b4954217..a5874cf73 100644
      /// CTRL_DATA에서 읽은 필드 이름 (누름틀 고치기에서 설정)
      pub ctrl_data_name: Option<String>,
      /// 메모 인덱스 (hwplib: memoIndex)
+diff --git a/src/model/image.rs b/src/model/image.rs
+index fc6f5d840..7c5203945 100644
+--- a/src/model/image.rs
++++ b/src/model/image.rs
+@@ -54,6 +54,10 @@ pub struct Picture {
+     /// HWPX `<hp:pic lock="...">` 값 — 개체 잠금(보호) 여부. 파서가 읽지 않고
+     /// 직렬화기가 항상 "0"을 방출해 lock="1"로 저장된 그림이 왕복 시 잠금 해제됐다.
+     pub lock: bool,
++    /// HWPX 원본이 `<hc:img>` 를 `imgRect`·`imgClip`·`inMargin`·`imgDim` 보다 앞(한컴
++    /// 일부 버전: `renderingInfo` 직후)에 적었는지. 직렬화기가 같은 자리로 되돌려
++    /// 무편집 저장이 그림 요소의 자식 순서를 바꾸지 않게 한다.
++    pub hwpx_img_before_layout: bool,
+ }
+ 
+ impl Picture {
 diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
 index 7bfcef5cb..7f0ca0bf5 100644
 --- a/src/model/paragraph.rs
@@ -1052,19 +1076,55 @@ index 7bfcef5cb..7f0ca0bf5 100644
              tab_extended: Vec::new(),
              title_marks: new_title_marks,
 diff --git a/src/model/style.rs b/src/model/style.rs
-index b9e652c5e..607e3db37 100644
+index b9e652c5e..8a7e8a60f 100644
 --- a/src/model/style.rs
 +++ b/src/model/style.rs
-@@ -362,6 +362,9 @@ pub struct ParaShape {
+@@ -162,6 +162,10 @@ pub struct CharShape {
+     pub kerning: bool,
+     /// 글꼴에 어울리는 빈칸 사용 여부 (bit 25)
+     pub use_font_space: bool,
++    /// HWPX `<hh:strikeout shape>` 의 비렌더 placeholder 원문(예: 한컴의 `"3D"`).
++    /// 파서는 이를 취소선 없음으로 해석하지만(`is_real_strike_shape`), 원문을 `NONE` 으로
++    /// 되쓰면 무편집 저장이 문서를 바꾼다. 취소선이 꺼진 상태에서만 이 원문을 되돌린다.
++    pub hwpx_strike_shape_raw: Option<String>,
+ }
+ 
+ /// `relative_sizes` 만 Rust 파생 기본값(0)이 아니라 **스펙 기본값 100** 이다. 나머지 필드는
+@@ -251,6 +255,7 @@ impl Default for CharShape {
+             strike_shape: 0,
+             kerning: false,
+             use_font_space: false,
++            hwpx_strike_shape_raw: None,
+         }
+     }
+ }
+@@ -362,6 +367,15 @@ pub struct ParaShape {
      /// `case` 에 절반값을 넣으면 한글이 보는 여백이 절반이 된다(쪽수 증가). 파서가 이 표기를
      /// 남기고 HWPX 직렬화기가 같은 표기로 되돌려 원본 조판을 지킨다.
      pub hwpx_plain_para_margin: bool,
 +    /// Exact source hp:switch for conditional heading. The generic heading model
 +    /// cannot express its case/default branches, so HWPX serialization reuses it.
 +    pub hwpx_heading_switch_xml: Option<String>,
++    /// HWPX `hp:case`(HwpUnitChar) 여백 자식(intent/left/right/prev/next 순서)의 원본
++    /// `(value, unit, 적재 당시 IR 값)`. 한컴은 case 에 `unit="CHAR"`(글자 단위)를 쓰기도
++    /// 하지만 IR 은 단위를 모델링하지 않아, 종전에는 같은 수치를 `unit="HWPUNIT"` 으로
++    /// 되써 한글이 보는 여백이 바뀌었다. HWPUNIT 이 아닌 단위만 보존하며, 직렬화기는 IR
++    /// 값이 적재 당시 그대로일 때만 원본 표기를 되돌린다(편집된 값은 파생값으로 방출).
++    pub hwpx_case_margin_raw: [Option<(i32, String, i32)>; 5],
      /// [#1986] HWPX breakSetting@breakLatinWord 원문 보존
      /// (BREAK_WORD/KEEP_WORD/HYPHENATION). 파서 미수집 시 None → 직렬화 기본값
      /// KEEP_WORD. 값이 3가지라 attr1 비트 인코딩 대신 원문 보존으로 무손실 방출.
+@@ -757,6 +771,10 @@ pub struct GradientFill {
+     pub colors: Vec<ColorRef>,
+     /// 색상 위치 목록
+     pub positions: Vec<i32>,
++    /// HWPX `<hc:gradation colorNum>` 이 원본에 있었는지. 한컴 산출물은 색상 수를
++    /// 명시하지만 다른 생성기는 생략하므로, 원본 표기를 그대로 되돌리기 위해 보존한다.
++    /// 방출 값은 항상 실제 `colors` 개수에서 파생한다(편집 후에도 불일치하지 않는다).
++    pub hwpx_has_color_num: bool,
+ }
+ 
+ /// 이미지 채우기
 diff --git a/src/parser/control.rs b/src/parser/control.rs
 index a420b5fcc..9819e5b19 100644
 --- a/src/parser/control.rs
@@ -1079,22 +1139,64 @@ index a420b5fcc..9819e5b19 100644
          // `tags::OWPML_EXTRA_FIELD_TYPES` 로 ctrl_id 에서 이름을 되찾는다.
          raw_type: None,
 diff --git a/src/parser/doc_info.rs b/src/parser/doc_info.rs
-index 4115a2805..9dc4a27a8 100644
+index 4115a2805..c295aec45 100644
 --- a/src/parser/doc_info.rs
 +++ b/src/parser/doc_info.rs
-@@ -820,6 +820,7 @@ fn parse_para_shape(data: &[u8]) -> Result<ParaShape, DocInfoError> {
+@@ -458,6 +458,7 @@ pub(crate) fn parse_fill(r: &mut ByteReader) -> Fill {
+             step_center: 0,
+             colors,
+             positions,
++            hwpx_has_color_num: false,
+         });
+     }
+ 
+@@ -668,6 +669,7 @@ fn parse_char_shape(data: &[u8]) -> Result<CharShape, DocInfoError> {
+         strike_shape,
+         kerning,
+         use_font_space,
++        hwpx_strike_shape_raw: None,
+     })
+ }
+ 
+@@ -820,6 +822,8 @@ fn parse_para_shape(data: &[u8]) -> Result<ParaShape, DocInfoError> {
          break_latin_word: None,
          // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
          hwpx_plain_para_margin: false,
 +        hwpx_heading_switch_xml: None,
++        hwpx_case_margin_raw: Default::default(),
      })
  }
  
+diff --git a/src/parser/hwp3/drawing.rs b/src/parser/hwp3/drawing.rs
+index 8be134589..b43cf5467 100644
+--- a/src/parser/hwp3/drawing.rs
++++ b/src/parser/hwp3/drawing.rs
+@@ -1006,6 +1006,7 @@ fn map_to_shape_object(
+                 step_center: 0,
+                 colors: vec![g.start_color, g.end_color],
+                 positions: vec![],
++                hwpx_has_color_num: false,
+             };
+             (crate::model::style::FillType::Gradient, Some(grad))
+         } else {
 diff --git a/src/parser/hwpx/header.rs b/src/parser/hwpx/header.rs
-index 8c26e1eb1..0c7e00127 100644
+index 8c26e1eb1..8bf2b4734 100644
 --- a/src/parser/hwpx/header.rs
 +++ b/src/parser/hwpx/header.rs
-@@ -930,10 +930,17 @@ fn parse_para_shape(
+@@ -770,6 +770,12 @@ fn parse_char_shape(
+                                         // 값은 fail-closed로 no-strike 처리.
+                                         // is_real_strike_shape() 독스트링 참고.
+                                         cs.strikethrough = is_real_strike_shape(&val);
++                                        cs.hwpx_strike_shape_raw =
++                                            if !cs.strikethrough && val != "NONE" {
++                                                Some(val.clone())
++                                            } else {
++                                                None
++                                            };
+                                         cs.strike_shape = match val.as_str() {
+                                             "SOLID" => 0,
+                                             "DASH" => 1,
+@@ -930,10 +936,18 @@ fn parse_para_shape(
                              parse_para_shape_margin_children(reader, &mut ps)?;
                          }
                          ParaShapeChildKind::Switch => {
@@ -1103,7 +1205,8 @@ index 8c26e1eb1..0c7e00127 100644
                              // HwpUnitChar case를 우선 적용, 없으면 default 사용
 -                            parse_para_shape_switch(reader, &mut ps)?;
 +                            let raw = parse_para_shape_switch(reader, &mut ps, ce)?;
-+                            if raw.as_bytes()
++                            if raw
++                                .as_bytes()
 +                                .windows(b"heading".len())
 +                                .any(|chunk| chunk == b"heading")
 +                            {
@@ -1114,7 +1217,7 @@ index 8c26e1eb1..0c7e00127 100644
                          }
                          ParaShapeChildKind::Other => {}
                      }
-@@ -1228,11 +1235,16 @@ fn parse_para_shape_margin_children(
+@@ -1228,11 +1242,17 @@ fn parse_para_shape_margin_children(
  fn parse_para_shape_switch(
      reader: &mut Reader<&[u8]>,
      ps: &mut ParaShape,
@@ -1123,7 +1226,8 @@ index 8c26e1eb1..0c7e00127 100644
 +) -> Result<String, HwpxError> {
      let mut buf = Vec::new();
 +    let mut raw_writer = quick_xml::Writer::new(Vec::new());
-+    raw_writer.write_event(Event::Start(switch_start.to_owned()))
++    raw_writer
++        .write_event(Event::Start(switch_start.to_owned()))
 +        .map_err(|err| HwpxError::XmlError(format!("switch capture: {err}")))?;
      let mut in_hwpunitchar_case = false;
      let mut in_default = false;
@@ -1132,15 +1236,20 @@ index 8c26e1eb1..0c7e00127 100644
      // default 값을 임시 저장 (case가 없을 때 폴백)
      let mut def_margin_left: Option<i32> = None;
      let mut def_margin_right: Option<i32> = None;
-@@ -1250,7 +1262,14 @@ fn parse_para_shape_switch(
+@@ -1248,9 +1268,19 @@ fn parse_para_shape_switch(
+     let mut case_prev: Option<i32> = None;
+     let mut case_next: Option<i32> = None;
      let mut case_line_spacing: Option<i32> = None;
++    // case 여백 자식의 HWPUNIT 이 아닌 원본 (value, unit) — intent/left/right/prev/next 순.
++    let mut case_margin_units: [Option<(i32, String)>; 5] = Default::default();
  
      loop {
 -        match reader.read_event_into(&mut buf) {
 +        let event = reader.read_event_into(&mut buf);
 +        if let Ok(ref item) = event {
 +            if !matches!(item, Event::Eof) {
-+                raw_writer.write_event(item.to_owned())
++                raw_writer
++                    .write_event(item.to_owned())
 +                    .map_err(|err| HwpxError::XmlError(format!("switch capture: {err}")))?;
 +            }
 +        }
@@ -1148,7 +1257,7 @@ index 8c26e1eb1..0c7e00127 100644
              Ok(Event::Start(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
-@@ -1276,6 +1295,14 @@ fn parse_para_shape_switch(
+@@ -1276,9 +1306,25 @@ fn parse_para_shape_switch(
                  let local = local_name(cname.as_ref());
                  if in_hwpunitchar_case || in_default {
                      match local {
@@ -1163,8 +1272,54 @@ index 8c26e1eb1..0c7e00127 100644
                          b"margin" | b"intent" | b"left" | b"right" | b"prev" | b"next" => {
                              // margin 하위 요소들: <left value="..." />, <prev value="..." /> 등
                              let tag_name = local;
-@@ -1446,7 +1473,8 @@ fn parse_para_shape_switch(
++                            let case_unit = if in_hwpunitchar_case {
++                                ce.attributes()
++                                    .flatten()
++                                    .find(|attr| attr.key.as_ref().as_bytes() == b"unit")
++                                    .map(|attr| attr_str(&attr))
++                            } else {
++                                None
++                            };
+                             for attr in ce.attributes().flatten() {
+                                 if attr.key.as_ref().as_bytes() == b"value" {
+                                     let val = parse_i32(&attr);
+@@ -1314,6 +1360,20 @@ fn parse_para_shape_switch(
+                                             }
+                                             _ => {}
+                                         }
++                                        let slot = match tag_name {
++                                            b"intent" => Some(0),
++                                            b"left" => Some(1),
++                                            b"right" => Some(2),
++                                            b"prev" => Some(3),
++                                            b"next" => Some(4),
++                                            _ => None,
++                                        };
++                                        if let (Some(slot), Some(unit)) = (slot, case_unit.as_ref())
++                                        {
++                                            if unit != "HWPUNIT" {
++                                                case_margin_units[slot] = Some((val, unit.clone()));
++                                            }
++                                        }
+                                         found_case = true;
+                                     } else if in_default {
+                                         match tag_name {
+@@ -1444,9 +1504,22 @@ fn parse_para_shape_switch(
+         if let Some(v) = ls_exact {
+             ps.line_spacing = v;
          }
++        // 비-HWPUNIT case 표기는 최종 IR 값과 함께 보존한다. 직렬화기는 IR 이 그대로일 때만
++        // 원본 (value, unit) 을 되돌린다.
++        let ir_values = [
++            ps.indent,
++            ps.margin_left,
++            ps.margin_right,
++            ps.spacing_before,
++            ps.spacing_after,
++        ];
++        for (slot, raw) in case_margin_units.into_iter().enumerate() {
++            ps.hwpx_case_margin_raw[slot] = raw.map(|(value, unit)| (value, unit, ir_values[slot]));
++        }
      }
  
 -    Ok(())
@@ -1173,8 +1328,16 @@ index 8c26e1eb1..0c7e00127 100644
  }
  
  /// `<switch>` 의 `case`(HwpUnitChar, 1× 스케일) 와 `default`(IR 과 같은 2× 스케일) 가
+@@ -1665,6 +1738,7 @@ fn parse_border_fill(
+                                     b"centerY" => grad.center_y = parse_i16(&attr),
+                                     b"blur" | b"step" => grad.blur = parse_i16(&attr),
+                                     b"stepCenter" => grad.step_center = parse_u8(&attr),
++                                    b"colorNum" => grad.hwpx_has_color_num = true,
+                                     b"alpha" => {
+                                         let val = attr_str(&attr);
+                                         if let Ok(f) = val.parse::<f64>() {
 diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
-index 0b7f15694..feb541582 100644
+index 0b7f15694..befa01b57 100644
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
 @@ -1032,6 +1032,7 @@ fn parse_paragraph_body(
@@ -1185,7 +1348,53 @@ index 0b7f15694..feb541582 100644
  
      Ok((para, sec_def))
  }
-@@ -5242,7 +5243,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
+@@ -2869,6 +2870,9 @@ fn parse_picture(
+     // 이미지 속성 읽기
+     let mut has_pos = false; // <pos> 파싱 여부 — <offset>이 덮어쓰지 않도록 방지
+     let mut caption: Option<crate::model::shape::Caption> = None;
++    // hc:img 가 imgRect/imgClip/inMargin/imgDim 보다 먼저 나왔는지 (원본 자식 순서 보존)
++    let mut img_layout_seen = false;
++    let mut img_before_layout = false;
+     let mut buf = Vec::new();
+     loop {
+         let event = reader.read_event_into(&mut buf);
+@@ -2876,6 +2880,7 @@ fn parse_picture(
+         let self_closing = matches!(&event, Ok(Event::Empty(_)));
+         match event {
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {
++                img_layout_seen = true;
+                 parse_picture_img_rect(reader, &mut border_x, &mut border_y)?;
+             }
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
+@@ -2891,6 +2896,11 @@ fn parse_picture(
+             Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                match local {
++                    b"imgRect" | b"imgClip" | b"inMargin" | b"imgDim" => img_layout_seen = true,
++                    b"img" | b"image" if !img_layout_seen => img_before_layout = true,
++                    _ => {}
++                }
+                 match local {
+                     b"sz" => {
+                         // 최종 표시 크기 (최우선)
+@@ -3186,6 +3196,7 @@ fn parse_picture(
+     pic.img_dim = img_dim;
+     pic.reverse = reverse;
+     pic.lock = lock;
++    pic.hwpx_img_before_layout = img_before_layout;
+ 
+     Ok(Control::Picture(Box::new(pic)))
+ }
+@@ -4084,6 +4095,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
+                                 b"centerY" => grad.center_y = parse_i16(&attr),
+                                 b"blur" | b"step" => grad.blur = parse_i16(&attr),
+                                 b"stepCenter" => grad.step_center = parse_u8(&attr),
++                                b"colorNum" => grad.hwpx_has_color_num = true,
+                                 b"alpha" => {
+                                     let val = attr_str(&attr);
+                                     if let Ok(f) = val.parse::<f64>() {
+@@ -5242,7 +5254,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
                      f.properties |= 1 << 15;
                  }
              }
@@ -1197,7 +1406,7 @@ index 0b7f15694..feb541582 100644
          }
      }
      // field_id 는 필드별 고유 식별자여야 한다(모델 계약 "문서 내 고유 ID").
-@@ -5781,6 +5785,8 @@ fn parse_ctrl_field_begin(
+@@ -5781,6 +5796,8 @@ fn parse_ctrl_field_begin(
                  let local = local_name(cname.as_ref());
                  if local == b"parameters" {
                      parse_field_parameters(ce, reader, &mut f)?;
@@ -1206,7 +1415,7 @@ index 0b7f15694..feb541582 100644
                  } else if local == b"subList" && f.field_type == FieldType::Memo {
                      for attr in ce.attributes().flatten() {
                          if attr.key.as_ref().as_bytes() == b"textDirection" {
-@@ -5796,6 +5802,9 @@ fn parse_ctrl_field_begin(
+@@ -5796,6 +5813,9 @@ fn parse_ctrl_field_begin(
                      skip_element(reader, &tag)?;
                  }
              }
@@ -1216,7 +1425,7 @@ index 0b7f15694..feb541582 100644
              Ok(Event::End(ref ee)) => {
                  let eename = ee.name();
                  if local_name(eename.as_ref()) == b"fieldBegin" {
-@@ -5811,6 +5820,30 @@ fn parse_ctrl_field_begin(
+@@ -5811,6 +5831,30 @@ fn parse_ctrl_field_begin(
      Ok(Control::Field(f))
  }
  
@@ -1247,7 +1456,7 @@ index 0b7f15694..feb541582 100644
  /// `<parameters>` 내부에서 Command 문자열 파라미터를 추출한다.
  /// XML 텍스트/속성값 이스케이프 (#1391 parameters verbatim 재조립용).
  fn escape_xml_text(s: &str) -> String {
-@@ -8925,7 +8958,9 @@ mod tests {
+@@ -8925,7 +8969,9 @@ mod tests {
    <hp:p paraPrIDRef="0" styleIDRef="0">
      <hp:run charPrIDRef="0">
        <hp:ctrl>
@@ -1258,7 +1467,7 @@ index 0b7f15694..feb541582 100644
        </hp:ctrl>
        <hp:t>ABC</hp:t>
        <hp:ctrl>
-@@ -8943,6 +8978,16 @@ mod tests {
+@@ -8943,6 +8989,16 @@ mod tests {
          assert_eq!(para.char_count, 20);
          assert_eq!(para.controls.len(), 1);
          assert_eq!(para.field_ranges.len(), 1);
@@ -1275,6 +1484,351 @@ index 0b7f15694..feb541582 100644
  
          let range = &para.field_ranges[0];
          assert_eq!(range.start_char_idx, 0);
+diff --git a/src/serializer/doc_info/tests.rs b/src/serializer/doc_info/tests.rs
+index 67d63b4db..2d3e1a64d 100644
+--- a/src/serializer/doc_info/tests.rs
++++ b/src/serializer/doc_info/tests.rs
+@@ -164,6 +164,7 @@ fn test_serialize_char_shape_roundtrip() {
+         strike_shape: 0,
+         kerning: false,
+         use_font_space: false,
++        hwpx_strike_shape_raw: None,
+     };
+ 
+     let data = serialize_char_shape(&cs);
+@@ -288,6 +289,8 @@ fn test_serialize_para_shape_roundtrip() {
+         head_type: crate::model::style::HeadType::None,
+         para_level: 0,
+         break_latin_word: None,
++        hwpx_heading_switch_xml: None,
++        hwpx_case_margin_raw: Default::default(),
+         hwpx_plain_para_margin: false,
+     };
+ 
+@@ -655,6 +658,7 @@ fn test_serialize_doc_info_roundtrip() {
+         strike_shape: 0,
+         kerning: false,
+         use_font_space: false,
++        hwpx_strike_shape_raw: None,
+     });
+     doc_info.para_shapes.push(ParaShape {
+         raw_data: None,
+@@ -677,6 +681,8 @@ fn test_serialize_doc_info_roundtrip() {
+         head_type: crate::model::style::HeadType::None,
+         para_level: 0,
+         break_latin_word: None,
++        hwpx_heading_switch_xml: None,
++        hwpx_case_margin_raw: Default::default(),
+         hwpx_plain_para_margin: false,
+     });
+     doc_info.styles.push(Style {
+diff --git a/src/serializer/hwpx/char_shapes.rs b/src/serializer/hwpx/char_shapes.rs
+index 4d423adbb..96b08b817 100644
+--- a/src/serializer/hwpx/char_shapes.rs
++++ b/src/serializer/hwpx/char_shapes.rs
+@@ -166,11 +166,17 @@ pub fn write_char_pr<W: Write>(
+             ("color", &color_hex(cs.underline_color)),
+         ],
+     )?;
++    // 취소선이 꺼진 charPr 는 원본 placeholder 표기(예: "3D")를 되돌린다 — 파서가
++    // 이를 취소선 없음으로 읽으므로 의미는 같고, 무편집 저장이 문서를 바꾸지 않는다.
++    let strike_shape = match (&cs.hwpx_strike_shape_raw, cs.strikethrough) {
++        (Some(raw), false) => raw.as_str(),
++        _ => strike_shape_str(cs.strikethrough, cs.strike_shape),
++    };
+     empty_tag(
+         w,
+         "hh:strikeout",
+         &[
+-            ("shape", strike_shape_str(cs.strikethrough, cs.strike_shape)),
++            ("shape", strike_shape),
+             ("color", &color_hex(cs.strike_color)),
+         ],
+     )?;
+diff --git a/src/serializer/hwpx/content.rs b/src/serializer/hwpx/content.rs
+index 6a05210e2..3e56fc8ce 100644
+--- a/src/serializer/hwpx/content.rs
++++ b/src/serializer/hwpx/content.rs
+@@ -57,6 +57,36 @@ fn extract_metadata_block(original: &str) -> Option<&str> {
+     Some(&original[open..close])
+ }
+ 
++/// 원본 content.hpf 의 `<opf:manifest> … </opf:manifest>` 블록 원문과 그 항목들의
++/// `(id, href)` 목록. 모든 항목이 `<opf:item … />` 자기닫힘 태그이고 id·href 가 있을
++/// 때만 인식하며, 그 외 형태는 `None` (호출자는 재생성 경로를 쓴다).
++fn extract_manifest_block(original: &str) -> Option<(&str, Vec<(String, String)>)> {
++    let open = original.find("<opf:manifest>")?;
++    let close = original[open..].find("</opf:manifest>")? + open + "</opf:manifest>".len();
++    let block = &original[open..close];
++    let mut inner = &block["<opf:manifest>".len()..block.len() - "</opf:manifest>".len()];
++    let attr = |tag: &str, name: &str| -> Option<String> {
++        let key = format!(" {name}=\"");
++        let start = tag.find(&key)? + key.len();
++        let end = tag[start..].find('"')? + start;
++        Some(tag[start..end].to_string())
++    };
++    let mut items = Vec::new();
++    while !inner.is_empty() {
++        if !inner.starts_with("<opf:item ") {
++            return None;
++        }
++        let end = inner.find("/>")? + 2;
++        let tag = &inner[..end];
++        if tag[..tag.len() - 2].contains('>') {
++            return None;
++        }
++        items.push((attr(tag, "id")?, attr(tag, "href")?));
++        inner = &inner[end..];
++    }
++    Some((block, items))
++}
++
+ /// content.hpf XML 생성
+ pub fn write_content_hpf(
+     section_hrefs: &[String],
+@@ -142,78 +172,117 @@ pub fn write_content_hpf(
+     }
+ 
+     // <opf:manifest>
+-    start_tag_attrs(&mut w, "opf:manifest", &[])?;
+-
+-    empty_tag(
+-        &mut w,
+-        "opf:item",
+-        &[
+-            ("id", "header"),
+-            ("href", "Contents/header.xml"),
+-            ("media-type", "application/xml"),
+-        ],
+-    )?;
+-
++    // 재생성할 매니페스트 항목의 (id, href). 원본 매니페스트가 정확히 같은 항목 집합을
++    // 선언하면 원본 블록을 그대로 보존한다 — 항목 순서·`media-type` 원문(예: 한컴의
++    // `image/jpg`)·속성 순서를 무편집 저장이 바꾸지 않게 한다. 항목이 하나라도 다르면
++    // (그림 추가·삭제 등) 종전대로 IR 에서 재생성한다.
++    let script_items: Vec<(String, String)> =
++        original_str.map(extract_script_items).unwrap_or_default();
++    let mut expected: Vec<(String, String)> =
++        vec![("header".to_string(), "Contents/header.xml".to_string())];
+     for (i, href) in section_hrefs.iter().enumerate() {
+-        let id = format!("section{}", i);
+-        empty_tag(
+-            &mut w,
+-            "opf:item",
+-            &[
+-                ("id", id.as_str()),
+-                ("href", href.as_str()),
+-                ("media-type", "application/xml"),
+-            ],
+-        )?;
++        expected.push((format!("section{}", i), href.clone()));
+     }
+-
+-    // 바탕쪽(masterpage) 등록 — section XML 의 idRef 와 id 가 일치해야 파서가 바인딩한다.
+     for (id, href) in master_items {
++        expected.push((id.clone(), href.clone()));
++    }
++    expected.push(("settings".to_string(), "settings.xml".to_string()));
++    for (id, tag) in &script_items {
++        let href = tag
++            .split("href=\"")
++            .nth(1)
++            .and_then(|t| t.split('"').next())
++            .unwrap_or("")
++            .to_string();
++        expected.push((id.clone(), href));
++    }
++    for entry in bin_data {
++        expected.push((entry.id.clone(), entry.href.clone()));
++    }
++    expected.sort();
++    let preserved_manifest =
++        original_str
++            .and_then(extract_manifest_block)
++            .and_then(|(block, mut items)| {
++                items.sort();
++                (items == expected).then_some(block)
++            });
++    if let Some(block) = preserved_manifest {
++        w.get_mut()
++            .write_all(block.as_bytes())
++            .map_err(|e| SerializeError::XmlError(format!("manifest splice: {e}")))?;
++    } else {
++        start_tag_attrs(&mut w, "opf:manifest", &[])?;
++
+         empty_tag(
+             &mut w,
+             "opf:item",
+             &[
+-                ("id", id.as_str()),
+-                ("href", href.as_str()),
++                ("id", "header"),
++                ("href", "Contents/header.xml"),
+                 ("media-type", "application/xml"),
+             ],
+         )?;
+-    }
+ 
+-    // settings.xml 등록
+-    empty_tag(
+-        &mut w,
+-        "opf:item",
+-        &[
+-            ("id", "settings"),
+-            ("href", "settings.xml"),
+-            ("media-type", "application/xml"),
+-        ],
+-    )?;
++        for (i, href) in section_hrefs.iter().enumerate() {
++            let id = format!("section{}", i);
++            empty_tag(
++                &mut w,
++                "opf:item",
++                &[
++                    ("id", id.as_str()),
++                    ("href", href.as_str()),
++                    ("media-type", "application/xml"),
++                ],
++            )?;
++        }
+ 
+-    // [#3557] Scripts/* 항목 — 원본 태그 원문 splice(id·media-type 보존).
+-    let script_items: Vec<(String, String)> =
+-        original_str.map(extract_script_items).unwrap_or_default();
+-    for (_, tag) in &script_items {
+-        w.get_mut()
+-            .write_all(tag.as_bytes())
+-            .map_err(|e| SerializeError::XmlError(format!("script item splice: {e}")))?;
+-    }
++        // 바탕쪽(masterpage) 등록 — section XML 의 idRef 와 id 가 일치해야 파서가 바인딩한다.
++        for (id, href) in master_items {
++            empty_tag(
++                &mut w,
++                "opf:item",
++                &[
++                    ("id", id.as_str()),
++                    ("href", href.as_str()),
++                    ("media-type", "application/xml"),
++                ],
++            )?;
++        }
+ 
+-    for entry in bin_data {
++        // settings.xml 등록
+         empty_tag(
+             &mut w,
+             "opf:item",
+             &[
+-                ("id", entry.id.as_str()),
+-                ("href", entry.href.as_str()),
+-                ("media-type", entry.media_type.as_str()),
+-                ("isEmbeded", if entry.is_embedded { "1" } else { "0" }),
++                ("id", "settings"),
++                ("href", "settings.xml"),
++                ("media-type", "application/xml"),
+             ],
+         )?;
+-    }
+ 
+-    end_tag(&mut w, "opf:manifest")?;
++        // [#3557] Scripts/* 항목 — 원본 태그 원문 splice(id·media-type 보존).
++        for (_, tag) in &script_items {
++            w.get_mut()
++                .write_all(tag.as_bytes())
++                .map_err(|e| SerializeError::XmlError(format!("script item splice: {e}")))?;
++        }
++
++        for entry in bin_data {
++            empty_tag(
++                &mut w,
++                "opf:item",
++                &[
++                    ("id", entry.id.as_str()),
++                    ("href", entry.href.as_str()),
++                    ("media-type", entry.media_type.as_str()),
++                    ("isEmbeded", if entry.is_embedded { "1" } else { "0" }),
++                ],
++            )?;
++        }
++
++        end_tag(&mut w, "opf:manifest")?;
++    }
+ 
+     // <opf:spine> — 한컴 원본은 itemref 마다 linear="yes"(OPF 기본값)를 명시한다.
+     start_tag_attrs(&mut w, "opf:spine", &[])?;
+@@ -313,4 +382,72 @@ mod tests {
+             Some("<opf:metadata><opf:title/></opf:metadata>")
+         );
+     }
++
++    #[test]
++    fn manifest_block_is_preserved_when_the_item_set_is_unchanged() {
++        // 한컴 원본의 항목 순서·media-type 원문(image/jpg)을 무편집 저장이 바꾸지 않는다.
++        let manifest = concat!(
++            r#"<opf:manifest><opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>"#,
++            r#"<opf:item id="image1" href="BinData/image1.jpg" media-type="image/jpg" isEmbeded="1"/>"#,
++            r#"<opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>"#,
++            r#"<opf:item id="settings" href="settings.xml" media-type="application/xml"/></opf:manifest>"#
++        );
++        let original = format!(
++            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:metadata><opf:title/></opf:metadata>{manifest}<opf:spine/></opf:package>"#
++        );
++        let image1 = BinDataEntry {
++            id: "image1".into(),
++            href: "BinData/image1.jpg".into(),
++            media_type: "image/jpeg".into(),
++            is_embedded: true,
++        };
++        let write = |bin: &[BinDataEntry]| {
++            String::from_utf8(
++                write_content_hpf(
++                    &["Contents/section0.xml".to_string()],
++                    bin,
++                    &[],
++                    Some(original.as_bytes()),
++                )
++                .unwrap(),
++            )
++            .unwrap()
++        };
++        let out = write(std::slice::from_ref(&image1));
++        assert!(out.contains(manifest), "{out}");
++
++        // 항목 집합이 달라지면(그림 추가) 종전대로 IR 에서 재생성한다.
++        let image2 = BinDataEntry {
++            id: "image2".into(),
++            href: "BinData/image2.png".into(),
++            media_type: "image/png".into(),
++            is_embedded: true,
++        };
++        let out = write(&[image1, image2]);
++        assert!(!out.contains(manifest), "{out}");
++        assert!(
++            out.contains(r#"href="BinData/image2.png" media-type="image/png""#),
++            "{out}"
++        );
++        assert!(
++            out.contains(r#"href="BinData/image1.jpg" media-type="image/jpeg""#),
++            "{out}"
++        );
++    }
++
++    #[test]
++    fn manifest_block_requires_self_closing_items_with_id_and_href() {
++        assert!(
++            extract_manifest_block("<opf:manifest><opf:item id=\"a\"/></opf:manifest>").is_none()
++        );
++        assert!(extract_manifest_block(
++            "<opf:manifest><opf:item id=\"a\" href=\"b\"></opf:item></opf:manifest>"
++        )
++        .is_none());
++        let (_, items) = extract_manifest_block(
++            "<opf:manifest><opf:item id=\"a\" href=\"b\" media-type=\"x\"/></opf:manifest>",
++        )
++        .unwrap();
++        assert_eq!(items, vec![("a".to_string(), "b".to_string())]);
++    }
+ }
 diff --git a/src/serializer/hwpx/context.rs b/src/serializer/hwpx/context.rs
 index 02c4828ca..4ee5ceab6 100644
 --- a/src/serializer/hwpx/context.rs
@@ -1418,10 +1972,10 @@ index f3fd6cf21..0564597ec 100644
  
      #[test]
 diff --git a/src/serializer/hwpx/header.rs b/src/serializer/hwpx/header.rs
-index d0226f0cf..245af9c7a 100644
+index d0226f0cf..04e2fbe77 100644
 --- a/src/serializer/hwpx/header.rs
 +++ b/src/serializer/hwpx/header.rs
-@@ -1026,15 +1026,20 @@ fn write_para_pr<W: Write>(
+@@ -1026,15 +1026,21 @@ fn write_para_pr<W: Write>(
              ("vertical", vertical),
          ],
      )?;
@@ -1435,7 +1989,8 @@ index d0226f0cf..245af9c7a 100644
 -        ],
 -    )?;
 +    if let Some(raw) = &ps.hwpx_heading_switch_xml {
-+        w.get_mut().write_all(raw.as_bytes())
++        w.get_mut()
++            .write_all(raw.as_bytes())
 +            .map_err(|err| SerializeError::XmlError(err.to_string()))?;
 +    } else {
 +        empty_tag(
@@ -1451,14 +2006,67 @@ index d0226f0cf..245af9c7a 100644
      empty_tag(
          w,
          "hh:breakSetting",
-@@ -2059,6 +2064,17 @@ mod tests {
+@@ -1136,12 +1142,29 @@ fn write_para_margin<W: Write>(
+     half: bool,
+ ) -> Result<(), SerializeError> {
+     let v = |x: i32| if half { x / 2 } else { x };
++    // case(HwpUnitChar) 의 비-HWPUNIT 원본 표기(예: unit="CHAR")는 IR 값이 적재 당시
++    // 그대로일 때만 되돌린다. 편집된 값은 종전대로 HWPUNIT 파생값으로 방출한다.
++    let child = |slot: usize, ir: i32| -> (i32, &str) {
++        if half {
++            if let Some((value, unit, loaded)) = &ps.hwpx_case_margin_raw[slot] {
++                if *loaded == ir {
++                    return (*value, unit.as_str());
++                }
++            }
++        }
++        (v(ir), "HWPUNIT")
++    };
+     super::utils::start_tag(w, "hh:margin")?;
+-    write_margin_child(w, "hc:intent", v(ps.indent))?;
+-    write_margin_child(w, "hc:left", v(ps.margin_left))?;
+-    write_margin_child(w, "hc:right", v(ps.margin_right))?;
+-    write_margin_child(w, "hc:prev", v(ps.spacing_before))?;
+-    write_margin_child(w, "hc:next", v(ps.spacing_after))?;
++    let (value, unit) = child(0, ps.indent);
++    write_margin_child(w, "hc:intent", value, unit)?;
++    let (value, unit) = child(1, ps.margin_left);
++    write_margin_child(w, "hc:left", value, unit)?;
++    let (value, unit) = child(2, ps.margin_right);
++    write_margin_child(w, "hc:right", value, unit)?;
++    let (value, unit) = child(3, ps.spacing_before);
++    write_margin_child(w, "hc:prev", value, unit)?;
++    let (value, unit) = child(4, ps.spacing_after);
++    write_margin_child(w, "hc:next", value, unit)?;
+     end_tag(w, "hh:margin")?;
+     Ok(())
+ }
+@@ -1175,12 +1198,9 @@ fn write_margin_child<W: Write>(
+     w: &mut Writer<W>,
+     name: &str,
+     value: i32,
++    unit: &str,
+ ) -> Result<(), SerializeError> {
+-    empty_tag(
+-        w,
+-        name,
+-        &[("value", &value.to_string()), ("unit", "HWPUNIT")],
+-    )
++    empty_tag(w, name, &[("value", &value.to_string()), ("unit", unit)])
+ }
+ 
+ fn alignment_str(a: Alignment) -> &'static str {
+@@ -2059,6 +2079,20 @@ mod tests {
          );
      }
  
 +    #[test]
 +    fn write_para_pr_preserves_conditional_heading_switch() {
 +        let raw = "<hp:switch><hp:case><hh:heading type=\"NONE\" idRef=\"0\" level=\"0\"/></hp:case><hp:default><hh:heading type=\"OUTLINE\" idRef=\"1\" level=\"2\"/></hp:default></hp:switch>";
-+        let ps = ParaShape { hwpx_heading_switch_xml: Some(raw.into()), ..Default::default() };
++        let ps = ParaShape {
++            hwpx_heading_switch_xml: Some(raw.into()),
++            ..Default::default()
++        };
 +        let mut writer = Writer::new(Vec::new());
 +        write_para_pr(&mut writer, 1, &ps).expect("write paraPr");
 +        let xml = String::from_utf8(writer.into_inner()).unwrap();
@@ -1469,32 +2077,267 @@ index d0226f0cf..245af9c7a 100644
      #[test]
      fn write_para_pr_emits_align_and_break_from_preserved_bits() {
          // [Finding 18] align@vertical, breakSetting@{breakNonLatinWord, widowOrphan,
+@@ -2489,4 +2523,124 @@ mod tests {
+         assert_eq!(tab_leader_str(11), "SLIM_THICK_SLIM");
+         assert_eq!(tab_leader_str(8), "DOUBLE_SLIM");
+     }
++
++    fn parse_single_para_pr(case_and_default: &str) -> ParaShape {
++        let xml = format!(
++            r##"<?xml version="1.0" encoding="UTF-8"?>
++<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
++  <hh:refList>
++    <hh:paraProperties itemCnt="1">
++      <hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">{case_and_default}</hh:paraPr>
++    </hh:paraProperties>
++  </hh:refList>
++</hh:head>"##
++        );
++        let (doc_info, _) =
++            crate::parser::hwpx::header::parse_hwpx_header(&xml).expect("parse hh:head");
++        doc_info.para_shapes[0].clone()
++    }
++
++    #[test]
++    fn para_pr_case_margin_keeps_char_unit_until_the_value_is_edited() {
++        // 한컴 원본은 HwpUnitChar case 에 unit="CHAR"(글자 단위) 여백을 쓰기도 한다.
++        // 종전에는 같은 수치를 unit="HWPUNIT" 으로 되써 무편집 저장이 여백을 바꿨다.
++        let switch = concat!(
++            r#"<hp:switch><hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar">"#,
++            r#"<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="200" unit="CHAR"/>"#,
++            r#"<hc:right value="0" unit="HWPUNIT"/><hc:prev value="100" unit="CHAR"/>"#,
++            r#"<hc:next value="0" unit="HWPUNIT"/></hh:margin>"#,
++            r#"<hh:lineSpacing type="PERCENT" value="180" unit="HWPUNIT"/></hp:case>"#,
++            r#"<hp:default><hh:margin><hc:intent value="0" unit="HWPUNIT"/>"#,
++            r#"<hc:left value="401" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/>"#,
++            r#"<hc:prev value="201" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>"#,
++            r#"<hh:lineSpacing type="PERCENT" value="180" unit="HWPUNIT"/></hp:default></hp:switch>"#
++        );
++        let mut ps = parse_single_para_pr(switch);
++        let write = |ps: &ParaShape| {
++            let mut writer = Writer::new(Vec::new());
++            write_para_pr(&mut writer, 0, ps).expect("write paraPr");
++            String::from_utf8(writer.into_inner()).unwrap()
++        };
++        let xml = write(&ps);
++        assert!(
++            xml.contains(r#"<hc:left value="200" unit="CHAR"/>"#),
++            "{xml}"
++        );
++        assert!(
++            xml.contains(r#"<hc:prev value="100" unit="CHAR"/>"#),
++            "{xml}"
++        );
++        assert!(
++            xml.contains(r#"<hc:left value="401" unit="HWPUNIT"/>"#),
++            "{xml}"
++        );
++        assert!(
++            xml.contains(r#"<hc:prev value="201" unit="HWPUNIT"/>"#),
++            "{xml}"
++        );
++
++        ps.margin_left = 1000;
++        let xml = write(&ps);
++        assert!(
++            xml.contains(r#"<hc:left value="500" unit="HWPUNIT"/>"#),
++            "{xml}"
++        );
++        assert!(
++            !xml.contains(r#"<hc:left value="200" unit="CHAR"/>"#),
++            "{xml}"
++        );
++        assert!(
++            xml.contains(r#"<hc:prev value="100" unit="CHAR"/>"#),
++            "{xml}"
++        );
++    }
++
++    #[test]
++    fn char_pr_strikeout_placeholder_shape_roundtrips_while_off() {
++        // 한컴 원본의 placeholder shape="3D" 는 취소선 없음으로 읽히지만, 무편집 저장이
++        // NONE 으로 바꾸지 않도록 원문을 되돌린다. 취소선을 켜면 실제 모양을 쓴다.
++        let mut cs = parse_single_char_pr(r##"<hh:strikeout shape="3D" color="#000000"/>"##);
++        assert!(!cs.strikethrough);
++        let xml = write_single_char_pr(&cs);
++        assert!(
++            xml.contains(r##"<hh:strikeout shape="3D" color="#000000"/>"##),
++            "{xml}"
++        );
++        cs.strikethrough = true;
++        let xml = write_single_char_pr(&cs);
++        assert!(
++            xml.contains(r##"<hh:strikeout shape="SOLID" color="#000000"/>"##),
++            "{xml}"
++        );
++        let none = parse_single_char_pr(r##"<hh:strikeout shape="NONE" color="#000000"/>"##);
++        assert_eq!(none.hwpx_strike_shape_raw, None);
++    }
++
++    #[test]
++    fn gradation_color_num_follows_the_source_presence() {
++        use crate::model::style::{Fill, FillType, GradientFill};
++        let ctx = SerializeContext::default();
++        let mut fill = Fill {
++            fill_type: FillType::Gradient,
++            gradient: Some(GradientFill {
++                gradient_type: 1,
++                colors: vec![0x00F2_F2F2, 0x00D8_D8D8],
++                hwpx_has_color_num: true,
++                ..Default::default()
++            }),
++            ..Default::default()
++        };
++        let write = |fill: &Fill| {
++            let mut writer = Writer::new(Vec::new());
++            super::super::shape::write_fill_brush(&mut writer, fill, &ctx).expect("fillBrush");
++            String::from_utf8(writer.into_inner()).unwrap()
++        };
++        let xml = write(&fill);
++        assert!(
++            xml.contains(r#" step="0" colorNum="2" stepCenter="0""#),
++            "{xml}"
++        );
++        fill.gradient.as_mut().unwrap().hwpx_has_color_num = false;
++        assert!(!write(&fill).contains("colorNum"));
++    }
+ }
+diff --git a/src/serializer/hwpx/picture.rs b/src/serializer/hwpx/picture.rs
+index 564e62e00..de4190cb1 100644
+--- a/src/serializer/hwpx/picture.rs
++++ b/src/serializer/hwpx/picture.rs
+@@ -109,11 +109,17 @@ pub fn write_picture<W: Write>(
+     // [#1501] 그룹 자식 pic 의 transMatrix(render_tx/sx) 보존 — 종전 identity 고정 출력은
+     // 그룹 내 자식을 원점·고유크기로 붕괴시켰다. shape.rs 의 raw_rendering 디코더 공유.
+     super::shape::write_rendering_info(w, &pic.shape_attr)?;
++    // 원본이 hc:img 를 renderingInfo 직후에 적었으면(한컴 일부 버전) 그 자리를 지킨다.
++    if pic.hwpx_img_before_layout {
++        write_img(w, pic, ctx)?; // 3-way 단언 지점
++    }
+     write_img_rect(w, pic)?;
+     write_img_clip(w, pic)?;
+     write_in_margin(w, pic)?;
+     write_img_dim(w, pic)?;
+-    write_img(w, pic, ctx)?; // 3-way 단언 지점
++    if !pic.hwpx_img_before_layout {
++        write_img(w, pic, ctx)?; // 3-way 단언 지점
++    }
+     write_effects(w, pic)?;
+     write_sz(w, &pic.common)?;
+     write_pos(w, &pic.common)?;
+@@ -1051,4 +1057,68 @@ mod tests {
+         assert!(xml.contains(r#"heightRelTo="ABSOLUTE""#), "{xml}");
+         assert!(xml.contains(r#"protect="0""#), "{xml}");
+     }
++
++    #[test]
++    fn img_is_written_where_the_source_placed_it() {
++        let doc = make_doc_with_bin(1, "png");
++        let mut ctx = SerializeContext::collect_from_document(&doc);
++        let mut pic = make_picture(1);
++        let xml = serialize(&pic, &mut ctx);
++        assert!(
++            xml.find("<hc:img").unwrap() > xml.find("<hp:imgDim").unwrap(),
++            "{xml}"
++        );
++
++        pic.hwpx_img_before_layout = true;
++        let xml = serialize(&pic, &mut ctx);
++        let img = xml.find("<hc:img").unwrap();
++        assert!(xml.find("</hp:renderingInfo>").unwrap() < img, "{xml}");
++        assert!(img < xml.find("<hp:imgRect").unwrap(), "{xml}");
++        assert_eq!(xml.matches("<hc:img").count(), 1, "{xml}");
++    }
++
++    #[test]
++    fn parser_records_img_before_layout_children() {
++        let parse = |fragment: &str| {
++            let xml = format!(
++                concat!(
++                    r#"<?xml version="1.0" encoding="UTF-8"?>"#,
++                    r#"<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph""#,
++                    r#" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section""#,
++                    r#" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">"#,
++                    r#"<hp:p id="0" paraPrIDRef="0" styleIDRef="0">"#,
++                    r#"<hp:run charPrIDRef="0"><hp:pic id="1">{}</hp:pic><hp:t/></hp:run></hp:p></hs:sec>"#
++                ),
++                fragment
++            );
++            let section = crate::parser::hwpx::section::parse_hwpx_section(&xml).unwrap();
++            match &section.paragraphs[0].controls[0] {
++                crate::model::control::Control::Picture(p) => p.hwpx_img_before_layout,
++                other => panic!("그림 컨트롤이어야 함: {other:?}"),
++            }
++        };
++        assert!(parse(
++            r#"<hc:img binaryItemIDRef="image1"/><hp:imgRect/><hp:imgDim dimwidth="1" dimheight="1"/>"#
++        ));
++        assert!(!parse(
++            r#"<hp:imgRect/><hp:imgDim dimwidth="1" dimheight="1"/><hc:img binaryItemIDRef="image1"/>"#
++        ));
++    }
++
++    #[test]
++    fn shape_comment_keeps_source_crlf_literal() {
++        // 원문 CRLF 는 XML 파서가 LF 로 읽는다. `&#13;` 로 쓰면 설명이 CRLF 로 바뀐다.
++        let doc = make_doc_with_bin(1, "png");
++        let mut ctx = SerializeContext::collect_from_document(&doc);
++        let mut pic = make_picture(1);
++        pic.common.description = "그림입니다.\r\n이름: a&b<c>".into();
++        let xml = serialize(&pic, &mut ctx);
++        assert!(
++            xml.contains(
++                "<hp:shapeComment>그림입니다.\r\n이름: a&amp;b&lt;c&gt;</hp:shapeComment>"
++            ),
++            "{xml}"
++        );
++        assert!(!xml.contains("&#13;"), "{xml}");
++    }
+ }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..3eb89a037 100644
+index f951d7284..abf78a101 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
-@@ -689,7 +689,7 @@ pub(crate) fn render_hp_p_open(p: &Paragraph, id: u32, style_id_ref: u8) -> Stri
+@@ -689,7 +689,11 @@ pub(crate) fn render_hp_p_open(p: &Paragraph, id: u32, style_id_ref: u8) -> Stri
      };
      format!(
          r#"<hp:p id="{}" paraPrIDRef="{}" styleIDRef="{}" pageBreak="{}" columnBreak="{}" merged="0">"#,
 -        id, p.para_shape_id, style_id_ref, page_break, column_break,
-+        p.hwpx_source_id.unwrap_or(id), p.para_shape_id, style_id_ref, page_break, column_break,
++        p.hwpx_source_id.unwrap_or(id),
++        p.para_shape_id,
++        style_id_ref,
++        page_break,
++        column_break,
      )
  }
  
-@@ -2192,6 +2192,11 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
-             if let Some(memo_children) = super::field::memo_field_children_xml(f) {
+@@ -1156,6 +1160,17 @@ impl RunSplitter {
+     }
+ }
+ 
++/// fieldBegin 의 `<hp:metaTag>` 자식. 한컴 원본(과 제품이 쓰는 슬롯 템플릿)은 metaTag 를
++/// `parameters`·`subList` 뒤, 즉 마지막 자식으로 적는다. 같은 자리로 되써 무편집 저장이
++/// 자식 순서를 바꾸지 않게 한다.
++fn push_field_meta_tags(out: &mut String, f: &crate::model::control::Field) {
++    for meta_tag in &f.hwpx_meta_tags {
++        out.push_str("<hp:metaTag>");
++        out.push_str(&super::field::xml_escape_attr(meta_tag));
++        out.push_str("</hp:metaTag>");
++    }
++}
++
+ /// `<hp:ctrl><hp:fieldEnd beginIDRef=".."/></hp:ctrl>` 방출 공통 경로.
+ fn emit_field_end(out: &mut String, para: &Paragraph, fr: &FieldRange) {
+     if let Some(Control::Field(f)) = para.controls.get(fr.control_idx) {
+@@ -2193,6 +2208,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-+                for meta_tag in &f.hwpx_meta_tags {
-+                    out.push_str("<hp:metaTag>");
-+                    out.push_str(&super::field::xml_escape_attr(meta_tag));
-+                    out.push_str("</hp:metaTag>");
-+                }
                  out.push_str(&memo_children);
++                push_field_meta_tags(out, f);
                  out.push_str("</hp:fieldBegin>");
                  out.push_str("</hp:ctrl>");
-@@ -2201,10 +2206,15 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+                 return;
+@@ -2201,7 +2217,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
              let has_params = f.raw_parameters_xml.is_some() || generated_params.is_some();
              let has_memo = f.field_type == crate::model::control::FieldType::Memo
                  && !f.memo_paragraphs.is_empty();
@@ -1503,14 +2346,101 @@ index f951d7284..3eb89a037 100644
                  // [#1391] 자식(parameters / memo subList)이 있으면 start/end 태그.
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-+                for meta_tag in &f.hwpx_meta_tags {
-+                    out.push_str("<hp:metaTag>");
-+                    out.push_str(&super::field::xml_escape_attr(meta_tag));
-+                    out.push_str("</hp:metaTag>");
-+                }
-                 if let Some(params) = f
-                     .raw_parameters_xml
-                     .as_deref()
+@@ -2230,6 +2246,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+                     }
+                     out.push_str("</hp:subList>");
+                 }
++                push_field_meta_tags(out, f);
+                 out.push_str("</hp:fieldBegin>");
+             } else {
+                 match writer_to_string(|w| write_field_begin(w, f)) {
+diff --git a/src/serializer/hwpx/shape.rs b/src/serializer/hwpx/shape.rs
+index bc3278b8d..ce017b21f 100644
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -962,20 +962,23 @@ pub(crate) fn write_fill_brush<W: Write>(
+             let step = grad.blur.to_string();
+             let step_center = grad.step_center.to_string();
+             let alpha = fill_alpha_str(fill.alpha);
++            let color_num = grad.colors.len().to_string();
+             start_tag(w, "hc:fillBrush")?;
+-            start_tag_attrs(
+-                w,
+-                "hc:gradation",
+-                &[
+-                    ("type", &gtype),
+-                    ("angle", &angle),
+-                    ("centerX", &cx),
+-                    ("centerY", &cy),
+-                    ("step", &step),
+-                    ("stepCenter", &step_center),
+-                    ("alpha", &alpha),
+-                ],
+-            )?;
++            // 한컴 원본 속성 순서: type, angle, centerX, centerY, step, colorNum, stepCenter, alpha.
++            // colorNum 은 원본에 있었을 때만 되돌리며, 값은 실제 색상 수에서 파생한다.
++            let mut attrs: Vec<(&str, &str)> = vec![
++                ("type", &gtype),
++                ("angle", &angle),
++                ("centerX", &cx),
++                ("centerY", &cy),
++                ("step", &step),
++            ];
++            if grad.hwpx_has_color_num {
++                attrs.push(("colorNum", &color_num));
++            }
++            attrs.push(("stepCenter", &step_center));
++            attrs.push(("alpha", &alpha));
++            start_tag_attrs(w, "hc:gradation", &attrs)?;
+             for c in &grad.colors {
+                 let v = color_to_hex(*c);
+                 empty_tag(w, "hc:color", &[("value", &v)])?;
+@@ -1131,7 +1134,8 @@ pub(super) fn write_shape_comment<W: Write>(
+         return Ok(());
+     }
+     start_tag(w, "hp:shapeComment")?;
+-    text(w, &c.description)?;
++    // 한컴 원본의 CRLF 줄바꿈을 원문으로 되쓴다 (utils::text_keep_line_ends 참고).
++    super::utils::text_keep_line_ends(w, &c.description)?;
+     end_tag(w, "hp:shapeComment")
+ }
+ 
+diff --git a/src/serializer/hwpx/utils.rs b/src/serializer/hwpx/utils.rs
+index 57484c73b..c22b09998 100644
+--- a/src/serializer/hwpx/utils.rs
++++ b/src/serializer/hwpx/utils.rs
+@@ -72,6 +72,31 @@ pub fn text<W: Write>(w: &mut Writer<W>, content: &str) -> Result<(), SerializeE
+     Ok(())
+ }
+ 
++/// 텍스트 노드 — `&`·`<`·`>` 만 이스케이프하고 줄바꿈(CR·LF)은 원문 그대로 쓴다.
++///
++/// quick-xml 의 기본 텍스트 이스케이프는 CR 을 `&#13;` 로 바꾼다. 한컴은 개체 설명
++/// (`hp:shapeComment`) 줄바꿈을 CRLF 원문으로 적는데, 원문 CRLF 는 XML 파서가 LF 로
++/// 정규화해 읽지만 `&#13;` 은 CR 문자로 남는다. 그래서 무편집 저장이 설명 텍스트의
++/// 줄바꿈을 LF 에서 CRLF 로 바꿨다. 원문 CR 을 그대로 두면 한컴 원본과 같은 바이트가 된다.
++pub fn text_keep_line_ends<W: Write>(
++    w: &mut Writer<W>,
++    content: &str,
++) -> Result<(), SerializeError> {
++    let filtered = filter_xml_1_0_chars(content);
++    let mut escaped = String::with_capacity(filtered.len());
++    for c in filtered.chars() {
++        match c {
++            '&' => escaped.push_str("&amp;"),
++            '<' => escaped.push_str("&lt;"),
++            '>' => escaped.push_str("&gt;"),
++            _ => escaped.push(c),
++        }
++    }
++    w.write_event(Event::Text(BytesText::from_escaped(escaped)))
++        .map_err(|e| SerializeError::XmlError(e.to_string()))?;
++    Ok(())
++}
++
+ /// XML 1.0이 허용하는 문자만 남긴다.
+ ///
+ /// `quick-xml`의 event writer는 `&` 등의 마크업 문자는 이스케이프하지만 XML 1.0 문자
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 index 96a36d2a3..a66fdb8d2 100644
 --- a/src/wasm_api.rs
@@ -1536,3 +2466,23 @@ index 96a36d2a3..a66fdb8d2 100644
      /// 비밀번호로 보호된 HWP/HWPX 파일을 비밀번호와 함께 로드한다.
      ///
      /// HWP5 EncryptVersion 4, 압축 HWP3와 ODF AES-256-CBC HWPX를 지원한다.
+diff --git a/src/wasm_api/tests.rs b/src/wasm_api/tests.rs
+index 42e933c96..ce13129db 100644
+--- a/src/wasm_api/tests.rs
++++ b/src/wasm_api/tests.rs
+@@ -16391,6 +16391,7 @@ fn test_save_picture() {
+         img_dim: (0, 0),
+         reverse: ref_pic.reverse,
+         lock: false,
++        hwpx_img_before_layout: false,
+     };
+ 
+     // 5. 문단 구성 (참조 파일: 단일 문단에 SectionDef + ColumnDef + Picture)
+@@ -17585,6 +17586,7 @@ fn test_save_pic_in_table() {
+         img_dim: (0, 0),
+         reverse: ref_pic.reverse,
+         lock: false,
++        hwpx_img_before_layout: false,
+     };
+ 
+     // 6. 셀 내부 문단 구성 (cc=9: gso(8)+CR(1), mask=0x00000800)
