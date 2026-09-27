@@ -50,6 +50,7 @@ const FACTORY_SERVICES = {
   /* 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`. selftest 프로브가
      `Bridge.call = stub` 으로 프로퍼티를 교체하므로 **객체째**여야 한다. */
   Bridge: [
+    "openAuthoringDocument", "saveAuthoringDocument", "authoringCasesFile", "exportAuthoringResult",
     "onPush", "hostReady", "initial", "call", "pickDataFile", "loadDataSheet",
     "importTemplateFile", "copyClipboard", "pickOutputFolder", "pickTemplatesRoot",
     "generate", "openJobInEditor", "newJobFromData",

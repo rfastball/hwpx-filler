@@ -652,3 +652,8 @@ def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnost
     """Inspect one open package; diagnostics are blocking but do not hide valid Slots."""
     snapshot = _inspect_slot_snapshot(pkg)
     return snapshot.slots, snapshot.diagnostics
+
+
+def inspect_slot_regions(pkg: object) -> _SlotSnapshot:
+    """Inspect product slots together with their native mutation regions."""
+    return _inspect_slot_snapshot(pkg)

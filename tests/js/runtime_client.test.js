@@ -46,10 +46,8 @@ function adapterWith(api) {
 /* ══════════════ 생성 계약의 소비 형태 ══════════════ */
 
 test("생성 계약 — 메서드 전수는 내부 표면을 포함하고, 내부 표면은 그 부분집합이다", () => {
-  assert.equal(HOST_METHODS.length, 24,
-    "WebFrontend 공개 표면은 24 다(패킷 §2.1 + S7-03 save_artifact_as"
-    + " − 자동 버리기로 사망한 editor_has_unsaved_work)");
-  for (const name of ["initial", "dispatch", "generate", "close_guard_state"]) {
+  assert.equal(HOST_METHODS.length, 28);
+  for (const name of ["initial", "dispatch", "generate", "close_guard_state", "open_authoring_document", "save_authoring_document", "authoring_cases_file", "export_authoring_result"]) {
     assert.ok(HOST_METHODS.includes(name), `${name} 이 HOST_METHODS 에 없습니다`);
   }
   for (const name of HOST_INTERNAL_METHODS) {
@@ -244,12 +242,14 @@ test("invoke — 계약 밖 이름은 호스트에 닿기 전에 시끄럽게 �
   assert.throws(() => client.invoke("ghost_method"), /계약\(HOST_METHODS\)에 없는/);
 });
 
-test("invoke — host-internal 은 client 표면이 아니다(웹 소비자 0 의 기록을 지킨다)", () => {
+test("invoke — 종료 전 buffer flush 후 close_guard_state 를 다시 조회한다", async () => {
   const calls = [];
-  const client = clientWith({ close_guard_state: () => { calls.push(1); return {}; } });
+  const client = clientWith({ close_guard_state: () => { calls.push(1); return { armed: false, reasons: [] }; } });
 
-  assert.throws(() => client.invoke("close_guard_state"), /host-internal/);
-  assert.equal(calls.length, 0, "거절 전에 호스트가 불렸습니다");
+  assert.deepEqual(await client.invoke("close_guard_state"), {
+    ok: true, value: { armed: false, reasons: [] },
+  });
+  assert.equal(calls.length, 1);
 });
 
 test("path action은 공개 동사를 정확한 typed invoke로 옮긴다", async () => {

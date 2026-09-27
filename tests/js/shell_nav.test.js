@@ -47,7 +47,7 @@ test("정본 데이터 — DEFAULT_SCREEN·REFRESH_ON_NAV·IMMERSIVE_SURFACES �
   assert.deepEqual([...REFRESH_ON_NAV], ["library", "job"]);
   assert.deepEqual(
     IMMERSIVE_SURFACES.map((im) => [im.id, im.cls]),
-    [["editor", "editor-open"], ["workbench", "workbench-open"]],
+    [["editor", "editor-open"], ["workbench", "workbench-open"], ["authoring", "authoring-open"]],
     "몰입 표면 단일 목록(F6) — 위임 판정과 셸 은닉 집행이 같은 행을 읽는다",
   );
   assert.equal(Object.isFrozen(REFRESH_ON_NAV), true);

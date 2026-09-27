@@ -21,6 +21,10 @@ Python은 `.python-version`, 의존성은 `pyproject.toml`·`uv.lock`을 따른�
 `build-web.ps1`가 frontend 도구 pin을 검사한다. 의존성을 변경하면 `uv lock`·`uv sync`와 잠금
 파일을 함께 커밋한다. CI는 `--locked`로 검사한다.
 
+HWPX 저작용 rhwp는 `vendor/rhwp/source.json`의 원천·보존 패치·도구 버전으로 빌드한다.
+`scripts/build_rhwp.ps1`가 저장소 캐시에 Rust/WASM 도구와 원천을 준비한다. 첫 빌드는 네트워크가
+필요하며 실행 시에는 봉인된 Studio·WASM·폰트만 쓴다. SDK와 runtime pin을 따로 갱신하지 않는다.
+
 `test.ps1`는 web build → Node 테스트 → Ruff → Pyright → pytest·coverage를 실행하며 인자는
 pytest에 전달한다. scripts 변경은 `ruff check scripts`, packaging 변경은 일반 Ruff 범위 밖이므로
 `uv run ruff check packaging`도 명시 실행한다. 문서 검사 성공을 전체 품질 성공으로 보고하지 않는다.

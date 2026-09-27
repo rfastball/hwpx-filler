@@ -50,6 +50,7 @@ APP_CSS_FILES = (
     "forced-colors.css",  # @media (forced-colors:active) — 현재 위치 뒤에도 두 조각이 더 온다
     "jobdata.css",        # .jobtb·.fico/.fchip/.fstrip·후보/탐색
     "tail.css",           # .colpanel·.undo-toast·스크롤포트 인벤토리(H-07)·workbench .wb-*
+    "authoring.css",      # HWPX/TXT 저작 작업대
 )
 
 #: 정적 소스 셸이 싣는 전체 CSS 순서(토큰 포함).

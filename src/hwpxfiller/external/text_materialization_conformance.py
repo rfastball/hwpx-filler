@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 from hwpxfiller.application.execution_composition import (
@@ -70,6 +71,7 @@ from .materialization_conformance_vocabulary import (
     ConformancePass,
     ConformanceResult,
 )
+from .text_template_inspection import inspect_txt_qualification
 
 TXT_CONFORMANCE_CONTRACT_ID = "txt-materialization-conformance/v1"
 
@@ -378,6 +380,82 @@ def verify_txt_materialization_postconditions(
     return ConformancePass(output_digest=blob_digest(output_bytes))
 
 
+def trial_txt_authoring(
+    content: str, values: Mapping[str, object], selected: Mapping[str, str]
+) -> dict:
+    """Preview an authored TXT through the production materialization port.
+
+    This transient preview plan carries the user's explicit option choices and
+    values; it never claims to be a sealed delivery plan.
+    """
+    from hwpxfiller.domain.template_authoring import trial as project_trial
+
+    source_bytes = content.encode(TXT_ENCODING)
+    inspection = inspect_txt_qualification(source_bytes)
+    structure = inspection.execution_structure
+    if structure is None:
+        raise ValueError("구조 오류를 수정한 뒤 결과를 시험하세요.")
+    scan = scan_text_structure(content)
+    slots = {slot.id: slot for slot in scan.slots}
+    for slot_id, slot in slots.items():
+        choice = selected.get(slot_id)
+        if slot.options and choice not in {option.id for option in slot.options}:
+            raise ValueError(f"'{slot_id}' 항목의 시험 선택을 지정하세요.")
+    if set(selected) - set(slots):
+        raise ValueError("존재하지 않는 항목 선택이 있습니다.")
+
+    removals = tuple(
+        {"op": PLAN_REMOVE_OPTION, "slot_id": slot.id, "option_id": option.id}
+        for slot in scan.slots for option in slot.options
+        if selected.get(slot.id) != option.id
+    )
+    chosen = {slot_id: (option_id,) for slot_id, option_id in selected.items()}
+    active = drop_lines(content, marker_lines(scan) | unselected_option_lines(scan, chosen))
+    segments, _ = render_segments(active, {})
+    counts: dict[str, int] = {}
+    for segment in segments:
+        if segment.kind != SEG_LITERAL and segment.name is not None:
+            counts[segment.name] = counts.get(segment.name, 0) + 1
+    logical_values = {name: "" if values.get(name) is None else str(values[name]) for name in counts}
+    # The existing port accepts a read-only plan projection. Its two stages and
+    # postconditions are identical to sealed delivery execution.
+    plan: Any = SimpleNamespace(
+        ordered_operations=removals + tuple(
+            {"op": PLAN_APPLY_FIELD_BINDING, "field_id": name} for name in counts
+        ),
+        active_field_requirements=tuple(
+            {"field_id": name, "expected_active_occurrence_count": count}
+            for name, count in counts.items()
+        ),
+        execution_basis=SimpleNamespace(contracts=SimpleNamespace(
+            native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID
+        )),
+    )
+    consistency = verify_txt_structure_bytes_consistency(
+        candidate_bytes=source_bytes, structure=structure
+    )
+    if isinstance(consistency, ConformanceFailure):
+        raise ValueError(f"결과 시험을 시작할 수 없습니다: {consistency.detail}")
+    materialized = apply_txt_execution_plan_in_memory(
+        candidate_bytes=source_bytes, plan=plan, structure=structure,
+        document_values=logical_values,
+    )
+    if isinstance(materialized, ConformanceFailure):
+        raise ValueError(f"결과 시험에 실패했습니다: {materialized.detail}")
+    checked = verify_txt_materialization_postconditions(
+        source_bytes=source_bytes, output_bytes=materialized.output_bytes,
+        plan=plan, structure=structure,
+        vdr=SimpleNamespace(document_values_in_order=lambda: tuple(logical_values.items())),
+        stage_facts=materialized.stage_facts,
+    )
+    if isinstance(checked, ConformanceFailure):
+        raise ValueError(f"결과 시험 검증에 실패했습니다: {checked.detail}")
+    return project_trial(
+        "txt", content, values, selected,
+        output=materialized.output_bytes.decode(TXT_ENCODING),
+    )
+
+
 __all__ = [
     "TXT_CONFORMANCE_CONTRACT_ID",
     "TXT_ENCODING",
@@ -388,6 +466,7 @@ __all__ = [
     "InMemoryTxtMaterialization",
     "apply_txt_execution_plan_in_memory",
     "decode_txt",
+    "trial_txt_authoring",
     "verify_txt_materialization_postconditions",
     "verify_txt_structure_bytes_consistency",
 ]

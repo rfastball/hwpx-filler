@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 import { createProductScreenExecutor } from "../../frontend/src/screens/product_screen_executor.ts";
 
-const SCREEN_IDS = ["job", "library", "editor", "workbench"];
+const SCREEN_IDS = ["job", "library", "editor", "workbench", "authoring"];
 
 function element(id, { focusable = true } = {}) {
   const node = {

@@ -61,6 +61,10 @@ export function createBridge() {
     /** 네이티브 파일 다이얼로그 → 링1 VM 로드. 파일명·"ERROR:…"·null(취소), 또는
      *  다중 시트면 {needs_sheet, path, name, sheets:[…]} 로 시트 확정을 요구(#33). */
     pickDataFile(screen) { return window.pywebview.api.pick_data_file(screen); },
+    openAuthoringDocument(path, asTemplate) { return window.pywebview.api.open_authoring_document(path, asTemplate); },
+    saveAuthoringDocument(sessionId, revision) { return window.pywebview.api.save_authoring_document(sessionId, revision); },
+    authoringCasesFile(sessionId, action) { return window.pywebview.api.authoring_cases_file(sessionId, action); },
+    exportAuthoringResult(sessionId, revision) { return window.pywebview.api.export_authoring_result(sessionId, revision); },
 
     /** 확정한 시트로 다중 시트 워크북 로드(#33). 파일명·"ERROR:…"·null. */
     loadDataSheet(screen, path, sheet) {

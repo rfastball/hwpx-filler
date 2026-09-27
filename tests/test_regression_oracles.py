@@ -53,7 +53,6 @@ def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> Non
         ("job", "cancel_generation", {}),
         ("job", "filter_col_text", {"column": "기관", "text": "교육청"}),
         ("job", "filter_clear_col", {"column": "기관"}),
-        ("tpl", "txt_content", {"path": "draft.txt"}),
         ("workbench", "revert_map", {"name": "수신"}),
         ("workbench", "set_map_fmt", {"name": "일자", "code": "date"}),
         ("workbench", "set_map_type", {"name": "금액", "type": "number"}),

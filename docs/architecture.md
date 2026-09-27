@@ -38,11 +38,16 @@ Python→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스�
 `aria-hidden`을 함께 적용한다. 구독·listener·worker·vendor 객체는 설치한 소유자가 해제한다.
 제품의 렌더 계약은 전체 `innerHTML` 재구성 후 범용 복원이 아니다. 연속성은 행동으로 검증한다.
 
-상단 탭은 `job`(문서 만들기)·`library`(문서 작업), `editor`·`workbench`는 몰입 화면이다.
+상단 탭은 `job`(문서 만들기)·`library`(문서 작업), `editor`·`workbench`·`authoring`은 몰입 화면이다.
 이탈 판정은 [shell/nav.ts](../frontend/src/shell/nav.ts), 화면 적용·listener 수명은 셸이 소유한다.
 [overlay/engine.ts](../frontend/src/overlay/engine.ts)는 DOM 없는 스택 상태기계로 확인 promise,
 Escape, 초기 포커스와 복귀를 조정한다. Python이 손실 집합을 판정하고 웹이 확인을 표시한다.
 실패한 확인을 성공·무응답으로 바꾸거나 화면별 지름길로 이탈 가드를 우회하지 않는다.
+
+저작 세션은 Python이 문서 revision·구조·시험 최신성·저장 및 외부 변경을 소유하고, 웹은 편집기
+history·선택·표시를 소유한다. HWPX 위치는 manifest 순서의 section entry와 native 문단 좌표,
+TXT 위치는 UTF-16 오프셋으로 전달한다. rhwp SDK는 전용 adapter 안에 두며 Studio·WASM·폰트는
+같은 고정 원천과 보존 패치로 빌드해 웹 산출물에 동봉한다. 외부 iframe·CDN을 실행 경로로 쓰지 않는다.
 
 <a id="architecture-authority"></a>
 ## 의미 권위와 제어면

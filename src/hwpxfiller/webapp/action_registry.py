@@ -67,6 +67,36 @@ _POOL_TARGETING = {
 }
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
+    "authoring": {
+        "new": _schema("media", "content"),
+        "activate": _schema("session_id"),
+        "content": _schema("session_id"),
+        "update": _schema("session_id revision content"),
+        "preview": _schema("session_id revision command"),
+        "copy": _schema("session_id revision selector"),
+        "preview_paste": _schema("session_id revision clipboard_token destination with_meaning"),
+        "rhwp_roundtrip_preflight": _schema("session_id revision content"),
+        "trial_input": _schema("session_id revision values selected"),
+        "trial": _schema("session_id revision"),
+        "search": _schema("session_id revision query kind"),
+        "locate": _schema("session_id revision selection"),
+        "case_upsert": _schema("session_id revision name values selected"),
+        "case_remove": _schema("session_id revision name"),
+        "save_cases": _schema("session_id"),
+        "save": _schema("session_id revision"),
+        "check_external": _schema("session_id"),
+        "external_content": _schema("session_id"),
+        "reload": _schema("session_id revision", "force"),
+        "recover": _schema("session_id revision"),
+        "recover_draft": _schema("key"),
+        "recovery_content": _schema("key"),
+        "discard_recovery": _schema("session_id"),
+        "discard_draft": _schema("key"),
+        "close": _schema("session_id", "force"),
+        "impact": _schema("session_id revision"),
+        "prepare_apply": _schema("session_id revision job_name"),
+        "apply_job": _schema("session_id revision job_name change_token"),
+    },
     # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).
     # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job)은 여기 없다 —
     # 「문서 만들기」(`job`)가 계속 소유하고 라이브러리 표면이 교차 화면 dispatch 로
@@ -301,14 +331,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 계약이다(빈 값·오타난 id 가 「전부」로 접히는 경로를 만들지 않는다).
         "slot_decompile_all": _schema("path", "confirm"),
         "slot_remove": _schema("path slot_id", "confirm"),
-        "txt_new": _schema("name content"),
-        # 저장은 편집 창이 열릴 때 읽은 원문(`baseline`)을 함께 싣는다 — 그 사이 밖에서
-        # 바뀌었으면 확인 왕복(`confirm_fingerprint` 2차 호출)으로만 덮는다(#216 이월 2).
-        "txt_edit": _schema("path content baseline", "confirm_fingerprint"),
-        "txt_content": _schema("path"),
-        # 저작 중 본문의 표기 판정 — 파일이 아니라 **창이 든 문자열**을 받는다(S10-05 #862).
-        # 읽기 전용이라 확인 왕복이 없고, 새 TXT 창에는 경로가 아직 없으므로 키도 없다.
-        "txt_lint": _schema("content"),
     },
     # 온보딩 튜토리얼 체크리스트(#894 · https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.3) — **화면이 아니라 채널**
     # 이다: DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이다. 그래도 화면 키를 갖는 이유는

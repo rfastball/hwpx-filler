@@ -59,6 +59,7 @@ export type ImmersiveSurface = { readonly id: string; readonly cls: string };
 export const IMMERSIVE_SURFACES: readonly ImmersiveSurface[] = Object.freeze([
   Object.freeze({ id: "editor", cls: "editor-open" }),
   Object.freeze({ id: "workbench", cls: "workbench-open" }),
+  Object.freeze({ id: "authoring", cls: "authoring-open" }),
 ]);
 
 /** 집행자 — 셸 판정 하나의 DOM·브리지 효과 전부. 판정은 기계가, 집행은 이쪽(shell/app.ts

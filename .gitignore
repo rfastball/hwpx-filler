@@ -72,3 +72,9 @@ desktop.ini
 assets/branding/document-narmi-dashboard-mockup-*.png
 assets/branding/document-narmi-icon-direction-*.png
 assets/branding/document-narmi-abstract-icon-concepts-*.png
+/.cache/rhwp*/
+/.cache/authoring-*/
+/.cache/authoring-*.log
+/.cache/rhwp-browser-probe.html
+/.cache/rhwp-cell-probe.*
+/.cache/rhwp_*_probe.mjs

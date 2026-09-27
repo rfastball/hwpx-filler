@@ -13,14 +13,13 @@
  * 것뿐이다 — 여기서 `{{…}}` 를 다시 정규식으로 가르면 sigil 선행 분류가 두 곳에서
  * 갈리고, 같은 토큰이 표면과 백엔드에서 다른 것이 된다.
  *
- * **키맵을 세우지 않는다.** `@codemirror/commands` 를 들이지 않으므로 Escape·Tab 은
- * CodeMirror 가 소비하지 않고 document 까지 올라간다 — 모달 엔진
- * (`frontend/src/overlay/engine.ts`)의 Escape=이탈 가드·Tab=포커스 트랩 판정이 그대로
- * 선다. 이 창의 출구는 모달 계약 하나여야 하고, 편집기 안쪽 키맵이 그것을 먹으면 dirty
- * 가드가 조용히 우회된다. */
-import { EditorState, StateEffect, StateField } from "@codemirror/state";
+ * 전용 작업대는 undo/search 키맵을 설치한다. 기존 모달에서는 키맵을 설치하지 않아
+ * Escape·Tab의 모달 이탈 가드와 포커스 트랩을 유지한다. */
+import { EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
-import { Decoration, EditorView } from "@codemirror/view";
+import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { history, historyKeymap, undo, redo, undoDepth, redoDepth, isolateHistory } from "@codemirror/commands";
+import { search, openSearchPanel } from "@codemirror/search";
 import type { DecorationSet } from "@codemirror/view";
 
 /** Python 브리지가 UTF-16 으로 번역한 토큰 좌표 1건. */
@@ -48,6 +47,11 @@ export type LintpadMountSpec = {
   ariaLabel: string;
   /** 사용자가 친 결과. 매 변경마다 전문(全文)으로 부른다. */
   onDocChanged: (text: string) => void;
+  /** 전용 작업대에서만 키맵·history를 설치한다. 기존 모달의 Escape/Tab 규칙은 유지한다. */
+  authoring?: boolean;
+  readOnly?: boolean;
+  onSelectionChanged?: (selection: { start: number; end: number }) => void;
+  onCompositionChanged?: (composing: boolean) => void;
 };
 
 export type LintpadUpdateSpec = {
@@ -97,7 +101,12 @@ function decorate(state: EditorState, spans: readonly LintpadSpan[]): Decoration
   const ranges: Range<Decoration>[] = usableSpans(spans, state.doc.length).map(
     (span) => Decoration.mark({ class: span.className }).range(span.from, span.to),
   );
-  return Decoration.set(ranges);
+  for (const span of spans) {
+    if (!["slot-start", "slot-end", "option-start", "option-end"].includes(span.kind)) continue;
+    const line = state.doc.lineAt(Math.max(0, Math.min(span.start, state.doc.length)));
+    ranges.push(Decoration.line({ class: `cm-authoring-${span.kind}` }).range(line.from));
+  }
+  return Decoration.set(ranges, true);
 }
 
 /** 강조 상태 — 문서가 바뀌면 좌표를 **매핑**해 따라가고, 새 판정이 오면 갈아 끼운다.
@@ -133,6 +142,13 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
     state: EditorState.create({
       doc: spec.doc,
       extensions: [
+        ...(spec.authoring ? [history(), keymap.of(historyKeymap), search(), lineNumbers()] : []),
+        EditorState.readOnly.of(!!spec.readOnly),
+        EditorView.editable.of(!spec.readOnly),
+        EditorView.domEventHandlers({
+          compositionstart: () => { spec.onCompositionChanged?.(true); return false; },
+          compositionend: () => { spec.onCompositionChanged?.(false); return false; },
+        }),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({
           id: spec.contentId,
@@ -142,12 +158,58 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         BASE_THEME,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) spec.onDocChanged(update.state.doc.toString());
+          if (update.selectionSet || update.docChanged) {
+            const range = update.state.selection.main;
+            spec.onSelectionChanged?.({ start: range.from, end: range.to });
+          }
         }),
       ],
     }),
   });
   VIEWS.set(handle, view);
   return handle;
+}
+
+/** 작업대 명령은 vendor 객체를 노출하지 않고 기존 view를 조작한다. */
+export function lintpadState(handle: LintpadHandle) {
+  const view = VIEWS.get(handle);
+  if (!view) throw new Error("TXT 편집기가 닫혔습니다.");
+  return {
+    text: view.state.doc.toString(),
+    start: view.state.selection.main.from,
+    end: view.state.selection.main.to,
+    canUndo: undoDepth(view.state) > 0,
+    canRedo: redoDepth(view.state) > 0,
+    composing: view.composing,
+  };
+}
+
+export function editLintpad(handle: LintpadHandle, edits: readonly { start: number; end: number; text: string }[]) {
+  const view = VIEWS.get(handle);
+  if (!view) throw new Error("TXT 편집기가 닫혔습니다.");
+  if (view.composing) return false;
+  view.dispatch({
+    changes: edits.map((edit) => ({ from: edit.start, to: edit.end, insert: edit.text })),
+    annotations: [isolateHistory.of("full"), Transaction.userEvent.of("input.authoring")],
+    scrollIntoView: true,
+  });
+  view.focus();
+  return true;
+}
+
+export function navigateLintpad(handle: LintpadHandle, start: number, end = start) {
+  const view = VIEWS.get(handle);
+  if (!view) return;
+  const limit = view.state.doc.length;
+  if (view.composing) return;
+  view.dispatch({ selection: { anchor: Math.max(0, Math.min(start, limit)), head: Math.max(0, Math.min(end, limit)) }, scrollIntoView: true });
+  view.focus();
+}
+
+export function lintpadCommand(handle: LintpadHandle, command: "undo" | "redo" | "search") {
+  const view = VIEWS.get(handle);
+  if (!view || view.composing) return false;
+  return ({ undo, redo, search: openSearchPanel })[command](view);
 }
 
 /** 외부 상태 → 뷰(`update_owner`). 문서 교체와 강조 갱신을 **한 트랜잭션**으로 보낸다. */

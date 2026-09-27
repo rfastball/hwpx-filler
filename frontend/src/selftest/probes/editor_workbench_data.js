@@ -276,71 +276,56 @@ async function waitFor(ctx, ready, tries = 30, ms = 40) {
   return !!ready();
 }
 
-/** TXT 저작 린트메모장 실물 확인(S10-05 #862 · #299 회수) — `editor_txt_band` 의 뒷단계.
- *
- *  정적 계약이 못 보는 넷을 실 WebView2 에서 센다:
- *
- *  ① CodeMirror 가 **정말 마운트되는가**(모듈은 있는데 붙지 않는 상태가 정적으로는 초록).
- *  ② 판정이 **왕복해 실물이 되는가** — 강조 두 종과 진단 줄이 Python 이 낸 좌표·문안에서
- *     온다. 프론트에 정규식이 없으므로 왕복이 죽으면 강조가 0 이 되어 바로 드러난다.
- *  ③ **Escape 를 vendor 가 먹지 않는가** — 키맵을 안 세운 것이 계약이고, 그 계약이 깨지면
- *     더럽혀진 창의 이탈 가드가 조용히 우회된다(저장 안 한 저작이 소리 없이 사라진다).
- *  ④ 창을 닫으면 **인스턴스가 걷히는가**(누수는 다음 열기에서 두 벌로 보인다).
- *
- *  본문 주입은 `contentDOM.textContent` 다 — CodeMirror 가 IME·붙여넣기로 DOM 이 바뀌었을 때
- *  쓰는 **되읽기** 경로와 같은 자리라, 값 대입으로 상태를 밀어 넣는 것보다 사용자 입력에
- *  가깝다. 새 창을 늘리지 않는다: 이 단계는 이미 서 있는 편집기 세션 위에 얹힌다. */
+/** 기존 editor_txt_band 부팅에서 실제 CM·Python 분석·미저장 보호를 검증한다. */
 async function probeLintpad(ctx, out) {
   const doc = ctx.doc;
   const rowMenu = doc.querySelector('#editorTplList [data-act="lib-more"][data-key="기안.txt"]');
   if (!rowMenu) { out.lintpad_trigger = false; return; }
-  doc.body.click();
-  rowMenu.click();
+  doc.body.click(); rowMenu.click();
   const editSelector = '#tplRowMenu [data-context-menu-action="edit"]';
   out.lintpad_trigger = await waitFor(ctx, () => !!doc.querySelector(editSelector));
   if (!out.lintpad_trigger) return;
-  // 합성 TXT의 본문만 대역으로 읽고, 린트는 실제 Python 왕복을 유지한다.
-  const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
-    if (screen === "tpl" && action === "txt_content") return Promise.resolve({ content: "" });
-    return real.call(this, screen, action, payload);
-  });
+  // 합성 행의 파일 선택만 대체한다. 세션과 분석은 실제 backend 왕복이다.
+  const stub = stubBridgeInvoke(ctx, "openAuthoringDocument", "open_authoring_document",
+    () => async () => service(ctx, "Bridge").call("authoring", "new", { media: "txt" }));
+  const canvas = ".authoring-document:not([hidden])";
   try {
     doc.querySelector(editSelector).click();
-    out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
-  } finally {
-    stub.restore();
-  }
+    out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector(`${canvas} .cm-editor`));
+  } finally { stub.restore(); }
   if (!out.lintpad_mounted) return;
-  const content = doc.getElementById("txtEditContent");
-  out.lintpad_content_editable = !!content && content.isContentEditable === true;
-  /* 기존 TXT 편집 창은 본문에 초점을 둔다. */
-  out.lintpad_focus = doc.activeElement ? doc.activeElement.id : "";
-  content.focus();
-  out.lintpad_focusable = doc.activeElement ? doc.activeElement.id : "";
-  /* 양성 대조의 **선행 음성** — 주입 전에는 강조가 0 이어야 한다. 이게 없으면 늘 켜져 있는
-     클래스도 초록을 훔친다. */
-  out.lintpad_marks_before = doc.querySelectorAll("#txtLintpad .cm-txtField").length
-    + doc.querySelectorAll("#txtLintpad .cm-txtMarker").length;
+  out.authoring_screen_on = doc.getElementById("scr-authoring").classList.contains("on");
+  const content = doc.querySelector(`${canvas} .cm-content`);
+  out.lintpad_content_editable = content.isContentEditable;
+  content.focus(); out.lintpad_focusable = doc.activeElement === content;
+  const marks = () => doc.querySelectorAll(`${canvas} .cm-txtField, ${canvas} .cm-txtMarker`).length;
+  out.lintpad_marks_before = marks();
   pasteInto(ctx, content, "제목: {{공고명}}\n{{#항목 사유}}");
-  out.lintpad_lint_arrived = await waitFor(
-    ctx, () => doc.querySelectorAll("#txtLintDiag li").length > 0);
-  out.lintpad_field_marks = doc.querySelectorAll("#txtLintpad .cm-txtField").length;
-  out.lintpad_marker_marks = doc.querySelectorAll("#txtLintpad .cm-txtMarker").length;
-  const diagnostics = doc.querySelectorAll("#txtLintDiag li");
-  out.lintpad_diag_count = diagnostics.length;
-  out.lintpad_diag_text = diagnostics.length ? diagnostics[0].textContent : "";
-  /* ③ 편집기 안에서 올린 Escape 가 모달 이탈 가드까지 도달하는가. 창은 더럽혀졌으므로
-     **확인 왕복**이 서야 한다 — 바로 닫히면 그것이 곧 가드 우회다. */
+  out.lintpad_lint_arrived = await waitFor(ctx, () => marks() === 2);
+  out.lintpad_field_marks = doc.querySelectorAll(`${canvas} .cm-txtField`).length;
+  out.lintpad_marker_marks = doc.querySelectorAll(`${canvas} .cm-txtMarker`).length;
+  [...doc.querySelectorAll(".authoring-toolbar button")].find((el) => el.textContent === "문제").click();
+  await waitFor(ctx, () => !!doc.querySelector(".authoring-bottom button"));
+  out.lintpad_diag_text = doc.querySelector(".authoring-bottom")?.textContent || "";
   keydownOn(ctx, content, "Escape");
-  const confirmRoot = doc.getElementById("confirmModal");
-  out.lintpad_escape_asks = await waitFor(
-    ctx, () => !!confirmRoot && !confirmRoot.classList.contains("hidden"), 20);
-  if (out.lintpad_escape_asks) {
-    doc.getElementById("confirmModalOk").click();
-    settleModal(ctx, "confirmModal");
+  out.authoring_escape_retains = await waitFor(ctx, () => !doc.querySelector(".authoring-bottom")) && content.isConnected;
+  const mode = doc.querySelector(".authoring-toolbar select");
+  mode.value = "document"; mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
+  out.authoring_document_mode = await waitFor(ctx, () => marks() === 0);
+  mode.value = "template"; mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
+  out.authoring_template_mode = await waitFor(ctx, () => marks() === 2);
+  const close = () => doc.querySelector(".authoring-tab button[aria-label]").click();
+  const asking = () => !doc.getElementById("chooseModal").classList.contains("hidden");
+  close(); out.authoring_close_asks = await waitFor(ctx, asking);
+  if (out.authoring_close_asks) {
+    doc.getElementById("chooseModalCancel").click();
+    await waitFor(ctx, () => !asking());
+    out.authoring_cancel_retains = content.isConnected && content.textContent.includes("공고명");
+    close(); await waitFor(ctx, asking);
+    doc.getElementById("chooseModalAlt").click(); settleModal(ctx, "chooseModal");
   }
-  settleModal(ctx, "txtEditModal");
-  out.lintpad_disposed = await waitFor(ctx, () => doc.getElementById("txtLintpad") === null, 20);
+  out.lintpad_disposed = await waitFor(ctx, () => !doc.querySelector(`${canvas} .cm-editor`));
+  service(ctx, "Nav").go("editor", { force: true }); await settleRender(ctx);
 }
 
 /** 몰입 표면을 걷고 셸을 되돌린다 — app.py:2058-2065 · 2158-2162 · 3316-3322 의 `finish()` 앞머리.
@@ -1049,7 +1034,7 @@ export function createEditorWorkbenchDataProbes() {
       deadlineMs: 6000,
       deadlineRationale:
         "공용 `_probe_late` 예산 2.5초에 **린트메모장 단계**가 얹혔다(S10-05 #862): 창 열기 +"
-        + " 디바운스 180ms + `tpl/txt_lint` 실왕복 + 이탈 확인 왕복이 한 프로브 안에서 돈다."
+        + " 디바운스 180ms + `authoring` 분석 실왕복 + 이탈 확인 왕복이 한 프로브 안에서 돈다."
         + " 늘린 것은 매달림을 유한 시간에 빨강으로 만드는 상한이지 통과 조건이 아니다 —"
         + " 실측 여유(내부 대기 상한 2×1.2초)를 담되 무한정은 아니게 잡는다.",
       completionField: "pending",

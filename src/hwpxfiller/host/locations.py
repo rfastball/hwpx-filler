@@ -96,3 +96,8 @@ def default_example_data_dir() -> Path:
     누르기 전에 홈을 건드리지 않는 것이 온보딩 D1 의 계약이다(#891).
     """
     return home_dir() / "example_data"
+
+
+def default_authoring_dir() -> Path:
+    """Template authoring recovery drafts and opt-in trial cases."""
+    return home_dir() / "authoring"

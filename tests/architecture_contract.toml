@@ -26,6 +26,8 @@ hwpxfiller = []
 # 조용히 우회된다.
 [vendor_integration.codemirror]
 packages = [
+  "@codemirror/commands",
+  "@codemirror/search",
   "@codemirror/state",
   "@codemirror/view",
 ]
