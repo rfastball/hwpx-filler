@@ -92,8 +92,7 @@ def _simple_field_span(occurrence) -> dict:
             end = offset
         elif node.tag == f"{_HP}t":
             offset += len(node.text or "")
-    if start is None or end is None or start > end:
-        return {}
+    assert start is not None and end is not None and start <= end
     return {"start": start, "end": end}
 
 
@@ -166,8 +165,7 @@ def _cell_path(root, paragraph) -> list[dict] | None:
                 if child is table:
                     control = counted
                 counted += control_count(child)
-        if control is None:
-            return None
+        assert control is not None
         cells = [item for item in table.iter(f"{_HP}tc")
                  if next(item.iterancestors(f"{_HP}tbl"), None) is table]
         steps.append({"parent_paragraph": -1, "control": control, "cell": cells.index(cell),
@@ -660,8 +658,7 @@ def _rename_region(package, command: Mapping[str, object]) -> None:
     root = etree.fromstring(package.entries[region.section], parser=parser)
     begins = [node for node in root.iter(f"{_HP}fieldBegin")
               if node.get("id") == region._pairing_id and node.get("type") == "BOOKMARK"]
-    if len(begins) != 1:
-        raise ValueError("책갈피 경계를 하나로 확정할 수 없습니다.")
+    assert len(begins) == 1
     begin = begins[0]
     tags = [node for node in begin if node.tag == f"{_HP}metaTag"]
     product = [node for node in tags if isinstance(node.text, str)
@@ -730,8 +727,7 @@ def _adjust_region(package, command: Mapping[str, object]) -> None:
              if node.get("id") == region._pairing_id and node.get("type") == "BOOKMARK"]
     finish = [node for node in root.iter(f"{_HP}fieldEnd")
               if node.get("beginIDRef") == region._pairing_id]
-    if len(begin) != 1 or len(finish) != 1:
-        raise ValueError("책갈피 경계를 하나로 확정할 수 없습니다.")
+    assert len(begin) == 1 and len(finish) == 1
     begin_ctrl, end_ctrl = begin[0].getparent(), finish[0].getparent()
     assert begin_ctrl is not None and end_ctrl is not None
     begin_ctrl.getparent().remove(begin_ctrl)
@@ -885,8 +881,7 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
     snapshot = inspect_slot_regions(package)
     if command.get("kind", "slot") == "option":
         slot_id = command.get("slot_id")
-        if not isinstance(slot_id, str):
-            raise ValueError("상위 항목 식별자가 필요합니다.")
+        assert isinstance(slot_id, str)
         owner = snapshot.slot_regions[slot_id]
         if not owner.start_paragraph <= destination <= owner.end_paragraph + 1:
             raise ValueError("복제한 선택은 같은 항목 안에 놓아야 합니다.")
@@ -949,7 +944,7 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
             elif command.get("kind", "slot") == "slot":
                 prefix = str(command.get("slot_id")) + "/"
                 if (element.get("name") or "").startswith(prefix):
-                    element.set("name", new_id + (element.get("name") or "")[len(prefix):])
+                    element.set("name", structure_region_name(new_id, (element.get("name") or "")[len(prefix):]))
     if command.get("kind", "slot") == "option" and destination == owner.end_paragraph + 1:
         parent_end = next(node for node in root.iter(f"{_HP}fieldEnd")
                           if node.get("beginIDRef") == owner._pairing_id)

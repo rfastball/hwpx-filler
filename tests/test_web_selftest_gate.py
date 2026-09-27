@@ -14,9 +14,11 @@ focus/scroll/layout 거동이다.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -213,6 +215,44 @@ def _tail(stream: "str | bytes | None", limit: int = 2000) -> str:
     return text[-limit:]
 
 
+#: HWPX 저작 밴드가 열 corpus 문서 — **프로브의 `HWPX_AUTHORING_CANDIDATES` 와 같은 파일
+#: 이름**이 유일한 전달 통로다. 프로브는 tmp 홈의 절대 경로를 알 수 없고(부팅마다 바뀐다),
+#: 대신 실 `tpl` 스냅샷에서 이 이름의 행을 찾아 그 경로로 연다.
+#:
+#: 두 문서를 심는 이유: rhwp 왕복 보존 검사를 어느 문서가 통과하는지는 vendor 편집기의 실측
+#: 사실이라 정적으로 모르고, 통과하지 못한 문서는 HWPX 수정 자체가 차단된다. corpus 전수에서
+#: 「사용 위치 2곳 필드」(AC07)와 「굵은 run 을 가진 본문 문구」(AC02)를 **둘 다** 가진 것은
+#: 이 나라장터 공고서 계열뿐이다(metatag_s1/N1 계열은 서식 있는 run 이 없다).
+HWPX_AUTHORING_CORPUS: "tuple[str, ...]" = (
+    "bid_notice_limited_under100m.hwpx",
+    "filled_notice_marine.hwpx",
+)
+
+#: 심은 사본의 경로와 **심은 직후의 해시** — AC01(원본 불변)의 대조가 이것을 읽는다.
+_authoring_library: "dict[str, tuple[Path, str]]" = {}
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _seed_authoring_library(home: Path) -> None:
+    """서식 폴더(``<홈>/templates``)에 corpus 사본을 심는다 — **corpus 원본은 건드리지 않는다**.
+
+    사본을 쓰는 이유가 계약이다: AC01 은 「열어서 편집한 문서를 앱이 조용히 덮어쓰지 않는다」
+    이고, 그 확정은 부팅 전후 해시 대조다. corpus 파일을 직접 열게 하면 그 대조가 저장소의
+    고정 자산을 과녁으로 삼는다.
+    """
+    root = home / "templates"
+    root.mkdir(parents=True, exist_ok=True)
+    _authoring_library.clear()
+    for name in HWPX_AUTHORING_CORPUS:
+        source = Path(__file__).parent / "corpus" / "real" / name
+        target = root / name
+        shutil.copy2(source, target)
+        _authoring_library[name] = (target, _sha256(target))
+
+
 @pytest.fixture(scope="module")
 def selftest_result(tmp_path_factory) -> dict:
     """``--selftest`` 로 앱을 모듈당 1회 구동하고 DOM 되읽기 결과 JSON 을 로드한다.
@@ -227,6 +267,7 @@ def selftest_result(tmp_path_factory) -> dict:
     """
     out = tmp_path_factory.mktemp("selftest") / "selftest_result.json"
     home = tmp_path_factory.mktemp("selftest-home")
+    _seed_authoring_library(home)
     env = dict(os.environ, HWPX_SELFTEST_OUT=str(out), HWPXFILLER_HOME=str(home))
     proc = _boot_selftest(env, out=out, what="full 모드 모듈 픽스처")
     assert out.exists(), (
@@ -1379,6 +1420,218 @@ class TestWebSelftestGate:
         assert b["lintpad_marker_marks"] == 1
         assert "닫는 마커가 없습니다" in b["lintpad_diag_text"]
 
+    def test_hwpx_authoring_creates_field_undoes_renames_and_never_overwrites_source(
+        self, selftest_result: dict
+    ) -> None:
+        """실 rhwp iframe 위의 HWPX 저작 거동 — UX 수용 기준 AC01·AC02·AC07·AC23.
+
+        같은 부팅·같은 프로브(`editor_txt_band`)의 두 번째 밴드다. 창을 늘리지 않는 것이
+        실창 게이트의 규율이고, 대체한 것은 네이티브 대화상자 둘(파일 선택·저장 위치)뿐이다
+        — 편집기·분석·미리보기·적용·실행 취소·저장 판정은 전부 실제 왕복이다.
+
+        rhwp 왕복 보존 검사를 통과하는 corpus 문서가 하나도 없으면 **스킵한다**: 그 상태에서는
+        백엔드가 HWPX 수정을 아예 거절하므로(screen_authoring 의 `rhwp_editable is not True`
+        관문) 뒤의 단언이 제품 결함이 아니라 「편집이 불가능했다」를 재게 된다. 스킵 사유에
+        후보별 진단을 그대로 실어 **발견 사항으로** 남긴다.
+        """
+        b = probe(selftest_result, "editor_txt_band")
+        assert b.get("hwpx_authoring_error") is None, (
+            f"HWPX 저작 밴드 예외: {b.get('hwpx_authoring_error')!r}"
+        )
+        assert b.get("hwpx_authoring_restore_error") is None, (
+            "HWPX 밴드의 복원(배율·창 크기·탭)이 실패했습니다 — 남은 상태는 뒤따르는"
+            f" 프로브의 실패로 나타납니다: {b.get('hwpx_authoring_restore_error')!r}"
+        )
+        assert b.get("hwpx_authoring_entry_affordance") is True, (
+            "편집기에 「템플릿 만들기」가 없습니다 — 저작 화면의 진입 배선이 끊겼습니다."
+        )
+        assert b.get("hwpx_authoring_library_rows"), (
+            "실 서식 폴더 목록이 비었습니다 — 픽스처가 심은 사본이 `tpl` 채널에 서지 않습니다"
+            f" (rows={b.get('hwpx_authoring_library_rows')!r})."
+        )
+        preflight = b.get("hwpx_authoring_preflight") or []
+        candidate = b.get("hwpx_authoring_candidate") or ""
+        if not candidate:
+            pytest.skip(
+                "rhwp 왕복 보존 검사를 통과한 corpus 문서가 없습니다 — 그 문서들은 HWPX 수정이"
+                " 백엔드에서 차단되므로 AC02·AC07 을 실물로 잴 수 없습니다(발견 사항: 이"
+                " 경계가 오늘의 편집 가능 범위다). 후보별 판정·진단: "
+                f"{json.dumps(preflight, ensure_ascii=False)}"
+            )
+        assert b.get("hwpx_authoring_aborted") is None, (
+            f"HWPX 밴드가 완주하지 못했습니다: {b.get('hwpx_authoring_aborted')!r} · {b!r}"
+        )
+        assert b["hwpx_authoring_mounted"] is True, (
+            f"rhwp iframe 이 마운트되지 않았습니다: {preflight!r}"
+        )
+        assert b["hwpx_authoring_rhwp_editable"] is True, preflight
+        assert b["hwpx_authoring_readiness"] == "ready", (
+            f"구조 오류 없는 문서가 초안으로 판정됐습니다: {b['hwpx_authoring_readiness']!r}"
+        )
+        assert b["hwpx_authoring_alerts"] == 0, (
+            f"저작 밴드가 alert 을 띄웠습니다(막다른 경보 금지): {b['hwpx_authoring_alerts']!r}"
+        )
+        base = b["hwpx_authoring_base_field_count"]
+        assert b["hwpx_authoring_target_field_count"] == 2, (
+            "AC07 의 대상(사용 위치 2곳 필드)이 분석에서 2곳이 아닙니다 — corpus 문서가"
+            f" 바뀌었거나 분석이 갈렸습니다: 필드 목록={b.get('hwpx_authoring_fields')!r}"
+        )
+
+        # ── AC01 — 새 템플릿으로 연 평범한 HWPX 는 조용히 덮어쓰이지 않는다.
+        assert b["hwpx_authoring_save_as_required"] is True, (
+            "AC01: 새 템플릿으로 연 문서에 이미 저장 경로가 붙어 있습니다 — 첫 저장이 원본을"
+            " 덮어씁니다."
+        )
+        assert b["hwpx_authoring_save_asked_for_path"] is True, (
+            "AC01: 첫 「저장」이 저장 위치를 묻지 않았습니다(네이티브 저장 대화상자 경로에"
+            f" 닿지 않음): {b!r}"
+        )
+        assert b["hwpx_authoring_save_needs_path"] is True, (
+            "AC01: 백엔드 `save` 가 경로 없이도 쓰겠다고 답했습니다 —"
+            " needs_path/needs_save_as 가 서지 않습니다."
+        )
+        assert b["hwpx_authoring_save_path_after"] == "", (
+            "AC01: 취소한 저장이 세션에 저장 경로를 남겼습니다:"
+            f" {b['hwpx_authoring_save_path_after']!r}"
+        )
+        for name, (target, before) in _authoring_library.items():
+            source = Path(__file__).parent / "corpus" / "real" / name
+            assert _sha256(target) == before, (
+                f"AC01: 앱이 열어 편집한 원본 파일이 변경됐습니다 — {target}"
+            )
+            assert _sha256(source) == before, (
+                f"corpus 자산이 변경됐습니다(사본만 써야 합니다) — {source}"
+            )
+
+        # ── AC02 — 서식 있는 문구를 필드로 만든 뒤 한 번의 문서 실행 취소가 원문을 되돌린다.
+        assert b["hwpx_authoring_target_formatted"] is True, (
+            "AC02: 고른 문구가 서식 있는 run 이 아닙니다 — 서식 손실 회귀를 잴 수 없습니다."
+        )
+        assert b["hwpx_authoring_search_hit"], "AC02: 본문 검색이 대상 문구를 찾지 못했습니다."
+        assert b["hwpx_authoring_create_enabled"] is True, (
+            "AC02: 본문 범위를 고른 뒤에도 「필드로 만들기」가 잠겨 있습니다."
+        )
+        assert b["hwpx_authoring_create_affected"] == 1, (
+            "AC02: 필드 만들기 미리보기가 사용 위치 1곳을 말하지 않습니다:"
+            f" {b['hwpx_authoring_create_affected']!r}"
+        )
+        assert b["hwpx_authoring_create_field_count"] == base + 1, (
+            f"AC02: 필드가 늘지 않았습니다({base} → {b['hwpx_authoring_create_field_count']})."
+        )
+        assert b["hwpx_authoring_create_changed_content"] is True, (
+            "AC02: 적용 뒤 문서 내용이 그대로입니다 — 편집기가 변경을 발신하지 않았습니다."
+        )
+        assert b["hwpx_authoring_create_label"].endswith("필드로 만들기"), (
+            "AC02: 실행 취소가 되돌릴 행동의 이름을 말하지 않습니다:"
+            f" {b['hwpx_authoring_create_label']!r}"
+        )
+        assert b["hwpx_authoring_undo_field_count"] == base, (
+            "AC02: 한 번의 문서 실행 취소가 필드를 되돌리지 않았습니다"
+            f"({b['hwpx_authoring_undo_field_count']} ≠ {base})."
+        )
+        assert b["hwpx_authoring_undo_changed_content"] is True, (
+            "AC02: 실행 취소가 문서 내용을 바꾸지 않았습니다(적용본 그대로)."
+        )
+        assert b["hwpx_authoring_undo_label_cleared"] is True, (
+            "AC02: 되돌린 뒤에도 실행 취소 버튼이 방금 되돌린 행동의 이름을 들고 있습니다."
+        )
+        assert b["hwpx_authoring_undone_matches_source"] is True, (
+            "AC02: 되돌린 문서가 디스크의 원본과 같지 않습니다(제품 보존 비교기 판정) —"
+            f" 되돌리기가 원문을 잃었습니다. 진단: {b['hwpx_authoring_undone_diagnostics']!r}"
+            f" · 바이트 동일 여부(진단용): {b['hwpx_authoring_undo_content_equals_mount']!r}"
+        )
+        assert b["hwpx_authoring_redo_field_count"] == base + 1, (
+            f"AC02: 다시 실행이 필드를 되살리지 않았습니다: {b!r}"
+        )
+        assert b["hwpx_authoring_redo_content_equals_create"] is True, (
+            "AC02: 다시 실행한 문서가 적용 직후와 바이트 동일하지 않습니다."
+        )
+        assert b["hwpx_authoring_undo2_content_equals_undo"] is True, (
+            "AC02: 같은 되돌리기가 두 번째에 다른 문서를 냈습니다(비결정 되돌리기)."
+        )
+
+        # ── AC07 — 이름 변경은 모든 사용 위치를 옮기고 그 수를 정직하게 말한다.
+        assert b["hwpx_authoring_rename_target"], (
+            "AC07: 구조 목록에 사용 위치 2곳 필드가 서지 않습니다 —"
+            f" 셈(`이름 · N`)이 분석과 갈렸습니다: {b!r}"
+        )
+        assert b["hwpx_authoring_rename_affected"] == 2, (
+            "AC07: 이름 변경 미리보기가 사용 위치 2곳을 말하지 않습니다:"
+            f" {b['hwpx_authoring_rename_affected']!r} · {b['hwpx_authoring_rename_preview_text']!r}"
+        )
+        assert b["hwpx_authoring_rename_new_count"] == 2, (
+            "AC07: 새 이름의 사용 위치가 2곳이 아닙니다(일부만 바뀌었습니다):"
+            f" {b['hwpx_authoring_rename_new_count']!r}"
+        )
+        assert b["hwpx_authoring_rename_old_count"] == 0, (
+            "AC07: 옛 이름이 문서에 남았습니다:"
+            f" {b['hwpx_authoring_rename_old_count']!r}"
+        )
+        assert b["hwpx_authoring_rename_field_total"] == base, (
+            "AC07: 이름 변경이 필드 수를 바꿨습니다(쪼개짐·중복):"
+            f" {b['hwpx_authoring_rename_field_total']} ≠ {base}"
+        )
+        assert b["hwpx_authoring_rename_undo_old_count"] == 2, (
+            "AC07: 이름 변경 실행 취소가 두 사용 위치를 모두 되돌리지 않았습니다:"
+            f" {b['hwpx_authoring_rename_undo_old_count']!r}"
+        )
+        assert b["hwpx_authoring_rename_undo_new_count"] == 0, (
+            f"AC07: 되돌린 뒤에도 새 이름이 남았습니다: {b!r}"
+        )
+
+        # ── AC23 — 표시 방식 전환은 내용도 미저장 상태도 건드리지 않는다.
+        assert b["hwpx_authoring_modes"] == ["document", "structure", "template"], (
+            f"AC23: 표시 방식 전환이 적용되지 않았습니다: {b['hwpx_authoring_modes']!r}"
+        )
+        assert b["hwpx_authoring_mode_dirty_after"] == b["hwpx_authoring_mode_dirty_before"], (
+            "AC23: 표시 방식을 바꾸자 미저장 상태가 달라졌습니다"
+            f"({b['hwpx_authoring_mode_dirty_before']!r} → {b['hwpx_authoring_mode_dirty_after']!r})."
+        )
+        assert b["hwpx_authoring_mode_content_stable"] is True, (
+            "AC23: 표시 방식 전환이 문서 내용을 바꿨습니다 — 장식이 문서를 건드립니다."
+        )
+
+        # ── 좁은 창·150% 배율에서도 편집면이 서고 페이지가 가로로 흐르지 않는다.
+        assert b["hwpx_authoring_min_window_ok"] is True, (
+            "760×600 에서 가로 스크롤이 생기거나 편집면이 접혔습니다:"
+            f" scrollWidth={b['hwpx_authoring_min_window_scroll_w']!r}"
+            f" clientWidth={b['hwpx_authoring_min_window_client_w']!r}"
+            f" canvas={b['hwpx_authoring_min_window_canvas_h']!r}"
+        )
+        assert b.get("hwpx_authoring_font_scale_skipped") is None, (
+            "150% 배율을 재지 못했습니다 — 개인화가 아직 폭을 적용하지 않은 상태입니다"
+            f" (그 상태에서 배율 동사를 부르면 폭 하한이 심긴다): "
+            f"{b.get('hwpx_authoring_font_scale_skipped')!r}"
+        )
+        assert b["hwpx_authoring_font_scale"] == "larger", (
+            f"150% 배율이 적용되지 않았습니다: {b['hwpx_authoring_font_scale']!r}"
+        )
+        assert b["hwpx_authoring_font_scale_px"] == "24px", (
+            f"150% 배율의 뿌리 글자 크기가 24px 이 아닙니다: {b['hwpx_authoring_font_scale_px']!r}"
+        )
+        assert b["hwpx_authoring_font_scale_ok"] is True, (
+            "150% 배율에서 가로 스크롤이 생기거나 편집면이 접혔습니다:"
+            f" scrollWidth={b['hwpx_authoring_font_scale_scroll_w']!r}"
+            f" clientWidth={b['hwpx_authoring_font_scale_client_w']!r}"
+            f" canvas={b['hwpx_authoring_font_scale_canvas_h']!r}"
+        )
+        assert b["hwpx_authoring_font_scale_restored"] is True, (
+            "배율이 100% 로 복원되지 않았습니다 — 뒤따르는 개인화 프로브가 이 값을 잽니다."
+        )
+        assert b["hwpx_authoring_master_width_stable"] is True, (
+            "배율을 오르내리는 사이 좌 열 폭(--master-width)이 달라졌습니다 — 그 자취는"
+            " 개인화 프로브의 실패로 나타나 귀인이 갈립니다."
+        )
+
+        # ── 수명주기 — 닫으면 편집기가 걷히고 셸이 돌아온다.
+        assert b["hwpx_authoring_closed"] is True, f"저작 탭이 닫히지 않았습니다: {b!r}"
+        assert b["hwpx_authoring_disposed"] is True, (
+            "rhwp iframe 이 탭과 함께 걷히지 않았습니다 — 다음 프로브의 측정을 가립니다."
+        )
+        assert b["hwpx_authoring_screen_on_after_close"] is False, (
+            "닫은 뒤에도 저작 화면이 서 있습니다 — 셸로 돌아오지 못했습니다."
+        )
+
     def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
         # 편집기가 실 WebView2 에서 **자기 화면**으로 서고 상단 2탭을 덮는지, 머리(이름·저장
         # 상태·판본)와 진입 문맥 배너가 실제로 그려지는지 되읽는다. 정적 계약(클래스·문자열
@@ -1770,8 +2023,8 @@ class TestWebSelftestGate:
             f"부분 변환 행에서 마저 변환 메뉴에 닿지 못합니다: {t['partial_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
-        assert t["compiled_menu_items"] == ["detail"], (
-            f"COMPILED 행 ⋮ 구성이 [자세히]와 다릅니다: {t['compiled_menu_items']!r}"
+        assert t["compiled_menu_items"] == ["edit", "detail"], (
+            f"COMPILED 행 ⋮ 구성이 [편집·자세히]와 다릅니다: {t['compiled_menu_items']!r}"
         )
         assert t["txt_menu_items"] == ["edit", "detail"], (
             f"TXT 행 ⋮ 구성이 [내용 편집·자세히]와 다릅니다: {t['txt_menu_items']!r}"

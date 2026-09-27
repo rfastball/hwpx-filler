@@ -75,6 +75,8 @@ assets/branding/document-narmi-abstract-icon-concepts-*.png
 /.cache/rhwp*/
 /.cache/authoring-*/
 /.cache/authoring-*.log
+/.cache/authoring-*.md
+/.cache/*.md
 /.cache/rhwp-browser-probe.html
 /.cache/rhwp-cell-probe.*
 /.cache/rhwp_*_probe.mjs

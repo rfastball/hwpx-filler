@@ -328,6 +328,477 @@ async function probeLintpad(ctx, out) {
   service(ctx, "Nav").go("editor", { force: true }); await settleRender(ctx);
 }
 
+/** HWPX 저작 밴드가 열 후보 문서 — **게이트가 실 서식 폴더(테스트 홈)에 심어 둔 파일**이다.
+ *
+ *  경로를 여기 적을 수 없다: 홈이 부팅마다 tmp 라 절대 경로를 아는 것은 파이썬 쪽뿐이고,
+ *  프로브가 아는 것은 **파일 이름**이다. 그래서 실 `tpl` 스냅샷(서식 폴더의 정본 목록)에서
+ *  같은 이름의 행을 찾아 그 `path` 로 연다 — 합성 스냅샷을 밀지 않으므로 「목록에 있는
+ *  경로만 연다」는 백엔드 관문(`screen_template.is_live_path`)도 실물로 지난다.
+ *
+ *  좌표는 `tests/corpus/real` 의 그 파일에서 왔고 헤드리스 왕복으로 확인했다:
+ *   · `query` 는 본문 검색 적중이 **한 곳**인 문구이고, 그 문단의 run 이 굵게(charPr 28)라
+ *     AC02 의 「서식 있는 문구」가 성립한다(`formatted`).
+ *   · `field` 는 사용 위치가 정확히 `occurrences` 곳인 필드다 — AC07 이 세는 그 수다.
+ *   · `newField`·`renamed` 는 문서에 없는 이름이다(이름 충돌 거절을 타지 않는다).
+ *
+ *  **순서대로 시도한다.** rhwp 왕복 보존 검사(`rhwp_roundtrip_preflight`)를 어느 문서가
+ *  통과하는지는 vendor 편집기의 실측 사실이라 정적으로 알 수 없고, 통과하지 못한 문서는
+ *  HWPX 수정 자체가 백엔드에서 차단된다(screen_authoring:517·548). 그래서 통과한 첫 문서로
+ *  밴드를 돌고, 하나도 통과하지 못하면 후보별 진단을 그대로 싣는다 — 조용히 초록이 되면
+ *  「편집이 아예 불가능했다」가 증거에서 사라진다. */
+const HWPX_AUTHORING_CANDIDATES = Object.freeze([
+  Object.freeze({
+    key: "bid_notice_limited_under100m.hwpx",
+    query: "입찰개요", context: "1. 입찰개요", formatted: true,
+    newField: "개요구간", field: "수요기관", occurrences: 2, renamed: "수요기관확인",
+  }),
+  Object.freeze({
+    key: "filled_notice_marine.hwpx",
+    query: "입찰개요", context: "1. 입찰개요", formatted: true,
+    newField: "개요구간", field: "수요기관", occurrences: 2, renamed: "수요기관확인",
+  }),
+]);
+
+/** 비동기 술어 폴링 — `waitFor` 는 **동기** 술어라 백엔드 왕복을 기다릴 수 없다. */
+async function pollFor(ctx, ready, tries, ms) {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (await ready()) return true;
+    await ctx.sleep(ms);
+  }
+  return !!(await ready());
+}
+
+/** HWPX 저작 밴드 — 실 rhwp iframe 위에서 AC01·AC02·AC07·AC23 의 거동을 되읽는다.
+ *
+ *  **편집기는 스텁하지 않는다.** 대체하는 것은 네이티브 대화상자 둘뿐이다(TXT 밴드와 같은
+ *  규율): 「문서 열기」의 파일 선택과 「저장」의 저장 위치 선택. 그 둘은 OS 창이라 게이트가
+ *  누를 수 없고, 그대로 두면 프로브가 대화상자 앞에서 매달린다. 세션·분석·미리보기·적용·
+ *  실행 취소·저장 판정은 전부 실제 왕복이다.
+ *
+ *  읽기는 **실 백엔드 스냅샷**(`Bridge.initial("authoring")`)으로 한다 — 컨트롤러 객체는
+ *  services 자루에 없고(포트로만 결속된다), 화면이 그리는 텍스트를 되파싱하면 재는 것이
+ *  제품의 상태가 아니라 표면의 문장이 된다. 쓰기는 반대로 전부 **실 DOM 클릭**이다.
+ *
+ *  바이트 비교의 기준선이 둘인 이유(중요): 마운트 시점의 세션 내용은 **디스크의 바이트**이고,
+ *  편집기가 한 번이라도 발신하면 세션 내용은 **rhwp 의 내보낸 바이트**가 된다. 보존 검사가
+ *  통과했다는 것은 그 둘이 c14n 동형이라는 뜻이지 바이트 동일이라는 뜻이 아니다. 그래서
+ *  「되돌리면 원본과 같다」의 확정은 제품의 비교기(`rhwp_roundtrip_preflight`)로 하고,
+ *  바이트 동일은 편집기 발신끼리(다시 실행 ↔ 적용, 두 번째 되돌리기 ↔ 첫 되돌리기)만 센다. */
+async function probeHwpxAuthoring(ctx, out) {
+  const doc = ctx.doc;
+  const Bridge = service(ctx, "Bridge");
+  const Nav = service(ctx, "Nav");
+  const Personalization = service(ctx, "Personalization");
+  const canvas = ".authoring-document:not([hidden])";
+  const all = (selector) => Array.prototype.slice.call(doc.querySelectorAll(selector));
+  const exact = (selector, label) => all(selector).find((el) => textOf(el).trim() === label) || null;
+  const snapshot = () => Bridge.initial("authoring");
+  const activeTab = (snap) => (((snap || {}).tabs) || []).find(
+    (tab) => tab.id === (snap || {}).active_id) || {};
+  const fieldsOf = (tab) => (((tab.analysis) || {}).fields) || [];
+  const countOf = (tab, name) => {
+    const found = fieldsOf(tab).find((field) => field.name === name);
+    return found ? found.count : 0;
+  };
+  /* 예산 파수꾼 — 남은 시한이 다음 국면을 감당하지 못하면 **이유를 적고** 멈춘다.
+     시한에 물려 죽으면 어디까지 갔는지가 증거에서 사라진다. */
+  const afford = (ms) => ctx.remainingMs() > ms;
+  const noAlert = () => {
+    const real = ctx.win.alert;
+    ctx.win.alert = function () { out.hwpx_authoring_alerts = (out.hwpx_authoring_alerts || 0) + 1; };
+    return { restore() { if (ctx.win.alert !== real) ctx.win.alert = real; } };
+  };
+
+  out.hwpx_authoring_error = null;
+  out.hwpx_authoring_alerts = 0;
+  out.hwpx_authoring_candidate = "";
+  out.hwpx_authoring_preflight = [];
+  let openStub = null;
+  let alerts = null;
+  let sid = "";
+  try {
+    const tpl = await Bridge.initial("tpl");
+    const rows = (((tpl || {}).column) || {}).rows || [];
+    out.hwpx_authoring_library_rows = rows.length;
+    /* 저작 화면 진입은 편집기 머리의 「템플릿 만들기」다(editor.ts:103 → 포트 → open()).
+       Nav 로 직접 가면 화면은 서지만 그 배선이 살아 있는지는 재지 못한다. */
+    const entry = exact("#scr-editor button", "템플릿 만들기");
+    out.hwpx_authoring_entry_affordance = !!entry;
+    if (!entry) return;
+    entry.click();
+    out.hwpx_authoring_screen_on = await waitFor(
+      ctx, () => byId(ctx, "scr-authoring").classList.contains("on"));
+    if (!out.hwpx_authoring_screen_on) return;
+
+    for (const candidate of HWPX_AUTHORING_CANDIDATES) {
+      const row = rows.find((item) => item && item.key === candidate.key);
+      const path = row ? String(row.path || "") : "";
+      if (!path) {
+        out.hwpx_authoring_preflight.push({ key: candidate.key, editable: null, reason: "목록에 없음" });
+        continue;
+      }
+      /* 후보 하나의 최악 몫(마운트 6초 + 보존 검사 6초)과 본 밴드의 몫을 합친 문턱이다.
+         남지 않았는데 들어가면 감시견이 프로브째 죽여 **TXT 단언 열둘까지** 증거를 잃는다. */
+      if (!afford(14000)) {
+        out.hwpx_authoring_preflight.push({ key: candidate.key, editable: null, reason: "예산 부족" });
+        break;
+      }
+      /* 네이티브 파일 선택만 대체한다 — 「문서 열기」는 as_template=false 로 열어
+         **저장 위치 미확정** 상태를 만든다(AC01 이 겨누는 그 상태다). */
+      openStub = stubBridgeInvoke(ctx, "openAuthoringDocument", "open_authoring_document",
+        (real) => (requested, asTemplate) => real(requested || path, asTemplate === true));
+      const open = exact(".authoring-head button", "문서 열기");
+      out.hwpx_authoring_open_affordance = !!open;
+      try {
+        if (!open) return;
+        open.click();
+        const started = await pollFor(ctx, async () => !!activeTab(await snapshot()).id, 20, 100);
+        if (!started) {
+          out.hwpx_authoring_preflight.push({ key: candidate.key, editable: null, reason: "세션 미생성" });
+          continue;
+        }
+      } finally { openStub.restore(); openStub = null; }
+      sid = String(activeTab(await snapshot()).id);
+      out.hwpx_authoring_mounted = await waitFor(
+        ctx, () => !!doc.querySelector(`${canvas} .authoring-editor-host iframe`), 30, 200);
+      /* 보존 검사 결과는 `rhwp_editable` 이 null 을 벗는 순간이다 — 마운트가 내보낸
+         바이트로 파이썬이 판정한다. */
+      await pollFor(ctx, async () => activeTab(await snapshot()).rhwp_editable !== null, 24, 250);
+      const tab = activeTab(await snapshot());
+      out.hwpx_authoring_preflight.push({
+        key: candidate.key,
+        editable: tab.rhwp_editable,
+        diagnostics: (tab.rhwp_diagnostics || []).slice(0, 6),
+      });
+      if (tab.rhwp_editable === true) {
+        out.hwpx_authoring_candidate = candidate.key;
+        out.hwpx_authoring_save_as_required = tab.save_as_required;
+        out.hwpx_authoring_rhwp_editable = tab.rhwp_editable;
+        out.hwpx_authoring_readiness = String(((tab.readiness) || {}).state || "");
+        out.hwpx_authoring_field_count = fieldsOf(tab).length;
+        out.hwpx_authoring_target_field_count = countOf(tab, candidate.field);
+        out.hwpx_authoring_target_formatted = candidate.formatted === true;
+        /* 필드 목록은 **셈과 함께** 싣는다 — 실패했을 때 「어느 필드가 몇 곳인가」를 증거에서
+           바로 읽을 수 있어야 사후에 문서를 다시 열어 보지 않는다. */
+        out.hwpx_authoring_fields = fieldsOf(tab)
+          .slice(0, 12).map((field) => `${field.name}:${field.count}`);
+        await runHwpxAuthoringBand(ctx, out, candidate, sid);
+        break;
+      }
+      /* 통과하지 못한 문서는 수정이 차단된다 — 탭을 닫고 다음 후보로 간다(읽기 전용
+         문서를 든 채로 다음 문서를 열면 어느 탭을 재는지가 흐려진다). */
+      await closeHwpxAuthoringTab(ctx, out);
+      sid = "";
+    }
+  } catch (thrown) {
+    /* 밴드의 예외는 **이 키에만** 싣는다 — `ctx.fail` 로 올리면 같은 프로브가 지는 TXT
+       단언 열둘이 함께 죽어 원인이 흐려진다. */
+    out.hwpx_authoring_error = String((thrown && thrown.message) || thrown);
+  } finally {
+    if (openStub) openStub.restore();
+    /* 복원은 **셋 다** 돈다(앞의 실패가 뒤의 복원을 삼키지 않는다): 배율 → 창 크기 →
+       탭·화면. 배율과 창은 뒤따르는 클러스터 E 프로브가 그 값을 재므로 남기면 그쪽 실패로
+       나타나 귀인이 갈린다(shell_settings 가 테마를 되돌리는 것과 같은 규율). */
+    try {
+      alerts = noAlert();
+      /* 올렸던 배율만 되돌린다 — 속성이 아예 없는 대역에서 부르면 개인화 동사가 폭까지
+         새로 심어(하한 180px) 뒤따르는 프로브의 값을 바꾼다. */
+      const scale = doc.documentElement.getAttribute("data-font-scale");
+      if (scale !== null && scale !== "normal") Personalization.setFontScale("normal");
+    } catch (thrown) {
+      out.hwpx_authoring_restore_error = String((thrown && thrown.message) || thrown);
+    } finally { if (alerts) { alerts.restore(); alerts = null; } }
+    if (ctx.state.hwpxWindowResized === true) {
+      try {
+        await ctx.host("window_resize", { width: 1440, height: 900 });
+        await ctx.sleep(600);
+        ctx.state.hwpxWindowResized = false;
+      } catch (thrown) {
+        out.hwpx_authoring_restore_error = String((thrown && thrown.message) || thrown);
+      }
+    }
+    try {
+      await closeHwpxAuthoringTab(ctx, out);
+      out.hwpx_authoring_disposed = await waitFor(
+        ctx, () => !doc.querySelector(".authoring-editor-host iframe"));
+      const back = exact(".authoring-head button", "돌아가기");
+      if (back) back.click();
+      await waitFor(ctx, () => !byId(ctx, "scr-authoring").classList.contains("on"));
+      out.hwpx_authoring_screen_on_after_close = byId(ctx, "scr-authoring")
+        .classList.contains("on");
+      Nav.go("editor", { force: true });
+      await settleRender(ctx);
+    } catch (thrown) {
+      out.hwpx_authoring_restore_error = String((thrown && thrown.message) || thrown);
+    }
+  }
+}
+
+/** 열린 저작 탭을 닫는다 — 미저장 변경이 있으면 3택에서 **버리기**를 고른다(force 닫기). */
+async function closeHwpxAuthoringTab(ctx, out) {
+  const doc = ctx.doc;
+  const close = doc.querySelector('.authoring-tab button[aria-label$="닫기"]');
+  if (!close) return;
+  close.click();
+  const asking = () => !byId(ctx, "chooseModal").classList.contains("hidden");
+  if (await waitFor(ctx, asking, 20, 50)) {
+    out.hwpx_authoring_close_asks = true;
+    byId(ctx, "chooseModalAlt").click();
+    settleModal(ctx, "chooseModal");
+    await waitFor(ctx, () => !asking());
+  }
+  out.hwpx_authoring_closed = await waitFor(
+    ctx, () => !doc.querySelector(".authoring-tab button[aria-label]"));
+}
+
+/** 통과한 문서 하나 위에서 도는 본 밴드(AC01·AC02·AC07·AC23). */
+async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
+  const doc = ctx.doc;
+  const Bridge = service(ctx, "Bridge");
+  const Personalization = service(ctx, "Personalization");
+  const all = (selector) => Array.prototype.slice.call(doc.querySelectorAll(selector));
+  const hit = (selector, label) => all(selector).find((el) => textOf(el).indexOf(label) >= 0) || null;
+  const exact = (selector, label) => all(selector).find((el) => textOf(el).trim() === label) || null;
+  const snapshot = () => Bridge.initial("authoring");
+  const activeTab = (snap) => (((snap || {}).tabs) || []).find(
+    (tab) => tab.id === (snap || {}).active_id) || {};
+  const fieldsOf = (tab) => (((tab.analysis) || {}).fields) || [];
+  const countOf = (tab, name) => {
+    const found = fieldsOf(tab).find((field) => field.name === name);
+    return found ? found.count : 0;
+  };
+  const tab = async () => activeTab(await snapshot());
+  const content = async () => String(
+    (await Bridge.call("authoring", "content", { session_id: sid })).content);
+  const undoLabel = () => textOf(hit(".authoring-toolbar button", "문서 실행 취소")).trim();
+  const previewText = () => textOf(doc.querySelector(
+    ".authoring-properties section.authoring-preview:not(.authoring-refusal)"));
+  const affected = () => {
+    const found = /사용 위치 (\d+)곳/.exec(previewText());
+    return found ? Number(found[1]) : -1;
+  };
+  /** 미리보기 확정 — 적용 버튼은 미리보기 구획 **안**의 첫 버튼이다(취소가 둘째). */
+  const applyPreview = async () => {
+    const section = doc.querySelector(
+      ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
+    if (!section) return false;
+    const apply = section.querySelector("button");
+    if (!apply) return false;
+    apply.click();
+    return true;
+  };
+  const afford = (ms) => ctx.remainingMs() > ms;
+
+  /* 내부 대기 상한은 **짧게** 잡는다(DOM 2초 · 백엔드 왕복 2.5초). 어느 국면이 서지
+     않으면 사유를 적고 곧장 나간다 — 아홉 자리에서 각자 길게 기다리면 합이 프로브 시한을
+     넘고, 그때는 감시견이 프로브째 죽여 TXT 단언까지 증거를 잃는다. */
+  const DOM_TRIES = 20;
+  const DOM_MS = 100;
+  const WIRE_TRIES = 20;
+  const WIRE_MS = 125;
+  const give = (reason) => { out.hwpx_authoring_aborted = reason; return false; };
+
+  const mount = await content();                        // 디스크 바이트(아직 편집기 발신 전)
+  out.hwpx_authoring_base_field_count = fieldsOf(await tab()).length;
+
+  /* ── ④ 서식 있는 본문 문구를 고르고 필드로 만든다 ─────────────────────────────
+     본문 범위 선택은 iframe **안**의 사건이라 게이트가 직접 끌 수 없다. 제품이 같은
+     선택을 만드는 두 번째 실경로가 검색 적중 클릭이다(controller.select → locate). */
+  exact(".authoring-toolbar button", "검색").click();
+  if (!await waitFor(ctx, () => !!doc.querySelector('.authoring-bottom input[name="query"]'),
+    DOM_TRIES, DOM_MS)) return give("검색 패널 미개방");
+  typeValue(ctx, doc.querySelector('.authoring-bottom input[name="query"]'), candidate.query);
+  exact(".authoring-bottom button", "찾기").click();
+  const found = await waitFor(
+    ctx, () => !!hit(".authoring-bottom button", candidate.context), WIRE_TRIES, WIRE_MS);
+  out.hwpx_authoring_search_hit = found
+    ? textOf(hit(".authoring-bottom button", candidate.context)).trim() : "";
+  if (!found) return give("본문 검색 적중 없음");
+  hit(".authoring-bottom button", candidate.context).click();
+  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties"), DOM_TRIES, DOM_MS)) {
+    return give("선택 뒤 속성 패널 미개방");
+  }
+  const create = exact(".authoring-toolbar button", "필드로 만들기");
+  out.hwpx_authoring_create_enabled = !!(create && !create.disabled);
+  if (!out.hwpx_authoring_create_enabled) return give("필드로 만들기 비활성");
+  create.click();
+  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),
+    DOM_TRIES, DOM_MS)) return give("속성 입력 없음");
+  typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.newField);
+  exact(".authoring-properties button", "변경 미리보기").click();
+  if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {
+    out.hwpx_authoring_create_refusal = textOf(
+      doc.querySelector(".authoring-refusal")).trim().slice(0, 160);
+    return give("필드 만들기 미리보기 미도착");
+  }
+  out.hwpx_authoring_create_affected = affected();
+  if (!(await applyPreview())) return give("적용 버튼 없음");
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
+    WIRE_TRIES, WIRE_MS)) return give("필드 생성이 분석에 반영되지 않음");
+  const created = await content();
+  out.hwpx_authoring_create_field_count = fieldsOf(await tab()).length;
+  out.hwpx_authoring_create_label = undoLabel();
+  out.hwpx_authoring_create_changed_content = created !== mount;
+
+  /* ── ⑤ 한 번의 문서 실행 취소가 원래 본문을 되돌린다 ───────────────────────── */
+  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
+    WIRE_TRIES, WIRE_MS)) return give("실행 취소가 필드를 되돌리지 않음");
+  const undone = await content();
+  out.hwpx_authoring_undo_field_count = fieldsOf(await tab()).length;
+  out.hwpx_authoring_undo_changed_content = undone !== created;
+  /* 진단용(단언하지 않는다): 마운트 시점 기준선은 **디스크 바이트**라, 되돌린 뒤 편집기가
+     내보낸 바이트와 동일하지 않을 수 있다. 원본 동일의 확정은 ⑧의 제품 비교기가 진다. */
+  out.hwpx_authoring_undo_content_equals_mount = undone === mount;
+  out.hwpx_authoring_undo_label_cleared = undoLabel() === "문서 실행 취소";
+  exact(".authoring-toolbar button", "문서 다시 실행").click();
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
+    WIRE_TRIES, WIRE_MS)) return give("다시 실행이 필드를 되살리지 않음");
+  out.hwpx_authoring_redo_field_count = fieldsOf(await tab()).length;
+  out.hwpx_authoring_redo_content_equals_create = (await content()) === created;
+  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
+    WIRE_TRIES, WIRE_MS)) return give("두 번째 실행 취소 미반영");
+  out.hwpx_authoring_undo2_content_equals_undo = (await content()) === undone;
+
+  /* ── ⑥ 이름 변경은 **모든 사용 위치**를 함께 옮긴다(AC07) ───────────────────── */
+  if (!afford(8000)) return give("예산 부족: 이름 변경");
+  const summary = all(".authoring-outline summary button").find(
+    (el) => textOf(el).indexOf(`${candidate.field} · ${candidate.occurrences}`) === 0);
+  out.hwpx_authoring_rename_target = summary ? textOf(summary).trim() : "";
+  if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
+  summary.click();
+  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),
+    DOM_TRIES, DOM_MS)) return give("필드 선택 뒤 속성 입력 없음");
+  typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.renamed);
+  exact(".authoring-properties button", "변경 미리보기").click();
+  if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {
+    out.hwpx_authoring_rename_refusal = textOf(
+      doc.querySelector(".authoring-refusal")).trim().slice(0, 160);
+    return give("이름 변경 미리보기 미도착");
+  }
+  out.hwpx_authoring_rename_affected = affected();
+  out.hwpx_authoring_rename_preview_text = previewText().trim().slice(0, 160);
+  if (!(await applyPreview())) return give("이름 변경 적용 버튼 없음");
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.renamed) > 0,
+    WIRE_TRIES, WIRE_MS)) return give("이름 변경이 분석에 반영되지 않음");
+  const renamed = await tab();
+  out.hwpx_authoring_rename_new_count = countOf(renamed, candidate.renamed);
+  out.hwpx_authoring_rename_old_count = countOf(renamed, candidate.field);
+  out.hwpx_authoring_rename_field_total = fieldsOf(renamed).length;
+  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.field) > 0,
+    WIRE_TRIES, WIRE_MS)) return give("이름 변경 실행 취소 미반영");
+  const restored = await tab();
+  out.hwpx_authoring_rename_undo_old_count = countOf(restored, candidate.field);
+  out.hwpx_authoring_rename_undo_new_count = countOf(restored, candidate.renamed);
+
+  /* ── ⑦ 표시 방식 전환은 내용도 미저장 상태도 건드리지 않는다(AC23) ───────────── */
+  const beforeModes = await tab();
+  const contentBeforeModes = await content();
+  const mode = doc.querySelector(".authoring-toolbar select");
+  if (!mode) return give("표시 방식 선택이 없음");
+  const applied = [];
+  for (const value of ["document", "structure", "template"]) {
+    mode.value = value;
+    mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
+    await settleRender(ctx);
+    await ctx.sleep(120);                               // 장식 왕복(iframe) 반영
+    applied.push(mode.value);
+  }
+  out.hwpx_authoring_modes = applied;
+  const afterModes = await tab();
+  out.hwpx_authoring_mode_dirty_before = beforeModes.dirty;
+  out.hwpx_authoring_mode_dirty_after = afterModes.dirty;
+  out.hwpx_authoring_mode_content_stable = (await content()) === contentBeforeModes;
+
+  /* ── 좁은 창(760×600)·150% 배율에서도 편집면이 서고 가로 스크롤이 없다 ───────── */
+  const fits = () => {
+    const root = doc.documentElement;
+    const face = doc.querySelector(".authoring-canvas");
+    return {
+      scroll_w: root.scrollWidth, client_w: root.clientWidth,
+      canvas_h: face ? face.clientHeight : 0,
+      ok: root.scrollWidth <= root.clientWidth && !!face && face.clientHeight > 100,
+    };
+  };
+  if (afford(6000)) {
+    ctx.state.hwpxWindowResized = true;
+    await ctx.host("window_resize", { width: 760, height: 600 });
+    await ctx.sleep(600);                               // OS resize → relayout(grid_narrow 와 같은 값)
+    const narrow = fits();
+    out.hwpx_authoring_min_window_ok = narrow.ok;
+    out.hwpx_authoring_min_window_scroll_w = narrow.scroll_w;
+    out.hwpx_authoring_min_window_client_w = narrow.client_w;
+    out.hwpx_authoring_min_window_canvas_h = narrow.canvas_h;
+    await ctx.host("window_resize", { width: 1440, height: 900 });
+    await ctx.sleep(600);
+    ctx.state.hwpxWindowResized = false;
+    /* 배율은 제품의 개인화 동사로 올린다(설정 모달이 부르는 그 함수) — 150% = `larger`.
+       그 동사는 **폭도 함께 다시 쓴다**(`apply` 가 현재 계산값을 읽어 되쓴다). 그래서 그
+       값이 아직 서지 않은 대역에서 부르면 하한(180px)이 심어지고, 그 자취는 뒤따르는
+       개인화 프로브의 `master_width == 240` 실패로 나타난다 — 서지 않았으면 부르지 않고
+       사유를 싣는다(원인이 이 밴드가 아니라 저쪽 프로브로 보이는 경로를 만들지 않는다). */
+    const app = doc.querySelector(".app");
+    const masterBefore = app
+      ? ctx.win.getComputedStyle(app).getPropertyValue("--master-width").trim() : "";
+    if (!masterBefore) {
+      out.hwpx_authoring_font_scale_skipped = "개인화가 아직 폭을 적용하지 않았습니다";
+    } else {
+      const real = ctx.win.alert;
+      ctx.win.alert = function () {
+        out.hwpx_authoring_alerts = (out.hwpx_authoring_alerts || 0) + 1;
+      };
+      try {
+        Personalization.setFontScale("larger");
+        await settleRender(ctx);
+        await ctx.sleep(200);
+        const large = fits();
+        out.hwpx_authoring_font_scale = String(
+          doc.documentElement.getAttribute("data-font-scale") || "");
+        out.hwpx_authoring_font_scale_px = ctx.win.getComputedStyle(doc.documentElement).fontSize;
+        out.hwpx_authoring_font_scale_ok = large.ok;
+        out.hwpx_authoring_font_scale_scroll_w = large.scroll_w;
+        out.hwpx_authoring_font_scale_client_w = large.client_w;
+        out.hwpx_authoring_font_scale_canvas_h = large.canvas_h;
+      } finally {
+        Personalization.setFontScale("normal");
+        await settleRender(ctx);
+        ctx.win.alert = real;
+      }
+      out.hwpx_authoring_font_scale_restored = ctx.win.getComputedStyle(
+        doc.documentElement).fontSize === "16px";
+      out.hwpx_authoring_master_width_stable = ctx.win.getComputedStyle(app)
+        .getPropertyValue("--master-width").trim() === masterBefore;
+    }
+  }
+
+  /* ── ⑧ 한 번도 저장하지 않은 문서의 첫 저장은 **경로를 묻는다**(AC01) ────────── */
+  if (!afford(4000)) return give("예산 부족: 저장 판정");
+  const asked = { count: 0 };
+  const saveStub = stubBridgeInvoke(ctx, "saveAuthoringDocument", "save_authoring_document",
+    () => async () => { asked.count += 1; return null; });   // 취소 = 아무 파일도 쓰지 않는다
+  try {
+    exact(".authoring-head button", "저장").click();
+    await pollFor(ctx, async () => asked.count > 0, DOM_TRIES, DOM_MS);
+  } finally { saveStub.restore(); }
+  out.hwpx_authoring_save_asked_for_path = asked.count === 1;
+  const current = await tab();
+  const refusal = await Bridge.call("authoring", "save",
+    { session_id: sid, revision: current.revision });
+  out.hwpx_authoring_save_needs_path = refusal.needs_path === true && refusal.needs_save_as === true;
+  out.hwpx_authoring_save_path_after = String((await tab()).save_path || "");
+
+  /* 되돌린 문서가 **디스크의 원본과 같은가** — 제품의 보존 비교기로 확정한다(바이트 비교로는
+     rhwp 직렬화 차이와 진짜 손실을 가를 수 없다). 이 자리가 마지막인 이유: 비교 결과가
+     `rhwp_editable` 을 다시 쓰므로, 실패하면 문서가 읽기 전용이 된다. */
+  const source = await Bridge.call("authoring", "external_content", { session_id: sid });
+  const verdict = await Bridge.call("authoring", "rhwp_roundtrip_preflight",
+    { session_id: sid, revision: (await tab()).revision, content: source.content });
+  out.hwpx_authoring_undone_matches_source = verdict.editable === true;
+  out.hwpx_authoring_undone_diagnostics = (verdict.diagnostics || []).slice(0, 6);
+}
+
 /** 몰입 표면을 걷고 셸을 되돌린다 — app.py:2058-2065 · 2158-2162 · 3316-3322 의 `finish()` 앞머리.
  *
  *  레거시는 실패를 `out.teardown_error` 에만 적었고 **아무 테스트도 그 필드를 읽지 않는다**.
@@ -1031,13 +1502,20 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3808,
-      deadlineMs: 6000,
+      deadlineMs: 28000,
       deadlineRationale:
         "공용 `_probe_late` 예산 2.5초에 **린트메모장 단계**가 얹혔다(S10-05 #862): 창 열기 +"
         + " 디바운스 180ms + `authoring` 분석 실왕복 + 이탈 확인 왕복이 한 프로브 안에서 돈다."
         + " 늘린 것은 매달림을 유한 시간에 빨강으로 만드는 상한이지 통과 조건이 아니다 —"
-        + " 실측 여유(내부 대기 상한 2×1.2초)를 담되 무한정은 아니게 잡는다.",
+        + " 실측 여유(내부 대기 상한 2×1.2초)를 담되 무한정은 아니게 잡는다."
+        + " 여기에 **HWPX 저작 밴드**가 얹힌다: vendor rhwp iframe 마운트 + 실 문서 적재 +"
+        + " 왕복 보존 검사(내보내기 → 파이썬 c14n 비교) + 필드 만들기·되돌리기·다시 실행·"
+        + " 이름 변경·표시 전환·저장 판정이 한 세션 안에서 돈다. 후보 문서가 보존 검사를"
+        + " 통과하지 못하면 다음 후보로 한 번 더 마운트하므로 그 몫도 든다. 밴드는 `ctx"
+        + ".remainingMs()` 로 국면마다 예산을 보고 모자라면 사유를 싣고 멈춘다 — 상한이 무는"
+        + " 것은 매달림뿐이고, 엔진 총예산(80초)을 지키려면 이 상한이 유계여야 한다.",
       completionField: "pending",
+      requiresHost: ["window_resize"],
       after: ["editor_discard_immediate"],
       afterReason: "레거시 드라이버 순서 그대로(3802 → 3808).",
       note:
@@ -1116,6 +1594,12 @@ export function createEditorWorkbenchDataProbes() {
           out.txt_pattern_input = !!ctx.doc.querySelector(
             '#editor-body input[data-act="pattern"]');
           out.txt_out_dir_row = !!byId(ctx, "editorOutFolderRow");
+          /* HWPX **저작** 밴드는 TXT 밴드 뒤에 선다(같은 부팅·같은 프로브): 실창 게이트는
+             창을 늘리지 않고 이미 선 세션에 단계를 얹는다. 합성 tpl 스냅샷을 밀어 둔 뒤라도
+             무해하다 — 이 밴드는 DOM 목록이 아니라 실 `tpl` 채널의 스냅샷에서 경로를
+             회수한다. 예외는 `hwpx_authoring_error` 에만 실려 TXT 단언 열둘을 끌고 죽지
+             않는다(원인 하나가 실패 열셋으로 번지는 것이 #429 의 그 결함류다). */
+          await probeHwpxAuthoring(ctx, out);
           out.why = "완료";
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));

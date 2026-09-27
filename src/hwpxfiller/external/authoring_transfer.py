@@ -287,8 +287,7 @@ def _region_from_selector(package: HwpxPackage, selector: Mapping[str, object]):
                    if item.section == loc["entry"] and item.name == raw["bookmark_name"]
                    and item.start_paragraph == loc["start_paragraph"]
                    and item.end_paragraph == loc["end_paragraph"]), None)
-    if region is None:
-        raise ValueError("복사할 영역의 경계를 확인할 수 없습니다.")
+    assert region is not None
     return region, selected
 
 
@@ -393,7 +392,7 @@ def _block_paste(source: HwpxPackage, target: HwpxPackage, selector: Mapping[str
                 elif selector["kind"] == "slot":
                     old_prefix = str(selector["slot_id"]) + "/"
                     if (element.get("name") or "").startswith(old_prefix):
-                        element.set("name", new_id + (element.get("name") or "")[len(old_prefix):])
+                        element.set("name", f"{new_id}/{(element.get('name') or '')[len(old_prefix):]}")
     insertion = root.index(paragraphs[index]) if index < len(paragraphs) else root.index(paragraphs[-1]) + 1
     for offset, paragraph in enumerate(clones):
         root.insert(insertion + offset, paragraph)

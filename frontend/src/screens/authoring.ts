@@ -310,10 +310,7 @@ function SemanticForm({ controller, selected, selection, preview }: Props & { se
         const captured = preview.original;
         await controller.applyPreview();
         if (type === "create_field" && captured) controller.update({ lastCreatedText: String(captured) });
-        if (type === "create_field" && keepValue && name && captured) {
-          const current = controller.viewModel.getSnapshot();
-          if (!(name in current.values)) await controller.trialInput({ ...current.values, [name]: captured }, current.selectedOptions);
-        }
+        if (type === "create_field" && keepValue && name && captured) await controller.keepTrialValue(name, String(captured));
       }); }, { className: "btn sm primary" }),
       button("취소", cancel)),
   );

@@ -8,7 +8,7 @@ import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
 // Headless Node only; Python tests own semantic edits and durable storage.
-function harness(handler = () => ({})) {
+function harness(handler = () => ({}), modal = {}) {
   const snapshot = { active_id: "a", tabs: [
     { id: "a", name: "a.txt", path: "a.txt", revision: 0, values: {}, selected: {} },
     { id: "b", name: "b.txt", path: "b.txt", revision: 0, values: {}, selected: {} },
@@ -25,7 +25,7 @@ function harness(handler = () => ({})) {
   };
   const controller = createAuthoringController({ client,
     runtime: { model: () => ({ getSnapshot: () => snapshot, subscribe: () => () => {} }), loadInitial: async () => {} },
-    modal: { choose: async () => "save", prompt: async () => null, confirm: async () => true },
+    modal: { choose: async () => "save", prompt: async () => null, confirm: async () => true, ...modal },
     navigation: { go() {}, refresh: async () => {} },
   });
   return { controller, calls, snapshot };
@@ -466,4 +466,19 @@ test("F26: 원문 표기 asks Python's syntax action and renders read-only secti
   assert.ok(markup.includes('<h3>Contents/section0.xml</h3><pre tabindex="0" aria-label="Contents/section0.xml 원문 표기">{{공고명}}'));
   assert.ok(markup.includes('class="btn sm">복사</button>'));
   assert.ok(!markup.includes("<textarea"), "JSON 덤프 textarea 는 없다");
+});
+
+test("U03 keeping the captured text asks keep/replace when a trial value already exists", async () => {
+  const runs = [];
+  const make = (answer) => harness((action, payload) => { if (action === "trial_input") runs.push([answer, payload.values]); return {}; }, { choose: async () => answer });
+  const kept = make("keep");
+  kept.controller.update({ values: { 공고명: "old" }, selectedOptions: {} });
+  assert.equal(await kept.controller.keepTrialValue("공고명", "new"), false, "유지를 고르면 시험값이 바뀌지 않는다");
+  const replaced = make("replace");
+  replaced.controller.update({ values: { 공고명: "old" }, selectedOptions: {} });
+  assert.equal(await replaced.controller.keepTrialValue("공고명", "new"), true);
+  const fresh = make("keep");
+  fresh.controller.update({ values: {}, selectedOptions: {} });
+  assert.equal(await fresh.controller.keepTrialValue("공고명", "new"), true, "값이 없으면 묻지 않고 보관한다");
+  assert.deepEqual(runs, [["replace", { 공고명: "new" }], ["keep", { 공고명: "new" }]]);
 });

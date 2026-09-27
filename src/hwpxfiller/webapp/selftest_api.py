@@ -179,7 +179,8 @@ OP_CLASSIFICATION: "dict[str, HostOpSpec]" = {
             "window_resize",
             CLASS_RUNTIME_REQUEST,
             "네이티브 창 크기 변경은 문서 밖이라 프런트가 못 한다. boot_routing_overlay·job·"
-            "persistence_geometry 세 클러스터가 hostSetup 으로 요청한다(오늘 app.py 의 resize 6회).",
+            "persistence_geometry·editor_workbench_data(저작 작업대 최소 창 검사) 네 클러스터가 "
+            "hostSetup 으로 요청한다.",
         ),
         HostOpSpec(
             "window_geometry",

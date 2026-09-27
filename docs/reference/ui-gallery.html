@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   살아있는 컴포넌트 갤러리 (개발 전용 · 배포 exe 미포함).
-  실 frontend/css/tokens.css + 앱 스타일시트을 <link> 로 그대로, **셸과 같은 순서로** 물어
+  실 frontend/css/tokens.css + 앱 스타일시트를 <link> 로 그대로, **셸과 같은 순서로** 물어
   **스타일** 드리프트 0 — CSS 를 고치면 이 페이지 색·간격·규칙이 자동 반영된다. 조각을 하나라도
   빠뜨리거나 순서를 바꾸면 실앱과 다른 화면이 된다. 이 개발용 페이지의 링크는 자동 게이트가
   아니므로 제품 정본 frontend/src/main.js의 CSS import 순서와 함께 갱신한다. 대조:
@@ -62,7 +62,7 @@ body{padding:0}
 <body>
 <header class="gal-mast">
   <h1>컴포넌트 갤러리</h1>
-  <p>실 <span class="path">frontend/css/tokens.css</span> + 앱 스타일시트을 셸과 같은 순서로 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
+  <p>실 <span class="path">frontend/css/tokens.css</span> + 앱 스타일시트를 셸과 같은 순서로 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
   <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 frontend/src/shell/preferences.ts 소유. -->
   <button class="gal-theme" id="galTheme" type="button">테마: 시스템</button>
 </header>
