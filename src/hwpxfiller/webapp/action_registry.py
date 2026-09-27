@@ -76,6 +76,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "copy": _schema("session_id revision selector"),
         "preview_paste": _schema("session_id revision clipboard_token destination with_meaning"),
         "rhwp_roundtrip_preflight": _schema("session_id revision content"),
+        # 편집기가 마운트·보존 검사를 끝내지 못했다는 보고 — 판정이 없으면 Python 이 수정을 잠근다.
+        "rhwp_unverified": _schema("session_id revision detail"),
+        # 최근 작업 위치·표시 방식(U02) — 문서별로 앱 홈에 둔다. 템플릿 파일에는 넣지 않는다.
+        "remember_view": _schema("session_id revision selection mode"),
         "trial_input": _schema("session_id revision values selected"),
         "trial": _schema("session_id revision"),
         "search": _schema("session_id revision query kind"),

@@ -3,10 +3,12 @@
 from pathlib import Path
 from types import SimpleNamespace
 import base64
+import json
 import xml.etree.ElementTree as ET
 
 import pytest
 
+from hwpxfiller.external.authoring_store import digest
 from hwpxfiller.webapp.screen_authoring import AuthoringController
 from hwpxfiller.domain.template_authoring import apply as apply_txt
 from hwpxcore.package import HwpxPackage
@@ -642,3 +644,194 @@ def test_close_guard_separates_document_and_test_material(tmp_path: Path) -> Non
     assert ctrl.dispatch("close", {"session_id": sid})["cases_dirty"] is True
     assert ctrl.close_guard_reason() == "저작 작업대: 미저장 문서 1개 · 시험 자료 1개"
     assert ctrl.dispatch("close", {"session_id": sid, "force": True}) == {"ok": True}
+
+
+def _tab(ctrl: AuthoringController, sid: str) -> dict:
+    return next(item for item in ctrl.snapshot()["tabs"] if item["id"] == sid)
+
+
+def test_reopen_restores_last_position_and_mode_from_the_app_home(tmp_path: Path) -> None:
+    """U02: 최근 작업 위치·표시 방식은 앱 홈에 문서별로 남고, 재시작 뒤 같은 문서에서 복원된다."""
+    path = tmp_path / "template.txt"
+    path.write_text("😀 {{이름}} 끝", encoding="utf-8")
+    before = path.read_bytes()
+    ctrl = _controller(tmp_path)
+    sid = ctrl.open_path(path)["session_id"]
+    assert _tab(ctrl, sid)["restore"] is None
+    remembered = ctrl.dispatch("remember_view", {"session_id": sid, "revision": 0, "mode": "structure",
+                                                 "selection": {"start": 3, "end": 9}})
+    assert remembered == {"stored": True}
+    assert path.read_bytes() == before, "작업 위치는 템플릿 파일에 들어가지 않는다"
+    ctrl.dispatch("close", {"session_id": sid})
+
+    restarted = _controller(tmp_path)
+    reopened = restarted.open_path(path)["session_id"]
+    expected = {"state": "restored", "mode": "structure", "selection": {"start": 3, "end": 9},
+                "message": None}
+    assert _tab(restarted, reopened)["restore"] == expected
+    assert restarted.dispatch("activate", {"session_id": reopened})["restore"] == expected
+    # 다시 연 문서에서 커서가 비면 기록도 새 값으로 바뀐다(마지막 값이 이긴다).
+    restarted.dispatch("remember_view", {"session_id": reopened, "revision": 0, "mode": "document",
+                                         "selection": {}})
+    third = _controller(tmp_path)
+    assert _tab(third, third.open_path(path)["session_id"])["restore"] == {
+        "state": "restored", "mode": "document", "selection": None, "message": None}
+
+
+def test_restore_drops_coordinates_when_the_document_changed_since_they_were_taken(tmp_path: Path) -> None:
+    path = tmp_path / "template.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    ctrl = _controller(tmp_path)
+    sid = ctrl.open_path(path)["session_id"]
+    # 미저장 편집 위에서 잡은 좌표는 그 편집 내용의 것이다 — 저장하지 않고 닫으면 파일과 어긋난다.
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "{{이름}} 아주 긴 추가 문장"})
+    ctrl.dispatch("remember_view", {"session_id": sid, "revision": 1, "mode": "structure",
+                                    "selection": {"start": 12, "end": 14}})
+    ctrl.dispatch("close", {"session_id": sid, "force": True})
+    stale = _controller(tmp_path)
+    reopened = stale.open_path(path)["session_id"]
+    assert _tab(stale, reopened)["restore"] == {
+        "state": "stale", "mode": "structure", "selection": None,
+        "message": "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다."}
+
+    # 외부 프로그램이 파일을 바꾼 경우도 같다.
+    stale.dispatch("remember_view", {"session_id": reopened, "revision": 0, "mode": "template",
+                                     "selection": {"start": 0, "end": 2}})
+    stale.dispatch("close", {"session_id": reopened})
+    path.write_text("외부에서 바뀐 {{이름}}", encoding="utf-8")
+    outside = _controller(tmp_path)
+    assert _tab(outside, outside.open_path(path)["session_id"])["restore"]["state"] == "stale"
+
+
+def test_unreadable_or_out_of_range_positions_are_diagnosed_not_ignored(tmp_path: Path) -> None:
+    path = tmp_path / "template.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    ctrl = _controller(tmp_path)
+    record = tmp_path / "home" / "workspace" / f"{ctrl.store.key(path)}.json"
+    record.parent.mkdir(parents=True)
+    fingerprint = digest(path.read_bytes())
+    for payload in (
+        "{",
+        json.dumps({"version": 9, "fingerprint": fingerprint, "mode": "template", "selection": None}),
+        json.dumps({"version": 1, "fingerprint": fingerprint, "mode": "표", "selection": None}),
+        json.dumps({"version": 1, "fingerprint": fingerprint, "mode": "template",
+                    "selection": {"start": 0, "end": 99}}),
+        json.dumps({"version": 1, "fingerprint": fingerprint, "mode": "template",
+                    "selection": {"start": 0, "end": 1, "extra": True}}),
+    ):
+        record.write_text(payload, encoding="utf-8")
+        fresh = _controller(tmp_path)
+        restore = _tab(fresh, fresh.open_path(path)["session_id"])["restore"]
+        assert restore["state"] == "unreadable" and restore["selection"] is None, payload
+        assert restore["message"].startswith("최근 작업 위치를 읽을 수 없습니다: "), restore
+
+
+def test_remember_view_refuses_bad_input_and_skips_pathless_or_stale_sessions(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    new = ctrl.dispatch("new", {"media": "txt", "content": "본문"})["session_id"]
+    assert ctrl.dispatch("remember_view", {"session_id": new, "revision": 0, "mode": "template",
+                                           "selection": {"start": 0, "end": 1}}) == {"stored": False}
+    assert not (tmp_path / "home" / "workspace").exists()
+    path = tmp_path / "template.txt"
+    path.write_text("본문", encoding="utf-8")
+    sid = ctrl.open_path(path)["session_id"]
+    assert ctrl.dispatch("remember_view", {"session_id": sid, "revision": 7, "mode": "template",
+                                           "selection": {"start": 0, "end": 1}}) == {"stored": False}
+    for mode, selection in (("표", {"start": 0, "end": 1}), ("template", {"start": -1, "end": 1}),
+                            ("template", {"start": True, "end": 1}), ("template", {"end": 1}),
+                            ("template", {"start": 0, "end": 1, "entry": 3}),
+                            ("template", {"start": 0, "end": 1, "cell_path": []}),
+                            ("template", "0-1")):
+        with pytest.raises(ValueError):
+            ctrl.dispatch("remember_view", {"session_id": sid, "revision": 0, "mode": mode,
+                                            "selection": selection})
+    with pytest.raises(ValueError):
+        ctrl.dispatch("remember_view", {"session_id": sid, "revision": "0", "mode": "template",
+                                        "selection": {}})
+
+
+def test_hwpx_positions_restore_with_section_coordinates(tmp_path: Path) -> None:
+    fixture = tmp_path / "template.hwpx"
+    fixture.write_bytes((Path(__file__).parent / "fixtures" / "template_v1.hwpx").read_bytes())
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(fixture)
+    entry = opened["section_entries"][0]
+    selection = {"entry": entry, "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0,
+                 "start": 1, "end": 2,
+                 "cell_path": [{"parent_paragraph": 0, "control": 0, "cell": 1, "paragraph": 0}]}
+    assert ctrl.dispatch("remember_view", {"session_id": opened["session_id"], "revision": 0,
+                                           "mode": "template", "selection": selection}) == {"stored": True}
+    again = _controller(tmp_path)
+    assert _tab(again, again.open_path(fixture)["session_id"])["restore"]["selection"] == selection
+    record = tmp_path / "home" / "workspace" / f"{ctrl.store.key(fixture)}.json"
+    data = json.loads(record.read_text(encoding="utf-8"))
+    data["selection"]["entry"] = "Contents/없는.xml"
+    record.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    broken = _controller(tmp_path)
+    assert _tab(broken, broken.open_path(fixture)["session_id"])["restore"]["state"] == "unreadable"
+
+
+def test_compatibility_projection_is_pushed_the_moment_python_judges(tmp_path: Path) -> None:
+    """U01·§7.1: 보존 판정은 Python 이 내리는 즉시 스냅샷에 선다 — 편집기 마운트를 기다리지 않는다."""
+    pushes: list[dict] = []
+    ctrl = AuthoringController(lambda _name, snapshot: pushes.append(snapshot), directory=tmp_path / "home")
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "본문"})["session_id"]
+    assert _tab(ctrl, txt)["compatibility"]["state"] == "not_applicable"
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    opened = ctrl.open_path(fixture)
+    sid = opened["session_id"]
+    assert _tab(ctrl, sid)["compatibility"] == {
+        "state": "checking", "editable": False, "message": None, "diagnostics": []}
+    changed = HwpxPackage.from_bytes(fixture.read_bytes())
+    changed.entries["Contents/header.xml"] = changed.entries["Contents/header.xml"].replace(
+        b"paraPr", b"paraXX", 1)
+    pushes.clear()
+    ctrl.dispatch("rhwp_roundtrip_preflight", {
+        "session_id": sid, "revision": 0,
+        "content": base64.b64encode(changed.to_bytes()).decode("ascii")})
+    pushed = next(item for item in pushes[-1]["tabs"] if item["id"] == sid)
+    assert pushed["compatibility"]["state"] == "limited"
+    assert pushed["compatibility"]["message"] == (
+        "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.")
+    assert pushed["compatibility"]["diagnostics"][0]["entry"] == "Contents/header.xml"
+    assert any(problem["category"] == "compatibility" for problem in pushed["problems"])
+    ctrl.dispatch("rhwp_roundtrip_preflight", {"session_id": sid, "revision": 0,
+                                               "content": opened["content"]})
+    assert _tab(ctrl, sid)["compatibility"]["state"] == "editable"
+
+
+def test_editor_mount_failure_locks_editing_and_keeps_the_guidance(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    opened = ctrl.open_path(fixture)
+    sid = opened["session_id"]
+    ctrl.dispatch("rhwp_roundtrip_preflight", {"session_id": sid, "revision": 0,
+                                               "content": opened["content"]})
+    # 판정이 통과였어도 편집기가 뒤이어 무너지면 수정은 잠긴다(판정 없는 편집 금지).
+    assert ctrl.dispatch("rhwp_unverified", {"session_id": sid, "revision": 0,
+                                             "detail": "Error: studio 적재 실패"}) == {"applied": True}
+    tab = _tab(ctrl, sid)
+    assert tab["rhwp_editable"] is False and tab["compatibility"]["state"] == "limited"
+    assert tab["compatibility"]["diagnostics"] == [{
+        "kind": "preflight_unavailable", "message": "HWPX 보존 검사를 실행할 수 없습니다.",
+        "detail": "Error: studio 적재 실패"}]
+    assert [p["message"] for p in tab["problems"] if p["category"] == "compatibility"] == [
+        "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.",
+        "HWPX 보존 검사를 실행할 수 없습니다."]
+    with pytest.raises(ValueError, match="보존 검증"):
+        ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": opened["content"]})
+    # 원본 보존 경로: 다른 이름으로 저장은 원본 그대로의 사본을 쓴다.
+    assert ctrl.save_to_path(sid, 0, tmp_path / "copy.hwpx")["ok"] is True
+    assert (tmp_path / "copy.hwpx").read_bytes() == fixture.read_bytes()
+    # 다시 연(revision 이 오른) 뒤 옛 편집기의 늦은 보고는 새 판정을 덮지 않는다.
+    reloaded = ctrl.dispatch("reload", {"session_id": sid, "revision": 0, "force": True})
+    assert _tab(ctrl, sid)["compatibility"]["state"] == "checking"
+    assert ctrl.dispatch("rhwp_unverified", {"session_id": sid, "revision": reloaded["revision"] - 1,
+                                             "detail": "늦은 보고"}) == {"applied": False}
+    assert _tab(ctrl, sid)["compatibility"]["state"] == "checking"
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "본문"})["session_id"]
+    with pytest.raises(ValueError, match="HWPX"):
+        ctrl.dispatch("rhwp_unverified", {"session_id": txt, "revision": 0, "detail": ""})
+    with pytest.raises(ValueError):
+        ctrl.dispatch("rhwp_unverified", {"session_id": sid, "revision": reloaded["revision"],
+                                          "detail": 3})

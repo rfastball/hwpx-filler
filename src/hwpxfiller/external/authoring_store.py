@@ -1,4 +1,4 @@
-"""Durable document saves, recovery drafts, and explicitly saved trial cases."""
+"""Durable document saves, recovery drafts, explicitly saved trial cases and work positions."""
 
 from __future__ import annotations
 
@@ -15,6 +15,10 @@ from .write_locks import shared_write_lock
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+#: 작업 위치 기록의 모양이 어긋났다 — 기록을 읽는 쪽(컨트롤러)도 같은 문장으로 알린다.
+WORKSPACE_INVALID = "작업 위치 기록의 내용이 올바르지 않습니다."
 
 
 class ExternalChangeError(ValueError):
@@ -136,6 +140,32 @@ class AuthoringStore:
         target.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps({"version": 1, "cases": cases}, ensure_ascii=False).encode("utf-8")
         write_bytes_atomic(target, data)
+
+    def read_workspace(self, key: str) -> dict | None:
+        """Last work position and display mode of one document (U02) — never inside the template.
+
+        The record only carries shape; which modes and coordinates are meaningful is the
+        controller's judgement. An unreadable record is raised, not treated as absent.
+        """
+        target = self._path("workspace", key)
+        if not target.is_file():
+            return None
+        record = json.loads(target.read_text(encoding="utf-8"))
+        if not isinstance(record, dict) or type(record.get("version")) is not int                 or record["version"] != 1:
+            raise ValueError("지원하지 않는 작업 위치 기록 형식입니다.")
+        if (not isinstance(record.get("fingerprint"), str)
+                or not isinstance(record.get("mode"), str)
+                or (record.get("selection") is not None
+                    and not isinstance(record["selection"], dict))):
+            raise ValueError(WORKSPACE_INVALID)
+        return record
+
+    def write_workspace(self, key: str, *, fingerprint: str, mode: str,
+                        selection: dict | None) -> None:
+        target = self._path("workspace", key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        record = {"version": 1, "fingerprint": fingerprint, "mode": mode, "selection": selection}
+        write_bytes_atomic(target, json.dumps(record, ensure_ascii=False).encode("utf-8"))
 
     @staticmethod
     def export_cases(path: Path, cases: list[dict]) -> None:

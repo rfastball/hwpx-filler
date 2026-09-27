@@ -112,3 +112,30 @@ def test_write_failures_keep_the_existing_file_and_stay_loud(tmp_path: Path, mon
     with pytest.raises(FileExistsError):
         AuthoringStore.export_result(result, b"NEW")
     assert result.read_bytes() == "기존".encode("utf-8")
+
+
+def test_workspace_records_roundtrip_and_refuse_unknown_shapes(tmp_path: Path) -> None:
+    """U02 최근 작업 위치 — 모양만 확인하고, 읽을 수 없는 기록은 없는 것으로 치지 않는다."""
+    store = _store(tmp_path)
+    assert store.read_workspace("k") is None
+    store.write_workspace("k", fingerprint="f0", mode="structure", selection={"start": 1, "end": 3})
+    assert store.read_workspace("k") == {"version": 1, "fingerprint": "f0", "mode": "structure",
+                                         "selection": {"start": 1, "end": 3}}
+    store.write_workspace("k", fingerprint="f1", mode="template", selection=None)
+    record = store.read_workspace("k")
+    assert record is not None and record["selection"] is None
+
+    target = tmp_path / "home" / "workspace" / "k.json"
+    for payload, message in (
+        ({"version": 2, "fingerprint": "f", "mode": "template", "selection": None}, "지원하지 않는"),
+        ([], "지원하지 않는"),
+        ({"version": 1, "fingerprint": 3, "mode": "template", "selection": None}, "올바르지 않"),
+        ({"version": 1, "fingerprint": "f", "mode": None, "selection": None}, "올바르지 않"),
+        ({"version": 1, "fingerprint": "f", "mode": "template", "selection": [1]}, "올바르지 않"),
+    ):
+        target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            store.read_workspace("k")
+    target.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError):
+        store.read_workspace("k")
