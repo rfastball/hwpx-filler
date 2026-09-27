@@ -176,6 +176,10 @@ export function createAuthoringController(deps: Deps) {
   }
 
   async function select(target: Obj) {
+    // A preview belongs to the target it was computed for. Choosing another target retires both
+    // the shown preview and any in-flight one — otherwise a late create_field preview for the old
+    // range lands under the new target's "필드 이름 변경" label and its apply runs the old command.
+    previewRequest += 1;
     const previous = { id: snapshot().active_id, revision: revision(snapshot().active_id), target: view.selection };
     if (target.session_id && target.session_id !== snapshot().active_id) await activate(target.session_id);
     const id = snapshot().active_id;
@@ -184,7 +188,7 @@ export function createAuthoringController(deps: Deps) {
     const located = target.source_revision != null
       ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location }) : null;
     navigationHistory.push(previous);
-    update({ selected: { ...location, ...target }, selection: location, panel: "properties", refusal: null,
+    update({ selected: { ...location, ...target }, selection: location, panel: "properties", refusal: null, preview: null, command: null,
       context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
       commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
     if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)

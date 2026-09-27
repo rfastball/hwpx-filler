@@ -36,6 +36,8 @@ export type RhwpMountSpec = {
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
   onCompatibility?: (result: { editable: boolean; diagnostics?: unknown[] }) => void;
   readOnly: boolean;
+  /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
+  studio?: typeof createStudio;
 };
 export type RhwpHandle = {
   content(): Promise<string>; applySnapshot(content: string, label: string, expectedContent?: string): Promise<void>;
@@ -58,7 +60,7 @@ function encodeBase64(bytes: Uint8Array): string {
 /** The pinned SDK owns the iframe and MessageChannel; this module owns its lifetime. */
 export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI).href;
-  const editor = await createStudio(spec.host, { studioUrl, plugins: ["hwpctrl"],
+  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl, plugins: ["hwpctrl"],
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false } });
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
@@ -161,6 +163,12 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
           throw new Error("편집 중 문서가 변경되었습니다. 다시 시도해 주세요.");
         replacing = true;
         const generation = ++changeGeneration;
+        // The embedded read-only gate drops *every* mutation, host transactions included
+        // (input-handler `isOperationAllowedInEditMode`), so the input lock held for the
+        // flush/compare above must be lifted for the replace itself or Studio rejects it
+        // ("현재 편집 모드에서 거절된 작업입니다"). The unlocked gap is one RPC round trip while
+        // keyboard focus sits on the host's apply button, not inside the iframe.
+        await editor.setReadOnly(false);
         await editor.plugins.invoke("hwpctrl", "replaceSnapshot", [decodeBase64(next), label]);
         await publish(generation);
         await selection();

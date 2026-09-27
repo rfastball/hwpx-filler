@@ -294,7 +294,12 @@ async function probeLintpad(ctx, out) {
     out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector(`${canvas} .cm-editor`));
   } finally { stub.restore(); }
   if (!out.lintpad_mounted) return;
-  out.authoring_screen_on = doc.getElementById("scr-authoring").classList.contains("on");
+  /* 편집면은 화면 전환보다 **먼저** 선다: controller.open 은 세션을 활성화(→ 탭·CodeMirror
+     렌더)한 **뒤에** 저작 화면으로 간다. 마운트 순간에 한 번 읽으면 그 사이를 재서, 화면이
+     아직 숨어 있어 포커스도 받지 못한 채로 두 키가 함께 거짓이 된다(전체 게이트 파일 실행에서
+     실제로 났다). 전환을 기다린 뒤 잰다 — 전환이 끝내 오지 않으면 여전히 거짓이다. */
+  out.authoring_screen_on = await waitFor(
+    ctx, () => doc.getElementById("scr-authoring").classList.contains("on"));
   const content = doc.querySelector(`${canvas} .cm-content`);
   out.lintpad_content_editable = content.isContentEditable;
   content.focus(); out.lintpad_focusable = doc.activeElement === content;
@@ -416,6 +421,12 @@ async function probeHwpxAuthoring(ctx, out) {
   let openStub = null;
   let alerts = null;
   let sid = "";
+  /* 되돌릴 배율은 **밴드 진입 시점**에 잡는다. 본 밴드가 배율 국면까지 가야 채워지는
+     `hwpx_authoring_font_scale_before` 에 기대면, 그 앞에서 멈춘(중단·후보 없음·진입 실패)
+     모든 경로에서 복원 목표가 「normal」로 떨어져 **이 부팅이 들고 있던 배율을 지운다** —
+     배율 영속 검사의 되읽기 콜드부트(large/larger)가 이 밴드 뒤의 `personalization_persist`
+     에서 normal 을 읽은 게이트 4차 실패가 그것이다. */
+  const scaleAtEntry = doc.documentElement.getAttribute("data-font-scale") || "normal";
   try {
     const tpl = await Bridge.initial("tpl");
     const rows = (((tpl || {}).column) || {}).rows || [];
@@ -504,8 +515,7 @@ async function probeHwpxAuthoring(ctx, out) {
       /* 올렸던 배율만 되돌린다 — 속성이 아예 없는 대역에서 부르면 개인화 동사가 폭까지
          새로 심어(하한 180px) 뒤따르는 프로브의 값을 바꾼다. */
       const scale = doc.documentElement.getAttribute("data-font-scale");
-      const wanted = out.hwpx_authoring_font_scale_before || "normal";
-      if (scale !== null && scale !== wanted) Personalization.setFontScale(wanted);
+      if (scale !== null && scale !== scaleAtEntry) Personalization.setFontScale(scaleAtEntry);
     } catch (thrown) {
       out.hwpx_authoring_restore_error = String((thrown && thrown.message) || thrown);
     } finally { if (alerts) { alerts.restore(); alerts = null; } }
@@ -597,7 +607,15 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   const DOM_MS = 100;
   const WIRE_TRIES = 20;
   const WIRE_MS = 125;
-  const give = (reason) => { out.hwpx_authoring_aborted = reason; return false; };
+  /* 중단 사유와 함께 **표면이 그 순간 보이던 오류**를 싣는다 — 제품이 거절·예외를 오류
+     띠(`.authoring-error`)로 그렸는데 프로브가 사유만 적으면, 「반영되지 않음」이 대기 부족인지
+     제품의 거절인지가 증거에서 갈리지 않는다. */
+  const give = (reason) => {
+    out.hwpx_authoring_aborted = reason;
+    out.hwpx_authoring_abort_alerts = all("#scr-authoring .authoring-error")
+      .map((el) => textOf(el).trim().slice(0, 200)).filter(Boolean);
+    return false;
+  };
 
   const mount = await content();                        // 디스크 바이트(아직 편집기 발신 전)
   out.hwpx_authoring_base_field_count = fieldsOf(await tab()).length;
@@ -634,8 +652,17 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   }
   out.hwpx_authoring_create_affected = affected();
   if (!(await applyPreview())) return give("적용 버튼 없음");
+  const appliedAt = Date.now();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
-    WIRE_TRIES, WIRE_MS)) return give("필드 생성이 분석에 반영되지 않음");
+    WIRE_TRIES, WIRE_MS)) {
+    const late = await tab();
+    out.hwpx_authoring_create_late = {
+      ms: Date.now() - appliedAt, revision: late.revision, dirty: late.dirty,
+      field_count: fieldsOf(late).length, new_count: countOf(late, candidate.newField),
+    };
+    return give("필드 생성이 분석에 반영되지 않음");
+  }
+  out.hwpx_authoring_create_ms = Date.now() - appliedAt;
   const created = await content();
   out.hwpx_authoring_create_field_count = fieldsOf(await tab()).length;
   out.hwpx_authoring_create_label = undoLabel();
@@ -669,8 +696,16 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   out.hwpx_authoring_rename_target = summary ? textOf(summary).trim() : "";
   if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
   summary.click();
-  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),
-    DOM_TRIES, DOM_MS)) return give("필드 선택 뒤 속성 입력 없음");
+  /* 속성 패널은 ④부터 **이미 열려 있다** — 입력창의 존재로는 선택이 끝났는지 알 수 없다.
+     선택(controller.select → locate)이 끝나야 명령이 「필드 이름 변경」으로 바뀌고 이름 칸이
+     그 필드의 이름으로 채워진다. 그 전에 쓰면 직전 명령(필드로 만들기)이 옛 선택 위에서
+     미리보기를 낸다(게이트 4차 재실행에서 실제로 났다). */
+  const settled = () => {
+    const kind = doc.querySelector(".authoring-properties select");
+    const input = doc.querySelector(".authoring-properties input");
+    return !!kind && kind.value === "rename_field" && !!input && input.value === candidate.field;
+  };
+  if (!await waitFor(ctx, settled, WIRE_TRIES, WIRE_MS)) return give("필드 선택 뒤 이름 변경 속성 미정착");
   typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.renamed);
   exact(".authoring-properties button", "변경 미리보기").click();
   if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {

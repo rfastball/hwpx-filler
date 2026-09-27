@@ -148,6 +148,29 @@ test("a preview returned after a tab switch cannot populate the other document",
 });
 
 
+test("choosing another target retires the shown preview and any preview still in flight", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { controller } = harness(async (action, payload) => {
+    if (action === "preview" && payload.command.name === "late") { await gate; return { affected: 1, original: "입찰개요" }; }
+    if (action === "preview") return { affected: 1, original: "입찰개요" };
+    if (action === "locate") return { context: {}, commands: [] };
+    return {};
+  });
+  await controller.activate("a");
+  await controller.preview({ type: "create_field", name: "shown" });
+  assert.equal(controller.viewModel.getSnapshot().preview.original, "입찰개요");
+  const pending = controller.preview({ type: "create_field", name: "late" });
+  await new Promise(setImmediate);
+  await controller.select({ kind: "field", name: "수요기관", occurrences: [{ entry: "e", paragraph: 1 }], source_revision: 0 });
+  release();
+  await pending;
+  const view = controller.viewModel.getSnapshot();
+  assert.equal(view.preview, null);
+  assert.equal(view.command, null);
+  assert.equal(view.selected.name, "수요기관");
+});
+
 test("stale search and trial coordinates are rejected before moving the caret", async () => {
   let focused = 0;
   const { controller } = harness((action, payload) => {
