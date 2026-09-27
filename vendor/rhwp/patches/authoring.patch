@@ -550,10 +550,23 @@ index fe02079b2..aa15ba10a 100644
        binding = { origin: event.origin, sessionId: event.data.sessionId, port, offDocumentChanged };
        return;
 diff --git a/rhwp-studio/src/engine/command.ts b/rhwp-studio/src/engine/command.ts
-index 5c4216582..62c437e98 100644
+index 5c4216582..7ad6553ab 100644
 --- a/rhwp-studio/src/engine/command.ts
 +++ b/rhwp-studio/src/engine/command.ts
-@@ -2781,10 +2781,15 @@ export class SnapshotCommand implements EditCommand {
+@@ -265,6 +265,12 @@ export type OperationDescriptor =
+       selectionBefore?: EditSelectionSnapshot | null;
+       /** 최초 실행/redo 뒤 복원할 선택. */
+       selectionAfter?: EditSelectionSnapshot | null;
++      /**
++       * Embedded host transaction (plugin host `transaction`). The embedded read-only lock
++       * rejects user input only; a host-issued transaction still runs while it is held so the
++       * host can replace the document without first unlocking user input.
++       */
++      hostTransaction?: true;
+       meta?: OperationMetadata;
+     }
+   | { kind: 'record'; command: EditCommand; meta?: OperationMetadata };
+@@ -2781,10 +2787,15 @@ export class SnapshotCommand implements EditCommand {
      private cursorBefore: DocumentPosition,
      private cursorAfter: DocumentPosition,
      private operation: ((wasm: WasmBridge) => DocumentPosition | null) | null,
@@ -570,7 +583,7 @@ index 5c4216582..62c437e98 100644
      if (this.executed) {
        // Redo: undo 시점에 잡아 둔 after 로 복원하고 **그 스냅샷을 즉시 반환한다** —
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..581e96fa3 100644
+index 2dde6f1a8..79d061174 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
@@ -650,11 +663,14 @@ index 2dde6f1a8..581e96fa3 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4319,66 @@ export class InputHandler {
+@@ -4302,6 +4319,69 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
-+  /** Embedded host read-only mode still permits navigation and selection. */
++  /**
++   * Embedded host read-only mode still permits navigation and selection. It rejects user
++   * mutations; host transactions marked `hostTransaction` remain allowed.
++   */
 +  setEmbeddedReadOnly(value: boolean): void {
 +    this.embeddedReadOnly = value;
 +    this.textarea.readOnly = value;
@@ -717,15 +733,17 @@ index 2dde6f1a8..581e96fa3 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4543,7 @@ export class InputHandler {
+@@ -4466,6 +4546,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
-+    if (this.embeddedReadOnly) return false;
++    // Embedded read-only locks user input only. Host transactions (plugin host) carry an
++    // explicit marker and still pass through the ordinary edit-mode gate below.
++    if (this.embeddedReadOnly && !(desc.kind === 'snapshot' && desc.hostTransaction === true)) return false;
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +4751,77 @@ export class InputHandler {
+@@ -4673,6 +4756,77 @@ export class InputHandler {
      }
    }
  
@@ -878,7 +896,7 @@ index 64e8a6d1d..caf23f251 100644
      // ── 브리지 확장 (P4) — 자동화·플러그인·창 제어 ─────────
      // 부모가 보내는 것은 데이터뿐이다. 함수를 받는 표면(확장 커맨드 등록)은 iframe 안의
 diff --git a/rhwp-studio/src/plugin/host.ts b/rhwp-studio/src/plugin/host.ts
-index e9fefb9c6..f97db1759 100644
+index e9fefb9c6..a66f58b37 100644
 --- a/rhwp-studio/src/plugin/host.ts
 +++ b/rhwp-studio/src/plugin/host.ts
 @@ -91,12 +91,14 @@ class PluginHostFacade implements PluginHost {
@@ -897,12 +915,14 @@ index e9fefb9c6..f97db1759 100644
  
      let deferred = false;
      let ran = false;
-@@ -116,6 +118,8 @@ class PluginHostFacade implements PluginHost {
+@@ -116,6 +118,10 @@ class PluginHostFacade implements PluginHost {
        ih.executeOperation({
          kind: 'snapshot',
          operationType: `plugin:${this.pluginId}:${label}`,
 +        selectionBefore: selection,
 +        selectionAfter: selection,
++        // Host-issued: allowed while the embedded read-only lock holds user input.
++        hostTransaction: true,
          operation: () => {
            result = fn(tx);
            ran = true;
@@ -979,7 +999,7 @@ index f860fb8fa..382863031 100644
        includeAssets: ['favicon.ico', 'icons/*.png'],
        manifest: {
 diff --git a/src/diagnostics/ir_field_sweep.rs b/src/diagnostics/ir_field_sweep.rs
-index 7f52f3ec3..464e96acf 100644
+index 7f52f3ec3..7ce0f69c0 100644
 --- a/src/diagnostics/ir_field_sweep.rs
 +++ b/src/diagnostics/ir_field_sweep.rs
 @@ -650,6 +650,8 @@ fn sweep_paragraph(base: &str, a: &Paragraph, b: &Paragraph, out: &mut Divergenc
@@ -991,6 +1011,27 @@ index 7f52f3ec3..464e96acf 100644
          has_para_text,
          tab_extended,
          title_marks,
+@@ -1018,6 +1020,8 @@ fn sweep_cell(base: &str, a: &Cell, b: &Cell, out: &mut DivergenceCollector) {
+         raw_list_extra,
+         field_name,
+         dirty_flag,
++        // HWPX-only verbatim metadata; HWP5 carries no counterpart to compare.
++        hwpx_sublist_metatag: _,
+     } = a;
+ 
+     macro_rules! f {
+diff --git a/src/document_core/converters/common_obj_attr_writer.rs b/src/document_core/converters/common_obj_attr_writer.rs
+index a2188ed8a..25000d833 100644
+--- a/src/document_core/converters/common_obj_attr_writer.rs
++++ b/src/document_core/converters/common_obj_attr_writer.rs
+@@ -108,6 +108,7 @@ mod tests {
+             height_criterion: SizeCriterion::Absolute,
+             description: String::new(),
+             raw_extra: Vec::new(),
++            hwpx_meta_tags: Vec::new(),
+             locked: false,
+             numbering_type: crate::model::shape::ObjectNumberingType::None,
+             drop_cap_style: crate::model::shape::DropCapStyle::None,
 diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
 index 853c5a8c6..1d4d50850 100644
 --- a/src/document_core/queries/field_query.rs
@@ -1075,6 +1116,22 @@ index 7bfcef5cb..7f0ca0bf5 100644
              has_para_text: new_has_para_text,
              tab_extended: Vec::new(),
              title_marks: new_title_marks,
+diff --git a/src/model/shape.rs b/src/model/shape.rs
+index d849542d6..e8d7ea78a 100644
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -104,6 +104,11 @@ pub struct CommonObjAttr {
+     pub drop_cap_style: DropCapStyle,
+     /// 파싱된 필드 이후 추가 바이트 (라운드트립 보존용)
+     pub raw_extra: Vec<u8>,
++    /// Direct HWPX `hp:metaTag` children of this object (table or drawing/picture/OLE
++    /// object), source text in document order. The text is carried verbatim (JSON is never
++    /// re-serialised); HWP5 has no counterpart. HWPX export writes them back in order.
++    #[serde(skip_serializing)]
++    pub hwpx_meta_tags: Vec<String>,
+     /// HWPX `lock`(개체 잠금) 속성 보존 (#2840, #2855, #2931).
+     ///
+     /// 파서가 이 속성을 읽지 않아 직렬화 시 항상 `lock="0"`으로 하드코딩되던 문제
 diff --git a/src/model/style.rs b/src/model/style.rs
 index b9e652c5e..8a7e8a60f 100644
 --- a/src/model/style.rs
@@ -1125,6 +1182,29 @@ index b9e652c5e..8a7e8a60f 100644
  }
  
  /// 이미지 채우기
+diff --git a/src/model/table.rs b/src/model/table.rs
+index f84da00c1..abf01a7af 100644
+--- a/src/model/table.rs
++++ b/src/model/table.rs
+@@ -174,6 +174,10 @@ pub struct Cell {
+     /// HWPX `<hp:tc dirty>` 속성 (편집기 캐시 무효화 표시, 라운드트립 보존용).
+     /// HWP5 바이너리에는 대응 비트가 없어 list_header_width_ref 재사용 대상에서 제외한다.
+     pub dirty_flag: bool,
++    /// HWPX cell `<hp:subList metatag>` source value, verbatim. `None` when the attribute is
++    /// absent; HWP5 has no counterpart.
++    #[serde(skip_serializing)]
++    pub hwpx_sublist_metatag: Option<String>,
+ }
+ 
+ /// 표 셀 행/열 바꿈 복사 데이터.
+@@ -511,6 +515,7 @@ impl Cell {
+             raw_list_extra: template.raw_list_extra.clone(),
+             field_name: None,
+             dirty_flag: false,
++            hwpx_sublist_metatag: None,
+             paragraphs: vec![para],
+         }
+     }
 diff --git a/src/parser/control.rs b/src/parser/control.rs
 index a420b5fcc..9819e5b19 100644
 --- a/src/parser/control.rs
@@ -1337,18 +1417,66 @@ index 8c26e1eb1..8bf2b4734 100644
                                          let val = attr_str(&attr);
                                          if let Ok(f) = val.parse::<f64>() {
 diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
-index 0b7f15694..befa01b57 100644
+index 0b7f15694..a335a7e47 100644
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
-@@ -1032,6 +1032,7 @@ fn parse_paragraph_body(
+@@ -542,6 +542,10 @@ fn parse_paragraph_body(
+     // HWPX 의 id 값 ("0" 또는 "2147483648"=0x80000000) 이 한컴 정답지의 instance_id 패턴과
+     // 정확 일치. 누락 시 한컴편집기가 각주 추가 시 본문 다단계 목록 부여 (Task #1058 본질).
+     let mut hp_p_id: u32 = 0;
++    // Source hp:p@id for HWPX re-export. An absent id is Hancom's unset value
++    // (OWPML CPType m_uId = (UINT)-1; Hancom writes id="4294967295" on resave), so it is
++    // kept as that value rather than as 0. The HWP5 instanceId above keeps its 0 default.
++    let mut hwpx_source_id: u32 = u32::MAX;
+     let mut has_column_break_attr = false;
+     let mut has_page_break_attr = false;
+     for attr in e.attributes().flatten() {
+@@ -550,6 +554,7 @@ fn parse_paragraph_body(
+                 if let Ok(s) = std::str::from_utf8(attr.value.as_ref().as_bytes()) {
+                     hp_p_id = s.parse::<u32>().unwrap_or(0);
+                 }
++                hwpx_source_id = hp_p_id;
+             }
+             b"paraPrIDRef" => para.para_shape_id = parse_u16(&attr),
+             b"styleIDRef" => para.style_id = parse_u8(&attr),
+@@ -1032,6 +1037,7 @@ fn parse_paragraph_body(
      header_extra.extend_from_slice(&[0u8; 6]); // numCharShapes/numRangeTags/numLineSegs 자리
      header_extra.extend_from_slice(&hp_p_id.to_le_bytes()); // instanceId
      para.raw_header_extra = header_extra;
-+    para.hwpx_source_id = Some(hp_p_id);
++    para.hwpx_source_id = Some(hwpx_source_id);
  
      Ok((para, sec_def))
  }
-@@ -2869,6 +2870,9 @@ fn parse_picture(
+@@ -2166,6 +2172,11 @@ fn parse_table(
+                         let caption = parse_caption(ce, reader)?;
+                         table.caption = Some(caption);
+                     }
++                    // Direct table metaTag (cells are consumed by parse_table_cell).
++                    b"metaTag" => table
++                        .common
++                        .hwpx_meta_tags
++                        .push(read_object_meta_tag(reader, false)?),
+                     _ => {}
+                 }
+             }
+@@ -2173,6 +2184,7 @@ fn parse_table(
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
+                 match local {
++                    b"metaTag" => table.common.hwpx_meta_tags.push(String::new()),
+                     b"sz" => {
+                         for attr in ce.attributes().flatten() {
+                             match attr.key.as_ref().as_bytes() {
+@@ -2681,6 +2693,8 @@ fn parse_table_cell(
+                                         _ => 0,
+                                     };
+                                 }
++                                // Product metadata on the cell list; kept verbatim.
++                                b"metatag" => cell.hwpx_sublist_metatag = Some(attr_str(&attr)),
+                                 _ => {}
+                             }
+                         }
+@@ -2869,6 +2883,9 @@ fn parse_picture(
      // 이미지 속성 읽기
      let mut has_pos = false; // <pos> 파싱 여부 — <offset>이 덮어쓰지 않도록 방지
      let mut caption: Option<crate::model::shape::Caption> = None;
@@ -1358,7 +1486,7 @@ index 0b7f15694..befa01b57 100644
      let mut buf = Vec::new();
      loop {
          let event = reader.read_event_into(&mut buf);
-@@ -2876,6 +2880,7 @@ fn parse_picture(
+@@ -2876,11 +2893,17 @@ fn parse_picture(
          let self_closing = matches!(&event, Ok(Event::Empty(_)));
          match event {
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {
@@ -1366,7 +1494,17 @@ index 0b7f15694..befa01b57 100644
                  parse_picture_img_rect(reader, &mut border_x, &mut border_y)?;
              }
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
-@@ -2891,6 +2896,11 @@ fn parse_picture(
+                 common.description = read_dutmal_text(reader, b"shapeComment")?;
+             }
++            Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce))
++                if local_name(ce.name().as_ref()) == b"metaTag" =>
++            {
++                common.hwpx_meta_tags.push(read_object_meta_tag(reader, self_closing)?);
++            }
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"effects" => {
+                 effects = parse_picture_effects(reader)?;
+             }
+@@ -2891,6 +2914,11 @@ fn parse_picture(
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
@@ -1378,7 +1516,7 @@ index 0b7f15694..befa01b57 100644
                  match local {
                      b"sz" => {
                          // 최종 표시 크기 (최우선)
-@@ -3186,6 +3196,7 @@ fn parse_picture(
+@@ -3186,6 +3214,7 @@ fn parse_picture(
      pic.img_dim = img_dim;
      pic.reverse = reverse;
      pic.lock = lock;
@@ -1386,7 +1524,28 @@ index 0b7f15694..befa01b57 100644
  
      Ok(Control::Picture(Box::new(pic)))
  }
-@@ -4084,6 +4095,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
+@@ -3923,6 +3952,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+     }
+ 
+     let mut bl = ShapeBorderLine::default();
++    // An absent endCap is FLAT: OWPML CLineShapeType initialises m_uEndCap to LECT_FLAT.
++    // Reading it as bit value 0 (ROUND) changed the line cap on re-export.
++    bl.attr |= 1 << 6;
+     for attr in e.attributes().flatten() {
+         match attr.key.as_ref().as_bytes() {
+             b"color" => bl.color = parse_color(&attr),
+@@ -3946,7 +3978,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+                     "SLIM_THICK_SLIM" => 11,
+                     _ => 1,
+                 };
+-                bl.attr = (bl.attr & !0xFF) | style_val;
++                // style owns the low 6 bits only (serializer reads `attr & 0x3F`); bits
++                // 6~9 are endCap and must not be cleared here.
++                bl.attr = (bl.attr & !0x3F) | style_val;
+             }
+             b"endCap" => {
+                 let end_cap: u32 = match attr_str(&attr).as_str() {
+@@ -4084,6 +4118,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                                  b"centerY" => grad.center_y = parse_i16(&attr),
                                  b"blur" | b"step" => grad.blur = parse_i16(&attr),
                                  b"stepCenter" => grad.step_center = parse_u8(&attr),
@@ -1394,7 +1553,31 @@ index 0b7f15694..befa01b57 100644
                                  b"alpha" => {
                                      let val = attr_str(&attr);
                                      if let Ok(f) = val.parse::<f64>() {
-@@ -5242,7 +5254,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
+@@ -4389,6 +4424,11 @@ fn parse_shape_object(
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
+                 common.description = read_dutmal_text(reader, b"shapeComment")?;
+             }
++            Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce))
++                if local_name(ce.name().as_ref()) == b"metaTag" =>
++            {
++                common.hwpx_meta_tags.push(read_object_meta_tag(reader, self_closing)?);
++            }
+             // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
+                 caption = Some(parse_caption(ce, reader)?);
+@@ -4748,6 +4788,11 @@ fn parse_container_body(
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
+                 common.description = read_dutmal_text(reader, b"shapeComment")?;
+             }
++            Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce))
++                if local_name(ce.name().as_ref()) == b"metaTag" =>
++            {
++                common.hwpx_meta_tags.push(read_object_meta_tag(reader, self_closing)?);
++            }
+             Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
+@@ -5242,7 +5287,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
                      f.properties |= 1 << 15;
                  }
              }
@@ -1406,7 +1589,7 @@ index 0b7f15694..befa01b57 100644
          }
      }
      // field_id 는 필드별 고유 식별자여야 한다(모델 계약 "문서 내 고유 ID").
-@@ -5781,6 +5796,8 @@ fn parse_ctrl_field_begin(
+@@ -5781,6 +5829,8 @@ fn parse_ctrl_field_begin(
                  let local = local_name(cname.as_ref());
                  if local == b"parameters" {
                      parse_field_parameters(ce, reader, &mut f)?;
@@ -1415,7 +1598,7 @@ index 0b7f15694..befa01b57 100644
                  } else if local == b"subList" && f.field_type == FieldType::Memo {
                      for attr in ce.attributes().flatten() {
                          if attr.key.as_ref().as_bytes() == b"textDirection" {
-@@ -5796,6 +5813,9 @@ fn parse_ctrl_field_begin(
+@@ -5796,6 +5846,9 @@ fn parse_ctrl_field_begin(
                      skip_element(reader, &tag)?;
                  }
              }
@@ -1425,10 +1608,22 @@ index 0b7f15694..befa01b57 100644
              Ok(Event::End(ref ee)) => {
                  let eename = ee.name();
                  if local_name(eename.as_ref()) == b"fieldBegin" {
-@@ -5811,6 +5831,30 @@ fn parse_ctrl_field_begin(
+@@ -5811,6 +5864,42 @@ fn parse_ctrl_field_begin(
      Ok(Control::Field(f))
  }
  
++/// Direct `hp:metaTag` child of a table or object: source text, verbatim.
++fn read_object_meta_tag(
++    reader: &mut Reader<&[u8]>,
++    self_closing: bool,
++) -> Result<String, HwpxError> {
++    if self_closing {
++        Ok(String::new())
++    } else {
++        read_field_meta_tag(reader)
++    }
++}
++
 +fn read_field_meta_tag(reader: &mut Reader<&[u8]>) -> Result<String, HwpxError> {
 +    let mut text = String::new();
 +    let mut buf = Vec::new();
@@ -1456,7 +1651,17 @@ index 0b7f15694..befa01b57 100644
  /// `<parameters>` 내부에서 Command 문자열 파라미터를 추출한다.
  /// XML 텍스트/속성값 이스케이프 (#1391 parameters verbatim 재조립용).
  fn escape_xml_text(s: &str) -> String {
-@@ -8925,7 +8969,9 @@ mod tests {
+@@ -7562,6 +7651,9 @@ fn parse_common_shape_children(
+                     b"shapeComment" => {
+                         common.description = read_dutmal_text(reader, b"shapeComment")?;
+                     }
++                    b"metaTag" => {
++                        common.hwpx_meta_tags.push(read_object_meta_tag(reader, self_closing)?);
++                    }
+                     // [#4319] 캡션 — 미적재 시 라운드트립에서 캡션 subList 소실(다른
+                     // 도형 변형과 동형, parse_shape_object/parse_container 참고).
+                     b"caption" => {
+@@ -8925,7 +9017,9 @@ mod tests {
    <hp:p paraPrIDRef="0" styleIDRef="0">
      <hp:run charPrIDRef="0">
        <hp:ctrl>
@@ -1467,7 +1672,7 @@ index 0b7f15694..befa01b57 100644
        </hp:ctrl>
        <hp:t>ABC</hp:t>
        <hp:ctrl>
-@@ -8943,6 +8989,16 @@ mod tests {
+@@ -8943,6 +9037,16 @@ mod tests {
          assert_eq!(para.char_count, 20);
          assert_eq!(para.controls.len(), 1);
          assert_eq!(para.field_ranges.len(), 1);
@@ -2203,7 +2408,7 @@ index d0226f0cf..04e2fbe77 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/picture.rs b/src/serializer/hwpx/picture.rs
-index 564e62e00..de4190cb1 100644
+index 564e62e00..36463c9c8 100644
 --- a/src/serializer/hwpx/picture.rs
 +++ b/src/serializer/hwpx/picture.rs
 @@ -109,11 +109,17 @@ pub fn write_picture<W: Write>(
@@ -2225,7 +2430,15 @@ index 564e62e00..de4190cb1 100644
      write_effects(w, pic)?;
      write_sz(w, &pic.common)?;
      write_pos(w, &pic.common)?;
-@@ -1051,4 +1057,68 @@ mod tests {
+@@ -124,6 +130,7 @@ pub fn write_picture<W: Write>(
+     }
+     // 설명 (#1392) — caption 직후 (aift 실물 공존 9건 전수 caption→shapeComment 순서)
+     super::shape::write_shape_comment(w, &pic.common)?;
++    super::shape::write_meta_tags(w, &pic.common)?;
+ 
+     end_tag(w, "hp:pic")?;
+     Ok(())
+@@ -1051,4 +1058,68 @@ mod tests {
          assert!(xml.contains(r#"heightRelTo="ABSOLUTE""#), "{xml}");
          assert!(xml.contains(r#"protect="0""#), "{xml}");
      }
@@ -2295,7 +2508,7 @@ index 564e62e00..de4190cb1 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..abf78a101 100644
+index f951d7284..b2f1084e4 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
 @@ -689,7 +689,11 @@ pub(crate) fn render_hp_p_open(p: &Paragraph, id: u32, style_id_ref: u8) -> Stri
@@ -2354,11 +2567,174 @@ index f951d7284..abf78a101 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
+@@ -3056,6 +3073,10 @@ fn render_common_shape_xml(
+         Ok(xml) => out.push_str(&xml),
+         Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
+     }
++    match writer_to_string(|w| super::shape::write_meta_tags(w, c)) {
++        Ok(xml) => out.push_str(&xml),
++        Err(e) => eprintln!("[hwpx] Shape({tag}) metaTag 직렬화 실패: {e}"),
++    }
+     out.push_str(&format!("</hp:{tag}>"));
+     out
+ }
+@@ -4373,6 +4394,111 @@ mod tests {
+         );
+     }
+ 
++    /// Table/object `hp:metaTag` children and the cell `hp:subList@metatag` carry product
++    /// metadata verbatim; they must survive HWPX -> IR -> HWPX at Hancom's positions
++    /// (table: after the last `hp:tr`; objects: after `hp:shapeComment`). An absent
++    /// `hp:p@id` and an absent `lineShape@endCap` keep Hancom's unset values
++    /// (4294967295, FLAT) instead of turning into 0 / ROUND.
++    #[test]
++    fn hwpx_meta_tags_and_unset_defaults_survive_roundtrip() {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++
++        let cell_meta = r##"{"hwpxFiller":{"v":1,"quoted":"he said \"yes\" & <no>","spaced":"  x  "},"name":"#hf_cell"}"##;
++        let table_meta = r##"{"hwpxFiller": {"v": 1, "q": "a & <b>"}, "name": "#hf_table"}"##;
++        let shape_meta = r##"{"name":"#hf_shape"}"##;
++        let esc = |v: &str| {
++            v.replace('&', "&amp;")
++                .replace('<', "&lt;")
++                .replace('>', "&gt;")
++                .replace('"', "&quot;")
++        };
++        let source = format!(
++            r##"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
++        xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"
++        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p id="0" paraPrIDRef="0" styleIDRef="0">
++    <hp:run charPrIDRef="0">
++      <hp:tbl id="7" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="1" noAdjust="0">
++        <hp:sz width="1000" widthRelTo="ABSOLUTE" height="500" heightRelTo="ABSOLUTE" protect="0"/>
++        <hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>
++        <hp:outMargin left="0" right="0" top="0" bottom="0"/>
++        <hp:inMargin left="0" right="0" top="0" bottom="0"/>
++        <hp:tr><hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="1">
++          <hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0" metatag="{cell}">
++            <hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>cell</hp:t></hp:run></hp:p>
++          </hp:subList>
++          <hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="500"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/>
++        </hp:tc></hp:tr>
++        <hp:metaTag>{table}</hp:metaTag>
++      </hp:tbl>
++    </hp:run>
++  </hp:p>
++  <hp:p paraPrIDRef="0" styleIDRef="0">
++    <hp:run charPrIDRef="0">
++      <hp:polygon id="9" zOrder="1" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="9">
++        <hp:offset x="0" y="0"/><hp:orgSz width="100" height="100"/><hp:curSz width="100" height="100"/>
++        <hp:lineShape color="#000000" width="0" style="SOLID" headStyle="NORMAL" tailStyle="NORMAL" headfill="0" tailfill="0" headSz="SMALL_SMALL" tailSz="SMALL_SMALL" outlineStyle="NORMAL" alpha="0"/>
++        <hc:pt x="0" y="0"/><hc:pt x="100" y="0"/><hc:pt x="100" y="100"/>
++        <hp:sz width="100" widthRelTo="ABSOLUTE" height="100" heightRelTo="ABSOLUTE" protect="0"/>
++        <hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="0" allowOverlap="1" holdAnchorAndSO="0" vertRelTo="PAPER" horzRelTo="PAPER" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>
++        <hp:outMargin left="0" right="0" top="0" bottom="0"/>
++        <hp:shapeComment>shape</hp:shapeComment>
++        <hp:metaTag>{shape}</hp:metaTag>
++      </hp:polygon>
++    </hp:run>
++  </hp:p>
++</hs:sec>"##,
++            cell = esc(cell_meta),
++            table = esc(table_meta),
++            shape = esc(shape_meta),
++        );
++
++        let section = parse_hwpx_section(&source).expect("parse metaTag carriers");
++        let mut doc = Document::default();
++        doc.sections.push(section.clone());
++        let mut ctx = SerializeContext::collect_from_document(&doc);
++        let xml = String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap())
++            .expect("section XML");
++
++        let last_tr = xml.rfind("</hp:tr>").expect("tr");
++        let table_tag = xml.find("<hp:metaTag>").expect("table metaTag");
++        let tbl_end = xml.find("</hp:tbl>").expect("tbl end");
++        assert!(last_tr < table_tag && table_tag < tbl_end, "table metaTag after last tr: {xml}");
++        let comment = xml.find("<hp:shapeComment>").expect("shapeComment");
++        let shape_tag = xml.rfind("<hp:metaTag>").expect("shape metaTag");
++        let polygon_end = xml.find("</hp:polygon>").expect("polygon end");
++        assert!(comment < shape_tag && shape_tag < polygon_end, "shape metaTag after shapeComment: {xml}");
++        assert!(xml.contains(r#"endCap="FLAT""#), "absent endCap stays FLAT: {xml}");
++        assert!(xml.contains(r#"<hp:p id="4294967295""#), "absent p@id stays unset: {xml}");
++
++        let reparsed = parse_hwpx_section(&xml).expect("reparse");
++        let table = reparsed.paragraphs[0]
++            .controls
++            .iter()
++            .find_map(|control| match control {
++                Control::Table(table) => Some(table),
++                _ => None,
++            })
++            .expect("table");
++        assert_eq!(table.common.hwpx_meta_tags, [table_meta]);
++        assert_eq!(table.cells[0].hwpx_sublist_metatag.as_deref(), Some(cell_meta));
++        let polygon = reparsed.paragraphs[1]
++            .controls
++            .iter()
++            .find_map(|control| match control {
++                Control::Shape(shape) => match shape.as_ref() {
++                    ShapeObject::Polygon(polygon) => Some(polygon),
++                    _ => None,
++                },
++                _ => None,
++            })
++            .expect("polygon");
++        assert_eq!(polygon.common.hwpx_meta_tags, [shape_meta]);
++        assert_eq!(reparsed.paragraphs[0].hwpx_source_id, Some(0));
++        assert_eq!(reparsed.paragraphs[1].hwpx_source_id, Some(u32::MAX));
++    }
++
+     /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
+     /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
+     #[test]
 diff --git a/src/serializer/hwpx/shape.rs b/src/serializer/hwpx/shape.rs
-index bc3278b8d..ce017b21f 100644
+index bc3278b8d..2e39d6404 100644
 --- a/src/serializer/hwpx/shape.rs
 +++ b/src/serializer/hwpx/shape.rs
-@@ -962,20 +962,23 @@ pub(crate) fn write_fill_brush<W: Write>(
+@@ -109,6 +109,7 @@ pub fn write_rect<W: Write>(
+         write_caption(w, cap, ctx)?;
+     }
+     write_shape_comment(w, c)?;
++    write_meta_tags(w, c)?;
+ 
+     end_tag(w, "hp:rect")?;
+     Ok(())
+@@ -260,6 +261,7 @@ pub fn write_line<W: Write>(
+     }
+     // [#1588] 도형 설명 — caption 뒤 (write_rect/container 와 동형).
+     write_shape_comment(w, c)?;
++    write_meta_tags(w, c)?;
+ 
+     end_tag(w, tag)?;
+     Ok(())
+@@ -335,6 +337,7 @@ pub fn write_container_close<W: Write>(
+     }
+     // 설명 (#1392) — caption 직후
+     write_shape_comment(w, common)?;
++    write_meta_tags(w, common)?;
+     end_tag(w, "hp:container")
+ }
+ 
+@@ -418,6 +421,7 @@ pub(crate) fn write_ole<W: Write>(
+         write_caption(w, cap, ctx)?;
+     }
+     write_shape_comment(w, c)?;
++    write_meta_tags(w, c)?;
+ 
+     end_tag(w, "hp:ole")?;
+     Ok(())
+@@ -503,6 +507,7 @@ fn write_chart_element<W: Write>(
+     if let Some(cap) = &ole.caption {
+         write_caption(w, cap, ctx)?;
+     }
++    write_meta_tags(w, c)?;
+     end_tag(w, "hp:chart")?;
+     Ok(())
+ }
+@@ -962,20 +967,23 @@ pub(crate) fn write_fill_brush<W: Write>(
              let step = grad.blur.to_string();
              let step_center = grad.step_center.to_string();
              let alpha = fill_alpha_str(fill.alpha);
@@ -2395,7 +2771,7 @@ index bc3278b8d..ce017b21f 100644
              for c in &grad.colors {
                  let v = color_to_hex(*c);
                  empty_tag(w, "hc:color", &[("value", &v)])?;
-@@ -1131,7 +1134,8 @@ pub(super) fn write_shape_comment<W: Write>(
+@@ -1131,10 +1139,26 @@ pub(super) fn write_shape_comment<W: Write>(
          return Ok(());
      }
      start_tag(w, "hp:shapeComment")?;
@@ -2404,6 +2780,96 @@ index bc3278b8d..ce017b21f 100644
 +    super::utils::text_keep_line_ends(w, &c.description)?;
      end_tag(w, "hp:shapeComment")
  }
+ 
++/// Direct `<hp:metaTag>` children of a table or object, source text verbatim and in source
++/// order. Written after shapeComment, the position Hancom output uses (tables: after the
++/// last `hp:tr`).
++pub(super) fn write_meta_tags<W: Write>(
++    w: &mut Writer<W>,
++    c: &CommonObjAttr,
++) -> Result<(), SerializeError> {
++    for meta_tag in &c.hwpx_meta_tags {
++        start_tag(w, "hp:metaTag")?;
++        super::utils::text(w, meta_tag)?;
++        end_tag(w, "hp:metaTag")?;
++    }
++    Ok(())
++}
++
+ // =====================================================================
+ // 공통 자식 요소 (sz / pos / outMargin)
+ // =====================================================================
+diff --git a/src/serializer/hwpx/table.rs b/src/serializer/hwpx/table.rs
+index 553fed725..effe9f439 100644
+--- a/src/serializer/hwpx/table.rs
++++ b/src/serializer/hwpx/table.rs
+@@ -121,6 +121,9 @@ pub fn write_table<W: Write>(
+         }
+         end_tag(w, "hp:tr")?;
+     }
++    // Direct table metaTag children: Hancom output (metatag_s1 M1) places them after the
++    // last hp:tr.
++    super::shape::write_meta_tags(w, &table.common)?;
+ 
+     end_tag(w, "hp:tbl")?;
+     Ok(())
+@@ -313,31 +316,32 @@ fn write_sub_list<W: Write>(
+     cell: &Cell,
+     ctx: &mut SerializeContext,
+ ) -> Result<(), SerializeError> {
+-    start_tag_attrs(
+-        w,
+-        "hp:subList",
+-        &[
+-            ("id", ""),
+-            (
+-                "textDirection",
+-                if cell.text_direction == 1 {
+-                    "VERTICAL"
+-                } else {
+-                    "HORIZONTAL"
+-                },
+-            ),
+-            // [#4898] 종전엔 상수 "BREAK" 였다 — 원본이 SQUEEZE 인 셀도 BREAK 로 굳어
+-            // x2x 왕복에서 조용히 소실됐다(코퍼스 표본 3,019회). IR 값을 그대로 되돌린다.
+-            ("lineWrap", cell_line_wrap_str(cell.line_wrap)),
+-            ("vertAlign", cell_vert_align_str(cell.vertical_align)),
+-            ("linkListIDRef", "0"),
+-            ("linkListNextIDRef", "0"),
+-            ("textWidth", "0"),
+-            ("textHeight", "0"),
+-            ("hasTextRef", "0"),
+-            ("hasNumRef", "0"),
+-        ],
+-    )?;
++    let mut attrs: Vec<(&str, &str)> = vec![
++        ("id", ""),
++        (
++            "textDirection",
++            if cell.text_direction == 1 {
++                "VERTICAL"
++            } else {
++                "HORIZONTAL"
++            },
++        ),
++        // [#4898] 종전엔 상수 "BREAK" 였다 — 원본이 SQUEEZE 인 셀도 BREAK 로 굳어
++        // x2x 왕복에서 조용히 소실됐다(코퍼스 표본 3,019회). IR 값을 그대로 되돌린다.
++        ("lineWrap", cell_line_wrap_str(cell.line_wrap)),
++        ("vertAlign", cell_vert_align_str(cell.vertical_align)),
++        ("linkListIDRef", "0"),
++        ("linkListNextIDRef", "0"),
++        ("textWidth", "0"),
++        ("textHeight", "0"),
++        ("hasTextRef", "0"),
++        ("hasNumRef", "0"),
++    ];
++    // Cell list metadata (OWPML ParaListType `metatag`, written last as Hancom does).
++    if let Some(meta_tag) = cell.hwpx_sublist_metatag.as_deref() {
++        attrs.push(("metatag", meta_tag));
++    }
++    start_tag_attrs(w, "hp:subList", &attrs)?;
+ 
+     write_sub_list_paragraphs(w, &cell.paragraphs, ctx)?;
  
 diff --git a/src/serializer/hwpx/utils.rs b/src/serializer/hwpx/utils.rs
 index 57484c73b..c22b09998 100644
