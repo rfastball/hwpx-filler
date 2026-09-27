@@ -1,4 +1,4 @@
-# Managed by codex-orchestration. Re-run the bootstrapper to update.
+# Managed by tiered-delegation. Re-run the bootstrapper to update.
 name = "luna"
 description = "Search, inventory, extract, or perform a mechanical transform."
 model = "gpt-6-luna"

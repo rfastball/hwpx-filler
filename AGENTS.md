@@ -1,8 +1,10 @@
 # AGENTS.md
 
 문서나르미는 HWPX·TXT 반복 문서 생성을 위한 Windows 데스크톱 앱이다.
-이 파일은 Codex·Claude Code의 공통 작업 진입점이다. 저장소의 에이전트 지침은 이 파일 하나로
-유지하며 `CLAUDE.md`, 연결 파일, 도구별 지침 복제본을 만들지 않는다.
+이 파일은 Codex·Claude Code의 공통 작업 진입점이다. 공통 에이전트 지침은 이 파일 하나로
+유지하며 `CLAUDE.md`, 이 파일을 가리키는 심볼릭 링크·포인터 파일, 도구별 지침 복제본을 만들지 않는다.
+도구별 역할·규칙 설정은 `.codex/`와 `.claude/agents/`·`.claude/rules/`에 두며, 이 파일을 구체화할 뿐
+어긋나지 않는다.
 
 ## 시작과 작업 범위
 
@@ -14,7 +16,7 @@
 
 ## 환경과 검증
 
-명령은 저장소 루트의 PowerShell에서 실행한다. Python 환경은 `uv`로 관리하며 수동 venv를 만들지 않는다.
+아래 명령은 Windows의 저장소 루트 PowerShell에서 실행한다. Python 환경은 `uv`로 관리하며 수동 venv를 만들지 않는다.
 버전·의존성은 `.python-version`, `.node-version`, `pyproject.toml`, `uv.lock`, `package.json`을 따른다.
 
 ```powershell
@@ -44,14 +46,16 @@ uv run python scripts/docs_contract.py --check
   프런트엔드에서 의미·권한·최신성·실행 가능 여부를 다시 판정하지 않는다.
 - 실패·손상·최신성 불명을 성공 fallback으로 낮추지 않는다. 사용자 문서·데이터의 손실을 숨기지 않는다.
 - [지원 경계](docs/product.md#product-scope)의 동결·비노출 자산을 임의로 삭제하거나 UI에 재연결하지 않는다.
-  코드의 존재만으로 제공·출하된 기능이라고 설명하지 않는다. API 테스트는 비밀키·실 서비스 대신 fixture를 쓴다.
-- 새 사용자 문장은 기본 0이다. 필요한 문장의 전문과 이유를 변경 범위에 먼저 명시한다.
+  코드의 존재만으로 제공·출하된 기능이라고 설명하지 않는다.
+- API 테스트는 비밀키·실 서비스 대신 fixture를 쓴다.
+- 사용자에게 노출되는 새 문구는 기본적으로 추가하지 않는다. 필요한 문구의 전문과 이유를 변경 범위에 먼저 명시한다.
 
 ## 위임과 병렬 작업
 
 - 사용 가능한 도구와 역할만 사용한다. 특정 모델·플러그인의 존재를 전제하지 않는다.
-  Codex의 모델·역할 설정은 [.codex/config.toml](.codex/config.toml)과 연결된 역할 파일이 소유한다.
-- 위임은 독립 작업이고 이득이 있을 때 사용한다. 변경 범위·파일·산출물·검증·정지 조건을 명시한다.
+  Codex의 모델·역할 설정은 [.codex/config.toml](.codex/config.toml)과 연결된 역할 파일이,
+  Claude Code의 역할·규칙 설정은 `.claude/agents/`·`.claude/rules/`가 소유한다.
+- 위임은 독립적으로 분리 가능하고 이득이 있는 작업에 사용한다. 변경 범위·파일·산출물·검증·정지 조건을 명시한다.
   사소하거나 분리 불가능한 작업, 위임 도구가 없는 환경에서는 직접 수행하고 같은 검증 기준을 적용한다.
 - 같은 파일의 동시 수정을 피하고 `src/hwpxfiller/viewmodel/run_state.py`는 단일 소유자로 둔다.
   domain과 관련 viewmodel 변경은 함께 맡기고 `hwpxcore` 변경은 직렬 처리한다. 불확실하면 직렬로 수행한다.

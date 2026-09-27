@@ -125,10 +125,17 @@ def test_agents_md_remains_required(repo: Path) -> None:
 @pytest.mark.parametrize("name", [
     "CLAUDE.md", ".claude/CLAUDE.md", ".claude/AGENTS.md",
     "subdir/AGENTS.md", "AGENTS.override.md",
+    ".claude/agents/nested/x.md", ".claude/rules/nested/x.md", ".claude/notes.md",
 ])
 def test_unregistered_agent_instruction_copies_are_rejected(repo: Path, name: str) -> None:
     _put(repo, name, "# Additional agent guidance\n")
     assert any("unregistered=" in p and name in p for p in docs.check(repo))
+
+
+@pytest.mark.parametrize("name", [".claude/agents/x.md", ".claude/rules/x.md"])
+def test_tool_role_and_rule_configuration_is_not_a_document(repo: Path, name: str) -> None:
+    _put(repo, name, "# Role configuration\n")
+    assert docs.check(repo) == []
 
 
 def test_version_change_requires_regeneration(repo: Path) -> None:

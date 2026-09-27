@@ -53,6 +53,8 @@ MAX_SUPPORT = 9
 MAX_CORE_LINES = 850
 MAX_CORE_BYTES = 75000
 DOC_SUFFIXES = {".md", ".markdown", ".mdx", ".rst", ".html", ".htm"}
+# Tool role/rule configuration, not documents; the Claude analogue of .codex/agents/*.toml.
+TOOL_CONFIG = (".claude/agents/*.md", ".claude/rules/*.md")
 DOCUMENT_FIELDS = {"path", "kind", "role", "title", "max_lines", "sources", "tests",
                    "source_sha256", "body_sha256", "why_separate"}
 TOPIC_FIELDS = {"id", "document", "sources", "tests", "source_sha256", "body_sha256"}
@@ -596,7 +598,8 @@ def check(root: Path) -> list[str]:
         files = repository_files(root)
     except ERRORS as exc:
         return [str(exc)]
-    actual = {p for p in files if Path(p).suffix.lower() in DOC_SUFFIXES
+    actual = {p for p in files if (Path(p).suffix.lower() in DOC_SUFFIXES
+              and not any(PurePosixPath(p).full_match(g) for g in TOOL_CONFIG))
               or (p.startswith("docs/") and Path(p).suffix == ".toml")}
     expected = {d["path"] for d in records if Path(d["path"]).suffix.lower() in DOC_SUFFIXES}
     expected |= {s["path"] for s in data["support"]} | {MANIFEST}
