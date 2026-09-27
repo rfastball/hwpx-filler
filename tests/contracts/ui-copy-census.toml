@@ -136,10 +136,6 @@ text = "호스트에 {} 가 없습니다 — 계약(HOST_METHODS)과 호스트�
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
-text = "개별 연결 변경·해제는 왼쪽 사용 위치에서 한 곳을 고르세요."
-
-[[sentence]]
-file = "frontend/src/screens/authoring.ts"
 text = "마지막 시험 이후 문서 또는 입력이 바뀌었습니다."
 
 [[sentence]]
@@ -160,15 +156,15 @@ text = "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일�
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
-text = "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."
-
-[[sentence]]
-file = "frontend/src/screens/authoring.ts"
 text = "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
 text = "시험 자료는 템플릿 파일에 포함되지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
@@ -193,6 +189,10 @@ text = "통과 표시는 현재 값과 선택 구성에만 해당합니다."
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
 text = "한글 조합을 마친 뒤 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "현재 문서의 사용 위치 {}곳이 ‘{}’으로 변경됩니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
@@ -2505,6 +2505,10 @@ text = "붙여넣을 위치와 방식을 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "사용 전에 구조 오류 {}개를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "선택 위치가 올바르지 않습니다."
 
 [[sentence]]
@@ -2518,6 +2522,10 @@ text = "선택한 위치가 교체 묶음 안에 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "선택한 위치에 파일이 이미 있습니다. 다른 이름을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 선택을 지정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
@@ -2538,6 +2546,10 @@ text = "시험 케이스 입력이 올바르지 않습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "시험 케이스를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험값이 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
@@ -2569,6 +2581,10 @@ text = "이 문서를 사용하는 작업을 찾을 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "작업 변경 적용이 연결되지 않았습니다."
 
 [[sentence]]
@@ -2593,11 +2609,11 @@ text = "적용할 작업 이름이 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
-text = "최신 결과 시험을 먼저 완료하세요."
+text = "초안은 저장되었습니다. 사용 전에 구조 오류 {}개를 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
-text = "파일이 외부에서 변경되었습니다. 다시 확인하세요."
+text = "최신 결과 시험을 먼저 완료하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"

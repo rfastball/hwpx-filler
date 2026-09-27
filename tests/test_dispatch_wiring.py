@@ -18,6 +18,7 @@ from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_tutorial import TutorialController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
+from hwpxfiller.webapp.screen_authoring import AuthoringController
 from hwpxfiller.viewmodel.edit_session import EditSession
 from hwpxfiller.webapp.editor_session import EditorLoader
 from hwpxfiller.webapp.data_zone import JobDataSession
@@ -30,6 +31,8 @@ CONTROLLERS = {
     "pool": PoolController,
     "tpl": TemplateController,
     "workbench": WorkbenchController,
+    # 템플릿 저작 작업대(#1015) — 몰입 화면. 문서 세션·명령 미리보기·시험·복구·적용 어휘.
+    "authoring": AuthoringController,
     # 화면이 아니라 채널이다(#894) — DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이지만,
     # 스냅샷 채널과 디스패치 어휘는 이 registry 에서만 나온다(`pool` 과 같은 형상).
     "tutorial": TutorialController,

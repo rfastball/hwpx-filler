@@ -17,6 +17,13 @@ class AuthoringSession:
     saved_content: bytes = b""
     revision: int = 0
     analysis: dict = field(default_factory=dict)
+    #: Analysis of ``saved_content`` — the baseline every "since save" impact is read against.
+    saved_analysis: dict = field(default_factory=dict)
+    #: Identifier renames applied since the last save, in order (F19). Recorded only when an
+    #: ``update`` commits exactly the content a preview produced; reset on save/reload.
+    identifier_changes: list[dict] = field(default_factory=list)
+    #: ``(content, renamed)`` of the latest preview, consumed by the next ``update``.
+    last_preview: tuple[bytes, list[dict]] | None = None
     draft_key: str = ""
     recovery: bool = False
     recovery_saved_at: str = ""

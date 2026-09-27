@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction } from "../../frontend/src/screens/authoring.ts";
+import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
 // Headless Node only; Python tests own semantic edits and durable storage.
@@ -285,4 +286,184 @@ test("HWPX comparison views forward Python's section entries into the read-only 
   assert.equal(panel, "comparison");
   assert.deepEqual([comparison.section_entries, comparison.current_section_entries, comparison.current_content], [["Contents/section1.xml"], ["Contents/section0.xml"], "cur"]);
   assert.ok(render(controller).includes(">비교 닫기</button>"), "비교 패널은 키보드로 닿을 버튼을 가진다");
+});
+
+// ---- Python 의 판정을 그리는 표면(F40·P07·§6.1·U07·AC10·F24·P09·F38·F26). 프런트는 뜻을 다시 판정하지 않는다. ----
+const COMMAND_VERDICTS = [
+  { type: "create_field", enabled: true, reason: null, alternative: null },
+  { type: "create_option", enabled: false, reason: "먼저 항목 안의 내용을 선택하세요.", alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } },
+  { type: "relink_field", enabled: false, reason: "전체 이름 변경과 다릅니다.", alternative: null },
+];
+
+test("F40: locate 가 실어 온 commands 가 도구 막대·팔레트·속성 select 의 비활성·사유·대안을 결정한다", async () => {
+  const { controller, calls } = harness((action) => action === "locate" ? { matches: [], context: {}, commands: COMMAND_VERDICTS } : {});
+  await controller.activate("a");
+  controller.selection("a", { start: 1, end: 2 });
+  await new Promise(setImmediate);
+  assert.deepEqual(controller.viewModel.getSnapshot().commands, COMMAND_VERDICTS);
+  assert.equal(calls.some((call) => call.action === "commands"), false, "locate 가 판정을 실어 오면 독립 액션을 다시 묻지 않는다");
+  controller.update({ panel: "commands" });
+  const palette = render(controller);
+  assert.match(palette, /<button type="button" class="btn sm" disabled="" aria-disabled="true" title="먼저 항목 안의 내용을 선택하세요\.">선택으로 만들기<\/button><p class="authoring-reason">먼저 항목 안의 내용을 선택하세요\.<\/p><button type="button" class="btn sm">먼저 항목 만들기<\/button>/);
+  assert.ok(palette.includes('title="먼저 항목 안의 내용을 선택하세요."'), "도구 막대 버튼도 같은 사유를 단다");
+  assert.ok(palette.includes('class="btn sm">필드로 만들기</button>'), "판정이 사용 가능이면 그대로 켜 둔다");
+  controller.update({ panel: "properties", commandType: "create_option" });
+  const properties = render(controller);
+  assert.match(properties, /<option value="create_option" disabled="" title="먼저 항목 안의 내용을 선택하세요\."( selected="")?>선택으로 만들기<\/option>/);
+  assert.ok(properties.includes('<p class="authoring-reason" role="status">먼저 항목 안의 내용을 선택하세요.</p>'));
+  assert.ok(properties.includes(">먼저 항목 만들기</button>"));
+  assert.match(properties, /<button class="btn sm" type="submit" disabled="" aria-disabled="true" title="[^"]+">변경 미리보기<\/button>/);
+});
+
+test("F40: locate 가 commands 를 싣지 않으면 독립 액션 commands 로 같은 fence 안에서 묻는다", async () => {
+  const { controller, calls } = harness((action) => action === "locate" ? { matches: [], context: { slot_id: "doc" } } : action === "commands" ? { commands: COMMAND_VERDICTS.slice(0, 1) } : {});
+  await controller.activate("a");
+  controller.selection("a", { start: 1, end: 2 });
+  await new Promise(setImmediate);
+  const asked = calls.find((call) => call.action === "commands");
+  assert.deepEqual([asked.session_id, asked.revision, asked.selection, asked.context], ["a", 0, { start: 1, end: 2 }, { slot_id: "doc" }]);
+  assert.deepEqual(controller.viewModel.getSnapshot().commands, COMMAND_VERDICTS.slice(0, 1));
+});
+
+test("§6.1: the context menu is a role=menu popover at the event coordinates, and Escape closes it first and returns focus", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ commands: COMMAND_VERDICTS, panel: "search" });
+  let focused = 0;
+  openContextMenu(controller, { clientX: 112, clientY: 234, target: { focus: () => { focused++; } }, preventDefault() {} }, { getBoundingClientRect: () => ({ left: 100, top: 200 }) });
+  const markup = render(controller);
+  assert.match(markup, /<div class="authoring-context-menu" role="menu" aria-label="문맥 명령" style="left:12px;top:34px">/);
+  assert.ok(markup.includes('<button type="button" class="btn sm" role="menuitem">필드로 만들기</button>'));
+  assert.ok(markup.includes('role="menuitem" disabled="" aria-disabled="true" title="먼저 항목 안의 내용을 선택하세요.">선택으로 만들기</button>'));
+  assert.equal(escapeShell(controller), "menu");
+  assert.equal(controller.viewModel.getSnapshot().contextMenu, null);
+  assert.equal(focused, 1);
+  assert.equal(controller.viewModel.getSnapshot().panel, "search", "메뉴를 닫는 Escape 는 패널을 건드리지 않는다");
+  assert.equal(escapeShell(controller), "panel");
+  assert.equal(controller.viewModel.getSnapshot().panel, "");
+  assert.equal(shellShortcut({ key: "F10", shiftKey: true, target: inside([".authoring-outline"]) }), "context-menu");
+  assert.equal(shellShortcut({ key: "ContextMenu", target: inside([".authoring-canvas"]) }), "context-menu");
+});
+
+test("U07/AC08: a name_conflict refusal shows Python's sentence with 취소·다른 이름 입력, and 기존 필드에 연결 only for a single occurrence", async () => {
+  const refusal = { code: "name_conflict", name: "사업명", existing_count: 2, message: "‘사업명’ 필드가 이미 있습니다. 다른 이름을 쓰거나 기존 필드에 연결하세요." };
+  const { controller } = harness((action) => action === "preview" ? { ok: false, refusal } : {});
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "rename_field", selected: { kind: "field", name: "공고명", start: 0, end: 3 } });
+  await controller.preview({ type: "rename_field", name: "사업명", old_name: "공고명" });
+  const view = controller.viewModel.getSnapshot();
+  assert.equal(view.preview, null);
+  assert.deepEqual(view.refusal, refusal);
+  const single = render(controller);
+  assert.ok(single.includes('<section class="authoring-preview authoring-refusal" role="alert" aria-label="변경 불가"><p>‘사업명’ 필드가 이미 있습니다. 다른 이름을 쓰거나 기존 필드에 연결하세요.</p>'));
+  for (const verb of ["다른 이름 입력", "기존 필드에 연결", "취소"]) assert.ok(single.includes(`>${verb}</button>`), verb);
+  controller.update({ selected: { kind: "field", name: "공고명", occurrences: [{ start: 0, end: 3 }, { start: 9, end: 12 }] } });
+  const whole = render(controller);
+  assert.ok(whole.includes(">다른 이름 입력</button>"));
+  assert.ok(!whole.includes(">기존 필드에 연결</button>"), "필드 전체 선택에서는 개별 연결 경로를 내지 않는다");
+});
+
+test("U08/AC10: a cascade_required refusal lists the children by kind·label·count and offers 하위 의미 함께 해제", async () => {
+  const refusal = { code: "cascade_required", children: [{ kind: "option", id: "quote", label: "견적서", count: 2 }, { kind: "field", id: "amount", label: "금액", count: 1 }], message: "이 항목을 해제하면 선택 2개도 확인이 필요합니다." };
+  const { controller } = harness((action) => action === "preview" ? { ok: false, refusal } : {});
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "unwrap", selected: { kind: "slot", id: "doc", label: "문서" } });
+  await controller.preview({ type: "unwrap", id: "doc" });
+  const markup = render(controller);
+  assert.ok(markup.includes('<ul aria-label="함께 해제될 하위 의미"><li>선택 · 견적서 · 2</li><li>필드 · 금액 · 1</li></ul>'));
+  assert.ok(markup.includes('<button type="button" class="btn sm primary">하위 의미 함께 해제</button>'));
+  assert.ok(markup.includes(">취소</button>"));
+});
+
+test("U04/U07: preview detail renders counts·included·children·candidates·links_existing and the rename sentence", async () => {
+  const { controller, snapshot } = harness((action, payload) => action === "preview" ? (payload.command.type === "rename_field"
+    ? { affected: 4, before: "공고명", after: "사업명" }
+    : { affected: 1, before: "특약", after: "[특약]", counts: { paragraphs: 3, fields: 2, options: 1, tables: 0 }, included: ["특약 사항", "세부 조건"], children: [{ kind: "option", id: "a", label: "갑", count: 1 }],
+      candidates: [{ name: "공고명", count: 3 }], links_existing: true, existing_count: 3, structure_delta: { added_slots: [], removed_slots: [], added_options: [], removed_options: [], renamed: [] }, body_changed: true }) : {});
+  snapshot.tabs[0].analysis = { fields: [{ name: "구", count: 1, occurrences: [] }], slots: [] };
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "create_field", selected: null });
+  await controller.preview({ type: "create_field", name: "공고명" });
+  const create = render(controller);
+  assert.ok(create.includes("<p>문단 3 · 필드 2 · 선택 1 · 표 0</p>"));
+  assert.ok(create.includes('<ul aria-label="포함될 내용"><li>특약 사항</li><li>세부 조건</li></ul>'));
+  assert.ok(create.includes('<ul aria-label="하위 의미"><li>선택 · 갑 · 1</li></ul>'));
+  assert.ok(create.includes('<option value="공고명" label="공고명 · 사용 위치 3곳"></option>'), "후보 목록은 Python 의 candidates 와 사용 위치 수를 쓴다");
+  assert.ok(create.includes("<p>기존 필드에 연결 · 사용 위치 3곳</p>"));
+  assert.ok(create.includes("<p>본문 변경 있음</p>"));
+  controller.update({ commandType: "rename_field", selected: { kind: "field", name: "공고명", occurrences: [] } });
+  await controller.preview({ type: "rename_field", name: "사업명" });
+  // 새 이름은 보낸 명령(view.command)에서 읽는다 — 문장 형식은 §13 그대로다.
+  assert.match(render(controller), /<p>현재 문서의 사용 위치 4곳이 ‘사업명’으로 변경됩니다\.<\/p>/);
+});
+
+test("F24/F12/F13: problems drive the outline badges, the panel's text-only severity·category, and the action wiring", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].analysis = { slots: [{ id: "doc", label: "문서", options: [{ id: "quote", label: "견적서" }] }], fields: [{ name: "공고명", count: 2, occurrences: [] }] };
+  snapshot.tabs[0].problems = [
+    { severity: "error", category: "structure", message: "선택 ‘견적서’의 범위가 항목 밖으로 나갑니다.", target: "quote", location: { start: 4, end: 9 }, actions: [{ label: "위치로 이동", kind: "navigate" }, { label: "구조 표기 수정", kind: "command", command: { type: "repair_marker", id: "quote" } }] },
+    { severity: "warning", category: "trial_input", message: "시험값이 없습니다.", target: "공고명", location: null, actions: [] },
+  ];
+  snapshot.tabs[0].readiness = { state: "draft", errors: 1, warnings: 1, message: "" };
+  await controller.activate("a");
+  controller.update({ panel: "problems" });
+  const markup = render(controller);
+  assert.ok(markup.includes('견적서<span class="authoring-badge">문제 1</span></button>'));
+  assert.ok(markup.includes('공고명 · 2<span class="authoring-badge">문제 1</span></button>'));
+  assert.ok(!markup.includes('문서<span class="authoring-badge">'), "문제가 없는 항목에는 배지가 없다");
+  assert.ok(markup.includes("<p><strong>오류</strong> · 구조 · quote</p><p>선택 ‘견적서’의 범위가 항목 밖으로 나갑니다.</p>"));
+  assert.ok(markup.includes("<p><strong>경고</strong> · 시험 입력 · 공고명</p>"));
+  assert.ok(markup.includes(">위치로 이동</button>") && markup.includes(">구조 표기 수정</button>"));
+  assert.ok(markup.includes("<span>구조 오류 1개 · 경고 1개</span>") && markup.includes("<span>저장됨 · 초안</span>"));
+  const recorded = [];
+  const stub = { select: async (target) => { recorded.push(["select", target]); }, preview: async (command) => { recorded.push(["preview", command]); } };
+  const [problem] = snapshot.tabs[0].problems;
+  await problemAction(stub, snapshot.tabs[0], problem, problem.actions[0]);
+  await problemAction(stub, snapshot.tabs[0], problem, problem.actions[1]);
+  assert.deepEqual(recorded, [["select", { source_revision: 0, start: 4, end: 9, target: "quote" }], ["preview", { type: "repair_marker", id: "quote" }]]);
+});
+
+test("P09/AC14: the footer separates save state from readiness, and a save notice appears inline until the next edit", async () => {
+  const { controller, snapshot } = harness((action) => action === "save" ? { notice: "초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요." } : action === "update" ? { revision: 1 } : {});
+  snapshot.tabs[0].readiness = { state: "ready", errors: 0, warnings: 0, message: "" };
+  await controller.activate("a");
+  assert.ok(render(controller).includes("<span>저장됨 · 사용 준비</span>"));
+  await controller.save("a");
+  const saved = render(controller);
+  assert.ok(saved.includes('<p role="status" class="authoring-notice">초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.</p>'));
+  controller.changed("a", "edited");
+  assert.equal(controller.viewModel.getSnapshot().notice, "");
+  await controller.flush("a");
+  snapshot.tabs[0].readiness = undefined;
+  snapshot.tabs[0].dirty = true;
+  assert.ok(render(controller).includes("<span>저장하지 않은 변경</span>"));
+});
+
+test("F38/F19/U11: the impact panel renders structure_delta·identifier changes·unverified count·per-job status, and usable=false disables 적용 영향 확인 with the reason", async () => {
+  const { controller } = harness((action) => action === "impact" ? { available: true, usable: false, save_required: false, content_changed_since_save: true, unverified_jobs: ["옛 작업"],
+    structure_delta: { added_slots: ["특약"], removed_slots: [], added_options: [{ id: "q", label: "견적서" }], removed_options: [], renamed: [{ kind: "slot", from: "doc", to: "document" }] },
+    identifier_changes: [{ kind: "slot", from: "doc", to: "document" }],
+    jobs: [{ name: "월간 공고", added_fields: ["사업명"], removed_fields: ["공고명"], change_status: "ready", blocked_reason: "템플릿을 저장한 뒤 확인할 수 있습니다." }] } : {});
+  await controller.activate("a");
+  await controller.impact();
+  const markup = render(controller);
+  assert.ok(markup.includes("<p>추가 항목: 특약</p><p>추가 선택: 견적서</p>"));
+  assert.ok(markup.includes('<ul aria-label="식별자 변경"><li>항목 · doc → document</li></ul>'));
+  assert.ok(markup.includes("<p>식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다.</p>"));
+  assert.ok(markup.includes("<p>저장 이후 본문 변경 있음</p>"));
+  assert.ok(markup.includes("<p>연결된 작업의 영향은 확인하지 않았습니다.</p><p>확인하지 않은 작업 1개</p>"));
+  assert.ok(markup.includes(`<p>${TPL_STATUS_COPY.ready}</p>`));
+  assert.ok(markup.includes('<button type="button" class="btn sm" disabled="" aria-disabled="true" title="템플릿을 저장한 뒤 확인할 수 있습니다.">적용 영향 확인</button><p class="authoring-reason">템플릿을 저장한 뒤 확인할 수 있습니다.</p>'));
+});
+
+test("F26: 원문 표기 asks Python's syntax action and renders read-only sections with a copy button", async () => {
+  const { controller, calls } = harness((action) => action === "syntax" ? { sections: [{ entry: "Contents/section0.xml", text: "{{공고명}}\n{{#특약}}…{{/특약}}" }], note: "HWPX 원문 표기는 읽기 전용" } : {});
+  await controller.activate("a");
+  await controller.raw();
+  assert.deepEqual(calls.filter((call) => ["syntax", "content"].includes(call.action)).map((call) => call.action), ["syntax"]);
+  const markup = render(controller);
+  assert.ok(markup.includes('<section class="authoring-bottom" aria-label="원문 표기"><h2>원문 표기</h2><p>HWPX 원문 표기는 읽기 전용</p>'));
+  assert.ok(markup.includes('<h3>Contents/section0.xml</h3><pre tabindex="0" aria-label="Contents/section0.xml 원문 표기">{{공고명}}'));
+  assert.ok(markup.includes('class="btn sm">복사</button>'));
+  assert.ok(!markup.includes("<textarea"), "JSON 덤프 textarea 는 없다");
 });

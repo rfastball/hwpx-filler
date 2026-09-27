@@ -102,6 +102,8 @@ export const SCREEN_ACTIONS = {
     trial: { required: ["revision", "session_id"], optional: [] },
     search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
     locate: { required: ["revision", "selection", "session_id"], optional: [] },
+    commands: { required: ["revision", "selection", "session_id"], optional: ["context"] },
+    syntax: { required: ["session_id"], optional: [] },
     case_upsert: { required: ["name", "revision", "selected", "session_id", "values"], optional: [] },
     case_remove: { required: ["name", "revision", "session_id"], optional: [] },
     save_cases: { required: ["session_id"], optional: [] },

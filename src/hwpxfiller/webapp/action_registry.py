@@ -80,6 +80,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "trial": _schema("session_id revision"),
         "search": _schema("session_id revision query kind"),
         "locate": _schema("session_id revision selection"),
+        # 명령 팔레트가 locate 없이 가용성만 묻는 자리(F40) — `context` 는 locate 가 준 것을 되돌려 준다.
+        "commands": _schema("session_id revision selection", "context"),
+        # 현재 의미를 TXT 문법으로 읽기만 하는 표시 모드(F26·§3.2) — 문서를 바꾸지 않는다.
+        "syntax": _schema("session_id"),
         "case_upsert": _schema("session_id revision name values selected"),
         "case_remove": _schema("session_id revision name"),
         "save_cases": _schema("session_id"),

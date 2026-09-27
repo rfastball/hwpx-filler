@@ -402,3 +402,243 @@ def test_hwpx_locate_matches_cell_field_only_with_same_cell_path(tmp_path: Path)
         invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
                                            "selection": {**selection, "cell_path": broken}})
         assert invalid["matches"] == [] and invalid["context"]["reason"] == "선택 위치가 유효하지 않습니다."
+
+
+# ── 저작 UX 계약(#1015 후속): 명령 가용성·구조화 거절·준비 상태·문제 목록·영향·문법 보기 ──
+def _structured_txt() -> str:
+    source = "머리 {{이름}}\n본문\n차선\n끝\n"
+    structured, _ = apply_txt("txt", source, {
+        "type": "create_slot", "start": source.index("본문"), "end": source.index("끝"),
+        "id": "항목1", "label": "표시",
+    })
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_option", "start": structured.index("본문"),
+        "end": structured.index("본문") + 2, "slot_id": "항목1", "id": "안1",
+    })
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_option", "start": structured.index("차선"),
+        "end": structured.index("차선") + 2, "slot_id": "항목1", "id": "안2",
+    })
+    return structured
+
+
+def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
+    sid = opened["session_id"]
+    picked = ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {"start": 0, "end": 2}})
+    by_type = {item["type"]: item for item in picked["commands"]}
+    assert len(by_type) == 13 and set(by_type["create_field"]) == {"type", "enabled", "reason", "alternative"}
+    assert by_type["create_field"]["enabled"] is True and by_type["create_field"]["reason"] is None
+    assert by_type["rename_slot"] == {"type": "rename_slot", "enabled": False,
+                                      "reason": "항목이나 선택 영역을 선택하세요.", "alternative": None}
+    assert by_type["create_option"]["alternative"] == {"label": "먼저 항목 만들기", "command_type": "create_slot"}
+    standalone = ctrl.dispatch("commands", {"session_id": sid, "revision": 0,
+                                            "selection": {"start": 0, "end": 2},
+                                            "context": picked["context"]})
+    assert standalone == {"commands": picked["commands"]}
+    location = opened["analysis"]["slots"][0]["options"][0]["location"]
+    inside = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
+                                      "selection": {"start": location["content_start_offset"],
+                                                    "end": location["content_start_offset"]}})
+    assert inside["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    assert {item["type"] for item in inside["commands"] if item["enabled"]} >= {"rename_slot", "rename_option", "unwrap"}
+    invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {"start": -1, "end": 0}})
+    assert invalid["matches"] == [] and all(
+        not item["enabled"] and item["reason"] == "선택 위치가 올바르지 않습니다." for item in invalid["commands"])
+    with pytest.raises(ValueError):
+        ctrl.dispatch("commands", {"session_id": sid, "revision": 0, "selection": {"start": 0}, "context": []})
+
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    hwpx = ctrl.open_path(fixture)
+    first = hwpx["analysis"]["fields"][0]["occurrences"][0]
+    selection = {"entry": first["entry"], "paragraph": first["paragraph"],
+                 "start_paragraph": first["paragraph"], "end_paragraph": first["paragraph"],
+                 "start": 0, "end": 0}
+    native = ctrl.dispatch("locate", {"session_id": hwpx["session_id"], "revision": 0, "selection": selection})
+    assert [item["type"] for item in native["commands"]] == [item["type"] for item in picked["commands"]]
+    assert next(item for item in native["commands"] if item["type"] == "rename_field")["enabled"] is True
+    assert ctrl.dispatch("commands", {"session_id": hwpx["session_id"], "revision": 0,
+                                      "selection": selection}) == {"commands": native["commands"]}
+
+
+def test_preview_returns_structured_refusals_without_changing_content(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    fields = ctrl.dispatch("new", {"media": "txt", "content": "{{이름}} {{날짜}}"})
+    conflict = ctrl.dispatch("preview", {"session_id": fields["session_id"], "revision": 0,
+                                         "command": {"type": "rename_field", "old_name": "이름", "name": "날짜"}})
+    assert conflict == {
+        "ok": False, "session_id": fields["session_id"], "revision": 0,
+        "refusal": {"code": "name_conflict", "name": "날짜", "existing_count": 1,
+                    "message": "‘날짜’ 필드가 이미 있습니다. 다른 이름을 쓰거나 기존 필드에 연결하세요."},
+    }
+    assert ctrl.dispatch("content", {"session_id": fields["session_id"]})["content"] == "{{이름}} {{날짜}}"
+    with pytest.raises(ValueError, match="찾을 수 없습니다"):
+        ctrl.dispatch("preview", {"session_id": fields["session_id"], "revision": 0,
+                                  "command": {"type": "rename_field", "old_name": "없음", "name": "새것"}})
+
+    structured = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
+    unwrap = {"type": "unwrap", "kind": "slot", "slot_id": "항목1"}
+    cascade = ctrl.dispatch("preview", {"session_id": structured["session_id"], "revision": 0, "command": unwrap})
+    assert cascade["ok"] is False and cascade["refusal"]["code"] == "cascade_required"
+    assert [child["id"] for child in cascade["refusal"]["children"]] == ["안1", "안2"]
+    assert cascade["refusal"]["message"] == "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
+    confirmed = ctrl.dispatch("preview", {"session_id": structured["session_id"], "revision": 0,
+                                          "command": {**unwrap, "cascade": True}})
+    assert "refusal" not in confirmed and "{{#" not in confirmed["content"]
+    assert confirmed["structure_delta"]["removed_slots"] == ["항목1"] and confirmed["body_changed"] is False
+
+
+def test_readiness_and_save_notice_follow_structure_errors(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": "{{#항목 a}}\n본문\n"})
+    sid = opened["session_id"]
+    tab = ctrl.snapshot()["tabs"][0]
+    errors = len([item for item in tab["analysis"]["diagnostics"] if item["severity"] == "error"])
+    assert errors >= 1
+    assert tab["readiness"] == {"state": "draft", "errors": errors, "warnings": 0,
+                                "message": f"사용 전에 구조 오류 {errors}개를 확인하세요."}
+    saved = ctrl.save_to_path(sid, 0, tmp_path / "draft.txt")
+    assert saved["ok"] is True
+    assert saved["notice"] == f"초안은 저장되었습니다. 사용 전에 구조 오류 {errors}개를 확인하세요."
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "{{이름}}"})
+    assert ctrl.snapshot()["tabs"][0]["readiness"] == {"state": "ready", "errors": 0, "warnings": 0, "message": None}
+    assert ctrl.dispatch("save", {"session_id": sid, "revision": 1})["notice"] is None
+
+
+def test_problems_union_trial_input_and_compatibility(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
+    sid = opened["session_id"]
+    assert ctrl.snapshot()["tabs"][0]["problems"] == opened["analysis"]["diagnostics"] == []
+    assert ctrl.dispatch("trial", {"session_id": sid, "revision": 0})["ok"] is False
+    problems = ctrl.snapshot()["tabs"][0]["problems"]
+    field_occurrence = opened["analysis"]["fields"][0]["occurrences"][0]
+    slot_location = opened["analysis"]["slots"][0]["location"]
+    assert problems == [
+        {"severity": "error", "category": "trial_input", "message": "시험값이 없습니다.", "target": "이름",
+         "location": field_occurrence,
+         "actions": [{"label": "원문으로 이동", "kind": "navigate", "location": field_occurrence}]},
+        {"severity": "error", "category": "trial_input", "message": "시험 선택을 지정하세요.", "target": "항목1",
+         "location": slot_location,
+         "actions": [{"label": "원문으로 이동", "kind": "navigate", "location": slot_location}]},
+    ]
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0,
+                                  "values": {"이름": "홍길동"}, "selected": {"항목1": "안1"}})
+    assert ctrl.snapshot()["tabs"][0]["problems"] == []
+    assert ctrl.snapshot()["tabs"][0]["analysis"]["diagnostics"] == []
+
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    hwpx = ctrl.open_path(fixture)
+    changed = HwpxPackage.from_bytes(fixture.read_bytes())
+    changed.entries["Contents/header.xml"] = changed.entries["Contents/header.xml"].replace(b"paraPr", b"paraXX", 1)
+    blocked = ctrl.dispatch("rhwp_roundtrip_preflight", {
+        "session_id": hwpx["session_id"], "revision": 0,
+        "content": base64.b64encode(changed.to_bytes()).decode("ascii")})
+    tab = next(item for item in ctrl.snapshot()["tabs"] if item["id"] == hwpx["session_id"])
+    structural = len(tab["analysis"]["diagnostics"])
+    compat = tab["problems"][structural:]
+    assert compat[0] == {"severity": "warning", "category": "compatibility",
+                         "message": "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.",
+                         "target": None, "location": None, "actions": []}
+    assert [(item["target"], item["message"]) for item in compat[1:]] == [
+        (entry["entry"], entry["message"]) for entry in blocked["diagnostics"]]
+    assert all(item["severity"] == "error" for item in tab["analysis"]["diagnostics"])
+
+
+def test_preview_and_impact_report_structure_delta_and_body_change(tmp_path: Path) -> None:
+    path = tmp_path / "template.txt"
+    path.write_text(_structured_txt(), encoding="utf-8")
+    job = SimpleNamespace(name="연결 작업", template_path=str(path), media="txt", template_fields=lambda: ["이름"])
+
+    class Registry:
+        def list_jobs(self, *, corrupted):
+            return [job]
+
+    class Change:
+        def zone(self, name, media, missing):
+            return {"source_drift": "changed", "actionable": True,
+                    "preparation": {"status": "review-required"}}
+
+    ctrl = AuthoringController(lambda _name, _snapshot: None, directory=tmp_path / "home",
+                               job_registry=Registry(), template_change=Change())
+    sid = ctrl.open_path(path)["session_id"]
+    rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "rename_slot", "kind": "slot",
+                                                   "slot_id": "항목1", "id": "항목A"}})
+    assert rename["structure_delta"] == {
+        "added_slots": ["항목A"], "removed_slots": ["항목1"],
+        "added_options": [["항목A", "안1"], ["항목A", "안2"]],
+        "removed_options": [["항목1", "안1"], ["항목1", "안2"]],
+        "renamed": [{"kind": "slot", "from": "항목1", "to": "항목A"}],
+    }
+    assert rename["body_changed"] is False
+    delete = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "delete", "kind": "option",
+                                                   "slot_id": "항목1", "option_id": "안2"}})
+    assert delete["body_changed"] is True
+    assert delete["structure_delta"]["removed_options"] == [["항목1", "안2"]] and delete["structure_delta"]["renamed"] == []
+    label_only = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                           "command": {"type": "rename_slot", "kind": "slot",
+                                                       "slot_id": "항목1", "label": "다른 표시"}})
+    assert label_only["structure_delta"]["renamed"] == [] and label_only["body_changed"] is False
+
+    # 미리보기 내용을 그대로 확정하면 식별자 변경이 영향에 남는다; 저장이 원장을 비운다.
+    ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                              "command": {"type": "rename_slot", "kind": "slot", "slot_id": "항목1", "id": "항목A"}})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": rename["content"]})
+    impact = ctrl.dispatch("impact", {"session_id": sid, "revision": 1})
+    assert impact["usable"] is False and impact["content_changed_since_save"] is True
+    assert impact["identifier_changes"] == [{"kind": "slot", "from": "항목1", "to": "항목A"}]
+    assert impact["structure_delta"]["removed_slots"] == ["항목1"] and impact["structure_delta"]["added_slots"] == ["항목A"]
+    assert impact["structure_delta"]["renamed"] == impact["identifier_changes"]
+    assert impact["jobs"][0]["blocked_reason"] == "문서를 저장한 뒤 기존 작업에 적용하세요."
+    assert impact["jobs"][0]["change_status"] == "review-required" and "change" in impact["jobs"][0]
+    ctrl.dispatch("save", {"session_id": sid, "revision": 1})
+    saved = ctrl.dispatch("impact", {"session_id": sid, "revision": 1})
+    assert saved["usable"] is True and saved["jobs"][0]["blocked_reason"] is None
+    assert saved["identifier_changes"] == [] and saved["content_changed_since_save"] is False
+    assert saved["structure_delta"] == {"added_slots": [], "removed_slots": [], "added_options": [],
+                                        "removed_options": [], "renamed": []}
+    # 되돌려진 이름 변경(옛 식별자가 다시 있음)은 영향에서 빠진다.
+    back = ctrl.dispatch("preview", {"session_id": sid, "revision": 1,
+                                     "command": {"type": "rename_slot", "kind": "slot", "slot_id": "항목A", "id": "항목1"}})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 1, "content": back["content"]})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 2, "content": rename["content"]})
+    assert ctrl.dispatch("impact", {"session_id": sid, "revision": 3})["identifier_changes"] == []
+    # 구조 오류가 있으면 저장돼 있어도 사용 가능이 아니다.
+    broken = ctrl.dispatch("update", {"session_id": sid, "revision": 3, "content": "{{#항목 a}}\n본문\n"})
+    ctrl.dispatch("save", {"session_id": sid, "revision": broken["revision"]})
+    draft = ctrl.dispatch("impact", {"session_id": sid, "revision": broken["revision"]})
+    assert draft["usable"] is False and draft["jobs"][0]["blocked_reason"].startswith("사용 전에 구조 오류")
+
+
+def test_syntax_view_for_both_media(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    text = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
+    assert ctrl.dispatch("syntax", {"session_id": text["session_id"]}) == {
+        "sections": [{"entry": "", "text": _structured_txt()}], "note": None}
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    hwpx = ctrl.open_path(fixture)
+    view = ctrl.dispatch("syntax", {"session_id": hwpx["session_id"]})
+    name = hwpx["analysis"]["fields"][0]["name"]
+    body = {section["entry"]: section["text"] for section in view["sections"]}
+    assert set(body) >= set(hwpx["section_entries"]) and "note" in view
+    assert "{{" + name + "}}" in body[hwpx["section_entries"][0]]
+    assert ctrl.dispatch("content", {"session_id": hwpx["session_id"]})["content"] == hwpx["content"]
+
+
+def test_close_guard_separates_document_and_test_material(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    path = tmp_path / "template.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    sid = ctrl.open_path(path)["session_id"]
+    assert ctrl.close_guard_reason() == ""
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "{{이름}} 수정"})
+    assert ctrl.dispatch("close", {"session_id": sid}) == {
+        "needs_confirm": True, "document_dirty": True, "dirty": True,
+        "cases_dirty": False, "trial_inputs_dirty": False}
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 1, "values": {"이름": "값"}, "selected": {}})
+    assert ctrl.dispatch("close", {"session_id": sid})["cases_dirty"] is True
+    assert ctrl.close_guard_reason() == "저작 작업대: 미저장 문서 1개 · 시험 자료 1개"
+    assert ctrl.dispatch("close", {"session_id": sid, "force": True}) == {"ok": True}

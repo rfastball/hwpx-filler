@@ -1762,10 +1762,11 @@ class TestWebSelftestGate:
         assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         # U6-E 리뷰 10: 상태 게이트는 **수선 동사**만 들고 검토 왕복은 「자세히…」가 진다 —
         # 같은 왕복을 부르는 메뉴 항목을 둘 두지 않는다.
-        assert t["hwpx_menu_items"] == ["act:compile", "detail"], (
-            f"HWPX 행 ⋮ 구성이 [변환·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
+        # 저작 작업대(#1015): HWPX 행에도 「템플릿 편집」이 선다 — TXT 행과 같은 어휘다.
+        assert t["hwpx_menu_items"] == ["edit", "act:compile", "detail"], (
+            f"HWPX 행 ⋮ 구성이 [편집·변환·자세히]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
-        assert t["partial_menu_items"] == ["act:compile", "detail"], (
+        assert t["partial_menu_items"] == ["edit", "act:compile", "detail"], (
             f"부분 변환 행에서 마저 변환 메뉴에 닿지 못합니다: {t['partial_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."

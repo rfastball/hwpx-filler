@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $cache = if ($env:RHWP_BUILD_CACHE_DIR) {
     if (-not [IO.Path]::IsPathRooted($env:RHWP_BUILD_CACHE_DIR)) { throw 'RHWP_BUILD_CACHE_DIR must be absolute' }

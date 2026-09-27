@@ -92,6 +92,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `case_upsert` | `session_id`, `revision`, `name`, `values`, `selected` | — |
 | `check_external` | `session_id` | — |
 | `close` | `session_id` | `force` |
+| `commands` | `session_id`, `revision`, `selection` | `context` |
 | `content` | `session_id` | — |
 | `copy` | `session_id`, `revision`, `selector` | — |
 | `discard_draft` | `key` | — |
@@ -111,6 +112,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `save` | `session_id`, `revision` | — |
 | `save_cases` | `session_id` | — |
 | `search` | `session_id`, `revision`, `query`, `kind` | — |
+| `syntax` | `session_id` | — |
 | `trial` | `session_id`, `revision` | — |
 | `trial_input` | `session_id`, `revision`, `values`, `selected` | — |
 | `update` | `session_id`, `revision`, `content` | — |

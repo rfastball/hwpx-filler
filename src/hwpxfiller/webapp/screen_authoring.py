@@ -18,13 +18,30 @@ from ..application.template_authoring_session import AuthoringSession
 from ..domain import template_authoring as semantics
 from ..external.authoring_store import AuthoringStore, ExternalChangeError, digest
 from ..external.authoring_transfer import capture_semantic, paste_semantic
-from ..external.hwpx_authoring import analyze_hwpx, apply_hwpx, search_hwpx, trial_hwpx
+from ..external.hwpx_authoring import (
+    analyze_hwpx,
+    apply_hwpx,
+    available_commands_hwpx,
+    search_hwpx,
+    syntax_view_hwpx,
+    trial_hwpx,
+)
 from ..external.rhwp_preflight import compare_rhwp_roundtrip
 from ..external.text_materialization_conformance import trial_txt_authoring
 from ..host.locations import default_authoring_dir
 from .screens import MutationSink, PushSink
 
 _INVALID_SELECTION = "선택 위치가 유효하지 않습니다."
+_BAD_PAYLOAD = "액션 입력이 올바르지 않습니다."
+_SAVE_FIRST = "문서를 저장한 뒤 기존 작업에 적용하세요."
+_EXTERNAL_CHANGED = "파일이 외부에서 변경되었습니다. 다시 확인하세요."
+# 문제 목록(§7.1) 중 webapp 이 투영하는 두 종류. 구조 진단은 domain/external 이 그대로 낸다.
+_CATEGORY_TRIAL_INPUT = "trial_input"
+_TRIAL_VALUE_MISSING = "시험값이 없습니다."
+_TRIAL_SELECTION_MISSING = "시험 선택을 지정하세요."
+_COMPATIBILITY_SUMMARY = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
+#: 본문(내용)을 바꾸는 명령 — 의미 경계만 바꾸는 명령과 구별한다(F38). `paste` 는 붙여넣기 미리보기.
+_BODY_CHANGING = frozenset({"delete", "unset_field", "repair_marker", "duplicate", "move", "paste"})
 
 
 class AuthoringController:
@@ -171,7 +188,59 @@ class AuthoringController:
             "external_changed": session.external_changed,
             "rhwp_editable": session.rhwp_editable,
             "rhwp_diagnostics": session.rhwp_diagnostics,
+            "readiness": self._readiness(session),
+            "problems": self._problems(session),
         }
+
+    @staticmethod
+    def _readiness(session: AuthoringSession) -> dict:
+        """Draft vs ready is decided by the structure diagnostics alone (F35, §9.1, AC14)."""
+        severities = [item.get("severity") for item in session.analysis.get("diagnostics", [])]
+        errors = severities.count(semantics.SEVERITY_ERROR)
+        warnings = severities.count(semantics.SEVERITY_WARNING)
+        return {
+            "state": "draft" if errors else "ready",
+            "errors": errors,
+            "warnings": warnings,
+            "message": f"사용 전에 구조 오류 {errors}개를 확인하세요." if errors else None,
+        }
+
+    @staticmethod
+    def _problems(session: AuthoringSession) -> list[dict]:
+        """Union of structure diagnostics, trial-input problems and compatibility warnings (F24, §7.1)."""
+        problems = list(session.analysis.get("diagnostics", []))
+        trial_attempted = (session.trial_result is not None or bool(session.trial_error)
+                           or bool(session.values) or bool(session.selected))
+        if trial_attempted:
+            for field in session.analysis.get("fields", []):
+                if session.values.get(field["name"]) is None:
+                    occurrences = field.get("occurrences") or [None]
+                    problems.append({
+                        "severity": semantics.SEVERITY_ERROR, "category": _CATEGORY_TRIAL_INPUT,
+                        "message": _TRIAL_VALUE_MISSING, "target": field["name"],
+                        "location": occurrences[0],
+                        "actions": [semantics.navigate_action(occurrences[0])],
+                    })
+            for slot in session.analysis.get("slots", []):
+                options = slot.get("options", [])
+                if options and session.selected.get(slot["id"]) not in {o["id"] for o in options}:
+                    problems.append({
+                        "severity": semantics.SEVERITY_ERROR, "category": _CATEGORY_TRIAL_INPUT,
+                        "message": _TRIAL_SELECTION_MISSING, "target": slot["id"],
+                        "location": slot.get("location"),
+                        "actions": [semantics.navigate_action(slot.get("location"))],
+                    })
+        if session.rhwp_editable is False:
+            problems.append({
+                "severity": semantics.SEVERITY_WARNING, "category": semantics.CATEGORY_COMPATIBILITY,
+                "message": _COMPATIBILITY_SUMMARY, "target": None, "location": None, "actions": [],
+            })
+            problems.extend({
+                "severity": semantics.SEVERITY_WARNING, "category": semantics.CATEGORY_COMPATIBILITY,
+                "message": item.get("message", ""), "target": item.get("entry"),
+                "location": None, "actions": [],
+            } for item in session.rhwp_diagnostics)
+        return problems
 
     @staticmethod
     def _trial_coverage(session: AuthoringSession) -> list[dict]:
@@ -265,6 +334,7 @@ class AuthoringController:
                 source_baseline=baseline,
                 saved_content=content,
                 analysis=analysis,
+                saved_analysis=analysis,
                 draft_key=key,
                 recovery=draft_meta is not None,
                 recovery_saved_at=draft_meta.get("updated_at", "") if draft_meta else "",
@@ -297,12 +367,14 @@ class AuthoringController:
                 session.external_changed = True
                 self._push()
                 return {"external_changed": True, "fingerprint": exc.fingerprint,
-                        "message": "파일이 외부에서 변경되었습니다. 다시 확인하세요."}
+                        "message": _EXTERNAL_CHANGED}
             old_draft = session.draft_key
             old_save_path = session.save_path
             session.save_path = str(target)
             session.baseline = new_baseline
             session.saved_content = session.content
+            session.saved_analysis = session.analysis
+            session.identifier_changes = []
             session.draft_key = self.store.key(target)
             session.recovery = False
             session.recovery_saved_at = ""
@@ -316,7 +388,10 @@ class AuthoringController:
             for sink in self.mutation_sinks:
                 sink("mutated", str(target))
             self._push()
-            return {"ok": True, "path": str(target), "revision": session.revision}
+            errors = self._readiness(session)["errors"]
+            return {"ok": True, "path": str(target), "revision": session.revision,
+                    "notice": (f"초안은 저장되었습니다. 사용 전에 구조 오류 {errors}개를 확인하세요."
+                               if errors else None)}
 
     def import_cases_path(self, session_id: str, path: str | Path) -> dict:
         """Native picker handoff only."""
@@ -383,6 +458,8 @@ class AuthoringController:
             "trial": self._do_trial,
             "search": self._do_search,
             "locate": self._do_locate,
+            "commands": self._do_commands,
+            "syntax": self._do_syntax,
             "case_upsert": self._do_case_upsert,
             "case_remove": self._do_case_remove,
             "save_cases": self._do_save_cases,
@@ -403,7 +480,7 @@ class AuthoringController:
         if action not in handlers:
             raise ValueError(f"알 수 없는 authoring 액션: {action!r}")
         if not isinstance(payload, dict):
-            raise ValueError("액션 입력이 올바르지 않습니다.")
+            raise ValueError(_BAD_PAYLOAD)
         with self._lock:
             result = handlers[action](payload)
             self._push()
@@ -453,6 +530,11 @@ class AuthoringController:
         else:
             self.store.discard_draft(session.draft_key)
             session.recovery_saved_at = ""
+        # 미리보기가 낸 내용이 그대로 확정되면 그 미리보기의 식별자 변경을 원장에 적는다(F19).
+        # 다른 내용이 오면 미리보기는 폐기된 것이다 — 추측으로 이름 변경을 복원하지 않는다.
+        if session.last_preview is not None and content == session.last_preview[0]:
+            session.identifier_changes.extend(session.last_preview[1])
+        session.last_preview = None
         session.replace_content(content, analysis)
         session.trial_error = ""
         self._refresh_recoverable()
@@ -469,10 +551,15 @@ class AuthoringController:
         if not isinstance(command, dict):
             raise ValueError("명령이 올바르지 않습니다.")
         parsed = self._parse(session.media, session.content)
-        changed, preview = (
-            semantics.apply(session.media, parsed, command)
-            if session.media == "txt" else apply_hwpx(parsed, command)
-        )
+        try:
+            changed, preview = (
+                semantics.apply(session.media, parsed, command)
+                if session.media == "txt" else apply_hwpx(parsed, command)
+            )
+        except (semantics.NameConflict, semantics.CascadeRequired) as exc:
+            # 구조화된 거절(AC08·AC10) — 문서는 바뀌지 않았고 프런트가 해결 경로를 그린다.
+            return {"ok": False, "refusal": exc.to_dict(),
+                    "session_id": session.id, "revision": session.revision}
         if session.media == "txt":
             if not isinstance(changed, str):
                 raise TypeError("TXT 편집 결과가 문자열이 아닙니다.")
@@ -481,18 +568,21 @@ class AuthoringController:
             if not isinstance(changed, HwpxPackage):
                 raise TypeError("HWPX 편집 결과가 문서가 아닙니다.")
             content = changed.to_bytes()
+        impact = self._preview_impact(session, preview, command)
+        session.last_preview = (content, impact["structure_delta"]["renamed"])
         return {
             **preview,
             "session_id": session.id,
             "revision": session.revision,
             "content": self._wire(session.media, content),
-            **self._preview_impact(session, preview),
+            **impact,
         }
 
-    def _preview_impact(self, session: AuthoringSession, preview: dict) -> dict:
+    def _preview_impact(self, session: AuthoringSession, preview: dict, command: dict) -> dict:
         linked_jobs, corrupted_jobs = self._linked_jobs(session)
         before_fields = {item["name"] for item in session.analysis.get("fields", [])}
         after_fields = {item["name"] for item in preview["result"].get("fields", [])}
+        action = str(command.get("type", ""))
         return {
             "linked_jobs": [job.name for job in linked_jobs],
             "impact_unverified": len(corrupted_jobs),
@@ -500,6 +590,38 @@ class AuthoringController:
                 "added_fields": sorted(after_fields - before_fields),
                 "removed_fields": sorted(before_fields - after_fields),
             },
+            "structure_delta": self._structure_delta(session.analysis, preview["result"],
+                                                     self._renamed(command)),
+            "body_changed": (action in _BODY_CHANGING
+                             or (action == "create_field" and bool(preview.get("original")))),
+        }
+
+    @staticmethod
+    def _renamed(command: dict) -> list[dict]:
+        """A rename command whose identifier actually changes (label-only edits are not renames)."""
+        action = command.get("type")
+        if action == "rename_slot" and "id" in command and command["id"] != command.get("slot_id"):
+            return [{"kind": "slot", "from": command.get("slot_id"), "to": command["id"]}]
+        if action == "rename_option" and "id" in command and command["id"] != command.get("option_id"):
+            return [{"kind": "option", "slot_id": command.get("slot_id"),
+                     "from": command.get("option_id"), "to": command["id"]}]
+        return []
+
+    @staticmethod
+    def _structure_delta(before: dict, after: dict, renamed: list[dict]) -> dict:
+        def slots(analysis: dict) -> set[str]:
+            return {slot["id"] for slot in analysis.get("slots", [])}
+
+        def options(analysis: dict) -> set[tuple[str, str]]:
+            return {(slot["id"], option["id"]) for slot in analysis.get("slots", [])
+                    for option in slot.get("options", [])}
+
+        return {
+            "added_slots": sorted(slots(after) - slots(before)),
+            "removed_slots": sorted(slots(before) - slots(after)),
+            "added_options": [list(pair) for pair in sorted(options(after) - options(before))],
+            "removed_options": [list(pair) for pair in sorted(options(before) - options(after))],
+            "renamed": list(renamed),
         }
 
     def _do_rhwp_roundtrip_preflight(self, p: dict) -> dict:
@@ -543,7 +665,7 @@ class AuthoringController:
         return {**preview, "session_id": session.id, "revision": session.revision,
                 "content": self._wire(session.media, content),
                 "clipboard_token": self._clipboard[0],
-                **self._preview_impact(session, preview)}
+                **self._preview_impact(session, preview, {"type": "paste"})}
 
     def _do_trial_input(self, p: dict) -> dict:
         session = self._session(p, revision=True)
@@ -648,6 +770,37 @@ class AuthoringController:
                              "context": source[max(0, index - 20):min(len(source), end + 20)]})
         return {"hits": hits}
 
+    def _commands(self, session: AuthoringSession, selection: dict, context: dict) -> list[dict]:
+        """Availability of every command for one selection — the domain decides, we carry (F40)."""
+        parsed = self._parse(session.media, session.content)
+        if session.media == "txt":
+            return semantics.available_commands("txt", parsed, selection, context)
+        return available_commands_hwpx(parsed, selection, context)
+
+    @staticmethod
+    def _invalid_locate() -> dict:
+        return {"matches": [], "context": {"slot_id": None, "option_id": None,
+                                           "reason": _INVALID_SELECTION},
+                "commands": semantics.availability_entries(
+                    dict.fromkeys(semantics.COMMAND_TYPES, semantics.REASON_INVALID_SELECTION))}
+
+    def _do_commands(self, p: dict) -> dict:
+        session = self._session(p, revision=True)
+        selection, context = p.get("selection"), p.get("context", None)
+        if not isinstance(selection, dict):
+            raise ValueError(semantics.REASON_INVALID_SELECTION)
+        if context is not None and not isinstance(context, dict):
+            raise ValueError(_BAD_PAYLOAD)
+        return {"commands": self._commands(session, selection, context or {})}
+
+    def _do_syntax(self, p: dict) -> dict:
+        """Read-only TXT-grammar view of the current meaning (F26, §3.2)."""
+        session = self._session(p)
+        parsed = self._parse(session.media, session.content)
+        if session.media == "txt":
+            return {"sections": [{"entry": "", "text": parsed}], "note": None}
+        return syntax_view_hwpx(parsed)
+
     def _do_locate(self, p: dict) -> dict:
         session = self._session(p, revision=True)
         selection = p.get("selection")
@@ -655,8 +808,7 @@ class AuthoringController:
             raise ValueError("선택 위치가 올바르지 않습니다.")
         start, end = selection.get("start"), selection.get("end")
         if type(start) is not int or type(end) is not int or start < 0 or end < 0:
-            return {"matches": [], "context": {"slot_id": None, "option_id": None,
-                                                  "reason": _INVALID_SELECTION}}
+            return self._invalid_locate()
         native = session.media == "hwpx"
         entry = selection.get("entry")
         first = selection.get("start_paragraph", selection.get("paragraph"))
@@ -664,13 +816,11 @@ class AuthoringController:
         if native and (not isinstance(entry, str) or type(first) is not int
                        or type(last) is not int or first < 0 or last < first
                        or entry not in self._section_entries(session.content)):
-            return {"matches": [], "context": {"slot_id": None, "option_id": None,
-                                                  "reason": _INVALID_SELECTION}}
+            return self._invalid_locate()
         first_paragraph = first if isinstance(first, int) else -1
         last_paragraph = last if isinstance(last, int) else -1
         if (not native or first == last) and end < start:
-            return {"matches": [], "context": {"slot_id": None, "option_id": None,
-                                                  "reason": _INVALID_SELECTION}}
+            return self._invalid_locate()
         # 표 셀 안 선택은 rhwp 커서 경로(cell_path)를 함께 싣는다 — 없으면 본문 문단이다.
         cell_path = selection.get("cell_path") if native else None
         if cell_path is not None and not (
@@ -680,8 +830,7 @@ class AuthoringController:
                     and all(type(value) is int and value >= 0 for value in step.values())
                     for step in cell_path)
         ):
-            return {"matches": [], "context": {"slot_id": None, "option_id": None,
-                                                  "reason": _INVALID_SELECTION}}
+            return self._invalid_locate()
 
         def hits(place: dict | None) -> bool:
             if not place:
@@ -755,9 +904,11 @@ class AuthoringController:
         slot_id = containing_slots[0] if len(containing_slots) == 1 else None
         option_id = (containing_options[0][1] if len(containing_options) == 1
                      and containing_options[0][0] == slot_id else None)
+        context = {"slot_id": slot_id, "option_id": option_id}
         return {"matches": matches,
-                "context": {"slot_id": slot_id, "option_id": option_id,
-                            "reason": ("" if slot_id else "선택한 위치가 교체 묶음 안에 없습니다.")}}
+                "context": {**context,
+                            "reason": ("" if slot_id else "선택한 위치가 교체 묶음 안에 없습니다.")},
+                "commands": self._commands(session, selection, context)}
 
     def _do_case_upsert(self, p: dict) -> dict:
         session = self._session(p, revision=True)
@@ -844,6 +995,9 @@ class AuthoringController:
         else:
             session.source_baseline = baseline
         session.analysis = analysis
+        session.saved_analysis = analysis
+        session.identifier_changes = []
+        session.last_preview = None
         session.revision += 1
         session.recovery = False
         session.recovery_saved_at = ""
@@ -986,10 +1140,21 @@ class AuthoringController:
 
     def _saved_for_jobs(self, session: AuthoringSession) -> None:
         if not session.save_path or session.dirty:
-            raise ValueError("문서를 저장한 뒤 기존 작업에 적용하세요.")
+            raise ValueError(_SAVE_FIRST)
         if self.store.current_fingerprint(Path(session.save_path)) != session.baseline:
             session.external_changed = True
-            raise ValueError("파일이 외부에서 변경되었습니다. 다시 확인하세요.")
+            raise ValueError(_EXTERNAL_CHANGED)
+
+    def _blocked_reason(self, session: AuthoringSession) -> str | None:
+        """Why the saved file cannot be handed to existing jobs yet (U11); None when usable."""
+        readiness = self._readiness(session)
+        if readiness["state"] != "ready":
+            return readiness["message"]
+        if not session.save_path or session.dirty:
+            return _SAVE_FIRST
+        if session.external_changed:
+            return _EXTERNAL_CHANGED
+        return None
 
     def _do_impact(self, p: dict) -> dict:
         session = self._session(p, revision=True)
@@ -997,22 +1162,40 @@ class AuthoringController:
             return {"available": False, "reason": "작업 연결을 확인할 수 없습니다.", "jobs": []}
         jobs, corrupted = self._linked_jobs(session)
         current_fields = {field["name"] for field in session.analysis.get("fields", [])}
+        blocked_reason = self._blocked_reason(session)
+        current_slots = {slot["id"] for slot in session.analysis.get("slots", [])}
+        current_options = {(slot["id"], option["id"]) for slot in session.analysis.get("slots", [])
+                           for option in slot.get("options", [])}
+        # 되돌려진 이름 변경(옛 식별자가 다시 있음)은 더는 영향이 아니다.
+        identifier_changes = [
+            change for change in session.identifier_changes
+            if (change["from"] not in current_slots if change["kind"] == "slot"
+                else (change.get("slot_id"), change["from"]) not in current_options)
+        ]
+        jobs_view = []
+        for job in jobs:
+            change = self._template_change.zone(job.name, job.media, not Path(job.template_path).is_file())
+            preparation = change.get("preparation") or {}
+            jobs_view.append({
+                "name": job.name,
+                "added_fields": sorted(current_fields - set(job.template_fields())),
+                "unmapped_fields": sorted(set(job.template_fields()) - current_fields),
+                "removed_fields": sorted(set(job.template_fields()) - current_fields),
+                "change": change,
+                "change_status": (str(preparation["status"]) if preparation.get("status") is not None
+                                  else None),
+                "blocked_reason": blocked_reason,
+            })
         return {
             "available": True,
             "save_required": session.dirty or not session.save_path,
+            "usable": blocked_reason is None,
+            "content_changed_since_save": session.dirty,
+            "structure_delta": self._structure_delta(session.saved_analysis, session.analysis,
+                                                     identifier_changes),
+            "identifier_changes": identifier_changes,
             "unverified_jobs": len(corrupted),
-            "jobs": [
-                {
-                    "name": job.name,
-                    "added_fields": sorted(current_fields - set(job.template_fields())),
-                    "unmapped_fields": sorted(set(job.template_fields()) - current_fields),
-                    "removed_fields": sorted(set(job.template_fields()) - current_fields),
-                    "change": self._template_change.zone(
-                        job.name, job.media, not Path(job.template_path).is_file()
-                    ),
-                }
-                for job in jobs
-            ],
+            "jobs": jobs_view,
         }
 
     def _linked_job(self, session: AuthoringSession, name: object):
