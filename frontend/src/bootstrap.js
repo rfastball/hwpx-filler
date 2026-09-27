@@ -102,6 +102,7 @@ import { createJobRelink } from "./screens/job_relink.ts";
 import { createEditorController } from "./screens/editor_controller.ts";
 import { createEditorEntry } from "./screens/editor_entry.ts";
 import { createWorkbenchController } from "./screens/workbench.ts";
+import { createAuthoringController } from "./screens/authoring_controller.ts";
 import { createSheetPickerController } from "./screens/sheet_picker.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
@@ -252,6 +253,8 @@ export function bootProduct() {
     doc: document, runtime, client, modal: Modal, chain: Intent, navigation,
     notify: (message) => window.alert(message),
   });
+  const AuthoringController = createAuthoringController({ runtime, client, modal: Modal, navigation });
+  screenPorts.authoring.bind(AuthoringController);
   /* R4-03 — 실행·결과 표면의 단일 owner. legacy `screens/job.js` 는 이 커밋에서 사라지므로
      `createJobRunAdapter` 를 거치는 임시 fan-out 도 함께 은퇴한다(port 를 직접 결속한다). */
   const JobRunController = createJobRunController({
@@ -292,6 +295,7 @@ export function bootProduct() {
   lifecycle.register("workbench", {
     leaveTo: (...args) => WorkbenchController.leaveTo(...args),
   });
+  lifecycle.register("authoring", { leaveTo: (to) => AuthoringController.guarded(() => AuthoringController.leaveTo(to)) });
   shellNav.bindExecutor(createProductScreenExecutor({
     doc: document,
     bridge,
@@ -355,7 +359,15 @@ export function bootProduct() {
       snapshot: (payload) => pushPort.dispatch(payload.screen, payload.snapshot),
 
       /* 네이티브 X 닫기 확인 — **시작만** 한다. 처분은 모달이 브리지로 되돌린다. */
-      "close-request": (payload) => AppCloseGuard.prompt(payload.state),
+      "close-request": async (payload) => {
+        try {
+          await AuthoringController.flushAll();
+          const state = await AuthoringController.closeState();
+          if (state && !state.armed) return bridge.confirmWindowClose();
+          return AppCloseGuard.prompt(state || payload.state);
+        }
+        catch (error) { await bridge.cancelWindowClose(); throw error; }
+      },
 
       /* 부팅 설정 주입 — 돌려주는 것은 **실제로 적용한 조각 이름**이다.
          조각별로 따로 감싸는 이유: 테마가 죽어도 개인화가 살았다는 사실을 잃지 않기 위해서다.
@@ -464,6 +476,7 @@ export function bootProduct() {
       library: LibraryController,
       editor: EditorController,
       workbench: WorkbenchController,
+      authoring: AuthoringController,
       jobRead: JobRead,
       jobRun: JobRunController,
       slotContent: JobContentSelectionController,
@@ -479,8 +492,6 @@ export function bootProduct() {
           { controller: JobRead, location: "sheet" }),
         productOverlayComponent("jobBrowseSheet", PRODUCT_OVERLAY_COMPONENTS.JobBrowseDialog,
           { controller: JobRead }),
-        productOverlayComponent("txtEditModal", PRODUCT_OVERLAY_COMPONENTS.TxtEditDialog,
-          { controller: EditorController }),
         /* 항목 상세 시트(U6-E #979) — 행 ⋮ 의 「자세히…」가 여는 면. 편집기 컨트롤러를
            받지만 그리는 값은 `tpl` 채널 스냅샷 한 존(`detail`)이다. */
         productOverlayComponent("tplDetailModal", PRODUCT_OVERLAY_COMPONENTS.TplDetailSheet,

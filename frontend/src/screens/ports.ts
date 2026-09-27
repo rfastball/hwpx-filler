@@ -63,6 +63,7 @@ export function createScreenPorts() {
     jobRunCoordination: createPort<JobRunCoordinationPort>("JobRunCoordinationPort"),
     jobRelinkFlow: createPort<JobRelinkFlowPort>("JobRelinkFlowPort"),
     editorEntry: createPort<EditorEntryPort>("EditorEntryPort"),
+    authoring: createPort<{ open(path?: string): Promise<void> }>("AuthoringEntryPort"),
   };
 }
 

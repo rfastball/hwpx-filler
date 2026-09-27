@@ -518,7 +518,7 @@ def test_quickstart_101_live_precondition_is_its_own_visible_step() -> None:
 def test_no_gate_opt_out_is_switched_on_inside_the_workflow() -> None:
     """옵트아웃 변수를 **켜는** 줄은 워크플로 어디에도 없다.
 
-    CI 는 셋 다 걷고 돈다(CLAUDE.md). 그런데 "걷는다"는 `Remove-Item` 단계로만 보이고, 어딘가
+    CI 는 셋 다 걷고 돈다(CONTRIBUTING.md#development). 그런데 "걷는다"는 `Remove-Item` 단계로만 보이고, 어딘가
     한 줄이 그것을 다시 켜면 그 단계는 선언만 남고 결과가 죽는다 — 이 저장소가 반복해 만난
     결함류다. 그래서 부재를 직접 센다.
     """

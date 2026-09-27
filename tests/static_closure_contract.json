@@ -53,7 +53,12 @@
       "node_modules/@codemirror/state/dist/index.js",
       "node_modules/style-mod/src/style-mod.js",
       "node_modules/w3c-keyname/index.js",
-      "node_modules/@codemirror/view/dist/index.js"
+      "node_modules/@codemirror/view/dist/index.js",
+      "node_modules/@codemirror/language/dist/index.js",
+      "node_modules/@codemirror/search/dist/index.js",
+      "node_modules/@lezer/common/dist/index.js",
+      "node_modules/@lezer/highlight/dist/index.js",
+      "node_modules/crelt/index.js"
     ]
   },
   "dev_dependency_owners": {

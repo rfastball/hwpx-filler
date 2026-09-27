@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 
 import { DataPickerDialog, PoolRegistrationDialog } from "./data_picker.ts";
 import type { DataPickerController } from "./data_picker.ts";
-import { EditorScreen, TplDetailSheet, TxtEditDialog } from "./editor.ts";
+import { EditorScreen, TplDetailSheet } from "./editor.ts";
 import type { EditorController } from "./editor.ts";
 import {
   JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeader, JobNoDataExit,
@@ -32,6 +32,8 @@ import { SettingsSheet } from "./settings_sheet.ts";
 import { SheetPickerDialog } from "./sheet_picker.ts";
 import type { SheetPickerController } from "./sheet_picker.ts";
 import { WorkbenchScreen } from "./workbench.ts";
+import { AuthoringScreen } from "./authoring.ts";
+import type { AuthoringController } from "./authoring_controller.ts";
 import type { WorkbenchController } from "./workbench.ts";
 
 type Obj = Record<string, unknown>;
@@ -39,7 +41,7 @@ const h = (tag: string | ((props: any) => ReactNode), props: Obj | null, ...chil
   createElement(tag as any, props, ...children);
 
 export const PRODUCT_SCREEN_IDS = Object.freeze([
-  "library", "job", "editor", "workbench",
+  "library", "job", "editor", "workbench", "authoring",
 ] as const);
 export type ProductScreenId = typeof PRODUCT_SCREEN_IDS[number];
 
@@ -83,6 +85,7 @@ export type ProductScreensPorts = {
   library: LibraryController;
   editor: EditorController;
   workbench: WorkbenchController;
+  authoring: AuthoringController;
   jobRead: JobReadController;
   jobRun: JobRunController;
   slotContent: JobContentSelectionController;
@@ -193,6 +196,8 @@ export function ProductScreens(ports: ProductScreensPorts): ReactNode {
       h(EditorScreen as any, { controller: ports.editor })),
     h("section", screenProps("workbench", active),
       h(WorkbenchScreen as any, { controller: ports.workbench })),
+    h("section", screenProps("authoring", active),
+      h(AuthoringScreen as any, { controller: ports.authoring })),
   );
   return createElement(Fragment, null,
     createPortal(screens, targets.stage, "product-screens"),
@@ -207,7 +212,6 @@ export const PRODUCT_OVERLAY_COMPONENTS = Object.freeze({
   DataPickerDialog,
   JobDataBody,
   JobBrowseDialog,
-  TxtEditDialog,
   /* 항목 상세 시트(U6-E #979) — 편집기 컨트롤러를 받되 읽는 것은 `tpl` 채널 스냅샷이다.
      화면 넷 중 편집기에서만 열리지만 overlay 라 target 은 셸 레벨에 선다. */
   TplDetailSheet,

@@ -220,7 +220,7 @@ test("제품 배선은 컨테이너 부재를 침묵으로 접지 않는다", as
 });
 
 test("제품 화면 visibility는 한 활성 화면만 동기 발행한다", () => {
-  assert.deepEqual([...PRODUCT_SCREEN_IDS], ["library", "job", "editor", "workbench"]);
+  assert.deepEqual([...PRODUCT_SCREEN_IDS], ["library", "job", "editor", "workbench", "authoring"]);
   assert.equal(Object.isFrozen(PRODUCT_SCREEN_IDS), true);
 
   const visibility = createProductScreenVisibility("job");
@@ -237,7 +237,7 @@ test("제품 화면 visibility는 한 활성 화면만 동기 발행한다", () 
 });
 
 test("화면 lifecycle registry는 owner만 위임하고 중복·해제 뒤 호출을 거절한다", () => {
-  assert.deepEqual([...SCREEN_LIFECYCLE_OWNER_IDS], ["editor", "workbench"]);
+  assert.deepEqual([...SCREEN_LIFECYCLE_OWNER_IDS], ["editor", "workbench", "authoring"]);
   const registry = createScreenLifecycleRegistry();
   const calls = [];
   const release = registry.register("editor", {

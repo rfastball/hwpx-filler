@@ -37,17 +37,20 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 
 | 메서드 | 인자 |
 |---|---|
+| `authoring_cases_file` | `session_id: str, action: str` |
 | `cancel_window_close` | `` |
 | `close_guard_state` | `` |
 | `confirm_window_close` | `` |
 | `copy_clipboard` | `screen: str, token: 'str &#124; None'=None` |
 | `copy_path` | `path: str` |
 | `dispatch` | `screen: str, action: str, payload: 'dict &#124; None'=None` |
+| `export_authoring_result` | `session_id: str, revision: int` |
 | `generate` | `screen: str, confirm_overwrite: bool=False, run_token: str=''` |
 | `import_template_file` | `screen: str` |
 | `initial` | `screen: str` |
 | `load_data_sheet` | `screen: str, path: str, sheet: str` |
 | `new_job_from_data` | `context: 'dict &#124; None'=None` |
+| `open_authoring_document` | `path: str='', as_template: bool=False` |
 | `open_job_in_editor` | `name: str, context: 'dict &#124; None'=None` |
 | `open_path` | `path: str` |
 | `pick_data_file` | `screen: str` |
@@ -58,6 +61,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `reveal_corrupt_job` | `path: str` |
 | `reveal_path` | `path: str` |
 | `save_artifact_as` | `ordinal: object` |
+| `save_authoring_document` | `session_id: str, revision: int` |
 | `set_font_scale` | `scale: str` |
 | `set_master_width` | `width: int` |
 | `set_theme` | `mode: str` |
@@ -77,6 +81,41 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 
 원천: [action_registry.py](../../src/hwpxfiller/webapp/action_registry.py).
 공유 dictionary expansion을 포함한다. 직접 host 호출의 payload 검증은 이 표 밖이다.
+
+### authoring
+
+| 액션 | 필수 키 | 선택 키 |
+|---|---|---|
+| `activate` | `session_id` | — |
+| `apply_job` | `session_id`, `revision`, `job_name`, `change_token` | — |
+| `case_remove` | `session_id`, `revision`, `name` | — |
+| `case_upsert` | `session_id`, `revision`, `name`, `values`, `selected` | — |
+| `check_external` | `session_id` | — |
+| `close` | `session_id` | `force` |
+| `commands` | `session_id`, `revision`, `selection` | `context` |
+| `content` | `session_id` | — |
+| `copy` | `session_id`, `revision`, `selector` | — |
+| `discard_draft` | `key` | — |
+| `discard_recovery` | `session_id` | — |
+| `external_content` | `session_id` | — |
+| `impact` | `session_id`, `revision` | — |
+| `locate` | `session_id`, `revision`, `selection` | — |
+| `new` | `media` | `content` |
+| `prepare_apply` | `session_id`, `revision`, `job_name` | — |
+| `preview` | `session_id`, `revision`, `command` | — |
+| `preview_paste` | `session_id`, `revision`, `clipboard_token`, `destination`, `with_meaning` | — |
+| `recover` | `session_id`, `revision` | — |
+| `recover_draft` | `key` | — |
+| `recovery_content` | `key` | — |
+| `reload` | `session_id`, `revision` | `force` |
+| `rhwp_roundtrip_preflight` | `session_id`, `revision`, `content` | — |
+| `save` | `session_id`, `revision` | — |
+| `save_cases` | `session_id` | — |
+| `search` | `session_id`, `revision`, `query`, `kind` | — |
+| `syntax` | `session_id` | — |
+| `trial` | `session_id`, `revision` | — |
+| `trial_input` | `session_id`, `revision`, `values`, `selected` | — |
+| `update` | `session_id`, `revision`, `content` | — |
 
 ### editor
 
@@ -201,10 +240,6 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `slot_decompile_all` | `path` | `confirm` |
 | `slot_remove` | `path`, `slot_id` | `confirm` |
 | `slot_rename` | `path`, `slot_id` | `label` |
-| `txt_content` | `path` | — |
-| `txt_edit` | `path`, `content`, `baseline` | `confirm_fingerprint` |
-| `txt_lint` | `content` | — |
-| `txt_new` | `name`, `content` | — |
 
 ### tutorial
 

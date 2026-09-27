@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,8 @@ def _write_repo(root: Path) -> ArtifactRepo:
         "export default { base: './', build: { manifest: true } };\n",
         encoding="utf-8",
     )
+    (root / "scripts").mkdir()
+    (root / "scripts" / "build_rhwp.ps1").write_text("# fixture build\n", encoding="utf-8")
     # tsconfig 는 R2-04 에서 봉인 입력으로 편입됐다(`_SOURCE_CONFIG_PATHS`) — Vite 의 `.ts`
     # 변환이 읽는 실빌드 입력이라서다. 없으면 `_required_file_record` 가 시끄럽게 죽는다.
     (root / "tsconfig.json").write_text(
@@ -137,6 +140,31 @@ def _write_repo(root: Path) -> ArtifactRepo:
         + "\n",
         encoding="utf-8",
     )
+    studio = artifact_root / "rhwp" / "studio"
+    (studio / "assets").mkdir(parents=True)
+    (studio / "index.html").write_text(
+        '<!doctype html><script src="./assets/studio.js"></script>'
+        '<button data-cmd="file:open">열기</button>\n', encoding="utf-8"
+    )
+    (studio / "assets" / "studio.js").write_text('window.studio = true;\n', encoding="utf-8")
+    entries = []
+    for file in sorted(studio.rglob("*")):
+        if file.is_file():
+            data = file.read_bytes()
+            entries.append({"path": "studio/" + file.relative_to(studio).as_posix(),
+                            "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    manifest_text = json.dumps({"schema": 1,
+                                "source_commit": web_artifact._RHWP_UPSTREAM_COMMIT,
+                                "files": entries}, indent=2) + "\n"
+    (artifact_root / "rhwp" / "studio-runtime.json").write_text(manifest_text, encoding="utf-8")
+    pinned = root / "vendor" / "rhwp"
+    pinned.mkdir(parents=True)
+    (pinned / "studio-runtime.json").write_text(manifest_text, encoding="utf-8")
+    (pinned / "source.json").write_text(
+        json.dumps({"commit": web_artifact._RHWP_UPSTREAM_COMMIT}) + "\n", encoding="utf-8"
+    )
+    (pinned / "patches").mkdir()
+    (pinned / "patches" / "authoring.patch").write_text("fixture patch\n", encoding="utf-8")
     return ArtifactRepo(root)
 
 
@@ -204,6 +232,9 @@ def test_producer_writes_complete_stable_self_excluding_seal(
         "assets/app.css",
         "assets/main.js",
         "index.html",
+        "rhwp/studio-runtime.json",
+        "rhwp/studio/assets/studio.js",
+        "rhwp/studio/index.html",
     ]
     assert SEAL_FILENAME not in output_paths
     assert all(record["size"] >= 0 and len(record["sha256"]) == 64
@@ -212,6 +243,36 @@ def test_producer_writes_complete_stable_self_excluding_seal(
     second = seal_repository_web_artifact(sealed_repo.root)
     assert second == first
     assert _seal_document(sealed_repo) == document
+
+
+def test_studio_runtime_is_exactly_the_tracked_offline_closure(unsealed_repo: ArtifactRepo) -> None:
+    extra = unsealed_repo.artifact_root / "rhwp" / "studio" / "assets" / "surprise.js"
+    extra.write_text('fetch("https://example.com")', encoding="utf-8")
+    with pytest.raises(WebArtifactViolation, match="pinned runtime manifest"):
+        seal_repository_web_artifact(unsealed_repo.root)
+    extra.unlink()
+    pinned = unsealed_repo.root / "vendor" / "rhwp" / "studio-runtime.json"
+    pinned.write_text(pinned.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    with pytest.raises(WebArtifactViolation, match="tracked source pin"):
+        seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_studio_manifest_cannot_pin_a_missing_local_asset(unsealed_repo: ArtifactRepo) -> None:
+    index = unsealed_repo.artifact_root / "rhwp" / "studio" / "index.html"
+    index.write_text(index.read_text(encoding="utf-8") + '<img src="./missing.png">',
+                     encoding="utf-8")
+    manifest_path = unsealed_repo.artifact_root / "rhwp" / "studio-runtime.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in manifest["files"] if item["path"] == "studio/index.html")
+    content = index.read_bytes()
+    record["size"] = len(content)
+    record["sha256"] = hashlib.sha256(content).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(WebArtifactViolation, match="static resource is missing"):
+        web_artifact._studio_output_closure(
+            unsealed_repo.artifact_root,
+            web_artifact._output_records(unsealed_repo.artifact_root),
+        )
 
 
 def test_source_and_frozen_resolvers_return_same_artifact_identity(
@@ -351,7 +412,7 @@ def test_resolver_refuses_a_dev_asset_that_was_sealed_with_the_tree(
     intruder = sealed_repo.artifact_root / "assets" / "main.ts"
     intruder.write_text("export const boot = () => 'ready';\n", encoding="utf-8")
     with monkeypatch.context() as sealing:
-        sealing.setattr(web_artifact, "_validate_output_composition", lambda _records: None)
+        sealing.setattr(web_artifact, "_validate_output_composition", lambda *_records: None)
         seal_repository_web_artifact(sealed_repo.root)
 
     with pytest.raises(
@@ -370,7 +431,7 @@ def test_frozen_resolver_refuses_the_same_composition_violation(
     intruder = sealed_repo.artifact_root / "assets" / "vite.config.mjs"
     intruder.write_text("export default {};\n", encoding="utf-8")
     with monkeypatch.context() as sealing:
-        sealing.setattr(web_artifact, "_validate_output_composition", lambda _records: None)
+        sealing.setattr(web_artifact, "_validate_output_composition", lambda *_records: None)
         seal_repository_web_artifact(sealed_repo.root)
         frozen_root = _frozen_root(sealed_repo, tmp_path)
 

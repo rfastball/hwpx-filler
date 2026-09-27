@@ -91,6 +91,7 @@ from .txt_materialization import (
 from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
 from .screen_template import TemplateController
+from .screen_authoring import AuthoringController
 from .screen_tutorial import TutorialController
 from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
@@ -373,6 +374,11 @@ class WebFrontend:
         # **목록보다 먼저 세운다**(U6-F #980): 전역 저장 폴더의 소유자가 이 컨트롤러라
         # 라이브러리 상세도 그 값을 콜러블로 받는다. 화면 **순서**는 아래 목록이 그대로
         # 진다(닫기 가드 질의 순서라 이유 없이 갈리면 안 된다).
+        template_change = TemplateChangeCoordinator(
+            job_registry,
+            root=default_template_authority_dir(),
+            clock=datetime.now,
+        )
         job_ctrl = JobController(job_registry, self._push, pool_registry=pool_registry,
             clock=datetime.now,
             generation_lock=generation_lock, engine=hwpx_engine,
@@ -381,11 +387,7 @@ class WebFrontend:
             pool_source_factory=source_from_pool_item,
             existing_outputs=existing_output_paths,
             ensure_output_dir=ensure_output_directory,
-            template_change=TemplateChangeCoordinator(
-                job_registry,
-                root=default_template_authority_dir(),
-                clock=datetime.now,
-            ),
+            template_change=template_change,
             slot_configuration=slot_configuration,
             # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
             # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
@@ -398,6 +400,8 @@ class WebFrontend:
 
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
+            AuthoringController(self._push, job_registry=job_registry,
+                                template_change=template_change),
             # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
             # 레지스트리는 편집기·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
@@ -504,6 +508,11 @@ class WebFrontend:
         # 디스패치 액션이 아니라 **컨트롤러 간 seam** 이라 action registry 밖이다: 웹이 부르는
         # 표면이 아니고, 원인 동사(tpl 변이)의 완료와 같은 줄에서 파이썬이 스스로 부른다.
         self.controllers["tpl"].mutation_sinks.append(
+            self.controllers["editor"].reconcile_template_mutation
+        )
+        # 저작 화면의 파일 저장도 템플릿 bytes 변이다(TXT 편집 모달의 승계자) — 같은 sink 가
+        # 같은 파일을 든 편집 세션을 재정산한다.
+        self.controllers["authoring"].mutation_sinks.append(
             self.controllers["editor"].reconcile_template_mutation
         )
         # 누름틀 변환 성립 → 「문서 만들기」 세션 기억(#894). 위 변이 sink 와 **갈라** 붙이는
@@ -773,7 +782,12 @@ class WebFrontend:
         if self._close_confirmed:
             return None
         state = self.close_guard_state()
-        if not state["armed"]:
+        flush_required = any(
+            bool(required())
+            for controller in self.controllers.values()
+            if (required := getattr(controller, "close_flush_required", None)) is not None
+        )
+        if not state["armed"] and not flush_required:
             return None
         if not self._close_prompt_open:
             self._close_prompt_open = True
@@ -811,6 +825,48 @@ class WebFrontend:
         검증·확정은 dispatch(``relink_template``)의 confirm 게이트가 담당. None = 취소.
         """
         return _file_dialog(_TEMPLATE_FILTERS)
+
+    def open_authoring_document(self, path: str = "", as_template: bool = False) -> "dict | None":
+        """라이브러리의 검증된 경로 또는 native 선택 결과만 저작 세션에 연다."""
+        if not isinstance(path, str) or not isinstance(as_template, bool):
+            raise ValueError("문서 열기 인자가 잘못되었습니다.")
+        if path:
+            media = Path(path).suffix.lower().lstrip(".")
+            if not self._controller("tpl").is_live_path(media, path):
+                raise ValueError("현재 템플릿 목록에 없는 경로입니다.")
+        else:
+            path = _file_dialog(_TEMPLATE_FILTERS) or ""
+        return self._controller("authoring").open_path(path, as_template=as_template) if path else None
+
+    def save_authoring_document(self, session_id: str, revision: int) -> "dict | None":
+        controller = self._controller("authoring")
+        content = controller.dispatch("content", {"session_id": session_id})
+        if type(revision) is not int or content["revision"] != revision:
+            raise ValueError("문서가 변경되었습니다. 다시 저장하세요.")
+        media = content["media"]
+        path = _save_dialog(f"새 템플릿.{media}", [(media.upper(), f"*.{media}")], media)
+        return controller.save_to_path(session_id, revision, path) if path else None
+
+    def authoring_cases_file(self, session_id: str, action: str) -> "dict | None":
+        controller = self._controller("authoring")
+        controller.dispatch("content", {"session_id": session_id})
+        filters = [("시험 케이스 JSON", "*.json")]
+        if action == "import":
+            path = _file_dialog(filters)
+            return controller.import_cases_path(session_id, path) if path else None
+        if action == "export":
+            path = _save_dialog("시험 케이스.json", filters, "json")
+            return controller.export_cases_path(session_id, path) if path else None
+        raise ValueError("시험 자료 파일 명령이 잘못되었습니다.")
+
+    def export_authoring_result(self, session_id: str, revision: int) -> "dict | None":
+        controller = self._controller("authoring")
+        content = controller.dispatch("content", {"session_id": session_id})
+        if type(revision) is not int or content["revision"] != revision:
+            raise ValueError("문서가 변경되었습니다. 다시 시험하세요.")
+        media = content["media"]
+        path = _save_dialog(f"시험 결과.{media}", [(media.upper(), f"*.{media}")], media)
+        return controller.export_result_path(session_id, revision, path) if path else None
 
     def reveal_corrupt_job(self, path: str) -> "str | None":
         """홈 손상 카드 '폴더 열기' → 탐색기에서 해당 파일 표시(#26 #8 해소 동선).

@@ -23,9 +23,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Callable
+from types import SimpleNamespace
+from typing import Any, Callable
 
 from hwpxfiller.application.candidate_revision import blob_digest
+from hwpxfiller.application.execution_composition import NATIVE_PRIMITIVE_CONTRACT_ID
 from hwpxfiller.application.execution_contract_set import (
     SealedExecutionPlanSemanticPayload,
 )
@@ -188,6 +190,62 @@ class ProductionMaterializationRunner:
         )
 
 
+def materialize_authoring_trial(
+    *,
+    source_bytes: bytes,
+    structure: ExecutionTemplateStructure,
+    ordered_operations: tuple[Mapping[str, object], ...],
+    active_field_requirements: tuple[Mapping[str, object], ...],
+    document_values: Mapping[str, str],
+) -> MaterializationOutcome:
+    """저작 작업대의 결과 시험 — Plan 봉인 없이 **같은** executor/verifier 를 지난다.
+
+    시험은 출하가 아니라 현재 문서 스냅샷과 시험 입력으로 「지금 만들어질 결과」를 보는 것이라
+    Plan ref·VDR ref·candidate store 조달이 없다. 그래도 물질화 경로는 하나여야 한다(S6-10):
+    P7 precheck → in-memory 실행 → postcondition 재검사의 순서와 실패 코드를 출하 경로와
+    똑같이 밟고, FAIL 이면 bytes 를 내지 않는다. 호출자(``hwpx_authoring``)는 operation 과
+    값을 넘길 뿐 executor/verifier 를 직접 만지지 않는다.
+    """
+    precheck = verify_structure_bytes_consistency(
+        candidate_bytes=source_bytes, structure=structure
+    )
+    if isinstance(precheck, ConformanceFailure):
+        return precheck
+    values = dict(document_values)
+    plan: Any = SimpleNamespace(
+        ordered_operations=ordered_operations,
+        active_field_requirements=active_field_requirements,
+        execution_basis=SimpleNamespace(
+            contracts=SimpleNamespace(
+                native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID
+            )
+        ),
+    )
+    materialized = apply_execution_plan_in_memory(
+        candidate_bytes=source_bytes,
+        ordered_operations=ordered_operations,
+        document_values=values,
+    )
+    verdict = verify_materialization_postconditions(
+        source_bytes=source_bytes,
+        output_bytes=materialized.output_bytes,
+        plan=plan,
+        structure=structure,
+        vdr=SimpleNamespace(document_values_in_order=lambda: tuple(values.items())),
+        execution_notes=materialized.notes,
+    )
+    if isinstance(verdict, ConformanceFailure):
+        return verdict
+    assert isinstance(verdict, ConformancePass)
+    return MaterializedDocumentBytes(
+        plan_semantic_digest="",
+        validated_record_ref="",
+        output_bytes=materialized.output_bytes,
+        output_digest=verdict.output_digest,
+        execution_notes=verdict.notes,
+    )
+
+
 def store_backed_structure_resolver(
     *,
     work_state_store: AtomicWorkTemplateStateStore,
@@ -257,6 +315,7 @@ __all__ = [
     "MaterializationProcurementError",
     "MaterializedDocumentBytes",
     "ProductionMaterializationRunner",
+    "materialize_authoring_trial",
     "production_materialization_runner",
     "require_native_materializer_escaping",
     "store_backed_structure_resolver",

@@ -1,12 +1,13 @@
 """템플릿 bytes 변이 → 편집 세션 재정산 계약 가드(S8G-00 #320) — 헤드리스.
 
-tpl 채널이 파일을 **제자리에서** 바꾸거나(누름틀 변환·TXT 내용 저장) 치우거나(휴지통 이동)
+tpl 채널이 파일을 **제자리에서** 바꾸거나(누름틀 변환) 치우거나(휴지통 이동), 저작 화면이
+TXT 원문을 저장하는
 되돌리는 동안, 같은 파일을 든 편집 세션은 종전에 아무것도 몰랐다: 스키마는 로드 시점 그대로
 얼어붙고, 삭제된 템플릿을 가리키는 작업이 조용히 저장됐다. 여기서 재는 것은 그 재정산이다.
 
 **실 조립을 쓴다**: 배선(`app.py` 의 사후 주입 한 줄)이 빠지면 컨트롤러 단위 테스트는 전부
 초록인 채 제품만 조용히 낡는다 — 그래서 :class:`~hwpxfiller.webapp.app.WebFrontend` 를 그대로
-세우고 tpl 액션을 dispatch 해 편집 세션의 스냅샷을 되읽는다(창 없이 구동된다).
+세우고 tpl 액션·저작 저장을 실제로 부른 뒤 편집 세션의 스냅샷을 되읽는다(창 없이 구동된다).
 """
 from __future__ import annotations
 
@@ -37,17 +38,24 @@ def _frontend(tmp_path: Path):
 
 
 def _txt(frontend, name: str, body: str) -> Path:
-    """TXT 템플릿 하나를 tpl 채널의 정규 동사로 만든다(레지스트리 목록에 실재해야 한다)."""
-    frontend.controllers["tpl"].dispatch("txt_new", {"name": name, "content": body})
-    return frontend.controllers["tpl"].text_registry.directory / f"{name}.txt"
+    """TXT 템플릿 하나를 서식 폴더에 놓는다 — 레지스트리는 매 조회마다 디스크를 훑는다."""
+    path = frontend.controllers["tpl"].text_registry.directory / f"{name}.txt"
+    path.write_text(body, encoding="utf-8")
+    return path
 
 
 def _txt_edit(frontend, path: Path, body: str):
-    """TXT 내용 저장 — 편집 창이 연 원문을 ``baseline`` 으로 싣는다(드리프트 없음 · #857)."""
-    return frontend.controllers["tpl"].dispatch(
-        "txt_edit",
-        {"path": str(path), "content": body, "baseline": path.read_text(encoding="utf-8")},
-    )
+    """TXT 원문 저장 — 저작 화면의 실제 경로(열기 → 갱신 → 같은 경로에 저장)를 그대로 지난다.
+
+    옛 TXT 편집 모달(`tpl/txt_edit`)의 승계자다. 저장 뒤 변이 통지가 나가는지가 이 파일의
+    주어이므로 컨트롤러 내부를 건드리지 않고 네이티브 handoff 메서드만 부른다.
+    """
+    authoring = frontend.controllers["authoring"]
+    opened = authoring.open_path(path)
+    updated = authoring.dispatch("update", {
+        "session_id": opened["session_id"], "revision": opened["revision"], "content": body,
+    })
+    return authoring.save_to_path(opened["session_id"], updated["revision"], path)
 
 
 def _raw_hwpx(name: str = "계약서") -> Path:
@@ -271,8 +279,10 @@ def test_mutation_of_another_template_leaves_the_session_untouched(tmp_path):
 def test_app_assembly_wires_tpl_mutations_into_the_editor(tmp_path):
     """조립부의 사후 배선이 실재한다 — 컨트롤러 단위 초록이 제품 배선을 증명하지 않는다."""
     fe = _frontend(tmp_path)
-    sinks = fe.controllers["tpl"].mutation_sinks
-    assert fe.controllers["editor"].reconcile_template_mutation in sinks
+    reconcile = fe.controllers["editor"].reconcile_template_mutation
+    assert reconcile in fe.controllers["tpl"].mutation_sinks
+    # 저작 화면의 저장도 같은 seam 을 지난다(TXT 편집 모달의 승계자).
+    assert reconcile in fe.controllers["authoring"].mutation_sinks
 
 
 def test_unknown_mutation_kind_is_loud_on_both_sides(tmp_path):
@@ -291,7 +301,7 @@ def test_sink_failure_is_not_swallowed_by_the_mutating_verb(tmp_path):
     def explode(kind: str, mutated: str) -> None:
         raise RuntimeError("재정산 실패")
 
-    fe.controllers["tpl"].mutation_sinks.append(explode)
+    fe.controllers["authoring"].mutation_sinks.append(explode)
     with pytest.raises(RuntimeError, match="재정산 실패"):
         _txt_edit(fe, path, "{{수신}}")
 

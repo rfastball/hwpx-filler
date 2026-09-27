@@ -66,8 +66,8 @@
 
 
     <!-- (「템플릿 관리」(scr-tpl)는 사망 — F8 §10.17: 목록·저작·변환·검토·그룹·삭제는 편집기
-         「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이 승계. #txtEditModal은
-         셸 레벨 공용 overlay target으로 생존한다.) -->
+         「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이, TXT 저작은 「저작」 화면
+         (scr-authoring)이 승계.) -->
 
     <!-- ============ 데이터 관리 (등록 데이터 참조 · 수명, #26 #4) ============ -->
     <!-- 안정 DOM(id) + pool.js 가 푸시('pool', snapshot) 로 값만 채운다(tpl 패턴).
@@ -105,14 +105,11 @@
     <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true"
          aria-labelledby="settingsTitle"></div>
 
-    <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
-    <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle"></div>
-
     <!-- 항목 상세 시트(U6-E #979) — 서식 폴더 항목 하나의 관리 표면. 편집기 고르기 존 아래에
          흩어져 있던 것들(선택 chip + 경로 동사·작성 출처·스키마 표·구간 항목 밴드·구간 요약)이
          여기 모였고, 여는 문은 행 ⋮ 의 「자세히…」 하나다. 겨누는 것은 편집 세션이 아니라
-         **풀 항목(파일)** 이라 편집기 몰입 표면 위에 서도 세션을 가리지 않는다(txtEditModal
-         선례). 내용의 생산자는 React `screens/editor.ts` 의 TplDetailSheet portal 이고 이
+         **풀 항목(파일)** 이라 편집기 몰입 표면 위에 서도 세션을 가리지 않는다.
+         내용의 생산자는 React `screens/editor.ts` 의 TplDetailSheet portal 이고 이
          자리는 그 target 이라 **비어 있어야** 한다(product_screens.requireEmptyTarget 가
          fail-closed). -->
     <div id="tplDetailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplDetailTitle"></div>

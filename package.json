@@ -9,7 +9,7 @@
     "npm": "11.16.0"
   },
   "scripts": {
-    "build": "vite build && uv run python scripts/seal_web_artifact.py",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_rhwp.ps1 && vite build && uv run python scripts/seal_web_artifact.py",
     "test": "node --test --test-concurrency=4 --test-reporter=tap \"tests/js/*.test.js\"",
     "verify:web": "uv run python scripts/seal_web_artifact.py --verify"
   },
@@ -20,6 +20,8 @@
     "vite": "8.1.5"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/search": "6.7.2",
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.9",
     "react": "19.2.8",

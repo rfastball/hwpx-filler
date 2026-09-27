@@ -3,7 +3,7 @@
    몰입 이탈 owner는 editor/workbench 정확히 둘이다. 등록되지 않은 일반 화면은 false로
    fallthrough하지만, owner를 해제한 뒤 다시 호출하는 것은 죽은 owner 사용이므로 loud하다. */
 
-export const SCREEN_LIFECYCLE_OWNER_IDS = Object.freeze(["editor", "workbench"] as const);
+export const SCREEN_LIFECYCLE_OWNER_IDS = Object.freeze(["editor", "workbench", "authoring"] as const);
 
 export type ScreenLifecycleOwnerId = typeof SCREEN_LIFECYCLE_OWNER_IDS[number];
 

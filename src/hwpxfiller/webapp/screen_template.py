@@ -38,10 +38,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..domain.job import template_media
-from ..domain.text_structure import scan_text_structure, scan_text_token_spans
 from ..host.locations import default_example_data_dir
 from ..external import example_pack
-from ..external.template_files import TemplateFileStore, TextEditDrift
+from ..external.template_files import TemplateFileStore
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
@@ -64,7 +63,6 @@ from .template_groups import (
     TemplateGroupModel,
     norm_library_path,
     rel_key,
-    validate_template_name,
 )
 
 
@@ -777,88 +775,6 @@ class TemplateController:
                 return True
         self._push()
         return False
-
-    # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
-    def _do_txt_new(self, p: dict) -> dict:
-        """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기.
-
-        존재 검사~쓰기는 공유 :meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`
-        임계구역 안에서 한다(리뷰 F5) — 「템플릿으로 저장」의 덮어쓰기 재검증과 같은 락을 잡아,
-        두 writer 가 같은 대상을 두고 check/write 를 교차하지 못하게 한다.
-        """
-        name = validate_template_name(p.get("name", ""))
-        content = p.get("content", "")
-        self._files.create_text(name, content)
-        self._set_result(_ok(f"TXT 템플릿을 만들었습니다: {name}"))
-        return {"ok": True, "name": name}
-
-    def _do_txt_edit(self, p: dict) -> dict:
-        """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5) + 드리프트 확인 왕복.
-
-        ``baseline`` 은 편집 창이 열릴 때 읽은 원문이다(필수 키 — 없으면 시끄럽게 실패).
-        디스크가 그것과 다르면 창이 열린 사이 밖에서 바뀐 것이라 무확인 덮어쓰기가 파괴가
-        된다(#216 이월 2): 쓰지 않고 재진술 문안과 **현재 지문**을 돌려주고, 웹이 확인을
-        받아 그 지문을 ``confirm_fingerprint`` 로 되실어 다시 부른다. 판정은
-        :meth:`~hwpxfiller.external.template_files.TemplateFileStore.edit_text` 가 쓰기와
-        같은 임계구역 안에서 내린다 — 여기서 미리 읽어 재판정하지 않는다.
-        """
-        result = self._files.edit_text(
-            p["path"],
-            p.get("content", ""),
-            baseline=p["baseline"],
-            confirm_fingerprint=str(p.get("confirm_fingerprint", "") or ""),
-        )
-        if isinstance(result, TextEditDrift):
-            name = Path(p["path"]).stem
-            return {
-                "needs_confirm": True,
-                "kind": "txt_drift",
-                "fingerprint": result.fingerprint,
-                "text": (
-                    f"편집 중 외부 변경: TXT 템플릿 '{name}' 이 이 편집 창을 여는 사이 "
-                    "다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 이 편집 창의 "
-                    "내용으로 덮어씁니다."
-                ),
-            }
-        path = result
-        self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
-        # 내용이 바뀌면 토큰 집합이 바뀐다 — 열려 있는 시트의 필드 목록도 방금 낡았다(리뷰 2).
-        self._reproject_detail(path)
-        # 편집 세션의 스키마도 방금 낡았다(#320).
-        self._notify_mutation("mutated", path)
-        return {"ok": True}
-
-    def _do_txt_content(self, p: dict) -> dict:
-        """편집 모달용 현재 내용 반환(읽기 전용). 읽기 실패는 loud raise."""
-        return {"content": self._files.read_text(p["path"])}
-
-    def _do_txt_lint(self, p: dict) -> dict:
-        """저작 중인 **미저장 본문**의 구간 표기 판정 + 토큰 좌표(읽기 전용·무변형).
-
-        린트메모장(S10-05 #862)의 판정 원천이다. 파일이 아니라 **창이 들고 있는 문자열**을
-        받는다 — 저장 전에 표기가 깨졌는지 말해 주는 것이 이 왕복의 존재 이유라, 디스크를
-        읽으면 늘 한 저장 늦게 대답한다. 그래서 경로 인자가 없고 쓰기도 없다(새 TXT 저작
-        창에는 아직 경로 자체가 없다).
-
-        진단은 링0 스캐너(:func:`~hwpxfiller.domain.text_structure.scan_text_structure`)가
-        낸 것을 **그대로** 싣는다. 표면은 ``message`` 를 재진술만 하고 ``kind`` 로 문안을
-        다시 짓지 않는다. 강조 구간은
-        :func:`~hwpxfiller.domain.text_structure.scan_text_token_spans` 가 판정한다.
-        도메인의 Python 문자 좌표만 웹 편집기의 UTF-16 코드 단위 좌표로 번역한다 —
-        웹이 토큰 정규식을 다시 쓰면 sigil 선행 분류가 두 곳에서 갈린다.
-        """
-        content = p.get("content", "")
-        scan = scan_text_structure(content)
-        offsets = [0]
-        for char in content:
-            offsets.append(offsets[-1] + (2 if ord(char) > 0xFFFF else 1))
-        return {
-            **scan.to_dict(),
-            "spans": [
-                span.to_dict() | {"start": offsets[span.start], "end": offsets[span.end]}
-                for span in scan_text_token_spans(content)
-            ],
-        }
 
 
 def _ok(text: str):

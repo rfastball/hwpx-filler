@@ -16,7 +16,6 @@ import {
   JobContentSelection,
   createJobContentSelectionController,
 } from "../../frontend/src/screens/job_content_selection.ts";
-import { PRODUCT_SCREEN_IDS } from "../../frontend/src/screens/product_screens.ts";
 
 /* ── 대역 빌더 ─────────────────────────────────────────────────────────────────────────── */
 function opt(id, text, effective = false) {
@@ -623,10 +622,6 @@ test("정상 view 부재는 비우고 init 실패는 backend 문안/action으로
   assert.equal(failed.zoneError, loadError); // transport 실패가 backend 원인을 지우지 않음
   assert.equal(failed.error, "재당김 실패");
   assert.equal(client.calls.length, 0);
-});
-
-test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면 그대로)", () => {
-  assert.deepEqual([...PRODUCT_SCREEN_IDS], ["library", "job", "editor", "workbench"]);
 });
 
 /* ══ S9-03(#829) 보관된 선택(Preset) — 저장·적용 두 동사 ═══════════════════════════════════ */

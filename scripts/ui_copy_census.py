@@ -38,12 +38,20 @@ PY_GLOBS = (
     # 짓는다 — 고르기 열 통합(PR #995)에서 그 문장들이 `webapp/screen_pool.py` 에서 여기로
     # 내려왔다. 범위 밖으로 흘리면 census 가 그 문장들을 「사라졌다」고만 말한다.
     "src/hwpxfiller/application/dataset_pool.py",
+    # 서식 저작(authoring) 모듈들. 링0·링1 이라서 원칙상 문안 생산자가 아니지만, 저작 작업대는
+    # 이들이 낸 거절 사유(`ValueError`)와 진단(`reason`·`message`)을 오류 배너·문제 패널에
+    # **그대로** 세운다. 문장을 webapp 에서 다시 감싸면 ~150 개를 이중 유지해야 하므로,
+    # 범위를 여기까지만 넓히고(`domain/`·`external/` 전체가 아니다) 원본을 센다.
+    "src/hwpxfiller/domain/template_authoring.py",
+    "src/hwpxfiller/external/hwpx_authoring.py",
+    "src/hwpxfiller/external/authoring_transfer.py",
+    "src/hwpxfiller/external/authoring_store.py",
+    "src/hwpxfiller/external/rhwp_preflight.py",
 )
 #: 프런트 source. `frontend/src/selftest/**` 는 프로브·픽스처라 제품 문안이 아니다.
 JS_GLOBS = ("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/src/**/*.js",
             "frontend/js/*.js")
 JS_EXCLUDE_PREFIXES = ("frontend/src/selftest/",)
-#: 정적 문안의 다른 단일 출처(CLAUDE.md 「단일 출처 목록」).
 HTML_FILES = ("frontend/index.html",)
 
 #: 태그 속성 중 사용자에게 읽히는 것.

@@ -310,7 +310,7 @@ export function createBootRoutingOverlayProbes() {
         "죽은 표면 ↔ 승계 표면은 **한 쌍**이다. 승계 쪽을 먼저 읽고 만족해 버리면 둘 다 서"
         + " 있는 반쪽 이주가 초록으로 지나간다 — 사망 확인을 앞에 세워 순서로 못 박는다.",
       note:
-        "새 창을 세우지 않는다(CLAUDE.md) — 이미 서 있는 이 프로브에 단계를 붙인다. 자기가"
+        "새 창을 세우지 않는다(CONTRIBUTING.md#development) — 이미 서 있는 이 프로브에 단계를 붙인다. 자기가"
         + " 민 픽스처는 자기가 걷는다: setup 이 실 스냅샷을 당겨 두고 run 말미에 되민다.",
       setup(ctx) {
         const api = ctx.win.pywebview && ctx.win.pywebview.api;

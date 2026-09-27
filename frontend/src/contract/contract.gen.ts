@@ -89,6 +89,38 @@ export const DISPATCH_REJECTION_FIELDS = ["name", "message"] as const;
 
 /* 화면×액션×payload 키 — validate_dispatch 가 거절의 정본이고 이 표는 그 타입 투영이다. */
 export const SCREEN_ACTIONS = {
+  authoring: {
+    new: { required: ["media"], optional: ["content"] },
+    activate: { required: ["session_id"], optional: [] },
+    content: { required: ["session_id"], optional: [] },
+    update: { required: ["content", "revision", "session_id"], optional: [] },
+    preview: { required: ["command", "revision", "session_id"], optional: [] },
+    copy: { required: ["revision", "selector", "session_id"], optional: [] },
+    preview_paste: { required: ["clipboard_token", "destination", "revision", "session_id", "with_meaning"], optional: [] },
+    rhwp_roundtrip_preflight: { required: ["content", "revision", "session_id"], optional: [] },
+    trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
+    trial: { required: ["revision", "session_id"], optional: [] },
+    search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
+    locate: { required: ["revision", "selection", "session_id"], optional: [] },
+    commands: { required: ["revision", "selection", "session_id"], optional: ["context"] },
+    syntax: { required: ["session_id"], optional: [] },
+    case_upsert: { required: ["name", "revision", "selected", "session_id", "values"], optional: [] },
+    case_remove: { required: ["name", "revision", "session_id"], optional: [] },
+    save_cases: { required: ["session_id"], optional: [] },
+    save: { required: ["revision", "session_id"], optional: [] },
+    check_external: { required: ["session_id"], optional: [] },
+    external_content: { required: ["session_id"], optional: [] },
+    reload: { required: ["revision", "session_id"], optional: ["force"] },
+    recover: { required: ["revision", "session_id"], optional: [] },
+    recover_draft: { required: ["key"], optional: [] },
+    recovery_content: { required: ["key"], optional: [] },
+    discard_recovery: { required: ["session_id"], optional: [] },
+    discard_draft: { required: ["key"], optional: [] },
+    close: { required: ["session_id"], optional: ["force"] },
+    impact: { required: ["revision", "session_id"], optional: [] },
+    prepare_apply: { required: ["job_name", "revision", "session_id"], optional: [] },
+    apply_job: { required: ["change_token", "job_name", "revision", "session_id"], optional: [] },
+  },
   library: {
     set_view: { required: [], optional: ["view"] },
     set_mode: { required: [], optional: ["mode"] },
@@ -215,10 +247,6 @@ export const SCREEN_ACTIONS = {
     slot_decompile: { required: ["path", "slot_id"], optional: ["confirm"] },
     slot_decompile_all: { required: ["path"], optional: ["confirm"] },
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
-    txt_new: { required: ["content", "name"], optional: [] },
-    txt_edit: { required: ["baseline", "content", "path"], optional: ["confirm_fingerprint"] },
-    txt_content: { required: ["path"], optional: [] },
-    txt_lint: { required: ["content"], optional: [] },
   },
   tutorial: {
     dismiss: { required: [], optional: [] },
@@ -252,6 +280,10 @@ export const HOST_METHODS = [
   "cancel_window_close",
   "pick_pool_data_file",
   "pick_template_path",
+  "open_authoring_document",
+  "save_authoring_document",
+  "authoring_cases_file",
+  "export_authoring_result",
   "reveal_corrupt_job",
   "copy_path",
   "reveal_path",
@@ -265,7 +297,6 @@ export type HostMethodName = (typeof HOST_METHODS)[number];
 
 /* 웹 소비자 0 인 host-internal 표면의 기록 — 지우지도 승격하지도 않는다(패킷 §4.1). */
 export const HOST_INTERNAL_METHODS = [
-  "close_guard_state",
 ] as const;
 
 export type HostInternalMethodName = (typeof HOST_INTERNAL_METHODS)[number];
@@ -288,6 +319,10 @@ export interface HostApi {
   cancel_window_close(): unknown;
   pick_pool_data_file(): unknown;
   pick_template_path(): unknown;
+  open_authoring_document(path?: unknown, as_template?: unknown): unknown;
+  save_authoring_document(session_id: unknown, revision: unknown): unknown;
+  authoring_cases_file(session_id: unknown, action: unknown): unknown;
+  export_authoring_result(session_id: unknown, revision: unknown): unknown;
   reveal_corrupt_job(path: unknown): unknown;
   copy_path(path: unknown): unknown;
   reveal_path(path: unknown): unknown;

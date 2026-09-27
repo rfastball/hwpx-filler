@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -37,6 +38,7 @@ _SOURCE_CONFIG_PATHS = (
     # 고친 채 봉인해도 신선도 검사가 통과하는 사각이 남는다(R2-04 · #408, R2-01 인계 정산).
     "tsconfig.json",
     "vite.config.mjs",
+    "scripts/build_rhwp.ps1",
 )
 _TEXT_OUTPUT_SUFFIXES = {
     ".cjs",
@@ -58,6 +60,14 @@ _TEXT_OUTPUT_SUFFIXES = {
 #: 넓히는 것은 금지가 아니라 **의도된 편집**이다: 새 자산 형식이 정당하면 사유와 함께 이 집합에
 #: 올린다. 자동 감지로 넓히지 않는다 — 그러면 sourcemap 하나가 조용히 출하된다.
 _OUTPUT_EXACT_FILES = frozenset({"index.html", VITE_MANIFEST_PATH})
+_STUDIO_MANIFEST_SOURCE = "vendor/rhwp/studio-runtime.json"
+_STUDIO_MANIFEST_OUTPUT = "rhwp/studio-runtime.json"
+_RHWP_UPSTREAM_COMMIT = "680111ec7bea2fe11110de18c3676ba5a1cf7847"
+_RHWP_SOURCE_FILES = frozenset({
+    "vendor/rhwp/source.json",
+    "vendor/rhwp/patches/authoring.patch",
+    _STUDIO_MANIFEST_SOURCE,
+})
 _OUTPUT_ASSET_DIR = "assets"
 _OUTPUT_ASSET_SUFFIXES = frozenset({".css", ".js", ".svg", ".woff2"})
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -79,7 +89,11 @@ _ABSOLUTE_ASSET_RE = re.compile(
     )
     """
 )
-_FILE_URL_RE = re.compile(r"(?i)\bfile:(?://)?")
+# Studio uses ``file:open`` command IDs and spells bare ``file://`` in protocol
+# checks/help text. Reject actual file URL paths and hosts, not these literals.
+_FILE_URL_RE = re.compile(r"(?i)\bfile:(?://(?:/|[a-z0-9])|/[a-z0-9]|\\\\)")
+_STUDIO_HTML_RESOURCE_RE = re.compile(r'''(?i)\b(?:src|href)\s*=\s*["']([^"']+)["']''')
+_STUDIO_CSS_RESOURCE_RE = re.compile(r'''(?i)\burl\(\s*["']?([^"')]+)''')
 #: 외부 URL **토큰** — 스킴부터 토큰 끝(공백·따옴표·괄호·역슬래시)까지 한 번에 잡는다.
 #: 토큰 전체를 대조해야 정확 열거 항목이 ``…/svg.evil.example`` 같은 연장으로 허용을
 #: 훔치지 못한다.
@@ -105,6 +119,8 @@ _INERT_OUTPUT_URLS = frozenset(
         "http://www.w3.org/2000/svg",
         "http://www.w3.org/XML/1998/namespace",
         "http://www.w3.org/1998/Math/MathML",
+        # rhwp's generated Word-compatible HTML namespace is document data.
+        "http://www.w3.org/TR/REC-html40",
         # CodeMirror 6 계열(S10-05 #862 · TXT 저작 린트메모장)이 데려온 **문서 주석** 링크
         # 전수. 반증 방법과 결과: 같은 그래프를 `minify: true` 로 다시 빌드하면
         # (주석만 사라지고 문자열 리터럴은 남는다) 산출물에 남는 외부 URL 은
@@ -114,10 +130,21 @@ _INERT_OUTPUT_URLS = frozenset(
         "https://code.haverbeke.berlin/marijn/style-mod#documentation",
         "https://developer.mozilla.org/en-US/docs/Web/CSS/direction",
         "https://developer.mozilla.org/en-US/docs/Web/CSS/white-space",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/position#sticky",
         "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference"
         "/Global_Objects/String/codePointAt",
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference"
+        "/Global_Objects/String/fromCodePoint",
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference"
+        "/Global_Objects/String/normalize",
         "https://en.wikipedia.org/wiki/Input_method",
         "https://en.wikipedia.org/wiki/Operational_transformation",
+        "https://en.wikipedia.org/wiki/Tree_traversal#Pre-order,_NLR",
+        "https://codemirror.net/docs/ref/#language.syntaxTree",
+        "https://code.haverbeke.berlin/codemirror/dev/issues",
+        "https://lezer.codemirror.net",
+        "https://lezer.codemirror.net/",
+        "https://lezer.codemirror.net/docs/ref#common.Input",
     }
 )
 #: 접두 면제 — 개별 열거가 무의미한 **한 문서 사이트의 API 레퍼런스 앵커 집합**만 받는다.
@@ -314,6 +341,9 @@ def _source_records(repo_root: Path) -> tuple[_FileRecord, ...]:
         _tree_records(frontend_root, role="frontend source", relative_to=repo_root)
     )
     records.extend(
+        _tree_records(repo_root / "vendor" / "rhwp", role="rhwp source", relative_to=repo_root)
+    )
+    records.extend(
         _required_file_record(
             repo_root / relative,
             relative_to=repo_root,
@@ -321,6 +351,11 @@ def _source_records(repo_root: Path) -> tuple[_FileRecord, ...]:
         )
         for relative in _SOURCE_CONFIG_PATHS
     )
+    if not _RHWP_SOURCE_FILES.issubset({record.path for record in records}):
+        raise WebArtifactViolation("rhwp pinned source or runtime manifest is missing")
+    source_pin = _json_object(repo_root / "vendor" / "rhwp" / "source.json", role="rhwp source pin")
+    if source_pin.get("commit") != _RHWP_UPSTREAM_COMMIT:
+        raise WebArtifactViolation("rhwp source pin has unexpected upstream commit")
     return tuple(sorted(records, key=lambda item: item.path))
 
 
@@ -495,6 +530,7 @@ def _assert_source_inputs_clean(repo_root: Path) -> None:
             "--untracked-files=all",
             "--",
             "frontend",
+            "vendor/rhwp",
             *_SOURCE_CONFIG_PATHS,
         ),
         role="Git source-input status lookup",
@@ -515,7 +551,85 @@ def _validate_vite_manifest(path: Path) -> None:
         raise WebArtifactViolation(f"Vite manifest is empty: {path}")
 
 
-def _validate_output_composition(records: Sequence[_FileRecord]) -> None:
+def _studio_output_closure(artifact_root: Path, records: Sequence[_FileRecord]) -> frozenset[str]:
+    manifest = _json_object(artifact_root / _STUDIO_MANIFEST_OUTPUT, role="rhwp Studio manifest")
+    if (set(manifest) != {"schema", "source_commit", "files"}
+            or type(manifest["schema"]) is not int or manifest["schema"] != 1):
+        raise WebArtifactViolation("rhwp Studio manifest has invalid fields")
+    if manifest["source_commit"] != _RHWP_UPSTREAM_COMMIT:
+        raise WebArtifactViolation("rhwp Studio manifest has unexpected upstream commit")
+    files = manifest["files"]
+    if not isinstance(files, list) or not files:
+        raise WebArtifactViolation("rhwp Studio manifest has no files")
+    expected: dict[str, tuple[int, str]] = {}
+    for item in files:
+        if not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}:
+            raise WebArtifactViolation("rhwp Studio manifest has invalid file entry")
+        relative = item["path"]
+        if not isinstance(relative, str):
+            raise WebArtifactViolation("rhwp Studio manifest has invalid path")
+        _validate_relative_path(relative, role="rhwp Studio manifest")
+        if not relative.startswith("studio/") or relative.lower().endswith(".map"):
+            raise WebArtifactViolation("rhwp Studio manifest has forbidden path")
+        path = f"rhwp/{relative}"
+        if (path in expected or type(item["size"]) is not int or item["size"] < 0
+                or not isinstance(item["sha256"], str)
+                or _DIGEST_RE.fullmatch(item["sha256"]) is None):
+            raise WebArtifactViolation("rhwp Studio manifest has invalid file entry")
+        expected[path] = (item["size"], item["sha256"])
+    if list(expected) != sorted(expected) or "rhwp/studio/index.html" not in expected:
+        raise WebArtifactViolation("rhwp Studio manifest file list is incomplete or unsorted")
+    actual = {
+        record.path: (record.size, record.sha256)
+        for record in records
+        if record.path.startswith("rhwp/studio/")
+    }
+    if actual != expected:
+        raise WebArtifactViolation("rhwp Studio output differs from pinned runtime manifest")
+    _validate_studio_local_references(artifact_root, frozenset(expected))
+    return frozenset({*expected, _STUDIO_MANIFEST_OUTPUT})
+
+
+def _validate_studio_local_references(artifact_root: Path, available: frozenset[str]) -> None:
+    """Every static Studio HTML/CSS fetch must resolve inside its pinned file list."""
+    for relative in sorted(available):
+        suffix = PurePosixPath(relative).suffix.lower()
+        pattern = (_STUDIO_HTML_RESOURCE_RE if suffix == ".html" else
+                   _STUDIO_CSS_RESOURCE_RE if suffix == ".css" else None)
+        if pattern is None:
+            continue
+        source = (artifact_root / PurePosixPath(relative)).read_text(encoding="utf-8")
+        for reference in pattern.findall(source):
+            value = reference.strip()
+            if not value or value.startswith(("#", "data:", "blob:")):
+                continue
+            path = value.split("?", 1)[0].split("#", 1)[0]
+            if path.startswith("/rhwp/studio/"):
+                resolved = path.lstrip("/")
+            elif path.startswith("/") or ":" in path or path.startswith("//"):
+                raise WebArtifactViolation(
+                    f"rhwp Studio has non-local static resource: {relative} ({value})"
+                )
+            else:
+                resolved = posixpath.normpath(posixpath.join(posixpath.dirname(relative), path))
+            if resolved not in available:
+                raise WebArtifactViolation(
+                    f"rhwp Studio static resource is missing: {relative} ({value})"
+                )
+
+
+def _assert_studio_source_pin(
+    source_files: Sequence[_FileRecord], output_files: Sequence[_FileRecord]
+) -> None:
+    source = _find_record(source_files, _STUDIO_MANIFEST_SOURCE, role="rhwp Studio source pin")
+    output = _find_record(output_files, _STUDIO_MANIFEST_OUTPUT, role="rhwp Studio output pin")
+    if (source.size, source.sha256) != (output.size, output.sha256):
+        raise WebArtifactViolation("rhwp Studio output manifest differs from tracked source pin")
+
+
+def _validate_output_composition(
+    records: Sequence[_FileRecord], studio_allowed: frozenset[str] = frozenset()
+) -> None:
     """산출물이 **무엇으로 되어 있는가**를 exact 폐포로 판정한다(R5-03).
 
     정체성 대조(네 사본이 같은가)는 이 판정을 대신하지 않는다 — 사본이 전부 같은 sourcemap 을
@@ -524,7 +638,7 @@ def _validate_output_composition(records: Sequence[_FileRecord]) -> None:
     offenders = [
         record.path
         for record in records
-        if record.path not in _OUTPUT_EXACT_FILES
+        if record.path not in _OUTPUT_EXACT_FILES and record.path not in studio_allowed
         and (
             PurePosixPath(record.path).parent.as_posix() != _OUTPUT_ASSET_DIR
             or PurePosixPath(record.path).suffix.lower() not in _OUTPUT_ASSET_SUFFIXES
@@ -755,7 +869,7 @@ def _verify_output_tree(artifact_root: Path, seal: _Seal) -> None:
         raise WebArtifactViolation("web artifact byte digest mismatch: " + ", ".join(mutated))
     if _record_digest(actual) != seal.tree_sha256:
         raise WebArtifactViolation("web artifact tree digest mismatch")
-    _validate_output_composition(actual)
+    _validate_output_composition(actual, _studio_output_closure(artifact_root, actual))
     _validate_vite_manifest(manifest_path)
     _validate_output_references(artifact_root, actual)
 
@@ -786,6 +900,7 @@ def _verify_source_state(repo_root: Path, seal: _Seal) -> None:
         seal.source_input_sha256
     ):
         raise WebArtifactViolation("frontend/config source input stale")
+    _assert_studio_source_pin(actual_sources, seal.output_files)
 
 
 def _verify_artifact(
@@ -874,13 +989,14 @@ def seal_repository_web_artifact(
         vite_command=vite_command,
     )
     output_files = _output_records(artifact_root)
+    _assert_studio_source_pin(source_files, output_files)
     index_path = artifact_root / "index.html"
     if not index_path.is_file() or _is_link(index_path):
         raise WebArtifactViolation(f"web artifact index missing: {index_path}")
     manifest_path = artifact_root / PurePosixPath(VITE_MANIFEST_PATH)
     if not manifest_path.is_file() or _is_link(manifest_path):
         raise WebArtifactViolation(f"Vite manifest missing: {manifest_path}")
-    _validate_output_composition(output_files)
+    _validate_output_composition(output_files, _studio_output_closure(artifact_root, output_files))
     _validate_vite_manifest(manifest_path)
     _validate_output_references(artifact_root, output_files)
     vite_manifest = _find_record(

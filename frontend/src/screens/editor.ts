@@ -2,8 +2,6 @@
 import { createElement, Fragment, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
-import { disposeLintpad, mountLintpad, updateLintpad } from "../editorview/txt_lintpad.ts";
-import type { LintpadHandle, LintpadSpan } from "../editorview/txt_lintpad.ts";
 import { ContextMenu } from "./context_menu.ts";
 import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { NoticeBox } from "./notice_box.ts";
@@ -17,7 +15,7 @@ import type { PoolColumnHost } from "./pool_column.ts";
 import { NAME_FIELD, PATTERN_FIELD, hasPendingEdits, rowField, valueOf } from "./editor_state.ts";
 import type { DraftState } from "./editor_state.ts";
 import { libRowMenuItems } from "./editor_controller.ts";
-import type { EditorController, Obj, TxtLintState, ViewState } from "./editor_controller.ts";
+import type { EditorController, Obj, ViewState } from "./editor_controller.ts";
 
 export { createEditorController, libRowMenuItems } from "./editor_controller.ts";
 export type { EditorController, EditorControllerDeps } from "./editor_controller.ts";
@@ -102,6 +100,7 @@ function EditorHead(props: { snapshot: Obj; controller: EditorController }): Rea
          이름 없는 새 작업이라고 말한다 — 빈 제목은 화면이 무엇을 편집 중인지 말하지 않는다. */
       h("h1", { id: "editorTitle" }, String(snapshot.name || "새 작업")),
       pairLine(snapshot) ? h("p", { className: "sub", id: "editorSubtitle" }, pairLine(snapshot)) : null),
+    h("button", { className: "btn sm", type: "button", onClick: () => controller.guarded(() => controller.openAuthoring()) }, "템플릿 만들기"),
     h("div", { className: "status", id: "editorSaveState", "data-level": level }, stateText));
 }
 
@@ -1011,130 +1010,3 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
     }));
 }
 
-/** 린트메모장 호스트 — vendor 수명주기를 **React 효과 하나**가 진다.
- *
- *  마운트/해제는 이 창이 살아 있는 동안만이다(`state === null` 이면 부모가 아예 렌더하지
- *  않는다). CodeMirror 타입은 `txt_lintpad.ts` 밖으로 나오지 않으므로 여기 있는 것은
- *  불투명 손잡이뿐이다(#588 봉쇄).
- *
- *  본문의 주인은 CodeMirror 문서이고 상태는 그 거울이다 — 매 렌더마다 값을 되밀어 넣지
- *  않는다(`updateLintpad` 가 같은 문자열이면 아무것도 하지 않는다). 그래서 캐럿이 튀지
- *  않으면서도 밖에서 갈아 끼운 본문은 따라 들어온다. */
-function TxtLintpad(props: {
-  controller: EditorController; content: string; spans: readonly LintpadSpan[] | null;
-}): ReactNode {
-  const { controller } = props;
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const handleRef = useRef<LintpadHandle | null>(null);
-  /* 마지막으로 **얹은** 판정. 렌더마다 같은 좌표를 다시 dispatch 하면 타이핑 한 글자에
-     트랜잭션이 둘씩 붙는다(강조는 그대로인 채 비용만 는다). */
-  const appliedSpans = useRef<readonly LintpadSpan[] | null>(null);
-  /* 마운트 시점의 본문만 심는다 — 이후 갱신은 아래 효과가 진다(deps 를 비워 재마운트 금지). */
-  const initial = useRef<string>(props.content);
-  useEffect(() => {
-    const host = hostRef.current;
-    if (host === null) return undefined;
-    const handle = mountLintpad({
-      host,
-      doc: initial.current,
-      contentId: "txtEditContent",
-      ariaLabel: "템플릿 내용",
-      onDocChanged: (text: string) => { controller.typeTxtEdit(text); },
-    });
-    handleRef.current = handle;
-    return () => { disposeLintpad(handle); handleRef.current = null; };
-  }, []);
-  useEffect(() => {
-    const handle = handleRef.current;
-    if (handle === null) return;
-    const fresh = props.spans !== null && props.spans !== appliedSpans.current;
-    if (fresh) appliedSpans.current = props.spans;
-    updateLintpad(handle, {
-      doc: props.content, spans: fresh ? props.spans ?? undefined : undefined,
-    });
-  });
-  return h("div", { className: "lintpad", id: "txtLintpad", ref: hostRef });
-}
-
-/** 진단 재진술 — Python 이 낸 `message` 를 **그대로** 줄로 편다(문안 재조립 금지). */
-function TxtLintReport(props: { lint: TxtLintState | null }): ReactNode {
-  const { lint } = props;
-  const diagnostics = lint?.diagnostics || [];
-  if (lint === null) {
-    return h("p", { id: "txtLintReport", className: "hint" }, "표기를 확인하는 중…");
-  }
-  if (diagnostics.length === 0) {
-    const summary = lint.summary || {};
-    return h("p", { id: "txtLintReport", className: "hint" },
-      `표기 이상 없음 · 항목 ${Number(summary.slots || 0)} · 선택 ${Number(summary.options || 0)}`
-      + ` · 누름틀 ${Number(summary.fields || 0)}`);
-  }
-  return h("div", { id: "txtLintReport", className: "note warnbox", role: "status" },
-    h("p", { style: { margin: 0 } }, `구간 표기 이상 ${diagnostics.length}건`),
-    h("ul", { id: "txtLintDiag", className: "muted capnote" },
-      diagnostics.map((diagnostic, index) => h("li", { key: index },
-        String(diagnostic.message || ""),
-        diagnostic.context ? h("span", { className: "muted" }, ` — ${String(diagnostic.context)}`) : null))));
-}
-
-export function TxtEditDialog(props: { controller: EditorController }): ReactNode {
-  const { controller } = props;
-  /* 세 번째 인자(getServerSnapshot)는 `EditorScreen` 과 같은 이유로 선다: 없으면 이 창이
-     `react-dom/server` 로 **한 번도** 렌더되지 못해 노드 배치를 단위층에서 잴 수 없다. */
-  const view = useSyncExternalStore(
-    controller.viewModel.subscribe, controller.viewModel.getSnapshot,
-    controller.viewModel.getSnapshot);
-  const state = view.txtEdit;
-  /* 초기 포커스는 **커밋 뒤** 이 자리가 겨눈다. 모달 executor 의 `initialFocus` 는 열림
-     **시점**의 DOM 을 보는데 이 창의 내용은 그 뒤 커밋에서 생기므로, 열림 시점에 넘기면
-     대상이 없어 되돌림 트리거로 떨어진다(시트 선택이 같은 이유로 같은 형태를 쓴다). */
-  useEffect(() => {
-    if (state === null) return;
-    /* 초기 포커스의 주인은 **여기 하나**다. 메모장이 마운트에서 스스로 겨누면 새 생성
-       창에서 이름 칸과 두 번 다투고, 마지막에 이긴 쪽이 순서에 따라 갈린다. 메모장의
-       컨텐츠 DOM 은 종전 id 를 그대로 이어받으므로 겨눔 방식은 바뀌지 않았다. */
-    const target = controller.doc.getElementById(
-      state.mode === "new" ? "txtEditName" : "txtEditContent");
-    target?.focus();
-  }, [state === null, state?.mode]);
-  return h("div", { className: "modal-card" },
-    h("h3", { id: "txtEditTitle" }, state?.title || "새 TXT 템플릿"),
-    h("label", {
-      className: "ctl", id: "txtNameRow",
-      style: { display: state?.mode === "new" ? "" : "none" },
-    },
-    h("span", { className: "lbl" }, "이름(확장자 제외)"),
-    h("input", {
-      className: "field", id: "txtEditName", type: "text", placeholder: "예: 회의결과보고",
-      value: state?.name || "",
-      onChange: (event: Obj) => controller.patchTxtEdit({ name: String(event.currentTarget.value) }),
-    })),
-    h("p", { className: "modal-sub" },
-      "{{필드}} 토큰과 {{#항목 …}} 구간 표기를 포함한 템플릿 내용"),
-    state === null ? null : h(TxtLintpad as any, {
-      /* 판정이 아직 없으면 `null` 이다 — 빈 배열을 주면 「강조 없음」을 매번 새로 얹는
-         것과 구분되지 않는다(렌더마다 같은 좌표를 다시 dispatch 하는 자리). */
-      controller, content: state.content, spans: state.lint?.spans ?? null,
-    }),
-    h(TxtLintReport as any, { lint: state?.lint || null }),
-    h("p", {
-      id: "txtEditError", className: "note dangerbox", role: "alert",
-      style: { display: state?.error ? "block" : "none" },
-    }, state?.error || ""),
-    h("div", { className: "modal-actions" },
-      h("button", {
-        className: "btn", id: "txtEditCancel",
-        onClick: () => controller.guarded(() => controller.confirmDiscardTxtEdit()),
-      }, "취소"),
-      state?.mode === "edit"
-        ? h("button", {
-          className: "btn", id: "txtEditSaveAs",
-          onClick: (event: Obj) => controller.guarded(
-            () => controller.saveTxtEditAsNew(event.currentTarget)),
-        }, "새 파일로 저장…")
-        : null,
-      h("button", {
-        className: "btn primary", id: "txtEditOk",
-        onClick: () => controller.guarded(() => controller.submitTxtEdit()),
-      }, "저장")));
-}

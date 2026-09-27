@@ -136,6 +136,10 @@ function applyShellMarkers(doc: Document, id: ProductScreenId): void {
       doc.body.classList.toggle("workbench-open", id === surface.id);
       return;
     }
+    if (surface.id === "authoring" && surface.cls === "authoring-open") {
+      doc.body.classList.toggle("authoring-open", id === surface.id);
+      return;
+    }
     throw new Error(`지원하지 않는 몰입 화면 표지입니다: ${surface.id}/${surface.cls}`);
   });
 }

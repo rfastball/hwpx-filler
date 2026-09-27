@@ -1042,7 +1042,7 @@ function newTplRequestId(): string {
 
 /** 제품 status → 상태 문안. 정본 어휘는 contract.gen.ts 의 TEMPLATE_PREPARATION_STATUSES —
  *  표에 없는 status 는 조용히 비우지 않고 원문을 그대로 보인다(조용한 폴백 금지). */
-const TPL_STATUS_COPY: Record<string, string> = {
+export const TPL_STATUS_COPY: Record<string, string> = {
   checking: "변경사항을 확인하는 중입니다…",
   ready: "적용할 수 있는 변경사항이 있습니다.",
   no_change: "변경사항이 없습니다 — 지금 템플릿이 이미 적용된 상태입니다.",

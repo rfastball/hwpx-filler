@@ -405,6 +405,12 @@ source_write_set = ["src/hwpxfiller/webapp/product_api.py"]
 oracle_nodeid = "tests/test_web_product_api.py::test_facade_absent_is_its_own_type_and_not_a_descriptor_error"
 
 [[unit]]
+module = "hwpxfiller.webapp.screen_authoring"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/screen_authoring.py"]
+oracle_nodeid = "tests/test_webapp_authoring.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.screen_editor"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_editor.py"]

@@ -1010,7 +1010,7 @@ def test_rows_carry_the_single_selection_verdict_and_its_reason(tmp_path):
 
 
 def test_frozen_source_rows_are_refused_loudly_not_hidden(tmp_path):
-    """나라장터 항목은 숨기지 않고 **시끄럽게 거절**한다(동결 규율 — CLAUDE.md 작업 규율)."""
+    """나라장터 항목은 숨기지 않고 **시끄럽게 거절**한다(docs/product.md#product-scope)."""
     ctrl, reg, _ = _controller(tmp_path)
     reg.add(DatasetReference(name="나라 참조", kind="nara", opts={}))
     ctrl.dispatch("refresh", {})

@@ -23,6 +23,8 @@ NPM_VERSION = "11.16.0"
 DEPENDENCIES = {
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.9",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/search": "6.7.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
 }
@@ -105,7 +107,7 @@ def test_package_scripts_vite_config_and_html_have_one_production_entry() -> Non
     assert package["private"] is True
     assert package["type"] == "module"
     assert package["scripts"] == {
-        "build": "vite build && uv run python scripts/seal_web_artifact.py",
+        "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_rhwp.ps1 && vite build && uv run python scripts/seal_web_artifact.py",
         "test": 'node --test --test-concurrency=4 --test-reporter=tap "tests/js/*.test.js"',
         "verify:web": "uv run python scripts/seal_web_artifact.py --verify",
     }

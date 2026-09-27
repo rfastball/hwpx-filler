@@ -47,7 +47,7 @@ OUTPUT = ROOT / "frontend" / "src" / "contract" / "contract.gen.ts"
 
 #: host-internal 표면의 **기록**(패킷 §4.1) — 웹 소비자 0 인 공개 메서드. 지우지도 승격하지도
 #: 않는다. 이 값이 실측과 어긋나면(브리지가 부르기 시작하면) 오러클의 bridge.js 대조가 잡는다.
-HOST_INTERNAL_METHODS = ("close_guard_state",)
+HOST_INTERNAL_METHODS: tuple[str, ...] = ()
 
 
 # ------------------------------------------------------------------ 추출

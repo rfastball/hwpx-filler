@@ -2,6 +2,7 @@ import "../css/tokens.css";
 import "../css/base.css";
 import "../css/draftcard.css";
 import "../css/editor.css";
+import "../css/authoring.css";
 import "../css/job.css";
 import "../css/overlay.css";
 import "../css/library.css";

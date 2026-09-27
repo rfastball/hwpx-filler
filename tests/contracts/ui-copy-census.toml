@@ -1,6 +1,6 @@
 # 사용자 문안 census. 생성: uv run python scripts/ui_copy_census.py --write
 # 검사: --check (tests/repo_contract/test_ui_copy_census.py 가 같은 것을 본다)
-# 규범: docs/COPY_STYLE_GUIDE.md §1·§2·§8. 새 문장은 기본 0 이고, 등재는 사유가 PR 에 서야 한다.
+# 규범: docs/ui-style.md#ui-copy§2·§8. 새 문장은 기본 0 이고, 등재는 사유가 PR 에 서야 한다.
 
 [[sentence]]
 file = "frontend/js/bridge.js"
@@ -13,6 +13,42 @@ text = "UndoToast: host 부재 — 되돌리기 어포던스 없이 재진술합
 [[sentence]]
 file = "frontend/src/domain/canonical_execution_encoding.ts"
 text = "undefined 는 canonical 값이 아니다"
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "HWPX 보존 검사를 실행할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "HWPX 보존 검사를 통과하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "HWPX 본문 범위가 유효하지 않습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "HWPX 본문 위치를 찾을 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "HWPX 위치를 에디터에서 찾을 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "읽기 전용 문서는 수정할 수 없습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/rhwp_editor.ts"
+text = "편집 중 문서가 변경되었습니다. 다시 시도해 주세요."
+
+[[sentence]]
+file = "frontend/src/editorview/txt_lintpad.ts"
+text = "TXT 편집기가 닫혔습니다."
+
+[[sentence]]
+file = "frontend/src/editorview/txt_lintpad.ts"
+text = "TXT 편집기가 닫혔습니다."
 
 [[sentence]]
 file = "frontend/src/overlay/engine.ts"
@@ -97,6 +133,94 @@ text = "호스트(pywebview)가 없어 {} 를 부를 수 없습니다."
 [[sentence]]
 file = "frontend/src/runtime/adapter.ts"
 text = "호스트에 {} 가 없습니다 — 계약(HOST_METHODS)과 호스트가 어긋났습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "마지막 시험 이후 문서 또는 입력이 바뀌었습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "변경할 문구를 선택해 필드로 만들어 보세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "시험 자료는 템플릿 파일에 포함되지 않습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "아직 시험하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "연결된 작업의 영향은 확인하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "연결된 작업의 영향은 확인하지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "템플릿을 저장한 뒤 적용할 작업을 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "통과 표시는 현재 값과 선택 구성에만 해당합니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "한글 조합을 마친 뒤 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "현재 문서의 사용 위치 {}곳이 ‘{}’으로 변경됩니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "‘{}’ 필드에 시험값이 이미 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "문서 편집기를 다시 여세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "템플릿과 시험 자료의 미저장 변경을 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "템플릿에 저장하지 않은 변경이 있습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
@@ -238,10 +362,6 @@ text = "{} 계속할까요?"
 
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
-text = "{} 덮어쓸까요?"
-
-[[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
 text = "{} 되돌릴까요?"
 
 [[sentence]]
@@ -286,19 +406,11 @@ text = "저장 처리 중 오류가 발생했습니다. 작업이 저장됐는�
 
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
-text = "저장하지 않은 템플릿 내용이 사라집니다."
-
-[[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
 text = "저장할 수 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
 text = "저장했습니다. '문서 만들기' 로 이동하지 못했습니다:"
-
-[[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
-text = "저장했습니다. 작업에 반영하려면 「변경사항 확인」 다음 「변경사항 적용」을 누르세요."
 
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
@@ -1154,6 +1266,750 @@ file = "src/hwpxfiller/application/dataset_pool.py"
 text = "파일 경로가 비어 있습니다."
 
 [[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "'{}' 항목의 시험 선택을 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "‘{}’ 필드가 이미 있습니다. 다른 이름을 쓰거나 기존 필드에 연결하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "같은 항목에 해당 선택 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "같은 항목에 해당 선택 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "구조 오류를 수정한 뒤 결과를 시험하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "복제할 영역의 새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 범위는 하나의 항목 안에 있어야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 범위에 기존 필드가 포함되어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 범위의 시작과 끝이 뒤바뀌었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 영역을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 위치가 문서 밖에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 위치가 문자 중간에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택 위치가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택한 필드 사용 위치를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "선택할 내용 줄이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "영역을 자기 안으로 옮길 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "옮기거나 복제할 위치는 줄 경계여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "의미를 해제한 뒤 남길 본문을 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "이 문제의 자동 수정이 더는 적용되지 않습니다. 문제 목록을 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "조정한 범위에 본문이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "필드를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "필드를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "필드를 하나만 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "항목 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "항목 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "항목이나 선택 영역을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "항목이나 선택 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "현재 시험에서 '{}'을 선택해 '{}'은 제외되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "복구 초안의 내용이 손상되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "복구 초안의 내용이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "지원하지 않는 복구 초안 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "지원하지 않는 시험 케이스 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "지원하지 않는 시험 케이스 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "파일이 편집 중 외부에서 변경되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "같은 항목 식별자가 있습니다. 새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "같은 항목 식별자가 있습니다. 새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "구조 오류가 있어 의미 영역을 복사할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "구조 오류가 있어 의미를 복사할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "대상 문서의 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "대상 문서의 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "두 HWPX 문서의 서식 참조가 달라 원래 모양을 보존할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "문단 일부만 포함한 의미 영역은 내용 손실 없이 복사할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사한 의미 데이터가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사한 필드 내용을 온전히 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사한 필드 사용 위치가 바뀌었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사한 필드 안에 지원하지 않는 제어 요소가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사한 필드 위치를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 본문을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 의미 요소를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 의미 요소를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 필드 사용 위치를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복사할 필드나 붙여넣을 영역을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복합 문단에는 의미 필드를 붙여넣을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "복합 문서 요소는 의미째 붙여넣을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣으면 대상 문서의 의미 구조가 깨집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문단 경계가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문단 시작 위치를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문단을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문단이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문서 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문자 범위가 문단 밖에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 문자 범위를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "붙여넣을 범위가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "상위 항목이나 선택 식별자를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "상위 항목이나 선택 식별자를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "서로 다른 파일 형식 사이의 의미 붙여넣기는 지원하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "선택 위치가 문자 경계에 있지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "선택 위치가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "선택은 상위 항목 안의 문단 경계에 붙여넣으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "영역 경계를 문단 단위로 복사할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "의미 영역은 줄 시작 위치에 붙여넣으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "의미를 포함한 범위는 필드·항목·선택으로 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "이 위치에 붙여넣으면 항목·선택 구조가 깨집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "지원하지 않는 복사 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "지원하지 않는 붙여넣기 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "지원하지 않는 제어 요소가 포함되어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "필드 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_transfer.py"
+text = "항목을 다른 의미 영역 안에 넣을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "'{}' 항목의 시험 선택을 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "HWPX 문서 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "같은 이름의 선택이 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "같은 이름의 항목이 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "같은 항목에 해당 선택 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "같은 항목에 해당 선택 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "검색 종류를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "검색어를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "경계 문단에 편집 가능한 텍스트 런이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "구간 표기로 되쓸 수 없는 식별자가 있어 해당 경계를 생략했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "구조 오류가 있어 영역을 변경할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "구조 오류가 있어 항목·선택 경계를 표기하지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "다른 문서 영역으로는 복제할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "다른 문서 영역으로는 이동할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "다른 영역이나 필드 경계가 걸친 문단은 이동할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "닫는 필드 경계가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "명령을 적용하면 문서 구조가 깨집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문단 범위를 정확히 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문단 범위를 정확히 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문단 안의 정확한 문자 범위를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문단을 가로지르는 필드는 복제할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문단을 가로지르는 필드는 복제할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 먼저 수정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 수정한 뒤 결과를 시험하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "문서 구조 오류를 수정한 뒤 결과를 시험하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "복제한 선택은 같은 항목 안에 놓아야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "복제할 문단 경계가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "복제할 영역의 새 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "복제할 위치를 문단 시작에 놓으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "본문과 의미가 삭제됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택 범위는 상위 항목 안에 있어야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택을 만들 상위 항목이 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문단 범위가 문서 영역 밖에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문단의 위치를 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문단의 위치를 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문단의 위치를 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문단이 문서 영역 밖에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 문자 범위가 문단 밖에 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 요소는 채울 수 있는 필드가 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "선택한 필드 사용 위치가 바뀌었습니다. 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "알 수 없는 필드 메타데이터는 복제할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "어느 필드의 닫는 경계인지 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "여는 필드 경계가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "여러 문단에 걸친 필드는 HWPX 누름틀 경계로 만들 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "영역 경계를 문단 단위로 복제할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "의미를 해제한 뒤 남길 본문을 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 문단에는 편집 가능한 텍스트가 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 문서의 구조나 선택 범위 때문에 명령을 적용할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 영역에 복제할 수 없는 문서 요소가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 영역에 복제할 수 없는 제어 요소가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 영역에 복제할 수 없는 제어 요소가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이동하면 기존 책갈피 소속이 달라집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이동할 문단 경계가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "이동할 위치를 문단 시작에 놓으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "조정한 항목 범위에서 하위 선택이 벗어납니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "존재하지 않는 항목 선택이 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "지원하지 않는 필드 제어 요소가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "템플릿 메타데이터를 하나로 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "표 안의 문단은 소속된 본문 문단 줄에 이어서 표시됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "표시 이름은 텍스트여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "표시 이름은 텍스트여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 경계가 서로 다른 문서 영역에 걸쳐 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 경계가 여러 문단에 걸쳐 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 구조를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 사용 위치가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 사용 위치를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 이름이 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드 제어 요소의 구조를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드가 다른 필드 안에 겹쳐 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드가 편집 가능한 본문 위치에 있지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "필드를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "하위 선택 책갈피를 하나로 확정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목 식별자가 이미 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택의 새 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택의 식별자가 필요합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "항목이나 선택의 식별자를 입력하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "현재 시험에서 '{}'을 선택해 '{}'은 제외되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/hwpx_authoring.py"
+text = "현재 영역 안으로 이동할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/rhwp_preflight.py"
+text = "문서 구조가 가져오기와 내보내기 사이에 변경되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/rhwp_preflight.py"
+text = "문서 내부 파일 구성이 변경되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/rhwp_preflight.py"
+text = "문서 내부 파일이 가져오기와 내보내기 사이에 변경되었습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
 
@@ -1795,7 +2651,23 @@ text = "WebView2 selftest {}: 전체 예산 안에 종료되지 않았습니다 
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
+text = "문서 열기 인자가 잘못되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "문서가 변경되었습니다. 다시 시험하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "문서가 변경되었습니다. 다시 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
 text = "새 작업을 시작하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "시험 자료 파일 명령이 잘못되었습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
@@ -1812,6 +2684,10 @@ text = "창을 만들지 못했습니다"
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
 text = "편집기를 여세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "현재 템플릿 목록에 없는 경로입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
@@ -2240,6 +3116,262 @@ file = "src/hwpxfiller/webapp/mapping_verbs.py"
 text = "{{{}}} 에 직접 입력한 값 '{}'은 '{}' 열의 값으로 바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
 
 [[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 또는 TXT 파일만 열 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 또는 TXT 형식만 만들 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 문서만 보존 검증을 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 본문 차례가 비었거나 중복되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 본문 차례가 없는 파일을 가리킵니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 본문 차례를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 본문 차례에 없는 항목입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 편집 결과가 문서가 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "TXT 편집 결과가 문자열이 아닙니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "검색 조건이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "결과 파일 형식이 문서와 다릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "다른 문서 형식으로 의미 요소를 붙여넣을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "다시 열 파일이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "명령이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "문서 내용은 문자열이어야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "문서 보존 검증이 끝나지 않아 HWPX를 수정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "문서 보존 검증이 끝나지 않아 HWPX를 수정할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "문서가 변경되었습니다. 최신 상태에서 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "문서를 저장한 뒤 기존 작업에 적용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "변경 확인 토큰이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안과 원본의 형식이 다릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 복원하거나 폐기한 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 복원하거나 폐기한 뒤 편집하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 복원하거나 폐기한 뒤 편집하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안의 원본 경로가 일치하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안의 형식이 다릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복구 초안이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복사한 내용이 변경되었습니다. 다시 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "복사할 의미 요소를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "붙여넣을 위치와 방식을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "사용 전에 구조 오류 {}개를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "선택 위치가 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "선택 위치가 유효하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "선택한 위치가 교체 묶음 안에 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "선택한 위치에 파일이 이미 있습니다. 다른 이름을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 선택을 지정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 입력이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 케이스 이름이 비었거나 중복되었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 케이스 이름이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 케이스 입력이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험 케이스를 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "시험값이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "실패한 시험 결과는 내보낼 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "알 수 없는 문서 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "액션 입력이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "열려 있지 않은 문서 세션입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "원본 파일이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "이 문서는 현재 붙여넣을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "이 문서를 사용하는 작업을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "작업 변경 적용이 연결되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "작업 변경 확인이 연결되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "작업 연결을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "저장할 파일 형식이 열린 문서와 다릅니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "적용 전 복구 초안이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "적용할 작업 이름이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "초안은 저장되었습니다. 사용 전에 구조 오류 {}개를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "최신 결과 시험을 먼저 완료하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "파일이 외부에서 변경되었습니다. 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "편집 중인 문서의 복구 초안은 폐기할 수 없습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "'{}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
 
@@ -2600,10 +3732,6 @@ text = "예제 템플릿 {}건을 '{}' 그룹에 넣고 데이터 {}건을 고�
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_template.py"
 text = "전 항목을 표기로 되돌렸습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_template.py"
-text = "편집 중 외부 변경: TXT 템플릿 '{}' 이 이 편집 창을 여는 사이 다른 곳에서 바뀌었습니다. 지금 저장하면 그 변경 내용을 이 편집 창의 내용으로 덮어씁니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_template.py"

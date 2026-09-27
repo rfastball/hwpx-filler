@@ -74,6 +74,67 @@ def _frontend(tmp_path, monkeypatch):
     return app_mod.WebFrontend()
 
 
+def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_path, monkeypatch):
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    source = tmp_path / "ordinary.txt"
+    source.write_text("원문", encoding="utf-8")
+    with pytest.raises(ValueError, match="목록"):
+        frontend.open_authoring_document(str(source), True)
+    with pytest.raises(ValueError, match="인자"):
+        frontend.open_authoring_document("", "false")
+    monkeypatch.setattr(app_mod, "_file_dialog", lambda _filters: str(source))
+    opened = frontend.open_authoring_document("", False)
+    assert opened["content"] == "원문"
+    assert frontend.controllers["authoring"]._template_change is frontend.controllers["job"]._template_change
+    target = tmp_path / "new-template.txt"
+    monkeypatch.setattr(app_mod, "_save_dialog", lambda *_args: str(target))
+    saved = frontend.save_authoring_document(opened["session_id"], opened["revision"])
+    assert saved["ok"] is True and target.read_text(encoding="utf-8") == "원문"
+    with pytest.raises(ValueError, match="변경"):
+        frontend.save_authoring_document(opened["session_id"], -1)
+    with pytest.raises(ValueError, match="변경"):
+        frontend.save_authoring_document(opened["session_id"], 0.0)
+
+
+def test_authoring_close_guard_covers_document_and_trial_inputs(tmp_path, monkeypatch):
+    frontend = _frontend(tmp_path, monkeypatch)
+    path = tmp_path / "template.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    authoring = frontend.controllers["authoring"]
+    opened = authoring.open_path(path)
+    sid = opened["session_id"]
+    assert frontend.close_guard_state()["armed"] is False
+    authoring.dispatch("trial_input", {"session_id": sid, "revision": 0,
+                                       "values": {"이름": "예시"}, "selected": {}})
+    assert "시험 자료 1개" in frontend.close_guard_state()["reasons"][0]
+    authoring.dispatch("update", {"session_id": sid, "revision": 0,
+                                  "content": "{{이름}} 수정"})
+    assert "미저장 문서 1개" in frontend.close_guard_state()["reasons"][0]
+
+
+def test_clean_authoring_tab_flushes_frontend_buffer_before_window_close(tmp_path, monkeypatch):
+    frontend = _frontend(tmp_path, monkeypatch)
+    frontend.controllers["authoring"].dispatch("new", {"media": "txt"})
+    assert frontend.close_guard_state()["armed"] is False
+    requests = []
+
+    class ImmediateTimer:
+        daemon = False
+
+        def __init__(self, _delay, fn, args=()):
+            self.fn, self.args = fn, args
+
+        def start(self):
+            self.fn(*self.args)
+
+    monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
+    monkeypatch.setattr(frontend, "_show_close_prompt", requests.append)
+    assert frontend._handle_window_closing() is False
+    assert requests == [{"armed": False, "reasons": []}]
+
+
 def _armed_workbench(frontend, tmp_path):
     """작업대 세션을 열어 복사 진행 1건을 만든다 — 창 종료 가드 무장의 최소 경로.
 

@@ -112,6 +112,10 @@ def test_generated_bridge_contract_matches_independent_public_boundaries() -> No
     called = set(
         re.findall(r"window\.pywebview\.api\.([a-z_]+)\(", source_text("js", "bridge.js"))
     )
+    assert 'invoke("close_guard_state")' in source_text(
+        "src", "screens", "authoring_controller.ts"
+    )
+    called.add("close_guard_state")
     expected_arrays["HOST_INTERNAL_METHODS"] = [
         name for name in expected_arrays["HOST_METHODS"] if name not in called
     ]

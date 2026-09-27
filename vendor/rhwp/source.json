@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/edwardkim/rhwp",
+  "commit": "680111ec7bea2fe11110de18c3676ba5a1cf7847",
+  "version": "0.8.6",
+  "license": "MIT",
+  "licenseFile": "vendor/rhwp/LICENSE.txt",
+  "fontNotices": ["vendor/rhwp/FONTS.txt", "vendor/rhwp/SourceHanSerifK-OFL.txt"],
+  "toolchain": "Rust 1.93.1 wasm32-unknown-unknown, wasm-pack 0.15.0, npm ci from rhwp-studio/package-lock.json",
+  "patch": "vendor/rhwp/patches/authoring.patch",
+  "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_rhwp.ps1",
+  "output": "build/rhwp/studio",
+  "sdk": "frontend/vendor/rhwp/editor"
+}
