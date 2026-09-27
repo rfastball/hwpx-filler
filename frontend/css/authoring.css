@@ -65,6 +65,8 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 /* 명령 가용성(F40·P07): 비활성 사유는 툴팁 외에 본문 힌트로도 선다. 문제 배지는 색이 아닌 글자로 센다(P14). */
 .authoring-reason{margin:0;font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
 .authoring-badge{display:inline-block;margin-left:var(--sp-4);padding:0 var(--sp-6);font-size:var(--fs-caption);line-height:1.5;color:var(--a-ink);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-pill);vertical-align:middle;white-space:nowrap}
+/* 항목·선택 종류 표지(§10): 색이 아닌 글자와 점선 테두리로 둘을 가른다. */
+.authoring-kind{display:inline-block;margin-right:var(--sp-4);padding:0 var(--sp-4);font-size:var(--fs-caption);line-height:1.5;color:var(--a-muted);border:1px dashed var(--a-border);border-radius:var(--rad-control);vertical-align:middle;white-space:nowrap}
 .authoring-command{display:flex;flex-direction:column;gap:var(--sp-4);margin:var(--sp-4) 0}
 .authoring-context-menu{position:absolute;z-index:var(--z-popover);min-width:220px;max-width:320px;max-height:70vh;overflow:auto;padding:var(--sp-4);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);box-shadow:0 4px 16px var(--a-shadow)}
 .authoring-context-menu .authoring-command{margin:0}
@@ -73,4 +75,4 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-problem{padding:var(--sp-4) 0;border-bottom:1px solid var(--a-border)}
 .authoring-problem p{margin:var(--sp-4) 0}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
-@media(forced-colors:active){.authoring-context-menu{border-color:CanvasText}.authoring-badge{border-color:CanvasText}}
+@media(forced-colors:active){.authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}}

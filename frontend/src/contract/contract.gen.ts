@@ -98,6 +98,8 @@ export const SCREEN_ACTIONS = {
     copy: { required: ["revision", "selector", "session_id"], optional: [] },
     preview_paste: { required: ["clipboard_token", "destination", "revision", "session_id", "with_meaning"], optional: [] },
     rhwp_roundtrip_preflight: { required: ["content", "revision", "session_id"], optional: [] },
+    rhwp_unverified: { required: ["detail", "revision", "session_id"], optional: [] },
+    remember_view: { required: ["mode", "revision", "selection", "session_id"], optional: [] },
     trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
     trial: { required: ["revision", "session_id"], optional: [] },
     search: { required: ["kind", "query", "revision", "session_id"], optional: [] },

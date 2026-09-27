@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createAuthoringController } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction } from "../../frontend/src/screens/authoring.ts";
+import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
+import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel } from "../../frontend/src/screens/authoring.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
@@ -504,4 +504,160 @@ test("U03 keeping the captured text asks keep/replace when a trial value already
   fresh.controller.update({ values: {}, selectedOptions: {} });
   assert.equal(await fresh.controller.keepTrialValue("공고명", "new"), true, "값이 없으면 묻지 않고 보관한다");
   assert.deepEqual(runs, [["replace", { 공고명: "new" }], ["keep", { 공고명: "new" }]]);
+});
+
+// ---- U02 재열기 복원 · U01 호환성 안내 시점 · §10 화면 읽기·색 비의존 ----
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("U02: Python's restore projection seeds the new view once — mode into the view, coordinates into the editor when it attaches", async () => {
+  const { controller, snapshot } = harness();
+  const selection = { start: 3, end: 9 };
+  snapshot.tabs[0].restore = { state: "restored", mode: "structure", selection, message: null };
+  snapshot.tabs[0].analysis = { fields: [] };
+  await controller.activate("a");
+  assert.equal(controller.viewModel.getSnapshot().mode, "structure");
+  assert.deepEqual(controller.viewModel.getSnapshot().selection, selection);
+  const seen = [];
+  controller.attach("a", { decorate: (_analysis, mode) => seen.push(["decorate", mode]), focus: async (target) => { seen.push(["focus", target]); } });
+  await new Promise(setImmediate);
+  assert.deepEqual(seen, [["decorate", "structure"], ["focus", selection]]);
+  // 한 번만 소비한다 — 다시 붙거나 다시 활성화해도 커서를 옮기지 않는다.
+  controller.attach("a", { decorate: () => seen.push(["again"]), focus: async () => { seen.push(["again"]); } });
+  await controller.activate("b");
+  await controller.activate("a");
+  await new Promise(setImmediate);
+  assert.equal(seen.filter(([kind]) => kind === "again").length, 0);
+});
+
+test("U02: an editor attached before activation still receives the restore (the race is the controller's, not the user's)", async () => {
+  const { controller, snapshot } = harness((action) => action === "activate" ? { restore: { state: "restored", mode: "document", selection: { start: 1, end: 1 }, message: null } } : {});
+  const seen = [];
+  controller.attach("a", { decorate: (_analysis, mode) => seen.push(mode), focus: async (target) => { seen.push(target); } });
+  await new Promise(setImmediate);
+  assert.deepEqual(seen, [], "복원 판정이 오기 전에는 아무것도 하지 않는다");
+  await controller.activate("a");
+  assert.deepEqual(seen, ["document", { start: 1, end: 1 }]);
+  assert.equal(snapshot.tabs[0].restore, undefined);
+});
+
+test("U02: a stale restore keeps the mode but never moves the caret, and its message stands in the footer", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].restore = { state: "stale", mode: "structure", selection: null, message: "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다." };
+  await controller.activate("a");
+  let focused = 0;
+  controller.attach("a", { decorate() {}, focus: async () => { focused++; } });
+  await new Promise(setImmediate);
+  assert.equal(focused, 0);
+  assert.equal(controller.viewModel.getSnapshot().mode, "structure");
+  assert.ok(render(controller).includes('<span data-restore="stale">마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다.</span>'));
+});
+
+test("U02: position and mode changes reach Python as editor coordinates only, debounced, and a close sends the pending one first", async () => {
+  const { controller, calls } = harness((action) => action === "locate" ? { matches: [], context: {} } : {});
+  await controller.activate("a");
+  // 한글 조합 중이면 편집기 flush 는 던진다 — 위치 기록은 그 경로를 타지 않으므로 경보가 서지 않는다.
+  controller.attach("a", { flush: async () => { throw new Error("한글 조합을 마친 뒤 다시 실행하세요."); }, decorate() {}, focus: async () => {} });
+  controller.selection("a", { start: 1, end: 2 });
+  controller.selection("a", { start: 4, end: 6 });
+  assert.equal(calls.filter((call) => call.action === "remember_view").length, 0, "모아서 보낸다");
+  await sleep(450);
+  assert.deepEqual(calls.filter((call) => call.action === "remember_view").map(({ selection, mode, revision }) => ({ selection, mode, revision })),
+    [{ selection: { start: 4, end: 6 }, mode: "template", revision: 0 }]);
+  assert.equal(controller.viewModel.getSnapshot().error, "");
+  // 조합이 끝난 편집기로 닫는다(닫기 자체의 flush 는 조합 중 거절이 맞다).
+  controller.attach("a", { decorate() {}, focus: async () => {} });
+  controller.setMode("structure");
+  controller.update({ selection: { start: 4, end: 6, kind: "field", name: "이름", occurrences: [] } });
+  await controller.close("a");
+  const sent = calls.filter((call) => call.action === "remember_view" || call.action === "close").map((call) => call.action === "close" ? "close" : call.selection);
+  assert.deepEqual(sent.slice(1), [{ start: 4, end: 6 }, "close"], "선택 대상 객체의 이름·종류는 보내지 않는다");
+  assert.equal(calls.filter((call) => call.action === "remember_view").at(-1).mode, "structure");
+});
+
+test("§10: coordinates() keeps only editor coordinates and drops incomplete ones", () => {
+  assert.deepEqual(coordinates({ entry: "s0", paragraph: 2, start_paragraph: 2, end_paragraph: 3, start: 0, end: 4, cell_path: [{ parent_paragraph: 0, control: 0, cell: 1, paragraph: 0 }], name: "x" }),
+    { start: 0, end: 4, entry: "s0", paragraph: 2, start_paragraph: 2, end_paragraph: 3, cell_path: [{ parent_paragraph: 0, control: 0, cell: 1, paragraph: 0 }] });
+  assert.deepEqual(coordinates({ start: 1 }), {});
+  assert.deepEqual(coordinates(null), {});
+});
+
+test("U01: the compatibility reporter tells Python only what Python has not judged, once", async () => {
+  const sent = [];
+  const controller = {
+    preflight: async () => ({ editable: false, diagnostics: [{ message: "문서 구조가 가져오기와 내보내기 사이에 변경되었습니다." }] }),
+    unverified: async (id, revision, detail) => { sent.push([id, revision, detail]); return {}; },
+  };
+  const judged = compatibilityReporter(controller, "a", 3);
+  assert.deepEqual(await judged.preflight("B64"), { editable: false, diagnostics: [{ message: "문서 구조가 가져오기와 내보내기 사이에 변경되었습니다." }] });
+  await judged.onCompatibility({ editable: false, diagnostics: ["…"] });
+  assert.deepEqual(sent, [], "Python 이 이미 판정한 차단은 다시 알리지 않는다");
+  await judged.onMountError(new Error("studio 적재 실패"));
+  await judged.onMountError(new Error("두 번째"));
+  assert.deepEqual(sent, [["a", 3, "studio 적재 실패"]], "판정 뒤에 무너진 마운트도 알린다 — 한 번만");
+
+  const failing = compatibilityReporter({ ...controller, preflight: async () => { throw new Error("bridge down"); } }, "b", 0);
+  await assert.rejects(failing.preflight("B64"), /bridge down/);
+  await failing.onCompatibility({ editable: false, diagnostics: ["Error: bridge down"] });
+  assert.deepEqual(sent.at(-1), ["b", 0, "Error: bridge down"]);
+});
+
+test("U01/§7.1: Python's compatibility verdict renders at shell level — banner, preserve-the-original verbs and the footer chip — with no editor mounted", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].media = "hwpx";
+  snapshot.tabs[0].compatibility = { state: "checking", editable: false, message: null, diagnostics: [] };
+  await controller.activate("a");
+  let markup = render(controller);
+  assert.ok(markup.includes('<span data-compat="checking">보존 확인 중</span>'));
+  assert.ok(!markup.includes("authoring-compat"));
+  snapshot.tabs[0].compatibility = { state: "limited", editable: false, message: "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.",
+    diagnostics: [{ kind: "preflight_unavailable", message: "HWPX 보존 검사를 실행할 수 없습니다.", detail: "Error: studio 적재 실패" }, { entry: "Contents/header.xml", message: "문서 구조가 가져오기와 내보내기 사이에 변경되었습니다." }] };
+  markup = render(controller);
+  const banner = markup.slice(markup.indexOf('<section class="authoring-error authoring-compat" role="alert" aria-label="호환성 경고">'));
+  assert.ok(banner.length < markup.length, "호환성 경고 구획이 선다");
+  assert.ok(banner.startsWith('<section class="authoring-error authoring-compat" role="alert" aria-label="호환성 경고"><strong>읽기 전용 · 보존 확인 필요</strong><p>이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.</p>'));
+  assert.ok(banner.includes('<p>HWPX 보존 검사를 실행할 수 없습니다.</p><p class="authoring-reason">Error: studio 적재 실패</p>'));
+  assert.ok(banner.includes(">다른 이름으로 저장</button>") && banner.includes(">원문 표기</button>"));
+  assert.ok(markup.includes('<span data-compat="limited">읽기 전용 · 보존 확인 필요</span>'));
+  assert.ok(markup.indexOf("authoring-compat") < markup.indexOf("authoring-editor-host"), "안내는 문서 편집면보다 먼저 읽힌다");
+});
+
+test("§10: screen readers get the field name, use count, parent item and problem count; the properties name input is described by target and context", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].analysis = { slots: [{ id: "doc", label: "문서", options: [{ id: "quote", label: "견적서" }] }],
+    fields: [{ name: "공고명", count: 2, occurrences: [{ start: 0, end: 7, context: "공고명: 2026" }, { start: 20, end: 27 }] }] };
+  snapshot.tabs[0].problems = [{ severity: "error", category: "structure", message: "m", target: "quote", location: null, actions: [] },
+    { severity: "warning", category: "trial_input", message: "m", target: "공고명", location: null, actions: [] }];
+  await controller.activate("a");
+  let markup = render(controller);
+  assert.ok(markup.includes('aria-label="필드 · 공고명 · 사용 위치 2곳 · 문제 1"'));
+  assert.ok(markup.includes('aria-label="항목 · 문서"'));
+  assert.ok(markup.includes('aria-label="선택 · 견적서 · 상위 항목 문서 · 문제 1"'));
+  assert.ok(markup.includes('aria-label="공고명 · 사용 위치 1/2 · 공고명: 2026"') && markup.includes('aria-label="공고명 · 사용 위치 2/2"'));
+  controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field" });
+  markup = render(controller);
+  assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title">'));
+  assert.ok(markup.includes('<p id="authoring-properties-target">필드 · 공고명 · 사용 위치 2곳 · 문제 1</p>'));
+  assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문서 · 0–7</p>'));
+  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
+  assert.equal(outlineLabel("option", { id: "q" }, 0, "doc"), "선택 · q · 상위 항목 doc");
+});
+
+test("§10: items and options, errors and warnings stay distinguishable without color", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].analysis = { slots: [{ id: "doc", label: "문서", options: [{ id: "quote", label: "견적서" }] }], fields: [] };
+  snapshot.tabs[0].problems = [
+    { severity: "error", category: "structure", message: "오류 설명", target: "quote", location: null, actions: [] },
+    { severity: "warning", category: "compatibility", message: "경고 설명", target: null, location: null, actions: [] },
+  ];
+  await controller.activate("a");
+  controller.update({ panel: "problems" });
+  const markup = render(controller);
+  // 항목·선택: 글자 표지가 이름 앞에 선다(들여쓰기·색이 유일한 구별이 아니다).
+  assert.ok(markup.includes('<span class="authoring-kind">항목</span>문서</button>'));
+  assert.ok(markup.includes('<span class="authoring-kind">선택</span>견적서<span class="authoring-badge">문제 1</span></button>'));
+  // 오류·경고: 심각도와 종류가 글자로 선다.
+  assert.ok(markup.includes("<p><strong>오류</strong> · 구조 · quote</p><p>오류 설명</p>"));
+  assert.ok(markup.includes("<p><strong>경고</strong> · 호환성</p><p>경고 설명</p>"));
+  // 문제 배지는 수를 글로 센다.
+  assert.ok(!/class="authoring-badge">\s*<\/span>/.test(markup));
 });

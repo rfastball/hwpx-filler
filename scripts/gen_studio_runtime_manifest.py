@@ -40,14 +40,20 @@ def main() -> int:
         return 1
     source_commit = json.loads(SOURCE.read_text(encoding="utf-8"))["commit"]
     manifest = build_manifest(OUTPUT_DIR, source_commit)
-    text = json.dumps(manifest, indent=2).replace("\n", "\r\n") + "\r\n"
+    text = json.dumps(manifest, indent=2) + "\n"
     if "--check" in sys.argv[1:]:
-        if MANIFEST.read_bytes() != text.encode("utf-8"):
+        try:
+            existing = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"{MANIFEST} unreadable: {exc}", file=sys.stderr)
+            return 1
+        if existing != manifest:
             print(f"{MANIFEST} differs from {OUTPUT_DIR}", file=sys.stderr)
             return 1
         print(f"{MANIFEST} matches {len(manifest['files'])} files")  # type: ignore[arg-type]
         return 0
-    MANIFEST.write_bytes(text.encode("utf-8"))
+    with MANIFEST.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
     print(f"wrote {MANIFEST} ({len(manifest['files'])} files)")  # type: ignore[arg-type]
     return 0
 

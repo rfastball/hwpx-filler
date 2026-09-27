@@ -28,6 +28,16 @@ export function problemCount(problems: Obj[] | undefined, target: string): numbe
   return (problems || []).filter((problem) => problem.target === target).length;
 }
 const badge = (count: number): ReactNode => count ? h("span", { className: "authoring-badge" }, `문제 ${count}`) : null;
+/** 항목·선택의 종류 표지(§10) — 들여쓰기·색이 아니라 글자로 둘을 가른다. */
+const kindTag = (kind: "slot" | "option"): ReactNode => h("span", { className: "authoring-kind" }, KIND_LABEL[kind]);
+/** 구조 목록 한 줄의 접근 가능한 이름(§10) — 종류·이름·사용 위치 수·상위 항목·문제 수를 글로 싣는다. */
+export function outlineLabel(kind: "field" | "slot" | "option" | "occurrence", entry: Obj, problems = 0, parent = ""): string {
+  const name = String(entry.name || entry.label || entry.id || "");
+  const parts = kind === "occurrence" ? [name, `사용 위치 ${entry.index}/${entry.total}`, ...(entry.context ? [String(entry.context)] : [])]
+    : kind === "field" ? [KIND_LABEL.field, name, `사용 위치 ${entry.count ?? 0}곳`]
+    : kind === "option" ? [KIND_LABEL.option, name, `상위 항목 ${parent}`] : [KIND_LABEL.slot, name];
+  return [...parts, ...(problems ? [`문제 ${problems}`] : [])].join(" · ");
+}
 /** 문제의 다음 행동(§7.2): navigate 는 그 위치로 선택을 옮기고, command 는 Python 이 준 명령을 미리보기로 보낸다. */
 export function problemAction(controller: Pick<AuthoringController, "select" | "preview">, item: Obj, problem: Obj, action: Obj): Promise<void> {
   return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target });
@@ -128,6 +138,24 @@ export function escapeStage(selected: Obj | null | undefined, draft: ReturnType<
   const applied = appliedProperties(selected);
   return (Object.keys(applied) as (keyof typeof applied)[]).some((key) => applied[key] !== draft[key]) ? "revert" : "close";
 }
+/** 편집기 마운트의 보존 판정 보고(U01·§7.1). 판정·안내는 Python 투영(tab.compatibility) 하나에서 선다 —
+ *  Python 판정이 돌아오기 전에 편집기가 스스로 막았거나(내보내기·검사 호출 실패) 마운트가 무너지면
+ *  그 사실만 Python 에 알린다. 이미 판정을 받은 뒤의 차단은 Python 이 안다(다시 알리지 않는다). */
+export function compatibilityReporter(controller: Pick<AuthoringController, "preflight" | "unverified">, id: string, revision: number) {
+  let judged = false;
+  let reported = false;
+  const report = async (detail: string) => { if (reported) return; reported = true; await controller.unverified(id, revision, detail); };
+  return {
+    preflight: async (content: string) => {
+      const result = await controller.preflight(id, revision, content);
+      judged = true;
+      return { editable: result.editable, diagnostics: result.diagnostics };
+    },
+    onCompatibility: async (result: { editable: boolean; diagnostics?: unknown[] }) => { if (!judged && !result.editable) await report(String(result.diagnostics?.[0] ?? "")); },
+    onMountError: (error: unknown) => report(error instanceof Error ? error.message : String(error)),
+  };
+}
+
 /** 속성 제출 — 한글 조합 중 Enter 는 확정이 아니다(§6.2·§10). 보냈으면 true. */
 export function submitProperties(controller: Pick<AuthoringController, "guarded" | "preview">, composing: boolean, command: () => Obj): boolean {
   if (composing) return false;
@@ -137,7 +165,6 @@ export function submitProperties(controller: Pick<AuthoringController, "guarded"
 
 function DocumentEditor({ controller, item, active }: Props & { item: Obj; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const [compatibility, setCompatibility] = useState<Obj | null>(null);
   const adapter = useRef<AuthoringEditor | null>(null);
   useEffect(() => {
     let disposed = false;
@@ -176,23 +203,28 @@ function DocumentEditor({ controller, item, active }: Props & { item: Obj; activ
         };
         release = () => disposeLintpad(handle);
       } else {
-        const handle = await mountRhwp({ host: host.current, content: initial.content, fileName: item.name,
+        const report = compatibilityReporter(controller, item.id, initial.revision);
+        let handle: Awaited<ReturnType<typeof mountRhwp>>;
+        try {
+          handle = await mountRhwp({ host: host.current, content: initial.content, fileName: item.name,
           sectionEntries: initial.section_entries,
-          preflight: async (content) => {
-            const result = await controller.preflight(item.id, initial.revision, content);
-            return { editable: result.editable, diagnostics: result.diagnostics };
-          },
-          onCompatibility: setCompatibility,
+          preflight: report.preflight,
+          onCompatibility: (result) => { void controller.guarded(() => report.onCompatibility(result)); },
           onShortcut: (shortcut) => {
             const current = controller.viewModel.getSnapshot();
             if (shortcut === "CtrlShiftP") controller.update({ panel: "commands" });
             else if (shortcut === "CtrlS") void controller.guarded(() => controller.save());
             else if (shortcut === "CtrlF") controller.update({ panel: "search" });
-            else controller.update({ panel: "properties", commandType: current.selected?.kind === "field" ? "rename_field" : current.selected?.kind === "option" ? "rename_option" : "rename_slot" });
+            else controller.update({ panel: "properties", commandType: current.selected?.kind === "field" ? "rename_field" : current.selected?.kind === "option" ? "rename_option" : "rename_slot", focusPanel: (current.focusPanel || 0) + 1 });
           },
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection) => controller.selection(item.id, selection),
           onError: (error) => controller.update({ error: String(error) }), readOnly: false });
+        } catch (error) {
+          // 마운트가 무너져도 안내는 남는다 — Python 이 판정 없음을 기록하고 투영한다. 보이는 오류는 원래의 것이다.
+          if (!disposed) await report.onMountError(error).catch(() => undefined);
+          throw error;
+        }
         if (disposed) { handle.dispose(); return; }
         adapter.current = {
           flush: () => handle.flushChanges(),
@@ -210,9 +242,6 @@ function DocumentEditor({ controller, item, active }: Props & { item: Obj; activ
   }, [controller, item.id]);
   useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id)); }, [item.analysis, active]);
   return h("div", { className: "authoring-document", hidden: !active, inert: !active || !!item.recovery, "aria-hidden": !active },
-    compatibility && !compatibility.editable && h("div", { className: "authoring-error", role: "alert" },
-      h("strong", null, "읽기 전용 · 보존 확인 필요"),
-      ...(compatibility.diagnostics || []).map((diagnostic: Obj | string, index: number) => h("p", { key: index }, typeof diagnostic === "string" ? diagnostic : diagnostic.message))),
     h("div", { ref: host, className: "authoring-editor-host" }));
 }
 
@@ -243,23 +272,27 @@ function SemanticForm({ controller, selected, selection, preview }: Props & { se
     id: identifier || name, label: name, slot_id: type === "create_option" ? view.context?.slot_id : parent || selected?.slot_id || selected?.id,
     option_id: selected?.option_id, kind: selected?.kind || "slot", text, cascade,
     destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name });
+  // 화면 읽기(§10): 이름 칸은 대상(종류·사용 위치)과 소속(상위 항목/선택·범위)을 설명으로 함께 읽힌다.
   const field = (label: string, value: string, onChange: (value: string) => void) => h("label", { className: "authoring-field" }, label,
-      h("input", { className: "field", value, ref: label.includes("이름") ? nameInput : undefined, list: label === "필드 이름" ? "authoring-existing-fields" : undefined, onChange: (event: any) => onChange(event.target.value) }));
-  return h("form", { className: "authoring-properties", onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; },
+      h("input", { className: "field", value, ref: label.includes("이름") ? nameInput : undefined, list: label === "필드 이름" ? "authoring-existing-fields" : undefined,
+        "aria-describedby": label.includes("이름") ? "authoring-properties-target authoring-properties-context" : undefined, onChange: (event: any) => onChange(event.target.value) }));
+  return h("form", { className: "authoring-properties", "aria-labelledby": "authoring-properties-title", onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; },
     onSubmit: (event: any) => { event.preventDefault(); submitProperties(controller, composing.current, command); },
     // Escape 1단계: 입력창의 작성 중인 값만 적용값으로 되돌린다. 2단계(되돌릴 것이 없을 때)는 셸이 패널을 닫고 선택으로 돌아간다.
     onKeyDown: (event: any) => {
       if (event.key !== "Escape" || event.nativeEvent?.isComposing) return;
       if (escapeStage(selected, { name, identifier, parent, text }) === "revert") { event.stopPropagation(); revert(); }
     } },
-    h("h2", null, "속성"),
-    selected && h("p", null, selected.name || selected.label || selected.id),
+    h("h2", { id: "authoring-properties-title" }, "속성"),
+    selected && h("p", { id: "authoring-properties-target" }, selected.kind === "field" && selected.occurrences
+      ? outlineLabel("field", { ...selected, count: selected.count ?? selected.occurrences.length }, problemCount(controller.tab().problems, selected.name))
+      : selected.name || selected.label || selected.id),
     h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined, onChange: (event: any) => switchType(event.target.value) },
       ...COMMANDS.map(([value, label]) => { const entry = commandAvailability(view.commands, value); return h("option", { key: value, value, disabled: !entry.enabled, title: entry.reason || undefined }, label); }))),
     // 비활성 사유와 대안은 Python 의 판정을 그대로 보인다(P07) — 툴팁만이 유일한 경로가 되지 않도록 본문에도 선다(§10).
     !available.enabled && available.reason && h("p", { className: "authoring-reason", role: "status" }, available.reason),
     !available.enabled && available.alternative && button(available.alternative.label, () => switchType(available.alternative!.command_type)),
-    h("p", { className: "authoring-context" }, `${selected?.slot_id || view.context?.slot_id || "문서"}${selected?.option_id || view.context?.option_id ? ` / ${selected?.option_id || view.context?.option_id}` : ""}${selection.start != null ? ` · ${selection.start}–${selection.end ?? selection.start}` : ""}`),
+    h("p", { className: "authoring-context", id: "authoring-properties-context" }, `${selected?.slot_id || view.context?.slot_id || "문서"}${selected?.option_id || view.context?.option_id ? ` / ${selected?.option_id || view.context?.option_id}` : ""}${selection.start != null ? ` · ${selection.start}–${selection.end ?? selection.start}` : ""}`),
     field(type.includes("field") ? "필드 이름" : "표시 이름", name, setName),
     type === "create_field" && h("datalist", { id: "authoring-existing-fields" }, ...candidates.map((candidate: Obj) => h("option", { key: candidate.name, value: candidate.name, label: `${candidate.name} · 사용 위치 ${candidate.count ?? 0}곳` }))),
     !["create_field", "rename_field", "relink_field", "unset_field"].includes(type) && field("연결 식별자", identifier, setIdentifier),
@@ -394,8 +427,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const item = tabs.find((tab) => tab.id === snapshot.active_id);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    root.current?.querySelector<HTMLElement>(view.panel === "properties" ? ".authoring-properties input" : view.panel === "search" ? '[name="query"]' : view.panel === "commands" || view.panel === "external" ? ".authoring-bottom button" : ".authoring-shell-placeholder")?.focus();
-  }, [view.panel, view.commandType]);
+    root.current?.querySelector<HTMLElement>(view.panel === "properties" ? ".authoring-properties input" : view.panel === "search" ? '[name="query"]' : view.panel === "commands" || view.panel === "external" || view.panel === "problems" ? ".authoring-bottom button" : ".authoring-shell-placeholder")?.focus();
+  }, [view.panel, view.commandType, view.focusPanel]);
   useEffect(() => {
     const focus = () => { void controller.guarded(controller.checkExternal); };
     window.addEventListener("focus", focus);
@@ -414,7 +447,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const contextMenu = (event: any, entry?: Obj) => { if (entry) select(entry)(); openContextMenu(controller, event, root.current); };
   const editorState = item ? controller.editorState(item.id) : null;
   const readOnly = !!item && item.media === "hwpx" && item.rhwp_editable !== true;
-  const rename = () => controller.update({ panel: "properties", commandType: view.selected?.kind === "field" ? "rename_field" : view.selected?.kind === "option" ? "rename_option" : "rename_slot" });
+  // F2(§10): 패널이 이미 열려 있어도 이름 칸으로 초점을 옮긴다 — focusPanel 은 그 요청의 차례 번호다.
+  const rename = () => controller.update({ panel: "properties", commandType: view.selected?.kind === "field" ? "rename_field" : view.selected?.kind === "option" ? "rename_option" : "rename_slot", focusPanel: (view.focusPanel || 0) + 1 });
   return h("div", { className: "authoring-shell", ref: root, onKeyDown: (event: any) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const shortcut = shellShortcut(event);
@@ -436,9 +470,10 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
     else if (shortcut === "escape") { if (escapeShell(controller) === "panel") act(controller.focusSelection)(); }
     else if (shortcut === "cycle") {
-      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-outline,.authoring-canvas,.authoring-properties,.authoring-bottom") || [])];
+      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-bottom") || [])];
       const current = panels.findIndex((panel) => panel.contains(document.activeElement));
-      panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length]?.querySelector<HTMLElement>("button,input,select,textarea,[contenteditable],iframe")?.focus();
+      // 패널 간 초점 이동(§10): 비활성 버튼은 초점을 받지 못하므로 첫 **활성** 제어로 간다.
+      panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length]?.querySelector<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe")?.focus();
     }
   } },
     h("header", { className: "authoring-head" },
@@ -453,6 +488,14 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     view.error && h("div", { role: "alert", className: "authoring-error" }, view.error),
     // 저장 결과의 알림(AC14·P09) — Python 이 준 문장만 보이고, 다음 편집에서 사라진다.
     view.notice && h("p", { role: "status", className: "authoring-notice" }, view.notice),
+    // 호환성 경고(U01·§7.1·P16): Python 판정이 서는 즉시 편집기 마운트와 무관하게 보이고, 마운트가 무너져도 남는다.
+    // 원본은 그대로 둔 채 확인(원문 표기)하거나 다른 이름으로 사본을 남기는 길을 함께 세운다.
+    item?.compatibility?.state === "limited" && h("section", { className: "authoring-error authoring-compat", role: "alert", "aria-label": "호환성 경고" },
+      h("strong", null, "읽기 전용 · 보존 확인 필요"),
+      item.compatibility.message && h("p", null, item.compatibility.message),
+      ...(item.compatibility.diagnostics || []).map((diagnostic: Obj | string, index: number) => typeof diagnostic === "string" ? h("p", { key: index }, diagnostic)
+        : h("div", { key: index }, h("p", null, diagnostic.message), diagnostic.detail && h("p", { className: "authoring-reason" }, diagnostic.detail))),
+      h("div", null, button("다른 이름으로 저장", act(() => controller.save(item.id, true))), button("원문 표기", act(controller.raw)))),
     item?.recovery && h("section", { className: "authoring-bottom", role: "alert" }, h("h2", null, "중단 전 복구 초안"),
       h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
       button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
@@ -484,13 +527,13 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: (event: any) => contextMenu(event) }, h("h2", null, "템플릿 구조"),
         ...(item.analysis?.slots || []).map((slot: Obj) => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }; return h("details", { open: true, key: slot.id },
-          h("summary", null, button([slot.label || slot.id, badge(problemCount(item.problems, slot.id))], select(slotEntry), { onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
+          h("summary", null, button([kindTag("slot"), slot.label || slot.id, badge(problemCount(item.problems, slot.id))], select(slotEntry), { "aria-label": outlineLabel("slot", slot, problemCount(item.problems, slot.id)), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
           ...(slot.options || []).map((option: Obj) => { const optionEntry = { ...option, ...option.location, kind: "option", slot_id: slot.id, option_id: option.id };
-            return button([option.label || option.id, badge(problemCount(item.problems, option.id))], select(optionEntry), { key: option.id, onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, optionEntry); } }); })); }),
+            return button([kindTag("option"), option.label || option.id, badge(problemCount(item.problems, option.id))], select(optionEntry), { key: option.id, "aria-label": outlineLabel("option", option, problemCount(item.problems, option.id), slot.label || slot.id), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, optionEntry); } }); })); }),
         h("h2", null, "필드"), ...(item.analysis?.fields || []).map((field: Obj) => { const fieldEntry = { ...field, kind: "field" }; return h("details", { key: field.name },
-          h("summary", null, button([`${field.name} · ${field.count}`, badge(problemCount(item.problems, field.name))], select(fieldEntry), { onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
+          h("summary", null, button([`${field.name} · ${field.count}`, badge(problemCount(item.problems, field.name))], select(fieldEntry), { "aria-label": outlineLabel("field", field, problemCount(item.problems, field.name)), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
           ...(field.occurrences || []).map((occ: Obj, index: number) => { const occEntry = { ...occ, name: field.name, kind: "field" };
-            return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); })); })),
+            return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, "aria-label": outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); })); })),
       h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller }))),
       item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview })),
     item && view.contextMenu && h("div", { className: "authoring-context-menu", role: "menu", "aria-label": "문맥 명령", style: { left: view.contextMenu.x, top: view.contextMenu.y } },
@@ -565,6 +608,10 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       h("span", null, view.saveFailed ? "저장 실패" : controller.pending(item.id) ? "편집 내용 반영 중" : item.save_as_required ? "새 템플릿 저장 필요" : item.dirty ? "저장하지 않은 변경"
         : item.readiness?.state === "ready" ? "저장됨 · 사용 준비" : item.readiness?.state === "draft" ? "저장됨 · 초안" : "저장됨"),
       h("span", null, `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`),
+      // 준비 상태 옆의 보존 판정 칩 — Python 의 compatibility.state 를 이름으로 옮길 뿐이다(마운트 전에도 선다).
+      item.compatibility?.state === "checking" && h("span", { "data-compat": "checking" }, "보존 확인 중"),
+      item.compatibility?.state === "limited" && h("span", { "data-compat": "limited" }, "읽기 전용 · 보존 확인 필요"),
+      item.restore?.message && h("span", { "data-restore": item.restore.state }, item.restore.message),
       h("span", null, item.trial_state === "current" ? "현재 시험 구성 확인됨" : "다시 시험 필요"),
       h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
       item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),

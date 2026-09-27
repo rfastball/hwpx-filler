@@ -1420,6 +1420,94 @@ class TestWebSelftestGate:
         assert b["lintpad_marker_marks"] == 1
         assert "닫는 마커가 없습니다" in b["lintpad_diag_text"]
 
+    def test_authoring_keyboard_only_selects_renames_moves_to_a_problem_and_returns(
+        self, selftest_result: dict
+    ) -> None:
+        """§10·F41·AC19 — 실창에서 **키보드만으로** 구조 목록 → 필드 선택 → 이름 변경 미리보기 →
+        Escape 두 단계 → F2 → 문제 위치 이동 → 원위치 복귀를 완주한다.
+
+        합성 키의 한계는 프로브 머리말(`pressKey`)에 적었다: 신뢰되지 않은 사건은 기본 동작이
+        없으므로 Tab·Enter 의 기본 동작만 표준 규칙대로 흉내 내고, 제품 처리기(F6·F2·Escape·
+        폼 키 처리)는 실물로 지난다. 좌표 클릭은 쓰지 않는다.
+        """
+        b = probe(selftest_result, "editor_txt_band")
+        assert b.get("kbd_error") is None, f"키보드 밴드 예외: {b.get('kbd_error')!r}"
+        for key in (
+            "kbd_outline_reached", "kbd_field_focused", "kbd_properties_focus",
+            "kbd_rename_preview", "kbd_escape_reverts", "kbd_escape_keeps_panel",
+            "kbd_escape_closes", "kbd_escape_focus_editor", "kbd_f2_focus",
+            "kbd_toolbar_reached", "kbd_problems_button", "kbd_problem_focus",
+            "kbd_problem_moved", "kbd_toolbar_again", "kbd_back_button",
+            "kbd_back_restored", "kbd_back_focus_editor",
+        ):
+            assert b.get(key) is True, f"키보드만으로 가지 못한 국면: {key}: {b!r}"
+        # 화면 읽기: 구조 목록 한 줄과 이름 칸이 필드 이름·사용 위치 수를 글로 싣는다.
+        assert b["kbd_field_label"] == "필드 · 공고명 · 사용 위치 1곳", b["kbd_field_label"]
+        assert b["kbd_properties_target"] == "필드 · 공고명 · 사용 위치 1곳"
+        assert b["kbd_name_described_by"] == (
+            "authoring-properties-target authoring-properties-context"
+        )
+        assert b["kbd_properties_command"] == "rename_field"
+        assert b["kbd_f2_command"] == "rename_field"
+        assert "‘공고제목’으로 변경됩니다" in b["kbd_rename_preview_text"]
+        # 문제 한 건은 심각도·종류가 글로 서고, 다음 행동 버튼이 초점을 받는다.
+        assert b["kbd_problem_text"].startswith("오류 · 구조"), b["kbd_problem_text"]
+        assert b["kbd_problem_action"] == "원문으로 이동"
+        assert b["kbd_problem_expected"] in b["kbd_problem_context"]
+        assert b["kbd_back_expected"] in b["kbd_back_context"]
+        assert b["kbd_error_band"] == "", f"키보드 경로가 오류 띠를 남겼습니다: {b['kbd_error_band']!r}"
+
+    def test_authoring_ime_composition_never_commits_moves_or_truncates(
+        self, selftest_result: dict
+    ) -> None:
+        """§10·§6.2 — 합성 조합 사건(compositionstart/update/end + isComposing keydown)으로 이름
+        입력 중 명령 미실행·커서 유지·입력 미절단·강한 오류 미표시를 되읽는다.
+
+        실 IME(한글 입력기) 자동화는 OS 키 주입이 필요해 하지 않는다 — 사용자 데스크톱 간섭 금지.
+        이 단언이 재는 것은 제품의 조합 방어선이지 입력기 자체가 아니다.
+        """
+        b = probe(selftest_result, "editor_txt_band")
+        assert b.get("kbd_error") is None, f"키보드 밴드 예외: {b.get('kbd_error')!r}"
+        for key in ("ime_no_preview", "ime_value_kept", "ime_focus_kept",
+                    "ime_caret_kept", "ime_panel_kept"):
+            assert b.get(key) is True, f"조합 중 방어선 실패: {key}: {b!r}"
+        assert b["ime_error_band"] == "", f"조합 중에 오류 띠가 섰습니다: {b['ime_error_band']!r}"
+        assert b["ime_value_after_end"] == "공고명수"
+
+    def test_hwpx_authoring_compatibility_chip_and_keyboard_selection(
+        self, selftest_result: dict
+    ) -> None:
+        """U01·§7.1 — 보존 판정 칩은 마운트 도중 「보존 확인 중」으로 서고, Python 판정이 나오면
+        편집기와 무관하게 그 판정을 싣는다. §10 — 실 rhwp iframe 옆에서도 F6·Tab·Enter·F2·Escape
+        만으로 필드를 고르고 이름 칸에 닿는다."""
+        b = probe(selftest_result, "editor_txt_band")
+        preflight = b.get("hwpx_authoring_preflight") or []
+        judged = [entry for entry in preflight if entry.get("editable") is not None]
+        assert judged, f"보존 판정을 받은 HWPX 후보가 없습니다: {preflight!r}"
+        for entry in judged:
+            assert entry["saw_checking"] is True, (
+                f"마운트 도중 「보존 확인 중」 칩이 보이지 않았습니다: {entry!r}"
+            )
+            if entry["editable"] is True:
+                assert (entry["compat_state"], entry["chip_after"], entry["banner"]) == (
+                    "editable", "", False), entry
+            else:
+                assert (entry["compat_state"], entry["chip_after"], entry["banner"]) == (
+                    "limited", "읽기 전용 · 보존 확인 필요", True), entry
+        candidate = b.get("hwpx_authoring_candidate") or ""
+        if not candidate:
+            pytest.skip(f"편집 가능한 HWPX 후보가 없어 키보드 선택을 잴 수 없습니다: {preflight!r}")
+        assert b.get("hwpx_kbd_skipped") is None, b.get("hwpx_kbd_skipped")
+        assert b.get("hwpx_kbd_outline") is True, b
+        assert b.get("hwpx_kbd_field") is True, (
+            f"구조 목록의 필드에 Tab 으로 닿지 못했습니다: {b.get('hwpx_kbd_field_label')!r}"
+        )
+        assert b["hwpx_kbd_field_label"].startswith("필드 · 수요기관 · 사용 위치 2곳")
+        assert b.get("hwpx_kbd_f2_focus") is True, b
+        assert b.get("hwpx_kbd_escape_closes") is True, b
+        # 두 단계(되돌리기 → 닫기)를 넘지 않는다 — 셋째 Escape 가 필요하면 단계 규칙이 깨진 것이다.
+        assert b["hwpx_kbd_escape_presses"] <= 2, b
+
     def test_hwpx_authoring_creates_field_undoes_renames_and_never_overwrites_source(
         self, selftest_result: dict
     ) -> None:

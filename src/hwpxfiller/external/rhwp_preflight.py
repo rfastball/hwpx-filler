@@ -8,7 +8,18 @@ import lxml.etree as etree  # pyright: ignore[reportMissingImports]
 
 from hwpxcore.package import HwpxPackage
 
-_HP_T = "{http://www.hancom.co.kr/hwpml/2011/paragraph}t"
+_HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+_HP_T = f"{_HP}t"
+# Attribute values equal to Hancom's own unset default, per element. The defaults are the
+# constructor values of Hancom's OWPML model (hancom-io/hwpx-owpml-model): CPType sets
+# pageBreak/columnBreak/merged to false and id to (UINT)-1, CLineShapeType sets endCap to
+# LECT_FLAT. Hancom writes those same values when it resaves a paragraph or line that
+# omitted them (tests/corpus/metatag_s1/N1-resaved.hwpx: id="4294967295"). Only the exact
+# default value is dropped; any other value is still compared.
+_UNSET_DEFAULTS = {
+    f"{_HP}p": {"pageBreak": "0", "columnBreak": "0", "merged": "0", "id": "4294967295"},
+    f"{_HP}lineShape": {"endCap": "FLAT"},
+}
 
 
 def _drop_empty_text_elements(root: etree._Element) -> None:
@@ -37,6 +48,9 @@ def _canonical_xml(data: bytes) -> bytes:
     # rhwp emits these false defaults on BOOKMARK fields even when the source
     # omits them. The observed values do not alter bookmark identity or content.
     for element in root.iter():
+        for name, default in _UNSET_DEFAULTS.get(element.tag, {}).items():
+            if element.get(name) == default:
+                element.attrib.pop(name)
         if element.tag.rsplit("}", 1)[-1] != "fieldBegin" or element.get("type") != "BOOKMARK":
             continue
         for name in ("editable", "dirty"):

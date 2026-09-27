@@ -27,6 +27,14 @@ type Deps = {
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
 };
 
+/** 편집기 선택 좌표만 남긴다 — 선택 대상 객체(이름·종류 등)가 섞인 뷰 선택을 편집기 좌표 모양으로 되돌린다. */
+const COORDINATE_KEYS = ["start", "end", "entry", "paragraph", "start_paragraph", "end_paragraph", "cell_path"];
+export function coordinates(selection: Obj | null | undefined): Obj {
+  const picked: Obj = {};
+  for (const key of COORDINATE_KEYS) if (selection?.[key] !== undefined && selection?.[key] !== null) picked[key] = selection[key];
+  return picked.start === undefined || picked.end === undefined ? {} : picked;
+}
+
 export function createAuthoringController(deps: Deps) {
   const model = deps.runtime.model<Obj | null>("authoring");
   const editors = new Map<string, AuthoringEditor>();
@@ -39,6 +47,10 @@ export function createAuthoringController(deps: Deps) {
   const generations = new Map<string, number>();
   const inputPumps = new Map<string, Promise<void>>();
   const selectionRequests = new Map<string, number>();
+  // U02: Python 이 판정한 복원 대상(tab.restore)은 **새 뷰에 한 번** 소비한다 — 표시 방식은 뷰에, 좌표는
+  // 편집기가 붙는 순간 초점으로. 바뀐 위치·방식은 잠시 모아 Python 에 보낸다(보관·판정은 Python 몫).
+  const pendingRestore = new Map<string, Obj>();
+  const rememberTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // commands: Python 이 현재 선택에 대해 판정한 명령 가용성(F40·P07). 표면은 이것을 그리기만 하고 다시 판정하지 않는다.
   const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", lastCreatedText: "", notice: "",
     mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, refusal: null, syntax: null,
@@ -98,17 +110,53 @@ export function createAuthoringController(deps: Deps) {
 
   async function flushAll(): Promise<void> {
     for (const item of snapshot().tabs || []) { await flush(item.id); await inputPumps.get(item.id); }
+    for (const id of [...rememberTimers.keys()]) await remember(id);
+  }
+
+  /** 복원 대상이 있는 새 뷰 — 표시 방식과 선택 좌표만 옮긴다. 좌표 없는 복원(stale·unreadable)은 방식만 또는 아무것도. */
+  function restoredView(restore: Obj | null | undefined): Obj {
+    return { ...initialView(), ...(restore?.mode ? { mode: restore.mode } : {}), ...(restore?.selection ? { selection: restore.selection } : {}) };
+  }
+
+  /** 편집기가 붙어 있으면 복원을 적용한다 — 활성화와 편집기 부착 중 늦게 오는 쪽이 적용한다(순서는 경쟁이다). */
+  async function applyRestore(id: string) {
+    const editor = editors.get(id);
+    const pending = pendingRestore.get(id);
+    if (!editor || !pending) return;
+    pendingRestore.delete(id);
+    editor.decorate(tab(id).analysis || {}, views.get(id)?.mode || "template");
+    // 좌표는 Python 이 이 bytes 에 대해 유효하다고 판정한 것이다. 그래도 편집기가 거절하면 알리되 문서 열기는 막지 않는다.
+    if (pending.selection) await editor.focus(pending.selection).catch((error) => update({ error: error instanceof Error ? error.message : String(error) }));
+  }
+
+  function scheduleRemember(id: string) {
+    clearTimeout(rememberTimers.get(id));
+    rememberTimers.set(id, setTimeout(() => { void guarded(() => remember(id)); }, 400));
+  }
+
+  /** 최근 작업 위치·표시 방식을 Python 에 보낸다. 편집기 flush 는 부르지 않는다 — 한글 조합 중에도 경보가 서지 않는다. */
+  async function remember(id: string) {
+    clearTimeout(rememberTimers.get(id));
+    rememberTimers.delete(id);
+    const state = views.get(id);
+    if (!state || !tab(id).id) return;
+    await drain(id);
+    await dispatch("remember_view", fenced(id, { selection: coordinates(state.selection), mode: state.mode || "template" }));
   }
 
   async function activate(id: string) {
     clearTimeout(trialTimer);
     if (snapshot().active_id) { await flush(snapshot().active_id); await inputPumps.get(snapshot().active_id); }
-    await dispatch("activate", { session_id: id });
+    const activated = await dispatch("activate", { session_id: id });
     const current = tab(id);
     viewId = id;
-    view = views.get(id) || initialView();
+    const known = views.get(id);
+    const restore = activated.restore ?? current.restore;
+    view = known || restoredView(restore);
+    if (!known && (restore?.mode || restore?.selection)) pendingRestore.set(id, { selection: restore.selection || null });
     update({
       values: { ...(current.values || {}) }, selectedOptions: { ...(current.selected || {}) } });
+    await applyRestore(id);
   }
 
   async function open(path?: string) {
@@ -148,6 +196,8 @@ export function createAuthoringController(deps: Deps) {
   async function close(id: string): Promise<boolean> {
     await flush(id);
     await inputPumps.get(id);
+    // 남은 작업 위치를 먼저 보낸다. 실패는 알리되 문서 닫기를 막지 않는다(잃는 것은 위치 기록뿐이다).
+    if (rememberTimers.has(id)) await remember(id).catch((error) => update({ error: error instanceof Error ? error.message : String(error) }));
     let result = await dispatch("close", { session_id: id, force: false });
     if (result.needs_confirm) {
       const answer = await deps.modal.choose({ title: tab(id).name || "문서 닫기",
@@ -165,6 +215,9 @@ export function createAuthoringController(deps: Deps) {
     buffers.delete(id);
     views.delete(id);
     generations.delete(id);
+    pendingRestore.delete(id);
+    clearTimeout(rememberTimers.get(id));
+    rememberTimers.delete(id);
     if (snapshot().active_id) await activate(snapshot().active_id);
     return !result.needs_confirm;
   }
@@ -341,6 +394,7 @@ export function createAuthoringController(deps: Deps) {
     const request = (selectionRequests.get(id) || 0) + 1;
     selectionRequests.set(id, request);
     update({ selection, matches: [], context: {} });
+    scheduleRemember(id);
     if (!Object.keys(selection).length) return;
     await flush(id);
     const atRevision = revision(id);
@@ -365,6 +419,7 @@ export function createAuthoringController(deps: Deps) {
     create: async () => { const result = await dispatch("new", { media: "txt" }); revisions.set(result.session_id, result.revision); await activate(result.session_id); },
     content: (id: string) => dispatch("content", { session_id: id }),
     preflight: (id: string, revision: number, content: string) => dispatch("rhwp_roundtrip_preflight", { session_id: id, revision, content }),
+    unverified: (id: string, revision: number, detail: string) => dispatch("rhwp_unverified", { session_id: id, revision, detail }),
     clipboard: () => clipboard,
     copy: async () => {
       const id = snapshot().active_id;
@@ -381,14 +436,14 @@ export function createAuthoringController(deps: Deps) {
     pending: (id: string) => buffers.has(id),
     selection: (id: string, range: Obj) => { void guarded(() => selection(id, range)); },
     focusSelection: async () => { if (Object.keys(view.selection).length) await editors.get(viewId)?.focus(view.selection); },
-    attach(id: string, editor: AuthoringEditor) { editors.set(id, editor); return () => { editors.delete(id); }; },
+    attach(id: string, editor: AuthoringEditor) { editors.set(id, editor); void guarded(() => applyRestore(id)); return () => { editors.delete(id); }; },
     command: async (command: "undo" | "redo" | "search") => {
       await editors.get(snapshot().active_id)?.command(command);
       // 되돌린 뒤에는 다음에 되돌릴 행동을 모른다 — 이름을 지운다. 빈 patch 도 history 깊이를 다시 읽게 한다.
       update(command === "undo" ? { lastCommandLabel: "" } : {});
     },
     editorState: (id: string) => editors.get(id)?.state?.() ?? null,
-    setMode(mode: string) { update({ mode }); editors.get(viewId)?.decorate(tab(viewId).analysis || {}, mode); },
+    setMode(mode: string) { update({ mode }); editors.get(viewId)?.decorate(tab(viewId).analysis || {}, mode); if (viewId) scheduleRemember(viewId); },
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
     recover: async (id: string) => { await restored(await (tab(id).id ? dispatch("recover", fenced(id)) : dispatch("recover_draft", { key: id }))); update({ recoveryPreview: null }); },

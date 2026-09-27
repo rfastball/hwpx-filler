@@ -1411,6 +1411,10 @@ text = "복구 초안의 내용이 올바르지 않습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
+text = "작업 위치 기록의 내용이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
 text = "지원하지 않는 복구 초안 형식입니다."
 
 [[sentence]]
@@ -1420,6 +1424,10 @@ text = "지원하지 않는 시험 케이스 형식입니다."
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
 text = "지원하지 않는 시험 케이스 형식입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/authoring_store.py"
+text = "지원하지 않는 작업 위치 기록 형식입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
@@ -3129,6 +3137,10 @@ text = "HWPX 문서만 보존 검증을 합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "HWPX 보존 검사를 실행할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "HWPX 본문 차례가 비었거나 중복되었습니다."
 
 [[sentence]]
@@ -3166,6 +3178,10 @@ text = "다른 문서 형식으로 의미 요소를 붙여넣을 수 없습니�
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "다시 열 파일이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"

@@ -276,6 +276,205 @@ async function waitFor(ctx, ready, tries = 30, ms = 40) {
   return !!ready();
 }
 
+/* ── §10 키보드·IME 실창 밴드의 공용 조각 ─────────────────────────────────────
+ *
+ *  **합성 키의 한계(중요)**: 스크립트가 쏜 KeyboardEvent 는 신뢰되지 않은 사건이라 브라우저의
+ *  기본 동작(Tab 의 초점 이동 · 버튼 위 Enter 의 활성화 · 입력칸 Enter 의 암묵 제출)이 따르지
+ *  않는다. 그래서 키는 **초점을 가진 원소에서** 쏘아 제품의 처리기(F6·F2·Escape·폼 onKeyDown)를
+ *  실물로 지나게 하고, 처리기가 막지 않은(`defaultPrevented` 아님) 경우에만 그 기본 동작을 표준
+ *  규칙대로 흉내 낸다: Tab = 문서 순서의 다음 탭 가능 원소, Enter = 버튼이면 click(), 폼
+ *  입력칸이면 requestSubmit(). 좌표 클릭은 쓰지 않는다. OS 수준 키 주입(SendInput)은 사용자
+ *  데스크톱을 건드리므로 쓰지 않는다 — 실 IME 조합도 같은 이유로 자동화하지 않는다. */
+const TABBABLE = 'button:not([disabled]),input:not([disabled]):not([type="hidden"]),'
+  + 'select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),'
+  + '[contenteditable="true"],iframe,details>summary';
+
+/** 접힌 details 의 본문(요약 줄 밖)에 있는가 — Chromium 은 그 자리를 그리지 않고 초점도 주지 않는다. */
+function insideClosedDetails(el) {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    if (node.tagName === "DETAILS" && !node.open) {
+      const summary = node.querySelector(":scope > summary");
+      if (!summary || !summary.contains(el)) return true;
+    }
+  }
+  return false;
+}
+
+/** 저작 화면 안의 탭 가능 원소 — 숨김·inert·접힌 details 본문은 빠진다(브라우저 순서 규칙). */
+function tabbables(ctx) {
+  return Array.prototype.filter.call(
+    ctx.doc.querySelectorAll(`#scr-authoring ${TABBABLE}`),
+    (el) => !el.closest("[inert],[hidden]") && !insideClosedDetails(el) && el.getClientRects().length > 0
+      && ctx.win.getComputedStyle(el).visibility !== "hidden",
+  );
+}
+
+/** 초점 원소에서 키 하나 — 막히지 않았으면 기본 동작만 흉내 낸다(조합 중이면 흉내도 없다). */
+function pressKey(ctx, key, init) {
+  const opts = init || {};
+  const target = ctx.doc.activeElement || ctx.doc.body;
+  const event = new ctx.win.KeyboardEvent("keydown", Object.assign(
+    { key, bubbles: true, cancelable: true }, opts));
+  const proceed = target.dispatchEvent(event);
+  if (!proceed || opts.isComposing) return { target, prevented: !proceed };
+  if (key === "Tab") {
+    const order = tabbables(ctx);
+    const at = order.indexOf(target);
+    const step = opts.shiftKey ? order.length - 1 : 1;
+    /* 초점을 받지 못하는 후보(브라우저가 거절)는 건너뛴다 — 실제 Tab 도 그 자리에 서지 않는다. */
+    let index = at < 0 ? (opts.shiftKey ? order.length - 1 : 0) : (at + step) % order.length;
+    for (let tries = 0; tries < order.length; tries += 1) {
+      order[index].focus();
+      if (ctx.doc.activeElement === order[index]) break;
+      index = (index + step) % order.length;
+    }
+  } else if (key === "Enter") {
+    if (target.tagName === "BUTTON") target.click();
+    else if (target.tagName === "INPUT" && target.form) target.form.requestSubmit();
+  }
+  return { target, prevented: false };
+}
+
+/** 키보드 이동 도구 — F6 으로 패널을 돌고 Tab 으로 대상 원소까지 간다. */
+function keyboardNav(ctx) {
+  const doc = ctx.doc;
+  const active = () => doc.activeElement;
+  const within = (selector) => !!(active() && active().closest && active().closest(selector));
+  const nameOf = (el) => (el && (el.getAttribute("aria-label") || textOf(el).trim())) || "";
+  return {
+    active, within, nameOf,
+    async cycleTo(selector) {
+      // 초점이 화면 밖(body)이면 사건이 셸을 지나지 않는다 — 사용자처럼 Tab 으로 먼저 들어온다.
+      if (!within("#scr-authoring")) pressKey(ctx, "Tab");
+      for (let i = 0; i < 6 && !within(selector); i += 1) {
+        pressKey(ctx, "F6");
+        await settleRender(ctx);
+      }
+      return within(selector);
+    },
+    tabTo(match, limit) {
+      for (let i = 0; i < (limit || 40) && !match(active()); i += 1) pressKey(ctx, "Tab");
+      return !!match(active());
+    },
+  };
+}
+
+/** §10·§6.2 IME — 이름 입력 중 합성 조합 사건을 쏘고 명령 미실행·커서 유지·입력 미절단을 되읽는다.
+ *  조합 중 Enter 에 브라우저는 암묵 제출을 하지 않는다 — 여기서는 **최악**을 흉내 내 제출을 직접
+ *  청해 제품의 방어선(조합 중 제출 무시)을 잰다. */
+async function probeAuthoringIme(ctx, out, input) {
+  const doc = ctx.doc;
+  const compose = (type, data) => input.dispatchEvent(
+    new ctx.win.CompositionEvent(type, { bubbles: true, cancelable: true, data }));
+  const errorBand = () => textOf(doc.querySelector("#scr-authoring .authoring-shell > div.authoring-error")).trim();
+  compose("compositionstart", "");
+  typeValue(ctx, input, "공고명수");                       // 조합 중인 음절까지 든 값
+  compose("compositionupdate", "수");
+  await settleRender(ctx);
+  input.setSelectionRange(4, 4);
+  const caret = [input.selectionStart, input.selectionEnd];
+  pressKey(ctx, "Enter", { isComposing: true, keyCode: 229 });
+  if (input.form) input.form.requestSubmit();
+  pressKey(ctx, "Escape", { isComposing: true, keyCode: 229 });
+  pressKey(ctx, "F2", { isComposing: true, keyCode: 229 });
+  await ctx.sleep(300);                                   // 늦게 오는 미리보기·거절까지 기다린다
+  out.ime_no_preview = !doc.querySelector(".authoring-properties section.authoring-preview");
+  out.ime_value_kept = input.isConnected && input.value === "공고명수";
+  out.ime_focus_kept = doc.activeElement === input;
+  out.ime_caret_kept = input.selectionStart === caret[0] && input.selectionEnd === caret[1];
+  out.ime_panel_kept = !!doc.querySelector(".authoring-properties");
+  out.ime_error_band = errorBand();
+  compose("compositionend", "수");
+  await settleRender(ctx);
+  out.ime_value_after_end = input.value;
+}
+
+/** §10 키보드만으로: 구조 목록 → 필드 선택 → 속성(이름 변경 미리보기) → Escape 두 단계 → F2 →
+ *  문제 위치 이동 → 원위치 복귀(TXT). 좌표는 Python 스냅샷에서 읽고, 화면의 범위 표기와 맞춘다. */
+async function probeAuthoringKeyboard(ctx, out) {
+  const doc = ctx.doc;
+  const started = Date.now();
+  const nav = keyboardNav(ctx);
+  const nameInput = () => doc.querySelector(".authoring-properties input");
+  const preview = () => doc.querySelector(
+    ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
+  const contextText = () => textOf(doc.querySelector(".authoring-properties .authoring-context")).trim();
+  const panelGone = () => !doc.querySelector(".authoring-properties");
+  const snap = await service(ctx, "Bridge").initial("authoring");
+  const tab = (((snap || {}).tabs) || []).find((item) => item.id === (snap || {}).active_id) || {};
+  const field = ((((tab.analysis || {}).fields) || [])[0] || {});
+  const occurrence = (field.occurrences || [])[0] || {};
+  const problem = (tab.problems || []).find((item) => item.location) || {};
+  const range = (place) => `${(place || {}).start}–${(place || {}).end}`;
+  try {
+    out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
+    if (!out.kbd_outline_reached) return;
+    out.kbd_field_focused = nav.tabTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
+    out.kbd_field_label = nav.nameOf(nav.active());
+    if (!out.kbd_field_focused) return;
+    pressKey(ctx, "Enter");
+    out.kbd_properties_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput()
+      && nameInput().value === field.name, 40, 50);
+    out.kbd_properties_command = (doc.querySelector(".authoring-properties select") || {}).value || "";
+    out.kbd_name_described_by = nameInput() ? String(nameInput().getAttribute("aria-describedby") || "") : "";
+    out.kbd_properties_target = textOf(doc.getElementById("authoring-properties-target")).trim();
+    out.kbd_properties_context = textOf(doc.getElementById("authoring-properties-context")).trim();
+    if (!out.kbd_properties_focus) return;
+
+    await probeAuthoringIme(ctx, out, nameInput());
+
+    typeValue(ctx, nameInput(), "공고제목");
+    pressKey(ctx, "Enter");
+    out.kbd_rename_preview = await waitFor(
+      ctx, () => textOf(preview()).indexOf("‘공고제목’으로 변경됩니다") >= 0, 40, 50);
+    out.kbd_rename_preview_text = textOf(preview()).trim().slice(0, 120);
+    pressKey(ctx, "Escape");                               // 1단계: 작성 중인 값만 되돌린다
+    await settleUntil(ctx, () => !!nameInput() && nameInput().value === field.name);
+    out.kbd_escape_reverts = !!nameInput() && nameInput().value === field.name;
+    out.kbd_escape_keeps_panel = !panelGone();
+    pressKey(ctx, "Escape");                               // 2단계: 패널을 닫고 선택으로 돌아간다
+    out.kbd_escape_closes = await waitFor(ctx, panelGone, 20, 50);
+    out.kbd_escape_focus_editor = await waitFor(ctx, () => nav.within(".cm-editor"), 20, 50);
+    pressKey(ctx, "F2");                                   // 선택한 의미 요소의 이름 작업
+    out.kbd_f2_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput(), 20, 50);
+    out.kbd_f2_command = (doc.querySelector(".authoring-properties select") || {}).value || "";
+    pressKey(ctx, "Escape");
+    await waitFor(ctx, panelGone, 20, 50);
+
+    out.kbd_toolbar_reached = await nav.cycleTo(".authoring-toolbar");
+    out.kbd_problems_button = nav.tabTo(
+      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "문제", 40);
+    if (!out.kbd_problems_button) return;
+    pressKey(ctx, "Enter");
+    const action = () => doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem button');
+    out.kbd_problem_focus = await waitFor(ctx, () => !!action() && nav.active() === action(), 20, 50);
+    out.kbd_problem_action = nav.nameOf(nav.active());
+    out.kbd_problem_text = textOf(
+      doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem')).trim().slice(0, 120);
+    if (!out.kbd_problem_focus) return;
+    pressKey(ctx, "Enter");
+    out.kbd_problem_expected = range(problem.location);
+    out.kbd_problem_moved = await waitFor(
+      ctx, () => contextText().indexOf(range(problem.location)) >= 0, 40, 50);
+    out.kbd_problem_context = contextText();
+
+    out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
+    out.kbd_back_button = nav.tabTo(
+      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "이전 위치로", 40);
+    if (!out.kbd_back_button) return;
+    pressKey(ctx, "Enter");
+    out.kbd_back_expected = range(occurrence);
+    out.kbd_back_restored = await waitFor(ctx, () => contextText().indexOf(range(occurrence)) >= 0, 40, 50);
+    out.kbd_back_context = contextText();
+    out.kbd_back_focus_editor = await waitFor(ctx, () => nav.within(".cm-editor"), 20, 50);
+    pressKey(ctx, "Escape");
+    await waitFor(ctx, panelGone, 20, 50);
+    out.kbd_error_band = textOf(doc.querySelector("#scr-authoring .authoring-shell > div.authoring-error")).trim();
+  } finally {
+    out.kbd_ms = Date.now() - started;
+  }
+}
+
 /** 기존 editor_txt_band 부팅에서 실제 CM·Python 분석·미저장 보호를 검증한다. */
 async function probeLintpad(ctx, out) {
   const doc = ctx.doc;
@@ -319,6 +518,13 @@ async function probeLintpad(ctx, out) {
   out.authoring_document_mode = await waitFor(ctx, () => marks() === 0);
   mode.value = "template"; mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
   out.authoring_template_mode = await waitFor(ctx, () => marks() === 2);
+  /* §10 키보드·IME 밴드 — 같은 세션(필드 1 · 닫히지 않은 항목 1 = 문제 1) 위에서 돈다. 예외는
+     `kbd_error` 에만 실어 뒤따르는 닫기 보호 단언을 끌고 죽지 않는다. */
+  try {
+    await probeAuthoringKeyboard(ctx, out);
+  } catch (thrown) {
+    out.kbd_error = String((thrown && thrown.message) || thrown);
+  }
   const close = () => doc.querySelector(".authoring-tab button[aria-label]").click();
   const asking = () => !doc.getElementById("chooseModal").classList.contains("hidden");
   close(); out.authoring_close_asks = await waitFor(ctx, asking);
@@ -470,16 +676,34 @@ async function probeHwpxAuthoring(ctx, out) {
         }
       } finally { openStub.restore(); openStub = null; }
       sid = String(activeTab(await snapshot()).id);
+      /* 보존 판정 칩(U01·§7.1)은 Python 투영에서 선다 — 마운트 **도중**에 「보존 확인 중」이
+         보이고, 판정이 서면 편집기 마운트와 무관하게 그 판정으로 바뀌어야 한다. 마운트를
+         기다리는 동안 칩을 표본으로 읽는다. */
+      const chip = () => textOf(doc.querySelector(".authoring-status [data-compat]")).trim();
+      let chipFirst = "";
+      let sawChecking = false;
+      const sample = () => {
+        const now = chip();
+        if (!chipFirst && now) chipFirst = now;
+        if (now === "보존 확인 중") sawChecking = true;
+      };
       out.hwpx_authoring_mounted = await waitFor(
-        ctx, () => !!doc.querySelector(`${canvas} .authoring-editor-host iframe`), 30, 200);
+        ctx, () => { sample(); return !!doc.querySelector(`${canvas} .authoring-editor-host iframe`); }, 30, 200);
       /* 보존 검사 결과는 `rhwp_editable` 이 null 을 벗는 순간이다 — 마운트가 내보낸
          바이트로 파이썬이 판정한다. */
-      await pollFor(ctx, async () => activeTab(await snapshot()).rhwp_editable !== null, 24, 250);
+      await pollFor(ctx, async () => { sample(); return activeTab(await snapshot()).rhwp_editable !== null; }, 24, 250);
       const tab = activeTab(await snapshot());
+      const limitedChip = "읽기 전용 · 보존 확인 필요";
+      await waitFor(ctx, () => chip() === (tab.rhwp_editable === false ? limitedChip : ""), 20, 50);
       out.hwpx_authoring_preflight.push({
         key: candidate.key,
         editable: tab.rhwp_editable,
         diagnostics: (tab.rhwp_diagnostics || []).slice(0, 6),
+        compat_state: String(((tab.compatibility) || {}).state || ""),
+        chip_first: chipFirst,
+        saw_checking: sawChecking,
+        chip_after: chip(),
+        banner: !!doc.querySelector("#scr-authoring section.authoring-compat"),
       });
       if (tab.rhwp_editable === true) {
         out.hwpx_authoring_candidate = candidate.key;
@@ -747,6 +971,48 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   out.hwpx_authoring_mode_dirty_before = beforeModes.dirty;
   out.hwpx_authoring_mode_dirty_after = afterModes.dirty;
   out.hwpx_authoring_mode_content_stable = (await content()) === contentBeforeModes;
+
+  /* ── ⑦-b §10 키보드만으로 구조 목록의 필드를 고르고 F2 로 이름 칸에 간다(HWPX) ─────
+     실 rhwp iframe 이 초점을 가져가도 셸의 F6·F2·Escape 가 선다는 것을 잰다. 좌표 클릭 없음. */
+  if (afford(9000)) {
+    const kbStart = Date.now();
+    const nav = keyboardNav(ctx);
+    const nameInput = () => doc.querySelector(".authoring-properties input");
+    const prefix = `필드 · ${candidate.field} · 사용 위치 ${candidate.occurrences}곳`;
+    out.hwpx_kbd_outline = await nav.cycleTo(".authoring-outline");
+    /* 진단(단언하지 않는다): 첫 Tab 한 번의 사건 판정과 탭 순서 안의 위치를 싣는다 — 닿지 못했을 때
+       「키가 막혔다」와 「순서에 없다」를 증거에서 가른다. */
+    const before = nav.active();
+    const order = tabbables(ctx);
+    const first = out.hwpx_kbd_outline ? pressKey(ctx, "Tab") : { prevented: null };
+    out.hwpx_kbd_first_tab = { prevented: first.prevented, order: order.length,
+      at: order.indexOf(before), moved: nav.active() !== before, now: nav.nameOf(nav.active()).slice(0, 60) };
+    out.hwpx_kbd_field = out.hwpx_kbd_outline && nav.tabTo((el) => nav.nameOf(el).indexOf(prefix) === 0, 80);
+    out.hwpx_kbd_field_label = nav.nameOf(nav.active());
+    if (out.hwpx_kbd_field) {
+      pressKey(ctx, "Enter");
+      await waitFor(ctx, settled, WIRE_TRIES, WIRE_MS);
+      pressKey(ctx, "F2");
+      out.hwpx_kbd_f2_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput()
+        && nameInput().value === candidate.field, WIRE_TRIES, WIRE_MS);
+      /* Escape 는 두 단계다(§6.2·§10): 작성 중인 값이 적용값과 다르면 먼저 되돌리고, 다음 Escape 가
+         패널을 닫는다. rhwp 는 초점 이동 뒤 자기 커서를 300ms 주기로 다시 보고하므로 그 사이 선택
+         대상이 바뀌면 첫 Escape 가 「되돌리기」가 될 수 있다 — 단계 수와 그때의 대상을 함께 싣는다. */
+      const target = () => textOf(doc.getElementById("authoring-properties-target")).trim();
+      const gone = () => !doc.querySelector(".authoring-properties");
+      out.hwpx_kbd_escape_target_before = target();
+      out.hwpx_kbd_escape_presses = 0;
+      for (let press = 0; press < 2 && !gone(); press += 1) {
+        pressKey(ctx, "Escape");
+        out.hwpx_kbd_escape_presses += 1;
+        await waitFor(ctx, gone, 8, 100);
+      }
+      out.hwpx_kbd_escape_closes = gone();
+    }
+    out.hwpx_kbd_ms = Date.now() - kbStart;
+  } else {
+    out.hwpx_kbd_skipped = "예산 부족";
+  }
 
   /* ── 좁은 창(760×600)·150% 배율에서도 편집면이 서고 가로 스크롤이 없다 ───────── */
   const fits = () => {

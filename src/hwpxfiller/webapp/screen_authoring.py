@@ -16,7 +16,7 @@ from hwpxcore.package import HwpxPackage
 
 from ..application.template_authoring_session import AuthoringSession
 from ..domain import template_authoring as semantics
-from ..external.authoring_store import AuthoringStore, ExternalChangeError, digest
+from ..external.authoring_store import WORKSPACE_INVALID, AuthoringStore, ExternalChangeError, digest
 from ..external.authoring_transfer import capture_semantic, paste_semantic
 from ..external.hwpx_authoring import (
     analyze_hwpx,
@@ -40,8 +40,31 @@ _CATEGORY_TRIAL_INPUT = "trial_input"
 _TRIAL_VALUE_MISSING = "시험값이 없습니다."
 _TRIAL_SELECTION_MISSING = "시험 선택을 지정하세요."
 _COMPATIBILITY_SUMMARY = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
+#: 편집기가 문서를 열거나 보존 검사를 끝내지 못했다(마운트 실패) — 판정이 없으니 수정은 잠근다.
+_PREFLIGHT_UNAVAILABLE = "HWPX 보존 검사를 실행할 수 없습니다."
+_HWPX_ONLY_PREFLIGHT = "HWPX 문서만 보존 검증을 합니다."
+#: 최근 작업 위치(U02) — 좌표를 기록한 문서가 지금 파일과 다르면 좌표를 버린다.
+_RESTORE_STALE = "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다."
 #: 본문(내용)을 바꾸는 명령 — 의미 경계만 바꾸는 명령과 구별한다(F38). `paste` 는 붙여넣기 미리보기.
 _BODY_CHANGING = frozenset({"delete", "unset_field", "repair_marker", "duplicate", "move", "paste"})
+#: 표시 방식(§3.2). 최근 작업 위치와 함께 문서별로 기억한다(U02).
+_VIEW_MODES = frozenset({"document", "template", "structure"})
+#: 편집기가 내는 선택 좌표의 키 — TXT 는 start/end, HWPX 는 본문 항목·문단·(표 셀 경로).
+_SELECTION_INTS = ("start", "end", "paragraph", "start_paragraph", "end_paragraph")
+
+
+def _valid_cell_path(cell_path: object) -> bool:
+    """rhwp 커서의 표 셀 경로 — 깊이 16 이하, 단계마다 네 개의 음이 아닌 정수."""
+    return (isinstance(cell_path, list) and 0 < len(cell_path) <= 16
+            and all(isinstance(step, dict)
+                    and set(step) == {"parent_paragraph", "control", "cell", "paragraph"}
+                    and all(type(value) is int and value >= 0 for value in step.values())
+                    for step in cell_path))
+
+
+def _utf16_length(text: str) -> int:
+    """TXT 편집기(CodeMirror) 좌표는 UTF-16 단위다 — 범위 검사도 같은 단위로 한다."""
+    return len(text.encode("utf-16-le")) // 2
 
 
 class AuthoringController:
@@ -56,6 +79,8 @@ class AuthoringController:
         self._job_registry = job_registry
         self._template_change = template_change
         self.sessions: dict[str, AuthoringSession] = {}
+        #: 세션을 열 때 Python 이 판정한 최근 작업 위치 복원 대상(U02) — 표면은 소비만 한다.
+        self._restores: dict[str, dict] = {}
         self.active_id = ""
         self._lock = threading.RLock()
         self._recoverable = self.store.list_drafts()
@@ -188,6 +213,8 @@ class AuthoringController:
             "external_changed": session.external_changed,
             "rhwp_editable": session.rhwp_editable,
             "rhwp_diagnostics": session.rhwp_diagnostics,
+            "compatibility": self._compatibility(session),
+            "restore": self._restores.get(session.id),
             "readiness": self._readiness(session),
             "problems": self._problems(session),
         }
@@ -204,6 +231,22 @@ class AuthoringController:
             "warnings": warnings,
             "message": f"사용 전에 구조 오류 {errors}개를 확인하세요." if errors else None,
         }
+
+    @staticmethod
+    def _compatibility(session: AuthoringSession) -> dict:
+        """HWPX 보존 판정의 표면 투영(U01·§7.1·P16) — 편집기 마운트 여부와 무관하게 선다.
+
+        판정이 없으면(`rhwp_editable is None`) 수정은 잠긴 채 「확인 중」이다. 판정이 거짓이면
+        제한 문장과 진단을 싣고, 원본은 그대로 둔 채 확인·다른 이름 저장만 열린다.
+        """
+        if session.media != "hwpx":
+            return {"state": "not_applicable", "editable": True, "message": None, "diagnostics": []}
+        if session.rhwp_editable is None:
+            return {"state": "checking", "editable": False, "message": None, "diagnostics": []}
+        if session.rhwp_editable:
+            return {"state": "editable", "editable": True, "message": None, "diagnostics": []}
+        return {"state": "limited", "editable": False, "message": _COMPATIBILITY_SUMMARY,
+                "diagnostics": list(session.rhwp_diagnostics)}
 
     @staticmethod
     def _problems(session: AuthoringSession) -> list[dict]:
@@ -343,9 +386,63 @@ class AuthoringController:
                 cases_error=cases_error,
             )
             self.sessions[session.id] = session
+            restore = self._restore_projection(key, media, content)
+            if restore is not None:
+                self._restores[session.id] = restore
             self.active_id = session.id
             self._push()
             return self._contents(session)
+
+    @staticmethod
+    def _clean_selection(selection: object) -> dict | None:
+        """Keep only the editor's caret coordinates; anything else is refused, not trimmed."""
+        if selection is None or selection == {}:
+            return None
+        if not isinstance(selection, dict) or not set(selection) <= {*_SELECTION_INTS, "entry", "cell_path"}:
+            raise ValueError(_INVALID_SELECTION)
+        if not all(type(selection[key]) is int and selection[key] >= 0
+                   for key in _SELECTION_INTS if key in selection):
+            raise ValueError(_INVALID_SELECTION)
+        if "entry" in selection and not isinstance(selection["entry"], str):
+            raise ValueError(_INVALID_SELECTION)
+        if "cell_path" in selection and not _valid_cell_path(selection["cell_path"]):
+            raise ValueError(_INVALID_SELECTION)
+        if "start" not in selection or "end" not in selection:
+            raise ValueError(_INVALID_SELECTION)
+        return dict(selection)
+
+    def _selection_in(self, media: str, content: bytes, selection: dict) -> bool:
+        if media == "txt":
+            limit = _utf16_length(content.decode("utf-8"))
+            return selection["start"] <= selection["end"] <= limit and "entry" not in selection
+        first = selection.get("start_paragraph", selection.get("paragraph"))
+        return (isinstance(selection.get("entry"), str) and type(first) is int
+                and selection["entry"] in self._section_entries(content))
+
+    def _restore_projection(self, key: str, media: str, content: bytes) -> dict | None:
+        """U02: the last work position and display mode, judged against the opened bytes.
+
+        No record means nothing to restore. An unreadable record is a diagnostic, never an
+        empty restore. Coordinates recorded on other bytes are dropped (the mode is kept) and
+        the projection says so.
+        """
+        try:
+            record = self.store.read_workspace(key)
+            if record is None:
+                return None
+            mode = record["mode"]
+            if mode not in _VIEW_MODES:
+                raise ValueError(WORKSPACE_INVALID)
+            selection = self._clean_selection(record.get("selection"))
+            if (record["fingerprint"] == digest(content) and selection is not None
+                    and not self._selection_in(media, content, selection)):
+                raise ValueError(WORKSPACE_INVALID)
+        except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
+            return {"state": "unreadable", "mode": None, "selection": None,
+                    "message": f"최근 작업 위치를 읽을 수 없습니다: {exc}"}
+        if record["fingerprint"] != digest(content):
+            return {"state": "stale", "mode": mode, "selection": None, "message": _RESTORE_STALE}
+        return {"state": "restored", "mode": mode, "selection": selection, "message": None}
 
     def save_to_path(self, session_id: str, revision: int, path: str | Path) -> dict:
         """Native Save As handoff. Existing destination is never silently replaced."""
@@ -454,6 +551,8 @@ class AuthoringController:
             "copy": self._do_copy,
             "preview_paste": self._do_preview_paste,
             "rhwp_roundtrip_preflight": self._do_rhwp_roundtrip_preflight,
+            "rhwp_unverified": self._do_rhwp_unverified,
+            "remember_view": self._do_remember_view,
             "trial_input": self._do_trial_input,
             "trial": self._do_trial,
             "search": self._do_search,
@@ -505,7 +604,7 @@ class AuthoringController:
     def _do_activate(self, p: dict) -> dict:
         session = self._session(p)
         self.active_id = session.id
-        return self._contents(session)
+        return {**self._contents(session), "restore": self._restores.get(session.id)}
 
     def _do_content(self, p: dict) -> dict:
         return self._contents(self._session(p))
@@ -627,12 +726,48 @@ class AuthoringController:
     def _do_rhwp_roundtrip_preflight(self, p: dict) -> dict:
         session = self._session(p, revision=True)
         if session.media != "hwpx":
-            raise ValueError("HWPX 문서만 보존 검증을 합니다.")
+            raise ValueError(_HWPX_ONLY_PREFLIGHT)
         exported = self._unwire("hwpx", p.get("content"))
         result = compare_rhwp_roundtrip(session.content, exported)
         session.rhwp_editable = result["editable"]
         session.rhwp_diagnostics = result["diagnostics"]
         return result
+
+    def _do_rhwp_unverified(self, p: dict) -> dict:
+        """The editor could not mount or finish the preflight: no verdict means no editing.
+
+        A report for an older revision (a remount already replaced that editor) changes nothing.
+        """
+        session = self._session(p)
+        if session.media != "hwpx":
+            raise ValueError(_HWPX_ONLY_PREFLIGHT)
+        detail = p.get("detail")
+        if type(p.get("revision")) is not int or not isinstance(detail, str):
+            raise ValueError(_BAD_PAYLOAD)
+        if p["revision"] != session.revision:
+            return {"applied": False}
+        session.rhwp_editable = False
+        session.rhwp_diagnostics = [{"kind": "preflight_unavailable",
+                                     "message": _PREFLIGHT_UNAVAILABLE, "detail": detail[:500]}]
+        return {"applied": True}
+
+    def _do_remember_view(self, p: dict) -> dict:
+        """U02: keep the latest work position and display mode per document in the app home.
+
+        Only path-backed documents are remembered. The coordinates are stamped with the digest
+        of the content they were taken on, so a reopen can tell whether they still apply.
+        """
+        session = self._session(p)
+        mode = p.get("mode")
+        if type(p.get("revision")) is not int or mode not in _VIEW_MODES:
+            raise ValueError(_BAD_PAYLOAD)
+        selection = self._clean_selection(p.get("selection"))
+        path = session.save_path or session.source_path
+        if not path or p["revision"] != session.revision:
+            return {"stored": False}
+        self.store.write_workspace(self.store.key(Path(path)), fingerprint=digest(session.content),
+                                   mode=mode, selection=selection)
+        return {"stored": True}
 
     def _do_copy(self, p: dict) -> dict:
         session = self._session(p, revision=True)
@@ -823,13 +958,7 @@ class AuthoringController:
             return self._invalid_locate()
         # 표 셀 안 선택은 rhwp 커서 경로(cell_path)를 함께 싣는다 — 없으면 본문 문단이다.
         cell_path = selection.get("cell_path") if native else None
-        if cell_path is not None and not (
-            isinstance(cell_path, list) and 0 < len(cell_path) <= 16
-            and all(isinstance(step, dict)
-                    and set(step) == {"parent_paragraph", "control", "cell", "paragraph"}
-                    and all(type(value) is int and value >= 0 for value in step.values())
-                    for step in cell_path)
-        ):
+        if cell_path is not None and not _valid_cell_path(cell_path):
             return self._invalid_locate()
 
         def hits(place: dict | None) -> bool:
@@ -1004,6 +1133,7 @@ class AuthoringController:
         session.rhwp_editable = None
         session.rhwp_diagnostics = []
         session.external_changed = False
+        self._restores.pop(session.id, None)
         self.store.discard_draft(session.draft_key)
         self._refresh_recoverable()
         return self._contents(session)
@@ -1029,6 +1159,7 @@ class AuthoringController:
                                           if item["key"] == session.draft_key), "")
         session.rhwp_editable = None
         session.rhwp_diagnostics = []
+        self._restores.pop(session.id, None)
         return self._contents(session)
 
     def _do_recover_draft(self, p: dict) -> dict:
@@ -1122,6 +1253,7 @@ class AuthoringController:
             self.store.discard_draft(session.draft_key)
             self._refresh_recoverable()
         del self.sessions[session.id]
+        self._restores.pop(session.id, None)
         if self.active_id == session.id:
             self.active_id = next(reversed(self.sessions), "")
         return {"ok": True}

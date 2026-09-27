@@ -2623,3 +2623,53 @@ def test_rhwp_roundtrip_real_notice_accepts_empty_text_but_blocks_one_character(
     edited.entries[ENTRY] = etree.tostring(root, xml_declaration=True, encoding="UTF-8",
                                            standalone=True)
     assert _rt_verdict(original, edited) == [("xml_changed", ENTRY)]
+
+
+# ---------------------------- rhwp 왕복 사전검사: 한컴 미지정 기본값(수용/거절 쌍)
+def _rt_paragraph(attributes: str) -> HwpxPackage:
+    return _rt_pkg(section=f'<hp:p{attributes} paraPrIDRef="0" styleIDRef="0">'
+                           '<hp:run><hp:t>본문</hp:t></hp:run></hp:p>')
+
+
+def test_rhwp_roundtrip_accepts_hancom_unset_paragraph_defaults_only() -> None:
+    bare = _rt_paragraph("")
+    hancom = _rt_paragraph(' id="4294967295" pageBreak="0" columnBreak="0" merged="0"')
+    assert _rt_verdict(bare, hancom) == []
+    assert _rt_verdict(hancom, bare) == []
+    for changed in (' id="0"', ' pageBreak="1"', ' columnBreak="1"', ' merged="1"'):
+        assert _rt_verdict(bare, _rt_paragraph(changed)) == [("xml_changed", ENTRY)], changed
+    assert _rt_verdict(_rt_paragraph(' id="0"'), bare) == [("xml_changed", ENTRY)]
+
+
+def _rt_line_shape(attributes: str) -> HwpxPackage:
+    return _rt_pkg(section='<hp:p><hp:run><hp:polygon id="1">'
+                           f'<hp:lineShape color="#000000" width="0" style="SOLID"{attributes}/>'
+                           '</hp:polygon></hp:run></hp:p>')
+
+
+def test_rhwp_roundtrip_accepts_only_flat_for_an_absent_line_end_cap() -> None:
+    bare = _rt_line_shape("")
+    assert _rt_verdict(bare, _rt_line_shape(' endCap="FLAT"')) == []
+    assert _rt_verdict(bare, _rt_line_shape(' endCap="ROUND"')) == [("xml_changed", ENTRY)]
+    assert _rt_verdict(_rt_line_shape(' endCap="ROUND"'),
+                       _rt_line_shape(' endCap="FLAT"')) == [("xml_changed", ENTRY)]
+
+
+def test_rhwp_roundtrip_never_ignores_table_or_cell_meta_tags() -> None:
+    meta = '{&quot;name&quot;:&quot;#hf_test_cell&quot;}'
+
+    def table(sub_list: str, table_meta: str) -> HwpxPackage:
+        return _rt_pkg(section=(
+            '<hp:p><hp:run><hp:tbl id="1"><hp:tr><hp:tc>'
+            f'<hp:subList{sub_list}><hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p></hp:subList>'
+            f'</hp:tc></hp:tr>{table_meta}</hp:tbl></hp:run></hp:p>'))
+
+    source = table(f' metatag="{meta}"', '<hp:metaTag>{"name":"#hf_test_table"}</hp:metaTag>')
+    assert _rt_verdict(source, table(f' metatag="{meta}"',
+                                     '<hp:metaTag>{"name":"#hf_test_table"}</hp:metaTag>')) == []
+    assert _rt_verdict(source, table("", '<hp:metaTag>{"name":"#hf_test_table"}</hp:metaTag>')
+                       ) == [("xml_changed", ENTRY)]
+    assert _rt_verdict(source, table(f' metatag="{meta}"', "")) == [("xml_changed", ENTRY)]
+    assert _rt_verdict(source, table(f' metatag="{meta}"',
+                                     '<hp:metaTag>{"name": "#hf_test_table"}</hp:metaTag>')
+                       ) == [("xml_changed", ENTRY)]

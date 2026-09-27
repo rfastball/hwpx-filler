@@ -163,12 +163,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
           throw new Error("편집 중 문서가 변경되었습니다. 다시 시도해 주세요.");
         replacing = true;
         const generation = ++changeGeneration;
-        // The embedded read-only gate drops *every* mutation, host transactions included
-        // (input-handler `isOperationAllowedInEditMode`), so the input lock held for the
-        // flush/compare above must be lifted for the replace itself or Studio rejects it
-        // ("현재 편집 모드에서 거절된 작업입니다"). The unlocked gap is one RPC round trip while
-        // keyboard focus sits on the host's apply button, not inside the iframe.
-        await editor.setReadOnly(false);
+        // The vendored embedded read-only gate rejects user input only; host transactions
+        // (hwpctrl plugin) still run, so the lock stays held through the replace itself.
         await editor.plugins.invoke("hwpctrl", "replaceSnapshot", [decodeBase64(next), label]);
         await publish(generation);
         await selection();
