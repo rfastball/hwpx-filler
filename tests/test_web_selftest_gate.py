@@ -2045,9 +2045,9 @@ class TestWebSelftestGate:
         assert t["sheet_field_names"] == ["계약명", "계약일"], (
             f"필드 표가 스냅샷 값을 그대로 그리지 않았습니다: {t['sheet_field_names']!r}"
         )
-        # COMPILED 는 수선할 것이 없으므로 동사 줄이 서지 않는다 — 시트가 실제로 세우는
-        # 동사는 그 아래 구간 항목 표의 것들이다(리뷰 10).
-        assert t["sheet_verbs"] == [], (
+        # COMPILED 는 수선할 것이 없어 상태 동사는 서지 않고, 저작 작업대(#1015)의 「템플릿 편집」만
+        # 남는다 — 그 아래 구간 항목 표의 동사와 별개다(리뷰 10).
+        assert t["sheet_verbs"] == ["detail-edit"], (
             f"시트 동사 줄이 링1 상태 게이트와 다릅니다: {t['sheet_verbs']!r}"
         )
         # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 시트 안으로 이주한 좌표다.

@@ -504,7 +504,8 @@ async function probeHwpxAuthoring(ctx, out) {
       /* 올렸던 배율만 되돌린다 — 속성이 아예 없는 대역에서 부르면 개인화 동사가 폭까지
          새로 심어(하한 180px) 뒤따르는 프로브의 값을 바꾼다. */
       const scale = doc.documentElement.getAttribute("data-font-scale");
-      if (scale !== null && scale !== "normal") Personalization.setFontScale("normal");
+      const wanted = out.hwpx_authoring_font_scale_before || "normal";
+      if (scale !== null && scale !== wanted) Personalization.setFontScale(wanted);
     } catch (thrown) {
       out.hwpx_authoring_restore_error = String((thrown && thrown.message) || thrown);
     } finally { if (alerts) { alerts.restore(); alerts = null; } }
@@ -749,6 +750,12 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
       ctx.win.alert = function () {
         out.hwpx_authoring_alerts = (out.hwpx_authoring_alerts || 0) + 1;
       };
+      /* 되돌릴 값은 「normal」이 아니라 **이 부팅이 들고 있던 배율**이다 — 배율 영속 검사가
+         env 로 large/larger 를 심은 부팅에서 normal 로 되돌리면 그 검사의 재시작 되읽기가
+         normal 을 읽는다(게이트 3차에서 실제로 났다). */
+      const scaleBefore = doc.documentElement.getAttribute("data-font-scale") || "normal";
+      const pxBefore = ctx.win.getComputedStyle(doc.documentElement).fontSize;
+      out.hwpx_authoring_font_scale_before = scaleBefore;
       try {
         Personalization.setFontScale("larger");
         await settleRender(ctx);
@@ -762,12 +769,12 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
         out.hwpx_authoring_font_scale_client_w = large.client_w;
         out.hwpx_authoring_font_scale_canvas_h = large.canvas_h;
       } finally {
-        Personalization.setFontScale("normal");
+        Personalization.setFontScale(scaleBefore);
         await settleRender(ctx);
         ctx.win.alert = real;
       }
       out.hwpx_authoring_font_scale_restored = ctx.win.getComputedStyle(
-        doc.documentElement).fontSize === "16px";
+        doc.documentElement).fontSize === pxBefore;
       out.hwpx_authoring_master_width_stable = ctx.win.getComputedStyle(app)
         .getPropertyValue("--master-width").trim() === masterBefore;
     }
