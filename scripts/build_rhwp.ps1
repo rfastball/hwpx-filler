@@ -69,6 +69,14 @@ if (-not (Test-Path $wasmPack)) {
     & npm install --prefix $tools --no-audit --no-fund --save-exact wasm-pack@0.15.0
     if ($LASTEXITCODE) { throw 'wasm-pack install failed' }
 }
+# Panic locations embed each dependency's absolute source path under CARGO_HOME, so
+# without remapping the WASM hash depends on where the cache lives (a CI runner can
+# never reproduce the tracked studio-runtime.json). The unit separator keeps paths
+# with spaces intact.
+$env:CARGO_ENCODED_RUSTFLAGS = @(
+    "--remap-path-prefix=$($env:CARGO_HOME)=/cargo",
+    "--remap-path-prefix=$source=/rhwp"
+) -join [char]0x1f
 Push-Location $source
 try {
     & $wasmPack build --target web --release --no-opt

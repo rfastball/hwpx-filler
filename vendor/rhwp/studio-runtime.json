@@ -8,9 +8,14 @@
       "sha256": "25ebed8e60158c5854f8dc807b936daca21354f8bfb6a2231266b0a93812f301"
     },
     {
-      "path": "studio/assets/canvaskit-renderer-DUbWJDPz.js",
+      "path": "studio/assets/canvaskit-renderer-Dv9etS6u.js",
       "size": 246941,
-      "sha256": "ffcc1fcd30dc642617bc12890582d46674bd4ca79587fd89f5beb2e455f097b3"
+      "sha256": "0a24b86590870bcbafae3676cb833cc4b820d4ac1012715ce1f5b61371d66d05"
+    },
+    {
+      "path": "studio/assets/index-BCdnI3ov.js",
+      "size": 1686149,
+      "sha256": "f1f402b64928b8250f927db968d1e5eb97725d1c781f0eb722ef27b22a4ae870"
     },
     {
       "path": "studio/assets/index-CScyW8Ot.css",
@@ -18,14 +23,9 @@
       "sha256": "88236f93eb78d4839cafffb60a4858e2a4959d8ec973551ff809c02d70c3e825"
     },
     {
-      "path": "studio/assets/index-KkyUwIYW.js",
-      "size": 1686149,
-      "sha256": "0062efe7440d8217da506067b5e24f853ea4340723db0c107dff9f4a6d565d3c"
-    },
-    {
-      "path": "studio/assets/rhwp_bg-CgrGIqlH.wasm",
-      "size": 11645161,
-      "sha256": "81a6dd3c580a707dd278c0f91c7aaa9796a8546c01503db7db6308a95ac4ac3a"
+      "path": "studio/assets/rhwp_bg-DN6wg9PP.wasm",
+      "size": 11632553,
+      "sha256": "fadc2461f8dc32e436b97cebef49ec01c36b27cee0e5c9f4494fabde3b3541e2"
     },
     {
       "path": "studio/assets/studio-plugin-bWVWiVQA.js",
@@ -224,28 +224,28 @@
     },
     {
       "path": "studio/images/icon_small_ko.svg",
-      "size": 471744,
-      "sha256": "83a8962e104f01aac9ddb8f9c25b40c2def47679f19aab9ba9febd7fe35b839f"
+      "size": 469618,
+      "sha256": "a0ac1200a41b6a75e9afb30cda5bb850276087d45c2f25870605888238ba9b39"
     },
     {
       "path": "studio/images/icon_small_ko_dark.svg",
-      "size": 453901,
-      "sha256": "352832dbc0ce2a8447008dd6122c4ac03f4ba76da1860901ae32a7e24c157480"
+      "size": 451775,
+      "sha256": "9d02ea0b8c1d399a89290d97613759826f19f3e3f392b6d79dcf6109e7e15fa6"
     },
     {
       "path": "studio/index.html",
-      "size": 67535,
-      "sha256": "939eb0f647b563f960e2de7aed5b8cc4c5684734cfd1607e73be6f3119730c30"
+      "size": 66826,
+      "sha256": "0130ea58dabdd2c4e96cac7f7913271bc9444947d91ef707044572b7a033f4f0"
     },
     {
       "path": "studio/print.html",
-      "size": 1486,
-      "sha256": "39be7ccd47a179ca9b216aae4b753df299dce14c137eeac69290972c367987ce"
+      "size": 1436,
+      "sha256": "930907863afbafcc76099d386f6a995bc6c69387cb56838b18e4cdaf6eea6b79"
     },
     {
       "path": "studio/theme-init.js",
-      "size": 2833,
-      "sha256": "5841355fffd7acfe83bcb23c36566be687c6f44d40332694181aa6146206613b"
+      "size": 2783,
+      "sha256": "5a3afcc0139187bfe509414cd60fde2a0dfea72fd72751c4e6e696cdc0f6c587"
     }
   ]
 }
