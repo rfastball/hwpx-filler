@@ -1,4 +1,4 @@
-# Managed by codex-orchestration. Re-run the bootstrapper to update.
+# Managed by tiered-delegation. Re-run the bootstrapper to update.
 name = "terra"
 description = "Implement clearly easy bounded changes; analyze, review, or verify bounded tasks."
 model = "gpt-5.6-terra"

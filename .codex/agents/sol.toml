@@ -1,4 +1,4 @@
-# Managed by codex-orchestration. Re-run the bootstrapper to update.
+# Managed by tiered-delegation. Re-run the bootstrapper to update.
 name = "sol"
 description = "Lead default implementation and integration; solve ambiguous or high-impact work."
 model = "gpt-6-sol"

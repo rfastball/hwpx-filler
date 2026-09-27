@@ -77,8 +77,8 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "e309ad61bf5eeb4c0c26e62592e24bd8606e7211a1375fce81fb80bdb7daaf4b"
-body_sha256 = "9ef81880957dc30f8e35f55fd79207a9fef9431981881abc200078cc3113ee2b"
+source_sha256 = "417dc5fb6420180a6b5866f851b108917e55de8a5a2395da4075c51de682f630"
+body_sha256 = "e713e9f7bbeaffd8753f45938bd717eaa5cfbccd72a51cdc38f8af85b885ddd1"
 
 [[document]]
 path = "docs/reference/ui-gallery.html"
@@ -265,7 +265,7 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "a08654cdaa2169ea23b52a81608646abf2ac0079da09a88b13515196839c4b29"
+source_sha256 = "807bd66000d965db99c12485c991ba0ac8b20b6d2281c22b81c00ca4c123e878"
 body_sha256 = "f64542c51616594ca2c9370c57dd2d9de851f66bddaac7b6c696d174722f5ead"
 
 [[topic]]
@@ -273,8 +273,8 @@ id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "0838b6fdc3752335c1bed99467dff59ced440cef2b899ad1f2e8c532ed327502"
-body_sha256 = "1224fc6756fb2eefe5e0fdd5785321a3542a33e5e949ab6140dc0b19cbaf243f"
+source_sha256 = "c0a4b1bd2c4fcb14c3dcd7534f3ea0f869faa2ba5426c30b12ec05f060f1417e"
+body_sha256 = "2583be20ae728c271f27072fd32f26055efa573b13c9e0b93e534991a5c062bf"
 
 [[support]]
 path = "examples/quickstart-101/README.md"
