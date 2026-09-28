@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason } from "../../frontend/src/screens/authoring.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
@@ -886,4 +886,22 @@ test("P09/§3.1: the status bar splits save·checks from preservation·trial·re
   await controller.activate("a");
   const markup = render(controller);
   assert.ok(markup.includes('<footer class="authoring-status" role="status"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span>다시 시험 필요</span><span>시험 자료 없음</span></div></footer>'));
+});
+
+test("UX-07/§10: an Escape forwarded from the editor iframe is a shell Escape (closes the properties panel); F6/Shift+F6 cycle panels", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties" });
+  const iframe = inside(["iframe", ".authoring-editor-host", ".authoring-canvas"]);
+  const escape = forwardedShellKey("Escape", iframe);
+  assert.equal(shellShortcut(escape), "escape");
+  assert.equal(escapeShell(controller), "panel");
+  assert.equal(controller.viewModel.getSnapshot().panel, "", "편집면에서 온 Escape 도 셸 Escape 처럼 속성 패널을 닫는다");
+  assert.equal(shellShortcut(forwardedShellKey("F6", iframe)), "cycle");
+  assert.equal(forwardedShellKey("ShiftF6", iframe).shiftKey, true, "Shift+F6 은 거꾸로 돈다");
+  assert.equal(forwardedShellKey("F2", iframe), null, "나머지 편집면 단축키는 기존 경로를 쓴다");
+  const event = forwardedShellKey("Escape", iframe);
+  assert.equal(event.target, iframe, "메뉴·패널이 초점을 돌려줄 자리는 편집면이다");
+  assert.equal(event.nativeEvent.isComposing, undefined);
+  event.preventDefault();
 });

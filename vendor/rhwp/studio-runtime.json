@@ -8,19 +8,19 @@
       "sha256": "25ebed8e60158c5854f8dc807b936daca21354f8bfb6a2231266b0a93812f301"
     },
     {
-      "path": "studio/assets/canvaskit-renderer-Ea7EyFiH.js",
+      "path": "studio/assets/canvaskit-renderer-DBEhCfmb.js",
       "size": 246941,
-      "sha256": "9ed1d002a159e15c46b11882156a21b639a675b3603fdc2f77919851e2c82f45"
+      "sha256": "db7311fbc4cbfdc8950c27db0b210ad8fe3d0205ad6ac08967a5feb95624abdc"
     },
     {
-      "path": "studio/assets/index-3ILIFRkF.js",
-      "size": 1686215,
-      "sha256": "539605622c935205eddf434064361f96fe31353f16e80eacca86077e0db2fa25"
+      "path": "studio/assets/index-Bc_MuKJe.js",
+      "size": 1692393,
+      "sha256": "16f77e253a7f3c0becd7f955f028df526e235714debb4e5b1bded57522706238"
     },
     {
-      "path": "studio/assets/index-CScyW8Ot.css",
-      "size": 108713,
-      "sha256": "88236f93eb78d4839cafffb60a4858e2a4959d8ec973551ff809c02d70c3e825"
+      "path": "studio/assets/index-BiyP9OvT.css",
+      "size": 110340,
+      "sha256": "e4401d567272e82487e6701928dfb7afa4da1bd4458d1e7c941b7c5b4bc214df"
     },
     {
       "path": "studio/assets/rhwp_bg-PUOJhs8t.wasm",
@@ -235,7 +235,7 @@
     {
       "path": "studio/index.html",
       "size": 66826,
-      "sha256": "1851db73eba714e66315d0664cab29f7964e14d2e96a1d8b21ec5542fef9da8c"
+      "sha256": "6d9364f3a71de475b3ef3094845a818cb3c7b0b326d0d1da5eb183ee4b706e3a"
     },
     {
       "path": "studio/print.html",
@@ -244,8 +244,8 @@
     },
     {
       "path": "studio/theme-init.js",
-      "size": 2783,
-      "sha256": "5a3afcc0139187bfe509414cd60fde2a0dfea72fd72751c4e6e696cdc0f6c587"
+      "size": 3372,
+      "sha256": "5ce6e56b08be99dba5a05769756c1eb41db54962d2c7ecc1f479bc51423cb6b7"
     }
   ]
 }

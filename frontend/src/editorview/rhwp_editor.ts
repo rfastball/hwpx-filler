@@ -32,7 +32,13 @@ function wireCellPath(path: StudioCellPath): WireCellPath {
 export type RhwpMountSpec = {
   host: HTMLElement; content: string; fileName: string; sectionEntries?: string[];
   onChanged: (content: string) => void; onSelectionChanged: (selection: Selection | Obj) => void;
-  onError: (error: unknown) => void; onShortcut?: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF') => void;
+  onError: (error: unknown) => void; onShortcut?: (shortcut: RhwpShortcut) => void;
+  /** Document right-click or keyboard menu key (Shift+F10, ContextMenu) inside the editor, in
+   *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
+   *  replaces the Studio's own. */
+  onContextMenu?: (point: { x: number; y: number }) => void;
+  /** Accessible name of the editor iframe. */
+  title?: string;
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
   onCompatibility?: (result: { editable: boolean; diagnostics?: unknown[] }) => void;
   readOnly: boolean;
@@ -43,6 +49,18 @@ export type RhwpMountSpec = {
   /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
   studio?: typeof createStudio;
 };
+/** Keys the Studio forwards to the host shell (spec §10). Escape comes only when no Studio UI claimed it. */
+export type RhwpShortcut = 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6';
+type Appearance = { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 };
+
+/** The app's theme and font scale (`html[data-theme]`, `html[data-font-scale]`) as the Studio takes them. */
+export function hostAppearance(root: { getAttribute(name: string): string | null } | null | undefined): Appearance {
+  const theme = root?.getAttribute("data-theme");
+  const scale = root?.getAttribute("data-font-scale");
+  return { theme: theme === "light" || theme === "dark" ? theme : "system",
+    fontScale: scale === "larger" ? 1.5 : scale === "large" ? 1.25 : 1 };
+}
+
 export type RhwpHandle = {
   content(): Promise<string>; applySnapshot(content: string, label: string, expectedContent?: string): Promise<void>;
   flushChanges(): Promise<void>;
@@ -73,9 +91,14 @@ function encodeBase64(bytes: Uint8Array): string {
 
 /** The pinned SDK owns the iframe and MessageChannel; this module owns its lifetime. */
 export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
-  const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI).href;
-  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl, plugins: ["hwpctrl"],
-    chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false } });
+  const root = document.documentElement;
+  let appearance = hostAppearance(root);
+  // The Studio applies the host theme before its first paint (theme-init.js); later changes go by message.
+  const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI);
+  studioUrl.searchParams.set("hostTheme", appearance.theme);
+  studioUrl.searchParams.set("hostFontScale", String(appearance.fontScale));
+  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"],
+    chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
   let pendingChange: Promise<void> | null = null;
@@ -83,6 +106,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
   try {
+    await editor.setAppearance(appearance);
+    if (spec.onContextMenu) await editor.setContextMenuForwarding(true);
     await editor.loadFile(decodeBase64(spec.content), spec.fileName, { skipUnsavedGuard: true });
     if (!readOnly) {
       let result: { editable: boolean; diagnostics?: unknown[] };
@@ -154,7 +179,30 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       exportTimer = window.setTimeout(exportScheduled, EXPORT_DEBOUNCE_MS);
     }
   });
-  const offShortcut = editor.onShortcut((shortcut) => spec.onShortcut?.(shortcut));
+  /** Iframe client coordinates → host client coordinates. */
+  const hostPoint = (x: number, y: number) => {
+    const frame = editor.element.getBoundingClientRect();
+    return { x: frame.left + x, y: frame.top + y };
+  };
+  /** The host menu reads the shell's selection, so the caret the menu was opened at goes first. */
+  const openMenu = (point: { x: number; y: number }) => {
+    void selection().catch(spec.onError).then(() => { if (!disposed) spec.onContextMenu?.(point); });
+  };
+  const offShortcut = editor.onShortcut((shortcut, detail) => {
+    if (shortcut === "ShiftF10" || shortcut === "ContextMenu") {
+      const caret = detail?.caret;
+      openMenu(caret ? hostPoint(caret.x, caret.y + caret.height) : hostPoint(0, 0));
+    } else spec.onShortcut?.(shortcut);
+  });
+  const offMenu = spec.onContextMenu ? editor.onContextMenuRequest((point) => openMenu(hostPoint(point.x, point.y))) : () => {};
+  // All mounts (editor, trial, comparison) follow the app's theme and font scale.
+  const observer = typeof MutationObserver === "function" && root ? new MutationObserver(() => {
+    const next = hostAppearance(root);
+    if (next.theme === appearance.theme && next.fontScale === appearance.fontScale) return;
+    appearance = next;
+    if (!disposed) void editor.setAppearance(next).catch(spec.onError);
+  }) : null;
+  observer?.observe(root, { attributes: true, attributeFilter: ["data-theme", "data-font-scale"] });
 
   const focus = async (target: Obj) => {
     const first = Array.isArray(target.occurrences) ? target.occurrences[0] : null;
@@ -219,7 +267,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       await publish(++changeGeneration);
     },
     async setDecorations(projection) {
-      if (projection.mode === "document") { await editor.setDecorations([]); return; }
+      if (projection.mode === "document") { await editor.setDecorations([], { labels: "none" }); return; }
       const fields = Array.isArray(projection.fields) ? projection.fields : [];
       const slots = Array.isArray(projection.slots) ? projection.slots : [];
       const markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number; startParagraph: number;
@@ -253,7 +301,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
             add("option", String(child.label ?? child.id ?? ""), child.location as Obj);
         }
       }
-      await editor.setDecorations(markers);
+      // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
+      // structure mode labels every boundary.
+      await editor.setDecorations(markers, { labels: projection.mode === "structure" ? "all" : "selected" });
     },
     async setReadOnly(value) {
       const next = value || compatibilityBlocked;
@@ -261,7 +311,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     },
     dispose() {
       if (disposed) return;
-      disposed = true; window.clearInterval(timer); cancelScheduled(); off(); offShortcut();
+      disposed = true; window.clearInterval(timer); cancelScheduled(); off(); offShortcut(); offMenu(); observer?.disconnect();
       editor.destroy();
     },
   };

@@ -142,13 +142,13 @@ export function externalDocumentSpec(item: Obj, content: string, sectionEntries?
   return { content, fileName: String(item.name || ""), readOnly: true as const, sectionEntries };
 }
 
-function ExternalDocument({ controller, item, content, sectionEntries }: Props & { item: Obj; content: string; sectionEntries?: string[] }) {
+function ExternalDocument({ controller, item, content, sectionEntries, title }: Props & { item: Obj; content: string; sectionEntries?: string[]; title?: string }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
     void controller.guarded(async () => {
-      const handle = await rhwpMount.mount({ host: host.current!, ...externalDocumentSpec(item, content, sectionEntries), trackSelection: "never",
+      const handle = await rhwpMount.mount({ host: host.current!, ...externalDocumentSpec(item, content, sectionEntries), trackSelection: "never", title: title || String(item.name || ""),
         onChanged: () => {}, onSelectionChanged: () => {}, onError: (error) => controller.update({ error: String(error) }) });
       if (disposed) handle.dispose(); else release = () => handle.dispose();
     });
@@ -156,6 +156,14 @@ function ExternalDocument({ controller, item, content, sectionEntries }: Props &
   }, [content]);
   return h("div", { ref: host, className: "authoring-result-pages" });
 }
+
+/** 편집면(iframe) 안에서 눌려 Studio 가 넘겨준 셸 키(§10) — 셸 onKeyDown 과 같은 길로 보낼 사건 모양. 그 밖의 키는 null. */
+export function forwardedShellKey(shortcut: string, target: unknown): Obj | null {
+  const key = shortcut === "Escape" ? { key: "Escape" } : shortcut === "F6" ? { key: "F6" } : shortcut === "ShiftF6" ? { key: "F6", shiftKey: true } : null;
+  return key && { ...key, target, nativeEvent: {}, preventDefault() {} };
+}
+/** 셸의 키·문맥 메뉴 처리기 — 편집면 iframe 은 셸까지 사건을 올리지 못하므로 편집기가 이 손잡이로 넘긴다. */
+type ShellInput = { current: { key?: (event: any) => void; menu?: (event: any) => void } };
 
 type ShellKey = { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; target?: { closest?(selector: string): unknown } | null };
 /** 셸 단축키 판독(§10). 문서 편집면·입력창 안의 Ctrl+Z/Y 는 그 문맥의 실행 취소이므로 셸이 가로채지 않는다(§9.3). */
@@ -211,7 +219,7 @@ export function submitProperties(controller: Pick<AuthoringController, "guarded"
   return true;
 }
 
-function DocumentEditor({ controller, item, active }: Props & { item: Obj; active: boolean }) {
+function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj; active: boolean; shell: ShellInput }) {
   const host = useRef<HTMLDivElement>(null);
   const adapter = useRef<AuthoringEditor | null>(null);
   useEffect(() => {
@@ -258,9 +266,14 @@ function DocumentEditor({ controller, item, active }: Props & { item: Obj; activ
           sectionEntries: initial.section_entries, trackSelection: "visible",
           preflight: report.preflight,
           onCompatibility: (result) => { void controller.guarded(() => report.onCompatibility(result)); },
+          title: item.name,
+          // 초점을 돌려받을 자리는 편집면 iframe 이다(메뉴를 닫는 Escape·F6 순환의 출발점).
+          onContextMenu: (point) => shell.current.menu?.({ clientX: point.x, clientY: point.y, target: host.current?.querySelector("iframe") || host.current }),
           onShortcut: (shortcut) => {
             const current = controller.viewModel.getSnapshot();
-            if (shortcut === "CtrlShiftP") controller.update({ panel: "commands" });
+            const forwarded = forwardedShellKey(shortcut, host.current?.querySelector("iframe") || host.current);
+            if (forwarded) shell.current.key?.(forwarded);
+            else if (shortcut === "CtrlShiftP") controller.update({ panel: "commands" });
             else if (shortcut === "CtrlS") void controller.guarded(() => controller.save());
             else if (shortcut === "CtrlF") controller.update({ panel: "search" });
             else controller.update({ panel: "properties", commandType: current.selected?.kind === "field" ? "rename_field" : current.selected?.kind === "option" ? "rename_option" : "rename_slot", focusPanel: (current.focusPanel || 0) + 1 });
@@ -407,7 +420,7 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
     let disposed = false;
     let release: (() => void) | undefined;
     if (item.media === "hwpx" && result?.content && output.current) void controller.guarded(async () => {
-      const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", readOnly: true,
+      const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", title: "시험 결과", readOnly: true,
         sectionEntries: result.section_entries, trackSelection: "visible",
         onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
         onError: (error) => controller.update({ error: String(error) }) });
@@ -486,6 +499,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const tabs: Obj[] = snapshot.tabs || [];
   const item = tabs.find((tab) => tab.id === snapshot.active_id);
   const root = useRef<HTMLDivElement>(null);
+  const shellInput: ShellInput = useRef<ShellInput["current"]>({});
   const dock = dockTabs(item, view);
   const counts = useMemo(() => problemCounts(item?.problems), [item?.problems]);
   useEffect(() => {
@@ -614,11 +628,11 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       button("외부 파일 다시 열기", act(controller.reload)), button("다시 저장", act(() => controller.save(item.id))));
     if (key === "comparison" && view.comparison) return h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
       h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
-        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries })))),
+        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries, title: label })))),
       button("비교 닫기", () => controller.update({ panel: "" })));
     return null;
   };
-  return h("div", { className: `authoring-shell${dock.active && view.dockMax ? " dock-max" : ""}`, ref: root, onKeyDown: (event: any) => {
+  return h("div", { className: `authoring-shell${dock.active && view.dockMax ? " dock-max" : ""}`, ref: root, onKeyDown: shellInput.current.key = (event: any) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const shortcut = shellShortcut(event);
     if (!shortcut) return;
@@ -705,7 +719,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
         item && h("div", { className: "authoring-selection", role: "group", "aria-label": "현재 위치의 의미" },
           h("span", { className: "authoring-selection-label", "aria-hidden": true }, "현재 위치의 의미"),
           ...(view.matches || []).map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
-        h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller })))),
+        h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
       item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview })),
     // 하단 독(§3.1): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
     (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}`, role: "region", "aria-label": "보조 패널" },

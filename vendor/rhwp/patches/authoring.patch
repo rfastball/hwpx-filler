@@ -52,10 +52,24 @@ index 9e51f5a07..0ba388538 100644
    }
    safeInteger(event.documentEpoch, 'document changed event documentEpoch', 1, code);
 diff --git a/npm/editor/index.d.ts b/npm/editor/index.d.ts
-index 6b35540e6..173a01cca 100644
+index 6b35540e6..472d93fb1 100644
 --- a/npm/editor/index.d.ts
 +++ b/npm/editor/index.d.ts
-@@ -218,6 +218,17 @@ export interface RhwpDocumentStateV1 {
+@@ -15,8 +15,13 @@ export interface EditorOptions {
+   requestTimeoutMs?: number;
+   /** v1 협상 제한 시간(ms, 기본: 1000) */
+   handshakeTimeoutMs?: number;
++  /** iframe 의 접근 가능한 이름(title) */
++  title?: string;
+ }
+ 
++/** Iframe client-coordinate rectangle. */
++export interface RhwpClientRect { x: number; y: number; width: number; height: number }
++
+ export interface LoadResult {
+   pageCount: number;
+ }
+@@ -218,6 +223,17 @@ export interface RhwpDocumentStateV1 {
    documentSha256: string;
  }
  
@@ -73,7 +87,7 @@ index 6b35540e6..173a01cca 100644
  export interface RhwpSelectionContextV1 {
    schemaVersion: 1;
    documentEpoch: number;
-@@ -228,6 +239,12 @@ export interface RhwpSelectionContextV1 {
+@@ -228,6 +244,12 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
@@ -86,7 +100,7 @@ index 6b35540e6..173a01cca 100644
  }
  
  export interface RhwpApplyTextCommandV1 {
-@@ -272,7 +289,7 @@ export interface RhwpTextCommandReceiptV1 {
+@@ -272,7 +294,7 @@ export interface RhwpTextCommandReceiptV1 {
  
  export interface RhwpDocumentChangedEventV1 {
    schemaVersion: 1;
@@ -95,14 +109,18 @@ index 6b35540e6..173a01cca 100644
    documentEpoch: number;
    changeSeq: number;
    commandId: string;
-@@ -317,14 +334,21 @@ export declare class RhwpEditor {
+@@ -317,14 +339,27 @@ export declare class RhwpEditor {
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
 +  setReadOnly(readOnly: boolean): Promise<void>;
 +  setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
-+    cellPath?: RhwpCellPathEntryV1[] }>): Promise<void>;
++    cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
++  /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
++  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 }): Promise<void>;
++  /** 켜 두면 문서 우클릭이 Studio 메뉴 대신 onContextMenuRequest 로 온다 */
++  setContextMenuForwarding(enabled: boolean): Promise<void>;
    /** exact preimage fence를 검증하고 문단 전체를 한 트랜잭션으로 교체 */
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    /** 가장 최근에 성공한 exact command를 한 트랜잭션으로 되돌림 */
@@ -113,12 +131,14 @@ index 6b35540e6..173a01cca 100644
 +    endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ focused: boolean }>;
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트 구독 */
    onDocumentChanged(listener: (event: RhwpDocumentChangedEventV1) => void): () => void;
-+  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF') => void): () => void;
++  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',
++    detail?: { caret: RhwpClientRect | null }) => void): () => void;
++  onContextMenuRequest(listener: (point: { x: number; y: number }) => void): () => void;
    /** iframe 엘리먼트를 반환합니다 */
    readonly element: HTMLIFrameElement;
    // ── 브리지 표면 ────────────────────────────────────────────────
 diff --git a/npm/editor/index.js b/npm/editor/index.js
-index f4ed3c6c1..241a0908c 100644
+index f4ed3c6c1..8bd2c7723 100644
 --- a/npm/editor/index.js
 +++ b/npm/editor/index.js
 @@ -22,7 +22,7 @@ import {
@@ -130,7 +150,16 @@ index f4ed3c6c1..241a0908c 100644
  
  /**
   * HWP 에디터를 생성하여 지정된 컨테이너에 마운트합니다.
-@@ -102,6 +102,8 @@ export class RhwpEditor {
+@@ -64,6 +64,8 @@ export async function createEditor(container, options = {}) {
+   iframe.style.height = options.height || '100%';
+   iframe.style.border = 'none';
+   iframe.allow = 'clipboard-read; clipboard-write';
++  // 화면 읽기 도구가 부를 이름. 호스트가 문서 이름 등을 넘긴다.
++  if (typeof options.title === 'string' && options.title) iframe.title = options.title;
+   el.appendChild(iframe);
+ 
+   // iframe 로드 대기
+@@ -102,6 +104,8 @@ export class RhwpEditor {
      this._offDocumentChanged = null;
      this._lastDocumentEpoch = null;
      this._lastDocumentChangeSeq = null;
@@ -139,7 +168,7 @@ index f4ed3c6c1..241a0908c 100644
    }
  
    /**
-@@ -155,6 +157,8 @@ export class RhwpEditor {
+@@ -155,6 +159,8 @@ export class RhwpEditor {
      });
      this._lastDocumentEpoch = null;
      this._lastDocumentChangeSeq = null;
@@ -148,7 +177,7 @@ index f4ed3c6c1..241a0908c 100644
      return result;
    }
  
-@@ -293,6 +297,16 @@ export class RhwpEditor {
+@@ -293,6 +299,31 @@ export class RhwpEditor {
      return selection;
    }
  
@@ -157,15 +186,30 @@ index f4ed3c6c1..241a0908c 100644
 +    return this._request('setReadOnly', { readOnly });
 +  }
 +
-+  /** Non-mutating semantic document overlay. */
-+  async setDecorations(markers) {
-+    return this._request('setDecorations', { markers });
++  /**
++   * Non-mutating semantic document overlay. `options.labels` picks the floating labels:
++   * 'selected' (caret or pointer, default), 'all', or 'none'.
++   */
++  async setDecorations(markers, options = {}) {
++    return this._request('setDecorations', {
++      markers, ...(options.labels === undefined ? {} : { labels: options.labels }),
++    });
++  }
++
++  /** Host theme and chrome scale; the Studio applies them over its own setting. */
++  async setAppearance(appearance) {
++    return this._request('setAppearance', { theme: appearance.theme, fontScale: appearance.fontScale });
++  }
++
++  /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
++  async setContextMenuForwarding(enabled) {
++    return this._request('setContextMenuForwarding', { enabled: enabled === true });
 +  }
 +
    /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
    async applyTextCommand(command) {
      assertCapability(this._transport, 'document-agent-command-v1');
-@@ -324,6 +338,11 @@ export class RhwpEditor {
+@@ -324,6 +355,11 @@ export class RhwpEditor {
      }));
    }
  
@@ -177,7 +221,7 @@ index f4ed3c6c1..241a0908c 100644
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
    onDocumentChanged(listener) {
      assertCapability(this._transport, 'document-change-events-v1');
-@@ -338,6 +357,7 @@ export class RhwpEditor {
+@@ -338,6 +374,7 @@ export class RhwpEditor {
            return;
          }
          if (!this._isFreshDocumentEvent(event.documentEpoch, event.changeSeq)) return;
@@ -185,14 +229,36 @@ index f4ed3c6c1..241a0908c 100644
          this._rememberDocumentVersion(event.documentEpoch, event.changeSeq);
          for (const subscriber of this._documentChangedListeners) {
            try { subscriber(event); } catch { /* 한 listener가 다른 listener를 막지 않는다. */ }
-@@ -353,10 +373,23 @@ export class RhwpEditor {
+@@ -353,10 +390,45 @@ export class RhwpEditor {
      };
    }
  
++  /**
++   * Authoring keys pressed inside the Studio. Escape arrives only when no Studio UI claimed it.
++   * The keyboard menu keys (ShiftF10, ContextMenu) come while context-menu forwarding is on and
++   * carry the caret rect in iframe client coordinates.
++   */
 +  onShortcut(listener) {
 +    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
 +    return this._transport.on('authoringShortcut', (value) => {
-+      if (['F2', 'CtrlShiftP', 'CtrlS', 'CtrlF'].includes(value)) listener(value);
++      if (typeof value === 'string') {
++        if (['F2', 'CtrlShiftP', 'CtrlS', 'CtrlF', 'Escape', 'F6', 'ShiftF6'].includes(value)) listener(value);
++        return;
++      }
++      if (value?.shortcut !== 'ShiftF10' && value?.shortcut !== 'ContextMenu') return;
++      const caret = value.caret;
++      const valid = caret && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(caret[key]));
++      listener(value.shortcut, {
++        caret: valid ? { x: caret.x, y: caret.y, width: caret.width, height: caret.height } : null,
++      });
++    });
++  }
++
++  /** Document right-clicks while forwarding is on; `{ x, y }` in iframe client coordinates. */
++  onContextMenuRequest(listener) {
++    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
++    return this._transport.on('contextMenuRequest', (point) => {
++      if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) listener({ x: point.x, y: point.y });
 +    });
 +  }
 +
@@ -274,6 +340,83 @@ index fef90d7aa..2945167d5 100644
        invoke: (method, args) => invoke(method, args),
        batch: (ops) => batch(ops),
  
+diff --git a/rhwp-studio/public/theme-init.js b/rhwp-studio/public/theme-init.js
+index f505cdccc..4cc6a6552 100644
+--- a/rhwp-studio/public/theme-init.js
++++ b/rhwp-studio/public/theme-init.js
+@@ -19,6 +19,20 @@
+   } catch {
+     mode = 'system';
+   }
++  // 임베드 호스트가 넘긴 테마·도구 모음 배율은 자체 설정보다 우선한다(호스트 크롬과 같은 테마).
++  let hostScale = 1;
++  try {
++    const query = new URLSearchParams(window.location.search);
++    const hostTheme = query.get('hostTheme');
++    if (isThemeMode(hostTheme)) mode = hostTheme;
++    hostScale = Number(query.get('hostFontScale'));
++  } catch {
++    hostScale = 1;
++  }
++  if (hostScale === 1.25 || hostScale === 1.5) {
++    root.dataset.hostFontScale = String(hostScale);
++    root.style.setProperty('--rhwp-host-font-scale', String(hostScale));
++  }
+   if (skin !== 'default') root.dataset.themeSkin = skin;
+   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+   const effective = mode === 'dark' || (mode === 'system' && prefersDark) ? 'dark' : 'light';
+diff --git a/rhwp-studio/src/core/theme.ts b/rhwp-studio/src/core/theme.ts
+index 342cdd5b0..fb7bca5c6 100644
+--- a/rhwp-studio/src/core/theme.ts
++++ b/rhwp-studio/src/core/theme.ts
+@@ -24,8 +24,21 @@ function syncBrowserColorScheme(root: HTMLElement, effective: EffectiveTheme): v
+   if (meta) meta.content = scheme;
+ }
+ 
++/**
++ * Theme chosen by an embedding host (`?hostTheme=` at load, then the embed `setAppearance`
++ * request). It overrides the Studio's own setting so the document matches the host chrome.
++ */
++let hostThemeMode: ThemeMode | null = (() => {
++  try {
++    const value = new URLSearchParams(window.location.search).get('hostTheme');
++    return value === 'system' || value === 'light' || value === 'dark' ? value : null;
++  } catch {
++    return null;
++  }
++})();
++
+ export function getThemeMode(): ThemeMode {
+-  return userSettings.getThemeSettings().mode;
++  return hostThemeMode ?? userSettings.getThemeSettings().mode;
+ }
+ 
+ export function getEffectiveTheme(mode: ThemeMode = getThemeMode()): EffectiveTheme {
+@@ -102,3 +115,24 @@ export function initThemeSync(onChange?: (effective: EffectiveTheme, mode: Theme
+   media.addListener(onMediaChange);
+   return () => media.removeListener(onMediaChange);
+ }
++
++/** Host chrome scale for the Studio's own toolbars (not the document zoom). */
++export function applyHostFontScale(scale: number): void {
++  const root = document.documentElement;
++  if (scale === 1.25 || scale === 1.5) {
++    root.dataset.hostFontScale = String(scale);
++    root.style.setProperty('--rhwp-host-font-scale', String(scale));
++  } else {
++    delete root.dataset.hostFontScale;
++    root.style.removeProperty('--rhwp-host-font-scale');
++  }
++}
++
++/** Apply the embedding host's theme and chrome scale; the host re-sends them on change. */
++export function applyHostAppearance(appearance: { theme: ThemeMode; fontScale: number }): { mode: ThemeMode; effective: EffectiveTheme } {
++  hostThemeMode = appearance.theme;
++  applyHostFontScale(appearance.fontScale);
++  const effective = applyTheme(appearance.theme);
++  syncThemeMenu(appearance.theme);
++  return { mode: appearance.theme, effective };
++}
 diff --git a/rhwp-studio/src/core/types.ts b/rhwp-studio/src/core/types.ts
 index 61d94b056..86856e6aa 100644
 --- a/rhwp-studio/src/core/types.ts
@@ -394,8 +537,29 @@ index 8f6bba3f5..6f9db6ac2 100644
  }
  
  export interface RhwpApplyTextCommandV1 {
+diff --git a/rhwp-studio/src/embed/protocol.ts b/rhwp-studio/src/embed/protocol.ts
+index 5c625f7b8..7d8c701dd 100644
+--- a/rhwp-studio/src/embed/protocol.ts
++++ b/rhwp-studio/src/embed/protocol.ts
+@@ -114,3 +114,16 @@ export function isUsableParentOrigin(origin: string): boolean {
+     return false;
+   }
+ }
++
++/**
++ * Input routing for an embedding host (authoring embed). The embed runtime turns these on
++ * when a host subscribes; while they are off the Studio keeps its standalone behaviour.
++ */
++export const hostInput = {
++  /** An Escape no Studio UI claimed goes to the host instead of walking out of a table cell. */
++  escape: false,
++  /** A document right-click opens the host's menu instead of the Studio menu. */
++  contextMenu: false,
++  /** Time of the last keyboard menu request; the browser's follow-up contextmenu is the same request. */
++  keyboardMenuAt: Number.NEGATIVE_INFINITY,
++};
 diff --git a/rhwp-studio/src/embed/rpc-router.ts b/rhwp-studio/src/embed/rpc-router.ts
-index 9723fff53..7f1ab9ef0 100644
+index 9723fff53..3a4ab3982 100644
 --- a/rhwp-studio/src/embed/rpc-router.ts
 +++ b/rhwp-studio/src/embed/rpc-router.ts
 @@ -1,5 +1,6 @@
@@ -405,14 +569,16 @@ index 9723fff53..7f1ab9ef0 100644
  import {
    assertEmptyParams,
    assertOnlyParam,
-@@ -48,9 +49,15 @@ export interface EmbedRpcHandlers {
+@@ -48,9 +49,17 @@ export interface EmbedRpcHandlers {
    notifySaved(fileName?: string): Promise<EmbedNotifySavedResult>;
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
 +  setReadOnly(readOnly: boolean): Promise<void>;
 +  setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
-+    cellPath?: EmbedCellPathEntry[] }>): Promise<void>;
++    cellPath?: EmbedCellPathEntry[] }>, labels: 'selected' | 'all' | 'none'): Promise<void>;
++  setContextMenuForwarding(enabled: boolean): Promise<void>;
++  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: number }): Promise<void>;
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    revertTextCommand(command: RhwpRevertTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    focusTarget(target: RhwpBodyParagraphTargetV1): Promise<{ focused: boolean; page: number }>;
@@ -421,7 +587,7 @@ index 9723fff53..7f1ab9ef0 100644
  
    // ── 브리지 확장 (P4) ────────────────────────────────────
    // 자동화·플러그인·창 제어. 부모는 **구조화 복제 가능한 값만** 보낼 수 있으므로 함수를 받는
-@@ -99,6 +106,23 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
+@@ -99,6 +108,23 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
    if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown.sort()[0]}`);
  }
  
@@ -445,7 +611,7 @@ index 9723fff53..7f1ab9ef0 100644
  /** 비어 있지 않은 문자열 식별자. 라우터에서 거르지 않으면 핸들러마다 같은 검사를 반복한다. */
  function asId(value: unknown): string {
    if (typeof value !== 'string' || value.length === 0) {
-@@ -176,6 +200,31 @@ export async function routeEmbedRequest(
+@@ -176,6 +202,43 @@ export async function routeEmbedRequest(
      case 'getSelectionContext':
        assertEmptyParams(params, 'getSelectionContext params');
        return handlers.getSelectionContext();
@@ -454,7 +620,9 @@ index 9723fff53..7f1ab9ef0 100644
 +      if (typeof params.readOnly !== 'boolean') throw new Error('readOnly must be boolean');
 +      return handlers.setReadOnly(params.readOnly);
 +    case 'setDecorations': {
-+      assertOnlyKeys(params, ['markers'], 'setDecorations params');
++      assertOnlyKeys(params, ['markers', 'labels'], 'setDecorations params');
++      const labels = params.labels ?? 'selected';
++      if (labels !== 'selected' && labels !== 'all' && labels !== 'none') throw new Error('invalid decoration labels');
 +      if (!Array.isArray(params.markers) || params.markers.length > 500) throw new Error('invalid decoration count');
 +      const markers = params.markers.map((item: unknown) => {
 +        const marker = asParams(item);
@@ -472,12 +640,22 @@ index 9723fff53..7f1ab9ef0 100644
 +          section: number; startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +          cellPath?: EmbedCellPathEntry[] };
 +      });
-+      return handlers.setDecorations(markers);
++      return handlers.setDecorations(markers, labels);
++    }
++    case 'setContextMenuForwarding':
++      assertOnlyKeys(params, ['enabled'], 'setContextMenuForwarding params');
++      if (typeof params.enabled !== 'boolean') throw new Error('enabled must be boolean');
++      return handlers.setContextMenuForwarding(params.enabled);
++    case 'setAppearance': {
++      assertOnlyKeys(params, ['theme', 'fontScale'], 'setAppearance params');
++      if (params.theme !== 'light' && params.theme !== 'dark' && params.theme !== 'system') throw new Error('invalid theme');
++      if (params.fontScale !== 1 && params.fontScale !== 1.25 && params.fontScale !== 1.5) throw new Error('invalid fontScale');
++      return handlers.setAppearance({ theme: params.theme, fontScale: params.fontScale });
 +    }
      case 'applyTextCommand': return handlers.applyTextCommand(parseApplyTextCommand(
        assertOnlyParam(params, 'command', 'applyTextCommand params'),
      ));
-@@ -185,6 +234,18 @@ export async function routeEmbedRequest(
+@@ -185,6 +248,18 @@ export async function routeEmbedRequest(
      case 'focusTarget': return handlers.focusTarget(parseBodyParagraphTarget(
        assertOnlyParam(params, 'target', 'focusTarget params'),
      ));
@@ -497,26 +675,37 @@ index 9723fff53..7f1ab9ef0 100644
      case 'automation.list': return handlers.automationList();
      case 'automation.menuModel': return handlers.automationMenuModel();
 diff --git a/rhwp-studio/src/embed/runtime.ts b/rhwp-studio/src/embed/runtime.ts
-index fe02079b2..aa15ba10a 100644
+index fe02079b2..6b4c19fbb 100644
 --- a/rhwp-studio/src/embed/runtime.ts
 +++ b/rhwp-studio/src/embed/runtime.ts
-@@ -16,6 +16,7 @@ interface EmbedRuntimeOptions {
+@@ -11,11 +11,17 @@ import {
+ import { routeEmbedRequest, type EmbedRpcHandlers } from './rpc-router.ts';
+ import { isDocumentAgentError } from '../document-agent/types.ts';
+ 
++/** Authoring keys forwarded to the host; menu keys carry the caret rect (client coordinates). */
++export type EmbedShortcutPayload = 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6'
++  | { shortcut: 'ShiftF10' | 'ContextMenu'; caret: { x: number; y: number; width: number; height: number } | null };
++
+ interface EmbedRuntimeOptions {
+   hostWindow: Window;
    parentWindow: Window;
    handlers: EmbedRpcHandlers;
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void;
-+  subscribeShortcut?: (listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF') => void) => () => void;
++  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void;
++  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void;
  }
  
  function errorText(error: unknown): string {
-@@ -47,6 +48,7 @@ function bindPort(
+@@ -47,6 +53,8 @@ function bindPort(
    clientCapabilities: readonly string[],
    handlers: EmbedRpcHandlers,
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void,
-+  subscribeShortcut?: (listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF') => void) => () => void,
++  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void,
++  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void,
  ): () => void {
    port.onmessage = async ({ data }) => {
      if (!isRequestAttempt(data, sessionId)) return;
-@@ -100,7 +102,7 @@ function bindPort(
+@@ -100,7 +108,7 @@ function bindPort(
      type: 'rhwp-connected', version: EMBED_PROTOCOL_VERSION, sessionId,
      capabilities: EMBED_CAPABILITIES,
    });
@@ -525,7 +714,7 @@ index fe02079b2..aa15ba10a 100644
      port.postMessage({
        type: 'rhwp-event',
        version: EMBED_PROTOCOL_VERSION,
-@@ -108,7 +110,12 @@ function bindPort(
+@@ -108,7 +116,16 @@ function bindPort(
        event: 'documentChanged',
        payload,
      });
@@ -535,16 +724,23 @@ index fe02079b2..aa15ba10a 100644
 +    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
 +      event: 'authoringShortcut', payload: shortcut });
 +  });
-+  return () => { offDocumentChanged?.(); offShortcut?.(); };
++  const offContextMenu = subscribeContextMenu?.((point) => {
++    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
++      event: 'contextMenuRequest', payload: point });
++  });
++  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); };
  }
  
  function rejectConnect(port: MessagePort, attempt: { version: number; sessionId: string }): void {
-@@ -200,6 +207,9 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
+@@ -200,6 +217,12 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
          event.data.capabilities.includes('document-change-events-v1')
            ? options.subscribeDocumentChanged
            : undefined,
 +        event.data.capabilities.includes('document-change-events-v1')
 +          ? options.subscribeShortcut
++          : undefined,
++        event.data.capabilities.includes('document-change-events-v1')
++          ? options.subscribeContextMenu
 +          : undefined,
        );
        binding = { origin: event.origin, sessionId: event.data.sessionId, port, offDocumentChanged };
@@ -582,8 +778,62 @@ index 5c4216582..7ad6553ab 100644
    execute(wasm: WasmBridge): DocumentPosition {
      if (this.executed) {
        // Redo: undo 시점에 잡아 둔 after 로 복원하고 **그 스냅샷을 즉시 반환한다** —
+diff --git a/rhwp-studio/src/engine/input-handler-keyboard.ts b/rhwp-studio/src/engine/input-handler-keyboard.ts
+index 0a89d1d81..33411506b 100644
+--- a/rhwp-studio/src/engine/input-handler-keyboard.ts
++++ b/rhwp-studio/src/engine/input-handler-keyboard.ts
+@@ -20,6 +20,7 @@ import type { WasmBridge } from '@/core/wasm-bridge';
+ import { tableObjectClipboardTarget } from './table-object-clipboard-target';
+ import { scrollByPageStep, type PageScrollDirection } from '@/view/page-scroll';
+ import { emitHeaderFooterModeChanged } from './header-footer-mode';
++import { hostInput } from '@/embed/protocol';
+ 
+ const RHWP_CLIPBOARD_MARKER_RE = /<!--\s*rhwp-studio-clipboard:([A-Za-z0-9._:-]+)\s*-->/;
+ const PAGINATION_BOUNDARY_KEYS = new Set([
+@@ -1339,9 +1340,17 @@ export function onKeyDown(this: any, e: KeyboardEvent): void {
+   //  - 본문 표 셀 → 표 객체 선택
+   //  한컴 UX 정합 (`feedback_visual_judgment_authority`).
+   if (e.key === 'Escape') {
++    // Studio menus claim Escape in capture (preventDefault); modes and dialogs returned above.
++    const unclaimed = !e.defaultPrevented;
+     e.preventDefault();
+     const inCell = this.cursor.isInCell();
+     const inTextBox = this.cursor.isInTextBox();
++    // Embedded authoring: an unclaimed Escape in body text or a table cell closes the host's
++    // transient UI (spec §10) rather than selecting the table object.
++    if (unclaimed && hostInput.escape && !inTextBox) {
++      this.eventBus.emit('embed-escape');
++      return;
++    }
+     const nestingDepth = this.cursor.nestingDepth();
+     // [Task #919] 글상자 안 표 셀 (cellPath.length >= 2 + isTextBox) → 표 객체 선택.
+     // enterTableObjectSelection 이 가장 안쪽 셀 (innermost) 의 표를 선택.
+diff --git a/rhwp-studio/src/engine/input-handler-mouse.ts b/rhwp-studio/src/engine/input-handler-mouse.ts
+index 4250e1ab0..1ec3ea162 100644
+--- a/rhwp-studio/src/engine/input-handler-mouse.ts
++++ b/rhwp-studio/src/engine/input-handler-mouse.ts
+@@ -8,6 +8,7 @@ import { MoveLineEndpointCommand, SetZOrderCommand } from './command';
+ import { computeLineEndpointRecord } from './object-drag-record';
+ import { emitHeaderFooterModeChanged } from './header-footer-mode';
+ import { cacheTableCellBboxes, ensureTableCellBboxCache } from './table-bbox-cache';
++import { hostInput } from '@/embed/protocol';
+ 
+ function protectedCellKey(hit: any): string | null {
+   if (!hit || hit.isTextBox) return null;
+@@ -1430,6 +1431,11 @@ export function onDblClick(this: any, e: MouseEvent): void {
+ 
+ export function onContextMenu(this: any, e: MouseEvent): void {
+   e.preventDefault();
++  // Embedded authoring: the host shows its own menu at this point (client coordinates).
++  if (hostInput.contextMenu) {
++    if (performance.now() - hostInput.keyboardMenuAt > 600) this.eventBus.emit('embed-contextmenu', { x: e.clientX, y: e.clientY });
++    return;
++  }
+   if (!this.active || !this.contextMenu) return;
+ 
+   // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..79d061174 100644
+index 2dde6f1a8..341ba2755 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
@@ -595,27 +845,51 @@ index 2dde6f1a8..79d061174 100644
  import { showConfirm } from '@/ui/confirm-dialog';
  import * as _mouse from './input-handler-mouse';
  import * as _table from './input-handler-table';
-@@ -319,6 +319,11 @@ export class InputHandler {
+@@ -309,6 +309,13 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
+ }
+ 
+ /** 클릭 커서 배치 + 키보드 입력을 처리한다 */
++/** Backend-projected meaning drawn over the document (embedded host `setDecorations`). */
++type SemanticMarker = { kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
++  startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
++  cellPath?: EmbedCellPathEntry[] };
++type SemanticGeometry = { index: number; marker: SemanticMarker;
++  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }> };
++
+ export class InputHandler {
+   private cursor: CursorState;
+   private caret: CaretRenderer;
+@@ -319,6 +326,16 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
 +  private embeddedReadOnly = false;
 +  private semanticLayer: HTMLDivElement | null = null;
-+  private semanticMarkers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
-+    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
-+    cellPath?: EmbedCellPathEntry[] }> = [];
++  private semanticMarkers: SemanticMarker[] = [];
++  private semanticLabelMode: 'selected' | 'all' | 'none' = 'selected';
++  private semanticGeometry: SemanticGeometry[] = [];
++  /** Marker indices whose labels are on screen; null forces the next layout. */
++  private semanticLabelKey: string | null = null;
++  private semanticHover = -1;
++  private onSemanticHoverBound = (e: MouseEvent) => this.onSemanticHover(e);
++  private onSemanticLeaveBound = () => { if (this.semanticHover !== -1) { this.semanticHover = -1; this.renderSemanticLabels(); } };
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -662,6 +667,7 @@ export class InputHandler {
+@@ -661,7 +678,12 @@ export class InputHandler {
+     this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
++    // Field labels follow the caret (selected mode) and the pointer.
++    eventBus.on('cursor-rect-updated', () => this.renderSemanticLabels());
++    container.addEventListener('mousemove', this.onSemanticHoverBound);
++    container.addEventListener('mouseleave', this.onSemanticLeaveBound);
      eventBus.on('zoom-changed', () => {
 +      this.renderSemanticMarkers();
        if (this.active) {
          const rect = this.cursor.getRect();
          if (rect) {
-@@ -3037,6 +3043,9 @@ export class InputHandler {
+@@ -3037,6 +3059,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -625,7 +899,7 @@ index 2dde6f1a8..79d061174 100644
      }
    }
  
-@@ -3108,7 +3117,8 @@ export class InputHandler {
+@@ -3108,7 +3133,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -635,7 +909,7 @@ index 2dde6f1a8..79d061174 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3132,7 @@ export class InputHandler {
+@@ -3122,6 +3148,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -643,7 +917,7 @@ index 2dde6f1a8..79d061174 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3243,11 @@ export class InputHandler {
+@@ -3232,6 +3259,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -655,7 +929,16 @@ index 2dde6f1a8..79d061174 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4272,6 +4288,7 @@ export class InputHandler {
+@@ -4257,6 +4289,8 @@ export class InputHandler {
+     this.container.removeEventListener('mousedown', this.onClickBound);
+     this.container.removeEventListener('dblclick', this.onDblClickBound);
+     this.container.removeEventListener('contextmenu', this.onContextMenuBound);
++    this.container.removeEventListener('mousemove', this.onSemanticHoverBound);
++    this.container.removeEventListener('mouseleave', this.onSemanticLeaveBound);
+     this.container.removeEventListener('mousemove', this.onMouseMoveBound);
+     document.removeEventListener('mousemove', this.onMouseMoveBound);
+     document.removeEventListener('mouseup', this.onMouseUpBound);
+@@ -4272,6 +4306,7 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
@@ -663,7 +946,7 @@ index 2dde6f1a8..79d061174 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4319,69 @@ export class InputHandler {
+@@ -4302,6 +4337,204 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -677,9 +960,15 @@ index 2dde6f1a8..79d061174 100644
 +    this.eventBus.emit('command-state-changed');
 +  }
 +
-+  /** Render backend-projected meaning as a non-mutating document overlay. */
-+  setSemanticMarkers(markers: typeof this.semanticMarkers): void {
++  /**
++   * Render backend-projected meaning as a non-mutating document overlay. Field runs get an
++   * inline marker (tint + underline); floating labels follow `labels`: `selected` shows only
++   * the markers under the caret or the pointer, `all` every marker, `none` no label.
++   */
++  setSemanticMarkers(markers: typeof this.semanticMarkers, labels: 'selected' | 'all' | 'none' = 'selected'): void {
 +    this.semanticMarkers = markers;
++    this.semanticLabelMode = labels;
++    this.semanticHover = -1;
 +    this.renderSemanticMarkers();
 +  }
 +
@@ -689,13 +978,15 @@ index 2dde6f1a8..79d061174 100644
 +    if (!this.semanticLayer) {
 +      this.semanticLayer = document.createElement('div');
 +      this.semanticLayer.className = 'rhwp-semantic-layer';
-+      this.semanticLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4';
++      this.semanticLayer.setAttribute('aria-hidden', 'true');
 +    }
 +    if (this.semanticLayer.parentElement !== scrollContent) scrollContent.appendChild(this.semanticLayer);
 +    this.semanticLayer.replaceChildren();
++    this.semanticGeometry = [];
++    this.semanticLabelKey = null;
 +    const zoom = this.viewportManager.getZoom();
 +    const contentWidth = scrollContent.clientWidth;
-+    for (const marker of this.semanticMarkers) {
++    this.semanticMarkers.forEach((marker, index) => {
 +      try {
 +        const endOffset = marker.endOffset
 +          ?? this.embedParagraphLength(marker.section, marker.endParagraph, marker.cellPath);
@@ -705,35 +996,162 @@ index 2dde6f1a8..79d061174 100644
 +          const caret = this.embedCaretRect(marker.section, marker.startParagraph, marker.startOffset, marker.cellPath);
 +          rects = [{ ...caret, width: 2 }];
 +        }
-+        rects.forEach((rect, index) => {
-+          const edge = document.createElement('div');
-+          const left = this.virtualScroll.getPageLeftResolved(rect.pageIndex, contentWidth) + rect.x * zoom;
-+          const top = this.virtualScroll.getPageOffset(rect.pageIndex) + rect.y * zoom;
-+          const color = marker.kind === 'field' ? '#198575' : marker.kind === 'option' ? '#c08436' : '#7364b5';
-+          const border = marker.emphasis === 'strong' ? `2px solid ${color}` : `1px dashed ${color}`;
-+          edge.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${Math.max(3, rect.width * zoom)}px;` +
-+            `height:${Math.max(3, rect.height * zoom)}px;box-sizing:border-box;border:${border};` +
-+            'border-radius:3px;background:transparent;pointer-events:none';
-+          edge.dataset.kind = marker.kind;
-+          // A marker that continues onto a later page is labelled as continued there (AC06/§5.3).
-+          const continued = index > 0 && rect.pageIndex !== rects[index - 1].pageIndex;
-+          if ((index === 0 && marker.emphasis === 'strong') || continued) {
-+            const chip = document.createElement('span');
-+            chip.textContent = continued ? '이어짐' : marker.label;
-+            chip.style.cssText = `position:absolute;bottom:100%;left:0;background:${color};color:white;` +
-+              'padding:2px 5px;border-radius:3px 3px 0 0;font:11px sans-serif;white-space:nowrap';
-+            edge.appendChild(chip);
-+          }
-+          this.semanticLayer!.appendChild(edge);
-+        });
++        const boxes = rects.map((rect) => ({ pageIndex: rect.pageIndex,
++          left: this.virtualScroll.getPageLeftResolved(rect.pageIndex, contentWidth) + rect.x * zoom,
++          top: this.virtualScroll.getPageOffset(rect.pageIndex) + rect.y * zoom,
++          width: Math.max(3, rect.width * zoom), height: Math.max(3, rect.height * zoom) }));
++        for (const box of boxes) {
++          const mark = document.createElement('div');
++          mark.className = 'rhwp-semantic-mark';
++          mark.dataset.kind = marker.kind;
++          mark.dataset.emphasis = marker.emphasis;
++          mark.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`;
++          this.semanticLayer!.appendChild(mark);
++        }
++        this.semanticGeometry.push({ index, marker, boxes });
 +      } catch { /* Unsupported nested or unresolved positions remain in the semantic outline. */ }
++    });
++    this.renderSemanticLabels();
++  }
++
++  /** True when the caret lies inside the marker's range (edges inclusive). */
++  private semanticMarkerHasCaret(marker: SemanticMarker): boolean {
++    const pos = this.cursor.getPosition();
++    if (pos.sectionIndex !== marker.section) return false;
++    let paragraph = pos.paragraphIndex;
++    if (marker.cellPath?.length) {
++      const path = pos.cellPath;
++      if (!path || path.length !== marker.cellPath.length || pos.parentParaIndex !== marker.cellPath[0].parentParagraph) return false;
++      for (let level = 0; level < path.length; level++) {
++        const want = marker.cellPath[level];
++        if (path[level].controlIndex !== want.control || path[level].cellIndex !== want.cell) return false;
++        if (level < path.length - 1 && path[level].cellParaIndex !== want.paragraph) return false;
++      }
++      paragraph = path[path.length - 1].cellParaIndex;
++    } else if (pos.parentParaIndex !== undefined) {
++      return false;
 +    }
++    if (paragraph < marker.startParagraph || paragraph > marker.endParagraph) return false;
++    if (paragraph === marker.startParagraph && pos.charOffset < marker.startOffset) return false;
++    return !(paragraph === marker.endParagraph && marker.endOffset !== null && pos.charOffset > marker.endOffset);
++  }
++
++  /**
++   * Free leading (content px) between the previous text line's glyphs and the run's first
++   * glyph line, with that glyph top relative to its page. Null when it cannot be measured
++   * (table cells, lines separated by objects, page boundaries); callers then go below the run.
++   */
++  private semanticLeadingAbove(marker: SemanticMarker): { gap: number; glyphTop: number } | null {
++    if (marker.cellPath?.length) return null;
++    const none = 0xFFFFFFFF;
++    const caret = this.wasm.getCursorRect(marker.section, marker.startParagraph, marker.startOffset);
++    const line = this.wasm.getLineInfo(marker.section, marker.startParagraph, marker.startOffset);
++    let previous: CursorRect | null = null;
++    if (line.lineIndex > 0) {
++      previous = this.wasm.getCursorRectOnLine(marker.section, marker.startParagraph, line.lineIndex - 1, false, none, none, none, none);
++    } else if (marker.startParagraph > 0) {
++      const length = this.wasm.getParagraphLength(marker.section, marker.startParagraph - 1);
++      previous = this.wasm.getCursorRect(marker.section, marker.startParagraph - 1, length);
++    }
++    if (!previous || previous.pageIndex !== caret.pageIndex) return null;
++    const gap = caret.y - (previous.y + previous.height);
++    // More than two text lines apart means something other than leading sits between them.
++    if (gap < 0 || gap > caret.height * 2) return null;
++    const zoom = this.viewportManager.getZoom();
++    return { gap: gap * zoom, glyphTop: caret.y * zoom };
++  }
++
++  /**
++   * Floating labels: never over each other, never over the previous line. Each goes into the
++   * leading above its run when it fits, else just below the run; labels that would overlap
++   * shift right, then down a row. Names longer than 12 characters are truncated (the full
++   * name is in the host's properties panel).
++   */
++  private renderSemanticLabels(): void {
++    const layer = this.semanticLayer;
++    if (!layer) return;
++    const wanted = this.semanticLabelMode === 'none' ? [] : this.semanticGeometry.filter((item) =>
++      this.semanticLabelMode === 'all' || item.index === this.semanticHover
++      || (this.active && this.semanticMarkerHasCaret(item.marker)));
++    const key = wanted.map((item) => item.index).join(',');
++    if (key === this.semanticLabelKey) return;
++    this.semanticLabelKey = key;
++    for (const old of layer.querySelectorAll('.rhwp-semantic-label')) old.remove();
++    const contentWidth = (layer.parentElement as HTMLElement | null)?.clientWidth ?? 0;
++    const placed: Array<{ left: number; top: number; right: number; bottom: number }> = [];
++    const collides = (left: number, top: number, width: number, height: number) => placed.find((box) =>
++      left < box.right && left + width > box.left && top < box.bottom && top + height > box.top);
++    const place = (item: SemanticGeometry, boxIndex: number, text: string) => {
++      const box = item.boxes[boxIndex];
++      const chip = document.createElement('span');
++      chip.className = 'rhwp-semantic-label';
++      chip.dataset.kind = item.marker.kind;
++      chip.textContent = text;
++      layer.appendChild(chip);
++      const width = chip.offsetWidth, height = chip.offsetHeight;
++      const pageRight = this.virtualScroll.getPageLeftResolved(box.pageIndex, contentWidth)
++        + this.virtualScroll.getPageWidth(box.pageIndex);
++      let leading: { gap: number; glyphTop: number } | null = null;
++      if (boxIndex === 0) {
++        try { leading = this.semanticLeadingAbove(item.marker); } catch { leading = null; }
++      }
++      const rows = leading && leading.gap >= height + 1
++        ? [this.virtualScroll.getPageOffset(box.pageIndex) + leading.glyphTop - height - 1] : [];
++      rows.push(box.top + box.height + 1);
++      let left = box.left, top = rows[0], row = 0;
++      for (let guard = 0; guard < 64; guard++) {
++        const hit = collides(left, top, width, height);
++        if (!hit && (left + width <= pageRight || left === box.left)) break;
++        if (hit && hit.right + 3 + width <= pageRight) { left = hit.right + 3; continue; }
++        row += 1;
++        left = box.left;
++        top = row < rows.length ? rows[row] : rows[rows.length - 1] + (row - rows.length + 1) * (height + 1);
++      }
++      chip.style.left = `${left}px`;
++      chip.style.top = `${top}px`;
++      placed.push({ left, top, right: left + width, bottom: top + height });
++    };
++    for (const item of wanted) {
++      const label = Array.from(item.marker.label);
++      place(item, 0, label.length > 12 ? `${label.slice(0, 11).join('')}…` : label.join(''));
++      // A marker that continues onto a later page is labelled as continued there (AC06/§5.3).
++      for (let index = 1; index < item.boxes.length; index++) {
++        if (item.boxes[index].pageIndex !== item.boxes[index - 1].pageIndex) place(item, index, '이어짐');
++      }
++    }
++  }
++
++  /** Pointer hover over a marker shows its label in `selected` mode. */
++  private onSemanticHover(e: MouseEvent): void {
++    if (this.semanticLabelMode !== 'selected' || this.semanticGeometry.length === 0) return;
++    const scrollContent = this.container.querySelector('#scroll-content');
++    if (!scrollContent) return;
++    const origin = scrollContent.getBoundingClientRect();
++    const x = e.clientX - origin.left, y = e.clientY - origin.top;
++    const hit = this.semanticGeometry.find((item) => item.boxes.some((box) =>
++      x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height));
++    const next = hit ? hit.index : -1;
++    if (next === this.semanticHover) return;
++    this.semanticHover = next;
++    this.renderSemanticLabels();
++  }
++
++  /** Caret rectangle in this document's client coordinates, for host keyboard menus. */
++  embedCaretClientRect(): { x: number; y: number; width: number; height: number } | null {
++    const rect = this.cursor.getRect();
++    const scrollContent = this.container.querySelector('#scroll-content');
++    if (!rect || !scrollContent) return null;
++    const zoom = this.viewportManager.getZoom();
++    const origin = scrollContent.getBoundingClientRect();
++    return { x: origin.left + this.virtualScroll.getPageLeftResolved(rect.pageIndex, scrollContent.clientWidth) + rect.x * zoom,
++      y: origin.top + this.virtualScroll.getPageOffset(rect.pageIndex) + rect.y * zoom,
++      width: 1, height: rect.height * zoom };
 +  }
 +
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4546,9 @@ export class InputHandler {
+@@ -4466,6 +4699,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -743,7 +1161,7 @@ index 2dde6f1a8..79d061174 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +4756,77 @@ export class InputHandler {
+@@ -4673,6 +4909,77 @@ export class InputHandler {
      }
    }
  
@@ -822,10 +1240,20 @@ index 2dde6f1a8..79d061174 100644
    removeCurrentField(posOverride?: DocumentPosition): void {
      const pos = posOverride ?? this.cursor.getPosition();
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
-index 64e8a6d1d..caf23f251 100644
+index 64e8a6d1d..6954774f9 100644
 --- a/rhwp-studio/src/main.ts
 +++ b/rhwp-studio/src/main.ts
-@@ -1941,7 +1941,38 @@ void initPromise.then(() => {
+@@ -56,7 +56,8 @@ import {
+ } from '@/ui/chrome-mode';
+ import { initRhwpDev } from '@/core/rhwp-dev';
+ import { DocumentDirtyState } from '@/core/document-dirty-state';
+-import { initThemeSync, setThemeMode, getThemeMode, getEffectiveTheme } from '@/core/theme';
++import { initThemeSync, setThemeMode, getThemeMode, getEffectiveTheme, applyHostAppearance } from '@/core/theme';
++import { hostInput } from '@/embed/protocol';
+ import { maybeShowSkinOnboarding } from '@/ui/skin-onboarding-dialog';
+ import { analyzeDocumentFonts } from '@/core/document-font-status';
+ import { setDocumentFontSubstitutions } from '@/core/font-substitution';
+@@ -1941,7 +1942,58 @@ void initPromise.then(() => {
  installEmbedRuntime({
    hostWindow: window,
    parentWindow: window.parent,
@@ -835,17 +1263,37 @@ index 64e8a6d1d..caf23f251 100644
 +      if (event.isComposing || event.keyCode === 229) return;
 +      const mod = event.ctrlKey || event.metaKey;
 +      const key = event.key.toLowerCase();
++      // F6 cycles the host's panels: Tab stays a document key here (tab character, next cell).
++      const menu = hostInput.contextMenu && !mod
++        && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey));
 +      const shortcut = event.key === 'F2' ? 'F2'
 +        : mod && event.shiftKey && key === 'p' ? 'CtrlShiftP'
 +        : mod && !event.shiftKey && key === 's' ? 'CtrlS'
-+        : mod && !event.shiftKey && key === 'f' ? 'CtrlF' : null;
++        : mod && !event.shiftKey && key === 'f' ? 'CtrlF'
++        : event.key === 'F6' && !mod ? (event.shiftKey ? 'ShiftF6' : 'F6')
++        : menu ? (event.key === 'ContextMenu' ? 'ContextMenu' : 'ShiftF10') : null;
 +      if (!shortcut) return;
 +      event.preventDefault();
 +      event.stopPropagation();
++      if (shortcut === 'ContextMenu' || shortcut === 'ShiftF10') {
++        hostInput.keyboardMenuAt = performance.now();
++        listener({ shortcut, caret: inputHandler?.embedCaretClientRect() ?? null });
++        return;
++      }
 +      listener(shortcut);
 +    };
 +    document.addEventListener('keydown', onKey, true);
-+    return () => document.removeEventListener('keydown', onKey, true);
++    hostInput.escape = true;
++    const offEscape = eventBus.on('embed-escape', () => listener('Escape'));
++    return () => {
++      document.removeEventListener('keydown', onKey, true);
++      hostInput.escape = false;
++      offEscape();
++    };
++  },
++  subscribeContextMenu: (listener) => {
++    const off = eventBus.on('embed-contextmenu', (point) => listener(point as { x: number; y: number }));
++    return () => { off(); hostInput.contextMenu = false; };
 +  },
 +  subscribeDocumentChanged: (listener) => {
 +    const offAgent = eventBus.on('document-agent-changed', listener);
@@ -865,7 +1313,7 @@ index 64e8a6d1d..caf23f251 100644
    handlers: {
      async ready() {
        await initPromise;
-@@ -2024,6 +2055,16 @@ installEmbedRuntime({
+@@ -2024,6 +2076,24 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.getSelectionContext();
      },
@@ -874,15 +1322,23 @@ index 64e8a6d1d..caf23f251 100644
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
 +      inputHandler.setEmbeddedReadOnly(readOnly);
 +    },
-+    async setDecorations(markers) {
++    async setDecorations(markers, labels) {
 +      await initPromise;
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
-+      inputHandler.setSemanticMarkers(markers);
++      inputHandler.setSemanticMarkers(markers, labels);
++    },
++    async setContextMenuForwarding(enabled) {
++      hostInput.contextMenu = enabled;
++    },
++    async setAppearance(appearance) {
++      const { mode, effective } = applyHostAppearance(appearance);
++      eventBus.emit('theme-changed', { mode, effective });
++      eventBus.emit('command-state-changed');
 +    },
      async applyTextCommand(command) {
        await initPromise;
        if (!documentAgent) throw new Error('Document agent is not initialized');
-@@ -2039,6 +2080,12 @@ installEmbedRuntime({
+@@ -2039,6 +2109,12 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.focusTarget(target);
      },
@@ -939,6 +1395,83 @@ index fabc8645e..2c529af86 100644
  
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
+diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
+index 1b1ecf8d5..9a7d944bb 100644
+--- a/rhwp-studio/src/styles/editor.css
++++ b/rhwp-studio/src/styles/editor.css
+@@ -144,3 +144,72 @@
+     -1px 0 0 var(--doc-paper);
+   white-space: nowrap;
+ }
++
++/* Embedded authoring overlay (setDecorations) and host chrome scale.
++   Marks never move or hide body text: fields are a tint plus an underline, labels float only
++   where the layout leaves room (input-handler renderSemanticLabels). */
++.rhwp-semantic-layer {
++  --rhwp-semantic-field: #198575;
++  --rhwp-semantic-slot: #7364b5;
++  --rhwp-semantic-option: #c08436;
++  position: absolute;
++  inset: 0;
++  pointer-events: none;
++  z-index: 4;
++}
++
++.rhwp-semantic-mark {
++  position: absolute;
++  box-sizing: border-box;
++  pointer-events: none;
++  border-radius: 2px;
++}
++
++.rhwp-semantic-mark[data-kind="field"] {
++  background: color-mix(in srgb, var(--rhwp-semantic-field) 16%, transparent);
++  border-bottom: 2px solid var(--rhwp-semantic-field);
++  border-radius: 2px 2px 0 0;
++  mix-blend-mode: multiply;
++}
++
++.rhwp-semantic-mark[data-kind="slot"] { border: 1px dashed var(--rhwp-semantic-slot); }
++.rhwp-semantic-mark[data-kind="option"] { border: 1px dashed var(--rhwp-semantic-option); }
++.rhwp-semantic-mark[data-kind="slot"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-slot); }
++.rhwp-semantic-mark[data-kind="option"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-option); }
++
++.rhwp-semantic-label {
++  position: absolute;
++  padding: 0 4px;
++  border-radius: 3px;
++  background: var(--rhwp-semantic-field);
++  color: #ffffff;
++  font: 11px/14px sans-serif;
++  white-space: nowrap;
++  pointer-events: none;
++}
++
++.rhwp-semantic-label[data-kind="slot"] { background: var(--rhwp-semantic-slot); }
++.rhwp-semantic-label[data-kind="option"] { background: var(--rhwp-semantic-option); }
++
++@media (forced-colors: active) {
++  .rhwp-semantic-mark {
++    forced-color-adjust: none;
++    mix-blend-mode: normal;
++  }
++  .rhwp-semantic-mark[data-kind="field"] {
++    background: transparent;
++    border-bottom-color: Highlight;
++  }
++  .rhwp-semantic-mark[data-kind="slot"],
++  .rhwp-semantic-mark[data-kind="option"] { border-color: Highlight; }
++  .rhwp-semantic-label {
++    forced-color-adjust: none;
++    background: Highlight;
++    color: HighlightText;
++  }
++}
++
++/* Host chrome scale (setAppearance fontScale): toolbars grow, the document zoom does not. */
++:root[data-host-font-scale] #studio-header {
++  zoom: var(--rhwp-host-font-scale, 1);
++}
 diff --git a/rhwp-studio/src/styles/style-bar.css b/rhwp-studio/src/styles/style-bar.css
 index 82fa1660b..17c7072aa 100644
 --- a/rhwp-studio/src/styles/style-bar.css
