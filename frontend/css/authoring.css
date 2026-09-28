@@ -211,6 +211,8 @@ body.resizing-authoring iframe{pointer-events:none}
    공유 사유 한 줄이 「명령」 위 머리 줄로 선다. */
 .authoring-context-menu [role=menuitem][aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
 .authoring-context-menu>.authoring-reason{padding:var(--sp-4) var(--sp-6)}
+/* 편집면 메뉴에 늘 서는 「필드로 만들기」(결정 C)가 불가일 때의 사유 — 항목 안 윗줄의 작은 글이다. */
+.authoring-context-menu [role=menuitem] .authoring-reason{display:block;margin-bottom:var(--sp-2)}
 .authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul:not(.authoring-rows){margin:var(--sp-4) 0;padding-left:var(--sp-16)}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 @media(forced-colors:active){

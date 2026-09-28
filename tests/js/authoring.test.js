@@ -1372,6 +1372,28 @@ test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable com
   markup = render(controller);
   const head = markup.slice(markup.indexOf('<div class="authoring-context-menu"'));
   assert.ok(head.startsWith(`<div class="authoring-context-menu" style="left:1px;top:1px"><p id="authoring-command-reason-menu" class="authoring-reason">${region}</p><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령"><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1" aria-describedby="authoring-command-reason-menu">명령</button></div>`));
+  // 결정 C: 편집면(글 자리)에서 연 메뉴는 「필드로 만들기」를 늘 첫 항목으로 싣는다 — 불가이면 흐리게, 사유는 그 항목의
+  // 설명 줄이다. 구조 목록 줄에서 연 메뉴에는 싣지 않는다(자동 표면 규칙 그대로).
+  assert.deepEqual(menuLines(commandEntries(same, false), false, true).map((line) => [line.command, line.disabled, line.reason]), [["create_field", true, region]]);
+  assert.equal(menuLines(commandEntries(same, false), false, false), null);
+  assert.equal(menuLines(commandEntries(same, true), true, true), null, "읽기 전용은 그대로 「명령」 한 줄");
+  assert.equal(menuLines(commandEntries([], false), false, true).length, 13, "판정 전은 그대로");
+  assert.deepEqual(menuLines(commandEntries(verdicts, false), false, true).map((line) => line.label), ["필드로 만들기", "항목으로 만들기", "먼저 항목 만들기"], "되는 「필드로 만들기」는 그대로 첫 항목");
+  const pinned = verdicts.map((entry) => entry.type === "create_field" ? { ...entry, enabled: false, reason: "선택 범위에 기존 필드가 포함되어 있습니다." } : entry);
+  controller.update({ commands: pinned, contextMenu: null });
+  openContextMenu(controller, { clientX: 1, clientY: 1, target: inside([".authoring-canvas"]) }, null);
+  assert.equal(controller.viewModel.getSnapshot().contextMenu.editor, true);
+  markup = render(controller);
+  menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
+  assert.ok(menu.startsWith('role="menu" aria-label="문맥 명령"><button type="button" role="menuitem" tabindex="-1" aria-disabled="true" aria-label="필드로 만들기" aria-describedby="authoring-menu-reason-create_field" class="authoring-menu-item"><span id="authoring-menu-reason-create_field" class="authoring-reason">선택 범위에 기존 필드가 포함되어 있습니다.</span>필드로 만들기</button><button type="button" role="menuitem" tabindex="-1" class="authoring-menu-item">항목으로 만들기</button>'), "편집면 메뉴: 불가 「필드로 만들기」 + 사유가 첫 항목");
+  assert.equal(count(menu, "aria-disabled"), 1, "예외는 「필드로 만들기」 하나뿐 — 다른 불가 명령은 숨는다");
+  controller.update({ contextMenu: null });
+  openContextMenu(controller, { clientX: 1, clientY: 1, target: inside([".authoring-outline"]) }, null);
+  assert.equal(controller.viewModel.getSnapshot().contextMenu.editor, undefined);
+  markup = render(controller);
+  menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
+  assert.ok(!menu.includes("필드로 만들기") && !menu.includes("aria-disabled"), "구조 목록 줄의 메뉴에는 불가 「필드로 만들기」가 없다");
+  controller.update({ commands: same });
   // 대안이 하나라도 서면 머리 줄은 없다 — 메뉴에 실행할 것이 있다.
   controller.update({ commands: same.map((entry) => entry.type === "create_option" ? { ...entry, alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } } : entry) });
   assert.ok(!render(controller).includes('id="authoring-command-reason-menu"'));

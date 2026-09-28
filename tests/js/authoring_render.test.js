@@ -526,12 +526,17 @@ test("IDE-02 (P-04): with verdicts the context menu carries runnable items and a
   env.controller.update({ commands: blocked, panel: "" });
   await open();
   items = byRole(env, "menuitem");
-  assert.deepEqual(items.map((node) => node.textContent), ["명령"], "되는 것이 없으면 팔레트를 여는 한 줄");
-  const header = env.container.querySelector("#authoring-command-reason-menu");
-  assert.equal(header?.textContent, "먼저 문서에서 내용을 선택하세요.", "그 위에 공유 사유 한 줄 — 팔레트 없이도 까닭이 보인다");
-  assert.equal(items[0].getAttribute("aria-describedby"), "authoring-command-reason-menu");
-  assert.equal(env.document.activeElement, items[0]);
+  // 결정 C: 편집면에서 연 메뉴는 「필드로 만들기」를 늘 첫 항목으로 싣는다 — 불가이면 흐리게, Python 사유를 설명 줄로.
+  // 그 밖에 되는 것이 없으니 팔레트를 여는 「명령」이 뒤따른다(사유가 항목에 서므로 공유 머리 줄은 없다).
+  assert.deepEqual(items.map((node) => node.getAttribute("aria-label") || node.textContent), ["필드로 만들기", "명령"]);
+  assert.equal(items[0].getAttribute("aria-disabled"), "true");
+  assert.equal(env.container.querySelector(`#${items[0].getAttribute("aria-describedby")}`).textContent, "먼저 문서에서 내용을 선택하세요.");
+  assert.equal(env.container.querySelector("#authoring-command-reason-menu"), null);
+  assert.equal(env.document.activeElement, items[1], "초점은 첫 사용 가능 항목(「명령」)");
   fire(env, items[0], "click");
+  await settle();
+  assert.ok(env.container.querySelector('[role="menu"]'), "불가 항목의 누름은 실행하지 않는다");
+  fire(env, items[1], "click");
   await settle();
   assert.equal(env.container.querySelector('[role="menu"]'), null);
   const input = env.container.querySelector('.authoring-command-palette input[role="combobox"]');
