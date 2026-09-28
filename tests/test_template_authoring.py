@@ -108,15 +108,15 @@ def test_txt_available_commands_are_decided_here_with_spec_reasons() -> None:
     assert outside["create_field"]["enabled"] is True and outside["create_slot"]["enabled"] is True
     assert outside["create_option"] == {
         "type": "create_option", "enabled": False,
-        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요.",
+        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 고르세요.",
         "alternative": {"label": "먼저 항목 만들기", "command_type": "create_slot"}}
-    assert outside["rename_field"]["reason"] == "필드를 선택하세요."
-    assert outside["unwrap"]["reason"] == "항목이나 선택 영역을 선택하세요."
-    assert outside["rename_option"]["reason"] == "선택 영역을 선택하세요."
+    assert outside["rename_field"]["reason"] == "필드를 고르세요."
+    assert outside["unwrap"]["reason"] == "항목이나 선택 영역을 고르세요."
+    assert outside["rename_option"]["reason"] == "선택 영역을 고르세요."
     crossing = {item["type"]: item for item in available_commands(
         "txt", base, {"start": 0, "end": base.index("첫째")})}
-    assert crossing["create_field"]["reason"] == "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
-    assert crossing["create_slot"]["reason"] == "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+    assert crossing["create_field"]["reason"] == "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
+    assert crossing["create_slot"]["reason"] == "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
     inside = {item["type"]: item for item in available_commands(
         "txt", base, {"start": base.index("공통"), "end": base.index("공통") + 2})}
     assert inside["create_option"]["enabled"] is True and inside["create_slot"]["enabled"] is False
@@ -125,13 +125,13 @@ def test_txt_available_commands_are_decided_here_with_spec_reasons() -> None:
         "txt", base, {"start": base.index("{{F}}") + 1, "end": base.index("{{F}}") + 1},
         {"slot_id": "s", "option_id": None})}
     assert all(on_field[kind]["enabled"] for kind in ("rename_field", "relink_field", "unset_field"))
-    assert on_field["create_field"]["reason"] == "선택 범위에 기존 필드가 포함되어 있습니다."
+    assert on_field["create_field"]["reason"] == "고른 범위에 기존 필드가 포함되어 있습니다."
     option = {item["type"]: item for item in available_commands(
         "txt", base, {"start": base.index("첫째"), "end": base.index("첫째")}, {"slot_id": "s", "option_id": "a"})}
-    assert option["rename_option"]["enabled"] and option["create_option"]["reason"] == "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+    assert option["rename_option"]["enabled"] and option["create_option"]["reason"] == "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
     broken = {item["type"]: item for item in available_commands("txt", "{{#항목 s}}\n본문\n", {"start": 12, "end": 12})}
     assert broken["create_slot"]["reason"] == "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
-    assert all(item["reason"] == "선택 위치가 올바르지 않습니다."
+    assert all(item["reason"] == "고른 위치가 올바르지 않습니다."
                for item in available_commands("txt", base, {"start": -1, "end": 0}))
 
 
@@ -283,7 +283,7 @@ def test_txt_transfer_refuses_stale_or_unsafe_selection_boundaries() -> None:
     capture_cases = (
         ("😀본문", {"kind": "text", "start": 1, "end": 3}, "문자 경계"),
         ("본문", {"kind": "field", "start": 0}, "필드 사용 위치"),
-        ("본문", {"kind": "text", "start": 1, "end": 1}, "본문을 선택"),
+        ("본문", {"kind": "text", "start": 1, "end": 1}, "본문을 고르"),
         ("본문", {"kind": "unknown"}, "의미 요소"),
         ("{{#항목 s}}\n본문\n", {"kind": "slot", "slot_id": "s"}, "구조 오류"),
     )

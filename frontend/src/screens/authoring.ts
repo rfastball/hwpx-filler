@@ -582,7 +582,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta", "aria-hidden": whole || undefined }, targetMeta.filter(Boolean).join(" · "))),
     // 카드 전체가 이름 칸의 설명이다(종류 「선택한 문구」 + 글자). 글자를 확정할 수 없으면(문단을 넘는 범위 등) 종류만 선다.
     textRange && h("div", { className: "authoring-target", id: "authoring-properties-target" },
-      h("span", { className: "authoring-target-kind" }, h("span", { className: "authoring-kind" }, "선택한 문구")),
+      h("span", { className: "authoring-target-kind" }, h("span", { className: "authoring-kind" }, "고른 문구")),
       !!view.context?.selected_text && h("p", { className: "authoring-target-name quote", title: String(view.context.selected_text) }, String(view.context.selected_text))),
     // 명령을 바꿔도 초점은 이 select 에 남는다(WCAG 3.2.2) — 닫힌 select 의 ↑↓ 는 값마다 change 를 쏜다.
     h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined,
@@ -601,7 +601,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     type === "unset_field" && h("div", { className: "authoring-actions start" },
       quiet("필드 이름 사용", () => setText(selected?.name || "")),
       quiet("시험값 사용", () => setText(String(view.values[selected?.name] ?? "")), { disabled: !(selected?.name in view.values) })),
-    type === "create_field" && h("label", null, h("input", { type: "checkbox", checked: keepValue, onChange: (event: any) => setKeepValue(event.target.checked) }), " 선택 문구를 시험값으로 보관"),
+    type === "create_field" && h("label", null, h("input", { type: "checkbox", checked: keepValue, onChange: (event: any) => setKeepValue(event.target.checked) }), " 고른 문구를 시험값으로 보관"),
     type === "unwrap" && h("label", null, h("input", { type: "checkbox", checked: cascade, onChange: (event: any) => setCascade(event.target.checked) }), " 하위 의미 함께 해제"),
     // 기본 범위는 현재 선택 한 곳이다(U03) — 같은 문구의 다른 자리는 별도 검색으로만 찾는다.
     type === "create_field" && !!view.lastCreatedText && h("div", null, quiet("다른 같은 문구 찾기", () => { const text = view.lastCreatedText; controller.update({ lastCreatedText: "" }); void controller.guarded(() => controller.search(text, "body")); })),
@@ -617,7 +617,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
         refusal.code === "cascade_required" && primary("하위 의미 함께 해제", () => { setCascade(true); submitProperties(controller, composing.current, () => ({ ...command(), cascade: true })); }))),
     preview && h("section", { className: "authoring-preview", "aria-label": "변경 영향" },
       h("h3", { className: "authoring-section-label" }, "변경 영향"),
-      preview.expanded && h("p", null, "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."),
+      preview.expanded && h("p", null, "고른 범위를 문단 전체로 넓힙니다. 포함될 내용을 확인하세요."),
       // 전체 이름 변경의 문장(§13)은 조사까지 Python 이 짓는다(preview.message) — 표면은 그대로 보인다.
       h("p", null, preview.message || `사용 위치 ${affected}곳`),
       preview.counts && h("p", null, `문단 ${preview.counts.paragraphs ?? 0} · 필드 ${preview.counts.fields ?? 0} · 선택 ${preview.counts.options ?? 0} · 표 ${preview.counts.tables ?? 0}`),
@@ -716,8 +716,8 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
           `${entry.slot_id} / ${entry.option_id} · ${COVERAGE_LABEL[entry.state]}`))),
       item.media === "txt" ? h(TxtTrialOutput, { controller, result, selected: view.selected }) : h("div", { className: "authoring-result-pages", ref: output }),
       h("h3", { className: "authoring-section-label" }, "출력·제외 이유"),
-      item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", { className: "authoring-section-label" }, "선택한 문단의 필드"),
-        rowList("선택한 문단의 필드", (result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map(traceRow))),
+      item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", { className: "authoring-section-label" }, "고른 문단의 필드"),
+        rowList("고른 문단의 필드", (result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map(traceRow))),
       rowList("출력·제외 이유", [
         ...(result?.occurrences || result?.trace || []).map(traceRow),
         ...(result?.excluded || []).map((entry: Obj) => rowButton({ chip: kindTag("option"), text: entry.reason || entry.label || entry.option_id }, select(entry)))])),
@@ -956,7 +956,7 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
       !filtering && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)));
 }
 
-const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "구조"]];
+const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "이름표"]];
 
 /** 상태 막대의 저장 상태 한 표현(P09·§9.1) — 저장·준비는 서로 다른 상태라 저장됨 뒤에 Python 의 readiness 를 붙인다. */
 export function saveLabel(item: Obj, view: Obj, pending: boolean): string {
@@ -1153,7 +1153,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   const moreActions: MenuAction[] = [
     [PALETTE_SELF, () => openPalette(), false, "Ctrl+Shift+P"],
     ["의미 복사", act(async () => { await controller.copy(); controller.update(focusRequest(controller.viewModel.getSnapshot(), "dock")); }), false],
-    ["붙여넣기", () => openPanel("paste"), !controller.clipboard()],
+    ["의미 붙여넣기", () => openPanel("paste"), !controller.clipboard()],
     ["이전 위치로", act(controller.back), false]];
   // 머리 띠 「파일」 메뉴 — 파일 동사 넷. 저장·다른 이름으로 저장은 열린 문서가 있어야 한다(불가 항목도 초점을 받는다).
   const fileActions: MenuAction[] = [
@@ -1231,7 +1231,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         quiet("비교 닫기", () => closePanel({ recoveryPreview: null })), primary("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key)))));
     if (!item) return null;
     if (key === "paste") return h("section", { className: "authoring-bottom", "aria-label": "의미 붙여넣기" }, h("h2", null, "의미 붙여넣기"),
-      h("p", null, "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
+      h("p", null, "문서에서 붙여넣을 위치를 고르세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
       h("form", { onSubmit: (event: any) => { event.preventDefault(); const data = new FormData(event.currentTarget); act(() => controller.paste(data.has("meaning"), String(data.get("new_id") || ""), data.has("link_existing")))(); } },
         h("label", null, h("input", { type: "checkbox", name: "meaning", defaultChecked: true }), "의미 포함"),
         h("label", null, h("input", { type: "checkbox", name: "link_existing" }), "같은 이름의 기존 필드에 연결"),

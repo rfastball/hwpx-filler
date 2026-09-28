@@ -69,7 +69,7 @@ _SCAFFOLD = """<!doctype html>
     <button type="button" class="btn primary">저장</button></header>
   <div class="authoring-toolbar" role="toolbar">
     <div class="authoring-toolbar-group"><button class="btn icon" aria-label="문서 실행 취소">{icon}</button><button class="btn icon" aria-label="문서 다시 실행">{icon}</button></div>
-    <div class="authoring-toolbar-group"><div class="authoring-mode"><button aria-pressed="true">원문</button><button>구조</button><button>문서</button></div></div>
+    <div class="authoring-toolbar-group"><div class="authoring-mode"><button aria-pressed="true">원문</button><button>이름표</button><button>문서</button></div></div>
     <div class="authoring-toolbar-group"><button class="btn quiet">필드로 만들기</button><button class="btn quiet">항목으로 만들기</button><button class="btn quiet">선택으로 만들기</button></div>
     <div class="authoring-toolbar-group"><button class="btn icon" aria-label="더보기">{icon}</button></div>
     <div class="authoring-toolbar-group authoring-toolbar-end"><button class="btn">결과 시험</button></div>
@@ -82,7 +82,7 @@ _SCAFFOLD = """<!doctype html>
       <div class="authoring-outline-panel" role="tabpanel"><ul class="authoring-tree" role="tree">{rows}</ul></div></aside>
     <div class="authoring-splitter authoring-splitter-outline" role="separator" tabindex="0"></div>
     <div class="authoring-center">
-      <div class="authoring-selection" role="navigation"><span class="authoring-crumb root">2026년 공고문 초안.hwpx</span><span class="authoring-crumb-sep">{icon}</span><button type="button" class="authoring-crumb" aria-current="location">항목 · 견적 조건</button><span class="authoring-selection-note" title="이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요.">이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요.</span></div>
+      <div class="authoring-selection" role="navigation"><span class="authoring-crumb root">2026년 공고문 초안.hwpx</span><span class="authoring-crumb-sep">{icon}</span><button type="button" class="authoring-crumb" aria-current="location">항목 · 견적 조건</button><span class="authoring-selection-note" title="고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요.">고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요.</span></div>
       <main class="authoring-canvas"><div class="authoring-document" id="document"><div style="height:3000px">본문</div></div></main>
     </div>
     <div class="authoring-splitter authoring-splitter-properties" role="separator" tabindex="0"></div>

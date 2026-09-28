@@ -393,13 +393,13 @@ export function createAuthoringController(deps: Deps) {
     if (id === viewId && state?.autoTrial && state?.trial) trialTimer = setTimeout(() => { void guarded(() => runTrial(id), "trial"); }, 350);
   }
 
-  /** U03: 선택 문구를 시험값으로 보관한다 — 이미 값이 있으면 덮어쓰지 않고 유지/교체를 묻는다. */
+  /** U03: 고른 문구를 시험값으로 보관한다 — 이미 값이 있으면 덮어쓰지 않고 유지/교체를 묻는다. */
   async function keepTrialValue(name: string, captured: string): Promise<boolean> {
     const values: Obj = { ...(view.values || {}) };
     if (name in values) {
       if (values[name] === captured) return false;
       const answer = await deps.modal.choose({ title: "시험값 보관", body: `‘${name}’ 필드에 시험값이 이미 있습니다.`,
-        choices: [{ value: "keep", label: "기존 값 유지" }, { value: "replace", label: "선택 문구로 교체" }] });
+        choices: [{ value: "keep", label: "기존 값 유지" }, { value: "replace", label: "고른 문구로 교체" }] });
       if (answer !== "replace") return false;
     }
     await trialInput({ ...values, [name]: captured }, view.selectedOptions || {});

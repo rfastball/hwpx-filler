@@ -53,19 +53,19 @@ REGION_COMMANDS = frozenset({"rename_slot", "rename_option", "adjust_range", "un
                              "duplicate", "move"})
 
 # Availability reasons (spec §6.1 / §13 sentences where they exist).
-REASON_INVALID_SELECTION = "선택 위치가 올바르지 않습니다."
-REASON_MULTI_REGION = "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
-REASON_OPTION_OUTSIDE_SLOT = "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."
-REASON_NEED_FIELD = "필드를 선택하세요."
-REASON_ONE_FIELD = "필드를 하나만 선택하세요."
-REASON_NEED_REGION = "항목이나 선택 영역을 선택하세요."
-REASON_NEED_OPTION = "선택 영역을 선택하세요."
-REASON_REGION_OVERLAP = "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
-REASON_FIELD_OVERLAP = "선택 범위에 기존 필드가 포함되어 있습니다."
+REASON_INVALID_SELECTION = "고른 위치가 올바르지 않습니다."
+REASON_MULTI_REGION = "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
+REASON_OPTION_OUTSIDE_SLOT = "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 고르세요."
+REASON_NEED_FIELD = "필드를 고르세요."
+REASON_ONE_FIELD = "필드를 하나만 고르세요."
+REASON_NEED_REGION = "항목이나 선택 영역을 고르세요."
+REASON_NEED_OPTION = "선택 영역을 고르세요."
+REASON_REGION_OVERLAP = "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+REASON_FIELD_OVERLAP = "고른 범위에 기존 필드가 포함되어 있습니다."
 REASON_STRUCTURE_FIRST = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
-REASON_NO_CONTENT_LINE = "선택할 내용 줄이 없습니다."
-REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 선택하세요."
-REASON_NEED_RANGE = "문서에서 범위를 선택하세요."
+REASON_NO_CONTENT_LINE = "고를 내용 줄이 없습니다."
+REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 고르세요."
+REASON_NEED_RANGE = "문서에서 범위를 고르세요."
 ALTERNATIVE_CREATE_SLOT = {"label": "먼저 항목 만들기", "command_type": "create_slot"}
 CASCADE_MESSAGE = "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
 
@@ -299,10 +299,10 @@ def _from_utf16(text: str, offset: object) -> int:
             return index
         units += _unit_length(char)
         if units > offset:
-            raise ValueError("선택 위치가 문자 중간에 있습니다.")
+            raise ValueError("고른 위치가 문자 중간에 있습니다.")
     if units == offset:
         return len(text)
-    raise ValueError("선택 위치가 문서 밖에 있습니다.")
+    raise ValueError("고른 위치가 문서 밖에 있습니다.")
 
 
 def from_utf16(text: str, offset: object) -> int:
@@ -551,7 +551,7 @@ def _edits(text: str, command: Mapping[str, object], *,
     start = _from_utf16(text, command.get("start", 0))
     end = _from_utf16(text, command.get("end", command.get("start", 0)))
     if start > end:
-        raise ValueError("선택 범위의 시작과 끝이 뒤바뀌었습니다.")
+        raise ValueError("고른 범위의 시작과 끝이 뒤바뀌었습니다.")
     expanded = False
     if action == "create_field":
         name = _identifier(command.get("name"))
@@ -575,7 +575,7 @@ def _edits(text: str, command: Mapping[str, object], *,
     if action in {"relink_field", "unset_field"}:
         match = next((item for item in matches if item.start() <= start < item.end()), None)
         if match is None:
-            raise ValueError("선택한 필드 사용 위치를 찾을 수 없습니다.")
+            raise ValueError("고른 필드 사용 위치를 찾을 수 없습니다.")
         replacement = ("{{" + _identifier(command.get("name")) + "}}") if action == "relink_field" else command.get("text")
         if not isinstance(replacement, str):
             raise ValueError("의미를 해제한 뒤 남길 본문을 입력하세요.")
@@ -591,7 +591,7 @@ def _edits(text: str, command: Mapping[str, object], *,
             owners = [place for place in scan.placements if place.kind == PLACEMENT_SLOT
                       and place.begin_marker_line < first <= last < place.end_marker_line]
             if len(owners) != 1 or owners[0].slot_id != command.get("slot_id"):
-                raise ValueError("선택 범위는 하나의 항목 안에 있어야 합니다.")
+                raise ValueError("고른 범위는 하나의 항목 안에 있어야 합니다.")
             if any(option.id == command.get("id") for slot in scan.slots
                    if slot.id == owners[0].slot_id for option in slot.options):
                 raise ValueError("같은 항목에 해당 선택 식별자가 이미 있습니다.")
@@ -934,7 +934,7 @@ def trial(
             "option_id": place.option_id,
             "selected_option_id": selected.get(place.slot_id),
             "label": omitted.label or omitted.id,
-            "reason": (f"현재 시험에서 '{chosen_option.label or chosen_option.id}'을 선택해 "
+            "reason": (f"현재 시험에서 '{chosen_option.label or chosen_option.id}'을 골라 "
                        f"'{omitted.label or omitted.id}'은 제외되었습니다."),
             "start": _to_utf16(content, starts[place.begin_marker_line]),
             "end": _to_utf16(content, starts[place.end_marker_line + 1]),

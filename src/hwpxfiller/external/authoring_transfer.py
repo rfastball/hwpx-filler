@@ -28,7 +28,7 @@ _HP = f"{{{HP_NS}}}"
 
 def _offset(text: str, units: object) -> int:
     if not isinstance(units, int) or units < 0:
-        raise ValueError("선택 위치가 올바르지 않습니다.")
+        raise ValueError("고른 위치가 올바르지 않습니다.")
     position = 0
     for index, char in enumerate(text):
         if position == units:
@@ -38,7 +38,7 @@ def _offset(text: str, units: object) -> int:
             break
     if position == units:
         return len(text)
-    raise ValueError("선택 위치가 문자 경계에 있지 않습니다.")
+    raise ValueError("고른 위치가 문자 경계에 있지 않습니다.")
 
 
 def _units(text: str, index: int) -> int:
@@ -53,19 +53,19 @@ def _txt_capture(text: str, selector: Mapping[str, object]) -> dict:
         match = next((item for item in iter_field_token_matches(text)
                       if item.start() <= position < item.end()), None)
         if match is None:
-            raise ValueError("복사할 필드 사용 위치를 선택하세요.")
+            raise ValueError("복사할 필드 사용 위치를 고르세요.")
         return {"kind": "field", "name": match.group(1).strip(), "text": match.group(0),
                 "plain": match.group(1).strip()}
     if kind == "text":
         start, end = _offset(text, selector.get("start")), _offset(text, selector.get("end"))
         if start >= end:
-            raise ValueError("복사할 본문을 선택하세요.")
+            raise ValueError("복사할 본문을 고르세요.")
         snippet = text[start:end]
         if any(span.start < end and start < span.end for span in scan_text_token_spans(text)):
             raise ValueError("의미를 포함한 범위는 필드·항목·선택으로 복사하세요.")
         return {"kind": "text", "text": snippet, "plain": snippet}
     if kind not in {"slot", "option"}:
-        raise ValueError("복사할 의미 요소를 선택하세요.")
+        raise ValueError("복사할 의미 요소를 고르세요.")
     location = next((item["location"] for slot in detail["slots"]
                      for item in ([slot] if kind == "slot" else slot["options"])
                      if (slot["id"] == selector.get("slot_id")
@@ -297,7 +297,7 @@ def _block_paste(source: HwpxPackage, target: HwpxPackage, selector: Mapping[str
     entry = destination.get("entry")
     index = destination.get("destination_paragraph")
     if not isinstance(entry, str) or not isinstance(index, int) or destination.get("start", 0) != 0:
-        raise ValueError("붙여넣을 문단 시작 위치를 선택하세요.")
+        raise ValueError("붙여넣을 문단 시작 위치를 고르세요.")
     root = _root(target, entry)
     paragraphs = [node for node in root if node.tag == f"{_HP}p"]
     if not paragraphs:

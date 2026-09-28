@@ -511,7 +511,7 @@ test("UX-04/IDE-02 APG menu: Shift+F10 on an outline item selects it and opens a
 
 test("IDE-02 (P-04): with verdicts the context menu carries runnable items and alternatives only; with nothing runnable it is one 명령 that opens the palette", async () => {
   const types = ["create_field", "create_slot", "create_option", "rename_field", "relink_field", "unset_field", "rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"];
-  const blocked = types.map((type) => ({ type, enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: null }));
+  const blocked = types.map((type) => ({ type, enabled: false, reason: "먼저 문서에서 내용을 고르세요.", alternative: null }));
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
   const view = () => env.controller.viewModel.getSnapshot();
   const canvas = env.container.querySelector(".authoring-canvas");
@@ -532,7 +532,7 @@ test("IDE-02 (P-04): with verdicts the context menu carries runnable items and a
   // 그 밖에 되는 것이 없으니 팔레트를 여는 「명령」이 뒤따른다(사유가 항목에 서므로 공유 머리 줄은 없다).
   assert.deepEqual(items.map((node) => node.getAttribute("aria-label") || node.textContent), ["필드로 만들기", "명령"]);
   assert.equal(items[0].getAttribute("aria-disabled"), "true");
-  assert.equal(env.container.querySelector(`#${items[0].getAttribute("aria-describedby")}`).textContent, "먼저 문서에서 내용을 선택하세요.");
+  assert.equal(env.container.querySelector(`#${items[0].getAttribute("aria-describedby")}`).textContent, "먼저 문서에서 내용을 고르세요.");
   assert.equal(env.container.querySelector("#authoring-command-reason-menu"), null);
   assert.equal(env.document.activeElement, items[1], "초점은 첫 사용 가능 항목(「명령」)");
   fire(env, items[0], "click");
@@ -545,7 +545,7 @@ test("IDE-02 (P-04): with verdicts the context menu carries runnable items and a
   assert.ok(input, "팔레트가 선다");
   assert.equal(env.document.activeElement, input, "입력칸에 초점");
   const group = byRole(env, "group").find((node) => node.closest(".authoring-command-palette"));
-  assert.equal(group.getAttribute("aria-label"), "먼저 문서에서 내용을 선택하세요.", "사유는 팔레트의 무리 이름으로 읽힌다");
+  assert.equal(group.getAttribute("aria-label"), "먼저 문서에서 내용을 고르세요.", "사유는 팔레트의 무리 이름으로 읽힌다");
   assert.equal(byRole(env, "group").filter((node) => node.closest(".authoring-command-palette")).length, 1, "사유당 한 무리");
   env.root.unmount();
 });
@@ -555,7 +555,7 @@ test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the
   const env = await boot(hwpxTab());
   const view = () => env.controller.viewModel.getSnapshot();
   env.controller.update({ commands: types.map((type) => type === "create_field" || type === "rename_field" ? { type, enabled: true, reason: null, alternative: null }
-    : { type, enabled: false, reason: type.startsWith("create") ? "먼저 항목 안의 내용을 선택하세요." : "먼저 필드를 선택하세요.", alternative: null }) });
+    : { type, enabled: false, reason: type.startsWith("create") ? "먼저 항목 안의 내용을 고르세요." : "먼저 필드를 고르세요.", alternative: null }) });
   await settle();
   const trialTab = () => env.container.querySelector("#authoring-dock-tab-trial");
   assert.equal(trialTab().getAttribute("aria-selected"), "true", "시험 탭이 열려 있다");
@@ -590,7 +590,7 @@ test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the
   // ↑ 는 감싸 돌아 마지막(흐린) 항목으로 — 흐린 항목도 활성이 되어 무리 이름(사유)이 읽힌다. Enter 는 아무것도 하지 않는다.
   press(env, "ArrowUp");
   assert.equal(active().getAttribute("aria-disabled"), "true");
-  assert.equal(active().closest('[role="group"]').getAttribute("aria-label"), "먼저 필드를 선택하세요.");
+  assert.equal(active().closest('[role="group"]').getAttribute("aria-label"), "먼저 필드를 고르세요.");
   assert.equal(active().getAttribute("aria-selected"), "true");
   assert.equal(press(env, "Enter", { nativeEvent: { isComposing: true } }).prevented, false, "조합 중 Enter 는 팔레트의 것이 아니다");
   press(env, "Enter");
@@ -885,9 +885,9 @@ test("IDE-01 P-12: the status bar's problem count opens the 문제 tab and moves
 });
 
 test("IDE-01 P-15: F2 where no rename is possible leaves the properties panel shut and puts Python's reason on the location row", async () => {
-  const commands = [{ type: "rename_field", enabled: false, reason: "필드를 선택하세요.", alternative: null },
-    { type: "rename_option", enabled: false, reason: "선택 영역을 선택하세요.", alternative: null },
-    { type: "rename_slot", enabled: false, reason: "항목이나 선택 영역을 선택하세요.", alternative: null }];
+  const commands = [{ type: "rename_field", enabled: false, reason: "필드를 고르세요.", alternative: null },
+    { type: "rename_option", enabled: false, reason: "선택 영역을 고르세요.", alternative: null },
+    { type: "rename_slot", enabled: false, reason: "항목이나 선택 영역을 고르세요.", alternative: null }];
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
   env.flushSync(() => env.controller.update({ commands }));
   const toolbar = env.container.querySelector('.authoring-toolbar [data-rove][tabindex="0"]');
@@ -896,15 +896,15 @@ test("IDE-01 P-15: F2 where no rename is possible leaves the properties panel sh
   await settle();
   assert.equal(env.container.querySelector(".authoring-properties"), null, "속성 패널을 열지 않는다");
   const note = env.container.querySelector(".authoring-selection .authoring-selection-note");
-  assert.equal(note.textContent, "필드를 선택하세요.");
-  assert.equal(note.getAttribute("title"), "필드를 선택하세요.");
-  assert.equal(env.container.querySelector(".authoring-live").textContent, "필드를 선택하세요.", "단일 live region 이 한 번 읽는다");
+  assert.equal(note.textContent, "필드를 고르세요.");
+  assert.equal(note.getAttribute("title"), "필드를 고르세요.");
+  assert.equal(env.container.querySelector(".authoring-live").textContent, "필드를 고르세요.", "단일 live region 이 한 번 읽는다");
   assert.equal(env.document.activeElement, toolbar, "초점은 그대로다");
   env.root.unmount();
 });
 
 test("NG-11: a dimmed create button takes focus and a press, runs nothing and puts Python's reason on the location row; the dock stays; the next caret move clears it", async () => {
-  const commands = [{ type: "create_field", enabled: false, reason: "선택 범위에 기존 필드가 포함되어 있습니다.", alternative: null },
+  const commands = [{ type: "create_field", enabled: false, reason: "고른 범위에 기존 필드가 포함되어 있습니다.", alternative: null },
     { type: "create_slot", enabled: true, reason: null, alternative: null },
     { type: "create_option", enabled: false, reason: "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요.", alternative: null }];
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
@@ -915,9 +915,9 @@ test("NG-11: a dimmed create button takes focus and a press, runs nothing and pu
   const dimmed = create("필드로 만들기");
   assert.equal(dimmed.getAttribute("aria-disabled"), "true", "흐린 단추는 aria-disabled 다");
   assert.ok(!dimmed.hasAttribute("disabled"), "disabled 속성이 없어 초점과 누름을 받는다");
-  assert.equal(dimmed.getAttribute("title"), "선택 범위에 기존 필드가 포함되어 있습니다.", "hover 사유는 그대로다");
+  assert.equal(dimmed.getAttribute("title"), "고른 범위에 기존 필드가 포함되어 있습니다.", "hover 사유는 그대로다");
   assert.equal(create("항목으로 만들기").getAttribute("aria-disabled"), null, "켜진 단추는 표지가 없다");
-  // 도구 막대 roving 이 흐린 단추에도 초점을 준다 — 앞 단추(모드 「구조」)에서 → 한 번이면 그 단추다.
+  // 도구 막대 roving 이 흐린 단추에도 초점을 준다 — 앞 단추(모드 「이름표」)에서 → 한 번이면 그 단추다.
   focusOn(env, toolbar.querySelector('[data-rove="mode-structure"]'));
   press(env, "ArrowRight");
   assert.equal(env.document.activeElement, dimmed, "→ 가 흐린 「필드로 만들기」에 선다");
@@ -929,8 +929,8 @@ test("NG-11: a dimmed create button takes focus and a press, runs nothing and pu
   assert.equal(env.container.querySelector(".authoring-properties"), null, "속성 패널을 열지 않는다");
   assert.equal(env.container.querySelector("#authoring-dock-panel").getAttribute("aria-labelledby"), "authoring-dock-tab-problems", "펼친 독 탭이 남는다");
   const note = env.container.querySelector(".authoring-selection .authoring-selection-note");
-  assert.equal(note.textContent, "선택 범위에 기존 필드가 포함되어 있습니다.", "Python 의 사유 문장 그대로다");
-  assert.equal(env.container.querySelector(".authoring-live").textContent, "선택 범위에 기존 필드가 포함되어 있습니다.", "단일 live region 이 한 번 읽는다");
+  assert.equal(note.textContent, "고른 범위에 기존 필드가 포함되어 있습니다.", "Python 의 사유 문장 그대로다");
+  assert.equal(env.container.querySelector(".authoring-live").textContent, "고른 범위에 기존 필드가 포함되어 있습니다.", "단일 live region 이 한 번 읽는다");
   assert.equal(env.document.activeElement, dimmed, "초점은 누른 단추에 남는다");
   // 다음 캐럿 이동에서 걷힌다(IDE-01 규칙).
   await env.controller.selection("a", { entry: "Contents/section0.xml", paragraph: 1, start: 0, end: 0 });
