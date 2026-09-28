@@ -180,7 +180,8 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
 
   assert.equal(typeof createPersonalization, "function");
   assert.deepEqual(Object.keys(createPersonalization({ bridge })).sort(),
-    ["apply", "currentFontScale", "masterMax", "masterMin", "saveMasterWidth",
+    ["apply", "authoringWidth", "currentFontScale", "masterMax", "masterMin",
+      "saveAuthoringWidth", "saveMasterWidth", "setAuthoringWidth",
       "setFontScale", "setMasterWidth", "toggleFontScale"]);
 
   assert.equal(typeof createJobReadController, "function");

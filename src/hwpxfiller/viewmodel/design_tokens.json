@@ -109,6 +109,11 @@
   "radius": { "control": 6, "surface": 9, "overlay": 12, "pill": 999 },
   "layer": { "overlay_root": 90, "popover": 100, "modal": 200 },
   "type": { "caption": 12, "body": 14, "dense": 13, "strong": 15, "section": 19, "kpi": 23 },
+  "font": {
+    "_note": "글꼴 스택 — 테마 불변(라이트 :root 만). ui=본문, mono=토큰·경로·원문 편집기. 한글 글리프가 없는 서양 고정폭(Cascadia·Consolas) 뒤에 D2Coding 을 두어 한글도 고정폭으로 떨어지게 한다.",
+    "ui": "\"Pretendard GOV Variable\",\"Segoe UI\",\"Malgun Gothic\",\"Apple SD Gothic Neo\",system-ui,sans-serif",
+    "mono": "\"Cascadia Code\",\"Consolas\",\"D2Coding\",ui-monospace,monospace"
+  },
   "motion": {
     "_note": "조작 피드백 모션(#179 슬라이스 4, emil-design-eng). 테마 불변 — space/radius/type 처럼 라이트 :root 만. dur_*=ms(무단위 정수 → gen 이 ms 부착), ease_*=cubic-bezier 문자열(그대로). press=버튼 눌림(100~160), pop=메뉴/팝오버(125~250), modal=모달 등장(180~220). 전부 <300ms.",
     "dur_press": 140, "dur_pop": 150, "dur_modal": 160,

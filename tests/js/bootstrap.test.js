@@ -22,6 +22,7 @@ const FACTORY_SERVICES = {
   Personalization: [
     "apply", "currentFontScale", "toggleFontScale", "setFontScale",
     "setMasterWidth", "saveMasterWidth", "masterMin", "masterMax",
+    "authoringWidth", "setAuthoringWidth", "saveAuthoringWidth",
   ],
   Modal: ["open", "close", "confirm", "prompt", "choose", "restoreFocus"],
   SurfaceSheet: ["open", "close", "closeAndRestore", "closeAllAndRestore", "isOpen", "restore"],
@@ -55,7 +56,7 @@ const FACTORY_SERVICES = {
     "importTemplateFile", "copyClipboard", "pickOutputFolder", "pickTemplatesRoot",
     "generate", "openJobInEditor", "newJobFromData",
     "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "openPath", "revealPath",
-    "copyPath", "saveArtifactAs", "setTheme", "setFontScale", "setMasterWidth",
+    "copyPath", "saveArtifactAs", "setTheme", "setFontScale", "setMasterWidth", "setAuthoringWidth",
     "confirmWindowClose", "cancelWindowClose",
   ],
 };

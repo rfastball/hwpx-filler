@@ -31,6 +31,7 @@ __all__ = (
     "DEFAULT_MASTER_WIDTH",
     "MIN_MASTER_WIDTH",
     "MAX_MASTER_WIDTH",
+    "AUTHORING_WIDTH_BOUNDS",
     "VALID_DRAFT_FONTS",
     "PROPORTIONAL_DRAFT_FONTS",
     "BOOT_STAMP_UNKNOWN_VERSION",
@@ -44,6 +45,8 @@ __all__ = (
     "save_font_scale",
     "load_master_width",
     "save_master_width",
+    "load_authoring_widths",
+    "save_authoring_width",
     "load_window_geometry",
     "save_window_geometry",
     "load_draft_target_font",
@@ -81,6 +84,13 @@ VALID_FONT_SCALES = ("normal", "large", "larger")
 DEFAULT_MASTER_WIDTH = 240
 MIN_MASTER_WIDTH = 180
 MAX_MASTER_WIDTH = 420
+# 템플릿 저작 작업대의 구조·속성 패널 폭(UX-08 #1027). 단위는 **기준 px**(뿌리 글자 16px
+# 기준) — 화면은 이 값을 16 으로 나눈 rem 으로 그리므로 글자 배율(125%·150%)을 따라 함께
+# 자란다. 저장값이 없으면 화면이 창 폭 비례 기본값(clamp)을 쓴다. 문서별이 아니라 앱 전역이다.
+AUTHORING_WIDTH_BOUNDS: "dict[str, tuple[int, int]]" = {
+    "outline": (176, 384),
+    "properties": (224, 448),
+}
 
 # 대상 글꼴 선언(R-flow 블록 3 결정 17) — 붙여넣는 곳(기안작성기)의 표준 글꼴. 클립보드
 # 평문은 글꼴을 운반하지 않으므로(글꼴=목적지 소유) 이건 원문 렌더가 미리 따를 글꼴일 뿐이고,
@@ -264,6 +274,31 @@ def save_master_width(width: int) -> None:
             f"목록 폭은 {MIN_MASTER_WIDTH}~{MAX_MASTER_WIDTH}px 정수여야 합니다"
         )
     _save_key("master_width", width)
+
+
+def load_authoring_widths() -> "dict[str, int | None]":
+    """저작 작업대 패널 폭(기준 px). 없거나 비유효한 칸은 ``None`` — 화면 기본값을 쓴다."""
+    raw = _read().get("authoring_widths")
+    bucket = raw if isinstance(raw, dict) else {}
+    widths: "dict[str, int | None]" = {}
+    for panel, (low, high) in AUTHORING_WIDTH_BOUNDS.items():
+        value = bucket.get(panel)
+        valid = isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+        widths[panel] = value if valid else None
+    return widths
+
+
+def save_authoring_width(panel: str, width: int) -> None:
+    """한 패널의 폭만 갱신한다 — 다른 패널의 저장값은 보존한다(:func:`_save_nested`)."""
+    bounds = AUTHORING_WIDTH_BOUNDS.get(panel) if isinstance(panel, str) else None
+    if bounds is None:
+        raise ValueError(
+            f"유효하지 않은 저작 패널: {panel!r} (허용: {tuple(AUTHORING_WIDTH_BOUNDS)})"
+        )
+    low, high = bounds
+    if not isinstance(width, int) or isinstance(width, bool) or not low <= width <= high:
+        raise ValueError(f"{panel} 패널 폭은 {low}~{high} 정수여야 합니다")
+    _save_nested("authoring_widths", panel, width)
 
 
 def load_window_geometry() -> "dict[str, int | bool] | None":

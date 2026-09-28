@@ -34,6 +34,7 @@ import type { SheetPickerController } from "./sheet_picker.ts";
 import { WorkbenchScreen } from "./workbench.ts";
 import { AuthoringScreen } from "./authoring.ts";
 import type { AuthoringController } from "./authoring_controller.ts";
+import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { WorkbenchController } from "./workbench.ts";
 
 type Obj = Record<string, unknown>;
@@ -86,6 +87,8 @@ export type ProductScreensPorts = {
   editor: EditorController;
   workbench: WorkbenchController;
   authoring: AuthoringController;
+  /** 저작 패널 폭의 주인(셸 개인화 서비스) — 분할선이 싣고 남긴다. */
+  authoringLayout: AuthoringLayout;
   jobRead: JobReadController;
   jobRun: JobRunController;
   slotContent: JobContentSelectionController;
@@ -197,7 +200,7 @@ export function ProductScreens(ports: ProductScreensPorts): ReactNode {
     h("section", screenProps("workbench", active),
       h(WorkbenchScreen as any, { controller: ports.workbench })),
     h("section", screenProps("authoring", active),
-      h(AuthoringScreen as any, { controller: ports.authoring })),
+      h(AuthoringScreen as any, { controller: ports.authoring, layout: ports.authoringLayout })),
   );
   return createElement(Fragment, null,
     createPortal(screens, targets.stage, "product-screens"),

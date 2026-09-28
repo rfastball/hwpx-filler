@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import { COMMANDS } from "./authoring_controller.ts";
+import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
+import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor } from "./authoring_controller.ts";
 import { TPL_STATUS_COPY } from "./job_run.ts";
 import { FOCUSABLE, clampMenu, errorParts, focusFirst, focusable, isCurrentTarget, liveStep, menuTrigger, roveFocus, tabName, treeKey } from "./authoring_a11y.ts";
@@ -614,7 +616,7 @@ function menuAnchor(target: HTMLElement): { left: number; top: number; bottom: n
   return target.getBoundingClientRect();
 }
 
-export function AuthoringScreen({ controller }: Props): ReactNode {
+export function AuthoringScreen({ controller, layout }: Props & { layout?: AuthoringLayout | null }): ReactNode {
   const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot) || {};
   const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot, controller.viewModel.getSnapshot);
   const tabs: Obj[] = snapshot.tabs || [];
@@ -627,6 +629,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const pendingTabFocus = useRef("");
   const liveRef = useRef<ReturnType<typeof liveStep>["state"] | null>(null);
   const [toolbarKey, setToolbarKey] = useState("");
+  // 좁은 폭(컨테이너 64rem 이하)에서만 쓰이는 구조 레일의 펼침 — 넓은 폭에서는 CSS 가 무시한다.
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const shellInput: ShellInput = useRef<ShellInput["current"]>({});
   const dock = dockTabs(item, view);
   const counts = useMemo(() => problemCounts(item?.problems), [item?.problems]);
@@ -883,11 +887,9 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       else if (!focusable(view.contextMenu?.trigger)) focusFirst([toolbarEntry()]);
     }
     else if (shortcut === "cycle") {
-      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-tabs,.authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock") || [])];
-      const current = panels.findIndex((panel) => panel.contains(document.activeElement));
-      // 패널 간 초점 이동(§10): roving 묶음(탭·도구 막대·구조 목록)은 제 대기 항목(tabindex=0)으로, 나머지는 첫 **활성** 제어로 간다.
-      const next = panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length];
-      focusFirst([next?.querySelector('[role="tab"][tabindex="0"],[role="treeitem"][tabindex="0"],[data-rove][tabindex="0"]'), next?.querySelector(FOCUSABLE)]);
+      // 패널 간 초점 이동(§10): 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 선다(authoring_layout.ts).
+      // roving 묶음(탭·도구 막대·구조 목록)은 제 대기 항목(tabindex=0)으로 들어간다(UX-04).
+      cyclePanels([...(root.current?.querySelectorAll<HTMLElement>(PANEL_CYCLE) || [])], document.activeElement, !!event.shiftKey);
     }
   } },
     // 단일 live region(UX-04) — 보이지 않고, 전이 때만 한 줄이 선다. 차례 번호가 바뀌면 같은 문장도 다시 읽힌다.
@@ -962,7 +964,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
         button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown, ...rove("trial") }),
         h("select", { className: "field", "aria-label": "확대", value: view.zoom, ...rove("zoom"), onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
-    tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
+    tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}${outlineOpen ? " outline-open" : ""}` },
+      item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, onClick: () => setOutlineOpen(!outlineOpen) }, outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기"),
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: contextMenu },
         h("h2", { id: "authoring-outline-structure" }, "템플릿 구조"),
         !!item.analysis?.slots?.length && h(OutlineTree, { key: `${item.id}:structure`, labelledBy: "authoring-outline-structure", onSelect: chooseFromOutline, onMenu: outlineMenu,
@@ -980,6 +983,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
             children: field.occurrences?.length ? () => field.occurrences.map((occ: Obj, index: number): TreeNode => ({ key: `occurrence:${field.name}#${index}`,
               label: outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }),
               content: [`${index + 1}. ${occ.context || field.name}`], entry: { ...occ, name: field.name, kind: "field" }, current: isCurrentTarget("occurrence", { ...occ, name: field.name }, view.selected) })) : undefined })) })),
+      item && h(PanelSplitter, { panel: "outline", label: "구조 패널 너비", layout }),
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
         item && h("div", { className: "authoring-selection", role: "navigation", "aria-label": "현재 위치의 의미" },
@@ -987,7 +991,11 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
           ...(view.matches || []).map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
         h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
-      item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview, onClose: () => returnFocus("properties") })),
+      item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
+      item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview, onClose: () => returnFocus("properties") }),
+      // 좁은 폭의 속성 시트 뒤 가림막 — 누르면 「닫기」와 같은 일을 한다(초점도 같은 자리로, 넓은 폭에서는 CSS 가 숨긴다).
+      item && view.panel === "properties" && h("div", { className: "authoring-scrim", "aria-hidden": true,
+        onClick: () => { controller.update({ panel: "", preview: null, refusal: null }); returnFocus("properties"); } })),
     // 하단 독(§3.1·APG tabs): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
     // ←→·Home·End 로 탭을 옮기고 Enter·Space 로 펼치면 그 패널의 첫 제어로 간다.
     (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}`, role: "region", "aria-label": "보조 패널" },

@@ -62,6 +62,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `reveal_path` | `path: str` |
 | `save_artifact_as` | `ordinal: object` |
 | `save_authoring_document` | `session_id: str, revision: int` |
+| `set_authoring_width` | `panel: str, width: int` |
 | `set_font_scale` | `scale: str` |
 | `set_master_width` | `width: int` |
 | `set_theme` | `mode: str` |

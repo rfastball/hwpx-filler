@@ -1169,3 +1169,21 @@ test("UX-07/§10: an Escape forwarded from the editor iframe is a shell Escape (
   assert.equal(event.nativeEvent.isComposing, undefined);
   event.preventDefault();
 });
+
+test("UX-04 × UX-08: F6 cycles the document tabs too and enters a roving group at its waiting item, not its first (tabindex=-1) control", async () => {
+  const { cyclePanels, PANEL_CYCLE } = await import("../../frontend/src/screens/authoring_layout.ts");
+  assert.equal(PANEL_CYCLE.split(",")[0], ".authoring-tabs", "문서 탭 줄이 순환의 첫 자리다");
+  const focused = [];
+  const panel = (name, entry) => ({
+    name, contains: (node) => node === name, matches: () => false, getClientRects: () => ({ length: 1 }), focus() {},
+    querySelector: (selector) => selector.includes('[tabindex="0"]') && !selector.includes(":not(")
+      ? (entry ? { focus: () => focused.push(`${name}:${entry}`) } : null)
+      : { focus: () => focused.push(`${name}:first`) },
+  });
+  const panels = [panel("tabs", "selected-tab"), panel("toolbar", "last-focused"), panel("outline", "current-row"), panel("canvas", null)];
+  assert.equal(cyclePanels(panels, "tabs", false).name, "toolbar");
+  assert.equal(cyclePanels(panels, "toolbar", false).name, "outline");
+  assert.equal(cyclePanels(panels, "outline", false).name, "canvas");
+  assert.equal(cyclePanels(panels, "canvas", false).name, "tabs");
+  assert.deepEqual(focused, ["toolbar:last-focused", "outline:current-row", "canvas:first", "tabs:selected-tab"]);
+});

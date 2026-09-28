@@ -587,6 +587,11 @@ class WebFrontend:
         settings.save_master_width(width)
         return width
 
+    def set_authoring_width(self, panel: str, width: int) -> int:
+        """저작 작업대 구조·속성 패널 폭(기준 px) 영속 — 분할선을 놓을 때 부른다."""
+        settings.save_authoring_width(panel, width)
+        return width
+
     # 바깥 파일의 유일 입구는 import_template_file(가져오기=복사)이다.
     def import_template_file(self, screen: str) -> "str | None":
         """Win32 열기 다이얼로그(HWPX·TXT) → 라이브러리 복사 → 편집기 채택 판정(F8 통일).
@@ -1527,6 +1532,7 @@ def main(
                 {
                     "font_scale": settings.load_font_scale(),
                     "master_width": settings.load_master_width(),
+                    "authoring_widths": settings.load_authoring_widths(),
                 },
                 settings.load_theme(),
             )

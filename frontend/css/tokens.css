@@ -70,6 +70,8 @@
   --z-overlay-root:90;
   --z-popover:100;
   --z-modal:200;
+  --font-ui:"Pretendard GOV Variable","Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  --font-mono:"Cascadia Code","Consolas","D2Coding",ui-monospace,monospace;
   color-scheme:light;
 }
 html{font-size:100%;}
