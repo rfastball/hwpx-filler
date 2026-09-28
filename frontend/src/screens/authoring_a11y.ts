@@ -39,8 +39,8 @@ export const FOCUSABLE = [
   "select:not([disabled]):not([tabindex=\"-1\"])", "textarea:not([disabled]):not([tabindex=\"-1\"])",
   "[tabindex=\"0\"]", "[contenteditable=\"true\"]", "iframe",
 ].join(",");
-/** 메뉴를 연 자리로 기록할 가장 가까운 초점 가능 조상(§6.1) — 글자 span 이 아니라 그 줄·버튼·편집면이다. */
-export const TRIGGER = "button,[role=\"treeitem\"],[role=\"tab\"],[tabindex],[contenteditable=\"true\"],input,select,textarea";
+/** 메뉴를 연 자리로 기록할 가장 가까운 초점 가능 조상(§6.1) — 글자 span 이 아니라 그 줄·버튼·편집면(iframe 포함)이다. */
+export const TRIGGER = "button,[role=\"treeitem\"],[role=\"tab\"],[tabindex],[contenteditable=\"true\"],input,select,textarea,iframe";
 
 type Element_ = { isConnected?: boolean; disabled?: boolean; closest?(selector: string): unknown; focus?(): void };
 /** 초점을 돌려받을 수 있는가 — 문서에 붙어 있고, 비활성·숨김·inert 안이 아니다. */

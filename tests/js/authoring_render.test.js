@@ -286,6 +286,29 @@ test("UX-04/UX-05: the field outline is an APG tree — occurrence rows are buil
   env.root.unmount();
 });
 
+test("UX-07: keys and right-clicks forwarded from the editor iframe take the shell's own Escape and menu paths; iframes are named", async () => {
+  const { controller, mounts, root } = await boot(hwpxTab());
+  const editor = mounts.find((record) => record.spec.fileName === "a.hwpx");
+  const trial = mounts.find((record) => record.spec.fileName === "시험 결과.hwpx");
+  assert.equal(editor.spec.title, "a.hwpx", "편집면 iframe 은 문서 이름으로 읽힌다");
+  assert.equal(trial.spec.title, "시험 결과");
+  const view = () => controller.viewModel.getSnapshot();
+  controller.update({ panel: "properties" });
+  await settle();
+  editor.spec.onShortcut("Escape");
+  await settle();
+  assert.equal(view().panel, "", "편집면 안의 Escape 도 셸 Escape 처럼 속성 패널을 닫는다");
+  editor.spec.onContextMenu({ x: 40, y: 60 });
+  await settle();
+  assert.deepEqual([view().contextMenu?.x, view().contextMenu?.y], [40, 60], "편집면 우클릭은 셸 문맥 메뉴를 그 자리에 연다");
+  controller.update({ panel: "search" });
+  editor.spec.onShortcut("Escape");
+  await settle();
+  assert.equal(view().contextMenu, null, "Escape 는 메뉴부터 닫는다");
+  assert.equal(view().panel, "search", "메뉴를 닫는 Escape 는 패널을 건드리지 않는다");
+  root.unmount();
+});
+
 test("#1025 §7.2: an opened outline field shows Python's normalized occurrence context in the label and accessible name, never the raw field command", async () => {
   const tab = { ...hwpxTab(), trial_result: null, trial_state: "untried",
     analysis: { revision: 3, slots: [], fields: [{ name: "진행상태", count: 1, occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, context: "[진행상태] - 누름틀",

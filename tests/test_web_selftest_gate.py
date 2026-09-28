@@ -1541,6 +1541,13 @@ class TestWebSelftestGate:
         assert b.get("hwpx_kbd_escape_closes") is True, b
         # 두 단계(되돌리기 → 닫기)를 넘지 않는다 — 셋째 Escape 가 필요하면 단계 규칙이 깨진 것이다.
         assert b["hwpx_kbd_escape_presses"] <= 2, b
+        # UX-07: 편집면 iframe 안의 Escape·F6 도 셸 어휘다 — 패널을 닫고, 초점을 다음 패널로 옮긴다.
+        assert b.get("hwpx_kbd_iframe_input") is True, b
+        assert b.get("hwpx_kbd_iframe_panel_open") is True, b
+        assert b.get("hwpx_kbd_iframe_escape_closes") is True, b
+        assert b.get("hwpx_kbd_iframe_f6_left") is True, (
+            f"편집면 안의 F6 이 셸의 다음 패널로 가지 않았습니다: {b.get('hwpx_kbd_iframe_f6_to')!r}"
+        )
 
     def test_hwpx_authoring_creates_field_undoes_renames_and_never_overwrites_source(
         self, selftest_result: dict
