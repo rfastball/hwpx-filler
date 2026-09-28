@@ -103,7 +103,7 @@ export const SCREEN_ACTIONS = {
     trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
     trial: { required: ["revision", "session_id"], optional: [] },
     search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
-    locate: { required: ["revision", "selection", "session_id"], optional: [] },
+    locate: { required: ["revision", "selection", "session_id"], optional: ["target"] },
     commands: { required: ["revision", "selection", "session_id"], optional: ["context"] },
     syntax: { required: ["session_id"], optional: [] },
     case_upsert: { required: ["name", "revision", "selected", "session_id", "values"], optional: [] },

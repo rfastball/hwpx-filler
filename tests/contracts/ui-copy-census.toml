@@ -1291,6 +1291,10 @@ text = "구조 오류를 수정한 뒤 결과를 시험하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
+text = "문서에서 범위를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
 text = "복제할 영역의 새 식별자를 입력하세요."
 
 [[sentence]]
@@ -1360,6 +1364,10 @@ text = "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
 text = "조정한 범위에 본문이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "필드 사용 위치를 하나 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
