@@ -52,14 +52,14 @@ export function problemAction(controller: Pick<AuthoringController, "select" | "
   return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target });
 }
 
-type MenuEvent = { clientX: number; clientY: number; target?: unknown; preventDefault?(): void };
+type MenuEvent = { clientX: number; clientY: number; anchorTop?: number; target?: unknown; preventDefault?(): void };
 /** 문맥 메뉴를 좌표(셸 기준)에 연다(§6.1). trigger 는 닫힐 때 초점을 돌려줄 자리 — 사건 대상의 가장 가까운 초점 가능
  *  조상이다(글자 span 이 아니다). anchor 는 창 좌표로, 그린 뒤 창 안에 들도록 위치를 다시 잰다(UX-04).
  *  kind="more" 는 도구 막대 「더보기」의 작은 메뉴다 — 같은 상태·Escape·바깥 클릭 경로를 쓴다. */
 export function openContextMenu(controller: Pick<AuthoringController, "update">, event: MenuEvent, root?: { getBoundingClientRect(): { left: number; top: number } } | null, kind?: "more"): void {
   event.preventDefault?.();
   const rect = root?.getBoundingClientRect();
-  controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), anchor: { x: event.clientX, y: event.clientY },
+  controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), anchor: { x: event.clientX, y: event.clientY, ...(event.anchorTop != null ? { top: event.anchorTop } : {}) },
     trigger: menuTrigger(event.target), ...(kind ? { kind } : {}) } });
 }
 /** 초점 요청(UX-04) — 초점은 사용자가 패널을 연 순간(속성·독 탭)·F2 에서만 옮긴다. 명령 select 의 값 변경,
@@ -500,7 +500,7 @@ function TxtTrialOutput({ controller, result, selected }: Props & { result?: Obj
 
 /** 구조 목록 한 줄(tree 항목). children 은 펼친 뒤에만 부른다(UX-05) — 사용 위치가 많은 문서에서 보이지 않는 줄을 짓지 않는다. */
 type TreeNode = { key: string; label: string; content: ReactNode[]; entry: Obj; current: boolean; open?: boolean; children?: () => TreeNode[] };
-type TreeHandlers = { onSelect(entry: Obj, element: HTMLElement): void; onMenu(entry: Obj, element: HTMLElement, anchor: { x: number; y: number }): void };
+type TreeHandlers = { onSelect(entry: Obj, element: HTMLElement): void; onMenu(entry: Obj, element: HTMLElement, anchor: { x: number; y: number; top?: number }): void };
 
 /** 구조 목록(§3.3·§10)은 APG treeview 다: 한 번의 Tab 으로 들어오고(roving tabindex), ↑↓ 이동·→ 펼침/첫 자식·
  *  ← 접힘/부모·Home·End, Enter·Space 로 고른다. 지금 선택된 대상은 aria-current 와 색이 아닌 표지(왼쪽 선·굵기)로 선다.
@@ -550,7 +550,7 @@ function OutlineTree({ labelledBy, nodes, onSelect, onMenu }: TreeHandlers & { l
       if (shellShortcut(event) === "context-menu") {
         event.preventDefault(); event.stopPropagation();
         const rect = (element.querySelector(".authoring-tree-row") || element).getBoundingClientRect();
-        onMenu(row.node.entry, element, { x: rect.left, y: rect.bottom });
+        onMenu(row.node.entry, element, { x: rect.left, y: rect.bottom, top: rect.top });
         return;
       }
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -591,7 +591,7 @@ export function liveState(item: Obj | undefined, view: Obj, pending: boolean): L
 }
 
 /** 키보드 문맥 메뉴의 자리 — 편집면이면 캐럿, 아니면 그 원소의 왼쪽 아래(§6.1·UX-04). */
-function menuAnchor(target: HTMLElement): { left: number; bottom: number } {
+function menuAnchor(target: HTMLElement): { left: number; top: number; bottom: number } {
   const selection = target.ownerDocument?.getSelection?.();
   if (target.isContentEditable && selection?.rangeCount) {
     const range = selection.getRangeAt(0);
@@ -710,9 +710,9 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   })();
   // 구조 목록 줄의 문맥 메뉴(오른쪽 클릭·Shift+F10): 그 줄을 고른 **뒤에** 연다 — 선택이 편집면으로 초점을 옮기므로
   // 먼저 열면 메뉴가 초점을 잃는다. trigger 는 그 줄이다.
-  const outlineMenu = (entry: Obj, element: HTMLElement, anchor: { x: number; y: number }) => act(async () => {
+  const outlineMenu = (entry: Obj, element: HTMLElement, anchor: { x: number; y: number; top?: number }) => act(async () => {
     await controller.select({ source_revision: item?.revision, ...entry });
-    openContextMenu(controller, { clientX: anchor.x, clientY: anchor.y, target: element }, root.current);
+    openContextMenu(controller, { clientX: anchor.x, clientY: anchor.y, anchorTop: anchor.top, target: element }, root.current);
   })();
   const editorState = item ? controller.editorState(item.id) : null;
   const readOnly = !!item && item.media === "hwpx" && item.rhwp_editable !== true;
@@ -853,7 +853,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       if (!item || !target.closest?.(".authoring-outline,.authoring-canvas")) return;
       const rect = menuAnchor(target);
       event.preventDefault();
-      openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target }, root.current);
+      openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, anchorTop: rect.top, target }, root.current);
       return;
     }
     if (shortcut !== "escape") event.preventDefault();

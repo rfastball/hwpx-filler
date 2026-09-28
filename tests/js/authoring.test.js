@@ -1047,6 +1047,7 @@ test("UX-04: clampMenu keeps the context menu inside the window — flips above 
   assert.deepEqual(clampMenu({ x: 100, y: 560 }, { width: 200, height: 300 }, viewport), { left: 100, top: 260 }, "아래가 모자라면 위로 뒤집는다");
   assert.deepEqual(clampMenu({ x: 700, y: 100 }, { width: 200, height: 100 }, viewport), { left: 596, top: 100 }, "오른쪽 끝에 붙는다");
   assert.deepEqual(clampMenu({ x: 10, y: 590 }, { width: 200, height: 700 }, viewport), { left: 10, top: 4 }, "창보다 크면 위 가장자리에서 시작한다");
+  assert.deepEqual(clampMenu({ x: 100, y: 560, top: 535 }, { width: 200, height: 300 }, viewport), { left: 100, top: 235 }, "키보드로 연 메뉴는 그 줄의 윗변 위로 뒤집어 줄을 가리지 않는다");
 });
 
 test("UX-04: errors show their first sentence; the host label, later lines and a Hangul-free tail go under 자세히", () => {

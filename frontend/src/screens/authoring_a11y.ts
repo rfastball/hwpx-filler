@@ -66,13 +66,15 @@ export function menuTrigger(target: unknown): unknown {
   return typeof el.closest === "function" ? el.closest(TRIGGER) ?? null : el;
 }
 
-/** 문맥 메뉴 위치(창 좌표): 아래로 열되 창 아래가 모자라고 위가 더 넉넉하면 위로 뒤집고, 그래도 넘치면 가장자리에 붙인다. */
-export function clampMenu(anchor: { x: number; y: number }, size: { width: number; height: number },
+/** 문맥 메뉴 위치(창 좌표): 아래로 열되 창 아래가 모자라고 위가 더 넉넉하면 위로 뒤집고, 그래도 넘치면 가장자리에 붙인다.
+ *  anchor.top 은 연 줄의 윗변이다(키보드로 연 메뉴) — 위로 뒤집을 때 그 줄을 가리지 않는다. 없으면 y(포인터 자리). */
+export function clampMenu(anchor: { x: number; y: number; top?: number }, size: { width: number; height: number },
   viewport: { width: number; height: number }, margin = 4): { left: number; top: number } {
   const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(value, Math.max(low, high)));
+  const upper = anchor.top ?? anchor.y;
   const below = viewport.height - margin - anchor.y;
-  const above = anchor.y - margin;
-  const top = size.height <= below || below >= above ? anchor.y : anchor.y - size.height;
+  const above = upper - margin;
+  const top = size.height <= below || below >= above ? anchor.y : upper - size.height;
   return {
     left: clamp(anchor.x, margin, viewport.width - margin - size.width),
     top: clamp(top, margin, viewport.height - margin - size.height),
