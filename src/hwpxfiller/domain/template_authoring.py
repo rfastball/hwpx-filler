@@ -62,6 +62,8 @@ REASON_REGION_OVERLAP = "선택 범위가 기존 영역과 겹칩니다. 범위�
 REASON_FIELD_OVERLAP = "선택 범위에 기존 필드가 포함되어 있습니다."
 REASON_STRUCTURE_FIRST = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
 REASON_NO_CONTENT_LINE = "선택할 내용 줄이 없습니다."
+REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 선택하세요."
+REASON_NEED_RANGE = "문서에서 범위를 선택하세요."
 ALTERNATIVE_CREATE_SLOT = {"label": "먼저 항목 만들기", "command_type": "create_slot"}
 CASCADE_MESSAGE = "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
 
@@ -173,6 +175,46 @@ def shared_reasons(*, field_hits: list[str], target_kind: str | None, has_slot: 
     for kind in ("adjust_range", "unwrap", "delete", "duplicate", "move"):
         reasons[kind] = blocked or (None if target_kind else REASON_NEED_REGION)
     return reasons
+
+
+#: Meaning elements chosen by identity (outline·search·match) rather than by a text range (§3.3).
+TARGET_KINDS: frozenset[str] = frozenset({"field", "occurrence", "slot", "option"})
+
+
+def target_availability(kind: str, *, name: str | None = None,
+                        structure_broken: bool) -> list[dict]:
+    """Availability for one meaning element chosen by identity, not by coordinates (§3.3·§6.1·§6.2).
+
+    필드 전체는 이름 변경만 연다 — 연결 변경·의미 해제는 사용 위치 한 곳의 명령이다(U07).
+    사용 위치는 그 자리의 연결 변경·의미 해제와 필드 전체 이름 변경을 연다(§6.2 첫 행).
+    항목·선택은 영역 명령을 연다. 대상은 글자 범위가 아니므로 만들기 명령은 필요한 범위를 안내한다.
+    """
+    if kind not in TARGET_KINDS:
+        raise ValueError(REASON_INVALID_SELECTION)
+    field = kind in {"field", "occurrence"}
+    region = None if field else kind
+    reasons = shared_reasons(field_hits=[name or ""] if field else [], target_kind=region,
+                             has_slot=region is not None, structure_broken=structure_broken)
+    if kind == "field":
+        reasons["relink_field"] = reasons["unset_field"] = REASON_NEED_OCCURRENCE
+    reasons["create_field"] = REASON_FIELD_OVERLAP if field else REASON_NEED_RANGE
+    if structure_broken:
+        reasons["create_slot"] = reasons["create_option"] = REASON_STRUCTURE_FIRST
+    else:
+        reasons["create_slot"] = REASON_NEED_RANGE if field else REASON_REGION_OVERLAP
+        reasons["create_option"] = (REASON_OPTION_OUTSIDE_SLOT if kind == "slot"
+                                    else REASON_REGION_OVERLAP if kind == "option"
+                                    else REASON_NEED_RANGE)
+    return availability_entries(reasons)
+
+
+def available_target_commands(media: str, content: str | object, kind: str,
+                              name: str | None = None) -> list[dict]:
+    """TXT availability for an identity-chosen target; structure errors come from the same scan."""
+    if media != "txt" or not isinstance(content, str):
+        raise ValueError(f"지원하지 않는 저작 형식입니다: {media}")
+    return target_availability(kind, name=name,
+                               structure_broken=bool(scan_text_structure(content).diagnostics))
 
 
 def field_candidates(fields: list[dict]) -> list[dict]:

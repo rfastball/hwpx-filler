@@ -47,6 +47,7 @@ from ..domain.template_authoring import (
     marker_target,
     navigate_action,
     shared_reasons,
+    target_availability,
 )
 from .hwpx_product_inspection import (
     inspect_slot_regions,
@@ -381,7 +382,7 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
     if kind not in {"text", "field", "structure"}:
         raise ValueError("검색 종류를 확인하세요.")
     if kind == "field":
-        return {"hits": [occurrence | {"name": field["name"]}
+        return {"hits": [occurrence | {"kind": "field", "name": field["name"]}
                          for field in analyze_hwpx(content)["fields"]
                          if query.casefold() in field["name"].casefold()
                          for occurrence in field["occurrences"]]}
@@ -1344,6 +1345,13 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
         reasons["create_option"] = REASON_OPTION_OUTSIDE_SLOT
         alternatives["create_option"] = dict(ALTERNATIVE_CREATE_SLOT)
     return availability_entries(reasons, alternatives)
+
+
+def available_target_commands_hwpx(content: object, kind: str, name: str | None = None) -> list[dict]:
+    """HWPX availability for an identity-chosen target; structure errors come from the same snapshot."""
+    package = require_package(content)
+    return target_availability(kind, name=name,
+                               structure_broken=bool(inspect_slot_regions(package).diagnostics))
 
 
 _NOTE_TABLE = "표 안의 문단은 소속된 본문 문단 줄에 이어서 표시됩니다."

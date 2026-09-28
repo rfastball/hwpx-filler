@@ -22,6 +22,7 @@ from ..external.hwpx_authoring import (
     analyze_hwpx,
     apply_hwpx,
     available_commands_hwpx,
+    available_target_commands_hwpx,
     search_hwpx,
     syntax_view_hwpx,
     trial_hwpx,
@@ -33,6 +34,9 @@ from .screens import MutationSink, PushSink
 
 _INVALID_SELECTION = "선택 위치가 유효하지 않습니다."
 _BAD_PAYLOAD = "액션 입력이 올바르지 않습니다."
+_OUTSIDE_SLOT = "선택한 위치가 교체 묶음 안에 없습니다."
+# 사용 위치를 되짚는 열쇠 — 분석이 낸 사용 위치에 실린 열쇠만 비교한다(TXT: start/end, HWPX: 섹션·순번·짝 id).
+_OCCURRENCE_KEYS = ("entry", "occurrence", "pairing_id", "paragraph", "cell_path", "start", "end")
 _SAVE_FIRST = "문서를 저장한 뒤 기존 작업에 적용하세요."
 _EXTERNAL_CHANGED = "파일이 외부에서 변경되었습니다. 다시 확인하세요."
 # 문제 목록(§7.1) 중 webapp 이 투영하는 두 종류. 구조 진단은 domain/external 이 그대로 낸다.
@@ -941,6 +945,11 @@ class AuthoringController:
         selection = p.get("selection")
         if not isinstance(selection, dict):
             raise ValueError("선택 위치가 올바르지 않습니다.")
+        target = p.get("target")
+        if target is not None:
+            if not isinstance(target, dict):
+                raise ValueError(_BAD_PAYLOAD)
+            return self._locate_target(session, target, selection)
         start, end = selection.get("start"), selection.get("end")
         if type(start) is not int or type(end) is not int or start < 0 or end < 0:
             return self._invalid_locate()
@@ -1036,8 +1045,86 @@ class AuthoringController:
         context = {"slot_id": slot_id, "option_id": option_id}
         return {"matches": matches,
                 "context": {**context,
-                            "reason": ("" if slot_id else "선택한 위치가 교체 묶음 안에 없습니다.")},
+                            "reason": ("" if slot_id else _OUTSIDE_SLOT)},
                 "commands": self._commands(session, selection, context)}
+
+    def _locate_target(self, session: AuthoringSession, target: dict, selection: dict) -> dict:
+        """Outline·search·match targets resolve by identity, not by a caret range (§3.3·§6.2).
+
+        필드 전체(``field``)·사용 위치(``occurrence``)·항목(``slot``)·선택(``option``)을 현재 분석에서
+        되짚고, 그 대상의 명령 가용성을 domain 이 판정한다. 되짚지 못하면 좌표 선택과 같은 무효다.
+        """
+        kind = target.get("kind")
+        analysis = session.analysis
+        name = target.get("name") if kind in {"field", "occurrence"} else None
+        slot_id: str | None = None
+        option_id: str | None = None
+        if kind in {"field", "occurrence"}:
+            field = next((item for item in analysis.get("fields", []) if item["name"] == name), None)
+            if not isinstance(name, str) or field is None:
+                return self._invalid_locate()
+            occurrences = field.get("occurrences") or []
+            if kind == "field":
+                location = occurrences[0] if occurrences else None
+                selected = {**field, "kind": "field"}
+            else:
+                found = [occurrence for occurrence in occurrences
+                         if any(key in occurrence for key in _OCCURRENCE_KEYS)
+                         and all(selection.get(key) == occurrence[key]
+                                 for key in _OCCURRENCE_KEYS if key in occurrence)]
+                if len(found) != 1:
+                    return self._invalid_locate()
+                location = found[0]
+                selected = {**location, "name": name, "kind": "field"}
+                slot_id, option_id = self._occurrence_owner(session, location)
+            match = {"kind": "field", "name": name, "location": location, "source": location}
+        elif kind in {"slot", "option"}:
+            slot = next((item for item in analysis.get("slots", [])
+                         if item["id"] == target.get("slot_id")), None)
+            option = None if slot is None or kind == "slot" else next(
+                (item for item in slot.get("options", []) if item["id"] == target.get("option_id")), None)
+            if slot is None or (kind == "option" and option is None):
+                return self._invalid_locate()
+            element = option if option is not None else slot
+            location = element.get("location")
+            slot_id = slot["id"]
+            option_id = option["id"] if option is not None else None
+            identity = {"slot_id": slot_id, **({"option_id": option_id} if option is not None else {})}
+            selected = {**element, **(location or {}), "kind": kind, **identity}
+            match = {"kind": kind, **identity, "label": element.get("label") or element["id"],
+                     "location": location}
+        else:
+            return self._invalid_locate()
+        parsed = self._parse(session.media, session.content)
+        commands = (semantics.available_target_commands("txt", parsed, kind, name)
+                    if session.media == "txt" else available_target_commands_hwpx(parsed, kind, name))
+        return {"selected": selected, "matches": [match],
+                "context": {"slot_id": slot_id, "option_id": option_id,
+                            "reason": "" if slot_id else _OUTSIDE_SLOT},
+                "commands": commands}
+
+    @staticmethod
+    def _occurrence_owner(session: AuthoringSession, occurrence: dict) -> tuple[str | None, str | None]:
+        """The item/option holding one field use — TXT carries it; HWPX is body-paragraph containment."""
+        if session.media == "txt":
+            return occurrence.get("slot_id"), occurrence.get("option_id")
+        paragraph = occurrence.get("paragraph")
+        # 셀 안 사용 위치의 문단 번호는 셀 문단이다 — 본문 문단 단위 영역과 비교하지 않는다(locate 와 같다).
+        if occurrence.get("cell_path") is not None or type(paragraph) is not int:
+            return None, None
+
+        def inside(location: dict | None) -> bool:
+            return (bool(location) and location is not None
+                    and location.get("entry") == occurrence.get("entry")
+                    and type(location.get("start_paragraph")) is int
+                    and type(location.get("end_paragraph")) is int
+                    and location["start_paragraph"] <= paragraph <= location["end_paragraph"])
+
+        owners = [slot for slot in session.analysis.get("slots", []) if inside(slot.get("location"))]
+        if len(owners) != 1:
+            return None, None
+        options = [option["id"] for option in owners[0].get("options", []) if inside(option.get("location"))]
+        return owners[0]["id"], options[0] if len(options) == 1 else None
 
     def _do_case_upsert(self, p: dict) -> dict:
         session = self._session(p, revision=True)
