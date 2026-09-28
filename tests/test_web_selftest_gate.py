@@ -1488,7 +1488,8 @@ class TestWebSelftestGate:
 
         문서 탭(「파일」 메뉴의 새 TXT 로 연 두 번째 탭 · ←→·Home·End·Enter·Delete → 이웃 탭), 도구 막대(roving
         한 입구 · End 는 마지막 제어 「결과 시험」 · → 로 감싸 돌되 누르지 않는다), 독 탭(Enter 로 패널 첫 제어 → Escape 로 그 탭), 구조 목록(tree)의
-        Shift+F10 문맥 메뉴(첫 사용 가능 항목·↓·End·Home·Escape 로 그 줄), 창 아래 끝에서 연 메뉴의
+        Shift+F10 문맥 메뉴(판정이 서면 되는 명령만·↓·End·Home·Escape 로 그 줄), 그 줄에서 연
+        명령 팔레트(Ctrl+Shift+P 로 입력칸·독 탭 그대로·↓ 활성 항목·Escape 로 그 줄), 창 아래 끝에서 연 메뉴의
         창 안 배치. 단계표(`a11y_steps`)는 증거로 싣는다.
         """
         b = probe(selftest_result, "editor_txt_band")
@@ -1504,6 +1505,9 @@ class TestWebSelftestGate:
             "a11y_tree_reached", "a11y_tree_entry", "a11y_tree_field", "a11y_tree_current",
             "a11y_menu_open", "a11y_menu_down", "a11y_menu_end", "a11y_menu_home",
             "a11y_menu_in_window", "a11y_menu_escape_closed", "a11y_menu_escape_return",
+            "a11y_menu_no_disabled",
+            "a11y_palette_open", "a11y_palette_dock_kept", "a11y_palette_arrow",
+            "a11y_palette_escape_closed", "a11y_palette_escape_return",
             "a11y_bottom_menu_open", "a11y_bottom_menu_in_window",
         ):
             assert b.get(key) is True, f"키보드 모델 국면 실패: {key}: {b.get('a11y_steps')!r}"

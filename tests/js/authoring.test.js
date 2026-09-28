@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, menuReasonGroups, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
-import { rovingIndex, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
+import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
+import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
@@ -397,11 +398,14 @@ test("F40: locate 가 실어 온 commands 가 도구 막대·팔레트·속성 s
   await new Promise(setImmediate);
   assert.deepEqual(controller.viewModel.getSnapshot().commands, COMMAND_VERDICTS);
   assert.equal(calls.some((call) => call.action === "commands"), false, "locate 가 판정을 실어 오면 독립 액션을 다시 묻지 않는다");
-  controller.update({ panel: "commands" });
+  controller.update({ palette: 1 });
   const palette = render(controller);
-  assert.match(palette, /<button type="button" class="authoring-menu-item" disabled="" aria-disabled="true" title="먼저 항목 안의 내용을 선택하세요\.">선택으로 만들기<\/button><p class="authoring-reason">먼저 항목 안의 내용을 선택하세요\.<\/p><button type="button" class="authoring-menu-item alternative">먼저 항목 만들기<\/button>/);
-  assert.ok(palette.includes('title="먼저 항목 안의 내용을 선택하세요."'), "도구 막대 버튼도 같은 사유를 단다");
-  assert.ok(palette.includes('class="authoring-menu-item">필드로 만들기</button>'), "판정이 사용 가능이면 그대로 켜 둔다");
+  // 명령 팔레트(IDE-02): 불가 명령은 흐림 + Python 사유(무리 이름), 대안은 그 곁의 되는 항목이다.
+  assert.ok(palette.includes('<div role="group" aria-label="먼저 항목 안의 내용을 선택하세요." class="authoring-palette-group"><div class="authoring-palette-reason" aria-hidden="true">먼저 항목 안의 내용을 선택하세요.</div><div id="authoring-palette-cmd-create_option" role="option" aria-selected="false" aria-disabled="true" class="authoring-palette-option"><span class="authoring-palette-label">선택으로 만들기</span></div><div id="authoring-palette-alt-create_option" role="option" aria-selected="false" class="authoring-palette-option alternative"><span class="authoring-palette-label">먼저 항목 만들기</span></div></div>'));
+  assert.ok(palette.includes('title="먼저 항목 안의 내용을 선택하세요."'), "도구 막대 버튼도 같은 사유를 단다(첫 사용자는 팔레트 없이도 사유를 본다)");
+  assert.ok(palette.includes('<div id="authoring-palette-cmd-create_field" role="option" aria-selected="true" class="authoring-palette-option active"><span class="authoring-palette-label">필드로 만들기</span></div>'), "판정이 사용 가능이면 되는 목록의 첫 항목이다");
+  assert.equal(controller.viewModel.getSnapshot().panel, "", "팔레트는 독 패널이 아니다 — view.panel 을 바꾸지 않는다");
+  controller.update({ palette: 0 });
   controller.update({ panel: "properties", commandType: "create_option" });
   const properties = render(controller);
   assert.match(properties, /<option value="create_option" disabled="" title="먼저 항목 안의 내용을 선택하세요\."( selected="")?>선택으로 만들기<\/option>/);
@@ -429,10 +433,12 @@ test("§6.1: the context menu is a role=menu popover at the event coordinates, a
   openContextMenu(controller, { clientX: 112, clientY: 234, target: { focus: () => { focused++; } }, preventDefault() {} }, { getBoundingClientRect: () => ({ left: 100, top: 200 }) });
   const markup = render(controller);
   assert.ok(markup.includes('<div class="authoring-context-menu" style="left:12px;top:34px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령">'));
-  assert.ok(markup.includes('<button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1" aria-label="필드로 만들기">필드로 만들기</button>'));
-  // APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 사유는 항목 안의 윗줄 설명이고(UX-10 R5), 대안은 곁의 menuitem 이다.
-  assert.ok(markup.includes('role="menuitem" tabindex="-1" aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-menu-reason-create_option"><span id="authoring-menu-reason-create_option" class="authoring-reason group-reason">먼저 항목 안의 내용을 선택하세요.</span>선택으로 만들기</button><button type="button" class="authoring-menu-item alternative" role="menuitem" tabindex="-1">먼저 항목 만들기</button>'));
+  // IDE-02(P-04): 문맥 메뉴는 자동 표면이다 — 되는 명령과 불가 명령의 대안만 싣는다. 불가 항목·사유 줄은 없다
+  // (UX-04·UX-10 R5 「불가 항목도 초점을 받아 사유를 읽힌다」의 의도된 되돌림 — 사유는 명령 팔레트가 읽힌다).
+  assert.ok(markup.includes('role="menu" aria-label="문맥 명령"><button type="button" role="menuitem" tabindex="-1" class="authoring-menu-item">필드로 만들기</button><button type="button" role="menuitem" tabindex="-1" class="authoring-menu-item alternative">먼저 항목 만들기</button></div>'));
   const menu = markup.slice(markup.indexOf('<div class="authoring-menu"'));
+  assert.ok(!menu.slice(0, menu.indexOf("</div>")).includes("aria-disabled") && !menu.slice(0, menu.indexOf("</div>")).includes("authoring-reason"), "불가 항목·사유 줄이 없다");
+  assert.ok(!menu.includes("선택으로 만들기</button>") && !menu.includes("필드 연결 변경</button>"), "대안이 없는 불가 명령은 숨는다");
   assert.ok(!/<button[^>]* disabled=""/.test(menu.slice(0, menu.indexOf("</div>"))), "메뉴 항목은 native disabled 가 아니다");
   assert.ok(!menu.slice(0, menu.indexOf("</div>")).includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
   assert.equal(escapeShell(controller), "menu");
@@ -972,6 +978,9 @@ test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then
   // 문서가 없으면 복구 초안 비교만 설 수 있다.
   assert.deepEqual(dockTabs(undefined, { panel: "", recoveryPreview: { key: "k" } }), { tabs: [["recovery_preview", "초안과 원본 비교"]], active: "recovery_preview" });
   assert.deepEqual(dockTabs(undefined, { panel: "" }), { tabs: [], active: "" });
+  // IDE-02: 명령 팔레트는 독 탭이 아니다 — 여는 동안에도 독은 열려 있던 탭(시험·문제)을 그대로 보인다.
+  assert.ok(!dockTabs(item, { panel: "commands" }).tabs.some(([key]) => key === "commands"));
+  assert.equal(dockTabs(item, { panel: "", dock: "trial", trial: true, palette: 3, dockClosed: true }).active, "trial");
 });
 
 test("§3.1/AC24: alert content keeps role=alert inside the dock", async () => {
@@ -994,31 +1003,56 @@ const SHARED_VERDICTS = [
   { type: "create_option", enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } },
 ];
 
-test("§3.1: a reason shared by every unavailable command is shown once, at the top; alternatives stay per item", async () => {
-  assert.equal(sharedReason(SHARED_VERDICTS), "먼저 문서에서 내용을 선택하세요.");
-  assert.equal(sharedReason(COMMAND_VERDICTS), null, "사유가 갈리면 항목마다 남긴다");
-  assert.equal(sharedReason([SHARED_VERDICTS[0]]), null, "불가 명령이 하나면 그 곁에 둔다");
-  assert.equal(sharedReason([{ type: "create_field", enabled: false, reason: null }, { type: "create_slot", enabled: false, reason: null }]), null);
+test("IDE-02 (P-10): the palette groups unavailable commands by Python's reason value — each reason once, alternatives beside their item — and teaches the shell keys", async () => {
+  const shared = paletteModel(commandEntries(SHARED_VERDICTS, false), [], "");
+  assert.deepEqual(shared.blocked.map((group) => [group.reason, group.options.map((option) => [option.label, option.enabled])]),
+    [["먼저 문서에서 내용을 선택하세요.", [["필드로 만들기", false], ["항목으로 만들기", false], ["선택으로 만들기", false], ["먼저 항목 만들기", true]]]]);
+  // 무리는 이웃이 아니라 사유 값이다: 되는 명령·다른 사유가 사이에 있어도 같은 사유는 한 무리, 무리 차례는 처음 나온 차례다.
+  const split = paletteModel(commandEntries([
+    { type: "create_field", enabled: false, reason: "가 사유입니다.", alternative: null },
+    { type: "create_slot", enabled: true, reason: null, alternative: null },
+    { type: "create_option", enabled: false, reason: "나 사유입니다.", alternative: null },
+    { type: "rename_field", enabled: false, reason: "가 사유입니다.", alternative: null },
+  ], false), [], "");
+  assert.deepEqual(split.blocked.map((group) => [group.reason, group.options.map((option) => option.command)]), [["가 사유입니다.", ["create_field", "rename_field"]], ["나 사유입니다.", ["create_option"]]]);
+  assert.deepEqual(split.runnable.map((option) => option.command), ["create_slot"]);
+  assert.equal(split.silent.length, 9, "판정이 없는 명령은 사유 없이 흐린 채 무리 밖에 선다");
+  assert.deepEqual(paletteOrder(split).slice(0, 4).map((option) => option.id), ["cmd-create_slot", "cmd-create_field", "cmd-rename_field", "cmd-create_option"], "화살표는 보이는 차례로 돈다");
+  // 읽기 전용이면 되는 의미 명령이 없고 대안도 싣지 않는다 — 사유 문장을 짓지 않으므로 흐린 채 무리 밖이다.
+  const locked = paletteModel(commandEntries(SHARED_VERDICTS.map((entry) => ({ ...entry, enabled: true, reason: null })), true), [], "");
+  assert.deepEqual([locked.runnable.length, locked.blocked.length, locked.silent.every((option) => !option.enabled)], [0, 0, true]);
+  // 걸러내기: 이름의 부분 일치(대소문자 무시). 셸 동작도 같은 규칙이다. 되지 않는 셸 동작은 싣지 않는다.
+  const all = commandEntries(["create_field", "create_slot", "create_option", "rename_field", "relink_field", "unset_field", "rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"]
+    .map((type) => ({ type, enabled: true, reason: null, alternative: null })), false);
+  const actions = [{ label: "저장", keys: "Ctrl+S", run() {} }, { label: "다른 이름으로 저장", run() {} }, { label: "붙여넣기", run() {}, disabled: true }];
+  assert.deepEqual(paletteModel(all, actions, "필드 이름").runnable.map((option) => option.label), ["필드 이름 변경"]);
+  assert.deepEqual(paletteModel(all, actions, " 이름 ").runnable.map((option) => option.label), ["필드 이름 변경", "다른 이름으로 저장"]);
+  assert.deepEqual(paletteModel(all, [{ label: "Save", run() {} }], "sAVE").runnable.map((option) => option.label), ["Save"]);
+  assert.equal(paletteOrder(paletteModel(all, actions, "붙여")).length, 0, "되지 않는 셸 동작은 걸러도 서지 않는다");
+  // 화면: 사유는 무리 이름(role=group · aria-label) 하나와 보이는 머리 줄 하나다.
   const { controller } = harness();
   await controller.activate("a");
-  controller.update({ commands: SHARED_VERDICTS, panel: "commands" });
+  controller.update({ commands: SHARED_VERDICTS, palette: 1 });
   const palette = render(controller);
-  assert.equal(count(palette, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
-  assert.ok(palette.includes('<h2>명령</h2><p id="authoring-command-reason-palette" class="authoring-reason">먼저 문서에서 내용을 선택하세요.</p><div class="authoring-palette"><div class="authoring-command">'));
-  assert.ok(palette.includes('disabled="" aria-disabled="true" title="먼저 문서에서 내용을 선택하세요." aria-describedby="authoring-command-reason-palette">선택으로 만들기</button><button type="button" class="authoring-menu-item alternative">먼저 항목 만들기</button>'));
-  // 판정이 없는 명령은 세 번째 상태 — 표면이 추측으로 켜 두지 않고, 사유 문장 없이 꺼 둔다(UX-04).
-  assert.ok(palette.includes('<div class="authoring-command group-start"><button type="button" class="authoring-menu-item" disabled="" aria-disabled="true" aria-keyshortcuts="F2">필드 이름 변경<kbd class="authoring-key" aria-hidden="true">F2</kbd></button></div>'), "판정이 없는 명령은 사유 없이 꺼 둔다");
-  // 팔레트는 도구 막대에서 빠진 세 동작도 싣는다 — 자기 자신을 여는 「명령」은 싣지 않는다.
-  for (const label of ["의미 복사", "이전 위치로"]) assert.ok(palette.includes(`class="authoring-menu-item">${label}</button>`), label);
-  assert.ok(!palette.includes('class="authoring-menu-item">명령</button>'), "팔레트는 자기를 여는 단추를 싣지 않는다");
-  assert.ok(palette.includes('class="authoring-menu-item" disabled="">붙여넣기</button>'), "복사한 의미가 없으면 붙여넣기는 꺼진다");
+  assert.equal(count(palette, 'role="group" aria-label="먼저 문서에서 내용을 선택하세요."'), 1, "사유 무리는 사유당 하나");
+  assert.equal(count(palette, "먼저 문서에서 내용을 선택하세요.</div>"), 1, "보이는 머리 줄도 한 번");
+  assert.ok(palette.includes('<div class="authoring-command-palette" role="dialog" aria-label="명령 팔레트"><input class="field" type="text" role="combobox" aria-label="명령"'), "오버레이 이름은 「명령 팔레트」, 입력 이름은 「명령」");
+  assert.ok(!/<input[^>]*placeholder/.test(palette), "placeholder 는 두지 않는다");
+  // 판정이 없는 명령은 세 번째 상태 — 표면이 추측으로 켜 두지 않고, 사유 문장 없이 흐리게 둔다(UX-04).
+  assert.ok(palette.includes('<div id="authoring-palette-cmd-rename_field" role="option" aria-selected="false" aria-disabled="true" aria-keyshortcuts="F2" class="authoring-palette-option"><span class="authoring-palette-label">필드 이름 변경</span><kbd class="authoring-key" aria-hidden="true">F2</kbd></div>'), "판정이 없는 명령은 사유 없이 흐리다");
+  // 셸 동작(1부)은 키 학습 표면이다(L-50) — 자기를 여는 「명령」은 없고, 복사한 의미가 없으면 붙여넣기는 서지 않는다.
+  const labels = [...palette.matchAll(/<span class="authoring-palette-label">([^<]+)<\/span>/g)].map((match) => match[1]);
+  assert.deepEqual(labels.slice(0, 9), ["저장", "다른 이름으로 저장", "찾기", "결과 시험", "의미 복사", "이전 위치로", "다음 영역으로", "이전 영역으로", "문맥 메뉴"]);
+  assert.ok(!labels.includes("명령") && !labels.includes("붙여넣기"));
+  for (const [label, keys, aria] of [["저장", "Ctrl+S", "Control+S"], ["찾기", "Ctrl+F", "Control+F"], ["다음 영역으로", "F6", "F6"], ["이전 영역으로", "Shift+F6", "Shift+F6"], ["문맥 메뉴", "Shift+F10", "Shift+F10"]])
+    assert.match(palette, new RegExp(`aria-keyshortcuts="${aria.replace("+", "[+]")}" class="authoring-palette-option( active)?"><span class="authoring-palette-label">${label}</span><kbd class="authoring-key" aria-hidden="true">${keys.replace("+", "[+]")}</kbd>`), label);
+  // 문맥 메뉴가 열리면 팔레트는 닫힌다. 되는 명령이 없으면 메뉴는 대안만 싣는다 — 머리 사유 줄이 없다.
   openContextMenu(controller, { clientX: 5, clientY: 6, target: null }, null);
+  assert.equal(controller.viewModel.getSnapshot().palette, 0);
   const menu = render(controller);
   const context = menu.slice(menu.indexOf('<div class="authoring-context-menu"'));
-  // 공유 사유는 메뉴의 자식이 아니다 — 메뉴 머리 줄로 서고 불가 항목이 설명으로 가리킨다.
-  assert.ok(context.startsWith('<div class="authoring-context-menu" style="left:5px;top:6px"><p id="authoring-command-reason-menu" class="authoring-reason">먼저 문서에서 내용을 선택하세요.</p><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령">'));
-  assert.ok(context.includes('aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-command-reason-menu">선택으로 만들기</button>'));
-  assert.equal(count(context, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
+  assert.ok(context.startsWith('<div class="authoring-context-menu" style="left:5px;top:6px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령"><button type="button" role="menuitem" tabindex="-1" class="authoring-menu-item alternative">먼저 항목 만들기</button></div></div>'));
+  assert.ok(!menu.includes('class="authoring-command-palette"'));
 });
 
 test("§3.1: the properties panel has a visible 닫기 in its header", async () => {
@@ -1178,6 +1212,12 @@ test("UX-04: rovingIndex wraps arrows along its axis and jumps with Home/End; ot
   assert.equal(rovingIndex("ArrowUp", 0, 3, "vertical"), 2);
   assert.equal(rovingIndex("Enter", 0, 3, "vertical"), null);
   assert.equal(rovingIndex("ArrowRight", 0, 0, "horizontal"), null);
+  // 명령 팔레트(combobox + listbox)는 ↑↓ 만 목록 몫이다 — Home·End·←→ 는 입력칸 캐럿이 쓴다.
+  assert.equal(listKey("ArrowDown", 2, 3), 0, "감싸 돈다");
+  assert.equal(listKey("ArrowUp", 0, 3), 2);
+  assert.equal(listKey("ArrowDown", -1, 3), 0);
+  for (const key of ["Home", "End", "ArrowLeft", "Enter"]) assert.equal(listKey(key, 1, 3), null, key);
+  assert.equal(listKey("ArrowDown", 0, 0), null);
 });
 
 test("UX-04: treeKey follows APG treeview — ↑↓ over visible rows, → expands then enters, ← collapses then climbs, Enter/Space select", () => {
@@ -1286,7 +1326,7 @@ test("UX-10 R3: a trial-input validation failure shows only in the trial panel; 
   assert.match(controller.viewModel.getSnapshot().error, /호출 실패/, "호출 실패만 오류 띠에 선다");
 });
 
-test("UX-10 R5: neighbouring unavailable menu items with the same reason show it once above the group; each keeps aria-describedby", async () => {
+test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable commands and alternatives; separators stand only between visible items whose group changes", async () => {
   const outside = "먼저 필드를 선택하세요.";
   const region = "먼저 항목이나 선택을 고르세요.";
   const verdicts = [
@@ -1296,24 +1336,32 @@ test("UX-10 R5: neighbouring unavailable menu items with the same reason show it
     ...["rename_field", "relink_field", "unset_field"].map((type) => ({ type, enabled: false, reason: outside, alternative: null })),
     ...["rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"].map((type) => ({ type, enabled: false, reason: region, alternative: null })),
   ];
-  const groups = menuReasonGroups(verdicts);
-  assert.deepEqual(groups.get("rename_field"), { id: "authoring-menu-reason-rename_field", reason: outside, lead: true, size: 3 });
-  assert.deepEqual(groups.get("unset_field"), { id: "authoring-menu-reason-rename_field", reason: outside, lead: false, size: 3 });
-  assert.equal(groups.get("move").id, "authoring-menu-reason-rename_slot");
-  assert.equal(groups.get("create_option").size, 1, "대안이 곁에 선 항목은 혼자다");
-  assert.equal(groups.has("create_field"), false);
+  const shape = (lines) => lines.map((line) => [line.label, line.groupStart, line.disabled]);
+  assert.deepEqual(shape(menuLines(commandEntries(verdicts, false), false)), [["필드로 만들기", false, false], ["항목으로 만들기", false, false], ["먼저 항목 만들기", false, false]],
+    "13 판정 가운데 되는 2 + 대안 1 — 같은 무리라 구분선이 없다");
+  // 무리가 바뀌는 보이는 항목에만 선다: 무리의 첫 명령(rename_field)이 숨어도 그 무리의 다음 보이는 항목이 선을 받는다.
+  const enable = (types) => verdicts.map((entry) => types.includes(entry.type) ? { ...entry, enabled: true, reason: null, alternative: null } : entry);
+  assert.deepEqual(shape(menuLines(commandEntries(enable(["unset_field", "delete", "move"]), false), false)).slice(3),
+    [["필드 의미 해제", true, false], ["내용까지 삭제", true, false], ["이동", true, false]]);
+  assert.deepEqual(shape(menuLines(commandEntries(enable(["relink_field", "unset_field"]).map((entry) => entry.type.startsWith("create") ? { ...entry, enabled: false, alternative: null } : entry), false), false)),
+    [["필드 연결 변경", false, false], ["필드 의미 해제", false, false]], "첫 보이는 항목은 선을 받지 않는다");
+  assert.equal(menuLines(commandEntries(enable(["delete"]), false), false).find((line) => line.label === "내용까지 삭제").danger, true, "파괴 명령은 위험 잉크");
+  // 되는 것이 없으면(대안도 없으면) · 읽기 전용이면 null — 화면은 팔레트를 여는 「명령」 한 줄을 세운다.
+  assert.equal(menuLines(commandEntries(verdicts.map((entry) => ({ ...entry, enabled: false, alternative: null })), false), false), null);
+  assert.equal(menuLines(commandEntries(verdicts, true), true), null);
   const { controller } = harness();
   await controller.activate("a");
   controller.update({ commands: verdicts });
   openContextMenu(controller, { clientX: 1, clientY: 1, target: { focus() {} }, preventDefault() {} }, null);
-  const markup = render(controller);
-  const menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
-  assert.equal(menu.split(outside).length - 1, 1, "무리의 사유는 한 번");
-  assert.equal(menu.split(region).length - 1, 1);
-  assert.ok(menu.includes('aria-label="필드 이름 변경" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field"><span id="authoring-menu-reason-rename_field" class="authoring-reason group-reason">먼저 필드를 선택하세요.</span>필드 이름 변경</button>'), "무리의 첫 항목 위");
-  assert.ok(menu.includes('aria-label="필드 의미 해제" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field">필드 의미 해제</button>'), "나머지는 같은 줄을 가리킨다");
-  assert.ok(menu.includes('aria-describedby="authoring-menu-reason-create_option"><span id="authoring-menu-reason-create_option" class="authoring-reason group-reason">먼저 항목 안의 내용을 선택하세요.</span>선택으로 만들기</button>'), "혼자인 사유도 같은 자리(윗줄)");
-  assert.ok(!menu.includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
+  let markup = render(controller);
+  let menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
+  assert.equal(count(menu, 'role="menuitem"'), 3);
+  assert.ok(!menu.includes(outside) && !menu.includes(region) && !menu.includes("aria-disabled") && !menu.includes("aria-describedby"), "사유 줄·불가 항목이 없다");
+  assert.ok(!menu.includes("<p") && !menu.includes("<span"), "메뉴의 자식은 menuitem 뿐이다");
+  controller.update({ commands: verdicts.map((entry) => ({ ...entry, enabled: false, alternative: null })) });
+  markup = render(controller);
+  menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
+  assert.ok(menu.endsWith('aria-label="문맥 명령"><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1">명령</button>'), "되는 것이 없으면 「명령」 한 줄");
 });
 
 test("UX-10 R2: a text-range selection opens a 선택한 문구 target card; the context line is Python's location label or nothing", async () => {
@@ -1340,9 +1388,18 @@ test("UX-10 R2: a text-range selection opens a 선택한 문구 target card; the
 test("UX-04: missing Python judgement is a third state — disabled with no reason, not enabled by guess", async () => {
   assert.deepEqual(commandAvailability([], "create_field"), { type: "create_field", enabled: false, pending: true, reason: null, alternative: null });
   assert.equal(commandAvailability(COMMAND_VERDICTS, "create_field").enabled, true);
-  assert.equal(sharedReason([...SHARED_VERDICTS]), "먼저 문서에서 내용을 선택하세요.", "판정 없는 명령은 공유 사유를 깨지 않는다");
+  // 판정 전 문맥 메뉴는 지금처럼 모든 명령을 사유 없이 흐리게 싣는다(IDE-02 는 판정이 선 뒤에만 거른다).
+  const pending = menuLines(commandEntries([], false), false);
+  assert.equal(pending.length, 13);
+  assert.ok(pending.every((line) => line.disabled && !line.alternative));
+  assert.deepEqual(pending.filter((line) => line.groupStart).map((line) => line.command), ["rename_field", "rename_slot", "unwrap", "duplicate"]);
   const { controller } = harness();
   await controller.activate("a");
+  openContextMenu(controller, { clientX: 1, clientY: 1, target: null }, null);
+  const menu = render(controller);
+  assert.equal(count(menu, 'role="menuitem" tabindex="-1" aria-disabled="true"'), 13, "판정 전: 보이는 비활성");
+  assert.ok(!menu.includes("authoring-reason"), "판정 전에는 사유 문장이 없다");
+  controller.update({ contextMenu: null });
   const markup = render(controller);
   for (const label of ["필드로 만들기", "항목으로 만들기", "선택으로 만들기"])
     assert.match(markup, new RegExp(`<button type="button" class="btn quiet" disabled="" aria-disabled="true" data-rove="[a-z_]+" tabindex="-1">${label}</button>`), label);

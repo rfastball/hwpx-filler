@@ -87,7 +87,7 @@ export function createAuthoringController(deps: Deps) {
   const rememberTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // commands: Python 이 현재 선택에 대해 판정한 명령 가용성(F40·P07). 표면은 이것을 그리기만 하고 다시 판정하지 않는다.
   const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", lastCreatedText: "", notice: "",
-    mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, refusal: null, syntax: null,
+    mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, palette: 0, refusal: null, syntax: null,
     command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], searchSummaries: [], values: {}, selectedOptions: {}, zoom: 100 });
   let view = initialView();
   let viewId = "";

@@ -219,6 +219,10 @@ file = "frontend/src/screens/authoring_controller.ts"
 text = "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다."
 
 [[sentence]]
+file = "frontend/src/screens/command_palette.ts"
+text = "일치하는 명령이 없습니다."
+
+[[sentence]]
 file = "frontend/src/screens/data_picker.ts"
 text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요."
 legacy = true

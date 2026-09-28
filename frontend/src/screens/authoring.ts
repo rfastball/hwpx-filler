@@ -10,6 +10,8 @@ import { TPL_STATUS_COPY } from "./job_run.ts";
 import { FOCUSABLE, clampMenu, errorParts, focusFirst, focusable, isCurrentTarget, liveStep, menuTrigger, roveFocus, tabName, treeKey } from "./authoring_a11y.ts";
 import type { LiveState, TreeRow } from "./authoring_a11y.ts";
 import { coverageDot, icon, kindGlyph } from "./icons.ts";
+import { CommandPalette, ariaKeys, menuLines } from "./command_palette.ts";
+import type { CommandEntry, PaletteAction } from "./command_palette.ts";
 
 /** IME 조합 중에는 문서 명령을 보내지 않는다 — 조합이 끝난 뒤 같은 명령을 다시 받는다. */
 const IME_BUSY = "한글 조합을 마친 뒤 다시 실행하세요.";
@@ -169,7 +171,7 @@ export function openContextMenu(controller: Pick<AuthoringController, "update">,
   event.preventDefault?.();
   const rect = root?.getBoundingClientRect();
   controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), anchor: { x: event.clientX, y: event.clientY, ...(event.anchorTop != null ? { top: event.anchorTop } : {}) },
-    trigger: menuTrigger(event.target), ...(kind ? { kind } : {}) } });
+    trigger: menuTrigger(event.target), ...(kind ? { kind } : {}) }, palette: 0 });
 }
 /** 초점 요청(UX-04) — 초점은 사용자가 패널을 연 순간(속성·독 탭)·F2 에서만 옮긴다. 명령 select 의 값 변경,
  *  경보가 스스로 연 독, 선택 판정의 도착은 초점을 끌어가지 않는다. focusPanel 은 요청의 차례 번호다. */
@@ -220,7 +222,7 @@ export function selectionNoteView(note: { message: string; severity?: "error" | 
 }
 
 /** 하단 독(§3.1 UI01~UI10)이 한 탭으로 보이는 패널 — `view.panel` 값이 곧 탭 열쇠다. 속성은 옆 패널이라 빠진다. */
-export const DOCK_PANELS = ["problems", "search", "raw", "impact", "paste", "commands", "external", "comparison"];
+export const DOCK_PANELS = ["problems", "search", "raw", "impact", "paste", "external", "comparison"];
 /** 독의 탭 목록과 지금 보일 탭 하나. 기본 탭(문제·검색·원문 표기·변경 영향·결과 시험)은 문서가 열려 있으면 늘 서고,
  *  문맥 탭은 그 상태가 있을 때만 선다. 보일 탭: 열린 패널 → 사용자가 고른 탭 → 경보·비교·시험 순의 대체.
  *  `dockClosed` 는 사용자가 닫은 뒤 경보가 스스로 다시 펼치지 않게 한다(새로 선 경보는 화면이 다시 연다). */
@@ -228,7 +230,6 @@ export function dockTabs(item: Obj | undefined, view: Obj): { tabs: [string, str
   const tabs: [string, string][] = item ? [["problems", "문제"], ["search", "검색"], ["raw", "원문 표기"], ["impact", "변경 영향·작업 적용"], ["trial", "결과 시험"]] : [];
   const saveFailed = !!item && (view.panel === "external" || !!view.saveFailed);
   if (item && view.panel === "paste") tabs.push(["paste", "의미 붙여넣기"]);
-  if (item && view.panel === "commands") tabs.push(["commands", "명령"]);
   if (saveFailed) tabs.push(["external", "저장 실패"]);
   if (item?.external_changed && !saveFailed) tabs.push(["external_changed", "외부 파일 변경"]);
   if (item?.recovery) tabs.push(["recovery", "중단 전 복구 초안"]);
@@ -239,13 +240,6 @@ export function dockTabs(item: Obj | undefined, view: Obj): { tabs: [string, str
   const fallback = view.dockClosed ? ["trial"] : ["recovery_preview", "recovery", "external_changed", "trial"];
   const active = DOCK_PANELS.includes(view.panel) && has(view.panel) ? view.panel : open(view.dock) ? view.dock : fallback.find(open) || "";
   return { tabs, active };
-}
-/** 같은 불가 사유를 명령마다 되풀이하지 않는다(§3.1): 불가 명령이 둘 이상이고 사유가 모두 같으면 그 한 문장, 아니면 null.
- *  사유는 Python 의 판정 문장 그대로다(P07) — 표면은 모을 뿐 새로 짓지 않는다. */
-export function sharedReason(commands: Obj[] | undefined, types: string[] = COMMANDS.map(([type]) => type)): string | null {
-  // 판정이 없는 명령(pending)은 사유가 없는 세 번째 상태라 모으지 않는다.
-  const reasons = types.map((type) => commandAvailability(commands, type)).filter((entry) => !entry.enabled && !entry.pending).map((entry) => String(entry.reason || ""));
-  return reasons.length > 1 && reasons.every((reason) => reason && reason === reasons[0]) ? reasons[0] : null;
 }
 /** Escape 한 단계(§10): 문맥 메뉴가 열려 있으면 그것만 닫고 초점을 연 자리로 돌린다("menu"); 아니면 패널을 닫는다("panel"). */
 export function escapeShell(controller: Pick<AuthoringController, "update" | "viewModel">): "menu" | "panel" {
@@ -263,74 +257,31 @@ export async function copyText(text: string): Promise<void> {
   try { document.execCommand("copy"); } finally { area.remove(); }
 }
 
-/** 명령 목록 — 도구 막대·팔레트·문맥 메뉴가 같은 가용성 데이터와 같은 실행 경로를 쓴다(F40).
- *  팔레트는 목록이다: 사유가 모두 같으면 머리에 한 번, 아니면 항목 곁에 선다.
- *  문맥 메뉴(menu)는 APG menu 다(UX-04): 자식은 menuitem 뿐이고, 불가 항목도 aria-disabled 로 초점을 받아 사유를
- *  설명(aria-describedby)으로 읽힌다. 항목별 사유는 항목 안의 설명 줄, 공유 사유는 메뉴 밖 머리 줄(화면이 그린다)이다.
- *  대안은 그 곁의 menuitem 이다.
- *  모양(UX-09)은 공용 `.ctx-menu` 의 메뉴 항목이다: 테두리 없는 전폭 줄, 명령 무리 사이 구분선(첫 항목의 윗선 — 메뉴의
- *  자식은 menuitem 뿐이라 구분선 원소를 두지 않는다), 파괴 명령은 위험 잉크. 팔레트는 오른쪽에 단축키 열을 둔다. */
-const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwrap", "duplicate"]);
-const DESTRUCTIVE = new Set(["delete"]);
-const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
+/** 명령 판정 표(F40·P07) — 도구 막대·속성 select·문맥 메뉴·팔레트가 같은 Python 판정을 읽는다. 읽기 전용이면 어떤 명령도
+ *  되지 않는다(사유 문장은 짓지 않는다 — 호환성 안내가 이미 선다). 대안도 읽기 전용에서는 싣지 않는다. */
+export function commandEntries(commands: Obj[] | undefined, readOnly: boolean): CommandEntry[] {
+  return COMMANDS.map(([type, label]) => {
+    const available = commandAvailability(commands, type);
+    return { type, label, enabled: !readOnly && !!available.enabled, pending: !!available.pending, reason: available.enabled ? null : available.reason || null,
+      alternative: readOnly || available.enabled ? null : available.alternative || null };
+  });
+}
 /** 작은 메뉴(「더보기」·「파일」)의 한 항목: 이름 · 실행 · 불가 · 단축키 표기(있을 때만). */
 type MenuAction = [string, () => void, boolean, string?];
-/** 「더보기」의 첫 항목 — 명령 팔레트를 연다. 팔레트 자신의 추가 동작 줄에는 세우지 않는다(자기를 여는 단추가 된다). */
+/** 「더보기」의 첫 항목이자 빈 문맥 메뉴의 한 줄 — 명령 팔레트를 연다. 팔레트 자신에는 서지 않는다(자기를 여는 줄이 된다). */
 const PALETTE_SELF = "명령";
-/** 단축키 표기 → aria-keyshortcuts 값. */
-const ARIA_KEYS: Obj = { "Ctrl+S": "Control+S" };
-const menuItemClass = (commandType: string) => `authoring-menu-item${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}${DESTRUCTIVE.has(commandType) ? " danger" : ""}`;
-/** 문맥 메뉴의 사유 묶음(UX-10 R5): 메뉴에서 **이웃한** 불가 항목이 같은 사유면 그 사유를 무리의 첫 항목 위에 한 번만
- *  세우고, 무리의 모든 항목이 그 줄을 설명(aria-describedby)으로 가리킨다. 대안 항목·가능 항목·판정 대기 항목이 무리를 끊는다.
- *  혼자인 사유도 같은 자리(그 항목의 윗줄)다. 값: 명령 → { id, reason, lead(무리의 첫 항목), size }. */
-export function menuReasonGroups(commands: Obj[] | undefined, readOnly = false): Map<string, { id: string; reason: string; lead: boolean; size: number }> {
-  const groups = new Map<string, { id: string; reason: string; lead: boolean; size: number }>();
-  let run: string[] = [];
-  let reason = "";
-  const close = () => {
-    run.forEach((type, index) => groups.set(type, { id: `authoring-menu-reason-${run[0]}`, reason, lead: index === 0, size: run.length }));
-    run = []; reason = "";
-  };
-  for (const [type] of COMMANDS) {
-    const available = commandAvailability(commands, type);
-    const text = (readOnly || !available.enabled) && available.reason ? String(available.reason) : "";
-    if (!text || (run.length && text !== reason)) close();
-    if (text) { run.push(type); reason = text; }
-    if (available.alternative && !available.enabled) close();
-  }
-  close();
-  return groups;
-}
-function CommandList({ view, readOnly, menu, onPick }: { view: Obj; readOnly: boolean; menu?: boolean; onPick: (commandType: string) => void }) {
-  const shared = sharedReason(view.commands);
-  const reasonId = `authoring-command-reason-${menu ? "menu" : "palette"}`;
-  const groups = menu && !shared ? menuReasonGroups(view.commands, readOnly) : null;
-  if (menu) return COMMANDS.flatMap(([commandType, label]) => {
-    const available = commandAvailability(view.commands, commandType);
-    const disabled = readOnly || !available.enabled;
-    const group = disabled ? groups?.get(commandType) : undefined;
-    const ownReason = group?.id;
-    // 사유는 늘 그것이 걸린 항목들(혼자이면 그 하나)의 첫 항목 윗줄이다 — 위치가 한 가지라 어느 항목의 사유인지 헷갈리지 않는다.
-    const reasonLine = group?.lead && h("span", { key: "reason", id: group.id, className: "authoring-reason group-reason" }, group.reason);
-    return [h("button", { key: commandType, type: "button", className: menuItemClass(commandType), role: "menuitem", tabIndex: -1, "aria-label": label,
-        "aria-disabled": disabled || undefined, "aria-describedby": disabled ? (shared && available.reason ? reasonId : ownReason) : undefined,
-        onClick: () => { if (!disabled) onPick(commandType); } },
-        reasonLine || null, label),
-      !available.enabled && available.alternative && h("button", { key: `${commandType}-alternative`, type: "button", className: "authoring-menu-item alternative", role: "menuitem", tabIndex: -1,
-        onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label)];
-  });
-  return [shared && h("p", { key: "shared-reason", id: reasonId, className: "authoring-reason" }, shared),
-    h("div", { key: "commands", className: "authoring-palette" }, ...COMMANDS.map(([commandType, label]) => {
-      const available = commandAvailability(view.commands, commandType);
-      const disabled = readOnly || !available.enabled;
-      const hint = KEY_HINTS[commandType];
-      return h("div", { key: commandType, className: `authoring-command${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}` },
-        h("button", { type: "button", className: menuItemClass(commandType).replace(" group-start", ""), onClick: () => onPick(commandType), disabled, "aria-disabled": disabled || undefined,
-          title: available.reason || undefined, "aria-describedby": shared && !available.enabled && available.reason ? reasonId : undefined, "aria-keyshortcuts": hint },
-          label, hint ? h("kbd", { className: "authoring-key", "aria-hidden": true }, hint) : null),
-        !shared && !available.enabled && available.reason && h("p", { className: "authoring-reason" }, available.reason),
-        !available.enabled && available.alternative && h("button", { type: "button", className: "authoring-menu-item alternative", onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label));
-    }))];
+
+/** 문맥 메뉴(IDE-02 · P-04)는 자동 표면이다 — 되는 명령과 불가 명령의 대안만 싣고, 불가 항목·사유 줄은 싣지 않는다.
+ *  이것은 UX-04·UX-10 R5(「불가 항목도 초점을 받아 사유를 읽힌다」)의 의도된 되돌림이다(제품 결정 2026-09-28): 우클릭이
+ *  19줄 가운데 되는 3줄을 찾게 하던 비용을 없애고, "있지만 안 됨"과 사유는 명시 표면(명령 팔레트·속성 명령 select·도구 막대
+ *  툴팁)에 남긴다. 판정 전(pending)이면 지금처럼 모든 명령을 사유 없이 흐리게 싣는다. 읽기 전용이거나 되는 것이 없으면
+ *  팔레트를 여는 「명령」 한 줄이다. APG menu: 자식은 menuitem 뿐이고, 구분선은 무리가 바뀌는 보이는 항목의 윗선이다. */
+function CommandMenu({ entries, readOnly, onPick, onPalette }: { entries: CommandEntry[]; readOnly: boolean; onPick: (commandType: string) => void; onPalette: () => void }) {
+  const lines = menuLines(entries, readOnly);
+  if (!lines) return h("button", { type: "button", className: "authoring-menu-item", role: "menuitem", tabIndex: -1, onClick: onPalette }, PALETTE_SELF);
+  return lines.map((line) => h("button", { key: line.key, type: "button", role: "menuitem", tabIndex: -1, "aria-disabled": line.disabled || undefined,
+    className: `authoring-menu-item${line.alternative ? " alternative" : ""}${line.groupStart ? " group-start" : ""}${line.danger ? " danger" : ""}`,
+    onClick: () => { if (!line.disabled) onPick(line.command); } }, line.label));
 }
 
 /** 구조 변경 요약(F38) — 미리보기와 변경 영향 패널이 같은 표를 쓴다. */
@@ -376,8 +327,8 @@ export function forwardedShellKey(shortcut: string, target: unknown): Obj | null
   const key = shortcut === "Escape" ? { key: "Escape" } : shortcut === "F6" ? { key: "F6" } : shortcut === "ShiftF6" ? { key: "F6", shiftKey: true } : null;
   return key && { ...key, target, nativeEvent: {}, preventDefault() {} };
 }
-/** 셸의 키·문맥 메뉴 처리기 — 편집면 iframe 은 셸까지 사건을 올리지 못하므로 편집기가 이 손잡이로 넘긴다. */
-type ShellInput = { current: { key?: (event: any) => void; menu?: (event: any) => void } };
+/** 셸의 키·문맥 메뉴·명령 팔레트 처리기 — 편집면 iframe 은 셸까지 사건을 올리지 못하므로 편집기가 이 손잡이로 넘긴다. */
+type ShellInput = { current: { key?: (event: any) => void; menu?: (event: any) => void; palette?: () => void } };
 
 type ShellKey = { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; target?: { closest?(selector: string): unknown } | null };
 /** 셸 단축키 판독(§10). 문서 편집면·입력창 안의 Ctrl+Z/Y 는 그 문맥의 실행 취소이므로 셸이 가로채지 않는다(§9.3). */
@@ -499,7 +450,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             const current = controller.viewModel.getSnapshot();
             const forwarded = forwardedShellKey(shortcut, host.current?.querySelector("iframe") || host.current);
             if (forwarded) shell.current.key?.(forwarded);
-            else if (shortcut === "CtrlShiftP") controller.update({ panel: "commands", ...focusRequest(current, "dock") });
+            else if (shortcut === "CtrlShiftP") shell.current.palette?.();
             else if (shortcut === "CtrlS") void controller.guarded(() => controller.save(), "save");
             else if (shortcut === "CtrlF") controller.update({ panel: "search", ...focusRequest(current, "dock") });
             else renameShortcut(controller);
@@ -1005,8 +956,10 @@ export function liveState(item: Obj | undefined, view: Obj, pending: boolean): L
   };
 }
 
-/** 키보드 문맥 메뉴의 자리 — 편집면이면 캐럿, 아니면 그 원소의 왼쪽 아래(§6.1·UX-04). */
+/** 키보드 문맥 메뉴의 자리 — 편집면이면 캐럿, 아니면 그 원소의 왼쪽 아래(§6.1·UX-04). 편집면 iframe 자체(팔레트의
+ *  「문맥 메뉴」가 그 자리에서 누른 키)는 캐럿을 모르므로 편집면의 왼쪽 위다 — 아래 끝에 세우면 편집면 밖으로 뒤집힌다. */
 function menuAnchor(target: HTMLElement): { left: number; top: number; bottom: number } {
+  if (target.tagName === "IFRAME") { const rect = target.getBoundingClientRect(); return { left: rect.left, top: rect.top, bottom: rect.top }; }
   const selection = target.ownerDocument?.getSelection?.();
   if (target.isContentEditable && selection?.rangeCount) {
     const range = selection.getRangeAt(0);
@@ -1026,6 +979,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   // 패널·독을 연 자리(초점 복귀 대상, UX-04). 요청자가 먼저 알면 pendingOpener 로 넘기고, 아니면 초점을 옮기기 직전의 원소다.
   const openers = useRef<Record<string, unknown>>({});
   const pendingOpener = useRef<unknown>(null);
+  // 명령 팔레트를 연 자리(IDE-02) — 닫으면 그리로 초점을 돌린다.
+  const paletteOpener = useRef<unknown>(null);
   const pendingTabFocus = useRef("");
   const liveRef = useRef<ReturnType<typeof liveStep>["state"] | null>(null);
   const [toolbarKey, setToolbarKey] = useState("");
@@ -1144,10 +1099,27 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     controller.update({ panel: "properties", commandType, contextMenu: null, preview: null, refusal: null, ...focusRequest(current, "properties") });
   };
   const openPanel = (panel: string) => controller.update({ panel, contextMenu: null, ...focusRequest(controller.viewModel.getSnapshot(), "dock") });
+  // 명령 팔레트(IDE-02 · P-10): 독 탭이 아니라 머리 띠 아래의 비모달 오버레이다 — 열어도 독(시험·문제)과 view.panel 은
+  // 그대로다. 연 자리를 기억해 닫으면 그리로 돌린다. 팔레트 안에서 다시 열면(Ctrl+Shift+P) 연 자리는 바뀌지 않는다.
+  const openPalette = (opener?: unknown) => {
+    const doc = root.current?.ownerDocument;
+    const active = doc?.activeElement as Element | null | undefined;
+    if (opener !== undefined) paletteOpener.current = opener;
+    else if (!active?.closest?.(".authoring-command-palette")) paletteOpener.current = active && active !== doc?.body ? active : null;
+    controller.update({ palette: (controller.viewModel.getSnapshot().palette || 0) + 1, contextMenu: null });
+  };
+  const closePalette = (restore: boolean) => {
+    const opener = paletteOpener.current;
+    paletteOpener.current = null;
+    controller.update({ palette: 0 });
+    if (restore && !focusFirst([opener])) focusFirst([toolbarEntry()]);
+  };
+  const commandTable = commandEntries(view.commands, readOnly);
+  shellInput.current.palette = () => openPalette();
   // 도구 막대에서 빠진 동작 — 「더보기」 메뉴와 명령 팔레트가 같은 실행 경로를 쓴다. 첫 항목 「명령」은 팔레트 자신을 여는
   // 길이라 팔레트 안에는 서지 않는다(PALETTE_SELF).
   const moreActions: MenuAction[] = [
-    [PALETTE_SELF, () => openPanel("commands"), false],
+    [PALETTE_SELF, () => openPalette(), false],
     ["의미 복사", act(async () => { await controller.copy(); controller.update(focusRequest(controller.viewModel.getSnapshot(), "dock")); }), false],
     ["붙여넣기", () => openPanel("paste"), !controller.clipboard()],
     ["이전 위치로", act(controller.back), false]];
@@ -1187,6 +1159,24 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     pendingTabFocus.current = neighbour || "-";
     controller.update({});
   })();
+  // 팔레트의 셸 동작(1부) — 키 학습 표면이다(L-50): 셸 키가 있는 동작은 그 키를 곁에 싣는다. 실행 경로는 「파일」·「더보기」·
+  // 셸 키와 같다. 영역 이동·문맥 메뉴는 팔레트가 연 자리로 초점을 돌린 뒤 그 자리에서 누른 키와 같다.
+  const pressHere = (key: string, shiftKey: boolean) => {
+    const target = root.current?.ownerDocument?.activeElement as HTMLElement | null | undefined;
+    const KeyboardEvent = (target?.ownerDocument?.defaultView as Obj | null | undefined)?.KeyboardEvent;
+    // 진짜 키 사건을 그 자리에 쏘면 구조 목록처럼 제 키를 먼저 받는 곳(줄을 고른 뒤 메뉴)도 사람이 누른 것과 같게 간다.
+    if (target && KeyboardEvent && typeof target.dispatchEvent === "function") target.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }));
+    else shellInput.current.key?.({ key, shiftKey, target, nativeEvent: {}, preventDefault() {} });
+  };
+  const paletteActions: PaletteAction[] = ([
+    ...fileActions.filter(([label]) => label === "저장" || label === "다른 이름으로 저장"),
+    ["찾기", () => openPanel("search"), false, "Ctrl+F"],
+    ["결과 시험", () => openDock("trial"), false],
+    ...moreActions.filter(([label]) => label !== PALETTE_SELF),
+    ["다음 영역으로", () => pressHere("F6", false), false, "F6"],
+    ["이전 영역으로", () => pressHere("F6", true), false, "Shift+F6"],
+    ["문맥 메뉴", () => pressHere("F10", true), false, "Shift+F10"],
+  ] as MenuAction[]).map(([label, run, disabled, keys]) => ({ label, run, disabled, keys }));
   const trialShown = dock.active === "trial";
   /** 외부 변경·저장 실패의 결정 동사(AC24·§9.2) — 경보 구획과 비교 구획이 같은 배열·같은 실행 경로를 쓴다(IDE-01).
    *  저장 실패면 「다시 저장」이 더해지고 그것이 그 구획의 주 행동이다. */
@@ -1228,9 +1218,6 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         view.searchSummaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary)),
       // 적중은 원문으로 옮겨 가는 행이다(UX-09): 종류 칩 · 문맥 · 흐린 문서 이름 · 이동 화살표.
       rowList("검색 결과", view.hits.map((hit: Obj) => rowButton({ chip: KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, text: hit.context || hit.name || hit.label, context: hit.document }, select(hit)))));
-    if (key === "commands") return h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
-      h(CommandList, { view, readOnly, onPick: pick }),
-      h("div", { className: "authoring-palette authoring-command-more" }, ...moreActions.filter(([label]) => label !== PALETTE_SELF).map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", onClick: run, disabled }, label))));
     // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
     if (key === "raw") return h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
       view.syntax?.note && h("p", null, view.syntax.note),
@@ -1316,7 +1303,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     if (shortcut === "save") act(() => controller.save(), "save")();
     else if (shortcut === "search") openPanel("search");
     else if (shortcut === "editor-search") act(() => controller.command("search"))();
-    else if (shortcut === "commands") openPanel("commands");
+    else if (shortcut === "commands") openPalette();
     else if (shortcut === "rename") rename();
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
     else if (shortcut === "escape") {
@@ -1442,21 +1429,22 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           iconButton(view.dockMax ? "restore" : "maximize", view.dockMax ? "복원" : "최대화", () => controller.update({ dockMax: !view.dockMax })),
           iconButton("close", "닫기", closeDock))),
       dock.active && h("div", { className: "authoring-dock-panel", id: "authoring-dock-panel", role: "tabpanel", tabIndex: -1, "aria-labelledby": `authoring-dock-tab-${dock.active}` }, dockContent(dock.active))),
-    // 문맥 메뉴·더보기(§6.1·APG menu): ↑↓·Home·End 로 옮기고 Tab 은 메뉴를 닫는다. 불가 항목도 초점을 받아 사유를 읽힌다.
-    // 공유 사유는 메뉴의 자식이 아니다 — 메뉴 머리 줄로 서고 불가 항목이 설명으로 가리킨다.
+    // 문맥 메뉴·더보기(§6.1·APG menu): ↑↓·Home·End 로 옮기고 Tab 은 메뉴를 닫는다. 문맥 메뉴는 되는 명령과 대안만 싣는다
+    // (IDE-02) — 불가 사유는 명령 팔레트가 읽힌다. 「더보기」·「파일」의 불가 항목은 초점을 받는다(자리를 기억하는 메뉴다).
     view.contextMenu && (item || view.contextMenu.kind === "file") && h("div", { className: "authoring-context-menu", ref: menuRef, style: { left: view.contextMenu.x, top: view.contextMenu.y },
       onKeyDown: (event: any) => {
         if (roveFocus(event, event.currentTarget, '[role="menuitem"]', "vertical")) return;
         if (event.key === "Tab") { const trigger = view.contextMenu?.trigger; controller.update({ contextMenu: null }); if (focusable(trigger)) trigger.focus(); }
       } },
-      !view.contextMenu.kind && sharedReason(view.commands) && h("p", { id: "authoring-command-reason-menu", className: "authoring-reason" }, sharedReason(view.commands)),
       h("div", { className: "authoring-menu", id: "authoring-menu", role: "menu", "aria-label": view.contextMenu.kind === "more" ? "더보기" : view.contextMenu.kind === "file" ? "파일" : "문맥 명령" },
         view.contextMenu.kind
           ? (view.contextMenu.kind === "file" ? fileActions : moreActions).map(([label, run, disabled, keys]) => h("button", { key: label, type: "button",
-            className: `authoring-menu-item${keys ? " with-key" : ""}`, role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined, "aria-keyshortcuts": keys ? ARIA_KEYS[keys] : undefined,
+            className: `authoring-menu-item${keys ? " with-key" : ""}`, role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined, "aria-keyshortcuts": ariaKeys(keys),
             onClick: () => { if (disabled) return; const trigger = view.contextMenu?.trigger; if (focusable(trigger)) trigger.focus(); controller.update({ contextMenu: null }); run(); } },
             label, keys ? h("kbd", { className: "authoring-key", "aria-hidden": true }, keys) : null))
-          : h(CommandList, { view, readOnly, menu: true, onPick: pick }))),
+          : h(CommandMenu, { entries: commandTable, readOnly, onPick: pick, onPalette: () => { const trigger = view.contextMenu?.trigger; controller.update({ contextMenu: null }); openPalette(trigger); } }))),
+    // 명령 팔레트(IDE-02): 비모달 오버레이 — 여는 차례 번호가 열쇠라 다시 열면 입력이 비고 초점이 입력칸으로 간다.
+    item && view.palette ? h(CommandPalette, { key: view.palette, entries: commandTable, actions: paletteActions, onPick: pick, onClose: closePalette }) : null,
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).
     item && h("footer", { className: "authoring-status", role: "group" },
       // 왼쪽: 저장·준비와 구조 검사. 오른쪽: 보존·복원·시험·복구 초안. 구분선은 CSS 가 그린다(글자가 아니다).
