@@ -179,10 +179,13 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       exportTimer = window.setTimeout(exportScheduled, EXPORT_DEBOUNCE_MS);
     }
   });
-  /** Iframe client coordinates → host client coordinates. */
+  /** Iframe client coordinates → host client coordinates. The canvas may be CSS-zoomed (편집면 확대),
+   *  so iframe px are scaled by the frame's rendered width over its own viewport width. */
   const hostPoint = (x: number, y: number) => {
     const frame = editor.element.getBoundingClientRect();
-    return { x: frame.left + x, y: frame.top + y };
+    const inner = editor.element.contentWindow?.innerWidth;
+    const scale = inner && frame.width ? frame.width / inner : 1;
+    return { x: frame.left + x * scale, y: frame.top + y * scale };
   };
   /** The host menu reads the shell's selection, so the caret the menu was opened at goes first. */
   const openMenu = (point: { x: number; y: number }) => {

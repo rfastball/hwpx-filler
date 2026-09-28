@@ -40,7 +40,7 @@ function fakeStudio(log, hooks = {}) {
     onDocumentChanged(listener) { changed.add(listener); return () => changed.delete(listener); },
     onShortcut(listener) { shortcuts.add(listener); return () => shortcuts.delete(listener); },
     onContextMenuRequest(listener) { menus.add(listener); return () => menus.delete(listener); },
-    element: { getBoundingClientRect: () => hooks.frame ?? { left: 0, top: 0 } },
+    element: { getBoundingClientRect: () => hooks.frame ?? { left: 0, top: 0 }, contentWindow: hooks.frameWindow },
     chrome: { async set() {} },
     plugins: {
       async invoke(plugin, method, args) {
@@ -430,4 +430,17 @@ test("UX-07: the editor iframe is named by the spec title, and labels follow the
     [["setDecorations", 1, { labels: "selected" }], ["setDecorations", 1, { labels: "all" }], ["setDecorations", 0, { labels: "none" }]],
     "template mode labels only the field under the caret or pointer; structure mode labels all");
   handle.dispose(); viewer.dispose();
+}));
+
+test("UX-07: a zoomed canvas scales iframe coordinates into host coordinates", () => withDom(async () => {
+  const menus = [];
+  // 편집면 150%: the frame renders 300 host px wide over a 200 px iframe viewport.
+  const fake = fakeStudio([], { frame: { left: 10, top: 20, width: 300 }, frameWindow: { innerWidth: 200 } });
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, onContextMenu: (point) => menus.push(point),
+    preflight: async () => ({ editable: true }), studio: fake.studio });
+  fake.rightClick({ x: 40, y: 60 });
+  await settle();
+  assert.deepEqual(menus, [{ x: 70, y: 110 }]);
+  handle.dispose();
 }));
