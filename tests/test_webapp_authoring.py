@@ -10,7 +10,7 @@ import pytest
 
 from hwpxfiller.external.authoring_store import digest
 from hwpxfiller.webapp.screen_authoring import AuthoringController
-from hwpxfiller.domain.template_authoring import apply as apply_txt
+from hwpxfiller.domain.template_authoring import COMMAND_TYPES, apply as apply_txt
 from hwpxcore.package import HwpxPackage
 
 
@@ -462,6 +462,135 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
     assert next(item for item in native["commands"] if item["type"] == "rename_field")["enabled"] is True
     assert ctrl.dispatch("commands", {"session_id": hwpx["session_id"], "revision": 0,
                                       "selection": selection}) == {"commands": native["commands"]}
+
+
+# ── #1021: 구조 목록·검색 대상은 좌표가 아니라 정체로 locate 한다(§3.3·§6.1·§6.2, AC18 두 형식 동일) ──
+_TARGET_ENABLED = {
+    "field": {"rename_field"},
+    "occurrence": {"rename_field", "relink_field", "unset_field"},
+    "slot": {"rename_slot", "adjust_range", "unwrap", "delete", "duplicate", "move"},
+    "option": {"rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"},
+}
+
+
+def _native_structured() -> str:
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx
+
+    hp = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+    hs = "http://www.hancom.co.kr/hwpml/2011/section"
+    entry = "Contents/section0.xml"
+    package = HwpxPackage()
+    package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    package.stored.add(MIMETYPE_NAME)
+    package.entries[entry] = (
+        f'<hs:sec xmlns:hs="{hs}" xmlns:hp="{hp}">'
+        '<hp:p><hp:run><hp:t>머리</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>본문 값</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>끝</hp:t></hp:run></hp:p></hs:sec>'
+    ).encode("utf-8")
+    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 1,
+                         "start": 3, "end": 4, "name": "이름"})
+    apply_hwpx(package, {"type": "create_slot", "entry": entry,
+                         "start_paragraph": 0, "end_paragraph": 2, "id": "항목1", "label": "표시"})
+    apply_hwpx(package, {"type": "create_option", "entry": entry,
+                         "start_paragraph": 1, "end_paragraph": 1, "slot_id": "항목1", "id": "안1"})
+    return base64.b64encode(package.to_bytes()).decode("ascii")
+
+
+def _outline_targets(analysis: dict) -> dict[str, tuple[dict, dict]]:
+    """구조 목록이 보내는 (정체, 좌표) — 필드 전체는 첫 사용 위치를 좌표로 싣는다(authoring_controller.select)."""
+    field = analysis["fields"][0]
+    slot = analysis["slots"][0]
+    option = slot["options"][0]
+    return {
+        "field": ({"kind": "field", "name": field["name"]}, field["occurrences"][0]),
+        "occurrence": ({"kind": "occurrence", "name": field["name"]}, field["occurrences"][0]),
+        "slot": ({"kind": "slot", "slot_id": slot["id"]}, slot["location"]),
+        "option": ({"kind": "option", "slot_id": slot["id"], "option_id": option["id"]},
+                   option["location"]),
+    }
+
+
+@pytest.mark.parametrize("media", ["txt", "hwpx"])
+def test_outline_targets_locate_by_identity_with_domain_availability(tmp_path: Path, media: str) -> None:
+    ctrl = _controller(tmp_path)
+    content = _structured_txt() if media == "txt" else _native_structured()
+    opened = ctrl.dispatch("new", {"media": media, "content": content})
+    sid = opened["session_id"]
+    if media == "hwpx":
+        assert ctrl.dispatch("rhwp_roundtrip_preflight", {"session_id": sid, "revision": 0,
+                                                           "content": content})["editable"]
+    located = {}
+    for kind, (target, selection) in _outline_targets(opened["analysis"]).items():
+        result = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
+                                          "selection": selection, "target": target})
+        located[kind] = result
+        assert [item["type"] for item in result["commands"]] == list(COMMAND_TYPES)
+        assert {item["type"] for item in result["commands"] if item["enabled"]} == _TARGET_ENABLED[kind], kind
+        assert all(item["reason"] and item["reason"] != "선택 위치가 올바르지 않습니다."
+                   for item in result["commands"] if not item["enabled"]), kind
+    field = located["field"]
+    assert field["selected"]["kind"] == "field" and field["selected"]["occurrences"]
+    assert {item["type"]: item["reason"] for item in field["commands"]
+            if item["type"] in {"relink_field", "unset_field", "create_field", "create_slot"}} == {
+        "relink_field": "필드 사용 위치를 하나 선택하세요.",
+        "unset_field": "필드 사용 위치를 하나 선택하세요.",
+        "create_field": "선택 범위에 기존 필드가 포함되어 있습니다.",
+        "create_slot": "문서에서 범위를 선택하세요.",
+    }
+    slot_commands = {item["type"]: item for item in located["slot"]["commands"]}
+    assert slot_commands["create_option"] == {
+        "type": "create_option", "enabled": False, "alternative": None,
+        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."}
+    assert slot_commands["rename_option"]["reason"] == "선택 영역을 선택하세요."
+    assert located["slot"]["context"] == {"slot_id": "항목1", "option_id": None, "reason": ""}
+    assert located["option"]["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    assert located["option"]["selected"]["option_id"] == "안1"
+
+    # 필드 전체 선택에서 곧바로 이름 변경 미리보기가 선다(U07/F17) — 우회 없이.
+    name = opened["analysis"]["fields"][0]["name"]
+    rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
+        **field["selected"], "type": "rename_field", "old_name": name, "name": "새이름"}})
+    assert rename["affected"] == 1 and "refusal" not in rename
+    # 사용 위치 한 곳에서는 그 자리의 연결 변경이 선다.
+    relink = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
+        **located["occurrence"]["selected"], "type": "relink_field", "name": "다른필드"}})
+    assert relink["affected"] == 1 and "refusal" not in relink
+    # 되짚지 못하는 정체는 좌표 선택과 같은 무효다.
+    for target in ({"kind": "field", "name": "없음"}, {"kind": "slot", "slot_id": "없음"},
+                   {"kind": "option", "slot_id": "항목1", "option_id": "없음"}, {"kind": "text"},
+                   {"kind": "occurrence", "name": name}):
+        invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
+                                           "selection": {"start": 999, "end": 999}, "target": target})
+        assert invalid["matches"] == [] and not any(item["enabled"] for item in invalid["commands"])
+    with pytest.raises(ValueError):
+        ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {}, "target": "field"})
+
+
+def test_hwpx_occurrence_target_reports_its_owner_and_template_field_is_renamable(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": _native_structured()})
+    field = opened["analysis"]["fields"][0]
+    occurrence = ctrl.dispatch("locate", {"session_id": opened["session_id"], "revision": 0,
+                                          "selection": field["occurrences"][0],
+                                          "target": {"kind": "occurrence", "name": field["name"]}})
+    assert occurrence["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    # 좌표 없는 누름틀(template_v1) — 좌표 locate 는 무효였지만 정체 locate 는 이름 변경을 연다.
+    fixture = ctrl.open_path(Path(__file__).parent / "fixtures" / "template_v1.hwpx")
+    first = fixture["analysis"]["fields"][0]
+    whole = ctrl.dispatch("locate", {"session_id": fixture["session_id"], "revision": 0,
+                                     "selection": first["occurrences"][0],
+                                     "target": {"kind": "field", "name": first["name"]}})
+    assert next(item for item in whole["commands"] if item["type"] == "rename_field")["enabled"] is True
+    hits = ctrl.dispatch("search", {"session_id": fixture["session_id"], "revision": 0,
+                                    "query": first["name"], "kind": "field"})["hits"]
+    assert hits and all(hit["kind"] == "field" and hit["name"] == first["name"] for hit in hits)
+    # 실 브리지 관문도 정체 키를 받는다 — 헤드리스 dispatch 는 이 관문 아래로 들어가므로 따로 잰다.
+    from hwpxfiller.webapp.action_registry import validate_dispatch
+
+    validate_dispatch("authoring", "locate", {"session_id": "s", "revision": 0, "selection": {},
+                                              "target": {"kind": "field", "name": first["name"]}})
 
 
 def test_preview_returns_structured_refusals_without_changing_content(tmp_path: Path) -> None:

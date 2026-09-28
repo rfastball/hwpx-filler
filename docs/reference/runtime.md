@@ -99,7 +99,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `discard_recovery` | `session_id` | — |
 | `external_content` | `session_id` | — |
 | `impact` | `session_id`, `revision` | — |
-| `locate` | `session_id`, `revision`, `selection` | — |
+| `locate` | `session_id`, `revision`, `selection` | `target` |
 | `new` | `media` | `content` |
 | `prepare_apply` | `session_id`, `revision`, `job_name` | — |
 | `preview` | `session_id`, `revision`, `command` | — |

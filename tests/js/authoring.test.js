@@ -122,6 +122,75 @@ test("late semantic location results cannot replace the newer canvas selection",
   assert.equal(controller.viewModel.getSnapshot().selection.start, 5);
 });
 
+test("#1021: an outline target is located by identity and survives the editor echo its own focus causes", async () => {
+  const TARGET_COMMANDS = [{ type: "rename_field", enabled: true, reason: null, alternative: null },
+    { type: "relink_field", enabled: false, reason: "필드 사용 위치를 하나 선택하세요.", alternative: null }];
+  const occurrence = { entry: "Contents/section0.xml", paragraph: 0, occurrence: 0, pairing_id: "7" };
+  const field = { kind: "field", name: "진행상태", count: 1, occurrences: [occurrence] };
+  const caret = [];
+  const { controller, calls } = harness((action, payload) => {
+    if (action !== "locate") return {};
+    if (payload.target) return { selected: { ...field }, matches: [], context: { slot_id: null }, commands: TARGET_COMMANDS };
+    caret.push(payload.selection);
+    // 좌표 locate 는 문단 단위 근사 후보만 안다 — 되울림이 이 결과로 명시 선택을 덮으면 대상이 사라진다.
+    return { matches: [{ kind: "field", name: "진행상태", location: occurrence, approximate: true }], context: {}, commands: [] };
+  });
+  await controller.activate("a");
+  const echo = { entry: "Contents/section0.xml", paragraph: 0, start_paragraph: 0, end_paragraph: 0, start: 0, end: 6 };
+  let focused = 0;
+  controller.attach("a", { decorate() {}, focus: async (place) => {
+    focused++;
+    controller.selection("a", { ...echo, end: 0 });   // 초점 이동 중의 중간 보고(TXT 는 동기로 온다)
+    // rhwp 는 초점이 끝난 뒤 300ms 주기로 보고한다 — 초점 해소 뒤에 되울림을 보낸다.
+    setTimeout(() => controller.selection("a", echo), 0);
+    assert.equal(place.start, undefined, "좌표 없는 사용 위치는 편집기가 문단으로 옮긴다");
+  } });
+  controller.update({ matches: [{ kind: "field", name: "진행상태", location: occurrence, approximate: true }] });
+  await controller.select({ source_revision: 0, ...field });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const asked = calls.find((call) => call.action === "locate");
+  assert.deepEqual(asked.target, { kind: "field", name: "진행상태" }, "필드 전체는 좌표가 아니라 대상으로 묻는다");
+  let view = controller.viewModel.getSnapshot();
+  assert.equal(focused, 1);
+  assert.deepEqual(caret, [], "되울림은 좌표 locate 를 다시 부르지 않는다");
+  assert.equal(view.selected.name, "진행상태");
+  assert.ok(Array.isArray(view.selected.occurrences), "필드 전체 선택이 남는다");
+  assert.deepEqual(view.commands, TARGET_COMMANDS);
+  assert.equal(view.commandType, "rename_field");
+  assert.equal(view.selection.end, 6, "편집기 좌표는 위치 기억용으로 받아 둔다");
+  assert.deepEqual(view.matches, [], "일치 후보 줄은 이 선택에 대해 Python 이 준 것이다 — 앞선 캐럿의 문단 내 후보가 남지 않는다");
+  // 사용자가 다른 자리로 캐럿을 옮기면 그 판정이 이긴다.
+  controller.selection("a", { ...echo, paragraph: 2, start_paragraph: 2, end_paragraph: 2, start: 1, end: 1 });
+  await new Promise(setImmediate);
+  view = controller.viewModel.getSnapshot();
+  assert.equal(caret.length, 1);
+  assert.equal(view.selected, null);
+  assert.deepEqual(view.commands, []);
+  // 사용 위치 한 곳은 occurrence 로, 항목·선택은 식별자로 묻는다.
+  await controller.select({ source_revision: 0, ...occurrence, name: "진행상태", kind: "field" });
+  await controller.select({ source_revision: 0, kind: "option", slot_id: "s", option_id: "o", entry: "Contents/section0.xml", start_paragraph: 1, end_paragraph: 1 });
+  assert.deepEqual(calls.filter((call) => call.action === "locate" && call.target).map((call) => call.target), [
+    { kind: "field", name: "진행상태" }, { kind: "occurrence", name: "진행상태" }, { kind: "option", slot_id: "s", option_id: "o" }]);
+});
+
+test("#1021: a caret locate that left before an explicit selection cannot replace it", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { controller } = harness(async (action, payload) => {
+    if (action !== "locate") return {};
+    if (payload.target || payload.selection.start !== 1) return { selected: { kind: "slot", slot_id: "s", label: "항목" }, context: { slot_id: "s" }, commands: [] };
+    await gate;
+    return { matches: [{ kind: "field", name: "캐럿", location: payload.selection }], context: {}, commands: [] };
+  });
+  await controller.activate("a");
+  controller.selection("a", { start: 1, end: 1 });
+  await new Promise(setImmediate);
+  await controller.select({ source_revision: 0, kind: "slot", slot_id: "s", start: 10, end: 20 });
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(controller.viewModel.getSnapshot().selected.slot_id, "s");
+});
+
 test("save drains the native editor export before sending the fenced save", async () => {
   const { controller, calls } = harness((action) => action === "update" ? { revision: 1 } : {});
   controller.attach("a", {

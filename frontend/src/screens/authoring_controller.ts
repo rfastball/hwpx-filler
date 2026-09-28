@@ -35,6 +35,33 @@ export function coordinates(selection: Obj | null | undefined): Obj {
   return picked.start === undefined || picked.end === undefined ? {} : picked;
 }
 
+/** 선택 대상의 정체 — Python 이 좌표가 아니라 대상으로 locate 를 판정한다(§3.3·§6.2). 여기서는 투영이 준 열쇠만 옮긴다.
+ *  필드 목록의 필드 전체는 occurrences 를 싣고, 사용 위치·검색 적중·일치 후보는 한 자리다. 정체가 없으면 좌표 선택이다. */
+export function semanticTarget(target: Obj): Obj | undefined {
+  if (target.kind === "field" && typeof target.name === "string")
+    return { kind: Array.isArray(target.occurrences) ? "field" : "occurrence", name: target.name };
+  if (target.kind === "slot" && typeof target.slot_id === "string") return { kind: "slot", slot_id: target.slot_id };
+  if (target.kind === "option" && typeof target.slot_id === "string" && typeof target.option_id === "string")
+    return { kind: "option", slot_id: target.slot_id, option_id: target.option_id };
+  return undefined;
+}
+
+/** 명시 선택이 편집기를 옮긴 자리의 되울림인가 — 같은 섹션·셀·문단 범위이고, 편집기가 받은 시작(없으면 0)과 끝(있으면)이다. */
+function echoes(place: Obj, selection: Obj): boolean {
+  if ((place.entry ?? null) !== (selection.entry ?? null)) return false;
+  if (JSON.stringify(cellPath(place.cell_path)) !== JSON.stringify(cellPath(selection.cell_path))) return false;
+  const first = place.start_paragraph ?? place.paragraph;
+  if (first != null) {
+    const low = selection.start_paragraph ?? selection.paragraph;
+    const high = selection.end_paragraph ?? low;
+    if (!(low >= first && high <= (place.end_paragraph ?? first))) return false;
+  }
+  if (selection.start !== (place.start ?? (first != null ? 0 : undefined))) return false;
+  return typeof place.end !== "number" || selection.end === place.end;
+}
+const cellPath = (path: unknown): unknown[] | null => Array.isArray(path)
+  ? path.map((step: Obj) => [step?.parent_paragraph, step?.control, step?.cell, step?.paragraph]) : null;
+
 export function createAuthoringController(deps: Deps) {
   const model = deps.runtime.model<Obj | null>("authoring");
   const editors = new Map<string, AuthoringEditor>();
@@ -47,6 +74,9 @@ export function createAuthoringController(deps: Deps) {
   const generations = new Map<string, number>();
   const inputPumps = new Map<string, Promise<void>>();
   const selectionRequests = new Map<string, number>();
+  // 명시 선택(구조 목록·검색·문제·시험 추적)이 편집기 초점을 옮기면 편집기가 그 선택을 되울린다. 초점 이동 중의
+  // 모든 보고와, 끝난 뒤 그 자리의 첫 보고는 되울림이다 — 명시 대상·판정을 덮지 않는다. 다른 자리는 사용자 이동이다.
+  let explicit: { id: string; place: Obj; focusing: boolean } | null = null;
   // U02: Python 이 판정한 복원 대상(tab.restore)은 **새 뷰에 한 번** 소비한다 — 표시 방식은 뷰에, 좌표는
   // 편집기가 붙는 순간 초점으로. 바뀐 위치·방식은 잠시 모아 Python 에 보낸다(보관·판정은 Python 몫).
   const pendingRestore = new Map<string, Obj>();
@@ -237,15 +267,26 @@ export function createAuthoringController(deps: Deps) {
     if (target.session_id && target.session_id !== snapshot().active_id) await activate(target.session_id);
     const id = snapshot().active_id;
     const location = target.location || target.occurrences?.[0] || target.source || target;
-    await flush(id);
-    const located = target.source_revision != null
-      ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location }) : null;
-    navigationHistory.push(previous);
-    update({ selected: { ...location, ...target }, selection: location, panel: "properties", refusal: null, preview: null, command: null,
-      context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
-      commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
-    if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
-      await editors.get(id)?.focus({ ...location, start: location.source_start ?? location.start, end: location.source_end ?? location.end });
+    const place = { ...location, start: location.source_start ?? location.start, end: location.source_end ?? location.end };
+    const hold = { id, place, focusing: true };
+    // 이 선택보다 먼저 떠난 캐럿 locate 는 늦게 와도 이 선택을 바꾸지 못한다.
+    explicit = hold;
+    selectionRequests.set(id, (selectionRequests.get(id) || 0) + 1);
+    try {
+      await flush(id);
+      const identity = semanticTarget(target);
+      const located = target.source_revision != null
+        ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
+      navigationHistory.push(previous);
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], panel: "properties", refusal: null, preview: null, command: null,
+        context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
+        commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
+      if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
+        await editors.get(id)?.focus(place);
+    } catch (error) {
+      if (explicit === hold) explicit = null;
+      throw error;
+    } finally { hold.focusing = false; }
   }
 
   async function back() {
@@ -390,6 +431,17 @@ export function createAuthoringController(deps: Deps) {
 
   async function selection(id: string, selection: Obj) {
     if (id !== viewId) return;
+    const hold = explicit?.id === id ? explicit : null;
+    if (hold && (hold.focusing || !Object.keys(selection).length || echoes(hold.place, selection))) {
+      // 되울림: 편집기 좌표만 받아 두고(위치 기억) 명시 대상·명령 판정은 그대로 둔다. 진행 중인 캐럿 locate 도 물린다.
+      if (!Object.keys(selection).length) return;
+      if (!hold.focusing) explicit = null;
+      selectionRequests.set(id, (selectionRequests.get(id) || 0) + 1);
+      update({ selection });
+      scheduleRemember(id);
+      return;
+    }
+    if (hold) explicit = null;
     const same = ["entry", "start", "end", "paragraph", "start_paragraph", "end_paragraph"].every((key) => selection[key] === view.selection[key]);
     const request = (selectionRequests.get(id) || 0) + 1;
     selectionRequests.set(id, request);
