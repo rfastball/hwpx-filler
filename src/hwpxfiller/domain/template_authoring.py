@@ -304,6 +304,11 @@ def _from_utf16(text: str, offset: object) -> int:
     raise ValueError("선택 위치가 문서 밖에 있습니다.")
 
 
+def from_utf16(text: str, offset: object) -> int:
+    """편집기 선택의 UTF-16 단위 위치 → code point 위치. 문자 중간·문서 밖·잘못된 값은 ValueError."""
+    return _from_utf16(text, offset)
+
+
 def _line_starts(text: str) -> list[int]:
     starts = [0]
     for line in text.splitlines(keepends=True):

@@ -12,9 +12,11 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-head,.authoring-tabs{display:flex;align-items:center;gap:var(--sp-8)}
 .authoring-head{flex-wrap:wrap}
 .authoring-head h1{font-size:var(--fs-section);margin:0 auto 0 0}
-.authoring-tabs{flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--a-border)}
+/* 탭 줄의 밑선은 안쪽 그림자다(UX-10 R7): 탭이 -1px 로 밑선을 덮던 방식은 1px 세로 넘침을 만들어, 넘칠 것이 없어도
+   스크롤 막대 썸이 섰다. 이제 탭은 줄 안에 꼭 맞고, 가로로 실제 넘칠 때만 얇은 막대가 선다. */
+.authoring-tabs{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;box-shadow:inset 0 -1px 0 var(--a-border)}
 /* 문서 탭(APG tabs): 탭 자체가 초점을 받는 한 칸이다. 닫기 단추는 그 안의 마우스용 표지다. */
-.authoring-tab{display:flex;flex:none;align-items:center;gap:var(--sp-4);padding:var(--sp-2) var(--sp-2) 0 var(--sp-12);border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--a-muted);cursor:pointer}
+.authoring-tab{display:flex;flex:none;align-items:center;gap:var(--sp-4);padding:var(--sp-2) var(--sp-2) 0 var(--sp-12);border:0;border-bottom:2px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer}
 .authoring-tab:hover{color:var(--a-ink);background:var(--n-hover)}
 .authoring-tab[aria-selected=true]{color:var(--a-ink);border-bottom-color:var(--a-primary);font-weight:600}
 /* 미저장 표지(UX-09): 글자 「 ·」 가 아니라 점 원소 — 테두리로 그려 강제 색상에서도 남는다. 뜻은 탭 이름이 싣는다. */
@@ -202,6 +204,7 @@ body.resizing-authoring iframe{pointer-events:none}
 /* APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 흐린 글자와 곁의 사유로 구별한다(색만이 아니다). */
 .authoring-context-menu [role=menuitem][aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
 .authoring-context-menu [role=menuitem] .authoring-reason{display:block}
+.authoring-context-menu [role=menuitem] .authoring-reason.group-reason{margin-bottom:var(--sp-2)}
 .authoring-context-menu>.authoring-reason{padding:var(--sp-4) var(--sp-6)}
 .authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul:not(.authoring-rows){margin:var(--sp-4) 0;padding-left:var(--sp-16)}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
@@ -290,6 +293,8 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-target-kind .icon{width:16px;height:16px}
 .authoring-target-kind .authoring-kind{border:0;padding:0;margin:0}
 .authoring-target-name{margin:0;font-weight:600;overflow-wrap:anywhere}
+/* 선택한 문구(UX-10 R2): 긴 범위는 두 줄에서 접고 전문은 title 로 둔다. */
+.authoring-target-name.quote{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
 .authoring-target-meta{margin:0;font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
 .authoring-properties-actions{position:sticky;bottom:calc(var(--sp-12) * -1);z-index:1;margin:auto calc(var(--sp-12) * -1) 0;padding:var(--sp-12);border-top:1px solid var(--a-border);background:var(--a-card)}
 .authoring-refusal .authoring-actions{margin-top:var(--sp-8)}
@@ -345,6 +350,7 @@ body.resizing-authoring iframe{pointer-events:none}
 @media(forced-colors:active){
   .authoring-tree [role=treeitem][data-kind=slot]>[role=group],.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left-color:CanvasText}
   .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
+  .authoring-tabs{border-bottom:1px solid CanvasText}
   .authoring-menu-item.group-start::before,.authoring-command.group-start::before,.authoring-properties-actions,.authoring-problem+.authoring-problem{border-color:CanvasText}
   .authoring-target{border-color:CanvasText}
   .authoring-crumb[aria-current=location]{outline:1px solid CanvasText}

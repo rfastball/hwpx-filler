@@ -520,13 +520,20 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
                 child.text or "" for run in paragraph if run.tag == f"{_HP}run"
                 for child in run if child.tag == f"{_HP}t"
             )
+            path = root.getroottree().getpath(paragraph)
+            seen: set[str] = set()
             for match in pattern.finditer(body):
+                context = _body_hit_context(_paragraph_pieces(paragraph, marks), match.start(), match.end())
+                # 같은 문단에서 보이는 줄이 같은 결과(예: 「수요기관:」 글자와 필드 값 「{{수요기관}}」 — 필드 값 안의
+                # 일치는 필드 전체를 표지로 보인다)는 사용자가 구별할 수 없는 한 자리다. 첫 일치 하나로 합친다(UX-10 R4).
+                if context in seen:
+                    continue
+                seen.add(context)
                 hits.append({"entry": entry, **position,
-                             "paragraph_path": root.getroottree().getpath(paragraph),
+                             "paragraph_path": path,
                              "start": match.start(), "end": match.end(),
                              "kind": "text",
-                             "context": _body_hit_context(_paragraph_pieces(paragraph, marks),
-                                                          match.start(), match.end())})
+                             "context": context})
     return {"hits": hits}
 
 
@@ -572,6 +579,58 @@ def _field_range_refusal(sites: list, hazards: list[int], text: str, start: int,
     return None
 
 
+def _selected_paragraph(root, paragraph_index: object, cell_path: object):
+    """본문 문단 번호, 또는 rhwp 커서 경로(cell_path)로 가리킨 셀 문단 하나."""
+    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
+    if isinstance(cell_path, list):
+        # rhwp 커서 경로로 셀 문단을 확정한다 — 같은 규칙(_cell_path)으로 되읽어 일치하는
+        # 문단만 인정하므로 analyze_hwpx 가 보고하는 좌표와 어긋날 수 없다.
+        if not cell_path or not all(
+            isinstance(step, dict) and set(step) == _CELL_PATH_KEYS
+            and all(type(value) is int and value >= 0 for value in step.values())
+            for step in cell_path
+        ) or paragraph_index != cell_path[-1]["paragraph"]:
+            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
+        owner_index = cell_path[0]["parent_paragraph"]
+        candidates = ([node for node in paragraphs[owner_index].iter(f"{_HP}p")
+                       if _cell_path(root, node) == cell_path]
+                      if owner_index < len(paragraphs) else [])
+        if len(candidates) != 1:
+            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
+        return candidates[0]
+    if not isinstance(paragraph_index, int) or not 0 <= paragraph_index < len(paragraphs):
+        raise ValueError("선택한 문단이 문서 영역 밖에 있습니다.")
+    return paragraphs[paragraph_index]
+
+
+def selected_text_hwpx(content: object, selection: Mapping[str, object]) -> str | None:
+    """선택한 문구(UX-10 R2) — 한 문단 안의 문자 범위를 필드 만들기와 같은 규칙으로 읽는다.
+
+    문단을 넘거나, 빈 범위이거나, 제어 요소가 끼어 문자 위치를 확정할 수 없으면 None 이다(짐작하지 않는다).
+    """
+    package = require_package(content)
+    entry = selection.get("entry")
+    first = selection.get("start_paragraph", selection.get("paragraph"))
+    last = selection.get("end_paragraph", first)
+    start, end = selection.get("start"), selection.get("end")
+    if (not isinstance(entry, str) or entry not in package.entries
+            or any(type(value) is not int or value < 0 for value in (first, last, start, end))
+            or first != last):
+        return None
+    assert isinstance(start, int) and isinstance(end, int)
+    if end <= start:
+        return None
+    root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
+    try:
+        paragraph = _selected_paragraph(root, first, selection.get("cell_path"))
+    except ValueError:
+        return None
+    sites, hazards, text = _paragraph_sites(paragraph)
+    if _field_range_refusal(sites, hazards, text, start, end) is not None:
+        return None
+    return text[start:end]
+
+
 def _create_field(package, command: Mapping[str, object]) -> str:
     entry = command.get("entry")
     if not isinstance(entry, str) or entry not in package.entries:
@@ -589,28 +648,8 @@ def _create_field(package, command: Mapping[str, object]) -> str:
         if len(paragraphs) != 1 or paragraphs[0].tag != f"{_HP}p":
             raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
         paragraph = paragraphs[0]
-    elif isinstance(cell_path, list):
-        # rhwp 커서 경로로 셀 문단을 확정한다 — 같은 규칙(_cell_path)으로 되읽어 일치하는
-        # 문단만 인정하므로 analyze_hwpx 가 보고하는 좌표와 어긋날 수 없다.
-        paragraphs = [node for node in root if node.tag == f"{_HP}p"]
-        if not cell_path or not all(
-            isinstance(step, dict) and set(step) == _CELL_PATH_KEYS
-            and all(type(value) is int and value >= 0 for value in step.values())
-            for step in cell_path
-        ) or paragraph_index != cell_path[-1]["paragraph"]:
-            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
-        owner_index = cell_path[0]["parent_paragraph"]
-        candidates = ([node for node in paragraphs[owner_index].iter(f"{_HP}p")
-                       if _cell_path(root, node) == cell_path]
-                      if owner_index < len(paragraphs) else [])
-        if len(candidates) != 1:
-            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
-        paragraph = candidates[0]
     else:
-        paragraphs = [node for node in root if node.tag == f"{_HP}p"]
-        if not isinstance(paragraph_index, int) or not 0 <= paragraph_index < len(paragraphs):
-            raise ValueError("선택한 문단이 문서 영역 밖에 있습니다.")
-        paragraph = paragraphs[paragraph_index]
+        paragraph = _selected_paragraph(root, paragraph_index, cell_path)
     if command.get("end_paragraph", paragraph_index) != paragraph_index:
         raise ValueError(_MULTI_PARAGRAPH_FIELD)
     sites, hazards, text = _paragraph_sites(paragraph)

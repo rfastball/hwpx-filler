@@ -103,11 +103,12 @@ export function createAuthoringController(deps: Deps) {
   const snapshot = (): Obj => model.getSnapshot() || { tabs: [], active_id: "" };
   const tab = (id = snapshot().active_id): Obj => (snapshot().tabs || []).find((item: Obj) => item.id === id) || {};
   const update = (patch: Obj) => { view = { ...view, ...patch }; if (viewId) views.set(viewId, view); listeners.forEach((listener) => listener()); };
-  const dispatch = async (action: string, payload: Obj = {}): Promise<Obj> => {
+  // verdict: Python 이 판정을 세션 상태로 이미 투영한 호출(시험 입력 검증 등) — ok:false 는 오류 띠가 아니라 그 표면이 보인다.
+  const dispatch = async (action: string, payload: Obj = {}, verdict = false): Promise<Obj> => {
     const call = deps.client.dispatch as unknown as (screen: string, name: string, body: Obj) => ReturnType<BridgeClient["dispatch"]>;
     const result = expectHostValue(await call("authoring", action, payload), `authoring/${action}`) as Obj;
     // 거절(refusal)은 오류가 아니라 판정이다 — 호출자가 사유와 대안을 그린다(U07·AC08·AC10).
-    if (result?.ok === false && !result.refusal) throw new Error(result.message || result.detail || result.reason);
+    if (result?.ok === false && !result.refusal && !verdict) throw new Error(result.message || result.detail || result.reason);
     return result || {};
   };
   const invoke = async (method: Parameters<BridgeClient["invoke"]>[0], ...args: unknown[]): Promise<Obj | null> =>
@@ -411,7 +412,9 @@ export function createAuthoringController(deps: Deps) {
     await inputPumps.get(id);
     await flush(id);
     if (id === viewId) update({ trialBusy: true, trial: true });
-    try { await dispatch("trial", fenced(id)); }
+    // 시험 입력 검증 실패(예: 시험 선택 미지정)는 시험 패널의 상태 칩·문장(trial_state_message)으로만 선다(UX-10 R3).
+    // 오류 띠는 호출 자체의 실패만 — 그래서 성공한 이 호출이 이전의 시험 오류 띠도 걷는다.
+    try { await dispatch("trial", fenced(id), true); }
     finally { if (id === viewId) update({ trialBusy: false }); }
   }
 

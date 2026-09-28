@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, menuReasonGroups, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch } from "../../frontend/src/screens/authoring.ts";
 import { rovingIndex, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
@@ -717,7 +717,8 @@ test("§10: screen readers get the field name, use count, parent item and proble
   assert.ok(!markup.includes("사용 위치 1/2"), "접힌 필드 줄은 사용 위치 줄을 짓지 않는다");
   assert.equal(outlineLabel("occurrence", { name: "공고명", index: 1, total: 2, context: "공고명: 2026" }), "공고명 · 사용 위치 1/2 · 공고명: 2026");
   assert.equal(outlineLabel("occurrence", { name: "공고명", index: 2, total: 2 }), "공고명 · 사용 위치 2/2");
-  controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field" });
+  controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field",
+    context: { slot_id: null, option_id: null, location_label: "문단 1" } });
   markup = render(controller);
   assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title">'));
   // 보이는 것은 굵은 이름, 종류·사용 위치 수·문제 수는 화면 읽기용 글로 이름에 붙는다 — 이름 칸이 읽는 글은 그대로다.
@@ -725,7 +726,9 @@ test("§10: screen readers get the field name, use count, parent item and proble
   assert.equal(target.replace(/<[^>]+>/g, ""), "필드 · 공고명 · 사용 위치 2곳 · 문제 1");
   assert.ok(target.includes('<span class="authoring-sr">필드 · </span>공고명<span class="authoring-sr"> · 사용 위치 2곳 · 문제 1</span>'));
   assert.ok(markup.includes('<p class="authoring-target-meta" aria-hidden="true">사용 위치 2곳 · 문제 1</p>'), "보이는 메타 줄은 이름과 두 번 읽히지 않는다");
-  assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문서 · 0–7</p>'));
+  // UX-10 R2: 문맥 줄은 Python 의 location_label 그대로다 — 원시 글자 offset(「문서 · 0–7」)은 보이지 않는다.
+  assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문단 1</p>'));
+  assert.ok(!markup.includes("0–7"));
   assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
   assert.equal(outlineLabel("option", { id: "q" }, 0, "doc"), "선택 · q · 상위 항목 doc");
 });
@@ -1194,6 +1197,82 @@ test("UX-04: the error band keeps an error until it is dismissed or the same kin
   controller.fail(new Error("편집기 오류"), "editor");
   controller.dismissError();
   assert.equal(controller.viewModel.getSnapshot().error, "", "「닫기」로 걷힌다");
+});
+
+test("UX-10 R3: a trial-input validation failure shows only in the trial panel; the error band is for failed calls", async () => {
+  const message = "'조건' 항목의 시험 선택을 지정하세요.";
+  let hostFails = false;
+  const { controller, snapshot } = harness((action, _payload, snap) => {
+    if (action !== "trial") return {};
+    if (hostFails) throw new Error("authoring/trial: 호출 실패");
+    Object.assign(snap.tabs[0], { trial_state: "failed", trial_state_label: "시험 실패", trial_state_message: message });
+    return { ok: false, message };
+  });
+  await controller.activate("a");
+  controller.fail(new Error("이전 시험 오류"), "trial");
+  await controller.guarded(() => controller.runTrial("a"), "trial");
+  assert.equal(controller.viewModel.getSnapshot().error, "", "검증 실패는 오류 띠에 서지 않고, 이전 시험 오류 띠도 걷힌다");
+  const markup = render(controller);
+  const shown = message.replaceAll("'", "&#x27;");
+  assert.ok(!markup.includes('<div class="authoring-error">'), "오류 띠 없음");
+  assert.equal(markup.split(shown).length - 1, 1, "문장은 시험 패널 한 곳에만");
+  assert.ok(markup.includes(`<p>${shown}</p>`), "시험 패널의 상태 문장(Python trial_state_message)");
+  assert.ok(markup.includes('data-trial="failed">시험 실패</span>'), "상태 칩");
+  assert.equal(snapshot.tabs[0].trial_state, "failed");
+  hostFails = true;
+  await controller.guarded(() => controller.runTrial("a"), "trial");
+  assert.match(controller.viewModel.getSnapshot().error, /호출 실패/, "호출 실패만 오류 띠에 선다");
+});
+
+test("UX-10 R5: neighbouring unavailable menu items with the same reason show it once above the group; each keeps aria-describedby", async () => {
+  const outside = "먼저 필드를 선택하세요.";
+  const region = "먼저 항목이나 선택을 고르세요.";
+  const verdicts = [
+    { type: "create_field", enabled: true, reason: null, alternative: null },
+    { type: "create_slot", enabled: true, reason: null, alternative: null },
+    { type: "create_option", enabled: false, reason: "먼저 항목 안의 내용을 선택하세요.", alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } },
+    ...["rename_field", "relink_field", "unset_field"].map((type) => ({ type, enabled: false, reason: outside, alternative: null })),
+    ...["rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"].map((type) => ({ type, enabled: false, reason: region, alternative: null })),
+  ];
+  const groups = menuReasonGroups(verdicts);
+  assert.deepEqual(groups.get("rename_field"), { id: "authoring-menu-reason-rename_field", reason: outside, lead: true, size: 3 });
+  assert.deepEqual(groups.get("unset_field"), { id: "authoring-menu-reason-rename_field", reason: outside, lead: false, size: 3 });
+  assert.equal(groups.get("move").id, "authoring-menu-reason-rename_slot");
+  assert.equal(groups.get("create_option").size, 1, "대안이 곁에 선 항목은 혼자다");
+  assert.equal(groups.has("create_field"), false);
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ commands: verdicts });
+  openContextMenu(controller, { clientX: 1, clientY: 1, target: { focus() {} }, preventDefault() {} }, null);
+  const markup = render(controller);
+  const menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
+  assert.equal(menu.split(outside).length - 1, 1, "무리의 사유는 한 번");
+  assert.equal(menu.split(region).length - 1, 1);
+  assert.ok(menu.includes('aria-label="필드 이름 변경" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field"><span id="authoring-menu-reason-rename_field" class="authoring-reason group-reason">먼저 필드를 선택하세요.</span>필드 이름 변경</button>'), "무리의 첫 항목 위");
+  assert.ok(menu.includes('aria-label="필드 의미 해제" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field">필드 의미 해제</button>'), "나머지는 같은 줄을 가리킨다");
+  assert.ok(menu.includes('aria-describedby="authoring-menu-reason-create_option">선택으로 만들기<span id="authoring-menu-reason-create_option" class="authoring-reason">'), "혼자인 사유는 전처럼 항목 안 아랫줄");
+  assert.ok(!menu.includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
+});
+
+test("UX-10 R2: a text-range selection opens a 선택한 문구 target card; the context line is Python's location label or nothing", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties", selected: null, selection: { entry: "s0", paragraph: 4, start_paragraph: 4, end_paragraph: 4, start: 6, end: 14 }, commandType: "create_field",
+    context: { slot_id: "구분", option_id: null, location_label: "공고 구분 · 문단 5", selected_text: "{{수요기관}}" } });
+  let markup = render(controller);
+  assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">선택한 문구</span></span><p class="authoring-target-name quote" title="{{수요기관}}">{{수요기관}}</p></div>'));
+  assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">공고 구분 · 문단 5</p>'));
+  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
+  assert.ok(!markup.includes("6–14"), "원시 offset 은 보이지 않는다");
+  // 글자를 확정할 수 없는 범위는 종류만, 위치 라벨이 없으면 문맥 줄을 세우지 않고 설명도 가리키지 않는다.
+  controller.update({ context: { slot_id: null, option_id: null, location_label: null, selected_text: null } });
+  markup = render(controller);
+  assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">선택한 문구</span></span></div>'));
+  assert.ok(!markup.includes('id="authoring-properties-context"'));
+  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target"/);
+  // 캐럿(빈 범위)은 대상 카드가 없다.
+  controller.update({ selection: { entry: "s0", paragraph: 4, start: 6, end: 6 } });
+  assert.ok(!render(controller).includes("선택한 문구"));
 });
 
 test("UX-04: missing Python judgement is a third state — disabled with no reason, not enabled by guess", async () => {

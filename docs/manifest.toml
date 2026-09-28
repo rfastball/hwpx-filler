@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "af96af06575874d2e33c663ac86ec00a3be3d9e0c0e44bf36351c43dbbe61f5d"
+source_sha256 = "592b464aae73fa1956e670ba87b5f91fa37f9d87402f36585530cea0f9a8a40e"
 body_sha256 = "b979a6f03447959545f87a59924a73573f7b96b703058ae7a886964bd21e95a9"
 
 [[document]]
@@ -193,8 +193,8 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "253af77ef615f1024f35fd62530e0e2224b2a2d504a2f6926d975695ce0b0577"
-body_sha256 = "0fb7bfede48f4ef3ed2fd975b78fddd411b21e28a764b9415334ef8ec50ccea4"
+source_sha256 = "b0d81fc682fdc2bcd77c4f237be2a62281aadda4261178577dbfaeb06887c029"
+body_sha256 = "16e83ce69220597a60a972014cd041b05686410ab1f1e11de15138a270fafa8a"
 
 [[topic]]
 id = "workflow-data"
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "16f7d6eecf606905f19fd014fa0861f526b6856464a3508a78366d2958a9be31"
-body_sha256 = "62cef844fd193a9e45d4050af80f3a1c47b384d7642e44c24a3ef18275ff3101"
+source_sha256 = "e9437841115fc043f27710aded5ee06ada9f67c8219c1f2fbe51a0faa500f759"
+body_sha256 = "4032a52a3352fc0b02547d443285386425409cd8c647d863e3c330a22110228b"
 
 [[topic]]
 id = "development"
