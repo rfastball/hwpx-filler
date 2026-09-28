@@ -1436,11 +1436,16 @@ class TestWebSelftestGate:
             "kbd_outline_reached", "kbd_field_focused", "kbd_properties_focus",
             "kbd_rename_preview", "kbd_escape_reverts", "kbd_escape_keeps_panel",
             "kbd_escape_closes", "kbd_escape_focus_editor", "kbd_f2_focus",
-            "kbd_toolbar_reached", "kbd_problems_button", "kbd_problem_focus",
-            "kbd_problem_moved", "kbd_toolbar_again", "kbd_back_button",
+            "kbd_dock_reached", "kbd_problems_tab", "kbd_problem_focus",
+            "kbd_problems_selected", "kbd_problem_moved", "kbd_toolbar_again",
+            "kbd_more_button", "kbd_more_menu", "kbd_back_button", "kbd_more_menu_closed",
             "kbd_back_restored", "kbd_back_focus_editor",
         ):
             assert b.get(key) is True, f"키보드만으로 가지 못한 국면: {key}: {b!r}"
+        # 하단 독(§3.1): 「문제」 탭은 Python 이 센 문제 수를 글로 싣고, 펼친 뒤 탭 패널은 하나뿐이다.
+        assert b["kbd_problems_expected"] >= 1, b
+        assert b["kbd_problems_tab_label"] == f"문제 {b['kbd_problems_expected']}", b["kbd_problems_tab_label"]
+        assert b["kbd_dock_panels"] == 1, f"독에 탭 패널이 {b['kbd_dock_panels']!r}개 섰습니다"
         # 화면 읽기: 구조 목록 한 줄과 이름 칸이 필드 이름·사용 위치 수를 글로 싣는다.
         assert b["kbd_field_label"] == "필드 · 공고명 · 사용 위치 1곳", b["kbd_field_label"]
         assert b["kbd_properties_target"] == "필드 · 공고명 · 사용 위치 1곳"

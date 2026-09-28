@@ -405,6 +405,7 @@ async function probeAuthoringKeyboard(ctx, out) {
   const field = ((((tab.analysis || {}).fields) || [])[0] || {});
   const occurrence = (field.occurrences || [])[0] || {};
   const problem = (tab.problems || []).find((item) => item.location) || {};
+  const dockTab = (el) => !!el && !!el.closest(".authoring-dock") && el.getAttribute("role") === "tab";
   const range = (place) => `${(place || {}).start}–${(place || {}).end}`;
   try {
     out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
@@ -441,13 +442,20 @@ async function probeAuthoringKeyboard(ctx, out) {
     pressKey(ctx, "Escape");
     await waitFor(ctx, panelGone, 20, 50);
 
-    out.kbd_toolbar_reached = await nav.cycleTo(".authoring-toolbar");
-    out.kbd_problems_button = nav.tabTo(
-      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "문제", 40);
-    if (!out.kbd_problems_button) return;
+    /* 문제는 하단 독(보조 패널)의 탭이다(§3.1): F6 으로 독에 들어가 「문제 N」 탭을 Enter 로 펼친다.
+       탭 이름의 수는 Python 스냅샷의 problems 수와 같아야 하고, 펼친 뒤 독에는 탭 패널이 하나만 선다. */
+    out.kbd_dock_reached = await nav.cycleTo(".authoring-dock");
+    out.kbd_problems_tab = nav.tabTo((el) => dockTab(el) && textOf(el).trim().indexOf("문제") === 0, 40);
+    out.kbd_problems_tab_label = out.kbd_problems_tab ? textOf(nav.active()).trim() : "";
+    out.kbd_problems_expected = (tab.problems || []).length;
+    if (!out.kbd_problems_tab) return;
+    const problemsTab = nav.active();
     pressKey(ctx, "Enter");
-    const action = () => doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem button');
+    const action = () => doc.querySelector(
+      '.authoring-dock [role="tabpanel"] .authoring-bottom[aria-label="문제"] .authoring-problem button');
     out.kbd_problem_focus = await waitFor(ctx, () => !!action() && nav.active() === action(), 20, 50);
+    out.kbd_problems_selected = problemsTab.getAttribute("aria-selected") === "true";
+    out.kbd_dock_panels = doc.querySelectorAll('.authoring-dock [role="tabpanel"]').length;
     out.kbd_problem_action = nav.nameOf(nav.active());
     out.kbd_problem_text = textOf(
       doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem')).trim().slice(0, 120);
@@ -458,11 +466,22 @@ async function probeAuthoringKeyboard(ctx, out) {
       ctx, () => contextText().indexOf(range(problem.location)) >= 0, 40, 50);
     out.kbd_problem_context = contextText();
 
+    /* 「이전 위치로」는 도구 막대 「더보기」 메뉴 안에 있다: 더보기 → Enter → 메뉴 첫 항목에 초점 →
+       Tab 으로 「이전 위치로」 → Enter. 메뉴 항목은 role=menuitem 이다. */
     out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
-    out.kbd_back_button = nav.tabTo(
-      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "이전 위치로", 40);
+    out.kbd_more_button = nav.tabTo(
+      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "더보기", 40);
+    if (!out.kbd_more_button) return;
+    pressKey(ctx, "Enter");
+    const moreMenu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="더보기"]');
+    out.kbd_more_menu = await waitFor(ctx, () => !!moreMenu() && !!nav.active()
+      && nav.active().getAttribute("role") === "menuitem" && moreMenu().contains(nav.active()), 20, 50);
+    if (!out.kbd_more_menu) return;
+    out.kbd_back_button = nav.tabTo((el) => !!el && el.getAttribute("role") === "menuitem"
+      && !!moreMenu() && moreMenu().contains(el) && textOf(el).trim() === "이전 위치로", 8);
     if (!out.kbd_back_button) return;
     pressKey(ctx, "Enter");
+    out.kbd_more_menu_closed = await waitFor(ctx, () => !moreMenu(), 20, 50);
     out.kbd_back_expected = range(occurrence);
     out.kbd_back_restored = await waitFor(ctx, () => contextText().indexOf(range(occurrence)) >= 0, 40, 50);
     out.kbd_back_context = contextText();
@@ -508,16 +527,21 @@ async function probeLintpad(ctx, out) {
   out.lintpad_lint_arrived = await waitFor(ctx, () => marks() === 2);
   out.lintpad_field_marks = doc.querySelectorAll(`${canvas} .cm-txtField`).length;
   out.lintpad_marker_marks = doc.querySelectorAll(`${canvas} .cm-txtMarker`).length;
-  [...doc.querySelectorAll(".authoring-toolbar button")].find((el) => el.textContent === "문제").click();
-  await waitFor(ctx, () => !!doc.querySelector(".authoring-bottom button"));
-  out.lintpad_diag_text = doc.querySelector(".authoring-bottom")?.textContent || "";
+  // 문제는 하단 독의 탭이다(§3.1) — 탭 이름이 「문제」로 시작한다(수 배지가 뒤따른다).
+  [...doc.querySelectorAll('.authoring-dock [role="tab"]')].find((el) => el.textContent.indexOf("문제") === 0).click();
+  const problemsPanel = '.authoring-dock [role="tabpanel"] .authoring-bottom[aria-label="문제"]';
+  await waitFor(ctx, () => !!doc.querySelector(`${problemsPanel} button`));
+  out.lintpad_diag_text = doc.querySelector(problemsPanel)?.textContent || "";
   keydownOn(ctx, content, "Escape");
-  out.authoring_escape_retains = await waitFor(ctx, () => !doc.querySelector(".authoring-bottom")) && content.isConnected;
-  const mode = doc.querySelector(".authoring-toolbar select");
-  mode.value = "document"; mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
-  out.authoring_document_mode = await waitFor(ctx, () => marks() === 0);
-  mode.value = "template"; mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
-  out.authoring_template_mode = await waitFor(ctx, () => marks() === 2);
+  out.authoring_escape_retains = await waitFor(ctx, () => !doc.querySelector('.authoring-dock [role="tabpanel"]')) && content.isConnected;
+  // 표시 방식은 도구 막대의 세 갈래 버튼(aria-pressed)이다.
+  const mode = (value) => doc.querySelector(`.authoring-toolbar .authoring-mode button[value="${value}"]`);
+  mode("document").click();
+  out.authoring_document_mode = await waitFor(ctx, () => marks() === 0)
+    && mode("document").getAttribute("aria-pressed") === "true";
+  mode("template").click();
+  out.authoring_template_mode = await waitFor(ctx, () => marks() === 2)
+    && mode("template").getAttribute("aria-pressed") === "true";
   /* §10 키보드·IME 밴드 — 같은 세션(필드 1 · 닫히지 않은 항목 1 = 문제 1) 위에서 돈다. 예외는
      `kbd_error` 에만 실어 뒤따르는 닫기 보호 단언을 끌고 죽지 않는다. */
   try {
@@ -847,7 +871,7 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   /* ── ④ 서식 있는 본문 문구를 고르고 필드로 만든다 ─────────────────────────────
      본문 범위 선택은 iframe **안**의 사건이라 게이트가 직접 끌 수 없다. 제품이 같은
      선택을 만드는 두 번째 실경로가 검색 적중 클릭이다(controller.select → locate). */
-  exact(".authoring-toolbar button", "검색").click();
+  exact('.authoring-dock [role="tab"]', "검색").click();
   if (!await waitFor(ctx, () => !!doc.querySelector('.authoring-bottom input[name="query"]'),
     DOM_TRIES, DOM_MS)) return give("검색 패널 미개방");
   typeValue(ctx, doc.querySelector('.authoring-bottom input[name="query"]'), candidate.query);
@@ -956,15 +980,14 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   /* ── ⑦ 표시 방식 전환은 내용도 미저장 상태도 건드리지 않는다(AC23) ───────────── */
   const beforeModes = await tab();
   const contentBeforeModes = await content();
-  const mode = doc.querySelector(".authoring-toolbar select");
-  if (!mode) return give("표시 방식 선택이 없음");
+  const modeButton = (value) => doc.querySelector(`.authoring-toolbar .authoring-mode button[value="${value}"]`);
+  if (!modeButton("document")) return give("표시 방식 선택이 없음");
   const applied = [];
   for (const value of ["document", "structure", "template"]) {
-    mode.value = value;
-    mode.dispatchEvent(new ctx.win.Event("change", { bubbles: true }));
+    modeButton(value).click();
     await settleRender(ctx);
     await ctx.sleep(120);                               // 장식 왕복(iframe) 반영
-    applied.push(mode.value);
+    applied.push((doc.querySelector('.authoring-toolbar .authoring-mode button[aria-pressed="true"]') || {}).value || "");
   }
   out.hwpx_authoring_modes = applied;
   const afterModes = await tab();
