@@ -44,11 +44,40 @@ export function problemAction(controller: Pick<AuthoringController, "select" | "
 }
 
 type MenuEvent = { clientX: number; clientY: number; target?: unknown; preventDefault?(): void };
-/** 문맥 메뉴를 좌표(셸 기준)에 연다(§6.1). trigger 는 닫힐 때 초점을 돌려줄 자리다. */
-export function openContextMenu(controller: Pick<AuthoringController, "update">, event: MenuEvent, root?: { getBoundingClientRect(): { left: number; top: number } } | null): void {
+/** 문맥 메뉴를 좌표(셸 기준)에 연다(§6.1). trigger 는 닫힐 때 초점을 돌려줄 자리다.
+ *  kind="more" 는 도구 막대 「더보기」의 작은 메뉴다 — 같은 상태·Escape·바깥 클릭 경로를 쓴다. */
+export function openContextMenu(controller: Pick<AuthoringController, "update">, event: MenuEvent, root?: { getBoundingClientRect(): { left: number; top: number } } | null, kind?: "more"): void {
   event.preventDefault?.();
   const rect = root?.getBoundingClientRect();
-  controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), trigger: event.target } });
+  controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), trigger: event.target, ...(kind ? { kind } : {}) } });
+}
+
+/** 하단 독(§3.1 UI01~UI10)이 한 탭으로 보이는 패널 — `view.panel` 값이 곧 탭 열쇠다. 속성은 옆 패널이라 빠진다. */
+export const DOCK_PANELS = ["problems", "search", "raw", "impact", "paste", "commands", "external", "comparison"];
+/** 독의 탭 목록과 지금 보일 탭 하나. 기본 탭(문제·검색·원문 표기·변경 영향·결과 시험)은 문서가 열려 있으면 늘 서고,
+ *  문맥 탭은 그 상태가 있을 때만 선다. 보일 탭: 열린 패널 → 사용자가 고른 탭 → 경보·비교·시험 순의 대체.
+ *  `dockClosed` 는 사용자가 닫은 뒤 경보가 스스로 다시 펼치지 않게 한다(새로 선 경보는 화면이 다시 연다). */
+export function dockTabs(item: Obj | undefined, view: Obj): { tabs: [string, string][]; active: string } {
+  const tabs: [string, string][] = item ? [["problems", "문제"], ["search", "검색"], ["raw", "원문 표기"], ["impact", "변경 영향·작업 적용"], ["trial", "결과 시험"]] : [];
+  const saveFailed = !!item && (view.panel === "external" || !!view.saveFailed);
+  if (item && view.panel === "paste") tabs.push(["paste", "의미 붙여넣기"]);
+  if (item && view.panel === "commands") tabs.push(["commands", "명령"]);
+  if (saveFailed) tabs.push(["external", "저장 실패"]);
+  if (item?.external_changed && !saveFailed) tabs.push(["external_changed", "외부 파일 변경"]);
+  if (item?.recovery) tabs.push(["recovery", "중단 전 복구 초안"]);
+  if (view.recoveryPreview) tabs.push(["recovery_preview", "초안과 원본 비교"]);
+  if (item && view.panel === "comparison" && view.comparison) tabs.push(["comparison", "외부 파일 내용"]);
+  const has = (key: string) => !!key && tabs.some(([tab]) => tab === key);
+  const open = (key: string) => has(key) && (key !== "trial" || !!view.trial) && (!DOCK_PANELS.includes(key) || view.panel === key);
+  const fallback = view.dockClosed ? ["trial"] : ["recovery_preview", "recovery", "external_changed", "trial"];
+  const active = DOCK_PANELS.includes(view.panel) && has(view.panel) ? view.panel : open(view.dock) ? view.dock : fallback.find(open) || "";
+  return { tabs, active };
+}
+/** 같은 불가 사유를 명령마다 되풀이하지 않는다(§3.1): 불가 명령이 둘 이상이고 사유가 모두 같으면 그 한 문장, 아니면 null.
+ *  사유는 Python 의 판정 문장 그대로다(P07) — 표면은 모을 뿐 새로 짓지 않는다. */
+export function sharedReason(commands: Obj[] | undefined, types: string[] = COMMANDS.map(([type]) => type)): string | null {
+  const reasons = types.map((type) => commandAvailability(commands, type)).filter((entry) => !entry.enabled).map((entry) => String(entry.reason || ""));
+  return reasons.length > 1 && reasons.every((reason) => reason && reason === reasons[0]) ? reasons[0] : null;
 }
 /** Escape 한 단계(§10): 문맥 메뉴가 열려 있으면 그것만 닫고 초점을 연 자리로 돌린다("menu"); 아니면 패널을 닫는다("panel"). */
 export function escapeShell(controller: Pick<AuthoringController, "update" | "viewModel">): "menu" | "panel" {
@@ -69,14 +98,19 @@ export async function copyText(text: string): Promise<void> {
 /** 명령 목록 — 도구 막대·팔레트·문맥 메뉴가 같은 가용성 데이터와 같은 실행 경로를 쓴다(F40). */
 function CommandList({ controller, view, readOnly, menu }: Props & { view: Obj; readOnly: boolean; menu?: boolean }) {
   const pick = (commandType: string) => controller.update({ panel: "properties", commandType, contextMenu: null, preview: null, refusal: null });
-  return COMMANDS.map(([commandType, label]) => {
-    const available = commandAvailability(view.commands, commandType);
-    const disabled = readOnly || !available.enabled;
-    return h("div", { key: commandType, className: "authoring-command", role: menu ? "none" : undefined },
-      button(label, () => pick(commandType), { role: menu ? "menuitem" : undefined, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined }),
-      !available.enabled && available.reason && h("p", { className: "authoring-reason" }, available.reason),
-      !available.enabled && available.alternative && button(available.alternative.label, () => pick(available.alternative!.command_type)));
-  });
+  // 사유가 모두 같으면 목록 머리에 한 번만 두고, 각 불가 항목은 그 문장을 설명으로 가리킨다. 대안은 항목마다 남는다.
+  const shared = sharedReason(view.commands);
+  const reasonId = `authoring-command-reason-${menu ? "menu" : "palette"}`;
+  return [shared && h("p", { key: "shared-reason", id: reasonId, className: "authoring-reason", role: menu ? "none" : undefined }, shared),
+    ...COMMANDS.map(([commandType, label]) => {
+      const available = commandAvailability(view.commands, commandType);
+      const disabled = readOnly || !available.enabled;
+      return h("div", { key: commandType, className: "authoring-command", role: menu ? "none" : undefined },
+        button(label, () => pick(commandType), { role: menu ? "menuitem" : undefined, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined,
+          "aria-describedby": shared && !available.enabled ? reasonId : undefined }),
+        !shared && !available.enabled && available.reason && h("p", { className: "authoring-reason" }, available.reason),
+        !available.enabled && available.alternative && button(available.alternative.label, () => pick(available.alternative!.command_type)));
+    })];
 }
 
 /** 구조 변경 요약(F38) — 미리보기와 변경 영향 패널이 같은 표를 쓴다. */
@@ -283,7 +317,9 @@ function SemanticForm({ controller, selected, selection, preview }: Props & { se
       if (event.key !== "Escape" || event.nativeEvent?.isComposing) return;
       if (escapeStage(selected, { name, identifier, parent, text }) === "revert") { event.stopPropagation(); revert(); }
     } },
-    h("h2", { id: "authoring-properties-title" }, "속성"),
+    // 닫기(§3.1): 모든 폭에서 머리 오른쪽에 선다 — Escape 의 닫기 단계와 같은 일(패널을 닫고 선택으로 돌아간다).
+    h("div", { className: "authoring-properties-head" }, h("h2", { id: "authoring-properties-title" }, "속성"),
+      button("닫기", () => { controller.update({ panel: "", preview: null, refusal: null }); void controller.guarded(controller.focusSelection); })),
     selected && h("p", { id: "authoring-properties-target" }, selected.kind === "field" && selected.occurrences
       ? outlineLabel("field", { ...selected, count: selected.count ?? selected.occurrences.length }, problemCount(controller.tab().problems, selected.name))
       : selected.name || selected.label || selected.id),
@@ -420,12 +456,15 @@ function TxtTrialOutput({ controller, result, selected }: Props & { result?: Obj
   return h("pre", { tabIndex: 0, "aria-label": "읽기 전용 시험 결과" }, ...parts);
 }
 
+const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "구조"]];
+
 export function AuthoringScreen({ controller }: Props): ReactNode {
   const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot) || {};
   const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot, controller.viewModel.getSnapshot);
   const tabs: Obj[] = snapshot.tabs || [];
   const item = tabs.find((tab) => tab.id === snapshot.active_id);
   const root = useRef<HTMLDivElement>(null);
+  const dock = dockTabs(item, view);
   useEffect(() => {
     root.current?.querySelector<HTMLElement>(view.panel === "properties" ? ".authoring-properties input" : view.panel === "search" ? '[name="query"]' : view.panel === "commands" || view.panel === "external" || view.panel === "problems" ? ".authoring-bottom button" : ".authoring-shell-placeholder")?.focus();
   }, [view.panel, view.commandType, view.focusPanel]);
@@ -435,13 +474,25 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     return () => window.removeEventListener("focus", focus);
   }, [controller]);
   // 문맥 메뉴(§6.1): 열리면 첫 활성 항목에 초점, 바깥 클릭이면 닫는다. Escape 는 셸 단축키가 처리한다.
+  // 「더보기」 메뉴는 여는 버튼 자체의 누름을 바깥으로 치지 않는다 — 그 버튼이 여닫기를 맡는다.
   useEffect(() => {
     if (!view.contextMenu) return;
     root.current?.querySelector<HTMLElement>('[role="menu"] [role="menuitem"]:not([disabled])')?.focus();
-    const outside = (event: MouseEvent) => { if (!(event.target as Element | null)?.closest?.('[role="menu"]')) controller.update({ contextMenu: null }); };
+    const trigger = view.contextMenu.kind === "more" ? view.contextMenu.trigger as Element | null : null;
+    const outside = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest?.('[role="menu"]') && !(target && trigger?.contains?.(target))) controller.update({ contextMenu: null });
+    };
     document.addEventListener("mousedown", outside);
     return () => document.removeEventListener("mousedown", outside);
   }, [view.contextMenu]);
+  // 경보(복구 초안·외부 파일 변경)와 초안 비교는 새로 서는 순간 독의 제 탭을 펼친다 — 닫아 둔 독도 다시 연다.
+  const forced = view.recoveryPreview ? "recovery_preview" : item?.recovery ? "recovery" : dock.tabs.some(([key]) => key === "external_changed") ? "external_changed" : "";
+  useEffect(() => {
+    if (!forced) return;
+    const current = controller.viewModel.getSnapshot();
+    controller.update({ dock: forced, dockClosed: false, ...(DOCK_PANELS.includes(current.panel) && current.panel !== "comparison" ? { panel: "" } : {}) });
+  }, [forced, item?.id, view.recoveryPreview]);
   const act = (work: () => unknown) => () => { void controller.guarded(work); };
   const select = (entry: Obj) => act(() => controller.select({ source_revision: item?.revision, ...entry }));
   const contextMenu = (event: any, entry?: Obj) => { if (entry) select(entry)(); openContextMenu(controller, event, root.current); };
@@ -449,7 +500,102 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const readOnly = !!item && item.media === "hwpx" && item.rhwp_editable !== true;
   // F2(§10): 패널이 이미 열려 있어도 이름 칸으로 초점을 옮긴다 — focusPanel 은 그 요청의 차례 번호다.
   const rename = () => controller.update({ panel: "properties", commandType: view.selected?.kind === "field" ? "rename_field" : view.selected?.kind === "option" ? "rename_option" : "rename_slot", focusPanel: (view.focusPanel || 0) + 1 });
-  return h("div", { className: "authoring-shell", ref: root, onKeyDown: (event: any) => {
+  // 도구 막대에서 빠진 세 동작 — 「더보기」 메뉴와 명령 팔레트가 같은 실행 경로를 쓴다.
+  const moreActions: [string, () => void, boolean][] = [
+    ["의미 복사", act(controller.copy), false],
+    ["붙여넣기", () => controller.update({ panel: "paste", contextMenu: null }), !controller.clipboard()],
+    ["이전 위치로", act(controller.back), false]];
+  // 독 탭 하나를 펼친다: 패널 탭은 view.panel 로, 나머지(시험·경보·비교)는 view.dock 으로. 옆 속성 패널은 건드리지 않는다.
+  const openDock = (key: string) => {
+    if (key === dock.active) return;
+    if (key === "raw") return act(controller.raw)();
+    if (key === "impact") return act(controller.impact)();
+    if (DOCK_PANELS.includes(key)) return controller.update({ panel: key, contextMenu: null });
+    controller.update({ dock: key, dockClosed: false, contextMenu: null, ...(key === "trial" ? { trial: true } : {}), ...(DOCK_PANELS.includes(view.panel) ? { panel: "" } : {}) });
+  };
+  const closeDock = () => {
+    root.current?.querySelector<HTMLElement>(`#authoring-dock-tab-${dock.active}`)?.focus();
+    controller.update({ ...(DOCK_PANELS.includes(view.panel) ? { panel: "" } : {}), trial: false, dock: "", dockClosed: true, dockMax: false });
+  };
+  const trialShown = dock.active === "trial";
+  const dockContent = (key: string): ReactNode => {
+    if (key === "trial" && item) return h(Trial, { controller, item, view });
+    if (key === "recovery" && item) return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "중단 전 복구 초안" }, h("h2", null, "중단 전 복구 초안"),
+      h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
+      button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
+      button("복구", act(() => controller.recover(item.id))), button("폐기", act(() => controller.discardRecovery(item.id))));
+    if (key === "recovery_preview" && view.recoveryPreview) return h("section", { className: "authoring-bottom", "aria-label": "초안과 원본 비교" }, h("h2", null, "초안과 원본 비교"),
+      h("div", { className: "authoring-compare" }, ...[["원본", view.recoveryPreview.original_content], ["복구 초안", view.recoveryPreview.content]].map(([name, content]) => h("div", { key: name }, h("h3", null, name),
+        content == null ? h("p", null, "원본 파일 없음") : view.recoveryPreview.media === "txt" ? h("pre", null, content)
+          : h(ExternalDocument, { controller, item: { name }, content, sectionEntries: name === "원본" ? view.recoveryPreview.original_section_entries : view.recoveryPreview.section_entries })))),
+      button("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key))), button("비교 닫기", () => controller.update({ recoveryPreview: null })));
+    if (!item) return null;
+    if (key === "paste") return h("section", { className: "authoring-bottom", "aria-label": "의미 붙여넣기" }, h("h2", null, "의미 붙여넣기"),
+      h("p", null, "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
+      h("form", { onSubmit: (event: any) => { event.preventDefault(); const data = new FormData(event.currentTarget); act(() => controller.paste(data.has("meaning"), String(data.get("new_id") || ""), data.has("link_existing")))(); } },
+        h("label", null, h("input", { type: "checkbox", name: "meaning", defaultChecked: true }), "의미 포함"),
+        h("label", null, h("input", { type: "checkbox", name: "link_existing" }), "같은 이름의 기존 필드에 연결"),
+        h("label", null, "새 연결 식별자 ", h("input", { name: "new_id", className: "field" })),
+        h("button", { className: "btn sm", disabled: !controller.clipboard() }, "붙여넣기 미리보기")),
+      view.command?.type === "paste" && view.preview && h("div", { className: "authoring-preview" },
+        h("pre", { "aria-label": "변경 전" }, view.preview.before), h("pre", { "aria-label": "변경 후" }, view.preview.after),
+        button("붙여넣기 적용", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null }))));
+    if (key === "search") return h("section", { className: "authoring-bottom", "aria-label": "검색" }, h("h2", null, "검색"),
+      h("form", { onSubmit: (event: any) => { event.preventDefault(); const values = new FormData(event.currentTarget); act(() => controller.search(String(values.get("query")), String(values.get("kind")), values.has("all")))(); } },
+        h("input", { className: "field", name: "query", "aria-label": "검색어", defaultValue: view.query }),
+        h("select", { className: "field", name: "kind", "aria-label": "검색 대상" }, h("option", { value: "body" }, "본문"), h("option", { value: "field" }, "필드"), h("option", { value: "structure" }, "항목·선택"), h("option", { value: "all" }, "전체")),
+        h("label", null, h("input", { type: "checkbox", name: "all" }), "열린 모든 문서"), h("button", { className: "btn sm" }, "찾기")),
+      ...view.hits.map((hit: Obj, index: number) => button(`${hit.document} · ${hit.context || hit.name || hit.label}`, select(hit), { key: index })));
+    if (key === "commands") return h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
+      h(CommandList, { controller, view, readOnly }),
+      h("div", { className: "authoring-command-more" }, ...moreActions.map(([label, run, disabled]) => button(label, run, { key: label, disabled }))));
+    // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
+    if (key === "raw") return h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
+      view.syntax?.note && h("p", null, view.syntax.note),
+      ...(view.syntax?.sections || []).map((section: Obj, index: number) => h("div", { key: index, className: "authoring-syntax" },
+        h("h3", null, section.entry), h("pre", { tabIndex: 0, "aria-label": `${section.entry} 원문 표기` }, section.text))),
+      button("복사", act(() => copyText((view.syntax?.sections || []).map((section: Obj) => section.text).join("\n\n"))), { disabled: !view.syntax?.sections?.length }));
+    if (key === "impact") return h("section", { className: "authoring-bottom", "aria-label": "변경 영향·작업 적용" }, h("h2", null, "변경 영향·작업 적용"),
+      view.impact?.save_required && h("p", null, "템플릿을 저장한 뒤 적용할 작업을 확인하세요."),
+      view.impact?.structure_delta && h(StructureDelta, { delta: view.impact.structure_delta }),
+      !!view.impact?.identifier_changes?.length && h("ul", { "aria-label": "식별자 변경" }, ...view.impact.identifier_changes.map((entry: Obj | string, index: number) =>
+        h("li", { key: index }, typeof entry === "string" ? entry : `${KIND_LABEL[entry.kind] || entry.kind || ""} · ${entry.from ?? entry.id ?? ""}${entry.to != null ? ` → ${entry.to}` : ""}`))),
+      (!!view.impact?.structure_delta?.renamed?.length || !!view.impact?.identifier_changes?.length) && h("p", null, IDENTIFIER_IMPACT),
+      view.impact?.content_changed_since_save && h("p", null, "저장 이후 본문 변경 있음"),
+      (!view.impact?.available || !!view.impact.unverified_jobs?.length) && h("p", null, "연결된 작업의 영향은 확인하지 않았습니다."),
+      !!view.impact?.unverified_jobs?.length && h("p", null, `확인하지 않은 작업 ${view.impact.unverified_jobs.length}개`),
+      view.impact?.available && !view.impact.jobs?.length && h("p", null, "연결된 작업 없음"),
+      ...(view.impact?.jobs || []).map((job: Obj) => { const blocked = view.impact.save_required || view.impact.usable === false; return h("div", { key: job.name }, h("strong", null, job.name),
+        job.change_status && h("p", null, TPL_STATUS_COPY[job.change_status] || job.change_status),
+        h("p", null, `추가 필드: ${(job.added_fields || []).join(", ") || "없음"} · 없어진 필드: ${(job.removed_fields || job.unmapped_fields || []).join(", ") || "없음"}`),
+        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
+        blocked && job.blocked_reason && h("p", { className: "authoring-reason" }, job.blocked_reason)); }),
+      view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
+        ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
+        button("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }), button("취소", () => controller.update({ jobApply: null }))));
+    // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
+    if (key === "problems") return h("section", { className: "authoring-bottom", "aria-label": "문제" }, h("h2", null, "문제"),
+      !item.problems?.length && h("p", null, "문제 없음"),
+      ...(item.problems || []).map((problem: Obj, index: number) => h("div", { key: index, className: "authoring-problem" },
+        h("p", null, h("strong", null, SEVERITY_LABEL[problem.severity] || problem.severity), ` · ${CATEGORY_LABEL[problem.category] || problem.category}`, problem.target ? ` · ${problem.target}` : ""),
+        h("p", null, problem.message),
+        ...(problem.actions || []).map((action: Obj, actionIndex: number) => button(action.label, act(() => problemAction(controller, item, problem, action)), { key: actionIndex })))),
+      view.command?.type === "repair_marker" && view.preview && h("div", { className: "authoring-preview" },
+        h("h3", null, "수정 제안"), h("pre", { "aria-label": "변경 전" }, view.preview.before), h("pre", { "aria-label": "변경 후" }, view.preview.after),
+        button("구조 표기 수정", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null }))));
+    if (key === "external_changed") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "외부 파일 변경" }, h("h2", null, "외부 파일 변경"),
+      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true))), button("외부 파일 다시 열기", act(controller.reload)));
+    // 저장 실패(AC24·§9.2): 변경은 그대로 남고, 같은 세 복구 동사에 「다시 저장」이 더해진다.
+    if (key === "external") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "저장 실패" }, h("h2", null, "저장 실패"),
+      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true))),
+      button("외부 파일 다시 열기", act(controller.reload)), button("다시 저장", act(() => controller.save(item.id))));
+    if (key === "comparison" && view.comparison) return h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
+      h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
+        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries })))),
+      button("비교 닫기", () => controller.update({ panel: "" })));
+    return null;
+  };
+  return h("div", { className: `authoring-shell${dock.active && view.dockMax ? " dock-max" : ""}`, ref: root, onKeyDown: (event: any) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const shortcut = shellShortcut(event);
     if (!shortcut) return;
@@ -470,7 +616,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
     else if (shortcut === "escape") { if (escapeShell(controller) === "panel") act(controller.focusSelection)(); }
     else if (shortcut === "cycle") {
-      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-bottom") || [])];
+      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock") || [])];
       const current = panels.findIndex((panel) => panel.contains(document.activeElement));
       // 패널 간 초점 이동(§10): 비활성 버튼은 초점을 받지 못하므로 첫 **활성** 제어로 간다.
       panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length]?.querySelector<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe")?.focus();
@@ -496,34 +642,31 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       ...(item.compatibility.diagnostics || []).map((diagnostic: Obj | string, index: number) => typeof diagnostic === "string" ? h("p", { key: index }, diagnostic)
         : h("div", { key: index }, h("p", null, diagnostic.message), diagnostic.detail && h("p", { className: "authoring-reason" }, diagnostic.detail))),
       h("div", null, button("다른 이름으로 저장", act(() => controller.save(item.id, true))), button("원문 표기", act(controller.raw)))),
-    item?.recovery && h("section", { className: "authoring-bottom", role: "alert" }, h("h2", null, "중단 전 복구 초안"),
-      h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
-      button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
-      button("복구", act(() => controller.recover(item.id))), button("폐기", act(() => controller.discardRecovery(item.id)))),
     !item && h("div", { className: "authoring-empty" }, h("p", null, "변경할 문구를 선택해 필드로 만들어 보세요."),
       ...(snapshot.recoverable || []).map((draft: Obj) => h("div", { key: draft.key }, draft.name || draft.path || "저장하지 않은 초안",
         draft.updated_at && h("time", { dateTime: draft.updated_at }, new Date(draft.updated_at).toLocaleString()),
         draft.error && h("p", { role: "alert" }, draft.error),
         button("초안과 원본 비교", act(() => controller.compareRecovery(draft.key)), { disabled: !!draft.error }),
         button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), button("폐기", act(() => controller.discardRecovery(draft.key)))))),
-    view.recoveryPreview && h("section", { className: "authoring-bottom" }, h("h2", null, "초안과 원본 비교"),
-      h("div", { className: "authoring-compare" }, ...[["원본", view.recoveryPreview.original_content], ["복구 초안", view.recoveryPreview.content]].map(([name, content]) => h("div", { key: name }, h("h3", null, name),
-        content == null ? h("p", null, "원본 파일 없음") : view.recoveryPreview.media === "txt" ? h("pre", null, content)
-          : h(ExternalDocument, { controller, item: { name }, content, sectionEntries: name === "원본" ? view.recoveryPreview.original_section_entries : view.recoveryPreview.section_entries })))),
-      button("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key))), button("비교 닫기", () => controller.update({ recoveryPreview: null }))),
-    item && h("div", { className: "authoring-toolbar", "aria-label": "문서 명령" },
-      button(`문서 실행 취소${view.lastCommandLabel ? `: ${view.lastCommandLabel}` : ""}`, act(() => controller.command("undo")), { disabled: editorState ? !editorState.canUndo : false }),
-      button("문서 다시 실행", act(() => controller.command("redo")), { disabled: editorState ? !editorState.canRedo : false }),
-      h("label", null, "표시 ", h("select", { className: "field", value: view.mode, onChange: (event: any) => controller.setMode(event.target.value) },
-        h("option", { value: "document" }, "문서"), h("option", { value: "template" }, "템플릿"), h("option", { value: "structure" }, "구조"))),
-      ...COMMANDS.slice(0, 3).map(([commandType, label]) => { const available = commandAvailability(view.commands, commandType); const disabled = readOnly || !available.enabled;
-        return button(label, () => controller.update({ panel: "properties", commandType, preview: null, refusal: null }), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined }); }),
-      button("명령", () => controller.update({ panel: "commands" })),
-      button("의미 복사", act(controller.copy)), button("붙여넣기", () => controller.update({ panel: "paste" }), { disabled: !controller.clipboard() }),
-      button("검색", () => controller.update({ panel: "search" })), button("문제", () => controller.update({ panel: "problems" })),
-      button("원문 표기", act(controller.raw)), button("변경 영향·작업 적용", act(controller.impact)),
-      button("이전 위치로", act(controller.back)), button("결과 시험", () => controller.update({ trial: !view.trial })),
-      h("label", null, "확대 ", h("select", { className: "field", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
+    // 도구 막대(§3.1): 한 줄, 줄바꿈 없음 — 넘치면 가로 스크롤. 보조 패널을 여는 동사는 하단 독의 탭으로 옮겼다.
+    item && h("div", { className: "authoring-toolbar", role: "toolbar", "aria-label": "문서 명령" },
+      h("div", { className: "authoring-toolbar-group" },
+        button(`문서 실행 취소${view.lastCommandLabel ? `: ${view.lastCommandLabel}` : ""}`, act(() => controller.command("undo")), { disabled: editorState ? !editorState.canUndo : false }),
+        button("문서 다시 실행", act(() => controller.command("redo")), { disabled: editorState ? !editorState.canRedo : false })),
+      h("div", { className: "authoring-toolbar-group" }, h("div", { className: "authoring-mode", role: "group", "aria-label": "표시" },
+        ...MODES.map(([value, label]) => h("button", { key: value, type: "button", value, "aria-pressed": view.mode === value, onClick: () => controller.setMode(value) }, label)))),
+      h("div", { className: "authoring-toolbar-group" },
+        ...COMMANDS.slice(0, 3).map(([commandType, label]) => { const available = commandAvailability(view.commands, commandType); const disabled = readOnly || !available.enabled;
+          return button(label, () => controller.update({ panel: "properties", commandType, preview: null, refusal: null }), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined }); })),
+      h("div", { className: "authoring-toolbar-group" },
+        button("명령", () => controller.update({ panel: "commands" })),
+        h("button", { type: "button", className: "btn sm", "aria-haspopup": "menu", "aria-expanded": view.contextMenu?.kind === "more",
+          onClick: (event: any) => { if (view.contextMenu?.kind === "more") { controller.update({ contextMenu: null }); return; }
+            const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+            openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target: event.currentTarget }, root.current, "more"); } }, "더보기")),
+      h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
+        button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown }),
+        h("select", { className: "field", "aria-label": "확대", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
     h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: (event: any) => contextMenu(event) }, h("h2", null, "템플릿 구조"),
         ...(item.analysis?.slots || []).map((slot: Obj) => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }; return h("details", { open: true, key: slot.id },
@@ -534,87 +677,46 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
           h("summary", null, button([`${field.name} · ${field.count}`, badge(problemCount(item.problems, field.name))], select(fieldEntry), { "aria-label": outlineLabel("field", field, problemCount(item.problems, field.name)), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
           ...(field.occurrences || []).map((occ: Obj, index: number) => { const occEntry = { ...occ, name: field.name, kind: "field" };
             return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, "aria-label": outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); })); })),
-      h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller }))),
+      // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
+      h("div", { className: "authoring-center" },
+        item && h("div", { className: "authoring-selection", role: "group", "aria-label": "현재 위치의 의미" },
+          h("span", { className: "authoring-selection-label", "aria-hidden": true }, "현재 위치의 의미"),
+          ...(view.matches || []).map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
+        h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller })))),
       item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview })),
-    item && view.contextMenu && h("div", { className: "authoring-context-menu", role: "menu", "aria-label": "문맥 명령", style: { left: view.contextMenu.x, top: view.contextMenu.y } },
-      h(CommandList, { controller, view, readOnly, menu: true })),
-    item && !!view.matches?.length && h("div", { className: "authoring-selection", "aria-label": "현재 위치의 의미" },
-      ...view.matches.map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
-    item && view.trial && h(Trial, { controller, item, view }),
-    item && view.panel === "paste" && h("section", { className: "authoring-bottom" }, h("h2", null, "의미 붙여넣기"),
-      h("p", null, "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
-      h("form", { onSubmit: (event: any) => { event.preventDefault(); const data = new FormData(event.currentTarget); act(() => controller.paste(data.has("meaning"), String(data.get("new_id") || ""), data.has("link_existing")))(); } },
-        h("label", null, h("input", { type: "checkbox", name: "meaning", defaultChecked: true }), "의미 포함"),
-        h("label", null, h("input", { type: "checkbox", name: "link_existing" }), "같은 이름의 기존 필드에 연결"),
-        h("label", null, "새 연결 식별자 ", h("input", { name: "new_id", className: "field" })),
-        h("button", { className: "btn sm", disabled: !controller.clipboard() }, "붙여넣기 미리보기")),
-      view.command?.type === "paste" && view.preview && h("div", { className: "authoring-preview" },
-        h("pre", { "aria-label": "변경 전" }, view.preview.before), h("pre", { "aria-label": "변경 후" }, view.preview.after),
-        button("붙여넣기 적용", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null })))),
-    item && view.panel === "search" && h("section", { className: "authoring-bottom" }, h("h2", null, "검색"),
-      h("form", { onSubmit: (event: any) => { event.preventDefault(); const values = new FormData(event.currentTarget); act(() => controller.search(String(values.get("query")), String(values.get("kind")), values.has("all")))(); } },
-        h("input", { className: "field", name: "query", "aria-label": "검색어", defaultValue: view.query }),
-        h("select", { className: "field", name: "kind", "aria-label": "검색 대상" }, h("option", { value: "body" }, "본문"), h("option", { value: "field" }, "필드"), h("option", { value: "structure" }, "항목·선택"), h("option", { value: "all" }, "전체")),
-        h("label", null, h("input", { type: "checkbox", name: "all" }), "열린 모든 문서"), h("button", { className: "btn sm" }, "찾기")),
-      ...view.hits.map((hit: Obj, index: number) => button(`${hit.document} · ${hit.context || hit.name || hit.label}`, select(hit), { key: index }))),
-    item && view.panel === "commands" && h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
-      h(CommandList, { controller, view, readOnly })),
-    // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
-    item && view.panel === "raw" && h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
-      view.syntax?.note && h("p", null, view.syntax.note),
-      ...(view.syntax?.sections || []).map((section: Obj, index: number) => h("div", { key: index, className: "authoring-syntax" },
-        h("h3", null, section.entry), h("pre", { tabIndex: 0, "aria-label": `${section.entry} 원문 표기` }, section.text))),
-      button("복사", act(() => copyText((view.syntax?.sections || []).map((section: Obj) => section.text).join("\n\n"))), { disabled: !view.syntax?.sections?.length })),
-    item && view.panel === "impact" && h("section", { className: "authoring-bottom", "aria-label": "변경 영향·작업 적용" }, h("h2", null, "변경 영향·작업 적용"),
-      view.impact?.save_required && h("p", null, "템플릿을 저장한 뒤 적용할 작업을 확인하세요."),
-      view.impact?.structure_delta && h(StructureDelta, { delta: view.impact.structure_delta }),
-      !!view.impact?.identifier_changes?.length && h("ul", { "aria-label": "식별자 변경" }, ...view.impact.identifier_changes.map((entry: Obj | string, index: number) =>
-        h("li", { key: index }, typeof entry === "string" ? entry : `${KIND_LABEL[entry.kind] || entry.kind || ""} · ${entry.from ?? entry.id ?? ""}${entry.to != null ? ` → ${entry.to}` : ""}`))),
-      (!!view.impact?.structure_delta?.renamed?.length || !!view.impact?.identifier_changes?.length) && h("p", null, IDENTIFIER_IMPACT),
-      view.impact?.content_changed_since_save && h("p", null, "저장 이후 본문 변경 있음"),
-      (!view.impact?.available || !!view.impact.unverified_jobs?.length) && h("p", null, "연결된 작업의 영향은 확인하지 않았습니다."),
-      !!view.impact?.unverified_jobs?.length && h("p", null, `확인하지 않은 작업 ${view.impact.unverified_jobs.length}개`),
-      view.impact?.available && !view.impact.jobs?.length && h("p", null, "연결된 작업 없음"),
-      ...(view.impact?.jobs || []).map((job: Obj) => { const blocked = view.impact.save_required || view.impact.usable === false; return h("div", { key: job.name }, h("strong", null, job.name),
-        job.change_status && h("p", null, TPL_STATUS_COPY[job.change_status] || job.change_status),
-        h("p", null, `추가 필드: ${(job.added_fields || []).join(", ") || "없음"} · 없어진 필드: ${(job.removed_fields || job.unmapped_fields || []).join(", ") || "없음"}`),
-        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
-        blocked && job.blocked_reason && h("p", { className: "authoring-reason" }, job.blocked_reason)); }),
-      view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
-        ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
-        button("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }), button("취소", () => controller.update({ jobApply: null })))),
-    // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
-    item && view.panel === "problems" && h("section", { className: "authoring-bottom", "aria-label": "문제" }, h("h2", null, "문제"),
-      !item.problems?.length && h("p", null, "문제 없음"),
-      ...(item.problems || []).map((problem: Obj, index: number) => h("div", { key: index, className: "authoring-problem" },
-        h("p", null, h("strong", null, SEVERITY_LABEL[problem.severity] || problem.severity), ` · ${CATEGORY_LABEL[problem.category] || problem.category}`, problem.target ? ` · ${problem.target}` : ""),
-        h("p", null, problem.message),
-        ...(problem.actions || []).map((action: Obj, actionIndex: number) => button(action.label, act(() => problemAction(controller, item, problem, action)), { key: actionIndex })))),
-      view.command?.type === "repair_marker" && view.preview && h("div", { className: "authoring-preview" },
-        h("h3", null, "수정 제안"), h("pre", { "aria-label": "변경 전" }, view.preview.before), h("pre", { "aria-label": "변경 후" }, view.preview.after),
-        button("구조 표기 수정", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null })))),
-    item?.external_changed && view.panel !== "external" && h("section", { className: "authoring-bottom", role: "alert" }, h("h2", null, "외부 파일 변경"),
-      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true))), button("외부 파일 다시 열기", act(controller.reload))),
-    // 저장 실패(AC24·§9.2): 변경은 그대로 남고, 같은 세 복구 동사에 「다시 저장」이 더해진다.
-    item && view.panel === "external" && h("section", { className: "authoring-bottom", role: "alert", "aria-label": "저장 실패" }, h("h2", null, "저장 실패"),
-      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true))),
-      button("외부 파일 다시 열기", act(controller.reload)), button("다시 저장", act(() => controller.save(item.id)))),
-    item && view.panel === "comparison" && view.comparison && h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
-      h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
-        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries })))),
-      button("비교 닫기", () => controller.update({ panel: "" }))),
+    // 하단 독(§3.1): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
+    (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}`, role: "region", "aria-label": "보조 패널" },
+      h("div", { className: "authoring-dock-bar" },
+        h("div", { className: "authoring-dock-tabs", role: "tablist", "aria-label": "보조 패널" }, ...dock.tabs.map(([key, label]) => {
+          const count = key === "problems" ? item?.problems?.length || 0 : 0;
+          return h("button", { key, type: "button", role: "tab", id: `authoring-dock-tab-${key}`, className: "authoring-dock-tab", "aria-selected": key === dock.active,
+            "aria-controls": key === dock.active ? "authoring-dock-panel" : undefined, onClick: () => openDock(key) },
+            label, count ? " " : null, count ? h("span", { className: "authoring-badge" }, String(count)) : null);
+        })),
+        dock.active && h("div", { className: "authoring-dock-actions" },
+          button(view.dockMax ? "복원" : "최대화", () => controller.update({ dockMax: !view.dockMax })),
+          button("닫기", closeDock))),
+      dock.active && h("div", { className: "authoring-dock-panel", id: "authoring-dock-panel", role: "tabpanel", "aria-labelledby": `authoring-dock-tab-${dock.active}` }, dockContent(dock.active))),
+    item && view.contextMenu && h("div", { className: "authoring-context-menu", role: "menu", "aria-label": view.contextMenu.kind === "more" ? "더보기" : "문맥 명령", style: { left: view.contextMenu.x, top: view.contextMenu.y } },
+      view.contextMenu.kind === "more"
+        ? moreActions.map(([label, run, disabled]) => h("div", { key: label, className: "authoring-command", role: "none" },
+          button(label, () => { (view.contextMenu.trigger as HTMLElement | undefined)?.focus?.(); controller.update({ contextMenu: null }); run(); }, { role: "menuitem", disabled })))
+        : h(CommandList, { controller, view, readOnly, menu: true })),
     item && h("footer", { className: "authoring-status", role: "status" },
-      // 저장·검사·시험은 서로 다른 상태다(P09·§9.1): 저장됨 뒤에 Python 의 readiness(초안/사용 준비)를 붙인다.
-      h("span", null, view.saveFailed ? "저장 실패" : controller.pending(item.id) ? "편집 내용 반영 중" : item.save_as_required ? "새 템플릿 저장 필요" : item.dirty ? "저장하지 않은 변경"
-        : item.readiness?.state === "ready" ? "저장됨 · 사용 준비" : item.readiness?.state === "draft" ? "저장됨 · 초안" : "저장됨"),
-      h("span", null, `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`),
-      // 준비 상태 옆의 보존 판정 칩 — Python 의 compatibility.state 를 이름으로 옮길 뿐이다(마운트 전에도 선다).
-      item.compatibility?.state === "checking" && h("span", { "data-compat": "checking" }, "보존 확인 중"),
-      item.compatibility?.state === "limited" && h("span", { "data-compat": "limited" }, "읽기 전용 · 보존 확인 필요"),
-      item.restore?.message && h("span", { "data-restore": item.restore.state }, item.restore.message),
-      h("span", null, item.trial_state === "current" ? "현재 시험 구성 확인됨" : "다시 시험 필요"),
-      h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
-      item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
-      item.recovery && h("span", null, "복구 여부 선택 필요")),
+      // 왼쪽: 저장·준비와 구조 검사. 오른쪽: 보존·복원·시험·복구 초안. 구분선은 CSS 가 그린다(글자가 아니다).
+      h("div", { className: "authoring-status-group" },
+        // 저장·검사·시험은 서로 다른 상태다(P09·§9.1): 저장됨 뒤에 Python 의 readiness(초안/사용 준비)를 붙인다.
+        h("span", null, view.saveFailed ? "저장 실패" : controller.pending(item.id) ? "편집 내용 반영 중" : item.save_as_required ? "새 템플릿 저장 필요" : item.dirty ? "저장하지 않은 변경"
+          : item.readiness?.state === "ready" ? "저장됨 · 사용 준비" : item.readiness?.state === "draft" ? "저장됨 · 초안" : "저장됨"),
+        h("span", null, `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`)),
+      h("div", { className: "authoring-status-group authoring-status-end" },
+        // 준비 상태 옆의 보존 판정 칩 — Python 의 compatibility.state 를 이름으로 옮길 뿐이다(마운트 전에도 선다).
+        item.compatibility?.state === "checking" && h("span", { "data-compat": "checking" }, "보존 확인 중"),
+        item.compatibility?.state === "limited" && h("span", { "data-compat": "limited" }, "읽기 전용 · 보존 확인 필요"),
+        item.restore?.message && h("span", { "data-restore": item.restore.state }, item.restore.message),
+        h("span", null, item.trial_state === "current" ? "현재 시험 구성 확인됨" : "다시 시험 필요"),
+        h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
+        item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
+        item.recovery && h("span", null, "복구 여부 선택 필요"))),
   );
 }
