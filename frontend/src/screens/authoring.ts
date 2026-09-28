@@ -200,21 +200,23 @@ export function renameChoice(commands: Obj[] | undefined, kind: string | undefin
   return { reason: entries[0].reason ? String(entries[0].reason) : null };
 }
 /** 셸 F2 와 편집면(rhwp)이 넘겨준 F2 가 같은 길을 쓴다. 열 수 있으면 속성 패널을 그 명령으로 열고 이름 칸으로 가며,
- *  불가이면 위치 줄 메모에 사유 한 줄을 세우고 단일 live region 으로 한 번 읽는다(다음 캐럿 이동에서 걷힌다). */
-export function renameShortcut(controller: Pick<AuthoringController, "update" | "announce" | "viewModel">): void {
+ *  불가이면 위치 줄 메모(controller.note)에 Python 사유 한 줄을 세운다 — 메모 칸의 첫 호출자다. */
+export function renameShortcut(controller: Pick<AuthoringController, "update" | "note" | "viewModel">): void {
   const view = controller.viewModel.getSnapshot();
   const choice = renameChoice(view.commands, view.selected?.kind);
   if (!choice) return;
   if ("open" in choice) { controller.update({ panel: "properties", commandType: choice.open, selectionNote: null, ...focusRequest(view, "properties") }); return; }
-  if (!choice.reason) return;
-  controller.update({ selectionNote: { text: choice.reason } });
-  controller.announce(choice.reason);
+  if (choice.reason) controller.note(choice.reason);
 }
-/** 위치 줄 메모(IDE-01) — 브레드크럼 줄 오른쪽 끝의 한 줄. 넘치면 말줄임이고 전문은 title 에 있다. 읽기는 live region 이
- *  한다(이 칸은 live region 이 아니다). chip 은 앞에 서는 글자 칩(예: 문제 심각도)이다. */
-export function selectionNoteView(note: { text: string; chip?: ReactNode } | null | undefined): ReactNode {
-  if (!note?.text) return null;
-  return h("span", { className: "authoring-selection-note", title: note.text }, note.chip || null, note.chip ? " " : null, note.text);
+/** 위치 줄 메모(IDE-01) — 브레드크럼 줄 오른쪽 끝의 제자리 사유 칸 하나. 넘치면 말줄임이고 전문은 title 에 있다.
+ *  오류·경고는 색만이 아니라 앞의 글자 칩(오류/경고)으로도 가른다(data-severity). 읽기는 live region 이 세울 때 한 번 한다
+ *  (이 칸은 live region 이 아니다). 문장은 호출자가 넘긴 Python 문장 그대로다. */
+export function selectionNoteView(note: { message: string; severity?: "error" | "warning" | "info" } | null | undefined): ReactNode {
+  if (!note?.message) return null;
+  const chip = note.severity === "error" || note.severity === "warning"
+    ? h("span", { className: "authoring-badge", "data-severity": note.severity }, SEVERITY_LABEL[note.severity]) : null;
+  return h("span", { className: "authoring-selection-note", title: note.message, "data-severity": note.severity },
+    chip, chip ? " " : null, note.message);
 }
 
 /** 하단 독(§3.1 UI01~UI10)이 한 탭으로 보이는 패널 — `view.panel` 값이 곧 탭 열쇠다. 속성은 옆 패널이라 빠진다. */
@@ -248,8 +250,8 @@ export function sharedReason(commands: Obj[] | undefined, types: string[] = COMM
 /** Escape 한 단계(§10): 문맥 메뉴가 열려 있으면 그것만 닫고 초점을 연 자리로 돌린다("menu"); 아니면 패널을 닫는다("panel"). */
 export function escapeShell(controller: Pick<AuthoringController, "update" | "viewModel">): "menu" | "panel" {
   const view = controller.viewModel.getSnapshot();
-  if (view.contextMenu) { const trigger = view.contextMenu.trigger; controller.update({ contextMenu: null }); if (focusable(trigger)) trigger.focus(); return "menu"; }
-  controller.update({ panel: "", preview: null, refusal: null });
+  if (view.contextMenu) { const trigger = view.contextMenu.trigger; controller.update({ contextMenu: null, selectionNote: null }); if (focusable(trigger)) trigger.focus(); return "menu"; }
+  controller.update({ panel: "", preview: null, refusal: null, selectionNote: null });
   return "panel";
 }
 /** 클립보드 복사 — 권한·API 부재 시 textarea 경로로 대신한다. */
@@ -1417,7 +1419,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           ...crumbs(view.matches).flatMap((match: Obj, index: number, all: Obj[]) => [h("span", { key: `sep-${index}`, className: "authoring-crumb-sep" }, icon("chevron-right")),
             h("button", { key: index, type: "button", className: "authoring-crumb", onClick: select(match), "aria-current": index === all.length - 1 ? "location" : undefined },
               `${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`)]),
-          // 위치 줄 메모(IDE-01): 줄 오른쪽 끝의 한 줄 — F2 가 안 되는 자리의 Python 사유가 서고 다음 캐럿 이동에서 걷힌다.
+          // 위치 줄 메모(IDE-01): 줄 오른쪽 끝의 제자리 사유 한 줄(controller.note) — 다음 캐럿 이동·Escape 에서 걷힌다.
           selectionNoteView(view.selectionNote)),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
         h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),

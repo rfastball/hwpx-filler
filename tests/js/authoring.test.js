@@ -1511,7 +1511,7 @@ test("IDE-01 P-15: a refused F2 leaves the panel shut, sets the location-row not
   renameShortcut(controller);
   let view = controller.viewModel.getSnapshot();
   assert.equal(view.panel, "", "패널을 열지 않는다");
-  assert.deepEqual(view.selectionNote, { text: "필드를 선택하세요." });
+  assert.deepEqual(view.selectionNote, { message: "필드를 선택하세요." });
   assert.equal(view.live.text, "필드를 선택하세요.");
   const seq = view.live.seq;
   const markup = render(controller);
@@ -1545,4 +1545,28 @@ test("IDE-01 P-21: the 외부 파일 내용 comparison carries the alert's decis
   controller.update({ saveFailed: false });
   markup = render(controller);
   assert.ok(section(markup).includes('<div class="authoring-actions"><button type="button" class="btn quiet">비교 닫기</button></div>'), "결정할 일이 없으면 닫기만");
+});
+
+test("IDE-01: the location-row note is a generic in-place reason slot — severity chip, one announcement, cleared by Escape and by a caret move", async () => {
+  const { controller } = harness((action) => action === "locate" ? { matches: [], commands: [] } : action === "commands" ? { commands: [] } : {});
+  await controller.activate("a");
+  controller.note("끝 표지가 없습니다.", "error");
+  let view = controller.viewModel.getSnapshot();
+  assert.deepEqual(view.selectionNote, { message: "끝 표지가 없습니다.", severity: "error" });
+  assert.equal(view.live.text, "끝 표지가 없습니다.");
+  const seq = view.live.seq;
+  let markup = render(controller);
+  assert.ok(markup.includes('<span class="authoring-selection-note" title="끝 표지가 없습니다." data-severity="error"><span class="authoring-badge" data-severity="error">오류</span> 끝 표지가 없습니다.</span>'), "심각도는 글자 칩으로도 선다");
+  controller.update({});
+  assert.equal(controller.viewModel.getSnapshot().live.seq, seq, "다시 그려도 다시 읽지 않는다");
+  assert.equal(escapeShell(controller), "panel");
+  assert.equal(controller.viewModel.getSnapshot().selectionNote, null, "Escape 가 걷는다");
+  controller.note("다른 이름을 입력하세요.", "info");
+  markup = render(controller);
+  assert.ok(markup.includes('<span class="authoring-selection-note" title="다른 이름을 입력하세요." data-severity="info">다른 이름을 입력하세요.</span>'), "안내는 칩 없이 한 줄");
+  controller.note("");
+  assert.equal(controller.viewModel.getSnapshot().selectionNote.message, "다른 이름을 입력하세요.", "빈 문장은 세우지 않는다");
+  controller.selection("a", { start: 3, end: 3 });
+  await new Promise(setImmediate);
+  assert.equal(controller.viewModel.getSnapshot().selectionNote, null, "캐럿 이동이 걷는다");
 });

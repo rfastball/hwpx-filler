@@ -136,6 +136,14 @@ export function createAuthoringController(deps: Deps) {
     if (text) update({ live: { text, seq: (view.live?.seq || 0) + 1 } });
   }
 
+  /** 위치 줄 메모(IDE-01) — 지금 자리에 대한 제자리 사유 한 줄. 세울 때 단일 live region 이 한 번 읽고, 다음 캐럿 이동과
+   *  Escape 에서 걷힌다. 문장·심각도는 호출자가 넘긴 Python 판정 그대로다(F2 불가 사유가 첫 호출자다). */
+  function note(message: string, severity?: "error" | "warning" | "info") {
+    if (!message) return;
+    update({ selectionNote: { message, ...(severity ? { severity } : {}) } });
+    announce(message);
+  }
+
   function changed(id: string, content: string): void {
     buffers.set(id, content);
     if (id === viewId) update({ preview: null, refusal: null, notice: "" });
@@ -511,7 +519,7 @@ export function createAuthoringController(deps: Deps) {
 
   return {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
-    snapshot, tab, update, guarded, fail, announce, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
+    snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
     back, select, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search,
     returnScreen: () => returnScreen,

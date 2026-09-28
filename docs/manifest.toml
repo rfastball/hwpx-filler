@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "1e3d5fa73f2bc0de783c3d72b96a1302491b049d809b21f111a8993ccd33a484"
+source_sha256 = "8ab41fe3544a7712459e22283fb8e989da1c5ac4885d6692360a67348aae7595"
 body_sha256 = "693ff05c27609d196e1f9511724bae6855120e664067f39a6b6870208a025de4"
 
 [[document]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "1102f74f048ab666dd005b72ed09fd42a9b65e27cc7b44c0394451d80e77ed7d"
+source_sha256 = "e9c5be8ec3f39d44758352e6c23e742ff3a0e91c222b8735d8af675f27d1b2bc"
 body_sha256 = "b4d25df076a530a920afb88f5d7a0e34c227813b4d7e237e5c057233d3332058"
 
 [[topic]]
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "60d94603fa246f5c1d41cfcc57a28f6ca609131d9b8e983bacefb2b874063997"
-body_sha256 = "d706c18e814cf996e2be2edf048dc360890260f9648e3b0ad490d9c69e081473"
+source_sha256 = "c82a994327bd7dfa791d401781421b8e055cbc251d7f813a53b2bdbebae44041"
+body_sha256 = "f21ccb94758bac38c6b78ad873cc1e566463e7bcd889e1ec360fa86ac22ea963"
 
 [[topic]]
 id = "development"
