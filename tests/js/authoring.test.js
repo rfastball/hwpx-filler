@@ -430,8 +430,8 @@ test("§6.1: the context menu is a role=menu popover at the event coordinates, a
   const markup = render(controller);
   assert.ok(markup.includes('<div class="authoring-context-menu" style="left:12px;top:34px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령">'));
   assert.ok(markup.includes('<button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1" aria-label="필드로 만들기">필드로 만들기</button>'));
-  // APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 사유는 항목 안의 설명 줄이고, 대안은 곁의 menuitem 이다.
-  assert.ok(markup.includes('role="menuitem" tabindex="-1" aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-menu-reason-create_option">선택으로 만들기<span id="authoring-menu-reason-create_option" class="authoring-reason">먼저 항목 안의 내용을 선택하세요.</span></button><button type="button" class="authoring-menu-item alternative" role="menuitem" tabindex="-1">먼저 항목 만들기</button>'));
+  // APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 사유는 항목 안의 윗줄 설명이고(UX-10 R5), 대안은 곁의 menuitem 이다.
+  assert.ok(markup.includes('role="menuitem" tabindex="-1" aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-menu-reason-create_option"><span id="authoring-menu-reason-create_option" class="authoring-reason group-reason">먼저 항목 안의 내용을 선택하세요.</span>선택으로 만들기</button><button type="button" class="authoring-menu-item alternative" role="menuitem" tabindex="-1">먼저 항목 만들기</button>'));
   const menu = markup.slice(markup.indexOf('<div class="authoring-menu"'));
   assert.ok(!/<button[^>]* disabled=""/.test(menu.slice(0, menu.indexOf("</div>"))), "메뉴 항목은 native disabled 가 아니다");
   assert.ok(!menu.slice(0, menu.indexOf("</div>")).includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
@@ -1250,7 +1250,7 @@ test("UX-10 R5: neighbouring unavailable menu items with the same reason show it
   assert.equal(menu.split(region).length - 1, 1);
   assert.ok(menu.includes('aria-label="필드 이름 변경" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field"><span id="authoring-menu-reason-rename_field" class="authoring-reason group-reason">먼저 필드를 선택하세요.</span>필드 이름 변경</button>'), "무리의 첫 항목 위");
   assert.ok(menu.includes('aria-label="필드 의미 해제" aria-disabled="true" aria-describedby="authoring-menu-reason-rename_field">필드 의미 해제</button>'), "나머지는 같은 줄을 가리킨다");
-  assert.ok(menu.includes('aria-describedby="authoring-menu-reason-create_option">선택으로 만들기<span id="authoring-menu-reason-create_option" class="authoring-reason">'), "혼자인 사유는 전처럼 항목 안 아랫줄");
+  assert.ok(menu.includes('aria-describedby="authoring-menu-reason-create_option"><span id="authoring-menu-reason-create_option" class="authoring-reason group-reason">먼저 항목 안의 내용을 선택하세요.</span>선택으로 만들기</button>'), "혼자인 사유도 같은 자리(윗줄)");
   assert.ok(!menu.includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
 });
 

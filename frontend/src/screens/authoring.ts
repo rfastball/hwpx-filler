@@ -233,7 +233,7 @@ const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "
 const menuItemClass = (commandType: string) => `authoring-menu-item${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}${DESTRUCTIVE.has(commandType) ? " danger" : ""}`;
 /** 문맥 메뉴의 사유 묶음(UX-10 R5): 메뉴에서 **이웃한** 불가 항목이 같은 사유면 그 사유를 무리의 첫 항목 위에 한 번만
  *  세우고, 무리의 모든 항목이 그 줄을 설명(aria-describedby)으로 가리킨다. 대안 항목·가능 항목·판정 대기 항목이 무리를 끊는다.
- *  혼자인 사유는 전처럼 그 항목 안의 설명 줄이다. 값: 명령 → { id, reason, lead(무리의 첫 항목), size }. */
+ *  혼자인 사유도 같은 자리(그 항목의 윗줄)다. 값: 명령 → { id, reason, lead(무리의 첫 항목), size }. */
 export function menuReasonGroups(commands: Obj[] | undefined, readOnly = false): Map<string, { id: string; reason: string; lead: boolean; size: number }> {
   const groups = new Map<string, { id: string; reason: string; lead: boolean; size: number }>();
   let run: string[] = [];
@@ -261,12 +261,12 @@ function CommandList({ view, readOnly, menu, onPick }: { view: Obj; readOnly: bo
     const disabled = readOnly || !available.enabled;
     const group = disabled ? groups?.get(commandType) : undefined;
     const ownReason = group?.id;
-    // 무리(둘 이상)의 사유는 첫 항목의 윗줄, 혼자인 사유는 항목 안의 아랫줄이다.
-    const reasonLine = group?.lead && h("span", { key: "reason", id: group.id, className: `authoring-reason${group.size > 1 ? " group-reason" : ""}` }, group.reason);
+    // 사유는 늘 그것이 걸린 항목들(혼자이면 그 하나)의 첫 항목 윗줄이다 — 위치가 한 가지라 어느 항목의 사유인지 헷갈리지 않는다.
+    const reasonLine = group?.lead && h("span", { key: "reason", id: group.id, className: "authoring-reason group-reason" }, group.reason);
     return [h("button", { key: commandType, type: "button", className: menuItemClass(commandType), role: "menuitem", tabIndex: -1, "aria-label": label,
         "aria-disabled": disabled || undefined, "aria-describedby": disabled ? (shared && available.reason ? reasonId : ownReason) : undefined,
         onClick: () => { if (!disabled) onPick(commandType); } },
-        group && group.size > 1 ? reasonLine : null, label, group && group.size === 1 ? reasonLine : null),
+        reasonLine || null, label),
       !available.enabled && available.alternative && h("button", { key: `${commandType}-alternative`, type: "button", className: "authoring-menu-item alternative", role: "menuitem", tabIndex: -1,
         onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label)];
   });
