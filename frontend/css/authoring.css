@@ -25,8 +25,8 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-mode button[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
 .authoring-shell .authoring-mode button:focus-visible{outline-offset:-2px}
 .authoring-toolbar .btn[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);border-color:var(--a-primary);font-weight:600}
-/* 문서면의 높이 예산: 최소 40vh(또는 20rem)를 먼저 갖는다. */
-.authoring-body{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:min(40vh,20rem);flex:1 1 0;position:relative}
+/* 문서면의 높이 예산: 창 높이의 40%를 먼저 갖는다. 압박이 오면 이 하한에서 멈추고 독·호환성 안내가 줄어든다. */
+.authoring-body{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:40vh;flex:1 1 0;position:relative}
 .authoring-body.with-properties{grid-template-columns:210px minmax(0,1fr) 260px}
 .authoring-outline,.authoring-properties{padding:var(--sp-12);background:var(--a-card);overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .authoring-outline{border-right:1px solid var(--a-border)}
@@ -90,7 +90,11 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-status-group>*+*{margin-left:var(--sp-8);padding-left:var(--sp-8);border-left:1px solid var(--a-border)}
 .authoring-status-end{margin-left:auto}
 .authoring-error{padding:var(--sp-8);color:var(--a-danger);background:var(--a-card);white-space:pre-wrap}
-.authoring-compat{flex-shrink:1;min-height:3rem;max-height:30vh;overflow:auto}
+/* 호환성 안내: 제목 줄 오른쪽에 원본 보존 동사를 두어 높이를 아끼고, 넘치면 안에서 스크롤한다. */
+.authoring-compat{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--sp-12);align-items:center;padding:var(--sp-6) var(--sp-8);flex-shrink:1;min-height:3rem;max-height:30vh;overflow:auto}
+.authoring-compat>*{grid-column:1}
+.authoring-compat p{margin:var(--sp-2) 0}
+.authoring-compat>div:last-child{grid-column:2;grid-row:1;display:flex;gap:var(--sp-4)}
 .authoring-empty{margin:auto;text-align:center}
 .authoring-syntax pre{font-family:Consolas,"D2Coding",monospace;padding:var(--sp-8);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 .authoring-bottom pre{white-space:pre-wrap;overflow-wrap:anywhere}
