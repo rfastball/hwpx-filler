@@ -109,6 +109,7 @@ class FakeElement extends FakeNode {
   closest(selector) { for (let node = this; node instanceof FakeElement; node = node.parentNode) if (node.matches(selector)) return node; return null; }
   contains(node) { for (let at = node; at; at = at.parentNode) if (at === this) return true; return false; }
   getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
+  getClientRects() { return { length: this.isConnected ? 1 : 0 }; }
   focus() { if (!this.disabled && this.isConnected) this.ownerDocument.activeElement = this; }
   get offsetParent() { return this.ownerDocument.body; }
   *walk() { yield this; for (const child of this.childNodes) if (child instanceof FakeElement) yield* child.walk(); }
@@ -315,6 +316,10 @@ test("UX-07: keys and right-clicks forwarded from the editor iframe take the she
   await settle();
   assert.equal(view().contextMenu, null, "Escape 는 메뉴부터 닫는다");
   assert.equal(view().panel, "search", "메뉴를 닫는 Escape 는 패널을 건드리지 않는다");
+  editor.spec.onShortcut("CtrlShiftP");
+  await settle();
+  assert.ok(view().palette > 0, "편집면 안의 Ctrl+Shift+P 는 셸의 명령 팔레트를 연다(IDE-02)");
+  assert.equal(view().panel, "search", "팔레트는 독 패널을 바꾸지 않는다");
   root.unmount();
 });
 
@@ -461,8 +466,9 @@ test("UX-04 APG tabs (dock): arrows rove the dock tabs, Enter opens a panel and 
   env.root.unmount();
 });
 
-test("UX-04 APG menu: Shift+F10 on an outline item selects it and opens the menu on the first usable item; ↑↓/Home/End rove incl. aria-disabled items; Tab and Escape close back to the item", async () => {
-  const commands = [{ type: "create_field", enabled: false, reason: "이미 필드입니다.", alternative: null }, { type: "rename_field", enabled: true, reason: null, alternative: null }];
+test("UX-04/IDE-02 APG menu: Shift+F10 on an outline item selects it and opens a menu of runnable commands only; ↑↓/Home/End rove; Tab and Escape close back to the item", async () => {
+  const commands = [{ type: "create_field", enabled: false, reason: "이미 필드입니다.", alternative: null },
+    { type: "rename_field", enabled: true, reason: null, alternative: null }, { type: "relink_field", enabled: true, reason: null, alternative: null }];
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action) => action === "locate" ? { commands } : {});
   showFields(env);
   await settle();
@@ -475,22 +481,18 @@ test("UX-04 APG menu: Shift+F10 on an outline item selects it and opens the menu
   const menu = env.container.querySelector('[role="menu"]');
   assert.ok(menu, "메뉴가 선다");
   assert.ok([...menu.childNodes].every((node) => node.getAttribute("role") === "menuitem"), "메뉴의 자식은 menuitem 뿐이다");
-  assert.equal(env.document.activeElement.textContent, "필드 이름 변경", "첫 **사용 가능** 항목에 초점");
-  press(env, "ArrowUp");
-  assert.equal(env.document.activeElement.getAttribute("aria-label"), "선택으로 만들기", "판정이 없는 항목도 초점을 받는다");
-  assert.equal(env.document.activeElement.getAttribute("aria-disabled"), "true");
-  assert.equal(env.document.activeElement.getAttribute("aria-describedby"), null, "판정이 없으면 사유 문장도 없다");
-  press(env, "Home");
-  assert.equal(env.document.activeElement.getAttribute("aria-label"), "필드로 만들기", "불가 항목도 초점을 받는다");
-  assert.equal(env.document.activeElement.getAttribute("aria-disabled"), "true");
-  const described = env.document.activeElement.getAttribute("aria-describedby");
-  assert.equal(env.container.querySelector(`#${described}`).textContent, "이미 필드입니다.", "사유를 설명으로 읽힌다");
-  press(env, "End");
-  assert.equal(env.document.activeElement, items().at(-1));
+  // IDE-02(P-04): 판정이 서면 되는 명령만 싣는다 — 불가 항목(필드로 만들기)과 판정 없는 명령은 숨는다(UX-04 R5 되돌림).
+  assert.deepEqual(items().map((node) => node.textContent), ["필드 이름 변경", "필드 연결 변경"]);
+  assert.ok(items().every((node) => node.getAttribute("aria-disabled") === null && node.getAttribute("aria-describedby") === null), "불가 항목·사유 설명이 없다");
+  assert.equal(env.document.activeElement, items()[0], "첫 항목에 초점");
+  press(env, "ArrowDown");
+  assert.equal(env.document.activeElement, items()[1]);
   press(env, "ArrowDown");
   assert.equal(env.document.activeElement, items()[0], "감싸 돈다");
-  fire(env, env.document.activeElement, "click");       // 불가 항목의 click 은 아무것도 하지 않는다
-  assert.ok(env.container.querySelector('[role="menu"]'), "불가 항목은 실행되지 않는다");
+  press(env, "End");
+  assert.equal(env.document.activeElement, items().at(-1));
+  press(env, "Home");
+  assert.equal(env.document.activeElement, items()[0]);
   press(env, "Tab");
   await settle();
   assert.equal(env.container.querySelector('[role="menu"]'), null, "Tab 은 메뉴를 닫는다");
@@ -502,6 +504,151 @@ test("UX-04 APG menu: Shift+F10 on an outline item selects it and opens the menu
   await settle();
   assert.equal(env.container.querySelector('[role="menu"]'), null);
   assert.equal(env.document.activeElement, field(), "Escape 도 그 줄로");
+  env.root.unmount();
+});
+
+test("IDE-02 (P-04): with verdicts the context menu carries runnable items and alternatives only; with nothing runnable it is one 명령 that opens the palette", async () => {
+  const types = ["create_field", "create_slot", "create_option", "rename_field", "relink_field", "unset_field", "rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"];
+  const blocked = types.map((type) => ({ type, enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: null }));
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  const view = () => env.controller.viewModel.getSnapshot();
+  const canvas = env.container.querySelector(".authoring-canvas");
+  const open = async () => { fire(env, canvas, "contextmenu", { clientX: 30, clientY: 40 }); await settle(); };
+  env.controller.update({ commands: blocked.map((entry) => entry.type === "create_field" ? { ...entry, enabled: true, reason: null }
+    : entry.type === "create_option" ? { ...entry, alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } } : entry) });
+  await open();
+  let items = byRole(env, "menuitem");
+  assert.deepEqual(items.map((node) => node.textContent), ["필드로 만들기", "먼저 항목 만들기"], "13 판정 중 되는 1 + 대안 1");
+  assert.equal(items.filter((node) => node.getAttribute("aria-disabled") === "true").length, 0);
+  fire(env, items[1], "click");
+  await settle();
+  assert.deepEqual([view().panel, view().commandType, view().contextMenu], ["properties", "create_slot", null], "대안은 Python 이 준 명령으로 같은 pick 경로를 탄다");
+  env.controller.update({ commands: blocked, panel: "" });
+  await open();
+  items = byRole(env, "menuitem");
+  // 결정 C: 편집면에서 연 메뉴는 「필드로 만들기」를 늘 첫 항목으로 싣는다 — 불가이면 흐리게, Python 사유를 설명 줄로.
+  // 그 밖에 되는 것이 없으니 팔레트를 여는 「명령」이 뒤따른다(사유가 항목에 서므로 공유 머리 줄은 없다).
+  assert.deepEqual(items.map((node) => node.getAttribute("aria-label") || node.textContent), ["필드로 만들기", "명령"]);
+  assert.equal(items[0].getAttribute("aria-disabled"), "true");
+  assert.equal(env.container.querySelector(`#${items[0].getAttribute("aria-describedby")}`).textContent, "먼저 문서에서 내용을 선택하세요.");
+  assert.equal(env.container.querySelector("#authoring-command-reason-menu"), null);
+  assert.equal(env.document.activeElement, items[1], "초점은 첫 사용 가능 항목(「명령」)");
+  fire(env, items[0], "click");
+  await settle();
+  assert.ok(env.container.querySelector('[role="menu"]'), "불가 항목의 누름은 실행하지 않는다");
+  fire(env, items[1], "click");
+  await settle();
+  assert.equal(env.container.querySelector('[role="menu"]'), null);
+  const input = env.container.querySelector('.authoring-command-palette input[role="combobox"]');
+  assert.ok(input, "팔레트가 선다");
+  assert.equal(env.document.activeElement, input, "입력칸에 초점");
+  const group = byRole(env, "group").find((node) => node.closest(".authoring-command-palette"));
+  assert.equal(group.getAttribute("aria-label"), "먼저 문서에서 내용을 선택하세요.", "사유는 팔레트의 무리 이름으로 읽힌다");
+  assert.equal(byRole(env, "group").filter((node) => node.closest(".authoring-command-palette")).length, 1, "사유당 한 무리");
+  env.root.unmount();
+});
+
+test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the dock; typing filters, ↑↓ reach disabled items, Enter runs only runnable ones, Escape stays inside and returns focus", async () => {
+  const types = ["create_field", "create_slot", "create_option", "rename_field", "relink_field", "unset_field", "rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"];
+  const env = await boot(hwpxTab());
+  const view = () => env.controller.viewModel.getSnapshot();
+  env.controller.update({ commands: types.map((type) => type === "create_field" || type === "rename_field" ? { type, enabled: true, reason: null, alternative: null }
+    : { type, enabled: false, reason: type.startsWith("create") ? "먼저 항목 안의 내용을 선택하세요." : "먼저 필드를 선택하세요.", alternative: null }) });
+  await settle();
+  const trialTab = () => env.container.querySelector("#authoring-dock-tab-trial");
+  assert.equal(trialTab().getAttribute("aria-selected"), "true", "시험 탭이 열려 있다");
+  const more = env.container.querySelector('.authoring-toolbar [data-rove="more"]');
+  focusOn(env, more);
+  press(env, "P", { ctrlKey: true, shiftKey: true });
+  await settle();
+  const palette = () => env.container.querySelector('.authoring-command-palette[role="dialog"]');
+  const input = () => palette()?.querySelector('input[role="combobox"]');
+  assert.ok(palette() && palette().getAttribute("aria-label") === "명령 팔레트" && !palette().closest(".authoring-dock"), "독이 아니라 오버레이다");
+  assert.equal(input().getAttribute("aria-label"), "명령");
+  assert.equal(env.document.activeElement, input(), "입력칸에 초점");
+  assert.equal(view().panel, "", "view.panel 이 바뀌지 않는다");
+  assert.equal(trialTab().getAttribute("aria-selected"), "true", "팔레트를 열어도 시험 탭이 그대로다");
+  assert.ok(!byRole(env, "tab").some((node) => node.textContent === "명령"), "독에 「명령」 탭이 없다");
+  const active = () => palette().querySelector(`#${input().getAttribute("aria-activedescendant")}`);
+  const options = () => byRole(env, "option").filter((node) => node.closest(".authoring-command-palette"));
+  assert.equal(active().textContent, "필드로 만들기", "첫 되는 항목이 활성");
+  // 걸러내기(부분 일치). 일치가 없으면 문장 하나.
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "필드 이름" } }));
+  await settle();
+  assert.deepEqual(options().map((node) => node.textContent), ["필드 이름 변경F2"]);
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "없는 명령" } }));
+  await settle();
+  assert.equal(options().length, 0);
+  assert.equal(palette().querySelector('[role="listbox"]'), null);
+  assert.equal(palette().querySelector("p").textContent, "일치하는 명령이 없습니다.");
+  assert.equal(input().getAttribute("aria-expanded"), "false");
+  assert.equal(input().getAttribute("aria-activedescendant"), null);
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "" } }));
+  await settle();
+  // ↑ 는 감싸 돌아 마지막(흐린) 항목으로 — 흐린 항목도 활성이 되어 무리 이름(사유)이 읽힌다. Enter 는 아무것도 하지 않는다.
+  press(env, "ArrowUp");
+  assert.equal(active().getAttribute("aria-disabled"), "true");
+  assert.equal(active().closest('[role="group"]').getAttribute("aria-label"), "먼저 필드를 선택하세요.");
+  assert.equal(active().getAttribute("aria-selected"), "true");
+  assert.equal(press(env, "Enter", { nativeEvent: { isComposing: true } }).prevented, false, "조합 중 Enter 는 팔레트의 것이 아니다");
+  press(env, "Enter");
+  await settle();
+  assert.ok(palette(), "흐린 항목의 Enter 는 실행하지 않고 닫지도 않는다");
+  assert.equal(view().panel, "");
+  assert.equal(byRole(env, "group").filter((node) => node.closest(".authoring-command-palette")).length, 2, "사유 무리는 서로 다른 사유 수만큼");
+  // Escape 는 팔레트 안에서 멈춘다 — 셸 Escape(속성 패널 닫기)로 새지 않고 연 자리로 초점을 돌린다.
+  env.controller.update({ panel: "properties", commandType: "create_field" });
+  await settle();
+  focusOn(env, input());
+  const escape = press(env, "Escape");
+  await settle();
+  assert.equal(escape.stopped, true, "Escape 전파를 막는다");
+  assert.equal(palette(), null, "닫힌다");
+  assert.equal(view().panel, "properties", "속성 패널은 그대로다");
+  assert.equal(env.document.activeElement, more, "연 자리로 초점이 돌아간다");
+  // 다시 열어 ↓ 로 되는 명령을 고르고 Enter — 같은 pick 경로로 속성 패널이 그 명령으로 열린다.
+  env.controller.update({ panel: "" });
+  focusOn(env, more);
+  press(env, "P", { ctrlKey: true, shiftKey: true });
+  await settle();
+  press(env, "ArrowDown");
+  assert.equal(active().textContent, "필드 이름 변경F2");
+  press(env, "Enter");
+  await settle();
+  assert.equal(palette(), null, "실행하면 닫힌다");
+  assert.deepEqual([view().panel, view().commandType], ["properties", "rename_field"]);
+  env.root.unmount();
+});
+
+test("IDE-02 (P-10): the palette's 문맥 메뉴 and 이전 영역으로 act at the place that opened it", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action) => action === "locate" ? { commands: [{ type: "rename_field", enabled: true, reason: null, alternative: null }] } : {});
+  showFields(env);
+  await settle();
+  const field = fieldRow(env, "필드 · 이름");
+  focusOn(env, field);
+  press(env, "P", { ctrlKey: true, shiftKey: true });
+  await settle();
+  const input = () => env.container.querySelector('.authoring-command-palette input[role="combobox"]');
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "문맥" } }));
+  await settle();
+  press(env, "Enter");
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-command-palette"), null);
+  const menu = env.container.querySelector('[role="menu"][aria-label="문맥 명령"]');
+  assert.ok(menu, "연 자리(그 줄)에서 Shift+F10 을 누른 것과 같다");
+  assert.equal(env.controller.viewModel.getSnapshot().contextMenu.trigger, field);
+  press(env, "Escape");
+  await settle();
+  assert.equal(env.document.activeElement, field);
+  // 「이전 영역으로」(Shift+F6)는 연 자리에서 한 영역 뒤로 — 구조 패널 앞은 좁은 폭의 구조 레일 단추다.
+  press(env, "P", { ctrlKey: true, shiftKey: true });
+  await settle();
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "이전 영역" } }));
+  await settle();
+  press(env, "Enter");
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-command-palette"), null);
+  assert.ok(env.document.activeElement.matches(".authoring-rail-toggle"), "셸 F6 순환과 같은 길");
   env.root.unmount();
 });
 
@@ -673,7 +820,7 @@ test("head band 파일 menu (APG menu): the trigger toggles it, it opens on 문�
   env.root.unmount();
 });
 
-test("더보기 menu: its first item 명령 opens the command palette in the dock, and the palette does not offer itself", async () => {
+test("더보기 menu: its first item 명령 opens the command palette overlay (not a dock tab), and the palette does not offer itself", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
   const more = env.container.querySelector('.authoring-toolbar [data-rove="more"]');
   focusOn(env, more);
@@ -681,15 +828,20 @@ test("더보기 menu: its first item 명령 opens the command palette in the doc
   await settle();
   const menu = env.container.querySelector('[role="menu"][aria-label="더보기"]');
   const first = menu.querySelectorAll('[role="menuitem"]')[0];
-  assert.equal(first.textContent, "명령");
+  assert.equal(first.textContent, "명령Ctrl+Shift+P", "팔레트로 가는 유일한 마우스 길이 키를 가르친다");
+  assert.equal(first.getAttribute("aria-keyshortcuts"), "Control+Shift+P");
   assert.equal(env.document.activeElement, first, "열리면 첫 항목(명령)에 초점");
   fire(env, first, "click");
   await settle();
   assert.equal(env.container.querySelector('[role="menu"]'), null);
-  const palette = env.container.querySelector('#authoring-dock-panel [aria-label="명령 팔레트"]');
-  assert.ok(palette, "명령 팔레트가 독에 선다");
-  assert.ok(!palette.querySelectorAll("button").some((node) => node.textContent === "명령"), "팔레트는 자기를 여는 단추를 싣지 않는다");
-  env.root.unmount();
+  const palette = env.container.querySelector('[role="dialog"][aria-label="명령 팔레트"]');
+  assert.ok(palette && !palette.closest("#authoring-dock-panel"), "명령 팔레트는 독이 아니라 오버레이다");
+  assert.equal(env.document.activeElement, palette.querySelector('input[role="combobox"]'));
+  assert.ok(!palette.querySelectorAll('[role="option"]').some((node) => node.textContent === "명령"), "팔레트는 자기를 여는 항목을 싣지 않는다");
+  press(env, "Escape");
+  await settle();
+  assert.equal(env.container.querySelector('[role="dialog"][aria-label="명령 팔레트"]'), null);
+  assert.equal(env.document.activeElement, more, "Escape 는 연 단추로 돌아간다");
 });
 
 /* ---------- IDE-01: 상태 막대 입구 · F2 제자리 사유 · 비교 안 결정(실제 커밋 위의 누름) ---------- */

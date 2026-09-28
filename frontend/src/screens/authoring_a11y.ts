@@ -16,6 +16,11 @@ export function rovingIndex(key: string, index: number, count: number, axis: "ho
   return null;
 }
 
+/** combobox 의 목록(APG combobox + listbox) 활성 항목 이동: ↑↓ 만 감싸 돈다. Home·End·←→ 는 입력칸의 캐럿 몫이라 null. */
+export function listKey(key: string, index: number, count: number): number | null {
+  return key === "ArrowDown" || key === "ArrowUp" ? rovingIndex(key, index, count, "vertical") : null;
+}
+
 type KeyEvent = { key: string; target: unknown; preventDefault(): void; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean };
 type Focusable = { focus(options?: FocusOptions): void; contains?(node: unknown): boolean };
 type Container = { querySelectorAll(selector: string): ArrayLike<unknown> };

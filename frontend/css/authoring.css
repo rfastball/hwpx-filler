@@ -126,7 +126,6 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-bottom form>label .field{flex:1;width:auto;min-width:0}
 .authoring-bottom form>.btn{flex:none}
 .authoring-bottom>.btn{margin:var(--sp-4) 0}
-.authoring-command-more{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-top:var(--sp-8);padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
 .authoring-trial{display:grid;grid-template-columns:clamp(12rem,28%,18rem) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);min-height:0}
 .authoring-trial>header{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-8)}
 .authoring-trial-input,.authoring-trial-output{overflow:auto;padding:var(--sp-12);min-height:0;min-width:0}
@@ -205,18 +204,19 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-badge{display:inline-block;margin-left:var(--sp-4);padding:0 var(--sp-6);font-size:var(--fs-caption);line-height:1.5;color:var(--a-ink);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-pill);vertical-align:middle;white-space:nowrap}
 /* 항목·선택 종류 표지(§10): 색이 아닌 글자와 점선 테두리로 둘을 가른다. */
 .authoring-kind{display:inline-block;margin-right:var(--sp-4);padding:0 var(--sp-4);font-size:var(--fs-caption);line-height:1.5;color:var(--a-muted);border:1px dashed var(--a-border);border-radius:var(--rad-control);vertical-align:middle;white-space:nowrap}
-.authoring-command{display:flex;flex-direction:column;gap:var(--sp-2)}
 /* 문맥 메뉴·더보기(UX-09): 공용 .ctx-menu 의 겉모습(테두리·모서리·그림자)을 따르되 위치는 셸 기준이다. 등장 움직임은 더하지 않는다. */
 .authoring-context-menu{position:absolute;z-index:var(--z-popover);min-width:14rem;max-width:20rem;max-height:70vh;overflow:auto;padding:var(--sp-4);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
-/* APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 흐린 글자와 곁의 사유로 구별한다(색만이 아니다). */
+/* APG menu: 「더보기」·「파일」과 판정 전 문맥 메뉴의 불가 항목은 초점을 받는다(aria-disabled) — 흐린 글자다.
+   판정이 선 문맥 메뉴는 되는 명령과 대안만 싣는다(IDE-02) — 사유는 명령 팔레트에 서고, 되는 것이 없을 때만
+   공유 사유 한 줄이 「명령」 위 머리 줄로 선다. */
 .authoring-context-menu [role=menuitem][aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
-.authoring-context-menu [role=menuitem] .authoring-reason{display:block}
-.authoring-context-menu [role=menuitem] .authoring-reason.group-reason{margin-bottom:var(--sp-2)}
 .authoring-context-menu>.authoring-reason{padding:var(--sp-4) var(--sp-6)}
+/* 편집면 메뉴에 늘 서는 「필드로 만들기」(결정 C)가 불가일 때의 사유 — 항목 안 윗줄의 작은 글이다. */
+.authoring-context-menu [role=menuitem] .authoring-reason{display:block;margin-bottom:var(--sp-2)}
 .authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul:not(.authoring-rows){margin:var(--sp-4) 0;padding-left:var(--sp-16)}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 @media(forced-colors:active){
-  .authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}
+  .authoring-context-menu,.authoring-command-palette,.authoring-palette-group{border-color:CanvasText}.authoring-palette-option.active{outline:2px solid Highlight;outline-offset:-2px}.authoring-badge,.authoring-kind{border-color:CanvasText}
   .authoring-compat,.authoring-drafts li{border-color:CanvasText}.authoring-compat>strong{color:CanvasText}
   .authoring-mode button[aria-pressed=true],.authoring-toolbar .btn[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-dock-tab[aria-selected=true]{border-bottom-color:Highlight}
@@ -279,7 +279,7 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-badge[data-severity=warning]{color:var(--a-warn);border-color:var(--a-warn)}
 .authoring-badge[data-trial=current]{color:var(--a-ok);border-color:var(--a-ok)}
 
-/* 메뉴 항목(문맥 메뉴·더보기·팔레트): 공용 .ctx-menu 항목과 같은 모양 — 테두리 없는 전폭 줄, hover 면, 불가는 흐린 글자,
+/* 메뉴 항목(문맥 메뉴·더보기·파일): 공용 .ctx-menu 항목과 같은 모양 — 테두리 없는 전폭 줄, hover 면, 불가는 흐린 글자,
    명령 무리 사이 구분선(무리 첫 항목의 윗선 — 메뉴의 자식은 menuitem 뿐이다), 파괴 명령은 위험 잉크. */
 .authoring-menu-item{position:relative;display:block;width:100%;text-align:left;border:0;background:none;font:inherit;font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);border-radius:var(--rad-control);cursor:pointer}
 .authoring-menu-item:hover:not(:disabled):not([aria-disabled=true]),.authoring-shell .authoring-menu-item:focus-visible{background:var(--n-hover)}
@@ -287,16 +287,25 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-menu-item.danger{color:var(--a-danger)}
 .authoring-menu-item:disabled,.authoring-menu-item[aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
 .authoring-shell .authoring-menu-item:focus-visible{outline-offset:-2px}
-.authoring-menu-item.group-start,.authoring-command.group-start{margin-top:var(--sp-8)}
-.authoring-menu-item.group-start::before,.authoring-command.group-start::before{content:"";position:absolute;left:var(--sp-2);right:var(--sp-2);top:calc(var(--sp-4) * -1 - 1px);border-top:1px solid var(--a-border)}
-.authoring-menu-item .authoring-reason{display:block}
-.authoring-palette{display:flex;flex-direction:column;max-width:32rem}
-.authoring-command{position:relative}
-.authoring-palette .authoring-menu-item{display:flex;align-items:center;gap:var(--sp-8)}
-.authoring-palette>.authoring-command>.authoring-reason,.authoring-palette>.authoring-command>.alternative{padding-left:var(--sp-10)}
+.authoring-menu-item.group-start{margin-top:var(--sp-8)}
+.authoring-menu-item.group-start::before{content:"";position:absolute;left:var(--sp-2);right:var(--sp-2);top:calc(var(--sp-4) * -1 - 1px);border-top:1px solid var(--a-border)}
 .authoring-menu-item.with-key{display:flex;align-items:center;gap:var(--sp-16)}
 .authoring-key{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-caption);color:var(--a-muted)}
-.authoring-command-more{margin-top:var(--sp-8);padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
+/* 명령 팔레트(IDE-02 · P-10): 머리 띠 아래 가운데의 비모달 오버레이 — 겉모습은 문맥 메뉴와 같은 층(테두리·모서리·그림자)이고
+   등장 움직임은 더하지 않는다. top 은 화면이 머리 띠 높이를 재어 고친다(글자 배율·탭 줄에 따라 달라진다).
+   활성 항목(aria-activedescendant)은 선택 면 + 왼쪽 막대, 흐린 항목은 흐린 글자, 사유는 무리 머리의 작은 글이다. */
+.authoring-command-palette{position:absolute;z-index:var(--z-popover);top:3rem;left:50%;transform:translateX(-50%);width:min(32rem,calc(100% - 32px));display:flex;flex-direction:column;gap:var(--sp-4);padding:var(--sp-6);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
+.authoring-command-palette>.field{width:100%}
+.authoring-palette-list{max-height:min(60vh,26rem);overflow:auto}
+.authoring-palette-option{display:flex;align-items:center;gap:var(--sp-16);padding:var(--sp-6) var(--sp-10);border-radius:var(--rad-control);font-size:var(--fs-body);color:var(--a-ink);cursor:pointer}
+.authoring-palette-option:hover:not([aria-disabled=true]){background:var(--n-hover)}
+.authoring-palette-option.active{background:var(--a-sel);box-shadow:inset 3px 0 0 var(--a-primary)}
+.authoring-palette-option[aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
+.authoring-palette-option.danger:not([aria-disabled=true]){color:var(--a-danger)}
+.authoring-palette-option.alternative{padding-left:var(--sp-24)}
+.authoring-palette-group{margin-top:var(--sp-4);padding-top:var(--sp-4);border-top:1px solid var(--a-border)}
+.authoring-palette-reason{padding:var(--sp-2) var(--sp-10);font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
+.authoring-palette-empty{padding:var(--sp-6) var(--sp-10)}
 
 /* 속성: 대상 카드(종류 표지 · 굵은 이름 · 메타 한 줄) / 폼 / 바닥 행동 줄(오른쪽 정렬, 늘 보이도록 바닥에 붙는다). */
 .authoring-target{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt)}
@@ -363,7 +372,7 @@ body.resizing-authoring iframe{pointer-events:none}
   .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
   .authoring-head{border-bottom:1px solid CanvasText}
   .authoring-status .authoring-zoom{border-color:CanvasText}
-  .authoring-menu-item.group-start::before,.authoring-command.group-start::before,.authoring-properties-actions,.authoring-problem+.authoring-problem{border-color:CanvasText}
+  .authoring-menu-item.group-start::before,.authoring-properties-actions,.authoring-problem+.authoring-problem{border-color:CanvasText}
   .authoring-target{border-color:CanvasText}
   .authoring-crumb[aria-current=location]{outline:1px solid CanvasText}
   .authoring-status-link{color:LinkText}

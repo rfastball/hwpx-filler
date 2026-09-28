@@ -641,10 +641,12 @@ async function probeAuthoringA11y(ctx, out) {
   step("Shift+F10", "그 줄을 고르고(aria-current) 문맥 메뉴의 첫 사용 가능 항목에 초점");
   if (out.a11y_menu_open) {
     const items = () => Array.prototype.slice.call(menu().querySelectorAll('[role="menuitem"]'));
+    // 판정이 선 뒤의 문맥 메뉴에는 불가 항목이 없다(판정 대기 중에만 사유 없는 흐린 항목이 선다).
+    out.a11y_menu_no_disabled = await waitFor(ctx, () => items().length > 0 && items().every((el) => el.getAttribute("aria-disabled") !== "true"), 20, 50);
     const first = nav.active();
     await press("ArrowDown");
     out.a11y_menu_down = nav.active() === items()[(items().indexOf(first) + 1) % items().length];
-    step("ArrowDown", "다음 항목(불가 항목도 초점을 받는다)");
+    step("ArrowDown", "다음 항목(판정이 선 문맥 메뉴는 되는 명령과 대안만 싣는다 — IDE-02)");
     await press("End");
     out.a11y_menu_end = nav.active() === items()[items().length - 1];
     await press("Home");
@@ -656,6 +658,30 @@ async function probeAuthoringA11y(ctx, out) {
     out.a11y_menu_escape_closed = await waitFor(ctx, () => !menu(), 20, 50);
     out.a11y_menu_escape_return = await waitFor(ctx, () => nav.active() === item, 20, 50);
     step("Escape", "메뉴를 닫고 그 줄로 돌아온다");
+  }
+  // 명령 팔레트(IDE-02 · APG combobox + listbox): 그 줄에서 Ctrl+Shift+P → 머리 띠 아래 비모달 오버레이의 입력칸에 초점.
+  // 독의 열린 탭은 그대로이고 독에 「명령」 탭이 서지 않는다. ↓ 는 활성 항목(aria-activedescendant)을 옮기고,
+  // Escape 는 팔레트 안에서 멈춰(속성 패널을 닫지 않는다) 연 줄로 초점을 돌린다.
+  const palette = () => doc.querySelector('#scr-authoring .authoring-command-palette[role="dialog"]');
+  const combo = () => palette() && palette().querySelector('input[role="combobox"]');
+  const dockSelected = () => { const tab = doc.querySelector('#scr-authoring .authoring-dock-tab[aria-selected="true"]'); return tab ? tab.id : ""; };
+  const dockBefore = dockSelected();
+  pressKey(ctx, "P", { ctrlKey: true, shiftKey: true });
+  out.a11y_palette_open = await waitFor(ctx, () => !!combo() && nav.active() === combo(), 40, 50);
+  step("Ctrl+Shift+P", "명령 팔레트 — 입력칸(combobox)에 초점");
+  if (out.a11y_palette_open) {
+    out.a11y_palette_dock_kept = dockSelected() === dockBefore
+      && !Array.prototype.some.call(doc.querySelectorAll("#scr-authoring .authoring-dock-tab"), (tab) => textOf(tab).trim() === "명령");
+    const first = combo().getAttribute("aria-activedescendant");
+    await press("ArrowDown");
+    out.a11y_palette_arrow = !!first && !!combo().getAttribute("aria-activedescendant") && combo().getAttribute("aria-activedescendant") !== first && nav.active() === combo();
+    step("ArrowDown", "활성 항목이 옮겨 간다(초점은 입력칸에 남는다)");
+    const properties = !!doc.querySelector("#scr-authoring .authoring-properties");
+    await press("Escape");
+    out.a11y_palette_escape_closed = await waitFor(ctx, () => !palette(), 20, 50);
+    out.a11y_palette_escape_return = await waitFor(ctx, () => nav.active() === item, 20, 50)
+      && !!doc.querySelector("#scr-authoring .authoring-properties") === properties;
+    step("Escape", "팔레트만 닫고 연 줄로 돌아온다");
   }
   // ⑤ 창 아래 끝에서 연 메뉴도 창 안에 든다(위로 뒤집힘) — 편집면 오른쪽 클릭 사건을 창 아래 끝 좌표로 쏜다.
   const canvas = doc.querySelector("#scr-authoring .authoring-canvas");
