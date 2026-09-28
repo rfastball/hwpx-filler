@@ -1031,6 +1031,27 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
         await waitFor(ctx, gone, 8, 100);
       }
       out.hwpx_kbd_escape_closes = gone();
+      /* UX-07 — 편집면 iframe **안**에서 누른 Escape·F6 도 셸에 닿는다. 스튜디오 입력칸은 같은 출처라
+         contentDocument 로 닿고, 합성 키도 스튜디오의 키 처리기를 실물로 지난다(셸로 넘기는 것은 그 처리기다). */
+      const frame = doc.querySelector(".authoring-document:not([hidden]) .authoring-editor-host iframe");
+      const studio = frame && frame.contentDocument;
+      const input = studio && studio.querySelector('[aria-label="문서 편집 입력"]');
+      out.hwpx_kbd_iframe_input = !!input;
+      if (out.hwpx_kbd_escape_closes && input) {
+        const pressInside = (key, init) => input.dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown",
+          Object.assign({ key, bubbles: true, cancelable: true }, init || {})));
+        frame.focus();
+        pressKey(ctx, "F2");                                   // 셸이 속성 패널을 다시 연다
+        out.hwpx_kbd_iframe_panel_open = await waitFor(ctx, () => !gone(), WIRE_TRIES, WIRE_MS);
+        pressInside("Escape");
+        out.hwpx_kbd_iframe_escape_closes = await waitFor(ctx, gone, 20, 100);
+        frame.focus();
+        pressInside("F6");
+        await settleRender(ctx);
+        out.hwpx_kbd_iframe_f6_to = nav.nameOf(nav.active()).slice(0, 60);
+        out.hwpx_kbd_iframe_f6_left = nav.active() !== frame && !nav.within(".authoring-canvas")
+          && nav.within(".authoring-toolbar,.authoring-outline,.authoring-properties,.authoring-dock");
+      }
     }
     out.hwpx_kbd_ms = Date.now() - kbStart;
   } else {

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mountRhwp } from "../../frontend/src/editorview/rhwp_editor.ts";
+import { mountRhwp, hostAppearance } from "../../frontend/src/editorview/rhwp_editor.ts";
+import { RhwpEditor } from "../../frontend/vendor/rhwp/editor/index.js";
 
 const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
 
@@ -11,7 +12,10 @@ const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
 function fakeStudio(log, hooks = {}) {
   let readOnly = false;
   let bytes = new TextEncoder().encode("mounted");
-  const changed = new Set();
+  const changed = new Set(), shortcuts = new Set(), menus = new Set();
+  /** SDK calls other than document I/O, and the options the Studio was created with. */
+  const calls = [];
+  let options = null;
   const userType = (text) => {
     if (readOnly) { log.push(`user-rejected:${text}`); return false; }
     log.push(`user-typed:${text}`);
@@ -30,9 +34,13 @@ function fakeStudio(log, hooks = {}) {
     async setReadOnly(value) { readOnly = value; log.push(`readOnly:${value}`); },
     async getSelectionContext() { hooks.selecting?.(); return { range: null }; },
     async focusRange() { return { focused: true }; },
-    async setDecorations() {},
+    async setDecorations(markers, options) { calls.push(["setDecorations", markers.length, options]); },
+    async setAppearance(appearance) { calls.push(["setAppearance", appearance]); },
+    async setContextMenuForwarding(enabled) { calls.push(["setContextMenuForwarding", enabled]); },
     onDocumentChanged(listener) { changed.add(listener); return () => changed.delete(listener); },
-    onShortcut() { return () => {}; },
+    onShortcut(listener) { shortcuts.add(listener); return () => shortcuts.delete(listener); },
+    onContextMenuRequest(listener) { menus.add(listener); return () => menus.delete(listener); },
+    element: { getBoundingClientRect: () => hooks.frame ?? { left: 0, top: 0 }, contentWindow: hooks.frameWindow },
     chrome: { async set() {} },
     plugins: {
       async invoke(plugin, method, args) {
@@ -47,7 +55,11 @@ function fakeStudio(log, hooks = {}) {
     },
     destroy() {},
   };
-  return { studio: async () => editor, userType };
+  return { studio: async (_host, created) => { options = created; return editor; }, userType, calls,
+    options: () => options,
+    pressShortcut: (shortcut, detail) => { for (const listener of shortcuts) listener(shortcut, detail); },
+    rightClick: (point) => { for (const listener of menus) listener(point); },
+    listeners: () => ({ shortcuts: shortcuts.size, menus: menus.size }) };
 }
 
 /** Manual timers: the test decides when the export debounce and the selection poll fire. */
@@ -287,3 +299,148 @@ test("UX-05: selection polling runs only where it matters and resumes when the h
     handle.dispose();
   }, timers);
 });
+
+// ---- UX-07: 편집면 iframe 안의 키·우클릭·테마·배율·이름 ----
+
+test("UX-07: Escape and F6 from inside the editor reach the host; the menu keys open the host menu under the caret", () => withDom(async () => {
+  const shortcuts = [], menus = [];
+  const fake = fakeStudio([], { frame: { left: 100, top: 50 } });
+  const handle = await mountRhwp({
+    host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; },
+    onShortcut: (shortcut) => shortcuts.push(shortcut), onContextMenu: (point) => menus.push(point),
+    preflight: async () => ({ editable: true }), studio: fake.studio,
+  });
+  assert.ok(fake.calls.some(([name, value]) => name === "setContextMenuForwarding" && value === true),
+    "a host menu replaces the Studio menu only when the host asks for it");
+  for (const key of ["Escape", "F6", "ShiftF6", "F2", "CtrlS"]) fake.pressShortcut(key);
+  assert.deepEqual(shortcuts, ["Escape", "F6", "ShiftF6", "F2", "CtrlS"]);
+  // Shift+F10 carries the caret rect in iframe coordinates; the host gets its bottom-left in host coordinates.
+  fake.pressShortcut("ShiftF10", { caret: { x: 10, y: 20, width: 1, height: 15 } });
+  fake.pressShortcut("ContextMenu", { caret: null });
+  fake.rightClick({ x: 5, y: 6 });
+  await settle();
+  assert.deepEqual(menus, [{ x: 110, y: 85 }, { x: 100, y: 50 }, { x: 105, y: 56 }]);
+  assert.equal(shortcuts.length, 5, "menu keys are not shell shortcuts");
+  handle.dispose();
+  assert.deepEqual(fake.listeners(), { shortcuts: 0, menus: 0 }, "dispose releases both subscriptions");
+}));
+
+test("UX-07: a mount without a host menu keeps the Studio menu", () => withDom(async () => {
+  const fake = fakeStudio([]);
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "r.hwpx", readOnly: true,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: fake.studio });
+  assert.ok(!fake.calls.some(([name]) => name === "setContextMenuForwarding"));
+  assert.equal(fake.listeners().menus, 0);
+  handle.dispose();
+}));
+
+test("UX-07: the SDK forwards the new shell keys, drops unknown ones and validates the caret and click points", () => {
+  const listeners = new Map();
+  const transport = { on(event, listener) { listeners.set(event, listener); return () => listeners.delete(event); } };
+  const editor = new RhwpEditor({}, transport);
+  const seen = [];
+  editor.onShortcut((shortcut, detail) => seen.push(detail ? [shortcut, detail] : shortcut));
+  const emit = listeners.get("authoringShortcut");
+  for (const value of ["Escape", "F6", "ShiftF6", "F2", "Tab", "ShiftF10", { shortcut: "Tab" }]) emit(value);
+  emit({ shortcut: "ShiftF10", caret: { x: 1, y: 2, width: 3, height: 4 } });
+  emit({ shortcut: "ContextMenu", caret: { x: "1" } });
+  assert.deepEqual(seen, ["Escape", "F6", "ShiftF6", "F2",
+    ["ShiftF10", { caret: { x: 1, y: 2, width: 3, height: 4 } }], ["ContextMenu", { caret: null }]]);
+  const points = [];
+  editor.onContextMenuRequest((point) => points.push(point));
+  listeners.get("contextMenuRequest")({ x: 3, y: 4 });
+  listeners.get("contextMenuRequest")({ x: "3", y: 4 });
+  assert.deepEqual(points, [{ x: 3, y: 4 }]);
+});
+
+/** A documentElement with the app's theme attributes and a MutationObserver the test fires. */
+function appearanceDom(attributes) {
+  const root = { attributes: { ...attributes }, getAttribute(name) { return this.attributes[name] ?? null; } };
+  const observers = [];
+  class FakeObserver {
+    constructor(callback) { this.callback = callback; this.target = null; this.options = null; observers.push(this); }
+    observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.target = null; }
+  }
+  return { root, observers, FakeObserver,
+    change(name, value) {
+      if (value === null) delete root.attributes[name]; else root.attributes[name] = value;
+      for (const observer of observers) if (observer.target) observer.callback([]);
+    } };
+}
+
+test("UX-07: theme and font scale reach every mount at load and follow html[data-theme]/[data-font-scale]", () => withDom(async () => {
+  const dom = appearanceDom({ "data-theme": "dark", "data-font-scale": "large" });
+  globalThis.document.documentElement = dom.root;
+  const priorObserver = globalThis.MutationObserver;
+  globalThis.MutationObserver = dom.FakeObserver;
+  try {
+    const editorFake = fakeStudio([]), viewerFake = fakeStudio([]);
+    const editor = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+      onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; },
+      preflight: async () => ({ editable: true }), studio: editorFake.studio });
+    const viewer = await mountRhwp({ host: {}, content: b64("disk"), fileName: "r.hwpx", readOnly: true, trackSelection: "never",
+      onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: viewerFake.studio });
+    for (const fake of [editorFake, viewerFake]) {
+      const url = new URL(fake.options().studioUrl);
+      assert.deepEqual([url.pathname, url.searchParams.get("hostTheme"), url.searchParams.get("hostFontScale")],
+        ["/rhwp/studio/index.html", "dark", "1.25"], "the first paint already has the app theme");
+      assert.deepEqual(fake.calls.filter(([name]) => name === "setAppearance"), [["setAppearance", { theme: "dark", fontScale: 1.25 }]]);
+    }
+    assert.deepEqual(dom.observers.map((observer) => observer.options.attributeFilter),
+      [["data-theme", "data-font-scale"], ["data-theme", "data-font-scale"]]);
+    dom.change("data-theme", null);
+    dom.change("data-font-scale", "larger");
+    dom.change("data-font-scale", "larger");
+    for (const fake of [editorFake, viewerFake]) {
+      assert.deepEqual(fake.calls.filter(([name]) => name === "setAppearance").map(([, value]) => value),
+        [{ theme: "dark", fontScale: 1.25 }, { theme: "system", fontScale: 1.25 }, { theme: "system", fontScale: 1.5 }],
+        "each real change is sent once; a repeated value is not");
+    }
+    editor.dispose(); viewer.dispose();
+    assert.ok(dom.observers.every((observer) => observer.target === null), "dispose disconnects the observer");
+  } finally {
+    globalThis.MutationObserver = priorObserver;
+  }
+}));
+
+test("UX-07: hostAppearance maps the app attributes; unknown values fall back to system and 1", () => {
+  const root = (attributes) => ({ getAttribute: (name) => attributes[name] ?? null });
+  assert.deepEqual(hostAppearance(root({ "data-theme": "light", "data-font-scale": "larger" })), { theme: "light", fontScale: 1.5 });
+  assert.deepEqual(hostAppearance(root({ "data-theme": "sepia", "data-font-scale": "huge" })), { theme: "system", fontScale: 1 });
+  assert.deepEqual(hostAppearance(null), { theme: "system", fontScale: 1 });
+});
+
+test("UX-07: the editor iframe is named by the spec title, and labels follow the display mode", () => withDom(async () => {
+  const named = fakeStudio([]), unnamed = fakeStudio([]);
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", title: "구매요청서.hwpx", readOnly: false,
+    sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; },
+    preflight: async () => ({ editable: true }), studio: named.studio });
+  const viewer = await mountRhwp({ host: {}, content: b64("disk"), fileName: "r.hwpx", readOnly: true,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: unnamed.studio });
+  assert.equal(named.options().title, "구매요청서.hwpx");
+  assert.ok(!("title" in unnamed.options()));
+  const analysis = { fields: [{ name: "수요기관", occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, start: 4, end: 9 }] }], slots: [] };
+  await handle.setDecorations({ ...analysis, mode: "template" });
+  await handle.setDecorations({ ...analysis, mode: "structure" });
+  await handle.setDecorations({ ...analysis, mode: "document" });
+  assert.deepEqual(named.calls.filter(([name]) => name === "setDecorations"),
+    [["setDecorations", 1, { labels: "selected" }], ["setDecorations", 1, { labels: "all" }], ["setDecorations", 0, { labels: "none" }]],
+    "template mode labels only the field under the caret or pointer; structure mode labels all");
+  handle.dispose(); viewer.dispose();
+}));
+
+test("UX-07: a zoomed canvas scales iframe coordinates into host coordinates", () => withDom(async () => {
+  const menus = [];
+  // 편집면 150%: the frame renders 300 host px wide over a 200 px iframe viewport.
+  const fake = fakeStudio([], { frame: { left: 10, top: 20, width: 300 }, frameWindow: { innerWidth: 200 } });
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, onContextMenu: (point) => menus.push(point),
+    preflight: async () => ({ editable: true }), studio: fake.studio });
+  fake.rightClick({ x: 40, y: 60 });
+  await settle();
+  assert.deepEqual(menus, [{ x: 70, y: 110 }]);
+  handle.dispose();
+}));

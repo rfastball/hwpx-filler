@@ -64,6 +64,8 @@ export async function createEditor(container, options = {}) {
   iframe.style.height = options.height || '100%';
   iframe.style.border = 'none';
   iframe.allow = 'clipboard-read; clipboard-write';
+  // 화면 읽기 도구가 부를 이름. 호스트가 문서 이름 등을 넘긴다.
+  if (typeof options.title === 'string' && options.title) iframe.title = options.title;
   el.appendChild(iframe);
 
   // iframe 로드 대기
@@ -302,9 +304,24 @@ export class RhwpEditor {
     return this._request('setReadOnly', { readOnly });
   }
 
-  /** Non-mutating semantic document overlay. */
-  async setDecorations(markers) {
-    return this._request('setDecorations', { markers });
+  /**
+   * Non-mutating semantic document overlay. `options.labels` picks the floating labels:
+   * 'selected' (caret or pointer, default), 'all', or 'none'.
+   */
+  async setDecorations(markers, options = {}) {
+    return this._request('setDecorations', {
+      markers, ...(options.labels === undefined ? {} : { labels: options.labels }),
+    });
+  }
+
+  /** Host theme and chrome scale; the Studio applies them over its own setting. */
+  async setAppearance(appearance) {
+    return this._request('setAppearance', { theme: appearance.theme, fontScale: appearance.fontScale });
+  }
+
+  /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
+  async setContextMenuForwarding(enabled) {
+    return this._request('setContextMenuForwarding', { enabled: enabled === true });
   }
 
   /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
@@ -373,10 +390,32 @@ export class RhwpEditor {
     };
   }
 
+  /**
+   * Authoring keys pressed inside the Studio. Escape arrives only when no Studio UI claimed it.
+   * The keyboard menu keys (ShiftF10, ContextMenu) come while context-menu forwarding is on and
+   * carry the caret rect in iframe client coordinates.
+   */
   onShortcut(listener) {
     if (typeof listener !== 'function') throw new TypeError('listener must be a function');
     return this._transport.on('authoringShortcut', (value) => {
-      if (['F2', 'CtrlShiftP', 'CtrlS', 'CtrlF'].includes(value)) listener(value);
+      if (typeof value === 'string') {
+        if (['F2', 'CtrlShiftP', 'CtrlS', 'CtrlF', 'Escape', 'F6', 'ShiftF6'].includes(value)) listener(value);
+        return;
+      }
+      if (value?.shortcut !== 'ShiftF10' && value?.shortcut !== 'ContextMenu') return;
+      const caret = value.caret;
+      const valid = caret && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(caret[key]));
+      listener(value.shortcut, {
+        caret: valid ? { x: caret.x, y: caret.y, width: caret.width, height: caret.height } : null,
+      });
+    });
+  }
+
+  /** Document right-clicks while forwarding is on; `{ x, y }` in iframe client coordinates. */
+  onContextMenuRequest(listener) {
+    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+    return this._transport.on('contextMenuRequest', (point) => {
+      if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) listener({ x: point.x, y: point.y });
     });
   }
 
