@@ -361,13 +361,19 @@ function keyboardNav(ctx) {
       for (let i = 0; i < (limit || 20) && !match(active()); i += 1) pressKey(ctx, key);
       return !!match(active());
     },
-    /** 구조 목록(APG tree)에서 대상 줄까지: ↓ 로 내려가고, 그 tree 의 끝이면 Tab 으로 다음 tree 에 들어간다. */
+    /** 구조 목록(APG tree)에서 대상 줄까지: 그 tree 의 처음(Home)부터 ↓ 로 내려가고, 끝이면 Tab 으로 다음 tree 에 들어간다. */
     async treeTo(match, limit) {
+      const top = async () => {
+        if (!active() || active().getAttribute("role") !== "treeitem") return;
+        pressKey(ctx, "Home");
+        await settleRender(ctx);
+      };
+      await top();
       for (let i = 0; i < (limit || 60) && !match(active()); i += 1) {
         const before = active();
         pressKey(ctx, "ArrowDown");
         await settleRender(ctx);
-        if (active() === before) pressKey(ctx, "Tab");
+        if (active() === before) { pressKey(ctx, "Tab"); await settleRender(ctx); await top(); }
       }
       return !!match(active());
     },
