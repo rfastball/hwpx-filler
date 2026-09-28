@@ -145,6 +145,7 @@ test("#1021: an outline target is located by identity and survives the editor ec
     setTimeout(() => controller.selection("a", echo), 0);
     assert.equal(place.start, undefined, "좌표 없는 사용 위치는 편집기가 문단으로 옮긴다");
   } });
+  controller.update({ matches: [{ kind: "field", name: "진행상태", location: occurrence, approximate: true }] });
   await controller.select({ source_revision: 0, ...field });
   await new Promise((resolve) => setTimeout(resolve, 5));
   const asked = calls.find((call) => call.action === "locate");
@@ -157,6 +158,7 @@ test("#1021: an outline target is located by identity and survives the editor ec
   assert.deepEqual(view.commands, TARGET_COMMANDS);
   assert.equal(view.commandType, "rename_field");
   assert.equal(view.selection.end, 6, "편집기 좌표는 위치 기억용으로 받아 둔다");
+  assert.deepEqual(view.matches, [], "일치 후보 줄은 이 선택에 대해 Python 이 준 것이다 — 앞선 캐럿의 문단 내 후보가 남지 않는다");
   // 사용자가 다른 자리로 캐럿을 옮기면 그 판정이 이긴다.
   controller.selection("a", { ...echo, paragraph: 2, start_paragraph: 2, end_paragraph: 2, start: 1, end: 1 });
   await new Promise(setImmediate);

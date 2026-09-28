@@ -278,7 +278,7 @@ export function createAuthoringController(deps: Deps) {
       const located = target.source_revision != null
         ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
       navigationHistory.push(previous);
-      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, panel: "properties", refusal: null, preview: null, command: null,
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], panel: "properties", refusal: null, preview: null, command: null,
         context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
         commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
       if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
