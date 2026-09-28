@@ -1036,3 +1036,158 @@ def test_trial_result_and_analysis_carry_revisions_that_change_only_with_the_obj
     ctrl.dispatch("update", {"session_id": txt, "revision": 0, "content": "{{이름}}"})
     assert _tab(ctrl, txt)["analysis"]["revision"] > before
     assert _tab(ctrl, txt)["analysis"]["revision"] != _tab(ctrl, sid)["analysis"]["revision"]
+
+
+# ── U09: 문서 척추(구조 보기)를 위한 사용 위치 소속·문서 순서·위치 문구 투영 ──
+def _outline_txt_content() -> str:
+    """항목(2 선택) 안팎에 걸친 필드 — 「단가」는 두 선택 모두에 있고, 바깥 필드는 앞뒤에 하나씩."""
+    source = "안내 문구\n저가안 단가값1\n고가안 단가값2\n끝 문구\n"
+    structured, _ = apply_txt("txt", source, {
+        "type": "create_slot", "start": source.index("저가안"),
+        "end": source.index("고가안") + len("고가안 단가값2"), "id": "항목", "label": "가격",
+    })
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_option", "start": structured.index("저가안"),
+        "end": structured.index("저가안") + len("저가안 단가값1"), "slot_id": "항목", "id": "저가",
+    })
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_option", "start": structured.index("고가안"),
+        "end": structured.index("고가안") + len("고가안 단가값2"), "slot_id": "항목", "id": "고가",
+    })
+    idx = structured.index("안내 ") + len("안내 ")
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_field", "start": idx, "end": idx + len("문구"), "name": "바깥앞",
+    })
+    idx = structured.index("단가값1")
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_field", "start": idx, "end": idx + len("단가값1"), "name": "단가",
+    })
+    idx = structured.index("단가값2")
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_field", "start": idx, "end": idx + len("단가값2"), "name": "단가",
+    })
+    idx = structured.index("끝 ") + len("끝 ")
+    structured, _ = apply_txt("txt", structured, {
+        "type": "create_field", "start": idx, "end": idx + len("문구"), "name": "바깥뒤",
+    })
+    return structured
+
+
+def test_outline_projection_orders_the_document_spine_for_txt(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": _outline_txt_content()})
+    sid = opened["session_id"]
+    raw = ctrl.sessions[sid].analysis
+    analysis = _tab(ctrl, sid)["analysis"]
+
+    slot = analysis["slots"][0]
+    cheap, pricey = slot["options"]
+    fields = {field["name"]: field for field in analysis["fields"]}
+    price = fields["단가"]["occurrences"]
+    outer_before = fields["바깥앞"]["occurrences"][0]
+    outer_after = fields["바깥뒤"]["occurrences"][0]
+
+    assert (price[0]["slot_id"], price[0]["option_id"]) == ("항목", "저가")
+    assert (price[1]["slot_id"], price[1]["option_id"]) == ("항목", "고가")
+    assert outer_before["slot_id"] is None and outer_before["option_id"] is None
+    assert outer_after["slot_id"] is None and outer_after["option_id"] is None
+
+    assert slot["location_label"] == "2–9행"
+    assert cheap["location_label"] == "3–5행"
+    assert pricey["location_label"] == "6–8행"
+
+    ordered = sorted(
+        [outer_before, slot, cheap, price[0], pricey, price[1], outer_after],
+        key=lambda item: item["order"],
+    )
+    assert [item.get("name") or item.get("id") for item in ordered] == [
+        "바깥앞", "항목", "저가", "단가", "고가", "단가", "바깥뒤",
+    ]
+    assert [item["order"] for item in ordered] == list(range(7))
+
+    # session.analysis 자체는 손대지 않는다 — 투영은 별도 사본이다.
+    assert "order" not in raw["slots"][0] and "location_label" not in raw["slots"][0]
+    assert "order" not in raw["slots"][0]["options"][0]
+    assert "order" not in raw["fields"][0]["occurrences"][0]
+
+
+def _native_outline_content() -> str:
+    """본문 밖 필드·항목 안 본문 필드·항목 안 표 셀 필드를 갖춘 HWPX 본문(base64)."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx
+
+    hp = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+    hs = "http://www.hancom.co.kr/hwpml/2011/section"
+    package = HwpxPackage()
+    package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    package.stored.add(MIMETYPE_NAME)
+    entry = "Contents/section0.xml"
+    package.entries[entry] = (
+        f'<hs:sec xmlns:hs="{hs}" xmlns:hp="{hp}">'
+        '<hp:p><hp:run><hp:t>머리 안내값</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run>'
+        '<hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>표값</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>본문값</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>끝</hp:t></hp:run></hp:p></hs:sec>'
+    ).encode("utf-8")
+    cell_path = [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]
+    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 0,
+                         "start": 3, "end": 6, "name": "바깥"})
+    apply_hwpx(package, {"type": "create_field", "entry": entry, "cell_path": cell_path,
+                         "paragraph": 0, "start": 0, "end": 2, "name": "표단가"})
+    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 2,
+                         "start": 0, "end": 3, "name": "본단가"})
+    apply_hwpx(package, {"type": "create_slot", "entry": entry,
+                         "start_paragraph": 1, "end_paragraph": 2, "id": "슬롯", "label": "표시"})
+    apply_hwpx(package, {"type": "create_option", "entry": entry,
+                         "start_paragraph": 1, "end_paragraph": 2, "slot_id": "슬롯", "id": "옵션"})
+    return base64.b64encode(package.to_bytes()).decode("ascii")
+
+
+def test_outline_projection_orders_the_document_spine_for_hwpx(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": _native_outline_content()})
+    sid = opened["session_id"]
+    raw = ctrl.sessions[sid].analysis
+    analysis = _tab(ctrl, sid)["analysis"]
+
+    slot = analysis["slots"][0]
+    option = slot["options"][0]
+    fields = {field["name"]: field["occurrences"][0] for field in analysis["fields"]}
+    outer = fields["바깥"]
+    cell = fields["표단가"]
+    body = fields["본단가"]
+
+    assert outer["anchor_paragraph"] == 0
+    assert cell["anchor_paragraph"] == 1
+    assert body["anchor_paragraph"] == 2
+    assert outer["slot_id"] is None and outer["option_id"] is None
+    assert (cell["slot_id"], cell["option_id"]) == ("슬롯", "옵션")
+    assert (body["slot_id"], body["option_id"]) == ("슬롯", "옵션")
+
+    assert slot["location_label"] == "문단 2–3"
+    assert option["location_label"] == "문단 2–3"
+
+    labeled = {id(outer): "바깥", id(slot): "슬롯", id(option): "옵션",
+               id(cell): "표단가", id(body): "본단가"}
+    ordered = sorted([outer, slot, option, cell, body], key=lambda item: item["order"])
+    assert [labeled[id(item)] for item in ordered] == ["바깥", "슬롯", "옵션", "표단가", "본단가"]
+    assert [item["order"] for item in ordered] == list(range(5))
+
+    assert "anchor_paragraph" in raw["fields"][0]["occurrences"][0]  # HWPX 분석기가 낸 원본 키
+    assert "slot_id" not in raw["fields"][0]["occurrences"][0]
+    assert "order" not in raw["slots"][0]
+
+
+def test_outline_projection_is_cached_until_analysis_is_replaced(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": "머리 {{이름}}\n"})
+    sid = opened["session_id"]
+    first_slots = _tab(ctrl, sid)["analysis"]["slots"]
+    second_slots = _tab(ctrl, sid)["analysis"]["slots"]
+    assert first_slots is second_slots  # 같은 analysis 객체 → 재사용, 다시 짓지 않는다.
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "새 {{이름}}\n"})
+    third_slots = _tab(ctrl, sid)["analysis"]["slots"]
+    assert third_slots is not first_slots  # update 가 analysis 객체를 바꿨다 → 다시 짓는다.

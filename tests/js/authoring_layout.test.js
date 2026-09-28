@@ -170,14 +170,15 @@ test("구조 분할선은 늘 서고, 속성 분할선·가림막은 속성 패�
   assert.ok(closed.includes(`<div role="separator" tabindex="0" class="authoring-splitter authoring-splitter-outline" aria-orientation="vertical" aria-label="구조 패널 너비" aria-valuemin="${AUTHORING_WIDTH_BOUNDS.outline.min}" aria-valuemax="${AUTHORING_WIDTH_BOUNDS.outline.max}" aria-valuenow="256"></div>`), closed);
   assert.ok(!closed.includes("속성 패널 너비"));
   assert.ok(!closed.includes("authoring-scrim"));
-  assert.ok(closed.includes('<button type="button" class="authoring-rail-toggle" aria-expanded="false">구조 패널 보기</button>'));
+  // 레일은 그림 단추다(UX-09) — 이름은 기존 문장 그대로 aria-label·title 에 선다.
+  assert.ok(closed.includes('<button type="button" class="authoring-rail-toggle" aria-expanded="false" aria-label="구조 패널 보기" title="구조 패널 보기"><svg class="icon"'));
   controller.update({ panel: "properties", commandType: "create_field", selected: null, selection: { start: 0, end: 2 } });
   const open = render(controller);
   const splitter = open.indexOf('aria-label="속성 패널 너비"');
   assert.ok(splitter > 0 && splitter < open.indexOf('<form class="authoring-properties"'), "속성 분할선은 속성 패널 바로 앞(왼쪽)에 선다");
   assert.ok(open.includes('<div class="authoring-scrim" aria-hidden="true"></div>'));
   // UX-01 의 보이는 「닫기」는 그대로 남는다.
-  assert.ok(open.includes('<h2 id="authoring-properties-title">속성</h2><button type="button" class="btn sm">닫기</button>'));
+  assert.ok(open.includes('<h2 class="authoring-section-label" id="authoring-properties-title">속성</h2><button type="button" class="btn icon" aria-label="닫기" title="닫기">'));
 });
 
 test("좁은 폭 규칙은 창이 아니라 작업대 폭의 rem 컨테이너 질의이고, 편집면을 겹치는 것은 가림막을 둔 시트뿐이다", () => {

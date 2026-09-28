@@ -9,14 +9,37 @@ import type { AuthoringController, AuthoringEditor } from "./authoring_controlle
 import { TPL_STATUS_COPY } from "./job_run.ts";
 import { FOCUSABLE, clampMenu, errorParts, focusFirst, focusable, isCurrentTarget, liveStep, menuTrigger, roveFocus, tabName, treeKey } from "./authoring_a11y.ts";
 import type { LiveState, TreeRow } from "./authoring_a11y.ts";
+import { coverageDot, icon, kindGlyph } from "./icons.ts";
 
 /** IME 조합 중에는 문서 명령을 보내지 않는다 — 조합이 끝난 뒤 같은 명령을 다시 받는다. */
 const IME_BUSY = "한글 조합을 마친 뒤 다시 실행하세요.";
 
 type Obj = Record<string, any>;
 type Props = { controller: AuthoringController };
+/* 단추 어휘(UX-09 · #1039) — 역할이 곧 모양이다. 보조 행동 `.btn`(테두리)이 기본이고, 구획마다 하나뿐인 주 행동은
+   `.btn.primary`(채움·굵게), 물러서는 행동(취소·닫기·복사…)은 `.btn.quiet`(테두리 없음), 되돌릴 수 없는 행동은
+   `.btn.danger`(채움 + 동사), 그림만 선 단추는 `.btn.icon`(이름은 aria-label·title). 이동하는 줄은 단추 모양이 아니다
+   — `rowButton`(목록 행)·트리 행·브레드크럼 조각·메뉴 항목이 따로 선다. */
 const button = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) =>
-  h("button", { type: "button", className: "btn sm", onClick: click, ...props }, ...(Array.isArray(label) ? label : [label]));
+  h("button", { type: "button", className: "btn", onClick: click, ...props }, ...(Array.isArray(label) ? label : [label]));
+const quiet = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn quiet", ...props });
+const primary = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn primary", ...props });
+const danger = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn danger", ...props });
+/** 아이콘 단추 — 보이는 글자 대신 그림이 서고, 기존 이름은 접근 가능한 이름과 툴팁으로 남는다(새 문구 없음). */
+const iconButton = (name: string, label: string, click: (event: any) => void, props: Obj = {}) =>
+  h("button", { type: "button", className: "btn icon", "aria-label": label, title: label, onClick: click, ...props }, icon(name));
+/** 목록 행(UX-09): 종류/심각도 칩 · 본문 · 흐린 문맥 · 오른쪽 이동 화살표. 단추가 아니라 원문으로 옮겨 가는 줄이다. */
+const rowButton = (parts: { chip?: ReactNode; text: ReactNode; value?: ReactNode; context?: ReactNode }, click: () => void, props: Obj = {}) =>
+  h("button", { type: "button", className: "authoring-row", onClick: click, ...props },
+    parts.chip || null, h("span", { className: "authoring-row-text" }, parts.text),
+    parts.value != null ? h("span", { className: "authoring-row-value" }, parts.value) : null,
+    parts.context ? h("span", { className: "authoring-row-context" }, parts.context) : null,
+    h("span", { className: "authoring-row-go" }, icon("chevron-right")));
+/** 행 목록 — role=list 로 목록임을 밝힌다(목록 스타일을 걷어도 읽기 도구가 목록으로 센다). */
+const rowList = (label: string, rows: ReactNode[], className = "") => rows.length
+  ? h("ul", { className: `authoring-rows${className ? ` ${className}` : ""}`, role: "list", "aria-label": label }, ...rows.map((row, index) => h("li", { key: index }, row))) : null;
+/** 구획 이름(UX-09): 내용과 겨루지 않는 caption 크기의 이름표다 — 제목 이동을 위해 h2 의미는 그대로 둔다. */
+const sectionLabel = (text: string, props: Obj = {}) => h("h2", { className: "authoring-section-label", ...props }, text);
 const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
 const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", trial_input: "시험 입력" };
@@ -38,7 +61,6 @@ export function problemCounts(problems: Obj[] | undefined): Map<string, number> 
   for (const problem of problems || []) counts.set(problem.target, (counts.get(problem.target) || 0) + 1);
   return counts;
 }
-const badge = (count: number): ReactNode => count ? h("span", { className: "authoring-badge" }, `문제 ${count}`) : null;
 /** 항목·선택의 종류 표지(§10) — 들여쓰기·색이 아니라 글자로 둘을 가른다. */
 const kindTag = (kind: "slot" | "option" | "field" | "text"): ReactNode => h("span", { className: "authoring-kind" }, KIND_LABEL[kind]);
 /** 구조 목록 한 줄의 접근 가능한 이름(§10) — 종류·이름·사용 위치 수·상위 항목·문제 수를 글로 싣는다. */
@@ -48,6 +70,90 @@ export function outlineLabel(kind: "field" | "slot" | "option" | "occurrence", e
     : kind === "field" ? [KIND_LABEL.field, name, `사용 위치 ${entry.count ?? 0}곳`]
     : kind === "option" ? [KIND_LABEL.option, name, `상위 항목 ${parent}`] : [KIND_LABEL.slot, name];
   return [...parts, ...(problems ? [`문제 ${problems}`] : [])].join(" · ");
+}
+/** 선택 한 갈래의 시험 상태 이름 — 시험 패널과 구조 트리의 점이 같은 이름을 쓴다(AC09·AC13). */
+export const COVERAGE_LABEL: Obj = { current: "현재 시험 구성 확인됨", stale: "다시 시험 필요", untried: "시험하지 않음" };
+/** 여러 자리에 선 같은 필드의 표지(§3.3) — 「같은 필드, i/n」. 한 곳뿐이면 사용 위치 수를 그대로 쓴다. */
+export function sameFieldMeta(index: number, total: number): string {
+  return total > 1 ? `같은 필드, ${index}/${total}` : `사용 위치 ${total}곳`;
+}
+
+/* ---------- 문서 척추(UX-09): 구조 트리의 모양은 Python 이 준 소속·차례로만 짓는다 ---------- */
+
+/** 척추의 한 마디. 필드 사용 위치(use)는 그것을 담은 선택·항목 아래에, 어디에도 없으면 척추에 직접 선다. */
+export type SpineNode =
+  | { kind: "slot"; slot: Obj; order: number; children: SpineNode[] }
+  | { kind: "option"; slot: Obj; option: Obj; order: number; children: SpineNode[] }
+  | { kind: "use"; field: Obj; occurrence: Obj; index: number; total: number; order: number };
+const LAST = Number.MAX_SAFE_INTEGER;
+const byOrder = (a: { order: number }, b: { order: number }) => a.order - b.order;
+/** 분석(Python 투영)에서 척추를 짓는다. 소속은 사용 위치의 `slot_id`·`option_id`, 차례는 `order` 그대로다 —
+ *  표면은 문단을 세거나 좌표를 견주지 않는다. 차례가 없는 옛 투영은 받은 차례(항목 → 필드)를 지킨다(안정 정렬). */
+export function outlineSpine(analysis: Obj | undefined): SpineNode[] {
+  const spine: SpineNode[] = [];
+  const slots = new Map<string, Extract<SpineNode, { kind: "slot" }>>();
+  const options = new Map<string, Extract<SpineNode, { kind: "option" }>>();
+  for (const slot of analysis?.slots || []) {
+    const node = { kind: "slot" as const, slot, order: slot.order ?? LAST, children: [] as SpineNode[] };
+    slots.set(slot.id, node);
+    spine.push(node);
+    for (const option of slot.options || []) {
+      const child = { kind: "option" as const, slot, option, order: option.order ?? LAST, children: [] as SpineNode[] };
+      options.set(`${slot.id}\u0000${option.id}`, child);
+      node.children.push(child);
+    }
+  }
+  for (const field of analysis?.fields || []) {
+    const occurrences: Obj[] = field.occurrences || [];
+    occurrences.forEach((occurrence, at) => {
+      const use: SpineNode = { kind: "use", field, occurrence, index: at + 1, total: occurrences.length, order: occurrence.order ?? LAST };
+      const home = options.get(`${occurrence.slot_id}\u0000${occurrence.option_id}`) || slots.get(occurrence.slot_id);
+      (home ? home.children : spine).push(use);
+    });
+  }
+  const sort = (list: SpineNode[]) => { list.sort(byOrder); for (const node of list) if (node.kind !== "use") sort(node.children); };
+  sort(spine);
+  return spine;
+}
+/** 필드 목록의 차례 — 문서에서 처음 쓰인 순서(§3.3·F13). 차례는 Python 의 `order` 다. */
+export function fieldsInFirstUse(analysis: Obj | undefined): Obj[] {
+  const first = (field: Obj) => Math.min(LAST, ...(field.occurrences || []).map((occurrence: Obj) => occurrence.order ?? LAST));
+  return [...(analysis?.fields || [])].map((field, at) => ({ field, at, first: first(field) }))
+    .sort((a, b) => a.first - b.first || a.at - b.at).map((entry) => entry.field);
+}
+/** 트리 줄의 열쇠 — 구조 탭과 필드 탭이 같은 규칙으로 짓는다(현재 위치 동기화가 이 열쇠로 줄을 찾는다). */
+export const outlineKey = {
+  slot: (slotId: string) => `slot:${slotId}`,
+  option: (slotId: string, optionId: string) => `option:${slotId}/${optionId}`,
+  use: (name: string, index: number) => `use:${name}#${index}`,
+  field: (name: string) => `field:${name}`,
+  occurrence: (name: string, index: number) => `occurrence:${name}#${index - 1}`,
+};
+/** 지금 위치의 의미가 가리키는 줄의 경로(바깥 → 안) — 구조 탭과 필드 탭 각각. 판정은 브레드크럼과 같다:
+ *  명시 선택(`selected`)이 먼저, 없으면 캐럿의 일치 후보(`matches`)에서 가장 안쪽(사용 위치 → 선택 → 항목)이다. */
+export function outlineCurrent(analysis: Obj | undefined, selected: Obj | null | undefined, matches: Obj[] = []): { structure: string[]; fields: string[] } {
+  const candidates = [selected, ...matches.map((match) => match.kind === "field" ? { ...(match.location || {}), name: match.name, kind: "field" } : match)].filter(Boolean) as Obj[];
+  if (selected?.kind === "field" && Array.isArray(selected.occurrences)) return { structure: [], fields: [outlineKey.field(selected.name)] };
+  for (const candidate of candidates) {
+    if (candidate.kind !== "field") continue;
+    const field = (analysis?.fields || []).find((entry: Obj) => entry.name === candidate.name);
+    const at = (field?.occurrences || []).findIndex((occurrence: Obj) => isCurrentTarget("occurrence", { ...occurrence, name: field.name }, candidate));
+    if (at < 0) continue;
+    const occurrence = field.occurrences[at];
+    const slot = (analysis?.slots || []).find((entry: Obj) => entry.id === occurrence.slot_id);
+    const option = slot && (slot.options || []).find((entry: Obj) => entry.id === occurrence.option_id);
+    return { structure: [...(slot ? [outlineKey.slot(slot.id)] : []), ...(option ? [outlineKey.option(slot.id, option.id)] : []), outlineKey.use(field.name, at + 1)],
+      fields: [outlineKey.field(field.name), outlineKey.occurrence(field.name, at + 1)] };
+  }
+  const option = candidates.find((candidate) => candidate.kind === "option" && candidate.slot_id && candidate.option_id);
+  if (option) return { structure: [outlineKey.slot(option.slot_id), outlineKey.option(option.slot_id, option.option_id)], fields: [] };
+  const slot = candidates.find((candidate) => candidate.kind === "slot" && candidate.slot_id);
+  return { structure: slot ? [outlineKey.slot(slot.slot_id)] : [], fields: [] };
+}
+/** 구조 필터 — 이름·표시 이름·식별자·문맥에 입력이 들어 있는가(대소문자 무시). */
+export function filterMatch(query: string, ...texts: unknown[]): boolean {
+  const wanted = query.trim().toLocaleLowerCase();
+  return !wanted || texts.some((text) => text != null && String(text).toLocaleLowerCase().includes(wanted));
 }
 /** 문제의 다음 행동(§7.2): navigate 는 그 위치로 선택을 옮기고, command 는 Python 이 준 명령을 미리보기로 보낸다. */
 export function problemAction(controller: Pick<AuthoringController, "select" | "preview">, item: Obj, problem: Obj, action: Obj): Promise<void> {
@@ -118,7 +224,13 @@ export async function copyText(text: string): Promise<void> {
  *  팔레트는 목록이다: 사유가 모두 같으면 머리에 한 번, 아니면 항목 곁에 선다.
  *  문맥 메뉴(menu)는 APG menu 다(UX-04): 자식은 menuitem 뿐이고, 불가 항목도 aria-disabled 로 초점을 받아 사유를
  *  설명(aria-describedby)으로 읽힌다. 항목별 사유는 항목 안의 설명 줄, 공유 사유는 메뉴 밖 머리 줄(화면이 그린다)이다.
- *  대안은 그 곁의 menuitem 이다. */
+ *  대안은 그 곁의 menuitem 이다.
+ *  모양(UX-09)은 공용 `.ctx-menu` 의 메뉴 항목이다: 테두리 없는 전폭 줄, 명령 무리 사이 구분선(첫 항목의 윗선 — 메뉴의
+ *  자식은 menuitem 뿐이라 구분선 원소를 두지 않는다), 파괴 명령은 위험 잉크. 팔레트는 오른쪽에 단축키 열을 둔다. */
+const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwrap", "duplicate"]);
+const DESTRUCTIVE = new Set(["delete"]);
+const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
+const menuItemClass = (commandType: string) => `authoring-menu-item${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}${DESTRUCTIVE.has(commandType) ? " danger" : ""}`;
 function CommandList({ view, readOnly, menu, onPick }: { view: Obj; readOnly: boolean; menu?: boolean; onPick: (commandType: string) => void }) {
   const shared = sharedReason(view.commands);
   const reasonId = `authoring-command-reason-${menu ? "menu" : "palette"}`;
@@ -126,23 +238,25 @@ function CommandList({ view, readOnly, menu, onPick }: { view: Obj; readOnly: bo
     const available = commandAvailability(view.commands, commandType);
     const disabled = readOnly || !available.enabled;
     const ownReason = !shared && disabled && available.reason ? `authoring-menu-reason-${commandType}` : undefined;
-    return [h("button", { key: commandType, type: "button", className: "btn sm", role: "menuitem", tabIndex: -1, "aria-label": label,
+    return [h("button", { key: commandType, type: "button", className: menuItemClass(commandType), role: "menuitem", tabIndex: -1, "aria-label": label,
         "aria-disabled": disabled || undefined, "aria-describedby": disabled ? (shared && available.reason ? reasonId : ownReason) : undefined,
         onClick: () => { if (!disabled) onPick(commandType); } },
         label, ownReason && h("span", { id: ownReason, className: "authoring-reason" }, available.reason)),
-      !available.enabled && available.alternative && h("button", { key: `${commandType}-alternative`, type: "button", className: "btn sm", role: "menuitem", tabIndex: -1,
+      !available.enabled && available.alternative && h("button", { key: `${commandType}-alternative`, type: "button", className: "authoring-menu-item alternative", role: "menuitem", tabIndex: -1,
         onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label)];
   });
   return [shared && h("p", { key: "shared-reason", id: reasonId, className: "authoring-reason" }, shared),
-    ...COMMANDS.map(([commandType, label]) => {
+    h("div", { key: "commands", className: "authoring-palette" }, ...COMMANDS.map(([commandType, label]) => {
       const available = commandAvailability(view.commands, commandType);
       const disabled = readOnly || !available.enabled;
-      return h("div", { key: commandType, className: "authoring-command" },
-        button(label, () => onPick(commandType), { disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined,
-          "aria-describedby": shared && !available.enabled && available.reason ? reasonId : undefined }),
+      const hint = KEY_HINTS[commandType];
+      return h("div", { key: commandType, className: `authoring-command${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}` },
+        h("button", { type: "button", className: menuItemClass(commandType).replace(" group-start", ""), onClick: () => onPick(commandType), disabled, "aria-disabled": disabled || undefined,
+          title: available.reason || undefined, "aria-describedby": shared && !available.enabled && available.reason ? reasonId : undefined, "aria-keyshortcuts": hint },
+          label, hint ? h("kbd", { className: "authoring-key", "aria-hidden": true }, hint) : null),
         !shared && !available.enabled && available.reason && h("p", { className: "authoring-reason" }, available.reason),
-        !available.enabled && available.alternative && button(available.alternative.label, () => onPick(available.alternative!.command_type)));
-    })];
+        !available.enabled && available.alternative && h("button", { type: "button", className: "authoring-menu-item alternative", onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label));
+    }))];
 }
 
 /** 구조 변경 요약(F38) — 미리보기와 변경 영향 패널이 같은 표를 쓴다. */
@@ -238,6 +352,16 @@ export function compatibilityReporter(controller: Pick<AuthoringController, "pre
   };
 }
 
+/** 강조 대상의 TXT 범위(UX-09) — 항목·선택은 그 위치(마커 줄 포함), 필드는 사용 위치(index 가 있으면 그 한 곳). */
+export function highlightRanges(analysis: Obj, highlight: Obj | null | undefined): { start: number; end: number }[] {
+  if (!highlight) return [];
+  const usable = (place: Obj | null | undefined) => place && typeof place.start === "number" && typeof place.end === "number" ? [{ start: place.start, end: place.end }] : [];
+  if (highlight.kind === "slot") return usable((analysis.slots || []).find((slot: Obj) => slot.id === highlight.id)?.location);
+  if (highlight.kind === "option") return usable((analysis.slots || []).find((slot: Obj) => slot.id === highlight.slot_id)?.options?.find((option: Obj) => option.id === highlight.id)?.location);
+  const field = (analysis.fields || []).find((entry: Obj) => entry.name === highlight.id);
+  return (field?.occurrences || []).filter((_: Obj, at: number) => highlight.index == null || highlight.index === at + 1).flatMap(usable);
+}
+
 /** 속성 제출 — 한글 조합 중 Enter 는 확정이 아니다(§6.2·§10). 보냈으면 true. */
 export function submitProperties(controller: Pick<AuthoringController, "guarded" | "preview">, composing: boolean, command: () => Obj): boolean {
   if (composing) return false;
@@ -274,12 +398,14 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           focus: async (target) => { if (target.start != null) navigateLintpad(handle, target.start, target.end ?? target.start); },
           command: async (command) => { lintpadCommand(handle, command); },
           state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
-          decorate: (analysis, mode) => {
+          decorate: (analysis, mode, highlight) => {
             const spans = mode === "document" ? [] : [...(analysis.spans || [])];
             if (mode === "structure") for (const place of analysis.placements || []) {
               spans.push({ kind: `${place.kind}-start`, start: place.start, end: place.start });
               spans.push({ kind: `${place.kind}-end`, start: Math.max(place.start, place.end - 1), end: place.end });
             }
+            // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
+            for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             updateLintpad(handle, { spans });
           },
         };
@@ -318,7 +444,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           content: () => handle.content(), apply: (content, _edits, label, expectedContent) => handle.applySnapshot(content, label, expectedContent),
           focus: (target) => handle.focus(target),
           command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
-          decorate: (analysis, mode) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode }), "editor"); },
+          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null }), "editor"); },
         };
         release = () => handle.dispose();
       }
@@ -364,6 +490,21 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   const field = (label: string, value: string, onChange: (value: string) => void) => h("label", { className: "authoring-field" }, label,
       h("input", { className: "field", value, ref: label.includes("이름") ? nameInput : undefined, list: label === "필드 이름" ? "authoring-existing-fields" : undefined,
         "aria-describedby": label.includes("이름") ? "authoring-properties-target authoring-properties-context" : undefined, onChange: (event: any) => onChange(event.target.value) }));
+  const close = () => { controller.update({ panel: "", preview: null, refusal: null }); onClose(); };
+  // 대상 카드(UX-09): 종류 표지 · 굵은 이름 · 메타 한 줄. 이름 칸의 설명(aria-describedby)은 카드 전체의 접근 이름이다.
+  const kind: "field" | "slot" | "option" | null = selected?.kind === "field" || selected?.kind === "slot" || selected?.kind === "option" ? selected.kind : null;
+  const problems = problemCount(controller.tab().problems, selected?.kind === "field" ? selected?.name : selected?.option_id || selected?.slot_id || selected?.name);
+  const targetMeta = selected?.kind === "field"
+    ? [selected.occurrences ? `사용 위치 ${selected.count ?? selected.occurrences.length}곳` : "", selected.occurrences ? "" : String(selected.context || ""), problems ? `문제 ${problems}` : ""]
+    : [String(selected?.location_label || ""), problems ? `문제 ${problems}` : ""];
+  const applyLabel = COMMANDS.find(([value]) => value === type)?.[1] || "적용";
+  const apply = () => { void controller.guarded(async () => {
+    if (composing.current || !preview) return;
+    const captured = preview.original;
+    await controller.applyPreview();
+    if (type === "create_field" && captured) controller.update({ lastCreatedText: String(captured) });
+    if (type === "create_field" && keepValue && name && captured) await controller.keepTrialValue(name, String(captured));
+  }); };
   return h("form", { className: "authoring-properties", "aria-labelledby": "authoring-properties-title", onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; },
     onSubmit: (event: any) => { event.preventDefault(); submitProperties(controller, composing.current, command); },
     // Escape 1단계: 입력창의 작성 중인 값만 적용값으로 되돌린다. 2단계(되돌릴 것이 없을 때)는 셸이 패널을 닫고 선택으로 돌아간다.
@@ -372,18 +513,21 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       if (escapeStage(selected, { name, identifier, parent, text }) === "revert") { event.stopPropagation(); revert(); }
     } },
     // 닫기(§3.1): 모든 폭에서 머리 오른쪽에 선다 — Escape 의 닫기 단계와 같은 일(패널을 닫고 선택으로 돌아간다).
-    h("div", { className: "authoring-properties-head" }, h("h2", { id: "authoring-properties-title" }, "속성"),
-      button("닫기", () => { controller.update({ panel: "", preview: null, refusal: null }); onClose(); })),
-    selected && h("p", { id: "authoring-properties-target" }, selected.kind === "field" && selected.occurrences
-      ? outlineLabel("field", { ...selected, count: selected.count ?? selected.occurrences.length }, problemCount(controller.tab().problems, selected.name))
-      : selected.name || selected.label || selected.id),
+    h("div", { className: "authoring-properties-head" }, sectionLabel("속성", { id: "authoring-properties-title" }),
+      iconButton("close", "닫기", close)),
+    selected && h("div", { className: "authoring-target" },
+      kind && h("span", { className: "authoring-target-kind" }, kindGlyph(kind), h("span", { className: "authoring-kind" }, KIND_LABEL[kind])),
+      h("p", { id: "authoring-properties-target", className: "authoring-target-name" }, selected.kind === "field" && selected.occurrences
+        ? outlineLabel("field", { ...selected, count: selected.count ?? selected.occurrences.length }, problemCount(controller.tab().problems, selected.name))
+        : selected.name || selected.label || selected.id),
+      targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta" }, targetMeta.filter(Boolean).join(" · "))),
     // 명령을 바꿔도 초점은 이 select 에 남는다(WCAG 3.2.2) — 닫힌 select 의 ↑↓ 는 값마다 change 를 쏜다.
     h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined,
       "aria-describedby": !available.enabled && available.reason ? "authoring-properties-reason" : undefined, onChange: (event: any) => switchType(event.target.value) },
       ...COMMANDS.map(([value, label]) => { const entry = commandAvailability(view.commands, value); return h("option", { key: value, value, disabled: !entry.enabled, title: entry.reason || undefined }, label); }))),
     // 비활성 사유와 대안은 Python 의 판정을 그대로 보인다(P07) — 툴팁만이 유일한 경로가 되지 않도록 본문에도 선다(§10).
     !available.enabled && available.reason && h("p", { className: "authoring-reason", id: "authoring-properties-reason" }, available.reason),
-    !available.enabled && available.alternative && button(available.alternative.label, () => switchType(available.alternative!.command_type)),
+    !available.enabled && available.alternative && h("div", null, button(available.alternative.label, () => switchType(available.alternative!.command_type))),
     h("p", { className: "authoring-context", id: "authoring-properties-context" }, `${selected?.slot_id || view.context?.slot_id || "문서"}${selected?.option_id || view.context?.option_id ? ` / ${selected?.option_id || view.context?.option_id}` : ""}${selection.start != null ? ` · ${selection.start}–${selection.end ?? selection.start}` : ""}`),
     field(type.includes("field") ? "필드 이름" : "표시 이름", name, setName),
     type === "create_field" && h("datalist", { id: "authoring-existing-fields" }, ...candidates.map((candidate: Obj) => h("option", { key: candidate.name, value: candidate.name, label: `${candidate.name} · 사용 위치 ${candidate.count ?? 0}곳` }))),
@@ -391,26 +535,25 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     type === "create_option" ? h("p", null, `상위 항목: ${view.context?.slot_id || "없음"}`) :
       ["rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"].includes(type) && field("상위 항목", parent, setParent),
     type === "unset_field" && field("남길 본문", text, setText),
-    type === "unset_field" && h("div", null,
-      button("필드 이름 사용", () => setText(selected?.name || "")),
-      button("시험값 사용", () => setText(String(view.values[selected?.name] ?? "")), { disabled: !(selected?.name in view.values) })),
+    type === "unset_field" && h("div", { className: "authoring-actions start" },
+      quiet("필드 이름 사용", () => setText(selected?.name || "")),
+      quiet("시험값 사용", () => setText(String(view.values[selected?.name] ?? "")), { disabled: !(selected?.name in view.values) })),
     type === "create_field" && h("label", null, h("input", { type: "checkbox", checked: keepValue, onChange: (event: any) => setKeepValue(event.target.checked) }), " 선택 문구를 시험값으로 보관"),
     type === "unwrap" && h("label", null, h("input", { type: "checkbox", checked: cascade, onChange: (event: any) => setCascade(event.target.checked) }), " 하위 의미 함께 해제"),
-    h("button", { className: "btn sm", type: "submit", disabled: readOnly || !available.enabled, "aria-disabled": (readOnly || !available.enabled) || undefined, title: available.reason || undefined }, "변경 미리보기"),
     // 기본 범위는 현재 선택 한 곳이다(U03) — 같은 문구의 다른 자리는 별도 검색으로만 찾는다.
-    type === "create_field" && !!view.lastCreatedText && button("다른 같은 문구 찾기", () => { const text = view.lastCreatedText; controller.update({ lastCreatedText: "" }); void controller.guarded(() => controller.search(text, "body")); }),
+    type === "create_field" && !!view.lastCreatedText && h("div", null, quiet("다른 같은 문구 찾기", () => { const text = view.lastCreatedText; controller.update({ lastCreatedText: "" }); void controller.guarded(() => controller.search(text, "body")); })),
     // 거절(U07·AC08·AC10): Python 의 판정 문장을 그대로 보이고, 다음 행동만 버튼으로 세운다.
     refusal && h("section", { className: "authoring-preview authoring-refusal", role: "alert", "aria-label": "변경 불가" },
       h("p", null, refusal.message),
       refusal.code === "cascade_required" && h("ul", { "aria-label": "함께 해제될 하위 의미" }, ...(refusal.children || []).map((child: Obj, index: number) =>
         h("li", { key: index }, `${KIND_LABEL[child.kind] || child.kind} · ${child.label || child.id}${child.count != null ? ` · ${child.count}` : ""}`))),
-      h("div", null,
-        refusal.code === "name_conflict" && button("다른 이름 입력", () => { nameInput.current?.focus(); nameInput.current?.select(); }),
+      h("div", { className: "authoring-actions" },
+        button("취소", cancel, { className: "btn quiet" }),
+        refusal.code === "name_conflict" && quiet("다른 이름 입력", () => { nameInput.current?.focus(); nameInput.current?.select(); }),
         refusal.code === "name_conflict" && singleOccurrence && button("기존 필드에 연결", () => { setName(String(refusal.name || "")); switchType("relink_field"); }),
-        refusal.code === "cascade_required" && button("하위 의미 함께 해제", () => { setCascade(true); submitProperties(controller, composing.current, () => ({ ...command(), cascade: true })); }, { className: "btn sm primary" }),
-        button("취소", cancel))),
+        refusal.code === "cascade_required" && primary("하위 의미 함께 해제", () => { setCascade(true); submitProperties(controller, composing.current, () => ({ ...command(), cascade: true })); }))),
     preview && h("section", { className: "authoring-preview", "aria-label": "변경 영향" },
-      h("h3", null, "변경 영향"),
+      h("h3", { className: "authoring-section-label" }, "변경 영향"),
       preview.expanded && h("p", null, "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."),
       // 전체 이름 변경의 문장(§13)은 조사까지 Python 이 짓는다(preview.message) — 표면은 그대로 보인다.
       h("p", null, preview.message || `사용 위치 ${affected}곳`),
@@ -429,15 +572,13 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       !!preview.linked_jobs?.length && h("p", null, `연결된 작업: ${preview.linked_jobs.join(", ")}`),
       !!preview.impact_unverified && h("p", null, "연결된 작업의 영향은 확인하지 않았습니다."),
       preview.field_delta && h("p", null, `추가 필드: ${(preview.field_delta.added_fields || []).join(", ") || "없음"} · 없어진 필드: ${(preview.field_delta.removed_fields || []).join(", ") || "없음"}`),
-      ...(preview.edits || []).map((edit: Obj, index: number) => h("pre", { key: index }, edit.text)),
-      button(COMMANDS.find(([value]) => value === type)?.[1] || "적용", () => { void controller.guarded(async () => {
-        if (composing.current) return;
-        const captured = preview.original;
-        await controller.applyPreview();
-        if (type === "create_field" && captured) controller.update({ lastCreatedText: String(captured) });
-        if (type === "create_field" && keepValue && name && captured) await controller.keepTrialValue(name, String(captured));
-      }); }, { className: "btn sm primary" }),
-      button("취소", cancel)),
+      ...(preview.edits || []).map((edit: Obj, index: number) => h("pre", { key: index }, edit.text))),
+    // 바닥 행동 줄(UX-09): 오른쪽 정렬 — 미리보기 전에는 [취소][변경 미리보기], 미리보기 뒤에는 적용(명령 이름)이 이 구획의
+    // 주 행동이 된다. 미리보기 단추는 그대로 남아 입력을 고친 뒤 다시 볼 수 있고, Enter 제출도 이 단추가 받는다.
+    h("div", { className: "authoring-actions authoring-properties-actions" },
+      quiet("취소", preview ? cancel : close),
+      h("button", { className: "btn", type: "submit", disabled: readOnly || !available.enabled, "aria-disabled": (readOnly || !available.enabled) || undefined, title: available.reason || undefined }, "변경 미리보기"),
+      preview && primary(applyLabel, apply)),
   );
 }
 
@@ -456,45 +597,60 @@ function Trial({ controller, item, view, onClose }: Props & { item: Obj; view: O
     }, "trial-view");
     return () => { disposed = true; release?.(); };
   }, trialViewerKey(item));
+  const select = (entry: Obj) => () => { void controller.guarded(() => controller.select({ ...(entry.source || entry), source_revision: result.source_revision })); };
+  const traceRow = (entry: Obj) => rowButton({ chip: kindTag("field"), text: entry.name || entry.field || "필드", value: String(entry.value ?? "") }, select(entry),
+    { "aria-label": `${entry.name || entry.field || "필드"}: ${entry.value ?? ""}` });
+  const coverage: Obj[] = item.trial_coverage || [];
+  // 결과 시험(§8.1 · UX-09): 왼쪽 열은 입력 → 선택 구성 → 자동 갱신 → [시험 시작(주 행동)][시험 케이스 저장], 가져오기·내보내기는
+  // 물러선 한 줄, 보관 케이스는 행. 오른쪽 열은 상태 칩 + 문장 → 선택별 시험 상태 → 결과 → 출력·제외 이유(행).
   return h("section", { className: "authoring-trial", "aria-label": "결과 시험" },
-    h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다."), button("원문으로", () => { controller.update({ trial: false }); onClose(); })),
+    h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다."), quiet("원문으로", () => { controller.update({ trial: false }); onClose(); })),
     h("div", { className: "authoring-trial-input" },
       item.cases_error && h("p", { role: "alert" }, item.cases_error),
-      ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
-        result?.report?.missing_fields?.includes(field.name) && h("span", null, "직전 시험: 미입력"),
-        h("input", { className: "field", "aria-invalid": !!result?.report?.missing_fields?.includes(field.name), value: view.values[field.name] || "",
-          onCompositionEnd: (event: any) => { void controller.guarded(() => controller.trialInput({ ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value }, controller.viewModel.getSnapshot().selectedOptions)); },
-          onChange: (event: any) => {
-            const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
-            if (event.nativeEvent.isComposing) controller.update({ values });
-            else void controller.guarded(() => controller.trialInput(values, controller.viewModel.getSnapshot().selectedOptions));
-          } }))),
-      ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
-        h("select", { className: "field", value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
-          h("option", { value: "" }, "선택"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id))))),
-      h("label", null, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
-      button("시험 시작", () => { void controller.guarded(() => controller.runTrial(), "trial"); }, { disabled: view.trialBusy }),
-      button("시험 케이스 저장", () => { void controller.guarded(() => controller.saveCase()); }),
-      button("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" }),
-      h("h3", null, "보관한 시험 케이스"),
-      ...(item.cases || []).map((test: Obj) => h("div", { key: test.name },
-        button(`${test.name}${test.needs_review ? " · 다시 확인 필요" : ""}`, () => { void controller.guarded(() => controller.loadCase(test)); }),
-        button("삭제", () => { void controller.guarded(() => controller.removeCase(test.name)); }, { "aria-label": `${test.name} 삭제` }))),
-      button("시험 자료 가져오기", () => { void controller.guarded(() => controller.transferCases("import")); }),
-      button("시험 자료 내보내기", () => { void controller.guarded(() => controller.transferCases("export")); })),
+      h("div", { className: "authoring-trial-group" },
+        ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
+          result?.report?.missing_fields?.includes(field.name) && h("span", { className: "authoring-reason" }, "직전 시험: 미입력"),
+          h("input", { className: "field", "aria-invalid": !!result?.report?.missing_fields?.includes(field.name), value: view.values[field.name] || "",
+            onCompositionEnd: (event: any) => { void controller.guarded(() => controller.trialInput({ ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value }, controller.viewModel.getSnapshot().selectedOptions)); },
+            onChange: (event: any) => {
+              const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
+              if (event.nativeEvent.isComposing) controller.update({ values });
+              else void controller.guarded(() => controller.trialInput(values, controller.viewModel.getSnapshot().selectedOptions));
+            } })))),
+      !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
+        ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
+          h("select", { className: "field", value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
+            h("option", { value: "" }, "선택"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
+      h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
+      h("div", { className: "authoring-actions start" },
+        primary("시험 시작", () => { void controller.guarded(() => controller.runTrial(), "trial"); }, { disabled: view.trialBusy }),
+        button("시험 케이스 저장", () => { void controller.guarded(() => controller.saveCase()); })),
+      h("div", { className: "authoring-actions start quiet-row" },
+        quiet("시험 자료 가져오기", () => { void controller.guarded(() => controller.transferCases("import")); }),
+        quiet("시험 자료 내보내기", () => { void controller.guarded(() => controller.transferCases("export")); })),
+      h("h3", { className: "authoring-section-label" }, "보관한 시험 케이스"),
+      rowList("보관한 시험 케이스", (item.cases || []).map((test: Obj) => h("div", { key: test.name, className: "authoring-case" },
+        rowButton({ text: test.name, context: test.needs_review ? "다시 확인 필요" : null }, () => { void controller.guarded(() => controller.loadCase(test)); },
+          { "aria-label": `${test.name}${test.needs_review ? " · 다시 확인 필요" : ""}` }),
+        iconButton("trash", `${test.name} 삭제`, () => { void controller.guarded(() => controller.removeCase(test.name)); }))))),
     h("div", { className: "authoring-trial-output" },
       // 상태 줄은 보이는 글로만 남는다 — 화면 읽기는 셸의 단일 live region 이 결과가 바뀔 때만 한다(UX-04).
-      h("p", null, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
-      h("p", null, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
-      h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...(item.trial_coverage || []).map((coverage: Obj) =>
-        h("li", { key: `${coverage.slot_id}/${coverage.option_id}` }, `${coverage.slot_id} / ${coverage.option_id} · ${({ current: "현재 시험 구성 확인됨", stale: "다시 시험 필요", untried: "시험하지 않음" } as Obj)[coverage.state]}`))),
+      h("div", { className: "authoring-trial-state" },
+        item.trial_state_label && h("span", { className: "authoring-badge", "data-trial": item.trial_state }, item.trial_state_label),
+        h("p", null, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
+        button("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" })),
+      h("p", { className: "authoring-reason" }, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
+      // 선택별 시험 상태: 구조 트리와 같은 점(채움 모양)과 같은 이름이다.
+      !!coverage.length && h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...coverage.map((entry: Obj) =>
+        h("li", { key: `${entry.slot_id}/${entry.option_id}` }, h("span", { className: "authoring-coverage-dot", "data-state": entry.state }, coverageDot(entry.state)),
+          `${entry.slot_id} / ${entry.option_id} · ${COVERAGE_LABEL[entry.state]}`))),
       item.media === "txt" ? h(TxtTrialOutput, { controller, result, selected: view.selected }) : h("div", { className: "authoring-result-pages", ref: output }),
-      h("h3", null, "출력·제외 이유"),
-      item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", null, "선택한 문단의 필드"),
-        ...(result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map((entry: Obj, index: number) =>
-          button(`${entry.name}: ${entry.value}`, () => { void controller.guarded(() => controller.select({ ...entry.source, source_revision: result.source_revision })); }, { key: index }))),
-      ...(result?.occurrences || result?.trace || []).map((entry: Obj, index: number) => button(`${entry.name || entry.field || "필드"}: ${entry.value ?? ""}`, () => { void controller.guarded(() => controller.select({ ...(entry.source || entry), source_revision: result.source_revision })); }, { key: `field-${index}` })),
-      ...(result?.excluded || []).map((entry: Obj, index: number) => button(entry.reason || entry.label || entry.option_id, () => { void controller.guarded(() => controller.select({ ...(entry.source || entry), source_revision: result.source_revision })); }, { key: `excluded-${index}` }))),
+      h("h3", { className: "authoring-section-label" }, "출력·제외 이유"),
+      item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", { className: "authoring-section-label" }, "선택한 문단의 필드"),
+        rowList("선택한 문단의 필드", (result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map(traceRow))),
+      rowList("출력·제외 이유", [
+        ...(result?.occurrences || result?.trace || []).map(traceRow),
+        ...(result?.excluded || []).map((entry: Obj) => rowButton({ chip: kindTag("option"), text: entry.reason || entry.label || entry.option_id }, select(entry)))])),
   );
 }
 
@@ -513,14 +669,16 @@ function TxtTrialOutput({ controller, result, selected }: Props & { result?: Obj
   return h("pre", { tabIndex: 0, role: "group", "aria-label": "읽기 전용 시험 결과" }, ...parts);
 }
 
-/** 구조 목록 한 줄(tree 항목). children 은 펼친 뒤에만 부른다(UX-05) — 사용 위치가 많은 문서에서 보이지 않는 줄을 짓지 않는다. */
-type TreeNode = { key: string; label: string; content: ReactNode[]; entry: Obj; current: boolean; open?: boolean; children?: () => TreeNode[] };
+/** 구조 목록 한 줄(tree 항목). children 은 펼친 뒤에만 부른다(UX-05) — 사용 위치가 많은 문서에서 보이지 않는 줄을 짓지 않는다.
+ *  kind 는 안내선의 종류(항목=실선·선택=점선)를 CSS 에 알리고, highlight 는 줄에 머문 동안 편집면이 강조할 대상이다(UX-09). */
+type TreeNode = { key: string; label: string; content: ReactNode[]; entry: Obj; kind?: string; highlight?: Obj; open?: boolean; children?: () => TreeNode[] };
 type TreeHandlers = { onSelect(entry: Obj, element: HTMLElement): void; onMenu(entry: Obj, element: HTMLElement, anchor: { x: number; y: number; top?: number }): void };
 
 /** 구조 목록(§3.3·§10)은 APG treeview 다: 한 번의 Tab 으로 들어오고(roving tabindex), ↑↓ 이동·→ 펼침/첫 자식·
- *  ← 접힘/부모·Home·End, Enter·Space 로 고른다. 지금 선택된 대상은 aria-current 와 색이 아닌 표지(왼쪽 선·굵기)로 선다.
+ *  ← 접힘/부모·Home·End, Enter·Space 로 고른다. 지금 위치(current — 바깥에서 안쪽으로의 열쇠 경로)는 **보이는 가장 안쪽**
+ *  줄 하나에 aria-current 와 색이 아닌 표지(왼쪽 막대·굵기)로 서고, 바뀌면 그 줄이 보이도록 목록을 옮긴다.
  *  이름은 outlineLabel 그대로다. 펼침 상태는 이 목록의 수명(문서 탭 하나)만큼 남는다. */
-function OutlineTree({ labelledBy, nodes, onSelect, onMenu }: TreeHandlers & { labelledBy: string; nodes: TreeNode[] }) {
+function OutlineTree({ labelledBy, nodes, current, inactive, onSelect, onMenu, onHighlight }: TreeHandlers & { labelledBy: string; nodes: TreeNode[]; current: string[]; inactive?: boolean; onHighlight(target: Obj | null): void }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [focusKey, setFocusKey] = useState("");
   const elements = useRef(new Map<string, HTMLElement>());
@@ -537,17 +695,21 @@ function OutlineTree({ labelledBy, nodes, onSelect, onMenu }: TreeHandlers & { l
   };
   walk(nodes, null);
   const byKey = new Map(rows.map((row) => [row.key, row]));
-  const active = byKey.has(focusKey) ? focusKey : rows.find((row) => row.node.current)?.key ?? rows[0]?.key;
-  const toggle = (key: string, open: boolean) => setExpanded((current) => ({ ...current, [key]: open }));
+  const currentKey = [...current].reverse().find((key) => byKey.has(key));
+  const active = byKey.has(focusKey) ? focusKey : currentKey ?? rows[0]?.key;
+  // 현재 위치 따라가기(F15): 캐럿이 옮긴 줄이 목록 밖이면 가장 가까운 쪽으로 스크롤한다(초점은 옮기지 않는다).
+  useEffect(() => { if (currentKey) elements.current.get(currentKey)?.scrollIntoView?.({ block: "nearest" }); }, [currentKey]);
+  const toggle = (key: string, open: boolean) => setExpanded((state) => ({ ...state, [key]: open }));
   const own = (event: any) => event.target?.closest?.('[role="treeitem"]') === event.currentTarget;
   const render = (node: TreeNode): ReactNode => {
     const row = byKey.get(node.key)!;
-    return h("li", { key: node.key, role: "treeitem", "data-tree-key": node.key, tabIndex: node.key === active ? 0 : -1, "aria-label": node.label,
-      "aria-expanded": row.expandable ? row.expanded : undefined, "aria-current": node.current ? "true" : undefined,
+    // 숨은 보기(다른 탭)의 tree 는 Tab·F6 의 입구를 두지 않는다(inactive).
+    return h("li", { key: node.key, role: "treeitem", "data-tree-key": node.key, "data-kind": node.kind, tabIndex: !inactive && node.key === active ? 0 : -1, "aria-label": node.label,
+      "aria-expanded": row.expandable ? row.expanded : undefined, "aria-current": node.key === currentKey ? "true" : undefined,
       ref: (element: HTMLElement | null) => { if (element) elements.current.set(node.key, element); else elements.current.delete(node.key); },
       onClick: (event: any) => { if (own(event)) onSelect(node.entry, event.currentTarget); },
       onContextMenu: (event: any) => { if (!own(event)) return; event.preventDefault(); event.stopPropagation(); onMenu(node.entry, event.currentTarget, { x: event.clientX, y: event.clientY }); } },
-      h("span", { className: "authoring-tree-row" },
+      h("span", { className: "authoring-tree-row", onMouseEnter: () => onHighlight(node.highlight || null) },
         // 펼침 표지는 마우스용이다(키보드는 →·←). 글자가 아니라 CSS 가 그린다.
         h("span", { className: "authoring-tree-toggle", "aria-hidden": true, "data-leaf": row.expandable ? undefined : "",
           onClick: row.expandable ? (event: any) => { event.stopPropagation(); toggle(node.key, !row.expanded); } : undefined }),
@@ -555,7 +717,15 @@ function OutlineTree({ labelledBy, nodes, onSelect, onMenu }: TreeHandlers & { l
       row.expanded && h("ul", { role: "group" }, ...(kids.get(node.key) || []).map(render)));
   };
   return h("ul", { className: "authoring-tree", role: "tree", "aria-labelledby": labelledBy,
-    onFocus: (event: any) => { const key = event.target?.getAttribute?.("data-tree-key"); if (key && key !== focusKey) setFocusKey(key); },
+    onMouseLeave: () => onHighlight(null),
+    onBlur: (event: any) => { if (!event.currentTarget?.contains?.(event.relatedTarget)) onHighlight(null); },
+    onFocus: (event: any) => {
+      const key = event.target?.getAttribute?.("data-tree-key");
+      if (!key) return;
+      if (key !== focusKey) setFocusKey(key);
+      // 키보드로 옮긴 줄도 편집면에서 강조한다 — 마우스와 같은 길(§10).
+      onHighlight(byKey.get(key)?.node.highlight || null);
+    },
     onKeyDown: (event: any) => {
       const element = event.target?.closest?.('[role="treeitem"]') as HTMLElement | null;
       const key = element?.getAttribute("data-tree-key");
@@ -577,6 +747,142 @@ function OutlineTree({ labelledBy, nodes, onSelect, onMenu }: TreeHandlers & { l
       if (action.focus) { setFocusKey(action.focus); elements.current.get(action.focus)?.focus(); }
       if (action.select) onSelect(row.node.entry, element);
     } }, ...nodes.map(render));
+}
+
+/** 브레드크럼 차례(UX-09): 바깥에서 안쪽으로 — 항목 › 선택 › 필드. Python 이 준 일치 후보를 종류 차례로만 세운다. */
+export function crumbs(matches: Obj[] | undefined): Obj[] {
+  const rank: Obj = { slot: 0, option: 1, field: 2 };
+  return [...(matches || [])].map((match, at) => ({ match, at })).sort((a, b) => (rank[a.match.kind] ?? 3) - (rank[b.match.kind] ?? 3) || a.at - b.at).map((entry) => entry.match);
+}
+/** 문자 몇 개를 「 · 」 로 잇는다 — 빈 것은 뺀다. */
+const joined = (...parts: unknown[]) => parts.filter((part) => part !== null && part !== undefined && part !== false && part !== "" && part !== 0).join(" · ");
+/** 대상별 가장 무거운 심각도(오류 > 경고) — 문제 줄의 글리프 자리에 글자 칩으로 선다(§10: 색이 아니라 글자). */
+export function problemSeverities(problems: Obj[] | undefined): Map<string, string> {
+  const severities = new Map<string, string>();
+  for (const problem of problems || []) if (problem.target != null && severities.get(problem.target) !== "error") severities.set(problem.target, problem.severity);
+  return severities;
+}
+type RowParts = { severity?: string; tag?: boolean; dot?: ReactNode; meta?: string };
+/** 트리 한 줄의 보이는 내용: [글리프 또는 심각도 칩] [종류 표지] [시험 점] [이름 — 한 줄 말줄임, 전체는 title] … [흐린 메타]. */
+function rowContent(kind: "slot" | "option" | "field", name: string, parts: RowParts): ReactNode[] {
+  return [
+    h("span", { key: "glyph", className: "authoring-tree-glyph" }, parts.severity
+      ? h("span", { className: "authoring-badge", "data-severity": parts.severity }, SEVERITY_LABEL[parts.severity] || parts.severity) : kindGlyph(kind)),
+    parts.tag === false ? null : h("span", { key: "kind", className: "authoring-kind" }, KIND_LABEL[kind]),
+    parts.dot || null,
+    h("span", { key: "name", className: "authoring-tree-name", title: name }, name),
+    parts.meta ? h("span", { key: "meta", className: "authoring-tree-meta" }, parts.meta) : null,
+  ];
+}
+const EMPTY_STRUCTURE = "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요.";
+const EMPTY_FIELDS = "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.";
+
+/** 왼쪽 템플릿 구조(§3.1 UI03·UI04·§3.3 · UX-09): 한 패널의 두 보기.
+ *  - 구조: 문서 순서의 척추 — 항목(실선 안내선) 아래 선택(점선 안내선), 필드 사용 위치는 그것을 담은 자리에 잎으로 선다.
+ *    선택 앞의 점은 시험 상태(채움 모양), 여러 자리에 선 필드는 「같은 필드, i/n」.
+ *  - 필드: 이름별 묶음(처음 쓰인 순서) — 펼치면 사용 위치(문맥과 소속). 사용 위치 줄은 펼친 뒤에만 짓는다(UX-05).
+ *  필터는 두 보기 모두에서 일치하는 줄과 그 조상을 남긴다. 줄에 마우스·초점이 머물면 편집면이 그 범위를 강조한다. */
+function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }: Props & TreeHandlers & { item: Obj; view: Obj; counts: Map<string, number>; onContext(event: any): void }) {
+  const [tab, setTab] = useState<"structure" | "fields">("structure");
+  const [query, setQuery] = useState("");
+  const analysis: Obj = item.analysis || {};
+  const version = analysis.revision ?? analysis;
+  const spine = useMemo(() => outlineSpine(analysis), [version]);
+  const fields = useMemo(() => fieldsInFirstUse(analysis), [version]);
+  const severities = useMemo(() => problemSeverities(item.problems), [item.problems]);
+  const current = outlineCurrent(analysis, view.selected, view.matches);
+  const coverage = new Map<string, string>((item.trial_coverage || []).map((entry: Obj) => [`${entry.slot_id}\u0000${entry.option_id}`, entry.state]));
+  // 강조 요청은 줄을 훑는 동안 마지막 것만 보낸다 — 문서 장식을 줄마다 다시 그리지 않는다.
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlight = (target: Obj | null) => {
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = setTimeout(() => { pending.current = null; controller.highlight(target); }, 60);
+  };
+  useEffect(() => () => { if (pending.current) clearTimeout(pending.current); }, [item.id]);
+  const filtering = !!query.trim();
+  const problemsOf = (target: string) => counts.get(target) || 0;
+
+  const spineNodes = (list: SpineNode[], matched: boolean): TreeNode[] => list.flatMap((node): TreeNode[] => {
+    if (node.kind === "use") {
+      const { field, occurrence, index, total } = node;
+      if (!matched && !filterMatch(query, field.name, occurrence.context)) return [];
+      const problems = problemsOf(field.name);
+      return [{ key: outlineKey.use(field.name, index), kind: "use", label: joined(KIND_LABEL.field, field.name, sameFieldMeta(index, total), problems && `문제 ${problems}`),
+        content: rowContent("field", field.name, { severity: severities.get(field.name), meta: joined(sameFieldMeta(index, total), problems && `문제 ${problems}`) }),
+        entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index } }];
+    }
+    const own = node.kind === "slot" ? node.slot : node.option;
+    const name = String(own.label || own.id);
+    const self = matched || filterMatch(query, own.label, own.id);
+    const children = filtering ? spineNodes(node.children, self) : null;
+    if (filtering && !self && !children!.length) return [];
+    const problems = problemsOf(own.id);
+    const build = () => children ?? spineNodes(node.children, true);
+    const expandable = filtering ? !!children!.length : node.children.length > 0;
+    if (node.kind === "slot") {
+      const slot = node.slot;
+      return [{ key: outlineKey.slot(slot.id), kind: "slot", label: joined(outlineLabel("slot", slot), slot.location_label, problems && `문제 ${problems}`),
+        content: rowContent("slot", name, { severity: severities.get(slot.id), meta: joined(slot.location_label, problems && `문제 ${problems}`) }),
+        entry: { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }, highlight: { kind: "slot", id: slot.id }, open: true,
+        children: expandable ? build : undefined }];
+    }
+    const { slot, option } = node;
+    const state = coverage.get(`${slot.id}\u0000${option.id}`);
+    const dot = state ? h("span", { key: "dot", className: "authoring-coverage-dot", "data-state": state, title: COVERAGE_LABEL[state] }, coverageDot(state)) : null;
+    return [{ key: outlineKey.option(slot.id, option.id), kind: "option",
+      label: joined(outlineLabel("option", option, 0, slot.label || slot.id), option.location_label, state && COVERAGE_LABEL[state], problems && `문제 ${problems}`),
+      content: rowContent("option", name, { severity: severities.get(option.id), dot, meta: joined(option.location_label, problems && `문제 ${problems}`) }),
+      entry: { ...option, ...option.location, kind: "option", slot_id: slot.id, option_id: option.id }, highlight: { kind: "option", id: option.id, slot_id: slot.id }, open: true,
+      children: expandable ? build : undefined }];
+  });
+
+  const slotName = (id: string) => { const slot = (analysis.slots || []).find((entry: Obj) => entry.id === id); return slot ? String(slot.label || slot.id) : ""; };
+  const optionName = (slotId: string, id: string) => { const option = (analysis.slots || []).find((entry: Obj) => entry.id === slotId)?.options?.find((entry: Obj) => entry.id === id); return option ? String(option.label || option.id) : ""; };
+  const occurrenceNode = (field: Obj, occurrence: Obj, at: number, total: number): TreeNode => {
+    const slot = occurrence.slot_id ? slotName(occurrence.slot_id) : "";
+    const option = occurrence.slot_id && occurrence.option_id ? optionName(occurrence.slot_id, occurrence.option_id) : "";
+    const place = [slot, option].filter(Boolean).join(" / ");
+    return { key: outlineKey.occurrence(field.name, at + 1), kind: "occurrence",
+      label: joined(outlineLabel("occurrence", { name: field.name, index: at + 1, total, context: occurrence.context }), slot && `${KIND_LABEL.slot} ${slot}`, option && `${KIND_LABEL.option} ${option}`),
+      content: [h("span", { key: "name", className: "authoring-tree-name", title: occurrence.context || field.name }, `${at + 1}. ${occurrence.context || field.name}`),
+        place ? h("span", { key: "meta", className: "authoring-tree-meta" }, place) : null],
+      entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index: at + 1 } };
+  };
+  const fieldNodes = fields.flatMap((field: Obj): TreeNode[] => {
+    const occurrences: Obj[] = field.occurrences || [];
+    const byName = filterMatch(query, field.name);
+    const hits = filtering && !byName ? occurrences.map((occurrence, at) => ({ occurrence, at })).filter(({ occurrence }) => filterMatch(query, occurrence.context)) : null;
+    if (hits && !hits.length) return [];
+    const problems = problemsOf(field.name);
+    return [{ key: outlineKey.field(field.name), kind: "field", label: outlineLabel("field", field, problems),
+      // 수는 글로 선다(§10): 「사용 위치 n곳」 — 이름(outlineLabel)과 같은 표현이다.
+      content: rowContent("field", field.name, { severity: severities.get(field.name), tag: false, meta: joined(`사용 위치 ${field.count ?? 0}곳`, problems && `문제 ${problems}`) }),
+      entry: { ...field, kind: "field" }, highlight: { kind: "field", id: field.name }, open: !!hits,
+      children: occurrences.length ? () => (hits || occurrences.map((occurrence, at) => ({ occurrence, at }))).map(({ occurrence, at }) => occurrenceNode(field, occurrence, at, occurrences.length)) : undefined }];
+  });
+  const structureNodes = spineNodes(spine, !filtering);
+
+  const tabButton = (key: "structure" | "fields", id: string, label: ReactNode[]) => h("button", { key, type: "button", role: "tab", id, className: "authoring-outline-tab",
+    tabIndex: tab === key ? 0 : -1, "aria-selected": tab === key, "aria-controls": `${id}-panel`, onClick: () => setTab(key), onFocus: () => setTab(key) }, ...label);
+  const tree = (key: "structure" | "fields", labelledBy: string, nodes: TreeNode[], path: string[]) => nodes.length > 0 && h(OutlineTree, { key: `${item.id}:${key}:${filtering ? "filter" : "all"}`,
+    labelledBy, nodes, current: path, inactive: tab !== key, onSelect, onMenu, onHighlight: highlight });
+  return h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: onContext },
+    h("div", { className: "authoring-outline-head" },
+      sectionLabel("템플릿 구조", { id: "authoring-outline-title" }),
+      // 두 보기는 한 쌍의 APG tabs 다(자동 활성화 — ←→ 로 옮기면 그 보기가 선다).
+      h("div", { className: "authoring-outline-tabs", role: "tablist", "aria-labelledby": "authoring-outline-title",
+        onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal"); } },
+        tabButton("structure", "authoring-outline-structure", ["구조"]),
+        tabButton("fields", "authoring-outline-fields", ["필드", " ", h("span", { key: "count", className: "authoring-tab-count" }, String(fields.length))])),
+      h("label", { className: "authoring-filter" }, icon("search"),
+        h("input", { className: "field", type: "search", "aria-label": "구조 필터", value: query, onChange: (event: any) => setQuery(event.target.value),
+          onKeyDown: (event: any) => { if (event.key === "Escape" && query && !event.nativeEvent?.isComposing) { event.preventDefault(); event.stopPropagation(); setQuery(""); } } }))),
+    h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-structure-panel", "aria-labelledby": "authoring-outline-structure", hidden: tab !== "structure" },
+      tree("structure", "authoring-outline-structure", structureNodes, current.structure),
+      !filtering && !(analysis.slots || []).length && h("p", { className: "authoring-outline-empty" }, EMPTY_STRUCTURE)),
+    h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-fields-panel", "aria-labelledby": "authoring-outline-fields", hidden: tab !== "fields" },
+      tree("fields", "authoring-outline-fields", fieldNodes, current.fields),
+      !filtering && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)));
 }
 
 const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "구조"]];
@@ -776,13 +1082,15 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     if (key === "trial" && item) return h(Trial, { controller, item, view, onClose: () => returnFocus("dock") });
     if (key === "recovery" && item) return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "중단 전 복구 초안" }, h("h2", null, "중단 전 복구 초안"),
       h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
-      button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
-      button("복구", act(() => controller.recover(item.id))), button("폐기", act(() => controller.discardRecovery(item.id))));
+      h("div", { className: "authoring-actions" },
+        button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
+        danger("폐기", act(() => controller.discardRecovery(item.id))), primary("복구", act(() => controller.recover(item.id)))));
     if (key === "recovery_preview" && view.recoveryPreview) return h("section", { className: "authoring-bottom", "aria-label": "초안과 원본 비교" }, h("h2", null, "초안과 원본 비교"),
       h("div", { className: "authoring-compare" }, ...[["원본", view.recoveryPreview.original_content], ["복구 초안", view.recoveryPreview.content]].map(([name, content]) => h("div", { key: name }, h("h3", null, name),
         content == null ? h("p", null, "원본 파일 없음") : view.recoveryPreview.media === "txt" ? h("pre", null, content)
           : h(ExternalDocument, { controller, item: { name }, content, sectionEntries: name === "원본" ? view.recoveryPreview.original_section_entries : view.recoveryPreview.section_entries })))),
-      button("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key))), button("비교 닫기", () => closePanel({ recoveryPreview: null })));
+      h("div", { className: "authoring-actions" },
+        quiet("비교 닫기", () => closePanel({ recoveryPreview: null })), primary("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key)))));
     if (!item) return null;
     if (key === "paste") return h("section", { className: "authoring-bottom", "aria-label": "의미 붙여넣기" }, h("h2", null, "의미 붙여넣기"),
       h("p", null, "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
@@ -790,28 +1098,29 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         h("label", null, h("input", { type: "checkbox", name: "meaning", defaultChecked: true }), "의미 포함"),
         h("label", null, h("input", { type: "checkbox", name: "link_existing" }), "같은 이름의 기존 필드에 연결"),
         h("label", null, "새 연결 식별자 ", h("input", { name: "new_id", className: "field" })),
-        h("button", { className: "btn sm", disabled: !controller.clipboard() }, "붙여넣기 미리보기")),
+        h("button", { className: "btn", disabled: !controller.clipboard() }, "붙여넣기 미리보기")),
       view.command?.type === "paste" && view.preview && h("div", { className: "authoring-preview" },
         h("pre", { role: "group", "aria-label": "변경 전" }, view.preview.before), h("pre", { role: "group", "aria-label": "변경 후" }, view.preview.after),
-        button("붙여넣기 적용", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null }))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ preview: null })), primary("붙여넣기 적용", act(controller.applyPreview)))));
     if (key === "search") return h("section", { className: "authoring-bottom", "aria-label": "검색" }, h("h2", null, "검색"),
       h("form", { onSubmit: (event: any) => { event.preventDefault(); const values = new FormData(event.currentTarget); act(() => controller.search(String(values.get("query")), String(values.get("kind")), values.has("all")))(); } },
         h("input", { className: "field", name: "query", "aria-label": "검색어", defaultValue: view.query }),
         h("select", { className: "field", name: "kind", "aria-label": "검색 대상" }, h("option", { value: "body" }, "본문"), h("option", { value: "field" }, "필드"), h("option", { value: "structure" }, "항목·선택"), h("option", { value: "all" }, "전체")),
-        h("label", null, h("input", { type: "checkbox", name: "all" }), "열린 모든 문서"), h("button", { className: "btn sm" }, "찾기")),
+        h("label", null, h("input", { type: "checkbox", name: "all" }), "열린 모든 문서"), h("button", { className: "btn" }, "찾기")),
       // 요약과 종류는 Python 이 센 것·준 것 그대로다(§6.3). 여러 문서를 찾으면 문서마다 한 줄씩 선다. 읽기는 셸의 live region 이 한다.
       ...(view.searchSummaries || []).map((entry: Obj, index: number) => h("p", { key: `summary-${index}`, className: "authoring-search-summary" },
         view.searchSummaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary)),
-      ...view.hits.map((hit: Obj, index: number) => button([KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, `${hit.document} · ${hit.context || hit.name || hit.label}`], select(hit), { key: index })));
+      // 적중은 원문으로 옮겨 가는 행이다(UX-09): 종류 칩 · 문맥 · 흐린 문서 이름 · 이동 화살표.
+      rowList("검색 결과", view.hits.map((hit: Obj) => rowButton({ chip: KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, text: hit.context || hit.name || hit.label, context: hit.document }, select(hit)))));
     if (key === "commands") return h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
       h(CommandList, { view, readOnly, onPick: pick }),
-      h("div", { className: "authoring-command-more" }, ...moreActions.map(([label, run, disabled]) => button(label, run, { key: label, disabled }))));
+      h("div", { className: "authoring-palette authoring-command-more" }, ...moreActions.map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", onClick: run, disabled }, label))));
     // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
     if (key === "raw") return h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
       view.syntax?.note && h("p", null, view.syntax.note),
       ...(view.syntax?.sections || []).map((section: Obj, index: number) => h("div", { key: index, className: "authoring-syntax" },
         h("h3", null, section.entry), h("pre", { tabIndex: 0, role: "group", "aria-label": `${section.entry} 원문 표기` }, section.text))),
-      button("복사", act(() => copyText((view.syntax?.sections || []).map((section: Obj) => section.text).join("\n\n"))), { disabled: !view.syntax?.sections?.length }));
+      quiet("복사", act(() => copyText((view.syntax?.sections || []).map((section: Obj) => section.text).join("\n\n"))), { disabled: !view.syntax?.sections?.length }));
     if (key === "impact") return h("section", { className: "authoring-bottom", "aria-label": "변경 영향·작업 적용" }, h("h2", null, "변경 영향·작업 적용"),
       view.impact?.save_required && h("p", null, "템플릿을 저장한 뒤 적용할 작업을 확인하세요."),
       view.impact?.structure_delta && h(StructureDelta, { delta: view.impact.structure_delta }),
@@ -829,27 +1138,39 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         blocked && job.blocked_reason && h("p", { className: "authoring-reason" }, job.blocked_reason)); }),
       view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
         ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
-        button("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }), button("취소", () => controller.update({ jobApply: null }))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }))));
     // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
+    // 문제 한 건은 행이다(UX-09): 심각도 글자 칩 · 종류 · 설명 · 흐린 대상. 이동하는 다음 행동(「원문으로 이동」)은 그 행 자체이고
+    // 그 동사가 행 이름의 첫머리·툴팁으로 남는다. 명령형 다음 행동(구조 표기 수정 등)은 행 곁의 보조 단추다.
     if (key === "problems") return h("section", { className: "authoring-bottom", "aria-label": "문제" }, h("h2", null, "문제"),
-      !item.problems?.length && h("p", null, "문제 없음"),
-      ...(item.problems || []).map((problem: Obj, index: number) => h("div", { key: index, className: "authoring-problem" },
-        h("p", null, h("strong", null, SEVERITY_LABEL[problem.severity] || problem.severity), ` · ${CATEGORY_LABEL[problem.category] || problem.category}`, problem.target ? ` · ${problem.target}` : ""),
-        h("p", null, problem.message),
-        ...(problem.actions || []).map((action: Obj, actionIndex: number) => button(action.label, act(() => problemAction(controller, item, problem, action)), { key: actionIndex })))),
+      !item.problems?.length && h("p", { className: "authoring-reason" }, "문제 없음"),
+      rowList("문제", (item.problems || []).map((problem: Obj, index: number) => {
+        const actions: Obj[] = problem.actions || [];
+        const navigate = actions.find((action) => action.kind !== "command");
+        const chip = h("span", { className: "authoring-badge", "data-severity": problem.severity }, SEVERITY_LABEL[problem.severity] || problem.severity);
+        const body = [h("span", { key: "category", className: "authoring-problem-category" }, CATEGORY_LABEL[problem.category] || problem.category), " ", problem.message];
+        return h("div", { key: index, className: "authoring-problem" },
+          // 이름은 다음 행동(동사)이 먼저, 이어서 심각도·종류·대상·설명 — 보이는 행과 같은 글이다.
+          navigate ? rowButton({ chip, text: body, context: problem.target || null }, act(() => problemAction(controller, item, problem, navigate)), { title: navigate.label,
+            "aria-label": joined(navigate.label, SEVERITY_LABEL[problem.severity] || problem.severity, CATEGORY_LABEL[problem.category] || problem.category, problem.target, problem.message) })
+            : h("div", { className: "authoring-row static" }, chip, h("span", { className: "authoring-row-text" }, ...body), problem.target ? h("span", { className: "authoring-row-context" }, problem.target) : null),
+          ...actions.filter((action) => action !== navigate).map((action: Obj, actionIndex: number) => button(action.label, act(() => problemAction(controller, item, problem, action)), { key: actionIndex })));
+      })),
       view.command?.type === "repair_marker" && view.preview && h("div", { className: "authoring-preview" },
         h("h3", null, "수정 제안"), h("pre", { role: "group", "aria-label": "변경 전" }, view.preview.before), h("pre", { role: "group", "aria-label": "변경 후" }, view.preview.after),
-        button("구조 표기 수정", act(controller.applyPreview)), button("취소", () => controller.update({ preview: null }))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ preview: null })), primary("구조 표기 수정", act(controller.applyPreview)))));
     if (key === "external_changed") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "외부 파일 변경" }, h("h2", null, "외부 파일 변경"),
-      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")), button("외부 파일 다시 열기", act(controller.reload)));
-    // 저장 실패(AC24·§9.2): 변경은 그대로 남고, 같은 세 복구 동사에 「다시 저장」이 더해진다.
+      h("div", { className: "authoring-actions start" },
+        button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")), button("외부 파일 다시 열기", act(controller.reload))));
+    // 저장 실패(AC24·§9.2): 변경은 그대로 남고, 같은 세 복구 동사에 「다시 저장」이 더해진다 — 이 구획의 주 행동이다.
     if (key === "external") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "저장 실패" }, h("h2", null, "저장 실패"),
-      button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")),
-      button("외부 파일 다시 열기", act(controller.reload)), button("다시 저장", act(() => controller.save(item.id), "save")));
+      h("div", { className: "authoring-actions start" },
+        button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")),
+        button("외부 파일 다시 열기", act(controller.reload)), primary("다시 저장", act(() => controller.save(item.id), "save"))));
     if (key === "comparison" && view.comparison) return h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
       h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
         h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries, title: label })))),
-      button("비교 닫기", () => closePanel({ panel: "" })));
+      quiet("비교 닫기", () => closePanel({ panel: "" })));
     return null;
   };
   // 도구 막대(§3.1·APG toolbar): 한 번의 Tab 으로 들어오고 ←→·Home·End 로 옮긴다(roving tabindex). 비활성 버튼은 건너뛴다.
@@ -895,10 +1216,12 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     // 단일 live region(UX-04) — 보이지 않고, 전이 때만 한 줄이 선다. 차례 번호가 바뀌면 같은 문장도 다시 읽힌다.
     h("p", { className: "authoring-live", role: "status" }, view.live?.text ? h("span", { key: view.live.seq }, view.live.text) : null),
     h("header", { className: "authoring-head" },
-      button("돌아가기", act(() => controller.leaveTo(controller.returnScreen()))),
+      quiet([h("span", { key: "back", className: "authoring-back" }, icon("chevron-left")), "돌아가기"], act(() => controller.leaveTo(controller.returnScreen()))),
       h("h1", null, "템플릿 저작"),
       button("문서 열기", act(controller.openFile)), button("새 TXT", act(controller.create)),
-      button("저장", act(() => controller.save(), "save"), { disabled: !item }),
+      // 머리 구획의 주 행동은 저장이다 — 저장할 변경이 있거나 새 템플릿이라 저장이 필요할 때만 채움으로 선다.
+      button("저장", act(() => controller.save(), "save"), { disabled: !item,
+        className: item && (item.dirty || item.save_as_required || controller.pending(item.id)) ? "btn primary" : "btn" }),
       button("다른 이름으로 저장", act(() => controller.save(item?.id, true), "save"), { disabled: !item })),
     // 열린 문서 탭(APG tabs, 수동 활성화): ←→·Home·End 로 옮기고 Enter·Space 로 연다. Delete 는 닫기(닫기 보호 그대로).
     // 닫기 단추는 탭 안의 마우스용 표지다 — tab 의 자식은 표시용이라 Tab 순서에 두지 않는다(tabIndex -1).
@@ -914,8 +1237,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       const dirty = !!(tab.dirty || controller.pending(tab.id));
       return h("div", { key: tab.id, className: "authoring-tab", role: "tab", "data-tab": tab.id, tabIndex: selected ? 0 : -1, "aria-selected": selected,
         "aria-controls": "authoring-canvas", "aria-label": tabName(tab.name, dirty), "aria-keyshortcuts": "Delete", onClick: act(() => controller.activate(tab.id)) },
-        h("span", { className: "authoring-tab-name" }, `${tab.name}${dirty ? " ·" : ""}`),
-        button("닫기", () => closeTab(tab.id), { tabIndex: -1, "aria-label": `${tab.name} 닫기`, onClick: (event: any) => { event.stopPropagation(); closeTab(tab.id); } }));
+        // 미저장 표지는 글자가 아니라 점 원소다 — 뜻은 탭 이름(tabName)이 싣는다.
+        h("span", { className: "authoring-tab-name" }, tab.name), dirty ? h("span", { className: "authoring-dirty", "aria-hidden": true }) : null,
+        iconButton("close", `${tab.name} 닫기`, (event: any) => { event.stopPropagation(); closeTab(tab.id); }, { tabIndex: -1 }));
     })),
     // 오류 띠(§10·UX-04): 첫 문장만 보이고 기술 세부는 「자세히」 안에 둔다. 사용자가 닫거나 같은 종류의 작업이 성공해야 걷힌다.
     errorView && h("div", { className: "authoring-error" },
@@ -942,14 +1266,15 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         draft.error && h("p", { role: "alert" }, draft.error),
         h("span", { className: "authoring-drafts-actions" },
           button("초안과 원본 비교", act(() => controller.compareRecovery(draft.key)), { disabled: !!draft.error }),
-          button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), button("폐기", act(() => controller.discardRecovery(draft.key)))))))),
+          button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), danger("폐기", act(() => controller.discardRecovery(draft.key)))))))),
     // 도구 막대(§3.1): 한 줄, 줄바꿈 없음 — 넘치면 가로 스크롤. 보조 패널을 여는 동사는 하단 독의 탭으로 옮겼다.
     item && h("div", { className: "authoring-toolbar", role: "toolbar", "aria-label": "문서 명령",
       onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, "[data-rove]:not([disabled])", "horizontal"); },
       onFocus: (event: any) => { const key = event.target?.getAttribute?.("data-rove"); if (key && key !== toolbarKey) setToolbarKey(key); } },
+      // 실행 취소·다시 실행은 그림 단추다 — 되돌릴 명령의 이름은 툴팁·이름과 live region 이 싣는다(새 문구 없음).
       h("div", { className: "authoring-toolbar-group" },
-        button(`문서 실행 취소${view.lastCommandLabel ? `: ${view.lastCommandLabel}` : ""}`, act(() => controller.command("undo")), { disabled: undoDisabled, ...rove("undo") }),
-        button("문서 다시 실행", act(() => controller.command("redo")), { disabled: redoDisabled, ...rove("redo") })),
+        iconButton("undo", `문서 실행 취소${view.lastCommandLabel ? `: ${view.lastCommandLabel}` : ""}`, act(() => controller.command("undo")), { disabled: undoDisabled, ...rove("undo") }),
+        iconButton("redo", "문서 다시 실행", act(() => controller.command("redo")), { disabled: redoDisabled, ...rove("redo") })),
       h("div", { className: "authoring-toolbar-group" }, h("div", { className: "authoring-mode", role: "group", "aria-label": "표시" },
         ...MODES.map(([value, label]) => h("button", { key: value, type: "button", value, "aria-pressed": view.mode === value, ...rove(`mode-${value}`), onClick: () => controller.setMode(value) }, label)))),
       h("div", { className: "authoring-toolbar-group" },
@@ -957,38 +1282,27 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           button(label, () => pick(commandType), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined, ...rove(commandType) }))),
       h("div", { className: "authoring-toolbar-group" },
         button("명령", () => openPanel("commands"), { "aria-expanded": view.panel === "commands", "aria-controls": view.panel === "commands" ? "authoring-dock-panel" : undefined, ...rove("commands") }),
-        h("button", { type: "button", className: "btn sm", "aria-haspopup": "menu", "aria-expanded": view.contextMenu?.kind === "more", "aria-controls": view.contextMenu?.kind === "more" ? "authoring-menu" : undefined, ...rove("more"),
-          onClick: (event: any) => { if (view.contextMenu?.kind === "more") { controller.update({ contextMenu: null }); return; }
+        iconButton("more", "더보기", (event: any) => { if (view.contextMenu?.kind === "more") { controller.update({ contextMenu: null }); return; }
             const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-            openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target: event.currentTarget }, root.current, "more"); } }, "더보기")),
+            openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target: event.currentTarget }, root.current, "more"); },
+          { "aria-haspopup": "menu", "aria-expanded": view.contextMenu?.kind === "more", "aria-controls": view.contextMenu?.kind === "more" ? "authoring-menu" : undefined, ...rove("more") })),
       h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
         button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown, ...rove("trial") }),
         h("select", { className: "field", "aria-label": "확대", value: view.zoom, ...rove("zoom"), onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
     tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}${outlineOpen ? " outline-open" : ""}` },
-      item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, onClick: () => setOutlineOpen(!outlineOpen) }, outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기"),
-      item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: contextMenu },
-        h("h2", { id: "authoring-outline-structure" }, "템플릿 구조"),
-        !!item.analysis?.slots?.length && h(OutlineTree, { key: `${item.id}:structure`, labelledBy: "authoring-outline-structure", onSelect: chooseFromOutline, onMenu: outlineMenu,
-          nodes: item.analysis.slots.map((slot: Obj): TreeNode => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id };
-            return { key: `slot:${slot.id}`, label: outlineLabel("slot", slot, counts.get(slot.id) || 0), content: [kindTag("slot"), slot.label || slot.id, badge(counts.get(slot.id) || 0)],
-              entry: slotEntry, current: isCurrentTarget("slot", slot, view.selected), open: true,
-              children: slot.options?.length ? () => slot.options.map((option: Obj): TreeNode => ({ key: `option:${slot.id}/${option.id}`,
-                label: outlineLabel("option", option, counts.get(option.id) || 0, slot.label || slot.id), content: [kindTag("option"), option.label || option.id, badge(counts.get(option.id) || 0)],
-                entry: { ...option, ...option.location, kind: "option", slot_id: slot.id, option_id: option.id }, current: isCurrentTarget("option", { ...option, slot_id: slot.id }, view.selected) })) : undefined }; }) }),
-        h("h2", { id: "authoring-outline-fields" }, "필드"),
-        !!item.analysis?.fields?.length && h(OutlineTree, { key: `${item.id}:fields`, labelledBy: "authoring-outline-fields", onSelect: chooseFromOutline, onMenu: outlineMenu,
-          nodes: item.analysis.fields.map((field: Obj): TreeNode => ({ key: `field:${field.name}`, label: outlineLabel("field", field, counts.get(field.name) || 0),
-            // 수는 글로 선다(§10): 「사용 위치 n곳」 — 이름(outlineLabel)과 같은 표현이다.
-            content: [`${field.name} · 사용 위치 ${field.count ?? 0}곳`, badge(counts.get(field.name) || 0)], entry: { ...field, kind: "field" }, current: isCurrentTarget("field", field, view.selected),
-            children: field.occurrences?.length ? () => field.occurrences.map((occ: Obj, index: number): TreeNode => ({ key: `occurrence:${field.name}#${index}`,
-              label: outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }),
-              content: [`${index + 1}. ${occ.context || field.name}`], entry: { ...occ, name: field.name, kind: "field" }, current: isCurrentTarget("occurrence", { ...occ, name: field.name }, view.selected) })) : undefined })) })),
+      // 좁은 폭의 구조 레일(UX-08): 몸통 높이 띠의 그림 단추 — 이름은 기존 문장 그대로 aria-label·title 이다.
+      item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, "aria-label": outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기",
+        title: outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기", onClick: () => setOutlineOpen(!outlineOpen) }, icon(outlineOpen ? "chevron-left" : "chevron-right")),
+      item && h(Outline, { key: item.id, controller, item, view, counts, onSelect: chooseFromOutline, onMenu: outlineMenu, onContext: contextMenu }),
       item && h(PanelSplitter, { panel: "outline", label: "구조 패널 너비", layout }),
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
         item && h("div", { className: "authoring-selection", role: "navigation", "aria-label": "현재 위치의 의미" },
           h("span", { className: "authoring-selection-label", "aria-hidden": true }, "현재 위치의 의미"),
-          ...(view.matches || []).map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
+          // 조각은 테두리 알약이 아니라 글 링크다(UX-09) — 사이는 › 그림, 마지막(가장 안쪽) 조각은 굵게.
+          ...crumbs(view.matches).flatMap((match: Obj, index: number, all: Obj[]) => [index > 0 ? h("span", { key: `sep-${index}`, className: "authoring-crumb-sep" }, icon("chevron-right")) : null,
+            h("button", { key: index, type: "button", className: "authoring-crumb", onClick: select(match), "aria-current": index === all.length - 1 ? "location" : undefined },
+              `${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`)])),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
         h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
       item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
@@ -1007,8 +1321,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
             label, count ? " " : null, count ? h("span", { className: "authoring-badge" }, String(count)) : null);
         })),
         dock.active && h("div", { className: "authoring-dock-actions" },
-          button(view.dockMax ? "복원" : "최대화", () => controller.update({ dockMax: !view.dockMax })),
-          button("닫기", closeDock))),
+          iconButton(view.dockMax ? "restore" : "maximize", view.dockMax ? "복원" : "최대화", () => controller.update({ dockMax: !view.dockMax })),
+          iconButton("close", "닫기", closeDock))),
       dock.active && h("div", { className: "authoring-dock-panel", id: "authoring-dock-panel", role: "tabpanel", tabIndex: -1, "aria-labelledby": `authoring-dock-tab-${dock.active}` }, dockContent(dock.active))),
     // 문맥 메뉴·더보기(§6.1·APG menu): ↑↓·Home·End 로 옮기고 Tab 은 메뉴를 닫는다. 불가 항목도 초점을 받아 사유를 읽힌다.
     // 공유 사유는 메뉴의 자식이 아니다 — 메뉴 머리 줄로 서고 불가 항목이 설명으로 가리킨다.
@@ -1020,7 +1334,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       view.contextMenu.kind !== "more" && sharedReason(view.commands) && h("p", { id: "authoring-command-reason-menu", className: "authoring-reason" }, sharedReason(view.commands)),
       h("div", { className: "authoring-menu", id: "authoring-menu", role: "menu", "aria-label": view.contextMenu.kind === "more" ? "더보기" : "문맥 명령" },
         view.contextMenu.kind === "more"
-          ? moreActions.map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "btn sm", role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined,
+          ? moreActions.map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined,
             onClick: () => { if (disabled) return; const trigger = view.contextMenu?.trigger; if (focusable(trigger)) trigger.focus(); controller.update({ contextMenu: null }); run(); } }, label))
           : h(CommandList, { view, readOnly, menu: true, onPick: pick }))),
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).

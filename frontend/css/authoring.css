@@ -14,10 +14,12 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-head h1{font-size:var(--fs-section);margin:0 auto 0 0}
 .authoring-tabs{flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--a-border)}
 /* 문서 탭(APG tabs): 탭 자체가 초점을 받는 한 칸이다. 닫기 단추는 그 안의 마우스용 표지다. */
-.authoring-tab{display:flex;flex:none;align-items:center;gap:var(--sp-4);padding:var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-10);border:1px solid var(--n-border-strong);border-radius:var(--rad-control);background:var(--a-card);color:var(--n-ink-control);cursor:pointer}
-.authoring-tab:hover{background:var(--n-hover)}
-.authoring-tab[aria-selected=true]{color:var(--a-primary);background:var(--a-sel);font-weight:600}
-.authoring-tab .btn{padding:var(--sp-2) var(--sp-6);font-weight:400}
+.authoring-tab{display:flex;flex:none;align-items:center;gap:var(--sp-4);padding:var(--sp-2) var(--sp-2) 0 var(--sp-12);border:0;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--a-muted);cursor:pointer}
+.authoring-tab:hover{color:var(--a-ink);background:var(--n-hover)}
+.authoring-tab[aria-selected=true]{color:var(--a-ink);border-bottom-color:var(--a-primary);font-weight:600}
+/* 미저장 표지(UX-09): 글자 「 ·」 가 아니라 점 원소 — 테두리로 그려 강제 색상에서도 남는다. 뜻은 탭 이름이 싣는다. */
+.authoring-dirty{flex:none;width:0;height:0;border:4px solid currentColor;border-radius:50%}
+.authoring-shell .authoring-tab .btn.icon{width:24px;height:24px;min-height:24px;font-weight:400}
 /* 도구 막대: 한 줄, 줄바꿈 없음. 좁으면 가로 스크롤한다. 세로 여백은 초점 윤곽이 잘리지 않을 자리다. */
 .authoring-toolbar{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;overflow-y:hidden;padding:var(--sp-4) var(--sp-2);scrollbar-width:thin}
 .authoring-toolbar-group{display:flex;flex:none;align-items:center;gap:var(--sp-4)}
@@ -39,11 +41,9 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-outline,.authoring-properties{flex:none;padding:var(--sp-12);background:var(--a-card);overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .authoring-outline{width:var(--authoring-outline-w,16rem);max-width:30%}
 .authoring-outline h2,.authoring-properties h2,.authoring-trial h2,.authoring-bottom h2{font-size:var(--fs-strong);margin:var(--sp-8) 0}
-/* 구조 목록(APG treeview): 줄 하나가 초점 한 칸. 지금 대상(aria-current)은 색만이 아니라 왼쪽 선과 굵기로 선다. */
+/* 구조 목록(APG treeview): 줄 하나가 초점 한 칸. 지금 대상(aria-current)은 색만이 아니라 왼쪽 선과 굵기로 선다.
+   줄·안내선·말줄임의 모양은 아래 UX-09 블록(문서 척추)이 진다. */
 .authoring-tree,.authoring-tree [role=group]{list-style:none;margin:0;padding:0}
-.authoring-tree [role=group]{padding-left:var(--sp-12)}
-.authoring-tree-row{display:flex;align-items:center;gap:var(--sp-4);margin:var(--sp-2) 0;padding:var(--sp-2) var(--sp-6);border-left:3px solid transparent;border-radius:var(--rad-control);word-break:keep-all;overflow-wrap:break-word;cursor:pointer}
-.authoring-tree-row:hover{background:var(--n-hover)}
 .authoring-tree-toggle{flex:none;width:12px;height:12px;display:inline-flex;align-items:center;justify-content:center}
 .authoring-tree-toggle:not([data-leaf])::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}
 .authoring-tree [aria-expanded=true]>.authoring-tree-row>.authoring-tree-toggle::before{transform:rotate(45deg)}
@@ -61,7 +61,6 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-rail-toggle,.authoring-scrim{display:none}
 /* 현재 위치의 의미: 편집면 바로 위 한 줄. 넘치면 가로 스크롤한다. */
 .authoring-selection{display:flex;flex:none;align-items:center;gap:var(--sp-4);min-height:2rem;padding:0 var(--sp-8);overflow-x:auto;overflow-y:hidden;white-space:nowrap;background:var(--a-card);border-bottom:1px solid var(--a-border)}
-.authoring-selection .btn{flex:none;padding:var(--sp-2) var(--sp-8)}
 .authoring-selection-label{flex:none;font-size:var(--fs-caption);color:var(--a-muted)}
 .authoring-canvas{display:flex;flex:1;min-width:0;min-height:0;background:var(--a-window)}
 .authoring-document{flex:1;min-width:0;min-height:0;overflow:auto}
@@ -123,12 +122,12 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-bottom form>label:has(.field){flex:1 1 20rem}
 .authoring-bottom form>label .field{flex:1;width:auto;min-width:0}
 .authoring-bottom form>.btn{flex:none}
-.authoring-bottom>.btn{display:block;margin:var(--sp-4) 0}
+.authoring-bottom>.btn{margin:var(--sp-4) 0}
 .authoring-command-more{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-top:var(--sp-8);padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
 .authoring-trial{display:grid;grid-template-columns:clamp(12rem,28%,18rem) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);min-height:0}
 .authoring-trial>header{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-8)}
 .authoring-trial-input,.authoring-trial-output{overflow:auto;padding:var(--sp-12);min-height:0;min-width:0}
-.authoring-trial-input{display:flex;flex-direction:column;gap:var(--sp-8);border-right:1px solid var(--a-border)}
+.authoring-trial-input{display:flex;flex-direction:column;gap:var(--sp-12);border-right:1px solid var(--a-border)}
 .authoring-result-pages{height:20rem}
 /* 상태 막대: 왼쪽(저장·검사)과 오른쪽(보존·복원·시험·복구) 두 무리. 항목 사이 구분선은 글자가 아닌 경계선이다. */
 .authoring-status{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2) var(--sp-16);font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);padding:var(--sp-4);font-variant-numeric:tabular-nums}
@@ -183,14 +182,13 @@ body.resizing-authoring iframe{pointer-events:none}
 }
 @container authoring (max-width:52rem){
   /* 레일: 몸통 높이 전체를 채우는 띠라 .btn 의 눌림 축소(scale)를 쓰지 않는다(전폭 표면 규칙). */
-  .authoring-rail-toggle{display:block;flex:none;margin:0;padding:var(--sp-8) var(--sp-4);writing-mode:vertical-rl;white-space:nowrap;font:inherit;font-size:var(--fs-body);color:var(--n-ink-control);background:var(--a-card);border:0;border-right:1px solid var(--a-border);cursor:pointer}
+  .authoring-rail-toggle{display:flex;flex:none;align-items:flex-start;justify-content:center;width:32px;margin:0;padding:var(--sp-8) 0;font:inherit;color:var(--n-ink-control);background:var(--a-card);border:0;border-right:1px solid var(--a-border);cursor:pointer}
   .authoring-rail-toggle:hover{background:var(--n-hover)}
   .authoring-rail-toggle[aria-expanded=true]{color:var(--a-primary);font-weight:600}
   .authoring-body:not(.outline-open)>.authoring-outline{display:none}
   .authoring-body.outline-open>.authoring-outline{width:clamp(11rem,40%,16rem);max-width:none}
 }
 @media(forced-colors:active){.authoring-tab[aria-selected=true]{outline:2px solid Highlight}.authoring-error{color:CanvasText}.authoring-tree [aria-current=true]>.authoring-tree-row{border-left-color:Highlight}}
-.authoring-coverage{padding-left:var(--sp-16);font-size:var(--fs-caption)}
 .authoring-document{display:flex;flex-direction:column}.authoring-editor-host{flex:1;min-height:0;min-width:0}
 .authoring-trial>header p{margin:0 auto 0 0;font-size:var(--fs-caption);color:var(--a-muted)}
 /* 명령 가용성(F40·P07): 비활성 사유는 툴팁 외에 본문 힌트로도 선다. 문제 배지는 색이 아닌 글자로 센다(P14). */
@@ -198,16 +196,14 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-badge{display:inline-block;margin-left:var(--sp-4);padding:0 var(--sp-6);font-size:var(--fs-caption);line-height:1.5;color:var(--a-ink);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-pill);vertical-align:middle;white-space:nowrap}
 /* 항목·선택 종류 표지(§10): 색이 아닌 글자와 점선 테두리로 둘을 가른다. */
 .authoring-kind{display:inline-block;margin-right:var(--sp-4);padding:0 var(--sp-4);font-size:var(--fs-caption);line-height:1.5;color:var(--a-muted);border:1px dashed var(--a-border);border-radius:var(--rad-control);vertical-align:middle;white-space:nowrap}
-.authoring-command{display:flex;flex-direction:column;gap:var(--sp-4);margin:var(--sp-4) 0}
-.authoring-context-menu{position:absolute;z-index:var(--z-popover);min-width:14rem;max-width:20rem;max-height:70vh;overflow:auto;padding:var(--sp-4);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);box-shadow:0 4px 16px var(--a-shadow)}
-.authoring-context-menu .btn{display:block;width:100%;text-align:left}
+.authoring-command{display:flex;flex-direction:column;gap:var(--sp-2)}
+/* 문맥 메뉴·더보기(UX-09): 공용 .ctx-menu 의 겉모습(테두리·모서리·그림자)을 따르되 위치는 셸 기준이다. 등장 움직임은 더하지 않는다. */
+.authoring-context-menu{position:absolute;z-index:var(--z-popover);min-width:14rem;max-width:20rem;max-height:70vh;overflow:auto;padding:var(--sp-4);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
 /* APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 흐린 글자와 곁의 사유로 구별한다(색만이 아니다). */
 .authoring-context-menu [role=menuitem][aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
 .authoring-context-menu [role=menuitem] .authoring-reason{display:block}
 .authoring-context-menu>.authoring-reason{padding:var(--sp-4) var(--sp-6)}
-.authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul{margin:var(--sp-4) 0;padding-left:var(--sp-16)}
-.authoring-problem{padding:var(--sp-4) 0;border-bottom:1px solid var(--a-border)}
-.authoring-problem p{margin:var(--sp-4) 0}
+.authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul:not(.authoring-rows){margin:var(--sp-4) 0;padding-left:var(--sp-16)}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 @media(forced-colors:active){
   .authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}
@@ -220,4 +216,133 @@ body.resizing-authoring iframe{pointer-events:none}
   .authoring-properties,.authoring-rail-toggle{border-color:CanvasText}
   .authoring-document .cm-editor .cm-searchMatch{outline-color:CanvasText}
   .authoring-document .cm-editor .cm-searchMatch-selected{outline-color:Highlight}
+}
+/* ===== UX-09(#1039): 단추 어휘 5역할 · 행·링크·칩 · 문서 척추 =====
+   역할이 곧 모양이다 — 주 행동(채움)·보조(테두리)·조용한(테두리 없음)·파괴(위험 채움)·아이콘(32px 정사각).
+   이동하는 것은 단추가 아니라 행(목록 행·트리 행)·링크(브레드크럼)·메뉴 항목이고, 상태는 칩이다.
+   간격 척도: 같은 무리 안 --sp-4, 무리 사이 --sp-12, 구획 사이 --sp-16. */
+.authoring-shell .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-4);min-height:32px;padding:var(--sp-4) var(--sp-12);white-space:nowrap}
+.authoring-shell .btn.primary,.authoring-shell .btn.danger{padding:var(--sp-4) var(--sp-16)}
+.authoring-shell .btn.icon{width:32px;height:32px;padding:0;border-color:transparent;background:transparent;color:var(--n-ink-control)}
+.authoring-shell .btn.icon:hover:not(:disabled){background:var(--n-hover)}
+.authoring-shell .icon{flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.authoring-back{display:inline-flex;margin-left:calc(var(--sp-4) * -1)}
+.authoring-back .icon{width:16px;height:16px}
+.authoring-head .btn.quiet{padding-left:var(--sp-8)}
+/* 구획 이름: 내용과 겨루지 않는 caption·muted·약간의 자간(h2 의미는 그대로). */
+.authoring-shell .authoring-section-label{margin:0;font-size:var(--fs-caption);font-weight:600;letter-spacing:.04em;color:var(--a-muted)}
+.authoring-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--sp-8)}
+.authoring-actions.start{justify-content:flex-start}
+.authoring-actions.quiet-row{gap:var(--sp-4);margin-top:calc(var(--sp-8) * -1)}
+.authoring-check{display:inline-flex;align-items:center;gap:var(--sp-4)}
+.authoring-context{margin:0;font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
+
+/* 브레드크럼(현재 위치의 의미): 글 링크 조각과 › 구분 그림, 마지막(가장 안쪽) 조각은 굵게. */
+.authoring-crumb{flex:none;font:inherit;font-size:var(--fs-body);padding:var(--sp-2) var(--sp-4);border:0;border-radius:var(--rad-control);background:transparent;color:var(--n-ink-control);cursor:pointer;text-decoration:underline;text-decoration-color:var(--n-border-strong);text-underline-offset:3px}
+.authoring-crumb:hover{background:var(--n-hover);text-decoration-color:currentColor}
+.authoring-crumb[aria-current=location]{font-weight:600;color:var(--a-ink);text-decoration:none}
+.authoring-crumb-sep{flex:none;display:inline-flex;color:var(--a-muted)}
+.authoring-crumb-sep .icon{width:14px;height:14px}
+
+/* 목록 행: 테두리 없는 전폭 줄 · hover 면 · 칩 · 본문 · 흐린 문맥 · 오른쪽 화살표. 값은 모노 글꼴. 전폭 표면이라 눌림은 면색이다. */
+.authoring-rows{list-style:none;margin:var(--sp-4) 0;padding:0;display:flex;flex-direction:column}
+.authoring-row{display:flex;align-items:center;gap:var(--sp-8);width:100%;min-height:32px;padding:var(--sp-4) var(--sp-8);border:0;border-radius:var(--rad-control);background:transparent;color:var(--a-ink);font:inherit;font-size:var(--fs-body);text-align:left;cursor:pointer}
+.authoring-row:hover{background:var(--n-hover)}
+.authoring-row:active{background:var(--n-pressed)}
+.authoring-row.static{cursor:default}
+.authoring-row.static:hover,.authoring-row.static:active{background:transparent}
+.authoring-row-text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.authoring-row-value{flex:0 1 auto;min-width:0;font-family:var(--font-mono);overflow-wrap:anywhere}
+.authoring-row-context{flex:0 1 auto;min-width:0;max-width:40%;font-size:var(--fs-caption);color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.authoring-row-go{flex:none;display:inline-flex;color:var(--a-muted)}
+.authoring-row-go .icon{width:16px;height:16px}
+.authoring-row .authoring-kind,.authoring-row .authoring-badge{flex:none;margin:0}
+.authoring-problem,.authoring-case{display:flex;align-items:center;gap:var(--sp-4)}
+.authoring-problem>.authoring-row,.authoring-case>.authoring-row{flex:1 1 auto;min-width:0}
+.authoring-problem+.authoring-problem{border-top:1px solid var(--a-border)}
+.authoring-problem-category{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 심각도·시험 상태 칩: 뜻은 글자가 싣고, 색은 거들 뿐이다. */
+.authoring-badge[data-severity=error],.authoring-badge[data-trial=failed]{color:var(--a-danger);border-color:var(--a-danger)}
+.authoring-badge[data-severity=warning]{color:var(--a-warn);border-color:var(--a-warn)}
+.authoring-badge[data-trial=current]{color:var(--a-ok);border-color:var(--a-ok)}
+
+/* 메뉴 항목(문맥 메뉴·더보기·팔레트): 공용 .ctx-menu 항목과 같은 모양 — 테두리 없는 전폭 줄, hover 면, 불가는 흐린 글자,
+   명령 무리 사이 구분선(무리 첫 항목의 윗선 — 메뉴의 자식은 menuitem 뿐이다), 파괴 명령은 위험 잉크. */
+.authoring-menu-item{position:relative;display:block;width:100%;text-align:left;border:0;background:none;font:inherit;font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);border-radius:var(--rad-control);cursor:pointer}
+.authoring-menu-item:hover:not(:disabled):not([aria-disabled=true]),.authoring-shell .authoring-menu-item:focus-visible{background:var(--n-hover)}
+.authoring-menu-item:active:not(:disabled){background:var(--n-pressed)}
+.authoring-menu-item.danger{color:var(--a-danger)}
+.authoring-menu-item:disabled,.authoring-menu-item[aria-disabled=true]{color:var(--a-muted);cursor:not-allowed}
+.authoring-shell .authoring-menu-item:focus-visible{outline-offset:-2px}
+.authoring-menu-item.group-start,.authoring-command.group-start{margin-top:var(--sp-8)}
+.authoring-menu-item.group-start::before,.authoring-command.group-start::before{content:"";position:absolute;left:var(--sp-2);right:var(--sp-2);top:calc(var(--sp-4) * -1 - 1px);border-top:1px solid var(--a-border)}
+.authoring-menu-item .authoring-reason{display:block}
+.authoring-palette{display:flex;flex-direction:column;max-width:32rem}
+.authoring-command{position:relative}
+.authoring-palette .authoring-menu-item{display:flex;align-items:center;gap:var(--sp-8)}
+.authoring-palette>.authoring-command>.authoring-reason,.authoring-palette>.authoring-command>.alternative{padding-left:var(--sp-10)}
+.authoring-key{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-caption);color:var(--a-muted)}
+.authoring-command-more{margin-top:var(--sp-8);padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
+
+/* 속성: 대상 카드(종류 표지 · 굵은 이름 · 메타 한 줄) / 폼 / 바닥 행동 줄(오른쪽 정렬, 늘 보이도록 바닥에 붙는다). */
+.authoring-target{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt)}
+.authoring-target-kind{display:inline-flex;align-items:center;gap:var(--sp-4);color:var(--a-muted)}
+.authoring-target-kind .icon{width:16px;height:16px}
+.authoring-target-kind .authoring-kind{border:0;padding:0;margin:0}
+.authoring-target-name{margin:0;font-weight:600;overflow-wrap:anywhere}
+.authoring-target-meta{margin:0;font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
+.authoring-properties-actions{position:sticky;bottom:calc(var(--sp-12) * -1);margin-top:auto;padding:var(--sp-12) 0;border-top:1px solid var(--a-border);background:var(--a-card)}
+.authoring-refusal .authoring-actions{margin-top:var(--sp-8)}
+
+/* 결과 시험: 왼쪽 열(입력 → 선택 → 자동 갱신 → 행동 → 보관 케이스), 오른쪽 열(상태 칩 + 문장 → 선택별 상태 → 결과 → 이유). */
+.authoring-trial-group{display:flex;flex-direction:column;gap:var(--sp-8)}
+.authoring-trial-output{display:flex;flex-direction:column;gap:var(--sp-12)}
+.authoring-trial-output>*{margin:0}
+.authoring-result-pages{flex:none}
+.authoring-trial-state{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-8)}
+.authoring-trial-state>p{flex:1 1 12rem;margin:0}
+.authoring-trial-state .authoring-badge{margin:0}
+.authoring-coverage{list-style:none;display:flex;flex-direction:column;gap:var(--sp-2);margin:0;padding:0;font-size:var(--fs-caption)}
+.authoring-coverage li{display:flex;align-items:center;gap:var(--sp-6)}
+.authoring-coverage-dot{flex:none;display:inline-flex;color:var(--n-ink-control)}
+.authoring-shell .authoring-coverage-dot .icon{width:12px;height:12px}
+
+/* 문서 척추(구조 패널) — 머리(이름 · 두 보기 탭 · 필터)는 목록을 내려도 남는다. */
+.authoring-outline{display:flex;flex-direction:column;gap:var(--sp-8);padding:0 var(--sp-8) var(--sp-12)}
+.authoring-outline-head{position:sticky;top:0;z-index:1;display:flex;flex-direction:column;gap:var(--sp-8);padding-top:var(--sp-12);background:var(--a-card)}
+.authoring-outline-tabs{display:flex;gap:var(--sp-4);border-bottom:1px solid var(--a-border)}
+.authoring-outline-tab{display:inline-flex;align-items:center;gap:var(--sp-4);font:inherit;font-size:var(--fs-body);padding:var(--sp-4) var(--sp-8);margin-bottom:-1px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer}
+.authoring-outline-tab:hover{color:var(--a-ink);background:var(--n-hover)}
+.authoring-outline-tab[aria-selected=true]{color:var(--a-ink);border-bottom-color:var(--a-primary);font-weight:600}
+.authoring-shell .authoring-outline-tab:focus-visible{outline-offset:-2px}
+.authoring-tab-count{font-size:var(--fs-caption);font-weight:400;color:var(--a-muted);font-variant-numeric:tabular-nums}
+.authoring-filter{position:relative;display:flex;align-items:center}
+.authoring-shell .authoring-filter .icon{position:absolute;left:var(--sp-8);width:16px;height:16px;color:var(--a-muted);pointer-events:none}
+.authoring-filter .field{padding-left:calc(var(--sp-8) + 22px)}
+.authoring-outline-panel[hidden]{display:none}
+.authoring-outline-empty{margin:var(--sp-4);font-size:var(--fs-caption);color:var(--a-muted)}
+/* 줄: 높이 28px, 한 줄 말줄임(전체 이름은 title·속성), 오른쪽 메타는 caption·muted·tabular-nums. 지금 줄은 왼쪽 3px 막대 + 면. */
+.authoring-tree-row{display:flex;align-items:center;gap:var(--sp-4);height:28px;min-width:0;padding:0 var(--sp-4) 0 var(--sp-2);border-left:3px solid transparent;border-radius:0 var(--rad-control) var(--rad-control) 0;white-space:nowrap;cursor:pointer}
+.authoring-tree-row:hover{background:var(--n-hover)}
+.authoring-tree-glyph{flex:none;display:inline-flex;align-items:center;color:var(--a-muted)}
+.authoring-shell .authoring-tree-glyph .icon{width:16px;height:16px}
+.authoring-tree-glyph .authoring-badge{margin:0}
+.authoring-tree .authoring-kind{flex:none;margin:0;padding:0;border:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.authoring-tree-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.authoring-tree-meta{flex:none;margin-left:auto;padding-left:var(--sp-4);font-size:var(--fs-caption);font-weight:400;color:var(--a-muted);font-variant-numeric:tabular-nums}
+.authoring-tree [role=treeitem][data-kind=occurrence]>.authoring-tree-row .authoring-tree-name{font-size:var(--fs-caption)}
+/* 안내선이 포함 관계다: 한 단계 들여쓰기는 --sp-16(여백 10 + 선 1 + 5). 항목의 자식 구간은 실선(편집면의 항목 경계),
+   같은 항목 아래 선택들은 점선 하나를 함께 쓴다(편집면의 선택 경계) — 선의 시작·끝이 곧 범위의 시작·끝이다. */
+.authoring-tree [role=group]{margin-left:10px;padding-left:5px;border-left:1px solid transparent}
+.authoring-tree [role=treeitem][data-kind=slot]>[role=group]{border-left-color:var(--n-border-strong)}
+.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left:1px dashed var(--n-border-strong)}
+/* 구조 트리가 가리키는 TXT 범위(마우스·초점이 줄에 머문 동안) — 줄 면과 왼쪽 막대, 본문은 밀리지 않는다. */
+.authoring-document .cm-authoring-highlight{background:var(--a-sel);box-shadow:inset 3px 0 0 var(--a-primary)}
+@media(forced-colors:active){
+  .authoring-tree [role=treeitem][data-kind=slot]>[role=group],.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left-color:CanvasText}
+  .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
+  .authoring-menu-item.group-start::before,.authoring-command.group-start::before,.authoring-properties-actions,.authoring-problem+.authoring-problem{border-color:CanvasText}
+  .authoring-target{border-color:CanvasText}
+  .authoring-crumb[aria-current=location]{outline:1px solid CanvasText}
+  .authoring-document .cm-authoring-highlight{outline:2px solid Highlight;outline-offset:-2px}
 }

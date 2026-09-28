@@ -10,7 +10,10 @@ export type AuthoringEditor = {
   apply(content: string, edits: Obj[], label: string, expectedContent?: string): Promise<void>;
   focus(target: Obj): Promise<void>;
   command(command: "undo" | "redo" | "search"): Promise<void>;
-  decorate(analysis: Obj, mode: string): void;
+  /** 의미 장식을 다시 얹는다. highlight 는 구조 트리 줄에 마우스·초점이 머문 동안의 강조 대상이다(UX-09) —
+   *  `{ kind: "slot"|"option"|"field", id, slot_id?, index? }`(option 의 id 는 선택 id, slot_id 는 소속 항목,
+   *  field 의 index 는 사용 위치 한 곳). 없으면 강조 없음. */
+  decorate(analysis: Obj, mode: string, highlight?: Obj | null): void;
   /** 편집기 history 의 현재 깊이. 없으면(HWPX) 표면은 두 버튼을 그대로 켜 둔다. */
   state?(): { canUndo: boolean; canRedo: boolean };
 };
@@ -531,6 +534,8 @@ export function createAuthoringController(deps: Deps) {
     },
     editorState: (id: string) => editors.get(id)?.state?.() ?? null,
     setMode(mode: string) { update({ mode }); editors.get(viewId)?.decorate(tab(viewId).analysis || {}, mode); if (viewId) scheduleRemember(viewId); },
+    /** 구조 트리 줄이 가리키는 범위를 편집면에서 강조한다(UX-09) — null 이면 걷는다. 선택·초점은 옮기지 않는다. */
+    highlight(target: Obj | null) { editors.get(viewId)?.decorate(tab(viewId).analysis || {}, views.get(viewId)?.mode || "template", target); },
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
     recover: async (id: string) => { await restored(await (tab(id).id ? dispatch("recover", fenced(id)) : dispatch("recover_draft", { key: id }))); update({ recoveryPreview: null }); },

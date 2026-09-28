@@ -180,7 +180,15 @@ text = "통과 표시는 현재 값과 선택 구성에만 해당합니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
+text = "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
 text = "한글 조합을 마친 뒤 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring.ts"
+text = "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"

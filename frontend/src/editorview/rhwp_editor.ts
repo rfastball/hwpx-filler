@@ -270,18 +270,28 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       await publish(++changeGeneration);
     },
     async setDecorations(projection) {
-      if (projection.mode === "document") { await editor.setDecorations([], { labels: "none" }); return; }
+      // 구조 트리 줄의 강조(UX-09): 가리킨 항목·선택은 강하게, 나머지 경계는 옅게 선다. 필드를 가리키면 그 필드의
+      // 표지만 남긴다(필드 표지는 강약이 없어 다른 필드와 갈리지 않는다). 문서 모드에서는 가리킨 것만 선다.
+      const highlight = projection.highlight && typeof projection.highlight === "object" ? projection.highlight as Obj : null;
+      const documentMode = projection.mode === "document";
+      if (documentMode && !highlight) { await editor.setDecorations([], { labels: "none" }); return; }
       const fields = Array.isArray(projection.fields) ? projection.fields : [];
       const slots = Array.isArray(projection.slots) ? projection.slots : [];
       const markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number; startParagraph: number;
         startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath }> = [];
-      const add = (kind: string, label: string, place: Obj) => {
+      const region = highlight?.kind === "slot" || highlight?.kind === "option";
+      const lit = (kind: string, id: unknown, slotId?: unknown, index?: number) => !!highlight && highlight.kind === kind && highlight.id === id
+        && (kind !== "option" || highlight.slot_id === slotId) && (kind !== "field" || highlight.index == null || highlight.index === index);
+      const add = (kind: string, label: string, place: Obj, shown = true) => {
+        if (!shown) return;
         const section = sectionEntries.indexOf(String(place.entry));
         const startParagraph = place.paragraph ?? place.start_paragraph;
         const endParagraph = place.end_paragraph ?? startParagraph;
         const cellPath = studioCellPath(place);
         if (section < 0 || !Number.isSafeInteger(startParagraph) || !Number.isSafeInteger(endParagraph) || cellPath === null) return;
-        markers.push({ kind, label, emphasis: kind === 'field' || projection.mode === 'structure' ? 'strong' : 'subtle',
+        const on = kind === "field" ? highlight?.kind === "field" : region && lit(kind, place.__id, place.__slot);
+        const emphasis = on ? 'strong' : region && kind !== "field" ? 'subtle' : kind === 'field' || projection.mode === 'structure' ? 'strong' : 'subtle';
+        markers.push({ kind, label, emphasis,
           section, startParagraph: startParagraph as number,
           startOffset: typeof place.start === "number" ? place.start : 0,
           endParagraph: endParagraph as number, endOffset: typeof place.end === "number" ? place.end : null,
@@ -290,23 +300,27 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       for (const item of fields) {
         if (!item || typeof item !== "object") continue;
         const field = item as Obj;
-        for (const occurrence of Array.isArray(field.occurrences) ? field.occurrences : [])
-          if (occurrence && typeof occurrence === "object") add("field", String(field.name ?? ""), occurrence as Obj);
+        (Array.isArray(field.occurrences) ? field.occurrences : []).forEach((occurrence: unknown, at: number) => {
+          const shown = highlight?.kind === "field" ? lit("field", field.name, undefined, at + 1) : !documentMode;
+          if (occurrence && typeof occurrence === "object") add("field", String(field.name ?? ""), occurrence as Obj, shown);
+        });
       }
       for (const item of slots) {
         if (!item || typeof item !== "object") continue;
         const slot = item as Obj;
-        if (slot.location && typeof slot.location === "object") add("slot", String(slot.label ?? slot.id ?? ""), slot.location as Obj);
+        const shown = (kind: string, id: unknown) => !documentMode || lit(kind, id, slot.id);
+        if (slot.location && typeof slot.location === "object")
+          add("slot", String(slot.label ?? slot.id ?? ""), { ...slot.location as Obj, __id: slot.id }, shown("slot", slot.id));
         for (const option of Array.isArray(slot.options) ? slot.options : []) {
           if (!option || typeof option !== "object") continue;
           const child = option as Obj;
           if (child.location && typeof child.location === "object")
-            add("option", String(child.label ?? child.id ?? ""), child.location as Obj);
+            add("option", String(child.label ?? child.id ?? ""), { ...child.location as Obj, __id: child.id, __slot: slot.id }, shown("option", child.id));
         }
       }
       // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
       // structure mode labels every boundary.
-      await editor.setDecorations(markers, { labels: projection.mode === "structure" ? "all" : "selected" });
+      await editor.setDecorations(markers, { labels: documentMode ? "none" : projection.mode === "structure" ? "all" : "selected" });
     },
     async setReadOnly(value) {
       const next = value || compatibilityBlocked;

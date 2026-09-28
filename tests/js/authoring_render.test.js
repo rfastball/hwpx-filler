@@ -122,6 +122,7 @@ function installDom() {
   class HTMLIFrameElement {}
   const document = new FakeNode(DOCUMENT, "#document", null);
   document.createElement = (tag) => tag === "option" ? new FakeOption(tag, document) : new FakeElement(tag, document);
+  document.createElementNS = (namespace, tag) => { const element = new FakeElement(tag, document); element.namespaceURI = namespace; return element; };
   document.createTextNode = (text) => new FakeText(text, document);
   document.documentElement = document.createElement("html");
   document.body = document.createElement("body");
@@ -172,7 +173,7 @@ async function boot(tab, more = [], respond = () => ({})) {
     // 편집면 초점은 편집기 host 로 선다 — 실제 rhwp 는 그 안의 iframe 이 초점을 받는다.
     return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async () => { spec.host.focus(); },
       undo: async () => {}, redo: async () => {}, setReadOnly: async () => {},
-      setDecorations: async () => { record.decorations += 1; }, dispose: () => { record.disposed = true; } };
+      setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; }, dispose: () => { record.disposed = true; } };
   };
   await controller.activate(tab.id);
   controller.update({ trial: true, dock: "trial" });
@@ -230,7 +231,7 @@ test("UX-05: a push that repeats the same trial revision keeps the trial viewer 
 const propsOf = (node) => node[Object.keys(node).find((key) => key.startsWith("__reactProps$"))] || {};
 /** 사건 하나를 대상에서 조상 쪽으로 흘린다. 멈추면 선다. 초점이 옮겨지면 새 초점 원소에서 onFocus 를 흘린다(React 의 focusin). */
 function fire(env, target, type, init = {}) {
-  const handler = { keydown: "onKeyDown", click: "onClick", contextmenu: "onContextMenu", focus: "onFocus" }[type];
+  const handler = { keydown: "onKeyDown", click: "onClick", contextmenu: "onContextMenu", focus: "onFocus", mouseenter: "onMouseEnter", mouseleave: "onMouseLeave" }[type];
   let stopped = false;
   let prevented = false;
   const before = env.document.activeElement;
@@ -248,16 +249,24 @@ const nodes = (env) => [...env.container.walk()];
 const byRole = (env, role) => nodes(env).filter((node) => node.getAttribute?.("role") === role);
 const named = (env, role, prefix) => byRole(env, role).find((node) => String(node.getAttribute("aria-label") ?? node.textContent).startsWith(prefix));
 const focusOn = (env, node) => { node.focus(); fire(env, node, "focus"); };
+/** 구조 패널의 「필드」 보기를 연다(UX-09) — 필드 목록은 그 탭 안의 tree 다. */
+const showFields = (env) => fire(env, env.container.querySelector("#authoring-outline-fields"), "click");
+const inPanel = (env, panel, role, prefix) => byRole(env, role).find((node) => node.closest(`#authoring-outline-${panel}-panel`)
+  && String(node.getAttribute("aria-label") ?? node.textContent).startsWith(prefix));
+const fieldRow = (env, prefix) => inPanel(env, "fields", "treeitem", prefix);
 
 test("UX-04/UX-05: the field outline is an APG tree — occurrence rows are built only when expanded; → expands then enters, ← returns then collapses", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
-  const field = () => named(env, "treeitem", "필드 · 이름");
+  showFields(env);
+  await settle();
+  const field = () => fieldRow(env, "필드 · 이름");
   const occurrences = () => byRole(env, "treeitem").filter((node) => String(node.getAttribute("aria-label")).startsWith("이름 · 사용 위치"));
-  const tree = env.container.querySelector('[role="tree"]');
-  assert.equal(tree.getAttribute("aria-labelledby"), "authoring-outline-fields", "목록 이름은 보이는 제목이다");
+  const tree = env.container.querySelector('#authoring-outline-fields-panel [role="tree"]');
+  assert.equal(tree.getAttribute("aria-labelledby"), "authoring-outline-fields", "목록 이름은 보이는 제목(필드 탭)이다");
   assert.equal(field().getAttribute("aria-expanded"), "false");
   assert.equal(field().getAttribute("tabindex"), "0", "tree 는 한 항목만 Tab 순서에 둔다");
-  assert.ok(field().textContent.includes("이름 · 사용 위치 2곳"), "사용 위치 수는 글로 선다");
+  assert.equal(field().querySelector(".authoring-tree-name").textContent, "이름");
+  assert.equal(field().querySelector(".authoring-tree-meta").textContent, "사용 위치 2곳", "사용 위치 수는 글로 선다");
   assert.equal(occurrences().length, 0, "접힌 동안 사용 위치 줄을 짓지 않는다(UX-05)");
   focusOn(env, field());
   press(env, "ArrowRight");
@@ -314,7 +323,9 @@ test("#1025 §7.2: an opened outline field shows Python's normalized occurrence 
     analysis: { revision: 3, slots: [], fields: [{ name: "진행상태", count: 1, occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, context: "[진행상태] - 누름틀",
       raw: { text: "9Clickhere:set:50:Direction:wstring:8:{{진행상태}} HelpState:wstring:0:  {{진행상태}}{{진행상태}} - 누름틀" } }] }] } };
   const env = await boot(tab);
-  focusOn(env, named(env, "treeitem", "필드 · 진행상태"));
+  showFields(env);
+  await settle();
+  focusOn(env, fieldRow(env, "필드 · 진행상태"));
   press(env, "ArrowRight");
   await settle();
   const occurrence = named(env, "treeitem", "진행상태 · 사용 위치");
@@ -328,7 +339,9 @@ test("#1025 §7.2: an opened outline field shows Python's normalized occurrence 
 
 test("UX-04 §10: Enter on an outline item selects it, marks it aria-current and moves to the name input; Escape returns to the selection", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
-  const field = () => named(env, "treeitem", "필드 · 이름");
+  showFields(env);
+  await settle();
+  const field = () => fieldRow(env, "필드 · 이름");
   focusOn(env, field());
   assert.equal(field().getAttribute("aria-current"), null);
   press(env, "Enter");
@@ -346,7 +359,9 @@ test("UX-04 §10: Enter on an outline item selects it, marks it aria-current and
 
 test("UX-04 WCAG 3.2.2: changing the properties command select keeps focus on the select", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
-  focusOn(env, named(env, "treeitem", "필드 · 이름"));
+  showFields(env);
+  await settle();
+  focusOn(env, fieldRow(env, "필드 · 이름"));
   press(env, "Enter");
   await settle();
   const select = env.container.querySelector(".authoring-properties select");
@@ -368,10 +383,13 @@ test("UX-04 APG tabs: document tabs rove with ←/→/Home/End, activate on Ente
   assert.equal(tab("a").getAttribute("tabindex"), "0");
   assert.equal(tab("b").getAttribute("tabindex"), "-1");
   assert.equal(tab("b").getAttribute("aria-label"), "b.hwpx, 저장하지 않은 변경", "미저장 상태는 이름에 실린다");
-  assert.equal(tab("b").querySelector(".authoring-tab-name").textContent, "b.hwpx ·", "보이는 기호는 그대로");
+  assert.equal(tab("b").querySelector(".authoring-tab-name").textContent, "b.hwpx", "이름 칸은 이름뿐이다");
+  assert.equal(tab("b").querySelector(".authoring-dirty").getAttribute("aria-hidden"), "true", "미저장은 보이는 점 원소로 선다(뜻은 이름이 싣는다)");
+  assert.equal(tab("a").querySelector(".authoring-dirty"), null);
   assert.equal(tab("a").getAttribute("aria-controls"), "authoring-canvas");
   assert.ok(env.container.querySelector("#authoring-canvas"), "탭이 가리키는 편집면 구획이 있다");
   assert.equal(tab("a").querySelector("button").getAttribute("tabindex"), "-1", "닫기 단추는 Tab 순서에 없다");
+  assert.equal(tab("a").querySelector("button").getAttribute("aria-label"), "a.hwpx 닫기", "그림 단추의 이름은 기존 문구 그대로다");
   focusOn(env, tab("a"));
   press(env, "ArrowRight");
   assert.equal(env.document.activeElement, tab("b"));
@@ -398,10 +416,11 @@ test("UX-04 APG toolbar: one tab stop, ←/→ wrap, Home/End, and the zoom sele
   const stops = () => toolbar.querySelectorAll('[tabindex="0"]');
   assert.equal(stops().length, 1);
   const first = stops()[0];
-  assert.equal(first.textContent, "문서 실행 취소");
+  assert.equal(first.getAttribute("aria-label"), "문서 실행 취소");
+  assert.equal(first.getAttribute("title"), "문서 실행 취소", "그림 단추의 이름은 툴팁으로도 선다");
   focusOn(env, first);
   press(env, "ArrowRight");
-  assert.equal(env.document.activeElement.textContent, "문서 다시 실행");
+  assert.equal(env.document.activeElement.getAttribute("aria-label"), "문서 다시 실행");
   await settle();
   assert.equal(stops()[0], env.document.activeElement, "roving: 마지막 초점이 Tab 의 입구");
   press(env, "End");
@@ -430,7 +449,7 @@ test("UX-04 APG tabs (dock): arrows rove the dock tabs, Enter opens a panel and 
   const panel = env.container.querySelector("#authoring-dock-panel");
   assert.equal(panel.getAttribute("aria-labelledby"), "authoring-dock-tab-problems");
   assert.equal(env.document.activeElement, panel, "제어가 없는 패널은 패널 자체(tabindex=-1)로 들어간다");
-  fire(env, [...env.container.querySelectorAll(".authoring-dock-actions button")].find((node) => node.textContent === "닫기"), "click");
+  fire(env, [...env.container.querySelectorAll(".authoring-dock-actions button")].find((node) => node.getAttribute("aria-label") === "닫기"), "click");
   await settle();
   assert.equal(env.container.querySelector("#authoring-dock-panel"), null);
   assert.equal(env.document.activeElement, dockTab("problems"), "닫으면 연 자리로 돌아간다");
@@ -440,7 +459,9 @@ test("UX-04 APG tabs (dock): arrows rove the dock tabs, Enter opens a panel and 
 test("UX-04 APG menu: Shift+F10 on an outline item selects it and opens the menu on the first usable item; ↑↓/Home/End rove incl. aria-disabled items; Tab and Escape close back to the item", async () => {
   const commands = [{ type: "create_field", enabled: false, reason: "이미 필드입니다.", alternative: null }, { type: "rename_field", enabled: true, reason: null, alternative: null }];
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action) => action === "locate" ? { commands } : {});
-  const field = () => named(env, "treeitem", "필드 · 이름");
+  showFields(env);
+  await settle();
+  const field = () => fieldRow(env, "필드 · 이름");
   const items = () => byRole(env, "menuitem");
   focusOn(env, field());
   assert.equal(press(env, "F10", { shiftKey: true }).stopped, true, "구조 목록이 제 문맥 메뉴를 연다");
@@ -503,5 +524,110 @@ test("UX-04 live region: one polite status that speaks on transitions only — n
   assert.equal(live().textContent, "초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.");
   assert.ok(!env.container.querySelector(".authoring-notice").hasAttribute("role"), "보이는 알림 줄은 live region 이 아니다");
   assert.ok(!env.container.querySelector("footer").matches('[role="status"]'), "상태 막대는 live region 이 아니다");
+  env.root.unmount();
+});
+
+/* ---------- UX-09 문서 척추: 소속·차례는 Python 투영 그대로, 안내선 종류·시험 점·같은 필드·현재 위치·강조 ---------- */
+const SECTION = "Contents/section0.xml";
+const spineTab = () => ({ ...hwpxTab(), trial_result: null, trial_state: "current",
+  trial_coverage: [{ slot_id: "조건", option_id: "국내", state: "current" }, { slot_id: "조건", option_id: "해외", state: "untried" }],
+  analysis: { revision: 5,
+    slots: [{ id: "조건", label: "견적 조건", order: 1, location_label: "문단 3–7", location: { entry: SECTION, start_paragraph: 2, end_paragraph: 6 },
+      options: [{ id: "국내", label: "국내 조달", order: 2, location_label: "문단 3–4", location: { entry: SECTION, start_paragraph: 2, end_paragraph: 3 } },
+        { id: "해외", label: "해외 조달", order: 4, location_label: "문단 5–7", location: { entry: SECTION, start_paragraph: 4, end_paragraph: 6 } }] }],
+    fields: [
+      { name: "수요기관", count: 1, occurrences: [{ entry: SECTION, occurrence: 0, paragraph: 0, order: 0, slot_id: null, option_id: null, context: "[수요기관] 귀하" }] },
+      { name: "단가", count: 2, occurrences: [{ entry: SECTION, occurrence: 1, paragraph: 3, order: 3, slot_id: "조건", option_id: "국내", context: "단가 [단가]" },
+        { entry: SECTION, occurrence: 3, paragraph: 5, order: 6, slot_id: "조건", option_id: "해외", context: "단가 [단가]" }] },
+      { name: "환율", count: 1, occurrences: [{ entry: SECTION, occurrence: 2, paragraph: 5, order: 5, slot_id: "조건", option_id: "해외", context: "환율 [환율]" }] },
+      { name: "담당자", count: 1, occurrences: [{ entry: SECTION, occurrence: 4, paragraph: 9, order: 7, slot_id: null, option_id: null, context: "[담당자]" }] }] } });
+const labelOf = (node) => node.getAttribute("aria-label");
+const childItems = (node) => [...(node.querySelector('[role="group"]')?.childNodes || [])].filter((child) => child.getAttribute?.("role") === "treeitem");
+
+test("UX-09: the structure view is a document spine — slots hold options, uses stand where they are, in Python's order", async () => {
+  const env = await boot(spineTab());
+  const tree = env.container.querySelector('#authoring-outline-structure-panel [role="tree"]');
+  assert.equal(tree.getAttribute("aria-labelledby"), "authoring-outline-structure");
+  const top = [...tree.childNodes];
+  assert.deepEqual(top.map(labelOf), ["필드 · 수요기관 · 사용 위치 1곳", "항목 · 견적 조건 · 문단 3–7", "필드 · 담당자 · 사용 위치 1곳"], "척추 위의 필드는 문서 순서로 항목 사이에 선다");
+  const slot = top[1];
+  assert.equal(slot.getAttribute("data-kind"), "slot", "항목의 자식 구간은 실선 안내선(CSS 가 data-kind 로 그린다)");
+  assert.equal(slot.querySelector(".authoring-tree-meta").textContent, "문단 3–7", "위치 표시는 Python 의 문자열 그대로다");
+  const [domestic, overseas] = childItems(slot);
+  assert.deepEqual([domestic, overseas].map((node) => node.getAttribute("data-kind")), ["option", "option"], "선택들은 같은 들여쓰기의 형제(점선 안내선 공유)");
+  assert.equal(labelOf(domestic), "선택 · 국내 조달 · 상위 항목 견적 조건 · 문단 3–4 · 현재 시험 구성 확인됨");
+  assert.equal(labelOf(overseas), "선택 · 해외 조달 · 상위 항목 견적 조건 · 문단 5–7 · 시험하지 않음");
+  assert.equal(domestic.querySelector(".authoring-coverage-dot").getAttribute("data-state"), "current", "시험 상태는 점의 채움 모양으로도 선다");
+  assert.equal(overseas.querySelector(".authoring-coverage-dot").getAttribute("title"), "시험하지 않음");
+  assert.deepEqual(childItems(domestic).map(labelOf), ["필드 · 단가 · 같은 필드, 1/2"]);
+  assert.deepEqual(childItems(overseas).map(labelOf), ["필드 · 환율 · 사용 위치 1곳", "필드 · 단가 · 같은 필드, 2/2"], "갈래 안의 사용 위치도 문서 순서다");
+  assert.equal(env.container.querySelector("#authoring-outline-fields").textContent, "필드 4", "필드 탭은 필드 수를 싣는다");
+  assert.ok(env.container.querySelector("#authoring-outline-fields-panel").hasAttribute("hidden"), "고르지 않은 보기는 숨는다");
+  assert.ok(!env.container.textContent.includes("항목·선택이 없습니다."), "항목이 있으면 빈 상태 안내가 없다");
+  env.root.unmount();
+});
+
+test("UX-09: the caret's place marks exactly one row current — the innermost the breadcrumb names", async () => {
+  const env = await boot(spineTab());
+  const current = () => byRole(env, "treeitem").filter((node) => node.closest("#authoring-outline-structure-panel") && node.getAttribute("aria-current") === "true").map(labelOf);
+  assert.deepEqual(current(), []);
+  const exchange = spineTab().analysis.fields[2].occurrences[0];
+  env.flushSync(() => env.controller.update({ selected: null, matches: [{ kind: "slot", slot_id: "조건" }, { kind: "option", slot_id: "조건", option_id: "해외" }, { kind: "field", name: "환율", location: exchange }] }));
+  await settle();
+  assert.deepEqual(current(), ["필드 · 환율 · 사용 위치 1곳"], "가장 안쪽(사용 위치) 줄 하나만 현재다");
+  assert.equal(inPanel(env, "fields", "treeitem", "필드 · 환율").getAttribute("aria-current"), "true", "필드 보기에서는 접힌 필드 줄이 대신 선다");
+  env.flushSync(() => env.controller.update({ matches: [{ kind: "slot", slot_id: "조건" }, { kind: "option", slot_id: "조건", option_id: "해외" }] }));
+  await settle();
+  assert.deepEqual(current(), ["선택 · 해외 조달 · 상위 항목 견적 조건 · 문단 5–7 · 시험하지 않음"]);
+  env.root.unmount();
+});
+
+test("UX-09: resting on a row asks the editor to emphasize that range; leaving the tree clears it", async () => {
+  const env = await boot(spineTab());
+  const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
+  const overseas = inPanel(env, "structure", "treeitem", "선택 · 해외 조달");
+  fire(env, overseas.querySelector(".authoring-tree-row"), "mouseenter");
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+  assert.deepEqual(editor.projection.highlight, { kind: "option", id: "해외", slot_id: "조건" }, "선택은 소속 항목과 함께 가리킨다");
+  assert.equal(editor.projection.mode, "template", "표시 모드는 그대로다");
+  fire(env, inPanel(env, "structure", "treeitem", "필드 · 단가 · 같은 필드, 2/2").querySelector(".authoring-tree-row"), "mouseenter");
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+  assert.deepEqual(editor.projection.highlight, { kind: "field", id: "단가", index: 2 }, "사용 위치 한 곳만 가리킨다");
+  fire(env, env.container.querySelector('#authoring-outline-structure-panel [role="tree"]'), "mouseleave");
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+  assert.equal(editor.projection.highlight, null, "목록을 떠나면 강조를 걷는다");
+  env.root.unmount();
+});
+
+test("UX-09: the filter narrows both views to matching rows and keeps their ancestors", async () => {
+  const env = await boot(spineTab());
+  const input = env.container.querySelector('input[aria-label="구조 필터"]');
+  env.flushSync(() => propsOf(input).onChange({ target: { value: "환율" } }));
+  await settle();
+  const structure = () => byRole(env, "treeitem").filter((node) => node.closest("#authoring-outline-structure-panel")).map(labelOf);
+  assert.deepEqual(structure(), ["항목 · 견적 조건 · 문단 3–7", "선택 · 해외 조달 · 상위 항목 견적 조건 · 문단 5–7 · 시험하지 않음", "필드 · 환율 · 사용 위치 1곳"],
+    "일치하는 줄과 그 조상만 남는다");
+  const fields = () => byRole(env, "treeitem").filter((node) => node.closest("#authoring-outline-fields-panel")).map(labelOf);
+  assert.deepEqual(fields(), ["필드 · 환율 · 사용 위치 1곳"]);
+  env.flushSync(() => propsOf(input).onChange({ target: { value: "귀하" } }));
+  await settle();
+  assert.deepEqual(fields(), ["필드 · 수요기관 · 사용 위치 1곳", "수요기관 · 사용 위치 1/1 · [수요기관] 귀하"], "문맥으로 찾은 필드는 그 사용 위치를 펼쳐 보인다");
+  const result = propsOf(input).onKeyDown;
+  let stopped = false;
+  env.flushSync(() => result({ key: "Escape", nativeEvent: {}, preventDefault() {}, stopPropagation() { stopped = true; } }));
+  await settle();
+  assert.ok(stopped && input.value === "", "필터의 Escape 는 입력만 비우고 패널을 닫지 않는다");
+  assert.equal(structure().length, 8, "필터를 비우면 모든 줄이 돌아온다(척추 3 · 선택 2 · 사용 위치 3)");
+  env.root.unmount();
+});
+
+test("UX-09: without slots or fields each view says what to do next", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried", analysis: { revision: 1, slots: [], fields: [] } });
+  assert.equal(env.container.querySelector("#authoring-outline-structure-panel .authoring-outline-empty").textContent, "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요.");
+  assert.equal(env.container.querySelector("#authoring-outline-fields-panel .authoring-outline-empty").textContent, "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.");
+  assert.equal(env.container.querySelector('[role="tree"]'), null, "빈 목록은 tree 를 세우지 않는다");
   env.root.unmount();
 });
