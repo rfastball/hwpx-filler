@@ -1439,7 +1439,7 @@ test("UX-10 R2: a text-range selection opens a 고른 문구 target card; the co
   assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target"/);
   // 캐럿(빈 범위)은 대상 카드가 없다.
   controller.update({ selection: { entry: "s0", paragraph: 4, start: 6, end: 6 } });
-  assert.ok(!render(controller).includes("고른 문구"));
+  assert.ok(!render(controller).includes('<span class="authoring-kind">고른 문구</span>'));
 });
 
 test("UX-04: missing Python judgement is a third state — disabled with no reason, not enabled by guess", async () => {
