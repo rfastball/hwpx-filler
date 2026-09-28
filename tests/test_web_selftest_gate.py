@@ -1433,7 +1433,7 @@ class TestWebSelftestGate:
         b = probe(selftest_result, "editor_txt_band")
         assert b.get("kbd_error") is None, f"키보드 밴드 예외: {b.get('kbd_error')!r}"
         for key in (
-            "kbd_outline_reached", "kbd_field_focused", "kbd_properties_focus",
+            "kbd_outline_reached", "kbd_fields_view", "kbd_field_focused", "kbd_properties_focus",
             "kbd_rename_preview", "kbd_escape_reverts", "kbd_escape_keeps_panel",
             "kbd_escape_closes", "kbd_escape_focus_editor", "kbd_f2_focus",
             "kbd_dock_reached", "kbd_problems_tab", "kbd_problem_focus",
@@ -1455,9 +1455,10 @@ class TestWebSelftestGate:
         assert b["kbd_properties_command"] == "rename_field"
         assert b["kbd_f2_command"] == "rename_field"
         assert "‘공고제목’으로 변경됩니다" in b["kbd_rename_preview_text"]
-        # 문제 한 건은 심각도·종류가 글로 서고, 다음 행동 버튼이 초점을 받는다.
-        assert b["kbd_problem_text"].startswith("오류 · 구조"), b["kbd_problem_text"]
-        assert b["kbd_problem_action"] == "원문으로 이동"
+        # 문제 한 건은 심각도·종류가 글로 서고(UX-09: 심각도 칩 · 종류 글), 다음 행동(행)이 초점을 받는다 —
+        # 그 행의 이름은 다음 행동의 동사로 시작한다.
+        assert b["kbd_problem_severity"] == "오류" and b["kbd_problem_category"] == "구조", b["kbd_problem_text"]
+        assert b["kbd_problem_action"].startswith("원문으로 이동 · 오류 · 구조"), b["kbd_problem_action"]
         assert b["kbd_problem_expected"] in b["kbd_problem_context"]
         assert b["kbd_back_expected"] in b["kbd_back_context"]
         assert b["kbd_error_band"] == "", f"키보드 경로가 오류 띠를 남겼습니다: {b['kbd_error_band']!r}"

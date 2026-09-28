@@ -14,7 +14,8 @@
   막대 자리)을 무엇도 덮지 않는다.
 - 좁은 폭(작업대 ≤ 64rem — 뿌리 글자 기준): 속성은 몸통 전체 높이의 시트, 그 뒤에 가림막,
   구조는 레일로 접히고 분할선은 쉰다.
-- 어느 배율에서도 구조 행이 낱말 안에서 줄을 바꾸지 않고, 도구 막대는 한 줄이다.
+- 어느 배율에서도 구조 행이 낱말 안에서 줄을 바꾸지 않고(UX-09: 28px 한 줄 말줄임), 구조 패널이 가로로
+  넘치지 않으며, 도구 막대는 한 줄이고 그림 단추는 32px 정사각이다. 항목의 자식 구간은 실선, 선택은 점선 안내선이다.
 - 강제 색상에서 린트 강조 두 종은 그림자가 아니라 실보더로 갈린다.
 
 데스크톱 Chrome 이 없는 러너는 ``HWPX_SKIP_MOTION_TESTS=1`` 로 **명시** 옵트아웃한다(눌림 기하
@@ -30,12 +31,29 @@ import pytest
 _GATE = bool(os.environ.get("HWPX_SKIP_MOTION_TESTS"))
 _REASON = "저작 배치 실렌더 게이트 — Playwright + 설치 Chrome 필요(HWPX_SKIP_MOTION_TESTS=1 로 명시 옵트아웃)"
 
+_ICON = '<svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"></path></svg>'
+
+
+def _row(kind: str, tag: str, name: str, meta: str, children: str = "", dot: bool = False) -> str:
+    """문서 척추 한 줄(UX-09) — 제품(authoring.ts)이 그리는 줄 구조와 같은 모양."""
+    group = f'<ul role="group">{children}</ul>' if children else ""
+    toggle = '<span class="authoring-tree-toggle" aria-hidden="true"></span>' if children else (
+        '<span class="authoring-tree-toggle" aria-hidden="true" data-leaf=""></span>')
+    dot_html = f'<span class="authoring-coverage-dot">{_ICON}</span>' if dot else ""
+    return (f'<li role="treeitem" data-kind="{kind}" aria-expanded="{"true" if children else "false"}">'
+            f'<span class="authoring-tree-row">{toggle}<span class="authoring-tree-glyph">{_ICON}</span>'
+            f'<span class="authoring-kind">{tag}</span>{dot_html}<span class="authoring-tree-name">{name}</span>'
+            f'<span class="authoring-tree-meta">{meta}</span></span>{group}</li>')
+
+
 _OUTLINE_ROWS = (
-    "항목 안내 유형",
-    "선택 일반 공고",
-    "사업명 · 2",
-    "공고 기관 담당자 연락처 · 1",
-    "1. 제출 서류 목록과 기한 확인",
+    _row("use", "필드", "공고 기관 담당자 연락처", "사용 위치 1곳")
+    + _row("slot", "항목", "안내 유형과 제출 서류 목록", "문단 3–17 · 문제 1", children=(
+        _row("option", "선택", "일반 공고", "문단 3–9", dot=True, children=(
+            _row("use", "필드", "제출 서류 목록과 기한 확인", "같은 필드, 1/2")))
+        + _row("option", "선택", "긴급 공고(재공고 포함)", "문단 10–17", dot=True, children=(
+            _row("use", "필드", "제출 서류 목록과 기한 확인", "같은 필드, 2/2")))))
+    + _row("use", "필드", "사업명", "사용 위치 1곳")
 )
 
 _SCAFFOLD = """<!doctype html>
@@ -45,22 +63,25 @@ _SCAFFOLD = """<!doctype html>
 <div class="app" style="{app_style}"><header class="topbar"></header><main class="stage"><div id="reactScreenStage">
 <section id="scr-authoring" class="scr on"><div class="authoring-shell">
   <div class="authoring-toolbar" role="toolbar">
-    <div class="authoring-toolbar-group"><button class="btn sm">문서 실행 취소</button><button class="btn sm">문서 다시 실행</button></div>
+    <div class="authoring-toolbar-group"><button class="btn icon" aria-label="문서 실행 취소">{icon}</button><button class="btn icon" aria-label="문서 다시 실행">{icon}</button></div>
     <div class="authoring-toolbar-group"><div class="authoring-mode"><button aria-pressed="true">원문</button><button>구조</button><button>문서</button></div></div>
-    <div class="authoring-toolbar-group"><button class="btn sm">필드 만들기</button><button class="btn sm">항목 만들기</button><button class="btn sm">선택 만들기</button></div>
-    <div class="authoring-toolbar-group"><button class="btn sm">명령</button><button class="btn sm">더보기</button></div>
-    <div class="authoring-toolbar-group authoring-toolbar-end"><button class="btn sm">결과 시험</button><select class="field"><option>100%</option></select></div>
+    <div class="authoring-toolbar-group"><button class="btn">필드로 만들기</button><button class="btn">항목으로 만들기</button><button class="btn">선택으로 만들기</button></div>
+    <div class="authoring-toolbar-group"><button class="btn">명령</button><button class="btn icon" aria-label="더보기">{icon}</button></div>
+    <div class="authoring-toolbar-group authoring-toolbar-end"><button class="btn">결과 시험</button><select class="field"><option>100%</option></select></div>
   </div>
   <div class="authoring-body with-properties">
-    <button type="button" class="authoring-rail-toggle" aria-expanded="false">구조 패널 보기</button>
-    <aside class="authoring-outline"><h2>템플릿 구조</h2>{rows}</aside>
+    <button type="button" class="authoring-rail-toggle" aria-expanded="false" aria-label="구조 패널 보기">{icon}</button>
+    <aside class="authoring-outline"><div class="authoring-outline-head"><h2 class="authoring-section-label">템플릿 구조</h2>
+      <div class="authoring-outline-tabs" role="tablist"><button type="button" role="tab" class="authoring-outline-tab" aria-selected="true">구조</button><button type="button" role="tab" class="authoring-outline-tab" aria-selected="false">필드 <span class="authoring-tab-count">4</span></button></div>
+      <label class="authoring-filter">{icon}<input class="field" type="search" aria-label="구조 필터"></label></div>
+      <div class="authoring-outline-panel" role="tabpanel"><ul class="authoring-tree" role="tree">{rows}</ul></div></aside>
     <div class="authoring-splitter authoring-splitter-outline" role="separator" tabindex="0"></div>
     <div class="authoring-center">
       <div class="authoring-selection"><span class="authoring-selection-label">현재 위치의 의미</span></div>
       <main class="authoring-canvas"><div class="authoring-document" id="document"><div style="height:3000px">본문</div></div></main>
     </div>
     <div class="authoring-splitter authoring-splitter-properties" role="separator" tabindex="0"></div>
-    <form class="authoring-properties"><div class="authoring-properties-head"><h2>속성</h2><button type="button" class="btn sm">닫기</button></div>
+    <form class="authoring-properties"><div class="authoring-properties-head"><h2 class="authoring-section-label">속성</h2><button type="button" class="btn icon" aria-label="닫기">{icon}</button></div>
       <label class="authoring-field">이름<input class="field"></label></form>
     <div class="authoring-scrim" aria-hidden="true"></div>
   </div>
@@ -75,8 +96,8 @@ _MEASURE = """() => {
   const doc = q("#document").getBoundingClientRect();
   const hit = document.elementFromPoint(doc.right - 3, (doc.top + doc.bottom) / 2);
   const brokenWords = [];
-  for (const button of document.querySelectorAll(".authoring-outline .btn")) {
-    const node = button.firstChild;
+  for (const name of document.querySelectorAll(".authoring-outline .authoring-tree-name")) {
+    const node = name.firstChild;
     const text = node.textContent;
     let at = 0;
     for (const word of text.split(" ")) {
@@ -87,6 +108,14 @@ _MEASURE = """() => {
       at += word.length + 1;
     }
   }
+  // UX-09: 줄은 28px 한 줄(이름은 말줄임)이고 구조 패널은 가로로 넘치지 않는다. 그림 단추는 32px 정사각.
+  const rowHeights = [...document.querySelectorAll(".authoring-tree-row")].map((row) => Math.round(row.getBoundingClientRect().height * 10) / 10);
+  const outlineEl = q(".authoring-outline");
+  const outlineOverflowX = outlineEl.scrollWidth - outlineEl.clientWidth;
+  const rowsInside = [...document.querySelectorAll(".authoring-tree-row")].every((row) => row.getBoundingClientRect().right <= outlineEl.getBoundingClientRect().right + 0.5);
+  const iconSizes = [...document.querySelectorAll(".authoring-toolbar .btn.icon")].map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  const guide = (s) => getComputedStyle(q(s)).borderLeftStyle;
+  const guides = { slot: guide('[data-kind="slot"]>[role="group"]'), option: guide('[role="group"]>[data-kind="option"]') };
   const toolbar = q(".authoring-toolbar");
   // 한 줄 = 모든 무리의 세로 구간이 서로 겹친다(높이가 다른 무리는 가운데 정렬이라 윗변이 조금씩 다르다).
   const groups = [...document.querySelectorAll(".authoring-toolbar-group")].map((g) => g.getBoundingClientRect());
@@ -101,7 +130,7 @@ _MEASURE = """() => {
     propertiesPosition: getComputedStyle(q(".authoring-properties")).position,
     documentEdgeHit: hit === null ? "" : (hit.id || hit.className || hit.tagName),
     documentEdgeFree: hit !== null && q("#document").contains(hit),
-    brokenWords, toolbarRows: oneRow ? 1 : 2,
+    brokenWords, toolbarRows: oneRow ? 1 : 2, rowHeights, outlineOverflowX, rowsInside, iconSizes, guides,
     toolbarOverflowY: toolbar.scrollHeight - toolbar.clientHeight,
   };
 }"""
@@ -113,8 +142,8 @@ def _render(width: int, height: int, scale: str, app_style: str = "") -> dict:
     from _press_probe import _built_css_path, _loopback_document
 
     css_path, artifact_id = _built_css_path()
-    rows = "".join(f'<button class="btn sm">{label}</button>' for label in _OUTLINE_ROWS)
-    html = _SCAFFOLD.format(css_path=css_path, scale=scale, rows=rows, app_style=app_style)
+    rows = _OUTLINE_ROWS
+    html = _SCAFFOLD.format(css_path=css_path, scale=scale, rows=rows, app_style=app_style, icon=_ICON)
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
@@ -144,6 +173,11 @@ def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale
     where = f"{width}x{height}@{scale} (root {m['root']}px, 작업대 {m['container']:.0f}px)"
 
     assert not m["brokenWords"], f"{where}: 구조 행이 낱말 안에서 줄을 바꿨습니다: {m['brokenWords']}"
+    if m["outlineShown"]:
+        assert set(m["rowHeights"]) == {28}, f"{where}: 구조 줄 높이가 28px 한 줄이 아닙니다: {m['rowHeights']}"
+        assert m["outlineOverflowX"] <= 0 and m["rowsInside"], f"{where}: 구조 패널이 가로로 넘칩니다({m['outlineOverflowX']}px)"
+        assert m["guides"] == {"slot": "solid", "option": "dashed"}, f"{where}: 안내선 종류가 다릅니다 {m['guides']}"
+    assert all(size == [32, 32] for size in m["iconSizes"]), f"{where}: 그림 단추가 32px 정사각이 아닙니다 {m['iconSizes']}"
     assert m["toolbarRows"] == 1 and m["toolbarOverflowY"] <= 1, (
         f"{where}: 도구 막대가 한 줄이 아닙니다(행 {m['toolbarRows']}, 세로 넘침 {m['toolbarOverflowY']})"
     )

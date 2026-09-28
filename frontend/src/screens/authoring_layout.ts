@@ -148,6 +148,9 @@ const FOCUSABLE = "button:not([disabled]),input:not([disabled]),select:not([disa
  *  roving 원소(tabindex=-1)는 Tab 순서가 아니므로 첫 조작 후보에서도 빠진다. */
 const FOCUSABLE_OUTSIDE_ROVING = FOCUSABLE.split(",").map((part) => part === "iframe" ? part : `${part}:not([tabindex="-1"])`).join(",");
 const ROVING_ENTRY = '[role="tab"][tabindex="0"],[role="treeitem"][tabindex="0"],[data-rove][tabindex="0"]';
+/** 패널의 주 내용이 먼저다(UX-09): 구조 패널은 보기 탭·필터보다 **보이는** 보기의 tree 대기 줄로 들어간다
+ *  (숨은 보기의 tree 는 대기 줄을 두지 않는다 — authoring.ts OutlineTree 의 inactive). */
+const PRIMARY_ENTRY = '[role="tabpanel"] [role="treeitem"][tabindex="0"]';
 
 type CyclePanel = {
   contains(node: unknown): boolean;
@@ -162,7 +165,7 @@ export function cyclePanels(panels: readonly CyclePanel[], active: unknown, back
   if (shown.length === 0) return null;
   const current = shown.findIndex((panel) => panel.contains(active));
   const next = shown[(current + (backwards ? shown.length - 1 : 1)) % shown.length];
-  const target = next.matches(FOCUSABLE) ? next : next.querySelector(ROVING_ENTRY) || next.querySelector(FOCUSABLE_OUTSIDE_ROVING);
+  const target = next.matches(FOCUSABLE) ? next : next.querySelector(PRIMARY_ENTRY) || next.querySelector(ROVING_ENTRY) || next.querySelector(FOCUSABLE_OUTSIDE_ROVING);
   target?.focus();
   return next;
 }

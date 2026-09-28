@@ -266,6 +266,14 @@ def _body_hit_context(pieces: list[tuple[str, object, str | None]], start: int, 
     return occurrence_context(_render_pieces(before), _render_pieces(focus), _render_pieces(after))
 
 
+def _root_anchor(paragraphs: list, paragraph) -> int | None:
+    """가장 가까운 본문 문단(``paragraphs`` 의 원소) 조상 — 문단이 그 자체로 본문이 아닐 때만 쓴다."""
+    for ancestor in paragraph.iterancestors(f"{_HP}p"):
+        if ancestor in paragraphs:
+            return paragraphs.index(ancestor)
+    return None
+
+
 def _fields(package) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for entry, root in _roots(package):
@@ -279,18 +287,23 @@ def _fields(package) -> list[dict]:
             if name is None:
                 continue
             if occurrence.paragraph in paragraphs:
-                position = {"paragraph": paragraphs.index(occurrence.paragraph),
-                            **_simple_field_span(occurrence)}
+                anchor_paragraph = paragraphs.index(occurrence.paragraph)
+                position = {"paragraph": anchor_paragraph, **_simple_field_span(occurrence)}
             else:
                 cell_path = _cell_path(root, occurrence.paragraph)
-                position = ({"paragraph": None} if cell_path is None
-                            else {"paragraph": cell_path[-1]["paragraph"], "cell_path": cell_path,
-                                  **_simple_field_span(occurrence)})
+                if cell_path is None:
+                    anchor_paragraph = _root_anchor(paragraphs, occurrence.paragraph)
+                    position = {"paragraph": None}
+                else:
+                    anchor_paragraph = cell_path[0]["parent_paragraph"]
+                    position = {"paragraph": cell_path[-1]["paragraph"], "cell_path": cell_path,
+                                **_simple_field_span(occurrence)}
             grouped[name].append({
                 "entry": entry,
                 "occurrence": ordinal,
                 "pairing_id": occurrence.begin.get("id"),
                 **position,
+                "anchor_paragraph": anchor_paragraph,
                 "paragraph_path": root.getroottree().getpath(occurrence.paragraph),
                 "reliable": not resolution.diagnostics,
                 "context": _occurrence_context(occurrence, name, marks),

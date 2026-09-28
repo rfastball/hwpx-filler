@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import itertools
 import json
 import os
@@ -64,6 +65,8 @@ _TRIAL_STATE_MESSAGES = {"current": "현재 시험 구성 통과",
                          "untried": "아직 시험하지 않았습니다.", "failed": "시험 실패"}
 #: 처음 여는 일반 문서(의미가 아직 없는 문서)의 첫 안내(§13) — 다음 편집에서 사라지는 알림이다.
 _FIRST_FIELD_HINT = "변경할 문구를 선택해 필드로 만들어 보세요."
+#: 문서 척추(구조 보기) 위치 표시(UX-09) — 문단·행 범위를 사람이 읽는 문장으로 접는다.
+_EN_DASH = "–"
 
 
 def _valid_cell_path(cell_path: object) -> bool:
@@ -108,6 +111,8 @@ class AuthoringController:
         self._projection_revisions: dict[tuple[str, str], tuple[object, int]] = {}
         #: 마지막으로 **전달된** push 의 지문 — 바뀐 것이 없으면 다시 밀지 않는다.
         self._pushed: str | None = None
+        #: 문서 척추 투영(UX-09) 캐시 — `session.analysis` 가 **같은 객체**인 동안만 재사용한다.
+        self._outline_cache: dict[str, tuple[object, dict]] = {}
 
     def _refresh_recoverable(self) -> None:
         self._recoverable = self.store.list_drafts()
@@ -198,6 +203,126 @@ class AuthoringController:
             result["section_entries"] = self._section_entries(session.content)
         return result
 
+    def _outline_analysis(self, session: AuthoringSession) -> dict:
+        """`session.analysis` + 문서 척추(UX-09) 전용 항목 — `slot_id`/`option_id`/`order`/`location_label`.
+
+        원본 `session.analysis` 는 손대지 않는다(항상 통째로 교체될 뿐이다). 같은 객체면 다시
+        계산하지 않고 세션마다 하나씩 캐시한다.
+        """
+        analysis = session.analysis
+        cached = self._outline_cache.get(session.id)
+        if cached is not None and cached[0] is analysis:
+            return cached[1]
+        enriched = self._build_outline(session, analysis)
+        self._outline_cache[session.id] = (analysis, enriched)
+        return enriched
+
+    def _build_outline(self, session: AuthoringSession, analysis: dict) -> dict:
+        media = session.media
+        slots = copy.deepcopy(analysis.get("slots", []))
+        fields = copy.deepcopy(analysis.get("fields", []))
+        section_rank: dict[str, int] | None = None
+        if media == "hwpx":
+            entries = self._section_entries(session.content)
+            section_rank = {entry: index for index, entry in enumerate(entries)}
+            for field in fields:
+                for occurrence in field.get("occurrences", []):
+                    occurrence["slot_id"], occurrence["option_id"] = self._occurrence_containment(
+                        slots, occurrence.get("entry"), occurrence.get("anchor_paragraph"))
+        for slot in slots:
+            slot["location_label"] = self._location_label(media, slot.get("location"))
+            for option in slot.get("options", []):
+                option["location_label"] = self._location_label(media, option.get("location"))
+        self._assign_outline_order(media, slots, fields, section_rank)
+        return {**analysis, "slots": slots, "fields": fields}
+
+    @staticmethod
+    def _location_label(media: str, location: dict | None) -> str | None:
+        """사람이 읽는 문단·행 범위(UX-09) — 1-based, 시작과 끝이 같으면 하나만 보인다."""
+        if not isinstance(location, dict):
+            return None
+        keys = ("start_paragraph", "end_paragraph") if media == "hwpx" else ("begin_marker_line", "end_marker_line")
+        start, end = location.get(keys[0]), location.get(keys[1])
+        # 좌표가 없거나 어긋난 범위는 표시하지 않는다 — 추측한 번호를 세우지 않는다.
+        if type(start) is not int or type(end) is not int or end < start:
+            return None
+        if media == "hwpx":
+            return (f"문단 {start + 1}" if start == end
+                    else f"문단 {start + 1}{_EN_DASH}{end + 1}")
+        return f"{start + 1}행" if start == end else f"{start + 1}{_EN_DASH}{end + 1}행"
+
+    @staticmethod
+    def _occurrence_containment(
+        slots: list[dict], entry: object, anchor_paragraph: object,
+    ) -> tuple[str | None, str | None]:
+        """HWPX 사용 위치의 담긴 항목·선택 — 채움 제거 기준(닻 본문 문단 포함)으로 정한다.
+
+        `_occurrence_owner` 와 같은 "정확히 하나의 소유자" 규칙을 따르되, 셀·글상자 안 사용
+        위치도 닻 문단으로 판정한다는 점이 다르다(UX-09). `_occurrence_owner`·`_do_locate` 의
+        의미는 건드리지 않는다.
+        """
+        if type(anchor_paragraph) is not int:
+            return None, None
+
+        def inside(location: dict | None) -> bool:
+            return (bool(location) and location is not None
+                    and location.get("entry") == entry
+                    and type(location.get("start_paragraph")) is int
+                    and type(location.get("end_paragraph")) is int
+                    and location["start_paragraph"] <= anchor_paragraph <= location["end_paragraph"])
+
+        owners = [slot for slot in slots if inside(slot.get("location"))]
+        if len(owners) != 1:
+            return None, None
+        options = [option["id"] for option in owners[0].get("options", []) if inside(option.get("location"))]
+        return owners[0]["id"], options[0] if len(options) == 1 else None
+
+    @staticmethod
+    def _assign_outline_order(
+        media: str, slots: list[dict], fields: list[dict], section_rank: dict[str, int] | None,
+    ) -> None:
+        """문서 전체에 걸친 순서(UX-09) — 항목 < 선택 < 그 안의 사용 위치, 좌표 없는 것은 뒤로(안정 정렬)."""
+        missing = len(section_rank) if section_rank is not None else 0
+        seq = itertools.count()
+        entries: list[tuple[dict, tuple]] = []
+
+        def key(location: dict | None, kind_rank: int, extra: int) -> tuple:
+            index = next(seq)
+            if location is None:
+                return (1, 0, 0, 0, 0, index)
+            if media == "hwpx":
+                entry = location.get("entry")
+                primary = (section_rank.get(entry, missing) if section_rank is not None and isinstance(entry, str)
+                           else missing)
+                secondary = location.get("start_paragraph")
+            else:
+                primary = 0
+                secondary = location.get("start")
+            if type(secondary) is not int:
+                return (1, 0, 0, 0, 0, index)
+            return (0, primary, secondary, kind_rank, extra, index)
+
+        for slot in slots:
+            entries.append((slot, key(slot.get("location"), 0, 0)))
+            for option in slot.get("options", []):
+                entries.append((option, key(option.get("location"), 1, 0)))
+        for field in fields:
+            for occurrence in field.get("occurrences", []):
+                if media == "hwpx":
+                    location = ({"entry": occurrence.get("entry"),
+                                 "start_paragraph": occurrence.get("anchor_paragraph")}
+                                if type(occurrence.get("anchor_paragraph")) is int else None)
+                    extra = occurrence.get("occurrence")
+                    extra = extra if type(extra) is int else 0
+                else:
+                    location = occurrence
+                    extra = 0
+                entries.append((occurrence, key(location, 2, extra)))
+
+        entries.sort(key=lambda pair: pair[1])
+        for order, (item, _) in enumerate(entries):
+            item["order"] = order
+
     def _tab(self, session: AuthoringSession) -> dict:
         path = session.save_path or session.source_path
         return {
@@ -211,7 +336,7 @@ class AuthoringController:
             "dirty": session.dirty,
             "cases_dirty": session.cases_dirty or session.trial_inputs_dirty,
             "trial_inputs_dirty": session.trial_inputs_dirty,
-            "analysis": {**session.analysis,
+            "analysis": {**self._outline_analysis(session),
                          "revision": self._projection_revision(session.id, "analysis", session.analysis)},
             "values": dict(session.values),
             "selected": dict(session.selected),
@@ -362,6 +487,8 @@ class AuthoringController:
         with self._lock:
             for key in [key for key in self._projection_revisions if key[0] not in self.sessions]:
                 del self._projection_revisions[key]
+            for session_id in [sid for sid in self._outline_cache if sid not in self.sessions]:
+                del self._outline_cache[session_id]
             return {
                 "tabs": [self._tab(session) for session in self.sessions.values()],
                 "active_id": self.active_id,

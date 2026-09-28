@@ -101,9 +101,17 @@ function decorate(state: EditorState, spans: readonly LintpadSpan[]): Decoration
   const ranges: Range<Decoration>[] = usableSpans(spans, state.doc.length).map(
     (span) => Decoration.mark({ class: span.className }).range(span.from, span.to),
   );
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, state.doc.length));
   for (const span of spans) {
+    if (span.kind === "highlight") {
+      // 구조 트리가 가리키는 범위(UX-09)는 그 범위가 닿는 줄 전체에 선다 — 필드 표지와 겹쳐도 마크가 아니라 줄 장식이다.
+      const first = state.doc.lineAt(clamp(span.start)).number;
+      const last = state.doc.lineAt(clamp(Math.max(span.start, span.end - 1))).number;
+      for (let number = first; number <= last; number++) ranges.push(Decoration.line({ class: "cm-authoring-highlight" }).range(state.doc.line(number).from));
+      continue;
+    }
     if (!["slot-start", "slot-end", "option-start", "option-end"].includes(span.kind)) continue;
-    const line = state.doc.lineAt(Math.max(0, Math.min(span.start, state.doc.length)));
+    const line = state.doc.lineAt(clamp(span.start));
     ranges.push(Decoration.line({ class: `cm-authoring-${span.kind}` }).range(line.from));
   }
   return Decoration.set(ranges, true);

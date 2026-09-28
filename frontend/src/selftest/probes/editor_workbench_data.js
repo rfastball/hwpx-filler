@@ -352,8 +352,8 @@ function keyboardNav(ctx) {
       }
       return within(selector);
     },
-    tabTo(match, limit) {
-      for (let i = 0; i < (limit || 40) && !match(active()); i += 1) pressKey(ctx, "Tab");
+    tabTo(match, limit, backwards) {
+      for (let i = 0; i < (limit || 40) && !match(active()); i += 1) pressKey(ctx, "Tab", backwards ? { shiftKey: true } : undefined);
       return !!match(active());
     },
     /** roving 묶음(APG tabs·toolbar·menu) 안에서 방향키로 대상까지 — Tab 은 묶음을 떠난다. */
@@ -439,6 +439,13 @@ async function probeAuthoringKeyboard(ctx, out) {
   try {
     out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
     if (!out.kbd_outline_reached) return;
+    /* 필드 목록은 구조 패널의 두 번째 보기다(UX-09): F6 은 보이는 보기(구조)의 tree 로 들어오므로, 보기 탭 줄로
+       올라가(Shift+Tab) → 로 「필드」 보기를 연다(자동 활성화). 이어서 Tab 이 필터를 지나 그 보기의 tree 로 간다. */
+    const outlineTab = (el) => !!el && el.getAttribute("role") === "tab" && !!el.closest(".authoring-outline");
+    out.kbd_fields_view = nav.tabTo(outlineTab, 6, true)
+      && nav.arrowTo((el) => outlineTab(el) && textOf(el).trim().indexOf("필드") === 0, "ArrowRight", 2);
+    await settleRender(ctx);
+    if (!out.kbd_fields_view) return;
     // 구조 목록은 APG tree 다(UX-04): 한 번의 Tab 으로 들어오고 ↓ 로 줄을 옮긴다.
     out.kbd_field_focused = await nav.treeTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
     out.kbd_field_label = nav.nameOf(nav.active());
@@ -488,8 +495,11 @@ async function probeAuthoringKeyboard(ctx, out) {
     out.kbd_problems_selected = problemsTab.getAttribute("aria-selected") === "true";
     out.kbd_dock_panels = doc.querySelectorAll('.authoring-dock [role="tabpanel"]').length;
     out.kbd_problem_action = nav.nameOf(nav.active());
-    out.kbd_problem_text = textOf(
-      doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem')).trim().slice(0, 120);
+    const problemRow = doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem');
+    out.kbd_problem_text = textOf(problemRow).trim().slice(0, 120);
+    // 문제 한 건은 행이다(UX-09) — 심각도는 글자 칩, 종류는 흐린 글로 선다(색이 아니라 글).
+    out.kbd_problem_severity = textOf(problemRow && problemRow.querySelector(".authoring-badge")).trim();
+    out.kbd_problem_category = textOf(problemRow && problemRow.querySelector(".authoring-problem-category")).trim();
     if (!out.kbd_problem_focus) return;
     pressKey(ctx, "Enter");
     out.kbd_problem_expected = range(problem.location);
@@ -501,7 +511,7 @@ async function probeAuthoringKeyboard(ctx, out) {
        ↓ 로 「이전 위치로」 → Enter. 도구 막대와 메뉴는 APG toolbar·menu 라 Tab 이 아니라 방향키로 옮긴다. */
     out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
     out.kbd_more_button = nav.arrowTo(
-      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "더보기", "ArrowRight", 20);
+      (el) => !!el && !!el.closest(".authoring-toolbar") && nav.nameOf(el) === "더보기", "ArrowRight", 20);
     if (!out.kbd_more_button) return;
     pressKey(ctx, "Enter");
     const moreMenu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="더보기"]');
@@ -982,6 +992,8 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   const all = (selector) => Array.prototype.slice.call(doc.querySelectorAll(selector));
   const hit = (selector, label) => all(selector).find((el) => textOf(el).indexOf(label) >= 0) || null;
   const exact = (selector, label) => all(selector).find((el) => textOf(el).trim() === label) || null;
+  // 그림 단추(UX-09: 실행 취소·다시 실행)는 보이는 글 대신 이름(aria-label)으로 찾는다.
+  const named = (selector, label) => all(selector).find((el) => String(el.getAttribute("aria-label") || "").indexOf(label) === 0) || null;
   const snapshot = () => Bridge.initial("authoring");
   const activeTab = (snap) => (((snap || {}).tabs) || []).find(
     (tab) => tab.id === (snap || {}).active_id) || {};
@@ -993,19 +1005,19 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   const tab = async () => activeTab(await snapshot());
   const content = async () => String(
     (await Bridge.call("authoring", "content", { session_id: sid })).content);
-  const undoLabel = () => textOf(hit(".authoring-toolbar button", "문서 실행 취소")).trim();
+  const undoLabel = () => String((named(".authoring-toolbar button", "문서 실행 취소") || { getAttribute: () => "" }).getAttribute("aria-label") || "").trim();
   const previewText = () => textOf(doc.querySelector(
     ".authoring-properties section.authoring-preview:not(.authoring-refusal)"));
   const affected = () => {
     const found = /사용 위치 (\d+)곳/.exec(previewText());
     return found ? Number(found[1]) : -1;
   };
-  /** 미리보기 확정 — 적용 버튼은 미리보기 구획 **안**의 첫 버튼이다(취소가 둘째). */
+  /** 미리보기 확정 — 적용은 속성 바닥 행동 줄의 주 행동(UX-09)이고, 미리보기 구획이 선 뒤에만 선다. */
   const applyPreview = async () => {
     const section = doc.querySelector(
       ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
     if (!section) return false;
-    const apply = section.querySelector("button");
+    const apply = doc.querySelector(".authoring-properties .authoring-properties-actions .btn.primary");
     if (!apply) return false;
     apply.click();
     return true;
@@ -1081,7 +1093,7 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   out.hwpx_authoring_create_changed_content = created !== mount;
 
   /* ── ⑤ 한 번의 문서 실행 취소가 원래 본문을 되돌린다 ───────────────────────── */
-  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  named(".authoring-toolbar button", "문서 실행 취소").click();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
     WIRE_TRIES, WIRE_MS)) return give("실행 취소가 필드를 되돌리지 않음");
   const undone = await content();
@@ -1091,22 +1103,26 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
      내보낸 바이트와 동일하지 않을 수 있다. 원본 동일의 확정은 ⑧의 제품 비교기가 진다. */
   out.hwpx_authoring_undo_content_equals_mount = undone === mount;
   out.hwpx_authoring_undo_label_cleared = undoLabel() === "문서 실행 취소";
-  exact(".authoring-toolbar button", "문서 다시 실행").click();
+  named(".authoring-toolbar button", "문서 다시 실행").click();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
     WIRE_TRIES, WIRE_MS)) return give("다시 실행이 필드를 되살리지 않음");
   out.hwpx_authoring_redo_field_count = fieldsOf(await tab()).length;
   out.hwpx_authoring_redo_content_equals_create = (await content()) === created;
-  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  named(".authoring-toolbar button", "문서 실행 취소").click();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
     WIRE_TRIES, WIRE_MS)) return give("두 번째 실행 취소 미반영");
   out.hwpx_authoring_undo2_content_equals_undo = (await content()) === undone;
 
   /* ── ⑥ 이름 변경은 **모든 사용 위치**를 함께 옮긴다(AC07) ───────────────────── */
   if (!afford(8000)) return give("예산 부족: 이름 변경");
-  // 구조 목록은 APG tree 다 — 필드 줄(treeitem)의 보이는 글은 「이름 · 사용 위치 n곳」로 시작한다.
-  const summary = all('.authoring-outline [role="treeitem"]').find(
-    (el) => textOf(el).indexOf(`${candidate.field} · 사용 위치 ${candidate.occurrences}곳`) === 0);
-  out.hwpx_authoring_rename_target = summary ? textOf(summary).trim() : "";
+  // 필드 목록은 구조 패널의 「필드」 보기다(UX-09) — 그 보기를 열고, 필드 줄(treeitem)을 이름으로 찾는다
+  // (「필드 · 이름 · 사용 위치 n곳」 — 화면 읽기가 읽는 그 이름).
+  const fieldsView = doc.querySelector("#authoring-outline-fields");
+  if (fieldsView) fieldsView.click();
+  await settleRender(ctx);
+  const summary = all('#authoring-outline-fields-panel [role="treeitem"]').find(
+    (el) => String(el.getAttribute("aria-label") || "").indexOf(`필드 · ${candidate.field} · 사용 위치 ${candidate.occurrences}곳`) === 0);
+  out.hwpx_authoring_rename_target = summary ? String(summary.getAttribute("aria-label")).trim() : "";
   if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
   summary.click();
   /* 속성 패널은 ④부터 **이미 열려 있다** — 입력창의 존재로는 선택이 끝났는지 알 수 없다.
@@ -1135,7 +1151,7 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   out.hwpx_authoring_rename_new_count = countOf(renamed, candidate.renamed);
   out.hwpx_authoring_rename_old_count = countOf(renamed, candidate.field);
   out.hwpx_authoring_rename_field_total = fieldsOf(renamed).length;
-  hit(".authoring-toolbar button", "문서 실행 취소").click();
+  named(".authoring-toolbar button", "문서 실행 취소").click();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.field) > 0,
     WIRE_TRIES, WIRE_MS)) return give("이름 변경 실행 취소 미반영");
   const restored = await tab();
