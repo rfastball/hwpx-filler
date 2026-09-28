@@ -19,10 +19,11 @@ type Props = { controller: AuthoringController };
 /* 단추 어휘(UX-09 · #1039) — 역할이 곧 모양이다. 보조 행동 `.btn`(테두리)이 기본이고, 구획마다 하나뿐인 주 행동은
    `.btn.primary`(채움·굵게), 물러서는 행동(취소·닫기·복사…)은 `.btn.quiet`(테두리 없음), 되돌릴 수 없는 행동은
    `.btn.danger`(채움 + 동사), 그림만 선 단추는 `.btn.icon`(이름은 aria-label·title). 이동하는 줄은 단추 모양이 아니다
-   — `rowButton`(목록 행)·트리 행·브레드크럼 조각·메뉴 항목이 따로 선다. */
-const button = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) =>
+   — `rowButton`(목록 행)·트리 행·브레드크럼 조각·메뉴 항목이 따로 선다. 편집기 틀(머리 띠·도구 막대)은 명령을
+   `.btn.quiet` 로 두고 띠마다 실행 행동 하나(저장·결과 시험)만 테두리·채움으로 세운다. */
+const button = (label: ReactNode | ReactNode[], click: (event: any) => void, props: Obj = {}) =>
   h("button", { type: "button", className: "btn", onClick: click, ...props }, ...(Array.isArray(label) ? label : [label]));
-const quiet = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn quiet", ...props });
+const quiet = (label: ReactNode | ReactNode[], click: (event: any) => void, props: Obj = {}) => button(label, click, { className: "btn quiet", ...props });
 const primary = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn primary", ...props });
 const danger = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) => button(label, click, { className: "btn danger", ...props });
 /** 아이콘 단추 — 보이는 글자 대신 그림이 서고, 기존 이름은 접근 가능한 이름과 툴팁으로 남는다(새 문구 없음). */
@@ -163,8 +164,8 @@ export function problemAction(controller: Pick<AuthoringController, "select" | "
 type MenuEvent = { clientX: number; clientY: number; anchorTop?: number; target?: unknown; preventDefault?(): void };
 /** 문맥 메뉴를 좌표(셸 기준)에 연다(§6.1). trigger 는 닫힐 때 초점을 돌려줄 자리 — 사건 대상의 가장 가까운 초점 가능
  *  조상이다(글자 span 이 아니다). anchor 는 창 좌표로, 그린 뒤 창 안에 들도록 위치를 다시 잰다(UX-04).
- *  kind="more" 는 도구 막대 「더보기」의 작은 메뉴다 — 같은 상태·Escape·바깥 클릭 경로를 쓴다. */
-export function openContextMenu(controller: Pick<AuthoringController, "update">, event: MenuEvent, root?: { getBoundingClientRect(): { left: number; top: number } } | null, kind?: "more"): void {
+ *  kind="more" 는 도구 막대 「더보기」, kind="file" 은 머리 띠 「파일」의 작은 메뉴다 — 같은 상태·Escape·바깥 클릭 경로를 쓴다. */
+export function openContextMenu(controller: Pick<AuthoringController, "update">, event: MenuEvent, root?: { getBoundingClientRect(): { left: number; top: number } } | null, kind?: "more" | "file"): void {
   event.preventDefault?.();
   const rect = root?.getBoundingClientRect();
   controller.update({ contextMenu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0), anchor: { x: event.clientX, y: event.clientY, ...(event.anchorTop != null ? { top: event.anchorTop } : {}) },
@@ -230,6 +231,12 @@ export async function copyText(text: string): Promise<void> {
 const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwrap", "duplicate"]);
 const DESTRUCTIVE = new Set(["delete"]);
 const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
+/** 작은 메뉴(「더보기」·「파일」)의 한 항목: 이름 · 실행 · 불가 · 단축키 표기(있을 때만). */
+type MenuAction = [string, () => void, boolean, string?];
+/** 「더보기」의 첫 항목 — 명령 팔레트를 연다. 팔레트 자신의 추가 동작 줄에는 세우지 않는다(자기를 여는 단추가 된다). */
+const PALETTE_SELF = "명령";
+/** 단축키 표기 → aria-keyshortcuts 값. */
+const ARIA_KEYS: Obj = { "Ctrl+S": "Control+S" };
 const menuItemClass = (commandType: string) => `authoring-menu-item${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}${DESTRUCTIVE.has(commandType) ? " danger" : ""}`;
 /** 문맥 메뉴의 사유 묶음(UX-10 R5): 메뉴에서 **이웃한** 불가 항목이 같은 사유면 그 사유를 무리의 첫 항목 위에 한 번만
  *  세우고, 무리의 모든 항목이 그 줄을 설명(aria-describedby)으로 가리킨다. 대안 항목·가능 항목·판정 대기 항목이 무리를 끊는다.
@@ -621,7 +628,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   );
 }
 
-function Trial({ controller, item, view, onClose }: Props & { item: Obj; view: Obj; onClose: () => void }) {
+function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
   const result = item.trial_result;
   const output = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -643,7 +650,7 @@ function Trial({ controller, item, view, onClose }: Props & { item: Obj; view: O
   // 결과 시험(§8.1 · UX-09): 왼쪽 열은 입력 → 선택 구성 → 자동 갱신 → [시험 시작(주 행동)][시험 케이스 저장], 가져오기·내보내기는
   // 물러선 한 줄, 보관 케이스는 행. 오른쪽 열은 상태 칩 + 문장 → 선택별 시험 상태 → 결과 → 출력·제외 이유(행).
   return h("section", { className: "authoring-trial", "aria-label": "결과 시험" },
-    h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다."), quiet("원문으로", () => { controller.update({ trial: false }); onClose(); })),
+    h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다.")),
     h("div", { className: "authoring-trial-input" },
       item.cases_error && h("p", { role: "alert" }, item.cases_error),
       h("div", { className: "authoring-trial-group" },
@@ -677,7 +684,7 @@ function Trial({ controller, item, view, onClose }: Props & { item: Obj; view: O
       h("div", { className: "authoring-trial-state" },
         item.trial_state_label && h("span", { className: "authoring-badge", "data-trial": item.trial_state }, item.trial_state_label),
         h("p", null, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
-        button("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" })),
+        quiet("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" })),
       h("p", { className: "authoring-reason" }, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
       // 선택별 시험 상태: 구조 트리와 같은 점(채움 모양)과 같은 이름이다.
       !!coverage.length && h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...coverage.map((entry: Obj) =>
@@ -1010,12 +1017,12 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     return () => window.removeEventListener("focus", focus);
   }, [controller]);
   // 문맥 메뉴(§6.1): 열리면 첫 사용 가능 항목(없으면 첫 항목)에 초점, 바깥 클릭이면 닫는다. Escape 는 셸 단축키가 처리한다.
-  // 「더보기」 메뉴는 여는 버튼 자체의 누름을 바깥으로 치지 않는다 — 그 버튼이 여닫기를 맡는다.
+  // 「더보기」·「파일」 메뉴는 여는 버튼 자체의 누름을 바깥으로 치지 않는다 — 그 버튼이 여닫기를 맡는다.
   useEffect(() => {
     if (!view.contextMenu) return;
     const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || [])];
     (items.find((entry) => entry.getAttribute("aria-disabled") !== "true") || items[0])?.focus();
-    const trigger = view.contextMenu.kind === "more" ? view.contextMenu.trigger as Element | null : null;
+    const trigger = view.contextMenu.kind ? view.contextMenu.trigger as Element | null : null;
     const outside = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (!target?.closest?.(".authoring-context-menu") && !(target && trigger?.contains?.(target))) controller.update({ contextMenu: null });
@@ -1088,11 +1095,26 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     controller.update({ panel: "properties", commandType, contextMenu: null, preview: null, refusal: null, ...focusRequest(current, "properties") });
   };
   const openPanel = (panel: string) => controller.update({ panel, contextMenu: null, ...focusRequest(controller.viewModel.getSnapshot(), "dock") });
-  // 도구 막대에서 빠진 세 동작 — 「더보기」 메뉴와 명령 팔레트가 같은 실행 경로를 쓴다.
-  const moreActions: [string, () => void, boolean][] = [
+  // 도구 막대에서 빠진 동작 — 「더보기」 메뉴와 명령 팔레트가 같은 실행 경로를 쓴다. 첫 항목 「명령」은 팔레트 자신을 여는
+  // 길이라 팔레트 안에는 서지 않는다(PALETTE_SELF).
+  const moreActions: MenuAction[] = [
+    [PALETTE_SELF, () => openPanel("commands"), false],
     ["의미 복사", act(async () => { await controller.copy(); controller.update(focusRequest(controller.viewModel.getSnapshot(), "dock")); }), false],
     ["붙여넣기", () => openPanel("paste"), !controller.clipboard()],
     ["이전 위치로", act(controller.back), false]];
+  // 머리 띠 「파일」 메뉴 — 파일 동사 넷. 저장·다른 이름으로 저장은 열린 문서가 있어야 한다(불가 항목도 초점을 받는다).
+  const fileActions: MenuAction[] = [
+    ["문서 열기", act(controller.openFile), false],
+    ["새 TXT", act(controller.create), false],
+    ["저장", act(() => controller.save(), "save"), !item, "Ctrl+S"],
+    ["다른 이름으로 저장", act(() => controller.save(item?.id, true), "save"), !item]];
+  /** 「더보기」·「파일」을 여닫는 단추의 누름 — 열린 제 메뉴면 닫고, 아니면 단추 아래에 연다. */
+  const menuToggle = (kind: "more" | "file") => (event: any) => {
+    if (view.contextMenu?.kind === kind) { controller.update({ contextMenu: null }); return; }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target: event.currentTarget }, root.current, kind);
+  };
+  const menuButton = (kind: "more" | "file") => ({ "aria-haspopup": "menu", "aria-expanded": view.contextMenu?.kind === kind, "aria-controls": view.contextMenu?.kind === kind ? "authoring-menu" : undefined });
   // 독 탭 하나를 펼친다: 패널 탭은 view.panel 로, 나머지(시험·경보·비교)는 view.dock 으로. 옆 속성 패널은 건드리지 않는다.
   // 사용자가 연 탭은 그 패널의 첫 제어로 초점을 옮긴다(이미 펼친 탭이면 초점만). 내용이 Python 에서 오는 탭은 도착한 뒤 옮긴다.
   const openDock = (key: string) => {
@@ -1118,7 +1140,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   })();
   const trialShown = dock.active === "trial";
   const dockContent = (key: string): ReactNode => {
-    if (key === "trial" && item) return h(Trial, { controller, item, view, onClose: () => returnFocus("dock") });
+    if (key === "trial" && item) return h(Trial, { controller, item, view });
     if (key === "recovery" && item) return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "중단 전 복구 초안" }, h("h2", null, "중단 전 복구 초안"),
       h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
       h("div", { className: "authoring-actions" },
@@ -1153,7 +1175,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       rowList("검색 결과", view.hits.map((hit: Obj) => rowButton({ chip: KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, text: hit.context || hit.name || hit.label, context: hit.document }, select(hit)))));
     if (key === "commands") return h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
       h(CommandList, { view, readOnly, onPick: pick }),
-      h("div", { className: "authoring-palette authoring-command-more" }, ...moreActions.map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", onClick: run, disabled }, label))));
+      h("div", { className: "authoring-palette authoring-command-more" }, ...moreActions.filter(([label]) => label !== PALETTE_SELF).map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", onClick: run, disabled }, label))));
     // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
     if (key === "raw") return h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
       view.syntax?.note && h("p", null, view.syntax.note),
@@ -1217,7 +1239,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   const redoDisabled = editorState ? !editorState.canRedo : false;
   const creates = COMMANDS.slice(0, 3).map(([commandType, label]) => { const available = commandAvailability(view.commands, commandType); return { commandType, label, available, disabled: readOnly || !available.enabled }; });
   const toolbarKeys = [...(undoDisabled ? [] : ["undo"]), ...(redoDisabled ? [] : ["redo"]), ...MODES.map(([value]) => `mode-${value}`),
-    ...creates.filter((entry) => !entry.disabled).map((entry) => entry.commandType), "commands", "more", "trial", "zoom"];
+    ...creates.filter((entry) => !entry.disabled).map((entry) => entry.commandType), "more", "trial"];
   const toolbarActive = toolbarKeys.includes(toolbarKey) ? toolbarKey : toolbarKeys[0];
   const rove = (key: string) => ({ "data-rove": key, tabIndex: key === toolbarActive ? 0 : -1 });
   const dockEntry = dock.active || dock.tabs[0]?.[0];
@@ -1254,14 +1276,12 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   } },
     // 단일 live region(UX-04) — 보이지 않고, 전이 때만 한 줄이 선다. 차례 번호가 바뀌면 같은 문장도 다시 읽힌다.
     h("p", { className: "authoring-live", role: "status" }, view.live?.text ? h("span", { key: view.live.seq }, view.live.text) : null),
+    // 머리 띠(편집기 제목 줄): 돌아가기 그림 · 제목 · 「파일」 메뉴 · 열린 문서 탭(가운데, 넘치면 가로 스크롤) · 저장.
+    // 파일 동사(열기·새 TXT·다른 이름으로 저장)는 「파일」 메뉴 안에 선다 — 띠에 보이는 행동은 저장 하나다.
     h("header", { className: "authoring-head" },
-      quiet([h("span", { key: "back", className: "authoring-back" }, icon("chevron-left")), "돌아가기"], act(() => controller.leaveTo(controller.returnScreen()))),
+      iconButton("chevron-left", "돌아가기", act(() => controller.leaveTo(controller.returnScreen()))),
       h("h1", null, "템플릿 저작"),
-      button("문서 열기", act(controller.openFile)), button("새 TXT", act(controller.create)),
-      // 머리 구획의 주 행동은 저장이다 — 저장할 변경이 있거나 새 템플릿이라 저장이 필요할 때만 채움으로 선다.
-      button("저장", act(() => controller.save(), "save"), { disabled: !item,
-        className: item && (item.dirty || item.save_as_required || controller.pending(item.id)) ? "btn primary" : "btn" }),
-      button("다른 이름으로 저장", act(() => controller.save(item?.id, true), "save"), { disabled: !item })),
+      quiet("파일", menuToggle("file"), menuButton("file")),
     // 열린 문서 탭(APG tabs, 수동 활성화): ←→·Home·End 로 옮기고 Enter·Space 로 연다. Delete 는 닫기(닫기 보호 그대로).
     // 닫기 단추는 탭 안의 마우스용 표지다 — tab 의 자식은 표시용이라 Tab 순서에 두지 않는다(tabIndex -1).
     tabs.length > 0 && h("div", { className: "authoring-tabs", role: "tablist", "aria-label": "열린 문서", onKeyDown: (event: any) => {
@@ -1280,6 +1300,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         h("span", { className: "authoring-tab-name" }, tab.name), dirty ? h("span", { className: "authoring-dirty", "aria-hidden": true }) : null,
         iconButton("close", `${tab.name} 닫기`, (event: any) => { event.stopPropagation(); closeTab(tab.id); }, { tabIndex: -1 }));
     })),
+      // 머리 띠의 주 행동은 저장이다 — 저장할 변경이 있거나 새 템플릿이라 저장이 필요할 때만 채움으로 선다.
+      button("저장", act(() => controller.save(), "save"), { disabled: !item,
+        className: item && (item.dirty || item.save_as_required || controller.pending(item.id)) ? "btn primary" : "btn quiet" })),
     // 오류 띠(§10·UX-04): 첫 문장만 보이고 기술 세부는 「자세히」 안에 둔다. 사용자가 닫거나 같은 종류의 작업이 성공해야 걷힌다.
     errorView && h("div", { className: "authoring-error" },
       h("p", { key: view.errorSeq, role: "alert" }, errorView.summary),
@@ -1318,16 +1341,13 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         ...MODES.map(([value, label]) => h("button", { key: value, type: "button", value, "aria-pressed": view.mode === value, ...rove(`mode-${value}`), onClick: () => controller.setMode(value) }, label)))),
       h("div", { className: "authoring-toolbar-group" },
         ...creates.map(({ commandType, label, available, disabled }) =>
-          button(label, () => pick(commandType), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined, ...rove(commandType) }))),
+          quiet(label, () => pick(commandType), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined, ...rove(commandType) }))),
+      // 명령 팔레트(Ctrl+Shift+P)·복사·붙여넣기·이전 위치로는 「더보기」 메뉴 안에 선다.
       h("div", { className: "authoring-toolbar-group" },
-        button("명령", () => openPanel("commands"), { "aria-expanded": view.panel === "commands", "aria-controls": view.panel === "commands" ? "authoring-dock-panel" : undefined, ...rove("commands") }),
-        iconButton("more", "더보기", (event: any) => { if (view.contextMenu?.kind === "more") { controller.update({ contextMenu: null }); return; }
-            const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-            openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, target: event.currentTarget }, root.current, "more"); },
-          { "aria-haspopup": "menu", "aria-expanded": view.contextMenu?.kind === "more", "aria-controls": view.contextMenu?.kind === "more" ? "authoring-menu" : undefined, ...rove("more") })),
+        iconButton("more", "더보기", menuToggle("more"), { ...menuButton("more"), ...rove("more") })),
+      // 막대의 실행 단추는 결과 시험 하나다 — 테두리 단추로 남는 유일한 명령이다.
       h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
-        button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown, ...rove("trial") }),
-        h("select", { className: "field", "aria-label": "확대", value: view.zoom, ...rove("zoom"), onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
+        button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown, ...rove("trial") }))),
     tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}${outlineOpen ? " outline-open" : ""}` },
       // 좁은 폭의 구조 레일(UX-08): 몸통 높이 띠의 그림 단추 — 이름은 기존 문장 그대로 aria-label·title 이다.
       item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, "aria-label": outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기",
@@ -1337,9 +1357,10 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
         item && h("div", { className: "authoring-selection", role: "navigation", "aria-label": "현재 위치의 의미" },
-          h("span", { className: "authoring-selection-label", "aria-hidden": true }, "현재 위치의 의미"),
+          // 뿌리 조각은 열린 문서 이름(글, 단추 아님) — 일치가 없어도 줄이 비어 보이지 않는다.
+          h("span", { className: "authoring-crumb root", title: item.name }, item.name),
           // 조각은 테두리 알약이 아니라 글 링크다(UX-09) — 사이는 › 그림, 마지막(가장 안쪽) 조각은 굵게.
-          ...crumbs(view.matches).flatMap((match: Obj, index: number, all: Obj[]) => [index > 0 ? h("span", { key: `sep-${index}`, className: "authoring-crumb-sep" }, icon("chevron-right")) : null,
+          ...crumbs(view.matches).flatMap((match: Obj, index: number, all: Obj[]) => [h("span", { key: `sep-${index}`, className: "authoring-crumb-sep" }, icon("chevron-right")),
             h("button", { key: index, type: "button", className: "authoring-crumb", onClick: select(match), "aria-current": index === all.length - 1 ? "location" : undefined },
               `${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`)])),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
@@ -1365,16 +1386,18 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       dock.active && h("div", { className: "authoring-dock-panel", id: "authoring-dock-panel", role: "tabpanel", tabIndex: -1, "aria-labelledby": `authoring-dock-tab-${dock.active}` }, dockContent(dock.active))),
     // 문맥 메뉴·더보기(§6.1·APG menu): ↑↓·Home·End 로 옮기고 Tab 은 메뉴를 닫는다. 불가 항목도 초점을 받아 사유를 읽힌다.
     // 공유 사유는 메뉴의 자식이 아니다 — 메뉴 머리 줄로 서고 불가 항목이 설명으로 가리킨다.
-    item && view.contextMenu && h("div", { className: "authoring-context-menu", ref: menuRef, style: { left: view.contextMenu.x, top: view.contextMenu.y },
+    view.contextMenu && (item || view.contextMenu.kind === "file") && h("div", { className: "authoring-context-menu", ref: menuRef, style: { left: view.contextMenu.x, top: view.contextMenu.y },
       onKeyDown: (event: any) => {
         if (roveFocus(event, event.currentTarget, '[role="menuitem"]', "vertical")) return;
         if (event.key === "Tab") { const trigger = view.contextMenu?.trigger; controller.update({ contextMenu: null }); if (focusable(trigger)) trigger.focus(); }
       } },
-      view.contextMenu.kind !== "more" && sharedReason(view.commands) && h("p", { id: "authoring-command-reason-menu", className: "authoring-reason" }, sharedReason(view.commands)),
-      h("div", { className: "authoring-menu", id: "authoring-menu", role: "menu", "aria-label": view.contextMenu.kind === "more" ? "더보기" : "문맥 명령" },
-        view.contextMenu.kind === "more"
-          ? moreActions.map(([label, run, disabled]) => h("button", { key: label, type: "button", className: "authoring-menu-item", role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined,
-            onClick: () => { if (disabled) return; const trigger = view.contextMenu?.trigger; if (focusable(trigger)) trigger.focus(); controller.update({ contextMenu: null }); run(); } }, label))
+      !view.contextMenu.kind && sharedReason(view.commands) && h("p", { id: "authoring-command-reason-menu", className: "authoring-reason" }, sharedReason(view.commands)),
+      h("div", { className: "authoring-menu", id: "authoring-menu", role: "menu", "aria-label": view.contextMenu.kind === "more" ? "더보기" : view.contextMenu.kind === "file" ? "파일" : "문맥 명령" },
+        view.contextMenu.kind
+          ? (view.contextMenu.kind === "file" ? fileActions : moreActions).map(([label, run, disabled, keys]) => h("button", { key: label, type: "button",
+            className: `authoring-menu-item${keys ? " with-key" : ""}`, role: "menuitem", tabIndex: -1, "aria-disabled": disabled || undefined, "aria-keyshortcuts": keys ? ARIA_KEYS[keys] : undefined,
+            onClick: () => { if (disabled) return; const trigger = view.contextMenu?.trigger; if (focusable(trigger)) trigger.focus(); controller.update({ contextMenu: null }); run(); } },
+            label, keys ? h("kbd", { className: "authoring-key", "aria-hidden": true }, keys) : null))
           : h(CommandList, { view, readOnly, menu: true, onPick: pick }))),
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).
     item && h("footer", { className: "authoring-status", role: "group" },
@@ -1393,6 +1416,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         item.trial_state_label && h("span", { "data-trial": item.trial_state }, item.trial_state_label),
         h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
         item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
-        item.recovery && h("span", null, "복구 여부 선택 필요"))),
+        item.recovery && h("span", null, "복구 여부 선택 필요"),
+        // 확대는 상태 막대 끝의 작은 선택이다(편집기 관례) — 도구 막대의 roving 묶음 밖, 보통 Tab 순서다.
+        h("select", { className: "field authoring-zoom", "aria-label": "확대", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) },
+          ...[75, 100, 125, 150, 200].map((value) => h("option", { key: value, value }, `${value}%`))))),
   );
 }

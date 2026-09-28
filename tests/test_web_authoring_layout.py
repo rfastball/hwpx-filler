@@ -15,7 +15,8 @@
 - 좁은 폭(작업대 ≤ 64rem — 뿌리 글자 기준): 속성은 몸통 전체 높이의 시트, 그 뒤에 가림막,
   구조는 레일로 접히고 분할선은 쉰다.
 - 어느 배율에서도 구조 행이 낱말 안에서 줄을 바꾸지 않고(UX-09: 28px 한 줄 말줄임), 구조 패널이 가로로
-  넘치지 않으며, 도구 막대는 한 줄이고 그림 단추는 32px 정사각이다. 항목의 자식 구간은 실선, 선택은 점선 안내선이다.
+  넘치지 않으며, 머리 띠(돌아가기·제목·파일·문서 탭·저장)와 도구 막대는 각각 한 줄이고 그림 단추는 32px 정사각이다.
+  항목의 자식 구간은 실선, 선택은 점선 안내선이다.
 - 강제 색상에서 린트 강조 두 종은 그림자가 아니라 실보더로 갈린다.
 
 데스크톱 Chrome 이 없는 러너는 ``HWPX_SKIP_MOTION_TESTS=1`` 로 **명시** 옵트아웃한다(눌림 기하
@@ -62,12 +63,16 @@ _SCAFFOLD = """<!doctype html>
 </head><body class="authoring-open">
 <div class="app" style="{app_style}"><header class="topbar"></header><main class="stage"><div id="reactScreenStage">
 <section id="scr-authoring" class="scr on"><div class="authoring-shell">
+  <header class="authoring-head"><button type="button" class="btn icon" aria-label="돌아가기">{icon}</button><h1>템플릿 저작</h1>
+    <button type="button" class="btn quiet" aria-haspopup="menu">파일</button>
+    <div class="authoring-tabs" role="tablist"><div class="authoring-tab" role="tab" aria-selected="true"><span class="authoring-tab-name">2026년 공고문 초안.hwpx</span><button type="button" class="btn icon" aria-label="닫기">{icon}</button></div><div class="authoring-tab" role="tab" aria-selected="false"><span class="authoring-tab-name">안내문.txt</span><button type="button" class="btn icon" aria-label="닫기">{icon}</button></div></div>
+    <button type="button" class="btn primary">저장</button></header>
   <div class="authoring-toolbar" role="toolbar">
     <div class="authoring-toolbar-group"><button class="btn icon" aria-label="문서 실행 취소">{icon}</button><button class="btn icon" aria-label="문서 다시 실행">{icon}</button></div>
     <div class="authoring-toolbar-group"><div class="authoring-mode"><button aria-pressed="true">원문</button><button>구조</button><button>문서</button></div></div>
-    <div class="authoring-toolbar-group"><button class="btn">필드로 만들기</button><button class="btn">항목으로 만들기</button><button class="btn">선택으로 만들기</button></div>
-    <div class="authoring-toolbar-group"><button class="btn">명령</button><button class="btn icon" aria-label="더보기">{icon}</button></div>
-    <div class="authoring-toolbar-group authoring-toolbar-end"><button class="btn">결과 시험</button><select class="field"><option>100%</option></select></div>
+    <div class="authoring-toolbar-group"><button class="btn quiet">필드로 만들기</button><button class="btn quiet">항목으로 만들기</button><button class="btn quiet">선택으로 만들기</button></div>
+    <div class="authoring-toolbar-group"><button class="btn icon" aria-label="더보기">{icon}</button></div>
+    <div class="authoring-toolbar-group authoring-toolbar-end"><button class="btn">결과 시험</button></div>
   </div>
   <div class="authoring-body with-properties">
     <button type="button" class="authoring-rail-toggle" aria-expanded="false" aria-label="구조 패널 보기">{icon}</button>
@@ -77,7 +82,7 @@ _SCAFFOLD = """<!doctype html>
       <div class="authoring-outline-panel" role="tabpanel"><ul class="authoring-tree" role="tree">{rows}</ul></div></aside>
     <div class="authoring-splitter authoring-splitter-outline" role="separator" tabindex="0"></div>
     <div class="authoring-center">
-      <div class="authoring-selection"><span class="authoring-selection-label">현재 위치의 의미</span></div>
+      <div class="authoring-selection" role="navigation"><span class="authoring-crumb root">2026년 공고문 초안.hwpx</span></div>
       <main class="authoring-canvas"><div class="authoring-document" id="document"><div style="height:3000px">본문</div></div></main>
     </div>
     <div class="authoring-splitter authoring-splitter-properties" role="separator" tabindex="0"></div>
@@ -85,6 +90,8 @@ _SCAFFOLD = """<!doctype html>
       <label class="authoring-field">이름<input class="field"></label></form>
     <div class="authoring-scrim" aria-hidden="true"></div>
   </div>
+  <footer class="authoring-status"><div class="authoring-status-group"><span>저장됨</span><span>구조 오류 0개</span></div>
+    <div class="authoring-status-group authoring-status-end"><span>시험 자료 없음</span><select class="field authoring-zoom" aria-label="확대"><option>100%</option></select></div></footer>
 </div></section></div></main></div></body></html>
 """
 
@@ -120,6 +127,13 @@ _MEASURE = """() => {
   // 한 줄 = 모든 무리의 세로 구간이 서로 겹친다(높이가 다른 무리는 가운데 정렬이라 윗변이 조금씩 다르다).
   const groups = [...document.querySelectorAll(".authoring-toolbar-group")].map((g) => g.getBoundingClientRect());
   const oneRow = Math.max(...groups.map((r) => r.top)) < Math.min(...groups.map((r) => r.bottom));
+  // 머리 띠도 한 줄이다: 자식(돌아가기·제목·파일·탭 줄·저장)의 세로 구간이 서로 겹치고, 저장은 띠 안(오른쪽 끝)에 선다.
+  const head = q(".authoring-head");
+  const headKids = [...head.children].map((el) => el.getBoundingClientRect());
+  const headOneRow = Math.max(...headKids.map((r) => r.top)) < Math.min(...headKids.map((r) => r.bottom));
+  const headBox = head.getBoundingClientRect();
+  const save = q(".authoring-head>.btn:last-child").getBoundingClientRect();
+  const headSaveInside = save.right <= headBox.right + 0.5 && save.left >= headBox.left;
   return {
     root, container: q("#scr-authoring").getBoundingClientRect().width,
     body: box(".authoring-body"), outline: box(".authoring-outline"), center: box(".authoring-center"),
@@ -132,6 +146,7 @@ _MEASURE = """() => {
     documentEdgeFree: hit !== null && q("#document").contains(hit),
     brokenWords, toolbarRows: oneRow ? 1 : 2, rowHeights, outlineOverflowX, rowsInside, iconSizes, guides,
     toolbarOverflowY: toolbar.scrollHeight - toolbar.clientHeight,
+    headRows: headOneRow ? 1 : 2, headSaveInside, headOverflowX: head.scrollWidth - head.clientWidth,
   };
 }"""
 
@@ -180,6 +195,10 @@ def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale
     assert all(size == [32, 32] for size in m["iconSizes"]), f"{where}: 그림 단추가 32px 정사각이 아닙니다 {m['iconSizes']}"
     assert m["toolbarRows"] == 1 and m["toolbarOverflowY"] <= 1, (
         f"{where}: 도구 막대가 한 줄이 아닙니다(행 {m['toolbarRows']}, 세로 넘침 {m['toolbarOverflowY']})"
+    )
+    assert m["headRows"] == 1 and m["headSaveInside"] and m["headOverflowX"] <= 0, (
+        f"{where}: 머리 띠가 한 줄로 서지 않습니다(행 {m['headRows']}, 저장 안쪽 {m['headSaveInside']}, "
+        f"가로 넘침 {m['headOverflowX']})"
     )
 
     if not narrow:

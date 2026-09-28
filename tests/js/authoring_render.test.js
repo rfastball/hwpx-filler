@@ -159,7 +159,7 @@ async function boot(tab, more = [], respond = () => ({})) {
       if (action === "close") { const tabs = snapshot.tabs.filter((item) => item.id !== payload.session_id); snapshot = { ...snapshot, tabs, active_id: tabs.at(-1)?.id || "" }; notify(); }
       return { ok: true, value: await respond(action, payload) };
     },
-    async invoke() { return { ok: true, value: null }; },
+    async invoke(method, ...args) { calls.push({ invoke: method, args }); return { ok: true, value: null }; },
   };
   const controller = createAuthoringController({ client,
     runtime: { model: () => ({ getSnapshot: () => snapshot, subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); } }), loadInitial: async () => {} },
@@ -410,7 +410,7 @@ test("UX-04 APG tabs: document tabs rove with ←/→/Home/End, activate on Ente
   env.root.unmount();
 });
 
-test("UX-04 APG toolbar: one tab stop, ←/→ wrap, Home/End, and the zoom select's arrows move between controls", async () => {
+test("UX-04 APG toolbar: one tab stop, ←/→ wrap, Home/End; the last control is 결과 시험 and zoom lives in the status bar", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
   const toolbar = env.container.querySelector('[role="toolbar"]');
   const stops = () => toolbar.querySelectorAll('[tabindex="0"]');
@@ -424,11 +424,16 @@ test("UX-04 APG toolbar: one tab stop, ←/→ wrap, Home/End, and the zoom sele
   await settle();
   assert.equal(stops()[0], env.document.activeElement, "roving: 마지막 초점이 Tab 의 입구");
   press(env, "End");
-  assert.equal(env.document.activeElement.getAttribute("aria-label"), "확대");
-  assert.equal(press(env, "ArrowRight").prevented, true, "select 의 → 는 값 변경이 아니라 이동이다");
+  const trial = toolbar.querySelector('[data-rove="trial"]');
+  assert.equal(env.document.activeElement, trial, "마지막 제어는 실행 단추 「결과 시험」");
+  assert.equal(trial.textContent, "결과 시험");
+  assert.equal(press(env, "ArrowRight").prevented, true, "→ 는 이동이다");
   assert.equal(env.document.activeElement, first, "끝에서 감싸 돈다");
   press(env, "ArrowLeft");
-  assert.equal(env.document.activeElement.getAttribute("aria-label"), "확대");
+  assert.equal(env.document.activeElement, trial);
+  assert.equal(toolbar.querySelector("select"), null, "도구 막대에 확대 선택이 없다");
+  const zoom = env.container.querySelector('.authoring-status select[aria-label="확대"]');
+  assert.ok(zoom && !zoom.hasAttribute("data-rove"), "확대는 상태 막대의 보통 Tab 제어다");
   press(env, "Home");
   assert.equal(env.document.activeElement, first);
   assert.ok(![...toolbar.querySelectorAll("[data-rove]")].some((node) => node.disabled && node.getAttribute("tabindex") === "0"), "비활성 제어는 입구가 되지 않는다");
@@ -629,5 +634,60 @@ test("UX-09: without slots or fields each view says what to do next", async () =
   assert.equal(env.container.querySelector("#authoring-outline-structure-panel .authoring-outline-empty").textContent, "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요.");
   assert.equal(env.container.querySelector("#authoring-outline-fields-panel .authoring-outline-empty").textContent, "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.");
   assert.equal(env.container.querySelector('[role="tree"]'), null, "빈 목록은 tree 를 세우지 않는다");
+  env.root.unmount();
+});
+
+test("head band 파일 menu (APG menu): the trigger toggles it, it opens on 문서 열기, ↓ roves, picking 새 TXT returns focus to 파일 and runs new; 문서 열기 runs the open picker", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action) => action === "new" ? { session_id: "a", revision: 0 } : {});
+  const head = env.container.querySelector(".authoring-head");
+  assert.ok(head.querySelector('.authoring-tabs[role="tablist"]'), "문서 탭 줄은 머리 띠 안에 선다");
+  const file = head.querySelectorAll("button").find((node) => node.textContent === "파일");
+  const menu = () => env.container.querySelector('[role="menu"]');
+  const items = () => menu().querySelectorAll('[role="menuitem"]');
+  const label = (node) => node.childNodes[0].textContent;
+  assert.equal(file.getAttribute("aria-haspopup"), "menu");
+  focusOn(env, file);
+  fire(env, file, "click");
+  await settle();
+  assert.equal(menu().getAttribute("aria-label"), "파일");
+  assert.equal(file.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(items().map(label), ["문서 열기", "새 TXT", "저장", "다른 이름으로 저장"]);
+  assert.equal(env.document.activeElement, items()[0], "열리면 첫 사용 가능 항목에 초점");
+  fire(env, file, "click");
+  await settle();
+  assert.equal(menu(), null, "여는 단추를 다시 누르면 닫힌다");
+  fire(env, file, "click");
+  await settle();
+  press(env, "ArrowDown");
+  assert.equal(label(env.document.activeElement), "새 TXT");
+  fire(env, env.document.activeElement, "click");
+  await settle();
+  assert.equal(menu(), null, "고르면 닫힌다");
+  assert.equal(env.document.activeElement, file, "초점은 연 단추로 돌아간다");
+  assert.ok(env.calls.some((call) => call.action === "new" && call.media === "txt"), "새 TXT 는 controller.create 와 같은 실행 경로");
+  fire(env, file, "click");
+  await settle();
+  fire(env, items().find((node) => label(node) === "문서 열기"), "click");
+  await settle();
+  assert.ok(env.calls.some((call) => call.invoke === "open_authoring_document"), "문서 열기는 controller.openFile 과 같은 실행 경로");
+  env.root.unmount();
+});
+
+test("더보기 menu: its first item 명령 opens the command palette in the dock, and the palette does not offer itself", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  const more = env.container.querySelector('.authoring-toolbar [data-rove="more"]');
+  focusOn(env, more);
+  fire(env, more, "click");
+  await settle();
+  const menu = env.container.querySelector('[role="menu"][aria-label="더보기"]');
+  const first = menu.querySelectorAll('[role="menuitem"]')[0];
+  assert.equal(first.textContent, "명령");
+  assert.equal(env.document.activeElement, first, "열리면 첫 항목(명령)에 초점");
+  fire(env, first, "click");
+  await settle();
+  assert.equal(env.container.querySelector('[role="menu"]'), null);
+  const palette = env.container.querySelector('#authoring-dock-panel [aria-label="명령 팔레트"]');
+  assert.ok(palette, "명령 팔레트가 독에 선다");
+  assert.ok(!palette.querySelectorAll("button").some((node) => node.textContent === "명령"), "팔레트는 자기를 여는 단추를 싣지 않는다");
   env.root.unmount();
 });
