@@ -833,7 +833,7 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..341ba2755 100644
+index 2dde6f1a8..a40aa1b4f 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
@@ -946,7 +946,7 @@ index 2dde6f1a8..341ba2755 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4337,204 @@ export class InputHandler {
+@@ -4302,6 +4337,251 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -1062,10 +1062,38 @@ index 2dde6f1a8..341ba2755 100644
 +  }
 +
 +  /**
++   * After the last glyph of the run's first visual line, and how far a label may reach there
++   * (the table cell's right edge, or the page for body text); zoomed px from the page's left.
++   * Null for nested table paths or when the line cannot be resolved.
++   */
++  private semanticLineEnd(marker: SemanticMarker): { x: number; right: number } | null {
++    const none = 0xFFFFFFFF;
++    const zoom = this.viewportManager.getZoom();
++    const path = marker.cellPath;
++    if (path && path.length > 1) return null;
++    const start = this.embedCaretRect(marker.section, marker.startParagraph, marker.startOffset, path);
++    if (path?.length) {
++      const [cell] = path;
++      const line = this.wasm.getLineInfoInCell(marker.section, cell.parentParagraph, cell.control, cell.cell,
++        marker.startParagraph, marker.startOffset);
++      const end = this.wasm.getCursorRectOnLine(marker.section, marker.startParagraph, line.lineIndex, true,
++        cell.parentParagraph, cell.control, cell.cell, marker.startParagraph);
++      const bounds = start.cellBounds ?? end.cellBounds;
++      if (!bounds || end.pageIndex !== start.pageIndex) return null;
++      return { x: end.x * zoom, right: (bounds.x + bounds.w) * zoom };
++    }
++    const line = this.wasm.getLineInfo(marker.section, marker.startParagraph, marker.startOffset);
++    const end = this.wasm.getCursorRectOnLine(marker.section, marker.startParagraph, line.lineIndex, true, none, none, none, none);
++    if (end.pageIndex !== start.pageIndex) return null;
++    return { x: end.x * zoom, right: Number.POSITIVE_INFINITY };
++  }
++
++  /**
 +   * Floating labels: never over each other, never over the previous line. Each goes into the
-+   * leading above its run when it fits, else just below the run; labels that would overlap
-+   * shift right, then down a row. Names longer than 12 characters are truncated (the full
-+   * name is in the host's properties panel).
++   * leading above its run when it fits, else onto the run's own line after its last glyph,
++   * else just below the run; labels that would overlap shift right, then to the next row.
++   * Names longer than 12 characters are truncated (the full name is in the host's properties
++   * panel).
 +   */
 +  private renderSemanticLabels(): void {
 +    const layer = this.semanticLayer;
@@ -1089,27 +1117,46 @@ index 2dde6f1a8..341ba2755 100644
 +      chip.textContent = text;
 +      layer.appendChild(chip);
 +      const width = chip.offsetWidth, height = chip.offsetHeight;
-+      const pageRight = this.virtualScroll.getPageLeftResolved(box.pageIndex, contentWidth)
-+        + this.virtualScroll.getPageWidth(box.pageIndex);
-+      let leading: { gap: number; glyphTop: number } | null = null;
++      const pageLeft = this.virtualScroll.getPageLeftResolved(box.pageIndex, contentWidth);
++      const pageTop = this.virtualScroll.getPageOffset(box.pageIndex);
++      const pageRight = pageLeft + this.virtualScroll.getPageWidth(box.pageIndex) - 2;
++      // Candidate rows, best first: the leading above the run, the rest of the run's own line
++      // after its last glyph, then below the run (the only one that may cover the next line).
++      const rows: Array<{ left: number; top: number; right: number }> = [];
 +      if (boxIndex === 0) {
++        let leading: { gap: number; glyphTop: number } | null = null;
 +        try { leading = this.semanticLeadingAbove(item.marker); } catch { leading = null; }
++        if (leading && leading.gap >= height + 1) {
++          rows.push({ left: box.left, top: pageTop + leading.glyphTop - height - 1, right: pageRight });
++        }
++        let lineEnd: { x: number; right: number } | null = null;
++        try { lineEnd = this.semanticLineEnd(item.marker); } catch { lineEnd = null; }
++        if (lineEnd) {
++          rows.push({ left: Math.max(box.left + box.width, pageLeft + lineEnd.x) + 4,
++            top: box.top + (box.height - height) / 2, right: Math.min(pageRight, pageLeft + lineEnd.right) });
++        }
 +      }
-+      const rows = leading && leading.gap >= height + 1
-+        ? [this.virtualScroll.getPageOffset(box.pageIndex) + leading.glyphTop - height - 1] : [];
-+      rows.push(box.top + box.height + 1);
-+      let left = box.left, top = rows[0], row = 0;
-+      for (let guard = 0; guard < 64; guard++) {
-+        const hit = collides(left, top, width, height);
-+        if (!hit && (left + width <= pageRight || left === box.left)) break;
-+        if (hit && hit.right + 3 + width <= pageRight) { left = hit.right + 3; continue; }
-+        row += 1;
-+        left = box.left;
-+        top = row < rows.length ? rows[row] : rows[rows.length - 1] + (row - rows.length + 1) * (height + 1);
++      const below = { left: box.left, top: box.top + box.height + 1, right: pageRight };
++      rows.push(below);
++      let spot: { left: number; top: number } | null = null;
++      for (const row of rows) {
++        let left = row.left;
++        for (let guard = 0; guard < 64 && left + width <= row.right; guard++) {
++          const hit = collides(left, row.top, width, height);
++          if (!hit) { spot = { left, top: row.top }; break; }
++          left = hit.right + 3;
++        }
++        if (spot) break;
 +      }
-+      chip.style.left = `${left}px`;
-+      chip.style.top = `${top}px`;
-+      placed.push({ left, top, right: left + width, bottom: top + height });
++      // Nothing fits: stack under the run, below any label already there.
++      if (!spot) {
++        let top = below.top;
++        for (let guard = 0; guard < 64 && collides(below.left, top, width, height); guard++) top += height + 1;
++        spot = { left: below.left, top };
++      }
++      chip.style.left = `${spot.left}px`;
++      chip.style.top = `${spot.top}px`;
++      placed.push({ left: spot.left, top: spot.top, right: spot.left + width, bottom: spot.top + height });
 +    };
 +    for (const item of wanted) {
 +      const label = Array.from(item.marker.label);
@@ -1151,7 +1198,7 @@ index 2dde6f1a8..341ba2755 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4699,9 @@ export class InputHandler {
+@@ -4466,6 +4746,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1161,7 +1208,7 @@ index 2dde6f1a8..341ba2755 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +4909,77 @@ export class InputHandler {
+@@ -4673,6 +4956,77 @@ export class InputHandler {
      }
    }
  
