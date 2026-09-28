@@ -55,6 +55,14 @@ _BODY_CHANGING = frozenset({"delete", "unset_field", "repair_marker", "duplicate
 _VIEW_MODES = frozenset({"document", "template", "structure"})
 #: 편집기가 내는 선택 좌표의 키 — TXT 는 start/end, HWPX 는 본문 항목·문단·(표 셀 경로).
 _SELECTION_INTS = ("start", "end", "paragraph", "start_paragraph", "end_paragraph")
+#: 결과 시험 상태 한 가지당 한 표현(P09·§9.1·§13) — 상태 막대의 짧은 칩과 시험 패널의 문장.
+_TRIAL_STATE_LABELS = {"current": "현재 구성 통과", "stale": "마지막 시험 이후 변경됨",
+                       "untried": "시험 전", "failed": "시험 실패"}
+_TRIAL_STATE_MESSAGES = {"current": "현재 시험 구성 통과",
+                         "stale": "마지막 시험 이후 문서 또는 입력이 바뀌었습니다.",
+                         "untried": "아직 시험하지 않았습니다.", "failed": "시험 실패"}
+#: 처음 여는 일반 문서(의미가 아직 없는 문서)의 첫 안내(§13) — 다음 편집에서 사라지는 알림이다.
+_FIRST_FIELD_HINT = "변경할 문구를 선택해 필드로 만들어 보세요."
 
 
 def _valid_cell_path(cell_path: object) -> bool:
@@ -201,13 +209,7 @@ class AuthoringController:
             "selected": dict(session.selected),
             "cases": [self._case_view(session, case) for case in session.cases],
             "cases_error": session.cases_error,
-            "trial_state": (
-                "failed" if session.trial_error else
-                "untried" if session.trial_result is None else
-                "stale" if session.trial_stale else
-                "failed" if session.trial_result.get("report", {}).get("missing_fields")
-                or session.trial_result.get("report", {}).get("errors") else "current"
-            ),
+            **self._trial_state(session),
             "trial_result": session.trial_result,
             "trial_coverage": self._trial_coverage(session),
             "trial_error": session.trial_error,
@@ -222,6 +224,19 @@ class AuthoringController:
             "readiness": self._readiness(session),
             "problems": self._problems(session),
         }
+
+    @staticmethod
+    def _trial_state(session: AuthoringSession) -> dict:
+        """결과 시험 상태와 그 표현(P09·§9.1) — 상태 막대와 시험 패널은 이 둘을 그대로 보인다."""
+        report = (session.trial_result or {}).get("report", {})
+        state = ("failed" if session.trial_error else
+                 "untried" if session.trial_result is None else
+                 "stale" if session.trial_stale else
+                 "failed" if report.get("missing_fields") or report.get("errors") else "current")
+        message = (session.trial_error if state == "failed" and session.trial_error
+                   else _TRIAL_STATE_MESSAGES[state])
+        return {"trial_state": state, "trial_state_label": _TRIAL_STATE_LABELS[state],
+                "trial_state_message": message}
 
     @staticmethod
     def _readiness(session: AuthoringSession) -> dict:
@@ -395,7 +410,9 @@ class AuthoringController:
                 self._restores[session.id] = restore
             self.active_id = session.id
             self._push()
-            return self._contents(session)
+            # 처음 여는 일반 문서(아직 의미가 없는 문서)에만 첫 안내를 한 번 싣는다(§13).
+            first = not as_template and not analysis.get("fields") and not analysis.get("slots")
+            return {**self._contents(session), "notice": _FIRST_FIELD_HINT if first else None}
 
     @staticmethod
     def _clean_selection(selection: object) -> dict | None:
@@ -673,6 +690,11 @@ class AuthoringController:
             content = changed.to_bytes()
         impact = self._preview_impact(session, preview, command)
         session.last_preview = (content, impact["structure_delta"]["renamed"])
+        if command.get("type") == "rename_field":
+            # 전체 이름 변경의 문장(§13)은 조사까지 Python 이 짓는다 — 표면은 그대로 보인다.
+            preview = {**preview, "message": semantics.rename_field_message(
+                int(preview.get("affected", len(preview.get("edits", [])))),
+                str(command.get("name", "")).strip())}
         return {
             **preview,
             "session_id": session.id,
@@ -863,14 +885,14 @@ class AuthoringController:
         if not isinstance(query, str) or kind not in {"text", "field", "structure", "all"}:
             raise ValueError("검색 조건이 올바르지 않습니다.")
         if not query:
-            return {"hits": []}
+            return {"hits": [], "summary": None}
         if session.media == "hwpx":
             package = self._parse(session.media, session.content)
             if kind == "all":
-                return {"hits": [*search_hwpx(package, query, "text")["hits"],
-                                 *search_hwpx(package, query, "field")["hits"],
-                                 *search_hwpx(package, query, "structure")["hits"]]}
-            return search_hwpx(package, query, kind)
+                return self._search_result([*search_hwpx(package, query, "text")["hits"],
+                                             *search_hwpx(package, query, "field")["hits"],
+                                             *search_hwpx(package, query, "structure")["hits"]])
+            return self._search_result(search_hwpx(package, query, kind)["hits"])
         hits = []
         if kind in {"field", "all"}:
             for field in session.analysis.get("fields", []):
@@ -906,8 +928,18 @@ class AuthoringController:
                 start_unit = len(source[:index].encode("utf-16-le")) // 2
                 end_unit = len(source[:end].encode("utf-16-le")) // 2
                 hits.append({"kind": "text", "start": start_unit, "end": end_unit,
-                             "context": source[max(0, index - 20):min(len(source), end + 20)]})
-        return {"hits": hits}
+                             "context": semantics.text_hit_context(source, index, end)})
+        return self._search_result(hits)
+
+    @staticmethod
+    def _search_result(hits: list[dict]) -> dict:
+        """검색 결과와 그 요약(§6.3) — 본문·필드·항목·선택을 나눠 센 것은 Python 이 한 번만 짓는다."""
+        counts = {kind: sum(hit.get("kind") in kinds for hit in hits)
+                  for kind, kinds in (("text", {"text"}), ("field", {"field"}),
+                                      ("structure", {"slot", "option"}))}
+        return {"hits": hits,
+                "summary": (f"총 {len(hits)}건 · 본문 {counts['text']} · 필드 {counts['field']}"
+                            f" · 항목·선택 {counts['structure']}")}
 
     def _commands(self, session: AuthoringSession, selection: dict, context: dict) -> list[dict]:
         """Availability of every command for one selection — the domain decides, we carry (F40)."""

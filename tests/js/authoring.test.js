@@ -8,7 +8,7 @@ import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
 // Headless Node only; Python tests own semantic edits and durable storage.
-function harness(handler = () => ({}), modal = {}) {
+function harness(handler = () => ({}), modal = {}, invoked = () => null) {
   const snapshot = { active_id: "a", tabs: [
     { id: "a", name: "a.txt", path: "a.txt", revision: 0, values: {}, selected: {} },
     { id: "b", name: "b.txt", path: "b.txt", revision: 0, values: {}, selected: {} },
@@ -21,7 +21,7 @@ function harness(handler = () => ({}), modal = {}) {
       const value = await handler(action, payload, snapshot);
       return { ok: true, value };
     },
-    async invoke(method, ...args) { calls.push({ method, args }); return { ok: true, value: null }; },
+    async invoke(method, ...args) { calls.push({ method, args }); return { ok: true, value: await invoked(method, args, snapshot) }; },
   };
   const controller = createAuthoringController({ client,
     runtime: { model: () => ({ getSnapshot: () => snapshot, subscribe: () => () => {} }), loadInitial: async () => {} },
@@ -469,7 +469,7 @@ test("U08/AC10: a cascade_required refusal lists the children by kind·label·co
 
 test("U04/U07: preview detail renders counts·included·children·candidates·links_existing and the rename sentence", async () => {
   const { controller, snapshot } = harness((action, payload) => action === "preview" ? (payload.command.type === "rename_field"
-    ? { affected: 4, before: "공고명", after: "사업명" }
+    ? { affected: 4, before: "공고명", after: "사업명", message: "현재 문서의 사용 위치 4곳이 ‘사업명’으로 변경됩니다." }
     : { affected: 1, before: "특약", after: "[특약]", counts: { paragraphs: 3, fields: 2, options: 1, tables: 0 }, included: ["특약 사항", "세부 조건"], children: [{ kind: "option", id: "a", label: "갑", count: 1 }],
       candidates: [{ name: "공고명", count: 3 }], links_existing: true, existing_count: 3, structure_delta: { added_slots: [], removed_slots: [], added_options: [], removed_options: [], renamed: [] }, body_changed: true }) : {});
   snapshot.tabs[0].analysis = { fields: [{ name: "구", count: 1, occurrences: [] }], slots: [] };
@@ -485,7 +485,7 @@ test("U04/U07: preview detail renders counts·included·children·candidates·li
   assert.ok(create.includes("<p>본문 변경 있음</p>"));
   controller.update({ commandType: "rename_field", selected: { kind: "field", name: "공고명", occurrences: [] } });
   await controller.preview({ type: "rename_field", name: "사업명" });
-  // 새 이름은 보낸 명령(view.command)에서 읽는다 — 문장 형식은 §13 그대로다.
+  // 문장은 조사까지 Python 이 지은 preview.message 그대로다(§13) — 표면은 새로 짓지 않는다.
   assert.match(render(controller), /<p>현재 문서의 사용 위치 4곳이 ‘사업명’으로 변경됩니다\.<\/p>/);
 });
 
@@ -681,9 +681,9 @@ test("U01/§7.1: Python's compatibility verdict renders at shell level — banne
   snapshot.tabs[0].compatibility = { state: "limited", editable: false, message: "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.",
     diagnostics: [{ kind: "preflight_unavailable", message: "HWPX 보존 검사를 실행할 수 없습니다.", detail: "Error: studio 적재 실패" }, { entry: "Contents/header.xml", message: "문서 구조가 가져오기와 내보내기 사이에 변경되었습니다." }] };
   markup = render(controller);
-  const banner = markup.slice(markup.indexOf('<section class="authoring-error authoring-compat" role="alert" aria-label="호환성 경고">'));
+  const banner = markup.slice(markup.indexOf('<section class="authoring-compat" role="alert" aria-label="호환성 경고">'));
   assert.ok(banner.length < markup.length, "호환성 경고 구획이 선다");
-  assert.ok(banner.startsWith('<section class="authoring-error authoring-compat" role="alert" aria-label="호환성 경고"><strong>읽기 전용 · 보존 확인 필요</strong><p>이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.</p>'));
+  assert.ok(banner.startsWith('<section class="authoring-compat" role="alert" aria-label="호환성 경고"><strong>읽기 전용 · 보존 확인 필요</strong><p>이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.</p>'));
   assert.ok(banner.includes('<p>HWPX 보존 검사를 실행할 수 없습니다.</p><p class="authoring-reason">Error: studio 적재 실패</p>'));
   assert.ok(banner.includes(">다른 이름으로 저장</button>") && banner.includes(">원문 표기</button>"));
   assert.ok(markup.includes('<span data-compat="limited">읽기 전용 · 보존 확인 필요</span>'));
@@ -880,7 +880,102 @@ test("P09/§3.1: the status bar splits save·checks from preservation·trial·re
   const { controller, snapshot } = harness();
   snapshot.tabs[0].readiness = { state: "draft", errors: 1, warnings: 0 };
   snapshot.tabs[0].compatibility = { state: "checking" };
+  Object.assign(snapshot.tabs[0], { trial_state: "untried", trial_state_label: "시험 전" });
   await controller.activate("a");
   const markup = render(controller);
-  assert.ok(markup.includes('<footer class="authoring-status" role="status"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span>다시 시험 필요</span><span>시험 자료 없음</span></div></footer>'));
+  assert.ok(markup.includes('<footer class="authoring-status" role="status"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span data-trial="untried">시험 전</span><span>시험 자료 없음</span></div></footer>'));
+});
+
+test("#1025 P09/§9.1: the footer chip and the trial panel show Python's one expression per trial state — untried and failed no longer read alike", async () => {
+  const { controller, snapshot } = harness();
+  await controller.activate("a");
+  const states = {
+    untried: ["시험 전", "아직 시험하지 않았습니다."],
+    failed: ["시험 실패", "필드 ‘사업명’의 값이 없습니다."],
+    stale: ["마지막 시험 이후 변경됨", "마지막 시험 이후 문서 또는 입력이 바뀌었습니다."],
+    current: ["현재 구성 통과", "현재 시험 구성 통과"],
+  };
+  const footers = [];
+  for (const [state, [label, message]] of Object.entries(states)) {
+    Object.assign(snapshot.tabs[0], { trial_state: state, trial_state_label: label, trial_state_message: message });
+    controller.update({ dock: "trial", trial: true });
+    const markup = render(controller);
+    const footer = markup.slice(markup.indexOf('<footer class="authoring-status"'));
+    assert.ok(footer.includes(`<span data-trial="${state}">${label}</span>`), state);
+    assert.ok(markup.includes(`<p role="status">${message}</p>`), state);
+    footers.push(label);
+  }
+  assert.equal(new Set(footers).size, 4, "상태마다 다른 표현");
+  const markup = render(controller);
+  assert.ok(!markup.includes("다시 시험 필요</span>") && !markup.includes("현재 시험 구성 확인됨</span>"), "표면이 짓던 옛 상태 막대 문구는 사라진다");
+});
+
+test("#1025 P09: the footer shows Python's readiness.message when it is sent, and the counts otherwise", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].readiness = { state: "draft", errors: 2, warnings: 1, message: "사용 전에 구조 오류 2개를 확인하세요." };
+  await controller.activate("a");
+  let markup = render(controller);
+  assert.ok(markup.includes("<span>저장됨 · 초안</span><span>사용 전에 구조 오류 2개를 확인하세요.</span>"));
+  snapshot.tabs[0].readiness = { state: "ready", errors: 0, warnings: 1, message: null };
+  markup = render(controller);
+  assert.ok(markup.includes("<span>저장됨 · 사용 준비</span><span>구조 오류 0개 · 경고 1개</span>"));
+});
+
+test("#1025 §6.3: search shows Python's summary above the hits and tags each hit with its kind; several documents get one summary line each", async () => {
+  const summaries = { a: "총 3건 · 본문 1 · 필드 1 · 항목·선택 1", b: "총 1건 · 본문 1 · 필드 0 · 항목·선택 0" };
+  const { controller } = harness((action, payload) => action === "search" ? { summary: summaries[payload.session_id], hits: payload.session_id === "a"
+    ? [{ kind: "text", context: "…수요기관: 공고 안내" }, { kind: "field", name: "공고명", context: "[공고명] 공고" }, { kind: "slot", label: "공고 구분" }]
+    : [{ kind: "text", context: "공고" }] } : {});
+  await controller.activate("a");
+  await controller.search("공고", "all");
+  let markup = render(controller);
+  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
+  assert.ok(markup.includes('<span class="authoring-kind">본문</span>a.txt · …수요기관: 공고 안내</button>'));
+  assert.ok(markup.includes('<span class="authoring-kind">필드</span>a.txt · [공고명] 공고</button>'));
+  assert.ok(markup.includes('<span class="authoring-kind">항목</span>a.txt · 공고 구분</button>'));
+  assert.ok(markup.indexOf("authoring-search-summary") < markup.indexOf("…수요기관"), "요약이 결과 위에 선다");
+  await controller.search("공고", "all", true);
+  markup = render(controller);
+  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">a.txt · 총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
+  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">b.txt · 총 1건 · 본문 1 · 필드 0 · 항목·선택 0</p>'));
+});
+
+test("#1025 §7.2: the outline occurrence label and its accessible name use Python's normalized context, never the raw field command", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].analysis = { slots: [], fields: [{ name: "진행상태", count: 1, occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, context: "[진행상태] - 누름틀",
+    raw: { text: "9Clickhere:set:50:Direction:wstring:8:{{진행상태}} HelpState:wstring:0:  {{진행상태}}{{진행상태}} - 누름틀" } }] }] };
+  await controller.activate("a");
+  const markup = render(controller);
+  assert.ok(markup.includes(">1. [진행상태] - 누름틀</button>"));
+  assert.ok(markup.includes('aria-label="진행상태 · 사용 위치 1/1 · [진행상태] - 누름틀"'));
+  assert.ok(!markup.includes("Clickhere"), "원문 명령 표기는 구조 목록에 서지 않는다");
+});
+
+test("#1025 §13: the empty workbench has one sentence, the header's two actions and the recoverable drafts as a list", async () => {
+  const { controller, calls, snapshot } = harness();
+  snapshot.tabs = [];
+  snapshot.active_id = "";
+  snapshot.recoverable = [{ key: "k1", name: "공고문.hwpx", updated_at: "2026-09-28T01:02:03Z" }, { key: "k2", path: "C:/x/깨짐.txt", error: "초안을 읽을 수 없습니다." }];
+  const markup = render(controller);
+  const empty = markup.slice(markup.indexOf('<div class="authoring-empty">'));
+  assert.ok(empty.startsWith('<div class="authoring-empty"><p>HWPX·TXT 문서를 열거나 새 TXT를 만드세요.</p><div class="authoring-empty-actions"><button type="button" class="btn primary">문서 열기</button><button type="button" class="btn">새 TXT</button></div>'));
+  assert.ok(empty.includes('<ul class="authoring-drafts" aria-label="복구 가능한 작업"><li><strong>공고문.hwpx</strong><time dateTime="2026-09-28T01:02:03Z">') || empty.includes('<ul class="authoring-drafts" aria-label="복구 가능한 작업"><li><strong>공고문.hwpx</strong><time datetime="2026-09-28T01:02:03Z">'));
+  assert.ok(empty.includes('<strong>C:/x/깨짐.txt</strong><p role="alert">초안을 읽을 수 없습니다.</p>'));
+  assert.ok(empty.includes('>초안과 원본 비교</button>') && empty.includes('>복구</button>') && empty.includes('>폐기</button>'));
+  assert.ok(!markup.includes("변경할 문구를 선택해 필드로 만들어 보세요."), "첫 필드 안내는 빈 작업대의 문장이 아니다");
+  assert.ok(!markup.includes("authoring-body"), "문서가 없으면 빈 편집면을 세우지 않는다");
+  await controller.openFile();
+  assert.deepEqual(calls.at(-1), { method: "open_authoring_document", args: ["", false] }, "머리의 「문서 열기」와 같은 실행 경로");
+});
+
+test("#1025 §13: opening a general document shows Python's first-field notice once, and the next edit clears it", async () => {
+  const hint = "변경할 문구를 선택해 필드로 만들어 보세요.";
+  const { controller } = harness((action) => action === "update" ? { revision: 1 } : {}, {},
+    (method) => method === "open_authoring_document" ? { session_id: "b", revision: 0, notice: hint } : null);
+  await controller.activate("a");
+  await controller.openFile();
+  assert.equal(controller.viewModel.getSnapshot().notice, hint);
+  controller.changed("b", "edited");
+  assert.equal(controller.viewModel.getSnapshot().notice, "");
+  await controller.flush("b");
 });

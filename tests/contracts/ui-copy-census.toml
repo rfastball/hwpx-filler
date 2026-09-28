@@ -136,7 +136,7 @@ text = "호스트에 {} 가 없습니다 — 계약(HOST_METHODS)과 호스트�
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
-text = "마지막 시험 이후 문서 또는 입력이 바뀌었습니다."
+text = "HWPX·TXT 문서를 열거나 새 TXT를 만드세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
@@ -145,10 +145,6 @@ text = "문서가 변경되었습니다. 변경 미리보기를 다시 실행하
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
 text = "문서에서 붙여넣을 위치를 선택하세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."
-
-[[sentence]]
-file = "frontend/src/screens/authoring.ts"
-text = "변경할 문구를 선택해 필드로 만들어 보세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
@@ -165,10 +161,6 @@ text = "시험 자료는 템플릿 파일에 포함되지 않습니다."
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
 text = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다."
-
-[[sentence]]
-file = "frontend/src/screens/authoring.ts"
-text = "아직 시험하지 않았습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
@@ -189,10 +181,6 @@ text = "통과 표시는 현재 값과 선택 구성에만 해당합니다."
 [[sentence]]
 file = "frontend/src/screens/authoring.ts"
 text = "한글 조합을 마친 뒤 다시 실행하세요."
-
-[[sentence]]
-file = "frontend/src/screens/authoring.ts"
-text = "현재 문서의 사용 위치 {}곳이 ‘{}’으로 변경됩니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
@@ -1404,6 +1392,10 @@ text = "항목이나 선택 영역을 선택하세요."
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
 text = "항목이나 선택 영역을 찾을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "현재 문서의 사용 위치 {}곳이 ‘{}’{} 변경됩니다."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
@@ -3189,6 +3181,10 @@ text = "다시 열 파일이 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "마지막 시험 이후 문서 또는 입력이 바뀌었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다."
 
 [[sentence]]
@@ -3218,6 +3214,10 @@ text = "문서를 저장한 뒤 기존 작업에 적용하세요."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "변경 확인 토큰이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "변경할 문구를 선택해 필드로 만들어 보세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
@@ -3326,6 +3326,10 @@ text = "시험값이 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "실패한 시험 결과는 내보낼 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_authoring.py"
+text = "아직 시험하지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"

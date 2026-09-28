@@ -46,6 +46,7 @@ from ..domain.template_authoring import (
     field_candidates,
     marker_target,
     navigate_action,
+    occurrence_context,
     shared_reasons,
     target_availability,
 )
@@ -181,11 +182,95 @@ def _cell_path(root, paragraph) -> list[dict] | None:
     return steps
 
 
+def _field_marks(entry: str, root) -> dict:
+    """필드 경계 노드 → (사용 위치 열쇠, 이름). 문맥 조각에서 필드 값 자리를 ``[이름]`` 으로 접는 데 쓴다."""
+    marks: dict = {}
+    for occurrence in resolve_field_occurrences(entry, root).occurrences:
+        name = normalize_field_id(occurrence.raw_name)
+        if name is None or not is_fill_target_field_type(occurrence.field_type):
+            continue
+        marks[occurrence.begin] = (occurrence.begin, name)
+        marks[occurrence.end] = (occurrence.begin, None)
+    return marks
+
+
+def _paragraph_pieces(paragraph, marks: dict) -> list[tuple[str, object, str | None]]:
+    """문단 본문의 조각 ``(글자, 필드 열쇠, 필드 이름)`` — 글자 offset 은 본문 검색의 ``body`` 와 같다.
+
+    본문은 문단 바로 아래 ``hp:run`` 의 ``hp:t`` 뿐이다. 필드 명령의 매개변수 문자열(``Clickhere:set:…``)은
+    ``hp:t`` 가 아니라 들어오지 않는다. 필드 시작마다 빈 조각을 두어 값이 빈 필드도 자리를 남긴다.
+    """
+    pieces: list[tuple[str, object, str | None]] = []
+    current: tuple[object, str] | None = None
+    for node in paragraph.iter():
+        mark = marks.get(node)
+        if mark is not None:
+            key, name = mark
+            current = (key, name) if name is not None else None
+            if current is not None:
+                pieces.append(("", key, name))
+        elif node.tag == f"{_HP}t":
+            run = node.getparent()
+            if run is not None and run.tag == f"{_HP}run" and run.getparent() is paragraph:
+                pieces.append((node.text or "", *(current or (None, None))))
+    return pieces
+
+
+def _render_pieces(pieces: list[tuple[str, object, str | None]]) -> str:
+    out: list[str] = []
+    last: object = None
+    for text, key, name in pieces:
+        if key is None:
+            out.append(text)
+        elif key is not last:
+            out.append(f"[{name}]")
+        last = key
+    return "".join(out)
+
+
+def _occurrence_context(occurrence, name: str, marks: dict) -> str:
+    """사용 위치 한 곳의 문맥 — 그 문단의 **본문 글자**만 앞뒤로 싣고 필드 자리는 ``[이름]`` 이다(§7.2·P10)."""
+    pieces = _paragraph_pieces(occurrence.paragraph, marks)
+    own = [index for index, piece in enumerate(pieces) if piece[1] is occurrence.begin]
+    if not own:
+        return f"[{name}]"
+    return occurrence_context(_render_pieces(pieces[:own[0]]), f"[{name}]",
+                              _render_pieces(pieces[own[-1] + 1:]))
+
+
+def _body_hit_context(pieces: list[tuple[str, object, str | None]], start: int, end: int) -> str:
+    """본문 검색 한 건의 문맥 — 찾은 글자가 필드 값 안이면 그 필드 전체를 표지로 보인다(§6.3)."""
+    spans: list[tuple[int, int, tuple[str, object, str | None]]] = []
+    offset = 0
+    for piece in pieces:
+        spans.append((offset, offset + len(piece[0]), piece))
+        offset += len(piece[0])
+    hit = {id(piece[1]) for lo, hi, piece in spans if piece[1] is not None and lo < end and start < hi}
+    # 찾은 글자가 필드 값에 걸치면 그 필드(들) 전체가 가운데 표지가 된다.
+    inside = [(lo, hi) for lo, hi, piece in spans if piece[1] is not None and id(piece[1]) in hit]
+    if inside:
+        start, end = min(start, inside[0][0]), max(end, inside[-1][1])
+    before: list[tuple[str, object, str | None]] = []
+    focus: list[tuple[str, object, str | None]] = []
+    after: list[tuple[str, object, str | None]] = []
+    for lo, hi, (text, key, name) in spans:
+        if key is not None:
+            # 필드 조각은 자르지 않는다 — 통째로 앞·가운데·뒤 중 한 곳에 선다.
+            side = (focus if id(key) in hit else before if hi <= start else after if lo >= end else focus)
+            side.append((text, key, name))
+            continue
+        before.append((text[:max(0, min(hi, start) - lo)], None, None))
+        focus.append((text[max(0, start - lo):max(0, min(hi, end) - lo)], None, None))
+        after.append((text[max(0, end - lo):], None, None))
+    return occurrence_context(_render_pieces(before), _render_pieces(focus), _render_pieces(after))
+
+
 def _fields(package) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for entry, root in _roots(package):
         paragraphs = [node for node in root if node.tag == f"{_HP}p"]
         resolution = resolve_field_occurrences(entry, root)
+        marks = _field_marks(entry, root)
         for ordinal, occurrence in enumerate(resolution.occurrences):
             if not is_fill_target_field_type(occurrence.field_type):
                 continue
@@ -207,11 +292,13 @@ def _fields(package) -> list[dict]:
                 **position,
                 "paragraph_path": root.getroottree().getpath(occurrence.paragraph),
                 "reliable": not resolution.diagnostics,
-                "context": "".join(occurrence.paragraph.itertext())[:120],
+                "context": _occurrence_context(occurrence, name, marks),
                 "raw": {
                     "begin_xml": etree.tostring(occurrence.begin, encoding="unicode", with_tail=False),
                     "end_xml": etree.tostring(occurrence.end, encoding="unicode", with_tail=False),
                     "value": "".join("".join(node.itertext()) for node in occurrence.texts),
+                    # 문단의 원문 글자(필드 명령 매개변수 포함) — 원문 표기에만 쓴다(§7.2).
+                    "text": "".join(occurrence.paragraph.itertext())[:120],
                 },
             })
     return [{"name": name, "count": len(items), "occurrences": items}
@@ -407,6 +494,7 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
     pattern = re.compile(re.escape(query), re.IGNORECASE)
     for entry, root in _roots(require_package(content)):
         paragraphs = [node for node in root if node.tag == f"{_HP}p"]
+        marks = _field_marks(entry, root)
         for paragraph in root.iter(f"{_HP}p"):
             if paragraph in paragraphs:
                 position = {"paragraph": paragraphs.index(paragraph)}
@@ -422,7 +510,9 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
                 hits.append({"entry": entry, **position,
                              "paragraph_path": root.getroottree().getpath(paragraph),
                              "start": match.start(), "end": match.end(),
-                             "context": body[:120]})
+                             "kind": "text",
+                             "context": _body_hit_context(_paragraph_pieces(paragraph, marks),
+                                                          match.start(), match.end())})
     return {"hits": hits}
 
 
