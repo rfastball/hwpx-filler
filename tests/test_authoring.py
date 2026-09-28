@@ -2585,6 +2585,12 @@ _CR = chr(13)
      '<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="s"><hp:metaTag>'
      '{"name":"#hf"}</hp:metaTag><hp:parameters cnt="0" name=""/></hp:fieldBegin></hp:ctrl>'
      '</hp:run></hp:p>'),
+    # 단 정의(colPr)가 없는 구역에 rhwp 템플릿의 기본 단 정의를 덧붙이던 결함(#1022).
+    # 실습 표본·시나리오 서식이 이 형태다 — 같은 값이라도 원본에 없던 요소가 생기면 편집이다.
+    ("section",
+     '<hp:p><hp:run><hp:secPr id=""/><hp:t>본문</hp:t></hp:run></hp:p>',
+     '<hp:p><hp:run><hp:secPr id=""/><hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" '
+     'colCount="1" sameSz="1" sameGap="0"/></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>'),
 ])
 def test_rhwp_roundtrip_blocks_categories_fixed_in_the_serializer(
         part: str, source: str, exported: str) -> None:

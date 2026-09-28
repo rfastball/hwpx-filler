@@ -2508,10 +2508,35 @@ index 564e62e00..36463c9c8 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..b2f1084e4 100644
+index f951d7284..024ed36ee 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
-@@ -689,7 +689,11 @@ pub(crate) fn render_hp_p_open(p: &Paragraph, id: u32, style_id_ref: u8) -> Stri
+@@ -563,14 +563,21 @@ pub fn write_section(
+     // colPr(colCount=1)에 치환한다. 본문(depth 0) ColumnDef 는 render_runs 인라인
+     // 슬롯에서 제외되므로(#1379) 여기서 받지 않으면 단 정의가 손실된다(2단→1단 →
+     // 페이지 넘침). #1388 secPr 여백 치환과 동형.
++    //
++    // 첫 문단 IR 에 ColumnDef 가 없으면(원본 HWPX 가 colPr 를 쓰지 않은 구역) 템플릿의
++    // 기본 colPr 를 지운다. 남기면 원본에 없던 단 정의가 생겨 무편집 왕복이 원본과
++    // 달라지고, 재파싱 IR 에도 없던 ColumnDef 가 생긴다. 단 정의가 없는 구역은
++    // 한컴·rhwp 모두 단일 단으로 조판하므로 조판은 바뀌지 않는다.
+     if let Some(p) = first_para {
+-        if let Some(Control::ColumnDef(cd)) = p
++        let col_pr = match p
+             .controls
+             .iter()
+             .find(|c| matches!(c, Control::ColumnDef(_)))
+         {
+-            out = out.replacen(TEMPLATE_BODY_COL_PR, &render_col_pr_ctrl(cd), 1);
+-        }
++            Some(Control::ColumnDef(cd)) => render_col_pr_ctrl(cd),
++            _ => String::new(),
++        };
++        out = out.replacen(TEMPLATE_BODY_COL_PR, &col_pr, 1);
+     }
+ 
+     if let Some(p) = first_para {
+@@ -689,7 +696,11 @@ pub(crate) fn render_hp_p_open(p: &Paragraph, id: u32, style_id_ref: u8) -> Stri
      };
      format!(
          r#"<hp:p id="{}" paraPrIDRef="{}" styleIDRef="{}" pageBreak="{}" columnBreak="{}" merged="0">"#,
@@ -2524,7 +2549,7 @@ index f951d7284..b2f1084e4 100644
      )
  }
  
-@@ -1156,6 +1160,17 @@ impl RunSplitter {
+@@ -1156,6 +1167,17 @@ impl RunSplitter {
      }
  }
  
@@ -2542,7 +2567,7 @@ index f951d7284..b2f1084e4 100644
  /// `<hp:ctrl><hp:fieldEnd beginIDRef=".."/></hp:ctrl>` 방출 공통 경로.
  fn emit_field_end(out: &mut String, para: &Paragraph, fr: &FieldRange) {
      if let Some(Control::Field(f)) = para.controls.get(fr.control_idx) {
-@@ -2193,6 +2208,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2193,6 +2215,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
                  out.push_str(&memo_children);
@@ -2550,7 +2575,7 @@ index f951d7284..b2f1084e4 100644
                  out.push_str("</hp:fieldBegin>");
                  out.push_str("</hp:ctrl>");
                  return;
-@@ -2201,7 +2217,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2201,7 +2224,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
              let has_params = f.raw_parameters_xml.is_some() || generated_params.is_some();
              let has_memo = f.field_type == crate::model::control::FieldType::Memo
                  && !f.memo_paragraphs.is_empty();
@@ -2559,7 +2584,7 @@ index f951d7284..b2f1084e4 100644
                  // [#1391] 자식(parameters / memo subList)이 있으면 start/end 태그.
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-@@ -2230,6 +2246,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2230,6 +2253,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                      }
                      out.push_str("</hp:subList>");
                  }
@@ -2567,7 +2592,7 @@ index f951d7284..b2f1084e4 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
-@@ -3056,6 +3073,10 @@ fn render_common_shape_xml(
+@@ -3056,6 +3080,10 @@ fn render_common_shape_xml(
          Ok(xml) => out.push_str(&xml),
          Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
      }
@@ -2578,7 +2603,7 @@ index f951d7284..b2f1084e4 100644
      out.push_str(&format!("</hp:{tag}>"));
      out
  }
-@@ -4373,6 +4394,111 @@ mod tests {
+@@ -4373,6 +4401,111 @@ mod tests {
          );
      }
  
@@ -2690,6 +2715,53 @@ index f951d7284..b2f1084e4 100644
      /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
      /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
      #[test]
+@@ -4840,16 +4973,31 @@ mod tests {
+ 
+     #[test]
+     fn task1407_single_column_doc_unaffected() {
+-        // ColumnDef IR 이 없는 문단(단일 단)은 템플릿 colCount=1 유지 — 회귀 없음.
++        // ColumnDef IR 이 없는 문단은 colPr 를 방출하지 않는다 — 원본에 없던 단 정의를
++        // 만들지 않는다(colPr 없는 HWPX 의 무편집 왕복 보존).
+         let mut para = Paragraph::default();
+         para.text = "x".to_string();
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+         let xml = String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap();
+         assert!(
+-            xml.contains(r#"colCount="1""#),
+-            "ColumnDef 없으면 템플릿 colCount=1 유지"
++            !xml.contains("<hp:colPr"),
++            "ColumnDef 없으면 colPr 를 방출하지 않아야 함: {}",
++            &xml[..900.min(xml.len())]
+         );
++        assert!(xml.contains("</hp:secPr>"), "secPr 는 그대로 방출");
++    }
++
++    #[test]
++    fn single_column_def_is_still_emitted_from_ir() {
++        // ColumnDef IR 이 있으면 단일 단이라도 colPr 를 그대로 방출한다.
++        let mut para = Paragraph::default();
++        para.text = "x".to_string();
++        para.controls.push(Control::ColumnDef(ColumnDef::default()));
++        let (doc, section) = make_doc_with_paragraph(para);
++        let mut ctx = SerializeContext::collect_from_document(&doc);
++        let xml = String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap();
++        assert_eq!(xml.matches("<hp:colPr").count(), 1, "IR ColumnDef 는 colPr 1개로 방출");
+     }
+ 
+     #[test]
+@@ -6191,8 +6339,11 @@ mod tests {
+         use crate::model::style::CharShape;
+ 
+         // 첫 문단: "abcdef", 경계 1개 — 원본 파스 결과는 [(0,1),(19,2)]
++        // colPr 가 위치 축 8 을 선점한다는 것은 파서가 그 문단에 ColumnDef 를 싣는다는
++        // 뜻이다 — ColumnDef 없는 IR 은 colPr 를 방출하지 않으므로 파서 정합대로 싣는다.
+         let mut p0 = Paragraph::default();
+         p0.text = "abcdef".to_string();
++        p0.controls.push(Control::ColumnDef(ColumnDef::default()));
+         p0.char_offsets = vec![16, 17, 18, 19, 20, 21];
+         p0.char_count = 23;
+         p0.char_shapes = vec![cs(0, 1), cs(19, 2)];
 diff --git a/src/serializer/hwpx/shape.rs b/src/serializer/hwpx/shape.rs
 index bc3278b8d..2e39d6404 100644
 --- a/src/serializer/hwpx/shape.rs
