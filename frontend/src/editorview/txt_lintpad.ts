@@ -15,7 +15,7 @@
  *
  * 전용 작업대는 undo/search 키맵을 설치한다. 기존 모달에서는 키맵을 설치하지 않아
  * Escape·Tab의 모달 이탈 가드와 포커스 트랩을 유지한다. */
-import { EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { history, historyKeymap, undo, redo, undoDepth, redoDepth, isolateHistory } from "@codemirror/commands";
@@ -134,6 +134,70 @@ const BASE_THEME: Extension = EditorView.theme({
   ".cm-scroller": { lineHeight: "1.6" },
 });
 
+/** 검색 패널(Ctrl+F)의 **배치**만 — 색·테두리는 `frontend/css/authoring.css` 가 토큰으로 칠한다.
+ *  vendor 기본은 글자를 70~80% 로 줄이고 조작 사이를 em 여백으로 띄운다. 제품 입력·버튼과
+ *  같은 크기·안쪽 여백으로 맞춘다. */
+const PANEL_THEME: Extension = EditorView.theme({
+  ".cm-panel.cm-search": { padding: "var(--sp-6) 2.5rem var(--sp-6) var(--sp-8)" },
+  ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label": {
+    margin: "var(--sp-2) var(--sp-8) var(--sp-2) 0",
+  },
+  ".cm-panel.cm-search label": { fontSize: "var(--fs-body)" },
+  ".cm-panel.cm-search [name=close]": { top: "var(--sp-4)", right: "var(--sp-8)", fontSize: "var(--fs-strong)" },
+  ".cm-textfield": { fontSize: "var(--fs-body)", padding: "var(--sp-4) var(--sp-8)" },
+  ".cm-button": { fontSize: "var(--fs-body)", padding: "var(--sp-4) var(--sp-10)" },
+});
+
+/** 앱이 지금 어두운 테마인가 — `tokens.css` 와 같은 판정 순서다: `html[data-theme]` 의
+ *  명시값이 이기고, 없으면(「시스템」) OS 선호를 따른다. 순수 함수라 단위로 잰다. */
+export function lintpadIsDark(themeAttribute: string | null, systemDark: boolean): boolean {
+  if (themeAttribute === "dark") return true;
+  if (themeAttribute === "light") return false;
+  return systemDark;
+}
+
+/** 어두운 테마 표지의 자리. vendor 는 이 facet 으로 `&dark`/`&light` 기본 규칙을 고른다 —
+ *  넘기지 않으면 어두운 앱 안에서 검색 패널이 밝은 기본으로 그려진다. */
+const darkness = new Compartment();
+const darkFacet = (dark: boolean): Extension => EditorView.darkTheme.of(dark);
+
+/** 같은 확장 조합에서 facet 이 실제로 켜지는가 — DOM 없이 상태만 세워 확인하는 단위 창구.
+ *  vendor 타입은 밖으로 나가지 않는다(boolean 만 돌려준다). */
+export function lintpadDarkFacet(dark: boolean): boolean {
+  return EditorState.create({ extensions: [darkness.of(darkFacet(dark))] }).facet(EditorView.darkTheme);
+}
+
+function systemPrefersDark(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function currentDark(): boolean {
+  return lintpadIsDark(document.documentElement.getAttribute("data-theme"), systemPrefersDark());
+}
+
+/** 테마 전환을 뒤따른다 — `data-theme` 속성 변화와 OS 선호 변화 둘 다. 해제 함수를 돌려준다. */
+function watchTheme(view: EditorView): () => void {
+  let dark = currentDark();
+  const sync = () => {
+    const next = currentDark();
+    if (next === dark) return;
+    dark = next;
+    view.dispatch({ effects: darkness.reconfigure(darkFacet(next)) });
+  };
+  const observer = typeof MutationObserver === "function" ? new MutationObserver(sync) : null;
+  observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  media?.addEventListener("change", sync);
+  return () => {
+    observer?.disconnect();
+    media?.removeEventListener("change", sync);
+  };
+}
+
+/** 손잡이 → 테마 감시 해제. 뷰와 같은 수명이다. */
+const THEME_WATCHES = new WeakMap<LintpadHandle, () => void>();
+
 /** 마운트 — vendor 인스턴스 생성의 **유일한** 자리(`mount_owner`). */
 export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
   const handle: LintpadHandle = { host: spec.host };
@@ -156,6 +220,8 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         }),
         spanField,
         BASE_THEME,
+        PANEL_THEME,
+        darkness.of(darkFacet(currentDark())),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) spec.onDocChanged(update.state.doc.toString());
           if (update.selectionSet || update.docChanged) {
@@ -167,6 +233,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
     }),
   });
   VIEWS.set(handle, view);
+  THEME_WATCHES.set(handle, watchTheme(view));
   return handle;
 }
 
@@ -232,5 +299,7 @@ export function disposeLintpad(handle: LintpadHandle): void {
   const view = VIEWS.get(handle);
   if (view === undefined) return;
   VIEWS.delete(handle);
+  THEME_WATCHES.get(handle)?.();
+  THEME_WATCHES.delete(handle);
   view.destroy();
 }

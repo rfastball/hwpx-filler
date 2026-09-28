@@ -94,6 +94,13 @@ _LAYER_MAP = [
     ("--z-modal", "layer.modal"),
 ]
 
+# 글꼴 스택(UX-08 #1027) — 테마 불변 문자열. 고정폭 스택이 화면마다 달리 적혀 있던 것을
+# 한 변수로 모은다. 값은 따옴표를 포함한 CSS font-family 목록 그대로다.
+_FONT_MAP = [
+    ("--font-ui", "font.ui"),
+    ("--font-mono", "font.mono"),
+]
+
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
 _WEB_INDENT = "  "
 
@@ -132,6 +139,11 @@ def _layer_vars(tokens: dict, indent: str) -> "list[str]":
     return [f"{indent}{name}:{_dig(tokens, path)};" for name, path in _LAYER_MAP]
 
 
+def _font_vars(tokens: dict, indent: str) -> "list[str]":
+    """글꼴 스택 토큰(문자열 그대로, 테마 불변)."""
+    return [f"{indent}{name}:{_dig(tokens, path)};" for name, path in _FONT_MAP]
+
+
 def render_web_region(tokens: dict) -> str:
     """웹 ``frontend/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
 
@@ -142,13 +154,14 @@ def render_web_region(tokens: dict) -> str:
     다크 선언은 미디어쿼리·명시 셀렉터에 두 번 실린다(CSS 변수는 재사용 include 가 없어 반복이 정답).
     color-scheme 로 WebView2 네이티브 크롬(스크롤바·<select>·체크박스)도 테마를 추종한다.
     마커(<gen:tokens>)는 이제 :root 를 포함한 전체 영역을 감싼다 — tokens.css 의 :root 수기 래퍼는 제거됨.
-    스케일·모션 변수(--sp-*·--rad-*·--fs-*·--dur-*·--ease-*)는 테마 불변이라 이 라이트 :root 블록에만 실린다(다크 두 블록 미중복)."""
+    스케일·모션·글꼴 변수(--sp-*·--rad-*·--fs-*·--dur-*·--ease-*·--font-*)는 테마 불변이라 이 라이트 :root 블록에만 실린다(다크 두 블록 미중복)."""
     dark = tokens["dark"]
     lines = [OPEN_CSS, ":root{"]
     lines += _web_vars(tokens, "  ")
     lines += _scale_vars(tokens, "  ")
     lines += _motion_vars(tokens, "  ")
     lines += _layer_vars(tokens, "  ")
+    lines += _font_vars(tokens, "  ")
     lines += ["  color-scheme:light;", "}",
               "html{font-size:100%;}",
               'html[data-font-scale="large"]{font-size:125%;}',

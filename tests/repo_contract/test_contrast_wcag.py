@@ -34,6 +34,9 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
             )
         ),
         ("light control border", light["neutral"]["border_control"], light["color"]["card_bg"], 3.0),
+        # 입력(.field) 테두리가 이 토큰이다(UX-08 #1027) — 카드뿐 아니라 창 바탕 위에도 선다.
+        ("light control border/window", light["neutral"]["border_control"], light["color"]["window_bg"], 3.0),
+        ("light control border/surface alt", light["neutral"]["border_control"], light["neutral"]["surface_alt"], 3.0),
         *(
             (f"dark muted/{name}", dark["color"]["muted"], background, 4.5)
             for name, background in (
@@ -43,6 +46,9 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
             )
         ),
         ("dark control border", dark["neutral"]["border_control"], dark["color"]["card_bg"], 3.0),
+        # 입력(.field) 테두리가 이 토큰이다(UX-08 #1027) — 카드뿐 아니라 창 바탕 위에도 선다.
+        ("dark control border/window", dark["neutral"]["border_control"], dark["color"]["window_bg"], 3.0),
+        ("dark control border/surface alt", dark["neutral"]["border_control"], dark["neutral"]["surface_alt"], 3.0),
         *(
             (f"dark {name}/card", foreground, dark["color"]["card_bg"], 4.5)
             for name, foreground in (

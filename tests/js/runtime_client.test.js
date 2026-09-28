@@ -46,7 +46,7 @@ function adapterWith(api) {
 /* ══════════════ 생성 계약의 소비 형태 ══════════════ */
 
 test("생성 계약 — 메서드 전수는 내부 표면을 포함하고, 내부 표면은 그 부분집합이다", () => {
-  assert.equal(HOST_METHODS.length, 28);
+  assert.equal(HOST_METHODS.length, 29);
   for (const name of ["initial", "dispatch", "generate", "close_guard_state", "open_authoring_document", "save_authoring_document", "authoring_cases_file", "export_authoring_result"]) {
     assert.ok(HOST_METHODS.includes(name), `${name} 이 HOST_METHODS 에 없습니다`);
   }

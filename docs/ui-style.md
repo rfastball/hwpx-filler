@@ -90,7 +90,8 @@
 전에 실제 포함 내용과 연결 영향을 보여 준다. 전체 필드 이름 변경과 개별 사용 위치 변경을 섞지 않는다.
 
 눌림 효과가 표 정렬을 깨뜨리지 않아야 한다. reduced-motion 두 경로의
-[실렌더 기하](../tests/test_web_press_geometry.py)를 검사한다. 포커스·캐럿·스크롤·IME 연속성,
+[실렌더 기하](../tests/test_web_press_geometry.py)를 검사한다. 저작 작업대의 열 폭·좁은 폭 시트·
+강제 색상 표지는 창 폭과 글자 배율별 [배치 실렌더](../tests/test_web_authoring_layout.py)가 잰다. 포커스·캐럿·스크롤·IME 연속성,
 모달 포커스 포획·복귀와 비활성 사유를 지킨다. 라이트·다크 모두
 [대비 검사](../tests/repo_contract/test_contrast_wcag.py)와 실제 렌더를 통과해야 한다.
 대비 하한·대상 쌍은 테스트가 소유한다. [실앱 검사](../tests/test_web_selftest_gate.py)는
