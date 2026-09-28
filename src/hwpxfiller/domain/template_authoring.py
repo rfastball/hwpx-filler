@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .job import MISSING_MARKER
 from .structure_scan import (
@@ -245,7 +246,7 @@ def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
     return CONFIRM_NONE
 
 
-def created_target(command: Mapping[str, object], result: Mapping[str, object]) -> dict | None:
+def created_target(command: Mapping[str, object], result: Mapping[str, Any]) -> dict | None:
     """만들기 명령이 적용 뒤 남길 대상(NG-14) — 결과 분석 안의 새 필드·항목·선택. 없으면 None."""
     action = command.get("type")
     if action == "create_field":
