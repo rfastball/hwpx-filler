@@ -330,7 +330,11 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-tree .authoring-kind{flex:none;margin:0;padding:0;border:0;font-size:var(--fs-caption);color:var(--a-muted)}
 .authoring-tree-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .authoring-tree-meta{flex:none;margin-left:auto;padding-left:var(--sp-4);font-size:var(--fs-caption);font-weight:400;color:var(--a-muted);font-variant-numeric:tabular-nums}
-.authoring-tree [role=treeitem][data-kind=occurrence]>.authoring-tree-row .authoring-tree-name{font-size:var(--fs-caption)}
+.authoring-tree [role=treeitem][data-kind=occurrence]>.authoring-tree-row .authoring-tree-name{flex:1 0 55%;font-size:var(--fs-caption)}
+/* 사용 위치 줄의 소속 경로는 문맥에 자리를 내준다 — 줄어들며 말줄임(전체는 title). */
+.authoring-tree [role=treeitem][data-kind=occurrence]>.authoring-tree-row .authoring-tree-meta{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* 화면 읽기용 글(보이는 표지와 같은 뜻을 이름에 싣는다). */
+.authoring-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* 안내선이 포함 관계다: 한 단계 들여쓰기는 --sp-16(여백 10 + 선 1 + 5). 항목의 자식 구간은 실선(편집면의 항목 경계),
    같은 항목 아래 선택들은 점선 하나를 함께 쓴다(편집면의 선택 경계) — 선의 시작·끝이 곧 범위의 시작·끝이다. */
 .authoring-tree [role=group]{margin-left:10px;padding-left:5px;border-left:1px solid transparent}

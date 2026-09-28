@@ -492,6 +492,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
         "aria-describedby": label.includes("이름") ? "authoring-properties-target authoring-properties-context" : undefined, onChange: (event: any) => onChange(event.target.value) }));
   const close = () => { controller.update({ panel: "", preview: null, refusal: null }); onClose(); };
   // 대상 카드(UX-09): 종류 표지 · 굵은 이름 · 메타 한 줄. 이름 칸의 설명(aria-describedby)은 카드 전체의 접근 이름이다.
+  const whole = selected?.kind === "field" && Array.isArray(selected?.occurrences);
   const kind: "field" | "slot" | "option" | null = selected?.kind === "field" || selected?.kind === "slot" || selected?.kind === "option" ? selected.kind : null;
   const problems = problemCount(controller.tab().problems, selected?.kind === "field" ? selected?.name : selected?.option_id || selected?.slot_id || selected?.name);
   const targetMeta = selected?.kind === "field"
@@ -517,10 +518,13 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       iconButton("close", "닫기", close)),
     selected && h("div", { className: "authoring-target" },
       kind && h("span", { className: "authoring-target-kind" }, kindGlyph(kind), h("span", { className: "authoring-kind" }, KIND_LABEL[kind])),
-      h("p", { id: "authoring-properties-target", className: "authoring-target-name" }, selected.kind === "field" && selected.occurrences
-        ? outlineLabel("field", { ...selected, count: selected.count ?? selected.occurrences.length }, problemCount(controller.tab().problems, selected.name))
-        : selected.name || selected.label || selected.id),
-      targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta" }, targetMeta.filter(Boolean).join(" · "))),
+      // 필드 전체는 이름 칸의 설명이 outlineLabel 전체(종류·이름·사용 위치 수·문제)다 — 보이는 것은 굵은 이름과 메타 줄이고,
+      // 종류·수는 화면 읽기용 글로만 이름에 붙는다(보이는 표지·메타와 같은 글이라 두 번 읽히지 않게 메타는 숨긴다).
+      whole ? h("p", { id: "authoring-properties-target", className: "authoring-target-name" },
+          h("span", { className: "authoring-sr" }, `${KIND_LABEL.field} · `), selected.name,
+          h("span", { className: "authoring-sr" }, ` · ${[`사용 위치 ${selected.count ?? selected.occurrences.length}곳`, ...(problems ? [`문제 ${problems}`] : [])].join(" · ")}`))
+        : h("p", { id: "authoring-properties-target", className: "authoring-target-name" }, selected.name || selected.label || selected.id),
+      targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta", "aria-hidden": whole || undefined }, targetMeta.filter(Boolean).join(" · "))),
     // 명령을 바꿔도 초점은 이 select 에 남는다(WCAG 3.2.2) — 닫힌 select 의 ↑↓ 는 값마다 change 를 쏜다.
     h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined,
       "aria-describedby": !available.enabled && available.reason ? "authoring-properties-reason" : undefined, onChange: (event: any) => switchType(event.target.value) },
@@ -845,7 +849,7 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
     return { key: outlineKey.occurrence(field.name, at + 1), kind: "occurrence",
       label: joined(outlineLabel("occurrence", { name: field.name, index: at + 1, total, context: occurrence.context }), slot && `${KIND_LABEL.slot} ${slot}`, option && `${KIND_LABEL.option} ${option}`),
       content: [h("span", { key: "name", className: "authoring-tree-name", title: occurrence.context || field.name }, `${at + 1}. ${occurrence.context || field.name}`),
-        place ? h("span", { key: "meta", className: "authoring-tree-meta" }, place) : null],
+        place ? h("span", { key: "meta", className: "authoring-tree-meta", title: place }, place) : null],
       entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index: at + 1 } };
   };
   const fieldNodes = fields.flatMap((field: Obj): TreeNode[] => {

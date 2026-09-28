@@ -720,7 +720,11 @@ test("§10: screen readers get the field name, use count, parent item and proble
   controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field" });
   markup = render(controller);
   assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title">'));
-  assert.ok(markup.includes('<p id="authoring-properties-target" class="authoring-target-name">필드 · 공고명 · 사용 위치 2곳 · 문제 1</p>'));
+  // 보이는 것은 굵은 이름, 종류·사용 위치 수·문제 수는 화면 읽기용 글로 이름에 붙는다 — 이름 칸이 읽는 글은 그대로다.
+  const target = /<p id="authoring-properties-target" class="authoring-target-name">(.*?)<\/p>/.exec(markup)[1];
+  assert.equal(target.replace(/<[^>]+>/g, ""), "필드 · 공고명 · 사용 위치 2곳 · 문제 1");
+  assert.ok(target.includes('<span class="authoring-sr">필드 · </span>공고명<span class="authoring-sr"> · 사용 위치 2곳 · 문제 1</span>'));
+  assert.ok(markup.includes('<p class="authoring-target-meta" aria-hidden="true">사용 위치 2곳 · 문제 1</p>'), "보이는 메타 줄은 이름과 두 번 읽히지 않는다");
   assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문서 · 0–7</p>'));
   assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
   assert.equal(outlineLabel("option", { id: "q" }, 0, "doc"), "선택 · q · 상위 항목 doc");
