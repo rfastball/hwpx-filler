@@ -42,6 +42,10 @@ export type RhwpMountSpec = {
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
   onCompatibility?: (result: { editable: boolean; diagnostics?: unknown[] }) => void;
   readOnly: boolean;
+  /** Fixed Studio zoom (percent) applied once after the document loads — a `view:zoom-N` command, never a
+   *  fit mode: fit modes persist in the Studio's shared settings and would carry into every later mount.
+   *  Only the read-only trial result viewer sets it (IDE-04). */
+  zoom?: 50 | 75 | 100;
   /** Who needs caret reports: "visible" polls only while the host is rendered (not inside a
    *  `hidden`/`inert` ancestor); "never" skips polling (viewers nobody reads the selection of).
    *  Default "visible". */
@@ -128,6 +132,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       }
     }
     await editor.setReadOnly(readOnly);
+    if (spec.zoom) await editor.commands.execute(`view:zoom-${spec.zoom}`);
   } catch (error) { editor.destroy(); throw error; }
   const content = async () => encodeBase64(await editor.exportHwpx());
   const publish = async (generation: number) => {

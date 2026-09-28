@@ -42,6 +42,7 @@ function fakeStudio(log, hooks = {}) {
     onContextMenuRequest(listener) { menus.add(listener); return () => menus.delete(listener); },
     element: { getBoundingClientRect: () => hooks.frame ?? { left: 0, top: 0 }, contentWindow: hooks.frameWindow },
     chrome: { async set() {} },
+    commands: { async execute(id) { calls.push(["execute", id]); return { ok: true }; } },
     plugins: {
       async invoke(plugin, method, args) {
         assert.equal(plugin, "hwpctrl");
@@ -443,4 +444,17 @@ test("UX-07: a zoomed canvas scales iframe coordinates into host coordinates", (
   await settle();
   assert.deepEqual(menus, [{ x: 70, y: 110 }]);
   handle.dispose();
+}));
+
+test("IDE-04: a fixed zoom is one view:zoom-N command after the load — never a fit mode, and absent unless asked", () => withDom(async () => {
+  const zoomed = fakeStudio([]);
+  const viewer = await mountRhwp({ host: {}, content: b64("result"), fileName: "시험 결과.hwpx", readOnly: true, zoom: 75,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: zoomed.studio, trackSelection: "never" });
+  assert.deepEqual(zoomed.calls.filter(([name]) => name === "execute"), [["execute", "view:zoom-75"]], "한 번, 고정 배율 명령");
+  viewer.dispose();
+  const plain = fakeStudio([]);
+  const editor = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio: plain.studio });
+  assert.deepEqual(plain.calls.filter(([name]) => name === "execute"), [], "편집면은 배율을 건드리지 않는다");
+  editor.dispose();
 }));

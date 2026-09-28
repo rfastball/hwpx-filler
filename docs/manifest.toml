@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "014b6a163a9554c6435a06f5bb62e02dcc7361fe714952ffb21c723b3e647424"
+source_sha256 = "161ccbf70fa3ddb34798fae5b3537682172a294618a645e85d5a6f4cfcaf1b4b"
 body_sha256 = "31a26465ff32c15b8f4592ebd2e94706539d1d0695df2e16f39d2180d8203223"
 
 [[document]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "adad253e89bda69ab05ceba8d0f0ce151e7c8fb03daf07d8f0e960008bbbbf77"
+source_sha256 = "943217799113073055b4504c50246f8958ef93d241979f9ef1a3d69df8f9297a"
 body_sha256 = "0d37d6f558951b084e676ea9480e4b62e9f626bbb24f1ec8d01437b183be05fe"
 
 [[topic]]
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "904c3dddc1af12a5d8254dd8e7aa79955afe3dc42572e9bd6b0913ec1e0b2e29"
-body_sha256 = "0b1e73531ed8a7083069faab03a561a85c7f3ea383e1f488c7d2c6f140456c56"
+source_sha256 = "05ab0fa1aab7be472224ae6584450c4a3f0b2e61b9ddfd08d2ee3381d09cd00e"
+body_sha256 = "bef0d65d0d262d376c33cb477a7b61b1a7fa29c018e1ac18320430e911b0bc20"
 
 [[topic]]
 id = "development"

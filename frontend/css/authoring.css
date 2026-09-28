@@ -106,6 +106,10 @@ body.resizing-authoring iframe{pointer-events:none}
 /* 하단 독(§3.1): 탭 줄은 늘 남고, 열린 탭 하나만 아래에 선다. 높이는 문서면 다음 차례라 먼저 줄어든다. */
 .authoring-dock{display:flex;flex-direction:column;flex:0 1 auto;min-height:0;border-top:1px solid var(--a-border);background:var(--a-card)}
 .authoring-dock.open{height:clamp(180px,34vh,45vh);min-height:72px}
+/* 결과 시험 탭이 펼쳐지면 독 높이 몫을 늘린다(IDE-04) — 몸통의 min-height:40vh 가 먼저라 좁은 창에서는 남는 만큼만 받는다. */
+.authoring-dock.open.trial{height:clamp(220px,48vh,56vh)}
+/* 낮은 창에서 결과 시험 중에는 몸통 하한을 32vh 로 낮춘다 — 그동안 사용자가 보는 것은 결과다(1366×768 사무용 PC). */
+@media(max-height:820px){.authoring-shell.trial-open>.authoring-body{min-height:32vh}}
 .authoring-shell.dock-max>.authoring-body{flex:0 0 0;min-height:0;height:0;overflow:hidden;visibility:hidden}
 .authoring-shell.dock-max>.authoring-dock{flex:1 1 auto;height:auto}
 .authoring-dock-bar{display:flex;flex:none;align-items:center;gap:var(--sp-8);border-bottom:1px solid var(--a-border)}
@@ -324,11 +328,22 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-properties-actions{position:sticky;bottom:calc(var(--sp-12) * -1);z-index:1;margin:auto calc(var(--sp-12) * -1) 0;padding:var(--sp-12);border-top:1px solid var(--a-border);background:var(--a-card)}
 .authoring-refusal .authoring-actions{margin-top:var(--sp-8)}
 
-/* 결과 시험: 왼쪽 열(입력 → 선택 → 자동 갱신 → 행동 → 보관 케이스), 오른쪽 열(상태 칩 + 문장 → 선택별 상태 → 결과 → 이유). */
+/* 결과 시험: 왼쪽 열(입력 → 선택 → 자동 갱신 → 시험 시작 → 접힌 보관 케이스), 오른쪽 열(상태 칩 + 문장 → 결과 → 통과 범위 → 접힌 선택별 상태·이유). */
 .authoring-trial-group{display:flex;flex-direction:column;gap:var(--sp-8)}
 .authoring-trial-output{display:flex;flex-direction:column;gap:var(--sp-12)}
 .authoring-trial-output>*{margin:0}
-.authoring-result-pages{flex:none}
+/* 결과 칸(IDE-04): 상태 줄 아래에서 남은 높이를 채운다 — 비교·복구 보기의 .authoring-result-pages 와 다른 선택자다.
+   TXT 결과는 칸 자체가 스크롤 상자다(닻은 이 칸의 scrollTop 만 옮긴다). */
+/* 출력 열은 크기 컨테이너다 — 결과 칸은 적어도 보이는 열 높이에서 상태 줄(2rem)과 간격을 뺀 만큼이라, 스크롤 없이 보이는
+   면을 결과가 다 쓰고 통과 범위 문장·접힌 구획은 그 아래(열 스크롤)에 선다. */
+.authoring-trial-output{container-type:size}
+.authoring-trial-result{flex:1 1 auto;min-height:max(12rem,calc(100cqh - 2rem - var(--sp-12)))}
+.authoring-trial-result iframe{width:100%;height:100%;border:0}
+pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
+/* 접힌 구획(IDE-04 점진 공개): 요약은 기존 구획 이름이다. 펼침 표지는 브라우저 기본(키보드·강제 색상 그대로). */
+.authoring-fold>summary{cursor:pointer;width:max-content;max-width:100%}
+.authoring-fold>*+*{margin-top:var(--sp-8)}
+.authoring-fold>.quiet-row{margin-top:var(--sp-4)}
 .authoring-trial-state{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-8)}
 .authoring-trial-state>p{flex:1 1 12rem;margin:0}
 .authoring-trial-state .authoring-badge{margin:0}
