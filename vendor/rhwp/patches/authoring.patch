@@ -1443,10 +1443,10 @@ index fabc8645e..2c529af86 100644
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..9a7d944bb 100644
+index 1b1ecf8d5..8762a378a 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,72 @@
+@@ -144,3 +144,78 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -1515,9 +1515,15 @@ index 1b1ecf8d5..9a7d944bb 100644
 +  }
 +}
 +
-+/* Host chrome scale (setAppearance fontScale): toolbars grow, the document zoom does not. */
++/* Host chrome scale (setAppearance fontScale): toolbars and rulers grow, the document zoom
++   does not. The rulers redraw at the new thickness (view/ruler.ts rulerSize). */
 +:root[data-host-font-scale] #studio-header {
 +  zoom: var(--rhwp-host-font-scale, 1);
++}
++
++:root[data-host-font-scale] #editor-area {
++  grid-template-columns: calc(20px * var(--rhwp-host-font-scale, 1)) minmax(0, 1fr);
++  grid-template-rows: calc(20px * var(--rhwp-host-font-scale, 1)) minmax(0, 1fr);
 +}
 diff --git a/rhwp-studio/src/styles/style-bar.css b/rhwp-studio/src/styles/style-bar.css
 index 82fa1660b..17c7072aa 100644
@@ -1552,6 +1558,83 @@ index 82fa1660b..17c7072aa 100644
  }
  
  /* 줄 간격 */
+diff --git a/rhwp-studio/src/view/ruler.ts b/rhwp-studio/src/view/ruler.ts
+index e2edd4581..32c551441 100644
+--- a/rhwp-studio/src/view/ruler.ts
++++ b/rhwp-studio/src/view/ruler.ts
+@@ -27,7 +27,16 @@ export type { RulerPinCommit };
+ const PX_PER_MM = 96 / 25.4;
+ 
+ /** 눈금자 높이/너비 (CSS px) */
+-const RULER_SIZE = 20;
++const RULER_BASE = 20;
++/** Ruler thickness; an embedding host's chrome scale (embed setAppearance fontScale) enlarges it. */
++function rulerSize(): number {
++  const scale = Number(document.documentElement?.dataset?.hostFontScale) || 1;
++  return Math.round(RULER_BASE * scale);
++}
++/** Ruler label font, scaled with the ruler. */
++function rulerFont(): string {
++  return `${Math.round(9 * rulerSize() / RULER_BASE)}px sans-serif`;
++}
+ 
+ /** 문단 마커 크기 (CSS px) */
+ const MARKER_SIZE = 6;
+@@ -207,7 +216,8 @@ export class Ruler {
+     const vH = this.container.clientHeight;
+     const hWidth = Math.round(hW * dpr);
+     const vHeight = Math.round(vH * dpr);
+-    const thickness = Math.round(RULER_SIZE * dpr);
++    const size = rulerSize();
++    const thickness = Math.round(size * dpr);
+     if (this.hCanvas.width !== hWidth) this.hCanvas.width = hWidth;
+     if (this.hCanvas.height !== thickness) this.hCanvas.height = thickness;
+     if (this.vCanvas.width !== thickness) this.vCanvas.width = thickness;
+@@ -215,7 +225,7 @@ export class Ruler {
+ 
+     const hCssWidth = `${hW}px`;
+     const vCssHeight = `${vH}px`;
+-    const cssThickness = `${RULER_SIZE}px`;
++    const cssThickness = `${size}px`;
+     if (this.hCanvas.style.width !== hCssWidth) this.hCanvas.style.width = hCssWidth;
+     if (this.hCanvas.style.height !== cssThickness) this.hCanvas.style.height = cssThickness;
+     if (this.vCanvas.style.width !== cssThickness) this.vCanvas.style.width = cssThickness;
+@@ -558,7 +568,7 @@ export class Ruler {
+     const ctx = this.hCtx;
+     if (!ctx) return;
+     const canvasW = this.hCanvas.width / dpr;
+-    const canvasH = RULER_SIZE;
++    const canvasH = rulerSize();
+ 
+     ctx.save();
+     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+@@ -651,7 +661,7 @@ export class Ruler {
+     ctx.strokeStyle = palette.tick;
+     ctx.fillStyle = palette.text;
+     ctx.lineWidth = 0.5;
+-    ctx.font = '9px sans-serif';
++    ctx.font = rulerFont();
+     ctx.textAlign = 'center';
+     ctx.textBaseline = 'top';
+ 
+@@ -746,7 +756,7 @@ export class Ruler {
+   private drawVertical(dpr: number): void {
+     const ctx = this.vCtx;
+     if (!ctx) return;
+-    const canvasW = RULER_SIZE;
++    const canvasW = rulerSize();
+     const canvasH = this.vCanvas.height / dpr;
+ 
+     ctx.save();
+@@ -827,7 +837,7 @@ export class Ruler {
+     ctx.strokeStyle = palette.tick;
+     ctx.fillStyle = palette.text;
+     ctx.lineWidth = 0.5;
+-    ctx.font = '9px sans-serif';
++    ctx.font = rulerFont();
+     ctx.textAlign = 'center';
+     ctx.textBaseline = 'middle';
+ 
 diff --git a/rhwp-studio/vite.config.ts b/rhwp-studio/vite.config.ts
 index f860fb8fa..382863031 100644
 --- a/rhwp-studio/vite.config.ts
