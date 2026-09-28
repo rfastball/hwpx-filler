@@ -15,7 +15,12 @@ export interface EditorOptions {
   requestTimeoutMs?: number;
   /** v1 협상 제한 시간(ms, 기본: 1000) */
   handshakeTimeoutMs?: number;
+  /** iframe 의 접근 가능한 이름(title) */
+  title?: string;
 }
+
+/** Iframe client-coordinate rectangle. */
+export interface RhwpClientRect { x: number; y: number; width: number; height: number }
 
 export interface LoadResult {
   pageCount: number;
@@ -337,7 +342,11 @@ export declare class RhwpEditor {
   setReadOnly(readOnly: boolean): Promise<void>;
   setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
     startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
-    cellPath?: RhwpCellPathEntryV1[] }>): Promise<void>;
+    cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
+  /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
+  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 }): Promise<void>;
+  /** 켜 두면 문서 우클릭이 Studio 메뉴 대신 onContextMenuRequest 로 온다 */
+  setContextMenuForwarding(enabled: boolean): Promise<void>;
   /** exact preimage fence를 검증하고 문단 전체를 한 트랜잭션으로 교체 */
   applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
   /** 가장 최근에 성공한 exact command를 한 트랜잭션으로 되돌림 */
@@ -348,7 +357,9 @@ export declare class RhwpEditor {
     endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ focused: boolean }>;
   /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트 구독 */
   onDocumentChanged(listener: (event: RhwpDocumentChangedEventV1) => void): () => void;
-  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF') => void): () => void;
+  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',
+    detail?: { caret: RhwpClientRect | null }) => void): () => void;
+  onContextMenuRequest(listener: (point: { x: number; y: number }) => void): () => void;
   /** iframe 엘리먼트를 반환합니다 */
   readonly element: HTMLIFrameElement;
   // ── 브리지 표면 ────────────────────────────────────────────────
