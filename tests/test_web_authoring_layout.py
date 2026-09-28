@@ -128,7 +128,9 @@ def _render(width: int, height: int, scale: str, app_style: str = "") -> dict:
                 browser.close()
 
 
-_CASES = [(width, height, scale) for width, height in ((1440, 900), (1000, 700))
+#: 1028×740 은 CI live-webview2 창의 클라이언트 폭이다(1024 급 화면) — 구조가 기본으로 서야 하는 폭.
+#: 744×560 은 selftest 최소 창(760×600)의 클라이언트 폭이다.
+_CASES = [(width, height, scale) for width, height in ((1440, 900), (1028, 740), (1000, 700), (744, 560))
           for scale in ("normal", "large", "larger")]
 
 
@@ -137,7 +139,8 @@ _CASES = [(width, height, scale) for width, height in ((1440, 900), (1000, 700))
 @pytest.mark.parametrize(("width", "height", "scale"), _CASES)
 def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale: str) -> None:
     m = _render(width, height, scale)
-    narrow = m["container"] <= 64 * m["root"] + 0.5
+    narrow = m["container"] <= 64 * m["root"] + 0.5   # 속성 시트
+    rail = m["container"] <= 52 * m["root"] + 0.5     # 구조 레일(핵심 패널이라 더 좁을 때만)
     where = f"{width}x{height}@{scale} (root {m['root']}px, 작업대 {m['container']:.0f}px)"
 
     assert not m["brokenWords"], f"{where}: 구조 행이 낱말 안에서 줄을 바꿨습니다: {m['brokenWords']}"
@@ -159,7 +162,12 @@ def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale
         assert m["properties"]["width"] == pytest.approx(min(20 * m["root"], 0.35 * body), abs=0.5), (
             where, m["properties"])
     else:
-        assert m["railShown"] and not m["outlineShown"] and not m["splitterShown"], where
+        assert not m["splitterShown"], where
+        if rail:
+            assert m["railShown"] and not m["outlineShown"], f"{where}: 구조 레일로 접혀야 합니다"
+        else:
+            assert m["outlineShown"] and not m["railShown"], f"{where}: 구조가 기본으로 서야 합니다"
+            assert m["outline"]["right"] <= m["center"]["left"] + 0.5, f"{where}: 구조가 문서면과 겹칩니다"
         assert m["propertiesPosition"] == "absolute" and m["scrimShown"], where
         body, sheet = m["body"], m["properties"]
         assert abs(sheet["top"] - body["top"]) <= 1 and abs(sheet["bottom"] - body["bottom"]) <= 1, (

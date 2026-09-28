@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import { COMMANDS } from "./authoring_controller.ts";
-import { PanelSplitter } from "./authoring_layout.ts";
+import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
 import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor } from "./authoring_controller.ts";
 import { TPL_STATUS_COPY } from "./job_run.ts";
@@ -660,10 +660,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
     else if (shortcut === "escape") { if (escapeShell(controller) === "panel") act(controller.focusSelection)(); }
     else if (shortcut === "cycle") {
-      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock") || [])];
-      const current = panels.findIndex((panel) => panel.contains(document.activeElement));
-      // 패널 간 초점 이동(§10): 비활성 버튼은 초점을 받지 못하므로 첫 **활성** 제어로 간다.
-      panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length]?.querySelector<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe")?.focus();
+      // 패널 간 초점 이동(§10): 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 선다(authoring_layout.ts).
+      cyclePanels([...(root.current?.querySelectorAll<HTMLElement>(PANEL_CYCLE) || [])], document.activeElement, !!event.shiftKey);
     }
   } },
     h("header", { className: "authoring-head" },

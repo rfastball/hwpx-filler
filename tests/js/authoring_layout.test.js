@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { keyedWidth, draggedWidth, WIDTH_STEP } from "../../frontend/src/screens/authoring_layout.ts";
+import { keyedWidth, draggedWidth, WIDTH_STEP, cyclePanels, PANEL_CYCLE } from "../../frontend/src/screens/authoring_layout.ts";
 import { AuthoringScreen } from "../../frontend/src/screens/authoring.ts";
 import { createAuthoringController } from "../../frontend/src/screens/authoring_controller.ts";
 import { AUTHORING_WIDTH_BOUNDS, clampAuthoringWidth, createPersonalization } from "../../frontend/src/shell/preferences.ts";
@@ -188,6 +188,36 @@ test("좁은 폭 규칙은 창이 아니라 작업대 폭의 rem 컨테이너 �
   assert.ok(narrow.length > 0);
   assert.match(narrow, /\.authoring-scrim\{display:block;position:absolute;inset:0/);
   assert.match(narrow, /\.authoring-body:not\(\.outline-open\)>\.authoring-outline\{display:none\}/);
+  // 구조는 핵심 패널이라 레일 문턱(52rem)이 속성 시트 문턱(64rem)보다 좁다 — 1024px 에서도 구조가 선다.
+  const rail = authoring.slice(authoring.indexOf("@container authoring (max-width:52rem)"));
+  assert.match(rail, /\.authoring-body:not\(\.outline-open\)>\.authoring-outline\{display:none\}/);
+  const sheet = authoring.slice(authoring.indexOf("@container authoring (max-width:64rem)"), authoring.indexOf("@container authoring (max-width:52rem)"));
+  assert.doesNotMatch(sheet, /authoring-outline\{display:none/, "64rem 문턱에서 구조를 접으면 안 됩니다");
   // 고정 px 열 폭이 남지 않는다.
   assert.doesNotMatch(authoring, /grid-template-columns:\s*\d+px/);
+});
+
+test("F6 순환: 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 서서 키보드로 닿는다", () => {
+  assert.ok(PANEL_CYCLE.split(",").includes(".authoring-rail-toggle"));
+  const focused = [];
+  const panel = (name, { shown = true, control = false } = {}) => ({
+    name,
+    contains: (node) => node === name,
+    matches: () => control,
+    getClientRects: () => ({ length: shown ? 1 : 0 }),
+    querySelector: () => ({ focus: () => focused.push(`${name}:first`) }),
+    focus: () => focused.push(name),
+  });
+  // 좁은 폭: 구조는 숨고 레일 버튼이 보인다.
+  const narrow = [panel("toolbar"), panel("rail", { control: true }), panel("outline", { shown: false }), panel("canvas"), panel("dock")];
+  assert.equal(cyclePanels(narrow, "toolbar", false).name, "rail");
+  assert.deepEqual(focused, ["rail"]);
+  assert.equal(cyclePanels(narrow, "rail", false).name, "canvas");
+  assert.equal(cyclePanels(narrow, "toolbar", true).name, "dock");
+  // 넓은 폭: 레일이 숨고 구조가 선다 — 구조 안 첫 조작으로 간다.
+  focused.length = 0;
+  const wide = [panel("toolbar"), panel("rail", { shown: false, control: true }), panel("outline"), panel("canvas")];
+  assert.equal(cyclePanels(wide, "toolbar", false).name, "outline");
+  assert.deepEqual(focused, ["outline:first"]);
+  assert.equal(cyclePanels([], null, false), null);
 });

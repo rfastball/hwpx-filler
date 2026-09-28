@@ -138,3 +138,27 @@ export function PanelSplitter({ panel, label, layout }: SplitterProps): ReactNod
     onKeyDown, onPointerDown,
   });
 }
+
+/** F6 패널 순환의 대상(§10). 좁은 폭에서 접힌 구조는 레일 버튼이 대신 선다 — 순환은 **그려진**
+ *  패널만 돈다(숨은 패널에 focus() 는 조용히 헛돈다). 레일 버튼처럼 패널 자신이 조작이면 그것에,
+ *  아니면 안의 첫 **활성** 조작에 초점을 둔다. */
+export const PANEL_CYCLE = ".authoring-toolbar,.authoring-rail-toggle,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock";
+const FOCUSABLE = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe";
+
+type CyclePanel = {
+  contains(node: unknown): boolean;
+  matches(selector: string): boolean;
+  getClientRects(): { length: number };
+  querySelector(selector: string): { focus(): void } | null;
+  focus(): void;
+};
+
+export function cyclePanels(panels: readonly CyclePanel[], active: unknown, backwards: boolean): CyclePanel | null {
+  const shown = panels.filter((panel) => panel.getClientRects().length > 0);
+  if (shown.length === 0) return null;
+  const current = shown.findIndex((panel) => panel.contains(active));
+  const next = shown[(current + (backwards ? shown.length - 1 : 1)) % shown.length];
+  const target = next.matches(FOCUSABLE) ? next : next.querySelector(FOCUSABLE);
+  target?.focus();
+  return next;
+}

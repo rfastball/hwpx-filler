@@ -152,21 +152,27 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-output-field[aria-pressed=true]{outline:2px solid var(--a-primary)}
 .authoring-shell :focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 .authoring-shell ::selection{background:var(--a-sel);color:var(--a-ink)}
-/* 좁은 폭(작업대 64rem 이하): 속성은 문서면 위의 전체 높이 시트(가림막 + 「닫기」), 구조는 펼칠 수 있는
-   레일로 접힌다. 펼친 구조는 문서면을 **밀어낸다** — 편집면 위에 겹치는 것은 가림막을 둔 시트뿐이고,
-   시트가 열린 동안 편집면은 가림막 뒤에 선다. 분할선은 이 폭에서 쉰다. */
+/* 좁은 폭은 두 문턱이다(작업대 폭·rem — 배율을 따른다). 구조는 기본으로 서는 핵심 패널(§3.1)이라
+   정말 좁을 때만 접고, 속성은 그보다 먼저 시트가 된다.
+   ① 64rem 이하: 속성은 문서면 위의 전체 높이 시트(가림막 + 「닫기」). 편집면 위에 겹치는 것은 가림막을
+      둔 시트뿐이고, 시트가 열린 동안 편집면은 가림막 뒤에 선다. 분할선은 이 폭에서 쉰다.
+   ② 52rem 이하: 구조가 펼칠 수 있는 레일로 접힌다. 펼친 구조는 문서면을 **밀어낸다**(겹치지 않는다).
+      레일 버튼은 F6 패널 순환에 들어 있어 접힌 구조에도 키보드로 닿는다(Enter 로 펼침). */
 @container authoring (max-width:64rem){
   .authoring-splitter{display:none}
+  .authoring-properties{position:absolute;top:0;right:0;bottom:0;z-index:2;width:min(var(--authoring-properties-w,22rem),calc(100% - 3rem));max-width:none;border-left:1px solid var(--a-border);box-shadow:-4px 0 16px var(--a-shadow)}
+  .authoring-scrim{display:block;position:absolute;inset:0;z-index:1;background:var(--a-scrim)}
+  .authoring-outline{border-right:1px solid var(--a-border)}
+  .authoring-head,.authoring-toolbar{gap:var(--sp-4)}
+  .authoring-toolbar-group+.authoring-toolbar-group{padding-left:var(--sp-4)}
+}
+@container authoring (max-width:52rem){
   /* 레일: 몸통 높이 전체를 채우는 띠라 .btn 의 눌림 축소(scale)를 쓰지 않는다(전폭 표면 규칙). */
   .authoring-rail-toggle{display:block;flex:none;margin:0;padding:var(--sp-8) var(--sp-4);writing-mode:vertical-rl;white-space:nowrap;font:inherit;font-size:var(--fs-body);color:var(--n-ink-control);background:var(--a-card);border:0;border-right:1px solid var(--a-border);cursor:pointer}
   .authoring-rail-toggle:hover{background:var(--n-hover)}
   .authoring-rail-toggle[aria-expanded=true]{color:var(--a-primary);font-weight:600}
   .authoring-body:not(.outline-open)>.authoring-outline{display:none}
-  .authoring-body.outline-open>.authoring-outline{width:clamp(11rem,40%,16rem);max-width:none;border-right:1px solid var(--a-border)}
-  .authoring-properties{position:absolute;top:0;right:0;bottom:0;z-index:2;width:min(var(--authoring-properties-w,22rem),calc(100% - 3rem));max-width:none;border-left:1px solid var(--a-border);box-shadow:-4px 0 16px var(--a-shadow)}
-  .authoring-scrim{display:block;position:absolute;inset:0;z-index:1;background:var(--a-scrim)}
-  .authoring-head,.authoring-toolbar{gap:var(--sp-4)}
-  .authoring-toolbar-group+.authoring-toolbar-group{padding-left:var(--sp-4)}
+  .authoring-body.outline-open>.authoring-outline{width:clamp(11rem,40%,16rem);max-width:none}
 }
 @media(forced-colors:active){.authoring-tab [aria-selected=true]{outline:2px solid Highlight}.authoring-error{color:CanvasText}}
 .authoring-coverage{padding-left:var(--sp-16);font-size:var(--fs-caption)}
