@@ -35,9 +35,9 @@ from ..external.text_materialization_conformance import trial_txt_authoring
 from ..host.locations import default_authoring_dir
 from .screens import MutationSink, PushSink
 
-_INVALID_SELECTION = "선택 위치가 유효하지 않습니다."
+_INVALID_SELECTION = "고른 위치가 유효하지 않습니다."
 _BAD_PAYLOAD = "액션 입력이 올바르지 않습니다."
-_OUTSIDE_SLOT = "선택한 위치가 교체 묶음 안에 없습니다."
+_OUTSIDE_SLOT = "고른 위치가 교체 묶음 안에 없습니다."
 # 사용 위치를 되짚는 열쇠 — 분석이 낸 사용 위치에 실린 열쇠만 비교한다(TXT: start/end, HWPX: 섹션·순번·짝 id).
 _OCCURRENCE_KEYS = ("entry", "occurrence", "pairing_id", "paragraph", "cell_path", "start", "end")
 _SAVE_FIRST = "문서를 저장한 뒤 기존 작업에 적용하세요."
@@ -679,7 +679,7 @@ class AuthoringController:
             except ExternalChangeError as exc:
                 if current_path != target:
                     return {"conflict": "destination_exists",
-                            "message": "선택한 위치에 파일이 이미 있습니다. 다른 이름을 선택하세요."}
+                            "message": "고른 위치에 파일이 이미 있습니다. 다른 이름을 고르세요."}
                 session.external_changed = True
                 self._push()
                 return {"external_changed": True, "fingerprint": exc.fingerprint,
@@ -1007,7 +1007,7 @@ class AuthoringController:
         session = self._session(p, revision=True)
         selector = p.get("selector")
         if not isinstance(selector, dict):
-            raise ValueError("복사할 의미 요소를 선택하세요.")
+            raise ValueError("복사할 의미 요소를 고르세요.")
         captured = capture_semantic(session.media, self._parse(session.media, session.content), selector)
         token = uuid4().hex
         self._clipboard = (token, captured)
@@ -1204,7 +1204,7 @@ class AuthoringController:
         session = self._session(p, revision=True)
         selection = p.get("selection")
         if not isinstance(selection, dict):
-            raise ValueError("선택 위치가 올바르지 않습니다.")
+            raise ValueError("고른 위치가 올바르지 않습니다.")
         target = p.get("target")
         if target is not None:
             if not isinstance(target, dict):

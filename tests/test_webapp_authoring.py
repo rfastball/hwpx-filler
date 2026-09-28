@@ -501,7 +501,7 @@ def test_hwpx_locate_matches_cell_field_only_with_same_cell_path(tmp_path: Path)
     for broken in ([], [{"control": 0}], [{**cell_path[0], "cell": True}], [{**cell_path[0], "cell": -1}]):
         invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
                                            "selection": {**selection, "cell_path": broken}})
-        assert invalid["matches"] == [] and invalid["context"]["reason"] == "선택 위치가 유효하지 않습니다."
+        assert invalid["matches"] == [] and invalid["context"]["reason"] == "고른 위치가 유효하지 않습니다."
 
 
 # ── 저작 UX 계약(#1015 후속): 명령 가용성·구조화 거절·준비 상태·문제 목록·영향·문법 보기 ──
@@ -531,7 +531,7 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
     assert len(by_type) == 13 and set(by_type["create_field"]) == {"type", "enabled", "reason", "alternative"}
     assert by_type["create_field"]["enabled"] is True and by_type["create_field"]["reason"] is None
     assert by_type["rename_slot"] == {"type": "rename_slot", "enabled": False,
-                                      "reason": "항목이나 선택 영역을 선택하세요.", "alternative": None}
+                                      "reason": "항목이나 선택 영역을 고르세요.", "alternative": None}
     assert by_type["create_option"]["alternative"] == {"label": "먼저 항목 만들기", "command_type": "create_slot"}
     standalone = ctrl.dispatch("commands", {"session_id": sid, "revision": 0,
                                             "selection": {"start": 0, "end": 2},
@@ -541,13 +541,13 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
     inside = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
                                       "selection": {"start": location["content_start_offset"],
                                                     "end": location["content_start_offset"]}})
-    # UX-10 R2: 문맥 줄은 담긴 항목/선택 이름과 사람이 읽는 행 범위다. 캐럿(빈 범위)에는 선택한 문구가 없다.
+    # UX-10 R2: 문맥 줄은 담긴 항목/선택 이름과 사람이 읽는 행 범위다. 캐럿(빈 범위)에는 고른 문구가 없다.
     assert inside["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": "",
                                  "location_label": "표시 / 안1 · 4행", "selected_text": None}
     assert {item["type"] for item in inside["commands"] if item["enabled"]} >= {"rename_slot", "rename_option", "unwrap"}
     invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {"start": -1, "end": 0}})
     assert invalid["matches"] == [] and all(
-        not item["enabled"] and item["reason"] == "선택 위치가 올바르지 않습니다." for item in invalid["commands"])
+        not item["enabled"] and item["reason"] == "고른 위치가 올바르지 않습니다." for item in invalid["commands"])
     with pytest.raises(ValueError):
         ctrl.dispatch("commands", {"session_id": sid, "revision": 0, "selection": {"start": 0}, "context": []})
 
@@ -628,22 +628,22 @@ def test_outline_targets_locate_by_identity_with_domain_availability(tmp_path: P
         located[kind] = result
         assert [item["type"] for item in result["commands"]] == list(COMMAND_TYPES)
         assert {item["type"] for item in result["commands"] if item["enabled"]} == _TARGET_ENABLED[kind], kind
-        assert all(item["reason"] and item["reason"] != "선택 위치가 올바르지 않습니다."
+        assert all(item["reason"] and item["reason"] != "고른 위치가 올바르지 않습니다."
                    for item in result["commands"] if not item["enabled"]), kind
     field = located["field"]
     assert field["selected"]["kind"] == "field" and field["selected"]["occurrences"]
     assert {item["type"]: item["reason"] for item in field["commands"]
             if item["type"] in {"relink_field", "unset_field", "create_field", "create_slot"}} == {
-        "relink_field": "필드 사용 위치를 하나 선택하세요.",
-        "unset_field": "필드 사용 위치를 하나 선택하세요.",
-        "create_field": "선택 범위에 기존 필드가 포함되어 있습니다.",
-        "create_slot": "문서에서 범위를 선택하세요.",
+        "relink_field": "필드 사용 위치를 하나 고르세요.",
+        "unset_field": "필드 사용 위치를 하나 고르세요.",
+        "create_field": "고른 범위에 기존 필드가 포함되어 있습니다.",
+        "create_slot": "문서에서 범위를 고르세요.",
     }
     slot_commands = {item["type"]: item for item in located["slot"]["commands"]}
     assert slot_commands["create_option"] == {
         "type": "create_option", "enabled": False, "alternative": None,
-        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."}
-    assert slot_commands["rename_option"]["reason"] == "선택 영역을 선택하세요."
+        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 고르세요."}
+    assert slot_commands["rename_option"]["reason"] == "선택 영역을 고르세요."
     labels = {kind: located[kind]["context"].pop("location_label") for kind in ("slot", "option")}
     assert located["slot"]["context"] == {"slot_id": "항목1", "option_id": None, "reason": ""}
     assert located["option"]["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}

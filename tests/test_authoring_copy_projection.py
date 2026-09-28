@@ -253,7 +253,7 @@ def test_txt_search_merges_hits_on_one_line_with_the_same_row(tmp_path: Path) ->
     assert [(hit["start"], hit["context"]) for hit in hits] == [(0, "수요기관: [수요기관]"), (15, "수요기관: [수요기관]")]
 
 
-# ------------------------------------------------------------------ 속성 문맥 줄·선택한 문구(UX-10 R2)
+# ------------------------------------------------------------------ 속성 문맥 줄·고른 문구(UX-10 R2)
 def test_locate_projects_a_human_location_label_and_the_selected_text(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path)
     opened = ctrl.open_path(QUICKSTART / "구매요청서.hwpx")

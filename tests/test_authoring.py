@@ -389,7 +389,7 @@ def test_native_field_rename_relink_and_unset_are_occurrence_scoped() -> None:
     entry = "Contents/section0.xml"
     apply_hwpx(pkg, {"type": "rename_field", "old_name": "F", "name": "G"})
     assert analyze_hwpx(pkg)["fields"][0]["count"] == 2
-    with pytest.raises(ValueError, match="다시 선택"):
+    with pytest.raises(ValueError, match="다시 고르"):
         apply_hwpx(pkg, {"type": "relink_field", "entry": entry, "occurrence": 0,
                          "pairing_id": "3", "name": "잘못된 대상"})
     apply_hwpx(pkg, {"type": "relink_field", "entry": entry, "occurrence": 0, "name": "H"})
@@ -953,35 +953,35 @@ def test_native_available_commands_share_txt_vocabulary() -> None:
     assert outside["create_field"]["enabled"] and outside["create_slot"]["enabled"]
     assert outside["create_option"] == {
         "type": "create_option", "enabled": False,
-        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요.",
+        "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 고르세요.",
         "alternative": {"label": "먼저 항목 만들기", "command_type": "create_slot"}}
-    assert outside["rename_field"]["reason"] == "필드를 선택하세요."
-    assert outside["delete"]["reason"] == "항목이나 선택 영역을 선택하세요."
+    assert outside["rename_field"]["reason"] == "필드를 고르세요."
+    assert outside["delete"]["reason"] == "항목이나 선택 영역을 고르세요."
     crossing = decide({"entry": entry, "start_paragraph": 0, "end_paragraph": 1, "start": 0, "end": 1})
-    assert crossing["create_field"]["reason"] == "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
-    assert crossing["create_slot"]["reason"] == "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
-    assert crossing["create_option"]["reason"] == "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
+    assert crossing["create_field"]["reason"] == "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
+    assert crossing["create_slot"]["reason"] == "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+    assert crossing["create_option"]["reason"] == "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
     inside = decide({"entry": entry, "paragraph": 1, "start": 0, "end": 0})
     assert inside["create_option"]["enabled"] and inside["unwrap"]["enabled"] and inside["create_slot"]["enabled"] is False
     # A region boundary paragraph starts with the bookmark control, so no field fits there yet.
-    assert inside["create_field"]["reason"] == "선택 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
-    assert inside["rename_field"]["reason"] == "필드를 선택하세요."
-    assert inside["rename_option"]["reason"] == "선택 영역을 선택하세요."
+    assert inside["create_field"]["reason"] == "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+    assert inside["rename_field"]["reason"] == "필드를 고르세요."
+    assert inside["rename_option"]["reason"] == "선택 영역을 고르세요."
     plain = decide({"entry": entry, "paragraph": 0, "start": 0, "end": 1})
     assert plain["create_field"]["enabled"] is True
     on_field = decide({"entry": entry, "paragraph": 1, "start": 3, "end": 4})
     assert all(on_field[kind]["enabled"] for kind in ("rename_field", "relink_field", "unset_field"))
-    assert on_field["create_field"]["reason"] == "선택 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+    assert on_field["create_field"]["reason"] == "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
     option = decide({"entry": entry, "paragraph": 2, "start": 0, "end": 0}, {"slot_id": "s", "option_id": "a"})
-    assert option["rename_option"]["enabled"] and option["create_option"]["reason"] == "선택 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
+    assert option["rename_option"]["enabled"] and option["create_option"]["reason"] == "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
     two_options = decide({"entry": entry, "start_paragraph": 2, "end_paragraph": 3, "start": 0, "end": 0})
-    assert two_options["create_field"]["reason"] == "이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요."
+    assert two_options["create_field"]["reason"] == "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
     plain_pair = _pkg('<hp:p><hp:run><hp:t>하나</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>둘</hp:t></hp:run></hp:p>')
     multi = {item["type"]: item for item in available_commands_hwpx(
         plain_pair, {"entry": entry, "start_paragraph": 0, "end_paragraph": 1, "start": 0, "end": 0})}
     assert multi["create_field"]["reason"] == "여러 문단에 걸친 필드는 HWPX 누름틀 경계로 만들 수 없습니다."
     assert multi["create_slot"]["enabled"] is True
-    assert all(item["reason"] == "선택 위치가 올바르지 않습니다."
+    assert all(item["reason"] == "고른 위치가 올바르지 않습니다."
                for item in available_commands_hwpx(package, {"entry": "Contents/missing.xml", "paragraph": 0,
                                                              "start": 0, "end": 0}))
 
@@ -2117,7 +2117,7 @@ def test_native_execute_refuses_unknown_commands_and_meaning_breaking_edits() ->
     assert package.entries[ENTRY] == before
     broken = _pkg('<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="1" type="CLICKHERE" name="F"/>'
                   '</hp:ctrl><hp:t>값</hp:t></hp:run></hp:p>')
-    with pytest.raises(ValueError, match="구조나 선택 범위 때문에"):
+    with pytest.raises(ValueError, match="구조나 고른 범위 때문에"):
         apply_hwpx(broken, {"type": "rename_field", "old_name": "F", "name": "G"})
 
 
@@ -2132,7 +2132,7 @@ def test_native_available_commands_reject_impossible_frames_and_stale_context() 
     for selection in ({"entry": ENTRY, "start_paragraph": 2, "end_paragraph": 1},
                       {"entry": ENTRY, "paragraph": 0, "start": 2, "end": 1},
                       {"entry": ENTRY, "paragraph": 9, "start": 0, "end": 0}):
-        assert all(item["reason"] == "선택 위치가 올바르지 않습니다."
+        assert all(item["reason"] == "고른 위치가 올바르지 않습니다."
                    for item in available_commands_hwpx(package, selection))
     spanning = {item["type"]: item for item in available_commands_hwpx(
         package, {"entry": ENTRY, "start_paragraph": 0, "end_paragraph": 2,
@@ -2142,7 +2142,7 @@ def test_native_available_commands_reject_impossible_frames_and_stale_context() 
     assert spanning["unset_field"]["enabled"] is True
     stale = {item["type"]: item for item in available_commands_hwpx(
         package, {"entry": ENTRY, "paragraph": 0, "start": 0, "end": 0}, {"slot_id": "없음"})}
-    assert stale["delete"]["reason"] == "항목이나 선택 영역을 선택하세요."
+    assert stale["delete"]["reason"] == "항목이나 선택 영역을 고르세요."
 
 
 def test_native_syntax_view_omits_markers_for_unwritable_identifiers() -> None:
@@ -2244,7 +2244,7 @@ def test_native_transfer_rejects_unsupported_media_and_unknown_selectors() -> No
         capture_semantic("docx", package, {"kind": "slot", "slot_id": "s"})
     with pytest.raises(ValueError, match="복사할 의미 요소를 찾을 수 없"):
         capture_semantic("hwpx", package, {"kind": "없는종류"})
-    with pytest.raises(ValueError, match="선택 위치가 올바르지 않"):
+    with pytest.raises(ValueError, match="고른 위치가 올바르지 않"):
         capture_semantic("txt", "본문", {"kind": "text", "start": -1, "end": 2})
     captured = capture_semantic("hwpx", package, {"kind": "slot", "slot_id": "s"})
     with pytest.raises(ValueError, match="지원하지 않는 붙여넣기 형식"):

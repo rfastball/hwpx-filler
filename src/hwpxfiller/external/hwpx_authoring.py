@@ -572,11 +572,11 @@ def _paragraph_sites(paragraph) -> tuple[list[tuple[etree._Element, int, int]], 
 
 def _field_range_refusal(sites: list, hazards: list[int], text: str, start: int, end: int) -> str | None:
     if not 0 <= start <= end <= len(text):
-        return "선택한 문자 범위가 문단 밖에 있습니다."
+        return "고른 문자 범위가 문단 밖에 있습니다."
     if not sites:
         return "이 문단에는 편집 가능한 텍스트가 없습니다."
     if any(position <= end for position in hazards):
-        return "선택 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+        return "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
     return None
 
 
@@ -591,16 +591,16 @@ def _selected_paragraph(root, paragraph_index: object, cell_path: object):
             and all(type(value) is int and value >= 0 for value in step.values())
             for step in cell_path
         ) or paragraph_index != cell_path[-1]["paragraph"]:
-            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
         owner_index = cell_path[0]["parent_paragraph"]
         candidates = ([node for node in paragraphs[owner_index].iter(f"{_HP}p")
                        if _cell_path(root, node) == cell_path]
                       if owner_index < len(paragraphs) else [])
         if len(candidates) != 1:
-            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
         return candidates[0]
     if not isinstance(paragraph_index, int) or not 0 <= paragraph_index < len(paragraphs):
-        raise ValueError("선택한 문단이 문서 영역 밖에 있습니다.")
+        raise ValueError("고른 문단이 문서 영역 밖에 있습니다.")
     return paragraphs[paragraph_index]
 
 
@@ -641,13 +641,13 @@ def _create_field(package, command: Mapping[str, object]) -> str:
     cell_path = command.get("cell_path")
     start, end = command.get("start"), command.get("end")
     if not all(isinstance(item, int) and not isinstance(item, bool) for item in (start, end)):
-        raise ValueError("문단 안의 정확한 문자 범위를 선택하세요.")
+        raise ValueError("문단 안의 정확한 문자 범위를 고르세요.")
     assert isinstance(start, int) and isinstance(end, int)
     root = etree.fromstring(package.entries[entry])
     if isinstance(paragraph_path, str):
         paragraphs = root.xpath(paragraph_path, namespaces=root.nsmap)
         if len(paragraphs) != 1 or paragraphs[0].tag != f"{_HP}p":
-            raise ValueError("선택한 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
         paragraph = paragraphs[0]
     else:
         paragraph = _selected_paragraph(root, paragraph_index, cell_path)
@@ -716,9 +716,9 @@ def _field_occurrence(root, entry: str, ordinal: object, pairing_id: object = No
         raise ValueError("필드 사용 위치를 찾을 수 없습니다.")
     target = occurrences[ordinal]
     if pairing_id is not None and target.begin.get("id") != pairing_id:
-        raise ValueError("선택한 필드 사용 위치가 바뀌었습니다. 다시 선택하세요.")
+        raise ValueError("고른 필드 사용 위치가 바뀌었습니다. 다시 고르세요.")
     if not is_fill_target_field_type(target.field_type):
-        raise ValueError("선택한 요소는 채울 수 있는 필드가 아닙니다.")
+        raise ValueError("고른 요소는 채울 수 있는 필드가 아닙니다.")
     return target
 
 
@@ -852,16 +852,16 @@ def _adjust_region(package, command: Mapping[str, object]) -> None:
         raise ValueError("항목이나 선택 영역을 찾을 수 없습니다.")
     start, end = command.get("start_paragraph"), command.get("end_paragraph")
     if not isinstance(start, int) or not isinstance(end, int) or start > end:
-        raise ValueError("문단 범위를 정확히 선택하세요.")
+        raise ValueError("문단 범위를 정확히 고르세요.")
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     root = etree.fromstring(package.entries[region.section], parser=parser)
     paragraphs = [node for node in root if node.tag == f"{_HP}p"]
     if start < 0 or end >= len(paragraphs):
-        raise ValueError("선택한 문단 범위가 문서 영역 밖에 있습니다.")
+        raise ValueError("고른 문단 범위가 문서 영역 밖에 있습니다.")
     if kind == "option":
         owner = snapshot.slot_regions[slot_id]
         if not owner.start_paragraph <= start <= end <= owner.end_paragraph:
-            raise ValueError("선택 범위는 상위 항목 안에 있어야 합니다.")
+            raise ValueError("고른 범위는 상위 항목 안에 있어야 합니다.")
     else:
         children = [item for (owner_id, _), item in snapshot.option_regions.items()
                     if owner_id == slot_id]
@@ -1125,7 +1125,7 @@ def _create_region(package, command: Mapping[str, object]) -> None:
     entry = command.get("entry")
     start, end = command.get("start_paragraph"), command.get("end_paragraph")
     if not isinstance(entry, str) or not isinstance(start, int) or not isinstance(end, int):
-        raise ValueError("문단 범위를 정확히 선택하세요.")
+        raise ValueError("문단 범위를 정확히 고르세요.")
     snapshot = inspect_slot_regions(package)
     owner = command.get("slot_id")
     if kind == "slot":
@@ -1269,7 +1269,7 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
         package.entries.clear()
         package.entries.update(before)
         if isinstance(exc, ValueError) and not re.search("[가-힣]", str(exc)):
-            raise ValueError("이 문서의 구조나 선택 범위 때문에 명령을 적용할 수 없습니다.") from exc
+            raise ValueError("이 문서의 구조나 고른 범위 때문에 명령을 적용할 수 없습니다.") from exc
         raise
 
 
@@ -1576,7 +1576,7 @@ def trial_hwpx(content: object, values: Mapping[str, object], selected: Mapping[
             excluded.append({"slot_id": slot.id, "option_id": option.id,
                              "selected_option_id": choice,
                              "label": option.label or option.id,
-                             "reason": (f"현재 시험에서 '{chosen_option.label or chosen_option.id}'을 선택해 "
+                             "reason": (f"현재 시험에서 '{chosen_option.label or chosen_option.id}'을 골라 "
                                         f"'{option.label or option.id}'은 제외되었습니다."),
                              "source": _region_location(region)})
     if set(selected) - {slot.id for slot in snapshot.slots}:
