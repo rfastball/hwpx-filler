@@ -283,7 +283,7 @@ def test_txt_transfer_refuses_stale_or_unsafe_selection_boundaries() -> None:
     capture_cases = (
         ("😀본문", {"kind": "text", "start": 1, "end": 3}, "문자 경계"),
         ("본문", {"kind": "field", "start": 0}, "필드 사용 위치"),
-        ("본문", {"kind": "text", "start": 1, "end": 1}, "본문을 선택"),
+        ("본문", {"kind": "text", "start": 1, "end": 1}, "본문을 고르"),
         ("본문", {"kind": "unknown"}, "의미 요소"),
         ("{{#항목 s}}\n본문\n", {"kind": "slot", "slot_id": "s"}, "구조 오류"),
     )
