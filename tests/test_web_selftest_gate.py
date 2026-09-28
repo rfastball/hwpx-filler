@@ -1479,6 +1479,35 @@ class TestWebSelftestGate:
         assert b["ime_error_band"] == "", f"조합 중에 오류 띠가 섰습니다: {b['ime_error_band']!r}"
         assert b["ime_value_after_end"] == "공고명수"
 
+    def test_authoring_keyboard_models_follow_apg_and_return_focus(
+        self, selftest_result: dict
+    ) -> None:
+        """UX-04 §10 — 실창에서 APG 키보드 모델과 초점 복귀를 단계마다 잰다(합성 키, OS 입력 없음).
+
+        문서 탭(←→·Home·End·Enter·Delete → 이웃 탭), 도구 막대(roving 한 입구·감싸 돌기·확대 select 의
+        → 는 값 변경이 아니라 이동), 독 탭(Enter 로 패널 첫 제어 → Escape 로 그 탭), 구조 목록(tree)의
+        Shift+F10 문맥 메뉴(첫 사용 가능 항목·↓·End·Home·Escape 로 그 줄), 창 아래 끝에서 연 메뉴의
+        창 안 배치. 단계표(`a11y_steps`)는 증거로 싣는다.
+        """
+        b = probe(selftest_result, "editor_txt_band")
+        assert b.get("a11y_error") is None, f"접근성 밴드 예외: {b.get('a11y_error')!r}"
+        for key in (
+            "a11y_new_tab", "a11y_tabs_reached", "a11y_tabs_entry", "a11y_tabs_left",
+            "a11y_tabs_right", "a11y_tabs_home", "a11y_tabs_enter", "a11y_tabs_end",
+            "a11y_tabs_delete_closed", "a11y_tabs_delete_focus",
+            "a11y_toolbar_reached", "a11y_toolbar_single_stop", "a11y_toolbar_right",
+            "a11y_toolbar_end", "a11y_toolbar_wrap",
+            "a11y_dock_reached", "a11y_dock_entry", "a11y_dock_search", "a11y_dock_enter_focus",
+            "a11y_dock_escape_closed", "a11y_dock_escape_return",
+            "a11y_tree_reached", "a11y_tree_entry", "a11y_tree_field", "a11y_tree_current",
+            "a11y_menu_open", "a11y_menu_down", "a11y_menu_end", "a11y_menu_home",
+            "a11y_menu_in_window", "a11y_menu_escape_closed", "a11y_menu_escape_return",
+            "a11y_bottom_menu_open", "a11y_bottom_menu_in_window",
+        ):
+            assert b.get(key) is True, f"키보드 모델 국면 실패: {key}: {b.get('a11y_steps')!r}"
+        assert len(b["a11y_steps"]) >= 15, b["a11y_steps"]
+        assert b["a11y_error_band"] == "", f"키보드 모델 경로가 오류 띠를 남겼습니다: {b['a11y_error_band']!r}"
+
     def test_hwpx_authoring_compatibility_chip_and_keyboard_selection(
         self, selftest_result: dict
     ) -> None:
@@ -1505,7 +1534,7 @@ class TestWebSelftestGate:
         assert b.get("hwpx_kbd_skipped") is None, b.get("hwpx_kbd_skipped")
         assert b.get("hwpx_kbd_outline") is True, b
         assert b.get("hwpx_kbd_field") is True, (
-            f"구조 목록의 필드에 Tab 으로 닿지 못했습니다: {b.get('hwpx_kbd_field_label')!r}"
+            f"구조 목록(tree)의 필드에 방향키로 닿지 못했습니다: {b.get('hwpx_kbd_field_label')!r}"
         )
         assert b["hwpx_kbd_field_label"].startswith("필드 · 수요기관 · 사용 위치 2곳")
         assert b.get("hwpx_kbd_f2_focus") is True, b
