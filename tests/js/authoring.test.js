@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
 import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
 import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
@@ -1071,7 +1071,7 @@ test("§3.1: 더보기 opens a small menu of 명령·의미 복사·붙여넣기
   openContextMenu(controller, { clientX: 40, clientY: 90, target: { focus: () => { focused++; } } }, { getBoundingClientRect: () => ({ left: 10, top: 20 }) }, "more");
   const markup = render(controller);
   const menu = markup.slice(markup.indexOf('<div class="authoring-context-menu"'));
-  assert.ok(menu.startsWith('<div class="authoring-context-menu" style="left:30px;top:70px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="더보기"><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1">명령</button><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1">의미 복사</button>'), "첫 항목은 명령 팔레트");
+  assert.ok(menu.startsWith('<div class="authoring-context-menu" style="left:30px;top:70px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="더보기"><button type="button" class="authoring-menu-item with-key" role="menuitem" tabindex="-1" aria-keyshortcuts="Control+Shift+P">명령<kbd class="authoring-key" aria-hidden="true">Ctrl+Shift+P</kbd></button><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1">의미 복사</button>'), "첫 항목은 명령 팔레트");
   assert.ok(menu.includes('role="menuitem" tabindex="-1" aria-disabled="true">붙여넣기</button>') && menu.includes('role="menuitem" tabindex="-1">이전 위치로</button>'));
   assert.ok(toolbarOf(markup).includes('aria-label="더보기" title="더보기" aria-haspopup="menu" aria-expanded="true" aria-controls="authoring-menu" data-rove="more" tabindex="-1">'));
   assert.equal(escapeShell(controller), "menu");
@@ -1362,6 +1362,19 @@ test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable com
   markup = render(controller);
   menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
   assert.ok(menu.endsWith('aria-label="문맥 명령"><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1">명령</button>'), "되는 것이 없으면 「명령」 한 줄");
+  assert.ok(!markup.includes('id="authoring-command-reason-menu"'), "사유가 갈리면 머리 줄이 없다(사유는 팔레트가 무리로 보인다)");
+  // 되는 것이 없고 사유가 모두 같으면 그 사유가 「명령」 위 머리 줄로 선다 — 처음 쓰는 사람이 팔레트 없이도 까닭을 본다.
+  const same = verdicts.map((entry) => ({ ...entry, enabled: false, reason: region, alternative: null }));
+  assert.equal(sharedReason(same), region);
+  assert.equal(sharedReason(verdicts.map((entry) => ({ ...entry, enabled: false }))), null);
+  assert.equal(sharedReason([{ type: "create_field", enabled: false, reason: null }, { type: "create_slot", enabled: false, reason: null }]), null);
+  controller.update({ commands: same });
+  markup = render(controller);
+  const head = markup.slice(markup.indexOf('<div class="authoring-context-menu"'));
+  assert.ok(head.startsWith(`<div class="authoring-context-menu" style="left:1px;top:1px"><p id="authoring-command-reason-menu" class="authoring-reason">${region}</p><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령"><button type="button" class="authoring-menu-item" role="menuitem" tabindex="-1" aria-describedby="authoring-command-reason-menu">명령</button></div>`));
+  // 대안이 하나라도 서면 머리 줄은 없다 — 메뉴에 실행할 것이 있다.
+  controller.update({ commands: same.map((entry) => entry.type === "create_option" ? { ...entry, alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } } : entry) });
+  assert.ok(!render(controller).includes('id="authoring-command-reason-menu"'));
 });
 
 test("UX-10 R2: a text-range selection opens a 선택한 문구 target card; the context line is Python's location label or nothing", async () => {

@@ -12,7 +12,7 @@ export const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwr
 export const DESTRUCTIVE = new Set(["delete"]);
 export const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
 /** 단축키 표기 → aria-keyshortcuts 값. Ctrl 만 Control 로 바꾸고 나머지(F2·Shift+F6…)는 표기 그대로다. */
-const ARIA_KEYS: Obj = { "Ctrl+S": "Control+S", "Ctrl+F": "Control+F" };
+const ARIA_KEYS: Obj = { "Ctrl+S": "Control+S", "Ctrl+F": "Control+F", "Ctrl+Shift+P": "Control+Shift+P" };
 export const ariaKeys = (keys?: string): string | undefined => keys ? ARIA_KEYS[keys] || keys : undefined;
 
 /** 명령 한 건의 판정 — 화면이 Python 의 commands 와 읽기 전용 여부로 짓는다(pending: 판정 전, 사유 없음). */

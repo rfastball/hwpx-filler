@@ -527,6 +527,9 @@ test("IDE-02 (P-04): with verdicts the context menu carries runnable items and a
   await open();
   items = byRole(env, "menuitem");
   assert.deepEqual(items.map((node) => node.textContent), ["명령"], "되는 것이 없으면 팔레트를 여는 한 줄");
+  const header = env.container.querySelector("#authoring-command-reason-menu");
+  assert.equal(header?.textContent, "먼저 문서에서 내용을 선택하세요.", "그 위에 공유 사유 한 줄 — 팔레트 없이도 까닭이 보인다");
+  assert.equal(items[0].getAttribute("aria-describedby"), "authoring-command-reason-menu");
   assert.equal(env.document.activeElement, items[0]);
   fire(env, items[0], "click");
   await settle();
@@ -820,7 +823,8 @@ test("더보기 menu: its first item 명령 opens the command palette overlay (n
   await settle();
   const menu = env.container.querySelector('[role="menu"][aria-label="더보기"]');
   const first = menu.querySelectorAll('[role="menuitem"]')[0];
-  assert.equal(first.textContent, "명령");
+  assert.equal(first.textContent, "명령Ctrl+Shift+P", "팔레트로 가는 유일한 마우스 길이 키를 가르친다");
+  assert.equal(first.getAttribute("aria-keyshortcuts"), "Control+Shift+P");
   assert.equal(env.document.activeElement, first, "열리면 첫 항목(명령)에 초점");
   fire(env, first, "click");
   await settle();
