@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState } from "../../frontend/src/screens/authoring.ts";
+import { rovingIndex, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
@@ -301,19 +302,20 @@ test("F34: the undo button names the applied command and follows the TXT history
   const commands = [];
   controller.attach("a", { apply: async () => { depth = { canUndo: true, canRedo: false }; }, content: async () => "{{name}}", decorate() {}, state: () => depth,
     command: async (command) => { commands.push(command); depth = { canUndo: false, canRedo: true }; } });
-  assert.match(render(controller), /<button type="button" class="btn sm" disabled="">문서 실행 취소<\/button>/);
+  assert.match(render(controller), /<button type="button" class="btn sm" disabled="" data-rove="undo" tabindex="-1">문서 실행 취소<\/button>/);
   await controller.preview({ type: "create_field", name: "name" });
   await controller.applyPreview();
   assert.equal(controller.viewModel.getSnapshot().lastCommandLabel, "필드로 만들기");
   const armed = render(controller);
   assert.ok(armed.includes(">문서 실행 취소: 필드로 만들기</button>"));
-  assert.match(armed, /<button type="button" class="btn sm" disabled="">문서 다시 실행<\/button>/);
+  assert.match(armed, /<button type="button" class="btn sm" disabled="" data-rove="redo" tabindex="-1">문서 다시 실행<\/button>/);
   await controller.command("undo");
   assert.deepEqual(commands, ["undo"]);
   assert.equal(controller.viewModel.getSnapshot().lastCommandLabel, "");
   const undone = render(controller);
-  assert.match(undone, /<button type="button" class="btn sm" disabled="">문서 실행 취소<\/button>/);
-  assert.ok(undone.includes('class="btn sm">문서 다시 실행</button>'));
+  assert.match(undone, /<button type="button" class="btn sm" disabled="" data-rove="undo" tabindex="-1">문서 실행 취소<\/button>/);
+  // 도구 막대의 roving 대기 항목은 첫 **활성** 제어다 — 실행 취소가 꺼지면 다시 실행이 Tab 의 입구가 된다.
+  assert.ok(undone.includes('class="btn sm" data-rove="redo" tabindex="0">문서 다시 실행</button>'));
 });
 
 test("F14: Escape in a properties input reverts the draft first and closes only when nothing is pending", () => {
@@ -346,7 +348,8 @@ test("U09: the stale label keys off the trial-specific in-flight flag, not the g
   await new Promise(setImmediate);
   assert.equal(controller.viewModel.getSnapshot().trialBusy, true);
   assert.equal(controller.viewModel.getSnapshot().busy, false);
-  assert.ok(render(controller).includes('<p role="status">갱신 중 · 이전 결과</p>'));
+  // 보이는 줄로만 선다 — 화면 읽기는 셸의 단일 live region 이 전이 때만 한다(UX-04).
+  assert.ok(render(controller).includes('<p>갱신 중 · 이전 결과</p>'));
   release();
   await running;
   assert.equal(controller.viewModel.getSnapshot().trialBusy, false);
@@ -402,7 +405,8 @@ test("F40: locate 가 실어 온 commands 가 도구 막대·팔레트·속성 s
   controller.update({ panel: "properties", commandType: "create_option" });
   const properties = render(controller);
   assert.match(properties, /<option value="create_option" disabled="" title="먼저 항목 안의 내용을 선택하세요\."( selected="")?>선택으로 만들기<\/option>/);
-  assert.ok(properties.includes('<p class="authoring-reason" role="status">먼저 항목 안의 내용을 선택하세요.</p>'));
+  assert.ok(properties.includes('<p class="authoring-reason" id="authoring-properties-reason">먼저 항목 안의 내용을 선택하세요.</p>'), "사유는 보이는 줄이고 live region 이 아니다");
+  assert.ok(properties.includes('aria-describedby="authoring-properties-reason"'), "명령 select 가 사유를 설명으로 가리킨다");
   assert.ok(properties.includes(">먼저 항목 만들기</button>"));
   assert.match(properties, /<button class="btn sm" type="submit" disabled="" aria-disabled="true" title="[^"]+">변경 미리보기<\/button>/);
 });
@@ -424,9 +428,13 @@ test("§6.1: the context menu is a role=menu popover at the event coordinates, a
   let focused = 0;
   openContextMenu(controller, { clientX: 112, clientY: 234, target: { focus: () => { focused++; } }, preventDefault() {} }, { getBoundingClientRect: () => ({ left: 100, top: 200 }) });
   const markup = render(controller);
-  assert.match(markup, /<div class="authoring-context-menu" role="menu" aria-label="문맥 명령" style="left:12px;top:34px">/);
-  assert.ok(markup.includes('<button type="button" class="btn sm" role="menuitem">필드로 만들기</button>'));
-  assert.ok(markup.includes('role="menuitem" disabled="" aria-disabled="true" title="먼저 항목 안의 내용을 선택하세요.">선택으로 만들기</button>'));
+  assert.ok(markup.includes('<div class="authoring-context-menu" style="left:12px;top:34px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령">'));
+  assert.ok(markup.includes('<button type="button" class="btn sm" role="menuitem" tabindex="-1" aria-label="필드로 만들기">필드로 만들기</button>'));
+  // APG menu: 불가 항목도 초점을 받는다(aria-disabled) — 사유는 항목 안의 설명 줄이고, 대안은 곁의 menuitem 이다.
+  assert.ok(markup.includes('role="menuitem" tabindex="-1" aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-menu-reason-create_option">선택으로 만들기<span id="authoring-menu-reason-create_option" class="authoring-reason">먼저 항목 안의 내용을 선택하세요.</span></button><button type="button" class="btn sm" role="menuitem" tabindex="-1">먼저 항목 만들기</button>'));
+  const menu = markup.slice(markup.indexOf('<div class="authoring-menu"'));
+  assert.ok(!/<button[^>]* disabled=""/.test(menu.slice(0, menu.indexOf("</div>"))), "메뉴 항목은 native disabled 가 아니다");
+  assert.ok(!menu.slice(0, menu.indexOf("</div>")).includes("<p"), "메뉴의 자식은 menuitem 뿐이다");
   assert.equal(escapeShell(controller), "menu");
   assert.equal(controller.viewModel.getSnapshot().contextMenu, null);
   assert.equal(focused, 1);
@@ -500,8 +508,8 @@ test("F24/F12/F13: problems drive the outline badges, the panel's text-only seve
   await controller.activate("a");
   controller.update({ panel: "problems" });
   const markup = render(controller);
-  assert.ok(markup.includes('견적서<span class="authoring-badge">문제 1</span></button>'));
-  assert.ok(markup.includes('공고명 · 2<span class="authoring-badge">문제 1</span></button>'));
+  assert.ok(markup.includes('견적서<span class="authoring-badge">문제 1</span></span>'));
+  assert.ok(markup.includes('공고명 · 사용 위치 2곳<span class="authoring-badge">문제 1</span></span>'), "사용 위치 수는 글로 선다");
   assert.ok(!markup.includes('문서<span class="authoring-badge">'), "문제가 없는 항목에는 배지가 없다");
   assert.ok(markup.includes("<p><strong>오류</strong> · 구조 · quote</p><p>선택 ‘견적서’의 범위가 항목 밖으로 나갑니다.</p>"));
   assert.ok(markup.includes("<p><strong>경고</strong> · 시험 입력 · 공고명</p>"));
@@ -522,7 +530,7 @@ test("P09/AC14: the footer separates save state from readiness, and a save notic
   assert.ok(render(controller).includes("<span>저장됨 · 사용 준비</span>"));
   await controller.save("a");
   const saved = render(controller);
-  assert.ok(saved.includes('<p role="status" class="authoring-notice">초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.</p>'));
+  assert.ok(saved.includes('<p class="authoring-notice">초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.</p>'), "알림은 보이는 줄이고, 읽기는 단일 live region 이 한다");
   controller.changed("a", "edited");
   assert.equal(controller.viewModel.getSnapshot().notice, "");
   await controller.flush("a");
@@ -555,7 +563,7 @@ test("F26: 원문 표기 asks Python's syntax action and renders read-only secti
   assert.deepEqual(calls.filter((call) => ["syntax", "content"].includes(call.action)).map((call) => call.action), ["syntax"]);
   const markup = render(controller);
   assert.ok(markup.includes('<section class="authoring-bottom" aria-label="원문 표기"><h2>원문 표기</h2><p>HWPX 원문 표기는 읽기 전용</p>'));
-  assert.ok(markup.includes('<h3>Contents/section0.xml</h3><pre tabindex="0" aria-label="Contents/section0.xml 원문 표기">{{공고명}}'));
+  assert.ok(markup.includes('<h3>Contents/section0.xml</h3><pre tabindex="0" role="group" aria-label="Contents/section0.xml 원문 표기">{{공고명}}'));
   assert.ok(markup.includes('class="btn sm">복사</button>'));
   assert.ok(!markup.includes("<textarea"), "JSON 덤프 textarea 는 없다");
 });
@@ -632,7 +640,8 @@ test("U02: position and mode changes reach Python as editor coordinates only, de
   await sleep(450);
   assert.deepEqual(calls.filter((call) => call.action === "remember_view").map(({ selection, mode, revision }) => ({ selection, mode, revision })),
     [{ selection: { start: 4, end: 6 }, mode: "template", revision: 0 }]);
-  assert.equal(controller.viewModel.getSnapshot().error, "");
+  // 이 대역 편집기는 캐럿 locate 의 flush 도 거절한다(그 오류는 locate 의 것으로 남는다 — UX-04 오류 수명). 위치 기록은 flush 를 타지 않으므로 제 경보를 세우지 않는다.
+  assert.notEqual(controller.viewModel.getSnapshot().errorKind, "remember");
   // 조합이 끝난 편집기로 닫는다(닫기 자체의 flush 는 조합 중 거절이 맞다).
   controller.attach("a", { decorate() {}, focus: async () => {} });
   controller.setMode("structure");
@@ -725,8 +734,8 @@ test("§10: items and options, errors and warnings stay distinguishable without 
   controller.update({ panel: "problems" });
   const markup = render(controller);
   // 항목·선택: 글자 표지가 이름 앞에 선다(들여쓰기·색이 유일한 구별이 아니다).
-  assert.ok(markup.includes('<span class="authoring-kind">항목</span>문서</button>'));
-  assert.ok(markup.includes('<span class="authoring-kind">선택</span>견적서<span class="authoring-badge">문제 1</span></button>'));
+  assert.ok(markup.includes('<span class="authoring-kind">항목</span>문서</span>'));
+  assert.ok(markup.includes('<span class="authoring-kind">선택</span>견적서<span class="authoring-badge">문제 1</span></span>'));
   // 오류·경고: 심각도와 종류가 글자로 선다.
   assert.ok(markup.includes("<p><strong>오류</strong> · 구조 · quote</p><p>오류 설명</p>"));
   assert.ok(markup.includes("<p><strong>경고</strong> · 호환성</p><p>경고 설명</p>"));
@@ -746,12 +755,14 @@ test("§3.1: the toolbar is one labelled row of document commands; panels, copy/
   assert.ok(toolbar.startsWith('<div class="authoring-toolbar" role="toolbar" aria-label="문서 명령">'));
   for (const label of ["문서 실행 취소", "문서 다시 실행", "필드로 만들기", "항목으로 만들기", "선택으로 만들기", "명령", "더보기", "결과 시험"]) assert.ok(toolbar.includes(`>${label}</button>`), label);
   // 표시 방식은 세 갈래 버튼 — 같은 setMode 로 간다. 확대는 보이는 라벨 없이 이름을 가진다.
-  assert.ok(toolbar.includes('<div class="authoring-mode" role="group" aria-label="표시"><button type="button" value="document" aria-pressed="false">문서</button><button type="button" value="template" aria-pressed="true">템플릿</button><button type="button" value="structure" aria-pressed="false">구조</button></div>'));
-  assert.ok(toolbar.includes('<select class="field" aria-label="확대">'));
+  assert.ok(toolbar.includes('<div class="authoring-mode" role="group" aria-label="표시"><button type="button" value="document" aria-pressed="false" data-rove="mode-document" tabindex="-1">문서</button><button type="button" value="template" aria-pressed="true" data-rove="mode-template" tabindex="-1">템플릿</button><button type="button" value="structure" aria-pressed="false" data-rove="mode-structure" tabindex="-1">구조</button></div>'));
+  assert.ok(toolbar.includes('<select class="field" aria-label="확대" data-rove="zoom" tabindex="-1">'));
+  assert.equal(count(toolbar, 'tabindex="0"'), 1, "APG toolbar: Tab 순서에는 한 제어만 선다(roving)");
   assert.ok(!toolbar.includes("<label"), "도구 막대 안에 줄을 늘리는 라벨이 없다");
   for (const moved of ["문제", "검색", "원문 표기", "변경 영향·작업 적용", "의미 복사", "붙여넣기", "이전 위치로"]) assert.ok(!toolbar.includes(`>${moved}</button>`), moved);
-  assert.ok(toolbar.includes('aria-haspopup="menu" aria-expanded="false">더보기</button>'));
-  assert.ok(toolbar.includes('aria-pressed="false">결과 시험</button>'));
+  assert.ok(toolbar.includes('aria-haspopup="menu" aria-expanded="false" data-rove="more" tabindex="-1">더보기</button>'));
+  assert.ok(toolbar.includes('aria-pressed="false" data-rove="trial" tabindex="-1">결과 시험</button>'));
+  assert.ok(toolbar.includes('aria-expanded="false" data-rove="commands" tabindex="-1">명령</button>'), "명령 팔레트를 여는 단추는 펼침 상태를 싣는다");
 });
 
 test("§3.1: the bottom dock keeps its tab strip, counts problems as text and shows exactly one tab panel", async () => {
@@ -761,7 +772,7 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
   let dock = dockOf(render(controller));
   assert.ok(dock.startsWith('<section class="authoring-dock" role="region" aria-label="보조 패널">'), "닫힌 독도 탭 줄로 남는다");
   assert.ok(dock.includes('<div class="authoring-dock-tabs" role="tablist" aria-label="보조 패널">'));
-  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" aria-selected="false">문제 <span class="authoring-badge">2</span></button>'));
+  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="0" aria-selected="false">문제 <span class="authoring-badge">2</span></button>'), "펼친 탭이 없으면 첫 탭이 Tab 의 입구다");
   for (const label of ["검색", "원문 표기", "변경 영향·작업 적용", "결과 시험"]) assert.ok(dock.includes(`aria-selected="false">${label}</button>`), label);
   assert.equal(count(dock, 'role="tabpanel"'), 0);
   assert.ok(!dock.includes(">최대화</button>") && !dock.includes(">닫기</button>"), "펼친 탭이 없으면 크기·닫기 동작도 없다");
@@ -770,15 +781,16 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
   let markup = render(controller);
   dock = dockOf(markup);
   assert.equal(count(dock, 'role="tabpanel"'), 1);
-  assert.ok(dock.includes('<div class="authoring-dock-panel" id="authoring-dock-panel" role="tabpanel" aria-labelledby="authoring-dock-tab-problems"><section class="authoring-bottom" aria-label="문제">'));
-  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" aria-selected="true" aria-controls="authoring-dock-panel">'));
+  assert.ok(dock.includes('<div class="authoring-dock-panel" id="authoring-dock-panel" role="tabpanel" tabindex="-1" aria-labelledby="authoring-dock-tab-problems"><section class="authoring-bottom" aria-label="문제">'));
+  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="0" aria-selected="true" aria-controls="authoring-dock-panel">'));
+  assert.equal(count(dock, 'tabindex="0"'), 1, "APG tabs: 펼친 탭 하나만 Tab 순서에 선다");
   assert.ok(!markup.includes('class="authoring-trial"'));
   assert.ok(dock.includes(">최대화</button>") && dock.includes(">닫기</button>"));
   // 패널을 닫으면(Escape 와 같은 경로) 열려 있던 시험이 제 탭으로 선다. 도구 막대의 「결과 시험」은 눌림으로 보인다.
   escapeShell(controller);
   markup = render(controller);
   assert.ok(dockOf(markup).includes('aria-labelledby="authoring-dock-tab-trial"><section class="authoring-trial" aria-label="결과 시험">'));
-  assert.ok(toolbarOf(markup).includes('aria-pressed="true">결과 시험</button>'));
+  assert.ok(toolbarOf(markup).includes('aria-pressed="true" data-rove="trial" tabindex="-1">결과 시험</button>'));
   controller.update({ dockMax: true });
   markup = render(controller);
   assert.ok(markup.includes('<div class="authoring-shell dock-max">') && dockOf(markup).includes(">복원</button>"));
@@ -836,14 +848,17 @@ test("§3.1: a reason shared by every unavailable command is shown once, at the 
   assert.equal(count(palette, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
   assert.ok(palette.includes('<h2>명령</h2><p id="authoring-command-reason-palette" class="authoring-reason">먼저 문서에서 내용을 선택하세요.</p><div class="authoring-command">'));
   assert.ok(palette.includes('disabled="" aria-disabled="true" title="먼저 문서에서 내용을 선택하세요." aria-describedby="authoring-command-reason-palette">선택으로 만들기</button><button type="button" class="btn sm">먼저 항목 만들기</button>'));
-  assert.ok(palette.includes('class="btn sm">필드 이름 변경</button>'), "판정이 없는 명령은 켜 둔다");
+  // 판정이 없는 명령은 세 번째 상태 — 표면이 추측으로 켜 두지 않고, 사유 문장 없이 꺼 둔다(UX-04).
+  assert.ok(palette.includes('<div class="authoring-command"><button type="button" class="btn sm" disabled="" aria-disabled="true">필드 이름 변경</button></div>'), "판정이 없는 명령은 사유 없이 꺼 둔다");
   // 팔레트는 도구 막대에서 빠진 세 동작도 싣는다.
   for (const label of ["의미 복사", "이전 위치로"]) assert.ok(palette.includes(`class="btn sm">${label}</button>`), label);
   assert.ok(palette.includes('class="btn sm" disabled="">붙여넣기</button>'), "복사한 의미가 없으면 붙여넣기는 꺼진다");
   openContextMenu(controller, { clientX: 5, clientY: 6, target: null }, null);
   const menu = render(controller);
   const context = menu.slice(menu.indexOf('<div class="authoring-context-menu"'));
-  assert.ok(context.startsWith('<div class="authoring-context-menu" role="menu" aria-label="문맥 명령" style="left:5px;top:6px"><p id="authoring-command-reason-menu" class="authoring-reason" role="none">먼저 문서에서 내용을 선택하세요.</p>'));
+  // 공유 사유는 메뉴의 자식이 아니다 — 메뉴 머리 줄로 서고 불가 항목이 설명으로 가리킨다.
+  assert.ok(context.startsWith('<div class="authoring-context-menu" style="left:5px;top:6px"><p id="authoring-command-reason-menu" class="authoring-reason">먼저 문서에서 내용을 선택하세요.</p><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="문맥 명령">'));
+  assert.ok(context.includes('aria-label="선택으로 만들기" aria-disabled="true" aria-describedby="authoring-command-reason-menu">선택으로 만들기</button>'));
   assert.equal(count(context, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
 });
 
@@ -863,9 +878,9 @@ test("§3.1: 더보기 opens a small menu of 의미 복사·붙여넣기·이전
   openContextMenu(controller, { clientX: 40, clientY: 90, target: { focus: () => { focused++; } } }, { getBoundingClientRect: () => ({ left: 10, top: 20 }) }, "more");
   const markup = render(controller);
   const menu = markup.slice(markup.indexOf('<div class="authoring-context-menu"'));
-  assert.ok(menu.startsWith('<div class="authoring-context-menu" role="menu" aria-label="더보기" style="left:30px;top:70px"><div class="authoring-command" role="none"><button type="button" class="btn sm" role="menuitem">의미 복사</button></div>'));
-  assert.ok(menu.includes('role="menuitem" disabled="">붙여넣기</button>') && menu.includes('role="menuitem">이전 위치로</button>'));
-  assert.ok(toolbarOf(markup).includes('aria-haspopup="menu" aria-expanded="true">더보기</button>'));
+  assert.ok(menu.startsWith('<div class="authoring-context-menu" style="left:30px;top:70px"><div class="authoring-menu" id="authoring-menu" role="menu" aria-label="더보기"><button type="button" class="btn sm" role="menuitem" tabindex="-1">의미 복사</button>'));
+  assert.ok(menu.includes('role="menuitem" tabindex="-1" aria-disabled="true">붙여넣기</button>') && menu.includes('role="menuitem" tabindex="-1">이전 위치로</button>'));
+  assert.ok(toolbarOf(markup).includes('aria-haspopup="menu" aria-expanded="true" aria-controls="authoring-menu" data-rove="more" tabindex="-1">더보기</button>'));
   assert.equal(escapeShell(controller), "menu");
   assert.equal(focused, 1);
   assert.equal(controller.viewModel.getSnapshot().panel, "search");
@@ -876,7 +891,9 @@ test("§3.1: the location breadcrumb sits in the centre column right above the c
   await controller.activate("a");
   controller.update({ matches: [{ kind: "slot", label: "문서", slot_id: "doc" }] });
   const markup = render(controller);
-  assert.ok(markup.includes('<div class="authoring-center"><div class="authoring-selection" role="group" aria-label="현재 위치의 의미"><span class="authoring-selection-label" aria-hidden="true">현재 위치의 의미</span><button type="button" class="btn sm">항목 · 문서</button></div><main class="authoring-canvas"'));
+  // 위치 경로는 이름 붙은 navigation 이고, 편집면은 앱 셸의 main 안에 겹치지 않는 이름 붙은 구획이다(UX-04).
+  assert.ok(markup.includes('<div class="authoring-center"><div class="authoring-selection" role="navigation" aria-label="현재 위치의 의미"><span class="authoring-selection-label" aria-hidden="true">현재 위치의 의미</span><button type="button" class="btn sm">항목 · 문서</button></div><section class="authoring-canvas" id="authoring-canvas" aria-label="원문 편집"'));
+  assert.ok(!markup.includes("<main"), "화면 안에 main 이 없다");
 });
 
 test("P09/§3.1: the status bar splits save·checks from preservation·trial·recovery", async () => {
@@ -886,7 +903,7 @@ test("P09/§3.1: the status bar splits save·checks from preservation·trial·re
   Object.assign(snapshot.tabs[0], { trial_state: "untried", trial_state_label: "시험 전" });
   await controller.activate("a");
   const markup = render(controller);
-  assert.ok(markup.includes('<footer class="authoring-status" role="status"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span data-trial="untried">시험 전</span><span>시험 자료 없음</span></div></footer>'));
+  assert.ok(markup.includes('<footer class="authoring-status" role="group"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span data-trial="untried">시험 전</span><span>시험 자료 없음</span></div></footer>'));
 });
 
 test("#1025 P09/§9.1: the footer chip and the trial panel show Python's one expression per trial state — untried and failed no longer read alike", async () => {
@@ -905,7 +922,7 @@ test("#1025 P09/§9.1: the footer chip and the trial panel show Python's one exp
     const markup = render(controller);
     const footer = markup.slice(markup.indexOf('<footer class="authoring-status"'));
     assert.ok(footer.includes(`<span data-trial="${state}">${label}</span>`), state);
-    assert.ok(markup.includes(`<p role="status">${message}</p>`), state);
+    assert.ok(markup.includes(`<p>${message}</p>`), state);
     footers.push(label);
   }
   assert.equal(new Set(footers).size, 4, "상태마다 다른 표현");
@@ -932,15 +949,15 @@ test("#1025 §6.3: search shows Python's summary above the hits and tags each hi
   await controller.activate("a");
   await controller.search("공고", "all");
   let markup = render(controller);
-  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
+  assert.ok(markup.includes('<p class="authoring-search-summary">총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
   assert.ok(markup.includes('<span class="authoring-kind">본문</span>a.txt · …수요기관: 공고 안내</button>'));
   assert.ok(markup.includes('<span class="authoring-kind">필드</span>a.txt · [공고명] 공고</button>'));
   assert.ok(markup.includes('<span class="authoring-kind">항목</span>a.txt · 공고 구분</button>'));
   assert.ok(markup.indexOf("authoring-search-summary") < markup.indexOf("…수요기관"), "요약이 결과 위에 선다");
   await controller.search("공고", "all", true);
   markup = render(controller);
-  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">a.txt · 총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
-  assert.ok(markup.includes('<p class="authoring-search-summary" role="status">b.txt · 총 1건 · 본문 1 · 필드 0 · 항목·선택 0</p>'));
+  assert.ok(markup.includes('<p class="authoring-search-summary">a.txt · 총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
+  assert.ok(markup.includes('<p class="authoring-search-summary">b.txt · 총 1건 · 본문 1 · 필드 0 · 항목·선택 0</p>'));
 });
 
 test("#1025 §13: the empty workbench has one sentence, the header's two actions and the recoverable drafts as a list", async () => {
@@ -972,6 +989,169 @@ test("#1025 §13: opening a general document shows Python's first-field notice o
   await controller.flush("b");
 });
 
+// ---- UX-04 접근성: 키보드 모델·초점·live region·오류 수명·가용성 3상태의 순수 판정 ----
+test("UX-04: rovingIndex wraps arrows along its axis and jumps with Home/End; other keys are not its business", () => {
+  assert.equal(rovingIndex("ArrowRight", 0, 3, "horizontal"), 1);
+  assert.equal(rovingIndex("ArrowRight", 2, 3, "horizontal"), 0, "감싸 돈다");
+  assert.equal(rovingIndex("ArrowLeft", 0, 3, "horizontal"), 2);
+  assert.equal(rovingIndex("Home", 2, 3, "horizontal"), 0);
+  assert.equal(rovingIndex("End", 0, 3, "vertical"), 2);
+  assert.equal(rovingIndex("ArrowDown", 1, 3, "vertical"), 2);
+  assert.equal(rovingIndex("ArrowDown", 1, 3, "horizontal"), null, "가로 묶음의 ↓ 는 제 것이 아니다(select 의 값 변경으로 남는다)");
+  assert.equal(rovingIndex("ArrowUp", 0, 3, "vertical"), 2);
+  assert.equal(rovingIndex("Enter", 0, 3, "vertical"), null);
+  assert.equal(rovingIndex("ArrowRight", 0, 0, "horizontal"), null);
+});
+
+test("UX-04: treeKey follows APG treeview — ↑↓ over visible rows, → expands then enters, ← collapses then climbs, Enter/Space select", () => {
+  const rows = [
+    { key: "slot", parent: null, expandable: true, expanded: true },
+    { key: "option", parent: "slot", expandable: false, expanded: false },
+    { key: "field", parent: null, expandable: true, expanded: false },
+  ];
+  assert.deepEqual(treeKey("ArrowDown", rows, "slot"), { focus: "option" });
+  assert.deepEqual(treeKey("ArrowDown", rows, "field"), {}, "끝에서 멈춘다(감싸지 않는다)");
+  assert.deepEqual(treeKey("ArrowUp", rows, "slot"), {});
+  assert.deepEqual(treeKey("End", rows, "slot"), { focus: "field" });
+  assert.deepEqual(treeKey("Home", rows, "field"), { focus: "slot" });
+  assert.deepEqual(treeKey("ArrowRight", rows, "field"), { expand: "field" });
+  assert.deepEqual(treeKey("ArrowRight", rows, "slot"), { focus: "option" });
+  assert.deepEqual(treeKey("ArrowRight", rows, "option"), {}, "잎은 → 에 반응하지 않는다");
+  assert.deepEqual(treeKey("ArrowLeft", rows, "option"), { focus: "slot" });
+  assert.deepEqual(treeKey("ArrowLeft", rows, "slot"), { collapse: "slot" });
+  assert.deepEqual(treeKey("ArrowLeft", rows, "field"), {});
+  assert.deepEqual(treeKey("Enter", rows, "option"), { select: "option" });
+  assert.deepEqual(treeKey(" ", rows, "field"), { select: "field" });
+  assert.equal(treeKey("a", rows, "field"), null);
+  assert.deepEqual(treeKey("ArrowDown", rows, "gone"), { focus: "slot" }, "초점 줄이 사라졌으면 처음으로");
+});
+
+test("UX-04: isCurrentTarget marks exactly the outline row Python located — whole field vs one occurrence vs slot vs option", () => {
+  const occurrence = { entry: "s0", paragraph: 2, start: 4, end: 7 };
+  const field = { name: "공고명", count: 2, occurrences: [occurrence, { entry: "s0", paragraph: 5, start: 0, end: 3 }] };
+  assert.equal(isCurrentTarget("field", field, { ...field, kind: "field" }), true);
+  assert.equal(isCurrentTarget("occurrence", { ...occurrence, name: "공고명" }, { ...field, kind: "field" }), false, "필드 전체 선택은 사용 위치 줄이 아니다");
+  assert.equal(isCurrentTarget("occurrence", { ...occurrence, name: "공고명" }, { ...occurrence, name: "공고명", kind: "field" }), true);
+  assert.equal(isCurrentTarget("field", field, { ...occurrence, name: "공고명", kind: "field" }), false);
+  assert.equal(isCurrentTarget("occurrence", { ...field.occurrences[1], name: "공고명" }, { ...occurrence, name: "공고명", kind: "field" }), false);
+  assert.equal(isCurrentTarget("slot", { id: "doc" }, { kind: "slot", slot_id: "doc" }), true);
+  assert.equal(isCurrentTarget("slot", { id: "doc" }, { kind: "option", slot_id: "doc", option_id: "q" }), false);
+  assert.equal(isCurrentTarget("option", { id: "q", slot_id: "doc" }, { kind: "option", slot_id: "doc", option_id: "q" }), true);
+  assert.equal(isCurrentTarget("option", { id: "q", slot_id: "other" }, { kind: "option", slot_id: "doc", option_id: "q" }), false);
+  assert.equal(isCurrentTarget("slot", { id: "doc" }, null), false);
+});
+
+test("UX-04: clampMenu keeps the context menu inside the window — flips above when the bottom is short, pins to the edges otherwise", () => {
+  const viewport = { width: 800, height: 600 };
+  assert.deepEqual(clampMenu({ x: 100, y: 100 }, { width: 200, height: 300 }, viewport), { left: 100, top: 100 });
+  assert.deepEqual(clampMenu({ x: 100, y: 560 }, { width: 200, height: 300 }, viewport), { left: 100, top: 260 }, "아래가 모자라면 위로 뒤집는다");
+  assert.deepEqual(clampMenu({ x: 700, y: 100 }, { width: 200, height: 100 }, viewport), { left: 596, top: 100 }, "오른쪽 끝에 붙는다");
+  assert.deepEqual(clampMenu({ x: 10, y: 590 }, { width: 200, height: 700 }, viewport), { left: 10, top: 4 }, "창보다 크면 위 가장자리에서 시작한다");
+  assert.deepEqual(clampMenu({ x: 100, y: 560, top: 535 }, { width: 200, height: 300 }, viewport), { left: 100, top: 235 }, "키보드로 연 메뉴는 그 줄의 윗변 위로 뒤집어 줄을 가리지 않는다");
+});
+
+test("UX-04: errors show their first sentence; the host label, later lines and a Hangul-free tail go under 자세히", () => {
+  assert.deepEqual(errorParts("authoring/save: 파일을 쓸 수 없습니다. [Errno 13] Permission denied: 'C:/x.hwpx'"),
+    { summary: "파일을 쓸 수 없습니다.", detail: "authoring/save\n[Errno 13] Permission denied: 'C:/x.hwpx'" });
+  assert.deepEqual(errorParts("저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요."),
+    { summary: "저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요.", detail: "" }, "사용자 안내 문장이 이어지면 그대로 보인다");
+  assert.deepEqual(errorParts("편집기를 열 수 없습니다.\nTypeError: x is undefined\n    at mount (rhwp.js:1:2)"),
+    { summary: "편집기를 열 수 없습니다.", detail: "TypeError: x is undefined\n    at mount (rhwp.js:1:2)" });
+  assert.equal(errorText(new Error("문서가 변경되었습니다.")), "문서가 변경되었습니다.", "Error: 접두는 붙지 않는다");
+  assert.equal(errorText("그대로"), "그대로");
+});
+
+test("UX-04: the error band keeps an error until it is dismissed or the same kind of work succeeds; errors raised inside the work stay", async () => {
+  const { controller } = harness((action) => action === "save" ? { conflict: true } : {});
+  await controller.activate("a");
+  await controller.guarded(() => { throw new Error("authoring/impact: 영향을 확인할 수 없습니다. timeout"); });
+  assert.equal(controller.viewModel.getSnapshot().error, "authoring/impact: 영향을 확인할 수 없습니다. timeout");
+  await controller.guarded(async () => {}, "edit");
+  await controller.guarded(async () => {}, "locate");
+  assert.notEqual(controller.viewModel.getSnapshot().error, "", "키 입력·캐럿 이동이 읽히기 전의 경보를 지우지 않는다");
+  const markup = render(controller);
+  const band = markup.slice(markup.indexOf('<div class="authoring-error">'));
+  assert.ok(band.startsWith('<div class="authoring-error"><p role="alert">영향을 확인할 수 없습니다.</p><details><summary>자세히</summary><pre>authoring/impact\ntimeout</pre></details><button type="button" class="btn sm">닫기</button></div>'));
+  await controller.guarded(async () => {});
+  assert.equal(controller.viewModel.getSnapshot().error, "", "같은 종류의 작업이 성공하면 걷힌다");
+  // 작업 안에서 선 오류(저장 충돌)는 그 작업의 성공으로 지워지지 않는다.
+  await controller.guarded(() => controller.save("a"), "save");
+  assert.match(controller.viewModel.getSnapshot().error, /다른 이름으로 저장하세요/);
+  await controller.guarded(async () => {}, "save");
+  assert.equal(controller.viewModel.getSnapshot().error, "", "같은 종류(저장)의 재시도 성공");
+  controller.fail(new Error("편집기 오류"), "editor");
+  controller.dismissError();
+  assert.equal(controller.viewModel.getSnapshot().error, "", "「닫기」로 걷힌다");
+});
+
+test("UX-04: missing Python judgement is a third state — disabled with no reason, not enabled by guess", async () => {
+  assert.deepEqual(commandAvailability([], "create_field"), { type: "create_field", enabled: false, pending: true, reason: null, alternative: null });
+  assert.equal(commandAvailability(COMMAND_VERDICTS, "create_field").enabled, true);
+  assert.equal(sharedReason([...SHARED_VERDICTS]), "먼저 문서에서 내용을 선택하세요.", "판정 없는 명령은 공유 사유를 깨지 않는다");
+  const { controller } = harness();
+  await controller.activate("a");
+  const markup = render(controller);
+  for (const label of ["필드로 만들기", "항목으로 만들기", "선택으로 만들기"])
+    assert.match(markup, new RegExp(`<button type="button" class="btn sm" disabled="" aria-disabled="true" data-rove="[a-z_]+" tabindex="-1">${label}</button>`), label);
+  assert.ok(!markup.includes("확인 중</"), "판정 대기에 새 문구를 세우지 않는다");
+  assert.ok(!markup.includes("authoring-reason"), "사유 문장이 없다");
+});
+
+test("UX-04: focusRequest numbers each request and names its panel; the context menu remembers the nearest focusable trigger", async () => {
+  assert.deepEqual(focusRequest({}, "dock"), { focusTarget: "dock", focusPanel: 1 });
+  assert.deepEqual(focusRequest({ focusPanel: 4 }, "properties"), { focusTarget: "properties", focusPanel: 5 });
+  const { controller } = harness();
+  await controller.activate("a");
+  const row = { focus() {} };
+  const span = { closest: (selector) => selector.includes('[role="treeitem"]') ? row : null };
+  openContextMenu(controller, { clientX: 3, clientY: 4, target: span }, null);
+  assert.equal(controller.viewModel.getSnapshot().contextMenu.trigger, row, "글자 span 이 아니라 그 줄이 trigger 다");
+  assert.deepEqual(controller.viewModel.getSnapshot().contextMenu.anchor, { x: 3, y: 4 });
+});
+
+test("UX-04: liveStep speaks on transitions only — saves, readiness, trial results, commands, searches — and never repeats an alert", () => {
+  const base = { id: "a", save: "저장하지 않은 변경", error: false, readiness: "ready", readinessText: "구조 오류 0개 · 경고 0개", trial: "untried", trialLabel: "시험 전",
+    notice: "", command: 0, commandText: "", search: undefined, searchText: "" };
+  let step = liveStep(null, base);
+  assert.equal(step.message, "", "처음은 기준만 잡는다");
+  const at = (patch) => { const next = liveStep(step.state, { ...base, ...step.state, ...patch }); step = next; return next.message; };
+  assert.equal(at({ save: "편집 내용 반영 중" }), "", "키 입력의 반영 중 깜빡임은 읽지 않는다");
+  assert.equal(at({ save: "저장하지 않은 변경" }), "");
+  assert.equal(at({ save: "저장됨 · 사용 준비" }), "저장됨 · 사용 준비", "저장됨으로 바뀐 순간");
+  assert.equal(at({ save: "저장하지 않은 변경", notice: "" }), "");
+  assert.equal(at({ save: "저장됨 · 초안", notice: "초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요." }), "초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.", "Python 의 알림이 있으면 그것");
+  assert.equal(at({ save: "저장 실패", error: true }), "", "오류 띠(alert)가 읽는 실패는 되풀이하지 않는다");
+  assert.equal(at({ save: "저장하지 않은 변경", error: false }), "");
+  assert.equal(at({ save: "저장 실패", error: false }), "저장 실패");
+  assert.equal(at({ readiness: "draft", readinessText: "사용 전에 구조 오류 1개를 확인하세요." }), "사용 전에 구조 오류 1개를 확인하세요.");
+  assert.equal(at({ readinessText: "사용 전에 구조 오류 2개를 확인하세요." }), "", "상태가 같으면 수가 바뀌어도 읽지 않는다");
+  assert.equal(at({ trial: "current", trialLabel: "현재 구성 통과" }), "현재 구성 통과");
+  assert.equal(at({ trial: "stale", trialLabel: "마지막 시험 이후 변경됨" }), "");
+  assert.equal(at({ trial: "current", trialLabel: "현재 구성 통과" }), "", "같은 결과의 자동 재시험");
+  assert.equal(at({ trial: "failed", trialLabel: "시험 실패" }), "시험 실패");
+  assert.equal(at({ command: 1, commandText: "필드로 만들기" }), "필드로 만들기");
+  assert.equal(at({ command: 2, commandText: "필드로 만들기" }), "필드로 만들기", "같은 명령의 두 번째 적용도 읽는다");
+  const summaries = [{ summary: "총 1건" }];
+  assert.equal(at({ search: summaries, searchText: "총 1건" }), "총 1건");
+  assert.equal(at({ search: summaries, searchText: "총 1건" }), "", "같은 검색 결과는 다시 읽지 않는다");
+  assert.equal(liveStep(step.state, { ...base, id: "b", save: "저장됨" }).message, "", "문서를 바꾸면 기준만 다시 잡는다");
+});
+
+test("UX-04: the live text reuses Python's and the surface's existing words — undo names what it undid", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  const item = { id: "a", readiness: { state: "draft", errors: 1, warnings: 0, message: null } };
+  assert.equal(saveLabel(item, {}, false), "저장됨 · 초안");
+  assert.equal(liveState(item, { commandNote: { seq: 3, kind: "undo", label: "필드로 만들기" } }, false).commandText, "문서 실행 취소: 필드로 만들기");
+  assert.equal(liveState(item, { commandNote: { seq: 4, kind: "redo", label: "" } }, false).commandText, "문서 다시 실행");
+  assert.equal(liveState(item, {}, false).readinessText, "구조 오류 1개 · 경고 0개");
+  assert.equal(liveState(item, { searchSummaries: [{ document: "a.txt", summary: "총 1건" }, { document: "b.txt", summary: "총 0건" }] }, false).searchText, "a.txt · 총 1건 · b.txt · 총 0건");
+  controller.attach("a", { command: async () => {}, decorate() {} });
+  controller.update({ lastCommandLabel: "항목으로 만들기" });
+  await controller.command("undo");
+  assert.deepEqual(controller.viewModel.getSnapshot().commandNote, { seq: 1, kind: "undo", label: "항목으로 만들기" });
+});
+
 test("UX-07/§10: an Escape forwarded from the editor iframe is a shell Escape (closes the properties panel); F6/Shift+F6 cycle panels", async () => {
   const { controller } = harness();
   await controller.activate("a");
@@ -988,4 +1168,22 @@ test("UX-07/§10: an Escape forwarded from the editor iframe is a shell Escape (
   assert.equal(event.target, iframe, "메뉴·패널이 초점을 돌려줄 자리는 편집면이다");
   assert.equal(event.nativeEvent.isComposing, undefined);
   event.preventDefault();
+});
+
+test("UX-04 × UX-08: F6 cycles the document tabs too and enters a roving group at its waiting item, not its first (tabindex=-1) control", async () => {
+  const { cyclePanels, PANEL_CYCLE } = await import("../../frontend/src/screens/authoring_layout.ts");
+  assert.equal(PANEL_CYCLE.split(",")[0], ".authoring-tabs", "문서 탭 줄이 순환의 첫 자리다");
+  const focused = [];
+  const panel = (name, entry) => ({
+    name, contains: (node) => node === name, matches: () => false, getClientRects: () => ({ length: 1 }), focus() {},
+    querySelector: (selector) => selector.includes('[tabindex="0"]') && !selector.includes(":not(")
+      ? (entry ? { focus: () => focused.push(`${name}:${entry}`) } : null)
+      : { focus: () => focused.push(`${name}:first`) },
+  });
+  const panels = [panel("tabs", "selected-tab"), panel("toolbar", "last-focused"), panel("outline", "current-row"), panel("canvas", null)];
+  assert.equal(cyclePanels(panels, "tabs", false).name, "toolbar");
+  assert.equal(cyclePanels(panels, "toolbar", false).name, "outline");
+  assert.equal(cyclePanels(panels, "outline", false).name, "canvas");
+  assert.equal(cyclePanels(panels, "canvas", false).name, "tabs");
+  assert.deepEqual(focused, ["toolbar:last-focused", "outline:current-row", "canvas:first", "tabs:selected-tab"]);
 });

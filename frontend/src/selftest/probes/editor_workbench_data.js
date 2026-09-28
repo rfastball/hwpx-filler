@@ -356,7 +356,36 @@ function keyboardNav(ctx) {
       for (let i = 0; i < (limit || 40) && !match(active()); i += 1) pressKey(ctx, "Tab");
       return !!match(active());
     },
+    /** roving 묶음(APG tabs·toolbar·menu) 안에서 방향키로 대상까지 — Tab 은 묶음을 떠난다. */
+    arrowTo(match, key, limit) {
+      for (let i = 0; i < (limit || 20) && !match(active()); i += 1) pressKey(ctx, key);
+      return !!match(active());
+    },
+    /** 구조 목록(APG tree)에서 대상 줄까지: 그 tree 의 처음(Home)부터 ↓ 로 내려가고, 끝이면 Tab 으로 다음 tree 에 들어간다. */
+    async treeTo(match, limit) {
+      const top = async () => {
+        if (!active() || active().getAttribute("role") !== "treeitem") return;
+        pressKey(ctx, "Home");
+        await settleRender(ctx);
+      };
+      await top();
+      for (let i = 0; i < (limit || 60) && !match(active()); i += 1) {
+        const before = active();
+        pressKey(ctx, "ArrowDown");
+        await settleRender(ctx);
+        if (active() === before) { pressKey(ctx, "Tab"); await settleRender(ctx); await top(); }
+      }
+      return !!match(active());
+    },
   };
+}
+
+/** 지금 초점 원소의 역할·이름 — 단계표(UX-04 키보드 증거)의 한 칸. */
+function focusStep(ctx, key, outcome) {
+  const el = ctx.doc.activeElement;
+  const role = el ? (el.getAttribute("role") || el.tagName.toLowerCase()) : "";
+  const name = el ? (el.getAttribute("aria-label") || textOf(el).trim()).slice(0, 60) : "";
+  return { key, role, name, outcome };
 }
 
 /** §10·§6.2 IME — 이름 입력 중 합성 조합 사건을 쏘고 명령 미실행·커서 유지·입력 미절단을 되읽는다.
@@ -410,7 +439,8 @@ async function probeAuthoringKeyboard(ctx, out) {
   try {
     out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
     if (!out.kbd_outline_reached) return;
-    out.kbd_field_focused = nav.tabTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
+    // 구조 목록은 APG tree 다(UX-04): 한 번의 Tab 으로 들어오고 ↓ 로 줄을 옮긴다.
+    out.kbd_field_focused = await nav.treeTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
     out.kbd_field_label = nav.nameOf(nav.active());
     if (!out.kbd_field_focused) return;
     pressKey(ctx, "Enter");
@@ -445,7 +475,8 @@ async function probeAuthoringKeyboard(ctx, out) {
     /* 문제는 하단 독(보조 패널)의 탭이다(§3.1): F6 으로 독에 들어가 「문제 N」 탭을 Enter 로 펼친다.
        탭 이름의 수는 Python 스냅샷의 problems 수와 같아야 하고, 펼친 뒤 독에는 탭 패널이 하나만 선다. */
     out.kbd_dock_reached = await nav.cycleTo(".authoring-dock");
-    out.kbd_problems_tab = nav.tabTo((el) => dockTab(el) && textOf(el).trim().indexOf("문제") === 0, 40);
+    // 독 탭 줄은 APG tabs 다: 들어온 탭에서 Home 으로 첫 탭(문제)까지 간다.
+    out.kbd_problems_tab = nav.arrowTo((el) => dockTab(el) && textOf(el).trim().indexOf("문제") === 0, "Home", 2);
     out.kbd_problems_tab_label = out.kbd_problems_tab ? textOf(nav.active()).trim() : "";
     out.kbd_problems_expected = (tab.problems || []).length;
     if (!out.kbd_problems_tab) return;
@@ -467,18 +498,18 @@ async function probeAuthoringKeyboard(ctx, out) {
     out.kbd_problem_context = contextText();
 
     /* 「이전 위치로」는 도구 막대 「더보기」 메뉴 안에 있다: 더보기 → Enter → 메뉴 첫 항목에 초점 →
-       Tab 으로 「이전 위치로」 → Enter. 메뉴 항목은 role=menuitem 이다. */
+       ↓ 로 「이전 위치로」 → Enter. 도구 막대와 메뉴는 APG toolbar·menu 라 Tab 이 아니라 방향키로 옮긴다. */
     out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
-    out.kbd_more_button = nav.tabTo(
-      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "더보기", 40);
+    out.kbd_more_button = nav.arrowTo(
+      (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "더보기", "ArrowRight", 20);
     if (!out.kbd_more_button) return;
     pressKey(ctx, "Enter");
     const moreMenu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="더보기"]');
     out.kbd_more_menu = await waitFor(ctx, () => !!moreMenu() && !!nav.active()
       && nav.active().getAttribute("role") === "menuitem" && moreMenu().contains(nav.active()), 20, 50);
     if (!out.kbd_more_menu) return;
-    out.kbd_back_button = nav.tabTo((el) => !!el && el.getAttribute("role") === "menuitem"
-      && !!moreMenu() && moreMenu().contains(el) && textOf(el).trim() === "이전 위치로", 8);
+    out.kbd_back_button = nav.arrowTo((el) => !!el && el.getAttribute("role") === "menuitem"
+      && !!moreMenu() && moreMenu().contains(el) && textOf(el).trim() === "이전 위치로", "ArrowDown", 8);
     if (!out.kbd_back_button) return;
     pressKey(ctx, "Enter");
     out.kbd_more_menu_closed = await waitFor(ctx, () => !moreMenu(), 20, 50);
@@ -492,6 +523,134 @@ async function probeAuthoringKeyboard(ctx, out) {
   } finally {
     out.kbd_ms = Date.now() - started;
   }
+}
+
+/** UX-04 §10 키보드 모델 밴드 — 실제 창에서 APG tabs·toolbar·tree·menu 와 초점 복귀를 단계마다 잰다.
+ *  각 단계는 누른 키 → 초점 원소(역할·이름) → 보이는 결과를 `a11y_steps` 에 싣고, 단언 키는 `a11y_*` 이다.
+ *  두 번째 문서(새 TXT)를 열어 탭 사이를 옮기고, 끝에 Delete 로 닫아 이웃 탭 초점을 잰다. */
+async function probeAuthoringA11y(ctx, out) {
+  const doc = ctx.doc;
+  const nav = keyboardNav(ctx);
+  const steps = [];
+  out.a11y_steps = steps;
+  const step = (key, outcome) => steps.push(focusStep(ctx, key, outcome));
+  const press = async (key, init) => { pressKey(ctx, key, init); await settleRender(ctx); };
+  const role = (name) => !!nav.active() && nav.active().getAttribute("role") === name;
+  const docTabs = () => Array.prototype.slice.call(doc.querySelectorAll('#scr-authoring .authoring-tabs [role="tab"]'));
+  const newTxt = Array.prototype.find.call(doc.querySelectorAll("#scr-authoring .authoring-head button"), (el) => textOf(el).trim() === "새 TXT");
+  if (!newTxt) { out.a11y_new_tab = false; return; }
+  newTxt.click();
+  out.a11y_new_tab = await waitFor(ctx, () => docTabs().length === 2 && docTabs()[1].getAttribute("aria-selected") === "true", 40, 50);
+  if (!out.a11y_new_tab) return;
+  const [firstTab, secondTab] = docTabs();
+
+  // ① 문서 탭(APG tabs, 수동 활성화)
+  out.a11y_tabs_reached = await nav.cycleTo(".authoring-tabs");
+  out.a11y_tabs_entry = nav.active() === secondTab;
+  step("F6", "문서 탭 줄 — 선택된 탭으로 들어온다");
+  await press("ArrowLeft");
+  out.a11y_tabs_left = nav.active() === firstTab && firstTab.getAttribute("aria-selected") === "false";
+  step("ArrowLeft", "앞 탭으로 초점만 옮긴다(선택은 그대로)");
+  await press("ArrowRight");
+  out.a11y_tabs_right = nav.active() === secondTab;
+  step("ArrowRight", "다음 탭으로");
+  await press("Home");
+  out.a11y_tabs_home = nav.active() === firstTab;
+  await press("Enter");
+  out.a11y_tabs_enter = await waitFor(ctx, () => firstTab.getAttribute("aria-selected") === "true", 40, 50);
+  step("Home, Enter", "첫 탭을 연다(aria-selected)");
+  await press("End");
+  const closing = nav.active();
+  out.a11y_tabs_end = closing === secondTab;
+  await press("Delete");
+  const asking = () => !byId(ctx, "chooseModal").classList.contains("hidden");
+  if (await waitFor(ctx, asking, 10, 50)) { byId(ctx, "chooseModalAlt").click(); settleModal(ctx, "chooseModal"); }
+  out.a11y_tabs_delete_closed = await waitFor(ctx, () => docTabs().length === 1, 40, 50);
+  out.a11y_tabs_delete_focus = await waitFor(ctx, () => nav.active() === docTabs()[0], 20, 50);
+  step("End, Delete", "새 문서 탭을 닫고 이웃 탭에 초점");
+
+  // ② 도구 막대(APG toolbar)
+  out.a11y_toolbar_reached = await nav.cycleTo(".authoring-toolbar");
+  const entry = nav.active();
+  out.a11y_toolbar_single_stop = doc.querySelectorAll('#scr-authoring .authoring-toolbar [tabindex="0"]').length === 1;
+  step("F6", "도구 막대 — 입구 제어 하나");
+  await press("ArrowRight");
+  out.a11y_toolbar_right = nav.active() !== entry && !!nav.within(".authoring-toolbar");
+  step("ArrowRight", "다음 제어");
+  await press("End");
+  out.a11y_toolbar_end = nav.active().getAttribute("aria-label") === "확대";
+  step("End", "마지막 제어(확대)");
+  const zoom = nav.active().value;
+  await press("ArrowRight");
+  // End 뒤의 → 는 첫 **활성** 제어로 감싸 돈다(입구는 마지막 초점 자리라 첫 제어와 다를 수 있다).
+  out.a11y_toolbar_wrap = nav.active() === doc.querySelector('#scr-authoring .authoring-toolbar [data-rove]:not([disabled])')
+    && doc.querySelector('#scr-authoring .authoring-toolbar select').value === zoom;
+  step("ArrowRight", "처음으로 감싸 돈다 — 확대 값은 그대로");
+
+  // ③ 하단 독 탭(APG tabs) — Enter 로 펼치면 패널 첫 제어로, Escape 는 그 탭으로 돌아온다
+  out.a11y_dock_reached = await nav.cycleTo(".authoring-dock");
+  out.a11y_dock_entry = role("tab");
+  step("F6", "독 탭 줄");
+  out.a11y_dock_search = nav.arrowTo((el) => !!el && el.getAttribute("role") === "tab" && textOf(el).trim() === "검색", "ArrowRight", 8);
+  const searchTab = nav.active();
+  step("ArrowRight", "검색 탭");
+  await press("Enter");
+  out.a11y_dock_enter_focus = await waitFor(ctx, () => !!nav.active() && nav.active().getAttribute("name") === "query", 20, 50);
+  step("Enter", "검색 패널을 펼치고 검색어 칸으로");
+  await press("Escape");
+  out.a11y_dock_escape_closed = await waitFor(ctx, () => !doc.querySelector('#scr-authoring [role="tabpanel"] input[name="query"]'), 20, 50);
+  out.a11y_dock_escape_return = await waitFor(ctx, () => nav.active() === searchTab, 20, 50);
+  step("Escape", "패널을 닫고 연 탭으로 돌아온다");
+
+  // ④ 구조 목록(APG tree)과 문맥 메뉴(APG menu) — Shift+F10 은 그 줄을 고른 뒤 그 아래에 메뉴를 연다
+  out.a11y_tree_reached = await nav.cycleTo(".authoring-outline");
+  out.a11y_tree_entry = role("treeitem");
+  step("F6", "구조 목록 — 입구 줄");
+  out.a11y_tree_field = await nav.treeTo((el) => nav.nameOf(el).indexOf("필드 · ") === 0, 16);
+  const item = nav.active();
+  step("ArrowDown", "필드 줄");
+  const menu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="문맥 명령"]');
+  pressKey(ctx, "F10", { shiftKey: true });
+  out.a11y_menu_open = await waitFor(ctx, () => !!menu() && role("menuitem") && menu().contains(nav.active()), 40, 50);
+  out.a11y_tree_current = item.getAttribute("aria-current") === "true";
+  step("Shift+F10", "그 줄을 고르고(aria-current) 문맥 메뉴의 첫 사용 가능 항목에 초점");
+  if (out.a11y_menu_open) {
+    const items = () => Array.prototype.slice.call(menu().querySelectorAll('[role="menuitem"]'));
+    const first = nav.active();
+    await press("ArrowDown");
+    out.a11y_menu_down = nav.active() === items()[(items().indexOf(first) + 1) % items().length];
+    step("ArrowDown", "다음 항목(불가 항목도 초점을 받는다)");
+    await press("End");
+    out.a11y_menu_end = nav.active() === items()[items().length - 1];
+    await press("Home");
+    out.a11y_menu_home = nav.active() === items()[0];
+    step("End, Home", "끝·처음 항목");
+    const rect = menu().parentElement.getBoundingClientRect();
+    out.a11y_menu_in_window = rect.top >= 0 && rect.left >= 0 && rect.bottom <= ctx.win.innerHeight && rect.right <= ctx.win.innerWidth;
+    await press("Escape");
+    out.a11y_menu_escape_closed = await waitFor(ctx, () => !menu(), 20, 50);
+    out.a11y_menu_escape_return = await waitFor(ctx, () => nav.active() === item, 20, 50);
+    step("Escape", "메뉴를 닫고 그 줄로 돌아온다");
+  }
+  // ⑤ 창 아래 끝에서 연 메뉴도 창 안에 든다(위로 뒤집힘) — 편집면 오른쪽 클릭 사건을 창 아래 끝 좌표로 쏜다.
+  const canvas = doc.querySelector("#scr-authoring .authoring-canvas");
+  canvas.dispatchEvent(new ctx.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: ctx.win.innerHeight - 4 }));
+  out.a11y_bottom_menu_open = await waitFor(ctx, () => !!menu(), 20, 50);
+  if (out.a11y_bottom_menu_open) {
+    await settleRender(ctx);
+    const rect = menu().parentElement.getBoundingClientRect();
+    out.a11y_bottom_menu_rect = { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(ctx.win.innerHeight) };
+    out.a11y_bottom_menu_in_window = rect.top >= 0 && rect.bottom <= ctx.win.innerHeight;
+    await press("Escape");
+    await waitFor(ctx, () => !menu(), 20, 50);
+  }
+  // 속성 패널(Shift+F10 의 선택이 열었다)을 닫아 뒤 단언이 깨끗한 셸에서 돈다.
+  if (doc.querySelector("#scr-authoring .authoring-properties")) {
+    const input = doc.querySelector("#scr-authoring .authoring-properties input");
+    if (input) { input.focus(); await press("Escape"); }
+    await waitFor(ctx, () => !doc.querySelector("#scr-authoring .authoring-properties"), 20, 50);
+  }
+  out.a11y_error_band = textOf(doc.querySelector("#scr-authoring .authoring-shell > div.authoring-error")).trim();
 }
 
 /** 기존 editor_txt_band 부팅에서 실제 CM·Python 분석·미저장 보호를 검증한다. */
@@ -548,6 +707,11 @@ async function probeLintpad(ctx, out) {
     await probeAuthoringKeyboard(ctx, out);
   } catch (thrown) {
     out.kbd_error = String((thrown && thrown.message) || thrown);
+  }
+  try {
+    await probeAuthoringA11y(ctx, out);
+  } catch (thrown) {
+    out.a11y_error = String((thrown && thrown.message) || thrown);
   }
   const close = () => doc.querySelector(".authoring-tab button[aria-label]").click();
   const asking = () => !doc.getElementById("chooseModal").classList.contains("hidden");
@@ -939,8 +1103,9 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
 
   /* ── ⑥ 이름 변경은 **모든 사용 위치**를 함께 옮긴다(AC07) ───────────────────── */
   if (!afford(8000)) return give("예산 부족: 이름 변경");
-  const summary = all(".authoring-outline summary button").find(
-    (el) => textOf(el).indexOf(`${candidate.field} · ${candidate.occurrences}`) === 0);
+  // 구조 목록은 APG tree 다 — 필드 줄(treeitem)의 보이는 글은 「이름 · 사용 위치 n곳」로 시작한다.
+  const summary = all('.authoring-outline [role="treeitem"]').find(
+    (el) => textOf(el).indexOf(`${candidate.field} · 사용 위치 ${candidate.occurrences}곳`) === 0);
   out.hwpx_authoring_rename_target = summary ? textOf(summary).trim() : "";
   if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
   summary.click();
@@ -1010,7 +1175,7 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
     const first = out.hwpx_kbd_outline ? pressKey(ctx, "Tab") : { prevented: null };
     out.hwpx_kbd_first_tab = { prevented: first.prevented, order: order.length,
       at: order.indexOf(before), moved: nav.active() !== before, now: nav.nameOf(nav.active()).slice(0, 60) };
-    out.hwpx_kbd_field = out.hwpx_kbd_outline && nav.tabTo((el) => nav.nameOf(el).indexOf(prefix) === 0, 80);
+    out.hwpx_kbd_field = out.hwpx_kbd_outline && await nav.treeTo((el) => nav.nameOf(el).indexOf(prefix) === 0, 80);
     out.hwpx_kbd_field_label = nav.nameOf(nav.active());
     if (out.hwpx_kbd_field) {
       pressKey(ctx, "Enter");

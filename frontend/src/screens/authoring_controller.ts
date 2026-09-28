@@ -1,6 +1,7 @@
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
+import { errorText } from "./authoring_a11y.ts";
 
 type Obj = Record<string, any>;
 export type AuthoringEditor = {
@@ -93,6 +94,9 @@ export function createAuthoringController(deps: Deps) {
   let previewRequest = 0;
   let searchRequest = 0;
   let applying = false;
+  // 오류 띠(§10·UX-04): 새 오류마다 차례 번호를 올린다. 같은 종류의 작업이 성공해야(또는 닫기로) 지워진다 —
+  // 다음 키 입력·캐럿 이동이 읽히기 전의 경보를 지우지 않는다.
+  let errorSeq = 0;
   const snapshot = (): Obj => model.getSnapshot() || { tabs: [], active_id: "" };
   const tab = (id = snapshot().active_id): Obj => (snapshot().tabs || []).find((item: Obj) => item.id === id) || {};
   const update = (patch: Obj) => { view = { ...view, ...patch }; if (viewId) views.set(viewId, view); listeners.forEach((listener) => listener()); };
@@ -108,15 +112,30 @@ export function createAuthoringController(deps: Deps) {
   const revision = (id: string): number => revisions.get(id) ?? tab(id).revision;
   const fenced = (id: string, payload: Obj = {}): Obj => ({ session_id: id, revision: revision(id), ...payload });
 
-  async function guarded(work: () => unknown | Promise<unknown>) {
-    try { update({ error: "" }); await work(); }
-    catch (error) { update({ error: error instanceof Error ? error.message : String(error) }); }
+  /** 오류 한 건을 띠에 세운다. kind 는 그 오류를 지울 수 있는 작업의 종류다. */
+  function fail(error: unknown, kind = "action") {
+    update({ error: errorText(error), errorKind: kind, errorSeq: ++errorSeq });
+  }
+
+  /** 작업 하나를 오류 띠로 감싼다. 시작할 때 띠를 지우지 않는다 — 이 작업이 성공했고, 그 사이 새 오류가 서지 않았고,
+   *  띠의 오류가 같은 종류일 때만 지운다(같은 종류의 재시도 성공). 나머지는 「닫기」로만 걷힌다. */
+  async function guarded(work: () => unknown | Promise<unknown>, kind = "action") {
+    const seen = errorSeq;
+    try {
+      await work();
+      if (view.error && view.errorKind === kind && view.errorSeq === seen) update({ error: "", errorKind: "" });
+    } catch (error) { fail(error, kind); }
+  }
+
+  /** live region 한 줄(UX-04) — 화면이 전이를 판정해 부른다. 같은 문장도 차례 번호로 다시 읽힌다. */
+  function announce(text: string) {
+    if (text) update({ live: { text, seq: (view.live?.seq || 0) + 1 } });
   }
 
   function changed(id: string, content: string): void {
     buffers.set(id, content);
     if (id === viewId) update({ preview: null, refusal: null, notice: "" });
-    void guarded(async () => { await drain(id); scheduleTrial(id); });
+    void guarded(async () => { await drain(id); scheduleTrial(id); }, "edit");
   }
 
   async function flush(id: string): Promise<void> {
@@ -156,12 +175,12 @@ export function createAuthoringController(deps: Deps) {
     pendingRestore.delete(id);
     editor.decorate(tab(id).analysis || {}, views.get(id)?.mode || "template");
     // 좌표는 Python 이 이 bytes 에 대해 유효하다고 판정한 것이다. 그래도 편집기가 거절하면 알리되 문서 열기는 막지 않는다.
-    if (pending.selection) await editor.focus(pending.selection).catch((error) => update({ error: error instanceof Error ? error.message : String(error) }));
+    if (pending.selection) await editor.focus(pending.selection).catch((error) => fail(error, "restore"));
   }
 
   function scheduleRemember(id: string) {
     clearTimeout(rememberTimers.get(id));
-    rememberTimers.set(id, setTimeout(() => { void guarded(() => remember(id)); }, 400));
+    rememberTimers.set(id, setTimeout(() => { void guarded(() => remember(id), "remember"); }, 400));
   }
 
   /** 최근 작업 위치·표시 방식을 Python 에 보낸다. 편집기 flush 는 부르지 않는다 — 한글 조합 중에도 경보가 서지 않는다. */
@@ -220,9 +239,9 @@ export function createAuthoringController(deps: Deps) {
     } catch (error) { update({ saveFailed: true }); throw error; }
     if (result?.needs_save_as) return save(id, true);
     // 저장 실패는 변경 상태를 유지한 채 복구 동사(비교·다른 이름·다시 열기·다시 저장)를 남긴다(§9.2).
-    if (result?.external_changed || result?.conflict) { update({ panel: "external", saveFailed: true, error: result.message || "저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요." }); return false; }
+    if (result?.external_changed || result?.conflict) { update({ panel: "external", saveFailed: true }); fail(result.message || "저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요.", "save"); return false; }
     if (!result || result.cancelled) return false;
-    update({ saveFailed: false, notice: result.notice || "", panel: view.panel === "external" ? "" : view.panel });
+    update({ saveFailed: false, notice: result.notice || "", panel: view.panel === "external" ? "" : view.panel, ...(view.errorKind === "save" ? { error: "", errorKind: "" } : {}) });
     await deps.navigation.refresh("tpl");
     return true;
   }
@@ -231,7 +250,7 @@ export function createAuthoringController(deps: Deps) {
     await flush(id);
     await inputPumps.get(id);
     // 남은 작업 위치를 먼저 보낸다. 실패는 알리되 문서 닫기를 막지 않는다(잃는 것은 위치 기록뿐이다).
-    if (rememberTimers.has(id)) await remember(id).catch((error) => update({ error: error instanceof Error ? error.message : String(error) }));
+    if (rememberTimers.has(id)) await remember(id).catch((error) => fail(error, "remember"));
     let result = await dispatch("close", { session_id: id, force: false });
     if (result.needs_confirm) {
       const answer = await deps.modal.choose({ title: tab(id).name || "문서 닫기",
@@ -347,7 +366,7 @@ export function createAuthoringController(deps: Deps) {
       await flush(id);
       // 다음에 되돌릴 행동의 이름(§9.3). backend 가 label 을 주면 그것, 아니면 명령 표시 이름.
       const label = prepared.label || result.label || COMMANDS.find(([type]) => type === command.type)?.[1] || command.type;
-      if (id === viewId) update({ command: null, preview: null, lastCommandLabel: label });
+      if (id === viewId) update({ command: null, preview: null, lastCommandLabel: label, commandNote: { seq: (view.commandNote?.seq || 0) + 1, kind: "apply", label } });
       scheduleTrial(id);
     } finally { applying = false; }
   }
@@ -355,7 +374,7 @@ export function createAuthoringController(deps: Deps) {
   function scheduleTrial(id: string) {
     clearTimeout(trialTimer);
     const state = views.get(id);
-    if (id === viewId && state?.autoTrial && state?.trial) trialTimer = setTimeout(() => { void guarded(() => runTrial(id)); }, 350);
+    if (id === viewId && state?.autoTrial && state?.trial) trialTimer = setTimeout(() => { void guarded(() => runTrial(id), "trial"); }, 350);
   }
 
   /** U03: 선택 문구를 시험값으로 보관한다 — 이미 값이 있으면 덮어쓰지 않고 유지/교체를 묻는다. */
@@ -470,7 +489,7 @@ export function createAuthoringController(deps: Deps) {
 
   return {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
-    snapshot, tab, update, guarded, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
+    snapshot, tab, update, guarded, fail, announce, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
     back, select, preview, applyPreview, trialInput, keepTrialValue, runTrial, saveCase, search,
     returnScreen: () => returnScreen,
@@ -492,13 +511,23 @@ export function createAuthoringController(deps: Deps) {
     editorGeneration: (id: string) => generations.get(id) || 0,
     mode: (id: string) => views.get(id)?.mode || "template",
     pending: (id: string) => buffers.has(id),
-    selection: (id: string, range: Obj) => { void guarded(() => selection(id, range)); },
-    focusSelection: async () => { if (Object.keys(view.selection).length) await editors.get(viewId)?.focus(view.selection); },
-    attach(id: string, editor: AuthoringEditor) { editors.set(id, editor); void guarded(() => applyRestore(id)); return () => { editors.delete(id); }; },
+    selection: (id: string, range: Obj) => { void guarded(() => selection(id, range), "locate"); },
+    /** 오류 띠의 「닫기」 — 사용자가 읽고 걷는다. */
+    dismissError: () => update({ error: "", errorKind: "" }),
+    /** 선택 자리로 초점을 돌린다(§10 Escape). 돌릴 선택·편집기가 없으면 false — 화면이 다음 후보로 간다. */
+    focusSelection: async (): Promise<boolean> => {
+      const editor = editors.get(viewId);
+      if (!editor || !Object.keys(view.selection).length) return false;
+      await editor.focus(view.selection);
+      return true;
+    },
+    attach(id: string, editor: AuthoringEditor) { editors.set(id, editor); void guarded(() => applyRestore(id), "restore"); return () => { editors.delete(id); }; },
     command: async (command: "undo" | "redo" | "search") => {
       await editors.get(snapshot().active_id)?.command(command);
       // 되돌린 뒤에는 다음에 되돌릴 행동을 모른다 — 이름을 지운다. 빈 patch 도 history 깊이를 다시 읽게 한다.
-      update(command === "undo" ? { lastCommandLabel: "" } : {});
+      // 실행 취소·다시 실행은 live region 이 읽을 표지(commandNote)를 남긴다 — 되돌린 명령의 이름과 함께.
+      const note = command === "search" ? {} : { commandNote: { seq: (view.commandNote?.seq || 0) + 1, kind: command, label: command === "undo" ? view.lastCommandLabel : "" } };
+      update(command === "undo" ? { lastCommandLabel: "", ...note } : note);
     },
     editorState: (id: string) => editors.get(id)?.state?.() ?? null,
     setMode(mode: string) { update({ mode }); editors.get(viewId)?.decorate(tab(viewId).analysis || {}, mode); if (viewId) scheduleRemember(viewId); },

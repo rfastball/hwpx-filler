@@ -141,9 +141,13 @@ export function PanelSplitter({ panel, label, layout }: SplitterProps): ReactNod
 
 /** F6 패널 순환의 대상(§10). 좁은 폭에서 접힌 구조는 레일 버튼이 대신 선다 — 순환은 **그려진**
  *  패널만 돈다(숨은 패널에 focus() 는 조용히 헛돈다). 레일 버튼처럼 패널 자신이 조작이면 그것에,
- *  아니면 안의 첫 **활성** 조작에 초점을 둔다. */
-export const PANEL_CYCLE = ".authoring-toolbar,.authoring-rail-toggle,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock";
+ *  아니면 안의 roving 대기 항목, 그것도 없으면 첫 **활성** 조작에 초점을 둔다. */
+export const PANEL_CYCLE = ".authoring-tabs,.authoring-toolbar,.authoring-rail-toggle,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock";
 const FOCUSABLE = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe";
+/** roving 묶음(APG tabs·toolbar·tree, UX-04)의 대기 항목 — 그 묶음에 들어가는 한 자리다. 대기 항목이 아닌
+ *  roving 원소(tabindex=-1)는 Tab 순서가 아니므로 첫 조작 후보에서도 빠진다. */
+const FOCUSABLE_OUTSIDE_ROVING = FOCUSABLE.split(",").map((part) => part === "iframe" ? part : `${part}:not([tabindex="-1"])`).join(",");
+const ROVING_ENTRY = '[role="tab"][tabindex="0"],[role="treeitem"][tabindex="0"],[data-rove][tabindex="0"]';
 
 type CyclePanel = {
   contains(node: unknown): boolean;
@@ -158,7 +162,7 @@ export function cyclePanels(panels: readonly CyclePanel[], active: unknown, back
   if (shown.length === 0) return null;
   const current = shown.findIndex((panel) => panel.contains(active));
   const next = shown[(current + (backwards ? shown.length - 1 : 1)) % shown.length];
-  const target = next.matches(FOCUSABLE) ? next : next.querySelector(FOCUSABLE);
+  const target = next.matches(FOCUSABLE) ? next : next.querySelector(ROVING_ENTRY) || next.querySelector(FOCUSABLE_OUTSIDE_ROVING);
   target?.focus();
   return next;
 }
