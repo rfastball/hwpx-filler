@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason } from "../../frontend/src/screens/authoring.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
 // New owner: asynchronous authoring revision fences and close preservation.
@@ -660,4 +660,158 @@ test("§10: items and options, errors and warnings stay distinguishable without 
   assert.ok(markup.includes("<p><strong>경고</strong> · 호환성</p><p>경고 설명</p>"));
   // 문제 배지는 수를 글로 센다.
   assert.ok(!/class="authoring-badge">\s*<\/span>/.test(markup));
+});
+
+// ---- §3.1 셸 배치(UX-01): 도구 막대 한 줄 · 하단 독 한 탭 · 사유 한 번 · 속성 닫기 · 더보기 ----
+const toolbarOf = (markup) => { const start = markup.indexOf('<div class="authoring-toolbar"'); return markup.slice(start, markup.indexOf('<div class="authoring-body', start)); };
+const dockOf = (markup) => { const start = markup.indexOf('<section class="authoring-dock'); if (start < 0) return ""; const end = markup.indexOf("<footer", start); return markup.slice(start, end < 0 ? undefined : end); };
+const count = (text, needle) => text.split(needle).length - 1;
+
+test("§3.1: the toolbar is one labelled row of document commands; panels, copy/paste and back moved out of it", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  const toolbar = toolbarOf(render(controller));
+  assert.ok(toolbar.startsWith('<div class="authoring-toolbar" role="toolbar" aria-label="문서 명령">'));
+  for (const label of ["문서 실행 취소", "문서 다시 실행", "필드로 만들기", "항목으로 만들기", "선택으로 만들기", "명령", "더보기", "결과 시험"]) assert.ok(toolbar.includes(`>${label}</button>`), label);
+  // 표시 방식은 세 갈래 버튼 — 같은 setMode 로 간다. 확대는 보이는 라벨 없이 이름을 가진다.
+  assert.ok(toolbar.includes('<div class="authoring-mode" role="group" aria-label="표시"><button type="button" value="document" aria-pressed="false">문서</button><button type="button" value="template" aria-pressed="true">템플릿</button><button type="button" value="structure" aria-pressed="false">구조</button></div>'));
+  assert.ok(toolbar.includes('<select class="field" aria-label="확대">'));
+  assert.ok(!toolbar.includes("<label"), "도구 막대 안에 줄을 늘리는 라벨이 없다");
+  for (const moved of ["문제", "검색", "원문 표기", "변경 영향·작업 적용", "의미 복사", "붙여넣기", "이전 위치로"]) assert.ok(!toolbar.includes(`>${moved}</button>`), moved);
+  assert.ok(toolbar.includes('aria-haspopup="menu" aria-expanded="false">더보기</button>'));
+  assert.ok(toolbar.includes('aria-pressed="false">결과 시험</button>'));
+});
+
+test("§3.1: the bottom dock keeps its tab strip, counts problems as text and shows exactly one tab panel", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].problems = [{ severity: "error", category: "structure", message: "m", target: "x", location: null, actions: [] }, { severity: "warning", category: "structure", message: "n", target: "y", location: null, actions: [] }];
+  await controller.activate("a");
+  let dock = dockOf(render(controller));
+  assert.ok(dock.startsWith('<section class="authoring-dock" role="region" aria-label="보조 패널">'), "닫힌 독도 탭 줄로 남는다");
+  assert.ok(dock.includes('<div class="authoring-dock-tabs" role="tablist" aria-label="보조 패널">'));
+  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" aria-selected="false">문제 <span class="authoring-badge">2</span></button>'));
+  for (const label of ["검색", "원문 표기", "변경 영향·작업 적용", "결과 시험"]) assert.ok(dock.includes(`aria-selected="false">${label}</button>`), label);
+  assert.equal(count(dock, 'role="tabpanel"'), 0);
+  assert.ok(!dock.includes(">최대화</button>") && !dock.includes(">닫기</button>"), "펼친 탭이 없으면 크기·닫기 동작도 없다");
+  // 시험과 문제가 함께 열려 있어도 보이는 것은 하나 — 방금 연 패널(문제)이다.
+  controller.update({ trial: true, panel: "problems" });
+  let markup = render(controller);
+  dock = dockOf(markup);
+  assert.equal(count(dock, 'role="tabpanel"'), 1);
+  assert.ok(dock.includes('<div class="authoring-dock-panel" id="authoring-dock-panel" role="tabpanel" aria-labelledby="authoring-dock-tab-problems"><section class="authoring-bottom" aria-label="문제">'));
+  assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" aria-selected="true" aria-controls="authoring-dock-panel">'));
+  assert.ok(!markup.includes('class="authoring-trial"'));
+  assert.ok(dock.includes(">최대화</button>") && dock.includes(">닫기</button>"));
+  // 패널을 닫으면(Escape 와 같은 경로) 열려 있던 시험이 제 탭으로 선다. 도구 막대의 「결과 시험」은 눌림으로 보인다.
+  escapeShell(controller);
+  markup = render(controller);
+  assert.ok(dockOf(markup).includes('aria-labelledby="authoring-dock-tab-trial"><section class="authoring-trial" aria-label="결과 시험">'));
+  assert.ok(toolbarOf(markup).includes('aria-pressed="true">결과 시험</button>'));
+  controller.update({ dockMax: true });
+  markup = render(controller);
+  assert.ok(markup.includes('<div class="authoring-shell dock-max">') && dockOf(markup).includes(">복원</button>"));
+});
+
+test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then alerts; a closed dock does not reopen for an old alert", () => {
+  const item = { id: "a", recovery: true, external_changed: true };
+  assert.deepEqual(dockTabs(item, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "impact", "trial", "external_changed", "recovery"]);
+  assert.equal(dockTabs(item, { panel: "" }).active, "recovery");
+  assert.equal(dockTabs(item, { panel: "search" }).active, "search");
+  assert.equal(dockTabs(item, { panel: "", dock: "external_changed" }).active, "external_changed");
+  assert.equal(dockTabs(item, { panel: "", dock: "trial" }).active, "recovery", "시험 탭은 시험이 열려 있을 때만 선다");
+  assert.equal(dockTabs(item, { panel: "", dockClosed: true }).active, "");
+  assert.equal(dockTabs(item, { panel: "", dockClosed: true, trial: true }).active, "trial", "사용자가 연 시험은 닫힌 독 표지와 무관하다");
+  assert.equal(dockTabs(item, { panel: "properties", recoveryPreview: { key: "k" } }).active, "recovery_preview");
+  // 저장 실패는 다른 탭을 보는 동안에도 탭으로 남아 복구 동사로 돌아갈 길이 된다. 외부 변경 탭은 그와 겹치지 않는다.
+  const failed = dockTabs(item, { panel: "problems", saveFailed: true });
+  assert.ok(failed.tabs.some(([key, label]) => key === "external" && label === "저장 실패"));
+  assert.ok(!failed.tabs.some(([key]) => key === "external_changed"));
+  assert.equal(failed.active, "problems");
+  // 문서가 없으면 복구 초안 비교만 설 수 있다.
+  assert.deepEqual(dockTabs(undefined, { panel: "", recoveryPreview: { key: "k" } }), { tabs: [["recovery_preview", "초안과 원본 비교"]], active: "recovery_preview" });
+  assert.deepEqual(dockTabs(undefined, { panel: "" }), { tabs: [], active: "" });
+});
+
+test("§3.1/AC24: alert content keeps role=alert inside the dock", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].recovery = true;
+  await controller.activate("a");
+  let dock = dockOf(render(controller));
+  assert.ok(dock.includes('aria-labelledby="authoring-dock-tab-recovery"><section class="authoring-bottom" role="alert" aria-label="중단 전 복구 초안"><h2>중단 전 복구 초안</h2>'));
+  for (const verb of ["초안과 원본 비교", "복구", "폐기"]) assert.ok(dock.includes(`>${verb}</button>`), verb);
+  snapshot.tabs[0].recovery = false;
+  snapshot.tabs[0].external_changed = true;
+  dock = dockOf(render(controller));
+  assert.ok(dock.includes('<section class="authoring-bottom" role="alert" aria-label="외부 파일 변경"><h2>외부 파일 변경</h2>'));
+  for (const verb of ["양쪽 내용 확인", "현재 작업을 다른 이름으로 저장", "외부 파일 다시 열기"]) assert.ok(dock.includes(`>${verb}</button>`), verb);
+});
+
+const SHARED_VERDICTS = [
+  { type: "create_field", enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: null },
+  { type: "create_slot", enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: null },
+  { type: "create_option", enabled: false, reason: "먼저 문서에서 내용을 선택하세요.", alternative: { label: "먼저 항목 만들기", command_type: "create_slot" } },
+];
+
+test("§3.1: a reason shared by every unavailable command is shown once, at the top; alternatives stay per item", async () => {
+  assert.equal(sharedReason(SHARED_VERDICTS), "먼저 문서에서 내용을 선택하세요.");
+  assert.equal(sharedReason(COMMAND_VERDICTS), null, "사유가 갈리면 항목마다 남긴다");
+  assert.equal(sharedReason([SHARED_VERDICTS[0]]), null, "불가 명령이 하나면 그 곁에 둔다");
+  assert.equal(sharedReason([{ type: "create_field", enabled: false, reason: null }, { type: "create_slot", enabled: false, reason: null }]), null);
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ commands: SHARED_VERDICTS, panel: "commands" });
+  const palette = render(controller);
+  assert.equal(count(palette, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
+  assert.ok(palette.includes('<h2>명령</h2><p id="authoring-command-reason-palette" class="authoring-reason">먼저 문서에서 내용을 선택하세요.</p><div class="authoring-command">'));
+  assert.ok(palette.includes('disabled="" aria-disabled="true" title="먼저 문서에서 내용을 선택하세요." aria-describedby="authoring-command-reason-palette">선택으로 만들기</button><button type="button" class="btn sm">먼저 항목 만들기</button>'));
+  assert.ok(palette.includes('class="btn sm">필드 이름 변경</button>'), "판정이 없는 명령은 켜 둔다");
+  // 팔레트는 도구 막대에서 빠진 세 동작도 싣는다.
+  for (const label of ["의미 복사", "이전 위치로"]) assert.ok(palette.includes(`class="btn sm">${label}</button>`), label);
+  assert.ok(palette.includes('class="btn sm" disabled="">붙여넣기</button>'), "복사한 의미가 없으면 붙여넣기는 꺼진다");
+  openContextMenu(controller, { clientX: 5, clientY: 6, target: null }, null);
+  const menu = render(controller);
+  const context = menu.slice(menu.indexOf('<div class="authoring-context-menu"'));
+  assert.ok(context.startsWith('<div class="authoring-context-menu" role="menu" aria-label="문맥 명령" style="left:5px;top:6px"><p id="authoring-command-reason-menu" class="authoring-reason" role="none">먼저 문서에서 내용을 선택하세요.</p>'));
+  assert.equal(count(context, "먼저 문서에서 내용을 선택하세요.</p>"), 1);
+});
+
+test("§3.1: the properties panel has a visible 닫기 in its header", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "create_field", selected: null, selection: { start: 0, end: 2 } });
+  const markup = render(controller);
+  assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title"><div class="authoring-properties-head"><h2 id="authoring-properties-title">속성</h2><button type="button" class="btn sm">닫기</button></div>'));
+});
+
+test("§3.1: 더보기 opens a small menu of 의미 복사·붙여넣기·이전 위치로, and Escape closes it before any panel", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "search" });
+  let focused = 0;
+  openContextMenu(controller, { clientX: 40, clientY: 90, target: { focus: () => { focused++; } } }, { getBoundingClientRect: () => ({ left: 10, top: 20 }) }, "more");
+  const markup = render(controller);
+  const menu = markup.slice(markup.indexOf('<div class="authoring-context-menu"'));
+  assert.ok(menu.startsWith('<div class="authoring-context-menu" role="menu" aria-label="더보기" style="left:30px;top:70px"><div class="authoring-command" role="none"><button type="button" class="btn sm" role="menuitem">의미 복사</button></div>'));
+  assert.ok(menu.includes('role="menuitem" disabled="">붙여넣기</button>') && menu.includes('role="menuitem">이전 위치로</button>'));
+  assert.ok(toolbarOf(markup).includes('aria-haspopup="menu" aria-expanded="true">더보기</button>'));
+  assert.equal(escapeShell(controller), "menu");
+  assert.equal(focused, 1);
+  assert.equal(controller.viewModel.getSnapshot().panel, "search");
+});
+
+test("§3.1: the location breadcrumb sits in the centre column right above the canvas and keeps its label", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ matches: [{ kind: "slot", label: "문서", slot_id: "doc" }] });
+  const markup = render(controller);
+  assert.ok(markup.includes('<div class="authoring-center"><div class="authoring-selection" role="group" aria-label="현재 위치의 의미"><span class="authoring-selection-label" aria-hidden="true">현재 위치의 의미</span><button type="button" class="btn sm">항목 · 문서</button></div><main class="authoring-canvas"'));
+});
+
+test("P09/§3.1: the status bar splits save·checks from preservation·trial·recovery", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].readiness = { state: "draft", errors: 1, warnings: 0 };
+  snapshot.tabs[0].compatibility = { state: "checking" };
+  await controller.activate("a");
+  const markup = render(controller);
+  assert.ok(markup.includes('<footer class="authoring-status" role="status"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span>다시 시험 필요</span><span>시험 자료 없음</span></div></footer>'));
 });

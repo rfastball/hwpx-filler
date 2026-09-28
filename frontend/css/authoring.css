@@ -2,13 +2,31 @@ body.authoring-open .nav{display:none}
 body.authoring-open{--shell-topbar-h:44px}
 body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 #scr-authoring.on{display:flex;height:100%;min-height:0}
-.authoring-shell{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;gap:var(--sp-8);position:relative}
-.authoring-head,.authoring-toolbar,.authoring-tabs,.authoring-status{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+/* 셸(§3.1): 머리·탭·도구 막대는 줄지 않고, 문서면이 먼저 높이를 가지며, 하단 독과 호환성 안내가 먼저 줄어든다.
+   그래도 넘치면 셸 자신이 스크롤한다 — 스크롤 막대 없이 잘리는 구획은 없다. */
+.authoring-shell{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;gap:var(--sp-6);position:relative;overflow:auto}
+.authoring-shell>*{flex-shrink:0}
+.authoring-head,.authoring-tabs{display:flex;align-items:center;gap:var(--sp-8)}
+.authoring-head{flex-wrap:wrap}
 .authoring-head h1{font-size:var(--fs-section);margin:0 auto 0 0}
 .authoring-tabs{flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--a-border)}
 .authoring-tab{display:flex;flex:none;align-items:center}
 .authoring-tab [aria-selected=true]{color:var(--a-primary);background:var(--a-sel);font-weight:600}
-.authoring-body{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:0;flex:1;position:relative}
+/* 도구 막대: 한 줄, 줄바꿈 없음. 좁으면 가로 스크롤한다. 세로 여백은 초점 윤곽이 잘리지 않을 자리다. */
+.authoring-toolbar{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;overflow-y:hidden;padding:var(--sp-4) var(--sp-2);scrollbar-width:thin}
+.authoring-toolbar-group{display:flex;flex:none;align-items:center;gap:var(--sp-4)}
+.authoring-toolbar-group+.authoring-toolbar-group{padding-left:var(--sp-8);border-left:1px solid var(--a-border)}
+.authoring-toolbar-end{margin-left:auto}
+.authoring-toolbar .field{width:auto}
+.authoring-mode{display:flex;border:1px solid var(--n-border-strong);border-radius:var(--rad-control);overflow:hidden}
+.authoring-mode button{font:inherit;font-size:var(--fs-body);padding:var(--sp-4) var(--sp-10);border:0;background:var(--a-card);color:var(--n-ink-control);cursor:pointer}
+.authoring-mode button+button{border-left:1px solid var(--a-border)}
+.authoring-mode button:hover{background:var(--n-hover)}
+.authoring-mode button[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.authoring-shell .authoring-mode button:focus-visible{outline-offset:-2px}
+.authoring-toolbar .btn[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);border-color:var(--a-primary);font-weight:600}
+/* 문서면의 높이 예산: 최소 40vh(또는 20rem)를 먼저 갖는다. */
+.authoring-body{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:min(40vh,20rem);flex:1 1 0;position:relative}
 .authoring-body.with-properties{grid-template-columns:210px minmax(0,1fr) 260px}
 .authoring-outline,.authoring-properties{padding:var(--sp-12);background:var(--a-card);overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .authoring-outline{border-right:1px solid var(--a-border)}
@@ -16,7 +34,12 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-outline details{padding:var(--sp-4) 0}
 .authoring-outline .btn{display:block;text-align:left;max-width:100%;overflow-wrap:anywhere;white-space:normal;margin:var(--sp-4) 0}
 .authoring-outline summary .btn{display:inline-block}
-.authoring-canvas{display:flex;min-width:0;min-height:0;background:var(--a-window)}
+.authoring-center{display:flex;flex-direction:column;min-width:0;min-height:0}
+/* 현재 위치의 의미: 편집면 바로 위 한 줄. 넘치면 가로 스크롤한다. */
+.authoring-selection{display:flex;flex:none;align-items:center;gap:var(--sp-4);min-height:32px;padding:0 var(--sp-8);overflow-x:auto;overflow-y:hidden;white-space:nowrap;background:var(--a-card);border-bottom:1px solid var(--a-border)}
+.authoring-selection .btn{flex:none;padding:var(--sp-2) var(--sp-8)}
+.authoring-selection-label{flex:none;font-size:var(--fs-caption);color:var(--a-muted)}
+.authoring-canvas{display:flex;flex:1;min-width:0;min-height:0;background:var(--a-window)}
 .authoring-document{flex:1;min-width:0;min-height:0;overflow:auto}
 .authoring-document[hidden]{display:none}
 .authoring-document .cm-editor{height:100%;background:var(--a-card);color:var(--a-ink)}
@@ -29,20 +52,45 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-document .cm-authoring-option-end{border-bottom:1px dashed var(--a-muted)}
 .authoring-document iframe{display:block;width:100%;height:100%;border:0}
 .authoring-properties{display:flex;flex-direction:column;gap:var(--sp-12);border-left:1px solid var(--a-border)}
+.authoring-properties-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
+.authoring-properties-head h2{margin:0}
 .authoring-field{display:flex;flex-direction:column;gap:var(--sp-4);font-size:var(--fs-body)}
 .authoring-field .field{width:100%;min-width:0}
 .authoring-preview pre,.authoring-trial-output pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:Consolas,"D2Coding",monospace}
 .authoring-preview{border-top:1px solid var(--a-border);padding-top:var(--sp-8)}
-.authoring-bottom{max-height:25vh;overflow:auto;border-top:1px solid var(--a-border);padding:var(--sp-8);background:var(--a-card)}
+/* 하단 독(§3.1): 탭 줄은 늘 남고, 열린 탭 하나만 아래에 선다. 높이는 문서면 다음 차례라 먼저 줄어든다. */
+.authoring-dock{display:flex;flex-direction:column;flex:0 1 auto;min-height:0;border-top:1px solid var(--a-border);background:var(--a-card)}
+.authoring-dock.open{height:clamp(180px,34vh,45vh);min-height:72px}
+.authoring-shell.dock-max>.authoring-body{flex:0 0 0;min-height:0;height:0;overflow:hidden;visibility:hidden}
+.authoring-shell.dock-max>.authoring-dock{flex:1 1 auto;height:auto}
+.authoring-dock-bar{display:flex;flex:none;align-items:center;gap:var(--sp-8);border-bottom:1px solid var(--a-border)}
+.authoring-dock-tabs{display:flex;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;white-space:nowrap}
+.authoring-dock-tab{flex:none;font:inherit;font-size:var(--fs-body);padding:var(--sp-6) var(--sp-12);border:0;border-bottom:2px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer}
+.authoring-dock-tab:hover{color:var(--a-ink);background:var(--n-hover)}
+.authoring-dock-tab[aria-selected=true]{color:var(--a-ink);border-bottom-color:var(--a-primary);font-weight:600}
+.authoring-shell .authoring-dock-tab:focus-visible{outline-offset:-2px}
+.authoring-dock-tab .authoring-badge{margin-left:0}
+.authoring-dock-actions{display:flex;flex:none;gap:var(--sp-4);padding:0 var(--sp-4)}
+.authoring-dock-panel{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+.authoring-dock-panel>.authoring-trial{height:100%}
+/* 독 탭 이름이 구획 제목을 겸한다 — 제목은 화면 읽기(제목 이동)용으로만 남는다. */
+.authoring-dock-panel>.authoring-bottom>h2,.authoring-dock-panel>.authoring-trial>header h2{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.authoring-bottom{padding:var(--sp-8) var(--sp-12)}
 .authoring-bottom form{display:flex;gap:var(--sp-8)}
 .authoring-bottom>.btn{display:block;margin:var(--sp-4) 0}
-.authoring-trial{display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);max-height:48%;min-height:180px;border-top:1px solid var(--a-border);background:var(--a-card)}
-.authoring-trial>header{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-8)}
+.authoring-command-more{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-top:var(--sp-8);padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
+.authoring-trial{display:grid;grid-template-columns:240px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);min-height:0}
+.authoring-trial>header{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-8)}
 .authoring-trial-input,.authoring-trial-output{overflow:auto;padding:var(--sp-12);min-height:0;min-width:0}
 .authoring-trial-input{display:flex;flex-direction:column;gap:var(--sp-8);border-right:1px solid var(--a-border)}
 .authoring-result-pages{height:320px}
-.authoring-status{font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);padding:var(--sp-4);font-variant-numeric:tabular-nums}
+/* 상태 막대: 왼쪽(저장·검사)과 오른쪽(보존·복원·시험·복구) 두 무리. 항목 사이 구분선은 글자가 아닌 경계선이다. */
+.authoring-status{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2) var(--sp-16);font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);padding:var(--sp-4);font-variant-numeric:tabular-nums}
+.authoring-status-group{display:flex;flex-wrap:wrap;align-items:center;row-gap:var(--sp-2)}
+.authoring-status-group>*+*{margin-left:var(--sp-8);padding-left:var(--sp-8);border-left:1px solid var(--a-border)}
+.authoring-status-end{margin-left:auto}
 .authoring-error{padding:var(--sp-8);color:var(--a-danger);background:var(--a-card);white-space:pre-wrap}
+.authoring-compat{flex-shrink:1;min-height:3rem;max-height:30vh;overflow:auto}
 .authoring-empty{margin:auto;text-align:center}
 .authoring-syntax pre{font-family:Consolas,"D2Coding",monospace;padding:var(--sp-8);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 .authoring-bottom pre{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -57,9 +105,10 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
   .authoring-body,.authoring-body.with-properties{grid-template-columns:170px minmax(0,1fr)}
   .authoring-properties{position:absolute;right:0;top:0;bottom:0;width:min(280px,70%);z-index:1}
   .authoring-head,.authoring-toolbar{gap:var(--sp-4)}
+  .authoring-toolbar-group+.authoring-toolbar-group{padding-left:var(--sp-4)}
 }
 @media(forced-colors:active){.authoring-tab [aria-selected=true]{outline:2px solid Highlight}.authoring-error{color:CanvasText}}
-.authoring-selection{display:flex;flex-wrap:wrap;gap:var(--sp-4);max-height:80px;overflow:auto}.authoring-coverage{padding-left:var(--sp-16);font-size:var(--fs-caption)}
+.authoring-coverage{padding-left:var(--sp-16);font-size:var(--fs-caption)}
 .authoring-document{display:flex;flex-direction:column}.authoring-editor-host{flex:1;min-height:0;min-width:0}
 .authoring-trial>header p{margin:0 auto 0 0;font-size:var(--fs-caption);color:var(--a-muted)}
 /* 명령 가용성(F40·P07): 비활성 사유는 툴팁 외에 본문 힌트로도 선다. 문제 배지는 색이 아닌 글자로 센다(P14). */
@@ -71,8 +120,14 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-context-menu{position:absolute;z-index:var(--z-popover);min-width:220px;max-width:320px;max-height:70vh;overflow:auto;padding:var(--sp-4);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);box-shadow:0 4px 16px var(--a-shadow)}
 .authoring-context-menu .authoring-command{margin:0}
 .authoring-context-menu .btn{display:block;width:100%;text-align:left}
+.authoring-context-menu>.authoring-reason{padding:var(--sp-4) var(--sp-6)}
 .authoring-refusal ul,.authoring-preview ul,.authoring-bottom ul{margin:var(--sp-4) 0;padding-left:var(--sp-16)}
 .authoring-problem{padding:var(--sp-4) 0;border-bottom:1px solid var(--a-border)}
 .authoring-problem p{margin:var(--sp-4) 0}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
-@media(forced-colors:active){.authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}}
+@media(forced-colors:active){
+  .authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}
+  .authoring-mode button[aria-pressed=true],.authoring-toolbar .btn[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
+  .authoring-dock-tab[aria-selected=true]{border-bottom-color:Highlight}
+  .authoring-toolbar-group+.authoring-toolbar-group,.authoring-status-group>*+*,.authoring-dock-bar,.authoring-selection{border-color:CanvasText}
+}
