@@ -49,6 +49,7 @@ from ..domain.template_authoring import (
     occurrence_context,
     shared_reasons,
     target_availability,
+    trial_document_values,
 )
 from .hwpx_product_inspection import (
     inspect_slot_regions,
@@ -1583,12 +1584,8 @@ def trial_hwpx(content: object, values: Mapping[str, object], selected: Mapping[
     for item in reversed(excluded):
         remove_slot_option(package, item["slot_id"], item["option_id"])
     selected_fields = _fields(package)
-    missing = []
-    for field in _fields(package):
-        if field["name"] not in values:
-            missing.append(field["name"])
-    if missing:
-        raise ValueError(f"시험값이 없는 필드가 있습니다: {', '.join(missing)}")
+    # 값이 없는 필드는 거절하지 않는다 — 생성 경로와 같은 빈 값 표식을 받고 보고의 empty_fields 에 선다(#957).
+    logical_values, empty_fields = trial_document_values((field["name"] for field in selected_fields), values)
     qualification = inspect_hwpx_qualification(source_bytes)
     structure = qualification.execution_structure
     if structure is None:
@@ -1600,8 +1597,6 @@ def trial_hwpx(content: object, values: Mapping[str, object], selected: Mapping[
         {"op": PLAN_APPLY_FIELD_BINDING, "field_id": field["name"]}
         for field in selected_fields
     )
-    logical_values = {field["name"]: "" if values[field["name"]] is None else str(values[field["name"]])
-                      for field in selected_fields}
     materialized = materialize_authoring_trial(
         source_bytes=source_bytes, structure=structure, ordered_operations=operations,
         active_field_requirements=tuple(
@@ -1616,13 +1611,12 @@ def trial_hwpx(content: object, values: Mapping[str, object], selected: Mapping[
     output_fields = _fields(HwpxPackage.from_bytes(materialized.output_bytes))
     sources = {(occurrence["entry"], occurrence["pairing_id"]): occurrence
                for field in source_fields for occurrence in field["occurrences"]}
-    provenance = [{"name": field["name"], "value": "" if values[field["name"]] is None
-                   else str(values[field["name"]]),
+    output_values, _ = trial_document_values((field["name"] for field in output_fields), values)
+    provenance = [{"name": field["name"], "value": output_values[field["name"]],
                    "source": sources.get((occurrence["entry"], occurrence["pairing_id"]), occurrence),
                    "output": occurrence}
                   for field in output_fields for occurrence in field["occurrences"]]
     return {"bytes": materialized.output_bytes, "excluded": excluded,
             "occurrences": provenance,
-            "report": {"missing_fields": [], "empty_fields": [name for name, value in values.items()
-                                                             if value is None or str(value).strip() == ""]}}
+            "report": {"missing_fields": [], "empty_fields": empty_fields}}
 

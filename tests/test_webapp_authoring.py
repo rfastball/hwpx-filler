@@ -294,6 +294,20 @@ def test_hwpx_trial_export_is_fenced_to_the_latest_success(tmp_path: Path) -> No
                                                     "end_paragraph": first["paragraph"],
                                                     "start": 0, "end": 0}})
     assert any(item["kind"] == "field" and item["name"] == name for item in picked["matches"])
+    # 손대지 않은 필드는 결과 시험을 막지 않는다(IDE-01 결정 1(a)) — 생성 경로와 같은 빈 값 표식으로 렌더하고
+    # 보고의 empty_fields 로 알린다. 시험 탭의 공백 수(trial_missing)는 그대로 남는다.
+    blank = ctrl.dispatch("trial", {"session_id": sid, "revision": 0})
+    field_names = [field["name"] for field in opened["analysis"]["fields"]]
+    assert sorted(blank["report"]["empty_fields"]) == sorted(field_names) and blank["report"]["missing_fields"] == []
+    blank_package = HwpxPackage.from_bytes(base64.b64decode(blank["content"]))
+    blank_text = "".join("".join(ET.fromstring(blank_package.entries[entry]).itertext())
+                         for entry in blank["section_entries"])
+    assert f"〘미입력·{name}〙" in blank_text
+    assert {entry["value"] for entry in blank["occurrences"] if entry["name"] == name} == {f"〘미입력·{name}〙"}
+    assert ctrl.snapshot()["tabs"][0]["trial_state"] == "current"
+    assert sorted(ctrl.snapshot()["tabs"][0]["trial_missing"]["fields"]) == sorted(field_names)
+    # 실패한 시험(없는 항목 선택)은 내보낼 수 없다 — 결과는 최신 성공에만 묶인다.
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {}, "selected": {"없는 항목": "x"}})
     assert ctrl.dispatch("trial", {"session_id": sid, "revision": 0})["ok"] is False
     assert ctrl.snapshot()["tabs"][0]["trial_state"] == "failed"
     with pytest.raises(ValueError, match="최신"):
@@ -644,23 +658,30 @@ def test_readiness_and_save_notice_follow_structure_errors(tmp_path: Path) -> No
     assert ctrl.dispatch("save", {"session_id": sid, "revision": 1})["notice"] is None
 
 
-def test_problems_union_trial_input_and_compatibility(tmp_path: Path) -> None:
+def test_problems_are_template_defects_and_trial_gaps_project_to_trial_missing(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path)
     opened = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
     sid = opened["session_id"]
-    assert ctrl.snapshot()["tabs"][0]["problems"] == opened["analysis"]["diagnostics"] == []
+    tab = ctrl.snapshot()["tabs"][0]
+    assert tab["problems"] == opened["analysis"]["diagnostics"] == []
+    # 시험 입력의 공백은 문제 목록이 아니라 결과 시험 탭의 trial_missing 이다(IDE-01) — 키 부재 = 손대지 않음.
+    assert tab["trial_missing"] == {"fields": ["이름"], "slots": ["항목1"]}
+    # 선택 공백은 지금처럼 시험 거절 사유다(상태 칩·문장), 문제 목록에는 서지 않는다.
     assert ctrl.dispatch("trial", {"session_id": sid, "revision": 0})["ok"] is False
-    problems = ctrl.snapshot()["tabs"][0]["problems"]
-    field_occurrence = opened["analysis"]["fields"][0]["occurrences"][0]
-    slot_location = opened["analysis"]["slots"][0]["location"]
-    assert problems == [
-        {"severity": "error", "category": "trial_input", "message": "시험값이 없습니다.", "target": "이름",
-         "location": field_occurrence,
-         "actions": [{"label": "원문으로 이동", "kind": "navigate", "location": field_occurrence}]},
-        {"severity": "error", "category": "trial_input", "message": "시험 선택을 지정하세요.", "target": "항목1",
-         "location": slot_location,
-         "actions": [{"label": "원문으로 이동", "kind": "navigate", "location": slot_location}]},
-    ]
+    tab = ctrl.snapshot()["tabs"][0]
+    assert tab["problems"] == [] and all(item.get("category") != "trial_input" for item in tab["problems"])
+    assert tab["trial_state"] == "failed" and "시험 선택" in tab["trial_state_message"]
+    # 필드 공백은 시험을 막지 않는다 — 빈 값 표식으로 렌더하고 empty_fields 로 알린다(결정 1(a)).
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {}, "selected": {"항목1": "안1"}})
+    assert ctrl.snapshot()["tabs"][0]["trial_missing"] == {"fields": ["이름"], "slots": []}
+    rendered = ctrl.dispatch("trial", {"session_id": sid, "revision": 0})
+    assert rendered["report"] == {"missing_fields": [], "empty_fields": ["이름"]}
+    assert rendered["text"].startswith("머리 〘미입력·이름〙\n")
+    assert ctrl.snapshot()["tabs"][0]["trial_state"] == "current"
+    # 빈 칸("")은 사용자가 손댄 값이다 — 공백 목록에서 빠지지만 결과는 같은 표식이다.
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {"이름": ""}, "selected": {"항목1": "안1"}})
+    assert ctrl.snapshot()["tabs"][0]["trial_missing"] == {"fields": [], "slots": []}
+    assert ctrl.dispatch("trial", {"session_id": sid, "revision": 0})["report"]["empty_fields"] == ["이름"]
     ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0,
                                   "values": {"이름": "홍길동"}, "selected": {"항목1": "안1"}})
     assert ctrl.snapshot()["tabs"][0]["problems"] == []
@@ -673,8 +694,11 @@ def test_problems_union_trial_input_and_compatibility(tmp_path: Path) -> None:
     blocked = ctrl.dispatch("rhwp_roundtrip_preflight", {
         "session_id": hwpx["session_id"], "revision": 0,
         "content": base64.b64encode(changed.to_bytes()).decode("ascii")})
+    ctrl.dispatch("trial_input", {"session_id": hwpx["session_id"], "revision": 0, "values": {}, "selected": {"없는 항목": "x"}})
+    ctrl.dispatch("trial", {"session_id": hwpx["session_id"], "revision": 0})
     tab = next(item for item in ctrl.snapshot()["tabs"] if item["id"] == hwpx["session_id"])
     structural = len(tab["analysis"]["diagnostics"])
+    assert len(tab["problems"]) == structural + 1 + len(blocked["diagnostics"])
     compat = tab["problems"][structural:]
     assert compat[0] == {"severity": "warning", "category": "compatibility",
                          "message": "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요.",
@@ -682,6 +706,47 @@ def test_problems_union_trial_input_and_compatibility(tmp_path: Path) -> None:
     assert [(item["target"], item["message"]) for item in compat[1:]] == [
         (entry["entry"], entry["message"]) for entry in blocked["diagnostics"]]
     assert all(item["severity"] == "error" for item in tab["analysis"]["diagnostics"])
+    # 상태 막대의 수는 문제 탭 배지와 같다 — 같은 problems 에서 센다(호환성 경고는 경고로만).
+    readiness = tab["readiness"]
+    assert readiness["errors"] + readiness["warnings"] == len(tab["problems"])
+    assert readiness["warnings"] == len(compat)
+    assert readiness["state"] == ("draft" if structural else "ready")
+
+
+def test_trial_fill_names_fills_only_untouched_fields_in_one_input_transition(tmp_path: Path) -> None:
+    path = tmp_path / "template.txt"
+    path.write_text("{{다}} {{가}}\n{{나}} {{다}}\n", encoding="utf-8")
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(path)
+    sid = opened["session_id"]
+    assert ctrl.snapshot()["tabs"][0]["trial_missing"] == {"fields": ["다", "가", "나"], "slots": []}
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {"가": "기존", "나": ""}, "selected": {}})
+    before = ctrl.sessions[sid].trial_input_revision
+    filled = ctrl.dispatch("trial_fill_names", {"session_id": sid, "revision": 0})
+    # 기존 값과 손댄 빈 칸은 그대로, 손대지 않은 필드만 그 이름을 받는다 — 한 번의 입력 전이다.
+    assert filled["values"] == {"가": "기존", "나": "", "다": "다"} and filled["selected"] == {}
+    assert filled["input_revision"] == before + 1 == ctrl.sessions[sid].trial_input_revision
+    tab = ctrl.snapshot()["tabs"][0]
+    assert tab["values"] == filled["values"] and tab["trial_missing"] == {"fields": [], "slots": []}
+    # 시험 자료 입력이 바뀌었으므로 닫기 보호가 선다(저장하지 않은 시험 자료).
+    assert tab["trial_inputs_dirty"] is True
+    assert ctrl.dispatch("close", {"session_id": sid})["needs_confirm"] is True
+    # 채울 필드가 없으면 거절한다 — 표면의 비활성과 같은 판정이고, 입력 전이는 없다.
+    with pytest.raises(ValueError, match="시험 입력"):
+        ctrl.dispatch("trial_fill_names", {"session_id": sid, "revision": 0})
+    assert ctrl.sessions[sid].trial_input_revision == before + 1
+    with pytest.raises(ValueError, match="변경"):
+        ctrl.dispatch("trial_fill_names", {"session_id": sid, "revision": 5})
+
+
+def test_export_result_name_marks_the_file_as_a_trial_copy(tmp_path: Path) -> None:
+    path = tmp_path / "구매요청서.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(path)
+    assert ctrl.export_result_name(opened["session_id"]) == "구매요청서_시험 결과.txt"
+    fresh = ctrl.dispatch("new", {"media": "txt"})
+    assert ctrl.export_result_name(fresh["session_id"]) == "새 템플릿_시험 결과.txt"
 
 
 def test_preview_and_impact_report_structure_delta_and_body_change(tmp_path: Path) -> None:

@@ -43,7 +43,7 @@ const rowList = (label: string, rows: ReactNode[], className = "") => rows.lengt
 const sectionLabel = (text: string, props: Obj = {}) => h("h2", { className: "authoring-section-label", ...props }, text);
 const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
-const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", trial_input: "시험 입력" };
+const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성" };
 /** 식별자 변경은 고급 정보지만 기존 작업 연결에 닿는 영향은 숨기지 않는다(U06·F19). */
 const IDENTIFIER_IMPACT = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다.";
 
@@ -175,6 +175,46 @@ export function openContextMenu(controller: Pick<AuthoringController, "update">,
  *  경보가 스스로 연 독, 선택 판정의 도착은 초점을 끌어가지 않는다. focusPanel 은 요청의 차례 번호다. */
 export function focusRequest(view: Obj, target: "properties" | "dock"): Obj {
   return { focusTarget: target, focusPanel: (view.focusPanel || 0) + 1 };
+}
+
+/** 독 탭의 수 배지(IDE-01) — 「문제」는 Python 의 problems 수, 「결과 시험」은 손대지 않은 시험 입력(trial_missing)의
+ *  필드+선택 수다. 표면은 어느 탭에 둘지만 고르고 세는 대상은 Python 이 정한다. 그 밖의 탭은 0(배지 없음). */
+export function dockBadge(item: Obj | undefined, key: string): number {
+  if (key === "problems") return item?.problems?.length || 0;
+  if (key === "trial") return (item?.trial_missing?.fields?.length || 0) + (item?.trial_missing?.slots?.length || 0);
+  return 0;
+}
+
+/** F2 의 이름 변경 명령 셋 — 선택 종류와 같은 것이 먼저, 종류가 없으면 필드 → 선택 → 항목(안쪽부터)이다. */
+const RENAME_BY_KIND: Obj = { field: "rename_field", option: "rename_option", slot: "rename_slot" };
+const RENAME_ORDER = ["rename_field", "rename_option", "rename_slot"];
+/** F2(IDE-01): Python 이 **enabled** 로 판정한 이름 변경 명령만 연다. 판정 전(pending)이면 아무것도 하지 않고, 셋 다
+ *  불가이면 패널을 열지 않고 선택 종류에 맞는 명령(종류가 없으면 필드 이름 변경)의 Python 사유를 돌려준다. */
+export function renameChoice(commands: Obj[] | undefined, kind: string | undefined): { open: string } | { reason: string | null } | null {
+  const preferred = RENAME_BY_KIND[kind || ""] || "rename_field";
+  const order = [preferred, ...RENAME_ORDER.filter((type) => type !== preferred)];
+  const entries = order.map((type) => commandAvailability(commands, type));
+  if (entries.some((entry) => entry.pending)) return null;
+  const enabled = entries.find((entry) => entry.enabled);
+  if (enabled) return { open: enabled.type };
+  return { reason: entries[0].reason ? String(entries[0].reason) : null };
+}
+/** 셸 F2 와 편집면(rhwp)이 넘겨준 F2 가 같은 길을 쓴다. 열 수 있으면 속성 패널을 그 명령으로 열고 이름 칸으로 가며,
+ *  불가이면 위치 줄 메모에 사유 한 줄을 세우고 단일 live region 으로 한 번 읽는다(다음 캐럿 이동에서 걷힌다). */
+export function renameShortcut(controller: Pick<AuthoringController, "update" | "announce" | "viewModel">): void {
+  const view = controller.viewModel.getSnapshot();
+  const choice = renameChoice(view.commands, view.selected?.kind);
+  if (!choice) return;
+  if ("open" in choice) { controller.update({ panel: "properties", commandType: choice.open, selectionNote: null, ...focusRequest(view, "properties") }); return; }
+  if (!choice.reason) return;
+  controller.update({ selectionNote: { text: choice.reason } });
+  controller.announce(choice.reason);
+}
+/** 위치 줄 메모(IDE-01) — 브레드크럼 줄 오른쪽 끝의 한 줄. 넘치면 말줄임이고 전문은 title 에 있다. 읽기는 live region 이
+ *  한다(이 칸은 live region 이 아니다). chip 은 앞에 서는 글자 칩(예: 문제 심각도)이다. */
+export function selectionNoteView(note: { text: string; chip?: ReactNode } | null | undefined): ReactNode {
+  if (!note?.text) return null;
+  return h("span", { className: "authoring-selection-note", title: note.text }, note.chip || null, note.chip ? " " : null, note.text);
 }
 
 /** 하단 독(§3.1 UI01~UI10)이 한 탭으로 보이는 패널 — `view.panel` 값이 곧 탭 열쇠다. 속성은 옆 패널이라 빠진다. */
@@ -460,7 +500,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             else if (shortcut === "CtrlShiftP") controller.update({ panel: "commands", ...focusRequest(current, "dock") });
             else if (shortcut === "CtrlS") void controller.guarded(() => controller.save(), "save");
             else if (shortcut === "CtrlF") controller.update({ panel: "search", ...focusRequest(current, "dock") });
-            else controller.update({ panel: "properties", commandType: current.selected?.kind === "field" ? "rename_field" : current.selected?.kind === "option" ? "rename_option" : "rename_slot", ...focusRequest(current, "properties") });
+            else renameShortcut(controller);
           },
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection) => controller.selection(item.id, selection),
@@ -647,6 +687,8 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
   const traceRow = (entry: Obj) => rowButton({ chip: kindTag("field"), text: entry.name || entry.field || "필드", value: String(entry.value ?? "") }, select(entry),
     { "aria-label": `${entry.name || entry.field || "필드"}: ${entry.value ?? ""}` });
   const coverage: Obj[] = item.trial_coverage || [];
+  const missingFields: string[] = item.trial_missing?.fields || [];
+  const missingSlots: string[] = item.trial_missing?.slots || [];
   // 결과 시험(§8.1 · UX-09): 왼쪽 열은 입력 → 선택 구성 → 자동 갱신 → [시험 시작(주 행동)][시험 케이스 저장], 가져오기·내보내기는
   // 물러선 한 줄, 보관 케이스는 행. 오른쪽 열은 상태 칩 + 문장 → 선택별 시험 상태 → 결과 → 출력·제외 이유(행).
   return h("section", { className: "authoring-trial", "aria-label": "결과 시험" },
@@ -654,9 +696,13 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
     h("div", { className: "authoring-trial-input" },
       item.cases_error && h("p", { role: "alert" }, item.cases_error),
       h("div", { className: "authoring-trial-group" },
+        // 「필드 이름 사용」(IDE-01): 손대지 않은 필드만 그 이름으로 채우는 한 번의 입력 전이 — 채울 필드(trial_missing)가
+        // 없으면 비활성이다. 어느 필드를 채울지는 Python 이 정한다.
+        !!item.analysis?.fields?.length && h("div", { className: "authoring-actions start" },
+          button("필드 이름 사용", () => { void controller.guarded(controller.fillTrialNames); }, { disabled: !missingFields.length })),
         ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
-          result?.report?.missing_fields?.includes(field.name) && h("span", { className: "authoring-reason" }, "직전 시험: 미입력"),
-          h("input", { className: "field", "aria-invalid": !!result?.report?.missing_fields?.includes(field.name), value: view.values[field.name] || "",
+          // 손대지 않은 필드는 입력칸이 aria-invalid 를 받고 결과 시험 탭 배지로 센다 — 결과는 빈 값 표식으로 렌더된다.
+          h("input", { className: "field", "aria-invalid": missingFields.includes(field.name) || undefined, value: view.values[field.name] || "",
             onCompositionEnd: (event: any) => { void controller.guarded(() => controller.trialInput({ ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value }, controller.viewModel.getSnapshot().selectedOptions)); },
             onChange: (event: any) => {
               const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
@@ -665,7 +711,7 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
             } })))),
       !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
         ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
-          h("select", { className: "field", value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
+          h("select", { className: "field", "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
             h("option", { value: "" }, "선택"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
       h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
       h("div", { className: "authoring-actions start" },
@@ -1087,7 +1133,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   const editorState = item ? controller.editorState(item.id) : null;
   const readOnly = !!item && item.media === "hwpx" && item.rhwp_editable !== true;
   // F2(§10): 패널이 이미 열려 있어도 이름 칸으로 초점을 옮긴다 — focusPanel 은 그 요청의 차례 번호다.
-  const rename = () => controller.update({ panel: "properties", commandType: view.selected?.kind === "field" ? "rename_field" : view.selected?.kind === "option" ? "rename_option" : "rename_slot", ...focusRequest(view, "properties") });
+  // 되는 이름 변경이 없으면 패널 대신 위치 줄에 사유가 선다(IDE-01) — 편집면이 넘긴 F2 와 같은 함수다.
+  const rename = () => renameShortcut(controller);
   // 명령 하나를 고르면 속성 패널이 그 명령으로 열리고 이름 칸으로 간다. 메뉴에서 골랐으면 메뉴를 연 자리가 복귀 대상이다.
   const pick = (commandType: string) => {
     const current = controller.viewModel.getSnapshot();
@@ -1139,6 +1186,12 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     controller.update({});
   })();
   const trialShown = dock.active === "trial";
+  /** 외부 변경·저장 실패의 결정 동사(AC24·§9.2) — 경보 구획과 비교 구획이 같은 배열·같은 실행 경로를 쓴다(IDE-01).
+   *  저장 실패면 「다시 저장」이 더해지고 그것이 그 구획의 주 행동이다. */
+  const externalVerbs = (saveFailed: boolean): ReactNode[] => !item ? [] : [
+    button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save"), { key: "save-as" }),
+    button("외부 파일 다시 열기", act(controller.reload), { key: "reload" }),
+    ...(saveFailed ? [primary("다시 저장", act(() => controller.save(item.id), "save"), { key: "save" })] : [])];
   const dockContent = (key: string): ReactNode => {
     if (key === "trial" && item) return h(Trial, { controller, item, view });
     if (key === "recovery" && item) return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "중단 전 복구 초안" }, h("h2", null, "중단 전 복구 초안"),
@@ -1222,16 +1275,17 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ preview: null })), primary("구조 표기 수정", act(controller.applyPreview)))));
     if (key === "external_changed") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "외부 파일 변경" }, h("h2", null, "외부 파일 변경"),
       h("div", { className: "authoring-actions start" },
-        button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")), button("외부 파일 다시 열기", act(controller.reload))));
+        button("양쪽 내용 확인", act(controller.compareExternal)), ...externalVerbs(false)));
     // 저장 실패(AC24·§9.2): 변경은 그대로 남고, 같은 세 복구 동사에 「다시 저장」이 더해진다 — 이 구획의 주 행동이다.
     if (key === "external") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "저장 실패" }, h("h2", null, "저장 실패"),
       h("div", { className: "authoring-actions start" },
-        button("양쪽 내용 확인", act(controller.compareExternal)), button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save")),
-        button("외부 파일 다시 열기", act(controller.reload)), primary("다시 저장", act(() => controller.save(item.id), "save"))));
+        button("양쪽 내용 확인", act(controller.compareExternal)), ...externalVerbs(true)));
+    // 비교 안에서 결정한다(IDE-01): 경보 구획과 같은 동사·같은 실행 경로가 비교 아래에도 선다. 「비교 닫기」는 물러선 행동이다.
     if (key === "comparison" && view.comparison) return h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
       h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
         h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries, title: label })))),
-      quiet("비교 닫기", () => closePanel({ panel: "" })));
+      h("div", { className: "authoring-actions" }, quiet("비교 닫기", () => closePanel({ panel: "" })),
+        ...(view.saveFailed ? externalVerbs(true) : item.external_changed ? externalVerbs(false) : [])));
     return null;
   };
   // 도구 막대(§3.1·APG toolbar): 한 번의 Tab 으로 들어오고 ←→·Home·End 로 옮긴다(roving tabindex). 비활성 버튼은 건너뛴다.
@@ -1362,7 +1416,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           // 조각은 테두리 알약이 아니라 글 링크다(UX-09) — 사이는 › 그림, 마지막(가장 안쪽) 조각은 굵게.
           ...crumbs(view.matches).flatMap((match: Obj, index: number, all: Obj[]) => [h("span", { key: `sep-${index}`, className: "authoring-crumb-sep" }, icon("chevron-right")),
             h("button", { key: index, type: "button", className: "authoring-crumb", onClick: select(match), "aria-current": index === all.length - 1 ? "location" : undefined },
-              `${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`)])),
+              `${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`)]),
+          // 위치 줄 메모(IDE-01): 줄 오른쪽 끝의 한 줄 — F2 가 안 되는 자리의 Python 사유가 서고 다음 캐럿 이동에서 걷힌다.
+          selectionNoteView(view.selectionNote)),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
         h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
       item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
@@ -1375,7 +1431,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}`, role: "region", "aria-label": "보조 패널" },
       h("div", { className: "authoring-dock-bar" },
         h("div", { className: "authoring-dock-tabs", role: "tablist", "aria-label": "보조 패널", onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal"); } }, ...dock.tabs.map(([key, label]) => {
-          const count = key === "problems" ? item?.problems?.length || 0 : 0;
+          const count = dockBadge(item, key);
           return h("button", { key, type: "button", role: "tab", id: `authoring-dock-tab-${key}`, className: "authoring-dock-tab", tabIndex: key === dockEntry ? 0 : -1, "aria-selected": key === dock.active,
             "aria-controls": key === dock.active ? "authoring-dock-panel" : undefined, onClick: () => openDock(key) },
             label, count ? " " : null, count ? h("span", { className: "authoring-badge" }, String(count)) : null);
@@ -1405,16 +1461,19 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       h("div", { className: "authoring-status-group" },
         // 저장·검사·시험은 서로 다른 상태다(P09·§9.1): 저장됨 뒤에 Python 의 readiness(초안/사용 준비)를 붙인다.
         h("span", null, liveNow.save),
-        // 구조 오류가 있으면 Python 의 준비 문장(readiness.message)을, 없으면 개수를 보인다.
-        h("span", null, liveNow.readinessText)),
+        // 구조 오류가 있으면 Python 의 준비 문장(readiness.message)을, 없으면 개수를 보인다. 수는 문제 탭 배지와 같은
+        // problems 에서 센다 — 문제가 있으면 그 표현이 문제 탭으로 가는 글 링크 모양 단추다(IDE-01).
+        item.problems?.length ? h("button", { type: "button", className: "authoring-status-link", onClick: () => openDock("problems") }, liveNow.readinessText)
+          : h("span", null, liveNow.readinessText)),
       h("div", { className: "authoring-status-group authoring-status-end" },
         // 준비 상태 옆의 보존 판정 칩 — Python 의 compatibility.state 를 이름으로 옮길 뿐이다(마운트 전에도 선다).
         item.compatibility?.state === "checking" && h("span", { "data-compat": "checking" }, "보존 확인 중"),
         item.compatibility?.state === "limited" && h("span", { "data-compat": "limited" }, "읽기 전용 · 보존 확인 필요"),
         item.restore?.message && h("span", { "data-restore": item.restore.state }, item.restore.message),
-        // 결과 시험 상태는 상태마다 한 표현이다 — Python 의 trial_state_label 그대로(P09·§9.1).
-        item.trial_state_label && h("span", { "data-trial": item.trial_state }, item.trial_state_label),
-        h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
+        // 결과 시험 상태는 상태마다 한 표현이다 — Python 의 trial_state_label 그대로(P09·§9.1). 시험을 한 뒤에만 서고,
+        // 누르면 결과 시험 탭을 연다(IDE-01). 시험 자료 표지는 보관한 케이스나 저장하지 않은 입력이 있을 때만 선다.
+        item.trial_state !== "untried" && item.trial_state_label && h("button", { type: "button", className: "authoring-status-link", "data-trial": item.trial_state, onClick: () => openDock("trial") }, item.trial_state_label),
+        (item.cases_dirty || !!item.cases?.length) && h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : "시험 자료: 로컬 보관"),
         item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
         item.recovery && h("span", null, "복구 여부 선택 필요"),
         // 확대는 상태 막대 끝의 작은 선택이다(편집기 관례) — 도구 막대의 roving 묶음 밖, 보통 Tab 순서다.

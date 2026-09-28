@@ -137,6 +137,10 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-status-group{display:flex;flex-wrap:wrap;align-items:center;row-gap:var(--sp-2)}
 .authoring-status-group>*+*{margin-left:var(--sp-8);padding-left:var(--sp-8);border-left:1px solid var(--a-border)}
 .authoring-status-end{margin-left:auto}
+/* 상태 막대의 입구(IDE-01): 문제 수·시험 상태를 누르면 그 독 탭이 열린다. 단추 모양이 아니라 글 링크 모양이다 —
+   테두리·면 없음, 밑줄은 hover·focus-visible 에만. 강제 색상에서는 LinkText 다. */
+.authoring-status-link{font:inherit;padding:0;border:0;background:transparent;color:var(--n-ink-control);cursor:pointer;text-decoration:none;text-underline-offset:3px}
+.authoring-status-link:hover,.authoring-status-link:focus-visible{text-decoration:underline}
 /* 확대: 상태 막대 끝의 작은 선택(편집기 관례). */
 .authoring-status .authoring-zoom{width:auto;min-height:1.5rem;padding:0 var(--sp-6);font-size:var(--fs-caption);border-color:var(--a-border)}
 .authoring-error{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-8);padding:var(--sp-8);color:var(--a-danger);background:var(--a-card);white-space:pre-wrap}
@@ -248,6 +252,8 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-crumb.root:hover{background:transparent}
 .authoring-crumb-sep{flex:none;display:inline-flex;color:var(--a-muted)}
 .authoring-crumb-sep .icon{width:14px;height:14px}
+/* 위치 줄 메모(IDE-01): 브레드크럼 줄 오른쪽 끝의 한 줄(F2 불가 사유 등). 넘치면 말줄임이고 전문은 title 이다. */
+.authoring-selection-note{flex:1 1 8rem;min-width:6rem;margin-left:var(--sp-8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-size:var(--fs-dense);color:var(--a-ink)}
 
 /* 목록 행: 테두리 없는 전폭 줄 · hover 면 · 칩 · 본문 · 흐린 문맥 · 오른쪽 화살표. 값은 모노 글꼴. 전폭 표면이라 눌림은 면색이다. */
 .authoring-rows{list-style:none;margin:var(--sp-4) 0;padding:0;display:flex;flex-direction:column}
@@ -358,5 +364,6 @@ body.resizing-authoring iframe{pointer-events:none}
   .authoring-menu-item.group-start::before,.authoring-command.group-start::before,.authoring-properties-actions,.authoring-problem+.authoring-problem{border-color:CanvasText}
   .authoring-target{border-color:CanvasText}
   .authoring-crumb[aria-current=location]{outline:1px solid CanvasText}
+  .authoring-status-link{color:LinkText}
   .authoring-document .cm-authoring-highlight{outline:2px solid Highlight;outline-offset:-2px}
 }

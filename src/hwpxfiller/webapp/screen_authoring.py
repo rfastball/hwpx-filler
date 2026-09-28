@@ -42,10 +42,8 @@ _OUTSIDE_SLOT = "선택한 위치가 교체 묶음 안에 없습니다."
 _OCCURRENCE_KEYS = ("entry", "occurrence", "pairing_id", "paragraph", "cell_path", "start", "end")
 _SAVE_FIRST = "문서를 저장한 뒤 기존 작업에 적용하세요."
 _EXTERNAL_CHANGED = "파일이 외부에서 변경되었습니다. 다시 확인하세요."
-# 문제 목록(§7.1) 중 webapp 이 투영하는 두 종류. 구조 진단은 domain/external 이 그대로 낸다.
-_CATEGORY_TRIAL_INPUT = "trial_input"
-_TRIAL_VALUE_MISSING = "시험값이 없습니다."
-_TRIAL_SELECTION_MISSING = "시험 선택을 지정하세요."
+# 문제 목록(§7.1) 중 webapp 이 투영하는 호환성 경고. 구조 진단은 domain/external 이 그대로 낸다.
+# 시험 입력의 공백은 템플릿의 결함이 아니다 — 문제 목록이 아니라 `trial_missing` 으로 결과 시험 탭에 선다(IDE-01).
 _COMPATIBILITY_SUMMARY = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
 #: 편집기가 문서를 열거나 보존 검사를 끝내지 못했다(마운트 실패) — 판정이 없으니 수정은 잠근다.
 _PREFLIGHT_UNAVAILABLE = "HWPX 보존 검사를 실행할 수 없습니다."
@@ -359,6 +357,7 @@ class AuthoringController:
             "restore": self._restores.get(session.id),
             "readiness": self._readiness(session),
             "problems": self._problems(session),
+            "trial_missing": self._trial_missing(self._outline_analysis(session), session),
         }
 
     @staticmethod
@@ -376,15 +375,21 @@ class AuthoringController:
 
     @staticmethod
     def _readiness(session: AuthoringSession) -> dict:
-        """Draft vs ready is decided by the structure diagnostics alone (F35, §9.1, AC14)."""
-        severities = [item.get("severity") for item in session.analysis.get("diagnostics", [])]
+        """Draft vs ready is decided by the structure diagnostics alone (F35, §9.1, AC14).
+
+        The counts come from the same `_problems` list the 문제 tab shows (IDE-01), so the status bar
+        numbers and the tab badge never disagree; compatibility warnings count as warnings only.
+        """
+        structure_errors = [item for item in session.analysis.get("diagnostics", [])
+                            if item.get("severity") == semantics.SEVERITY_ERROR]
+        severities = [item.get("severity") for item in AuthoringController._problems(session)]
         errors = severities.count(semantics.SEVERITY_ERROR)
         warnings = severities.count(semantics.SEVERITY_WARNING)
         return {
-            "state": "draft" if errors else "ready",
+            "state": "draft" if structure_errors else "ready",
             "errors": errors,
             "warnings": warnings,
-            "message": f"사용 전에 구조 오류 {errors}개를 확인하세요." if errors else None,
+            "message": f"사용 전에 구조 오류 {errors}개를 확인하세요." if structure_errors else None,
         }
 
     @staticmethod
@@ -405,29 +410,11 @@ class AuthoringController:
 
     @staticmethod
     def _problems(session: AuthoringSession) -> list[dict]:
-        """Union of structure diagnostics, trial-input problems and compatibility warnings (F24, §7.1)."""
+        """Template defects only: structure diagnostics and compatibility warnings (F24, §7.1).
+
+        Trial-input gaps are not template defects; they are projected as `trial_missing` (IDE-01).
+        """
         problems = list(session.analysis.get("diagnostics", []))
-        trial_attempted = (session.trial_result is not None or bool(session.trial_error)
-                           or bool(session.values) or bool(session.selected))
-        if trial_attempted:
-            for field in session.analysis.get("fields", []):
-                if session.values.get(field["name"]) is None:
-                    occurrences = field.get("occurrences") or [None]
-                    problems.append({
-                        "severity": semantics.SEVERITY_ERROR, "category": _CATEGORY_TRIAL_INPUT,
-                        "message": _TRIAL_VALUE_MISSING, "target": field["name"],
-                        "location": occurrences[0],
-                        "actions": [semantics.navigate_action(occurrences[0])],
-                    })
-            for slot in session.analysis.get("slots", []):
-                options = slot.get("options", [])
-                if options and session.selected.get(slot["id"]) not in {o["id"] for o in options}:
-                    problems.append({
-                        "severity": semantics.SEVERITY_ERROR, "category": _CATEGORY_TRIAL_INPUT,
-                        "message": _TRIAL_SELECTION_MISSING, "target": slot["id"],
-                        "location": slot.get("location"),
-                        "actions": [semantics.navigate_action(slot.get("location"))],
-                    })
         if session.rhwp_editable is False:
             problems.append({
                 "severity": semantics.SEVERITY_WARNING, "category": semantics.CATEGORY_COMPATIBILITY,
@@ -439,6 +426,38 @@ class AuthoringController:
                 "location": None, "actions": [],
             } for item in session.rhwp_diagnostics)
         return problems
+
+    @staticmethod
+    def _missing_trial_fields(analysis: dict, values: dict) -> list[str]:
+        """손대지 않은 시험 필드 — 문서에서 처음 쓰인 차례(구조 척추의 `order`)로.
+
+        "없음"은 **키 부재**다(JSON null 도 같다). 입력칸을 비워 둔 `""` 는 사용자가 손댄 값이라 여기 들지
+        않는다 — 결과 시험은 두 경우 모두 빈 값 표식으로 렌더한다(`trial_document_values`).
+        """
+        def first_use(field: dict) -> tuple[int, int]:
+            orders = [occurrence["order"] for occurrence in field.get("occurrences", [])
+                      if type(occurrence.get("order")) is int]
+            return (0, min(orders)) if orders else (1, 0)
+        fields = sorted(enumerate(analysis.get("fields", [])), key=lambda pair: (first_use(pair[1]), pair[0]))
+        return [field["name"] for _, field in fields if values.get(field["name"]) is None]
+
+    @staticmethod
+    def _trial_missing(analysis: dict, session: AuthoringSession) -> dict:
+        """결과 시험 입력의 공백(IDE-01) — 결과 시험 탭 배지와 입력칸 표지의 원천.
+
+        `fields`: 값의 키가 없는(손대지 않은) 필드 이름, 문서 차례. `slots`: 선택이 있는 항목 중 시험 선택이
+        그 항목의 선택 id 가 아닌 항목 id, 문서 차례. 필드 공백은 시험을 막지 않고(빈 값 표식), 선택 공백은
+        지금처럼 시험 거절 사유다.
+        """
+        def order(slot: dict) -> tuple[int, int]:
+            return (0, slot["order"]) if type(slot.get("order")) is int else (1, 0)
+        slots = sorted(enumerate(analysis.get("slots", [])), key=lambda pair: (order(pair[1]), pair[0]))
+        return {
+            "fields": AuthoringController._missing_trial_fields(analysis, session.values),
+            "slots": [slot["id"] for _, slot in slots
+                      if slot.get("options")
+                      and session.selected.get(slot["id"]) not in {option["id"] for option in slot["options"]}],
+        }
 
     @staticmethod
     def _trial_coverage(session: AuthoringSession) -> list[dict]:
@@ -702,6 +721,14 @@ class AuthoringController:
             self.store.export_cases(Path(path), session.cases)
             return {"ok": True, "path": str(path)}
 
+    def export_result_name(self, session_id: str) -> str:
+        """시험 결과 내보내기의 기본 파일 이름(IDE-01) — 이름부터 시험본이다: `<템플릿 이름>_시험 결과.<확장자>`."""
+        with self._lock:
+            session = self._session({"session_id": session_id})
+            path = session.save_path or session.source_path
+            stem = Path(path).stem if path else "새 템플릿"
+            return f"{stem}_시험 결과.{session.media}"
+
     def export_result_path(self, session_id: str, revision: int, path: str | Path) -> dict:
         """Native picker handoff; stale or failed trial output cannot leave the app."""
         with self._lock:
@@ -747,6 +774,7 @@ class AuthoringController:
             "rhwp_unverified": self._do_rhwp_unverified,
             "remember_view": self._do_remember_view,
             "trial_input": self._do_trial_input,
+            "trial_fill_names": self._do_trial_fill_names,
             "trial": self._do_trial,
             "search": self._do_search,
             "locate": self._do_locate,
@@ -1008,6 +1036,20 @@ class AuthoringController:
         session.replace_trial_input(values, selected)
         session.trial_error = ""
         return {"input_revision": session.trial_input_revision, "stale": session.trial_stale}
+
+    def _do_trial_fill_names(self, p: dict) -> dict:
+        """「필드 이름 사용」(IDE-01) — 손대지 않은 필드만 그 필드 이름을 시험값으로 받는다. 한 번의 입력 전이다.
+
+        이미 있는 값(빈 칸 `""` 포함)은 건드리지 않는다. 채울 필드가 없으면 거절한다(표면의 비활성과 같은 판정).
+        """
+        session = self._session(p, revision=True)
+        missing = self._missing_trial_fields(session.analysis, session.values)
+        if not missing:
+            raise ValueError("시험 입력이 올바르지 않습니다.")
+        session.replace_trial_input({**session.values, **{name: name for name in missing}}, session.selected)
+        session.trial_error = ""
+        return {"values": dict(session.values), "selected": dict(session.selected),
+                "input_revision": session.trial_input_revision, "stale": session.trial_stale}
 
     def _do_trial(self, p: dict) -> dict:
         session = self._session(p, revision=True)

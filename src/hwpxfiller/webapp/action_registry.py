@@ -81,6 +81,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 최근 작업 위치·표시 방식(U02) — 문서별로 앱 홈에 둔다. 템플릿 파일에는 넣지 않는다.
         "remember_view": _schema("session_id revision selection mode"),
         "trial_input": _schema("session_id revision values selected"),
+        # 「필드 이름 사용」(IDE-01) — 손대지 않은 시험 필드만 그 이름으로 채우는 한 번의 입력 전이.
+        "trial_fill_names": _schema("session_id revision"),
         "trial": _schema("session_id revision"),
         "search": _schema("session_id revision query kind"),
         # 구조 목록·검색·일치 후보는 좌표와 함께 대상 정체(필드 전체·사용 위치·항목·선택)를 싣는다(#1021).

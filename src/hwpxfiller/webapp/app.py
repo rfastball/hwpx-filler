@@ -871,7 +871,7 @@ class WebFrontend:
         if type(revision) is not int or content["revision"] != revision:
             raise ValueError("문서가 변경되었습니다. 다시 시험하세요.")
         media = content["media"]
-        path = _save_dialog(f"시험 결과.{media}", [(media.upper(), f"*.{media}")], media)
+        path = _save_dialog(controller.export_result_name(session_id), [(media.upper(), f"*.{media}")], media)
         return controller.export_result_path(session_id, revision, path) if path else None
 
     def reveal_corrupt_job(self, path: str) -> "str | None":

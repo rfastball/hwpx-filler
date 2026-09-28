@@ -101,6 +101,7 @@ export const SCREEN_ACTIONS = {
     rhwp_unverified: { required: ["detail", "revision", "session_id"], optional: [] },
     remember_view: { required: ["mode", "revision", "selection", "session_id"], optional: [] },
     trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
+    trial_fill_names: { required: ["revision", "session_id"], optional: [] },
     trial: { required: ["revision", "session_id"], optional: [] },
     search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
     locate: { required: ["revision", "selection", "session_id"], optional: ["target"] },

@@ -98,6 +98,37 @@ def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_p
         frontend.save_authoring_document(opened["session_id"], 0.0)
 
 
+def test_authoring_result_export_defaults_to_a_trial_named_file(tmp_path, monkeypatch):
+    """시험 결과 내보내기의 기본 이름은 `<템플릿 이름>_시험 결과.<확장자>` 다(IDE-01) — 바이트는 결과 그대로다."""
+    from pathlib import Path as _Path
+
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    authoring = frontend.controllers["authoring"]
+    path = tmp_path / "구매요청서.txt"
+    path.write_text("{{이름}}", encoding="utf-8")
+    sid = authoring.open_path(path)["session_id"]
+    authoring.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {"이름": "예시"}, "selected": {}})
+    authoring.dispatch("trial", {"session_id": sid, "revision": 0})
+    asked = []
+    target = tmp_path / "내보낸 결과.txt"
+
+    def save_dialog(name, filters, extension):
+        asked.append((name, filters, extension))
+        return str(target)
+
+    monkeypatch.setattr(app_mod, "_save_dialog", save_dialog)
+    assert frontend.export_authoring_result(sid, 0)["ok"] is True
+    assert asked == [("구매요청서_시험 결과.txt", [("TXT", "*.txt")], "txt")]
+    assert target.read_text(encoding="utf-8") == "예시"
+    fixture = _Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    hwpx = authoring.open_path(fixture)["session_id"]
+    monkeypatch.setattr(app_mod, "_save_dialog", lambda name, *_rest: asked.append(name))
+    assert frontend.export_authoring_result(hwpx, 0) is None
+    assert asked[-1] == "template_v1_시험 결과.hwpx"
+
+
 def test_authoring_close_guard_covers_document_and_trial_inputs(tmp_path, monkeypatch):
     frontend = _frontend(tmp_path, monkeypatch)
     path = tmp_path / "template.txt"

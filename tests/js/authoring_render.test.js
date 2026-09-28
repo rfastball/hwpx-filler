@@ -691,3 +691,60 @@ test("더보기 menu: its first item 명령 opens the command palette in the doc
   assert.ok(!palette.querySelectorAll("button").some((node) => node.textContent === "명령"), "팔레트는 자기를 여는 단추를 싣지 않는다");
   env.root.unmount();
 });
+
+/* ---------- IDE-01: 상태 막대 입구 · F2 제자리 사유 · 비교 안 결정(실제 커밋 위의 누름) ---------- */
+
+test("IDE-01 P-12: the status bar's problem count opens the 문제 tab and moves into it; the trial state opens 결과 시험", async () => {
+  const problem = { severity: "error", category: "structure", message: "끝 표지가 없습니다.", target: "s", location: null, actions: [] };
+  const env = await boot({ ...hwpxTab(), problems: [problem], readiness: { state: "draft", errors: 1, warnings: 0, message: "사용 전에 구조 오류 1개를 확인하세요." },
+    trial_state: "failed", trial_state_label: "시험 실패", trial_state_message: "시험 실패" });
+  env.flushSync(() => env.controller.update({ dock: "", trial: false }));
+  await settle();
+  const links = () => env.container.querySelectorAll(".authoring-status .authoring-status-link");
+  assert.deepEqual(links().map((node) => node.textContent), ["사용 전에 구조 오류 1개를 확인하세요.", "시험 실패"]);
+  assert.ok(links().every((node) => node.tagName === "BUTTON" && node.getAttribute("type") === "button"));
+  focusOn(env, links()[0]);
+  fire(env, links()[0], "click");
+  await settle();
+  const panel = env.container.querySelector("#authoring-dock-panel");
+  assert.equal(panel.getAttribute("aria-labelledby"), "authoring-dock-tab-problems");
+  assert.ok(panel.contains(env.document.activeElement), "문제 탭의 첫 제어로 초점이 옮겨 간다");
+  fire(env, links()[1], "click");
+  await settle();
+  assert.equal(env.container.querySelector("#authoring-dock-panel").getAttribute("aria-labelledby"), "authoring-dock-tab-trial");
+  env.root.unmount();
+});
+
+test("IDE-01 P-15: F2 where no rename is possible leaves the properties panel shut and puts Python's reason on the location row", async () => {
+  const commands = [{ type: "rename_field", enabled: false, reason: "필드를 선택하세요.", alternative: null },
+    { type: "rename_option", enabled: false, reason: "선택 영역을 선택하세요.", alternative: null },
+    { type: "rename_slot", enabled: false, reason: "항목이나 선택 영역을 선택하세요.", alternative: null }];
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  env.flushSync(() => env.controller.update({ commands }));
+  const toolbar = env.container.querySelector('.authoring-toolbar [data-rove][tabindex="0"]');
+  focusOn(env, toolbar);
+  press(env, "F2");
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-properties"), null, "속성 패널을 열지 않는다");
+  const note = env.container.querySelector(".authoring-selection .authoring-selection-note");
+  assert.equal(note.textContent, "필드를 선택하세요.");
+  assert.equal(note.getAttribute("title"), "필드를 선택하세요.");
+  assert.equal(env.container.querySelector(".authoring-live").textContent, "필드를 선택하세요.", "단일 live region 이 한 번 읽는다");
+  assert.equal(env.document.activeElement, toolbar, "초점은 그대로다");
+  env.root.unmount();
+});
+
+test("IDE-01 P-21: after a failed save the comparison's own 다시 저장 runs the same save path", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried", external_changed: true });
+  env.flushSync(() => env.controller.update({ saveFailed: true, panel: "comparison", comparison: { content: "ZG9j", current_content: "ZG9j" } }));
+  await settle();
+  const section = env.container.querySelector('#authoring-dock-panel [aria-label="외부 파일 내용"]');
+  const labels = section.querySelectorAll(".authoring-actions button").map((node) => node.textContent);
+  assert.deepEqual(labels, ["비교 닫기", "현재 작업을 다른 이름으로 저장", "외부 파일 다시 열기", "다시 저장"]);
+  const again = section.querySelectorAll(".authoring-actions button").find((node) => node.textContent === "다시 저장");
+  assert.ok(String(again.getAttribute("class")).includes("primary"), "구획의 주 행동");
+  fire(env, again, "click");
+  await settle();
+  assert.ok(env.calls.some((call) => call.action === "save" && call.session_id === "a"), "경보 구획과 같은 저장 경로");
+  env.root.unmount();
+});

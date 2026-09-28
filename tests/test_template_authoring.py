@@ -13,7 +13,9 @@ from hwpxfiller.domain.template_authoring import (
     available_commands,
     preview,
     trial,
+    trial_document_values,
 )
+from hwpxfiller.domain.job import MISSING_MARKER
 from hwpxfiller.external.text_materialization_conformance import trial_txt_authoring
 from hwpxfiller.external.authoring_transfer import capture_semantic, paste_semantic
 
@@ -358,3 +360,20 @@ def test_txt_trial_provenance_uses_utf16_for_astral_source_and_value() -> None:
     assert rendered["text"] == "😀 🟢\n"
     assert rendered["occurrences"] == [{"name": "F", "source_start": 3, "source_end": 8,
                                          "output_start": 3, "output_end": 5, "value": "🟢"}]
+
+
+def test_trial_renders_values_that_are_absent_or_blank_with_the_generation_marker() -> None:
+    """결과 시험의 빈 값 규칙은 생성 경로와 같다(IDE-01 결정 1(a)) — 없거나 빈 값은 막지 않고 표식이다."""
+    document, empty = trial_document_values(["다", "가", "나", "다", "라"], {"가": "", "나": "  ", "라": "값", "무관": None})
+    marker = MISSING_MARKER.format
+    assert document == {"다": marker(field="다"), "가": marker(field="가"), "나": marker(field="나"), "라": "값"}
+    assert empty == ["다", "가", "나"], "차례는 받은 이름 차례, 중복 없음"
+    rendered = trial_txt_authoring("{{이름}}·{{값}}\n", {"값": "1"}, {})
+    assert rendered["text"] == f"{marker(field='이름')}·1\n"
+    assert rendered["report"] == {"missing_fields": [], "empty_fields": ["이름"]}
+    first = rendered["occurrences"][0]
+    assert first["value"] == marker(field="이름")
+    assert rendered["text"][first["output_start"]:first["output_end"]] == marker(field="이름")
+    # 선택 공백은 두 매체 모두 지금처럼 거절이다.
+    with pytest.raises(ValueError, match="시험 선택"):
+        trial_txt_authoring("{{#항목 s 표시}}\n{{#선택 a 가}}\n가\n{{/선택}}\n{{/항목}}\n", {}, {})
