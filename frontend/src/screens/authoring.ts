@@ -356,7 +356,6 @@ function SemanticForm({ controller, selected, selection, preview }: Props & { se
     preview && h("section", { className: "authoring-preview", "aria-label": "변경 영향" },
       h("h3", null, "변경 영향"),
       preview.expanded && h("p", null, "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."),
-      // 미리보기는 보낸 명령(view.command)의 것이다 — 문장의 새 이름도 그 명령에서 읽는다.
       // 전체 이름 변경의 문장(§13)은 조사까지 Python 이 짓는다(preview.message) — 표면은 그대로 보인다.
       h("p", null, preview.message || `사용 위치 ${affected}곳`),
       preview.counts && h("p", null, `문단 ${preview.counts.paragraphs ?? 0} · 필드 ${preview.counts.fields ?? 0} · 선택 ${preview.counts.options ?? 0} · 표 ${preview.counts.tables ?? 0}`),

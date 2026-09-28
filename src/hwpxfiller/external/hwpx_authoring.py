@@ -212,7 +212,8 @@ def _paragraph_pieces(paragraph, marks: dict) -> list[tuple[str, object, str | N
         elif node.tag == f"{_HP}t":
             run = node.getparent()
             if run is not None and run.tag == f"{_HP}run" and run.getparent() is paragraph:
-                pieces.append((node.text or "", *(current or (None, None))))
+                key, name = current if current is not None else (None, None)
+                pieces.append((node.text or "", key, name))
     return pieces
 
 
