@@ -309,3 +309,6 @@ def test_locate_label_names_the_containing_slot_for_table_cells_and_txt_lines(tm
     picked = ctrl.dispatch("locate", {"session_id": txt["session_id"], "revision": 0,
                                       "selection": {"start": 9, "end": 13}})["context"]
     assert (picked["location_label"], picked["selected_text"]) == ("2행", "수요기관")
+    whole_line = ctrl.dispatch("locate", {"session_id": txt["session_id"], "revision": 0,
+                                          "selection": {"start": 0, "end": 4}})["context"]
+    assert whole_line["location_label"] == "1행", "줄바꿈까지 고른 한 줄은 다음 줄로 넘어가지 않는다"

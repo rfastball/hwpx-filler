@@ -419,7 +419,7 @@ async function probeAuthoringIme(ctx, out, input) {
 }
 
 /** §10 키보드만으로: 구조 목록 → 필드 선택 → 속성(이름 변경 미리보기) → Escape 두 단계 → F2 →
- *  문제 위치 이동 → 원위치 복귀(TXT). 좌표는 Python 스냅샷에서 읽고, 화면의 범위 표기와 맞춘다. */
+ *  문제 위치 이동 → 원위치 복귀(TXT). 줄 번호는 Python 스냅샷에서 읽고, 화면의 위치 표기와 맞춘다. */
 async function probeAuthoringKeyboard(ctx, out) {
   const doc = ctx.doc;
   const started = Date.now();
@@ -435,7 +435,8 @@ async function probeAuthoringKeyboard(ctx, out) {
   const occurrence = (field.occurrences || [])[0] || {};
   const problem = (tab.problems || []).find((item) => item.location) || {};
   const dockTab = (el) => !!el && !!el.closest(".authoring-dock") && el.getAttribute("role") === "tab";
-  const range = (place) => `${(place || {}).start}–${(place || {}).end}`;
+  // 문맥 줄은 Python 의 사람이 읽는 위치(UX-10 R2: 「N행」)다 — 스냅샷의 줄 번호(0부터)로 기대값을 세운다.
+  const range = (place) => `${Number((place || {}).line) + 1}행`;
   try {
     out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
     if (!out.kbd_outline_reached) return;

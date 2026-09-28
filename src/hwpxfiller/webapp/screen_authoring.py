@@ -1298,7 +1298,9 @@ class AuthoringController:
         if span is None:
             return None
         text, low, high = span
-        return {"begin_marker_line": text.count("\n", 0, low), "end_marker_line": text.count("\n", 0, high)}
+        # 끝은 배타적이다 — 줄 끝의 줄바꿈까지 고른 범위(줄 전체)는 다음 줄로 넘어가지 않는다.
+        last = high - 1 if high > low and text[high - 1] == "\n" else high
+        return {"begin_marker_line": text.count("\n", 0, low), "end_marker_line": text.count("\n", 0, last)}
 
     def _selected_text(self, session: AuthoringSession, selection: dict, start: int, end: int) -> str | None:
         """대상 카드의 「선택한 문구」(UX-10 R2) — 빈 범위이거나 글자를 확정할 수 없으면 None."""
