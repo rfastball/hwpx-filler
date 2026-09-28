@@ -13,7 +13,7 @@ type Obj = Record<string, any>;
 type Props = { controller: AuthoringController };
 const button = (label: ReactNode | ReactNode[], click: () => void, props: Obj = {}) =>
   h("button", { type: "button", className: "btn sm", onClick: click, ...props }, ...(Array.isArray(label) ? label : [label]));
-const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택" };
+const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
 const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", trial_input: "시험 입력" };
 /** 식별자 변경은 고급 정보지만 기존 작업 연결에 닿는 영향은 숨기지 않는다(U06·F19). */
@@ -35,7 +35,7 @@ export function problemCounts(problems: Obj[] | undefined): Map<string, number> 
 }
 const badge = (count: number): ReactNode => count ? h("span", { className: "authoring-badge" }, `문제 ${count}`) : null;
 /** 항목·선택의 종류 표지(§10) — 들여쓰기·색이 아니라 글자로 둘을 가른다. */
-const kindTag = (kind: "slot" | "option"): ReactNode => h("span", { className: "authoring-kind" }, KIND_LABEL[kind]);
+const kindTag = (kind: "slot" | "option" | "field" | "text"): ReactNode => h("span", { className: "authoring-kind" }, KIND_LABEL[kind]);
 /** 구조 목록 한 줄의 접근 가능한 이름(§10) — 종류·이름·사용 위치 수·상위 항목·문제 수를 글로 싣는다. */
 export function outlineLabel(kind: "field" | "slot" | "option" | "occurrence", entry: Obj, problems = 0, parent = ""): string {
   const name = String(entry.name || entry.label || entry.id || "");
@@ -371,8 +371,8 @@ function SemanticForm({ controller, selected, selection, preview }: Props & { se
     preview && h("section", { className: "authoring-preview", "aria-label": "변경 영향" },
       h("h3", null, "변경 영향"),
       preview.expanded && h("p", null, "선택을 문단 전체로 확장합니다. 포함될 내용을 확인하세요."),
-      // 미리보기는 보낸 명령(view.command)의 것이다 — 문장의 새 이름도 그 명령에서 읽는다.
-      type === "rename_field" ? h("p", null, `현재 문서의 사용 위치 ${affected}곳이 ‘${view.command?.name || name}’으로 변경됩니다.`) : h("p", null, `사용 위치 ${affected}곳`),
+      // 전체 이름 변경의 문장(§13)은 조사까지 Python 이 짓는다(preview.message) — 표면은 그대로 보인다.
+      h("p", null, preview.message || `사용 위치 ${affected}곳`),
       preview.counts && h("p", null, `문단 ${preview.counts.paragraphs ?? 0} · 필드 ${preview.counts.fields ?? 0} · 선택 ${preview.counts.options ?? 0} · 표 ${preview.counts.tables ?? 0}`),
       preview.included != null && (Array.isArray(preview.included)
         ? h("ul", { "aria-label": "포함될 내용" }, ...preview.included.map((entry: Obj | string, index: number) => h("li", { key: index }, typeof entry === "string" ? entry : entry.label || entry.text || entry.id)))
@@ -442,7 +442,7 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
       button("시험 자료 가져오기", () => { void controller.guarded(() => controller.transferCases("import")); }),
       button("시험 자료 내보내기", () => { void controller.guarded(() => controller.transferCases("export")); })),
     h("div", { className: "authoring-trial-output" },
-      h("p", { role: "status" }, view.trialBusy ? "갱신 중 · 이전 결과" : ({ current: "현재 시험 구성 통과", failed: item.trial_error || "시험 실패", untried: "아직 시험하지 않았습니다.", stale: "마지막 시험 이후 문서 또는 입력이 바뀌었습니다." } as Obj)[item.trial_state]),
+      h("p", { role: "status" }, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
       h("p", null, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
       h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...(item.trial_coverage || []).map((coverage: Obj) =>
         h("li", { key: `${coverage.slot_id}/${coverage.option_id}` }, `${coverage.slot_id} / ${coverage.option_id} · ${({ current: "현재 시험 구성 확인됨", stale: "다시 시험 필요", untried: "시험하지 않음" } as Obj)[coverage.state]}`))),
@@ -568,7 +568,10 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
         h("input", { className: "field", name: "query", "aria-label": "검색어", defaultValue: view.query }),
         h("select", { className: "field", name: "kind", "aria-label": "검색 대상" }, h("option", { value: "body" }, "본문"), h("option", { value: "field" }, "필드"), h("option", { value: "structure" }, "항목·선택"), h("option", { value: "all" }, "전체")),
         h("label", null, h("input", { type: "checkbox", name: "all" }), "열린 모든 문서"), h("button", { className: "btn sm" }, "찾기")),
-      ...view.hits.map((hit: Obj, index: number) => button(`${hit.document} · ${hit.context || hit.name || hit.label}`, select(hit), { key: index })));
+      // 요약과 종류는 Python 이 센 것·준 것 그대로다(§6.3). 여러 문서를 찾으면 문서마다 한 줄씩 선다.
+      ...(view.searchSummaries || []).map((entry: Obj, index: number) => h("p", { key: `summary-${index}`, className: "authoring-search-summary", role: "status" },
+        view.searchSummaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary)),
+      ...view.hits.map((hit: Obj, index: number) => button([KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, `${hit.document} · ${hit.context || hit.name || hit.label}`], select(hit), { key: index })));
     if (key === "commands") return h("section", { className: "authoring-bottom", "aria-label": "명령 팔레트" }, h("h2", null, "명령"),
       h(CommandList, { controller, view, readOnly }),
       h("div", { className: "authoring-command-more" }, ...moreActions.map(([label, run, disabled]) => button(label, run, { key: label, disabled }))));
@@ -659,18 +662,23 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     view.notice && h("p", { role: "status", className: "authoring-notice" }, view.notice),
     // 호환성 경고(U01·§7.1·P16): Python 판정이 서는 즉시 편집기 마운트와 무관하게 보이고, 마운트가 무너져도 남는다.
     // 원본은 그대로 둔 채 확인(원문 표기)하거나 다른 이름으로 사본을 남기는 길을 함께 세운다.
-    item?.compatibility?.state === "limited" && h("section", { className: "authoring-error authoring-compat", role: "alert", "aria-label": "호환성 경고" },
+    item?.compatibility?.state === "limited" && h("section", { className: "authoring-compat", role: "alert", "aria-label": "호환성 경고" },
       h("strong", null, "읽기 전용 · 보존 확인 필요"),
       item.compatibility.message && h("p", null, item.compatibility.message),
       ...(item.compatibility.diagnostics || []).map((diagnostic: Obj | string, index: number) => typeof diagnostic === "string" ? h("p", { key: index }, diagnostic)
         : h("div", { key: index }, h("p", null, diagnostic.message), diagnostic.detail && h("p", { className: "authoring-reason" }, diagnostic.detail))),
       h("div", null, button("다른 이름으로 저장", act(() => controller.save(item.id, true))), button("원문 표기", act(controller.raw)))),
-    !item && h("div", { className: "authoring-empty" }, h("p", null, "변경할 문구를 선택해 필드로 만들어 보세요."),
-      ...(snapshot.recoverable || []).map((draft: Obj) => h("div", { key: draft.key }, draft.name || draft.path || "저장하지 않은 초안",
+    // 빈 작업대: 지금 할 수 있는 두 행동(머리의 것과 같은 실행 경로)과 복구 가능한 작업만 둔다.
+    // 「변경할 문구를 선택해…」는 처음 여는 일반 문서의 안내라 Python 의 notice 로 선다(§13).
+    !item && h("div", { className: "authoring-empty" }, h("p", null, "HWPX·TXT 문서를 열거나 새 TXT를 만드세요."),
+      h("div", { className: "authoring-empty-actions" }, button("문서 열기", act(controller.openFile), { className: "btn primary" }), button("새 TXT", act(controller.create), { className: "btn" })),
+      !!snapshot.recoverable?.length && h("ul", { className: "authoring-drafts", "aria-label": "복구 가능한 작업" }, ...snapshot.recoverable.map((draft: Obj) => h("li", { key: draft.key },
+        h("strong", null, draft.name || draft.path || "저장하지 않은 초안"),
         draft.updated_at && h("time", { dateTime: draft.updated_at }, new Date(draft.updated_at).toLocaleString()),
         draft.error && h("p", { role: "alert" }, draft.error),
-        button("초안과 원본 비교", act(() => controller.compareRecovery(draft.key)), { disabled: !!draft.error }),
-        button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), button("폐기", act(() => controller.discardRecovery(draft.key)))))),
+        h("span", { className: "authoring-drafts-actions" },
+          button("초안과 원본 비교", act(() => controller.compareRecovery(draft.key)), { disabled: !!draft.error }),
+          button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), button("폐기", act(() => controller.discardRecovery(draft.key)))))))),
     // 도구 막대(§3.1): 한 줄, 줄바꿈 없음 — 넘치면 가로 스크롤. 보조 패널을 여는 동사는 하단 독의 탭으로 옮겼다.
     item && h("div", { className: "authoring-toolbar", role: "toolbar", "aria-label": "문서 명령" },
       h("div", { className: "authoring-toolbar-group" },
@@ -690,7 +698,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
         button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown }),
         h("select", { className: "field", "aria-label": "확대", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
-    h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
+    tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: (event: any) => contextMenu(event) }, h("h2", null, "템플릿 구조"),
         ...(item.analysis?.slots || []).map((slot: Obj) => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }; return h("details", { open: true, key: slot.id },
           h("summary", null, button([kindTag("slot"), slot.label || slot.id, badge(counts.get(slot.id) || 0)], select(slotEntry), { "aria-label": outlineLabel("slot", slot, counts.get(slot.id) || 0), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
@@ -731,13 +739,15 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
         // 저장·검사·시험은 서로 다른 상태다(P09·§9.1): 저장됨 뒤에 Python 의 readiness(초안/사용 준비)를 붙인다.
         h("span", null, view.saveFailed ? "저장 실패" : controller.pending(item.id) ? "편집 내용 반영 중" : item.save_as_required ? "새 템플릿 저장 필요" : item.dirty ? "저장하지 않은 변경"
           : item.readiness?.state === "ready" ? "저장됨 · 사용 준비" : item.readiness?.state === "draft" ? "저장됨 · 초안" : "저장됨"),
-        h("span", null, `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`)),
+        // 구조 오류가 있으면 Python 의 준비 문장(readiness.message)을, 없으면 개수를 보인다.
+        h("span", null, item.readiness?.message || `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`)),
       h("div", { className: "authoring-status-group authoring-status-end" },
         // 준비 상태 옆의 보존 판정 칩 — Python 의 compatibility.state 를 이름으로 옮길 뿐이다(마운트 전에도 선다).
         item.compatibility?.state === "checking" && h("span", { "data-compat": "checking" }, "보존 확인 중"),
         item.compatibility?.state === "limited" && h("span", { "data-compat": "limited" }, "읽기 전용 · 보존 확인 필요"),
         item.restore?.message && h("span", { "data-restore": item.restore.state }, item.restore.message),
-        h("span", null, item.trial_state === "current" ? "현재 시험 구성 확인됨" : "다시 시험 필요"),
+        // 결과 시험 상태는 상태마다 한 표현이다 — Python 의 trial_state_label 그대로(P09·§9.1).
+        item.trial_state_label && h("span", { "data-trial": item.trial_state }, item.trial_state_label),
         h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : item.cases?.length ? "시험 자료: 로컬 보관" : "시험 자료 없음"),
         item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
         item.recovery && h("span", null, "복구 여부 선택 필요"))),

@@ -185,3 +185,23 @@ test("UX-05: field occurrences inside a closed outline <details> are built only 
   assert.equal(occurrenceButtons().length, 0);
   root.unmount();
 });
+
+test("#1025 §7.2: an opened outline field shows Python's normalized occurrence context in the label and accessible name, never the raw field command", async () => {
+  const tab = { ...hwpxTab(), trial_result: null, trial_state: "untried",
+    analysis: { revision: 3, slots: [], fields: [{ name: "진행상태", count: 1, occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, context: "[진행상태] - 누름틀",
+      raw: { text: "9Clickhere:set:50:Direction:wstring:8:{{진행상태}} HelpState:wstring:0:  {{진행상태}}{{진행상태}} - 누름틀" } }] }] } };
+  const { container, root } = await boot(tab);
+  const all = () => [...container.walk()];
+  const details = all().find((node) => node.nodeName === "DETAILS");
+  details.open = true;
+  const { flushSync } = await import("react-dom");
+  flushSync(() => { for (const listener of details.listeners.get("toggle") || []) listener({ type: "toggle", target: details, currentTarget: details, timeStamp: 0 }); });
+  await settle();
+  const occurrence = all().find((node) => String(node.getAttribute?.("aria-label") || "").startsWith("진행상태 · 사용 위치"));
+  assert.ok(occurrence, "펼친 필드 줄에 사용 위치 줄이 선다");
+  assert.equal(occurrence.textContent, "1. [진행상태] - 누름틀");
+  assert.equal(occurrence.getAttribute("aria-label"), "진행상태 · 사용 위치 1/1 · [진행상태] - 누름틀");
+  assert.ok(!container.textContent.includes("Clickhere"), "원문 명령 표기는 구조 목록에 서지 않는다");
+  assert.ok(!all().some((node) => String(node.getAttribute?.("aria-label") || "").includes("Clickhere")));
+  root.unmount();
+});
