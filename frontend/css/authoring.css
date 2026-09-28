@@ -291,7 +291,7 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-target-kind .authoring-kind{border:0;padding:0;margin:0}
 .authoring-target-name{margin:0;font-weight:600;overflow-wrap:anywhere}
 .authoring-target-meta{margin:0;font-size:var(--fs-caption);color:var(--a-muted);overflow-wrap:anywhere}
-.authoring-properties-actions{position:sticky;bottom:calc(var(--sp-12) * -1);margin-top:auto;padding:var(--sp-12) 0;border-top:1px solid var(--a-border);background:var(--a-card)}
+.authoring-properties-actions{position:sticky;bottom:calc(var(--sp-12) * -1);z-index:1;margin:auto calc(var(--sp-12) * -1) 0;padding:var(--sp-12);border-top:1px solid var(--a-border);background:var(--a-card)}
 .authoring-refusal .authoring-actions{margin-top:var(--sp-8)}
 
 /* 결과 시험: 왼쪽 열(입력 → 선택 → 자동 갱신 → 행동 → 보관 케이스), 오른쪽 열(상태 칩 + 문장 → 선택별 상태 → 결과 → 이유). */
@@ -309,7 +309,7 @@ body.resizing-authoring iframe{pointer-events:none}
 
 /* 문서 척추(구조 패널) — 머리(이름 · 두 보기 탭 · 필터)는 목록을 내려도 남는다. */
 .authoring-outline{display:flex;flex-direction:column;gap:var(--sp-8);padding:0 var(--sp-8) var(--sp-12)}
-.authoring-outline-head{position:sticky;top:0;z-index:1;display:flex;flex-direction:column;gap:var(--sp-8);padding-top:var(--sp-12);background:var(--a-card)}
+.authoring-outline-head{position:sticky;top:0;z-index:1;display:flex;flex-direction:column;gap:var(--sp-8);padding:var(--sp-12) 0 var(--sp-8);background:var(--a-card)}
 .authoring-outline-tabs{display:flex;gap:var(--sp-4);border-bottom:1px solid var(--a-border)}
 .authoring-outline-tab{display:inline-flex;align-items:center;gap:var(--sp-4);font:inherit;font-size:var(--fs-body);padding:var(--sp-4) var(--sp-8);margin-bottom:-1px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer}
 .authoring-outline-tab:hover{color:var(--a-ink);background:var(--n-hover)}
