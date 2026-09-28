@@ -88,8 +88,8 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "f34ab03775d1cef6b084c1c7dd5ed0ce62b58bd14274bc0d137e1d748537d303"
-body_sha256 = "693ff05c27609d196e1f9511724bae6855120e664067f39a6b6870208a025de4"
+source_sha256 = "014b6a163a9554c6435a06f5bb62e02dcc7361fe714952ffb21c723b3e647424"
+body_sha256 = "dc442e327fac60fd1834a666f7462080fdd505070da39c805ba788b4349d6a3b"
 
 [[document]]
 path = "tests/contracts/module-rings.toml"
@@ -193,8 +193,8 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "3a4708d4e461b3ad6a4beba718092257992e9fe2b53627def4af37a2a06da5b4"
-body_sha256 = "9d603396811827a92bf0bc683d8686ee15526f99b98670f515677bf57f512b36"
+source_sha256 = "39e9c290dfcaffc7aeb1d18e5f7b1dd0c90ad02205aeb6d3317c002e637e22d9"
+body_sha256 = "b9d037f5d70bb6cbbd984518bd22cfeb56aaad1e4d87aed309092c3f9bb98887"
 
 [[topic]]
 id = "workflow-data"
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "e4b0aea33612c376bc665b3fe3506ac175f3899c97ba94a13e18a576366ba35a"
-body_sha256 = "a99d2f79dd97464685856ab7301c2277af7be9ff4ec71c862d9003e91352e5cd"
+source_sha256 = "904c3dddc1af12a5d8254dd8e7aa79955afe3dc42572e9bd6b0913ec1e0b2e29"
+body_sha256 = "0b1e73531ed8a7083069faab03a561a85c7f3ea383e1f488c7d2c6f140456c56"
 
 [[topic]]
 id = "development"

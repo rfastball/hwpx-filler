@@ -158,9 +158,10 @@ export function filterMatch(query: string, ...texts: unknown[]): boolean {
   const wanted = query.trim().toLocaleLowerCase();
   return !wanted || texts.some((text) => text != null && String(text).toLocaleLowerCase().includes(wanted));
 }
-/** 문제의 다음 행동(§7.2): navigate 는 그 위치로 선택을 옮기고, command 는 Python 이 준 명령을 미리보기로 보낸다. */
+/** 문제의 다음 행동(§7.2): navigate 는 그 위치로 선택을 옮기고, command 는 Python 이 준 명령을 미리보기로 보낸다.
+ *  옮기기는 독에서 시작한 선택이라 문제 탭을 남긴다(NG-06 keepDock) — 속성 패널은 열지 않는다. */
 export function problemAction(controller: Pick<AuthoringController, "select" | "preview">, item: Obj, problem: Obj, action: Obj): Promise<void> {
-  return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target });
+  return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target }, { keepDock: true });
 }
 
 type MenuEvent = { clientX: number; clientY: number; anchorTop?: number; target?: unknown; preventDefault?(): void };
@@ -225,11 +226,12 @@ export function selectionNoteView(note: { message: string; severity?: "error" | 
 
 /** 하단 독(§3.1 UI01~UI10)이 한 탭으로 보이는 패널 — `view.panel` 값이 곧 탭 열쇠다. 속성은 옆 패널이라 빠진다. */
 export const DOCK_PANELS = ["problems", "search", "raw", "impact", "paste", "external", "comparison"];
-/** 독의 탭 목록과 지금 보일 탭 하나. 기본 탭(문제·검색·원문 표기·변경 영향·결과 시험)은 문서가 열려 있으면 늘 서고,
- *  문맥 탭은 그 상태가 있을 때만 선다. 보일 탭: 열린 패널 → 사용자가 고른 탭 → 경보·비교·시험 순의 대체.
+/** 독의 탭 목록과 지금 보일 탭 하나. 기본 탭(문제·검색·원문 표기·결과 시험)은 문서가 열려 있으면 늘 서고,
+ *  문맥 탭은 그 상태가 있을 때만 선다. 「변경 영향·작업 적용」은 Python 이 연결 작업이 있다고(또는 확인할 수 없다고) 투영한
+ *  문서에만 서는 문맥 탭이다(NG-09 · `has_linked_jobs`) — 표면은 그 값을 읽을 뿐 연결을 추측하지 않는다. 보일 탭: 열린 패널 → 사용자가 고른 탭 → 경보·비교·시험 순의 대체.
  *  `dockClosed` 는 사용자가 닫은 뒤 경보가 스스로 다시 펼치지 않게 한다(새로 선 경보는 화면이 다시 연다). */
 export function dockTabs(item: Obj | undefined, view: Obj): { tabs: [string, string][]; active: string } {
-  const tabs: [string, string][] = item ? [["problems", "문제"], ["search", "검색"], ["raw", "원문 표기"], ["impact", "변경 영향·작업 적용"], ["trial", "결과 시험"]] : [];
+  const tabs: [string, string][] = item ? [["problems", "문제"], ["search", "검색"], ["raw", "원문 표기"], ...(item.has_linked_jobs ? [["impact", "변경 영향·작업 적용"] as [string, string]] : []), ["trial", "결과 시험"]] : [];
   const saveFailed = !!item && (view.panel === "external" || !!view.saveFailed);
   if (item && view.panel === "paste") tabs.push(["paste", "의미 붙여넣기"]);
   if (saveFailed) tabs.push(["external", "저장 실패"]);
@@ -658,7 +660,8 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
     }, "trial-view");
     return () => { disposed = true; release?.(); };
   }, trialViewerKey(item));
-  const select = (entry: Obj) => () => { void controller.guarded(() => controller.select({ ...(entry.source || entry), source_revision: result.source_revision })); };
+  // 추적·제외 행은 독의 결과 시험 안에서 고르는 길이다(NG-06) — 원문 위치로 옮기되 속성 패널은 열지 않는다.
+  const select = (entry: Obj) => () => { void controller.guarded(() => controller.select({ ...(entry.source || entry), source_revision: result.source_revision }, { keepDock: true })); };
   const traceRow = (entry: Obj) => rowButton({ chip: kindTag("field"), text: entry.name || entry.field || "필드", value: String(entry.value ?? "") }, select(entry),
     { "aria-label": `${entry.name || entry.field || "필드"}: ${entry.value ?? ""}` });
   const coverage: Obj[] = item.trial_coverage || [];
@@ -729,7 +732,7 @@ function TxtTrialOutput({ controller, result, selected }: Props & { result?: Obj
     parts.push(text.slice(end, occurrence.output_start));
     parts.push(h("button", { type: "button", key: index, className: "authoring-output-field",
       "aria-label": `${occurrence.name}: ${occurrence.value}`, "aria-pressed": selected?.name === occurrence.name,
-      onClick: () => { void controller.guarded(() => controller.select({ ...occurrence, source_revision: result?.source_revision })); } }, text.slice(occurrence.output_start, occurrence.output_end) || "∅"));
+      onClick: () => { void controller.guarded(() => controller.select({ ...occurrence, source_revision: result?.source_revision }, { keepDock: true })); } }, text.slice(occurrence.output_start, occurrence.output_end) || "∅"));
     end = occurrence.output_end;
   }
   parts.push(text.slice(end));
@@ -841,7 +844,6 @@ function rowContent(kind: "slot" | "option" | "field", name: string, parts: RowP
     parts.meta ? h("span", { key: "meta", className: "authoring-tree-meta" }, parts.meta) : null,
   ];
 }
-const EMPTY_STRUCTURE = "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요.";
 const EMPTY_FIELDS = "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.";
 
 /** 왼쪽 템플릿 구조(§3.1 UI03·UI04·§3.3 · UX-09): 한 패널의 두 보기.
@@ -946,7 +948,9 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
           onKeyDown: (event: any) => { if (event.key === "Escape" && query && !event.nativeEvent?.isComposing) { event.preventDefault(); event.stopPropagation(); setQuery(""); } } }))),
     h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-structure-panel", "aria-labelledby": "authoring-outline-structure", hidden: tab !== "structure" },
       tree("structure", "authoring-outline-structure", structureNodes, current.structure),
-      !filtering && !(analysis.slots || []).length && h("p", { className: "authoring-outline-empty" }, EMPTY_STRUCTURE)),
+      // 빈 상태 안내(NG-01)는 첫 행동인 필드 만들기 하나다: 필드도 항목도 없을 때만 선다. 필드가 있고 항목이 없으면 문장을 두지 않는다
+      // (선택 기능이 없다는 사실은 알릴 일이 아니다 — 상시 힌트 기본 0). 필드·항목 유무는 Python 투영(analysis)을 읽기만 한다.
+      !filtering && !(analysis.slots || []).length && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)),
     h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-fields-panel", "aria-labelledby": "authoring-outline-fields", hidden: tab !== "fields" },
       tree("fields", "authoring-outline-fields", fieldNodes, current.fields),
       !filtering && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)));
@@ -1094,6 +1098,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     controller.update({ dock: forced, dockClosed: false, ...(DOCK_PANELS.includes(current.panel) && current.panel !== "comparison" ? { panel: "" } : {}) });
   }, [forced, item?.id, view.recoveryPreview]);
   const select = (entry: Obj) => act(() => controller.select({ source_revision: item?.revision, ...entry }));
+  // 독 안의 행(검색 적중)에서 고르면 그 독 탭이 남는다(NG-06) — 편집면 강조와 위치 줄만 옮기고 속성 패널은 열지 않는다.
+  const selectInDock = (entry: Obj) => act(() => controller.select({ source_revision: item?.revision, ...entry }, { keepDock: true }));
   const contextMenu = (event: any) => openContextMenu(controller, event, root.current);
   // 구조 목록에서 고르면 속성 패널이 그 대상으로 열리고 이름 칸으로 간다(§10). 메뉴가 열려 있으면 메뉴가 초점을 쥔다.
   const chooseFromOutline = (entry: Obj, element: HTMLElement) => act(async () => {
@@ -1243,7 +1249,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       ...(view.searchSummaries || []).map((entry: Obj, index: number) => h("p", { key: `summary-${index}`, className: "authoring-search-summary" },
         view.searchSummaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary)),
       // 적중은 원문으로 옮겨 가는 행이다(UX-09): 종류 칩 · 문맥 · 흐린 문서 이름 · 이동 화살표.
-      rowList("검색 결과", view.hits.map((hit: Obj) => rowButton({ chip: KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, text: hit.context || hit.name || hit.label, context: hit.document }, select(hit)))));
+      rowList("검색 결과", view.hits.map((hit: Obj) => rowButton({ chip: KIND_LABEL[hit.kind] ? kindTag(hit.kind) : null, text: hit.context || hit.name || hit.label, context: hit.document }, selectInDock(hit)))));
     // 원문 표기(F26·UI09): Python 이 지은 문법 표현을 본문 항목별로 읽기 전용으로 보인다.
     if (key === "raw") return h("section", { className: "authoring-bottom", "aria-label": "원문 표기" }, h("h2", null, "원문 표기"),
       view.syntax?.note && h("p", null, view.syntax.note),
@@ -1303,10 +1309,17 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         ...(view.saveFailed ? externalVerbs(true) : item.external_changed ? externalVerbs(false) : [])));
     return null;
   };
-  // 도구 막대(§3.1·APG toolbar): 한 번의 Tab 으로 들어오고 ←→·Home·End 로 옮긴다(roving tabindex). 비활성 버튼은 건너뛴다.
+  // 도구 막대(§3.1·APG toolbar): 한 번의 Tab 으로 들어오고 ←→·Home·End 로 옮긴다(roving tabindex). 비활성(disabled) 단추는 건너뛰고
+  // 흐린(aria-disabled) 만들기 단추는 초점을 받는다 — 눌러서 사유를 듣는 길이다(APG: 초점 가능한 비활성 허용).
   const undoDisabled = editorState ? !editorState.canUndo : false;
   const redoDisabled = editorState ? !editorState.canRedo : false;
-  const creates = COMMANDS.slice(0, 3).map(([commandType, label]) => { const available = commandAvailability(view.commands, commandType); return { commandType, label, available, disabled: readOnly || !available.enabled }; });
+  // 만들기 단추(NG-11): Python 판정이 있고 불가이면 흐린 단추(aria-disabled)로 초점과 누름을 받는다 — 누르면 실행하지 않고
+  // 위치 줄 메모에 그 판정의 사유를 세운다(F2 불가와 같은 칸). 판정 전(pending)·읽기 전용은 사유가 없어 그대로 비활성이다.
+  const creates = COMMANDS.slice(0, 3).map(([commandType, label]) => {
+    const available = commandAvailability(view.commands, commandType);
+    const disabled = readOnly || !!available.pending;
+    return { commandType, label, available, disabled, dimmed: !disabled && !available.enabled };
+  });
   const toolbarKeys = [...(undoDisabled ? [] : ["undo"]), ...(redoDisabled ? [] : ["redo"]), ...MODES.map(([value]) => `mode-${value}`),
     ...creates.filter((entry) => !entry.disabled).map((entry) => entry.commandType), "more", "trial"];
   const toolbarActive = toolbarKeys.includes(toolbarKey) ? toolbarKey : toolbarKeys[0];
@@ -1409,8 +1422,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       h("div", { className: "authoring-toolbar-group" }, h("div", { className: "authoring-mode", role: "group", "aria-label": "표시" },
         ...MODES.map(([value, label]) => h("button", { key: value, type: "button", value, "aria-pressed": view.mode === value, ...rove(`mode-${value}`), onClick: () => controller.setMode(value) }, label)))),
       h("div", { className: "authoring-toolbar-group" },
-        ...creates.map(({ commandType, label, available, disabled }) =>
-          quiet(label, () => pick(commandType), { key: commandType, disabled, "aria-disabled": disabled || undefined, title: available.reason || undefined, ...rove(commandType) }))),
+        ...creates.map(({ commandType, label, available, disabled, dimmed }) =>
+          quiet(label, disabled ? () => {} : dimmed ? () => controller.note(String(available.reason || "")) : () => pick(commandType),
+            { key: commandType, disabled, "aria-disabled": disabled || dimmed || undefined, title: available.reason || undefined, ...rove(commandType) }))),
       // 명령 팔레트(Ctrl+Shift+P)·복사·붙여넣기·이전 위치로는 「더보기」 메뉴 안에 선다.
       h("div", { className: "authoring-toolbar-group" },
         iconButton("more", "더보기", menuToggle("more"), { ...menuButton("more"), ...rove("more") })),

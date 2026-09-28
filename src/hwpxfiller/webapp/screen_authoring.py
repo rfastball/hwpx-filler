@@ -62,8 +62,6 @@ _TRIAL_STATE_LABELS = {"current": "현재 구성 통과", "stale": "마지막 �
 _TRIAL_STATE_MESSAGES = {"current": "현재 시험 구성 통과",
                          "stale": "마지막 시험 이후 문서 또는 입력이 바뀌었습니다.",
                          "untried": "아직 시험하지 않았습니다.", "failed": "시험 실패"}
-#: 처음 여는 일반 문서(의미가 아직 없는 문서)의 첫 안내(§13) — 다음 편집에서 사라지는 알림이다.
-_FIRST_FIELD_HINT = "변경할 문구를 선택해 필드로 만들어 보세요."
 #: 문서 척추(구조 보기) 위치 표시(UX-09) — 문단·행 범위를 사람이 읽는 문장으로 접는다.
 _EN_DASH = "–"
 
@@ -112,6 +110,9 @@ class AuthoringController:
         self._pushed: str | None = None
         #: 문서 척추 투영(UX-09) 캐시 — `session.analysis` 가 **같은 객체**인 동안만 재사용한다.
         self._outline_cache: dict[str, tuple[object, dict]] = {}
+        #: 연결 작업 유무(NG-09) 캐시 — 세션별 (저장 경로, 판정). 스냅숏마다 작업 파일을 다시 훑지 않는다.
+        #: 저장 경로가 바뀌면 다시 재고, 활성화·외부 변경 확인(창 초점)·영향 확인·초기 스냅숏에서 버린다.
+        self._linked_cache: dict[str, tuple[str, bool]] = {}
 
     def _refresh_recoverable(self) -> None:
         self._recoverable = self.store.list_drafts()
@@ -355,6 +356,7 @@ class AuthoringController:
             "rhwp_diagnostics": session.rhwp_diagnostics,
             "compatibility": self._compatibility(session),
             "restore": self._restores.get(session.id),
+            "has_linked_jobs": self._has_linked_jobs(session),
             "readiness": self._readiness(session),
             "problems": self._problems(session),
             "trial_missing": self._trial_missing(self._outline_analysis(session), session),
@@ -509,6 +511,8 @@ class AuthoringController:
                 del self._projection_revisions[key]
             for session_id in [sid for sid in self._outline_cache if sid not in self.sessions]:
                 del self._outline_cache[session_id]
+            for session_id in [sid for sid in self._linked_cache if sid not in self.sessions]:
+                del self._linked_cache[session_id]
             return {
                 "tabs": [self._tab(session) for session in self.sessions.values()],
                 "active_id": self.active_id,
@@ -516,7 +520,10 @@ class AuthoringController:
             }
 
     def initial(self) -> dict:
-        return self.snapshot()
+        with self._lock:
+            # 다른 화면이 작업을 만들거나 지웠을 수 있다 — 연결 작업 유무는 처음 그릴 때 다시 잰다(NG-09).
+            self._linked_cache.clear()
+            return self.snapshot()
 
     def close_guard_reason(self) -> str:
         with self._lock:
@@ -601,9 +608,9 @@ class AuthoringController:
                 self._restores[session.id] = restore
             self.active_id = session.id
             self._push()
-            # 처음 여는 일반 문서(아직 의미가 없는 문서)에만 첫 안내를 한 번 싣는다(§13).
-            first = not as_template and not analysis.get("fields") and not analysis.get("slots")
-            return {**self._contents(session), "notice": _FIRST_FIELD_HINT if first else None}
+            # 여는 응답의 알림 칸은 남고 첫 필드 안내 문장은 퇴역했다(NG-01·결정 D) — 필드도 항목도 없는 문서는
+            # 구조 패널(기본 탭)의 빈 상태가 필드 만들기를 가리킨다.
+            return {**self._contents(session), "notice": None}
 
     @staticmethod
     def _clean_selection(selection: object) -> dict | None:
@@ -824,6 +831,7 @@ class AuthoringController:
 
     def _do_activate(self, p: dict) -> dict:
         session = self._session(p)
+        self._linked_cache.pop(session.id, None)
         self.active_id = session.id
         return {**self._contents(session), "restore": self._restores.get(session.id)}
 
@@ -1490,6 +1498,7 @@ class AuthoringController:
 
     def _do_check_external(self, p: dict) -> dict:
         session = self._session(p)
+        self._linked_cache.pop(session.id, None)
         path = session.save_path or session.source_path
         expected = session.baseline if session.save_path else session.source_baseline
         actual = self.store.current_fingerprint(Path(path)) if path else None
@@ -1661,6 +1670,25 @@ class AuthoringController:
             self.active_id = next(reversed(self.sessions), "")
         return {"ok": True}
 
+    def _has_linked_jobs(self, session: AuthoringSession) -> bool:
+        """「변경 영향·작업 적용」 독 탭을 세울지(NG-09) — ``impact`` 와 같은 원천(:meth:`_linked_jobs`)이다.
+
+        저장 경로가 없는 문서(일반 문서로 연 새 템플릿)는 어떤 작업의 템플릿도 아니다. 작업 연결을 확인할 수
+        없거나(작업 저장소 미배선) 손상된 작업 파일이 있으면 연결을 모르는 것이라 탭을 숨기지 않는다 —
+        탭 안의 ``impact`` 가 그 사실(「연결된 작업의 영향은 확인하지 않았습니다.」)을 말한다.
+        """
+        if not session.save_path:
+            return False
+        if self._job_registry is None or self._template_change is None:
+            return True
+        cached = self._linked_cache.get(session.id)
+        if cached is not None and cached[0] == session.save_path:
+            return cached[1]
+        jobs, corrupted = self._linked_jobs(session)
+        linked = bool(jobs or corrupted)
+        self._linked_cache[session.id] = (session.save_path, linked)
+        return linked
+
     def _linked_jobs(self, session: AuthoringSession) -> tuple[list, list]:
         if self._job_registry is None or not session.save_path:
             return [], []
@@ -1696,6 +1724,8 @@ class AuthoringController:
         if self._job_registry is None or self._template_change is None:
             return {"available": False, "reason": "작업 연결을 확인할 수 없습니다.", "jobs": []}
         jobs, corrupted = self._linked_jobs(session)
+        if session.save_path:
+            self._linked_cache[session.id] = (session.save_path, bool(jobs or corrupted))
         current_fields = {field["name"] for field in session.analysis.get("fields", [])}
         blocked_reason = self._blocked_reason(session)
         current_slots = {slot["id"] for slot in session.analysis.get("slots", [])}

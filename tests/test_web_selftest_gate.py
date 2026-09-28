@@ -1426,6 +1426,11 @@ class TestWebSelftestGate:
         """§10·F41·AC19 — 실창에서 **키보드만으로** 구조 목록 → 필드 선택 → 이름 변경 미리보기 →
         Escape 두 단계 → F2 → 문제 위치 이동 → 원위치 복귀를 완주한다.
 
+        문제 행에서 고른 이동은 독에서 시작한 선택이다(NG-06 keepDock): 편집면 캐럿이 문제의 줄로 옮겨 가고
+        독의 활성 탭은 「문제」 그대로이며 속성 패널은 열리지 않는다. 흐린 「항목으로 만들기」(NG-11)는 도구 막대
+        roving 에 들고, Enter 는 실행 대신 위치 줄 메모에 Python 사유를 세운다. 복귀는 캐럿 줄로 재고, 이어서 F2 로
+        연 속성의 문맥 줄이 사람이 읽는 줄 번호인지 되읽는다.
+
         합성 키의 한계는 프로브 머리말(`pressKey`)에 적었다: 신뢰되지 않은 사건은 기본 동작이
         없으므로 Tab·Enter 의 기본 동작만 표준 규칙대로 흉내 내고, 제품 처리기(F6·F2·Escape·
         폼 키 처리)는 실물로 지난다. 좌표 클릭은 쓰지 않는다.
@@ -1437,9 +1442,12 @@ class TestWebSelftestGate:
             "kbd_rename_preview", "kbd_escape_reverts", "kbd_escape_keeps_panel",
             "kbd_escape_closes", "kbd_escape_focus_editor", "kbd_f2_focus",
             "kbd_dock_reached", "kbd_problems_tab", "kbd_problem_focus",
-            "kbd_problems_selected", "kbd_problem_moved", "kbd_toolbar_again",
+            "kbd_problems_selected", "kbd_problem_moved", "kbd_problem_dock_kept",
+            "kbd_problem_no_properties", "kbd_toolbar_again",
+            "kbd_dimmed_reached", "kbd_dimmed_aria", "kbd_dimmed_note", "kbd_dimmed_no_panel",
+            "kbd_dimmed_focus_kept",
             "kbd_more_button", "kbd_more_menu", "kbd_back_button", "kbd_more_menu_closed",
-            "kbd_back_restored", "kbd_back_focus_editor",
+            "kbd_back_restored", "kbd_back_focus_editor", "kbd_back_properties",
         ):
             assert b.get(key) is True, f"키보드만으로 가지 못한 국면: {key}: {b!r}"
         # 하단 독(§3.1): 「문제」 탭은 Python 이 센 문제 수를 글로 싣고, 펼친 뒤 탭 패널은 하나뿐이다.
@@ -1459,9 +1467,14 @@ class TestWebSelftestGate:
         # 그 행의 이름은 다음 행동의 동사로 시작한다.
         assert b["kbd_problem_severity"] == "오류" and b["kbd_problem_category"] == "구조", b["kbd_problem_text"]
         assert b["kbd_problem_action"].startswith("원문으로 이동 · 오류 · 구조"), b["kbd_problem_action"]
-        # 문맥 줄은 원시 offset 이 아니라 사람이 읽는 줄 번호다(UX-10 R2).
-        assert b["kbd_problem_expected"].endswith("행") and b["kbd_problem_expected"] in b["kbd_problem_context"]
-        assert b["kbd_back_expected"] in b["kbd_back_context"]
+        # 문제 행 이동(NG-06): 캐럿은 문제의 줄(닫히지 않은 항목 표기 = 둘째 줄)로 옮겨 갔다 — 독은 「문제」 그대로다.
+        assert b["kbd_problem_expected_line"] == 1, b["kbd_problem_expected_line"]
+        assert b["kbd_problem_caret_line"] == b["kbd_problem_expected_line"], b
+        # 흐린 만들기 단추(NG-11): 메모는 그 단추의 hover 사유와 같은 Python 문장이다.
+        assert b["kbd_dimmed_note_text"] == b["kbd_dimmed_title"] == "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요.", b
+        # 복귀: 캐럿이 필드 사용 위치의 줄로 돌아오고, 그 자리의 문맥 줄은 원시 offset 이 아니라 사람이 읽는 줄 번호다(UX-10 R2).
+        assert b["kbd_back_expected_line"] == 0, b["kbd_back_expected_line"]
+        assert b["kbd_back_expected"].endswith("행") and b["kbd_back_expected"] in b["kbd_back_context"]
         assert b["kbd_error_band"] == "", f"키보드 경로가 오류 띠를 남겼습니다: {b['kbd_error_band']!r}"
 
     def test_authoring_ime_composition_never_commits_moves_or_truncates(
@@ -1499,7 +1512,7 @@ class TestWebSelftestGate:
             "a11y_tabs_right", "a11y_tabs_home", "a11y_tabs_enter", "a11y_tabs_end",
             "a11y_tabs_delete_closed", "a11y_tabs_delete_focus",
             "a11y_toolbar_reached", "a11y_toolbar_single_stop", "a11y_toolbar_right",
-            "a11y_toolbar_end", "a11y_toolbar_wrap",
+            "a11y_toolbar_end", "a11y_toolbar_wrap", "a11y_toolbar_dimmed_in_order",
             "a11y_dock_reached", "a11y_dock_entry", "a11y_dock_search", "a11y_dock_enter_focus",
             "a11y_dock_escape_closed", "a11y_dock_escape_return",
             "a11y_tree_reached", "a11y_tree_entry", "a11y_tree_field", "a11y_tree_current",
@@ -1512,6 +1525,9 @@ class TestWebSelftestGate:
         ):
             assert b.get(key) is True, f"키보드 모델 국면 실패: {key}: {b.get('a11y_steps')!r}"
         assert len(b["a11y_steps"]) >= 15, b["a11y_steps"]
+        # 흐린 만들기 단추(NG-11)는 aria-disabled·초점 가능이라 roving 걷기에 들고, disabled 제어는 들지 않는다.
+        assert set(b["a11y_toolbar_dimmed"]) <= {"create_field", "create_slot", "create_option"}, b["a11y_toolbar_dimmed"]
+        assert b["a11y_toolbar_visits"][-1] == "trial", b["a11y_toolbar_visits"]
         assert b["a11y_error_band"] == "", f"키보드 모델 경로가 오류 띠를 남겼습니다: {b['a11y_error_band']!r}"
 
     def test_hwpx_authoring_compatibility_chip_and_keyboard_selection(
@@ -1643,6 +1659,17 @@ class TestWebSelftestGate:
             "AC02: 고른 문구가 서식 있는 run 이 아닙니다 — 서식 손실 회귀를 잴 수 없습니다."
         )
         assert b["hwpx_authoring_search_hit"], "AC02: 본문 검색이 대상 문구를 찾지 못했습니다."
+        # NG-06 — 검색 적중은 독에서 시작한 선택이다: 선택은 옮겨 가도 검색 탭과 적중 목록이 남고 속성 패널은 열리지 않는다.
+        assert b["hwpx_authoring_hit_dock_kept"] is True, (
+            f"NG-06: 검색 적중을 고른 뒤 검색 탭이 닫혔습니다: {b!r}"
+        )
+        assert b["hwpx_authoring_hit_no_properties"] is True, (
+            "NG-06: 검색 적중 선택이 속성 패널을 열었습니다 — 속성은 만들기 명령·F2·구조 행으로 연다."
+        )
+        # NG-09 — 일반 문서로 연 새 템플릿에는 연결된 작업이 없어 「변경 영향·작업 적용」 탭이 서지 않는다.
+        assert b["hwpx_authoring_impact_tab"] is False, (
+            "NG-09: 연결 작업이 없는 새 템플릿의 독에 「변경 영향·작업 적용」 탭이 섰습니다."
+        )
         assert b["hwpx_authoring_create_enabled"] is True, (
             "AC02: 본문 범위를 고른 뒤에도 「필드로 만들기」가 잠겨 있습니다."
         )

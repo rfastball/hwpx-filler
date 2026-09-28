@@ -5,7 +5,7 @@
 - 결과 시험 상태는 상태마다 짧은 칩(``trial_state_label``)과 문장(``trial_state_message``) 한 쌍이다.
 - 전체 이름 변경 문장은 새 이름의 끝소리로 조사를 고른다.
 - 검색 결과는 종류(``kind``)와 요약(``summary``)을 싣는다.
-- 처음 여는 일반 문서에만 첫 필드 안내가 ``notice`` 로 실린다.
+- 처음 여는 일반 문서의 첫 필드 안내는 퇴역했다(NG-01) — 여는 응답의 ``notice`` 칸은 남되 비어 있다.
 """
 
 from __future__ import annotations
@@ -204,15 +204,24 @@ def test_hwpx_search_summary_includes_the_body_kind(tmp_path: Path) -> None:
     assert result["summary"] == f"총 {len(result['hits'])}건 · 본문 {len(result['hits'])} · 필드 0 · 항목·선택 0"
 
 
-# ------------------------------------------------------------------ 첫 필드 안내(§13)
-def test_first_field_hint_is_a_notice_only_for_a_general_document_without_meaning(tmp_path: Path) -> None:
+# ------------------------------------------------------------------ 첫 필드 안내 퇴역(§13 개정 · NG-01 결정 D)
+def test_opening_a_general_document_carries_no_first_field_notice(tmp_path: Path) -> None:
+    """처음 여는 일반 HWPX·TXT 문서의 첫 응답에도 알림이 없다 — 필드 만들기 안내는 구조 패널(기본 탭)의
+    빈 상태가 늘 보이는 자리에서 맡는다. 응답의 ``notice`` 칸 자체는 남는다(다른 알림 경로와 같은 모양)."""
     plain = tmp_path / "plain.txt"
     plain.write_text("계약 상대방 정보", encoding="utf-8")
     template = tmp_path / "template.txt"
     template.write_text("계약 상대방 {{수요기관}}", encoding="utf-8")
+    plain_hwpx = tmp_path / "plain.hwpx"
+    package = _click_here_package()
+    package.entries["Contents/section0.xml"] = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}"><hp:p><hp:run charPrIDRef="0">'
+        '<hp:t>계약 상대방 정보</hp:t></hp:run></hp:p></hs:sec>').encode("utf-8")
+    plain_hwpx.write_bytes(package.to_bytes())
     ctrl = _controller(tmp_path)
-    assert ctrl.open_path(plain, as_template=False)["notice"] == "변경할 문구를 선택해 필드로 만들어 보세요."
-    assert ctrl.open_path(template, as_template=False)["notice"] is None
+    for path in (plain, template, plain_hwpx):
+        opened = ctrl.open_path(path, as_template=False)
+        assert "notice" in opened and opened["notice"] is None, (path.name, opened.get("notice"))
     again = _controller(tmp_path / "second")
     assert again.open_path(plain, as_template=True)["notice"] is None
 

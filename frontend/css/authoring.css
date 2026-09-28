@@ -37,6 +37,10 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-mode button[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
 .authoring-shell .authoring-mode button:focus-visible{outline-offset:-2px}
 .authoring-toolbar .btn[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);border-color:var(--a-primary);font-weight:600}
+/* 흐린 만들기 단추(NG-11): 초점·누름을 받는 aria-disabled 단추 — disabled 와 같은 흐림이고, 눌림·hover 면이 없다(누르면 사유가 선다). */
+.authoring-toolbar .btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.authoring-toolbar .btn.quiet[aria-disabled=true]:hover{background:transparent;color:var(--n-ink-soft)}
+.authoring-toolbar .btn[aria-disabled=true]:active{transform:none}
 /* 문서면의 높이 예산: 창 높이의 40%를 먼저 갖는다. 압박이 오면 이 하한에서 멈추고 독·호환성 안내가 줄어든다. */
 /* 열 폭(UX-08): 구조·속성 패널은 rem 이라 글자 배율을 따라 자란다(기본 16rem·20rem).
    사용자가 분할선으로 맞춘 폭은 개인화 서비스가 `.app` 에 싣는 --authoring-*-w 가 이긴다. 어느 쪽이든
@@ -219,6 +223,7 @@ body.resizing-authoring iframe{pointer-events:none}
   .authoring-context-menu,.authoring-command-palette,.authoring-palette-group{border-color:CanvasText}.authoring-palette-option.active{outline:2px solid Highlight;outline-offset:-2px}.authoring-badge,.authoring-kind{border-color:CanvasText}
   .authoring-compat,.authoring-drafts li{border-color:CanvasText}.authoring-compat>strong{color:CanvasText}
   .authoring-mode button[aria-pressed=true],.authoring-toolbar .btn[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
+  .authoring-toolbar .btn[aria-disabled=true]{color:GrayText}
   .authoring-dock-tab[aria-selected=true]{border-bottom-color:Highlight}
   .authoring-toolbar-group+.authoring-toolbar-group,.authoring-status-group>*+*,.authoring-dock-bar,.authoring-selection{border-color:CanvasText}
   .authoring-splitter::after{border-left-color:CanvasText}

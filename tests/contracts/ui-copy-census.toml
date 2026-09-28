@@ -187,10 +187,6 @@ file = "frontend/src/screens/authoring.ts"
 text = "한글 조합을 마친 뒤 다시 실행하세요."
 
 [[sentence]]
-file = "frontend/src/screens/authoring.ts"
-text = "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요."
-
-[[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
 text = "‘{}’ 필드에 시험값이 이미 있습니다."
 
@@ -3226,10 +3222,6 @@ text = "문서를 저장한 뒤 기존 작업에 적용하세요."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "변경 확인 토큰이 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_authoring.py"
-text = "변경할 문구를 선택해 필드로 만들어 보세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
