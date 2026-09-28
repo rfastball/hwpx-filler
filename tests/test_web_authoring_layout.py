@@ -82,7 +82,7 @@ _SCAFFOLD = """<!doctype html>
       <div class="authoring-outline-panel" role="tabpanel"><ul class="authoring-tree" role="tree">{rows}</ul></div></aside>
     <div class="authoring-splitter authoring-splitter-outline" role="separator" tabindex="0"></div>
     <div class="authoring-center">
-      <div class="authoring-selection" role="navigation"><span class="authoring-crumb root">2026년 공고문 초안.hwpx</span></div>
+      <div class="authoring-selection" role="navigation"><span class="authoring-crumb root">2026년 공고문 초안.hwpx</span><span class="authoring-crumb-sep">{icon}</span><button type="button" class="authoring-crumb" aria-current="location">항목 · 견적 조건</button><span class="authoring-selection-note" title="이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요.">이 선택은 여러 독립 영역에 걸쳐 있습니다. 한 범위를 선택하세요.</span></div>
       <main class="authoring-canvas"><div class="authoring-document" id="document"><div style="height:3000px">본문</div></div></main>
     </div>
     <div class="authoring-splitter authoring-splitter-properties" role="separator" tabindex="0"></div>
@@ -90,8 +90,8 @@ _SCAFFOLD = """<!doctype html>
       <label class="authoring-field">이름<input class="field"></label></form>
     <div class="authoring-scrim" aria-hidden="true"></div>
   </div>
-  <footer class="authoring-status"><div class="authoring-status-group"><span>저장됨</span><span>구조 오류 0개</span></div>
-    <div class="authoring-status-group authoring-status-end"><span>시험 자료 없음</span><select class="field authoring-zoom" aria-label="확대"><option>100%</option></select></div></footer>
+  <footer class="authoring-status"><div class="authoring-status-group"><span>저장됨 · 초안</span><button type="button" class="authoring-status-link">사용 전에 구조 오류 1개를 확인하세요.</button></div>
+    <div class="authoring-status-group authoring-status-end"><button type="button" class="authoring-status-link" data-trial="current">현재 구성 통과</button><select class="field authoring-zoom" aria-label="확대"><option>100%</option></select></div></footer>
 </div></section></div></main></div></body></html>
 """
 
@@ -134,6 +134,17 @@ _MEASURE = """() => {
   const headBox = head.getBoundingClientRect();
   const save = q(".authoring-head>.btn:last-child").getBoundingClientRect();
   const headSaveInside = save.right <= headBox.right + 0.5 && save.left >= headBox.left;
+  // IDE-01: 위치 줄 메모는 줄 안의 한 줄(말줄임)이고, 상태 막대 입구는 밑줄 없는 글이다(hover·focus 에만 밑줄).
+  const selectionEl = q(".authoring-selection");
+  const selectionBox = selectionEl.getBoundingClientRect();
+  const noteBox = q(".authoring-selection-note").getBoundingClientRect();
+  const noteInside = noteBox.right <= selectionBox.right + 0.5 && noteBox.top >= selectionBox.top - 0.5
+    && noteBox.bottom <= selectionBox.bottom + 0.5 && noteBox.width > 0;
+  const noteStyle = getComputedStyle(q(".authoring-selection-note"));
+  const statusLinks = [...document.querySelectorAll(".authoring-status-link")].map((el) => {
+    const style = getComputedStyle(el);
+    return { decoration: style.textDecorationLine, border: style.borderTopStyle, background: style.backgroundColor };
+  });
   return {
     root, container: q("#scr-authoring").getBoundingClientRect().width,
     body: box(".authoring-body"), outline: box(".authoring-outline"), center: box(".authoring-center"),
@@ -147,6 +158,8 @@ _MEASURE = """() => {
     brokenWords, toolbarRows: oneRow ? 1 : 2, rowHeights, outlineOverflowX, rowsInside, iconSizes, guides,
     toolbarOverflowY: toolbar.scrollHeight - toolbar.clientHeight,
     headRows: headOneRow ? 1 : 2, headSaveInside, headOverflowX: head.scrollWidth - head.clientWidth,
+    noteInside, noteEllipsis: noteStyle.textOverflow === "ellipsis" && noteStyle.whiteSpace === "nowrap",
+    selectionOverflowY: selectionEl.scrollHeight - selectionEl.clientHeight, statusLinks,
   };
 }"""
 
@@ -200,6 +213,14 @@ def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale
         f"{where}: 머리 띠가 한 줄로 서지 않습니다(행 {m['headRows']}, 저장 안쪽 {m['headSaveInside']}, "
         f"가로 넘침 {m['headOverflowX']})"
     )
+    # IDE-01: 위치 줄 메모는 줄 안에 한 줄로 서고(넘치면 말줄임), 줄을 세로로 밀지 않는다.
+    assert m["noteInside"] and m["noteEllipsis"] and m["selectionOverflowY"] <= 0, (
+        f"{where}: 위치 줄 메모가 줄 안의 한 줄이 아닙니다(안쪽 {m['noteInside']}, 말줄임 {m['noteEllipsis']}, "
+        f"세로 넘침 {m['selectionOverflowY']})"
+    )
+    # 상태 막대 입구는 단추 모양이 아니라 글 링크 모양이다 — 테두리·면·평시 밑줄 없음.
+    assert m["statusLinks"] and all(link == {"decoration": "none", "border": "none", "background": "rgba(0, 0, 0, 0)"}
+                                    for link in m["statusLinks"]), f"{where}: {m['statusLinks']}"
 
     if not narrow:
         assert m["outlineShown"] and m["splitterShown"] and not m["railShown"] and not m["scrimShown"], where
@@ -250,14 +271,15 @@ _FORCED = """<!doctype html>
 <html lang="ko" data-theme="light"><head><meta charset="utf-8">
 <link rel="stylesheet" href="./{css_path}"></head><body>
 <p><span id="field" class="cm-txtField">{{{{공고명}}}}</span> <span id="marker" class="cm-txtMarker">{{{{#항목 a 안내}}}}</span></p>
+<p><button type="button" id="link" class="authoring-status-link">구조 오류 1개</button> <a id="ref" href="#ref">참조</a></p>
 </body></html>
 """
 
-_MEASURE_FORCED = """() => Object.fromEntries(["field", "marker"].map((id) => {
+_MEASURE_FORCED = """() => ({...Object.fromEntries(["field", "marker"].map((id) => {
   const s = getComputedStyle(document.getElementById(id));
   return [id, {shadow: s.boxShadow, bottom: `${s.borderBottomWidth} ${s.borderBottomStyle}`,
                left: `${s.borderLeftWidth} ${s.borderLeftStyle}`}];
-}))"""
+})), link: getComputedStyle(document.getElementById("link")).color, ref: getComputedStyle(document.getElementById("ref")).color})"""
 
 
 @pytest.mark.browser
@@ -288,3 +310,5 @@ def test_lintpad_spans_stay_distinct_in_forced_colors() -> None:
     assert active["marker"]["bottom"] == "1px dashed" and active["marker"]["left"] == "1px dashed", active
     # 평시에는 새 테두리가 새지 않는다(그림자 밑줄이 그대로).
     assert plain["field"]["bottom"].startswith("0px") and plain["field"]["shadow"] != "none", plain
+    # IDE-01: 상태 막대 입구는 강제 색상에서 링크 색(LinkText)이다 — 단추 글자색(ButtonText)으로 뭉개지지 않는다.
+    assert active["link"] == active["ref"], active

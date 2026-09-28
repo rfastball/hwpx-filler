@@ -389,6 +389,7 @@ def trial_txt_authoring(
     values; it never claims to be a sealed delivery plan.
     """
     from hwpxfiller.domain.template_authoring import trial as project_trial
+    from hwpxfiller.domain.template_authoring import trial_document_values
 
     source_bytes = content.encode(TXT_ENCODING)
     inspection = inspect_txt_qualification(source_bytes)
@@ -416,7 +417,8 @@ def trial_txt_authoring(
     for segment in segments:
         if segment.kind != SEG_LITERAL and segment.name is not None:
             counts[segment.name] = counts.get(segment.name, 0) + 1
-    logical_values = {name: "" if values.get(name) is None else str(values[name]) for name in counts}
+    # 값이 없는 필드는 생성 경로와 같은 빈 값 표식을 받는다 — 시험 투영(project_trial)과 같은 함수다.
+    logical_values, _ = trial_document_values(counts, values)
     # The existing port accepts a read-only plan projection. Its two stages and
     # postconditions are identical to sealed delivery execution.
     plan: Any = SimpleNamespace(

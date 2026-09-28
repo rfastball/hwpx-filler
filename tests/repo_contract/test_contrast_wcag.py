@@ -65,6 +65,12 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
         ("dark ack badge", dark["badge"]["ack_fg"], dark["badge"]["ack_bg"], 4.5),
         ("dark accent ink/primary", dark["color"]["on_accent"], dark["color"]["primary"], 4.5),
         ("dark accent ink/ok", dark["color"]["on_accent"], dark["color"]["ok"], 4.5),
+        # 저작 상태 막대의 입구(.authoring-status-link, IDE-01)는 조작 잉크 글자다 — 창 바탕·카드 위 모두 작은 글자 하한.
+        *(
+            (f"{theme} control ink/{name}", palette["neutral"]["ink_control"], palette["color"][background], 4.5)
+            for theme, palette in (("light", light), ("dark", dark))
+            for name, background in (("window", "window_bg"), ("card", "card_bg"))
+        ),
     ]
 
     failures = [

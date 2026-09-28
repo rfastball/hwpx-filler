@@ -136,6 +136,14 @@ export function createAuthoringController(deps: Deps) {
     if (text) update({ live: { text, seq: (view.live?.seq || 0) + 1 } });
   }
 
+  /** 위치 줄 메모(IDE-01) — 지금 자리에 대한 제자리 사유 한 줄. 세울 때 단일 live region 이 한 번 읽고, 다음 캐럿 이동과
+   *  Escape 에서 걷힌다. 문장·심각도는 호출자가 넘긴 Python 판정 그대로다(F2 불가 사유가 첫 호출자다). */
+  function note(message: string, severity?: "error" | "warning" | "info") {
+    if (!message) return;
+    update({ selectionNote: { message, ...(severity ? { severity } : {}) } });
+    announce(message);
+  }
+
   function changed(id: string, content: string): void {
     buffers.set(id, content);
     if (id === viewId) update({ preview: null, refusal: null, notice: "" });
@@ -305,7 +313,7 @@ export function createAuthoringController(deps: Deps) {
       const located = target.source_revision != null
         ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
       navigationHistory.push(previous);
-      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], panel: "properties", refusal: null, preview: null, command: null,
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], panel: "properties", refusal: null, preview: null, command: null, selectionNote: null,
         context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
         commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
       if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
@@ -407,6 +415,21 @@ export function createAuthoringController(deps: Deps) {
     finally { if (inputPumps.get(id) === pump) inputPumps.delete(id); }
   }
 
+  /** 「필드 이름 사용」(IDE-01) — 손대지 않은 필드만 그 이름으로 채운다. 채울 대상은 Python 이 정하고(trial_fill_names),
+   *  앞선 입력 전이 뒤에 차례로 선다. 돌아온 값이 곧 시험 입력이고 자동 갱신이 켜져 있으면 다시 시험한다. */
+  async function fillTrialNames() {
+    const id = snapshot().active_id;
+    const previous = inputPumps.get(id) || Promise.resolve();
+    const pump = previous.catch(() => {}).then(async () => {
+      await flush(id);
+      const result = await dispatch("trial_fill_names", fenced(id));
+      if (id === viewId) update({ values: { ...(result.values || {}) }, selectedOptions: { ...(result.selected || {}) } });
+    });
+    inputPumps.set(id, pump);
+    try { await pump; scheduleTrial(id); }
+    finally { if (inputPumps.get(id) === pump) inputPumps.delete(id); }
+  }
+
   async function runTrial(id = snapshot().active_id) {
     clearTimeout(trialTimer);
     await inputPumps.get(id);
@@ -476,7 +499,8 @@ export function createAuthoringController(deps: Deps) {
     const same = ["entry", "start", "end", "paragraph", "start_paragraph", "end_paragraph"].every((key) => selection[key] === view.selection[key]);
     const request = (selectionRequests.get(id) || 0) + 1;
     selectionRequests.set(id, request);
-    update({ selection, matches: [], context: {} });
+    // 캐럿이 옮겨 가면 위치 줄 메모(F2 불가 사유 등)는 걷힌다(IDE-01) — 같은 자리의 재보고는 이동이 아니다.
+    update({ selection, matches: [], context: {}, ...(same ? {} : { selectionNote: null }) });
     scheduleRemember(id);
     if (!Object.keys(selection).length) return;
     await flush(id);
@@ -495,9 +519,9 @@ export function createAuthoringController(deps: Deps) {
 
   return {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
-    snapshot, tab, update, guarded, fail, announce, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
+    snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
-    back, select, preview, applyPreview, trialInput, keepTrialValue, runTrial, saveCase, search,
+    back, select, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search,
     returnScreen: () => returnScreen,
     create: async () => { const result = await dispatch("new", { media: "txt" }); revisions.set(result.session_id, result.revision); await activate(result.session_id); },
     content: (id: string) => dispatch("content", { session_id: id }),

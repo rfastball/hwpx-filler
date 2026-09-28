@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, menuReasonGroups, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, menuReasonGroups, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
 import { rovingIndex, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
 
@@ -502,7 +502,7 @@ test("F24/F12/F13: problems drive the outline badges, the panel's text-only seve
   snapshot.tabs[0].analysis = { slots: [{ id: "doc", label: "문서", options: [{ id: "quote", label: "견적서" }] }], fields: [{ name: "공고명", count: 2, occurrences: [] }] };
   snapshot.tabs[0].problems = [
     { severity: "error", category: "structure", message: "선택 ‘견적서’의 범위가 항목 밖으로 나갑니다.", target: "quote", location: { start: 4, end: 9 }, actions: [{ label: "위치로 이동", kind: "navigate" }, { label: "구조 표기 수정", kind: "command", command: { type: "repair_marker", id: "quote" } }] },
-    { severity: "warning", category: "trial_input", message: "시험값이 없습니다.", target: "공고명", location: null, actions: [] },
+    { severity: "warning", category: "compatibility", message: "변경 후 보존을 확인할 수 없습니다.", target: "공고명", location: null, actions: [] },
   ];
   snapshot.tabs[0].readiness = { state: "draft", errors: 1, warnings: 1, message: "" };
   await controller.activate("a");
@@ -513,11 +513,13 @@ test("F24/F12/F13: problems drive the outline badges, the panel's text-only seve
   assert.ok(markup.includes('<span class="authoring-tree-name" title="문서">문서</span></span><ul role="group">'), "문제가 없는 항목에는 메타 표시가 없다");
   assert.ok(markup.includes('<span class="authoring-problem-category">구조</span> 선택 ‘견적서’의 범위가 항목 밖으로 나갑니다.'));
   assert.ok(markup.includes('<span class="authoring-badge" data-severity="error">오류</span>'));
-  assert.ok(markup.includes('<span class="authoring-problem-category">시험 입력</span> 시험값이 없습니다.'));
+  assert.ok(markup.includes('<span class="authoring-problem-category">호환성</span> 변경 후 보존을 확인할 수 없습니다.'));
   assert.ok(markup.includes('<span class="authoring-badge" data-severity="warning">경고</span>'));
   assert.ok(markup.includes('<span class="authoring-row-context">quote</span>'));
   assert.ok(markup.includes('title="위치로 이동" aria-label="위치로 이동 · 오류 · 구조 · quote · 선택 ‘견적서’의 범위가 항목 밖으로 나갑니다."') && markup.includes(">구조 표기 수정</button>"));
-  assert.ok(markup.includes("<span>구조 오류 1개 · 경고 1개</span>") && markup.includes("<span>저장됨 · 초안</span>"));
+  // 상태 막대의 수는 문제 탭 배지와 같은 problems 에서 온다 — 문제가 있으면 문제 탭으로 가는 글 링크 모양 단추다(IDE-01).
+  assert.ok(markup.includes('<button type="button" class="authoring-status-link">구조 오류 1개 · 경고 1개</button>') && markup.includes("<span>저장됨 · 초안</span>"));
+  assert.ok(markup.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="0" aria-selected="true" aria-controls="authoring-dock-panel">문제 <span class="authoring-badge">2</span></button>'));
   const recorded = [];
   const stub = { select: async (target) => { recorded.push(["select", target]); }, preview: async (command) => { recorded.push(["preview", command]); } };
   const [problem] = snapshot.tabs[0].problems;
@@ -707,7 +709,7 @@ test("§10: screen readers get the field name, use count, parent item and proble
   snapshot.tabs[0].analysis = { slots: [{ id: "doc", label: "문서", options: [{ id: "quote", label: "견적서" }] }],
     fields: [{ name: "공고명", count: 2, occurrences: [{ start: 0, end: 7, context: "공고명: 2026" }, { start: 20, end: 27 }] }] };
   snapshot.tabs[0].problems = [{ severity: "error", category: "structure", message: "m", target: "quote", location: null, actions: [] },
-    { severity: "warning", category: "trial_input", message: "m", target: "공고명", location: null, actions: [] }];
+    { severity: "warning", category: "compatibility", message: "m", target: "공고명", location: null, actions: [] }];
   await controller.activate("a");
   let markup = render(controller);
   assert.ok(markup.includes('aria-label="필드 · 공고명 · 사용 위치 2곳 · 문제 1"'));
@@ -1065,7 +1067,15 @@ test("P09/§3.1: the status bar splits save·checks from preservation·trial·re
   Object.assign(snapshot.tabs[0], { trial_state: "untried", trial_state_label: "시험 전" });
   await controller.activate("a");
   const markup = render(controller);
-  assert.ok(markup.includes('<footer class="authoring-status" role="group"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><span data-trial="untried">시험 전</span><span>시험 자료 없음</span><select class="field authoring-zoom" aria-label="확대">'));
+  // 시험 전이고 보관한 시험 자료가 없으면 상태 막대에 시험 관련 표지가 없다(IDE-01) — 해당 없는 상태는 빼고,
+  // 문제가 없으면 준비 표현은 글이다(문제 탭으로 갈 곳이 없다).
+  assert.ok(markup.includes('<footer class="authoring-status" role="group"><div class="authoring-status-group"><span>저장됨 · 초안</span><span>구조 오류 1개 · 경고 0개</span></div><div class="authoring-status-group authoring-status-end"><span data-compat="checking">보존 확인 중</span><select class="field authoring-zoom" aria-label="확대">'));
+  const footer = markup.slice(markup.indexOf('<footer class="authoring-status"'));
+  assert.ok(!footer.includes("시험") && !footer.includes("authoring-status-link"), "시험 전·케이스 0 이면 시험 표지 0개");
+  Object.assign(snapshot.tabs[0], { cases: [{ name: "검토" }] });
+  assert.ok(render(controller).includes("<span>시험 자료: 로컬 보관</span>"));
+  Object.assign(snapshot.tabs[0], { cases: [], cases_dirty: true });
+  assert.ok(render(controller).includes("<span>시험 자료: 저장하지 않은 변경</span>"));
   // 확대는 상태 막대 끝의 작은 선택이다 — roving 묶음 밖의 보통 Tab 순서(data-rove 없음).
   assert.ok(markup.includes('<option value="200">200%</option></select></div></footer>'));
   assert.ok(!markup.includes('data-rove="zoom"'));
@@ -1086,7 +1096,9 @@ test("#1025 P09/§9.1: the footer chip and the trial panel show Python's one exp
     controller.update({ dock: "trial", trial: true });
     const markup = render(controller);
     const footer = markup.slice(markup.indexOf('<footer class="authoring-status"'));
-    assert.ok(footer.includes(`<span data-trial="${state}">${label}</span>`), state);
+    // 시험 전은 상태 막대에 서지 않는다(IDE-01) — 시험 뒤의 상태는 결과 시험 탭으로 가는 글 링크 모양 단추다.
+    if (state === "untried") assert.ok(!footer.includes(label), state);
+    else assert.ok(footer.includes(`<button type="button" class="authoring-status-link" data-trial="${state}">${label}</button>`), state);
     assert.ok(markup.includes(`<p>${message}</p>`), state);
     footers.push(label);
   }
@@ -1427,4 +1439,134 @@ test("UX-04 × UX-08: F6 cycles the document tabs too and enters a roving group 
   assert.equal(cyclePanels(panels, "outline", false).name, "canvas");
   assert.equal(cyclePanels(panels, "canvas", false).name, "tabs");
   assert.deepEqual(focused, ["toolbar:last-focused", "outline:current-row", "canvas:first", "tabs:selected-tab"]);
+});
+
+/* ---------- IDE-01: 시험 공백 분리 · 상태 막대 입구 · F2 제자리 사유 · 비교 안 결정 ---------- */
+
+test("IDE-01 P-03: the 결과 시험 tab badge counts Python's trial_missing, the 문제 badge counts problems; untouched inputs are aria-invalid", async () => {
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], { media: "txt", analysis: { fields: [{ name: "공고명", occurrences: [] }, { name: "기관", occurrences: [] }],
+    slots: [{ id: "조건", label: "조건", options: [{ id: "국내", label: "국내" }] }] },
+  problems: [], trial_missing: { fields: ["공고명"], slots: ["조건"] }, values: { 기관: "조달청" } });
+  assert.equal(dockBadge(snapshot.tabs[0], "trial"), 2);
+  assert.equal(dockBadge(snapshot.tabs[0], "problems"), 0);
+  assert.equal(dockBadge({ problems: [{}, {}], trial_missing: { fields: [], slots: [] } }, "problems"), 2);
+  assert.equal(dockBadge(snapshot.tabs[0], "search"), 0);
+  await controller.activate("a");
+  controller.update({ dock: "trial", trial: true });
+  const markup = render(controller);
+  assert.ok(markup.includes('aria-controls="authoring-dock-panel">결과 시험 <span class="authoring-badge">2</span></button>'), "시험 탭 배지 = 필드+선택 공백 수");
+  assert.ok(markup.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="-1" aria-selected="false">문제</button>'), "문제 0 이면 배지 없음");
+  assert.ok(markup.includes('공고명<input class="field" aria-invalid="true" value=""/>'), "손대지 않은 필드 입력칸");
+  assert.ok(markup.includes('기관<input class="field" value="조달청"/>'), "값이 있는 입력칸은 표지가 없다");
+  assert.ok(markup.includes('<select class="field" aria-invalid="true">'), "시험 선택이 없는 항목");
+  assert.ok(!markup.includes("미입력"), "폐기 어휘를 넓히지 않는다");
+  assert.ok(markup.includes('<div class="authoring-actions start"><button type="button" class="btn">필드 이름 사용</button></div>'));
+  Object.assign(snapshot.tabs[0], { trial_missing: { fields: [], slots: [] } });
+  assert.ok(render(controller).includes('<button type="button" class="btn" disabled="">필드 이름 사용</button>'), "채울 필드가 없으면 비활성");
+});
+
+test("IDE-01 P-03: 필드 이름 사용 dispatches trial_fill_names behind the pending input, adopts Python's values and re-runs the automatic trial", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { controller, calls } = harness(async (action) => {
+    if (action === "trial_input") { await gate; return {}; }
+    if (action === "trial_fill_names") return { values: { 공고명: "공고명", 기관: "조달청" }, selected: {}, input_revision: 2 };
+    return {};
+  });
+  await controller.activate("a");
+  controller.update({ trial: true, autoTrial: true });
+  const typing = controller.trialInput({ 기관: "조달청" }, {});
+  const filling = controller.fillTrialNames();
+  release();
+  await Promise.all([typing, filling]);
+  const order = calls.filter((call) => call.action === "trial_input" || call.action === "trial_fill_names").map((call) => call.action);
+  assert.deepEqual(order, ["trial_input", "trial_fill_names"], "앞선 입력 전이 뒤에 선다");
+  assert.deepEqual(calls.find((call) => call.action === "trial_fill_names"), { action: "trial_fill_names", session_id: "a", revision: 0 });
+  assert.deepEqual(controller.viewModel.getSnapshot().values, { 공고명: "공고명", 기관: "조달청" });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.ok(calls.some((call) => call.action === "trial"), "자동 갱신이 켜져 있으면 다시 시험한다");
+});
+
+test("IDE-01 P-15: F2 opens only a rename command Python enabled — the selection's kind first — and does nothing while pending", () => {
+  const entry = (type, enabled, reason = null) => ({ type, enabled, reason, alternative: null });
+  const refused = [entry("rename_field", false, "필드를 선택하세요."), entry("rename_option", false, "선택 영역을 선택하세요."), entry("rename_slot", false, "항목이나 선택 영역을 선택하세요.")];
+  assert.equal(renameChoice([], "field"), null, "판정 전(pending)이면 아무것도 하지 않는다");
+  assert.deepEqual(renameChoice(refused, undefined), { reason: "필드를 선택하세요." }, "종류가 없으면 필드 이름 변경의 사유");
+  assert.deepEqual(renameChoice(refused, "option"), { reason: "선택 영역을 선택하세요." }, "선택 종류에 맞는 명령의 사유");
+  const optionOpen = [entry("rename_field", false, "필드를 선택하세요."), entry("rename_option", true), entry("rename_slot", true)];
+  assert.deepEqual(renameChoice(optionOpen, "option"), { open: "rename_option" }, "선택이 option 이고 rename_option 이 되면 그것");
+  assert.deepEqual(renameChoice(optionOpen, "slot"), { open: "rename_slot" });
+  assert.deepEqual(renameChoice(optionOpen, "field"), { open: "rename_option" }, "종류가 맞는 명령이 안 되면 되는 것 중 안쪽부터");
+  assert.deepEqual(renameChoice([entry("rename_field", true), ...refused.slice(1)], undefined), { open: "rename_field" });
+});
+
+test("IDE-01 P-15: a refused F2 leaves the panel shut, sets the location-row note, announces it once, and the next caret move clears it", async () => {
+  const commands = [{ type: "rename_field", enabled: false, reason: "필드를 선택하세요.", alternative: null },
+    { type: "rename_option", enabled: false, reason: "선택 영역을 선택하세요.", alternative: null },
+    { type: "rename_slot", enabled: false, reason: "항목이나 선택 영역을 선택하세요.", alternative: null }];
+  const { controller } = harness((action) => action === "locate" ? { matches: [], commands } : action === "commands" ? { commands } : {});
+  await controller.activate("a");
+  controller.update({ commands, panel: "" });
+  renameShortcut(controller);
+  let view = controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "", "패널을 열지 않는다");
+  assert.deepEqual(view.selectionNote, { message: "필드를 선택하세요." });
+  assert.equal(view.live.text, "필드를 선택하세요.");
+  const seq = view.live.seq;
+  const markup = render(controller);
+  assert.ok(markup.includes('<span class="authoring-selection-note" title="필드를 선택하세요.">필드를 선택하세요.</span></div><section class="authoring-canvas"'), "위치 줄 오른쪽 끝의 한 줄");
+  controller.selection("a", { start: 0, end: 0 });
+  await new Promise(setImmediate);
+  view = controller.viewModel.getSnapshot();
+  assert.equal(view.selectionNote, null, "다음 캐럿 이동에서 걷힌다");
+  assert.equal(view.live.seq, seq, "걷을 때는 읽지 않는다");
+  controller.update({ commands: [{ ...commands[0], enabled: true, reason: null }, commands[1], commands[2]], selected: { kind: "field", name: "공고명" } });
+  renameShortcut(controller);
+  view = controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "properties");
+  assert.equal(view.commandType, "rename_field");
+  assert.equal(view.focusTarget, "properties");
+});
+
+test("IDE-01 P-21: the 외부 파일 내용 comparison carries the alert's decision verbs — 다시 저장 is its primary only after a failed save", async () => {
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], { media: "txt", external_changed: true });
+  await controller.activate("a");
+  controller.update({ panel: "comparison", comparison: { content: "외부", current_content: "현재" } });
+  const section = (text) => { const at = text.indexOf('aria-label="외부 파일 내용"'); return text.slice(at, text.indexOf("</section>", at)); };
+  let markup = render(controller);
+  assert.ok(section(markup).includes('<div class="authoring-actions"><button type="button" class="btn quiet">비교 닫기</button><button type="button" class="btn">현재 작업을 다른 이름으로 저장</button><button type="button" class="btn">외부 파일 다시 열기</button></div>'));
+  assert.ok(!section(markup).includes("다시 저장</button>"));
+  controller.update({ saveFailed: true });
+  markup = render(controller);
+  assert.ok(section(markup).includes('<button type="button" class="btn">외부 파일 다시 열기</button><button type="button" class="btn primary">다시 저장</button></div>'), "저장 실패면 다시 저장이 주 행동");
+  Object.assign(snapshot.tabs[0], { external_changed: false });
+  controller.update({ saveFailed: false });
+  markup = render(controller);
+  assert.ok(section(markup).includes('<div class="authoring-actions"><button type="button" class="btn quiet">비교 닫기</button></div>'), "결정할 일이 없으면 닫기만");
+});
+
+test("IDE-01: the location-row note is a generic in-place reason slot — severity chip, one announcement, cleared by Escape and by a caret move", async () => {
+  const { controller } = harness((action) => action === "locate" ? { matches: [], commands: [] } : action === "commands" ? { commands: [] } : {});
+  await controller.activate("a");
+  controller.note("끝 표지가 없습니다.", "error");
+  let view = controller.viewModel.getSnapshot();
+  assert.deepEqual(view.selectionNote, { message: "끝 표지가 없습니다.", severity: "error" });
+  assert.equal(view.live.text, "끝 표지가 없습니다.");
+  const seq = view.live.seq;
+  let markup = render(controller);
+  assert.ok(markup.includes('<span class="authoring-selection-note" title="끝 표지가 없습니다." data-severity="error"><span class="authoring-badge" data-severity="error">오류</span> 끝 표지가 없습니다.</span>'), "심각도는 글자 칩으로도 선다");
+  controller.update({});
+  assert.equal(controller.viewModel.getSnapshot().live.seq, seq, "다시 그려도 다시 읽지 않는다");
+  assert.equal(escapeShell(controller), "panel");
+  assert.equal(controller.viewModel.getSnapshot().selectionNote, null, "Escape 가 걷는다");
+  controller.note("다른 이름을 입력하세요.", "info");
+  markup = render(controller);
+  assert.ok(markup.includes('<span class="authoring-selection-note" title="다른 이름을 입력하세요." data-severity="info">다른 이름을 입력하세요.</span>'), "안내는 칩 없이 한 줄");
+  controller.note("");
+  assert.equal(controller.viewModel.getSnapshot().selectionNote.message, "다른 이름을 입력하세요.", "빈 문장은 세우지 않는다");
+  controller.selection("a", { start: 3, end: 3 });
+  await new Promise(setImmediate);
+  assert.equal(controller.viewModel.getSnapshot().selectionNote, null, "캐럿 이동이 걷는다");
 });

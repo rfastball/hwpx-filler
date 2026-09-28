@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
+from .job import MISSING_MARKER
 from .structure_scan import (
     CONTEXT_MAX,
     PLACEMENT_OPTION,
@@ -850,6 +851,31 @@ def available_commands(media: str, content: str | object, selection: Mapping[str
     return availability_entries(reasons, alternatives)
 
 
+def trial_document_values(
+    names: Iterable[str], values: Mapping[str, object],
+) -> tuple[dict[str, str], list[str]]:
+    """결과 시험이 문서에 넣을 필드 값 — 생성 경로와 같은 빈 값 규칙이다(#957 신뢰 정책).
+
+    값이 없거나(키 부재·null) 비었거나 공백뿐인 필드는 막지 않고 빈 값 표식
+    (:data:`~hwpxfiller.domain.job.MISSING_MARKER`)을 받는다. 두 매체(TXT·HWPX)가 이 한 함수를
+    써서 시험 결과가 실제 생성과 같은 자리를 같은 글로 보인다. 반환: (필드 → 문서 값, 표식을
+    받은 필드 이름 — ``names`` 차례·중복 제거). 표식 필드는 결과 보고의 ``empty_fields`` 다.
+    """
+    document: dict[str, str] = {}
+    empty: list[str] = []
+    for name in names:
+        if name in document:
+            continue
+        value = values.get(name)
+        text = "" if value is None else str(value)
+        if text.strip():
+            document[name] = text
+        else:
+            document[name] = MISSING_MARKER.format(field=name)
+            empty.append(name)
+    return document, empty
+
+
 def trial(
     media: str,
     content: str | object,
@@ -872,6 +898,9 @@ def trial(
     hidden = marker_lines(scan) | unselected_option_lines(scan, chosen)
     pieces = content.splitlines(keepends=True)
     starts = _line_starts(content)
+    names = [match.group(1).strip() for line, piece in enumerate(pieces) if line not in hidden
+             for match in iter_field_token_matches(piece)]
+    document_values, empty_fields = trial_document_values(names, values)
     occurrences = []
     output_pos = 0
     for line, piece in enumerate(pieces):
@@ -881,7 +910,7 @@ def trial(
         for match in iter_field_token_matches(piece):
             output_pos += _unit_length(piece[cursor:match.start()])
             name = match.group(1).strip()
-            value = "" if values.get(name) is None else str(values[name])
+            value = document_values[name]
             occurrences.append({
                 "name": name,
                 "source_start": _to_utf16(content, starts[line] + match.start()),
@@ -912,11 +941,8 @@ def trial(
         })
     return {
         "text": output,
-        "report": {
-            "missing_fields": list(dict.fromkeys(item["name"] for item in occurrences if item["name"] not in values)),
-            "empty_fields": list(dict.fromkeys(item["name"] for item in occurrences
-                                             if item["name"] in values and not str(values[item["name"]] or "").strip())),
-        },
+        # 값이 없는 필드는 거절하지 않고 빈 값 표식으로 렌더한다(trial_document_values) — 누락은 없다.
+        "report": {"missing_fields": [], "empty_fields": empty_fields},
         "occurrences": occurrences,
         "excluded": excluded,
     }

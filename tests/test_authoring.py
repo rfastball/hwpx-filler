@@ -765,7 +765,8 @@ def test_native_search_and_trial_report_semantic_locations_and_missing_inputs() 
         search_hwpx(package, "")
     with pytest.raises(ValueError, match="검색 종류"):
         search_hwpx(package, "본문", "unknown")
-    with pytest.raises(ValueError, match="시험값"):
+    # 값이 없는 필드는 더 이상 시험 거절 사유가 아니다(IDE-01 결정 1(a)) — 남은 거절은 구조·항목 선택이다.
+    with pytest.raises(ValueError, match="문서 구조 오류"):
         trial_hwpx(package, {}, {})
     with pytest.raises(ValueError, match="존재하지 않는 항목"):
         trial_hwpx(package, {"이름": "A"}, {"missing": "x"})
@@ -774,8 +775,13 @@ def test_native_search_and_trial_report_semantic_locations_and_missing_inputs() 
     rendered = trial_hwpx(field_only, {"이름": "A"}, {})
     assert rendered["occurrences"][0]["source"]["paragraph"] == 1
     assert rendered["occurrences"][0]["output"]["paragraph"] == 1
-    empty = trial_hwpx(field_only, {"이름": None}, {})
-    assert empty["report"]["empty_fields"] == ["이름"]
+    assert rendered["report"] == {"missing_fields": [], "empty_fields": []}
+    # 손대지 않음(키 부재)·null·빈 칸·공백뿐은 모두 생성 경로와 같은 빈 값 표식으로 렌더되고 empty_fields 에 선다.
+    for values in ({}, {"이름": None}, {"이름": ""}, {"이름": "  "}):
+        empty = trial_hwpx(field_only, values, {})
+        assert empty["report"] == {"missing_fields": [], "empty_fields": ["이름"]}
+        assert empty["occurrences"][0]["value"] == "〘미입력·이름〙"
+        assert "〘미입력·이름〙" in "".join(_root(HwpxPackage.from_bytes(empty["bytes"])).itertext())
 
 
 def test_native_field_path_targets_exact_table_cell_paragraph() -> None:

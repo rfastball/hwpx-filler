@@ -117,6 +117,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `search` | `session_id`, `revision`, `query`, `kind` | — |
 | `syntax` | `session_id` | — |
 | `trial` | `session_id`, `revision` | — |
+| `trial_fill_names` | `session_id`, `revision` | — |
 | `trial_input` | `session_id`, `revision`, `values`, `selected` | — |
 | `update` | `session_id`, `revision`, `content` | — |
 
