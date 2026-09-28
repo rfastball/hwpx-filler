@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
-source_sha256 = "546a35c6304684337035859d7614792b6314bac4192168ba8d43b45697ae17ae"
+source_sha256 = "6bdecf1753e5e2a82caa52d1b9a36da1fc415bed53b80a13d6b3617751815d69"
 body_sha256 = "90993ee9495c69be46ffc853d306e40996de531a9418ea481b5d9174b9a9c863"
 
 [[topic]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "fbf324cbaddabf688938d4b4d9e025f7f6e26f523b3f90786c85a9562b3b4999"
+source_sha256 = "ae611d46cb8b04e6759ff7fca95072619c7cfdebe87f0c179df58f1a0ab57e70"
 body_sha256 = "3673da7b35532830848ce663d5a1f810c29f9cf641844bc9c87ae1aa0f50bd52"
 
 [[topic]]
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "8210526db1796790e5a07bef553ab08e0e5413296351581a3fd3711d3a93259f"
+source_sha256 = "10e5dff45378e3dfba711cba793214f180b2a9698edd8a5748e1eb93043a6a23"
 body_sha256 = "9b1d11febe0b51f48ea6af7a4ff88ffe65a57521af98d4dc062273b3e7835cd0"
 
 [[topic]]

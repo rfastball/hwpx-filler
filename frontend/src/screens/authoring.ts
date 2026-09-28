@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createElement as h, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
@@ -26,6 +26,12 @@ export function commandAvailability(commands: Obj[] | undefined, type: string): 
 /** 대상별 문제 수 — 구조 tree·필드 목록의 `문제 N` 배지(F12·F13). Python 의 problems 를 target 으로 셀 뿐이다. */
 export function problemCount(problems: Obj[] | undefined, target: string): number {
   return (problems || []).filter((problem) => problem.target === target).length;
+}
+/** 대상별 문제 수 표 — 스냅샷마다 한 번 센다(구조 목록 한 줄마다 목록을 다시 훑지 않는다). */
+export function problemCounts(problems: Obj[] | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const problem of problems || []) counts.set(problem.target, (counts.get(problem.target) || 0) + 1);
+  return counts;
 }
 const badge = (count: number): ReactNode => count ? h("span", { className: "authoring-badge" }, `문제 ${count}`) : null;
 /** 항목·선택의 종류 표지(§10) — 들여쓰기·색이 아니라 글자로 둘을 가른다. */
@@ -123,6 +129,14 @@ function StructureDelta({ delta }: { delta: Obj }) {
     !!delta.renamed?.length && h("ul", { "aria-label": "식별자 변경" }, ...delta.renamed.map((entry: Obj, index: number) => h("li", { key: index }, `${KIND_LABEL[entry.kind] || entry.kind} · ${entry.from} → ${entry.to}`))));
 }
 
+/** rhwp 마운트 경로 — 제품은 늘 mountRhwp 다. Node 시험은 WASM iframe 을 띄울 수 없어 여기만 바꿔 낀다. */
+export const rhwpMount = { mount: mountRhwp };
+/** 시험 결과 뷰어의 마운트 열쇠 — Python 이 결과 객체마다 새 revision 을 준다. 같은 결과의 재전송(push)은 같은 열쇠라
+ *  뷰어를 다시 띄우지 않는다(UX-05). revision 이 없는 옛 투영은 내용 문자열로 가른다. */
+export function trialViewerKey(item: Obj): unknown[] {
+  return [item.media, item.trial_result?.revision ?? item.trial_result?.content];
+}
+
 /** 읽기 전용 HWPX 비교 뷰의 마운트 인자(host·콜백 제외). 본문 차례는 Python 이 그 내용에서 셈해 준 것을 그대로 넘긴다. */
 export function externalDocumentSpec(item: Obj, content: string, sectionEntries?: string[]) {
   return { content, fileName: String(item.name || ""), readOnly: true as const, sectionEntries };
@@ -134,7 +148,7 @@ function ExternalDocument({ controller, item, content, sectionEntries }: Props &
     let disposed = false;
     let release: (() => void) | undefined;
     void controller.guarded(async () => {
-      const handle = await mountRhwp({ host: host.current!, ...externalDocumentSpec(item, content, sectionEntries),
+      const handle = await rhwpMount.mount({ host: host.current!, ...externalDocumentSpec(item, content, sectionEntries), trackSelection: "never",
         onChanged: () => {}, onSelectionChanged: () => {}, onError: (error) => controller.update({ error: String(error) }) });
       if (disposed) handle.dispose(); else release = () => handle.dispose();
     });
@@ -240,8 +254,8 @@ function DocumentEditor({ controller, item, active }: Props & { item: Obj; activ
         const report = compatibilityReporter(controller, item.id, initial.revision);
         let handle: Awaited<ReturnType<typeof mountRhwp>>;
         try {
-          handle = await mountRhwp({ host: host.current, content: initial.content, fileName: item.name,
-          sectionEntries: initial.section_entries,
+          handle = await rhwpMount.mount({ host: host.current, content: initial.content, fileName: item.name,
+          sectionEntries: initial.section_entries, trackSelection: "visible",
           preflight: report.preflight,
           onCompatibility: (result) => { void controller.guarded(() => report.onCompatibility(result)); },
           onShortcut: (shortcut) => {
@@ -274,7 +288,8 @@ function DocumentEditor({ controller, item, active }: Props & { item: Obj; activ
     });
     return () => { disposed = true; detach?.(); release?.(); adapter.current = null; };
   }, [controller, item.id]);
-  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id)); }, [item.analysis, active]);
+  // 장식은 분석이 바뀔 때만 다시 보낸다 — 같은 분석의 재전송(push)은 같은 revision 이다(UX-05).
+  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id)); }, [item.analysis?.revision ?? item.analysis, active]);
   return h("div", { className: "authoring-document", hidden: !active, inert: !active || !!item.recovery, "aria-hidden": !active },
     h("div", { ref: host, className: "authoring-editor-host" }));
 }
@@ -392,14 +407,14 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
     let disposed = false;
     let release: (() => void) | undefined;
     if (item.media === "hwpx" && result?.content && output.current) void controller.guarded(async () => {
-      const editor = await mountRhwp({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", readOnly: true,
-        sectionEntries: result.section_entries,
+      const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", readOnly: true,
+        sectionEntries: result.section_entries, trackSelection: "visible",
         onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
         onError: (error) => controller.update({ error: String(error) }) });
       if (disposed) editor.dispose(); else release = () => editor.dispose();
     });
     return () => { disposed = true; release?.(); };
-  }, [result]);
+  }, trialViewerKey(item));
   return h("section", { className: "authoring-trial", "aria-label": "결과 시험" },
     h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다."), button("원문으로", () => controller.update({ trial: false }))),
     h("div", { className: "authoring-trial-input" },
@@ -456,6 +471,13 @@ function TxtTrialOutput({ controller, result, selected }: Props & { result?: Obj
   return h("pre", { tabIndex: 0, "aria-label": "읽기 전용 시험 결과" }, ...parts);
 }
 
+/** 닫힌 <details> 의 본문은 펼친 뒤에 그린다(UX-05) — 사용 위치가 많은 문서에서 보이지 않는 줄을 매번 짓지 않는다.
+ *  펼침 상태는 details 원소와 같은 수명의 컴포넌트 상태라, React 가 원소를 다시 쓰면 상태도 함께 남는다. */
+function LazyDetails({ summary, body }: { summary: ReactNode; body: () => ReactNode[] }) {
+  const [open, setOpen] = useState(false);
+  return h("details", { onToggle: (event: any) => setOpen(!!event.currentTarget.open) }, summary, ...(open ? body() : []));
+}
+
 const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "구조"]];
 
 export function AuthoringScreen({ controller }: Props): ReactNode {
@@ -465,6 +487,7 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
   const item = tabs.find((tab) => tab.id === snapshot.active_id);
   const root = useRef<HTMLDivElement>(null);
   const dock = dockTabs(item, view);
+  const counts = useMemo(() => problemCounts(item?.problems), [item?.problems]);
   useEffect(() => {
     root.current?.querySelector<HTMLElement>(view.panel === "properties" ? ".authoring-properties input" : view.panel === "search" ? '[name="query"]' : view.panel === "commands" || view.panel === "external" || view.panel === "problems" ? ".authoring-bottom button" : ".authoring-shell-placeholder")?.focus();
   }, [view.panel, view.commandType, view.focusPanel]);
@@ -678,13 +701,13 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: (event: any) => contextMenu(event) }, h("h2", null, "템플릿 구조"),
         ...(item.analysis?.slots || []).map((slot: Obj) => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }; return h("details", { open: true, key: slot.id },
-          h("summary", null, button([kindTag("slot"), slot.label || slot.id, badge(problemCount(item.problems, slot.id))], select(slotEntry), { "aria-label": outlineLabel("slot", slot, problemCount(item.problems, slot.id)), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
+          h("summary", null, button([kindTag("slot"), slot.label || slot.id, badge(counts.get(slot.id) || 0)], select(slotEntry), { "aria-label": outlineLabel("slot", slot, counts.get(slot.id) || 0), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
           ...(slot.options || []).map((option: Obj) => { const optionEntry = { ...option, ...option.location, kind: "option", slot_id: slot.id, option_id: option.id };
-            return button([kindTag("option"), option.label || option.id, badge(problemCount(item.problems, option.id))], select(optionEntry), { key: option.id, "aria-label": outlineLabel("option", option, problemCount(item.problems, option.id), slot.label || slot.id), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, optionEntry); } }); })); }),
-        h("h2", null, "필드"), ...(item.analysis?.fields || []).map((field: Obj) => { const fieldEntry = { ...field, kind: "field" }; return h("details", { key: field.name },
-          h("summary", null, button([`${field.name} · ${field.count}`, badge(problemCount(item.problems, field.name))], select(fieldEntry), { "aria-label": outlineLabel("field", field, problemCount(item.problems, field.name)), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
-          ...(field.occurrences || []).map((occ: Obj, index: number) => { const occEntry = { ...occ, name: field.name, kind: "field" };
-            return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, "aria-label": outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); })); })),
+            return button([kindTag("option"), option.label || option.id, badge(counts.get(option.id) || 0)], select(optionEntry), { key: option.id, "aria-label": outlineLabel("option", option, counts.get(option.id) || 0, slot.label || slot.id), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, optionEntry); } }); })); }),
+        h("h2", null, "필드"), ...(item.analysis?.fields || []).map((field: Obj) => { const fieldEntry = { ...field, kind: "field" }; return h(LazyDetails, { key: field.name,
+          summary: h("summary", null, button([`${field.name} · ${field.count}`, badge(counts.get(field.name) || 0)], select(fieldEntry), { "aria-label": outlineLabel("field", field, counts.get(field.name) || 0), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
+          body: () => (field.occurrences || []).map((occ: Obj, index: number) => { const occEntry = { ...occ, name: field.name, kind: "field" };
+            return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, "aria-label": outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); }) }); })),
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
         item && h("div", { className: "authoring-selection", role: "group", "aria-label": "현재 위치의 의미" },

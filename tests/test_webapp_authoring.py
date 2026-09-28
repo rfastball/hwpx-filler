@@ -964,3 +964,75 @@ def test_editor_mount_failure_locks_editing_and_keeps_the_guidance(tmp_path: Pat
     with pytest.raises(ValueError):
         ctrl.dispatch("rhwp_unverified", {"session_id": sid, "revision": reloaded["revision"],
                                           "detail": 3})
+
+
+def test_read_only_actions_do_not_repush_an_unchanged_snapshot(tmp_path: Path) -> None:
+    """UX-05: locate·commands 같은 읽기 동작은 같은 판을 다시 밀지 않는다 — 바뀐 동작만 나간다."""
+    pushes: list[dict] = []
+    ctrl = AuthoringController(lambda _name, snapshot: pushes.append(snapshot), directory=tmp_path / "home")
+    path = tmp_path / "example.txt"
+    path.write_text("이름 본문", encoding="utf-8")
+    sid = ctrl.open_path(path)["session_id"]
+    assert len(pushes) == 1
+    selection = {"start": 0, "end": 2}
+    ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": selection})
+    ctrl.dispatch("commands", {"session_id": sid, "revision": 0, "selection": selection, "context": {}})
+    ctrl.dispatch("search", {"session_id": sid, "revision": 0, "query": "이름", "kind": "body"})
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is False
+    assert len(pushes) == 1
+    # 읽기 동작이라도 상태를 바꿨으면 나간다 — 외부 변경을 발견한 check_external.
+    path.write_text("외부 편집", encoding="utf-8")
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is True
+    assert len(pushes) == 2
+    assert pushes[-1]["tabs"][0]["external_changed"] is True
+    ctrl.dispatch("check_external", {"session_id": sid})
+    assert len(pushes) == 2
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "{{이름}} 본문"})
+    assert len(pushes) == 3
+    assert pushes[-1]["tabs"][0]["revision"] == 1
+
+
+def test_undelivered_push_is_not_remembered_as_sent(tmp_path: Path) -> None:
+    """전달 실패로 판정된 push 는 지문을 남기지 않는다 — 다음 동작이 같은 판을 다시 보낸다."""
+    delivered: list[bool] = []
+    outcomes = iter([SimpleNamespace(ok=False), SimpleNamespace(ok=True), SimpleNamespace(ok=True)])
+
+    def sink(_name: str, _snapshot: dict) -> object:
+        outcome = next(outcomes)
+        delivered.append(outcome.ok)
+        return outcome
+
+    ctrl = AuthoringController(sink, directory=tmp_path / "home")
+    sid = ctrl.dispatch("new", {"media": "txt", "content": "본문"})["session_id"]
+    ctrl.dispatch("content", {"session_id": sid})
+    ctrl.dispatch("content", {"session_id": sid})
+    assert delivered == [False, True]
+
+
+def test_trial_result_and_analysis_carry_revisions_that_change_only_with_the_object(tmp_path: Path) -> None:
+    """UX-05: 시험 결과·분석의 revision 은 같은 객체의 재투영에서 그대로이고 새 객체에서만 오른다."""
+    ctrl = _controller(tmp_path)
+    fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
+    opened = ctrl.open_path(fixture)
+    sid = opened["session_id"]
+    ctrl.dispatch("rhwp_roundtrip_preflight", {"session_id": sid, "revision": 0, "content": opened["content"]})
+    name = opened["analysis"]["fields"][0]["name"]
+    assert _tab(ctrl, sid)["trial_result"] is None
+    analysis = _tab(ctrl, sid)["analysis"]["revision"]
+    assert "revision" not in ctrl.sessions[sid].analysis
+    ctrl.dispatch("trial_input", {"session_id": sid, "revision": 0, "values": {name: "검토값"}, "selected": {}})
+    result = ctrl.dispatch("trial", {"session_id": sid, "revision": 0})
+    assert result["revision"] == 0  # 디스패치 반환의 revision 은 여전히 문서 revision 이다.
+    first = _tab(ctrl, sid)["trial_result"]
+    assert first["content"] == result["content"]
+    assert "revision" not in (ctrl.sessions[sid].trial_result or {})
+    assert _tab(ctrl, sid)["trial_result"]["revision"] == first["revision"]
+    assert _tab(ctrl, sid)["analysis"]["revision"] == analysis
+    ctrl.dispatch("trial", {"session_id": sid, "revision": 0})
+    second = _tab(ctrl, sid)["trial_result"]["revision"]
+    assert second > first["revision"]
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "본문"})["session_id"]
+    before = _tab(ctrl, txt)["analysis"]["revision"]
+    ctrl.dispatch("update", {"session_id": txt, "revision": 0, "content": "{{이름}}"})
+    assert _tab(ctrl, txt)["analysis"]["revision"] > before
+    assert _tab(ctrl, txt)["analysis"]["revision"] != _tab(ctrl, sid)["analysis"]["revision"]

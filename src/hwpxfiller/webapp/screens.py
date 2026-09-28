@@ -30,8 +30,9 @@ from ..domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS  # 계약 목록 �
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..viewmodel.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
-# 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
-PushSink = Callable[[str, dict], None]
+# 푸시 sink: (화면 id, 스냅샷 dict) → 전달 판정(없으면 None). 앱=evaluate_js, 테스트=수집.
+# 판정의 `ok` 가 False 이면 전달되지 않은 것이다 — 같은 판을 다시 보내야 하는 쪽이 읽는다.
+PushSink = Callable[[str, dict], object]
 
 # 템플릿 bytes 변이 통지 sink: (kind, path) → None. 통지하는 쪽(tpl 채널)과 받는 쪽(편집
 # 세션 재정산)이 **같은 어휘**를 써야 해서 여기 공용에 둔다(#320).

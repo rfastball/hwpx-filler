@@ -701,7 +701,10 @@ test("§10: screen readers get the field name, use count, parent item and proble
   assert.ok(markup.includes('aria-label="필드 · 공고명 · 사용 위치 2곳 · 문제 1"'));
   assert.ok(markup.includes('aria-label="항목 · 문서"'));
   assert.ok(markup.includes('aria-label="선택 · 견적서 · 상위 항목 문서 · 문제 1"'));
-  assert.ok(markup.includes('aria-label="공고명 · 사용 위치 1/2 · 공고명: 2026"') && markup.includes('aria-label="공고명 · 사용 위치 2/2"'));
+  // 사용 위치 줄은 필드 줄을 펼친 뒤에 선다(UX-05) — 펼친 뒤의 이름은 authoring_render.test.js 가 실제 커밋으로 잰다.
+  assert.ok(!markup.includes("사용 위치 1/2"), "접힌 필드 줄은 사용 위치 줄을 짓지 않는다");
+  assert.equal(outlineLabel("occurrence", { name: "공고명", index: 1, total: 2, context: "공고명: 2026" }), "공고명 · 사용 위치 1/2 · 공고명: 2026");
+  assert.equal(outlineLabel("occurrence", { name: "공고명", index: 2, total: 2 }), "공고명 · 사용 위치 2/2");
   controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field" });
   markup = render(controller);
   assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title">'));
@@ -938,17 +941,6 @@ test("#1025 §6.3: search shows Python's summary above the hits and tags each hi
   markup = render(controller);
   assert.ok(markup.includes('<p class="authoring-search-summary" role="status">a.txt · 총 3건 · 본문 1 · 필드 1 · 항목·선택 1</p>'));
   assert.ok(markup.includes('<p class="authoring-search-summary" role="status">b.txt · 총 1건 · 본문 1 · 필드 0 · 항목·선택 0</p>'));
-});
-
-test("#1025 §7.2: the outline occurrence label and its accessible name use Python's normalized context, never the raw field command", async () => {
-  const { controller, snapshot } = harness();
-  snapshot.tabs[0].analysis = { slots: [], fields: [{ name: "진행상태", count: 1, occurrences: [{ entry: "Contents/section0.xml", paragraph: 0, context: "[진행상태] - 누름틀",
-    raw: { text: "9Clickhere:set:50:Direction:wstring:8:{{진행상태}} HelpState:wstring:0:  {{진행상태}}{{진행상태}} - 누름틀" } }] }] };
-  await controller.activate("a");
-  const markup = render(controller);
-  assert.ok(markup.includes(">1. [진행상태] - 누름틀</button>"));
-  assert.ok(markup.includes('aria-label="진행상태 · 사용 위치 1/1 · [진행상태] - 누름틀"'));
-  assert.ok(!markup.includes("Clickhere"), "원문 명령 표기는 구조 목록에 서지 않는다");
 });
 
 test("#1025 §13: the empty workbench has one sentence, the header's two actions and the recoverable drafts as a list", async () => {
