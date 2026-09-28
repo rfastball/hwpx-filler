@@ -37,6 +37,10 @@ if (-not $alreadyPatched) {
     # applied patch in place; reset only this marked checkout before reapplying.
     & git -C $source reset --hard $commit | Out-Null
     if ($LASTEXITCODE) { throw 'rhwp cache reset failed' }
+    # Files the patch adds survive a reset as untracked files and would block reapplying it.
+    # Ignored build outputs (node_modules, target, pkg) and the ownership marker stay.
+    & git -C $source clean -fdq -e .rhwp-builder-owned
+    if ($LASTEXITCODE) { throw 'rhwp cache clean failed' }
     & git -C $source apply --check $patch
     if ($LASTEXITCODE) { throw 'rhwp patch does not apply to pinned source' }
     & git -C $source apply $patch
