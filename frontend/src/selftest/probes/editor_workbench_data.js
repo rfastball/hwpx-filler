@@ -582,7 +582,9 @@ async function probeAuthoringA11y(ctx, out) {
   step("End", "마지막 제어(확대)");
   const zoom = nav.active().value;
   await press("ArrowRight");
-  out.a11y_toolbar_wrap = nav.active() === entry && doc.querySelector('#scr-authoring .authoring-toolbar select').value === zoom;
+  // End 뒤의 → 는 첫 **활성** 제어로 감싸 돈다(입구는 마지막 초점 자리라 첫 제어와 다를 수 있다).
+  out.a11y_toolbar_wrap = nav.active() === doc.querySelector('#scr-authoring .authoring-toolbar [data-rove]:not([disabled])')
+    && doc.querySelector('#scr-authoring .authoring-toolbar select').value === zoom;
   step("ArrowRight", "처음으로 감싸 돈다 — 확대 값은 그대로");
 
   // ③ 하단 독 탭(APG tabs) — Enter 로 펼치면 패널 첫 제어로, Escape 는 그 탭으로 돌아온다
