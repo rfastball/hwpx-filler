@@ -451,7 +451,9 @@ test("UX-04 APG tabs (dock): arrows rove the dock tabs, Enter opens a panel and 
   assert.equal(dockTab("trial").getAttribute("tabindex"), "0", "펼친 탭이 입구");
   focusOn(env, dockTab("trial"));
   press(env, "ArrowLeft");
-  assert.equal(env.document.activeElement, dockTab("impact"));
+  // 연결 작업이 없는 문서라 「변경 영향·작업 적용」 문맥 탭이 없다(NG-09) — 시험 앞은 원문 표기다.
+  assert.equal(dockTab("impact"), null);
+  assert.equal(env.document.activeElement, dockTab("raw"));
   press(env, "Home");
   assert.equal(env.document.activeElement, dockTab("problems"));
   fire(env, dockTab("problems"), "click");                // Enter·Space 는 button 의 click 이다
@@ -715,7 +717,7 @@ test("UX-09: the structure view is a document spine — slots hold options, uses
   assert.deepEqual(childItems(overseas).map(labelOf), ["필드 · 환율 · 사용 위치 1곳", "필드 · 단가 · 같은 필드, 2/2"], "갈래 안의 사용 위치도 문서 순서다");
   assert.equal(env.container.querySelector("#authoring-outline-fields").textContent, "필드 4", "필드 탭은 필드 수를 싣는다");
   assert.ok(env.container.querySelector("#authoring-outline-fields-panel").hasAttribute("hidden"), "고르지 않은 보기는 숨는다");
-  assert.ok(!env.container.textContent.includes("항목·선택이 없습니다."), "항목이 있으면 빈 상태 안내가 없다");
+  assert.equal(env.container.querySelector("#authoring-outline-structure-panel .authoring-outline-empty"), null, "항목이 있으면 빈 상태 안내가 없다");
   env.root.unmount();
 });
 
@@ -776,11 +778,26 @@ test("UX-09: the filter narrows both views to matching rows and keeps their ance
   env.root.unmount();
 });
 
-test("UX-09: without slots or fields each view says what to do next", async () => {
+test("NG-01: without slots or fields both views point at 필드로 만들기; the 항목 sentence is gone everywhere", async () => {
   const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried", analysis: { revision: 1, slots: [], fields: [] } });
-  assert.equal(env.container.querySelector("#authoring-outline-structure-panel .authoring-outline-empty").textContent, "항목·선택이 없습니다. 문단을 고르고 「항목으로 만들기」를 누르세요.");
-  assert.equal(env.container.querySelector("#authoring-outline-fields-panel .authoring-outline-empty").textContent, "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.");
+  const fields = "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.";
+  // 기본 탭(구조)이 첫 행동인 필드 만들기를 가리킨다 — 필드 탭도 같은 문장이다.
+  assert.equal(env.container.querySelector("#authoring-outline-structure").getAttribute("aria-selected"), "true", "구조가 기본 탭이다");
+  assert.equal(env.container.querySelector("#authoring-outline-structure-panel .authoring-outline-empty").textContent, fields);
+  assert.equal(env.container.querySelector("#authoring-outline-fields-panel .authoring-outline-empty").textContent, fields);
   assert.equal(env.container.querySelector('[role="tree"]'), null, "빈 목록은 tree 를 세우지 않는다");
+  assert.ok(!env.container.textContent.includes("항목·선택이 없습니다"), "항목 안내 문장은 어디에도 그려지지 않는다");
+  env.root.unmount();
+});
+
+test("NG-01: fields without slots put no sentence in the 구조 view — the spine shows the field uses; with slots the tree stands", async () => {
+  // hwpxTab 은 필드 1개(사용 위치 2곳)·항목 0개다.
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  const structure = env.container.querySelector("#authoring-outline-structure-panel");
+  assert.equal(structure.querySelector(".authoring-outline-empty"), null, "필드가 있고 항목이 없으면 구조 탭의 안내 문장이 0개다");
+  assert.ok(structure.querySelector('[role="tree"]'), "척추는 필드 사용 위치를 그린다");
+  assert.equal(env.container.querySelector("#authoring-outline-fields-panel .authoring-outline-empty"), null, "필드가 있으면 필드 탭도 문장이 없다");
+  assert.ok(!env.container.textContent.includes("항목·선택이 없습니다"));
   env.root.unmount();
 });
 
@@ -883,6 +900,111 @@ test("IDE-01 P-15: F2 where no rename is possible leaves the properties panel sh
   assert.equal(note.getAttribute("title"), "필드를 선택하세요.");
   assert.equal(env.container.querySelector(".authoring-live").textContent, "필드를 선택하세요.", "단일 live region 이 한 번 읽는다");
   assert.equal(env.document.activeElement, toolbar, "초점은 그대로다");
+  env.root.unmount();
+});
+
+test("NG-11: a dimmed create button takes focus and a press, runs nothing and puts Python's reason on the location row; the dock stays; the next caret move clears it", async () => {
+  const commands = [{ type: "create_field", enabled: false, reason: "선택 범위에 기존 필드가 포함되어 있습니다.", alternative: null },
+    { type: "create_slot", enabled: true, reason: null, alternative: null },
+    { type: "create_option", enabled: false, reason: "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요.", alternative: null }];
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  env.flushSync(() => env.controller.update({ commands, panel: "problems", dock: "", trial: false }));
+  await settle();
+  const toolbar = env.container.querySelector('[role="toolbar"]');
+  const create = (label) => [...toolbar.querySelectorAll("button")].find((node) => node.textContent === label);
+  const dimmed = create("필드로 만들기");
+  assert.equal(dimmed.getAttribute("aria-disabled"), "true", "흐린 단추는 aria-disabled 다");
+  assert.ok(!dimmed.hasAttribute("disabled"), "disabled 속성이 없어 초점과 누름을 받는다");
+  assert.equal(dimmed.getAttribute("title"), "선택 범위에 기존 필드가 포함되어 있습니다.", "hover 사유는 그대로다");
+  assert.equal(create("항목으로 만들기").getAttribute("aria-disabled"), null, "켜진 단추는 표지가 없다");
+  // 도구 막대 roving 이 흐린 단추에도 초점을 준다 — 앞 단추(모드 「구조」)에서 → 한 번이면 그 단추다.
+  focusOn(env, toolbar.querySelector('[data-rove="mode-structure"]'));
+  press(env, "ArrowRight");
+  assert.equal(env.document.activeElement, dimmed, "→ 가 흐린 「필드로 만들기」에 선다");
+  fire(env, dimmed, "click");
+  await settle();
+  const view = env.controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "problems", "view.panel 은 그대로다 — 명령을 실행하지 않았다");
+  assert.equal(view.commandType, undefined, "명령을 고르지 않았다");
+  assert.equal(env.container.querySelector(".authoring-properties"), null, "속성 패널을 열지 않는다");
+  assert.equal(env.container.querySelector("#authoring-dock-panel").getAttribute("aria-labelledby"), "authoring-dock-tab-problems", "펼친 독 탭이 남는다");
+  const note = env.container.querySelector(".authoring-selection .authoring-selection-note");
+  assert.equal(note.textContent, "선택 범위에 기존 필드가 포함되어 있습니다.", "Python 의 사유 문장 그대로다");
+  assert.equal(env.container.querySelector(".authoring-live").textContent, "선택 범위에 기존 필드가 포함되어 있습니다.", "단일 live region 이 한 번 읽는다");
+  assert.equal(env.document.activeElement, dimmed, "초점은 누른 단추에 남는다");
+  // 다음 캐럿 이동에서 걷힌다(IDE-01 규칙).
+  await env.controller.selection("a", { entry: "Contents/section0.xml", paragraph: 1, start: 0, end: 0 });
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-selection-note"), null, "캐럿이 움직이면 메모가 걷힌다");
+  // 켜진 단추는 지금처럼 속성 패널을 그 명령으로 연다.
+  env.flushSync(() => env.controller.update({ commands }));
+  fire(env, create("항목으로 만들기"), "click");
+  await settle();
+  assert.equal(env.controller.viewModel.getSnapshot().panel, "properties");
+  assert.equal(env.controller.viewModel.getSnapshot().commandType, "create_slot");
+  env.root.unmount();
+});
+
+test("NG-11: while verdicts are pending the create buttons stay disabled with no reason and out of the roving order", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  env.flushSync(() => env.controller.update({ commands: [] }));
+  await settle();
+  const toolbar = env.container.querySelector('[role="toolbar"]');
+  for (const label of ["필드로 만들기", "항목으로 만들기", "선택으로 만들기"]) {
+    const node = [...toolbar.querySelectorAll("button")].find((entry) => entry.textContent === label);
+    assert.ok(node.hasAttribute("disabled"), `${label}: 판정 전에는 disabled`);
+    assert.equal(node.getAttribute("title"), null, `${label}: 판정 전에는 사유가 없다`);
+    fire(env, node, "click");
+  }
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-selection-note"), null, "판정 전 누름은 무동작이다");
+  assert.equal(env.container.querySelector(".authoring-properties"), null);
+  focusOn(env, toolbar.querySelector('[data-rove="mode-structure"]'));
+  press(env, "ArrowRight");
+  assert.equal(env.document.activeElement.getAttribute("data-rove"), "more", "판정 전 만들기 단추는 roving 이 건너뛴다");
+  env.root.unmount();
+});
+
+test("NG-06: rows picked inside the dock (문제·검색·결과 시험) keep that dock tab and never open properties; an outline row still does", async () => {
+  const place = { entry: "Contents/section0.xml", paragraph: 1, start: 0, end: 2 };
+  const problem = { severity: "error", category: "structure", message: "끝 표지가 없습니다.", target: "s", location: place, actions: [{ kind: "navigate", label: "원문으로 이동" }] };
+  const tab = { ...hwpxTab(), problems: [problem],
+    trial_result: { ...hwpxTab().trial_result, occurrences: [{ name: "이름", value: "홍길동", source: { entry: "Contents/section0.xml", paragraph: 0, start: 0, end: 2 } }] } };
+  const env = await boot(tab, [], (action) => action === "locate" ? { selected: null, matches: [{ kind: "field", name: "이름", location: place }], context: {} } : {});
+  const dockPanel = () => env.container.querySelector("#authoring-dock-panel")?.getAttribute("aria-labelledby");
+  // 문제 행
+  env.flushSync(() => env.controller.update({ panel: "problems" }));
+  await settle();
+  fire(env, env.container.querySelector('.authoring-bottom[aria-label="문제"] .authoring-row'), "click");
+  await settle();
+  let view = env.controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "problems", "문제 행을 누른 뒤에도 독 활성 탭이 「문제」다");
+  assert.equal(dockPanel(), "authoring-dock-tab-problems");
+  assert.equal(env.container.querySelector(".authoring-properties"), null, "속성 패널을 열지 않는다");
+  assert.deepEqual({ entry: view.selection.entry, paragraph: view.selection.paragraph }, { entry: place.entry, paragraph: place.paragraph }, "편집면 선택은 문제 위치로 옮겨 간다");
+  assert.ok(env.container.querySelector(".authoring-selection .authoring-crumb[aria-current]"), "위치 줄(브레드크럼)은 새 자리를 가리킨다");
+  // 검색 적중
+  env.flushSync(() => env.controller.update({ panel: "search", hits: [{ kind: "text", context: "첫째", document: "a.hwpx", ...place }] }));
+  await settle();
+  fire(env, env.container.querySelector('.authoring-bottom[aria-label="검색"] .authoring-row'), "click");
+  await settle();
+  view = env.controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "search", "검색 적중을 누른 뒤에도 검색 탭이 남는다");
+  assert.equal(dockPanel(), "authoring-dock-tab-search");
+  assert.equal(env.container.querySelector(".authoring-properties"), null);
+  // 결과 시험 추적 행
+  env.flushSync(() => env.controller.update({ panel: "", trial: true, dock: "trial" }));
+  await settle();
+  fire(env, env.container.querySelector('.authoring-trial ul[aria-label="출력·제외 이유"] .authoring-row'), "click");
+  await settle();
+  view = env.controller.viewModel.getSnapshot();
+  assert.equal(view.panel, "", "시험 추적 행은 속성 패널을 열지 않는다");
+  assert.equal(dockPanel(), "authoring-dock-tab-trial", "결과 시험 탭이 남는다");
+  assert.deepEqual({ entry: view.selection.entry, paragraph: view.selection.paragraph }, { entry: "Contents/section0.xml", paragraph: 0 });
+  // 구조 목록 줄은 지금처럼 속성 패널을 연다.
+  fire(env, inPanel(env, "structure", "treeitem", "필드 · 이름").querySelector(".authoring-tree-row"), "click");
+  await settle();
+  assert.equal(env.controller.viewModel.getSnapshot().panel, "properties", "구조 행 누름은 속성 패널을 연다");
   env.root.unmount();
 });
 

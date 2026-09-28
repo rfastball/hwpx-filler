@@ -527,11 +527,12 @@ test("F24/F12/F13: problems drive the outline badges, the panel's text-only seve
   assert.ok(markup.includes('<button type="button" class="authoring-status-link">구조 오류 1개 · 경고 1개</button>') && markup.includes("<span>저장됨 · 초안</span>"));
   assert.ok(markup.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="0" aria-selected="true" aria-controls="authoring-dock-panel">문제 <span class="authoring-badge">2</span></button>'));
   const recorded = [];
-  const stub = { select: async (target) => { recorded.push(["select", target]); }, preview: async (command) => { recorded.push(["preview", command]); } };
+  const stub = { select: async (target, options) => { recorded.push(["select", target, options]); }, preview: async (command) => { recorded.push(["preview", command]); } };
   const [problem] = snapshot.tabs[0].problems;
   await problemAction(stub, snapshot.tabs[0], problem, problem.actions[0]);
   await problemAction(stub, snapshot.tabs[0], problem, problem.actions[1]);
-  assert.deepEqual(recorded, [["select", { source_revision: 0, start: 4, end: 9, target: "quote" }], ["preview", { type: "repair_marker", id: "quote" }]]);
+  // 옮기기는 독에서 시작한 선택이다(NG-06) — 문제 탭을 남기는 keepDock 으로 부른다.
+  assert.deepEqual(recorded, [["select", { source_revision: 0, start: 4, end: 9, target: "quote" }, { keepDock: true }], ["preview", { type: "repair_marker", id: "quote" }]]);
 });
 
 test("P09/AC14: the footer separates save state from readiness, and a save notice appears inline until the next edit", async () => {
@@ -551,13 +552,16 @@ test("P09/AC14: the footer separates save state from readiness, and a save notic
 });
 
 test("F38/F19/U11: the impact panel renders structure_delta·identifier changes·unverified count·per-job status, and usable=false disables 적용 영향 확인 with the reason", async () => {
-  const { controller } = harness((action) => action === "impact" ? { available: true, usable: false, save_required: false, content_changed_since_save: true, unverified_jobs: ["옛 작업"],
+  const { controller, snapshot } = harness((action) => action === "impact" ? { available: true, usable: false, save_required: false, content_changed_since_save: true, unverified_jobs: ["옛 작업"],
     structure_delta: { added_slots: ["특약"], removed_slots: [], added_options: [{ id: "q", label: "견적서" }], removed_options: [], renamed: [{ kind: "slot", from: "doc", to: "document" }] },
     identifier_changes: [{ kind: "slot", from: "doc", to: "document" }],
     jobs: [{ name: "월간 공고", added_fields: ["사업명"], removed_fields: ["공고명"], change_status: "ready", blocked_reason: "템플릿을 저장한 뒤 확인할 수 있습니다." }] } : {});
+  // 탭은 연결 작업이 있는(또는 확인할 수 없는) 문서에만 선다(NG-09) — Python 의 has_linked_jobs 를 읽는다.
+  snapshot.tabs[0].has_linked_jobs = true;
   await controller.activate("a");
   await controller.impact();
   const markup = render(controller);
+  assert.ok(dockOf(markup).includes('id="authoring-dock-tab-impact" class="authoring-dock-tab" tabindex="0" aria-selected="true" aria-controls="authoring-dock-panel">변경 영향·작업 적용</button>'));
   assert.ok(markup.includes("<p>추가 항목: 특약</p><p>추가 선택: 견적서</p>"));
   assert.ok(markup.includes('<ul aria-label="식별자 변경"><li>항목 · doc → document</li></ul>'));
   assert.ok(markup.includes("<p>식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다.</p>"));
@@ -937,7 +941,12 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
   assert.ok(dock.startsWith('<section class="authoring-dock" role="region" aria-label="보조 패널">'), "닫힌 독도 탭 줄로 남는다");
   assert.ok(dock.includes('<div class="authoring-dock-tabs" role="tablist" aria-label="보조 패널">'));
   assert.ok(dock.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="0" aria-selected="false">문제 <span class="authoring-badge">2</span></button>'), "펼친 탭이 없으면 첫 탭이 Tab 의 입구다");
-  for (const label of ["검색", "원문 표기", "변경 영향·작업 적용", "결과 시험"]) assert.ok(dock.includes(`aria-selected="false">${label}</button>`), label);
+  for (const label of ["검색", "원문 표기", "결과 시험"]) assert.ok(dock.includes(`aria-selected="false">${label}</button>`), label);
+  // 연결 작업이 없는 문서에는 「변경 영향·작업 적용」 탭이 없다(NG-09 · Python 의 has_linked_jobs).
+  assert.ok(!dock.includes("변경 영향·작업 적용"), "연결 작업이 없으면 변경 영향 탭은 서지 않는다");
+  snapshot.tabs[0].has_linked_jobs = true;
+  assert.ok(dockOf(render(controller)).includes('aria-selected="false">변경 영향·작업 적용</button>'), "연결 작업이 있으면 선다");
+  delete snapshot.tabs[0].has_linked_jobs;
   assert.equal(count(dock, 'role="tabpanel"'), 0);
   assert.ok(!dock.includes('aria-label="최대화"') && !dock.includes('aria-label="닫기"'), "펼친 탭이 없으면 크기·닫기 동작도 없다");
   // 시험과 문제가 함께 열려 있어도 보이는 것은 하나 — 방금 연 패널(문제)이다.
@@ -962,7 +971,14 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
 
 test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then alerts; a closed dock does not reopen for an old alert", () => {
   const item = { id: "a", recovery: true, external_changed: true };
-  assert.deepEqual(dockTabs(item, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "impact", "trial", "external_changed", "recovery"]);
+  assert.deepEqual(dockTabs(item, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "trial", "external_changed", "recovery"]);
+  // 「변경 영향·작업 적용」은 문맥 탭이다(NG-09): Python 이 연결 작업이 있다고(또는 확인할 수 없다고) 투영한 문서에만 서고,
+  // 자리는 원문 표기와 결과 시험 사이다. 탭이 사라지면 그 패널이 열려 있어도 다음 대체 탭이 선다(문맥 탭의 퇴장 규칙).
+  const linked = { ...item, has_linked_jobs: true };
+  assert.deepEqual(dockTabs(linked, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "impact", "trial", "external_changed", "recovery"]);
+  assert.equal(dockTabs(linked, { panel: "impact" }).active, "impact");
+  assert.equal(dockTabs({ ...item, has_linked_jobs: false }, { panel: "impact" }).active, "recovery");
+  assert.equal(dockTabs({ id: "a" }, { panel: "impact" }).active, "");
   assert.equal(dockTabs(item, { panel: "" }).active, "recovery");
   assert.equal(dockTabs(item, { panel: "search" }).active, "search");
   assert.equal(dockTabs(item, { panel: "", dock: "external_changed" }).active, "external_changed");
@@ -1188,13 +1204,19 @@ test("#1025 §13: the empty workbench has one sentence, the 파일 menu's two ac
   assert.deepEqual(calls.at(-1), { method: "open_authoring_document", args: ["", false] }, "「파일」 메뉴의 「문서 열기」와 같은 실행 경로");
 });
 
-test("#1025 §13: opening a general document shows Python's first-field notice once, and the next edit clears it", async () => {
-  const hint = "변경할 문구를 선택해 필드로 만들어 보세요.";
+test("NG-01: opening a general document puts no first-field notice up (retired); the open response's notice slot still shows a Python sentence once", async () => {
+  // 처음 여는 일반 문서의 첫 안내는 퇴역했다(결정 D) — Python 은 notice 칸을 비워 보내고 표면은 아무것도 세우지 않는다.
+  const quiet = harness(() => ({}), {}, (method) => method === "open_authoring_document" ? { session_id: "b", revision: 0, notice: null } : null);
+  await quiet.controller.activate("a");
+  await quiet.controller.openFile();
+  assert.equal(quiet.controller.viewModel.getSnapshot().notice, "", "여는 응답에 알림이 없으면 알림 줄이 서지 않는다");
+  // 알림 칸 자체는 남는다: Python 이 문장을 주면 한 번 서고 다음 편집에서 걷힌다.
+  const sentence = "초안은 저장되었습니다. 사용 전에 구조 오류 1개를 확인하세요.";
   const { controller } = harness((action) => action === "update" ? { revision: 1 } : {}, {},
-    (method) => method === "open_authoring_document" ? { session_id: "b", revision: 0, notice: hint } : null);
+    (method) => method === "open_authoring_document" ? { session_id: "b", revision: 0, notice: sentence } : null);
   await controller.activate("a");
   await controller.openFile();
-  assert.equal(controller.viewModel.getSnapshot().notice, hint);
+  assert.equal(controller.viewModel.getSnapshot().notice, sentence);
   controller.changed("b", "edited");
   assert.equal(controller.viewModel.getSnapshot().notice, "");
   await controller.flush("b");

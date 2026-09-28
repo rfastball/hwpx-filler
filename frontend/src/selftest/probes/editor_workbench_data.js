@@ -442,6 +442,18 @@ async function probeAuthoringKeyboard(ctx, out) {
     ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
   const contextText = () => textOf(doc.querySelector(".authoring-properties .authoring-context")).trim();
   const panelGone = () => !doc.querySelector(".authoring-properties");
+  /* 편집면 캐럿이 선 줄(0부터) — CodeMirror 는 초점을 쥔 동안 제 선택을 DOM 선택으로 쓴다(activeElement 가 편집면이면
+     창 초점과 무관하다). 속성 패널을 열지 않는 선택(NG-06 keepDock)의 이동은 이 줄로 잰다. */
+  const caretLine = () => {
+    const content = doc.querySelector(".authoring-document:not([hidden]) .cm-content");
+    const picked = doc.getSelection ? doc.getSelection() : null;
+    if (!content || !picked || !picked.anchorNode || !content.contains(picked.anchorNode)) return -1;
+    let node = picked.anchorNode;
+    if (node === content) node = content.childNodes[Math.min(picked.anchorOffset, content.childNodes.length - 1)];
+    const el = node && (node.nodeType === 3 ? node.parentElement : node);
+    const line = el && el.closest ? el.closest(".cm-line") : null;
+    return line ? Array.prototype.indexOf.call(content.querySelectorAll(".cm-line"), line) : -1;
+  };
   const snap = await service(ctx, "Bridge").initial("authoring");
   const tab = (((snap || {}).tabs) || []).find((item) => item.id === (snap || {}).active_id) || {};
   const field = ((((tab.analysis || {}).fields) || [])[0] || {});
@@ -515,15 +527,36 @@ async function probeAuthoringKeyboard(ctx, out) {
     out.kbd_problem_severity = textOf(problemRow && problemRow.querySelector(".authoring-badge")).trim();
     out.kbd_problem_category = textOf(problemRow && problemRow.querySelector(".authoring-problem-category")).trim();
     if (!out.kbd_problem_focus) return;
+    /* 문제 행의 Enter 는 독에서 시작한 선택이다(NG-06 keepDock): 편집면 선택이 문제 위치로 옮겨 가고, 독의 활성 탭은
+       「문제」 그대로이며 속성 패널은 열리지 않는다. 이동은 편집면 캐럿이 선 줄로 잰다(문제 위치는 Python 스냅샷의 줄). */
     pressKey(ctx, "Enter");
-    out.kbd_problem_expected = range(problem.location);
+    out.kbd_problem_expected_line = Number((problem.location || {}).line);
     out.kbd_problem_moved = await waitFor(
-      ctx, () => contextText().indexOf(range(problem.location)) >= 0, 40, 50);
-    out.kbd_problem_context = contextText();
+      ctx, () => caretLine() === out.kbd_problem_expected_line, 40, 50);
+    out.kbd_problem_caret_line = caretLine();
+    await settleRender(ctx);
+    out.kbd_problem_dock_kept = problemsTab.getAttribute("aria-selected") === "true"
+      && !!doc.querySelector('.authoring-dock [role="tabpanel"] .authoring-bottom[aria-label="문제"]');
+    out.kbd_problem_no_properties = panelGone();
 
     /* 「이전 위치로」는 도구 막대 「더보기」 메뉴 안에 있다: 더보기 → Enter → 메뉴 첫 항목에 초점 →
        ↓ 로 「이전 위치로」 → Enter. 도구 막대와 메뉴는 APG toolbar·menu 라 Tab 이 아니라 방향키로 옮긴다. */
     out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
+    /* 흐린 만들기 단추(NG-11): 도구 막대 roving 이 aria-disabled 단추에도 선다. Enter(누름)는 명령을 실행하지 않고
+       위치 줄 메모에 그 판정의 Python 사유를 세운다 — hover 사유(title)와 같은 문장이다. 이 문서는 닫히지 않은
+       항목(구조 오류)이 있어 「항목으로 만들기」가 어느 자리에서나 불가다. 펼친 독 탭(문제)과 초점은 그대로다. */
+    const dimmedSlot = (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "항목으로 만들기";
+    out.kbd_dimmed_reached = nav.arrowTo(dimmedSlot, "ArrowRight", 20);
+    if (!out.kbd_dimmed_reached) return;
+    const dimmed = nav.active();
+    out.kbd_dimmed_aria = dimmed.getAttribute("aria-disabled") === "true" && !dimmed.disabled;
+    out.kbd_dimmed_title = String(dimmed.getAttribute("title") || "");
+    const noteText = () => textOf(doc.querySelector("#scr-authoring .authoring-selection-note")).trim();
+    pressKey(ctx, "Enter");
+    out.kbd_dimmed_note = await waitFor(ctx, () => !!noteText() && noteText() === out.kbd_dimmed_title, 20, 50);
+    out.kbd_dimmed_note_text = noteText();
+    out.kbd_dimmed_no_panel = panelGone() && problemsTab.getAttribute("aria-selected") === "true";
+    out.kbd_dimmed_focus_kept = nav.active() === dimmed;
     out.kbd_more_button = nav.arrowTo(
       (el) => !!el && !!el.closest(".authoring-toolbar") && nav.nameOf(el) === "더보기", "ArrowRight", 20);
     if (!out.kbd_more_button) return;
@@ -537,10 +570,15 @@ async function probeAuthoringKeyboard(ctx, out) {
     if (!out.kbd_back_button) return;
     pressKey(ctx, "Enter");
     out.kbd_more_menu_closed = await waitFor(ctx, () => !moreMenu(), 20, 50);
-    out.kbd_back_expected = range(occurrence);
-    out.kbd_back_restored = await waitFor(ctx, () => contextText().indexOf(range(occurrence)) >= 0, 40, 50);
-    out.kbd_back_context = contextText();
+    /* 복귀는 편집면 캐럿이 원래 줄(필드 사용 위치)로 돌아온 것으로 잰다. 이어서 F2 로 속성 패널을 열어 그 자리의
+       문맥 줄이 원시 offset 이 아니라 사람이 읽는 줄 번호(「N행」)임을 되읽는다(UX-10 R2). */
+    out.kbd_back_expected_line = Number(occurrence.line);
+    out.kbd_back_restored = await waitFor(ctx, () => caretLine() === out.kbd_back_expected_line, 40, 50);
     out.kbd_back_focus_editor = await waitFor(ctx, () => nav.within(".cm-editor"), 20, 50);
+    out.kbd_back_expected = range(occurrence);
+    pressKey(ctx, "F2");
+    out.kbd_back_properties = await waitFor(ctx, () => !!nameInput() && contextText().indexOf(range(occurrence)) >= 0, 40, 50);
+    out.kbd_back_context = contextText();
     pressKey(ctx, "Escape");
     await waitFor(ctx, panelGone, 20, 50);
     out.kbd_error_band = textOf(doc.querySelector("#scr-authoring .authoring-shell > div.authoring-error")).trim();
@@ -611,6 +649,26 @@ async function probeAuthoringA11y(ctx, out) {
   out.a11y_toolbar_wrap = nav.active() === doc.querySelector('#scr-authoring .authoring-toolbar [data-rove]:not([disabled])')
     && doc.querySelector('#scr-authoring .authoring-toolbar [data-rove="trial"]').getAttribute("aria-pressed") === pressed;
   step("ArrowRight", "처음으로 감싸 돈다 — 결과 시험은 눌리지 않는다");
+  /* 흐린 만들기 단추(NG-11)는 roving 에 든다: 처음부터 → 로 끝(결과 시험)까지 걸으면 aria-disabled 만들기 단추를 모두
+     지나고, disabled 제어(판정 전·실행 취소 불가)는 하나도 지나지 않는다. 걷기는 옮기기만 하고 누르지 않는다. */
+  const visited = [];
+  for (let i = 0; i < 20; i += 1) {
+    const key = nav.active() && nav.active().getAttribute("data-rove");
+    if (!key || visited.indexOf(key) >= 0) break;
+    visited.push(key);
+    if (key === "trial") break;
+    await press("ArrowRight");
+  }
+  out.a11y_toolbar_visits = visited;
+  const roveKeys = (selector) => Array.prototype.map.call(
+    doc.querySelectorAll(`#scr-authoring .authoring-toolbar ${selector}`), (el) => el.getAttribute("data-rove"));
+  out.a11y_toolbar_dimmed = roveKeys('[data-rove][aria-disabled="true"]:not([disabled])');
+  out.a11y_toolbar_disabled = roveKeys("[data-rove][disabled]");
+  out.a11y_toolbar_dimmed_in_order = out.a11y_toolbar_dimmed.length > 0
+    && out.a11y_toolbar_dimmed.every((key) => visited.indexOf(key) >= 0)
+    && out.a11y_toolbar_disabled.every((key) => visited.indexOf(key) < 0)
+    && visited[visited.length - 1] === "trial";
+  step("ArrowRight…", "흐린 만들기 단추도 차례에 든다 — disabled 제어는 건너뛴다");
 
   // ③ 하단 독 탭(APG tabs) — Enter 로 펼치면 패널 첫 제어로, Escape 는 그 탭으로 돌아온다
   out.a11y_dock_reached = await nav.cycleTo(".authoring-dock");
@@ -1099,11 +1157,21 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
     ? textOf(hit(".authoring-bottom button", candidate.context)).trim() : "";
   if (!found) return give("본문 검색 적중 없음");
   hit(".authoring-bottom button", candidate.context).click();
-  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties"), DOM_TRIES, DOM_MS)) {
-    return give("선택 뒤 속성 패널 미개방");
-  }
+  /* 검색 적중은 독에서 시작한 선택이다(NG-06 keepDock): 선택이 옮겨 가고(「필드로 만들기」 판정이 그 범위로 켜진다)
+     독의 검색 탭과 적중 목록은 그대로이며 속성 패널은 열리지 않는다. 속성은 이어서 「필드로 만들기」가 연다. */
+  const createReady = () => {
+    const button = exact(".authoring-toolbar button", "필드로 만들기");
+    return !!(button && !button.disabled && button.getAttribute("aria-disabled") !== "true");
+  };
+  if (!await waitFor(ctx, createReady, WIRE_TRIES, WIRE_MS)) return give("검색 적중 선택 뒤 필드로 만들기 미개방");
+  const searchTab = exact('.authoring-dock [role="tab"]', "검색");
+  out.hwpx_authoring_hit_dock_kept = !!searchTab && searchTab.getAttribute("aria-selected") === "true"
+    && !!hit(".authoring-bottom button", candidate.context);
+  out.hwpx_authoring_hit_no_properties = !doc.querySelector(".authoring-properties");
+  // 일반 문서로 연(저장 경로 없는) 새 템플릿에는 연결된 작업이 없다 — 「변경 영향·작업 적용」 문맥 탭이 서지 않는다(NG-09).
+  out.hwpx_authoring_impact_tab = !!exact('.authoring-dock [role="tab"]', "변경 영향·작업 적용");
   const create = exact(".authoring-toolbar button", "필드로 만들기");
-  out.hwpx_authoring_create_enabled = !!(create && !create.disabled);
+  out.hwpx_authoring_create_enabled = !!(create && !create.disabled && create.getAttribute("aria-disabled") !== "true");
   if (!out.hwpx_authoring_create_enabled) return give("필드로 만들기 비활성");
   create.click();
   if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),

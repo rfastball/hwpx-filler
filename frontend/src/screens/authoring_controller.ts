@@ -237,7 +237,8 @@ export function createAuthoringController(deps: Deps) {
     if (!result) return;
     revisions.set(result.session_id, result.revision);
     await activate(result.session_id);
-    // 처음 여는 일반 문서의 첫 안내(§13) — Python 이 준 문장만, 다음 편집에서 사라진다.
+    // 여는 응답의 알림 칸 — Python 이 준 문장만, 다음 편집에서 사라진다. 처음 여는 일반 문서의 첫 안내는 퇴역했다(NG-01):
+    // 필드 만들기 안내는 구조 패널의 빈 상태가 늘 보이는 자리에서 맡는다.
     if (result.notice && viewId === result.session_id) update({ notice: result.notice });
   }
 
@@ -293,7 +294,10 @@ export function createAuthoringController(deps: Deps) {
     deps.navigation.go(to, { force: true });
   }
 
-  async function select(target: Obj) {
+  /** 대상 하나를 고른다 — 편집면 강조·위치 줄·명령 판정이 그 대상으로 옮긴다. 기본은 속성 패널을 그 대상으로 연다.
+   *  `keepDock`(NG-06)은 독에서 시작한 선택(문제·검색·결과 시험 행)의 길이다: `view.panel` 을 건드리지 않아 펼친 독 탭이
+   *  그대로 남고 속성 패널은 열리지 않는다. 속성은 F2·문맥 메뉴·구조 목록 줄·만들기 명령으로 연다. */
+  async function select(target: Obj, options: { keepDock?: boolean } = {}) {
     // A preview belongs to the target it was computed for. Choosing another target retires both
     // the shown preview and any in-flight one — otherwise a late create_field preview for the old
     // range lands under the new target's "필드 이름 변경" label and its apply runs the old command.
@@ -313,7 +317,7 @@ export function createAuthoringController(deps: Deps) {
       const located = target.source_revision != null
         ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
       navigationHistory.push(previous);
-      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], panel: "properties", refusal: null, preview: null, command: null, selectionNote: null,
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], ...(options.keepDock ? {} : { panel: "properties" }), refusal: null, preview: null, command: null, selectionNote: null,
         context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
         commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
       if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)

@@ -278,6 +278,90 @@ def test_existing_job_impact_uses_shared_coordinator_after_file_save(tmp_path: P
     assert [call[0] for call in change.calls] == ["check", "apply"]
 
 
+def test_linked_jobs_projection_decides_the_impact_tab_from_the_impact_source(tmp_path: Path) -> None:
+    """NG-09 — 「변경 영향·작업 적용」 독 탭은 연결 작업이 있는 문서에만 선다. 판정은 ``impact`` 와 같은 원천
+    (`_linked_jobs`)의 투영 ``has_linked_jobs`` 이고, 스냅숏마다 작업 파일을 다시 훑지 않는다."""
+    linked_path = tmp_path / "linked.txt"
+    linked_path.write_text("{{필드}}", encoding="utf-8")
+    alone_path = tmp_path / "alone.txt"
+    alone_path.write_text("{{필드}}", encoding="utf-8")
+    plain_path = tmp_path / "plain.txt"
+    plain_path.write_text("계약 상대방 정보", encoding="utf-8")
+    job = SimpleNamespace(name="연결 작업", template_path=str(linked_path), media="txt",
+                          template_fields=lambda: ["필드"])
+
+    class Registry:
+        def __init__(self):
+            self.jobs = [job]
+            self.corrupted: list = []
+            self.scans = 0
+
+        def list_jobs(self, *, corrupted):
+            self.scans += 1
+            corrupted.extend(self.corrupted)
+            return list(self.jobs)
+
+    class Change:
+        def zone(self, name, media, missing):
+            return {}
+
+    registry = Registry()
+    ctrl = AuthoringController(lambda _name, _snapshot: None, directory=tmp_path / "home",
+                               job_registry=registry, template_change=Change())
+    linked = ctrl.open_path(linked_path)["session_id"]
+    alone = ctrl.open_path(alone_path)["session_id"]
+    plain = ctrl.open_path(plain_path, as_template=False)["session_id"]
+
+    def tabs() -> dict:
+        return {tab["id"]: tab["has_linked_jobs"] for tab in ctrl.snapshot()["tabs"]}
+
+    def impact(sid: str) -> dict:
+        return ctrl.dispatch("impact", {"session_id": sid, "revision": 0})
+
+    # 기존 작업의 템플릿이면 선다 — impact 가 그 작업을 싣는 것과 같다.
+    assert tabs() == {linked: True, alone: False, plain: False}
+    assert [entry["name"] for entry in impact(linked)["jobs"]] == ["연결 작업"]
+    assert impact(alone)["jobs"] == [] and impact(alone)["unverified_jobs"] == 0
+    # 일반 문서로 연 새 템플릿은 저장 경로가 없어 어떤 작업의 템플릿도 아니다 — 작업 목록을 읽지도 않는다.
+    assert ctrl.snapshot()["tabs"][2]["save_as_required"] is True
+
+    # 스냅숏은 캐시를 쓴다(push 마다 작업 파일을 훑지 않는다).
+    scans = registry.scans
+    for _ in range(3):
+        tabs()
+    assert registry.scans == scans
+
+    # 다른 화면이 연결을 바꾸면 활성화·외부 변경 확인(창 초점)·첫 스냅숏에서 다시 잰다.
+    registry.jobs = []
+    ctrl.dispatch("activate", {"session_id": linked})
+    assert tabs()[linked] is False
+    registry.jobs = [SimpleNamespace(name="새 작업", template_path=str(alone_path), media="txt",
+                                     template_fields=lambda: ["필드"])]
+    ctrl.dispatch("check_external", {"session_id": alone})
+    assert tabs()[alone] is True
+    registry.jobs = [job]
+    ctrl.initial()
+    assert tabs() == {linked: True, alone: False, plain: False}
+
+    # 손상된 작업 파일은 연결을 모르는 것이다 — impact 의 unverified_jobs 와 같이 탭을 숨기지 않는다.
+    registry.jobs = []
+    registry.corrupted = [(tmp_path / "broken.job.json", "손상")]
+    assert impact(alone)["unverified_jobs"] == 1
+    assert tabs()[alone] is True
+
+
+def test_linked_jobs_are_not_hidden_when_the_job_store_is_not_wired(tmp_path: Path) -> None:
+    """작업 저장소가 없으면 연결을 확인할 수 없다 — 저장 경로가 있는 문서의 탭은 숨기지 않는다
+    (탭 안의 impact 가 「작업 연결을 확인할 수 없습니다.」를 말한다). 저장 경로가 없는 새 템플릿은 서지 않는다."""
+    path = tmp_path / "template.txt"
+    path.write_text("{{필드}}", encoding="utf-8")
+    ctrl = _controller(tmp_path)
+    saved = ctrl.open_path(path)["session_id"]
+    fresh = ctrl.dispatch("new", {"media": "txt", "content": ""})["session_id"]
+    assert {tab["id"]: tab["has_linked_jobs"] for tab in ctrl.snapshot()["tabs"]} == {saved: True, fresh: False}
+    assert ctrl.dispatch("impact", {"session_id": saved, "revision": 0})["available"] is False
+
+
 def test_hwpx_trial_export_is_fenced_to_the_latest_success(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path)
     fixture = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
