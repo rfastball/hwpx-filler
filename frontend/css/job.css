@@ -120,7 +120,7 @@
 /* display:flex 가 UA [hidden]{display:none} 을 특이도로 이긴다(부록 B-9 결함 클래스 2) —
    진행·거절 태에서 저장 폴더 줄을 숨기려면 되돌려 놔야 한다. */
 .result3-folder[hidden]{display:none}
-.result3-dir{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;word-break:break-all}
+.result3-dir{font-family:var(--font-mono);word-break:break-all}
 /* 만든 문서 목록(S7-03 · #825) — 실패 목록과 같은 세로 밀도이되 경보 색을 쓰지 않는다.
    `display:flex` 가 UA [hidden] 을 이기는 결함 클래스는 여기도 같으므로 되돌려 놓는다. */
 .result3-docs{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-8)}
@@ -142,7 +142,7 @@
 .result3-evidence[hidden]{display:none}
 .result3-evidence>summary{cursor:pointer}
 .result3-evidence pre{margin-top:var(--sp-6);white-space:pre-wrap;word-break:break-word;
-  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  font-family:var(--font-mono)}
 /* `.zone-cap-sub` 의 소비자는 결과 존의 「만든 문서 N건」 하나다 — 실행 기록 상자가
    퇴역하면서(#957) 같이 쓰던 두 번째 자리가 사라졌다. */
 .zone-cap-sub{margin-top:var(--sp-12)}

@@ -104,7 +104,7 @@ tr.r-suggested td{background:var(--a-card)}
 .tbadge{font-size:var(--fs-caption);color:var(--n-ink-soft);font-weight:600;margin-left:var(--sp-4)}
 .sel{font:inherit;font-size:var(--fs-caption);border:1px solid var(--n-border-strong);border-radius:var(--rad-control);
   padding:var(--sp-2) var(--sp-4);background:var(--a-card);color:var(--a-ink);max-width:100%}
-.pv{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-caption)}
+.pv{font-family:var(--font-mono);font-size:var(--fs-caption)}
 .pv.emptyval{color:var(--a-empty);font-weight:600}
 /* 미리보기 4갈래 — 표식(문서에 박히는 문자열)은 주의색, 열 필요·오류는 중립·경보. */
 .pv.missing{color:var(--a-warn);font-weight:600}

@@ -145,6 +145,8 @@ export function createBridge() {
     /** 앱 글자 배율·셸 레이아웃 영속 — 모두 오리진 비의존 settings.json. */
     setFontScale(scale) { return window.pywebview.api.set_font_scale(scale); },
     setMasterWidth(width) { return window.pywebview.api.set_master_width(Math.round(width)); },
+    /** 저작 작업대 구조·속성 패널 폭(기준 px, UX-08 #1027). panel = "outline" | "properties". */
+    setAuthoringWidth(panel, width) { return window.pywebview.api.set_authoring_width(panel, Math.round(width)); },
 
     /** 네이티브 X 닫기 확인의 처분 통보(#218 G1) — 확인 모달의 3택 결과를 호스트에 되돌린다.
      *  종전엔 앱 셸이 `pywebview.api` 를 직접 만졌다. 반환은 **그대로** 넘긴다(호출자가 await):

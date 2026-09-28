@@ -1,6 +1,7 @@
 """마일스톤 I 설정 존중·개인화 정적/순수 계약(#221)."""
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from _web_source import (
@@ -81,6 +82,12 @@ def test_personalization_bridge_setters_delegate_and_return_values(monkeypatch) 
     assert frontend.set_font_scale("large") == "large"
     assert frontend.set_master_width(333) == 333
     assert calls == [("scale", "large"), ("width", 333)]
+    monkeypatch.setattr(
+        app_mod.settings, "save_authoring_width",
+        lambda panel, value: calls.append((f"authoring:{panel}", value)),
+    )
+    assert frontend.set_authoring_width("outline", 256) == 256
+    assert calls[-1] == ("authoring:outline", 256)
     # 레일 접기는 셸 교체와 함께 사망(F2 PR-B) — 브리지 표면에 남으면 표면 없는 설정을 쓰는
     # 통로가 되고, 그 통로가 다음 세션에 레일을 되살린다(지도 §10.9 판정 F 와 같은 규율).
     assert not hasattr(app_mod.WebFrontend, "set_rail_collapsed")
@@ -389,6 +396,11 @@ def test_personalization_shell_and_splitters_are_wired() -> None:
     # 그대로 쓴다. DOM 이 되살아나면(>0) 이 계약을 다시 세우면 된다.
     assert index.count('class="master-splitter"') == 0
     assert "saveMasterWidth" in app_js and "setRailCollapsed" not in app_js
+    # 저작 작업대 패널 폭(UX-08 #1027)은 같은 개인화 서비스가 싣고 남긴다 — 부팅 주입의
+    # personalization 조각에 실려 오고, 분할선을 놓으면 set_authoring_width 로 영속한다.
+    app_py = (Path(app_mod.__file__)).read_text(encoding="utf-8")
+    assert '"authoring_widths": settings.load_authoring_widths()' in app_py
+    assert "authoringLayout: Personalization" in bootstrap
     compact = "".join(css.split())
     assert ".jobtbtbodytr" in compact and "user-select:none" in compact
     # 셸은 상단 토바 2행 그리드(F2 PR-B) — 좁은 창의 여유는 접기가 아니라 도구 값 라벨

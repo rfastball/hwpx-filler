@@ -7,7 +7,7 @@ table.dmap th,table.dmap td{padding:var(--sp-6) var(--sp-10);text-align:left;
 table.dmap th{background:var(--a-window);font-weight:600;font-size:var(--fs-caption);
   color:var(--a-muted);white-space:nowrap;position:sticky;top:0;z-index:1}
 table.dmap tr:last-child td{border-bottom:0}
-.dmap .maptok{font-weight:600;white-space:nowrap;font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.dmap .maptok{font-weight:600;white-space:nowrap;font-family:var(--font-mono)}
 .dmap .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
 .dmap .maptok::after{content:"}}";color:var(--a-muted);font-weight:400}
 .mapsrc{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
@@ -68,7 +68,7 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-srcbar .btn{margin-left:auto;flex:none}       /* 「사본으로 편집」을 오른쪽으로 */
 .wc-srcbar .btn[hidden]{display:none}
 .wc-srcbox{width:100%;min-height:180px;resize:vertical;padding:var(--sp-10) var(--sp-12);
-  font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);line-height:1.7;
+  font-family:var(--font-mono);font-size:var(--fs-body);line-height:1.7;
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink)}
 .wc-srcbox:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
 .wc-srcbox[readonly]{background:var(--n-surface-alt);color:var(--a-muted)}
@@ -120,7 +120,7 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-render{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-16) var(--sp-24);overflow:auto;font-size:var(--fs-body);line-height:1.85;
   white-space:pre-wrap;color:var(--a-ink);margin:0;
-  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  font-family:var(--font-mono)}
 .wc-render:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 .wc-render .seg-fill{background:var(--fb-fill-bg);border-radius:var(--rad-control);padding:0 2px}
 .wc-render .seg-blank{color:var(--a-warn);background:var(--fb-blank-bg);border-radius:var(--rad-control);
@@ -156,7 +156,7 @@ table.dmap tr:last-child td{border-bottom:0}
   border-bottom:1px dashed var(--a-border)}
 .qd-trow:last-of-type{border-bottom:0}
 .qd-trow-head{display:flex;align-items:center;gap:var(--sp-8)}
-.qd-tname{flex:1;min-width:0;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
+.qd-tname{flex:1;min-width:0;font-family:var(--font-mono);
   font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--a-ink)}
 .qd-chip{flex:none;font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
   font-weight:600;white-space:nowrap}
@@ -198,7 +198,7 @@ table.dmap tr:last-child td{border-bottom:0}
 .qd-tabs .btn[aria-pressed="true"]{background:var(--fb-fill-bg);border-color:var(--a-primary);
   color:var(--a-primary);font-weight:600}
 .qd-srcedit{flex:1;min-height:220px;resize:none;font-size:var(--fs-body);line-height:1.6;
-  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  font-family:var(--font-mono)}
 .qd-prevnote{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
 /* 휘발 표지 — 채움 알약과 별개로 **상시** 서는 화면 성질 배지(#134). 상태가 아니라 성질이라
    data-level 색 체계를 쓰지 않고 조용한 중립으로 둔다(경보가 아니라 상시 사실). */

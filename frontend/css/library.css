@@ -180,7 +180,7 @@ table.ro .pv.err{color:var(--a-warn);white-space:normal;word-break:keep-all}
 .library-empty .heading{font-size:var(--fs-strong);font-weight:700;color:var(--a-ink);margin-bottom:var(--sp-6)}
 .library-empty p{color:var(--a-muted);font-size:var(--fs-body);margin:0 0 var(--sp-16);white-space:pre-line}
 .route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
-  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  font-family:var(--font-mono)}
 
 /* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다.
    (짝이던 `.tplcard` 는 마지막 소비자인 데이터 선택 다이얼로그가 공용 고르기 열로

@@ -477,6 +477,7 @@ export function bootProduct() {
       editor: EditorController,
       workbench: WorkbenchController,
       authoring: AuthoringController,
+      authoringLayout: Personalization,
       jobRead: JobRead,
       jobRun: JobRunController,
       slotContent: JobContentSelectionController,

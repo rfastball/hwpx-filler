@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import { COMMANDS } from "./authoring_controller.ts";
+import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
+import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor } from "./authoring_controller.ts";
 import { TPL_STATUS_COPY } from "./job_run.ts";
 
@@ -493,12 +495,14 @@ function LazyDetails({ summary, body }: { summary: ReactNode; body: () => ReactN
 
 const MODES: [string, string][] = [["document", "문서"], ["template", "템플릿"], ["structure", "구조"]];
 
-export function AuthoringScreen({ controller }: Props): ReactNode {
+export function AuthoringScreen({ controller, layout }: Props & { layout?: AuthoringLayout | null }): ReactNode {
   const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot) || {};
   const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot, controller.viewModel.getSnapshot);
   const tabs: Obj[] = snapshot.tabs || [];
   const item = tabs.find((tab) => tab.id === snapshot.active_id);
   const root = useRef<HTMLDivElement>(null);
+  // 좁은 폭(컨테이너 64rem 이하)에서만 쓰이는 구조 레일의 펼침 — 넓은 폭에서는 CSS 가 무시한다.
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const shellInput: ShellInput = useRef<ShellInput["current"]>({});
   const dock = dockTabs(item, view);
   const counts = useMemo(() => problemCounts(item?.problems), [item?.problems]);
@@ -656,10 +660,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
     else if (shortcut === "escape") { if (escapeShell(controller) === "panel") act(controller.focusSelection)(); }
     else if (shortcut === "cycle") {
-      const panels = [...(root.current?.querySelectorAll<HTMLElement>(".authoring-toolbar,.authoring-outline,.authoring-canvas,.authoring-properties,.authoring-dock") || [])];
-      const current = panels.findIndex((panel) => panel.contains(document.activeElement));
-      // 패널 간 초점 이동(§10): 비활성 버튼은 초점을 받지 못하므로 첫 **활성** 제어로 간다.
-      panels[(current + (event.shiftKey ? panels.length - 1 : 1)) % panels.length]?.querySelector<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[contenteditable],iframe")?.focus();
+      // 패널 간 초점 이동(§10): 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 선다(authoring_layout.ts).
+      cyclePanels([...(root.current?.querySelectorAll<HTMLElement>(PANEL_CYCLE) || [])], document.activeElement, !!event.shiftKey);
     }
   } },
     h("header", { className: "authoring-head" },
@@ -712,7 +714,8 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
       h("div", { className: "authoring-toolbar-group authoring-toolbar-end" },
         button("결과 시험", () => { if (trialShown) controller.update({ trial: false, dock: "" }); else openDock("trial"); }, { "aria-pressed": trialShown }),
         h("select", { className: "field", "aria-label": "확대", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) }, ...[75,100,125,150,200].map((value) => h("option", { key: value, value }, `${value}%`))))),
-    tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}` },
+    tabs.length > 0 && h("div", { className: `authoring-body${view.panel === "properties" ? " with-properties" : ""}${outlineOpen ? " outline-open" : ""}` },
+      item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, onClick: () => setOutlineOpen(!outlineOpen) }, outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기"),
       item && h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: (event: any) => contextMenu(event) }, h("h2", null, "템플릿 구조"),
         ...(item.analysis?.slots || []).map((slot: Obj) => { const slotEntry = { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }; return h("details", { open: true, key: slot.id },
           h("summary", null, button([kindTag("slot"), slot.label || slot.id, badge(counts.get(slot.id) || 0)], select(slotEntry), { "aria-label": outlineLabel("slot", slot, counts.get(slot.id) || 0), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, slotEntry); } })),
@@ -722,13 +725,18 @@ export function AuthoringScreen({ controller }: Props): ReactNode {
           summary: h("summary", null, button([`${field.name} · ${field.count}`, badge(counts.get(field.name) || 0)], select(fieldEntry), { "aria-label": outlineLabel("field", field, counts.get(field.name) || 0), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, fieldEntry); } })),
           body: () => (field.occurrences || []).map((occ: Obj, index: number) => { const occEntry = { ...occ, name: field.name, kind: "field" };
             return button(`${index + 1}. ${occ.context || field.name}`, select(occEntry), { key: index, "aria-label": outlineLabel("occurrence", { name: field.name, index: index + 1, total: field.occurrences.length, context: occ.context }), onContextMenu: (event: any) => { event.stopPropagation(); contextMenu(event, occEntry); } }); }) }); })),
+      item && h(PanelSplitter, { panel: "outline", label: "구조 패널 너비", layout }),
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
         item && h("div", { className: "authoring-selection", role: "group", "aria-label": "현재 위치의 의미" },
           h("span", { className: "authoring-selection-label", "aria-hidden": true }, "현재 위치의 의미"),
           ...(view.matches || []).map((match: Obj, index: number) => button(`${({ field: "필드", slot: "항목", option: "선택" } as Obj)[match.kind]} · ${match.name || match.label || match.option_id || match.slot_id}${match.approximate ? " · 문단 내 후보" : ""}`, select(match), { key: index }))),
         h("main", { className: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = (event: any) => contextMenu(event) }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
-      item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview })),
+      item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
+      item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview }),
+      // 좁은 폭의 속성 시트 뒤 가림막 — 누르면 「닫기」와 같은 일을 한다(넓은 폭에서는 CSS 가 숨긴다).
+      item && view.panel === "properties" && h("div", { className: "authoring-scrim", "aria-hidden": true,
+        onClick: () => { controller.update({ panel: "", preview: null, refusal: null }); void controller.guarded(controller.focusSelection); } })),
     // 하단 독(§3.1): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
     (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}`, role: "region", "aria-label": "보조 패널" },
       h("div", { className: "authoring-dock-bar" },

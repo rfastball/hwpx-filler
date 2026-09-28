@@ -270,6 +270,7 @@ export const HOST_METHODS = [
   "set_theme",
   "set_font_scale",
   "set_master_width",
+  "set_authoring_width",
   "import_template_file",
   "pick_templates_root",
   "pick_data_file",
@@ -309,6 +310,7 @@ export interface HostApi {
   set_theme(mode: unknown): unknown;
   set_font_scale(scale: unknown): unknown;
   set_master_width(width: unknown): unknown;
+  set_authoring_width(panel: unknown, width: unknown): unknown;
   import_template_file(screen: unknown): unknown;
   pick_templates_root(screen: unknown): unknown;
   pick_data_file(screen: unknown): unknown;

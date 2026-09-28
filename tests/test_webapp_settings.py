@@ -211,6 +211,34 @@ def test_invalid_master_width_is_loud(home, value):
         settings.save_master_width(value)  # type: ignore[arg-type]
 
 
+def test_authoring_widths_default_roundtrip_and_preserve_each_other(home):
+    """저작 패널 폭(UX-08 #1027): 저장값이 없으면 None(화면 기본값), 한 패널 저장이 다른 패널을 지우지 않는다."""
+    assert settings.load_authoring_widths() == {"outline": None, "properties": None}
+    settings.save_master_width(333)
+    settings.save_authoring_width("outline", 256)
+    settings.save_authoring_width("properties", 320)
+    settings.save_authoring_width("outline", 240)
+    assert settings.load_authoring_widths() == {"outline": 240, "properties": 320}
+    assert settings.load_master_width() == 333
+    # 손상·범위 밖 저장값은 그 칸만 기본값으로 돌아간다.
+    (home / "settings.json").write_text(
+        json.dumps({"authoring_widths": {"outline": 9999, "properties": True}}), encoding="utf-8"
+    )
+    assert settings.load_authoring_widths() == {"outline": None, "properties": None}
+    (home / "settings.json").write_text(json.dumps({"authoring_widths": [1, 2]}), encoding="utf-8")
+    assert settings.load_authoring_widths() == {"outline": None, "properties": None}
+
+
+@pytest.mark.parametrize(
+    ("panel", "value"),
+    [("outline", 175), ("outline", 385), ("properties", 223), ("properties", 449),
+     ("outline", 240.5), ("outline", True), ("dock", 240), (None, 240)],
+)
+def test_invalid_authoring_width_is_loud(home, panel, value):
+    with pytest.raises(ValueError):
+        settings.save_authoring_width(panel, value)  # type: ignore[arg-type]
+
+
 def test_window_geometry_roundtrip_and_corrupt_fallback(home):
     assert settings.load_window_geometry() is None
     settings.save_window_geometry(x=-900, y=40, width=1180, height=820, maximized=True)
