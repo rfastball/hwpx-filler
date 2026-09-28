@@ -111,6 +111,8 @@ class FakeElement extends FakeNode {
   getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
   getClientRects() { return { length: this.isConnected ? 1 : 0 }; }
   focus() { if (!this.disabled && this.isConnected) this.ownerDocument.activeElement = this; }
+  /* 입력칸 전체 선택(P-06) — 선택 범위만 옮긴다. */
+  select() { this.selectionStart = 0; this.selectionEnd = String(this.value ?? "").length; }
   get offsetParent() { return this.ownerDocument.body; }
   *walk() { yield this; for (const child of this.childNodes) if (child instanceof FakeElement) yield* child.walk(); }
 }
@@ -1117,5 +1119,109 @@ test("IDE-04: the HWPX trial viewer never takes focus — not on a new result an
   env.flushSync(() => env.controller.update({ trial: false, dock: "problems", panel: "problems" }));
   assert.equal(env.container.querySelector("section.authoring-dock").getAttribute("class"), "authoring-dock open", "다른 탭은 기본 몫");
   assert.ok(!env.container.querySelector(".authoring-shell").getAttribute("class").includes("trial-open"), "다른 탭에서는 몸통 하한이 그대로");
+
+// ------------------------------------------------------------------ IDE-03 만들기 루프(실 커밋)
+const createTarget = { kind: "field", name: "수요기관", count: 1, location: { entry: "Contents/section0.xml", paragraph: 1, start: 6, end: 10 } };
+createTarget.occurrences = [createTarget.location];
+const valueRange = { entry: "Contents/section0.xml", paragraph: 1, start_paragraph: 1, end_paragraph: 1, start: 6, end: 10 };
+const creatable = [{ type: "create_field", enabled: true, reason: null, alternative: null },
+  { type: "create_slot", enabled: true, reason: null, alternative: null }, { type: "create_option", enabled: false, reason: "먼저 항목 안의 내용을 고르세요.", alternative: null }];
+const submitForm = (env) => env.flushSync(() => propsOf(env.container.querySelector(".authoring-properties")).onSubmit({ preventDefault() {} }));
+
+async function createLoop(confirm = "none") {
+  return boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action, payload) => {
+    if (action === "preview") return { confirm, content: "bmV3", edits: [], original: "○○시청", affected: 1, created: createTarget };
+    if (action === "update") return { revision: payload.revision + 1 };
+    if (action === "locate" && payload.target) return { selected: { ...createTarget }, matches: [{ kind: "field", name: "수요기관", location: createTarget.location, source: createTarget.location }],
+      context: { slot_id: null, option_id: null }, commands: [{ type: "rename_field", enabled: true, reason: null, alternative: null }] };
+    return {};
+  });
+}
+
+test("IDE-03 R5: 필드로 만들기 opens a form with no 명령 select, the name prefilled with Python's suggestion, fully selected and focused; one Enter applies, closes the panel and lands on the new field (필드 · 수요기관)", async () => {
+  const env = await createLoop("none");
+  env.flushSync(() => env.controller.update({ selection: valueRange, selected: null, commands: creatable,
+    context: { slot_id: null, option_id: null, name_suggestion: "수요기관", selected_text: "○○시청", location_label: "문단 2" } }));
+  await settle();
+  const toolbar = env.container.querySelector('[role="toolbar"]');
+  fire(env, [...toolbar.querySelectorAll("button")].find((node) => node.textContent === "필드로 만들기"), "click");
+  await settle();
+  const form = env.container.querySelector(".authoring-properties");
+  assert.equal(form.querySelector("select"), null, "만들기 진입은 「명령」 선택이 없다(NG-05)");
+  assert.deepEqual([...form.querySelectorAll("button")].map((node) => node.textContent).filter((text) => text.includes("미리보기")), [], "「변경 미리보기」가 없다(NG-04)");
+  assert.equal(form.querySelector('button[type="submit"]').textContent, "필드로 만들기", "제출 단추는 명령 이름이다");
+  const input = form.querySelector("input");
+  assert.equal(input.value, "수요기관", "이름 칸은 Python 의 제안값이다(P-06)");
+  assert.equal(env.document.activeElement, input, "초점은 이름 칸이다");
+  assert.deepEqual([input.selectionStart, input.selectionEnd], [0, 4], "전체 선택이라 치면 바로 바뀐다");
+  const shown = [];
+  const unsubscribe = env.controller.viewModel.subscribe(() => shown.push(env.controller.viewModel.getSnapshot().preview));
+  submitForm(env);
+  for (let round = 0; round < 4; round++) await settle();
+  unsubscribe();
+  assert.ok(shown.every((value) => value === null), "none 등급은 미리보기 구획을 세우지 않는다");
+  assert.equal(env.calls.filter((call) => call.action === "preview").length, 2, "미리보기 + 확정 직전 재검사");
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 1, "Enter 한 번에 적용된다");
+  assert.equal(env.container.querySelector(".authoring-properties"), null, "적용 뒤 패널이 닫힌다(결정 2)");
+  const view = env.controller.viewModel.getSnapshot();
+  assert.equal(view.selected.name, "수요기관", "선택이 새 필드에 선다(NG-14)");
+  const located = env.calls.filter((call) => call.action === "locate" && call.target).at(-1);
+  assert.deepEqual([located.revision, located.target], [1, { kind: "field", name: "수요기관" }], "적용 뒤 revision 에서 새 필드를 정체로 짚는다");
+  assert.equal(env.container.querySelector('.authoring-selection .authoring-crumb[aria-current="location"]').textContent, "필드 · 수요기관");
+  assert.ok(env.document.activeElement.closest(".authoring-canvas"), "초점은 선택 자리(편집면)로 돌아간다");
+  env.root.unmount();
+});
+
+test("IDE-03 R5: a create_field picked from the context menu opens the same select-less form", async () => {
+  const env = await createLoop("none");
+  env.flushSync(() => env.controller.update({ selection: valueRange, selected: null, commands: creatable, context: { name_suggestion: "수요기관" } }));
+  await settle();
+  const canvas = env.container.querySelector(".authoring-canvas");
+  fire(env, canvas, "contextmenu", { clientX: 30, clientY: 40 });
+  await settle();
+  fire(env, byRole(env, "menuitem").find((node) => node.textContent === "필드로 만들기"), "click");
+  await settle();
+  const form = env.container.querySelector(".authoring-properties");
+  assert.ok(form, "속성이 그 명령으로 열린다");
+  assert.equal(form.querySelector("select"), null);
+  assert.equal(env.controller.viewModel.getSnapshot().formEntry, "create");
+  env.root.unmount();
+});
+
+test("IDE-03 NG-05·P-01 enter: an outline row opens 필드 이름 변경 with its 명령 select and a disabled submit until the name changes; Enter shows 변경 영향 and arms Enter on the same button; the next Enter applies and keeps the panel", async () => {
+  const whole = { kind: "field", name: "이름", count: 2, occurrences: hwpxTab().analysis.fields[0].occurrences };
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action, payload) => {
+    if (action === "locate") return { selected: whole, matches: [{ kind: "field", name: "이름", location: whole.occurrences[0] }], context: {},
+      commands: [{ type: "rename_field", enabled: true, reason: null, alternative: null }] };
+    if (action === "preview") return { confirm: "enter", affected: 2, message: "현재 문서의 사용 위치 2곳이 ‘성명’으로 변경됩니다.", content: "bmV3", edits: [] };
+    if (action === "update") return { revision: payload.revision + 1 };
+    return {};
+  });
+  showFields(env);
+  await settle();
+  focusOn(env, fieldRow(env, "필드 · 이름"));
+  press(env, "Enter");
+  await settle();
+  const form = () => env.container.querySelector(".authoring-properties");
+  const submit = () => form().querySelector('button[type="submit"]');
+  assert.ok(form().querySelector("select"), "구조 목록 진입은 「명령」 선택을 둔다");
+  assert.equal(submit().textContent, "필드 이름 변경");
+  assert.ok(submit().hasAttribute("disabled"), "입력이 적용값과 같으면 보낼 것이 없다(NG-05 c)");
+  const input = form().querySelector("input");
+  env.flushSync(() => propsOf(input).onChange({ target: { value: "성명" } }));
+  await settle();
+  assert.ok(!submit().hasAttribute("disabled"), "한 글자라도 바꾸면 켜진다");
+  submitForm(env);
+  await settle();
+  assert.ok(form().querySelector('section[aria-label="변경 영향"]'), "enter 등급은 영향 구획을 세운다");
+  assert.equal(submit().getAttribute("aria-keyshortcuts"), "Enter");
+  assert.equal(submit().querySelector("kbd").textContent, "Enter", "같은 주 단추에 Enter 표기가 선다");
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 0, "첫 Enter 는 적용이 아니다");
+  assert.equal(env.document.activeElement, input, "초점은 이름 칸에 남는다(WCAG 3.2.2)");
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 1, "입력이 그대로면 두 번째 Enter 가 적용이다");
+  assert.ok(form(), "enter 등급은 영향을 본 자리에 패널이 남는다(결정 2)");
+  assert.equal(form().querySelector('section[aria-label="변경 영향"]'), null);
   env.root.unmount();
 });

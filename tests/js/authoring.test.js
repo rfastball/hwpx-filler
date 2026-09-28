@@ -49,14 +49,14 @@ test("typing during an in-flight update drains the newest content with the retur
   assert.deepEqual(calls.filter((call) => call.action === "update").map(({ revision, content }) => [revision, content]), [[0, "first"], [1, "last"]]);
 });
 
-test("a stale semantic preview never mutates the editor", async () => {
+test("a stale semantic preview never mutates the editor (enter tier: the preview stands, then applies)", async () => {
   let revision = 0;
   let applications = 0;
   const { controller } = harness((action, payload) => {
     if (action === "update") return { revision: ++revision };
     if (action === "preview") {
       if (payload.revision !== revision) throw new Error("stale revision");
-      return { content: "{{name}}", edits: [] };
+      return { confirm: "enter", content: "{{name}}", edits: [] };
     }
     return {};
   });
@@ -206,7 +206,7 @@ test("a preview returned after a tab switch cannot populate the other document",
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const { controller } = harness(async (action) => {
-    if (action === "preview") { await gate; return { content: "{{name}}" }; }
+    if (action === "preview") { await gate; return { confirm: "enter", content: "{{name}}" }; }
     return {};
   });
   await controller.activate("a");
@@ -223,8 +223,8 @@ test("choosing another target retires the shown preview and any preview still in
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const { controller } = harness(async (action, payload) => {
-    if (action === "preview" && payload.command.name === "late") { await gate; return { affected: 1, original: "입찰개요" }; }
-    if (action === "preview") return { affected: 1, original: "입찰개요" };
+    if (action === "preview" && payload.command.name === "late") { await gate; return { confirm: "enter", affected: 1, original: "입찰개요" }; }
+    if (action === "preview") return { confirm: "enter", affected: 1, original: "입찰개요" };
     if (action === "locate") return { context: {}, commands: [] };
     return {};
   });
@@ -412,7 +412,9 @@ test("F40: locate 가 실어 온 commands 가 도구 막대·팔레트·속성 s
   assert.ok(properties.includes('<p class="authoring-reason" id="authoring-properties-reason">먼저 항목 안의 내용을 고르세요.</p>'), "사유는 보이는 줄이고 live region 이 아니다");
   assert.ok(properties.includes('aria-describedby="authoring-properties-reason"'), "명령 select 가 사유를 설명으로 가리킨다");
   assert.ok(properties.includes(">먼저 항목 만들기</button>"));
-  assert.match(properties, /<button class="btn" type="submit" disabled="" aria-disabled="true" title="[^"]+">변경 미리보기<\/button>/);
+  // 제출 단추는 처음부터 명령 이름이다(NG-04) — 불가이면 흐리고 사유를 단다. 「변경 미리보기」는 이 폼에 없다.
+  assert.match(properties, /<button class="btn primary" type="submit" disabled="" aria-disabled="true" title="[^"]+">선택으로 만들기<\/button>/);
+  assert.ok(!properties.includes(">변경 미리보기</button>"));
 });
 
 test("F40: locate 가 commands 를 싣지 않으면 독립 액션 commands 로 같은 fence 안에서 묻는다", async () => {
@@ -483,8 +485,8 @@ test("U08/AC10: a cascade_required refusal lists the children by kind·label·co
 
 test("U04/U07: preview detail renders counts·included·children·candidates·links_existing and the rename sentence", async () => {
   const { controller, snapshot } = harness((action, payload) => action === "preview" ? (payload.command.type === "rename_field"
-    ? { affected: 4, before: "공고명", after: "사업명", message: "현재 문서의 사용 위치 4곳이 ‘사업명’으로 변경됩니다." }
-    : { affected: 1, before: "특약", after: "[특약]", counts: { paragraphs: 3, fields: 2, options: 1, tables: 0 }, included: ["특약 사항", "세부 조건"], children: [{ kind: "option", id: "a", label: "갑", count: 1 }],
+    ? { confirm: "enter", affected: 4, before: "공고명", after: "사업명", message: "현재 문서의 사용 위치 4곳이 ‘사업명’으로 변경됩니다." }
+    : { confirm: "enter", affected: 1, before: "특약", after: "[특약]", counts: { paragraphs: 3, fields: 2, options: 1, tables: 0 }, included: ["특약 사항", "세부 조건"], children: [{ kind: "option", id: "a", label: "갑", count: 1 }],
       candidates: [{ name: "공고명", count: 3 }], links_existing: true, existing_count: 3, structure_delta: { added_slots: [], removed_slots: [], added_options: [], removed_options: [], renamed: [] }, body_changed: true }) : {});
   snapshot.tabs[0].analysis = { fields: [{ name: "구", count: 1, occurrences: [] }], slots: [] };
   await controller.activate("a");
@@ -1789,4 +1791,158 @@ test("IDE-04: keepFocusOutside returns focus the trial viewer took during its mo
     keepFocusOutside(host, frame);
     assert.equal(input.focused.length, 1, "뷰어 밖에 있는 초점은 건드리지 않는다");
   } finally { globalThis.document = saved; }
+
+// ------------------------------------------------------------------ IDE-03 만들기 루프(P-06·P-01·NG-04·NG-05·NG-14·P-11a)
+const turns = async (count = 24) => { for (let turn = 0; turn < count; turn++) await new Promise(setImmediate); };
+/** 확인 등급을 싣는 미리보기 — 편집기 하나를 붙이고 적용 횟수와 보인 미리보기를 센다. */
+async function tiered(confirm, extra = {}) {
+  let revision = 0;
+  const applied = [];
+  const shown = [];
+  const env = harness((action, payload) => {
+    if (action === "update") return { revision: ++revision };
+    if (action === "preview") return { confirm, content: "{{수요기관}}", edits: [], original: "○○시청", affected: 1, ...extra };
+    return {};
+  });
+  await env.controller.activate("a");
+  let text = "○○시청";
+  env.controller.attach("a", { apply: async (content, edits) => { applied.push(edits); text = content; }, content: async () => text, decorate() {} });
+  env.controller.viewModel.subscribe(() => shown.push(env.controller.viewModel.getSnapshot().preview));
+  const finished = [];
+  const finish = async (prepared) => { finished.push(await env.controller.applyPreview(prepared)); };
+  const previews = () => env.calls.filter((call) => call.action === "preview").length;
+  return { ...env, applied, shown, finished, finish, previews };
+}
+
+test("IDE-03 P-01 none: one submit previews and applies that prepared preview — the preview section never stands and the pre-apply re-check still runs", async () => {
+  const created = { kind: "field", name: "수요기관", occurrences: [{ start: 0, end: 8 }], location: { start: 0, end: 8 } };
+  const env = await tiered("none", { created });
+  const command = () => ({ type: "create_field", name: "수요기관", start: 0, end: 4 });
+  assert.equal(submitProperties(env.controller, false, command, env.finish), true);
+  await turns();
+  assert.equal(env.previews(), 2, "미리보기 한 번 + 확정 직전 revision 재검사 한 번");
+  assert.equal(env.applied.length, 1, "Enter 한 번에 적용된다");
+  assert.ok(env.shown.length > 0 && env.shown.every((value) => value === null), "미리보기 구획은 한 프레임도 서지 않는다");
+  assert.equal(env.finished[0].label, "필드로 만들기", "Python 이 label 을 주지 않으면 명령 표시 이름이 되돌릴 이름이다");
+  // 만든 대상은 적용 뒤 revision 에서 짚인다(NG-14) — 호출자가 그 자리를 고른다.
+  assert.deepEqual(env.finished[0].created, { ...created, session_id: "a", source_revision: 1 });
+});
+
+test("IDE-03 P-01 enter: the first submit shows the impact; the same inputs apply on the next submit; changed inputs preview again", async () => {
+  const env = await tiered("enter", { message: "현재 문서의 사용 위치 2곳이 ‘성명’으로 변경됩니다." });
+  let name = "성명";
+  const command = () => ({ type: "rename_field", old_name: "이름", name });
+  submitProperties(env.controller, false, command, env.finish);
+  await turns();
+  assert.equal(env.previews(), 1);
+  assert.equal(env.applied.length, 0, "첫 Enter 는 영향을 세울 뿐이다");
+  assert.equal(env.controller.viewModel.getSnapshot().preview.confirm, "enter");
+  submitProperties(env.controller, false, command, env.finish);
+  await turns();
+  assert.equal(env.applied.length, 1, "입력이 그대로면 두 번째 Enter 가 적용이다");
+  assert.equal(env.previews(), 2, "적용 직전 재검사는 enter 등급에도 돈다");
+  submitProperties(env.controller, false, command, env.finish);
+  await turns();
+  assert.equal(env.applied.length, 1, "적용 뒤 첫 Enter 는 다시 미리보기다");
+  name = "성함";
+  submitProperties(env.controller, false, command, env.finish);
+  await turns();
+  assert.equal(env.applied.length, 1, "입력을 고친 뒤의 Enter 는 미리보기다");
+  assert.equal(env.controller.viewModel.getSnapshot().command.name, "성함");
+});
+
+test("IDE-03 P-01 button: Enter only ever re-previews; the danger button labelled with the command applies", async () => {
+  const env = await tiered("button", { before: "견적서", after: "" });
+  const selected = { kind: "option", slot_id: "doc", option_id: "quote", label: "견적서" };
+  env.controller.update({ panel: "properties", commandType: "delete", selected, commands: [{ type: "delete", enabled: true, reason: null, alternative: null }] });
+  const command = () => ({ type: "delete", kind: "option", slot_id: "doc", option_id: "quote" });
+  for (let press = 0; press < 3; press++) { submitProperties(env.controller, false, command, env.finish); await turns(); }
+  assert.equal(env.applied.length, 0, "button 등급은 제출로 적용되지 않는다");
+  assert.equal(env.previews(), 3);
+  const markup = render(env.controller);
+  // 제출은 다시 확인하는 「변경 미리보기」로 선다(입력을 고친 뒤 다시 보는 단추) — 적용은 명령 이름의 위험 단추뿐이다.
+  assert.ok(markup.includes('<button class="btn" type="submit">변경 미리보기</button>'));
+  assert.ok(markup.includes('<button type="button" class="btn danger">내용까지 삭제</button>'));
+  assert.ok(!markup.includes('aria-keyshortcuts="Enter"'), "button 등급의 적용에는 Enter 표기가 없다");
+});
+
+test("IDE-03 P-01: a composition-ending Enter never previews or applies, at any tier", async () => {
+  for (const confirm of ["none", "enter", "button"]) {
+    const env = await tiered(confirm);
+    const command = () => ({ type: "create_field", name: "수요기관", start: 0, end: 4 });
+    if (confirm !== "none") { submitProperties(env.controller, false, command, env.finish); await turns(); }
+    const before = env.previews();
+    assert.equal(submitProperties(env.controller, true, command, env.finish), false, confirm);
+    await turns();
+    assert.equal(env.previews(), before, `${confirm}: 조합 중 Enter 는 아무것도 보내지 않는다`);
+    assert.equal(env.applied.length, 0, `${confirm}: 조합 중 Enter 는 적용하지 않는다`);
+  }
+});
+
+test("IDE-03 P-06: an invalid_name refusal stands under the offending input — not in the refusal section, not in the error band; the input keeps its text", async () => {
+  const message = "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다.";
+  const { controller } = harness((action, payload) => action === "preview"
+    ? { ok: false, refusal: { code: "invalid_name", field: payload.command.type === "create_slot" ? "identifier" : "name", message } } : {});
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "create_field", formEntry: "create", selected: null, selection: { start: 0, end: 4 },
+    commands: [{ type: "create_field", enabled: true, reason: null, alternative: null }, { type: "create_slot", enabled: true, reason: null, alternative: null }],
+    context: { name_suggestion: "수요기관", selected_text: "○○시청" } });
+  await controller.preview({ type: "create_field", name: "#x", start: 0, end: 4 });
+  let markup = render(controller);
+  assert.equal(controller.viewModel.getSnapshot().error, "", "오류 띠가 아니다");
+  assert.ok(!markup.includes("authoring-error") && !markup.includes("authoring-refusal"), "거절 구획·오류 띠가 서지 않는다");
+  assert.ok(markup.includes('<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-name-reason" aria-invalid="true" value="수요기관"/>'), "입력은 그대로 남고 칸이 거절을 설명으로 가리킨다");
+  assert.ok(markup.includes(`<p class="authoring-reason" id="authoring-properties-name-reason" role="alert">${message}</p>`));
+  // 식별자 칸의 거절은 접힌 「연결 식별자」를 펴고 그 칸 곁에 선다(P-11a).
+  controller.update({ commandType: "create_slot" });
+  await controller.preview({ type: "create_slot", id: "a b", start: 0, end: 4 });
+  markup = render(controller);
+  assert.ok(markup.includes('<details class="authoring-disclosure" open=""><summary>연결 식별자</summary><input class="field" aria-label="연결 식별자" aria-describedby="authoring-properties-identifier-reason" aria-invalid="true" value=""/>'));
+  assert.ok(markup.includes(`<p class="authoring-reason" id="authoring-properties-identifier-reason" role="alert">${message}</p>`));
+});
+
+test("IDE-03 NG-04·NG-05: a create form opened by a create command has no 명령 select and no 변경 미리보기 — its submit is the command name; an outline-opened form keeps the select", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "create_field", formEntry: "create", selected: null, selection: { start: 0, end: 4 },
+    commands: [{ type: "create_field", enabled: true, reason: null, alternative: null }], context: { name_suggestion: "수요기관", selected_text: "○○시청" } });
+  let markup = render(controller);
+  const form = markup.slice(markup.indexOf('<form class="authoring-properties"'), markup.indexOf("</form>"));
+  assert.ok(!form.includes("<select"), "만들기 진입은 「명령」 선택을 그리지 않는다");
+  assert.ok(!form.includes("변경 미리보기"), "만들기 폼에 「변경 미리보기」가 없다");
+  assert.ok(form.includes('<button class="btn primary" type="submit">필드로 만들기</button>'), "제출 단추는 처음부터 명령 이름이다");
+  assert.ok(form.includes('value="수요기관"'), "이름 칸은 Python 의 제안값으로 선다");
+  controller.update({ formEntry: "" });
+  markup = render(controller);
+  assert.ok(markup.slice(markup.indexOf('<form class="authoring-properties"')).includes('<label class="authoring-field">명령<select'), "구조 목록·F2 진입은 「명령」 선택을 둔다");
+});
+
+test("IDE-03 NG-05 c: a rename form whose inputs equal the applied values cannot submit", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "rename_field", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] },
+    selection: { start: 0, end: 7 }, commands: [{ type: "rename_field", enabled: true, reason: null, alternative: null }] });
+  assert.match(render(controller), /<button class="btn primary" type="submit" disabled="" aria-disabled="true">필드 이름 변경<\/button>/);
+});
+
+test("IDE-03 P-11a: create_slot folds 연결 식별자 into a closed disclosure named by its summary; rename_slot keeps the input open", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  controller.update({ panel: "properties", commandType: "create_slot", formEntry: "create", selected: null, selection: { start: 0, end: 4 },
+    commands: [{ type: "create_slot", enabled: true, reason: null, alternative: null }] });
+  let markup = render(controller);
+  assert.ok(markup.includes('<details class="authoring-disclosure"><summary>연결 식별자</summary><input class="field" aria-label="연결 식별자" value=""/></details>'));
+  assert.ok(!markup.includes('<label class="authoring-field">연결 식별자'));
+  controller.update({ commandType: "rename_slot", formEntry: "", selected: { kind: "slot", slot_id: "doc", label: "문서" } });
+  markup = render(controller);
+  assert.ok(markup.includes('<label class="authoring-field">연결 식별자<input class="field" value="doc"/></label>'));
+  assert.ok(!markup.includes("authoring-disclosure"));
+});
+
+test("IDE-03 P-06: appliedProperties opens the name at Python's proposal when the target has none, and Escape reverts to it", () => {
+  assert.equal(appliedProperties(null, "수요기관").name, "수요기관");
+  assert.equal(appliedProperties({ kind: "field", name: "공고명" }, "수요기관").name, "공고명", "대상의 이름이 먼저다");
+  const draft = { ...appliedProperties(null, "수요기관") };
+  assert.equal(escapeStage(null, draft, "수요기관"), "close", "제안 그대로면 되돌릴 것이 없다");
+  assert.equal(escapeStage(null, { ...draft, name: "수요처" }, "수요기관"), "revert");
 });

@@ -5,8 +5,9 @@ The existing structure scanner and renderer remain the semantic authority.
 
 This module also owns the **media-shared vocabulary** of the authoring surface:
 command types and display names, availability reasons, undo labels, problem
-taxonomy constants and the structured refusals (:class:`NameConflict`,
-:class:`CascadeRequired`). The HWPX adapter imports them so both media return
+taxonomy constants, the structured refusals (:class:`NameConflict`,
+:class:`CascadeRequired`, :class:`InvalidName`), the field-name suggestion and the
+confirmation tier of a previewed command. The HWPX adapter imports them so both media return
 the same words and shapes; the frontend never re-decides any of it.
 """
 
@@ -102,6 +103,174 @@ class CascadeRequired(ValueError):
 
     def to_dict(self) -> dict:
         return {"code": "cascade_required", "children": self.children, "message": self.message}
+
+
+#: 필드 이름 문법 거절(§13) — 비었거나 문법 기호가 든 이름.
+INVALID_FIELD_NAME = "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."
+#: 항목·선택 식별자가 빈 거절 — 만들기와 속성 변경이 각자의 문장을 쓴다(HWPX 가 먼저 쓰던 그 문장).
+REASON_NEED_IDENTIFIER = "항목이나 선택의 식별자를 입력하세요."
+REASON_NEED_NEW_IDENTIFIER = "항목이나 선택의 새 식별자를 입력하세요."
+
+
+class InvalidName(ValueError):
+    """A name or identifier the grammar cannot carry — refused in place, not raised as an error (P-06).
+
+    ``field`` names the input the sentence belongs to: ``"name"`` (필드 이름·표시 이름) or
+    ``"identifier"`` (연결 식별자). The surface puts the sentence right under that input.
+    """
+
+    def __init__(self, field: str, message: str) -> None:
+        self.field = field
+        self.message = message
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        return {"code": "invalid_name", "field": self.field, "message": self.message}
+
+
+def region_identifier(raw: object, *, renaming: bool = False) -> str:
+    """항목·선택 식별자 — 구간 표기로 되읽히는 값만 통과한다(두 매체 공유). 거절은 식별자 칸의 것이다."""
+    from .authoring import marker_identifier
+
+    if not isinstance(raw, str) or not raw.strip():
+        raise InvalidName("identifier", REASON_NEED_NEW_IDENTIFIER if renaming else REASON_NEED_IDENTIFIER)
+    try:
+        return marker_identifier(raw)
+    except ValueError as exc:
+        raise InvalidName("identifier", str(exc)) from exc
+
+
+def _region_label(raw: object) -> None:
+    """항목·선택 표시 이름(이름 칸) — 되읽기 동등이 아니면 이름 칸의 거절이다."""
+    from .authoring import marker_label
+
+    try:
+        marker_label(raw)
+    except ValueError as exc:
+        raise InvalidName("name", str(exc)) from exc
+
+
+# --------------------------------------------------------------- field-name suggestion (P-06)
+#: 제안 이름의 길이 상한 — 넘으면 라벨이 아니라 문장이다.
+SUGGESTION_MAX = 20
+_LABEL_END = re.compile(r"[:：]\s*$")
+#: 라벨 토막을 끊는 앞 경계 — 앞 라벨의 쌍점, 필드 토큰의 끝, 탭.
+_LABEL_BREAK = re.compile(r"[:：\t]|\}\}")
+#: 앞 번호 머리 — 가. 1. 1) (1) (가) ① □ ○ - • 등. 여러 겹이면 차례로 뗀다.
+_ENUMERATOR = re.compile(
+    r"^(?:[가-힣]\.|\d+[.)]|\(\d+\)|\([가-힣]\)|[①-⑳㉠-㉻]"
+    r"|[□■○●◦▪▫◆◇▶►※\-•·*])\s*")
+_COLUMN_GAP = re.compile(r"\s{2,}")
+
+
+def _syllable(token: str) -> bool:
+    return len(token) == 1 and "가" <= token <= "힣"
+
+
+def suggest_field_name(before: str, selected: str, existing: Iterable[str] = ()) -> str | None:
+    """「라벨: 값」에서 값을 고르면 그 라벨을 필드 이름으로 제안한다(P-06 규칙 ①만).
+
+    같은 문단(셀) 안에서 선택 앞 글자가 ``…라벨 :``/``：``(뒤 공백 허용)로 끝날 때만 제안한다.
+    라벨은 앞 쌍점·필드 토큰·탭 뒤의 토막이다. 끝의 한 음절 토막이 둘 이상 이어지면(균등 배분
+    띄어쓰기 「수  요  기  관」) 붙이고, 아니면 칸 사이 넓은 공백 뒤만 남긴 채 앞 번호 머리를
+    떼고 공백을 접는다. 선택 문구 자체는 이름이 되지 않는다(값 문구가 이름이 되는 길 삭제).
+    기존 필드 이름과 공백만 다르면 그 이름을 쓴다. 비거나 20자를 넘거나 문법이 거절하면 None.
+    """
+    if not isinstance(before, str) or not isinstance(selected, str) or not selected.strip():
+        return None
+    if "{{" in selected or "}}" in selected or "\n" in selected or "\r" in selected:
+        return None
+    if not _LABEL_END.search(before):
+        return None
+    segment = _LABEL_BREAK.split(_LABEL_END.sub("", before))[-1]
+    tokens = segment.split()
+    run = 0
+    while run < len(tokens) and _syllable(tokens[len(tokens) - 1 - run]):
+        run += 1
+    if run >= 2:
+        label = "".join(tokens[len(tokens) - run:])
+    else:
+        label = _COLUMN_GAP.split(segment.strip())[-1]
+        previous = None
+        while previous != label:
+            previous, label = label, _ENUMERATOR.sub("", label, count=1)
+        label = " ".join(label.split())
+    if not label or len(label) > SUGGESTION_MAX:
+        return None
+    try:
+        label = _identifier(label)
+    except InvalidName:
+        return None
+    compact = "".join(label.split())
+    return next((str(name) for name in existing if "".join(str(name).split()) == compact), label)
+
+
+# --------------------------------------------------------------- confirmation tier (P-01)
+#: 확인 등급 — ``none`` 은 미리보기를 받자마자 적용, ``enter`` 는 영향을 본 뒤 Enter 한 번 더,
+#: ``button`` 은 위험 단추 누름으로만 적용한다. ui-style 의 계약 명령(이름 변경·범위 확장·삭제)은
+#: 늘 ``enter`` 이상이다.
+CONFIRM_NONE = "none"
+CONFIRM_ENTER = "enter"
+CONFIRM_BUTTON = "button"
+_ENTER_COMMANDS = frozenset({"rename_field", "adjust_range", "move", "duplicate", "unwrap", "unset_field",
+                             "relink_field", "paste", "repair_marker"})
+
+
+def _identifier_changes(command: Mapping[str, object]) -> bool:
+    action = command.get("type")
+    own = "slot_id" if action == "rename_slot" else "option_id" if action == "rename_option" else None
+    return own is not None and "id" in command and command["id"] != command.get(own)
+
+
+def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
+                 impact: Mapping[str, object] | None = None) -> str:
+    """미리보기 한 건의 확인 등급(P-01) — 두 매체가 같은 표를 쓴다. 표면은 이 값으로만 가른다."""
+    action = command.get("type")
+    impact = impact or {}
+    if action == "delete" or (action == "unwrap" and (preview.get("requires_cascade") or command.get("cascade"))):
+        return CONFIRM_BUTTON
+    if action in _ENTER_COMMANDS or _identifier_changes(command) or preview.get("expanded"):
+        return CONFIRM_ENTER
+    if action == "create_field" and preview.get("links_existing"):
+        return CONFIRM_ENTER
+    field_delta = impact.get("field_delta")
+    if isinstance(field_delta, Mapping) and field_delta.get("removed_fields"):
+        return CONFIRM_ENTER
+    structure_delta = impact.get("structure_delta")
+    if impact.get("linked_jobs") and isinstance(structure_delta, Mapping) and any(structure_delta.values()):
+        return CONFIRM_ENTER
+    unverified = impact.get("impact_unverified")
+    if isinstance(unverified, int) and unverified > 0:
+        return CONFIRM_ENTER
+    return CONFIRM_NONE
+
+
+def created_target(command: Mapping[str, object], result: Mapping[str, object]) -> dict | None:
+    """만들기 명령이 적용 뒤 남길 대상(NG-14) — 결과 분석 안의 새 필드·항목·선택. 없으면 None."""
+    action = command.get("type")
+    if action == "create_field":
+        name = normalize_field_id(command.get("name"))
+        fields = result.get("fields") or []
+        field = next((item for item in fields if isinstance(item, Mapping) and item.get("name") == name), None)
+        occurrences = list((field or {}).get("occurrences") or [])
+        if field is None or not occurrences:
+            return None
+        return {"kind": "field", "name": name, "count": field.get("count", len(occurrences)),
+                "occurrences": occurrences, "location": occurrences[0]}
+    if action in {"create_slot", "create_option"}:
+        slot_id = command.get("id") if action == "create_slot" else command.get("slot_id")
+        slots = result.get("slots") or []
+        slot = next((item for item in slots if isinstance(item, Mapping) and item.get("id") == slot_id), None)
+        if slot is None:
+            return None
+        if action == "create_slot":
+            return {"kind": "slot", "slot_id": slot_id, "location": slot.get("location")}
+        option = next((item for item in slot.get("options") or []
+                       if isinstance(item, Mapping) and item.get("id") == command.get("id")), None)
+        if option is None:
+            return None
+        return {"kind": "option", "slot_id": slot_id, "option_id": option["id"], "location": option.get("location")}
+    return None
 
 
 def _object_particle(name: str) -> str:
@@ -337,7 +506,7 @@ def _eol(text: str) -> str:
 def _identifier(raw: object) -> str:
     name = normalize_field_id(raw)
     if not name or "{{" in name or "}}" in name or "|" in name or name.startswith(("#", "/")):
-        raise ValueError("필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다.")
+        raise InvalidName("name", INVALID_FIELD_NAME)
     return name
 
 
@@ -582,6 +751,8 @@ def _edits(text: str, command: Mapping[str, object], *,
         return [(match.start(), match.end(), replacement)], False, False
     if action in {"create_slot", "create_option"}:
         kind = PLACEMENT_SLOT if action == "create_slot" else PLACEMENT_OPTION
+        region_identifier(command.get("id"))
+        _region_label(command.get("label"))
         first, last, lo, hi = _line_range(text, start, end)
         expanded = (lo != start or hi != end)
         if any(place.begin_marker_line <= last and first <= place.end_marker_line
@@ -610,6 +781,9 @@ def _edits(text: str, command: Mapping[str, object], *,
     finish = target.end_marker_line
     if action in {"rename_slot", "rename_option"}:
         new_id = command.get("id", target.option_id if target.kind == "option" else target.slot_id)
+        if new_id != (target.option_id if target.kind == "option" else target.slot_id):
+            region_identifier(new_id, renaming=True)
+        _region_label(command.get("label"))
         if target.kind == "slot" and any(slot.id == new_id and slot.id != target.slot_id for slot in scan.slots):
             raise ValueError("항목 식별자가 이미 있습니다.")
         if target.kind == "option" and any(opt.id == new_id and opt.id != target.option_id

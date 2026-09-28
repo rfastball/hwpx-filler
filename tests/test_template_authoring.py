@@ -7,11 +7,15 @@ import pytest
 from hwpxfiller.domain.template_authoring import (
     COMMAND_TYPES,
     CascadeRequired,
+    InvalidName,
     NameConflict,
     analyze,
     apply,
     available_commands,
+    confirm_tier,
+    created_target,
     preview,
+    suggest_field_name,
     trial,
     trial_document_values,
 )
@@ -377,3 +381,129 @@ def test_trial_renders_values_that_are_absent_or_blank_with_the_generation_marke
     # 선택 공백은 두 매체 모두 지금처럼 거절이다.
     with pytest.raises(ValueError, match="시험 선택"):
         trial_txt_authoring("{{#항목 s 표시}}\n{{#선택 a 가}}\n가\n{{/선택}}\n{{/항목}}\n", {}, {})
+
+
+# ------------------------------------------------------------------ P-06 이름 제안 · 이름 거절 제자리
+@pytest.mark.parametrize(("before", "selected", "expected"), [
+    ("수요기관: ", "○○시청", "수요기관"),
+    ("품명 ：", "볼펜", "품명"),
+    ("  가. 공고번호   :", "제2026-1호", "공고번호"),
+    (" 수  요  기  관:", "○○시청", "수요기관"),
+    ("1. 계약 기간 :", "30일", "계약 기간"),
+    ("□ 품 명:", "볼펜", "품명"),
+    ("① 납품장소：", "본관", "납품장소"),
+    ("공고번호: 제1호   공고일: ", "2026. 3. 1.", "공고일"),       # 한 문단 두 쌍 — 칸 사이 넓은 공백 뒤만
+    ("수요기관: {{기관}} 품명: ", "볼펜", "품명"),                 # 앞 필드 토큰 뒤의 라벨만
+    ("", "계약명", None),                                          # 규칙 ② 삭제 — 선택 문구는 이름이 아니다
+    ("수요기관 ", "○○시청", None),                                 # 쌍점으로 끝나지 않으면 라벨이 아니다
+    ("수요기관: ", "{{기관}}", None),                              # 문법이 든 선택
+    ("수요기관: ", "  ", None),                                    # 빈 선택
+    ("수요기관: ", "둘\n줄", None),                                # 여러 줄
+    ("가" * 21 + ":", "값", None),                                 # 20자 초과는 라벨이 아니다
+    ("#기관: ", "값", None),                                       # 문법 기호로 시작하는 이름은 거절된다
+])
+def test_suggest_field_name_reads_only_the_label_before_the_selection(before, selected, expected) -> None:
+    assert suggest_field_name(before, selected, []) == expected
+
+
+def test_suggest_field_name_adopts_an_existing_spelling_that_differs_only_in_spaces() -> None:
+    assert suggest_field_name("수요 기관: ", "○○시청", ["수요기관", "품명"]) == "수요기관"
+    assert suggest_field_name("수요기관: ", "○○시청", ["품명"]) == "수요기관"
+
+
+def test_invalid_names_are_structured_in_place_refusals_naming_their_input() -> None:
+    with pytest.raises(InvalidName) as empty:
+        preview("txt", "수요기관: ○○시청", {"type": "create_field", "start": 6, "end": 10, "name": "  "})
+    assert empty.value.to_dict() == {"code": "invalid_name", "field": "name",
+                                     "message": "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."}
+    with pytest.raises(InvalidName) as syntax:
+        preview("txt", "{{이름}}", {"type": "rename_field", "old_name": "이름", "name": "a|b"})
+    assert syntax.value.field == "name"
+    # 항목·선택 식별자는 식별자 칸의 거절이다 — 이름 칸 곁이 아니다.
+    with pytest.raises(InvalidName) as identifier:
+        preview("txt", "본문\n끝\n", {"type": "create_slot", "start": 0, "end": 2, "id": "a b", "label": "표시"})
+    assert identifier.value.field == "identifier"
+    with pytest.raises(InvalidName) as missing:
+        preview("txt", "본문\n끝\n", {"type": "create_slot", "start": 0, "end": 2, "id": "", "label": ""})
+    assert missing.value.to_dict() == {"code": "invalid_name", "field": "identifier",
+                                       "message": "항목이나 선택의 식별자를 입력하세요."}
+    # 표시 이름(이름 칸)이 되읽기 동등을 깨면 이름 칸의 거절이다.
+    with pytest.raises(InvalidName) as label:
+        preview("txt", "본문\n끝\n", {"type": "create_slot", "start": 0, "end": 2, "id": "a", "label": "표  시"})
+    assert label.value.field == "name"
+    assert isinstance(label.value, ValueError), "거절은 여전히 ValueError 다 — 판정 밖 호출자는 그대로 멈춘다"
+
+
+# ------------------------------------------------------------------ P-01 확인 등급
+_NO_IMPACT = {"linked_jobs": [], "impact_unverified": 0,
+              "field_delta": {"added_fields": [], "removed_fields": []},
+              "structure_delta": {"added_slots": [], "removed_slots": [], "added_options": [],
+                                  "removed_options": [], "renamed": []}}
+
+
+@pytest.mark.parametrize(("command", "projection", "impact", "tier"), [
+    ({"type": "create_field", "name": "수요기관"}, {}, _NO_IMPACT, "none"),
+    ({"type": "create_field", "name": "수요기관"}, {"links_existing": True}, _NO_IMPACT, "enter"),
+    ({"type": "create_field", "name": "수요기관"}, {}, {**_NO_IMPACT, "impact_unverified": 1}, "enter"),
+    ({"type": "create_slot", "id": "a"}, {"expanded": False}, _NO_IMPACT, "none"),
+    ({"type": "create_slot", "id": "a"}, {"expanded": True}, _NO_IMPACT, "enter"),
+    ({"type": "create_option", "id": "a", "slot_id": "s"}, {}, _NO_IMPACT, "none"),
+    ({"type": "rename_field", "old_name": "a", "name": "b"}, {}, _NO_IMPACT, "enter"),
+    ({"type": "rename_slot", "slot_id": "s", "id": "s", "label": "새 표시"}, {}, _NO_IMPACT, "none"),
+    ({"type": "rename_slot", "slot_id": "s", "id": "t"}, {}, _NO_IMPACT, "enter"),
+    ({"type": "rename_option", "slot_id": "s", "option_id": "o", "id": "p"}, {}, _NO_IMPACT, "enter"),
+    ({"type": "adjust_range", "slot_id": "s"}, {"expanded": True}, _NO_IMPACT, "enter"),
+    ({"type": "unwrap", "slot_id": "s"}, {}, _NO_IMPACT, "enter"),
+    ({"type": "unwrap", "slot_id": "s"}, {"requires_cascade": True}, _NO_IMPACT, "button"),
+    ({"type": "unwrap", "slot_id": "s", "cascade": True}, {}, _NO_IMPACT, "button"),
+    ({"type": "delete", "slot_id": "s"}, {}, _NO_IMPACT, "button"),
+    ({"type": "rename_slot", "slot_id": "s", "id": "s"}, {},
+     {**_NO_IMPACT, "field_delta": {"added_fields": [], "removed_fields": ["이름"]}}, "enter"),
+    ({"type": "rename_slot", "slot_id": "s", "id": "s"}, {},
+     {**_NO_IMPACT, "linked_jobs": ["작업"],
+      "structure_delta": {**_NO_IMPACT["structure_delta"], "added_slots": ["t"]}}, "enter"),
+    ({"type": "rename_slot", "slot_id": "s", "id": "s"}, {}, {**_NO_IMPACT, "linked_jobs": ["작업"]}, "none"),
+])
+def test_confirm_tier_table(command, projection, impact, tier) -> None:
+    assert confirm_tier(command, projection, impact) == tier
+
+
+def test_contract_commands_always_show_their_impact_before_apply() -> None:
+    """ui-style 미리보기 계약: 이름 변경·범위 확장·삭제는 적용 전에 영향이 보인다 — 어느 입력에서도 none 이 아니다."""
+    contract = [
+        ({"type": "rename_field", "old_name": "a", "name": "b"}, {}),
+        ({"type": "rename_slot", "slot_id": "s", "id": "t"}, {}),
+        ({"type": "rename_option", "slot_id": "s", "option_id": "o", "id": "p"}, {}),
+        ({"type": "adjust_range", "slot_id": "s"}, {}),
+        ({"type": "create_slot", "id": "a"}, {"expanded": True}),
+        ({"type": "create_option", "id": "a", "slot_id": "s"}, {"expanded": True}),
+        ({"type": "delete", "slot_id": "s"}, {}),
+        ({"type": "delete", "kind": "option", "slot_id": "s", "option_id": "o"}, {}),
+    ]
+    for command, projection in contract:
+        for impact in (None, _NO_IMPACT):
+            assert confirm_tier(command, projection, impact) != "none", command
+
+
+def test_real_txt_previews_carry_the_facts_the_tier_reads() -> None:
+    source = "수요기관: ○○시청\n본문\n끝\n"
+    create = preview("txt", source, {"type": "create_field", "start": 6, "end": 10, "name": "수요기관"})
+    assert confirm_tier({"type": "create_field"}, create, _NO_IMPACT) == "none"
+    partial = preview("txt", source, {"type": "create_slot", "start": 12, "end": 13, "id": "a"})
+    assert partial["expanded"] is True and confirm_tier({"type": "create_slot"}, partial, _NO_IMPACT) == "enter"
+    whole = preview("txt", source, {"type": "create_slot", "start": 11, "end": 14, "id": "a"})
+    assert whole["expanded"] is False and confirm_tier({"type": "create_slot"}, whole, _NO_IMPACT) == "none"
+
+
+def test_created_target_names_the_new_field_slot_or_option_in_the_result() -> None:
+    source = "수요기관: ○○시청\n본문\n끝\n"
+    result, _ = apply("txt", source, {"type": "create_field", "start": 6, "end": 10, "name": "수요기관"})
+    created = created_target({"type": "create_field", "name": " 수요기관 "}, analyze("txt", result))
+    assert created is not None and created["kind"] == "field" and created["name"] == "수요기관"
+    assert created["location"] == created["occurrences"][0]
+    assert (created["location"]["start"], created["location"]["end"]) == (6, 14)
+    slotted, _ = apply("txt", source, {"type": "create_slot", "start": 11, "end": 14, "id": "구분"})
+    slot = created_target({"type": "create_slot", "id": "구분"}, analyze("txt", slotted))
+    assert slot is not None and slot["kind"] == "slot" and slot["slot_id"] == "구분" and slot["location"]
+    assert created_target({"type": "rename_field", "name": "수요기관"}, analyze("txt", result)) is None
+    assert created_target({"type": "create_field", "name": "없음"}, analyze("txt", result)) is None

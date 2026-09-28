@@ -261,6 +261,14 @@ body{padding:0}
       <div class="authoring-status"><div class="authoring-status-group"><span>저장하지 않은 변경</span><button class="authoring-status-link">구조 오류 0개 · 경고 1개</button></div><div class="authoring-status-group authoring-status-end"><button class="authoring-status-link" data-trial="stale">마지막 시험 이후 변경됨</button><select class="field authoring-zoom" aria-label="확대"><option>100%</option></select></div></div>
     </div>
   </div>
+
+  <div class="spec">
+    <div class="spec-h">템플릿 저작 — 속성 확정(이름 제안·칸 곁 거절·Enter 확정)</div>
+    <div class="authoring-shell" style="flex-direction:row;gap:var(--sp-16);align-items:flex-start">
+      <form class="authoring-properties" style="max-width:none"><div class="authoring-target"><span class="authoring-target-kind"><span class="authoring-kind">고른 문구</span></span><p class="authoring-target-name quote">○○시청</p></div><label class="authoring-field">필드 이름<input class="field" value="수요기관" aria-invalid="true" aria-describedby="gal-name-reason"></label><p class="authoring-reason" id="gal-name-reason" role="alert">필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다.</p><details class="authoring-disclosure"><summary>연결 식별자</summary><input class="field" aria-label="연결 식별자"></details><div class="authoring-actions authoring-properties-actions"><button type="button" class="btn quiet">취소</button><button type="submit" class="btn primary">필드로 만들기</button></div></form>
+      <form class="authoring-properties" style="max-width:none"><label class="authoring-field">필드 이름<input class="field" value="수요처"></label><section class="authoring-preview" aria-label="변경 영향"><h3 class="authoring-section-label">변경 영향</h3><p>현재 문서의 사용 위치 3곳이 ‘수요처’로 변경됩니다.</p></section><div class="authoring-actions authoring-properties-actions"><button type="button" class="btn quiet">취소</button><button type="submit" class="btn primary" aria-keyshortcuts="Enter">필드 이름 변경<kbd class="authoring-key" aria-hidden="true">Enter</kbd></button></div></form>
+    </div>
+  </div>
 </main>
 <script>
 /* 갤러리 테마 검증 토글 — System→Light→Dark 순환. documentElement 의 data-theme 만 세팅해

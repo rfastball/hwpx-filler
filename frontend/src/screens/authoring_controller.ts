@@ -317,7 +317,7 @@ export function createAuthoringController(deps: Deps) {
       const located = target.source_revision != null
         ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
       navigationHistory.push(previous);
-      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], ...(options.keepDock ? {} : { panel: "properties" }), refusal: null, preview: null, command: null, selectionNote: null,
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], ...(options.keepDock ? {} : { panel: "properties", formEntry: "" }), refusal: null, preview: null, command: null, selectionNote: null,
         context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
         commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
       if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
@@ -337,16 +337,20 @@ export function createAuthoringController(deps: Deps) {
     await editors.get(previous.id)?.focus(previous.target);
   }
 
-  async function preview(command: Obj) {
+  /** 명령 하나를 미리 본다. 돌려주는 값이 준비된 미리보기다(거절이면 refusal 을 실은 결과, 늦었으면 null).
+   *  확인 등급(P-01)이 `none` 이면 미리보기 구획을 그리지 않는다 — 호출자가 그 값으로 곧바로 적용한다(번쩍임 없음). */
+  async function preview(command: Obj): Promise<Obj | null> {
     const id = snapshot().active_id;
     const request = ++previewRequest;
     await flush(id);
     const editorContent = await editors.get(id)?.content();
     const atRevision = revision(id);
     const result = await previewCommand(id, atRevision, command);
-    if (id !== viewId || request !== previewRequest || atRevision !== revision(id)) return;
-    if (result.refusal) update({ command, preview: null, refusal: result.refusal });
-    else update({ command, preview: { ...result, session_id: id, revision: atRevision, editorContent }, refusal: null });
+    if (id !== viewId || request !== previewRequest || atRevision !== revision(id)) return null;
+    if (result.refusal) { update({ command, preview: null, refusal: result.refusal }); return result; }
+    const prepared = { ...result, session_id: id, revision: atRevision, editorContent, command };
+    update({ command, preview: result.confirm === "none" ? null : prepared, refusal: null });
+    return prepared;
   }
 
   /** 현재 선택의 명령 가용성 — locate 결과가 실어 오면 그것, 아니면 독립 액션 `commands` 로 묻는다. */
@@ -361,11 +365,13 @@ export function createAuthoringController(deps: Deps) {
       destination: command.destination, with_meaning: command.with_meaning })
     : dispatch("preview", { session_id: id, revision: atRevision, command });
 
-  async function applyPreview() {
+  /** 준비된 미리보기를 적용한다 — 인자가 없으면 보이는 미리보기다. 돌려주는 값은 되돌릴 이름과, 만들기 명령이면
+   *  Python 이 짚은 만든 대상(created, NG-14)이다. 확정 직전 revision 재검사는 등급과 무관하게 늘 돈다. */
+  async function applyPreview(given?: Obj): Promise<{ label: string; created: Obj | null } | undefined> {
     if (applying) return;
-    const prepared = view.preview;
-    const command = view.command;
-    if (!prepared) return;
+    const prepared = given || view.preview;
+    const command = prepared?.command || view.command;
+    if (!prepared || !command) return;
     applying = true;
     try {
       const id = prepared.session_id;
@@ -384,6 +390,8 @@ export function createAuthoringController(deps: Deps) {
       const label = prepared.label || result.label || COMMANDS.find(([type]) => type === command.type)?.[1] || command.type;
       if (id === viewId) update({ command: null, preview: null, lastCommandLabel: label, commandNote: { seq: (view.commandNote?.seq || 0) + 1, kind: "apply", label } });
       scheduleTrial(id);
+      // 만든 대상은 적용 뒤의 revision 에서 짚는다 — 호출자가 그 자리를 고를 수 있게(선택·캐럿·이름표).
+      return { label, created: result.created ? { ...result.created, session_id: id, source_revision: revision(id) } : null };
     } finally { applying = false; }
   }
 

@@ -1058,7 +1058,7 @@ def _placement_keyword(kind: str) -> str:
     return keyword
 
 
-def _marker_identifier(value: object) -> str:
+def marker_identifier(value: object) -> str:
     """마커에 실을 id — **스캐너가 같은 값으로 도로 읽는지**가 통과 조건이다.
 
     :func:`~hwpxfiller.domain.fields.normalize_field_id` 가 공백을 접고 스캐너가
@@ -1073,7 +1073,7 @@ def _marker_identifier(value: object) -> str:
     return ident
 
 
-def _marker_label(value: object) -> str:
+def marker_label(value: object) -> str:
     """마커에 실을 label — 되읽기 동등(공백 접힘·괄호 없음)만 통과."""
     if value is None:
         return ""
@@ -1089,8 +1089,8 @@ def _marker_label(value: object) -> str:
 def begin_marker_text(kind: str, identifier: object, label: object = None) -> str:
     """여는 구간 마커 1건의 문단 텍스트(``{{#항목 id label}}``)."""
     keyword = _placement_keyword(kind)
-    ident = _marker_identifier(identifier)
-    tail = _marker_label(label)
+    ident = marker_identifier(identifier)
+    tail = marker_label(label)
     body = f"#{keyword} {ident}" + (f" {tail}" if tail else "")
     return "{{" + body + "}}"
 

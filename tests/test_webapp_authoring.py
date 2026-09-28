@@ -543,7 +543,8 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
                                                     "end": location["content_start_offset"]}})
     # UX-10 R2: 문맥 줄은 담긴 항목/선택 이름과 사람이 읽는 행 범위다. 캐럿(빈 범위)에는 고른 문구가 없다.
     assert inside["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": "",
-                                 "location_label": "표시 / 안1 · 4행", "selected_text": None}
+                                 "location_label": "표시 / 안1 · 4행", "selected_text": None,
+                                 "name_suggestion": None}
     assert {item["type"] for item in inside["commands"] if item["enabled"]} >= {"rename_slot", "rename_option", "unwrap"}
     invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {"start": -1, "end": 0}})
     assert invalid["matches"] == [] and all(
@@ -1347,3 +1348,122 @@ def test_outline_projection_is_cached_until_analysis_is_replaced(tmp_path: Path)
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "새 {{이름}}\n"})
     third_slots = _tab(ctrl, sid)["analysis"]["slots"]
     assert third_slots is not first_slots  # update 가 analysis 객체를 바꿨다 → 다시 짓는다.
+
+
+# ------------------------------------------------------------------ IDE-03 만들기 루프(P-06·P-01·NG-14)
+_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+_HS = "http://www.hancom.co.kr/hwpml/2011/section"
+_ENTRY = "Contents/section0.xml"
+
+
+def _hwpx_session(ctrl: AuthoringController, *paragraphs: str) -> str:
+    """본문 문단만 든 HWPX 한 부를 열고 보존 검증이 끝난 것으로 둔다(실 rhwp 판정은 게이트가 잰다)."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+
+    package = HwpxPackage()
+    package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    package.stored.add(MIMETYPE_NAME)
+    body = "".join(f"<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p>" for text in paragraphs)
+    package.entries[_ENTRY] = f'<hs:sec xmlns:hs="{_HS}" xmlns:hp="{_HP}">{body}</hs:sec>'.encode("utf-8")
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": base64.b64encode(package.to_bytes()).decode("ascii")})
+    ctrl.sessions[opened["session_id"]].rhwp_editable = True
+    return opened["session_id"]
+
+
+def test_locate_suggests_the_label_before_a_value_for_both_media(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "공고명 없음\n수요기관: ○○시청\n"})
+    sid = txt["session_id"]
+
+    def txt_context(start: int, end: int) -> dict:
+        return ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
+                                        "selection": {"start": start, "end": end}})["context"]
+
+    value = "공고명 없음\n수요기관: ".__len__()
+    picked = txt_context(value, value + 4)
+    assert (picked["selected_text"], picked["name_suggestion"]) == ("○○시청", "수요기관")
+    # 라벨이 없으면 제안도 없다(선택 문구 자체는 이름이 되지 않는다). 캐럿은 문구가 아니다.
+    assert txt_context(0, 3)["name_suggestion"] is None
+    assert txt_context(value, value)["name_suggestion"] is None
+
+    hwpx = _hwpx_session(ctrl, "  가. 공고번호   : 제1호", " 수  요  기  관: ○○시청", "입찰개요")
+    place = {"entry": _ENTRY, "start_paragraph": 1, "end_paragraph": 1, "paragraph": 1}
+    native = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 0,
+                                      "selection": {**place, "start": 13, "end": 17}})["context"]
+    assert (native["selected_text"], native["name_suggestion"]) == ("○○시청", "수요기관")
+    numbered = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 0, "selection": {
+        "entry": _ENTRY, "start_paragraph": 0, "end_paragraph": 0, "paragraph": 0, "start": 14, "end": 17}})["context"]
+    assert numbered["name_suggestion"] == "공고번호"
+    plain = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 0, "selection": {
+        "entry": _ENTRY, "start_paragraph": 2, "end_paragraph": 2, "paragraph": 2, "start": 0, "end": 4}})["context"]
+    assert (plain["selected_text"], plain["name_suggestion"]) == ("입찰개요", None)
+
+
+def test_invalid_names_come_back_as_refusals_for_both_media(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "수요기관: ○○시청\n본문\n끝\n"})
+    empty = ctrl.dispatch("preview", {"session_id": txt["session_id"], "revision": 0,
+                                      "command": {"type": "create_field", "start": 6, "end": 10, "name": " "}})
+    assert empty == {"ok": False, "session_id": txt["session_id"], "revision": 0,
+                     "refusal": {"code": "invalid_name", "field": "name",
+                                 "message": "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."}}
+    slot = ctrl.dispatch("preview", {"session_id": txt["session_id"], "revision": 0,
+                                     "command": {"type": "create_slot", "start": 11, "end": 14, "id": "a b", "label": "표시"}})
+    assert slot["ok"] is False and slot["refusal"]["code"] == "invalid_name" and slot["refusal"]["field"] == "identifier"
+    assert ctrl.dispatch("content", {"session_id": txt["session_id"]})["content"] == "수요기관: ○○시청\n본문\n끝\n"
+
+    hwpx = _hwpx_session(ctrl, "수요기관: ○○시청", "본문")
+    native = ctrl.dispatch("preview", {"session_id": hwpx, "revision": 0, "command": {
+        "type": "create_field", "entry": _ENTRY, "paragraph": 0, "start": 6, "end": 10, "name": "#x"}})
+    assert native["ok"] is False and native["refusal"] == {
+        "code": "invalid_name", "field": "name",
+        "message": "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."}
+    region = ctrl.dispatch("preview", {"session_id": hwpx, "revision": 0, "command": {
+        "type": "create_slot", "entry": _ENTRY, "start_paragraph": 1, "end_paragraph": 1, "id": "", "label": ""}})
+    assert region["ok"] is False and region["refusal"] == {
+        "code": "invalid_name", "field": "identifier", "message": "항목이나 선택의 식별자를 입력하세요."}
+
+
+def test_preview_carries_the_confirm_tier_and_the_created_target(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "수요기관: ○○시청 {{품명}}\n본문\n끝\n"})
+    sid = txt["session_id"]
+    create = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "create_field", "start": 6, "end": 10, "name": "수요기관"}})
+    assert create["confirm"] == "none"
+    assert create["created"]["kind"] == "field" and create["created"]["name"] == "수요기관"
+    assert (create["created"]["location"]["start"], create["created"]["location"]["end"]) == (6, 14)
+    linking = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                        "command": {"type": "create_field", "start": 6, "end": 10, "name": "품명"}})
+    assert linking["links_existing"] is True and linking["confirm"] == "enter"
+    rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "rename_field", "old_name": "품명", "name": "물품명"}})
+    assert rename["confirm"] == "enter" and rename["created"] is None
+    expanded = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                         "command": {"type": "create_slot", "start": 18, "end": 19, "id": "구분"}})
+    assert expanded["expanded"] is True and expanded["confirm"] == "enter"
+    assert expanded["created"]["kind"] == "slot" and expanded["created"]["slot_id"] == "구분"
+
+    structured = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})
+    delete = ctrl.dispatch("preview", {"session_id": structured["session_id"], "revision": 0,
+                                       "command": {"type": "delete", "kind": "option", "slot_id": "항목1", "option_id": "안2"}})
+    assert delete["confirm"] == "button"
+    cascade = ctrl.dispatch("preview", {"session_id": structured["session_id"], "revision": 0,
+                                        "command": {"type": "unwrap", "kind": "slot", "slot_id": "항목1", "cascade": True}})
+    assert cascade["confirm"] == "button"
+    label_only = ctrl.dispatch("preview", {"session_id": structured["session_id"], "revision": 0,
+                                           "command": {"type": "rename_slot", "kind": "slot", "slot_id": "항목1",
+                                                       "id": "항목1", "label": "다른 표시"}})
+    assert label_only["confirm"] == "none"
+
+    hwpx = _hwpx_session(ctrl, "수요기관: ○○시청", "본문")
+    native = ctrl.dispatch("preview", {"session_id": hwpx, "revision": 0, "command": {
+        "type": "create_field", "entry": _ENTRY, "paragraph": 0, "start": 6, "end": 10, "name": "수요기관"}})
+    assert native["confirm"] == "none"
+    created = native["created"]
+    assert created["kind"] == "field" and created["name"] == "수요기관" and created["location"]["paragraph"] == 0
+    # 적용(편집기 확정) 뒤 그 대상은 정체로 짚인다 — 위치 줄이 「필드 · 수요기관」이 된다.
+    ctrl.dispatch("update", {"session_id": hwpx, "revision": 0, "content": native["content"]})
+    located = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 1, "selection": created["location"],
+                                       "target": {"kind": "field", "name": "수요기관"}})
+    assert [(match["kind"], match["name"]) for match in located["matches"]] == [("field", "수요기관")]
