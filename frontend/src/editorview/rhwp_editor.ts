@@ -36,6 +36,10 @@ export type RhwpMountSpec = {
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
   onCompatibility?: (result: { editable: boolean; diagnostics?: unknown[] }) => void;
   readOnly: boolean;
+  /** Who needs caret reports: "visible" polls only while the host is rendered (not inside a
+   *  `hidden`/`inert` ancestor); "never" skips polling (viewers nobody reads the selection of).
+   *  Default "visible". */
+  trackSelection?: "visible" | "always" | "never";
   /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
   studio?: typeof createStudio;
 };
@@ -46,6 +50,16 @@ export type RhwpHandle = {
   setDecorations(projection: Obj): Promise<void>; setReadOnly(readOnly: boolean): Promise<void>;
   dispose(): void;
 };
+
+/** Trailing debounce for HWPX export after edits: a burst of change events costs one export. */
+export const EXPORT_DEBOUNCE_MS = 200;
+const SELECTION_POLL_MS = 300;
+
+/** The host is rendered: no `hidden`/`inert` ancestor (inactive document tabs) and laid out. */
+function hostRendered(host: HTMLElement): boolean {
+  if (typeof host.closest === "function" && host.closest("[hidden],[inert]")) return false;
+  return !("offsetParent" in host) || host.offsetParent !== null;
+}
 
 function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
@@ -65,6 +79,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
   let pendingChange: Promise<void> | null = null;
+  // Debounced export: `scheduled` means a change arrived that no export has started for yet.
+  let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
   try {
     await editor.loadFile(decodeBase64(spec.content), spec.fileName, { skipUnsavedGuard: true });
@@ -116,11 +132,26 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     if (key !== lastSelection) { lastSelection = key; spec.onSelectionChanged(next); }
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.
-  const timer = window.setInterval(() => { if (!disposed && !document.hidden) void selection().catch(spec.onError); }, 300);
+  // Hidden tabs and viewers whose selection nobody reads skip the cross-frame query.
+  const track = spec.trackSelection ?? "visible";
+  const timer = track === "never" ? undefined : window.setInterval(() => {
+    if (disposed || document.hidden || (track === "visible" && !hostRendered(spec.host))) return;
+    void selection().catch(spec.onError);
+  }, SELECTION_POLL_MS);
+  const cancelScheduled = () => { scheduled = false; window.clearTimeout(exportTimer); exportTimer = undefined; };
+  /** Start the export for the latest change now (timer fired or a flush asked for it). */
+  const exportScheduled = () => {
+    if (!scheduled) return;
+    cancelScheduled();
+    pendingChange = publish(changeGeneration);
+    void pendingChange.catch(spec.onError);
+  };
   const off = editor.onDocumentChanged(() => {
     if (!readOnly && !replacing && !disposed) {
-      pendingChange = publish(++changeGeneration);
-      void pendingChange.catch(spec.onError);
+      ++changeGeneration;
+      scheduled = true;
+      window.clearTimeout(exportTimer);
+      exportTimer = window.setTimeout(exportScheduled, EXPORT_DEBOUNCE_MS);
     }
   });
   const offShortcut = editor.onShortcut((shortcut) => spec.onShortcut?.(shortcut));
@@ -144,10 +175,12 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     if (!result.focused) throw new Error("HWPX 위치를 에디터에서 찾을 수 없습니다.");
   };
   const flushChanges = async () => {
-    while (pendingChange) {
+    for (;;) {
+      exportScheduled();
       const current = pendingChange;
+      if (!current) return;
       await current;
-      if (current === pendingChange) break;
+      if (!scheduled && current === pendingChange) return;
     }
   };
   return {
@@ -175,12 +208,14 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       if (readOnly) return;
       const r = await editor.hwpctrl.undo();
       if (!r.ok) throw new Error(r.message || r.reason);
+      cancelScheduled();
       await publish(++changeGeneration);
     },
     async redo() {
       if (readOnly) return;
       const r = await editor.hwpctrl.redo();
       if (!r.ok) throw new Error(r.message || r.reason);
+      cancelScheduled();
       await publish(++changeGeneration);
     },
     async setDecorations(projection) {
@@ -226,7 +261,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     },
     dispose() {
       if (disposed) return;
-      disposed = true; window.clearInterval(timer); off(); offShortcut();
+      disposed = true; window.clearInterval(timer); cancelScheduled(); off(); offShortcut();
       editor.destroy();
     },
   };

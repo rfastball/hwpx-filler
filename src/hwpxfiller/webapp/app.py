@@ -531,15 +531,16 @@ class WebFrontend:
             raise ValueError(f"등록되지 않은 화면: {screen!r}") from None
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
-    def _push(self, screen: str, snapshot: dict) -> None:
+    def _push(self, screen: str, snapshot: dict) -> "product_api.DeliveryOutcome | None":
         """제품 공개 경계 하나로만 나간다(N-07 · D-06) — 내부 이름 `window.__push` 는 모른다.
 
-        종전과 같이 **발사 후 망각**이다: 반환을 검사하지 않는다. 느린 렌더러에서 ack 를
-        기다리기 시작하면 이 스레드가 화면 갱신마다 매달린다.
+        종전과 같이 **발사 후 망각**이다: 여기서 반환을 검사하지 않는다. 느린 렌더러에서 ack 를
+        기다리기 시작하면 이 스레드가 화면 갱신마다 매달린다. 전달 판정은 돌려줄 뿐이다 —
+        변경 없는 push 를 생략하는 화면(authoring)이 실패한 전달을 성공으로 기억하지 않게 한다.
         """
         if self._window is None:
-            return
-        product_api.ProductApiClient.for_window(self._window).push(screen, snapshot)
+            return None
+        return product_api.ProductApiClient.for_window(self._window).push(screen, snapshot)
 
     # -------------------------------------------------- 웹→Python (js_api)
     def initial(self, screen: str) -> dict:

@@ -216,8 +216,8 @@ export function lintpadCommand(handle: LintpadHandle, command: "undo" | "redo" |
 export function updateLintpad(handle: LintpadHandle, spec: LintpadUpdateSpec): void {
   const view = VIEWS.get(handle);
   if (view === undefined) return;
-  const current = view.state.doc.toString();
-  const replacing = spec.doc !== undefined && spec.doc !== current;
+  // 강조만 바꾸는 호출(장식)은 문서 전체를 문자열로 만들지 않는다 — 비교할 새 문서가 있을 때만 읽는다.
+  const replacing = spec.doc !== undefined && spec.doc !== view.state.doc.toString();
   if (!replacing && spec.spans === undefined) return;
   view.dispatch({
     changes: replacing
