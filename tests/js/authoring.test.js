@@ -701,7 +701,10 @@ test("§10: screen readers get the field name, use count, parent item and proble
   assert.ok(markup.includes('aria-label="필드 · 공고명 · 사용 위치 2곳 · 문제 1"'));
   assert.ok(markup.includes('aria-label="항목 · 문서"'));
   assert.ok(markup.includes('aria-label="선택 · 견적서 · 상위 항목 문서 · 문제 1"'));
-  assert.ok(markup.includes('aria-label="공고명 · 사용 위치 1/2 · 공고명: 2026"') && markup.includes('aria-label="공고명 · 사용 위치 2/2"'));
+  // 사용 위치 줄은 필드 줄을 펼친 뒤에 선다(UX-05) — 펼친 뒤의 이름은 authoring_render.test.js 가 실제 커밋으로 잰다.
+  assert.ok(!markup.includes("사용 위치 1/2"), "접힌 필드 줄은 사용 위치 줄을 짓지 않는다");
+  assert.equal(outlineLabel("occurrence", { name: "공고명", index: 1, total: 2, context: "공고명: 2026" }), "공고명 · 사용 위치 1/2 · 공고명: 2026");
+  assert.equal(outlineLabel("occurrence", { name: "공고명", index: 2, total: 2 }), "공고명 · 사용 위치 2/2");
   controller.update({ panel: "properties", selected: { kind: "field", name: "공고명", count: 2, occurrences: [{ start: 0, end: 7 }] }, selection: { start: 0, end: 7 }, commandType: "rename_field" });
   markup = render(controller);
   assert.ok(markup.includes('<form class="authoring-properties" aria-labelledby="authoring-properties-title">'));

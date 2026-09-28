@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import os
 import re
@@ -93,6 +94,12 @@ class AuthoringController:
         # 형태다. 저장은 파일을 제자리에서 바꾸므로 같은 파일을 든 편집 세션이 되읽어야
         # 한다(#320). 배선은 앱 조립부가 한다(`app.py`).
         self.mutation_sinks: list[MutationSink] = []
+        #: 투영 revision(UX-05) — 세션이 **새 객체**를 들 때만 오르는 전역 순번. 표면은 이 열쇠로
+        #: 시험 뷰어 재마운트·장식 재전송을 가른다(같은 결과의 재전송은 같은 열쇠).
+        self._revision_counter = itertools.count(1)
+        self._projection_revisions: dict[tuple[str, str], tuple[object, int]] = {}
+        #: 마지막으로 **전달된** push 의 지문 — 바뀐 것이 없으면 다시 밀지 않는다.
+        self._pushed: str | None = None
 
     def _refresh_recoverable(self) -> None:
         self._recoverable = self.store.list_drafts()
@@ -196,7 +203,8 @@ class AuthoringController:
             "dirty": session.dirty,
             "cases_dirty": session.cases_dirty or session.trial_inputs_dirty,
             "trial_inputs_dirty": session.trial_inputs_dirty,
-            "analysis": session.analysis,
+            "analysis": {**session.analysis,
+                         "revision": self._projection_revision(session.id, "analysis", session.analysis)},
             "values": dict(session.values),
             "selected": dict(session.selected),
             "cases": [self._case_view(session, case) for case in session.cases],
@@ -208,7 +216,9 @@ class AuthoringController:
                 "failed" if session.trial_result.get("report", {}).get("missing_fields")
                 or session.trial_result.get("report", {}).get("errors") else "current"
             ),
-            "trial_result": session.trial_result,
+            "trial_result": None if session.trial_result is None else {
+                **session.trial_result,
+                "revision": self._projection_revision(session.id, "trial_result", session.trial_result)},
             "trial_coverage": self._trial_coverage(session),
             "trial_error": session.trial_error,
             "recovery": session.recovery,
@@ -320,8 +330,23 @@ class AuthoringController:
     def _case_view(self, session: AuthoringSession, case: dict) -> dict:
         return {**case, "needs_review": case.get("schema") != self._schema_key(session.analysis)}
 
+    def _projection_revision(self, session_id: str, part: str, value: object) -> int:
+        """세션이 든 투영 객체(analysis·trial_result)의 revision — 객체가 바뀔 때만 오른다.
+
+        두 객체는 통째로 교체될 뿐 제자리에서 고쳐지지 않는다. 참조를 쥐고 있으므로 `is` 비교가
+        재사용된 id 에 속지 않는다. 순번은 컨트롤러 전역이라 다른 문서의 결과와 겹치지 않는다.
+        """
+        key = (session_id, part)
+        seen = self._projection_revisions.get(key)
+        if seen is None or seen[0] is not value:
+            seen = (value, next(self._revision_counter))
+            self._projection_revisions[key] = seen
+        return seen[1]
+
     def snapshot(self) -> dict:
         with self._lock:
+            for key in [key for key in self._projection_revisions if key[0] not in self.sessions]:
+                del self._projection_revisions[key]
             return {
                 "tabs": [self._tab(session) for session in self.sessions.values()],
                 "active_id": self.active_id,
@@ -346,8 +371,27 @@ class AuthoringController:
         with self._lock:
             return bool(self.sessions)
 
+    @staticmethod
+    def _fingerprint(snapshot: dict) -> str:
+        """push 지문 — 시험 결과의 base64 본문은 다시 직렬화하지 않고 그 revision 으로 대신한다."""
+        tabs = [{**tab, "trial_result": tab["trial_result"] and tab["trial_result"]["revision"]}
+                for tab in snapshot["tabs"]]
+        return digest(json.dumps({**snapshot, "tabs": tabs}, ensure_ascii=False, default=str).encode("utf-8"))
+
     def _push(self) -> None:
-        self._push_sink(self.name, self.snapshot())
+        """관측 push — 직전에 전달한 것과 같은 스냅숏이면 보내지 않는다(UX-05).
+
+        읽기 전용 동작(locate·commands 등)이 매번 같은 판을 다시 보내 표면이 다시 그리던 것을 막는다.
+        상태가 바뀐 동작(예: check_external 이 외부 변경을 발견)은 지문이 달라 그대로 나간다.
+        전달이 실패했다고 판정된 push 는 지문을 남기지 않는다 — 다음 동작이 같은 판을 다시 보낸다.
+        """
+        with self._lock:
+            snapshot = self.snapshot()
+            fingerprint = self._fingerprint(snapshot)
+            if fingerprint == self._pushed:
+                return
+            outcome = self._push_sink(self.name, snapshot)
+            self._pushed = None if getattr(outcome, "ok", True) is False else fingerprint
 
     def open_path(self, path: str | Path, *, as_template: bool = True) -> dict:
         """Native dialog/library handoff only; never register as a frontend action."""
