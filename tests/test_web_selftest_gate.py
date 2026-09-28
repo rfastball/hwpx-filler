@@ -1449,9 +1449,9 @@ class TestWebSelftestGate:
         # 화면 읽기: 구조 목록 한 줄과 이름 칸이 필드 이름·사용 위치 수를 글로 싣는다.
         assert b["kbd_field_label"] == "필드 · 공고명 · 사용 위치 1곳", b["kbd_field_label"]
         assert b["kbd_properties_target"] == "필드 · 공고명 · 사용 위치 1곳"
-        assert b["kbd_name_described_by"] == (
-            "authoring-properties-target authoring-properties-context"
-        )
+        # 필드 전체는 여러 자리라 위치 문맥 줄이 없다(UX-10 R2) — 이름 칸은 대상 카드만 설명으로 읽는다.
+        assert b["kbd_name_described_by"] == "authoring-properties-target"
+        assert b["kbd_properties_context"] == ""
         assert b["kbd_properties_command"] == "rename_field"
         assert b["kbd_f2_command"] == "rename_field"
         assert "‘공고제목’으로 변경됩니다" in b["kbd_rename_preview_text"]
@@ -1459,7 +1459,8 @@ class TestWebSelftestGate:
         # 그 행의 이름은 다음 행동의 동사로 시작한다.
         assert b["kbd_problem_severity"] == "오류" and b["kbd_problem_category"] == "구조", b["kbd_problem_text"]
         assert b["kbd_problem_action"].startswith("원문으로 이동 · 오류 · 구조"), b["kbd_problem_action"]
-        assert b["kbd_problem_expected"] in b["kbd_problem_context"]
+        # 문맥 줄은 원시 offset 이 아니라 사람이 읽는 줄 번호다(UX-10 R2).
+        assert b["kbd_problem_expected"].endswith("행") and b["kbd_problem_expected"] in b["kbd_problem_context"]
         assert b["kbd_back_expected"] in b["kbd_back_context"]
         assert b["kbd_error_band"] == "", f"키보드 경로가 오류 띠를 남겼습니다: {b['kbd_error_band']!r}"
 

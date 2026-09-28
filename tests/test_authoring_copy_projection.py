@@ -215,3 +215,100 @@ def test_first_field_hint_is_a_notice_only_for_a_general_document_without_meanin
     assert ctrl.open_path(template, as_template=False)["notice"] is None
     again = _controller(tmp_path / "second")
     assert again.open_path(plain, as_template=True)["notice"] is None
+
+
+# ------------------------------------------------------------------ 검색 결과의 같은 자리(UX-10 R4)
+QUICKSTART = Path(__file__).parent.parent / "examples" / "quickstart-101" / "templates"
+
+
+def test_hwpx_search_merges_hits_the_row_cannot_tell_apart(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(QUICKSTART / "구매요청서.hwpx")
+    result = ctrl.dispatch("search", {"session_id": opened["session_id"], "revision": 0,
+                                      "query": "수요기관", "kind": "all"})
+    rows = [(hit["kind"], hit.get("entry"), hit.get("paragraph_path"), hit.get("context")) for hit in result["hits"]]
+    # 「수요기관:」 글자와 필드 값 「{{수요기관}}」 안의 일치는 같은 문단의 같은 줄 「수요기관: [수요기관]」이었다.
+    assert len(rows) == len(set(rows)), rows
+    assert [hit["kind"] for hit in result["hits"]] == ["text", "field"]
+    assert result["summary"] == "총 2건 · 본문 1 · 필드 1 · 항목·선택 0"
+    first = result["hits"][0]
+    assert (first["start"], first["context"]) == (0, "수요기관: [수요기관]"), "합친 결과는 첫 일치로 간다"
+
+
+def test_txt_search_merges_hits_on_one_line_with_the_same_row(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.dispatch("new", {"media": "txt", "content": "수요기관: {{수요기관}}\n수요기관: {{수요기관}}\n"})
+    hits = ctrl.dispatch("search", {"session_id": opened["session_id"], "revision": 0,
+                                    "query": "수요기관", "kind": "body"})["hits"]
+    # 한 줄의 두 일치는 한 행으로, 다른 줄의 같은 문맥은 다른 자리로 남는다.
+    assert [(hit["start"], hit["context"]) for hit in hits] == [(0, "수요기관: [수요기관]"), (15, "수요기관: [수요기관]")]
+
+
+# ------------------------------------------------------------------ 속성 문맥 줄·선택한 문구(UX-10 R2)
+def test_locate_projects_a_human_location_label_and_the_selected_text(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(QUICKSTART / "구매요청서.hwpx")
+    sid = opened["session_id"]
+    first = next(field for field in opened["analysis"]["fields"] if field["name"] == "수요기관")["occurrences"][0]
+    place = {"entry": first["entry"], "paragraph": first["paragraph"],
+             "start_paragraph": first["paragraph"], "end_paragraph": first["paragraph"]}
+
+    def context(**selection) -> dict:
+        return ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
+                                        "selection": {**place, **selection}})["context"]
+
+    label = context(start=0, end=4)
+    # 문맥 줄은 사람이 읽는 문단 번호(1부터)이고 글자 offset 이 아니다. 선택한 글자는 그대로 싣는다.
+    assert label["location_label"] == f"문단 {first['paragraph'] + 1}"
+    assert label["selected_text"] == "수요기관"
+    assert context(start=2, end=2)["selected_text"] is None, "캐럿은 문구가 아니다"
+    # 필드 뒤처럼 제어 요소 너머의 글자 위치는 확정할 수 없다 — 짐작하지 않는다.
+    assert context(start=first["start"], end=first["end"])["selected_text"] is None
+    spanning = context(start=0, end=1, end_paragraph=first["paragraph"] + 1)
+    assert spanning["selected_text"] is None
+    assert spanning["location_label"] == f"문단 {first['paragraph'] + 1}–{first['paragraph'] + 2}"
+
+
+def test_locate_label_names_the_containing_slot_for_table_cells_and_txt_lines(tmp_path: Path) -> None:
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx
+
+    package = HwpxPackage()
+    package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    package.stored.add(MIMETYPE_NAME)
+    entry = "Contents/section0.xml"
+    package.entries[entry] = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">'
+        '<hp:p><hp:run><hp:t>머리</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run>'
+        '<hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>표 안 글자</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>끝</hp:t></hp:run></hp:p></hs:sec>'
+    ).encode("utf-8")
+    ctrl = _controller(tmp_path)
+    import base64
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": base64.b64encode(package.to_bytes()).decode("ascii")})
+    cell_path = [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]
+    cell = ctrl.dispatch("locate", {"session_id": opened["session_id"], "revision": 0, "selection": {
+        "entry": entry, "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0, "start": 0, "end": 3,
+        "cell_path": cell_path}})["context"]
+    # 셀 문단 번호는 셀 안의 번호다 — 위치는 표를 담은 본문 문단으로 읽는다.
+    assert cell["location_label"] == "문단 2"
+    assert cell["selected_text"] == "표 안"
+    # 항목(책갈피 영역) 안의 본문은 그 항목 이름이 앞선다.
+    apply_hwpx(package, {"type": "create_slot", "entry": entry, "start_paragraph": 1, "end_paragraph": 2,
+                         "id": "구분", "label": "공고 구분"})
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": base64.b64encode(package.to_bytes()).decode("ascii")})
+    body = ctrl.dispatch("locate", {"session_id": opened["session_id"], "revision": 0, "selection": {
+        "entry": entry, "paragraph": 1, "start_paragraph": 1, "end_paragraph": 1, "start": 0, "end": 2}})["context"]
+    # 항목 시작 책갈피가 문단 앞에 선 제어 요소라 글자 위치를 확정하지 않는다(필드 만들기와 같은 규칙).
+    assert (body["location_label"], body["selected_text"]) == ("공고 구분 · 문단 2", None)
+
+    txt = ctrl.dispatch("new", {"media": "txt", "content": "첫 줄\n둘째 줄 수요기관\n셋째"})
+    picked = ctrl.dispatch("locate", {"session_id": txt["session_id"], "revision": 0,
+                                      "selection": {"start": 9, "end": 13}})["context"]
+    assert (picked["location_label"], picked["selected_text"]) == ("2행", "수요기관")
+    whole_line = ctrl.dispatch("locate", {"session_id": txt["session_id"], "revision": 0,
+                                          "selection": {"start": 0, "end": 4}})["context"]
+    assert whole_line["location_label"] == "1행", "줄바꿈까지 고른 한 줄은 다음 줄로 넘어가지 않는다"

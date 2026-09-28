@@ -231,17 +231,42 @@ const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwrap", "d
 const DESTRUCTIVE = new Set(["delete"]);
 const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
 const menuItemClass = (commandType: string) => `authoring-menu-item${COMMAND_GROUP_START.has(commandType) ? " group-start" : ""}${DESTRUCTIVE.has(commandType) ? " danger" : ""}`;
+/** 문맥 메뉴의 사유 묶음(UX-10 R5): 메뉴에서 **이웃한** 불가 항목이 같은 사유면 그 사유를 무리의 첫 항목 위에 한 번만
+ *  세우고, 무리의 모든 항목이 그 줄을 설명(aria-describedby)으로 가리킨다. 대안 항목·가능 항목·판정 대기 항목이 무리를 끊는다.
+ *  혼자인 사유도 같은 자리(그 항목의 윗줄)다. 값: 명령 → { id, reason, lead(무리의 첫 항목), size }. */
+export function menuReasonGroups(commands: Obj[] | undefined, readOnly = false): Map<string, { id: string; reason: string; lead: boolean; size: number }> {
+  const groups = new Map<string, { id: string; reason: string; lead: boolean; size: number }>();
+  let run: string[] = [];
+  let reason = "";
+  const close = () => {
+    run.forEach((type, index) => groups.set(type, { id: `authoring-menu-reason-${run[0]}`, reason, lead: index === 0, size: run.length }));
+    run = []; reason = "";
+  };
+  for (const [type] of COMMANDS) {
+    const available = commandAvailability(commands, type);
+    const text = (readOnly || !available.enabled) && available.reason ? String(available.reason) : "";
+    if (!text || (run.length && text !== reason)) close();
+    if (text) { run.push(type); reason = text; }
+    if (available.alternative && !available.enabled) close();
+  }
+  close();
+  return groups;
+}
 function CommandList({ view, readOnly, menu, onPick }: { view: Obj; readOnly: boolean; menu?: boolean; onPick: (commandType: string) => void }) {
   const shared = sharedReason(view.commands);
   const reasonId = `authoring-command-reason-${menu ? "menu" : "palette"}`;
+  const groups = menu && !shared ? menuReasonGroups(view.commands, readOnly) : null;
   if (menu) return COMMANDS.flatMap(([commandType, label]) => {
     const available = commandAvailability(view.commands, commandType);
     const disabled = readOnly || !available.enabled;
-    const ownReason = !shared && disabled && available.reason ? `authoring-menu-reason-${commandType}` : undefined;
+    const group = disabled ? groups?.get(commandType) : undefined;
+    const ownReason = group?.id;
+    // 사유는 늘 그것이 걸린 항목들(혼자이면 그 하나)의 첫 항목 윗줄이다 — 위치가 한 가지라 어느 항목의 사유인지 헷갈리지 않는다.
+    const reasonLine = group?.lead && h("span", { key: "reason", id: group.id, className: "authoring-reason group-reason" }, group.reason);
     return [h("button", { key: commandType, type: "button", className: menuItemClass(commandType), role: "menuitem", tabIndex: -1, "aria-label": label,
         "aria-disabled": disabled || undefined, "aria-describedby": disabled ? (shared && available.reason ? reasonId : ownReason) : undefined,
         onClick: () => { if (!disabled) onPick(commandType); } },
-        label, ownReason && h("span", { id: ownReason, className: "authoring-reason" }, available.reason)),
+        reasonLine || null, label),
       !available.enabled && available.alternative && h("button", { key: `${commandType}-alternative`, type: "button", className: "authoring-menu-item alternative", role: "menuitem", tabIndex: -1,
         onClick: () => onPick(available.alternative!.command_type) }, available.alternative.label)];
   });
@@ -486,10 +511,16 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     id: identifier || name, label: name, slot_id: type === "create_option" ? view.context?.slot_id : parent || selected?.slot_id || selected?.id,
     option_id: selected?.option_id, kind: selected?.kind || "slot", text, cascade,
     destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name });
+  // 문맥 줄(UX-10 R2): Python 의 location_label(담긴 항목/선택 · 문단·행 범위)만 보인다 — 원시 좌표는 싣지 않는다.
+  const locationLabel = String(view.context?.location_label || "");
+  // 선택한 문구 카드(UX-10 R2): 의미가 아직 없는 글자 범위를 고른 채 속성을 열면(필드로 만들기) 무엇을 만드는지 보인다.
+  const textRange = !selected && selection.start != null && selection.end != null && (selection.start !== selection.end
+    || (selection.start_paragraph ?? selection.paragraph) !== (selection.end_paragraph ?? selection.start_paragraph ?? selection.paragraph));
   // 화면 읽기(§10): 이름 칸은 대상(종류·사용 위치)과 소속(상위 항목/선택·범위)을 설명으로 함께 읽힌다.
+  const describedBy = [(selected || textRange) && "authoring-properties-target", locationLabel && "authoring-properties-context"].filter(Boolean).join(" ") || undefined;
   const field = (label: string, value: string, onChange: (value: string) => void) => h("label", { className: "authoring-field" }, label,
       h("input", { className: "field", value, ref: label.includes("이름") ? nameInput : undefined, list: label === "필드 이름" ? "authoring-existing-fields" : undefined,
-        "aria-describedby": label.includes("이름") ? "authoring-properties-target authoring-properties-context" : undefined, onChange: (event: any) => onChange(event.target.value) }));
+        "aria-describedby": label.includes("이름") ? describedBy : undefined, onChange: (event: any) => onChange(event.target.value) }));
   const close = () => { controller.update({ panel: "", preview: null, refusal: null }); onClose(); };
   // 대상 카드(UX-09): 종류 표지 · 굵은 이름 · 메타 한 줄. 이름 칸의 설명(aria-describedby)은 카드 전체의 접근 이름이다.
   const whole = selected?.kind === "field" && Array.isArray(selected?.occurrences);
@@ -525,6 +556,10 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
           h("span", { className: "authoring-sr" }, ` · ${[`사용 위치 ${selected.count ?? selected.occurrences.length}곳`, ...(problems ? [`문제 ${problems}`] : [])].join(" · ")}`))
         : h("p", { id: "authoring-properties-target", className: "authoring-target-name" }, selected.name || selected.label || selected.id),
       targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta", "aria-hidden": whole || undefined }, targetMeta.filter(Boolean).join(" · "))),
+    // 카드 전체가 이름 칸의 설명이다(종류 「선택한 문구」 + 글자). 글자를 확정할 수 없으면(문단을 넘는 범위 등) 종류만 선다.
+    textRange && h("div", { className: "authoring-target", id: "authoring-properties-target" },
+      h("span", { className: "authoring-target-kind" }, h("span", { className: "authoring-kind" }, "선택한 문구")),
+      !!view.context?.selected_text && h("p", { className: "authoring-target-name quote", title: String(view.context.selected_text) }, String(view.context.selected_text))),
     // 명령을 바꿔도 초점은 이 select 에 남는다(WCAG 3.2.2) — 닫힌 select 의 ↑↓ 는 값마다 change 를 쏜다.
     h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined,
       "aria-describedby": !available.enabled && available.reason ? "authoring-properties-reason" : undefined, onChange: (event: any) => switchType(event.target.value) },
@@ -532,7 +567,7 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     // 비활성 사유와 대안은 Python 의 판정을 그대로 보인다(P07) — 툴팁만이 유일한 경로가 되지 않도록 본문에도 선다(§10).
     !available.enabled && available.reason && h("p", { className: "authoring-reason", id: "authoring-properties-reason" }, available.reason),
     !available.enabled && available.alternative && h("div", null, button(available.alternative.label, () => switchType(available.alternative!.command_type))),
-    h("p", { className: "authoring-context", id: "authoring-properties-context" }, `${selected?.slot_id || view.context?.slot_id || "문서"}${selected?.option_id || view.context?.option_id ? ` / ${selected?.option_id || view.context?.option_id}` : ""}${selection.start != null ? ` · ${selection.start}–${selection.end ?? selection.start}` : ""}`),
+    locationLabel && h("p", { className: "authoring-context", id: "authoring-properties-context" }, locationLabel),
     field(type.includes("field") ? "필드 이름" : "표시 이름", name, setName),
     type === "create_field" && h("datalist", { id: "authoring-existing-fields" }, ...candidates.map((candidate: Obj) => h("option", { key: candidate.name, value: candidate.name, label: `${candidate.name} · 사용 위치 ${candidate.count ?? 0}곳` }))),
     !["create_field", "rename_field", "relink_field", "unset_field"].includes(type) && field("연결 식별자", identifier, setIdentifier),

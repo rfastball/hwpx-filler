@@ -26,6 +26,7 @@ from ..external.hwpx_authoring import (
     available_commands_hwpx,
     available_target_commands_hwpx,
     search_hwpx,
+    selected_text_hwpx,
     syntax_view_hwpx,
     trial_hwpx,
 )
@@ -1094,12 +1095,18 @@ class AuthoringController:
                                      }, "line": location.get("begin_marker_line")})
         if kind in {"text", "all"} and session.media == "txt":
             source = session.content.decode("utf-8")
+            seen: set[tuple[int, str]] = set()
             for match in re.finditer(re.escape(query), source, flags=re.IGNORECASE):
                 index, end = match.span()
+                context = semantics.text_hit_context(source, index, end)
+                # 같은 줄에서 보이는 문맥이 같은 결과는 한 자리로 합친다 — HWPX 본문 검색과 같은 규칙(UX-10 R4).
+                line = source.count("\n", 0, index)
+                if (line, context) in seen:
+                    continue
+                seen.add((line, context))
                 start_unit = len(source[:index].encode("utf-16-le")) // 2
                 end_unit = len(source[:end].encode("utf-16-le")) // 2
-                hits.append({"kind": "text", "start": start_unit, "end": end_unit,
-                             "context": semantics.text_hit_context(source, index, end)})
+                hits.append({"kind": "text", "start": start_unit, "end": end_unit, "context": context})
         return self._search_result(hits)
 
     @staticmethod
@@ -1246,10 +1253,61 @@ class AuthoringController:
         option_id = (containing_options[0][1] if len(containing_options) == 1
                      and containing_options[0][0] == slot_id else None)
         context = {"slot_id": slot_id, "option_id": option_id}
+        if native:
+            anchor = cell_path[0]["parent_paragraph"] if cell_path else None
+            span = ({"start_paragraph": anchor, "end_paragraph": anchor} if cell_path
+                    else {"start_paragraph": first_paragraph, "end_paragraph": last_paragraph})
+        else:
+            span = self._txt_line_span(session, start, end)
         return {"matches": matches,
                 "context": {**context,
-                            "reason": ("" if slot_id else _OUTSIDE_SLOT)},
+                            "reason": ("" if slot_id else _OUTSIDE_SLOT),
+                            "location_label": self._context_label(session, slot_id, option_id, span),
+                            "selected_text": self._selected_text(session, selection, start, end)},
                 "commands": self._commands(session, selection, context)}
+
+    def _context_label(self, session: AuthoringSession, slot_id: object, option_id: object,
+                       span: dict | None) -> str | None:
+        """속성 문맥 줄(UX-10 R2) — 담긴 항목/선택의 이름과 사람이 읽는 문단·행 범위(UX-09 표기).
+
+        원시 좌표(글자 offset)는 싣지 않는다. 아무것도 확정할 수 없으면 None — 화면은 줄을 세우지 않는다.
+        """
+        path: list[str] = []
+        slot = next((item for item in session.analysis.get("slots", []) if item["id"] == slot_id), None)
+        if slot is not None:
+            path.append(str(slot.get("label") or slot["id"]))
+            option = next((item for item in slot.get("options", []) if item["id"] == option_id), None)
+            if option is not None:
+                path.append(str(option.get("label") or option["id"]))
+        where = self._location_label(session.media, span)
+        parts = [" / ".join(path)] if path else []
+        return " · ".join([*parts, *([where] if where else [])]) or None
+
+    @staticmethod
+    def _txt_span(session: AuthoringSession, start: int, end: int) -> tuple[str, int, int] | None:
+        """TXT 선택(UTF-16 단위)의 code point 범위 — 문자 중간·문서 밖이면 None."""
+        text = session.content.decode("utf-8")
+        try:
+            return text, semantics.from_utf16(text, start), semantics.from_utf16(text, end)
+        except ValueError:
+            return None
+
+    def _txt_line_span(self, session: AuthoringSession, start: int, end: int) -> dict | None:
+        """TXT 선택이 걸친 줄 — ``_location_label`` 의 행 범위 모양으로."""
+        span = self._txt_span(session, start, end)
+        if span is None:
+            return None
+        text, low, high = span
+        # 끝은 배타적이다 — 줄 끝의 줄바꿈까지 고른 범위(줄 전체)는 다음 줄로 넘어가지 않는다.
+        last = high - 1 if high > low and text[high - 1] == "\n" else high
+        return {"begin_marker_line": text.count("\n", 0, low), "end_marker_line": text.count("\n", 0, last)}
+
+    def _selected_text(self, session: AuthoringSession, selection: dict, start: int, end: int) -> str | None:
+        """대상 카드의 「선택한 문구」(UX-10 R2) — 빈 범위이거나 글자를 확정할 수 없으면 None."""
+        if session.media == "hwpx":
+            return selected_text_hwpx(self._parse(session.media, session.content), selection)
+        span = self._txt_span(session, start, end)
+        return (span[0][span[1]:span[2]] or None) if span is not None else None
 
     def _locate_target(self, session: AuthoringSession, target: dict, selection: dict) -> dict:
         """Outline·search·match targets resolve by identity, not by a caret range (§3.3·§6.2).
@@ -1301,9 +1359,22 @@ class AuthoringController:
         parsed = self._parse(session.media, session.content)
         commands = (semantics.available_target_commands("txt", parsed, kind, name)
                     if session.media == "txt" else available_target_commands_hwpx(parsed, kind, name))
+        if kind == "field":
+            span = None  # 필드 전체는 여러 자리다 — 대상 카드가 사용 위치 수를 보인다.
+        elif kind == "occurrence":
+            anchor = location.get("anchor_paragraph") if location else None
+            line = location.get("line") if location else None
+            span = ({"start_paragraph": anchor, "end_paragraph": anchor} if session.media == "hwpx"
+                    else {"begin_marker_line": line, "end_marker_line": line})
+        else:
+            span = location
+        # 항목·선택 대상의 문맥은 그것을 담은 쪽(선택이면 상위 항목)이다 — 자기 이름은 대상 카드가 보인다.
+        owner_slot, owner_option = (slot_id, option_id) if kind in {"field", "occurrence"} else (
+            (slot_id, None) if kind == "option" else (None, None))
         return {"selected": selected, "matches": [match],
                 "context": {"slot_id": slot_id, "option_id": option_id,
-                            "reason": "" if slot_id else _OUTSIDE_SLOT},
+                            "reason": "" if slot_id else _OUTSIDE_SLOT,
+                            "location_label": self._context_label(session, owner_slot, owner_option, span)},
                 "commands": commands}
 
     @staticmethod

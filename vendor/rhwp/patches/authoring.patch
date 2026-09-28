@@ -833,7 +833,7 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..a40aa1b4f 100644
+index 2dde6f1a8..50d253350 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
@@ -845,7 +845,15 @@ index 2dde6f1a8..a40aa1b4f 100644
  import { showConfirm } from '@/ui/confirm-dialog';
  import * as _mouse from './input-handler-mouse';
  import * as _table from './input-handler-table';
-@@ -309,6 +309,13 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
+@@ -51,6 +51,7 @@ import { showInitialCaretAndPublishFocus } from './initial-caret-focus';
+ import { CaretLayoutReveal } from './caret-layout-reveal';
+ import { emitHeaderFooterModeChanged } from './header-footer-mode';
+ import { CellBlockLetterImeGuard } from '@/command/contextual-shortcut';
++import { browserOverlayRelayout } from './overlay-relayout';
+ 
+ const SVG_NS = 'http://www.w3.org/2000/svg';
+ const DRAG_SCROLL_EDGE_PX = 48;
+@@ -309,6 +310,13 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
  }
  
  /** 클릭 커서 배치 + 키보드 입력을 처리한다 */
@@ -859,7 +867,7 @@ index 2dde6f1a8..a40aa1b4f 100644
  export class InputHandler {
    private cursor: CursorState;
    private caret: CaretRenderer;
-@@ -319,6 +326,16 @@ export class InputHandler {
+@@ -319,6 +327,17 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
@@ -871,25 +879,60 @@ index 2dde6f1a8..a40aa1b4f 100644
 +  /** Marker indices whose labels are on screen; null forces the next layout. */
 +  private semanticLabelKey: string | null = null;
 +  private semanticHover = -1;
++  private readonly overlayRelayout = browserOverlayRelayout(() => this.relayoutEmbedOverlays());
 +  private onSemanticHoverBound = (e: MouseEvent) => this.onSemanticHover(e);
 +  private onSemanticLeaveBound = () => { if (this.semanticHover !== -1) { this.semanticHover = -1; this.renderSemanticLabels(); } };
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -661,7 +678,12 @@ export class InputHandler {
+@@ -661,33 +680,19 @@ export class InputHandler {
      this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
+-    eventBus.on('zoom-changed', () => {
+-      if (this.active) {
+-        const rect = this.cursor.getRect();
+-        if (rect) {
+-          this.caret.updatePosition(this.viewportManager.getZoom());
+-        }
+-        // 필드 마커도 줌에 맞게 갱신
+-        if (this.fieldMarker.isVisible) {
+-          this.updateFieldMarkers();
+-        }
+-      }
+-      // 텍스트 블럭 선택 줌 동기화
+-      if (this.cursor.hasSelection()) {
+-        this.updateSelection();
+-      }
+-      // F5 셀 선택 줌 동기화
+-      if (this.cursor.isInCellSelectionMode()) {
+-        this.updateCellSelection();
+-      }
+-      // 도형/표 선택 핸들 줌 동기화
+-      if (this.cursor.isInPictureObjectSelection()) {
+-        this.renderPictureObjectSelection();
+-      }
+-      if (this.cursor.isInTableObjectSelection()) {
+-        this.renderTableObjectSelection();
+-      }
+-    });
 +    // Field labels follow the caret (selected mode) and the pointer.
 +    eventBus.on('cursor-rect-updated', () => this.renderSemanticLabels());
 +    container.addEventListener('mousemove', this.onSemanticHoverBound);
 +    container.addEventListener('mouseleave', this.onSemanticLeaveBound);
-     eventBus.on('zoom-changed', () => {
-+      this.renderSemanticMarkers();
-       if (this.active) {
-         const rect = this.cursor.getRect();
-         if (rect) {
-@@ -3037,6 +3059,9 @@ export class InputHandler {
++    // Page geometry moves when the host resizes the frame (panel, dock, window), the studio
++    // re-lays out (pan space, pagination) or the zoom changes: re-project every overlay drawn in
++    // #scroll-content coordinates once per frame, after CanvasView.recalcLayout.
++    eventBus.on('zoom-changed', () => this.overlayRelayout.schedule());
++    eventBus.on('viewport-resize', () => this.overlayRelayout.schedule());
++    eventBus.on('document-layout-refreshed', () => this.overlayRelayout.schedule());
++    eventBus.on('document-view-changed', () => this.overlayRelayout.schedule());
++    this.overlayRelayout.watch(container);
++    eventBus.on('zoom-changed', () => this.reprojectCursorOverlays());
+ 
+     eventBus.on('document-view-changed', () => {
+       if (!this.active) return;
+@@ -3037,6 +3042,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -899,7 +942,7 @@ index 2dde6f1a8..a40aa1b4f 100644
      }
    }
  
-@@ -3108,7 +3133,8 @@ export class InputHandler {
+@@ -3108,7 +3116,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -909,7 +952,7 @@ index 2dde6f1a8..a40aa1b4f 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3148,7 @@ export class InputHandler {
+@@ -3122,6 +3131,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -917,7 +960,7 @@ index 2dde6f1a8..a40aa1b4f 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3259,11 @@ export class InputHandler {
+@@ -3232,6 +3242,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -929,7 +972,7 @@ index 2dde6f1a8..a40aa1b4f 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4257,6 +4289,8 @@ export class InputHandler {
+@@ -4257,6 +4272,8 @@ export class InputHandler {
      this.container.removeEventListener('mousedown', this.onClickBound);
      this.container.removeEventListener('dblclick', this.onDblClickBound);
      this.container.removeEventListener('contextmenu', this.onContextMenuBound);
@@ -938,18 +981,54 @@ index 2dde6f1a8..a40aa1b4f 100644
      this.container.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mouseup', this.onMouseUpBound);
-@@ -4272,6 +4306,7 @@ export class InputHandler {
+@@ -4272,6 +4289,8 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
 +    this.semanticLayer?.remove();
++    this.overlayRelayout.dispose();
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4337,251 @@ export class InputHandler {
+@@ -4302,6 +4321,287 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
++  /** Caret, selection and object handles in the current page geometry (zoom, resize). */
++  private reprojectCursorOverlays(): void {
++    if (this.active) {
++      const rect = this.cursor.getRect();
++      if (rect) {
++        this.caret.updatePosition(this.viewportManager.getZoom());
++      }
++      // 필드 마커도 줌에 맞게 갱신
++      if (this.fieldMarker.isVisible) {
++        this.updateFieldMarkers();
++      }
++    }
++    // 텍스트 블럭 선택 줌 동기화
++    if (this.cursor.hasSelection()) {
++      this.updateSelection();
++    }
++    // F5 셀 선택 줌 동기화
++    if (this.cursor.isInCellSelectionMode()) {
++      this.updateCellSelection();
++    }
++    // 도형/표 선택 핸들 줌 동기화
++    if (this.cursor.isInPictureObjectSelection()) {
++      this.renderPictureObjectSelection();
++    }
++    if (this.cursor.isInTableObjectSelection()) {
++      this.renderTableObjectSelection();
++    }
++  }
++
++  /** One coalesced relayout: semantic markers and labels, then the studio's own cursor overlays. */
++  private relayoutEmbedOverlays(): void {
++    if (this.semanticLayer) this.renderSemanticMarkers();
++    this.reprojectCursorOverlays();
++  }
++
 +  /**
 +   * Embedded host read-only mode still permits navigation and selection. It rejects user
 +   * mutations; host transactions marked `hostTransaction` remain allowed.
@@ -981,6 +1060,7 @@ index 2dde6f1a8..a40aa1b4f 100644
 +      this.semanticLayer.setAttribute('aria-hidden', 'true');
 +    }
 +    if (this.semanticLayer.parentElement !== scrollContent) scrollContent.appendChild(this.semanticLayer);
++    this.overlayRelayout.watch(scrollContent);
 +    this.semanticLayer.replaceChildren();
 +    this.semanticGeometry = [];
 +    this.semanticLabelKey = null;
@@ -1198,7 +1278,7 @@ index 2dde6f1a8..a40aa1b4f 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4746,9 @@ export class InputHandler {
+@@ -4466,6 +4766,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1208,7 +1288,7 @@ index 2dde6f1a8..a40aa1b4f 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +4956,77 @@ export class InputHandler {
+@@ -4673,6 +4976,77 @@ export class InputHandler {
      }
    }
  
@@ -1286,6 +1366,77 @@ index 2dde6f1a8..a40aa1b4f 100644
    /** 현재 커서 위치의 누름틀 필드와 내용을 제거한다. */
    removeCurrentField(posOverride?: DocumentPosition): void {
      const pos = posOverride ?? this.cursor.getPosition();
+diff --git a/rhwp-studio/src/engine/overlay-relayout.ts b/rhwp-studio/src/engine/overlay-relayout.ts
+new file mode 100644
+index 000000000..af541c610
+--- /dev/null
++++ b/rhwp-studio/src/engine/overlay-relayout.ts
+@@ -0,0 +1,65 @@
++/**
++ * Embedded host overlays (semantic markers, labels, the body selection and the caret) are
++ * absolute boxes in `#scroll-content` coordinates. Those coordinates move whenever the page
++ * geometry does: the host resizes the frame (a side panel, a dock or the window), the studio
++ * re-lays out or adds/removes horizontal pan space, or the zoom changes. This scheduler turns
++ * every such trigger into at most one relayout per animation frame, after the studio's own
++ * synchronous `recalcLayout` has run. It never polls.
++ */
++export interface OverlayRelayoutDeps {
++  requestFrame(callback: () => void): number;
++  cancelFrame(handle: number): void;
++  /** Size observer factory; omitted where ResizeObserver does not exist. */
++  createObserver?: (callback: () => void) => { observe(target: Element): void; disconnect(): void };
++}
++
++export class OverlayRelayout {
++  private frame: number | null = null;
++  private observer: { observe(target: Element): void; disconnect(): void } | null = null;
++  private readonly watched = new Set<Element>();
++  private disposed = false;
++  private readonly deps: OverlayRelayoutDeps;
++  private readonly run: () => void;
++
++  constructor(deps: OverlayRelayoutDeps, run: () => void) {
++    this.deps = deps;
++    this.run = run;
++    this.observer = deps.createObserver?.(() => this.schedule()) ?? null;
++  }
++
++  /** Coalesce: several triggers in one frame run the relayout once. */
++  schedule(): void {
++    if (this.disposed || this.frame !== null) return;
++    this.frame = this.deps.requestFrame(() => {
++      this.frame = null;
++      if (!this.disposed) this.run();
++    });
++  }
++
++  /** Relayout when this element's box changes size (idempotent per element). */
++  watch(target: Element | null | undefined): void {
++    if (!target || this.disposed || !this.observer || this.watched.has(target)) return;
++    this.watched.add(target);
++    this.observer.observe(target);
++  }
++
++  dispose(): void {
++    this.disposed = true;
++    if (this.frame !== null) this.deps.cancelFrame(this.frame);
++    this.frame = null;
++    this.observer?.disconnect();
++    this.observer = null;
++    this.watched.clear();
++  }
++}
++
++/** Browser wiring: rAF plus ResizeObserver when available. */
++export function browserOverlayRelayout(run: () => void): OverlayRelayout {
++  return new OverlayRelayout({
++    requestFrame: (callback) => requestAnimationFrame(callback),
++    cancelFrame: (handle) => cancelAnimationFrame(handle),
++    createObserver: typeof ResizeObserver === 'function'
++      ? (callback) => new ResizeObserver(() => callback())
++      : undefined,
++  }, run);
++}
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
 index 64e8a6d1d..6954774f9 100644
 --- a/rhwp-studio/src/main.ts
@@ -1635,6 +1786,88 @@ index e2edd4581..32c551441 100644
      ctx.textAlign = 'center';
      ctx.textBaseline = 'middle';
  
+diff --git a/rhwp-studio/tests/overlay-relayout.test.ts b/rhwp-studio/tests/overlay-relayout.test.ts
+new file mode 100644
+index 000000000..39833f7c4
+--- /dev/null
++++ b/rhwp-studio/tests/overlay-relayout.test.ts
+@@ -0,0 +1,76 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { OverlayRelayout } from '../src/engine/overlay-relayout.ts';
++import { functionBodyFrom } from './support/source-guard.ts';
++
++function harness() {
++  const frames = new Map<number, () => void>();
++  let next = 1;
++  const observed: unknown[] = [];
++  let observerCallback: (() => void) | null = null;
++  let disconnected = false;
++  let runs = 0;
++  const relayout = new OverlayRelayout({
++    requestFrame: (callback) => { const id = next++; frames.set(id, callback); return id; },
++    cancelFrame: (id) => { frames.delete(id); },
++    createObserver: (callback) => {
++      observerCallback = callback;
++      return { observe: (target) => { observed.push(target); }, disconnect: () => { disconnected = true; } };
++    },
++  }, () => { runs++; });
++  const flush = () => { const pending = [...frames.values()]; frames.clear(); pending.forEach((cb) => cb()); };
++  return { relayout, frames, observed, flush, resize: () => observerCallback?.(),
++    runs: () => runs, disconnected: () => disconnected };
++}
++
++test('several layout triggers in one frame relayout the overlay once', () => {
++  const h = harness();
++  h.relayout.schedule();
++  h.relayout.schedule();
++  h.resize();
++  assert.equal(h.frames.size, 1);
++  assert.equal(h.runs(), 0, 'relayout waits for the frame, after the studio recalcLayout');
++  h.flush();
++  assert.equal(h.runs(), 1);
++  h.resize();
++  h.flush();
++  assert.equal(h.runs(), 2, 'a later resize schedules again');
++});
++
++test('watched containers relayout on resize and are observed once', () => {
++  const h = harness();
++  const container = {} as Element;
++  h.relayout.watch(container);
++  h.relayout.watch(container);
++  h.relayout.watch(null);
++  assert.deepEqual(h.observed, [container]);
++  h.resize();
++  h.flush();
++  assert.equal(h.runs(), 1);
++});
++
++test('dispose cancels the pending frame and disconnects the observer', () => {
++  const h = harness();
++  h.relayout.schedule();
++  h.relayout.dispose();
++  assert.equal(h.frames.size, 0);
++  assert.equal(h.disconnected(), true);
++  h.relayout.schedule();
++  h.resize();
++  assert.equal(h.frames.size, 0);
++  assert.equal(h.runs(), 0);
++});
++
++test('InputHandler re-lays out embedded overlays on every page-geometry change', () => {
++  const src = readFileSync(new URL('../src/engine/input-handler.ts', import.meta.url), 'utf8');
++  for (const event of ['viewport-resize', 'document-layout-refreshed', 'document-view-changed', 'zoom-changed']) {
++    assert.ok(src.includes(`eventBus.on('${event}', () => this.overlayRelayout.schedule());`), event);
++  }
++  const relayout = functionBodyFrom(src, 'private relayoutEmbedOverlays(');
++  assert.match(relayout, /this\.renderSemanticMarkers\(\)/);
++  assert.match(relayout, /this\.reprojectCursorOverlays\(\)/);
++  const render = functionBodyFrom(src, 'private renderSemanticMarkers(');
++  assert.match(render, /this\.overlayRelayout\.watch\(scrollContent\)/);
++  assert.match(functionBodyFrom(src, 'dispose(): void'), /this\.overlayRelayout\.dispose\(\)/);
++});
 diff --git a/rhwp-studio/vite.config.ts b/rhwp-studio/vite.config.ts
 index f860fb8fa..382863031 100644
 --- a/rhwp-studio/vite.config.ts

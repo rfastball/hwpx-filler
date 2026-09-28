@@ -443,7 +443,9 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
     inside = ctrl.dispatch("locate", {"session_id": sid, "revision": 0,
                                       "selection": {"start": location["content_start_offset"],
                                                     "end": location["content_start_offset"]}})
-    assert inside["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    # UX-10 R2: 문맥 줄은 담긴 항목/선택 이름과 사람이 읽는 행 범위다. 캐럿(빈 범위)에는 선택한 문구가 없다.
+    assert inside["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": "",
+                                 "location_label": "표시 / 안1 · 4행", "selected_text": None}
     assert {item["type"] for item in inside["commands"] if item["enabled"]} >= {"rename_slot", "rename_option", "unwrap"}
     invalid = ctrl.dispatch("locate", {"session_id": sid, "revision": 0, "selection": {"start": -1, "end": 0}})
     assert invalid["matches"] == [] and all(
@@ -544,8 +546,12 @@ def test_outline_targets_locate_by_identity_with_domain_availability(tmp_path: P
         "type": "create_option", "enabled": False, "alternative": None,
         "reason": "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 선택하세요."}
     assert slot_commands["rename_option"]["reason"] == "선택 영역을 선택하세요."
+    labels = {kind: located[kind]["context"].pop("location_label") for kind in ("slot", "option")}
     assert located["slot"]["context"] == {"slot_id": "항목1", "option_id": None, "reason": ""}
     assert located["option"]["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    # UX-10 R2: 항목의 문맥은 범위만, 선택의 문맥은 상위 항목 이름과 범위다(자기 이름은 대상 카드가 보인다).
+    assert labels["slot"] == ("문단 1–3" if media == "hwpx" else "2–9행")
+    assert labels["option"].startswith("표시 · ")
     assert located["option"]["selected"]["option_id"] == "안1"
 
     # 필드 전체 선택에서 곧바로 이름 변경 미리보기가 선다(U07/F17) — 우회 없이.
@@ -575,7 +581,8 @@ def test_hwpx_occurrence_target_reports_its_owner_and_template_field_is_renamabl
     occurrence = ctrl.dispatch("locate", {"session_id": opened["session_id"], "revision": 0,
                                           "selection": field["occurrences"][0],
                                           "target": {"kind": "occurrence", "name": field["name"]}})
-    assert occurrence["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": ""}
+    assert occurrence["context"] == {"slot_id": "항목1", "option_id": "안1", "reason": "",
+                                     "location_label": "표시 / 안1 · 문단 2"}
     # 좌표 없는 누름틀(template_v1) — 좌표 locate 는 무효였지만 정체 locate 는 이름 변경을 연다.
     fixture = ctrl.open_path(Path(__file__).parent / "fixtures" / "template_v1.hwpx")
     first = fixture["analysis"]["fields"][0]
