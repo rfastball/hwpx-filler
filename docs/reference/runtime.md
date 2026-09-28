@@ -7,7 +7,7 @@
 
 | 항목 | 선언 | 원천 |
 |---|---|---|
-| 제품 버전 | `0.8.0` | [pyproject.toml](../../pyproject.toml) |
+| 제품 버전 | `0.9.0` | [pyproject.toml](../../pyproject.toml) |
 | Python 요구 범위 | `>=3.13,<3.14` | [pyproject.toml](../../pyproject.toml) |
 | Python pin | `3.13` | [.python-version](../../.python-version) |
 | Node pin | `24.18.1` | [.node-version](../../.node-version) |
