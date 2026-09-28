@@ -1486,8 +1486,8 @@ class TestWebSelftestGate:
     ) -> None:
         """UX-04 §10 — 실창에서 APG 키보드 모델과 초점 복귀를 단계마다 잰다(합성 키, OS 입력 없음).
 
-        문서 탭(←→·Home·End·Enter·Delete → 이웃 탭), 도구 막대(roving 한 입구·감싸 돌기·확대 select 의
-        → 는 값 변경이 아니라 이동), 독 탭(Enter 로 패널 첫 제어 → Escape 로 그 탭), 구조 목록(tree)의
+        문서 탭(「파일」 메뉴의 새 TXT 로 연 두 번째 탭 · ←→·Home·End·Enter·Delete → 이웃 탭), 도구 막대(roving
+        한 입구 · End 는 마지막 제어 「결과 시험」 · → 로 감싸 돌되 누르지 않는다), 독 탭(Enter 로 패널 첫 제어 → Escape 로 그 탭), 구조 목록(tree)의
         Shift+F10 문맥 메뉴(첫 사용 가능 항목·↓·End·Home·Escape 로 그 줄), 창 아래 끝에서 연 메뉴의
         창 안 배치. 단계표(`a11y_steps`)는 증거로 싣는다.
         """

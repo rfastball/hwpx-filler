@@ -276,6 +276,19 @@ async function waitFor(ctx, ready, tries = 30, ms = 40) {
   return !!ready();
 }
 
+/** 저작 머리 띠의 「파일」 메뉴를 사용자 경로(단추 누름)로 열고 이름이 `label` 인 메뉴 항목을 돌려준다.
+ *  파일 동사(문서 열기·새 TXT·저장·다른 이름으로 저장)는 머리 띠 단추가 아니라 이 메뉴 안에 선다.
+ *  단추나 메뉴가 서지 않으면 null — 호출자가 그 사실을 빨강으로 남긴다. */
+async function authoringFileItem(ctx, label) {
+  const doc = ctx.doc;
+  const opener = Array.prototype.find.call(doc.querySelectorAll("#scr-authoring .authoring-head button"), (el) => textOf(el).trim() === "파일");
+  if (!opener) return null;
+  opener.click();
+  const menu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="파일"]');
+  if (!await waitFor(ctx, () => !!menu(), 20, 50)) return null;
+  return Array.prototype.find.call(menu().querySelectorAll('[role="menuitem"]'), (el) => textOf(el).trim() === label) || null;
+}
+
 /* ── §10 키보드·IME 실창 밴드의 공용 조각 ─────────────────────────────────────
  *
  *  **합성 키의 한계(중요)**: 스크립트가 쏜 KeyboardEvent 는 신뢰되지 않은 사건이라 브라우저의
@@ -548,7 +561,7 @@ async function probeAuthoringA11y(ctx, out) {
   const press = async (key, init) => { pressKey(ctx, key, init); await settleRender(ctx); };
   const role = (name) => !!nav.active() && nav.active().getAttribute("role") === name;
   const docTabs = () => Array.prototype.slice.call(doc.querySelectorAll('#scr-authoring .authoring-tabs [role="tab"]'));
-  const newTxt = Array.prototype.find.call(doc.querySelectorAll("#scr-authoring .authoring-head button"), (el) => textOf(el).trim() === "새 TXT");
+  const newTxt = await authoringFileItem(ctx, "새 TXT");
   if (!newTxt) { out.a11y_new_tab = false; return; }
   newTxt.click();
   out.a11y_new_tab = await waitFor(ctx, () => docTabs().length === 2 && docTabs()[1].getAttribute("aria-selected") === "true", 40, 50);
@@ -589,14 +602,15 @@ async function probeAuthoringA11y(ctx, out) {
   out.a11y_toolbar_right = nav.active() !== entry && !!nav.within(".authoring-toolbar");
   step("ArrowRight", "다음 제어");
   await press("End");
-  out.a11y_toolbar_end = nav.active().getAttribute("aria-label") === "확대";
-  step("End", "마지막 제어(확대)");
-  const zoom = nav.active().value;
+  // 막대의 마지막 제어는 실행 단추 「결과 시험」이다(확대는 상태 막대로 옮겼다).
+  out.a11y_toolbar_end = nav.active().getAttribute("data-rove") === "trial" && textOf(nav.active()).trim() === "결과 시험";
+  step("End", "마지막 제어(결과 시험)");
+  const pressed = nav.active().getAttribute("aria-pressed");
   await press("ArrowRight");
-  // End 뒤의 → 는 첫 **활성** 제어로 감싸 돈다(입구는 마지막 초점 자리라 첫 제어와 다를 수 있다).
+  // End 뒤의 → 는 첫 **활성** 제어로 감싸 돈다(입구는 마지막 초점 자리라 첫 제어와 다를 수 있다). 옮기기만 하고 누르지 않는다.
   out.a11y_toolbar_wrap = nav.active() === doc.querySelector('#scr-authoring .authoring-toolbar [data-rove]:not([disabled])')
-    && doc.querySelector('#scr-authoring .authoring-toolbar select').value === zoom;
-  step("ArrowRight", "처음으로 감싸 돈다 — 확대 값은 그대로");
+    && doc.querySelector('#scr-authoring .authoring-toolbar [data-rove="trial"]').getAttribute("aria-pressed") === pressed;
+  step("ArrowRight", "처음으로 감싸 돈다 — 결과 시험은 눌리지 않는다");
 
   // ③ 하단 독 탭(APG tabs) — Enter 로 펼치면 패널 첫 제어로, Escape 는 그 탭으로 돌아온다
   out.a11y_dock_reached = await nav.cycleTo(".authoring-dock");
@@ -863,7 +877,7 @@ async function probeHwpxAuthoring(ctx, out) {
          **저장 위치 미확정** 상태를 만든다(AC01 이 겨누는 그 상태다). */
       openStub = stubBridgeInvoke(ctx, "openAuthoringDocument", "open_authoring_document",
         (real) => (requested, asTemplate) => real(requested || path, asTemplate === true));
-      const open = exact(".authoring-head button", "문서 열기");
+      const open = await authoringFileItem(ctx, "문서 열기");
       out.hwpx_authoring_open_affordance = !!open;
       try {
         if (!open) return;
@@ -955,7 +969,7 @@ async function probeHwpxAuthoring(ctx, out) {
       await closeHwpxAuthoringTab(ctx, out);
       out.hwpx_authoring_disposed = await waitFor(
         ctx, () => !doc.querySelector(".authoring-editor-host iframe"));
-      const back = exact(".authoring-head button", "돌아가기");
+      const back = doc.querySelector('#scr-authoring .authoring-head button[aria-label="돌아가기"]');
       if (back) back.click();
       await waitFor(ctx, () => !byId(ctx, "scr-authoring").classList.contains("on"));
       out.hwpx_authoring_screen_on_after_close = byId(ctx, "scr-authoring")
