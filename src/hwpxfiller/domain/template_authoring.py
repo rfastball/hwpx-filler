@@ -12,6 +12,7 @@ the same words and shapes; the frontend never re-decides any of it.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Mapping
 
@@ -109,6 +110,63 @@ def _object_particle(name: str) -> str:
     if 0xAC00 <= code <= 0xD7A3:
         return "을" if (code - 0xAC00) % 28 else "를"
     return "을(를)"
+
+
+def _direction_particle(name: str) -> str:
+    """방향 조사 「(으)로」 — 받침 없음·ㄹ 받침은 「로」, 그 밖의 받침은 「으로」(§13)."""
+    code = ord(name[-1]) if name else 0
+    if 0xAC00 <= code <= 0xD7A3:
+        return "로" if (code - 0xAC00) % 28 in (0, 8) else "으로"
+    return "(으)로"
+
+
+def rename_field_message(affected: int, name: str) -> str:
+    """전체 필드 이름 변경 미리보기의 문장(§13) — 조사는 새 이름의 끝소리로 고른다."""
+    return f"현재 문서의 사용 위치 {affected}곳이 ‘{name}’{_direction_particle(name)} 변경됩니다."
+
+
+#: 사용 위치·검색 결과 문맥에 싣는 앞뒤 본문 글자 수(§7.2·P10).
+CONTEXT_SPAN = 12
+
+
+def occurrence_context(before: str, focus: str, after: str, span: int = CONTEXT_SPAN) -> str:
+    """사용 위치 한 곳의 사람이 읽는 문맥 — 앞뒤 본문 몇 글자와 가운데 표지(§7.2·P10).
+
+    필드 명령 문법·원문 표기는 싣지 않는다. 그것은 ``raw`` 와 원문 표기 패널의 몫이다.
+    공백 연속은 한 칸으로 줄이고, 잘린 쪽에는 말줄임표를 둔다.
+    """
+    before, after = (re.sub(r"\s+", " ", part) for part in (before, after))
+    lead = ("…" if len(before) > span else "") + before[-span:]
+    trail = after[:span] + ("…" if len(after) > span else "")
+    return f"{lead}{focus}{trail}"
+
+
+def humanize_field_tokens(text: str) -> str:
+    """TXT 문맥 조각의 필드 토큰(``{{이름}}``)을 문법 없이 ``[이름]`` 으로 보인다."""
+    parts: list[str] = []
+    end = 0
+    for match in iter_field_token_matches(text):
+        parts.append(text[end:match.start()])
+        parts.append(f"[{match.group(1).strip()}]")
+        end = match.end()
+    parts.append(text[end:])
+    return "".join(parts)
+
+
+def text_hit_context(source: str, start: int, end: int) -> str:
+    """TXT 본문 검색 결과 한 건의 문맥 — 같은 줄의 앞뒤 본문과 찾은 글자(§6.3). 인자는 code point 위치다."""
+    line_start = max(source.rfind("\n", 0, start), source.rfind("\r", 0, start)) + 1
+    line_end = min((index for index in (source.find("\n", end), source.find("\r", end)) if index >= 0),
+                   default=len(source))
+    line = source[line_start:line_end]
+    focus = source[start:end]
+    # 찾은 글자가 필드 토큰 안에 있으면 토큰 전체를 표지로 보인다 — 문법 조각이 문맥에 새지 않게.
+    for match in iter_field_token_matches(line):
+        if match.start() < end - line_start and start - line_start < match.end():
+            start, end = min(start, line_start + match.start()), max(end, line_start + match.end())
+            focus = humanize_field_tokens(source[start:end])
+    return occurrence_context(humanize_field_tokens(source[line_start:start]), focus,
+                              humanize_field_tokens(source[end:line_end]))
 
 
 def command_label(command: Mapping[str, object], target: object = None) -> str:
@@ -300,14 +358,20 @@ def _occurrences(text: str) -> list[dict]:
              if place.begin_marker_line < line < place.end_marker_line),
             None,
         )
+        name = match.group(1).strip()
+        line_text = text.splitlines()[line]
+        column = match.start() - starts[line]
         result.append({
-            "name": match.group(1).strip(),
+            "name": name,
             "start": _to_utf16(text, match.start()),
             "end": _to_utf16(text, match.end()),
             "line": line,
             "slot_id": owner.slot_id if owner else None,
             "option_id": owner.option_id if owner else None,
-            "context": text.splitlines()[line][:120],
+            # 사람이 읽는 문맥은 필드 문법 없이 앞뒤 본문만(§7.2). 원문 줄은 raw 에 둔다.
+            "context": occurrence_context(humanize_field_tokens(line_text[:column]), f"[{name}]",
+                                          humanize_field_tokens(line_text[column + len(match.group(0)):])),
+            "raw": {"text": line_text[:CONTEXT_MAX]},
         })
     return result
 

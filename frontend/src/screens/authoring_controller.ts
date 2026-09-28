@@ -84,7 +84,7 @@ export function createAuthoringController(deps: Deps) {
   // commands: Python 이 현재 선택에 대해 판정한 명령 가용성(F40·P07). 표면은 이것을 그리기만 하고 다시 판정하지 않는다.
   const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", lastCreatedText: "", notice: "",
     mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, refusal: null, syntax: null,
-    command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], values: {}, selectedOptions: {}, zoom: 100 });
+    command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], searchSummaries: [], values: {}, selectedOptions: {}, zoom: 100 });
   let view = initialView();
   let viewId = "";
   let trialTimer: ReturnType<typeof setTimeout> | undefined;
@@ -203,7 +203,11 @@ export function createAuthoringController(deps: Deps) {
 
   async function openFile() {
     const result = await invoke("open_authoring_document", "", false);
-    if (result) { revisions.set(result.session_id, result.revision); await activate(result.session_id); }
+    if (!result) return;
+    revisions.set(result.session_id, result.revision);
+    await activate(result.session_id);
+    // 처음 여는 일반 문서의 첫 안내(§13) — Python 이 준 문장만, 다음 편집에서 사라진다.
+    if (result.notice && viewId === result.session_id) update({ notice: result.notice });
   }
 
   async function save(id = snapshot().active_id, saveAs = false): Promise<boolean> {
@@ -411,13 +415,15 @@ export function createAuthoringController(deps: Deps) {
     const request = ++searchRequest;
     const id = viewId;
     const hits: Obj[] = [];
+    const searchSummaries: Obj[] = [];
     for (const item of all ? snapshot().tabs : [tab()]) {
       await flush(item.id);
       const requestRevision = revision(item.id);
       const result = await dispatch("search", { session_id: item.id, revision: requestRevision, query, kind });
       hits.push(...(result.hits || result.results || []).map((hit: Obj) => ({ ...hit, session_id: item.id, source_revision: requestRevision, document: item.name })));
+      if (result.summary) searchSummaries.push({ document: item.name, summary: result.summary });
     }
-    if (id === viewId && request === searchRequest) update({ query, hits, panel: "search" });
+    if (id === viewId && request === searchRequest) update({ query, hits, searchSummaries, panel: "search" });
   }
 
   async function restored(result: Obj) {

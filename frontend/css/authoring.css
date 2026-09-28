@@ -91,11 +91,22 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-status-end{margin-left:auto}
 .authoring-error{padding:var(--sp-8);color:var(--a-danger);background:var(--a-card);white-space:pre-wrap}
 /* 호환성 안내: 제목 줄 오른쪽에 원본 보존 동사를 두어 높이를 아끼고, 넘치면 안에서 스크롤한다. */
-.authoring-compat{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--sp-12);align-items:center;padding:var(--sp-6) var(--sp-8);flex-shrink:1;min-height:3rem;max-height:30vh;overflow:auto}
+/* 경고 톤(§7.1 호환성 경고): 오류 빨강이 아니라 경고 계열 토큰. 뜻은 색이 아니라 머리 글자가 싣는다(P14). */
+.authoring-compat{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--sp-12);align-items:center;padding:var(--sp-6) var(--sp-8);flex-shrink:1;min-height:3rem;max-height:30vh;overflow:auto;color:var(--a-ink);background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);border-radius:var(--rad-control);white-space:pre-wrap}
+.authoring-compat>strong{color:var(--a-warn)}
 .authoring-compat>*{grid-column:1}
 .authoring-compat p{margin:var(--sp-2) 0}
 .authoring-compat>div:last-child{grid-column:2;grid-row:1;display:flex;gap:var(--sp-4)}
-.authoring-empty{margin:auto;text-align:center}
+/* 빈 작업대: 가운데 한 덩어리 — 한 문장, 두 행동, 복구 가능한 작업 목록. */
+.authoring-empty{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-12);text-align:center}
+.authoring-empty>p{margin:0}
+.authoring-empty-actions{display:flex;gap:var(--sp-8)}
+.authoring-drafts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-8);text-align:left}
+.authoring-drafts li{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-8);padding:var(--sp-6) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
+.authoring-drafts time{font-size:var(--fs-caption);color:var(--a-muted)}
+.authoring-drafts p{flex-basis:100%;margin:0}
+.authoring-drafts-actions{display:flex;gap:var(--sp-4);margin-left:auto}
+.authoring-search-summary{margin:var(--sp-4) 0;font-size:var(--fs-caption);color:var(--a-muted)}
 .authoring-syntax pre{font-family:Consolas,"D2Coding",monospace;padding:var(--sp-8);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 .authoring-bottom pre{white-space:pre-wrap;overflow-wrap:anywhere}
 .authoring-compare{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-12)}
@@ -131,6 +142,7 @@ body.authoring-open .stage{padding:var(--sp-8);overflow:hidden}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 @media(forced-colors:active){
   .authoring-context-menu{border-color:CanvasText}.authoring-badge,.authoring-kind{border-color:CanvasText}
+  .authoring-compat,.authoring-drafts li{border-color:CanvasText}.authoring-compat>strong{color:CanvasText}
   .authoring-mode button[aria-pressed=true],.authoring-toolbar .btn[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-dock-tab[aria-selected=true]{border-bottom-color:Highlight}
   .authoring-toolbar-group+.authoring-toolbar-group,.authoring-status-group>*+*,.authoring-dock-bar,.authoring-selection{border-color:CanvasText}
