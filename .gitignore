@@ -80,3 +80,10 @@ assets/branding/document-narmi-abstract-icon-concepts-*.png
 /.cache/rhwp-browser-probe.html
 /.cache/rhwp-cell-probe.*
 /.cache/rhwp_*_probe.mjs
+
+# rhwp 빌더 캐시·로컬 작업 캐시(scripts/build_rhwp.ps1 기본 위치 — 커밋 금지)
+.cache/
+# 로컬 설정 백업본
+.claude/*.bak-*
+# 권한이 잠긴 로컬 pytest 캐시
+.pytest-codex-cache*/
