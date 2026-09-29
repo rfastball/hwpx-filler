@@ -104,6 +104,46 @@ def test_txt_region_previews_show_children_counts_text_and_labels() -> None:
         assert preview("txt", base, command)["label"]
 
 
+def test_txt_preview_included_location_is_the_expanded_or_target_range() -> None:
+    """IDE-06 P-16: 편집면이 미리보기 동안 칠할 실제 범위 — 넓힌 줄 전체 또는 대상 영역(UTF-16 좌표)."""
+    source = "머리\n본문 한 줄\n끝\n"
+    line = source.index("본문")
+    partial = preview("txt", source, {"type": "create_slot", "start": line + 1, "end": line + 3, "id": "s"})
+    assert partial["expanded"] is True
+    assert partial["included_location"] == {"start": line, "end": source.index("끝")}
+    base = _slot_template()
+    region = base[base.index("{{#항목 s"):base.index("끝")]
+    for command in ({"type": "unwrap", "kind": "slot", "slot_id": "s", "cascade": True},
+                    {"type": "delete", "kind": "slot", "slot_id": "s"},
+                    {"type": "rename_slot", "kind": "slot", "slot_id": "s", "id": "t"}):
+        assert preview("txt", base, command)["included_location"] == {
+            "start": base.index(region), "end": base.index(region) + len(region)}, command["type"]
+    adjusted = preview("txt", base, {"type": "adjust_range", "kind": "slot", "slot_id": "s",
+                                     "start": 0, "end": base.index("끝")})
+    assert adjusted["included_location"] == {"start": 0, "end": base.index("끝")}
+    assert preview("txt", base, {"type": "unset_field", "start": base.index("{{F}}") + 1,
+                                 "text": "값"})["included_location"] is None
+
+
+def test_txt_whole_field_unset_replaces_every_occurrence_in_one_plan() -> None:
+    """IDE-06 P-20: 필드 전체(occurrences 를 실은 대상)의 해제는 모든 사용 위치를 한 계획으로 치환한다."""
+    source = "가 {{F}}\n{{G}} 나 {{F}}\n끝 {{F}}\n"
+    occurrences = analyze("txt", source)["fields"][0]["occurrences"]
+    command = {"type": "unset_field", "old_name": "F", "name": "F", "occurrences": occurrences,
+               "start": occurrences[0]["start"], "end": occurrences[0]["end"], "text": "값"}
+    projected = preview("txt", source, command)
+    assert projected["affected"] == 3 and len(projected["edits"]) == 3
+    assert projected["label"] == "‘F’ 필드 의미 해제"
+    assert projected["included"] == [item["context"] for item in occurrences]
+    assert (projected["before"], projected["after"]) == ("{{F}}", "값")
+    assert [field["name"] for field in projected["result"]["fields"]] == ["G"]
+    result, _ = apply("txt", source, command)
+    assert result == "가 값\n{{G}} 나 값\n끝 값\n"
+    single = dict(command)
+    single.pop("occurrences")
+    assert apply("txt", source, single)[0] == "가 값\n{{G}} 나 {{F}}\n끝 {{F}}\n"
+
+
 def test_txt_available_commands_are_decided_here_with_spec_reasons() -> None:
     base = _slot_template()
     outside = {name: item for item in available_commands("txt", base, {"start": 0, "end": 2}, {})
@@ -457,6 +497,10 @@ _NO_IMPACT = {"linked_jobs": [], "impact_unverified": 0,
     ({"type": "unwrap", "slot_id": "s"}, {"requires_cascade": True}, _NO_IMPACT, "button"),
     ({"type": "unwrap", "slot_id": "s", "cascade": True}, {}, _NO_IMPACT, "button"),
     ({"type": "delete", "slot_id": "s"}, {}, _NO_IMPACT, "button"),
+    # IDE-06 P-20: 필드 전체의 의미 해제는 모든 사용 위치를 한 번에 없앤다 — 영향을 보이는 enter 등급이다.
+    ({"type": "unset_field", "old_name": "F", "occurrences": [{}, {}, {}], "text": "값"}, {}, _NO_IMPACT, "enter"),
+    ({"type": "unset_field", "old_name": "F", "occurrences": [{}, {}, {}], "text": "값"}, {},
+     {**_NO_IMPACT, "field_delta": {"added_fields": [], "removed_fields": ["F"]}}, "enter"),
     ({"type": "rename_slot", "slot_id": "s", "id": "s"}, {},
      {**_NO_IMPACT, "field_delta": {"added_fields": [], "removed_fields": ["이름"]}}, "enter"),
     ({"type": "rename_slot", "slot_id": "s", "id": "s"}, {},

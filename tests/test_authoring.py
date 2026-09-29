@@ -97,6 +97,70 @@ def test_native_preview_exposes_captured_paragraphs_without_changing_source() ->
     assert package.entries["Contents/section0.xml"] == before
 
 
+def test_native_preview_included_location_is_the_expanded_paragraph_range() -> None:
+    """IDE-06 P-16: 문단 일부를 고른 만들기 미리보기는 편집면이 칠할 실제 범위(문단 전체)를 싣는다."""
+    package = _pkg(
+        '<hp:p><hp:run><hp:t>첫 문단</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>둘째 문단</hp:t></hp:run></hp:p>'
+    )
+    assert preview_hwpx(package, {"type": "create_field", "entry": ENTRY, "paragraph": 0,
+                                  "start": 0, "end": 1, "name": "F"})["included_location"] is None
+    partial = preview_hwpx(package, {"type": "create_slot", "entry": ENTRY, "start_paragraph": 1,
+                                     "end_paragraph": 1, "start": 1, "end": 2, "id": "s"})
+    assert partial["expanded"] is True
+    assert partial["included_location"] == {"entry": ENTRY, "start_paragraph": 1, "end_paragraph": 1}
+    apply_hwpx(package, {"type": "create_slot", "entry": ENTRY, "start_paragraph": 0,
+                         "end_paragraph": 1, "id": "s"})
+    # 대상 영역 명령은 그 영역의 문단이다. 필드 명령은 범위를 싣지 않는다(편집면은 필드 표지로 칠한다).
+    assert preview_hwpx(package, {"type": "unwrap", "kind": "slot", "slot_id": "s"})["included_location"] == {
+        "entry": ENTRY, "start_paragraph": 0, "end_paragraph": 1}
+
+
+def _three_site_field(middle: str = '<hp:t>나</hp:t>') -> HwpxPackage:
+    def site(pairing: int, body: str) -> str:
+        return (f'<hp:p><hp:run><hp:t>앞</hp:t><hp:ctrl><hp:fieldBegin id="{pairing}" fieldid="{pairing + 50}" '
+                f'name="F" type="CLICK_HERE"/></hp:ctrl>{body}<hp:ctrl><hp:fieldEnd beginIDRef="{pairing}" '
+                f'fieldid="{pairing + 50}"/></hp:ctrl></hp:run></hp:p>')
+    return _pkg(site(1, '<hp:t>가</hp:t>') + site(2, middle) + site(3, '<hp:t>다</hp:t>')
+                + '<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="9" fieldid="59" name="G" type="CLICK_HERE"/>'
+                  '</hp:ctrl><hp:t>남는</hp:t><hp:ctrl><hp:fieldEnd beginIDRef="9" fieldid="59"/></hp:ctrl>'
+                  '</hp:run></hp:p>')
+
+
+def test_native_whole_field_unset_replaces_every_occurrence_in_one_plan() -> None:
+    """IDE-06 P-20: 필드 전체의 의미 해제는 모든 사용 위치를 한 계획으로 치환한다(한 스냅샷 = 한 실행 취소)."""
+    package = _three_site_field()
+    occurrences = analyze_hwpx(package)["fields"][0]["occurrences"]
+    command = {"type": "unset_field", "old_name": "F", "name": "F", "occurrences": occurrences,
+               **occurrences[0], "text": "값"}
+    before = dict(package.entries)
+    projected = preview_hwpx(package, command)
+    assert package.entries == before
+    assert projected["affected"] == 3 and projected["label"] == "‘F’ 필드 의미 해제"
+    assert projected["included"] == [item["context"] for item in occurrences] and len(projected["included"]) == 3
+    assert (projected["before"], projected["after"]) == ("[ F ]", "값")
+    assert [field["name"] for field in projected["result"]["fields"]] == ["G"]
+    _, impact = apply_hwpx(package, command)
+    assert impact["changed_entries"] == [ENTRY]
+    assert [field["name"] for field in analyze_hwpx(package)["fields"]] == ["G"]
+    assert "".join(_root(package).itertext()) == "앞값앞값앞값남는"
+    # 같은 모양의 사용 위치 한 곳(occurrences 없음)은 그 자리만 고친다.
+    single = _three_site_field()
+    apply_hwpx(single, {"type": "unset_field", "entry": ENTRY, "occurrence": 1, "old_name": "F", "text": "값"})
+    assert next(field for field in analyze_hwpx(single)["fields"] if field["name"] == "F")["count"] == 2
+
+
+def test_native_whole_field_unset_is_all_or_nothing_on_a_complex_site() -> None:
+    package = _three_site_field(middle='<hp:t>나<hp:tab/></hp:t>')
+    occurrences = analyze_hwpx(package)["fields"][0]["occurrences"]
+    before = dict(package.entries)
+    with pytest.raises(ValueError, match="복합 요소"):
+        apply_hwpx(package, {"type": "unset_field", "old_name": "F", "occurrences": occurrences,
+                             **occurrences[0], "text": "값"})
+    assert package.entries == before
+    assert analyze_hwpx(package)["fields"][0]["count"] == 3
+
+
 def test_native_semantic_transfer_preserves_field_style_and_rebases_ids() -> None:
     source = _pkg('<hp:p><hp:run charPrIDRef="7"><hp:t>앞 원문 뒤</hp:t></hp:run></hp:p>')
     apply_hwpx(source, {"type": "create_field", "entry": "Contents/section0.xml",

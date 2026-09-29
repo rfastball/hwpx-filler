@@ -62,6 +62,7 @@ from ..domain.template_authoring import (
     shared_reasons,
     target_availability,
     trial_document_values,
+    whole_field_unset,
 )
 from .hwpx_product_inspection import (
     inspect_slot_regions,
@@ -634,6 +635,7 @@ def _field_name(raw: object) -> str:
 
 
 _MULTI_PARAGRAPH_FIELD = "여러 문단에 걸친 필드는 HWPX 누름틀 경계로 만들 수 없습니다."
+_COMPLEX_FIELD = "이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다."
 
 
 def _paragraph_sites(paragraph) -> tuple[list[tuple[etree._Element, int, int]], list[int], str]:
@@ -807,16 +809,24 @@ def _field_occurrence(root, entry: str, ordinal: object, pairing_id: object = No
 
 def _change_field(package, command: Mapping[str, object]) -> int:
     action = command["type"]
-    old = _field_name(command.get("old_name")) if action == "rename_field" else None
+    whole = whole_field_unset(command)
+    old = _field_name(command.get("old_name")) if action == "rename_field" or whole else None
     new = _field_name(command.get("name")) if action in {"rename_field", "relink_field"} else None
     if action == "rename_field" and new != old:
         taken = next((item["count"] for item in _fields(package) if item["name"] == new), 0)
         if taken:
             assert isinstance(new, str)
             raise NameConflict(new, taken)
+    if whole:
+        # 필드 전체의 의미 해제(P-20)는 전부 아니면 전무다 — 한 자리라도 복합 요소면 아무 자리도 고치지 않는다.
+        for entry, root in _roots(package):
+            for item in resolve_field_occurrences(entry, root).require_usable():
+                if (is_fill_target_field_type(item.field_type) and normalize_field_id(item.raw_name) == old
+                        and (not item.texts or any(len(node) for node in item.texts))):
+                    raise ValueError(_COMPLEX_FIELD)
     count = 0
     for entry, root in _roots(package):
-        if action == "rename_field":
+        if action == "rename_field" or whole:
             targets = [item for item in resolve_field_occurrences(entry, root).require_usable()
                        if is_fill_target_field_type(item.field_type)
                        and normalize_field_id(item.raw_name) == old]
@@ -830,7 +840,7 @@ def _change_field(package, command: Mapping[str, object]) -> int:
                 if not isinstance(replacement, str):
                     raise ValueError("의미를 해제한 뒤 남길 본문을 입력하세요.")
                 if not target.texts or any(len(node) for node in target.texts):
-                    raise ValueError("이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다.")
+                    raise ValueError(_COMPLEX_FIELD)
                 target.texts[0].text = replacement
                 for node in target.texts[1:]:
                     node.text = ""
@@ -1285,8 +1295,15 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
             captured = _compile_token(package, command)
         elif action in {"rename_field", "relink_field", "unset_field"}:
             captured = _change_field(package, command)
-            label = command_label(command, command.get("old_name") if action == "rename_field"
+            whole = whole_field_unset(command)
+            label = command_label(command, command.get("old_name") if action == "rename_field" or whole
                                   else _prior_field_name(prior_fields, command))
+            if whole:
+                # 필드 전체 해제의 포함 내용은 모든 사용 위치의 문맥이다(P-20) — 구조 목록의 사용 위치 행과 같다.
+                name = normalize_field_id(command.get("old_name"))
+                impact_context = {**impact_context, "included": [
+                    occurrence["context"] for field in prior_fields if field["name"] == name
+                    for occurrence in field["occurrences"]]}
         elif action in {"create_slot", "create_option"}:
             _create_region(package, command)
             captured = None
@@ -1347,6 +1364,7 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
                                     else captured_text if captured_text is not None else before_label),
                          "after": after_text if after_text is not None else after_label,
                          "included": impact_context.get("included"),
+                         "included_location": impact_context.get("included_location"),
                          "expanded": impact_context.get("expanded", False),
                          "children": impact_context.get("children", []),
                          "counts": impact_context.get("counts"),
@@ -1366,6 +1384,8 @@ def _command_preview_label(command: Mapping[str, object], *, after: bool = False
         return f"[ {command.get('name', '')} ]" if after else str(captured or "")
     if action in {"rename_field", "relink_field"}:
         return str(command.get("name" if after else "old_name", ""))
+    if action == "unset_field":
+        return str(command.get("text", "")) if after else f"[ {command.get('old_name', '')} ]"
     if action in {"create_slot", "rename_slot", "create_option", "rename_option"}:
         noun = "항목" if str(action).endswith("slot") else "선택"
         return f"{noun} {command.get('id' if after else 'slot_id', '')}"
@@ -1431,6 +1451,8 @@ def _preview_content_context(package, command: Mapping[str, object]) -> dict:
             "after": ("본문과 의미가 삭제됩니다." if action == "delete"
                       else included + "\n\n" + _command_preview_label(command, after=True)),
             "included": included[:500], "expanded": expanded,
+            # 편집면이 미리보기 동안 칠할 실제 범위(P-16) — 넓힌 문단 전체 또는 대상 영역의 문단.
+            "included_location": {"entry": entry, "start_paragraph": start, "end_paragraph": end},
             "children": children, "counts": counts, "target_name": target_name}
 
 

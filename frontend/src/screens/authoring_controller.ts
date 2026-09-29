@@ -14,6 +14,9 @@ export type AuthoringEditor = {
    *  `{ kind: "slot"|"option"|"field", id, slot_id?, index? }`(option 의 id 는 선택 id, slot_id 는 소속 항목,
    *  field 의 index 는 사용 위치 한 곳). 없으면 강조 없음. */
   decorate(analysis: Obj, mode: string, highlight?: Obj | null): void;
+  /** 편집면 배율 방식(IDE-06 P-13) — 폭 맞춤이면 편집기 스스로 쪽 폭을 맞추고, 고정이면 편집기는 100%이고 셸이 키운다.
+   *  없으면(TXT) 셸 배율만 쓴다. */
+  zoom?(mode: "fit" | "fixed"): Promise<void>;
   /** 편집기 history 의 현재 깊이. 없으면(HWPX) 표면은 두 버튼을 그대로 켜 둔다. */
   state?(): { canUndo: boolean; canRedo: boolean };
 };
@@ -24,6 +27,30 @@ export const COMMANDS: [string, string][] = [
   ["rename_slot", "항목 속성 변경"], ["rename_option", "선택 속성 변경"], ["adjust_range", "범위 조정"],
   ["unwrap", "의미만 해제"], ["delete", "내용까지 삭제"], ["duplicate", "복제"], ["move", "이동"],
 ];
+/** 확대 값: 「폭 맞춤」(HWPX 기본) 또는 고정 배율(%). */
+export type Zoom = "fit" | number;
+export const DEFAULT_ZOOM: Zoom = "fit";
+const FIELD_COMMANDS = ["rename_field", "relink_field", "unset_field"];
+
+/** 미리보기 동안 편집면이 칠할 대상(IDE-06 P-16). 범위 명령은 Python 이 준 실제 포함 범위(`included_location`)를
+ *  이름표 없는 합성 표지로(`marker` 는 그 표지의 종류), 필드 명령은 그 필드의 사용 위치 — 필드 전체·전체 이름 변경은
+ *  모든 사용 위치, 한 곳의 명령은 그 자리(index)다. 미리보기가 없거나 칠할 자리를 모르면 null. */
+export function previewHighlight(preview: Obj | null | undefined, command: Obj | null | undefined, analysis: Obj = {}): Obj | null {
+  if (!preview || !command) return null;
+  const location = preview.included_location;
+  if (location && typeof location === "object")
+    return { kind: "range", location, marker: command.type === "create_option" || (command.type !== "create_slot" && command.kind === "option") ? "option" : "slot" };
+  if (!FIELD_COMMANDS.includes(command.type)) return null;
+  const name = command.old_name || command.name;
+  if (!name) return null;
+  if (command.type === "rename_field" || Array.isArray(command.occurrences)) return { kind: "field", id: name };
+  const occurrences: Obj[] = (analysis.fields || []).find((field: Obj) => field.name === name)?.occurrences || [];
+  const at = occurrences.findIndex((occurrence) => command.occurrence != null
+    ? occurrence.entry === command.entry && occurrence.occurrence === command.occurrence
+    : occurrence.start === command.start);
+  return at < 0 ? null : { kind: "field", id: name, index: at + 1 };
+}
+
 type Deps = {
   client: BridgeClient;
   runtime: ScreenRuntime;
@@ -102,7 +129,7 @@ export function createAuthoringController(deps: Deps) {
   // commands: Python 이 현재 선택에 대해 판정한 명령 가용성(F40·P07). 표면은 이것을 그리기만 하고 다시 판정하지 않는다.
   const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", lastCreatedText: "", notice: "",
     mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, palette: 0, refusal: null, syntax: null,
-    command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], searchSummaries: [], values: {}, selectedOptions: {}, zoom: 100 });
+    command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], searchSummaries: [], values: {}, selectedOptions: {}, zoom: DEFAULT_ZOOM });
   let view = initialView();
   let viewId = "";
   let trialTimer: ReturnType<typeof setTimeout> | undefined;
@@ -116,7 +143,20 @@ export function createAuthoringController(deps: Deps) {
   let errorSeq = 0;
   const snapshot = (): Obj => model.getSnapshot() || { tabs: [], active_id: "" };
   const tab = (id = snapshot().active_id): Obj => (snapshot().tabs || []).find((item: Obj) => item.id === id) || {};
-  const update = (patch: Obj) => { view = { ...view, ...patch }; if (viewId) views.set(viewId, view); listeners.forEach((listener) => listener()); };
+  // 구조 트리 줄 hover 의 강조(UX-09) — 미리보기 강조(IDE-06 P-16)를 잠시 덮고, 떠나면(null) 미리보기 강조로 돌아온다.
+  let hovered: Obj | null = null;
+  /** 편집면 강조 — hover 가 있으면 그것, 없으면 서 있는 미리보기의 대상. 다른 탭의 편집기는 강조가 없다. */
+  const currentHighlight = (id = viewId): Obj | null => id !== viewId ? null
+    : hovered || previewHighlight(view.preview, view.command, tab(id).analysis || {});
+  const redecorate = () => { if (viewId) editors.get(viewId)?.decorate(tab(viewId).analysis || {}, view.mode || "template", currentHighlight()); };
+  const update = (patch: Obj) => {
+    const before = view;
+    view = { ...view, ...patch };
+    if (viewId) views.set(viewId, view);
+    // 미리보기가 서거나 걷히면 편집면 강조도 따라간다 — hover 중이면 hover 가 그대로 앞선다.
+    if (viewId && (view.preview !== before.preview || view.command !== before.command) && !hovered) redecorate();
+    listeners.forEach((listener) => listener());
+  };
   // verdict: Python 이 판정을 세션 상태로 이미 투영한 호출(시험 입력 검증 등) — ok:false 는 오류 띠가 아니라 그 표면이 보인다.
   const dispatch = async (action: string, payload: Obj = {}, verdict = false): Promise<Obj> => {
     const call = deps.client.dispatch as unknown as (screen: string, name: string, body: Obj) => ReturnType<BridgeClient["dispatch"]>;
@@ -210,7 +250,7 @@ export function createAuthoringController(deps: Deps) {
     const pending = pendingRestore.get(id);
     if (!editor || !pending) return;
     pendingRestore.delete(id);
-    editor.decorate(tab(id).analysis || {}, views.get(id)?.mode || "template");
+    editor.decorate(tab(id).analysis || {}, views.get(id)?.mode || "template", currentHighlight(id));
     // 좌표는 Python 이 이 bytes 에 대해 유효하다고 판정한 것이다. 그래도 편집기가 거절하면 알리되 문서 열기는 막지 않는다.
     if (pending.selection) await editor.focus(pending.selection).catch((error) => fail(error, "restore"));
   }
@@ -236,6 +276,7 @@ export function createAuthoringController(deps: Deps) {
     const activated = await dispatch("activate", { session_id: id });
     const current = tab(id);
     viewId = id;
+    hovered = null;
     const known = views.get(id);
     const restore = activated.restore ?? current.restore;
     view = known || restoredView(restore);
@@ -584,6 +625,17 @@ export function createAuthoringController(deps: Deps) {
       destination: { ...view.selection, slot_id: view.context?.slot_id, new_id: newId, link_existing: linkExisting }, with_meaning: withMeaning }),
     editorGeneration: (id: string) => generations.get(id) || 0,
     mode: (id: string) => views.get(id)?.mode || "template",
+    /** 그 탭의 편집면 강조(hover 또는 미리보기 대상) — 편집기가 장식을 다시 보낼 때 함께 싣는다. */
+    highlightOf: (id: string) => currentHighlight(id),
+    /** 그 탭의 확대 값(IDE-06 P-13) — 뷰가 없으면(마운트가 활성화보다 빠르면) 기본 「폭 맞춤」이다. */
+    zoom: (id: string): Zoom => views.get(id)?.zoom ?? DEFAULT_ZOOM,
+    /** 확대를 고른다. 폭 맞춤 ↔ 고정 배율이 바뀔 때만 편집기에 알린다(고정 배율 사이는 셸 배율만 바뀐다). */
+    setZoom(zoom: Zoom) {
+      const before = view.zoom;
+      update({ zoom });
+      if ((before === "fit") !== (zoom === "fit"))
+        void guarded(async () => { await editors.get(viewId)?.zoom?.(zoom === "fit" ? "fit" : "fixed"); }, "editor");
+    },
     pending: (id: string) => buffers.has(id),
     selection: (id: string, range: Obj) => { void guarded(() => selection(id, range), "locate"); },
     /** 오류 띠의 「닫기」 — 사용자가 읽고 걷는다. */
@@ -604,9 +656,10 @@ export function createAuthoringController(deps: Deps) {
       update(command === "undo" ? { lastCommandLabel: "", ...note } : note);
     },
     editorState: (id: string) => editors.get(id)?.state?.() ?? null,
-    setMode(mode: string) { update({ mode }); editors.get(viewId)?.decorate(tab(viewId).analysis || {}, mode); if (viewId) scheduleRemember(viewId); },
-    /** 구조 트리 줄이 가리키는 범위를 편집면에서 강조한다(UX-09) — null 이면 걷는다. 선택·초점은 옮기지 않는다. */
-    highlight(target: Obj | null) { editors.get(viewId)?.decorate(tab(viewId).analysis || {}, views.get(viewId)?.mode || "template", target); },
+    setMode(mode: string) { update({ mode }); redecorate(); if (viewId) scheduleRemember(viewId); },
+    /** 구조 트리 줄이 가리키는 범위를 편집면에서 강조한다(UX-09) — null 이면 걷는다. 선택·초점은 옮기지 않는다.
+     *  미리보기가 서 있으면 걷은 자리에 미리보기 대상의 강조가 돌아온다(IDE-06 P-16). */
+    highlight(target: Obj | null) { hovered = target; redecorate(); },
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
     recover: async (id: string) => { await restored(await (tab(id).id ? dispatch("recover", fenced(id)) : dispatch("recover_draft", { key: id }))); update({ recoveryPreview: null }); },

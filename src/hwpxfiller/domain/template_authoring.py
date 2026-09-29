@@ -68,6 +68,7 @@ REASON_FIELD_OVERLAP = "고른 범위에 기존 필드가 포함되어 있습니
 REASON_STRUCTURE_FIRST = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
 REASON_NO_CONTENT_LINE = "고를 내용 줄이 없습니다."
 REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 고르세요."
+_FIELD_NOT_FOUND = "필드를 찾을 수 없습니다."
 REASON_NEED_RANGE = "문서에서 범위를 고르세요."
 ALTERNATIVE_CREATE_SLOT = {"label": "먼저 항목 만들기", "command_type": "create_slot"}
 CASCADE_MESSAGE = "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
@@ -475,7 +476,8 @@ def target_availability(kind: str, *, name: str | None = None,
                         structure_broken: bool) -> list[dict]:
     """Availability for one meaning element chosen by identity, not by coordinates (§3.3·§6.1·§6.2).
 
-    필드 전체는 이름 변경만 연다 — 연결 변경·의미 해제는 사용 위치 한 곳의 명령이다(U07).
+    필드 전체는 이름 변경과 전체 의미 해제를 연다 — 연결 변경은 사용 위치 한 곳의 명령이다(U07).
+    전체 의미 해제는 모든 사용 위치를 한 계획·한 실행 취소로 치환하는 전체 대상의 명령이다(IDE-06 P-20).
     사용 위치는 그 자리의 연결 변경·의미 해제와 필드 전체 이름 변경을 연다(§6.2 첫 행).
     항목·선택은 영역 명령을 연다. 대상은 글자 범위가 아니므로 만들기 명령은 필요한 범위를 안내한다.
     """
@@ -486,7 +488,7 @@ def target_availability(kind: str, *, name: str | None = None,
     reasons = shared_reasons(field_hits=[name or ""] if field else [], target_kind=region,
                              has_slot=region is not None, structure_broken=structure_broken)
     if kind == "field":
-        reasons["relink_field"] = reasons["unset_field"] = REASON_NEED_OCCURRENCE
+        reasons["relink_field"] = REASON_NEED_OCCURRENCE
     reasons["create_field"] = REASON_FIELD_OVERLAP if field else REASON_NEED_RANGE
     if structure_broken:
         reasons["create_slot"] = reasons["create_option"] = REASON_STRUCTURE_FIRST
@@ -496,6 +498,15 @@ def target_availability(kind: str, *, name: str | None = None,
                                     else REASON_REGION_OVERLAP if kind == "option"
                                     else REASON_NEED_RANGE)
     return availability_entries(reasons)
+
+
+def whole_field_unset(command: Mapping[str, object]) -> bool:
+    """필드 전체(구조 목록의 필드 행 — ``occurrences`` 를 실은 대상)의 의미 해제인가(IDE-06 P-20).
+
+    전체 대상은 이름(``old_name``)이 같은 모든 사용 위치를 한 계획으로 치환한다. 사용 위치 한 곳의
+    해제는 좌표(TXT)나 차례(HWPX)로 그 자리만 고친다.
+    """
+    return command.get("type") == "unset_field" and isinstance(command.get("occurrences"), list)
 
 
 def available_target_commands(media: str, content: str | object, kind: str,
@@ -794,7 +805,7 @@ def _edits(text: str, command: Mapping[str, object], *,
         new = _identifier(command.get("name"))
         existing = [match for match in matches if match.group(1).strip() == old]
         if not existing:
-            raise ValueError("필드를 찾을 수 없습니다.")
+            raise ValueError(_FIELD_NOT_FOUND)
         if old == new:
             return [], False, False
         taken = [match for match in matches if match.group(1).strip() == new]
@@ -804,13 +815,21 @@ def _edits(text: str, command: Mapping[str, object], *,
                  for match in existing]
         return edits, False, False
     if action in {"relink_field", "unset_field"}:
-        match = next((item for item in matches if item.start() <= start < item.end()), None)
-        if match is None:
-            raise ValueError("고른 필드 사용 위치를 찾을 수 없습니다.")
         replacement = ("{{" + _identifier(command.get("name")) + "}}") if action == "relink_field" else command.get("text")
+        if whole_field_unset(command):
+            # 필드 전체의 의미 해제(P-20): 이름이 같은 모든 사용 위치를 한 계획으로 치환한다.
+            name = _identifier(command.get("old_name"))
+            sites = [match for match in matches if match.group(1).strip() == name]
+            if not sites:
+                raise ValueError(_FIELD_NOT_FOUND)
+        else:
+            match = next((item for item in matches if item.start() <= start < item.end()), None)
+            if match is None:
+                raise ValueError("고른 필드 사용 위치를 찾을 수 없습니다.")
+            sites = [match]
         if not isinstance(replacement, str):
             raise ValueError("의미를 해제한 뒤 남길 본문을 입력하세요.")
-        return [(match.start(), match.end(), replacement)], False, False
+        return [(match.start(), match.end(), replacement) for match in sites], False, False
     if action in {"create_slot", "create_option"}:
         kind = PLACEMENT_SLOT if action == "create_slot" else PLACEMENT_OPTION
         region_identifier(command.get("id"))
@@ -926,7 +945,9 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
     original = content[start:end] if action == "create_field" else None
     before: str | None = None
     after: str | None = None
-    included: str | None = None
+    included: str | list[str] | None = None
+    # 편집면이 미리보기 동안 칠할 실제 범위(P-16) — 넓힌 범위 또는 대상 영역, UTF-16 좌표.
+    included_location: dict | None = None
     children: list[dict] = []
     counts: dict | None = None
     label = command_label(command)
@@ -942,6 +963,12 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         old = _identifier(command.get("old_name"))
         before, after = old, _identifier(command.get("name"))
         label = command_label(command, old)
+    elif whole_field_unset(command):
+        name = _identifier(command.get("old_name"))
+        before, after = "{{" + name + "}}", edits[0][2]
+        # 모든 사용 위치의 문맥(P-20) — 구조 목록의 사용 위치 행과 같은 문장이다.
+        included = [item["context"] for item in _occurrences(content) if item["name"] == name]
+        label = command_label(command, name)
     elif action in {"relink_field", "unset_field"}:
         match = next(item for item in iter_field_token_matches(content) if item.start() <= start < item.end())
         before, after = match.group(0), edits[0][2]
@@ -957,6 +984,7 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         first, last, lo, hi = _line_range(content, start, end)
         before, included = content[start:end], content[lo:hi]
         after = included
+        included_location = {"start": _to_utf16(content, lo), "end": _to_utf16(content, hi)}
         children, counts = _line_block_children(content, scan, first, last)
         label = command_label(command)
     else:
@@ -965,6 +993,8 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         begin, finish = target.begin_marker_line, target.end_marker_line
         region = content[starts[begin]:starts[finish + 1]]
         included = region
+        included_location = {"start": _to_utf16(content, starts[begin]),
+                             "end": _to_utf16(content, starts[finish + 1])}
         children, counts = _line_block_children(content, scan, begin, finish)
         label = command_label(command, _target_name(scan, target))
         if action == "delete":
@@ -985,6 +1015,7 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
             first, last, lo, hi = _line_range(content, start, end)
             before, included = region, content[lo:hi]
             after = included
+            included_location = {"start": _to_utf16(content, lo), "end": _to_utf16(content, hi)}
             children, counts = _line_block_children(content, scan, first, last)
     return {
         "edits": [{"start": _to_utf16(content, lo), "end": _to_utf16(content, hi), "text": value}
@@ -997,6 +1028,7 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         "before": before,
         "after": after,
         "included": included,
+        "included_location": included_location,
         "children": children,
         "counts": counts,
         "label": label,

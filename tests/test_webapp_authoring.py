@@ -567,7 +567,7 @@ def test_locate_and_commands_carry_domain_availability_for_both_media(tmp_path: 
 
 # ── #1021: 구조 목록·검색 대상은 좌표가 아니라 정체로 locate 한다(§3.3·§6.1·§6.2, AC18 두 형식 동일) ──
 _TARGET_ENABLED = {
-    "field": {"rename_field"},
+    "field": {"rename_field", "unset_field"},
     "occurrence": {"rename_field", "relink_field", "unset_field"},
     "slot": {"rename_slot", "adjust_range", "unwrap", "delete", "duplicate", "move"},
     "option": {"rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"},
@@ -634,9 +634,8 @@ def test_outline_targets_locate_by_identity_with_domain_availability(tmp_path: P
     field = located["field"]
     assert field["selected"]["kind"] == "field" and field["selected"]["occurrences"]
     assert {item["type"]: item["reason"] for item in field["commands"]
-            if item["type"] in {"relink_field", "unset_field", "create_field", "create_slot"}} == {
+            if item["type"] in {"relink_field", "create_field", "create_slot"}} == {
         "relink_field": "필드 사용 위치를 하나 고르세요.",
-        "unset_field": "필드 사용 위치를 하나 고르세요.",
         "create_field": "고른 범위에 기존 필드가 포함되어 있습니다.",
         "create_slot": "문서에서 범위를 고르세요.",
     }
@@ -658,6 +657,11 @@ def test_outline_targets_locate_by_identity_with_domain_availability(tmp_path: P
     rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
         **field["selected"], "type": "rename_field", "old_name": name, "name": "새이름"}})
     assert rename["affected"] == 1 and "refusal" not in rename
+    # 필드 전체의 의미 해제도 곧바로 선다(IDE-06 P-20) — 모든 사용 위치의 문맥과 없어질 필드를 함께 보인다.
+    unset = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
+        **field["selected"], "type": "unset_field", "old_name": name, "text": "값"}})
+    assert unset["affected"] == 1 and unset["field_delta"]["removed_fields"] == [name]
+    assert unset["included"] == [item["context"] for item in field["selected"]["occurrences"]]
     # 사용 위치 한 곳에서는 그 자리의 연결 변경이 선다.
     relink = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
         **located["occurrence"]["selected"], "type": "relink_field", "name": "다른필드"}})
