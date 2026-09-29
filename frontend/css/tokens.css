@@ -43,6 +43,11 @@
   --n-ink-control:#2b3038;
   --log-surface:#1e242b;
   --log-ink:#c6d0da;
+  --a-sem-field:#198575;
+  --a-sem-slot:#7364b5;
+  --a-sem-option:#c08436;
+  --a-sem-slot-ink:#ffffff;
+  --a-sem-option-ink:#1c2126;
   --sp-2:2px;
   --sp-4:4px;
   --sp-6:6px;
@@ -120,6 +125,11 @@ html[data-font-scale="larger"]{font-size:150%;}
     --n-ink-control:#dbe0e6;
     --log-surface:#12161b;
     --log-ink:#c6d0da;
+    --a-sem-field:#3fb39c;
+    --a-sem-slot:#9486dc;
+    --a-sem-option:#d9a35a;
+    --a-sem-slot-ink:#0f1418;
+    --a-sem-option-ink:#0f1418;
     color-scheme:dark;
   }
 }
@@ -165,6 +175,11 @@ html[data-font-scale="larger"]{font-size:150%;}
   --n-ink-control:#dbe0e6;
   --log-surface:#12161b;
   --log-ink:#c6d0da;
+  --a-sem-field:#3fb39c;
+  --a-sem-slot:#9486dc;
+  --a-sem-option:#d9a35a;
+  --a-sem-slot-ink:#0f1418;
+  --a-sem-option-ink:#0f1418;
   color-scheme:dark;
 }
 /* </gen:tokens> */

@@ -179,6 +179,16 @@ def test_txt_available_commands_are_decided_here_with_spec_reasons() -> None:
                for item in available_commands("txt", base, {"start": -1, "end": 0}))
 
 
+def test_analysis_spans_carry_name_tags_in_utf16_coordinates() -> None:
+    """FB-03(#1079): 표면이 원문 대신 그릴 이름표(이름·범위 종류·여닫음·짝)를 분석이 싣는다. 좌표는 UTF-16 이다."""
+    source = "😀 {{공고명}}\n{{#항목 사유 변경 사유}}\n본문\n{{/항목}}\n"
+    spans = analyze("txt", source)["spans"]
+    assert [(span["label"], span.get("region"), span.get("role"), span.get("paired")) for span in spans] == [
+        ("공고명", None, None, None), ("변경 사유", "slot", "open", True), ("변경 사유", "slot", "close", True)]
+    # 😀 는 UTF-16 두 단위다 — 오프셋이 편집기 좌표로 번역돼 있다.
+    assert (spans[0]["start"], spans[0]["end"]) == (3, 10)
+
+
 def test_structure_commands_and_trial_keep_source_to_output_evidence() -> None:
     source = "시작\n첫째 {{이름}}\n둘째 {{이름}}\n끝\n"
     source, _ = apply("txt", source, {"type": "create_slot", "start": source.index("첫째"), "end": source.index("끝"), "id": "항목1", "label": "표시"})

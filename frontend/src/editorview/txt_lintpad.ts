@@ -13,11 +13,16 @@
  * 것뿐이다 — 여기서 `{{…}}` 를 다시 정규식으로 가르면 sigil 선행 분류가 두 곳에서
  * 갈리고, 같은 토큰이 표면과 백엔드에서 다른 것이 된다.
  *
+ * **이름표(FB-03 #1079).** 편집면은 표기 원문 대신 HWPX 편집면과 같은 이름표를 그린다 — 필드는 이름에 필드 밑줄,
+ * 항목·선택 표기는 이름 칩, 그 범위는 줄 왼쪽 막대다. 원문은 문서에 그대로 있고(오프셋은 늘 원문 좌표) 가려질
+ * 뿐이다. 가린 토큰은 원자 범위라 캐럿이 그 안에 서지 않고, 지우면 토큰 하나가 통째로 지워진다(되돌리기 한 번).
+ * 원문 표기는 「원문 표기」 독이 보인다. 이름·짝은 Python 이 정한다(`LintpadSpan.label` 등).
+ *
  * 전용 작업대는 undo/search 키맵을 설치한다. 기존 모달에서는 키맵을 설치하지 않아
  * Escape·Tab의 모달 이탈 가드와 포커스 트랩을 유지한다. */
 import { Compartment, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
-import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType, keymap, lineNumbers } from "@codemirror/view";
 import { history, historyKeymap, undo, redo, undoDepth, redoDepth, isolateHistory } from "@codemirror/commands";
 import { search, openSearchPanel } from "@codemirror/search";
 import type { DecorationSet } from "@codemirror/view";
@@ -29,7 +34,22 @@ export type LintpadSpan = {
   /** 0-기반 UTF-16 코드 단위 오프셋(반열린 구간). */
   start: number;
   end: number;
+  /** Python 이 본 토큰 원문 — 지금 문서의 그 자리가 이것과 같을 때만 이름표로 가린다(판정 시차 방어, 다시 가르지 않는다). */
+  source?: string;
+  /** 이름표에 보일 이름(FB-03) — 비었거나 없으면 가리지 않고 원문을 보인다(깨진 표기는 고칠 수 있게 보인다). */
+  label?: string;
+  /** 마커의 범위 종류(`"slot"`·`"option"`)와 여닫음(`"open"`·`"close"`) — Python 판정 그대로. */
+  region?: string;
+  role?: string;
+  paired?: boolean;
 };
+
+/** 이름표 표시 방식 — HWPX 편집면(`rhwp_editor.ts` `setDecorations` 의 `labels`)과 같은 어휘다.
+ *  `none`(문서): 이름만 조용히 · `selected`(템플릿): 이름표, 캐럿이 든 범위만 막대를 짙게 · `all`(이름표): 전부 짙게. */
+export type LintpadLabels = "none" | "selected" | "all";
+
+/** 항목·선택 범위 1건 — Python 배치(`analysis.placements`)의 UTF-16 좌표 그대로(여는 표기 줄 머리 ~ 닫는 표기 다음 줄 머리). */
+export type LintpadRegion = { kind: string; start: number; end: number };
 
 /** 원인 자리 문제 1건(IDE-05) — Python 의 `problems[].location`(UTF-16)과 심각도·문장 그대로다. */
 export type LintpadProblem = {
@@ -85,6 +105,10 @@ export type LintpadUpdateSpec = {
   problems?: readonly LintpadProblem[];
   /** 표지 짝 전집. 넘기지 않으면 그대로 둔다. */
   pairs?: readonly LintpadPair[];
+  /** 이름표 표시 방식. 넘기지 않으면 그대로 둔다(처음은 `selected`). */
+  labels?: LintpadLabels;
+  /** 항목·선택 범위 전집(줄 왼쪽 막대). 넘기지 않으면 그대로 둔다. */
+  regions?: readonly LintpadRegion[];
 };
 
 /** 손잡이 → 실제 뷰. 이 `WeakMap` 이 vendor 타입 봉쇄의 자리다. */
@@ -95,7 +119,17 @@ const SPAN_CLASS: Record<string, string> = {
   marker: "cm-txtMarker",
 };
 
+/** 문서 표시(`labels: "none"`)의 이름표 — 색 없이 이름만 조용히 선다(HWPX 문서 표시에 표지가 없는 것과 같은 자리). */
+const QUIET_CLASS: Record<string, string> = {
+  field: "cm-txtToken",
+  marker: "cm-txtToken cm-txtToken-marker",
+};
+const NAMED_REGIONS = ["slot", "option"];
+const NAMED_ROLES = ["open", "close"];
+
 const setSpans = StateEffect.define<readonly LintpadSpan[]>();
+const setLabels = StateEffect.define<LintpadLabels>();
+const setRegions = StateEffect.define<readonly LintpadRegion[]>();
 const setProblems = StateEffect.define<readonly LintpadProblem[]>();
 const setPairs = StateEffect.define<readonly LintpadPair[]>();
 
@@ -145,41 +179,184 @@ export function usableSpans(
   return usable;
 }
 
-/** 좌표 → 데코레이션(위 투영의 vendor 얼굴). */
-function decorate(state: EditorState, spans: readonly LintpadSpan[]): DecorationSet {
-  const ranges: Range<Decoration>[] = usableSpans(spans, state.doc.length).map(
-    (span) => Decoration.mark({ class: span.className }).range(span.from, span.to),
-  );
-  const clamp = (offset: number) => Math.max(0, Math.min(offset, state.doc.length));
+/** 이름표·강조 조각 1건 — `label` 이 있으면 원문을 가리는 이름표, 없으면 원문 위 강조(mark)다. */
+export type LintpadPiece = { from: number; to: number; className: string; label?: string; region?: string; role?: string };
+
+/** Python 이 준 이름표 이름 — 표면은 이름을 짓지 않고, 이름을 쓸 수 없는 표기면 null(원문을 그대로 보인다). */
+function nameTag(span: LintpadSpan): string | null {
+  const label = typeof span.label === "string" ? span.label : "";
+  if (!label) return null;
+  if (span.kind === "field") return label;
+  return span.kind === "marker" && NAMED_REGIONS.includes(String(span.region)) && NAMED_ROLES.includes(String(span.role)) ? label : null;
+}
+
+/** 이름표·강조로 얹을 조각의 **순수** 투영(FB-03) — vendor 타입이 없어 단위로 잰다.
+ *
+ *  `usableSpans` 의 세 규칙(문서 길이로 자름·앞 조각 뒤에서만·모르는 kind 버림) 위에 둘을 더한다:
+ *  ① 이름표는 토큰 전부가 그 자리에 있고 지금 문서의 글자가 Python 이 본 원문(`source`)과 같을 때만 선다 —
+ *  판정 왕복 사이에 문서가 바뀌었으면 가리지 않는다(엉뚱한 글자를 이름표로 덮지 않는다). ② 문서 표시(`none`)는
+ *  이름표를 조용한 모양으로만 세우고 원문 강조(mark)는 칠하지 않는다(종전 문서 표시와 같다). */
+export function lintpadPieces(
+  spans: readonly LintpadSpan[], doc: string, labels: LintpadLabels = "selected",
+): LintpadPiece[] {
+  const quiet = labels === "none";
+  const pieces: LintpadPiece[] = [];
+  let cursor = 0;
   for (const span of spans) {
-    if (span.kind === "highlight") {
-      // 구조 트리가 가리키는 범위(UX-09)는 그 범위가 닿는 줄 전체에 선다 — 필드 표지와 겹쳐도 마크가 아니라 줄 장식이다.
-      const first = state.doc.lineAt(clamp(span.start)).number;
-      const last = state.doc.lineAt(clamp(Math.max(span.start, span.end - 1))).number;
-      for (let number = first; number <= last; number++) ranges.push(Decoration.line({ class: "cm-authoring-highlight" }).range(state.doc.line(number).from));
+    const className = SPAN_CLASS[span.kind];
+    const from = Math.max(cursor, Math.min(span.start, doc.length));
+    const to = Math.min(span.end, doc.length);
+    if (className === undefined || to <= from) continue;
+    cursor = to;
+    const label = nameTag(span);
+    const whole = from === span.start && to === span.end && (span.source === undefined || doc.slice(from, to) === span.source);
+    if (label !== null && whole) {
+      pieces.push({ from, to, className: quiet ? QUIET_CLASS[span.kind] : className, label,
+        ...(span.kind === "marker" ? { region: String(span.region), role: String(span.role) } : {}) });
+    } else if (!quiet) pieces.push({ from, to, className });
+  }
+  return pieces;
+}
+
+/** 원문 토큰을 가리는 이름표 — 글자는 Python 이 준 이름뿐이다. 누름은 편집기가 받아 캐럿을 토큰 앞뒤로 둔다. */
+class NameTag extends WidgetType {
+  readonly label: string;
+  readonly className: string;
+  readonly region: string;
+  readonly role: string;
+  constructor(label: string, className: string, region: string, role: string) {
+    super();
+    this.label = label; this.className = className; this.region = region; this.role = role;
+  }
+  eq(other: NameTag) {
+    return other.label === this.label && other.className === this.className && other.region === this.region && other.role === this.role;
+  }
+  toDOM() {
+    const tag = document.createElement("span");
+    tag.className = this.className;
+    if (this.region) tag.dataset.region = this.region;
+    if (this.role) tag.dataset.role = this.role;
+    tag.textContent = this.label;
+    return tag;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** 좌표 → 데코레이션(위 투영의 vendor 얼굴). 이름표(replace)는 원자 범위로도 따로 모은다. */
+function decorate(state: EditorState, spans: readonly LintpadSpan[], labels: LintpadLabels): { deco: DecorationSet; atoms: DecorationSet } {
+  const ranges: Range<Decoration>[] = [];
+  const atoms: Range<Decoration>[] = [];
+  for (const piece of lintpadPieces(spans, state.doc.toString(), labels)) {
+    if (piece.label === undefined) {
+      ranges.push(Decoration.mark({ class: piece.className }).range(piece.from, piece.to));
       continue;
     }
-    if (!["slot-start", "slot-end", "option-start", "option-end"].includes(span.kind)) continue;
-    const line = state.doc.lineAt(clamp(span.start));
-    ranges.push(Decoration.line({ class: `cm-authoring-${span.kind}` }).range(line.from));
+    const tag = Decoration.replace({ widget: new NameTag(piece.label, piece.className, piece.region || "", piece.role || "") });
+    ranges.push(tag.range(piece.from, piece.to));
+    atoms.push(tag.range(piece.from, piece.to));
   }
-  return Decoration.set(ranges, true);
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, state.doc.length));
+  for (const span of spans) {
+    if (span.kind !== "highlight") continue;
+    // 구조 트리가 가리키는 범위(UX-09)는 그 범위가 닿는 줄 전체에 선다 — 필드 표지와 겹쳐도 마크가 아니라 줄 장식이다.
+    const first = state.doc.lineAt(clamp(span.start)).number;
+    const last = state.doc.lineAt(clamp(Math.max(span.start, span.end - 1))).number;
+    for (let number = first; number <= last; number++) ranges.push(Decoration.line({ class: "cm-authoring-highlight" }).range(state.doc.line(number).from));
+  }
+  return { deco: Decoration.set(ranges, true), atoms: Decoration.set(atoms, true) };
 }
 
 /** 강조 상태 — 문서가 바뀌면 좌표를 **매핑**해 따라가고, 새 판정이 오면 갈아 끼운다.
  *
  *  매핑이 있어야 왕복(디바운스 180ms)이 도는 사이에도 강조가 글자에 붙어 있다. 새 판정이
- *  도착하면 그 순간의 전집으로 덮으므로 매핑의 누적 오차는 남지 않는다. */
-const spanField = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
+ *  도착하면 그 순간의 전집으로 덮으므로 매핑의 누적 오차는 남지 않는다. 표시 방식만 바뀌면(문서·템플릿·이름표)
+ *  매핑해 둔 좌표로 다시 짓는다. */
+type SpanState = { spans: readonly LintpadSpan[]; labels: LintpadLabels; deco: DecorationSet; atoms: DecorationSet };
+const spanField = StateField.define<SpanState>({
+  create: () => ({ spans: [], labels: "selected", deco: Decoration.none, atoms: Decoration.none }),
   update(value, tr) {
-    let next = value.map(tr.changes);
-    for (const effect of tr.effects) {
-      if (effect.is(setSpans)) next = decorate(tr.state, effect.value);
+    let { spans, labels } = value;
+    let rebuild = false;
+    if (tr.docChanged) {
+      spans = spans.map((span) => ({ ...span, start: tr.changes.mapPos(span.start, 1), end: tr.changes.mapPos(span.end, -1) }));
     }
-    return next;
+    for (const effect of tr.effects) {
+      if (effect.is(setSpans)) { spans = effect.value; rebuild = true; }
+      if (effect.is(setLabels) && effect.value !== labels) { labels = effect.value; rebuild = true; }
+    }
+    if (rebuild) return { spans, labels, ...decorate(tr.state, spans, labels) };
+    return tr.docChanged ? { spans, labels, deco: value.deco.map(tr.changes), atoms: value.atoms.map(tr.changes) } : value;
   },
-  provide: (field) => EditorView.decorations.from(field),
+  provide: (field) => [
+    EditorView.decorations.from(field, (value) => value.deco),
+    // 가린 토큰은 원자 범위다 — 캐럿·끌기·지우기가 그 안에 서지 않는다(지우면 토큰 하나가 통째로 지워진다).
+    EditorView.atomicRanges.of((view) => view.state.field(field).atoms),
+  ],
+});
+
+/** 가린 토큰의 [from, to] 목록 — 원자 범위의 평범한 얼굴(vendor 타입 없음). */
+function atomList(state: EditorState): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  state.field(spanField).atoms.between(0, state.doc.length, (from, to) => { out.push({ from, to }); });
+  return out;
+}
+
+/** 밖에서 옮긴 선택을 가린 토큰 밖으로 민다 — 캐럿은 가까운 쪽 경계로, 범위는 걸친 토큰을 통째로 담는다.
+ *  편집기 자신의 캐럿·끌기는 원자 범위가 이미 막는다. 이것은 문제·검색·구조 목록에서 온 좌표를 위한 것이다 —
+ *  캐럿이 가린 토큰 안에 서면 다음 글자가 보이지 않는 표기 안으로 들어간다. */
+export function snapOutOfTokens(atoms: readonly { from: number; to: number }[], start: number, end: number): [number, number] {
+  if (start === end) {
+    const inside = atoms.find((atom) => atom.from < start && start < atom.to);
+    if (!inside) return [start, end];
+    const side = start - inside.from <= inside.to - start ? inside.from : inside.to;
+    return [side, side];
+  }
+  let lo = Math.min(start, end), hi = Math.max(start, end);
+  for (const atom of atoms) {
+    if (atom.from < lo && lo < atom.to) lo = atom.from;
+    if (atom.from < hi && hi < atom.to) hi = atom.to;
+  }
+  return start <= end ? [lo, hi] : [hi, lo];
+}
+
+/** 항목·선택 범위의 줄 막대(FB-03) — HWPX 편집면의 범위 상자와 같은 자리다. 템플릿 표시는 캐럿이 든 범위만,
+ *  이름표 표시는 전부 짙게 선다. 문서 표시는 막대가 없다. 범위는 Python 배치 그대로이고 매핑으로 따라간다. */
+type RegionState = { regions: readonly LintpadRegion[]; labels: LintpadLabels; deco: DecorationSet };
+
+function regionDecoration(state: EditorState, regions: readonly LintpadRegion[], labels: LintpadLabels): DecorationSet {
+  if (labels === "none") return Decoration.none;
+  const caret = state.selection.main.head;
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, state.doc.length));
+  const lines = new Map<number, Set<string>>();
+  for (const region of regions) {
+    if (!NAMED_REGIONS.includes(region.kind) || !(region.end > region.start)) continue;
+    const strong = labels === "all" || (region.start <= caret && caret < region.end);
+    const first = state.doc.lineAt(clamp(region.start)).number;
+    const last = state.doc.lineAt(clamp(region.end - 1)).number;
+    for (let number = first; number <= last; number++) {
+      const classes = lines.get(number) || new Set<string>();
+      classes.add(`cm-txtRegion-${region.kind}`);
+      if (strong) classes.add(`cm-txtRegion-${region.kind}-strong`);
+      lines.set(number, classes);
+    }
+  }
+  return Decoration.set([...lines].sort((a, b) => a[0] - b[0])
+    .map(([number, classes]) => Decoration.line({ class: [...classes].sort().join(" ") }).range(state.doc.line(number).from)));
+}
+
+const regionField = StateField.define<RegionState>({
+  create: () => ({ regions: [], labels: "selected", deco: Decoration.none }),
+  update(value, tr) {
+    let { regions, labels } = value;
+    if (tr.docChanged) regions = regions.map((region) => ({ ...region, start: tr.changes.mapPos(region.start, -1), end: tr.changes.mapPos(region.end, 1) }));
+    let changed = tr.docChanged || tr.selection !== undefined;
+    for (const effect of tr.effects) {
+      if (effect.is(setRegions)) { regions = effect.value; changed = true; }
+      if (effect.is(setLabels)) { labels = effect.value; changed = true; }
+    }
+    return changed ? { regions, labels, deco: regionDecoration(tr.state, regions, labels) } : value;
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => value.deco),
 });
 
 /** 문제 표지 층(IDE-05) — 필드·표지 강조와 **다른** StateField 다. 같은 배열에 섞으면 `usableSpans` 가 겹친 뒤
@@ -232,25 +409,49 @@ const pairField = StateField.define<PairState>({
   provide: (field) => EditorView.decorations.from(field, (value) => value.deco),
 });
 
-/** 세 장식 층(강조·문제·짝)이 한 문서에서 실제로 무엇을 그리는가 — DOM 없이 상태만 세워 확인하는 단위 창구.
- *  vendor 타입은 밖으로 나가지 않는다(평범한 조각 목록만 돌려준다). */
+/** 한 층이 그린 조각 1건 — 단위 창구의 평범한 얼굴. `token` 층은 원문을 가린 이름표다(`label` 이 보이는 글자). */
+export type LintpadDrawn = {
+  layer: "span" | "token" | "problem" | "pair" | "region"; from: number; to: number; className: string;
+  title?: string; label?: string; region?: string; role?: string;
+};
+
+/** 장식 층(강조·이름표·문제·짝·범위 막대)이 한 문서에서 실제로 무엇을 그리는가 — DOM 없이 상태만 세워 확인하는 단위 창구.
+ *  `edits` 는 판정을 얹은 **뒤** 친 편집이다(판정 왕복 사이의 매핑을 잰다). `atoms` 는 원자 범위 facet 이 편집기에
+ *  실제로 내주는 범위다. vendor 타입은 밖으로 나가지 않는다(평범한 조각 목록만 돌려준다). */
 export function lintpadDecorations(
-  doc: string, spec: { spans?: readonly LintpadSpan[]; problems?: readonly LintpadProblem[]; pairs?: readonly LintpadPair[]; caret?: number },
-): { layer: "span" | "problem" | "pair"; from: number; to: number; className: string; title?: string }[] {
-  let state = EditorState.create({ doc, extensions: [spanField, problemField, pairField] });
+  doc: string, spec: {
+    spans?: readonly LintpadSpan[]; problems?: readonly LintpadProblem[]; pairs?: readonly LintpadPair[]; caret?: number;
+    labels?: LintpadLabels; regions?: readonly LintpadRegion[]; edits?: readonly { start: number; end: number; text: string }[];
+  },
+): LintpadDrawn[] & { doc: string; atoms: { from: number; to: number }[] } {
+  let state = EditorState.create({ doc, extensions: [spanField, regionField, problemField, pairField] });
   state = state.update({
-    effects: [setSpans.of(spec.spans || []), setProblems.of(spec.problems || []), setPairs.of(spec.pairs || [])],
+    effects: [setSpans.of(spec.spans || []), setProblems.of(spec.problems || []), setPairs.of(spec.pairs || []),
+      ...(spec.labels ? [setLabels.of(spec.labels)] : []), setRegions.of(spec.regions || [])],
     selection: spec.caret === undefined ? undefined : { anchor: spec.caret },
   }).state;
-  const out: { layer: "span" | "problem" | "pair"; from: number; to: number; className: string; title?: string }[] = [];
-  const read = (layer: "span" | "problem" | "pair", set: DecorationSet) => set.between(0, state.doc.length, (from, to, value) => {
+  if (spec.edits?.length) state = state.update({ changes: spec.edits.map((edit) => ({ from: edit.start, to: edit.end, insert: edit.text })) }).state;
+  const out: LintpadDrawn[] = [];
+  const read = (layer: LintpadDrawn["layer"], set: DecorationSet) => set.between(0, state.doc.length, (from, to, value) => {
+    const widget = value.spec.widget;
+    if (widget instanceof NameTag) {
+      out.push({ layer: "token", from, to, className: widget.className, label: widget.label,
+        ...(widget.region ? { region: widget.region, role: widget.role } : {}) });
+      return;
+    }
     const attributes = value.spec.attributes as Record<string, string> | undefined;
     out.push({ layer, from, to, className: String(value.spec.class), ...(attributes?.title ? { title: attributes.title } : {}) });
   });
-  read("span", state.field(spanField));
+  read("span", state.field(spanField).deco);
+  read("region", state.field(regionField).deco);
   read("problem", state.field(problemField));
   read("pair", state.field(pairField).deco);
-  return out;
+  // 원자 범위는 facet 을 거쳐 읽는다 — 편집기가 캐럿·지우기에 쓰는 바로 그 값이다(facet 함수는 view.state 만 읽는다).
+  const atoms: { from: number; to: number }[] = [];
+  for (const source of state.facet(EditorView.atomicRanges)) {
+    source({ state } as unknown as EditorView).between(0, state.doc.length, (from, to) => { atoms.push({ from, to }); });
+  }
+  return Object.assign(out, { doc: state.doc.toString(), atoms });
 }
 
 /** 메모장 기본 모습 — 색·굵기는 제품 CSS(`frontend/css/editor.css`)가 토큰으로 소유한다.
@@ -474,6 +675,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         ...(spec.onSelectionRect ? [selectionRectExtension(spec.onSelectionRect)] : []),
         ...(spec.onRangePick ? [rangePickExtension(spec.onRangePick)] : []),
         spanField,
+        regionField,
         problemField,
         pairField,
         BASE_THEME,
@@ -527,7 +729,10 @@ export function navigateLintpad(handle: LintpadHandle, start: number, end = star
   if (!view) return;
   const limit = view.state.doc.length;
   if (view.composing) return;
-  view.dispatch({ selection: { anchor: Math.max(0, Math.min(start, limit)), head: Math.max(0, Math.min(end, limit)) }, scrollIntoView: true });
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, limit));
+  // 밖에서 온 좌표가 가린 토큰 안이면 경계로 민다 — 캐럿이 보이지 않는 표기 안에 서지 않는다(FB-03).
+  const [anchor, head] = snapOutOfTokens(atomList(view.state), clamp(start), clamp(end));
+  view.dispatch({ selection: { anchor, head }, scrollIntoView: true });
   view.focus();
 }
 
@@ -544,7 +749,9 @@ export function updateLintpad(handle: LintpadHandle, spec: LintpadUpdateSpec): v
   // 강조만 바꾸는 호출(장식)은 문서 전체를 문자열로 만들지 않는다 — 비교할 새 문서가 있을 때만 읽는다.
   const replacing = spec.doc !== undefined && spec.doc !== view.state.doc.toString();
   const effects = [
+    ...(spec.labels === undefined ? [] : [setLabels.of(spec.labels)]),
     ...(spec.spans === undefined ? [] : [setSpans.of(spec.spans)]),
+    ...(spec.regions === undefined ? [] : [setRegions.of(spec.regions)]),
     ...(spec.problems === undefined ? [] : [setProblems.of(spec.problems)]),
     ...(spec.pairs === undefined ? [] : [setPairs.of(spec.pairs)]),
   ];

@@ -83,6 +83,18 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
             for theme, palette in (("light", light), ("dark", dark))
             for name in ("danger", "warn")
         ),
+        # TXT 이름표(FB-03 #1079): 필드 밑줄·항목/선택 테두리와 범위 막대는 카드 위 그래픽 표지다 — 3:1.
+        *(
+            (f"{theme} semantic {name}/card", palette["semantic"][name], palette["color"]["card_bg"], 3.0)
+            for theme, palette in (("light", light), ("dark", dark))
+            for name in ("field", "slot", "option")
+        ),
+        # 여는 표기 칩의 이름은 칩 바탕 위 작은 글자다 — 4.5:1.
+        *(
+            (f"{theme} semantic {name} ink", palette["semantic"][f"{name}_ink"], palette["semantic"][name], 4.5)
+            for theme, palette in (("light", light), ("dark", dark))
+            for name in ("slot", "option")
+        ),
     ]
 
     failures = [

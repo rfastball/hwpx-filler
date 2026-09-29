@@ -537,3 +537,59 @@ def test_token_spans_leave_broken_markers_visible_as_markers():
         (text_structure.TOKEN_SPAN_FIELD, "{{공고명}}"),
         (text_structure.TOKEN_SPAN_MARKER, "{{#항목 사유}}"),
     ]
+
+
+# ---------------------------------------------- 이름표(FB-03 #1079 · TXT 시각 저작 뷰)
+def test_token_spans_carry_the_name_tags_the_surface_draws():
+    """표면은 표기 원문 대신 이름표를 그린다 — 이름과 짝은 도메인이 정한다(표면은 원문을 다시 가르지 않는다).
+
+    여는 마커는 이름표(없으면 id), 닫는 마커는 **짝이 된 여는 마커의 이름**이다. 구조 목록과 HWPX 이름표가
+    보이는 이름(``label ?? id``)과 같은 규칙이다.
+    """
+    spans = text_structure.scan_text_token_spans(_CANONICAL)
+    fields = [(s.label, s.region, s.role) for s in spans if s.kind == text_structure.TOKEN_SPAN_FIELD]
+    assert fields == [("지체상금률", "", ""), ("하자기간", "", ""), ("수요기관", "", "")]
+    markers = [(s.label, s.region, s.role, s.paired) for s in spans if s.kind == text_structure.TOKEN_SPAN_MARKER]
+    assert markers == [
+        ("특약 사항", "slot", "open", True),
+        ("지체상금 조항", "option", "open", True),
+        ("지체상금 조항", "option", "close", True),
+        ("하자보수 조항", "option", "open", True),
+        ("하자보수 조항", "option", "close", True),
+        ("특약 사항", "slot", "close", True),
+        ("부칙", "slot", "open", True),              # 이름표가 없으면 id
+        ("가", "option", "open", True),
+        ("가", "option", "close", True),
+        ("나", "option", "open", True),
+        ("나", "option", "close", True),
+        ("부칙", "slot", "close", True),
+    ]
+    # 이름은 구조 스캔이 복원한 선언과 같다(label ?? id) — 두 표면이 같은 이름을 말한다.
+    scan = text_structure.scan_text_structure(_CANONICAL)
+    declared = [slot.label or slot.id for slot in scan.slots]
+    assert [label for label, region, role, _ in markers if region == "slot" and role == "open"] == declared
+
+
+def test_token_spans_name_broken_markers_only_when_the_text_says_what_they_are():
+    """짝이 없는 표기도 제 이름은 말한다. 무엇인지 알 수 없는 표기(알 수 없는 키워드·id 없는 여는 마커)는 이름이
+    비어 표면이 원문을 그대로 보인다 — 고칠 대상을 이름표로 덮지 않는다."""
+    text = "{{#항목 열림}}\n{{/선택}}\n{{#그밖 x}}\n{{#항목}}\n{{/항목 꼬리}}\n"
+    spans = text_structure.scan_text_token_spans(text)
+    assert [(s.source, s.label, s.region, s.role, s.paired) for s in spans] == [
+        # 닫는 표기에 남은 꼬리는 진단이지만 짝은 맺는다(구조 스캔의 배치 그대로).
+        ("{{#항목 열림}}", "열림", "slot", "open", True),
+        ("{{/선택}}", "선택", "option", "close", False),
+        ("{{#그밖 x}}", "", "", "open", False),
+        ("{{#항목}}", "", "slot", "open", False),
+        ("{{/항목 꼬리}}", "열림", "slot", "close", True),
+    ]
+
+
+def test_token_spans_accept_an_existing_scan_and_serialize_marker_fields_only_for_markers():
+    """이미 스캔한 호출자(분석 투영)는 스캔을 넘긴다 — 결과는 같다. 필드 직렬화에는 마커 전용 키가 없다."""
+    scan = text_structure.scan_text_structure(_CANONICAL)
+    assert text_structure.scan_text_token_spans(_CANONICAL, scan) == text_structure.scan_text_token_spans(_CANONICAL)
+    field, marker = (next(s for s in text_structure.scan_text_token_spans(_CANONICAL) if s.kind == kind)
+                     for kind in (text_structure.TOKEN_SPAN_FIELD, text_structure.TOKEN_SPAN_MARKER))
+    assert set(field.to_dict()) == {"kind", "start", "end", "source", "label"}
+    assert set(marker.to_dict()) == {"kind", "start", "end", "source", "label", "region", "role", "paired"}

@@ -120,6 +120,27 @@ OPTION_KEYWORD = "선택"
 STRUCTURE_KEYWORDS = (SLOT_KEYWORD, OPTION_KEYWORD)
 
 
+def split_structure_marker(raw: str) -> "tuple[str, str, str]":
+    """마커 본문(``{{ }}`` 안쪽)을 ``(sigil, keyword, tail)`` 로 가른다(판정 없음).
+
+    상태기계(:meth:`StructureReader.read_marker`)와 저작 표면의 이름표
+    (:func:`~hwpxfiller.domain.text_structure.scan_text_token_spans`)가 **같은 자름**을 쓴다 —
+    한쪽이 공백 규칙을 달리 읽으면 표면의 이름표와 구조 목록의 이름이 갈린다.
+    """
+    body = raw.lstrip()
+    sigil, rest = body[:1], body[1:].strip()
+    parts = rest.split(None, 1)
+    return sigil, (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+
+
+def structure_marker_name(tail: str) -> "tuple[str | None, str]":
+    """여는 마커 꼬리의 ``(id, label)`` — id 는 Field ID 규칙으로 정규화(없으면 ``None``)."""
+    parts = tail.split(None, 1)
+    ident = normalize_field_id(parts[0] if parts else "")
+    label = " ".join(parts[1].split()) if len(parts) > 1 else ""
+    return ident, label
+
+
 class StructureDiagnosticKind(StrEnum):
     """구간 표기 진단의 안정 식별자 — 상위 링이 문안 대신 이 값으로 분기한다."""
 
@@ -305,11 +326,7 @@ class StructureReader:
 
     def read_marker(self, raw: str, context: str) -> None:
         """단독으로 선 마커 1개의 본문(``{{ }}`` 안쪽)을 읽어 전이한다."""
-        body = raw.lstrip()
-        sigil, rest = body[0], body[1:].strip()
-        parts = rest.split(None, 1)
-        keyword = parts[0] if parts else ""
-        tail = parts[1] if len(parts) > 1 else ""
+        sigil, keyword, tail = split_structure_marker(raw)
         if keyword not in STRUCTURE_KEYWORDS:
             self.note(
                 StructureDiagnosticKind.UNKNOWN_KEYWORD,
@@ -407,9 +424,7 @@ class StructureReader:
         )
 
     def _begin(self, keyword: str, tail: str, context: str) -> None:
-        parts = tail.split(None, 1)
-        ident = normalize_field_id(parts[0] if parts else "")
-        label = " ".join(parts[1].split()) if len(parts) > 1 else ""
+        ident, label = structure_marker_name(tail)
         if ident is None:
             kind = (
                 StructureDiagnosticKind.EMPTY_SLOT_ID

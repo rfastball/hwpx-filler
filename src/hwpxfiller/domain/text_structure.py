@@ -25,18 +25,24 @@ admission 은 S10-02 소관).
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from .slot import Slot
 from .structure_scan import (
     CONTEXT_MAX,
+    OPTION_KEYWORD,
     PLACEMENT_OPTION,
+    PLACEMENT_SLOT,
+    SLOT_KEYWORD,
     StructureDiagnostic,
     StructureDiagnosticKind,
     StructureReader,
     StructureSummary,
     iter_structure_markers,
+    split_structure_marker,
+    structure_marker_name,
 )
 from .text_render import iter_field_token_matches, template_fields
 
@@ -301,7 +307,7 @@ def scan_text_structure(text: str) -> TextStructureScan:
 
 @dataclass(frozen=True)
 class TextTokenSpan:
-    """토큰 1개의 **문자 오프셋** 스팬 — 저작 표면의 표기 강조가 읽는 좌표.
+    """토큰 1개의 **문자 오프셋** 스팬 — 저작 표면의 표기 강조·이름표가 읽는 좌표.
 
     ``start``/``end`` 는 원문 문자열의 0-기반 반열린 구간이라 ``text[start:end]`` 가
     ``source`` 와 같다(불변식). 줄 좌표(:class:`TextStructurePlacement`)와 **다른 축**이다 —
@@ -310,23 +316,86 @@ class TextTokenSpan:
     ``kind`` 는 :data:`TOKEN_SPAN_FIELD`(누름틀 토큰)·:data:`TOKEN_SPAN_MARKER`(구간 마커)
     둘뿐이고, 그 이분은 sigil 술어
     (:func:`~hwpxfiller.domain.structure_scan.is_structure_sigil`)의 얼굴이다.
+
+    **이름표(FB-03 #1079).** 표면은 표기 원문 대신 이름표를 그린다(HWPX 편집면과 같은 어휘).
+    그 이름과 짝은 여기서 정한다 — 표면이 ``source`` 를 다시 가르면 표기 문법이 두 곳에 산다.
+
+    - ``label`` — 보일 이름. 필드는 필드 이름, 여는 마커는 이름표(없으면 id), 닫는 마커는
+      **짝이 된 여는 마커의 이름**(짝이 없으면 키워드)이다. 빈 문자열이면 이름을 정할 수 없는
+      표기(알 수 없는 키워드·id 없는 여는 마커)라 표면은 원문을 그대로 보인다.
+    - ``region`` — 마커가 여닫는 범위 종류(``"slot"``·``"option"``, 알 수 없으면 ``""``).
+    - ``role`` — 마커의 ``"open"``·``"close"``.
+    - ``paired`` — 구조 스캔이 이 마커를 한 범위의 경계로 짝지었는가
+      (:attr:`TextStructureScan.placements` 의 여는·닫는 줄).
     """
 
     kind: str
     start: int
     end: int
     source: str
+    label: str = ""
+    region: str = ""
+    role: str = ""
+    paired: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        entry: dict = {
             "kind": self.kind,
             "start": self.start,
             "end": self.end,
             "source": self.source,
+            "label": self.label,
         }
+        if self.kind == TOKEN_SPAN_MARKER:
+            entry |= {"region": self.region, "role": self.role, "paired": self.paired}
+        return entry
 
 
-def scan_text_token_spans(text: str) -> "tuple[TextTokenSpan, ...]":
+#: 마커 키워드 → 범위 종류(배치 ``kind`` 와 같은 어휘).
+_MARKER_REGION = {SLOT_KEYWORD: PLACEMENT_SLOT, OPTION_KEYWORD: PLACEMENT_OPTION}
+
+
+def _line_index(starts: "list[int]", offset: int) -> int:
+    return bisect_right(starts, offset) - 1
+
+
+def _marker_spans(text: str, scan: TextStructureScan) -> "list[TextTokenSpan]":
+    """마커 스팬 + 이름표. 짝은 구조 스캔의 배치(여는·닫는 줄)에서만 읽는다 — 여기서 짝짓지 않는다."""
+    starts = [0]
+    for piece in text.splitlines(keepends=True):
+        starts.append(starts[-1] + len(piece))
+    opens = {(place.kind, place.begin_marker_line): place for place in scan.placements}
+    closes = {(place.kind, place.end_marker_line): place for place in scan.placements}
+    named: "dict[int, str]" = {}
+    pending = []
+    for match in iter_structure_markers(text):
+        sigil, keyword, tail = split_structure_marker(match.group(1))
+        region = _MARKER_REGION.get(keyword, "")
+        line = _line_index(starts, match.start())
+        role = "open" if sigil == "#" else "close"
+        pending.append((match, keyword, region, role, line))
+        if role == "open" and region:
+            ident, label = structure_marker_name(tail)
+            named[line] = (label or ident) if ident else ""
+    spans = []
+    for match, keyword, region, role, line in pending:
+        if role == "open":
+            paired = (region, line) in opens
+            label = named.get(line, "")
+        else:
+            place = closes.get((region, line))
+            paired = place is not None
+            # 짝이 없는 닫는 마커도 무엇을 닫으려 했는지는 말한다(키워드) — 알 수 없는 키워드만 이름이 없다.
+            label = (named.get(place.begin_marker_line, "") if place is not None else "") or (
+                keyword if region else "")
+        spans.append(TextTokenSpan(TOKEN_SPAN_MARKER, match.start(), match.end(), match.group(0),
+                                   label=label, region=region, role=role, paired=paired))
+    return spans
+
+
+def scan_text_token_spans(
+    text: str, scan: "TextStructureScan | None" = None,
+) -> "tuple[TextTokenSpan, ...]":
     """``text`` 의 필드 토큰·구간 마커 스팬 전부를 등장순으로 낸다(무변형).
 
     **왜 도메인에 있는가.** 저작 표면이 표기를 색으로 가르려면 「어디부터 어디까지가
@@ -342,14 +411,15 @@ def scan_text_token_spans(text: str) -> "tuple[TextTokenSpan, ...]":
     정렬이 곧 등장순이다. 두 축의 **합집합**이 완전 토큰 전부는 아니다: 렌더의 필드 토큰
     문법이 ``|`` 를 배제하므로 그런 토큰은 어느 축에도 들지 않는다 — 강조되지 않을 뿐
     잘못 강조되지는 않는다(문법의 단일 출처를 여기서 넓히지 않는다).
+
+    이름표(:class:`TextTokenSpan` 의 ``label`` 등)의 짝은 ``scan`` 의 배치에서 읽는다. 이미
+    스캔한 호출자는 넘겨 두 번 스캔하지 않는다.
     """
+    structure = scan_text_structure(text) if scan is None else scan
     spans = [
-        TextTokenSpan(TOKEN_SPAN_FIELD, m.start(), m.end(), m.group(0))
+        TextTokenSpan(TOKEN_SPAN_FIELD, m.start(), m.end(), m.group(0), label=m.group(1).strip())
         for m in iter_field_token_matches(text)
     ]
-    spans.extend(
-        TextTokenSpan(TOKEN_SPAN_MARKER, m.start(), m.end(), m.group(0))
-        for m in iter_structure_markers(text)
-    )
+    spans.extend(_marker_spans(text, structure))
     spans.sort(key=lambda span: span.start)
     return tuple(spans)

@@ -43,6 +43,8 @@
      누름틀 = Highlight 실선 밑줄, 구간 표기 = CanvasText 점선 테두리. */
   .cm-txtField{border-bottom:2px solid Highlight}
   .cm-txtMarker{border:1px dashed CanvasText}
+  .cm-txtToken{border-bottom-color:CanvasText}
+  .cm-txtToken-marker{border-color:CanvasText}
 
   /* 겨눈 규칙 행 — 강제 색 모드에선 배경이 시스템 소유라 시스템색 표지로 갈음한다. */
   #wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 Highlight}
