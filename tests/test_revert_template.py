@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -47,7 +48,8 @@ def _pkg(section_inner: str, *, extra: "dict[str, str] | None" = None) -> HwpxPa
 
 def _filled(section_inner: str, values: "dict[str, str]", *, extra: "dict[str, str] | None" = None) -> HwpxPackage:
     """누름틀 변환 뒤 ``values`` 를 생성과 같은 채움 경로로 주입한 문서."""
-    pkg, _ = compile_document(_pkg(section_inner, extra=extra))
+    compiled, _ = compile_document(_pkg(section_inner, extra=extra))
+    pkg = cast(HwpxPackage, compiled)
     for entry in pkg.content_xml_names():
         doc = FieldDocument(pkg.entries[entry], entry=entry)
         for name, value in values.items():
@@ -97,7 +99,7 @@ def test_the_placeholder_round_trips_as_its_own_name() -> None:
 # ------------------------------------------------------------------ 가용 판정
 def test_available_only_while_a_field_holds_a_real_value() -> None:
     xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{ 사업예산 }}</hp:t></hp:run></hp:p>"
-    compiled, _ = compile_document(_pkg(xml))
+    compiled = cast(HwpxPackage, compile_document(_pkg(xml))[0])
     assert _availability(compiled) == {"type": semantics.REVERT_TEMPLATE, "enabled": False,
                                        "reason": semantics.REASON_NO_FILLED_VALUE, "alternative": None}
     filled = _filled(xml, {"계약명": "정보시스템 구축"})
@@ -146,7 +148,8 @@ def test_every_filled_value_returns_to_its_placeholder() -> None:
     untouched = [entry for entry in pkg.entries if entry not in pkg.content_xml_names()]
     before = {entry: pkg.entries[entry] for entry in untouched}
 
-    result, impact = apply_hwpx(pkg, REVERT)
+    changed, impact = apply_hwpx(pkg, REVERT)
+    result = cast(HwpxPackage, changed)
 
     assert sorted(_values(result)) == sorted([
         ("계약명", "{{계약명}}"), ("계약명", "{{계약명}}"), ("사업예산", "{{ 사업예산 }}"),
@@ -166,13 +169,14 @@ def test_a_section_without_filled_values_keeps_its_bytes() -> None:
     pkg = _filled("<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>", {"계약명": "값"},
                   extra={"Contents/section1.xml": "<hp:p><hp:run><hp:t>{{ 담당자 }}</hp:t></hp:run></hp:p>"})
     original = pkg.entries["Contents/section1.xml"]
-    result, impact = apply_hwpx(pkg, REVERT)
+    changed, impact = apply_hwpx(pkg, REVERT)
+    result = cast(HwpxPackage, changed)
     assert impact["changed_entries"] == [SECTION]
     assert result.entries["Contents/section1.xml"] == original
 
 
 def test_revert_refuses_when_nothing_is_filled() -> None:
-    compiled, _ = compile_document(_pkg("<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"))
+    compiled = cast(HwpxPackage, compile_document(_pkg("<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"))[0])
     original = dict(compiled.entries)
     with pytest.raises(ValueError, match=semantics.REASON_NO_FILLED_VALUE):
         apply_hwpx(compiled, REVERT)
@@ -243,15 +247,15 @@ def test_wire_and_authoring_kind_vocabularies_map_one_to_one() -> None:
     assert sorted(AUTHORING_KIND_BY_PRODUCT_KIND.values()) == sorted({PLACEMENT_SLOT, PLACEMENT_OPTION})
 
     pkg = _pkg("".join(f"<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p>" for text in ("머리", "갑", "을", "끝")))
-    pkg, _ = apply_hwpx(pkg, {"type": "create_slot", "entry": SECTION, "start_paragraph": 1,
-                              "end_paragraph": 2, "id": "계약방식"})
-    pkg, _ = apply_hwpx(pkg, {"type": "create_option", "entry": SECTION, "start_paragraph": 1,
-                              "end_paragraph": 1, "id": "일반", "slot_id": "계약방식"})
+    pkg = cast(HwpxPackage, apply_hwpx(pkg, {"type": "create_slot", "entry": SECTION, "start_paragraph": 1,
+                              "end_paragraph": 2, "id": "계약방식"})[0])
+    pkg = cast(HwpxPackage, apply_hwpx(pkg, {"type": "create_option", "entry": SECTION, "start_paragraph": 1,
+                              "end_paragraph": 1, "id": "일반", "slot_id": "계약방식"})[0])
     analysis = analyze_hwpx(pkg)
     authored = {slot["id"]: slot["kind"] for slot in analysis["slots"]}
     authored |= {option["id"]: option["kind"] for slot in analysis["slots"] for option in slot["options"]}
     assert authored == {"계약방식": PLACEMENT_SLOT, "일반": PLACEMENT_OPTION}
-    wired = {item.product_id: item.kind for item in inspect_product_bookmarks(scan_structural_boundaries(pkg)).observations
+    wired = {str(item.product_id): str(item.kind) for item in inspect_product_bookmarks(scan_structural_boundaries(pkg)).observations
              if item.classification is ProductClassification.KNOWN_PRODUCT}
     assert wired == {"계약방식": PRODUCT_KIND_SLOT, "일반": PRODUCT_KIND_OPTION}
     assert {product_id: AUTHORING_KIND_BY_PRODUCT_KIND[kind] for product_id, kind in wired.items()} == authored
