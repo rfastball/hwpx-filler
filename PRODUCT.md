@@ -82,3 +82,10 @@ API 테스트는 키나 실 서비스 대신 fixture를 사용한다.
 조판 수준 HWPX→PDF 내보내기를 제공하지 않는다. 산출물 구조 관찰은 조판 엔진이 아니다.
 템플릿 저작 작업대는 HWPX·TXT만 열며 HWP 가져오기와 macOS 지원은 제공하지 않는다.
 
+HWPX 입력은 엔트리 payload를 읽기 전에 ZIP central directory 선언값으로 자원 한도를 잰다
+([`HwpxPackageLimits`](src/hwpxcore/package.py)). 파일 1 GiB, ZIP 엔트리 4,096개,
+엔트리당 비압축 256 MiB, 비압축 합계 1 GiB, 비압축 1 MiB를 넘는 엔트리의 압축률 500:1이 상한이다.
+넘으면 `HWPX 자원 한도 초과:` 뒤에 관측값과 한도를 붙여 열기를 거절하며 일부만 읽어 쓰지 않는다.
+선언보다 짧은 엔트리, 암호화·패치 데이터 플래그, STORED·DEFLATED 밖의 압축 방식도 거절한다.
+테스트 corpus와 예제의 실측은 모든 한도의 1% 미만이다. Excel·CSV 입력에는 아직 규모 한도가 없다.
+

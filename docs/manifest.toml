@@ -66,7 +66,7 @@ title = "사용자 소개·실행"
 max_lines = 230
 sources = ["docs/product.md"]
 tests = ["tests/test_job.py"]
-source_sha256 = "1225d4d1b5a7edc17e3e05bb9b68d8b1b931c1c3152e871c863e3561f2b414be"
+source_sha256 = "4f98c9acabbed0b547986ebed3d3405212144fd3f591a56a75fd09b82617f42b"
 body_sha256 = "8a140c257739d422fc98b12216888df980c03321f5b997459d7d586876811072"
 
 [[document]]
@@ -151,10 +151,10 @@ body_sha256 = "4650a56284e7016ba084ae2e8d13f72acedf9be1c8a25342af3d941e08323afb"
 [[topic]]
 id = "product-scope"
 document = "docs/product.md"
-sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "frontend/src/react/*.ts", "frontend/index.html"]
-tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py"]
-source_sha256 = "6c7e2387a69a6dbc965de6553405718a6ecde40419be93f6dd062cfc6c9e5aa7"
-body_sha256 = "f08d54c53d875fb2c044990a24e05e8c5ab824c60894a09f7953ef182216be52"
+sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxcore/package.py", "src/hwpxfiller/external/hwpx_package_io.py", "frontend/src/react/*.ts", "frontend/index.html"]
+tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py", "tests/test_package_budget.py"]
+source_sha256 = "244488a9d3fa704b3b86adbe08bd56522cd27073085d5b67f96173ed25b103fa"
+body_sha256 = "28bce93c0f0e1c4c0bb2fcec131c1babc40d1d84b746cf1aa92ef2c17bd87d6a"
 
 [[topic]]
 id = "architecture-boundaries"
