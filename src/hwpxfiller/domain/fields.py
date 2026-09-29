@@ -169,8 +169,7 @@ class FieldDocument:
         """단일 ``fieldBegin`` 과 짝을 이루는 종료 지점 사이의 텍스트를 읽는다.
 
         공용 정본 판독기(:func:`hwpxcore.text_extract.read_field_text`)의 글자 투영이다 —
-        ``hp:tab``·``hp:lineBreak``·``hp:fwSpace`` 는 ``	``·``
-``·U+2007 로 읽힌다.
+        ``hp:tab``·``hp:lineBreak``·``hp:fwSpace`` 는 ``\\t``·``\\n``·U+2007 로 읽힌다.
         미모델링 인라인 자식의 내용은 투영에서 빠지며, 그런 값은 채움의 같은 값 판정과
         사후 검증에서 어떤 목표값과도 같지 않다(#1080).
         """
@@ -239,8 +238,7 @@ class FieldDocument:
 
         **읽기-쓰기 대칭 계약**: 성공한 ``set_field(f, V)`` 뒤 ``read_field(f) == V``
         (CR LF·CR 은 LF 로 접힌 값 — :func:`hwpxcore.native_admission.canonical_field_value`).
-        ``	``·``
-``·U+2007 은 ``hp:tab``·``hp:lineBreak``·``hp:fwSpace`` 요소로 쓰이고, 그
+        ``\\t``·``\\n``·U+2007 은 ``hp:tab``·``hp:lineBreak``·``hp:fwSpace`` 요소로 쓰이고, 그
         밖의 제어 문자가 든 값은 ``FieldValueError`` 로 변형 없이 거절된다(#1080).
         이미 그 상태면 무연산(자식 요소·바이트 불변 — #95 동일 값 재채움 안정).
         값을 실제로 바꿀 때 값 런의 인라인 자식 요소는 구값 소속이라 값과 함께
