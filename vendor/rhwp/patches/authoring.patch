@@ -953,6 +953,112 @@ index 5c4216582..7ad6553ab 100644
    execute(wasm: WasmBridge): DocumentPosition {
      if (this.executed) {
        // Redo: undo 시점에 잡아 둔 after 로 복원하고 **그 스냅샷을 즉시 반환한다** —
+diff --git a/rhwp-studio/src/engine/field-marker-ink.ts b/rhwp-studio/src/engine/field-marker-ink.ts
+new file mode 100644
+index 000000000..abc80dde8
+--- /dev/null
++++ b/rhwp-studio/src/engine/field-marker-ink.ts
+@@ -0,0 +1,30 @@
++/** Horizontal ink extent of one glyph, in em, from the glyph's pen origin (its box's left edge). */
++export type GlyphInk = { left: number; right: number };
++
++/**
++ * Where the 누름틀 낫표 boxes go so the visible strokes, not the glyph boxes, sit on the field boundaries.
++ *
++ * A font draws 「 and 」 anywhere inside their advance (Malgun Gothic: 「 ink 0.21–0.53em, 」 ink 0.04–0.36em), so a box
++ * whose left edge is the boundary shows 「 inside the field's first character and 」 after a gap past its last one — both
++ * read as shifted right. Here the 「 ink starts at the field start and the 」 ink ends at the field end, so the pair
++ * brackets exactly the field text. `startX`/`endX` and the result are px; `startSize`/`endSize` are the glyph font sizes
++ * (px) the ink is scaled by. Unknown ink (null) keeps the box at the boundary.
++ */
++export function fieldMarkerLefts(startX: number, endX: number, startSize: number, endSize: number,
++  startInk: GlyphInk | null, endInk: GlyphInk | null): { start: number; end: number } {
++  return {
++    start: startInk ? startX - startInk.left * startSize : startX,
++    end: endInk ? endX - endInk.right * endSize : endX,
++  };
++}
++
++/**
++ * The glyph's ink from canvas text metrics (`actualBoundingBoxLeft` is positive leftwards of the pen origin), as em.
++ * Null when the metrics are unusable, so the caller keeps the unadjusted box instead of guessing.
++ */
++export function inkFromMetrics(metrics: { actualBoundingBoxLeft?: number; actualBoundingBoxRight?: number }, size: number): GlyphInk | null {
++  const left = metrics.actualBoundingBoxLeft, right = metrics.actualBoundingBoxRight;
++  if (!(size > 0) || typeof left !== 'number' || typeof right !== 'number' || !Number.isFinite(left) || !Number.isFinite(right)) return null;
++  const ink = { left: -left / size, right: right / size };
++  return ink.right > ink.left ? ink : null;
++}
+diff --git a/rhwp-studio/src/engine/field-marker-renderer.ts b/rhwp-studio/src/engine/field-marker-renderer.ts
+index 93b0c3ce1..7912fdb18 100644
+--- a/rhwp-studio/src/engine/field-marker-renderer.ts
++++ b/rhwp-studio/src/engine/field-marker-renderer.ts
+@@ -1,5 +1,6 @@
+ import type { CursorRect } from '@/core/types';
+ import { VirtualScroll } from '@/view/virtual-scroll';
++import { fieldMarkerLefts, inkFromMetrics, type GlyphInk } from './field-marker-ink';
+ 
+ /**
+  * 누름틀(ClickHere) 필드 경계에 낫표 마커(「 」)를 렌더링한다.
+@@ -11,6 +12,8 @@ export class FieldMarkerRenderer {
+   private startEl: HTMLDivElement;
+   private endEl: HTMLDivElement;
+   private visible = false;
++  /** Glyph ink per computed font (the font can change with the host theme), measured once. */
++  private inkCache = new Map<string, { start: GlyphInk | null; end: GlyphInk | null }>();
+ 
+   constructor(
+     private container: HTMLElement,
+@@ -51,16 +54,19 @@ export class FieldMarkerRenderer {
+     const startPageOffset = this.virtualScroll.getPageOffset(startRect.pageIndex);
+     const startPageLeft = this.calcPageLeft(startRect.pageIndex);
+     this.startEl.style.fontSize = `${fontSize}px`;
+-    this.startEl.style.left = `${startPageLeft + startRect.x * zoom}px`;
++    // The strokes, not the glyph boxes, go on the boundaries: 「 ink starts at the field start, 」 ink ends at its end.
++    const endPageOffset = this.virtualScroll.getPageOffset(endRect.pageIndex);
++    const endPageLeft = this.calcPageLeft(endRect.pageIndex);
++    const ink = this.glyphInk();
++    const lefts = fieldMarkerLefts(startPageLeft + startRect.x * zoom, endPageLeft + endRect.x * zoom, fontSize, fontSize, ink.start, ink.end);
++    this.startEl.style.left = `${lefts.start}px`;
+     this.startEl.style.top = `${startPageOffset + startRect.y * zoom}px`;
+     this.startEl.style.height = `${startRect.height * zoom}px`;
+     this.startEl.style.display = 'block';
+ 
+-    // 끝 마커 」 — 필드 끝점 오른쪽에 배치
+-    const endPageOffset = this.virtualScroll.getPageOffset(endRect.pageIndex);
+-    const endPageLeft = this.calcPageLeft(endRect.pageIndex);
++    // 끝 마커 」 — 필드 끝 경계에 맞춘다.
+     this.endEl.style.fontSize = `${fontSize}px`;
+-    this.endEl.style.left = `${endPageLeft + endRect.x * zoom}px`;
++    this.endEl.style.left = `${lefts.end}px`;
+     this.endEl.style.top = `${endPageOffset + endRect.y * zoom}px`;
+     this.endEl.style.height = `${endRect.height * zoom}px`;
+     this.endEl.style.display = 'block';
+@@ -78,6 +84,24 @@ export class FieldMarkerRenderer {
+     return this.visible;
+   }
+ 
++  /** 「·」 ink measured in the markers' own computed font; null where canvas metrics are unavailable. */
++  private glyphInk(): { start: GlyphInk | null; end: GlyphInk | null } {
++    const style = getComputedStyle(this.startEl);
++    const key = `${style.fontStyle} ${style.fontWeight} ${style.fontFamily}`;
++    const cached = this.inkCache.get(key);
++    if (cached) return cached;
++    const size = 100;
++    const context = document.createElement('canvas').getContext('2d');
++    let ink: { start: GlyphInk | null; end: GlyphInk | null } = { start: null, end: null };
++    if (context) {
++      context.font = `${style.fontStyle} ${style.fontWeight} ${size}px ${style.fontFamily}`;
++      context.textAlign = 'left';
++      ink = { start: inkFromMetrics(context.measureText('「'), size), end: inkFromMetrics(context.measureText('」'), size) };
++    }
++    this.inkCache.set(key, ink);
++    return ink;
++  }
++
+   /** 페이지의 화면 X 좌표를 계산한다 */
+   private calcPageLeft(pageIndex: number): number {
+     const gridLeft = this.virtualScroll.getPageLeft(pageIndex);
 diff --git a/rhwp-studio/src/engine/input-handler-keyboard.ts b/rhwp-studio/src/engine/input-handler-keyboard.ts
 index 0a89d1d81..33411506b 100644
 --- a/rhwp-studio/src/engine/input-handler-keyboard.ts
@@ -2469,6 +2575,46 @@ index a87452c42..73b9af364 100644
 +  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: Array(501).fill(problem) }, handlers),
 +    /invalid decoration count/);
 +  assert.deepEqual(calls, [{ method: 'scroll', value: range }, { method: 'decorate', value: [[problem], 'none'] }]);
++});
+diff --git a/rhwp-studio/tests/field-marker-ink.test.ts b/rhwp-studio/tests/field-marker-ink.test.ts
+new file mode 100644
+index 000000000..75416f4e2
+--- /dev/null
++++ b/rhwp-studio/tests/field-marker-ink.test.ts
+@@ -0,0 +1,34 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { fieldMarkerLefts, inkFromMetrics } from '../src/engine/field-marker-ink.ts';
++
++// Malgun Gothic: 「 ink 426–1092 and 」 ink 72–743 font units of 2048.
++const open = { left: 426 / 2048, right: 1092 / 2048 };
++const close = { left: 72 / 2048, right: 743 / 2048 };
++
++test('the 「 ink starts at the field start and the 」 ink ends at the field end', () => {
++  const { start, end } = fieldMarkerLefts(328, 397, 20, 20, open, close);
++  assert.ok(Math.abs(start + open.left * 20 - 328) < 1e-9, '「 stroke on the start boundary, not inside the first character');
++  assert.ok(Math.abs(end + close.right * 20 - 397) < 1e-9, '」 stroke on the end boundary, not past it');
++  assert.ok(start < 328 && end < 397, 'both boxes move left of the boundaries they used to start at');
++});
++
++test('the ink offset scales with each glyph size', () => {
++  const small = fieldMarkerLefts(100, 200, 10, 10, open, close);
++  const large = fieldMarkerLefts(100, 200, 40, 40, open, close);
++  assert.ok(Math.abs((100 - large.start) - 4 * (100 - small.start)) < 1e-9);
++  assert.ok(Math.abs((200 - large.end) - 4 * (200 - small.end)) < 1e-9);
++});
++
++test('unknown ink keeps the boxes on the boundaries', () => {
++  assert.deepEqual(fieldMarkerLefts(10, 50, 20, 20, null, null), { start: 10, end: 50 });
++});
++
++test('canvas metrics become em ink; unusable metrics are null', () => {
++  assert.deepEqual(inkFromMetrics({ actualBoundingBoxLeft: -20, actualBoundingBoxRight: 50 }, 100), { left: 0.2, right: 0.5 });
++  assert.equal(inkFromMetrics({}, 100), null);
++  assert.equal(inkFromMetrics({ actualBoundingBoxLeft: 0, actualBoundingBoxRight: 0 }, 100), null, 'no ink');
++  assert.equal(inkFromMetrics({ actualBoundingBoxLeft: -20, actualBoundingBoxRight: 50 }, 0), null);
++  assert.equal(inkFromMetrics({ actualBoundingBoxLeft: Number.NaN, actualBoundingBoxRight: 50 }, 100), null);
 +});
 diff --git a/rhwp-studio/tests/host-autosave-off.test.ts b/rhwp-studio/tests/host-autosave-off.test.ts
 new file mode 100644

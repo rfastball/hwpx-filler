@@ -1757,7 +1757,9 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       // 좁은 폭의 구조 레일(UX-08): 몸통 높이 띠의 그림 단추 — 이름은 기존 문장 그대로 aria-label·title 이다.
       item && h("button", { type: "button", className: "authoring-rail-toggle", "aria-expanded": outlineOpen, "aria-label": outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기",
         title: outlineOpen ? "구조 패널 숨기기" : "구조 패널 보기", onClick: () => setOutlineOpen(!outlineOpen) }, icon(outlineOpen ? "chevron-left" : "chevron-right")),
-      item && h(Outline, { key: item.id, controller, item, view, counts, onSelect: chooseFromOutline, onMenu: outlineMenu, onContext: contextMenu }),
+      // 몸통의 자식은 한 배열이다 — 문서 탭마다 다시 서는 구조·속성 패널의 열쇠는 종류를 앞에 붙여 서로 겹치지 않게 한다
+      // (같은 열쇠의 형제는 React 가 옛 원소를 지우지 못해 탭을 옮길 때마다 구조 열이 쌓였다, #1077).
+      item && h(Outline, { key: `outline:${item.id}`, controller, item, view, counts, onSelect: chooseFromOutline, onMenu: outlineMenu, onContext: contextMenu }),
       item && h(PanelSplitter, { panel: "outline", label: "구조 패널 너비", layout }),
       // 가운데 열: 현재 위치의 의미(한 줄 경로) 바로 아래에 문서 편집면이 선다. 줄은 항상 자리를 지켜 캐럿 이동에 편집면이 밀리지 않는다.
       h("div", { className: "authoring-center" },
@@ -1773,7 +1775,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
         h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: zoom.cssZoom }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
       item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
-      item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview, onClose: () => returnFocus("properties") }),
+      item && view.panel === "properties" && h(SemanticForm, { key: `properties:${item.id}`, controller, selected: view.selected, selection: view.selection, preview: view.preview, onClose: () => returnFocus("properties") }),
       // 좁은 폭의 속성 시트 뒤 가림막 — 누르면 「닫기」와 같은 일을 한다(초점도 같은 자리로, 넓은 폭에서는 CSS 가 숨긴다).
       item && view.panel === "properties" && h("div", { className: "authoring-scrim", "aria-hidden": true,
         onClick: () => { controller.update({ panel: "", preview: null, refusal: null }); returnFocus("properties"); } })),
