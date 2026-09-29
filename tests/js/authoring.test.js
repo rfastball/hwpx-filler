@@ -1433,12 +1433,12 @@ test("UX-10 R2: a text-range selection opens a 고른 문구 target card; the co
   assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">공고 구분 · 문단 5</p>'));
   assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
   assert.ok(!markup.includes("6–14"), "원시 offset 은 보이지 않는다");
-  // 글자를 확정할 수 없는 범위는 종류만, 위치 라벨이 없으면 문맥 줄을 세우지 않고 설명도 가리키지 않는다.
+  // 글자를 확정할 수 없는 범위는 카드를 세우지 않는다(빈 카드 금지, R5). 위치 라벨이 없으면 문맥 줄도 없고 설명도 가리키지 않는다.
   controller.update({ context: { slot_id: null, option_id: null, location_label: null, selected_text: null } });
   markup = render(controller);
-  assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">고른 문구</span></span></div>'));
+  assert.ok(!markup.includes('class="authoring-target"'), "보일 글자가 없으면 대상 카드가 없다");
   assert.ok(!markup.includes('id="authoring-properties-context"'));
-  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target"/);
+  assert.match(markup, /<input class="field" list="authoring-existing-fields" value=""\/>/, "설명이 가리킬 카드·문맥 줄이 없다");
   // 캐럿(빈 범위)은 대상 카드가 없다.
   controller.update({ selection: { entry: "s0", paragraph: 4, start: 6, end: 6 } });
   assert.ok(!render(controller).includes('<span class="authoring-kind">고른 문구</span>'));
@@ -1791,6 +1791,7 @@ test("IDE-04: keepFocusOutside returns focus the trial viewer took during its mo
     keepFocusOutside(host, frame);
     assert.equal(input.focused.length, 1, "뷰어 밖에 있는 초점은 건드리지 않는다");
   } finally { globalThis.document = saved; }
+});
 
 // ------------------------------------------------------------------ IDE-03 만들기 루프(P-06·P-01·NG-04·NG-05·NG-14·P-11a)
 const turns = async (count = 24) => { for (let turn = 0; turn < count; turn++) await new Promise(setImmediate); };
@@ -1945,4 +1946,19 @@ test("IDE-03 P-06: appliedProperties opens the name at Python's proposal when th
   const draft = { ...appliedProperties(null, "수요기관") };
   assert.equal(escapeStage(null, draft, "수요기관"), "close", "제안 그대로면 되돌릴 것이 없다");
   assert.equal(escapeStage(null, { ...draft, name: "수요처" }, "수요기관"), "revert");
+});
+
+test("IDE-03 R5: a range picked from a search hit (no semantic kind) never shows an empty target card — the card stands only with Python's selected_text", async () => {
+  const { controller } = harness();
+  await controller.activate("a");
+  const hit = { kind: "text", context: "나. 수요기관 : ○○시청", document: "a.txt", source_revision: 0, entry: "s0", paragraph: 4, start: 6, end: 10 };
+  controller.update({ panel: "properties", commandType: "create_field", formEntry: "create", selected: hit, selection: { entry: "s0", paragraph: 4, start: 6, end: 10 },
+    commands: [{ type: "create_field", enabled: true, reason: null, alternative: null }], context: { location_label: "문단 5", name_suggestion: "수요기관" } });
+  let markup = render(controller);
+  assert.ok(!markup.includes('class="authoring-target"'), "문구를 확정하지 못한 범위는 빈 카드 대신 카드가 없다");
+  assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문단 5</p>'), "위치 줄은 남는다");
+  assert.ok(markup.includes('aria-describedby="authoring-properties-context"'), "이름 칸은 없는 카드를 가리키지 않는다");
+  controller.update({ context: { location_label: "문단 5", name_suggestion: "수요기관", selected_text: "○○시청" } });
+  markup = render(controller);
+  assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">고른 문구</span></span><p class="authoring-target-name quote" title="○○시청">○○시청</p></div>'));
 });

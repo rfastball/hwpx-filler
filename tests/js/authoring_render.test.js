@@ -1119,6 +1119,8 @@ test("IDE-04: the HWPX trial viewer never takes focus — not on a new result an
   env.flushSync(() => env.controller.update({ trial: false, dock: "problems", panel: "problems" }));
   assert.equal(env.container.querySelector("section.authoring-dock").getAttribute("class"), "authoring-dock open", "다른 탭은 기본 몫");
   assert.ok(!env.container.querySelector(".authoring-shell").getAttribute("class").includes("trial-open"), "다른 탭에서는 몸통 하한이 그대로");
+  env.root.unmount();
+});
 
 // ------------------------------------------------------------------ IDE-03 만들기 루프(실 커밋)
 const createTarget = { kind: "field", name: "수요기관", count: 1, location: { entry: "Contents/section0.xml", paragraph: 1, start: 6, end: 10 } };

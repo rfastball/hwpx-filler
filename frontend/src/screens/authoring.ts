@@ -571,11 +571,15 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name });
   // 문맥 줄(UX-10 R2): Python 의 location_label(담긴 항목/선택 · 문단·행 범위)만 보인다 — 원시 좌표는 싣지 않는다.
   const locationLabel = String(view.context?.location_label || "");
-  // 선택한 문구 카드(UX-10 R2): 의미가 아직 없는 글자 범위를 고른 채 속성을 열면(필드로 만들기) 무엇을 만드는지 보인다.
-  const textRange = !selected && selection.start != null && selection.end != null && (selection.start !== selection.end
+  // 대상 카드(UX-09)는 의미 요소(필드·항목·선택)일 때만 선다 — 검색 적중처럼 종류가 없는 대상은 글자 범위다.
+  const kind: "field" | "slot" | "option" | null = selected?.kind === "field" || selected?.kind === "slot" || selected?.kind === "option" ? selected.kind : null;
+  // 고른 문구 카드(UX-10 R2): 의미가 아직 없는 글자 범위를 고른 채 속성을 열면(필드로 만들기) 무엇을 만드는지 보인다.
+  // 카드는 보일 글자가 있을 때만 선다 — Python 이 문구를 확정하지 못하면(selected_text 없음) 빈 카드 대신 문맥 줄만 남는다.
+  const rangeText = String(view.context?.selected_text || "");
+  const textRange = !kind && !!rangeText && selection.start != null && selection.end != null && (selection.start !== selection.end
     || (selection.start_paragraph ?? selection.paragraph) !== (selection.end_paragraph ?? selection.start_paragraph ?? selection.paragraph));
   // 화면 읽기(§10): 이름 칸은 대상(종류·사용 위치)과 소속(상위 항목/선택·범위)을 설명으로 함께 읽힌다. 거절이 서면 그 문장도.
-  const describedBy = (key: string) => [key === "name" && (selected || textRange) && "authoring-properties-target", key === "name" && locationLabel && "authoring-properties-context",
+  const describedBy = (key: string) => [key === "name" && (kind || textRange) && "authoring-properties-target", key === "name" && locationLabel && "authoring-properties-context",
     invalidField === key && `authoring-properties-${key}-reason`].filter(Boolean).join(" ") || undefined;
   const control = (key: string, value: string, onChange: (value: string) => void, props: Obj = {}) => h("input", { className: "field", value,
     ref: key === "name" ? nameInput : undefined, ...props, "aria-describedby": describedBy(key), "aria-invalid": invalidField === key || undefined,
@@ -586,7 +590,6 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   const close = () => { controller.update({ panel: "", preview: null, refusal: null }); onClose(); };
   // 대상 카드(UX-09): 종류 표지 · 굵은 이름 · 메타 한 줄. 이름 칸의 설명(aria-describedby)은 카드 전체의 접근 이름이다.
   const whole = selected?.kind === "field" && Array.isArray(selected?.occurrences);
-  const kind: "field" | "slot" | "option" | null = selected?.kind === "field" || selected?.kind === "slot" || selected?.kind === "option" ? selected.kind : null;
   const problems = problemCount(controller.tab().problems, selected?.kind === "field" ? selected?.name : selected?.option_id || selected?.slot_id || selected?.name);
   const targetMeta = selected?.kind === "field"
     ? [selected.occurrences ? `사용 위치 ${selected.count ?? selected.occurrences.length}곳` : "", selected.occurrences ? "" : String(selected.context || ""), problems ? `문제 ${problems}` : ""]
@@ -629,8 +632,8 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     // 닫기(§3.1): 모든 폭에서 머리 오른쪽에 선다 — Escape 의 닫기 단계와 같은 일(패널을 닫고 선택으로 돌아간다).
     h("div", { className: "authoring-properties-head" }, sectionLabel("속성", { id: "authoring-properties-title" }),
       iconButton("close", "닫기", close)),
-    selected && h("div", { className: "authoring-target" },
-      kind && h("span", { className: "authoring-target-kind" }, kindGlyph(kind), h("span", { className: "authoring-kind" }, KIND_LABEL[kind])),
+    kind && h("div", { className: "authoring-target" },
+      h("span", { className: "authoring-target-kind" }, kindGlyph(kind), h("span", { className: "authoring-kind" }, KIND_LABEL[kind])),
       // 필드 전체는 이름 칸의 설명이 outlineLabel 전체(종류·이름·사용 위치 수·문제)다 — 보이는 것은 굵은 이름과 메타 줄이고,
       // 종류·수는 화면 읽기용 글로만 이름에 붙는다(보이는 표지·메타와 같은 글이라 두 번 읽히지 않게 메타는 숨긴다).
       whole ? h("p", { id: "authoring-properties-target", className: "authoring-target-name" },
@@ -638,10 +641,10 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
           h("span", { className: "authoring-sr" }, ` · ${[`사용 위치 ${selected.count ?? selected.occurrences.length}곳`, ...(problems ? [`문제 ${problems}`] : [])].join(" · ")}`))
         : h("p", { id: "authoring-properties-target", className: "authoring-target-name" }, selected.name || selected.label || selected.id),
       targetMeta.some(Boolean) && h("p", { className: "authoring-target-meta", "aria-hidden": whole || undefined }, targetMeta.filter(Boolean).join(" · "))),
-    // 카드 전체가 이름 칸의 설명이다(종류 「선택한 문구」 + 글자). 글자를 확정할 수 없으면(문단을 넘는 범위 등) 종류만 선다.
+    // 카드 전체가 이름 칸의 설명이다(종류 「고른 문구」 + 글자).
     textRange && h("div", { className: "authoring-target", id: "authoring-properties-target" },
       h("span", { className: "authoring-target-kind" }, h("span", { className: "authoring-kind" }, "고른 문구")),
-      !!view.context?.selected_text && h("p", { className: "authoring-target-name quote", title: String(view.context.selected_text) }, String(view.context.selected_text))),
+      h("p", { className: "authoring-target-name quote", title: rangeText }, rangeText)),
     // 명령을 바꿔도 초점은 이 select 에 남는다(WCAG 3.2.2) — 닫힌 select 의 ↑↓ 는 값마다 change 를 쏜다.
     !explicitCreate && h("label", { className: "authoring-field" }, "명령", h("select", { className: "field", value: type, "aria-disabled": !available.enabled || undefined, title: available.reason || undefined,
       "aria-describedby": !available.enabled && available.reason ? "authoring-properties-reason" : undefined, onChange: (event: any) => switchType(event.target.value) },
