@@ -38,7 +38,11 @@ from ..domain.template_authoring import (
     REASON_REGION_OVERLAP,
     REASON_STRUCTURE_FIRST,
     SEVERITY_ERROR,
+    INVALID_FIELD_NAME,
+    REASON_NEED_IDENTIFIER,
+    REASON_NEED_NEW_IDENTIFIER,
     CascadeRequired,
+    InvalidName,
     NameConflict,
     availability_entries,
     command_action,
@@ -547,7 +551,7 @@ def _require_clean(package) -> None:
 def _field_name(raw: object) -> str:
     name = normalize_field_id(raw)
     if name is None or "{{" in name or "}}" in name or name.startswith(("#", "/")):
-        raise ValueError("필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다.")
+        raise InvalidName("name", INVALID_FIELD_NAME)
     return name
 
 
@@ -604,10 +608,11 @@ def _selected_paragraph(root, paragraph_index: object, cell_path: object):
     return paragraphs[paragraph_index]
 
 
-def selected_text_hwpx(content: object, selection: Mapping[str, object]) -> str | None:
-    """선택한 문구(UX-10 R2) — 한 문단 안의 문자 범위를 필드 만들기와 같은 규칙으로 읽는다.
+def selected_context_hwpx(content: object, selection: Mapping[str, object]) -> tuple[str, str] | None:
+    """선택 앞 글자와 선택한 문구(UX-10 R2·P-06) — 같은 문단(셀)의 결합 텍스트(``_paragraph_sites``)에서 자른다.
 
-    문단을 넘거나, 빈 범위이거나, 제어 요소가 끼어 문자 위치를 확정할 수 없으면 None 이다(짐작하지 않는다).
+    한 문단 안의 문자 범위를 필드 만들기와 같은 규칙으로 읽는다. 문단을 넘거나, 빈 범위이거나, 제어 요소가
+    끼어 문자 위치를 확정할 수 없으면 None 이다(짐작하지 않는다).
     """
     package = require_package(content)
     entry = selection.get("entry")
@@ -629,7 +634,7 @@ def selected_text_hwpx(content: object, selection: Mapping[str, object]) -> str 
     sites, hazards, text = _paragraph_sites(paragraph)
     if _field_range_refusal(sites, hazards, text, start, end) is not None:
         return None
-    return text[start:end]
+    return text[:start], text[start:end]
 
 
 def _create_field(package, command: Mapping[str, object]) -> str:
@@ -783,7 +788,8 @@ def _rename_region(package, command: Mapping[str, object]) -> None:
     identifier = command.get("id", option_id if kind == "option" else slot_id)
     label = command.get("label")
     if not isinstance(identifier, str) or not identifier.strip():
-        raise ValueError("항목이나 선택의 새 식별자를 입력하세요.")
+        # 식별자 칸의 거절(P-06) — 원문 표기로 되쓸 수 없는 식별자는 책갈피 메타가 정본이라 받는다(구문 보기가 생략).
+        raise InvalidName("identifier", REASON_NEED_NEW_IDENTIFIER)
     if label is not None and not isinstance(label, str):
         raise ValueError("표시 이름은 텍스트여야 합니다.")
     if kind == "slot":
@@ -1118,7 +1124,7 @@ def _create_region(package, command: Mapping[str, object]) -> None:
     kind = "option" if command["type"] == "create_option" else "slot"
     identifier = command.get("id")
     if not isinstance(identifier, str) or not identifier.strip():
-        raise ValueError("항목이나 선택의 식별자를 입력하세요.")
+        raise InvalidName("identifier", REASON_NEED_IDENTIFIER)
     label = command.get("label")
     if label is not None and not isinstance(label, str):
         raise ValueError("표시 이름은 텍스트여야 합니다.")

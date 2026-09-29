@@ -1673,9 +1673,17 @@ class TestWebSelftestGate:
         assert b["hwpx_authoring_create_enabled"] is True, (
             "AC02: 본문 범위를 고른 뒤에도 「필드로 만들기」가 잠겨 있습니다."
         )
-        assert b["hwpx_authoring_create_affected"] == 1, (
-            "AC02: 필드 만들기 미리보기가 사용 위치 1곳을 말하지 않습니다:"
-            f" {b['hwpx_authoring_create_affected']!r}"
+        # IDE-03: 만들기 진입은 「명령」 선택 없이 명령 이름의 제출 단추 하나다(NG-04·NG-05).
+        assert b["hwpx_authoring_create_form_select"] is False, (
+            "NG-05: 「필드로 만들기」로 연 폼에 「명령」 선택이 섰습니다."
+        )
+        assert b["hwpx_authoring_create_submit_label"] == "필드로 만들기", (
+            "NG-04: 만들기 폼의 제출 단추가 명령 이름이 아닙니다:"
+            f" {b['hwpx_authoring_create_submit_label']!r}"
+        )
+        # 새 이름 한 자리의 필드 만들기는 확인 등급 none — 한 번에 적용되고 미리보기 구획이 서지 않는다(P-01).
+        assert b["hwpx_authoring_create_preview_flashed"] is False, (
+            "P-01: none 등급 필드 만들기에서 미리보기 구획이 섰습니다(번쩍임)."
         )
         assert b["hwpx_authoring_create_field_count"] == base + 1, (
             f"AC02: 필드가 늘지 않았습니다({base} → {b['hwpx_authoring_create_field_count']})."
@@ -1686,6 +1694,14 @@ class TestWebSelftestGate:
         assert b["hwpx_authoring_create_label"].endswith("필드로 만들기"), (
             "AC02: 실행 취소가 되돌릴 행동의 이름을 말하지 않습니다:"
             f" {b['hwpx_authoring_create_label']!r}"
+        )
+        # 결정 2·NG-14: 적용 뒤 속성 패널이 닫히고 선택이 새 필드에 서서 위치 줄이 「필드 · 이름」이다.
+        assert b["hwpx_authoring_create_panel_closed"] is True, (
+            "결정 2: none 등급 만들기 뒤 속성 패널이 닫히지 않았습니다."
+        )
+        assert b["hwpx_authoring_create_crumb"] == f"필드 · {b['hwpx_authoring_create_new_field']}", (
+            "NG-14: 만든 뒤 위치 줄이 새 필드를 가리키지 않습니다:"
+            f" {b['hwpx_authoring_create_crumb']!r}"
         )
         assert b["hwpx_authoring_undo_field_count"] == base, (
             "AC02: 한 번의 문서 실행 취소가 필드를 되돌리지 않았습니다"
@@ -1716,6 +1732,10 @@ class TestWebSelftestGate:
         assert b["hwpx_authoring_rename_target"], (
             "AC07: 구조 목록에 사용 위치 2곳 필드가 서지 않습니다 —"
             f" 셈(`이름 · N`)이 분석과 갈렸습니다: {b!r}"
+        )
+        # 이름 변경은 확인 등급 enter — 첫 Enter 가 영향을 세우고 같은 주 단추에 Enter 표기가 선다(P-01).
+        assert b["hwpx_authoring_rename_enter_armed"] is True, (
+            "P-01: 이름 변경 영향 뒤 주 단추에 Enter 표기(aria-keyshortcuts)가 서지 않았습니다."
         )
         assert b["hwpx_authoring_rename_affected"] == 2, (
             "AC07: 이름 변경 미리보기가 사용 위치 2곳을 말하지 않습니다:"

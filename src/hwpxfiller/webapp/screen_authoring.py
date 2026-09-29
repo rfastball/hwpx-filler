@@ -26,7 +26,7 @@ from ..external.hwpx_authoring import (
     available_commands_hwpx,
     available_target_commands_hwpx,
     search_hwpx,
-    selected_text_hwpx,
+    selected_context_hwpx,
     syntax_view_hwpx,
     trial_hwpx,
 )
@@ -884,8 +884,9 @@ class AuthoringController:
                 semantics.apply(session.media, parsed, command)
                 if session.media == "txt" else apply_hwpx(parsed, command)
             )
-        except (semantics.NameConflict, semantics.CascadeRequired) as exc:
-            # 구조화된 거절(AC08·AC10) — 문서는 바뀌지 않았고 프런트가 해결 경로를 그린다.
+        except (semantics.NameConflict, semantics.CascadeRequired, semantics.InvalidName) as exc:
+            # 구조화된 거절(AC08·AC10·P-06) — 문서는 바뀌지 않았고 프런트가 해결 경로를 그린다.
+            # 이름 문법 거절(invalid_name)은 그 입력 칸 곁에 선다 — 오류 띠가 아니다.
             return {"ok": False, "refusal": exc.to_dict(),
                     "session_id": session.id, "revision": session.revision}
         if session.media == "txt":
@@ -909,6 +910,9 @@ class AuthoringController:
             "revision": session.revision,
             "content": self._wire(session.media, content),
             **impact,
+            # 확인 등급(P-01)과 만든 대상(NG-14)은 Python 이 짓는다 — 표면은 이 값으로만 가른다.
+            "confirm": semantics.confirm_tier(command, preview, impact),
+            "created": semantics.created_target(command, preview["result"]),
         }
 
     def _preview_impact(self, session: AuthoringSession, preview: dict, command: dict) -> dict:
@@ -1309,11 +1313,16 @@ class AuthoringController:
                     else {"start_paragraph": first_paragraph, "end_paragraph": last_paragraph})
         else:
             span = self._txt_line_span(session, start, end)
+        found = self._selected_context(session, selection, start, end)
         return {"matches": matches,
                 "context": {**context,
                             "reason": ("" if slot_id else _OUTSIDE_SLOT),
                             "location_label": self._context_label(session, slot_id, option_id, span),
-                            "selected_text": self._selected_text(session, selection, start, end)},
+                            "selected_text": found[1] if found is not None else None,
+                            # 이름 칸의 제안(P-06) — 같은 문단 앞 라벨에서 Python 이 짓는다. 없으면 빈 칸이다.
+                            "name_suggestion": (semantics.suggest_field_name(
+                                found[0], found[1], [item["name"] for item in session.analysis.get("fields", [])])
+                                if found is not None else None)},
                 "commands": self._commands(session, selection, context)}
 
     def _context_label(self, session: AuthoringSession, slot_id: object, option_id: object,
@@ -1352,12 +1361,19 @@ class AuthoringController:
         last = high - 1 if high > low and text[high - 1] == "\n" else high
         return {"begin_marker_line": text.count("\n", 0, low), "end_marker_line": text.count("\n", 0, last)}
 
-    def _selected_text(self, session: AuthoringSession, selection: dict, start: int, end: int) -> str | None:
-        """대상 카드의 「선택한 문구」(UX-10 R2) — 빈 범위이거나 글자를 확정할 수 없으면 None."""
+    def _selected_context(self, session: AuthoringSession, selection: dict,
+                          start: int, end: int) -> tuple[str, str] | None:
+        """대상 카드의 「선택한 문구」(UX-10 R2)와 같은 문단(줄) 안의 앞 글자(P-06).
+
+        빈 범위이거나 글자를 확정할 수 없으면 None 이다(짐작하지 않는다).
+        """
         if session.media == "hwpx":
-            return selected_text_hwpx(self._parse(session.media, session.content), selection)
+            return selected_context_hwpx(self._parse(session.media, session.content), selection)
         span = self._txt_span(session, start, end)
-        return (span[0][span[1]:span[2]] or None) if span is not None else None
+        if span is None or span[2] <= span[1]:
+            return None
+        text, low, high = span
+        return text[text.rfind("\n", 0, low) + 1:low], text[low:high]
 
     def _locate_target(self, session: AuthoringSession, target: dict, selection: dict) -> dict:
         """Outline·search·match targets resolve by identity, not by a caret range (§3.3·§6.2).

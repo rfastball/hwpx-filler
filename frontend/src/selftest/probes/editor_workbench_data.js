@@ -1111,16 +1111,15 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
     const found = /사용 위치 (\d+)곳/.exec(previewText());
     return found ? Number(found[1]) : -1;
   };
-  /** 미리보기 확정 — 적용은 속성 바닥 행동 줄의 주 행동(UX-09)이고, 미리보기 구획이 선 뒤에만 선다. */
-  const applyPreview = async () => {
-    const section = doc.querySelector(
-      ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
-    if (!section) return false;
-    const apply = doc.querySelector(".authoring-properties .authoring-properties-actions .btn.primary");
-    if (!apply) return false;
-    apply.click();
+  /** 속성 폼의 Enter — 이름 칸에서 누른 Enter 의 암묵 제출과 같은 submit 경로다(pressKey 의 Enter 와 같다). */
+  const enter = () => {
+    const form = doc.querySelector("#scr-authoring form.authoring-properties");
+    if (!form) return false;
+    form.requestSubmit();
     return true;
   };
+  const crumbNow = () => textOf(doc.querySelector(
+    '#scr-authoring .authoring-selection .authoring-crumb[aria-current="location"]')).trim();
   const afford = (ms) => ctx.remainingMs() > ms;
 
   /* 내부 대기 상한은 **짧게** 잡는다(DOM 2초 · 백엔드 왕복 2.5초). 어느 국면이 서지
@@ -1176,15 +1175,24 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   create.click();
   if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),
     DOM_TRIES, DOM_MS)) return give("속성 입력 없음");
+  /* 만들기 진입(IDE-03 NG-04·NG-05): 「명령」 선택이 없고 제출 단추가 명령 이름 하나다. 이름 칸은 Python 제안값으로
+     열린다 — 이 표본 문구(「1. 입찰개요」)에는 「라벨:」이 없어 빈 칸이다(진단용으로 싣는다). */
+  out.hwpx_authoring_create_form_select = !!doc.querySelector(".authoring-properties select");
+  out.hwpx_authoring_create_submit_label = textOf(doc.querySelector('.authoring-properties button[type="submit"]')).trim();
+  out.hwpx_authoring_create_suggested = doc.querySelector(".authoring-properties input").value;
+  out.hwpx_authoring_create_new_field = candidate.newField;
   typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.newField);
-  exact(".authoring-properties button", "변경 미리보기").click();
-  if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {
-    out.hwpx_authoring_create_refusal = textOf(
-      doc.querySelector(".authoring-refusal")).trim().slice(0, 160);
-    return give("필드 만들기 미리보기 미도착");
-  }
-  out.hwpx_authoring_create_affected = affected();
-  if (!(await applyPreview())) return give("적용 버튼 없음");
+  /* 새 이름 한 자리의 필드 만들기는 확인 등급 none 이다(P-01): 명령 단추 한 번(= Enter 한 번)에 적용되고
+     미리보기 구획은 한 프레임도 서지 않는다. 그 사이 구획이 섰는지는 DOM 변화를 지켜 잰다. */
+  let previewFlashed = false;
+  const Observer = ctx.win.MutationObserver;
+  const flashes = new Observer(() => {
+    if (doc.querySelector(".authoring-properties section.authoring-preview:not(.authoring-refusal)")) previewFlashed = true;
+  });
+  flashes.observe(byId(ctx, "scr-authoring"), { childList: true, subtree: true });
+  const submit = exact(".authoring-properties button", "필드로 만들기");
+  if (!submit) { flashes.disconnect(); return give("필드로 만들기 제출 단추 없음"); }
+  submit.click();
   const appliedAt = Date.now();
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
     WIRE_TRIES, WIRE_MS)) {
@@ -1193,9 +1201,19 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
       ms: Date.now() - appliedAt, revision: late.revision, dirty: late.dirty,
       field_count: fieldsOf(late).length, new_count: countOf(late, candidate.newField),
     };
+    flashes.disconnect();
+    out.hwpx_authoring_create_refusal = textOf(
+      doc.querySelector(".authoring-properties .authoring-reason[role=alert], .authoring-refusal")).trim().slice(0, 160);
     return give("필드 생성이 분석에 반영되지 않음");
   }
   out.hwpx_authoring_create_ms = Date.now() - appliedAt;
+  /* 적용 뒤(결정 2·NG-14): 속성 패널이 닫히고 선택이 새 필드에 서서 위치 줄이 「필드 · 이름」이 된다. */
+  out.hwpx_authoring_create_panel_closed = await waitFor(
+    ctx, () => !doc.querySelector(".authoring-properties"), WIRE_TRIES, WIRE_MS);
+  await waitFor(ctx, () => crumbNow() === `필드 · ${candidate.newField}`, WIRE_TRIES, WIRE_MS);
+  flashes.disconnect();
+  out.hwpx_authoring_create_preview_flashed = previewFlashed;
+  out.hwpx_authoring_create_crumb = crumbNow();
   const created = await content();
   out.hwpx_authoring_create_field_count = fieldsOf(await tab()).length;
   out.hwpx_authoring_create_label = undoLabel();
@@ -1234,10 +1252,10 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   out.hwpx_authoring_rename_target = summary ? String(summary.getAttribute("aria-label")).trim() : "";
   if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
   summary.click();
-  /* 속성 패널은 ④부터 **이미 열려 있다** — 입력창의 존재로는 선택이 끝났는지 알 수 없다.
-     선택(controller.select → locate)이 끝나야 명령이 「필드 이름 변경」으로 바뀌고 이름 칸이
-     그 필드의 이름으로 채워진다. 그 전에 쓰면 직전 명령(필드로 만들기)이 옛 선택 위에서
-     미리보기를 낸다(게이트 4차 재실행에서 실제로 났다). */
+  /* 입력창의 존재로는 선택이 끝났는지 알 수 없다 — 선택(controller.select → locate)이 끝나야
+     명령이 「필드 이름 변경」으로 바뀌고 이름 칸이 그 필드의 이름으로 채워진다. 그 전에 쓰면
+     직전 명령이 옛 선택 위에서 미리보기를 낸다(게이트 4차 재실행에서 실제로 났다). 구조 목록 줄이 연
+     폼은 「명령」 선택을 둔다(NG-05). */
   const settled = () => {
     const kind = doc.querySelector(".authoring-properties select");
     const input = doc.querySelector(".authoring-properties input");
@@ -1245,7 +1263,9 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   };
   if (!await waitFor(ctx, settled, WIRE_TRIES, WIRE_MS)) return give("필드 선택 뒤 이름 변경 속성 미정착");
   typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.renamed);
-  exact(".authoring-properties button", "변경 미리보기").click();
+  /* 이름 변경은 확인 등급 enter 다(P-01): 첫 Enter 가 영향 구획을 세우고, 같은 주 단추에 Enter 표기가 선다.
+     입력이 그대로면 두 번째 Enter 가 적용이다. */
+  if (!enter()) return give("이름 변경 폼 없음");
   if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {
     out.hwpx_authoring_rename_refusal = textOf(
       doc.querySelector(".authoring-refusal")).trim().slice(0, 160);
@@ -1253,7 +1273,9 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   }
   out.hwpx_authoring_rename_affected = affected();
   out.hwpx_authoring_rename_preview_text = previewText().trim().slice(0, 160);
-  if (!(await applyPreview())) return give("이름 변경 적용 버튼 없음");
+  const armed = doc.querySelector('.authoring-properties button[type="submit"][aria-keyshortcuts="Enter"]');
+  out.hwpx_authoring_rename_enter_armed = !!armed && textOf(armed).trim() === "필드 이름 변경Enter";
+  if (!enter()) return give("이름 변경 Enter 확정 불가");
   if (!await pollFor(ctx, async () => countOf(await tab(), candidate.renamed) > 0,
     WIRE_TRIES, WIRE_MS)) return give("이름 변경이 분석에 반영되지 않음");
   const renamed = await tab();
