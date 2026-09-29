@@ -289,6 +289,74 @@ def test_saved_mapping_commits_revision_and_recomputes_sealed_value(tmp_path) ->
     assert unchanged.revision_id == committed.revision_id
 
 
+# ─── 새 Work 의 저장 Mapping 들이기(0.9.0 실사용 보고) ─────────────────────────────────────
+def _unbound_world(tmp_path, mapping: MappingProfile):
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = mapping
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    return root, registry, service
+
+
+def test_adopt_turns_a_covering_saved_mapping_into_the_first_revision(tmp_path) -> None:
+    root, _registry_unused, service = _unbound_world(tmp_path, _complete_mapping())
+
+    adopted = service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-1")
+
+    assert adopted is not None and adopted.changed is True
+    assert load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    ) is not None
+    assert _review_states(service) == {
+        "성명": ("PRESERVED", False),
+        "주소": ("PRESERVED", False),
+        "항목": ("PRESERVED", False),
+    }
+    assert isinstance(
+        service.seal_execution_plan(WORK_REF, "seal-adopted").command_outcome,
+        ExecutionPlanSealedProductOutcome,
+    )
+
+
+def test_adopt_leaves_an_undecided_active_field_for_explicit_review(tmp_path) -> None:
+    # 저장본에 결정이 없는 활성 Field(항목)가 있으면 아무것도 쓰지 않는다 — 추측으로 채우지 않는다.
+    partial = MappingProfile(
+        mappings=[
+            FieldMapping("성명", type="const", const="v"),
+            FieldMapping("주소", type="const", const="v"),
+        ]
+    )
+    root, _registry_unused, service = _unbound_world(tmp_path, partial)
+
+    assert service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-partial") is None
+
+    assert load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    ) is None
+    assert _review_states(service)["항목"] == ("NEW_ACTIVE_FIELD", True)
+
+
+def test_adopt_never_rewrites_a_work_that_already_has_a_revision(tmp_path) -> None:
+    # 판본이 하나라도 있으면 저장본이 달라져도 들이지 않는다 — 그 확정은 명시 동사(#911)의 몫이다.
+    root, registry, service = _unbound_world(tmp_path, _complete_mapping("first"))
+    first = service.commit_current_mapping(WORK_REF, "commit-first")
+    assert first is not None
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping("second")
+    registry.save(job, allow_overwrite=True)
+
+    assert service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-after") is None
+
+    revision = load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    )
+    assert revision is not None
+    assert revision.field_binding_authority_revision == first.revision_id
+
+
 # ─── U3-04(#877): 판본은 활성 절단이 아니라 upsert + 비활성 규칙 보존 ────────────────────
 def _roundtrip_world(tmp_path):
     """옵션 왕복 시나리오의 실 store 세계 — Mapping 은 네 Field 전건 확정 상태."""
