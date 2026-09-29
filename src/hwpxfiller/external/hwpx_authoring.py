@@ -42,6 +42,7 @@ from ..domain.template_authoring import (
     REASON_INVALID_SELECTION,
     REASON_MULTI_REGION,
     REASON_OPTION_OUTSIDE_SLOT,
+    REASON_REGION_IN_CELL,
     REASON_REGION_OVERLAP,
     REASON_STRUCTURE_FIRST,
     SEVERITY_ERROR,
@@ -1324,6 +1325,9 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         raise ValueError("표시 이름은 텍스트여야 합니다.")
     entry = command.get("entry")
     start, end = command.get("start_paragraph"), command.get("end_paragraph")
+    if command.get("cell_path") is not None:
+        # 셀 문단 번호를 본문 문단 번호로 읽으면 엉뚱한 문단을 감싼다 — 판정(가용성)과 같은 거절이다.
+        raise ValueError(REASON_REGION_IN_CELL)
     if not isinstance(entry, str) or not isinstance(start, int) or not isinstance(end, int):
         raise ValueError("문단 범위를 정확히 고르세요.")
     snapshot = inspect_slot_regions(package)
@@ -1632,7 +1636,8 @@ def preview_hwpx(content: object, command: Mapping[str, object]) -> dict:
     return impact
 
 
-def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int, int, int, int, list] | None:
+def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int, int, int, int, object] | None:
+    """선택의 (구역, 첫·끝 문단, 글자 범위, 첫 문단 요소). 셀 안 선택은 문단 번호가 셀 문단이다 — 요소도 그 셀 문단이다."""
     entry = selection.get("entry")
     first = selection.get("start_paragraph", selection.get("paragraph"))
     last = selection.get("end_paragraph", first)
@@ -1645,10 +1650,16 @@ def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int
     if first > last or (first == last and start > end):
         return None
     root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
+    cell_path = selection.get("cell_path")
+    if cell_path is not None:
+        try:
+            return entry, first, last, start, end, _selected_paragraph(root, first, cell_path)
+        except ValueError:
+            return None
     paragraphs = [node for node in root if node.tag == f"{_HP}p"]
     if last >= len(paragraphs):
         return None
-    return entry, first, last, start, end, paragraphs
+    return entry, first, last, start, end, paragraphs[first]
 
 
 def available_commands_hwpx(content: object, selection: Mapping[str, object],
@@ -1659,13 +1670,16 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
     frame = _selection_frame(package, selection)
     if frame is None:
         return availability_entries(dict.fromkeys(COMMAND_TYPES, REASON_INVALID_SELECTION))
-    entry, first, last, start, end, paragraphs = frame
+    entry, first, last, start, end, first_paragraph = frame
+    cell_path = selection.get("cell_path")
     analysis = analyze_hwpx(package)
     snapshot = inspect_slot_regions(package)
 
     def field_hit(occurrence: dict) -> bool:
         paragraph = occurrence.get("paragraph")
-        if occurrence.get("entry") != entry or not isinstance(paragraph, int) or not first <= paragraph <= last:
+        # 셀 문단과 본문 문단은 번호 공간이 다르다 — 같은 셀 경로의 사용 위치만 겹친다.
+        if (occurrence.get("entry") != entry or occurrence.get("cell_path") != cell_path
+                or not isinstance(paragraph, int) or not first <= paragraph <= last):
             return False
         low, high = occurrence.get("start"), occurrence.get("end")
         if not isinstance(low, int) or not isinstance(high, int):
@@ -1682,8 +1696,9 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
                 item["location"])
                for slot in analysis["slots"] for item in [slot, *slot["options"]]
                if item["location"] is not None and item["location"]["entry"] == entry]
+    # 항목·선택 영역은 본문 문단 단위다 — 셀 안 선택은 어떤 영역과도 겹치거나 담기지 않는다(locate 와 같다).
     hit = [region for region in regions
-           if region[3]["start_paragraph"] <= last and first <= region[3]["end_paragraph"]]
+           if cell_path is None and region[3]["start_paragraph"] <= last and first <= region[3]["end_paragraph"]]
     containing = [region for region in hit
                   if region[3]["start_paragraph"] <= first and last <= region[3]["end_paragraph"]]
     crossing = any(region not in containing for region in hit)
@@ -1703,11 +1718,14 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
     elif first != last:
         reasons["create_field"] = _MULTI_PARAGRAPH_FIELD
     else:
-        sites, hazards, text = _paragraph_sites(paragraphs[first])
+        sites, hazards, text = _paragraph_sites(first_paragraph)
         reasons["create_field"] = _field_range_refusal(sites, hazards, text, start, end) or (
             REASON_FIELD_OVERLAP if field_hits and start != end else None)
     if broken:
         reasons["create_slot"] = reasons["create_option"] = REASON_STRUCTURE_FIRST
+        return availability_entries(reasons, alternatives)
+    if cell_path is not None:
+        reasons["create_slot"] = reasons["create_option"] = REASON_REGION_IN_CELL
         return availability_entries(reasons, alternatives)
     reasons["create_slot"] = REASON_REGION_OVERLAP if hit else None
     owners = [region for region in containing if region[0] == "slot"]

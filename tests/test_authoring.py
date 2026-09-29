@@ -2854,3 +2854,69 @@ def test_marker_beside_an_inline_table_is_one_located_diagnostic_in_the_workbenc
     assert [(item["kind"], item["context"], item["location"]) for item in diagnostics] == [
         ("marker_not_alone", "{{/선택}}", {"entry": "Contents/section0.xml", "paragraph": 3})]
     assert diagnostics[0]["message"].startswith("구간 마커가 표·그림 같은 개체와 같은 문단에 있습니다")
+
+
+def _cell_package() -> HwpxPackage:
+    """본문 문단 0 · 표를 품은 본문 문단 1(셀 문단 하나) · 본문 문단 2."""
+    return _pkg(
+        '<hp:p><hp:run><hp:t>짧다</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>셀 안의 꽤 긴 문구</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>뒤</hp:t></hp:run></hp:p>'
+    )
+
+
+_IN_CELL = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0,
+            "cell_path": [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]}
+
+
+def test_cell_selection_never_creates_a_body_region_on_the_same_numbered_paragraph() -> None:
+    """셀 안 선택의 문단 번호는 셀 문단이다 — 본문 문단 0 을 감싸면 엉뚱한 자리다. 항목·선택 만들기는 막는다."""
+    from hwpxfiller.domain.template_authoring import REASON_REGION_IN_CELL
+
+    package = _cell_package()
+    selection = {**_IN_CELL, "start": 0, "end": 2}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert (commands["create_slot"]["enabled"], commands["create_slot"]["reason"]) == (False, REASON_REGION_IN_CELL)
+    assert (commands["create_option"]["enabled"], commands["create_option"]["reason"]) == (False, REASON_REGION_IN_CELL)
+    before = dict(package.entries)
+    for kind in ("create_slot", "create_option"):
+        with pytest.raises(ValueError, match="표 셀 안에서는"):
+            apply_hwpx(package, {"type": kind, "id": "s", "slot_id": "s", **selection})
+        assert package.entries == before
+    assert analyze_hwpx(package)["slots"] == []
+
+
+def test_cell_selection_judges_create_field_on_the_cell_paragraph() -> None:
+    """필드 만들기 판정은 셀 문단의 글자로 한다 — 같은 번호의 본문 문단(짧다)으로 재면 범위 밖이 된다."""
+    package = _cell_package()
+    selection = {**_IN_CELL, "start": 5, "end": 9}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert commands["create_field"]["enabled"] is True, commands["create_field"]
+    result, _ = apply_hwpx(package, {"type": "create_field", "name": "문구", **selection})
+    [field] = analyze_hwpx(result)["fields"]
+    assert [occurrence["cell_path"] for occurrence in field["occurrences"]] == [_IN_CELL["cell_path"]]
+    # 같은 번호의 본문 문단에 필드가 있어도 셀 선택의 필드 판정에 끼지 않는다.
+    body_field, _ = apply_hwpx(_cell_package(), {"type": "create_field", "name": "본문", "entry": "Contents/section0.xml",
+                                                  "paragraph": 0, "start": 0, "end": 2})
+    commands = {item["type"]: item for item in available_commands_hwpx(body_field, {**_IN_CELL, "start": 0, "end": 2})}
+    assert commands["create_field"]["enabled"] is True, commands["create_field"]
+
+
+def test_a_body_range_that_ends_on_a_table_paragraph_wraps_the_whole_table() -> None:
+    """표에서 끝난 끌기는 편집기가 표의 닻 본문 문단으로 접는다(셀 경로 없음) — Python 은 그 범위를 그대로 감싼다."""
+    package = _cell_package()
+    selection = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 1,
+                 "start": 0, "end": 0}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert commands["create_slot"]["enabled"] is True, commands["create_slot"]
+    result, _ = apply_hwpx(package, {"type": "create_slot", "id": "표포함", **selection})
+    [slot] = analyze_hwpx(result)["slots"]
+    assert (slot["location"]["start_paragraph"], slot["location"]["end_paragraph"]) == (0, 1)
+    assert "셀 안의 꽤 긴 문구" in result.entries["Contents/section0.xml"].decode("utf-8")
+    last = _cell_package()
+    last.entries["Contents/section0.xml"] = last.entries["Contents/section0.xml"].replace(
+        b"<hp:p><hp:run><hp:t>\xeb\x92\xa4</hp:t></hp:run></hp:p>", b"")
+    tail, _ = apply_hwpx(last, {"type": "create_slot", "id": "끝표", **selection})
+    assert [(item["id"], item["location"]["end_paragraph"]) for item in analyze_hwpx(tail)["slots"]] == [("끝표", 1)]

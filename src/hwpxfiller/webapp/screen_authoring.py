@@ -945,6 +945,8 @@ class AuthoringController:
             # 확인 등급(P-01)과 만든 대상(NG-14)은 Python 이 짓는다 — 표면은 이 값으로만 가른다.
             "confirm": semantics.confirm_tier(command, preview, impact),
             "created": semantics.created_target(command, preview["result"]),
+            # 이름 변경 뒤 가리킬 대상(#1069) — 패널이 남는 등급에서 표면이 선택·카드·폼을 이 대상으로 다시 세운다.
+            "renamed": semantics.renamed_target(command, preview["result"]),
         }
 
     def _preview_impact(self, session: AuthoringSession, preview: dict, command: dict) -> dict:

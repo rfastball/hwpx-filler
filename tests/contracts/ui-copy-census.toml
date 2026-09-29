@@ -188,11 +188,23 @@ text = "‘{}’ 필드에 시험값이 이미 있습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
+text = "끝 위치를 누르세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
 text = "문서 편집기를 다시 여세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
 text = "문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "범위 고르기를 취소했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/authoring_controller.ts"
+text = "시작 위치를 누르세요."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
@@ -1364,6 +1376,10 @@ text = "조정한 범위에 본문이 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
 text = "평문으로 남은 필드 표기입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "표 셀 안에서는 항목·선택을 만들 수 없습니다. 표 밖 문단까지 이어서 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"

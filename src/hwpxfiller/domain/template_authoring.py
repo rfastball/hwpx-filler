@@ -71,6 +71,8 @@ REASON_NO_CONTENT_LINE = "고를 내용 줄이 없습니다."
 REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 고르세요."
 _FIELD_NOT_FOUND = "필드를 찾을 수 없습니다."
 REASON_NEED_RANGE = "문서에서 범위를 고르세요."
+#: 셀 안 선택(HWPX ``cell_path``) — 항목·선택 영역은 본문 문단 단위다. 표를 감싸려면 표 밖 문단까지 이어 고른다.
+REASON_REGION_IN_CELL = "표 셀 안에서는 항목·선택을 만들 수 없습니다. 표 밖 문단까지 이어서 고르세요."
 ALTERNATIVE_CREATE_SLOT = {"label": "먼저 항목 만들기", "command_type": "create_slot"}
 CASCADE_MESSAGE = "항목 의미를 해제하면 하위 선택 의미도 해제됩니다. 함께 해제를 확인하세요."
 
@@ -287,6 +289,36 @@ def created_target(command: Mapping[str, object], result: Mapping[str, Any]) -> 
         if option is None:
             return None
         return {"kind": "option", "slot_id": slot_id, "option_id": option["id"], "location": option.get("location")}
+    return None
+
+
+def renamed_target(command: Mapping[str, object], result: Mapping[str, Any]) -> dict | None:
+    """이름을 바꾸는 명령이 적용 뒤 가리킬 대상(#1069) — 결과 분석 안의 새 이름 필드·새 식별자 항목·선택. 없으면 None.
+
+    패널이 남는 등급(enter)의 이름 변경 뒤에 표면이 속성 카드·위치 줄·폼 초기값을 이 대상으로 다시 세운다(판정은 Python).
+    """
+    action = command.get("type")
+    if action == "rename_field":
+        name = normalize_field_id(command.get("name"))
+        field = next((item for item in result.get("fields") or []
+                      if isinstance(item, Mapping) and item.get("name") == name), None)
+        occurrences = list((field or {}).get("occurrences") or [])
+        if field is None or not occurrences:
+            return None
+        return {"kind": "field", "name": name, "count": field.get("count", len(occurrences)),
+                "occurrences": occurrences, "location": occurrences[0]}
+    if action in {"rename_slot", "rename_option"}:
+        slot_id = command.get("id", command.get("slot_id")) if action == "rename_slot" else command.get("slot_id")
+        slot = next((item for item in result.get("slots") or []
+                     if isinstance(item, Mapping) and item.get("id") == slot_id), None)
+        if slot is None:
+            return None
+        if action == "rename_slot":
+            return {**slot, "kind": "slot", "slot_id": slot_id}
+        option_id = command.get("id", command.get("option_id"))
+        option = next((item for item in slot.get("options") or []
+                       if isinstance(item, Mapping) and item.get("id") == option_id), None)
+        return None if option is None else {**option, "kind": "option", "slot_id": slot_id, "option_id": option_id}
     return None
 
 

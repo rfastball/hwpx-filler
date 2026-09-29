@@ -227,6 +227,14 @@ export interface RhwpDocumentStateV1 {
  * 표 셀 좌표(바깥 표부터). `parentParagraph`=표 컨트롤을 담은 문단(첫 항목은 본문, 이후는 셀 문단),
  * `control`=그 문단의 컨트롤 순번, `cell`=표 안 셀의 선형 순번, `paragraph`=셀 안 문단 순번.
  */
+/** 범위 고르기의 한 점 — 본문 문단과 글자 위치. 표 셀 안을 누르면 그 표의 닻 본문 문단(cell: true, 0)이다 */
+export interface RhwpPickPointV1 {
+  section: number;
+  paragraph: number;
+  charOffset: number;
+  cell: boolean;
+}
+
 export interface RhwpCellPathEntryV1 {
   parentParagraph: number;
   control: number;
@@ -353,6 +361,9 @@ export declare class RhwpEditor {
   setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 }): Promise<void>;
   /** 켜 두면 문서 우클릭이 Studio 메뉴 대신 onContextMenuRequest 로 온다 */
   setContextMenuForwarding(enabled: boolean): Promise<void>;
+  /** 호스트 범위 고르기: 켜 두면 문서 누름이 캐럿을 옮기지 않고 onRangePick 으로 온다. start 가 있으면 고무줄 범위를 그린다 */
+  setRangePick(options: { enabled: boolean; start?: RhwpPickPointV1 | null }): Promise<void>;
+  onRangePick(listener: (point: RhwpPickPointV1) => void): () => void;
   /** exact preimage fence를 검증하고 문단 전체를 한 트랜잭션으로 교체 */
   applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
   /** 가장 최근에 성공한 exact command를 한 트랜잭션으로 되돌림 */

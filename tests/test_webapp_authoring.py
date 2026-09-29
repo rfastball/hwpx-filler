@@ -1517,6 +1517,32 @@ def test_preview_carries_the_confirm_tier_and_the_created_target(tmp_path: Path)
     assert [(match["kind"], match["name"]) for match in located["matches"]] == [("field", "수요기관")]
 
 
+def test_rename_previews_carry_the_renamed_target_the_surface_adopts(tmp_path: Path) -> None:
+    """#1069 — 패널이 남는 이름 변경 뒤 속성 카드·위치 줄이 설 대상은 Python 이 결과 분석에서 되짚는다."""
+    ctrl = _controller(tmp_path)
+    sid = ctrl.dispatch("new", {"media": "txt", "content": "{{품명}} 과 {{품명}}\n"})["session_id"]
+    rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "rename_field", "old_name": "품명", "name": " 물품명 "}})
+    renamed = rename["renamed"]
+    assert (renamed["kind"], renamed["name"], renamed["count"]) == ("field", "물품명", 2)
+    assert renamed["location"] == renamed["occurrences"][0]
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": rename["content"]})
+    located = ctrl.dispatch("locate", {"session_id": sid, "revision": 1, "selection": renamed["location"],
+                                       "target": {"kind": "field", "name": renamed["name"]}})
+    assert located["selected"]["name"] == "물품명" and [match["name"] for match in located["matches"]] == ["물품명"]
+
+    structured = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})["session_id"]
+    slot = ctrl.dispatch("preview", {"session_id": structured, "revision": 0, "command": {
+        "type": "rename_slot", "kind": "slot", "slot_id": "항목1", "id": "새항목", "label": "새 표시"}})["renamed"]
+    assert (slot["kind"], slot["slot_id"], slot["label"]) == ("slot", "새항목", "새 표시")
+    option = ctrl.dispatch("preview", {"session_id": structured, "revision": 0, "command": {
+        "type": "rename_option", "kind": "option", "slot_id": "항목1", "option_id": "안2", "id": "안이"}})["renamed"]
+    assert (option["kind"], option["slot_id"], option["option_id"]) == ("option", "항목1", "안이")
+    create = ctrl.dispatch("preview", {"session_id": sid, "revision": 1, "command": {
+        "type": "create_field", "start": 0, "end": 0, "name": "빈"}})
+    assert create.get("renamed") is None
+
+
 def test_same_text_projects_raw_sites_with_location_lines_and_the_search_summary(tmp_path: Path) -> None:
     """IDE-07 P-07 — 「다른 같은 문구 찾기」: 원시 자리·Python 위치 줄·검색과 같은 요약. 적용은 한 명령이다."""
     ctrl = _controller(tmp_path)

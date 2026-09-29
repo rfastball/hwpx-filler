@@ -61,7 +61,7 @@ index 9e51f5a07..9f30d7107 100644
    }
    safeInteger(event.documentEpoch, 'document changed event documentEpoch', 1, code);
 diff --git a/npm/editor/index.d.ts b/npm/editor/index.d.ts
-index 6b35540e6..0995f45a6 100644
+index 6b35540e6..26a179270 100644
 --- a/npm/editor/index.d.ts
 +++ b/npm/editor/index.d.ts
 @@ -15,8 +15,13 @@ export interface EditorOptions {
@@ -78,7 +78,7 @@ index 6b35540e6..0995f45a6 100644
  export interface LoadResult {
    pageCount: number;
  }
-@@ -218,6 +223,17 @@ export interface RhwpDocumentStateV1 {
+@@ -218,6 +223,25 @@ export interface RhwpDocumentStateV1 {
    documentSha256: string;
  }
  
@@ -86,6 +86,14 @@ index 6b35540e6..0995f45a6 100644
 + * 표 셀 좌표(바깥 표부터). `parentParagraph`=표 컨트롤을 담은 문단(첫 항목은 본문, 이후는 셀 문단),
 + * `control`=그 문단의 컨트롤 순번, `cell`=표 안 셀의 선형 순번, `paragraph`=셀 안 문단 순번.
 + */
++/** 범위 고르기의 한 점 — 본문 문단과 글자 위치. 표 셀 안을 누르면 그 표의 닻 본문 문단(cell: true, 0)이다 */
++export interface RhwpPickPointV1 {
++  section: number;
++  paragraph: number;
++  charOffset: number;
++  cell: boolean;
++}
++
 +export interface RhwpCellPathEntryV1 {
 +  parentParagraph: number;
 +  control: number;
@@ -96,7 +104,7 @@ index 6b35540e6..0995f45a6 100644
  export interface RhwpSelectionContextV1 {
    schemaVersion: 1;
    documentEpoch: number;
-@@ -228,6 +244,14 @@ export interface RhwpSelectionContextV1 {
+@@ -228,6 +252,14 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
@@ -111,7 +119,7 @@ index 6b35540e6..0995f45a6 100644
  }
  
  export interface RhwpApplyTextCommandV1 {
-@@ -272,7 +296,7 @@ export interface RhwpTextCommandReceiptV1 {
+@@ -272,7 +304,7 @@ export interface RhwpTextCommandReceiptV1 {
  
  export interface RhwpDocumentChangedEventV1 {
    schemaVersion: 1;
@@ -120,7 +128,7 @@ index 6b35540e6..0995f45a6 100644
    documentEpoch: number;
    changeSeq: number;
    commandId: string;
-@@ -317,14 +341,34 @@ export declare class RhwpEditor {
+@@ -317,14 +349,37 @@ export declare class RhwpEditor {
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
@@ -136,6 +144,9 @@ index 6b35540e6..0995f45a6 100644
 +  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 }): Promise<void>;
 +  /** 켜 두면 문서 우클릭이 Studio 메뉴 대신 onContextMenuRequest 로 온다 */
 +  setContextMenuForwarding(enabled: boolean): Promise<void>;
++  /** 호스트 범위 고르기: 켜 두면 문서 누름이 캐럿을 옮기지 않고 onRangePick 으로 온다. start 가 있으면 고무줄 범위를 그린다 */
++  setRangePick(options: { enabled: boolean; start?: RhwpPickPointV1 | null }): Promise<void>;
++  onRangePick(listener: (point: RhwpPickPointV1) => void): () => void;
    /** exact preimage fence를 검증하고 문단 전체를 한 트랜잭션으로 교체 */
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    /** 가장 최근에 성공한 exact command를 한 트랜잭션으로 되돌림 */
@@ -156,7 +167,7 @@ index 6b35540e6..0995f45a6 100644
    readonly element: HTMLIFrameElement;
    // ── 브리지 표면 ────────────────────────────────────────────────
 diff --git a/npm/editor/index.js b/npm/editor/index.js
-index f4ed3c6c1..a3c2b6e18 100644
+index f4ed3c6c1..b7f9bce30 100644
 --- a/npm/editor/index.js
 +++ b/npm/editor/index.js
 @@ -22,7 +22,7 @@ import {
@@ -195,7 +206,7 @@ index f4ed3c6c1..a3c2b6e18 100644
      return result;
    }
  
-@@ -293,6 +299,31 @@ export class RhwpEditor {
+@@ -293,6 +299,56 @@ export class RhwpEditor {
      return selection;
    }
  
@@ -219,6 +230,31 @@ index f4ed3c6c1..a3c2b6e18 100644
 +    return this._request('setAppearance', { theme: appearance.theme, fontScale: appearance.fontScale });
 +  }
 +
++  /**
++   * Host range pick. While enabled, a document press never moves the caret: a click raises `onRangePick` with the body
++   * point under it (a table cell folds to its table's anchor paragraph). With `start`, the Studio draws a rubber band
++   * from it to the point under the pointer. `{ enabled: false }` ends it.
++   */
++  async setRangePick(options) {
++    const enabled = options?.enabled === true;
++    const start = enabled && options?.start ? {
++      section: options.start.section, paragraph: options.start.paragraph,
++      charOffset: options.start.charOffset, cell: options.start.cell === true,
++    } : null;
++    return this._request('setRangePick', { enabled, start });
++  }
++
++  /** Body point of each range-pick click (see `setRangePick`). */
++  onRangePick(listener) {
++    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
++    return this._transport.on('rangePick', (point) => {
++      if ([point?.section, point?.paragraph, point?.charOffset].every((n) => Number.isSafeInteger(n) && n >= 0)
++          && typeof point.cell === 'boolean') {
++        listener({ section: point.section, paragraph: point.paragraph, charOffset: point.charOffset, cell: point.cell });
++      }
++    });
++  }
++
 +  /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
 +  async setContextMenuForwarding(enabled) {
 +    return this._request('setContextMenuForwarding', { enabled: enabled === true });
@@ -227,7 +263,7 @@ index f4ed3c6c1..a3c2b6e18 100644
    /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
    async applyTextCommand(command) {
      assertCapability(this._transport, 'document-agent-command-v1');
-@@ -324,6 +355,19 @@ export class RhwpEditor {
+@@ -324,6 +380,19 @@ export class RhwpEditor {
      }));
    }
  
@@ -247,7 +283,7 @@ index f4ed3c6c1..a3c2b6e18 100644
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
    onDocumentChanged(listener) {
      assertCapability(this._transport, 'document-change-events-v1');
-@@ -338,6 +382,7 @@ export class RhwpEditor {
+@@ -338,6 +407,7 @@ export class RhwpEditor {
            return;
          }
          if (!this._isFreshDocumentEvent(event.documentEpoch, event.changeSeq)) return;
@@ -255,7 +291,7 @@ index f4ed3c6c1..a3c2b6e18 100644
          this._rememberDocumentVersion(event.documentEpoch, event.changeSeq);
          for (const subscriber of this._documentChangedListeners) {
            try { subscriber(event); } catch { /* 한 listener가 다른 listener를 막지 않는다. */ }
-@@ -353,10 +398,45 @@ export class RhwpEditor {
+@@ -353,10 +423,45 @@ export class RhwpEditor {
      };
    }
  
@@ -305,7 +341,7 @@ index f4ed3c6c1..a3c2b6e18 100644
  
    _rememberDocumentVersion(epoch, changeSeq) {
 diff --git a/npm/editor/tests/document-agent-command-v1.contract.test.mjs b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
-index 1b8d0fcec..c17b037a1 100644
+index 1b8d0fcec..5b66303a8 100644
 --- a/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 +++ b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 @@ -40,6 +40,9 @@ function selection() {
@@ -329,7 +365,7 @@ index 1b8d0fcec..c17b037a1 100644
    const first = [];
    const second = [];
    editor.onDocumentChanged(event => first.push(event.changeSeq));
-@@ -250,8 +253,50 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
+@@ -250,8 +253,66 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(2, 99));
@@ -379,6 +415,22 @@ index 1b8d0fcec..c17b037a1 100644
 +  const { editor, requests } = editorHarness({ scrollToRange: { scrolled: true } });
 +  assert.deepEqual(await editor.scrollToRange(range), { scrolled: true });
 +  assert.deepEqual(requests.at(-1), { method: 'scrollToRange', params: { range } });
++});
++
++test('setRangePick sends enabled and an exact start; onRangePick passes only well-formed body points', async () => {
++  const { editor, requests, emit } = editorHarness({});
++  await editor.setRangePick({ enabled: true, start: { section: 0, paragraph: 3, charOffset: 2, cell: false, extra: 1 } });
++  await editor.setRangePick({ enabled: false, start: { section: 0, paragraph: 3, charOffset: 2, cell: false } });
++  assert.deepEqual(requests, [
++    { method: 'setRangePick', params: { enabled: true, start: { section: 0, paragraph: 3, charOffset: 2, cell: false } } },
++    { method: 'setRangePick', params: { enabled: false, start: null } },
++  ]);
++  const points = [];
++  editor.onRangePick((point) => points.push(point));
++  emit('rangePick', { section: 0, paragraph: 9, charOffset: 0, cell: true });
++  emit('rangePick', { section: 0, paragraph: -1, charOffset: 0, cell: false });
++  emit('rangePick', { section: 0, paragraph: 1, charOffset: 0 });
++  assert.deepEqual(points, [{ section: 0, paragraph: 9, charOffset: 0, cell: true }]);
 +});
 diff --git a/npm/hwpctrl-ocx/src/studio-plugin.mjs b/npm/hwpctrl-ocx/src/studio-plugin.mjs
 index fef90d7aa..2945167d5 100644
@@ -472,10 +524,10 @@ index 342cdd5b0..fb7bca5c6 100644
 +  return { mode: appearance.theme, effective };
 +}
 diff --git a/rhwp-studio/src/core/types.ts b/rhwp-studio/src/core/types.ts
-index 61d94b056..86856e6aa 100644
+index 61d94b056..3eae3908d 100644
 --- a/rhwp-studio/src/core/types.ts
 +++ b/rhwp-studio/src/core/types.ts
-@@ -185,6 +185,19 @@ export interface CellPathSegment {
+@@ -185,6 +185,30 @@ export interface CellPathSegment {
    cellParaIdx: number;
  }
  export type CellPath = CellPathSegment[];
@@ -486,6 +538,17 @@ index 61d94b056..86856e6aa 100644
 + * `control` the table's index in that paragraph's controls, `cell` the linear cell index and
 + * `paragraph` the paragraph index inside the cell. Mirrors `CellPathEntry` plus the parent.
 + */
++/**
++ * One body point chosen by the embedded range pick: a section, a body paragraph and a character offset. A hit inside a
++ * table cell folds to the table's anchor body paragraph (`cell: true`, offset 0) — cell-level coordinates never leave.
++ */
++export interface EmbedPickPoint {
++  section: number;
++  paragraph: number;
++  charOffset: number;
++  cell: boolean;
++}
++
 +export interface EmbedCellPathEntry {
 +  parentParagraph: number;
 +  control: number;
@@ -496,7 +559,7 @@ index 61d94b056..86856e6aa 100644
  
  /** 문서 트리 DFS 순회 컨텍스트 엔트리 */
 diff --git a/rhwp-studio/src/document-agent/controller.ts b/rhwp-studio/src/document-agent/controller.ts
-index b0a350267..078659e46 100644
+index b0a350267..207ceae2b 100644
 --- a/rhwp-studio/src/document-agent/controller.ts
 +++ b/rhwp-studio/src/document-agent/controller.ts
 @@ -2,7 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
@@ -542,7 +605,7 @@ index b0a350267..078659e46 100644
  export class DocumentAgentController {
    private readonly deps: DocumentAgentControllerDeps;
    private readonly now: () => number;
-@@ -410,6 +437,25 @@ export class DocumentAgentController {
+@@ -410,6 +437,38 @@ export class DocumentAgentController {
        collapsed,
        target,
        selectedTextSha256,
@@ -558,7 +621,20 @@ index b0a350267..078659e46 100644
 +            end: { section: end.sectionIndex, paragraph: end.paragraphIndex, charOffset: end.charOffset },
 +          };
 +        }
-+        if (!sameCell(startPath, endPath)) return null;
++        if (!sameCell(startPath, endPath)) {
++          // A drag that enters or leaves a table (body↔cell, or two different cells) folds each cell edge to
++          // the table's anchor body paragraph — the start to its beginning, the end to its end — so the range
++          // is plain body coordinates that cover the whole table paragraph.
++          const fold = (pos: DocumentPosition, path: EmbedCellPathEntry[], edge: 'start' | 'end') => {
++            if (path.length === 0) {
++              return { section: pos.sectionIndex, paragraph: pos.paragraphIndex, charOffset: pos.charOffset };
++            }
++            const anchor = path[0].parentParagraph;
++            return { section: pos.sectionIndex, paragraph: anchor,
++              charOffset: edge === 'start' ? 0 : this.deps.wasm.getParagraphLength(pos.sectionIndex, anchor) };
++          };
++          return { start: fold(start, startPath, 'start'), end: fold(end, endPath, 'end') };
++        }
 +        return {
 +          start: { section: start.sectionIndex, paragraph: startPath[startPath.length - 1].paragraph, charOffset: start.charOffset },
 +          end: { section: end.sectionIndex, paragraph: endPath[endPath.length - 1].paragraph, charOffset: end.charOffset },
@@ -569,7 +645,7 @@ index b0a350267..078659e46 100644
    }
  
 diff --git a/rhwp-studio/src/document-agent/types.ts b/rhwp-studio/src/document-agent/types.ts
-index 8f6bba3f5..6f9db6ac2 100644
+index 8f6bba3f5..8089c936a 100644
 --- a/rhwp-studio/src/document-agent/types.ts
 +++ b/rhwp-studio/src/document-agent/types.ts
 @@ -1,3 +1,5 @@
@@ -578,14 +654,15 @@ index 8f6bba3f5..6f9db6ac2 100644
  export interface RhwpBodyParagraphTargetV1 {
    kind: 'body_paragraph';
    section: number;
-@@ -25,6 +27,12 @@ export interface RhwpSelectionContextV1 {
+@@ -25,6 +27,13 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
 +  range: {
 +    start: { section: number; paragraph: number; charOffset: number };
 +    end: { section: number; paragraph: number; charOffset: number };
-+    /** Present only when both edges sit in the same table cell; paragraphs are then cell-level. */
++    /** Present only when both edges sit in the same table cell; paragraphs are then cell-level. An edge in any
++     *  other cell is folded to its table's anchor body paragraph (start → offset 0, end → paragraph end). */
 +    cellPath?: EmbedCellPathEntry[];
 +  } | null;
  }
@@ -613,17 +690,17 @@ index 5c625f7b8..7d8c701dd 100644
 +  keyboardMenuAt: Number.NEGATIVE_INFINITY,
 +};
 diff --git a/rhwp-studio/src/embed/rpc-router.ts b/rhwp-studio/src/embed/rpc-router.ts
-index 9723fff53..e0ed40bcb 100644
+index 9723fff53..e57f5ac0e 100644
 --- a/rhwp-studio/src/embed/rpc-router.ts
 +++ b/rhwp-studio/src/embed/rpc-router.ts
 @@ -1,5 +1,6 @@
  import type { HmlSaveState } from '../core/hml-save-capability.ts';
  import type { EmbedFontDecisionTraceV1 } from '../core/font-decision-trace.ts';
-+import type { EmbedCellPathEntry } from '../core/types.ts';
++import type { EmbedCellPathEntry, EmbedPickPoint } from '../core/types.ts';
  import {
    assertEmptyParams,
    assertOnlyParam,
-@@ -47,10 +48,20 @@ export interface EmbedRpcHandlers {
+@@ -47,10 +48,22 @@ export interface EmbedRpcHandlers {
    exportHwpVerify(): Promise<unknown>;
    notifySaved(fileName?: string): Promise<EmbedNotifySavedResult>;
    getDocumentState(): Promise<RhwpDocumentStateV1>;
@@ -635,6 +712,8 @@ index 9723fff53..e0ed40bcb 100644
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +    cellPath?: EmbedCellPathEntry[] }>, labels: 'selected' | 'all' | 'none'): Promise<void>;
 +  setContextMenuForwarding(enabled: boolean): Promise<void>;
++  /** Host range pick: presses report `rangePick` events instead of moving the caret; `start` draws the rubber band. */
++  setRangePick(enabled: boolean, start: EmbedPickPoint | null): Promise<void>;
 +  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: number }): Promise<void>;
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    revertTextCommand(command: RhwpRevertTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
@@ -645,7 +724,7 @@ index 9723fff53..e0ed40bcb 100644
  
    // ── 브리지 확장 (P4) ────────────────────────────────────
    // 자동화·플러그인·창 제어. 부모는 **구조화 복제 가능한 값만** 보낼 수 있으므로 함수를 받는
-@@ -99,6 +110,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
+@@ -99,6 +112,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
    if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown.sort()[0]}`);
  }
  
@@ -692,7 +771,7 @@ index 9723fff53..e0ed40bcb 100644
  /** 비어 있지 않은 문자열 식별자. 라우터에서 거르지 않으면 핸들러마다 같은 검사를 반복한다. */
  function asId(value: unknown): string {
    if (typeof value !== 'string' || value.length === 0) {
-@@ -176,6 +227,43 @@ export async function routeEmbedRequest(
+@@ -176,6 +229,59 @@ export async function routeEmbedRequest(
      case 'getSelectionContext':
        assertEmptyParams(params, 'getSelectionContext params');
        return handlers.getSelectionContext();
@@ -723,6 +802,22 @@ index 9723fff53..e0ed40bcb 100644
 +      });
 +      return handlers.setDecorations(markers, labels);
 +    }
++    case 'setRangePick': {
++      assertOnlyKeys(params, ['enabled', 'start'], 'setRangePick params');
++      if (typeof params.enabled !== 'boolean') throw new Error('enabled must be boolean');
++      const raw = params.start ?? null;
++      let start: EmbedPickPoint | null = null;
++      if (raw !== null) {
++        const point = asParams(raw);
++        assertOnlyKeys(point, ['section', 'paragraph', 'charOffset', 'cell'], 'setRangePick start');
++        for (const key of ['section', 'paragraph', 'charOffset']) {
++          if (!Number.isSafeInteger(point[key]) || (point[key] as number) < 0) throw new Error(`invalid setRangePick start.${key}`);
++        }
++        if (typeof point.cell !== 'boolean') throw new Error('invalid setRangePick start.cell');
++        start = point as unknown as EmbedPickPoint;
++      }
++      return handlers.setRangePick(params.enabled, start);
++    }
 +    case 'setContextMenuForwarding':
 +      assertOnlyKeys(params, ['enabled'], 'setContextMenuForwarding params');
 +      if (typeof params.enabled !== 'boolean') throw new Error('enabled must be boolean');
@@ -736,7 +831,7 @@ index 9723fff53..e0ed40bcb 100644
      case 'applyTextCommand': return handlers.applyTextCommand(parseApplyTextCommand(
        assertOnlyParam(params, 'command', 'applyTextCommand params'),
      ));
-@@ -185,6 +273,8 @@ export async function routeEmbedRequest(
+@@ -185,6 +291,8 @@ export async function routeEmbedRequest(
      case 'focusTarget': return handlers.focusTarget(parseBodyParagraphTarget(
        assertOnlyParam(params, 'target', 'focusTarget params'),
      ));
@@ -746,10 +841,10 @@ index 9723fff53..e0ed40bcb 100644
      case 'automation.list': return handlers.automationList();
      case 'automation.menuModel': return handlers.automationMenuModel();
 diff --git a/rhwp-studio/src/embed/runtime.ts b/rhwp-studio/src/embed/runtime.ts
-index fe02079b2..6b4c19fbb 100644
+index fe02079b2..e1e3cde23 100644
 --- a/rhwp-studio/src/embed/runtime.ts
 +++ b/rhwp-studio/src/embed/runtime.ts
-@@ -11,11 +11,17 @@ import {
+@@ -11,11 +11,18 @@ import {
  import { routeEmbedRequest, type EmbedRpcHandlers } from './rpc-router.ts';
  import { isDocumentAgentError } from '../document-agent/types.ts';
  
@@ -764,19 +859,21 @@ index fe02079b2..6b4c19fbb 100644
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void;
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void;
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void;
++  subscribeRangePick?: (listener: (point: unknown) => void) => () => void;
  }
  
  function errorText(error: unknown): string {
-@@ -47,6 +53,8 @@ function bindPort(
+@@ -47,6 +54,9 @@ function bindPort(
    clientCapabilities: readonly string[],
    handlers: EmbedRpcHandlers,
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void,
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void,
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void,
++  subscribeRangePick?: (listener: (point: unknown) => void) => () => void,
  ): () => void {
    port.onmessage = async ({ data }) => {
      if (!isRequestAttempt(data, sessionId)) return;
-@@ -100,7 +108,7 @@ function bindPort(
+@@ -100,7 +110,7 @@ function bindPort(
      type: 'rhwp-connected', version: EMBED_PROTOCOL_VERSION, sessionId,
      capabilities: EMBED_CAPABILITIES,
    });
@@ -785,7 +882,7 @@ index fe02079b2..6b4c19fbb 100644
      port.postMessage({
        type: 'rhwp-event',
        version: EMBED_PROTOCOL_VERSION,
-@@ -108,7 +116,16 @@ function bindPort(
+@@ -108,7 +118,20 @@ function bindPort(
        event: 'documentChanged',
        payload,
      });
@@ -799,11 +896,15 @@ index fe02079b2..6b4c19fbb 100644
 +    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
 +      event: 'contextMenuRequest', payload: point });
 +  });
-+  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); };
++  const offRangePick = subscribeRangePick?.((point) => {
++    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
++      event: 'rangePick', payload: point });
++  });
++  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); offRangePick?.(); };
  }
  
  function rejectConnect(port: MessagePort, attempt: { version: number; sessionId: string }): void {
-@@ -200,6 +217,12 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
+@@ -200,6 +223,15 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
          event.data.capabilities.includes('document-change-events-v1')
            ? options.subscribeDocumentChanged
            : undefined,
@@ -812,6 +913,9 @@ index fe02079b2..6b4c19fbb 100644
 +          : undefined,
 +        event.data.capabilities.includes('document-change-events-v1')
 +          ? options.subscribeContextMenu
++          : undefined,
++        event.data.capabilities.includes('document-change-events-v1')
++          ? options.subscribeRangePick
 +          : undefined,
        );
        binding = { origin: event.origin, sessionId: event.data.sessionId, port, offDocumentChanged };
@@ -904,10 +1008,19 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..206335b07 100644
+index 2dde6f1a8..1fbb027d1 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
-@@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
+@@ -1,5 +1,8 @@
+ import { WasmBridge } from '@/core/wasm-bridge';
+ import type { DeferredFocusedPagePatch } from '@/core/wasm-bridge';
++import type { EmbedPickPoint } from '@/core/types';
++import { PICK_CLICK_SLOP, pickPointOf, pickRange } from './range-pick';
++import { regionBoxes, type PageRect, type RegionBox } from './region-box';
+ import { EventBus } from '@/core/event-bus';
+ import { CursorState } from './cursor';
+ import { CaretRenderer } from './caret-renderer';
+@@ -33,7 +36,7 @@ import type { CommandPalette } from '@/ui/command-palette';
  import type { CellSelectionRenderer } from './cell-selection-renderer';
  import type { TableObjectRenderer } from './table-object-renderer';
  import type { TableResizeRenderer, BorderEdge } from './table-resize-renderer';
@@ -916,7 +1029,7 @@ index 2dde6f1a8..206335b07 100644
  import { showConfirm } from '@/ui/confirm-dialog';
  import * as _mouse from './input-handler-mouse';
  import * as _table from './input-handler-table';
-@@ -51,6 +51,7 @@ import { showInitialCaretAndPublishFocus } from './initial-caret-focus';
+@@ -51,6 +54,7 @@ import { showInitialCaretAndPublishFocus } from './initial-caret-focus';
  import { CaretLayoutReveal } from './caret-layout-reveal';
  import { emitHeaderFooterModeChanged } from './header-footer-mode';
  import { CellBlockLetterImeGuard } from '@/command/contextual-shortcut';
@@ -924,7 +1037,7 @@ index 2dde6f1a8..206335b07 100644
  
  const SVG_NS = 'http://www.w3.org/2000/svg';
  const DRAG_SCROLL_EDGE_PX = 48;
-@@ -309,6 +310,13 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
+@@ -309,6 +313,17 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
  }
  
  /** 클릭 커서 배치 + 키보드 입력을 처리한다 */
@@ -933,12 +1046,16 @@ index 2dde6f1a8..206335b07 100644
 +  startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +  cellPath?: EmbedCellPathEntry[] };
 +type SemanticGeometry = { index: number; marker: SemanticMarker;
-+  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }> };
++  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }>;
++  /** A 항목/선택 region drawn as one box per page (labels sit on its top edge). */
++  region?: boolean };
++/** Region box outset (page px): a 항목 box sits outside its 선택 boxes so nesting stays visible. */
++const REGION_OUTSET: Record<string, number> = { slot: 5, option: 1 };
 +
  export class InputHandler {
    private cursor: CursorState;
    private caret: CaretRenderer;
-@@ -319,6 +327,22 @@ export class InputHandler {
+@@ -319,6 +334,31 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
@@ -958,10 +1075,32 @@ index 2dde6f1a8..206335b07 100644
 +  };
 +  /** Native tooltip text of the problem marker under the pointer ('' = none). */
 +  private semanticTitle = '';
++  // ── Embedded range pick (two clicks choose a body range) ─────────────────────────────
++  /** On while the host runs its range pick: document presses report points and never move the caret. */
++  private rangePickOn = false;
++  /** The chosen start; the rubber band runs from it to the point under the pointer. */
++  private rangePickStart: EmbedPickPoint | null = null;
++  private rangePickLayer: HTMLDivElement | null = null;
++  private rangePickPointer: { x: number; y: number } | null = null;
++  private rangePickPress: { x: number; y: number } | null = null;
++  private rangePickFrame = 0;
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -661,33 +685,19 @@ export class InputHandler {
+@@ -647,6 +687,12 @@ export class InputHandler {
+     };
+     document.addEventListener('keydown', this.onF11InterceptBound, true);
+ 
++    // Range pick (embed): capture-phase listeners run before the Studio's own press handling and
++    // swallow presses only while the host's pick is on.
++    container.addEventListener('mousedown', (e) => this.onRangePickDown(e), true);
++    container.addEventListener('click', (e) => { if (this.rangePickOn) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
++    container.addEventListener('mousemove', (e) => this.onRangePickMove(e), true);
++    container.addEventListener('scroll', () => this.scheduleRangePickRender(), { passive: true });
+     container.addEventListener('mousedown', this.onClickBound);
+     container.addEventListener('dblclick', this.onDblClickBound);
+     container.addEventListener('contextmenu', this.onContextMenuBound);
+@@ -661,33 +707,19 @@ export class InputHandler {
      this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
@@ -1008,7 +1147,7 @@ index 2dde6f1a8..206335b07 100644
  
      eventBus.on('document-view-changed', () => {
        if (!this.active) return;
-@@ -3037,6 +3047,9 @@ export class InputHandler {
+@@ -3037,6 +3069,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -1018,7 +1157,7 @@ index 2dde6f1a8..206335b07 100644
      }
    }
  
-@@ -3108,7 +3121,8 @@ export class InputHandler {
+@@ -3108,7 +3143,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -1028,7 +1167,7 @@ index 2dde6f1a8..206335b07 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3136,7 @@ export class InputHandler {
+@@ -3122,6 +3158,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -1036,7 +1175,7 @@ index 2dde6f1a8..206335b07 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3247,11 @@ export class InputHandler {
+@@ -3232,6 +3269,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -1048,7 +1187,7 @@ index 2dde6f1a8..206335b07 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4257,6 +4277,8 @@ export class InputHandler {
+@@ -4257,6 +4299,8 @@ export class InputHandler {
      this.container.removeEventListener('mousedown', this.onClickBound);
      this.container.removeEventListener('dblclick', this.onDblClickBound);
      this.container.removeEventListener('contextmenu', this.onContextMenuBound);
@@ -1057,7 +1196,7 @@ index 2dde6f1a8..206335b07 100644
      this.container.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mouseup', this.onMouseUpBound);
-@@ -4272,6 +4294,8 @@ export class InputHandler {
+@@ -4272,6 +4316,8 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
@@ -1066,7 +1205,7 @@ index 2dde6f1a8..206335b07 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4326,313 @@ export class InputHandler {
+@@ -4302,6 +4348,463 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -1102,6 +1241,7 @@ index 2dde6f1a8..206335b07 100644
 +  /** One coalesced relayout: semantic markers and labels, then the studio's own cursor overlays. */
 +  private relayoutEmbedOverlays(): void {
 +    if (this.semanticLayer) this.renderSemanticMarkers();
++    if (this.rangePickLayer) this.renderRangePick();
 +    this.reprojectCursorOverlays();
 +  }
 +
@@ -1113,6 +1253,87 @@ index 2dde6f1a8..206335b07 100644
 +    this.embeddedReadOnly = value;
 +    this.textarea.readOnly = value;
 +    this.eventBus.emit('command-state-changed');
++  }
++
++  /**
++   * The embedding host's range pick. While `enabled`, a document press never moves the caret or starts a drag;
++   * a press released within {@link PICK_CLICK_SLOP} px is a click and emits `embed-range-pick` with the body point
++   * under it (a table cell folds to the table's anchor paragraph). Keys keep working (Shift+arrow selections).
++   * With a `start`, a rubber band is drawn from it to the point under the pointer, following the pointer and scrolls,
++   * once per animation frame. Off clears everything.
++   */
++  setRangePick(enabled: boolean, start: EmbedPickPoint | null): void {
++    this.rangePickOn = enabled;
++    this.rangePickStart = enabled ? start : null;
++    if (!enabled) { this.rangePickPress = null; this.rangePickPointer = null; }
++    this.scheduleRangePickRender();
++  }
++
++  private onRangePickDown(e: MouseEvent): void {
++    if (!this.rangePickOn || e.button !== 0) return;
++    e.preventDefault();
++    e.stopImmediatePropagation();
++    this.rangePickPress = { x: e.clientX, y: e.clientY };
++    const release = (up: MouseEvent) => {
++      document.removeEventListener('mouseup', release, true);
++      const press = this.rangePickPress;
++      this.rangePickPress = null;
++      if (!this.rangePickOn || !press) return;
++      up.preventDefault();
++      up.stopImmediatePropagation();
++      if (Math.hypot(up.clientX - press.x, up.clientY - press.y) > PICK_CLICK_SLOP) return;
++      const point = pickPointOf(this.hitTestFromClientPoint(up.clientX, up.clientY));
++      if (point) this.eventBus.emit('embed-range-pick', point);
++    };
++    document.addEventListener('mouseup', release, true);
++  }
++
++  private onRangePickMove(e: MouseEvent): void {
++    if (!this.rangePickOn) return;
++    this.rangePickPointer = { x: e.clientX, y: e.clientY };
++    if (this.rangePickPress) { e.stopImmediatePropagation(); return; }
++    this.scheduleRangePickRender();
++  }
++
++  private scheduleRangePickRender(): void {
++    if (this.rangePickFrame) return;
++    this.rangePickFrame = requestAnimationFrame(() => { this.rangePickFrame = 0; this.renderRangePick(); });
++  }
++
++  /** The rubber band: from the start to the point under the pointer (or the start alone), as selection-like boxes. */
++  private renderRangePick(): void {
++    const scrollContent = this.container.querySelector('#scroll-content');
++    if (!scrollContent) return;
++    if (!this.rangePickLayer) {
++      this.rangePickLayer = document.createElement('div');
++      this.rangePickLayer.className = 'rhwp-range-pick-layer';
++      this.rangePickLayer.setAttribute('aria-hidden', 'true');
++    }
++    if (this.rangePickLayer.parentElement !== scrollContent) scrollContent.appendChild(this.rangePickLayer);
++    this.rangePickLayer.replaceChildren();
++    const start = this.rangePickStart;
++    if (!this.rangePickOn || !start) return;
++    const pointer = this.rangePickPointer;
++    const under = pointer ? pickPointOf(this.hitTestFromClientPoint(pointer.x, pointer.y)) : null;
++    const range = pickRange(start, under && under.section === start.section ? under : start);
++    if (!range) return;
++    try {
++      // The band is drawn like a region box — the span it would choose, tables included, one box per page.
++      const boxes = this.bodyRangeBoxes(range.section, range.startParagraph, range.startOffset, range.endParagraph,
++        range.endOffset, new Map(), 0);
++      const zoom = this.viewportManager.getZoom();
++      const contentWidth = scrollContent.clientWidth;
++      for (const box of boxes) {
++        const mark = document.createElement('div');
++        mark.className = 'rhwp-range-pick-mark';
++        const open = [box.openTop ? 'top' : '', box.openBottom ? 'bottom' : ''].filter(Boolean).join(' ');
++        if (open) mark.dataset.open = open;
++        mark.style.cssText = `left:${this.virtualScroll.getPageLeftResolved(box.pageIndex, contentWidth) + box.x * zoom}px;`
++          + `top:${this.virtualScroll.getPageOffset(box.pageIndex) + box.y * zoom}px;`
++          + `width:${Math.max(2, box.width * zoom)}px;height:${Math.max(3, box.height * zoom)}px`;
++        this.rangePickLayer.appendChild(mark);
++      }
++    } catch { /* An unresolved position draws no band; the pick itself still works. */ }
 +  }
 +
 +  /**
@@ -1144,8 +1365,28 @@ index 2dde6f1a8..206335b07 100644
 +    this.semanticLabelKey = null;
 +    const zoom = this.viewportManager.getZoom();
 +    const contentWidth = scrollContent.clientWidth;
++    const pageControls = new Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>();
 +    this.semanticMarkers.forEach((marker, index) => {
 +      try {
++        if ((marker.kind === 'slot' || marker.kind === 'option') && !marker.cellPath?.length) {
++          const regions = this.semanticRegionBoxes(marker, pageControls);
++          const boxes = regions.map((region) => ({ pageIndex: region.pageIndex,
++            left: this.virtualScroll.getPageLeftResolved(region.pageIndex, contentWidth) + region.x * zoom,
++            top: this.virtualScroll.getPageOffset(region.pageIndex) + region.y * zoom,
++            width: Math.max(3, region.width * zoom), height: Math.max(3, region.height * zoom) }));
++          boxes.forEach((box, at) => {
++            const mark = document.createElement('div');
++            mark.className = 'rhwp-semantic-mark';
++            mark.dataset.kind = marker.kind;
++            mark.dataset.emphasis = marker.emphasis;
++            mark.dataset.region = '';
++            const open = [regions[at].openTop ? 'top' : '', regions[at].openBottom ? 'bottom' : ''].filter(Boolean).join(' ');
++            if (open) mark.dataset.open = open;
++            mark.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`;
++            this.semanticLayer!.appendChild(mark);
++          });
++          if (boxes.length) { this.semanticGeometry.push({ index, marker, boxes, region: true }); return; }
++        }
 +        const endOffset = marker.endOffset
 +          ?? this.embedParagraphLength(marker.section, marker.endParagraph, marker.cellPath);
 +        let rects = this.embedSelectionRects(marker.section, marker.startParagraph,
@@ -1170,6 +1411,50 @@ index 2dde6f1a8..206335b07 100644
 +      } catch { /* Unsupported nested or unresolved positions remain in the semantic outline. */ }
 +    });
 +    this.renderSemanticLabels();
++  }
++
++  /**
++   * A body 항목/선택 region's boxes (page px): its text lines plus every table/object anchored in its paragraphs,
++   * one box per page over the body column. Control layouts are read once per page per render (`pageControls`).
++   */
++  private semanticRegionBoxes(marker: SemanticMarker,
++                              pageControls: Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>): RegionBox[] {
++    return this.bodyRangeBoxes(marker.section, marker.startParagraph, marker.startOffset, marker.endParagraph,
++      marker.endOffset, pageControls, REGION_OUTSET[marker.kind] ?? 0);
++  }
++
++  /** Body range → one box per page covering its text lines and the tables/objects anchored in its paragraphs. */
++  private bodyRangeBoxes(section: number, startParagraph: number, startOffset: number, endParagraph: number,
++                         endOffsetOrNull: number | null,
++                         pageControls: Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>, outset: number): RegionBox[] {
++    const endOffset = endOffsetOrNull ?? this.embedParagraphLength(section, endParagraph);
++    const marker = { startParagraph, endParagraph };
++    const parts: PageRect[] = [...this.embedSelectionRects(section, startParagraph, startOffset, endParagraph, endOffset)];
++    for (const [paragraph, offset] of [[startParagraph, startOffset], [endParagraph, endOffset]]) {
++      try { const caret = this.embedCaretRect(section, paragraph, offset); parts.push({ ...caret, width: 1 }); } catch { /* no caret */ }
++    }
++    if (!parts.length) return [];
++    const pages = parts.map((part) => part.pageIndex);
++    const last = Math.min(this.wasm.pageCount - 1, Math.max(...pages) + 1);
++    const columns = new Map<number, { left: number; right: number }>();
++    for (let page = Math.min(...pages); page <= last; page++) {
++      let controls = pageControls.get(page);
++      if (!controls) {
++        try { controls = this.wasm.getPageControlLayout(page).controls; } catch { controls = []; }
++        pageControls.set(page, controls);
++      }
++      for (const control of controls) {
++        if ((control.secIdx ?? section) !== section || typeof control.paraIdx !== 'number'
++          || control.paraIdx < marker.startParagraph || control.paraIdx > marker.endParagraph
++          || control.cellIdx !== undefined || control.noteRef || control.headerFooter || control.outerTableControlIdx !== undefined) continue;
++        parts.push({ pageIndex: page, x: control.x, y: control.y, width: control.w, height: control.h });
++      }
++      try {
++        const info = this.wasm.getPageInfo(page);
++        columns.set(page, { left: info.bodyLeft ?? info.marginLeft, right: info.bodyRight ?? info.width - info.marginRight });
++      } catch { /* no column: the box hugs the content */ }
++    }
++    return regionBoxes(parts, columns, outset);
 +  }
 +
 +  /** True when the caret lies inside the marker's range (edges inclusive). */
@@ -1282,7 +1567,11 @@ index 2dde6f1a8..206335b07 100644
 +      // Candidate rows, best first: the leading above the run, the rest of the run's own line
 +      // after its last glyph, then below the run (the only one that may cover the next line).
 +      const rows: Array<{ left: number; top: number; right: number }> = [];
-+      if (boxIndex === 0) {
++      if (item.region) {
++        // A region box carries its tag on its top edge: just above the box, else just inside its top-left corner.
++        rows.push({ left: box.left + 4, top: box.top - height - 1, right: pageRight });
++        rows.push({ left: box.left + 4, top: box.top + 2, right: box.left + box.width });
++      } else if (boxIndex === 0) {
 +        let leading: { gap: number; glyphTop: number } | null = null;
 +        try { leading = this.semanticLeadingAbove(item.marker); } catch { leading = null; }
 +        if (leading && leading.gap >= height + 1) {
@@ -1380,7 +1669,7 @@ index 2dde6f1a8..206335b07 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4797,9 @@ export class InputHandler {
+@@ -4466,6 +4969,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1390,7 +1679,7 @@ index 2dde6f1a8..206335b07 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +5007,109 @@ export class InputHandler {
+@@ -4673,6 +5179,109 @@ export class InputHandler {
      }
    }
  
@@ -1571,8 +1860,81 @@ index 000000000..af541c610
 +      : undefined,
 +  }, run);
 +}
+diff --git a/rhwp-studio/src/engine/range-pick.ts b/rhwp-studio/src/engine/range-pick.ts
+new file mode 100644
+index 000000000..578fb00f7
+--- /dev/null
++++ b/rhwp-studio/src/engine/range-pick.ts
+@@ -0,0 +1,28 @@
++import type { DocumentPosition, EmbedPickPoint } from '@/core/types';
++
++/** A hit-test result as a range-pick point: body positions as they are, a table-cell hit folded to the table's anchor
++ *  body paragraph, anything else (text boxes, unresolved positions) none. */
++export function pickPointOf(hit: DocumentPosition | null): EmbedPickPoint | null {
++  if (!hit || hit.isTextBox) return null;
++  const section = hit.sectionIndex;
++  if (hit.parentParaIndex !== undefined) {
++    return Number.isSafeInteger(hit.parentParaIndex) && hit.parentParaIndex >= 0
++      ? { section, paragraph: hit.parentParaIndex, charOffset: 0, cell: true } : null;
++  }
++  if (!Number.isSafeInteger(hit.paragraphIndex) || !Number.isSafeInteger(hit.charOffset)) return null;
++  return { section, paragraph: hit.paragraphIndex, charOffset: hit.charOffset, cell: false };
++}
++
++/** The body range between two pick points (either order) — `endOffset: null` is the end paragraph's end. A cell point
++ *  covers its whole table paragraph; two points in different sections have no range. */
++export function pickRange(a: EmbedPickPoint, b: EmbedPickPoint): { section: number; startParagraph: number; startOffset: number;
++  endParagraph: number; endOffset: number | null } | null {
++  if (a.section !== b.section) return null;
++  const [first, second] = a.paragraph < b.paragraph || (a.paragraph === b.paragraph && a.charOffset <= b.charOffset) ? [a, b] : [b, a];
++  const whole = first.paragraph === second.paragraph && (first.cell || second.cell);
++  return { section: first.section, startParagraph: first.paragraph, startOffset: whole || first.cell ? 0 : first.charOffset,
++    endParagraph: second.paragraph, endOffset: whole || second.cell ? null : second.charOffset };
++}
++
++/** Pointer travel (CSS px) under which a press and release is a click, not a drag. */
++export const PICK_CLICK_SLOP = 5;
+diff --git a/rhwp-studio/src/engine/region-box.ts b/rhwp-studio/src/engine/region-box.ts
+new file mode 100644
+index 000000000..277746476
+--- /dev/null
++++ b/rhwp-studio/src/engine/region-box.ts
+@@ -0,0 +1,33 @@
++/** A page-coordinate rectangle (zoom 1): text line rects, table/object layout boxes. */
++export type PageRect = { pageIndex: number; x: number; y: number; width: number; height: number };
++/** One region box on one page: the region's extent there, with the edges a page break cuts left open. */
++export type RegionBox = PageRect & { openTop: boolean; openBottom: boolean };
++
++/**
++ * One clean box per page for a 항목/선택 region (the embedded authoring overlay), instead of a box per text line.
++ *
++ * `parts` are everything the region lays out: its text lines and the tables/objects anchored in its paragraphs. On each
++ * page the box spans the body column (`columns`, widened when content reaches past it) and runs from the region's first
++ * part to its last there. A region that continues across a page break leaves the bottom edge open on the earlier page
++ * and the top edge open on the later one. `outset` grows the box on every side (page px) — a 항목 box sits outside its
++ * 선택 boxes so nesting stays visible.
++ */
++export function regionBoxes(parts: readonly PageRect[], columns: ReadonlyMap<number, { left: number; right: number }>,
++                            outset = 0): RegionBox[] {
++  const byPage = new Map<number, PageRect[]>();
++  for (const part of parts) {
++    if (![part.x, part.y, part.width, part.height].every(Number.isFinite) || part.height <= 0) continue;
++    byPage.set(part.pageIndex, [...(byPage.get(part.pageIndex) ?? []), part]);
++  }
++  const pages = [...byPage.keys()].sort((a, b) => a - b);
++  return pages.map((pageIndex, at) => {
++    const rects = byPage.get(pageIndex)!;
++    const column = columns.get(pageIndex);
++    const left = Math.min(column?.left ?? Infinity, ...rects.map((rect) => rect.x));
++    const right = Math.max(column?.right ?? -Infinity, ...rects.map((rect) => rect.x + rect.width));
++    const top = Math.min(...rects.map((rect) => rect.y));
++    const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
++    return { pageIndex, x: left - outset, y: top - outset, width: right - left + outset * 2, height: bottom - top + outset * 2,
++      openTop: at > 0, openBottom: at < pages.length - 1 };
++  });
++}
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
-index 64e8a6d1d..c5493353c 100644
+index 64e8a6d1d..c2fdcc96e 100644
 --- a/rhwp-studio/src/main.ts
 +++ b/rhwp-studio/src/main.ts
 @@ -56,7 +56,8 @@ import {
@@ -1585,7 +1947,40 @@ index 64e8a6d1d..c5493353c 100644
  import { maybeShowSkinOnboarding } from '@/ui/skin-onboarding-dialog';
  import { analyzeDocumentFonts } from '@/core/document-font-status';
  import { setDocumentFontSubstitutions } from '@/core/font-substitution';
-@@ -1941,7 +1942,58 @@ void initPromise.then(() => {
+@@ -68,7 +69,7 @@ import {
+   resolveLocalFont,
+ } from '@/core/local-fonts';
+ import { userSettings } from '@/core/user-settings';
+-import { AutosaveManager, type AutosaveScheduleSettings, type AutosaveStatus } from '@/recovery/autosave-manager';
++import { AutosaveManager, hostAutosaveSchedule, hostDisablesAutosave, type AutosaveScheduleSettings, type AutosaveStatus } from '@/recovery/autosave-manager';
+ import { clearAutosaveDrafts, deleteAutosaveDraft, listAutosaveDrafts, type AutosaveDraft } from '@/recovery/autosave-store';
+ import { recoveryFileName } from '@/recovery/recovery-format';
+ import { showAutosaveRecoveryDialog } from '@/recovery/recovery-ui';
+@@ -388,12 +389,12 @@ let autosavePreviousMessage: string | null = null;
+ 
+ function autosaveScheduleFromUserSettings(): AutosaveScheduleSettings {
+   const settings = userSettings.getAutosaveSettings();
+-  return {
++  return hostAutosaveSchedule(window.location.search, {
+     recoveryEnabled: settings.recoveryEnabled,
+     recoveryIntervalMs: settings.recoveryIntervalMinutes * 60_000,
+     idleEnabled: settings.idleSaveEnabled,
+     idleDelayMs: settings.idleDelaySeconds * 1_000,
+-  };
++  });
+ }
+ 
+ function handleAutosaveStatus(status: AutosaveStatus): void {
+@@ -1675,6 +1676,8 @@ function shouldSkipInitialAutosaveRecovery(): boolean {
+ 
+ async function offerAutosaveRecoveryIfIdle(): Promise<void> {
+   if (shouldSkipInitialAutosaveRecovery()) return;
++  // A host that disabled autosave (`?autosave=off`) never sees drafts offered — older ones stay untouched.
++  if (hostDisablesAutosave(window.location.search)) return;
+ 
+   try {
+     const drafts = (await listAutosaveDrafts()).filter((draft) => draft.data.byteLength > 0);
+@@ -1941,7 +1944,62 @@ void initPromise.then(() => {
  installEmbedRuntime({
    hostWindow: window,
    parentWindow: window.parent,
@@ -1623,6 +2018,10 @@ index 64e8a6d1d..c5493353c 100644
 +      offEscape();
 +    };
 +  },
++  subscribeRangePick: (listener) => {
++    const off = eventBus.on('embed-range-pick', (point) => listener(point));
++    return () => { off(); inputHandler?.setRangePick(false, null); };
++  },
 +  subscribeContextMenu: (listener) => {
 +    const off = eventBus.on('embed-contextmenu', (point) => listener(point as { x: number; y: number }));
 +    return () => { off(); hostInput.contextMenu = false; };
@@ -1645,7 +2044,7 @@ index 64e8a6d1d..c5493353c 100644
    handlers: {
      async ready() {
        await initPromise;
-@@ -2022,7 +2074,26 @@ installEmbedRuntime({
+@@ -2022,7 +2080,26 @@ installEmbedRuntime({
      async getSelectionContext() {
        await initPromise;
        if (!documentAgent) throw new Error('Document agent is not initialized');
@@ -1673,7 +2072,7 @@ index 64e8a6d1d..c5493353c 100644
      },
      async applyTextCommand(command) {
        await initPromise;
-@@ -2039,6 +2110,18 @@ installEmbedRuntime({
+@@ -2039,6 +2116,23 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.focusTarget(target);
      },
@@ -1682,6 +2081,11 @@ index 64e8a6d1d..c5493353c 100644
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
 +      return { focused: inputHandler.focusBodyRange(range.section, range.startParagraph,
 +        range.startOffset, range.endParagraph, range.endOffset, range.cellPath) };
++    },
++    async setRangePick(enabled, start) {
++      await initPromise;
++      if (!inputHandler) throw new Error('Input handler is not initialized');
++      inputHandler.setRangePick(enabled, start);
 +    },
 +    async scrollToRange(range) {
 +      await initPromise;
@@ -1736,11 +2140,36 @@ index fabc8645e..2c529af86 100644
  
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
+diff --git a/rhwp-studio/src/recovery/autosave-manager.ts b/rhwp-studio/src/recovery/autosave-manager.ts
+index a74050ecd..5853a1b5a 100644
+--- a/rhwp-studio/src/recovery/autosave-manager.ts
++++ b/rhwp-studio/src/recovery/autosave-manager.ts
+@@ -277,6 +277,20 @@ export class AutosaveManager {
+   }
+ }
+ 
++/**
++ * The embedding host owns the document lifecycle and asks for no autosave (`?autosave=off` on the Studio URL):
++ * no recovery drafts are written (neither the interval nor the idle save) and none are offered, whatever the
++ * user settings say. Any other value leaves the user settings in charge.
++ */
++export function hostDisablesAutosave(search: string): boolean {
++  return new URLSearchParams(search).get('autosave') === 'off';
++}
++
++/** The schedule to run: the user settings, with both saves off when the host disabled autosave. */
++export function hostAutosaveSchedule(search: string, settings: AutosaveScheduleSettings): AutosaveScheduleSettings {
++  return hostDisablesAutosave(search) ? { ...settings, recoveryEnabled: false, idleEnabled: false } : settings;
++}
++
+ function normalizeSchedule(settings: AutosaveScheduleSettings): AutosaveScheduleSettings {
+   return {
+     recoveryEnabled: settings.recoveryEnabled,
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..96552e8bf 100644
+index 1b1ecf8d5..5c132bd43 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,107 @@
+@@ -144,3 +144,122 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -1760,6 +2189,18 @@ index 1b1ecf8d5..96552e8bf 100644
 +  z-index: 4;
 +}
 +
++/* Range pick rubber band (embedded host): the span a second click would choose, drawn like a selection. */
++.rhwp-range-pick-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
++.rhwp-range-pick-mark {
++  position: absolute;
++  pointer-events: none;
++  background: color-mix(in srgb, #3b82f6 26%, transparent);
++  outline: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent);
++}
++.rhwp-range-pick-mark[data-open~="top"] { outline: none; border-bottom: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent); }
++.rhwp-range-pick-mark[data-open~="bottom"] { outline: none; border-top: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent); }
++.rhwp-range-pick-mark[data-open~="top"][data-open~="bottom"] { border: 0; }
++
 +.rhwp-semantic-mark {
 +  position: absolute;
 +  box-sizing: border-box;
@@ -1778,6 +2219,9 @@ index 1b1ecf8d5..96552e8bf 100644
 +.rhwp-semantic-mark[data-kind="option"] { border: 1px dashed var(--rhwp-semantic-option); }
 +.rhwp-semantic-mark[data-kind="slot"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-slot); }
 +.rhwp-semantic-mark[data-kind="option"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-option); }
++/* A region box cut by a page break keeps that edge open — the region goes on over the break. */
++.rhwp-semantic-mark[data-region][data-open~="top"] { border-top-color: transparent; }
++.rhwp-semantic-mark[data-region][data-open~="bottom"] { border-bottom-color: transparent; }
 +
 +/* Authoring problems: an underline just below the run, never a fill, so the text and a field tint
 +   under it stay readable. Shape tells the severity, not only colour: strong (error) is wavy,
@@ -1958,6 +2402,43 @@ index e2edd4581..32c551441 100644
      ctx.textAlign = 'center';
      ctx.textBaseline = 'middle';
  
+diff --git a/rhwp-studio/tests/document-agent-controller.test.ts b/rhwp-studio/tests/document-agent-controller.test.ts
+index c598a6d2d..ca57272c9 100644
+--- a/rhwp-studio/tests/document-agent-controller.test.ts
++++ b/rhwp-studio/tests/document-agent-controller.test.ts
+@@ -414,3 +414,32 @@ test('selection context와 focus는 body paragraph만 exact하게 노출한다',
+     charOffset: 0,
+   });
+ });
++
++test('selection context range folds a cell edge outside one shared cell to the table anchor paragraph', () => {
++  const { controller, input } = harness();
++  const cell = (cell: number, paragraph: number, charOffset: number) => ({
++    sectionIndex: 0, paragraphIndex: paragraph, charOffset, parentParaIndex: 1, controlIndex: 0, cellIndex: cell,
++    cellParaIndex: paragraph, cellPath: [{ controlIndex: 0, cellIndex: cell, cellParaIndex: paragraph }],
++  });
++  // body → cell: the end folds to the end of the anchor paragraph (index 1, '기존 문단' = 5 code points)
++  input.selection = { start: { sectionIndex: 0, paragraphIndex: 0, charOffset: 2 }, end: cell(0, 0, 1) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 0, charOffset: 2 }, end: { section: 0, paragraph: 1, charOffset: 5 } });
++  // cell → body: the start folds to the beginning of the anchor paragraph
++  input.selection = { start: cell(1, 0, 3), end: { sectionIndex: 0, paragraphIndex: 2, charOffset: 1 } };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 1, charOffset: 0 }, end: { section: 0, paragraph: 2, charOffset: 1 } });
++  // two different cells: the whole table paragraph
++  input.selection = { start: cell(0, 0, 1), end: cell(1, 0, 2) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 1, charOffset: 0 }, end: { section: 0, paragraph: 1, charOffset: 5 } });
++  // one shared cell keeps cell-level coordinates and the cellPath
++  input.selection = { start: cell(0, 0, 1), end: cell(0, 0, 3) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 0, charOffset: 1 }, end: { section: 0, paragraph: 0, charOffset: 3 },
++    cellPath: [{ parentParagraph: 1, control: 0, cell: 0, paragraph: 0 }] });
++  // a text box edge still has no embed coordinate
++  input.selection = { start: { sectionIndex: 0, paragraphIndex: 0, charOffset: 0 },
++    end: { sectionIndex: 0, paragraphIndex: 0, charOffset: 1, isTextBox: true } };
++  assert.equal(controller.getSelectionContext().range, null);
++});
 diff --git a/rhwp-studio/tests/embed-protocol.test.ts b/rhwp-studio/tests/embed-protocol.test.ts
 index a87452c42..73b9af364 100644
 --- a/rhwp-studio/tests/embed-protocol.test.ts
@@ -1988,6 +2469,27 @@ index a87452c42..73b9af364 100644
 +  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: Array(501).fill(problem) }, handlers),
 +    /invalid decoration count/);
 +  assert.deepEqual(calls, [{ method: 'scroll', value: range }, { method: 'decorate', value: [[problem], 'none'] }]);
++});
+diff --git a/rhwp-studio/tests/host-autosave-off.test.ts b/rhwp-studio/tests/host-autosave-off.test.ts
+new file mode 100644
+index 000000000..e66145ead
+--- /dev/null
++++ b/rhwp-studio/tests/host-autosave-off.test.ts
+@@ -0,0 +1,15 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { hostAutosaveSchedule, hostDisablesAutosave } from '../src/recovery/autosave-manager.ts';
++
++const settings = { recoveryEnabled: true, recoveryIntervalMs: 600_000, idleEnabled: true, idleDelayMs: 10_000 };
++
++test('?autosave=off turns off both the interval and the idle save and is the only switch', () => {
++  assert.equal(hostDisablesAutosave('?hostTheme=dark&autosave=off'), true);
++  assert.deepEqual(hostAutosaveSchedule('?autosave=off', settings), { ...settings, recoveryEnabled: false, idleEnabled: false });
++  for (const search of ['', '?autosave=on', '?autosave=', '?hostTheme=dark']) {
++    assert.equal(hostDisablesAutosave(search), false, search);
++    assert.deepEqual(hostAutosaveSchedule(search, settings), settings, search);
++  }
 +});
 diff --git a/rhwp-studio/tests/overlay-relayout.test.ts b/rhwp-studio/tests/overlay-relayout.test.ts
 new file mode 100644
@@ -2082,6 +2584,87 @@ index 000000000..82d306a88
 +  assert.match(functionBodyFrom(src, 'embedSelectionEndClientRect('), /return this\.isDragging \? null : this\.embedCaretClientRect\(\);/);
 +  // Problem markers explain themselves by the hover tooltip and never float a label chip.
 +  assert.match(functionBodyFrom(src, 'private renderSemanticLabels('), /item\.marker\.kind !== 'problem'/);
++});
+diff --git a/rhwp-studio/tests/range-pick.test.ts b/rhwp-studio/tests/range-pick.test.ts
+new file mode 100644
+index 000000000..baacefc96
+--- /dev/null
++++ b/rhwp-studio/tests/range-pick.test.ts
+@@ -0,0 +1,36 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { pickPointOf, pickRange } from '../src/engine/range-pick.ts';
++import { routeEmbedRequest, type EmbedRpcHandlers } from '../src/embed/rpc-router.ts';
++
++const body = (paragraphIndex: number, charOffset: number) => ({ sectionIndex: 0, paragraphIndex, charOffset });
++
++test('range pick points: body hits as they are, a cell hit folds to its table anchor paragraph, text boxes have none', () => {
++  assert.deepEqual(pickPointOf(body(4, 7) as never), { section: 0, paragraph: 4, charOffset: 7, cell: false });
++  assert.deepEqual(pickPointOf({ ...body(0, 3), parentParaIndex: 9, controlIndex: 0, cellIndex: 2, cellParaIndex: 0 } as never),
++    { section: 0, paragraph: 9, charOffset: 0, cell: true });
++  assert.equal(pickPointOf({ ...body(1, 1), isTextBox: true } as never), null);
++  assert.equal(pickPointOf(null), null);
++});
++
++test('range pick ranges order the points and cover a whole table paragraph for a cell edge', () => {
++  const p = (paragraph: number, charOffset: number, cell = false) => ({ section: 0, paragraph, charOffset, cell });
++  assert.deepEqual(pickRange(p(5, 3), p(2, 1)), { section: 0, startParagraph: 2, startOffset: 1, endParagraph: 5, endOffset: 3 });
++  assert.deepEqual(pickRange(p(2, 4), p(9, 0, true)), { section: 0, startParagraph: 2, startOffset: 4, endParagraph: 9, endOffset: null });
++  assert.deepEqual(pickRange(p(9, 0, true), p(9, 0, true)), { section: 0, startParagraph: 9, startOffset: 0, endParagraph: 9, endOffset: null });
++  assert.equal(pickRange(p(1, 0), { ...p(1, 0), section: 1 }), null);
++});
++
++test('embed router setRangePick takes enabled and an exact start point', async () => {
++  const calls: unknown[] = [];
++  const handlers = { setRangePick: async (enabled: unknown, start: unknown) => { calls.push([enabled, start]); } } as unknown as EmbedRpcHandlers;
++  const start = { section: 0, paragraph: 3, charOffset: 2, cell: false };
++  await routeEmbedRequest('setRangePick', { enabled: true, start }, handlers);
++  await routeEmbedRequest('setRangePick', { enabled: false }, handlers);
++  for (const bad of [{ enabled: 'yes' }, { enabled: true, start: { ...start, paragraph: -1 } }, { enabled: true, start: { ...start, extra: 1 } },
++    { enabled: true, start: { ...start, cell: 1 } }, { enabled: true, extra: 1 }]) {
++    await assert.rejects(() => routeEmbedRequest('setRangePick', bad, handlers));
++  }
++  assert.deepEqual(calls, [[true, start], [false, null]]);
++});
+diff --git a/rhwp-studio/tests/region-box.test.ts b/rhwp-studio/tests/region-box.test.ts
+new file mode 100644
+index 000000000..74446e33a
+--- /dev/null
++++ b/rhwp-studio/tests/region-box.test.ts
+@@ -0,0 +1,33 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { regionBoxes } from '../src/engine/region-box.ts';
++
++const column = new Map([[0, { left: 50, right: 550 }], [1, { left: 50, right: 550 }]]);
++const line = (pageIndex: number, y: number, width = 200) => ({ pageIndex, x: 60, y, width, height: 18 });
++
++test('a region is one box over the body column from its first line to its last part, table included', () => {
++  const table = { pageIndex: 0, x: 55, y: 140, width: 480, height: 90 };
++  assert.deepEqual(regionBoxes([line(0, 100), line(0, 120, 80), table], column), [
++    { pageIndex: 0, x: 50, y: 100, width: 500, height: 130, openTop: false, openBottom: false },
++  ]);
++  // A table wider than the column widens the box instead of spilling out of it.
++  const wide = { pageIndex: 0, x: 40, y: 140, width: 530, height: 20 };
++  assert.deepEqual(regionBoxes([line(0, 100), wide], column)[0], { pageIndex: 0, x: 40, y: 100, width: 530, height: 60, openTop: false, openBottom: false });
++});
++
++test('a region across a page break is one box per page with the cut edges open', () => {
++  const boxes = regionBoxes([line(0, 700), line(0, 720), { pageIndex: 1, x: 55, y: 80, width: 300, height: 40 }, line(1, 130)], column);
++  assert.deepEqual(boxes.map((box) => [box.pageIndex, box.y, box.height, box.openTop, box.openBottom]),
++    [[0, 700, 38, false, true], [1, 80, 68, true, false]]);
++});
++
++test('the outset nests a 선택 box visibly inside its 항목 box', () => {
++  const parts = [line(0, 100), line(0, 200)];
++  const [slot] = regionBoxes(parts, column, 5);
++  const [option] = regionBoxes([line(0, 140)], column, 1);
++  assert.ok(slot.x < option.x && slot.x + slot.width > option.x + option.width, 'the 항목 box is wider on both sides');
++  assert.ok(slot.y < option.y && slot.y + slot.height > option.y + option.height, 'and taller');
++  assert.deepEqual(regionBoxes([], column), []);
++  assert.deepEqual(regionBoxes([{ ...line(0, 1), height: 0 }], column), [], 'empty parts draw nothing');
 +});
 diff --git a/rhwp-studio/vite.config.ts b/rhwp-studio/vite.config.ts
 index f860fb8fa..382863031 100644

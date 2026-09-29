@@ -411,6 +411,9 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-document .cm-authoring-problem-warning{text-decoration-style:dotted;text-decoration-color:var(--a-warn)}
 /* 표지 짝(IDE-05) — 캐럿이 선 표지 줄의 짝 줄에 옅은 줄 면. 구조 트리 강조보다 약하다(왼쪽 막대 없음). */
 .authoring-document .cm-authoring-pair{background:color-mix(in srgb,var(--a-sel) 55%,transparent)}
+/* 범위 고르기의 고무줄 범위 — 선택처럼 칠하되 점선 테두리로 아직 고르지 않은 범위임을 가른다. */
+.authoring-document .cm-authoring-rangepick{background:var(--a-sel);outline:1px dashed var(--a-primary)}
+.authoring-document .cm-authoring-rangepick-line{box-shadow:inset 3px 0 0 var(--a-primary)}
 @media(forced-colors:active){
   .authoring-tree [role=treeitem][data-kind=slot]>[role=group],.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left-color:CanvasText}
   .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
@@ -423,4 +426,5 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-document .cm-authoring-highlight{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-document .cm-authoring-problem-error,.authoring-document .cm-authoring-problem-warning{text-decoration-color:CanvasText}
   .authoring-document .cm-authoring-pair{outline:1px dashed CanvasText;outline-offset:-1px}
+  .authoring-document .cm-authoring-rangepick{outline:1px dashed Highlight}
 }

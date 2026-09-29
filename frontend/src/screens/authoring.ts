@@ -1,9 +1,9 @@
 import { createElement as h, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
+import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad, setLintpadRangePick } from "../editorview/txt_lintpad.ts";
 import type { LintpadPair, LintpadProblem } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
-import { COMMANDS, coordinates } from "./authoring_controller.ts";
+import { AUTHORING_COPY, COMMANDS, coordinates } from "./authoring_controller.ts";
 import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
 import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor, Zoom } from "./authoring_controller.ts";
@@ -84,11 +84,14 @@ export function sameFieldMeta(index: number, total: number): string {
 
 /* ---------- 문서 척추(UX-09): 구조 트리의 모양은 Python 이 준 소속·차례로만 짓는다 ---------- */
 
-/** 척추의 한 마디. 필드 사용 위치(use)는 그것을 담은 선택·항목 아래에, 어디에도 없으면 척추에 직접 선다. */
+/** 척추의 한 마디. 필드 사용 위치(use)는 그것을 담은 선택·항목 아래에, 어디에도 없으면 척추에 직접 선다.
+ *  척추 위에 이어 선 항목 밖 사용 위치 둘 이상은 한 묶음(group — 연속 묶음)으로 접힌다. */
+export type SpineUse = { kind: "use"; field: Obj; occurrence: Obj; index: number; total: number; order: number };
 export type SpineNode =
   | { kind: "slot"; slot: Obj; order: number; children: SpineNode[] }
   | { kind: "option"; slot: Obj; option: Obj; order: number; children: SpineNode[] }
-  | { kind: "use"; field: Obj; occurrence: Obj; index: number; total: number; order: number };
+  | { kind: "group"; key: string; order: number; children: SpineUse[] }
+  | SpineUse;
 const LAST = Number.MAX_SAFE_INTEGER;
 const byOrder = (a: { order: number }, b: { order: number }) => a.order - b.order;
 /** 분석(Python 투영)에서 척추를 짓는다. 소속은 사용 위치의 `slot_id`·`option_id`, 차례는 `order` 그대로다 —
@@ -115,9 +118,32 @@ export function outlineSpine(analysis: Obj | undefined): SpineNode[] {
       (home ? home.children : spine).push(use);
     });
   }
-  const sort = (list: SpineNode[]) => { list.sort(byOrder); for (const node of list) if (node.kind !== "use") sort(node.children); };
+  const sort = (list: SpineNode[]) => { list.sort(byOrder); for (const node of list) if (node.kind === "slot" || node.kind === "option") sort(node.children); };
   sort(spine);
-  return spine;
+  return groupLooseUses(spine);
+}
+/** 연속 묶음: 항목과 항목 사이에 이어 선 항목 밖 사용 위치(둘 이상)를 한 묶음 줄로 접는다 — 문서 차례는 그대로다.
+ *  하나뿐인 사용 위치는 묶지 않는다(펼칠 것이 한 줄이면 묶음이 한 번 더 누르게만 한다). */
+function groupLooseUses(spine: SpineNode[]): SpineNode[] {
+  const grouped: SpineNode[] = [];
+  let run: SpineUse[] = [];
+  const close = () => {
+    if (run.length > 1) grouped.push({ kind: "group", key: outlineKey.group(run[0].field.name, run[0].index), order: run[0].order, children: run });
+    else grouped.push(...run);
+    run = [];
+  };
+  for (const node of spine) {
+    if (node.kind === "use") run.push(node);
+    else { close(); grouped.push(node); }
+  }
+  close();
+  return grouped;
+}
+/** 구조 경로의 연속 묶음 조상 — 묶음 안 사용 위치가 지금 위치면 그 묶음 열쇠를 앞에 세운다(펼침 동기화의 기준). */
+export function groupedPath(spine: SpineNode[], path: string[]): string[] {
+  if (path.length !== 1) return path;
+  const group = spine.find((node) => node.kind === "group" && node.children.some((use) => outlineKey.use(use.field.name, use.index) === path[0]));
+  return group && group.kind === "group" ? [group.key, ...path] : path;
 }
 /** 필드 목록의 차례 — 문서에서 처음 쓰인 순서(§3.3·F13). 차례는 Python 의 `order` 다. */
 export function fieldsInFirstUse(analysis: Obj | undefined): Obj[] {
@@ -130,6 +156,7 @@ export const outlineKey = {
   slot: (slotId: string) => `slot:${slotId}`,
   option: (slotId: string, optionId: string) => `option:${slotId}/${optionId}`,
   use: (name: string, index: number) => `use:${name}#${index}`,
+  group: (name: string, index: number) => `group:${name}#${index}`,
   field: (name: string) => `field:${name}`,
   occurrence: (name: string, index: number) => `occurrence:${name}#${index - 1}`,
 };
@@ -513,6 +540,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           onDocChanged: (content) => { if (!composing) controller.changed(item.id, content); },
           onSelectionChanged: (selection) => { if (!composing) controller.selection(item.id, selection); },
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
+          onRangePick: (offset) => controller.pickClick(item.id, { entry: "", paragraph: 0, offset, cell: false }),
           onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
         });
         adapter.current = {
@@ -524,6 +552,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             if (!editLintpad(handle, changes as { start: number; end: number; text: string }[])) throw new Error(IME_BUSY);
           },
           focus: async (target) => { if (target.start != null) navigateLintpad(handle, target.start, target.end ?? target.start); },
+          rangePick: (state) => setLintpadRangePick(handle, state === false || state === null ? state : state.offset),
           command: async (command) => { lintpadCommand(handle, command); },
           state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
           decorate: (analysis, mode, highlight) => {
@@ -563,6 +592,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection) => controller.selection(item.id, selection),
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
+          onRangePick: (point) => controller.pickClick(item.id, point),
           onError: (error) => controller.fail(error, "editor"), readOnly: false,
           // 배율 방식은 마운트마다 명시한다(IDE-06) — 폭 맞춤이면 Studio 가, 고정 배율이면 셸 CSS 가 키운다(곱하지 않는다).
           zoom: mountedFit ? "fit" : 100 });
@@ -580,6 +610,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           // 문제 밑줄(IDE-08 P-08)은 TXT 와 같은 규칙이다 — Python 의 problems 를 그대로 넘기고 문서 모드에서도 선다.
           decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [] }), "editor"); },
           zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
+          rangePick: (state) => handle.rangePick(state),
         };
         release = () => handle.dispose();
         // 마운트 중에 확대를 바꿨으면(편집기가 붙기 전이라 알림을 못 받았다) 지금 방식을 맞춘다.
@@ -692,6 +723,8 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     const applied = await controller.applyPreview(prepared);
     if (!applied) return;
     if (sent.type === "create_field" && keepValue && sent.name && captured) await controller.keepTrialValue(String(sent.name), String(captured));
+    // 패널이 남는 이름 변경(#1069): 카드·위치 줄·이름 칸이 Python 이 되짚은 새 대상으로 선다 — 이름이 같아지니 제출은 다시 꺼진다.
+    if (prepared.confirm !== "none" && applied.renamed) { await controller.adopt(applied.renamed); return; }
     if (prepared.confirm !== "none" || !CREATE_TYPES.includes(sent.type)) return;
     controller.update({ panel: "", preview: null, refusal: null, formEntry: "" });
     if (applied.created) await controller.select(applied.created, { keepDock: true });
@@ -1001,6 +1034,12 @@ function OutlineTree({ labelledBy, nodes, current, inactive, onSelect, onMenu, o
   const byKey = new Map(rows.map((row) => [row.key, row]));
   const currentKey = [...current].reverse().find((key) => byKey.has(key));
   const active = byKey.has(focusKey) ? focusKey : currentKey ?? rows[0]?.key;
+  // 지금 위치가 연속 묶음 안이면 그 묶음을 펼친다(접어 둔 묶음도 — 가리킨 줄이 보여야 한다). 항목·선택의 접힘은 그대로 둔다.
+  const path = current.join("\u0000");
+  useEffect(() => {
+    const groups = current.slice(0, -1).filter((key) => key.startsWith("group:") && !expanded[key]);
+    if (groups.length) setExpanded((state) => ({ ...state, ...Object.fromEntries(groups.map((key) => [key, true])) }));
+  }, [path]);
   // 현재 위치 따라가기(F15): 캐럿이 옮긴 줄이 목록 밖이면 가장 가까운 쪽으로 스크롤한다(초점은 옮기지 않는다).
   useEffect(() => { if (currentKey) elements.current.get(currentKey)?.scrollIntoView?.({ block: "nearest" }); }, [currentKey]);
   const toggle = (key: string, open: boolean) => setExpanded((state) => ({ ...state, [key]: open }));
@@ -1093,7 +1132,9 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
   const spine = useMemo(() => outlineSpine(analysis), [version]);
   const fields = useMemo(() => fieldsInFirstUse(analysis), [version]);
   const severities = useMemo(() => problemSeverities(item.problems), [item.problems]);
-  const current = outlineCurrent(analysis, view.selected, view.matches);
+  const located = outlineCurrent(analysis, view.selected, view.matches);
+  // 묶음 안 사용 위치가 지금 위치면 묶음이 그 경로의 조상이다 — 트리가 그 묶음을 펼쳐 줄을 보인다.
+  const current = { ...located, structure: groupedPath(spine, located.structure) };
   const coverage = new Map<string, string>((item.trial_coverage || []).map((entry: Obj) => [`${entry.slot_id}\u0000${entry.option_id}`, entry.state]));
   // 강조 요청은 줄을 훑는 동안 마지막 것만 보낸다 — 문서 장식을 줄마다 다시 그리지 않는다.
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1106,6 +1147,23 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
   const problemsOf = (target: string) => counts.get(target) || 0;
 
   const spineNodes = (list: SpineNode[], matched: boolean): TreeNode[] => list.flatMap((node): TreeNode[] => {
+    if (node.kind === "group") {
+      // 연속 묶음: 기본은 접혀 있고 사용 위치 수와 그 필드들의 문제 수를 모아 보인다. 필터 중에는 일치한 줄만 펼쳐 둔다.
+      const found = filtering ? spineNodes(node.children, matched) : null;
+      if (found && !found.length) return [];
+      const names = [...new Set(node.children.map((use) => String(use.field.name)))];
+      const problems = names.reduce((sum, name) => sum + problemsOf(name), 0);
+      const severity = names.map((name) => severities.get(name)).find((level) => level === "error")
+        ?? names.map((name) => severities.get(name)).find(Boolean);
+      const meta = joined(`사용 위치 ${node.children.length}곳`, problems && `문제 ${problems}`);
+      const first = node.children[0];
+      return [{ key: node.key, kind: "group", label: joined(AUTHORING_COPY.looseUses, meta),
+        content: rowContent("field", AUTHORING_COPY.looseUses, { severity, tag: false, meta }),
+        // 한 필드만 든 묶음에 머물면 그 필드의 사용 위치를 모두 칠한다 — 여러 필드면 칠할 한 대상이 없다.
+        entry: { ...first.occurrence, name: first.field.name, kind: "field" }, open: !!found,
+        ...(names.length === 1 ? { highlight: { kind: "field", id: names[0] } } : {}),
+        children: () => found ?? spineNodes(node.children, true) }];
+    }
     if (node.kind === "use") {
       const { field, occurrence, index, total } = node;
       if (!matched && !filterMatch(query, field.name, occurrence.context)) return [];
@@ -1601,6 +1659,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, anchorTop: rect.top, target }, root.current);
       return;
     }
+    // 범위 고르기(두 번 누름) 중의 Escape 는 고르기만 접는다 — 패널·막대는 그대로다.
+    if (shortcut === "escape" && view.rangePick) { controller.cancelRangePick(); return; }
     // 떠 있는 선택 옆 막대가 가장 위의 일시 표면이다 — Escape 한 번은 막대만 걷는다.
     if (shortcut === "escape" && barShown) { setBarAnchor(null); return; }
     if (shortcut !== "escape") event.preventDefault();
@@ -1682,7 +1742,11 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       h("div", { className: "authoring-toolbar-group" },
         ...creates.map(({ commandType, label, available, disabled, dimmed }) =>
           quiet(label, disabled ? () => {} : dimmed ? () => controller.note(String(available.reason || "")) : () => pick(commandType),
-            { key: commandType, disabled, "aria-disabled": disabled || dimmed || undefined, title: available.reason || undefined, ...rove(commandType) }))),
+            { key: commandType, disabled, "aria-disabled": disabled || dimmed || undefined, title: available.reason || undefined, ...rove(commandType) })),
+        // 범위 고르기(두 번 누름): 시작 자리를 누르고, 스크롤해 끝 자리를 누르면 그 사이가 선택된다 — 표로 끝나는 범위도 고른다.
+        // TXT·HWPX 모두. 켠 동안 눌린 단추(aria-pressed)이고 Escape·다시 누름으로 접는다.
+        !readOnly && h("button", { key: "range-pick", type: "button", className: "btn quiet", "aria-pressed": !!view.rangePick,
+          ...rove("range-pick"), onClick: () => controller.toggleRangePick() }, AUTHORING_COPY.rangePick)),
       // 명령 팔레트(Ctrl+Shift+P)·복사·붙여넣기·이전 위치로는 「더보기」 메뉴 안에 선다.
       h("div", { className: "authoring-toolbar-group" },
         iconButton("more", "더보기", menuToggle("more"), { ...menuButton("more"), ...rove("more") })),

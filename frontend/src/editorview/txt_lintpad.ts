@@ -65,6 +65,8 @@ export type LintpadMountSpec = {
   authoring?: boolean;
   readOnly?: boolean;
   onSelectionChanged?: (selection: { start: number; end: number }) => void;
+  /** 범위 고르기의 누름 한 번(click) — 그 자리의 UTF-16 위치. 켠 동안(`setLintpadRangePick`)만 오고 캐럿은 옮기지 않는다. */
+  onRangePick?: (offset: number) => void;
   /** 선택 끝(head) 줄의 호스트 클라이언트 좌표(IDE-08) — 비어 있지 않은 선택이 **자리 잡으면** 보고한다(포인터를 누른
    *  채 끄는 동안은 보고하지 않고 놓을 때 한 번). 선택이 비거나 문서가 바뀌면 null 이다. 선택 옆 막대가 이 줄 아래에 선다. */
   onSelectionRect?: (rect: LintpadLineRect | null) => void;
@@ -373,6 +375,82 @@ function selectionRectExtension(report: (rect: LintpadLineRect | null) => void):
   ];
 }
 
+/* ---------- 범위 고르기(두 번 누름): 누른 자리를 알리고, 시작부터 포인터 아래까지 고무줄 범위를 칠한다 ---------- */
+const setPickBand = StateEffect.define<{ from: number; to: number } | null>();
+const pickField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    let next = value.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (!effect.is(setPickBand)) continue;
+      const band = effect.value;
+      if (!band) { next = Decoration.none; continue; }
+      const from = Math.max(0, Math.min(band.from, band.to, tr.state.doc.length));
+      const to = Math.min(tr.state.doc.length, Math.max(band.from, band.to));
+      next = to > from ? Decoration.set([Decoration.mark({ class: "cm-authoring-rangepick" }).range(from, to)])
+        : Decoration.set([Decoration.line({ class: "cm-authoring-rangepick-line" }).range(tr.state.doc.lineAt(from).from)]);
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+/** 누름과 뗌 사이의 이동이 이보다 작으면 끌기가 아니라 누름이다(CSS px). */
+const PICK_SLOP = 5;
+type PickState = { on: boolean; start: number | null; pointer: { x: number; y: number } | null; press: { x: number; y: number } | null; frame: number };
+const PICKS = new WeakMap<EditorView, PickState>();
+
+function pickBand(view: EditorView) {
+  const pick = PICKS.get(view);
+  if (!pick || pick.frame) return;
+  pick.frame = requestAnimationFrame(() => {
+    pick.frame = 0;
+    if (!pick.on || pick.start === null) { view.dispatch({ effects: setPickBand.of(null) }); return; }
+    const under = pick.pointer ? view.posAtCoords(pick.pointer) : null;
+    view.dispatch({ effects: setPickBand.of({ from: pick.start, to: under ?? pick.start }) });
+  });
+}
+
+/** 켠 동안 문서 누름은 캐럿을 옮기지 않고 끌기도 시작하지 않는다 — 뗌이 누름 자리 곁이면 그 위치를 알린다. 키는 그대로다. */
+function rangePickExtension(onPick: (offset: number) => void): Extension {
+  return [pickField, EditorView.domEventHandlers({
+    mousedown(event, view) {
+      const pick = PICKS.get(view);
+      if (!pick?.on || event.button !== 0) return false;
+      event.preventDefault();
+      pick.press = { x: event.clientX, y: event.clientY };
+      const release = (up: MouseEvent) => {
+        view.dom.ownerDocument.removeEventListener("mouseup", release, true);
+        const press = pick.press;
+        pick.press = null;
+        if (!pick.on || !press || Math.hypot(up.clientX - press.x, up.clientY - press.y) > PICK_SLOP) return;
+        const at = view.posAtCoords({ x: up.clientX, y: up.clientY });
+        if (at !== null) onPick(at);
+      };
+      view.dom.ownerDocument.addEventListener("mouseup", release, true);
+      return true;
+    },
+    mousemove(event, view) {
+      const pick = PICKS.get(view);
+      if (!pick?.on) return false;
+      pick.pointer = { x: event.clientX, y: event.clientY };
+      pickBand(view);
+      return false;
+    },
+    scroll(_event, view) { if (PICKS.get(view)?.on) pickBand(view); return false; },
+  })];
+}
+
+/** 범위 고르기를 켜고 끈다 — `false` 끔, `null` 켬(시작 전), 수는 그 시작에서 포인터 아래까지 칠한다. */
+export function setLintpadRangePick(handle: LintpadHandle, state: number | null | false): void {
+  const view = VIEWS.get(handle);
+  const pick = view && PICKS.get(view);
+  if (!view || !pick) return;
+  pick.on = state !== false;
+  pick.start = typeof state === "number" ? state : null;
+  if (!pick.on) { pick.pointer = null; pick.press = null; }
+  pickBand(view);
+}
+
 /** 마운트 — vendor 인스턴스 생성의 **유일한** 자리(`mount_owner`). */
 export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
   const handle: LintpadHandle = { host: spec.host };
@@ -394,6 +472,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
           "aria-label": spec.ariaLabel,
         }),
         ...(spec.onSelectionRect ? [selectionRectExtension(spec.onSelectionRect)] : []),
+        ...(spec.onRangePick ? [rangePickExtension(spec.onRangePick)] : []),
         spanField,
         problemField,
         pairField,
@@ -411,6 +490,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
     }),
   });
   VIEWS.set(handle, view);
+  if (spec.onRangePick) PICKS.set(view, { on: false, start: null, pointer: null, press: null, frame: 0 });
   THEME_WATCHES.set(handle, watchTheme(view));
   return handle;
 }

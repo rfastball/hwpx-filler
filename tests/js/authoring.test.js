@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates, previewHighlight } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside, zoomChoice } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, groupedPath, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside, zoomChoice } from "../../frontend/src/screens/authoring.ts";
 import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
 import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
@@ -763,12 +763,34 @@ test("UX-09: outlineSpine places slots in order, options under their slot, and u
     ] }],
   };
   const spine = outlineSpine(analysis);
-  assert.deepEqual(spine.map((node) => node.kind === "use" ? "use" : node.slot.id), ["s1", "s2", "use", "use"]);
-  assert.deepEqual(spine.slice(2).map((node) => node.order), [4, 5], "소속 없는(null) 필드와 못 찾은(gone) 항목의 사용 위치 모두 척추 위, order 차례대로");
+  assert.deepEqual(spine.map((node) => node.kind === "group" ? "group" : node.slot.id), ["s1", "s2", "group"]);
+  assert.deepEqual(spine[2].children.map((node) => node.order), [4, 5], "소속 없는(null) 필드와 못 찾은(gone) 항목의 사용 위치 모두 척추 위, order 차례대로 — 이어 섰으니 한 묶음");
   const s1 = spine[0], s2 = spine[1];
   assert.equal(s1.kind, "slot"); assert.equal(s1.children.length, 1); assert.equal(s1.children[0].kind, "use");
   assert.equal(s2.children[0].kind, "option"); assert.equal(s2.children[0].option.id, "o1");
   assert.equal(s2.children[0].children[0].kind, "use");
+});
+
+test("연속 묶음: runs of two or more loose uses between slots fold into one group in document order; a lone loose use stays a row", () => {
+  const use = (name, order, slot_id = null) => ({ slot_id, option_id: null, order });
+  const analysis = {
+    slots: [{ id: "s", order: 3, options: [] }],
+    fields: [
+      { name: "a", occurrences: [use("a", 0), use("a", 2), use("a", 4, "s"), use("a", 6)] },
+      { name: "b", occurrences: [use("b", 1), use("b", 7), use("b", 8)] },
+    ],
+  };
+  const spine = outlineSpine(analysis);
+  assert.deepEqual(spine.map((node) => node.kind), ["group", "slot", "group"]);
+  const [head, , tail] = spine;
+  assert.equal(head.key, outlineKey.group("a", 1), "묶음 열쇠는 첫 사용 위치에서 짓는다");
+  assert.deepEqual(head.children.map((node) => `${node.field.name}${node.index}`), ["a1", "b1", "a2"], "묶음 안도 문서 차례");
+  assert.deepEqual(tail.children.map((node) => `${node.field.name}${node.index}`), ["a4", "b2", "b3"]);
+  const lone = outlineSpine({ slots: [{ id: "s", order: 1, options: [] }], fields: [{ name: "x", occurrences: [use("x", 0), use("x", 2)] }] });
+  assert.deepEqual(lone.map((node) => node.kind), ["use", "slot", "use"], "하나뿐이면 묶지 않는다");
+  assert.deepEqual(groupedPath(spine, [outlineKey.use("b", 1)]), [head.key, outlineKey.use("b", 1)], "묶음 안 사용 위치의 경로에는 묶음이 조상으로 선다");
+  assert.deepEqual(groupedPath(lone, [outlineKey.use("x", 1)]), [outlineKey.use("x", 1)]);
+  assert.deepEqual(groupedPath(spine, [outlineKey.slot("s"), outlineKey.use("a", 3)]), [outlineKey.slot("s"), outlineKey.use("a", 3)]);
 });
 
 test("UX-09: outlineSpine keeps insertion order for nodes with no order (stable sort, oldest projections)", () => {
@@ -2035,4 +2057,28 @@ test("IDE-06 P-20: a whole field offers 필드 의미 해제 with one 남길 본
   assert.ok(preview.includes('<ul aria-label="포함될 내용"><li>가 [F]</li><li>나 [F]</li><li>끝 [F]</li></ul>'), "모든 사용 위치의 문맥");
   assert.ok(preview.includes("<p>추가 필드: 없음 · 없어진 필드: F</p>") && preview.includes("<p>연결된 작업: 월간 보고</p>"));
   assert.ok(/<button class="btn primary" type="submit"[^>]*>필드 의미 해제/.test(preview), "주 행동은 명령 이름의 제출 단추 하나다(enter 등급 — 영향을 본 뒤 확정)");
+});
+
+test("범위 고르기: rangePickStep takes click points only — a start, then an end that commits the ordered range; cell points fold to the table's anchor paragraph; TXT points are offsets", async () => {
+  const { rangePickStep } = await import("../../frontend/src/screens/authoring_controller.ts");
+  const E = "Contents/section0.xml";
+  const at = (paragraph, offset, cell = false) => ({ entry: E, paragraph, offset, cell });
+  assert.deepEqual(rangePickStep(null, at(1, 2)), { pick: null }, "끈 동안은 아무것도 하지 않는다");
+  const started = rangePickStep({ phase: "start" }, at(5, 3)).pick;
+  assert.deepEqual(started, { phase: "end", start: at(5, 3) });
+  assert.deepEqual(rangePickStep(started, at(9, 4)), { pick: null, commit: { entry: E, paragraph: 5, start_paragraph: 5, end_paragraph: 9, start: 3, end: 4 } });
+  assert.deepEqual(rangePickStep(started, at(2, 0)).commit, { entry: E, paragraph: 2, start_paragraph: 2, end_paragraph: 5, start: 0, end: 3 },
+    "끝이 시작보다 앞이면 차례를 바로잡는다");
+  assert.deepEqual(rangePickStep(started, at(12, 0, true)).commit, { entry: E, paragraph: 5, start_paragraph: 5, end_paragraph: 12, start: 3 },
+    "표에서 끝나면 표 문단 끝까지(end 생략 = 문단 끝)");
+  const fromCell = rangePickStep({ phase: "start" }, at(4, 0, true)).pick;
+  assert.deepEqual(rangePickStep(fromCell, at(7, 2)).commit, { entry: E, paragraph: 4, start_paragraph: 4, end_paragraph: 7, start: 0, end: 2 });
+  assert.deepEqual(rangePickStep(fromCell, at(4, 0, true)).commit, { entry: E, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start: 0 },
+    "같은 표의 두 셀이면 그 표 문단 전체");
+  assert.equal(rangePickStep(started, { ...at(1, 1), entry: "Contents/section1.xml" }).pick.start.entry, "Contents/section1.xml",
+    "다른 구역의 끝은 새 시작이다");
+  const txt = (offset) => ({ entry: "", paragraph: 0, offset, cell: false });
+  const txtStart = rangePickStep({ phase: "start" }, txt(40)).pick;
+  const txtCommit = rangePickStep(txtStart, txt(3)).commit;
+  assert.deepEqual([txtCommit.start, txtCommit.end], [3, 40], "TXT 는 글자 위치 차례로 선다");
 });

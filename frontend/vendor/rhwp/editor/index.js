@@ -319,6 +319,31 @@ export class RhwpEditor {
     return this._request('setAppearance', { theme: appearance.theme, fontScale: appearance.fontScale });
   }
 
+  /**
+   * Host range pick. While enabled, a document press never moves the caret: a click raises `onRangePick` with the body
+   * point under it (a table cell folds to its table's anchor paragraph). With `start`, the Studio draws a rubber band
+   * from it to the point under the pointer. `{ enabled: false }` ends it.
+   */
+  async setRangePick(options) {
+    const enabled = options?.enabled === true;
+    const start = enabled && options?.start ? {
+      section: options.start.section, paragraph: options.start.paragraph,
+      charOffset: options.start.charOffset, cell: options.start.cell === true,
+    } : null;
+    return this._request('setRangePick', { enabled, start });
+  }
+
+  /** Body point of each range-pick click (see `setRangePick`). */
+  onRangePick(listener) {
+    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+    return this._transport.on('rangePick', (point) => {
+      if ([point?.section, point?.paragraph, point?.charOffset].every((n) => Number.isSafeInteger(n) && n >= 0)
+          && typeof point.cell === 'boolean') {
+        listener({ section: point.section, paragraph: point.paragraph, charOffset: point.charOffset, cell: point.cell });
+      }
+    });
+  }
+
   /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
   async setContextMenuForwarding(enabled) {
     return this._request('setContextMenuForwarding', { enabled: enabled === true });
