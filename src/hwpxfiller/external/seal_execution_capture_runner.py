@@ -52,12 +52,14 @@ from hwpxfiller.application.execution_structure import (
     decode_execution_structure,
     template_structure_digest,
 )
+from hwpxfiller.domain.field_binding import is_current_field_binding_contract
 from hwpxfiller.application.field_binding_input import (
     CurrentApplicationFieldStructure,
     FieldBindingApplicationReview,
     FieldBindingInputIntegrityError,
     FieldBindingRevision,
     FieldReviewClassification,
+    NEEDS_BINDING_SEMANTIC_MIGRATION,
     NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     NEW_ACTIVE_FIELD,
     build_field_binding_input,
@@ -449,6 +451,17 @@ class SealExecutionCaptureRunner:
             return DomainBlockedFieldBinding(
                 NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
                 "current Application 에 field binding revision 이 없다",
+            )
+        if not is_current_field_binding_contract(
+            revision.field_binding_semantic_contract_id
+        ):
+            # outdated 판(v2)은 legacy ``type`` 을 잃은 채라 규칙만으로는 표시형을 알 수 없다.
+            # 현재 판으로 다시 짓지 않고(그러면 표시형 없음으로 조용히 읽힌다) 결속 축 blocker 로
+            # 닫는다 — 현재 Mapping 에서 다시 확정되면(자동 무손실 승격·편집기 확정) 풀린다.
+            return DomainBlockedFieldBinding(
+                NEEDS_BINDING_SEMANTIC_MIGRATION,
+                "현재 Field Binding 판본이 이전 판("
+                f"{revision.field_binding_semantic_contract_id})이라 표시형을 다시 확정해야 한다",
             )
         field_binding = build_field_binding_input(
             workspace_instance_id=workspace_instance_id,

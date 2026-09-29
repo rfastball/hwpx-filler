@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "c55b530fb616930600bd32052d1ae4cceb57a0f794b731a4fccad4d88c41d267"
+source_sha256 = "e52e6f1236fb6c2d112ea83d6c39eef209eff1a6f167cea7d478f52b8450af46"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -185,8 +185,8 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py"]
 tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py"]
-source_sha256 = "4ef30c8651fe6ca2b83210dc73a6777304d08fa2b22c825d89f9cc6d4f686e9b"
-body_sha256 = "516a0484b28da8ee8e92c2167a0d180f62e8404f8ee5f0d6d4d9feef4456f2b1"
+source_sha256 = "bb31e2580b9087875d928aed8d896206aac216105ebc83a785a5325e4951025c"
+body_sha256 = "2fa8db78acac8d71ebee0f09d251beec9829e15d5f63195f91b7c9482982b120"
 
 [[topic]]
 id = "workflow-template"
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "8fdd95820da3f5f8d44a50bde8a30a2528f9d734320b43949086283910ce599d"
+source_sha256 = "4c9d9532f40645504f9529870bd2ebcce091d56a9fbe1fc24f9c8d873a52303b"
 body_sha256 = "6dcf67f7dabac55747c963e1e1b9949d26fbae903d2e1a0abcce0241bcd936d6"
 
 [[topic]]
@@ -217,7 +217,7 @@ id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py"]
-source_sha256 = "4c918baf8a2be721b51ee4df9d5f404c4bd8bebab47fa7b06bf42b10fce06a60"
+source_sha256 = "0269e95db49bb0094d5c07ee2c838d321a36849b9a273152a50b600d612393f0"
 body_sha256 = "9f8381b7c374c61c69c267c1f1783cac77f2e26fc0caa4df1b7037559996adc3"
 
 [[topic]]

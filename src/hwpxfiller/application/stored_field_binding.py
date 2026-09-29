@@ -240,12 +240,18 @@ def commit_revision(
 
 # ─── codec ─────────────────────────────────────────────────────────────────────
 def _encode_rule(rule: FieldBindingRule) -> dict[str, Any]:
-    """v2 규칙 표현 — 고정값은 tagged 표현 없이 텍스트 하나로 평탄화한다(값 알파벳이 단형)."""
+    """규칙 표현 — 고정값은 tagged 표현 없이 텍스트 하나로 평탄화한다(값 알파벳이 단형).
+
+    ``format_kind`` 는 field-binding/v3 표시형 슬롯이다. 규칙이 어느 판에 속하는지는 revision 의
+    ``field_binding_semantic_contract_id`` 가 말하고, digest 재계산이 그 판의 framing 으로 대조한다
+    — v2 판본에 kind 가 끼어들면 그 재계산이 시끄럽게 닫는다.
+    """
     return {
         "field_id": rule.field_id,
         "binding_kind": rule.binding_kind,
         "policy_id": rule.document_content_value_policy.policy_id,
         "source_key": rule.source_key,
+        "format_kind": rule.format_kind,
         "format_code": rule.format_code,
         "canonical_constant_text": (
             None
@@ -266,6 +272,9 @@ def _decode_rule(data: Any) -> FieldBindingRule:
     constant_text = data.get("canonical_constant_text")
     if constant_text is not None and not isinstance(constant_text, str):
         raise StoredFieldBindingError("canonical_constant_text 표현이 malformed")
+    format_kind = data.get("format_kind")  # v2 판 기록에는 키가 없다(None)
+    if format_kind is not None and not isinstance(format_kind, str):
+        raise StoredFieldBindingError("format_kind 표현이 malformed")
     return FieldBindingRule(
         field_id=_require_nonempty(data.get("field_id"), "field_id"),
         binding_kind=_require_nonempty(data.get("binding_kind"), "binding_kind"),
@@ -275,6 +284,7 @@ def _decode_rule(data: Any) -> FieldBindingRule:
         canonical_constant_value=(
             None if constant_text is None else ExactText(constant_text)
         ),
+        format_kind=format_kind,
     )
 
 

@@ -116,9 +116,12 @@ class ExecutionCompilationError(ValueError):
 # ─── value expression 합타입(actual value 아님 — 규칙의 exact projection) ──────────────
 @dataclass(frozen=True)
 class FromSource:
+    """소스 값 하나 + 문서 값 정책 + 표시형(v3 ``format_kind`` × ``format_code``)."""
+
     source_key: str
     format_code: str | None
     document_content_value_policy_id: str
+    format_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -252,7 +255,9 @@ def _value_expression(rule: FieldBindingRule) -> ActiveFieldValueExpression:
     if rule.binding_kind == SOURCE:
         # SOURCE 규칙은 source_key 를 반드시 갖는다(FieldBindingRule 이 강제).
         assert rule.source_key is not None
-        return FromSource(rule.source_key, rule.format_code, policy_id)
+        return FromSource(
+            rule.source_key, rule.format_code, policy_id, format_kind=rule.format_kind
+        )
     if rule.binding_kind == CONSTANT:
         assert rule.canonical_constant_value is not None
         return ConstantValue(rule.canonical_constant_value, rule.format_code, policy_id)
@@ -374,6 +379,8 @@ def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
         return {
             "kind": "FROM_SOURCE",
             "source_key": ve.source_key,
+            # 표시형 쌍 — record validation 이 legacy 와 같은 해석기로 렌더한다(v3).
+            "format_kind": ve.format_kind,
             "format_code": ve.format_code,
             "document_content_value_policy_id": ve.document_content_value_policy_id,
         }

@@ -597,6 +597,7 @@ def test_value_expressions_carry_no_value_type_slot():
     assert encode_value_expression(FromSource("열", None, "document-content-value/v1")) == {
         "kind": "FROM_SOURCE",
         "source_key": "열",
+        "format_kind": None,  # v3 표시형 쌍(값 유형 슬롯은 여전히 없다)
         "format_code": None,
         "document_content_value_policy_id": "document-content-value/v1",
     }

@@ -353,6 +353,19 @@ class JobExecutionSession:
         )
         return result is not None and result.changed
 
+    def upgrade_outdated_binding_if_lossless(self, work_ref: str) -> bool:
+        """outdated(v2) Field Binding 판본을 현재 Mapping 에서 무손실로 다시 확정한다 — 했으면 True.
+
+        판정은 :meth:`SealExecutionPlanService.upgrade_outdated_binding_if_lossless` 가 진다.
+        봉인 직전(:meth:`run_automatic_seal`)에만 부른다 — 들이기와 같은 자리·같은 fence 규율이다.
+        """
+        if self.seal_execution is None or not work_ref:
+            return False
+        result = self.seal_execution.upgrade_outdated_binding_if_lossless(
+            work_ref, uuid.uuid4().hex
+        )
+        return result is not None and result.changed
+
     def run_automatic_seal(self, work_ref: str, *, max_coalesced: int) -> None:
         """CHECKING 전이를 실제 seal 호출과 결속해 coalesce를 유한하게 소진한다.
 
@@ -364,6 +377,9 @@ class JobExecutionSession:
             raise ValueError("실행 확인 기능이 조립되지 않았습니다")
         try:
             self.adopt_saved_mapping_if_unbound(work_ref)
+            # 이전 판(v2) 판본은 표시형을 잃었다 — Mapping 이 그 판본의 출처임이 증명되면 봉인
+            # 전에 현재 판으로 다시 확정한다(아니면 봉인이 결속 축 blocker 로 시끄럽게 닫는다).
+            self.upgrade_outdated_binding_if_lossless(work_ref)
         except Exception:  # noqa: BLE001 - product failures drive the state machine.
             self.settle_seal(succeeded=False, current=False)
             return

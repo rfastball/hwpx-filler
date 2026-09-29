@@ -58,7 +58,9 @@ from ..application.seal_execution_plan import (
 )
 from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.field_binding import (
+    FIELD_BINDING_SEMANTIC_VERSION_V2,
     FieldBindingRule,
+    is_current_field_binding_contract,
     resolve_document_value_policy,
     txt_document_value_policy,
 )
@@ -317,6 +319,53 @@ class SealExecutionPlanService:
         except FieldBindingReviewRequired:
             return None
 
+    def upgrade_outdated_binding_if_lossless(
+        self, work_ref: str, request_id: str
+    ) -> BindingCommitProjection | None:
+        """outdated(field-binding/v2) 판본을 현재 Mapping 에서 다시 확정한다 — **무손실일 때만**.
+
+        v2 판본은 legacy ``type`` 을 버려 표시형을 모른다. 그 결정의 유일한 권위는 Work 의 현재
+        Mapping 이다. 다만 Mapping 이 판본 뒤에 바뀌었을 수 있으므로(저장은 됐지만 확정이 거절된
+        편집), **v2 판본의 모든 규칙이 현재 Mapping 을 v2 모양으로 사영한 것과 정확히 같을 때만**
+        그 Mapping 이 곧 판본의 출처라고 보고 v3 로 다시 확정한다 — 그때 더해지는 것은 판본이
+        잃었던 ``type`` 하나뿐이다. 어긋나면 아무것도 하지 않고 None: capture 가
+        NEEDS_BINDING_SEMANTIC_MIGRATION 으로 닫은 채 남아 편집기 확정(#911)으로 간다.
+        매체는 판본을 쓰는 쪽이 갖는다(hwpx·txt 공용, 값 정책 번역은 확정 몸통이 진다).
+        """
+        job = load_job(self._registry, work_ref)
+        if not job.authority_id:
+            return None
+        workspace_id = self._workspace.get_or_create(self._seal_clock())
+        current = self._capture.read_current_field_binding_review(
+            workspace_id,
+            job.authority_id,
+            _source_schema_keys(job.mapping),
+        )
+        prior = None if current is None else current.prior_revision
+        if (
+            prior is None
+            or prior.field_binding_semantic_contract_id != FIELD_BINDING_SEMANTIC_VERSION_V2
+        ):
+            return None
+        draft = prepare_legacy_field_binding_migration(
+            work_authority_id=job.authority_id,
+            base_template_application_id=prior.base_template_application_id,
+            legacy_entries=_legacy_entries(job.mapping),
+            captured_at=self._seal_clock(),
+        )
+        candidates = {item.field_id: item for item in draft.candidate_rules}
+        for rule in prior.binding_rules:
+            candidate = candidates.get(rule.field_id)
+            if candidate is None or _v2_projection(
+                _rule_from_candidate(candidate, media=job.media)
+            ) != _v2_projection(rule):
+                return None
+        try:
+            return self._commit_mapping_binding(work_ref, request_id, media=job.media)
+        except (FieldBindingReviewRequired, StaleFieldBindingBasis):
+            # 확정이 사용자 결정을 요구하거나 그사이 기준이 움직였다 — 승격하지 않고 blocker 로 남긴다.
+            return None
+
     def commit_txt_mapping(
         self, work_ref: str, request_id: str
     ) -> BindingCommitProjection | None:
@@ -503,6 +552,7 @@ def _rule_from_candidate(
         source_key=candidate.source_key,
         format_code=candidate.format_code,
         canonical_constant_value=candidate.canonical_constant_value,
+        format_kind=candidate.format_kind,
     )
 
 
@@ -529,15 +579,39 @@ def _preserved_inactive_rules(
         return ()
     keep = frozenset(current.review.inactive_only_field_ids())
     candidates = {item.field_id: item for item in draft.candidate_rules}
+    prior_is_current = is_current_field_binding_contract(
+        prior.field_binding_semantic_contract_id
+    )
     preserved: list[FieldBindingRule] = []
     for rule in prior.binding_rules:
         if rule.field_id not in keep:
             continue
         candidate = candidates.get(rule.field_id)
-        preserved.append(
-            rule if candidate is None else _rule_from_candidate(candidate, media=media)
-        )
+        if candidate is not None:
+            preserved.append(_rule_from_candidate(candidate, media=media))
+        elif prior_is_current:
+            preserved.append(rule)
+        # outdated(v2) 판의 규칙은 Mapping 없이는 표시형을 되살릴 수 없다 — 표시형 없음으로
+        # 옮겨 적으면 그 Field 가 다시 활성이 되는 날 다른 글자가 조용히 나간다. 보존하지 않고
+        # 떨군다: 다시 활성이 되면 review 가 NEW_ACTIVE_FIELD 로 세워 확정을 받는다(시끄러운 쪽).
     return tuple(preserved)
+
+
+def _v2_projection(rule: FieldBindingRule) -> tuple[object, ...]:
+    """규칙을 field-binding/v2 가 적던 모양으로 사영한다 — v3 가 더한 표시형 kind 를 뺀다.
+
+    v2 는 legacy ``fmt`` 를 ``fmt or None`` 으로 적었으므로 빈 코드는 None 으로 접는다.
+    """
+    return (
+        rule.field_id,
+        rule.binding_kind,
+        rule.document_content_value_policy.policy_id,
+        rule.source_key,
+        rule.format_code or None,
+        None
+        if rule.canonical_constant_value is None
+        else rule.canonical_constant_value.text,
+    )
 
 
 # migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기

@@ -21,6 +21,8 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     FIELD_BINDING_SEMANTIC_VERSION,
+    FORMAT_KIND_TEXT,
+    FORMAT_KINDS,
     SOURCE,
     SOURCE_SCHEMA_VERSION,
     CanonicalBindingValue,
@@ -30,16 +32,17 @@ from hwpxfiller.domain.field_binding import (
     canonicalize_binding_rules,
     digest_binding_rules,
     digest_source_schema,
+    require_current_field_binding_contract,
     require_field_binding_contract,
     require_single_rule_per_field,
     require_source_schema_contract,
     validate_source_schema_keys,
 )
 
-#: 소스 값을 나르는 legacy 유형(나머지는 const·today 로 따로 갈린다). 값 유형 어휘가
-#: 사라졌으므로 이 집합은 "SOURCE 후보인가"만 가른다 — 미지 유형은 조용히 확장하지 않고
-#: 시끄럽게 거절한다.
-_LEGACY_SOURCE_TYPES = ("text", "date", "amount")
+#: 소스 값을 나르는 legacy 유형(나머지는 const·today 로 따로 갈린다). 이 이름들은 곧 v3
+#: 표시형 kind 다 — legacy 에서도 유형은 값을 검증하지 않고 어느 해석기로 서식할지만 골랐다.
+#: 미지 유형은 조용히 확장하지 않고 시끄럽게 거절한다.
+_LEGACY_SOURCE_TYPES = FORMAT_KINDS
 
 # review 분류 어휘.
 PRESERVED = "PRESERVED"
@@ -112,7 +115,10 @@ class FieldBindingInput:
             "captured_at",
         ):
             _require_nonempty(getattr(self, name), name)
-        require_field_binding_contract(self.field_binding_semantic_contract_id)
+        # 실행 입력은 현재 판만 된다 — outdated(v2) 판본은 표시형 kind 를 잃은 채라 그대로
+        # 실행 입력으로 올리면 그 손실이 문서로 나간다(capture 가 NEEDS_BINDING_SEMANTIC_MIGRATION
+        # 으로 먼저 닫는다; 여기는 그 뒤의 방어선).
+        require_current_field_binding_contract(self.field_binding_semantic_contract_id)
         require_source_schema_contract(self.source_schema_contract_id)
         rules = require_single_rule_per_field(self.binding_rules)
         keys = validate_source_schema_keys(self.source_schema_keys)
@@ -257,7 +263,9 @@ class FieldBindingRevision:
             raise FieldBindingInputIntegrityError(
                 "field_binding_authority_revision 이 내용 content-address 와 불일치"
             )
-        if digest_binding_rules(self.binding_rules) != self.canonical_binding_digest:
+        if digest_binding_rules(
+            self.binding_rules, contract_id=self.field_binding_semantic_contract_id
+        ) != self.canonical_binding_digest:
             raise FieldBindingInputIntegrityError("revision 규칙/digest mismatch")
         if digest_source_schema(self.source_schema_keys) != (
             self.canonical_source_schema_digest
@@ -305,6 +313,8 @@ class MigrationCandidateRule:
     canonical_constant_value: CanonicalBindingValue | None
     proposed_policy_id: str
     whitespace_decision_required: bool
+    #: 표시형 kind(v3) — legacy ``type`` 이 문서 글자를 정하던 결정. ``(None, None)`` = 값 그대로.
+    format_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -351,6 +361,20 @@ def legacy_field_binding_basis_fingerprint(
     return "sha256:" + hasher.hexdigest()
 
 
+def legacy_value_format(legacy_type: str, fmt: str) -> tuple[str | None, str | None]:
+    """legacy 소스 carrier 유형·표시형 코드 → v3 표시형 쌍(정본 모양).
+
+    ``text`` + 빈 코드는 값 그대로라 ``(None, None)`` 이다(같은 뜻의 두 모양 금지). 나머지는
+    ``(type, fmt)`` 그대로 — ``date``·``amount`` 의 빈 코드는 「kind 기본 표시」라는 **결정**이지
+    표시형 없음이 아니다(``24750000`` → ``24,750,000원``). v2 는 이 쌍에서 ``type`` 을 버렸다.
+    """
+    if legacy_type not in _LEGACY_SOURCE_TYPES:
+        raise FieldBindingInputIntegrityError(f"미지원 legacy 유형: {legacy_type!r}")
+    if legacy_type == FORMAT_KIND_TEXT and fmt == "":
+        return None, None
+    return legacy_type, fmt
+
+
 def prepare_legacy_field_binding_migration(
     *,
     work_authority_id: str,
@@ -392,13 +416,16 @@ def prepare_legacy_field_binding_migration(
             raise FieldBindingInputIntegrityError(
                 f"미지원 legacy 유형: {entry.legacy_type!r} ({entry.template_field!r})"
             )
+        format_kind, format_code = legacy_value_format(entry.legacy_type, entry.fmt)
         candidates.append(
             MigrationCandidateRule(
                 field_id=entry.template_field,
                 binding_kind=SOURCE,
                 source_key=entry.source,
                 canonical_constant_value=None,
-                format_code=entry.fmt or None,
+                # legacy ``type``·``fmt`` 쌍을 그대로 옮긴다 — 렌더는 같은 해석기가 한다.
+                format_kind=format_kind,
+                format_code=format_code,
                 # legacy 는 값을 암묵 strip 했다 — 명시 whitespace 결정을 요구한다.
                 proposed_policy_id=DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP.policy_id,
                 whitespace_decision_required=True,

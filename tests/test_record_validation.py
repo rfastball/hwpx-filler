@@ -101,12 +101,12 @@ def _rules():
 def _contracts(**over):
     kw = dict(
         slot_selection_contract_id="slot-selection/v1",
-        field_binding_contract_id="field-binding/v2",
+        field_binding_contract_id="field-binding/v3",
         source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         execution_semantic_contract_id="execution-semantics/v1",
         binding_value_contract_id="binding-value/v2",
-        document_value_resolution_contract_id="document-content-value/v1",
+        document_value_resolution_contract_id="document-content-value/v2",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
         composition_contract_id=COMPOSITION_CONTRACT_ID,
@@ -504,7 +504,7 @@ def test_vdr_binds_plan_basis_contract() -> None:
     assert p["plan_semantic_digest"] == plan_semantic_digest(plan)
     assert p["execution_basis_digest"] == execution_basis_digest(plan.execution_basis)
     assert p["record_validation_contract_id"] == "record-validation/v1"
-    assert p["document_value_resolution_contract_id"] == "document-content-value/v1"
+    assert p["document_value_resolution_contract_id"] == "document-content-value/v2"
     verify_validated_record_completeness(vdr, plan)
 
 
@@ -701,6 +701,71 @@ def test_format_code_unsupported_is_context_error() -> None:
     res = _validate(plan=plan, snapshot=_snapshot([("name", SourceText("x"))]))
     assert isinstance(res, RecordValidationContextError)
     assert res.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
+
+
+def _single_source_plan(value_expression) -> object:
+    rules = (EffectiveFieldBindingRule("f_amount", "SOURCE", value_expression),)
+    binding = EffectiveFieldBindingBasis(
+        effective_active_binding_rules=rules,
+        active_binding_digest=active_binding_digest(rules),
+        required_source_keys=("amount",),
+        required_source_key_set_digest=required_source_key_set_digest(("amount",)),
+    )
+    return build_sealed_plan(
+        execution_basis=_basis(field_binding=binding),
+        active_field_requirements=[{
+            "field_id": "f_amount",
+            "expected_active_occurrence_count": 1,
+            "value_expression": encode_value_expression(value_expression),
+        }],
+        ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": "f_amount"}],
+        plan_schema_version="hwpx-execution-plan/v2",
+    )
+
+
+_STRIP_POLICY_ID = "document-content-value/legacy-strip-v1"
+
+
+@pytest.mark.parametrize(
+    ("kind", "code", "raw", "expected"),
+    [
+        ("amount", "", " 24750000 ", "24,750,000원"),  # legacy 순서: strip → 서식
+        ("amount", "{:,}", "24750000", "24,750,000"),
+        ("date", "kor", "2026-06-15", "2026년 6월 15일"),
+        ("text", "phone", "01012345678", "010-1234-5678"),
+        (None, None, " 원문 ", "원문"),
+    ],
+)
+def test_source_value_is_rendered_with_the_rule_format(kind, code, raw, expected) -> None:
+    """VDR 의 document_value 는 legacy 가 문서에 쓰던 바로 그 글자다(표시형 적용 뒤)."""
+    plan = _single_source_plan(FromSource("amount", code, _STRIP_POLICY_ID, format_kind=kind))
+    res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText(raw))]))
+    assert isinstance(res, ValidatedDataRecord)
+    assert res.document_values_in_order() == (("f_amount", expected),)
+
+
+def test_blank_source_is_marked_not_formatted() -> None:
+    """빈 값은 표식이다 — 서식기에 넘겨 빈 글자·원문으로 흘리지 않는다(legacy 와 같은 표식)."""
+    plan = _single_source_plan(FromSource("amount", "", _POLICY_ID, format_kind="amount"))
+    res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText("  "))]))
+    assert isinstance(res, ValidatedDataRecord)
+    assert res.document_values_in_order() == (("f_amount", missing_value_marker("f_amount")),)
+
+
+@pytest.mark.parametrize(
+    "value_expression",
+    [
+        FromSource("amount", "", _POLICY_ID, format_kind="currency"),  # 모르는 kind
+        FromSource("amount", None, _POLICY_ID, format_kind="amount"),  # kind 에 code 없음
+    ],
+)
+def test_unsupported_value_format_is_context_error_even_on_blank_rows(value_expression) -> None:
+    """모양이 틀린 표시형은 원문으로 풀지 않는다 — 값이 빈 행이어도 같은 context error 다."""
+    plan = _single_source_plan(value_expression)
+    for raw in ("1500", ""):
+        res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText(raw))]))
+        assert isinstance(res, RecordValidationContextError)
+        assert res.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
 
 
 # ─── immutable VDR ref / retention ───────────────────────────────────────────────────────
