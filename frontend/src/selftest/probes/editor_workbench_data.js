@@ -816,15 +816,31 @@ async function probeLintpad(ctx, out) {
     && content.textContent.includes("사유");
   const tag = doc.querySelector(`${canvas} .cm-txtField`);
   if (tag) {
+    /* 합성 mousedown 에는 기본 동작(초점 이동)이 없다 — 편집면이 초점을 쥐어야 CodeMirror 가 제 선택을 DOM 선택으로 쓴다.
+       캐럿은 문서 끝(닫히지 않은 항목 줄)에서 출발하므로, 누른 뒤 이름표의 줄에 섰다면 누름이 캐럿을 옮긴 것이다. */
+    content.focus();
+    await settleRender(ctx);
     const box = tag.getBoundingClientRect();
-    const point = { bubbles: true, cancelable: true, button: 0, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+    const point = { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
     tag.dispatchEvent(new ctx.win.MouseEvent("mousedown", point));
     tag.dispatchEvent(new ctx.win.MouseEvent("mouseup", point));
     await settleRender(ctx);
     const picked = doc.getSelection();
     const shown = doc.querySelector(`${canvas} .cm-txtField`);
-    out.lintpad_tag_caret_outside = !!picked && !!picked.anchorNode && picked.isCollapsed && content.contains(picked.anchorNode)
-      && !!shown && !shown.contains(picked.anchorNode);
+    const anchor = picked && picked.anchorNode;
+    const anchorEl = anchor && (anchor.nodeType === 3 ? anchor.parentElement : anchor);
+    const anchorLine = anchorEl && anchorEl.closest ? (anchorEl.classList && anchorEl.classList.contains("cm-content")
+      ? anchorEl.childNodes[Math.min(picked.anchorOffset, anchorEl.childNodes.length - 1)] : anchorEl.closest(".cm-line")) : null;
+    // 원자 범위: 선택의 두 끝이 모두 이름표 밖이고, 비어 있거나 이름표 하나를 통째로 담는다(토큰 일부만 고르지 않는다).
+    const focusNode = picked && picked.focusNode;
+    const whole = !!picked && !!shown && !picked.isCollapsed && picked.containsNode(shown, false)
+      && picked.toString() === shown.textContent;
+    out.lintpad_tag_caret_outside = !!anchor && !!focusNode && content.contains(anchor) && !!shown
+      && !shown.contains(anchor) && !shown.contains(focusNode) && !!anchorLine && anchorLine === shown.closest(".cm-line")
+      && (picked.isCollapsed || whole);
+    out.lintpad_tag_caret_detail = { collapsed: !!picked && picked.isCollapsed, whole, text: picked ? picked.toString() : "",
+      inContent: !!anchor && content.contains(anchor), inTag: !!shown && ((!!anchor && shown.contains(anchor)) || (!!focusNode && shown.contains(focusNode))),
+      sameLine: !!anchorLine && !!shown && anchorLine === shown.closest(".cm-line"), focused: doc.activeElement === content };
   }
   /* §10 키보드·IME 밴드 — 같은 세션(필드 1 · 닫히지 않은 항목 1 = 문제 1) 위에서 돈다. 예외는
      `kbd_error` 에만 실어 뒤따르는 닫기 보호 단언을 끌고 죽지 않는다. */
