@@ -97,13 +97,14 @@ def _corpus_documents() -> list[str]:
 
 
 @contextmanager
-def _loopback() -> Iterator[str]:
-    """봉인 산출물(rhwp Studio 포함)·동봉 SDK·코퍼스를 한 loopback 원점에서 내준다."""
+def _loopback(generated: Path | None = None) -> Iterator[str]:
+    """봉인 산출물(rhwp Studio 포함)·동봉 SDK·코퍼스(와 만든 문서)를 한 loopback 원점에서 내준다."""
     artifact = resolve_web_artifact(repo_root=REPO_ROOT)
     studio = artifact.root / "rhwp" / "studio" / "index.html"
     assert studio.is_file(), f"봉인 산출물에 rhwp Studio 가 없습니다: {studio}"
     payload = _HARNESS.encode("utf-8")
-    mounts = {"/__sdk__/": SDK_ROOT, "/__corpus__/": CORPUS}
+    mounts = {"/__sdk__/": SDK_ROOT, "/__corpus__/": CORPUS,
+              **({"/__generated__/": generated} if generated is not None else {})}
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
@@ -199,3 +200,48 @@ def test_every_other_corpus_document_roundtrips_editable(
     blocked = {document: kinds for document, kinds in roundtrip_verdicts.items() if kinds}
     assert blocked == NOT_EDITABLE
     assert set(NOT_EDITABLE) <= set(roundtrip_verdicts)
+
+
+def _batch_outputs() -> dict[str, bytes]:
+    """IDE-07 반복 명령의 산출물 — 실습 표본에 한 명령씩 적용한다(같은 문구 4곳을 한 필드로 · 문단마다 선택 4개)."""
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx, same_text_hwpx
+    from hwpxfiller.external.hwpx_package_io import read_hwpx_package
+
+    source = CORPUS / QUICKSTART_CASES[0]
+    entry = "Contents/section0.xml"
+    package = read_hwpx_package(source)
+    selection = {"entry": entry, "paragraph": 2, "start_paragraph": 2, "end_paragraph": 2, "start": 4, "end": 5}
+    sites = [hit["location"] for hit in same_text_hwpx(package, selection) if hit["enabled"]]
+    assert len(sites) == 3, sites
+    fields, _ = apply_hwpx(package, {"type": "create_field", "name": "구분", **selection,
+                                     "ranges": [selection, *sites]})
+    split, _ = apply_hwpx(read_hwpx_package(source), {
+        "type": "create_slot", "entry": entry, "start_paragraph": 2, "end_paragraph": 5,
+        "id": "요청", "label": "요청 내용", "split": "paragraph"})
+    return {"batch-fields.hwpx": fields.to_bytes(), "batch-split.hwpx": split.to_bytes()}
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_GATE_REASON)
+def test_batch_command_outputs_roundtrip_editable(tmp_path: Path) -> None:
+    """IDE-07 — 한 명령 안의 여러 누름틀 삽입·중첩 책갈피 구간이 rhwp 왕복 보존 판정을 깨지 않는다."""
+    from playwright.sync_api import sync_playwright  # 지역 import — 옵트아웃 러너에 playwright 불요
+
+    outputs = _batch_outputs()
+    for name, content in outputs.items():
+        (tmp_path / name).write_bytes(content)
+    verdicts: dict[str, tuple[str, ...]] = {}
+    with _loopback(tmp_path) as base, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="chrome")
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 1000})
+            page.goto(base + _HARNESS_PATH, wait_until="load")
+            page.wait_for_function("() => window.harnessReady === true")
+            for name, content in outputs.items():
+                result = page.evaluate("([u, n]) => window.roundtrip(u, n)", [base + "/__generated__/" + name, name])
+                assert "error" not in result, result
+                verdict = compare_rhwp_roundtrip(content, base64.b64decode(result["exported"]))
+                verdicts[name] = tuple(sorted(item["kind"] for item in verdict["diagnostics"]))
+        finally:
+            browser.close()
+    assert verdicts == {name: () for name in outputs}

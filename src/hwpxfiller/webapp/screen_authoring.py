@@ -25,6 +25,7 @@ from ..external.hwpx_authoring import (
     apply_hwpx,
     available_commands_hwpx,
     available_target_commands_hwpx,
+    same_text_hwpx,
     search_hwpx,
     selected_context_hwpx,
     stray_token_problems,
@@ -827,6 +828,7 @@ class AuthoringController:
             "trial_fill_names": self._do_trial_fill_names,
             "trial": self._do_trial,
             "search": self._do_search,
+            "same_text": self._do_same_text,
             "locate": self._do_locate,
             "commands": self._do_commands,
             "syntax": self._do_syntax,
@@ -1205,6 +1207,26 @@ class AuthoringController:
                 end_unit = len(source[:end].encode("utf-16-le")) // 2
                 hits.append({"kind": "text", "start": start_unit, "end": end_unit, "context": context})
         return self._search_result(hits)
+
+    def _do_same_text(self, p: dict) -> dict:
+        """고른 문구와 같은 다른 평문 자리(IDE-07 P-07) — 필드로 만들기 폼 안의 체크 목록이 그리는 원시 자리.
+
+        자리마다 위치 줄(「N행」·「문단 N」)을 Python 이 짓는다 — 문맥이 같은 두 자리는 행과 강조 글자로 갈린다.
+        """
+        session = self._session(p, revision=True)
+        selection = self._clean_selection(p.get("selection"))
+        if selection is None:
+            return self._search_result([])
+        parsed = self._parse(session.media, session.content)
+        if session.media == "hwpx":
+            hits = same_text_hwpx(parsed, selection)
+            places = [dict.fromkeys(("start_paragraph", "end_paragraph"), hit.pop("anchor")) for hit in hits]
+        else:
+            hits = semantics.same_text_sites("txt", parsed, selection)
+            places = [dict.fromkeys(("begin_marker_line", "end_marker_line"), hit.pop("line")) for hit in hits]
+        # 요약은 검색과 같은 문장이다(같은 생산자) — 자리는 모두 본문이다.
+        return self._search_result([hit | {"kind": "text", "location_label": self._location_label(session.media, place)}
+                                    for hit, place in zip(hits, places, strict=True)])
 
     @staticmethod
     def _search_result(hits: list[dict]) -> dict:

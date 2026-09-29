@@ -1471,3 +1471,54 @@ def test_preview_carries_the_confirm_tier_and_the_created_target(tmp_path: Path)
     located = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 1, "selection": created["location"],
                                        "target": {"kind": "field", "name": "수요기관"}})
     assert [(match["kind"], match["name"]) for match in located["matches"]] == [("field", "수요기관")]
+
+
+def test_same_text_projects_raw_sites_with_location_lines_and_the_search_summary(tmp_path: Path) -> None:
+    """IDE-07 P-07 — 「다른 같은 문구 찾기」: 원시 자리·Python 위치 줄·검색과 같은 요약. 적용은 한 명령이다."""
+    ctrl = _controller(tmp_path)
+    source = "○○시청 귀하\n서명 ○○시청 (인)\n○○시청 ○○시청\n"
+    opened = ctrl.dispatch("new", {"media": "txt", "content": source})
+    sid = opened["session_id"]
+    found = ctrl.dispatch("same_text", {"session_id": sid, "revision": 0, "selection": {"start": 0, "end": 4}})
+    assert found["summary"] == "총 3건 · 본문 3 · 필드 0 · 항목·선택 0"
+    assert [(hit["kind"], hit["location_label"], hit["context"], hit["focus"]["start"]) for hit in found["hits"]] == [
+        ("text", "2행", "서명 ○○시청 (인)", 3), ("text", "3행", "○○시청 ○○시청", 0), ("text", "3행", "○○시청 ○○시청", 5)]
+    assert "line" not in found["hits"][0]
+    empty = ctrl.dispatch("same_text", {"session_id": sid, "revision": 0, "selection": {}})
+    assert empty == {"hits": [], "summary": "총 0건 · 본문 0 · 필드 0 · 항목·선택 0"}
+    with pytest.raises(ValueError, match="고른 위치가 유효하지"):
+        ctrl.dispatch("same_text", {"session_id": sid, "revision": 0, "selection": {"start": 0}})
+    with pytest.raises(ValueError, match="변경"):
+        ctrl.dispatch("same_text", {"session_id": sid, "revision": 3, "selection": {"start": 0, "end": 4}})
+    ranges = [{"start": 0, "end": 4}, *(hit["location"] for hit in found["hits"][1:])]
+    plan = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
+        "type": "create_field", "name": "수요기관", "start": 0, "end": 4, "ranges": ranges}})
+    assert plan["confirm"] == "enter" and plan["affected"] == 3
+    assert plan["included"] == ["○○시청 귀하", "○○시청 ○○시청", "○○시청 ○○시청"]
+    assert plan["created"]["count"] == 3
+    from hwpxfiller.webapp.action_registry import validate_dispatch
+
+    validate_dispatch("authoring", "same_text", {"session_id": "s", "revision": 0, "selection": {}})
+
+
+def test_same_text_on_hwpx_labels_body_paragraph_of_each_site(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path)
+    section = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+        '<hp:p><hp:run><hp:t>○○시청 귀하</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>셀 ○○시청</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>'
+    ).encode("utf-8")
+    package = HwpxPackage()
+    package.entries["mimetype"] = b"application/hwp+zip"
+    package.stored.add("mimetype")
+    package.entries["Contents/section0.xml"] = section
+    opened = ctrl.dispatch("new", {"media": "hwpx", "content": base64.b64encode(package.to_bytes()).decode("ascii")})
+    selection = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0,
+                 "start": 0, "end": 4}
+    found = ctrl.dispatch("same_text", {"session_id": opened["session_id"], "revision": 0, "selection": selection})
+    assert [(hit["location_label"], hit["context"], hit["enabled"]) for hit in found["hits"]] == [
+        ("문단 2", "셀 ○○시청", True)]
+    assert "anchor" not in found["hits"][0]

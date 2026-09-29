@@ -13,6 +13,7 @@ the same words and shapes; the frontend never re-decides any of it.
 
 from __future__ import annotations
 
+import itertools
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -218,6 +219,42 @@ def suggest_field_name(before: str, selected: str, existing: Iterable[str] = ())
     return next((str(name) for name in existing if "".join(str(name).split()) == compact), label)
 
 
+# --------------------------------------------------------------- batch commands (IDE-07)
+#: 「문단마다 선택으로 만들기」(P-11b)의 명령 값 — ``create_slot`` 이 이 값의 ``split`` 을 실으면 고른 문단들이
+#: 항목 하나가 되고 빈 문단을 뺀 문단마다 선택 하나가 된다(한 명령·한 실행 취소).
+SPLIT_PARAGRAPH = "paragraph"
+#: 문단마다 선택의 식별자 머리 — ``선택1…N``.
+SPLIT_OPTION_PREFIX = "선택"
+
+
+def split_mode(command: Mapping[str, object]) -> bool:
+    """``create_slot`` 이 문단마다 선택을 싣는가. 모르는 값은 조용히 한 항목으로 접지 않고 거절한다."""
+    split = command.get("split")
+    if split is None:
+        return False
+    if command.get("type") != "create_slot" or split != SPLIT_PARAGRAPH:
+        raise ValueError(f"알 수 없는 저작 명령입니다: {split!r}")
+    return True
+
+
+def split_option_label(text: str) -> str | None:
+    """문단 한 개의 선택 표시 이름(P-11b) — Python 이 짓는다.
+
+    필드 토큰(``{{…}}``)과 구간 표기를 걷고 남은 중괄호도 뗀 뒤 공백을 접고 앞 20자로 자른다. 구간 표기 라벨의
+    문법(:func:`~hwpxfiller.domain.authoring.marker_label` — ``{{``·``}}``·겹공백 거절)을 늘 통과한다. 비면 None
+    (라벨 없이 식별자만)이다.
+    """
+    # 두 축(필드 토큰·구간 표기)의 스팬은 겹치지 않는다(``scan_text_token_spans`` 와 같은 단일 출처).
+    pieces: list[str] = []
+    end = 0
+    for span in scan_text_token_spans(text):
+        pieces.append(text[end:span.start] + " ")
+        end = span.end
+    pieces.append(text[end:])
+    label = " ".join("".join(pieces).replace("{", " ").replace("}", " ").split())
+    return label[:SUGGESTION_MAX].rstrip() or None
+
+
 # --------------------------------------------------------------- confirmation tier (P-01)
 #: 확인 등급 — ``none`` 은 미리보기를 받자마자 적용, ``enter`` 는 영향을 본 뒤 Enter 한 번 더,
 #: ``button`` 은 위험 단추 누름으로만 적용한다. ui-style 의 계약 명령(이름 변경·범위 확장·삭제)은
@@ -243,6 +280,9 @@ def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
     if action == "delete" or (action == "unwrap" and (preview.get("requires_cascade") or command.get("cascade"))):
         return CONFIRM_BUTTON
     if action in _ENTER_COMMANDS or _identifier_changes(command) or preview.get("expanded"):
+        return CONFIRM_ENTER
+    # 여러 자리 명령(IDE-07): 같은 문구 N곳(``ranges``)·문단마다 선택(``split``)은 포함 자리를 본 뒤 확정한다.
+    if (action == "create_field" and command.get("ranges")) or (action == "create_slot" and command.get("split")):
         return CONFIRM_ENTER
     if action == "create_field" and preview.get("links_existing"):
         return CONFIRM_ENTER
@@ -312,16 +352,28 @@ def rename_field_message(affected: int, name: str) -> str:
 CONTEXT_SPAN = 12
 
 
+def occurrence_context_parts(before: str, focus: str, after: str,
+                             span: int = CONTEXT_SPAN) -> tuple[str, str, str]:
+    """:func:`occurrence_context` 의 세 조각(앞·가운데·뒤) — 표면이 가운데를 강조해 같은 문맥의 두 자리를 가른다."""
+    before, after = (re.sub(r"\s+", " ", part) for part in (before, after))
+    lead = ("…" if len(before) > span else "") + before[-span:]
+    trail = after[:span] + ("…" if len(after) > span else "")
+    return lead, focus, trail
+
+
 def occurrence_context(before: str, focus: str, after: str, span: int = CONTEXT_SPAN) -> str:
     """사용 위치 한 곳의 사람이 읽는 문맥 — 앞뒤 본문 몇 글자와 가운데 표지(§7.2·P10).
 
     필드 명령 문법·원문 표기는 싣지 않는다. 그것은 ``raw`` 와 원문 표기 패널의 몫이다.
     공백 연속은 한 칸으로 줄이고, 잘린 쪽에는 말줄임표를 둔다.
     """
-    before, after = (re.sub(r"\s+", " ", part) for part in (before, after))
-    lead = ("…" if len(before) > span else "") + before[-span:]
-    trail = after[:span] + ("…" if len(after) > span else "")
-    return f"{lead}{focus}{trail}"
+    return "".join(occurrence_context_parts(before, focus, after, span))
+
+
+def context_focus(parts: tuple[str, str, str]) -> dict:
+    """문맥 문자열 안의 가운데 조각 위치(UTF-16) — 표면이 그 글자만 강조한다(판정 아님)."""
+    lead = _unit_length(parts[0])
+    return {"start": lead, "end": lead + _unit_length(parts[1])}
 
 
 def humanize_field_tokens(text: str) -> str:
@@ -338,6 +390,11 @@ def humanize_field_tokens(text: str) -> str:
 
 def text_hit_context(source: str, start: int, end: int) -> str:
     """TXT 본문 검색 결과 한 건의 문맥 — 같은 줄의 앞뒤 본문과 찾은 글자(§6.3). 인자는 code point 위치다."""
+    return "".join(text_hit_parts(source, start, end))
+
+
+def text_hit_parts(source: str, start: int, end: int) -> tuple[str, str, str]:
+    """:func:`text_hit_context` 의 세 조각(앞·찾은 글자·뒤)."""
     line_start = max(source.rfind("\n", 0, start), source.rfind("\r", 0, start)) + 1
     line_end = min((index for index in (source.find("\n", end), source.find("\r", end)) if index >= 0),
                    default=len(source))
@@ -348,8 +405,8 @@ def text_hit_context(source: str, start: int, end: int) -> str:
         if match.start() < end - line_start and start - line_start < match.end():
             start, end = min(start, line_start + match.start()), max(end, line_start + match.end())
             focus = humanize_field_tokens(source[start:end])
-    return occurrence_context(humanize_field_tokens(source[line_start:start]), focus,
-                              humanize_field_tokens(source[end:line_end]))
+    return occurrence_context_parts(humanize_field_tokens(source[line_start:start]), focus,
+                                    humanize_field_tokens(source[end:line_end]))
 
 
 def command_label(command: Mapping[str, object], target: object = None) -> str:
@@ -797,9 +854,10 @@ def _edits(text: str, command: Mapping[str, object], *,
     expanded = False
     if action == "create_field":
         name = _identifier(command.get("name"))
-        if any(match.start() < end and start < match.end() for match in matches):
+        spans = _field_spans(text, command, start, end)
+        if any(match.start() < hi and lo < match.end() for lo, hi in spans for match in matches):
             raise ValueError(REASON_FIELD_OVERLAP)
-        return [(start, end, "{{" + name + "}}")], False, False
+        return [(lo, hi, "{{" + name + "}}") for lo, hi in spans], False, False
     if action == "rename_field":
         old = _identifier(command.get("old_name"))
         new = _identifier(command.get("name"))
@@ -850,6 +908,9 @@ def _edits(text: str, command: Mapping[str, object], *,
         elif any(slot.id == command.get("id") for slot in scan.slots):
             raise ValueError("항목 식별자가 이미 있습니다.")
         eol = _eol(text)
+        if split_mode(command):
+            return [(lo, hi, _split_block(text[lo:hi], command, closed=hi < len(text) or text.endswith(("\r", "\n")),
+                                          eol=eol))], expanded, False
         if hi == len(text) and not text.endswith(("\r", "\n")):
             return [(lo, lo, _marker(kind, command.get("id"), command.get("label")) + eol),
                     (hi, hi, eol + _end_marker(kind))], expanded, False
@@ -926,6 +987,46 @@ def _edits(text: str, command: Mapping[str, object], *,
     raise ValueError(f"알 수 없는 저작 명령입니다: {action!r}")
 
 
+def _field_spans(text: str, command: Mapping[str, object], start: int, end: int) -> list[tuple[int, int]]:
+    """``create_field`` 의 자리들(code point) — ``ranges`` 가 있으면 고른 자리를 포함한 전부다(IDE-07 P-07).
+
+    고른 자리(``start/end``)는 ``ranges`` 안에 있어야 한다. 서로 겹치거나 같은 자리는 필드 겹침 거절이다.
+    """
+    ranges = command.get("ranges")
+    if ranges is None:
+        return [(start, end)]
+    if not isinstance(ranges, list) or not all(isinstance(item, Mapping) for item in ranges):
+        raise ValueError(REASON_INVALID_SELECTION)
+    spans = sorted((_from_utf16(text, item.get("start")), _from_utf16(text, item.get("end"))) for item in ranges)
+    # 같은 문구 N곳이다 — 고른 자리가 들어 있고 모든 자리의 글자가 같아야 한다(옛 좌표를 짐작해 끼우지 않는다).
+    if (start, end) not in spans or any(lo > hi or text[lo:hi] != text[start:end] for lo, hi in spans):
+        raise ValueError(REASON_INVALID_SELECTION)
+    if any(first[1] > second[0] or first == second for first, second in itertools.pairwise(spans)):
+        raise ValueError(REASON_FIELD_OVERLAP)
+    return spans
+
+
+_LINE_BREAKS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+
+
+def _split_block(block: str, command: Mapping[str, object], *, closed: bool, eol: str) -> str:
+    """고른 줄들을 항목 하나로, 빈 줄을 뺀 줄마다 선택 하나로 감싼 새 본문(P-11b) — 표지 줄이 2N+2 늘어난다."""
+    lines = [_marker(PLACEMENT_SLOT, command.get("id"), command.get("label")) + eol]
+    count = 0
+    for piece in block.splitlines(keepends=True):
+        body = piece.rstrip(_LINE_BREAKS)
+        ending = piece[len(body):] or eol
+        if not body.strip():
+            lines.append(body + ending)
+            continue
+        count += 1
+        lines.append(_marker(PLACEMENT_OPTION, f"{SPLIT_OPTION_PREFIX}{count}", split_option_label(body))
+                     + eol + body + ending + _end_marker(PLACEMENT_OPTION) + eol)
+    if not count:
+        raise ValueError(REASON_NO_CONTENT_LINE)
+    return "".join(lines) + _end_marker(PLACEMENT_SLOT) + (eol if closed else "")
+
+
 def _apply_edits(text: str, edits: list[tuple[int, int, str]]) -> str:
     for start, end, replacement in sorted(edits, key=lambda edit: (edit[0], edit[1]), reverse=True):
         text = text[:start] + replacement + text[end:]
@@ -959,6 +1060,9 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         before, after = original, f"[ {name} ]"
         extra = {"links_existing": existing > 0, "existing_count": existing,
                  "candidates": field_candidates(fields)}
+        if command.get("ranges") is not None:
+            # 같은 문구 N곳(P-07): 포함될 자리마다 검색 결과와 같은 문맥 한 줄(문서 차례).
+            included = [text_hit_context(content, lo, hi) for lo, hi, _ in sorted(edits)]
     elif action == "rename_field":
         old = _identifier(command.get("old_name"))
         before, after = old, _identifier(command.get("name"))
@@ -986,6 +1090,12 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         after = included
         included_location = {"start": _to_utf16(content, lo), "end": _to_utf16(content, hi)}
         children, counts = _line_block_children(content, scan, first, last)
+        if split_mode(command):
+            # 문단마다 선택(P-11b): 하위 의미는 만든 뒤의 항목 안 — Python 이 지은 선택 이름이 미리보기에 선다.
+            made = scan_text_structure(result)
+            slot = next(place for place in made.placements
+                        if place.kind == PLACEMENT_SLOT and place.slot_id == command.get("id"))
+            children, counts = _line_block_children(result, made, slot.begin_marker_line, slot.end_marker_line)
         label = command_label(command)
     else:
         target = _target(scan, command)
@@ -1053,6 +1163,63 @@ def apply(media: str, content: str | object, command: Mapping[str, object]) -> t
     return _apply_edits(content, edits), projection
 
 
+def _overlaps(lo: int, hi: int, start: int, end: int) -> bool:
+    """고른 범위(빈 범위면 캐럿)가 ``lo..hi`` 에 닿는가 — 명령 가용성의 겹침 규칙."""
+    return lo <= start <= hi if start == end else lo < end and start < hi
+
+
+def _placement_hits(scan, starts: list[int], start: int, end: int) -> tuple[list, bool]:
+    """범위를 품은 항목·선택, 그리고 범위가 영역 경계를 가로지르는가."""
+    placed = [(place, starts[place.begin_marker_line], starts[place.end_marker_line + 1])
+              for place in scan.placements]
+    hit = [(place, lo, hi) for place, lo, hi in placed if _overlaps(lo, hi, start, end)]
+    containing = [place for place, lo, hi in hit if lo <= start and end <= hi]
+    return containing, any(not (lo <= start and end <= hi) for _, lo, hi in hit)
+
+
+def _create_field_reason(scan, starts: list[int], matches: list, start: int, end: int) -> str | None:
+    """한 범위의 ``create_field`` 판정(TXT) — 명령 가용성과 같은 문구 자리(``same_text``)가 같은 규칙을 쓴다."""
+    if _placement_hits(scan, starts, start, end)[1]:
+        return REASON_MULTI_REGION
+    inside_field = any((match.start() < start < match.end()) if start == end
+                       else (match.start() < end and start < match.end()) for match in matches)
+    return REASON_FIELD_OVERLAP if inside_field else None
+
+
+def same_text_sites(media: str, content: str | object, selection: Mapping[str, object]) -> list[dict]:
+    """고른 문구와 같은 평문 자리 전부(IDE-07 P-07) — 검색의 「같은 문맥은 한 건」 병합 없이 원시 자리다.
+
+    고른 자리와 겹치는 자리, 필드 토큰·구간 표기(문법) 안의 자리는 뺀다. 자리마다 ``enabled/reason`` 은 그 자리를
+    범위로 한 ``create_field`` 판정이다. 문맥이 같은 두 자리는 ``line``(행)과 문맥 안의 찾은 글자 위치(``focus``)로
+    갈린다. 고른 범위가 비었거나 공백뿐이거나 글자를 확정할 수 없으면 빈 목록이다(짐작하지 않는다).
+    """
+    if media != "txt" or not isinstance(content, str):
+        raise ValueError(f"지원하지 않는 저작 형식입니다: {media}")
+    try:
+        start = _from_utf16(content, selection.get("start"))
+        end = _from_utf16(content, selection.get("end"))
+    except ValueError:
+        return []
+    phrase = content[start:end]
+    if not phrase.strip():
+        return []
+    scan = scan_text_structure(content)
+    starts = _line_starts(content)
+    matches = list(iter_field_token_matches(content))
+    grammar = scan_text_token_spans(content)
+    sites: list[dict] = []
+    for found in re.finditer(re.escape(phrase), content):
+        lo, hi = found.span()
+        if (lo < end and start < hi) or any(span.start < hi and lo < span.end for span in grammar):
+            continue
+        parts = text_hit_parts(content, lo, hi)
+        reason = _create_field_reason(scan, starts, matches, lo, hi)
+        sites.append({"location": {"start": _to_utf16(content, lo), "end": _to_utf16(content, hi)},
+                      "line": _line_at(starts, lo), "context": "".join(parts), "focus": context_focus(parts),
+                      "enabled": reason is None, "reason": reason})
+    return sites
+
+
 def available_commands(media: str, content: str | object, selection: Mapping[str, object],
                        context: Mapping[str, object] | None = None) -> list[dict]:
     """Decide which commands the current TXT selection allows and why not (F40, §6.1)."""
@@ -1069,16 +1236,9 @@ def available_commands(media: str, content: str | object, selection: Mapping[str
     scan = scan_text_structure(content)
     starts = _line_starts(content)
     matches = list(iter_field_token_matches(content))
-
-    def overlaps(lo: int, hi: int) -> bool:
-        return lo <= start <= hi if start == end else lo < end and start < hi
-
-    field_hits = [match.group(1).strip() for match in matches if overlaps(match.start(), match.end())]
-    placed = [(place, starts[place.begin_marker_line], starts[place.end_marker_line + 1])
-              for place in scan.placements]
-    hit = [(place, lo, hi) for place, lo, hi in placed if overlaps(lo, hi)]
-    containing = [place for place, lo, hi in hit if lo <= start and end <= hi]
-    crossing = any(not (lo <= start and end <= hi) for _, lo, hi in hit)
+    field_hits = [match.group(1).strip() for match in matches
+                  if _overlaps(match.start(), match.end(), start, end)]
+    containing, _ = _placement_hits(scan, starts, start, end)
     slot_id = context["slot_id"] if "slot_id" in context else next(
         (place.slot_id for place in containing if place.kind == PLACEMENT_SLOT), None)
     option_id = context["option_id"] if "option_id" in context else next(
@@ -1090,10 +1250,7 @@ def available_commands(media: str, content: str | object, selection: Mapping[str
     reasons = shared_reasons(field_hits=field_hits, target_kind=target_kind, has_slot=slot_id is not None,
                              structure_broken=broken)
     alternatives: dict[str, dict] = {}
-    inside_field = any((match.start() < start < match.end()) if start == end
-                       else (match.start() < end and start < match.end()) for match in matches)
-    reasons["create_field"] = (REASON_MULTI_REGION if crossing
-                               else REASON_FIELD_OVERLAP if inside_field else None)
+    reasons["create_field"] = _create_field_reason(scan, starts, matches, start, end)
     if broken:
         reasons["create_slot"] = reasons["create_option"] = REASON_STRUCTURE_FIRST
         return availability_entries(reasons, alternatives)
