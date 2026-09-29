@@ -27,6 +27,7 @@ from ..external.hwpx_authoring import (
     available_target_commands_hwpx,
     search_hwpx,
     selected_context_hwpx,
+    stray_token_problems,
     syntax_view_hwpx,
     trial_hwpx,
 )
@@ -110,6 +111,8 @@ class AuthoringController:
         self._pushed: str | None = None
         #: 문서 척추 투영(UX-09) 캐시 — `session.analysis` 가 **같은 객체**인 동안만 재사용한다.
         self._outline_cache: dict[str, tuple[object, dict]] = {}
+        #: 저작 문제(IDE-05) 캐시 — `session.analysis`·`session.content` 가 **같은 객체**인 동안만 재사용한다.
+        self._lint_cache: dict[str, tuple[object, object, list[dict]]] = {}
         #: 연결 작업 유무(NG-09) 캐시 — 세션별 (저장 경로, 판정). 스냅숏마다 작업 파일을 다시 훑지 않는다.
         #: 저장 경로가 바뀌면 다시 재고, 활성화·외부 변경 확인(창 초점)·영향 확인·초기 스냅숏에서 버린다.
         self._linked_cache: dict[str, tuple[str, bool]] = {}
@@ -278,29 +281,42 @@ class AuthoringController:
         return owners[0]["id"], options[0] if len(options) == 1 else None
 
     @staticmethod
+    def _document_position(
+        media: str, location: object, section_rank: dict[str, int] | None,
+    ) -> tuple[int, int] | None:
+        """문서 차례의 자리 (구역 차례, 문단·글자) — 개요 척추(UX-09)와 문제 목록(IDE-05)이 같은 열쇠를 쓴다.
+
+        HWPX 는 구역 차례와 본문 문단이다(셀 안은 그 표를 담은 본문 문단). TXT 는 글자 offset 이다. 좌표가 없으면 None.
+        """
+        if not isinstance(location, dict):
+            return None
+        if media == "hwpx":
+            missing = len(section_rank) if section_rank is not None else 0
+            entry = location.get("entry")
+            primary = (section_rank.get(entry, missing) if section_rank is not None and isinstance(entry, str)
+                       else missing)
+            cell_path = location.get("cell_path")
+            secondary = (cell_path[0].get("parent_paragraph")
+                         if isinstance(cell_path, list) and cell_path and isinstance(cell_path[0], dict)
+                         else location.get("start_paragraph", location.get("paragraph")))
+        else:
+            primary, secondary = 0, location.get("start")
+        return (primary, secondary) if type(secondary) is int else None
+
+    @staticmethod
     def _assign_outline_order(
         media: str, slots: list[dict], fields: list[dict], section_rank: dict[str, int] | None,
     ) -> None:
         """문서 전체에 걸친 순서(UX-09) — 항목 < 선택 < 그 안의 사용 위치, 좌표 없는 것은 뒤로(안정 정렬)."""
-        missing = len(section_rank) if section_rank is not None else 0
         seq = itertools.count()
         entries: list[tuple[dict, tuple]] = []
 
         def key(location: dict | None, kind_rank: int, extra: int) -> tuple:
             index = next(seq)
-            if location is None:
+            position = AuthoringController._document_position(media, location, section_rank)
+            if position is None:
                 return (1, 0, 0, 0, 0, index)
-            if media == "hwpx":
-                entry = location.get("entry")
-                primary = (section_rank.get(entry, missing) if section_rank is not None and isinstance(entry, str)
-                           else missing)
-                secondary = location.get("start_paragraph")
-            else:
-                primary = 0
-                secondary = location.get("start")
-            if type(secondary) is not int:
-                return (1, 0, 0, 0, 0, index)
-            return (0, primary, secondary, kind_rank, extra, index)
+            return (0, *position, kind_rank, extra, index)
 
         for slot in slots:
             entries.append((slot, key(slot.get("location"), 0, 0)))
@@ -375,8 +391,7 @@ class AuthoringController:
         return {"trial_state": state, "trial_state_label": _TRIAL_STATE_LABELS[state],
                 "trial_state_message": message}
 
-    @staticmethod
-    def _readiness(session: AuthoringSession) -> dict:
+    def _readiness(self, session: AuthoringSession) -> dict:
         """Draft vs ready is decided by the structure diagnostics alone (F35, §9.1, AC14).
 
         The counts come from the same `_problems` list the 문제 tab shows (IDE-01), so the status bar
@@ -384,7 +399,7 @@ class AuthoringController:
         """
         structure_errors = [item for item in session.analysis.get("diagnostics", [])
                             if item.get("severity") == semantics.SEVERITY_ERROR]
-        severities = [item.get("severity") for item in AuthoringController._problems(session)]
+        severities = [item.get("severity") for item in self._problems(session)]
         errors = severities.count(semantics.SEVERITY_ERROR)
         warnings = severities.count(semantics.SEVERITY_WARNING)
         return {
@@ -410,13 +425,39 @@ class AuthoringController:
         return {"state": "limited", "editable": False, "message": _COMPATIBILITY_SUMMARY,
                 "diagnostics": list(session.rhwp_diagnostics)}
 
-    @staticmethod
-    def _problems(session: AuthoringSession) -> list[dict]:
-        """Template defects only: structure diagnostics and compatibility warnings (F24, §7.1).
+    def _authoring_lint(self, session: AuthoringSession) -> list[dict]:
+        """Authoring warnings (IDE-05 #1051): whitespace-only field-name variants, and for HWPX plain-text
+        ``{{이름}}`` left outside fields. They never change draft/ready — only the warning count."""
+        cached = self._lint_cache.get(session.id)
+        if cached is not None and cached[0] is session.analysis and cached[1] is session.content:
+            return cached[2]
+        lint = semantics.authoring_lint(session.media, session.analysis)
+        if session.media == "hwpx":
+            lint += stray_token_problems(self._parse(session.media, session.content))
+        self._lint_cache[session.id] = (session.analysis, session.content, lint)
+        return lint
 
+    def _problems(self, session: AuthoringSession) -> list[dict]:
+        """Template defects: structure diagnostics, authoring lint and compatibility warnings (F24, §7.1).
+
+        Problems with a location come in document order — the outline's key (`_document_position`) — and the
+        location-less ones (compatibility warnings) last, each group keeping its own order.
         Trial-input gaps are not template defects; they are projected as `trial_missing` (IDE-01).
         """
-        problems = list(session.analysis.get("diagnostics", []))
+        found = [*session.analysis.get("diagnostics", []), *self._authoring_lint(session)]
+        section_rank = ({entry: index for index, entry in enumerate(self._section_entries(session.content))}
+                        if session.media == "hwpx" and any(item.get("location") for item in found) else None)
+
+        def order(pair: tuple[int, dict]) -> tuple:
+            index, item = pair
+            location = item.get("location")
+            position = self._document_position(session.media, location, section_rank)
+            if position is None:
+                return (1, 0, 0, 0, index)
+            start = location.get("start") if session.media == "hwpx" and isinstance(location, dict) else None
+            return (0, *position, start if type(start) is int else -1, index)
+
+        problems = [item for _, item in sorted(enumerate(found), key=order)]
         if session.rhwp_editable is False:
             problems.append({
                 "severity": semantics.SEVERITY_WARNING, "category": semantics.CATEGORY_COMPATIBILITY,
@@ -511,6 +552,8 @@ class AuthoringController:
                 del self._projection_revisions[key]
             for session_id in [sid for sid in self._outline_cache if sid not in self.sessions]:
                 del self._outline_cache[session_id]
+            for session_id in [sid for sid in self._lint_cache if sid not in self.sessions]:
+                del self._lint_cache[session_id]
             for session_id in [sid for sid in self._linked_cache if sid not in self.sessions]:
                 del self._linked_cache[session_id]
             return {
@@ -1213,7 +1256,8 @@ class AuthoringController:
         if target is not None:
             if not isinstance(target, dict):
                 raise ValueError(_BAD_PAYLOAD)
-            return self._locate_target(session, target, selection)
+            return {**self._locate_target(session, target, selection),
+                    "problems_here": self._problems_here(session, selection)}
         start, end = selection.get("start"), selection.get("end")
         if type(start) is not int or type(end) is not int or start < 0 or end < 0:
             return self._invalid_locate()
@@ -1323,7 +1367,57 @@ class AuthoringController:
                             "name_suggestion": (semantics.suggest_field_name(
                                 found[0], found[1], [item["name"] for item in session.analysis.get("fields", [])])
                                 if found is not None else None)},
-                "commands": self._commands(session, selection, context)}
+                "commands": self._commands(session, selection, context),
+                "problems_here": self._problems_here(session, selection)}
+
+    def _problems_here(self, session: AuthoringSession, selection: dict) -> list[int]:
+        """문제 목록(`problems`) 가운데 지금 캐럿·선택과 겹치는 것의 순번(IDE-05) — 위치 줄 메시지의 원천.
+
+        겹침은 여기서만 판정한다. 캐럿은 자리 안이거나 자리 바로 뒤이면 그 자리다 — 다만 줄 전체 자리
+        (줄바꿈까지)의 끝은 다음 줄의 머리이므로 들지 않는다. HWPX 는 같은 구역·셀의 문단이 겹치면 그 자리이고,
+        자리와 선택이 둘 다 한 문단의 글자 범위를 가지면 글자로 가른다.
+        """
+        start, end = selection.get("start"), selection.get("end")
+        if session.media == "txt":
+            if type(start) is not int or type(end) is not int or not 0 <= start <= end:
+                return []
+            text = session.content.decode("utf-8")
+
+            def hit(location: dict) -> bool:
+                low, high = location.get("start"), location.get("end")
+                if type(low) is not int or type(high) is not int:
+                    return False
+                if start != end:
+                    return low < end and start < high
+                if low <= start < high:
+                    return True
+                if start != high or high <= low:
+                    return False
+                at = semantics.from_utf16(text, high)
+                return 0 < at <= len(text) and text[at - 1] not in "\r\n"
+        else:
+            entry = selection.get("entry")
+            first = selection.get("start_paragraph", selection.get("paragraph"))
+            last = selection.get("end_paragraph", first)
+            if not isinstance(entry, str) or type(first) is not int or type(last) is not int or last < first:
+                return []
+            cell_path = selection.get("cell_path")
+
+            def hit(location: dict) -> bool:
+                if location.get("entry") != entry or location.get("cell_path") != cell_path:
+                    return False
+                low_p = location.get("start_paragraph", location.get("paragraph"))
+                high_p = location.get("end_paragraph", low_p)
+                if type(low_p) is not int or type(high_p) is not int or not (low_p <= last and first <= high_p):
+                    return False
+                low, high = location.get("start"), location.get("end")
+                if (first != last or low_p != high_p or type(low) is not int or type(high) is not int
+                        or type(start) is not int or type(end) is not int):
+                    return True
+                return low <= start <= high if start == end else low < end and start < high
+
+        return [index for index, problem in enumerate(self._problems(session))
+                if isinstance(problem.get("location"), dict) and hit(problem["location"])]
 
     def _context_label(self, session: AuthoringSession, slot_id: object, option_id: object,
                        span: dict | None) -> str | None:

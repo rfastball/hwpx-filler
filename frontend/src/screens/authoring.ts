@@ -1,6 +1,7 @@
 import { createElement as h, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
+import type { LintpadPair, LintpadProblem } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import { COMMANDS } from "./authoring_controller.ts";
 import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
@@ -45,7 +46,7 @@ const rowList = (label: string, rows: ReactNode[], className = "") => rows.lengt
 const sectionLabel = (text: string, props: Obj = {}) => h("h2", { className: "authoring-section-label", ...props }, text);
 const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
-const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성" };
+const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", authoring: "필드" };
 /** 식별자 변경은 고급 정보지만 기존 작업 연결에 닿는 영향은 숨기지 않는다(U06·F19). */
 const IDENTIFIER_IMPACT = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다.";
 
@@ -160,8 +161,34 @@ export function filterMatch(query: string, ...texts: unknown[]): boolean {
 }
 /** 문제의 다음 행동(§7.2): navigate 는 그 위치로 선택을 옮기고, command 는 Python 이 준 명령을 미리보기로 보낸다.
  *  옮기기는 독에서 시작한 선택이라 문제 탭을 남긴다(NG-06 keepDock) — 속성 패널은 열지 않는다. */
-export function problemAction(controller: Pick<AuthoringController, "select" | "preview">, item: Obj, problem: Obj, action: Obj): Promise<unknown> {
-  return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target }, { keepDock: true });
+/** 문제 행의 명령 행동(자동 수정·필드 연결 변경·누름틀 변환)이 낸 미리보기인가 — 그 행동을 돌려준다. 문제 탭은 그
+ *  미리보기를 「수정 제안」으로 보이고 그 행동 이름으로 확정한다(새 이름을 짓지 않는다). */
+export function problemFix(problems: Obj[] | undefined, command: Obj | null | undefined): Obj | null {
+  if (!command) return null;
+  const wanted = JSON.stringify(command);
+  for (const problem of problems || []) for (const action of problem.actions || [])
+    if (action.kind === "command" && JSON.stringify(action.command) === wanted) return action;
+  return null;
+}
+
+/** TXT 편집면의 문제 표지(IDE-05) — Python 문제 가운데 글자 자리(`location.start/end`)가 있는 것만, 문장·심각도 그대로다. */
+export function txtProblemMarks(problems: Obj[] | undefined): LintpadProblem[] {
+  return (problems || []).filter((problem) => typeof problem.location?.start === "number" && typeof problem.location?.end === "number")
+    .map((problem) => ({ severity: String(problem.severity), start: problem.location.start, end: problem.location.end, message: String(problem.message || "") }));
+}
+
+/** 표지 짝(IDE-05) — Python `analysis.placements` 의 여는 표지 줄 머리(`start`)와 닫는 표지 줄(`end` 바로 앞 글자). 짝은 계산하지 않는다. */
+export function markerPairs(analysis: Obj): LintpadPair[] {
+  return (analysis.placements || []).filter((place: Obj) => typeof place.start === "number" && typeof place.end === "number" && place.end > place.start)
+    .map((place: Obj) => ({ open: place.start, close: place.end - 1 }));
+}
+
+export async function problemAction(controller: Pick<AuthoringController, "select" | "preview" | "applyPreview">, item: Obj, problem: Obj, action: Obj): Promise<unknown> {
+  if (action.kind !== "command") return controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target }, { keepDock: true });
+  // 명령 행동도 Python 확인 등급(P-01)을 따른다 — `none`(예: 누름틀 변환)은 곧바로 적용하고, 그 밖은 문제 탭의 「수정 제안」에서 확정한다.
+  const prepared = await controller.preview(action.command);
+  if (prepared && !prepared.refusal && prepared.confirm === "none") await controller.applyPreview(prepared);
+  return prepared;
 }
 
 type MenuEvent = { clientX: number; clientY: number; anchorTop?: number; target?: unknown; preventDefault?(): void };
@@ -439,6 +466,9 @@ export function submitProperties(controller: Pick<AuthoringController, "guarded"
 function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj; active: boolean; shell: ShellInput }) {
   const host = useRef<HTMLDivElement>(null);
   const adapter = useRef<AuthoringEditor | null>(null);
+  // 장식이 읽는 최신 문제 목록(IDE-05) — TXT 의 문제는 분석과 같은 투영에서 오므로 분석 revision 이 바뀔 때 함께 바뀐다.
+  const latest = useRef(item);
+  latest.current = item;
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
@@ -473,7 +503,8 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             }
             // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
-            updateLintpad(handle, { spans });
+            // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
+            updateLintpad(handle, { spans, problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
           },
         };
         release = () => disposeLintpad(handle);
@@ -1400,6 +1431,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
         ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
         h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }))));
+    const fix = key === "problems" && view.preview ? problemFix(item.problems, view.command) : null;
     // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
     // 문제 한 건은 행이다(UX-09): 심각도 글자 칩 · 종류 · 설명 · 흐린 대상. 이동하는 다음 행동(「원문으로 이동」)은 그 행 자체이고
     // 그 동사가 행 이름의 첫머리·툴팁으로 남는다. 명령형 다음 행동(구조 표기 수정 등)은 행 곁의 보조 단추다.
@@ -1417,9 +1449,10 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
             : h("div", { className: "authoring-row static" }, chip, h("span", { className: "authoring-row-text" }, ...body), problem.target ? h("span", { className: "authoring-row-context" }, problem.target) : null),
           ...actions.filter((action) => action !== navigate).map((action: Obj, actionIndex: number) => button(action.label, act(() => problemAction(controller, item, problem, action)), { key: actionIndex })));
       })),
-      view.command?.type === "repair_marker" && view.preview && h("div", { className: "authoring-preview" },
+      // 문제 행의 명령 행동이 낸 미리보기는 이 탭에서 확인·확정한다 — 확정 단추는 그 행동의 이름이다(구조 표기 자동 수정만 기존 이름).
+      fix && h("div", { className: "authoring-preview" },
         h("h3", null, "수정 제안"), h("pre", { role: "group", "aria-label": "변경 전" }, view.preview.before), h("pre", { role: "group", "aria-label": "변경 후" }, view.preview.after),
-        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ preview: null })), primary("구조 표기 수정", act(controller.applyPreview)))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ preview: null })), primary(view.command.type === "repair_marker" ? "구조 표기 수정" : fix.label, act(controller.applyPreview)))));
     if (key === "external_changed") return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "외부 파일 변경" }, h("h2", null, "외부 파일 변경"),
       h("div", { className: "authoring-actions start" },
         button("양쪽 내용 확인", act(controller.compareExternal)), ...externalVerbs(false)));

@@ -397,6 +397,13 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left:1px dashed var(--n-border-strong)}
 /* 구조 트리가 가리키는 TXT 범위(마우스·초점이 줄에 머문 동안) — 줄 면과 왼쪽 막대, 본문은 밀리지 않는다. */
 .authoring-document .cm-authoring-highlight{background:var(--a-sel);box-shadow:inset 3px 0 0 var(--a-primary)}
+/* 원인 자리 문제(IDE-05) — 별도 장식 층의 밑줄이다. 오류는 물결, 경고는 점선으로 색이 아니라 선 모양으로도 가르고,
+   표지 위 title 이 Python 문장이다. 문서 모드에서도 선다. 필드 강조의 아래 선과 겹치지 않게 조금 띄운다. */
+.authoring-document .cm-authoring-problem-error,.authoring-document .cm-authoring-problem-warning{text-decoration-line:underline;text-decoration-thickness:2px;text-underline-offset:4px;text-decoration-skip-ink:none}
+.authoring-document .cm-authoring-problem-error{text-decoration-style:wavy;text-decoration-color:var(--a-danger)}
+.authoring-document .cm-authoring-problem-warning{text-decoration-style:dotted;text-decoration-color:var(--a-warn)}
+/* 표지 짝(IDE-05) — 캐럿이 선 표지 줄의 짝 줄에 옅은 줄 면. 구조 트리 강조보다 약하다(왼쪽 막대 없음). */
+.authoring-document .cm-authoring-pair{background:color-mix(in srgb,var(--a-sel) 55%,transparent)}
 @media(forced-colors:active){
   .authoring-tree [role=treeitem][data-kind=slot]>[role=group],.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left-color:CanvasText}
   .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
@@ -407,4 +414,6 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-crumb[aria-current=location]{outline:1px solid CanvasText}
   .authoring-status-link{color:LinkText}
   .authoring-document .cm-authoring-highlight{outline:2px solid Highlight;outline-offset:-2px}
+  .authoring-document .cm-authoring-problem-error,.authoring-document .cm-authoring-problem-warning{text-decoration-color:CanvasText}
+  .authoring-document .cm-authoring-pair{outline:1px dashed CanvasText;outline-offset:-1px}
 }

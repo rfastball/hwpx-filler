@@ -272,6 +272,9 @@ _FORCED = """<!doctype html>
 <link rel="stylesheet" href="./{css_path}"></head><body>
 <p><span id="field" class="cm-txtField">{{{{공고명}}}}</span> <span id="marker" class="cm-txtMarker">{{{{#항목 a 안내}}}}</span></p>
 <p><button type="button" id="link" class="authoring-status-link">구조 오류 1개</button> <a id="ref" href="#ref">참조</a></p>
+<div class="authoring-document"><div id="pair" class="cm-line cm-authoring-pair">{{{{/항목}}}}</div>
+<div class="cm-line"><span id="error" class="cm-authoring-problem-error">{{{{#항목 a}}}}</span>
+<span class="cm-txtField"><span id="warning" class="cm-authoring-problem-warning">{{{{공고 명}}}}</span></span></div></div>
 </body></html>
 """
 
@@ -279,7 +282,13 @@ _MEASURE_FORCED = """() => ({...Object.fromEntries(["field", "marker"].map((id) 
   const s = getComputedStyle(document.getElementById(id));
   return [id, {shadow: s.boxShadow, bottom: `${s.borderBottomWidth} ${s.borderBottomStyle}`,
                left: `${s.borderLeftWidth} ${s.borderLeftStyle}`}];
-})), link: getComputedStyle(document.getElementById("link")).color, ref: getComputedStyle(document.getElementById("ref")).color})"""
+})), link: getComputedStyle(document.getElementById("link")).color, ref: getComputedStyle(document.getElementById("ref")).color,
+  ink: getComputedStyle(document.body).color,
+  pair: `${getComputedStyle(document.getElementById("pair")).outlineStyle}`,
+  ...Object.fromEntries(["error", "warning"].map((id) => {
+    const s = getComputedStyle(document.getElementById(id));
+    return [id, {line: s.textDecorationLine, style: s.textDecorationStyle, color: s.textDecorationColor}];
+  }))})"""
 
 
 @pytest.mark.browser
@@ -312,6 +321,15 @@ def test_lintpad_spans_stay_distinct_in_forced_colors() -> None:
     assert plain["field"]["bottom"].startswith("0px") and plain["field"]["shadow"] != "none", plain
     # IDE-01: 상태 막대 입구는 강제 색상에서 링크 색(LinkText)이다 — 단추 글자색(ButtonText)으로 뭉개지지 않는다.
     assert active["link"] == active["ref"], active
+    # IDE-05: 문제 밑줄은 선 모양으로 갈린다(오류 물결·경고 점선) — 필드 강조 안에서도 제 층의 밑줄이다.
+    for measured_mode in (active, plain):
+        assert (measured_mode["error"]["line"], measured_mode["error"]["style"]) == ("underline", "wavy"), measured_mode
+        assert (measured_mode["warning"]["line"], measured_mode["warning"]["style"]) == ("underline", "dotted"), measured_mode
+    # 평시에는 심각도 색(서로 다르다), 강제 색상에서는 둘 다 본문 잉크(CanvasText)로 보인다.
+    assert plain["error"]["color"] != plain["warning"]["color"], plain
+    assert active["error"]["color"] == active["warning"]["color"] == active["ink"], active
+    # 짝 줄의 옅은 면은 강제 색상에서 사라지므로 점선 윤곽이 대신 선다.
+    assert active["pair"] == "dashed" and plain["pair"] == "none", (active, plain)
 
 
 # ---------------------------------------------------------------- IDE-04 결과 시험 첫 결과

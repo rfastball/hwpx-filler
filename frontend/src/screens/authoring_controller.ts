@@ -31,6 +31,20 @@ type Deps = {
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
 };
 
+/** 위치 줄 메시지(IDE-05)의 내용 — locate 가 판정한 `problems_here`(문제 목록 순번) 가운데 첫 문제의 심각도와 Python 문장.
+ *  겹침은 Python 이 판정했다. 여기서는 순번으로 문제를 찾을 뿐이다. `source: "problem"` 은 캐럿이 옮길 때 이 메모를
+ *  다음 판정까지 남겨 둘지(깜박임 없이) 가르는 표지다. */
+export function problemNote(problems: Obj[] | undefined, here: unknown): { message: string; severity?: "error" | "warning"; source: "problem" } | null {
+  if (!Array.isArray(here)) return null;
+  for (const index of here) {
+    const problem = typeof index === "number" ? problems?.[index] : undefined;
+    if (!problem?.message) continue;
+    const severity = problem.severity === "error" || problem.severity === "warning" ? problem.severity : undefined;
+    return { message: String(problem.message), ...(severity ? { severity } : {}), source: "problem" };
+  }
+  return null;
+}
+
 /** 편집기 선택 좌표만 남긴다 — 선택 대상 객체(이름·종류 등)가 섞인 뷰 선택을 편집기 좌표 모양으로 되돌린다. */
 const COORDINATE_KEYS = ["start", "end", "entry", "paragraph", "start_paragraph", "end_paragraph", "cell_path"];
 export function coordinates(selection: Obj | null | undefined): Obj {
@@ -142,6 +156,17 @@ export function createAuthoringController(deps: Deps) {
     if (!message) return;
     update({ selectionNote: { message, ...(severity ? { severity } : {}) } });
     announce(message);
+  }
+
+  /** 지금 자리의 문제(IDE-05)를 위치 줄에 세운다 — 같은 문제가 그대로면 다시 읽지 않는다(캐럿이 한 자리 안에서
+   *  움직일 때마다 읽지 않는다). 문제가 없으면 문제 메모만 걷고 다른 사유(F2 등)는 그대로 둔다. */
+  function problemHere(id: string, here: unknown) {
+    const next = problemNote(tab(id).problems, here);
+    const prior = view.selectionNote;
+    if (!next) { if (prior?.source === "problem") update({ selectionNote: null }); return; }
+    if (prior?.source === "problem" && prior.message === next.message && prior.severity === next.severity) return;
+    update({ selectionNote: next });
+    announce(next.message);
   }
 
   function changed(id: string, content: string): void {
@@ -317,9 +342,11 @@ export function createAuthoringController(deps: Deps) {
       const located = target.source_revision != null
         ? await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) }) : null;
       navigationHistory.push(previous);
-      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], ...(options.keepDock ? {} : { panel: "properties", formEntry: "" }), refusal: null, preview: null, command: null, selectionNote: null,
+      const prior = view.selectionNote?.source === "problem" ? view.selectionNote : null;
+      update({ selected: { ...location, ...(located?.selected || target) }, selection: location, matches: located?.matches || [], ...(options.keepDock ? {} : { panel: "properties", formEntry: "" }), refusal: null, preview: null, command: null, selectionNote: prior,
         context: located?.context || view.context || {}, commands: await commandsFor(id, located, location),
         commandType: target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined });
+      problemHere(id, located?.problems_here);
       if (location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null)
         await editors.get(id)?.focus(place);
     } catch (error) {
@@ -514,7 +541,9 @@ export function createAuthoringController(deps: Deps) {
     const request = (selectionRequests.get(id) || 0) + 1;
     selectionRequests.set(id, request);
     // 캐럿이 옮겨 가면 위치 줄 메모(F2 불가 사유 등)는 걷힌다(IDE-01) — 같은 자리의 재보고는 이동이 아니다.
-    update({ selection, matches: [], context: {}, ...(same ? {} : { selectionNote: null }) });
+    // 문제 메모(IDE-05)는 다음 판정이 올 때까지 남는다 — 같은 문제 안의 이동에서 깜박이지 않고, 판정이 걷거나 바꾼다.
+    const keepNote = same || (view.selectionNote?.source === "problem" && Object.keys(selection).length > 0);
+    update({ selection, matches: [], context: {}, ...(keepNote ? {} : { selectionNote: null }) });
     scheduleRemember(id);
     if (!Object.keys(selection).length) return;
     await flush(id);
@@ -529,6 +558,7 @@ export function createAuthoringController(deps: Deps) {
     update({ matches, commands, context: result.context || {}, ...(!retain ? {
       selected: matches.length === 1 && !matches[0].approximate ? { ...matches[0].location, ...matches[0] } : null,
     } : {}) });
+    problemHere(id, result.problems_here);
   }
 
   return {
