@@ -630,7 +630,7 @@ def test_inactive_source_missing_key_unresolved() -> None:
 
 def test_output_name_value_resolution_failed_code_is_retired() -> None:
     """타입 대조가 유일 생산자였다 — 어휘째 퇴역하고 문안도 함께 걷혔다."""
-    from hwpxfiller.webapp.current_execution_preparation import DELIVERY_BLOCKER_PHRASES
+    from hwpxfiller.external.current_execution_preparation import DELIVERY_BLOCKER_PHRASES
 
     assert not hasattr(gd, "OUTPUT_NAME_VALUE_RESOLUTION_FAILED")
     assert "OUTPUT_NAME_VALUE_RESOLUTION_FAILED" not in DELIVERY_BLOCKER_PHRASES
@@ -905,20 +905,14 @@ def test_materialization_input_port_rejects_plan_ref_mismatch() -> None:
         port.resolve(bad)
 
 
-def test_adapter_types_distinct_and_guarantee_only_managed() -> None:
+def test_guarantee_is_owned_only_by_the_managed_adapter() -> None:
     plan = _plan()
     mgp = _managed(plan, (_snapshot(),))
     managed = gd.ManagedPlanMaterializationAdapter(managed_plan=mgp)
-    slotless = gd.LegacySlotlessGenerationAdapter(transitional_reason="legacy")
-    cont = gd.LegacyContinuationGenerationAdapter(previous_output_base="C:/old", transitional_reason="cont")
-    assert type(managed) is not type(slotless) is not type(cont)
     assert gd.has_s5_exact_delivery_guarantee(managed) is True
-    assert gd.has_s5_exact_delivery_guarantee(slotless) is False
-    assert gd.has_s5_exact_delivery_guarantee(cont) is False
-    # managed adapter 는 Plan+VDR MaterializationInput 을 낸다(legacy generator 입력으로 변환 0).
+    assert gd.has_s5_exact_delivery_guarantee(object()) is False
+    # managed adapter 는 Plan+VDR MaterializationInput 을 낸다(다른 생성기 입력으로 변환 0).
     assert all(isinstance(mi, gd.MaterializationInput) for mi in managed.materialization_inputs())
-    # continuation 은 applied Candidate 로 취급하지 않는다.
-    assert gd.continuation_is_applied_candidate(cont) is False
 
 
 def test_slotless_managed_bridge_same_contract() -> None:

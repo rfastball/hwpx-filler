@@ -3,7 +3,7 @@
 slot 없는 HWPX 를 legacy generator 로 보내던 admission(exact applied Candidate bytes staging +
 실행 구성 provenance 판정)은 문서 생성 경로가 managed 하나가 되며 사라졌다. slot 유무와 무관하게
 봉인·물질화·배달을 타고, 실행 bytes 의 무결성·구간 표기 검문은 managed 파이프라인
-(:mod:`hwpxfiller.webapp.managed_generation`)이 같은 코드로 진다.
+(:mod:`hwpxfiller.external.managed_generation`)이 같은 코드로 진다.
 """
 
 from __future__ import annotations

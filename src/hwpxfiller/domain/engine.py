@@ -1,98 +1,29 @@
-"""HWPX 생성 엔진 — VBA ``modHWPXEngine`` 의 포트.
+"""HWPX 템플릿 엔진 — 요구 필드 판독(사전검증·CLI ``--fields``·실행뷰).
 
-메모리 내에서 컨테이너를 열어 대상 XML 에 필드를 주입하고 새 HWPX 로 저장한다.
-원본과 달리 임시 폴더 언집/재압축이 없다(순수 zipfile).
+종전 이 자리는 VBA ``modHWPXEngine`` 포트인 legacy 생성(``generate`` → ``GenerateResult``)도
+소유했다. 문서 생성은 managed materialization 하나가 되어(#1081 PR3) 그 갈래는 퇴역했고,
+남은 것은 필드 판독뿐이다.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from collections.abc import Mapping
 from typing import Callable
 
 from hwpxcore.text_extract import PackageLike
 
-from .fields import FieldDocument, FillNote, field_xml_names
-
-
-@dataclass
-class GenerateResult:
-    ok: bool
-    output_path: str
-    # 실제로 값이 주입된 필드명들
-    applied: "set[str]" = field(default_factory=set)
-    # 데이터에 있었으나 템플릿에서 매칭 실패한 필드명들
-    unmatched: "set[str]" = field(default_factory=set)
-    # 채움이 "경고 후 진행"으로 처리한 사실들(#154) — 호출측이 표면화할 의무
-    notes: "list[FillNote]" = field(default_factory=list)
-    error: str = ""
+from .fields import FieldDocument, field_xml_names
 
 
 class HwpxEngine[PackageT: PackageLike]:
-    """단일 템플릿 + 데이터 → 단일 HWPX 파일.
+    """템플릿 경로 → 요구 누름틀 이름.
 
-    경로 읽기·쓰기는 주입된 ``read_package``/``write_package``가 소유한다(P3-03, #591 —
-    의미론 층은 concrete IO 를 개시하지 않는다). concrete 결속은
-    :func:`hwpxfiller.external.hwpx_engine.make_hwpx_engine` 이 조립한다.
+    경로 읽기는 주입된 ``read_package`` 가 소유한다(P3-03, #591 — 의미론 층은 concrete IO 를
+    개시하지 않는다). concrete 결속은 :func:`hwpxfiller.external.hwpx_engine.make_hwpx_engine`
+    이 조립한다.
     """
 
-    def __init__(
-        self,
-        read_package: "Callable[[str], PackageT]",
-        write_package: "Callable[[str, PackageT], None]",
-    ):
+    def __init__(self, read_package: "Callable[[str], PackageT]"):
         self._read_package = read_package
-        self._write_package = write_package
-
-    def generate(
-        self,
-        template_path: str,
-        data: "Mapping[str, object]",
-        output_path: str,
-    ) -> GenerateResult:
-        try:
-            pkg = self._read_package(template_path)
-        except Exception as exc:  # noqa: BLE001 - 상위에서 결과로 보고
-            return GenerateResult(False, output_path, error=f"템플릿 열기 실패: {exc}")
-
-        applied: set[str] = set()
-        notes: "list[FillNote]" = []
-        # **주어진 키는 전부 주입한다** — 빈 값도 값이다(U6 §2.10). 종전에는 VBA 판박이로
-        # 빈 값을 건너뛰어 누름틀 안내 문구가 그대로 남았는데, 그 자리가 이제 사람의 명시
-        # 선언(빈 고정값)이 도착하는 자리다. 「비운다」는 답이 「손대지 않는다」로 새면 문서에
-        # 안내 문구가 실려 나간다. 값이 없어 비는 자리는 여기 오기 전에 표식(MISSING_MARKER)
-        # 으로 바뀌므로, 여기 남은 빈 문자열은 언제나 선언이다.
-        active = {k: str(v) for k, v in data.items()}
-
-        try:
-            for name in field_xml_names(pkg):
-                doc = FieldDocument(pkg.entries[name], entry=name)
-                for key, val in active.items():
-                    if doc.set_field(key, val):
-                        applied.add(key)
-                notes.extend(doc.notes)
-                # 실제 텍스트가 바뀐 문서만 재직렬화(#95) — 매칭만 되고 값이 기존과
-                # 같은 재채움은 원본 바이트(유효 캐시 포함)를 그대로 둔다. 이로써
-                # "재작성된 XML + 캐시 잔존" 조합은 불가능: 재작성 ⇔ modified ⇔ 스트립.
-                if doc.modified:
-                    pkg.entries[name] = doc.to_bytes()
-        except Exception as exc:  # noqa: BLE001
-            return GenerateResult(False, output_path, error=f"XML 처리 실패: {exc}")
-
-        try:
-            self._write_package(output_path, pkg)
-        except Exception as exc:  # noqa: BLE001
-            return GenerateResult(False, output_path, error=f"저장 실패: {exc}")
-
-        unmatched = set(active) - applied
-        return GenerateResult(
-            True,
-            output_path,
-            applied=applied,
-            unmatched=unmatched,
-            # 노트는 템플릿 구조 사실 — XML 여러 개에 걸쳐도 한 번씩(순서 보존 dedupe)
-            notes=list(dict.fromkeys(notes)),
-        )
 
     def required_fields(self, template_path: str) -> "list[str]":
         """템플릿이 요구하는 누름틀 이름 전체(사전검증용)."""

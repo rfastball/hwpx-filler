@@ -26,6 +26,7 @@ from hwpxfiller.application.fresh_execution_observation import (
 )
 from hwpxfiller.application.jobs import Job
 from hwpxfiller.application.field_binding_input import (
+    FieldBindingReviewRequired,
     StaleFieldBindingBasis,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -34,14 +35,14 @@ from hwpxfiller.application.seal_execution_plan import RouteResolutionError
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.work_configuration_store import WorkspaceMetadataStore
 from hwpxfiller.host.locations import default_template_authority_dir
-from hwpxfiller.webapp.seal_execution_plan_product import (
+from hwpxfiller.external.seal_execution_plan_product import (
     ExecutionPlanSealedProductOutcome,
     ExecutionQualificationBlockedProductOutcome,
 )
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 
-import hwpxfiller.webapp.seal_execution_plan_service as service_module
+import hwpxfiller.external.seal_execution_plan_service as service_module
 from tests.test_execution_compilation import WORK
 from tests.test_seal_execution_capture_runner import WS, _seed_v2_work
 
@@ -543,3 +544,139 @@ def test_mapping_basis_change_during_commit_writes_no_revision(
         service.commit_current_mapping(WORK_REF, "binding-stale")
 
     assert not WorkFieldBindingStore(root / "field_bindings").exists(WORK)
+
+
+# ─── 낮은 층위 branch — 권위 미발급·매체 불일치·방어적 갈래 ──────────────────────────────
+def test_reads_return_none_before_authority_is_issued(tmp_path) -> None:
+    """권위(``Job.authority_id``)가 아직 없으면 workspace 조차 만들지 않고 None(발급 0)."""
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = JobRegistry(tmp_path / "jobs")
+    registry.save(Job(name=WORK_REF, template_path="managed.hwpx"))  # authority_id 미발급
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+
+    assert service.managed_run_context(WORK_REF) is None
+    assert service.current_binding_review(WORK_REF) is None
+    assert service.upgrade_outdated_binding_if_lossless(WORK_REF, "r1") is None
+    assert WorkspaceMetadataStore(root).read() is None
+
+
+def test_commit_mapping_binding_returns_none_when_media_does_not_match_the_job(
+    tmp_path,
+) -> None:
+    """저장한 Job 의 매체(hwpx)와 다른 매체로 확정을 부르면(txt) 아무것도 하지 않는다."""
+    service = _service(tmp_path, with_binding=True)
+    assert service.commit_txt_mapping(WORK_REF, "r1") is None
+
+
+def test_commit_mapping_binding_raises_when_current_review_is_unreadable(
+    tmp_path, monkeypatch
+) -> None:
+    """capture 가 current Active Field 구조를 못 읽으면(None) 확정은 검토 요구로 닫는다."""
+    service = _service(tmp_path, with_binding=True)
+    monkeypatch.setattr(
+        service._capture, "read_current_field_binding_review", lambda *a, **k: None
+    )
+    with pytest.raises(FieldBindingReviewRequired):
+        service.commit_current_mapping(WORK_REF, "r1")
+
+
+def test_current_application_field_structure_raises_when_capture_returns_none(
+    tmp_path, monkeypatch
+) -> None:
+    """두 번째 확정부터 쓰는 basis 콜백 — capture 가 현재 구조를 못 돌려주면 StaleFieldBindingBasis."""
+    root = default_template_authority_dir()
+    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
+    service = _service(tmp_path, with_binding=True)
+    first = service.commit_current_mapping(WORK_REF, "r1")
+    assert first is not None
+    # 첫 호출은 review 자체가 이 구조를 이미 한 번 읽는 통로다 — 그 호출은 실물을 그대로
+    # 돌려주고, commit 몸통이 basis 콜백으로 부르는 **두 번째부터**만 None 을 흉내낸다.
+    real = service._capture.current_application_field_structure
+    calls = {"n": 0}
+
+    def sometimes_none(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real(*a, **k)
+        return None
+
+    monkeypatch.setattr(service._capture, "current_application_field_structure", sometimes_none)
+    with pytest.raises(StaleFieldBindingBasis):
+        service.commit_current_mapping(WORK_REF, "r2")
+
+
+def test_upgrade_outdated_binding_returns_none_when_the_commit_itself_is_blocked(
+    tmp_path, monkeypatch
+) -> None:
+    """무손실 승격 조건은 서지만, 실제 확정이 검토를 요구하면 승격하지 않고 None.
+
+    (v3 판본을 v2 표기로 재작성해 「무손실」 조건은 자연히 만족시키고, 확정 몸통
+    ``_commit_mapping_binding`` 만 seam 하나로 가로채 검토-요구 예외를 강제한다 — 그 경로가
+    실제로 나는 것은 활성 Field 가 새로 생긴 사이 좁은 창뿐이라 정상 흐름에서 재현하기
+    어렵다.)
+    """
+    import dataclasses
+
+    from hwpxfiller.application.stored_field_binding import ApplicationRevisionPointer
+    from hwpxfiller.domain.field_binding import (
+        FIELD_BINDING_SEMANTIC_VERSION_V2,
+        digest_binding_rules,
+    )
+    from hwpxfiller.application.field_binding_input import (
+        field_binding_authority_revision_identity,
+    )
+
+    root = default_template_authority_dir()
+    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
+    service = _service(tmp_path, with_binding=True)
+    committed = service.commit_current_mapping(WORK_REF, "r1")
+    assert committed is not None
+    store = WorkFieldBindingStore(root / "field_bindings")
+    current = load_current_revision(store, WORK, "app-1")
+    assert current is not None
+    v2_rules = current.binding_rules
+    digest = digest_binding_rules(v2_rules, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2)
+    revision_id = field_binding_authority_revision_identity(
+        work_authority_id=current.work_authority_id,
+        base_template_application_id=current.base_template_application_id,
+        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
+        source_schema_contract_id=current.source_schema_contract_id,
+        raw_record_contract_id=current.raw_record_contract_id,
+        canonical_binding_digest=digest,
+        canonical_source_schema_digest=current.canonical_source_schema_digest,
+    )
+    v2 = dataclasses.replace(
+        current,
+        field_binding_authority_revision=revision_id,
+        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
+        binding_rules=v2_rules,
+        canonical_binding_digest=digest,
+    )
+    stored = store.load(WORK)
+
+    def mutate(aggregate):
+        pointers = tuple(
+            ApplicationRevisionPointer(p.application_id, revision_id)
+            if p.application_id == "app-1"
+            else p
+            for p in aggregate.current_by_application
+        )
+        return dataclasses.replace(
+            aggregate,
+            aggregate_version=aggregate.aggregate_version + 1,
+            current_by_application=pointers,
+            immutable_binding_revisions=aggregate.immutable_binding_revisions + (v2,),
+        )
+
+    store.update(WORK, stored.aggregate_version, mutate)
+    assert load_current_revision(store, WORK, "app-1").field_binding_semantic_contract_id == (
+        FIELD_BINDING_SEMANTIC_VERSION_V2
+    )
+
+    def refuse(*_a, **_k):
+        raise FieldBindingReviewRequired("X", "새 활성 Field 에 결정이 필요합니다")
+
+    monkeypatch.setattr(service, "_commit_mapping_binding", refuse)
+
+    assert service.upgrade_outdated_binding_if_lossless(WORK_REF, "r2") is None

@@ -29,7 +29,8 @@ web
 
 Windows pywebview/WebView2 안에서 실행하는 웹 UI다. 브라우저 SaaS나 모바일 제품이 아니다.
 문서 만들기와 문서 작업에서 템플릿·연결·파일명을 구성한다. 구체적인 개체와 저장·실행
-규칙은 [작업 흐름](docs/workflow.md)이 소유한다.
+규칙은 [작업 흐름](docs/workflow.md)이 소유한다. 자동화용 CLI(`hwpxfiller`)는 같은 생성 경로를
+창 없이 실행하며 `--ledger` 원장은 화면과 같은 `managed-delivery/v1` 형식이다.
 
 ## Capabilities and Constraints
 

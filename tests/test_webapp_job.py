@@ -35,9 +35,9 @@ from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp import active_work_session as active_work_module
 from hwpxfiller.webapp.pool_column import POOL_ROW_KEYS, session_data_row
 from hwpxfiller.webapp.job_presentation import filename_source_columns
-from hwpxfiller.webapp import template_change as template_change_module
+from hwpxfiller.external import template_change as template_change_module
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator, TemplateChangeError
+from hwpxfiller.external.template_change import TemplateChangeCoordinator, TemplateChangeError
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -174,7 +174,7 @@ def _controller(
 def _managed_services(reg, root=None) -> dict:
     """앱 조립(`WebFrontend`)과 같은 서비스 한 벌 — root 기본값은 테스트별 앱 홈의 authority 폴더."""
     from hwpxfiller.host.locations import default_template_authority_dir
-    from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+    from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
     from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
     from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
 
@@ -4055,7 +4055,7 @@ def _fake_delivery(oks, *, errors=(), cancelled_at=None):
         DeliveryAborted,
         DeliveryCompleted,
     )
-    from hwpxfiller.webapp.managed_generation import ManagedRunCancelled
+    from hwpxfiller.external.managed_generation import ManagedRunCancelled
 
     errs = list(errors)
 

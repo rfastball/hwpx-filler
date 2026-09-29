@@ -10,8 +10,6 @@ import pytest
 from hwpxfiller.application.execution_capture import (
     APPLIED_TEMPLATE_CANDIDATE,
     APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-    CONTINUATION_BASE_NOT_SUPPORTED,
-    CONTINUATION_OUTPUT_DOCUMENT,
     EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR,
     FIELD_BINDING_INPUT_INTEGRITY_ERROR,
     MATERIALIZATION_BASE_CONTRACT_ID,
@@ -36,8 +34,6 @@ from hwpxfiller.application.execution_capture import (
     ExactTemplateQualificationContext,
     ExecutionCaptureContextError,
     ExecutionCaptureIntegrityError,
-    LegacyContinuationGenerationAdapter,
-    ManagedPlanMaterializationAdapter,
     QualificationProfileSemanticPayload,
     ResolvedSealPolicy,
     WorkRouteRef,
@@ -498,23 +494,6 @@ def test_wrong_materialization_contract_is_dependency_context_error():
     result = _judge(resolved_seal_policy=_policy(mat="other/v1"))
     assert isinstance(result, ExecutionCaptureContextError)
     assert result.code == EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR
-
-
-def test_continuation_is_policy_block():
-    result = _judge(resolved_seal_policy=_policy(base=CONTINUATION_OUTPUT_DOCUMENT))
-    assert isinstance(result, CapturedExecutionPolicyBlock)
-    assert result.policy_code == CONTINUATION_BASE_NOT_SUPPORTED
-
-
-def test_legacy_and_managed_adapter_type_separation():
-    legacy = LegacyContinuationGenerationAdapter()
-    managed = ManagedPlanMaterializationAdapter()
-    assert type(legacy) is not type(managed)
-    assert not isinstance(legacy, ManagedPlanMaterializationAdapter)
-    # legacy 는 exact/Plan-bound provenance 를 주장하지 않는다.
-    assert legacy.claims_exact_guarantee is False
-    assert legacy.claims_plan_bound_provenance is False
-    assert managed.claims_exact_guarantee is True
 
 
 def test_execution_structure_schema_must_match_declared_schema():

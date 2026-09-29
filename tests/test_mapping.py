@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.domain.lint import similarity
 from hwpxfiller.domain.format_engine import presets
 from hwpxfiller.domain.mapping import (
@@ -474,14 +473,13 @@ def test_end_to_end_api_record_fills_real_template(tmp_path):
             FieldMapping("개찰일시", "opengDate", type="date"),
         ]
     )
-    data = profile.apply(rec)
-    out = tmp_path / "generated.hwpx"
-    result = make_hwpx_engine().generate(template, data, str(out))
+    # 실제 문서는 GUI·CLI 와 같은 managed 경로로 만든다(#1081 PR3) — 프로파일은 연결 판본이
+    # 되고 표시형은 판본이 같은 해석기로 렌더한다. 프로파일이 덮지 않는 필드는 비움으로 확정.
+    from _managed_fill import generate, only_document
 
-    assert result.ok
-    assert {"입찰공고번호", "공고명", "추정가격", "개찰일시"} <= result.applied
+    document = only_document(generate(tmp_path, template, profile, [rec]))
     # 생성물에 변환된 값이 실제로 들어갔는지 바이트로 확인.
-    pkg = read_hwpx_package(out)
+    pkg = read_hwpx_package(document.absolute_path)
     text = b"".join(pkg.entries[n] for n in pkg.content_xml_names()).decode("utf-8")
     assert "R26BK01561738" in text
     assert "65,454,545원" in text

@@ -46,27 +46,27 @@ from ..application.slotless_run_bridge import (
     STRUCTURE_NOTATION_UNCOMPILED,
 )
 from ..domain.raw_data_record import RawDataRecordSnapshot
-from ..external.candidate_store import CandidateObjectStore
-from ..external.artifact_observation import (
+from .candidate_store import CandidateObjectStore
+from .artifact_observation import (
     ArtifactObservationRefused,
     observe_delivered_artifact,
 )
-from ..external.delivery_coordinator import (
+from .delivery_coordinator import (
     DeliveredDocument,
     DeliveryCompleted,
     DeliveryExecutionResult,
     deliver_current_documents,
 )
-from ..external.materialization_runner import ProductionMaterializationRunner
-from ..external.materialization_start_gate import (
+from .materialization_runner import ProductionMaterializationRunner
+from .materialization_start_gate import (
     CurrentBasisDigestReader,
     StartMaterializationResult,
     start_materialization,
 )
-from ..external.materialization_runner import store_backed_structure_resolver
-from ..external.qualification_store import QualificationObjectStore
-from ..external.template_inspection import hwpx_structure_marker_count
-from ..external.work_template_store import AtomicWorkTemplateStateStore
+from .materialization_runner import store_backed_structure_resolver
+from .qualification_store import QualificationObjectStore
+from .template_inspection import hwpx_structure_marker_count
+from .work_template_store import AtomicWorkTemplateStateStore
 
 # record 검증 거절의 재진술 코드 — UI 검증(resolve/record 준비)이 이미 통과한 뒤라, 여기서
 # 나면 준비와 실행 사이에 무언가 움직였다는 뜻이다(조용히 진행하지 않는다).

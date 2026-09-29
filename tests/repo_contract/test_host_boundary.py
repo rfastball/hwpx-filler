@@ -20,7 +20,6 @@ INWARD_ROOTS = (
     SRC / "hwpxfiller" / "viewmodel",
 )
 INWARD_FILES = (
-    SRC / "hwpxfiller" / "batch.py",
     SRC / "hwpxfiller" / "naming.py",
 )
 

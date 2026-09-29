@@ -77,7 +77,7 @@ from ..viewmodel.work_candidates import (
 )
 from .action_registry import ZONE_MUTATIONS
 from .active_work_session import ActiveWorkSession
-from .template_change import (
+from ..external.template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
     unsupported_zone,
 )
@@ -105,7 +105,7 @@ from ..domain.raw_data_record import (
 )
 from ..domain.field_binding import FieldBindingError
 from .slot_configuration_product import SlotConfigurationProductError
-from .current_execution_preparation import (
+from ..external.current_execution_preparation import (
     CurrentRecordCaptureError as _CurrentRecordCaptureError,
     capture_selected_records,
     current_record_identity,

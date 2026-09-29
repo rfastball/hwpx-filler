@@ -22,7 +22,7 @@ from hwpxfiller.domain.raw_data_record import (
 )
 from hwpxfiller.external.delivery_coordinator import DeliveryCompleted, DeliveryRefused
 from hwpxfiller.external.runtime_capability import admitted_runtime_conformance_registry
-from hwpxfiller.webapp.managed_generation import (
+from hwpxfiller.external.managed_generation import (
     RECORD_VALIDATION_BLOCKED,
     ManagedReadBackFailed,
     ManagedRunCancelled,
@@ -125,7 +125,7 @@ def test_read_back_failure_is_a_distinct_state_that_keeps_delivered_facts(
     배선을 잰다: 완주 뒤 delivered 순서로 관찰이 돌고, 첫 거절에서 그 항목의 ordinal 과
     사유가 재조립 없이 실려 나온다.
     """
-    import hwpxfiller.webapp.managed_generation as mg
+    import hwpxfiller.external.managed_generation as mg
     from hwpxfiller.external.artifact_observation import (
         ARTIFACT_DIGEST_MISMATCH,
         ArtifactObservationRefused,
@@ -283,3 +283,84 @@ def test_foreign_plan_against_this_authority_fails_closed(tmp_path) -> None:
             ),
         )
     assert list(out.iterdir()) == []
+
+
+# ═══ 낮은 층위 branch — 방어적 갈래 ═══════════════════════════════════════════════════
+def test_unreadable_candidate_bytes_refuse_with_content_integrity_error(
+    tmp_path, monkeypatch
+) -> None:
+    """Candidate blob 은 조달됐지만 marker 스캐너가 열지 못하면 fail-closed 로 닫는다.
+
+    실제 corrupt-zip candidate 를 조달 경로로 세우는 대신 스캐너 seam 하나만 주입한다
+    (``hwpx_structure_marker_count`` 는 스캐너 단일 출처라 여기서 다시 세지 않는다 — 검문할
+    것은 「그 예외를 제품 상태로 번역하는가」뿐이다).
+    """
+    import hwpxfiller.external.managed_generation as mg
+    from hwpxfiller.application.slotless_run_bridge import (
+        APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+    )
+
+    case, registry, manifest, basis, out = _kit(tmp_path)
+
+    def boom(_exact_bytes):
+        raise ValueError("bytes 를 열 수 없다")
+
+    monkeypatch.setattr(mg, "hwpx_structure_marker_count", boom)
+    result = _run(
+        case, registry, manifest, basis, out, tmp_path,
+        [_snapshot("r1", "홍길동", "1000")], ["공고서-001.hwpx"],
+    )
+    assert isinstance(result, ManagedRunRefused)
+    assert result.code == APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR
+    assert "bytes 를 열 수 없다" in result.detail
+    assert list(out.iterdir()) == []  # 검문은 안착 전 — write 0
+
+
+def test_record_validation_context_error_is_restated_not_swallowed(tmp_path) -> None:
+    """검증기가 (user-fixable) blocked 도 valid 도 아닌 context error 를 내면 그대로 재진술한다.
+
+    준비 층(``current_execution_preparation``)이 이미 통과시킨 뒤라, 실행에서 나는 context
+    error 는 준비↔실행 사이의 무결성 이동이다 — fallback 없이 그 code·detail 을 그대로 올린다.
+    """
+    import dataclasses
+
+    case, registry, manifest, basis, out = _kit(tmp_path)
+    snap = _snapshot("r1", "홍길동", "1000")
+    tampered = dataclasses.replace(
+        snap, _values={**dict(snap._values), "이름": SourceText("TAMPERED")}
+    )
+    result = _run(case, registry, manifest, basis, out, tmp_path, [tampered], ["a.hwpx"])
+    assert isinstance(result, ManagedRunRefused)
+    assert result.code  # 검증기 사유의 재진술(빈 코드 없음)
+    assert list(out.iterdir()) == []
+
+
+def test_plan_resolver_rejects_an_unknown_plan_ref(tmp_path) -> None:
+    """process-local plan resolver 는 고정 digest 하나만 내준다 — 다른 ref 는 위조로 닫는다.
+
+    이 resolver 는 ``run_managed_generation`` 안의 지역 closure 라 바깥에서 부를 수 없다.
+    ``MaterializationInputPort`` 조립 seam 하나만 가로채 그 closure 를 붙잡고, 고의로 다른
+    ref 를 넣어 방어적 KeyError 갈래를 직접 잰다(다른 모든 호출은 항상 같은 digest 를 쓰므로
+    이 갈래는 정상 흐름에서 나지 않는다).
+    """
+    import hwpxfiller.external.managed_generation as mg
+
+    case, registry, manifest, basis, out = _kit(tmp_path)
+    captured: dict[str, object] = {}
+    real_port = mg.MaterializationInputPort
+
+    def spying_port(*, plan_resolver, vdr_store):
+        captured["resolver"] = plan_resolver
+        return real_port(plan_resolver=plan_resolver, vdr_store=vdr_store)
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(mg, "MaterializationInputPort", spying_port)
+        _run(
+            case, registry, manifest, basis, out, tmp_path,
+            [_snapshot("r1", "홍길동", "1000")], ["공고서-001.hwpx"],
+        )
+    assert "resolver" in captured
+    with pytest.raises(KeyError):
+        captured["resolver"]("sha256:" + "0" * 64)

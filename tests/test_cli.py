@@ -167,6 +167,12 @@ def test_profile_maps_source_keys_to_template_fields(tmp_path):
 
 # ------------------------------------------------------------- 생성 원장(--ledger)
 def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
+    """--ledger 는 GUI 「문서 만들기」와 같은 managed 배달 원장을 남긴다(#1081 PR3).
+
+    종전 legacy 원장(``hwpx-fill-ledger`` — 매핑 행·미리보기·원천 프로파일)은 legacy 생성기와
+    함께 퇴역했다. 지금 원장은 봉인 basis·plan digest 와 문서별 처분·output digest 를 싣는
+    ``managed-delivery/v1`` 이고, CLI 는 그 위에 데이터 출처 포인터를 더한다.
+    """
     data = _xlsx(tmp_path / "d.xlsx",
                  [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
 
@@ -183,20 +189,16 @@ def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
     # 실행별 타임스탬프 파일명(RC-02) — 고정 이름이 아니라 fill-ledger-<시각>.json.
     (sidecar,) = list(out.glob("fill-ledger-*.json"))
     payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert payload["kind"] == "hwpx-fill-ledger"
+    assert payload["ledger_kind"] == "managed-delivery/v1"
+    assert payload["outcome"] == "DeliveryCompleted"
     assert payload["source"] == f"file:{data}"           # 포인터-온리
-    (entry,) = payload["outputs"]
-    assert entry["ok"] and entry["verify_error"] == ""
-    rows = {r["field"]: r for r in entry["rows"]}
-    # dry-run 결과값 + 생성물 되읽기 증거(주장 아닌 관측).
-    assert rows["입찰공고번호"]["preview_text"] == "R26BK00000001"
-    assert rows["입찰공고번호"]["injected"] is True
-    assert rows["공고명"]["injected"] is True
-    # 소스 실제형 프로파일 — 잠정 라벨은 추정 표기.
-    profs = {p["key"]: p for p in payload["profiles"]}
-    assert profs["추정가격"]["samples"] == ["12000000"]
-    assert profs["추정가격"]["tentative_type"] == "정수(추정)"
-    assert "HWPX 렌더" in capsys.readouterr().err       # 미리보기 ≠ 렌더 고지
+    assert payload["execution_basis_digest"].startswith("sha256:")
+    assert payload["plan_semantic_digest"].startswith("sha256:")
+    (doc,) = payload["delivered"]
+    assert doc["relative_path"] == "공고-R26BK00000001.hwpx"
+    assert doc["collision_disposition"] == "WRITE_NEW"
+    assert doc["output_digest"].startswith("sha256:")
+    assert "[원장]" in capsys.readouterr().err
 
 
 def test_ledger_rerun_accumulates_evidence(tmp_path):
@@ -272,6 +274,27 @@ def test_cli_case_twins_do_not_overwrite_each_other(tmp_path):
     ]
 
 
+def test_cli_filename_token_must_be_a_template_field(tmp_path, capsys):
+    """파일명 토큰은 연결된 템플릿 필드로 푼다(#1081 PR3) — 필드가 아닌 원천 열은 exit 1·0건.
+
+    종전 legacy 생성은 매핑된 레코드의 아무 키로나 이름을 지었다. managed 배달 계획은 GUI 와
+    같이 연결 판본으로만 토큰을 풀므로, 풀 수 없는 토큰은 문서를 만들기 전에 거절한다.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.append([*FIELDS, "관리번호"])
+    ws.append(["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00", "K-1"])
+    data = tmp_path / "d.xlsx"
+    wb.save(data)
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", str(data), "--out", str(out),
+               "--pattern", "공고-{{관리번호}}"])
+    assert rc == 1
+    assert not out.exists() or _outputs(out) == []
+    err = capsys.readouterr().err
+    assert "[오류]" in err and "OUTPUT_NAME_TOKEN_UNRESOLVED" in err
+
+
 # ------------------------------------------------------- 빈값 게이트(RC-03, ADR-E)
 def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
     """값이 빈 필드는 기본 차단(exit 1) — GUI 와 동일 입력에서 문서 내용이 갈라지지 않는다."""
@@ -303,8 +326,15 @@ def test_cli_ack_empty_injects_marker(tmp_path):
 
 
 def test_cli_ack_empty_ledger_records_marker_evidence(tmp_path):
-    """--ack-empty + --ledger — 원장이 문서 실상(표식 주입)을 증거한다(RC-03 원장 갈림 봉합)."""
+    """--ack-empty + --ledger — 원장이 표식이 든 **그 문서**를 가리킨다(RC-03 원장 갈림 봉합).
+
+    원장은 문서별 output digest 를 싣는다 — 표식 주입 여부는 digest 가 가리키는 실물 문서가
+    증거다(값 미리보기를 원장에 따로 적어 두 사실이 갈리게 하지 않는다).
+    """
+    import hashlib
     import json as _json
+
+    from hwpxfiller.domain.fields import read_fields
 
     data = _xlsx(tmp_path / "d.xlsx",
                  [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
@@ -314,11 +344,10 @@ def test_cli_ack_empty_ledger_records_marker_evidence(tmp_path):
     assert rc == 0
     (sidecar,) = list(out.glob("fill-ledger-*.json"))
     payload = _json.loads(sidecar.read_text(encoding="utf-8"))
-    rows = {r["field"]: r for r in payload["outputs"][0]["rows"]}
-    # 표식 주입 필드: 미충족(missing)으로 분류 + 실제 들어간 값(표식) 되읽기 증거.
-    assert rows["입찰공고번호"]["status"] == "missing"
-    assert rows["입찰공고번호"]["preview_text"] == "〘미입력·입찰공고번호〙"
-    assert rows["입찰공고번호"]["injected"] is True
+    (entry,) = payload["delivered"]
+    doc = out / entry["relative_path"]
+    assert entry["output_digest"] == "sha256:" + hashlib.sha256(doc.read_bytes()).hexdigest()
+    assert read_fields(read_hwpx_package(doc))["입찰공고번호"] == "〘미입력·입찰공고번호〙"
 
 
 # --------------------------------------------------------------- 나라장터 소스
@@ -421,8 +450,9 @@ def test_nara_without_profile_warns(tmp_path, monkeypatch, capsys):
     out = tmp_path / "out"
     rc = main(["--template", TEMPLATE, "--source", "nara",
                "--service-key", "DUMMY", "--bgn", "202606010000", "--end", "202606302359",
-               "--out", str(out), "--pattern", "x-{{bidNtceNo}}"])
-    # 프로파일 없이도 실행은 되지만(영문키라 대부분 빈칸) 경고를 낸다.
+               "--out", str(out)])
+    # 프로파일 없이도 실행은 되지만(영문키라 대부분 빈칸) 경고를 낸다. 파일 이름 토큰은
+    # 템플릿 필드로 풀리므로(#1081 PR3) 원천 영문 키 대신 기본 패턴(예약 토큰)을 쓴다.
     assert rc == 0
     assert "--profile 없이는" in capsys.readouterr().err
 

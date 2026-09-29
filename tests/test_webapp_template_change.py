@@ -39,8 +39,8 @@ from hwpxfiller.application.jobs import load_job
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.webapp import template_change as tc
-from hwpxfiller.webapp.template_change import (
+from hwpxfiller.external import template_change as tc
+from hwpxfiller.external.template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
     SUPPORTED_MEDIA,
     SourceDrift,
@@ -681,3 +681,113 @@ def test_view_drops_change_token_unless_ready():
         preparation_token="pt", change_token="ct",
     )
     assert view["status"] == "applied" and view["change_token"] is None
+
+
+# ─── 낮은 층위 branch — 권한·port 계약·진단 조회의 방어적 갈래 ─────────────────────────
+def test_apply_with_a_non_local_actor_is_refused(tmp_path):
+    """단일 사용자 데스크톱 — token 과 별개로 actor 를 매 요청 재확인한다."""
+    _reg, _tpl, coord, token = _ready(tmp_path)
+    with pytest.raises(TemplateChangeError):
+        coord.apply("공고서", token, actor="다른사용자")
+    # 거절은 상태를 바꾸지 않는다 — 같은 token 이 정상 actor 로는 그대로 적용된다.
+    assert coord.apply("공고서", token)["status"] == "applied"
+
+
+def test_work_state_read_port_returns_none_for_a_missing_aggregate(tmp_path):
+    """#674 read Port 계약 — 없는 Work 는 예외가 아니라 None."""
+    from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
+
+    store = AtomicWorkTemplateStateStore(tmp_path / "works")
+    port = tc._WorkStateReadPort(store)
+    assert port.load("missing-work-id") is None
+
+
+def test_diagnostics_drop_a_missing_evidence_record_silently(tmp_path):
+    """Preparation 이 가리키는 Evidence 가 store 에 없으면(회수·손상) 진단은 원본 사유만 남긴다."""
+    import dataclasses
+
+    reg, _tpl, coord, _token = _ready(tmp_path)
+    work_id = reg.load("공고서").authority_id
+    aggregate = coord._works.load(work_id)
+    prep = aggregate.preparations[-1]
+    tampered = dataclasses.replace(prep, evidence_id="missing-evidence-id")
+
+    found = coord._diagnostics(tampered)
+
+    assert found == tuple((str(d.get("reason", "")), "") for d in prep.diagnostics)
+
+
+def test_current_preparation_view_is_none_before_any_preparation_exists(tmp_path):
+    """current_template_preparation_id 가 없으면(예: 갓 만든 상태) 조회는 None."""
+    import dataclasses
+
+    reg, _tpl, coord, _token = _ready(tmp_path)
+    work_id = reg.load("공고서").authority_id
+    aggregate = coord._works.load(work_id)
+    blank = dataclasses.replace(
+        aggregate, work=dataclasses.replace(aggregate.work, current_template_preparation_id=None)
+    )
+
+    assert coord._current_preparation_view(blank, work_id) is None
+
+
+def test_bootstrap_failure_diagnostics_tolerate_a_missing_evidence_record(tmp_path, monkeypatch):
+    """bootstrap 실패 진단 조회도 같은 관용을 진다 — evidence 부재는 원본 사유만 남긴다."""
+    from hwpxfiller.external.qualification_store import ObjectNotFound
+
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.hwpx"
+    tpl.write_bytes(b"not a zip")
+    reg.save(Job(name="깨진작업", template_path=str(tpl)))
+    coord = _coordinator(tmp_path, reg)
+
+    def raise_not_found(*_a, **_k):
+        raise ObjectNotFound("evidence 없음")
+
+    monkeypatch.setattr(coord._quals, "get_evidence", raise_not_found)
+    result = coord.check("깨진작업", "k1")
+    assert result == {"ok": False, "reason": "initialization_required"}
+    zone = coord.zone("깨진작업", "hwpx", False)
+    assert zone["checkable"] is False and zone["diagnostics"]
+
+
+def test_seating_refuses_when_authority_cannot_be_reconfirmed(tmp_path, monkeypatch):
+    """방어적 갈래 — 방금 좌석한 권위가 재조회에서 다른 값으로 보이면 loud 하게 닫는다.
+
+    정상 흐름에서는 나지 않는 경합 화해 실패라 ``seat_job_authority_id`` seam 하나만 주입해
+    직접 잰다.
+    """
+    reg, _tpl = _seed(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    monkeypatch.setattr(tc, "seat_job_authority_id", lambda *_a, **_k: ("bogus-work-id", True))
+
+    with pytest.raises(TemplateChangeError):
+        coord.check("공고서", "k1")
+
+
+def test_bootstrap_failure_does_not_release_authority_it_did_not_issue(tmp_path, monkeypatch):
+    """방어적 갈래 — 이번 호출이 발급하지 않은 권위(``issued_now=False``)는 실패해도 돌려주지
+    않는다. 정상 흐름은 이 권위를 이번 호출이 늘 발급하므로(초기 등록 실패는 즉시 롤백) 실물
+    구성이 아니라 ``seat_job_authority_id`` 반환값 seam 하나만 흉내낸다.
+    """
+    tpl = tmp_path / "깨진.hwpx"
+    tpl.write_bytes(b"not a zip")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="깨진작업", template_path=str(tpl)))
+    reg.assign_authority_id("깨진작업", "w-preexisting")
+    coord = _coordinator(tmp_path, reg)
+
+    monkeypatch.setattr(
+        tc, "seat_job_authority_id", lambda *_a, **_k: ("w-preexisting", False)
+    )
+    released = []
+    monkeypatch.setattr(
+        tc,
+        "release_job_authority_id",
+        lambda *a, **k: released.append((a, k)) or reg.load("깨진작업"),
+    )
+
+    result = coord.check("깨진작업", "k1")
+    assert result == {"ok": False, "reason": "initialization_required"}
+    assert released == []  # issued_now=False — 이 호출은 발급하지 않았으니 돌려주지 않는다
+    assert reg.load("깨진작업").authority_id == "w-preexisting"  # 좀비 롤백 대상이 아니다

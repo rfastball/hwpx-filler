@@ -15,6 +15,8 @@ REQUIRED_HIDDEN = {
     "hwpxfiller.domain.authoring",
     "hwpxfiller.domain.lint",
     "hwpxfiller.data.nara",
+    # CLI 문서 생성의 managed 척추(#1081 PR3) — 함수 안 import 라 정적 분석에 기대지 않는다.
+    "hwpxfiller.external.headless_generation",
 }
 
 

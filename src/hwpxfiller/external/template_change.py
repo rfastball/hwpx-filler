@@ -77,15 +77,15 @@ from ..application.work_template_state import (
     TemplateChangePreparation,
     WorkTemplateStateAggregate,
 )
-from ..external.candidate_store import CandidateObjectStore
-from ..external.field_binding_store import (
+from .candidate_store import CandidateObjectStore
+from .field_binding_store import (
     WorkFieldBindingStore,
 )
-from ..external.work_configuration_store import (
+from .work_configuration_store import (
     WorkspaceMetadataStore,
 )
-from ..external.work_template_store import WorkAggregateNotFound
-from ..external.prepare_orchestration_runner import (
+from .work_template_store import WorkAggregateNotFound
+from .prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
     bootstrap_work,
@@ -93,17 +93,17 @@ from ..external.prepare_orchestration_runner import (
     run_capture_stage,
     run_qualification_stage,
 )
-from ..external.qualification_store import ObjectNotFound, QualificationObjectStore
-from ..external.template_inspection import (
+from .qualification_store import ObjectNotFound, QualificationObjectStore
+from .template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
 )
-from ..external.text_template_inspection import (
+from .text_template_inspection import (
     TXT_QUALIFICATION_PROFILE,
     txt_qualification_manifest,
 )
-from ..external.template_source_reader import FileTemplateSourceReader
-from ..external.work_template_store import (
+from .template_source_reader import FileTemplateSourceReader
+from .work_template_store import (
     AtomicWorkTemplateStateStore,
     start_prepare,
 )

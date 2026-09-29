@@ -593,7 +593,6 @@ def test_declared_empty_skips_the_marker_and_writes_empty_into_a_real_hwpx(tmp_p
     """빈 고정값은 표식 대상이 아니고, 산출물에는 **빈 문자열**로 들어간다(U6 §2.10)."""
     from pathlib import Path
 
-    from hwpxfiller.external.hwpx_engine import make_hwpx_engine
     from hwpxfiller.domain.fields import read_fields
     from hwpxfiller.domain.job import MISSING_MARKER
 
@@ -618,10 +617,12 @@ def test_declared_empty_skips_the_marker_and_writes_empty_into_a_real_hwpx(tmp_p
     }
 
     before = read_fields(read_hwpx_package(template))
-    out = tmp_path / "marked.hwpx"
-    result = make_hwpx_engine().generate(str(template), marked, str(out))
-    assert result.ok
-    after = read_fields(read_hwpx_package(out))
+    # 실제 문서는 GUI·CLI 와 같은 managed 경로로 만든다(#1081 PR3) — 빈 원천 값의 표식과
+    # 선언한 비움의 빈 문자열을 레코드 검증·물질화가 같은 규칙으로 낸다.
+    from _managed_fill import generate, only_document
+
+    document = only_document(generate(tmp_path, template, mapping, [{"name": ""}]))
+    after = read_fields(read_hwpx_package(document.absolute_path))
     assert after["공고명"] == "〘미입력·공고명〙"
     for declared in ["입찰공고번호", "계약방법", "추정가격", "개찰일시"]:
         assert before[declared] != ""          # 전제: 템플릿에 안내 문구가 있었다
@@ -1423,19 +1424,6 @@ def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
     RunViewModel(Job(name="저작중", template_path=""), engine=make_hwpx_engine())          # 빈 템플릿(저작 중) 통과
     with pytest.raises(MediaMismatchError):
         RunViewModel(Job(name="기안", template_path="/x/d.txt"), engine=make_hwpx_engine())
-
-
-def test_generate_batch_rejects_non_hwpx_template():
-    """generate_batch(산출물=hwpx 파일, engine=make_hwpx_engine())는 hwpx 아닌 템플릿 경로를 첫머리에서 loud 거부(결정 9·13)."""
-    from hwpxfiller.batch import generate_batch
-    from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
-
-    with pytest.raises(MediaMismatchError):
-        generate_batch(
-            "/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}",
-            engine=make_hwpx_engine(), existing_outputs=existing_output_paths,
-            ensure_output_dir=ensure_output_directory,
-        )
 
 
 @pytest.mark.parametrize("bad", [None, [], "", 0, 3])

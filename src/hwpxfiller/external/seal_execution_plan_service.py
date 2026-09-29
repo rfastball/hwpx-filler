@@ -67,29 +67,29 @@ from ..domain.field_binding import (
 from ..domain.job import Job
 from ..domain.mapping import MappingProfile
 from ..domain.raw_data_record import RAW_RECORD_CONTRACT_ID
-from ..external.candidate_store import CandidateObjectStore
-from ..external.field_binding_store import (
+from .candidate_store import CandidateObjectStore
+from .field_binding_store import (
     LegacyMigrationBasis,
     WorkFieldBindingStore,
     commit_field_binding_for_current_application,
     commit_field_binding_migration,
     load_current_revision,
 )
-from ..external.qualification_store import QualificationObjectStore
-from ..external.runtime_capability import (
+from .qualification_store import QualificationObjectStore
+from .runtime_capability import (
     admitted_runtime_conformance_registry,
     admitted_txt_runtime_conformance,
 )
-from ..external.seal_orchestration_runner import observe_current_basis_digest
-from ..external.seal_execution_capture_runner import (
+from .seal_orchestration_runner import observe_current_basis_digest
+from .seal_execution_capture_runner import (
     CurrentFieldBindingReview,
     SealExecutionCaptureRunner,
 )
-from ..external.work_configuration_store import (
+from .work_configuration_store import (
     WorkSlotConfigurationStore,
     WorkspaceMetadataStore,
 )
-from ..external.work_template_store import AtomicWorkTemplateStateStore
+from .work_template_store import AtomicWorkTemplateStateStore
 from .seal_execution_plan_product import (
     RuntimeConformanceBinding,
     SealExecutionPlanProduct,

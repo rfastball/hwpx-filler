@@ -33,9 +33,9 @@ from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
 
 NOW = datetime(2026, 8, 25, 9, 0, 0)

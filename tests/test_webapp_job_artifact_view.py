@@ -36,7 +36,7 @@ from hwpxfiller.external.delivery_coordinator import (
 from hwpxfiller.viewmodel.artifact_view_state import ARTIFACT_PARTIAL_COVERAGE
 from hwpxfiller.webapp import app as app_module
 from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
-from hwpxfiller.webapp.managed_generation import ManagedReadBackFailed
+from hwpxfiller.external.managed_generation import ManagedReadBackFailed
 from hwpxfiller.webapp.document_run_coordinator import (
     ARTIFACT_NOT_IN_SESSION,
     ARTIFACT_OBSERVED,

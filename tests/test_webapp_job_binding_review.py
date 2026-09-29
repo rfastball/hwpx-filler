@@ -42,11 +42,11 @@ from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
 from hwpxfiller.webapp.document_run_coordinator import ManagedRunInput
-from hwpxfiller.webapp import current_execution_preparation as execution_preparation
-from hwpxfiller.webapp.current_execution_preparation import current_record_identity
+from hwpxfiller.external import current_execution_preparation as execution_preparation
+from hwpxfiller.external.current_execution_preparation import current_record_identity
 from hwpxfiller.webapp.job_presentation import serialize_observation
 from hwpxfiller.external.delivery_coordinator import DeliveredDocument, DeliveryCompleted
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
@@ -84,7 +84,7 @@ from hwpxfiller.webapp.workbench_observation_product import (
     content_selection_from_view,
     execution_verdicts_from_fresh,
 )
-from hwpxfiller.webapp.managed_generation import ManagedRunCancelled, ManagedRunRefused
+from hwpxfiller.external.managed_generation import ManagedRunCancelled, ManagedRunRefused
 
 from tests.test_execution_compilation import WORK
 from tests.test_seal_execution_capture_runner import _seed_v2_work
@@ -1388,7 +1388,7 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
     """
     from hwpxfiller.external.artifact_observation import ARTIFACT_DIGEST_MISMATCH
     from hwpxfiller.external.delivery_coordinator import DeliveredDocument
-    from hwpxfiller.webapp.managed_generation import ManagedReadBackFailed
+    from hwpxfiller.external.managed_generation import ManagedReadBackFailed
 
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("select_job", {"name": WORK_REF})

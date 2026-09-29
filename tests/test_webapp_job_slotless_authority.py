@@ -23,9 +23,9 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.viewmodel.tutorial_state import Milestone
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
 
 from tests.test_webapp_job import _clock, _data_csv, _mount_all, _registry

@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
 from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -130,25 +129,6 @@ def test_mapped_records_injects_marker_only_on_empty(tmp_path):
     assert vm.mapped_records(_data(), [0])[0]["추정가격"] == ""
 
 
-def test_validate_generate_gate_order(tmp_path):
-    # 데이터 없음 = 첫 차단.
-    vm0 = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
-    assert "데이터" in vm0.validate_generate(RunDataInput(None, ()), [0], "out")[0].message
-
-    vm = _vm(tmp_path)
-    data = _data()
-    assert vm.validate_generate(data, [], "out")[0].message.startswith("생성할 문서")
-    assert vm.validate_generate(data, [0], "")[0].message.startswith("저장 폴더")
-    assert vm.validate_generate(data, [0, 1], "out") == []
-
-
-def test_missing_template_is_danger(tmp_path):
-    vm = _vm(tmp_path)
-    vm.job.template_path = str(tmp_path / "gone.hwpx")  # 존재하지 않음
-    errs = vm.validate_generate(_data(), [0], "out")
-    assert errs and errs[0].level == "danger"
-
-
 def test_field_states_report_missing_without_an_ack_axis(tmp_path):
     """U2 §2.13 — 필드축 ack 는 폐기됐다: 빈 값은 상태(missing)로 보고되고, 그 자체로
     게이트를 닫지 않는다(닫는 것은 blank_set 검토 요구 — screen_job 소관)."""
@@ -206,13 +186,13 @@ def test_declared_empty_is_quiet_but_uncovered_template_field_is_drift(tmp_path)
     states = {s.name: s.state for s in vm.field_states(data, [0])}
     assert states == {"공고명": "filled", "추정가격": "filled"}
     assert "추정가격" not in vm.blank_fields(data, [0])
-    assert vm.validate_generate(data, [0], "out") == []
+    assert vm.gate_state(data, [0], "out").enabled is True
 
     _write_template(job.template_path, ["공고명", "추정가격", "신규필드"])
     states = {s.name: s.state for s in vm.field_states(data, [0])}
     assert states["신규필드"] == "drift"
-    errs = vm.validate_generate(data, [0], "out")
-    assert errs and errs[0].level == "danger" and "신규필드" in errs[0].message
+    gate = vm.gate_state(data, [0], "out")
+    assert not gate.enabled and gate.level == "danger" and "신규필드" in gate.text
 
 
 def test_mapping_orphan_is_drift_and_hard_gate(tmp_path):
@@ -221,7 +201,8 @@ def test_mapping_orphan_is_drift_and_hard_gate(tmp_path):
     drift = vm.structure_drift()
     assert drift.mapping_orphaned == ("추정가격",)
     assert {s.name: s.state for s in vm.field_states(_data(), [0])}["추정가격"] == "drift"
-    assert "소멸" in vm.validate_generate(_data(), [0], "out")[0].message
+    gate = vm.gate_state(_data(), [0], "out")
+    assert not gate.enabled and gate.reason == "drift" and "추정가격" in gate.text
 
 
 def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
@@ -232,140 +213,12 @@ def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
 
     vm.job.template_path = str(tmp_path / "broken.hwpx")
     (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
-    errs = vm.validate_generate(_data(), [0], "out")
-    assert errs and errs[0].level == "danger" and "읽을 수 없음" in errs[0].message
+    gate = vm.gate_state(_data(), [0], "out")
+    assert not gate.enabled and gate.level == "danger" and gate.reason == "template_unreadable"
 
 
 # ------------------------------------------------------------- 덮어쓰기 확인(RC-02)
-def test_output_conflicts_lists_existing_targets_only(tmp_path):
-    """생성과 동일 규칙으로 계산한 대상 중 **디스크에 이미 있는** 파일만 보고(무변형).
-
-    위젯 확인 대화상자의 원천 — 빈 목록이면 확인 없이 진행, 비면 안 되는 목록이면
-    사용자 확정 후에만 overwrite=True(링1 계약).
-    """
-    vm = _vm(tmp_path)
-    data = _data()
-    out = tmp_path / "out"
-    assert vm.output_conflicts(
-        data, [0, 1], str(out), existing_outputs=existing_output_paths
-    ) == []
-
-    out.mkdir()
-    sentinel = out / "doc-가.hwpx"  # 패턴 doc-{{공고명}} × 레코드0(공고명=가)의 대상
-    sentinel.write_bytes(b"user-edited")
-    conflicts = vm.output_conflicts(
-        data, [0, 1], str(out), existing_outputs=existing_output_paths
-    )
-    assert conflicts == [str(sentinel)]
-    assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형
-
-
 # ------------------------------------------------------------ 생성 계획(RC-07)
-def test_generation_plan_is_immutable_snapshot(tmp_path):
-    """계획은 클릭 시점 스냅샷 — 이후 VM/데이터가 바뀌어도 불변(라이브 재독 금지)."""
-    import dataclasses
-
-    from hwpxfiller.domain.job import MISSING_MARKER
-
-    vm = _vm(tmp_path)
-    data = _data()
-    plan = vm.build_generation_plan(
-        data, [0, 1], str(tmp_path / "outA"), marker=MISSING_MARKER, ledger=True
-    )
-    assert plan.template == vm.job.template_path
-    assert plan.out_dir == str(tmp_path / "outA")
-    assert plan.records[0]["추정가격"] == MISSING_MARKER.format(field="추정가격")
-    assert plan.source_pointer == "_Src"
-    assert plan.indices == (0, 1)
-    assert plan.job_name == "실행" and plan.source_keys == ("bidNtceNm", "presmptPrce")
-
-    data.records[0]["bidNtceNm"] = "바뀐공고"
-    assert plan.records[0]["공고명"] == "가"          # 재독 없음
-    assert plan.source_records[0]["bidNtceNm"] == "가"
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        plan.out_dir = "elsewhere"  # type: ignore[misc]
-
-
-def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
-    """원장은 계획만 소비(RC-07) — 실행 중 out_dir 편집·데이터 교체가 증거에 못 낀다."""
-    import json
-    from pathlib import Path
-
-    from hwpxfiller.batch import generate_batch
-    from hwpxfiller.domain.job import MISSING_MARKER
-    from hwpxfiller.external.ledger_export import export_plan_ledger
-
-    vm = _vm(tmp_path)
-    out = tmp_path / "outA"
-    plan = vm.build_generation_plan(
-        _data(), [0, 1], str(out), marker=MISSING_MARKER, ledger=True
-    )
-    batch = generate_batch(
-        plan.template, list(plan.records), plan.out_dir, plan.pattern,
-        make_hwpx_engine(), mapping=plan.mapping,
-        existing_outputs=existing_output_paths, ensure_output_dir=ensure_output_directory,
-    )
-    assert batch.failed == 0
-
-    sidecar = export_plan_ledger(plan, batch)
-    assert Path(sidecar).parent == out                   # ed_out 재독 없음
-    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
-    assert payload["job"] == "실행" and payload["source"] == "_Src"
-    first = {r["field"]: r for r in payload["outputs"][0]["rows"]}
-    assert first["공고명"]["preview_text"] == "가"       # 생성물과 같은 데이터의 증거
-    assert first["공고명"]["injected"] is True
-    # 표식 주입도 미충족으로 분류하되, 실제 들어간 값(표식)의 증거는 남는다.
-    assert first["추정가격"]["status"] == "missing"
-    assert first["추정가격"]["injected"] is True
-    second = {r["field"]: r for r in payload["outputs"][1]["rows"]}
-    assert second["추정가격"]["status"] == "filled" and second["추정가격"]["injected"] is True
-
-    profs = {p["key"]: p for p in payload["profiles"]}
-    assert set(profs) == {"bidNtceNm", "presmptPrce"}   # 매핑이 읽는 소스 키만 관측
-    assert profs["presmptPrce"]["samples"] == ["2000"]
-
-
-def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
-    """취소된 부분 배치(RC-06)도 처리된 산출물만큼 증거를 남긴다 — strict zip 붕괴 금지."""
-    from hwpxfiller.batch import generate_batch
-    from hwpxfiller.external.ledger_export import export_plan_ledger
-
-    vm = _vm(tmp_path)
-    out = tmp_path / "out"
-    plan = vm.build_generation_plan(_data(), [0, 1], str(out), marker="", ledger=True)
-    flag = {"stop": False}
-
-    def progress(done, total):
-        flag["stop"] = True  # 레코드 1 직후 취소
-
-    batch = generate_batch(
-        plan.template, list(plan.records), plan.out_dir, plan.pattern,
-        make_hwpx_engine(),
-        progress=progress, cancelled=lambda: flag["stop"],
-        existing_outputs=existing_output_paths, ensure_output_dir=ensure_output_directory,
-    )
-    assert batch.cancelled and batch.attempted == 1
-
-    import json
-    from pathlib import Path
-    sidecar = export_plan_ledger(plan, batch)
-    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
-    assert len(payload["outputs"]) == 1  # 처리된 1건만 — 예외 없이 부분 증거
-
-
-def test_export_plan_ledger_without_mapping_snapshot_is_loud():
-    """계획에 매핑 스냅샷이 없으면 증거를 추정으로 조립하지 않고 시끄럽게 거절한다."""
-    from hwpxfiller.external.ledger_export import export_plan_ledger
-    from hwpxfiller.viewmodel.run_state import GenerationPlan
-
-    plan = GenerationPlan(
-        template="t.hwpx", records=(), out_dir="out", pattern="p-{{seq}}",
-        marker="", indices=(), source_pointer="",
-    )
-    with pytest.raises(ValueError, match="매핑 스냅샷"):
-        export_plan_ledger(plan, batch=None)
-
-
 # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
 def test_gate_state_single_decision_drift_open(tmp_path):
     """게이트 표시 결정(활성/level/text)이 vm 단일 산출 — 위젯 재조립 없음(RC-23).
@@ -439,35 +292,6 @@ def test_data_input_is_explicit_and_vm_owns_no_data(tmp_path):
 
 
 # ------------------------------------------------ 소스 포인터 선언 프로토콜(RC-25)
-def test_source_pointer_uses_declared_protocol_not_type_name(tmp_path):
-    """소스가 선언한 source_pointer() 가 우선 — 타입명 검사 아님(개명 내성, RC-25)."""
-    from hwpxfiller.application.nara_acquire import AcquiredNaraData
-
-    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
-    source = AcquiredNaraData([{"bidNtceNm": "가"}], ["bidNtceNm"])
-    assert vm.source_pointer(_data(source)) == "nara:취득 스냅샷(키 미포함)"
-
-    # 클래스를 개명해도(서브클래스 = 다른 __name__) 원장 표기는 선언값 그대로 —
-    # 종전 type(src).__name__ == "AcquiredNaraData" 비교였다면 침묵 오기록되던 자리.
-    class RenamedSnapshot(AcquiredNaraData):
-        pass
-
-    source = RenamedSnapshot([], [])
-    assert vm.source_pointer(_data(source)) == "nara:취득 스냅샷(키 미포함)"
-
-
-def test_source_pointer_falls_back_to_path_then_type_name(tmp_path):
-    """미선언 소스 강등 순서: path 속성(file:) → 타입명(포트 명세의 폴백 계약)."""
-    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
-
-    class _PathSrc(_Src):
-        path = "C:/data/d.xlsx"
-
-    assert vm.source_pointer(_data(_PathSrc())) == "file:C:/data/d.xlsx"
-    assert vm.source_pointer(_data()) == "_Src"
-    assert vm.source_pointer(RunDataInput(None, ())) == ""
-
-
 # ------------------------------------------------ 파일명 토큰 계약 게이트(F34, RC-20 GUI 짝)
 def _job_with_pattern(tmp_path, pattern, *, blank_price=False):
     """파일명 패턴만 바꾼 실행 작업 — blank_price=True 면 추정가격을 빈 고정값으로 선언."""
@@ -517,13 +341,6 @@ def test_unresolved_name_token_fires_before_data_selection(tmp_path):
     status = vm.refresh(RunDataInput(None, ()), [])
     assert status.gate.enabled is False and status.gate.level == "danger"
     assert "{{ID}}" in status.gate.text
-
-
-def test_unresolved_name_token_blocks_generate_backstop(tmp_path):
-    """validate_generate 백스톱 — 게이트 우회(워커/API 직접 호출)도 danger 차단(F34)."""
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
-    errors = vm.validate_generate(_data(), [0, 1], str(tmp_path / "out"))
-    assert errors and errors[0].level == "danger" and "{{ID}}" in errors[0].message
 
 
 def test_declared_empty_field_token_is_unresolved(tmp_path):

@@ -235,7 +235,7 @@ def test_does_not_import_backend_currentness_judgment():
     source = Path(orch_module.__file__).read_text(encoding="utf-8")
     modules = _imported_module_names(source)
     # currentness/basis 판정 소유 모듈을 import 하지 않는다 — 판정은 입력 플래그로 받는다.
-    assert "hwpxfiller.webapp.seal_execution_plan_product" not in modules
+    assert "hwpxfiller.external.seal_execution_plan_product" not in modules
     assert "hwpxfiller.application.fresh_execution_observation" not in modules
     assert "hwpxfiller.external.seal_orchestration_runner" not in modules
     # 프로젝트 import 는 vocabulary 하나뿐이다.
