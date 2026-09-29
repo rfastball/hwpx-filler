@@ -24,17 +24,46 @@ REAL_FILES = sorted(CORPUS.glob("*.hwpx"))
 
 
 def _raw_text_segments(pkg: HwpxPackage) -> "list[str]":
-    """섹션 XML 에서 원문 ``hp:t`` 텍스트 조각(본문 + 자식 tail)을 lxml 로 독립 추출."""
+    """섹션 XML 에서 ``hp:t`` 안의 **모든** 문자 데이터 조각을 lxml 로 독립 추출.
+
+    본문·자식 tail 뿐 아니라 자식 요소 **내부**의 글자까지 모은다(#1080). 추출기가 미모델링
+    자식의 내용을 투영에서 빼므로, 그런 자식이 코퍼스에 나타나면 이 기대값이 그것을 요구해
+    소리 나게 실패한다 — 판독기와 같은 사각(자식 내용 무시)을 공유하지 않는다.
+    """
     segments: "list[str]" = []
     for name in section_xml_names(pkg):
         root = etree.fromstring(pkg.entries[name])
         for t in root.iter(f"{{{HP_NS}}}t"):
-            if t.text:
-                segments.append(t.text)
-            for child in t:
-                if child.tail:
-                    segments.append(child.tail)
+            segments.extend(s for s in t.itertext() if s)
     return segments
+
+
+#: 판독기 정책과 **독립으로** 적은 ``hp:t`` 안 인라인 요소 → 기대 글자. 여기 없는 요소가
+#: 실 코퍼스 ``hp:t`` 에 나타나면 아래 테스트가 새 결정을 요구한다.
+_EXPECTED_T_CHILDREN = {
+    "tab": "\t",
+    "lineBreak": "\n",
+    "fwSpace": " ",
+    "markpenBegin": "",
+    "markpenEnd": "",
+}
+
+
+def _section_texts(doc) -> str:
+    """본문 섹션만의 문단 텍스트(머리말·꼬리말 제외)를 모은다."""
+
+    def walk(blocks):
+        for block in blocks:
+            if block["type"] == "paragraph":
+                yield block["text"]
+            else:
+                for row in block["rows"]:
+                    for cell in row:
+                        yield from walk(cell["blocks"])
+
+    return "".join(
+        text for section in doc.to_dict()["sections"] for text in walk(section["blocks"])
+    )
 
 
 def test_corpus_not_empty():
@@ -65,6 +94,44 @@ def test_coverage_ledger_empty(path: Path):
         f"(예: {doc.unhandled_examples}). 처리 브랜치 추가 또는 KNOWN_IGNORED 허용목록에 "
         f"이유와 함께 등록할 것."
     )
+
+
+@pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
+def test_inline_t_children_are_decided_and_projected(path: Path):
+    """``hp:t`` 안 인라인 요소는 모두 의식적으로 결정됐고, 고정폭 빈칸은 U+2007 로 남는다.
+
+    과거 판독기는 ``hp:fwSpace`` 를 조용히 버렸고 원장도 비어 있었다(#1080 H-2). 여기서는
+    원문 XML 을 독립으로 세어 추출 텍스트의 U+2007 개수와 맞춘다.
+    """
+    pkg = read_hwpx_package(path)
+    fw_spaces = 0
+    for name in section_xml_names(pkg):
+        root = etree.fromstring(pkg.entries[name])
+        for t in root.iter(f"{{{HP_NS}}}t"):
+            fw_spaces += (t.text or "").count(" ")
+            for child in t:
+                fw_spaces += (child.tail or "").count(" ")
+                if not isinstance(child.tag, str):
+                    continue
+                local = etree.QName(child).localname
+                assert local in _EXPECTED_T_CHILDREN, (
+                    f"hp:t 안 새 인라인 요소 {local!r} ({path.name}) — 판독기 정책을 정할 것"
+                )
+                fw_spaces += local == "fwSpace"
+    assert _section_texts(extract_document(pkg)).count(" ") == fw_spaces
+
+
+def test_real_fw_space_is_modelled_not_dropped():
+    """실 코퍼스의 ``hp:t`` 안 ``hp:fwSpace`` 2건이 텍스트에 남고 원장은 비어 있다."""
+    pkg = read_hwpx_package(CORPUS / "spec_revision_2025.hwpx")
+    raw = sum(
+        len(etree.fromstring(pkg.entries[name]).findall(f".//{{{HP_NS}}}t/{{{HP_NS}}}fwSpace"))
+        for name in section_xml_names(pkg)
+    )
+    doc = extract_document(pkg)
+    assert raw == 2
+    assert full_text(doc).count(" ") == 2
+    assert doc.unhandled == {}
 
 
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)

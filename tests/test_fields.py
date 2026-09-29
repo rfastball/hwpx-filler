@@ -446,11 +446,14 @@ def test_unsupported_inline_object_blocks_fill_atomically():
     assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
     assert doc.to_bytes() == before
 
-    noop = FieldDocument(xml)
-    assert noop.set_field("계약명", "OLD") is True
-    assert noop.modified is False
-    assert noop.notes == []
-    assert noop.to_bytes() == before
+    # 글자 투영이 "OLD" 와 같아도 미지원 객체가 남은 값은 같은 값이 아니다(#1080) —
+    # 조용한 무연산 대신 같은 admission 으로 막혀 소리 나게 기입 불가다.
+    same_text = FieldDocument(xml)
+    assert same_text.read_field("계약명") == "OLD"
+    assert same_text.set_field("계약명", "OLD") is False
+    assert same_text.modified is False
+    assert same_text.notes == [FillNote("계약명", "occurrence_unfillable")]
+    assert same_text.to_bytes() == before
 
 
 # ------------------------------------------------------- 사전 판정(#154 PR-2)
