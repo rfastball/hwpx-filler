@@ -1370,6 +1370,8 @@ test("IDE-07 P-11b: 항목으로 만들기 has one unchecked 문단마다 선택
   assert.equal(command.type, "create_slot");
   assert.equal(command.split, "paragraph", "켜면 같은 명령에 split 을 싣는다");
   assert.equal("ranges" in command, false);
+  env.root.unmount();
+});
 
 /* ---------- IDE-08: 선택 옆 막대(P-05)·HWPX 결과 닻(P-02)·HWPX 문제 표지(P-08) ---------- */
 const CREATE_ONLY_FIELD = [
