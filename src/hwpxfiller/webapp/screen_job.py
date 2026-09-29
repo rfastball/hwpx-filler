@@ -140,6 +140,7 @@ from ..external.settings import (
 )
 from .data_zone import JobDataSession
 from .document_run_coordinator import (
+    CompletionStamp,
     DocumentRunCoordinator,
     ManagedRunInput,
     RunInputCapture,
@@ -2051,9 +2052,23 @@ class JobController:
             now=now if now is not None else self._clock(),
             confirm_overwrite=confirm_overwrite,
             overwrite_pin_key=self._overwrite_pin_key(),
+            progress=self._push_progress,
+            completion=CompletionStamp(
+                self.registry, lambda: self._clock().isoformat(timespec="seconds")
+            ),
         )
+        if result.executed:
+            # 배달 준비는 **폴더 관찰**에 묶여 있다(folder 변경 무효화와 같은 축). 이 런이
+            # 파일을 앉혔거나 앉히려 했으므로 그 관찰은 더는 사실이 아니다 — 버리지 않으면
+            # 다음 실행이 「없던 파일」로 계획해 덮어쓰기 확인 대신 관찰 불일치로 멈춘다.
+            self.execution.invalidate_delivery()
         if result.historical_outcome is not None:
             self.execution.record_managed_outcome(result.historical_outcome)
+        if result.stamped_job is not None and run_vm is self.work.vm:
+            # legacy `_generate_locked` 와 같은 채택 규칙 — 세션 사본이 완주 기록을 본다.
+            if result.stamped_rules_changed:
+                self.runs.last_generated = None
+            run_vm.job = result.stamped_job
         return result.payload
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":
