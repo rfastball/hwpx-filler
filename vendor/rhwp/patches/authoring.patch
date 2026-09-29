@@ -1737,10 +1737,10 @@ index fabc8645e..2c529af86 100644
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..70b7a5610 100644
+index 1b1ecf8d5..96552e8bf 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,106 @@
+@@ -144,3 +144,107 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -1792,9 +1792,10 @@ index 1b1ecf8d5..70b7a5610 100644
 +}
 +
 +.rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after {
-+  background-color: var(--rhwp-semantic-problem-error);
-+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 3C1.5 3 1.5 1 3 1S4.5 3 6 3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E") repeat-x 0 0 / 6px 4px;
-+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 3C1.5 3 1.5 1 3 1S4.5 3 6 3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E") repeat-x 0 0 / 6px 4px;
++  /* A row of small arches (a wave) drawn by a ring gradient — no image, so no external URL. */
++  --rhwp-problem-wave: var(--rhwp-semantic-problem-error);
++  background: radial-gradient(circle at 50% 100%, transparent 1.6px, var(--rhwp-problem-wave) 1.9px 2.9px, transparent 3.2px)
++    0 0 / 6px 4px repeat-x;
 +}
 +
 +.rhwp-semantic-mark[data-kind="problem"][data-emphasis="subtle"]::after {
@@ -1828,7 +1829,7 @@ index 1b1ecf8d5..70b7a5610 100644
 +  }
 +  .rhwp-semantic-mark[data-kind="slot"],
 +  .rhwp-semantic-mark[data-kind="option"] { border-color: Highlight; }
-+  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after { background-color: CanvasText; }
++  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after { --rhwp-problem-wave: CanvasText; }
 +  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="subtle"]::after { border-bottom-color: CanvasText; }
 +  .rhwp-semantic-label {
 +    forced-color-adjust: none;
