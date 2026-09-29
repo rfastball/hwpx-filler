@@ -49,6 +49,7 @@ from ..application.record_validation import (
     validate_data_records_against_current_value,
 )
 from ..application.run_delivery_intent import RunDeliveryIntent
+from ..viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT
 from ..domain.raw_data_record import (
     RawDataRecordSnapshot,
     RawRecordCaptureProvenance,
@@ -296,7 +297,7 @@ def observe_path_occupancy(
 DELIVERY_BLOCKER_PHRASES = {
     "OUTPUT_NAME_TOKEN_UNRESOLVED": "파일 이름에 사용할 값을 확인할 수 없습니다.",
     "OUTPUT_NAME_BINDING_AMBIGUOUS": "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다.",
-    "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
+    "OUTPUT_NAME_PATTERN_INVALID": OUTPUT_NAME_INVALID_TEXT,
     "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 파일이 있습니다:",
     "OUTPUT_PATH_NON_REGULAR_CONFLICT": "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:",
 }

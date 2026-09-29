@@ -2295,6 +2295,10 @@ text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
+text = "파일 이름 규칙이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
 
 [[sentence]]
@@ -2776,10 +2780,6 @@ text = "저장 폴더는 전체 경로여야 합니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/current_execution_preparation.py"
 text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "파일 이름 규칙이 올바르지 않습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/current_execution_preparation.py"

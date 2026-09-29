@@ -26,6 +26,7 @@ from ..viewmodel.work_candidates import (
     suggested_work,
 )
 from ..viewmodel.work_mode import WORK_MODE_TEXT, mode_sections, work_mode_label
+from ..domain.output_name import OutputNameError
 from ..naming import pattern_field_tokens, plan_output_names
 from .managed_run_result import run_title
 
@@ -298,8 +299,14 @@ def record_table_rows(
     names: dict[int, str] = {}
     if selected_model_indices and filename_pattern is not None:
         assert names_now is not None
-        planned = plan_output_names(filename_pattern, mapped_records, now=names_now)
-        names = dict(zip(selected_model_indices, planned, strict=True))
+        try:
+            planned = plan_output_names(filename_pattern, mapped_records, now=names_now)
+        except OutputNameError:
+            # 이름 kernel 이 이름을 만들 수 없다고 판정했다 — 배달도 계획을 세우지 않는다.
+            # 「문서」 열은 쓰지 않을 이름을 보여 주지 않는다(거절 사유는 게이트가 말한다).
+            planned = None
+        if planned is not None:
+            names = dict(zip(selected_model_indices, planned, strict=True))
     return record_rows(
         records=records,
         display_order=display_order,

@@ -66,7 +66,9 @@ def generate_batch(
     :meth:`~hwpxfiller.domain.fill_ledger.TemplateStructureDrift.describe` 단일화.
 
     파일명은 :func:`~hwpxfiller.naming.plan_output_names` 로 **먼저 전부** 계산한다
-    (연번·날짜 토큰·배치 내 충돌 접미사 — :class:`~hwpxfiller.naming.OutputNamer` 규칙).
+    (연번·날짜 토큰·대소문자 무관 배치 충돌 접미사 — managed 배달과 같은 이름 kernel,
+    :mod:`hwpxfiller.domain.output_name`). 이름을 만들 수 없으면(닫히지 않은 ``{{``·폴더 밖·장치
+    이름) 쓰기 전에 :class:`~hwpxfiller.domain.output_name.OutputNameError` 로 닫힌다(#798).
     대상 중 디스크에 이미 존재하는 파일이 있으면 ``overwrite=True`` 없이는 생성을
     시작하기 전에 :class:`FileExistsError` 로 원자 차단한다(RC-02: 기존 산출물의
     무경고 파괴 금지 — GUI 는 사용자 확인 후, CLI 는 ``--overwrite`` 로만 통과).

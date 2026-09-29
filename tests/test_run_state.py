@@ -495,6 +495,20 @@ def test_unresolved_name_token_closes_gate_danger(tmp_path):
     assert "파일명" in status.preflight.text
 
 
+@pytest.mark.parametrize("pattern", ["{{공고명", "../{{공고명}}", "C:{{공고명}}", "CON"])
+def test_unmakeable_output_names_close_the_gate(tmp_path, pattern):
+    """이름 kernel 이 이름을 만들 수 없으면(#798) 게이트가 차단한다 — 배달 계획이 서지 않는 것과
+    같은 사실이다. 종전 legacy 는 닫히지 않은 ``{{`` 를 리터럴로, ``../`` 를 폴더 밖으로 썼다."""
+    from hwpxfiller.viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT
+
+    vm = RunViewModel(_job_with_pattern(tmp_path, pattern), engine=make_hwpx_engine())
+    status = vm.refresh(_data(), [0, 1], str(tmp_path / "out"))
+    assert status.gate.enabled is False and status.gate.level == "danger"
+    assert status.gate.reason == "name_invalid"
+    assert status.gate.text == OUTPUT_NAME_INVALID_TEXT
+    assert status.audit.refusal_code and status.audit.names == ()
+
+
 def test_unresolved_name_token_fires_before_data_selection(tmp_path):
     """토큰 계약은 작업 정의 수준 — 데이터 미겨눔에서도 danger 로 먼저 발화한다(F34).
 

@@ -701,6 +701,10 @@ def test_health_translation_covers_every_data_independent_gate_reason():
         # 검토를 끼우면 새로 만든 모든 작업이 「확인 필요」에 서서 그 구획이 뜻을 잃는다
         # (경보 인플레이션 — 진짜 고장 난 작업이 새 작업들 사이에 묻힌다).
         "review_required",
+        # 출력 이름 거절(#798)은 **데이터 의존** 사유다 — 게이트는 선택한 레코드로 이름을 계획해
+        # 본 결과(감사)에서만 서고, 레코드가 없으면 발화하지 않는다. 같은 패턴도 값(장치 이름·
+        # 빈 값)에 따라 통과·거절이 갈리므로 레코드 없는 라이브러리 행에서 판정할 근거가 없다.
+        "name_invalid",
     }
     missing = [
         r for r in reasons if r not in not_health and evidence.get(r, r) not in covered

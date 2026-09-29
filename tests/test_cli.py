@@ -245,6 +245,33 @@ def test_cli_overwrite_optin_passes(tmp_path):
     assert sentinel.read_bytes()[:2] == b"PK"  # 재생성본으로 교체됨
 
 
+@pytest.mark.parametrize("pattern", ["../공고-{{입찰공고번호}}", "C:공고-{{입찰공고번호}}", "CON"])
+def test_cli_refuses_output_names_outside_the_folder(tmp_path, capsys, pattern):
+    """CLI 도 같은 이름 kernel 을 쓴다(#798) — 폴더 밖·drive·장치 이름을 쓰지 않고 exit 1."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "work" / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out), "--pattern", pattern])
+    assert rc == 1
+    assert not list((tmp_path / "work").rglob("*.hwpx"))
+    assert not list(tmp_path.glob("*.hwpx"))
+    assert "[오류]" in capsys.readouterr().err
+
+
+def test_cli_case_twins_do_not_overwrite_each_other(tmp_path):
+    """대소문자만 다른 두 레코드가 같은 파일을 덮지 않는다(#798) — 둘째는 꼬리표."""
+    data = _xlsx(tmp_path / "d.xlsx", [
+        ["Report", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"],
+        ["report", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"],
+    ])
+    out = tmp_path / "out"
+    assert main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+                 "--pattern", "{{입찰공고번호}}"]) == 0
+    assert sorted(p.name.casefold() for p in out.glob("*.hwpx")) == [
+        "report.hwpx", "report_1.hwpx",
+    ]
+
+
 # ------------------------------------------------------- 빈값 게이트(RC-03, ADR-E)
 def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
     """값이 빈 필드는 기본 차단(exit 1) — GUI 와 동일 입력에서 문서 내용이 갈라지지 않는다."""
