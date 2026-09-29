@@ -1006,7 +1006,7 @@ def _field_spans(text: str, command: Mapping[str, object], start: int, end: int)
     return spans
 
 
-_LINE_BREAKS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85  "
+_LINE_BREAKS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
 
 
 def _split_block(block: str, command: Mapping[str, object], *, closed: bool, eol: str) -> str:

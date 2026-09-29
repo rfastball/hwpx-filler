@@ -1703,14 +1703,6 @@ text = "고른 문단의 위치를 확정할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/hwpx_authoring.py"
-text = "고른 문단의 위치를 확정할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/external/hwpx_authoring.py"
-text = "고른 문단의 위치를 확정할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/external/hwpx_authoring.py"
 text = "고른 문단이 문서 영역 밖에 있습니다."
 
 [[sentence]]
