@@ -32,6 +32,11 @@ function wireCellPath(path: StudioCellPath): WireCellPath {
 export type RhwpMountSpec = {
   host: HTMLElement; content: string; fileName: string; sectionEntries?: string[];
   onChanged: (content: string) => void; onSelectionChanged: (selection: Selection | Obj) => void;
+  /** The selection end (caret) line in host client coordinates, for UI placed beside the selection (IDE-08).
+   *  Reported once a new non-empty selection settles (never while a pointer drag still extends it); null
+   *  when the selection collapses or changes, the document is edited, or the reported line moves (scroll,
+   *  zoom). The same selection is not re-reported after an edit or a move. */
+  onSelectionRect?: (rect: HostLineRect | null) => void;
   onError: (error: unknown) => void; onShortcut?: (shortcut: RhwpShortcut) => void;
   /** Document right-click or keyboard menu key (Shift+F10, ContextMenu) inside the editor, in
    *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
@@ -55,6 +60,8 @@ export type RhwpMountSpec = {
   /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
   studio?: typeof createStudio;
 };
+/** One text line in host client coordinates (the line's top and bottom at a horizontal position). */
+export type HostLineRect = { left: number; top: number; bottom: number };
 /** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
 export type RhwpZoom = "fit" | 50 | 75 | 100;
 const zoomCommand = (zoom: RhwpZoom) => zoom === "fit" ? "view:zoom-fit-width" : `view:zoom-${zoom}`;
@@ -84,6 +91,9 @@ export type RhwpHandle = {
   content(): Promise<string>; applySnapshot(content: string, label: string, expectedContent?: string): Promise<void>;
   flushChanges(): Promise<void>;
   focus(target: Obj): Promise<void>; undo(): Promise<void>; redo(): Promise<void>;
+  /** Scroll the viewport to the target's range (same targets as `focus`) without moving the caret or DOM
+   *  focus (IDE-08 H4). False = the Studio could not place the range; the view stays where it was. */
+  scrollTo(target: Obj): Promise<boolean>;
   setDecorations(projection: Obj): Promise<void>; setReadOnly(readOnly: boolean): Promise<void>;
   /** Switch the Studio zoom mode (see `RhwpMountSpec.zoom`). */
   setZoom(zoom: RhwpZoom): Promise<void>;
@@ -92,6 +102,11 @@ export type RhwpHandle = {
 
 /** Studio markers per setDecorations call (the SDK validator throws `invalid decoration count` above it). */
 export const DECORATION_LIMIT = 500;
+/** Studio marker label length (validator). A problem's label is its hover tooltip — Python's sentence. */
+const LABEL_LIMIT = 160;
+const PROBLEM_EMPHASIS: Record<string, 'strong' | 'subtle'> = { error: 'strong', warning: 'subtle' };
+type Marker = { kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
+  startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath };
 
 /** Trailing debounce for HWPX export after edits: a burst of change events costs one export. */
 export const EXPORT_DEBOUNCE_MS = 200;
@@ -130,6 +145,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
   let zoom: RhwpZoom = spec.zoom ?? 100;
+  // The dropped-problem note goes to the console once per mount (a developer signal, not user copy).
+  let problemCapNoted = false;
   try {
     await editor.setAppearance(appearance);
     if (spec.onContextMenu) await editor.setContextMenuForwarding(true);
@@ -162,10 +179,40 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     lastEmittedContent = bytes;
     spec.onChanged(bytes);
   };
+  // Selection-side rect (IDE-08 H3): the selection key the rect belongs to, the last rect seen for it ("" =
+  // none yet, e.g. mid-drag), whether the host is showing it, and whether it may not come back (edited or moved).
+  let rectKey = "", rectSeen = "", rectShown = false, rectSpent = false;
+  const hideRect = (spent: boolean) => {
+    if (spent) rectSpent = true;
+    if (rectShown) { rectShown = false; spec.onSelectionRect?.(null); }
+  };
+  /** A reported Studio rect in host coordinates, or null when it is not visible inside the frame. */
+  const visibleRect = (rect: { x: number; y: number; width: number; height: number } | null): HostLineRect | null => {
+    if (!rect) return null;
+    let height = 0;
+    try { height = editor.element.contentWindow?.innerHeight ?? 0; } catch { height = 0; }
+    if (height && (rect.y + rect.height <= 0 || rect.y >= height)) return null;
+    const top = hostPoint(rect.x, rect.y), bottom = hostPoint(rect.x, rect.y + rect.height);
+    return { left: top.x, top: top.y, bottom: bottom.y };
+  };
+  const reportRect = (key: string, rect: { x: number; y: number; width: number; height: number } | null) => {
+    if (!spec.onSelectionRect) return;
+    const seen = rect ? JSON.stringify(rect) : "";
+    if (!key) { rectKey = ""; rectSeen = ""; rectSpent = false; hideRect(false); return; }
+    if (key !== rectKey) { rectKey = key; rectSeen = ""; rectSpent = false; hideRect(false); }
+    if (seen === rectSeen) return;
+    const first = rectSeen === "";
+    rectSeen = seen;
+    // The line moved under an unchanged selection (scroll, zoom, relayout): hide and wait for a new selection.
+    if (!first || rectSpent) { hideRect(true); return; }
+    const place = visibleRect(rect);
+    if (place) { rectShown = true; spec.onSelectionRect(place); }
+  };
   const selection = async () => {
     if (disposed) return;
-    const range = (await editor.getSelectionContext()).range;
-    const clear = () => { if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } };
+    const context = await editor.getSelectionContext();
+    const range = context.range;
+    const clear = () => { reportRect("", null); if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } };
     if (!range || range.start.section !== range.end.section) { clear(); return; }
     const { start, end } = range;
     const entry = sectionEntries[start.section];
@@ -181,6 +228,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     }
     const key = JSON.stringify(next);
     if (key !== lastSelection) { lastSelection = key; spec.onSelectionChanged(next); }
+    const collapsed = next.start_paragraph === next.end_paragraph && next.start === next.end;
+    reportRect(collapsed || disposed ? "" : key, context.rect);
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.
   // Hidden tabs and viewers whose selection nobody reads skip the cross-frame query.
@@ -198,6 +247,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     void pendingChange.catch(spec.onError);
   };
   const off = editor.onDocumentChanged(() => {
+    // An edit takes the selection-side UI down; the same selection does not bring it back.
+    hideRect(true);
     if (!readOnly && !replacing && !disposed) {
       ++changeGeneration;
       scheduled = true;
@@ -248,7 +299,8 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   }) : null;
   resized?.observe(spec.host);
 
-  const focus = async (target: Obj) => {
+  /** The Studio range of a target: its first occurrence, its location, its source, or the target itself. */
+  const rangeOf = (target: Obj) => {
     const first = Array.isArray(target.occurrences) ? target.occurrences[0] : null;
     const source = (first && typeof first === "object" ? first : target.location && typeof target.location === "object"
       ? target.location : target.source && typeof target.source === "object" ? target.source : target) as Obj;
@@ -262,8 +314,11 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     const endOffset = typeof source.end === "number" ? source.end : null;
     if (!Number.isSafeInteger(endParagraph) || !Number.isSafeInteger(startOffset))
       throw new Error("HWPX 본문 범위가 유효하지 않습니다.");
-    const result = await editor.focusRange({ section, startParagraph: paragraph,
-      startOffset: startOffset as number, endParagraph: endParagraph as number, endOffset, ...(cellPath ? { cellPath } : {}) });
+    return { section, startParagraph: paragraph, startOffset: startOffset as number, endParagraph: endParagraph as number,
+      endOffset, ...(cellPath ? { cellPath } : {}) };
+  };
+  const focus = async (target: Obj) => {
+    const result = await editor.focusRange(rangeOf(target));
     if (!result.focused) throw new Error("HWPX 위치를 에디터에서 찾을 수 없습니다.");
   };
   const flushChanges = async () => {
@@ -296,6 +351,10 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       } finally { replacing = false; await editor.setReadOnly(readOnly); }
     },
     focus,
+    async scrollTo(target) {
+      if (disposed) return false;
+      return (await editor.scrollToRange(rangeOf(target))).scrolled === true;
+    },
     async undo() {
       if (readOnly) return;
       const r = await editor.hwpctrl.undo();
@@ -317,16 +376,17 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       // Studio 는 표지의 실체를 검사하지 않는다. 이름표가 있으면 실제 항목처럼 보이므로 이름표를 모두 걷는다.
       const highlight = projection.highlight && typeof projection.highlight === "object" ? projection.highlight as Obj : null;
       const range = highlight?.kind === "range" && highlight.location && typeof highlight.location === "object" ? highlight.location as Obj : null;
+      // 문제 표지(IDE-08 P-08)는 Python 의 problems[].location 에 선다 — 오류는 물결(strong), 경고는 점선(subtle) 밑줄이고
+      // 문장은 포인터 설명이다. 문제는 표시가 아니라 경보라 문서 모드에서도 선다(TXT 와 같다). 표지 상한은 필드·항목 표지와
+      // 나눠 쓰므로 넘치면 문제 표지부터 덜어 낸다(상한을 넘기면 장식 호출 전체가 던진다).
       const documentMode = projection.mode === "document";
-      if (documentMode && !highlight) { await editor.setDecorations([], { labels: "none" }); return; }
       const fields = Array.isArray(projection.fields) ? projection.fields : [];
       const slots = Array.isArray(projection.slots) ? projection.slots : [];
-      const markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number; startParagraph: number;
-        startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath }> = [];
+      const markers: Marker[] = [];
       const region = highlight?.kind === "slot" || highlight?.kind === "option" || !!range;
       const lit = (kind: string, id: unknown, slotId?: unknown, index?: number) => !!highlight && highlight.kind === kind && highlight.id === id
         && (kind !== "option" || highlight.slot_id === slotId) && (kind !== "field" || highlight.index == null || highlight.index === index);
-      const marker = (kind: string, label: string, emphasis: 'subtle' | 'strong', place: Obj) => {
+      const marker = (kind: Marker["kind"], label: string, emphasis: 'subtle' | 'strong', place: Obj): Marker | null => {
         const section = sectionEntries.indexOf(String(place.entry));
         const startParagraph = place.paragraph ?? place.start_paragraph;
         const endParagraph = place.end_paragraph ?? startParagraph;
@@ -337,7 +397,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
           endParagraph: endParagraph as number, endOffset: typeof place.end === "number" ? place.end : null,
           ...(cellPath ? { cellPath } : {}) };
       };
-      const add = (kind: string, label: string, place: Obj, shown = true) => {
+      const add = (kind: "field" | "slot" | "option", label: string, place: Obj, shown = true) => {
         if (!shown) return;
         const on = kind === "field" ? highlight?.kind === "field" : region && lit(kind, place.__id, place.__slot);
         const emphasis = on ? 'strong' : region && kind !== "field" ? 'subtle' : kind === 'field' || projection.mode === 'structure' ? 'strong' : 'subtle';
@@ -368,6 +428,22 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       // The preview range is one more marker only while the Studio's cap leaves room for it.
       const synthetic = range && marker(highlight?.marker === "option" ? "option" : "slot", "", 'strong', range);
       if (synthetic && markers.length < DECORATION_LIMIT) markers.push(synthetic);
+      const problems: Marker[] = [];
+      for (const item of Array.isArray(projection.problems) ? projection.problems : []) {
+        const problem = item && typeof item === "object" ? item as Obj : null;
+        const emphasis = problem ? PROBLEM_EMPHASIS[String(problem.severity)] : undefined;
+        if (!problem || !emphasis || !problem.location || typeof problem.location !== "object") continue;
+        const chars = Array.from(String(problem.message ?? ""));
+        const label = chars.length > LABEL_LIMIT ? `${chars.slice(0, LABEL_LIMIT - 1).join("")}…` : chars.join("");
+        const made = marker("problem", label, emphasis, problem.location as Obj);
+        if (made) problems.push(made);
+      }
+      const room = Math.max(0, DECORATION_LIMIT - markers.length);
+      if (problems.length > room && !problemCapNoted) {
+        problemCapNoted = true;
+        console.debug(`rhwp: ${problems.length - room} problem markers dropped (decoration cap ${DECORATION_LIMIT})`);
+      }
+      markers.push(...problems.slice(0, room));
       // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
       // structure mode labels every boundary. A preview range takes every label down.
       await editor.setDecorations(markers, { labels: documentMode || range ? "none" : projection.mode === "structure" ? "all" : "selected" });

@@ -250,6 +250,8 @@ export interface RhwpSelectionContextV1 {
     /** 두 끝이 같은 표 셀 안에 있을 때만 존재하며, 그때 paragraph 는 셀 안 문단 순번이다 */
     cellPath?: RhwpCellPathEntryV1[];
   } | null;
+  /** 선택 끝(캐럿) 줄의 iframe 클라이언트 좌표. 포인터로 선택을 끄는 중이면 null 이다 */
+  rect: RhwpClientRect | null;
 }
 
 export interface RhwpApplyTextCommandV1 {
@@ -340,7 +342,11 @@ export declare class RhwpEditor {
   /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
   getSelectionContext(): Promise<RhwpSelectionContextV1>;
   setReadOnly(readOnly: boolean): Promise<void>;
-  setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
+  /**
+   * kind: 'field' | 'slot' | 'option' | 'problem'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
+   * label 이 포인터 설명이다. 표지는 한 번에 500개까지다.
+   */
+  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
     startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
     cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
   /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
@@ -355,6 +361,9 @@ export declare class RhwpEditor {
   focusTarget(target: RhwpBodyParagraphTargetV1): Promise<{ focused: boolean; page: number }>;
   focusRange(range: { section: number; startParagraph: number; startOffset: number;
     endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ focused: boolean }>;
+  /** 캐럿·선택·DOM 초점은 그대로 두고 뷰포트만 범위의 첫 줄로 옮긴다 */
+  scrollToRange(range: { section: number; startParagraph: number; startOffset: number;
+    endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ scrolled: boolean }>;
   /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트 구독 */
   onDocumentChanged(listener: (event: RhwpDocumentChangedEventV1) => void): () => void;
   onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',

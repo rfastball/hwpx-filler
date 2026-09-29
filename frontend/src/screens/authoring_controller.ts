@@ -607,7 +607,8 @@ export function createAuthoringController(deps: Deps) {
     if (id !== viewId || selectionRequests.get(id) !== request || revision(id) !== atRevision) return;
     // Moving or resizing uses the new caret as a destination; retain its source.
     const retain = same || ["move", "duplicate", "adjust_range"].includes(view.commandType);
-    update({ matches, commands, context: result.context || {}, ...(!retain ? {
+    // commandsSelection: 이 판정이 선 편집기 선택(같은 객체) — 선택 옆 막대(IDE-08)는 지금 선택의 판정이 도착했을 때만 선다.
+    update({ matches, commands, commandsSelection: selection, context: result.context || {}, ...(!retain ? {
       selected: matches.length === 1 && !matches[0].approximate ? { ...matches[0].location, ...matches[0] } : null,
     } : {}) });
     problemHere(id, result.problems_here);

@@ -65,6 +65,9 @@ export type LintpadMountSpec = {
   authoring?: boolean;
   readOnly?: boolean;
   onSelectionChanged?: (selection: { start: number; end: number }) => void;
+  /** 선택 끝(head) 줄의 호스트 클라이언트 좌표(IDE-08) — 비어 있지 않은 선택이 **자리 잡으면** 보고한다(포인터를 누른
+   *  채 끄는 동안은 보고하지 않고 놓을 때 한 번). 선택이 비거나 문서가 바뀌면 null 이다. 선택 옆 막대가 이 줄 아래에 선다. */
+  onSelectionRect?: (rect: LintpadLineRect | null) => void;
   onCompositionChanged?: (composing: boolean) => void;
 };
 
@@ -321,6 +324,55 @@ function watchTheme(view: EditorView): () => void {
 /** 손잡이 → 테마 감시 해제. 뷰와 같은 수명이다. */
 const THEME_WATCHES = new WeakMap<LintpadHandle, () => void>();
 
+/** 선택 끝 줄(호스트 좌표) — 편집면 밖 표면이 그 아래에 선다(IDE-08). */
+export type LintpadLineRect = { left: number; top: number; bottom: number };
+
+/** 선택 끝 줄 보고의 **순수** 상태(IDE-08) — vendor 타입이 없어 단위로 잰다. 포인터가 눌린 동안은 끄는 중이라 재지 않고
+ *  놓는 순간 잰다. 선택이 바뀌면 먼저 걷고 다시 잰다. 편집되면 걷는다. 같은 null 은 거듭 보내지 않는다. `measure` 는 지금
+ *  선택의 끝 줄을 재어 `measured` 로 돌려주는 요청이다(비어 있으면 null). */
+export function selectionRectTracker(report: (rect: LintpadLineRect | null) => void) {
+  let shown = false, pointerDown = false;
+  const hide = () => { if (shown) { shown = false; report(null); } };
+  return {
+    press() { pointerDown = true; hide(); },
+    release(measure: () => void) { pointerDown = false; measure(); },
+    selected(empty: boolean, measure: () => void) { hide(); if (!pointerDown && !empty) measure(); },
+    edited() { hide(); },
+    measured(rect: LintpadLineRect | null) { if (!rect) { hide(); return; } shown = true; report(rect); },
+  };
+}
+
+/** 선택 끝 줄 좌표의 측정 열쇠 — 같은 틀 안의 여러 요청은 한 번만 잰다. */
+const RECT_MEASURE = {};
+
+/** 위 상태의 vendor 얼굴 — mousedown·선택·편집을 CodeMirror 에서 받아 끝(head) 좌표를 잰다. */
+function selectionRectExtension(report: (rect: LintpadLineRect | null) => void): Extension {
+  const tracker = selectionRectTracker(report);
+  const measure = (view: EditorView) => () => view.requestMeasure({ key: RECT_MEASURE,
+    read: (current) => {
+      const main = current.state.selection.main;
+      if (main.empty) return null;
+      // 앞으로 고른 범위의 끝은 앞 글자 쪽, 뒤로 고른 범위의 끝은 뒤 글자 쪽 좌표다 — 줄 끝에서 다음 줄로 넘어가지 않는다.
+      const coords = current.coordsAtPos(main.head, main.head === main.to ? -1 : 1);
+      return coords ? { left: coords.left, top: coords.top, bottom: coords.bottom } : null;
+    },
+    write: (rect) => tracker.measured(rect) });
+  return [
+    EditorView.domEventHandlers({
+      mousedown: (_event, view) => {
+        tracker.press();
+        // 닫힌 뷰(dom 이 문서에서 떨어진 뒤)에 늦게 온 mouseup 은 재지 않는다.
+        view.dom.ownerDocument.defaultView?.addEventListener("mouseup", () => tracker.release(view.dom.isConnected ? measure(view) : () => {}), { once: true });
+        return false;
+      },
+    }),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) tracker.edited();
+      else if (update.selectionSet) tracker.selected(update.state.selection.main.empty, measure(update.view));
+    }),
+  ];
+}
+
 /** 마운트 — vendor 인스턴스 생성의 **유일한** 자리(`mount_owner`). */
 export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
   const handle: LintpadHandle = { host: spec.host };
@@ -341,6 +393,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
           id: spec.contentId,
           "aria-label": spec.ariaLabel,
         }),
+        ...(spec.onSelectionRect ? [selectionRectExtension(spec.onSelectionRect)] : []),
         spanField,
         problemField,
         pairField,
