@@ -693,6 +693,48 @@ def test_installer_wipe_path_cannot_fire_silently() -> None:
     )
 
 
+def test_installer_clears_bundle_dir_on_every_install() -> None:
+    r"""덮어쓰기(유지) 설치도 PyInstaller 번들 폴더 ``{app}\_internal`` 을 **매번** 비운다.
+
+    ``[Files]`` 는 덮어쓸 뿐 옛 버전 파일을 지우지 않는다. 그런데 앱 기동 시 web 산출물 검증은
+    ``_internal\web`` 이 봉인과 정확히 같기를 요구해, Vite 해시 이름의 옛 assets 가 하나라도
+    남으면 "extra stale web artifact file" 로 기동을 거부한다 — 업그레이드에서 「기존 데이터를
+    유지하며 덮어쓰기(권장)」를 고른 사용자만 앱이 켜지지 않는다(실측). 빈 폴더에 설치하는
+    패키징·릴리스 스모크는 이 경로를 보지 않으므로 여기서 직접 센다: 비우기는 초기화 선택·
+    Tasks 에 묶이지 않은 무조건 항목이어야 하고, 사용자가 고른 ``{app}`` 자체가 아니라 번들
+    소유 폴더만 겨눈다.
+    """
+    iss = INSTALLER_ISS.read_text(encoding="utf-8")
+
+    header = "\n[InstallDelete]"
+    assert header in iss, (
+        "[InstallDelete] 섹션이 없습니다 — 덮어쓰기 설치가 옛 web assets 를 남겨 "
+        "앱이 기동을 거부합니다"
+    )
+    start = iss.index(header) + len(header)
+    next_section = iss.find("\n[", start)
+    section = iss[start : next_section if next_section != -1 else len(iss)]
+    entries = [
+        line.strip()
+        for line in section.splitlines()
+        if line.strip() and not line.strip().startswith(";")
+    ]
+
+    bundle = [entry for entry in entries if 'Name: "{app}\\_internal"' in entry]
+    assert bundle, r"[InstallDelete] 가 번들 폴더 {app}\_internal 을 겨누지 않습니다"
+    for entry in bundle:
+        assert "Type: filesandordirs" in entry, (
+            "번들 폴더 비우기가 filesandordirs 가 아닙니다 — 하위 폴더의 옛 assets 가 남습니다"
+        )
+        for gate in ("Check:", "Tasks:", "Components:", "Languages:"):
+            assert gate not in entry, (
+                f"번들 폴더 비우기가 {gate} 조건에 묶였습니다 — 덮어쓰기 설치에서 빠질 수 있습니다"
+            )
+    assert not any(entry.endswith('Name: "{app}"') for entry in entries), (
+        "[InstallDelete] 가 {app} 자체를 지웁니다 — 사용자가 고른 설치 폴더 전체가 사라집니다"
+    )
+
+
 def _web_entry_module():
     """`packaging/hwpx_filler_web_entry.py` 를 **모듈로** 싣는다(`__main__` 가드는 안 돈다)."""
     spec = importlib.util.spec_from_file_location("hwpx_filler_web_entry", WEB_ENTRY)

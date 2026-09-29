@@ -153,7 +153,7 @@ id = "product-scope"
 document = "docs/product.md"
 sources = ["packaging/verify_specs.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "frontend/src/react/*.ts", "frontend/index.html"]
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_tutorial_state.py"]
-source_sha256 = "9715812e0ca665db055e92e2813a0db0b9394f96f6466d0335100a2397950751"
+source_sha256 = "6c7e2387a69a6dbc965de6553405718a6ecde40419be93f6dd062cfc6c9e5aa7"
 body_sha256 = "f08d54c53d875fb2c044990a24e05e8c5ab824c60894a09f7953ef182216be52"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "64054877f0974acc3c2971a96b7c3598d806bf647daf0fb0da6e50475c168c01"
+source_sha256 = "7b8ec8c33f52dbffbfbf3dd1c5a3d2b4d7f8f2ae5ca0739434ea66e9ae6debd7"
 body_sha256 = "0a80a50b08f0a552b34726334b3bc41763d6f0c25e240161b31816d983197b20"
 
 [[topic]]
