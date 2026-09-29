@@ -209,8 +209,7 @@ document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
 source_sha256 = "5e4c1c07b66797675121b8146d69c0519f76d7e96444b6ba48f563881926c613"
-body_sha256 = "4087d4243c3331932e1c118042275b1fd351e8e85b501ffe8f7ae123aea14935"
-[[topic]]
+body_sha256 = "4087d4243c3331932e1c118042275b1fd351e8e85b501ffe8f7ae123aea14935"[[topic]]
 id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
