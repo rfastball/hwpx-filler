@@ -1335,6 +1335,10 @@ text = "구조 오류를 수정한 뒤 결과를 시험하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
+text = "되돌릴 필드 값이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
 text = "문서에서 범위를 고르세요."
 
 [[sentence]]

@@ -1090,6 +1090,73 @@ test("IDE-02 (P-10): the palette groups unavailable commands by Python's reason 
   assert.ok(!menu.includes('class="authoring-command-palette"'));
 });
 
+test("#1078: 「원본 템플릿으로 되돌리기」 is a document command — palette only, dimmed with Python's reason, never in the context menu or the properties select", async () => {
+  const { controller, snapshot } = harness();
+  await controller.activate("a");
+  const reason = "되돌릴 필드 값이 없습니다.";
+  snapshot.tabs[0].document_commands = [{ type: "revert_template", enabled: false, reason, alternative: null }];
+  controller.update({ commands: SHARED_VERDICTS, palette: 1 });
+  const palette = render(controller);
+  assert.equal(count(palette, `role="group" aria-label="${reason}"`), 1, "불가 사유는 Python 문장 그대로 무리 이름이다");
+  assert.ok(palette.includes('<div id="authoring-palette-cmd-revert_template" role="option" aria-selected="false" aria-disabled="true" class="authoring-palette-option danger"><span class="authoring-palette-label">원본 템플릿으로 되돌리기</span></div>'));
+  // 되면 되는 목록에 위험 모양으로 선다. 판정은 선택(view.commands)이 아니라 탭 투영이다 — 선택 판정 전에도 선다.
+  snapshot.tabs[0].document_commands = [{ type: "revert_template", enabled: true, reason: null, alternative: null }];
+  controller.update({ commands: [], palette: 2 });
+  // 선택 명령이 판정 전이라 되는 첫 항목(활성)이다.
+  assert.ok(render(controller).includes('<div id="authoring-palette-cmd-revert_template" role="option" aria-selected="true" class="authoring-palette-option active danger"><span class="authoring-palette-label">원본 템플릿으로 되돌리기</span></div>'));
+  // 읽기 전용(HWPX 보존 미확인)이면 어떤 명령도 되지 않는다.
+  const locked = commandEntries([{ type: "revert_template", enabled: true, reason: null, alternative: null }], true, [["revert_template", "원본 템플릿으로 되돌리기"]]);
+  assert.deepEqual(locked.map((entry) => [entry.type, entry.enabled]), [["revert_template", false]]);
+  // 문맥 메뉴·속성 명령 선택은 고른 대상의 명령만 싣는다.
+  controller.update({ palette: 0, commands: SHARED_VERDICTS.map((entry) => ({ ...entry, enabled: true, reason: null })) });
+  openContextMenu(controller, { clientX: 5, clientY: 6, target: null }, null);
+  assert.ok(!render(controller).includes("원본 템플릿으로 되돌리기"));
+  controller.update({ contextMenu: null, panel: "properties", commandType: "rename_field", selected: { kind: "field", name: "이름" }, selection: { start: 0, end: 2 } });
+  assert.ok(!render(controller).includes("원본 템플릿으로 되돌리기"));
+});
+
+test("#1078: running the document command previews, asks the button-grade confirm (title/button = the command, body = Python's loss set), then applies through the edit chain", async () => {
+  const confirms = [];
+  let answer = false;
+  let revision = 0;
+  const applied = [];
+  const { controller, calls } = harness((action, payload) => {
+    if (action === "update") return { revision: ++revision };
+    if (action === "preview") {
+      if (payload.revision !== revision) throw new Error("stale revision");
+      return { confirm: "button", content: "UkVWRVJURUQ=", edits: [], label: "원본 템플릿으로 되돌리기", message: "사라지는 것: 필드 값 2개" };
+    }
+    return {};
+  }, { confirm: async (spec) => { confirms.push(spec); return answer; } });
+  await controller.activate("a");
+  let content = "FILLED";
+  controller.attach("a", { apply: async (next, edits, label, expected) => { applied.push({ next, edits, label, expected }); content = next; }, content: async () => content, decorate() {} });
+  // 취소: 문서는 그대로다(편집기 적용·update 없음).
+  assert.equal(await controller.documentCommand("revert_template"), false);
+  assert.deepEqual(confirms, [{ title: "원본 템플릿으로 되돌리기", body: "사라지는 것: 필드 값 2개", confirmLabel: "원본 템플릿으로 되돌리기", danger: true }]);
+  assert.equal(applied.length, 0);
+  assert.equal(calls.filter((call) => call.action === "update").length, 0);
+  // 확인: 확정 직전 같은 revision 으로 다시 미리 보고, 편집기 한 번의 적용(실행 취소 단위)과 update 로 선다.
+  answer = true;
+  assert.equal(await controller.documentCommand("revert_template"), true);
+  assert.deepEqual(applied, [{ next: "UkVWRVJURUQ=", edits: [], label: "revert_template", expected: "FILLED" }]);
+  assert.deepEqual(calls.filter((call) => call.action === "preview").map((call) => [call.revision, call.command]), [[0, { type: "revert_template" }], [0, { type: "revert_template" }], [0, { type: "revert_template" }]]);
+  assert.equal(calls.filter((call) => call.action === "update").at(-1).content, "UkVWRVJURUQ=");
+  const view = controller.viewModel.getSnapshot();
+  assert.equal(view.lastCommandLabel, "원본 템플릿으로 되돌리기", "실행 취소 표지는 명령 이름이다");
+  assert.equal(view.preview, null, "속성 패널의 미리보기 구획을 세우지 않는다");
+  // 확인 창이 떠 있는 사이 문서가 바뀌면 옛 미리보기를 적용하지 않는다(확정 직전 revision 재검사).
+  const bump = harness((action, payload) => {
+    if (action === "update") return { revision: ++revision };
+    if (action === "preview" && payload.revision !== revision) throw new Error("stale revision");
+    if (action === "preview") return { confirm: "button", content: "X", edits: [], message: "사라지는 것: 필드 값 1개" };
+    return {};
+  }, { confirm: async () => { revision++; return true; } });
+  await bump.controller.activate("a");
+  bump.controller.attach("a", { apply: async () => { throw new Error("must not apply"); }, content: async () => "", decorate() {} });
+  await assert.rejects(bump.controller.documentCommand("revert_template"), /stale revision/);
+});
+
 test("§3.1: the properties panel has a visible 닫기 in its header", async () => {
   const { controller } = harness();
   await controller.activate("a");

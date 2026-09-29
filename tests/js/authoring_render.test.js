@@ -556,7 +556,8 @@ test("IDE-02 (P-04): with verdicts the context menu carries runnable items and a
 
 test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the dock; typing filters, ↑↓ reach disabled items, Enter runs only runnable ones, Escape stays inside and returns focus", async () => {
   const types = ["create_field", "create_slot", "create_option", "rename_field", "relink_field", "unset_field", "rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"];
-  const env = await boot(hwpxTab());
+  // 문서 명령(#1078)은 탭 투영의 판정이다 — 채운 값이 없는 문서라 사유와 함께 흐리다(팔레트 끝의 사유 무리).
+  const env = await boot({ ...hwpxTab(), document_commands: [{ type: "revert_template", enabled: false, reason: "되돌릴 필드 값이 없습니다.", alternative: null }] });
   const view = () => env.controller.viewModel.getSnapshot();
   env.controller.update({ commands: types.map((type) => type === "create_field" || type === "rename_field" ? { type, enabled: true, reason: null, alternative: null }
     : { type, enabled: false, reason: type.startsWith("create") ? "먼저 항목 안의 내용을 고르세요." : "먼저 필드를 고르세요.", alternative: null }) });
@@ -594,6 +595,9 @@ test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the
   // ↑ 는 감싸 돌아 마지막(흐린) 항목으로 — 흐린 항목도 활성이 되어 무리 이름(사유)이 읽힌다. Enter 는 아무것도 하지 않는다.
   press(env, "ArrowUp");
   assert.equal(active().getAttribute("aria-disabled"), "true");
+  assert.equal(active().textContent, "원본 템플릿으로 되돌리기", "문서 명령은 선택 명령 뒤에 선다");
+  assert.equal(active().closest('[role="group"]').getAttribute("aria-label"), "되돌릴 필드 값이 없습니다.");
+  press(env, "ArrowUp");
   assert.equal(active().closest('[role="group"]').getAttribute("aria-label"), "먼저 필드를 고르세요.");
   assert.equal(active().getAttribute("aria-selected"), "true");
   assert.equal(press(env, "Enter", { nativeEvent: { isComposing: true } }).prevented, false, "조합 중 Enter 는 팔레트의 것이 아니다");
@@ -601,7 +605,7 @@ test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the
   await settle();
   assert.ok(palette(), "흐린 항목의 Enter 는 실행하지 않고 닫지도 않는다");
   assert.equal(view().panel, "");
-  assert.equal(byRole(env, "group").filter((node) => node.closest(".authoring-command-palette")).length, 2, "사유 무리는 서로 다른 사유 수만큼");
+  assert.equal(byRole(env, "group").filter((node) => node.closest(".authoring-command-palette")).length, 3, "사유 무리는 서로 다른 사유 수만큼");
   // Escape 는 팔레트 안에서 멈춘다 — 셸 Escape(속성 패널 닫기)로 새지 않고 연 자리로 초점을 돌린다.
   env.controller.update({ panel: "properties", commandType: "create_field" });
   await settle();
@@ -623,6 +627,26 @@ test("IDE-02 (P-10): Ctrl+Shift+P opens a non-modal palette without touching the
   await settle();
   assert.equal(palette(), null, "실행하면 닫힌다");
   assert.deepEqual([view().panel, view().commandType], ["properties", "rename_field"]);
+  env.root.unmount();
+});
+
+test("#1078: picking 「원본 템플릿으로 되돌리기」 in the palette previews the document command and asks the confirm — no properties panel opens", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried", document_commands: [{ type: "revert_template", enabled: true, reason: null, alternative: null }] }, [],
+    (action) => action === "preview" ? { confirm: "button", content: "ZG9j", edits: [], message: "사라지는 것: 필드 값 2개" } : {});
+  await settle();
+  focusOn(env, env.container.querySelector('.authoring-toolbar [data-rove="more"]'));
+  press(env, "P", { ctrlKey: true, shiftKey: true });
+  await settle();
+  const input = () => env.container.querySelector('.authoring-command-palette input[role="combobox"]');
+  env.flushSync(() => propsOf(input()).onChange({ target: { value: "원본" } }));
+  await settle();
+  press(env, "Enter");
+  await settle();
+  assert.equal(env.container.querySelector(".authoring-command-palette"), null, "팔레트는 닫힌다");
+  assert.deepEqual(env.calls.filter((call) => call.action === "preview").map((call) => call.command), [{ type: "revert_template" }]);
+  // boot 의 확인 창은 취소한다 — 적용(update)이 없고 속성 패널도 열리지 않는다.
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 0);
+  assert.equal(env.controller.viewModel.getSnapshot().panel, "");
   env.root.unmount();
 });
 

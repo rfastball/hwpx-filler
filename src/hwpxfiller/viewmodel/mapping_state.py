@@ -1179,7 +1179,7 @@ class PartialGate:
     - ``RAW``(필드 0개): 차단(채울 대상 없음 — 상위 페이지가 이미 필드 없는 템플릿을 거부).
     - ``PARTIAL``(필드 有 + skip/파편/평문 잔존): **명시 ack 또는 인라인 컴파일 전까지 차단**
       — 값이 조용히 누락되는 위험을 소리 나게 세운다(confirm-or-alarm).
-    - ``COMPILED``/``FILLED``: 통과.
+    - ``COMPILED``: 통과.
 
     **반사적 dismiss 봉쇄(ADR-E).** ack 는 *정확히 재진술된 미해결 이름 전체*를 확인해야
     성립한다(``acknowledge`` 가 받은 이름 집합이 ``unmet_tokens`` 와 일치할 때만). 다른/부분/
@@ -1206,7 +1206,7 @@ class PartialGate:
         return self.status.structure_marker_n > 0
 
     def needs_gate(self) -> bool:
-        """PARTIAL 만 확정 게이트가 닫힌다(RAW 는 상위에서 차단, COMPILED/FILLED 는 통과)."""
+        """PARTIAL 만 확정 게이트가 닫힌다(RAW 는 상위에서 차단, COMPILED 는 통과)."""
         return self.status.state is CompileState.PARTIAL
 
     def acknowledge(self, confirmed: "Iterable[str]") -> None:
@@ -1230,7 +1230,7 @@ class PartialGate:
             return False  # ack 와 무관한 차단(구조 미완 — 수선 동선은 변환)
         if st is CompileState.PARTIAL:
             return self.is_acked()
-        return True  # COMPILED / FILLED
+        return True  # COMPILED
 
     def message(self) -> str:
         """사람이 볼 게이트 메시지 — PARTIAL 은 구체 토큰 이름을 재진술한다."""

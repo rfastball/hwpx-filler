@@ -38,6 +38,8 @@ from .text_structure import (
 )
 
 # --------------------------------------------------------------- shared vocabulary
+#: 문서 명령 「원본 템플릿으로 되돌리기」(#1078) — 모든 필드 값을 ``{{이름}}`` 원형으로 되돌린다.
+REVERT_TEMPLATE = "revert_template"
 #: Command types in the fixed order the frontend renders them (F40/P07).
 COMMAND_TYPES: tuple[str, ...] = (
     "create_field", "create_slot", "create_option",
@@ -51,7 +53,12 @@ COMMAND_NAMES: dict[str, str] = {
     "rename_field": "필드 이름 변경", "relink_field": "필드 연결 변경", "unset_field": "필드 의미 해제",
     "rename_slot": "항목 속성 변경", "rename_option": "선택 속성 변경", "adjust_range": "범위 조정",
     "unwrap": "의미만 해제", "delete": "내용까지 삭제", "duplicate": "복제", "move": "이동",
+    REVERT_TEMPLATE: "원본 템플릿으로 되돌리기",
 }
+#: 문서 명령(#1078) — 선택이 아니라 문서 전체에 대한 명령. 가용 판정은 선택마다가 아니라 분석(revision)마다 한 번이고,
+#: 탭 투영(``document_commands``)으로 선다. 선택 명령 표(:data:`COMMAND_TYPES`)와 섞지 않는다 — 문맥 메뉴·속성 명령
+#: 선택은 고른 대상의 명령만 싣는다.
+DOCUMENT_COMMAND_TYPES: tuple[str, ...] = (REVERT_TEMPLATE,)
 FIELD_COMMANDS = frozenset({"create_field", "rename_field", "relink_field", "unset_field"})
 REGION_COMMANDS = frozenset({"rename_slot", "rename_option", "adjust_range", "unwrap", "delete",
                              "duplicate", "move"})
@@ -71,6 +78,9 @@ REASON_NO_CONTENT_LINE = "고를 내용 줄이 없습니다."
 REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 고르세요."
 _FIELD_NOT_FOUND = "필드를 찾을 수 없습니다."
 REASON_NEED_RANGE = "문서에서 범위를 고르세요."
+#: 「원본 템플릿으로 되돌리기」 불가 — 모든 필드가 이미 ``{{이름}}`` 원형이거나 비었다. TXT 는 필드가 곧 ``{{이름}}``
+#: 표기라 값이 없다(늘 이 사유).
+REASON_NO_FILLED_VALUE = "되돌릴 필드 값이 없습니다."
 #: 셀 안 선택(HWPX ``cell_path``) — 항목·선택 영역은 본문 문단 단위다. 표를 감싸려면 표 밖 문단까지 이어 고른다.
 REASON_REGION_IN_CELL = "표 셀 안에서는 항목·선택을 만들 수 없습니다. 표 밖 문단까지 이어서 고르세요."
 ALTERNATIVE_CREATE_SLOT = {"label": "먼저 항목 만들기", "command_type": "create_slot"}
@@ -243,7 +253,7 @@ def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
     """미리보기 한 건의 확인 등급(P-01) — 두 매체가 같은 표를 쓴다. 표면은 이 값으로만 가른다."""
     action = command.get("type")
     impact = impact or {}
-    if action == "delete" or (action == "unwrap" and (preview.get("requires_cascade") or command.get("cascade"))):
+    if action in {"delete", REVERT_TEMPLATE} or (action == "unwrap" and (preview.get("requires_cascade") or command.get("cascade"))):
         return CONFIRM_BUTTON
     if action in _ENTER_COMMANDS or _identifier_changes(command) or preview.get("expanded"):
         return CONFIRM_ENTER
@@ -262,6 +272,47 @@ def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
     if isinstance(unverified, int) and unverified > 0:
         return CONFIRM_ENTER
     return CONFIRM_NONE
+
+
+# --------------------------------------------------------------- document commands (#1078)
+def field_placeholder(name: str) -> str:
+    """필드의 원형 값 — 누름틀 변환이 값 자리에 남기는 ``{{이름}}`` 표기(공백 없는 정규 이름)."""
+    return "{{" + name + "}}"
+
+
+def is_placeholder_value(value: str, name: str) -> bool:
+    """값이 아직 원형(``{{ ... }}``)인가 — 껍질을 벗겨 안쪽을 필드 이름과 비교한다.
+
+    누름틀 변환은 값 런에 원문 토큰(내부 공백 포함, 예 ``{{ 계약명 }}``)을 그대로 남기고 fieldBegin@name 은 공백을
+    벗긴 이름을 쓴다. 그 비대칭을 여기서 흡수한다 — 문자열 재조립(``"{{"+name+"}}"`` 비교)은 공백 토큰을 채운 값으로
+    오판정한다.
+    """
+    text = value.strip()
+    return text.startswith("{{") and text.endswith("}}") and normalize_field_id(text) == name
+
+
+def is_filled_value(value: str, name: str) -> bool:
+    """누름틀에 실제 값이 들었는가 — 비었거나 공백뿐이거나 원형이면 아니다."""
+    return bool(value.strip()) and not is_placeholder_value(value, name)
+
+
+def filled_value_count(media: str, analysis: Mapping[str, Any]) -> int:
+    """실제 값이 든 필드 사용 위치 수. HWPX 분석의 사용 위치는 값(``raw.value``)을 싣는다. TXT 필드는 값이 없다."""
+    if media != "hwpx":
+        return 0
+    return sum(1 for field in analysis.get("fields") or [] for occurrence in field.get("occurrences") or []
+               if is_filled_value(str((occurrence.get("raw") or {}).get("value") or ""), str(field.get("name"))))
+
+
+def document_commands(media: str, analysis: Mapping[str, Any]) -> list[dict]:
+    """문서 명령의 가용성(#1078) — 선택 명령과 같은 모양(``type``·``enabled``·``reason``·``alternative``)이다."""
+    reason = None if filled_value_count(media, analysis) else REASON_NO_FILLED_VALUE
+    return [{"type": REVERT_TEMPLATE, "enabled": reason is None, "reason": reason, "alternative": None}]
+
+
+def revert_template_message(count: int) -> str:
+    """되돌리기 확인의 손실 집합(ui-style 파괴 확인: 본문=결과·손실 집합)."""
+    return f"사라지는 것: 필드 값 {count}개"
 
 
 def created_target(command: Mapping[str, object], result: Mapping[str, Any]) -> dict | None:
@@ -1007,6 +1058,9 @@ def _apply_edits(text: str, edits: list[tuple[int, int, str]]) -> str:
 
 def _project(content: str, command: Mapping[str, object], *, projecting: bool) -> dict:
     action = command.get("type")
+    if action == REVERT_TEMPLATE:
+        # TXT 필드는 ``{{이름}}`` 표기 자체라 채운 값이 없다 — 판정(document_commands)과 같은 거절이다.
+        raise ValueError(REASON_NO_FILLED_VALUE)
     scan = scan_text_structure(content)
     edits, expanded, requires_cascade = _edits(content, command, projecting=projecting)
     result = _apply_edits(content, edits)

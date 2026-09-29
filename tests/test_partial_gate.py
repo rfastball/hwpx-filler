@@ -62,14 +62,13 @@ def _status(state: CompileState) -> TemplateStatus:
 
 
 def test_pure_gate_decision_table():
-    """순수 판정 — RAW·PARTIAL 차단, COMPILED·FILLED 통과(Qt·패키지 무관)."""
+    """순수 판정 — RAW·PARTIAL 차단, COMPILED 통과(Qt·패키지 무관)."""
     assert not PartialGate(_status(CompileState.RAW)).can_proceed()
     assert not PartialGate(_status(CompileState.PARTIAL), ["a"]).can_proceed()
 
     compiled = PartialGate(_status(CompileState.COMPILED))
     assert compiled.can_proceed()
     assert not compiled.needs_gate()
-    assert PartialGate(_status(CompileState.FILLED)).can_proceed()
 
 
 def test_pure_gate_ack_requires_exact_names():
@@ -123,7 +122,7 @@ def test_partial_stray_inside_field_value_blocks():
 
 
 def test_raw_blocks_and_compiled_filled_pass():
-    """RAW 차단, COMPILED·FILLED 게이트 없이 통과(수용 3)."""
+    """RAW 차단, COMPILED(값을 채운 문서 포함) 게이트 없이 통과(수용 3)."""
     raw = gate_for_template(
         _pkg("<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
     )
@@ -141,7 +140,7 @@ def test_raw_blocks_and_compiled_filled_pass():
     assert doc.set_field("계약명", "정보시스템 구축") is True
     pkg.entries[SECTION] = doc.to_bytes()
     filled = gate_for_template(pkg)
-    assert filled.state is CompileState.FILLED
+    assert filled.state is CompileState.COMPILED  # #1078 — 채운 값은 상태가 아니다
     assert filled.can_proceed()
 
 

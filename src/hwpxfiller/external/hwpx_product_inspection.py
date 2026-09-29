@@ -16,8 +16,18 @@ from hwpxcore.text_extract import require_package
 
 from ..application.template_qualification import TemplateDiagnostic
 from ..domain.slot import Slot, SlotOption
+from ..domain.structure_scan import PLACEMENT_OPTION, PLACEMENT_SLOT
 
-PRODUCT_KINDS = frozenset({"slot", "slot_option"})
+#: 배선 어휘(메타태그 JSON ``hwpxFiller.kind``) — 문서 bytes 에 남는 값이라 바꾸지 않는다.
+PRODUCT_KIND_SLOT = "slot"
+PRODUCT_KIND_OPTION = "slot_option"
+PRODUCT_KINDS = frozenset({PRODUCT_KIND_SLOT, PRODUCT_KIND_OPTION})
+#: 배선 어휘 → 저작 어휘(분석·명령의 ``kind``, 구간 표기 배치와 같은 말). 일대일이다(L-5 — 두 어휘가 갈리는 곳은
+#: 옵션 하나: 배선 ``slot_option`` ↔ 저작 ``option``).
+AUTHORING_KIND_BY_PRODUCT_KIND: dict[str, str] = {
+    PRODUCT_KIND_SLOT: PLACEMENT_SLOT,
+    PRODUCT_KIND_OPTION: PLACEMENT_OPTION,
+}
 _NATIVE_NAME = "#hf"
 
 
@@ -106,13 +116,13 @@ def _require_text(value: object, field: str) -> str:
 def serialize_slot_metatag(slot: Slot) -> str:
     """Serialize one canonical object-local Slot payload; native ``name`` is last."""
     _require_text(slot.id, "Slot id")
-    return _serialize_product_metatag("slot", slot.id, slot.label)
+    return _serialize_product_metatag(PRODUCT_KIND_SLOT, slot.id, slot.label)
 
 
 def serialize_slot_option_metatag(option: SlotOption) -> str:
     """Serialize one canonical object-local Slot Option payload."""
     _require_text(option.id, "Slot Option id")
-    return _serialize_product_metatag("slot_option", option.id, option.label)
+    return _serialize_product_metatag(PRODUCT_KIND_OPTION, option.id, option.label)
 
 
 def _product_tag(
@@ -398,14 +408,16 @@ def inspect_product_bookmarks(
                     open_bookmarks.append(_OpenBookmark(event.pair, None, False))
                     continue
                 scope_blocked = any(not item.scope_usable for item in open_bookmarks)
-                slot_ancestors = [item.pair for item in open_bookmarks if item.kind == "slot"]
+                slot_ancestors = [
+                    item.pair for item in open_bookmarks if item.kind == PRODUCT_KIND_SLOT
+                ]
                 option_ancestors = [
-                    item.pair for item in open_bookmarks if item.kind == "slot_option"
+                    item.pair for item in open_bookmarks if item.kind == PRODUCT_KIND_OPTION
                 ]
                 owning_slot = (
                     slot_ancestors[0]
                     if not scope_blocked
-                    and product.kind == "slot_option"
+                    and product.kind == PRODUCT_KIND_OPTION
                     and len(slot_ancestors) == 1
                     else None
                 )
@@ -427,7 +439,7 @@ def inspect_product_bookmarks(
                         )
                         role = ProductScopeRole.INVALID_PRODUCT
                         usable = False
-                    elif product.kind == "slot":
+                    elif product.kind == PRODUCT_KIND_SLOT:
                         if slot_ancestors:
                             diagnostics.append(
                                 _diagnostic(
@@ -515,7 +527,7 @@ def inspect_product_bookmarks(
             or item.pair not in projection_pairs
         ):
             continue
-        if item.kind == "slot":
+        if item.kind == PRODUCT_KIND_SLOT:
             if item.product_id in seen_slot_ids:
                 diagnostics.append(
                     _diagnostic(
@@ -553,7 +565,7 @@ def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
     for item in inspection.observations:
         if (
             item.classification is ProductClassification.KNOWN_PRODUCT
-            and item.kind == "slot_option"
+            and item.kind == PRODUCT_KIND_OPTION
             and item.product_id is not None
             and item.owning_slot_pair is not None
             and item.pair in inspection._projection_pairs
@@ -572,7 +584,7 @@ def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
         )
         for item in inspection.observations
         if item.classification is ProductClassification.KNOWN_PRODUCT
-        and item.kind == "slot"
+        and item.kind == PRODUCT_KIND_SLOT
         and item.product_id is not None
         and item.pair in inspection._projection_pairs
     )
@@ -636,7 +648,7 @@ def _inspect_slot_snapshot(pkg: object) -> _SlotSnapshot:
             raise ProductInspectionContractError(
                 f"Product pair in {item.entry!r} has no mutation handle"
             )
-        if item.kind == "slot":
+        if item.kind == PRODUCT_KIND_SLOT:
             slot_regions[item.product_id] = region
         elif item.owning_slot_pair is not None:
             owner = by_pair.get(item.owning_slot_pair)

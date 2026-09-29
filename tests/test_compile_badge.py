@@ -26,11 +26,12 @@ def test_every_compile_state_has_label_and_level():
 
 
 def test_severity_vocabulary_is_unified():
-    """RAW=muted(할 일)·PARTIAL=warn·COMPILED/FILLED=ok — 화면별 상이 어휘 금지."""
+    """RAW=muted(할 일)·PARTIAL=warn·COMPILED=ok — 화면별 상이 어휘 금지."""
     assert badge_level(CompileState.RAW) == "muted"
     assert badge_level(CompileState.PARTIAL) == "warn"
     assert badge_level(CompileState.COMPILED) == "ok"
-    assert badge_level(CompileState.FILLED) == "ok"
+    # 채운 템플릿의 배지도 「변환됨」 하나다(#1078 — 「채워짐」 퇴역).
+    assert set(BADGE_LABELS.values()) == {"원문", "부분 변환", "변환됨"}
 
 
 def test_none_state_is_loud_danger():

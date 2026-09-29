@@ -53,7 +53,9 @@ _HWPX_ONLY_PREFLIGHT = "HWPX 문서만 보존 검증을 합니다."
 #: 최근 작업 위치(U02) — 좌표를 기록한 문서가 지금 파일과 다르면 좌표를 버린다.
 _RESTORE_STALE = "마지막 작업 이후 문서가 바뀌어 작업 위치를 복원하지 않았습니다."
 #: 본문(내용)을 바꾸는 명령 — 의미 경계만 바꾸는 명령과 구별한다(F38). `paste` 는 붙여넣기 미리보기.
-_BODY_CHANGING = frozenset({"delete", "unset_field", "repair_marker", "duplicate", "move", "paste"})
+#: 「원본 템플릿으로 되돌리기」(#1078)는 필드 값(본문 글자)을 원형으로 바꾼다.
+_BODY_CHANGING = frozenset({"delete", "unset_field", "repair_marker", "duplicate", "move", "paste",
+                            semantics.REVERT_TEMPLATE})
 #: 표시 방식(§3.2). 최근 작업 위치와 함께 문서별로 기억한다(U02).
 _VIEW_MODES = frozenset({"document", "template", "structure"})
 #: 편집기가 내는 선택 좌표의 키 — TXT 는 start/end, HWPX 는 본문 항목·문단·(표 셀 경로).
@@ -398,6 +400,8 @@ class AuthoringController:
             "restore": self._restores.get(session.id),
             "has_linked_jobs": self._has_linked_jobs(session),
             "readiness": self._readiness(session),
+            # 문서 명령(#1078)의 가용성 — 선택이 아니라 분석에서 판정한다(명령 팔레트가 선택 명령과 함께 싣는다).
+            "document_commands": semantics.document_commands(session.media, session.analysis),
             "problems": self._problems(session),
             "trial_missing": self._trial_missing(self._outline_analysis(session), session),
         }

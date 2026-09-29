@@ -1,7 +1,7 @@
 """템플릿 관리 워크숍 ViewModel(C5) 계약 테스트 — 창 없이 실행하는 링1 테스트.
 
 핵심 증명:
-1. 상태별(RAW/PARTIAL/COMPILED/FILLED) 게이트 액션이 정확히 합의된 집합이다.
+1. 상태별(RAW/PARTIAL/COMPILED) 게이트 액션이 정확히 합의된 집합이다.
 2. fieldize dry-run(scan_preview)은 파일을 만지지 않고 미리보기만; 적용(apply_fieldize)만
    컴파일·저장하고 그 파일의 compile_status 가 진행한다(RAW/PARTIAL → COMPILED).
 3. lint/drift 결과가 VM 을 통해 렌더된다.
@@ -71,7 +71,7 @@ def _write_compiled(path: Path, section_inner: str) -> Path:
 
 
 def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Path:
-    """컴파일 후 값 1개 주입한 템플릿을 파일로 저장(FILLED)."""
+    """컴파일 후 값 1개 주입한 템플릿을 파일로 저장(상태는 COMPILED — #1078)."""
     pkg, _ = compile_document(_pkg(section_inner))
     doc = FieldDocument(pkg.entries[SECTION])
     assert doc.set_field(field, value) is True
@@ -85,14 +85,13 @@ def test_action_matrix_and_vm_delegation():
     """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
     # U6-B(#976): `preview`·`make_job` 은 살아 있는 표면에 소비자가 0 이라 **사슬째 걷혔다**
     # — 두 링2 소비자가 각자 필터로 지우고 있었고, 그것이 곧 링1 목록의 재판정이었다.
-    # U6-E(#979): 그때 0 이 된 COMPILED·FILLED 의 도달성 구멍은 **상태 동사가 아니라**
+    # U6-E(#979): 그때 0 이 된 COMPILED 의 도달성 구멍은 **상태 동사가 아니라**
     # 「자세히…」가 메운다 — 그 항목이 `tpl/review` 왕복을 지고 상세 시트를 연다(웹이 모든
     # 행에 덧붙인다). 그래서 이 표가 드는 것은 상태가 허용하는 **수선 동사**뿐이다.
     expected = {
         CompileState.RAW: ["compile"],
         CompileState.PARTIAL: ["compile"],
         CompileState.COMPILED: [],
-        CompileState.FILLED: [],
         None: [],
     }
     for state, keys in expected.items():
@@ -128,7 +127,7 @@ def test_library_scan_excludes_results_output_subtree(tmp_path):
     """#136 리뷰 F2 — 작업 산출물 폴더(템플릿/Results)는 템플릿으로 재수집하지 않는다.
 
     실행 기본 저장 폴더가 라이브러리 루트 밑 ``Results`` 라, 재귀 스캔이 완성 문서를 다시
-    템플릿(FILLED 행)으로 올리면 실행할수록 라이브러리가 오염된다."""
+    템플릿(값이 채워진 행)으로 올리면 실행할수록 라이브러리가 오염된다."""
     _write_raw(tmp_path / "서식.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
     results = tmp_path / "Results"
     results.mkdir()
@@ -182,7 +181,7 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     assert [a.key for a in by_name["raw"].actions()] == ["compile"]
     assert by_name["comp"].state == CompileState.COMPILED
     assert [a.key for a in by_name["comp"].actions()] == []
-    assert by_name["fill"].state == CompileState.FILLED
+    assert by_name["fill"].state == CompileState.COMPILED  # 채운 값은 상태가 아니다(#1078)
     assert [a.key for a in by_name["fill"].actions()] == []
     # U6-B: 「고를 수 있는가」와 사유도 같은 행이 진다 — 변환 전은 비활성 + 사유다.
     assert by_name["comp"].select_block_reason() == ""
@@ -366,7 +365,7 @@ def test_unreadable_file_surfaced_as_error_row_not_hidden(tmp_path):
 
 
 def test_filled_values_preview_reads_c1_fields(tmp_path):
-    """FILLED 미리보기 값은 C1 read_fields 로 읽는다."""
+    """누름틀 값 미리보기는 C1 read_fields 로 읽는다."""
     path = _write_filled(
         tmp_path / "fill.hwpx",
         "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
