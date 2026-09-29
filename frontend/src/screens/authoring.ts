@@ -6,7 +6,7 @@ import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import { COMMANDS } from "./authoring_controller.ts";
 import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
 import type { AuthoringLayout } from "./authoring_layout.ts";
-import type { AuthoringController, AuthoringEditor } from "./authoring_controller.ts";
+import type { AuthoringController, AuthoringEditor, Zoom } from "./authoring_controller.ts";
 import { TPL_STATUS_COPY } from "./job_run.ts";
 import { FOCUSABLE, clampMenu, errorParts, focusFirst, focusable, isCurrentTarget, liveStep, menuTrigger, roveFocus, tabName, treeKey } from "./authoring_a11y.ts";
 import type { LiveState, TreeRow } from "./authoring_a11y.ts";
@@ -360,7 +360,8 @@ export function trialViewerKey(item: Obj): unknown[] {
 
 /** 읽기 전용 HWPX 비교 뷰의 마운트 인자(host·콜백 제외). 본문 차례는 Python 이 그 내용에서 셈해 준 것을 그대로 넘긴다. */
 export function externalDocumentSpec(item: Obj, content: string, sectionEntries?: string[]) {
-  return { content, fileName: String(item.name || ""), readOnly: true as const, sectionEntries };
+  // 고정 100% 를 명시한다(IDE-06) — 편집면의 폭 맞춤이 Studio 설정에 남아 이 뷰로 번지지 않는다.
+  return { content, fileName: String(item.name || ""), readOnly: true as const, sectionEntries, zoom: 100 as const };
 }
 
 function ExternalDocument({ controller, item, content, sectionEntries, title }: Props & { item: Obj; content: string; sectionEntries?: string[]; title?: string }) {
@@ -434,10 +435,22 @@ export function compatibilityReporter(controller: Pick<AuthoringController, "pre
   };
 }
 
-/** 강조 대상의 TXT 범위(UX-09) — 항목·선택은 그 위치(마커 줄 포함), 필드는 사용 위치(index 가 있으면 그 한 곳). */
+/** 상태 막대 확대 선택(IDE-06 P-13). HWPX 는 「폭 맞춤」이 첫 항목이자 기본값이고 그동안 셸 CSS 배율은 1 이다(Studio 가
+ *  쪽 폭을 맞춘다 — 곱하면 이중 배율). TXT 는 숫자 배율만 두고 폭 맞춤 값은 100% 로 읽힌다. */
+export const ZOOM_STEPS = [75, 100, 125, 150, 200];
+export function zoomChoice(media: string | undefined, zoom: Zoom): { value: string; options: [string, string][]; cssZoom: number } {
+  const fit = media === "hwpx";
+  const numeric = typeof zoom === "number" ? zoom : 100;
+  return { value: fit && zoom === "fit" ? "fit" : String(numeric), cssZoom: zoom === "fit" ? 1 : numeric / 100,
+    options: [...(fit ? [["fit", "폭 맞춤"] as [string, string]] : []), ...ZOOM_STEPS.map((step): [string, string] => [String(step), `${step}%`])] };
+}
+
+/** 강조 대상의 TXT 범위(UX-09) — 항목·선택은 그 위치(마커 줄 포함), 필드는 사용 위치(index 가 있으면 그 한 곳),
+ *  미리보기 범위(IDE-06 P-16, kind "range")는 Python 이 준 실제 포함 범위 그대로다. */
 export function highlightRanges(analysis: Obj, highlight: Obj | null | undefined): { start: number; end: number }[] {
   if (!highlight) return [];
   const usable = (place: Obj | null | undefined) => place && typeof place.start === "number" && typeof place.end === "number" ? [{ start: place.start, end: place.end }] : [];
+  if (highlight.kind === "range") return usable(highlight.location);
   if (highlight.kind === "slot") return usable((analysis.slots || []).find((slot: Obj) => slot.id === highlight.id)?.location);
   if (highlight.kind === "option") return usable((analysis.slots || []).find((slot: Obj) => slot.id === highlight.slot_id)?.options?.find((option: Obj) => option.id === highlight.id)?.location);
   const field = (analysis.fields || []).find((entry: Obj) => entry.name === highlight.id);
@@ -510,6 +523,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
         release = () => disposeLintpad(handle);
       } else {
         const report = compatibilityReporter(controller, item.id, initial.revision);
+        const mountedFit = controller.zoom(item.id) === "fit";
         let handle: Awaited<ReturnType<typeof mountRhwp>>;
         try {
           handle = await rhwpMount.mount({ host: host.current, content: initial.content, fileName: item.name,
@@ -530,7 +544,9 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           },
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection) => controller.selection(item.id, selection),
-          onError: (error) => controller.fail(error, "editor"), readOnly: false });
+          onError: (error) => controller.fail(error, "editor"), readOnly: false,
+          // 배율 방식은 마운트마다 명시한다(IDE-06) — 폭 맞춤이면 Studio 가, 고정 배율이면 셸 CSS 가 키운다(곱하지 않는다).
+          zoom: mountedFit ? "fit" : 100 });
         } catch (error) {
           // 마운트가 무너져도 안내는 남는다 — Python 이 판정 없음을 기록하고 투영한다. 보이는 오류는 원래의 것이다.
           if (!disposed) await report.onMountError(error).catch(() => undefined);
@@ -543,16 +559,19 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           focus: (target) => handle.focus(target),
           command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
           decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null }), "editor"); },
+          zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
         };
         release = () => handle.dispose();
+        // 마운트 중에 확대를 바꿨으면(편집기가 붙기 전이라 알림을 못 받았다) 지금 방식을 맞춘다.
+        if ((controller.zoom(item.id) === "fit") !== mountedFit) await adapter.current.zoom!(mountedFit ? "fixed" : "fit");
       }
       detach = controller.attach(item.id, adapter.current!);
-      adapter.current!.decorate(item.analysis || {}, controller.mode(item.id));
+      adapter.current!.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id));
     }, "editor");
     return () => { disposed = true; detach?.(); release?.(); adapter.current = null; };
   }, [controller, item.id]);
   // 장식은 분석이 바뀔 때만 다시 보낸다 — 같은 분석의 재전송(push)은 같은 revision 이다(UX-05).
-  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id)); }, [item.analysis?.revision ?? item.analysis, active]);
+  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id)); }, [item.analysis?.revision ?? item.analysis, active]);
   return h("div", { className: "authoring-document", hidden: !active, inert: !active || !!item.recovery, "aria-hidden": !active },
     h("div", { ref: host, className: "authoring-editor-host" }));
 }
@@ -1367,6 +1386,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     ["문맥 메뉴", () => pressHere("F10", true), false, "Shift+F10"],
   ] as MenuAction[]).map(([label, run, disabled, keys]) => ({ label, run, disabled, keys }));
   const trialShown = dock.active === "trial";
+  const zoom = zoomChoice(item?.media, view.zoom);
   /** 외부 변경·저장 실패의 결정 동사(AC24·§9.2) — 경보 구획과 비교 구획이 같은 배열·같은 실행 경로를 쓴다(IDE-01).
    *  저장 실패면 「다시 저장」이 더해지고 그것이 그 구획의 주 행동이다. */
   const externalVerbs = (saveFailed: boolean): ReactNode[] => !item ? [] : [
@@ -1608,7 +1628,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           // 위치 줄 메모(IDE-01): 줄 오른쪽 끝의 제자리 사유 한 줄(controller.note) — 다음 캐럿 이동·Escape 에서 걷힌다.
           selectionNoteView(view.selectionNote)),
         // 편집면은 화면 안의 이름 붙은 구획이다 — 앱 셸의 main 안에 main 을 겹치지 않는다(UX-04). 문서 탭이 이것을 가리킨다.
-        h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: view.zoom / 100 }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
+        h("section", { className: "authoring-canvas", id: "authoring-canvas", "aria-label": "원문 편집", style: { zoom: zoom.cssZoom }, onContextMenu: shellInput.current.menu = contextMenu }, ...tabs.map((tab) => h(DocumentEditor, { key: `${tab.id}:${controller.editorGeneration(tab.id)}`, item: tab, active: tab.id === snapshot.active_id, controller, shell: shellInput })))),
       item && view.panel === "properties" && h(PanelSplitter, { panel: "properties", label: "속성 패널 너비", layout }),
       item && view.panel === "properties" && h(SemanticForm, { key: item.id, controller, selected: view.selected, selection: view.selection, preview: view.preview, onClose: () => returnFocus("properties") }),
       // 좁은 폭의 속성 시트 뒤 가림막 — 누르면 「닫기」와 같은 일을 한다(초점도 같은 자리로, 넓은 폭에서는 CSS 가 숨긴다).
@@ -1669,7 +1689,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
         item.recovery && h("span", null, "복구 여부 선택 필요"),
         // 확대는 상태 막대 끝의 작은 선택이다(편집기 관례) — 도구 막대의 roving 묶음 밖, 보통 Tab 순서다.
-        h("select", { className: "field authoring-zoom", "aria-label": "확대", value: view.zoom, onChange: (event: any) => controller.update({ zoom: Number(event.target.value) }) },
-          ...[75, 100, 125, 150, 200].map((value) => h("option", { key: value, value }, `${value}%`))))),
+        h("select", { className: "field authoring-zoom", "aria-label": "확대", value: zoom.value, onChange: (event: any) => controller.setZoom(event.target.value === "fit" ? "fit" : Number(event.target.value)) },
+          ...zoom.options.map(([value, label]) => h("option", { key: value, value }, label))))),
   );
 }

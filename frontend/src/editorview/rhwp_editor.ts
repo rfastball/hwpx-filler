@@ -42,10 +42,12 @@ export type RhwpMountSpec = {
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
   onCompatibility?: (result: { editable: boolean; diagnostics?: unknown[] }) => void;
   readOnly: boolean;
-  /** Fixed Studio zoom (percent) applied once after the document loads — a `view:zoom-N` command, never a
-   *  fit mode: fit modes persist in the Studio's shared settings and would carry into every later mount.
-   *  Only the read-only trial result viewer sets it (IDE-04). */
-  zoom?: 50 | 75 | 100;
+  /** Studio zoom set explicitly after every document load (IDE-06): `"fit"` = the Studio's own
+   *  `view:zoom-fit-width` (re-applied when the host is resized), a number = the fixed `view:zoom-N`.
+   *  The Studio persists its fit mode in the iframe origin's shared settings and restores it on the next
+   *  load, so every mount states its mode — default fixed 100 (the comparison and recovery viewers).
+   *  The main editor passes "fit" or 100 (the shell's CSS zoom scales a fixed page); the trial viewer 75. */
+  zoom?: RhwpZoom;
   /** Who needs caret reports: "visible" polls only while the host is rendered (not inside a
    *  `hidden`/`inert` ancestor); "never" skips polling (viewers nobody reads the selection of).
    *  Default "visible". */
@@ -53,6 +55,19 @@ export type RhwpMountSpec = {
   /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
   studio?: typeof createStudio;
 };
+/** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
+export type RhwpZoom = "fit" | 50 | 75 | 100;
+const zoomCommand = (zoom: RhwpZoom) => zoom === "fit" ? "view:zoom-fit-width" : `view:zoom-${zoom}`;
+/** The iframe's width: the host's width rounded down to a whole CSS pixel. At fractional device-pixel
+ *  ratios (175%) a host can be 835.43px wide; the Studio then sizes its page area to the integer
+ *  clientWidth and the sub-pixel remainder becomes a horizontal scroll range with a visible scrollbar
+ *  and nothing to scroll. CSS does the rounding at layout time, so a percentage stays a percentage
+ *  (no observer writes, no intrinsic-size feedback); a WebView without CSS `round()` drops the value
+ *  and the stylesheet's `width: 100%` applies. */
+export const FRAME_WIDTH = "round(down, 100%, 1px)";
+/** Refit delay after the host stops resizing (panel drags and window resizes arrive in bursts). */
+export const REFIT_DEBOUNCE_MS = 120;
+
 /** Keys the Studio forwards to the host shell (spec §10). Escape comes only when no Studio UI claimed it. */
 export type RhwpShortcut = 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6';
 type Appearance = { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 };
@@ -70,8 +85,13 @@ export type RhwpHandle = {
   flushChanges(): Promise<void>;
   focus(target: Obj): Promise<void>; undo(): Promise<void>; redo(): Promise<void>;
   setDecorations(projection: Obj): Promise<void>; setReadOnly(readOnly: boolean): Promise<void>;
+  /** Switch the Studio zoom mode (see `RhwpMountSpec.zoom`). */
+  setZoom(zoom: RhwpZoom): Promise<void>;
   dispose(): void;
 };
+
+/** Studio markers per setDecorations call (the SDK validator throws `invalid decoration count` above it). */
+export const DECORATION_LIMIT = 500;
 
 /** Trailing debounce for HWPX export after edits: a burst of change events costs one export. */
 export const EXPORT_DEBOUNCE_MS = 200;
@@ -101,7 +121,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI);
   studioUrl.searchParams.set("hostTheme", appearance.theme);
   studioUrl.searchParams.set("hostFontScale", String(appearance.fontScale));
-  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"],
+  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"], width: FRAME_WIDTH,
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
@@ -109,6 +129,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   // Debounced export: `scheduled` means a change arrived that no export has started for yet.
   let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
+  let zoom: RhwpZoom = spec.zoom ?? 100;
   try {
     await editor.setAppearance(appearance);
     if (spec.onContextMenu) await editor.setContextMenuForwarding(true);
@@ -132,7 +153,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       }
     }
     await editor.setReadOnly(readOnly);
-    if (spec.zoom) await editor.commands.execute(`view:zoom-${spec.zoom}`);
+    await editor.commands.execute(zoomCommand(zoom));
   } catch (error) { editor.destroy(); throw error; }
   const content = async () => encodeBase64(await editor.exportHwpx());
   const publish = async (generation: number) => {
@@ -211,6 +232,21 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     if (!disposed) void editor.setAppearance(next).catch(spec.onError);
   }) : null;
   observer?.observe(root, { attributes: true, attributeFilter: ["data-theme", "data-font-scale"] });
+  // 폭 맞춤(IDE-06): the Studio computes the fit once per command and does not refit when its
+  // container is resized (properties panel, splitter, window), so the host's size changes re-run it.
+  // A hidden tab reports width 0 — it refits when it is shown again.
+  let refitTimer: number | undefined;
+  const refit = () => {
+    refitTimer = undefined;
+    if (disposed || zoom !== "fit" || !hostRendered(spec.host)) return;
+    void editor.commands.execute(zoomCommand("fit")).catch(spec.onError);
+  };
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+    if (zoom !== "fit" || !entries.some((entry) => entry.contentRect.width > 0)) return;
+    window.clearTimeout(refitTimer);
+    refitTimer = window.setTimeout(refit, REFIT_DEBOUNCE_MS);
+  }) : null;
+  resized?.observe(spec.host);
 
   const focus = async (target: Obj) => {
     const first = Array.isArray(target.occurrences) ? target.occurrences[0] : null;
@@ -277,30 +313,36 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     async setDecorations(projection) {
       // 구조 트리 줄의 강조(UX-09): 가리킨 항목·선택은 강하게, 나머지 경계는 옅게 선다. 필드를 가리키면 그 필드의
       // 표지만 남긴다(필드 표지는 강약이 없어 다른 필드와 갈리지 않는다). 문서 모드에서는 가리킨 것만 선다.
+      // 미리보기 범위(IDE-06 P-16, kind "range")는 Python 이 준 실제 포함 범위에 이름표 없는 합성 표지 하나로 선다 —
+      // Studio 는 표지의 실체를 검사하지 않는다. 이름표가 있으면 실제 항목처럼 보이므로 이름표를 모두 걷는다.
       const highlight = projection.highlight && typeof projection.highlight === "object" ? projection.highlight as Obj : null;
+      const range = highlight?.kind === "range" && highlight.location && typeof highlight.location === "object" ? highlight.location as Obj : null;
       const documentMode = projection.mode === "document";
       if (documentMode && !highlight) { await editor.setDecorations([], { labels: "none" }); return; }
       const fields = Array.isArray(projection.fields) ? projection.fields : [];
       const slots = Array.isArray(projection.slots) ? projection.slots : [];
       const markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number; startParagraph: number;
         startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath }> = [];
-      const region = highlight?.kind === "slot" || highlight?.kind === "option";
+      const region = highlight?.kind === "slot" || highlight?.kind === "option" || !!range;
       const lit = (kind: string, id: unknown, slotId?: unknown, index?: number) => !!highlight && highlight.kind === kind && highlight.id === id
         && (kind !== "option" || highlight.slot_id === slotId) && (kind !== "field" || highlight.index == null || highlight.index === index);
-      const add = (kind: string, label: string, place: Obj, shown = true) => {
-        if (!shown) return;
+      const marker = (kind: string, label: string, emphasis: 'subtle' | 'strong', place: Obj) => {
         const section = sectionEntries.indexOf(String(place.entry));
         const startParagraph = place.paragraph ?? place.start_paragraph;
         const endParagraph = place.end_paragraph ?? startParagraph;
         const cellPath = studioCellPath(place);
-        if (section < 0 || !Number.isSafeInteger(startParagraph) || !Number.isSafeInteger(endParagraph) || cellPath === null) return;
-        const on = kind === "field" ? highlight?.kind === "field" : region && lit(kind, place.__id, place.__slot);
-        const emphasis = on ? 'strong' : region && kind !== "field" ? 'subtle' : kind === 'field' || projection.mode === 'structure' ? 'strong' : 'subtle';
-        markers.push({ kind, label, emphasis,
-          section, startParagraph: startParagraph as number,
+        if (section < 0 || !Number.isSafeInteger(startParagraph) || !Number.isSafeInteger(endParagraph) || cellPath === null) return null;
+        return { kind, label, emphasis, section, startParagraph: startParagraph as number,
           startOffset: typeof place.start === "number" ? place.start : 0,
           endParagraph: endParagraph as number, endOffset: typeof place.end === "number" ? place.end : null,
-          ...(cellPath ? { cellPath } : {}) });
+          ...(cellPath ? { cellPath } : {}) };
+      };
+      const add = (kind: string, label: string, place: Obj, shown = true) => {
+        if (!shown) return;
+        const on = kind === "field" ? highlight?.kind === "field" : region && lit(kind, place.__id, place.__slot);
+        const emphasis = on ? 'strong' : region && kind !== "field" ? 'subtle' : kind === 'field' || projection.mode === 'structure' ? 'strong' : 'subtle';
+        const made = marker(kind, label, emphasis, place);
+        if (made) markers.push(made);
       };
       for (const item of fields) {
         if (!item || typeof item !== "object") continue;
@@ -323,17 +365,27 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
             add("option", String(child.label ?? child.id ?? ""), { ...child.location as Obj, __id: child.id, __slot: slot.id }, shown("option", child.id));
         }
       }
+      // The preview range is one more marker only while the Studio's cap leaves room for it.
+      const synthetic = range && marker(highlight?.marker === "option" ? "option" : "slot", "", 'strong', range);
+      if (synthetic && markers.length < DECORATION_LIMIT) markers.push(synthetic);
       // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
-      // structure mode labels every boundary.
-      await editor.setDecorations(markers, { labels: documentMode ? "none" : projection.mode === "structure" ? "all" : "selected" });
+      // structure mode labels every boundary. A preview range takes every label down.
+      await editor.setDecorations(markers, { labels: documentMode || range ? "none" : projection.mode === "structure" ? "all" : "selected" });
     },
     async setReadOnly(value) {
       const next = value || compatibilityBlocked;
       await editor.setReadOnly(next); readOnly = next;
     },
+    async setZoom(next) {
+      if (disposed) return;
+      zoom = next;
+      window.clearTimeout(refitTimer);
+      await editor.commands.execute(zoomCommand(next));
+    },
     dispose() {
       if (disposed) return;
-      disposed = true; window.clearInterval(timer); cancelScheduled(); off(); offShortcut(); offMenu(); observer?.disconnect();
+      disposed = true; window.clearInterval(timer); window.clearTimeout(refitTimer); cancelScheduled(); off(); offShortcut(); offMenu();
+      observer?.disconnect(); resized?.disconnect();
       editor.destroy();
     },
   };

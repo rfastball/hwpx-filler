@@ -446,15 +446,85 @@ test("UX-07: a zoomed canvas scales iframe coordinates into host coordinates", (
   handle.dispose();
 }));
 
-test("IDE-04: a fixed zoom is one view:zoom-N command after the load — never a fit mode, and absent unless asked", () => withDom(async () => {
+test("IDE-06: every mount states its Studio zoom after the load — fixed view:zoom-N by default, fit width when asked", () => withDom(async () => {
+  // The Studio keeps its fit mode in the iframe origin's settings and restores it on the next load: an
+  // unstated mode would inherit whatever the last mount left there.
   const zoomed = fakeStudio([]);
   const viewer = await mountRhwp({ host: {}, content: b64("result"), fileName: "시험 결과.hwpx", readOnly: true, zoom: 75,
     onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: zoomed.studio, trackSelection: "never" });
   assert.deepEqual(zoomed.calls.filter(([name]) => name === "execute"), [["execute", "view:zoom-75"]], "한 번, 고정 배율 명령");
   viewer.dispose();
   const plain = fakeStudio([]);
-  const editor = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
-    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio: plain.studio });
-  assert.deepEqual(plain.calls.filter(([name]) => name === "execute"), [], "편집면은 배율을 건드리지 않는다");
+  const compare = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: true,
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio: plain.studio, trackSelection: "never" });
+  assert.deepEqual(plain.calls.filter(([name]) => name === "execute"), [["execute", "view:zoom-100"]], "배율을 말하지 않은 마운트는 고정 100%");
+  compare.dispose();
+  const fitted = fakeStudio([]);
+  const editor = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false, zoom: "fit",
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio: fitted.studio });
+  assert.deepEqual(fitted.calls.filter(([name]) => name === "execute"), [["execute", "view:zoom-fit-width"]], "폭 맞춤은 Studio 의 폭 맞춤 명령");
+  await editor.setZoom(100);
+  await editor.setZoom("fit");
+  assert.deepEqual(fitted.calls.filter(([name]) => name === "execute").slice(1), [["execute", "view:zoom-100"], ["execute", "view:zoom-fit-width"]],
+    "숫자 배율로 돌아가면 Studio 는 고정 100% — 셸 CSS 배율과 곱하지 않는다");
   editor.dispose();
+}));
+
+test("IDE-06: fit width re-fits after the host is resized (debounced), never while fixed or hidden", () => {
+  const timers = fakeTimers();
+  const observers = [];
+  const prior = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class { constructor(callback) { this.callback = callback; this.observed = []; observers.push(this); }
+    observe(target) { this.observed.push(target); } disconnect() { this.disconnected = true; } };
+  return withDom(async () => {
+    const fake = fakeStudio([]);
+    const host = {};
+    const handle = await mountRhwp({ host, content: b64("disk"), fileName: "a.hwpx", readOnly: false, zoom: "fit",
+      onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio: fake.studio, trackSelection: "never" });
+    const executes = () => fake.calls.filter(([name]) => name === "execute").map(([, id]) => id);
+    assert.equal(observers.length, 1);
+    assert.equal(observers[0].observed[0], host, "편집기 host 의 크기를 본다(속성 패널·분할선·창 크기)");
+    const resize = (width) => observers[0].callback([{ contentRect: { width } }]);
+    assert.equal(fake.options().width, "round(down, 100%, 1px)",
+      "iframe 폭은 host 폭을 정수 CSS px 로 내린 값이다 — 소수 폭이면 Studio 의 정수 clientWidth 가 내용보다 모자라 빈 가로 스크롤이 선다");
+    resize(900); resize(835.43);
+    assert.deepEqual(executes(), ["view:zoom-fit-width"], "크기 변화가 몰려오는 동안에는 기다린다");
+    timers.fireTimeouts();
+    await settle();
+    assert.deepEqual(executes(), ["view:zoom-fit-width", "view:zoom-fit-width"], "멈추면 한 번 다시 맞춘다");
+    resize(0);
+    timers.fireTimeouts();
+    assert.equal(executes().length, 2, "숨은 탭(폭 0)은 맞추지 않는다 — 다시 보일 때 맞춘다");
+    await handle.setZoom(100);
+    resize(800);
+    timers.fireTimeouts();
+    assert.deepEqual(executes().slice(2), ["view:zoom-100"], "고정 배율 중에는 다시 맞추지 않는다");
+    handle.dispose();
+    assert.equal(observers[0].disconnected, true);
+  }, timers).finally(() => { globalThis.ResizeObserver = prior; });
+});
+
+test("IDE-06 P-16: a preview range is one label-less synthetic marker, labels come down, and it yields to the Studio's 500 cap", () => withDom(async () => {
+  const fake = fakeStudio([]);
+  const markers = [];
+  const studio = async (host, created) => { const editor = await fake.studio(host, created);
+    const original = editor.setDecorations; editor.setDecorations = async (list, options) => { markers.push(list); return original(list, options); }; return editor; };
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false, sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio, trackSelection: "never" });
+  const slot = { id: "s", label: "특약", location: { entry: "Contents/section0.xml", start_paragraph: 0, end_paragraph: 2 }, options: [] };
+  const range = { kind: "range", marker: "slot", location: { entry: "Contents/section0.xml", start_paragraph: 4, end_paragraph: 4 } };
+  await handle.setDecorations({ fields: [], slots: [slot], mode: "structure", highlight: range });
+  const drawn = markers.at(-1);
+  assert.equal(drawn.length, 2);
+  assert.deepEqual(drawn[1], { kind: "slot", label: "", emphasis: "strong", section: 0, startParagraph: 4, startOffset: 0, endParagraph: 4, endOffset: null },
+    "합성 표지: 이름표 없음, 강하게, 문단 전체");
+  assert.equal(drawn[0].emphasis, "subtle", "실제 경계는 옅게 물러선다");
+  assert.deepEqual(fake.calls.filter(([name]) => name === "setDecorations").at(-1)[2], { labels: "none" }, "이름표 모드에서도 미리보기 중에는 이름표를 걷는다");
+  await handle.setDecorations({ fields: [], slots: [slot], mode: "document", highlight: range });
+  assert.deepEqual(markers.at(-1).map((marker) => marker.label), [""], "문서 모드에서는 미리보기 범위만 선다");
+  const crowded = { name: "F", occurrences: Array.from({ length: 500 }, (_, index) => ({ entry: "Contents/section0.xml", paragraph: index })) };
+  await handle.setDecorations({ fields: [crowded], slots: [], mode: "template", highlight: range });
+  assert.equal(markers.at(-1).length, 500, "상한에 닿으면 합성 표지를 뺀다 — 장식 호출 전체가 던지지 않는다");
+  assert.ok(markers.at(-1).every((marker) => marker.kind === "field"));
+  handle.dispose();
 }));

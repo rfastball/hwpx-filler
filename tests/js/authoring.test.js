@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside } from "../../frontend/src/screens/authoring.ts";
+import { createAuthoringController, coordinates, previewHighlight } from "../../frontend/src/screens/authoring_controller.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside, zoomChoice } from "../../frontend/src/screens/authoring.ts";
 import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
 import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
@@ -371,7 +371,8 @@ test("§6.3: the search target offers 전체 alongside the three kinds, and kind
 
 test("HWPX comparison views forward Python's section entries into the read-only mount", async () => {
   assert.deepEqual(externalDocumentSpec({ name: "원본" }, "AAA=", ["Contents/section0.xml"]),
-    { content: "AAA=", fileName: "원본", readOnly: true, sectionEntries: ["Contents/section0.xml"] });
+    { content: "AAA=", fileName: "원본", readOnly: true, sectionEntries: ["Contents/section0.xml"], zoom: 100 },
+    "비교 보기는 고정 100% 를 명시한다(IDE-06) — 편집면의 폭 맞춤이 Studio 설정을 타고 번지지 않는다");
   const { controller, snapshot } = harness((action) => action === "external_content" ? { content: "ext", section_entries: ["Contents/section1.xml"] }
     : action === "content" ? { content: "cur", section_entries: ["Contents/section0.xml"] } : {});
   snapshot.tabs[0].media = "hwpx";
@@ -817,6 +818,8 @@ test("UX-09: highlightRanges returns a slot/option's own range, a field's every 
   assert.deepEqual(highlightRanges(analysis, { kind: "field", id: "missing" }), []);
   assert.deepEqual(highlightRanges(analysis, { kind: "slot", id: "missing" }), []);
   assert.deepEqual(highlightRanges(analysis, null), []);
+  // 미리보기 범위(IDE-06 P-16)는 Python 이 준 실제 포함 범위 그대로다.
+  assert.deepEqual(highlightRanges(analysis, { kind: "range", location: { start: 11, end: 30 } }), [{ start: 11, end: 30 }]);
 });
 
 test("UX-09: problemSeverities keeps the heaviest severity per target — an error is never downgraded by a later warning", () => {
@@ -1961,4 +1964,87 @@ test("IDE-03 R5: a range picked from a search hit (no semantic kind) never shows
   controller.update({ context: { location_label: "문단 5", name_suggestion: "수요기관", selected_text: "○○시청" } });
   markup = render(controller);
   assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">고른 문구</span></span><p class="authoring-target-name quote" title="○○시청">○○시청</p></div>'));
+});
+
+test("IDE-06 P-16: previewHighlight paints Python's included range, a field command's uses, and nothing without a preview", () => {
+  const range = { entry: "Contents/section0.xml", start_paragraph: 2, end_paragraph: 4 };
+  assert.deepEqual(previewHighlight({ included_location: range }, { type: "create_slot", kind: "field" }), { kind: "range", location: range, marker: "slot" });
+  assert.deepEqual(previewHighlight({ included_location: range }, { type: "create_option" }), { kind: "range", location: range, marker: "option" });
+  assert.deepEqual(previewHighlight({ included_location: range }, { type: "unwrap", kind: "option" }), { kind: "range", location: range, marker: "option" });
+  assert.deepEqual(previewHighlight({ included_location: { start: 3, end: 9 } }, { type: "delete", kind: "slot" }).location, { start: 3, end: 9 });
+  const analysis = { fields: [{ name: "F", occurrences: [{ start: 1, end: 6 }, { start: 10, end: 15 }] }, { name: "H", occurrences: [{ entry: "e", occurrence: 0 }, { entry: "e", occurrence: 1 }] }] };
+  assert.deepEqual(previewHighlight({}, { type: "unset_field", old_name: "F", occurrences: [{}, {}] }, analysis), { kind: "field", id: "F" }, "필드 전체: 모든 사용 위치");
+  assert.deepEqual(previewHighlight({}, { type: "rename_field", old_name: "F", name: "G" }, analysis), { kind: "field", id: "F" });
+  assert.deepEqual(previewHighlight({}, { type: "unset_field", old_name: "F", start: 10 }, analysis), { kind: "field", id: "F", index: 2 }, "TXT 사용 위치 한 곳");
+  assert.deepEqual(previewHighlight({}, { type: "relink_field", old_name: "H", name: "K", entry: "e", occurrence: 1 }, analysis), { kind: "field", id: "H", index: 2 }, "HWPX 사용 위치 한 곳");
+  assert.equal(previewHighlight({}, { type: "unset_field", old_name: "F", start: 99 }, analysis), null, "모르는 자리는 칠하지 않는다");
+  assert.equal(previewHighlight({}, { type: "create_field", name: "F" }, analysis), null);
+  assert.equal(previewHighlight(null, { type: "create_slot" }), null);
+});
+
+test("IDE-06 P-16: while a preview stands the editor highlight is pinned to it — outline hover overrides, leaving returns, cancel clears", async () => {
+  const range = { start: 4, end: 20 };
+  const { controller } = harness((action) => action === "preview" ? { included_location: range, before: "a", after: "b" } : {});
+  await controller.activate("a");
+  const painted = [];
+  controller.attach("a", { content: async () => "", decorate: (_analysis, _mode, highlight) => painted.push(highlight ?? null) });
+  await controller.preview({ type: "create_slot", kind: "slot", start: 5, end: 6, id: "s" });
+  const pinned = { kind: "range", location: range, marker: "slot" };
+  assert.deepEqual(painted.at(-1), pinned, "미리보기가 도착하면 그 실제 범위를 칠한다");
+  const hover = { kind: "field", id: "F" };
+  controller.highlight(hover);
+  assert.deepEqual(painted.at(-1), hover, "구조 트리 hover 는 잠시 덮는다");
+  controller.highlight(null);
+  assert.deepEqual(painted.at(-1), pinned, "떠나면 미리보기 대상으로 돌아온다");
+  controller.setMode("structure");
+  assert.deepEqual(painted.at(-1), pinned, "표시 방식을 바꿔도 미리보기 강조가 남는다");
+  controller.update({ preview: null, refusal: null });
+  assert.equal(painted.at(-1), null, "미리보기를 걷으면 강조도 걷힌다");
+});
+
+test("IDE-06 P-13: 「폭 맞춤」 is the first and default HWPX zoom with shell zoom 1; a number is fixed zoom; TXT keeps numbers only", async () => {
+  assert.deepEqual(zoomChoice("hwpx", "fit"), { value: "fit", cssZoom: 1,
+    options: [["fit", "폭 맞춤"], ["75", "75%"], ["100", "100%"], ["125", "125%"], ["150", "150%"], ["200", "200%"]] });
+  assert.equal(zoomChoice("hwpx", 125).value, "125");
+  assert.equal(zoomChoice("hwpx", 125).cssZoom, 1.25);
+  assert.deepEqual(zoomChoice("txt", "fit"), { value: "100", cssZoom: 1,
+    options: [["75", "75%"], ["100", "100%"], ["125", "125%"], ["150", "150%"], ["200", "200%"]] }, "TXT 에는 폭 맞춤이 없고 100% 로 읽힌다");
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0] = { ...snapshot.tabs[0], name: "a.hwpx", media: "hwpx", rhwp_editable: true };
+  await controller.activate("a");
+  assert.equal(controller.zoom("a"), "fit");
+  assert.equal(controller.zoom("never-opened"), "fit", "뷰가 없는 새 문서도 기본값으로 선다 — 앞 문서의 방식을 물려받지 않는다");
+  const markup = render(controller);
+  assert.ok(markup.includes('<select class="field authoring-zoom" aria-label="확대"><option value="fit" selected="">폭 맞춤</option><option value="75">75%</option>'));
+  assert.ok(markup.includes('id="authoring-canvas" aria-label="원문 편집" style="zoom:1"'), "폭 맞춤 중 셸 CSS 배율은 1 이다(이중 배율 없음)");
+  const modes = [];
+  controller.attach("a", { content: async () => "", decorate() {}, zoom: async (mode) => { modes.push(mode); } });
+  controller.setZoom(125);
+  controller.setZoom(150);
+  controller.setZoom("fit");
+  await new Promise(setImmediate);
+  assert.deepEqual(modes, ["fixed", "fit"], "편집기에는 방식이 바뀔 때만 알린다 — 고정 배율 사이는 셸 배율만 바뀐다");
+  controller.setZoom(150);
+  assert.ok(render(controller).includes('style="zoom:1.5"'));
+  await controller.activate("b");
+  assert.equal(controller.viewModel.getSnapshot().zoom, "fit", "다른 문서는 자기 방식(처음이면 기본값)으로 선다");
+});
+
+test("IDE-06 P-20: a whole field offers 필드 의미 해제 with one 남길 본문 and a preview of every use; relink stays per use", async () => {
+  const { controller } = harness((action) => action === "preview" ? { affected: 3, before: "{{F}}", after: "값", included: ["가 [F]", "나 [F]", "끝 [F]"],
+    field_delta: { added_fields: [], removed_fields: ["F"] }, linked_jobs: ["월간 보고"], confirm: "enter" } : {});
+  await controller.activate("a");
+  const whole = { kind: "field", name: "F", count: 3, occurrences: [{ start: 2, end: 7 }, { start: 9, end: 14 }, { start: 20, end: 25 }] };
+  const commands = [{ type: "rename_field", enabled: true }, { type: "relink_field", enabled: false, reason: "필드 사용 위치를 하나 고르세요." },
+    { type: "unset_field", enabled: true }];
+  controller.update({ panel: "properties", commandType: "unset_field", selected: whole, commands });
+  const form = render(controller);
+  assert.ok(form.includes('<option value="unset_field" selected="">필드 의미 해제</option>'), "필드 전체에서 의미 해제가 켜진다(흐림·사유 없음)");
+  assert.ok(form.includes('<option value="relink_field" disabled="" title="필드 사용 위치를 하나 고르세요.">필드 연결 변경</option>'), "연결 변경은 사용 위치 한 곳의 명령으로 남는다");
+  assert.ok(form.includes(">남길 본문<") && form.includes(">필드 이름 사용</button>"));
+  await controller.preview({ type: "unset_field", old_name: "F", occurrences: whole.occurrences, text: "값" });
+  const preview = render(controller);
+  assert.ok(preview.includes('<ul aria-label="포함될 내용"><li>가 [F]</li><li>나 [F]</li><li>끝 [F]</li></ul>'), "모든 사용 위치의 문맥");
+  assert.ok(preview.includes("<p>추가 필드: 없음 · 없어진 필드: F</p>") && preview.includes("<p>연결된 작업: 월간 보고</p>"));
+  assert.ok(/<button class="btn primary" type="submit"[^>]*>필드 의미 해제/.test(preview), "주 행동은 명령 이름의 제출 단추 하나다(enter 등급 — 영향을 본 뒤 확정)");
 });

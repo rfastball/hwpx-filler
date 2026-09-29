@@ -175,8 +175,8 @@ async function boot(tab, more = [], respond = () => ({})) {
     mounts.push(record);
     // 편집면 초점은 편집기 host 로 선다 — 실제 rhwp 는 그 안의 iframe 이 초점을 받는다.
     return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async (target) => { (record.focused ||= []).push(target); spec.host.focus(); },
-      undo: async () => {}, redo: async () => {}, setReadOnly: async () => {},
-      setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; }, dispose: () => { record.disposed = true; } };
+      undo: async () => {}, redo: async () => {}, setReadOnly: async () => {}, setZoom: async (zoom) => { (record.zooms ||= []).push(zoom); },
+      setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; (record.highlights ||= []).push(projection.highlight); }, dispose: () => { record.disposed = true; } };
   };
   await controller.activate(tab.id);
   controller.update({ trial: true, dock: "trial" });
@@ -1092,7 +1092,8 @@ test("IDE-04: the HWPX trial viewer never takes focus — not on a new result an
   assert.ok(result && !env.container.querySelector(".authoring-trial .authoring-result-pages"), "결과 칸 전용 선택자");
   assert.equal(viewers()[0].spec.host, result, "HWPX 결과 뷰어는 결과 칸에 선다");
   assert.equal(viewers()[0].spec.zoom, 75, "결과 뷰어만 고정 배율(맞춤 모드 아님)로 선다");
-  assert.ok(env.mounts.filter((record) => record.spec.fileName !== "시험 결과.hwpx").every((record) => record.spec.zoom === undefined), "편집면·비교 보기는 배율을 건드리지 않는다");
+  assert.deepEqual(env.mounts.filter((record) => record.spec.fileName !== "시험 결과.hwpx").map((record) => record.spec.zoom), ["fit"],
+    "편집면은 기본 「폭 맞춤」을 마운트 때 명시한다(IDE-06) — 결과 뷰어의 고정 배율과 섞이지 않는다");
   assert.equal(env.container.querySelector("section.authoring-dock").getAttribute("class"), "authoring-dock open trial", "결과 시험 탭이 펼쳐지면 독이 높은 몫을 받는다");
   assert.ok(env.container.querySelector(".authoring-shell").getAttribute("class").split(" ").includes("trial-open"), "셸도 결과 시험 중임을 싣는다(낮은 창의 몸통 하한)");
   const start = [...env.container.querySelectorAll(".authoring-trial button")].find((node) => node.textContent === "시험 시작");
@@ -1225,5 +1226,46 @@ test("IDE-03 NG-05·P-01 enter: an outline row opens 필드 이름 변경 with i
   assert.equal(env.calls.filter((call) => call.action === "update").length, 1, "입력이 그대로면 두 번째 Enter 가 적용이다");
   assert.ok(form(), "enter 등급은 영향을 본 자리에 패널이 남는다(결정 2)");
   assert.equal(form().querySelector('section[aria-label="변경 영향"]'), null);
+  env.root.unmount();
+});
+
+test("IDE-06 P-13: the HWPX editor mounts in 「폭 맞춤」 (shell zoom 1); a number sets the Studio to fixed 100 under the shell zoom and back", async () => {
+  const env = await boot(hwpxTab());
+  const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
+  assert.equal(editor.spec.zoom, "fit", "처음 마운트는 아무것도 고르지 않아도 폭 맞춤이다");
+  const select = env.container.querySelector('.authoring-status select[aria-label="확대"]');
+  assert.deepEqual(select.options.map((option) => [option.value, option.textContent]).slice(0, 2), [["fit", "폭 맞춤"], ["75", "75%"]]);
+  const canvas = () => propsOf(env.container.querySelector("#authoring-canvas")).style.zoom;
+  assert.equal(canvas(), 1, "폭 맞춤 중 셸 CSS 배율은 1 — Studio 배율과 곱하지 않는다");
+  const choose = async (value) => { env.flushSync(() => propsOf(select).onChange({ target: { value }, currentTarget: select })); await settle(); };
+  await choose("125");
+  assert.equal(canvas(), 1.25);
+  await choose("150");
+  await choose("fit");
+  assert.deepEqual(editor.zooms, [100, "fit"], "숫자 배율 = Studio 고정 100%(셸이 키운다), 폭 맞춤으로 돌아가면 Studio 가 다시 맞춘다");
+  assert.equal(canvas(), 1);
+  env.root.unmount();
+});
+
+test("IDE-06 P-16: a preview pins the editor highlight to its range; an outline hover borrows it and leaving gives it back", async () => {
+  const range = { entry: "Contents/section0.xml", start_paragraph: 0, end_paragraph: 1 };
+  const env = await boot(hwpxTab(), [], (action) => action === "preview" ? { included_location: range, before: "머리", after: "머리" } : {});
+  const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
+  await env.controller.preview({ type: "create_slot", kind: "slot", id: "s", entry: range.entry, start_paragraph: 0, end_paragraph: 1, start: 1, end: 2 });
+  await settle();
+  const pinned = { kind: "range", location: range, marker: "slot" };
+  assert.deepEqual(editor.projection.highlight, pinned, "미리보기가 서면 편집면이 실제 포함 범위를 칠한다");
+  const row = [...env.container.querySelectorAll(".authoring-tree-row")][0];
+  fire(env, row, "mouseenter");
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+  assert.equal(editor.projection.highlight?.kind, "field", "트리 줄 hover 가 잠시 덮는다");
+  fire(env, row.closest('[role="tree"]'), "mouseleave");
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  await settle();
+  assert.deepEqual(editor.projection.highlight, pinned, "떠나면 미리보기 범위로 돌아온다");
+  env.flushSync(() => env.controller.update({ preview: null, refusal: null }));
+  await settle();
+  assert.equal(editor.projection.highlight, null, "미리보기를 걷으면 강조도 걷힌다");
   env.root.unmount();
 });
