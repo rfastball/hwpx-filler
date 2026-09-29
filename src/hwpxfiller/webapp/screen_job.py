@@ -2565,7 +2565,7 @@ class JobController:
         if (
             generation != self.data.snapshot_generation
             or (
-                id(self.data.records) != run_input.source_records_identity
+                run_input.source_records_ref is not self.data.records
                 if run_input is not None
                 else rows is not self.data.records
             )
