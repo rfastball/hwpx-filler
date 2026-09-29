@@ -30,13 +30,13 @@ from typing import TYPE_CHECKING, Any
 
 from ..batch import generate_batch
 from ..domain.job import MISSING_MARKER, Job, rules_fingerprints
-from ..viewmodel.run_state import GenerationPlan
+from ..viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT, GateError, GenerationPlan
 from .jobs import JobStorePort, stamp_run_completion
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ..viewmodel.run_state import GateError, RunDataInput, RunViewModel
+    from ..viewmodel.run_state import RunDataInput, RunViewModel
 
 
 def blank_marker(blanks: "list[str] | tuple[str, ...]") -> str:
@@ -163,6 +163,12 @@ def plan_generation(
 
     blanks = list(vm.blank_fields(data, indices))
     marker = blank_marker(blanks)
+    if vm.output_name_audit(
+        data, indices, out_dir, mark_missing=marker, now=now
+    ).refusal_code:
+        # 이름 kernel 이 이름을 만들 수 없다(#798) — 덮어쓰기 대조가 이름을 계획하기 전에 게이트와
+        # 같은 문장으로 닫는다(버튼을 우회한 호출이 예외로 새지 않게).
+        return PlanDecision(rejection=GateError(OUTPUT_NAME_INVALID_TEXT, "danger"))
     conflicts = vm.output_conflicts(
         data, indices, out_dir, mark_missing=marker, now=now,
         existing_outputs=existing_outputs,

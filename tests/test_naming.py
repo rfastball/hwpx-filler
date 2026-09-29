@@ -1,7 +1,8 @@
-"""파일명 생성 테스트 — Qt 불필요(순수 로직).
+"""레코드 dict 파일 이름 어댑터 테스트 — 규칙은 이름 kernel(:mod:`hwpxfiller.domain.output_name`).
 
-``{{키}}`` 하위호환 + 날짜/연번 예약 토큰 + ``OutputNamer`` 의 충돌 접미사·배치 상태.
-날짜·연번은 ``now``/``seq`` 를 주입해 결정적으로 검증한다.
+``{{키}}`` 치환·날짜/연번 예약 토큰·배치 충돌 접미사·집합 감사를 본다. 날짜·연번은
+``now``/``seq`` 를 주입해 결정적으로 검증한다. 종전 ``OutputNamer`` 의 상태 규칙(연번 증가·
+충돌 접미사·시각 1회 캡처)은 :func:`plan_output_names` 가 그대로 진다(#798 에서 kernel 로 이전).
 """
 
 from __future__ import annotations
@@ -10,11 +11,15 @@ from datetime import datetime
 
 import pytest
 
+from hwpxfiller.domain.output_name import (
+    OUTPUT_NAME_PATTERN_INVALID,
+    OUTPUT_PATH_ESCAPE_DETECTED,
+    OutputNameError,
+    clean_filename,
+)
 from hwpxfiller.naming import (
     MAX_PATH_CHARS,
-    OutputNamer,
     audit_output_names,
-    clean_filename,
     make_output_filename,
     pattern_field_tokens,
     pattern_uses_seq,
@@ -40,7 +45,7 @@ def test_hwpx_extension_enforced_case_insensitive():
 
 
 def test_missing_key_left_untouched():
-    # 데이터에 없는 키 토큰은 그대로 남는다(기존 동작).
+    # 데이터에 없는 키 토큰은 그대로 남는다 — 미해소 토큰 경고가 따로 선다.
     assert make_output_filename("{{a}}-{{b}}", {"a": "1"}) == "1-{{b}}.hwpx"
 
 
@@ -48,6 +53,10 @@ def test_prefformatted_value_substituted_plainly():
     # 파일명은 서식하지 않는다 — 프로파일이 이미 서식한 값을 평문 치환.
     out = make_output_filename("공고-{{개찰일시}}", {"개찰일시": "2026년 6월 15일"})
     assert out == "공고-2026년 6월 15일.hwpx"
+
+
+def test_clean_filename_direct():
+    assert clean_filename('a\\b/c:d') == "a_b_c_d"
 
 
 # ------------------------------------------------------------------- 날짜 토큰
@@ -95,56 +104,65 @@ def test_seq_default_is_one_when_absent():
     assert make_output_filename("{{seq:00}}", {}) == "01.hwpx"
 
 
-# ------------------------------------------------------------- OutputNamer 상태
-def test_namer_seq_increments_per_next():
-    namer = OutputNamer("doc-{{seq:001}}", now=_NOW)
-    assert namer.next({}) == "doc-001.hwpx"
-    assert namer.next({}) == "doc-002.hwpx"
-    assert namer.next({}) == "doc-003.hwpx"
-
-
-def test_namer_collision_appends_suffix():
-    namer = OutputNamer("doc-{{ID}}", now=_NOW)
-    assert namer.next({"ID": "A1"}) == "doc-A1.hwpx"
-    assert namer.next({"ID": "A1"}) == "doc-A1_1.hwpx"
-    assert namer.next({"ID": "A1"}) == "doc-A1_2.hwpx"
-
-
-def test_namer_collision_does_not_clobber_explicit_suffix():
-    # 명시적 _1 이 먼저 등장하면, 이후 base 충돌은 _2 로 건너뛴다.
-    namer = OutputNamer("{{ID}}", now=_NOW)
-    assert namer.next({"ID": "doc_1"}) == "doc_1.hwpx"
-    assert namer.next({"ID": "doc"}) == "doc.hwpx"
-    assert namer.next({"ID": "doc"}) == "doc_2.hwpx"
-
-
-def test_namer_date_constant_across_batch():
-    namer = OutputNamer("{{date:YYYYMMDD}}-{{seq}}", now=_NOW)
-    a = namer.next({})
-    b = namer.next({})
-    assert a == "20260709-1.hwpx"
-    assert b == "20260709-2.hwpx"
-
-
-def test_namer_deterministic_given_order():
-    recs = [{"ID": "A"}, {"ID": "A"}, {"ID": "B"}]
-    n1 = OutputNamer("{{ID}}", now=_NOW)
-    n2 = OutputNamer("{{ID}}", now=_NOW)
-    assert [n1.next(r) for r in recs] == [n2.next(r) for r in recs]
-
-
-def test_clean_filename_direct():
-    assert clean_filename('a\\b/c:d') == "a_b_c_d"
-
-
-# -------------------------------------------------- 디스크 충돌 검출(RC-02)
-def test_plan_output_names_matches_namer_rules():
-    """사전 계산이 실제 발급(OutputNamer)과 동일 규칙·순서 — 검출과 생성의 이름 일치."""
-    recs = [{"ID": "A"}, {"ID": "A"}, {"ID": "B"}]
-    namer = OutputNamer("{{date:YYYYMMDD}}-{{ID}}", now=_NOW)
-    assert plan_output_names("{{date:YYYYMMDD}}-{{ID}}", recs, now=_NOW) == [
-        namer.next(r) for r in recs
+# ------------------------------------------------------- 배치 계획(종전 OutputNamer 규칙)
+def test_plan_seq_increments_per_record():
+    assert plan_output_names("doc-{{seq:001}}", [{}, {}, {}], now=_NOW) == [
+        "doc-001.hwpx", "doc-002.hwpx", "doc-003.hwpx",
     ]
+
+
+def test_plan_collision_appends_suffix():
+    recs = [{"ID": "A1"}] * 3
+    assert plan_output_names("doc-{{ID}}", recs, now=_NOW) == [
+        "doc-A1.hwpx", "doc-A1_1.hwpx", "doc-A1_2.hwpx",
+    ]
+
+
+def test_plan_collision_does_not_clobber_explicit_suffix():
+    # 명시적 _1 이 먼저 등장하면, 이후 base 충돌은 _2 로 건너뛴다.
+    recs = [{"ID": "doc_1"}, {"ID": "doc"}, {"ID": "doc"}]
+    assert plan_output_names("{{ID}}", recs, now=_NOW) == [
+        "doc_1.hwpx", "doc.hwpx", "doc_2.hwpx",
+    ]
+
+
+def test_plan_collision_is_case_insensitive_like_windows():
+    """``A.hwpx`` 와 ``a.hwpx`` 는 Windows 에서 같은 파일이다 — 둘째가 첫째를 덮지 않는다(#798)."""
+    recs = [{"ID": "Report"}, {"ID": "report"}, {"ID": "REPORT"}]
+    assert plan_output_names("{{ID}}", recs, now=_NOW) == [
+        "Report.hwpx", "report_1.hwpx", "REPORT_2.hwpx",
+    ]
+
+
+def test_plan_date_constant_across_batch():
+    assert plan_output_names("{{date:YYYYMMDD}}-{{seq}}", [{}, {}], now=_NOW) == [
+        "20260709-1.hwpx", "20260709-2.hwpx",
+    ]
+
+
+def test_plan_deterministic_given_order():
+    recs = [{"ID": "A"}, {"ID": "A"}, {"ID": "B"}]
+    assert plan_output_names("{{ID}}", recs, now=_NOW) == plan_output_names(
+        "{{ID}}", recs, now=_NOW
+    )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "records", "code"),
+    [
+        ("{{ID", [{"ID": "1"}], OUTPUT_NAME_PATTERN_INVALID),        # 닫히지 않은 토큰
+        ("../{{ID}}", [{"ID": "1"}], OUTPUT_PATH_ESCAPE_DETECTED),   # 상위 경로
+        ("C:{{ID}}", [{"ID": "1"}], OUTPUT_PATH_ESCAPE_DETECTED),    # drive-relative
+        ("{{ID}}:stream", [{"ID": "1"}], OUTPUT_PATH_ESCAPE_DETECTED),  # ADS
+        ("{{ID}}", [{"ID": "CON"}], OUTPUT_PATH_ESCAPE_DETECTED),    # 데이터가 만든 장치 이름
+        ("con.hwpx", [{}], OUTPUT_PATH_ESCAPE_DETECTED),
+    ],
+)
+def test_plan_refuses_names_it_cannot_make_safely(pattern, records, code):
+    """legacy 가 조용히 쓰던 이름(리터럴 ``{{``·폴더 밖·장치)은 계획 단계에서 시끄럽게 닫힌다."""
+    with pytest.raises(OutputNameError) as info:
+        plan_output_names(pattern, records, now=_NOW)
+    assert info.value.code == code
 
 
 # --------------------------------------------- 패턴 요구 토큰 조회(RC-20)
@@ -182,10 +200,27 @@ def test_audit_counts_records_that_converged_on_one_name():
     assert audit.names[1] == "가_1.hwpx" and audit.names[3] == "가_2.hwpx"
 
 
-def test_empty_token_values_collapse_and_are_counted():
-    """값이 빈 토큰은 이름을 무너뜨리고, 무너진 이름끼리 겹친다 — 수렴 집계가 함께 잡는다."""
+def test_audit_counts_case_only_convergence():
+    audit = audit_output_names("{{이름}}", [{"이름": "Ab"}, {"이름": "aB"}])
+    assert audit.converged == (1,) and audit.names == ("Ab.hwpx", "aB_1.hwpx")
+
+
+def test_empty_name_is_refused_not_written_as_a_bare_extension():
+    """값이 빈 토큰만의 패턴은 ``.hwpx`` 라는 빈 이름을 만든다 — 조용히 쓰지 않고 거절한다.
+
+    종전에는 그 빈 이름끼리 수렴해 ``_1`` 을 달고 나갔다. 배달은 이미 빈 stem 을 막았다 — 두
+    표면이 같은 판정을 쓴다.
+    """
     audit = audit_output_names("{{이름}}", [{"이름": ""}, {"이름": ""}])
-    assert audit.converged == (1,)
+    assert audit.refusal_code == OUTPUT_PATH_ESCAPE_DETECTED
+    assert audit.names == () and audit.converged == ()
+
+
+@pytest.mark.parametrize("pattern", ["{{이름", "../{{이름}}", "{{이름}}:x"])
+def test_audit_reports_a_refusal_instead_of_raising(pattern):
+    """감사는 화면 스냅샷 경로다 — 거절을 싣고 스냅샷을 죽이지 않는다."""
+    audit = audit_output_names(pattern, [{"이름": "가"}])
+    assert audit.refusal_code and audit.names == ()
 
 
 def test_seq_token_keeps_names_distinct_so_nothing_converges():

@@ -1,7 +1,7 @@
 """S5 exact batch output-name resolution + managed GenerationPlan bridge (S5-13 · #709).
 
-이 모듈이 소유하는 것: ``filename-pattern/v1`` exact PatternToken parser(기존 :mod:`hwpxfiller.naming`
-의미 보존), :class:`GenerationDeliveryBindingBasis`(inactive Field token 값 근거), batch-level
+이 모듈이 소유하는 것: ``filename-pattern/v1`` 계약 확인(해석·조립·안전 판정·충돌 규칙 자체는
+이름 kernel :mod:`hwpxfiller.domain.output_name` 소유, #798), :class:`GenerationDeliveryBindingBasis`(inactive Field token 값 근거), batch-level
 :func:`resolve_generation_delivery_plan`, resolved output path canonical payload/digest, output
 blocker taxonomy, :class:`ManagedGenerationPlan` DTO, :class:`MaterializationInput` port,
 runtime conformance admission bridge, managed/legacy/continuation adapter 분리.
@@ -18,8 +18,8 @@ runtime conformance admission bridge, managed/legacy/continuation adapter 분리
   delivery/overwrite contract 는 latest fallback 없이 fail-closed.
 
 canonical framing·digest 는 S5-06 closed set(:mod:`hwpxfiller.domain.canonical_execution_encoding`).
-filename 조립(금지문자 sanitation·date/seq 서식)은 기존 :mod:`hwpxfiller.naming` 의 증명된 v1 의미를
-재사용한다 — 의미를 조용히 바꾸지 않는다.
+filename 조립(금지문자 sanitation·date/seq 서식·안전 판정·casefold 충돌)은 이름 kernel 한 곳을
+쓴다 — 표시 표면(「문서」 열·편집기 예시)과 같은 함수라 미리 보인 이름이 실제 이름이다.
 """
 
 from __future__ import annotations
@@ -53,11 +53,23 @@ from hwpxfiller.domain.canonical_execution_encoding import (
     CanonicalExecutionEncodingError,
     canonical_execution_digest,
 )
+# 이름 kernel 어휘의 re-export(``X as X``) — 배달 계획을 소비하는 쪽이 이 모듈에서 계속 찾는다.
 from hwpxfiller.domain.output_name import (
-    clean_filename,
-    format_date_token,
-    format_seq_token,
-    has_forbidden_filename_char,
+    OUTPUT_NAME_PATTERN_INVALID as OUTPUT_NAME_PATTERN_INVALID,
+    OUTPUT_PATH_ESCAPE_DETECTED as OUTPUT_PATH_ESCAPE_DETECTED,
+    FieldValueToken as FieldValueToken,
+    LiteralSegment as LiteralSegment,
+    OutputNameError,
+    PatternToken,
+    ReservedDateToken as ReservedDateToken,
+    ReservedSequenceToken as ReservedSequenceToken,
+    dedupe_output_names,
+    guard_output_name,
+    pattern_field_token_ids,
+    render_output_name,
+)
+from hwpxfiller.domain.output_name import (
+    parse_filename_pattern as _parse_pattern_text,
 )
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
@@ -92,8 +104,6 @@ OUTPUT_NAME_BASIS_SCHEMA = "output-name-basis-canonical/v1"
 GENERATION_DELIVERY_PLAN_SCHEMA = "generation-delivery-plan-canonical/v1"
 MANAGED_GENERATION_PLAN_SCHEMA = "managed-generation-plan/v1"
 
-# S5 정본 delivery 확장자 — naming.make_output_filename 과 같은 v1 규약.
-_HWPX_EXT = ".hwpx"
 
 # ─── overwrite policy 어휘(disk disposition 은 S6 가 집행, S5 는 planned disposition 만 기록) ──
 OVERWRITE_EXISTING = "OVERWRITE_EXISTING"
@@ -108,7 +118,7 @@ _DISPOSITION_BY_POLICY = {
 # ─── output blocker taxonomy(user-fixable — seal terminal blocker 아님) ─────────────────────
 OUTPUT_NAME_TOKEN_UNRESOLVED = "OUTPUT_NAME_TOKEN_UNRESOLVED"
 OUTPUT_NAME_BINDING_AMBIGUOUS = "OUTPUT_NAME_BINDING_AMBIGUOUS"
-OUTPUT_NAME_PATTERN_INVALID = "OUTPUT_NAME_PATTERN_INVALID"
+# OUTPUT_NAME_PATTERN_INVALID 는 이름 kernel(:mod:`hwpxfiller.domain.output_name`) 소유 — 위 import.
 OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED = "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
 OUTPUT_PATH_NON_REGULAR_CONFLICT = "OUTPUT_PATH_NON_REGULAR_CONFLICT"
 
@@ -124,7 +134,7 @@ CURRENT_RECORD_VALIDATION_BASIS_MISMATCH = (
     "CURRENT_RECORD_VALIDATION_BASIS_MISMATCH"
 )
 PATH_OCCUPANCY_OBSERVATION_MISMATCH = "PATH_OCCUPANCY_OBSERVATION_MISMATCH"
-OUTPUT_PATH_ESCAPE_DETECTED = "OUTPUT_PATH_ESCAPE_DETECTED"
+# OUTPUT_PATH_ESCAPE_DETECTED 는 이름 kernel 소유 — 위 import.
 UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT = (
     "UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT"
 )
@@ -183,90 +193,28 @@ class _PatternInvalidSignal(Exception):
     """malformed/unknown pattern — OUTPUT_NAME_PATTERN_INVALID blocker 로 변환한다."""
 
 
-# ─── PatternToken 합타입 ──────────────────────────────────────────────────────────────────
-@dataclass(frozen=True)
-class LiteralSegment:
-    text: str
-
-
-@dataclass(frozen=True)
-class ReservedDateToken:
-    date_spec: str | None  # None = 기본 YYYYMMDD
-
-
-@dataclass(frozen=True)
-class ReservedSequenceToken:
-    pad: str | None  # None = 무 pad. ``{{seq:001}}`` → pad "001"(폭 3)
-
-
-@dataclass(frozen=True)
-class FieldValueToken:
-    field_id: str  # target logical Field ID(raw source key 아님)
-
-
-PatternToken = LiteralSegment | ReservedDateToken | ReservedSequenceToken | FieldValueToken
-
-_RESERVED_DATE = "date"
-_RESERVED_SEQ = "seq"
+# ─── PatternToken 합타입·parser 는 이름 kernel 소유(#798) ───────────────────────────────
+# LiteralSegment·ReservedDateToken·ReservedSequenceToken·FieldValueToken·PatternToken·
+# pattern_field_token_ids 는 :mod:`hwpxfiller.domain.output_name` 에서 그대로 re-export 한다.
 
 
 def parse_filename_pattern(
     pattern: object, *, filename_pattern_contract_id: str
 ) -> tuple[PatternToken, ...]:
-    """exact pattern text + contract ID → PatternToken 열(문서 순서 = filename component 조립 순서).
+    """exact pattern text + contract ID → PatternToken 열 — 해석은 이름 kernel 한 곳이 한다.
 
-    unknown contract → fail-closed context signal. empty pattern·닫히지 않은 ``{{``·빈 ``{{}}``·
-    inner brace 는 OUTPUT_NAME_PATTERN_INVALID(``_PatternInvalidSignal``). well-formed v1 pattern
-    (``{{date}}``·``{{seq:001}}``·``{{필드}}``·리터럴)은 기존 naming 의미와 동치다 — v1 이 조용히
-    출력에 누출하던 malformed brace 만 시끄럽게 거절한다(confirm-or-alarm 상향).
+    unknown contract → fail-closed context signal. 패턴 문법 위반(빈 패턴·닫히지 않은 ``{{``·빈
+    ``{{}}``·inner brace)은 kernel 이 내는 OUTPUT_NAME_PATTERN_INVALID(``_PatternInvalidSignal``).
     """
     if filename_pattern_contract_id != FILENAME_PATTERN_CONTRACT_ID:
         raise _DeliveryContextSignal(
             UNSUPPORTED_FILENAME_PATTERN_CONTRACT,
             f"미지원 filename pattern contract: {filename_pattern_contract_id!r}",
         )
-    if not isinstance(pattern, str) or pattern == "":
-        raise _PatternInvalidSignal("filename pattern 이 비어 있다")
-    tokens: list[PatternToken] = []
-    buf: list[str] = []
-    i = 0
-    n = len(pattern)
-    while i < n:
-        if pattern[i : i + 2] == "{{":
-            close = pattern.find("}}", i + 2)
-            if close == -1:
-                raise _PatternInvalidSignal("닫히지 않은 '{{' token")
-            inner = pattern[i + 2 : close]
-            if inner == "" or "{" in inner or "}" in inner:
-                raise _PatternInvalidSignal(f"malformed token: {pattern[i : close + 2]!r}")
-            if buf:
-                tokens.append(LiteralSegment("".join(buf)))
-                buf = []
-            head, _, spec = inner.partition(":")
-            has_spec = ":" in inner
-            if head == _RESERVED_DATE:
-                tokens.append(ReservedDateToken(spec if has_spec else None))
-            elif head == _RESERVED_SEQ:
-                tokens.append(ReservedSequenceToken(spec if has_spec else None))
-            else:
-                tokens.append(FieldValueToken(inner))
-            i = close + 2
-        else:
-            # 단일 '{'·짝 없는 '}' 는 v1 과 동일하게 리터럴로 취급한다(과잉 거절 금지).
-            buf.append(pattern[i])
-            i += 1
-    if buf:
-        tokens.append(LiteralSegment("".join(buf)))
-    return tuple(tokens)
-
-
-def pattern_field_token_ids(tokens: Iterable[PatternToken]) -> tuple[str, ...]:
-    """token 열이 참조하는 Field ID(문서순·중복 제거)."""
-    out: dict[str, None] = {}
-    for tok in tokens:
-        if isinstance(tok, FieldValueToken):
-            out.setdefault(tok.field_id, None)
-    return tuple(out)
+    try:
+        return _parse_pattern_text(pattern)
+    except OutputNameError as exc:
+        raise _PatternInvalidSignal(exc.detail) from exc
 
 
 # ─── inactive Field 값 표현(delivery basis 가 봉인하는 exact requirement) ──────────────────────
@@ -740,27 +688,15 @@ def _delivery_plan_payload(
 
 
 def _guard_relative_path(name: str) -> None:
-    """resolved path 가 output directory 밖으로 탈출하지 못하게 flat relative 임을 강제한다.
-
-    field/date 값은 이미 clean_filename 이 금지문자를 제거하지만, pattern 리터럴은 v1 이 청소하지
-    않으므로 여기서 최종 방어한다. Windows 금지문자(``\\ / : * ? " < > |``·제어문자)는 전부 거절한다 —
-    ``:`` 는 drive-relative(``C:x``)·ADS(``name:stream``)를 만들어 다른 드라이브의 output root 를
-    통째로 버릴 수 있다. ``..``·NUL 도 OUTPUT_PATH_ESCAPE_DETECTED.
+    """최종 이름이 출력 폴더 안의 평평한 안전한 파일 이름인가 — 판정은 이름 kernel
+    (:func:`~hwpxfiller.domain.output_name.guard_output_name`) 한 곳이다. 위반은 fail-closed
+    OUTPUT_PATH_ESCAPE_DETECTED(경로 구분자·drive/ADS·금지/제어 문자·``..``·빈 stem·끝 점/공백·
+    Windows 예약 장치 이름).
     """
-    if has_forbidden_filename_char(name) or "\x00" in name:
-        raise _DeliveryContextSignal(
-            OUTPUT_PATH_ESCAPE_DETECTED,
-            f"resolved path 에 경로 구분자/drive/금지문자: {name!r}",
-        )
-    if name in (".", "..") or name.startswith(".."):
-        raise _DeliveryContextSignal(
-            OUTPUT_PATH_ESCAPE_DETECTED, f"resolved path 가 상위 경로 참조: {name!r}"
-        )
-    if len(name) <= len(_HWPX_EXT):
-        # 확장자만 남는(빈 stem) 이름은 조용한 빈 파일명이라 막는다.
-        raise _DeliveryContextSignal(
-            OUTPUT_PATH_ESCAPE_DETECTED, "resolved path 의 stem 이 비어 있다"
-        )
+    try:
+        guard_output_name(name)
+    except OutputNameError as exc:
+        raise _DeliveryContextSignal(exc.code, exc.detail) from exc
 
 
 def _render_item(
@@ -770,60 +706,19 @@ def _render_item(
     ordinal: int,
     clock: datetime,
 ) -> tuple[str, tuple[ResolvedTokenValue, ...]]:
-    """token 열을 filename 으로 조립한다(naming v1 sanitation·date/seq 서식 재사용).
-
-    seq = ordinal + 1(1-based), date = batch clock. field 값은 clean_filename 으로 청소한다 —
-    naming.make_output_filename 과 같은 규약. 확장자 ``.hwpx`` 를 보장한다.
-    """
-    parts: list[str] = []
-    resolved: list[ResolvedTokenValue] = []
-    for tok in tokens:
-        if isinstance(tok, LiteralSegment):
-            parts.append(tok.text)
-        elif isinstance(tok, ReservedDateToken):
-            text = format_date_token(tok.date_spec, clock)
-            parts.append(text)
-            resolved.append(ResolvedTokenValue("DATE", None, text))
-        elif isinstance(tok, ReservedSequenceToken):
-            text = format_seq_token(tok.pad, ordinal + 1)
-            parts.append(text)
-            resolved.append(ResolvedTokenValue("SEQ", None, text))
-        else:  # FieldValueToken
-            cleaned = clean_filename(field_values[tok.field_id])
-            parts.append(cleaned)
-            resolved.append(ResolvedTokenValue("FIELD", tok.field_id, cleaned))
-    stem = "".join(parts)
-    name = stem if stem.lower().endswith(_HWPX_EXT) else stem + _HWPX_EXT
-    return name, tuple(resolved)
+    """token 열을 filename 으로 조립한다 — 조립 규칙은 이름 kernel 의 것(seq = ordinal + 1)."""
+    name, parts = render_output_name(tokens, field_values, seq=ordinal + 1, now=clock)
+    return name, tuple(ResolvedTokenValue(p.kind, p.field_id, p.text) for p in parts)
 
 
 def _dedupe_batch(
     base_names: list[str], *, occupied_names: Iterable[str] = ()
 ) -> list[str]:
-    """배치 내 같은 이름 충돌에 결정적 접미사(_1·_2…)를 붙인다(naming.OutputNamer 규칙).
+    """배치 내 같은 이름 충돌에 결정적 접미사(_1·_2…) — 대소문자 무관(casefold) 규칙은 kernel 소유.
 
-    접미사는 확장자 앞에 넣는다(``stem_1.hwpx``). batch 순서로 한 번 계산한다 — item 별 독립
-    재결정 금지(invariant 22).
-
-    Windows FS 는 기본 case-insensitive 라 ``Report.hwpx`` 와 ``report.hwpx`` 는 같은 파일이다 —
-    충돌 판정은 casefold 로 하되(안 그러면 둘째가 첫째를 덮어쓴다) 표시 철자는 원본 그대로 둔다.
+    batch 순서로 한 번 계산한다 — item 별 독립 재결정 금지(invariant 22).
     """
-    seen = {name.casefold() for name in occupied_names}
-    out: list[str] = []
-    for name in base_names:
-        if name.casefold() not in seen:
-            seen.add(name.casefold())
-            out.append(name)
-            continue
-        stem, ext = name[: -len(_HWPX_EXT)], name[-len(_HWPX_EXT) :]
-        i = 1
-        cand = f"{stem}_{i}{ext}"
-        while cand.casefold() in seen:
-            i += 1
-            cand = f"{stem}_{i}{ext}"
-        seen.add(cand.casefold())
-        out.append(cand)
-    return out
+    return dedupe_output_names(base_names, occupied_names=occupied_names)
 
 
 def resolve_current_generation_delivery(

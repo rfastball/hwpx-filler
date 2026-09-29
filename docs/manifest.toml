@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "e52e6f1236fb6c2d112ea83d6c39eef209eff1a6f167cea7d478f52b8450af46"
+source_sha256 = "7aa9948a5f4bcc3b431baa5dfd498d2d1c55677e39ff7ff95e37040b36fe1716"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -207,10 +207,10 @@ body_sha256 = "7a6813ecc90d2322df471d88bec96e8ae6e5a3d3a0da1a2524370f98eaabff4c"
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
-sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
+sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "4c9d9532f40645504f9529870bd2ebcce091d56a9fbe1fc24f9c8d873a52303b"
-body_sha256 = "6dcf67f7dabac55747c963e1e1b9949d26fbae903d2e1a0abcce0241bcd936d6"
+source_sha256 = "a8bfd88a61f2889a4511d1efe60d7bc87c6e45fb1dc7819a7123df79b49e353f"
+body_sha256 = "4f9b72e9aee48c8a29917a4041b7d8f15786fe60fbb290e805ce9e15d63d643f"
 
 [[topic]]
 id = "workflow-results"

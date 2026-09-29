@@ -33,6 +33,10 @@ from ..naming import (
 )
 from .review_state import ReviewRequirement, review_notice_text
 
+#: 이름을 만들 수 없는 패턴·값(이름 kernel 의 OUTPUT_NAME_PATTERN_INVALID·
+#: OUTPUT_PATH_ESCAPE_DETECTED)을 말하는 **한 문장** — 배달 blocker 표(webapp)도 이 상수를 쓴다.
+OUTPUT_NAME_INVALID_TEXT = "파일 이름 규칙이 올바르지 않습니다."
+
 
 @dataclass
 class PreflightResult:
@@ -493,6 +497,10 @@ class RunViewModel:
             )
         if name_gate is not None:
             return name_gate
+        if audit is not None and audit.refusal_code:
+            # 이름 kernel 이 이름을 만들 수 없다고 판정했다(#798) — 배달 계획이 서지 않는 것과
+            # 같은 사실을 같은 등급(차단)으로 말한다. 버튼을 열어 두면 생성이 예외로 끝난다.
+            return GateState(False, "danger", OUTPUT_NAME_INVALID_TEXT, reason="name_invalid")
         if configuration_gate is not None:
             return configuration_gate
         # 데이터 결속은 **작업 정의 수준의 결핍**이다(U4 §2.4 · #932 U4-C): 저장 게이트가

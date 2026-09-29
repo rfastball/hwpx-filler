@@ -71,10 +71,16 @@ class _Store:
 class _VM:
     """RunViewModel 의 게이트 표면 대역 — 호출 순서·관통 인자를 기록한다."""
 
-    def __init__(self, errors=(), blanks=(), conflicts=()):
+    def __init__(self, errors=(), blanks=(), conflicts=(), name_refusal=""):
         self.errors, self.blanks, self.conflicts = list(errors), list(blanks), list(conflicts)
+        self.name_refusal = name_refusal
         self.trace = []
         self.plan_kwargs = None
+
+    def output_name_audit(self, data, indices, out_dir="", *, mark_missing="", now=None):
+        from hwpxfiller.naming import OutputNameAudit
+
+        return OutputNameAudit(refusal_code=self.name_refusal)
 
     def validate_generate(self, data, indices, out_dir):
         self.trace.append("validate")
@@ -149,6 +155,18 @@ def test_overwrite_needs_confirmation_then_builds_the_plan():
     )
     assert done.plan is not None and done.plan.overwrite is True
     assert vm2.plan_kwargs == {"marker": "", "overwrite": True, "now": now}
+
+
+def test_unmakeable_output_names_reject_before_the_overwrite_lookup():
+    """이름 kernel 거절(#798)은 덮어쓰기 대조 전에 게이트와 같은 문장으로 닫힌다."""
+    from hwpxfiller.viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT
+
+    vm = _VM(name_refusal="OUTPUT_PATH_ESCAPE_DETECTED")
+    decision = plan_generation(vm, _DATA, [0], "out", now=_NOW)
+    assert decision.plan is None and decision.rejection is not None
+    assert decision.rejection.message == OUTPUT_NAME_INVALID_TEXT
+    assert decision.rejection.level == "danger"
+    assert not any(isinstance(step, tuple) and step[0] == "conflicts" for step in vm.trace)
 
 
 def test_blank_marker_is_the_single_predicate():
