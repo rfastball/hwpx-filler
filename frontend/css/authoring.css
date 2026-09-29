@@ -109,6 +109,14 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-disclosure[open]>summary{margin-bottom:var(--sp-4)}
 .authoring-disclosure .field{width:100%;min-width:0}
 .authoring-disclosure .authoring-reason{margin-top:var(--sp-4)}
+/* 같은 문구 N곳(P-07): 폼 안 체크 목록 — 체크 상자 · 문맥(찾은 글자 강조) · 흐린 위치 줄, 만들 수 없는 자리는 흐림 + 사유 줄. */
+.authoring-same{display:flex;flex-direction:column;gap:var(--sp-6);max-height:14rem;overflow-y:auto}
+.authoring-same-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--sp-2) var(--sp-8);align-items:baseline;font-size:var(--fs-body)}
+.authoring-same-row .authoring-reason{grid-column:2/-1}
+.authoring-same-row .authoring-row-context{max-width:none}
+.authoring-same-row.disabled .authoring-same-text{color:var(--a-muted)}
+.authoring-same-text{overflow-wrap:anywhere}
+.authoring-same-text mark{background:var(--a-sel);color:inherit;font-weight:600}
 /* 적용 단추의 Enter 표기(P-01 enter 등급): 단추 글자색을 따른다(채움 단추 위 흐린 글자는 대비를 잃는다). */
 .authoring-properties-actions .authoring-key{margin-left:var(--sp-8);color:inherit}
 .authoring-preview pre,.authoring-trial-output pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--font-mono)}

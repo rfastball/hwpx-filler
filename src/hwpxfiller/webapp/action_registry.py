@@ -85,6 +85,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "trial_fill_names": _schema("session_id revision"),
         "trial": _schema("session_id revision"),
         "search": _schema("session_id revision query kind"),
+        # 「다른 같은 문구 찾기」(IDE-07 P-07) — 고른 문구와 같은 원시 평문 자리와 자리마다의 필드 만들기 판정.
+        "same_text": _schema("session_id revision selection"),
         # 구조 목록·검색·일치 후보는 좌표와 함께 대상 정체(필드 전체·사용 위치·항목·선택)를 싣는다(#1021).
         "locate": _schema("session_id revision selection", "target"),
         # 명령 팔레트가 locate 없이 가용성만 묻는 자리(F40) — `context` 는 locate 가 준 것을 되돌려 준다.

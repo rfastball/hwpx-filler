@@ -41,6 +41,7 @@ from ..domain.template_authoring import (
     REASON_FIELD_OVERLAP,
     REASON_INVALID_SELECTION,
     REASON_MULTI_REGION,
+    REASON_NO_CONTENT_LINE,
     REASON_OPTION_OUTSIDE_SLOT,
     REASON_REGION_OVERLAP,
     REASON_STRUCTURE_FIRST,
@@ -58,8 +59,13 @@ from ..domain.template_authoring import (
     field_candidates,
     marker_target,
     navigate_action,
+    context_focus,
     occurrence_context,
+    occurrence_context_parts,
+    SPLIT_OPTION_PREFIX,
     shared_reasons,
+    split_mode,
+    split_option_label,
     target_availability,
     trial_document_values,
     whole_field_unset,
@@ -255,6 +261,12 @@ def _occurrence_context(occurrence, name: str, marks: dict) -> str:
 
 def _body_hit_context(pieces: list[tuple[str, object, str | None]], start: int, end: int) -> str:
     """본문 검색 한 건의 문맥 — 찾은 글자가 필드 값 안이면 그 필드 전체를 표지로 보인다(§6.3)."""
+    return "".join(_body_hit_parts(pieces, start, end))
+
+
+def _body_hit_parts(pieces: list[tuple[str, object, str | None]], start: int,
+                    end: int) -> tuple[str, str, str]:
+    """:func:`_body_hit_context` 의 세 조각(앞·찾은 글자·뒤)."""
     spans: list[tuple[int, int, tuple[str, object, str | None]]] = []
     offset = 0
     for piece in pieces:
@@ -277,7 +289,7 @@ def _body_hit_context(pieces: list[tuple[str, object, str | None]], start: int, 
         before.append((text[:max(0, min(hi, start) - lo)], None, None))
         focus.append((text[max(0, start - lo):max(0, min(hi, end) - lo)], None, None))
         after.append((text[max(0, end - lo):], None, None))
-    return occurrence_context(_render_pieces(before), _render_pieces(focus), _render_pieces(after))
+    return occurrence_context_parts(_render_pieces(before), _render_pieces(focus), _render_pieces(after))
 
 
 def _root_anchor(paragraphs: list, paragraph) -> int | None:
@@ -594,16 +606,8 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
         paragraphs = [node for node in root if node.tag == f"{_HP}p"]
         marks = _field_marks(entry, root)
         for paragraph in root.iter(f"{_HP}p"):
-            if paragraph in paragraphs:
-                position = {"paragraph": paragraphs.index(paragraph)}
-            else:
-                cell_path = _cell_path(root, paragraph)
-                position = ({"paragraph": None} if cell_path is None
-                            else {"paragraph": cell_path[-1]["paragraph"], "cell_path": cell_path})
-            body = "".join(
-                child.text or "" for run in paragraph if run.tag == f"{_HP}run"
-                for child in run if child.tag == f"{_HP}t"
-            )
+            position = _paragraph_position(root, paragraphs, paragraph)
+            body = _paragraph_body(paragraph)
             path = root.getroottree().getpath(paragraph)
             seen: set[str] = set()
             for match in pattern.finditer(body):
@@ -621,6 +625,63 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
     return {"hits": hits}
 
 
+def _paragraph_position(root, paragraphs: list, paragraph) -> dict:
+    """검색 결과의 문단 좌표 — 본문 문단 번호, 셀 문단이면 셀 안 번호와 셀 경로, 그 밖은 번호 없음."""
+    if paragraph in paragraphs:
+        return {"paragraph": paragraphs.index(paragraph)}
+    cell_path = _cell_path(root, paragraph)
+    return ({"paragraph": None} if cell_path is None
+            else {"paragraph": cell_path[-1]["paragraph"], "cell_path": cell_path})
+
+
+def _paragraph_body(paragraph) -> str:
+    """본문 검색의 글자 — 문단 바로 아래 ``hp:run`` 의 ``hp:t`` 글자."""
+    return "".join(child.text or "" for run in paragraph if run.tag == f"{_HP}run"
+                   for child in run if child.tag == f"{_HP}t")
+
+
+def same_text_hwpx(content: object, selection: Mapping[str, object]) -> list[dict]:
+    """고른 문구와 같은 본문 자리 전부(IDE-07 P-07) — 검색의 「같은 문맥은 한 건」 병합 없이 원시 자리다.
+
+    자리 좌표는 검색 결과와 같은 모양(``entry``·문단·셀 경로·``paragraph_path``·``start/end``)이고, 고른 자리와 겹치는
+    자리는 뺀다. 자리마다 ``enabled/reason`` 은 그 자리를 범위로 한 ``create_field`` 판정(``_paragraph_sites`` ·
+    ``_field_range_refusal``)이다 — 필드 값·제어 요소 뒤의 자리는 흐린 채 사유와 함께 남는다. ``anchor`` 는 위치 줄의
+    본문 문단 번호(셀이면 표를 품은 문단)다. 고른 문구가 없거나 공백뿐이면 빈 목록이다.
+    """
+    package = require_package(content)
+    found = selected_context_hwpx(package, selection)
+    if found is None or not found[1].strip():
+        return []
+    phrase = found[1]
+    first = selection.get("start_paragraph", selection.get("paragraph"))
+    chosen_start, chosen_end = selection["start"], selection["end"]
+    assert isinstance(chosen_start, int) and isinstance(chosen_end, int)
+    hits: list[dict] = []
+    for entry, root in _roots(package):
+        chosen = (_selected_paragraph(root, first, selection.get("cell_path"))
+                  if entry == selection.get("entry") else None)
+        paragraphs = [node for node in root if node.tag == f"{_HP}p"]
+        marks = _field_marks(entry, root)
+        for paragraph in root.iter(f"{_HP}p"):
+            position = _paragraph_position(root, paragraphs, paragraph)
+            path = root.getroottree().getpath(paragraph)
+            anchor = (paragraphs.index(paragraph) if paragraph in paragraphs
+                      else _root_anchor(paragraphs, paragraph))
+            for match in re.finditer(re.escape(phrase), _paragraph_body(paragraph)):
+                start, end = match.span()
+                if paragraph is chosen and start < chosen_end and chosen_start < end:
+                    continue
+                parts = _body_hit_parts(_paragraph_pieces(paragraph, marks), start, end)
+                # 편집기가 가리킬 수 없는 문단(글상자 등 — 번호 없음)의 자리는 흐린 채 그 사유로 남는다.
+                reason = (_PARAGRAPH_UNRESOLVED if position["paragraph"] is None
+                          else _field_range_refusal(*_paragraph_sites(paragraph), start, end))
+                hits.append({"location": {"entry": entry, **position, "paragraph_path": path,
+                                          "start": start, "end": end},
+                             "anchor": anchor, "context": "".join(parts), "focus": context_focus(parts),
+                             "enabled": reason is None, "reason": reason})
+    return hits
+
+
 def _require_clean(package) -> None:
     _slots, diagnostics = inspect_slots(package)
     if diagnostics:
@@ -636,6 +697,8 @@ def _field_name(raw: object) -> str:
 
 _MULTI_PARAGRAPH_FIELD = "여러 문단에 걸친 필드는 HWPX 누름틀 경계로 만들 수 없습니다."
 _COMPLEX_FIELD = "이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다."
+#: 편집기 좌표로 가리킬 수 없는 문단(글상자 등) — 셀 경로도 본문 번호도 없다.
+_PARAGRAPH_UNRESOLVED = "고른 문단의 위치를 확정할 수 없습니다."
 
 
 def _paragraph_sites(paragraph) -> tuple[list[tuple[etree._Element, int, int]], list[int], str]:
@@ -675,13 +738,13 @@ def _selected_paragraph(root, paragraph_index: object, cell_path: object):
             and all(type(value) is int and value >= 0 for value in step.values())
             for step in cell_path
         ) or paragraph_index != cell_path[-1]["paragraph"]:
-            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError(_PARAGRAPH_UNRESOLVED)
         owner_index = cell_path[0]["parent_paragraph"]
         candidates = ([node for node in paragraphs[owner_index].iter(f"{_HP}p")
                        if _cell_path(root, node) == cell_path]
                       if owner_index < len(paragraphs) else [])
         if len(candidates) != 1:
-            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError(_PARAGRAPH_UNRESOLVED)
         return candidates[0]
     if not isinstance(paragraph_index, int) or not 0 <= paragraph_index < len(paragraphs):
         raise ValueError("고른 문단이 문서 영역 밖에 있습니다.")
@@ -717,49 +780,86 @@ def selected_context_hwpx(content: object, selection: Mapping[str, object]) -> t
     return text[:start], text[start:end]
 
 
-def _create_field(package, command: Mapping[str, object]) -> str:
-    entry = command.get("entry")
+def _field_paragraph(package, roots: dict, site: Mapping[str, object]) -> tuple[str, etree._Element, int, int]:
+    """한 필드 자리의 문단 — 문단 경로(``paragraph_path``), 또는 본문 문단 번호와 셀 경로(``cell_path``)."""
+    entry = site.get("entry")
     if not isinstance(entry, str) or entry not in package.entries:
         raise ValueError("HWPX 문서 영역을 찾을 수 없습니다.")
-    paragraph_index = command.get("paragraph")
-    paragraph_path = command.get("paragraph_path")
-    cell_path = command.get("cell_path")
-    start, end = command.get("start"), command.get("end")
+    start, end = site.get("start"), site.get("end")
     if not all(isinstance(item, int) and not isinstance(item, bool) for item in (start, end)):
         raise ValueError("문단 안의 정확한 문자 범위를 고르세요.")
     assert isinstance(start, int) and isinstance(end, int)
-    root = etree.fromstring(package.entries[entry])
+    if entry not in roots:
+        roots[entry] = etree.fromstring(package.entries[entry])
+    root = roots[entry]
+    paragraph_index = site.get("paragraph")
+    paragraph_path = site.get("paragraph_path")
     if isinstance(paragraph_path, str):
         paragraphs = root.xpath(paragraph_path, namespaces=root.nsmap)
         if len(paragraphs) != 1 or paragraphs[0].tag != f"{_HP}p":
-            raise ValueError("고른 문단의 위치를 확정할 수 없습니다.")
+            raise ValueError(_PARAGRAPH_UNRESOLVED)
         paragraph = paragraphs[0]
     else:
-        paragraph = _selected_paragraph(root, paragraph_index, cell_path)
-    if command.get("end_paragraph", paragraph_index) != paragraph_index:
+        paragraph = _selected_paragraph(root, paragraph_index, site.get("cell_path"))
+    if site.get("end_paragraph", paragraph_index) != paragraph_index:
         raise ValueError(_MULTI_PARAGRAPH_FIELD)
-    sites, hazards, text = _paragraph_sites(paragraph)
-    refusal = _field_range_refusal(sites, hazards, text, start, end)
-    if refusal is not None:
-        raise ValueError(refusal)
+    return entry, paragraph, start, end
+
+
+def _field_ranges(command: Mapping[str, object]) -> list[Mapping[str, object]]:
+    """``create_field`` 의 자리 목록 — ``ranges`` 가 없으면 고른 자리 하나다."""
+    ranges = command.get("ranges")
+    if ranges is None:
+        return [command]
+    if not isinstance(ranges, list) or not all(isinstance(item, Mapping) for item in ranges):
+        raise ValueError(REASON_INVALID_SELECTION)
+    return ranges
+
+
+def _create_field(package, command: Mapping[str, object]) -> str:
+    """고른 자리(와 ``ranges`` 의 자리들, IDE-07 P-07)에 같은 이름의 누름틀을 한 패키지 변형으로 끼운다.
+
+    ``ranges`` 는 고른 자리를 포함한 자리 전부다. 자리마다 판정(제어 요소·문단 밖)은 **바꾸기 전** 문서에서 하고,
+    같은 문단의 자리는 뒤에서부터 끼우며 끼울 때마다 문단 글자 자리를 다시 센다(앞 자리의 offset 은 밀리지 않는다).
+    """
+    roots: dict = {}
+    primary = _field_paragraph(package, roots, command)
+    sites = [_field_paragraph(package, roots, item) for item in _field_ranges(command)]
+    if primary not in sites:
+        raise ValueError(REASON_INVALID_SELECTION)
+    captured = _paragraph_sites(primary[1])[2][primary[2]:primary[3]]
+    for index, (_entry, paragraph, start, end) in enumerate(sites):
+        text_sites, hazards, text = _paragraph_sites(paragraph)
+        refusal = _field_range_refusal(text_sites, hazards, text, start, end)
+        if refusal is not None:
+            raise ValueError(refusal)
+        # 같은 문구 N곳이다 — 다른 글자의 자리(옛 좌표)는 짐작해 끼우지 않는다.
+        if text[start:end] != captured:
+            raise ValueError(REASON_INVALID_SELECTION)
+        if any(other is paragraph and (lo < end and start < hi or (lo, hi) == (start, end))
+               for _e, other, lo, hi in sites[index + 1:]):
+            raise ValueError(REASON_FIELD_OVERLAP)
     name = _field_name(command.get("name"))
-    allocate = _authoring._make_id_allocator(root)
-    begin_id, field_id = allocate()
-    begin_site = next((node for node, lo, hi in sites if lo <= start < hi), sites[-1][0])
-    end_site = next((node for node, lo, hi in sites if lo < end <= hi), sites[0][0])
-    begin_ctrl = _authoring._begin_run(dict(begin_site.getparent().attrib), name,
-                                       begin_id, field_id)[0]
-    end_ctrl = _authoring._end_run(dict(end_site.getparent().attrib), begin_id,
-                                   field_id)[0]
-    if start == end == 0:
-        _insert_field_boundary(sites, start, begin_ctrl, beginning=True)
-        _insert_field_boundary(sites, end, end_ctrl, beginning=False)
-    else:
-        _insert_field_boundary(sites, end, end_ctrl, beginning=False)
-        _insert_field_boundary(sites, start, begin_ctrl, beginning=True)
-    resolve_field_occurrences(entry, root).require_usable()
-    package.entries[entry] = serialize_modified_section(root)
-    return text[start:end]
+    allocators = {entry: _authoring._make_id_allocator(root) for entry, root in roots.items()}
+    for entry, paragraph, start, end in sorted(sites, key=lambda site: -site[2]):
+        sites_now = _paragraph_sites(paragraph)[0]
+        begin_id, field_id = allocators[entry]()
+        begin_site = next((node for node, lo, hi in sites_now if lo <= start < hi), sites_now[-1][0])
+        end_site = next((node for node, lo, hi in sites_now if lo < end <= hi), sites_now[0][0])
+        begin_ctrl = _authoring._begin_run(dict(begin_site.getparent().attrib), name,
+                                           begin_id, field_id)[0]
+        end_ctrl = _authoring._end_run(dict(end_site.getparent().attrib), begin_id,
+                                       field_id)[0]
+        if start == end == 0:
+            _insert_field_boundary(sites_now, start, begin_ctrl, beginning=True)
+            _insert_field_boundary(sites_now, end, end_ctrl, beginning=False)
+        else:
+            _insert_field_boundary(sites_now, end, end_ctrl, beginning=False)
+            _insert_field_boundary(sites_now, start, begin_ctrl, beginning=True)
+    for entry, root in roots.items():
+        resolve_field_occurrences(entry, root).require_usable()
+        package.entries[entry] = serialize_modified_section(root)
+    return captured
 
 
 def _insert_field_boundary(
@@ -1235,6 +1335,7 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         parent = snapshot.slot_regions[owner]
         order = len(next(slot.options for slot in snapshot.slots if slot.id == owner))
         payload = serialize_slot_option_metatag(SlotOption(identifier, order, label))
+    labels = _split_labels(package, command, entry, start, end) if split_mode(command) else []
     if kind == "slot":
         region_name = structure_region_name(identifier)
     else:
@@ -1246,6 +1347,41 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         parent=parent,
     )
     append_bookmark_metatag(package, region, payload)
+    # 문단마다 선택(P-11b): 같은 패키지 변형 안에서 새 항목을 부모로 문단마다 선택 구간을 만든다.
+    for order, (index, option_label) in enumerate(labels):
+        option_id = f"{SPLIT_OPTION_PREFIX}{order + 1}"
+        option = create_bookmark_region(
+            package, entry, index, index,
+            name=structure_region_name(identifier, option_id),
+            parent=inspect_slot_regions(package).slot_regions[identifier],
+        )
+        append_bookmark_metatag(package, option, serialize_slot_option_metatag(
+            SlotOption(option_id, order, option_label)))
+
+
+def _split_labels(package, command: Mapping[str, object], entry: str, start: int,
+                  end: int) -> list[tuple[int, str | None]]:
+    """문단마다 선택이 될 본문 문단과 그 표시 이름(P-11b) — 빈 문단은 뺀다.
+
+    본문 문단만 된다: 셀 안 선택이거나 범위 안 문단이 표를 품으면(표 셀 문단이 섞이면) 한 범위가 아니다.
+    표시 이름은 필드 값을 걷은 본문 글자로 TXT 와 같은 규칙(:func:`split_option_label`)이 짓는다.
+    """
+    if command.get("cell_path") is not None or entry not in package.entries:
+        raise ValueError(REASON_MULTI_REGION)
+    root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
+    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
+    chosen = paragraphs[start:end + 1]
+    if any(True for paragraph in chosen for _ in paragraph.iter(f"{_HP}tbl")):
+        raise ValueError(REASON_MULTI_REGION)
+    marks = _field_marks(entry, root)
+    labels: list[tuple[int, str | None]] = []
+    for index, paragraph in enumerate(chosen, start):
+        pieces = _paragraph_pieces(paragraph, marks)
+        if any(text.strip() or key is not None for text, key, _ in pieces):
+            labels.append((index, split_option_label("".join(text for text, key, _ in pieces if key is None))))
+    if not labels:
+        raise ValueError(REASON_NO_CONTENT_LINE)
+    return labels
 
 
 def apply_hwpx(content: object, command: Mapping[str, object]) -> tuple[object, dict]:
@@ -1286,11 +1422,16 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
             command.get("option_id") if action == "rename_option" else None))
     try:
         if action == "create_field":
+            sites = _field_site_contexts(package, command) if command.get("ranges") is not None else None
             captured = _create_field(package, command)
             existing = next((item["count"] for item in prior_fields
                              if item["name"] == normalize_field_id(command.get("name"))), 0)
             extra = {"links_existing": existing > 0, "existing_count": existing,
                      "candidates": field_candidates(prior_fields)}
+            if sites is not None:
+                # 같은 문구 N곳(P-07): 포함될 자리마다 검색 결과와 같은 문맥 한 줄, 영향은 자리 수다.
+                impact_context = {**impact_context, "included": sites}
+                extra["affected"] = len(sites)
         elif action == COMPILE_TOKEN:
             captured = _compile_token(package, command)
         elif action in {"rename_field", "relink_field", "unset_field"}:
@@ -1307,6 +1448,8 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
         elif action in {"create_slot", "create_option"}:
             _create_region(package, command)
             captured = None
+            if split_mode(command):
+                impact_context = {**impact_context, **_split_children(package, command)}
         elif action in {"rename_slot", "rename_option"}:
             _rename_region(package, command)
             captured = None
@@ -1375,6 +1518,28 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
         if isinstance(exc, ValueError) and not re.search("[가-힣]", str(exc)):
             raise ValueError("이 문서의 구조나 고른 범위 때문에 명령을 적용할 수 없습니다.") from exc
         raise
+
+
+def _field_site_contexts(package, command: Mapping[str, object]) -> list[str]:
+    """``ranges`` 자리마다 바꾸기 전 문맥 한 줄(문서 차례) — 좌표가 틀리면 ``_create_field`` 와 같은 거절이다."""
+    roots: dict = {}
+    sites = [_field_paragraph(package, roots, item) for item in _field_ranges(command)]
+    order = {entry: {id(node): index for index, node in enumerate(root.iter(f"{_HP}p"))}
+             for entry, root in roots.items()}
+    marks = {entry: _field_marks(entry, root) for entry, root in roots.items()}
+    return [_body_hit_context(_paragraph_pieces(paragraph, marks[entry]), start, end)
+            for entry, paragraph, start, end in sorted(
+                sites, key=lambda site: (site[0], order[site[0]][id(site[1])], site[2]))]
+
+
+def _split_children(package, command: Mapping[str, object]) -> dict:
+    """문단마다 선택으로 만든 뒤의 하위 의미와 수 — 미리보기가 Python 이 지은 선택 이름을 보인다."""
+    entry, start, end = command["entry"], command["start_paragraph"], command["end_paragraph"]
+    assert isinstance(entry, str) and isinstance(start, int) and isinstance(end, int)
+    root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
+    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
+    children, counts = _block_children(package, inspect_slot_regions(package), entry, paragraphs, start, end)
+    return {"children": children, "counts": counts}
 
 
 def _command_preview_label(command: Mapping[str, object], *, after: bool = False,

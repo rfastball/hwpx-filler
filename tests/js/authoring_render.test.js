@@ -1269,3 +1269,105 @@ test("IDE-06 P-16: a preview pins the editor highlight to its range; an outline 
   assert.equal(editor.projection.highlight, null, "미리보기를 걷으면 강조도 걷힌다");
   env.root.unmount();
 });
+
+const SAME_TEXT_HITS = [
+  { kind: "text", location: { entry: "Contents/section0.xml", paragraph: 3, paragraph_path: "/hs:sec/hp:p[4]", start: 3, end: 7 },
+    context: "서명 ○○시청 (인)", focus: { start: 3, end: 7 }, enabled: true, reason: null, location_label: "문단 4" },
+  { kind: "text", location: { entry: "Contents/section0.xml", paragraph: 5, paragraph_path: "/hs:sec/hp:p[6]", start: 2, end: 6 },
+    context: "표 ○○시청", focus: { start: 2, end: 6 }, enabled: false, reason: "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다.", location_label: "문단 6" },
+  { kind: "text", location: { entry: "Contents/section0.xml", paragraph: 7, paragraph_path: "/hs:sec/hp:p[8]", start: 0, end: 4 },
+    context: "○○시청 ○○시청", focus: { start: 0, end: 4 }, enabled: true, reason: null, location_label: "문단 8" },
+];
+
+async function batchLoop() {
+  return boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action, payload) => {
+    if (action === "same_text") return { hits: SAME_TEXT_HITS, summary: "총 3건 · 본문 3 · 필드 0 · 항목·선택 0" };
+    // 영향을 보는 등급(enter)이라 제출이 곧바로 적용되지 않고 폼이 남는다 — 제출마다 보낸 명령을 잰다.
+    if (action === "preview") return { confirm: "enter", content: "bmV3", edits: [], original: "○○시청",
+      affected: payload.command.ranges?.length || 1, included: payload.command.ranges ? ["○○시청 귀하", "서명 ○○시청 (인)"] : null, created: createTarget };
+    if (action === "update") return { revision: payload.revision + 1 };
+    return {};
+  });
+}
+
+const openCreate = async (env, label) => {
+  env.flushSync(() => env.controller.update({ selection: valueRange, selected: null, commands: creatable,
+    context: { slot_id: null, option_id: null, name_suggestion: "수요기관", selected_text: "○○시청", location_label: "문단 2" } }));
+  await settle();
+  fire(env, [...env.container.querySelector('[role="toolbar"]').querySelectorAll("button")].find((node) => node.textContent === label), "click");
+  await settle();
+  return env.container.querySelector(".authoring-properties");
+};
+const previews = (env) => env.calls.filter((call) => call.action === "preview").map((call) => call.command);
+
+test("IDE-07 P-07: 다른 같은 문구 찾기 is an in-form checklist of Python's raw sites — all unchecked, disabled sites dimmed with Python's reason; only checked sites ride in one create_field as ranges", async () => {
+  const env = await batchLoop();
+  const form = await openCreate(env, "필드로 만들기");
+  assert.equal(form.querySelector('[role="group"][aria-label="검색 결과"]'), null, "누르기 전에는 목록이 없다");
+  fire(env, [...form.querySelectorAll("button")].find((node) => node.textContent === "다른 같은 문구 찾기"), "click");
+  for (let round = 0; round < 3; round++) await settle();
+  const sent = env.calls.find((call) => call.action === "same_text");
+  assert.deepEqual(sent.selection, valueRange, "편집기 좌표만 보낸다");
+  assert.equal(sent.revision, 0);
+  const group = form.querySelector('[role="group"][aria-label="검색 결과"]');
+  assert.ok(group, "폼 안의 체크 목록이다(검색 탭으로 옮겨 가지 않는다)");
+  assert.equal(form.querySelector(".authoring-search-summary").textContent, "총 3건 · 본문 3 · 필드 0 · 항목·선택 0");
+  const boxes = [...group.querySelectorAll("input")];
+  assert.equal(boxes.length, 3);
+  assert.ok(boxes.every((box) => !propsOf(box).checked), "모두 해제로 시작한다(U03)");
+  assert.equal(propsOf(boxes[1]).disabled, true, "만들 수 없는 자리는 고를 수 없다");
+  const reason = form.querySelector(`#${propsOf(boxes[1])["aria-describedby"]}`);
+  assert.equal(reason.textContent, SAME_TEXT_HITS[1].reason, "사유는 Python 문장 그대로이고 그 상자의 설명이다");
+  const rows = [...group.querySelectorAll(".authoring-same-row")];
+  assert.ok(rows[1].getAttribute("class").includes("disabled"));
+  assert.equal(rows[2].querySelector("mark").textContent, "○○시청", "찾은 글자가 강조된다 — 같은 문맥의 두 자리가 갈린다");
+  assert.equal(rows[2].querySelector(".authoring-row-context").textContent, "문단 8", "위치 줄은 Python 이 지었다");
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  assert.equal("ranges" in previews(env).at(-1), false, "체크 없이 제출하면 ranges 가 없다 — 고른 한 곳이다");
+  env.flushSync(() => propsOf(boxes[0]).onChange({ target: { checked: true } }));
+  env.flushSync(() => propsOf(boxes[2]).onChange({ target: { checked: true } }));
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  assert.deepEqual(previews(env).at(-1).ranges, [valueRange, SAME_TEXT_HITS[0].location, SAME_TEXT_HITS[2].location],
+    "고른 자리와 체크한 자리가 한 명령에 실린다");
+  const preview = form.querySelector('section[aria-label="변경 영향"]');
+  assert.ok(preview, "여러 자리 명령은 enter 등급이라 영향이 먼저 선다");
+  assert.equal(preview.querySelector('ul[aria-label="포함될 내용"]').childNodes.length, 2);
+  env.flushSync(() => propsOf(boxes[0]).onChange({ target: { checked: false } }));
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  assert.deepEqual(previews(env).at(-1).ranges, [valueRange, SAME_TEXT_HITS[2].location], "해제한 자리는 빠진다");
+  submitForm(env);
+  for (let round = 0; round < 4; round++) await settle();
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 1, "두 번째 Enter 가 한 번에 적용한다");
+  assert.equal(form.querySelector('[role="group"][aria-label="검색 결과"]'), null, "적용 뒤(새 revision) 옛 좌표 목록은 걷힌다");
+  assert.ok(!env.calls.some((call) => call.action === "search"), "검색 탭으로 가는 옛 경로는 없다");
+  env.root.unmount();
+});
+
+test("IDE-07 P-11b: 항목으로 만들기 has one unchecked 문단마다 선택으로 만들기 box; checking it sends split in the same create_slot command", async () => {
+  const env = await batchLoop();
+  let form = await openCreate(env, "필드로 만들기");
+  assert.ok(!form.textContent.includes("문단마다 선택으로 만들기"), "필드로 만들기 폼에는 없다");
+  env.flushSync(() => env.controller.update({ panel: "", preview: null }));
+  await settle();
+  form = await openCreate(env, "항목으로 만들기");
+  const label = [...form.querySelectorAll("label")].find((node) => node.textContent.includes("문단마다 선택으로 만들기"));
+  assert.ok(label, "항목으로 만들기 폼에 체크 상자 하나가 선다");
+  const box = label.querySelector("input");
+  assert.equal(propsOf(box).checked, false, "기본 해제다");
+  assert.equal(form.querySelector(".authoring-same"), null);
+  assert.ok(![...form.querySelectorAll("button")].some((node) => node.textContent === "다른 같은 문구 찾기"));
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  assert.equal("split" in previews(env).at(-1), false, "끄면 split 이 없다");
+  env.flushSync(() => propsOf(box).onChange({ target: { checked: true } }));
+  submitForm(env);
+  for (let round = 0; round < 3; round++) await settle();
+  const command = previews(env).at(-1);
+  assert.equal(command.type, "create_slot");
+  assert.equal(command.split, "paragraph", "켜면 같은 명령에 split 을 싣는다");
+  assert.equal("ranges" in command, false);
+  env.root.unmount();
+});

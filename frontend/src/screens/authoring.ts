@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad } from "../editorview/txt_lintpad.ts";
 import type { LintpadPair, LintpadProblem } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
-import { COMMANDS } from "./authoring_controller.ts";
+import { COMMANDS, coordinates } from "./authoring_controller.ts";
 import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
 import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor, Zoom } from "./authoring_controller.ts";
@@ -595,6 +595,11 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   const [text, setText] = useState(() => appliedProperties(selected).text);
   const [cascade, setCascade] = useState(false);
   const [keepValue, setKeepValue] = useState(true);
+  // 문단마다 선택(P-11b): 항목으로 만들기의 범위 수식어 하나 — 기본 해제다.
+  const [split, setSplit] = useState(false);
+  // 같은 문구 N곳(P-07): Python 이 준 원시 자리 목록(찾은 revision·고른 자리 열쇠와 함께)과 체크한 자리. 모두 해제로 시작한다(U03).
+  const [same, setSame] = useState<Obj | null>(null);
+  const [checked, setChecked] = useState<number[]>([]);
   // 「연결 식별자」 접기(P-11a): 만들기에서는 접혀 있고(비우면 이름을 쓴다), 이름 거절이 그 칸을 가리키면 편다.
   const [identifierOpen, setIdentifierOpen] = useState(false);
   const composing = useRef(false);
@@ -605,6 +610,11 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   // 이름 문법 거절(invalid_name)은 그 입력 칸 곁에 선다 — 거절 구획·오류 띠가 아니다(P-06). 입력은 그대로 남는다.
   const invalid: Obj | null = refusal?.code === "invalid_name" ? refusal : null;
   const invalidField = invalid ? (invalid.field === "identifier" ? "identifier" : "name") : "";
+  // 고른 자리(편집기 좌표)와 체크한 같은 문구 자리들 — 목록은 찾은 문서·고른 자리 그대로일 때만 선다(옛 좌표를 보이지도 싣지도 않는다).
+  const site = coordinates(selection);
+  const siteKey = JSON.stringify(site);
+  const sameHits: Obj[] | null = type === "create_field" && same && same.key === siteKey && same.revision === controller.revisionOf() ? same.hits : null;
+  const ranges = sameHits && checked.length ? [site, ...checked.map((index) => sameHits[index].location)] : null;
   const switchType = (next: string) => { setType(next); controller.update({ preview: null, refusal: null, commandType: next }); };
   const cancel = () => controller.update({ preview: null, refusal: null });
   // 기존 필드에 연결(U07)은 개별 사용 위치 한 곳이 선택됐을 때만 뜻이 있다 — 필드 전체 선택은 사용 위치 묶음(occurrences)을 가진다.
@@ -612,13 +622,15 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   const candidates: Obj[] = preview?.candidates || controller.tab().analysis?.fields || [];
   const affected = preview?.affected ?? preview?.edits?.length ?? 0;
   const revert = (offer = proposed) => { const applied = appliedProperties(selected, offer); setName(applied.name); setIdentifier(applied.identifier); setParent(applied.parent); setText(applied.text); };
-  useEffect(() => { setProposal(suggestion); revert(type === "create_field" ? suggestion : ""); if (selected?.occurrences) setType("rename_field"); }, [selected]);
+  useEffect(() => { setProposal(suggestion); revert(type === "create_field" ? suggestion : ""); setSame(null); setChecked([]); if (selected?.occurrences) setType("rename_field"); }, [selected]);
   useEffect(() => { if (view.commandType) setType(view.commandType); }, [view.commandType]);
   useEffect(() => { if (invalidField === "identifier") setIdentifierOpen(true); }, [refusal]);
   const command = (): Obj => ({ ...selected, ...(["create_field", "create_slot", "create_option", "adjust_range"].includes(type) ? selection : {}), type, name, old_name: selected?.name || name,
     id: identifier || name, label: name, slot_id: type === "create_option" ? view.context?.slot_id : parent || selected?.slot_id || selected?.id,
     option_id: selected?.option_id, kind: selected?.kind || "slot", text, cascade,
-    destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name });
+    destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name,
+    // 여러 자리 명령(IDE-07)은 한 명령이다 — 체크한 자리가 있을 때만 `ranges`(고른 자리 포함), 켰을 때만 `split`.
+    ...(type === "create_field" && ranges ? { ranges } : {}), ...(type === "create_slot" && split ? { split: "paragraph" } : {}) });
   // 문맥 줄(UX-10 R2): Python 의 location_label(담긴 항목/선택 · 문단·행 범위)만 보인다 — 원시 좌표는 싣지 않는다.
   const locationLabel = String(view.context?.location_label || "");
   // 대상 카드(UX-09)는 의미 요소(필드·항목·선택)일 때만 선다 — 검색 적중처럼 종류가 없는 대상은 글자 범위다.
@@ -661,7 +673,6 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     const captured = prepared.original;
     const applied = await controller.applyPreview(prepared);
     if (!applied) return;
-    if (sent.type === "create_field" && captured) controller.update({ lastCreatedText: String(captured) });
     if (sent.type === "create_field" && keepValue && sent.name && captured) await controller.keepTrialValue(String(sent.name), String(captured));
     if (prepared.confirm !== "none" || !CREATE_TYPES.includes(sent.type)) return;
     controller.update({ panel: "", preview: null, refusal: null, formEntry: "" });
@@ -672,6 +683,20 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   // 위험 단추(button 등급): 누름만이 적용이다 — Enter 제출은 미리보기를 다시 세울 뿐이다.
   const apply = () => { void controller.guarded(async () => { if (!composing.current && preview) await finish(preview); }); };
   const nameLabel = type.includes("field") ? "필드 이름" : "표시 이름";
+  const findSame = () => { void controller.guarded(async () => { const found = await controller.sameText(selection); if (found) { setSame({ ...found, key: siteKey }); setChecked([]); } }); };
+  /** 같은 문구 자리 한 줄: 체크 상자 · Python 문맥(찾은 글자는 강조 — 같은 줄의 두 자리가 갈린다) · 흐린 위치 줄. 만들 수 없는 자리는
+   *  흐린 채 Python 사유가 그 상자의 설명이다. */
+  const sameRow = (hit: Obj, index: number) => {
+    const reasonId = hit.reason ? `authoring-same-${index}-reason` : undefined;
+    const text = String(hit.context || "");
+    const focus = hit.focus;
+    return h("label", { key: index, className: `authoring-same-row${hit.enabled ? "" : " disabled"}` },
+      h("input", { type: "checkbox", checked: checked.includes(index), disabled: !hit.enabled || undefined, "aria-describedby": reasonId,
+        onChange: (event: any) => setChecked(event.target.checked ? [...checked, index].sort((a, b) => a - b) : checked.filter((at) => at !== index)) }),
+      h("span", { className: "authoring-same-text" }, ...(focus ? [text.slice(0, focus.start), h("mark", { key: "focus" }, text.slice(focus.start, focus.end)), text.slice(focus.end)] : [text])),
+      hit.location_label ? h("span", { className: "authoring-row-context" }, hit.location_label) : null,
+      hit.reason ? h("span", { className: "authoring-reason", id: reasonId }, hit.reason) : null);
+  };
   return h("form", { className: "authoring-properties", "aria-labelledby": "authoring-properties-title", onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; },
     onSubmit: (event: any) => { event.preventDefault(); submit(); },
     // Escape 1단계: 입력창의 작성 중인 값만 적용값으로 되돌린다. 2단계(되돌릴 것이 없을 때)는 셸이 패널을 닫고 선택으로 돌아간다.
@@ -717,9 +742,13 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       quiet("필드 이름 사용", () => setText(selected?.name || "")),
       quiet("시험값 사용", () => setText(String(view.values[selected?.name] ?? "")), { disabled: !(selected?.name in view.values) })),
     type === "create_field" && h("label", null, h("input", { type: "checkbox", checked: keepValue, onChange: (event: any) => setKeepValue(event.target.checked) }), " 고른 문구를 시험값으로 보관"),
+    type === "create_slot" && h("label", null, h("input", { type: "checkbox", checked: split, onChange: (event: any) => setSplit(event.target.checked) }), " 문단마다 선택으로 만들기"),
     type === "unwrap" && h("label", null, h("input", { type: "checkbox", checked: cascade, onChange: (event: any) => setCascade(event.target.checked) }), " 하위 의미 함께 해제"),
-    // 기본 범위는 현재 선택 한 곳이다(U03) — 같은 문구의 다른 자리는 별도 검색으로만 찾는다.
-    type === "create_field" && !!view.lastCreatedText && h("div", null, quiet("다른 같은 문구 찾기", () => { const text = view.lastCreatedText; controller.update({ lastCreatedText: "" }); void controller.guarded(() => controller.search(text, "body")); })),
+    // 같은 문구 N곳(P-07): 적용 전 폼 안에서 같은 문구 자리를 체크 목록으로 고른다. 기본 범위는 고른 한 곳이다(U03) — 행은 모두
+    // 해제로 시작하고, 체크한 자리만 한 명령(`ranges`)에 실린다. 요약은 검색과 같은 Python 문장이다.
+    type === "create_field" && textRange && h("div", { className: "authoring-actions start" }, quiet("다른 같은 문구 찾기", findSame)),
+    sameHits && same?.summary && h("p", { className: "authoring-search-summary" }, same.summary),
+    sameHits && !!sameHits.length && h("div", { className: "authoring-same", role: "group", "aria-label": "검색 결과" }, ...sameHits.map(sameRow)),
     // 거절(U07·AC08·AC10): Python 의 판정 문장을 그대로 보이고, 다음 행동만 버튼으로 세운다. 이름 문법 거절은 칸 곁이다.
     refusal && !invalid && h("section", { className: "authoring-preview authoring-refusal", role: "alert", "aria-label": "변경 불가" },
       h("p", null, refusal.message),

@@ -551,3 +551,136 @@ def test_created_target_names_the_new_field_slot_or_option_in_the_result() -> No
     assert slot is not None and slot["kind"] == "slot" and slot["slot_id"] == "구분" and slot["location"]
     assert created_target({"type": "rename_field", "name": "수요기관"}, analyze("txt", result)) is None
     assert created_target({"type": "create_field", "name": "없음"}, analyze("txt", result)) is None
+
+
+# ------------------------------------------------------------- IDE-07 반복 명령 (#1053)
+def _undo(source: str, result: str, plan: dict) -> str:
+    """편집기의 실행 취소 한 번 — 한 계획의 edit 전부를 한 번에 뒤집는다(BMP 본문이라 UTF-16 == code point)."""
+    shift = 0
+    inverse = []
+    for edit in sorted(plan["edits"], key=lambda item: item["start"]):
+        start = edit["start"] + shift
+        inverse.append((start, start + len(edit["text"]), source[edit["start"]:edit["end"]]))
+        shift += len(edit["text"]) - (edit["end"] - edit["start"])
+    for start, end, text in reversed(inverse):
+        result = result[:start] + text + result[end:]
+    return result
+
+
+def test_txt_split_wraps_each_paragraph_as_an_option_in_one_command() -> None:
+    source = "머리\n첫째 문단\n\n납품기한:  {{납기}}\n{{납기}}\n끝\n"
+    start, end = source.index("첫째"), source.index("\n끝")
+    command = {"type": "create_slot", "start": start, "end": end, "id": "조건", "label": "납품 조건",
+               "split": "paragraph"}
+    result, plan = apply("txt", source, command)
+    analysis = analyze("txt", result)
+    assert analysis["diagnostics"] == []
+    assert [(slot["id"], slot["label"], [(option["id"], option["label"]) for option in slot["options"]])
+            for slot in analysis["slots"]] == [
+        ("조건", "납품 조건", [("선택1", "첫째 문단"), ("선택2", "납품기한:"), ("선택3", "")])]
+    assert "{{#선택 선택2 납품기한:}}" in result and "\n\n{{#선택 선택2" in result, "빈 줄은 선택 밖, 항목 안에 남는다"
+    assert len(plan["edits"]) == 1 and plan["affected"] == 1, "한 의미 명령은 한 계획이다"
+    assert _undo(source, result, plan) == source, "실행 취소 한 번에 원문이 돌아온다"
+    projected = preview("txt", source, command)
+    assert [(child["kind"], child["id"], child["label"]) for child in projected["children"]] == [
+        ("option", "선택1", "첫째 문단"), ("option", "선택2", "납품기한:"), ("option", "선택3", "선택3"),
+        ("field", "납기", "납기")]
+    assert projected["counts"] == {"paragraphs": 4, "fields": 2, "options": 3, "tables": 0}
+    assert confirm_tier(command, projected) == "enter"
+
+
+def test_txt_split_at_end_of_file_and_its_refusals() -> None:
+    source = "머리\n하나\n둘"
+    result, _ = apply("txt", source, {"type": "create_slot", "start": 3, "end": len(source), "id": "s",
+                                      "split": "paragraph"})
+    assert result == "머리\n{{#항목 s}}\n{{#선택 선택1 하나}}\n하나\n{{/선택}}\n{{#선택 선택2 둘}}\n둘\n{{/선택}}\n{{/항목}}"
+    assert analyze("txt", result)["diagnostics"] == []
+    blank = "머리\n\n   \n끝\n"
+    with pytest.raises(ValueError, match="고를 내용 줄이 없습니다"):
+        apply("txt", blank, {"type": "create_slot", "start": 3, "end": 8, "id": "s", "split": "paragraph"})
+    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
+        apply("txt", source, {"type": "create_slot", "start": 3, "end": 5, "id": "s", "split": "line"})
+    slotted, _ = apply("txt", source, {"type": "create_slot", "start": 3, "end": len(source), "id": "s"})
+    inner = slotted.index("하나")
+    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
+        apply("txt", slotted, {"type": "create_option", "start": inner, "end": inner + 2, "slot_id": "s",
+                               "id": "o", "split": "paragraph"})
+
+
+@pytest.mark.parametrize(("text", "label"), [
+    ("납품기한: {{납기}}", "납품기한:"),
+    ("  앞   뒤  ", "앞 뒤"),
+    ("{{#선택 x}} 가 {나} }} {{", "가 나"),
+    ("{{납기}}", None),
+    ("가나다라마바사아자차 카타파하가나다라마바 사아", "가나다라마바사아자차 카타파하가나다라마"),
+    ("가나다라마바사아자차카타파하가나다라마 바", "가나다라마바사아자차카타파하가나다라마"),
+])
+def test_split_option_label_strips_grammar_collapses_space_and_cuts_to_twenty(text, label) -> None:
+    from hwpxfiller.domain.authoring import marker_label
+    from hwpxfiller.domain.template_authoring import split_option_label
+
+    assert split_option_label(text) == label
+    assert marker_label(label) == (label or ""), "구간 표기 라벨 문법을 늘 통과한다"
+
+
+def test_txt_same_text_is_raw_sites_with_create_field_verdicts() -> None:
+    from hwpxfiller.domain.template_authoring import same_text_sites
+
+    source = "○○시청 귀하\n서명 ○○시청 (인)\n○○시청 ○○시청\n{{○○시청}}\n{{#항목 ○○시청}}\n본문\n{{/항목}}\n"
+    sites = same_text_sites("txt", source, {"start": 0, "end": 4})
+    # 고른 자리·필드 토큰·구간 표기 안의 자리는 빠지고, 같은 줄의 두 자리는 합치지 않는다(검색의 한 건 병합 아님).
+    assert [(site["location"], site["line"], site["context"], site["focus"]) for site in sites] == [
+        ({"start": 11, "end": 15}, 1, "서명 ○○시청 (인)", {"start": 3, "end": 7}),
+        ({"start": 20, "end": 24}, 2, "○○시청 ○○시청", {"start": 0, "end": 4}),
+        ({"start": 25, "end": 29}, 2, "○○시청 ○○시청", {"start": 5, "end": 9}),
+    ]
+    assert all(site["enabled"] is True and site["reason"] is None for site in sites)
+    assert same_text_sites("txt", source, {"start": 4, "end": 5}) == [], "공백뿐인 문구"
+    assert same_text_sites("txt", source, {"start": 2, "end": 2}) == [], "빈 범위"
+    assert same_text_sites("txt", source, {"start": 0, "end": 999}) == [], "문서 밖"
+    with pytest.raises(ValueError, match="지원하지 않는"):
+        same_text_sites("hwpx", source, {"start": 0, "end": 4})
+
+
+def test_txt_create_field_ranges_is_one_plan_with_one_undo() -> None:
+    source = "○○시청 귀하\n서명 ○○시청 (인)\n○○시청 ○○시청\n"
+    ranges = [{"start": 0, "end": 4}, {"start": 25, "end": 29}, {"start": 11, "end": 15}]
+    command = {"type": "create_field", "name": "수요기관", "start": 0, "end": 4, "ranges": ranges}
+    result, plan = apply("txt", source, command)
+    field = next(item for item in analyze("txt", result)["fields"] if item["name"] == "수요기관")
+    assert field["count"] == 3
+    assert result == "{{수요기관}} 귀하\n서명 {{수요기관}} (인)\n○○시청 {{수요기관}}\n"
+    assert plan["affected"] == 3 and len(plan["edits"]) == 3
+    assert plan["included"] == ["○○시청 귀하", "서명 ○○시청 (인)", "○○시청 ○○시청"]
+    assert _undo(source, result, plan) == source
+    assert confirm_tier(command, plan) == "enter"
+    assert confirm_tier({**command, "ranges": []}, {}) == "none"
+    assert "included" in preview("txt", source, {**command, "ranges": None}) and \
+        preview("txt", source, {"type": "create_field", "name": "a", "start": 0, "end": 4})["included"] is None
+
+
+@pytest.mark.parametrize(("ranges", "message"), [
+    ([{"start": 0, "end": 4}, {"start": 0, "end": 4}], "기존 필드가 포함"),
+    ([{"start": 11, "end": 15}], "고른 위치가 올바르지"),
+    ([{"start": 0, "end": 4}, {"start": 5, "end": 9}], "고른 위치가 올바르지"),
+    ([{"start": 0, "end": 4}, {"start": 15, "end": 11}], "고른 위치가 올바르지"),
+    ([{"start": 0, "end": 4}, {"start": 0}], "고른 위치가 올바르지"),
+    ([{"start": 0, "end": 4}, "x"], "고른 위치가 올바르지"),
+    ({"start": 0, "end": 4}, "고른 위치가 올바르지"),
+    ([{"start": 0, "end": 4}, {"start": 32, "end": 36}], "기존 필드가 포함"),
+])
+def test_txt_create_field_ranges_refusals_leave_source_untouched(ranges, message) -> None:
+    source = "○○시청 귀하\n서명 ○○시청 (인)\n○○시청 ○○시청\n{{○○시청}}\n"
+    assert source[32:36] == "○○시청"
+    with pytest.raises(ValueError, match=message):
+        apply("txt", source, {"type": "create_field", "name": "수요기관", "start": 0, "end": 4, "ranges": ranges})
+
+
+def test_txt_create_field_ranges_that_overlap_each_other_are_refused() -> None:
+    with pytest.raises(ValueError, match="기존 필드가 포함"):
+        apply("txt", "아아아", {"type": "create_field", "name": "a", "start": 0, "end": 2,
+                               "ranges": [{"start": 0, "end": 2}, {"start": 1, "end": 3}]})
+    # 맞닿은 두 자리는 겹침이 아니다.
+    result, _ = apply("txt", "아아아아", {"type": "create_field", "name": "a", "start": 0, "end": 2,
+                                         "ranges": [{"start": 2, "end": 4}, {"start": 0, "end": 2}]})
+    assert result == "{{a}}{{a}}"

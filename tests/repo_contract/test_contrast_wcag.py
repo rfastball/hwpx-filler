@@ -71,6 +71,11 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
             for theme, palette in (("light", light), ("dark", dark))
             for name, background in (("window", "window_bg"), ("card", "card_bg"))
         ),
+        # 같은 문구 목록(IDE-07 .authoring-same-text mark)은 선택 바탕 위의 본문 잉크 글자다 — 작은 글자 하한.
+        *(
+            (f"{theme} ink/select", palette["color"]["ink"], palette["state"]["select_bg"], 4.5)
+            for theme, palette in (("light", light), ("dark", dark))
+        ),
         # TXT 편집면의 문제 밑줄(IDE-05 .cm-authoring-problem-error/-warning)은 글자가 아닌 그래픽 표지다 — 3:1.
         # 편집면 바탕은 카드다. 강제 색상에서는 CanvasText 로 바뀐다(authoring.css forced-colors 블록).
         *(

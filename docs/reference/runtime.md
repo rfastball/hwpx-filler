@@ -112,6 +112,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `remember_view` | `session_id`, `revision`, `selection`, `mode` | — |
 | `rhwp_roundtrip_preflight` | `session_id`, `revision`, `content` | — |
 | `rhwp_unverified` | `session_id`, `revision`, `detail` | — |
+| `same_text` | `session_id`, `revision`, `selection` | — |
 | `save` | `session_id`, `revision` | — |
 | `save_cases` | `session_id` | — |
 | `search` | `session_id`, `revision`, `query`, `kind` | — |

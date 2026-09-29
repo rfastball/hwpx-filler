@@ -127,7 +127,7 @@ export function createAuthoringController(deps: Deps) {
   const pendingRestore = new Map<string, Obj>();
   const rememberTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // commands: Python 이 현재 선택에 대해 판정한 명령 가용성(F40·P07). 표면은 이것을 그리기만 하고 다시 판정하지 않는다.
-  const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", lastCreatedText: "", notice: "",
+  const initialView = (): Obj => ({ error: "", busy: false, trialBusy: false, saveFailed: false, lastCommandLabel: "", notice: "",
     mode: "template", panel: "", selection: {}, selected: null, commands: [], contextMenu: null, palette: 0, refusal: null, syntax: null,
     command: null, preview: null, trial: false, autoTrial: true, query: "", hits: [], searchSummaries: [], values: {}, selectedOptions: {}, zoom: DEFAULT_ZOOM });
   let view = initialView();
@@ -541,6 +541,17 @@ export function createAuthoringController(deps: Deps) {
     return true;
   }
 
+  /** 고른 문구와 같은 다른 평문 자리(IDE-07 P-07) — 원시 자리·문맥·판정·위치 줄은 Python 이 짓는다. 돌려주는 값은
+   *  찾은 revision 과 자리 목록이다. 탭·revision 이 그사이 바뀌었으면(늦은 응답) null — 표면은 옛 좌표를 보이지 않는다. */
+  async function sameText(selection: Obj): Promise<{ revision: number; hits: Obj[]; summary: string | null } | null> {
+    const id = viewId;
+    await flush(id);
+    const atRevision = revision(id);
+    const result = await dispatch("same_text", fenced(id, { selection: coordinates(selection) }));
+    if (id !== viewId || atRevision !== revision(id)) return null;
+    return { revision: atRevision, hits: result.hits || [], summary: result.summary ?? null };
+  }
+
   async function search(query: string, kind: string, all = false) {
     const request = ++searchRequest;
     const id = viewId;
@@ -606,7 +617,9 @@ export function createAuthoringController(deps: Deps) {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
     snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
-    back, select, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search,
+    back, select, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search, sameText,
+    /** 활성 탭(또는 그 탭)의 지금 revision — 표면이 제 목록이 옛 문서의 것인지 비교할 뿐이다(판정 아님). */
+    revisionOf: (id = snapshot().active_id) => revision(id),
     returnScreen: () => returnScreen,
     create: async () => { const result = await dispatch("new", { media: "txt" }); revisions.set(result.session_id, result.revision); await activate(result.session_id); },
     content: (id: string) => dispatch("content", { session_id: id }),

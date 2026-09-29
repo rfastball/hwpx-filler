@@ -2749,3 +2749,145 @@ def test_rhwp_roundtrip_never_ignores_table_or_cell_meta_tags() -> None:
     assert _rt_verdict(source, table(f' metatag="{meta}"',
                                      '<hp:metaTag>{"name": "#hf_test_table"}</hp:metaTag>')
                        ) == [("xml_changed", ENTRY)]
+
+
+# ------------------------------------------------------------- IDE-07 반복 명령 (#1053)
+def _same_text_package() -> HwpxPackage:
+    return _pkg(
+        '<hp:p><hp:run><hp:t>○○시청 귀하 ○○시청</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>서명 ○○시청 (인)</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:ctrl><hp:tab/></hp:ctrl><hp:t>표 ○○시청</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>셀 ○○시청</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:rect><hp:drawText><hp:subList>'
+        '<hp:p><hp:run><hp:t>글상자 ○○시청</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:drawText></hp:rect></hp:run></hp:p>'
+    )
+
+
+_SELECTED = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0,
+             "start": 0, "end": 4}
+
+
+def test_native_same_text_lists_raw_sites_with_create_field_verdicts() -> None:
+    from hwpxfiller.external.hwpx_authoring import same_text_hwpx
+
+    package = _same_text_package()
+    hits = same_text_hwpx(package, _SELECTED)
+    summary = [(hit["location"].get("paragraph"), hit["location"]["start"], hit["anchor"], hit["context"],
+                hit["focus"], hit["enabled"]) for hit in hits]
+    assert summary == [
+        (0, 8, 0, "○○시청 귀하 ○○시청", {"start": 8, "end": 12}, True),
+        (1, 3, 1, "서명 ○○시청 (인)", {"start": 3, "end": 7}, True),
+        (2, 2, 2, "표 ○○시청", {"start": 2, "end": 6}, False),
+        (0, 2, 3, "셀 ○○시청", {"start": 2, "end": 6}, True),
+        (None, 4, 4, "글상자 ○○시청", {"start": 4, "end": 8}, False),
+    ]
+    assert hits[2]["reason"] == "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+    assert hits[3]["location"]["cell_path"] == [{"parent_paragraph": 3, "control": 0, "cell": 0, "paragraph": 0}]
+    assert hits[4]["reason"] == "고른 문단의 위치를 확정할 수 없습니다."
+    assert all(hit["location"]["paragraph_path"].startswith("/hs:sec/") for hit in hits)
+    assert same_text_hwpx(package, {**_SELECTED, "end": 0}) == []
+    assert same_text_hwpx(package, {**_SELECTED, "start": 4, "end": 5}) == [], "공백뿐인 문구"
+    # 필드 값 안의 같은 문구는 필드 경계(제어 요소) 뒤라 흐린 자리다.
+    fielded, _ = apply_hwpx(package, {"type": "create_field", "name": "기관", **_SELECTED,
+                                      "start": 8, "end": 12})
+    later = same_text_hwpx(fielded, _SELECTED)
+    assert (later[0]["location"]["start"], later[0]["enabled"]) == (8, False)
+
+
+def test_native_create_field_ranges_inserts_all_sites_in_one_package_change() -> None:
+    from hwpxfiller.external.hwpx_authoring import same_text_hwpx
+
+    package = _same_text_package()
+    before = dict(package.entries)
+    hits = same_text_hwpx(package, _SELECTED)
+    ranges = [_SELECTED, hits[0]["location"], hits[1]["location"], hits[3]["location"]]
+    command = {"type": "create_field", "name": "수요기관", **_SELECTED, "ranges": ranges}
+    projected = preview_hwpx(package, command)
+    assert package.entries == before, "미리보기는 원본을 바꾸지 않는다 — 실행 취소는 이 bytes 한 벌이다"
+    assert projected["affected"] == 4 and projected["original"] == "○○시청"
+    assert projected["included"] == ["○○시청 귀하 ○○시청", "○○시청 귀하 ○○시청", "서명 ○○시청 (인)", "셀 ○○시청"]
+    result, impact = apply_hwpx(package, command)
+    field = next(item for item in analyze_hwpx(result)["fields"] if item["name"] == "수요기관")
+    assert field["count"] == 4
+    assert [occurrence["context"] for occurrence in field["occurrences"]] == [
+        "[수요기관] 귀하 [수요기관]", "[수요기관] 귀하 [수요기관]", "서명 [수요기관] (인)", "셀 [수요기관]"]
+    assert impact["changed_entries"] == ["Contents/section0.xml"]
+    assert analyze_hwpx(result)["diagnostics"] == []
+
+
+@pytest.mark.parametrize(("extra", "message"), [
+    ([{"entry": "Contents/section0.xml", "paragraph": 2, "start": 2, "end": 6}], "제어 요소"),
+    ([{"entry": "Contents/section0.xml", "paragraph": 0, "start": 0, "end": 4}], "기존 필드가 포함"),
+    ([{"entry": "Contents/section0.xml", "paragraph": 1, "start": 0, "end": 4}], "고른 위치가 올바르지"),
+    (["x"], "고른 위치가 올바르지"),
+])
+def test_native_create_field_ranges_refusals_leave_source_untouched(extra, message) -> None:
+    package = _same_text_package()
+    before = dict(package.entries)
+    with pytest.raises(ValueError, match=message):
+        apply_hwpx(package, {"type": "create_field", "name": "수요기관", **_SELECTED, "ranges": [_SELECTED, *extra]})
+    assert package.entries == before
+    with pytest.raises(ValueError, match="고른 위치가 올바르지"):
+        apply_hwpx(package, {"type": "create_field", "name": "수요기관", **_SELECTED,
+                             "ranges": [{**_SELECTED, "start": 8, "end": 12}]})
+    with pytest.raises(ValueError, match="고른 위치가 올바르지"):
+        apply_hwpx(package, {"type": "create_field", "name": "수요기관", **_SELECTED, "ranges": _SELECTED})
+
+
+def test_native_split_wraps_each_body_paragraph_as_an_option_in_one_command() -> None:
+    entry = "Contents/section0.xml"
+    package = _pkg(
+        '<hp:p><hp:run><hp:t>첫째 문단</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t></hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>납품기한:  기한</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>셋째</hp:t></hp:run></hp:p>'
+    )
+    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 2, "start": 7, "end": 9, "name": "납기"})
+    before = dict(package.entries)
+    command = {"type": "create_slot", "entry": entry, "start_paragraph": 0, "end_paragraph": 3,
+               "start": 0, "end": 2, "id": "조건", "label": "납품 조건", "split": "paragraph"}
+    projected = preview_hwpx(package, command)
+    assert package.entries == before, "미리보기는 원본을 바꾸지 않는다 — 실행 취소는 이 bytes 한 벌이다"
+    assert [(child["kind"], child["id"], child["label"]) for child in projected["children"]] == [
+        ("option", "선택1", "첫째 문단"), ("option", "선택2", "납품기한:"), ("option", "선택3", "셋째"),
+        ("field", "납기", "납기")]
+    assert projected["counts"] == {"paragraphs": 4, "fields": 1, "options": 3, "tables": 0}
+    result, _ = apply_hwpx(package, command)
+    analysis = analyze_hwpx(result)
+    assert analysis["diagnostics"] == []
+    assert [(slot["id"], slot["label"], [(option["id"], option["label"]) for option in slot["options"]])
+            for slot in analysis["slots"]] == [
+        ("조건", "납품 조건", [("선택1", "첫째 문단"), ("선택2", "납품기한:"), ("선택3", "셋째")])]
+    assert [(option["id"], option["location"]["start_paragraph"]) for option in analysis["slots"][0]["options"]] == [
+        ("선택1", 0), ("선택2", 2), ("선택3", 3)]
+
+
+def test_native_split_refuses_cells_tables_empty_ranges_and_options() -> None:
+    entry = "Contents/section0.xml"
+    package = _pkg(
+        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t> </hp:t></hp:run></hp:p>'
+    )
+    before = dict(package.entries)
+    base = {"type": "create_slot", "entry": entry, "id": "s", "split": "paragraph"}
+    cases = (
+        ({"start_paragraph": 0, "end_paragraph": 1}, "여러 독립 영역"),
+        ({"start_paragraph": 0, "end_paragraph": 0,
+          "cell_path": [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]}, "여러 독립 영역"),
+        ({"start_paragraph": 2, "end_paragraph": 2}, "고를 내용 줄이 없습니다"),
+        ({"start_paragraph": 0, "end_paragraph": 0, "split": "line"}, "알 수 없는 저작 명령"),
+    )
+    for override, message in cases:
+        with pytest.raises(ValueError, match=message):
+            apply_hwpx(package, base | override)
+        assert package.entries == before
+    apply_hwpx(package, base | {"start_paragraph": 0, "end_paragraph": 0, "split": None})
+    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
+        apply_hwpx(package, {"type": "create_option", "entry": entry, "start_paragraph": 0, "end_paragraph": 0,
+                             "slot_id": "s", "id": "o", "split": "paragraph"})
