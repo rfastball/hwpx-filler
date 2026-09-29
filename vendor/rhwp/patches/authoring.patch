@@ -2788,7 +2788,7 @@ index fc6f5d840..7c5203945 100644
  
  impl Picture {
 diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
-index 7bfcef5cb..7f0ca0bf5 100644
+index 7bfcef5cb..758af3eb6 100644
 --- a/src/model/paragraph.rs
 +++ b/src/model/paragraph.rs
 @@ -93,6 +93,10 @@ pub struct Paragraph {
@@ -2802,7 +2802,26 @@ index 7bfcef5cb..7f0ca0bf5 100644
      /// 원본에 PARA_TEXT 레코드가 존재했는지 (라운드트립 보존용)
      pub has_para_text: bool,
      /// TAB 확장 데이터 (라운드트립 보존용)
-@@ -1438,6 +1442,7 @@ impl Paragraph {
+@@ -514,6 +518,18 @@ pub struct OrphanFieldEnd {
+     /// 0 이면 모른다는 뜻이고, 그때는 HWP5 저장에서 마커를 내지 않는다 — 필드 종류를
+     /// 지어내면 한글이 짝을 못 맞춘다. HWPX 에서 들어온 고아 마커가 이 경우다.
+     pub begin_ctrl_id: u32,
++    /// 원본에서 이 종료 마커 **앞에** 놓인 `controls` 개수(표·그림·fieldBegin 등).
++    ///
++    /// `char_idx` 는 보이는 글자만 세므로 같은 글자 위치에 놓인 컨트롤 슬롯과의 앞뒤를
++    /// 잃는다 — 문단 말미 `<hp:t> </hp:t><hp:tbl/><hp:ctrl><hp:fieldEnd/></hp:ctrl>` 를
++    /// 저장하면 `fieldEnd` 가 표 **앞**으로 당겨졌다(같은 문단 필드가
++    /// `FieldRange::inner_slot_count` 로 푸는 것과 같은 결손). 직렬화기는 이 수만큼의
++    /// 컨트롤을 먼저 방출한 뒤에야 이 마커를 낸다.
++    ///
++    /// `None` 은 모른다는 뜻이며 종전 배치 규칙(같은 자리의 비필드 슬롯보다 앞)을 따른다.
++    /// HWPX 파서만 채운다. HWP5 PARA_TEXT·합성 IR 의 고아는 `None` 이다.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub preceding_controls: Option<usize>,
+ }
+ 
+ impl Paragraph {
+@@ -1438,6 +1454,7 @@ impl Paragraph {
              ctrl_data_records: new_ctrl_data_records,
              char_count_msb: false,
              raw_header_extra: new_raw_header_extra,
@@ -2899,6 +2918,46 @@ index f84da00c1..abf01a7af 100644
              paragraphs: vec![para],
          }
      }
+diff --git a/src/parser/body_text.rs b/src/parser/body_text.rs
+index fec213296..73cf26dc2 100644
+--- a/src/parser/body_text.rs
++++ b/src/parser/body_text.rs
+@@ -504,6 +504,7 @@ fn parse_para_text(data: &[u8]) -> ParaTextParts {
+                         begin_id_ref: 0,
+                         field_id: 0,
+                         begin_ctrl_id: 0,
++                        preceding_controls: None,
+                     });
+                 }
+             } else if is_extended_only_ctrl_char(ch) {
+diff --git a/src/parser/body_text/tests.rs b/src/parser/body_text/tests.rs
+index 4d44e02d9..d335d1f98 100644
+--- a/src/parser/body_text/tests.rs
++++ b/src/parser/body_text/tests.rs
+@@ -1011,6 +1011,7 @@ fn orphan_field_end_links_to_the_open_field_id() {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }],
+         ..Default::default()
+     };
+@@ -1050,6 +1051,7 @@ fn field_closed_in_its_own_paragraph_is_not_left_open() {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }],
+         ..Default::default()
+     };
+@@ -1164,6 +1166,7 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
+                         begin_id_ref: 0,
+                         field_id: 0,
+                         begin_ctrl_id: 0,
++                        preceding_controls: None,
+                     });
+                 }
+             } else if is_extended_only_ctrl_char(ch) {
 diff --git a/src/parser/control.rs b/src/parser/control.rs
 index a420b5fcc..9819e5b19 100644
 --- a/src/parser/control.rs
@@ -3111,7 +3170,7 @@ index 8c26e1eb1..8bf2b4734 100644
                                          let val = attr_str(&attr);
                                          if let Ok(f) = val.parse::<f64>() {
 diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
-index 0b7f15694..a335a7e47 100644
+index 0b7f15694..d01b4dd24 100644
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
 @@ -542,6 +542,10 @@ fn parse_paragraph_body(
@@ -3133,7 +3192,44 @@ index 0b7f15694..a335a7e47 100644
              }
              b"paraPrIDRef" => para.para_shape_id = parse_u16(&attr),
              b"styleIDRef" => para.style_id = parse_u8(&attr),
-@@ -1032,6 +1037,7 @@ fn parse_paragraph_body(
+@@ -591,7 +596,11 @@ fn parse_paragraph_body(
+     let mut hwp5_only_leading_slots: u32 = 0;
+     // [Task #1556] fieldEnd 의 (beginIDRef, fieldid) 를 출현 순서대로 보관 — text_parts 의
+     // `\u{0004}` 와 1:1 대응. 고아 fieldEnd 복원에 사용.
+-    let mut field_end_attrs: Vec<(u32, u32)> = Vec::new();
++    // 세 번째 값은 그 시점까지 쌓인 `para.controls` 수 — 고아 fieldEnd 가 같은 글자 위치의
++    // 컨트롤(표 등) 앞뒤 어디에 있었는지를 직렬화기에 넘긴다(`OrphanFieldEnd::preceding_controls`).
++    // 슬롯 표식 수가 아니라 실제 `controls` 길이라, 표식 없이 컨트롤만 쌓는 요소
++    // (hiddenComment)가 있어도 직렬화기의 `slot_ctrl_indices` 와 같은 축이다.
++    let mut field_end_attrs: Vec<(u32, u32, usize)> = Vec::new();
+ 
+     loop {
+         match reader.read_event_into(&mut buf) {
+@@ -830,10 +839,12 @@ fn parse_paragraph_body(
+                 control_idx += 1;
+             }
+             "\u{0004}" => {
+-                let (begin_id_ref, field_id) = field_end_attrs
++                let (begin_id_ref, field_id, preceding_controls) = field_end_attrs
+                     .get(field_end_idx)
+-                    .copied()
+-                    .unwrap_or((0, 0));
++                    .map(|&(begin_id_ref, field_id, preceding)| {
++                        (begin_id_ref, field_id, Some(preceding))
++                    })
++                    .unwrap_or((0, 0, None));
+                 field_end_idx += 1;
+                 if let Some((start_char_idx, begin_control_idx)) = field_stack.pop() {
+                     // 필드 안쪽 컨트롤 슬롯 수 — 표·그림을 감싼 누름틀이 텍스트 축에서
+@@ -857,6 +868,7 @@ fn parse_paragraph_body(
+                         // HWPX `<hp:fieldEnd>` 는 필드 종류를 싣지 않는다 — 짝
+                         // `fieldBegin` 은 다른 문단에 있어 여기서는 알 수 없다.
+                         begin_ctrl_id: 0,
++                        preceding_controls,
+                     });
+                 }
+             }
+@@ -1032,6 +1044,7 @@ fn parse_paragraph_body(
      header_extra.extend_from_slice(&[0u8; 6]); // numCharShapes/numRangeTags/numLineSegs 자리
      header_extra.extend_from_slice(&hp_p_id.to_le_bytes()); // instanceId
      para.raw_header_extra = header_extra;
@@ -3141,7 +3237,7 @@ index 0b7f15694..a335a7e47 100644
  
      Ok((para, sec_def))
  }
-@@ -2166,6 +2172,11 @@ fn parse_table(
+@@ -2166,6 +2179,11 @@ fn parse_table(
                          let caption = parse_caption(ce, reader)?;
                          table.caption = Some(caption);
                      }
@@ -3153,7 +3249,7 @@ index 0b7f15694..a335a7e47 100644
                      _ => {}
                  }
              }
-@@ -2173,6 +2184,7 @@ fn parse_table(
+@@ -2173,6 +2191,7 @@ fn parse_table(
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
                  match local {
@@ -3161,7 +3257,7 @@ index 0b7f15694..a335a7e47 100644
                      b"sz" => {
                          for attr in ce.attributes().flatten() {
                              match attr.key.as_ref().as_bytes() {
-@@ -2681,6 +2693,8 @@ fn parse_table_cell(
+@@ -2681,6 +2700,8 @@ fn parse_table_cell(
                                          _ => 0,
                                      };
                                  }
@@ -3170,7 +3266,7 @@ index 0b7f15694..a335a7e47 100644
                                  _ => {}
                              }
                          }
-@@ -2869,6 +2883,9 @@ fn parse_picture(
+@@ -2869,6 +2890,9 @@ fn parse_picture(
      // 이미지 속성 읽기
      let mut has_pos = false; // <pos> 파싱 여부 — <offset>이 덮어쓰지 않도록 방지
      let mut caption: Option<crate::model::shape::Caption> = None;
@@ -3180,7 +3276,7 @@ index 0b7f15694..a335a7e47 100644
      let mut buf = Vec::new();
      loop {
          let event = reader.read_event_into(&mut buf);
-@@ -2876,11 +2893,17 @@ fn parse_picture(
+@@ -2876,11 +2900,17 @@ fn parse_picture(
          let self_closing = matches!(&event, Ok(Event::Empty(_)));
          match event {
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {
@@ -3198,7 +3294,7 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"effects" => {
                  effects = parse_picture_effects(reader)?;
              }
-@@ -2891,6 +2914,11 @@ fn parse_picture(
+@@ -2891,6 +2921,11 @@ fn parse_picture(
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
@@ -3210,7 +3306,7 @@ index 0b7f15694..a335a7e47 100644
                  match local {
                      b"sz" => {
                          // 최종 표시 크기 (최우선)
-@@ -3186,6 +3214,7 @@ fn parse_picture(
+@@ -3186,6 +3221,7 @@ fn parse_picture(
      pic.img_dim = img_dim;
      pic.reverse = reverse;
      pic.lock = lock;
@@ -3218,7 +3314,7 @@ index 0b7f15694..a335a7e47 100644
  
      Ok(Control::Picture(Box::new(pic)))
  }
-@@ -3923,6 +3952,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3923,6 +3959,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
      }
  
      let mut bl = ShapeBorderLine::default();
@@ -3228,7 +3324,7 @@ index 0b7f15694..a335a7e47 100644
      for attr in e.attributes().flatten() {
          match attr.key.as_ref().as_bytes() {
              b"color" => bl.color = parse_color(&attr),
-@@ -3946,7 +3978,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3946,7 +3985,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
                      "SLIM_THICK_SLIM" => 11,
                      _ => 1,
                  };
@@ -3239,7 +3335,7 @@ index 0b7f15694..a335a7e47 100644
              }
              b"endCap" => {
                  let end_cap: u32 = match attr_str(&attr).as_str() {
-@@ -4084,6 +4118,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
+@@ -4084,6 +4125,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                                  b"centerY" => grad.center_y = parse_i16(&attr),
                                  b"blur" | b"step" => grad.blur = parse_i16(&attr),
                                  b"stepCenter" => grad.step_center = parse_u8(&attr),
@@ -3247,7 +3343,7 @@ index 0b7f15694..a335a7e47 100644
                                  b"alpha" => {
                                      let val = attr_str(&attr);
                                      if let Ok(f) = val.parse::<f64>() {
-@@ -4389,6 +4424,11 @@ fn parse_shape_object(
+@@ -4389,6 +4431,11 @@ fn parse_shape_object(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -3259,7 +3355,7 @@ index 0b7f15694..a335a7e47 100644
              // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
                  caption = Some(parse_caption(ce, reader)?);
-@@ -4748,6 +4788,11 @@ fn parse_container_body(
+@@ -4748,6 +4795,11 @@ fn parse_container_body(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -3271,7 +3367,36 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
-@@ -5242,7 +5287,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
+@@ -4836,7 +4888,7 @@ fn parse_ctrl(
+     reader: &mut Reader<&[u8]>,
+     controls: &mut Vec<Control>,
+     text_parts: &mut Vec<String>,
+-    field_end_attrs: &mut Vec<(u32, u32)>,
++    field_end_attrs: &mut Vec<(u32, u32, usize)>,
+ ) -> Result<(), HwpxError> {
+     let mut buf = Vec::new();
+     loop {
+@@ -4902,7 +4954,8 @@ fn parse_ctrl(
+                     }
+                     b"fieldEnd" => {
+                         // [Task #1556] beginIDRef/fieldid 포착 (고아 fieldEnd 복원용).
+-                        field_end_attrs.push(parse_field_end_attrs(ce));
++                        let (begin_id_ref, field_id) = parse_field_end_attrs(ce);
++                        field_end_attrs.push((begin_id_ref, field_id, controls.len()));
+                         skip_element(reader, b"fieldEnd")?;
+                         // FIELD_END 제어 문자 추가 (Task #11)
+                         text_parts.push("\u{0004}".to_string());
+@@ -5002,7 +5055,8 @@ fn parse_ctrl(
+                     }
+                     b"fieldEnd" => {
+                         // [Task #1556] 자기닫힘 fieldEnd — beginIDRef/fieldid 포착.
+-                        field_end_attrs.push(parse_field_end_attrs(ce));
++                        let (begin_id_ref, field_id) = parse_field_end_attrs(ce);
++                        field_end_attrs.push((begin_id_ref, field_id, controls.len()));
+                         text_parts.push("\u{0004}".to_string());
+                     }
+                     b"hiddenComment" => {}
+@@ -5242,7 +5296,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
                      f.properties |= 1 << 15;
                  }
              }
@@ -3283,7 +3408,7 @@ index 0b7f15694..a335a7e47 100644
          }
      }
      // field_id 는 필드별 고유 식별자여야 한다(모델 계약 "문서 내 고유 ID").
-@@ -5781,6 +5829,8 @@ fn parse_ctrl_field_begin(
+@@ -5781,6 +5838,8 @@ fn parse_ctrl_field_begin(
                  let local = local_name(cname.as_ref());
                  if local == b"parameters" {
                      parse_field_parameters(ce, reader, &mut f)?;
@@ -3292,7 +3417,7 @@ index 0b7f15694..a335a7e47 100644
                  } else if local == b"subList" && f.field_type == FieldType::Memo {
                      for attr in ce.attributes().flatten() {
                          if attr.key.as_ref().as_bytes() == b"textDirection" {
-@@ -5796,6 +5846,9 @@ fn parse_ctrl_field_begin(
+@@ -5796,6 +5855,9 @@ fn parse_ctrl_field_begin(
                      skip_element(reader, &tag)?;
                  }
              }
@@ -3302,7 +3427,7 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::End(ref ee)) => {
                  let eename = ee.name();
                  if local_name(eename.as_ref()) == b"fieldBegin" {
-@@ -5811,6 +5864,42 @@ fn parse_ctrl_field_begin(
+@@ -5811,6 +5873,42 @@ fn parse_ctrl_field_begin(
      Ok(Control::Field(f))
  }
  
@@ -3345,7 +3470,7 @@ index 0b7f15694..a335a7e47 100644
  /// `<parameters>` 내부에서 Command 문자열 파라미터를 추출한다.
  /// XML 텍스트/속성값 이스케이프 (#1391 parameters verbatim 재조립용).
  fn escape_xml_text(s: &str) -> String {
-@@ -7562,6 +7651,9 @@ fn parse_common_shape_children(
+@@ -7562,6 +7660,9 @@ fn parse_common_shape_children(
                      b"shapeComment" => {
                          common.description = read_dutmal_text(reader, b"shapeComment")?;
                      }
@@ -3355,7 +3480,7 @@ index 0b7f15694..a335a7e47 100644
                      // [#4319] 캡션 — 미적재 시 라운드트립에서 캡션 subList 소실(다른
                      // 도형 변형과 동형, parse_shape_object/parse_container 참고).
                      b"caption" => {
-@@ -8925,7 +9017,9 @@ mod tests {
+@@ -8925,7 +9026,9 @@ mod tests {
    <hp:p paraPrIDRef="0" styleIDRef="0">
      <hp:run charPrIDRef="0">
        <hp:ctrl>
@@ -3366,7 +3491,7 @@ index 0b7f15694..a335a7e47 100644
        </hp:ctrl>
        <hp:t>ABC</hp:t>
        <hp:ctrl>
-@@ -8943,6 +9037,16 @@ mod tests {
+@@ -8943,6 +9046,16 @@ mod tests {
          assert_eq!(para.char_count, 20);
          assert_eq!(para.controls.len(), 1);
          assert_eq!(para.field_ranges.len(), 1);
@@ -4202,7 +4327,7 @@ index 564e62e00..36463c9c8 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..024ed36ee 100644
+index f951d7284..b07f0361d 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
 @@ -563,14 +563,21 @@ pub fn write_section(
@@ -4261,7 +4386,119 @@ index f951d7284..024ed36ee 100644
  /// `<hp:ctrl><hp:fieldEnd beginIDRef=".."/></hp:ctrl>` 방출 공통 경로.
  fn emit_field_end(out: &mut String, para: &Paragraph, fr: &FieldRange) {
      if let Some(Control::Field(f)) = para.controls.get(fr.control_idx) {
-@@ -2193,6 +2215,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -1270,6 +1292,23 @@ fn emit_orphan_field_end(out: &mut String, ofe: &OrphanFieldEnd) {
+     }
+ }
+ 
++/// 이 고아 fieldEnd 를 `next_slot_ctrl`(다음 미방출 슬롯의 `controls` 인덱스, 남은 슬롯이
++/// 없으면 `None`) **앞에** 내도 되는가.
++///
++/// 원본에서 마커 앞에 놓였던 컨트롤(`preceding_controls`)이 전부 나간 뒤여야 한다.
++/// `char_idx` 는 보이는 글자만 세므로 문단 말미 `<hp:t> </hp:t><hp:tbl/>` 뒤의 종료 마커와
++/// 표 앞의 종료 마커가 같은 값이 된다. 이 판정 없이 "같은 자리의 비필드 슬롯보다 앞"
++/// (#1948)만 따르면 표 뒤에 있던 마커가 표 앞으로 당겨지고, 다단락 책갈피가 표를 잃는다.
++/// 빈 누름틀(`fieldBegin`+`fieldEnd`)이 문단 끝에 올 때도 같다.
++///
++/// 위치를 모르는 고아(`None` — HWP5·합성 IR)는 종전 규칙 그대로 `true` 다.
++fn orphan_precedes_slot(ofe: &OrphanFieldEnd, next_slot_ctrl: Option<usize>) -> bool {
++    match (ofe.preceding_controls, next_slot_ctrl) {
++        (Some(preceding), Some(ctrl)) => preceding <= ctrl,
++        _ => true,
++    }
++}
++
+ /// 문단 텍스트 전체를 char_shapes 경계로 분할하며 `splitter` 에 누적한다.
+ ///
+ /// `char_offsets` 로 문자 idx → UTF-16 위치를 매핑하므로 IR 내 컨트롤(8 유닛 갭)이
+@@ -1569,6 +1608,20 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     // 연속 또는 중첩 필드의 닫는 순서가 뒤바뀐다.
+     if para.text.is_empty() {
+         while slot_idx < slots.len() {
++            // 원본에서 이 슬롯보다 앞에 있던 고아 fieldEnd 는 여기서 낸다. 위치를 모르는
++            // 고아(`None`)는 종전대로 모든 슬롯 뒤(아래 루프)에 둔다.
++            for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++                if ofe.char_idx == 0
++                    && !orphan_emitted[i]
++                    && ofe.preceding_controls.is_some()
++                    && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++                {
++                    splitter.cut_before(expected_utf16_pos);
++                    emit_orphan_field_end(&mut splitter.content, ofe);
++                    expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++                    orphan_emitted[i] = true;
++                }
++            }
+             splitter.cut_before(expected_utf16_pos);
+             render_control_slot_tracked(
+                 &mut splitter.content,
+@@ -1652,7 +1705,13 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+                 .orphan_field_ends
+                 .iter()
+                 .enumerate()
+-                .position(|(i, ofe)| ofe.char_idx == idx && !orphan_emitted[i])
++                // 원본에서 이 슬롯 **뒤**에 있던 고아는 양보받지 않는다 — 슬롯이 먼저 나가고
++                // 고아는 아래 `char_idx == idx` 경로에서 제자리에 나간다.
++                .position(|(i, ofe)| {
++                    ofe.char_idx == idx
++                        && !orphan_emitted[i]
++                        && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++                })
+                 .filter(|_| !field_begin_owns_gap)
+             {
+                 flush_text_fragment(
+@@ -1887,12 +1946,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     }
+ 
+     // [Task #1556] 텍스트 끝(char_idx == text_char_count) 의 고아 fieldEnd — para 0.16 케이스.
++    // 원본에서 남은 말미 슬롯(표·빈 누름틀의 fieldBegin 등) **뒤**에 있던 고아는 그 슬롯을
++    // 낸 다음으로 미룬다(`orphan_precedes_slot`). 위치를 모르는 고아는 종전대로 여기서 낸다.
+     for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
+         if !orphan_emitted[i] {
+             debug_assert!(
+                 ofe.char_idx >= text_char_count,
+                 "미방출 고아 fieldEnd 는 텍스트 끝이어야 함"
+             );
++            if !orphan_precedes_slot(ofe, slot_ctrl_indices.get(slot_idx).copied()) {
++                continue;
++            }
+             splitter.cut_before(expected_utf16_pos);
+             emit_orphan_field_end(&mut splitter.content, ofe);
+             expected_utf16_pos = expected_utf16_pos.saturating_add(8);
+@@ -1901,6 +1965,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     }
+ 
+     while slot_idx < slots.len() {
++        // 미뤄 둔 고아 중 원본에서 이 슬롯보다 앞에 있던 것.
++        for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++            if !orphan_emitted[i]
++                && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++            {
++                splitter.cut_before(expected_utf16_pos);
++                emit_orphan_field_end(&mut splitter.content, ofe);
++                expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++                orphan_emitted[i] = true;
++            }
++        }
+         splitter.cut_before(expected_utf16_pos);
+         render_control_slot_tracked(
+             &mut splitter.content,
+@@ -1932,6 +2007,15 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+             }
+         }
+     }
++    // 원본에서 모든 말미 슬롯 뒤에 있던 고아 — 문단 끝 표 뒤의 다단락 책갈피 종료 등.
++    for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++        if !orphan_emitted[i] {
++            splitter.cut_before(expected_utf16_pos);
++            emit_orphan_field_end(&mut splitter.content, ofe);
++            expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++            orphan_emitted[i] = true;
++        }
++    }
+     // [Task #1893] 방어: 지연분이 슬롯 루프에서 매칭되지 못했으면 말미에 방출(종전 동작).
+     for (i, fr) in para.field_ranges.iter().enumerate() {
+         if !field_end_emitted[i] {
+@@ -2193,6 +2277,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
                  out.push_str(&memo_children);
@@ -4269,7 +4506,7 @@ index f951d7284..024ed36ee 100644
                  out.push_str("</hp:fieldBegin>");
                  out.push_str("</hp:ctrl>");
                  return;
-@@ -2201,7 +2224,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2201,7 +2286,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
              let has_params = f.raw_parameters_xml.is_some() || generated_params.is_some();
              let has_memo = f.field_type == crate::model::control::FieldType::Memo
                  && !f.memo_paragraphs.is_empty();
@@ -4278,7 +4515,7 @@ index f951d7284..024ed36ee 100644
                  // [#1391] 자식(parameters / memo subList)이 있으면 start/end 태그.
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-@@ -2230,6 +2253,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2230,6 +2315,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                      }
                      out.push_str("</hp:subList>");
                  }
@@ -4286,7 +4523,7 @@ index f951d7284..024ed36ee 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
-@@ -3056,6 +3080,10 @@ fn render_common_shape_xml(
+@@ -3056,6 +3142,10 @@ fn render_common_shape_xml(
          Ok(xml) => out.push_str(&xml),
          Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
      }
@@ -4297,7 +4534,7 @@ index f951d7284..024ed36ee 100644
      out.push_str(&format!("</hp:{tag}>"));
      out
  }
-@@ -4373,6 +4401,111 @@ mod tests {
+@@ -4373,6 +4463,111 @@ mod tests {
          );
      }
  
@@ -4409,7 +4646,7 @@ index f951d7284..024ed36ee 100644
      /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
      /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
      #[test]
-@@ -4840,16 +4973,31 @@ mod tests {
+@@ -4840,16 +5035,31 @@ mod tests {
  
      #[test]
      fn task1407_single_column_doc_unaffected() {
@@ -4444,7 +4681,160 @@ index f951d7284..024ed36ee 100644
      }
  
      #[test]
-@@ -6191,8 +6339,11 @@ mod tests {
+@@ -5286,6 +5496,7 @@ mod tests {
+             begin_id_ref: 1_878_228_493,
+             field_id: 627_272_811,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+@@ -5360,6 +5571,7 @@ mod tests {
+             begin_id_ref: 42,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+@@ -5863,6 +6075,7 @@ mod tests {
+             begin_id_ref: 1_867_945_539,
+             field_id: 0,
+             begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
++            preceding_controls: None,
+         }];
+ 
+         let runs = runs_of(&para);
+@@ -5883,6 +6096,7 @@ mod tests {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let runs = runs_of(&para);
+         assert!(
+@@ -5911,6 +6125,7 @@ mod tests {
+             begin_id_ref: 2_031_845_287,
+             field_id: 0,
+             begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
++            preceding_controls: None,
+         }];
+ 
+         let runs = runs_of(&para);
+@@ -5922,6 +6137,112 @@ mod tests {
+         );
+     }
+ 
++    // ---------- 고아 fieldEnd 와 같은 글자 위치의 말미 컨트롤 순서 보존 ----------
++
++    const ORPHAN_ORDER_TABLE: &str = r#"<hp:tbl id="7" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="1" noAdjust="0"><hp:sz width="1000" widthRelTo="ABSOLUTE" height="500" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/><hp:tr><hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="1"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>cell</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="500"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/></hp:tc></hp:tr></hp:tbl>"#;
++    const ORPHAN_ORDER_END: &str =
++        r#"<hp:ctrl><hp:fieldEnd beginIDRef="1600000001"/></hp:ctrl>"#;
++
++    /// 책갈피가 문단 0 에서 열리고 `end_run` 문단에서 닫히는 섹션을 한 번 내보내고, 다시
++    /// 읽어 한 번 더 내보낸다. 두 번째 문단의 (첫 방출, 재방출) XML 을 돌려준다.
++    fn orphan_order_roundtrip(end_run: &str) -> (String, String) {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl><hp:t>시작</hp:t></hp:run></hp:p>
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">{end_run}</hp:run></hp:p>
++</hs:sec>"#
++        );
++        let emit = |source: &str| {
++            let section = parse_hwpx_section(source).unwrap();
++            let mut doc = Document::default();
++            doc.sections.push(section.clone());
++            let mut ctx = SerializeContext::collect_from_document(&doc);
++            String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap()
++        };
++        let second_paragraph = |section_xml: &str| {
++            let at = section_xml.match_indices("<hp:p ").nth(1).expect("둘째 문단").0;
++            section_xml[at..].to_string()
++        };
++        let first = emit(&xml);
++        let again = emit(&first);
++        (second_paragraph(&first), second_paragraph(&again))
++    }
++
++    fn assert_before(xml: &str, first: &str, second: &str) {
++        let a = xml.find(first).unwrap_or_else(|| panic!("{first} 없음:\n{xml}"));
++        let b = xml.find(second).unwrap_or_else(|| panic!("{second} 없음:\n{xml}"));
++        assert!(a < b, "{first} 가 {second} 보다 앞이어야 한다:\n{xml}");
++    }
++
++    /// 문단 말미 표 **뒤**의 다단락 책갈피 종료는 표 뒤에 남는다. 종전에는 `char_idx` 가
++    /// 보이는 글자만 세어 표 앞으로 당겨졌고, 책갈피가 표를 잃었다(한컴식 `<hp:t> </hp:t>`
++    /// 앞글자 + 글자처럼 취급한 표 문단 — 입찰 공고 표본 문단 35·36).
++    #[test]
++    fn orphan_field_end_after_trailing_table_stays_after_it() {
++        let (first, again) =
++            orphan_order_roundtrip(&format!("<hp:t> </hp:t>{ORPHAN_ORDER_TABLE}<hp:t/>{ORPHAN_ORDER_END}"));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 반대로 원본이 표 **앞**에 둔 종료는 그대로 앞이다(#1948 계약 유지).
++    #[test]
++    fn orphan_field_end_before_trailing_table_stays_before_it() {
++        let (first, again) =
++            orphan_order_roundtrip(&format!("<hp:t> </hp:t>{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"));
++        assert_before(&first, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 문단 끝의 빈 누름틀 뒤에 온 종료도 그 누름틀 뒤에 남는다. 종전에는 누름틀의
++    /// `fieldBegin` 앞으로 당겨졌다 — 책갈피 밖으로 누름틀이 빠지는 같은 결손이다.
++    #[test]
++    fn orphan_field_end_after_trailing_empty_click_here_stays_after_it() {
++        let click = r#"<hp:ctrl><hp:fieldBegin id="77" type="CLICK_HERE" name="값" editable="1" dirty="0" fieldid="77"/></hp:ctrl><hp:ctrl><hp:fieldEnd beginIDRef="77" fieldid="77"/></hp:ctrl>"#;
++        let (first, again) = orphan_order_roundtrip(&format!("<hp:t>끝</hp:t>{click}{ORPHAN_ORDER_END}"));
++        assert_before(&first, r#"<hp:fieldEnd beginIDRef="77""#, r#"<hp:fieldEnd beginIDRef="1600000001""#);
++        assert_before(&first, "<hp:fieldBegin", r#"<hp:fieldEnd beginIDRef="1600000001""#);
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 보이는 글자가 없는 문단(표만 있는 문단)에서도 원본 순서를 양쪽 다 지킨다.
++    #[test]
++    fn orphan_field_end_order_is_kept_in_text_less_table_paragraph() {
++        let (after, after_again) = orphan_order_roundtrip(&format!("{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}"));
++        assert_before(&after, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(after, after_again);
++        let (before, before_again) = orphan_order_roundtrip(&format!("{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"));
++        assert_before(&before, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(before, before_again);
++    }
++
++    /// 표와 표 사이에 있던 종료는 그 사이에 남는다.
++    #[test]
++    fn orphan_field_end_between_trailing_tables_stays_between() {
++        let (first, again) = orphan_order_roundtrip(&format!(
++            "<hp:t>가</hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"
++        ));
++        let end = first.find("<hp:fieldEnd").expect("종료");
++        assert_eq!(first[..end].matches("</hp:tbl>").count(), 1, "첫 표 뒤·둘째 표 앞:\n{first}");
++        assert_eq!(first[end..].matches("<hp:tbl ").count(), 1, "첫 표 뒤·둘째 표 앞:\n{first}");
++        assert_eq!(first, again);
++    }
++
++    /// 파서는 고아 종료 앞의 컨트롤 수를 싣는다(`preceding_controls`).
++    #[test]
++    fn hwpx_parser_records_controls_preceding_an_orphan_field_end() {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl><hp:t>a</hp:t></hp:run></hp:p><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t> </hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}</hp:run></hp:p></hs:sec>"#
++        );
++        let section = parse_hwpx_section(&xml).unwrap();
++        let orphan = &section.paragraphs[1].orphan_field_ends[0];
++        assert_eq!(orphan.char_idx, 1);
++        assert_eq!(orphan.preceding_controls, Some(1));
++    }
++
+     /// [#4778] 위치 축이 무너진 문단(파서 미수용 8유닛 슬롯 — 차례표지 0x0008 등)의
+     /// 저장 lineseg 는 방출하지 않는다. textpos 사다리와 어긋난 lineseg 를 한글 2022 가
+     /// 만나면 그 문단부터 문서 끝까지 본문을 폐기한다(성년후견 h2x -112,075자 실측,
+@@ -6191,8 +6512,11 @@ mod tests {
          use crate::model::style::CharShape;
  
          // 첫 문단: "abcdef", 경계 1개 — 원본 파스 결과는 [(0,1),(19,2)]
