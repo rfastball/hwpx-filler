@@ -5,9 +5,9 @@
 
    구 「본문 확인」 존의 요약 한 줄(빈 값 필드·이름 건수)과 우 열 「현재 실행 상태」 문안은
    각각 사전검증 `[경고] 빈 값 필드` 와 우상단 상태 pill 이 이미 말하던 것의 두 번째 발화라
-   걷혔다. 남는 것은 **행동을 든 것**뿐이다: 위험 배너(`#jobMirror` — 구조 드리프트·미해소
-   토큰 + 복구 동사)는 사실을 말하는 사전검증 **바로 아래**로 내려갔고, 「생성 예정 문서」는
-   좌 열(표와 생성 결과 사이)로 옮겨 만들 것과 만들어진 것이 한 줄기로 읽힌다.
+   걷혔다. 남는 것은 **행동을 든 것**뿐이다: 「생성 예정 문서」는 좌 열(표와 생성 결과 사이)로
+   옮겨 만들 것과 만들어진 것이 한 줄기로 읽힌다. legacy HWPX 의 위험 배너(`#jobMirror`)는
+   문서 생성이 managed 하나가 되며(#1081 PR2) 걷혔다.
    구 재진술 블록(`#jobRestate`)은 선택 수치를 세 번째로 말하던 자리라 함께 죽었다 —
    그 수치를 정말 다시 물어야 하는 자리는 파괴 전이 가드 모달 하나이고, 거기는 공유
    합성기 `selectionLine` 이 계속 진다.
@@ -80,8 +80,8 @@ const GATE_ZONE: Record<string, string> = {
   no_candidates: "이 데이터에 사용할 문서 · ",
   no_job: "이 데이터에 사용할 문서 · ",
   // 드리프트·미해소 토큰의 지목도 **빈 문자열**이다 — 그 축을 소유하던 「본문 확인」 존은
-  // 존 재편에서 죽었고, 두 사유의 위험 배너는 사전검증 바로 아래(현재 데이터 존 안)에 서서
-  // 복구 동사를 스스로 든다. 없는 구획을 가리키느니 안 가리킨다(`template_missing` 동형).
+  // 존 재편에서 죽었고, 두 사유의 위험 배너도 legacy HWPX 갈래와 함께 걷혔다(#1081 PR2).
+  // 없는 구획을 가리키느니 안 가리킨다(`template_missing` 동형).
   drift: "",
   name_tokens: "",
   // 템플릿 축은 **빈 문자열**이다 — 그 축을 소유하던 「선택한 작업」 존은 죽었고 복구는
@@ -150,6 +150,10 @@ function isCopyWork(s: Obj | null): boolean {
   return !!(s && s.run_action && s.run_action.key === "workbench");
 }
 
+/** HWPX 문서 생성 작업인가 — 판정은 Python 이 낸 `managed_hwpx` 하나를 읽는다. 문서 생성
+ *  경로는 managed 하나라(#1081 PR2) 이 값은 「권위가 선 HWPX 작업」이다. 거짓이면 TXT(복사)·
+ *  미선택 표면이거나, 초기 등록이 거절돼 권위가 서지 않은 HWPX 작업이다(그 작업의 생성은
+ *  backend 가 초기 등록 거절 문장으로 닫고, 사유는 템플릿 존이 진단과 함께 말한다). */
 function isManagedHwpx(s: Obj | null): boolean {
   return s?.managed_hwpx === true;
 }
@@ -614,17 +618,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         emit();
       }
     },
-    openRepair(kind: "fix-mapping" | "fix-filename"): void {
-      void openEditForRepair({
-        entry_reason: "document_browser_repair",
-        evidence: {
-          "고칠 것": kind === "fix-filename" ? "파일 이름 규칙" : "필드 연결",
-          "막힌 이유": String(deps.doc.getElementById("jobGate")?.textContent || "").trim(),
-        },
-        return_context: { surface: "data" },
-      });
-    },
-
     init(): Promise<unknown> {
       if (releaseModel === null) {
         releaseModel = model.subscribe(pump);
@@ -679,78 +672,14 @@ export function JobPreflight(props: { controller: JobRunController }): ReactNode
     String(p.text));
 }
 
-/** 위험 배너 host — 구조 드리프트·미해소 파일명 토큰의 **차단 배너 전용** 자리다.
- *
- *  구 「본문 확인」 존의 몸통(cap + `#jobMirrorLine`/`#jobMirrorSummary` 요약 한 줄)은
- *  걷혔다: 「빈 값 N필드(…)」는 바로 위 사전검증이 이미 말하는 사실이라 두 번째 발화였고,
- *  「이름 N건」은 표의 선택 수치와 배달 계획이 각각 말한다. 남긴 것은 **사실 말고 행동을
- *  든 것**이다 — 배너는 사유를 재진술하고 편집기로 가는 복구 동사를 함께 세운다.
- *
- *  그래서 이 컴포넌트의 자리도 바뀐다: 사실을 말하는 `#jobPreflight` 바로 아래에 서서
- *  「무엇이 잘못됐나 → 어디로 가서 고치나」가 한 자리에서 이어진다. `#jobMirror` id 는
- *  그대로다 — 배너 host 의 정체는 바뀌지 않았고 게이트·대본이 그 좌표를 든다. */
-export function JobDangerBanner(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  // TXT·managed 는 이 배너가 **없는 축**이다(구조 드리프트·파일명 토큰이 둘 다 legacy hwpx
-  // 생성 경로의 사유다) — 통째로 걷는다. 렌더 조건은 존 재편 전과 같다.
-  if (isCopyWork(s) || isManagedHwpx(s)) return null;
-  const drift = (s?.drift || []) as string[];
-  const nameTokens = (s?.name_tokens || []) as string[];
+/* 구 위험 배너(`JobDangerBanner` · `#jobMirror`)와 저장 폴더 한 줄(`JobOutFolderLine` ·
+   `#jobOutDirLine`)은 legacy HWPX 생성 갈래의 표면이었다 — 문서 생성이 managed 하나가 되며
+   (#1081 PR2) 구조·파일 이름 사유는 작업대 관찰·배달 계획이, 저장 폴더는 「생성 예정 문서」 머리가
+   말한다. 그 배너의 복구 동사(`openRepair`)도 함께 걷혔다.
 
-  // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
-  let banner: ReactNode = null;
-  if (drift.length) {
-    banner = h("div", { className: "mir-drift", role: "alert" },
-      h("p", null, "템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. 어긋난 필드: ",
-        h("b", null, drift.join(", ")), "."),
-      h("button", {
-        className: "btn sm", "data-act": "fix-mapping", "data-busy-lock": true,
-        onClick: () => props.controller.openRepair("fix-mapping"),
-      }, "편집에서 매핑 확정…"));
-  } else if (nameTokens.length) {
-    banner = h("div", { className: "mir-drift", role: "alert" },
-      h("p", null, "파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. 남는 토큰: ",
-        h("b", null, nameTokens.map((t) => `{{${t}}}`).join(", ")), "."),
-      h("button", {
-        className: "btn sm", "data-act": "fix-filename", "data-busy-lock": true,
-        onClick: () => props.controller.openRepair("fix-filename"),
-      }, "편집에서 파일명 패턴 고치기…"));
-  }
-
-  // host 는 배너가 없어도 선다 — 안정 DOM 이라 게이트가 「비어 있음」을 실제로 잴 수 있고,
-  // 빈 div 는 자리를 차지하지 않는다(존 상자가 아니라 데이터 존 안의 한 조각이다).
-  return h("div", { id: "jobMirror" }, banner);
-}
-
-/** 구식(hwpx) 갈래의 저장 폴더 **표시 한 줄** — 고르는 자리가 아니다.
- *
- *  전역화 전 이 자리에는 라벨 + 경로 칸 + 「찾아보기…」 + 경로 어포던스가 선 `#jobOutRow` 가
- *  있었다. 저장 폴더가 작업 속성이 아니라 앱 설정이 되면서 **고르는 동사는 설정 모달 하나**로
- *  갔고, 화면에 남는 것은 "이번 생성이 어디로 떨어지는가"라는 사실뿐이다. 그 사실까지 걷으면
- *  구식 갈래는 저장 위치를 어디에서도 말하지 않게 되므로(조용한 추측) 한 줄은 남긴다.
- *
- *  managed 갈래는 같은 사실을 「생성 예정 문서」 머리(`#jobPlannedOutDir`)가 말하고,
- *  TXT(복사) 갈래는 파일을 만들지 않아 폴더가 축이 아니다 — 셋 다 자리가 하나씩이다. */
-export function JobOutFolderLine(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  if (isCopyWork(s) || isManagedHwpx(s)) return null;
-  const folder = (s?.output_folder || {}) as Obj;
-  const out = String(folder.directory || s?.out_dir || "");
-  const source = String(folder.source_label || "");
-  const notice = String(folder.notice || "");
-  if (!out && !notice) return null;
-  return createElement(Fragment, null,
-    out
-      ? h("span", { className: "muted capnote", id: "jobOutDirLine" },
-        source ? `저장 폴더: ${out} (${source})` : `저장 폴더: ${out}`)
-      : null,
-    // 도출이 한 단계 내려간 사유는 침묵하지 않는다 — 설정된 폴더가 사라졌다는 사실이다.
-    notice ? h("p", { className: "warn capnote", id: "jobOutDirNotice" }, notice) : null);
-}
-
-/* 구 재진술 블록(`JobRestate` · `#jobRestate`)은 존 재편에서 죽었다 — 「선택 N행」은 표
-   머리와 필터 밖 스트립이, 「생성 N건 · 저장 폴더」는 배달 계획(`JobDelivery`)과 저장 폴더
-   표시 한 줄이 이미 말하던 것이라 세 번째 발화였다. 그 수치를 정말 다시 물어야 하는 자리는
+   구 재진술 블록(`JobRestate` · `#jobRestate`)은 존 재편에서 죽었다 — 「선택 N행」은 표
+   머리와 필터 밖 스트립이, 「생성 N건 · 저장 폴더」는 배달 계획(`JobDelivery`)이 이미
+   말하던 것이라 세 번째 발화였다. 그 수치를 정말 다시 물어야 하는 자리는
    선택을 파기하는 전이의 확인 모달 하나이고, 거기는 `composeGuardBody` 가 공유 합성기
    `selectionLine` 으로 계속 짓는다(그래서 그 합성기는 표면에 이름째 남는다). */
 
@@ -864,8 +793,8 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
  *  존 재편에서 **좌 열**로 내려왔다(데이터 표와 `#jobResultZone` 사이): 만들 것과 만들어진
  *  것이 같은 열에서 위아래로 읽히고, 우 열은 「고르고 준비하는」 축만 든다. 렌더 조건은
  *  작업대 존과 같다(managed hwpx + 관찰 지원) — 조건이 같아도 자리가 다르므로 컴포넌트를
- *  가른다. legacy hwpx 의 저장 폴더 표시는 `JobOutFolderLine` 이 계속 지고 두 갈래는
- *  배타라 값이 두 자리에 겹치지 않는다. TXT(복사) 갈래는 파일을 만들지 않아 렌더 0 이다. */
+ *  가른다. 저장 폴더를 말하는 자리는 이제 여기 하나다(legacy hwpx 의 `JobOutFolderLine` 은
+ *  #1081 PR2 에서 걷혔다). TXT(복사) 갈래는 파일을 만들지 않아 렌더 0 이다. */
 export function JobDelivery(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
   const wb = (s?.workbench_observation || {}) as Obj;

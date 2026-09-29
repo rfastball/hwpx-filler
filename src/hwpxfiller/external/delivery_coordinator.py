@@ -42,6 +42,10 @@ from .atomic import write_bytes_atomic, write_bytes_atomic_exclusive
 from .materialization_start_gate import StartMaterializationResult
 from .materialization_runner import MaterializedDocumentBytes
 
+#: 항목 쓰기 자체가 OS 오류로 실패했다(파일이 한글에 열려 있음·권한·디스크 등) — 앞서 앉은 문서는
+#: 그대로 두고 그 항목에서 멈춘다. 원문 오류는 detail 이 그대로 나른다(행동 안내는 표면이 붙인다).
+DELIVERY_WRITE_FAILED = "DELIVERY_WRITE_FAILED"
+
 
 class DeliveryContractError(Exception):
     """coordinator 입력이 계약 밖 — outcome 수·경로 봉쇄 위반은 거절이 아니라 loud 예외다."""
@@ -164,6 +168,15 @@ def deliver_current_documents(
                 failed_item_ordinal=item.item_ordinal,
                 delivered=tuple(delivered),
             )
+        except OSError as exc:
+            # 예외로 올리면 이미 앉은 문서의 사실과 결과 서사가 함께 사라진다 — 항목별 원자라
+            # 이 항목은 쓰이지 않았고(원자 쓰기), 앞 항목들은 앉았다. 그 사실 그대로 멈춘다.
+            return DeliveryAborted(
+                code=DELIVERY_WRITE_FAILED,
+                detail=str(exc) or exc.__class__.__name__,
+                failed_item_ordinal=item.item_ordinal,
+                delivered=tuple(delivered),
+            )
         delivered.append(
             DeliveredDocument(
                 item_ordinal=item.item_ordinal,
@@ -180,6 +193,7 @@ def deliver_current_documents(
 
 
 __all__ = [
+    "DELIVERY_WRITE_FAILED",
     "DeliveredDocument",
     "DeliveryAborted",
     "DeliveryCompleted",

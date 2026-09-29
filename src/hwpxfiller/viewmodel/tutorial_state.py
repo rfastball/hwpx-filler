@@ -208,7 +208,7 @@ STEPS: "tuple[TutorialStep, ...]" = (
         milestone=Milestone.GENERATE,
         tier=Tier.BASIC,
         title="문서 생성",
-        next_step="'이 작업으로 문서 생성'을 누르세요.",
+        next_step="'문서 만들기'를 누르세요.",
         moment_copy="첫 문서가 만들어졌습니다. 같은 작업으로 한 바퀴 더 돌면 리듬이 손에 붙습니다.",
     ),
     TutorialStep(

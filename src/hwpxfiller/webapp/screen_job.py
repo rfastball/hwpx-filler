@@ -59,7 +59,6 @@ from ..viewmodel.review_state import (
 )
 from ..viewmodel.run_state import (
     FileSourceFactoryPort,
-    GateState,
     PoolSourceFactoryPort,
     RunDataInput,
     resolve_file_source,
@@ -80,11 +79,7 @@ from .action_registry import ZONE_MUTATIONS
 from .active_work_session import ActiveWorkSession
 from .template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
-    TemplateChangeError,
     unsupported_zone,
-)
-from ..application.slotless_run_bridge import (
-    SlotlessRunAdmissionError,
 )
 from dataclasses import asdict
 from ..application.template_change_product import workbench_template_change_verdict
@@ -117,9 +112,7 @@ from .current_execution_preparation import (
     record_issue,
 )
 from .job_execution_session import JobExecutionSession
-from .managed_run_result import (
-    ADMISSION_REJECT_TEXT,
-)
+from .managed_run_result import TEMPLATE_INITIALIZATION_REFUSAL
 from .job_presentation import (
     base_panel_snapshot,
     browse_payload,
@@ -196,8 +189,6 @@ class JobController:
         text_registry=None,
         file_source_factory: FileSourceFactoryPort,
         pool_source_factory: PoolSourceFactoryPort,
-        existing_outputs: Callable[[str, list[str]], list[str]],
-        ensure_output_dir: Callable[[str], None],
         template_change=None,
         slot_configuration=None,
         workbench_observation=None,
@@ -240,8 +231,6 @@ class JobController:
         # 데이터 소스 구현은 필수 주입해 링2의 service locator 뒷문을 막는다.
         self._file_source_factory = file_source_factory
         self._pool_source_factory = pool_source_factory
-        self._existing_outputs = existing_outputs
-        self._ensure_output_dir = ensure_output_dir
         # TXT 템플릿은 빈 후보 안내에만 쓰며 미주입 시 실 홈을 스캔하지 않는다.
         self.text_registry = text_registry
         # 화면 간 작업대 진입은 composition root가 callable로 결선한다.
@@ -575,9 +564,7 @@ class JobController:
     def _prepare_hwpx_panel(self, base: dict) -> dict:
         assert self.work.vm is not None
         job = self.work.vm.job
-        # S6-05(#812) 의미 3 파생 전환: bool(authority_id) 는 slotless 발급 작업까지 managed 로
-        # 취급해 generate-once 트랩(#806 R1)의 곱 반대편 항이었다. managed 는 「materialization
-        # 대상인가」= slot-bearing 사실(링1 projection 이 이미 소유)에서 파생한다.
+        # 문서 생성 경로는 managed 하나다(#1081 PR2) — HWPX ∧ 작업 권위면 managed 표면이다.
         managed_hwpx = self._is_managed_hwpx_work(job)
         indices = self.data.selected_indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
@@ -617,16 +604,6 @@ class JobController:
         )
         # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
         # 요구 자체가 사전검증 고지의 입력이다.
-        configuration_gate = None
-        if self._template_change is not None and job.media == "hwpx" and not managed_hwpx:
-            verdict = self._template_change.generation_provenance_verdict(self.work.name)
-            if verdict != "EXECUTION_ALLOWED":
-                configuration_gate = GateState(
-                    False,
-                    "warn",
-                    ADMISSION_REJECT_TEXT[verdict],
-                    reason=verdict,
-                )
         status = self.work.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             run_data,
             indices,
@@ -634,7 +611,6 @@ class JobController:
             review_notice=req,
             mapped=run_mapped,
             now=self._names_now,
-            configuration_gate=configuration_gate,
         )
         drift_fields = self._drift_fields(status)
         # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
@@ -1783,10 +1759,7 @@ class JobController:
         if self.work.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
         job = self.work.vm.job
-        # S6-05(#812): S6-absent \uac00\ub4dc(authority_id \ub2e8\ub3c5 \ud544\ud130)\ub294 \ucca0\uac70\ub410\ub2e4 \u2014 \uc2e4\ud589 \uacbd\ub85c \uc120\ud0dd
-        # (\uc758\ubbf8 4)\uc740 \uc544\ub798\uc5d0\uc11c managed_hwpx \ud30c\uc0dd\uacfc \uac19\uc740 \uc6d0\ucc9c\uc73c\ub85c \uac08\ub9ac\uace0, managed \uac08\ub798\uc758
-        # \uc2dc\uc791 \uc790\uaca9\uc740 start gate \uac00, slot-bearing \uc758 legacy \uc720\uc785\uc740 admission \uc774 \uac01\uc790 \uc18c\uc720\ud55c
-        # \uc0ac\uc720\ub85c \ub2eb\ub294\ub2e4(#806 R1\u00b7R2 \uac00 \ub51b\ub294 \uc0ac\uc2e4).
+        # HWPX 문서 생성은 managed 하나다(#1081 PR2) — 경로 선택은 아래 `_is_managed_hwpx_work`.
 
         if self.data.range_draft is not None:
             # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
@@ -1798,108 +1771,70 @@ class JobController:
                 "error": "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요.",
             }
         run_vm = self.work.vm
-        visible_identity_before = (
-            self.work.vm,
-            getattr(getattr(self.work.vm, "job", None), "authority_id", None),
-            self.work.seated_template_application_id,
-            self.work.name,
-        )
         run = self.runs.begin(
             getattr(run_vm, "job", None), job_name=self.work.name, token=run_token
         )
         if run is None:
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
         try:
-            try:
-                # 잠금 직후 VM·데이터·출력 폴더를 한 번만 붙든다.
-                run_input = self.runs.capture_input(
-                    datasource=self.data.datasource,
-                    records=self.data.records,
-                    indices=self.data.selected_indices(),
-                    snapshot_generation=self.data.snapshot_generation,
-                    work_ref=self.work.name,
-                    source_schema_keys=(
-                        tuple(self.data.filter.columns)
-                        if self.data.filter is not None
-                        else tuple(self.data.records[0].keys())
-                        if self.data.records
-                        else ()
-                    ),
-                    output_directory=self.runs.out_dir,
-                )
-                run_now = self.runs.capture_now(
+            # 잠금 직후 VM·데이터·출력 폴더를 한 번만 붙든다.
+            run_input = self.runs.capture_input(
+                datasource=self.data.datasource,
+                records=self.data.records,
+                indices=self.data.selected_indices(),
+                snapshot_generation=self.data.snapshot_generation,
+                work_ref=self.work.name,
+                source_schema_keys=(
+                    tuple(self.data.filter.columns)
+                    if self.data.filter is not None
+                    else tuple(self.data.records[0].keys())
+                    if self.data.records
+                    else ()
+                ),
+                output_directory=self.runs.out_dir,
+            )
+            run_now = self.runs.capture_now(
+                confirm_overwrite=confirm_overwrite,
+                pin_key=self._overwrite_pin_key(),
+                clock=self._clock,
+            )
+            if run_now is None:
+                # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
+                # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
+                result = {
+                    "ok": False,
+                    "level": "warn",
+                    "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
+                    "문서 만들기를 다시 실행하세요.",
+                }
+            elif self._is_managed_hwpx_work(job):
+                # 문서 생성 경로는 managed 하나다(#1081 PR2) — 봉인 → 레코드 검증 → start gate →
+                # 배달. 준비 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
+                result = self._generate_managed_locked(
+                    run,
+                    run_vm,
+                    run_input,
                     confirm_overwrite=confirm_overwrite,
-                    pin_key=self._overwrite_pin_key(),
-                    clock=self._clock,
+                    now=run_now,
                 )
-                if run_now is None:
-                    # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
-                    # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
-                    visible_identity_changed = False
-                    result = {
-                        "ok": False,
-                        "level": "warn",
-                        "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
-                        "문서 만들기를 다시 실행하세요.",
-                    }
-                elif self._is_managed_hwpx_work(job):
-                    # managed 갈래(S6-05) — legacy staging·admission 을 타지 않는다. 준비
-                    # 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
-                    visible_identity_changed = False
-                    result = self._generate_managed_locked(
-                        run,
-                        run_vm,
-                        run_input,
-                        confirm_overwrite=confirm_overwrite,
-                        now=run_now,
-                    )
-                else:
-                    reject = self._resolve_managed_template(run_vm)
-                    visible_identity_changed = (
-                        self.work.vm,
-                        getattr(getattr(self.work.vm, "job", None), "authority_id", None),
-                        self.work.seated_template_application_id,
-                        self.work.name,
-                    ) != visible_identity_before
-                    result = (
-                        reject
-                        if reject is not None
-                        else self._generate_locked(
-                            run,
-                            run_vm,
-                            run_input,
-                            confirm_overwrite=confirm_overwrite,
-                            now=run_now,
-                        )
-                    )
-            finally:
-                # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
-                # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
-                managed = (
-                    run_vm is not None and getattr(run_vm, "_managed_template", None) is not None
-                )
-                if run_vm is not None:
-                    run_vm._managed_template = None
-                if managed and self._template_change is not None:
-                    self._template_change.clear_generation_staging()
-                self.runs.finish()
-        except Exception:
-            if (
-                self.work.vm,
-                getattr(getattr(self.work.vm, "job", None), "authority_id", None),
-                self.work.seated_template_application_id,
-                self.work.name,
-            ) != visible_identity_before:
-                self._push()
-            raise
+            else:
+                # 실행뷰는 HWPX 작업에만 선다(TXT·미지원 매체는 위 `vm is None` 에서 닫혔다).
+                # 여기 온 것은 작업 권위가 서지 않은 HWPX — 착석의 자동 준비(초기 등록)가
+                # 거절된 작업이다(#932 B5). 종전 legacy 갈래가 생성 시점 초기 등록 실패로
+                # 내던 거절을 같은 문장으로 낸다. 우회 경로로 문서를 만들지 않는다(#1081 PR2).
+                result = {
+                    "ok": False,
+                    "error": TEMPLATE_INITIALIZATION_REFUSAL,
+                    "level": "warn",
+                }
+        finally:
+            self.runs.finish()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
         # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
         if result.get("ok"):
             self._note_tutorial_generation(result)
-            self._push()
-        elif visible_identity_changed:
             self._push()
         return result
 
@@ -2071,81 +2006,6 @@ class JobController:
             run_vm.job = result.stamped_job
         return result.payload
 
-    def _resolve_managed_template(self, run_vm) -> "dict | None":
-        """managed Product Work(HWPX 새 문서) 생성이 겨눌 템플릿을 current Application 의
-        exact applied bytes(staged)로 고정한다(#681 G11) — mutable ``job.template_path`` 직독을
-        managed 경로에서 없앤다. 이어채우기(이전 출력)·txt·코디네이터 부재는 해당 없음.
-        admission 차단은 fallback 없이 시끄러운 거절 dict 로 돌려준다(confirm-or-alarm).
-        반환 ``None`` = managed 해당 없음 또는 통과(``run_vm._managed_template`` 설정됨).
-        """
-        if (
-            self._template_change is None
-            or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
-        ):
-            return None
-
-        def synchronize_seated_identity(restored_job: Job, application_id: str) -> None:
-            if self.work.vm is run_vm and (
-                not run_vm.job.authority_id or self.work.seated_template_application_id is None
-            ):
-                if not self.work.can_adopt_seated_identity(run_vm.job, restored_job):
-                    self._release_changed_active_work("문서 작업이 변경되어")
-                    raise TemplateChangeError(
-                        "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
-                    )
-                run_vm.job.authority_id = restored_job.authority_id
-                self.work.seated_template_application_id = application_id
-
-        try:
-            run_vm._managed_template = (
-                self._template_change.resolve_generation_template_for_seated_context(
-                    self.work.name, on_context=synchronize_seated_identity
-                )
-            )
-        except (SlotlessRunAdmissionError, TemplateChangeError) as exc:
-            if isinstance(exc, SlotlessRunAdmissionError):
-                return {
-                    "ok": False,
-                    "level": "warn",
-                    "error": ADMISSION_REJECT_TEXT.get(exc.code, "생성을 진행할 수 없습니다."),
-                }
-            return {"ok": False, "level": "warn", "error": str(exc)}
-        return None
-
-    def _generate_locked(
-        self,
-        run,
-        run_vm,
-        run_input: RunInputCapture,
-        *,
-        confirm_overwrite: bool = False,
-        now: "datetime | None" = None,
-    ) -> dict:
-        """고정 런 입력을 legacy 실행 coordinator에 전달한다."""
-        run_now = now if now is not None else self._clock()
-        result = self.runs.run_legacy(
-            run,
-            run_vm,
-            run_input,
-            now=run_now,
-            confirm_overwrite=confirm_overwrite,
-            overwrite_pin_key=self._overwrite_pin_key(),
-            existing_outputs=self._existing_outputs,
-            engine=self._engine,
-            progress=self._push_progress,
-            store=self.registry,
-            completed_at=lambda: self._clock().isoformat(timespec="seconds"),
-            ensure_output_dir=self._ensure_output_dir,
-            filename_source_columns=filename_source_columns(
-                run_vm.job, run_input.source_schema_keys
-            ),
-        )
-        if result.stamped_job is not None and run_vm is self.work.vm:
-            if result.stamped_rules_changed:
-                self.runs.last_generated = None
-            run_vm.job = result.stamped_job
-        return result.payload
-
     # ----------------------------------- S4 Working Slot Configuration(SX-02 #725)
     # 4개 command 는 전부 **dispatch 경로**다(직접 브리지 아님). work_ref 는 세션의 현재 작업
     # (payload 에 없음, template_check 선례). configuration_token 은 opaque(프런트가 직전 응답의 새
@@ -2190,13 +2050,10 @@ class JobController:
         }
 
     def _is_managed_hwpx_work(self, job) -> bool:
-        """의미 3(managed_hwpx)의 파생(S6-05 · #812) — 실행 경로 의미와 한 원천에서 나온다.
+        """이 Work 가 managed 문서 생성 대상인가 = HWPX ∧ 작업 권위(#1081 PR2).
 
-        「이 Work 가 materialization 대상인가」= hwpx ∧ durable authority ∧ **slot-bearing**
-        (링1 projection 의 slots 사실 — 재판정이 아니라 이름 붙이기). slotless 발급 작업은
-        False → legacy 갈래로 흘러 R1 트랩이 구조로 소멸한다. view 실패·미초기화도 False —
-        slot-bearing 이 잘못 legacy 로 가도 admission 이 제 사유로 loud 거절한다(#806 R2 백스톱).
-        조회는 read-only projection(#744)이라 렌더 부작용이 없다.
+        slot 유무로 legacy 와 가르던 갈래는 사라졌다 — slot 없는 HWPX 도 봉인·물질화·배달을 탄다.
+        권위가 서지 않은 HWPX(착석 초기화 실패)는 생성하지 않고 작업대 관찰이 그 사유를 말한다.
         """
         return self.execution.is_managed_hwpx(self.work.name, job)
 

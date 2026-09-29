@@ -42,7 +42,8 @@
  *                      warn_click_sends=="[]"(막힘) ↔ warn_redirect_modal(안내 다이얼로그) ·
  *                      cands_hidden_when_no_data. relink 는 `offsetParent` 로 **실제 가시성**을
  *                      본다 — hidden 을 지운 것과 그려진 것은 다른 사실이다.
- *   · job_mirror     : mirror_host_present(true) ↔ mirror_line_gone/restate_gone(부재 음성) ·
+ *   · job_mirror     : mirror_host_gone·out_dir_line_gone·legacy_banner_gone(철거 음성) ·
+ *                      mirror_line_gone/restate_gone(부재 음성) ·
  *                      mirror_trigger_disabled(false) ↔ mirror_trigger_locked(true) ·
  *                      reapply_shown ↔ reapply_hidden · panel_hidden(hidden 이 flex 를 이긴다) ·
  *                      guard_body(재적용 있음) ↔ guard_body_minimal(없음) ·
@@ -891,22 +892,16 @@ async function runJobMirror(ctx) {
   await pushAndSettle(ctx, "job", snap);
   out.full_cell_title = doc.getElementById("jobCell-0-0")?.parentElement?.title || "";
 
-  /* `#jobMirror` 는 **danger 배너 전용 host** 다(#364). 존 재편에서 그 위에 섰던 캡션과
-     요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)이 죽었으므로 여기서 재는 것은 **부재**다
-     — 선언된 철거는 조용한 무시와 다르고, 되살아나면 이 세 줄이 빨강이다. 배너 host 자신은
-     사전검증 바로 아래에 그대로 서 있어야 하므로 존재를 함께 잰다(양성·음성 한 쌍). */
-  out.mirror_host_present = !!doc.getElementById("jobMirror");
+  /* `#jobMirror`(legacy HWPX 의 드리프트·파일명 토큰 차단 배너 host)와 그 위에 섰던 캡션·
+     요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)은 전부 걷혔다 — 문서 생성이 managed
+     하나가 되며(#1081 PR2) 그 사유는 작업대 관찰·배달 계획이 말한다. 여기서 재는 것은
+     **부재**다: 선언된 철거는 조용한 무시와 다르고, 되살아나면 이 줄들이 빨강이다. 저장 폴더
+     한 줄(`#jobOutDirLine`)도 같은 갈래의 표면이라 함께 잰다. */
+  out.mirror_host_gone = !doc.getElementById("jobMirror");
   out.mirror_line_gone = !doc.getElementById("jobMirrorLine")
     && !doc.getElementById("jobMirrorSummary")
-    && !doc.querySelector(".mirline, .mir-blank-flag, .mirempty");
-  out.mirror_banner_empty = doc.getElementById("jobMirror").children.length === 0;
-  /* 배너 host 는 사실을 말하는 사전검증 **바로 뒤**에 온다 — 복구 동사가 사유와 떨어져
-     서면 「무엇이 잘못됐나」와 「어디로 가서 고치나」가 화면에서 갈린다. */
-  out.mirror_follows_preflight = (() => {
-    const pf = doc.getElementById("jobPreflight");
-    const host = doc.getElementById("jobMirror");
-    return !!pf && !!host && pf.nextElementSibling === host;
-  })();
+    && !doc.querySelector(".mirline, .mir-blank-flag, .mirempty, .mir-drift");
+  out.out_dir_line_gone = !doc.getElementById("jobOutDirLine");
   /* 종전 이 자리에 섰던 확인 면 출구(`#jobMirrorPreviewOpen`)와 그 잠금 대조는 #957 에서
      사망했다. 파괴 확인의 계측은 아래 `ow_body` 다. */
   out.mirror_preview_exit_gone = !doc.getElementById("jobMirrorPreviewOpen");
@@ -995,29 +990,14 @@ async function runJobMirror(ctx) {
   /* 열 패널 기본 닫힘 — React owner에서는 hidden 토글이 아니라 조건부 언마운트가 계약이다. */
   out.panel_hidden = !doc.querySelector(panelSelector);
 
-  /* 드리프트 스냅샷 → 본문 존 한 줄이 차단 배너 + 행동 링크로 교체되는지(overlay 가 아닌
-     실제 교체). 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다. */
+  /* 드리프트·파일명 토큰 스냅샷이 와도 차단 배너는 서지 않는다(host 가 없다) — 그 사유를
+     말하는 자리는 managed 작업대 관찰·배달 계획이다. 음성 한 번으로 잰다. */
   snap = deepCopy(snap);
-  snap.drift = ["유령", "계약조건"]; snap.blank_fields = [];
+  snap.drift = ["유령", "계약조건"]; snap.name_tokens = ["납품기한"]; snap.blank_fields = [];
   snap.gate = { enabled: false, level: "danger", text: "템플릿 구조가 확정 매핑과 달라졌습니다." };
   await pushAndSettle(ctx, "job", snap);
-  out.drift_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
-  out.drift_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-mapping"]');
-  /* 배너가 섰을 때 그 자리에 요약 한 줄이 남지 않는다 — 존 재편 뒤 그 줄은 어느 상태에도
-     없으므로 부재는 위 `mirror_line_gone` 한 번으로 잰다(중복 계측 금지). */
-
-  /* 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. */
-  snap = deepCopy(snap);
-  snap.drift = []; snap.name_tokens = ["납품기한"];
-  snap.blank_fields = [];
-  snap.gate = { enabled: false, level: "danger", text: "파일명 패턴의 토큰이…" };
-  await pushAndSettle(ctx, "job", snap);
-  out.token_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
-  out.token_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-filename"]');
-  out.token_banner_text = (() => {
-    const b = doc.querySelector("#jobMirror .mir-drift");
-    return b ? b.textContent : "";
-  })();
+  out.legacy_banner_gone = !doc.querySelector(".mir-drift")
+    && !doc.querySelector('[data-act="fix-mapping"], [data-act="fix-filename"]');
   /* 덮어쓰기 확인 본문 합성 되읽기 — overwrite_count/new_count 스왑·이름 목록 누락의 핀. */
   out.ow_body = services.JobRun.overwriteBody({
     total: 10, overwrite_count: 3, new_count: 7, conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 5,

@@ -22,10 +22,6 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.materialization_conformance_vocabulary import (
     MaterializedDocumentBytes,
 )
-from hwpxfiller.external.output_files import (
-    ensure_output_directory,
-    existing_output_paths,
-)
 from hwpxfiller.webapp.app import (
     _content_selection_reader,
     _txt_materialization_port,
@@ -109,8 +105,6 @@ class _Harness:
             generation_lock=threading.Lock(),
             file_source_factory=source_for_path,
             pool_source_factory=source_from_pool_item,
-            existing_outputs=existing_output_paths,
-            ensure_output_dir=ensure_output_directory,
             template_change=TemplateChangeCoordinator(
                 self.registry, root=self.root, clock=_clock()
             ),

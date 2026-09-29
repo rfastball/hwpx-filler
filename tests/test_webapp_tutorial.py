@@ -30,7 +30,6 @@ from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.external import settings
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -598,8 +597,21 @@ def _hwpx_template(path: Path, fields: "list[str]") -> None:
     )
 
 
-def _job_controller(tmp_path: Path, notify, *, names=("공고서",)):
+def _job_controller(
+    tmp_path: Path, notify, *, names=("공고서",), generating: "str | None" = None,
+):
+    """작업 화면 컨트롤러 — ``generating`` 에 데이터 파일 이름을 주면 문서까지 만든다.
+
+    HWPX 문서 생성은 managed 하나라(#1081 PR2) 문서를 만드는 테스트는 실제 앱처럼 작업
+    권위·구성·봉인·작업대 관찰을 한 authority root 로 배선하고, 작업을 그 데이터에 결속한다
+    (managed 생성은 결속된 데이터를 요구한다). 그 밖의 테스트는 가벼운 기본 배선이다.
+    """
     reg = JobRegistry(tmp_path / "jobs")
+    binding = (
+        {"data_path": str(tmp_path / generating), "data_sheet": "", "data_header_row": 0}
+        if generating
+        else {}
+    )
     for index, name in enumerate(names):
         template = tmp_path / f"t{index}.hwpx"
         _hwpx_template(template, ["공고명", "추정가격"])
@@ -611,20 +623,36 @@ def _job_controller(tmp_path: Path, notify, *, names=("공고서",)):
                 FieldMapping(template_field="추정가격", source="presmptPrce"),
             ]),
             filename_pattern=f"{name}-{{{{seq:001}}}}",
+            **binding,
         )
         job.reviewed_rules = rules_fingerprints(job)
         reg.save(job)
+    services: dict = {}
+    if generating:
+        from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+        from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
+        from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+        from hwpxfiller.webapp.workbench_observation_product import (
+            WorkbenchObservationProduct,
+        )
+
+        root = tmp_path / "authority"
+        services = {
+            "template_change": TemplateChangeCoordinator(reg, root=root, clock=_job_clock()),
+            "slot_configuration": SlotConfigurationProduct(reg, root=root, clock=_job_clock()),
+            "seal_execution": SealExecutionPlanService(reg, root=root, clock=_job_clock()),
+            "workbench_observation": WorkbenchObservationProduct(),
+        }
     ctrl = JobController(
         reg, lambda s, snap: None,
         clock=_job_clock(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
         tutorial=notify,
+        **services,
     )
     return ctrl, reg
 
@@ -683,7 +711,7 @@ def test_generation_notifies_its_own_event_and_no_approval_event_remains(tmp_pat
     빈 값 있는 데이터를 쓰는 이유는 그것이 종전 승인을 **세우던** 축이기 때문이다.
     """
     seen, notify = _collector()
-    ctrl, _ = _job_controller(tmp_path, notify)
+    ctrl, _ = _job_controller(tmp_path, notify, generating="blank.csv")
     ctrl.load_data_path(_csv(tmp_path, "blank.csv", _BLANK))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
@@ -700,7 +728,7 @@ def test_generation_notifies_its_own_event_and_no_approval_event_remains(tmp_pat
 def test_second_lap_is_the_same_job_generated_again(tmp_path):
     """§3.3 T8 — 「한 바퀴 더」. 앱이 횟수를 어디에도 안 들고 있어 세션이 직접 센다."""
     seen, notify = _collector()
-    ctrl, _ = _job_controller(tmp_path, notify)
+    ctrl, _ = _job_controller(tmp_path, notify, generating="a.csv")
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
@@ -719,7 +747,9 @@ def test_second_lap_is_the_same_job_generated_again(tmp_path):
 def test_switch_job_is_a_second_work_on_the_same_mount(tmp_path):
     """§3.4 T9 — 데이터를 다시 고르지 않고 작업만 갈아 끼운 생성."""
     seen, notify = _collector()
-    ctrl, _ = _job_controller(tmp_path, notify, names=("공고서", "구매추진"))
+    ctrl, _ = _job_controller(
+        tmp_path, notify, names=("공고서", "구매추진"), generating="a.csv",
+    )
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
     pick_output_folder(ctrl, tmp_path / "out")
 
@@ -761,7 +791,7 @@ def test_frozen_approval_steps_still_stand_in_ring1_but_have_no_producer(tmp_pat
 def test_generation_from_a_template_compiled_in_this_session(tmp_path):
     """§3.5 T16 — 변환의 출구가 첫 티어의 입구였음을 세션이 안다(tpl→job seam)."""
     seen, notify = _collector()
-    ctrl, reg = _job_controller(tmp_path, notify)
+    ctrl, reg = _job_controller(tmp_path, notify, generating="a.csv")
     ctrl.load_data_path(_csv(tmp_path, "a.csv", _CLEAN))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})

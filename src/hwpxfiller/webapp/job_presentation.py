@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -11,12 +11,10 @@ from ..application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
     RecordValidationSummary,
 )
-from ..application.generation import GenerationOutcome
 from ..application.workbench_execution_status import CHECKING, NO_EVIDENCE, STALE
 from ..domain.job import work_mode
 from ..domain.mapping import SOURCE_CARRIER_TYPES
 from ..domain.identity_summary import identity_summary
-from ..viewmodel.result_errors import classify_result_error, describe_fill_note
 from ..viewmodel.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
@@ -28,7 +26,6 @@ from ..viewmodel.work_candidates import (
 from ..viewmodel.work_mode import WORK_MODE_TEXT, mode_sections, work_mode_label
 from ..domain.output_name import OutputNameError
 from ..naming import pattern_field_tokens, plan_output_names
-from .managed_run_result import run_title
 
 
 _EXECUTION_RESOLVABLE_STATUS_CODES = frozenset((NO_EVIDENCE, CHECKING, STALE))
@@ -539,127 +536,4 @@ def serialize_observation(observation, *, execution_status: tuple[str, str]) -> 
             "selected_record_count": observation.data_scope.selected_record_count,
             "total_record_count": observation.data_scope.total_record_count,
         },
-    }
-
-
-def failure_rows(
-    *,
-    records: "Sequence[dict]",
-    indices: Sequence[int],
-    results: Iterable,
-    filename_source_columns: list[str],
-) -> list[dict]:
-    """Project attempted, failed records; cancellation may leave results short."""
-    pairs = [
-        (index, result) for index, result in zip(indices, results, strict=False) if not result.ok
-    ]
-    if not pairs:
-        return []
-    summary = identity_summary(records, filename_tokens=filename_source_columns)
-    rows = []
-    for index, result in pairs:
-        reason, known = classify_result_error(result.error)
-        rows.append(
-            {
-                "index": index,
-                "identity": (
-                    summary.display_for(records[index]) if 0 <= index < len(records) else ""
-                ),
-                "filename": Path(result.output_path).name,
-                "reason": reason,
-                "known": known,
-            }
-        )
-    return rows
-
-
-def failed_result(
-    *,
-    indices: Sequence[int],
-    out_dir: str,
-    message: str,
-    failed_indices: Sequence[int],
-    revisions: dict,
-) -> dict:
-    reason, known = classify_result_error(message)
-    total = len(indices)
-    return {
-        "ok": True,
-        "status": "failed",
-        "title": run_title("failed", False, 0, total),
-        "summary": f"문서를 만들지 못했습니다. 대상 {total}건이 모두 생성되지 않았습니다.",
-        "level": "danger",
-        "stage": "생성 시작 전",
-        "message": reason,
-        "known": known,
-        "out_dir": out_dir,
-        "succeeded": 0,
-        "failed": total,
-        "failed_selectable": len(failed_indices),
-        "total": total,
-        "failures": [],
-        "fill_notes": [],
-        "cancelled": False,
-        "attempted": 0,
-        "unstarted": total,
-        "revisions": dict(revisions),
-    }
-
-
-def generation_result(
-    outcome: GenerationOutcome,
-    *,
-    blanks: Sequence[str],
-    failures: list[dict],
-    failed_indices: Sequence[int],
-    out_dir: str,
-    revisions: dict,
-) -> dict:
-    cancelled = outcome.cancelled
-    if cancelled:
-        summary = (
-            f"중단했습니다. 완료 {outcome.attempted}/{outcome.total}건"
-            f"(성공 {outcome.succeeded}, 실패 {outcome.failed}), "
-            f"미착수 {outcome.unstarted}건. 완료된 문서는 그대로 유지됩니다."
-        )
-    else:
-        summary = f"완료. 성공 {outcome.succeeded}/{outcome.total}, 실패 {outcome.failed}."
-    if blanks:
-        summary += f" 빈 값 표시 필드 {len(blanks)}개({', '.join(blanks)})."
-    if outcome.stamp_error:
-        summary += (
-            f" 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다({outcome.stamp_error})."
-        )
-    fill_notes = [
-        describe_fill_note(note)
-        for note in dict.fromkeys(
-            note for result in outcome.results if result.ok for note in result.notes
-        )
-    ]
-    if fill_notes:
-        summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
-    return {
-        "ok": True,
-        "status": outcome.status,
-        "title": run_title(outcome.status, cancelled, outcome.succeeded, outcome.failed),
-        "stage": "",
-        "message": "",
-        "known": True,
-        "summary": summary,
-        "level": (
-            "warn"
-            if cancelled
-            else ("ok" if outcome.failed == 0 and not outcome.stamp_error else "danger")
-        ),
-        "out_dir": out_dir,
-        "succeeded": outcome.succeeded,
-        "failed": outcome.failed,
-        "failed_selectable": len(failed_indices),
-        "total": outcome.total,
-        "failures": failures,
-        "fill_notes": fill_notes,
-        "cancelled": cancelled,
-        "attempted": outcome.attempted,
-        "unstarted": outcome.unstarted,
-        "revisions": dict(revisions),
     }

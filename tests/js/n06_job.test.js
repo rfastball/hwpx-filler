@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { createJobRunController } from "../../frontend/src/screens/job_run.ts";
 import {
-  JobActionBar, JobDangerBanner, JobDelivery, JobStatusPill, JobWorkbenchStatus,
+  JobActionBar, JobDelivery, JobStatusPill, JobWorkbenchStatus,
 } from "../../frontend/src/screens/job_run.ts";
 import {
   acceptDirect,
@@ -34,7 +34,6 @@ const SURFACE = [
   "relinkActive", "templateCheck", "templateApply",
   // 산출물 관찰(S7-03 · #825) — 미리보기와 **별도 표면**이라 이름도 갈린다.
   "openArtifactFrom", "closeArtifact", "saveArtifactAs",
-  "openRepair",
   "init", "dispose",
 ];
 
@@ -187,17 +186,6 @@ test("#789 exact Binding 수정도 같은 문맥을 넘긴다", async () => {
   const [, context] = h.editorCalls.at(-1);
   assert.equal(context.target, "binding/추가확인");
   assert.equal(context.entry_reason, "document_browser_repair");
-});
-
-test("#789 target 없는 일반 수리 진입은 겨눌 자리를 넘기지 않는다", async () => {
-  // 음성 대조 — 겨눌 자리가 없는 진입까지 조준 문맥을 실으면 엉뚱한 행에 초점이 선다.
-  const h = harness({ openGuardedResult: true, snapshot: SNAP });
-  await h.controller.init();
-  h.push(SNAP);
-  h.controller.openRepair("fix-mapping");
-  await Promise.resolve();
-  const [, context] = h.editorCalls.at(-1);
-  assert.equal(context.target, undefined);
 });
 
 /* ================= ⑥ 포트는 객체째 ================= */
@@ -511,11 +499,6 @@ test("생성 내용 확인 표면과 승인 표지는 철거됐다(#957) — 파
   for (const gone of ["jobReviewFlag", "승인 필요", "jobManagedPreviewOpen"]) {
     assert.equal(legacyAction.includes(gone), false, gone);
   }
-  const banner = renderToStaticMarkup(
-    createElement(JobDangerBanner, { controller: h.controller }),
-  );
-  assert.equal(banner.includes("jobMirrorPreviewOpen"), false);
-  assert.equal(banner.includes("생성 값 미리보기"), false);
 
   /* 파괴 확인 본문은 남는다 — 수치 재진술의 단일 출처(managed·legacy 공용). */
   const body = h.controller.overwriteBody({

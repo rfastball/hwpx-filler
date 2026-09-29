@@ -417,11 +417,15 @@ def run(ctx: ScenarioContext) -> dict:
     # 문서를 열어 확인하는 것은 첫 실행이든 아니든 상수라 알림이 바꾸는 행동이 없다.
     # 그래서 여기서 재는 것은 **생성이 열려 있고 사전검증이 첫 실행을 들먹이지 않는 것**,
     # 그리고 철거된 확인 면의 출구가 화면에 없다는 사실이다.
+    # HWPX 문서 생성은 managed 하나다(#1081 PR2) — slot 없는 발주요청서도 작업대의 만들기
+    # 동사(`#jobManagedCreate`)가 생성 입구이고, legacy 단추(`#jobGenBtn`)는 숨는다.
     s.wait(
-        "!document.getElementById('jobGenBtn').disabled"
+        "!document.getElementById('jobManagedCreate').disabled"
+        " && document.getElementById('jobGenBtn').hidden"
         " && !document.getElementById('jobPreflight').textContent.includes('첫 실행')",
         "첫 실행 무고지 + 생성 게이트 개방",
-        requires=["#jobGenBtn", "#jobPreflight"],
+        timeout=30.0,
+        requires=["#jobManagedCreate", "#jobGenBtn", "#jobPreflight"],
     )
     seen["first_run_not_announced"] = True
     _expect(
@@ -480,25 +484,25 @@ def run(ctx: ScenarioContext) -> dict:
     s.wait(
         "document.getElementById('dataSheet').classList.contains('hidden')"
         " && document.getElementById('jobOrderToggle').getAttribute('aria-pressed') === 'false'"
-        " && !document.getElementById('jobGenBtn').disabled",
+        " && !document.getElementById('jobManagedCreate').disabled",
         "취소 뒤 메인 범위 보존",
-        requires=["#dataSheet", "#jobOrderToggle", "#jobGenBtn"],
+        timeout=30.0,
+        requires=["#dataSheet", "#jobOrderToggle", "#jobManagedCreate"],
     )
 
-    # ---- S6 사전검증 + 위험 배너 --------------------------------------------
+    # ---- S6 사전검증 --------------------------------------------------------
     # 존 재편: 구 「본문 확인」 존의 요약 한 줄(`#jobMirrorLine`/`#jobMirrorSummary`)과
     # 재진술 블록(`#jobRestate`)은 사전검증·표 머리가 이미 말하던 사실의 2·3중 발화라
-    # 걷혔다. 남은 것은 **행동을 든** 위험 배너 host 뿐이고, 그 자리는 사전검증 바로 아래다.
-    # 실주행에서 재는 것은 ①죽은 세 좌표의 부재 ②배너 host 가 사전검증 뒤에 있음이다 —
-    # 부재를 대본이 안 재면 「걷었다」는 선언이 실앱에서 증명되지 않는다.
+    # 걷혔고, legacy HWPX 위험 배너 host(`#jobMirror`)도 문서 생성이 managed 하나가 되며
+    # (#1081 PR2) 걷혔다. 실주행에서 재는 것은 그 좌표들의 부재다 — 부재를 대본이 안 재면
+    # 「걷었다」는 선언이 실앱에서 증명되지 않는다.
     s.wait(
         "!document.getElementById('jobMirrorLine')"
         " && !document.getElementById('jobMirrorSummary')"
         " && !document.getElementById('jobRestate')"
-        " && document.getElementById('jobPreflight').nextElementSibling"
-        " === document.getElementById('jobMirror')",
-        "본문 요약·재진술 부재 + 위험 배너 자리",
-        requires=["#jobPreflight", "#jobMirror"],
+        " && !document.getElementById('jobMirror')",
+        "본문 요약·재진술·legacy 위험 배너 부재",
+        requires=["#jobPreflight"],
     )
     # host는 display:contents여서 배치 상자가 없다. 실제 사전검증 박스를 겨눈다.
     s.wait("!!document.querySelector('#jobPreflight .preflight')", "사전검증 박스", requires=["#jobPreflight"])
@@ -506,7 +510,7 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.shoot("preflight-check")
 
     # ---- S7 생성 → 완료 요약 ----------------------------------------------
-    s.click_sel("#jobGenBtn", what="이 작업으로 문서 생성")
+    s.click_sel("#jobManagedCreate", what="문서 만들기")
     # 결과는 3태 구획이 받는다(F4) — 제목이 태를, 요약이 수치를 말한다.
     s.wait(
         "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",

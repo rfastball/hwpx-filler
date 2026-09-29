@@ -140,19 +140,8 @@ class JobExecutionSession:
         }
 
     def is_managed_hwpx(self, work_ref: str, job: Job) -> bool:
-        if (
-            job.media != "hwpx"
-            or not job.authority_id
-            or self.slot_configuration is None
-            or not work_ref
-        ):
-            return False
-        try:
-            response = self.slot_configuration.current_slot_configuration_view(work_ref)
-        except SlotConfigurationProductError:
-            return False
-        projection = response.current_view.projection
-        return projection is not None and bool(projection.slots)
+        """HWPX ∧ 작업 권위 — 문서 생성 경로는 managed 하나다(#1081 PR2, slot 유무 무관)."""
+        return bool(work_ref) and job.media == "hwpx" and bool(job.authority_id)
 
     def open_slot_configuration(self, work_ref: str):
         return self.require_slot_configuration(work_ref).open_slot_configuration(work_ref)

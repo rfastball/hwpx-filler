@@ -7,13 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import threading
 
-from ..application.generation import (
-    GenerationRun,
-    PlanDecision,
-    plan_generation,
-    run_generation,
-    start_run,
-)
+from ..application.generation import GenerationRun, start_run
 from ..application.execution_contract_set import (
     SealedExecutionPlanSemanticPayload,
     plan_semantic_digest,
@@ -34,14 +28,9 @@ from ..external.ledger_export import write_managed_delivery_ledger
 from ..external.output_files import ensure_output_directory
 from ..viewmodel.artifact_view_state import observed_artifact_snapshot
 from ..application.run_delivery_intent import DEFAULT_COLLISION_POLICY
-from ..viewmodel.run_state import RunDataInput, RunViewModel
+from ..viewmodel.run_state import RunDataInput
 from ..domain.job import Job, rules_fingerprints
-from .job_presentation import (
-    failed_result,
-    failure_rows,
-    generation_result,
-    overwrite_response,
-)
+from .job_presentation import overwrite_response
 from .current_execution_preparation import CurrentDeliveryPreparation
 from .managed_generation import ManagedReadBackFailed, run_managed_generation
 from .managed_run_result import project_managed_run_result
@@ -77,13 +66,6 @@ class RunInputCapture:
 
 
 @dataclass(frozen=True)
-class LegacyRunResult:
-    payload: dict
-    stamped_job: Job | None = None
-    stamped_rules_changed: bool = False
-
-
-@dataclass(frozen=True)
 class ManagedRunInput:
     """봉인된 plan과 같은 세대에서 준비한 managed 실행 입력."""
 
@@ -109,7 +91,8 @@ class ManagedRunResult:
 
     ``executed`` 는 파이프라인이 실제로 돌았는가(배달 시도 여부와 무관하게 참) — 이 런이
     디스크를 움직였을 수 있으므로 호출자는 폴더 관찰에 묶인 배달 준비를 버려야 한다.
-    ``stamped_job``·``stamped_rules_changed`` 는 legacy :class:`LegacyRunResult` 와 같은 뜻이다.
+    ``stamped_job``·``stamped_rules_changed`` 는 완주 기록된 Job 과 그 규칙 지문이 런 고정 규칙과
+    달라졌는가다(세션 사본 채택·결과 무효화 판정에 쓴다).
     """
 
     payload: dict
@@ -211,124 +194,6 @@ class DocumentRunCoordinator:
 
     def arm_overwrite(self, pin_key: str, now: datetime) -> None:
         self.overwrite_now_pin = (pin_key, now)
-
-    def plan_legacy(
-        self,
-        vm: RunViewModel,
-        data: RunInputCapture,
-        indices: list[int],
-        *,
-        now: datetime,
-        confirm_overwrite: bool,
-        existing_outputs: Callable[[str, list[str]], list[str]],
-    ) -> PlanDecision:
-        """한 런의 고정 데이터와 출력 설정으로 legacy 계획을 판정한다."""
-        return plan_generation(
-            vm,
-            data.data,
-            indices,
-            data.output_directory,
-            now=now,
-            confirm_overwrite=confirm_overwrite,
-            existing_outputs=existing_outputs,
-        )
-
-    def run_legacy(
-        self,
-        run: GenerationRun,
-        vm: RunViewModel,
-        capture: RunInputCapture,
-        *,
-        now: datetime,
-        confirm_overwrite: bool,
-        overwrite_pin_key: str,
-        existing_outputs: Callable[[str, list[str]], list[str]],
-        engine,
-        progress,
-        store: JobStorePort,
-        completed_at: Callable[[], str],
-        ensure_output_dir: Callable[[str], None],
-        filename_source_columns: list[str],
-    ) -> LegacyRunResult:
-        """고정 입력의 legacy plan부터 결과 projection까지 한 transaction으로 실행한다."""
-        self.adopt_run_metadata(run)
-        indices = list(capture.indices)
-        decision = self.plan_legacy(
-            vm,
-            capture,
-            indices,
-            now=now,
-            confirm_overwrite=confirm_overwrite,
-            existing_outputs=existing_outputs,
-        )
-        if decision.rejection is not None:
-            return LegacyRunResult({
-                "ok": False,
-                "error": decision.rejection.message,
-                "level": decision.rejection.level,
-            })
-        blanks = list(decision.blanks)
-        if decision.needs_overwrite:
-            self.arm_overwrite(overwrite_pin_key, now)
-            return LegacyRunResult(overwrite_response(
-                total=len(indices),
-                conflict_names=[Path(path).name for path in decision.conflicts],
-            ))
-        plan = decision.plan
-        assert plan is not None
-        outcome = run_generation(
-            run,
-            plan,
-            engine=engine,
-            progress=progress,
-            capture=(ValueError, OSError),
-            store=store,
-            completed_at=completed_at,
-            existing_outputs=existing_outputs,
-            ensure_output_dir=ensure_output_dir,
-        )
-        if outcome.error is not None:
-            self.record_result(failed=list(indices))
-            return LegacyRunResult(failed_result(
-                indices=indices,
-                out_dir=plan.out_dir,
-                message=str(outcome.error) or outcome.error.__class__.__name__,
-                failed_indices=self.last_failed,
-                revisions=self.run_revisions,
-            ))
-        if outcome.completed:
-            self.record_result(generated=set(indices))
-        stamped_rules_changed = bool(
-            outcome.stamped_job is not None
-            and rules_fingerprints(outcome.stamped_job) != run.rules
-        )
-        results = list(outcome.results)
-        failures = failure_rows(
-            records=capture.source_records,
-            indices=indices,
-            results=results,
-            filename_source_columns=(
-                filename_source_columns
-                if any(
-                    not result.ok
-                    for _index, result in zip(indices, results, strict=False)
-                )
-                else []
-            ),
-        )
-        self.record_result(failed=[failure["index"] for failure in failures])
-        return LegacyRunResult(
-            generation_result(
-                outcome,
-                blanks=blanks,
-                failures=failures,
-                failed_indices=self.last_failed,
-                out_dir=plan.out_dir,
-                revisions=self.run_revisions,
-            ),
-            stamped_job=outcome.stamped_job,
-            stamped_rules_changed=stamped_rules_changed,
-        )
 
     def run_managed(
         self,
@@ -580,7 +445,6 @@ class DocumentRunCoordinator:
 __all__ = [
     "CompletionStamp",
     "DocumentRunCoordinator",
-    "LegacyRunResult",
     "ManagedRunInput",
     "ManagedRunResult",
     "RunInputCapture",

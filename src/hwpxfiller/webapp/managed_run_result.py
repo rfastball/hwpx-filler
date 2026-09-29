@@ -16,7 +16,7 @@ from ..external.delivery_coordinator import (
 )
 from ..application.generation_delivery import CurrentResolvedDelivery
 from ..viewmodel.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
-from ..viewmodel.result_errors import describe_fill_note
+from ..viewmodel.result_errors import classify_result_error, describe_fill_note
 from ..application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
 from .current_execution_preparation import CurrentDeliveryPreparation
 from .managed_generation import (
@@ -27,13 +27,13 @@ from .managed_generation import (
 )
 
 
+#: 작업 권위가 서지 않은(착석의 초기 등록이 거절된) HWPX 작업의 생성 거절 — 종전 legacy
+#: admission 의 TEMPLATE_INITIALIZATION_REQUIRED 문장 그대로다(#1081 PR2, 새 문구 0).
+TEMPLATE_INITIALIZATION_REFUSAL = (
+    "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요."
+)
+
 ADMISSION_REJECT_TEXT = {
-    "TEMPLATE_INITIALIZATION_REQUIRED": "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요.",
-    "NEEDS_CONFIGURATION_REVIEW": "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요.",
-    "NEEDS_CONFIGURATION": "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다.",
-    "STALE_TEMPLATE_APPLICATION": "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다.",
-    "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요.",
-    "SLOTLESS_SELECTION_CONTEXT_REQUIRED": "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다.",
     "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR": "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다.",
     STRUCTURE_NOTATION_UNCOMPILED: STRUCTURE_NOTATION_BLOCK_MESSAGE,
 }
@@ -95,6 +95,9 @@ def managed_failure_row(
     )
     failed_item = resolved_delivery.ordered_items[failed_ordinal]
     summary = identity_summary(records, filename_tokens=filename_source_columns)
+    # 원문 오류 → 행동 안내(파일이 한글에 열려 있음 등) — legacy 결과와 같은 판정 한 벌이다.
+    # 모르는 원인은 아는 척하지 않는다(known=False = 「원인 진단 미연결」).
+    text, known = classify_result_error(reason)
     return failed_index, {
         "index": failed_index,
         "identity": (
@@ -103,8 +106,8 @@ def managed_failure_row(
             else ""
         ),
         "filename": failed_item.resolved_output_relative_path,
-        "reason": reason,
-        "known": True,
+        "reason": text,
+        "known": known,
     }
 
 

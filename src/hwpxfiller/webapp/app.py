@@ -50,7 +50,6 @@ from ..host.locations import (
 from ..external.template_root import TemplateRoot, migrate_legacy_text_templates
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.template_files import TemplateFileStore
-from ..external.output_files import ensure_output_directory, existing_output_paths
 from ..external.text_registry import TextTemplateRegistry
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
@@ -385,8 +384,6 @@ class WebFrontend:
             text_registry=registry,
             file_source_factory=source_for_path,
             pool_source_factory=source_from_pool_item,
-            existing_outputs=existing_output_paths,
-            ensure_output_dir=ensure_output_directory,
             template_change=template_change,
             slot_configuration=slot_configuration,
             # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct

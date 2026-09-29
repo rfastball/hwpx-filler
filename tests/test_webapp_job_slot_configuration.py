@@ -19,7 +19,6 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchObservation,
 )
 from hwpxfiller.application.document_creation_vocabulary import BLOCKER_CODES
-from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
 from hwpxfiller.application.work_template_state import PREP_INTERRUPTED
 from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
@@ -28,7 +27,6 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.slot_configuration_product import (
@@ -89,8 +87,6 @@ def _controller(tmp_path: Path, *, wire: bool = True, bootstrap: bool = True):
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         template_change=coord,
     )
     if wire:
@@ -443,8 +439,6 @@ def _slot_bearing_controller(tmp_path: Path):
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         template_change=coord,
         slot_configuration=SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock()),
         workbench_observation=WorkbenchObservationProduct(),
@@ -549,39 +543,6 @@ def _aggregate_bytes(tmp_path: Path, reg) -> bytes:
     return (_root(tmp_path) / "works" / f"{work_id}.json").read_bytes()
 
 
-def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
-    tmp_path: Path,
-) -> None:
-    """slot-bearing 거절은 `authority_id` 가드가 **없어도** 제 사유로 난다.
-
-    오늘 `_generate_with_token` 은 `job.authority_id` 만 보고 먼저 거절한다(SX-03 #750). 그 가드가
-    앞에 서 있는 동안 **그 아래가 실제로 무엇을 하는지 확인된 적이 없다** — #807 S6-05 가 가드를
-    걷을 때 무엇이 남는지가 이 테스트의 산출물이다.
-
-    남는 것은 admission 이다: `resolve_generation_template_for_seated_context` →
-    `admit_managed_slotless_run` → `admit_slotless_run` 이 `SlotConfigurationSnapshot`(slot-bearing)을
-    무조건 `SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE` 로 거절한다. 단위 층은
-    `test_slotless_run_bridge.py` 가 이미 덮으므로 여기서는 **컨트롤러 층 도달**만 잰다.
-    """
-    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
-
-    # (1) 오늘의 표면 — 가드가 먼저 서서 managed 사유로 닫는다.
-    guarded = ctrl.generate()
-    assert guarded["ok"] is False
-
-    # (2) 가드 아래 — 같은 작업을 admission 이 **제 사유로** 거절한다(가드가 없어도 안전).
-    reject = ctrl._resolve_managed_template(ctrl.work.vm)
-    assert reject is not None, "slot-bearing 은 legacy generator 로 통과되면 안 된다"
-    assert reject["ok"] is False
-    # (3) 사유는 실사유여야 한다(#907·#912). 「아직 지원하지 않습니다」는 S5/S6 미출하 시절의
-    # 전제라 S6 완주 이후로는 거짓이고, 다음 행동도 주지 못했다.
-    assert reject["error"] == (
-        "이 작업의 문서 구성이 아직 확립되지 않았습니다. "
-        "'템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
-    )
-    assert "지원하지 않습니다" not in reject["error"]
-
-
 def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     tmp_path: Path,
 ) -> None:
@@ -670,35 +631,6 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
 
 
-def test_failed_initialization_on_the_generate_path_releases_the_authority_too(
-    tmp_path: Path,
-) -> None:
-    """생성 경로의 초기 등록 실패도 **같은 규율**로 롤백한다 — 문을 하나만 닫지 않는다.
-
-    확인 경로만 고치면 같은 좀비가 「문서 만들기」로 다시 만들어지고 막다른 길이 그대로
-    열린다(#804 잔여). 두 경로가 같은 use case(`seat_job_authority_id`/`release_job_
-    authority_id`)를 공유하는지를 여기서 잰다.
-
-    겨눔은 `resolve_generation_template` 이다: 그 위 `generate` 가드는 slot-bearing 을 **다른
-    사유**로 먼저 닫으므로(같은 파일의 `_resolve_managed_template` 테스트와 같은 이유) 가드
-    아래 실제 문에 대고 물어야 이 규율이 확인된다.
-    """
-    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
-    clone = reg.clone("공고서")
-    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물(착석 전 — #932 B5)
-    ctrl.dispatch("select_job", {"name": clone})
-
-    with pytest.raises(SlotlessRunAdmissionError):
-        ctrl._template_change.resolve_generation_template(clone)
-
-    assert reg.load(clone).authority_id == ""  # 좀비 권위 부재
-    assert reg.load("공고서").authority_id != ""  # 이미 겪은 권위는 무사하다
-
-    zone = ctrl.snapshot()["slot_configuration"]
-    assert zone["supported"] is True and zone["initialized"] is False
-    assert zone["current_view"] is None  # CONTEXT_ERROR 막다른 길이 서지 않는다
-
-
 def test_clone_of_a_work_with_durable_selection_opens_its_own_zone(tmp_path: Path) -> None:
     """durable 선택을 가진 원본의 복제도 확인 한 번으로 자기 존을 연다(음성 대조).
 
@@ -769,8 +701,6 @@ def _txt_slot_bearing_controller(tmp_path: Path, *, body: str = _TXT_SLOT_TEMPLA
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         template_change=coord,
         slot_configuration=SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock()),
         workbench_observation=WorkbenchObservationProduct(),
@@ -863,8 +793,6 @@ def test_txt_check_seats_the_template_application_identity(tmp_path: Path) -> No
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         template_change=coord,
     )
     ctrl.dispatch("select_job", {"name": "안내문"})

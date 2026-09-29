@@ -44,7 +44,7 @@ const FACTORY_SERVICES = {
     "templateCheck", "templateApply",
     // 산출물 관찰(S7-03 · #825) — 결과 존 행이 여는 별도 표면과 그 직접 브리지 저장.
     "openArtifactFrom", "closeArtifact", "saveArtifactAs",
-    "openRepair", "init", "dispose",
+    "init", "dispose",
   ],
   Nav: ["go", "refresh", "currentScreen"],
   AppCloseGuard: ["prompt"],
