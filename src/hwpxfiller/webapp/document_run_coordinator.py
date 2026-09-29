@@ -65,9 +65,13 @@ class RunInputCapture:
     indices: tuple[int, ...]
     snapshot_generation: int
     work_ref: str
-    source_records: list[dict]
+    source_records: tuple[dict, ...]
     source_schema_keys: tuple[str, ...]
     output_directory: str
+    #: 잠금 시점 `JobDataSession.records` 리스트의 `id()` — source_records 를
+    #: 불변 스냅샷으로 고정한 뒤에도 "그 리스트가 재마운트로 통째로 바뀌었는가"를
+    #: 원본 별칭 없이 재현하기 위한 내부 표식이다(L-4). 읽기에는 쓰지 않는다.
+    source_records_identity: int = 0
 
 
 @dataclass(frozen=True)
@@ -183,9 +187,10 @@ class DocumentRunCoordinator:
             indices=tuple(indices),
             snapshot_generation=snapshot_generation,
             work_ref=work_ref,
-            source_records=records,
+            source_records=tuple(records),
             source_schema_keys=source_schema_keys,
             output_directory=output_directory,
+            source_records_identity=id(records),
         )
 
     def capture_now(
