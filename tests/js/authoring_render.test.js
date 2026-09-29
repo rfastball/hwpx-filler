@@ -1647,3 +1647,35 @@ test("범위 고르기: the toolbar toggle turns the editor's click pick on, a c
   assert.equal(editor.picks.at(-1), false);
   env.root.unmount();
 });
+
+test("#1077: switching document tabs with the properties panel open replaces the outline column — one outline, the active tab's rows, no duplicate keys", async () => {
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => { errors.push(args.map(String).join(" ")); };
+  try {
+    const hwpx = { ...hwpxTab(), trial_result: null, trial_state: "untried" };
+    const txt = { id: "b", name: "b.txt", media: "txt", path: "b.txt", revision: 0, values: {}, selected: {}, problems: [], cases: [], trial_state: "untried",
+      analysis: { revision: 5, fields: [{ name: "주소", count: 1, occurrences: [{ entry: "text", paragraph: 0, context: "둘째" }] }], slots: [] } };
+    const env = await boot(hwpx, [txt]);
+    const outlines = () => env.container.querySelectorAll("aside.authoring-outline");
+    const fieldNames = () => outlines().map((outline) => outline.querySelectorAll('#authoring-outline-fields-panel [data-kind="field"] .authoring-tree-name').filter((name) => name.closest('[role="treeitem"]').getAttribute("data-kind") === "field").map((name) => name.textContent));
+    // 속성 패널이 열린 채로(구조 행을 고른 뒤) 탭을 번갈아 누른다 — 사용자 보고의 순서다.
+    showFields(env);
+    await settle();
+    fire(env, fieldRow(env, "필드 · 이름").querySelector(".authoring-tree-row"), "click");
+    await settle();
+    assert.equal(env.controller.viewModel.getSnapshot().panel, "properties", "구조 행 누름은 속성 패널을 연다");
+    for (const [id, names] of [["b", ["주소"]], ["a", ["이름"]], ["b", ["주소"]], ["a", ["이름"]]]) {
+      fire(env, env.container.querySelector(`.authoring-tab[data-tab="${id}"]`), "click");
+      await settle();
+      assert.equal(env.snapshot().active_id, id);
+      assert.equal(outlines().length, 1, `탭 ${id}: 구조 열은 하나만 선다 — 옛 탭의 구조가 남지 않는다`);
+      assert.deepEqual(fieldNames(), [names], `탭 ${id}: 구조 열은 활성 탭의 필드를 보인다`);
+      assert.ok(env.container.querySelectorAll(".authoring-properties").length <= 1, "속성 패널도 하나 이하다");
+    }
+    assert.deepEqual(errors.filter((line) => line.includes("same key")), [], "몸통의 형제 열쇠는 겹치지 않는다");
+    env.root.unmount();
+  } finally {
+    console.error = original;
+  }
+});
