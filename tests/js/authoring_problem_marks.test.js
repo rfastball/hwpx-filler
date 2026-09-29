@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, problemNote } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, markerPairs, problemFix, txtProblemMarks } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, markerPairs, problemAction, problemFix, txtProblemMarks } from "../../frontend/src/screens/authoring.ts";
 import { lintpadDecorations, problemMarks, usableSpans } from "../../frontend/src/editorview/txt_lintpad.ts";
 
 // 원인 자리 문제(IDE-05 #1051) — TXT 문제 밑줄의 별도 층, 표지 짝 강조, 위치 줄 메시지(problems_here).
@@ -150,18 +150,35 @@ test("IDE-05: choosing a problem row keeps the 문제 tab, moves the editor, and
   assert.equal(problemFix(snapshot.tabs[0].problems, { type: "relink_field", start: 0, end: 7, name: "x" }), null, "문제 행동이 아닌 미리보기는 여기 서지 않는다");
 });
 
-test("IDE-05: a 누름틀 변환 action previews in the 문제 tab and confirms under its own name", async () => {
+test("IDE-05: a problem's command follows Python's confirm tier — 누름틀 변환 (none) applies at once, an enter-tier fix waits in 수정 제안 under its own name", async () => {
   const command = { type: "compile_token", entry: "Contents/section0.xml", paragraph_path: "/hs:sec/hp:p[5]", token_start: 12, name: "수요기관" };
-  const { controller, snapshot } = harness((action) => action === "preview" ? { before: "{{수요기관}}", after: "[ 수요기관 ]", content: "x", edits: [] } : {});
-  Object.assign(snapshot.tabs[0], { media: "hwpx", rhwp_editable: true, problems: [{ severity: "warning", category: "authoring", message: "평문으로 남은 필드 표기입니다.", target: "수요기관",
+  let tier = "none";
+  const { controller, snapshot, calls } = harness((action) => action === "preview"
+    ? { before: "{{수요기관}}", after: "[ 수요기관 ]", content: "변환본", edits: [], confirm: tier, label: "‘수요기관’ 누름틀 변환" } : action === "update" ? { revision: 1 } : {});
+  const problem = { severity: "warning", category: "authoring", message: "평문으로 남은 필드 표기입니다.", target: "수요기관",
     location: { entry: "Contents/section0.xml", paragraph: 4, start: 12, end: 20 },
-    actions: [{ label: "원문으로 이동", kind: "navigate" }, { label: "누름틀 변환", kind: "command", command }] }] });
+    actions: [{ label: "원문으로 이동", kind: "navigate" }, { label: "누름틀 변환", kind: "command", command }] };
+  Object.assign(snapshot.tabs[0], { media: "hwpx", rhwp_editable: true, problems: [problem] });
   await controller.activate("a");
+  const applied = [];
+  let body = "원본";
+  controller.attach("a", { decorate() {}, flush: async () => {}, content: async () => body, focus: async () => {},
+    apply: async (content, _edits, label) => { applied.push([content, label]); body = content; } });
   controller.update({ panel: "problems" });
   let markup = render(controller);
   assert.ok(markup.includes('<span class="authoring-problem-category">필드</span> 평문으로 남은 필드 표기입니다.'));
   assert.ok(markup.includes('<button type="button" class="btn">누름틀 변환</button>'), "행 곁의 보조 단추");
-  await controller.preview(command);
+  await problemAction(controller, snapshot.tabs[0], problem, problem.actions[1]);
+  let view = controller.viewModel.getSnapshot();
+  assert.deepEqual(applied, [["변환본", "compile_token"]], "확인 등급 none — 누르면 곧바로 바뀐다(한 번의 실행 취소)");
+  assert.equal(view.preview, null, "수정 제안은 서지 않는다");
+  assert.equal(view.panel, "problems", "문제 탭에 남는다");
+  assert.equal(calls.filter((call) => call.action === "preview").length, 2, "확정 직전에 revision 을 다시 검사한다");
+  tier = "enter";
+  body = "원본";
+  await problemAction(controller, snapshot.tabs[0], problem, problem.actions[1]);
+  view = controller.viewModel.getSnapshot();
+  assert.equal(applied.length, 1, "enter 등급은 확정 전까지 바꾸지 않는다");
   markup = render(controller);
   assert.ok(markup.includes('<pre role="group" aria-label="변경 후">[ 수요기관 ]</pre>'));
   assert.ok(markup.includes('<button type="button" class="btn primary">누름틀 변환</button>'));

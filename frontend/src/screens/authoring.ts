@@ -183,8 +183,12 @@ export function markerPairs(analysis: Obj): LintpadPair[] {
     .map((place: Obj) => ({ open: place.start, close: place.end - 1 }));
 }
 
-export function problemAction(controller: Pick<AuthoringController, "select" | "preview">, item: Obj, problem: Obj, action: Obj): Promise<unknown> {
-  return action.kind === "command" ? controller.preview(action.command) : controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target }, { keepDock: true });
+export async function problemAction(controller: Pick<AuthoringController, "select" | "preview" | "applyPreview">, item: Obj, problem: Obj, action: Obj): Promise<unknown> {
+  if (action.kind !== "command") return controller.select({ source_revision: item.revision, ...(problem.location || {}), target: problem.target }, { keepDock: true });
+  // 명령 행동도 Python 확인 등급(P-01)을 따른다 — `none`(예: 누름틀 변환)은 곧바로 적용하고, 그 밖은 문제 탭의 「수정 제안」에서 확정한다.
+  const prepared = await controller.preview(action.command);
+  if (prepared && !prepared.refusal && prepared.confirm === "none") await controller.applyPreview(prepared);
+  return prepared;
 }
 
 type MenuEvent = { clientX: number; clientY: number; anchorTop?: number; target?: unknown; preventDefault?(): void };
