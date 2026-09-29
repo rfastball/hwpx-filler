@@ -68,19 +68,9 @@ from ..application.template_change_product import (
 )
 from ..application.work_bootstrap import (
     BOOTSTRAP_OK,
-    EXECUTION_ALLOWED,
-    NEEDS_CONFIGURATION_REVIEW,
-    TEMPLATE_INITIALIZATION_REQUIRED,
     BootstrapOutcome,
-    evaluate_execution_provenance,
-)
-from ..application.slot_selection_input import SlotSelectionCaptureError
-from ..application.slotless_run_bridge import (
-    SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE,
-    SlotlessRunAdmissionError,
 )
 from ..application.work_template_state import (
-    INITIALIZATION,
     DocumentWork,
     PREP_CAPTURING,
     PREP_QUALIFYING,
@@ -90,15 +80,11 @@ from ..application.work_template_state import (
 from ..external.candidate_store import CandidateObjectStore
 from ..external.field_binding_store import (
     WorkFieldBindingStore,
-    WorkFieldBindingStoreError,
-    load_current_revision,
 )
-from ..external.slot_command_runner import admit_managed_slotless_run
 from ..external.work_configuration_store import (
-    WorkSlotConfigurationStore,
     WorkspaceMetadataStore,
 )
-from ..external.work_template_store import WorkAggregateNotFound, WorkTemplateStoreError
+from ..external.work_template_store import WorkAggregateNotFound
 from ..external.prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -108,7 +94,6 @@ from ..external.prepare_orchestration_runner import (
     run_qualification_stage,
 )
 from ..external.qualification_store import ObjectNotFound, QualificationObjectStore
-from ..host.staged_template import clear_run_staging
 from ..external.template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
@@ -140,8 +125,8 @@ class _BootstrapRefused(Exception):
     """초기 등록 실패 — 오류가 아니라 **종결된 판정**이라 모듈 밖으로 나가지 않는다.
 
     좀비 권위 롤백과 durable 실패 기록은 이미 끝난 상태로 오므로, 받는 쪽은 자기 경로의
-    어휘로 옮기기만 한다(확인은 ``{"ok": False, …}``, 생성은 ``SlotlessRunAdmissionError``,
-    자동 준비는 조용히 존에 맡긴다).
+    어휘로 옮기기만 한다(확인은 ``{"ok": False, …}``, 자동 준비는 조용히 존에 맡긴다). 생성은
+    착석이 세운 권위만 쓴다 — 권위가 서지 않은 작업은 managed 생성이 거절한다(#1081 PR2).
     """
 
     def __init__(self, outcome: BootstrapOutcome) -> None:
@@ -245,45 +230,6 @@ class _WorkStateReadPort:
             return None
 
 
-class _ExecutionConfigurationProvenance:
-    """실행 구성의 exact Template Application base를 기존 권위에서 복원한다.
-
-    INITIALIZATION Application 은 bootstrap 때 legacy 실행 구성을 함께 확립했으므로 그대로
-    허용한다. Apply 뒤에는 current Application 에 명시 확정된 Field Binding revision만 새
-    base가 된다. current revision 부재는 INITIALIZATION base를 유지해 NEEDS_CONFIGURATION,
-    저장소 손상은 UNKNOWN으로 닫아 NEEDS_CONFIGURATION_REVIEW가 되게 한다.
-    """
-
-    def __init__(
-        self,
-        works: "AtomicWorkTemplateStateStore",
-        field_bindings: "WorkFieldBindingStore",
-    ) -> None:
-        self._works = works
-        self._field_bindings = field_bindings
-
-    def resolve_base_template_application_id(self, work_id: str) -> "str | None":
-        if not self._works.exists(work_id):
-            return None
-        aggregate = self._works.load(work_id)
-        current_id = aggregate.work.current_template_application_id
-        current = find_application(aggregate, current_id)
-        if current.origin == INITIALIZATION:
-            return current_id
-        try:
-            revision = load_current_revision(
-                self._field_bindings, work_id, current_id
-            )
-        except (OSError, UnicodeError, WorkFieldBindingStoreError):
-            return None
-        if revision is not None:
-            return revision.base_template_application_id
-        for app in aggregate.applications:
-            if app.origin == INITIALIZATION:
-                return app.application_id
-        return None
-
-
 class TemplateChangeCoordinator:
     """job 화면이 소비하는 prepare/apply/query 서비스 — webview 비의존, 헤드리스 구동."""
 
@@ -298,9 +244,6 @@ class TemplateChangeCoordinator:
         self._root = Path(root)
         self._works = AtomicWorkTemplateStateStore(self._root / "works")
         self._field_bindings = WorkFieldBindingStore(self._root / "field_bindings")
-        self._generation_provenance = _ExecutionConfigurationProvenance(
-            self._works, self._field_bindings
-        )
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
         self._workspace = WorkspaceMetadataStore(self._root)
@@ -723,101 +666,6 @@ class TemplateChangeCoordinator:
             advanced.final_job_snapshot,
             advanced.current_application_id,
         )
-
-    def resolve_generation_template(self, job_name: str) -> str:
-        """managed Product Work 생성의 정본 템플릿 경로 — current Application 의 exact applied
-        Candidate bytes 를 staging 한 read-only 경로다(#681 G11).
-
-        mutable ``job.template_path`` 를 직접 소비하지 않는다: bootstrap-on-demand 로 Work·
-        current Application 을 세우고(첫 생성이 exact bytes 를 Candidate store 에 확립),
-        slotless admission gate(exact context·provenance·bytes 무결성)를 통과할 때만 staged
-        경로를 낸다. 실패는 fallback 없이 시끄럽게 오른다(confirm-or-alarm):
-        bootstrap 실패는 ``SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)``,
-        gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
-        EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
-        """
-        return self.resolve_generation_template_for_seated_context(job_name)
-
-    def generation_provenance_verdict(self, job_name: str) -> str:
-        """현재 생성 구성의 Template Application 출처 판정(read-only).
-
-        아직 Work가 없으면 실제 생성 경로의 bootstrap-on-demand가 provenance를 세우므로
-        허용한다. durable 권위 읽기가 실패하면 snapshot 전체를 깨지 않고 UNKNOWN 판정으로
-        닫는다. 이 조회는 bootstrap·staging·workspace 발급을 하지 않는다.
-        """
-        try:
-            job = load_job(self._registry, job_name)
-            work_id = job.authority_id or None
-            if not work_id or not self._works.exists(work_id):
-                return EXECUTION_ALLOWED
-            aggregate = self._works.load(work_id)
-            current_id = aggregate.work.current_template_application_id
-            base_id = self._generation_provenance.resolve_base_template_application_id(
-                work_id
-            )
-        except (OSError, UnicodeError, ValueError, WorkTemplateStoreError):
-            return NEEDS_CONFIGURATION_REVIEW
-        return evaluate_execution_provenance(base_id, current_id)
-
-    def resolve_generation_template_for_seated_context(
-        self,
-        job_name: str,
-        *,
-        on_context: "Callable[[Job, str], None] | None" = None,
-    ) -> str:
-        """생성 admission 전에 이미 확립된 Work/Application identity를 알린다."""
-        job = load_job(self._registry, job_name)
-        # **여기만 여전히 hwpx 전용이다**(S10-02 #859 범위 밖): 이 경로는 managed HWPX 문서
-        # 생성이 겨눌 staged 템플릿을 낸다. TXT 의 산출은 문서 생성이 아니라 작업대 복사라
-        # 물질화·복사 인수는 S10-04 소관이고, 그 전에 여는 것은 없는 기능을 있는 척하는 것이다.
-        if job.media != "hwpx":
-            raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
-        profile = _profile_for(job.media, "생성")
-        try:
-            # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
-            # Candidate/qualification object 를 남겨도, 템플릿을 고쳐 다시 누르면 새 id 로 재부트스트랩
-            # 된다(고정 id 면 ObjectAlreadyExists 로 복구 불가). 진짜 중복 클릭은 generation_lock 이
-            # 막으므로 여기서 재전송-멱등을 따로 지킬 필요가 없다.
-            work_id, job = self._seat_bootstrapped_work(
-                job_name, profile, f"gen-{uuid.uuid4().hex}"
-            )
-        except _BootstrapRefused as exc:
-            # 확인 경로와 **같은 규율**이다(#804): 문을 확인 쪽에서만 닫으면 같은 막다른 길이
-            # 「문서 만들기」로 다시 열린다.
-            raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED) from exc
-        aggregate = self._works.load(work_id)
-        if on_context is not None:
-            job = load_job(self._registry, job_name)
-            if job.authority_id != work_id:
-                raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
-            on_context(job, aggregate.work.current_template_application_id)
-        ws = self._workspace.get_or_create(self._now())
-        try:
-            run = admit_managed_slotless_run(
-                WorkSlotConfigurationStore(self._root / "slot_configs"),
-                _WorkStateReadPort(self._works),
-                self._quals, self._candidates, self._candidates,
-                self._generation_provenance,
-                str(self._root),
-                workspace_instance_id=ws,
-                expected_work_authority_id=work_id,
-                expected_template_application_id=aggregate.work.current_template_application_id,
-                captured_at=self._now(),
-            )
-        except SlotSelectionCaptureError as exc:
-            # slot-bearing 이고 slot config 가 미완이면 capture 가 admit 앞에서 SLOT_CONFIGURATION_
-            # INCOMPLETE 로 던진다 — 구조화된 제품 상태로 번역한다(raw 예외가 프런트로 새지 않게).
-            raise SlotlessRunAdmissionError(
-                SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE, str(exc)
-            ) from exc
-        return run.staged_template_path
-
-    def clear_generation_staging(self) -> None:
-        """run 이 끝나 아무 실행도 staged 경로를 참조하지 않을 때 staging 사본을 정리한다
-        (#681 「cleanup 은 Host lifecycle 소유」). content-addressed 라 다음 run 이 다시
-        stage 하므로 run 뒤 지우는 것은 안전하다 — 안 지우면 판본마다 read-only 사본이 영구
-        누적된다."""
-        clear_run_staging(self._root)
 
     def source_drift(self, job_name: str) -> SourceDrift:
         """부트스트랩된 Work 의 현재 원본 파일 bytes ↔ 캡처된 applied Candidate bytes 대조.

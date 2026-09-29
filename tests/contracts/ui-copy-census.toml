@@ -843,10 +843,6 @@ text = "적용할 수 있는 변경사항이 있습니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
-text = "템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. 어긋난 필드:"
-
-[[sentence]]
-file = "frontend/src/screens/job_run.ts"
 text = "템플릿 상태를 확인해 주세요."
 
 [[sentence]]
@@ -856,10 +852,6 @@ text = "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없�
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
 text = "템플릿을 수정하거나 다시 연결한 뒤 확인하세요."
-
-[[sentence]]
-file = "frontend/src/screens/job_run.ts"
-text = "파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. 남는 토큰:"
 
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
@@ -2375,6 +2367,10 @@ text = "'공고서_연습' 행의 더보기에서 누름틀 변환을 확인하�
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"
+text = "'문서 만들기'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'문서 만들기'에서 이번에 쓸 데이터를 고르세요."
 
 [[sentence]]
@@ -2388,10 +2384,6 @@ text = "'새 작업'에서 '계약체결안내'를 '이 템플릿으로' 고르�
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"
 text = "'오류연습_보증금' TXT 작업을 저장하며 비움 확정을 지나세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_state.py"
-text = "'이 작업으로 문서 생성'을 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"
@@ -3039,19 +3031,11 @@ text = "· 확인 시점 {}건과 다릅니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/job_presentation.py"
-text = "문서를 만들지 못했습니다. 대상 {}건이 모두 생성되지 않았습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/job_presentation.py"
 text = "빈 값 {}칸이 있습니다. 문서에는 미입력 표식이 들어갑니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/job_presentation.py"
 text = "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 TXT 템플릿을 선택하고 저장하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/job_presentation.py"
-text = "중단했습니다. 완료 {}/{}건(성공 {}, 실패 {}), 미착수 {}건. 완료된 문서는 그대로 유지됩니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/live_run.py"
@@ -3084,23 +3068,11 @@ legacy = true
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/managed_run_result.py"
-text = "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/managed_run_result.py"
-text = "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/managed_run_result.py"
 text = "완료. 성공 {}/{}, 실패 1. 문서는 만들었지만 만든 뒤 다시 읽어 확인하는 데 실패했습니다({}). 해당 파일을 직접 열어 내용을 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/managed_run_result.py"
 text = "완료. 성공 {}/{}, 실패 1. 미착수 {}건 — 앉은 문서는 그대로 유지됩니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/managed_run_result.py"
-text = "이 작업의 문서 구성이 아직 확립되지 않았습니다. '템플릿 변경사항 확인'을 먼저 실행한 뒤 다시 시도하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/managed_run_result.py"
@@ -3112,16 +3084,7 @@ text = "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 �
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/managed_run_result.py"
-text = "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/managed_run_result.py"
 text = "중단했습니다. 시도 {}/{}건 — 안착 전이라 문서는 만들지 않았습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/managed_run_result.py"
-text = "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다."
-legacy = true
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/mapping_verbs.py"
@@ -3437,10 +3400,6 @@ text = "문서 작업이 변경되어 선택을 해제했습니다. 문서 작�
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "문서 작업이 변경되어 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "문제 데이터의 항목 위치를 복원할 수 없습니다."
 
 [[sentence]]
@@ -3474,10 +3433,6 @@ text = "범위를 편집하세요"
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
 text = "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. 문서 만들기를 다시 실행하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
-text = "생성을 진행할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
@@ -3904,15 +3859,7 @@ text = "현재 문서 작업과 템플릿이 맞지 않아 포함할 내용을 �
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/template_change.py"
-text = "HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
 text = "actor {} 는 이 Work 에 접근할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "문서 작업 권위를 다시 확인할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/template_change.py"

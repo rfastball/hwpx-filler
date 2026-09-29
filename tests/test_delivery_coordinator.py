@@ -23,6 +23,7 @@ from hwpxfiller.application.generation_delivery import (
 )
 from hwpxfiller.domain.fields import FillNote
 from hwpxfiller.external.delivery_coordinator import (
+    DELIVERY_WRITE_FAILED,
     DeliveryAborted,
     DeliveryCompleted,
     DeliveryContractError,
@@ -178,6 +179,45 @@ def test_interloper_at_write_new_target_aborts_without_destroying_it(tmp_path) -
     assert (out / "먼저.hwpx").read_bytes() == b"D0"  # 이미 앉은 문서는 유효
     assert [d.item_ordinal for d in result.delivered] == [0]
     assert not (out / "이후.hwpx").exists()  # 실패 이후는 손대지 않는다
+
+
+def test_os_write_failure_aborts_with_the_documents_already_delivered(
+    tmp_path, monkeypatch
+) -> None:
+    """쓰기 자체의 OS 오류(한글이 연 파일·권한·디스크)도 예외로 올리지 않고 사실대로 멈춘다.
+
+    항목별 원자라 실패한 항목은 쓰이지 않았고 앞 항목들은 앉았다 — 예외로 올리면 앉은 문서의
+    사실과 결과 서사가 함께 사라진다(#1081 PR2, legacy 결과가 알리던 「파일이 열려 있음」 경로).
+    원문 오류는 detail 이 그대로 나른다.
+    """
+    import hwpxfiller.external.delivery_coordinator as coordinator
+
+    real = coordinator.write_bytes_atomic_exclusive
+
+    def locked_second(target, data):
+        if str(target).endswith("잠김.hwpx"):
+            raise PermissionError(13, "다른 프로세스가 파일을 사용 중입니다")
+        return real(target, data)
+
+    monkeypatch.setattr(coordinator, "write_bytes_atomic_exclusive", locked_second)
+    out = tmp_path / "out"
+    out.mkdir()
+    result = deliver_current_documents(
+        resolved=_resolved(
+            out,
+            _item(0, "먼저.hwpx", WRITE_NEW),
+            _item(1, "잠김.hwpx", WRITE_NEW),
+            _item(2, "이후.hwpx", WRITE_NEW),
+        ),
+        ordered_outcomes=[_doc(b"D0"), _doc(b"D1"), _doc(b"D2")],
+    )
+    assert isinstance(result, DeliveryAborted)
+    assert result.code == DELIVERY_WRITE_FAILED
+    assert result.failed_item_ordinal == 1
+    assert "사용 중" in result.detail
+    assert (out / "먼저.hwpx").read_bytes() == b"D0"
+    assert [d.item_ordinal for d in result.delivered] == [0]
+    assert not (out / "잠김.hwpx").exists() and not (out / "이후.hwpx").exists()
 
 
 # ═══ 계약 밖 입력은 loud 예외 ═════════════════════════════════════════════════════════

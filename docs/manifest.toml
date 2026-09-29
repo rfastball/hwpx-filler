@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "eff566eb60021948f83534706df5dfbd1fd578b2da97ecdbfa7dd951cfdb37a4"
+source_sha256 = "68f7250d4554c5ea76c0640fb342e2b691a7a916037e2bbd350c09c72f622f2b"
 body_sha256 = "6be19e5da8613a5634996f6c4af5eb76650ef2e396e6c46aae84ec19da23f04c"
 
 [[document]]
@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "7aa9948a5f4bcc3b431baa5dfd498d2d1c55677e39ff7ff95e37040b36fe1716"
+source_sha256 = "785f0cfaa8ca4c8596695113f2d0763fc818e0bc0ed490bf2fa61109b5f9db47"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
-source_sha256 = "4d75f75f48931e3593763baf5abf2ac343bfd6d91cbe8764e3893eb76bdf0f11"
+source_sha256 = "6447efdd9c19b1211ce4cfe9587d5873e71929cf1e68514a782214ad4d6266a5"
 body_sha256 = "692faf62c7adb2e926525b1a70b88c31a2ab9c013e873d3a192d64400f757b26"
 
 [[topic]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "14646500e8f3c653fd8d61aef3ca4fd5bc006bc3f6d47b6df5e5d3bf67ecb6cc"
+source_sha256 = "19382324eef417ff838075ba369b2f52e3393851154989e09569c4c8f375c1d3"
 body_sha256 = "e8b8c1342d4f20d6ab2ea754b83d571f49f589047388a8b5b1ebc6c9d8b4dc9a"
 
 [[topic]]
@@ -201,7 +201,7 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "b695354481ccaffa481ab4dde5437991b7e29642abd9b062555be1f6f3042065"
+source_sha256 = "2ed32fc22ba51854426249f65f5f803b1d461ef36feca56f226c63c370ecb7e4"
 body_sha256 = "7a6813ecc90d2322df471d88bec96e8ae6e5a3d3a0da1a2524370f98eaabff4c"
 
 [[topic]]
@@ -209,15 +209,15 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "a8bfd88a61f2889a4511d1efe60d7bc87c6e45fb1dc7819a7123df79b49e353f"
-body_sha256 = "4f9b72e9aee48c8a29917a4041b7d8f15786fe60fbb290e805ce9e15d63d643f"
+source_sha256 = "dfe310588d80e099741515ce64b158f2f5c521ca6965dc35f91e90c4da9da8ff"
+body_sha256 = "8050d02b39ce57a05bb904927be767d5b51d2a1b7b28992b433d81c607dc6a70"
 
 [[topic]]
 id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py"]
-source_sha256 = "0269e95db49bb0094d5c07ee2c838d321a36849b9a273152a50b600d612393f0"
+source_sha256 = "683f98f56f24f5858d827323f572e7b86495bb23d535f4cbfab41e5d5e3b6229"
 body_sha256 = "9f8381b7c374c61c69c267c1f1783cac77f2e26fc0caa4df1b7037559996adc3"
 
 [[topic]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "36d726d39609d34c57e89f891cb6418c027c0fabfae6a38286cefae591904b38"
+source_sha256 = "d87872396da18bda3b61d8597c77697177d97a41515ff4dc04b37015b8705ebf"
 body_sha256 = "3edd755e13396e4273390dc354498112a53e6555c711b1b5644db15c69cd4b3d"
 
 [[topic]]

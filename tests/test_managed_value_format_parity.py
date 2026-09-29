@@ -1,4 +1,4 @@
-"""legacy·managed 가 같은 작업에서 **같은 문서**를 낸다 — 값 표시형 동등성 (#1081 PR0b).
+"""legacy·managed 가 같은 작업에서 **같은 문서**를 낸다 — 값 표시형 동등성 (#1081 PR0b·PR2).
 
 legacy 생성은 Mapping 의 ``type``·``fmt`` 로 값을 서식한다(``24750000`` → ``24,750,000원``).
 field-binding/v2 는 그 ``type`` 을 버려서 managed 경로가 같은 작업에서 서식 없는 값을 냈다.
@@ -6,8 +6,11 @@ v3 는 표시형 kind 를 판본에 싣고 legacy 와 같은 해석기로 렌더
 제품 조립(:class:`WebFrontend`)과 동봉 예제로 고정한다: 한 작업을 legacy 로 한 번, managed 로
 한 번 만들고 두 문서의 ``Contents/section0.xml`` 이 byte 동일한지 본다.
 
-slot 없는 예제는 오늘 legacy 로 간다. managed 갈래 술어만 갈아 끼워(라우팅은 PR2 몫) 같은
-Work·같은 판본·같은 데이터가 두 경로를 지나게 한다.
+PR2 부터 GUI 의 HWPX 문서 생성은 managed 하나다 — slot 없는 동봉 예제도 술어를 갈아 끼우지
+않고 **제품 경로 그대로** managed 로 간다. legacy 쪽은 GUI 에서 사라졌으므로 legacy 생성
+유스케이스(:func:`plan_generation`·:func:`run_generation`, CLI 가 아직 쓰는 그 경로)를 같은
+작업 세션의 실행뷰·데이터·선택으로 직접 불러 비교 기준을 만든다(PR3 에서 legacy 가 삭제되면
+이 비교도 함께 은퇴한다).
 """
 from __future__ import annotations
 
@@ -18,7 +21,11 @@ import pytest
 
 from _output_folder_pick import pick_output_folder
 
+from hwpxfiller.application.generation import plan_generation, run_generation, start_run
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.host.locations import home_dir
+from hwpxfiller.viewmodel.run_state import RunDataInput
 
 WORK = "동등성"
 
@@ -74,6 +81,29 @@ def _sections(out: Path) -> dict[str, bytes]:
     return result
 
 
+def _legacy_generate(job_ctrl, out: Path) -> None:
+    """같은 작업 세션(실행뷰·데이터·선택)으로 legacy 생성 유스케이스를 직접 부른다."""
+    vm = job_ctrl.work.vm
+    data = RunDataInput(job_ctrl.data.datasource, tuple(job_ctrl.data.records))
+    decision = plan_generation(
+        vm,
+        data,
+        job_ctrl.data.selected_indices(),
+        str(out),
+        now=job_ctrl._clock(),
+        existing_outputs=existing_output_paths,
+    )
+    assert decision.rejection is None and decision.plan is not None, decision
+    outcome = run_generation(
+        start_run(None, job_name=WORK),
+        decision.plan,
+        engine=make_hwpx_engine(),
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
+    )
+    assert outcome.completed and outcome.failed == 0, outcome
+
+
 @pytest.mark.parametrize(
     ("template", "data", "overrides", "expected_texts"),
     [
@@ -90,6 +120,8 @@ def _sections(out: Path) -> dict[str, bytes]:
             },
             ["41,200,000"],
         ),
+        # 다른 slot 없는 동봉 예제 — 편집기 제안 그대로(제안이 못 이은 칸은 표식).
+        ("구매추진안내.hwpx", "계약목록.csv", {}, []),
     ],
 )
 def test_legacy_and_managed_write_identical_section_xml(
@@ -100,18 +132,17 @@ def test_legacy_and_managed_write_identical_section_xml(
     job = app.controllers["job"]
     app.dispatch("job", "select_job", {"name": WORK})
     app.dispatch("job", "set_all", {})
-    assert job.snapshot()["managed_hwpx"] is False, "전제: slot 없는 예제는 legacy 갈래"
+    snapshot = job.refresh_panel()
+    assert snapshot["managed_hwpx"] is True, "slot 없는 예제도 managed 하나로 간다(#1081 PR2)"
+    assert not snapshot["slot_configuration"]["current_view"]["projection"]["slots"], (
+        "전제: slot 없는 예제"
+    )
 
     legacy_out = tmp_path / "legacy"
-    pick_output_folder(job, legacy_out)
-    legacy = app.generate("job")
-    assert legacy["ok"] is True and legacy["status"] == "completed", legacy
+    _legacy_generate(job, legacy_out)
 
-    # 같은 Work 를 managed 갈래로 보낸다 — 판정 술어만 바꾸고(라우팅은 PR2) 나머지는 실제 조립.
-    job.execution.is_managed_hwpx = lambda _ref, j: bool(j.media == "hwpx" and j.authority_id)
     managed_out = tmp_path / "managed"
     pick_output_folder(job, managed_out)
-    app.dispatch("job", "resolve_execution", {})
     managed = app.generate("job")
     assert managed["ok"] is True and managed["status"] == "completed", managed
     assert "delivered" in managed, "전제: managed 파이프라인이 문서를 앉혔다"

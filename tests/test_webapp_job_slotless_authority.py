@@ -1,14 +1,13 @@
-"""slotless HWPX 작업이 authority id 를 획득한 뒤의 명령 좌표 정렬(#905).
+"""slot 없는 HWPX 작업의 문서 생성 좌표 — 권위를 가진 slot 없는 작업은 managed 작업이다.
 
-S6-05(#812)는 「관리 작업인가」를 `bool(authority_id)` → **slot 보유**로 좁혔지만 이관이
-스냅샷 파생·실행 분기에서 멈췄다. 미리보기 열기·승인·저장 폴더 지정 셋은 옛 축에 남아,
-같은 스냅샷이 모순을 말했다: `managed_hwpx=False` 라 프런트는 활성 「생성 값 미리보기」를
-그리는데 그 버튼은 관리 분기로 들어가 거짓 사유로 거절했다.
+#905 는 `bool(authority_id)` 와 「slot 보유」 두 축이 같은 스냅샷에서 모순을 말하던 결함이었다
+(S6-05 #812 가 slot 없는 작업을 legacy 로 보낸 뒤 명령 좌표 일부가 옛 축에 남았다). 문서 생성이
+managed 하나가 되며(#1081 PR2) 그 두 축은 하나로 합쳐졌다: HWPX ∧ 작업 권위면 managed 이고,
+slot 유무는 생성 경로를 가르지 않는다.
 
-여기가 재는 것은 그 **모순의 부재**다. 그러려면 형상이 실제로 slotless 여야 하므로 관리
+여기가 재는 것은 그 **합쳐진 좌표**다. 그러려면 형상이 실제로 slotless 여야 하므로 관리
 Product 를 미주입으로 우회하지 않는다 — 실 `SlotConfigurationProduct` 를 코디네이터와 **같은
-authority root** 로 배선해 projection 이 「구간 0개」를 스스로 말하게 한다. 술어가 미주입으로
-False 인 것과 slot 이 없어서 False 인 것은 다른 사실이고, 결함이 산 자리는 후자다.
+authority root** 로 배선해 projection 이 「구간 0개」를 스스로 말하게 한다.
 
 slot 보유 관리 작업의 관리 분기는 `test_webapp_job_binding_review.py` 가 소유한다.
 """
@@ -22,9 +21,9 @@ from _output_folder_pick import pick_output_folder
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.viewmodel.tutorial_state import Milestone
 from hwpxfiller.webapp.screen_job import JobController
+from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
@@ -50,8 +49,6 @@ def _slotless_controller(tmp_path: Path):
         reg,
         lambda screen, snap: None,
         clock=_clock(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
@@ -59,6 +56,7 @@ def _slotless_controller(tmp_path: Path):
         pool_source_factory=source_from_pool_item,
         template_change=TemplateChangeCoordinator(reg, root=root, clock=_clock()),
         slot_configuration=SlotConfigurationProduct(reg, root=root, clock=_clock()),
+        seal_execution=SealExecutionPlanService(reg, root=root, clock=_clock()),
         workbench_observation=WorkbenchObservationProduct(),
         tutorial=notify,
     )
@@ -71,89 +69,57 @@ def _seated(ctrl, tmp_path: Path) -> None:
     ctrl.dispatch("set_all", {})
 
 
-def _mint(ctrl) -> None:
-    """문서를 만들지 않고 권위 id 만 발급시킨다 — 발급은 생성 **성사 전**이라 가능하다.
+def test_seating_mints_the_authority_and_a_slotless_work_is_a_managed_work(
+    tmp_path: Path,
+) -> None:
+    """착석이 권위 id 를 발급하고(#932 B5), 권위를 가진 slot 없는 작업은 managed 작업이다.
 
-    #957 로 빈 값이 더는 실행을 막지 않으므로, 뒤 단계가 「아직 아무것도 안 만든 상태」를
-    전제하는 자리에서는 살아 있는 가드(선택 0건)로 성사만 막는다.
-    """
-    ctrl.dispatch("set_none", {})
-    assert ctrl.generate()["ok"] is False
-    ctrl.dispatch("set_all", {})
-
-
-def test_first_generate_mints_the_authority_id_of_a_slotless_work(tmp_path: Path) -> None:
-    """mint 고리 — 「변경사항 확인」을 누른 적 없어도 **첫 생성**이 권위 id 를 발급한다.
-
-    좌표는 `screen_job._resolve_managed_template` → `TemplateChangeCoordinator.
-    resolve_generation_template_for_seated_context` → `_work_id_for(create=True)` →
-    `application.jobs.ensure_job_authority_id` 다. 발급은 생성 **성사 전**에 일어나므로
-    (여기서는 선택 0건 가드가 그 뒤에 닫는다) 사용자는 한 번도 성공하지 않고도 발급된
-    작업을 손에 쥔다 — #905 가 튜토리얼 전용이 아닌 이유가 이것이다.
+    종전엔 첫 생성이 권위를 발급했고(`_resolve_managed_template`), 발급 뒤에도 slot 이 없으면
+    managed 가 아니었다. 그 두 사실은 함께 사라졌다(#1081 PR2) — 판정의 원천은 HWPX ∧ 권위다.
+    projection 은 여전히 「구간 0개」를 스스로 말한다(미주입 우회가 아니다).
     """
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
-    pick_output_folder(ctrl, tmp_path / "out")
-    # 착석이 준비를 지게 된 뒤로(#932 B5) 이 고리는 「준비가 없던 작업의 첫 생성」에서만
-    # 재진다 — 고리 자체(발급이 성사 전에 일어난다)는 그대로라 상태만 명시로 되만든다.
-    ctrl.registry.mutate("공고서", lambda job: setattr(job, "authority_id", ""))
-    if ctrl.work.vm is not None:
-        ctrl.work.vm.job.authority_id = ""
-    assert ctrl.registry.load("공고서").authority_id == ""
-    ctrl.dispatch("set_none", {})
 
-    rejected = ctrl.generate()
-
-    assert rejected["ok"] is False and "최소 1건" in rejected["error"]
-    assert not list((tmp_path / "out").glob("*.hwpx"))
     assert ctrl.registry.load("공고서").authority_id.startswith("w-")
-    # 발급됐어도 관리 작업이 아니다 — 판정의 원천은 slot 보유이고, projection 이 그 사실을
-    # 스스로 말한다(미주입 우회가 아니라 「구간 0개」).
     view = ctrl.execution.slot_configuration.current_slot_configuration_view("공고서")
     projection = view.current_view.projection
     assert projection is not None and projection.slots == ()
-    assert ctrl.snapshot()["managed_hwpx"] is False
+    assert ctrl.refresh_panel()["managed_hwpx"] is True
 
 
-def test_generation_after_the_mint_needs_no_approval_detour(tmp_path: Path) -> None:
-    """발급 뒤 곧바로 생성이 선다 — 사이에 승인이라는 관문이 없다(#957).
+def test_generation_needs_no_approval_detour(tmp_path: Path) -> None:
+    """착석 뒤 곧바로 생성이 선다 — 사이에 승인이라는 관문이 없다(#957).
 
     종전 이 자리는 「광고된 미리보기가 실제로 열린다」(#905 ①)와 「승인이 성립한다」(②)를
     쟀다. 그 표면과 승인 축이 통째로 철거됐으므로 지금 재는 것은 **우회로의 부재**다:
-    발급이 성사된 상태에서 아무 확인 왕복 없이 문서가 난다.
+    아무 확인 왕복 없이 문서가 난다.
     """
     ctrl, seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     out = tmp_path / "out"
     pick_output_folder(ctrl, out)
-    _mint(ctrl)
     seen.clear()
-    assert ctrl.registry.load("공고서").authority_id != ""
-    assert ctrl.snapshot()["managed_hwpx"] is False
 
     result = ctrl.generate()
 
-    assert result["ok"] is True and result["succeeded"] == 2
+    assert result["ok"] is True and result["succeeded"] == 2, result
     assert len(list(out.glob("*.hwpx"))) == 2
     # 생성 완주 마일스톤은 그대로 선다(#941 동결 seam) — 사라진 것은 승인 사건뿐이다.
     assert str(Milestone.GENERATE) in seen
 
 
-def test_folder_picked_after_the_mint_is_where_the_documents_land(tmp_path: Path) -> None:
-    """저장 폴더 지정이 legacy 실행이 읽는 축에 들어간다 — 조용히 무시되지 않는다.
+def test_folder_picked_later_is_where_the_documents_land(tmp_path: Path) -> None:
+    """나중에 고른 저장 폴더가 배달 계획이 읽는 축에 들어간다 — 조용히 무시되지 않는다.
 
-    옛 축에서는 발급 뒤의 지정이 delivery intent(관리 면이 읽는 값)로 들어가고 legacy 생성이
-    보는 ``out_dir`` 는 도출 기본값 그대로였다. 사용자가 고른 폴더가 아닌 곳에 문서가 나는
-    것은 「조용히 틀리지 않는다」의 정면 위반이라, 여기서는 **파일이 난 자리**로 잰다.
-
-    전역화 뒤 그 갈래 분기 자체가 없다 — 두 축이 같은 도출을 지나므로 발급 전후가 같은 값을
-    본다. 그래도 이 테스트는 남는다: 계약은 분기의 부재가 아니라 「고른 폴더에 문서가
-    난다」이고, 그것을 재는 자리는 여전히 파일이 난 자리다.
+    옛 축에서는 발급 뒤의 지정이 delivery intent 로 들어가고 legacy 생성이 보는 ``out_dir`` 는
+    도출 기본값 그대로였다. 사용자가 고른 폴더가 아닌 곳에 문서가 나는 것은 「조용히 틀리지
+    않는다」의 정면 위반이라, 여기서는 **파일이 난 자리**로 잰다.
     """
     ctrl, _seen = _slotless_controller(tmp_path)
     _seated(ctrl, tmp_path)
     pick_output_folder(ctrl, tmp_path / "first")
-    _mint(ctrl)
+    ctrl.refresh_panel()  # 첫 폴더로 배달 준비가 한 번 선 뒤에 바꾼다
 
     picked = tmp_path / "picked"
     pick_output_folder(ctrl, picked)

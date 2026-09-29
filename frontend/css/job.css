@@ -8,16 +8,13 @@
    portal target 의 **속성은 React 가 만지지 않으므로**(children 만 들어간다) 「이 존이
    없는 축」 판정은 자리를 비우는 것으로 말하고 CSS 가 그것을 접는다. 조건 열거가 아니라
    빈 자리 하나가 규칙이라 새 갈래가 생겨도 여기가 늘지 않는다. */
-#jobPreflight:empty,#jobDeliveryZone:empty,#jobOutFolderRow:empty{display:none}
-/* 저장 폴더 표시 줄(전역화 뒤의 `#jobOutRow` 후계) — 고르는 칸·단추가 사라져 한 줄에 나란히
-   놓을 것이 없다. 사유 문안은 경로 **아래**에 서야 읽히므로 이 행만 세로로 눕힌다. */
-#jobOutFolderRow{flex-direction:column;align-items:flex-start;gap:var(--sp-4)}
+#jobPreflight:empty,#jobDeliveryZone:empty{display:none}
 /* 조치가 있을 때만 서는 두 구획(#932 B5 템플릿 존 · U4 13번 「포함할 내용」)의 자리도 같은
    규칙으로 접는다 — 술어가 거짓이면 React 는 children 을 비울 뿐이고, `.zone` 의 안쪽 여백과
    `.zone + .zone` 구분선은 그대로 남아 **빈 상자**가 선다. 숨긴다고 판정해 놓고 자리만 남기면
    사용자가 보는 것은 「사라진 구획」이 아니라 「비어 있는 구획」이다. */
 #jobTplChangeZone:empty,#jobContentSelectionZone:empty,#jobWorkbenchStatusZone:empty{display:none}
-#jobRunZone:has(#jobRunCap:empty):has(#jobOutFolderRow:empty){display:none}
+#jobRunZone:has(#jobRunCap:empty){display:none}
 /* 사전검증 slot은 기존 조판에 새 상자를 만들지 않는다. */
 #jobPreflight{display:contents}
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
@@ -36,14 +33,9 @@
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
 .tbwrap{overflow-x:auto}
-/* ── 위험 배너(`#jobMirror`) — 구조 드리프트·미해소 토큰은 편집에 가야 풀린다. 존 재편에서
-   구 「본문 확인」 존의 요약 한 줄(`.mirline`·`.mir-blank-flag`·`.mirempty`)은 사전검증과
-   같은 사실의 두 번째 발화라 걷혔고, 배너는 그 사전검증 **바로 아래**로 내려왔다. 남는
-   규칙은 배너 하나다 — 차단 사유 + 상시 행동 링크(결정 36·S9, 막다른 경보 금지). ── */
-.mir-drift{background:var(--fb-missing-bg);border:1px solid var(--a-danger);border-radius:var(--rad-surface);
-  padding:var(--sp-10) var(--sp-12);margin-top:var(--sp-10);display:flex;flex-direction:column;
-  gap:var(--sp-8);align-items:flex-start}
-.mir-drift p{margin:0;color:var(--a-danger)}
+/* 위험 배너(`#jobMirror` · `.mir-drift`)는 legacy HWPX 생성 갈래의 표면이라 문서 생성이
+   managed 하나가 되며(#1081 PR2) 규칙째 걷혔다 — 구조·파일 이름 사유는 작업대 관찰·배달
+   계획이 말한다. */
 /* 구 재진술 블록의 `.defblk`·`.defblk .dl` 은 산출자가 0 이 되어 함께 걷혔다(#325 — 남은
    규칙은 그 표면이 아직 산다고 읽힌다). */
 

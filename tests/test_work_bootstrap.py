@@ -26,11 +26,7 @@ from hwpxfiller.application.template_qualification import (
 )
 from hwpxfiller.application.work_bootstrap import (
     BOOTSTRAP_OK,
-    EXECUTION_ALLOWED,
-    NEEDS_CONFIGURATION,
-    NEEDS_CONFIGURATION_REVIEW,
     TEMPLATE_INITIALIZATION_REQUIRED,
-    evaluate_execution_provenance,
 )
 from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
@@ -214,19 +210,3 @@ def test_legacy_aggregate_without_migration_key_decodes(tmp_path):
     data = encode_aggregate(wstore.load("W1"))
     del data["migration_provenance"]
     assert decode_aggregate(data).migration_provenance is None
-
-
-# ─── 실행 provenance guard ─────────────────────────────────────────────────────
-
-def test_guard_allows_matching_base():
-    assert evaluate_execution_provenance("A18", "A18") == EXECUTION_ALLOWED
-
-
-def test_guard_blocks_stale_base():
-    # Config base A17 인데 Work 는 A18 로 전진 → 실행 차단(완료 시점 rebase 금지).
-    assert evaluate_execution_provenance("A17", "A18") == NEEDS_CONFIGURATION
-
-
-def test_guard_blocks_unknown_provenance():
-    # provenance 증명 불가(None) → bootstrap A1 에 자동 귀속하지 않고 review 요구.
-    assert evaluate_execution_provenance(None, "A1") == NEEDS_CONFIGURATION_REVIEW

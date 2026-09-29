@@ -23,7 +23,6 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.external.settings import load_last_data_source, save_last_data_source
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
@@ -142,28 +141,50 @@ def _deps(tmp_path, lock: "threading.Lock | None" = None):
     return {
         **_FACTORIES,
         "clock": _clock(),
-        "existing_outputs": existing_output_paths,
-        "ensure_output_dir": ensure_output_directory,
         "engine": make_hwpx_engine(),
         "pool_registry": DatasetPoolRegistry(tmp_path / "pool"),
         "generation_lock": lock if lock is not None else threading.Lock(),
     }
 
 
-def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_for_path):
+def _controller(
+    tmp_path, *, reviewed: bool = True, file_source_factory=source_for_path, managed: bool = False
+):
+    """``managed=True`` 면 실제 앱처럼 작업 권위·구성·봉인·작업대 관찰을 **같은 authority root**
+    (테스트별 ``HWPXFILLER_HOME``)로 배선한다 — HWPX 문서 생성은 managed 하나라(#1081 PR2) 문서를
+    만드는 테스트는 이 배선을 쓴다. 그 밖(데이터·선택·후보·필터…)은 가벼운 기본 배선이다."""
     pushes: list = []
+    reg = _registry(tmp_path, reviewed=reviewed)
+    extra: dict = {}
+    if managed:
+        extra = _managed_services(reg)
     ctrl = JobController(
-        _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
+        reg, lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
         file_source_factory=file_source_factory,
         pool_source_factory=source_from_pool_item,
+        **extra,
     )
     return ctrl, pushes
+
+
+def _managed_services(reg, root=None) -> dict:
+    """앱 조립(`WebFrontend`)과 같은 서비스 한 벌 — root 기본값은 테스트별 앱 홈의 authority 폴더."""
+    from hwpxfiller.host.locations import default_template_authority_dir
+    from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+    from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
+    from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
+
+    root = default_template_authority_dir() if root is None else root
+    return {
+        "template_change": TemplateChangeCoordinator(reg, root=root, clock=_clock()),
+        "slot_configuration": SlotConfigurationProduct(reg, root=root, clock=_clock()),
+        "seal_execution": SealExecutionPlanService(reg, root=root, clock=_clock()),
+        "workbench_observation": WorkbenchObservationProduct(),
+    }
 
 
 def _data_csv(tmp_path) -> str:
@@ -180,6 +201,17 @@ def _mount_all(ctrl, path, *, sheet=None) -> None:
     if selected_work and not ctrl.work.name:
         ctrl.dispatch("select_job", {"name": selected_work})
     ctrl.dispatch("set_all", {})
+
+
+def _rebind(ctrl, path: str, name: str = "공고서") -> None:
+    """작업의 결속을 ``path`` 로 옮긴다 — 자유 마운트 시나리오가 **문서까지 만드는** 경우용.
+
+    `_unbind` 는 재선택 되튐을 끄지만 managed 생성은 결속된 데이터를 요구한다(CONNECT_DATA,
+    #1081 PR2). 마운트할 데이터에 결속하면 되튐도 없고 생성도 선다.
+    """
+    ctrl.registry.save(
+        replace(ctrl.registry.load(name), **_bound_to(path)), allow_overwrite=True,
+    )
 
 
 def _unbind(ctrl, name: str = "공고서") -> None:
@@ -400,13 +432,14 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
         lock.release()
 
 
-def test_generate_locked_never_rereads_live_vm():
-    """_generate_locked 는 캡처한 run_vm 만 소비한다(#302 리뷰 P1) — 생성 중 전환이
-    self.vm 을 갈아끼워도 이 런의 검증·계획·완주 기록이 남의 작업으로 새지 않는다."""
+def test_generate_managed_locked_never_rereads_live_vm():
+    """생성 본체는 캡처한 run_vm 만 소비한다(#302 리뷰 P1) — 생성 중 전환이 세션 vm 을
+    갈아끼워도 이 런의 관찰·배달·완주 기록이 남의 작업으로 새지 않는다(#1081 PR2: 본체는
+    managed 하나)."""
     import inspect
 
-    src = inspect.getsource(JobController._generate_locked)
-    assert "self.vm." not in src, "_generate_locked 가 라이브 vm 을 재참조합니다(P1 재유입)."
+    src = inspect.getsource(JobController._generate_managed_locked)
+    assert "self.vm." not in src, "생성 본체가 라이브 vm 을 재참조합니다(P1 재유입)."
     assert "run_vm." in src
 
 
@@ -417,7 +450,7 @@ def test_data_first_flow_end_to_end(tmp_path):
     봉합 계획 §5 성공 기준의 자동판 — master 생성 엔진을 그대로 쓰면서 data-first
     메인 흐름이 실제 문서 1건을 완주한다. 각 단계의 스냅샷 재진술도 함께 되읽는다.
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.load_data_path(_data_csv(tmp_path))                      # 작업 없이 마운트
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["has_data"] is True
@@ -854,7 +887,7 @@ def test_blank_values_are_announced_but_do_not_block_generation(tmp_path):
     어느 필드가 비었는지 지목한 채 생성이 그대로 열린다 — 확인은 결과 문서에서 한다.
     빈 값이 조용히 새지 않는 근거는 승인이 아니라 문서에 박히는 표식이다.
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -873,7 +906,7 @@ def test_blank_values_are_announced_but_do_not_block_generation(tmp_path):
 
 
 def test_generate_writes_documents_and_marks_missing(tmp_path):
-    ctrl, pushes = _controller(tmp_path)
+    ctrl, pushes = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -887,42 +920,6 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     assert made == ["doc-001.hwpx", "doc-002.hwpx"]
     # 진행 델타가 최소 1회 푸시됐다(진행바 갱신 계약).
     assert any(isinstance(snap, dict) and "progress" in snap for _s, snap in pushes)
-
-
-def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkeypatch):
-    import hwpxfiller.application.generation as appgen
-
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    pick_output_folder(ctrl, tmp_path / "out")
-
-    class _Done:
-        ok = True
-        output_path = "doc-001.hwpx"
-        error = ""
-        notes = []
-
-    class _Cancelled:
-        total = 2
-        succeeded = 1
-        failed = 1
-        results = [_Done()]
-        cancelled = True
-        attempted = 1
-
-    def fake_batch(*args, **kwargs):
-        ctrl.dispatch("cancel_generation", {})
-        assert kwargs["cancelled"]() is True
-        return _Cancelled()
-
-    monkeypatch.setattr(appgen, "generate_batch", fake_batch)
-    result = ctrl.generate()
-    assert result["cancelled"] is True
-    assert result["attempted"] == 1 and result["unstarted"] == 1
-    assert result["failed"] == 0
-    assert "완료된 문서는 그대로 유지" in result["summary"]
-    assert ctrl.registry.load("공고서").last_run_at == ""
 
 
 def test_generate_rejects_concurrent_entry(tmp_path):
@@ -946,7 +943,7 @@ def test_generate_rejects_concurrent_entry(tmp_path):
 
 def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
     """완주 = 역사(#129) — 영속된 최신 Job 전체가 세션 사본도 갱신한다."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     stamped_jobs = []
     stamp_last_run = ctrl.registry.stamp_last_run
 
@@ -971,9 +968,9 @@ def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
 
 def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     """생성 중 최신 규칙을 보존하되 옛 규칙의 완주 증거는 버린다."""
-    import hwpxfiller.application.generation as appgen
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
 
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
@@ -981,15 +978,15 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
     pick_output_folder(ctrl, tmp_path / "out")
     assert ctrl.snapshot()["guard"]["armed"] is True
 
-    generate_batch = appgen.generate_batch
+    run_managed_generation = coordinator.run_managed_generation
 
-    def edit_midflight(*args, **kwargs):
+    def edit_midflight(**kwargs):
         edited = ctrl.registry.load("공고서")
         edited.filename_pattern = "edited-{{seq:001}}"
         ctrl.registry.save(edited, allow_overwrite=True)
-        return generate_batch(*args, **kwargs)
+        return run_managed_generation(**kwargs)
 
-    monkeypatch.setattr(appgen, "generate_batch", edit_midflight)
+    monkeypatch.setattr(coordinator, "run_managed_generation", edit_midflight)
 
     assert ctrl.generate()["ok"] is True
     after = ctrl.registry.load("공고서")
@@ -1008,23 +1005,23 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     허용하고 캡처로 스탬프만 방어했지만, 검증·계획도 라이브 vm 을 볼 수 있어 남의 작업
     생성으로 샐 수 있었다. 이제 가드(시끄러운 거부)+캡처(이중 방어)를 함께 고정한다.
     """
-    import hwpxfiller.application.generation as appgen
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
 
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _second_job(ctrl, tmp_path)                       # 전환 시도 대상(공고서2) 등록
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
 
-    real_batch = appgen.generate_batch
+    real_run = coordinator.run_managed_generation
 
-    def _switch_midflight(*a, **k):
-        result = real_batch(*a, **k)
+    def _switch_midflight(**k):
+        result = real_run(**k)
         with pytest.raises(ValueError, match="생성이 진행 중"):   # 전환은 loud 거부
             ctrl.dispatch("select_job", {"name": "공고서2"})
         return result
 
-    monkeypatch.setattr(appgen, "generate_batch", _switch_midflight)
+    monkeypatch.setattr(coordinator, "run_managed_generation", _switch_midflight)
     assert ctrl.generate()["ok"] is True
     assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
     assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
@@ -1038,7 +1035,7 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     (둘 중 늦게 착지한 저장이 상대 변경을 통째로 되돌린다). 그 회귀는 결과값으로는 잘 안
     드러나므로 경로 자체를 못박는다.
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -1057,7 +1054,7 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
 
 def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -1077,19 +1074,10 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
 
 def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     """부분 실패는 완주가 아니다 — 무장 해제와 스탬프가 같은 술어를 공유한다(#129)."""
-    import hwpxfiller.application.generation as appgen
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
 
-    class _FakeResult:
-        ok = False
-        output_path = "x.hwpx"
-        error = "boom"
-
-    class _FakeBatch:
-        succeeded, failed, total = 1, 1, 2
-        results = [_FakeResult()]
-
-    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: _FakeBatch())
-    ctrl, _ = _controller(tmp_path)
+    monkeypatch.setattr(coordinator, "run_managed_generation", _fake_delivery([True, False]))
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -1099,7 +1087,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
 
 
 def test_overwrite_confirm_flow(tmp_path):
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -1118,7 +1106,7 @@ def test_overwrite_confirm_flow(tmp_path):
 def test_generate_echoes_run_token_on_every_direct_branch(tmp_path):
     """토큰은 **모든** direct 갈래로 되돌아온다 — 갈래 하나가 빠지면 그 갈래에서만
     표면이 응답의 주인을 잃고, 그 창은 조용하다(늦은 응답이 새 실행을 덮는다)."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
 
     # ① 작업 미선택 거절
     assert ctrl.generate(run_token="t-1")["run_token"] == "t-1"
@@ -1176,7 +1164,7 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
 
 def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
     """런이 끝나면 이름표를 비운다 — 남은 이름표는 어떤 런도 안 겨눈다."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -1187,7 +1175,7 @@ def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
 
 def test_progress_delta_carries_the_run_token(tmp_path):
     """진행 델타는 direct 반환과 다른 채널이라 payload 안에 주인이 있어야 한다."""
-    ctrl, pushes = _controller(tmp_path)
+    ctrl, pushes = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -1207,7 +1195,7 @@ def test_run_token_is_opaque_to_python(tmp_path):
     for index, (token, expected) in enumerate(((None, ""), ("", ""), (weird, weird))):
         home = tmp_path / f"h{index}"
         home.mkdir()
-        ctrl, _ = _controller(home)
+        ctrl, _ = _controller(home, managed=True)
         ctrl.dispatch("select_job", {"name": "공고서"})
         _mount_all(ctrl, _data_csv(home))
         pick_output_folder(ctrl, home / "out")
@@ -1243,7 +1231,12 @@ def test_a_declared_empty_field_is_written_empty_without_a_marker(tmp_path):
     """
     from hwpxfiller.domain.fields import read_fields
 
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_deps(tmp_path))
+    reg = _mirror_job(tmp_path)
+    # managed 생성은 결속된 데이터를 요구한다(CONNECT_DATA) — 이 테스트가 마운트할 데이터에 결속.
+    reg.save(replace(reg.load("공고서"), **_bound_to(_data_csv_path(tmp_path))), allow_overwrite=True)
+    ctrl = JobController(
+        reg, lambda s, snap: None, **_deps(tmp_path), **_managed_services(reg)
+    )
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -1564,8 +1557,6 @@ def _pool_controller(
     ctrl = JobController(
         registry or _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=pool,
         generation_lock=threading.Lock(),
@@ -2232,19 +2223,20 @@ def test_overwrite_confirm_roundtrip_pins_the_timestamp(tmp_path):
     확인 재호출이 **소비하며 소거**한다. 표시(스냅샷)와 실행(런 진입)이 각자 시각을 찍는
     것은 정상이다 — 확인의 자리가 만들어진 문서로 옮겨졌기 때문이다.
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
     _rereview(ctrl)   # 파일명 규칙 변경의 검토 고지는 이 테스트의 대상이 아니다
+    # 시계를 손에 쥔다 — 왕복 사이의 초 경계를 결정적으로 넘겨야 핀이 관측 가능해진다.
+    # managed 배달 계획은 **준비를 관찰한 시각**으로 이름을 짓고 그 준비를 캐시하므로
+    # (#1081 PR2) 시계는 첫 관찰 전에 쥔다.
+    t1 = datetime(2026, 7, 21, 9, 0, 0)
+    ctrl._clock = lambda: t1
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     pick_output_folder(ctrl, out)
-
-    # 시계를 손에 쥔다 — 왕복 사이의 초 경계를 결정적으로 넘겨야 핀이 관측 가능해진다.
-    t1 = datetime(2026, 7, 21, 9, 0, 0)
-    ctrl._clock = lambda: t1
     assert ctrl.generate()["ok"] is True
     first = sorted(p.name for p in out.glob("*.hwpx"))
     assert first == ["doc-090000-1.hwpx", "doc-090000-2.hwpx"]
@@ -2274,7 +2266,7 @@ def test_the_overwrite_pin_is_dropped_when_the_zone_changes_between_the_roundtri
     되쓰면 사용자가 본 적 없는 이름을 만든다 — 확인창이 말한 집합과 실제 집합이 갈리는
     바로 그 결함류를 반대 방향으로 되살리는 꼴이다.
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -2356,9 +2348,9 @@ def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
 
 
 # ------------------------------------------------- 필터 배선
-def _session(tmp_path):
-    """작업 선택 + 데이터 겨눔까지 마친 컨트롤러 — 필터 계약 테스트 공용."""
-    ctrl, pushes = _controller(tmp_path)
+def _session(tmp_path, *, managed: bool = False):
+    """작업 선택 + 데이터 겨눔까지 마친 컨트롤러 — 필터 계약 테스트 공용(문서를 만들면 managed)."""
+    ctrl, pushes = _controller(tmp_path, managed=managed)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     return ctrl, pushes
@@ -2506,7 +2498,7 @@ def test_hide_column_is_a_view_axis_only(tmp_path):
 
 def test_hidden_column_still_reaches_the_generated_document(tmp_path):
     """열을 숨긴 채 생성해도 **그 열의 값이 문서에 그대로 들어간다**(#341 최우선 계약)."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -2679,8 +2671,8 @@ def test_guard_disarmed_by_generation_completion(tmp_path):
     재는 축은 완료 여부이지 결속(#932 U4-C)이 아니다 — `_unbind` 로 재선택 되튐을 끈다
     (`test_guard_armed_by_set_comparison` 과 같은 사유).
     """
-    ctrl, _ = _session(tmp_path)
-    _unbind(ctrl)
+    ctrl, _ = _session(tmp_path, managed=True)
+    _rebind(ctrl, str(tmp_path / "d3.csv"))   # 생성까지 가므로 결속을 d3 로 옮긴다
     _mount_all(ctrl, _data_csv3(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
     ctrl.dispatch("set_none", {})
@@ -2758,20 +2750,10 @@ def test_guard_state_no_longer_enumerates_the_dead_ack_axis(tmp_path):
 
 def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
     """부분 실패 런은 완주가 아니다(리뷰 #1) — 실패분 재시도 선택을 무확인 파괴에서 지킨다."""
-    import hwpxfiller.application.generation as appgen
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
 
-    class _FakeResult:
-        def __init__(self):
-            self.ok = False
-            self.output_path = "x.hwpx"
-            self.error = "boom"  # describe_result_error 는 문자열 계약
-
-    class _FakeBatch:
-        succeeded, failed, total = 0, 1, 1
-        results = [_FakeResult()]
-
-    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: _FakeBatch())
-    ctrl, _ = _session(tmp_path)
+    monkeypatch.setattr(coordinator, "run_managed_generation", _fake_delivery([False]))
+    ctrl, _ = _session(tmp_path, managed=True)
     pick_output_folder(ctrl, tmp_path / "out")
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행
@@ -3135,7 +3117,7 @@ def test_describe_fill_note_names_field_and_kinds():
 
 def test_generate_surfaces_fill_notes(tmp_path):
     """완화 노트(#154)는 잡 완료 표면에 실린다 — CLI 만 알던 비대칭 해소(리뷰 F1)."""
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     # 리그 템플릿을 마커 낀 값 런으로 재작성 — 채움이 inline_stripped 를 낳는다.
     sec = (
         '<?xml version="1.0" encoding="UTF-8"?>'
@@ -3579,11 +3561,12 @@ def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transitio
     assert ctrl.snapshot()["data_notice"] is None
 
 
-@pytest.mark.parametrize("action", ["check", "generate"])
-def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
-    tmp_path, action,
-):
-    """Authority 미발급 seat와 registry snapshot이 갈리면 새 identity를 섞지 않는다."""
+def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(tmp_path):
+    """Authority 미발급 seat와 registry snapshot이 갈리면 새 identity를 섞지 않는다.
+
+    채택자는 「변경사항 확인」 하나다 — 생성 경로의 lazy 채택(legacy admission)은 문서 생성이
+    managed 하나가 되며 사라졌다(#1081 PR2). 생성 쪽 계약은 아래 권위 없는 작업 거절 테스트.
+    """
     registry = _registry(tmp_path)
     coordinator = TemplateChangeCoordinator(
         registry, root=tmp_path / "authority", clock=_clock()
@@ -3591,34 +3574,50 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
     ctrl, _pool = _pool_controller(
         tmp_path, registry=registry, template_change=coordinator
     )
-    pushes: list[dict] = []
-    ctrl._push_sink = lambda _screen, snapshot: pushes.append(snapshot)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    if action == "generate":
-        _mount_all(ctrl, _data_csv(tmp_path))
-        pick_output_folder(ctrl, tmp_path / "out")
     registry.mutate(
         "공고서",
         lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
     )
     _unprepared_after_select(ctrl)  # 채택은 아래 동사가 진다(#932 B5)
-    pushes.clear()
 
-    result = (
-        ctrl.dispatch("template_check", {"request_id": "replacement"})
-        if action == "check"
-        else ctrl.generate()
-    )
+    result = ctrl.dispatch("template_check", {"request_id": "replacement"})
 
     assert result["ok"] is False and "변경되어 선택을 해제" in result["error"]
     assert registry.load("공고서").authority_id  # 새 registry Work는 bootstrap됨
     assert ctrl.work.name == "" and ctrl.work.vm is None
     assert ctrl.work.seated_template_application_id is None
     assert "문서 작업이 변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
-    if action == "generate":
-        assert len(pushes) == 1
-        assert pushes[-1]["has_job"] is False and pushes[-1]["job_name"] == ""
-        assert pushes[-1] == ctrl.snapshot()
+
+
+def test_generate_refuses_an_hwpx_work_without_authority_and_writes_nothing(tmp_path):
+    """권위가 서지 않은 HWPX 작업(착석의 초기 등록 거절)은 생성하지 않는다(#1081 PR2).
+
+    종전 legacy 갈래는 생성 시점에 초기 등록을 다시 시도하고 실패하면 같은 문장으로 거절했다.
+    이제 생성 경로는 managed 하나라 권위 없는 작업은 우회 경로 없이 같은 문장으로 닫히고,
+    권위를 새로 발급하지도 파일을 쓰지도 않는다.
+    """
+    ctrl, pushes = _template_change_controller(tmp_path, managed=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    _unprepared_after_select(ctrl)
+    assert ctrl.refresh_panel()["managed_hwpx"] is False
+    pushes.clear()
+
+    refused = ctrl.generate()
+
+    assert refused == {
+        "ok": False,
+        "error": "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. "
+        "템플릿 파일을 확인하세요.",
+        "level": "warn",
+        "run_token": "",
+    }
+    assert pushes == []  # 보이는 정체가 그대로인 거절은 push 0
+    assert ctrl.registry.load("공고서").authority_id == ""  # 생성이 권위를 발급하지 않는다
+    assert not out.exists() or not any(out.iterdir())
 
 
 def test_applied_then_advanced_releases_instead_of_adopting_the_later_application(
@@ -4045,39 +4044,54 @@ def test_prefer_work_rejects_unknown_names_loudly(tmp_path):
 
 
 # ---------------------------------------- 결과 3태 + 부분 실패 표면(F4, 지도 §10.10)
-def _fake_batch(oks, *, errors=(), cancelled=False, total=None):
-    """``oks`` 순서대로 성공/실패인 배치 대역 — ``errors`` 는 실패분 사유(순서대로)."""
+# 문서 생성은 managed 하나다(#1081 PR2) — 결과 3태·실패 행·복구 대상은 배달 결과(완주·항목에서
+# 멈춤·취소)에서 나온다. 대역은 배달 파이프라인 자리(`run_managed_generation`)에 선다: 봉인·
+# 레코드 검증·배달 계획은 실제로 돌고, 파일을 앉히는 결과만 시나리오대로 돌려준다.
+def _fake_delivery(oks, *, errors=(), cancelled_at=None):
+    """``oks`` 순서대로 앉거나 멈추는 배달 대역 — 첫 실패 항목에서 멈춘다(항목별 원자)."""
+    from hwpxfiller.external.delivery_coordinator import (
+        DELIVERY_WRITE_FAILED,
+        DeliveredDocument,
+        DeliveryAborted,
+        DeliveryCompleted,
+    )
+    from hwpxfiller.webapp.managed_generation import ManagedRunCancelled
+
     errs = list(errors)
 
-    class _R:
-        def __init__(self, ok, name):
-            self.ok, self.output_path, self.notes = ok, name, []
-            self.error = "" if ok else (errs.pop(0) if errs else "boom")
+    def run(**kw):
+        resolved = kw["resolved_delivery"]
+        items = resolved.ordered_items
+        if cancelled_at is not None:
+            return ManagedRunCancelled(attempted=cancelled_at, total=len(items))
+        delivered = []
+        for ordinal, (ok, item) in enumerate(zip(oks, items, strict=False)):
+            if not ok:
+                return DeliveryAborted(
+                    code=DELIVERY_WRITE_FAILED,
+                    detail=errs.pop(0) if errs else "boom",
+                    failed_item_ordinal=ordinal,
+                    delivered=tuple(delivered),
+                )
+            delivered.append(DeliveredDocument(
+                ordinal, f"rec-{ordinal}", item.resolved_output_relative_path,
+                str(Path(resolved.output_directory) / item.resolved_output_relative_path),
+                item.collision_disposition, "sha256:" + "0" * 64, (),
+            ))
+        return DeliveryCompleted(resolved.output_directory, tuple(delivered))
 
-    results = [_R(ok, f"doc-{i:03}.hwpx") for i, ok in enumerate(oks, 1)]
-
-    class _B:
-        pass
-
-    b = _B()
-    b.results = results
-    b.succeeded = sum(1 for r in results if r.ok)
-    b.total = len(oks) if total is None else total
-    b.failed = b.total - b.succeeded
-    b.cancelled = cancelled
-    b.attempted = len(results)
-    return b
+    return run
 
 
-def _run_with(monkeypatch, ctrl, batch):
-    import hwpxfiller.application.generation as appgen
-    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: batch)
+def _run_with(monkeypatch, ctrl, run):
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
+    monkeypatch.setattr(coordinator, "run_managed_generation", run)
     return ctrl.generate()
 
 
 def _result_session(tmp_path):
     """빈 값 게이트를 태우지 않는 3행 세션 — 결과 3태 계약은 게이트 통과 이후가 무대다."""
-    ctrl, pushes = _controller(tmp_path)
+    ctrl, pushes = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv3(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -4107,17 +4121,18 @@ def test_result_three_states_are_python_judged(tmp_path, monkeypatch):
 def test_partial_run_reports_partial_state_and_failed_rows(tmp_path, monkeypatch):
     """부분 실패 = `partiallyCompleted` + 실패 행 구조화(§10.10 판정 E)."""
     ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch(
+    res = _run_with(monkeypatch, ctrl, _fake_delivery(
         [True, False], errors=["[WinError 32] 다른 프로세스가 파일을 사용 중"],
     ))
     assert res["status"] == "partiallyCompleted"
     assert res["title"] == "1개 성공 · 1개 실패"
     row = res["failures"][0]
     assert row["filename"] == "doc-002.hwpx"
-    assert row["index"] in {0, 1}                 # 원본 index(선택 재사용의 입력)
+    assert row["index"] in {0, 1, 2}              # 원본 index(선택 재사용의 입력)
     assert row["identity"]                        # 식별 요약 = 표 「문서」 열과 같은 판정
     assert row["known"] is True                   # 아는 원인 — 미연결 표지 금지
     assert "원문:" in row["reason"]                # 증거 무손실
+    assert "한글" in row["reason"]                 # 행동 안내(열린 문서를 닫는다)
 
 
 def test_unknown_cause_keeps_the_undiagnosed_boundary(tmp_path, monkeypatch):
@@ -4129,35 +4144,20 @@ def test_unknown_cause_keeps_the_undiagnosed_boundary(tmp_path, monkeypatch):
     assert known is False and text == "알 수 없는 무엇"   # 원문 관통(조용한 재작성 금지)
 
     ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch([False], errors=["설명 없는 오류"]))
+    res = _run_with(monkeypatch, ctrl, _fake_delivery([False], errors=["설명 없는 오류"]))
     assert res["status"] == "failed"
     assert res["failures"][0]["known"] is False
-
-
-def test_batch_exception_lands_in_the_result_zone(tmp_path, monkeypatch):
-    """배치가 시작조차 못 한 실패도 결과 구획에 선다(§10.10 판정 C) — 백스톱으로 새지 않는다."""
-    import hwpxfiller.application.generation as appgen
-
-    def _boom(*a, **k):
-        raise ValueError("템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — 필드 없음")
-
-    monkeypatch.setattr(appgen, "generate_batch", _boom)
-    ctrl, _ = _result_session(tmp_path)
-    res = ctrl.generate()
-    assert res["ok"] is True and res["status"] == "failed"   # 거절이 아니라 실패
-    assert res["stage"] == "생성 시작 전"                     # 실패 단계(계약 §10.3)
-    assert "템플릿 구조" in res["message"]                    # 받은 메시지 원문
-    assert res["succeeded"] == 0 and res["failed"] == res["total"] > 0
+    assert res["failures"][0]["reason"] == "설명 없는 오류"
 
 
 def test_select_failed_replaces_selection_and_does_not_generate(tmp_path, monkeypatch):
     """「실패한 N건만 선택」 = 선택 교체뿐(§10.10 판정 F) — 2클릭 분리."""
     ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    res = _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     failed_index = res["failures"][0]["index"]
     calls: list = []
-    import hwpxfiller.application.generation as appgen
-    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: calls.append(1))
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
+    monkeypatch.setattr(coordinator, "run_managed_generation", lambda **k: calls.append(1))
 
     out = ctrl.dispatch("select_failed", {})
     assert out == {"selected": 1}
@@ -4170,43 +4170,29 @@ def test_select_failed_replaces_selection_and_does_not_generate(tmp_path, monkey
 def test_failed_indices_die_with_their_data_and_work(tmp_path, monkeypatch):
     """실패 index 는 이 레코드 집합·이 작업에서만 뜻이 있다 — 경계를 지나면 무동작이 정직하다."""
     ctrl, _ = _result_session(tmp_path)
-    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     assert ctrl.dispatch("select_failed", {})["selected"] == 1
     other = tmp_path / "other.csv"
     other.write_text("bidNtceNm,presmptPrce\n다른행,1\n", encoding="utf-8")
     ctrl.load_data_path(str(other))                            # 데이터 교체
     assert ctrl.dispatch("select_failed", {})["selected"] == 0  # 남의 행을 고르지 않는다
 
-    _mount_all(ctrl, _data_csv(tmp_path))
-    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     ctrl.dispatch("select_job", {"name": "공고서", "confirm": True})  # 작업 전환
     assert ctrl.dispatch("select_failed", {})["selected"] == 0
 
 
-def test_cancel_before_first_record_is_not_a_failure(tmp_path, monkeypatch):
-    """중단은 성공 수와 무관하게 부분이다(1R P2) — 실패한 시도가 없는데 실패 태를 달지 않는다."""
+def test_cancel_writes_nothing_and_is_not_a_failure(tmp_path, monkeypatch):
+    """중단은 배달 전이라 문서 0건이다(managed) — 실패한 시도가 없으니 실패 태·복구 대상도 없다."""
     ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch([], cancelled=True, total=3))
-    assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
-    assert res["succeeded"] == 0 and res["failed"] == 0 and res["unstarted"] == 3
+    res = _run_with(monkeypatch, ctrl, _fake_delivery([], cancelled_at=1))
+    assert res["status"] == "cancelled" and res["cancelled"] is True
+    assert res["succeeded"] == 0 and res["failed"] == 0 and res["unstarted"] == 2
     assert res["failed_selectable"] == 0          # 다시 만들 '실패분'은 없다(미착수는 실패가 아니다)
-
-
-def test_batch_exception_keeps_the_recovery_action_reachable(tmp_path, monkeypatch):
-    """행이 0개라도 복구 대상은 전량이다(1R P2) — 표면이 「실패한 N건만 선택」을 숨기지 않게."""
-    import hwpxfiller.application.generation as appgen
-
-    def _boom(*a, **k):
-        raise OSError("[WinError 5] 액세스가 거부되었습니다")
-
-    monkeypatch.setattr(appgen, "generate_batch", _boom)
-    ctrl, _ = _result_session(tmp_path)
-    res = ctrl.generate()
-    assert res["failures"] == []                   # 시도가 없었으므로 행별 사유를 지어내지 않는다
-    assert res["failed_selectable"] == res["total"] > 0
-    # 그사이 선택을 바꿔도 대상 집합을 되찾는다 — 이것이 행 대신 수치로 노출을 정하는 이유.
-    ctrl.dispatch("set_none", {})
-    assert ctrl.dispatch("select_failed", {})["selected"] == res["failed_selectable"]
+    assert res["level"] == "warn"
+    assert res["title"].startswith("생성을 중단했습니다")
+    assert not list((tmp_path / "out").glob("*.hwpx"))
 
 
 def test_failed_job_switch_keeps_the_recovery_target(tmp_path, monkeypatch):
@@ -4216,7 +4202,7 @@ def test_failed_job_switch_keeps_the_recovery_target(tmp_path, monkeypatch):
     남아 있는 「실패한 N건만 선택」이 0건을 돌려주는 유령 행동이 된다.
     """
     ctrl, _ = _result_session(tmp_path)
-    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     assert ctrl.dispatch("select_failed", {})["selected"] == 1
     with pytest.raises(OSError):                         # 사라진·읽을 수 없는 작업
         ctrl.dispatch("select_job", {"name": "없는작업", "confirm": True})
@@ -4235,7 +4221,7 @@ def test_run_owner_lives_in_session_state_and_follows_renames(tmp_path, monkeypa
     작업이 남처럼 보인다 — 표면이 쓰는 두 값을 같은 출처(스냅샷)에서 낸다.
     """
     ctrl, _ = _result_session(tmp_path)
-    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     snap = ctrl.snapshot()
     assert snap["last_run_job"] == snap["job_name"] == "공고서"   # 그 런의 작업이 열려 있다
 
@@ -4243,15 +4229,6 @@ def test_run_owner_lives_in_session_state_and_follows_renames(tmp_path, monkeypa
     snap = ctrl.snapshot()
     assert snap["last_run_job"] == snap["job_name"] == "공고서(수정)"  # 같은 전이에서 추종
     assert ctrl.dispatch("select_failed", {})["selected"] == 1        # 복구 대상도 유효
-
-    import hwpxfiller.application.generation as appgen
-
-    def _boom(*a, **k):
-        raise OSError("[WinError 5] 액세스가 거부되었습니다")
-
-    monkeypatch.setattr(appgen, "generate_batch", _boom)
-    ctrl.generate()
-    assert ctrl.snapshot()["last_run_job"] == "공고서(수정)"          # 실패 경로도 같은 모양
 
     ctrl.registry.save(Job(name="둘째"))
     ctrl.dispatch("select_job", {"name": "둘째", "confirm": True})
@@ -4263,18 +4240,9 @@ def test_run_pushes_a_snapshot_so_the_surface_can_judge(tmp_path, monkeypatch):
     """`generate` 는 dispatch 밖이라 자동 push 가 없다 — 런이 바꾼 값을 표면이 못 본다(3R P2)."""
     ctrl, pushes = _result_session(tmp_path)
     before = len(pushes)
-    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    _run_with(monkeypatch, ctrl, _fake_delivery([True, False]))
     assert len(pushes) > before
     assert pushes[-1][1]["last_run_job"] == "공고서"
-
-
-def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):
-    """취소 런은 부분 태 + warn 채널을 유지한다(#278 리뷰가 세운 색 계약과 같은 걸음)."""
-    ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch([True], cancelled=True, total=2))
-    assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
-    assert res["level"] == "warn" and res["unstarted"] == 1
-    assert res["title"].startswith("생성을 중단했습니다")
 
 
 # ------------------------------------- 전체 표시순서 축(재작성 F3, 지도 §10.11.1 4계약면)
@@ -4690,7 +4658,7 @@ def _unreviewed_session(tmp_path):
     (구 「빈 값 ack 먼저 통과」 단계는 필드축 ack 폐기 — U2 §2.13 — 로 사라졌다: 빈 값은
     이제 같은 검토 요구의 성분이라 별도 선행 게이트가 없다.)
     """
-    ctrl, pushes = _controller(tmp_path, reviewed=False)
+    ctrl, pushes = _controller(tmp_path, reviewed=False, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
@@ -4747,7 +4715,7 @@ def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path
     빈 값 없는 데이터를 쓴다 — 빈 값이 있으면 blank_set(§2.13)이 반복 실행에도 서는
     것이 계약이라(침묵 금지), 「조용한 반복」의 전제가 데이터 축에서 갈린다.
     """
-    ctrl, _ = _controller(tmp_path, reviewed=False)
+    ctrl, _ = _controller(tmp_path, managed=True, reviewed=False)
     ctrl.dispatch("select_job", {"name": "공고서"})
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
@@ -4847,7 +4815,7 @@ def test_planned_names_match_what_generation_will_write(tmp_path):
 
     #957 이후 그 계획을 말하는 표면은 표 「문서」 열 하나다(확인 면이 아니라).
     """
-    ctrl, _ = _controller(tmp_path, reviewed=True)
+    ctrl, _ = _controller(tmp_path, managed=True, reviewed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "{{추정가격}}"    # 빈 값이 나는 필드를 이름이 참조한다
     ctrl.registry.save(job, allow_overwrite=True)
@@ -4910,7 +4878,7 @@ def test_run_entry_captures_its_own_timestamp_once(tmp_path):
     두 축이 갈리는 것은 결함이 아니지만, **런 안에서** 갈리면 같은 배치의 문서가 서로 다른
     초를 이름에 달게 된다 — 그것을 여기서 막는다.
     """
-    ctrl, _ = _controller(tmp_path, reviewed=True)
+    ctrl, _ = _controller(tmp_path, managed=True, reviewed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
@@ -4934,7 +4902,7 @@ def test_new_blanks_on_new_data_are_announced_and_marked(tmp_path):
     #957 이후 그 말하기는 게이트가 아니라 ①사전검증 경고 ②문서에 박히는 표식 ③완료 요약의
     병기 셋이다. 조용한 생성은 여전히 없다 — 없어진 것은 승인을 받아야 열리는 문 하나다.
     """
-    ctrl, _ = _controller(tmp_path)                       # 기준선 있는 작업(완주 자격)
+    ctrl, _ = _controller(tmp_path, managed=True)                       # 기준선 있는 작업(완주 자격)
     ctrl.dispatch("select_job", {"name": "공고서"})
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
@@ -5348,24 +5316,27 @@ def test_candidates_txt_note_is_silent_without_an_injected_registry(tmp_path):
 # ─── 템플릿 변경 확인·적용 배선(S3-09 #659) — 판정은 코디네이터 테스트가 소유 ───
 
 
-def _template_change_controller(tmp_path):
-    """공용 `_controller` + 실 코디네이터 주입 — 존·동사의 **배선**만 잰다."""
+def _template_change_controller(tmp_path, *, managed: bool = False):
+    """공용 `_controller` + 실 코디네이터 주입 — 존·동사의 **배선**만 잰다.
+
+    ``managed=True`` 면 같은 authority root 로 구성·봉인·작업대 관찰까지 배선한다 — 문서를
+    만드는 테스트용이다(HWPX 문서 생성은 managed 하나, #1081 PR2).
+    """
     reg = _registry(tmp_path)
-    coordinator = TemplateChangeCoordinator(
-        reg, root=tmp_path / "authority", clock=_clock()
-    )
+    root = tmp_path / "authority"
+    services = _managed_services(reg, root) if managed else {
+        "template_change": TemplateChangeCoordinator(reg, root=root, clock=_clock()),
+    }
     pushes: list = []
     ctrl = JobController(
         reg, lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        template_change=coordinator,
+        **services,
     )
     return ctrl, pushes
 
@@ -5463,70 +5434,80 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     assert ctrl.snapshot()["template_change"]["epoch"] == 2
 
 
-@pytest.mark.parametrize("verdict", ["NEEDS_CONFIGURATION", "NEEDS_CONFIGURATION_REVIEW"])
-def test_slotless_configuration_verdict_controls_preflight_and_gate(
-    tmp_path, monkeypatch, verdict,
-):
-    """생성 admission의 provenance 거절은 클릭 전 사전검증과 버튼에도 반영된다."""
-    ctrl, _ = _template_change_controller(tmp_path)
+def test_a_template_apply_closes_generation_until_the_binding_is_confirmed(tmp_path):
+    """적용된 새 템플릿 판본은 연결을 다시 확정하기 전까지 문서를 만들지 않는다(#1081 PR2).
+
+    종전 이 계약은 slot 없는 legacy admission 의 provenance 판정(NEEDS_CONFIGURATION)이
+    졌다. 문서 생성이 managed 하나가 된 뒤로는 current Application 의 Field Binding 판본이
+    같은 사실을 닫는다 — 클릭 전 표면(작업대 만들기 동사·사전검증)과 직접 호출 둘 다.
+    """
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
-    pick_output_folder(ctrl, tmp_path / "out")
-    coordinator = ctrl._template_change
-    assert coordinator is not None
-    monkeypatch.setattr(coordinator, "generation_provenance_verdict", lambda _: verdict)
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    ready = ctrl.refresh_panel()
+    assert ready["managed_hwpx"] is True
+    assert ready["workbench_observation"]["create_action"]["enabled"] is True
+
+    _write_template(tmp_path / "t.hwpx", ["공고명", "추정가격", "담당자"])
+    preparation = ctrl.dispatch("template_check", {"request_id": "k2"})["preparation"]
+    assert preparation["status"] == "ready"
+    applied = ctrl.dispatch("template_apply", {"change_token": preparation["change_token"]})
+    assert applied["status"] == "applied"
 
     blocked = ctrl.refresh_panel()
-    assert blocked["gate"]["enabled"] is False
-    assert blocked["gate"]["reason"] == verdict
-    assert blocked["preflight"]["level"] == "warn"
-    assert blocked["gate"]["text"] in blocked["preflight"]["text"]
+    assert blocked["workbench_observation"]["create_action"]["enabled"] is False
     assert "검증 완료. 생성할 수 있습니다." not in blocked["preflight"]["text"]
+    refused = ctrl.generate()
+    assert refused["ok"] is False, refused
+    assert not list(out.glob("*.hwpx"))
 
-    monkeypatch.setattr(
-        coordinator, "generation_provenance_verdict", lambda _: "EXECUTION_ALLOWED",
+    # 새 판본에 대한 연결 확정(편집기 저장과 같은 사건)이 생성을 다시 연다.
+    ctrl.registry.mutate(
+        "공고서",
+        lambda job: job.mapping.mappings.append(
+            FieldMapping(template_field="담당자", type="const", const="홍길동")
+        ),
     )
-    ready = ctrl.refresh_panel()
-    assert ready["gate"]["enabled"] is True
-    assert ready["preflight"]["level"] == "ok"
-    assert "검증 완료. 생성할 수 있습니다." in ready["preflight"]["text"]
-    ctrl.dispatch("set_none", {})
-    unselected = ctrl.refresh_panel()
-    assert unselected["preflight"]["level"] == "ok"
-    assert unselected["gate"]["enabled"] is False
-    assert "검증 완료. 생성할 수 있습니다." not in unselected["preflight"]["text"]
+    assert ctrl.on_editor_mapping_saved("공고서")["binding_commit_ok"] is True
+    reopened = ctrl.refresh_panel()
+    assert reopened["workbench_observation"]["create_action"]["enabled"] is True
+    made = ctrl.generate()
+    assert made["ok"] is True and made["status"] == "completed", made
+    assert len(list(out.glob("*.hwpx"))) == 2
 
 
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
-def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_path):
-    """**#806 R1 의 뒤집힘 — S6-05(#812)가 트랩을 구조로 해소했다.**
+def test_slotless_hwpx_runs_twice_and_the_second_run_asks_to_overwrite(tmp_path):
+    """slot 없는 HWPX 도 managed 하나로 만든다(#1081 PR2) — 두 번째 실행은 덮어쓰기를 묻는다.
 
-    S6G-00(#806)이 재현으로 고정한 generate-once 트랩: 1회차 generate 가 스스로
-    ``authority_id`` 를 발급하고(S4-11), 2회차가 그 발급물 때문에 managed 로 읽혀 거절됐다
-    (SX-03 가드). S6-05 는 곱의 반대편 항을 제거했다 — 실행 경로 선택(의미 4)은
-    ``bool(authority_id)`` 가 아니라 slot-bearing 사실에서 갈리므로, slotless 작업은 발급
-    뒤에도 legacy 갈래로 흘러 **2회차도 같은 갈래에서 성공한다**(같은 입력 = 같은 갈래).
-    발급 자체(의미 1·2)는 그대로 옳다 — 발급이 트랩이 아니라 곱이 트랩이었다.
+    종전(S6-05 #812)엔 slot 없는 작업이 legacy 갈래로 흘렀다. 이제 같은 작업의 두 번째
+    「문서 만들기」는 배달 계획이 앞서 만든 파일을 보고 `needs_overwrite` 로 묻고, 확인하면
+    같은 이름을 다시 쓴다. 권위는 착석이 한 번 세운 그대로다.
     """
-    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    pick_output_folder(ctrl, tmp_path / "out")
-    _unprepared_after_select(ctrl)  # 1회차 generate 가 최초 발급자인 상태(#932 B5)
-    assert ctrl.registry.load("공고서").authority_id == ""
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    seated = ctrl.registry.load("공고서").authority_id
+    assert seated.startswith("w-")
+    assert ctrl.refresh_panel()["managed_hwpx"] is True
 
-    assert ctrl.generate()["ok"] is True
-    # 1회차가 Work identity 를 발급했다(의미 1·2 — lazy 발급은 그대로 옳다).
-    minted = ctrl.registry.load("공고서").authority_id
-    assert minted != ""
-    assert minted.startswith("w-")  # 발급 형태 단일화(S6-05)
+    first = ctrl.generate()
+    assert first["ok"] is True and first["status"] == "completed", first
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    assert made == ["doc-001.hwpx", "doc-002.hwpx"]
 
-    # 2회차: 발급물이 있어도 slotless 는 legacy 갈래 그대로 — 트랩이 구조로 사라졌다.
+    asked = ctrl.generate()
+    assert asked["needs_overwrite"] is True, asked
+    assert sorted(asked["conflict_names"]) == made
+
     second = ctrl.generate(confirm_overwrite=True)
-    assert second["ok"] is True, second
-    assert second.get("needs_overwrite") is not True
-    assert ctrl.registry.load("공고서").authority_id == minted
+    assert second["ok"] is True and second["status"] == "completed", second
+    assert sorted(p.name for p in out.glob("*.hwpx")) == made
+    assert ctrl.registry.load("공고서").authority_id == seated
 
 
 def test_template_check_validation_failure_precedes_durable_commit(tmp_path):
@@ -5812,7 +5793,7 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     RELEASE 된다. select 전에 결속해야 seated 지문이 그 결속으로 시작해 이후 재마운트가
     `content_fingerprint`(U4 §2.4)의 결속 3성분과 계속 일치한다.
     """
-    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl, pushes = _template_change_controller(tmp_path, managed=True)
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     ctrl.registry.save(
@@ -5837,56 +5818,34 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert ctrl.work.name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
-def test_managed_generation_pushes_adopted_identity_before_a_plan_rejection(tmp_path):
-    """Lazy bootstrap 뒤 plan 거절도 새 managed identity를 한 번 밀어야 한다.
+def test_edited_source_blocks_generation_until_the_change_is_checked(tmp_path):
+    """#681 drift 음성대조 — 원본을 앱 밖에서 고치면(미적용) 캡처본으로 조용히 만들지 않는다.
 
-    거절 사유는 #957 이후 구조 가드다 — 검토 거절 갈래가 사망했으므로 살아 있는 가드
-    (선택 0건)로 같은 순서를 잰다.
+    생성은 current Application 의 캡처 bytes 를 봉인해 물질화한다. 원본이 갈린 채 그대로
+    만들면 「고친 내용이 반영 안 된 문서」가 조용히 나오므로 원본 드리프트는 실행 게이트다
+    (#932 B5). slot 없는 작업도 managed 하나라 같은 게이트를 지난다(#1081 PR2 — 종전 legacy
+    갈래는 드리프트를 무시하고 캡처본으로 만들었다).
     """
-    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    pick_output_folder(ctrl, tmp_path / "out")
-    ctrl.dispatch("set_none", {})
-    assert ctrl.snapshot()["managed_hwpx"] is False
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    _write_template(tmp_path / "t.hwpx", ["공고명", "추정가격", "담당자"])  # B — 미적용
 
-    _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
-    pushes.clear()
-    rejected = ctrl.generate()
-
-    assert rejected["ok"] is False and "최소 1건" in rejected["error"]
-    current = ctrl.snapshot()
-    # S6-05(#812): managed_hwpx 는 slot-bearing 파생이라 slotless 발급 작업은 False 다 —
-    # 채택된 identity(authority_id) push 는 그대로 한 번 일어난다.
-    assert current["managed_hwpx"] is False
-    assert ctrl.registry.load("공고서").authority_id != ""
-    assert len(pushes) == 1 and pushes[0][1] == current
-
-
-def test_managed_generation_uses_applied_bytes_not_edited_source(tmp_path):
-    """#681 drift 음성대조: 적용된 A bytes 뒤 source 를 B 로 고쳐도(미적용) 생성 입력은
-    A 의 exact Candidate bytes(staged) 다 — bridge 는 source 가 아니라 Candidate store 를 읽는다."""
-    from hwpxfiller.application.candidate_revision import blob_digest
-    from hwpxfiller.application.jobs import load_job
-
-    ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    job = load_job(ctrl.registry, "공고서")
-    applied_bytes = Path(job.template_path).read_bytes()  # A
-    coord = ctrl._template_change
-    staged_a = coord.resolve_generation_template("공고서")  # bootstrap A + stage
-    # source 를 B 로 오염(미적용) — staged 는 여전히 A digest 여야 한다.
-    Path(job.template_path).write_bytes(applied_bytes + b"DRIFT-B")  # B != A
-    staged_again = coord.resolve_generation_template("공고서")
-    assert Path(staged_again).read_bytes() == applied_bytes            # A, not B
-    assert blob_digest(Path(staged_again).read_bytes()) == blob_digest(applied_bytes)
-    assert Path(staged_a).read_bytes() == applied_bytes                # 첫 스테이징도 A
+    snap = ctrl.refresh_panel()
+    assert snap["template_change"]["source_drift"] == "changed"
+    assert snap["template_change"]["actionable"] is True  # 복구 동사가 선 존
+    assert snap["workbench_observation"]["create_action"]["enabled"] is False
+    refused = ctrl.generate()
+    assert refused["ok"] is False, refused
+    assert not list(out.glob("*.hwpx"))
 
 
 def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
     """#681 confirm-or-alarm: bootstrap qualification 이 실패하는 템플릿은 조용히
     template_path 로 fallback 하지 않고 시끄러운 거절(TEMPLATE_INITIALIZATION_REQUIRED 문안)."""
-    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
     bad = tmp_path / "안됨.hwpx"
     bad.write_bytes(b"not a real hwpx zip")     # qualify 실패
     ctrl.registry.save(Job(name="깨진작업", template_path=str(bad)))
@@ -5901,174 +5860,33 @@ def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
     assert not list((tmp_path / "out2").glob("*.hwpx"))  # 산출물 0 (fallback 없음)
 
 
-def test_managed_generation_clears_staging_after_run(tmp_path):
-    """#681 F2: run 이 끝나면 staged 사본을 정리한다 — 판본별 read-only 사본이 영구 누적되지 않는다."""
-    ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    clean = tmp_path / "clean.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
-    _mount_all(ctrl, str(clean))
-    pick_output_folder(ctrl, tmp_path / "out")
-    assert ctrl.generate()["ok"] is True
-    staging = tmp_path / "authority" / "run_staging"
-    assert not staging.exists() or not list(staging.iterdir())  # 누적 없음
-
-
-@pytest.mark.parametrize("target", ["file", "pool"])
-def test_managed_generation_maps_incomplete_slot_config_to_status(
-    tmp_path, monkeypatch, target,
-):
-    """#681 F3: capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 던지면 raw 예외로 새지 않고
-    구조화된 제품 상태(ok:False)로 거절한다.
-
-    재는 축은 admission 거절 뒤 KEEP 배선이지 결속(#932 U4-C)이 아니다 — 결말의
-    `ctrl.work.name == "공고서"` 단언이 성립하려면 c.csv 가 이 작업의 결속이어야 한다
-    (`test_managed_generation_routes_through_exact_applied_bytes_no_regression` 과 같은 사유).
-    """
-    import hwpxfiller.webapp.template_change as tc
-    from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
-
-    ctrl, pushes = _template_change_controller(tmp_path)
-    clean = tmp_path / "c.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
-    ctrl.registry.save(
-        replace(ctrl.registry.load("공고서"), **_bound_to(str(clean))), allow_overwrite=True,
-    )
-    ctrl.dispatch("select_job", {"name": "공고서"})
-
-    def boom(*_a, **_k):
-        raise SlotSelectionCaptureError("SLOT_CONFIGURATION_INCOMPLETE", "미완")
-
-    monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
-    _mount_all(ctrl, str(clean))
-    pick_output_folder(ctrl, tmp_path / "out3")
-    _unprepared_after_select(ctrl)  # 채택은 generate 안에서 일어난다(#932 B5)
-    pushes.clear()
-    res = ctrl.generate()
-    assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
-    assert len(pushes) == 1 and pushes[-1][1] == ctrl.snapshot()
-    restored = ctrl.registry.load("공고서")
-    assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
-    assert ctrl.work.seated_template_application_id is not None
-    if target == "file":
-        ctrl.load_data_path(str(clean))
-    else:
-        key = _pool_add(ctrl.data.pool_registry, "거절 뒤 데이터", {"path": str(clean)})
-        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
-    assert ctrl.work.name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
-
-
-@pytest.mark.parametrize("failpoint", ["manifest", "workspace", "staging"])
-def test_managed_generation_exception_pushes_only_changed_identity(
-    tmp_path, monkeypatch, failpoint,
-):
-    """Invocation 중 실제 identity가 바뀐 예외 종료만 fresh snapshot을 한 번 민다."""
-    import hwpxfiller.external.slot_command_runner as slot_command_runner
-
-    ctrl, pushes = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    coordinator = ctrl._template_change
-    assert coordinator is not None and ctrl.work.vm is not None
-    _mount_all(ctrl, _data_csv(tmp_path))
-    pick_output_folder(ctrl, tmp_path / "out")
-
-    def boom(*_a, **_k):
-        raise OSError(f"{failpoint} I/O failed")
-
-    if failpoint == "manifest":
-        monkeypatch.setattr(coordinator, "_ensure_manifest", boom)
-    elif failpoint == "workspace":
-        monkeypatch.setattr(coordinator._workspace, "get_or_create", boom)
-    else:
-        monkeypatch.setattr(slot_command_runner, "stage_exact_applied_bytes", boom)
-    # `adopted` 축이 살아 있으려면 채택이 generate 안에서 일어나야 한다(#932 B5) — 착석이
-    # 이미 채택해 버리면 세 failpoint 가 전부 같은 답을 내 축이 vacuous 해진다.
-    _unprepared_after_select(ctrl)
-    pushes.clear()
-
-    with pytest.raises(OSError, match=rf"{failpoint} I/O failed"):
-        ctrl.generate()
-
-    adopted = failpoint != "manifest"
-    current = ctrl.snapshot()
-    # S6-05(#812): slotless 는 발급(채택) 뒤에도 managed_hwpx=False — 채택 여부는
-    # authority_id 로 직접 확인한다(push 계약은 그대로).
-    assert current["managed_hwpx"] is False
-    assert (ctrl.registry.load("공고서").authority_id != "") is adopted
-    assert len(pushes) == int(adopted)
-    if adopted:
-        restored = ctrl.registry.load("공고서")
-        assert ctrl.work.vm is not None and ctrl.work.vm.job.authority_id == restored.authority_id
-        assert ctrl.work.seated_template_application_id is not None
-        assert pushes[-1][1] == current
-    assert ctrl.runs.run is None and ctrl.work.vm is not None
-    assert ctrl.work.vm._managed_template is None
-    assert ctrl.runs.lock.acquire(blocking=False)
-    ctrl.runs.lock.release()
-    staging = tmp_path / "authority" / "run_staging"
-    assert not staging.exists() or not list(staging.iterdir())
-
-
-def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
-    """RELEASE 뒤 cleanup 예외도 has_job=false를 한 번만 밀고 원래 예외를 유지한다."""
-    ctrl, pushes = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    run_vm = ctrl.work.vm
-    assert run_vm is not None
-    _mount_all(ctrl, _data_csv(tmp_path))
-    pick_output_folder(ctrl, tmp_path / "out")
-    ctrl.registry.mutate(
-        "공고서",
-        lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
-    )
-
-    class ReleaseErrorLock:
-        def __init__(self):
-            self.lock = threading.Lock()
-            self.released = False
-
-        def acquire(self, *, blocking=True):
-            return self.lock.acquire(blocking=blocking)
-
-        def release(self):
-            self.lock.release()
-            self.released = True
-            raise OSError("generation lock cleanup failed")
-
-    lock = ReleaseErrorLock()
-    ctrl.runs.lock = lock
-    _unprepared_after_select(ctrl)  # RELEASE 는 발급 순간의 대조에서 난다(#932 B5)
-    pushes.clear()
-
-    with pytest.raises(OSError, match="generation lock cleanup failed"):
-        ctrl.generate()
-
-    current = ctrl.snapshot()
-    assert current["has_job"] is False and current["job_name"] == ""
-    assert len(pushes) == 1 and pushes[-1][1] == current
-    assert ctrl.runs.run is None and run_vm._managed_template is None
-    assert lock.released is True
-
-
 def test_generation_recovers_after_repairing_bad_template(tmp_path):
-    """#681 F4: bootstrap 이 qualification 에서 실패한 뒤 템플릿을 고쳐 다시 부르면 fresh id 로
-    재부트스트랩돼 staged 경로를 낸다(고정 id 의 ObjectAlreadyExists 회복 불가 차단). 코디네이터
-    메서드 단위 — 상위 review 게이트 소음 없이 F4 의 회복 자체를 잰다."""
+    """#681 F4: 초기 등록이 거절된 템플릿을 고쳐 다시 고르면 새로 준비돼 문서를 만든다.
+
+    초기 등록의 재시도는 착석이 진다(#932 B5 — 같은 실물이면 재시도하지 않고, 실물이
+    바뀌면 새 id 로 다시 준비한다). 생성은 그 권위만 쓴다(#1081 PR2).
+    """
     import shutil
 
-    from hwpxfiller.application.jobs import load_job
-    from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
-
-    reg = _registry(tmp_path)
-    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
+    good = ctrl.registry.load("공고서")
     bad = tmp_path / "bad.hwpx"
     bad.write_bytes(b"not a real hwpx zip")             # qualify 실패
-    reg.save(Job(name="고칠작업", template_path=str(bad)))
-    with pytest.raises(SlotlessRunAdmissionError):     # 최초: TEMPLATE_INITIALIZATION_REQUIRED
-        coord.resolve_generation_template("고칠작업")
-    shutil.copyfile(load_job(reg, "공고서").template_path, bad)  # 정상 hwpx 로 수리
-    staged = coord.resolve_generation_template("고칠작업")       # fresh id → 재부트스트랩 성공
-    assert Path(staged).exists()
+    ctrl.registry.save(replace(good, name="고칠작업", template_path=str(bad), authority_id=""))
+    ctrl.dispatch("select_job", {"name": "고칠작업"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    refused = ctrl.generate()
+    assert refused["ok"] is False and "초기화" in refused["error"]
+    assert ctrl.registry.load("고칠작업").authority_id == ""
+
+    shutil.copyfile(good.template_path, bad)             # 정상 hwpx 로 수리
+    ctrl.dispatch("select_job", {"name": "고칠작업"})     # 다시 고르면 새로 준비한다
+    assert ctrl.registry.load("고칠작업").authority_id != ""
+    made = ctrl.generate()
+    assert made["ok"] is True and made["status"] == "completed", made
+    assert len(list(out.glob("*.hwpx"))) == 2
 
 
 def _drift(ctrl):
@@ -6100,31 +5918,6 @@ def test_unbootstrapped_work_shows_no_source_drift(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _unprepared_after_select(ctrl)                          # 미부트스트랩 상태(#932 B5)
     assert _drift(ctrl) == (None, None)                     # 판정 불성립 — 「없다」가 아니다
-
-
-def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, monkeypatch):
-    """#681: managed 생성이 evaluate_execution_provenance 를 **실제로** 호출한다(정적 name-ref
-    가 아니라 라이브 도달) — S3-99 가 지적한 죽은 seam 이 실행 경로에서 살아 있음을 증명."""
-    import hwpxfiller.application.slotless_run_bridge as bridge
-
-    seen: list = []
-    real = bridge.evaluate_execution_provenance
-
-    def spy(base, current):
-        seen.append((base, current))
-        return real(base, current)
-
-    monkeypatch.setattr(bridge, "evaluate_execution_provenance", spy)
-    ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    clean = tmp_path / "clean.csv"
-    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
-    _mount_all(ctrl, str(clean))
-    pick_output_folder(ctrl, tmp_path / "out")
-    assert ctrl.generate()["ok"] is True
-    assert seen, "generate 가 execution provenance guard 를 부르지 않았다(seam 죽음)"
-    base, current = seen[0]
-    assert base == current  # bootstrap base == current → EXECUTION_ALLOWED
 
 
 def test_template_change_without_assembly_is_loud_not_silent(tmp_path):
@@ -6161,51 +5954,65 @@ def _write_notation_template(path, fields, markers=("{{#항목 특약 특약 사
     )
 
 
-def test_generation_is_refused_while_structure_notation_is_uncompiled(tmp_path):
-    """생성 admission 이 **실행 시점 bytes** 를 보고 잔존 표기를 시끄럽게 거절한다.
-
-    상태 배지만으로는 실행이 막히지 않는다(홈은 알리고 admission 이 막는다). 통과하면
-    산출물에 모든 선택지 + 마커 텍스트가 실린 구조적으로 틀린 문서가 나온다(#822 D5).
-    """
-    from hwpxfiller.application.slotless_run_bridge import (
-        STRUCTURE_NOTATION_UNCOMPILED,
-        SlotlessRunAdmissionError,
-    )
-    from hwpxfiller.domain.template_status import CompileState
-    from hwpxfiller.webapp.managed_run_result import ADMISSION_REJECT_TEXT
-
+def _notation_controller(tmp_path, name: str, template):
+    """구간 표기 템플릿 작업 + 실제 managed 배선 — 결속 데이터는 이 파일의 기본 데이터다."""
     reg = _registry(tmp_path)
+    job = replace(reg.load("공고서"), name=name, template_path=str(template))
+    job.mapping = MappingProfile(mappings=[
+        FieldMapping(template_field="공고명", source="bidNtceNm"),
+    ])
+    job.reviewed_rules = rules_fingerprints(job)
+    reg.save(job)
+    return JobController(
+        reg, lambda s, snap: None, **_deps(tmp_path),
+        **_managed_services(reg, tmp_path / "authority"),
+    )
+
+
+def test_generation_is_refused_while_structure_notation_is_uncompiled(tmp_path):
+    """생성이 **실행 시점 bytes** 를 보고 잔존 구간 표기를 시끄럽게 거절한다(S8-04 #835).
+
+    상태 배지만으로는 실행이 막히지 않는다(홈은 알리고 생성이 막는다). 통과하면 산출물에
+    모든 선택지 + 마커 텍스트가 실린 구조적으로 틀린 문서가 나온다(#822 D5). slot 없는
+    작업도 managed 파이프라인의 같은 검문을 지난다(#1081 PR2).
+    """
+    from hwpxfiller.domain.template_status import CompileState
+
     template = tmp_path / "notation.hwpx"
     _write_notation_template(template, ["공고명"])
-    reg.save(Job(name="표기작업", template_path=str(template)))
     status = template_compile_status(str(template))
     assert (status.state, status.structure_marker_n) == (CompileState.PARTIAL, 2)
+    ctrl = _notation_controller(tmp_path, "표기작업", template)
+    ctrl.dispatch("select_job", {"name": "표기작업"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
 
-    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
-    with pytest.raises(SlotlessRunAdmissionError) as exc:
-        coord.resolve_generation_template("표기작업")
+    refused = ctrl.generate()
 
-    assert exc.value.code == STRUCTURE_NOTATION_UNCOMPILED
-    # 코드 → 문안 맵이 이 거절을 재진술한다(조용한 fallback 「생성을 진행할 수 없습니다」 금지).
-    text = ADMISSION_REJECT_TEXT[exc.value.code]
-    assert "구간 표기" in text and "변환" in text
+    assert refused["ok"] is False, refused
+    assert "구간 표기" in refused["error"] and "변환" in refused["error"]
+    assert not list(out.glob("*.hwpx"))
 
 
 def test_generation_proceeds_when_no_notation_is_left(tmp_path):
-    """양성 대조 — 표기가 없는 같은 모양의 템플릿은 그대로 staged 경로를 낸다.
+    """양성 대조 — 표기가 없는 같은 모양의 템플릿은 그대로 문서를 만든다.
 
-    새 검문이 「항상 빨강」이 아님을 못박는다. 표기를 실제로 변환한 뒤(S8-02)의 실행은
-    slot-bearing 실행 자격이라는 **다른 게이트**의 소관이라 여기서 겨누지 않는다.
+    새 검문이 「항상 빨강」이 아님을 못박는다.
     """
-    reg = _registry(tmp_path)
     template = tmp_path / "clean.hwpx"
     _write_notation_template(template, ["공고명"], markers=("계약 일반사항",))
-    reg.save(Job(name="표기없음", template_path=str(template)))
     assert template_compile_status(str(template)).structure_marker_n == 0
+    ctrl = _notation_controller(tmp_path, "표기없음", template)
+    ctrl.dispatch("select_job", {"name": "표기없음"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
 
-    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
-    staged = coord.resolve_generation_template("표기없음")
-    assert Path(staged).exists()
+    made = ctrl.generate()
+
+    assert made["ok"] is True and made["status"] == "completed", made
+    assert len(list(out.glob("*.hwpx"))) == 2
 
 
 # ------------------- 마지막 사용 데이터의 부팅 자동 마운트(U3-07 · #880)

@@ -53,10 +53,8 @@ from hwpxfiller.application.slot_configuration_context import (
     SlotConfigurationContextError,
     StaleTemplateApplication,
     WorkTemplateStateReadPort,
-    resolve_exact_applied_template_input,
     resolve_slot_configuration_context,
 )
-from hwpxfiller.application.candidate_revision import CandidateObjectStorePort
 from hwpxfiller.application.execution_structure import (
     ExecutionStructureError,
     decode_execution_structure,
@@ -67,14 +65,6 @@ from hwpxfiller.application.slot_selection_input import (
     SlotSelectionInput,
     plan_capture,
 )
-from hwpxfiller.application.slotless_run_bridge import (
-    APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-    AdmittedSlotlessRun,
-    ExecutionConfigurationProvenancePort,
-    SlotlessRunAdmissionError,
-    admit_slotless_run,
-)
-from hwpxfiller.host.staged_template import stage_exact_applied_bytes
 from hwpxfiller.application.slot_configuration_projection import (
     CurrentSlotConfigurationView,
     ProjectedDetachedSelection,
@@ -112,7 +102,6 @@ from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
 from .candidate_store import CandidateStoreError
 from .qualification_store import QualificationStoreError
-from .template_inspection import template_compile_status
 from .work_configuration_store import WorkSlotConfigurationStore
 
 
@@ -640,39 +629,6 @@ def capture_slot_selection_input(
         )
 
 
-# ─── slotless run bridge admission (S4-11 #681) ──────────────────────────────────
-def admit_managed_slotless_run(
-    store: WorkSlotConfigurationStore,
-    work_state: WorkTemplateStateReadPort,
-    qualification: QualificationReadPort,
-    candidate: AppliedCandidateReadPort,
-    candidate_bytes: CandidateObjectStorePort,
-    provenance: ExecutionConfigurationProvenancePort,
-    home: "str",
-    *,
-    workspace_instance_id: str,
-    expected_work_authority_id: str,
-    expected_template_application_id: str,
-    expected_configuration_presence: bool | None = None,
-    expected_configuration_version: int | None = None,
-    captured_at: str,
-) -> AdmittedSlotlessRun:
-    """slotless legacy 실행 admission — shared fence 아래 exact context·bytes·provenance 를 고정한다.
-
-    guard 순서(#681): route auth(caller) → fence → current Application + SlotSelectionInput capture →
-    execution provenance read → exact current Application 대조 → exact Candidate bytes integrity →
-    immutable run-plan input 고정 → fence release. 장기 generation 은 fence **밖**에서 이 고정값
-    (staged_template_path)만 쓴다 — 이후 Apply 가 running run 의 bytes 를 갈아치우지 못한다.
-    """
-    with per_work_mutation_fence(workspace_instance_id, expected_work_authority_id):
-        return _admit_slotless_run_under_fence(
-            store, work_state, qualification, candidate, candidate_bytes, provenance,
-            home, workspace_instance_id, expected_work_authority_id,
-            expected_template_application_id, expected_configuration_presence,
-            expected_configuration_version, captured_at,
-        )
-
-
 # ─── Preset 저장·적용 (S9-02 · #828) ─────────────────────────────────────────────
 # 이 두 동사는 새 모듈이 아니라 **여기** 산다: Configuration 읽기·context 복원·CAS·persist·
 # fresh view 는 이미 이 모듈의 private helper 가 지고, 새 모듈에서는 그것들을 재사용할 수 없어
@@ -929,60 +885,3 @@ def apply_selection_preset(
         return _apply_selection_preset_under_fence(
             store, work_state, qualification, candidate, context, preset, now
         )
-
-
-def _admit_slotless_run_under_fence(
-    store: WorkSlotConfigurationStore,
-    work_state: WorkTemplateStateReadPort,
-    qualification: QualificationReadPort,
-    candidate: AppliedCandidateReadPort,
-    candidate_bytes: CandidateObjectStorePort,
-    provenance: ExecutionConfigurationProvenancePort,
-    home: str,
-    workspace_instance_id: str,
-    expected_work_authority_id: str,
-    expected_template_application_id: str,
-    expected_configuration_presence: bool | None,
-    expected_configuration_version: int | None,
-    captured_at: str,
-) -> AdmittedSlotlessRun:
-    # SlotSelectionInput capture(exact Application·version 검증 포함) — capture 와 같은 seam.
-    selection_input = _capture_under_fence(
-        store, work_state, qualification, candidate,
-        workspace_instance_id, expected_work_authority_id,
-        expected_template_application_id, expected_configuration_presence,
-        expected_configuration_version, captured_at,
-    )
-    # exact applied Candidate bytes 참조(존재·digest 결속만; parse 0). 다른 Application → 무결성 오류.
-    applied_input = resolve_exact_applied_template_input(
-        work_state, qualification, candidate,
-        expected_work_authority_id, expected_template_application_id,
-    )
-    # 전체 execution configuration provenance(기존 Job/Mapping 권위) — 없으면 UNKNOWN(None).
-    base = provenance.resolve_base_template_application_id(expected_work_authority_id)
-    return admit_slotless_run(
-        selection_input, applied_input, base,
-        lambda digest: stage_exact_applied_bytes(candidate_bytes, home, digest),
-        count_structure_markers=_staged_structure_marker_count,
-    )
-
-
-def _staged_structure_marker_count(staged_path: str) -> int:
-    """staged 실행 bytes 에 남은 구간 표기 수 — 상태 판정과 **같은 출처**를 되읽는다.
-
-    :func:`~hwpxfiller.external.template_inspection.template_compile_status` 를 그대로 쓰는
-    이유는 두 가지다: 경로 열기 + 마커 셈을 여기서 다시 조립하면 같은 상태의 두 번째 판정이
-    되고(그 둘이 갈리면 화면은 PARTIAL 인데 생성은 통과한다), admission 은 캐시된 상태가
-    아니라 **이 실행이 쓸 bytes** 를 봐야 한다(staged 사본이 곧 그 bytes 다).
-
-    읽지 못하면 「마커 0」으로 접지 않고 무결성 오류로 거절한다: qualification 이 이미
-    parse 를 증명한 bytes 라 여기서 실패했다는 것은 staged 사본이 그때 본 것과 다르다는
-    뜻이고, 못 읽은 문서를 통과시키면 검문이 있으나 마나다(fail-closed).
-    """
-    try:
-        return template_compile_status(staged_path).structure_marker_n
-    except Exception as exc:  # noqa: BLE001 — 열기·파싱 실패류를 제품 상태로 번역(raw 누출 금지)
-        raise SlotlessRunAdmissionError(
-            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-            f"staged 템플릿 bytes 를 읽을 수 없어 구간 표기를 확인하지 못했다: {exc}",
-        ) from exc

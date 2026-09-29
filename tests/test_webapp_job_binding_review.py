@@ -33,7 +33,6 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.viewmodel.selection_state import SelectionModel
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.external.settings import (
     load_last_output_directory,
     save_last_output_directory,
@@ -135,8 +134,6 @@ def _controller(
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=source_from_pool_item,
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
         slot_configuration=SlotConfigurationProduct(reg, root=root, clock=_clock()),
         workbench_observation=WorkbenchObservationProduct(),
     )
@@ -1222,22 +1219,18 @@ def test_snapshot_marks_durable_work_as_managed_hwpx(tmp_path: Path) -> None:
     assert ctrl.snapshot()["managed_hwpx"] is True
 
 
-def test_managed_hwpx_generate_never_reaches_legacy_generator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_managed_hwpx_generate_restates_the_workbench_disabled_reason(
+    tmp_path: Path,
 ) -> None:
-    # S6-05(#812): slot-bearing managed Work \ub294 managed \uac08\ub798\ub85c \uac04\ub2e4 \u2014 legacy generator \ub3c4\ub2ec
-    # 0(S6-9)\uc740 \uc720\uc9c0\ub418\uace0, \uc900\ube44 \ubbf8\ub2ec\uc758 \uac70\uc808 \uc0ac\uc720\ub294 \uac00\ub4dc \ud558\ub4dc\ucf54\ub529\uc774 \uc544\ub2c8\ub77c workbench
-    # observation \uc758 disabled_reason \uc7ac\uc9c4\uc220\uc774\ub2e4(\ub370\uc774\ud130 \ubbf8\uc7a5\ucc29).
+    # 준비 미달의 거절 사유는 가드 하드코딩이 아니라 workbench observation 의 disabled_reason
+    # 재진술이다(데이터 미장착). 문서 생성 경로는 managed 하나다(#1081 PR2 — legacy 없음).
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("select_job", {"name": WORK_REF})
 
-    def forbidden(*args, **kwargs):
-        pytest.fail("managed HWPX reached legacy generator")
-
-    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
     result = ctrl._generate_with_token()
     assert result["ok"] is False
-    assert result["error"] == "\ud544\uc694\ud55c \uc900\ube44\ub97c \uba3c\uc800 \uc644\ub8cc\ud574 \uc8fc\uc138\uc694"
+    assert result["error"] == "필요한 준비를 먼저 완료해 주세요"
+
 
 def test_managed_generate_wires_session_facts_into_the_pipeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1246,8 +1239,8 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
 
     bytes 진실은 test_managed_generation(실 store)·live101(actual WebView2)이 소유한다 —
     여기는 컨트롤러 층의 seam 계약을 잰다: 실 seal 이 세운 payload·digest·delivery 준비가
-    그대로 넘어가고, reader 는 실제 authority 관찰로 sealed digest 와 동치이며, legacy
-    generator 는 도달 0 이고, 결과 dict 는 legacy 키 집합으로 번역된다.
+    그대로 넘어가고, reader 는 실제 authority 관찰로 sealed digest 와 동치이며, 결과 dict 는
+    결과 존의 키 집합으로 번역된다.
     """
     from hwpxfiller.external.delivery_coordinator import (
         DeliveredDocument,
@@ -1288,11 +1281,6 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
         )
 
     monkeypatch.setattr(run_coordinator_module, "run_managed_generation", fake_run)
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("managed 갈래가 legacy generator 에 도달했다")
-
-    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
     result = ctrl.generate(run_token="tk-1")
     assert result["ok"] is True, result.get("error")
     assert result["status"] == "completed", result

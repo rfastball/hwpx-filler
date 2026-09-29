@@ -816,9 +816,11 @@ class TestWebSelftestGate:
         j = probe(selftest_result, "job_mirror")
         assert j["full_cell_title"] == "전산장비", "필터 강조 조각의 전체 값이 표에서 사라졌습니다."
         assert j.get("error") is None, f"위험 배너 프로브 예외: {j.get('error')!r}"
-        assert j["mirror_host_present"] is True, "위험 배너 host(#jobMirror)가 없습니다."
-        assert j["mirror_follows_preflight"] is True, (
-            "위험 배너가 사전검증 바로 아래가 아닙니다 — 사유와 복구 동사가 갈립니다."
+        assert j["mirror_host_gone"] is True, (
+            "철거된 legacy 위험 배너 host(#jobMirror)가 되살아났습니다(#1081 PR2)."
+        )
+        assert j["out_dir_line_gone"] is True, (
+            "철거된 legacy 저장 폴더 한 줄(#jobOutDirLine)이 되살아났습니다(#1081 PR2)."
         )
         assert j["mirror_line_gone"] is True, (
             "철거된 본문 확인 요약 한 줄이 되살아났습니다 — 사전검증과 같은 사실의 2중 발화."
@@ -832,8 +834,6 @@ class TestWebSelftestGate:
         assert j["mirror_review_flag_gone"] is True, (
             "철거된 「승인 필요」 표지(#jobReviewFlag)가 아직 렌더됩니다(#957)."
         )
-        # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 경보 인플레 금지(#364).
-        assert j["mirror_banner_empty"] is True, "위험 없는 상태에서 배너가 서 있습니다."
 
     def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
         """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
@@ -1219,19 +1219,6 @@ class TestWebSelftestGate:
     ) -> None:
         """I-217 R4: filter_panel 응답이 미결이어도 제목+로딩 껍데기는 클릭 프레임에 선다."""
         assert probe(selftest_result, "job_mirror")["panel_shell_immediate"] is True
-
-    def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
-        # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
-        # 행동 링크로 선다. 종전엔 거울이 「채움」 표를 그려 문서가 건강해 보이고, 재진술은
-        # danger 라 말없이 사라지고, 남는 신호는 하단 회색 캡션 한 줄뿐인 막다른 경보였다.
-        j = probe(selftest_result, "job_mirror")
-        assert j["token_banner"] is True, "미해소 파일명 토큰에 차단 배너가 서지 않았습니다."
-        assert j["token_fix_link"] is True, (
-            "배너에 행동 링크가 없습니다 — 막다른 경보 금지(결정 36)."
-        )
-        assert "납품기한" in j["token_banner_text"], (
-            f"배너가 남는 토큰을 재진술하지 않습니다: {j['token_banner_text']!r}"
-        )
 
     def test_job_filter_panel_hidden_beats_flex(self, selftest_result: dict) -> None:
         # 열 필터 패널 기본 닫힘 — [hidden] 이 .colpanel 의 display:flex 를 실제로 이긴다
@@ -2538,16 +2525,11 @@ class TestWebSelftestGate:
             f"전진 차단 사유가 Python 문안 그대로가 아닙니다: {e['half_block_reason']!r}"
         )
 
-    def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
-        # danger(구조 드리프트)는 본문 존 한 줄과 섞이지 않고 차단 배너 + 행동 링크로
-        # **교체**된다(결정 36·S9). overlay 로 얹히는 게 아니라 실제로 교체돼 선다.
+    def test_job_legacy_danger_banner_is_gone(self, selftest_result: dict) -> None:
+        # 드리프트·파일명 토큰 스냅샷이 와도 legacy 차단 배너는 서지 않는다 — 문서 생성이
+        # managed 하나라(#1081 PR2) 그 사유의 자리는 작업대 관찰·배달 계획이다.
         j = probe(selftest_result, "job_mirror")
-        assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
-        assert j["drift_fix_link"] is True, (
-            "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
-        )
-        # 「건강한 한 줄」·「N건 생성 재진술」과의 모순 대조는 그 두 표면이 존 재편에서
-        # 걷히면서 함께 은퇴했다 — 부재는 위 배너 host 테스트가 한 번만 잰다.
+        assert j["legacy_banner_gone"] is True, "철거된 legacy 차단 배너가 렌더됩니다."
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.
