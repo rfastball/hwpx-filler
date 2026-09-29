@@ -206,3 +206,60 @@ def test_problems_with_a_location_precede_the_locationless_compatibility_warning
     problems = _tab(ctrl, sid)["problems"]
     assert [item["category"] for item in problems] == ["authoring"] * 5 + ["compatibility"] * (1 + len(blocked["diagnostics"]))
     assert all(item["location"] is None for item in problems[5:])
+
+
+_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+_HS = "http://www.hancom.co.kr/hwpml/2011/section"
+_ENTRY = "Contents/section0.xml"
+
+
+def _placements_package() -> HwpxPackage:
+    """평문 토큰 네 자리 — 본문(좌표 확정), 탭 뒤 본문(문단만), 표 셀(셀 경로), 글상자(담은 본문 문단)."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+
+    package = HwpxPackage()
+    package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    package.stored.add(MIMETYPE_NAME)
+    package.entries[_ENTRY] = (
+        f'<hs:sec xmlns:hs="{_HS}" xmlns:hp="{_HP}">'
+        '<hp:p><hp:run><hp:t>가 {{본문}}</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>x</hp:t><hp:tab/><hp:t>{{탭뒤}}</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
+        '<hp:p><hp:run><hp:t>{{셀}}</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:rect><hp:drawText><hp:subList>'
+        '<hp:p><hp:run><hp:t>{{글상자}}</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:drawText></hp:rect></hp:run></hp:p></hs:sec>'
+    ).encode("utf-8")
+    return package
+
+
+def test_plain_token_locations_are_editor_coordinates_only_when_nothing_before_them_can_shift_them() -> None:
+    from hwpxfiller.external.hwpx_authoring import stray_token_problems
+
+    package = _placements_package()
+    problems = {item["target"]: item for item in stray_token_problems(package)}
+    assert set(problems) == set(extract_schema(package).stray_tokens) == {"본문", "탭뒤", "셀", "글상자"}
+    assert problems["본문"]["location"] == {"entry": _ENTRY, "paragraph": 0, "start": 2, "end": 8}
+    # 탭이 앞에 끼면 편집기 offset 과 본문 offset 이 갈릴 수 있다 — 문단만 싣고 추측하지 않는다.
+    assert problems["탭뒤"]["location"] == {"entry": _ENTRY, "paragraph": 1}
+    assert problems["셀"]["location"] == {
+        "entry": _ENTRY, "paragraph": 0, "start": 0, "end": 5,
+        "cell_path": [{"parent_paragraph": 2, "control": 0, "cell": 0, "paragraph": 0}]}
+    # 글상자 안은 셀 경로가 없다 — 그것을 담은 본문 문단이다.
+    assert problems["글상자"]["location"] == {"entry": _ENTRY, "paragraph": 3}
+    assert all(item["actions"][1]["label"] == "누름틀 변환" for item in problems.values())
+
+
+def test_compile_token_converts_a_token_after_a_tab_and_refuses_a_malformed_or_foreign_command() -> None:
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx, stray_token_problems
+
+    package = _placements_package()
+    command = next(item for item in stray_token_problems(package) if item["target"] == "탭뒤")["actions"][1]["command"]
+    changed, impact = apply_hwpx(package, command)
+    assert impact["before"] == "{{탭뒤}}" and impact["after"] == "[ 탭뒤 ]"
+    assert extract_schema(changed).field_names() == ["탭뒤"]
+    for bad in ({"type": "compile_token"}, {**command, "token_start": "2"}, {**command, "name": ""},
+                {**command, "name": "다른이름"}, {**command, "paragraph_path": "]["}):
+        with pytest.raises(ValueError, match="자동 수정이 더는 적용되지 않습니다"):
+            apply_hwpx(_placements_package(), bad)

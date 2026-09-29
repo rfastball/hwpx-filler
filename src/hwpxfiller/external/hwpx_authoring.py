@@ -486,18 +486,14 @@ def stray_token_problems(content: object) -> list[dict]:
     roots: dict[str, etree._Element] = {}
     problems: list[dict] = []
     for site in extract_schema(package).stray_sites:
-        if site.entry not in package.entries or site.start < 0:
-            continue
+        # 자리는 같은 package 를 훑은 스캐너의 것이다 — 구역·문단 경로·offset·이름이 늘 선다(스캐너가 보증).
         root = roots.get(site.entry)
         if root is None:
             root = roots[site.entry] = etree.fromstring(
                 package.entries[site.entry], parser=etree.XMLParser(resolve_entities=False))
         found = root.xpath(site.paragraph_path, namespaces=_namespaces(root))
-        if not isinstance(found, list) or len(found) != 1:
-            continue
-        name = normalize_field_id(site.name)
-        if name is None:
-            continue
+        assert isinstance(found, list) and len(found) == 1 and site.start >= 0
+        name = normalize_field_id(site.name) or site.name
         location = _token_location(root, site.entry, found[0], site.start, site.end)
         command = {"type": COMPILE_TOKEN, "entry": site.entry, "paragraph_path": site.paragraph_path,
                    "token_start": site.start, "name": name}
