@@ -193,8 +193,8 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "9ce07fef84a479e9fa880f266b5ad09a572476a2944381488821579286757e9f"
-body_sha256 = "263c30c892d227b7a50b2bf28e4679472c1a69e571636dcbdcbc71f3291eb57e"
+source_sha256 = "14646500e8f3c653fd8d61aef3ca4fd5bc006bc3f6d47b6df5e5d3bf67ecb6cc"
+body_sha256 = "e8b8c1342d4f20d6ab2ea754b83d571f49f589047388a8b5b1ebc6c9d8b4dc9a"
 
 [[topic]]
 id = "workflow-data"
