@@ -91,10 +91,15 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-document .cm-editor .cm-searchMatch-selected{background:var(--a-sel);outline:2px solid var(--a-primary)}
 .authoring-document .cm-gutters{background:var(--n-surface-alt);color:var(--a-muted);border-color:var(--a-border)}
 .authoring-document .cm-cursor{border-left-color:var(--a-ink)}
-.authoring-document .cm-authoring-slot-start{border-top:2px solid var(--a-primary);background:var(--a-sel)}
-.authoring-document .cm-authoring-slot-end{border-bottom:2px solid var(--a-primary);background:var(--a-sel)}
-.authoring-document .cm-authoring-option-start{border-top:1px dashed var(--a-muted)}
-.authoring-document .cm-authoring-option-end{border-bottom:1px dashed var(--a-muted)}
+/* 항목·선택 범위 막대(FB-03 #1079) — HWPX 편집면 범위 상자의 TXT 얼굴이다: 줄 왼쪽 막대(항목 바깥·선택 안쪽), 같은 색족
+   (--a-sem-*). 옅게는 템플릿 표시의 다른 범위, 짙게는 캐럿이 든 범위와 이름표 표시다. 그림자 막대라 글자를 밀지 않고,
+   막대 자리만큼 줄 머리를 띄운다. 구조 트리 강조·범위 고르기의 막대가 뒤에 와서 그 위에 선다. */
+.authoring-document .cm-content .cm-line{padding-left:var(--sp-10)}
+.authoring-document .cm-txtRegion-slot{--txt-slot-bar:color-mix(in srgb,var(--a-sem-slot) 40%,transparent);box-shadow:inset 3px 0 0 var(--txt-slot-bar)}
+.authoring-document .cm-txtRegion-slot-strong{--txt-slot-bar:var(--a-sem-slot)}
+.authoring-document .cm-txtRegion-option{--txt-option-bar:color-mix(in srgb,var(--a-sem-option) 40%,transparent)}
+.authoring-document .cm-txtRegion-option-strong{--txt-option-bar:var(--a-sem-option)}
+.authoring-document .cm-txtRegion-slot.cm-txtRegion-option{box-shadow:inset 3px 0 0 var(--txt-slot-bar),inset 6px 0 0 var(--txt-option-bar)}
 .authoring-document iframe{display:block;width:100%;height:100%;border:0}
 .authoring-properties{display:flex;flex-direction:column;gap:var(--sp-12);width:var(--authoring-properties-w,20rem);max-width:35%}
 .authoring-properties-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
@@ -427,4 +432,7 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-document .cm-authoring-problem-error,.authoring-document .cm-authoring-problem-warning{text-decoration-color:CanvasText}
   .authoring-document .cm-authoring-pair{outline:1px dashed CanvasText;outline-offset:-1px}
   .authoring-document .cm-authoring-rangepick{outline:1px dashed Highlight}
+  /* 범위 막대는 그림자라 강제 색상에서 사라진다 — 실선(항목)·점선(선택) 왼쪽 테두리가 대신 선다. */
+  .authoring-document .cm-txtRegion-slot{border-left:3px solid CanvasText}
+  .authoring-document .cm-txtRegion-slot.cm-txtRegion-option{border-left-style:dashed}
 }

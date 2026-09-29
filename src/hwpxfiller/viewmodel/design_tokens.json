@@ -51,6 +51,14 @@
     "surface": "#1e242b",
     "ink": "#c6d0da"
   },
+  "semantic": {
+    "_note": "저작 편집면의 의미 표지(필드·항목·선택) 색 — HWPX 편집면(vendor/rhwp/patches/authoring.patch .rhwp-semantic-layer)과 같은 값이라 TXT·HWPX 가 같은 색으로 말한다(FB-03 #1079). *_ink 는 이름표 칩 바탕 위 글자다.",
+    "field": "#198575",
+    "slot": "#7364b5",
+    "option": "#c08436",
+    "slot_ink": "#ffffff",
+    "option_ink": "#1c2126"
+  },
   "dark": {
     "_note": "다크 팔레트 — 단순 반전이 아니라 손으로 재산출. 원칙: 밝은 accent(primary/ok)는 흰글씨 대신 어두운 on_accent 잉크를 얹고 다크 표면 위 텍스트로도 읽히게 밝힘(라이트에선 accent 가 어두워 흰글씨였던 이중용도 충돌 해소). 파스텔 틴트(state/badge)는 같은 색조의 어둡고 저채도 배경 + 밝힌 전경/보더. 중성 램프는 극성 반전(hover 가 surface 보다 밝음). 대비 하한은 test_contrast_wcag 가 기계 비준.",
     "color": {
@@ -103,6 +111,13 @@
     "log": {
       "surface": "#12161b",
       "ink": "#c6d0da"
+    },
+    "semantic": {
+      "field": "#3fb39c",
+      "slot": "#9486dc",
+      "option": "#d9a35a",
+      "slot_ink": "#0f1418",
+      "option_ink": "#0f1418"
     }
   },
   "space": { "2": 2, "4": 4, "6": 6, "8": 8, "10": 10, "12": 12, "16": 16, "24": 24, "40": 40 },

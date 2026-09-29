@@ -556,15 +556,14 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           command: async (command) => { lintpadCommand(handle, command); },
           state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
           decorate: (analysis, mode, highlight) => {
-            const spans = mode === "document" ? [] : [...(analysis.spans || [])];
-            if (mode === "structure") for (const place of analysis.placements || []) {
-              spans.push({ kind: `${place.kind}-start`, start: place.start, end: place.start });
-              spans.push({ kind: `${place.kind}-end`, start: Math.max(place.start, place.end - 1), end: place.end });
-            }
+            // 이름표(FB-03)는 모든 표시에서 원문 표기를 대신한다 — 표시 방식은 HWPX 편집면의 labels 어휘다(문서 none·템플릿
+            // selected·이름표 all). 항목·선택 범위 막대는 Python 배치(placements) 그대로다.
+            const spans = [...(analysis.spans || [])];
             // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
-            updateLintpad(handle, { spans, problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
+            updateLintpad(handle, { spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
+              regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
           },
         };
         release = () => disposeLintpad(handle);

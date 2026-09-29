@@ -810,6 +810,22 @@ async function probeLintpad(ctx, out) {
   mode("template").click();
   out.authoring_template_mode = await waitFor(ctx, () => marks() === 2)
     && mode("template").getAttribute("aria-pressed") === "true";
+  /* FB-03(#1079): 편집면은 표기 원문 대신 이름표를 그린다 — 템플릿 표시의 편집면 글자에 표기 문법(`{{`)이 없고 이름은
+     보인다. 이름표를 누르면 캐럿은 토큰 앞뒤에 선다(원자 범위): 편집면이 쓴 DOM 선택이 이름표 안에 들지 않는다. */
+  out.lintpad_source_hidden = !content.textContent.includes("{{") && content.textContent.includes("공고명")
+    && content.textContent.includes("사유");
+  const tag = doc.querySelector(`${canvas} .cm-txtField`);
+  if (tag) {
+    const box = tag.getBoundingClientRect();
+    const point = { bubbles: true, cancelable: true, button: 0, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+    tag.dispatchEvent(new ctx.win.MouseEvent("mousedown", point));
+    tag.dispatchEvent(new ctx.win.MouseEvent("mouseup", point));
+    await settleRender(ctx);
+    const picked = doc.getSelection();
+    const shown = doc.querySelector(`${canvas} .cm-txtField`);
+    out.lintpad_tag_caret_outside = !!picked && !!picked.anchorNode && picked.isCollapsed && content.contains(picked.anchorNode)
+      && !!shown && !shown.contains(picked.anchorNode);
+  }
   /* §10 키보드·IME 밴드 — 같은 세션(필드 1 · 닫히지 않은 항목 1 = 문제 1) 위에서 돈다. 예외는
      `kbd_error` 에만 실어 뒤따르는 닫기 보호 단언을 끌고 죽지 않는다. */
   try {

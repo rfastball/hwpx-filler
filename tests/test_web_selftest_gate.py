@@ -1412,6 +1412,8 @@ class TestWebSelftestGate:
             "lintpad_content_editable", "lintpad_focusable", "lintpad_lint_arrived",
             "authoring_escape_retains", "authoring_document_mode",
             "authoring_template_mode", "authoring_close_asks",
+            # FB-03(#1079): 편집면은 표기 원문 대신 이름표를 그리고, 이름표를 누른 캐럿은 토큰 밖(원자 범위)이다.
+            "lintpad_source_hidden", "lintpad_tag_caret_outside",
             "authoring_cancel_retains", "lintpad_disposed",
         ):
             assert b[key] is True, f"실제 TXT 저작 동작 실패: {key}: {b!r}"

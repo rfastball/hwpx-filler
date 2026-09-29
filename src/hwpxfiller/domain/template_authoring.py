@@ -714,9 +714,9 @@ def analyze(media: str, content: str | object) -> dict:
         "fields": _fields(content),
         "slots": slots,
         "placements": placements,
-        "spans": [{"kind": span.kind, "start": _to_utf16(content, span.start),
-                   "end": _to_utf16(content, span.end), "source": span.source}
-                  for span in scan_text_token_spans(content)],
+        # 이름표(label·region·role·paired, FB-03)까지 도메인이 정한다 — 표면은 좌표만 UTF-16 으로 받는다.
+        "spans": [span.to_dict() | {"start": _to_utf16(content, span.start), "end": _to_utf16(content, span.end)}
+                  for span in scan_text_token_spans(content, scan)],
         "diagnostics": [_diagnostic_entry(content, scan, item) for item in scan.diagnostics],
         "summary": scan.summary.to_dict(),
     }

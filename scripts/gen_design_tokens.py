@@ -53,6 +53,10 @@ _WEB_MAP = [
     ("--n-header-ink", "neutral.header_ink"), ("--n-ink-control", "neutral.ink_control"),
     # 실행 화면 로그박스(웹 전용) — 어두운 콘솔 톤. style.py(Qt)는 QPlainTextEdit 기본이라 미사용.
     ("--log-surface", "log.surface"), ("--log-ink", "log.ink"),
+    # 저작 편집면의 의미 표지(FB-03 #1079) — TXT 이름표가 HWPX 편집면(rhwp)과 같은 색족으로 말한다.
+    ("--a-sem-field", "semantic.field"), ("--a-sem-slot", "semantic.slot"),
+    ("--a-sem-option", "semantic.option"), ("--a-sem-slot-ink", "semantic.slot_ink"),
+    ("--a-sem-option-ink", "semantic.option_ink"),
 ]
 
 # 스케일 변수(여백·모서리·폰트크기) ← JSON space/radius/type. 색과 달리 **테마 불변** —
