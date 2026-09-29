@@ -201,14 +201,19 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "5300bc58ff1e0a087d33a9d43925b1d12c1d1a4fcd6fc3816b4927f96e07bcff"body_sha256 = "7a6813ecc90d2322df471d88bec96e8ae6e5a3d3a0da1a2524370f98eaabff4c"
+source_sha256 = "b695354481ccaffa481ab4dde5437991b7e29642abd9b062555be1f6f3042065"
+body_sha256 = "7a6813ecc90d2322df471d88bec96e8ae6e5a3d3a0da1a2524370f98eaabff4c"
+
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "5e4c1c07b66797675121b8146d69c0519f76d7e96444b6ba48f563881926c613"
-body_sha256 = "4087d4243c3331932e1c118042275b1fd351e8e85b501ffe8f7ae123aea14935"[[topic]]id = "workflow-results"
+source_sha256 = "8fdd95820da3f5f8d44a50bde8a30a2528f9d734320b43949086283910ce599d"
+body_sha256 = "6dcf67f7dabac55747c963e1e1b9949d26fbae903d2e1a0abcce0241bcd936d6"
+
+[[topic]]
+id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py"]
