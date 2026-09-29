@@ -203,7 +203,7 @@ def test_every_other_corpus_document_roundtrips_editable(
 
 
 def _batch_outputs() -> dict[str, bytes]:
-    """IDE-07 반복 명령의 산출물 — 실습 표본에 한 명령씩 적용한다(같은 문구 4곳을 한 필드로 · 문단마다 선택 4개)."""
+    """IDE-07 반복 명령의 산출물 — 실습 표본에 한 명령을 적용한다(같은 문구 4곳을 한 필드로)."""
     from hwpxfiller.external.hwpx_authoring import apply_hwpx, same_text_hwpx
     from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
@@ -215,19 +215,13 @@ def _batch_outputs() -> dict[str, bytes]:
     assert len(sites) == 3, sites
     fields, _ = apply_hwpx(package, {"type": "create_field", "name": "구분", **selection,
                                      "ranges": [selection, *sites]})
-    split, _ = apply_hwpx(read_hwpx_package(source), {
-        "type": "create_slot", "entry": entry, "start_paragraph": 2, "end_paragraph": 5,
-        "id": "요청", "label": "요청 내용", "split": "paragraph"})
-    return {"batch-fields.hwpx": fields.to_bytes(), "batch-split.hwpx": split.to_bytes()}
+    return {"batch-fields.hwpx": fields.to_bytes()}
 
 
-@pytest.mark.browser
-@pytest.mark.skipif(_GATE, reason=_GATE_REASON)
-def test_batch_command_outputs_roundtrip_editable(tmp_path: Path) -> None:
-    """IDE-07 — 한 명령 안의 여러 누름틀 삽입·중첩 책갈피 구간이 rhwp 왕복 보존 판정을 깨지 않는다."""
+def _generated_verdicts(tmp_path: Path, outputs: dict[str, bytes]) -> dict[str, tuple[str, ...]]:
+    """제품이 만든 문서를 동봉 편집기로 한 번 왕복해 보존 판정 종류를 모은다."""
     from playwright.sync_api import sync_playwright  # 지역 import — 옵트아웃 러너에 playwright 불요
 
-    outputs = _batch_outputs()
     for name, content in outputs.items():
         (tmp_path / name).write_bytes(content)
     verdicts: dict[str, tuple[str, ...]] = {}
@@ -244,4 +238,103 @@ def test_batch_command_outputs_roundtrip_editable(tmp_path: Path) -> None:
                 verdicts[name] = tuple(sorted(item["kind"] for item in verdict["diagnostics"]))
         finally:
             browser.close()
-    assert verdicts == {name: () for name in outputs}
+    return verdicts
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_GATE_REASON)
+def test_batch_command_outputs_roundtrip_editable(tmp_path: Path) -> None:
+    """IDE-07 — 한 명령 안의 여러 누름틀 삽입이 rhwp 왕복 보존 판정을 깨지 않는다."""
+    outputs = _batch_outputs()
+    assert _generated_verdicts(tmp_path, outputs) == {name: () for name in outputs}
+
+
+#: 입찰 공고 표본의 문단 35·36 은 ``<hp:t> </hp:t>`` 앞글자 뒤에 글자처럼 취급한 1x1 표가 오는
+#: 문단이다. 영역이 이 문단에서 끝나면 책갈피 종료가 표 **뒤**에 놓인다(문단 전체가 영역).
+_TABLE_END_SOURCE = "real/bid_notice_limited_under100m.hwpx"
+
+
+def _table_end_region_outputs() -> dict[str, bytes]:
+    """문단 말미 표로 끝나는 영역 — 편집기가 종료를 표 앞으로 당기면 영역이 표를 잃는다.
+
+    ``{{/선택}}`` 을 표 바로 다음 문단에 둔 템플릿을 컴파일하면 선택 영역이 이렇게 끝난다.
+    당겨진 문서는 커널이 부분 문단 종료로 거절해 생성에서 지울 수 없게 되므로, 보존 판정이
+    읽기 전용으로 막은 것이 옳았다 — 고칠 곳은 편집기 직렬화기다(여러 문단이면 ``OrphanFieldEnd``,
+    한 문단이면 ``FieldRange`` 의 감싼 컨트롤 수).
+    """
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx
+    from hwpxfiller.external.hwpx_package_io import read_hwpx_package
+
+    entry = "Contents/section0.xml"
+    outputs: dict[str, bytes] = {}
+    # 36..36 은 한 문단 영역이다 — 시작·종료가 같은 문단이라 편집기가 고아가 아닌 같은 문단 필드로
+    # 읽는다(``" "`` + 표 한 문단을 감싼 선택 영역이 컴파일되면 이렇게 된다).
+    for start, end in ((20, 35), (20, 36), (36, 36)):
+        package = read_hwpx_package(CORPUS / _TABLE_END_SOURCE)
+        created, _ = apply_hwpx(package, {"type": "create_slot", "entry": entry, "start_paragraph": start,
+                                          "end_paragraph": end, "id": "a"})
+        outputs[f"slot-{start}-{end}-table-end.hwpx"] = created.to_bytes()
+    return outputs
+
+
+def _trailing_empty_field_outputs() -> dict[str, bytes]:
+    """문단 끝 빈 누름틀 뒤에서 끝나는 영역 — 종료가 누름틀 ``fieldBegin`` 앞으로 당겨지면
+    누름틀이 영역 밖으로 빠진다. 코퍼스에 이 모양이 없어 표본 문단 34 끝에 제품 누름틀
+    표기(``domain.authoring``)로 빈 누름틀을 덧붙여 만든다. 누름틀만 있는 문서도 함께 잰다 —
+    그 문서가 왕복에서 변하면 영역 판정이 무엇을 재는지 흐려진다.
+    """
+    import lxml.etree as etree
+
+    from hwpxfiller.external.hwpx_authoring import apply_hwpx
+    from hwpxfiller.external.hwpx_package_io import read_hwpx_package
+    from hwpxcore.lineseg import serialize_modified_section
+
+    entry = "Contents/section0.xml"
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    package = read_hwpx_package(CORPUS / _TABLE_END_SOURCE)
+    root = etree.fromstring(package.entries[entry])
+    paragraph = [child for child in root if child.tag == f"{hp}p"][34]
+    run = [child for child in paragraph if child.tag == f"{hp}run"][-1]
+    begin = etree.SubElement(etree.SubElement(run, f"{hp}ctrl"), f"{hp}fieldBegin")
+    for name, value in (("id", "1700000001"), ("type", "CLICK_HERE"), ("name", "끝"), ("editable", "1"),
+                        ("dirty", "1"), ("zorder", "-1"), ("fieldid", "1700000002"), ("metaTag", "")):
+        begin.set(name, value)
+    end = etree.SubElement(etree.SubElement(run, f"{hp}ctrl"), f"{hp}fieldEnd")
+    end.set("beginIDRef", "1700000001")
+    end.set("fieldid", "1700000002")
+    package.entries[entry] = serialize_modified_section(root)
+    field_only = package.to_bytes()
+    created, _ = apply_hwpx(package, {"type": "create_slot", "entry": entry, "start_paragraph": 20,
+                                      "end_paragraph": 34, "id": "a"})
+    return {"trailing-empty-field.hwpx": field_only, "slot-20-34-trailing-empty-field.hwpx": created.to_bytes()}
+
+
+def test_generated_region_ends_really_follow_the_trailing_object() -> None:
+    """위 두 표본이 재려는 모양 그대로다 — 종료가 문단 마지막 표·누름틀 **뒤**에 있다."""
+    import zipfile
+    from io import BytesIO
+
+    import lxml.etree as etree
+
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    cases = {**_table_end_region_outputs(), **_trailing_empty_field_outputs()}
+    del cases["trailing-empty-field.hwpx"]
+    for name, content in cases.items():
+        root = etree.fromstring(zipfile.ZipFile(BytesIO(content)).read("Contents/section0.xml"))
+        end = next(node for node in root.iter(f"{hp}fieldEnd")
+                   if node.get("beginIDRef") == next(node.get("id") for node in root.iter(f"{hp}fieldBegin")
+                                                     if node.get("type") == "BOOKMARK"))
+        paragraph = end.getparent().getparent().getparent()
+        trailing = [node for run in paragraph if run.tag == f"{hp}run" for node in run
+                    if not (node.tag == f"{hp}t" and not len(node) and not node.text)]
+        before = trailing[trailing.index(end.getparent()) - 1]
+        kinds = {etree.QName(child).localname for child in before.iter()}
+        assert kinds & {"tbl", "fieldEnd"}, (name, kinds)
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_GATE_REASON)
+def test_region_ending_after_trailing_object_roundtrips_editable(tmp_path: Path) -> None:
+    """영역 종료가 문단 끝 표·빈 누름틀 뒤에 있어도 편집기 왕복이 그 자리를 지킨다."""
+    outputs = {**_table_end_region_outputs(), **_trailing_empty_field_outputs()}
+    assert _generated_verdicts(tmp_path, outputs) == {name: () for name in outputs}

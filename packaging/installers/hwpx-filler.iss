@@ -30,6 +30,14 @@ VersionInfoVersion={#AppVersionInfo}
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; GroupDescription: "추가 바로가기:"; Flags: unchecked
 
+; 덮어쓰기(유지) 설치도 PyInstaller 번들 폴더는 매번 비우고 새로 싣는다. 프로그램 파일은
+; 사용자 데이터가 아니다(데이터는 DataHomeDir). [Files] 는 덮어쓸 뿐 옛 버전 파일을 지우지
+; 않는데, 앱 기동 시 web 산출물 검증은 _internal\web 이 봉인과 **정확히** 같기를 요구한다 —
+; Vite 해시 이름의 옛 assets 가 남으면 "extra stale web artifact file" 로 기동을 거부한다.
+; {app} 자체는 지우지 않는다(사용자가 고른 폴더일 수 있다) — 번들 소유 _internal 만 비운다.
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\..\dist\hwpx-filler-web\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

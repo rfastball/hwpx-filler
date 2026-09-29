@@ -285,6 +285,38 @@ class SealExecutionPlanService:
         """Commit an explicit legacy Mapping save as the Work-default S5 revision."""
         return self._commit_mapping_binding(work_ref, request_id, media="hwpx")
 
+    def adopt_saved_mapping_if_unbound(
+        self, work_ref: str, request_id: str
+    ) -> BindingCommitProjection | None:
+        """권위 발급 **전에** 저장된 Mapping 을 이 Work 의 최초 Field Binding 판본으로 들인다.
+
+        새 작업의 편집기 저장은 권위(``authority_id``)가 아직 없어 결속 확정을 부르지 못한다 —
+        권위는 「문서 만들기」 착석이 나중에 발급한다(#932 B5). 그 사이에 판본이 없으면 현재 활성
+        Field 전건이 NEW_ACTIVE_FIELD 로 서서, 사용자가 방금 편집기에서 확정한 연결을 한 번 더
+        확정하라는 요구가 된다. 저장본의 결정이 활성 Field 를 전부 덮고 있으면 그 결정이 곧 확정이다.
+
+        들이는 조건은 셋이 모두 설 때뿐이다: hwpx·권위 있음, 현재 활성 Field 를 읽을 수 있음(구간
+        선택 전이면 아직 모른다), **이전 판본이 전혀 없음**. 판본이 하나라도 있으면(BROKEN·템플릿
+        변경 뒤의 새 Field) 여기서 판단하지 않는다 — 그 확정은 #911 의 명시 동사가 진다. 결정이
+        빠진 활성 Field 가 있으면 커밋이 거절하고(``FieldBindingReviewRequired``) 그 Field 는
+        NEW_ACTIVE_FIELD 검토로 남는다. 들였으면 커밋 결과를, 아니면 None 을 돌려준다.
+        """
+        job = load_job(self._registry, work_ref)
+        if job.media != "hwpx" or not job.authority_id:
+            return None
+        workspace_id = self._workspace.get_or_create(self._seal_clock())
+        current = self._capture.read_current_field_binding_review(
+            workspace_id,
+            job.authority_id,
+            _source_schema_keys(job.mapping),
+        )
+        if current is None or current.has_prior_revision:
+            return None
+        try:
+            return self._commit_mapping_binding(work_ref, request_id, media="hwpx")
+        except FieldBindingReviewRequired:
+            return None
+
     def commit_txt_mapping(
         self, work_ref: str, request_id: str
     ) -> BindingCommitProjection | None:

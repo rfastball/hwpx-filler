@@ -1,12 +1,9 @@
-"""Durable document saves, recovery drafts, explicitly saved trial cases and work positions."""
+"""Durable document saves, explicitly saved trial cases and work positions."""
 
 from __future__ import annotations
 
-import base64
-import binascii
 import hashlib
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .atomic import write_bytes_atomic, write_bytes_atomic_exclusive
@@ -58,72 +55,6 @@ class AuthoringStore:
             else:
                 write_bytes_atomic(path, data)
         return digest(data)
-
-    def write_draft(
-        self, key: str, *, path: str, media: str, baseline: str | None,
-        source_baseline: str | None, content: bytes
-    ) -> str:
-        target = self._path("drafts", key)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        record = {
-            "version": 1,
-            "path": path,
-            "media": media,
-            "baseline": baseline,
-            "source_baseline": source_baseline,
-            "content": base64.b64encode(content).decode("ascii"),
-        }
-        write_bytes_atomic(target, json.dumps(record, ensure_ascii=False).encode("utf-8"))
-        return datetime.now(timezone.utc).isoformat()
-
-    def read_draft(self, key: str) -> dict | None:
-        target = self._path("drafts", key)
-        if not target.is_file():
-            return None
-        record = json.loads(target.read_text(encoding="utf-8"))
-        if not isinstance(record, dict) or type(record.get("version")) is not int \
-                or record["version"] != 1:
-            raise ValueError("지원하지 않는 복구 초안 형식입니다.")
-        if (not isinstance(record.get("path"), str)
-                or not isinstance(record.get("media"), str)
-                or record["media"] not in {"txt", "hwpx"}
-                or (record.get("baseline") is not None
-                    and not isinstance(record["baseline"], str))
-                or (record.get("source_baseline") is not None
-                    and not isinstance(record["source_baseline"], str))
-                or not isinstance(record.get("content"), str)):
-            raise ValueError("복구 초안의 내용이 올바르지 않습니다.")
-        try:
-            record["content"] = base64.b64decode(record["content"], validate=True)
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError("복구 초안의 내용이 손상되었습니다.") from exc
-        return record
-
-    def discard_draft(self, key: str) -> None:
-        self._path("drafts", key).unlink(missing_ok=True)
-
-    def list_drafts(self) -> list[dict]:
-        directory = self.directory / "drafts"
-        if not directory.is_dir():
-            return []
-        drafts = []
-        for target in sorted(directory.glob("*.json")):
-            try:
-                updated_at = datetime.fromtimestamp(
-                    target.stat().st_mtime, timezone.utc
-                ).isoformat()
-            except OSError:
-                updated_at = ""
-            try:
-                record = self.read_draft(target.stem)
-                if record is not None:
-                    drafts.append({"key": target.stem, "path": record["path"],
-                                   "media": record["media"], "updated_at": updated_at})
-            except (OSError, UnicodeError, ValueError) as exc:
-                drafts.append({"key": target.stem, "path": "", "media": "",
-                               "updated_at": updated_at,
-                               "error": f"복구 초안을 읽을 수 없습니다: {exc}"})
-        return drafts
 
     def read_cases(self, key: str) -> list[dict]:
         target = self._path("cases", key)

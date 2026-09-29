@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates, previewHighlight } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside, zoomChoice } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, groupedPath, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside, zoomChoice } from "../../frontend/src/screens/authoring.ts";
 import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
 import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
@@ -763,12 +763,34 @@ test("UX-09: outlineSpine places slots in order, options under their slot, and u
     ] }],
   };
   const spine = outlineSpine(analysis);
-  assert.deepEqual(spine.map((node) => node.kind === "use" ? "use" : node.slot.id), ["s1", "s2", "use", "use"]);
-  assert.deepEqual(spine.slice(2).map((node) => node.order), [4, 5], "소속 없는(null) 필드와 못 찾은(gone) 항목의 사용 위치 모두 척추 위, order 차례대로");
+  assert.deepEqual(spine.map((node) => node.kind === "group" ? "group" : node.slot.id), ["s1", "s2", "group"]);
+  assert.deepEqual(spine[2].children.map((node) => node.order), [4, 5], "소속 없는(null) 필드와 못 찾은(gone) 항목의 사용 위치 모두 척추 위, order 차례대로 — 이어 섰으니 한 묶음");
   const s1 = spine[0], s2 = spine[1];
   assert.equal(s1.kind, "slot"); assert.equal(s1.children.length, 1); assert.equal(s1.children[0].kind, "use");
   assert.equal(s2.children[0].kind, "option"); assert.equal(s2.children[0].option.id, "o1");
   assert.equal(s2.children[0].children[0].kind, "use");
+});
+
+test("연속 묶음: runs of two or more loose uses between slots fold into one group in document order; a lone loose use stays a row", () => {
+  const use = (name, order, slot_id = null) => ({ slot_id, option_id: null, order });
+  const analysis = {
+    slots: [{ id: "s", order: 3, options: [] }],
+    fields: [
+      { name: "a", occurrences: [use("a", 0), use("a", 2), use("a", 4, "s"), use("a", 6)] },
+      { name: "b", occurrences: [use("b", 1), use("b", 7), use("b", 8)] },
+    ],
+  };
+  const spine = outlineSpine(analysis);
+  assert.deepEqual(spine.map((node) => node.kind), ["group", "slot", "group"]);
+  const [head, , tail] = spine;
+  assert.equal(head.key, outlineKey.group("a", 1), "묶음 열쇠는 첫 사용 위치에서 짓는다");
+  assert.deepEqual(head.children.map((node) => `${node.field.name}${node.index}`), ["a1", "b1", "a2"], "묶음 안도 문서 차례");
+  assert.deepEqual(tail.children.map((node) => `${node.field.name}${node.index}`), ["a4", "b2", "b3"]);
+  const lone = outlineSpine({ slots: [{ id: "s", order: 1, options: [] }], fields: [{ name: "x", occurrences: [use("x", 0), use("x", 2)] }] });
+  assert.deepEqual(lone.map((node) => node.kind), ["use", "slot", "use"], "하나뿐이면 묶지 않는다");
+  assert.deepEqual(groupedPath(spine, [outlineKey.use("b", 1)]), [head.key, outlineKey.use("b", 1)], "묶음 안 사용 위치의 경로에는 묶음이 조상으로 선다");
+  assert.deepEqual(groupedPath(lone, [outlineKey.use("x", 1)]), [outlineKey.use("x", 1)]);
+  assert.deepEqual(groupedPath(spine, [outlineKey.slot("s"), outlineKey.use("a", 3)]), [outlineKey.slot("s"), outlineKey.use("a", 3)]);
 });
 
 test("UX-09: outlineSpine keeps insertion order for nodes with no order (stable sort, oldest projections)", () => {
@@ -975,29 +997,26 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
 });
 
 test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then alerts; a closed dock does not reopen for an old alert", () => {
-  const item = { id: "a", recovery: true, external_changed: true };
-  assert.deepEqual(dockTabs(item, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "trial", "external_changed", "recovery"]);
+  const item = { id: "a", external_changed: true };
+  assert.deepEqual(dockTabs(item, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "trial", "external_changed"]);
   // 「변경 영향·작업 적용」은 문맥 탭이다(NG-09): Python 이 연결 작업이 있다고(또는 확인할 수 없다고) 투영한 문서에만 서고,
   // 자리는 원문 표기와 결과 시험 사이다. 탭이 사라지면 그 패널이 열려 있어도 다음 대체 탭이 선다(문맥 탭의 퇴장 규칙).
   const linked = { ...item, has_linked_jobs: true };
-  assert.deepEqual(dockTabs(linked, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "impact", "trial", "external_changed", "recovery"]);
+  assert.deepEqual(dockTabs(linked, { panel: "" }).tabs.map(([key]) => key), ["problems", "search", "raw", "impact", "trial", "external_changed"]);
   assert.equal(dockTabs(linked, { panel: "impact" }).active, "impact");
-  assert.equal(dockTabs({ ...item, has_linked_jobs: false }, { panel: "impact" }).active, "recovery");
+  assert.equal(dockTabs({ ...item, has_linked_jobs: false }, { panel: "impact" }).active, "external_changed");
   assert.equal(dockTabs({ id: "a" }, { panel: "impact" }).active, "");
-  assert.equal(dockTabs(item, { panel: "" }).active, "recovery");
+  assert.equal(dockTabs(item, { panel: "" }).active, "external_changed");
   assert.equal(dockTabs(item, { panel: "search" }).active, "search");
   assert.equal(dockTabs(item, { panel: "", dock: "external_changed" }).active, "external_changed");
-  assert.equal(dockTabs(item, { panel: "", dock: "trial" }).active, "recovery", "시험 탭은 시험이 열려 있을 때만 선다");
+  assert.equal(dockTabs(item, { panel: "", dock: "trial" }).active, "external_changed", "시험 탭은 시험이 열려 있을 때만 선다");
   assert.equal(dockTabs(item, { panel: "", dockClosed: true }).active, "");
   assert.equal(dockTabs(item, { panel: "", dockClosed: true, trial: true }).active, "trial", "사용자가 연 시험은 닫힌 독 표지와 무관하다");
-  assert.equal(dockTabs(item, { panel: "properties", recoveryPreview: { key: "k" } }).active, "recovery_preview");
   // 저장 실패는 다른 탭을 보는 동안에도 탭으로 남아 복구 동사로 돌아갈 길이 된다. 외부 변경 탭은 그와 겹치지 않는다.
   const failed = dockTabs(item, { panel: "problems", saveFailed: true });
   assert.ok(failed.tabs.some(([key, label]) => key === "external" && label === "저장 실패"));
   assert.ok(!failed.tabs.some(([key]) => key === "external_changed"));
   assert.equal(failed.active, "problems");
-  // 문서가 없으면 복구 초안 비교만 설 수 있다.
-  assert.deepEqual(dockTabs(undefined, { panel: "", recoveryPreview: { key: "k" } }), { tabs: [["recovery_preview", "초안과 원본 비교"]], active: "recovery_preview" });
   assert.deepEqual(dockTabs(undefined, { panel: "" }), { tabs: [], active: "" });
   // IDE-02: 명령 팔레트는 독 탭이 아니다 — 여는 동안에도 독은 열려 있던 탭(시험·문제)을 그대로 보인다.
   assert.ok(!dockTabs(item, { panel: "commands" }).tabs.some(([key]) => key === "commands"));
@@ -1006,14 +1025,9 @@ test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then
 
 test("§3.1/AC24: alert content keeps role=alert inside the dock", async () => {
   const { controller, snapshot } = harness();
-  snapshot.tabs[0].recovery = true;
   await controller.activate("a");
-  let dock = dockOf(render(controller));
-  assert.ok(dock.includes('aria-labelledby="authoring-dock-tab-recovery"><section class="authoring-bottom" role="alert" aria-label="중단 전 복구 초안"><h2>중단 전 복구 초안</h2>'));
-  for (const verb of ["초안과 원본 비교", "복구", "폐기"]) assert.ok(dock.includes(`>${verb}</button>`), verb);
-  snapshot.tabs[0].recovery = false;
   snapshot.tabs[0].external_changed = true;
-  dock = dockOf(render(controller));
+  const dock = dockOf(render(controller));
   assert.ok(dock.includes('<section class="authoring-bottom" role="alert" aria-label="외부 파일 변경"><h2>외부 파일 변경</h2>'));
   for (const verb of ["양쪽 내용 확인", "현재 작업을 다른 이름으로 저장", "외부 파일 다시 열기"]) assert.ok(dock.includes(`>${verb}</button>`), verb);
 });
@@ -1115,7 +1129,7 @@ test("§3.1: the location breadcrumb sits in the centre column right above the c
   assert.ok(!markup.includes("<main"), "화면 안에 main 이 없다");
 });
 
-test("P09/§3.1: the status bar splits save·checks from preservation·trial·recovery", async () => {
+test("P09/§3.1: the status bar splits save·checks from preservation·trial", async () => {
   const { controller, snapshot } = harness();
   snapshot.tabs[0].readiness = { state: "draft", errors: 1, warnings: 0 };
   snapshot.tabs[0].compatibility = { state: "checking" };
@@ -1192,17 +1206,13 @@ test("#1025 §6.3: search shows Python's summary above the hits and tags each hi
   assert.ok(markup.includes('<p class="authoring-search-summary">b.txt · 총 1건 · 본문 1 · 필드 0 · 항목·선택 0</p>'));
 });
 
-test("#1025 §13: the empty workbench has one sentence, the 파일 menu's two actions and the recoverable drafts as a list", async () => {
+test("#1025 §13: the empty workbench has one sentence and the 파일 menu's two actions", async () => {
   const { controller, calls, snapshot } = harness();
   snapshot.tabs = [];
   snapshot.active_id = "";
-  snapshot.recoverable = [{ key: "k1", name: "공고문.hwpx", updated_at: "2026-09-28T01:02:03Z" }, { key: "k2", path: "C:/x/깨짐.txt", error: "초안을 읽을 수 없습니다." }];
   const markup = render(controller);
   const empty = markup.slice(markup.indexOf('<div class="authoring-empty">'));
-  assert.ok(empty.startsWith('<div class="authoring-empty"><p>HWPX·TXT 문서를 열거나 새 TXT를 만드세요.</p><div class="authoring-empty-actions"><button type="button" class="btn primary">문서 열기</button><button type="button" class="btn">새 TXT</button></div>'));
-  assert.ok(empty.includes('<ul class="authoring-drafts" aria-label="복구 가능한 작업"><li><strong>공고문.hwpx</strong><time dateTime="2026-09-28T01:02:03Z">') || empty.includes('<ul class="authoring-drafts" aria-label="복구 가능한 작업"><li><strong>공고문.hwpx</strong><time datetime="2026-09-28T01:02:03Z">'));
-  assert.ok(empty.includes('<strong>C:/x/깨짐.txt</strong><p role="alert">초안을 읽을 수 없습니다.</p>'));
-  assert.ok(empty.includes('>초안과 원본 비교</button>') && empty.includes('>복구</button>') && empty.includes('>폐기</button>'));
+  assert.ok(empty.startsWith('<div class="authoring-empty"><p>HWPX·TXT 문서를 열거나 새 TXT를 만드세요.</p><div class="authoring-empty-actions"><button type="button" class="btn primary">문서 열기</button><button type="button" class="btn">새 TXT</button></div></div>'));
   assert.ok(!markup.includes("변경할 문구를 선택해 필드로 만들어 보세요."), "첫 필드 안내는 빈 작업대의 문장이 아니다");
   assert.ok(!markup.includes("authoring-body"), "문서가 없으면 빈 편집면을 세우지 않는다");
   await controller.openFile();
@@ -2047,4 +2057,28 @@ test("IDE-06 P-20: a whole field offers 필드 의미 해제 with one 남길 본
   assert.ok(preview.includes('<ul aria-label="포함될 내용"><li>가 [F]</li><li>나 [F]</li><li>끝 [F]</li></ul>'), "모든 사용 위치의 문맥");
   assert.ok(preview.includes("<p>추가 필드: 없음 · 없어진 필드: F</p>") && preview.includes("<p>연결된 작업: 월간 보고</p>"));
   assert.ok(/<button class="btn primary" type="submit"[^>]*>필드 의미 해제/.test(preview), "주 행동은 명령 이름의 제출 단추 하나다(enter 등급 — 영향을 본 뒤 확정)");
+});
+
+test("범위 고르기: rangePickStep takes click points only — a start, then an end that commits the ordered range; cell points fold to the table's anchor paragraph; TXT points are offsets", async () => {
+  const { rangePickStep } = await import("../../frontend/src/screens/authoring_controller.ts");
+  const E = "Contents/section0.xml";
+  const at = (paragraph, offset, cell = false) => ({ entry: E, paragraph, offset, cell });
+  assert.deepEqual(rangePickStep(null, at(1, 2)), { pick: null }, "끈 동안은 아무것도 하지 않는다");
+  const started = rangePickStep({ phase: "start" }, at(5, 3)).pick;
+  assert.deepEqual(started, { phase: "end", start: at(5, 3) });
+  assert.deepEqual(rangePickStep(started, at(9, 4)), { pick: null, commit: { entry: E, paragraph: 5, start_paragraph: 5, end_paragraph: 9, start: 3, end: 4 } });
+  assert.deepEqual(rangePickStep(started, at(2, 0)).commit, { entry: E, paragraph: 2, start_paragraph: 2, end_paragraph: 5, start: 0, end: 3 },
+    "끝이 시작보다 앞이면 차례를 바로잡는다");
+  assert.deepEqual(rangePickStep(started, at(12, 0, true)).commit, { entry: E, paragraph: 5, start_paragraph: 5, end_paragraph: 12, start: 3 },
+    "표에서 끝나면 표 문단 끝까지(end 생략 = 문단 끝)");
+  const fromCell = rangePickStep({ phase: "start" }, at(4, 0, true)).pick;
+  assert.deepEqual(rangePickStep(fromCell, at(7, 2)).commit, { entry: E, paragraph: 4, start_paragraph: 4, end_paragraph: 7, start: 0, end: 2 });
+  assert.deepEqual(rangePickStep(fromCell, at(4, 0, true)).commit, { entry: E, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start: 0 },
+    "같은 표의 두 셀이면 그 표 문단 전체");
+  assert.equal(rangePickStep(started, { ...at(1, 1), entry: "Contents/section1.xml" }).pick.start.entry, "Contents/section1.xml",
+    "다른 구역의 끝은 새 시작이다");
+  const txt = (offset) => ({ entry: "", paragraph: 0, offset, cell: false });
+  const txtStart = rangePickStep({ phase: "start" }, txt(40)).pick;
+  const txtCommit = rangePickStep(txtStart, txt(3)).commit;
+  assert.deepEqual([txtCommit.start, txtCommit.end], [3, 40], "TXT 는 글자 위치 차례로 선다");
 });

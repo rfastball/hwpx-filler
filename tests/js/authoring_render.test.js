@@ -150,7 +150,7 @@ async function boot(tab, more = [], respond = () => ({})) {
   const { flushSync } = await import("react-dom");
   const { createAuthoringController } = await import("../../frontend/src/screens/authoring_controller.ts");
   const screen = await import("../../frontend/src/screens/authoring.ts");
-  let snapshot = { active_id: tab.id, tabs: [tab, ...more], recoverable: [] };
+  let snapshot = { active_id: tab.id, tabs: [tab, ...more] };
   const listeners = new Set();
   const calls = [];
   const notify = () => flushSync(() => { for (const listener of [...listeners]) listener(); });
@@ -177,6 +177,7 @@ async function boot(tab, more = [], respond = () => ({})) {
     return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async (target) => { (record.focused ||= []).push(target); spec.host.focus(); },
       scrollTo: async (target) => { (record.scrolled ||= []).push(target); return true; },
       undo: async () => {}, redo: async () => {}, setReadOnly: async () => {}, setZoom: async (zoom) => { (record.zooms ||= []).push(zoom); },
+      rangePick: async (state) => { (record.picks ||= []).push(state); },
       setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; (record.highlights ||= []).push(projection.highlight); }, dispose: () => { record.disposed = true; } };
   };
   await controller.activate(tab.id);
@@ -739,6 +740,46 @@ test("UX-09: the caret's place marks exactly one row current — the innermost t
   env.root.unmount();
 });
 
+const groupTab = () => {
+  const tab = spineTab();
+  const loose = (name, occurrence, paragraph, order, context) => ({ entry: SECTION, occurrence, paragraph, order, slot_id: null, option_id: null, context });
+  tab.analysis.fields.find((field) => field.name === "담당자").occurrences.push(loose("담당자", 5, 10, 8, "연락 [담당자]"));
+  tab.analysis.fields.push({ name: "전화", count: 1, occurrences: [loose("전화", 6, 11, 9, "전화 [전화]")] });
+  tab.problems = [{ severity: "error", category: "structure", message: "문제", target: "전화", location: null, actions: [] }];
+  return tab;
+};
+
+test("연속 묶음: loose uses after the last slot fold into one collapsed group row with the use count and the fields' problems; the caret inside expands it; the filter reaches inside", async () => {
+  const env = await boot(groupTab());
+  const tree = env.container.querySelector('#authoring-outline-structure-panel [role="tree"]');
+  const top = () => [...tree.childNodes];
+  assert.deepEqual(top().map(labelOf), ["필드 · 수요기관 · 사용 위치 1곳", "항목 · 견적 조건 · 문단 3–7", "항목 밖 필드 · 사용 위치 3곳 · 문제 1"],
+    "항목 사이 하나뿐인 사용 위치는 줄 그대로, 이어 선 셋은 한 묶음");
+  const group = top()[2];
+  assert.equal(group.getAttribute("aria-expanded"), "false", "묶음은 접힌 채 선다");
+  assert.equal(group.getAttribute("data-kind"), "group");
+  assert.equal(group.querySelector(".authoring-badge").getAttribute("data-severity"), "error", "묶음 줄은 든 필드의 가장 무거운 심각도를 보인다");
+  assert.equal(childItems(group).length, 0, "접힌 묶음은 자식 줄을 짓지 않는다");
+  const phone = groupTab().analysis.fields.find((field) => field.name === "전화").occurrences[0];
+  env.flushSync(() => env.controller.update({ selected: null, matches: [{ kind: "field", name: "전화", location: phone }] }));
+  await settle();
+  const opened = top()[2];
+  assert.equal(opened.getAttribute("aria-expanded"), "true", "지금 위치가 묶음 안이면 묶음이 펼쳐진다");
+  assert.deepEqual(childItems(opened).map(labelOf), ["필드 · 담당자 · 같은 필드, 1/2", "필드 · 담당자 · 같은 필드, 2/2", "필드 · 전화 · 사용 위치 1곳 · 문제 1"]);
+  assert.equal(childItems(opened)[2].getAttribute("aria-current"), "true", "가리킨 사용 위치 줄이 현재다");
+  env.root.unmount();
+
+  const filtered = await boot(groupTab());
+  const input = filtered.container.querySelector(".authoring-filter input");
+  filtered.flushSync(() => propsOf(input).onChange({ target: { value: "전화" } }));
+  await settle();
+  const rows = [...filtered.container.querySelector('#authoring-outline-structure-panel [role="tree"]').childNodes];
+  assert.deepEqual(rows.map(labelOf), ["항목 밖 필드 · 사용 위치 3곳 · 문제 1"], "필터는 묶음 안의 줄도 찾고 그 묶음만 남긴다");
+  assert.equal(rows[0].getAttribute("aria-expanded"), "true", "필터 중에는 일치한 줄이 보이게 펼친다");
+  assert.deepEqual(childItems(rows[0]).map(labelOf), ["필드 · 전화 · 사용 위치 1곳 · 문제 1"]);
+  filtered.root.unmount();
+});
+
 test("UX-09: resting on a row asks the editor to emphasize that range; leaving the tree clears it", async () => {
   const env = await boot(spineTab());
   const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
@@ -964,7 +1005,7 @@ test("NG-11: while verdicts are pending the create buttons stay disabled with no
   assert.equal(env.container.querySelector(".authoring-properties"), null);
   focusOn(env, toolbar.querySelector('[data-rove="mode-structure"]'));
   press(env, "ArrowRight");
-  assert.equal(env.document.activeElement.getAttribute("data-rove"), "more", "판정 전 만들기 단추는 roving 이 건너뛴다");
+  assert.equal(env.document.activeElement.getAttribute("data-rove"), "range-pick", "판정 전 만들기 단추는 roving 이 건너뛴다(다음은 만들기 무리 끝의 범위 고르기)");
   env.root.unmount();
 });
 
@@ -1230,6 +1271,46 @@ test("IDE-03 NG-05·P-01 enter: an outline row opens 필드 이름 변경 with i
   env.root.unmount();
 });
 
+test("#1069: after an enter-tier 필드 이름 변경 applies, the card, breadcrumb and name input adopt Python's renamed target and the submit is off again", async () => {
+  const occurrences = hwpxTab().analysis.fields[0].occurrences;
+  const target = (name) => ({ kind: "field", name, count: 2, occurrences });
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" }, [], (action, payload) => {
+    if (action === "locate") {
+      const name = payload.target?.name || "이름";
+      return { selected: target(name), matches: [{ kind: "field", name, location: occurrences[0] }], context: {},
+        commands: [{ type: "rename_field", enabled: true, reason: null, alternative: null }] };
+    }
+    if (action === "preview") return { confirm: "enter", affected: 2, message: "현재 문서의 사용 위치 2곳이 ‘성명’으로 변경됩니다.", content: "bmV3", edits: [],
+      renamed: target("성명") };
+    if (action === "update") return { revision: payload.revision + 1 };
+    return {};
+  });
+  showFields(env);
+  await settle();
+  focusOn(env, fieldRow(env, "필드 · 이름"));
+  press(env, "Enter");
+  await settle();
+  const form = () => env.container.querySelector(".authoring-properties");
+  const submit = () => form().querySelector('button[type="submit"]');
+  const input = form().querySelector("input");
+  env.flushSync(() => propsOf(input).onChange({ target: { value: "성명" } }));
+  await settle();
+  submitForm(env);
+  await settle();
+  submitForm(env);
+  for (let round = 0; round < 4; round++) await settle();
+  assert.equal(env.calls.filter((call) => call.action === "update").length, 1, "두 번째 Enter 가 적용했다");
+  const card = form().querySelector("#authoring-properties-target");
+  assert.ok(card.textContent.includes("성명") && !card.textContent.includes("이름 ·"), `속성 카드는 새 이름이다: ${card.textContent}`);
+  const crumb = [...env.container.querySelectorAll(".authoring-selection .authoring-crumb")].at(-1);
+  assert.equal(crumb.textContent, "필드 · 성명", "위치 줄도 새 이름이다");
+  assert.equal(form().querySelector("input").value, "성명");
+  assert.ok(submit().hasAttribute("disabled"), "이름이 지금 대상과 같으니 제출은 꺼진다 — 다시 누를 것이 없다");
+  const adopted = env.calls.filter((call) => call.action === "locate").at(-1);
+  assert.deepEqual(adopted.target, { kind: "field", name: "성명" }, "표면은 Python 이 준 대상으로 되짚기만 한다");
+  env.root.unmount();
+});
+
 test("IDE-06 P-13: the HWPX editor mounts in 「폭 맞춤」 (shell zoom 1); a number sets the Studio to fixed 100 under the shell zoom and back", async () => {
   const env = await boot(hwpxTab());
   const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
@@ -1347,28 +1428,17 @@ test("IDE-07 P-07: 다른 같은 문구 찾기 is an in-form checklist of Python
   env.root.unmount();
 });
 
-test("IDE-07 P-11b: 항목으로 만들기 has one unchecked 문단마다 선택으로 만들기 box; checking it sends split in the same create_slot command", async () => {
+test("IDE-07: 항목으로 만들기 is one plain region command — no per-paragraph box, no same-text list", async () => {
   const env = await batchLoop();
-  let form = await openCreate(env, "필드로 만들기");
-  assert.ok(!form.textContent.includes("문단마다 선택으로 만들기"), "필드로 만들기 폼에는 없다");
-  env.flushSync(() => env.controller.update({ panel: "", preview: null }));
-  await settle();
-  form = await openCreate(env, "항목으로 만들기");
-  const label = [...form.querySelectorAll("label")].find((node) => node.textContent.includes("문단마다 선택으로 만들기"));
-  assert.ok(label, "항목으로 만들기 폼에 체크 상자 하나가 선다");
-  const box = label.querySelector("input");
-  assert.equal(propsOf(box).checked, false, "기본 해제다");
+  const form = await openCreate(env, "항목으로 만들기");
+  assert.equal(form.querySelector('input[type="checkbox"]'), null, "항목으로 만들기 폼에는 체크 상자가 없다");
   assert.equal(form.querySelector(".authoring-same"), null);
   assert.ok(![...form.querySelectorAll("button")].some((node) => node.textContent === "다른 같은 문구 찾기"));
   submitForm(env);
   for (let round = 0; round < 3; round++) await settle();
-  assert.equal("split" in previews(env).at(-1), false, "끄면 split 이 없다");
-  env.flushSync(() => propsOf(box).onChange({ target: { checked: true } }));
-  submitForm(env);
-  for (let round = 0; round < 3; round++) await settle();
   const command = previews(env).at(-1);
   assert.equal(command.type, "create_slot");
-  assert.equal(command.split, "paragraph", "켜면 같은 명령에 split 을 싣는다");
+  assert.equal("split" in command, false);
   assert.equal("ranges" in command, false);
   env.root.unmount();
 });
@@ -1528,5 +1598,52 @@ test("IDE-08 P-08: the HWPX editor decorations carry Python's problems in every 
   await settle();
   assert.equal(editor.projection.mode, "document");
   assert.deepEqual(editor.projection.problems, problems, "문서 모드에서도 문제는 넘어간다");
+  env.root.unmount();
+});
+
+test("범위 고르기: the toolbar toggle turns the editor's click pick on, a click starts the rubber band, caret moves never commit, the end click sets the editor selection, and Escape cancels via the live region", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
+  const toggle = () => [...env.container.querySelectorAll(".authoring-toolbar button")].find((node) => node.textContent === "범위 고르기");
+  const note = () => env.container.querySelector(".authoring-selection .authoring-selection-note")?.textContent;
+  const live = () => env.container.querySelector(".authoring-live").textContent;
+  const E = "Contents/section0.xml";
+  const caret = (paragraph, offset) => ({ entry: E, paragraph, start_paragraph: paragraph, end_paragraph: paragraph, start: offset, end: offset });
+  assert.equal(toggle().getAttribute("aria-pressed"), "false");
+  fire(env, toggle(), "click");
+  await settle();
+  assert.equal(toggle().getAttribute("aria-pressed"), "true");
+  assert.equal(note(), "시작 위치를 누르세요.");
+  assert.deepEqual(editor.picks, [null], "켜면 편집기가 누름을 가로채 자리를 알린다(시작 전)");
+  editor.spec.onSelectionChanged(caret(3, 2));
+  await settle();
+  assert.equal(note(), "시작 위치를 누르세요.", "캐럿 이동(화살표 등)은 점이 아니다");
+  const start = { entry: E, paragraph: 0, offset: 1, cell: false };
+  editor.spec.onRangePick(start);
+  await settle();
+  assert.equal(note(), "끝 위치를 누르세요.");
+  assert.deepEqual(editor.picks.at(-1), start, "시작을 받으면 편집기가 그 자리부터 포인터 아래까지 칠한다");
+  editor.spec.onSelectionChanged(caret(7, 0));
+  await settle();
+  assert.equal(toggle().getAttribute("aria-pressed"), "true", "시작 뒤의 캐럿 이동도 끝이 아니다");
+  editor.spec.onRangePick({ entry: E, paragraph: 1, offset: 0, cell: true });
+  await settle();
+  assert.deepEqual(editor.focused.at(-1), { entry: E, paragraph: 0, start_paragraph: 0, end_paragraph: 1, start: 1 },
+    "끝이 표 안이면 그 표 문단 끝까지를 편집기 선택으로 세운다");
+  assert.equal(toggle().getAttribute("aria-pressed"), "false", "끝을 받으면 고르기는 접힌다");
+  assert.equal(editor.picks.at(-1), false, "편집기의 누름 가로채기·고무줄도 꺼진다");
+  fire(env, toggle(), "click");
+  await settle();
+  editor.spec.onSelectionChanged({ ...caret(2, 0), end: 5 });
+  await settle();
+  assert.equal(toggle().getAttribute("aria-pressed"), "false", "키로 범위를 고르면(Shift+화살표) 그 범위가 서고 고르기는 접힌다");
+  fire(env, toggle(), "click");
+  await settle();
+  editor.spec.onShortcut("Escape");
+  await settle();
+  assert.equal(toggle().getAttribute("aria-pressed"), "false");
+  assert.equal(live(), "범위 고르기를 취소했습니다.");
+  assert.equal(note(), undefined);
+  assert.equal(editor.picks.at(-1), false);
   env.root.unmount();
 });

@@ -1349,7 +1349,12 @@ class JobController:
         # 자동 확인(seal)의 트리거는 **준비 이전의** 권위를 본다: 종전 bootstrap 동사였던
         # 「변경사항 확인」도 seal 을 켜지 않았으므로, 준비를 앞당긴 것이 자동 seal 까지
         # 딸려 켜면 그건 이 판정이 안 받은 두 번째 변경이다(준비 ≠ 재확인).
+        # 단 **방금 권위가 선 새 작업**은 편집기 저장이 결속 확정을 부르지 못한 채 왔다(권위가
+        # 저장 뒤에 섰으므로). 저장본의 결정이 활성 Field 를 전부 덮으면 그것을 최초 판본으로
+        # 들이고, 그 durable 변경에 대해서만 자동 확인을 켠다 — 편집기 저장이 했을 일 그대로다.
         if job.media == "hwpx" and was_prepared:
+            self._maybe_auto_check(effective_basis_changed=True)
+        elif job.media == "hwpx" and self._adopt_saved_mapping_for_new_work(name):
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -1989,6 +1994,10 @@ class JobController:
                 "error": "현재 환경에서는 문서를 만들 수 없습니다",
                 "level": "warn",
             }
+        if isinstance(observation, DocumentCreationWorkbenchContextError):
+            # 복구가 필요한 맥락 실패 — 작업대가 이미 그 사유(`detail`)를 danger 로 말하고 있다.
+            # 생성 거절도 같은 사유를 그대로 싣는다(속성 접근으로 터지면 거절이 예외로 바뀐다).
+            return {"ok": False, "error": observation.detail, "level": "warn"}
         if not observation.create_documents_enabled:
             return {
                 "ok": False,
@@ -2431,6 +2440,22 @@ class JobController:
         return self.execution.binding_review_pending(
             input_requirements=(projection.input_requirements if projection is not None else ()),
         )
+
+    def _adopt_saved_mapping_for_new_work(self, work_ref: str) -> bool:
+        """방금 권위가 선 새 작업의 저장 Mapping 을 최초 판본으로 들인다 — 들였으면 True.
+
+        :meth:`on_editor_mapping_saved` 와 같은 생성 잠금 규율을 따른다. 잠금을 못 잡으면(생성
+        중) 여기서 들이지 않는다 — 그 Work 의 다음 자동 확인이 봉인 전에 같은 들이기를 다시
+        시도하므로(:meth:`JobExecutionSession.run_automatic_seal`) 결정이 사라지지 않는다.
+        """
+        if self.execution.seal_execution is None:
+            return False
+        if not self.runs.lock.acquire(blocking=False):
+            return False
+        try:
+            return self.execution.adopt_saved_mapping_if_unbound(work_ref)
+        finally:
+            self.runs.lock.release()
 
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Commit the saved Mapping to S5, then reuse automatic current-value checking."""

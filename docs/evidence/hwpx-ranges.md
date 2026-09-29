@@ -1074,3 +1074,68 @@ carrier 가 그 자리에 쓰일 수 있다는 뜻이며, 구체 설계는 이 �
 - owner `tests/test_bookmark_regions.py` 에 S0-H test 1건 추가(8 → 9 passed). H1·H1-resaved·H2 가
   같은 nesting 으로 resolve 되는 것, H3 의 결과, 네 파일 전부의 orphan 부재를 고정한다.
 - production 변경 없음. crossing 거부 경로는 그대로이고 합성 표본이 계속 그것을 지킨다.
+
+## 25. S0-I 말미 개체 뒤의 영역 종료 native 관찰
+
+### 25.1 방법과 표본
+
+한글 `12, 0, 0, 4605`를 **COM 자동화**로 창을 숨긴 채 조작했다(§1과 다른 방법이다. 파일 경로 보안
+승인 모듈을 등록해 대화상자 없이 열고 저장했다). 문단 범위를 `SelectText`로 고르고 블록 책갈피
+(`HBookMark`, `Type=1`)를 넣어 HWPX로 저장했다. R2와 같은 `fieldBegin type="BOOKMARK"` 짝이 나온다.
+원본은 저장소 코퍼스 사본뿐이다. I1은 `R0-plain.hwpx`의 `CCC` 문단을 비우고 글자처럼 취급한 1×1 표를
+넣었다. I2~I4는 `tests/corpus/real/bid_notice_limited_under100m.hwpx`이며 문단 35·36이 `" "` 뒤에
+글자처럼 취급한 표가 오는 문단이다. I4의 빈 누름틀은 제품 표기(`domain.authoring`)로 문단 34 끝에
+덧붙였다. I5는 우리 저작 명령(`create_slot`·`create_option`)의 산출물이고 I5-resaved·I6은 한글이
+그것을 열어 저장하거나 지운 결과다. 원본 문서의 `lastsaveby` 등 package 메타데이터는 그대로다.
+
+| 파일 | 변형 | SHA-256 |
+|---|---|---|
+| `I1-table-only-end.hwpx` | `BBB` 시작 ~ 표만 있는 문단 끝 (p1~p2) | `2F03E0CE73DF0580327A68977D4355FFAEA397DC974FD1D17A18CE7E1731BB02` |
+| `I2-space-table-end.hwpx` | 문단 20 시작 ~ `" "`+표 문단 36 끝 | `49FB78B7E25F010A4ADBCC279C7FF65E53E335A13C28569586935022E83694EE` |
+| `I3-single-space-table.hwpx` | `" "`+표 문단 36 하나 | `A3090FB05D292A59E4014B00245BE552E197642FBD494765100F3BE08EA02D40` |
+| `I4-empty-field-end.hwpx` | 문단 20 시작 ~ 빈 누름틀로 끝나는 문단 34 끝 | `054F14536AB3B668DDE04E7078344ECE85443E620EE5AB880BDC8A55284DF1E4` |
+| `I5-generated-options.hwpx` | 우리 산출물: `s` 20~36, 선택 `o1` 20~24·`o2` 25~35·`o3` 36~36 | `1A0C2815261F0E3CF28EAE724E31BB98689167CB0EEE2ED6101DC35D2059FA34` |
+| `I5-resaved.hwpx` | I5를 한글이 열어 그대로 저장 | `394CBC2278358C8DE51B0C01831A0C25D4737B4CB9C430A950C1036302A4E582` |
+| `I6-delete-option.hwpx` | I5에서 `o2` 범위(p25 시작 ~ p36 시작) 삭제 | `68FFF9CCA5A85830874D2AFEBAC639B8CE6FEDB615445E2A57E6F2E676D5D1D9` |
+
+### 25.2 관찰
+
+종료 문단의 run 순서다(`t∅`는 글자 없는 `<hp:t/>`).
+
+| 파일 | 종료 문단 |
+|---|---|
+| I1 | `표 · fieldEnd · t∅` |
+| I2 | `" " · 표 · fieldEnd · t∅` |
+| I3 | `fieldBegin · " " · 표 · fieldEnd · t∅` |
+| I4 | `… " " · 누름틀 fieldBegin · 누름틀 fieldEnd · 책갈피 fieldEnd · t∅` |
+| I5-resaved | 네 종료(p24·p35·p36의 둘) 모두 표 뒤. 한글은 우리 종료를 `t∅` 앞으로 옮기고 `fieldid`만 더했다 |
+
+- **종료는 문단의 마지막 개체 뒤에 온다.** 표만 있는 문단, 앞 글자가 있는 표 문단, 한 문단 범위,
+  빈 누름틀로 끝나는 문단이 모두 같다. 한글이 스스로 넣은 빈 누름틀(안내문을 내용 run으로 둔 모양)도
+  같았다.
+- 선택을 다음 문단 시작까지 늘려도 종료는 표 문단에 남았다(표본은 남기지 않았다).
+- I6에서 `o2`가 통째로 사라지고 `s`는 20~25, `o3`은 25~25로 당겨졌다. orphan은 없다.
+- 사용자 템플릿으로 한 같은 관찰(재저장·선택 삭제)도 결과가 같았다. 개인 문서라 표본으로 남기지 않는다.
+
+### 25.3 우리 구현과의 대조
+
+| 대상 | 대조 | 결과 |
+|---|---|---|
+| `create_bookmark_region()` | I1~I4의 책갈피를 풀고 같은 문단 범위로 다시 만든 시작·종료 문단의 run 순서 | 일치. 차이는 종료가 `t∅` 뒤냐 앞이냐뿐이고 `t∅`는 폭 0이다 |
+| `remove_bookmark_region()` | I5에서 `s/o2` 제거 ↔ I6 | 문단 텍스트, marker (문단, 종류, 이름) 순서, region 계층 모두 일치 |
+| 동봉 rhwp 왕복 | I1~I6 | 편집 가능(수정 뒤). 수정 전 Studio는 말미 표 앞으로 종료를 당겼다 — 여러 문단이면 고아 `fieldEnd`, 한 문단이면 같은 문단 필드 경로 |
+
+### 25.4 판정
+
+- 한글의 영역 종료 위치 = 문단 마지막 개체(글자처럼 취급한 표, 빈 누름틀) 뒤: **PROVEN**.
+- 우리 종료 배치와 한글의 일치: **PROVEN**. 빈 `hp:t` 앞뒤 차이는 비교에서 제외한다.
+- 말미 표 문단으로 끝나는 선택의 한글 삭제 = 우리 문단 제거: **PROVEN**, 부모 안쪽 선택에 한정.
+- 범위 밖: 그림·도형 등 다른 개체, 글자처럼 취급하지 않는 표, 셀 안 문단, 부모와 경계를 공유하는
+  선택의 삭제(S0-G 영역).
+
+### 25.5 검증
+
+- owner `tests/test_bookmark_regions.py`에 S0-I test 2건: I1~I4의 span·제거 가능성·종료 위치와 우리
+  생성의 run 순서 일치, I5/I5-resaved의 resolve와 I6 삭제 동등성.
+- `tests/test_rhwp_roundtrip_corpus.py`는 코퍼스를 전수 순회하므로 I1~I6의 동봉 rhwp 왕복 편집
+  가능이 자동으로 고정된다. 입찰 공고 문단 20~35·20~36·36~36 생성 영역도 따로 잰다.

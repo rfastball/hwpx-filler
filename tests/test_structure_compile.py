@@ -326,6 +326,73 @@ def test_marker_with_whitespace_element_still_compiles(whitespace_xml: str) -> N
     assert inspect_slots(pkg)[0] == (Slot("특약", ()),)
 
 
+#: 글자처럼 취급하는 1×1 표 — 본문 문단의 run 안에 선다(셀 문단은 본문 직계가 아니다).
+_INLINE_TABLE = (
+    '<hp:tbl rowCnt="1" colCnt="1"><hp:pos treatAsChar="1"/><hp:tr><hp:tc><hp:subList>'
+    '<hp:p><hp:run charPrIDRef="0"><hp:t>표 내용</hp:t></hp:run></hp:p>'
+    "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+)
+_OBJECT_MESSAGE = "구간 마커가 표·그림 같은 개체와 같은 문단에 있습니다 — 마커를 개체 다음 줄(별도 문단)로 옮기세요."
+
+
+def _options_around(close_paragraph: str) -> HwpxPackage:
+    return _pkg(
+        _text("{{#항목 특약}}"),
+        _text("{{#선택 가}}"),
+        _text("본문 가"),
+        close_paragraph,
+        _text("{{#선택 나}}"),
+        _text("본문 나"),
+        _text("{{/선택}}"),
+        _text("{{/항목}}"),
+    )
+
+
+def test_close_marker_after_an_inline_table_is_refused_once_with_its_position() -> None:
+    """개체 뒤 같은 문단의 닫는 마커 — 거절은 그대로, 문맥·자리는 정확하게, 파생 중첩·교차 오류는 없다."""
+    pkg = _options_around(
+        f'<hp:p><hp:run charPrIDRef="0"><hp:t> </hp:t>{_INLINE_TABLE}</hp:run>'
+        '<hp:run charPrIDRef="0"><hp:t>{{/선택}}</hp:t></hp:run></hp:p>'
+    )
+    before = dict(pkg.entries)
+
+    diagnostics = scan_structure(pkg).diagnostics
+    assert [(item.kind.value, item.message, item.context) for item in diagnostics] == [
+        ("marker_not_alone", _OBJECT_MESSAGE, "{{/선택}}")
+    ]
+    assert (diagnostics[0].entry, diagnostics[0].index) == (SECTION, 3)
+    report = compile_structure(pkg)
+    assert report.modified is False
+    assert report.refusal is not None
+    assert [(item.kind, item.code) for item in report.refusal] == [
+        (Refusal.NOTATION_DIAGNOSTIC, "marker_not_alone")
+    ]
+    assert pkg.entries == before
+
+
+def test_refused_close_marker_without_an_open_range_adds_nothing() -> None:
+    pkg = _pkg(
+        _text("본문"),
+        f'<hp:p><hp:run charPrIDRef="0">{_INLINE_TABLE}<hp:t>{{{{/선택}}}}</hp:t></hp:run></hp:p>',
+    )
+
+    assert [item.kind.value for item in scan_structure(pkg).diagnostics] == ["marker_not_alone"]
+
+
+def test_close_marker_in_its_own_paragraph_after_a_table_compiles_and_keeps_the_table() -> None:
+    pkg = _options_around(_text("{{/선택}}"))
+    table = f'<hp:p><hp:run charPrIDRef="0"><hp:t> </hp:t>{_INLINE_TABLE}</hp:run></hp:p>'
+    pkg.entries[SECTION] = pkg.entries[SECTION].replace(
+        _text("본문 가").encode(), (_text("본문 가") + table).encode(), 1
+    )
+
+    assert scan_structure(pkg).diagnostics == ()
+    assert compile_structure(pkg).modified is True
+    assert inspect_slots(pkg)[0] == (Slot("특약", (SlotOption("가", 0), SlotOption("나", 1))),)
+    assert "표 내용" in pkg.entries[SECTION].decode("utf-8")
+    assert pkg.entries[SECTION].count(b"<hp:tbl") == 1
+
+
 # ------------------------------------------------- 4. preflight blocker → 변이 0
 def test_preflight_refuses_unusable_field_pairing() -> None:
     """짝 없는 fieldEnd 하나로 entry 급 신뢰가 무너지면 컴파일하지 않는다."""

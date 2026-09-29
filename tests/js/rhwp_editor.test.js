@@ -387,6 +387,7 @@ test("UX-07: theme and font scale reach every mount at load and follow html[data
       const url = new URL(fake.options().studioUrl);
       assert.deepEqual([url.pathname, url.searchParams.get("hostTheme"), url.searchParams.get("hostFontScale")],
         ["/rhwp/studio/index.html", "dark", "1.25"], "the first paint already has the app theme");
+      assert.equal(url.searchParams.get("autosave"), "off", "#1068: every mount turns the Studio's own autosave recovery off");
       assert.deepEqual(fake.calls.filter(([name]) => name === "setAppearance"), [["setAppearance", { theme: "dark", fontScale: 1.25 }]]);
     }
     assert.deepEqual(dom.observers.map((observer) => observer.options.attributeFilter),
@@ -601,6 +602,34 @@ test("IDE-08 H3: the host gets the selection end line once a non-empty selection
     assert.deepEqual(rects.slice(-2), [{ left: 70, top: 110, bottom: 140 }, null], "a collapse takes it down");
     assert.ok(selections.length >= 5, "selection reports still flow to the host");
     handle.dispose();
+  }, timers);
+});
+
+test("IDE-08 H3: a selection the host set follows its own centring scroll instead of being hidden as a user scroll; later moves hide it", () => {
+  const timers = fakeTimers();
+  return withDom(async () => {
+    globalThis.document.hidden = false;
+    const realNow = performance.now.bind(performance);
+    let clock = 1000;
+    performance.now = () => clock;
+    try {
+      const { state, studio } = selectingStudio();
+      const rects = [];
+      const handle = await mountRhwp({ host: { closest: () => null, offsetParent: {} }, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+        sectionEntries: ["Contents/section0.xml"], onChanged() {}, onSelectionChanged() {},
+        onSelectionRect: (rect) => rects.push(rect), onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio });
+      const poll = async (range, rect) => { state.context = { range, rect }; timers.tick(); await settle(); };
+      const line = { x: 40, y: 60, width: 1, height: 20 };
+      await handle.focus({ entry: "Contents/section0.xml", start_paragraph: 1, end_paragraph: 9, start: 0 });
+      await poll(at(1, 0, 9), line);
+      await poll(at(1, 0, 9), { ...line, y: 30 });
+      assert.deepEqual(rects, [{ left: 70, top: 110, bottom: 140 }, { left: 70, top: 65, bottom: 95 }],
+        "the Studio's centring scroll after a host-set selection moves the bar with the line — it is not a user scroll");
+      clock += 2000;
+      await poll(at(1, 0, 9), { ...line, y: 10 });
+      assert.deepEqual(rects.at(-1), null, "once settled, a moved line is the user scrolling — hide as before");
+      handle.dispose();
+    } finally { performance.now = realNow; }
   }, timers);
 });
 

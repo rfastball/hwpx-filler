@@ -20,7 +20,11 @@ from pathlib import Path
 
 from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
 from ..domain.engine import HwpxEngine
-from ..domain.fill_ledger import TemplateStructureDrift, template_path_drift
+from ..domain.fill_ledger import (
+    TemplateStructureDrift,
+    template_path_drift,
+    template_structure_drift,
+)
 from ..domain.job import (
     Job,
     data_binding_label,
@@ -28,6 +32,7 @@ from ..domain.job import (
     require_hwpx_template,
 )
 from ..domain.template_status import CompileState, TemplateStatus
+from ..domain.text_render import template_fields
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
@@ -133,7 +138,8 @@ class JobRow:
     # 프로파일은 확정 행만 담아 「확인 필요 k」를 거기서 셀 수도 없다 — 그 사실은 현재
     # 템플릿과의 대칭차에만 있다. 수치를 따로 복사하지 않고 **원본을 든다**: 사본을 만들면
     # 「읽지 못했다」와 「읽었는데 0 이다」를 가르는 축(`readable`)이 옮겨 오다 빠진다.
-    # 템플릿을 읽지 않는 갈래(미연결·부재·손상·TXT)는 ``None`` 이다.
+    # 템플릿을 읽지 않는 갈래(미연결·부재·hwpx 손상)는 ``None`` 이다. TXT 는 읽은 텍스트의
+    # 누름틀로 세우고, 못 읽으면 ``read_error`` 를 든다.
     structure: "TemplateStructureDrift | None" = None
     # txt 템플릿을 지금 읽을 수 있는가(리뷰 P2). 파일이 "있다"는 것과 "열린다"는 것은 다르다 —
     # 깨진 인코딩·`.txt` 로 끝나는 디렉터리는 존재하지만 여는 순간 실패한다.
@@ -167,17 +173,24 @@ class JobRow:
         else:
             compile_state, compile_badge = None, ""
         txt_readable = True
+        structure = None
         if job.media == "txt" and tpath and not template_missing:
             # 여는 계약과 **같은 방식**으로 읽어 본다(UTF-8) — 다른 방식으로 재보면 이 화면과
             # 실제 열기가 서로 다른 답을 낸다. 소량 텍스트라 비용은 hwpx zip 파싱보다 싸다.
             try:
-                Path(tpath).read_text(encoding="utf-8")
-            except Exception:  # noqa: BLE001 — 못 읽으면 이유 불문 "지금 열 수 없다"
+                text = Path(tpath).read_text(encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001 — 못 읽으면 이유 불문 "지금 열 수 없다"
                 txt_readable = False
+                structure = TemplateStructureDrift(read_error=str(exc))
+            else:
+                # 읽은 그 텍스트로 구조 사실을 세운다(`TextTemplate.fields`·작업대 진입과 같은
+                # 추출기) — 카드·표와 건강 보기의 드리프트 축이 이 한 값을 함께 읽는다.
+                structure = template_structure_drift(template_fields(text), job.mapping)
         # 실행 게이트와 **같은 몸통**을 쓴다(두 표면이 같은 상태를 다르게 부르지 않게).
         name_tokens = bool(unresolved_name_tokens_for(job)) if job.media == "hwpx" else False
-        drift = False
-        structure = None
+        # TXT 는 **읽었을 때만** 드리프트를 말한다 — 못 읽은 갈래(`read_error`)는 이미
+        # 「템플릿을 읽을 수 없습니다」로 말하므로 여기서 한 번 더 세면 오진이 하나 는다.
+        drift = bool(structure is not None and structure.readable and structure.has_drift)
         if job.media == "hwpx" and compile_state is not None:
             # 읽을 수 있는 템플릿에서만 본다(못 읽는 건 이미 danger 로 말한다). 매핑이 비어
             # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
@@ -414,7 +427,9 @@ def library_health_causes(row: "JobRow") -> "list[tuple[int, str]]":
     if row.structure_drift and row.mapping_empty:
         # 같은 신호(대칭차)지만 원인이 다르다: 아직 아무것도 맞추지 않은 작업이다. 드리프트로
         # 부르면 오진이고(무엇이 "달라졌다"는 말인가), 숨기면 실행에서 막히는 걸 뒤늦게 안다.
-        causes.append((3, "매핑을 아직 확정하지 않았습니다."))
+        # 등급은 **그 매체의 실행 게이트**를 따른다: HWPX 는 생성이 차단되므로 3, TXT 작업대는
+        # 진입·복사를 막지 않고 덮이지 않은 필드를 미확정 행으로 보여 주므로 2 다(차단이라 부르지 않는다).
+        causes.append((3 if row.media == "hwpx" else 2, "매핑을 아직 확정하지 않았습니다."))
     elif row.structure_drift:
         # §19.7 "확인된 Template/Binding drift = 2, 차단하지 않음"의 자리. 실행 게이트는
         # 실제로 차단하지만(fail-closed), 여기서 말하는 건 **작업 자체의 건강**이라 등급은

@@ -1,4 +1,4 @@
-"""복구 초안·시험 케이스 저장소(External) — 손상 입력은 조용히 넘어가지 않는다.
+"""시험 케이스·작업 위치 저장소(External) — 손상 입력은 조용히 넘어가지 않는다.
 
 저장은 전부 원자 쓰기를 지난다: 교체·이동 실패는 기존 문서를 파괴하지 않고, 임시 파일
 정리마저 실패해도 원래 예외가 그대로 올라간다(확인-또는-경보).
@@ -16,57 +16,6 @@ from hwpxfiller.external.authoring_store import AuthoringStore
 
 def _store(tmp_path: Path) -> AuthoringStore:
     return AuthoringStore(tmp_path / "home")
-
-
-def test_recovery_draft_roundtrip_and_corrupt_records_are_loud(tmp_path: Path) -> None:
-    store = _store(tmp_path)
-    assert store.read_draft("없는열쇠") is None
-    stamp = store.write_draft("k", path="문서.txt", media="txt", baseline="b0",
-                              source_baseline=None, content="내 편집".encode("utf-8"))
-    assert stamp
-    record = store.read_draft("k")
-    assert record is not None
-    assert (record["path"], record["media"], record["content"]) == (
-        "문서.txt", "txt", "내 편집".encode("utf-8"))
-
-    target = tmp_path / "home" / "drafts" / "k.json"
-    for payload, message in (
-        ({"version": 2, "path": "문서.txt", "media": "txt", "content": ""}, "지원하지 않는"),
-        ({"version": 1, "path": "문서.txt", "media": "pdf", "content": ""}, "올바르지 않"),
-        ({"version": 1, "path": "문서.txt", "media": "txt", "baseline": None,
-          "source_baseline": None, "content": "!!아니다!!"}, "손상"),
-    ):
-        target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        with pytest.raises(ValueError, match=message):
-            store.read_draft("k")
-
-    store.discard_draft("k")
-    assert store.read_draft("k") is None
-
-
-def test_draft_listing_survives_unreadable_entries(tmp_path: Path, monkeypatch) -> None:
-    store = _store(tmp_path)
-    assert store.list_drafts() == []
-    store.write_draft("ok", path="문서.txt", media="txt", baseline=None,
-                      source_baseline=None, content=b"x")
-    drafts = tmp_path / "home" / "drafts"
-    (drafts / "폴더.json").mkdir()          # 파일이 아닌 항목은 목록에서 빠진다
-    (drafts / "broken.json").write_text("{", encoding="utf-8")
-    listed = {item["key"]: item for item in store.list_drafts()}
-    assert set(listed) == {"ok", "broken"}
-    assert listed["ok"]["path"] == "문서.txt" and listed["ok"]["updated_at"]
-    assert listed["broken"]["error"] and listed["broken"]["path"] == ""
-
-    real_stat = Path.stat
-
-    def _stat(self: Path, **kwargs: object):
-        if self.name == "ok.json":
-            raise OSError(5, "I/O error")
-        return real_stat(self, **kwargs)  # pyright: ignore[reportCallIssue]
-
-    monkeypatch.setattr(Path, "stat", _stat)
-    unstamped = {item["key"]: item for item in store.list_drafts()}
-    assert unstamped["ok"]["updated_at"] == "" and unstamped["ok"]["error"]
 
 
 def test_case_files_roundtrip_and_refuse_unknown_versions(tmp_path: Path) -> None:

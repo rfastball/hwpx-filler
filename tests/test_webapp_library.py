@@ -830,7 +830,9 @@ def test_txt_work_has_no_retired_zones(tmp_path):
     ctrl.dispatch("select_work", {"name": "기안 작업"})
     zone = ctrl.snapshot()["detail"]["pairing_detail"]
     assert "plan" not in zone and "output_folder" not in zone
-    assert zone["card"]["counted"] is False                  # hwpx 대칭차가 없는 갈래
+    # TXT 도 템플릿의 {{필드}}에서 대칭차를 센다 — 「읽지 못해 저장된 연결만」 갈래가 아니다.
+    assert zone["card"]["counted"] is True
+    assert zone["rows_basis"] == "template"
     assert zone["rows"][0]["preview"] == "청사 냉난방"
 
 
@@ -925,6 +927,84 @@ def test_an_unreadable_template_falls_back_to_the_saved_bindings_and_says_so(tmp
     assert [r["template_field"] for r in zone["rows"]] == ["공고번호", "사업명", "금액"]
     assert zone["card"]["counted"] is False
     assert zone["card"]["template_field_count"] == 0
+
+
+def _txt_detail(tmp_path, content: bytes) -> dict:
+    """TXT 작업 하나의 상세 연결 존 — 저장 매핑은 템플릿 필드 하나 + 옛 연결 하나."""
+    txt = tmp_path / "templates" / "안내문.txt"
+    txt.parent.mkdir(parents=True, exist_ok=True)
+    txt.write_bytes(content)
+    reg = JobRegistry(tmp_path / "txtjobs")
+    reg.save(Job(
+        name="기안문", template_path=str(txt),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="옛필드", source="bidNtceNm"),
+        ]),
+    ))
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "기안문"})
+    return ctrl.snapshot()["detail"]["pairing_detail"]
+
+
+def test_a_readable_txt_template_builds_rows_from_its_fields(tmp_path):
+    """읽히는 TXT 템플릿은 「읽지 못해 저장된 연결만」 갈래로 떨어지지 않는다.
+
+    TXT 도 HWPX 와 같은 규칙이다: 템플릿의 ``{{필드}}`` 에서 행을 세우고 저장 매핑을 얹는다.
+    CRLF 줄끝은 필드 집합을 바꾸지 않는다.
+    """
+    zone = _txt_detail(
+        tmp_path, "제목 {{공고명}}\r\n담당 {{담당자}}\r\n".encode("utf-8"))
+    assert zone["rows_basis"] == "template"
+    assert [r["template_field"] for r in zone["rows"]] == ["공고명", "담당자"]
+    assert zone["rows"][0]["row_state"] == "confirmed"
+    assert zone["rows"][1]["row_state"] == "needs_source"
+    assert zone["stale_fields"] == ["옛필드"]
+    card = zone["card"]
+    assert card["counted"] is True
+    assert (card["template_field_count"], card["mapped_count"],
+            card["unbound_count"], card["stale_count"]) == (2, 1, 1, 1)
+
+
+def test_an_unreadable_txt_template_still_says_it_shows_saved_bindings(tmp_path):
+    """UTF-8 로 못 읽는 TXT 는 저장된 연결만 그리고 그 사실을 명시한다(수치는 세지 않는다)."""
+    zone = _txt_detail(tmp_path, bytes([0xFF, 0xFE, 0x80, 0x81]))
+    assert zone["rows_basis"] == "profile"
+    assert [r["template_field"] for r in zone["rows"]] == ["공고명", "옛필드"]
+    assert zone["card"]["counted"] is False
+    assert zone["card"]["template_field_count"] == 0
+
+
+def test_a_drifted_txt_work_surfaces_in_library_health(tmp_path):
+    """TXT 작업도 템플릿 구조가 확정 매핑과 어긋나면 목록 건강·상세 원인·「확인 필요」에 든다.
+
+    등급은 확인(2)이다 — TXT 작업대는 구조 대칭차로 진입·복사를 막지 않으므로 차단(3)이라
+    부르지 않는다. 문구는 HWPX 드리프트와 같은 한 문장이다(새 문구 없음).
+    """
+    txt = tmp_path / "templates" / "안내문.txt"
+    txt.parent.mkdir(parents=True, exist_ok=True)
+    txt.write_text("제목 {{공고명}} 담당 {{담당자}}", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "txtjobs")
+    reg.save(Job(name="기안문", template_path=str(txt), mapping=MappingProfile(mappings=[
+        FieldMapping(template_field="공고명", source="bidNtceNm"),
+    ])))
+    ctrl, _ = _controller(tmp_path, registry=reg)
+    ctrl.dispatch("select_work", {"name": "기안문"})
+    snap = ctrl.snapshot()
+    drift_text = "템플릿 구조가 확정 매핑과 달라졌습니다."
+    assert _rows(snap)["기안문"]["health"] == {"severity": 2, "text": drift_text}
+    assert [c["text"] for c in snap["detail"]["health_causes"]] == [drift_text]
+
+    # 매핑이 템플릿 필드를 정확히 덮으면 건강하다(드리프트가 아닌 것을 드리프트라 부르지 않는다).
+    job = reg.load("기안문")
+    reg.save(Job(name=job.name, template_path=job.template_path, mapping=MappingProfile(mappings=[
+        FieldMapping(template_field="공고명", source="bidNtceNm"),
+        FieldMapping(template_field="담당자", source="bidNtceNm"),
+    ])))
+    ctrl.dispatch("refresh", {"select": "기안문"})
+    snap = ctrl.snapshot()
+    assert _rows(snap)["기안문"]["health"]["severity"] == 0
+    assert snap["detail"]["health_causes"] == []
 
 
 def test_the_read_starts_from_the_snapshot_not_from_one_action(tmp_path):

@@ -42,6 +42,9 @@ export type RhwpMountSpec = {
    *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
    *  replaces the Studio's own. */
   onContextMenu?: (point: { x: number; y: number }) => void;
+  /** Range pick clicks (see `RhwpHandle.rangePick`): the body point under each click, a table cell folded to its
+   *  table's anchor paragraph (`cell`). Never raised by caret moves or key presses. */
+  onRangePick?: (point: PickPoint) => void;
   /** Accessible name of the editor iframe. */
   title?: string;
   preflight?: (exported: string) => Promise<{ editable: boolean; diagnostics?: unknown[] }>;
@@ -50,7 +53,7 @@ export type RhwpMountSpec = {
   /** Studio zoom set explicitly after every document load (IDE-06): `"fit"` = the Studio's own
    *  `view:zoom-fit-width` (re-applied when the host is resized), a number = the fixed `view:zoom-N`.
    *  The Studio persists its fit mode in the iframe origin's shared settings and restores it on the next
-   *  load, so every mount states its mode — default fixed 100 (the comparison and recovery viewers).
+   *  load, so every mount states its mode — default fixed 100 (the comparison viewers).
    *  The main editor passes "fit" or 100 (the shell's CSS zoom scales a fixed page); the trial viewer 75. */
   zoom?: RhwpZoom;
   /** Who needs caret reports: "visible" polls only while the host is rendered (not inside a
@@ -60,6 +63,8 @@ export type RhwpMountSpec = {
   /** Test seam only: the product always mounts the pinned SDK's `createStudio`. */
   studio?: typeof createStudio;
 };
+/** One range-pick point on the Python wire: a body paragraph of a section entry and a character offset. */
+export type PickPoint = { entry: string; paragraph: number; offset: number; cell: boolean };
 /** One text line in host client coordinates (the line's top and bottom at a horizontal position). */
 export type HostLineRect = { left: number; top: number; bottom: number };
 /** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
@@ -97,6 +102,9 @@ export type RhwpHandle = {
   setDecorations(projection: Obj): Promise<void>; setReadOnly(readOnly: boolean): Promise<void>;
   /** Switch the Studio zoom mode (see `RhwpMountSpec.zoom`). */
   setZoom(zoom: RhwpZoom): Promise<void>;
+  /** The host's range pick: `false` off; `null` on (presses report `onRangePick` and never move the caret); a point
+   *  on with that start (the Studio draws the band from it to the point under the pointer, following scrolls). */
+  rangePick(state: PickPoint | null | false): Promise<void>;
   dispose(): void;
 };
 
@@ -111,6 +119,8 @@ type Marker = { kind: 'field' | 'slot' | 'option' | 'problem'; label: string; em
 /** Trailing debounce for HWPX export after edits: a burst of change events costs one export. */
 export const EXPORT_DEBOUNCE_MS = 200;
 const SELECTION_POLL_MS = 300;
+/** How long after a host-set selection its centring scroll may still move the reported line (two polls and a frame). */
+export const HOST_MOVE_SETTLE_MS = 900;
 
 /** The host is rendered: no `hidden`/`inert` ancestor (inactive document tabs) and laid out. */
 function hostRendered(host: HTMLElement): boolean {
@@ -136,6 +146,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI);
   studioUrl.searchParams.set("hostTheme", appearance.theme);
   studioUrl.searchParams.set("hostFontScale", String(appearance.fontScale));
+  // The product keeps no recovery drafts (#1068): every mount (editor, trial result, comparison) turns the Studio's
+  // own autosave off — no interval or idle draft is written and no 「문서 복구」 dialog offers another document's body.
+  studioUrl.searchParams.set("autosave", "off");
   const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"], width: FRAME_WIDTH,
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
@@ -182,6 +195,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   // Selection-side rect (IDE-08 H3): the selection key the rect belongs to, the last rect seen for it ("" =
   // none yet, e.g. mid-drag), whether the host is showing it, and whether it may not come back (edited or moved).
   let rectKey = "", rectSeen = "", rectShown = false, rectSpent = false;
+  // A selection the host set (`focus`) is followed by the Studio's own centring scroll, which lands after the first
+  // report: until this time a moved line is that scroll settling, not the user scrolling — the rect follows it.
+  let hostMoveUntil = 0;
   const hideRect = (spent: boolean) => {
     if (spent) rectSpent = true;
     if (rectShown) { rectShown = false; spec.onSelectionRect?.(null); }
@@ -203,7 +219,13 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     if (seen === rectSeen) return;
     const first = rectSeen === "";
     rectSeen = seen;
-    // The line moved under an unchanged selection (scroll, zoom, relayout): hide and wait for a new selection.
+    // The line moved under an unchanged selection (scroll, zoom, relayout): hide and wait for a new selection —
+    // except while a host-set selection's own scroll settles (the rect then follows the line).
+    if (!first && !rectSpent && performance.now() < hostMoveUntil) {
+      const place = visibleRect(rect);
+      if (place) { rectShown = true; spec.onSelectionRect(place); } else hideRect(false);
+      return;
+    }
     if (!first || rectSpent) { hideRect(true); return; }
     const place = visibleRect(rect);
     if (place) { rectShown = true; spec.onSelectionRect(place); }
@@ -275,6 +297,10 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     } else spec.onShortcut?.(shortcut);
   });
   const offMenu = spec.onContextMenu ? editor.onContextMenuRequest((point) => openMenu(hostPoint(point.x, point.y))) : () => {};
+  const offPick = spec.onRangePick ? editor.onRangePick((point) => {
+    const entry = sectionEntries[point.section];
+    if (!disposed && entry) spec.onRangePick!({ entry, paragraph: point.paragraph, offset: point.charOffset, cell: point.cell });
+  }) : () => {};
   // All mounts (editor, trial, comparison) follow the app's theme and font scale.
   const observer = typeof MutationObserver === "function" && root ? new MutationObserver(() => {
     const next = hostAppearance(root);
@@ -318,7 +344,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       endOffset, ...(cellPath ? { cellPath } : {}) };
   };
   const focus = async (target: Obj) => {
+    hostMoveUntil = performance.now() + HOST_MOVE_SETTLE_MS;
     const result = await editor.focusRange(rangeOf(target));
+    hostMoveUntil = performance.now() + HOST_MOVE_SETTLE_MS;
     if (!result.focused) throw new Error("HWPX 위치를 에디터에서 찾을 수 없습니다.");
   };
   const flushChanges = async () => {
@@ -452,6 +480,13 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       const next = value || compatibilityBlocked;
       await editor.setReadOnly(next); readOnly = next;
     },
+    async rangePick(state) {
+      if (disposed) return;
+      if (state === false || state === null) { await editor.setRangePick({ enabled: state === null, start: null }); return; }
+      const section = sectionEntries.indexOf(state.entry);
+      await editor.setRangePick({ enabled: true, start: section < 0 ? null
+        : { section, paragraph: state.paragraph, charOffset: state.offset, cell: state.cell } });
+    },
     async setZoom(next) {
       if (disposed) return;
       zoom = next;
@@ -460,7 +495,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     },
     dispose() {
       if (disposed) return;
-      disposed = true; window.clearInterval(timer); window.clearTimeout(refitTimer); cancelScheduled(); off(); offShortcut(); offMenu();
+      disposed = true; window.clearInterval(timer); window.clearTimeout(refitTimer); cancelScheduled(); off(); offShortcut(); offMenu(); offPick();
       observer?.disconnect(); resized?.disconnect();
       editor.destroy();
     },

@@ -702,6 +702,83 @@ def test_hancom_never_stores_crossing_so_only_authored_files_can_carry_it() -> N
         assert begins == ends, name
 
 
+def _boundary_tokens(pkg: HwpxPackage, paragraph_index: int) -> list[str]:
+    """The run-level order of one top-level paragraph, zero-width empty ``hp:t`` left out."""
+    root = etree.fromstring(pkg.entries[SECTION])
+    paragraph = [child for child in root if local_name(child.tag) == "p"][paragraph_index]
+    tokens = []
+    for run in paragraph:
+        if local_name(run.tag) != "run":
+            continue
+        for node in run:
+            name = local_name(node.tag)
+            if name == "t" and not len(node) and not node.text:
+                continue
+            if name == "ctrl":
+                name += ":" + ",".join(
+                    f"{local_name(child.tag)}:{child.get('type') or ''}" for child in node
+                )
+            tokens.append(name)
+    return tokens
+
+
+#: S0-I — block bookmarks Hancom 12.0.0.4605 itself made, each ending on a paragraph whose
+#: last object is a treat-as-char table or an empty CLICK_HERE field.
+_S0_I_HANCOM_REGIONS = {
+    "I/I1-table-only-end.hwpx": ("S0_END", 1, 2),
+    "I/I2-space-table-end.hwpx": ("S0_END", 20, 36),
+    "I/I3-single-space-table.hwpx": ("S0_END", 36, 36),
+    "I/I4-empty-field-end.hwpx": ("S0_END", 20, 34),
+}
+
+
+def test_hancom_ends_regions_after_trailing_objects_where_our_writer_does() -> None:
+    """S0-I: the end marker follows a trailing table or field, and our writer agrees."""
+    end_marker = "ctrl:fieldEnd:"
+    for name, (bookmark, start, end) in _S0_I_HANCOM_REGIONS.items():
+        native = _native(name)
+        # Resolving with the default removability check is the kernel's "removable".
+        assert [
+            (region.name, region.start_paragraph, region.end_paragraph)
+            for region in resolve_bookmark_regions(native)
+        ] == [(bookmark, start, end)], name
+        tokens = _boundary_tokens(native, end)
+        assert tokens[-1] == end_marker, (name, tokens)
+        assert tokens[-2] in {"tbl", end_marker}, (name, tokens)
+
+        ours = _native(name)
+        unwrap_bookmark_region(ours, _region(ours, bookmark))
+        create_bookmark_region(ours, SECTION, start, end, name=bookmark)
+        for index in {start, end}:
+            assert _boundary_tokens(ours, index) == _boundary_tokens(native, index), (name, index)
+
+        remove_bookmark_region(native, _region(native, bookmark))
+        begins, ends = _pairing_ids(native)
+        assert begins == ends, name
+
+
+def test_removes_option_ending_on_a_table_paragraph_exactly_as_hancom_deletes_it() -> None:
+    """S0-I: Hancom's deletion of an option whose range ends on a table paragraph."""
+    shape = lambda items: [  # noqa: E731 - local projection, not an API
+        (region.name, region.start_paragraph, region.end_paragraph,
+         region.parent.name if region.parent else None)
+        for region in items
+    ]
+    generated = [("s", 20, 36, None), ("s/o1", 20, 24, "s"), ("s/o2", 25, 35, "s"),
+                 ("s/o3", 36, 36, "s")]
+    pkg = _native("I/I5-generated-options.hwpx")
+    assert shape(resolve_bookmark_regions(pkg)) == generated
+    assert shape(resolve_bookmark_regions(_native("I/I5-resaved.hwpx"))) == generated
+
+    remove_bookmark_region(pkg, _region(pkg, "s/o2"))
+    hancom = _native("I/I6-delete-option.hwpx")
+    assert _paragraph_texts(pkg) == _paragraph_texts(hancom)
+    assert _markers(pkg) == _markers(hancom)
+    assert shape(resolve_bookmark_regions(pkg)) == shape(resolve_bookmark_regions(hancom)) == [
+        ("s", 20, 25, None), ("s/o1", 20, 24, "s"), ("s/o3", 25, 25, "s")
+    ]
+
+
 def test_resolves_nested_regions_with_containment() -> None:
     pkg = _native("R5-nested.hwpx")
     regions = resolve_bookmark_regions(pkg)

@@ -41,29 +41,24 @@ def test_preview_waits_for_editor_commit_and_revision_blocks_old_tab_write(tmp_p
     assert ctrl.dispatch("content", {"session_id": b["session_id"]})["content"] == "둘째"
 
 
-def test_external_change_refuses_save_and_restart_recovers_draft(tmp_path: Path) -> None:
+def test_external_change_refuses_save_and_edits_leave_no_draft_behind(tmp_path: Path) -> None:
     path = tmp_path / "example.txt"
     path.write_text("원본", encoding="utf-8")
     ctrl = _controller(tmp_path)
     opened = ctrl.open_path(path)
     sid = opened["session_id"]
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "내 편집"})
-    assert ctrl.snapshot()["tabs"][0]["recovery_saved_at"]
     path.write_text("외부 편집", encoding="utf-8")
     blocked = ctrl.dispatch("save", {"session_id": sid, "revision": 1})
     assert blocked["external_changed"] is True
     assert path.read_text(encoding="utf-8") == "외부 편집"
-    restarted = _controller(tmp_path)
-    assert restarted.initial()["recoverable"][0]["path"] == str(path)
-    key = restarted.initial()["recoverable"][0]["key"]
-    comparison = restarted.dispatch("recovery_content", {"key": key})
-    assert comparison["content"] == "내 편집"
-    assert comparison["original_content"] == "외부 편집"
-    assert comparison["external_changed"] is True
-    assert restarted.sessions == {}
-    recovered = restarted.dispatch("recover_draft", {"key": key})
-    assert recovered["content"] == "내 편집"
-    assert restarted.dispatch("check_external", {"session_id": recovered["session_id"]})["changed"] is True
+    # 복구 초안은 퇴역했다 — 편집은 앱 홈에 초안을 쓰지 않고, 표면에 복구 상태를 싣지 않는다.
+    assert not (tmp_path / "home" / "drafts").exists()
+    assert "recoverable" not in ctrl.snapshot()
+    assert not {"recovery", "recovery_saved_at", "recovery_key"} & set(ctrl.snapshot()["tabs"][0])
+    for action in ("recover", "recover_draft", "recovery_content", "discard_recovery", "discard_draft"):
+        with pytest.raises(ValueError, match="알 수 없는 authoring 액션"):
+            ctrl.dispatch(action, {"session_id": sid, "revision": 1, "key": "k"})
 
 
 def test_imported_source_tracks_external_change_without_becoming_save_target(tmp_path: Path) -> None:
@@ -83,33 +78,83 @@ def test_imported_source_tracks_external_change_without_becoming_save_target(tmp
     assert ctrl.snapshot()["tabs"][0]["save_as_required"] is True
 
 
-def test_corrupt_local_recovery_and_cases_do_not_block_document_open(tmp_path: Path) -> None:
+def _utf16_slice(text: str, start: int, end: int) -> str:
+    return text.encode("utf-16-le")[start * 2:end * 2].decode("utf-16-le")
+
+
+def test_crlf_txt_is_served_in_editor_coordinates_and_saved_back_with_its_line_breaks(tmp_path: Path) -> None:
+    # CodeMirror 는 CRLF 를 한 자리로 접는다 — 분석 좌표가 CRLF 기준이면 앞선 줄 수만큼 밀린다.
+    path = tmp_path / "crlf.txt"
+    raw = "제목 😀\r\n이름: {{이름}}\r\n\r\n주소: 서울\r\n연락: {{연락처}}\r\n".encode("utf-8")
+    path.write_bytes(raw)
+    ctrl = _controller(tmp_path)
+    opened = ctrl.open_path(path)
+    sid, text = opened["session_id"], opened["content"]
+    assert "\r" not in text
+    occurrences = [item for field in opened["analysis"]["fields"] for item in field["occurrences"]]
+    assert sorted(item["name"] for item in occurrences) == ["연락처", "이름"]
+    for item in occurrences:
+        assert _utf16_slice(text, item["start"], item["end"]) == "{{" + item["name"] + "}}"
+    tab = ctrl.snapshot()["tabs"][0]
+    assert tab["dirty"] is False
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is False
+    assert ctrl.dispatch("external_content", {"session_id": sid})["content"] == text
+
+    start = len(text[:text.index("서울")].encode("utf-16-le")) // 2
+    plan = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": {
+        "type": "create_field", "start": start, "end": start + 2, "name": "주소"}})
+    assert plan["content"] == text.replace("주소: 서울", "주소: {{주소}}")
+    # 편집기가 CRLF 를 보내도 세션은 LF 로 든다 — 줄바꿈만 다르면 변경이 아니다.
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": plan["content"].replace("\n", "\r\n")})
+    assert ctrl.snapshot()["tabs"][0]["dirty"] is True
+    assert ctrl.dispatch("content", {"session_id": sid})["content"] == plan["content"]
+    assert ctrl.dispatch("save", {"session_id": sid, "revision": 1})["ok"] is True
+    assert path.read_bytes() == raw.replace("주소: 서울".encode("utf-8"), "주소: {{주소}}".encode("utf-8"))
+    assert ctrl.snapshot()["tabs"][0]["dirty"] is False
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is False
+
+    path.write_bytes(raw)
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is True
+    reloaded = ctrl.dispatch("reload", {"session_id": sid, "revision": 1})
+    assert reloaded["content"] == text
+    assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is False
+
+
+def test_lf_and_new_txt_documents_are_written_with_lf(tmp_path: Path) -> None:
+    path = tmp_path / "lf.txt"
+    path.write_bytes("하나\n둘\n".encode("utf-8"))
+    ctrl = _controller(tmp_path)
+    sid = ctrl.open_path(path)["session_id"]
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": "하나\r\n셋\r\n"})
+    assert ctrl.dispatch("save", {"session_id": sid, "revision": 1})["ok"] is True
+    assert path.read_bytes() == "하나\n셋\n".encode("utf-8")
+    created = ctrl.dispatch("new", {"media": "txt", "content": "새\r\n문서"})
+    assert created["content"] == "새\n문서"
+
+
+def test_corrupt_cases_and_leftover_drafts_do_not_block_document_open(tmp_path: Path) -> None:
     path = tmp_path / "example.txt"
     path.write_text("{{이름}}", encoding="utf-8")
     home = tmp_path / "home"
     drafts = home / "drafts"
     drafts.mkdir(parents=True)
-    (drafts / "broken.json").write_text("{", encoding="utf-8")
     from hwpxfiller.external.authoring_store import AuthoringStore
 
     key = AuthoringStore.key(path)
+    # 퇴역한 복구 초안의 옛 파일 — 읽지도 지우지도 않는다.
     (drafts / f"{key}.json").write_text("{", encoding="utf-8")
     cases = home / "cases"
     cases.mkdir()
     (cases / f"{key}.json").write_text("[]", encoding="utf-8")
     ctrl = _controller(tmp_path)
-    pending = {item["key"]: item for item in ctrl.initial()["recoverable"]}
-    assert pending["broken"]["error"] and pending[key]["error"]
-    with pytest.raises(ValueError):
-        ctrl.dispatch("recovery_content", {"key": "broken"})
     opened = ctrl.open_path(path)
     tab = ctrl.snapshot()["tabs"][0]
-    assert opened["content"] == "{{이름}}" and tab["cases_error"] and tab["recovery"]
+    assert opened["content"] == "{{이름}}" and tab["cases_error"] and "recovery" not in tab
     assert ctrl.dispatch("save_cases", {"session_id": opened["session_id"]})["needs_case_repair"]
     assert (cases / f"{key}.json").read_text(encoding="utf-8") == "[]"
-    assert ctrl.dispatch("discard_draft", {"key": "broken"}) == {"ok": True}
-    assert ctrl.dispatch("discard_draft", {"key": key}) == {"ok": True}
-    assert ctrl.initial()["recoverable"] == []
+    ctrl.dispatch("update", {"session_id": opened["session_id"], "revision": 0, "content": "편집"})
+    ctrl.dispatch("close", {"session_id": opened["session_id"], "force": True})
+    assert (drafts / f"{key}.json").read_text(encoding="utf-8") == "{"
 
 
 def test_cases_have_an_independent_explicit_save_and_close_guard(tmp_path: Path) -> None:
@@ -128,7 +173,6 @@ def test_cases_have_an_independent_explicit_save_and_close_guard(tmp_path: Path)
         "cases_dirty": True, "trial_inputs_dirty": False,
     }
     assert _controller(tmp_path).open_path(path)["analysis"]["fields"][0]["name"] == "이름"
-    assert _controller(tmp_path).snapshot()["recoverable"] == []
     ctrl.dispatch("save_cases", {"session_id": sid})
     again = _controller(tmp_path)
     again.open_path(path)
@@ -1471,6 +1515,32 @@ def test_preview_carries_the_confirm_tier_and_the_created_target(tmp_path: Path)
     located = ctrl.dispatch("locate", {"session_id": hwpx, "revision": 1, "selection": created["location"],
                                        "target": {"kind": "field", "name": "수요기관"}})
     assert [(match["kind"], match["name"]) for match in located["matches"]] == [("field", "수요기관")]
+
+
+def test_rename_previews_carry_the_renamed_target_the_surface_adopts(tmp_path: Path) -> None:
+    """#1069 — 패널이 남는 이름 변경 뒤 속성 카드·위치 줄이 설 대상은 Python 이 결과 분석에서 되짚는다."""
+    ctrl = _controller(tmp_path)
+    sid = ctrl.dispatch("new", {"media": "txt", "content": "{{품명}} 과 {{품명}}\n"})["session_id"]
+    rename = ctrl.dispatch("preview", {"session_id": sid, "revision": 0,
+                                       "command": {"type": "rename_field", "old_name": "품명", "name": " 물품명 "}})
+    renamed = rename["renamed"]
+    assert (renamed["kind"], renamed["name"], renamed["count"]) == ("field", "물품명", 2)
+    assert renamed["location"] == renamed["occurrences"][0]
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": rename["content"]})
+    located = ctrl.dispatch("locate", {"session_id": sid, "revision": 1, "selection": renamed["location"],
+                                       "target": {"kind": "field", "name": renamed["name"]}})
+    assert located["selected"]["name"] == "물품명" and [match["name"] for match in located["matches"]] == ["물품명"]
+
+    structured = ctrl.dispatch("new", {"media": "txt", "content": _structured_txt()})["session_id"]
+    slot = ctrl.dispatch("preview", {"session_id": structured, "revision": 0, "command": {
+        "type": "rename_slot", "kind": "slot", "slot_id": "항목1", "id": "새항목", "label": "새 표시"}})["renamed"]
+    assert (slot["kind"], slot["slot_id"], slot["label"]) == ("slot", "새항목", "새 표시")
+    option = ctrl.dispatch("preview", {"session_id": structured, "revision": 0, "command": {
+        "type": "rename_option", "kind": "option", "slot_id": "항목1", "option_id": "안2", "id": "안이"}})["renamed"]
+    assert (option["kind"], option["slot_id"], option["option_id"]) == ("option", "항목1", "안이")
+    create = ctrl.dispatch("preview", {"session_id": sid, "revision": 1, "command": {
+        "type": "create_field", "start": 0, "end": 0, "name": "빈"}})
+    assert create.get("renamed") is None
 
 
 def test_same_text_projects_raw_sites_with_location_lines_and_the_search_summary(tmp_path: Path) -> None:

@@ -77,6 +77,16 @@ def _valid_cell_path(cell_path: object) -> bool:
                     for step in cell_path))
 
 
+#: TXT 줄바꿈 — CodeMirror 가 한 자리로 접는 것과 같은 셋(CRLF·CR·LF). 다른 줄 구분 문자는 글자로 남는다.
+_LINE_BREAK = re.compile(r"\r\n?|\n")
+
+
+def _txt_eol(text: str) -> str:
+    """파일의 줄바꿈 — 첫 줄바꿈의 모양이다. 줄바꿈이 없으면 LF."""
+    found = _LINE_BREAK.search(text)
+    return found.group(0) if found else "\n"
+
+
 def _utf16_length(text: str) -> int:
     """TXT 편집기(CodeMirror) 좌표는 UTF-16 단위다 — 범위 검사도 같은 단위로 한다."""
     return len(text.encode("utf-16-le")) // 2
@@ -98,7 +108,6 @@ class AuthoringController:
         self._restores: dict[str, dict] = {}
         self.active_id = ""
         self._lock = threading.RLock()
-        self._recoverable = self.store.list_drafts()
         self._clipboard: tuple[str, dict] | None = None
         # 템플릿 bytes 변이 통지 sink — tpl 채널의 `mutation_sinks` 와 같은 `(kind, path)`
         # 형태다. 저장은 파일을 제자리에서 바꾸므로 같은 파일을 든 편집 세션이 되읽어야
@@ -117,9 +126,6 @@ class AuthoringController:
         #: 연결 작업 유무(NG-09) 캐시 — 세션별 (저장 경로, 판정). 스냅숏마다 작업 파일을 다시 훑지 않는다.
         #: 저장 경로가 바뀌면 다시 재고, 활성화·외부 변경 확인(창 초점)·영향 확인·초기 스냅숏에서 버린다.
         self._linked_cache: dict[str, tuple[str, bool]] = {}
-
-    def _refresh_recoverable(self) -> None:
-        self._recoverable = self.store.list_drafts()
 
     @staticmethod
     def _media(path: Path) -> str:
@@ -145,8 +151,28 @@ class AuthoringController:
         if not isinstance(content, str):
             raise ValueError("문서 내용은 문자열이어야 합니다.")
         if media == "txt":
-            return content.encode("utf-8")
+            return _LINE_BREAK.sub("\n", content).encode("utf-8")
         return base64.b64decode(content, validate=True)
+
+    @staticmethod
+    def _load(media: str, raw: bytes) -> tuple[bytes, str]:
+        """디스크 bytes → 세션 내용과 그 줄바꿈. TXT 는 LF 로만 든다 — 분석 좌표(UTF-16)가 편집기 좌표와 같아야 한다.
+
+        CodeMirror 는 CRLF 를 한 자리로 접는다. CRLF 그대로 분석하면 앞선 줄바꿈 수만큼 좌표가 밀린다.
+        외부 변경 판정의 기준(baseline)은 원래 bytes 의 digest 그대로다.
+        """
+        if media != "txt":
+            return raw, "\n"
+        text = raw.decode("utf-8")
+        return _LINE_BREAK.sub("\n", text).encode("utf-8"), _txt_eol(text)
+
+    @staticmethod
+    def _on_disk(session: AuthoringSession, content: bytes | None = None) -> bytes:
+        """세션 내용(TXT 는 LF) → 파일에 쓸 bytes. 파일의 줄바꿈을 되살린다."""
+        data = session.content if content is None else content
+        if session.media != "txt" or session.eol == "\n":
+            return data
+        return data.decode("utf-8").replace("\n", session.eol).encode("utf-8")
 
     @staticmethod
     def _section_entries(content: bytes) -> list[str]:
@@ -365,9 +391,6 @@ class AuthoringController:
                 "revision": self._projection_revision(session.id, "trial_result", session.trial_result)},
             "trial_coverage": self._trial_coverage(session),
             "trial_error": session.trial_error,
-            "recovery": session.recovery,
-            "recovery_saved_at": session.recovery_saved_at,
-            "recovery_key": session.draft_key if session.recovery else "",
             "external_changed": session.external_changed,
             "rhwp_editable": session.rhwp_editable,
             "rhwp_diagnostics": session.rhwp_diagnostics,
@@ -560,7 +583,6 @@ class AuthoringController:
             return {
                 "tabs": [self._tab(session) for session in self.sessions.values()],
                 "active_id": self.active_id,
-                "recoverable": list(self._recoverable),
             }
 
     def initial(self) -> dict:
@@ -616,10 +638,10 @@ class AuthoringController:
                     self.active_id = session.id
                     self._push()
                     return self._contents(session)
-            content, baseline = self.store.read_document(source)
+            raw, baseline = self.store.read_document(source)
+            content, eol = self._load(media, raw)
             analysis = self._analyze(media, content)
             key = self.store.key(source)
-            draft_meta = next((item for item in self._recoverable if item["key"] == key), None)
             cases: list[dict] = []
             cases_error = ""
             if as_template:
@@ -633,15 +655,13 @@ class AuthoringController:
                 media=media,
                 content=content,
                 source_path=str(source),
+                eol=eol,
                 save_path=str(source) if as_template else "",
                 baseline=baseline if as_template else None,
                 source_baseline=baseline,
                 saved_content=content,
                 analysis=analysis,
                 saved_analysis=analysis,
-                draft_key=key,
-                recovery=draft_meta is not None,
-                recovery_saved_at=draft_meta.get("updated_at", "") if draft_meta else "",
                 external_changed=False,
                 cases=cases,
                 cases_error=cases_error,
@@ -711,15 +731,13 @@ class AuthoringController:
         """Native Save As handoff. Existing destination is never silently replaced."""
         with self._lock:
             session = self._session({"session_id": session_id, "revision": revision}, revision=True)
-            if session.recovery:
-                raise ValueError("복구 초안을 복원하거나 폐기한 뒤 저장하세요.")
             target = Path(path).resolve()
             if self._media(target) != session.media:
                 raise ValueError("저장할 파일 형식이 열린 문서와 다릅니다.")
             current_path = Path(session.save_path).resolve() if session.save_path else None
             expected = session.baseline if current_path == target else None
             try:
-                new_baseline = self.store.save_document(target, session.content, expected)
+                new_baseline = self.store.save_document(target, self._on_disk(session), expected)
             except ExternalChangeError as exc:
                 if current_path != target:
                     return {"conflict": "destination_exists",
@@ -728,22 +746,15 @@ class AuthoringController:
                 self._push()
                 return {"external_changed": True, "fingerprint": exc.fingerprint,
                         "message": _EXTERNAL_CHANGED}
-            old_draft = session.draft_key
             old_save_path = session.save_path
             session.save_path = str(target)
             session.baseline = new_baseline
             session.saved_content = session.content
             session.saved_analysis = session.analysis
             session.identifier_changes = []
-            session.draft_key = self.store.key(target)
-            session.recovery = False
-            session.recovery_saved_at = ""
             session.external_changed = False
             if old_save_path != session.save_path and session.cases:
                 session.cases_dirty = True
-            self.store.discard_draft(old_draft)
-            self.store.discard_draft(session.draft_key)
-            self._refresh_recoverable()
             # sink 의 실패는 삼키지 않는다(confirm-or-alarm) — 조용한 미정산이 더 나쁘다.
             for sink in self.mutation_sinks:
                 sink("mutated", str(target))
@@ -793,7 +804,7 @@ class AuthoringController:
             if self._media(target) != session.media:
                 raise ValueError("결과 파일 형식이 문서와 다릅니다.")
             if session.media == "txt":
-                data = session.trial_result["text"].encode("utf-8")
+                data = self._on_disk(session, session.trial_result["text"].encode("utf-8"))
             else:
                 data = base64.b64decode(session.trial_result["content"], validate=True)
             self.store.export_result(target, data)
@@ -839,11 +850,6 @@ class AuthoringController:
             "check_external": self._do_check_external,
             "external_content": self._do_external_content,
             "reload": self._do_reload,
-            "recover": self._do_recover,
-            "recover_draft": self._do_recover_draft,
-            "recovery_content": self._do_recovery_content,
-            "discard_recovery": self._do_discard_recovery,
-            "discard_draft": self._do_discard_draft,
             "close": self._do_close,
             "impact": self._do_impact,
             "prepare_apply": self._do_prepare_apply,
@@ -868,7 +874,6 @@ class AuthoringController:
             media=media,
             content=content,
             analysis=self._analyze(media, content),
-            draft_key=uuid4().hex,
         )
         self.sessions[session.id] = session
         self.active_id = session.id
@@ -885,24 +890,10 @@ class AuthoringController:
 
     def _do_update(self, p: dict) -> dict:
         session = self._session(p, revision=True)
-        if session.recovery:
-            raise ValueError("복구 초안을 복원하거나 폐기한 뒤 편집하세요.")
         if session.media == "hwpx" and session.rhwp_editable is not True:
             raise ValueError("문서 보존 검증이 끝나지 않아 HWPX를 수정할 수 없습니다.")
         content = self._unwire(session.media, p.get("content"))
         analysis = self._analyze(session.media, content)
-        if content != session.saved_content:
-            session.recovery_saved_at = self.store.write_draft(
-                session.draft_key,
-                path=session.save_path or session.source_path,
-                media=session.media,
-                baseline=session.baseline,
-                source_baseline=session.source_baseline,
-                content=content,
-            )
-        else:
-            self.store.discard_draft(session.draft_key)
-            session.recovery_saved_at = ""
         # 미리보기가 낸 내용이 그대로 확정되면 그 미리보기의 식별자 변경을 원장에 적는다(F19).
         # 다른 내용이 오면 미리보기는 폐기된 것이다 — 추측으로 이름 변경을 복원하지 않는다.
         if session.last_preview is not None and content == session.last_preview[0]:
@@ -910,14 +901,10 @@ class AuthoringController:
         session.last_preview = None
         session.replace_content(content, analysis)
         session.trial_error = ""
-        self._refresh_recoverable()
-        session.recovery = False
         return {"session_id": session.id, "revision": session.revision, "analysis": analysis}
 
     def _do_preview(self, p: dict) -> dict:
         session = self._session(p, revision=True)
-        if session.recovery:
-            raise ValueError("복구 초안을 복원하거나 폐기한 뒤 편집하세요.")
         if session.media == "hwpx" and session.rhwp_editable is not True:
             raise ValueError("문서 보존 검증이 끝나지 않아 HWPX를 수정할 수 없습니다.")
         command = p.get("command")
@@ -958,6 +945,8 @@ class AuthoringController:
             # 확인 등급(P-01)과 만든 대상(NG-14)은 Python 이 짓는다 — 표면은 이 값으로만 가른다.
             "confirm": semantics.confirm_tier(command, preview, impact),
             "created": semantics.created_target(command, preview["result"]),
+            # 이름 변경 뒤 가리킬 대상(#1069) — 패널이 남는 등급에서 표면이 선택·카드·폼을 이 대상으로 다시 세운다.
+            "renamed": semantics.renamed_target(command, preview["result"]),
         }
 
     def _preview_impact(self, session: AuthoringSession, preview: dict, command: dict) -> dict:
@@ -1064,7 +1053,7 @@ class AuthoringController:
 
     def _do_preview_paste(self, p: dict) -> dict:
         session = self._session(p, revision=True)
-        if session.recovery or (session.media == "hwpx" and session.rhwp_editable is not True):
+        if session.media == "hwpx" and session.rhwp_editable is not True:
             raise ValueError("이 문서는 현재 붙여넣을 수 없습니다.")
         if (self._clipboard is None or not isinstance(p.get("clipboard_token"), str)
                 or p["clipboard_token"] != self._clipboard[0]):
@@ -1642,7 +1631,8 @@ class AuthoringController:
         path = session.save_path or session.source_path
         if not path:
             raise ValueError("원본 파일이 없습니다.")
-        content, fingerprint = self.store.read_document(Path(path))
+        raw, fingerprint = self.store.read_document(Path(path))
+        content, _eol = self._load(session.media, raw)
         result: dict[str, object] = {
             "content": self._wire(session.media, content),
             "fingerprint": fingerprint,
@@ -1656,10 +1646,10 @@ class AuthoringController:
         path = session.save_path or session.source_path
         if not path:
             raise ValueError("다시 열 파일이 없습니다.")
-        if (session.dirty or session.recovery) and p.get("force") is not True:
-            return {"needs_confirm": True, "document_dirty": session.dirty,
-                    "recovery": session.recovery}
-        content, baseline = self.store.read_document(Path(path))
+        if session.dirty and p.get("force") is not True:
+            return {"needs_confirm": True, "document_dirty": session.dirty}
+        raw, baseline = self.store.read_document(Path(path))
+        content, session.eol = self._load(session.media, raw)
         analysis = self._analyze(session.media, content)
         session.content = content
         session.saved_content = content
@@ -1672,119 +1662,11 @@ class AuthoringController:
         session.identifier_changes = []
         session.last_preview = None
         session.revision += 1
-        session.recovery = False
-        session.recovery_saved_at = ""
         session.rhwp_editable = None
         session.rhwp_diagnostics = []
         session.external_changed = False
         self._restores.pop(session.id, None)
-        self.store.discard_draft(session.draft_key)
-        self._refresh_recoverable()
         return self._contents(session)
-
-    def _do_recover(self, p: dict) -> dict:
-        session = self._session(p, revision=True)
-        draft = self.store.read_draft(session.draft_key)
-        if draft is None:
-            raise ValueError("복구 초안이 없습니다.")
-        if draft["media"] != session.media:
-            raise ValueError("복구 초안의 형식이 다릅니다.")
-        analysis = self._analyze(session.media, draft["content"])
-        session.replace_content(draft["content"], analysis)
-        session.baseline = draft["baseline"]
-        session.source_baseline = draft.get("source_baseline")
-        session.external_changed = bool(
-            (session.save_path or session.source_path)
-            and self.store.current_fingerprint(Path(session.save_path or session.source_path))
-            != (session.baseline if session.save_path else session.source_baseline)
-        )
-        session.recovery = False
-        session.recovery_saved_at = next((item.get("updated_at", "") for item in self._recoverable
-                                          if item["key"] == session.draft_key), "")
-        session.rhwp_editable = None
-        session.rhwp_diagnostics = []
-        self._restores.pop(session.id, None)
-        return self._contents(session)
-
-    def _do_recover_draft(self, p: dict) -> dict:
-        key = p.get("key")
-        if not isinstance(key, str) or key not in {item["key"] for item in self._recoverable}:
-            raise ValueError("복구 초안을 찾을 수 없습니다.")
-        draft = self.store.read_draft(key)
-        assert draft is not None
-        path = draft["path"]
-        if path and Path(path).is_file():
-            result = self.open_path(path, as_template=draft["baseline"] is not None)
-            return self._do_recover({"session_id": result["session_id"], "revision": result["revision"]})
-        media = draft["media"]
-        content = draft["content"]
-        session = AuthoringSession(
-            id=uuid4().hex, media=media, content=content,
-            source_path=path, saved_content=b"", analysis=self._analyze(media, content),
-            draft_key=key,
-            recovery_saved_at=next((item.get("updated_at", "") for item in self._recoverable
-                                    if item["key"] == key), ""),
-        )
-        self.sessions[session.id] = session
-        self.active_id = session.id
-        return self._contents(session)
-
-    def _do_recovery_content(self, p: dict) -> dict:
-        key = p.get("key")
-        if not isinstance(key, str) or key not in {item["key"] for item in self._recoverable}:
-            raise ValueError("복구 초안을 찾을 수 없습니다.")
-        draft = self.store.read_draft(key)
-        if draft is None:
-            raise ValueError("복구 초안을 찾을 수 없습니다.")
-        media = draft["media"]
-        content = draft["content"]
-        result: dict[str, object] = {
-            "key": key,
-            "media": media,
-            "content": self._wire(media, content),
-            "path": draft["path"],
-            "original_content": None,
-            "external_changed": False,
-        }
-        if media == "hwpx":
-            result["section_entries"] = self._section_entries(content)
-        path = Path(draft["path"])
-        if draft["path"] and self.store.key(path) != key:
-            raise ValueError("복구 초안의 원본 경로가 일치하지 않습니다.")
-        if draft["path"] and path.is_file():
-            original, fingerprint = self.store.read_document(path)
-            if self._media(path) != media:
-                raise ValueError("복구 초안과 원본의 형식이 다릅니다.")
-            result["original_content"] = self._wire(media, original)
-            expected = draft["baseline"] if draft["baseline"] is not None else draft.get("source_baseline")
-            result["external_changed"] = fingerprint != expected
-            if media == "hwpx":
-                result["original_section_entries"] = self._section_entries(original)
-        return result
-
-    def _do_discard_recovery(self, p: dict) -> dict:
-        session = self._session(p)
-        if not session.recovery:
-            raise ValueError("적용 전 복구 초안이 없습니다.")
-        self.store.discard_draft(session.draft_key)
-        self._refresh_recoverable()
-        session.recovery = False
-        session.recovery_saved_at = ""
-        return {"ok": True}
-
-    def _do_discard_draft(self, p: dict) -> dict:
-        key = p.get("key")
-        if not isinstance(key, str) or key not in {item["key"] for item in self._recoverable}:
-            raise ValueError("복구 초안을 찾을 수 없습니다.")
-        if any(session.draft_key == key and session.dirty for session in self.sessions.values()):
-            raise ValueError("편집 중인 문서의 복구 초안은 폐기할 수 없습니다.")
-        self.store.discard_draft(key)
-        self._refresh_recoverable()
-        for session in self.sessions.values():
-            if session.draft_key == key:
-                session.recovery = False
-                session.recovery_saved_at = ""
-        return {"ok": True}
 
     def _do_close(self, p: dict) -> dict:
         session = self._session(p)
@@ -1793,9 +1675,6 @@ class AuthoringController:
             return {"needs_confirm": True, "document_dirty": session.dirty,
                     "dirty": session.dirty, "cases_dirty": cases_dirty,
                     "trial_inputs_dirty": session.trial_inputs_dirty}
-        if p.get("force") is True and not session.recovery:
-            self.store.discard_draft(session.draft_key)
-            self._refresh_recoverable()
         del self.sessions[session.id]
         self._restores.pop(session.id, None)
         if self.active_id == session.id:

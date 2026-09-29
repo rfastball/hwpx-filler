@@ -61,7 +61,7 @@ index 9e51f5a07..9f30d7107 100644
    }
    safeInteger(event.documentEpoch, 'document changed event documentEpoch', 1, code);
 diff --git a/npm/editor/index.d.ts b/npm/editor/index.d.ts
-index 6b35540e6..0995f45a6 100644
+index 6b35540e6..26a179270 100644
 --- a/npm/editor/index.d.ts
 +++ b/npm/editor/index.d.ts
 @@ -15,8 +15,13 @@ export interface EditorOptions {
@@ -78,7 +78,7 @@ index 6b35540e6..0995f45a6 100644
  export interface LoadResult {
    pageCount: number;
  }
-@@ -218,6 +223,17 @@ export interface RhwpDocumentStateV1 {
+@@ -218,6 +223,25 @@ export interface RhwpDocumentStateV1 {
    documentSha256: string;
  }
  
@@ -86,6 +86,14 @@ index 6b35540e6..0995f45a6 100644
 + * 표 셀 좌표(바깥 표부터). `parentParagraph`=표 컨트롤을 담은 문단(첫 항목은 본문, 이후는 셀 문단),
 + * `control`=그 문단의 컨트롤 순번, `cell`=표 안 셀의 선형 순번, `paragraph`=셀 안 문단 순번.
 + */
++/** 범위 고르기의 한 점 — 본문 문단과 글자 위치. 표 셀 안을 누르면 그 표의 닻 본문 문단(cell: true, 0)이다 */
++export interface RhwpPickPointV1 {
++  section: number;
++  paragraph: number;
++  charOffset: number;
++  cell: boolean;
++}
++
 +export interface RhwpCellPathEntryV1 {
 +  parentParagraph: number;
 +  control: number;
@@ -96,7 +104,7 @@ index 6b35540e6..0995f45a6 100644
  export interface RhwpSelectionContextV1 {
    schemaVersion: 1;
    documentEpoch: number;
-@@ -228,6 +244,14 @@ export interface RhwpSelectionContextV1 {
+@@ -228,6 +252,14 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
@@ -111,7 +119,7 @@ index 6b35540e6..0995f45a6 100644
  }
  
  export interface RhwpApplyTextCommandV1 {
-@@ -272,7 +296,7 @@ export interface RhwpTextCommandReceiptV1 {
+@@ -272,7 +304,7 @@ export interface RhwpTextCommandReceiptV1 {
  
  export interface RhwpDocumentChangedEventV1 {
    schemaVersion: 1;
@@ -120,7 +128,7 @@ index 6b35540e6..0995f45a6 100644
    documentEpoch: number;
    changeSeq: number;
    commandId: string;
-@@ -317,14 +341,34 @@ export declare class RhwpEditor {
+@@ -317,14 +349,37 @@ export declare class RhwpEditor {
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
@@ -136,6 +144,9 @@ index 6b35540e6..0995f45a6 100644
 +  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: 1 | 1.25 | 1.5 }): Promise<void>;
 +  /** 켜 두면 문서 우클릭이 Studio 메뉴 대신 onContextMenuRequest 로 온다 */
 +  setContextMenuForwarding(enabled: boolean): Promise<void>;
++  /** 호스트 범위 고르기: 켜 두면 문서 누름이 캐럿을 옮기지 않고 onRangePick 으로 온다. start 가 있으면 고무줄 범위를 그린다 */
++  setRangePick(options: { enabled: boolean; start?: RhwpPickPointV1 | null }): Promise<void>;
++  onRangePick(listener: (point: RhwpPickPointV1) => void): () => void;
    /** exact preimage fence를 검증하고 문단 전체를 한 트랜잭션으로 교체 */
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    /** 가장 최근에 성공한 exact command를 한 트랜잭션으로 되돌림 */
@@ -156,7 +167,7 @@ index 6b35540e6..0995f45a6 100644
    readonly element: HTMLIFrameElement;
    // ── 브리지 표면 ────────────────────────────────────────────────
 diff --git a/npm/editor/index.js b/npm/editor/index.js
-index f4ed3c6c1..a3c2b6e18 100644
+index f4ed3c6c1..b7f9bce30 100644
 --- a/npm/editor/index.js
 +++ b/npm/editor/index.js
 @@ -22,7 +22,7 @@ import {
@@ -195,7 +206,7 @@ index f4ed3c6c1..a3c2b6e18 100644
      return result;
    }
  
-@@ -293,6 +299,31 @@ export class RhwpEditor {
+@@ -293,6 +299,56 @@ export class RhwpEditor {
      return selection;
    }
  
@@ -219,6 +230,31 @@ index f4ed3c6c1..a3c2b6e18 100644
 +    return this._request('setAppearance', { theme: appearance.theme, fontScale: appearance.fontScale });
 +  }
 +
++  /**
++   * Host range pick. While enabled, a document press never moves the caret: a click raises `onRangePick` with the body
++   * point under it (a table cell folds to its table's anchor paragraph). With `start`, the Studio draws a rubber band
++   * from it to the point under the pointer. `{ enabled: false }` ends it.
++   */
++  async setRangePick(options) {
++    const enabled = options?.enabled === true;
++    const start = enabled && options?.start ? {
++      section: options.start.section, paragraph: options.start.paragraph,
++      charOffset: options.start.charOffset, cell: options.start.cell === true,
++    } : null;
++    return this._request('setRangePick', { enabled, start });
++  }
++
++  /** Body point of each range-pick click (see `setRangePick`). */
++  onRangePick(listener) {
++    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
++    return this._transport.on('rangePick', (point) => {
++      if ([point?.section, point?.paragraph, point?.charOffset].every((n) => Number.isSafeInteger(n) && n >= 0)
++          && typeof point.cell === 'boolean') {
++        listener({ section: point.section, paragraph: point.paragraph, charOffset: point.charOffset, cell: point.cell });
++      }
++    });
++  }
++
 +  /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
 +  async setContextMenuForwarding(enabled) {
 +    return this._request('setContextMenuForwarding', { enabled: enabled === true });
@@ -227,7 +263,7 @@ index f4ed3c6c1..a3c2b6e18 100644
    /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
    async applyTextCommand(command) {
      assertCapability(this._transport, 'document-agent-command-v1');
-@@ -324,6 +355,19 @@ export class RhwpEditor {
+@@ -324,6 +380,19 @@ export class RhwpEditor {
      }));
    }
  
@@ -247,7 +283,7 @@ index f4ed3c6c1..a3c2b6e18 100644
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
    onDocumentChanged(listener) {
      assertCapability(this._transport, 'document-change-events-v1');
-@@ -338,6 +382,7 @@ export class RhwpEditor {
+@@ -338,6 +407,7 @@ export class RhwpEditor {
            return;
          }
          if (!this._isFreshDocumentEvent(event.documentEpoch, event.changeSeq)) return;
@@ -255,7 +291,7 @@ index f4ed3c6c1..a3c2b6e18 100644
          this._rememberDocumentVersion(event.documentEpoch, event.changeSeq);
          for (const subscriber of this._documentChangedListeners) {
            try { subscriber(event); } catch { /* 한 listener가 다른 listener를 막지 않는다. */ }
-@@ -353,10 +398,45 @@ export class RhwpEditor {
+@@ -353,10 +423,45 @@ export class RhwpEditor {
      };
    }
  
@@ -305,7 +341,7 @@ index f4ed3c6c1..a3c2b6e18 100644
  
    _rememberDocumentVersion(epoch, changeSeq) {
 diff --git a/npm/editor/tests/document-agent-command-v1.contract.test.mjs b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
-index 1b8d0fcec..c17b037a1 100644
+index 1b8d0fcec..5b66303a8 100644
 --- a/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 +++ b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 @@ -40,6 +40,9 @@ function selection() {
@@ -329,7 +365,7 @@ index 1b8d0fcec..c17b037a1 100644
    const first = [];
    const second = [];
    editor.onDocumentChanged(event => first.push(event.changeSeq));
-@@ -250,8 +253,50 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
+@@ -250,8 +253,66 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(2, 99));
@@ -379,6 +415,22 @@ index 1b8d0fcec..c17b037a1 100644
 +  const { editor, requests } = editorHarness({ scrollToRange: { scrolled: true } });
 +  assert.deepEqual(await editor.scrollToRange(range), { scrolled: true });
 +  assert.deepEqual(requests.at(-1), { method: 'scrollToRange', params: { range } });
++});
++
++test('setRangePick sends enabled and an exact start; onRangePick passes only well-formed body points', async () => {
++  const { editor, requests, emit } = editorHarness({});
++  await editor.setRangePick({ enabled: true, start: { section: 0, paragraph: 3, charOffset: 2, cell: false, extra: 1 } });
++  await editor.setRangePick({ enabled: false, start: { section: 0, paragraph: 3, charOffset: 2, cell: false } });
++  assert.deepEqual(requests, [
++    { method: 'setRangePick', params: { enabled: true, start: { section: 0, paragraph: 3, charOffset: 2, cell: false } } },
++    { method: 'setRangePick', params: { enabled: false, start: null } },
++  ]);
++  const points = [];
++  editor.onRangePick((point) => points.push(point));
++  emit('rangePick', { section: 0, paragraph: 9, charOffset: 0, cell: true });
++  emit('rangePick', { section: 0, paragraph: -1, charOffset: 0, cell: false });
++  emit('rangePick', { section: 0, paragraph: 1, charOffset: 0 });
++  assert.deepEqual(points, [{ section: 0, paragraph: 9, charOffset: 0, cell: true }]);
 +});
 diff --git a/npm/hwpctrl-ocx/src/studio-plugin.mjs b/npm/hwpctrl-ocx/src/studio-plugin.mjs
 index fef90d7aa..2945167d5 100644
@@ -472,10 +524,10 @@ index 342cdd5b0..fb7bca5c6 100644
 +  return { mode: appearance.theme, effective };
 +}
 diff --git a/rhwp-studio/src/core/types.ts b/rhwp-studio/src/core/types.ts
-index 61d94b056..86856e6aa 100644
+index 61d94b056..3eae3908d 100644
 --- a/rhwp-studio/src/core/types.ts
 +++ b/rhwp-studio/src/core/types.ts
-@@ -185,6 +185,19 @@ export interface CellPathSegment {
+@@ -185,6 +185,30 @@ export interface CellPathSegment {
    cellParaIdx: number;
  }
  export type CellPath = CellPathSegment[];
@@ -486,6 +538,17 @@ index 61d94b056..86856e6aa 100644
 + * `control` the table's index in that paragraph's controls, `cell` the linear cell index and
 + * `paragraph` the paragraph index inside the cell. Mirrors `CellPathEntry` plus the parent.
 + */
++/**
++ * One body point chosen by the embedded range pick: a section, a body paragraph and a character offset. A hit inside a
++ * table cell folds to the table's anchor body paragraph (`cell: true`, offset 0) — cell-level coordinates never leave.
++ */
++export interface EmbedPickPoint {
++  section: number;
++  paragraph: number;
++  charOffset: number;
++  cell: boolean;
++}
++
 +export interface EmbedCellPathEntry {
 +  parentParagraph: number;
 +  control: number;
@@ -496,7 +559,7 @@ index 61d94b056..86856e6aa 100644
  
  /** 문서 트리 DFS 순회 컨텍스트 엔트리 */
 diff --git a/rhwp-studio/src/document-agent/controller.ts b/rhwp-studio/src/document-agent/controller.ts
-index b0a350267..078659e46 100644
+index b0a350267..207ceae2b 100644
 --- a/rhwp-studio/src/document-agent/controller.ts
 +++ b/rhwp-studio/src/document-agent/controller.ts
 @@ -2,7 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
@@ -542,7 +605,7 @@ index b0a350267..078659e46 100644
  export class DocumentAgentController {
    private readonly deps: DocumentAgentControllerDeps;
    private readonly now: () => number;
-@@ -410,6 +437,25 @@ export class DocumentAgentController {
+@@ -410,6 +437,38 @@ export class DocumentAgentController {
        collapsed,
        target,
        selectedTextSha256,
@@ -558,7 +621,20 @@ index b0a350267..078659e46 100644
 +            end: { section: end.sectionIndex, paragraph: end.paragraphIndex, charOffset: end.charOffset },
 +          };
 +        }
-+        if (!sameCell(startPath, endPath)) return null;
++        if (!sameCell(startPath, endPath)) {
++          // A drag that enters or leaves a table (body↔cell, or two different cells) folds each cell edge to
++          // the table's anchor body paragraph — the start to its beginning, the end to its end — so the range
++          // is plain body coordinates that cover the whole table paragraph.
++          const fold = (pos: DocumentPosition, path: EmbedCellPathEntry[], edge: 'start' | 'end') => {
++            if (path.length === 0) {
++              return { section: pos.sectionIndex, paragraph: pos.paragraphIndex, charOffset: pos.charOffset };
++            }
++            const anchor = path[0].parentParagraph;
++            return { section: pos.sectionIndex, paragraph: anchor,
++              charOffset: edge === 'start' ? 0 : this.deps.wasm.getParagraphLength(pos.sectionIndex, anchor) };
++          };
++          return { start: fold(start, startPath, 'start'), end: fold(end, endPath, 'end') };
++        }
 +        return {
 +          start: { section: start.sectionIndex, paragraph: startPath[startPath.length - 1].paragraph, charOffset: start.charOffset },
 +          end: { section: end.sectionIndex, paragraph: endPath[endPath.length - 1].paragraph, charOffset: end.charOffset },
@@ -569,7 +645,7 @@ index b0a350267..078659e46 100644
    }
  
 diff --git a/rhwp-studio/src/document-agent/types.ts b/rhwp-studio/src/document-agent/types.ts
-index 8f6bba3f5..6f9db6ac2 100644
+index 8f6bba3f5..8089c936a 100644
 --- a/rhwp-studio/src/document-agent/types.ts
 +++ b/rhwp-studio/src/document-agent/types.ts
 @@ -1,3 +1,5 @@
@@ -578,14 +654,15 @@ index 8f6bba3f5..6f9db6ac2 100644
  export interface RhwpBodyParagraphTargetV1 {
    kind: 'body_paragraph';
    section: number;
-@@ -25,6 +27,12 @@ export interface RhwpSelectionContextV1 {
+@@ -25,6 +27,13 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
 +  range: {
 +    start: { section: number; paragraph: number; charOffset: number };
 +    end: { section: number; paragraph: number; charOffset: number };
-+    /** Present only when both edges sit in the same table cell; paragraphs are then cell-level. */
++    /** Present only when both edges sit in the same table cell; paragraphs are then cell-level. An edge in any
++     *  other cell is folded to its table's anchor body paragraph (start → offset 0, end → paragraph end). */
 +    cellPath?: EmbedCellPathEntry[];
 +  } | null;
  }
@@ -613,17 +690,17 @@ index 5c625f7b8..7d8c701dd 100644
 +  keyboardMenuAt: Number.NEGATIVE_INFINITY,
 +};
 diff --git a/rhwp-studio/src/embed/rpc-router.ts b/rhwp-studio/src/embed/rpc-router.ts
-index 9723fff53..e0ed40bcb 100644
+index 9723fff53..e57f5ac0e 100644
 --- a/rhwp-studio/src/embed/rpc-router.ts
 +++ b/rhwp-studio/src/embed/rpc-router.ts
 @@ -1,5 +1,6 @@
  import type { HmlSaveState } from '../core/hml-save-capability.ts';
  import type { EmbedFontDecisionTraceV1 } from '../core/font-decision-trace.ts';
-+import type { EmbedCellPathEntry } from '../core/types.ts';
++import type { EmbedCellPathEntry, EmbedPickPoint } from '../core/types.ts';
  import {
    assertEmptyParams,
    assertOnlyParam,
-@@ -47,10 +48,20 @@ export interface EmbedRpcHandlers {
+@@ -47,10 +48,22 @@ export interface EmbedRpcHandlers {
    exportHwpVerify(): Promise<unknown>;
    notifySaved(fileName?: string): Promise<EmbedNotifySavedResult>;
    getDocumentState(): Promise<RhwpDocumentStateV1>;
@@ -635,6 +712,8 @@ index 9723fff53..e0ed40bcb 100644
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +    cellPath?: EmbedCellPathEntry[] }>, labels: 'selected' | 'all' | 'none'): Promise<void>;
 +  setContextMenuForwarding(enabled: boolean): Promise<void>;
++  /** Host range pick: presses report `rangePick` events instead of moving the caret; `start` draws the rubber band. */
++  setRangePick(enabled: boolean, start: EmbedPickPoint | null): Promise<void>;
 +  setAppearance(appearance: { theme: 'light' | 'dark' | 'system'; fontScale: number }): Promise<void>;
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    revertTextCommand(command: RhwpRevertTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
@@ -645,7 +724,7 @@ index 9723fff53..e0ed40bcb 100644
  
    // ── 브리지 확장 (P4) ────────────────────────────────────
    // 자동화·플러그인·창 제어. 부모는 **구조화 복제 가능한 값만** 보낼 수 있으므로 함수를 받는
-@@ -99,6 +110,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
+@@ -99,6 +112,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
    if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown.sort()[0]}`);
  }
  
@@ -692,7 +771,7 @@ index 9723fff53..e0ed40bcb 100644
  /** 비어 있지 않은 문자열 식별자. 라우터에서 거르지 않으면 핸들러마다 같은 검사를 반복한다. */
  function asId(value: unknown): string {
    if (typeof value !== 'string' || value.length === 0) {
-@@ -176,6 +227,43 @@ export async function routeEmbedRequest(
+@@ -176,6 +229,59 @@ export async function routeEmbedRequest(
      case 'getSelectionContext':
        assertEmptyParams(params, 'getSelectionContext params');
        return handlers.getSelectionContext();
@@ -723,6 +802,22 @@ index 9723fff53..e0ed40bcb 100644
 +      });
 +      return handlers.setDecorations(markers, labels);
 +    }
++    case 'setRangePick': {
++      assertOnlyKeys(params, ['enabled', 'start'], 'setRangePick params');
++      if (typeof params.enabled !== 'boolean') throw new Error('enabled must be boolean');
++      const raw = params.start ?? null;
++      let start: EmbedPickPoint | null = null;
++      if (raw !== null) {
++        const point = asParams(raw);
++        assertOnlyKeys(point, ['section', 'paragraph', 'charOffset', 'cell'], 'setRangePick start');
++        for (const key of ['section', 'paragraph', 'charOffset']) {
++          if (!Number.isSafeInteger(point[key]) || (point[key] as number) < 0) throw new Error(`invalid setRangePick start.${key}`);
++        }
++        if (typeof point.cell !== 'boolean') throw new Error('invalid setRangePick start.cell');
++        start = point as unknown as EmbedPickPoint;
++      }
++      return handlers.setRangePick(params.enabled, start);
++    }
 +    case 'setContextMenuForwarding':
 +      assertOnlyKeys(params, ['enabled'], 'setContextMenuForwarding params');
 +      if (typeof params.enabled !== 'boolean') throw new Error('enabled must be boolean');
@@ -736,7 +831,7 @@ index 9723fff53..e0ed40bcb 100644
      case 'applyTextCommand': return handlers.applyTextCommand(parseApplyTextCommand(
        assertOnlyParam(params, 'command', 'applyTextCommand params'),
      ));
-@@ -185,6 +273,8 @@ export async function routeEmbedRequest(
+@@ -185,6 +291,8 @@ export async function routeEmbedRequest(
      case 'focusTarget': return handlers.focusTarget(parseBodyParagraphTarget(
        assertOnlyParam(params, 'target', 'focusTarget params'),
      ));
@@ -746,10 +841,10 @@ index 9723fff53..e0ed40bcb 100644
      case 'automation.list': return handlers.automationList();
      case 'automation.menuModel': return handlers.automationMenuModel();
 diff --git a/rhwp-studio/src/embed/runtime.ts b/rhwp-studio/src/embed/runtime.ts
-index fe02079b2..6b4c19fbb 100644
+index fe02079b2..e1e3cde23 100644
 --- a/rhwp-studio/src/embed/runtime.ts
 +++ b/rhwp-studio/src/embed/runtime.ts
-@@ -11,11 +11,17 @@ import {
+@@ -11,11 +11,18 @@ import {
  import { routeEmbedRequest, type EmbedRpcHandlers } from './rpc-router.ts';
  import { isDocumentAgentError } from '../document-agent/types.ts';
  
@@ -764,19 +859,21 @@ index fe02079b2..6b4c19fbb 100644
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void;
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void;
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void;
++  subscribeRangePick?: (listener: (point: unknown) => void) => () => void;
  }
  
  function errorText(error: unknown): string {
-@@ -47,6 +53,8 @@ function bindPort(
+@@ -47,6 +54,9 @@ function bindPort(
    clientCapabilities: readonly string[],
    handlers: EmbedRpcHandlers,
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void,
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void,
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void,
++  subscribeRangePick?: (listener: (point: unknown) => void) => () => void,
  ): () => void {
    port.onmessage = async ({ data }) => {
      if (!isRequestAttempt(data, sessionId)) return;
-@@ -100,7 +108,7 @@ function bindPort(
+@@ -100,7 +110,7 @@ function bindPort(
      type: 'rhwp-connected', version: EMBED_PROTOCOL_VERSION, sessionId,
      capabilities: EMBED_CAPABILITIES,
    });
@@ -785,7 +882,7 @@ index fe02079b2..6b4c19fbb 100644
      port.postMessage({
        type: 'rhwp-event',
        version: EMBED_PROTOCOL_VERSION,
-@@ -108,7 +116,16 @@ function bindPort(
+@@ -108,7 +118,20 @@ function bindPort(
        event: 'documentChanged',
        payload,
      });
@@ -799,11 +896,15 @@ index fe02079b2..6b4c19fbb 100644
 +    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
 +      event: 'contextMenuRequest', payload: point });
 +  });
-+  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); };
++  const offRangePick = subscribeRangePick?.((point) => {
++    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
++      event: 'rangePick', payload: point });
++  });
++  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); offRangePick?.(); };
  }
  
  function rejectConnect(port: MessagePort, attempt: { version: number; sessionId: string }): void {
-@@ -200,6 +217,12 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
+@@ -200,6 +223,15 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
          event.data.capabilities.includes('document-change-events-v1')
            ? options.subscribeDocumentChanged
            : undefined,
@@ -812,6 +913,9 @@ index fe02079b2..6b4c19fbb 100644
 +          : undefined,
 +        event.data.capabilities.includes('document-change-events-v1')
 +          ? options.subscribeContextMenu
++          : undefined,
++        event.data.capabilities.includes('document-change-events-v1')
++          ? options.subscribeRangePick
 +          : undefined,
        );
        binding = { origin: event.origin, sessionId: event.data.sessionId, port, offDocumentChanged };
@@ -904,10 +1008,19 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..206335b07 100644
+index 2dde6f1a8..1fbb027d1 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
-@@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
+@@ -1,5 +1,8 @@
+ import { WasmBridge } from '@/core/wasm-bridge';
+ import type { DeferredFocusedPagePatch } from '@/core/wasm-bridge';
++import type { EmbedPickPoint } from '@/core/types';
++import { PICK_CLICK_SLOP, pickPointOf, pickRange } from './range-pick';
++import { regionBoxes, type PageRect, type RegionBox } from './region-box';
+ import { EventBus } from '@/core/event-bus';
+ import { CursorState } from './cursor';
+ import { CaretRenderer } from './caret-renderer';
+@@ -33,7 +36,7 @@ import type { CommandPalette } from '@/ui/command-palette';
  import type { CellSelectionRenderer } from './cell-selection-renderer';
  import type { TableObjectRenderer } from './table-object-renderer';
  import type { TableResizeRenderer, BorderEdge } from './table-resize-renderer';
@@ -916,7 +1029,7 @@ index 2dde6f1a8..206335b07 100644
  import { showConfirm } from '@/ui/confirm-dialog';
  import * as _mouse from './input-handler-mouse';
  import * as _table from './input-handler-table';
-@@ -51,6 +51,7 @@ import { showInitialCaretAndPublishFocus } from './initial-caret-focus';
+@@ -51,6 +54,7 @@ import { showInitialCaretAndPublishFocus } from './initial-caret-focus';
  import { CaretLayoutReveal } from './caret-layout-reveal';
  import { emitHeaderFooterModeChanged } from './header-footer-mode';
  import { CellBlockLetterImeGuard } from '@/command/contextual-shortcut';
@@ -924,7 +1037,7 @@ index 2dde6f1a8..206335b07 100644
  
  const SVG_NS = 'http://www.w3.org/2000/svg';
  const DRAG_SCROLL_EDGE_PX = 48;
-@@ -309,6 +310,13 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
+@@ -309,6 +313,17 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
  }
  
  /** 클릭 커서 배치 + 키보드 입력을 처리한다 */
@@ -933,12 +1046,16 @@ index 2dde6f1a8..206335b07 100644
 +  startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +  cellPath?: EmbedCellPathEntry[] };
 +type SemanticGeometry = { index: number; marker: SemanticMarker;
-+  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }> };
++  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }>;
++  /** A 항목/선택 region drawn as one box per page (labels sit on its top edge). */
++  region?: boolean };
++/** Region box outset (page px): a 항목 box sits outside its 선택 boxes so nesting stays visible. */
++const REGION_OUTSET: Record<string, number> = { slot: 5, option: 1 };
 +
  export class InputHandler {
    private cursor: CursorState;
    private caret: CaretRenderer;
-@@ -319,6 +327,22 @@ export class InputHandler {
+@@ -319,6 +334,31 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
@@ -958,10 +1075,32 @@ index 2dde6f1a8..206335b07 100644
 +  };
 +  /** Native tooltip text of the problem marker under the pointer ('' = none). */
 +  private semanticTitle = '';
++  // ── Embedded range pick (two clicks choose a body range) ─────────────────────────────
++  /** On while the host runs its range pick: document presses report points and never move the caret. */
++  private rangePickOn = false;
++  /** The chosen start; the rubber band runs from it to the point under the pointer. */
++  private rangePickStart: EmbedPickPoint | null = null;
++  private rangePickLayer: HTMLDivElement | null = null;
++  private rangePickPointer: { x: number; y: number } | null = null;
++  private rangePickPress: { x: number; y: number } | null = null;
++  private rangePickFrame = 0;
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -661,33 +685,19 @@ export class InputHandler {
+@@ -647,6 +687,12 @@ export class InputHandler {
+     };
+     document.addEventListener('keydown', this.onF11InterceptBound, true);
+ 
++    // Range pick (embed): capture-phase listeners run before the Studio's own press handling and
++    // swallow presses only while the host's pick is on.
++    container.addEventListener('mousedown', (e) => this.onRangePickDown(e), true);
++    container.addEventListener('click', (e) => { if (this.rangePickOn) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
++    container.addEventListener('mousemove', (e) => this.onRangePickMove(e), true);
++    container.addEventListener('scroll', () => this.scheduleRangePickRender(), { passive: true });
+     container.addEventListener('mousedown', this.onClickBound);
+     container.addEventListener('dblclick', this.onDblClickBound);
+     container.addEventListener('contextmenu', this.onContextMenuBound);
+@@ -661,33 +707,19 @@ export class InputHandler {
      this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
@@ -1008,7 +1147,7 @@ index 2dde6f1a8..206335b07 100644
  
      eventBus.on('document-view-changed', () => {
        if (!this.active) return;
-@@ -3037,6 +3047,9 @@ export class InputHandler {
+@@ -3037,6 +3069,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -1018,7 +1157,7 @@ index 2dde6f1a8..206335b07 100644
      }
    }
  
-@@ -3108,7 +3121,8 @@ export class InputHandler {
+@@ -3108,7 +3143,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -1028,7 +1167,7 @@ index 2dde6f1a8..206335b07 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3136,7 @@ export class InputHandler {
+@@ -3122,6 +3158,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -1036,7 +1175,7 @@ index 2dde6f1a8..206335b07 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3247,11 @@ export class InputHandler {
+@@ -3232,6 +3269,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -1048,7 +1187,7 @@ index 2dde6f1a8..206335b07 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4257,6 +4277,8 @@ export class InputHandler {
+@@ -4257,6 +4299,8 @@ export class InputHandler {
      this.container.removeEventListener('mousedown', this.onClickBound);
      this.container.removeEventListener('dblclick', this.onDblClickBound);
      this.container.removeEventListener('contextmenu', this.onContextMenuBound);
@@ -1057,7 +1196,7 @@ index 2dde6f1a8..206335b07 100644
      this.container.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mouseup', this.onMouseUpBound);
-@@ -4272,6 +4294,8 @@ export class InputHandler {
+@@ -4272,6 +4316,8 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
@@ -1066,7 +1205,7 @@ index 2dde6f1a8..206335b07 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4326,313 @@ export class InputHandler {
+@@ -4302,6 +4348,463 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -1102,6 +1241,7 @@ index 2dde6f1a8..206335b07 100644
 +  /** One coalesced relayout: semantic markers and labels, then the studio's own cursor overlays. */
 +  private relayoutEmbedOverlays(): void {
 +    if (this.semanticLayer) this.renderSemanticMarkers();
++    if (this.rangePickLayer) this.renderRangePick();
 +    this.reprojectCursorOverlays();
 +  }
 +
@@ -1113,6 +1253,87 @@ index 2dde6f1a8..206335b07 100644
 +    this.embeddedReadOnly = value;
 +    this.textarea.readOnly = value;
 +    this.eventBus.emit('command-state-changed');
++  }
++
++  /**
++   * The embedding host's range pick. While `enabled`, a document press never moves the caret or starts a drag;
++   * a press released within {@link PICK_CLICK_SLOP} px is a click and emits `embed-range-pick` with the body point
++   * under it (a table cell folds to the table's anchor paragraph). Keys keep working (Shift+arrow selections).
++   * With a `start`, a rubber band is drawn from it to the point under the pointer, following the pointer and scrolls,
++   * once per animation frame. Off clears everything.
++   */
++  setRangePick(enabled: boolean, start: EmbedPickPoint | null): void {
++    this.rangePickOn = enabled;
++    this.rangePickStart = enabled ? start : null;
++    if (!enabled) { this.rangePickPress = null; this.rangePickPointer = null; }
++    this.scheduleRangePickRender();
++  }
++
++  private onRangePickDown(e: MouseEvent): void {
++    if (!this.rangePickOn || e.button !== 0) return;
++    e.preventDefault();
++    e.stopImmediatePropagation();
++    this.rangePickPress = { x: e.clientX, y: e.clientY };
++    const release = (up: MouseEvent) => {
++      document.removeEventListener('mouseup', release, true);
++      const press = this.rangePickPress;
++      this.rangePickPress = null;
++      if (!this.rangePickOn || !press) return;
++      up.preventDefault();
++      up.stopImmediatePropagation();
++      if (Math.hypot(up.clientX - press.x, up.clientY - press.y) > PICK_CLICK_SLOP) return;
++      const point = pickPointOf(this.hitTestFromClientPoint(up.clientX, up.clientY));
++      if (point) this.eventBus.emit('embed-range-pick', point);
++    };
++    document.addEventListener('mouseup', release, true);
++  }
++
++  private onRangePickMove(e: MouseEvent): void {
++    if (!this.rangePickOn) return;
++    this.rangePickPointer = { x: e.clientX, y: e.clientY };
++    if (this.rangePickPress) { e.stopImmediatePropagation(); return; }
++    this.scheduleRangePickRender();
++  }
++
++  private scheduleRangePickRender(): void {
++    if (this.rangePickFrame) return;
++    this.rangePickFrame = requestAnimationFrame(() => { this.rangePickFrame = 0; this.renderRangePick(); });
++  }
++
++  /** The rubber band: from the start to the point under the pointer (or the start alone), as selection-like boxes. */
++  private renderRangePick(): void {
++    const scrollContent = this.container.querySelector('#scroll-content');
++    if (!scrollContent) return;
++    if (!this.rangePickLayer) {
++      this.rangePickLayer = document.createElement('div');
++      this.rangePickLayer.className = 'rhwp-range-pick-layer';
++      this.rangePickLayer.setAttribute('aria-hidden', 'true');
++    }
++    if (this.rangePickLayer.parentElement !== scrollContent) scrollContent.appendChild(this.rangePickLayer);
++    this.rangePickLayer.replaceChildren();
++    const start = this.rangePickStart;
++    if (!this.rangePickOn || !start) return;
++    const pointer = this.rangePickPointer;
++    const under = pointer ? pickPointOf(this.hitTestFromClientPoint(pointer.x, pointer.y)) : null;
++    const range = pickRange(start, under && under.section === start.section ? under : start);
++    if (!range) return;
++    try {
++      // The band is drawn like a region box — the span it would choose, tables included, one box per page.
++      const boxes = this.bodyRangeBoxes(range.section, range.startParagraph, range.startOffset, range.endParagraph,
++        range.endOffset, new Map(), 0);
++      const zoom = this.viewportManager.getZoom();
++      const contentWidth = scrollContent.clientWidth;
++      for (const box of boxes) {
++        const mark = document.createElement('div');
++        mark.className = 'rhwp-range-pick-mark';
++        const open = [box.openTop ? 'top' : '', box.openBottom ? 'bottom' : ''].filter(Boolean).join(' ');
++        if (open) mark.dataset.open = open;
++        mark.style.cssText = `left:${this.virtualScroll.getPageLeftResolved(box.pageIndex, contentWidth) + box.x * zoom}px;`
++          + `top:${this.virtualScroll.getPageOffset(box.pageIndex) + box.y * zoom}px;`
++          + `width:${Math.max(2, box.width * zoom)}px;height:${Math.max(3, box.height * zoom)}px`;
++        this.rangePickLayer.appendChild(mark);
++      }
++    } catch { /* An unresolved position draws no band; the pick itself still works. */ }
 +  }
 +
 +  /**
@@ -1144,8 +1365,28 @@ index 2dde6f1a8..206335b07 100644
 +    this.semanticLabelKey = null;
 +    const zoom = this.viewportManager.getZoom();
 +    const contentWidth = scrollContent.clientWidth;
++    const pageControls = new Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>();
 +    this.semanticMarkers.forEach((marker, index) => {
 +      try {
++        if ((marker.kind === 'slot' || marker.kind === 'option') && !marker.cellPath?.length) {
++          const regions = this.semanticRegionBoxes(marker, pageControls);
++          const boxes = regions.map((region) => ({ pageIndex: region.pageIndex,
++            left: this.virtualScroll.getPageLeftResolved(region.pageIndex, contentWidth) + region.x * zoom,
++            top: this.virtualScroll.getPageOffset(region.pageIndex) + region.y * zoom,
++            width: Math.max(3, region.width * zoom), height: Math.max(3, region.height * zoom) }));
++          boxes.forEach((box, at) => {
++            const mark = document.createElement('div');
++            mark.className = 'rhwp-semantic-mark';
++            mark.dataset.kind = marker.kind;
++            mark.dataset.emphasis = marker.emphasis;
++            mark.dataset.region = '';
++            const open = [regions[at].openTop ? 'top' : '', regions[at].openBottom ? 'bottom' : ''].filter(Boolean).join(' ');
++            if (open) mark.dataset.open = open;
++            mark.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`;
++            this.semanticLayer!.appendChild(mark);
++          });
++          if (boxes.length) { this.semanticGeometry.push({ index, marker, boxes, region: true }); return; }
++        }
 +        const endOffset = marker.endOffset
 +          ?? this.embedParagraphLength(marker.section, marker.endParagraph, marker.cellPath);
 +        let rects = this.embedSelectionRects(marker.section, marker.startParagraph,
@@ -1170,6 +1411,50 @@ index 2dde6f1a8..206335b07 100644
 +      } catch { /* Unsupported nested or unresolved positions remain in the semantic outline. */ }
 +    });
 +    this.renderSemanticLabels();
++  }
++
++  /**
++   * A body 항목/선택 region's boxes (page px): its text lines plus every table/object anchored in its paragraphs,
++   * one box per page over the body column. Control layouts are read once per page per render (`pageControls`).
++   */
++  private semanticRegionBoxes(marker: SemanticMarker,
++                              pageControls: Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>): RegionBox[] {
++    return this.bodyRangeBoxes(marker.section, marker.startParagraph, marker.startOffset, marker.endParagraph,
++      marker.endOffset, pageControls, REGION_OUTSET[marker.kind] ?? 0);
++  }
++
++  /** Body range → one box per page covering its text lines and the tables/objects anchored in its paragraphs. */
++  private bodyRangeBoxes(section: number, startParagraph: number, startOffset: number, endParagraph: number,
++                         endOffsetOrNull: number | null,
++                         pageControls: Map<number, ReturnType<typeof this.wasm.getPageControlLayout>['controls']>, outset: number): RegionBox[] {
++    const endOffset = endOffsetOrNull ?? this.embedParagraphLength(section, endParagraph);
++    const marker = { startParagraph, endParagraph };
++    const parts: PageRect[] = [...this.embedSelectionRects(section, startParagraph, startOffset, endParagraph, endOffset)];
++    for (const [paragraph, offset] of [[startParagraph, startOffset], [endParagraph, endOffset]]) {
++      try { const caret = this.embedCaretRect(section, paragraph, offset); parts.push({ ...caret, width: 1 }); } catch { /* no caret */ }
++    }
++    if (!parts.length) return [];
++    const pages = parts.map((part) => part.pageIndex);
++    const last = Math.min(this.wasm.pageCount - 1, Math.max(...pages) + 1);
++    const columns = new Map<number, { left: number; right: number }>();
++    for (let page = Math.min(...pages); page <= last; page++) {
++      let controls = pageControls.get(page);
++      if (!controls) {
++        try { controls = this.wasm.getPageControlLayout(page).controls; } catch { controls = []; }
++        pageControls.set(page, controls);
++      }
++      for (const control of controls) {
++        if ((control.secIdx ?? section) !== section || typeof control.paraIdx !== 'number'
++          || control.paraIdx < marker.startParagraph || control.paraIdx > marker.endParagraph
++          || control.cellIdx !== undefined || control.noteRef || control.headerFooter || control.outerTableControlIdx !== undefined) continue;
++        parts.push({ pageIndex: page, x: control.x, y: control.y, width: control.w, height: control.h });
++      }
++      try {
++        const info = this.wasm.getPageInfo(page);
++        columns.set(page, { left: info.bodyLeft ?? info.marginLeft, right: info.bodyRight ?? info.width - info.marginRight });
++      } catch { /* no column: the box hugs the content */ }
++    }
++    return regionBoxes(parts, columns, outset);
 +  }
 +
 +  /** True when the caret lies inside the marker's range (edges inclusive). */
@@ -1282,7 +1567,11 @@ index 2dde6f1a8..206335b07 100644
 +      // Candidate rows, best first: the leading above the run, the rest of the run's own line
 +      // after its last glyph, then below the run (the only one that may cover the next line).
 +      const rows: Array<{ left: number; top: number; right: number }> = [];
-+      if (boxIndex === 0) {
++      if (item.region) {
++        // A region box carries its tag on its top edge: just above the box, else just inside its top-left corner.
++        rows.push({ left: box.left + 4, top: box.top - height - 1, right: pageRight });
++        rows.push({ left: box.left + 4, top: box.top + 2, right: box.left + box.width });
++      } else if (boxIndex === 0) {
 +        let leading: { gap: number; glyphTop: number } | null = null;
 +        try { leading = this.semanticLeadingAbove(item.marker); } catch { leading = null; }
 +        if (leading && leading.gap >= height + 1) {
@@ -1380,7 +1669,7 @@ index 2dde6f1a8..206335b07 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4797,9 @@ export class InputHandler {
+@@ -4466,6 +4969,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1390,7 +1679,7 @@ index 2dde6f1a8..206335b07 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +5007,109 @@ export class InputHandler {
+@@ -4673,6 +5179,109 @@ export class InputHandler {
      }
    }
  
@@ -1571,8 +1860,81 @@ index 000000000..af541c610
 +      : undefined,
 +  }, run);
 +}
+diff --git a/rhwp-studio/src/engine/range-pick.ts b/rhwp-studio/src/engine/range-pick.ts
+new file mode 100644
+index 000000000..578fb00f7
+--- /dev/null
++++ b/rhwp-studio/src/engine/range-pick.ts
+@@ -0,0 +1,28 @@
++import type { DocumentPosition, EmbedPickPoint } from '@/core/types';
++
++/** A hit-test result as a range-pick point: body positions as they are, a table-cell hit folded to the table's anchor
++ *  body paragraph, anything else (text boxes, unresolved positions) none. */
++export function pickPointOf(hit: DocumentPosition | null): EmbedPickPoint | null {
++  if (!hit || hit.isTextBox) return null;
++  const section = hit.sectionIndex;
++  if (hit.parentParaIndex !== undefined) {
++    return Number.isSafeInteger(hit.parentParaIndex) && hit.parentParaIndex >= 0
++      ? { section, paragraph: hit.parentParaIndex, charOffset: 0, cell: true } : null;
++  }
++  if (!Number.isSafeInteger(hit.paragraphIndex) || !Number.isSafeInteger(hit.charOffset)) return null;
++  return { section, paragraph: hit.paragraphIndex, charOffset: hit.charOffset, cell: false };
++}
++
++/** The body range between two pick points (either order) — `endOffset: null` is the end paragraph's end. A cell point
++ *  covers its whole table paragraph; two points in different sections have no range. */
++export function pickRange(a: EmbedPickPoint, b: EmbedPickPoint): { section: number; startParagraph: number; startOffset: number;
++  endParagraph: number; endOffset: number | null } | null {
++  if (a.section !== b.section) return null;
++  const [first, second] = a.paragraph < b.paragraph || (a.paragraph === b.paragraph && a.charOffset <= b.charOffset) ? [a, b] : [b, a];
++  const whole = first.paragraph === second.paragraph && (first.cell || second.cell);
++  return { section: first.section, startParagraph: first.paragraph, startOffset: whole || first.cell ? 0 : first.charOffset,
++    endParagraph: second.paragraph, endOffset: whole || second.cell ? null : second.charOffset };
++}
++
++/** Pointer travel (CSS px) under which a press and release is a click, not a drag. */
++export const PICK_CLICK_SLOP = 5;
+diff --git a/rhwp-studio/src/engine/region-box.ts b/rhwp-studio/src/engine/region-box.ts
+new file mode 100644
+index 000000000..277746476
+--- /dev/null
++++ b/rhwp-studio/src/engine/region-box.ts
+@@ -0,0 +1,33 @@
++/** A page-coordinate rectangle (zoom 1): text line rects, table/object layout boxes. */
++export type PageRect = { pageIndex: number; x: number; y: number; width: number; height: number };
++/** One region box on one page: the region's extent there, with the edges a page break cuts left open. */
++export type RegionBox = PageRect & { openTop: boolean; openBottom: boolean };
++
++/**
++ * One clean box per page for a 항목/선택 region (the embedded authoring overlay), instead of a box per text line.
++ *
++ * `parts` are everything the region lays out: its text lines and the tables/objects anchored in its paragraphs. On each
++ * page the box spans the body column (`columns`, widened when content reaches past it) and runs from the region's first
++ * part to its last there. A region that continues across a page break leaves the bottom edge open on the earlier page
++ * and the top edge open on the later one. `outset` grows the box on every side (page px) — a 항목 box sits outside its
++ * 선택 boxes so nesting stays visible.
++ */
++export function regionBoxes(parts: readonly PageRect[], columns: ReadonlyMap<number, { left: number; right: number }>,
++                            outset = 0): RegionBox[] {
++  const byPage = new Map<number, PageRect[]>();
++  for (const part of parts) {
++    if (![part.x, part.y, part.width, part.height].every(Number.isFinite) || part.height <= 0) continue;
++    byPage.set(part.pageIndex, [...(byPage.get(part.pageIndex) ?? []), part]);
++  }
++  const pages = [...byPage.keys()].sort((a, b) => a - b);
++  return pages.map((pageIndex, at) => {
++    const rects = byPage.get(pageIndex)!;
++    const column = columns.get(pageIndex);
++    const left = Math.min(column?.left ?? Infinity, ...rects.map((rect) => rect.x));
++    const right = Math.max(column?.right ?? -Infinity, ...rects.map((rect) => rect.x + rect.width));
++    const top = Math.min(...rects.map((rect) => rect.y));
++    const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
++    return { pageIndex, x: left - outset, y: top - outset, width: right - left + outset * 2, height: bottom - top + outset * 2,
++      openTop: at > 0, openBottom: at < pages.length - 1 };
++  });
++}
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
-index 64e8a6d1d..c5493353c 100644
+index 64e8a6d1d..c2fdcc96e 100644
 --- a/rhwp-studio/src/main.ts
 +++ b/rhwp-studio/src/main.ts
 @@ -56,7 +56,8 @@ import {
@@ -1585,7 +1947,40 @@ index 64e8a6d1d..c5493353c 100644
  import { maybeShowSkinOnboarding } from '@/ui/skin-onboarding-dialog';
  import { analyzeDocumentFonts } from '@/core/document-font-status';
  import { setDocumentFontSubstitutions } from '@/core/font-substitution';
-@@ -1941,7 +1942,58 @@ void initPromise.then(() => {
+@@ -68,7 +69,7 @@ import {
+   resolveLocalFont,
+ } from '@/core/local-fonts';
+ import { userSettings } from '@/core/user-settings';
+-import { AutosaveManager, type AutosaveScheduleSettings, type AutosaveStatus } from '@/recovery/autosave-manager';
++import { AutosaveManager, hostAutosaveSchedule, hostDisablesAutosave, type AutosaveScheduleSettings, type AutosaveStatus } from '@/recovery/autosave-manager';
+ import { clearAutosaveDrafts, deleteAutosaveDraft, listAutosaveDrafts, type AutosaveDraft } from '@/recovery/autosave-store';
+ import { recoveryFileName } from '@/recovery/recovery-format';
+ import { showAutosaveRecoveryDialog } from '@/recovery/recovery-ui';
+@@ -388,12 +389,12 @@ let autosavePreviousMessage: string | null = null;
+ 
+ function autosaveScheduleFromUserSettings(): AutosaveScheduleSettings {
+   const settings = userSettings.getAutosaveSettings();
+-  return {
++  return hostAutosaveSchedule(window.location.search, {
+     recoveryEnabled: settings.recoveryEnabled,
+     recoveryIntervalMs: settings.recoveryIntervalMinutes * 60_000,
+     idleEnabled: settings.idleSaveEnabled,
+     idleDelayMs: settings.idleDelaySeconds * 1_000,
+-  };
++  });
+ }
+ 
+ function handleAutosaveStatus(status: AutosaveStatus): void {
+@@ -1675,6 +1676,8 @@ function shouldSkipInitialAutosaveRecovery(): boolean {
+ 
+ async function offerAutosaveRecoveryIfIdle(): Promise<void> {
+   if (shouldSkipInitialAutosaveRecovery()) return;
++  // A host that disabled autosave (`?autosave=off`) never sees drafts offered — older ones stay untouched.
++  if (hostDisablesAutosave(window.location.search)) return;
+ 
+   try {
+     const drafts = (await listAutosaveDrafts()).filter((draft) => draft.data.byteLength > 0);
+@@ -1941,7 +1944,62 @@ void initPromise.then(() => {
  installEmbedRuntime({
    hostWindow: window,
    parentWindow: window.parent,
@@ -1623,6 +2018,10 @@ index 64e8a6d1d..c5493353c 100644
 +      offEscape();
 +    };
 +  },
++  subscribeRangePick: (listener) => {
++    const off = eventBus.on('embed-range-pick', (point) => listener(point));
++    return () => { off(); inputHandler?.setRangePick(false, null); };
++  },
 +  subscribeContextMenu: (listener) => {
 +    const off = eventBus.on('embed-contextmenu', (point) => listener(point as { x: number; y: number }));
 +    return () => { off(); hostInput.contextMenu = false; };
@@ -1645,7 +2044,7 @@ index 64e8a6d1d..c5493353c 100644
    handlers: {
      async ready() {
        await initPromise;
-@@ -2022,7 +2074,26 @@ installEmbedRuntime({
+@@ -2022,7 +2080,26 @@ installEmbedRuntime({
      async getSelectionContext() {
        await initPromise;
        if (!documentAgent) throw new Error('Document agent is not initialized');
@@ -1673,7 +2072,7 @@ index 64e8a6d1d..c5493353c 100644
      },
      async applyTextCommand(command) {
        await initPromise;
-@@ -2039,6 +2110,18 @@ installEmbedRuntime({
+@@ -2039,6 +2116,23 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.focusTarget(target);
      },
@@ -1682,6 +2081,11 @@ index 64e8a6d1d..c5493353c 100644
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
 +      return { focused: inputHandler.focusBodyRange(range.section, range.startParagraph,
 +        range.startOffset, range.endParagraph, range.endOffset, range.cellPath) };
++    },
++    async setRangePick(enabled, start) {
++      await initPromise;
++      if (!inputHandler) throw new Error('Input handler is not initialized');
++      inputHandler.setRangePick(enabled, start);
 +    },
 +    async scrollToRange(range) {
 +      await initPromise;
@@ -1736,11 +2140,36 @@ index fabc8645e..2c529af86 100644
  
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
+diff --git a/rhwp-studio/src/recovery/autosave-manager.ts b/rhwp-studio/src/recovery/autosave-manager.ts
+index a74050ecd..5853a1b5a 100644
+--- a/rhwp-studio/src/recovery/autosave-manager.ts
++++ b/rhwp-studio/src/recovery/autosave-manager.ts
+@@ -277,6 +277,20 @@ export class AutosaveManager {
+   }
+ }
+ 
++/**
++ * The embedding host owns the document lifecycle and asks for no autosave (`?autosave=off` on the Studio URL):
++ * no recovery drafts are written (neither the interval nor the idle save) and none are offered, whatever the
++ * user settings say. Any other value leaves the user settings in charge.
++ */
++export function hostDisablesAutosave(search: string): boolean {
++  return new URLSearchParams(search).get('autosave') === 'off';
++}
++
++/** The schedule to run: the user settings, with both saves off when the host disabled autosave. */
++export function hostAutosaveSchedule(search: string, settings: AutosaveScheduleSettings): AutosaveScheduleSettings {
++  return hostDisablesAutosave(search) ? { ...settings, recoveryEnabled: false, idleEnabled: false } : settings;
++}
++
+ function normalizeSchedule(settings: AutosaveScheduleSettings): AutosaveScheduleSettings {
+   return {
+     recoveryEnabled: settings.recoveryEnabled,
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..96552e8bf 100644
+index 1b1ecf8d5..5c132bd43 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,107 @@
+@@ -144,3 +144,122 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -1760,6 +2189,18 @@ index 1b1ecf8d5..96552e8bf 100644
 +  z-index: 4;
 +}
 +
++/* Range pick rubber band (embedded host): the span a second click would choose, drawn like a selection. */
++.rhwp-range-pick-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
++.rhwp-range-pick-mark {
++  position: absolute;
++  pointer-events: none;
++  background: color-mix(in srgb, #3b82f6 26%, transparent);
++  outline: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent);
++}
++.rhwp-range-pick-mark[data-open~="top"] { outline: none; border-bottom: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent); }
++.rhwp-range-pick-mark[data-open~="bottom"] { outline: none; border-top: 1px dashed color-mix(in srgb, #3b82f6 70%, transparent); }
++.rhwp-range-pick-mark[data-open~="top"][data-open~="bottom"] { border: 0; }
++
 +.rhwp-semantic-mark {
 +  position: absolute;
 +  box-sizing: border-box;
@@ -1778,6 +2219,9 @@ index 1b1ecf8d5..96552e8bf 100644
 +.rhwp-semantic-mark[data-kind="option"] { border: 1px dashed var(--rhwp-semantic-option); }
 +.rhwp-semantic-mark[data-kind="slot"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-slot); }
 +.rhwp-semantic-mark[data-kind="option"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-option); }
++/* A region box cut by a page break keeps that edge open — the region goes on over the break. */
++.rhwp-semantic-mark[data-region][data-open~="top"] { border-top-color: transparent; }
++.rhwp-semantic-mark[data-region][data-open~="bottom"] { border-bottom-color: transparent; }
 +
 +/* Authoring problems: an underline just below the run, never a fill, so the text and a field tint
 +   under it stay readable. Shape tells the severity, not only colour: strong (error) is wavy,
@@ -1958,6 +2402,43 @@ index e2edd4581..32c551441 100644
      ctx.textAlign = 'center';
      ctx.textBaseline = 'middle';
  
+diff --git a/rhwp-studio/tests/document-agent-controller.test.ts b/rhwp-studio/tests/document-agent-controller.test.ts
+index c598a6d2d..ca57272c9 100644
+--- a/rhwp-studio/tests/document-agent-controller.test.ts
++++ b/rhwp-studio/tests/document-agent-controller.test.ts
+@@ -414,3 +414,32 @@ test('selection context와 focus는 body paragraph만 exact하게 노출한다',
+     charOffset: 0,
+   });
+ });
++
++test('selection context range folds a cell edge outside one shared cell to the table anchor paragraph', () => {
++  const { controller, input } = harness();
++  const cell = (cell: number, paragraph: number, charOffset: number) => ({
++    sectionIndex: 0, paragraphIndex: paragraph, charOffset, parentParaIndex: 1, controlIndex: 0, cellIndex: cell,
++    cellParaIndex: paragraph, cellPath: [{ controlIndex: 0, cellIndex: cell, cellParaIndex: paragraph }],
++  });
++  // body → cell: the end folds to the end of the anchor paragraph (index 1, '기존 문단' = 5 code points)
++  input.selection = { start: { sectionIndex: 0, paragraphIndex: 0, charOffset: 2 }, end: cell(0, 0, 1) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 0, charOffset: 2 }, end: { section: 0, paragraph: 1, charOffset: 5 } });
++  // cell → body: the start folds to the beginning of the anchor paragraph
++  input.selection = { start: cell(1, 0, 3), end: { sectionIndex: 0, paragraphIndex: 2, charOffset: 1 } };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 1, charOffset: 0 }, end: { section: 0, paragraph: 2, charOffset: 1 } });
++  // two different cells: the whole table paragraph
++  input.selection = { start: cell(0, 0, 1), end: cell(1, 0, 2) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 1, charOffset: 0 }, end: { section: 0, paragraph: 1, charOffset: 5 } });
++  // one shared cell keeps cell-level coordinates and the cellPath
++  input.selection = { start: cell(0, 0, 1), end: cell(0, 0, 3) };
++  assert.deepEqual(controller.getSelectionContext().range, {
++    start: { section: 0, paragraph: 0, charOffset: 1 }, end: { section: 0, paragraph: 0, charOffset: 3 },
++    cellPath: [{ parentParagraph: 1, control: 0, cell: 0, paragraph: 0 }] });
++  // a text box edge still has no embed coordinate
++  input.selection = { start: { sectionIndex: 0, paragraphIndex: 0, charOffset: 0 },
++    end: { sectionIndex: 0, paragraphIndex: 0, charOffset: 1, isTextBox: true } };
++  assert.equal(controller.getSelectionContext().range, null);
++});
 diff --git a/rhwp-studio/tests/embed-protocol.test.ts b/rhwp-studio/tests/embed-protocol.test.ts
 index a87452c42..73b9af364 100644
 --- a/rhwp-studio/tests/embed-protocol.test.ts
@@ -1988,6 +2469,27 @@ index a87452c42..73b9af364 100644
 +  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: Array(501).fill(problem) }, handlers),
 +    /invalid decoration count/);
 +  assert.deepEqual(calls, [{ method: 'scroll', value: range }, { method: 'decorate', value: [[problem], 'none'] }]);
++});
+diff --git a/rhwp-studio/tests/host-autosave-off.test.ts b/rhwp-studio/tests/host-autosave-off.test.ts
+new file mode 100644
+index 000000000..e66145ead
+--- /dev/null
++++ b/rhwp-studio/tests/host-autosave-off.test.ts
+@@ -0,0 +1,15 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { hostAutosaveSchedule, hostDisablesAutosave } from '../src/recovery/autosave-manager.ts';
++
++const settings = { recoveryEnabled: true, recoveryIntervalMs: 600_000, idleEnabled: true, idleDelayMs: 10_000 };
++
++test('?autosave=off turns off both the interval and the idle save and is the only switch', () => {
++  assert.equal(hostDisablesAutosave('?hostTheme=dark&autosave=off'), true);
++  assert.deepEqual(hostAutosaveSchedule('?autosave=off', settings), { ...settings, recoveryEnabled: false, idleEnabled: false });
++  for (const search of ['', '?autosave=on', '?autosave=', '?hostTheme=dark']) {
++    assert.equal(hostDisablesAutosave(search), false, search);
++    assert.deepEqual(hostAutosaveSchedule(search, settings), settings, search);
++  }
 +});
 diff --git a/rhwp-studio/tests/overlay-relayout.test.ts b/rhwp-studio/tests/overlay-relayout.test.ts
 new file mode 100644
@@ -2082,6 +2584,87 @@ index 000000000..82d306a88
 +  assert.match(functionBodyFrom(src, 'embedSelectionEndClientRect('), /return this\.isDragging \? null : this\.embedCaretClientRect\(\);/);
 +  // Problem markers explain themselves by the hover tooltip and never float a label chip.
 +  assert.match(functionBodyFrom(src, 'private renderSemanticLabels('), /item\.marker\.kind !== 'problem'/);
++});
+diff --git a/rhwp-studio/tests/range-pick.test.ts b/rhwp-studio/tests/range-pick.test.ts
+new file mode 100644
+index 000000000..baacefc96
+--- /dev/null
++++ b/rhwp-studio/tests/range-pick.test.ts
+@@ -0,0 +1,36 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { pickPointOf, pickRange } from '../src/engine/range-pick.ts';
++import { routeEmbedRequest, type EmbedRpcHandlers } from '../src/embed/rpc-router.ts';
++
++const body = (paragraphIndex: number, charOffset: number) => ({ sectionIndex: 0, paragraphIndex, charOffset });
++
++test('range pick points: body hits as they are, a cell hit folds to its table anchor paragraph, text boxes have none', () => {
++  assert.deepEqual(pickPointOf(body(4, 7) as never), { section: 0, paragraph: 4, charOffset: 7, cell: false });
++  assert.deepEqual(pickPointOf({ ...body(0, 3), parentParaIndex: 9, controlIndex: 0, cellIndex: 2, cellParaIndex: 0 } as never),
++    { section: 0, paragraph: 9, charOffset: 0, cell: true });
++  assert.equal(pickPointOf({ ...body(1, 1), isTextBox: true } as never), null);
++  assert.equal(pickPointOf(null), null);
++});
++
++test('range pick ranges order the points and cover a whole table paragraph for a cell edge', () => {
++  const p = (paragraph: number, charOffset: number, cell = false) => ({ section: 0, paragraph, charOffset, cell });
++  assert.deepEqual(pickRange(p(5, 3), p(2, 1)), { section: 0, startParagraph: 2, startOffset: 1, endParagraph: 5, endOffset: 3 });
++  assert.deepEqual(pickRange(p(2, 4), p(9, 0, true)), { section: 0, startParagraph: 2, startOffset: 4, endParagraph: 9, endOffset: null });
++  assert.deepEqual(pickRange(p(9, 0, true), p(9, 0, true)), { section: 0, startParagraph: 9, startOffset: 0, endParagraph: 9, endOffset: null });
++  assert.equal(pickRange(p(1, 0), { ...p(1, 0), section: 1 }), null);
++});
++
++test('embed router setRangePick takes enabled and an exact start point', async () => {
++  const calls: unknown[] = [];
++  const handlers = { setRangePick: async (enabled: unknown, start: unknown) => { calls.push([enabled, start]); } } as unknown as EmbedRpcHandlers;
++  const start = { section: 0, paragraph: 3, charOffset: 2, cell: false };
++  await routeEmbedRequest('setRangePick', { enabled: true, start }, handlers);
++  await routeEmbedRequest('setRangePick', { enabled: false }, handlers);
++  for (const bad of [{ enabled: 'yes' }, { enabled: true, start: { ...start, paragraph: -1 } }, { enabled: true, start: { ...start, extra: 1 } },
++    { enabled: true, start: { ...start, cell: 1 } }, { enabled: true, extra: 1 }]) {
++    await assert.rejects(() => routeEmbedRequest('setRangePick', bad, handlers));
++  }
++  assert.deepEqual(calls, [[true, start], [false, null]]);
++});
+diff --git a/rhwp-studio/tests/region-box.test.ts b/rhwp-studio/tests/region-box.test.ts
+new file mode 100644
+index 000000000..74446e33a
+--- /dev/null
++++ b/rhwp-studio/tests/region-box.test.ts
+@@ -0,0 +1,33 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { regionBoxes } from '../src/engine/region-box.ts';
++
++const column = new Map([[0, { left: 50, right: 550 }], [1, { left: 50, right: 550 }]]);
++const line = (pageIndex: number, y: number, width = 200) => ({ pageIndex, x: 60, y, width, height: 18 });
++
++test('a region is one box over the body column from its first line to its last part, table included', () => {
++  const table = { pageIndex: 0, x: 55, y: 140, width: 480, height: 90 };
++  assert.deepEqual(regionBoxes([line(0, 100), line(0, 120, 80), table], column), [
++    { pageIndex: 0, x: 50, y: 100, width: 500, height: 130, openTop: false, openBottom: false },
++  ]);
++  // A table wider than the column widens the box instead of spilling out of it.
++  const wide = { pageIndex: 0, x: 40, y: 140, width: 530, height: 20 };
++  assert.deepEqual(regionBoxes([line(0, 100), wide], column)[0], { pageIndex: 0, x: 40, y: 100, width: 530, height: 60, openTop: false, openBottom: false });
++});
++
++test('a region across a page break is one box per page with the cut edges open', () => {
++  const boxes = regionBoxes([line(0, 700), line(0, 720), { pageIndex: 1, x: 55, y: 80, width: 300, height: 40 }, line(1, 130)], column);
++  assert.deepEqual(boxes.map((box) => [box.pageIndex, box.y, box.height, box.openTop, box.openBottom]),
++    [[0, 700, 38, false, true], [1, 80, 68, true, false]]);
++});
++
++test('the outset nests a 선택 box visibly inside its 항목 box', () => {
++  const parts = [line(0, 100), line(0, 200)];
++  const [slot] = regionBoxes(parts, column, 5);
++  const [option] = regionBoxes([line(0, 140)], column, 1);
++  assert.ok(slot.x < option.x && slot.x + slot.width > option.x + option.width, 'the 항목 box is wider on both sides');
++  assert.ok(slot.y < option.y && slot.y + slot.height > option.y + option.height, 'and taller');
++  assert.deepEqual(regionBoxes([], column), []);
++  assert.deepEqual(regionBoxes([{ ...line(0, 1), height: 0 }], column), [], 'empty parts draw nothing');
 +});
 diff --git a/rhwp-studio/vite.config.ts b/rhwp-studio/vite.config.ts
 index f860fb8fa..382863031 100644
@@ -2205,7 +2788,7 @@ index fc6f5d840..7c5203945 100644
  
  impl Picture {
 diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
-index 7bfcef5cb..7f0ca0bf5 100644
+index 7bfcef5cb..758af3eb6 100644
 --- a/src/model/paragraph.rs
 +++ b/src/model/paragraph.rs
 @@ -93,6 +93,10 @@ pub struct Paragraph {
@@ -2219,7 +2802,26 @@ index 7bfcef5cb..7f0ca0bf5 100644
      /// 원본에 PARA_TEXT 레코드가 존재했는지 (라운드트립 보존용)
      pub has_para_text: bool,
      /// TAB 확장 데이터 (라운드트립 보존용)
-@@ -1438,6 +1442,7 @@ impl Paragraph {
+@@ -514,6 +518,18 @@ pub struct OrphanFieldEnd {
+     /// 0 이면 모른다는 뜻이고, 그때는 HWP5 저장에서 마커를 내지 않는다 — 필드 종류를
+     /// 지어내면 한글이 짝을 못 맞춘다. HWPX 에서 들어온 고아 마커가 이 경우다.
+     pub begin_ctrl_id: u32,
++    /// 원본에서 이 종료 마커 **앞에** 놓인 `controls` 개수(표·그림·fieldBegin 등).
++    ///
++    /// `char_idx` 는 보이는 글자만 세므로 같은 글자 위치에 놓인 컨트롤 슬롯과의 앞뒤를
++    /// 잃는다 — 문단 말미 `<hp:t> </hp:t><hp:tbl/><hp:ctrl><hp:fieldEnd/></hp:ctrl>` 를
++    /// 저장하면 `fieldEnd` 가 표 **앞**으로 당겨졌다(같은 문단 필드가
++    /// `FieldRange::inner_slot_count` 로 푸는 것과 같은 결손). 직렬화기는 이 수만큼의
++    /// 컨트롤을 먼저 방출한 뒤에야 이 마커를 낸다.
++    ///
++    /// `None` 은 모른다는 뜻이며 종전 배치 규칙(같은 자리의 비필드 슬롯보다 앞)을 따른다.
++    /// HWPX 파서만 채운다. HWP5 PARA_TEXT·합성 IR 의 고아는 `None` 이다.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub preceding_controls: Option<usize>,
+ }
+ 
+ impl Paragraph {
+@@ -1438,6 +1454,7 @@ impl Paragraph {
              ctrl_data_records: new_ctrl_data_records,
              char_count_msb: false,
              raw_header_extra: new_raw_header_extra,
@@ -2316,6 +2918,46 @@ index f84da00c1..abf01a7af 100644
              paragraphs: vec![para],
          }
      }
+diff --git a/src/parser/body_text.rs b/src/parser/body_text.rs
+index fec213296..73cf26dc2 100644
+--- a/src/parser/body_text.rs
++++ b/src/parser/body_text.rs
+@@ -504,6 +504,7 @@ fn parse_para_text(data: &[u8]) -> ParaTextParts {
+                         begin_id_ref: 0,
+                         field_id: 0,
+                         begin_ctrl_id: 0,
++                        preceding_controls: None,
+                     });
+                 }
+             } else if is_extended_only_ctrl_char(ch) {
+diff --git a/src/parser/body_text/tests.rs b/src/parser/body_text/tests.rs
+index 4d44e02d9..d335d1f98 100644
+--- a/src/parser/body_text/tests.rs
++++ b/src/parser/body_text/tests.rs
+@@ -1011,6 +1011,7 @@ fn orphan_field_end_links_to_the_open_field_id() {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }],
+         ..Default::default()
+     };
+@@ -1050,6 +1051,7 @@ fn field_closed_in_its_own_paragraph_is_not_left_open() {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }],
+         ..Default::default()
+     };
+@@ -1164,6 +1166,7 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
+                         begin_id_ref: 0,
+                         field_id: 0,
+                         begin_ctrl_id: 0,
++                        preceding_controls: None,
+                     });
+                 }
+             } else if is_extended_only_ctrl_char(ch) {
 diff --git a/src/parser/control.rs b/src/parser/control.rs
 index a420b5fcc..9819e5b19 100644
 --- a/src/parser/control.rs
@@ -2528,7 +3170,7 @@ index 8c26e1eb1..8bf2b4734 100644
                                          let val = attr_str(&attr);
                                          if let Ok(f) = val.parse::<f64>() {
 diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
-index 0b7f15694..a335a7e47 100644
+index 0b7f15694..d01b4dd24 100644
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
 @@ -542,6 +542,10 @@ fn parse_paragraph_body(
@@ -2550,7 +3192,44 @@ index 0b7f15694..a335a7e47 100644
              }
              b"paraPrIDRef" => para.para_shape_id = parse_u16(&attr),
              b"styleIDRef" => para.style_id = parse_u8(&attr),
-@@ -1032,6 +1037,7 @@ fn parse_paragraph_body(
+@@ -591,7 +596,11 @@ fn parse_paragraph_body(
+     let mut hwp5_only_leading_slots: u32 = 0;
+     // [Task #1556] fieldEnd 의 (beginIDRef, fieldid) 를 출현 순서대로 보관 — text_parts 의
+     // `\u{0004}` 와 1:1 대응. 고아 fieldEnd 복원에 사용.
+-    let mut field_end_attrs: Vec<(u32, u32)> = Vec::new();
++    // 세 번째 값은 그 시점까지 쌓인 `para.controls` 수 — 고아 fieldEnd 가 같은 글자 위치의
++    // 컨트롤(표 등) 앞뒤 어디에 있었는지를 직렬화기에 넘긴다(`OrphanFieldEnd::preceding_controls`).
++    // 슬롯 표식 수가 아니라 실제 `controls` 길이라, 표식 없이 컨트롤만 쌓는 요소
++    // (hiddenComment)가 있어도 직렬화기의 `slot_ctrl_indices` 와 같은 축이다.
++    let mut field_end_attrs: Vec<(u32, u32, usize)> = Vec::new();
+ 
+     loop {
+         match reader.read_event_into(&mut buf) {
+@@ -830,10 +839,12 @@ fn parse_paragraph_body(
+                 control_idx += 1;
+             }
+             "\u{0004}" => {
+-                let (begin_id_ref, field_id) = field_end_attrs
++                let (begin_id_ref, field_id, preceding_controls) = field_end_attrs
+                     .get(field_end_idx)
+-                    .copied()
+-                    .unwrap_or((0, 0));
++                    .map(|&(begin_id_ref, field_id, preceding)| {
++                        (begin_id_ref, field_id, Some(preceding))
++                    })
++                    .unwrap_or((0, 0, None));
+                 field_end_idx += 1;
+                 if let Some((start_char_idx, begin_control_idx)) = field_stack.pop() {
+                     // 필드 안쪽 컨트롤 슬롯 수 — 표·그림을 감싼 누름틀이 텍스트 축에서
+@@ -857,6 +868,7 @@ fn parse_paragraph_body(
+                         // HWPX `<hp:fieldEnd>` 는 필드 종류를 싣지 않는다 — 짝
+                         // `fieldBegin` 은 다른 문단에 있어 여기서는 알 수 없다.
+                         begin_ctrl_id: 0,
++                        preceding_controls,
+                     });
+                 }
+             }
+@@ -1032,6 +1044,7 @@ fn parse_paragraph_body(
      header_extra.extend_from_slice(&[0u8; 6]); // numCharShapes/numRangeTags/numLineSegs 자리
      header_extra.extend_from_slice(&hp_p_id.to_le_bytes()); // instanceId
      para.raw_header_extra = header_extra;
@@ -2558,7 +3237,7 @@ index 0b7f15694..a335a7e47 100644
  
      Ok((para, sec_def))
  }
-@@ -2166,6 +2172,11 @@ fn parse_table(
+@@ -2166,6 +2179,11 @@ fn parse_table(
                          let caption = parse_caption(ce, reader)?;
                          table.caption = Some(caption);
                      }
@@ -2570,7 +3249,7 @@ index 0b7f15694..a335a7e47 100644
                      _ => {}
                  }
              }
-@@ -2173,6 +2184,7 @@ fn parse_table(
+@@ -2173,6 +2191,7 @@ fn parse_table(
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
                  match local {
@@ -2578,7 +3257,7 @@ index 0b7f15694..a335a7e47 100644
                      b"sz" => {
                          for attr in ce.attributes().flatten() {
                              match attr.key.as_ref().as_bytes() {
-@@ -2681,6 +2693,8 @@ fn parse_table_cell(
+@@ -2681,6 +2700,8 @@ fn parse_table_cell(
                                          _ => 0,
                                      };
                                  }
@@ -2587,7 +3266,7 @@ index 0b7f15694..a335a7e47 100644
                                  _ => {}
                              }
                          }
-@@ -2869,6 +2883,9 @@ fn parse_picture(
+@@ -2869,6 +2890,9 @@ fn parse_picture(
      // 이미지 속성 읽기
      let mut has_pos = false; // <pos> 파싱 여부 — <offset>이 덮어쓰지 않도록 방지
      let mut caption: Option<crate::model::shape::Caption> = None;
@@ -2597,7 +3276,7 @@ index 0b7f15694..a335a7e47 100644
      let mut buf = Vec::new();
      loop {
          let event = reader.read_event_into(&mut buf);
-@@ -2876,11 +2893,17 @@ fn parse_picture(
+@@ -2876,11 +2900,17 @@ fn parse_picture(
          let self_closing = matches!(&event, Ok(Event::Empty(_)));
          match event {
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"imgRect" => {
@@ -2615,7 +3294,7 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"effects" => {
                  effects = parse_picture_effects(reader)?;
              }
-@@ -2891,6 +2914,11 @@ fn parse_picture(
+@@ -2891,6 +2921,11 @@ fn parse_picture(
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
@@ -2627,7 +3306,7 @@ index 0b7f15694..a335a7e47 100644
                  match local {
                      b"sz" => {
                          // 최종 표시 크기 (최우선)
-@@ -3186,6 +3214,7 @@ fn parse_picture(
+@@ -3186,6 +3221,7 @@ fn parse_picture(
      pic.img_dim = img_dim;
      pic.reverse = reverse;
      pic.lock = lock;
@@ -2635,7 +3314,7 @@ index 0b7f15694..a335a7e47 100644
  
      Ok(Control::Picture(Box::new(pic)))
  }
-@@ -3923,6 +3952,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3923,6 +3959,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
      }
  
      let mut bl = ShapeBorderLine::default();
@@ -2645,7 +3324,7 @@ index 0b7f15694..a335a7e47 100644
      for attr in e.attributes().flatten() {
          match attr.key.as_ref().as_bytes() {
              b"color" => bl.color = parse_color(&attr),
-@@ -3946,7 +3978,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3946,7 +3985,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
                      "SLIM_THICK_SLIM" => 11,
                      _ => 1,
                  };
@@ -2656,7 +3335,7 @@ index 0b7f15694..a335a7e47 100644
              }
              b"endCap" => {
                  let end_cap: u32 = match attr_str(&attr).as_str() {
-@@ -4084,6 +4118,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
+@@ -4084,6 +4125,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                                  b"centerY" => grad.center_y = parse_i16(&attr),
                                  b"blur" | b"step" => grad.blur = parse_i16(&attr),
                                  b"stepCenter" => grad.step_center = parse_u8(&attr),
@@ -2664,7 +3343,7 @@ index 0b7f15694..a335a7e47 100644
                                  b"alpha" => {
                                      let val = attr_str(&attr);
                                      if let Ok(f) = val.parse::<f64>() {
-@@ -4389,6 +4424,11 @@ fn parse_shape_object(
+@@ -4389,6 +4431,11 @@ fn parse_shape_object(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -2676,7 +3355,7 @@ index 0b7f15694..a335a7e47 100644
              // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
                  caption = Some(parse_caption(ce, reader)?);
-@@ -4748,6 +4788,11 @@ fn parse_container_body(
+@@ -4748,6 +4795,11 @@ fn parse_container_body(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -2688,7 +3367,36 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
-@@ -5242,7 +5287,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
+@@ -4836,7 +4888,7 @@ fn parse_ctrl(
+     reader: &mut Reader<&[u8]>,
+     controls: &mut Vec<Control>,
+     text_parts: &mut Vec<String>,
+-    field_end_attrs: &mut Vec<(u32, u32)>,
++    field_end_attrs: &mut Vec<(u32, u32, usize)>,
+ ) -> Result<(), HwpxError> {
+     let mut buf = Vec::new();
+     loop {
+@@ -4902,7 +4954,8 @@ fn parse_ctrl(
+                     }
+                     b"fieldEnd" => {
+                         // [Task #1556] beginIDRef/fieldid 포착 (고아 fieldEnd 복원용).
+-                        field_end_attrs.push(parse_field_end_attrs(ce));
++                        let (begin_id_ref, field_id) = parse_field_end_attrs(ce);
++                        field_end_attrs.push((begin_id_ref, field_id, controls.len()));
+                         skip_element(reader, b"fieldEnd")?;
+                         // FIELD_END 제어 문자 추가 (Task #11)
+                         text_parts.push("\u{0004}".to_string());
+@@ -5002,7 +5055,8 @@ fn parse_ctrl(
+                     }
+                     b"fieldEnd" => {
+                         // [Task #1556] 자기닫힘 fieldEnd — beginIDRef/fieldid 포착.
+-                        field_end_attrs.push(parse_field_end_attrs(ce));
++                        let (begin_id_ref, field_id) = parse_field_end_attrs(ce);
++                        field_end_attrs.push((begin_id_ref, field_id, controls.len()));
+                         text_parts.push("\u{0004}".to_string());
+                     }
+                     b"hiddenComment" => {}
+@@ -5242,7 +5296,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
                      f.properties |= 1 << 15;
                  }
              }
@@ -2700,7 +3408,7 @@ index 0b7f15694..a335a7e47 100644
          }
      }
      // field_id 는 필드별 고유 식별자여야 한다(모델 계약 "문서 내 고유 ID").
-@@ -5781,6 +5829,8 @@ fn parse_ctrl_field_begin(
+@@ -5781,6 +5838,8 @@ fn parse_ctrl_field_begin(
                  let local = local_name(cname.as_ref());
                  if local == b"parameters" {
                      parse_field_parameters(ce, reader, &mut f)?;
@@ -2709,7 +3417,7 @@ index 0b7f15694..a335a7e47 100644
                  } else if local == b"subList" && f.field_type == FieldType::Memo {
                      for attr in ce.attributes().flatten() {
                          if attr.key.as_ref().as_bytes() == b"textDirection" {
-@@ -5796,6 +5846,9 @@ fn parse_ctrl_field_begin(
+@@ -5796,6 +5855,9 @@ fn parse_ctrl_field_begin(
                      skip_element(reader, &tag)?;
                  }
              }
@@ -2719,7 +3427,7 @@ index 0b7f15694..a335a7e47 100644
              Ok(Event::End(ref ee)) => {
                  let eename = ee.name();
                  if local_name(eename.as_ref()) == b"fieldBegin" {
-@@ -5811,6 +5864,42 @@ fn parse_ctrl_field_begin(
+@@ -5811,6 +5873,42 @@ fn parse_ctrl_field_begin(
      Ok(Control::Field(f))
  }
  
@@ -2762,7 +3470,7 @@ index 0b7f15694..a335a7e47 100644
  /// `<parameters>` 내부에서 Command 문자열 파라미터를 추출한다.
  /// XML 텍스트/속성값 이스케이프 (#1391 parameters verbatim 재조립용).
  fn escape_xml_text(s: &str) -> String {
-@@ -7562,6 +7651,9 @@ fn parse_common_shape_children(
+@@ -7562,6 +7660,9 @@ fn parse_common_shape_children(
                      b"shapeComment" => {
                          common.description = read_dutmal_text(reader, b"shapeComment")?;
                      }
@@ -2772,7 +3480,7 @@ index 0b7f15694..a335a7e47 100644
                      // [#4319] 캡션 — 미적재 시 라운드트립에서 캡션 subList 소실(다른
                      // 도형 변형과 동형, parse_shape_object/parse_container 참고).
                      b"caption" => {
-@@ -8925,7 +9017,9 @@ mod tests {
+@@ -8925,7 +9026,9 @@ mod tests {
    <hp:p paraPrIDRef="0" styleIDRef="0">
      <hp:run charPrIDRef="0">
        <hp:ctrl>
@@ -2783,7 +3491,7 @@ index 0b7f15694..a335a7e47 100644
        </hp:ctrl>
        <hp:t>ABC</hp:t>
        <hp:ctrl>
-@@ -8943,6 +9037,16 @@ mod tests {
+@@ -8943,6 +9046,16 @@ mod tests {
          assert_eq!(para.char_count, 20);
          assert_eq!(para.controls.len(), 1);
          assert_eq!(para.field_ranges.len(), 1);
@@ -3619,7 +4327,7 @@ index 564e62e00..36463c9c8 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..024ed36ee 100644
+index f951d7284..b869167a8 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
 @@ -563,14 +563,21 @@ pub fn write_section(
@@ -3678,7 +4386,195 @@ index f951d7284..024ed36ee 100644
  /// `<hp:ctrl><hp:fieldEnd beginIDRef=".."/></hp:ctrl>` 방출 공통 경로.
  fn emit_field_end(out: &mut String, para: &Paragraph, fr: &FieldRange) {
      if let Some(Control::Field(f)) = para.controls.get(fr.control_idx) {
-@@ -2193,6 +2215,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -1270,6 +1292,35 @@ fn emit_orphan_field_end(out: &mut String, ofe: &OrphanFieldEnd) {
+     }
+ }
+ 
++/// 이 고아 fieldEnd 를 `next_slot_ctrl`(다음 미방출 슬롯의 `controls` 인덱스, 남은 슬롯이
++/// 없으면 `None`) **앞에** 내도 되는가.
++///
++/// 원본에서 마커 앞에 놓였던 컨트롤(`preceding_controls`)이 전부 나간 뒤여야 한다.
++/// `char_idx` 는 보이는 글자만 세므로 문단 말미 `<hp:t> </hp:t><hp:tbl/>` 뒤의 종료 마커와
++/// 표 앞의 종료 마커가 같은 값이 된다. 이 판정 없이 "같은 자리의 비필드 슬롯보다 앞"
++/// (#1948)만 따르면 표 뒤에 있던 마커가 표 앞으로 당겨지고, 다단락 책갈피가 표를 잃는다.
++/// 빈 누름틀(`fieldBegin`+`fieldEnd`)이 문단 끝에 올 때도 같다.
++///
++/// 위치를 모르는 고아(`None` — HWP5·합성 IR)는 종전 규칙 그대로 `true` 다.
++/// 같은 문단 필드(텍스트 축 길이 > 0)가 감싼 컨트롤 슬롯이 아직 남아 있는가.
++///
++/// `FieldRange::end_char_idx` 도 보이는 글자만 센다. `<begin/><hp:t> </hp:t><hp:tbl/><end/>`
++/// 처럼 필드가 마지막 글자 **뒤**의 표까지 감싸면, 마지막 글자 직후에 `fieldEnd` 를 내는
++/// 순간 표가 필드 밖으로 밀린다(한글이 만든 한 문단 책갈피 — 입찰 공고 문단 36). 감싼 마지막
++/// 컨트롤(`control_idx + inner_slot_count`)이 나갈 때까지 미룬다 — 0길이 필드가 이미 쓰는
++/// 규칙과 같다. `inner_slot_count` 가 0 이면 종전과 같다.
++fn field_inner_slots_pending(fr: &FieldRange, next_slot_ctrl: Option<usize>) -> bool {
++    fr.inner_slot_count > 0
++        && next_slot_ctrl.is_some_and(|ctrl| ctrl <= fr.control_idx + fr.inner_slot_count)
++}
++
++fn orphan_precedes_slot(ofe: &OrphanFieldEnd, next_slot_ctrl: Option<usize>) -> bool {
++    match (ofe.preceding_controls, next_slot_ctrl) {
++        (Some(preceding), Some(ctrl)) => preceding <= ctrl,
++        _ => true,
++    }
++}
++
+ /// 문단 텍스트 전체를 char_shapes 경계로 분할하며 `splitter` 에 누적한다.
+ ///
+ /// `char_offsets` 로 문자 idx → UTF-16 위치를 매핑하므로 IR 내 컨트롤(8 유닛 갭)이
+@@ -1569,6 +1620,20 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     // 연속 또는 중첩 필드의 닫는 순서가 뒤바뀐다.
+     if para.text.is_empty() {
+         while slot_idx < slots.len() {
++            // 원본에서 이 슬롯보다 앞에 있던 고아 fieldEnd 는 여기서 낸다. 위치를 모르는
++            // 고아(`None`)는 종전대로 모든 슬롯 뒤(아래 루프)에 둔다.
++            for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++                if ofe.char_idx == 0
++                    && !orphan_emitted[i]
++                    && ofe.preceding_controls.is_some()
++                    && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++                {
++                    splitter.cut_before(expected_utf16_pos);
++                    emit_orphan_field_end(&mut splitter.content, ofe);
++                    expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++                    orphan_emitted[i] = true;
++                }
++            }
+             splitter.cut_before(expected_utf16_pos);
+             render_control_slot_tracked(
+                 &mut splitter.content,
+@@ -1652,7 +1717,13 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+                 .orphan_field_ends
+                 .iter()
+                 .enumerate()
+-                .position(|(i, ofe)| ofe.char_idx == idx && !orphan_emitted[i])
++                // 원본에서 이 슬롯 **뒤**에 있던 고아는 양보받지 않는다 — 슬롯이 먼저 나가고
++                // 고아는 아래 `char_idx == idx` 경로에서 제자리에 나간다.
++                .position(|(i, ofe)| {
++                    ofe.char_idx == idx
++                        && !orphan_emitted[i]
++                        && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++                })
+                 .filter(|_| !field_begin_owns_gap)
+             {
+                 flush_text_fragment(
+@@ -1706,6 +1777,23 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+                     field_end_emitted[i] = true;
+                 }
+             }
++            // 마지막 글자 직후에서 미룬 필드(`field_inner_slots_pending`)는 감싼 마지막
++            // 컨트롤이 나간 바로 뒤에 닫는다.
++            for (i, fr) in para.field_ranges.iter().enumerate() {
++                if !field_end_emitted[i]
++                    && fr.start_char_idx < fr.end_char_idx
++                    && fr.end_char_idx <= idx
++                    && fr.inner_slot_count > 0
++                    && !field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied())
++                {
++                    let guide_units =
++                        emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
++                    expected_utf16_pos = expected_utf16_pos
++                        .saturating_add(guide_units)
++                        .saturating_add(8);
++                    field_end_emitted[i] = true;
++                }
++            }
+         }
+ 
+         // [Task #1556] 고아 fieldEnd (char_idx == idx): 문자 push 전에 8유닛 슬롯 방출.
+@@ -1837,6 +1925,7 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+             if fr.end_char_idx == next_idx
+                 && !field_end_emitted[i]
+                 && fr.start_char_idx < fr.end_char_idx
++                && !field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied())
+             {
+                 flush_text_fragment(
+                     &mut splitter.content,
+@@ -1875,7 +1964,10 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+         if !field_end_emitted[i] {
+             let begin_slot_pending = fr.start_char_idx == fr.end_char_idx
+                 && slot_ctrl_indices[slot_idx..].contains(&fr.control_idx);
+-            if begin_slot_pending {
++            if begin_slot_pending
++                || (fr.start_char_idx < fr.end_char_idx
++                    && field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied()))
++            {
+                 continue;
+             }
+             let guide_units = emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
+@@ -1887,12 +1979,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     }
+ 
+     // [Task #1556] 텍스트 끝(char_idx == text_char_count) 의 고아 fieldEnd — para 0.16 케이스.
++    // 원본에서 남은 말미 슬롯(표·빈 누름틀의 fieldBegin 등) **뒤**에 있던 고아는 그 슬롯을
++    // 낸 다음으로 미룬다(`orphan_precedes_slot`). 위치를 모르는 고아는 종전대로 여기서 낸다.
+     for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
+         if !orphan_emitted[i] {
+             debug_assert!(
+                 ofe.char_idx >= text_char_count,
+                 "미방출 고아 fieldEnd 는 텍스트 끝이어야 함"
+             );
++            if !orphan_precedes_slot(ofe, slot_ctrl_indices.get(slot_idx).copied()) {
++                continue;
++            }
+             splitter.cut_before(expected_utf16_pos);
+             emit_orphan_field_end(&mut splitter.content, ofe);
+             expected_utf16_pos = expected_utf16_pos.saturating_add(8);
+@@ -1901,6 +1998,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+     }
+ 
+     while slot_idx < slots.len() {
++        // 미뤄 둔 고아 중 원본에서 이 슬롯보다 앞에 있던 것.
++        for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++            if !orphan_emitted[i]
++                && orphan_precedes_slot(ofe, Some(slot_ctrl_indices[slot_idx]))
++            {
++                splitter.cut_before(expected_utf16_pos);
++                emit_orphan_field_end(&mut splitter.content, ofe);
++                expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++                orphan_emitted[i] = true;
++            }
++        }
+         splitter.cut_before(expected_utf16_pos);
+         render_control_slot_tracked(
+             &mut splitter.content,
+@@ -1919,10 +2027,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+         // `inner_slot_count` 만큼 지나서 닫아야 개체가 필드 안에 남는다. 자기 슬롯
+         // 직후에 닫으면 개체가 밖으로 밀려 빈 누름틀이 되고, 한글이 안내문을 본문에
+         // 찍는다(G-순수증식 16경로).
++        // 텍스트가 있는 필드가 말미 컨트롤까지 감쌌으면(`field_inner_slots_pending` 으로 미룬
++        // 것) 감싼 마지막 컨트롤 뒤에서 닫는다.
+         for (i, fr) in para.field_ranges.iter().enumerate() {
+             if !field_end_emitted[i]
+-                && fr.start_char_idx == fr.end_char_idx
+-                && fr.control_idx + fr.inner_slot_count == emitted_ctrl_idx
++                && ((fr.start_char_idx == fr.end_char_idx
++                    && fr.control_idx + fr.inner_slot_count == emitted_ctrl_idx)
++                    || (fr.start_char_idx < fr.end_char_idx
++                        && !field_inner_slots_pending(
++                            fr,
++                            slot_ctrl_indices.get(slot_idx).copied(),
++                        )))
+             {
+                 let guide_units = emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
+                 expected_utf16_pos = expected_utf16_pos
+@@ -1932,6 +2047,15 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+             }
+         }
+     }
++    // 원본에서 모든 말미 슬롯 뒤에 있던 고아 — 문단 끝 표 뒤의 다단락 책갈피 종료 등.
++    for (i, ofe) in para.orphan_field_ends.iter().enumerate() {
++        if !orphan_emitted[i] {
++            splitter.cut_before(expected_utf16_pos);
++            emit_orphan_field_end(&mut splitter.content, ofe);
++            expected_utf16_pos = expected_utf16_pos.saturating_add(8);
++            orphan_emitted[i] = true;
++        }
++    }
+     // [Task #1893] 방어: 지연분이 슬롯 루프에서 매칭되지 못했으면 말미에 방출(종전 동작).
+     for (i, fr) in para.field_ranges.iter().enumerate() {
+         if !field_end_emitted[i] {
+@@ -2193,6 +2317,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
                  out.push_str(&memo_children);
@@ -3686,7 +4582,7 @@ index f951d7284..024ed36ee 100644
                  out.push_str("</hp:fieldBegin>");
                  out.push_str("</hp:ctrl>");
                  return;
-@@ -2201,7 +2224,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2201,7 +2326,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
              let has_params = f.raw_parameters_xml.is_some() || generated_params.is_some();
              let has_memo = f.field_type == crate::model::control::FieldType::Memo
                  && !f.memo_paragraphs.is_empty();
@@ -3695,7 +4591,7 @@ index f951d7284..024ed36ee 100644
                  // [#1391] 자식(parameters / memo subList)이 있으면 start/end 태그.
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-@@ -2230,6 +2253,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2230,6 +2355,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                      }
                      out.push_str("</hp:subList>");
                  }
@@ -3703,7 +4599,7 @@ index f951d7284..024ed36ee 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
-@@ -3056,6 +3080,10 @@ fn render_common_shape_xml(
+@@ -3056,6 +3182,10 @@ fn render_common_shape_xml(
          Ok(xml) => out.push_str(&xml),
          Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
      }
@@ -3714,7 +4610,7 @@ index f951d7284..024ed36ee 100644
      out.push_str(&format!("</hp:{tag}>"));
      out
  }
-@@ -4373,6 +4401,111 @@ mod tests {
+@@ -4373,6 +4503,111 @@ mod tests {
          );
      }
  
@@ -3826,7 +4722,7 @@ index f951d7284..024ed36ee 100644
      /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
      /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
      #[test]
-@@ -4840,16 +4973,31 @@ mod tests {
+@@ -4840,16 +5075,31 @@ mod tests {
  
      #[test]
      fn task1407_single_column_doc_unaffected() {
@@ -3861,7 +4757,243 @@ index f951d7284..024ed36ee 100644
      }
  
      #[test]
-@@ -6191,8 +6339,11 @@ mod tests {
+@@ -5286,6 +5536,7 @@ mod tests {
+             begin_id_ref: 1_878_228_493,
+             field_id: 627_272_811,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+@@ -5360,6 +5611,7 @@ mod tests {
+             begin_id_ref: 42,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+@@ -5863,6 +6115,7 @@ mod tests {
+             begin_id_ref: 1_867_945_539,
+             field_id: 0,
+             begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
++            preceding_controls: None,
+         }];
+ 
+         let runs = runs_of(&para);
+@@ -5883,6 +6136,7 @@ mod tests {
+             begin_id_ref: 0,
+             field_id: 0,
+             begin_ctrl_id: 0,
++            preceding_controls: None,
+         }];
+         let runs = runs_of(&para);
+         assert!(
+@@ -5911,6 +6165,7 @@ mod tests {
+             begin_id_ref: 2_031_845_287,
+             field_id: 0,
+             begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
++            preceding_controls: None,
+         }];
+ 
+         let runs = runs_of(&para);
+@@ -5922,6 +6177,195 @@ mod tests {
+         );
+     }
+ 
++    // ---------- 고아 fieldEnd 와 같은 글자 위치의 말미 컨트롤 순서 보존 ----------
++
++    const ORPHAN_ORDER_TABLE: &str = r#"<hp:tbl id="7" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="1" noAdjust="0"><hp:sz width="1000" widthRelTo="ABSOLUTE" height="500" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:inMargin left="0" right="0" top="0" bottom="0"/><hp:tr><hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="1"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>cell</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="500"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/></hp:tc></hp:tr></hp:tbl>"#;
++    const ORPHAN_ORDER_END: &str =
++        r#"<hp:ctrl><hp:fieldEnd beginIDRef="1600000001"/></hp:ctrl>"#;
++
++    /// 책갈피가 문단 0 에서 열리고 `end_run` 문단에서 닫히는 섹션을 한 번 내보내고, 다시
++    /// 읽어 한 번 더 내보낸다. 두 번째 문단의 (첫 방출, 재방출) XML 을 돌려준다.
++    fn orphan_order_roundtrip(end_run: &str) -> (String, String) {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl><hp:t>시작</hp:t></hp:run></hp:p>
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">{end_run}</hp:run></hp:p>
++</hs:sec>"#
++        );
++        let emit = |source: &str| {
++            let section = parse_hwpx_section(source).unwrap();
++            let mut doc = Document::default();
++            doc.sections.push(section.clone());
++            let mut ctx = SerializeContext::collect_from_document(&doc);
++            String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap()
++        };
++        let second_paragraph = |section_xml: &str| {
++            let at = section_xml.match_indices("<hp:p ").nth(1).expect("둘째 문단").0;
++            section_xml[at..].to_string()
++        };
++        let first = emit(&xml);
++        let again = emit(&first);
++        (second_paragraph(&first), second_paragraph(&again))
++    }
++
++    fn assert_before(xml: &str, first: &str, second: &str) {
++        let a = xml.find(first).unwrap_or_else(|| panic!("{first} 없음:\n{xml}"));
++        let b = xml.find(second).unwrap_or_else(|| panic!("{second} 없음:\n{xml}"));
++        assert!(a < b, "{first} 가 {second} 보다 앞이어야 한다:\n{xml}");
++    }
++
++    /// 문단 말미 표 **뒤**의 다단락 책갈피 종료는 표 뒤에 남는다. 종전에는 `char_idx` 가
++    /// 보이는 글자만 세어 표 앞으로 당겨졌고, 책갈피가 표를 잃었다(한컴식 `<hp:t> </hp:t>`
++    /// 앞글자 + 글자처럼 취급한 표 문단 — 입찰 공고 표본 문단 35·36).
++    #[test]
++    fn orphan_field_end_after_trailing_table_stays_after_it() {
++        let (first, again) =
++            orphan_order_roundtrip(&format!("<hp:t> </hp:t>{ORPHAN_ORDER_TABLE}<hp:t/>{ORPHAN_ORDER_END}"));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 반대로 원본이 표 **앞**에 둔 종료는 그대로 앞이다(#1948 계약 유지).
++    #[test]
++    fn orphan_field_end_before_trailing_table_stays_before_it() {
++        let (first, again) =
++            orphan_order_roundtrip(&format!("<hp:t> </hp:t>{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"));
++        assert_before(&first, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 문단 끝의 빈 누름틀 뒤에 온 종료도 그 누름틀 뒤에 남는다. 종전에는 누름틀의
++    /// `fieldBegin` 앞으로 당겨졌다 — 책갈피 밖으로 누름틀이 빠지는 같은 결손이다.
++    #[test]
++    fn orphan_field_end_after_trailing_empty_click_here_stays_after_it() {
++        let click = r#"<hp:ctrl><hp:fieldBegin id="77" type="CLICK_HERE" name="값" editable="1" dirty="0" fieldid="77"/></hp:ctrl><hp:ctrl><hp:fieldEnd beginIDRef="77" fieldid="77"/></hp:ctrl>"#;
++        let (first, again) = orphan_order_roundtrip(&format!("<hp:t>끝</hp:t>{click}{ORPHAN_ORDER_END}"));
++        assert_before(&first, r#"<hp:fieldEnd beginIDRef="77""#, r#"<hp:fieldEnd beginIDRef="1600000001""#);
++        assert_before(&first, "<hp:fieldBegin", r#"<hp:fieldEnd beginIDRef="1600000001""#);
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 보이는 글자가 없는 문단(표만 있는 문단)에서도 원본 순서를 양쪽 다 지킨다.
++    #[test]
++    fn orphan_field_end_order_is_kept_in_text_less_table_paragraph() {
++        let (after, after_again) = orphan_order_roundtrip(&format!("{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}"));
++        assert_before(&after, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(after, after_again);
++        let (before, before_again) = orphan_order_roundtrip(&format!("{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"));
++        assert_before(&before, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(before, before_again);
++    }
++
++    /// 표와 표 사이에 있던 종료는 그 사이에 남는다.
++    #[test]
++    fn orphan_field_end_between_trailing_tables_stays_between() {
++        let (first, again) = orphan_order_roundtrip(&format!(
++            "<hp:t>가</hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"
++        ));
++        let end = first.find("<hp:fieldEnd").expect("종료");
++        assert_eq!(first[..end].matches("</hp:tbl>").count(), 1, "첫 표 뒤·둘째 표 앞:\n{first}");
++        assert_eq!(first[end..].matches("<hp:tbl ").count(), 1, "첫 표 뒤·둘째 표 앞:\n{first}");
++        assert_eq!(first, again);
++    }
++
++    // ---------- 같은 문단 필드가 마지막 글자 뒤의 컨트롤까지 감쌀 때 ----------
++
++    /// 한 문단 섹션을 한 번 내보내고, 다시 읽어 한 번 더 내보낸다. 문단 XML 둘을 돌려준다.
++    fn single_paragraph_roundtrip(run: &str) -> (String, String) {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">{run}</hp:run></hp:p>
++</hs:sec>"#
++        );
++        let emit = |source: &str| {
++            let section = parse_hwpx_section(source).unwrap();
++            let mut doc = Document::default();
++            doc.sections.push(section.clone());
++            let mut ctx = SerializeContext::collect_from_document(&doc);
++            String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap()
++        };
++        let paragraph = |section_xml: &str| {
++            let at = section_xml.find("<hp:p ").expect("문단");
++            section_xml[at..].to_string()
++        };
++        let first = emit(&xml);
++        let again = emit(&first);
++        (paragraph(&first), paragraph(&again))
++    }
++
++    const SAME_PARA_BEGIN: &str =
++        r#"<hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl>"#;
++
++    /// 한 문단 책갈피가 `" "` 뒤의 표까지 감싸면 종료는 표 뒤에 남는다. 종전에는 마지막
++    /// 글자 직후로 당겨져 표가 책갈피 밖으로 빠졌다(입찰 공고 문단 36 하나만 영역으로 잡은 경우).
++    #[test]
++    fn same_paragraph_field_wrapping_trailing_table_closes_after_it() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t> </hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}"
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 한글 12.0.0.4605 가 같은 문단을 블록 책갈피로 잡아 저장한 모양 그대로다
++    /// (`begin · " " · 표 · end · 빈 hp:t`).
++    #[test]
++    fn hancom_single_paragraph_bookmark_over_space_and_table_is_kept() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            r#"<hp:ctrl><hp:fieldBegin id="1207535220" type="BOOKMARK" name="S0_END" editable="0" dirty="1" zorder="-1" fieldid="627207531" metaTag=""/></hp:ctrl><hp:t> </hp:t>{ORPHAN_ORDER_TABLE}<hp:ctrl><hp:fieldEnd beginIDRef="1207535220" fieldid="627207531"/></hp:ctrl><hp:t/>"#
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 필드가 표를 감싸지 않으면(종료가 표 앞) 그대로 앞이다 — 감싼 컨트롤 수가 0 인 종전 경로.
++    #[test]
++    fn same_paragraph_field_ending_before_trailing_table_stays_before_it() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t> </hp:t>{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"
++        ));
++        assert_before(&first, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 문단 가운데에서도 같다 — 표를 감싼 필드는 표 뒤·다음 글자 앞에서 닫힌다.
++    #[test]
++    fn same_paragraph_field_wrapping_mid_text_table_closes_before_next_text() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t>가</hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}<hp:t>나</hp:t>"
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_before(&first, "<hp:fieldEnd", "나</hp:t>");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 누름틀도 같은 경로다 — 글자와 말미 표를 함께 감싼 누름틀은 표 뒤에서 닫힌다.
++    #[test]
++    fn click_here_wrapping_text_and_trailing_table_closes_after_the_table() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            r#"<hp:ctrl><hp:fieldBegin id="77" type="CLICK_HERE" name="값" editable="1" dirty="0" fieldid="77"/></hp:ctrl><hp:t>값</hp:t>{ORPHAN_ORDER_TABLE}<hp:ctrl><hp:fieldEnd beginIDRef="77" fieldid="77"/></hp:ctrl>"#
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 파서는 고아 종료 앞의 컨트롤 수를 싣는다(`preceding_controls`).
++    #[test]
++    fn hwpx_parser_records_controls_preceding_an_orphan_field_end() {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl><hp:t>a</hp:t></hp:run></hp:p><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t> </hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}</hp:run></hp:p></hs:sec>"#
++        );
++        let section = parse_hwpx_section(&xml).unwrap();
++        let orphan = &section.paragraphs[1].orphan_field_ends[0];
++        assert_eq!(orphan.char_idx, 1);
++        assert_eq!(orphan.preceding_controls, Some(1));
++    }
++
+     /// [#4778] 위치 축이 무너진 문단(파서 미수용 8유닛 슬롯 — 차례표지 0x0008 등)의
+     /// 저장 lineseg 는 방출하지 않는다. textpos 사다리와 어긋난 lineseg 를 한글 2022 가
+     /// 만나면 그 문단부터 문서 끝까지 본문을 폐기한다(성년후견 h2x -112,075자 실측,
+@@ -6191,8 +6635,11 @@ mod tests {
          use crate::model::style::CharShape;
  
          // 첫 문단: "abcdef", 경계 1개 — 원본 파스 결과는 [(0,1),(19,2)]

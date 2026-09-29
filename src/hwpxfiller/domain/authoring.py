@@ -936,6 +936,9 @@ class _StructureReader(StructureReader):
         context = _paragraph_text(p_el).strip()[:CONTEXT_MAX]
         markers = list(iter_structure_markers(text))
         self.note_markers(len(markers))  # 자격 판정 **앞** — 거절될 마커도 문서에 남아 있다
+        if markers and not context:
+            # 직속 글이 비었거나 개체(표) 앞에서 끊겼다 — 진단 문맥은 빈 칸이 아니라 마커 표기다.
+            context = markers[0].group(0).strip()[:CONTEXT_MAX]
         if not markers:
             if top_level:
                 self.count_content()
@@ -969,6 +972,7 @@ class _StructureReader(StructureReader):
                 "차지해야 합니다.",
                 context,
             )
+            self.settle_refused(match.group(1), context)
             return
         # 마커 문단은 컴파일 때 통째로 지운다. 그림·제어 등 텍스트에 안 잡히는
         # 내용도 단독 마커로 오인하면 함께 사라지므로 여기서 먼저 거절한다.
@@ -985,9 +989,10 @@ class _StructureReader(StructureReader):
         ):
             self.note(
                 StructureDiagnosticKind.MARKER_NOT_ALONE,
-                "마커는 문단을 단독으로 차지해야 합니다.",
+                "구간 마커가 표·그림 같은 개체와 같은 문단에 있습니다 — 마커를 개체 다음 줄(별도 문단)로 옮기세요.",
                 context,
             )
+            self.settle_refused(match.group(1), context)
             return
         self.read_marker(match.group(1), context)
 

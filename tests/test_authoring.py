@@ -884,14 +884,15 @@ def test_native_analysis_separates_invalid_and_nonfillable_field_controls() -> N
     assert invalid["location"] == {"entry": "Contents/section0.xml", "paragraph": 0}
 
 
-def test_native_structure_diagnostic_location_is_only_projected_when_unique() -> None:
+def test_native_structure_diagnostic_location_is_the_read_body_paragraph() -> None:
+    """본문 직계 문단의 진단은 읽은 자리 그대로다 — 같은 문맥의 마커가 여럿이어도 제 자리를 가리킨다."""
     marker = '<hp:p><hp:run><hp:t>{{/항목}}</hp:t></hp:run></hp:p>'
     unique = analyze_hwpx(_pkg(marker + '<hp:p><hp:run><hp:t>끝</hp:t></hp:run></hp:p>'))
     item = next(row for row in unique["diagnostics"] if row["kind"] == "unbalanced_marker")
     assert item["location"] == {"entry": "Contents/section0.xml", "paragraph": 0}
     duplicated = analyze_hwpx(_pkg(marker + marker))
-    assert all(row["location"] is None for row in duplicated["diagnostics"]
-               if row["kind"] == "unbalanced_marker")
+    assert [row["location"] for row in duplicated["diagnostics"] if row["kind"] == "unbalanced_marker"] == [
+        {"entry": "Contents/section0.xml", "paragraph": 0}, {"entry": "Contents/section0.xml", "paragraph": 1}]
     for row in duplicated["diagnostics"] + unique["diagnostics"]:
         assert (row["severity"], row["category"]) == ("error", "structure")
         assert row["actions"][0] == {"label": "원문으로 이동", "kind": "navigate", "location": row["location"]}
@@ -2228,11 +2229,12 @@ def test_native_trial_surfaces_materialization_failure_loudly(monkeypatch) -> No
         trial_hwpx(package, {"F": "값"}, {})
 
 
-def test_native_marker_diagnostic_without_addressable_text_has_no_location() -> None:
-    """표가 앞선 문단의 마커는 좌표로 되짚을 직속 텍스트가 없다 — 위치를 비운다."""
+def test_native_marker_diagnostic_beside_a_table_is_located_but_one_inside_a_cell_needs_its_text() -> None:
+    """표가 앞선 본문 문단의 마커는 직속 텍스트가 없어도 읽은 자리가 있다. 셀 안 문단은 번호가 없어 문맥 글로만
+    되짚는다 — 되짚을 수 없으면 위치를 비운다(짐작하지 않는다)."""
     beside_table = _pkg('<hp:p><hp:run><hp:tbl/><hp:t>{{/항목}}</hp:t></hp:run></hp:p>')
-    assert [item["location"] for item in analyze_hwpx(beside_table)["diagnostics"]
-            if item["kind"] == "marker_not_alone"] == [None]
+    assert [(item["context"], item["location"]) for item in analyze_hwpx(beside_table)["diagnostics"]
+            if item["kind"] == "marker_not_alone"] == [("{{/항목}}", {"entry": "Contents/section0.xml", "paragraph": 0})]
     outside_lane = _pkg(
         '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:p><hp:run><hp:t>{{/항목}}</hp:t>'
         '</hp:run></hp:p></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
@@ -2837,57 +2839,84 @@ def test_native_create_field_ranges_refusals_leave_source_untouched(extra, messa
         apply_hwpx(package, {"type": "create_field", "name": "수요기관", **_SELECTED, "ranges": _SELECTED})
 
 
-def test_native_split_wraps_each_body_paragraph_as_an_option_in_one_command() -> None:
-    entry = "Contents/section0.xml"
-    package = _pkg(
-        '<hp:p><hp:run><hp:t>첫째 문단</hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t></hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t>납품기한:  기한</hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t>셋째</hp:t></hp:run></hp:p>'
-    )
-    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 2, "start": 7, "end": 9, "name": "납기"})
-    before = dict(package.entries)
-    command = {"type": "create_slot", "entry": entry, "start_paragraph": 0, "end_paragraph": 3,
-               "start": 0, "end": 2, "id": "조건", "label": "납품 조건", "split": "paragraph"}
-    projected = preview_hwpx(package, command)
-    assert package.entries == before, "미리보기는 원본을 바꾸지 않는다 — 실행 취소는 이 bytes 한 벌이다"
-    assert [(child["kind"], child["id"], child["label"]) for child in projected["children"]] == [
-        ("option", "선택1", "첫째 문단"), ("option", "선택2", "납품기한:"), ("option", "선택3", "셋째"),
-        ("field", "납기", "납기")]
-    assert projected["counts"] == {"paragraphs": 4, "fields": 1, "options": 3, "tables": 0}
-    result, _ = apply_hwpx(package, command)
-    analysis = analyze_hwpx(result)
-    assert analysis["diagnostics"] == []
-    assert [(slot["id"], slot["label"], [(option["id"], option["label"]) for option in slot["options"]])
-            for slot in analysis["slots"]] == [
-        ("조건", "납품 조건", [("선택1", "첫째 문단"), ("선택2", "납품기한:"), ("선택3", "셋째")])]
-    assert [(option["id"], option["location"]["start_paragraph"]) for option in analysis["slots"][0]["options"]] == [
-        ("선택1", 0), ("선택2", 2), ("선택3", 3)]
+def test_marker_beside_an_inline_table_is_one_located_diagnostic_in_the_workbench() -> None:
+    """개체와 같은 문단의 닫는 마커(user 신고) — 문맥은 마커 표기, 자리는 그 본문 문단이다.
+
+    같은 닫는 마커 문단이 여럿이라 문맥 글로는 자리를 정할 수 없다 — 읽기가 적은 좌표가 자리다.
+    """
+    table = ('<hp:tbl rowCnt="1" colCnt="1"><hp:pos treatAsChar="1"/><hp:tr><hp:tc><hp:subList>'
+             '<hp:p><hp:run><hp:t>표 내용</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl>')
+    lines = ["{{#항목 특약}}", "{{#선택 가}}", "본문 가", None, "{{#선택 나}}", "본문 나", "{{/선택}}", "{{/항목}}"]
+    package = _pkg("".join(
+        f"<hp:p><hp:run><hp:t> </hp:t>{table}</hp:run><hp:run><hp:t>{{{{/선택}}}}</hp:t></hp:run></hp:p>"
+        if line is None else f"<hp:p><hp:run><hp:t>{line}</hp:t></hp:run></hp:p>" for line in lines))
+    diagnostics = analyze_hwpx(package)["diagnostics"]
+    assert [(item["kind"], item["context"], item["location"]) for item in diagnostics] == [
+        ("marker_not_alone", "{{/선택}}", {"entry": "Contents/section0.xml", "paragraph": 3})]
+    assert diagnostics[0]["message"].startswith("구간 마커가 표·그림 같은 개체와 같은 문단에 있습니다")
 
 
-def test_native_split_refuses_cells_tables_empty_ranges_and_options() -> None:
-    entry = "Contents/section0.xml"
-    package = _pkg(
-        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p>'
+def _cell_package() -> HwpxPackage:
+    """본문 문단 0 · 표를 품은 본문 문단 1(셀 문단 하나) · 본문 문단 2."""
+    return _pkg(
+        '<hp:p><hp:run><hp:t>짧다</hp:t></hp:run></hp:p>'
         '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
-        '<hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>셀 안의 꽤 긴 문구</hp:t></hp:run></hp:p>'
         '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t> </hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>뒤</hp:t></hp:run></hp:p>'
     )
+
+
+_IN_CELL = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 0,
+            "cell_path": [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]}
+
+
+def test_cell_selection_never_creates_a_body_region_on_the_same_numbered_paragraph() -> None:
+    """셀 안 선택의 문단 번호는 셀 문단이다 — 본문 문단 0 을 감싸면 엉뚱한 자리다. 항목·선택 만들기는 막는다."""
+    from hwpxfiller.domain.template_authoring import REASON_REGION_IN_CELL
+
+    package = _cell_package()
+    selection = {**_IN_CELL, "start": 0, "end": 2}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert (commands["create_slot"]["enabled"], commands["create_slot"]["reason"]) == (False, REASON_REGION_IN_CELL)
+    assert (commands["create_option"]["enabled"], commands["create_option"]["reason"]) == (False, REASON_REGION_IN_CELL)
     before = dict(package.entries)
-    base = {"type": "create_slot", "entry": entry, "id": "s", "split": "paragraph"}
-    cases = (
-        ({"start_paragraph": 0, "end_paragraph": 1}, "여러 독립 영역"),
-        ({"start_paragraph": 0, "end_paragraph": 0,
-          "cell_path": [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]}, "여러 독립 영역"),
-        ({"start_paragraph": 2, "end_paragraph": 2}, "고를 내용 줄이 없습니다"),
-        ({"start_paragraph": 0, "end_paragraph": 0, "split": "line"}, "알 수 없는 저작 명령"),
-    )
-    for override, message in cases:
-        with pytest.raises(ValueError, match=message):
-            apply_hwpx(package, base | override)
+    for kind in ("create_slot", "create_option"):
+        with pytest.raises(ValueError, match="표 셀 안에서는"):
+            apply_hwpx(package, {"type": kind, "id": "s", "slot_id": "s", **selection})
         assert package.entries == before
-    apply_hwpx(package, base | {"start_paragraph": 0, "end_paragraph": 0, "split": None})
-    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
-        apply_hwpx(package, {"type": "create_option", "entry": entry, "start_paragraph": 0, "end_paragraph": 0,
-                             "slot_id": "s", "id": "o", "split": "paragraph"})
+    assert analyze_hwpx(package)["slots"] == []
+
+
+def test_cell_selection_judges_create_field_on_the_cell_paragraph() -> None:
+    """필드 만들기 판정은 셀 문단의 글자로 한다 — 같은 번호의 본문 문단(짧다)으로 재면 범위 밖이 된다."""
+    package = _cell_package()
+    selection = {**_IN_CELL, "start": 5, "end": 9}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert commands["create_field"]["enabled"] is True, commands["create_field"]
+    result, _ = apply_hwpx(package, {"type": "create_field", "name": "문구", **selection})
+    [field] = analyze_hwpx(result)["fields"]
+    assert [occurrence["cell_path"] for occurrence in field["occurrences"]] == [_IN_CELL["cell_path"]]
+    # 같은 번호의 본문 문단에 필드가 있어도 셀 선택의 필드 판정에 끼지 않는다.
+    body_field, _ = apply_hwpx(_cell_package(), {"type": "create_field", "name": "본문", "entry": "Contents/section0.xml",
+                                                  "paragraph": 0, "start": 0, "end": 2})
+    commands = {item["type"]: item for item in available_commands_hwpx(body_field, {**_IN_CELL, "start": 0, "end": 2})}
+    assert commands["create_field"]["enabled"] is True, commands["create_field"]
+
+
+def test_a_body_range_that_ends_on_a_table_paragraph_wraps_the_whole_table() -> None:
+    """표에서 끝난 끌기는 편집기가 표의 닻 본문 문단으로 접는다(셀 경로 없음) — Python 은 그 범위를 그대로 감싼다."""
+    package = _cell_package()
+    selection = {"entry": "Contents/section0.xml", "paragraph": 0, "start_paragraph": 0, "end_paragraph": 1,
+                 "start": 0, "end": 0}
+    commands = {item["type"]: item for item in available_commands_hwpx(package, selection)}
+    assert commands["create_slot"]["enabled"] is True, commands["create_slot"]
+    result, _ = apply_hwpx(package, {"type": "create_slot", "id": "표포함", **selection})
+    [slot] = analyze_hwpx(result)["slots"]
+    assert (slot["location"]["start_paragraph"], slot["location"]["end_paragraph"]) == (0, 1)
+    assert "셀 안의 꽤 긴 문구" in result.entries["Contents/section0.xml"].decode("utf-8")
+    last = _cell_package()
+    last.entries["Contents/section0.xml"] = last.entries["Contents/section0.xml"].replace(
+        b"<hp:p><hp:run><hp:t>\xeb\x92\xa4</hp:t></hp:run></hp:p>", b"")
+    tail, _ = apply_hwpx(last, {"type": "create_slot", "id": "끝표", **selection})
+    assert [(item["id"], item["location"]["end_paragraph"]) for item in analyze_hwpx(tail)["slots"]] == [("끝표", 1)]

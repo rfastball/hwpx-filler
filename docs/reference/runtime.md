@@ -96,8 +96,6 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `commands` | `session_id`, `revision`, `selection` | `context` |
 | `content` | `session_id` | — |
 | `copy` | `session_id`, `revision`, `selector` | — |
-| `discard_draft` | `key` | — |
-| `discard_recovery` | `session_id` | — |
 | `external_content` | `session_id` | — |
 | `impact` | `session_id`, `revision` | — |
 | `locate` | `session_id`, `revision`, `selection` | `target` |
@@ -105,9 +103,6 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `prepare_apply` | `session_id`, `revision`, `job_name` | — |
 | `preview` | `session_id`, `revision`, `command` | — |
 | `preview_paste` | `session_id`, `revision`, `clipboard_token`, `destination`, `with_meaning` | — |
-| `recover` | `session_id`, `revision` | — |
-| `recover_draft` | `key` | — |
-| `recovery_content` | `key` | — |
 | `reload` | `session_id`, `revision` | `force` |
 | `remember_view` | `session_id`, `revision`, `selection`, `mode` | — |
 | `rhwp_roundtrip_preflight` | `session_id`, `revision`, `content` | — |

@@ -589,12 +589,69 @@ def test_unreadable_txt_template_is_not_healthy(tmp_path):
     as_dir.mkdir()                                    # 존재하지만 읽을 수 없는 경로
     ok = tmp_path / "정상.txt"
     ok.write_text("제목: {{공고명}}", encoding="utf-8")
+    # 매핑은 템플릿 필드를 덮는다 — 「정상」이 구조 드리프트로 확인 필요에 들지 않게.
+    covered = MappingProfile(mappings=[FieldMapping("공고명", "bidNtceNm")])
     for name, path in (("깨짐", bad), ("폴더", as_dir), ("정상", ok)):
-        reg.save(Job(name=name, template_path=str(path)))
+        reg.save(Job(name=name, template_path=str(path), mapping=covered))
     rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
     assert library_health(rows["깨짐"]) == (3, "템플릿을 읽을 수 없습니다.")
     assert library_health(rows["폴더"]) == (3, "템플릿을 읽을 수 없습니다.")
     assert library_health(rows["정상"])[0] == 0
+
+
+def test_txt_structure_is_read_from_the_template_text(tmp_path):
+    """TXT 행도 **읽은 텍스트의 누름틀**로 구조 사실을 든다 — 상세 카드·표가 읽는 원본.
+
+    못 읽는 TXT 는 ``None`` 이 아니라 ``read_error`` 로 「모른다」를 말한다. 읽힌 TXT 의
+    대칭차는 HWPX 와 같은 드리프트 축(`structure_drift`)에 실린다. 못 읽은 갈래는 드리프트로
+    한 번 더 세지 않는다 — 「템플릿을 읽을 수 없습니다」 하나만 말한다.
+    """
+    reg = JobRegistry(tmp_path / "txtstruct")
+    ok = tmp_path / "안내.txt"
+    ok.write_bytes("제목 {{공고명}}\r\n담당 {{담당자}} / {{공고명}}\r\n".encode("utf-8"))
+    bad = tmp_path / "깨진.txt"
+    bad.write_bytes(bytes([0xFF, 0xFE, 0x80, 0x81]))
+    mapping = MappingProfile(mappings=[FieldMapping("공고명", "bidNtceNm"),
+                                       FieldMapping("옛필드", "old")])
+    reg.save(Job(name="정상", template_path=str(ok), mapping=mapping))
+    reg.save(Job(name="깨짐", template_path=str(bad), mapping=mapping))
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
+
+    good = rows["정상"]
+    assert good.structure_readable is True
+    assert good.template_fields == ("공고명", "담당자")
+    assert good.unbound_fields == ("담당자",)
+    assert good.stale_mapping_fields == ("옛필드",)
+    assert good.structure_drift is True
+    assert library_health_causes(good) == [(2, "템플릿 구조가 확정 매핑과 달라졌습니다.")]
+
+    broken = rows["깨짐"]
+    assert broken.structure is not None and broken.structure.read_error
+    assert broken.structure_readable is False
+    assert broken.template_fields == ()
+    assert broken.structure_drift is False
+    assert library_health_causes(broken) == [(3, "템플릿을 읽을 수 없습니다.")]
+
+
+def test_txt_drift_severity_follows_the_txt_run_gate(tmp_path):
+    """TXT 드리프트의 등급은 **TXT 실행 게이트**를 따른다 — 작업대는 막지 않는다.
+
+    작업대 진입 게이트(`workbench_entry_gate`)와 복사 게이트는 구조 대칭차를 차단 사유로
+    보지 않고, 덮이지 않은 필드는 미확정 행으로 보여 준다. 그래서 TXT 는 매핑이 비어 있어도
+    차단 등급(3)이 아니라 확인 등급(2)이고, 덮인 TXT 는 건강하다. HWPX 는 생성이 차단되므로
+    같은 상태가 3 이다(대조군).
+    """
+    reg = JobRegistry(tmp_path / "txtgate")
+    tpl = tmp_path / "기안.txt"
+    tpl.write_text("제목 {{공고명}}", encoding="utf-8")
+    reg.save(Job(name="빈매핑", template_path=str(tpl)))
+    reg.save(Job(name="덮임", template_path=str(tpl),
+                 mapping=MappingProfile(mappings=[FieldMapping("공고명", "bidNtceNm")])))
+    reg.save(Job(name="hwpx빈매핑", template_path=_compiled_hwpx(tmp_path, "gate.hwpx")))
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
+    assert library_health_causes(rows["빈매핑"]) == [(2, "매핑을 아직 확정하지 않았습니다.")]
+    assert library_health(rows["덮임"]) == (0, "")
+    assert library_health(rows["hwpx빈매핑"]) == (3, "매핑을 아직 확정하지 않았습니다.")
 
 
 def test_unresolved_filename_tokens_surface_in_health(tmp_path):

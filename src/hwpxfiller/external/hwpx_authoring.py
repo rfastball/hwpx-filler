@@ -41,8 +41,8 @@ from ..domain.template_authoring import (
     REASON_FIELD_OVERLAP,
     REASON_INVALID_SELECTION,
     REASON_MULTI_REGION,
-    REASON_NO_CONTENT_LINE,
     REASON_OPTION_OUTSIDE_SLOT,
+    REASON_REGION_IN_CELL,
     REASON_REGION_OVERLAP,
     REASON_STRUCTURE_FIRST,
     SEVERITY_ERROR,
@@ -62,10 +62,7 @@ from ..domain.template_authoring import (
     context_focus,
     occurrence_context,
     occurrence_context_parts,
-    SPLIT_OPTION_PREFIX,
     shared_reasons,
-    split_mode,
-    split_option_label,
     target_availability,
     trial_document_values,
     whole_field_unset,
@@ -426,6 +423,16 @@ def _structure_diagnostic_location(package, context: str) -> dict | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _structure_diagnostic_position(package, item) -> dict | None:
+    """구조 진단의 자리 — 읽기가 적은 본문 문단 좌표가 먼저다. 없으면(셀·글상자 안) 문맥 글로 되짚는다.
+
+    같은 문맥의 문단이 여럿이면(예: 같은 닫는 마커 여러 개) 글로는 자리를 정할 수 없다 — 좌표가 그 자리다.
+    """
+    if item.entry and isinstance(item.index, int) and item.index >= 0:
+        return {"entry": item.entry, "paragraph": item.index}
+    return _structure_diagnostic_location(package, item.context)
+
+
 def analyze_hwpx(content: object) -> dict:
     package = require_package(content)
     slots, diagnostics = inspect_slots(package)
@@ -452,7 +459,7 @@ def analyze_hwpx(content: object) -> dict:
                                            "target": marker_target(item.context), "location": location,
                                            "actions": [navigate_action(location)]}
                          for item in structure.diagnostics
-                         for location in (_structure_diagnostic_location(package, item.context),)] +
+                         for location in (_structure_diagnostic_position(package, item),)] +
                         _field_diagnostics(package)),
         "summary": {"slots": len(slots),
                     "options": sum(len(slot.options) for slot in slots),
@@ -1318,6 +1325,9 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         raise ValueError("표시 이름은 텍스트여야 합니다.")
     entry = command.get("entry")
     start, end = command.get("start_paragraph"), command.get("end_paragraph")
+    if command.get("cell_path") is not None:
+        # 셀 문단 번호를 본문 문단 번호로 읽으면 엉뚱한 문단을 감싼다 — 판정(가용성)과 같은 거절이다.
+        raise ValueError(REASON_REGION_IN_CELL)
     if not isinstance(entry, str) or not isinstance(start, int) or not isinstance(end, int):
         raise ValueError("문단 범위를 정확히 고르세요.")
     snapshot = inspect_slot_regions(package)
@@ -1335,7 +1345,6 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         parent = snapshot.slot_regions[owner]
         order = len(next(slot.options for slot in snapshot.slots if slot.id == owner))
         payload = serialize_slot_option_metatag(SlotOption(identifier, order, label))
-    labels = _split_labels(package, command, entry, start, end) if split_mode(command) else []
     if kind == "slot":
         region_name = structure_region_name(identifier)
     else:
@@ -1347,41 +1356,6 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         parent=parent,
     )
     append_bookmark_metatag(package, region, payload)
-    # 문단마다 선택(P-11b): 같은 패키지 변형 안에서 새 항목을 부모로 문단마다 선택 구간을 만든다.
-    for order, (index, option_label) in enumerate(labels):
-        option_id = f"{SPLIT_OPTION_PREFIX}{order + 1}"
-        option = create_bookmark_region(
-            package, entry, index, index,
-            name=structure_region_name(identifier, option_id),
-            parent=inspect_slot_regions(package).slot_regions[identifier],
-        )
-        append_bookmark_metatag(package, option, serialize_slot_option_metatag(
-            SlotOption(option_id, order, option_label)))
-
-
-def _split_labels(package, command: Mapping[str, object], entry: str, start: int,
-                  end: int) -> list[tuple[int, str | None]]:
-    """문단마다 선택이 될 본문 문단과 그 표시 이름(P-11b) — 빈 문단은 뺀다.
-
-    본문 문단만 된다: 셀 안 선택이거나 범위 안 문단이 표를 품으면(표 셀 문단이 섞이면) 한 범위가 아니다.
-    표시 이름은 필드 값을 걷은 본문 글자로 TXT 와 같은 규칙(:func:`split_option_label`)이 짓는다.
-    """
-    if command.get("cell_path") is not None or entry not in package.entries:
-        raise ValueError(REASON_MULTI_REGION)
-    root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
-    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
-    chosen = paragraphs[start:end + 1]
-    if any(True for paragraph in chosen for _ in paragraph.iter(f"{_HP}tbl")):
-        raise ValueError(REASON_MULTI_REGION)
-    marks = _field_marks(entry, root)
-    labels: list[tuple[int, str | None]] = []
-    for index, paragraph in enumerate(chosen, start):
-        pieces = _paragraph_pieces(paragraph, marks)
-        if any(text.strip() or key is not None for text, key, _ in pieces):
-            labels.append((index, split_option_label("".join(text for text, key, _ in pieces if key is None))))
-    if not labels:
-        raise ValueError(REASON_NO_CONTENT_LINE)
-    return labels
 
 
 def apply_hwpx(content: object, command: Mapping[str, object]) -> tuple[object, dict]:
@@ -1448,8 +1422,6 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
         elif action in {"create_slot", "create_option"}:
             _create_region(package, command)
             captured = None
-            if split_mode(command):
-                impact_context = {**impact_context, **_split_children(package, command)}
         elif action in {"rename_slot", "rename_option"}:
             _rename_region(package, command)
             captured = None
@@ -1530,16 +1502,6 @@ def _field_site_contexts(package, command: Mapping[str, object]) -> list[str]:
     return [_body_hit_context(_paragraph_pieces(paragraph, marks[entry]), start, end)
             for entry, paragraph, start, end in sorted(
                 sites, key=lambda site: (site[0], order[site[0]][id(site[1])], site[2]))]
-
-
-def _split_children(package, command: Mapping[str, object]) -> dict:
-    """문단마다 선택으로 만든 뒤의 하위 의미와 수 — 미리보기가 Python 이 지은 선택 이름을 보인다."""
-    entry, start, end = command["entry"], command["start_paragraph"], command["end_paragraph"]
-    assert isinstance(entry, str) and isinstance(start, int) and isinstance(end, int)
-    root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
-    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
-    children, counts = _block_children(package, inspect_slot_regions(package), entry, paragraphs, start, end)
-    return {"children": children, "counts": counts}
 
 
 def _command_preview_label(command: Mapping[str, object], *, after: bool = False,
@@ -1674,7 +1636,8 @@ def preview_hwpx(content: object, command: Mapping[str, object]) -> dict:
     return impact
 
 
-def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int, int, int, int, list] | None:
+def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int, int, int, int, object] | None:
+    """선택의 (구역, 첫·끝 문단, 글자 범위, 첫 문단 요소). 셀 안 선택은 문단 번호가 셀 문단이다 — 요소도 그 셀 문단이다."""
     entry = selection.get("entry")
     first = selection.get("start_paragraph", selection.get("paragraph"))
     last = selection.get("end_paragraph", first)
@@ -1687,10 +1650,16 @@ def _selection_frame(package, selection: Mapping[str, object]) -> tuple[str, int
     if first > last or (first == last and start > end):
         return None
     root = etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
+    cell_path = selection.get("cell_path")
+    if cell_path is not None:
+        try:
+            return entry, first, last, start, end, _selected_paragraph(root, first, cell_path)
+        except ValueError:
+            return None
     paragraphs = [node for node in root if node.tag == f"{_HP}p"]
     if last >= len(paragraphs):
         return None
-    return entry, first, last, start, end, paragraphs
+    return entry, first, last, start, end, paragraphs[first]
 
 
 def available_commands_hwpx(content: object, selection: Mapping[str, object],
@@ -1701,13 +1670,16 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
     frame = _selection_frame(package, selection)
     if frame is None:
         return availability_entries(dict.fromkeys(COMMAND_TYPES, REASON_INVALID_SELECTION))
-    entry, first, last, start, end, paragraphs = frame
+    entry, first, last, start, end, first_paragraph = frame
+    cell_path = selection.get("cell_path")
     analysis = analyze_hwpx(package)
     snapshot = inspect_slot_regions(package)
 
     def field_hit(occurrence: dict) -> bool:
         paragraph = occurrence.get("paragraph")
-        if occurrence.get("entry") != entry or not isinstance(paragraph, int) or not first <= paragraph <= last:
+        # 셀 문단과 본문 문단은 번호 공간이 다르다 — 같은 셀 경로의 사용 위치만 겹친다.
+        if (occurrence.get("entry") != entry or occurrence.get("cell_path") != cell_path
+                or not isinstance(paragraph, int) or not first <= paragraph <= last):
             return False
         low, high = occurrence.get("start"), occurrence.get("end")
         if not isinstance(low, int) or not isinstance(high, int):
@@ -1724,8 +1696,9 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
                 item["location"])
                for slot in analysis["slots"] for item in [slot, *slot["options"]]
                if item["location"] is not None and item["location"]["entry"] == entry]
+    # 항목·선택 영역은 본문 문단 단위다 — 셀 안 선택은 어떤 영역과도 겹치거나 담기지 않는다(locate 와 같다).
     hit = [region for region in regions
-           if region[3]["start_paragraph"] <= last and first <= region[3]["end_paragraph"]]
+           if cell_path is None and region[3]["start_paragraph"] <= last and first <= region[3]["end_paragraph"]]
     containing = [region for region in hit
                   if region[3]["start_paragraph"] <= first and last <= region[3]["end_paragraph"]]
     crossing = any(region not in containing for region in hit)
@@ -1745,11 +1718,14 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
     elif first != last:
         reasons["create_field"] = _MULTI_PARAGRAPH_FIELD
     else:
-        sites, hazards, text = _paragraph_sites(paragraphs[first])
+        sites, hazards, text = _paragraph_sites(first_paragraph)
         reasons["create_field"] = _field_range_refusal(sites, hazards, text, start, end) or (
             REASON_FIELD_OVERLAP if field_hits and start != end else None)
     if broken:
         reasons["create_slot"] = reasons["create_option"] = REASON_STRUCTURE_FIRST
+        return availability_entries(reasons, alternatives)
+    if cell_path is not None:
+        reasons["create_slot"] = reasons["create_option"] = REASON_REGION_IN_CELL
         return availability_entries(reasons, alternatives)
     reasons["create_slot"] = REASON_REGION_OVERLAP if hit else None
     owners = [region for region in containing if region[0] == "slot"]

@@ -14,6 +14,9 @@ export type AuthoringEditor = {
    *  `{ kind: "slot"|"option"|"field", id, slot_id?, index? }`(option 의 id 는 선택 id, slot_id 는 소속 항목,
    *  field 의 index 는 사용 위치 한 곳). 없으면 강조 없음. */
   decorate(analysis: Obj, mode: string, highlight?: Obj | null): void;
+  /** 범위 고르기(두 번 누름): `false` 끔, `null` 켬(누름이 캐럿을 옮기지 않고 자리를 알린다), 자리는 그 시작에서 포인터
+   *  아래까지의 고무줄 범위를 칠한다. 누른 자리는 마운트할 때 건 `pickClick` 으로 온다. */
+  rangePick?(state: PickPoint | null | false): void | Promise<void>;
   /** 편집면 배율 방식(IDE-06 P-13) — 폭 맞춤이면 편집기 스스로 쪽 폭을 맞추고, 고정이면 편집기는 100%이고 셸이 키운다.
    *  없으면(TXT) 셸 배율만 쓴다. */
   zoom?(mode: "fit" | "fixed"): Promise<void>;
@@ -27,6 +30,14 @@ export const COMMANDS: [string, string][] = [
   ["rename_slot", "항목 속성 변경"], ["rename_option", "선택 속성 변경"], ["adjust_range", "범위 조정"],
   ["unwrap", "의미만 해제"], ["delete", "내용까지 삭제"], ["duplicate", "복제"], ["move", "이동"],
 ];
+/** 새 문구(사용자 승인 대기)는 이 한 곳에 모은다 — 저작 작업대 화면이 쓴다: 구조 트리 연속 묶음(항목 밖 사용 위치)과 두 번 눌러 범위 고르기. */
+export const AUTHORING_COPY = {
+  looseUses: "항목 밖 필드",
+  rangePick: "범위 고르기",
+  rangePickStart: "시작 위치를 누르세요.",
+  rangePickEnd: "끝 위치를 누르세요.",
+  rangePickCancel: "범위 고르기를 취소했습니다.",
+} as const;
 /** 확대 값: 「폭 맞춤」(HWPX 기본) 또는 고정 배율(%). */
 export type Zoom = "fit" | number;
 export const DEFAULT_ZOOM: Zoom = "fit";
@@ -49,6 +60,25 @@ export function previewHighlight(preview: Obj | null | undefined, command: Obj |
     ? occurrence.entry === command.entry && occurrence.occurrence === command.occurrence
     : occurrence.start === command.start);
   return at < 0 ? null : { kind: "field", id: name, index: at + 1 };
+}
+
+/** 두 번 눌러 범위 고르기의 상태 — 시작 위치를 기다리거나(start), 시작을 받아 끝 위치를 기다린다(end). */
+export type RangePick = { phase: "start" } | { phase: "end"; start: PickPoint };
+/** 고른 한 자리 — 편집기가 누름 한 번에 알린 본문 문단과 그 안의 글자. HWPX 는 셀 안을 누르면 그 표의 닻 본문
+ *  문단이다(`cell`). TXT 는 구역·문단 없이 글자 위치(UTF-16)만 쓴다(`entry` "", `paragraph` 0). */
+export type PickPoint = { entry: string; paragraph: number; offset: number; cell: boolean };
+
+/** 범위 고르기의 한 걸음(순수) — 누름 한 번의 자리로 다음 상태와(끝을 받았으면) 편집기에 세울 범위를 낸다.
+ *  점은 누름에서만 온다(캐럿 이동·키는 점이 아니다). 다른 구역의 끝은 새 시작이다. 셀 안 자리는 표의 닻 문단 전체로
+ *  접힌다 — 시작이면 문단 머리, 끝이면 문단 끝(`end` 생략 = 문단 끝). */
+export function rangePickStep(pick: RangePick | null, point: PickPoint): { pick: RangePick | null; commit?: Obj } {
+  if (!pick) return { pick };
+  if (pick.phase === "start" || pick.start.entry !== point.entry) return { pick: { phase: "end", start: point } };
+  const a = pick.start;
+  const [first, second] = a.paragraph < point.paragraph || (a.paragraph === point.paragraph && a.offset <= point.offset) ? [a, point] : [point, a];
+  const whole = first.paragraph === second.paragraph && (first.cell || second.cell);
+  return { pick: null, commit: { entry: first.entry, paragraph: first.paragraph, start_paragraph: first.paragraph, end_paragraph: second.paragraph,
+    start: whole || first.cell ? 0 : first.offset, ...(whole || second.cell ? {} : { end: second.offset }) } };
 }
 
 type Deps = {
@@ -203,6 +233,7 @@ export function createAuthoringController(deps: Deps) {
   function problemHere(id: string, here: unknown) {
     const next = problemNote(tab(id).problems, here);
     const prior = view.selectionNote;
+    if (prior?.source === "rangePick") return;
     if (!next) { if (prior?.source === "problem") update({ selectionNote: null }); return; }
     if (prior?.source === "problem" && prior.message === next.message && prior.severity === next.severity) return;
     update({ selectionNote: next });
@@ -211,7 +242,8 @@ export function createAuthoringController(deps: Deps) {
 
   function changed(id: string, content: string): void {
     buffers.set(id, content);
-    if (id === viewId) update({ preview: null, refusal: null, notice: "" });
+    // 고르던 자리는 편집 전 좌표다 — 편집이 오면 범위 고르기를 조용히 접는다.
+    if (id === viewId) { if (view.rangePick) endRangePick(id); update({ preview: null, refusal: null, notice: "" }); }
     void guarded(async () => { await drain(id); scheduleTrial(id); }, "edit");
   }
 
@@ -279,7 +311,9 @@ export function createAuthoringController(deps: Deps) {
     hovered = null;
     const known = views.get(id);
     const restore = activated.restore ?? current.restore;
-    view = known || restoredView(restore);
+    // 범위 고르기는 그 문서의 편집면에서만 뜻이 있다 — 문서를 옮기면 떠나는 편집면의 고르기를 끄고, 새 뷰는 접혀 있다.
+    if (viewId && view.rangePick) void Promise.resolve(editors.get(viewId)?.rangePick?.(false)).catch(() => undefined);
+    view = { ...(known || restoredView(restore)), rangePick: null };
     if (!known && (restore?.mode || restore?.selection)) pendingRestore.set(id, { selection: restore.selection || null });
     update({
       values: { ...(current.values || {}) }, selectedOptions: { ...(current.selected || {}) } });
@@ -396,6 +430,20 @@ export function createAuthoringController(deps: Deps) {
     } finally { hold.focusing = false; }
   }
 
+  /** 적용한 이름 변경이 가리키는 새 대상(#1069)을 지금 대상으로 받는다 — 패널·초점·편집기 선택은 그대로 두고, 속성 카드·
+   *  위치 줄·폼 초기값·명령 판정만 Python 이 되짚은 대상으로 바꾼다(표면은 받은 대상을 쓸 뿐이다). */
+  async function adopt(target: Obj) {
+    const id = snapshot().active_id;
+    if (target.session_id && target.session_id !== id) return;
+    const location = target.location || target.occurrences?.[0] || target;
+    const identity = semanticTarget(target);
+    const located = await dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) });
+    if (id !== viewId) return;
+    const commands = await commandsFor(id, located, location);
+    if (id !== viewId) return;
+    update({ selected: { ...location, ...(located.selected || target) }, matches: located.matches || [], context: located.context || view.context || {}, commands });
+  }
+
   async function back() {
     const previous = navigationHistory.pop();
     if (!previous) return;
@@ -435,7 +483,7 @@ export function createAuthoringController(deps: Deps) {
 
   /** 준비된 미리보기를 적용한다 — 인자가 없으면 보이는 미리보기다. 돌려주는 값은 되돌릴 이름과, 만들기 명령이면
    *  Python 이 짚은 만든 대상(created, NG-14)이다. 확정 직전 revision 재검사는 등급과 무관하게 늘 돈다. */
-  async function applyPreview(given?: Obj): Promise<{ label: string; created: Obj | null } | undefined> {
+  async function applyPreview(given?: Obj): Promise<{ label: string; created: Obj | null; renamed: Obj | null } | undefined> {
     if (applying) return;
     const prepared = given || view.preview;
     const command = prepared?.command || view.command;
@@ -459,7 +507,8 @@ export function createAuthoringController(deps: Deps) {
       if (id === viewId) update({ command: null, preview: null, lastCommandLabel: label, commandNote: { seq: (view.commandNote?.seq || 0) + 1, kind: "apply", label } });
       scheduleTrial(id);
       // 만든 대상은 적용 뒤의 revision 에서 짚는다 — 호출자가 그 자리를 고를 수 있게(선택·캐럿·이름표).
-      return { label, created: result.created ? { ...result.created, session_id: id, source_revision: revision(id) } : null };
+      const at = { session_id: id, source_revision: revision(id) };
+      return { label, created: result.created ? { ...result.created, ...at } : null, renamed: result.renamed ? { ...result.renamed, ...at } : null };
     } finally { applying = false; }
   }
 
@@ -576,7 +625,57 @@ export function createAuthoringController(deps: Deps) {
     update({ preview: null, comparison: null });
   }
 
+  /** 범위 고르기(두 번 누름)를 켜고 끈다. 켜면 시작 자리를 기다린다. 끄는 길은 이 단추·Escape·편집·다른 문서다. */
+  function toggleRangePick() {
+    if (view.rangePick) { cancelRangePick(); return; }
+    const editor = editors.get(viewId);
+    if (!editor?.rangePick) return;
+    update({ rangePick: { phase: "start" } });
+    void guarded(() => editor.rangePick!(null), "editor");
+    pickNote(AUTHORING_COPY.rangePickStart);
+  }
+  /** 고르기의 안내 메모 — 여느 위치 줄 메모와 달리 캐럿 이동·문제 메모에 걷히지 않고 고르기가 끝날 때 걷힌다. */
+  function pickNote(message: string) {
+    update({ selectionNote: { message, severity: "info", source: "rangePick" } });
+    announce(message);
+  }
+  /** 고르기를 조용히 접는다 — 편집기의 누름 가로채기·고무줄 범위를 끄고 메모를 걷는다(취소 알림은 부른 쪽이 정한다). */
+  function endRangePick(id = viewId) {
+    update({ rangePick: null, ...(view.selectionNote?.source === "rangePick" ? { selectionNote: null } : {}) });
+    void guarded(async () => { await editors.get(id)?.rangePick?.(false); }, "editor");
+  }
+  function cancelRangePick() {
+    if (!view.rangePick) return;
+    endRangePick();
+    announce(AUTHORING_COPY.rangePickCancel);
+  }
+  /** 편집기가 알린 누름 한 번(범위 고르기 중에만 온다). 시작이면 고무줄 범위를 켜고, 끝이면 두 자리 사이를 편집기 선택으로
+   *  세운다 — 그 선택의 보고가 여느 선택처럼 명령 판정·선택 옆 막대로 간다. */
+  async function pickClick(id: string, point: PickPoint) {
+    if (id !== viewId || !view.rangePick) return;
+    const step = rangePickStep(view.rangePick, point);
+    const editor = editors.get(id);
+    if (step.commit) {
+      endRangePick(id);
+      await editor?.focus(step.commit);
+      return;
+    }
+    if (step.pick?.phase === "end") {
+      update({ rangePick: step.pick });
+      await editor?.rangePick?.(step.pick.start);
+      pickNote(AUTHORING_COPY.rangePickEnd);
+    }
+  }
+
   async function selection(id: string, selection: Obj) {
+    if (id !== viewId) return;
+    // 고르기 중 키로 범위를 골랐으면(Shift+화살표) 그 범위가 선다 — 고르기는 접힌다. 캐럿 이동은 점이 아니다.
+    if (view.rangePick && Object.keys(selection).length && (selection.start !== selection.end
+        || (selection.start_paragraph ?? selection.paragraph) !== (selection.end_paragraph ?? selection.start_paragraph ?? selection.paragraph))) endRangePick(id);
+    await caretSelection(id, selection);
+  }
+
+  async function caretSelection(id: string, selection: Obj) {
     if (id !== viewId) return;
     const hold = explicit?.id === id ? explicit : null;
     if (hold && (hold.focusing || !Object.keys(selection).length || echoes(hold.place, selection))) {
@@ -594,7 +693,8 @@ export function createAuthoringController(deps: Deps) {
     selectionRequests.set(id, request);
     // 캐럿이 옮겨 가면 위치 줄 메모(F2 불가 사유 등)는 걷힌다(IDE-01) — 같은 자리의 재보고는 이동이 아니다.
     // 문제 메모(IDE-05)는 다음 판정이 올 때까지 남는다 — 같은 문제 안의 이동에서 깜박이지 않고, 판정이 걷거나 바꾼다.
-    const keepNote = same || (view.selectionNote?.source === "problem" && Object.keys(selection).length > 0);
+    const keepNote = same || view.selectionNote?.source === "rangePick"
+      || (view.selectionNote?.source === "problem" && Object.keys(selection).length > 0);
     update({ selection, matches: [], context: {}, ...(keepNote ? {} : { selectionNote: null }) });
     scheduleRemember(id);
     if (!Object.keys(selection).length) return;
@@ -618,7 +718,7 @@ export function createAuthoringController(deps: Deps) {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
     snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
-    back, select, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search, sameText,
+    back, select, adopt, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search, sameText,
     /** 활성 탭(또는 그 탭)의 지금 revision — 표면이 제 목록이 옛 문서의 것인지 비교할 뿐이다(판정 아님). */
     revisionOf: (id = snapshot().active_id) => revision(id),
     returnScreen: () => returnScreen,
@@ -652,6 +752,8 @@ export function createAuthoringController(deps: Deps) {
     },
     pending: (id: string) => buffers.has(id),
     selection: (id: string, range: Obj) => { void guarded(() => selection(id, range), "locate"); },
+    toggleRangePick, cancelRangePick,
+    pickClick: (id: string, point: PickPoint) => { void guarded(() => pickClick(id, point), "locate"); },
     /** 오류 띠의 「닫기」 — 사용자가 읽고 걷는다. */
     dismissError: () => update({ error: "", errorKind: "" }),
     /** 선택 자리로 초점을 돌린다(§10 Escape). 돌릴 선택·편집기가 없으면 false — 화면이 다음 후보로 간다. */
@@ -676,9 +778,6 @@ export function createAuthoringController(deps: Deps) {
     highlight(target: Obj | null) { hovered = target; redecorate(); },
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
-    recover: async (id: string) => { await restored(await (tab(id).id ? dispatch("recover", fenced(id)) : dispatch("recover_draft", { key: id }))); update({ recoveryPreview: null }); },
-    compareRecovery: async (key: string) => update({ recoveryPreview: await dispatch("recovery_content", { key }) }),
-    discardRecovery: (id: string) => tab(id).id ? dispatch("discard_recovery", { session_id: id }) : dispatch("discard_draft", { key: id }),
     compareExternal: async () => {
       const id = snapshot().active_id;
       await flush(id);
