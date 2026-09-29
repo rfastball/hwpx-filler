@@ -865,7 +865,10 @@ def test_managed_overwrite_confirmation_reaches_the_runner_with_the_same_batch(
     result = ctrl.generate(confirm_overwrite=True, run_token="tk-1")
 
     assert result["ok"] is True, result.get("error")
-    assert ctrl.execution.delivery_preparation is prep_before, "확인 왕복이 배치를 갈아치웠습니다."
+    assert prep_before is not None
+    assert captured["resolved_delivery"] is prep_before.result, "확인 왕복이 배치를 갈아치웠습니다."
+    # 런이 폴더를 움직였으므로 그 관찰에 묶인 준비는 버려진다(다음 실행은 다시 관찰한다).
+    assert ctrl.execution.delivery_preparation is None
     assert [
         item.resolved_output_relative_path
         for item in captured["resolved_delivery"].ordered_items
@@ -1272,6 +1275,8 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
 
     def fake_run(**kw):
         captured.update(kw)
+        # 런이 받은 준비 — 런 뒤에는 폴더 관찰 무효화로 세션에서 버려진다.
+        captured["prep"] = ctrl.execution.delivery_preparation
         return DeliveryCompleted(
             output_directory=str(out),
             delivered=(
@@ -1295,8 +1300,9 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     assert result["run_token"] == "tk-1"
     # 세션 사실이 재조립 없이 그대로 넘어갔다.
     assert captured["plan_payload"] is ctrl.execution.sealed_plan_payload
-    prep = ctrl.execution.delivery_preparation
+    prep = captured["prep"]
     assert prep is not None
+    assert ctrl.execution.delivery_preparation is None
     assert captured["ordered_raw_snapshots"] == prep.record_preparation.raw_records
     assert captured["resolved_delivery"] is prep.result
     # reader 는 실 authority 관찰이다 — 방금 봉인된 digest 와 동치(자기 비교가 아니다).
@@ -1419,7 +1425,10 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
                           "WRITE_NEW", "sha256:" + "1" * 64, ()),
     )
 
+    seen: dict = {}
+
     def fake_run(**kw):
+        seen["prep"] = ctrl.execution.delivery_preparation
         return ManagedReadBackFailed(
             code=ARTIFACT_DIGEST_MISMATCH,
             detail="b.hwpx 의 내용이 안착 기록과 다르다",
@@ -1438,7 +1447,7 @@ def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
     assert (result["unstarted"], result["attempted"]) == (0, 2)
     assert len(result["failures"]) == 1
     failure = result["failures"][0]
-    prep = ctrl.execution.delivery_preparation
+    prep = seen["prep"]
     assert prep is not None
     # ordinal → 표시 index·파일 이름 투영은 실 준비의 것이다(중단 갈래와 같은 방식).
     assert failure["index"] == prep.record_preparation.ordered_model_indices[1]
