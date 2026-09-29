@@ -96,12 +96,12 @@ def _rules():
 def _contracts(**over):
     kw = dict(
         slot_selection_contract_id="slot-selection/v1",
-        field_binding_contract_id="field-binding/v2",
+        field_binding_contract_id="field-binding/v3",
         source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         execution_semantic_contract_id="execution-semantics/v1",
         binding_value_contract_id="binding-value/v2",
-        document_value_resolution_contract_id="document-content-value/v1",
+        document_value_resolution_contract_id="document-content-value/v2",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
         composition_contract_id=COMPOSITION_CONTRACT_ID,
@@ -1116,7 +1116,8 @@ def test_managed_builder_rejects_plan_ref_not_bound_to_delivery_plan() -> None:
 
 
 def test_inactive_format_code_sealed_and_fail_closed() -> None:
-    # F4: inactive SOURCE 의 nonempty format_code 는 봉인되고, v1 미구현이라 조용히 버리지 않고 fail-closed.
+    # F4: inactive SOURCE 의 kind 없는 format_code(v2 모양)는 봉인되되, 어느 해석기인지 몰라 조용히
+    # 원문으로 풀지 않고 fail-closed(v3 표시형 계약).
     rule = FieldBindingRule(
         field_id="f_dept", binding_kind=SOURCE,
         document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
@@ -1128,6 +1129,35 @@ def test_inactive_format_code_sealed_and_fail_closed() -> None:
     res = _resolve(plan, (_snapshot(),), pattern="{{f_dept}}", basis=basis)
     assert isinstance(res, gd.DeliveryPlanContextError)
     assert res.code == gd.UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT
+
+
+def test_inactive_source_token_is_rendered_with_the_rule_format() -> None:
+    """파일 이름의 inactive token 도 Active 값과 같은 해석기로 서식한다(legacy 파일 이름과 동일)."""
+    rule = FieldBindingRule(
+        field_id="f_dept", binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="dept", format_code="{:,}", format_kind="amount",
+    )
+    plan = _plan()
+    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
+    sealed = basis.output_name_requirements[0].value_expression
+    assert (sealed["format_kind"], sealed["format_code"]) == ("amount", "{:,}")
+    res = _ok(_resolve(plan, (_snapshot(dept="1500000"),), pattern="{{f_dept}}", basis=basis))
+    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
+        "1,500,000.hwpx"
+    ]
+
+
+def test_inactive_value_format_of_unknown_kind_is_fail_closed() -> None:
+    ve = {"kind": "FROM_SOURCE", "source_key": "dept", "format_kind": "currency",
+          "format_code": "", "document_content_value_policy_id": _POLICY_ID}
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(ve, _snapshot())
+    constant = {"kind": "CONSTANT", "canonical_value": {"kind": "TEXT", "text": "x"},
+                "format_kind": "amount", "format_code": "",
+                "document_content_value_policy_id": _POLICY_ID}
+    with pytest.raises(gd._DeliveryContextSignal):  # 고정값은 서식하지 않는다
+        gd.resolve_delivery_field_value(constant, _snapshot())
 
 
 def test_unsupported_document_value_resolution_contract_rejected_in_basis() -> None:

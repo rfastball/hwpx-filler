@@ -227,6 +227,38 @@ def test_workbench_copies_the_materialized_bytes_for_slot_bearing_txt(
     assert written[0] == observed == materialized
 
 
+def test_formatted_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> None:
+    """표시형(금액 기본 「원」)이 걸린 Mapping 도 봉인된 산출이 카드와 같은 글자다(#1081 PR0b).
+
+    field-binding/v2 는 legacy ``type`` 을 버려 산출이 ``1500000`` 이었고, 카드는 ``1,500,000원``
+    이라 복사가 「보이는 것 ≠ 복사되는 것」으로 막혔다. v3 판본은 표시형을 싣는다.
+    """
+    harness = _Harness(tmp_path, SLOT_BODY)
+
+    def amount_title(job) -> None:
+        for item in job.mapping.mappings:
+            if item.template_field == "건명":
+                item.type = "amount"
+
+    harness.registry.mutate("안내문", amount_title)
+    harness.choose("첨부", "계약서")
+    record = {**RECORD, "건명": "1500000"}
+    controller = WorkbenchController(
+        harness.registry, lambda s, snap: None, clock=_clock(),
+        target_font=TargetFontSetting(),
+        content_selection=_content_selection_reader(harness.slot_product, harness.registry),
+        txt_materialization=_txt_materialization_port(harness.registry, harness.seal),
+    )
+    controller.open(harness.registry.load("안내문"), [(0, record)])
+
+    written: "list[str]" = []
+    result = controller.copy_to(controller.copy_token(), written.append)
+    assert result["copied"] is True, result
+    assert written == [
+        "수신: ○○청\n담당자: 홍길동\n계약서를 첨부합니다. 1,500,000원\n끝.\n"
+    ]
+
+
 def test_workbench_refuses_when_the_screen_and_the_document_diverge(
     tmp_path: Path,
 ) -> None:

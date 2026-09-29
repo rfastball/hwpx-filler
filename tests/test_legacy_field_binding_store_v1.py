@@ -19,10 +19,9 @@ import hwpxfiller.external.field_binding_store as store_mod
 from hwpxfiller.application.field_binding_input import (
     INACTIVE_ONLY,
     CurrentApplicationFieldStructure,
-    build_field_binding_input,
+    FieldBindingRevision,
     field_binding_authority_revision_identity,
     review_field_binding_for_current_application,
-    revision_from_input,
 )
 from hwpxfiller.application.legacy_field_binding_store_v1 import (
     FIELD_BINDING_SEMANTIC_VERSION_V1,
@@ -39,8 +38,11 @@ from hwpxfiller.application.stored_field_binding import STORE_SCHEMA_VERSION
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
+    FIELD_BINDING_SEMANTIC_VERSION_V2,
     SOURCE,
     FieldBindingRule,
+    digest_binding_rules,
+    digest_source_schema,
 )
 from hwpxfiller.external.field_binding_store import (
     FieldBindingIntegrityError,
@@ -151,16 +153,31 @@ def _write_v1(tmp_path: Path, content: dict) -> WorkFieldBindingStore:
 
 
 def _expected_v2_revision(rules: tuple[FieldBindingRule, ...], keys: tuple[str, ...]):
-    return revision_from_input(
-        build_field_binding_input(
-            workspace_instance_id=WS,
+    """v1 마이그레이션의 목적지는 field-binding/v2 에 고정이다(#1081 PR0b) — v1 도 legacy
+    ``type`` 을 싣지 않았으므로 현재 판(v3)으로 곧장 올리면 표시형 없음으로 조용히 읽힌다.
+    그래서 기대값도 현재 판 빌더가 아니라 v2 framing 으로 직접 짓는다."""
+    binding_digest = digest_binding_rules(rules, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2)
+    schema_digest = digest_source_schema(keys)
+    return FieldBindingRevision(
+        work_authority_id=WORK,
+        base_template_application_id=APP,
+        field_binding_authority_revision=field_binding_authority_revision_identity(
             work_authority_id=WORK,
             base_template_application_id=APP,
-            binding_rules=rules,
-            source_schema_keys=keys,
+            field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
+            source_schema_contract_id="source-schema/v2",
             raw_record_contract_id=RAW,
-            captured_at=NOW,
-        )
+            canonical_binding_digest=binding_digest,
+            canonical_source_schema_digest=schema_digest,
+        ),
+        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
+        source_schema_contract_id="source-schema/v2",
+        raw_record_contract_id=RAW,
+        binding_rules=rules,
+        source_schema_keys=keys,
+        canonical_binding_digest=binding_digest,
+        canonical_source_schema_digest=schema_digest,
+        captured_at=NOW,
     )
 
 

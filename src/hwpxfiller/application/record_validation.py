@@ -16,7 +16,9 @@ ref/retention port(:class:`ImmutableVdrStore`).
 경계(issue #708): VDR 의 ``document_value`` 는 native writer 에 전달할 **logical Unicode text** 다 —
 XML escaped text·XML fragment·serialized ``hp:t`` bytes 가 아니다(그건 S6 소유). unresolved 는 조용한
 빈칸이 아니라 시끄러운 blocker 다(confirm-or-alarm) — 값의 **모양**은 여기서 판정하지 않는다(값 유형
-어휘 퇴역, v2). unsupported local implementation(format code·unknown policy·미지원 contract)은
+어휘 퇴역, v2). 값의 **표시형**(규칙의 ``format_kind``·``format_code``)은 legacy 와 같은 해석기로
+적용한다(document-content-value/v2). unsupported local implementation(모르는 표시형 kind·kind 없는
+format code·고정값의 표시형·unknown policy·미지원 contract)은
 user-fixable blocker 로 낮추지 않고 context error 로 닫는다.
 
 **행 안의 빈 값은 차단이 아니라 표식이다**(#957 신뢰 정책 선회): explicit null·빈/공백 텍스트는
@@ -55,12 +57,15 @@ from hwpxfiller.domain.canonical_execution_encoding import (
 )
 from hwpxfiller.domain.field_binding import (
     BINDING_VALUE_VERSION,
+    DOCUMENT_CONTENT_VALUE_POLICY_VERSION,
     EXACT_BLANK_POLICY,
     SOURCE_SCHEMA_VERSION,
     VALUE_KIND_TEXT,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
     UnsupportedDocumentValuePolicyError,
+    UnsupportedValueFormatError,
+    render_value_format,
     resolve_document_value_policy,
 )
 from hwpxfiller.domain.job import MISSING_MARKER
@@ -79,7 +84,8 @@ from hwpxfiller.domain.raw_data_record import (
 
 VALIDATED_RECORD_SCHEMA_VERSION = "validated-record/v1"
 RECORD_VALIDATION_CONTRACT_ID = "record-validation/v1"
-DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID = "document-content-value/v1"
+#: 문서 값 해석 계약 — v2 는 FROM_SOURCE 규칙의 표시형을 legacy 와 같은 해석기로 적용한다.
+DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID = DOCUMENT_CONTENT_VALUE_POLICY_VERSION
 # 이 validator 가 지원하는 exact plan schema 집합 — 미지원은 v2 로 풀지 않고 fail-closed.
 SUPPORTED_PLAN_SCHEMA_VERSIONS = ("hwpx-execution-plan/v2",)
 
@@ -284,13 +290,28 @@ def _resolve_policy(policy_id: str) -> Any:
 
 
 def _require_no_format_code(ve: Mapping[str, Any]) -> None:
-    """v1 resolution 은 format code 를 구현하지 않는다 — 있으면 조용히 무시하지 않고 닫는다."""
+    """고정값은 서식하지 않는다(legacy 도 그랬다) — 표시형이 실려 오면 조용히 무시하지 않고 닫는다."""
     format_code = ve.get("format_code")
-    if format_code is not None and format_code != "":
+    if (format_code is not None and format_code != "") or ve.get("format_kind") is not None:
         raise _ContextSignal(
             UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-            f"v1 resolution 은 format_code 를 지원하지 않는다: {format_code!r}",
+            f"고정값에는 표시형을 적용하지 않는다: {ve.get('format_kind')!r}/{format_code!r}",
         )
+
+
+def _render_source_format(ve: Mapping[str, Any], field_id: str, text: str) -> str:
+    """FROM_SOURCE 값에 규칙의 표시형을 적용한다(legacy ``apply_transform`` 과 같은 해석기).
+
+    모르는 kind·kind 없는 code 는 원문으로 풀지 않고 context error 로 닫는다 — 그 모양이
+    v2 가 ``type`` 을 잃은 자리이고, 원문을 내면 legacy 와 다른 문서가 조용히 나간다.
+    """
+    try:
+        return render_value_format(ve.get("format_kind"), ve.get("format_code"), text)
+    except UnsupportedValueFormatError as exc:
+        raise _ContextSignal(
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+            f"requirement {field_id!r} 의 표시형을 해석할 수 없다: {exc}",
+        ) from exc
 
 
 def missing_value_marker(field_id: str) -> str:
@@ -331,7 +352,8 @@ def _resolve_from_source(
     표식에는 whitespace policy 를 적용하지 않는다 — 그건 **소스 값**의 정규화 규칙이고
     표식은 우리가 짓는 리터럴이다.
     """
-    _require_no_format_code(ve)
+    # 표시형 모양은 값의 존재와 무관한 Plan 사실이다 — 빈 행이라서 거짓 모양이 통과하지 않게 먼저 본다.
+    _render_source_format(ve, field_id, "")
     source_key = ve.get("source_key")
     if not isinstance(source_key, str):
         raise _ContextSignal(
@@ -352,7 +374,9 @@ def _resolve_from_source(
     assert value is not None  # has_key True 이고 NULL 이 아니면 텍스트
     if value.text.strip() == "":
         return _ResolvedValue(missing_value_marker(field_id), missing_marked=True)
-    return _ResolvedValue(_apply_whitespace_policy(value.text, policy.whitespace_policy))
+    # legacy 순서 그대로: 공백 정책(legacy 의 strip) → 표시형(legacy 의 format_engine.render).
+    text = _apply_whitespace_policy(value.text, policy.whitespace_policy)
+    return _ResolvedValue(_render_source_format(ve, field_id, text))
 
 
 def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:

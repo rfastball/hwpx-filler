@@ -1,9 +1,18 @@
 """S5 Field Binding 의미 언어 — 값·소스 스키마·바인딩 규칙 계약 (S5-01 · #697).
 
 이 모듈이 소유하는 것: ``binding-value/v2`` 값 모델(:class:`CanonicalBindingValue` — exact
-logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v2`` 규칙 semantic
+logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v3`` 규칙 semantic
 모델과 exclusivity 불변식, ``document-content-value/v1`` 값 정책, Intentional Blank 의미,
-그리고 이 slice 국소 canonical byte framing·digest.
+**표시형**(:data:`FORMAT_KINDS` × format code) 쌍의 계약과 렌더 단일 출처, 그리고 이 slice 국소
+canonical byte framing·digest.
+
+**표시형은 규칙이 나른다**(v3, #1081 PR0b): legacy Mapping 의 ``type``(text/date/amount)·``fmt``
+는 값의 모양을 **검증**하던 값 유형 어휘(v1, 퇴역)와 달리 문서에 적히는 글자를 **정한다**
+(``24750000`` → ``24,750,000원``). v2 는 ``fmt`` 만 옮기고 ``type`` 을 버려서 같은 작업이
+legacy 와 managed 에서 다른 문서를 냈다. v3 는 ``format_kind`` 슬롯을 더해 그 결정을 판본에
+싣고, 렌더는 legacy 와 같은 :mod:`hwpxfiller.domain.format_engine` 한 곳이 한다.
+v2 판본은 읽을 수 있지만(``field-binding/v2`` 는 **outdated** 로만 지원) 실행 입력이 되지
+못한다 — ``type`` 이 없어 어떤 표시형이었는지 판본만으로는 알 수 없기 때문이다.
 
 **값 유형 어휘는 없다**(v2): 데이터가 나르는 값은 언제나 타입 없는 텍스트다. 타입 추론은
 사용자가 고른 것이 아니라 필드 이름 휴리스틱의 산물이었고, 실제 문서에 적히는 값과도 무관한
@@ -23,13 +32,19 @@ import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from . import format_engine
+
 _U32_MAX = 0xFFFF_FFFF
 
 # semantic 버전 — 코드·문서 단일 출처.
-FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v2"
+FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v3"
+#: 표시형 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지, :func:`is_current_field_binding_contract`).
+FIELD_BINDING_SEMANTIC_VERSION_V2 = "field-binding/v2"
 SOURCE_SCHEMA_VERSION = "source-schema/v2"
 BINDING_VALUE_VERSION = "binding-value/v2"
-DOCUMENT_CONTENT_VALUE_POLICY_VERSION = "document-content-value/v1"
+#: 문서 값 **해석** 계약 — v2 는 규칙의 표시형을 적용한다(v1 은 format 을 거절했다). 규칙이
+#: 싣는 값 정책 id(``document-content-value/v1`` 등)와는 다른 축이다.
+DOCUMENT_CONTENT_VALUE_POLICY_VERSION = "document-content-value/v2"
 
 # 이 slice 국소 canonical framing magic(8 bytes 고정).
 _BINDING_MAGIC = b"HFBIND1\0"
@@ -47,6 +62,14 @@ EXACT_BLANK_POLICY = "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
 # whitespace 정책 어휘 — legacy strip 은 명시 후보로만 등장한다(암묵 적용 금지).
 WHITESPACE_PRESERVE_EXACT = "PRESERVE_EXACT"
 WHITESPACE_STRIP_LEADING_TRAILING = "STRIP_LEADING_TRAILING"
+
+# 표시형 어휘(v3) — legacy Mapping 의 소스 carrier 유형과 같은 이름·같은 해석기다. 닫힌 집합이라
+# 미지 kind 는 조용히 원문으로 풀지 않고 시끄럽게 거절한다. ``today`` 는 여기 없다: 값이 소스가
+# 아니라 실행 시각에서 오는 binding kind 문제라 #950 이 따로 연다.
+FORMAT_KIND_TEXT = "text"
+FORMAT_KIND_DATE = "date"
+FORMAT_KIND_AMOUNT = "amount"
+FORMAT_KINDS = (FORMAT_KIND_TEXT, FORMAT_KIND_DATE, FORMAT_KIND_AMOUNT)
 
 
 class FieldBindingError(Exception):
@@ -69,6 +92,12 @@ class UnsupportedFieldBindingContractError(FieldBindingError):
 
 class UnsupportedDocumentValuePolicyError(FieldBindingError):
     code = "UNSUPPORTED_DOCUMENT_VALUE_POLICY"
+
+
+class UnsupportedValueFormatError(FieldBindingError):
+    """표시형 쌍이 이 계약이 아는 모양이 아니다 — 원문으로 조용히 풀지 않는다."""
+
+    code = "UNSUPPORTED_VALUE_FORMAT"
 
 
 # ─── 텍스트·스칼라 검증 ──────────────────────────────────────────────────────────
@@ -242,8 +271,62 @@ def require_registered_document_value_policy(
     return registered
 
 
-# ─── field-binding/v2 semantic contract registry ─────────────────────────────────
-_SUPPORTED_SEMANTIC_CONTRACTS = frozenset({FIELD_BINDING_SEMANTIC_VERSION})
+# ─── 표시형(format kind × code) 계약 ──────────────────────────────────────────────
+def require_value_format(format_kind: object, format_code: object) -> None:
+    """표시형 쌍의 정본 모양을 강제한다(v3). 위반은 :class:`UnsupportedValueFormatError`.
+
+    - ``(None, None)`` — 표시형 없음: 값 그대로(legacy ``text`` + 빈 코드와 같은 뜻). v2 가 쓰던
+      ``(None, "")`` 도 같은 뜻으로 받되, 현재 판 framing 은 둘을 한 모양(None)으로 적는다.
+    - ``(kind, code)`` — ``kind`` ∈ :data:`FORMAT_KINDS`, ``code`` 는 문자열(``""`` = kind 기본).
+
+    같은 뜻이 두 모양을 갖지 않게 ``("text", "")`` 는 ``(None, None)`` 으로만 적는다(content-
+    address 가 갈리지 않게). kind 없는 code 는 **어느 해석기로 읽을지 모르는** 값이라 거절한다 —
+    v2 가 그 모양으로 ``type`` 을 버렸고, 그걸 원문으로 푸는 것이 이 계약이 막는 조용한 손실이다.
+    """
+    if format_kind is None:
+        if format_code not in (None, ""):
+            raise UnsupportedValueFormatError(
+                f"표시형 kind 없이 format code 만 있다: {format_code!r}"
+            )
+        return
+    if format_kind not in FORMAT_KINDS:
+        raise UnsupportedValueFormatError(f"미지원 표시형 kind: {format_kind!r}")
+    if not isinstance(format_code, str):
+        raise UnsupportedValueFormatError(
+            f"표시형 {format_kind!r} 의 format code 는 문자열이어야 한다(빈 문자열 = 기본)"
+        )
+    try:
+        _require_scalar_text(format_code, "format_code", allow_empty=True)
+    except FieldBindingInputIntegrityError as exc:
+        raise UnsupportedValueFormatError(str(exc)) from exc
+    if format_kind == FORMAT_KIND_TEXT and format_code == "":
+        raise UnsupportedValueFormatError(
+            "text 기본 표시형은 (None, None) 으로 적는다(같은 뜻의 두 번째 모양 금지)"
+        )
+
+
+def render_value_format(
+    format_kind: str | None, format_code: str | None, text: str
+) -> str:
+    """logical text 에 규칙의 표시형을 적용한다 — legacy 와 **같은** 해석기(단일 출처).
+
+    legacy :func:`hwpxfiller.domain.mapping.apply_transform` 이 부르는 바로 그
+    :func:`hwpxfiller.domain.format_engine.render` 다. 해석기는 관대한 시도라 파싱할 수 없는
+    값·코드는 원문을 낸다 — legacy 와 byte 동일해야 하므로 그 규칙을 그대로 따른다. 표시형 쌍
+    자체의 모양은 :func:`require_value_format` 이 먼저 닫는다(모르는 kind 는 원문이 아니라 거절).
+    """
+    require_value_format(format_kind, format_code)
+    if format_kind is None:
+        return text
+    assert format_code is not None  # require_value_format 이 강제
+    return format_engine.render(format_kind, format_code, text)
+
+
+# ─── field-binding semantic contract registry ────────────────────────────────────
+#: 읽을 수 있는 판(저장 revision 해독용). 실행 입력은 현재 판만 된다.
+_SUPPORTED_SEMANTIC_CONTRACTS = frozenset(
+    {FIELD_BINDING_SEMANTIC_VERSION, FIELD_BINDING_SEMANTIC_VERSION_V2}
+)
 _SUPPORTED_SOURCE_SCHEMA_CONTRACTS = frozenset({SOURCE_SCHEMA_VERSION})
 
 
@@ -251,6 +334,20 @@ def require_field_binding_contract(contract_id: str) -> str:
     if contract_id not in _SUPPORTED_SEMANTIC_CONTRACTS:
         raise UnsupportedFieldBindingContractError(
             f"미지원 field-binding contract: {contract_id!r}"
+        )
+    return contract_id
+
+
+def is_current_field_binding_contract(contract_id: str) -> bool:
+    """이 판본이 실행 입력이 될 수 있는 현재 판인가(outdated 판은 읽기만 한다)."""
+    return contract_id == FIELD_BINDING_SEMANTIC_VERSION
+
+
+def require_current_field_binding_contract(contract_id: str) -> str:
+    require_field_binding_contract(contract_id)
+    if not is_current_field_binding_contract(contract_id):
+        raise UnsupportedFieldBindingContractError(
+            f"실행 입력은 현재 field-binding contract 여야 한다: {contract_id!r}"
         )
     return contract_id
 
@@ -263,10 +360,16 @@ def require_source_schema_contract(contract_id: str) -> str:
     return contract_id
 
 
-# ─── field-binding/v2 규칙 모델 ──────────────────────────────────────────────────
+# ─── field-binding 규칙 모델 ─────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class FieldBindingRule:
-    """한 logical Field 의 exact 바인딩 규칙 — kind 별 필드 존재/부재가 exclusivity 를 강제한다."""
+    """한 logical Field 의 exact 바인딩 규칙 — kind 별 필드 존재/부재가 exclusivity 를 강제한다.
+
+    ``format_kind`` 는 v3 표시형 슬롯이다. 표시형은 SOURCE 규칙에만 선다(legacy 고정값은 서식하지
+    않았다). 쌍의 정본 모양은 현재 판 canonical framing 이 :func:`require_value_format` 으로
+    강제한다 — 규칙 객체는 outdated(v2) 판본의 ``(None, code)`` 모양도 읽어야 해서, 여기서는
+    kind 가 섰을 때의 모양과 SOURCE 전용만 본다.
+    """
 
     field_id: str
     binding_kind: str
@@ -274,6 +377,7 @@ class FieldBindingRule:
     source_key: str | None = None
     format_code: str | None = None
     canonical_constant_value: CanonicalBindingValue | None = None
+    format_kind: str | None = None
 
     def __post_init__(self) -> None:
         _require_scalar_text(self.field_id, "field_id")
@@ -291,6 +395,15 @@ class FieldBindingRule:
         require_registered_document_value_policy(self.document_content_value_policy)
         if self.format_code is not None:
             _require_scalar_text(self.format_code, "format_code", allow_empty=True)
+        if self.format_kind is not None:
+            if self.binding_kind != SOURCE:
+                raise FieldBindingInputIntegrityError(
+                    f"표시형은 SOURCE 규칙에만 선다: {self.binding_kind!r}"
+                )
+            try:
+                require_value_format(self.format_kind, self.format_code)
+            except UnsupportedValueFormatError as exc:
+                raise FieldBindingInputIntegrityError(str(exc)) from exc
         if self.binding_kind == SOURCE:
             self._require_source()
         elif self.binding_kind == CONSTANT:
@@ -376,14 +489,33 @@ def _u32(value: int) -> bytes:
     return value.to_bytes(4, "big")
 
 
-def _encode_rule(rule: FieldBindingRule) -> bytes:
-    """v2 규칙 프레이밍 — 6 슬롯(value_type 슬롯은 v2 에서 사라졌다)."""
+def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
+    """규칙 프레이밍 — v2 는 6 슬롯, v3 는 표시형 kind 슬롯을 source_key 뒤에 더한 7 슬롯.
+
+    v2 프레이밍은 **동결**이다(디스크의 v2 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
+    ``format_kind`` 가 설 수 없고, v3 판은 표시형 쌍의 정본 모양을 강제한다.
+    """
     out = bytearray()
     out += _text(rule.field_id)
     out += _text(rule.binding_kind)
     out += _text(rule.document_content_value_policy.policy_id)
     out += _opt_text(rule.source_key)
-    out += _opt_text(rule.format_code)
+    if contract_id == FIELD_BINDING_SEMANTIC_VERSION_V2:
+        if rule.format_kind is not None:
+            raise FieldBindingInputIntegrityError(
+                f"field-binding/v2 판에는 표시형 kind 가 없다: {rule.field_id!r}"
+            )
+        out += _opt_text(rule.format_code)
+    else:
+        try:
+            require_value_format(rule.format_kind, rule.format_code)
+        except UnsupportedValueFormatError as exc:
+            raise FieldBindingInputIntegrityError(
+                f"{rule.field_id!r} 의 표시형이 {contract_id} 모양이 아니다: {exc}"
+            ) from exc
+        out += _opt_text(rule.format_kind)
+        # 표시형 없음의 두 철자((None, None)·(None, ""))는 한 identity 다 — 한 모양으로 적는다.
+        out += _opt_text(None if rule.format_kind is None else rule.format_code)
     out += _opt_text(
         None
         if rule.canonical_constant_value is None
@@ -392,22 +524,33 @@ def _encode_rule(rule: FieldBindingRule) -> bytes:
     return bytes(out)
 
 
-def canonicalize_binding_rules(rules: Iterable[FieldBindingRule]) -> bytes:
-    """field-binding/v2 규칙 집합의 정본 bytes — 저장 순서 무관, field_id UTF-8 byte 정렬."""
+def canonicalize_binding_rules(
+    rules: Iterable[FieldBindingRule],
+    *,
+    contract_id: str = FIELD_BINDING_SEMANTIC_VERSION,
+) -> bytes:
+    """규칙 집합의 정본 bytes — 저장 순서 무관, field_id UTF-8 byte 정렬. 판이 framing 을 고른다."""
+    require_field_binding_contract(contract_id)
     ordered = require_single_rule_per_field(rules)
     out = bytearray()
     out += _BINDING_MAGIC
-    out += _text(FIELD_BINDING_SEMANTIC_VERSION)
+    out += _text(contract_id)
     out += _u32(len(ordered))
     for rule in sorted(ordered, key=lambda r: r.field_id.encode("utf-8")):
-        encoded = _encode_rule(rule)
+        encoded = _encode_rule(rule, contract_id)
         out += _u32(len(encoded))
         out += encoded
     return bytes(out)
 
 
-def digest_binding_rules(rules: Iterable[FieldBindingRule]) -> str:
-    return "sha256:" + hashlib.sha256(canonicalize_binding_rules(rules)).hexdigest()
+def digest_binding_rules(
+    rules: Iterable[FieldBindingRule],
+    *,
+    contract_id: str = FIELD_BINDING_SEMANTIC_VERSION,
+) -> str:
+    return "sha256:" + hashlib.sha256(
+        canonicalize_binding_rules(rules, contract_id=contract_id)
+    ).hexdigest()
 
 
 def canonicalize_source_schema(keys: Iterable[str]) -> bytes:

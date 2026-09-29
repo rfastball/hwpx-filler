@@ -129,7 +129,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         execution_semantic_contract_id="execution-semantics/v1",
         binding_value_contract_id="binding-value/v2",
         raw_record_contract_id="raw-record/v1",
-        document_value_resolution_contract_id="document-content-value/v1",
+        document_value_resolution_contract_id="document-content-value/v2",
         record_validation_contract_id="record-validation/v1",
         record_review_contract_id="record-review/v1",
         composition_contract_id=COMPOSITION_CONTRACT_ID,

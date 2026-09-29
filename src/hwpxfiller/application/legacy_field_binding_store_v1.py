@@ -18,6 +18,11 @@ typed constant(v1 에서도 생산 경로가 없어 손편집으로만 만들어
 ``basis_fingerprint`` 는 역사 기록이라 손대지 않는다.
 
 읽기 경로는 파일을 다시 쓰지 않는다 — 다음 durable commit 의 ``update()`` 가 v2 로 재봉인한다.
+
+**목적지는 field-binding/v2 에 고정이다**(#1081 PR0b): v1 도 legacy ``type`` 을 나르지 않았으므로
+v1 판본을 곧장 현재 판(v3)으로 올리면 표시형 없음으로 조용히 읽힌다. v2 는 읽을 수 있되 실행
+입력이 되지 못하는 outdated 판이라, 옮긴 판본은 capture 에서 NEEDS_BINDING_SEMANTIC_MIGRATION
+으로 닫히고 현재 Mapping 에서 다시 확정될 때 v3 가 된다.
 """
 
 from __future__ import annotations
@@ -41,7 +46,7 @@ from hwpxfiller.application.stored_field_binding import (
 )
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
-    FIELD_BINDING_SEMANTIC_VERSION,
+    FIELD_BINDING_SEMANTIC_VERSION_V2,
     SOURCE,
     SOURCE_SCHEMA_VERSION,
     ExactText,
@@ -312,12 +317,14 @@ def _migrate_revision(data: Any) -> tuple[str, FieldBindingRevision]:
 
     # value_type accept-and-drop → v2 규칙·digest·identity 재유도.
     v2_rules = tuple(_v2_rule(rule) for rule in v1_rules)
-    binding_digest = digest_binding_rules(v2_rules)
+    binding_digest = digest_binding_rules(
+        v2_rules, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2
+    )
     schema_digest = digest_source_schema(v1_keys)
     new_revision_id = field_binding_authority_revision_identity(
         work_authority_id=work_authority_id,
         base_template_application_id=application_id,
-        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION,
+        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
         source_schema_contract_id=SOURCE_SCHEMA_VERSION,
         raw_record_contract_id=raw_record_contract_id,
         canonical_binding_digest=binding_digest,
@@ -328,7 +335,7 @@ def _migrate_revision(data: Any) -> tuple[str, FieldBindingRevision]:
             work_authority_id=work_authority_id,
             base_template_application_id=application_id,
             field_binding_authority_revision=new_revision_id,
-            field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION,
+            field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
             source_schema_contract_id=SOURCE_SCHEMA_VERSION,
             raw_record_contract_id=raw_record_contract_id,
             binding_rules=v2_rules,

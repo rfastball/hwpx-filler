@@ -66,6 +66,8 @@ from hwpxfiller.domain.field_binding import (
     WHITESPACE_STRIP_LEADING_TRAILING,
     FieldBindingRule,
     UnsupportedDocumentValuePolicyError,
+    UnsupportedValueFormatError,
+    render_value_format,
     require_single_rule_per_field,
     resolve_document_value_policy,
 )
@@ -84,7 +86,8 @@ if TYPE_CHECKING:
 # ─── contract/schema 버전(코드·문서 단일 출처) ────────────────────────────────────────────
 FILENAME_PATTERN_CONTRACT_ID = "filename-pattern/v1"
 DELIVERY_CONTRACT_ID = "generation-delivery/v1"
-DELIVERY_BINDING_BASIS_SCHEMA = "generation-delivery-binding-basis/v2"
+# v3: inactive FROM_SOURCE requirement 가 표시형 kind 를 함께 봉인한다(field-binding/v3).
+DELIVERY_BINDING_BASIS_SCHEMA = "generation-delivery-binding-basis/v3"
 OUTPUT_NAME_BASIS_SCHEMA = "output-name-basis-canonical/v1"
 GENERATION_DELIVERY_PLAN_SCHEMA = "generation-delivery-plan-canonical/v1"
 MANAGED_GENERATION_PLAN_SCHEMA = "managed-generation-plan/v1"
@@ -278,7 +281,8 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
         return {
             "kind": _KIND_FROM_SOURCE,
             "source_key": rule.source_key,
-            # format_code 를 봉인한다 — Active 경로처럼 조용히 버리지 않고 resolution 이 판정한다.
+            # 표시형 쌍을 봉인한다 — Active 경로(VDR)와 같은 해석기로 파일 이름 값도 렌더한다.
+            "format_kind": rule.format_kind,
             "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
         }
@@ -458,13 +462,29 @@ def _apply_whitespace_policy(text: str, whitespace_policy: str) -> str:
 
 
 def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> None:
-    """v1 은 format code 미구현 — nonempty format_code 는 조용히 버리지 않고 fail-closed(Active 경로 일치)."""
+    """고정값은 서식하지 않는다 — 표시형이 실려 오면 조용히 버리지 않고 fail-closed(Active 경로 일치)."""
     format_code = value_expression.get("format_code")
-    if format_code is not None and format_code != "":
+    if (format_code is not None and format_code != "") or (
+        value_expression.get("format_kind") is not None
+    ):
         raise _DeliveryContextSignal(
             UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-            f"v1 delivery resolution 은 format_code 를 지원하지 않는다: {format_code!r}",
+            "고정값에는 표시형을 적용하지 않는다: "
+            f"{value_expression.get('format_kind')!r}/{format_code!r}",
         )
+
+
+def _render_delivery_format(value_expression: Mapping[str, Any], text: str) -> str:
+    """inactive FROM_SOURCE 값의 표시형 — Active 경로(record validation)와 같은 해석기·같은 규율."""
+    try:
+        return render_value_format(
+            value_expression.get("format_kind"), value_expression.get("format_code"), text
+        )
+    except UnsupportedValueFormatError as exc:
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            f"파일 이름 값의 표시형을 해석할 수 없다: {exc}",
+        ) from exc
 
 
 def resolve_delivery_field_value(
@@ -488,9 +508,8 @@ def resolve_delivery_field_value(
     kind = value_expression.get("kind")
     if kind == _KIND_INTENTIONAL_BLANK:
         return (OUTPUT_NAME_TOKEN_UNRESOLVED, "INTENTIONAL_BLANK 은 filename token 으로 미해소")
-    # v1 resolution 은 format code 를 구현하지 않는다 — Active 경로처럼 있으면 조용히 무시하지 않고 닫는다.
-    _require_no_delivery_format_code(value_expression)
     if kind == _KIND_CONSTANT:
+        _require_no_delivery_format_code(value_expression)
         canonical = value_expression.get("canonical_value")
         if not isinstance(canonical, Mapping):
             raise _DeliveryContextSignal(
@@ -510,13 +529,16 @@ def resolve_delivery_field_value(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
                 "FROM_SOURCE requirement 의 source_key 형식 불량",
             )
+        _render_delivery_format(value_expression, "")  # 모양은 값의 존재와 무관한 basis 사실
         if not snapshot.has_key(source_key):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 raw record 에 없다")
         value = snapshot.value_for(source_key)
         if isinstance(value, SourceNull):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 explicit null")
         assert value is not None
-        return _apply_whitespace_policy(value.text, policy.whitespace_policy)
+        return _render_delivery_format(
+            value_expression, _apply_whitespace_policy(value.text, policy.whitespace_policy)
+        )
     raise _DeliveryContextSignal(
         GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
         f"미지원 delivery value expression kind: {kind!r}",
