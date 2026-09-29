@@ -50,7 +50,7 @@ export type RhwpMountSpec = {
   /** Studio zoom set explicitly after every document load (IDE-06): `"fit"` = the Studio's own
    *  `view:zoom-fit-width` (re-applied when the host is resized), a number = the fixed `view:zoom-N`.
    *  The Studio persists its fit mode in the iframe origin's shared settings and restores it on the next
-   *  load, so every mount states its mode — default fixed 100 (the comparison and recovery viewers).
+   *  load, so every mount states its mode — default fixed 100 (the comparison viewers).
    *  The main editor passes "fit" or 100 (the shell's CSS zoom scales a fixed page); the trial viewer 75. */
   zoom?: RhwpZoom;
   /** Who needs caret reports: "visible" polls only while the host is rendered (not inside a

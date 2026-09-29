@@ -268,12 +268,10 @@ export function dockTabs(item: Obj | undefined, view: Obj): { tabs: [string, str
   if (item && view.panel === "paste") tabs.push(["paste", "의미 붙여넣기"]);
   if (saveFailed) tabs.push(["external", "저장 실패"]);
   if (item?.external_changed && !saveFailed) tabs.push(["external_changed", "외부 파일 변경"]);
-  if (item?.recovery) tabs.push(["recovery", "중단 전 복구 초안"]);
-  if (view.recoveryPreview) tabs.push(["recovery_preview", "초안과 원본 비교"]);
   if (item && view.panel === "comparison" && view.comparison) tabs.push(["comparison", "외부 파일 내용"]);
   const has = (key: string) => !!key && tabs.some(([tab]) => tab === key);
   const open = (key: string) => has(key) && (key !== "trial" || !!view.trial) && (!DOCK_PANELS.includes(key) || view.panel === key);
-  const fallback = view.dockClosed ? ["trial"] : ["recovery_preview", "recovery", "external_changed", "trial"];
+  const fallback = view.dockClosed ? ["trial"] : ["external_changed", "trial"];
   const active = DOCK_PANELS.includes(view.panel) && has(view.panel) ? view.panel : open(view.dock) ? view.dock : fallback.find(open) || "";
   return { tabs, active };
 }
@@ -594,7 +592,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
   }, [controller, item.id]);
   // 장식은 분석이 바뀔 때만 다시 보낸다 — 같은 분석의 재전송(push)은 같은 revision 이다(UX-05).
   useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id)); }, [item.analysis?.revision ?? item.analysis, active]);
-  return h("div", { className: "authoring-document", hidden: !active, inert: !active || !!item.recovery, "aria-hidden": !active },
+  return h("div", { className: "authoring-document", hidden: !active, inert: !active, "aria-hidden": !active },
     h("div", { ref: host, className: "authoring-editor-host" }));
 }
 
@@ -617,8 +615,6 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
   const [text, setText] = useState(() => appliedProperties(selected).text);
   const [cascade, setCascade] = useState(false);
   const [keepValue, setKeepValue] = useState(true);
-  // 문단마다 선택(P-11b): 항목으로 만들기의 범위 수식어 하나 — 기본 해제다.
-  const [split, setSplit] = useState(false);
   // 같은 문구 N곳(P-07): Python 이 준 원시 자리 목록(찾은 revision·고른 자리 열쇠와 함께)과 체크한 자리. 모두 해제로 시작한다(U03).
   const [same, setSame] = useState<Obj | null>(null);
   const [checked, setChecked] = useState<number[]>([]);
@@ -651,8 +647,8 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
     id: identifier || name, label: name, slot_id: type === "create_option" ? view.context?.slot_id : parent || selected?.slot_id || selected?.id,
     option_id: selected?.option_id, kind: selected?.kind || "slot", text, cascade,
     destination: selection.start, destination_entry: selection.entry, destination_paragraph: selection.start_paragraph ?? selection.paragraph, new_id: identifier || name,
-    // 여러 자리 명령(IDE-07)은 한 명령이다 — 체크한 자리가 있을 때만 `ranges`(고른 자리 포함), 켰을 때만 `split`.
-    ...(type === "create_field" && ranges ? { ranges } : {}), ...(type === "create_slot" && split ? { split: "paragraph" } : {}) });
+    // 여러 자리 명령(IDE-07)은 한 명령이다 — 체크한 자리가 있을 때만 `ranges`(고른 자리 포함).
+    ...(type === "create_field" && ranges ? { ranges } : {}) });
   // 문맥 줄(UX-10 R2): Python 의 location_label(담긴 항목/선택 · 문단·행 범위)만 보인다 — 원시 좌표는 싣지 않는다.
   const locationLabel = String(view.context?.location_label || "");
   // 대상 카드(UX-09)는 의미 요소(필드·항목·선택)일 때만 선다 — 검색 적중처럼 종류가 없는 대상은 글자 범위다.
@@ -764,7 +760,6 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
       quiet("필드 이름 사용", () => setText(selected?.name || "")),
       quiet("시험값 사용", () => setText(String(view.values[selected?.name] ?? "")), { disabled: !(selected?.name in view.values) })),
     type === "create_field" && h("label", null, h("input", { type: "checkbox", checked: keepValue, onChange: (event: any) => setKeepValue(event.target.checked) }), " 고른 문구를 시험값으로 보관"),
-    type === "create_slot" && h("label", null, h("input", { type: "checkbox", checked: split, onChange: (event: any) => setSplit(event.target.checked) }), " 문단마다 선택으로 만들기"),
     type === "unwrap" && h("label", null, h("input", { type: "checkbox", checked: cascade, onChange: (event: any) => setCascade(event.target.checked) }), " 하위 의미 함께 해제"),
     // 같은 문구 N곳(P-07): 적용 전 폼 안에서 같은 문구 자리를 체크 목록으로 고른다. 기본 범위는 고른 한 곳이다(U03) — 행은 모두
     // 해제로 시작하고, 체크한 자리만 한 명령(`ranges`)에 실린다. 요약은 검색과 같은 Python 문장이다.
@@ -1336,13 +1331,13 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     liveRef.current = state;
     if (message) controller.announce(message);
   });
-  // 경보(복구 초안·외부 파일 변경)와 초안 비교는 새로 서는 순간 독의 제 탭을 펼친다 — 닫아 둔 독도 다시 연다. 초점은 옮기지 않는다(경보가 읽힌다).
-  const forced = view.recoveryPreview ? "recovery_preview" : item?.recovery ? "recovery" : dock.tabs.some(([key]) => key === "external_changed") ? "external_changed" : "";
+  // 경보(외부 파일 변경)는 새로 서는 순간 독의 제 탭을 펼친다 — 닫아 둔 독도 다시 연다. 초점은 옮기지 않는다(경보가 읽힌다).
+  const forced = dock.tabs.some(([key]) => key === "external_changed") ? "external_changed" : "";
   useEffect(() => {
     if (!forced) return;
     const current = controller.viewModel.getSnapshot();
     controller.update({ dock: forced, dockClosed: false, ...(DOCK_PANELS.includes(current.panel) && current.panel !== "comparison" ? { panel: "" } : {}) });
-  }, [forced, item?.id, view.recoveryPreview]);
+  }, [forced, item?.id]);
   const select = (entry: Obj) => act(() => controller.select({ source_revision: item?.revision, ...entry }));
   // 독 안의 행(검색 적중)에서 고르면 그 독 탭이 남는다(NG-06) — 편집면 강조와 위치 줄만 옮기고 속성 패널은 열지 않는다.
   const selectInDock = (entry: Obj) => act(() => controller.select({ source_revision: item?.revision, ...entry }, { keepDock: true }));
@@ -1495,17 +1490,6 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     ...(saveFailed ? [primary("다시 저장", act(() => controller.save(item.id), "save"), { key: "save" })] : [])];
   const dockContent = (key: string): ReactNode => {
     if (key === "trial" && item) return h(Trial, { controller, item, view });
-    if (key === "recovery" && item) return h("section", { className: "authoring-bottom", role: "alert", "aria-label": "중단 전 복구 초안" }, h("h2", null, "중단 전 복구 초안"),
-      h("p", null, "복구 여부를 선택한 뒤 편집을 계속하세요. 원본 파일은 아직 변경하지 않았습니다."),
-      h("div", { className: "authoring-actions" },
-        button("초안과 원본 비교", act(() => controller.compareRecovery(item.recovery_key))),
-        danger("폐기", act(() => controller.discardRecovery(item.id))), primary("복구", act(() => controller.recover(item.id)))));
-    if (key === "recovery_preview" && view.recoveryPreview) return h("section", { className: "authoring-bottom", "aria-label": "초안과 원본 비교" }, h("h2", null, "초안과 원본 비교"),
-      h("div", { className: "authoring-compare" }, ...[["원본", view.recoveryPreview.original_content], ["복구 초안", view.recoveryPreview.content]].map(([name, content]) => h("div", { key: name }, h("h3", null, name),
-        content == null ? h("p", null, "원본 파일 없음") : view.recoveryPreview.media === "txt" ? h("pre", null, content)
-          : h(ExternalDocument, { controller, item: { name }, content, sectionEntries: name === "원본" ? view.recoveryPreview.original_section_entries : view.recoveryPreview.section_entries })))),
-      h("div", { className: "authoring-actions" },
-        quiet("비교 닫기", () => closePanel({ recoveryPreview: null })), primary("복구", act(() => controller.recover(item?.recovery ? item.id : view.recoveryPreview.key)))));
     if (!item) return null;
     if (key === "paste") return h("section", { className: "authoring-bottom", "aria-label": "의미 붙여넣기" }, h("h2", null, "의미 붙여넣기"),
       h("p", null, "문서에서 붙여넣을 위치를 고르세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
@@ -1681,17 +1665,10 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       ...(item.compatibility.diagnostics || []).map((diagnostic: Obj | string, index: number) => typeof diagnostic === "string" ? h("p", { key: index }, diagnostic)
         : h("div", { key: index }, h("p", null, diagnostic.message), diagnostic.detail && h("p", { className: "authoring-reason" }, diagnostic.detail))),
       h("div", null, button("다른 이름으로 저장", act(() => controller.save(item.id, true), "save")), button("원문 표기", act(controller.raw)))),
-    // 빈 작업대: 지금 할 수 있는 두 행동(머리의 것과 같은 실행 경로)과 복구 가능한 작업만 둔다.
+    // 빈 작업대: 지금 할 수 있는 두 행동(머리의 것과 같은 실행 경로)만 둔다.
     // 「변경할 문구를 선택해…」는 처음 여는 일반 문서의 안내라 Python 의 notice 로 선다(§13).
     !item && h("div", { className: "authoring-empty" }, h("p", null, "HWPX·TXT 문서를 열거나 새 TXT를 만드세요."),
-      h("div", { className: "authoring-empty-actions" }, button("문서 열기", act(controller.openFile), { className: "btn primary" }), button("새 TXT", act(controller.create), { className: "btn" })),
-      !!snapshot.recoverable?.length && h("ul", { className: "authoring-drafts", "aria-label": "복구 가능한 작업" }, ...snapshot.recoverable.map((draft: Obj) => h("li", { key: draft.key },
-        h("strong", null, draft.name || draft.path || "저장하지 않은 초안"),
-        draft.updated_at && h("time", { dateTime: draft.updated_at }, new Date(draft.updated_at).toLocaleString()),
-        draft.error && h("p", { role: "alert" }, draft.error),
-        h("span", { className: "authoring-drafts-actions" },
-          button("초안과 원본 비교", act(() => controller.compareRecovery(draft.key)), { disabled: !!draft.error }),
-          button("복구", act(() => controller.recover(draft.key)), { disabled: !!draft.error }), danger("폐기", act(() => controller.discardRecovery(draft.key)))))))),
+      h("div", { className: "authoring-empty-actions" }, button("문서 열기", act(controller.openFile), { className: "btn primary" }), button("새 TXT", act(controller.create), { className: "btn" }))),
     // 도구 막대(§3.1): 한 줄, 줄바꿈 없음 — 넘치면 가로 스크롤. 보조 패널을 여는 동사는 하단 독의 탭으로 옮겼다.
     item && h("div", { className: "authoring-toolbar", role: "toolbar", "aria-label": "문서 명령",
       onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, "[data-rove]:not([disabled])", "horizontal"); },
@@ -1738,7 +1715,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         onClick: () => { controller.update({ panel: "", preview: null, refusal: null }); returnFocus("properties"); } })),
     // 하단 독(§3.1·APG tabs): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
     // ←→·Home·End 로 탭을 옮기고 Enter·Space 로 펼치면 그 패널의 첫 제어로 간다.
-    (item || view.recoveryPreview) && h("section", { className: `authoring-dock${dock.active ? " open" : ""}${dock.active === "trial" ? " trial" : ""}`, role: "region", "aria-label": "보조 패널" },
+    item && h("section", { className: `authoring-dock${dock.active ? " open" : ""}${dock.active === "trial" ? " trial" : ""}`, role: "region", "aria-label": "보조 패널" },
       h("div", { className: "authoring-dock-bar" },
         h("div", { className: "authoring-dock-tabs", role: "tablist", "aria-label": "보조 패널", onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal"); } }, ...dock.tabs.map(([key, label]) => {
           const count = dockBadge(item, key, view);
@@ -1777,7 +1754,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     item && view.palette ? h(CommandPalette, { key: view.palette, entries: commandTable, actions: paletteActions, onPick: pick, onClose: closePalette }) : null,
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).
     item && h("footer", { className: "authoring-status", role: "group" },
-      // 왼쪽: 저장·준비와 구조 검사. 오른쪽: 보존·복원·시험·복구 초안. 구분선은 CSS 가 그린다(글자가 아니다).
+      // 왼쪽: 저장·준비와 구조 검사. 오른쪽: 보존·복원·시험. 구분선은 CSS 가 그린다(글자가 아니다).
       h("div", { className: "authoring-status-group" },
         // 저장·검사·시험은 서로 다른 상태다(P09·§9.1): 저장됨 뒤에 Python 의 readiness(초안/사용 준비)를 붙인다.
         h("span", null, liveNow.save),
@@ -1794,8 +1771,6 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         // 누르면 결과 시험 탭을 연다(IDE-01). 시험 자료 표지는 보관한 케이스나 저장하지 않은 입력이 있을 때만 선다.
         item.trial_state !== "untried" && item.trial_state_label && h("button", { type: "button", className: "authoring-status-link", "data-trial": item.trial_state, onClick: () => openDock("trial") }, item.trial_state_label),
         (item.cases_dirty || !!item.cases?.length) && h("span", null, item.cases_dirty ? "시험 자료: 저장하지 않은 변경" : "시험 자료: 로컬 보관"),
-        item.recovery_saved_at && h("span", null, "복구 초안 저장됨 · ", h("time", { dateTime: item.recovery_saved_at }, new Date(item.recovery_saved_at).toLocaleTimeString())),
-        item.recovery && h("span", null, "복구 여부 선택 필요"),
         // 확대는 상태 막대 끝의 작은 선택이다(편집기 관례) — 도구 막대의 roving 묶음 밖, 보통 Tab 순서다.
         h("select", { className: "field authoring-zoom", "aria-label": "확대", value: zoom.value, onChange: (event: any) => controller.setZoom(event.target.value === "fit" ? "fit" : Number(event.target.value)) },
           ...zoom.options.map(([value, label]) => h("option", { key: value, value }, label))))),

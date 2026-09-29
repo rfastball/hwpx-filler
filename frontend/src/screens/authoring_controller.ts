@@ -676,9 +676,6 @@ export function createAuthoringController(deps: Deps) {
     highlight(target: Obj | null) { hovered = target; redecorate(); },
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
-    recover: async (id: string) => { await restored(await (tab(id).id ? dispatch("recover", fenced(id)) : dispatch("recover_draft", { key: id }))); update({ recoveryPreview: null }); },
-    compareRecovery: async (key: string) => update({ recoveryPreview: await dispatch("recovery_content", { key }) }),
-    discardRecovery: (id: string) => tab(id).id ? dispatch("discard_recovery", { session_id: id }) : dispatch("discard_draft", { key: id }),
     compareExternal: async () => {
       const id = snapshot().active_id;
       await flush(id);

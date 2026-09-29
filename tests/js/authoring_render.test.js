@@ -150,7 +150,7 @@ async function boot(tab, more = [], respond = () => ({})) {
   const { flushSync } = await import("react-dom");
   const { createAuthoringController } = await import("../../frontend/src/screens/authoring_controller.ts");
   const screen = await import("../../frontend/src/screens/authoring.ts");
-  let snapshot = { active_id: tab.id, tabs: [tab, ...more], recoverable: [] };
+  let snapshot = { active_id: tab.id, tabs: [tab, ...more] };
   const listeners = new Set();
   const calls = [];
   const notify = () => flushSync(() => { for (const listener of [...listeners]) listener(); });
@@ -1347,28 +1347,17 @@ test("IDE-07 P-07: 다른 같은 문구 찾기 is an in-form checklist of Python
   env.root.unmount();
 });
 
-test("IDE-07 P-11b: 항목으로 만들기 has one unchecked 문단마다 선택으로 만들기 box; checking it sends split in the same create_slot command", async () => {
+test("IDE-07: 항목으로 만들기 is one plain region command — no per-paragraph box, no same-text list", async () => {
   const env = await batchLoop();
-  let form = await openCreate(env, "필드로 만들기");
-  assert.ok(!form.textContent.includes("문단마다 선택으로 만들기"), "필드로 만들기 폼에는 없다");
-  env.flushSync(() => env.controller.update({ panel: "", preview: null }));
-  await settle();
-  form = await openCreate(env, "항목으로 만들기");
-  const label = [...form.querySelectorAll("label")].find((node) => node.textContent.includes("문단마다 선택으로 만들기"));
-  assert.ok(label, "항목으로 만들기 폼에 체크 상자 하나가 선다");
-  const box = label.querySelector("input");
-  assert.equal(propsOf(box).checked, false, "기본 해제다");
+  const form = await openCreate(env, "항목으로 만들기");
+  assert.equal(form.querySelector('input[type="checkbox"]'), null, "항목으로 만들기 폼에는 체크 상자가 없다");
   assert.equal(form.querySelector(".authoring-same"), null);
   assert.ok(![...form.querySelectorAll("button")].some((node) => node.textContent === "다른 같은 문구 찾기"));
   submitForm(env);
   for (let round = 0; round < 3; round++) await settle();
-  assert.equal("split" in previews(env).at(-1), false, "끄면 split 이 없다");
-  env.flushSync(() => propsOf(box).onChange({ target: { checked: true } }));
-  submitForm(env);
-  for (let round = 0; round < 3; round++) await settle();
   const command = previews(env).at(-1);
   assert.equal(command.type, "create_slot");
-  assert.equal(command.split, "paragraph", "켜면 같은 명령에 split 을 싣는다");
+  assert.equal("split" in command, false);
   assert.equal("ranges" in command, false);
   env.root.unmount();
 });

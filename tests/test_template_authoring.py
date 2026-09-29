@@ -567,62 +567,6 @@ def _undo(source: str, result: str, plan: dict) -> str:
     return result
 
 
-def test_txt_split_wraps_each_paragraph_as_an_option_in_one_command() -> None:
-    source = "머리\n첫째 문단\n\n납품기한:  {{납기}}\n{{납기}}\n끝\n"
-    start, end = source.index("첫째"), source.index("\n끝")
-    command = {"type": "create_slot", "start": start, "end": end, "id": "조건", "label": "납품 조건",
-               "split": "paragraph"}
-    result, plan = apply("txt", source, command)
-    analysis = analyze("txt", result)
-    assert analysis["diagnostics"] == []
-    assert [(slot["id"], slot["label"], [(option["id"], option["label"]) for option in slot["options"]])
-            for slot in analysis["slots"]] == [
-        ("조건", "납품 조건", [("선택1", "첫째 문단"), ("선택2", "납품기한:"), ("선택3", "")])]
-    assert "{{#선택 선택2 납품기한:}}" in result and "\n\n{{#선택 선택2" in result, "빈 줄은 선택 밖, 항목 안에 남는다"
-    assert len(plan["edits"]) == 1 and plan["affected"] == 1, "한 의미 명령은 한 계획이다"
-    assert _undo(source, result, plan) == source, "실행 취소 한 번에 원문이 돌아온다"
-    projected = preview("txt", source, command)
-    assert [(child["kind"], child["id"], child["label"]) for child in projected["children"]] == [
-        ("option", "선택1", "첫째 문단"), ("option", "선택2", "납품기한:"), ("option", "선택3", "선택3"),
-        ("field", "납기", "납기")]
-    assert projected["counts"] == {"paragraphs": 4, "fields": 2, "options": 3, "tables": 0}
-    assert confirm_tier(command, projected) == "enter"
-
-
-def test_txt_split_at_end_of_file_and_its_refusals() -> None:
-    source = "머리\n하나\n둘"
-    result, _ = apply("txt", source, {"type": "create_slot", "start": 3, "end": len(source), "id": "s",
-                                      "split": "paragraph"})
-    assert result == "머리\n{{#항목 s}}\n{{#선택 선택1 하나}}\n하나\n{{/선택}}\n{{#선택 선택2 둘}}\n둘\n{{/선택}}\n{{/항목}}"
-    assert analyze("txt", result)["diagnostics"] == []
-    blank = "머리\n\n   \n끝\n"
-    with pytest.raises(ValueError, match="고를 내용 줄이 없습니다"):
-        apply("txt", blank, {"type": "create_slot", "start": 3, "end": 8, "id": "s", "split": "paragraph"})
-    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
-        apply("txt", source, {"type": "create_slot", "start": 3, "end": 5, "id": "s", "split": "line"})
-    slotted, _ = apply("txt", source, {"type": "create_slot", "start": 3, "end": len(source), "id": "s"})
-    inner = slotted.index("하나")
-    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
-        apply("txt", slotted, {"type": "create_option", "start": inner, "end": inner + 2, "slot_id": "s",
-                               "id": "o", "split": "paragraph"})
-
-
-@pytest.mark.parametrize(("text", "label"), [
-    ("납품기한: {{납기}}", "납품기한:"),
-    ("  앞   뒤  ", "앞 뒤"),
-    ("{{#선택 x}} 가 {나} }} {{", "가 나"),
-    ("{{납기}}", None),
-    ("가나다라마바사아자차 카타파하가나다라마바 사아", "가나다라마바사아자차 카타파하가나다라마"),
-    ("가나다라마바사아자차카타파하가나다라마 바", "가나다라마바사아자차카타파하가나다라마"),
-])
-def test_split_option_label_strips_grammar_collapses_space_and_cuts_to_twenty(text, label) -> None:
-    from hwpxfiller.domain.authoring import marker_label
-    from hwpxfiller.domain.template_authoring import split_option_label
-
-    assert split_option_label(text) == label
-    assert marker_label(label) == (label or ""), "구간 표기 라벨 문법을 늘 통과한다"
-
-
 def test_txt_same_text_is_raw_sites_with_create_field_verdicts() -> None:
     from hwpxfiller.domain.template_authoring import same_text_sites
 

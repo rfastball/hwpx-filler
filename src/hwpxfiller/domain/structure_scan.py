@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from .slot import Slot, SlotOption
@@ -142,11 +142,18 @@ class StructureDiagnosticKind(StrEnum):
 
 @dataclass(frozen=True)
 class StructureDiagnostic:
-    """표기 이상 1건 — ``kind`` 는 안정 식별자, ``message`` 는 한국어 재진술."""
+    """표기 이상 1건 — ``kind`` 는 안정 식별자, ``message`` 는 한국어 재진술.
+
+    ``entry``·``index`` 는 진단이 가리키는 단위의 좌표다(HWPX 는 content XML 과 본문 직계 문단 순번,
+    TXT 는 줄). 번호를 받지 않은 단위(표 셀·글상자 안 문단)면 ``index`` 가 ``None`` 이다 — 문맥 글로
+    되짚어야 한다. 좌표는 같은 진단의 동일성에 들지 않는다(직렬화 모양도 그대로다).
+    """
 
     kind: StructureDiagnosticKind
     message: str
     context: str
+    entry: str = field(default="", compare=False)
+    index: "int | None" = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
         return {"kind": str(self.kind), "message": self.message, "context": self.context}
@@ -246,11 +253,25 @@ class StructureReader:
         self._seen_slot_ids: "set[str]" = set()
         self._entry = ""
         self._index = -1
+        # 지금 단위가 번호를 받았는가 — 받지 않은 단위의 진단에는 좌표를 싣지 않는다.
+        self._located = False
 
     # ---------------------------------------------------------------- 진단
-    def note(self, kind: StructureDiagnosticKind, message: str, context: str) -> None:
-        """진단 1건을 남긴다 — 매체 명사가 드는 문안은 어댑터가 직접 부른다."""
-        self.diagnostics.append(StructureDiagnostic(kind, message, context))
+    def note(
+        self,
+        kind: StructureDiagnosticKind,
+        message: str,
+        context: str,
+        *,
+        at: "tuple[str, int] | None" = None,
+    ) -> None:
+        """진단 1건을 남긴다 — 매체 명사가 드는 문안은 어댑터가 직접 부른다.
+
+        좌표는 ``at`` 이 있으면 그것(열린 범위의 여는 마커 등), 없으면 지금 단위다.
+        """
+        entry, index = at if at is not None else (
+            (self._entry, self._index) if self._located else (self._entry, None))
+        self.diagnostics.append(StructureDiagnostic(kind, message, context, entry, index))
 
     # ---------------------------------------------------------------- 입력
     def position(self, *, entry: str = "", index: "int | None" = None) -> None:
@@ -262,6 +283,7 @@ class StructureReader:
         self._entry = entry
         if index is not None:
             self._index = index
+        self._located = index is not None
 
     def note_markers(self, count: int) -> None:
         """이 단위에서 발견한 구조 마커 토큰 수를 누적한다 — **자격 판정 앞**."""
@@ -301,6 +323,27 @@ class StructureReader:
         else:
             self._end(keyword, tail, context)
 
+    def settle_refused(self, raw: str, context: str) -> None:
+        """자격을 잃은 단독 **닫는** 마커의 짝짓기만 정리한다 — 거절 진단은 매체가 이미 남겼다.
+
+        닫는 마커가 놓인 자리만 틀린 경우(개체·글자와 같은 단위) 그 마커를 없던 것으로 두면 열린 범위가
+        닫히지 않아 뒤의 여는 마커마다 중첩·교차 오류가 번진다. 짝이 되는 범위가 열려 있을 때만 닫는다 —
+        거절 진단이 남아 있으므로 템플릿은 여전히 막히고 배치는 신뢰 대상이 아니다. 같은 단위의 다른
+        내용(개체·글자)은 닫히는 범위의 내용으로 센다.
+        """
+        body = raw.lstrip()
+        if not body.startswith("/"):
+            return
+        parts = body[1:].split(None, 1)
+        keyword = parts[0] if parts else ""
+        tail = parts[1] if len(parts) > 1 else ""
+        if (keyword == OPTION_KEYWORD and self._option is None) or (
+            keyword == SLOT_KEYWORD and self._slot is None
+        ) or keyword not in STRUCTURE_KEYWORDS:
+            return
+        self.count_content()
+        self._end(keyword, tail, context)
+
     def close_entry(self) -> None:
         """스캔 단위 하나의 끝 — 닫히지 않은 범위를 불균형으로 신고한다.
 
@@ -316,6 +359,7 @@ class StructureReader:
                 f"「선택 {self._option.id}」 범위가 열린 채 {self._scope} 끝났습니다 — "
                 "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
                 self._option.context,
+                at=(self._option.entry, self._option.begin_index),
             )
             self._option = None
         if self._slot is not None:
@@ -324,6 +368,7 @@ class StructureReader:
                 f"「항목 {self._slot.id}」 범위가 열린 채 {self._scope} 끝났습니다 — "
                 "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
                 self._slot.context,
+                at=(self._slot.entry, self._slot.begin_index),
             )
             self._slot = None
             self._options = []

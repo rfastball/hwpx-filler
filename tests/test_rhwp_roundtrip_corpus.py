@@ -203,7 +203,7 @@ def test_every_other_corpus_document_roundtrips_editable(
 
 
 def _batch_outputs() -> dict[str, bytes]:
-    """IDE-07 반복 명령의 산출물 — 실습 표본에 한 명령씩 적용한다(같은 문구 4곳을 한 필드로 · 문단마다 선택 4개)."""
+    """IDE-07 반복 명령의 산출물 — 실습 표본에 한 명령을 적용한다(같은 문구 4곳을 한 필드로)."""
     from hwpxfiller.external.hwpx_authoring import apply_hwpx, same_text_hwpx
     from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
@@ -215,16 +215,13 @@ def _batch_outputs() -> dict[str, bytes]:
     assert len(sites) == 3, sites
     fields, _ = apply_hwpx(package, {"type": "create_field", "name": "구분", **selection,
                                      "ranges": [selection, *sites]})
-    split, _ = apply_hwpx(read_hwpx_package(source), {
-        "type": "create_slot", "entry": entry, "start_paragraph": 2, "end_paragraph": 5,
-        "id": "요청", "label": "요청 내용", "split": "paragraph"})
-    return {"batch-fields.hwpx": fields.to_bytes(), "batch-split.hwpx": split.to_bytes()}
+    return {"batch-fields.hwpx": fields.to_bytes()}
 
 
 @pytest.mark.browser
 @pytest.mark.skipif(_GATE, reason=_GATE_REASON)
 def test_batch_command_outputs_roundtrip_editable(tmp_path: Path) -> None:
-    """IDE-07 — 한 명령 안의 여러 누름틀 삽입·중첩 책갈피 구간이 rhwp 왕복 보존 판정을 깨지 않는다."""
+    """IDE-07 — 한 명령 안의 여러 누름틀 삽입이 rhwp 왕복 보존 판정을 깨지 않는다."""
     from playwright.sync_api import sync_playwright  # 지역 import — 옵트아웃 러너에 playwright 불요
 
     outputs = _batch_outputs()

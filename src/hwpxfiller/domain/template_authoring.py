@@ -219,42 +219,6 @@ def suggest_field_name(before: str, selected: str, existing: Iterable[str] = ())
     return next((str(name) for name in existing if "".join(str(name).split()) == compact), label)
 
 
-# --------------------------------------------------------------- batch commands (IDE-07)
-#: 「문단마다 선택으로 만들기」(P-11b)의 명령 값 — ``create_slot`` 이 이 값의 ``split`` 을 실으면 고른 문단들이
-#: 항목 하나가 되고 빈 문단을 뺀 문단마다 선택 하나가 된다(한 명령·한 실행 취소).
-SPLIT_PARAGRAPH = "paragraph"
-#: 문단마다 선택의 식별자 머리 — ``선택1…N``.
-SPLIT_OPTION_PREFIX = "선택"
-
-
-def split_mode(command: Mapping[str, object]) -> bool:
-    """``create_slot`` 이 문단마다 선택을 싣는가. 모르는 값은 조용히 한 항목으로 접지 않고 거절한다."""
-    split = command.get("split")
-    if split is None:
-        return False
-    if command.get("type") != "create_slot" or split != SPLIT_PARAGRAPH:
-        raise ValueError(f"알 수 없는 저작 명령입니다: {split!r}")
-    return True
-
-
-def split_option_label(text: str) -> str | None:
-    """문단 한 개의 선택 표시 이름(P-11b) — Python 이 짓는다.
-
-    필드 토큰(``{{…}}``)과 구간 표기를 걷고 남은 중괄호도 뗀 뒤 공백을 접고 앞 20자로 자른다. 구간 표기 라벨의
-    문법(:func:`~hwpxfiller.domain.authoring.marker_label` — ``{{``·``}}``·겹공백 거절)을 늘 통과한다. 비면 None
-    (라벨 없이 식별자만)이다.
-    """
-    # 두 축(필드 토큰·구간 표기)의 스팬은 겹치지 않는다(``scan_text_token_spans`` 와 같은 단일 출처).
-    pieces: list[str] = []
-    end = 0
-    for span in scan_text_token_spans(text):
-        pieces.append(text[end:span.start] + " ")
-        end = span.end
-    pieces.append(text[end:])
-    label = " ".join("".join(pieces).replace("{", " ").replace("}", " ").split())
-    return label[:SUGGESTION_MAX].rstrip() or None
-
-
 # --------------------------------------------------------------- confirmation tier (P-01)
 #: 확인 등급 — ``none`` 은 미리보기를 받자마자 적용, ``enter`` 는 영향을 본 뒤 Enter 한 번 더,
 #: ``button`` 은 위험 단추 누름으로만 적용한다. ui-style 의 계약 명령(이름 변경·범위 확장·삭제)은
@@ -281,8 +245,8 @@ def confirm_tier(command: Mapping[str, object], preview: Mapping[str, object],
         return CONFIRM_BUTTON
     if action in _ENTER_COMMANDS or _identifier_changes(command) or preview.get("expanded"):
         return CONFIRM_ENTER
-    # 여러 자리 명령(IDE-07): 같은 문구 N곳(``ranges``)·문단마다 선택(``split``)은 포함 자리를 본 뒤 확정한다.
-    if (action == "create_field" and command.get("ranges")) or (action == "create_slot" and command.get("split")):
+    # 여러 자리 명령(IDE-07): 같은 문구 N곳(``ranges``)은 포함 자리를 본 뒤 확정한다.
+    if action == "create_field" and command.get("ranges"):
         return CONFIRM_ENTER
     if action == "create_field" and preview.get("links_existing"):
         return CONFIRM_ENTER
@@ -908,9 +872,6 @@ def _edits(text: str, command: Mapping[str, object], *,
         elif any(slot.id == command.get("id") for slot in scan.slots):
             raise ValueError("항목 식별자가 이미 있습니다.")
         eol = _eol(text)
-        if split_mode(command):
-            return [(lo, hi, _split_block(text[lo:hi], command, closed=hi < len(text) or text.endswith(("\r", "\n")),
-                                          eol=eol))], expanded, False
         if hi == len(text) and not text.endswith(("\r", "\n")):
             return [(lo, lo, _marker(kind, command.get("id"), command.get("label")) + eol),
                     (hi, hi, eol + _end_marker(kind))], expanded, False
@@ -1006,27 +967,6 @@ def _field_spans(text: str, command: Mapping[str, object], start: int, end: int)
     return spans
 
 
-_LINE_BREAKS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
-
-
-def _split_block(block: str, command: Mapping[str, object], *, closed: bool, eol: str) -> str:
-    """고른 줄들을 항목 하나로, 빈 줄을 뺀 줄마다 선택 하나로 감싼 새 본문(P-11b) — 표지 줄이 2N+2 늘어난다."""
-    lines = [_marker(PLACEMENT_SLOT, command.get("id"), command.get("label")) + eol]
-    count = 0
-    for piece in block.splitlines(keepends=True):
-        body = piece.rstrip(_LINE_BREAKS)
-        ending = piece[len(body):] or eol
-        if not body.strip():
-            lines.append(body + ending)
-            continue
-        count += 1
-        lines.append(_marker(PLACEMENT_OPTION, f"{SPLIT_OPTION_PREFIX}{count}", split_option_label(body))
-                     + eol + body + ending + _end_marker(PLACEMENT_OPTION) + eol)
-    if not count:
-        raise ValueError(REASON_NO_CONTENT_LINE)
-    return "".join(lines) + _end_marker(PLACEMENT_SLOT) + (eol if closed else "")
-
-
 def _apply_edits(text: str, edits: list[tuple[int, int, str]]) -> str:
     for start, end, replacement in sorted(edits, key=lambda edit: (edit[0], edit[1]), reverse=True):
         text = text[:start] + replacement + text[end:]
@@ -1090,12 +1030,6 @@ def _project(content: str, command: Mapping[str, object], *, projecting: bool) -
         after = included
         included_location = {"start": _to_utf16(content, lo), "end": _to_utf16(content, hi)}
         children, counts = _line_block_children(content, scan, first, last)
-        if split_mode(command):
-            # 문단마다 선택(P-11b): 하위 의미는 만든 뒤의 항목 안 — Python 이 지은 선택 이름이 미리보기에 선다.
-            made = scan_text_structure(result)
-            slot = next(place for place in made.placements
-                        if place.kind == PLACEMENT_SLOT and place.slot_id == command.get("id"))
-            children, counts = _line_block_children(result, made, slot.begin_marker_line, slot.end_marker_line)
         label = command_label(command)
     else:
         target = _target(scan, command)

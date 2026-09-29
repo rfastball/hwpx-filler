@@ -99,5 +99,5 @@ def default_example_data_dir() -> Path:
 
 
 def default_authoring_dir() -> Path:
-    """Template authoring recovery drafts and opt-in trial cases."""
+    """Template authoring: opt-in trial cases and last work positions."""
     return home_dir() / "authoring"

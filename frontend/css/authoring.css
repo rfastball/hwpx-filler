@@ -157,7 +157,7 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-trial-input,.authoring-trial-output{overflow:auto;padding:var(--sp-12);min-height:0;min-width:0}
 .authoring-trial-input{display:flex;flex-direction:column;gap:var(--sp-12);border-right:1px solid var(--a-border)}
 .authoring-result-pages{height:20rem}
-/* 상태 막대: 왼쪽(저장·검사)과 오른쪽(보존·복원·시험·복구) 두 무리. 항목 사이 구분선은 글자가 아닌 경계선이다. */
+/* 상태 막대: 왼쪽(저장·검사)과 오른쪽(보존·복원·시험) 두 무리. 항목 사이 구분선은 글자가 아닌 경계선이다. */
 .authoring-status{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2) var(--sp-16);font-size:var(--fs-dense);color:var(--a-muted);border-top:1px solid var(--a-border);padding:var(--sp-4);font-variant-numeric:tabular-nums}
 .authoring-status-group{display:flex;flex-wrap:wrap;align-items:center;row-gap:var(--sp-2)}
 .authoring-status-group>*+*{margin-left:var(--sp-8);padding-left:var(--sp-8);border-left:1px solid var(--a-border)}
@@ -181,15 +181,10 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-compat>*{grid-column:1}
 .authoring-compat p{margin:var(--sp-2) 0}
 .authoring-compat>div:last-child{grid-column:2;grid-row:1;display:flex;gap:var(--sp-4)}
-/* 빈 작업대: 가운데 한 덩어리 — 한 문장, 두 행동, 복구 가능한 작업 목록. */
+/* 빈 작업대: 가운데 한 덩어리 — 한 문장, 두 행동. */
 .authoring-empty{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-12);text-align:center}
 .authoring-empty>p{margin:0}
 .authoring-empty-actions{display:flex;gap:var(--sp-8)}
-.authoring-drafts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-8);text-align:left}
-.authoring-drafts li{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-8);padding:var(--sp-6) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
-.authoring-drafts time{font-size:var(--fs-caption);color:var(--a-muted)}
-.authoring-drafts p{flex-basis:100%;margin:0}
-.authoring-drafts-actions{display:flex;gap:var(--sp-4);margin-left:auto}
 .authoring-search-summary{margin:var(--sp-4) 0;font-size:var(--fs-caption);color:var(--a-muted)}
 .authoring-syntax pre{font-family:var(--font-mono);padding:var(--sp-8);background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 .authoring-bottom pre{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -247,7 +242,7 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-notice{margin:0;padding:var(--sp-4) var(--sp-8);font-size:var(--fs-caption);color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control)}
 @media(forced-colors:active){
   .authoring-context-menu,.authoring-command-palette,.authoring-palette-group,.authoring-selection-bar{border-color:CanvasText}.authoring-palette-option.active{outline:2px solid Highlight;outline-offset:-2px}.authoring-badge,.authoring-kind{border-color:CanvasText}
-  .authoring-compat,.authoring-drafts li{border-color:CanvasText}.authoring-compat>strong{color:CanvasText}
+  .authoring-compat{border-color:CanvasText}.authoring-compat>strong{color:CanvasText}
   .authoring-mode button[aria-pressed=true],.authoring-toolbar .btn[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-toolbar .btn[aria-disabled=true]{color:GrayText}
   .authoring-dock-tab[aria-selected=true]{border-bottom-color:Highlight}
@@ -354,7 +349,7 @@ body.resizing-authoring iframe{pointer-events:none}
 .authoring-trial-group{display:flex;flex-direction:column;gap:var(--sp-8)}
 .authoring-trial-output{display:flex;flex-direction:column;gap:var(--sp-12)}
 .authoring-trial-output>*{margin:0}
-/* 결과 칸(IDE-04): 상태 줄 아래에서 남은 높이를 채운다 — 비교·복구 보기의 .authoring-result-pages 와 다른 선택자다.
+/* 결과 칸(IDE-04): 상태 줄 아래에서 남은 높이를 채운다 — 비교 보기의 .authoring-result-pages 와 다른 선택자다.
    TXT 결과는 칸 자체가 스크롤 상자다(닻은 이 칸의 scrollTop 만 옮긴다). */
 /* 출력 열은 크기 컨테이너다 — 결과 칸은 적어도 보이는 열 높이에서 상태 줄(2rem)과 간격을 뺀 만큼이라, 스크롤 없이 보이는
    면을 결과가 다 쓰고 통과 범위 문장·접힌 구획은 그 아래(열 스크롤)에 선다. */

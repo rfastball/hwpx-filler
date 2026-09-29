@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 class AuthoringSession:
     id: str
     media: str
+    #: TXT is held with LF line breaks only — the editor's (CodeMirror's) coordinate space.
     content: bytes
     source_path: str = ""
     save_path: str = ""
@@ -24,9 +25,8 @@ class AuthoringSession:
     identifier_changes: list[dict] = field(default_factory=list)
     #: ``(content, renamed)`` of the latest preview, consumed by the next ``update``.
     last_preview: tuple[bytes, list[dict]] | None = None
-    draft_key: str = ""
-    recovery: bool = False
-    recovery_saved_at: str = ""
+    #: The file's own line break (TXT) — restored on every write so a CRLF file stays CRLF.
+    eol: str = "\n"
     external_changed: bool = False
     rhwp_editable: bool | None = None
     rhwp_diagnostics: list[dict] = field(default_factory=list)

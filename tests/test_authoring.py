@@ -884,14 +884,15 @@ def test_native_analysis_separates_invalid_and_nonfillable_field_controls() -> N
     assert invalid["location"] == {"entry": "Contents/section0.xml", "paragraph": 0}
 
 
-def test_native_structure_diagnostic_location_is_only_projected_when_unique() -> None:
+def test_native_structure_diagnostic_location_is_the_read_body_paragraph() -> None:
+    """본문 직계 문단의 진단은 읽은 자리 그대로다 — 같은 문맥의 마커가 여럿이어도 제 자리를 가리킨다."""
     marker = '<hp:p><hp:run><hp:t>{{/항목}}</hp:t></hp:run></hp:p>'
     unique = analyze_hwpx(_pkg(marker + '<hp:p><hp:run><hp:t>끝</hp:t></hp:run></hp:p>'))
     item = next(row for row in unique["diagnostics"] if row["kind"] == "unbalanced_marker")
     assert item["location"] == {"entry": "Contents/section0.xml", "paragraph": 0}
     duplicated = analyze_hwpx(_pkg(marker + marker))
-    assert all(row["location"] is None for row in duplicated["diagnostics"]
-               if row["kind"] == "unbalanced_marker")
+    assert [row["location"] for row in duplicated["diagnostics"] if row["kind"] == "unbalanced_marker"] == [
+        {"entry": "Contents/section0.xml", "paragraph": 0}, {"entry": "Contents/section0.xml", "paragraph": 1}]
     for row in duplicated["diagnostics"] + unique["diagnostics"]:
         assert (row["severity"], row["category"]) == ("error", "structure")
         assert row["actions"][0] == {"label": "원문으로 이동", "kind": "navigate", "location": row["location"]}
@@ -2228,11 +2229,12 @@ def test_native_trial_surfaces_materialization_failure_loudly(monkeypatch) -> No
         trial_hwpx(package, {"F": "값"}, {})
 
 
-def test_native_marker_diagnostic_without_addressable_text_has_no_location() -> None:
-    """표가 앞선 문단의 마커는 좌표로 되짚을 직속 텍스트가 없다 — 위치를 비운다."""
+def test_native_marker_diagnostic_beside_a_table_is_located_but_one_inside_a_cell_needs_its_text() -> None:
+    """표가 앞선 본문 문단의 마커는 직속 텍스트가 없어도 읽은 자리가 있다. 셀 안 문단은 번호가 없어 문맥 글로만
+    되짚는다 — 되짚을 수 없으면 위치를 비운다(짐작하지 않는다)."""
     beside_table = _pkg('<hp:p><hp:run><hp:tbl/><hp:t>{{/항목}}</hp:t></hp:run></hp:p>')
-    assert [item["location"] for item in analyze_hwpx(beside_table)["diagnostics"]
-            if item["kind"] == "marker_not_alone"] == [None]
+    assert [(item["context"], item["location"]) for item in analyze_hwpx(beside_table)["diagnostics"]
+            if item["kind"] == "marker_not_alone"] == [("{{/항목}}", {"entry": "Contents/section0.xml", "paragraph": 0})]
     outside_lane = _pkg(
         '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:p><hp:run><hp:t>{{/항목}}</hp:t>'
         '</hp:run></hp:p></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
@@ -2837,57 +2839,18 @@ def test_native_create_field_ranges_refusals_leave_source_untouched(extra, messa
         apply_hwpx(package, {"type": "create_field", "name": "수요기관", **_SELECTED, "ranges": _SELECTED})
 
 
-def test_native_split_wraps_each_body_paragraph_as_an_option_in_one_command() -> None:
-    entry = "Contents/section0.xml"
-    package = _pkg(
-        '<hp:p><hp:run><hp:t>첫째 문단</hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t></hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t>납품기한:  기한</hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t>셋째</hp:t></hp:run></hp:p>'
-    )
-    apply_hwpx(package, {"type": "create_field", "entry": entry, "paragraph": 2, "start": 7, "end": 9, "name": "납기"})
-    before = dict(package.entries)
-    command = {"type": "create_slot", "entry": entry, "start_paragraph": 0, "end_paragraph": 3,
-               "start": 0, "end": 2, "id": "조건", "label": "납품 조건", "split": "paragraph"}
-    projected = preview_hwpx(package, command)
-    assert package.entries == before, "미리보기는 원본을 바꾸지 않는다 — 실행 취소는 이 bytes 한 벌이다"
-    assert [(child["kind"], child["id"], child["label"]) for child in projected["children"]] == [
-        ("option", "선택1", "첫째 문단"), ("option", "선택2", "납품기한:"), ("option", "선택3", "셋째"),
-        ("field", "납기", "납기")]
-    assert projected["counts"] == {"paragraphs": 4, "fields": 1, "options": 3, "tables": 0}
-    result, _ = apply_hwpx(package, command)
-    analysis = analyze_hwpx(result)
-    assert analysis["diagnostics"] == []
-    assert [(slot["id"], slot["label"], [(option["id"], option["label"]) for option in slot["options"]])
-            for slot in analysis["slots"]] == [
-        ("조건", "납품 조건", [("선택1", "첫째 문단"), ("선택2", "납품기한:"), ("선택3", "셋째")])]
-    assert [(option["id"], option["location"]["start_paragraph"]) for option in analysis["slots"][0]["options"]] == [
-        ("선택1", 0), ("선택2", 2), ("선택3", 3)]
+def test_marker_beside_an_inline_table_is_one_located_diagnostic_in_the_workbench() -> None:
+    """개체와 같은 문단의 닫는 마커(user 신고) — 문맥은 마커 표기, 자리는 그 본문 문단이다.
 
-
-def test_native_split_refuses_cells_tables_empty_ranges_and_options() -> None:
-    entry = "Contents/section0.xml"
-    package = _pkg(
-        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>'
-        '<hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p>'
-        '</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>'
-        '<hp:p><hp:run><hp:t> </hp:t></hp:run></hp:p>'
-    )
-    before = dict(package.entries)
-    base = {"type": "create_slot", "entry": entry, "id": "s", "split": "paragraph"}
-    cases = (
-        ({"start_paragraph": 0, "end_paragraph": 1}, "여러 독립 영역"),
-        ({"start_paragraph": 0, "end_paragraph": 0,
-          "cell_path": [{"parent_paragraph": 1, "control": 0, "cell": 0, "paragraph": 0}]}, "여러 독립 영역"),
-        ({"start_paragraph": 2, "end_paragraph": 2}, "고를 내용 줄이 없습니다"),
-        ({"start_paragraph": 0, "end_paragraph": 0, "split": "line"}, "알 수 없는 저작 명령"),
-    )
-    for override, message in cases:
-        with pytest.raises(ValueError, match=message):
-            apply_hwpx(package, base | override)
-        assert package.entries == before
-    apply_hwpx(package, base | {"start_paragraph": 0, "end_paragraph": 0, "split": None})
-    with pytest.raises(ValueError, match="알 수 없는 저작 명령"):
-        apply_hwpx(package, {"type": "create_option", "entry": entry, "start_paragraph": 0, "end_paragraph": 0,
-                             "slot_id": "s", "id": "o", "split": "paragraph"})
+    같은 닫는 마커 문단이 여럿이라 문맥 글로는 자리를 정할 수 없다 — 읽기가 적은 좌표가 자리다.
+    """
+    table = ('<hp:tbl rowCnt="1" colCnt="1"><hp:pos treatAsChar="1"/><hp:tr><hp:tc><hp:subList>'
+             '<hp:p><hp:run><hp:t>표 내용</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl>')
+    lines = ["{{#항목 특약}}", "{{#선택 가}}", "본문 가", None, "{{#선택 나}}", "본문 나", "{{/선택}}", "{{/항목}}"]
+    package = _pkg("".join(
+        f"<hp:p><hp:run><hp:t> </hp:t>{table}</hp:run><hp:run><hp:t>{{{{/선택}}}}</hp:t></hp:run></hp:p>"
+        if line is None else f"<hp:p><hp:run><hp:t>{line}</hp:t></hp:run></hp:p>" for line in lines))
+    diagnostics = analyze_hwpx(package)["diagnostics"]
+    assert [(item["kind"], item["context"], item["location"]) for item in diagnostics] == [
+        ("marker_not_alone", "{{/선택}}", {"entry": "Contents/section0.xml", "paragraph": 3})]
+    assert diagnostics[0]["message"].startswith("구간 마커가 표·그림 같은 개체와 같은 문단에 있습니다")
