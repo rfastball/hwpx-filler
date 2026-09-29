@@ -43,6 +43,11 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(REPO / "build" / "web"), "web"),  # sealed Vite output only
+        # 프로젝트 라이선스 + 제3자 고지 취합본 — 설치본·포터블 산출물 동봉(사용자 확정: 파일
+        # 동봉만, 앱 내 표면 없음). Inno Setup [Files] 는 이 dist 폴더 전체를 재귀 복사하므로
+        # 여기 한 곳만 채우면 두 배포 형태 모두 실린다.
+        (str(REPO / "LICENSE"), "."),
+        (str(REPO / "THIRD_PARTY_NOTICES"), "."),
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[
