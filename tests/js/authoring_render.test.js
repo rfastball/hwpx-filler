@@ -175,6 +175,7 @@ async function boot(tab, more = [], respond = () => ({})) {
     mounts.push(record);
     // 편집면 초점은 편집기 host 로 선다 — 실제 rhwp 는 그 안의 iframe 이 초점을 받는다.
     return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async (target) => { (record.focused ||= []).push(target); spec.host.focus(); },
+      scrollTo: async (target) => { (record.scrolled ||= []).push(target); return true; },
       undo: async () => {}, redo: async () => {}, setReadOnly: async () => {}, setZoom: async (zoom) => { (record.zooms ||= []).push(zoom); },
       setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; (record.highlights ||= []).push(projection.highlight); }, dispose: () => { record.disposed = true; } };
   };
@@ -1369,5 +1370,161 @@ test("IDE-07 P-11b: 항목으로 만들기 has one unchecked 문단마다 선택
   assert.equal(command.type, "create_slot");
   assert.equal(command.split, "paragraph", "켜면 같은 명령에 split 을 싣는다");
   assert.equal("ranges" in command, false);
+
+/* ---------- IDE-08: 선택 옆 막대(P-05)·HWPX 결과 닻(P-02)·HWPX 문제 표지(P-08) ---------- */
+const CREATE_ONLY_FIELD = [
+  { type: "create_field", enabled: true, reason: null, alternative: null },
+  { type: "create_slot", enabled: false, reason: "항목으로 만들 수 없는 범위입니다.", alternative: null },
+  { type: "create_option", enabled: false, reason: "선택은 항목 안에서만 만들 수 있습니다.", alternative: null },
+  { type: "rename_field", enabled: false, reason: "필드가 아닙니다.", alternative: null },
+];
+/** locate 가 판정을 돌려주는 부팅 — `gate` 가 서 있는 동안의 locate 는 그 약속이 풀릴 때 답한다(판정 지연). */
+async function bootSelecting(commands = CREATE_ONLY_FIELD, tab = { ...hwpxTab(), trial_result: null, trial_state: "untried" }) {
+  const state = { commands, gate: null };
+  const env = await boot(tab, [], async (action) => {
+    if (action !== "locate") return {};
+    if (state.gate) await state.gate;
+    return { matches: [], commands: state.commands, context: {} };
+  });
+  const editor = env.mounts.find((record) => record.spec.fileName === tab.name);
+  return { env, state, editor };
+}
+let selectionSeq = 0;
+/** 편집면에서 비어 있지 않은 범위를 고르고 끝 줄을 보고한다(실제 편집기의 차례: 선택 → 끝 줄). */
+async function drag(editor, rect = { left: 120, top: 200, bottom: 220 }) {
+  selectionSeq += 1;
+  editor.spec.onSelectionChanged({ entry: "Contents/section0.xml", paragraph: 0, start_paragraph: 0, end_paragraph: 0, start: 1, end: 3 + selectionSeq });
+  editor.spec.onSelectionRect(rect);
+  await settle();
+}
+const selectionBar = (env) => env.container.querySelector(".authoring-selection-bar");
+
+test("IDE-08 P-05: a settled HWPX selection raises an unnamed bar with only the enabled create commands; focus stays; one click opens the create form", async () => {
+  const { env, editor } = await bootSelecting();
+  const before = env.document.activeElement;
+  await drag(editor);
+  const bar = selectionBar(env);
+  assert.ok(bar, "판정이 도착하면 막대가 선다");
+  assert.equal(bar.getAttribute("role"), "group");
+  assert.equal(bar.getAttribute("aria-label"), null, "이름 없는 group — 「문서 명령」 도구 막대와 이름이 겹치지 않는다");
+  assert.equal(env.container.querySelectorAll('[role="toolbar"]').length, 1, "도구 막대는 하나뿐이다");
+  const buttons = bar.querySelectorAll("button");
+  assert.deepEqual(buttons.map((node) => node.textContent), ["필드로 만들기"], "되는 만들기만 기존 이름으로");
+  assert.ok(buttons.every((node) => node.getAttribute("tabindex") === "-1" && String(node.getAttribute("class")).split(" ").includes("quiet")));
+  assert.equal(env.document.activeElement, before, "막대가 서도 초점은 옮겨 가지 않는다");
+  let prevented = false;
+  propsOf(bar).onMouseDown({ preventDefault() { prevented = true; } });
+  assert.ok(prevented, "누름이 초점을 먼저 가져가지 않는다");
+
+  fire(env, buttons[0], "click");
+  await settle();
+  const view = env.controller.viewModel.getSnapshot();
+  assert.deepEqual([view.panel, view.commandType, view.formEntry], ["properties", "create_field", "create"], "도구 막대·문맥 메뉴와 같은 pick 경로");
+  assert.equal(selectionBar(env), null, "누르면 막대는 걷힌다");
+  env.root.unmount();
+});
+
+test("IDE-08 P-05: no bar without an enabled create command, while the verdict is pending, or for a collapsed selection", async () => {
+  const { env, state, editor } = await bootSelecting();
+  await drag(editor);
+  assert.ok(selectionBar(env), "앞 선택의 판정으로 막대가 섰다");
+  let release;
+  state.gate = new Promise((resolve) => { release = resolve; });
+  editor.spec.onSelectionRect(null);
+  await drag(editor, { left: 300, top: 400, bottom: 420 });
+  assert.equal(selectionBar(env), null, "새 선택의 판정이 오기 전에는 서지 않는다 — 앞 선택의 판정(되는 만들기)으로 서지 않는다");
+  state.gate = null;
+  release();
+  await settle();
+  assert.ok(selectionBar(env), "판정이 도착하면 선다");
+  state.commands = CREATE_ONLY_FIELD.map((entry) => ({ ...entry, enabled: false }));
+  await drag(editor);
+  assert.equal(selectionBar(env), null, "되는 만들기가 없으면 막대가 없다");
+  state.commands = CREATE_ONLY_FIELD;
+  editor.spec.onSelectionRect(null);
+  editor.spec.onSelectionChanged({ entry: "Contents/section0.xml", paragraph: 0, start_paragraph: 0, end_paragraph: 0, start: 4, end: 4 });
+  await settle();
+  assert.equal(selectionBar(env), null, "선택이 비면 걷힌다");
+  env.root.unmount();
+});
+
+test("IDE-08 P-05: the bar goes on Escape, scroll, edit, a new selection, and when a menu or the palette opens", async () => {
+  const { env, editor } = await bootSelecting();
+  const view = () => env.controller.viewModel.getSnapshot();
+  env.flushSync(() => env.controller.update({ panel: "search" }));
+  await drag(editor);
+  fire(env, selectionBar(env), "keydown", { key: "Escape" });
+  await settle();
+  assert.equal(selectionBar(env), null, "Escape 는 막대를 걷는다");
+  assert.equal(view().panel, "search", "그 Escape 는 막대만 걷는다(열린 패널은 그대로)");
+
+  await drag(editor);
+  assert.ok(selectionBar(env));
+  for (const listener of env.document.listeners.get("scroll") || []) listener({ type: "scroll" });
+  await settle();
+  assert.equal(selectionBar(env), null, "스크롤에 걷힌다");
+
+  await drag(editor);
+  editor.spec.onSelectionRect(null);
+  await settle();
+  assert.equal(selectionBar(env), null, "편집(편집기가 끝 줄을 걷는다)에 걷힌다");
+
+  await drag(editor);
+  env.flushSync(() => env.controller.update({ palette: 1 }));
+  await settle();
+  assert.equal(selectionBar(env), null, "팔레트가 열리면 걷힌다");
+  env.flushSync(() => env.controller.update({ palette: 0 }));
+  await settle();
+  assert.equal(selectionBar(env), null, "팔레트를 닫아도 같은 선택으로 다시 서지 않는다");
+
+  await drag(editor);
+  editor.spec.onContextMenu({ x: 40, y: 60 });
+  await settle();
+  assert.equal(selectionBar(env), null, "문맥 메뉴가 열리면 걷힌다");
+  env.flushSync(() => env.controller.update({ contextMenu: null }));
+
+  await drag(editor, { left: 10, top: 20, bottom: 40 });
+  assert.ok(selectionBar(env), "새 선택은 다시 세운다");
+  env.root.unmount();
+});
+
+test("IDE-08 P-02: a new HWPX result scrolls without focus to the anchor field's first output; not while the input is composing", async () => {
+  const output = { entry: "Contents/section0.xml", paragraph: 5, start: 2, end: 5, name: "이름" };
+  const withOccurrences = (revision) => ({ revision, content: `cmV2${revision}`, section_entries: ["Contents/section0.xml"], source_revision: 0,
+    occurrences: [{ name: "이름", value: "홍길동", source: { entry: "Contents/section0.xml", paragraph: 0 }, output }] });
+  const env = await boot({ ...hwpxTab(), trial_missing: { fields: [], slots: [] }, trial_result: withOccurrences(7) });
+  const viewers = () => env.mounts.filter((record) => record.spec.fileName === "시험 결과.hwpx");
+  assert.equal(viewers()[0].scrolled, undefined, "닻이 없으면 옮기지 않는다(쪽 머리)");
+
+  const input = env.container.querySelector(".authoring-trial-input input.field");
+  focusOn(env, input);
+  env.flushSync(() => propsOf(input).onChange({ target: { value: "홍길동" }, nativeEvent: { isComposing: false } }));
+  await settle();
+  assert.equal(env.controller.viewModel.getSnapshot().trialAnchor, "이름");
+  const next = env.snapshot();
+  next.tabs[0].trial_result = withOccurrences(8);
+  await env.push(next);
+  assert.deepEqual(viewers().at(-1).scrolled, [output], "닻 필드의 첫 출력 자리로 — Python 이 준 좌표 그대로");
+  assert.equal(viewers().at(-1).focused, undefined, "focus(→ focusRange)는 부르지 않는다");
+  assert.equal(env.document.activeElement, input, "초점은 시험 입력칸에 남는다");
+
+  propsOf(input).onCompositionStart({});
+  const composing = env.snapshot();
+  composing.tabs[0].trial_result = withOccurrences(9);
+  await env.push(composing);
+  assert.equal(viewers().at(-1).scrolled, undefined, "한글 조합 중에는 옮기지 않는다");
+  env.root.unmount();
+});
+
+test("IDE-08 P-08: the HWPX editor decorations carry Python's problems in every display mode", async () => {
+  const problems = [{ severity: "warning", category: "authoring", message: "평문으로 남은 필드 표기입니다.", target: "수요기관",
+    location: { entry: "Contents/section0.xml", paragraph: 2, start: 0, end: 8 }, actions: [] }];
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried", problems });
+  const editor = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
+  assert.deepEqual(editor.projection.problems, problems);
+  env.controller.setMode("document");
+  await settle();
+  assert.equal(editor.projection.mode, "document");
+  assert.deepEqual(editor.projection.problems, problems, "문서 모드에서도 문제는 넘어간다");
   env.root.unmount();
 });

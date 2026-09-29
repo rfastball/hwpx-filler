@@ -310,6 +310,22 @@ export function commandEntries(commands: Obj[] | undefined, readOnly: boolean): 
       alternative: readOnly || available.enabled ? null : available.alternative || null };
   });
 }
+/** 선택 옆 막대(IDE-08 P-05)에 실을 것 — 만들기 셋 가운데 되는 것과, 되지 않는 것의 대안만이다(문맥 메뉴와 같은 Python 판정,
+ *  같은 이름). 판정 전·읽기 전용이면 싣지 않는다 — 막대가 서지 않는다. 같은 명령으로 가는 대안은 한 번만 싣는다. */
+export function selectionBarItems(entries: CommandEntry[], readOnly: boolean): { key: string; label: string; command: string; alternative: boolean }[] {
+  const creates = entries.filter((entry) => CREATE_TYPES.includes(entry.type));
+  if (readOnly || creates.some((entry) => entry.pending)) return [];
+  const items = creates.flatMap((entry) => entry.enabled ? [{ key: entry.type, label: entry.label, command: entry.type, alternative: false }]
+    : entry.alternative ? [{ key: `${entry.type}-alternative`, label: entry.alternative.label, command: entry.alternative.command_type, alternative: true }] : []);
+  return items.filter((entry, index) => items.findIndex((other) => other.command === entry.command) === index);
+}
+/** 선택 끝 줄과 막대 사이(px). */
+export const SELECTION_BAR_GAP = 8;
+/** 선택 옆 막대의 창 좌표 — 선택 끝 줄 아래 8px 에 서고, 아래가 모자라면 그 줄 위로 뒤집으며 창 안에 든다(clampMenu 규칙). */
+export function selectionBarPlace(rect: { left: number; top: number; bottom: number }, size: { width: number; height: number },
+  viewport: { width: number; height: number }): { left: number; top: number } {
+  return clampMenu({ x: rect.left, y: rect.bottom + SELECTION_BAR_GAP, top: rect.top - SELECTION_BAR_GAP }, size, viewport);
+}
 /** 작은 메뉴(「더보기」·「파일」)의 한 항목: 이름 · 실행 · 불가 · 단축키 표기(있을 때만). */
 type MenuAction = [string, () => void, boolean, string?];
 /** 「더보기」의 첫 항목이자 빈 문맥 메뉴의 한 줄 — 명령 팔레트를 연다. 팔레트 자신에는 서지 않는다(자기를 여는 줄이 된다). */
@@ -385,7 +401,10 @@ export function forwardedShellKey(shortcut: string, target: unknown): Obj | null
   return key && { ...key, target, nativeEvent: {}, preventDefault() {} };
 }
 /** 셸의 키·문맥 메뉴·명령 팔레트 처리기 — 편집면 iframe 은 셸까지 사건을 올리지 못하므로 편집기가 이 손잡이로 넘긴다. */
-type ShellInput = { current: { key?: (event: any) => void; menu?: (event: any) => void; palette?: () => void } };
+/** 편집면 글 한 줄의 호스트 창 좌표(선택 끝 자리) — 편집기가 보고하고 셸은 그 아래에 선택 옆 막대를 세운다(IDE-08). */
+type LineRect = { left: number; top: number; bottom: number };
+type ShellInput = { current: { key?: (event: any) => void; menu?: (event: any) => void; palette?: () => void;
+  selectionRect?: (id: string, rect: LineRect | null) => void } };
 
 type ShellKey = { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; target?: { closest?(selector: string): unknown } | null };
 /** 셸 단축키 판독(§10). 문서 편집면·입력창 안의 Ctrl+Z/Y 는 그 문맥의 실행 취소이므로 셸이 가로채지 않는다(§9.3). */
@@ -495,6 +514,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           contentId: `authoring-text-${item.id}`, ariaLabel: "TXT 템플릿 원문", authoring: true,
           onDocChanged: (content) => { if (!composing) controller.changed(item.id, content); },
           onSelectionChanged: (selection) => { if (!composing) controller.selection(item.id, selection); },
+          onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
         });
         adapter.current = {
@@ -544,6 +564,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           },
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection) => controller.selection(item.id, selection),
+          onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onError: (error) => controller.fail(error, "editor"), readOnly: false,
           // 배율 방식은 마운트마다 명시한다(IDE-06) — 폭 맞춤이면 Studio 가, 고정 배율이면 셸 CSS 가 키운다(곱하지 않는다).
           zoom: mountedFit ? "fit" : 100 });
@@ -558,7 +579,8 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
           content: () => handle.content(), apply: (content, _edits, label, expectedContent) => handle.applySnapshot(content, label, expectedContent),
           focus: (target) => handle.focus(target),
           command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
-          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null }), "editor"); },
+          // 문제 밑줄(IDE-08 P-08)은 TXT 와 같은 규칙이다 — Python 의 problems 를 그대로 넘기고 문서 모드에서도 선다.
+          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [] }), "editor"); },
           zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
         };
         release = () => handle.dispose();
@@ -799,6 +821,12 @@ function SemanticForm({ controller, selected, selection, preview, onClose }: Pro
 export function trialAnchorName(view: Obj): string | null {
   return view.trialAnchor || view.selected?.name || null;
 }
+/** HWPX 결과의 닻 자리(IDE-08 P-02) — 닻 필드의 첫 출력 자리(Python 의 `trial_result.occurrences[].output`). 없으면 null. */
+export function hwpxTrialAnchor(result: Obj | null | undefined, anchor: string | null): Obj | null {
+  if (!anchor) return null;
+  const hit = (result?.occurrences || []).find((occurrence: Obj) => occurrence?.name === anchor && occurrence.output && typeof occurrence.output === "object");
+  return hit ? hit.output : null;
+}
 /** 결과 칸(스크롤 상자) 안에서 target 이 가운데 오게 하는 scrollTop. 상자만 옮기므로 입력칸을 품은 독 패널은 그대로다
  *  (scrollIntoView 는 모든 스크롤 조상을 움직인다). 값은 [0, 끝] 안으로 자른다. */
 export function centeredScrollTop(scroller: { scrollTop: number; clientHeight: number; scrollHeight: number; getBoundingClientRect(): { top: number } },
@@ -824,11 +852,14 @@ export function keepFocusOutside(host: { contains(node: unknown): boolean } | nu
 function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
   const result = item.trial_result;
   const output = useRef<HTMLDivElement>(null);
+  // 시험 입력칸의 한글 조합 중(IDE-08) — 조합 중에는 결과 닻을 옮기지 않는다.
+  const composing = useRef(false);
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
-    // 결과 뷰어는 결과 칸을 채운다. HWPX 닻(고친 값 자리로 옮기기)은 초점을 뺏지 않는 Studio 훅(H4)이 선 뒤다 —
-    // focus/focusRange 는 결과 iframe 으로 DOM 초점을 가져가므로 여기서 부르지 않는다(IDE-04).
+    // 결과 뷰어는 결과 칸을 채우고, 새 결과가 서면 닻 필드의 첫 출력 자리로 옮겨 간다(IDE-08 P-02, TXT 닻과 같은 규칙).
+    // 이동은 초점 없는 스크롤(H4)이다 — focus/focusRange 는 결과 iframe 으로 DOM 초점을 가져가므로 쓰지 않는다. 즉시 이동이라
+    // 줄인 움직임 설정에도 그대로다.
     if (item.media === "hwpx" && result?.content && output.current) void controller.guarded(async () => {
       const before = document.activeElement;
       // 75% 고정 배율(IDE-04): 결과 칸 높이에서 채운 값 줄이 쪽 머리와 함께 들어온다. 맞춤 모드는 Studio 설정에 남아
@@ -837,7 +868,11 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
         sectionEntries: result.section_entries, trackSelection: "visible",
         onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
         onError: (error) => controller.fail(error, "trial-view") });
-      if (disposed) editor.dispose(); else { release = () => editor.dispose(); keepFocusOutside(output.current, before); }
+      if (disposed) { editor.dispose(); return; }
+      release = () => editor.dispose();
+      keepFocusOutside(output.current, before);
+      const anchor = hwpxTrialAnchor(result, trialAnchorName(controller.viewModel.getSnapshot()));
+      if (anchor && !composing.current) await editor.scrollTo(anchor);
     }, "trial-view");
     return () => { disposed = true; release?.(); };
   }, trialViewerKey(item));
@@ -866,7 +901,8 @@ function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
         ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
           // 손대지 않은 필드는 입력칸이 aria-invalid 를 받고 결과 시험 탭 배지로 센다 — 결과는 빈 값 표식으로 렌더된다.
           h("input", { className: "field", "aria-invalid": missingFields.includes(field.name) || undefined, value: view.values[field.name] || "",
-            onCompositionEnd: (event: any) => { void controller.guarded(() => input(field.name, { ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value })); },
+            onCompositionStart: () => { composing.current = true; },
+            onCompositionEnd: (event: any) => { composing.current = false; void controller.guarded(() => input(field.name, { ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value })); },
             onChange: (event: any) => {
               const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
               if (event.nativeEvent.isComposing) controller.update({ values });
@@ -1216,6 +1252,11 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   // 좁은 폭(컨테이너 64rem 이하)에서만 쓰이는 구조 레일의 펼침 — 넓은 폭에서는 CSS 가 무시한다.
   const [outlineOpen, setOutlineOpen] = useState(false);
   const shellInput: ShellInput = useRef<ShellInput["current"]>({});
+  // 선택 옆 막대(IDE-08 P-05)의 자리 — 편집기가 보고한 선택 끝 줄(호스트 좌표)이다. 선택이 바뀌거나 비거나 문서가 편집되면
+  // 편집기가 걷고(같은 선택을 다시 보고하지 않는다), Escape·스크롤·창 크기·메뉴·팔레트·막대 누름은 셸이 걷는다.
+  const [barAnchor, setBarAnchor] = useState<{ id: string; rect: LineRect } | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  shellInput.current.selectionRect = (id, rect) => setBarAnchor(rect ? { id, rect } : null);
   const dock = dockTabs(item, view);
   const counts = useMemo(() => problemCounts(item?.problems), [item?.problems]);
   const act = (work: () => unknown, kind?: string) => () => { void controller.guarded(work, kind); };
@@ -1348,6 +1389,36 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     if (restore && !focusFirst([opener])) focusFirst([toolbarEntry()]);
   };
   const commandTable = commandEntries(view.commands, readOnly);
+  // 막대는 지금 선택에 대한 Python 판정이 도착했을 때만 선다(commandsSelection) — 판정 전·다른 선택의 판정으로는 서지 않는다.
+  // 초점은 옮기지 않는다: 단추는 Tab 순서 밖이고 누름이 초점을 먼저 가져가지 않는다. 키보드 입구는 Shift+F10 문맥 메뉴다.
+  const barItems = selectionBarItems(commandTable, readOnly);
+  const barShown = !!item && barAnchor?.id === item.id && !!view.commandsSelection && view.commandsSelection === view.selection
+    && !view.contextMenu && !view.palette && barItems.length > 0;
+  // 메뉴·팔레트가 열리면 막대는 걷힌다 — 떠 있는 표면은 한 번에 하나다.
+  useEffect(() => { if (view.contextMenu || view.palette) setBarAnchor(null); }, [view.contextMenu, view.palette]);
+  // 스크롤(편집면·셸 어디서든)과 창 크기 변화에 걷힌다 — 막대가 선택 자리에서 떨어진다.
+  useEffect(() => {
+    const doc = root.current?.ownerDocument;
+    const win = doc?.defaultView;
+    if (!barAnchor || !doc) return;
+    const hide = () => setBarAnchor(null);
+    doc.addEventListener("scroll", hide, true);
+    win?.addEventListener("resize", hide);
+    return () => { doc.removeEventListener("scroll", hide, true); win?.removeEventListener("resize", hide); };
+  }, [barAnchor]);
+  // 막대는 그린 뒤 실제 크기로 선택 끝 줄 아래(모자라면 위)에 창 안으로 든다 — 셸 층이라 편집면 확대의 영향을 받지 않는다.
+  const barKey = barItems.map((entry) => entry.key).join(" ");
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const shell = root.current;
+    const win = shell?.ownerDocument?.defaultView;
+    if (!barShown || !bar || !shell || !barAnchor || !win?.innerWidth || typeof bar.getBoundingClientRect !== "function") return;
+    const size = bar.getBoundingClientRect();
+    const place = selectionBarPlace(barAnchor.rect, { width: size.width, height: size.height }, { width: win.innerWidth, height: win.innerHeight });
+    const base = shell.getBoundingClientRect();
+    bar.style.left = `${place.left - base.left - (shell.clientLeft || 0) + (shell.scrollLeft || 0)}px`;
+    bar.style.top = `${place.top - base.top - (shell.clientTop || 0) + (shell.scrollTop || 0)}px`;
+  }, [barShown, barAnchor, barKey]);
   // 판정이 섰는데 되는 명령도 대안도 없어 문맥 메뉴가 「명령」 한 줄뿐이면 그 위에 공유 사유를 한 줄 세운다(읽기 전용 제외).
   // 편집면 메뉴는 「필드로 만들기」가 제 사유를 싣고 서므로(결정 C) 그 한 줄뿐인 경우가 없다.
   const menuEditor = !!view.contextMenu?.editor;
@@ -1546,6 +1617,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       openContextMenu(controller, { clientX: rect.left, clientY: rect.bottom, anchorTop: rect.top, target }, root.current);
       return;
     }
+    // 떠 있는 선택 옆 막대가 가장 위의 일시 표면이다 — Escape 한 번은 막대만 걷는다.
+    if (shortcut === "escape" && barShown) { setBarAnchor(null); return; }
     if (shortcut !== "escape") event.preventDefault();
     if (shortcut === "save") act(() => controller.save(), "save")();
     else if (shortcut === "search") openPanel("search");
@@ -1694,6 +1767,12 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
             onClick: () => { if (disabled) return; const trigger = view.contextMenu?.trigger; if (focusable(trigger)) trigger.focus(); controller.update({ contextMenu: null }); run(); } },
             label, keys ? h("kbd", { className: "authoring-key", "aria-hidden": true }, keys) : null))
           : h(CommandMenu, { entries: commandTable, readOnly, editor: menuEditor, reason: menuReason, onPick: pick, onPalette: () => { const trigger = view.contextMenu?.trigger; controller.update({ contextMenu: null }); openPalette(trigger); } }))),
+    // 선택 옆 막대(IDE-08 P-05): 이름 없는 group 이다 — 「문서 명령」 도구 막대와 이름이 겹치지 않는다. 단추는 기존 명령 이름이고
+    // Tab 순서 밖(tabIndex -1)이며, 누름이 초점을 먼저 가져가지 않는다(mousedown 기본 동작 없음). 누르면 도구 막대·문맥 메뉴와
+    // 같은 pick 경로다 — 만들기 폼이 제안 이름과 함께 서고 Enter 한 번이면 선다(IDE-03).
+    barShown && h("div", { className: "authoring-selection-bar", role: "group", ref: barRef, onMouseDown: (event: any) => event.preventDefault() },
+      ...barItems.map((entry) => quiet(entry.label, () => { setBarAnchor(null); pick(entry.command); },
+        { key: entry.key, tabIndex: -1 }))),
     // 명령 팔레트(IDE-02): 비모달 오버레이 — 여는 차례 번호가 열쇠라 다시 열면 입력이 비고 초점이 입력칸으로 간다.
     item && view.palette ? h(CommandPalette, { key: view.palette, entries: commandTable, actions: paletteActions, onPick: pick, onClose: closePalette }) : null,
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).

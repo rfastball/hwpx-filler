@@ -136,7 +136,7 @@ export function validateSelectionContext(value) {
   const selection = record(value, 'selection context', code);
   exactKeys(selection, [
     'schemaVersion', 'documentEpoch', 'changeSeq', 'page', 'editable', 'collapsed',
-    'target', 'selectedTextSha256', 'range',
+    'target', 'selectedTextSha256', 'range', 'rect',
   ], 'selection context', code);
   if (selection.schemaVersion !== 1) {
     throw contractError(code, 'selection context schemaVersion must be 1');
@@ -171,6 +171,15 @@ export function validateSelectionContext(value) {
       exactKeys(pos, ['section', 'paragraph', 'charOffset'], `selection context range ${edge}`, code);
       for (const key of ['section', 'paragraph', 'charOffset']) {
         safeInteger(pos[key], `selection context range ${edge}.${key}`, 0, code);
+      }
+    }
+  }
+  if (selection.rect !== null) {
+    const rect = record(selection.rect, 'selection context rect', code);
+    exactKeys(rect, ['x', 'y', 'width', 'height'], 'selection context rect', code);
+    for (const key of ['x', 'y', 'width', 'height']) {
+      if (!Number.isFinite(rect[key]) || ((key === 'width' || key === 'height') && rect[key] < 0)) {
+        throw contractError(code, `selection context rect.${key} is invalid`);
       }
     }
   }

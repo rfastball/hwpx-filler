@@ -528,3 +528,142 @@ test("IDE-06 P-16: a preview range is one label-less synthetic marker, labels co
   assert.ok(markers.at(-1).every((marker) => marker.kind === "field"));
   handle.dispose();
 }));
+
+// ---- IDE-08: 선택 사각형(H3)·초점 없는 스크롤(H4)·문제 표지(H2) ----
+
+test("IDE-08 H3: the vendored SDK accepts the selection end rect and rejects malformed ones; scrollToRange sends the range only", async () => {
+  const context = { schemaVersion: 1, documentEpoch: 1, changeSeq: 0, page: 1, editable: true, collapsed: false, target: null,
+    selectedTextSha256: null, range: null, rect: { x: 12.5, y: 40, width: 1, height: 18.75 } };
+  const requests = [];
+  const editorWith = (result) => new RhwpEditor({}, { supports: () => true, on: () => () => {},
+    request: (method, params) => { requests.push([method, params]); return Promise.resolve(result); } });
+  assert.deepEqual(await editorWith(context).getSelectionContext(), context);
+  assert.equal((await editorWith({ ...context, rect: null }).getSelectionContext()).rect, null);
+  const { rect: _rect, ...missing } = context;
+  for (const bad of [missing, { ...context, rect: { x: 1, y: 2, width: 1 } }, { ...context, rect: { ...context.rect, y: Number.NaN } },
+    { ...context, rect: { ...context.rect, height: -1 } }, { ...context, rect: { ...context.rect, extra: 0 } }]) {
+    await assert.rejects(() => editorWith(bad).getSelectionContext(), (error) => error.code === "INVALID_RESPONSE");
+  }
+  const range = { section: 0, startParagraph: 2, startOffset: 1, endParagraph: 2, endOffset: 4 };
+  assert.deepEqual(await editorWith({ scrolled: true }).scrollToRange(range), { scrolled: true });
+  assert.deepEqual(requests.at(-1), ["scrollToRange", { range }]);
+});
+
+/** Studio stand-in whose selection context the test sets; polls fire on `timers.tick()`. */
+function selectingStudio(hooks = {}) {
+  const fake = fakeStudio([], { frame: { left: 10, top: 20, width: 300 }, frameWindow: { innerWidth: 200, innerHeight: 400 }, ...hooks });
+  const state = { context: { range: null, rect: null } };
+  const calls = [];
+  const studio = async (host, created) => {
+    const editor = await fake.studio(host, created);
+    editor.getSelectionContext = async () => state.context;
+    editor.focusRange = async (range) => { calls.push(["focusRange", range]); return { focused: true }; };
+    editor.scrollToRange = async (range) => { calls.push(["scrollToRange", range]); return { scrolled: state.scrolled ?? true }; };
+    return editor;
+  };
+  return { fake, state, calls, studio };
+}
+const at = (paragraph, start, end = start) => ({ start: { section: 0, paragraph, charOffset: start }, end: { section: 0, paragraph, charOffset: end } });
+
+test("IDE-08 H3: the host gets the selection end line once a non-empty selection settles, and loses it on collapse, move or edit", () => {
+  const timers = fakeTimers();
+  return withDom(async () => {
+    globalThis.document.hidden = false;
+    const { fake, state, studio } = selectingStudio();
+    const rects = [], selections = [];
+    const handle = await mountRhwp({ host: { closest: () => null, offsetParent: {} }, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+      sectionEntries: ["Contents/section0.xml"], onChanged() {}, onSelectionChanged: (selection) => selections.push(selection),
+      onSelectionRect: (rect) => rects.push(rect), onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio });
+    const poll = async (range, rect) => { state.context = { range, rect }; timers.tick(); await settle(); };
+    const line = { x: 40, y: 60, width: 1, height: 20 };
+    await poll(at(1, 3), line);
+    assert.deepEqual(rects, [], "a caret (collapsed selection) has no selection-side UI");
+    await poll(at(1, 3, 8), null);
+    assert.deepEqual(rects, [], "mid-drag the Studio reports no rect — nothing may appear under the pointer");
+    await poll(at(1, 3, 8), line);
+    assert.deepEqual(rects, [{ left: 70, top: 110, bottom: 140 }], "once settled: iframe px scaled by the frame (150%) into host px");
+    await poll(at(1, 3, 8), line);
+    assert.equal(rects.length, 1, "an unchanged selection is not re-reported");
+    await poll(at(1, 3, 8), { ...line, y: 30 });
+    assert.deepEqual(rects.at(-1), null, "the line moved under the same selection (scroll) — hide");
+    await poll(at(1, 3, 8), { ...line, y: 10 });
+    assert.equal(rects.length, 2, "and it does not come back for that selection");
+    await poll(at(1, 3, 9), { ...line, y: 100 });
+    assert.deepEqual(rects.at(-1), { left: 70, top: 170, bottom: 200 }, "a new selection reports again");
+    fake.userType("x");
+    assert.deepEqual(rects.at(-1), null, "an edit takes it down");
+    await poll(at(1, 3, 9), { ...line, y: 100 });
+    assert.equal(rects.length, 4, "the edited selection is not re-reported");
+    await poll(at(1, 0, 9), { ...line, y: 500 });
+    assert.equal(rects.length, 4, "a selection end outside the frame is not reported");
+    await poll(at(1, 0, 2), line);
+    await poll(at(1, 2), line);
+    assert.deepEqual(rects.slice(-2), [{ left: 70, top: 110, bottom: 140 }, null], "a collapse takes it down");
+    assert.ok(selections.length >= 5, "selection reports still flow to the host");
+    handle.dispose();
+  }, timers);
+});
+
+test("IDE-08 H4: scrollTo moves only the Studio viewport to the target's range — never focusRange", () => withDom(async () => {
+  const { state, calls, studio } = selectingStudio();
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "r.hwpx", readOnly: true, sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, studio, trackSelection: "never" });
+  assert.equal(await handle.scrollTo({ entry: "Contents/section0.xml", paragraph: 2, start: 1, end: 4 }), true);
+  const cell = [{ parent_paragraph: 1, control: 0, cell: 2, paragraph: 3 }];
+  state.scrolled = false;
+  assert.equal(await handle.scrollTo({ entry: "Contents/section0.xml", paragraph: 3, cell_path: cell }), false, "not placeable: the view stays");
+  assert.deepEqual(calls, [
+    ["scrollToRange", { section: 0, startParagraph: 2, startOffset: 1, endParagraph: 2, endOffset: 4 }],
+    ["scrollToRange", { section: 0, startParagraph: 3, startOffset: 0, endParagraph: 3, endOffset: null,
+      cellPath: [{ parentParagraph: 1, control: 0, cell: 2, paragraph: 3 }] }]]);
+  await assert.rejects(() => handle.scrollTo({ entry: "Contents/other.xml", paragraph: 0 }), /HWPX 본문 위치를 찾을 수 없습니다/);
+  handle.dispose();
+}));
+
+test("IDE-08 H2: problems become problem markers (error strong, warning subtle) in every mode and give way first to the 500 cap", () => withDom(async () => {
+  const fake = fakeStudio([]);
+  const markers = [];
+  const studio = async (host, created) => { const editor = await fake.studio(host, created);
+    const original = editor.setDecorations; editor.setDecorations = async (list, options) => { markers.push([list, options]); return original(list, options); }; return editor; };
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false, sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio, trackSelection: "never" });
+  const entry = "Contents/section0.xml";
+  const long = "가".repeat(200);
+  const problems = [
+    { severity: "error", message: "끝 표지가 없습니다.", location: { entry, paragraph: 4 } },
+    { severity: "warning", message: "평문으로 남은 필드 표기입니다.", location: { entry, paragraph: 1, start: 2, end: 8 } },
+    { severity: "warning", message: long, location: { entry, paragraph: 2, start: 0, end: 1, cell_path: [{ parent_paragraph: 0, control: 0, cell: 1, paragraph: 2 }] } },
+    { severity: "info", message: "모르는 심각도", location: { entry, paragraph: 3 } },
+    { severity: "error", message: "위치 없음", location: null },
+    { severity: "error", message: "다른 구역", location: { entry: "Contents/other.xml", paragraph: 0 } },
+  ];
+  const field = { name: "이름", occurrences: [{ entry, paragraph: 1, start: 2, end: 8 }] };
+  await handle.setDecorations({ fields: [field], slots: [], mode: "template", highlight: null, problems });
+  const [drawn, options] = markers.at(-1);
+  assert.deepEqual(options, { labels: "selected" });
+  assert.deepEqual(drawn.map((marker) => [marker.kind, marker.emphasis]), [["field", "strong"], ["problem", "strong"], ["problem", "subtle"], ["problem", "subtle"]],
+    "필드 뒤에 문제 표지 — 모르는 심각도·위치 없는 문제·모르는 구역은 칠하지 않는다");
+  assert.deepEqual(drawn[1], { kind: "problem", label: "끝 표지가 없습니다.", emphasis: "strong", section: 0, startParagraph: 4, startOffset: 0, endParagraph: 4, endOffset: null },
+    "글자 위치가 없으면 문단 전체");
+  assert.equal(Array.from(drawn[3].label).length, 160, "Studio 이름표 한도 안으로 자른다");
+  assert.ok(drawn[3].label.endsWith("…"));
+  assert.deepEqual(drawn[3].cellPath, [{ parentParagraph: 0, control: 0, cell: 1, paragraph: 2 }]);
+
+  await handle.setDecorations({ fields: [field], slots: [], mode: "document", highlight: null, problems });
+  assert.deepEqual(markers.at(-1)[0].map((marker) => marker.kind), ["problem", "problem", "problem"], "문서 모드에서도 문제는 선다(표시가 아니라 경보)");
+  assert.deepEqual(markers.at(-1)[1], { labels: "none" });
+
+  const debug = console.debug;
+  const notes = [];
+  console.debug = (...args) => notes.push(args.join(" "));
+  try {
+    const crowded = { name: "F", occurrences: Array.from({ length: 498 }, (_, index) => ({ entry, paragraph: index })) };
+    await handle.setDecorations({ fields: [crowded], slots: [], mode: "template", highlight: null, problems });
+    assert.equal(markers.at(-1)[0].length, 500, "합계가 상한을 넘지 않는다");
+    assert.deepEqual(markers.at(-1)[0].slice(-2).map((marker) => marker.kind), ["problem", "problem"], "넘치는 몫은 문제 표지에서 덜어 낸다");
+    await handle.setDecorations({ fields: [crowded], slots: [], mode: "template", highlight: null, problems });
+    assert.equal(notes.length, 1, "덜어 냈다는 기록은 콘솔 debug 에 마운트당 한 번");
+    assert.match(notes[0], /1 problem markers dropped/);
+  } finally { console.debug = debug; }
+  handle.dispose();
+}));

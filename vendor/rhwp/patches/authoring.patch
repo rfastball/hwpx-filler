@@ -1,5 +1,5 @@
 diff --git a/npm/editor/document-agent-contract.js b/npm/editor/document-agent-contract.js
-index 9e51f5a07..0ba388538 100644
+index 9e51f5a07..9f30d7107 100644
 --- a/npm/editor/document-agent-contract.js
 +++ b/npm/editor/document-agent-contract.js
 @@ -136,7 +136,7 @@ export function validateSelectionContext(value) {
@@ -7,11 +7,11 @@ index 9e51f5a07..0ba388538 100644
    exactKeys(selection, [
      'schemaVersion', 'documentEpoch', 'changeSeq', 'page', 'editable', 'collapsed',
 -    'target', 'selectedTextSha256',
-+    'target', 'selectedTextSha256', 'range',
++    'target', 'selectedTextSha256', 'range', 'rect',
    ], 'selection context', code);
    if (selection.schemaVersion !== 1) {
      throw contractError(code, 'selection context schemaVersion must be 1');
-@@ -150,6 +150,30 @@ export function validateSelectionContext(value) {
+@@ -150,6 +150,39 @@ export function validateSelectionContext(value) {
    if (selection.selectedTextSha256 !== null) {
      sha256(selection.selectedTextSha256, 'selection context selectedTextSha256', code);
    }
@@ -39,10 +39,19 @@ index 9e51f5a07..0ba388538 100644
 +      }
 +    }
 +  }
++  if (selection.rect !== null) {
++    const rect = record(selection.rect, 'selection context rect', code);
++    exactKeys(rect, ['x', 'y', 'width', 'height'], 'selection context rect', code);
++    for (const key of ['x', 'y', 'width', 'height']) {
++      if (!Number.isFinite(rect[key]) || ((key === 'width' || key === 'height') && rect[key] < 0)) {
++        throw contractError(code, `selection context rect.${key} is invalid`);
++      }
++    }
++  }
    return selection;
  }
  
-@@ -204,7 +228,7 @@ export function validateDocumentChangedEvent(value) {
+@@ -204,7 +237,7 @@ export function validateDocumentChangedEvent(value) {
    if (event.schemaVersion !== 1) {
      throw contractError(code, 'document changed event schemaVersion must be 1');
    }
@@ -52,7 +61,7 @@ index 9e51f5a07..0ba388538 100644
    }
    safeInteger(event.documentEpoch, 'document changed event documentEpoch', 1, code);
 diff --git a/npm/editor/index.d.ts b/npm/editor/index.d.ts
-index 6b35540e6..472d93fb1 100644
+index 6b35540e6..0995f45a6 100644
 --- a/npm/editor/index.d.ts
 +++ b/npm/editor/index.d.ts
 @@ -15,8 +15,13 @@ export interface EditorOptions {
@@ -87,7 +96,7 @@ index 6b35540e6..472d93fb1 100644
  export interface RhwpSelectionContextV1 {
    schemaVersion: 1;
    documentEpoch: number;
-@@ -228,6 +244,12 @@ export interface RhwpSelectionContextV1 {
+@@ -228,6 +244,14 @@ export interface RhwpSelectionContextV1 {
    collapsed: boolean;
    target: RhwpBodyParagraphTargetV1 | null;
    selectedTextSha256: string | null;
@@ -97,10 +106,12 @@ index 6b35540e6..472d93fb1 100644
 +    /** 두 끝이 같은 표 셀 안에 있을 때만 존재하며, 그때 paragraph 는 셀 안 문단 순번이다 */
 +    cellPath?: RhwpCellPathEntryV1[];
 +  } | null;
++  /** 선택 끝(캐럿) 줄의 iframe 클라이언트 좌표. 포인터로 선택을 끄는 중이면 null 이다 */
++  rect: RhwpClientRect | null;
  }
  
  export interface RhwpApplyTextCommandV1 {
-@@ -272,7 +294,7 @@ export interface RhwpTextCommandReceiptV1 {
+@@ -272,7 +296,7 @@ export interface RhwpTextCommandReceiptV1 {
  
  export interface RhwpDocumentChangedEventV1 {
    schemaVersion: 1;
@@ -109,12 +120,16 @@ index 6b35540e6..472d93fb1 100644
    documentEpoch: number;
    changeSeq: number;
    commandId: string;
-@@ -317,14 +339,27 @@ export declare class RhwpEditor {
+@@ -317,14 +341,34 @@ export declare class RhwpEditor {
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
 +  setReadOnly(readOnly: boolean): Promise<void>;
-+  setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
++  /**
++   * kind: 'field' | 'slot' | 'option' | 'problem'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
++   * label 이 포인터 설명이다. 표지는 한 번에 500개까지다.
++   */
++  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +    cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
 +  /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
@@ -129,6 +144,9 @@ index 6b35540e6..472d93fb1 100644
    focusTarget(target: RhwpBodyParagraphTargetV1): Promise<{ focused: boolean; page: number }>;
 +  focusRange(range: { section: number; startParagraph: number; startOffset: number;
 +    endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ focused: boolean }>;
++  /** 캐럿·선택·DOM 초점은 그대로 두고 뷰포트만 범위의 첫 줄로 옮긴다 */
++  scrollToRange(range: { section: number; startParagraph: number; startOffset: number;
++    endParagraph: number; endOffset: number | null; cellPath?: RhwpCellPathEntryV1[] }): Promise<{ scrolled: boolean }>;
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트 구독 */
    onDocumentChanged(listener: (event: RhwpDocumentChangedEventV1) => void): () => void;
 +  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',
@@ -138,7 +156,7 @@ index 6b35540e6..472d93fb1 100644
    readonly element: HTMLIFrameElement;
    // ── 브리지 표면 ────────────────────────────────────────────────
 diff --git a/npm/editor/index.js b/npm/editor/index.js
-index f4ed3c6c1..8bd2c7723 100644
+index f4ed3c6c1..a3c2b6e18 100644
 --- a/npm/editor/index.js
 +++ b/npm/editor/index.js
 @@ -22,7 +22,7 @@ import {
@@ -209,7 +227,7 @@ index f4ed3c6c1..8bd2c7723 100644
    /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
    async applyTextCommand(command) {
      assertCapability(this._transport, 'document-agent-command-v1');
-@@ -324,6 +355,11 @@ export class RhwpEditor {
+@@ -324,6 +355,19 @@ export class RhwpEditor {
      }));
    }
  
@@ -218,10 +236,18 @@ index f4ed3c6c1..8bd2c7723 100644
 +    return this._request('focusRange', { range });
 +  }
 +
++  /**
++   * Scroll the Studio viewport to an exact range without moving the caret, the selection or
++   * DOM focus (the host keeps focus in its own inputs). `{ scrolled: false }` = not placeable.
++   */
++  async scrollToRange(range) {
++    return this._request('scrollToRange', { range });
++  }
++
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
    onDocumentChanged(listener) {
      assertCapability(this._transport, 'document-change-events-v1');
-@@ -338,6 +374,7 @@ export class RhwpEditor {
+@@ -338,6 +382,7 @@ export class RhwpEditor {
            return;
          }
          if (!this._isFreshDocumentEvent(event.documentEpoch, event.changeSeq)) return;
@@ -229,7 +255,7 @@ index f4ed3c6c1..8bd2c7723 100644
          this._rememberDocumentVersion(event.documentEpoch, event.changeSeq);
          for (const subscriber of this._documentChangedListeners) {
            try { subscriber(event); } catch { /* 한 listener가 다른 listener를 막지 않는다. */ }
-@@ -353,10 +390,45 @@ export class RhwpEditor {
+@@ -353,10 +398,45 @@ export class RhwpEditor {
      };
    }
  
@@ -279,19 +305,20 @@ index f4ed3c6c1..8bd2c7723 100644
  
    _rememberDocumentVersion(epoch, changeSeq) {
 diff --git a/npm/editor/tests/document-agent-command-v1.contract.test.mjs b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
-index 1b8d0fcec..deb9d0e7d 100644
+index 1b8d0fcec..c17b037a1 100644
 --- a/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 +++ b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
-@@ -40,6 +40,8 @@ function selection() {
+@@ -40,6 +40,9 @@ function selection() {
      collapsed: true,
      target: target(),
      selectedTextSha256: null,
 +    range: { start: { section: 0, paragraph: 1, charOffset: 0 },
 +      end: { section: 0, paragraph: 1, charOffset: 0 } },
++    rect: null,
    };
  }
  
-@@ -233,8 +235,8 @@ test('문서 변경 이벤트는 capability와 strict v1 payload를 사용한다
+@@ -233,8 +236,8 @@ test('문서 변경 이벤트는 capability와 strict v1 payload를 사용한다
    );
  });
  
@@ -302,7 +329,7 @@ index 1b8d0fcec..deb9d0e7d 100644
    const first = [];
    const second = [];
    editor.onDocumentChanged(event => first.push(event.changeSeq));
-@@ -250,8 +252,23 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
+@@ -250,8 +253,50 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(2, 99));
@@ -325,6 +352,33 @@ index 1b8d0fcec..deb9d0e7d 100644
 +    const { editor } = editorHarness({ getSelectionContext: { ...inCell, range: { ...inCell.range, cellPath: bad } } });
 +    await assert.rejects(() => editor.getSelectionContext(), (error) => error.code === 'INVALID_RESPONSE');
 +  }
++});
++
++test('선택 컨텍스트 rect는 선택 끝 줄의 유한 좌표 사각형이거나 null이다', async () => {
++  const rect = { x: 12.5, y: 40, width: 1, height: 18.75 };
++  const withRect = { ...selection(), collapsed: false, rect };
++  assert.deepEqual(await editorHarness({ getSelectionContext: withRect }).editor.getSelectionContext(), withRect);
++  assert.equal((await editorHarness({ getSelectionContext: selection() }).editor.getSelectionContext()).rect, null);
++
++  const { rect: _omitted, ...missing } = selection();
++  for (const bad of [
++    missing,
++    { ...withRect, rect: { x: 1, y: 2, width: 1 } },
++    { ...withRect, rect: { ...rect, extra: 0 } },
++    { ...withRect, rect: { ...rect, y: Number.NaN } },
++    { ...withRect, rect: { ...rect, height: -1 } },
++    { ...withRect, rect: [1, 2, 3, 4] },
++  ]) {
++    const { editor } = editorHarness({ getSelectionContext: bad });
++    await assert.rejects(() => editor.getSelectionContext(), (error) => error.code === 'INVALID_RESPONSE');
++  }
++});
++
++test('scrollToRange는 range 하나만 싣고 초점 이동 없이 결과를 그대로 돌려준다', async () => {
++  const range = { section: 0, startParagraph: 2, startOffset: 1, endParagraph: 2, endOffset: 4 };
++  const { editor, requests } = editorHarness({ scrollToRange: { scrolled: true } });
++  assert.deepEqual(await editor.scrollToRange(range), { scrolled: true });
++  assert.deepEqual(requests.at(-1), { method: 'scrollToRange', params: { range } });
 +});
 diff --git a/npm/hwpctrl-ocx/src/studio-plugin.mjs b/npm/hwpctrl-ocx/src/studio-plugin.mjs
 index fef90d7aa..2945167d5 100644
@@ -559,7 +613,7 @@ index 5c625f7b8..7d8c701dd 100644
 +  keyboardMenuAt: Number.NEGATIVE_INFINITY,
 +};
 diff --git a/rhwp-studio/src/embed/rpc-router.ts b/rhwp-studio/src/embed/rpc-router.ts
-index 9723fff53..3a4ab3982 100644
+index 9723fff53..e0ed40bcb 100644
 --- a/rhwp-studio/src/embed/rpc-router.ts
 +++ b/rhwp-studio/src/embed/rpc-router.ts
 @@ -1,5 +1,6 @@
@@ -569,10 +623,13 @@ index 9723fff53..3a4ab3982 100644
  import {
    assertEmptyParams,
    assertOnlyParam,
-@@ -48,9 +49,17 @@ export interface EmbedRpcHandlers {
+@@ -47,10 +48,20 @@ export interface EmbedRpcHandlers {
+   exportHwpVerify(): Promise<unknown>;
    notifySaved(fileName?: string): Promise<EmbedNotifySavedResult>;
    getDocumentState(): Promise<RhwpDocumentStateV1>;
-   getSelectionContext(): Promise<RhwpSelectionContextV1>;
+-  getSelectionContext(): Promise<RhwpSelectionContextV1>;
++  /** The document-agent context plus `rect`: the selection end (caret) line in client coordinates. */
++  getSelectionContext(): Promise<RhwpSelectionContextV1 & { rect: EmbedClientRect | null }>;
 +  setReadOnly(readOnly: boolean): Promise<void>;
 +  setDecorations(markers: Array<{ kind: string; label: string; emphasis: 'subtle' | 'strong'; section: number;
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
@@ -582,15 +639,26 @@ index 9723fff53..3a4ab3982 100644
    applyTextCommand(command: RhwpApplyTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    revertTextCommand(command: RhwpRevertTextCommandV1): Promise<RhwpTextCommandReceiptV1>;
    focusTarget(target: RhwpBodyParagraphTargetV1): Promise<{ focused: boolean; page: number }>;
-+  focusRange(range: { section: number; startParagraph: number; startOffset: number;
-+    endParagraph: number; endOffset: number | null; cellPath?: EmbedCellPathEntry[] }): Promise<{ focused: boolean }>;
++  focusRange(range: EmbedBodyRange): Promise<{ focused: boolean }>;
++  /** Viewport only: the caret, the selection and DOM focus stay where they are. */
++  scrollToRange(range: EmbedBodyRange): Promise<{ scrolled: boolean }>;
  
    // ── 브리지 확장 (P4) ────────────────────────────────────
    // 자동화·플러그인·창 제어. 부모는 **구조화 복제 가능한 값만** 보낼 수 있으므로 함수를 받는
-@@ -99,6 +108,23 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
+@@ -99,6 +110,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
    if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown.sort()[0]}`);
  }
  
++/** Client-coordinate rectangle inside the Studio document. */
++export type EmbedClientRect = { x: number; y: number; width: number; height: number };
++
++/** Exact body or table-cell range (`endOffset: null` = the end paragraph's end). */
++export type EmbedBodyRange = { section: number; startParagraph: number; startOffset: number;
++  endParagraph: number; endOffset: number | null; cellPath?: EmbedCellPathEntry[] };
++
++/** Semantic overlay kinds; `problem` is an authoring diagnostic drawn as an underline. */
++const DECORATION_KINDS = ['field', 'slot', 'option', 'problem'];
++
 +const CELL_PATH_KEYS = ['parentParagraph', 'control', 'cell', 'paragraph'] as const;
 +
 +/** Optional table-cell coordinate; absent means a body paragraph range. */
@@ -608,10 +676,23 @@ index 9723fff53..3a4ab3982 100644
 +  });
 +}
 +
++/** The single `range` param of focusRange and scrollToRange. */
++function parseBodyRange(params: Record<string, unknown>, method: string): EmbedBodyRange {
++  const range = asParams(assertOnlyParam(params, 'range', `${method} params`));
++  assertOnlyKeys(range, ['section', 'startParagraph', 'startOffset', 'endParagraph', 'endOffset', 'cellPath'], `${method} range`);
++  for (const key of ['section', 'startParagraph', 'startOffset', 'endParagraph']) {
++    if (!Number.isSafeInteger(range[key]) || (range[key] as number) < 0) throw new Error(`${method} ${key} is invalid`);
++  }
++  if (range.endOffset !== null && (!Number.isSafeInteger(range.endOffset) || (range.endOffset as number) < 0))
++    throw new Error(`${method} endOffset is invalid`);
++  const cellPath = parseCellPath(range.cellPath, method);
++  return { ...range, ...(cellPath ? { cellPath } : {}) } as EmbedBodyRange;
++}
++
  /** 비어 있지 않은 문자열 식별자. 라우터에서 거르지 않으면 핸들러마다 같은 검사를 반복한다. */
  function asId(value: unknown): string {
    if (typeof value !== 'string' || value.length === 0) {
-@@ -176,6 +202,43 @@ export async function routeEmbedRequest(
+@@ -176,6 +227,43 @@ export async function routeEmbedRequest(
      case 'getSelectionContext':
        assertEmptyParams(params, 'getSelectionContext params');
        return handlers.getSelectionContext();
@@ -627,7 +708,7 @@ index 9723fff53..3a4ab3982 100644
 +      const markers = params.markers.map((item: unknown) => {
 +        const marker = asParams(item);
 +        assertOnlyKeys(marker, ['kind', 'label', 'emphasis', 'section', 'startParagraph', 'startOffset', 'endParagraph', 'endOffset', 'cellPath'], 'decoration');
-+        if (!['field', 'slot', 'option'].includes(String(marker.kind))
++        if (!DECORATION_KINDS.includes(String(marker.kind))
 +          || typeof marker.label !== 'string' || marker.label.length > 160
 +          || !['strong', 'subtle'].includes(String(marker.emphasis))) throw new Error('invalid decoration label');
 +        for (const key of ['section', 'startParagraph', 'startOffset', 'endParagraph']) {
@@ -655,22 +736,12 @@ index 9723fff53..3a4ab3982 100644
      case 'applyTextCommand': return handlers.applyTextCommand(parseApplyTextCommand(
        assertOnlyParam(params, 'command', 'applyTextCommand params'),
      ));
-@@ -185,6 +248,18 @@ export async function routeEmbedRequest(
+@@ -185,6 +273,8 @@ export async function routeEmbedRequest(
      case 'focusTarget': return handlers.focusTarget(parseBodyParagraphTarget(
        assertOnlyParam(params, 'target', 'focusTarget params'),
      ));
-+    case 'focusRange': {
-+      const range = asParams(assertOnlyParam(params, 'range', 'focusRange params'));
-+      assertOnlyKeys(range, ['section', 'startParagraph', 'startOffset', 'endParagraph', 'endOffset', 'cellPath'], 'focusRange range');
-+      for (const key of ['section', 'startParagraph', 'startOffset', 'endParagraph']) {
-+        if (!Number.isSafeInteger(range[key]) || (range[key] as number) < 0) throw new Error(`focusRange ${key} is invalid`);
-+      }
-+      if (range.endOffset !== null && (!Number.isSafeInteger(range.endOffset) || (range.endOffset as number) < 0))
-+        throw new Error('focusRange endOffset is invalid');
-+      const cellPath = parseCellPath(range.cellPath, 'focusRange');
-+      return handlers.focusRange({ ...range, ...(cellPath ? { cellPath } : {}) } as { section: number; startParagraph: number;
-+        startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: EmbedCellPathEntry[] });
-+    }
++    case 'focusRange': return handlers.focusRange(parseBodyRange(params, 'focusRange'));
++    case 'scrollToRange': return handlers.scrollToRange(parseBodyRange(params, 'scrollToRange'));
      // ── 브리지 확장 (P4) ──────────────────────────────────
      case 'automation.list': return handlers.automationList();
      case 'automation.menuModel': return handlers.automationMenuModel();
@@ -833,7 +904,7 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..50d253350 100644
+index 2dde6f1a8..206335b07 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -33,7 +33,7 @@ import type { CommandPalette } from '@/ui/command-palette';
@@ -867,7 +938,7 @@ index 2dde6f1a8..50d253350 100644
  export class InputHandler {
    private cursor: CursorState;
    private caret: CaretRenderer;
-@@ -319,6 +327,17 @@ export class InputHandler {
+@@ -319,6 +327,22 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
@@ -881,11 +952,16 @@ index 2dde6f1a8..50d253350 100644
 +  private semanticHover = -1;
 +  private readonly overlayRelayout = browserOverlayRelayout(() => this.relayoutEmbedOverlays());
 +  private onSemanticHoverBound = (e: MouseEvent) => this.onSemanticHover(e);
-+  private onSemanticLeaveBound = () => { if (this.semanticHover !== -1) { this.semanticHover = -1; this.renderSemanticLabels(); } };
++  private onSemanticLeaveBound = () => {
++    this.setSemanticTitle('');
++    if (this.semanticHover !== -1) { this.semanticHover = -1; this.renderSemanticLabels(); }
++  };
++  /** Native tooltip text of the problem marker under the pointer ('' = none). */
++  private semanticTitle = '';
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -661,33 +680,19 @@ export class InputHandler {
+@@ -661,33 +685,19 @@ export class InputHandler {
      this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
@@ -932,7 +1008,7 @@ index 2dde6f1a8..50d253350 100644
  
      eventBus.on('document-view-changed', () => {
        if (!this.active) return;
-@@ -3037,6 +3042,9 @@ export class InputHandler {
+@@ -3037,6 +3047,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -942,7 +1018,7 @@ index 2dde6f1a8..50d253350 100644
      }
    }
  
-@@ -3108,7 +3116,8 @@ export class InputHandler {
+@@ -3108,7 +3121,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -952,7 +1028,7 @@ index 2dde6f1a8..50d253350 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3131,7 @@ export class InputHandler {
+@@ -3122,6 +3136,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -960,7 +1036,7 @@ index 2dde6f1a8..50d253350 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3242,11 @@ export class InputHandler {
+@@ -3232,6 +3247,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -972,7 +1048,7 @@ index 2dde6f1a8..50d253350 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4257,6 +4272,8 @@ export class InputHandler {
+@@ -4257,6 +4277,8 @@ export class InputHandler {
      this.container.removeEventListener('mousedown', this.onClickBound);
      this.container.removeEventListener('dblclick', this.onDblClickBound);
      this.container.removeEventListener('contextmenu', this.onContextMenuBound);
@@ -981,7 +1057,7 @@ index 2dde6f1a8..50d253350 100644
      this.container.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mouseup', this.onMouseUpBound);
-@@ -4272,6 +4289,8 @@ export class InputHandler {
+@@ -4272,6 +4294,8 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
@@ -990,7 +1066,7 @@ index 2dde6f1a8..50d253350 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4321,287 @@ export class InputHandler {
+@@ -4302,6 +4326,313 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -1041,13 +1117,15 @@ index 2dde6f1a8..50d253350 100644
 +
 +  /**
 +   * Render backend-projected meaning as a non-mutating document overlay. Field runs get an
-+   * inline marker (tint + underline); floating labels follow `labels`: `selected` shows only
-+   * the markers under the caret or the pointer, `all` every marker, `none` no label.
++   * inline marker (tint + underline); a problem gets an underline (strong = error, wavy; subtle =
++   * warning, dotted) whose label is its hover tooltip. Floating labels follow `labels`: `selected`
++   * shows only the markers under the caret or the pointer, `all` every marker, `none` no label.
 +   */
 +  setSemanticMarkers(markers: typeof this.semanticMarkers, labels: 'selected' | 'all' | 'none' = 'selected'): void {
 +    this.semanticMarkers = markers;
 +    this.semanticLabelMode = labels;
 +    this.semanticHover = -1;
++    this.setSemanticTitle('');
 +    this.renderSemanticMarkers();
 +  }
 +
@@ -1178,9 +1256,10 @@ index 2dde6f1a8..50d253350 100644
 +  private renderSemanticLabels(): void {
 +    const layer = this.semanticLayer;
 +    if (!layer) return;
-+    const wanted = this.semanticLabelMode === 'none' ? [] : this.semanticGeometry.filter((item) =>
-+      this.semanticLabelMode === 'all' || item.index === this.semanticHover
-+      || (this.active && this.semanticMarkerHasCaret(item.marker)));
++    // Problem markers never float a label: their message is the hover tooltip (onSemanticHover).
++    const wanted = this.semanticLabelMode === 'none' ? [] : this.semanticGeometry.filter((item) => item.marker.kind !== 'problem'
++      && (this.semanticLabelMode === 'all' || item.index === this.semanticHover
++      || (this.active && this.semanticMarkerHasCaret(item.marker))));
 +    const key = wanted.map((item) => item.index).join(',');
 +    if (key === this.semanticLabelKey) return;
 +    this.semanticLabelKey = key;
@@ -1248,19 +1327,42 @@ index 2dde6f1a8..50d253350 100644
 +    }
 +  }
 +
-+  /** Pointer hover over a marker shows its label in `selected` mode. */
++  /**
++   * Pointer hover: a problem marker shows its message as the native tooltip (the overlay takes no
++   * pointer events, so the title sits on the scroll container); any other marker shows its label
++   * in `selected` mode.
++   */
 +  private onSemanticHover(e: MouseEvent): void {
-+    if (this.semanticLabelMode !== 'selected' || this.semanticGeometry.length === 0) return;
++    if (this.semanticGeometry.length === 0) return;
 +    const scrollContent = this.container.querySelector('#scroll-content');
 +    if (!scrollContent) return;
 +    const origin = scrollContent.getBoundingClientRect();
 +    const x = e.clientX - origin.left, y = e.clientY - origin.top;
-+    const hit = this.semanticGeometry.find((item) => item.boxes.some((box) =>
-+      x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height));
++    const over = (item: SemanticGeometry) => item.boxes.some((box) =>
++      x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height);
++    this.setSemanticTitle(this.semanticGeometry.find((item) => item.marker.kind === 'problem' && over(item))?.marker.label ?? '');
++    if (this.semanticLabelMode !== 'selected') return;
++    const hit = this.semanticGeometry.find((item) => item.marker.kind !== 'problem' && over(item));
 +    const next = hit ? hit.index : -1;
 +    if (next === this.semanticHover) return;
 +    this.semanticHover = next;
 +    this.renderSemanticLabels();
++  }
++
++  private setSemanticTitle(title: string): void {
++    if (title === this.semanticTitle) return;
++    this.semanticTitle = title;
++    if (title) this.container.title = title;
++    else this.container.removeAttribute('title');
++  }
++
++  /**
++   * Selection end (caret) line in client coordinates, for host UI placed beside the selection.
++   * Null while a pointer drag is still extending the selection: host UI must not appear under
++   * the pointer mid-drag.
++   */
++  embedSelectionEndClientRect(): ReturnType<InputHandler['embedCaretClientRect']> {
++    return this.isDragging ? null : this.embedCaretClientRect();
 +  }
 +
 +  /** Caret rectangle in this document's client coordinates, for host keyboard menus. */
@@ -1278,7 +1380,7 @@ index 2dde6f1a8..50d253350 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4766,9 @@ export class InputHandler {
+@@ -4466,6 +4797,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1288,7 +1390,7 @@ index 2dde6f1a8..50d253350 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +4976,77 @@ export class InputHandler {
+@@ -4673,6 +5007,109 @@ export class InputHandler {
      }
    }
  
@@ -1324,17 +1426,49 @@ index 2dde6f1a8..50d253350 100644
 +    return this.wasm.getCursorRectByPath(section, cellPath[0].parentParagraph, this.embedPathJson(cellPath, paragraph), charOffset);
 +  }
 +
-+  /** Select an exact body or table-cell range without mutating the document. */
-+  focusBodyRange(section: number, startParagraph: number, startOffset: number,
-+                 endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[]): boolean {
++  /** The end offset of an exact body or table-cell range that exists in the document, else null. */
++  private embedRangeEnd(section: number, startParagraph: number, startOffset: number,
++                        endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[]): number | null {
 +    if (![section, startParagraph, startOffset, endParagraph].every(n => Number.isSafeInteger(n) && n >= 0)
-+        || endParagraph < startParagraph) return false;
++        || endParagraph < startParagraph) return null;
 +    try {
 +      const end = endOffset ?? this.embedParagraphLength(section, endParagraph, cellPath);
 +      if (!Number.isSafeInteger(end) || end < 0
 +          || startOffset > this.embedParagraphLength(section, startParagraph, cellPath)
 +          || end > this.embedParagraphLength(section, endParagraph, cellPath)
-+          || (startParagraph === endParagraph && startOffset > end)) return false;
++          || (startParagraph === endParagraph && startOffset > end)) return null;
++      return end;
++    } catch { return null; }
++  }
++
++  /**
++   * Scroll the viewport so the range's first line sits mid-viewport. Nothing else moves: no caret,
++   * no selection, no DOM focus (a host keeps focus in its own inputs while this document follows).
++   */
++  scrollBodyRangeIntoView(section: number, startParagraph: number, startOffset: number,
++                          endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[]): boolean {
++    const end = this.embedRangeEnd(section, startParagraph, startOffset, endParagraph, endOffset, cellPath);
++    if (end === null) return false;
++    try {
++      const rects = this.embedSelectionRects(section, startParagraph, startOffset, endParagraph, end, cellPath);
++      const first = Array.isArray(rects) && rects.length > 0 ? rects[0]
++        : this.embedCaretRect(section, startParagraph, startOffset, cellPath);
++      if (!first) return false;
++      const zoom = this.viewportManager.getZoom();
++      const lineTop = this.virtualScroll.getPageOffset(first.pageIndex) + first.y * zoom;
++      const maxScrollTop = Math.max(0, this.container.scrollHeight - this.container.clientHeight);
++      this.container.scrollTop = Math.max(0, Math.min(maxScrollTop,
++        lineTop + (first.height * zoom) / 2 - this.container.clientHeight / 2));
++      return true;
++    } catch { return false; }
++  }
++
++  /** Select an exact body or table-cell range without mutating the document. */
++  focusBodyRange(section: number, startParagraph: number, startOffset: number,
++                 endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[]): boolean {
++    const end = this.embedRangeEnd(section, startParagraph, startOffset, endParagraph, endOffset, cellPath);
++    if (end === null) return false;
++    try {
 +      const rects = this.embedSelectionRects(section, startParagraph, startOffset, endParagraph, end, cellPath);
 +      if (!Array.isArray(rects)) return false;
 +      this.exitFootnoteModeForBodyNavigation();
@@ -1438,7 +1572,7 @@ index 000000000..af541c610
 +  }, run);
 +}
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
-index 64e8a6d1d..6954774f9 100644
+index 64e8a6d1d..c5493353c 100644
 --- a/rhwp-studio/src/main.ts
 +++ b/rhwp-studio/src/main.ts
 @@ -56,7 +56,8 @@ import {
@@ -1511,10 +1645,14 @@ index 64e8a6d1d..6954774f9 100644
    handlers: {
      async ready() {
        await initPromise;
-@@ -2024,6 +2076,24 @@ installEmbedRuntime({
+@@ -2022,7 +2074,26 @@ installEmbedRuntime({
+     async getSelectionContext() {
+       await initPromise;
        if (!documentAgent) throw new Error('Document agent is not initialized');
-       return documentAgent.getSelectionContext();
-     },
+-      return documentAgent.getSelectionContext();
++      // The host places selection-side UI under the selection end; null while a pointer drag is running.
++      return { ...documentAgent.getSelectionContext(), rect: inputHandler?.embedSelectionEndClientRect() ?? null };
++    },
 +    async setReadOnly(readOnly) {
 +      await initPromise;
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
@@ -1532,11 +1670,10 @@ index 64e8a6d1d..6954774f9 100644
 +      const { mode, effective } = applyHostAppearance(appearance);
 +      eventBus.emit('theme-changed', { mode, effective });
 +      eventBus.emit('command-state-changed');
-+    },
+     },
      async applyTextCommand(command) {
        await initPromise;
-       if (!documentAgent) throw new Error('Document agent is not initialized');
-@@ -2039,6 +2109,12 @@ installEmbedRuntime({
+@@ -2039,6 +2110,18 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.focusTarget(target);
      },
@@ -1544,6 +1681,12 @@ index 64e8a6d1d..6954774f9 100644
 +      await initPromise;
 +      if (!inputHandler) throw new Error('Input handler is not initialized');
 +      return { focused: inputHandler.focusBodyRange(range.section, range.startParagraph,
++        range.startOffset, range.endParagraph, range.endOffset, range.cellPath) };
++    },
++    async scrollToRange(range) {
++      await initPromise;
++      if (!inputHandler) throw new Error('Input handler is not initialized');
++      return { scrolled: inputHandler.scrollBodyRangeIntoView(range.section, range.startParagraph,
 +        range.startOffset, range.endParagraph, range.endOffset, range.cellPath) };
 +    },
  
@@ -1594,10 +1737,10 @@ index fabc8645e..2c529af86 100644
    /**
     * 문서를 바꾸지 않는 작업. 히스토리를 건드리지 않아 스냅샷 비용도 undo 항목도 없다.
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..8762a378a 100644
+index 1b1ecf8d5..70b7a5610 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,78 @@
+@@ -144,3 +144,106 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -1609,6 +1752,8 @@ index 1b1ecf8d5..8762a378a 100644
 +  --rhwp-semantic-field: #198575;
 +  --rhwp-semantic-slot: #7364b5;
 +  --rhwp-semantic-option: #c08436;
++  --rhwp-semantic-problem-error: #c0392b;
++  --rhwp-semantic-problem-warning: #a05a00;
 +  position: absolute;
 +  inset: 0;
 +  pointer-events: none;
@@ -1633,6 +1778,30 @@ index 1b1ecf8d5..8762a378a 100644
 +.rhwp-semantic-mark[data-kind="option"] { border: 1px dashed var(--rhwp-semantic-option); }
 +.rhwp-semantic-mark[data-kind="slot"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-slot); }
 +.rhwp-semantic-mark[data-kind="option"][data-emphasis="strong"] { border: 2px solid var(--rhwp-semantic-option); }
++
++/* Authoring problems: an underline just below the run, never a fill, so the text and a field tint
++   under it stay readable. Shape tells the severity, not only colour: strong (error) is wavy,
++   subtle (warning) is dotted. The message is the hover tooltip; problems float no label. */
++.rhwp-semantic-mark[data-kind="problem"]::after {
++  content: "";
++  position: absolute;
++  left: 0;
++  right: 0;
++  bottom: -4px;
++  height: 4px;
++}
++
++.rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after {
++  background-color: var(--rhwp-semantic-problem-error);
++  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 3C1.5 3 1.5 1 3 1S4.5 3 6 3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E") repeat-x 0 0 / 6px 4px;
++  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 3C1.5 3 1.5 1 3 1S4.5 3 6 3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E") repeat-x 0 0 / 6px 4px;
++}
++
++.rhwp-semantic-mark[data-kind="problem"][data-emphasis="subtle"]::after {
++  height: 0;
++  bottom: -3px;
++  border-bottom: 2px dotted var(--rhwp-semantic-problem-warning);
++}
 +
 +.rhwp-semantic-label {
 +  position: absolute;
@@ -1659,6 +1828,8 @@ index 1b1ecf8d5..8762a378a 100644
 +  }
 +  .rhwp-semantic-mark[data-kind="slot"],
 +  .rhwp-semantic-mark[data-kind="option"] { border-color: Highlight; }
++  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after { background-color: CanvasText; }
++  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="subtle"]::after { border-bottom-color: CanvasText; }
 +  .rhwp-semantic-label {
 +    forced-color-adjust: none;
 +    background: Highlight;
@@ -1786,12 +1957,43 @@ index e2edd4581..32c551441 100644
      ctx.textAlign = 'center';
      ctx.textBaseline = 'middle';
  
+diff --git a/rhwp-studio/tests/embed-protocol.test.ts b/rhwp-studio/tests/embed-protocol.test.ts
+index a87452c42..73b9af364 100644
+--- a/rhwp-studio/tests/embed-protocol.test.ts
++++ b/rhwp-studio/tests/embed-protocol.test.ts
+@@ -1151,3 +1151,26 @@ test('embed router는 notifySaved fileName을 정규화해 핸들러로 전달
+ 
+   assert.deepEqual(received, [undefined, 'a.hwp', undefined, undefined]);
+ });
++
++test('embed router는 scrollToRange를 focusRange와 같은 범위 검사로 넘기고 problem 장식을 받는다', async () => {
++  const calls: Array<{ method: string; value: unknown }> = [];
++  const handlers = {
++    scrollToRange: async (value: unknown) => { calls.push({ method: 'scroll', value }); return { scrolled: true }; },
++    setDecorations: async (value: unknown, labels: unknown) => { calls.push({ method: 'decorate', value: [value, labels] }); },
++  } as unknown as EmbedRpcHandlers;
++  const range = { section: 0, startParagraph: 3, startOffset: 2, endParagraph: 3, endOffset: null,
++    cellPath: [{ parentParagraph: 1, control: 0, cell: 2, paragraph: 3 }] };
++  assert.deepEqual(await routeEmbedRequest('scrollToRange', { range }, handlers), { scrolled: true });
++  for (const bad of [{ range: { ...range, startParagraph: -1 } }, { range: { ...range, extra: 1 } }, { range, extra: 1 }]) {
++    await assert.rejects(() => routeEmbedRequest('scrollToRange', bad, handlers));
++  }
++
++  const problem = { kind: 'problem', label: '평문으로 남은 필드 표기입니다.', emphasis: 'subtle', section: 0,
++    startParagraph: 1, startOffset: 0, endParagraph: 1, endOffset: 6 };
++  await routeEmbedRequest('setDecorations', { markers: [problem], labels: 'none' }, handlers);
++  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: [{ ...problem, kind: 'lint' }] }, handlers),
++    /invalid decoration label/);
++  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: Array(501).fill(problem) }, handlers),
++    /invalid decoration count/);
++  assert.deepEqual(calls, [{ method: 'scroll', value: range }, { method: 'decorate', value: [[problem], 'none'] }]);
++});
 diff --git a/rhwp-studio/tests/overlay-relayout.test.ts b/rhwp-studio/tests/overlay-relayout.test.ts
 new file mode 100644
-index 000000000..39833f7c4
+index 000000000..82d306a88
 --- /dev/null
 +++ b/rhwp-studio/tests/overlay-relayout.test.ts
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,88 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import { readFileSync } from 'node:fs';
@@ -1867,6 +2069,18 @@ index 000000000..39833f7c4
 +  const render = functionBodyFrom(src, 'private renderSemanticMarkers(');
 +  assert.match(render, /this\.overlayRelayout\.watch\(scrollContent\)/);
 +  assert.match(functionBodyFrom(src, 'dispose(): void'), /this\.overlayRelayout\.dispose\(\)/);
++});
++
++test('scrollBodyRangeIntoView moves only the viewport; the selection end rect waits for a pointer drag to end', () => {
++  const src = readFileSync(new URL('../src/engine/input-handler.ts', import.meta.url), 'utf8');
++  const scroll = functionBodyFrom(src, 'scrollBodyRangeIntoView(');
++  assert.match(scroll, /this\.container\.scrollTop = /);
++  for (const moves of [/cursor\./, /focusTextarea/, /updateCaret/, /\.focus\(/, /this\.active = /]) {
++    assert.doesNotMatch(scroll, moves, `scroll-to-range must not ${moves}`);
++  }
++  assert.match(functionBodyFrom(src, 'embedSelectionEndClientRect('), /return this\.isDragging \? null : this\.embedCaretClientRect\(\);/);
++  // Problem markers explain themselves by the hover tooltip and never float a label chip.
++  assert.match(functionBodyFrom(src, 'private renderSemanticLabels('), /item\.marker\.kind !== 'problem'/);
 +});
 diff --git a/rhwp-studio/vite.config.ts b/rhwp-studio/vite.config.ts
 index f860fb8fa..382863031 100644

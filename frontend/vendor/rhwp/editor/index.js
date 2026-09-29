@@ -360,6 +360,14 @@ export class RhwpEditor {
     return this._request('focusRange', { range });
   }
 
+  /**
+   * Scroll the Studio viewport to an exact range without moving the caret, the selection or
+   * DOM focus (the host keeps focus in its own inputs). `{ scrolled: false }` = not placeable.
+   */
+  async scrollToRange(range) {
+    return this._request('scrollToRange', { range });
+  }
+
   /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
   onDocumentChanged(listener) {
     assertCapability(this._transport, 'document-change-events-v1');
