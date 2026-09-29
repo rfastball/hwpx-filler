@@ -4327,7 +4327,7 @@ index 564e62e00..36463c9c8 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..b07f0361d 100644
+index f951d7284..b869167a8 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
 @@ -563,14 +563,21 @@ pub fn write_section(
@@ -4386,7 +4386,7 @@ index f951d7284..b07f0361d 100644
  /// `<hp:ctrl><hp:fieldEnd beginIDRef=".."/></hp:ctrl>` 방출 공통 경로.
  fn emit_field_end(out: &mut String, para: &Paragraph, fr: &FieldRange) {
      if let Some(Control::Field(f)) = para.controls.get(fr.control_idx) {
-@@ -1270,6 +1292,23 @@ fn emit_orphan_field_end(out: &mut String, ofe: &OrphanFieldEnd) {
+@@ -1270,6 +1292,35 @@ fn emit_orphan_field_end(out: &mut String, ofe: &OrphanFieldEnd) {
      }
  }
  
@@ -4400,6 +4400,18 @@ index f951d7284..b07f0361d 100644
 +/// 빈 누름틀(`fieldBegin`+`fieldEnd`)이 문단 끝에 올 때도 같다.
 +///
 +/// 위치를 모르는 고아(`None` — HWP5·합성 IR)는 종전 규칙 그대로 `true` 다.
++/// 같은 문단 필드(텍스트 축 길이 > 0)가 감싼 컨트롤 슬롯이 아직 남아 있는가.
++///
++/// `FieldRange::end_char_idx` 도 보이는 글자만 센다. `<begin/><hp:t> </hp:t><hp:tbl/><end/>`
++/// 처럼 필드가 마지막 글자 **뒤**의 표까지 감싸면, 마지막 글자 직후에 `fieldEnd` 를 내는
++/// 순간 표가 필드 밖으로 밀린다(한글이 만든 한 문단 책갈피 — 입찰 공고 문단 36). 감싼 마지막
++/// 컨트롤(`control_idx + inner_slot_count`)이 나갈 때까지 미룬다 — 0길이 필드가 이미 쓰는
++/// 규칙과 같다. `inner_slot_count` 가 0 이면 종전과 같다.
++fn field_inner_slots_pending(fr: &FieldRange, next_slot_ctrl: Option<usize>) -> bool {
++    fr.inner_slot_count > 0
++        && next_slot_ctrl.is_some_and(|ctrl| ctrl <= fr.control_idx + fr.inner_slot_count)
++}
++
 +fn orphan_precedes_slot(ofe: &OrphanFieldEnd, next_slot_ctrl: Option<usize>) -> bool {
 +    match (ofe.preceding_controls, next_slot_ctrl) {
 +        (Some(preceding), Some(ctrl)) => preceding <= ctrl,
@@ -4410,7 +4422,7 @@ index f951d7284..b07f0361d 100644
  /// 문단 텍스트 전체를 char_shapes 경계로 분할하며 `splitter` 에 누적한다.
  ///
  /// `char_offsets` 로 문자 idx → UTF-16 위치를 매핑하므로 IR 내 컨트롤(8 유닛 갭)이
-@@ -1569,6 +1608,20 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+@@ -1569,6 +1620,20 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
      // 연속 또는 중첩 필드의 닫는 순서가 뒤바뀐다.
      if para.text.is_empty() {
          while slot_idx < slots.len() {
@@ -4431,7 +4443,7 @@ index f951d7284..b07f0361d 100644
              splitter.cut_before(expected_utf16_pos);
              render_control_slot_tracked(
                  &mut splitter.content,
-@@ -1652,7 +1705,13 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+@@ -1652,7 +1717,13 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
                  .orphan_field_ends
                  .iter()
                  .enumerate()
@@ -4446,7 +4458,51 @@ index f951d7284..b07f0361d 100644
                  .filter(|_| !field_begin_owns_gap)
              {
                  flush_text_fragment(
-@@ -1887,12 +1946,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+@@ -1706,6 +1777,23 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+                     field_end_emitted[i] = true;
+                 }
+             }
++            // 마지막 글자 직후에서 미룬 필드(`field_inner_slots_pending`)는 감싼 마지막
++            // 컨트롤이 나간 바로 뒤에 닫는다.
++            for (i, fr) in para.field_ranges.iter().enumerate() {
++                if !field_end_emitted[i]
++                    && fr.start_char_idx < fr.end_char_idx
++                    && fr.end_char_idx <= idx
++                    && fr.inner_slot_count > 0
++                    && !field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied())
++                {
++                    let guide_units =
++                        emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
++                    expected_utf16_pos = expected_utf16_pos
++                        .saturating_add(guide_units)
++                        .saturating_add(8);
++                    field_end_emitted[i] = true;
++                }
++            }
+         }
+ 
+         // [Task #1556] 고아 fieldEnd (char_idx == idx): 문자 push 전에 8유닛 슬롯 방출.
+@@ -1837,6 +1925,7 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+             if fr.end_char_idx == next_idx
+                 && !field_end_emitted[i]
+                 && fr.start_char_idx < fr.end_char_idx
++                && !field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied())
+             {
+                 flush_text_fragment(
+                     &mut splitter.content,
+@@ -1875,7 +1964,10 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+         if !field_end_emitted[i] {
+             let begin_slot_pending = fr.start_char_idx == fr.end_char_idx
+                 && slot_ctrl_indices[slot_idx..].contains(&fr.control_idx);
+-            if begin_slot_pending {
++            if begin_slot_pending
++                || (fr.start_char_idx < fr.end_char_idx
++                    && field_inner_slots_pending(fr, slot_ctrl_indices.get(slot_idx).copied()))
++            {
+                 continue;
+             }
+             let guide_units = emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
+@@ -1887,12 +1979,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
      }
  
      // [Task #1556] 텍스트 끝(char_idx == text_char_count) 의 고아 fieldEnd — para 0.16 케이스.
@@ -4464,7 +4520,7 @@ index f951d7284..b07f0361d 100644
              splitter.cut_before(expected_utf16_pos);
              emit_orphan_field_end(&mut splitter.content, ofe);
              expected_utf16_pos = expected_utf16_pos.saturating_add(8);
-@@ -1901,6 +1965,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+@@ -1901,6 +1998,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
      }
  
      while slot_idx < slots.len() {
@@ -4482,7 +4538,27 @@ index f951d7284..b07f0361d 100644
          splitter.cut_before(expected_utf16_pos);
          render_control_slot_tracked(
              &mut splitter.content,
-@@ -1932,6 +2007,15 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+@@ -1919,10 +2027,17 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
+         // `inner_slot_count` 만큼 지나서 닫아야 개체가 필드 안에 남는다. 자기 슬롯
+         // 직후에 닫으면 개체가 밖으로 밀려 빈 누름틀이 되고, 한글이 안내문을 본문에
+         // 찍는다(G-순수증식 16경로).
++        // 텍스트가 있는 필드가 말미 컨트롤까지 감쌌으면(`field_inner_slots_pending` 으로 미룬
++        // 것) 감싼 마지막 컨트롤 뒤에서 닫는다.
+         for (i, fr) in para.field_ranges.iter().enumerate() {
+             if !field_end_emitted[i]
+-                && fr.start_char_idx == fr.end_char_idx
+-                && fr.control_idx + fr.inner_slot_count == emitted_ctrl_idx
++                && ((fr.start_char_idx == fr.end_char_idx
++                    && fr.control_idx + fr.inner_slot_count == emitted_ctrl_idx)
++                    || (fr.start_char_idx < fr.end_char_idx
++                        && !field_inner_slots_pending(
++                            fr,
++                            slot_ctrl_indices.get(slot_idx).copied(),
++                        )))
+             {
+                 let guide_units = emit_field_end_at(&mut splitter, para, fr, expected_utf16_pos);
+                 expected_utf16_pos = expected_utf16_pos
+@@ -1932,6 +2047,15 @@ fn render_runs(para: &Paragraph, ctx: &mut SerializeContext) -> (String, bool, u
              }
          }
      }
@@ -4498,7 +4574,7 @@ index f951d7284..b07f0361d 100644
      // [Task #1893] 방어: 지연분이 슬롯 루프에서 매칭되지 못했으면 말미에 방출(종전 동작).
      for (i, fr) in para.field_ranges.iter().enumerate() {
          if !field_end_emitted[i] {
-@@ -2193,6 +2277,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2193,6 +2317,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
                  out.push_str(&memo_children);
@@ -4506,7 +4582,7 @@ index f951d7284..b07f0361d 100644
                  out.push_str("</hp:fieldBegin>");
                  out.push_str("</hp:ctrl>");
                  return;
-@@ -2201,7 +2286,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2201,7 +2326,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
              let has_params = f.raw_parameters_xml.is_some() || generated_params.is_some();
              let has_memo = f.field_type == crate::model::control::FieldType::Memo
                  && !f.memo_paragraphs.is_empty();
@@ -4515,7 +4591,7 @@ index f951d7284..b07f0361d 100644
                  // [#1391] 자식(parameters / memo subList)이 있으면 start/end 태그.
                  out.push_str(&super::field::field_begin_open_tag(f));
                  out.push('>');
-@@ -2230,6 +2315,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
+@@ -2230,6 +2355,7 @@ fn render_control_slot(out: &mut String, control: &Control, ctx: &mut SerializeC
                      }
                      out.push_str("</hp:subList>");
                  }
@@ -4523,7 +4599,7 @@ index f951d7284..b07f0361d 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
-@@ -3056,6 +3142,10 @@ fn render_common_shape_xml(
+@@ -3056,6 +3182,10 @@ fn render_common_shape_xml(
          Ok(xml) => out.push_str(&xml),
          Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
      }
@@ -4534,7 +4610,7 @@ index f951d7284..b07f0361d 100644
      out.push_str(&format!("</hp:{tag}>"));
      out
  }
-@@ -4373,6 +4463,111 @@ mod tests {
+@@ -4373,6 +4503,111 @@ mod tests {
          );
      }
  
@@ -4646,7 +4722,7 @@ index f951d7284..b07f0361d 100644
      /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
      /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
      #[test]
-@@ -4840,16 +5035,31 @@ mod tests {
+@@ -4840,16 +5075,31 @@ mod tests {
  
      #[test]
      fn task1407_single_column_doc_unaffected() {
@@ -4681,7 +4757,7 @@ index f951d7284..b07f0361d 100644
      }
  
      #[test]
-@@ -5286,6 +5496,7 @@ mod tests {
+@@ -5286,6 +5536,7 @@ mod tests {
              begin_id_ref: 1_878_228_493,
              field_id: 627_272_811,
              begin_ctrl_id: 0,
@@ -4689,7 +4765,7 @@ index f951d7284..b07f0361d 100644
          }];
          let (doc, section) = make_doc_with_paragraph(para);
          let mut ctx = SerializeContext::collect_from_document(&doc);
-@@ -5360,6 +5571,7 @@ mod tests {
+@@ -5360,6 +5611,7 @@ mod tests {
              begin_id_ref: 42,
              field_id: 0,
              begin_ctrl_id: 0,
@@ -4697,7 +4773,7 @@ index f951d7284..b07f0361d 100644
          }];
          let (doc, section) = make_doc_with_paragraph(para);
          let mut ctx = SerializeContext::collect_from_document(&doc);
-@@ -5863,6 +6075,7 @@ mod tests {
+@@ -5863,6 +6115,7 @@ mod tests {
              begin_id_ref: 1_867_945_539,
              field_id: 0,
              begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
@@ -4705,7 +4781,7 @@ index f951d7284..b07f0361d 100644
          }];
  
          let runs = runs_of(&para);
-@@ -5883,6 +6096,7 @@ mod tests {
+@@ -5883,6 +6136,7 @@ mod tests {
              begin_id_ref: 0,
              field_id: 0,
              begin_ctrl_id: 0,
@@ -4713,7 +4789,7 @@ index f951d7284..b07f0361d 100644
          }];
          let runs = runs_of(&para);
          assert!(
-@@ -5911,6 +6125,7 @@ mod tests {
+@@ -5911,6 +6165,7 @@ mod tests {
              begin_id_ref: 2_031_845_287,
              field_id: 0,
              begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
@@ -4721,7 +4797,7 @@ index f951d7284..b07f0361d 100644
          }];
  
          let runs = runs_of(&para);
-@@ -5922,6 +6137,112 @@ mod tests {
+@@ -5922,6 +6177,195 @@ mod tests {
          );
      }
  
@@ -4818,6 +4894,89 @@ index f951d7284..b07f0361d 100644
 +        assert_eq!(first, again);
 +    }
 +
++    // ---------- 같은 문단 필드가 마지막 글자 뒤의 컨트롤까지 감쌀 때 ----------
++
++    /// 한 문단 섹션을 한 번 내보내고, 다시 읽어 한 번 더 내보낸다. 문단 XML 둘을 돌려준다.
++    fn single_paragraph_roundtrip(run: &str) -> (String, String) {
++        use crate::parser::hwpx::section::parse_hwpx_section;
++        let xml = format!(
++            r#"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">{run}</hp:run></hp:p>
++</hs:sec>"#
++        );
++        let emit = |source: &str| {
++            let section = parse_hwpx_section(source).unwrap();
++            let mut doc = Document::default();
++            doc.sections.push(section.clone());
++            let mut ctx = SerializeContext::collect_from_document(&doc);
++            String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap()
++        };
++        let paragraph = |section_xml: &str| {
++            let at = section_xml.find("<hp:p ").expect("문단");
++            section_xml[at..].to_string()
++        };
++        let first = emit(&xml);
++        let again = emit(&first);
++        (paragraph(&first), paragraph(&again))
++    }
++
++    const SAME_PARA_BEGIN: &str =
++        r#"<hp:ctrl><hp:fieldBegin id="1600000001" type="BOOKMARK" name="a"/></hp:ctrl>"#;
++
++    /// 한 문단 책갈피가 `" "` 뒤의 표까지 감싸면 종료는 표 뒤에 남는다. 종전에는 마지막
++    /// 글자 직후로 당겨져 표가 책갈피 밖으로 빠졌다(입찰 공고 문단 36 하나만 영역으로 잡은 경우).
++    #[test]
++    fn same_paragraph_field_wrapping_trailing_table_closes_after_it() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t> </hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}"
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 한글 12.0.0.4605 가 같은 문단을 블록 책갈피로 잡아 저장한 모양 그대로다
++    /// (`begin · " " · 표 · end · 빈 hp:t`).
++    #[test]
++    fn hancom_single_paragraph_bookmark_over_space_and_table_is_kept() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            r#"<hp:ctrl><hp:fieldBegin id="1207535220" type="BOOKMARK" name="S0_END" editable="0" dirty="1" zorder="-1" fieldid="627207531" metaTag=""/></hp:ctrl><hp:t> </hp:t>{ORPHAN_ORDER_TABLE}<hp:ctrl><hp:fieldEnd beginIDRef="1207535220" fieldid="627207531"/></hp:ctrl><hp:t/>"#
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 필드가 표를 감싸지 않으면(종료가 표 앞) 그대로 앞이다 — 감싼 컨트롤 수가 0 인 종전 경로.
++    #[test]
++    fn same_paragraph_field_ending_before_trailing_table_stays_before_it() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t> </hp:t>{ORPHAN_ORDER_END}{ORPHAN_ORDER_TABLE}"
++        ));
++        assert_before(&first, "<hp:fieldEnd", "<hp:tbl");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 문단 가운데에서도 같다 — 표를 감싼 필드는 표 뒤·다음 글자 앞에서 닫힌다.
++    #[test]
++    fn same_paragraph_field_wrapping_mid_text_table_closes_before_next_text() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            "{SAME_PARA_BEGIN}<hp:t>가</hp:t>{ORPHAN_ORDER_TABLE}{ORPHAN_ORDER_END}<hp:t>나</hp:t>"
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_before(&first, "<hp:fieldEnd", "나</hp:t>");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
++    /// 누름틀도 같은 경로다 — 글자와 말미 표를 함께 감싼 누름틀은 표 뒤에서 닫힌다.
++    #[test]
++    fn click_here_wrapping_text_and_trailing_table_closes_after_the_table() {
++        let (first, again) = single_paragraph_roundtrip(&format!(
++            r#"<hp:ctrl><hp:fieldBegin id="77" type="CLICK_HERE" name="값" editable="1" dirty="0" fieldid="77"/></hp:ctrl><hp:t>값</hp:t>{ORPHAN_ORDER_TABLE}<hp:ctrl><hp:fieldEnd beginIDRef="77" fieldid="77"/></hp:ctrl>"#
++        ));
++        assert_before(&first, "</hp:tbl>", "<hp:fieldEnd");
++        assert_eq!(first, again, "재방출이 고정점이어야 한다");
++    }
++
 +    /// 파서는 고아 종료 앞의 컨트롤 수를 싣는다(`preceding_controls`).
 +    #[test]
 +    fn hwpx_parser_records_controls_preceding_an_orphan_field_end() {
@@ -4834,7 +4993,7 @@ index f951d7284..b07f0361d 100644
      /// [#4778] 위치 축이 무너진 문단(파서 미수용 8유닛 슬롯 — 차례표지 0x0008 등)의
      /// 저장 lineseg 는 방출하지 않는다. textpos 사다리와 어긋난 lineseg 를 한글 2022 가
      /// 만나면 그 문단부터 문서 끝까지 본문을 폐기한다(성년후견 h2x -112,075자 실측,
-@@ -6191,8 +6512,11 @@ mod tests {
+@@ -6191,8 +6635,11 @@ mod tests {
          use crate::model::style::CharShape;
  
          // 첫 문단: "abcdef", 경계 1개 — 원본 파스 결과는 [(0,1),(19,2)]

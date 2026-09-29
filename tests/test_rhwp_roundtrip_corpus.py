@@ -259,18 +259,21 @@ def _table_end_region_outputs() -> dict[str, bytes]:
 
     ``{{/선택}}`` 을 표 바로 다음 문단에 둔 템플릿을 컴파일하면 선택 영역이 이렇게 끝난다.
     당겨진 문서는 커널이 부분 문단 종료로 거절해 생성에서 지울 수 없게 되므로, 보존 판정이
-    읽기 전용으로 막은 것이 옳았다 — 고칠 곳은 편집기 직렬화기다(``OrphanFieldEnd``).
+    읽기 전용으로 막은 것이 옳았다 — 고칠 곳은 편집기 직렬화기다(여러 문단이면 ``OrphanFieldEnd``,
+    한 문단이면 ``FieldRange`` 의 감싼 컨트롤 수).
     """
     from hwpxfiller.external.hwpx_authoring import apply_hwpx
     from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
     entry = "Contents/section0.xml"
     outputs: dict[str, bytes] = {}
-    for end in (35, 36):
+    # 36..36 은 한 문단 영역이다 — 시작·종료가 같은 문단이라 편집기가 고아가 아닌 같은 문단 필드로
+    # 읽는다(``" "`` + 표 한 문단을 감싼 선택 영역이 컴파일되면 이렇게 된다).
+    for start, end in ((20, 35), (20, 36), (36, 36)):
         package = read_hwpx_package(CORPUS / _TABLE_END_SOURCE)
-        created, _ = apply_hwpx(package, {"type": "create_slot", "entry": entry, "start_paragraph": 20,
+        created, _ = apply_hwpx(package, {"type": "create_slot", "entry": entry, "start_paragraph": start,
                                           "end_paragraph": end, "id": "a"})
-        outputs[f"slot-20-{end}-table-end.hwpx"] = created.to_bytes()
+        outputs[f"slot-{start}-{end}-table-end.hwpx"] = created.to_bytes()
     return outputs
 
 
