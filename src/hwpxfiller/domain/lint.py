@@ -74,8 +74,10 @@ class LintReport:
         return {"findings": [f.to_dict() for f in self.findings]}
 
 
-def _near_duplicate_pairs(names: "list[str]") -> "list[tuple[str, str]]":
+def near_duplicate_pairs(names: "list[str]") -> "list[tuple[str, str]]":
     """정규화(공백 제거) 후 동일한 서로 다른 필드명 쌍 — 공백/표기 변이.
+
+    저작 작업대의 저작 문제(IDE-05 #1051, ``template_authoring.authoring_lint``)도 이 판정을 쓴다.
 
     퍼지 비율(SequenceMatcher)은 ``세부품명`` vs ``세부품명번호`` 같은 부분 문자열
     관계(정당하게 구분되는 별개 필드)를 오탐하므로 lint 중복 판정엔 쓰지 않는다.
@@ -110,7 +112,7 @@ def lint_template(
             LintFinding("no_fields", "warning", "템플릿에 누름틀 필드가 없습니다.", [])
         )
 
-    for a, b in _near_duplicate_pairs(names):
+    for a, b in near_duplicate_pairs(names):
         findings.append(
             LintFinding(
                 "near_duplicate",

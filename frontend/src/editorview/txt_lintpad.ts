@@ -31,6 +31,20 @@ export type LintpadSpan = {
   end: number;
 };
 
+/** 원인 자리 문제 1건(IDE-05) — Python 의 `problems[].location`(UTF-16)과 심각도·문장 그대로다. */
+export type LintpadProblem = {
+  /** `"error"`(실선 물결) 또는 `"warning"`(점선 물결). 모르는 심각도는 칠하지 않는다. */
+  severity: string;
+  start: number;
+  end: number;
+  /** 표지 위 `title` — Python 문장 그대로. */
+  message: string;
+};
+
+/** 표지 짝 1쌍(IDE-05) — Python 의 `analysis.placements` 가 준 여는 표지 줄·닫는 표지 줄 위의 offset 하나씩.
+ *  짝은 여기서 계산하지 않는다. 캐럿이 한쪽 줄에 있으면 다른 쪽 줄이 옅게 선다. */
+export type LintpadPair = { open: number; close: number };
+
 /** 마운트된 메모장 1개의 **불투명 손잡이** — vendor 타입을 밖으로 내지 않는다. */
 export type LintpadHandle = {
   readonly host: HTMLElement;
@@ -62,6 +76,10 @@ export type LintpadUpdateSpec = {
   doc?: string;
   /** 강조 좌표 전집. 넘기지 않으면 기존 강조를 그대로 둔다(문서 변경에 따라 매핑된다). */
   spans?: readonly LintpadSpan[];
+  /** 문제 표지 전집(별도 층) — 필드·표지 강조와 겹쳐도 잘리지 않는다. 넘기지 않으면 그대로 둔다. */
+  problems?: readonly LintpadProblem[];
+  /** 표지 짝 전집. 넘기지 않으면 그대로 둔다. */
+  pairs?: readonly LintpadPair[];
 };
 
 /** 손잡이 → 실제 뷰. 이 `WeakMap` 이 vendor 타입 봉쇄의 자리다. */
@@ -73,6 +91,32 @@ const SPAN_CLASS: Record<string, string> = {
 };
 
 const setSpans = StateEffect.define<readonly LintpadSpan[]>();
+const setProblems = StateEffect.define<readonly LintpadProblem[]>();
+const setPairs = StateEffect.define<readonly LintpadPair[]>();
+
+const PROBLEM_CLASS: Record<string, string> = {
+  error: "cm-authoring-problem-error",
+  warning: "cm-authoring-problem-warning",
+};
+
+/** 문제 표지로 얹을 조각의 **순수** 투영 — vendor 타입이 없어 단위로 잰다.
+ *  필드 강조(`usableSpans`)와 달리 겹침을 버리지 않는다: 문제는 제 층이 따로 있고, 같은 자리의 두 문제는 둘 다
+ *  선다(마크는 겹쳐도 되고 정렬만 요구한다). 문서 길이로 자르고, 줄 전체 자리의 끝 줄바꿈은 밑줄이 설 글자가 아니라
+ *  걷는다. 모르는 심각도·빈 조각은 버린다. */
+export function problemMarks(
+  problems: readonly LintpadProblem[], doc: string,
+): { from: number; to: number; className: string; title: string }[] {
+  const marks: { from: number; to: number; className: string; title: string }[] = [];
+  for (const problem of problems) {
+    const className = PROBLEM_CLASS[problem.severity];
+    const from = Math.max(0, Math.min(problem.start, doc.length));
+    let to = Math.max(from, Math.min(problem.end, doc.length));
+    while (to > from && (doc[to - 1] === "\n" || doc[to - 1] === "\r")) to--;
+    if (className === undefined || to <= from) continue;
+    marks.push({ from, to, className, title: problem.message });
+  }
+  return marks.sort((a, b) => a.from - b.from || a.to - b.to);
+}
 
 /** 데코를 얹을 수 있는 조각만 남긴 **순수** 투영 — vendor 타입이 없어 단위로 잰다.
  *
@@ -132,6 +176,77 @@ const spanField = StateField.define<DecorationSet>({
   },
   provide: (field) => EditorView.decorations.from(field),
 });
+
+/** 문제 표지 층(IDE-05) — 필드·표지 강조와 **다른** StateField 다. 같은 배열에 섞으면 `usableSpans` 가 겹친 뒤
+ *  조각을 버려 문제가 사라진다. 문서가 바뀌면 매핑으로 따라가고 새 판정이 오면 갈아 끼운다. */
+const problemField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    let next = value.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (effect.is(setProblems)) {
+        next = Decoration.set(problemMarks(effect.value, tr.state.doc.toString()).map((mark) =>
+          Decoration.mark({ class: mark.className, attributes: { title: mark.title } }).range(mark.from, mark.to)), true);
+      }
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+/** 표지 짝 층(IDE-05) — 짝 목록(매핑으로 따라간다)과 지금 캐럿이 고른 짝 줄 장식. */
+type PairState = { pairs: readonly LintpadPair[]; deco: DecorationSet };
+
+function pairDecoration(state: EditorState, pairs: readonly LintpadPair[]): DecorationSet {
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, state.doc.length));
+  const caret = state.doc.lineAt(state.selection.main.head).number;
+  const lines = new Set<number>();
+  for (const pair of pairs) {
+    const open = state.doc.lineAt(clamp(pair.open)).number;
+    const close = state.doc.lineAt(clamp(pair.close)).number;
+    if (open === close) continue;
+    if (caret === open) lines.add(close);
+    else if (caret === close) lines.add(open);
+  }
+  return Decoration.set([...lines].sort((a, b) => a - b)
+    .map((number) => Decoration.line({ class: "cm-authoring-pair" }).range(state.doc.line(number).from)));
+}
+
+const pairField = StateField.define<PairState>({
+  create: () => ({ pairs: [], deco: Decoration.none }),
+  update(value, tr) {
+    let pairs = tr.docChanged
+      ? value.pairs.map((pair) => ({ open: tr.changes.mapPos(pair.open), close: tr.changes.mapPos(pair.close) }))
+      : value.pairs;
+    let changed = tr.docChanged || tr.selection !== undefined;
+    for (const effect of tr.effects) {
+      if (effect.is(setPairs)) { pairs = effect.value; changed = true; }
+    }
+    return changed ? { pairs, deco: pairDecoration(tr.state, pairs) } : value;
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => value.deco),
+});
+
+/** 세 장식 층(강조·문제·짝)이 한 문서에서 실제로 무엇을 그리는가 — DOM 없이 상태만 세워 확인하는 단위 창구.
+ *  vendor 타입은 밖으로 나가지 않는다(평범한 조각 목록만 돌려준다). */
+export function lintpadDecorations(
+  doc: string, spec: { spans?: readonly LintpadSpan[]; problems?: readonly LintpadProblem[]; pairs?: readonly LintpadPair[]; caret?: number },
+): { layer: "span" | "problem" | "pair"; from: number; to: number; className: string; title?: string }[] {
+  let state = EditorState.create({ doc, extensions: [spanField, problemField, pairField] });
+  state = state.update({
+    effects: [setSpans.of(spec.spans || []), setProblems.of(spec.problems || []), setPairs.of(spec.pairs || [])],
+    selection: spec.caret === undefined ? undefined : { anchor: spec.caret },
+  }).state;
+  const out: { layer: "span" | "problem" | "pair"; from: number; to: number; className: string; title?: string }[] = [];
+  const read = (layer: "span" | "problem" | "pair", set: DecorationSet) => set.between(0, state.doc.length, (from, to, value) => {
+    const attributes = value.spec.attributes as Record<string, string> | undefined;
+    out.push({ layer, from, to, className: String(value.spec.class), ...(attributes?.title ? { title: attributes.title } : {}) });
+  });
+  read("span", state.field(spanField));
+  read("problem", state.field(problemField));
+  read("pair", state.field(pairField).deco);
+  return out;
+}
 
 /** 메모장 기본 모습 — 색·굵기는 제품 CSS(`frontend/css/editor.css`)가 토큰으로 소유한다.
  *  여기서는 레이아웃만 세운다(vendor 테마가 제품 팔레트를 발명하지 않게 한다). */
@@ -227,6 +342,8 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
           "aria-label": spec.ariaLabel,
         }),
         spanField,
+        problemField,
+        pairField,
         BASE_THEME,
         PANEL_THEME,
         darkness.of(darkFacet(currentDark())),
@@ -293,12 +410,17 @@ export function updateLintpad(handle: LintpadHandle, spec: LintpadUpdateSpec): v
   if (view === undefined) return;
   // 강조만 바꾸는 호출(장식)은 문서 전체를 문자열로 만들지 않는다 — 비교할 새 문서가 있을 때만 읽는다.
   const replacing = spec.doc !== undefined && spec.doc !== view.state.doc.toString();
-  if (!replacing && spec.spans === undefined) return;
+  const effects = [
+    ...(spec.spans === undefined ? [] : [setSpans.of(spec.spans)]),
+    ...(spec.problems === undefined ? [] : [setProblems.of(spec.problems)]),
+    ...(spec.pairs === undefined ? [] : [setPairs.of(spec.pairs)]),
+  ];
+  if (!replacing && !effects.length) return;
   view.dispatch({
     changes: replacing
       ? { from: 0, to: view.state.doc.length, insert: spec.doc }
       : undefined,
-    effects: spec.spans === undefined ? undefined : setSpans.of(spec.spans),
+    effects,
   });
 }
 

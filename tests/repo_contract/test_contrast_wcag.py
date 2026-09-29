@@ -71,6 +71,13 @@ def test_text_and_control_colors_meet_wcag_contrast_floors() -> None:
             for theme, palette in (("light", light), ("dark", dark))
             for name, background in (("window", "window_bg"), ("card", "card_bg"))
         ),
+        # TXT 편집면의 문제 밑줄(IDE-05 .cm-authoring-problem-error/-warning)은 글자가 아닌 그래픽 표지다 — 3:1.
+        # 편집면 바탕은 카드다. 강제 색상에서는 CanvasText 로 바뀐다(authoring.css forced-colors 블록).
+        *(
+            (f"{theme} problem underline {name}/card", palette["color"][name], palette["color"]["card_bg"], 3.0)
+            for theme, palette in (("light", light), ("dark", dark))
+            for name in ("danger", "warn")
+        ),
     ]
 
     failures = [

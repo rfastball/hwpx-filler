@@ -19,6 +19,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .job import MISSING_MARKER
+from .lint import near_duplicate_pairs
 from .structure_scan import (
     CONTEXT_MAX,
     PLACEMENT_OPTION,
@@ -78,6 +79,16 @@ CATEGORY_STRUCTURE = "structure"
 CATEGORY_COMPATIBILITY = "compatibility"
 CATEGORY_AUTHORING = "authoring"
 ACTION_NAVIGATE_LABEL = "원문으로 이동"
+# Authoring lint (IDE-05 #1051) — warnings that never change draft/ready. The row's target cell shows the
+# name, so the sentences carry none.
+MESSAGE_NEAR_DUPLICATE = "공백만 다른 필드 이름이 있습니다."
+MESSAGE_STRAY_TOKEN = "평문으로 남은 필드 표기입니다."
+KIND_NEAR_DUPLICATE = "near_duplicate"
+KIND_STRAY_TOKEN = "stray_token"
+#: The one-token 누름틀 변환 (vocabulary `ui-style.md`: 평문 토큰의 누름틀 전환 → 누름틀 변환).
+COMPILE_TOKEN = "compile_token"
+COMPILE_TOKEN_LABEL = "누름틀 변환"
+REASON_FIX_STALE = "이 문제의 자동 수정이 더는 적용되지 않습니다. 문제 목록을 다시 확인하세요."
 
 
 class NameConflict(ValueError):
@@ -359,6 +370,9 @@ def command_label(command: Mapping[str, object], target: object = None) -> str:
         return f"{quoted} {COMMAND_NAMES[action]}".strip()
     if action == "repair_marker":
         return str(target or "마커 수정")
+    if action == COMPILE_TOKEN:
+        name = str(command.get("name", ""))
+        return f"‘{name}’ {COMPILE_TOKEN_LABEL}"
     return action
 
 
@@ -369,6 +383,53 @@ def navigate_action(location: object) -> dict:
 def command_action(command: Mapping[str, object], label: str | None = None) -> dict:
     return {"label": label or COMMAND_NAMES.get(str(command.get("type")), str(command.get("type"))),
             "kind": "command", "command": dict(command)}
+
+
+def _occurrence_location(media: str, occurrence: Mapping[str, object] | None) -> dict | None:
+    """Where one field use sits, in the shape the problem rows navigate with (§7.2)."""
+    if occurrence is None:
+        return None
+    if media == "txt":
+        return {key: occurrence[key] for key in ("line", "start", "end") if key in occurrence}
+    paragraph, anchor = occurrence.get("paragraph"), occurrence.get("anchor_paragraph")
+    if type(paragraph) is not int:
+        return {"entry": occurrence.get("entry"), "paragraph": anchor} if type(anchor) is int else None
+    location: dict = {"entry": occurrence.get("entry"), "paragraph": paragraph}
+    if occurrence.get("cell_path") is not None:
+        location["cell_path"] = occurrence["cell_path"]
+    if type(occurrence.get("start")) is int and type(occurrence.get("end")) is int:
+        location.update(start=occurrence["start"], end=occurrence["end"])
+    return location
+
+
+def _relink_command(media: str, occurrence: Mapping[str, object], old: str, name: str) -> dict:
+    if media == "txt":
+        return {"type": "relink_field", "start": occurrence["start"], "end": occurrence["end"], "name": name}
+    return {"type": "relink_field", "entry": occurrence.get("entry"), "occurrence": occurrence.get("occurrence"),
+            "pairing_id": occurrence.get("pairing_id"), "old_name": old, "name": name}
+
+
+def authoring_lint(media: str, analysis: dict) -> list[dict]:
+    """Field names that differ only in whitespace (IDE-05 #1051) — the same judgment as `lint.near_duplicate_pairs`.
+
+    One warning per pair. The target is the name with fewer uses (on a tie, the one that first appears later —
+    the likelier typo). Its first use is where the row navigates; a one-use target also carries 「필드 연결 변경」
+    onto the other name. `normalize_field_id` folds but keeps inner whitespace, so 「공고 명」 is a separate field.
+    """
+    by_name = {str(item.get("name")): item for item in analysis.get("fields", []) if isinstance(item, dict)}
+    counts = {name: int(item.get("count", len(item.get("occurrences", [])))) for name, item in by_name.items()}
+    problems: list[dict] = []
+    for first, second in near_duplicate_pairs(list(by_name)):
+        target, other = (first, second) if counts[first] < counts[second] else (second, first)
+        occurrences = list(by_name[target].get("occurrences", []))
+        location = _occurrence_location(media, occurrences[0] if occurrences else None)
+        actions = [navigate_action(location)]
+        if counts[target] == 1 and occurrences:
+            actions.append(command_action(_relink_command(media, occurrences[0], target, other)))
+        problems.append({"kind": KIND_NEAR_DUPLICATE, "severity": SEVERITY_WARNING,
+                         "category": CATEGORY_AUTHORING, "message": MESSAGE_NEAR_DUPLICATE,
+                         "target": target, "location": location, "actions": actions})
+    return problems
 
 
 def marker_target(context: str) -> str | None:
@@ -713,7 +774,7 @@ def _edits(text: str, command: Mapping[str, object], *,
             if suggestion is not None and command == suggestion["command"]:
                 return [(_from_utf16(text, command["start"]),
                          _from_utf16(text, command["end"]), str(command["text"]))], False, False
-        raise ValueError("이 문제의 자동 수정이 더는 적용되지 않습니다. 문제 목록을 다시 확인하세요.")
+        raise ValueError(REASON_FIX_STALE)
     if scan.diagnostics and action not in FIELD_COMMANDS:
         raise ValueError(REASON_STRUCTURE_FIRST)
     matches = list(iter_field_token_matches(text))

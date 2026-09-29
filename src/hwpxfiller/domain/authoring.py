@@ -88,12 +88,20 @@ class TokenSite:
 
     ``compilable`` 이 False 면 ``reason`` 에 이유(파편·복합 런). ``name`` 은 ``{{}}`` 벗긴
     필드명(부분 토큰이라 알 수 없으면 원문 조각).
+
+    좌표(IDE-05 #1051) — ``entry`` 는 content XML 이름, ``paragraph_path`` 는 그 XML 안 문단의
+    lxml 경로, ``start``/``end`` 는 그 문단 depth-0 본문(``_build_paragraph_model``) 안 토큰의
+    오프셋이다(모르면 -1). 비교·리포트 사전에는 들지 않는다 — 판정은 그대로이고 자리만 싣는다.
     """
 
     name: str
     context: str
     compilable: bool
     reason: str = ""
+    entry: str = field(default="", compare=False, repr=False)
+    paragraph_path: str = field(default="", compare=False, repr=False)
+    start: int = field(default=-1, compare=False, repr=False)
+    end: int = field(default=-1, compare=False, repr=False)
 
     def to_dict(self) -> dict:
         return {
@@ -570,17 +578,20 @@ def _classify_paragraph_tokens(p_el: etree._Element) -> "list[_TokenSpan]":
 
 
 def _compile_one_composite(
-    p_el: etree._Element, alloc, report: CompileReport
+    p_el: etree._Element, alloc, report: CompileReport, only: "int | None" = None
 ) -> bool:
     """깨끗한 복합-런 토큰 **하나**를 누름틀로 치환. 치환했으면 True.
 
     치환은 트리를 바꿔 오프셋을 무효화하므로 호출자가 한 번에 하나씩, 매번 새로
     분석하며 돌린다(정지: 남은 깨끗한 복합 토큰이 없으면 False). 단순 런 토큰은
     이미 단순 경로가 처리했으므로(apply 후 depth>0) 여기 걸리지 않는다.
+    ``only`` 가 있으면 depth-0 본문에서 그 오프셋에서 시작하는 토큰만 대상이다.
     """
     for span in _classify_paragraph_tokens(p_el):
         if not span.clean or span.all_simple:
             continue  # 병리 토큰·단순 경로 소관은 건드리지 않는다
+        if only is not None and span.match.start() != only:
+            continue
         _replace_composite_token(p_el, span, alloc, report)
         return True
     return False
@@ -642,9 +653,11 @@ def _report_uncompilable_tokens(
             if span.all_simple:
                 continue  # 단순 경로가 이미 처리(scan=미리보기 등록, apply=컴파일)
             if not apply:
-                report.compilable.append(TokenSite(span.name, context, True))
+                report.compilable.append(TokenSite(span.name, context, True,
+                                                   start=span.match.start(), end=span.match.end()))
             continue  # apply 면 이미 _compile_one_composite 가 치환함
-        report.skipped.append(TokenSite(span.name, context, False, span.reason))
+        report.skipped.append(TokenSite(span.name, context, False, span.reason,
+                                        start=span.match.start(), end=span.match.end()))
 
     # 미완결 여는 괄호({{ 만 있고 닫는 }} 없음)는 완전 매치가 없어 위 루프가 못 잡는다.
     # 조용히 흘리지 않고 파편에 걸친 토큰으로 시끄럽게 신고(master 동작 복원).
@@ -690,14 +703,19 @@ def _depth0_texts(run: etree._Element, start_depth: int) -> "tuple[list[str], in
 
 
 def _process_paragraph(
-    p_el: etree._Element, alloc, apply: bool, report: CompileReport
+    p_el: etree._Element, alloc, apply: bool, report: CompileReport,
+    only: "int | None" = None,
 ) -> None:
     """한 문단의 depth-0 토큰을 스캔(+ apply 면 컴파일). field 영역 안 토큰은 건너뛴다.
 
     depth 는 런 경계가 아니라 **런 내부 자식 수준**으로 추적한다 — 인라인 누름틀
     (한 런 안 begin/end)의 값 텍스트를 미치환 토큰으로 오인하지 않기 위해서다.
+    ``only``(apply 전용)는 depth-0 본문에서 그 오프셋에서 시작하는 토큰 **하나**만 바꾼다(IDE-05).
     """
     context = _paragraph_text(p_el).strip()[:CONTEXT_MAX]
+    # 단순 런 묶음의 depth-0 시작 오프셋 — 스캔은 좌표로 싣고, 한 토큰 컴파일은 대상을 가른다.
+    run_base = _build_paragraph_model(p_el)[3] if (not apply or only is not None) else {}
+    compiled_before = len(report.compiled)
     depth = 0
     children = list(p_el)  # 스냅샷(치환 중 순회 안정)
     index = 0
@@ -732,10 +750,15 @@ def _process_paragraph(
                 for grouped in group
             )
             matches = list(iter_field_tokens(text))
+            base = run_base.get(run, -1)
+            if only is not None:
+                matches = [m for m in matches if base >= 0 and base + m.start() == only]
             if matches and not apply:
                 for m in matches:
                     report.compilable.append(
-                        TokenSite(_clean_name(m.group(1)), context, True)
+                        TokenSite(_clean_name(m.group(1)), context, True,
+                                  start=base + m.start() if base >= 0 else -1,
+                                  end=base + m.end() if base >= 0 else -1)
                     )
             elif matches:
                 _compile_simple_group(p_el, group, matches, alloc, report)
@@ -747,9 +770,11 @@ def _process_paragraph(
 
     # 단순 경로가 못 접은 **복합 런**이라도 토큰 구간이 깨끗하면 여기서 컴파일한다.
     # 매 치환이 오프셋을 무효화하므로 한 번에 하나씩 재분석하며 소진한다.
-    if apply:
+    if apply and only is None:
         while _compile_one_composite(p_el, alloc, report):
             pass
+    elif apply and len(report.compiled) == compiled_before:
+        _compile_one_composite(p_el, alloc, report, only)
 
     # apply 뒤에는 새 누름틀 영역이 depth>0 으로 제외되므로 미처리 토큰만 남는다.
     _report_uncompilable_tokens(p_el, context, report, apply)
@@ -979,9 +1004,14 @@ def scan_tokens(pkg: object) -> "list[TokenSite]":
     sites: "list[TokenSite]" = []
     for name in pkg.content_xml_names():
         root = etree.fromstring(pkg.entries[name], parser=parser)
+        tree = root.getroottree()
         report = CompileReport()
         for p in _iter_paragraphs(root):
+            before = len(report.compilable), len(report.skipped)
             _process_paragraph(p, alloc=None, apply=False, report=report)
+            path = tree.getpath(p)
+            for site in report.compilable[before[0]:] + report.skipped[before[1]:]:
+                site.entry, site.paragraph_path = name, path
         sites.extend(report.compilable)
         sites.extend(report.skipped)
     return sites
@@ -1164,21 +1194,37 @@ def insert_marker_paragraphs(
     pkg.entries[entry] = serialize_modified_section(root)
 
 
-def compile_document(pkg: object) -> "tuple[object, CompileReport]":
+def compile_document(
+    pkg: object, *, only: "tuple[str, str, int] | None" = None
+) -> "tuple[object, CompileReport]":
     """토큰을 누름틀로 컴파일. (변형된 package, 리포트) 반환.
 
     **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     ``apply`` 는 항상 참 — 미리보기는 ``scan_tokens`` 를 쓴다. 컴파일된 XML 만 교체하고,
     바뀐 게 없으면 ``modified=False``.
+
+    ``only=(entry, paragraph_path, start)`` 는 같은 변환을 **한 토큰**에만 건다(IDE-05 #1051) —
+    ``scan_tokens`` 가 실은 좌표(``TokenSite.entry``·``paragraph_path``·``start``) 그대로다. 그
+    자리에 변환 가능한 토큰이 없으면 아무것도 바꾸지 않는다(``compiled`` 가 빈다).
     """
     pkg = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     report = CompileReport()
     for name in pkg.content_xml_names():
+        if only is not None and name != only[0]:
+            continue
         root = etree.fromstring(pkg.entries[name], parser=parser)
         alloc = _make_id_allocator(root)
         before = len(report.compiled)
-        for p in _iter_paragraphs(root):
+        if only is not None:
+            try:
+                found = root.xpath(only[1], namespaces={k: v for k, v in root.nsmap.items() if k})
+            except etree.XPathError:
+                found = []
+            if (isinstance(found, list) and len(found) == 1
+                    and isinstance(found[0], etree._Element) and local_name(found[0].tag) == "p"):
+                _process_paragraph(found[0], alloc=alloc, apply=True, report=report, only=only[2])
+        for p in (_iter_paragraphs(root) if only is None else ()):
             _process_paragraph(p, alloc=alloc, apply=True, report=report)
         if len(report.compiled) > before:
             # 런 재편으로 stale 이 된 줄배치 캐시를 재직렬화 직전 스트립(#95).

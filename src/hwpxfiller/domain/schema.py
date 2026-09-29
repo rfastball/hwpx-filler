@@ -29,7 +29,7 @@ from hwpxcore.text_extract import (
     require_package,
     text_of_t,
 )
-from hwpxfiller.domain.authoring import is_structure_sigil, scan_tokens
+from hwpxfiller.domain.authoring import TokenSite, is_structure_sigil, scan_tokens
 from hwpxfiller.domain.fields import (
     FieldDocument,
     field_xml_names,
@@ -125,12 +125,17 @@ class TemplateSchema:
     ``fields`` 는 문서 등장 순서의 필드 명세. ``table_regions`` 는 필드를 품은 표 목록.
     ``stray_tokens`` 는 본문 평문에 남은 미치환 ``{{...}}``(실제 누름틀이 아닌 잔존물 —
     검증 경고용). ``unhandled`` 는 text_extract 커버리지 원장 승계(정상 문서에선 빈 dict).
+
+    ``stray_sites`` 는 같은 판정의 **좌표**(IDE-05 #1051)다 — ``stray_tokens`` 에 든 이름의 평문
+    자리 가운데 누름틀 변환이 바로 바꿀 수 있는(``compilable``) ``scan_tokens`` 자리만 싣는다.
+    파편 토큰·누름틀 값 안·BOOKMARK 평문은 이름만 있고 자리가 없다. 사전·비교에는 들지 않는다.
     """
 
     fields: "list[FieldSpec]" = field(default_factory=list)
     table_regions: "list[TableRegion]" = field(default_factory=list)
     stray_tokens: "list[str]" = field(default_factory=list)
     unhandled: "dict[str, int]" = field(default_factory=dict)
+    stray_sites: "list[TokenSite]" = field(default_factory=list, compare=False, repr=False)
 
     def field_names(self) -> "list[str]":
         """등장 순서의 필드 이름 목록(``required_fields()`` 상위호환)."""
@@ -288,7 +293,8 @@ def extract_schema(pkg: object) -> TemplateSchema:
     outside_tokens: "Counter[str]" = Counter()
     field_tokens: "Counter[str]" = Counter()
     field_strays: "Counter[str]" = Counter()
-    for site in scan_tokens(pkg):
+    sites = scan_tokens(pkg)
+    for site in sites:
         token = normalize_field_id(site.name)
         if token is not None and not site.name.startswith("{{"):
             outside_tokens[token] += 1
@@ -340,9 +346,12 @@ def extract_schema(pkg: object) -> TemplateSchema:
         if remaining:
             append_stray(token, include_real=True)
 
+    stray_names = set(stray)
     return TemplateSchema(
         fields=[merged[n] for n in order],
         table_regions=table_regions,
         stray_tokens=stray,
         unhandled=dict(doc.unhandled),
+        stray_sites=[site for site in sites
+                     if site.compilable and normalize_field_id(site.name) in stray_names],
     )

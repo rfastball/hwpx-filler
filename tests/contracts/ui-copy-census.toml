@@ -1319,6 +1319,10 @@ text = "고를 내용 줄이 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
+text = "공백만 다른 필드 이름이 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
 text = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
 
 [[sentence]]
@@ -1360,6 +1364,10 @@ text = "이 문제의 자동 수정이 더는 적용되지 않습니다. 문제 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
 text = "조정한 범위에 본문이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/domain/template_authoring.py"
+text = "평문으로 남은 필드 표기입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/domain/template_authoring.py"
