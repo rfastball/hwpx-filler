@@ -172,7 +172,7 @@ async function boot(tab, more = [], respond = () => ({})) {
     const record = { spec, disposed: false, decorations: 0 };
     mounts.push(record);
     // 편집면 초점은 편집기 host 로 선다 — 실제 rhwp 는 그 안의 iframe 이 초점을 받는다.
-    return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async () => { spec.host.focus(); },
+    return { content: async () => spec.content, flushChanges: async () => {}, applySnapshot: async () => {}, focus: async (target) => { (record.focused ||= []).push(target); spec.host.focus(); },
       undo: async () => {}, redo: async () => {}, setReadOnly: async () => {},
       setDecorations: async (projection) => { record.decorations += 1; record.projection = projection; }, dispose: () => { record.disposed = true; } };
   };
@@ -1020,5 +1020,102 @@ test("IDE-01 P-21: after a failed save the comparison's own 다시 저장 runs t
   fire(env, again, "click");
   await settle();
   assert.ok(env.calls.some((call) => call.action === "save" && call.session_id === "a"), "경보 구획과 같은 저장 경로");
+  env.root.unmount();
+});
+
+/* ---------- IDE-04: 시험 첫 결과 — TXT 닻은 결과 칸의 scrollTop 만, HWPX 결과 뷰어는 초점을 가져가지 않는다 ---------- */
+const TXT_RESULT = "수요기관: 조달청\n" + "본문 줄\n".repeat(40) + "담당자: 홍길동\n";
+const txtTrialTab = (revision = 1, text = TXT_RESULT) => ({ id: "a", name: "a.txt", media: "txt", path: "a.txt", revision: 0, values: {}, selected: {}, problems: [], cases: [],
+  analysis: { revision: 3, fields: [{ name: "수요기관", count: 1, occurrences: [] }, { name: "담당자", count: 1, occurrences: [] }], slots: [] },
+  trial_state: "current", trial_missing: { fields: [], slots: [] },
+  trial_result: { revision, text, source_revision: 0, occurrences: [
+    { name: "수요기관", value: "조달청", output_start: 6, output_end: 9 },
+    { name: "담당자", value: "홍길동", output_start: text.indexOf("홍길동"), output_end: text.indexOf("홍길동") + 3 }] } });
+
+/** 결과 칸(pre)과 출력 단추에 기하를 단다 — 칸은 화면 y=50 에서 100px 높이, 내용 1000px. 단추 i 의 내용 속 y 는 offsets[i]. */
+function stubTrialGeometry(env, offsets) {
+  const pre = env.container.querySelector("pre.authoring-trial-result");
+  const panel = env.container.querySelector("#authoring-dock-panel");
+  const writes = { pre: [], panel: [] };
+  let top = 0;
+  Object.defineProperty(pre, "scrollTop", { configurable: true, get: () => top, set: (value) => { top = value; writes.pre.push(value); } });
+  Object.assign(pre, { clientHeight: 100, scrollHeight: 1000, getBoundingClientRect: () => ({ top: 50, left: 0, right: 0, bottom: 150, width: 0, height: 100 }) });
+  Object.defineProperty(panel, "scrollTop", { configurable: true, get: () => 0, set: (value) => { writes.panel.push(value); } });
+  for (const button of env.container.querySelectorAll("pre.authoring-trial-result .authoring-output-field")) {
+    const index = Number(button.getAttribute("data-occurrence"));
+    button.getBoundingClientRect = () => ({ top: 50 + offsets[index] - top, height: 20, left: 0, right: 0, bottom: 0, width: 0 });
+    button.scrollIntoView = () => { throw new Error("scrollIntoView 는 독 패널까지 옮긴다 — 쓰지 않는다"); };
+  }
+  return writes;
+}
+
+test("IDE-04 P-02: a new TXT result scrolls only its own box so the last-typed field's output is centered; the selected field is the fallback", async () => {
+  const env = await boot(txtTrialTab());
+  const pre = env.container.querySelector("pre.authoring-trial-result");
+  assert.ok(pre, "TXT 결과는 결과 칸 선택자를 쓴다");
+  let writes = stubTrialGeometry(env, [0, 600]);
+  assert.deepEqual(writes.pre, [], "닻이 없으면 첫 결과는 옮기지 않는다(쪽 머리)");
+
+  // 담당자 입력칸에 친다 → 닻 = 담당자. 새 결과(revision 2)가 서면 그 출력이 칸 가운데로 온다: 600 - (100 - 20) / 2 = 560.
+  const field = [...env.container.querySelectorAll(".authoring-trial-input input.field")][1];
+  env.flushSync(() => propsOf(field).onChange({ target: { value: "홍길동" }, nativeEvent: { isComposing: false } }));
+  await settle();
+  assert.equal(env.controller.viewModel.getSnapshot().trialAnchor, "담당자");
+  await env.push({ ...env.snapshot(), tabs: [txtTrialTab(2)] });
+  assert.deepEqual(writes.pre, [560], "결과 칸의 scrollTop 만 옮긴다");
+  assert.deepEqual(writes.panel, [], "입력칸을 품은 독 패널은 움직이지 않는다");
+  await env.push();
+  assert.deepEqual(writes.pre, [560], "같은 결과의 재전송은 다시 옮기지 않는다");
+
+  // 시험 입력으로 닻을 정하지 않은 새 탭 보기: 편집면에서 고른 필드가 닻이다.
+  env.flushSync(() => env.controller.update({ trialAnchor: undefined, selected: { kind: "field", name: "수요기관" } }));
+  writes = stubTrialGeometry(env, [300, 600]);
+  await env.push({ ...env.snapshot(), tabs: [txtTrialTab(3)] });
+  assert.deepEqual(writes.pre, [260], "고른 필드의 출력이 가운데로(300 - 40)");
+  env.root.unmount();
+});
+
+test("IDE-04: the HWPX trial viewer never takes focus — not on a new result and not after 시험 시작", async () => {
+  const env = await boot({ ...hwpxTab(), trial_missing: { fields: [], slots: [] } });
+  const viewers = () => env.mounts.filter((record) => record.spec.fileName === "시험 결과.hwpx");
+  // 실제 Studio 는 문서를 싣는 동안 제 iframe 에 초점을 준다(실창 측정) — 그 행동을 흉내 낸다.
+  const screen = await import("../../frontend/src/screens/authoring.ts");
+  const mount = screen.rhwpMount.mount;
+  screen.rhwpMount.mount = async (spec) => {
+    const handle = await mount(spec);
+    if (spec.fileName === "시험 결과.hwpx") { const frame = env.document.createElement("iframe"); spec.host.appendChild(frame); frame.focus(); }
+    return handle;
+  };
+  const result = env.container.querySelector(".authoring-trial-result");
+  assert.ok(result && !env.container.querySelector(".authoring-trial .authoring-result-pages"), "결과 칸 전용 선택자");
+  assert.equal(viewers()[0].spec.host, result, "HWPX 결과 뷰어는 결과 칸에 선다");
+  assert.equal(viewers()[0].spec.zoom, 75, "결과 뷰어만 고정 배율(맞춤 모드 아님)로 선다");
+  assert.ok(env.mounts.filter((record) => record.spec.fileName !== "시험 결과.hwpx").every((record) => record.spec.zoom === undefined), "편집면·비교 보기는 배율을 건드리지 않는다");
+  assert.equal(env.container.querySelector("section.authoring-dock").getAttribute("class"), "authoring-dock open trial", "결과 시험 탭이 펼쳐지면 독이 높은 몫을 받는다");
+  assert.ok(env.container.querySelector(".authoring-shell").getAttribute("class").split(" ").includes("trial-open"), "셸도 결과 시험 중임을 싣는다(낮은 창의 몸통 하한)");
+  const start = [...env.container.querySelectorAll(".authoring-trial button")].find((node) => node.textContent === "시험 시작");
+  focusOn(env, start);
+  fire(env, start, "click");
+  await settle();
+  const next = env.snapshot();
+  next.tabs[0].trial_result = { ...next.tabs[0].trial_result, revision: 8, content: "bmV3" };
+  await env.push(next);
+  assert.equal(viewers().length, 2, "새 결과는 뷰어를 한 번 다시 띄운다");
+  assert.ok(viewers().every((record) => record.spec.zoom === 75), "마운트마다 한 번씩 같은 고정 배율");
+  assert.ok(viewers().every((record) => !record.focused), "결과 뷰어의 focus(→ focusRange)는 부르지 않는다 — iframe 이 초점을 가져간다");
+  assert.equal(env.document.activeElement, start, "초점은 누른 단추에 남는다(뷰어가 가져간 초점을 돌린다)");
+
+  // 자동 갱신 중 치던 입력칸도 그대로다.
+  const input = env.container.querySelector(".authoring-trial-input input.field");
+  focusOn(env, input);
+  const typed = env.snapshot();
+  typed.tabs[0].trial_result = { ...typed.tabs[0].trial_result, revision: 9, content: "bmV3Mg==" };
+  await env.push(typed);
+  assert.equal(viewers().length, 3);
+  assert.equal(env.document.activeElement, input, "새 결과가 서도 입력칸이 초점을 지킨다");
+  screen.rhwpMount.mount = mount;
+  env.flushSync(() => env.controller.update({ trial: false, dock: "problems", panel: "problems" }));
+  assert.equal(env.container.querySelector("section.authoring-dock").getAttribute("class"), "authoring-dock open", "다른 탭은 기본 몫");
+  assert.ok(!env.container.querySelector(".authoring-shell").getAttribute("class").includes("trial-open"), "다른 탭에서는 몸통 하한이 그대로");
   env.root.unmount();
 });

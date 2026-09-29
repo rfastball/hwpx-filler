@@ -312,3 +312,137 @@ def test_lintpad_spans_stay_distinct_in_forced_colors() -> None:
     assert plain["field"]["bottom"].startswith("0px") and plain["field"]["shadow"] != "none", plain
     # IDE-01: 상태 막대 입구는 강제 색상에서 링크 색(LinkText)이다 — 단추 글자색(ButtonText)으로 뭉개지지 않는다.
     assert active["link"] == active["ref"], active
+
+
+# ---------------------------------------------------------------- IDE-04 결과 시험 첫 결과
+#: 결과 시험 독(펼침) 고정물 — 제품(authoring.ts `Trial`)의 열 차례와 같다: 입력 열(입력 → 자동 갱신 → 시험 시작 →
+#: 접힌 보관 케이스), 출력 열(상태 줄 → 결과 칸 → 통과 범위 문장 → 접힌 이유). 결과 칸은 HWPX(iframe) 또는 TXT(pre).
+_TRIAL_DOCK = """  <section class="authoring-dock open trial" role="region" aria-label="보조 패널">
+    <div class="authoring-dock-bar"><div class="authoring-dock-tabs" role="tablist"><button type="button" role="tab" class="authoring-dock-tab" aria-selected="false">문제</button><button type="button" role="tab" class="authoring-dock-tab" aria-selected="true">결과 시험</button></div>
+      <div class="authoring-dock-actions"><button class="btn icon" aria-label="최대화">{icon}</button><button class="btn icon" aria-label="닫기">{icon}</button></div></div>
+    <div class="authoring-dock-panel" id="authoring-dock-panel" role="tabpanel"><section class="authoring-trial" aria-label="결과 시험">
+      <header><h2>결과 시험</h2><p>시험 자료는 템플릿 파일에 포함되지 않습니다.</p></header>
+      <div class="authoring-trial-input"><div class="authoring-trial-group"><div class="authoring-actions start"><button class="btn">필드 이름 사용</button></div>
+        <label class="authoring-field">수요기관<input class="field" value="시험값1"></label><label class="authoring-field">공고명<input class="field" value="시험값2"></label>
+        <label class="authoring-field">추정가격<input class="field"></label><label class="authoring-field">담당자<input class="field"></label></div>
+        <label class="authoring-check"><input type="checkbox" checked> 자동 갱신</label>
+        <div class="authoring-actions start"><button class="btn primary">시험 시작</button></div>
+        <details class="authoring-fold" id="cases"><summary class="authoring-section-label">보관한 시험 케이스</summary>
+          <div class="authoring-actions start"><button class="btn" id="save-case">시험 케이스 저장</button></div>
+          <div class="authoring-actions start quiet-row" id="transfer"><button class="btn quiet">시험 자료 가져오기</button><button class="btn quiet">시험 자료 내보내기</button></div></details></div>
+      <div class="authoring-trial-output" id="output"><div class="authoring-trial-state" id="state"><span class="authoring-badge" data-trial="current">현재 구성 통과</span><p>현재 시험 구성 통과</p><button class="btn quiet">시험 결과 내보내기</button></div>
+        {result}
+        <p class="authoring-reason" id="reason">통과 표시는 현재 값과 선택 구성에만 해당합니다.</p>
+        <details class="authoring-fold" id="reasons"><summary class="authoring-section-label">출력·제외 이유</summary><ul class="authoring-rows"><li>수요기관</li></ul></details></div>
+    </section></div></section>
+"""
+_TRIAL_RESULTS = {
+    "hwpx": '<div class="authoring-trial-result" id="result"><iframe title="시험 결과"></iframe></div>',
+    "txt": '<pre class="authoring-trial-result" id="result" tabindex="0" role="group" aria-label="읽기 전용 시험 결과">'
+           + "".join(f"{i:03d}행 본문 문장입니다.\n" for i in range(1, 121)) + "</pre>",
+}
+
+_MEASURE_TRIAL = """() => {
+  const q = (s) => document.querySelector(s);
+  const box = (s) => { const r = q(s).getBoundingClientRect(); return {top: r.top, bottom: r.bottom, height: r.height}; };
+  const result = q("#result"), output = q("#output");
+  const frame = q("#result iframe");
+  const folded = [...document.querySelectorAll("details.authoring-fold")].map((d) => d.open);
+  // 펼친 케이스 구획: 물러선 가져오기·내보내기 줄이 「시험 케이스 저장」과 겹치지 않는다.
+  q("#cases").open = true;
+  const caseGap = q("#transfer").getBoundingClientRect().top - q("#save-case").getBoundingClientRect().bottom;
+  q("#cases").open = false;
+  return { folded, caseGap,
+    body: box(".authoring-body"), dock: box(".authoring-dock"), viewport: innerHeight,
+    panel: box("#authoring-dock-panel"), output: box("#output"), state: box("#state"), result: box("#result"), reason: box("#reason"),
+    frame: frame ? box("#result iframe") : null,
+    resultScrolls: result.scrollHeight > result.clientHeight + 1 && getComputedStyle(result).overflowY === "auto",
+    outputOverflow: output.scrollHeight - output.clientHeight, root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    summaryShown: [...document.querySelectorAll("details.authoring-fold>summary")].every((s) => s.getBoundingClientRect().height > 0),
+  };
+}"""
+
+
+def _render_trial(width: int, height: int, scale: str, media: str, dock: str = "open", trial_open: bool = True) -> dict:
+    from playwright.sync_api import sync_playwright
+
+    from _press_probe import _built_css_path, _loopback_document
+
+    css_path, artifact_id = _built_css_path()
+    # 결과 칸 HTML 에는 중괄호가 없다 — 이어서 뼈대 전체를 한 번 format 한다({icon} 등).
+    dock_html = _TRIAL_DOCK.replace("{result}", _TRIAL_RESULTS[media])
+    scaffold = _SCAFFOLD.replace('  <footer class="authoring-status">', dock_html + '  <footer class="authoring-status">')
+    shell = "authoring-shell" + (" dock-max" if dock == "max" else "") + (" trial-open" if trial_open else "")
+    scaffold = scaffold.replace('<div class="authoring-shell">', f'<div class="{shell}">')
+    html = scaffold.format(css_path=css_path, scale=scale, rows=_OUTLINE_ROWS, app_style="", icon=_ICON)
+    with _loopback_document(html) as (url, served_artifact_id):
+        assert served_artifact_id == artifact_id
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome")
+            try:
+                page = browser.new_context(viewport={"width": width, "height": height}).new_page()
+                page.goto(url, wait_until="networkidle")
+                page.wait_for_timeout(120)
+                return page.evaluate(_MEASURE_TRIAL)
+            finally:
+                browser.close()
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_REASON)
+@pytest.mark.parametrize(("width", "height"), [(1440, 900), (1366, 768), (1028, 740)])
+@pytest.mark.parametrize("scale", ["normal", "large"])
+@pytest.mark.parametrize("media", ["hwpx", "txt"])
+def test_trial_result_fills_the_dock(width: int, height: int, scale: str, media: str) -> None:
+    """IDE-04(P-02): 결과 칸은 고정 20rem 이 아니라 독 패널의 남은 높이를 채운다 — 1440×900(물리 2518×1574)과
+    1028×740 에서 독 패널 높이의 절반 이상이고, 상태 줄 바로 아래(스크롤 없이 윗변이 보인다)에 선다. 통과 범위 문장과
+    접힌 구획은 결과 아래다. HWPX 결과 iframe 은 칸을 가득 채우고, TXT 결과는 칸 자체가 스크롤 상자다."""
+    m = _render_trial(width, height, scale, media)
+    where = f"{media} {width}x{height}@{scale}"
+    panel, output, result = m["panel"], m["output"], m["result"]
+    # 몸통 하한: 결과 시험 중인 낮은 창(≤820px)은 32vh, 그 밖은 40vh 그대로.
+    floor = 0.32 if height <= 820 else 0.4
+    assert m["body"]["height"] >= floor * m["viewport"] - 0.5, f"{where}: 결과 시험 독이 몸통의 {floor:.0%} 하한을 눌렀습니다 {m['body']}"
+    assert result["height"] >= 0.5 * panel["height"], f"{where}: 결과 칸 {result['height']}px < 독 패널 {panel['height']}px 의 50%"
+    assert m["state"]["bottom"] <= result["top"] <= m["reason"]["top"], f"{where}: 열 차례가 상태 → 결과 → 통과 범위가 아닙니다 {m}"
+    assert output["top"] <= result["top"] < output["bottom"], f"{where}: 결과 칸 윗변이 출력 열 안에 보이지 않습니다 {m}"
+    assert m["folded"] == [False, False] and m["summaryShown"], f"{where}: 케이스·이유 구획은 접힌 채 요약만 보여야 합니다 {m['folded']}"
+    assert m["caseGap"] >= 0, f"{where}: 펼친 케이스 구획에서 가져오기·내보내기 줄이 저장 단추와 겹칩니다({m['caseGap']}px)"
+    # 결과 칸은 12rem 하한을 넘는 한 보이는 출력 열을 끝까지 쓴다(아래 여백 = 열 안쪽 여백 12px 뿐).
+    if result["height"] > 12 * m["root"] + 0.5:
+        assert abs(min(result["bottom"], output["bottom"]) - output["bottom"]) <= 12.5, f"{where}: 결과 칸이 보이는 열을 다 쓰지 않습니다 {m}"
+    if (width, height, scale) == (1440, 900, "normal"):
+        # 독 몫(48vh)은 몸통 40vh 하한에 막혀 347px 이다 — 결과 칸은 그 안의 최대(상태 줄 아래 전부)다.
+        assert result["height"] >= 215, f"{where}: 결과 칸 {result['height']}px"
+    if media == "hwpx":
+        assert m["frame"] and abs(m["frame"]["height"] - result["height"]) <= 1, f"{where}: 결과 iframe 이 칸을 채우지 않습니다 {m}"
+    else:
+        assert m["resultScrolls"], f"{where}: 긴 TXT 결과는 칸 안에서 스크롤해야 합니다(닻은 이 칸의 scrollTop 만 옮긴다)"
+    # 스크롤 없이 보이는 결과 칸(출력 열 안쪽)도 독 패널의 절반 이상이다 — 통과 범위 문장·접힌 구획은 그 아래로 밀려도 된다
+    # (출력 열 스크롤로 닿는다, P-02 위험 항목).
+    visible = min(result["bottom"], output["bottom"]) - result["top"]
+    assert visible >= 0.5 * panel["height"], f"{where}: 스크롤 없이 보이는 결과 칸 {visible}px < 독 패널 {panel['height']}px 의 50%"
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_REASON)
+@pytest.mark.parametrize("media", ["hwpx", "txt"])
+def test_trial_result_grows_with_a_maximized_dock(media: str) -> None:
+    """IDE-04: 결과 칸은 고정 높이(옛 20rem)가 아니다 — 독을 최대화하면 보이는 출력 열을 끝까지 채우고, 통과 범위 문장과
+    접힌 구획은 그 바로 아래(열 스크롤 한 번)에 선다."""
+    m = _render_trial(1440, 900, "normal", media, dock="max")
+    assert m["result"]["height"] > 20 * m["root"], f"{media}: 최대화한 독에서 결과 칸이 자라지 않습니다 {m['result']}"
+    assert abs(m["result"]["bottom"] - m["output"]["bottom"]) <= 12.5, f"{media}: 결과 칸이 보이는 열을 다 쓰지 않습니다 {m}"
+    assert 0 < m["outputOverflow"] <= 8 * m["root"], f"{media}: 결과 아래 구획의 넘침이 예상 밖입니다({m['outputOverflow']}px)"
+    assert m["state"]["bottom"] <= m["result"]["top"] <= m["reason"]["top"], m
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_GATE, reason=_REASON)
+@pytest.mark.parametrize(("width", "height", "trial_open", "floor"), [
+    (1028, 740, True, 0.32), (1366, 768, True, 0.32), (1028, 740, False, 0.4), (1440, 900, True, 0.4)])
+def test_body_floor_drops_only_during_a_trial_in_short_windows(width: int, height: int, trial_open: bool, floor: float) -> None:
+    """IDE-04: 결과 시험 독이 몸통을 누르면 몸통은 하한에서 멈춘다 — 결과 시험 중(셸 trial-open)이고 창 높이가 820px 이하일
+    때만 32vh, 셸 표지가 없거나 높은 창이면 40vh 그대로다."""
+    m = _render_trial(width, height, "normal", "hwpx", trial_open=trial_open)
+    assert abs(m["body"]["height"] - floor * m["viewport"]) <= 1, (width, height, trial_open, m["body"], m["viewport"])

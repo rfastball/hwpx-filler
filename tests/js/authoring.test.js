@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController, coordinates } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, shellShortcut, forwardedShellKey, appliedProperties, escapeStage, submitProperties, externalDocumentSpec, openContextMenu, escapeShell, problemAction, compatibilityReporter, outlineLabel, dockTabs, commandEntries, sharedReason, commandAvailability, focusRequest, saveLabel, liveState, outlineSpine, outlineCurrent, outlineKey, crumbs, sameFieldMeta, highlightRanges, problemSeverities, fieldsInFirstUse, filterMatch, dockBadge, renameChoice, renameShortcut, trialAnchorName, centeredScrollTop, keepFocusOutside } from "../../frontend/src/screens/authoring.ts";
 import { menuLines, paletteModel, paletteOrder } from "../../frontend/src/screens/command_palette.ts";
 import { rovingIndex, listKey, treeKey, clampMenu, errorParts, errorText, isCurrentTarget, liveStep } from "../../frontend/src/screens/authoring_a11y.ts";
 import { TPL_STATUS_COPY } from "../../frontend/src/screens/job_run.ts";
@@ -966,7 +966,7 @@ test("§3.1: the bottom dock keeps its tab strip, counts problems as text and sh
   assert.ok(toolbarOf(markup).includes('aria-pressed="true" data-rove="trial" tabindex="-1">결과 시험</button>'));
   controller.update({ dockMax: true });
   markup = render(controller);
-  assert.ok(markup.includes('<div class="authoring-shell dock-max">') && dockOf(markup).includes('aria-label="복원" title="복원"'));
+  assert.ok(markup.includes('<div class="authoring-shell dock-max trial-open">') && dockOf(markup).includes('aria-label="복원" title="복원"'));
 });
 
 test("§3.1: dockTabs resolves one tab — open panel, then the chosen tab, then alerts; a closed dock does not reopen for an old alert", () => {
@@ -1683,4 +1683,110 @@ test("IDE-01: the location-row note is a generic in-place reason slot — severi
   controller.selection("a", { start: 3, end: 3 });
   await new Promise(setImmediate);
   assert.equal(controller.viewModel.getSnapshot().selectionNote, null, "캐럿 이동이 걷는다");
+});
+
+/* ---------- IDE-04: 시험 첫 결과 — 결과 칸이 독을 채우고, 시험 패널은 점진 공개 ---------- */
+
+const trialTab = (extra = {}) => ({ media: "hwpx", analysis: { fields: [{ name: "수요기관", occurrences: [] }], slots: [] }, problems: [], cases: [],
+  trial_missing: { fields: [], slots: [] }, values: { 수요기관: "조달청" }, trial_state: "current", trial_state_label: "현재 구성 통과", trial_state_message: "현재 시험 구성 통과",
+  trial_result: { revision: 1, content: "cmVzdWx0", occurrences: [{ name: "수요기관", value: "조달청" }], source_revision: 0 }, ...extra });
+const between = (markup, from, to) => { const start = markup.indexOf(from); return markup.slice(start, markup.indexOf(to, start)); };
+
+test("IDE-04 P-02: the output column reads status → result → pass scope → folded sections; the trial result has its own selector", async () => {
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], trialTab({ trial_coverage: [{ slot_id: "조건", option_id: "국내", state: "current" }] }));
+  await controller.activate("a");
+  controller.update({ dock: "trial", trial: true });
+  const output = between(render(controller), 'class="authoring-trial-output"', "</section>");
+  const at = (text) => { const index = output.indexOf(text); assert.ok(index >= 0, `없음: ${text}`); return index; };
+  const order = [at('class="authoring-trial-state"'), at('<div class="authoring-trial-result"></div>'), at("통과 표시는 현재 값과 선택 구성에만 해당합니다."),
+    at('<details class="authoring-fold"><summary class="authoring-section-label">선택별 시험 상태</summary>'),
+    at('<details class="authoring-fold"><summary class="authoring-section-label">출력·제외 이유</summary>')];
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "상태 줄 → 결과 → 통과 범위 → 선택별 시험 상태 → 출력·제외 이유");
+  assert.ok(output.includes('<ul class="authoring-coverage" aria-label="선택별 시험 상태">'), "접어도 목록 이름은 그대로");
+  assert.ok(output.includes('aria-label="출력·제외 이유"'), "접어도 목록 이름은 그대로");
+  assert.ok(!render(controller).includes("authoring-result-pages"), "결과 칸은 비교·복구 보기의 선택자를 쓰지 않는다");
+
+  Object.assign(snapshot.tabs[0], { trial_coverage: [] });
+  assert.ok(!render(controller).includes("선택별 시험 상태"), "항목이 없으면 선택별 시험 상태는 서지 않는다");
+});
+
+test("IDE-04 NG-12: cases, case save and import/export fold under 「보관한 시험 케이스」 — open only when cases exist; 시험 시작·자동 갱신 stay visible", async () => {
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], trialTab());
+  await controller.activate("a");
+  controller.update({ dock: "trial", trial: true });
+  const input = between(render(controller), 'class="authoring-trial-input"', 'class="authoring-trial-output"');
+  const fold = between(input, '<details class="authoring-fold">', "</details>");
+  assert.ok(fold.startsWith('<details class="authoring-fold"><summary class="authoring-section-label">보관한 시험 케이스</summary>'), "케이스가 없으면 접힌 채");
+  for (const label of ["시험 케이스 저장", "시험 자료 가져오기", "시험 자료 내보내기"]) assert.ok(fold.includes(`>${label}</button>`), `${label} 는 접힌 구획 안`);
+  const head = input.slice(0, input.indexOf("<details"));
+  assert.ok(head.includes(">시험 시작</button>") && head.includes(" 자동 갱신</label>"), "첫 시험에 필요한 제어는 접히지 않는다");
+  assert.ok(!head.includes("시험 케이스 저장") && !head.includes('<h3 class="authoring-section-label">보관한 시험 케이스</h3>'), "구획 이름은 요약 하나");
+
+  Object.assign(snapshot.tabs[0], { cases: [{ name: "첫 케이스", values: {} }] });
+  const opened = render(controller);
+  assert.ok(opened.includes('<details class="authoring-fold" open=""><summary class="authoring-section-label">보관한 시험 케이스</summary>'), "케이스가 있으면 펼친 채 연다");
+  assert.ok(between(opened, 'open=""><summary', "</details>").includes('aria-label="보관한 시험 케이스"'), "케이스 목록은 그 안에 이름 그대로");
+});
+
+test("IDE-04 P-02: the anchor is the last-typed trial field, else the selected field, else none; the centered scrollTop is clamped to the box", async () => {
+  assert.equal(trialAnchorName({ trialAnchor: "담당자", selected: { name: "수요기관" } }), "담당자");
+  assert.equal(trialAnchorName({ selected: { name: "수요기관" } }), "수요기관");
+  assert.equal(trialAnchorName({ selected: null }), null);
+  const box = (scrollTop) => ({ scrollTop, clientHeight: 100, scrollHeight: 1000, getBoundingClientRect: () => ({ top: 50 }) });
+  const at = (top) => ({ getBoundingClientRect: () => ({ top, height: 20 }) });
+  assert.equal(centeredScrollTop(box(0), at(50 + 400)), 360, "칸 안 400px 의 단추가 가운데로");
+  assert.equal(centeredScrollTop(box(200), at(50 + 200)), 360, "이미 내린 만큼을 더한다");
+  assert.equal(centeredScrollTop(box(0), at(60)), 0, "위 끝 아래로는 가지 않는다");
+  assert.equal(centeredScrollTop(box(0), at(50 + 990)), 900, "아래 끝 너머로는 가지 않는다");
+
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], trialTab());
+  await controller.activate("a");
+  await controller.trialInput({ 수요기관: "새 값" }, {}, "수요기관");
+  assert.equal(controller.viewModel.getSnapshot().trialAnchor, "수요기관", "필드 입력 전이가 닻을 정한다");
+  await controller.loadCase({ values: { 수요기관: "케이스" }, selected: {} });
+  assert.equal(controller.viewModel.getSnapshot().trialAnchor, "수요기관", "케이스 불러오기는 닻을 바꾸지 않는다");
+});
+
+test("IDE-04: the 결과 시험 badge stands only after a trial was attempted — a freshly opened document shows none", async () => {
+  const fresh = { trial_state: "untried", trial_missing: { fields: ["수요기관", "공고명", "추정가격", "담당자"], slots: [] } };
+  assert.equal(dockBadge(fresh, "trial", { values: {}, selectedOptions: {} }), 0, "시험 전·값 없음 = 배지 없음");
+  assert.equal(dockBadge({ ...fresh, trial_missing: { fields: ["공고명", "추정가격", "담당자"], slots: [] } }, "trial", { values: { 수요기관: "조달청" }, selectedOptions: {} }), 3, "값 하나 뒤 = 남은 수");
+  assert.equal(dockBadge({ ...fresh, trial_missing: { fields: [], slots: ["조건"] } }, "trial", { values: {}, selectedOptions: { 다른: "a" } }), 1, "선택 하나도 시도다");
+  assert.equal(dockBadge({ ...fresh, trial_state: "failed" }, "trial", {}), 4, "시험한 뒤에는 값이 없어도 센다");
+
+  const { controller, snapshot } = harness();
+  Object.assign(snapshot.tabs[0], { media: "txt", analysis: { fields: ["수요기관", "공고명", "추정가격", "담당자"].map((name) => ({ name, occurrences: [] })), slots: [] },
+    problems: [], ...fresh });
+  await controller.activate("a");
+  controller.update({ dock: "trial", trial: true });
+  const tab = (markup) => between(markup, 'id="authoring-dock-tab-trial"', "</button>");
+  assert.ok(!tab(render(controller)).includes("authoring-badge"), "갓 연 문서의 결과 시험 탭에는 배지가 없다");
+  assert.ok(render(controller).includes('<button type="button" class="btn">필드 이름 사용</button>'), "공백 투영은 그대로 — 「필드 이름 사용」은 첫 시험 전에도 켜진다");
+  await controller.trialInput({ 수요기관: "조달청" }, {}, "수요기관");
+  Object.assign(snapshot.tabs[0], { trial_missing: { fields: ["공고명", "추정가격", "담당자"], slots: [] } });
+  assert.ok(tab(render(controller)).includes('<span class="authoring-badge">3</span>'), "값 하나 뒤에는 남은 수");
+});
+
+test("IDE-04: keepFocusOutside returns focus the trial viewer took during its mount — to the prior control, or off the viewer when nothing had it", () => {
+  const body = { focus() {}, isConnected: true };
+  const doc = { activeElement: null, body };
+  const saved = globalThis.document;
+  globalThis.document = doc;
+  try {
+    const frame = { blurred: 0, blur() { this.blurred += 1; doc.activeElement = body; } };
+    const host = { contains: (node) => node === frame };
+    const input = { focused: [], isConnected: true, closest: () => null, focus(options) { this.focused.push(options); doc.activeElement = input; } };
+    doc.activeElement = frame;
+    keepFocusOutside(host, input);
+    assert.deepEqual(input.focused, [{ preventScroll: true }], "치던 입력칸으로 스크롤 없이 돌린다");
+    doc.activeElement = frame;
+    keepFocusOutside(host, body);
+    assert.equal(frame.blurred, 1, "본문에 있던 초점이면 뷰어에서 거둔다");
+    doc.activeElement = input;
+    keepFocusOutside(host, frame);
+    assert.equal(input.focused.length, 1, "뷰어 밖에 있는 초점은 건드리지 않는다");
+  } finally { globalThis.document = saved; }
 });

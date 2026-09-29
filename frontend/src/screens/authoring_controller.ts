@@ -402,13 +402,15 @@ export function createAuthoringController(deps: Deps) {
         choices: [{ value: "keep", label: "기존 값 유지" }, { value: "replace", label: "고른 문구로 교체" }] });
       if (answer !== "replace") return false;
     }
-    await trialInput({ ...values, [name]: captured }, view.selectedOptions || {});
+    await trialInput({ ...values, [name]: captured }, view.selectedOptions || {}, name);
     return true;
   }
 
-  async function trialInput(values: Obj, selectedOptions: Obj) {
+  /** 시험 입력 전이. anchor 는 값을 바꾼 필드 이름이다 — 다음 결과가 그 필드의 출력 자리로 옮겨 간다(IDE-04 닻).
+   *  케이스 불러오기·항목 선택처럼 한 필드를 고치지 않는 전이는 닻을 그대로 둔다. */
+  async function trialInput(values: Obj, selectedOptions: Obj, anchor?: string) {
     const id = snapshot().active_id;
-    update({ values, selectedOptions });
+    update({ values, selectedOptions, ...(anchor ? { trialAnchor: anchor } : {}) });
     const previous = inputPumps.get(id) || Promise.resolve();
     const pump = previous.catch(() => {}).then(async () => {
       await flush(id);
