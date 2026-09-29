@@ -485,7 +485,9 @@ test("IDE-06: fit width re-fits after the host is resized (debounced), never whi
     assert.equal(observers.length, 1);
     assert.equal(observers[0].observed[0], host, "편집기 host 의 크기를 본다(속성 패널·분할선·창 크기)");
     const resize = (width) => observers[0].callback([{ contentRect: { width } }]);
-    resize(900); resize(700);
+    assert.equal(fake.options().width, "round(down, 100%, 1px)",
+      "iframe 폭은 host 폭을 정수 CSS px 로 내린 값이다 — 소수 폭이면 Studio 의 정수 clientWidth 가 내용보다 모자라 빈 가로 스크롤이 선다");
+    resize(900); resize(835.43);
     assert.deepEqual(executes(), ["view:zoom-fit-width"], "크기 변화가 몰려오는 동안에는 기다린다");
     timers.fireTimeouts();
     await settle();

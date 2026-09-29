@@ -58,6 +58,13 @@ export type RhwpMountSpec = {
 /** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
 export type RhwpZoom = "fit" | 50 | 75 | 100;
 const zoomCommand = (zoom: RhwpZoom) => zoom === "fit" ? "view:zoom-fit-width" : `view:zoom-${zoom}`;
+/** The iframe's width: the host's width rounded down to a whole CSS pixel. At fractional device-pixel
+ *  ratios (175%) a host can be 835.43px wide; the Studio then sizes its page area to the integer
+ *  clientWidth and the sub-pixel remainder becomes a horizontal scroll range with a visible scrollbar
+ *  and nothing to scroll. CSS does the rounding at layout time, so a percentage stays a percentage
+ *  (no observer writes, no intrinsic-size feedback); a WebView without CSS `round()` drops the value
+ *  and the stylesheet's `width: 100%` applies. */
+export const FRAME_WIDTH = "round(down, 100%, 1px)";
 /** Refit delay after the host stops resizing (panel drags and window resizes arrive in bursts). */
 export const REFIT_DEBOUNCE_MS = 120;
 
@@ -114,7 +121,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const studioUrl = new URL("/rhwp/studio/index.html", document.baseURI);
   studioUrl.searchParams.set("hostTheme", appearance.theme);
   studioUrl.searchParams.set("hostFontScale", String(appearance.fontScale));
-  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"],
+  const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"], width: FRAME_WIDTH,
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
   let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
