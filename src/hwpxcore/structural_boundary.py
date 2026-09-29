@@ -15,7 +15,7 @@ from .field_occurrence import (
     paragraph_container,
     resolve_field_occurrences,
 )
-from .text_extract import HP_NS, local_name, require_package
+from .text_extract import HP_NS, local_name, read_field_text, require_package
 
 _HS_NS = "http://www.hancom.co.kr/hwpml/2011/section"
 _HP = f"{{{HP_NS}}}"
@@ -580,9 +580,7 @@ def _scan_entry(
 def _field_text_preview(occurrence: FieldOccurrence) -> str:
     """짝 사이 ``hp:t`` 텍스트를 한 줄로 이어 붙여 자른다(줄바꿈은 공백으로)."""
     # 파편 ``hp:t`` 는 한 값의 조각이라 사이에 공백을 넣지 않는다(값 읽기와 같은 규칙).
-    text = " ".join(
-        "".join("".join(node.itertext()) for node in occurrence.texts).split()
-    )
+    text = " ".join(read_field_text(occurrence.texts).text.split())
     if len(text) > _FIELD_TEXT_PREVIEW_LIMIT:
         return text[:_FIELD_TEXT_PREVIEW_LIMIT] + "…"
     return text
