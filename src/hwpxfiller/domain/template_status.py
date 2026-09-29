@@ -1,10 +1,14 @@
 """컴파일 수명주기 상태 파생 — 저장하지 않는 **계산값**(호출마다 재산출).
 
-한글에서 평문 ``{{계약명}}`` 을 타이핑 → ``authoring.compile_document`` 로 누름틀 컴파일
-→ ``fields.set_field`` 로 값 주입, 이 세 단계가 문서의 수명주기다. 그런데 "어디까지 왔나"
-는 파일 어딘가에 도장으로 찍혀 있지 않다 — 그런 도장은 사용자가 한글에서 문서를 재편집한
-순간 거짓이 된다(드리프트). 그래서 이 모듈은 상태를 **읽을 때마다 다시 계산**한다:
-스키마(누름틀 수)·스캔(잔존 토큰)·실제 필드 값을 그 자리에서 읽어 4-상태로 환원한다.
+한글에서 평문 ``{{계약명}}`` 을 타이핑 → ``authoring.compile_document`` 로 누름틀 컴파일,
+이 두 단계가 템플릿의 수명주기다. 그런데 "어디까지 왔나" 는 파일 어딘가에 도장으로 찍혀
+있지 않다 — 그런 도장은 사용자가 한글에서 문서를 재편집한 순간 거짓이 된다(드리프트).
+그래서 이 모듈은 상태를 **읽을 때마다 다시 계산**한다: 스키마(누름틀 수)·스캔(잔존 토큰)을
+그 자리에서 읽어 3-상태로 환원한다.
+
+누름틀에 값이 채워졌는지는 상태가 아니다(#1078): 채워진 템플릿은 채우지 않은 템플릿과 똑같이
+작동한다(실행은 누름틀 값을 덮어쓴다). 값을 ``{{이름}}`` 원형으로 되돌리는 일은 저작 작업대의
+문서 명령(「원본 템플릿으로 되돌리기」)이 맡고, 그 가용 판정만 값을 읽는다.
 
 **단일 진실원.** 컴파일 상태 가독성의 유일 출처 — 웨이브-2 GUI 유닛(C3/C4/C5)이 모두 이
 계산값 위에 앉는다. 저장·캐시·상태 전이 부작용은 없다(재산출 원칙 위반).
@@ -13,7 +17,6 @@
 - 필드는 있는데 잔존 토큰(미컴파일·파편·본문 평문)이나 **미변환 구간 표기**가 남은
   "다 된 것 같지만 아닌" 위험 상태를 ``PARTIAL`` 로 **시끄럽게** 구분한다(조용히
   COMPILED 로 통과시키지 않는다).
-- ``COMPILED`` vs ``FILLED`` 는 추측이 아니라 실제 누름틀 값을 결정적으로 **읽어** 판정한다.
 
 **읽기 전용.** 재사용하는 ``scan_tokens``·``extract_schema`` 와 아래 로컬 값 리더는
 모두 파싱 사본 위에서 동작한다 — 입력 패키지를 전혀 변형하지 않는다.
@@ -27,7 +30,6 @@ from pathlib import Path
 
 from hwpxcore.text_extract import require_package
 from hwpxfiller.domain.authoring import scan_structure, scan_tokens
-from hwpxfiller.domain.fields import FieldDocument, normalize_field_id
 from hwpxfiller.domain.schema import extract_schema
 
 
@@ -82,19 +84,20 @@ def library_display_name(root: "Path | None", path: "str | Path") -> str:
 
 
 class CompileState(str, enum.Enum):
-    """HWPX 컴파일 수명주기의 4-상태.
+    """HWPX 컴파일 수명주기의 3-상태.
 
     - ``RAW``: 진짜 필드 0개 + 본문에 ``{{}}`` 평문 토큰(미컴파일 원문).
     - ``PARTIAL``: 필드 有 + skip/파편/본문 잔존 토큰 또는 미변환 구간 표기가 남음
       ("다 된 것 같지만 아닌" 위험).
-    - ``COMPILED``: 필드 有 + 잔존 토큰 0 + 값이 아직 ``{{X}}`` placeholder 리터럴.
-    - ``FILLED``: 필드 有 + 값이 placeholder 와 다름(실제 값이 채워짐).
+    - ``COMPILED``: 필드 有 + 잔존 토큰 0 — 누름틀 값이 ``{{X}}`` 원형이든 실제 값이든 같다.
+
+    값이 채워진 상태(옛 ``FILLED``)는 #1078 에서 퇴역했다. 값은 저장된 적이 없는 계산값이라
+    되읽을 옛 기록이 없다(직렬화 값 ``"filled"`` 를 읽는 소비자도 없다).
     """
 
     RAW = "raw"
     PARTIAL = "partial"
     COMPILED = "compiled"
-    FILLED = "filled"
 
 
 @dataclass
@@ -105,8 +108,7 @@ class TemplateStatus:
     ``scan_tokens`` 가 각각 컴파일 가능/불가로 신고한 잔존 토큰 수, ``stray_n`` 은 본문
     평문에 남은 ``{{}}`` 수. ``structure_marker_n`` 은 아직 native Slot 으로 변환되지 않고
     본문에 남은 **구간 표기 마커** 수(:attr:`~hwpxfiller.domain.authoring.StructureSummary.markers`
-    를 그대로 싣는다 — 여기서 다시 세지 않는다). ``state`` 는 이 카운트 + 실제 값 판독에서
-    파생된다.
+    를 그대로 싣는다 — 여기서 다시 세지 않는다). ``state`` 는 이 카운트에서 파생된다.
 
     ``structure_marker_n`` 만 기본값을 갖는 이유는 하나다: 생산자는
     :func:`compile_status` 하나뿐이고 그것은 항상 실측값을 싣는다. 값 객체를 직접 짓는
@@ -129,28 +131,6 @@ class TemplateStatus:
             "stray_n": self.stray_n,
             "structure_marker_n": self.structure_marker_n,
         }
-
-
-def _is_placeholder(value: str, name: str) -> bool:
-    """값이 아직 미충전 placeholder 인가 — ``{{ ... }}`` 껍질을 벗겨 안쪽을 필드명과 비교.
-
-    compile_document 는 값 런에 원문 토큰(내부 공백 포함, 예 ``{{ 계약명 }}``)을 그대로
-    남기고 fieldBegin@name 은 공백을 벗긴 이름을 쓴다. 그 비대칭을 여기서 흡수한다 —
-    문자열 재조립("{{"+name+"}}")은 공백 토큰을 FILLED 로 오판정하므로 쓰지 않는다.
-    """
-    v = value.strip()
-    if v.startswith("{{") and v.endswith("}}"):
-        return normalize_field_id(v) == name
-    return False
-
-
-def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
-    """주입 대상 XML 전체에서 (필드명, 값) 목록을 읽는다(파싱 사본 — 무변형)."""
-    pkg2 = require_package(pkg)
-    out: "list[tuple[str, str]]" = []
-    for name in pkg2.content_xml_names():
-        out.extend(FieldDocument(pkg2.entries[name], entry=name).field_values())
-    return out
 
 
 # ------------------------------------------------------------------ 공개 API
@@ -187,14 +167,8 @@ def compile_status(pkg: object) -> TemplateStatus:
         # 필드는 있는데 잔존 토큰·구간 표기가 남음 → "다 된 것 같지만 아닌" 위험 상태.
         state = CompileState.PARTIAL
     else:
-        # 필드 有 + 잔존 토큰 0 → 실제 값을 읽어 COMPILED(placeholder) vs FILLED 구분.
-        # 값이 아직 {{...}} placeholder(내부 공백 무관)면 미충전, 실제 내용이면 채워짐.
-        # 값이 비어/공백뿐이면(코퍼스 관례상 placeholder 유지 취지) 채워지지 않은 것으로 본다.
-        values = _read_field_values(pkg)
-        filled = any(
-            val.strip() and not _is_placeholder(val, name) for name, val in values
-        )
-        state = CompileState.FILLED if filled else CompileState.COMPILED
+        # 필드 有 + 잔존 토큰 0 → 실행 가능한 템플릿. 누름틀 값은 읽지 않는다(#1078).
+        state = CompileState.COMPILED
 
     return TemplateStatus(
         state=state,

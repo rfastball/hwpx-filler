@@ -7,7 +7,7 @@
 
 - ``muted``  — RAW(원문·할 일, 심각도 아님)
 - ``warn``   — PARTIAL(다 된 것 같지만 아닌 상태)
-- ``ok``     — COMPILED/FILLED(실행 준비)
+- ``ok``     — COMPILED(실행 준비)
 - ``danger`` — 상태 없음(부재·손상·읽기 실패) = 시끄러운 주의
 
 두 화면이 같은 상태에 다른 심각도 신호를 내지 않도록, 상태별 레벨은 반드시
@@ -23,7 +23,6 @@ BADGE_LABELS: "dict[CompileState, str]" = {
     CompileState.RAW: "원문",
     CompileState.PARTIAL: "부분 변환",
     CompileState.COMPILED: "변환됨",
-    CompileState.FILLED: "채워짐",
 }
 
 # 상태 → QSS 배지 레벨(style.py 의 QLabel[level=…]/[pill=…] 팔레트와 통일).
@@ -31,7 +30,6 @@ BADGE_LEVELS: "dict[CompileState, str]" = {
     CompileState.RAW: "muted",
     CompileState.PARTIAL: "warn",
     CompileState.COMPILED: "ok",
-    CompileState.FILLED: "ok",
 }
 
 # 상태를 판정할 수 없는 행(템플릿 부재·손상·읽기 실패) — 조용히 감추지 않고 시끄럽게.

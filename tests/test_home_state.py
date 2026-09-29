@@ -207,7 +207,7 @@ def _partial_hwpx(tmp_path) -> str:
 
 
 def _filled_hwpx(tmp_path) -> str:
-    """컴파일 + 실제 값 주입 → FILLED."""
+    """컴파일 + 실제 값 주입 → 여전히 COMPILED(#1078 — 채운 값은 상태가 아니다)."""
     xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
     pkg, _ = compile_document(_pkg(xml))
     doc = FieldDocument(pkg.entries[SECTION])
@@ -228,7 +228,7 @@ def test_badge_matrix_also_owns_the_runnable_decision(tmp_path):
         (_raw_hwpx(tmp_path), CompileState.RAW, BADGE_RAW, False, True),
         (_partial_hwpx(tmp_path), CompileState.PARTIAL, "⚠ 미확인 토큰 1개", False, True),
         (_compiled_hwpx(tmp_path), CompileState.COMPILED, BADGE_READY, False, True),
-        (_filled_hwpx(tmp_path), CompileState.FILLED, BADGE_READY, False, True),
+        (_filled_hwpx(tmp_path), CompileState.COMPILED, BADGE_READY, False, True),
         (str(tmp_path / "does_not_exist.hwpx"), None, BADGE_MISSING, True, False),
         ("", None, "", False, False),
         (str(bad), None, BADGE_ERROR, False, False),

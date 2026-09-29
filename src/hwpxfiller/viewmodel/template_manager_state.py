@@ -8,10 +8,10 @@
 전부 여기 산다 — PySide6 임포트 없이 창 없이 테스트된다.
 
 **새 코어 없음.** 전부 기존 코어 재사용:
-- ``domain.template_status.compile_status`` — RAW/PARTIAL/COMPILED/FILLED 4-상태(호출마다 재산출).
+- ``domain.template_status.compile_status`` — RAW/PARTIAL/COMPILED 3-상태(호출마다 재산출).
 - ``domain.authoring.scan_tokens``/``compile_document`` — 읽기 전용 스캔 미리보기 → 명시적 적용.
 - ``domain.lint.lint_template``/``diff_schema`` — 위생 점검 + 판본 드리프트.
-- ``domain.fields.read_fields`` — FILLED 값 미리보기.
+- ``domain.fields.read_fields`` — 누름틀 값 미리보기.
 
 **설계 원칙**("묻고 확정하게 하라, 아니면 시끄럽게 알려라"):
 - fieldize 는 CLI 와 동일하게 **dry-run 기본**(scan_preview 는 파일을 만지지 않는다) →
@@ -128,7 +128,6 @@ class TemplateAction:
 #   RAW      → [누름틀·구간 변환]
 #   PARTIAL  → [마저 변환]
 #   COMPILED → (없음)
-#   FILLED   → (없음)
 #
 # RAW 라벨은 S8-03 에서 「누름틀 변환」→「누름틀·구간 변환」이 됐다: 같은 한 동사가 필드
 # 토큰과 **구간 표기**를 함께 변환하므로(:meth:`TemplateManagerViewModel.apply_convert`)
@@ -142,7 +141,7 @@ class TemplateAction:
 # (`_HIDDEN_ACTIONS`·`_PICKER_HIDDEN_ACTIONS`)로 걷고 있었다 — 링2 두 곳이 링1 목록을
 # 다시 판정하던 자리다. 필터를 지우고 목록 자체를 줄였다.
 #
-# **U6-E(#979) — `review` 도 이 표에서 걷혔다**: U6-B 이후 COMPILED·FILLED 의 동사가 0 이
+# **U6-E(#979) — `review` 도 이 표에서 걷혔다**: U6-B 이후 COMPILED(와 #1078 에서 퇴역한 FILLED)의 동사가 0 이
 # 되면서 **완전 변환된 템플릿의 구간 항목에 닿을 길이 사라졌는데**(개명·표기로 되돌리기·
 # 삭제는 전부 검토가 세우는 목록 위에 산다), 그 구멍을 메우는 것은 상태 동사가 아니라
 # **「자세히…」 하나**다. 그 항목이 `tpl/review` 왕복을 지고 항목 상세 시트를 연다 —
@@ -158,7 +157,6 @@ _STATE_ACTIONS: "dict[CompileState, tuple[TemplateAction, ...]]" = {
     CompileState.RAW: (TemplateAction("compile", CONVERT_ACTION_LABEL),),
     CompileState.PARTIAL: (TemplateAction("compile", "마저 변환"),),
     CompileState.COMPILED: (),
-    CompileState.FILLED: (),
 }
 
 
@@ -1065,7 +1063,7 @@ class TemplateManagerViewModel:
         return ResultLine("\n".join(lines), level)
 
     def format_preview_result(self, path: str, values: "dict[str, str]") -> ResultLine:
-        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted.
+        """누름틀 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted.
 
         빈 값 필드는 '필드명 = ' 뒤 무표시 공백으로 렌더돼 의도적 공란과 채우다 만 것을
         구별할 수 없었다(UD-26 F5) — 빈 값을 '(비움)' 으로 명시 재진술한다(ADR-B).
@@ -1095,7 +1093,7 @@ class TemplateManagerViewModel:
             parts.append(f"~ 개명(추정): {r['old']} → {r['new']} ({r['score']})")
         return ResultLine("\n".join(parts), "warn")
 
-    # ----------------------------------------------------- FILLED 값 미리보기
+    # ----------------------------------------------------- 누름틀 값 미리보기
     def filled_values(self, path: str) -> "dict[str, str]":
-        """FILLED(또는 임의) 템플릿의 현재 누름틀 값 — C1 read_fields 포트 위임."""
+        """템플릿의 현재 누름틀 값 — C1 read_fields 포트 위임."""
         return self._file_ops.read_fields(str(path))

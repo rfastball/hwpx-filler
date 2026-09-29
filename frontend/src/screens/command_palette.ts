@@ -9,7 +9,8 @@ type Obj = Record<string, any>;
 
 /** 명령 무리의 첫 명령 — 무리가 바뀌는 보이는 항목 위에만 구분선이 선다. */
 export const COMMAND_GROUP_START = new Set(["rename_field", "rename_slot", "unwrap", "duplicate"]);
-export const DESTRUCTIVE = new Set(["delete"]);
+/** 파괴 명령 — 위험 모양으로 선다. 「원본 템플릿으로 되돌리기」(#1078)는 채운 값을 모두 지운다. */
+export const DESTRUCTIVE = new Set(["delete", "revert_template"]);
 export const KEY_HINTS: Obj = { rename_field: "F2", rename_slot: "F2", rename_option: "F2" };
 /** 단축키 표기 → aria-keyshortcuts 값. Ctrl 만 Control 로 바꾸고 나머지(F2·Shift+F6…)는 표기 그대로다. */
 const ARIA_KEYS: Obj = { "Ctrl+S": "Control+S", "Ctrl+F": "Control+F", "Ctrl+Shift+P": "Control+Shift+P" };

@@ -33,7 +33,8 @@ from ..application.template_qualification import (
 from ..domain.fields import is_fill_target_field_type, normalize_field_id
 from .hwpx_product_inspection import (
     ProductBookmarkInspection, ProductClassification, ProductScopeRole,
-    ProductScopeObservation, PRODUCT_KINDS, inspect_product_bookmarks,
+    ProductScopeObservation, PRODUCT_KIND_OPTION, PRODUCT_KIND_SLOT, PRODUCT_KINDS,
+    inspect_product_bookmarks,
 )
 
 @dataclass(frozen=True)
@@ -136,7 +137,7 @@ def _product_observation_consistent(
                 item.owning_slot_pair is None
                 or (
                     item.classification is ProductClassification.KNOWN_PRODUCT
-                    and item.kind == "slot_option"
+                    and item.kind == PRODUCT_KIND_OPTION
                 )
             )
         )
@@ -149,8 +150,8 @@ def _product_observation_consistent(
             and item.owning_slot_pair is None
         )
     expected = {
-        ProductScopeRole.SLOT: ("slot", False),
-        ProductScopeRole.OPTION: ("slot_option", True),
+        ProductScopeRole.SLOT: (PRODUCT_KIND_SLOT, False),
+        ProductScopeRole.OPTION: (PRODUCT_KIND_OPTION, True),
     }.get(item.scope_role)
     return (
         item.scope_usable

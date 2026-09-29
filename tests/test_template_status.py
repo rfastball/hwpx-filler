@@ -1,6 +1,6 @@
-"""컴파일 수명주기 상태(``compile_status``) 계약 테스트 — 4-상태 파생·재산출·드리프트.
+"""컴파일 수명주기 상태(``compile_status``) 계약 테스트 — 3-상태 파생·재산출·드리프트.
 
-핵심 증명: 상태는 파일에 찍힌 도장이 아니라 스키마·스캔·실제 값에서 매번 **다시 계산**된다.
+핵심 증명: 상태는 파일에 찍힌 도장이 아니라 스키마·스캔에서 매번 **다시 계산**된다.
 그래서 재편집으로 새 토큰이 끼면 COMPILED 가 즉시 PARTIAL 로 재판정된다(저장값이 아님).
 
 State is a computed value (never stored): re-editing a compiled doc drifts it back to PARTIAL.
@@ -8,6 +8,7 @@ State is a computed value (never stored): re-editing a compiled doc drifts it ba
 
 from __future__ import annotations
 
+import pytest
 from lxml import etree
 
 from hwpxfiller.domain.authoring import compile_document
@@ -171,13 +172,13 @@ def test_compiled_spaced_token_is_compiled():
     """내부 공백 토큰 ``{{ 계약명 }}`` 을 컴파일만 하고 채우지 않으면 COMPILED.
 
     compile_document 는 값 런에 원문(``{{ 계약명 }}``, 공백 포함)을 남기고 fieldBegin@name
-    은 공백 벗긴 ``계약명`` 을 쓴다 — 그 비대칭을 판별기가 흡수해야 FILLED 오판정을 막는다.
+    은 공백 벗긴 ``계약명`` 을 쓴다 — 값 런의 토큰은 본문 잔존 토큰(stray)으로 세지 않는다.
     """
     xml = "<hp:p><hp:run><hp:t>계약명: {{ 계약명 }}</hp:t></hp:run></hp:p>"
     pkg, report = compile_document(_pkg(xml))
     assert report.compiled == ["계약명"]  # 공백 토큰도 컴파일 대상
     st = compile_status(pkg)
-    assert st.state == CompileState.COMPILED  # 공백 때문에 FILLED 로 오판정 금지
+    assert st.state == CompileState.COMPILED
     assert st.field_n == 1
     assert st.stray_n == 0
     assert st.compilable_n == 0
@@ -215,42 +216,8 @@ def test_compiled_spaced_token_is_compiled():
     assert wrong_status.stray_n == 1
 
 
-# -------------------------------------------------------------------- FILLED
-def test_filled_after_set_field():
-    """COMPILED 문서에 실제 값을 주입하면 값이 placeholder 와 달라져 → FILLED."""
-    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
-    pkg, _ = compile_document(_pkg(xml))
-    assert compile_status(pkg).state == CompileState.COMPILED  # 채우기 전
-
-    doc = FieldDocument(pkg.entries[SECTION])
-    assert doc.set_field("계약명", "정보시스템 구축 사업") is True
-    pkg.entries[SECTION] = doc.to_bytes()  # 패키지 엔트리 재빌드
-
-    st = compile_status(pkg)
-    assert st.state == CompileState.FILLED
-    assert st.field_n == 1
-    assert st.stray_n == 0
-
-
-def test_filled_when_any_field_filled_mixed():
-    """여러 필드 중 하나만 채우고 하나는 placeholder로 남겨도 → FILLED(하나라도 채워지면)."""
-    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{사업예산}}</hp:t></hp:run></hp:p>"
-    pkg, report = compile_document(_pkg(xml))
-    assert report.compiled == ["계약명", "사업예산"]
-
-    doc = FieldDocument(pkg.entries[SECTION])
-    assert doc.set_field("계약명", "정보시스템 구축") is True  # 하나만 채움
-    pkg.entries[SECTION] = doc.to_bytes()
-
-    st = compile_status(pkg)
-    assert st.state == CompileState.FILLED  # 사업예산은 아직 placeholder여도 FILLED
-    assert st.field_n == 2
-    assert st.stray_n == 0
-
-
-def test_filled_table_cell_field():
-    """표 셀 안 필드를 컴파일 후 채우면 → FILLED(값 리더가 표 경로를 탄다)."""
-    xml = """
+# ------------------------------------------------- 채운 값은 상태가 아니다(#1078)
+_TABLE_XML = """
     <hp:p><hp:run>
       <hp:tbl>
         <hp:tr>
@@ -264,18 +231,46 @@ def test_filled_table_cell_field():
       </hp:tbl>
     </hp:run></hp:p>
     """
-    pkg, report = compile_document(_pkg(xml))
-    assert report.compiled == ["공급가액"]
+
+
+@pytest.mark.parametrize(
+    ("xml", "values", "field_n"),
+    [
+        ("<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+         {"계약명": "정보시스템 구축 사업"}, 1),
+        # 하나만 채우고 하나는 placeholder 로 남긴 섞인 문서.
+        ("<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{사업예산}}</hp:t></hp:run></hp:p>",
+         {"계약명": "정보시스템 구축"}, 2),
+        # 표 셀 안 필드.
+        (_TABLE_XML, {"공급가액": "1,000,000원"}, 1),
+    ],
+    ids=["single", "mixed", "table-cell"],
+)
+def test_filled_values_stay_compiled(xml, values, field_n):
+    """COMPILED 문서에 실제 값을 주입해도 COMPILED 다 — 옛 FILLED 는 COMPILED 로 흡수됐다.
+
+    채운 템플릿은 채우지 않은 템플릿과 똑같이 작동하므로(실행이 값을 덮어쓴다) 상태로 가르지
+    않는다. 원형으로 되돌리기는 저작 작업대의 문서 명령이 맡는다.
+    """
+    pkg, _ = compile_document(_pkg(xml))
     assert compile_status(pkg).state == CompileState.COMPILED  # 채우기 전
 
     doc = FieldDocument(pkg.entries[SECTION])
-    assert doc.set_field("공급가액", "1,000,000원") is True
+    for name, value in values.items():
+        assert doc.set_field(name, value) is True
     pkg.entries[SECTION] = doc.to_bytes()
 
     st = compile_status(pkg)
-    assert st.state == CompileState.FILLED
-    assert st.field_n == 1
+    assert st.state == CompileState.COMPILED
+    assert st.field_n == field_n
     assert st.stray_n == 0
+
+
+def test_compile_state_has_no_filled_member():
+    """퇴역한 값 ``"filled"`` 는 어떤 상태로도 되읽히지 않는다 — 조용한 흡수 대신 시끄러운 거절."""
+    assert [state.value for state in CompileState] == ["raw", "partial", "compiled"]
+    with pytest.raises(ValueError):
+        CompileState("filled")
 
 
 # --------------------------------------------------- 저장 없음 / 재산출 / 무변형

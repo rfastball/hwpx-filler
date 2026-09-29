@@ -30,6 +30,9 @@ export const COMMANDS: [string, string][] = [
   ["rename_slot", "항목 속성 변경"], ["rename_option", "선택 속성 변경"], ["adjust_range", "범위 조정"],
   ["unwrap", "의미만 해제"], ["delete", "내용까지 삭제"], ["duplicate", "복제"], ["move", "이동"],
 ];
+/** 문서 명령(#1078) → 표시 이름. 고른 대상이 아니라 문서 전체의 명령이라 판정은 탭 투영(`document_commands`)이 싣고,
+ *  명시 표면인 명령 팔레트에만 선다(문맥 메뉴·속성 명령 선택은 고른 대상의 명령만 싣는다). */
+export const DOCUMENT_COMMANDS: [string, string][] = [["revert_template", "원본 템플릿으로 되돌리기"]];
 /** 새 문구(사용자 승인 대기)는 이 한 곳에 모은다 — 저작 작업대 화면이 쓴다: 구조 트리 연속 묶음(항목 밖 사용 위치)과 두 번 눌러 범위 고르기. */
 export const AUTHORING_COPY = {
   looseUses: "항목 밖 필드",
@@ -503,13 +506,32 @@ export function createAuthoringController(deps: Deps) {
       changed(id, await editor.content());
       await flush(id);
       // 다음에 되돌릴 행동의 이름(§9.3). backend 가 label 을 주면 그것, 아니면 명령 표시 이름.
-      const label = prepared.label || result.label || COMMANDS.find(([type]) => type === command.type)?.[1] || command.type;
+      const label = prepared.label || result.label || [...COMMANDS, ...DOCUMENT_COMMANDS].find(([type]) => type === command.type)?.[1] || command.type;
       if (id === viewId) update({ command: null, preview: null, lastCommandLabel: label, commandNote: { seq: (view.commandNote?.seq || 0) + 1, kind: "apply", label } });
       scheduleTrial(id);
       // 만든 대상은 적용 뒤의 revision 에서 짚는다 — 호출자가 그 자리를 고를 수 있게(선택·캐럿·이름표).
       const at = { session_id: id, source_revision: revision(id) };
       return { label, created: result.created ? { ...result.created, ...at } : null, renamed: result.renamed ? { ...result.renamed, ...at } : null };
     } finally { applying = false; }
+  }
+
+  /** 문서 명령 하나를 실행한다(#1078) — 속성 패널 없이 미리보기 → (확인 등급이 `none` 이 아니면) 파괴 확인 → 적용이다.
+   *  확인 창은 제목·확인 단추가 명령 이름, 본문이 Python 이 지은 손실 집합(`message`)이고 기본 초점은 취소다(`button` 등급:
+   *  위험 단추 누름만이 적용이다). 적용은 다른 명령과 같은 편집 사슬(applyPreview → 편집기 한 번의 실행 취소 단위)이다.
+   *  돌려주는 값은 적용했는가다 — 취소했거나 그사이 문서·탭이 바뀌었으면 false. */
+  async function documentCommand(type: string): Promise<boolean> {
+    const id = snapshot().active_id;
+    await flush(id);
+    const editorContent = await editors.get(id)?.content();
+    const atRevision = revision(id);
+    const command = { type };
+    const result = await previewCommand(id, atRevision, command);
+    if (result.refusal) throw new Error(result.refusal.message);
+    if (id !== viewId || atRevision !== revision(id)) return false;
+    const name = DOCUMENT_COMMANDS.find(([value]) => value === type)?.[1] || String(result.label || type);
+    if (result.confirm !== "none" && !(await deps.modal.confirm({ title: name, body: String(result.message || ""), confirmLabel: name, danger: true })))
+      return false;
+    return !!(await applyPreview({ ...result, session_id: id, revision: atRevision, editorContent, command }));
   }
 
   function scheduleTrial(id: string) {
@@ -718,7 +740,7 @@ export function createAuthoringController(deps: Deps) {
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
     snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),
-    back, select, adopt, preview, applyPreview, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search, sameText,
+    back, select, adopt, preview, applyPreview, documentCommand, trialInput, fillTrialNames, keepTrialValue, runTrial, saveCase, search, sameText,
     /** 활성 탭(또는 그 탭)의 지금 revision — 표면이 제 목록이 옛 문서의 것인지 비교할 뿐이다(판정 아님). */
     revisionOf: (id = snapshot().active_id) => revision(id),
     returnScreen: () => returnScreen,

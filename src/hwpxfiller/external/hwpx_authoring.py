@@ -23,10 +23,10 @@ from hwpxcore.text_extract import HP_NS, require_package
 
 from ..domain import authoring as _authoring
 from ..application.execution_contract_set import PLAN_APPLY_FIELD_BINDING, PLAN_REMOVE_OPTION
-from ..domain.fields import is_fill_target_field_type
+from ..domain.fields import FieldDocument, is_fill_target_field_type
 from ..domain.schema import extract_schema
 from ..domain.slot import Slot, SlotOption
-from ..domain.structure_scan import CONTEXT_MAX, normalize_field_id
+from ..domain.structure_scan import CONTEXT_MAX, PLACEMENT_OPTION, PLACEMENT_SLOT, normalize_field_id
 from ..domain.template_authoring import (
     ALTERNATIVE_CREATE_SLOT,
     CATEGORY_AUTHORING,
@@ -49,6 +49,8 @@ from ..domain.template_authoring import (
     INVALID_FIELD_NAME,
     REASON_NEED_IDENTIFIER,
     REASON_NEED_NEW_IDENTIFIER,
+    REASON_NO_FILLED_VALUE,
+    REVERT_TEMPLATE,
     SEVERITY_WARNING,
     CascadeRequired,
     InvalidName,
@@ -57,11 +59,14 @@ from ..domain.template_authoring import (
     command_action,
     command_label,
     field_candidates,
+    field_placeholder,
+    is_filled_value,
     marker_target,
     navigate_action,
     context_focus,
     occurrence_context,
     occurrence_context_parts,
+    revert_template_message,
     shared_reasons,
     target_availability,
     trial_document_values,
@@ -441,11 +446,11 @@ def analyze_hwpx(content: object) -> dict:
     snapshot = inspect_slot_regions(package)
     return {
         "fields": fields,
-        "slots": [{"id": slot.id, "label": slot.label or "", "kind": "slot",
+        "slots": [{"id": slot.id, "label": slot.label or "", "kind": PLACEMENT_SLOT,
                    "location": _region_location(snapshot.slot_regions.get(slot.id)),
                    "raw": _region_raw(snapshot.slot_regions.get(slot.id)),
                    "options": [{"id": option.id, "label": option.label or "",
-                                "kind": "option", "slot_id": slot.id,
+                                "kind": PLACEMENT_OPTION, "slot_id": slot.id,
                                 "location": _region_location(snapshot.option_regions.get((slot.id, option.id))),
                                 "raw": _region_raw(snapshot.option_regions.get((slot.id, option.id)))}
                                for option in slot.options]} for slot in slots],
@@ -596,13 +601,13 @@ def search_hwpx(content: object, query: str, kind: str = "text") -> dict:
         for slot in snapshot.slots:
             region = snapshot.slot_regions[slot.id]
             if query.casefold() in (slot.id + " " + (slot.label or "")).casefold():
-                hits.append({"kind": "slot", "slot_id": slot.id, "label": slot.label or slot.id,
+                hits.append({"kind": PLACEMENT_SLOT, "slot_id": slot.id, "label": slot.label or slot.id,
                              "entry": region.section, "start_paragraph": region.start_paragraph,
                              "end_paragraph": region.end_paragraph})
             for option in slot.options:
                 region = snapshot.option_regions[(slot.id, option.id)]
                 if query.casefold() in (option.id + " " + (option.label or "")).casefold():
-                    hits.append({"kind": "option", "slot_id": slot.id, "option_id": option.id,
+                    hits.append({"kind": PLACEMENT_OPTION, "slot_id": slot.id, "option_id": option.id,
                                  "label": option.label or option.id, "entry": region.section,
                                  "start_paragraph": region.start_paragraph,
                                  "end_paragraph": region.end_paragraph})
@@ -964,30 +969,54 @@ def _change_field(package, command: Mapping[str, object]) -> int:
     return count
 
 
+def _revert_template(package) -> int:
+    """모든 필드 값을 ``{{이름}}`` 원형으로 되돌린다(#1078) — 되돌린 사용 위치 수를 돌려준다.
+
+    값 쓰기는 생성과 같은 채움 경로(:meth:`FieldDocument.set_field`)다 — 빈 누름틀·값 런의 인라인 요소를 생성과 같은
+    규칙으로 다룬다. 실제 값이 든 이름만 쓴다(이미 원형인 자리는 바이트까지 그대로다). 한 자리라도 쓸 수 없으면 아무
+    자리도 고치지 않는다(``_execute`` 가 원래 bytes 로 되돌린다) — 일부만 되돌린 문서를 성공으로 내지 않는다.
+    """
+    count = 0
+    for entry in package.content_xml_names():
+        document = FieldDocument(package.entries[entry], entry=entry)
+        filled = [(name, value) for name, value in document.field_values() if is_filled_value(value, name)]
+        for name in dict.fromkeys(name for name, _ in filled):
+            if not document.set_field(name, field_placeholder(name)):
+                raise ValueError(_COMPLEX_FIELD)
+        if any(note.kind == "occurrence_unfillable" for note in document.notes):
+            raise ValueError(_COMPLEX_FIELD)
+        if document.modified:
+            package.entries[entry] = document.to_bytes()
+        count += len(filled)
+    if not count:
+        raise ValueError(REASON_NO_FILLED_VALUE)
+    return count
+
+
 def _rename_region(package, command: Mapping[str, object]) -> None:
     snapshot = inspect_slot_regions(package)
     if snapshot.diagnostics:
         raise ValueError("문서 구조 오류를 먼저 수정하세요.")
-    kind = "option" if command.get("type") == "rename_option" else "slot"
+    kind = PLACEMENT_OPTION if command.get("type") == "rename_option" else PLACEMENT_SLOT
     slot_id = command.get("slot_id")
     option_id = command.get("option_id")
-    if not isinstance(slot_id, str) or (kind == "option" and not isinstance(option_id, str)):
+    if not isinstance(slot_id, str) or (kind == PLACEMENT_OPTION and not isinstance(option_id, str)):
         raise ValueError("항목이나 선택의 식별자가 필요합니다.")
-    if kind == "option":
+    if kind == PLACEMENT_OPTION:
         assert isinstance(option_id, str)
         region = snapshot.option_regions.get((slot_id, option_id))
     else:
         region = snapshot.slot_regions.get(slot_id)
     if region is None:
         raise ValueError("항목이나 선택 영역을 찾을 수 없습니다.")
-    identifier = command.get("id", option_id if kind == "option" else slot_id)
+    identifier = command.get("id", option_id if kind == PLACEMENT_OPTION else slot_id)
     label = command.get("label")
     if not isinstance(identifier, str) or not identifier.strip():
         # 식별자 칸의 거절(P-06) — 원문 표기로 되쓸 수 없는 식별자는 책갈피 메타가 정본이라 받는다(구문 보기가 생략).
         raise InvalidName("identifier", REASON_NEED_NEW_IDENTIFIER)
     if label is not None and not isinstance(label, str):
         raise ValueError("표시 이름은 텍스트여야 합니다.")
-    if kind == "slot":
+    if kind == PLACEMENT_SLOT:
         if identifier != slot_id and identifier in snapshot.slot_regions:
             raise ValueError("항목 식별자가 이미 있습니다.")
         previous_slot = next(slot for slot in snapshot.slots if slot.id == slot_id)
@@ -1012,9 +1041,9 @@ def _rename_region(package, command: Mapping[str, object]) -> None:
     if len(product) != 1:
         raise ValueError("템플릿 메타데이터를 하나로 확정할 수 없습니다.")
     product[0].text = payload
-    begin.set("name", structure_region_name(identifier if kind == "slot" else str(slot_id),
-                                            identifier if kind == "option" else None))
-    if kind == "slot" and identifier != slot_id:
+    begin.set("name", structure_region_name(identifier if kind == PLACEMENT_SLOT else str(slot_id),
+                                            identifier if kind == PLACEMENT_OPTION else None))
+    if kind == PLACEMENT_SLOT and identifier != slot_id:
         for option in previous_slot.options:
             old_name = structure_region_name(str(slot_id), option.id)
             option_begins = [node for node in root.iter(f"{_HP}fieldBegin")
@@ -1034,16 +1063,21 @@ def _is_product_tag(raw: str) -> bool:
     return isinstance(payload, dict) and "hwpxFiller" in payload
 
 
+def _region_kind(command: Mapping[str, object]) -> object:
+    """영역 명령이 가리키는 요소의 저작 어휘 ``kind`` — 명시가 없으면 항목이다(L-5: 기본값은 이 한 곳)."""
+    return command.get("kind", PLACEMENT_SLOT)
+
+
 def _adjust_region(package, command: Mapping[str, object]) -> None:
     snapshot = inspect_slot_regions(package)
     if snapshot.diagnostics:
         raise ValueError("문서 구조 오류를 먼저 수정하세요.")
-    kind = command.get("kind", "slot")
+    kind = _region_kind(command)
     slot_id = command.get("slot_id")
     option_id = command.get("option_id")
     if not isinstance(slot_id, str):
         raise ValueError("항목 식별자가 필요합니다.")
-    if kind == "option":
+    if kind == PLACEMENT_OPTION:
         if not isinstance(option_id, str):
             raise ValueError("선택 식별자가 필요합니다.")
         region = snapshot.option_regions.get((slot_id, option_id))
@@ -1059,7 +1093,7 @@ def _adjust_region(package, command: Mapping[str, object]) -> None:
     paragraphs = [node for node in root if node.tag == f"{_HP}p"]
     if start < 0 or end >= len(paragraphs):
         raise ValueError("고른 문단 범위가 문서 영역 밖에 있습니다.")
-    if kind == "option":
+    if kind == PLACEMENT_OPTION:
         owner = snapshot.slot_regions[slot_id]
         if not owner.start_paragraph <= start <= end <= owner.end_paragraph:
             raise ValueError("고른 범위는 상위 항목 안에 있어야 합니다.")
@@ -1082,7 +1116,7 @@ def _adjust_region(package, command: Mapping[str, object]) -> None:
     end_runs = [node for node in paragraphs[end] if node.tag == f"{_HP}run"]
     if not start_runs or not end_runs:
         raise ValueError("경계 문단에 편집 가능한 텍스트 런이 없습니다.")
-    if kind == "option" and start == owner.start_paragraph:
+    if kind == PLACEMENT_OPTION and start == owner.start_paragraph:
         parent_begin = next(node for node in root.iter(f"{_HP}fieldBegin")
                             if node.get("id") == owner._pairing_id)
         parent_ctrl = parent_begin.getparent()
@@ -1090,7 +1124,7 @@ def _adjust_region(package, command: Mapping[str, object]) -> None:
         parent_ctrl.getparent().insert(parent_ctrl.getparent().index(parent_ctrl) + 1, begin_ctrl)
     else:
         start_runs[0].insert(0, begin_ctrl)
-    if kind == "option" and end == owner.end_paragraph:
+    if kind == PLACEMENT_OPTION and end == owner.end_paragraph:
         parent_end = next(node for node in root.iter(f"{_HP}fieldEnd")
                           if node.get("beginIDRef") == owner._pairing_id)
         parent_ctrl = parent_end.getparent()
@@ -1108,12 +1142,12 @@ def _block_region(
     snapshot = inspect_slot_regions(package)
     if snapshot.diagnostics:
         raise ValueError("구조 오류가 있어 영역을 변경할 수 없습니다.")
-    kind = command.get("kind", "slot")
+    kind = _region_kind(command)
     slot_id = command.get("slot_id")
     option_id = command.get("option_id")
     if not isinstance(slot_id, str):
         raise ValueError("항목 식별자가 필요합니다.")
-    if kind == "option":
+    if kind == PLACEMENT_OPTION:
         if not isinstance(option_id, str):
             raise ValueError("선택 식별자가 필요합니다.")
         region = snapshot.option_regions.get((slot_id, option_id))
@@ -1214,6 +1248,7 @@ def _next_native_id(package) -> int:
 
 def _duplicate_region(package, command: Mapping[str, object]) -> None:
     region, root, paragraphs, block = _block_region(package, command)
+    kind = _region_kind(command)
     if command.get("destination_entry", region.section) != region.section:
         raise ValueError("다른 문서 영역으로는 복제할 수 없습니다.")
     if command.get("start", 0) != 0:
@@ -1225,7 +1260,7 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
     if not isinstance(destination, int) or not 0 <= destination <= len(paragraphs):
         raise ValueError("복제할 문단 경계가 올바르지 않습니다.")
     snapshot = inspect_slot_regions(package)
-    if command.get("kind", "slot") == "option":
+    if kind == PLACEMENT_OPTION:
         slot_id = command.get("slot_id")
         assert isinstance(slot_id, str)
         owner = snapshot.slot_regions[slot_id]
@@ -1280,18 +1315,18 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
                                      if new == element.get("id")), None)
             if original_pairing == region._pairing_id:
                 element.set("name", structure_region_name(
-                    new_id if command.get("kind", "slot") == "slot" else str(command.get("slot_id")),
-                    new_id if command.get("kind", "slot") == "option" else None))
+                    new_id if kind == PLACEMENT_SLOT else str(command.get("slot_id")),
+                    new_id if kind == PLACEMENT_OPTION else None))
                 for tag in element.iter(f"{_HP}metaTag"):
                     if tag.text and _is_product_tag(tag.text):
                         payload = json.loads(tag.text)
                         payload["hwpxFiller"]["id"] = new_id
                         tag.text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            elif command.get("kind", "slot") == "slot":
+            elif kind == PLACEMENT_SLOT:
                 prefix = str(command.get("slot_id")) + "/"
                 if (element.get("name") or "").startswith(prefix):
                     element.set("name", structure_region_name(new_id, (element.get("name") or "")[len(prefix):]))
-    if command.get("kind", "slot") == "option" and destination == owner.end_paragraph + 1:
+    if kind == PLACEMENT_OPTION and destination == owner.end_paragraph + 1:
         parent_end = next(node for node in root.iter(f"{_HP}fieldEnd")
                           if node.get("beginIDRef") == owner._pairing_id)
         parent_ctrl = parent_end.getparent()
@@ -1299,7 +1334,7 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
         parent_ctrl.getparent().remove(parent_ctrl)
         last_runs = [node for node in clones[-1] if node.tag == f"{_HP}run"]
         last_runs[-1].append(parent_ctrl)
-    elif command.get("kind", "slot") == "option" and destination == owner.start_paragraph:
+    elif kind == PLACEMENT_OPTION and destination == owner.start_paragraph:
         parent_begin = next(node for node in root.iter(f"{_HP}fieldBegin")
                             if node.get("id") == owner._pairing_id)
         parent_ctrl = parent_begin.getparent()
@@ -1316,7 +1351,7 @@ def _duplicate_region(package, command: Mapping[str, object]) -> None:
 
 def _create_region(package, command: Mapping[str, object]) -> None:
     _require_clean(package)
-    kind = "option" if command["type"] == "create_option" else "slot"
+    kind = PLACEMENT_OPTION if command["type"] == "create_option" else PLACEMENT_SLOT
     identifier = command.get("id")
     if not isinstance(identifier, str) or not identifier.strip():
         raise InvalidName("identifier", REASON_NEED_IDENTIFIER)
@@ -1332,7 +1367,7 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         raise ValueError("문단 범위를 정확히 고르세요.")
     snapshot = inspect_slot_regions(package)
     owner = command.get("slot_id")
-    if kind == "slot":
+    if kind == PLACEMENT_SLOT:
         if identifier in snapshot.slot_regions:
             raise ValueError("항목 식별자가 이미 있습니다.")
         parent = None
@@ -1345,7 +1380,7 @@ def _create_region(package, command: Mapping[str, object]) -> None:
         parent = snapshot.slot_regions[owner]
         order = len(next(slot.options for slot in snapshot.slots if slot.id == owner))
         payload = serialize_slot_option_metatag(SlotOption(identifier, order, label))
-    if kind == "slot":
+    if kind == PLACEMENT_SLOT:
         region_name = structure_region_name(identifier)
     else:
         assert isinstance(owner, str)
@@ -1408,6 +1443,10 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
                 extra["affected"] = len(sites)
         elif action == COMPILE_TOKEN:
             captured = _compile_token(package, command)
+        elif action == REVERT_TEMPLATE:
+            captured = _revert_template(package)
+            # 파괴 확인(button)의 본문 — 손실 집합(ui-style: 제목=행동, 본문=결과·손실 집합).
+            extra = {"message": revert_template_message(captured)}
         elif action in {"rename_field", "relink_field", "unset_field"}:
             captured = _change_field(package, command)
             whole = whole_field_unset(command)
@@ -1435,11 +1474,11 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
             _duplicate_region(package, command)
             captured = None
         elif action in {"unwrap", "delete"}:
-            kind = command.get("kind", "slot")
+            kind = _region_kind(command)
             slot_id = str(command.get("slot_id"))
             option_id = command.get("option_id")
             if action == "delete":
-                if kind == "option":
+                if kind == PLACEMENT_OPTION:
                     remove_slot_option(package, slot_id, str(option_id))
                 else:
                     remove_slot(package, slot_id)
@@ -1447,15 +1486,15 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
                 snapshot = inspect_slot_regions(package)
                 if snapshot.diagnostics:
                     raise ValueError("문서 구조 오류를 먼저 수정하세요.")
-                region = (snapshot.option_regions.get((slot_id, str(option_id))) if kind == "option"
+                region = (snapshot.option_regions.get((slot_id, str(option_id))) if kind == PLACEMENT_OPTION
                           else snapshot.slot_regions.get(slot_id))
                 if region is None:
                     raise ValueError("항목이나 선택 영역을 찾을 수 없습니다.")
-                if kind == "slot" and any(slot.options for slot in snapshot.slots if slot.id == slot_id):
+                if kind == PLACEMENT_SLOT and any(slot.options for slot in snapshot.slots if slot.id == slot_id):
                     if not command.get("cascade"):
                         if not projecting:
                             raise CascadeRequired([child for child in impact_context.get("children", [])
-                                                   if child["kind"] == "option"])
+                                                   if child["kind"] == PLACEMENT_OPTION])
                         requires_cascade = True
                     _unwrap_slot_options(package, slot_id)
                     region = inspect_slot_regions(package).slot_regions[slot_id]
@@ -1520,6 +1559,9 @@ def _command_preview_label(command: Mapping[str, object], *, after: bool = False
         return "삭제됨" if after else "영역 내용과 의미"
     if action == "unwrap":
         return "본문 유지" if after else "의미 경계"
+    if action == REVERT_TEMPLATE:
+        # 되돌리기는 문서 전체의 값이다 — 한 줄 전후 표지가 없고 손실 집합(message)이 영향이다.
+        return ""
     return str(command.get("type", ""))
 
 
@@ -1529,6 +1571,7 @@ def _preview_content_context(package, command: Mapping[str, object]) -> dict:
     if action not in {"create_slot", "create_option", "adjust_range", "unwrap", "delete", "duplicate", "move"}:
         return {}
     slot_id = str(command.get("slot_id") or "")
+    on_option = _region_kind(command) == PLACEMENT_OPTION
     option_id = command.get("option_id")
     prior_region = None
     target_name = None
@@ -1539,17 +1582,17 @@ def _preview_content_context(package, command: Mapping[str, object]) -> dict:
         end = command.get("end_paragraph")
         if action == "adjust_range":
             region = (snapshot.option_regions.get((slot_id, option_id))
-                      if isinstance(option_id, str) and command.get("kind") == "option"
+                      if isinstance(option_id, str) and on_option
                       else snapshot.slot_regions.get(slot_id))
             prior_region = region
-            target_name = _region_display_name(snapshot, slot_id, option_id if command.get("kind") == "option" else None)
+            target_name = _region_display_name(snapshot, slot_id, option_id if on_option else None)
             if region is not None and entry is None:
                 entry = region.section
     else:
         region = (snapshot.option_regions.get((slot_id, option_id))
-                  if isinstance(option_id, str) and command.get("kind") == "option"
+                  if isinstance(option_id, str) and on_option
                   else snapshot.slot_regions.get(slot_id))
-        target_name = _region_display_name(snapshot, slot_id, option_id if command.get("kind") == "option" else None)
+        target_name = _region_display_name(snapshot, slot_id, option_id if on_option else None)
         if region is None:
             return {"target_name": target_name}
         entry, start, end = region.section, region.start_paragraph, region.end_paragraph
@@ -1565,7 +1608,7 @@ def _preview_content_context(package, command: Mapping[str, object]) -> dict:
     previous = ("\n".join("".join(node.text or "" for node in paragraph.iter(f"{_HP}t"))
                           for paragraph in paragraphs[prior_region.start_paragraph:prior_region.end_paragraph + 1])
                 if prior_region is not None else included)
-    target_key = ((slot_id, option_id) if command.get("kind") == "option"
+    target_key = ((slot_id, option_id) if on_option
                   and action not in {"create_slot", "create_option"} else None)
     children, counts = _block_children(package, snapshot, entry, paragraphs, start, end, exclude=target_key)
     detail = (f"\n\n포함: 문단 {counts['paragraphs']}개 · 필드 {counts['fields']}곳 · "
@@ -1604,7 +1647,7 @@ def _block_children(package, snapshot, entry: str, paragraphs: list, start: int,
                if region.section == entry and start <= region.start_paragraph and region.end_paragraph <= end
                and (owner, option_id) != exclude]
     for owner, option_id, region in options:
-        children.append({"kind": "option", "id": option_id,
+        children.append({"kind": PLACEMENT_OPTION, "id": option_id,
                          "label": _region_display_name(snapshot, owner, option_id) or option_id,
                          "count": region.end_paragraph - region.start_paragraph + 1})
     grouped: dict[str, int] = defaultdict(int)
@@ -1692,7 +1735,7 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
 
     field_hits = [field["name"] for field in analysis["fields"]
                   for occurrence in field["occurrences"] if field_hit(occurrence)]
-    regions = [(item["kind"], item.get("slot_id", item["id"]), item["id"] if item["kind"] == "option" else None,
+    regions = [(item["kind"], item.get("slot_id", item["id"]), item["id"] if item["kind"] == PLACEMENT_OPTION else None,
                 item["location"])
                for slot in analysis["slots"] for item in [slot, *slot["options"]]
                if item["location"] is not None and item["location"]["entry"] == entry]
@@ -1703,12 +1746,13 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
                   if region[3]["start_paragraph"] <= first and last <= region[3]["end_paragraph"]]
     crossing = any(region not in containing for region in hit)
     slot_id = context["slot_id"] if "slot_id" in context else next(
-        (region[1] for region in containing if region[0] == "slot"), None)
+        (region[1] for region in containing if region[0] == PLACEMENT_SLOT), None)
     option_id = context["option_id"] if "option_id" in context else next(
-        (region[2] for region in containing if region[0] == "option"), None)
+        (region[2] for region in containing if region[0] == PLACEMENT_OPTION), None)
     if slot_id is not None and slot_id not in snapshot.slot_regions:
         slot_id = option_id = None
-    target_kind = "option" if option_id is not None and slot_id is not None else "slot" if slot_id else None
+    target_kind = (PLACEMENT_OPTION if option_id is not None and slot_id is not None
+                   else PLACEMENT_SLOT if slot_id else None)
     broken = bool(snapshot.diagnostics)
     reasons = shared_reasons(field_hits=field_hits, target_kind=target_kind, has_slot=slot_id is not None,
                              structure_broken=broken)
@@ -1728,11 +1772,11 @@ def available_commands_hwpx(content: object, selection: Mapping[str, object],
         reasons["create_slot"] = reasons["create_option"] = REASON_REGION_IN_CELL
         return availability_entries(reasons, alternatives)
     reasons["create_slot"] = REASON_REGION_OVERLAP if hit else None
-    owners = [region for region in containing if region[0] == "slot"]
+    owners = [region for region in containing if region[0] == PLACEMENT_SLOT]
     if len(owners) == 1:
-        reasons["create_option"] = (REASON_REGION_OVERLAP if any(region[0] == "option" for region in hit)
+        reasons["create_option"] = (REASON_REGION_OVERLAP if any(region[0] == PLACEMENT_OPTION for region in hit)
                                     else None)
-    elif any(region[0] == "slot" for region in hit):
+    elif any(region[0] == PLACEMENT_SLOT for region in hit):
         reasons["create_option"] = REASON_MULTI_REGION
     else:
         reasons["create_option"] = REASON_OPTION_OUTSIDE_SLOT
@@ -1763,8 +1807,8 @@ def syntax_view_hwpx(content: object) -> dict:
         notes.append(_NOTE_BROKEN)
     else:
         for slot in snapshot.slots:
-            members = [("slot", slot.id, slot.label, snapshot.slot_regions[slot.id])]
-            members += [("option", option.id, option.label, snapshot.option_regions[(slot.id, option.id)])
+            members = [(PLACEMENT_SLOT, slot.id, slot.label, snapshot.slot_regions[slot.id])]
+            members += [(PLACEMENT_OPTION, option.id, option.label, snapshot.option_regions[(slot.id, option.id)])
                         for option in slot.options]
             for kind, identifier, label, region in members:
                 try:

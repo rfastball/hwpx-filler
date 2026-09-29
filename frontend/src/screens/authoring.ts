@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { mountLintpad, disposeLintpad, updateLintpad, editLintpad, lintpadState, lintpadCommand, navigateLintpad, setLintpadRangePick } from "../editorview/txt_lintpad.ts";
 import type { LintpadPair, LintpadProblem } from "../editorview/txt_lintpad.ts";
 import { mountRhwp } from "../editorview/rhwp_editor.ts";
-import { AUTHORING_COPY, COMMANDS, coordinates } from "./authoring_controller.ts";
+import { AUTHORING_COPY, COMMANDS, DOCUMENT_COMMANDS, coordinates } from "./authoring_controller.ts";
 import { PanelSplitter, PANEL_CYCLE, cyclePanels } from "./authoring_layout.ts";
 import type { AuthoringLayout } from "./authoring_layout.ts";
 import type { AuthoringController, AuthoringEditor, Zoom } from "./authoring_controller.ts";
@@ -327,9 +327,10 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /** 명령 판정 표(F40·P07) — 도구 막대·속성 select·문맥 메뉴·팔레트가 같은 Python 판정을 읽는다. 읽기 전용이면 어떤 명령도
- *  되지 않는다(사유 문장은 짓지 않는다 — 호환성 안내가 이미 선다). 대안도 읽기 전용에서는 싣지 않는다. */
-export function commandEntries(commands: Obj[] | undefined, readOnly: boolean): CommandEntry[] {
-  return COMMANDS.map(([type, label]) => {
+ *  되지 않는다(사유 문장은 짓지 않는다 — 호환성 안내가 이미 선다). 대안도 읽기 전용에서는 싣지 않는다.
+ *  `table` 은 이름 표다 — 기본은 선택 명령, 문서 명령(#1078)은 탭 투영 `document_commands` 와 `DOCUMENT_COMMANDS` 로 같은 모양을 짓는다. */
+export function commandEntries(commands: Obj[] | undefined, readOnly: boolean, table: [string, string][] = COMMANDS): CommandEntry[] {
+  return table.map(([type, label]) => {
     const available = commandAvailability(commands, type);
     return { type, label, enabled: !readOnly && !!available.enabled, pending: !!available.pending, reason: available.enabled ? null : available.reason || null,
       alternative: readOnly || available.enabled ? null : available.alternative || null };
@@ -1420,6 +1421,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   const rename = () => renameShortcut(controller);
   // 명령 하나를 고르면 속성 패널이 그 명령으로 열리고 이름 칸으로 간다. 메뉴에서 골랐으면 메뉴를 연 자리가 복귀 대상이다.
   const pick = (commandType: string) => {
+    // 문서 명령(#1078)은 속성 패널을 열지 않는다 — 고른 대상이 없고 입력 칸이 없다. 확인은 Python 등급을 따른다.
+    if (DOCUMENT_COMMANDS.some(([type]) => type === commandType)) { act(() => controller.documentCommand(commandType))(); return; }
     const current = controller.viewModel.getSnapshot();
     if (current.contextMenu) pendingOpener.current = current.contextMenu.trigger;
     controller.update({ panel: "properties", commandType, formEntry: CREATE_TYPES.includes(commandType) ? "create" : "", contextMenu: null, preview: null, refusal: null, ...focusRequest(current, "properties") });
@@ -1441,6 +1444,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     if (restore && !focusFirst([opener])) focusFirst([toolbarEntry()]);
   };
   const commandTable = commandEntries(view.commands, readOnly);
+  // 명령 팔레트는 선택 명령 뒤에 문서 명령을 싣는다 — 판정은 선택이 아니라 문서(탭 투영)의 것이다.
+  const paletteTable = [...commandTable, ...commandEntries(item?.document_commands, readOnly, DOCUMENT_COMMANDS)];
   // 막대는 지금 선택에 대한 Python 판정이 도착했을 때만 선다(commandsSelection) — 판정 전·다른 선택의 판정으로는 서지 않는다.
   // 초점은 옮기지 않는다: 단추는 Tab 순서 밖이고 누름이 초점을 먼저 가져가지 않는다. 키보드 입구는 Shift+F10 문맥 메뉴다.
   const barItems = selectionBarItems(commandTable, readOnly);
@@ -1816,7 +1821,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       ...barItems.map((entry) => quiet(entry.label, () => { setBarAnchor(null); pick(entry.command); },
         { key: entry.key, tabIndex: -1 }))),
     // 명령 팔레트(IDE-02): 비모달 오버레이 — 여는 차례 번호가 열쇠라 다시 열면 입력이 비고 초점이 입력칸으로 간다.
-    item && view.palette ? h(CommandPalette, { key: view.palette, entries: commandTable, actions: paletteActions, onPick: pick, onClose: closePalette }) : null,
+    item && view.palette ? h(CommandPalette, { key: view.palette, entries: paletteTable, actions: paletteActions, onPick: pick, onClose: closePalette }) : null,
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).
     item && h("footer", { className: "authoring-status", role: "group" },
       // 왼쪽: 저장·준비와 구조 검사. 오른쪽: 보존·복원·시험. 구분선은 CSS 가 그린다(글자가 아니다).

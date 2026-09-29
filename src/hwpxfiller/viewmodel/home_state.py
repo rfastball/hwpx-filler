@@ -45,7 +45,7 @@ from .run_state import unresolved_name_tokens_for
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
 BADGE_MISSING = "❌ 템플릿 없음"        # 경로 있으나 파일 부재(compile_status 호출 안 함)
 BADGE_RAW = "✏ 원문·누름틀 변환 필요"   # CompileState.RAW(진짜 필드 없음, 평문 토큰)
-BADGE_READY = "✅ 실행 준비"           # COMPILED/FILLED(잔존 토큰 0)
+BADGE_READY = "✅ 실행 준비"           # COMPILED(잔존 토큰 0)
 BADGE_ERROR = "⚠ 템플릿 오류"          # 손상 템플릿 — 조용한 ✅ 금지, 시끄럽게 알림
 BADGE_CORRUPT = "⚠ 손상됨"             # .job.json 파싱 실패 — 목록을 죽이지 않되 시끄럽게(RC-05)
 
@@ -91,7 +91,7 @@ def _derive_compile(
         # 속 빈 배지가 된다 — 상태는 시끄러운데 수치가 조용한 어긋남.
         n = st.skipped_n + st.stray_n + st.compilable_n + st.structure_marker_n
         return st.state, _partial_badge(n)
-    return st.state, BADGE_READY              # COMPILED 또는 FILLED(잔존 토큰 0)
+    return st.state, BADGE_READY              # COMPILED(잔존 토큰 0)
 
 
 def _fmt_iso(ts: str) -> str:
@@ -234,7 +234,7 @@ class JobRow:
         """실행 진입 가능 여부 — 카드 상태 모델과 실행 판정을 잇는 단일 술어(UD-03).
 
         판정을 badge_level(RC-29 단일 어휘)에 연결한다: ``danger``(템플릿 부재·손상·컴파일
-        오류·미설정 = compile_state None)면 실행 불가, 그 외(RAW·PARTIAL·COMPILED·FILLED)는
+        오류·미설정 = compile_state None)면 실행 불가, 그 외(RAW·PARTIAL·COMPILED)는
         진입 가능하다. RAW/PARTIAL 은 아직 실행 준비 전이지만 진입 자체는 허용하고
         표현 계층이 CTA 강조를 강등해 고지한다. 카드 [실행] 액션과 진입 게이트가
         이 한 술어를 공유해 같은 액션의 두 경로가 다른 판정을 내지 않는다(자기 모순 해소).
