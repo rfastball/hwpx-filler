@@ -9,6 +9,23 @@ from pathlib import Path
 
 from hwpxfiller.web_artifact import WebArtifactViolation, resolve_web_artifact
 
+#: 배포본에 함께 실려야 하는 법적 고지 — PyInstaller datas(``packaging/hwpx_filler_web.spec``)가
+#: bundle_root 최상단에 싣는다(FB-06 #1082, 사용자 확정: 파일 동봉만·앱 내 표면 없음).
+REQUIRED_NOTICE_FILES: tuple[str, ...] = ("LICENSE", "THIRD_PARTY_NOTICES")
+
+
+def verify_third_party_notices(bundle_root: Path) -> None:
+    """번들 최상단에 LICENSE·THIRD_PARTY_NOTICES 가 실제로 있는지 확인한다.
+
+    누락은 조용한 성공이 아니라 :class:`WebArtifactViolation`이다 — 앱 산출물 검증과
+    같은 실패 어휘를 쓴다.
+    """
+    missing = [name for name in REQUIRED_NOTICE_FILES if not (bundle_root / name).is_file()]
+    if missing:
+        raise WebArtifactViolation(
+            f"bundle is missing required notice files: {', '.join(missing)}"
+        )
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -32,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
             raise WebArtifactViolation(
                 "source and bundled web artifacts do not have the same identity"
             )
+        verify_third_party_notices(args.bundle_root)
     except (OSError, WebArtifactViolation) as exc:
         print(f"packaged web verification failed: {exc}", file=sys.stderr)
         return 2

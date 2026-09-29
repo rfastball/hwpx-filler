@@ -934,9 +934,7 @@ export function JobDelivery(props: { controller: JobRunController }): ReactNode 
       : null,
     // 「목록 새로 확인」도 없다(U4 계열2-28) — 계획은 그것을 바꾸는 전이에서 Python 이
     // 무효화하고 다시 세운다. 사람이 눌러 새로고침해야 하는 목록이면 그 자체가 결함이다.
-    h('div', { className: 'run-row' },
-      h('span', { className: 'muted capnote' },
-        '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
+  );
 }
 
 

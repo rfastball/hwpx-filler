@@ -1,0 +1,122 @@
+# 제3자 고지 (Third-Party Notices)
+
+문서나르미(hwpx-filler)는 아래 제3자 구성요소를 함께 배포한다(설치본·포터블 산출물).
+각 항목의 정확한 라이선스 전문은 표에 적힌 동봉 파일 또는 아래 부록을 따른다.
+이 목록은 `pyproject.toml`(`[project.dependencies]` + `gui` extra), `package.json`
+(`dependencies`), `vendor/rhwp/source.json`을 정본으로 손으로 유지한다 —
+`tests/test_third_party_notices.py`가 각 정본의 의존성 이름이 이 파일에 등장하는지
+대조해 누락을 검사한다(생성 스크립트가 아니라 손 유지 + 검증 테스트 방식; 근거는
+PR 본문 참고). 확장자 없이 `LICENSE`와 같은 규약을 따른다 — 저장소 문서 인벤토리
+계약(`docs/manifest.toml`)이 다루는 `.md` 문서가 아니라 배포 동봉 고지 파일이다.
+
+## Python 런타임 의존성
+
+| 구성요소 | 버전 | 라이선스 | 저작권자 | 근거 |
+| --- | --- | --- | --- | --- |
+| lxml | 6.1.1 | BSD-3-Clause | lxml 개발자들 | `uv.lock`, PyPI METADATA |
+| openpyxl | 3.1.5 | MIT | See openpyxl/AUTHORS.rst (Charlie Clark 외) | `uv.lock`, PyPI METADATA |
+| et-xmlfile | 2.0.0 | MIT | See et_xmlfile/AUTHORS.txt (Charlie Clark 외, openpyxl 전이의존) | `uv.lock`, PyPI METADATA |
+| pywebview | ≥6.2,<7 (`gui` extra — 웹 앱 실행에 필수, PyInstaller 산출물에 번들) | BSD-3-Clause | Roman Sirokov and contributors | `pyproject.toml`, PyPI METADATA |
+
+전문: BSD-3-Clause·MIT 표준 문안이며, 이 저장소는 각 프로젝트가 배포하는 전문을
+따로 보존하지 않는다 — 해당 배포처(PyPI 소스 배포판)의 `LICENSE`/`LICENCE.rst` 파일이
+정본이다. 아래 [부록](#부록-표준-라이선스-전문)에 표준 문안 사본을 싣는다.
+
+## npm 런타임 의존성 (Vite가 프런트엔드 번들에 포함)
+
+| 구성요소 | 버전 | 라이선스 | 근거 |
+| --- | --- | --- | --- |
+| react | 19.2.8 | MIT | `package.json`, `package-lock.json` |
+| react-dom | 19.2.8 | MIT | `package.json`, `package-lock.json` |
+| scheduler | 0.27.0 (react-dom 전이의존) | MIT | `package-lock.json` |
+| @codemirror/commands | 6.11.1 | MIT | `package.json`, `package-lock.json` |
+| @codemirror/language | 6.12.4 (전이의존) | MIT | `package-lock.json` |
+| @codemirror/search | 6.7.2 | MIT | `package.json`, `package-lock.json` |
+| @codemirror/state | 6.7.1 | MIT | `package.json`, `package-lock.json` |
+| @codemirror/view | 6.43.9 | MIT | `package.json`, `package-lock.json` |
+| @lezer/common | 1.5.3 (전이의존) | MIT | `package-lock.json` |
+| @lezer/highlight | 1.2.4 (전이의존) | MIT | `package-lock.json` |
+| @lezer/lr | 1.4.10 (전이의존) | MIT | `package-lock.json` |
+| @marijn/find-cluster-break | 1.0.4 (전이의존) | MIT | `package-lock.json` |
+| crelt | 1.0.7 (전이의존) | MIT | `package-lock.json` |
+| style-mod | 4.1.3 (전이의존) | MIT | `package-lock.json` |
+| w3c-keyname | 2.2.8 (전이의존) | MIT | `package-lock.json` |
+
+전 항목 MIT — 표준 문안은 [부록](#부록-표준-라이선스-전문) 참고.
+
+## rhwp(HWP/HWPX 웹 렌더러)와 동봉 글꼴
+
+| 구성요소 | 버전/커밋 | 라이선스 | 저작권자 | 동봉 파일 |
+| --- | --- | --- | --- | --- |
+| rhwp | `vendor/rhwp/source.json` 고정 커밋 | MIT | Edward Kim | `vendor/rhwp/LICENSE.txt` |
+| rhwp editor SDK | 동일 원천 | MIT | Edward Kim | `frontend/vendor/rhwp/editor/LICENSE.txt` |
+| Source Han Serif K | `vendor/rhwp` 번들 | OFL-1.1 | Adobe(Source Han 프로젝트 기여자) | `vendor/rhwp/SourceHanSerifK-OFL.txt` |
+| Pretendard | `frontend/fonts` 번들 | OFL-1.1 | 길형진(길형진 외 Pretendard 기여자) | `frontend/fonts/OFL.txt` |
+
+`vendor/rhwp/FONTS.txt`가 명시하듯 한컴·MS 제공 폰트 등 독점 글꼴은 저장소·배포본
+어디에도 실리지 않는다(로컬에서만 사용자가 직접 추가). 위 두 오픈소스 글꼴만 배포본에
+실제로 번들된다.
+
+## 프로젝트 라이선스
+
+문서나르미 자체는 MIT — 전문은 저장소 루트 [`LICENSE`](LICENSE) 파일(배포본에도 동봉).
+
+---
+
+## 부록: 표준 라이선스 전문
+
+### MIT License
+
+```
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+(각 구성요소의 정확한 저작권 행은 위 표의 "저작권자" 열, 또는 동봉 파일을 따른다.)
+
+### BSD 3-Clause License
+
+```
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```
+
+### SIL Open Font License 1.1 (OFL-1.1)
+
+전문은 `vendor/rhwp/SourceHanSerifK-OFL.txt`, `frontend/fonts/OFL.txt`에 각 글꼴의
+저작권 행과 함께 동봉되어 있다 — 두 파일 모두 이 배포본에 함께 실린다.

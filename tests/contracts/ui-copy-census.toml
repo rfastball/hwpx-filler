@@ -871,10 +871,6 @@ text = "현재 데이터를 확인할 수 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
-text = "현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_run.ts"
 text = "확인 이후 작업 상태가 바뀌어 이 변경사항은 적용할 수 없습니다."
 
 [[sentence]]

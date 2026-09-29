@@ -153,6 +153,26 @@ HWPX 생성 직전 별도 '생성 값 미리보기' 승인 시트는 없다. 연
 취소·일부 성공·배달 실패를 숨기거나 전부 성공/실패로 뭉개지 않는다. 화면에 별도 실행 원장을
 만들지 않는다. 출력 위치는 [저장 규칙](#workflow-storage)을 따른다.
 
+무엇을 바꾸면 어떤 준비 상태를 버리는가(모두 `screen_job.py`·`job_execution_session.py`·
+`document_run_coordinator.py`):
+
+| 바뀐 것 | 버리는 것 | 근거 |
+| --- | --- | --- |
+| 데이터 마운트·리로드 | 준비(record/delivery preparation) + 실행 결과 | `_invalidate_data_results` → `execution.invalidate_preparations` + `runs.invalidate_data_results` |
+| 저장 폴더 변경 | 배달 준비만(레코드 준비는 유지) | `execution.invalidate_delivery` |
+| 작업 전환·해제 | 실행 결과(마지막 생성·배달) | `runs.invalidate_work_results` |
+| 템플릿 재결속·재연결 | 봉인·계획·준비 전체 | `execution.invalidate`(orchestration 리셋 + `invalidate_preparations`) |
+| 템플릿 변경 적용(편집기 확정) | 봉인·계획·준비 전체 + 자동 재확인 | `execution.invalidate` + `_maybe_auto_check` |
+
+결속·이름 패턴 변경은 위 표의 "템플릿 재결속" 또는 "데이터 마운트" 경로로 흡수된다 — 별도
+무효화 축이 없다.
+
+BOOKMARK 짝 판정은 소비자에 따라 갈린다. 진단 스캐너(`structural_boundary.py`)는 admission·
+qualification에서 쓰며 `BOOKMARK_CROSSING`을 진단으로 보고하고 스캔을 계속한다(표 셀·캡션도
+지원). region API(`bookmark_region.py`)는 저작·materialization에서 쓰며 짝이 native
+ctrl/run/최상위 문단 형태가 아니면 `ValueError`로 멈춘다(최상위 문단만 지원). 둘의 범위
+차이는 의도된 경계이지 결함이 아니다.
+
 <a id="workflow-results"></a>
 ## 결과 관찰과 TXT 복사
 

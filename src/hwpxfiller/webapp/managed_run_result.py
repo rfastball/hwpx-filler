@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..application.document_creation_workbench import (
@@ -80,7 +81,7 @@ def managed_failure_row(
     ordered_model_indices: list[int],
     failed_ordinal: int,
     reason: str,
-    records: list[dict],
+    records: "Sequence[dict]",
     filename_source_columns: list[str],
 ) -> tuple[int, dict]:
     """managed 실패 항목 하나 → legacy 실패 행(안착 중단·되읽기 실패가 같은 투영을 쓴다).
@@ -111,7 +112,7 @@ def project_managed_run_result(
     *,
     outcome: ManagedGenerationResult,
     preparation: CurrentDeliveryPreparation,
-    records: list[dict],
+    records: "Sequence[dict]",
     filename_source_columns: list[str],
     run_revisions: dict,
     generated_at: str,

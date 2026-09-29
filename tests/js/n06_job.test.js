@@ -558,14 +558,17 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
     '백엔드-그대로_7.hwpx',
     // 덮어쓴다는 사실은 정책 라벨이 아니라 **파일마다** 선다(U4 계열2-27).
     '기존 파일 덮어쓰기',
-    '실제 파일 생성을 예약한 것은 아닙니다.',
     // U3-06(#879): 계획도 어디에 떨어지는지 같은 자리에서 진술한다.
     '저장 폴더: C:\\문서',
   ]) assert.ok(markup.includes(text), text);
 
   // 고르는 자리도 새로고침 동사도 없다(U4 계열2-27 · 2-28) — 정책은 기본값 하나이고
-  // 계획은 그것을 바꾸는 전이에서 Python 이 다시 센다.
-  for (const gone of ['충돌 처리', '목록 새로 확인', 'jobDeliveryCollision', 'jobRefreshDelivery'])
+  // 계획은 그것을 바꾸는 전이에서 Python 이 다시 센다. 예정 파일명이 확정이 아니라는
+  // capnote 안내도 없다(#1082 FB-06 항목1) — 정보 밀도만 더하고 새 결정을 요구하지 않았다.
+  for (const gone of [
+    '충돌 처리', '목록 새로 확인', 'jobDeliveryCollision', 'jobRefreshDelivery',
+    '실제 파일 생성을 예약한 것은 아닙니다.',
+  ])
     assert.equal(markup.includes(gone), false, gone);
 
   const source = String(JobDelivery);

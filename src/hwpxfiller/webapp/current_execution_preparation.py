@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -150,7 +150,7 @@ def capture_selected_records(
     *,
     snapshot_generation: int,
     ordered_model_indices: tuple[int, ...],
-    rows: list[dict],
+    rows: "Sequence[dict]",
     source_schema_keys: tuple[str, ...],
     captured_at: str,
 ) -> tuple[RawDataRecordSnapshot, ...]:

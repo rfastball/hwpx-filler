@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 import threading
@@ -65,9 +65,15 @@ class RunInputCapture:
     indices: tuple[int, ...]
     snapshot_generation: int
     work_ref: str
-    source_records: list[dict]
+    source_records: tuple[dict, ...]
     source_schema_keys: tuple[str, ...]
     output_directory: str
+    #: 잠금 시점 `JobDataSession.records` 리스트 그 객체 — identity 토큰 전용이다.
+    #: source_records(불변 스냅샷)와 달리 이 필드는 절대 순회·수정하지 않는다. "그 리스트가
+    #: 재마운트로 통째로 바뀌었는가"를 `is` 비교로 재현하기 위해서만 쓴다(L-4). id() 정수를
+    #: 저장하면 원본 리스트가 GC된 뒤 다른 객체가 같은 id를 재사용할 수 있어 부정확하다 —
+    #: 참조 자체를 들고 있어야 `is` 비교가 항상 옳다.
+    source_records_ref: "Sequence[dict]" = ()
 
 
 @dataclass(frozen=True)
@@ -183,9 +189,10 @@ class DocumentRunCoordinator:
             indices=tuple(indices),
             snapshot_generation=snapshot_generation,
             work_ref=work_ref,
-            source_records=records,
+            source_records=tuple(records),
             source_schema_keys=source_schema_keys,
             output_directory=output_directory,
+            source_records_ref=records,
         )
 
     def capture_now(

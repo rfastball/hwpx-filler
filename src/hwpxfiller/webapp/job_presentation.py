@@ -537,7 +537,7 @@ def serialize_observation(observation, *, execution_status: tuple[str, str]) -> 
 
 def failure_rows(
     *,
-    records: list[dict],
+    records: "Sequence[dict]",
     indices: Sequence[int],
     results: Iterable,
     filename_source_columns: list[str],
