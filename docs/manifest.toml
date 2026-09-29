@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js"]
-source_sha256 = "2b642c1a02c470bf67a0dda9bbac55ea3944977d6ca82175cb21e0a5be85ea21"
+source_sha256 = "1d5cc821fe4dad61d3db3f8f431f4f2bb64a41753f2c67ac6f1f23aee893705d"
 body_sha256 = "263c30c892d227b7a50b2bf28e4679472c1a69e571636dcbdcbc71f3291eb57e"
 
 [[topic]]
@@ -201,7 +201,7 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "d72d47899da379e674bec0905eb5e4450cfa8dad1dc3afa7ccf4c3d1a7e97346"
+source_sha256 = "5300bc58ff1e0a087d33a9d43925b1d12c1d1a4fcd6fc3816b4927f96e07bcff"
 body_sha256 = "7a6813ecc90d2322df471d88bec96e8ae6e5a3d3a0da1a2524370f98eaabff4c"
 
 [[topic]]
@@ -209,8 +209,8 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "0a0ecd5f85d4860ee83abcc1f784de9e42ce6d7f24b7951964f52d526dfa3343"
-body_sha256 = "ee96a8a6893dab6a35de8d391c5c57c53ac35285cf87dff6efe626c0579a77cc"
+source_sha256 = "5e4c1c07b66797675121b8146d69c0519f76d7e96444b6ba48f563881926c613"
+body_sha256 = "4087d4243c3331932e1c118042275b1fd351e8e85b501ffe8f7ae123aea14935"
 
 [[topic]]
 id = "workflow-results"

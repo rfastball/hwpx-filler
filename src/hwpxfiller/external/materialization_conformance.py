@@ -35,8 +35,9 @@ import lxml.etree as etree
 
 from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.field_occurrence import resolve_field_occurrences
+from hwpxcore.native_admission import canonical_field_value
 from hwpxcore.package import HwpxPackage
-from hwpxcore.text_extract import require_package
+from hwpxcore.text_extract import InlineText, read_field_text, require_package
 from hwpxfiller.application.execution_composition import (
     NATIVE_PRIMITIVE_CONTRACT_ID,
     UnsupportedNativePrimitiveContract,
@@ -305,7 +306,7 @@ def verify_materialization_postconditions(
         )
     # inspect_slots 가 모든 content entry 의 bookmark/field marker topology 를 이미 gate 하므로
     # 여기 도달하면 pairing 은 usable 하다 — occurrence 를 그대로 읽는다.
-    field_values: list[tuple[str, str]] = []
+    field_values: list[tuple[str, InlineText]] = []
     for name, root in entries:
         for occ in resolve_field_occurrences(name, root).occurrences:
             field_id = normalize_field_id(occ.raw_name)
@@ -354,7 +355,7 @@ def verify_materialization_postconditions(
 
     # P3 — 모든 Active Field occurrence 가 exact VDR logical text(+expected count).
     expected_text = dict(vdr.document_values_in_order())
-    occ_by_field: dict[str, list[str]] = {}
+    occ_by_field: dict[str, list[InlineText]] = {}
     for field_id, value in field_values:
         occ_by_field.setdefault(field_id, []).append(value)
     for requirement in plan.active_field_requirements:
@@ -366,12 +367,20 @@ def verify_materialization_postconditions(
                 OCCURRENCE_COUNT_MISMATCH,
                 f"Active Field {field_id!r} occurrence {len(occurrences)} != 기대 {expected_count}",
             )
-        want = expected_text[field_id]
+        # 기대값도 쓰기와 같은 정본 투영으로 본다(CR LF → LF). 미모델링 인라인 자식이
+        # 남은 값은 글자가 같아 보여도 정확한 판독이 아니므로 통과시키지 않는다.
+        want = canonical_field_value(expected_text[field_id])
         for value in occurrences:
-            if value != want:
+            if not value.exact:
                 return ConformanceFailure(
                     FIELD_TEXT_MISMATCH,
-                    f"Active Field {field_id!r} text {value!r} != 기대 {want!r}",
+                    f"Active Field {field_id!r} 에 판독하지 못한 인라인 요소 "
+                    f"{list(value.unmodelled)} 가 남았다",
+                )
+            if value.text != want:
+                return ConformanceFailure(
+                    FIELD_TEXT_MISMATCH,
+                    f"Active Field {field_id!r} text {value.text!r} != 기대 {want!r}",
                 )
 
     # P5 — protected structure: removed Option(및 그 안에 중첩된 region) 밖의 모든 BOOKMARK region 이
@@ -458,8 +467,9 @@ def _parse_content_entries(pkg: HwpxPackage) -> list[tuple[str, etree._Element]]
     ]
 
 
-def _occurrence_text(occ: Any) -> str:
-    return "".join("".join(t.itertext()) for t in occ.texts)
+def _occurrence_text(occ: Any) -> InlineText:
+    """사후 검증의 필드 값 판독 — 채움·읽기와 같은 정본 판독기(#1080)."""
+    return read_field_text(occ.texts)
 
 
 def _read_field_values(pkg: object) -> list[tuple[str, str]]:

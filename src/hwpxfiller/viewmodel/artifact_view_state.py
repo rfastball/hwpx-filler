@@ -40,6 +40,7 @@ from typing import Iterator
 
 from hwpxcore import extract_document
 
+from ..domain.fields import is_fill_target_field_type
 from ..domain.job import MISSING_MARKER
 
 #: 부분 포섭 병기 코드(#820 §3). 관찰은 성립하므로 **거절 코드가 아니다** — 화면은 이
@@ -100,7 +101,10 @@ def observed_artifact_snapshot(package: object) -> dict:
     - ``coverage_code`` — 부분이면 :data:`ARTIFACT_PARTIAL_COVERAGE`, 아니면 빈 문자열.
     - ``missing_value_markers`` — ``[{"field", "count"}, ...]``, 필드 이름 정렬.
     """
-    payload = extract_document(package).to_dict()
+    # 문단 ``fields`` 는 채울 누름틀만 싣는다 — 자동 필드(HYPERLINK) 이름은 거른다(#1080).
+    payload = extract_document(
+        package, field_filter=is_fill_target_field_type
+    ).to_dict()
     unhandled = payload["unhandled"]
     partial = bool(unhandled)
     regions = [*payload["sections"], *payload["headers"], *payload["footers"]]

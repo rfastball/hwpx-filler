@@ -2,10 +2,23 @@
 
 The public surface deliberately stops at opaque scan pair observations.  Native
 node references live only in private plans consumed by the existing writers.
+
+Field value text (#1080) is read by :func:`hwpxcore.text_extract.read_field_text`
+and written by :func:`write_field_value_text`, its exact inverse: ``\\t`` becomes
+``<hp:tab width="0" leader="0" type="1"/>``, ``\\n`` becomes ``<hp:lineBreak/>`` and
+U+2007 becomes ``<hp:fwSpace/>`` inside one mixed-content ``hp:t`` (the shape 한글
+saves).  ``width="0"`` is the "no computed advance" tab marker: the real width is a
+layout cache 한글 recomputes (the rewritten section also drops its lineseg cache),
+and a fixed width would pin the tab to a stale position.  Before writing, a value
+passes :func:`canonical_field_value`: CR LF and lone CR fold to LF (one line break
+has one representation), and every other control character is rejected with
+:class:`FieldValueError` before any mutation — never stripped silently.
 """
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
@@ -23,7 +36,13 @@ from .structural_boundary import (
     StructuralBoundaryScan,
     StructuralDiagnosticKind,
 )
-from .text_extract import HP_NS, local_name, require_package
+from .text_extract import (
+    HP_NS,
+    VALUE_INLINE_TEXT,
+    local_name,
+    read_field_text,
+    require_package,
+)
 
 _HP = f"{{{HP_NS}}}"
 _RANGE_MARKERS = {
@@ -34,13 +53,86 @@ _RANGE_MARKERS = {
     "deleteBegin": ("delete", True),
     "deleteEnd": ("delete", False),
 }
-_SAFE_INLINE = {"tab", "lineBreak"}
+# Value-text inline elements belong to the value itself: a rewrite replaces them
+# like any other character, so their removal is not a REMOVE_INLINE mitigation.
+_SAFE_INLINE = frozenset(VALUE_INLINE_TEXT)
 _RANGE_TAGS = {f"{_HP}{name}" for name in _RANGE_MARKERS}
 _SAFE_INLINE_TAGS = {f"{_HP}{name}" for name in _SAFE_INLINE}
+_CARRIAGE_RETURN = re.compile(r"\r\n?")
+#: Character → (local name, attributes in 한글's order) of the synthesized element.
+_INLINE_WRITE: "dict[str, tuple[str, tuple[tuple[str, str], ...]]]" = {
+    "\t": ("tab", (("width", "0"), ("leader", "0"), ("type", "1"))),
+    "\n": ("lineBreak", ()),
+    " ": ("fwSpace", ()),
+}
 
 
 class NativeAdmissionContractError(RuntimeError):
     """The supplied scan no longer maps exactly to its package snapshot."""
+
+
+class FieldValueError(ValueError):
+    """A field value holds characters HWPX body text cannot carry."""
+
+    def __init__(self, code_points: "tuple[str, ...]") -> None:
+        self.code_points = code_points
+        super().__init__(
+            "필드 값에 문서 본문에 쓸 수 없는 제어 문자가 있습니다: "
+            + ", ".join(code_points)
+        )
+
+
+def _unwritable(ch: str) -> bool:
+    if ch in _INLINE_WRITE:
+        return False
+    code = ord(ch)
+    return unicodedata.category(ch) in {"Cc", "Cs"} or code in {0xFFFE, 0xFFFF}
+
+
+def canonical_field_value(value: str) -> str:
+    """The text a field holds after writing ``value`` — read-back equals this.
+
+    CR LF and lone CR fold to LF.  Any other control character (C0 except TAB/LF,
+    DEL, C1), surrogate or U+FFFE/U+FFFF raises :class:`FieldValueError`.
+    """
+    text = _CARRIAGE_RETURN.sub("\n", value)
+    bad = sorted({ch for ch in text if _unwritable(ch)})
+    if bad:
+        raise FieldValueError(tuple(f"U+{ord(ch):04X}" for ch in bad))
+    return text
+
+
+def write_field_value_text(t_el: etree._Element, value: str) -> bool:
+    """Write canonical ``value`` into a childless ``hp:t``; True when it changed.
+
+    Characters of :data:`_INLINE_WRITE` become inline elements whose tails carry
+    the following text, so :func:`read_field_text` returns ``value`` unchanged.
+    """
+    head, rest = _split_inline(value)
+    changed = False
+    if (t_el.text or "") != head:
+        t_el.text = head
+        changed = True
+    for char, tail in rest:
+        local, attrs = _INLINE_WRITE[char]
+        element = etree.SubElement(t_el, f"{_HP}{local}", dict(attrs))
+        element.tail = tail or None
+        changed = True
+    return changed
+
+
+def _split_inline(value: str) -> "tuple[str, list[tuple[str, str]]]":
+    """``value`` → (text before the first inline char, [(inline char, its tail)])."""
+    head: list[str] = []
+    rest: list[tuple[str, list[str]]] = []
+    for ch in value:
+        if ch in _INLINE_WRITE:
+            rest.append((ch, []))
+        elif rest:
+            rest[-1][1].append(ch)
+        else:
+            head.append(ch)
+    return "".join(head), [(char, "".join(tail)) for char, tail in rest]
 
 
 class FieldFillEffectKind(StrEnum):
@@ -320,11 +412,8 @@ def plan_field_fill(
                 FieldFillBlockerKind.UNSUPPORTED_INLINE_OBJECT, unsupported
             )
         )
-    safe_removed.update(
-        node
-        for node in removed
-        if isinstance(node.tag, str) and node.tag in _SAFE_INLINE_TAGS
-    )
+    # Value-text inline elements (tab/lineBreak/fwSpace) are part of the old value;
+    # replacing them is the rewrite itself, not a stripped mitigation (#1080).
 
     effects: list[FieldFillEffect] = []
     if not occurrence.texts and occurrence.end_ctrl is not occurrence.begin_ctrl:
@@ -357,9 +446,18 @@ def apply_field_fill(
     occurrence: FieldOccurrence,
     new_value: str,
 ) -> FieldFillMutation:
-    """Apply exactly the plan used by inspection; never mutate a blocked pair."""
+    """Apply exactly the plan used by inspection; never mutate a blocked pair.
+
+    The field already holds the value only when its canonical read is exact and
+    equal to :func:`canonical_field_value` of ``new_value``.  An unmodelled inline
+    child never compares equal, so the fill goes through admission instead of
+    reporting a silent no-op (#1080).  An unwritable value raises
+    :class:`FieldValueError` before anything is touched.
+    """
+    value = canonical_field_value(new_value)
     texts = list(occurrence.texts)
-    if texts and "".join("".join(text.itertext()) for text in texts) == new_value:
+    current = read_field_text(texts)
+    if texts and current.exact and current.text == value:
         return FieldFillMutation(True, False, False, (), ())
     plan = plan_field_fill(index, occurrence)
     if plan.blockers:
@@ -395,9 +493,7 @@ def apply_field_fill(
             for effect in plan.effects
             if effect.kind is FieldFillEffectKind.REMOVE_INLINE
         )
-    first = texts[0]
-    if (first.text or "") != new_value:
-        first.text = new_value
+    if write_field_value_text(texts[0], value):
         modified = True
     for fragment in texts[1:]:
         if fragment.text:

@@ -15,7 +15,10 @@ HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표 구조를 담은 
   - **한 문단의 텍스트는 여러 런의 여러 ``hp:t`` 파편으로 쪼개진다** — 문서 순서로
     이어붙여야 문단 문자열이 복원된다.
   - ``hp:t`` 는 혼합 콘텐츠다: ``.text`` + 자식(``hp:tab`` 등) + 자식의 ``.tail``.
-    실제 파일에서 ``<hp:t>글자<hp:tab/></hp:t>`` 형태로 탭이 ``hp:t`` 안에 박힌다.
+    실제 파일에서 ``<hp:t>글자<hp:tab width="1668" leader="0" type="1"/></hp:t>`` 형태로
+    탭이 ``hp:t`` 안에 박힌다. ``hp:t`` 자식의 글자 투영은 :func:`read_inline_text` 한 곳이
+    정한다(아래 「``hp:t`` 인라인 자식 정책」) — 본문 추출·누름틀 값 읽기·같은 값 판정·사후
+    검증이 모두 이 판독기를 쓴다.
   - 표는 런 안에 중첩된다: ``hp:tbl`` > ``hp:tr`` > ``hp:tc`` > ``hp:subList`` > ``hp:p``.
     셀은 자체 문단을 가지며 표 중첩이 가능하다. 셀은 ``cellSpan``(colSpan/rowSpan)·
     ``cellAddr``(colAddr/rowAddr) 메타를 보존한다(그리드 기하는 해석하지 않음).
@@ -27,11 +30,30 @@ HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표 구조를 담은 
 
 출력은 랜덤 ID(id, fieldid, charPrIDRef 등)를 전혀 담지 않아 골든 스냅샷이 실행 간
 안정적이고 문서 버전 간 의미를 갖는다.
+
+``hp:t`` 인라인 자식 정책(#1080):
+  - **값 글자 요소**(:data:`VALUE_INLINE_TEXT`): ``hp:tab`` → ``\t``, ``hp:lineBreak`` →
+    ``\n``, ``hp:fwSpace`` → ``U+2007``(FIGURE SPACE). 고정폭 빈칸은 한글이 빈칸 한 칸으로
+    그리지만 폭이 글꼴 공백과 달라, 일반 공백(U+0020)으로 접으면 왕복이 닫히지 않는다 —
+    그래서 전용 코드포인트 U+2007 로 투영한다(rhwp 파서·직렬화기와 같은 대응이고, 한컴이
+    저장한 HWPX 에서 U+2007 은 늘 ``hp:fwSpace`` 요소로 나타난다). 쓰기 쪽
+    (:mod:`hwpxcore.native_admission`)은 이 대응의 역으로 요소를 합성해 쓰기→읽기가
+    항등이다.
+  - **글자 없는 서식 표지**(:data:`TEXTLESS_INLINE_MARKERS`): 형광펜 ``markpenBegin``/
+    ``markpenEnd`` 는 글자를 더하지 않는다.
+  - 위 두 부류도 **빈 요소일 때만** 모델링된 것으로 친다. 그 밖의 모든 요소 자식(변경 추적
+    ``insertBegin``/``deleteBegin`` 류, ``nbSpace``·``hyphen``·``titleMark``, 비-hp 요소,
+    내용을 품은 탭 등)은 **미모델링**이다: 그 요소 자신의 내용은 투영에서 빠지고(``tail``
+    은 이어 붙인다) 이름이 :attr:`InlineText.unmodelled` 에 남는다. 본문 추출은 그것을
+    커버리지 원장에 기록하고, 누름틀 같은 값 판정·사후 검증은 ``exact`` 가 아닌 값을
+    어떤 목표값과도 같다고 보지 않는다(조용한 무연산·거짓 통과 금지).
+  - 주석·처리 지시(PI)는 글자가 없어 투영에서 빠진다(다른 결정 지점과 같은 규칙).
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -152,7 +174,8 @@ class Paragraph:
     """복원된 문단. ``text`` 는 파편을 이어붙인 최종 문자열(탭/줄바꿈 보존).
 
     ``fields`` 는 이 문단 안에서 텍스트를 담은 누름틀 이름의 순서 있는 중복 없는 목록
-    (의미론적 이름이므로 랜덤 ID 가 아니다).
+    (의미론적 이름이므로 랜덤 ID 가 아니다). BOOKMARK 는 Field 가 아니라 구간 경계라 넣지
+    않고, 그 밖의 ``type`` 거름은 :func:`extract_document` 의 ``field_filter`` 가 정한다.
     """
 
     text: str
@@ -278,25 +301,127 @@ def _has_body_text(root: etree._Element) -> bool:
 
 
 # ------------------------------------------------------------- 텍스트 복원
-def text_of_t(t_el: etree._Element) -> str:
-    """``hp:t`` 혼합 콘텐츠를 문자열로 복원. ``hp:tab`` -> \\t, ``hp:lineBreak`` -> \\n."""
-    parts: "list[str]" = []
-    if t_el.text:
-        parts.append(t_el.text)
+#: 값 글자를 이루는 ``hp:t`` 인라인 요소 → 글자 투영(모듈 docstring 「인라인 자식 정책」).
+VALUE_INLINE_TEXT: "dict[str, str]" = {
+    "tab": "\t",
+    "lineBreak": "\n",
+    "fwSpace": "\u2007",
+}
+#: 글자를 더하지 않는 ``hp:t`` 안 서식 표지(빈 요소일 때만 모델링된 것으로 친다).
+TEXTLESS_INLINE_MARKERS = frozenset({"markpenBegin", "markpenEnd"})
+
+
+@dataclass(frozen=True)
+class InlineText:
+    """``hp:t`` 파편(들)의 정본 글자 투영.
+
+    ``unmodelled`` 는 투영이 의미를 정하지 못한 자식 요소 이름(문서 순서, 비-hp 요소는
+    ``{ns}local``)이다. 비어 있어야 ``text`` 가 파편의 글자를 **정확히** 나타낸다.
+    """
+
+    text: str
+    unmodelled: "tuple[str, ...]" = ()
+
+    @property
+    def exact(self) -> bool:
+        return not self.unmodelled
+
+
+def _inline_child_text(child: etree._Element) -> "str | None":
+    """모델링된 인라인 자식의 글자 투영. 미모델링이면 ``None``."""
+    tag = child.tag
+    if not isinstance(tag, str):  # 주석·PI — 글자 없음
+        return ""
+    if _ns(tag) != HP_NS or len(child) or child.text:
+        return None
+    ln = local_name(tag)
+    if ln in VALUE_INLINE_TEXT:
+        return VALUE_INLINE_TEXT[ln]
+    if ln in TEXTLESS_INLINE_MARKERS:
+        return ""
+    return None
+
+
+def _unmodelled_name(child: etree._Element) -> str:
+    ns = _ns(child.tag)
+    local = local_name(child.tag)
+    return local if ns == HP_NS else f"{{{ns}}}{local}"
+
+
+def read_inline_text(t_el: etree._Element) -> InlineText:
+    """``hp:t`` 한 파편의 정본 판독 — 인라인 자식 정책의 단일 출처."""
+    parts: "list[str]" = [t_el.text or ""]
+    unmodelled: "list[str]" = []
     for ch in t_el:
-        ln = local_name(ch.tag)
-        if ln == "tab":
-            parts.append("\t")
-        elif ln == "lineBreak":
-            parts.append("\n")
-        # 그 외 인라인 마크업(markpen 등)은 텍스트 없음 — tail 만 이어붙인다.
+        projected = _inline_child_text(ch)
+        if projected is None:
+            unmodelled.append(_unmodelled_name(ch))
+        else:
+            parts.append(projected)
         if ch.tail:
             parts.append(ch.tail)
-    return "".join(parts)
+    return InlineText("".join(parts), tuple(unmodelled))
+
+
+def read_field_text(texts: "Iterable[etree._Element]") -> InlineText:
+    """누름틀 값 ``hp:t`` 파편들을 문서 순서로 이어 붙인 정본 판독.
+
+    파편 사이에는 아무것도 넣지 않는다(한 값의 조각). 값 읽기·같은 값 판정·사후 검증이
+    모두 이 함수를 쓴다 — 경로마다 같은 문서를 다르게 읽지 않게 한다(#1080).
+    """
+    reads = [read_inline_text(t) for t in texts]
+    return InlineText(
+        "".join(r.text for r in reads),
+        tuple(name for r in reads for name in r.unmodelled),
+    )
+
+
+def text_of_t(t_el: etree._Element) -> str:
+    """``hp:t`` 혼합 콘텐츠를 문자열로 복원(:func:`read_inline_text` 의 글자 투영)."""
+    return read_inline_text(t_el).text
+
+
+def _field_label(
+    begin: etree._Element, field_filter: "Callable[[str | None], bool] | None"
+) -> str:
+    """``Paragraph.fields`` 에 실을 누름틀 이름. 싣지 않을 경계는 빈 문자열.
+
+    BOOKMARK ``fieldBegin`` 은 Field 가 아니라 구간 경계다(형식 사실 — 공용 Field
+    resolver 와 같은 구분). 어느 ``type`` 이 채울 누름틀인지는 제품 층이 ``field_filter``
+    로 정한다(#931) — 이 커널은 그 규칙을 소유하지 않는다.
+    """
+    field_type = begin.get("type")
+    if field_type == "BOOKMARK":
+        return ""
+    if field_filter is not None and not field_filter(field_type):
+        return ""
+    return (begin.get("name") or "").strip()
+
+
+def _close_field(
+    field_stack: "list[tuple[str | None, str]]", begin_ref: "str | None"
+) -> None:
+    """``fieldEnd`` 가 닫는 경계를 스택에서 뗀다.
+
+    ``beginIDRef`` 가 있으면 그 ``id`` 의 경계를 닫는다 — 다른 문단에서 열린 BOOKMARK 의
+    끝이 이 문단의 누름틀을 잘못 닫지 않게. 짝 id 가 이 문단에 없으면 아무것도 닫지
+    않는다. 참조가 없는 형상만 가장 안쪽을 닫는다.
+    """
+    if begin_ref is None:
+        if field_stack:
+            field_stack.pop()
+        return
+    for index in range(len(field_stack) - 1, -1, -1):
+        if field_stack[index][0] == begin_ref:
+            del field_stack[index]
+            return
 
 
 def _blocks_from_paragraph(
-    p_el: etree._Element, ledger: CoverageLedger, path: str
+    p_el: etree._Element,
+    ledger: CoverageLedger,
+    path: str,
+    field_filter: "Callable[[str | None], bool] | None" = None,
 ) -> "list[Paragraph | Table]":
     """단일 ``hp:p`` 를 블록 목록으로 변환.
 
@@ -306,7 +431,8 @@ def _blocks_from_paragraph(
     blocks: "list[Paragraph | Table]" = []
     buf: "list[str]" = []
     field_names: "list[str]" = []
-    field_stack: "list[str]" = []
+    # (fieldBegin@id, 실을 이름 또는 "") — fieldEnd@beginIDRef 로 짝을 찾는다.
+    field_stack: "list[tuple[str | None, str]]" = []
 
     def flush() -> None:
         if buf:
@@ -321,26 +447,30 @@ def _blocks_from_paragraph(
         for ch in run:
             ln = ledger.classify(ch, _HANDLED_RUN, _IGNORE_RUN, run_path)
             if ln == "t":
-                txt = text_of_t(ch)
+                inline = read_inline_text(ch)
+                # hp:t 도 결정 지점이다 — 미모델링 인라인 자식은 원장에 소리 나게 남긴다.
+                for name in inline.unmodelled:
+                    ledger.record(name, f"{run_path}/t/{local_name(name)}")
+                txt = inline.text
                 if txt:
                     buf.append(txt)
-                    if field_stack and txt.strip():
-                        nm = field_stack[-1]
-                        if nm and nm not in field_names:
-                            field_names.append(nm)
+                    nm = next((label for _, label in reversed(field_stack) if label), "")
+                    if nm and txt.strip() and nm not in field_names:
+                        field_names.append(nm)
             elif ln == "ctrl":
                 # ctrl 내부는 별도 결정 지점으로 원장에 넣지 않는다(제어 객체 세부).
                 # 누름틀 경계만 관찰한다.
                 for c in ch:
                     cl = local_name(c.tag)
                     if cl == "fieldBegin":
-                        field_stack.append((c.get("name") or "").strip())
+                        field_stack.append((c.get("id"), _field_label(c, field_filter)))
                     elif cl == "fieldEnd":
-                        if field_stack:
-                            field_stack.pop()
+                        _close_field(field_stack, c.get("beginIDRef"))
             elif ln == "tbl":
                 flush()
-                cap_blocks, table = _table_from_el(ch, ledger, f"{run_path}/tbl")
+                cap_blocks, table = _table_from_el(
+                    ch, ledger, f"{run_path}/tbl", field_filter
+                )
                 blocks.extend(cap_blocks)  # 캡션 문단을 표 앞(문서 순서)에 배치
                 blocks.append(table)
             elif ln == "lineBreak":
@@ -358,7 +488,10 @@ def _blocks_from_paragraph(
 
 
 def _blocks_from_container(
-    container: etree._Element, ledger: CoverageLedger, path: str
+    container: etree._Element,
+    ledger: CoverageLedger,
+    path: str,
+    field_filter: "Callable[[str | None], bool] | None" = None,
 ) -> "list[Paragraph | Table]":
     """컨테이너(섹션 루트 또는 셀 subList)의 직속 ``hp:p`` 를 순서대로 블록화."""
     blocks: "list[Paragraph | Table]" = []
@@ -366,7 +499,9 @@ def _blocks_from_container(
         if (
             ledger.classify(child, _HANDLED_CONTAINER, _IGNORE_CONTAINER, path) == "p"
         ):
-            blocks.extend(_blocks_from_paragraph(child, ledger, f"{path}/p"))
+            blocks.extend(
+                _blocks_from_paragraph(child, ledger, f"{path}/p", field_filter)
+            )
     return blocks
 
 
@@ -390,7 +525,10 @@ def _cell_span_addr(tc: etree._Element) -> "tuple[dict, dict]":
 
 
 def _caption_blocks(
-    cap_el: etree._Element, ledger: CoverageLedger, path: str
+    cap_el: etree._Element,
+    ledger: CoverageLedger,
+    path: str,
+    field_filter: "Callable[[str | None], bool] | None" = None,
 ) -> "list[Paragraph | Table]":
     """``hp:caption`` -> 캡션 문단 블록 목록. 텍스트는 ``hp:subList`` 밑 문단에 담긴다.
 
@@ -400,12 +538,17 @@ def _caption_blocks(
     blocks: "list[Paragraph | Table]" = []
     for sub in cap_el:
         if ledger.classify(sub, _HANDLED_CAPTION, _IGNORE_CAPTION, path) == "subList":
-            blocks.extend(_blocks_from_container(sub, ledger, f"{path}/subList"))
+            blocks.extend(
+                _blocks_from_container(sub, ledger, f"{path}/subList", field_filter)
+            )
     return blocks
 
 
 def _table_from_el(
-    tbl_el: etree._Element, ledger: CoverageLedger, path: str
+    tbl_el: etree._Element,
+    ledger: CoverageLedger,
+    path: str,
+    field_filter: "Callable[[str | None], bool] | None" = None,
 ) -> "tuple[list[Paragraph | Table], Table]":
     """``hp:tbl`` -> (캡션 블록, Table). 셀 내용은 ``hp:subList`` 밑 문단에서 추출(중첩 재귀).
 
@@ -418,7 +561,7 @@ def _table_from_el(
         ln = ledger.classify(child, _HANDLED_TBL, _IGNORE_TBL, path)
         if ln == "caption":
             caption_blocks.extend(
-                _caption_blocks(child, ledger, f"{path}/caption")
+                _caption_blocks(child, ledger, f"{path}/caption", field_filter)
             )
             continue
         if ln != "tr":
@@ -437,7 +580,9 @@ def _table_from_el(
                     == "subList"
                 ):
                     cell_blocks.extend(
-                        _blocks_from_container(sub, ledger, f"{tc_path}/subList")
+                        _blocks_from_container(
+                            sub, ledger, f"{tc_path}/subList", field_filter
+                        )
                     )
             cells.append(Cell(cell_blocks, span=span, addr=addr))
         rows.append(cells)
@@ -459,13 +604,21 @@ def require_package(obj: object) -> PackageLike:
     )
 
 
-def extract_document(pkg: object) -> Document:
+def extract_document(
+    pkg: object,
+    *,
+    field_filter: "Callable[[str | None], bool] | None" = None,
+) -> Document:
     """열린 HWPX package 에서 본문·머리말·꼬리말을 추출해 Document 반환.
 
     **package-only**(P2-19R): 호출자가 경로/바이트를 열린 package로 변환해 넘긴다.
     섹션은 section0, section1, ... 순으로 결정적이다. 머리말/꼬리말은 본문 문단을
     실제로 담은 ``header*``/``footer*`` XML 만 별도 영역으로 포함하며, 스타일 전용
     ``hp:head`` (``Contents/header.xml``)는 제외한다. 미처리 구조는 원장에 남는다.
+
+    ``field_filter`` 는 ``fieldBegin@type`` 을 받아 그 경계 이름을 ``Paragraph.fields``
+    에 실을지 정한다(제품 층의 채움 대상 규칙, #931). ``None`` 이면 BOOKMARK 가 아닌
+    모든 Field 를 싣는다.
     """
     pkg = require_package(pkg)
     doc = Document()
@@ -478,20 +631,32 @@ def extract_document(pkg: object) -> Document:
     for name in section_xml_names(pkg):
         root = etree.fromstring(pkg.entries[name], parser=parser)
         doc.sections.append(
-            Section(blocks=_blocks_from_container(root, ledger, _label(name)))
+            Section(
+                blocks=_blocks_from_container(
+                    root, ledger, _label(name), field_filter
+                )
+            )
         )
 
     for name in _headerfooter_xml_names(pkg, "header"):
         root = etree.fromstring(pkg.entries[name], parser=parser)
         if _has_body_text(root):
             doc.headers.append(
-                Section(blocks=_blocks_from_container(root, ledger, _label(name)))
+                Section(
+                    blocks=_blocks_from_container(
+                        root, ledger, _label(name), field_filter
+                    )
+                )
             )
     for name in _headerfooter_xml_names(pkg, "footer"):
         root = etree.fromstring(pkg.entries[name], parser=parser)
         if _has_body_text(root):
             doc.footers.append(
-                Section(blocks=_blocks_from_container(root, ledger, _label(name)))
+                Section(
+                    blocks=_blocks_from_container(
+                        root, ledger, _label(name), field_filter
+                    )
+                )
             )
 
     doc.unhandled = dict(ledger.counts)
