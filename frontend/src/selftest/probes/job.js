@@ -1067,6 +1067,13 @@ async function runJobMirror(ctx) {
     const input = builderRoot?.querySelector(".fb-operand.num");
     return input ? win.getComputedStyle(input).textAlign : "";
   })();
+  /* 배치는 연 직후에 잰다 — 트리거 아래에 붙고, 아래가 모자라면 위로 뒤집힌다(`Popover.place`). */
+  const openRect = builderRoot?.getBoundingClientRect();
+  const anchor = newBtn.getBoundingClientRect();
+  out.builder_anchored = !!openRect
+    && (openRect.top >= anchor.bottom - 1 || openRect.bottom <= anchor.top + 1);
+  out.builder_width = openRect ? Math.round(openRect.width) : 0;
+  out.builder_fits_viewport = !!openRect && openRect.top >= 0 && openRect.bottom <= win.innerHeight + 1;
   const picker = doc.getElementById("jobFilterColumnPicker");
   out.builder_focus_picker = doc.activeElement === picker;
   out.picker_role = picker?.getAttribute("role") || "";
@@ -1090,10 +1097,6 @@ async function runJobMirror(ctx) {
     );
     out.picker_focus_in_new_card = !!doc.activeElement?.closest?.('.fb-card[data-fb-column="공고명"]');
   }
-  const rect = builderRoot?.getBoundingClientRect();
-  const anchor = newBtn.getBoundingClientRect();
-  out.builder_below_trigger = !!rect && rect.top >= anchor.bottom - 1;
-  out.builder_width = rect ? Math.round(rect.width) : 0;
   doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await ctx.sleep(50);
   out.builder_closed_on_escape = !doc.getElementById("jobFilterBuilder");
