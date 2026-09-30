@@ -21,8 +21,10 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     FIELD_BINDING_SEMANTIC_VERSION,
+    FORMAT_KIND_DATE,
     FORMAT_KIND_TEXT,
     FORMAT_KINDS,
+    RUNTIME_DATE,
     SOURCE,
     SOURCE_SCHEMA_VERSION,
     CanonicalBindingValue,
@@ -40,6 +42,9 @@ from hwpxfiller.domain.field_binding import (
 )
 from hwpxfiller.domain.text_slice import TextSlice
 
+#: legacy 「오늘 날짜」 유형 — 판본에서는 :data:`RUNTIME_DATE` 규칙이 된다(#950).
+_LEGACY_TODAY_TYPE = "today"
+
 #: 소스 값을 나르는 legacy 유형(나머지는 const·today 로 따로 갈린다). 이 이름들은 곧 v3
 #: 표시형 kind 다 — legacy 에서도 유형은 값을 검증하지 않고 어느 해석기로 서식할지만 골랐다.
 #: 미지 유형은 조용히 확장하지 않고 시끄럽게 거절한다.
@@ -54,12 +59,10 @@ NEW_ACTIVE_FIELD = "NEW_ACTIVE_FIELD"
 #: 되돌아올 때마다 같은 결정을 다시 확정하게 된다. 실행에 참여하지 않을 뿐 판본에서는 산다.
 INACTIVE_ONLY = "INACTIVE_ONLY"
 
-# migration blocker 어휘.
-#: legacy ``today``(오늘 날짜, U4-E1 #939) — 값이 **실행 시각**에서 나오므로 SOURCE(데이터
-#: 열)도 CONSTANT(고정 리터럴)도 아니다. 이 slice 는 binding kind 어휘를 늘리지 않으므로
-#: 후보 규칙을 짓지 않고 blocker 로 남긴다. SOURCE(빈 source_key)나 CONSTANT(그때의 렌더값)로
-#: 접으면 **거짓 durable 규칙**을 판본에 적는다 — 조용히 틀리느니 시끄럽게 막는다.
-RUNTIME_TODAY_UNSUPPORTED = "RUNTIME_TODAY_UNSUPPORTED"
+# migration blocker 어휘 — 지금은 비어 있다. legacy ``today``(오늘 날짜)가 판본으로 옮겨지지 못해
+# 세우던 ``RUNTIME_TODAY_UNSUPPORTED`` 는 :data:`RUNTIME_DATE` kind 가 생기며 퇴역했다(#950).
+# blocker 틀(:class:`MigrationBlocker`)은 남긴다 — 옮길 수 없는 legacy 결정이 다시 생기면 조용히
+# 접지 않고 여기에 이름을 세운다.
 
 # commit terminal outcome 어휘.
 FIELD_BINDING_REVISION_COMMITTED = "FIELD_BINDING_REVISION_COMMITTED"
@@ -376,12 +379,17 @@ def legacy_field_binding_basis_fingerprint(
 
 
 def legacy_value_format(legacy_type: str, fmt: str) -> tuple[str | None, str | None]:
-    """legacy 소스 carrier 유형·표시형 코드 → v3 표시형 쌍(정본 모양).
+    """legacy 유형·표시형 코드 → v3 표시형 쌍(정본 모양).
 
     ``text`` + 빈 코드는 값 그대로라 ``(None, None)`` 이다(같은 뜻의 두 모양 금지). 나머지는
     ``(type, fmt)`` 그대로 — ``date``·``amount`` 의 빈 코드는 「kind 기본 표시」라는 **결정**이지
     표시형 없음이 아니다(``24750000`` → ``24,750,000원``). v2 는 이 쌍에서 ``type`` 을 버렸다.
+
+    ``today``(오늘 날짜)는 date 표시형을 **공유**한다(legacy ``apply_transform`` 이 date 해석기로
+    렌더했다) — ``("date", fmt)``. 값의 출처(실행 시각)는 표시형이 아니라 binding kind 가 진다.
     """
+    if legacy_type == _LEGACY_TODAY_TYPE:
+        return FORMAT_KIND_DATE, fmt
     if legacy_type not in _LEGACY_SOURCE_TYPES:
         raise FieldBindingInputIntegrityError(f"미지원 legacy 유형: {legacy_type!r}")
     if legacy_type == FORMAT_KIND_TEXT and fmt == "":
@@ -401,6 +409,8 @@ def prepare_legacy_field_binding_migration(
     - text/date/amount 의 암묵 strip 을 **명시 whitespace 정책 후보**(legacy-strip)로 옮긴다.
     - const 는 canonicalization 후보(ExactText)로 옮긴다 — 빈 const 는 ``ExactText("")``,
       곧 「빈 문자열을 써 넣는다」는 선언 그대로다(옛 blank omission 의 후계라 모호하지 않다).
+    - today(오늘 날짜)는 :data:`RUNTIME_DATE` 후보로 옮긴다(#950) — date 표시형 쌍만 싣고 값은
+      실행이 캡처한 시각에서 얻는다. 소스 텍스트가 아니라 공백 결정을 묻지 않는다(보존 정책).
     """
     entries = tuple(legacy_entries)
     candidates: list[MigrationCandidateRule] = []
@@ -419,11 +429,21 @@ def prepare_legacy_field_binding_migration(
                 )
             )
             continue
-        if entry.legacy_type == "today":
-            # 실행 시각에서 값을 얻는 Field — binding kind 어휘(SOURCE/CONSTANT/
-            # INTENTIONAL_BLANK)에 대응이 없다. 억지로 접지 않고 명시 결정으로 남긴다.
-            blockers.append(
-                MigrationBlocker(entry.template_field, RUNTIME_TODAY_UNSUPPORTED)
+        if entry.legacy_type == _LEGACY_TODAY_TYPE:
+            # 실행 시각에서 값을 얻는 Field — SOURCE(빈 열)·CONSTANT(그때의 렌더값)로 접으면
+            # 거짓 durable 규칙이 된다. 그 뜻 그대로의 kind 로 옮긴다(표시형 fmt 도 함께).
+            format_kind, format_code = legacy_value_format(entry.legacy_type, entry.fmt)
+            candidates.append(
+                MigrationCandidateRule(
+                    field_id=entry.template_field,
+                    binding_kind=RUNTIME_DATE,
+                    source_key=None,
+                    canonical_constant_value=None,
+                    format_kind=format_kind,
+                    format_code=format_code,
+                    proposed_policy_id=DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id,
+                    whitespace_decision_required=False,
+                )
             )
             continue
         if entry.legacy_type not in _LEGACY_SOURCE_TYPES:

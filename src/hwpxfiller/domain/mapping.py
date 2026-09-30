@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from . import format_engine as _fe
+from .field_binding import render_runtime_date
 from .lint import similarity
 from .text_slice import TextSlice, apply_text_slice, text_slice_from_payload
 
@@ -78,8 +79,9 @@ def apply_transform(
     if kind == "today":
         # date 의 서식 어휘·프리셋을 **무손실 재사용**한다(U4 §2.14 판정 1): 직렬화한
         # ``%Y-%m-%d %H:%M`` 를 `format_engine.parse_dt` 가 연·월·일·시·분 전부 되읽으므로
-        # date 프리셋 9개가 그대로 성립한다. 새 서식 표를 만들면 두 벌이 갈린다.
-        return _fe.render("date", fmt, (now or datetime.now()).strftime("%Y-%m-%d %H:%M"))
+        # date 프리셋 9개가 그대로 성립한다. 새 서식 표를 만들면 두 벌이 갈린다. 렌더는 managed
+        # 「오늘 날짜」(RUNTIME_DATE, #950)와 **같은 함수**다 — 미리보기와 생성 문서가 한 글자다.
+        return render_runtime_date(fmt, now or datetime.now())
     if kind in ("text", "date", "amount"):
         return _fe.render(kind, fmt, apply_text_slice(text_slice, value.strip()))
     # 미지 유형을 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)

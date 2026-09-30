@@ -196,10 +196,15 @@ def prepare_current_records(
         [RecordValidationBlocker, int, str], RecordValidationIssue
     ],
 ) -> CurrentRecordPreparation | WorkbenchContextIntegrity:
+    # 레코드 준비의 「오늘 날짜」(RUNTIME_DATE)는 이 batch 를 캡처한 시각 하나로 렌더한다 — 검증
+    # 결과(표식·차단)를 세우는 미리보기 값이다. 파일 이름·생성 문서의 시각 권위는 배달 준비의
+    # ``captured_delivery_clock`` 이다(:mod:`hwpxfiller.application.generation_delivery`).
+    captured_at = raw_records[0].capture_provenance.captured_at
     results = validate_data_records_against_current_value(
         plan=plan,
         snapshots=raw_records,
-        validated_at=raw_records[0].capture_provenance.captured_at,
+        validated_at=captured_at,
+        runtime_clock=captured_at,
     )
     validated: list[CurrentValidatedDataRecord] = []
     issues: list[RecordValidationIssue] = []

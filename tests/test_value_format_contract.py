@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.application.field_binding_input import (
-    RUNTIME_TODAY_UNSUPPORTED,
     LegacyFieldBindingEntry,
     build_field_binding_input,
     legacy_value_format,
@@ -67,7 +66,7 @@ def test_canonical_value_formats_are_accepted(kind, code) -> None:
     ("kind", "code", "reason"),
     [
         (None, "{:,}", "kind 없이"),       # v2 가 type 을 버린 모양 — 해석기를 모른다
-        ("today", "", "미지원"),            # 닫힌 어휘(#950 은 binding kind 문제)
+        ("today", "", "미지원"),            # 닫힌 어휘(오늘 날짜는 RUNTIME_DATE kind 가 진다)
         ("currency", "{:,}", "미지원"),
         ("amount", None, "문자열"),
         ("text", "", "(None, None)"),       # 같은 뜻의 두 번째 모양
@@ -224,6 +223,9 @@ def test_execution_input_is_always_the_current_contract() -> None:
         ("date", "%Y-%m-%d", ("date", "%Y-%m-%d")),
         ("amount", "", ("amount", "")),
         ("amount", "{:,}", ("amount", "{:,}")),
+        # 「오늘 날짜」는 date 표시형을 공유한다 — 값의 출처는 binding kind(RUNTIME_DATE)가 진다.
+        ("today", "", ("date", "")),
+        ("today", "kor", ("date", "kor")),
     ],
 )
 def test_legacy_value_format_keeps_the_type_decision(legacy_type, fmt, expected) -> None:
@@ -254,8 +256,7 @@ def test_migration_candidates_carry_the_format_pair() -> None:
         "일자": ("date", "kor"),
         "이름": (None, None),
         "고정": (None, None),
+        # 「오늘 날짜」는 date 표시형을 공유한다 — 빈 코드는 date 기본 표시라는 결정(#950).
+        "오늘": ("date", ""),
     }
-    # 「오늘 날짜」는 이 판에서도 binding kind 가 없다 — 명명 blocker 그대로(#950).
-    assert [(b.field_id, b.reason) for b in draft.blockers] == [
-        ("오늘", RUNTIME_TODAY_UNSUPPORTED)
-    ]
+    assert draft.blockers == ()

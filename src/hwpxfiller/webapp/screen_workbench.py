@@ -133,7 +133,7 @@ class WorkbenchController(MappingVerbsMixin):
         target_font,
         content_selection: "Callable[[str], dict[str, frozenset[str]]] | None" = None,
         txt_materialization: (
-            "Callable[[str, dict, str], tuple[str | None, str]] | None"
+            "Callable[[str, dict, str, datetime], tuple[str | None, str]] | None"
         ) = None,
         tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
@@ -852,12 +852,16 @@ class WorkbenchController(MappingVerbsMixin):
     # ------------------------------------------------ 클립보드 브리지 계약
     # app.copy_clipboard(screen) 이 render → can_copy → note_copied 순으로 부른다.
     # 「기안」과 **같은 3메서드 계약**이라 브리지가 화면을 몰라도 된다.
-    def render(self) -> "tuple[str, RenderReport]":
-        """작업점 카드의 (클립보드 텍스트, 리포트) — 카드와 **같은 통로**(링1 공유)."""
+    def render(self, now: "datetime | None" = None) -> "tuple[str, RenderReport]":
+        """작업점 카드의 (클립보드 텍스트, 리포트) — 카드와 **같은 통로**(링1 공유).
+
+        ``now`` 는 「오늘 날짜」의 기준 시각이다 — 복사 거래가 한 번 캡처해 봉인 물질화와 함께
+        넘긴다(RC-02). 없으면 이 호출이 한 번 읽는다(브리지의 3메서드 계약).
+        """
         assert self.mapping is not None
         rendered = render_card(
             self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth, now=self._clock(),
+            fullwidth=self._fullwidth, now=now if now is not None else self._clock(),
         )
         return card_text(rendered.segments), rendered.report
 
@@ -908,10 +912,13 @@ class WorkbenchController(MappingVerbsMixin):
                 text, report = self.render()
                 return {"copied": False, "missing_fields": list(report.missing_fields),
                         "empty_fields": list(report.empty_fields)}
-            text, report = self.render()
+            # 「오늘 날짜」의 기준 시각은 이 거래에서 **한 번**만 읽는다(RC-02 · #950): 카드 렌더와
+            # 봉인 물질화가 각자 시계를 읽으면 분 단위 서식에서 두 글자가 갈려 조용히 복사가 막힌다.
+            now = self._clock()
+            text, report = self.render(now=now)
             if self._marker_count:
                 # slot-bearing 은 화면이 그린 투영이 아니라 **봉인된 실행 산출**을 내보낸다.
-                materialized, reason = self._materialize_current()
+                materialized, reason = self._materialize_current(now)
                 if materialized is None:
                     return {"copied": False, "missing_fields": [], "empty_fields": [],
                             "error": reason}
@@ -924,7 +931,7 @@ class WorkbenchController(MappingVerbsMixin):
             return {"copied": True, "missing_fields": list(report.missing_fields),
                     "empty_fields": gate_empty_fields(report, self.mapping)}
 
-    def _materialize_current(self) -> "tuple[str | None, str]":
+    def _materialize_current(self, now: datetime) -> "tuple[str | None, str]":
         """작업점 레코드의 물질화 결과 — (검증된 텍스트, 사유). 정확히 한쪽만 산다.
 
         판정은 전부 저쪽(봉인·record 검증·start gate·postcondition)의 것이고 이 컨트롤러는
@@ -936,7 +943,7 @@ class WorkbenchController(MappingVerbsMixin):
         assert self._txt_materialization is not None
         try:
             return self._txt_materialization(
-                self.job_name, self._current_record(), self.copy_token()
+                self.job_name, self._current_record(), self.copy_token(), now
             )
         except Exception as exc:  # noqa: BLE001 — 복사 차단 사유로 접는다(조용한 성공 0)
             return None, f"문서를 만들지 못했습니다: {exc}"

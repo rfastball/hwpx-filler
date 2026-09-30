@@ -29,6 +29,7 @@ from hwpxfiller.application.field_binding_input import (
     FieldBindingReviewRequired,
     StaleFieldBindingBasis,
 )
+from hwpxfiller.domain.field_binding import RUNTIME_DATE
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.field_binding_store import WorkFieldBindingStore, load_current_revision
 from hwpxfiller.application.seal_execution_plan import RouteResolutionError
@@ -470,11 +471,11 @@ def test_preserved_inactive_rule_follows_the_current_mapping_decision(tmp_path) 
     assert values["금액"] == "고침-금액"
 
 
-def test_inactive_unsupported_mapping_keeps_the_committed_rule_without_blocking(
+def test_inactive_field_switched_to_today_carries_the_runtime_date_rule(
     tmp_path,
 ) -> None:
-    # 비활성 Field 가 옮길 수 없는 유형(「오늘 날짜」)으로 바뀌어도 확정을 막지 않는다
-    # (명시 결정은 활성 Field 의 몫) — 판본은 이전에 확정한 규칙을 그대로 보존한다.
+    # 비활성 Field 가 「오늘 날짜」로 바뀌면 판본은 그 결정을 RUNTIME_DATE 규칙으로 싣는다
+    # (#950 — 예전엔 옮길 수 없어 이전 규칙을 보존했다). 스코프는 판본, 값은 Mapping(#877).
     root, registry, service, slots = _roundtrip_world(tmp_path)
     service.commit_current_mapping(WORK_REF, "commit-o1")
     _select_option(slots, "o2", "select-o2")
@@ -489,7 +490,9 @@ def test_inactive_unsupported_mapping_keeps_the_committed_rule_without_blocking(
     assert revision is not None
     kept = {rule.field_id: rule for rule in revision.binding_rules}
     assert set(kept) == {"성명", "주소", "항목", "금액"}
-    assert kept["항목"].canonical_constant_value.text == "v-항목"
+    assert kept["항목"].binding_kind == RUNTIME_DATE
+    assert kept["항목"].canonical_constant_value is None
+    assert (kept["항목"].format_kind, kept["항목"].format_code) == ("date", "")
 
 
 def test_empty_constant_mapping_commits_as_an_exact_empty_text_rule(tmp_path) -> None:

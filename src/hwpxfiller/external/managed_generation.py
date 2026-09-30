@@ -169,11 +169,17 @@ def run_managed_generation(
     """봉인 payload 가 정한 것만 수행해 record 들을 bytes 로 만들고 disposition 대로 앉힌다."""
     # 1. VDR 조달 — run-local store(durable 아님, S5-12 비범위 유지). UI 준비가 이미 통과한
     #    뒤라 여기서의 거절은 준비↔실행 사이의 이동이다 — fallback 없이 재진술로 닫는다.
+    #    「오늘 날짜」(RUNTIME_DATE)는 배달 계획이 캡처한 시각 **하나**로 렌더한다(RC-02 · #950) —
+    #    파일 이름의 날짜 토큰이 이미 그 값으로 섰으므로, 본문이 실행 진입 시각(``validated_at``)을
+    #    따로 쓰면 이름과 본문이 하위-일 경계에서 갈린다. 두 번째 시계를 읽지 않는다.
     vdr_store = ImmutableVdrStore()
     vdr_refs: list[str] = []
     for ordinal, snapshot in enumerate(ordered_raw_snapshots):
         validated = validate_data_record_against_plan(
-            plan=plan_payload, snapshot=snapshot, validated_at=validated_at
+            plan=plan_payload,
+            snapshot=snapshot,
+            validated_at=validated_at,
+            runtime_clock=resolved_delivery.captured_delivery_clock,
         )
         if isinstance(validated, ValidatedDataRecord):
             vdr_refs.append(vdr_store.put(validated))

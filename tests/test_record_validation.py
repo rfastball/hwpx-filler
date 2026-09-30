@@ -235,6 +235,8 @@ def test_current_value_validator_has_no_legacy_plan_identity_or_review_authority
         "plan",
         "snapshot",
         "validated_at",
+        # 「오늘 날짜」의 실행 시각(#950) — caller 가 캡처한 값 하나다(live 콜백·시계가 아니다).
+        "runtime_clock",
     }
 
 
@@ -494,6 +496,7 @@ def test_validation_reads_only_frozen_snapshot() -> None:
         "review_evidence",
         "record_review_required",
         "validated_at",
+        "runtime_clock",  # 캡처된 실행 시각 문자열(#950) — live row 콜백이 아니다
     }
 
 

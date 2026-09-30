@@ -19,6 +19,11 @@ v2 판본은 읽을 수 있지만(``field-binding/v2`` 는 **outdated** 로만 �
 표시형이고 렌더는 :func:`render_source_value` 한 곳이다. v3 판본도 v2 처럼 읽기만 하는 outdated
 판이다 — v3 에는 가공이 설 수 없었으므로 현재 Mapping 과 그대로 일치하면 무손실로 다시 확정된다.
 
+**「오늘 날짜」도 규칙이 나른다**(v4, #950): 값이 데이터 열도 고정 리터럴도 아닌 **실행 시각**에서
+오는 Field 는 :data:`RUNTIME_DATE` kind 다. 규칙은 date 표시형 쌍만 싣고(source·constant·가공 없음),
+글자는 실행이 **한 번** 캡처한 시각을 :func:`render_runtime_date` 가 legacy 와 같은 해석기로 렌더한다.
+SOURCE(빈 열)·CONSTANT(그때의 렌더값)로 접으면 판본에 거짓 durable 규칙이 적힌다 — 그래서 kind 다.
+
 **값 유형 어휘는 없다**(v2): 데이터가 나르는 값은 언제나 타입 없는 텍스트다. 타입 추론은
 사용자가 고른 것이 아니라 필드 이름 휴리스틱의 산물이었고, 실제 문서에 적히는 값과도 무관한
 검증이었다. 값이 맞는지는 사람이 본다 — 이 계층은 존재(결측·명시 null·빈 값)만 판정한다.
@@ -36,6 +41,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 
 from . import format_engine
 from .text_slice import TextSlice, TextSliceError, apply_text_slice, text_slice_from_payload
@@ -63,7 +69,9 @@ _SCHEMA_MAGIC = b"HFSSC1\0\0"
 SOURCE = "SOURCE"
 CONSTANT = "CONSTANT"
 INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
-BINDING_KINDS = (SOURCE, CONSTANT, INTENTIONAL_BLANK)
+#: 실행 시각에서 값을 얻는 규칙(v4, #950) — legacy 「오늘 날짜」(``today``)의 판본 대응.
+RUNTIME_DATE = "RUNTIME_DATE"
+BINDING_KINDS = (SOURCE, CONSTANT, INTENTIONAL_BLANK, RUNTIME_DATE)
 
 # Intentional Blank 의 exact plan 의미(S5-01 고정).
 EXACT_BLANK_POLICY = "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
@@ -74,7 +82,7 @@ WHITESPACE_STRIP_LEADING_TRAILING = "STRIP_LEADING_TRAILING"
 
 # 표시형 어휘(v3) — legacy Mapping 의 소스 carrier 유형과 같은 이름·같은 해석기다. 닫힌 집합이라
 # 미지 kind 는 조용히 원문으로 풀지 않고 시끄럽게 거절한다. ``today`` 는 여기 없다: 값이 소스가
-# 아니라 실행 시각에서 오는 binding kind 문제라 #950 이 따로 연다.
+# 아니라 실행 시각에서 오는 binding kind 문제라 :data:`RUNTIME_DATE` 가 진다(표시형은 ``date``).
 FORMAT_KIND_TEXT = "text"
 FORMAT_KIND_DATE = "date"
 FORMAT_KIND_AMOUNT = "amount"
@@ -117,6 +125,12 @@ class UnsupportedTextSliceError(UnsupportedValueFormatError):
     """
 
     code = "UNSUPPORTED_TEXT_SLICE"
+
+
+class RuntimeClockError(FieldBindingError):
+    """실행 시각이 없거나 읽을 수 없다 — ``datetime.now()`` 로 조용히 메우지 않는다(RC-02)."""
+
+    code = "RUNTIME_CLOCK_UNAVAILABLE"
 
 
 # ─── 텍스트·스칼라 검증 ──────────────────────────────────────────────────────────
@@ -376,6 +390,45 @@ def render_source_value(
     return render_value_format(format_kind, format_code, apply_text_slice(spec, text))
 
 
+# ─── 실행 시각 값(RUNTIME_DATE) — v4 ─────────────────────────────────────────────
+#: 실행 시각을 date 해석기에 넘기는 직렬 모양 — legacy ``apply_transform("today", …)`` 과 같다.
+#: :func:`hwpxfiller.domain.format_engine.parse_dt` 가 연·월·일·시·분을 전부 되읽으므로 date
+#: 프리셋이 그대로 성립한다(새 서식 표를 만들지 않는다).
+RUNTIME_CLOCK_TEXT_FORMAT = "%Y-%m-%d %H:%M"
+
+
+def require_runtime_date_format(format_kind: object, format_code: object) -> None:
+    """RUNTIME_DATE 규칙의 표시형 — ``date`` kind 만, code 는 문자열(``""`` = date 기본)."""
+    if format_kind != FORMAT_KIND_DATE:
+        raise UnsupportedValueFormatError(
+            f"실행 시각 값의 표시형은 date 여야 한다: {format_kind!r}"
+        )
+    require_value_format(format_kind, format_code)
+
+
+def parse_runtime_clock(runtime_clock: object) -> datetime:
+    """실행이 캡처한 시각(ISO 8601 문자열) → datetime. 없음·불량은 :class:`RuntimeClockError`."""
+    if not isinstance(runtime_clock, str) or runtime_clock == "":
+        raise RuntimeClockError("실행 시각이 주어지지 않았다")
+    try:
+        return datetime.fromisoformat(runtime_clock)
+    except ValueError as exc:
+        raise RuntimeClockError(
+            f"실행 시각이 유효한 ISO 8601 이 아니다: {runtime_clock!r}"
+        ) from exc
+
+
+def render_runtime_date(format_code: str, now: datetime) -> str:
+    """실행 시각 하나의 문서 글자 — legacy ``today`` 와 managed RUNTIME_DATE 의 **단일 출처**.
+
+    ``now`` 는 caller 가 실행당 한 번 캡처한 값이다(RC-02) — 여기서 시계를 읽지 않는다.
+    """
+    require_runtime_date_format(FORMAT_KIND_DATE, format_code)
+    return format_engine.render(
+        FORMAT_KIND_DATE, format_code, now.strftime(RUNTIME_CLOCK_TEXT_FORMAT)
+    )
+
+
 # ─── field-binding semantic contract registry ────────────────────────────────────
 #: 읽을 수 있는 판(저장 revision 해독용). 실행 입력은 현재 판만 된다.
 _SUPPORTED_SEMANTIC_CONTRACTS = frozenset(
@@ -430,6 +483,10 @@ class FieldBindingRule:
 
     ``text_slice`` 는 v4 가공 슬롯이다. SOURCE 규칙에만 서고(고정값에는 원본 칸이 없다) 모양은
     :func:`require_text_slice` 가 규칙 구성 시점에 다시 판정한다 — 편집 시점 판정과 같은 판정기다.
+
+    :data:`RUNTIME_DATE`(v4)는 source·constant·가공 없이 ``date`` 표시형 쌍만 싣는다. 값이 소스
+    텍스트가 아니므로 공백 정책은 보존(``PRESERVE_EXACT``)만 받는다 — legacy 도 실행 시각 값을
+    다듬지 않았다.
     """
 
     field_id: str
@@ -458,9 +515,9 @@ class FieldBindingRule:
         if self.format_code is not None:
             _require_scalar_text(self.format_code, "format_code", allow_empty=True)
         if self.format_kind is not None:
-            if self.binding_kind != SOURCE:
+            if self.binding_kind not in (SOURCE, RUNTIME_DATE):
                 raise FieldBindingInputIntegrityError(
-                    f"표시형은 SOURCE 규칙에만 선다: {self.binding_kind!r}"
+                    f"표시형은 SOURCE·RUNTIME_DATE 규칙에만 선다: {self.binding_kind!r}"
                 )
             try:
                 require_value_format(self.format_kind, self.format_code)
@@ -478,6 +535,8 @@ class FieldBindingRule:
             self._require_source()
         elif self.binding_kind == CONSTANT:
             self._require_constant()
+        elif self.binding_kind == RUNTIME_DATE:
+            self._require_runtime_date()
         else:  # INTENTIONAL_BLANK
             self._require_blank()
 
@@ -498,6 +557,22 @@ class FieldBindingRule:
         if self.source_key is not None:
             raise FieldBindingInputIntegrityError(
                 "CONSTANT 규칙은 source_key 를 가질 수 없다(kind 합성 금지)"
+            )
+
+    def _require_runtime_date(self) -> None:
+        if self.source_key is not None or self.canonical_constant_value is not None:
+            raise FieldBindingInputIntegrityError(
+                "RUNTIME_DATE 규칙은 source/constant 를 가질 수 없다(kind 합성 금지)"
+            )
+        # 가공은 위에서 SOURCE 전용으로 이미 닫혔다. 표시형은 date 쌍이 **반드시** 선다 —
+        # 표시형 없는 실행 시각 값은 어느 모양으로 적을지 모르는 값이다.
+        try:
+            require_runtime_date_format(self.format_kind, self.format_code)
+        except UnsupportedValueFormatError as exc:
+            raise FieldBindingInputIntegrityError(str(exc)) from exc
+        if self.document_content_value_policy.whitespace_policy != WHITESPACE_PRESERVE_EXACT:
+            raise FieldBindingInputIntegrityError(
+                "RUNTIME_DATE 규칙의 값 정책은 공백을 보존해야 한다(소스 텍스트가 아니다)"
             )
 
     def _require_blank(self) -> None:
@@ -578,6 +653,9 @@ def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
     """규칙 프레이밍 — v2 는 6 슬롯, v3 는 표시형 kind 슬롯을 source_key 뒤에 더한 7 슬롯,
     v4 는 v3 뒤에 가공 슬롯을 더한 8 슬롯.
 
+    RUNTIME_DATE(v4)는 슬롯을 더하지 않는다: kind 문자열이 SOURCE 와 갈라 주고 source_key·constant·
+    가공은 0x00, 표시형 쌍(``date``·code)만 선다 — 같은 규칙은 언제나 같은 bytes 다.
+
     v2·v3 프레이밍은 **동결**이다(디스크의 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
     ``format_kind`` 가, v2·v3 판에는 ``text_slice`` 가 설 수 없다. v3 이후 판은 표시형 쌍의
     정본 모양을 강제한다.
@@ -585,6 +663,11 @@ def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
     if rule.text_slice is not None and contract_id != FIELD_BINDING_SEMANTIC_VERSION:
         raise FieldBindingInputIntegrityError(
             f"{contract_id} 판에는 가공이 없다: {rule.field_id!r}"
+        )
+    # 실행 시각 kind 도 v4 에서 생겼다 — v2·v3 판으로는 봉인하지 못한다(framing 동결).
+    if rule.binding_kind == RUNTIME_DATE and contract_id != FIELD_BINDING_SEMANTIC_VERSION:
+        raise FieldBindingInputIntegrityError(
+            f"{contract_id} 판에는 실행 시각 규칙이 없다: {rule.field_id!r}"
         )
     out = bytearray()
     out += _text(rule.field_id)
