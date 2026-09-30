@@ -537,7 +537,14 @@ async function measureChipRowAndCorner(ctx, out, snap) {
     const rects = items.map((e) => e.getBoundingClientRect());
     const firstTop = Math.min(...rects.map((r) => r.top));
     const firstLeft = Math.min(...rects.filter((r) => Math.abs(r.top - firstTop) < 1).map((r) => r.left));
-    const laterLefts = rects.filter((r) => r.top > firstTop + 1).map((r) => r.left);
+    // 줄마다 첫 항목(가장 왼쪽)의 시작선 — 둘째 줄부터가 첫 칩 시작선에 맞는지 본다.
+    const lineStarts = new Map();
+    for (const r of rects) {
+      if (r.top <= firstTop + 1) continue;
+      const key = Math.round(r.top);
+      lineStarts.set(key, Math.min(lineStarts.has(key) ? lineStarts.get(key) : Infinity, r.left));
+    }
+    const laterLefts = Array.from(lineStarts.values());
     const heights = Array.from(box.querySelectorAll(".fchips-area > .fchip, .fchips-area > .fcluster"))
       .concat([plus]).map((e) => Math.round(e.getBoundingClientRect().height * 10) / 10);
     const plusRect = plus.getBoundingClientRect();
@@ -547,6 +554,7 @@ async function measureChipRowAndCorner(ctx, out, snap) {
       display: win.getComputedStyle(box).display,
       lines: new Set(rects.map((r) => Math.round(r.top))).size,
       hanging: laterLefts.length > 0 && laterLefts.every((left) => Math.abs(left - firstLeft) <= 1),
+      starts: [Math.round(firstLeft)].concat(laterLefts.map((left) => Math.round(left))),
       after_caption: !!cap && firstLeft >= cap.getBoundingClientRect().right,
       plus_top: Math.round(plusRect.top - firstTop),
       plus_right: Math.round(boxRect.right - plusRect.right),
