@@ -27,7 +27,7 @@ from hwpxfiller.webapp.slot_configuration_product import (
     SlotConfigurationProduct,
     SlotConfigurationProductError,
 )
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 
 NOW = datetime(2026, 8, 16, 0, 0, 0)
 

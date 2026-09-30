@@ -17,11 +17,15 @@ Qt 불필요(헤드리스). ``tests/corpus/scenario/`` 번들 하나로 조달 �
 
 검증하는 실사용 불변식:
 - **소스 형식 무관**: CSV·xlsx 가 같은 레코드를 낸다(DataSource 이음새).
-- **직접 매칭 경로**: 한글 CSV → Job/RunRequest/generate_batch → 25필드 채워진 산출.
+- **직접 매칭 경로**: 한글 CSV → 항등 연결 → managed 생성 → 25필드 채워진 산출.
 - **부분집합 템플릿**: 같은 데이터가 10필드 구매요청서를 채우고 여분 키는 조용히 무시.
 - **매핑 경로**: 영문 나라장터 레코드가 프로파일로 한글 필드에 이어지고 금액/일시 서식.
 - **얇은 소스 대비**: 나라장터엔 세부품명이 없어 그 누름틀은 미충족으로 남는다(CSV는 채움).
 - **txt 트랙**: 같은 레코드가 두 기안 템플릿을 렌더, 누락 필드는 토큰 유지(시끄럽게).
+
+HWPX 산출은 GUI·CLI 와 같은 managed 경로(창 없는 조립
+:func:`~hwpxfiller.external.headless_generation.run_headless_generation`)로 만든다 — legacy
+일괄 생성기는 #1081 PR3 에서 퇴역했다.
 """
 
 from __future__ import annotations
@@ -31,16 +35,6 @@ from datetime import datetime
 from pathlib import Path
 
 
-from functools import partial
-
-from hwpxfiller.batch import generate_batch as _generate_batch
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
-
-generate_batch = partial(
-    _generate_batch,
-    existing_outputs=existing_output_paths,
-    ensure_output_dir=ensure_output_directory,
-)
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.domain.fields import read_fields
 from hwpxfiller.domain.job import Job, RunRequest
@@ -49,6 +43,13 @@ from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.domain.text_render import render_record
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.domain.fill_ledger import template_path_drift
+from hwpxfiller.external.delivery_coordinator import DeliveryCompleted
+from hwpxfiller.external.headless_generation import (
+    HeadlessExecuted,
+    HeadlessRefused,
+    run_headless_generation,
+)
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.mapping_store import load_mapping_profile
 
@@ -99,6 +100,36 @@ def _nara_profile() -> MappingProfile:
     return load_mapping_profile(DATA / "나라장터_매핑.json")
 
 
+def _covered(profile: MappingProfile, template: str) -> MappingProfile:
+    """프로파일 + 템플릿에만 있는 필드의 명시적 비움 — managed 는 전건 확정 연결만 봉인한다."""
+    drift = template_path_drift(template, profile, engine=make_hwpx_engine())
+    return MappingProfile(
+        name=profile.name,
+        mappings=[*profile.mappings, *(FieldMapping(f, type="const") for f in drift.template_uncovered)],
+    )
+
+
+def _generate(tmp_path, out: Path, template: str, mapping, records, pattern, *, now=None):
+    """GUI·CLI 와 같은 managed 경로로 만든다 — 결과 합타입을 그대로 돌려준다."""
+    return run_headless_generation(
+        workspace=tmp_path / f"ws-{out.name}",
+        template_path=template,
+        mapping=mapping,
+        filename_pattern=pattern,
+        records=list(records),
+        source_schema_keys=tuple(dict.fromkeys(k for r in records for k in r)),
+        output_directory=str(out),
+        overwrite=False,
+        clock=(lambda: now) if now is not None else datetime.now,
+    )
+
+
+def _delivered(result) -> DeliveryCompleted:
+    assert isinstance(result, HeadlessExecuted), result
+    assert isinstance(result.outcome, DeliveryCompleted), result.outcome
+    return result.outcome
+
+
 # ---------------------------------------------------- 소스 형식 무관(여러 자료)
 def test_csv_and_xlsx_yield_identical_records():
     """같은 데이터의 CSV·xlsx 는 DataSource 이음새 뒤에서 동일 레코드를 낸다."""
@@ -111,7 +142,7 @@ def test_csv_and_xlsx_yield_identical_records():
 
 # ------------------------------------------ 직접 매칭 경로(한글 CSV → 25필드)
 def test_direct_match_batch_fills_bid_notice(tmp_path):
-    """한글 CSV → Job/RunRequest(항등 매핑) → generate_batch → 건별 산출·값 주입."""
+    """한글 CSV → Job/RunRequest(항등 매핑) → managed 생성 → 건별 산출·값 주입."""
     src = source_for_path(DATA / "조달_한글.csv")
     job = Job(
         name="입찰공고 일괄",
@@ -125,9 +156,10 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
     assert req.source_report().missing_columns == []
 
     out = tmp_path / "out"
-    batch = generate_batch(job.template_path, req.mapped_records(),
-                           str(out), job.filename_pattern, engine=make_hwpx_engine())
-    assert batch.succeeded == 3
+    done = _delivered(_generate(
+        tmp_path, out, job.template_path, job.mapping, src.records(), job.filename_pattern,
+    ))
+    assert len(done.delivered) == 3
     assert _outputs(out) == [
         "입찰공고서-2026-001.hwpx",
         "입찰공고서-2026-002.hwpx",
@@ -137,12 +169,12 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
     assert read_fields(generated) == req.mapped_records()[0]
 
 
-def test_today_token_fills_document_body_with_the_filename_clock(tmp_path):
-    """U4-E1 #939 — 「오늘 날짜」가 **문서 본문**에 실행 시각을 낸다(데이터 열 없이).
+def test_today_token_is_refused_loudly_by_the_managed_value_contract(tmp_path):
+    """U4-E1 #939 「오늘 날짜」 유형 — managed 값 계약은 아직 실행 시각 값을 싣지 않는다.
 
-    핵심 불변식은 두 가지다. ① 값은 데이터가 아니라 실행 시각에서 온다. ② 본문과 파일 이름이
-    **같은 now** 를 말한다 — 매핑 층과 파일명 층에 같은 값을 관통시키므로 하위-일 경계에서
-    「승인한 이름 ≠ 만든 문서」가 생기지 않는다(RC-02).
+    legacy 생성은 매핑 층에서 실행 시각을 본문에 넣었다. managed 값 계약에는 그 RUNTIME 계열
+    값이 아직 없어(#950) ``today`` 결속이 연결 판본에 들어가지 못한다 — 조용히 빈 값·데이터 열 값으로
+    채우지 않고 문서 0건으로 멈춘다(#1081 PR0b 결정 Q1: 계약 상향 전까지 차단 유지).
     """
     now = datetime(2026, 6, 15, 18, 4)
     src = source_for_path(DATA / "조달_한글.csv")
@@ -156,35 +188,34 @@ def test_today_token_fills_document_body_with_the_filename_clock(tmp_path):
         filename_pattern="공고-{{date:%Y-%m-%d}}-{{입찰공고번호}}",
     )
     req = RunRequest(job, tuple(src.records()), selected_indices=[0])
-    mapped = req.mapped_records(now=now)
-
-    # 값의 출처는 **실행 시각** 하나다 — 같은 이름의 데이터 열이 있어도 읽지 않는다.
-    assert src.records()[0][field_name] != "2026-06-15"
-    assert mapped[0][field_name] == "2026-06-15"
+    # 매핑 층(표시·편집기 예시)은 여전히 실행 시각을 말한다 — 데이터 열을 읽지 않는다.
+    assert req.mapped_records(now=now)[0][field_name] == "2026-06-15"
 
     out = tmp_path / "out"
-    batch = generate_batch(job.template_path, mapped, str(out), job.filename_pattern,
-                           engine=make_hwpx_engine(), now=now)
-    assert batch.succeeded == 1
-    # 파일 이름의 날짜 토큰과 본문의 「오늘 날짜」가 같은 시각을 말한다.
-    assert _outputs(out) == ["공고-2026-06-15-2026-001.hwpx"]
-    assert read_fields(read_hwpx_package(out / _outputs(out)[0]))[field_name] == "2026-06-15"
+    result = _generate(
+        tmp_path, out, job.template_path, job.mapping, src.records()[:1], job.filename_pattern,
+        now=now,
+    )
+    # 봉인이 서지 않는다 — ``today`` 결속은 연결 판본으로 들어가지 못해 그 필드가 미확정으로 남는다.
+    assert isinstance(result, HeadlessRefused), result
+    assert result.stage == "EXECUTION_NOT_SEALABLE", result
+    assert not out.exists()
 
 
 # ----------------------------------------- 부분집합 템플릿(같은 데이터 → 10필드)
 def test_same_data_fills_subset_template_ignoring_extra_keys(tmp_path):
     """같은 CSV 레코드가 10필드 구매요청서를 채운다 — 여분 키(계약방법 등)는 조용히 무시."""
     src = source_for_path(DATA / "조달_한글.csv")
+    fields = make_hwpx_engine().required_fields(PURCHASE_REQ)
+    assert "계약방법" in src.fields() and "계약방법" not in fields  # 25필드 CSV·10필드 템플릿
     out = tmp_path / "req"
-    # 부분집합 템플릿은 직접 채우기(원본 한글 키). 템플릿에 없는 키는 unmatched 로.
-    batch = generate_batch(PURCHASE_REQ, src.records(), str(out),
-                           "구매요청서-{{입찰공고번호}}", engine=make_hwpx_engine())
-    assert batch.succeeded == 3
-    res0 = batch.results[0]
-    # 템플릿에 있는 필드만 주입되고, 나머지 소스 키(예: 계약방법)는 매칭 실패로 신고.
-    assert "세부품명" in res0.applied
-    assert "계약방법" in res0.unmatched  # 25필드 CSV엔 있으나 10필드 템플릿엔 없음
-    blob = _xml_blob(out / "구매요청서-2026-001.hwpx")
+    done = _delivered(_generate(
+        tmp_path, out, PURCHASE_REQ, _identity_profile(fields), src.records(),
+        # 파일 이름 토큰은 템플릿 필드로 푼다(#1081 PR3) — 이 템플릿에 입찰공고번호는 없다.
+        "구매요청서-{{seq:001}}",
+    ))
+    assert len(done.delivered) == 3
+    blob = _xml_blob(out / "구매요청서-001.hwpx")
     assert "선박용 소화기" in blob and "해양수산부" in blob
     assert "일반경쟁입찰" not in blob  # 계약방법은 이 템플릿이 담지 않음
 
@@ -203,9 +234,11 @@ def test_nara_mapping_fills_bid_notice_with_formatting(tmp_path):
     assert req.source_report().missing_columns == []  # 매핑이 읽는 영문 키 모두 존재
 
     out = tmp_path / "out"
-    batch = generate_batch(job.template_path, req.mapped_records(),
-                           str(out), job.filename_pattern, engine=make_hwpx_engine())
-    assert batch.succeeded == 2
+    done = _delivered(_generate(
+        tmp_path, out, job.template_path, _covered(job.mapping, BID_NOTICE), src.records(),
+        job.filename_pattern,
+    ))
+    assert len(done.delivered) == 2
     blob = _xml_blob(out / "공고서-R26BK00450011.hwpx")
     assert "친환경 선박용 소화장비 구매" in blob
     assert "45,000,000원" in blob                # amount 변환
@@ -221,11 +254,11 @@ def test_nara_mapping_fills_bid_notice_with_formatting(tmp_path):
 
 
 def test_thin_source_leaves_unmapped_fields_unfilled(tmp_path):
-    """얇은 소스 대비: 나라장터엔 세부품명이 없어 그 누름틀은 미충족 — CSV는 채운다.
+    """얇은 소스 대비: 나라장터엔 세부품명이 없어 그 누름틀은 비움으로 확정 — CSV는 채운다.
 
-    실행 시 매핑 재확정 없음 원칙: 매핑이 방출하지 않는 필드는 output_report 가
-    되살리지 않는다(잡음 재유입 방지). 얇음은 '산출 문서에 미충족 누름틀이 남음'으로
-    드러난다 — 더 풍부한 CSV 소스를 선호할 실증 근거.
+    managed 는 확정되지 않은 필드로 실행 계획을 세우지 않으므로, 소스에 없는 필드는 명시적
+    비움으로 확정해야 문서가 나온다. 얇음은 '산출 문서에 그 값이 없음'으로 드러난다 — 더
+    풍부한 CSV 소스를 선호할 실증 근거.
     """
     nara_job = Job(template_path=BID_NOTICE, mapping=_nara_profile())
     nara_source = _nara_source()
@@ -235,14 +268,20 @@ def test_thin_source_leaves_unmapped_fields_unfilled(tmp_path):
     assert "세부품명" not in nara_req.mapped_records()[0]
 
     out = tmp_path / "out"
-    generate_batch(BID_NOTICE, nara_req.mapped_records(), str(out), "n-{{입찰공고번호}}", engine=make_hwpx_engine())
+    _delivered(_generate(
+        tmp_path, out, BID_NOTICE, _covered(nara_job.mapping, BID_NOTICE),
+        nara_source.records()[:1], "n-{{입찰공고번호}}",
+    ))
     nara_blob = _xml_blob(next(out.glob("*.hwpx")))
-    assert "선박용 소화기" not in nara_blob  # 세부품명 미충족(나라장터)
+    assert "선박용 소화기" not in nara_blob  # 세부품명 비움(나라장터)
 
     # 반면 한글 CSV 는 세부품명을 채운다.
     csv_src = source_for_path(DATA / "조달_한글.csv")
     out2 = tmp_path / "out2"
-    generate_batch(BID_NOTICE, csv_src.records(), str(out2), "c-{{입찰공고번호}}", engine=make_hwpx_engine())
+    _delivered(_generate(
+        tmp_path, out2, BID_NOTICE, _identity_profile(csv_src.fields()), csv_src.records(),
+        "c-{{입찰공고번호}}",
+    ))
     csv_blob = _xml_blob(out2 / "c-2026-001.hwpx")
     assert "선박용 소화기" in csv_blob
 

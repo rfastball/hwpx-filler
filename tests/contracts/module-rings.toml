@@ -75,12 +75,6 @@ source_write_set = ["src/hwpxfiller/__init__.py"]
 oracle_nodeid = "tests/test_naming.py"
 
 [[unit]]
-module = "hwpxfiller.batch"
-target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/batch.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-
-[[unit]]
 module = "hwpxfiller.cli"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/cli.py"]
@@ -144,7 +138,7 @@ oracle_nodeid = "tests/test_text_registry.py"
 module = "hwpxfiller.external.output_files"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/external/output_files.py"]
-oracle_nodeid = "tests/test_batch_gate.py"
+oracle_nodeid = "tests/test_headless_generation.py::test_second_run_asks_to_overwrite_and_overwrite_rewrites"
 
 [[unit]]
 module = "hwpxfiller.external.template_files"
@@ -270,7 +264,7 @@ oracle_nodeid = "tests/test_webapp_workbench.py"
 module = "hwpxfiller.naming"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/naming.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
+oracle_nodeid = "tests/test_naming.py"
 
 [[unit]]
 module = "hwpxfiller.web_artifact"
@@ -313,12 +307,6 @@ module = "hwpxfiller.webapp.boot_budget"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/boot_budget.py"]
 oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
-
-[[unit]]
-module = "hwpxfiller.webapp.current_execution_preparation"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/current_execution_preparation.py"]
-oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.data_zone"
@@ -477,28 +465,10 @@ source_write_set = ["src/hwpxfiller/webapp/selftest_runner.py"]
 oracle_nodeid = "tests/test_live_run_contract.py"
 
 [[unit]]
-module = "hwpxfiller.webapp.seal_execution_plan_product"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/seal_execution_plan_product.py"]
-oracle_nodeid = "tests/test_seal_execution_plan_product.py"
-
-[[unit]]
-module = "hwpxfiller.webapp.seal_execution_plan_service"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/seal_execution_plan_service.py"]
-oracle_nodeid = "tests/test_seal_execution_plan_service.py"
-
-[[unit]]
 module = "hwpxfiller.webapp.slot_configuration_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/slot_configuration_product.py"]
 oracle_nodeid = "tests/test_slot_configuration_product.py"
-
-[[unit]]
-module = "hwpxfiller.webapp.template_change"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/template_change.py"]
-oracle_nodeid = "tests/test_webapp_template_change.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.template_groups"
@@ -511,12 +481,6 @@ module = "hwpxfiller.webapp.workbench_observation_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/workbench_observation_product.py"]
 oracle_nodeid = "tests/test_webapp_job_slot_configuration.py"
-
-[[unit]]
-module = "hwpxfiller.webapp.managed_generation"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/managed_generation.py"]
-oracle_nodeid = "tests/test_managed_generation.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.txt_materialization"

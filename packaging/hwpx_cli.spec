@@ -21,6 +21,12 @@ a = Analysis(
         "hwpxfiller.domain.text_render",
         "hwpxfiller.data.excel",
         "hwpxfiller.data.nara",
+        "hwpxfiller.data.pclm",
+        # 문서 생성은 GUI 와 같은 managed 척추를 창 없이 조립한다(#1081 PR3) — cli.py 가
+        # 함수 안에서 들이므로 번들 계약으로 명시한다.
+        "hwpxfiller.external.headless_generation",
+        "hwpxfiller.external.ledger_export",
+        "hwpxfiller.application.execution_contract_set",
         "openpyxl",
     ],
     hookspath=[],

@@ -1,24 +1,25 @@
+"""템플릿-구조 드리프트(Domain)와 managed 배달 원장 사이드카(External).
+
+legacy 생성 원장(``FillLedger``·매핑 행·값 미리보기·되읽기 행·원천 프로파일 —
+``hwpx-fill-ledger``)은 legacy 생성기와 함께 #1081 PR3 에서 퇴역했다. 생성 원장은 GUI 와
+CLI 가 같이 쓰는 ``managed-delivery/v1`` 이다.
+"""
 import json
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
+from hwpxfiller.domain.fields import FillNote
 from hwpxfiller.domain.fill_ledger import (
-    StructureState,
-    ValueState,
-    build_fill_ledger,
-    ledger_outputs,
-    manifest_rows,
     template_structure_drift,
     template_path_drift,
 )
-from hwpxfiller.external.ledger_export import (
-    LEDGER_SIDECAR_NAME,
-    export_run_ledger,
-    verified_outputs,
-    verify_output,
-)
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.domain.source_profile import profile_fields
+from hwpxfiller.external.delivery_coordinator import (
+    DeliveredDocument,
+    DeliveryAborted,
+    DeliveryCompleted,
+)
+from hwpxfiller.external.ledger_export import write_managed_delivery_ledger
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
@@ -59,25 +60,6 @@ def test_declared_blank_completes_coverage_quietly():
     assert not drift.has_drift
 
 
-def test_structure_and_value_axes_are_independent():
-    ledger = build_fill_ledger(
-        ["공고명", "비고"], _mapping(), source_fields=[], empty_values=["공고명"]
-    )
-    assert ledger.structure_state is StructureState.SOURCE_DRIFT
-    assert ledger.source_structure_drift and not ledger.template_structure_drift
-    assert ledger.value_state is ValueState.EMPTY
-
-    template_only = build_fill_ledger(
-        ["공고명", "신규필드"], _mapping(), source_fields=["name"]
-    )
-    assert template_only.structure_state is StructureState.TEMPLATE_DRIFT
-
-    both = build_fill_ledger(
-        ["공고명", "신규필드"], _mapping(), source_fields=[]
-    )
-    assert both.structure_state is StructureState.TEMPLATE_AND_SOURCE_DRIFT
-
-
 def test_mapping_duplicate_conflict_fails_closed():
     mapping = MappingProfile(mappings=[
         FieldMapping("공고명", "name"),
@@ -95,127 +77,6 @@ def test_template_path_seam_reloads_and_fails_closed(tmp_path):
     assert template_path_drift(str(path), _mapping(), engine=make_hwpx_engine()).template_uncovered == ("신규",)
     path.write_bytes(b"broken")
     assert template_path_drift(str(path), _mapping(), engine=make_hwpx_engine()).read_error
-
-
-# ==================================================================== L2 원장 export
-MARKER = "〘미입력·{field}〙"
-
-
-def test_manifest_rows_statuses_and_previews():
-    rows = {r.field: r for r in manifest_rows(
-        _mapping(), ["공고명", "비고", "신규"],
-        {"공고명": "관급자재 구매"},
-    )}
-    assert rows["공고명"].status == "filled"
-    assert rows["공고명"].preview_text == "관급자재 구매"
-    assert rows["공고명"].source == "name"
-    assert rows["비고"].status == "blank" and rows["비고"].preview_text == ""
-    assert rows["신규"].status == "drift"
-    # 전 행이 미검증 상태(dry-run) — injected 는 증거이지 추정이 아니다.
-    assert all(r.injected is None for r in rows.values())
-
-
-def test_manifest_rows_marker_counts_as_missing_but_records_real_value():
-    marked = MARKER.format(field="공고명")
-    (row,) = [r for r in manifest_rows(
-        _mapping(), ["공고명", "비고"], {"공고명": marked}, missing_marker=MARKER,
-    ) if r.field == "공고명"]
-    assert row.status == "missing"
-    assert row.preview_text == marked  # 원장은 실제 들어가는 값을 그대로 기록
-
-
-def test_verify_output_reads_back_evidence(tmp_path):
-    template = tmp_path / "t.hwpx"
-    _template(template, ["공고명", "비고"])
-    out = tmp_path / "doc.hwpx"
-    res = make_hwpx_engine().generate(str(template), {"공고명": "실제값"}, str(out))
-    assert res.ok
-
-    rows = manifest_rows(_mapping(), ["공고명", "비고"], {"공고명": "실제값"})
-    verified = {r.field: r for r in verify_output(str(out), rows)}
-    assert verified["공고명"].injected is True and verified["공고명"].read_back == ""
-    assert verified["비고"].injected is None  # 공란 선언 — 검증 대상 아님
-
-    # 기대값이 문서 실값과 다르면 증거로 불일치를 남긴다(주장 ≠ 관측).
-    lying = manifest_rows(_mapping(), ["공고명", "비고"], {"공고명": "다른값"})
-    bad = {r.field: r for r in verify_output(str(out), lying)}
-    assert bad["공고명"].injected is False
-    assert bad["공고명"].read_back == "실제값"
-
-
-def test_ledger_outputs_stay_pure_and_verified_outputs_add_evidence(tmp_path):
-    """순수 행 구성(Domain)과 되읽기 증거 얹기(External)의 분업 — 의미는 종전
-    ``ledger_outputs(verify=True)`` 그대로다(P2-19R #576)."""
-    template = tmp_path / "t.hwpx"
-    _template(template, ["공고명", "비고"])
-    out = tmp_path / "doc.hwpx"
-    res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
-    pure = ledger_outputs(
-        [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
-    )
-    # Domain 산출은 파일을 되읽지 않는다 — 전 행 미검증(injected=None).
-    assert all(r.injected is None for r in pure[0].rows)
-
-    entries = verified_outputs(pure)
-    assert entries[0].ok and entries[0].verify_error == ""
-    assert {r.field: r.injected for r in entries[0].rows}["공고명"] is True
-
-    # 산출물이 사라지면 되읽기 실패가 조용한 통과가 아니라 verify_error 로 남는다.
-    out.unlink()
-    (entry,) = verified_outputs(ledger_outputs(
-        [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
-    ))
-    assert entry.verify_error.startswith("되읽기 실패")
-
-    # 실패 산출물은 되읽지 않는다 — 실패 사유를 그대로 나르고 미검증으로 남긴다.
-    from hwpxfiller.domain.engine import GenerateResult
-
-    failed = GenerateResult(ok=False, output_path=str(out), error="생성 실패")
-    (kept,) = verified_outputs(ledger_outputs(
-        [failed], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
-    ))
-    assert not kept.ok and kept.error == "생성 실패" and kept.verify_error == ""
-    assert all(r.injected is None for r in kept.rows)
-
-
-def test_export_redacts_service_key_and_notes_no_render(tmp_path):
-    template = tmp_path / "t.hwpx"
-    _template(template, ["공고명", "비고"])
-    out = tmp_path / "doc.hwpx"
-    leaky = "https://apis.example/x?ServiceKey=TOPSECRET&y=1"
-    res = make_hwpx_engine().generate(str(template), {"공고명": leaky}, str(out))
-    entries = verified_outputs(ledger_outputs([res], [{"공고명": leaky}], _mapping(), ["공고명", "비고"]))
-    sidecar = tmp_path / LEDGER_SIDECAR_NAME
-    payload = export_run_ledger(
-        sidecar,
-        template=str(template),
-        source="file:data.xlsx",
-        outputs=entries,
-        job_name="작업",
-        profiles=profile_fields([{"name": leaky}], ["name"]),
-        generated_at="2026-07-12T00:00:00",
-    )
-    text = sidecar.read_text(encoding="utf-8")
-    # 키 비직렬화 — 값·프로파일 샘플 어디에도 비밀이 남지 않는다(N1 관통).
-    assert "TOPSECRET" not in text and "[REDACTED]" in text
-    assert payload["kind"] == "hwpx-fill-ledger"
-    assert "렌더" in payload["note"]  # 값 미리보기 ≠ HWPX 렌더(ADR C)
-    assert json.loads(text) == payload
-
-
-def test_export_batch_ledger_honors_caller_timestamp(tmp_path):
-    """호출자가 고정한 generated_at 이 그대로 쓰인다 — 시계 폴백(RC-07 계획 시점 고정)과의 분기."""
-    from hwpxfiller.external.ledger_export import export_batch_ledger
-
-    sidecar = export_batch_ledger(
-        tmp_path, template="t.hwpx", source="file:d.xlsx", mapping=_mapping(),
-        template_fields=["공고명"], results=[], mapped_records=[],
-        generated_at="2026-07-12T14:05:03",
-    )
-    assert sidecar == tmp_path / "fill-ledger-20260712-140503.json"
-    payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert payload["generated_at"] == "2026-07-12T14:05:03"
-    assert payload["outputs"] == []  # 빈 배치도 예외 없이 증거 형태를 지킨다
 
 
 # ------------------------------------------------- 실행별 사이드카 경로(RC-02)
@@ -239,33 +100,57 @@ def test_ledger_sidecar_path_same_second_accumulates(tmp_path):
     assert second != first and first.exists()
 
 
-def test_ledger_records_fill_notes_as_evidence(tmp_path):
-    """완화 사실(#154)은 원장 사이드카에 남는다 — "왜 표식이 사라졌나"의 사후 복원."""
-    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
-
-    sec = (
-        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
-        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
-        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>OLD<hp:markpenBegin/>X<hp:markpenEnd/></hp:t></hp:run>"
-        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
-        "</hp:p></hs:sec>"
-    ).encode("utf-8")
-    template = tmp_path / "t.hwpx"
-    write_hwpx_package(
-        template,
-        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}),
+# ------------------------------------------------- managed 배달 원장
+def _doc(ordinal: int, notes=()) -> DeliveredDocument:
+    return DeliveredDocument(
+        ordinal, f"rec-{ordinal}", f"doc-{ordinal}.hwpx", f"C:/out/doc-{ordinal}.hwpx",
+        "WRITE_NEW", "sha256:" + str(ordinal) * 64, tuple(notes),
     )
-    out = tmp_path / "doc.hwpx"
-    res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
-    assert res.notes  # 선조건: 완화가 실제 발생
 
-    (entry,) = verified_outputs(ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"]))
-    payload = entry.to_dict()
-    assert payload["notes"] == [
-        {
-            "field": "공고명",
-            "kind": "inline_stripped",
-            "detail": ["markpenBegin", "markpenEnd"],
-        }
+
+def _write(tmp_path, result, **kw):
+    return write_managed_delivery_ledger(
+        tmp_path,
+        generated_at="2026-07-12T14:05:03",
+        work_authority_id="w-1",
+        execution_basis_digest="sha256:" + "b" * 64,
+        plan_semantic_digest="sha256:" + "p" * 64,
+        result=result,
+        **kw,
+    )
+
+
+def test_managed_ledger_records_documents_and_fill_notes(tmp_path):
+    note = FillNote("계약명", "inline_stripped", ("markpenBegin",))
+    sidecar = _write(tmp_path, DeliveryCompleted(str(tmp_path), (_doc(0, [note]), _doc(1))))
+    assert sidecar == tmp_path / "fill-ledger-20260712-140503.json"
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["ledger_kind"] == "managed-delivery/v1"
+    assert payload["outcome"] == "DeliveryCompleted"
+    assert [doc["relative_path"] for doc in payload["delivered"]] == ["doc-0.hwpx", "doc-1.hwpx"]
+    # 완화 노트도 증거다 — 조용한 데이터 손실 금지(#154).
+    assert payload["delivered"][0]["execution_notes"] == [
+        {"field": "계약명", "kind": "inline_stripped", "detail": ["markpenBegin"]}
     ]
+    assert "source" not in payload  # GUI 는 출처 포인터를 싣지 않는다
+
+
+def test_managed_ledger_keeps_the_abort_and_what_landed(tmp_path):
+    aborted = DeliveryAborted(
+        code="DELIVERY_WRITE_FAILED", detail="잠김", failed_item_ordinal=1,
+        delivered=(_doc(0),),
+    )
+    payload = json.loads(_write(tmp_path, aborted).read_text(encoding="utf-8"))
+    assert payload["outcome"] == "DeliveryAborted"
+    assert payload["aborted"] == {
+        "code": "DELIVERY_WRITE_FAILED", "detail": "잠김", "failed_item_ordinal": 1,
+    }
+    assert [doc["item_ordinal"] for doc in payload["delivered"]] == [0]
+
+
+def test_managed_ledger_source_pointer_is_redacted(tmp_path):
+    """CLI 출처 포인터에 키 흔적이 섞여도 사이드카에 남지 않는다(N1 관통)."""
+    leaky = "https://apis.example/x?ServiceKey=TOPSECRET&y=1"
+    sidecar = _write(tmp_path, DeliveryCompleted(str(tmp_path), ()), source=leaky)
+    text = sidecar.read_text(encoding="utf-8")
+    assert "TOPSECRET" not in text and "[REDACTED]" in text

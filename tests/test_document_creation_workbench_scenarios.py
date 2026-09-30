@@ -49,7 +49,7 @@ from hwpxfiller.application.fresh_execution_observation import (
     decide_runtime_policy_admission,
 )
 from hwpxfiller.application.selection_compatibility import AUTO_KEEP, DETACHED, REVIEW_REQUIRED
-from hwpxfiller.webapp.seal_execution_plan_product import s6_absent_runtime_conformance
+from hwpxfiller.external.seal_execution_plan_product import s6_absent_runtime_conformance
 
 PASS = "PASS"
 

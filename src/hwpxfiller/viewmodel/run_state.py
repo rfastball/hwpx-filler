@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from ..domain.data_source import DataSource
 from ..domain.engine import HwpxEngine
@@ -29,7 +29,6 @@ from ..naming import (
     OutputNameAudit,
     audit_output_names,
     pattern_field_tokens,
-    plan_output_names,
 )
 from .review_state import ReviewRequirement, review_notice_text
 
@@ -126,42 +125,6 @@ class RunDataInput:
 
     datasource: object | None
     records: "tuple[dict, ...]"
-
-
-@dataclass(frozen=True)
-class GenerationPlan:
-    """생성 1회의 **불변 계획**(RC-07) — 게이트 통과 시점의 전체 스냅샷.
-
-    실행기·완료 처리·원장 export 가 이것만 소비한다. 실행 중 사용자의 화면 조작
-    (출력 폴더 편집·데이터 재로드)이 라이브 재독을 통해 원장에 생성물과 다른
-    데이터·폴더를 '증거'로 기록하던 결함의 봉합 — 계획에 없는 값은 소비할 수 없다.
-    """
-
-    template: str
-    records: "tuple[dict, ...]"          # 매핑+표식 적용 완료(생성 입력 그대로)
-    out_dir: str
-    pattern: str
-    marker: str                          # 이번 생성에 실제 쓴 미입력 표식("" = 없음)
-    indices: "tuple[int, ...]"
-    source_pointer: str                  # 원장 소스 표기(포인터-온리)
-    overwrite: bool = False              # 사용자 확정을 받은 덮어쓰기(RC-02)
-    # 날짜 토큰({{date}}) 기준 시각을 계획 시점에 **고정**한다(RC-02) — 덮어쓰기 확인이
-    # 조회한 대상 파일과 실제 생성이 쓰는 파일이 하위-일 토큰에서 갈라지지 않도록.
-    # None 이면 생성 시 datetime.now() 로 폴백(직접 구성 테스트 호환).
-    now: "datetime | None" = None
-    ledger: bool = False                 # 원장 사이드카 opt-in
-    # ---- 원장 문맥(ledger=True 일 때 워커 꼬리가 소비) — 전부 계획 시점 캡처 ----
-    job_name: str = ""
-    mapping: "MappingProfile | None" = None
-    template_fields: "tuple[str, ...]" = ()
-    source_records: "tuple[dict, ...]" = ()   # 매핑 전 실제형(프로파일링 대상)
-    source_keys: "tuple[str, ...]" = ()
-    labels: "dict[str, str]" = field(default_factory=dict)
-
-
-# (계획 스냅샷의 원장 사이드카 저장은 P2-18(#566)에서 External 로 승계 —
-#  :func:`hwpxfiller.external.ledger_export.export_plan_ledger`. Application 은 계획
-#  (:class:`GenerationPlan`)을 소유하고, durable 기록 효과는 adapter 가 소유한다.)
 
 
 # ------------------------------------------------------------ 데이터 겨눔 리졸버
@@ -286,14 +249,6 @@ class RunViewModel:
         # zip IO 가 결속된 엔진은 Host/ring 2 가 주입한다(P3-03 — 링1 은 concrete package
         # read/write adapter를 모른다. P2-16 source factory 주입과 같은 seam).
         self._engine = engine
-        # managed Product Work 생성이 고정한 exact applied bytes staged 경로(#681 G11) —
-        # mutable job.template_path 대신 이걸 소비한다.
-        self._managed_template: "str | None" = None
-
-    # ------------------------------------------------------------ 대상 문서
-    def effective_template(self) -> str:
-        """생성이 겨눌 문서 — managed staged bytes가 있으면 우선한다."""
-        return self._managed_template or self.job.template_path
 
     # ------------------------------------------------------------ 사전검증
     def request(self, data: RunDataInput, indices: "list[int]") -> RunRequest:
@@ -317,7 +272,7 @@ class RunViewModel:
     # ------------------------------------------------------- 상시 인라인 필드 상태(ADR-E)
     def _template_fields(self) -> "list[str]":
         """현재 대상 문서의 누름틀 집합. 드리프트 감지를 위해 매 호출 재읽기한다."""
-        template = self.effective_template()
+        template = self.job.template_path
         if template_missing(template):
             return []
         return list(self._engine.required_fields(template))
@@ -325,7 +280,7 @@ class RunViewModel:
     def structure_drift(self) -> TemplateStructureDrift:
         """현재 템플릿과 확정 매핑 커버의 대칭차(스냅샷 없는 구조 계약)."""
         return template_path_drift(
-            self.effective_template(), self.job.mapping, engine=self._engine
+            self.job.template_path, self.job.mapping, engine=self._engine
         )
 
     def field_states(self, data: RunDataInput, indices: "list[int]") -> "list[FieldState]":
@@ -363,7 +318,6 @@ class RunViewModel:
         review_notice: "ReviewRequirement | None" = None,
         mapped: "list[dict] | None" = None,
         now: "datetime | None" = None,
-        configuration_gate: "GateState | None" = None,
     ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
@@ -380,18 +334,12 @@ class RunViewModel:
         다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 게이트 서열에
         끼지 않는다 — #957 정책 선회로 검토는 차단이 아니라 사전검증의 비차단 고지이고,
         승인이라는 해소 사건 자체가 없어져 「미승인분」이라는 축도 함께 사라졌다.
-
-        ``configuration_gate`` 는 실제 생성 admission과 같은 출처 판정이다. 템플릿 적용
-        뒤 실행 구성이 아직 확정되지 않았으면 사전검증과 버튼이 함께 그 사유를 표시한다.
         """
         name_gate = self._name_token_gate()
         if data.datasource is None:
             return RunStatus(
-                PreflightResult(
-                    level=configuration_gate.level, text=configuration_gate.text,
-                ) if configuration_gate else PreflightResult(), (),
-                name_gate or configuration_gate
-                or GateState(False, "warn", "먼저 데이터를 선택하세요."),
+                PreflightResult(), (),
+                name_gate or GateState(False, "warn", "먼저 데이터를 선택하세요."),
             )
         idx = list(indices)
         req = self.request(data, idx)
@@ -413,11 +361,11 @@ class RunViewModel:
         return RunStatus(
             preflight=self._compose_preflight(
                 src, out, drift, name_gate is not None, len(audit.too_long),
-                review_notice, configuration_gate,
+                review_notice,
             ),
             field_states=tuple(states),
             gate=self._compose_gate(
-                states, drift, idx, out_dir, name_gate, audit, configuration_gate,
+                states, drift, idx, out_dir, name_gate, audit,
             ),
             audit=audit,
         )
@@ -434,7 +382,7 @@ class RunViewModel:
         읽기 실패는 :func:`template_path_drift` 와 동일하게 ``read_error``
         (fail-closed)로 남긴다 — 드리프트 감지를 위해 refresh 마다 재읽기한다.
         """
-        template = self.effective_template()
+        template = self.job.template_path
         if not template:
             return TemplateStructureDrift(read_error="템플릿 경로가 비어 있습니다."), set()
         try:
@@ -462,10 +410,9 @@ class RunViewModel:
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
         audit: "OutputNameAudit | None" = None,
-        configuration_gate: "GateState | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
-        실행 구성(warn) > **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
+        이름 불가(danger) > **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
 
         결속 단이 세션 전제조건보다 앞선 이유는 **고칠 자리가 다르기** 때문이다(U4 §2.4):
         저장 폴더·행 선택은 이 화면에서 지우지만 결속은 편집기를 지난다. 세션을 다 갖춰도
@@ -479,8 +426,8 @@ class RunViewModel:
 
         UD-06: 저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
-        재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
-        ``validate_generate`` 의 모달 백스톱에 남긴다.
+        재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재는 착석·작업대 관찰이
+        말한다(legacy 생성의 모달 백스톱 ``validate_generate`` 는 #1081 PR3 에서 퇴역).
         """
         if drift.has_drift:
             if drift.read_error:
@@ -501,8 +448,6 @@ class RunViewModel:
             # 이름 kernel 이 이름을 만들 수 없다고 판정했다(#798) — 배달 계획이 서지 않는 것과
             # 같은 사실을 같은 등급(차단)으로 말한다. 버튼을 열어 두면 생성이 예외로 끝난다.
             return GateState(False, "danger", OUTPUT_NAME_INVALID_TEXT, reason="name_invalid")
-        if configuration_gate is not None:
-            return configuration_gate
         # 데이터 결속은 **작업 정의 수준의 결핍**이다(U4 §2.4 · #932 U4-C): 저장 게이트가
         # 요구하는 것을 실행 게이트가 통과시키면 「필수」는 한 자리에서만 참인 말이 되고,
         # 그 작업은 매 세션 데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다.
@@ -526,11 +471,8 @@ class RunViewModel:
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
         long_paths: int = 0, review_notice: "ReviewRequirement | None" = None,
-        configuration_gate: "GateState | None" = None,
     ) -> PreflightResult:
         parts: "list[str]" = []
-        if configuration_gate is not None:
-            parts.append(configuration_gate.text)
         if src.missing_columns:
             parts.append(
                 "[치명] 데이터에 없는 항목입니다(빈 값 생성됨): " + ", ".join(src.missing_columns)
@@ -567,7 +509,7 @@ class RunViewModel:
             parts.extend(notices)
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
-        elif out.empty_valued or long_paths or configuration_gate is not None:
+        elif out.empty_valued or long_paths:
             level = "warn"
         else:
             # 고지만 있는 실행은 **등급을 올리지 않는다** — 「알려주되 막지 않는다」는
@@ -584,35 +526,10 @@ class RunViewModel:
     #  폐기와 함께 사망 — U2 §2.13. 빈 값 판정은 :meth:`blank_fields` 하나로 남고,
     #  표식 삽입 동의는 승인(빈 값 집합이 지문 성분)이 겸한다.)
 
-    # ------------------------------------------------------------ 생성 게이트
-    def validate_generate(
-        self, data: RunDataInput, indices: "list[int]", out_dir: str
-    ) -> "list[GateError]":
-        """생성 전 가드 — 첫 차단 사유만 반환(없으면 빈 목록)."""
-        indices = list(indices)
-        if data.datasource is None:
-            return [GateError("먼저 데이터를 선택하세요.", "warn")]
-        template = self.effective_template()
-        if template and not Path(template).exists():
-            return [GateError(f"템플릿을 찾을 수 없습니다:\n{template}", "danger")]
-        drift = self.structure_drift()
-        if drift.has_drift:
-            # 상세 문구는 describe() 단일화(RC-03) — CLI/생성 경계와 같은 문장.
-            return [GateError(
-                "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해야 생성할 수 "
-                "있습니다.\n" + drift.describe(),
-                "danger",
-            )]
-        name_gate = self._name_token_gate()
-        if name_gate is not None:
-            # 파일명 토큰 계약(F34) — 게이트 버튼이 이미 비활성이어도 워커/API 우회를
-            # 방어적으로 재차단한다(CLI RC-20 게이트의 GUI 짝, 문구 동일 출처).
-            return [GateError(name_gate.text, "danger")]
-        if not out_dir:
-            return [GateError("저장 폴더를 지정하세요.", "warn")]
-        if not indices:
-            return [GateError("생성할 문서를 최소 1건 선택하세요.", "warn")]
-        return []
+    # (legacy 생성의 모달 백스톱 ``validate_generate``·덮어쓰기 대조 ``output_conflicts``·
+    #  이름 감사 ``output_name_audit``·불변 계획 ``build_generation_plan``(+``GenerationPlan``·
+    #  원장 ``source_pointer``)은 legacy 생성기와 함께 #1081 PR3 에서 퇴역했다. 생성 게이트
+    #  판정은 managed 작업대 관찰이, 덮어쓰기·이름 판정은 배달 계획이 진다.)
 
     def mapped_records(
         self, data: RunDataInput, indices: "list[int]", mark_missing: str = "",
@@ -641,113 +558,3 @@ class RunViewModel:
             i for i, rec in enumerate(recs)
             if any(not str(v).strip() for v in rec.values())
         ]
-
-    def output_conflicts(
-        self, data: RunDataInput, indices: "list[int]", out_dir: str, *, mark_missing: str = "",
-        now: "datetime | None" = None,
-        existing_outputs: "Callable[[str, list[str]], list[str]]",
-    ) -> "list[str]":
-        """생성이 덮어쓸 **기존** 파일 경로 목록 — 실행 전 덮어쓰기 확인의 원천(RC-02).
-
-        생성과 동일한 매핑·표식·파일명 규칙으로 대상 경로를 계산해 디스크 존재만
-        조회한다(무변형). 표현 계층은 이 목록이 비지 않으면 "기존 N개 파일을 덮어씁니다"
-        사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
-        ``now`` 는 날짜 토큰 기준 시각 — 이후 생성 계획과 **같은 값**을 넘겨야 하위-일
-        토큰에서 확인 대상과 실제 생성 대상이 갈라지지 않는다(RC-02).
-        """
-        names = plan_output_names(
-            self.job.filename_pattern,
-            self.mapped_records(data, indices, mark_missing, now=now),
-            now=now,
-        )
-        return existing_outputs(out_dir, names)
-
-    def output_name_audit(
-        self, data: RunDataInput, indices: "list[int]", out_dir: str = "", *,
-        mark_missing: str = "", now: "datetime | None" = None,
-    ) -> OutputNameAudit:
-        """이 실행이 발급할 이름의 집합 감사(C-01, 지도 §10.12 판정 K).
-
-        ``output_conflicts`` 와 같은 입력·같은 규칙이되 디스크를 보지 않는다 — 이쪽은
-        **배치 안에서 자기들끼리** 생기는 성질(수렴·경로 길이)만 센다.
-        """
-        return audit_output_names(
-            self.job.filename_pattern,
-            self.mapped_records(data, indices, mark_missing, now=now),
-            out_dir, now=now,
-        )
-
-    # ------------------------------------------------------------ 생성 계획(RC-07)
-    def build_generation_plan(
-        self,
-        data: RunDataInput,
-        indices: "list[int]",
-        out_dir: str,
-        *,
-        marker: str = "",
-        ledger: bool = False,
-        overwrite: bool = False,
-        now: "datetime | None" = None,
-    ) -> GenerationPlan:
-        """게이트 통과 직후 호출 — 생성·완료 처리·원장이 소비할 전부를 원자 캡처한다.
-
-        이후 표현 계층/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
-        생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다. ``now`` 는
-        덮어쓰기 확인(:meth:`output_conflicts`)에 넘긴 시각과 **같은 값**이어야 확인
-        대상과 실제 생성 대상이 하위-일 날짜 토큰에서 갈라지지 않는다(RC-02). 그 값은
-        파일명뿐 아니라 **본문**의 ``today``(오늘 날짜) 유형에도 그대로 간다 — 한 실행에서
-        이름과 본문이 다른 시각을 말하지 않는다(U4-E1 #939).
-        """
-        idx = list(indices)
-        labels_fn = getattr(data.datasource, "field_labels", None)
-        # Optional adapters may not expose labels; callable-only preserves that fallback while
-        # narrowing the dynamic host seam to the declared label result.
-        labels = (
-            cast("Callable[[], dict[str, str]]", labels_fn)()
-            if callable(labels_fn)
-            else {}
-        )
-        return GenerationPlan(
-            template=self.effective_template(),
-            records=tuple(self.mapped_records(data, idx, marker, now=now)),
-            out_dir=out_dir,
-            pattern=self.job.filename_pattern,
-            marker=marker,
-            indices=tuple(idx),
-            source_pointer=self.source_pointer(data),
-            overwrite=overwrite,
-            now=now,
-            ledger=ledger,
-            job_name=self.job.name,
-            mapping=self.job.mapping,
-            template_fields=tuple(self._template_fields()),
-            source_records=tuple(
-                dict(record) for record in self.request(data, idx).selected_records()
-            ),
-            source_keys=tuple(self.job.source_keys()),
-            labels=dict(labels),
-        )
-
-    # ------------------------------------------------------------ 생성 원장(L2)
-    def source_pointer(self, data: RunDataInput) -> str:
-        """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다.
-
-        소스가 자기 표기를 선언하면(``source_pointer()`` — :mod:`hwpxfiller.domain.data_source`
-        의 선택 프로토콜) 그것이 우선한다. 문자열 타입명 비교로 소스 종류를 식별하지
-        않는다 — 클래스 개명이 원장 침묵 오기록이 되지 않게(RC-25). 미선언 소스는
-        ``path`` 속성(``file:<경로>``) → 타입명 순으로 강등 표기.
-        """
-        src = data.datasource
-        if src is None:
-            return ""
-        pointer_fn = getattr(src, "source_pointer", None)
-        if callable(pointer_fn):
-            return str(pointer_fn())
-        path = getattr(src, "path", "")
-        if path:
-            return f"file:{path}"
-        return type(src).__name__
-
-    # (사후 export 보조 표면 export_run_ledger 는 P2-18(#566)에서 제거 — production
-    #  소비자 0 이었고, 같은 일은 :meth:`build_generation_plan` + External
-    #  :func:`~hwpxfiller.external.ledger_export.export_plan_ledger` 조합이 한다.)

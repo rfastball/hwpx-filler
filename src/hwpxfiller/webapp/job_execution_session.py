@@ -35,7 +35,7 @@ from ..application.fresh_execution_observation import (
 from ..application.run_delivery_intent import RunDeliveryIntent
 from ..application.generation_delivery import DeliveryPlanContextError
 from ..domain.raw_data_record import RawDataRecordSnapshot
-from .current_execution_preparation import (
+from ..external.current_execution_preparation import (
     CurrentDeliveryPreparation,
     CurrentRecordPreparation,
     delivery_projection,
@@ -43,10 +43,10 @@ from .current_execution_preparation import (
     prepare_current_records,
     unresolved_delivery,
 )
-from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
+from ..external.seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProduct, SlotConfigurationProductError
-from .seal_execution_plan_service import BindingReviewProjection
-from .template_change import SUPPORTED_MEDIA
+from ..external.seal_execution_plan_service import BindingReviewProjection
+from ..external.template_change import SUPPORTED_MEDIA
 from ..application.preset_command import preset_list_actionable
 from ..domain.job import Job
 

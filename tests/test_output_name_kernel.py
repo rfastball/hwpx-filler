@@ -6,7 +6,6 @@ managed 배달과 표시·legacy 표면이 같은 함수를 부르므로, 여기
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -28,7 +27,6 @@ from hwpxfiller.domain.output_name import (
     parse_filename_pattern,
     render_output_name,
 )
-from hwpxfiller.external.output_files import existing_output_paths
 from hwpxfiller.naming import plan_output_names
 
 _NOW = datetime(2026, 9, 30, 9, 0, 0)
@@ -139,16 +137,8 @@ def test_dedupe_respects_occupied_names_with_the_same_key():
     ]
 
 
-# ─── 기존 파일 충돌도 같은 키(#798) ──────────────────────────────────────────────
-def test_existing_file_check_uses_the_same_case_insensitive_key(tmp_path: Path):
-    (tmp_path / "Report.hwpx").write_bytes(b"old")
-    found = existing_output_paths(tmp_path, ["report.hwpx", "new.hwpx"])
-    # 디스크의 실제 철자로 돌려준다 — 확인창이 실제로 사라질 파일을 말한다.
-    assert found == [str(tmp_path / "Report.hwpx")]
-
-
-def test_existing_file_check_without_a_folder_finds_nothing(tmp_path: Path):
-    assert existing_output_paths(tmp_path / "없음", ["a.hwpx"]) == []
+# (기존 파일 충돌의 같은 키 판정은 legacy ``existing_output_paths`` 가 퇴역하며 배달 계획의 점유
+#  관찰로 옮겼다 — ``test_generation_delivery``·``test_cli::test_cli_case_twins_*`` 가 잰다.)
 
 
 # ─── 표시 표면 == 배달 ───────────────────────────────────────────────────────────

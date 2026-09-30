@@ -1,7 +1,7 @@
 """fresh execution observation 순수 판정 — current Sealed Plan value·admission·readiness (S5-11 · #707).
 
 지금 이 순간의 current Work/Profile/runtime 관계를 recompute 하는 순수 판정만 소유한다. 저장·fence·
-wall-clock 을 모른다 — exact fact 를 이미 읽어 온 :mod:`hwpxfiller.webapp.seal_execution_plan_product`
+wall-clock 을 모른다 — exact fact 를 이미 읽어 온 :mod:`hwpxfiller.external.seal_execution_plan_product`
 가 그 값을 넘겨 여기서 상태를 파생시킨다.
 
 **S5F R2-04b-1(#740):** historical durable Plan lookup + digest-vs-stored currentness(CURRENT/STALE)

@@ -76,7 +76,7 @@ from ..application.stored_execution_plan import (
     SealTerminalOutcome,
     StaleExecutionBasis,
 )
-from ..external.seal_orchestration_runner import seal_execution_plan
+from .seal_orchestration_runner import seal_execution_plan
 from ..host.per_work_fence import per_work_mutation_fence
 
 # Product contract error code(fresh observation 축 전용 강등 코드).

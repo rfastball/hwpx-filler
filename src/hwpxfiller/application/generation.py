@@ -1,42 +1,21 @@
-"""생성 transaction·run lifecycle 의 Application use case (P2-23 #571).
+"""생성 run lifecycle 의 Application facts (P2-23 #571 · #1081 PR3).
 
-생성의 **척추**(입력 고정 → 게이트 판정 → plan → materialize → progress/cancel →
-완주 판정 → durable completion 기록 → stable result facts)를 한 곳이 소유한다.
-GUI(:mod:`~hwpxfiller.webapp.screen_job`)와 CLI(:mod:`~hwpxfiller.cli`)는 같은
-use case 를 **각자의 게이트 선언**으로 부른다 — 게이트 판정 입력(빈값 처리·덮어쓰기
-확정)은 호출자가 명시 선언해 넘기는 facts 다. 검토는 더 이상 게이트가 아니다(#957):
-바뀐 규칙·첫 실행은 **비차단 고지**로 나가고 확인은 결과 문서에서 한다 — 그래서 이
-use case 에 검토 판정기 선언이 없다. CLI 생성 경로의 현 의미(빈값 기본 차단
-+``--ack-empty``·완주 스탬프 없음·취소 없음)는 **의도된 제품 계약**이라 CLI 는 그
-부재를 인자 생략이 아니라 선언(``store=None``)으로 말한다.
+생성의 척추(봉인 → 레코드 검증 → 배달 계획 → materialization → 배달)는 managed 파이프라인
+(:mod:`hwpxfiller.external.managed_generation`)이 소유한다. GUI 와 CLI 가 같은 파이프라인을
+부르며, 종전 legacy 척추(``plan_generation``·``direct_plan``·``run_generation`` →
+``hwpxfiller.batch``)는 #1081 PR3 에서 퇴역했다.
 
-:mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.viewmodel.run_state` 는 ring 계약
-(`tests/contracts/module-rings.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
-엔진(zip IO 결속)은 Host/ring 2 가 인자로 관통시킨다 — Application 은 concrete package
-read/write adapter를 모른다(P3-03 과 같은 seam). 시각도 같다: 이 모듈은 wall clock 을 직접
-고르지 않고 ``now``/``completed_at`` 을 호출자가 선언한다(boundary 게이트).
-
-한국어 요약 문장·버튼 문구·모달 구성은 Presentation 잔류다 — 여기는 수치·상태
-facts 만 낸다(제목 :func:`~hwpxfiller.webapp.screen_job._run_title` 류의 문안
-oracle 은 종전 owner 그대로 산다).
+여기 남는 것은 run 1회의 상태 정본(주체·판본·규칙 고정 + cancel event + token)과 그 결과
+분류 facts(결과 3태·완주 술어·미입력 표식 결정)다. 한국어 요약 문장·버튼 문구는
+Presentation 잔류다 — 여기는 수치·상태 facts 만 낸다.
 """
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
 
-from ..batch import generate_batch
 from ..domain.job import MISSING_MARKER, Job, rules_fingerprints
-from ..viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT, GateError, GenerationPlan
-from .jobs import JobStorePort, stamp_run_completion
-
-if TYPE_CHECKING:
-    from datetime import datetime
-
-    from ..viewmodel.run_state import RunDataInput, RunViewModel
 
 
 def blank_marker(blanks: "list[str] | tuple[str, ...]") -> str:
@@ -113,205 +92,4 @@ def start_run(job: "Job | None", *, job_name: str = "", token: str = "") -> Gene
         revisions={"template": job.template_revision, "binding": job.binding_revision},
         rules=rules_fingerprints(job),
         token=token,
-    )
-
-
-@dataclass(frozen=True)
-class PlanDecision:
-    """게이트 판정 1회의 facts — 거절·덮어쓰기 확인 필요·확정 plan 중 하나.
-
-    문안 조립(거절 재진술·모달 수치 합성)은 Presentation 몫이고 여기는 사실만 싣는다.
-    ``rejection`` 은 링1 :class:`~hwpxfiller.viewmodel.run_state.GateError` 관통(판정·문안
-    모두 링1 소유 — 재조립 금지). 검토 미충족 갈래는 #957 정책 선회로 사망했다 —
-    검토는 차단이 아니라 고지라 plan 을 짓는 데 개입하지 않는다.
-    """
-
-    plan: "GenerationPlan | None" = None
-    rejection: "GateError | None" = None
-    blanks: "tuple[str, ...]" = ()
-    marker: str = ""
-    conflicts: "tuple[str, ...]" = ()
-    needs_overwrite: bool = False
-
-
-def plan_generation(
-    vm: "RunViewModel",
-    data: "RunDataInput",
-    indices: "list[int]",
-    out_dir: str,
-    *,
-    now: "datetime",
-    confirm_overwrite: bool = False,
-    existing_outputs: "Callable[[str, list[str]], list[str]]",
-) -> PlanDecision:
-    """실행 요청의 유효성 판정 **순서**와 게이트 facts — confirm-or-alarm 순서 보존.
-
-    순서는 ①기본 가드(링1 ``validate_generate`` 단일 판정) → ②빈 값 집합(표식이 그
-    집합을 소비, §2.13 단일 술어) → ③표식 결정 → ④덮어쓰기 확인(RC-02: 확정 없이는
-    plan 을 짓지 않는다) → ⑤불변 생성 계획(RC-07)이다.
-
-    종전 ③이던 **검토 백스톱은 #957 에서 사망**했다: 바뀐 규칙·첫 실행은 생성을 막는
-    대신 비차단 고지로 나가고 확인은 결과 문서에서 한다. 빈 값도 차단하지 않는다 —
-    표식(:func:`blank_marker`)이 붙어 문서에 남으므로 조용한 통과가 아니다.
-
-    ``now`` 는 날짜 토큰 기준 시각 — 확인이 조회한 대상과 실제 생성이 같은 값을 쓰도록
-    호출자가 고정해 넘긴다(RC-02, 미리보기 핀은 호출자 소유).
-    """
-    errors = vm.validate_generate(data, indices, out_dir)
-    if errors:
-        return PlanDecision(rejection=errors[0])
-
-    blanks = list(vm.blank_fields(data, indices))
-    marker = blank_marker(blanks)
-    if vm.output_name_audit(
-        data, indices, out_dir, mark_missing=marker, now=now
-    ).refusal_code:
-        # 이름 kernel 이 이름을 만들 수 없다(#798) — 덮어쓰기 대조가 이름을 계획하기 전에 게이트와
-        # 같은 문장으로 닫는다(버튼을 우회한 호출이 예외로 새지 않게).
-        return PlanDecision(rejection=GateError(OUTPUT_NAME_INVALID_TEXT, "danger"))
-    conflicts = vm.output_conflicts(
-        data, indices, out_dir, mark_missing=marker, now=now,
-        existing_outputs=existing_outputs,
-    )
-    if conflicts and not confirm_overwrite:
-        return PlanDecision(
-            blanks=tuple(blanks), marker=marker,
-            conflicts=tuple(conflicts), needs_overwrite=True,
-        )
-    plan = vm.build_generation_plan(
-        data, indices, out_dir, marker=marker, overwrite=bool(conflicts), now=now
-    )
-    return PlanDecision(
-        plan=plan, blanks=tuple(blanks), marker=marker, conflicts=tuple(conflicts),
-    )
-
-
-def direct_plan(
-    template: str,
-    records: "list[dict]",
-    out_dir: str,
-    pattern: str,
-    *,
-    marker: str = "",
-    overwrite: bool = False,
-    mapping: Any = None,
-    now: "datetime | None" = None,
-) -> "GenerationPlan":
-    """VM 없는 호출자(CLI)의 불변 생성 계획 — 게이트는 호출자가 이미 스스로 선언·판정했다.
-
-    CLI 는 검토 게이트·사전 덮어쓰기 확인이 **없는 것이 계약**이라 :func:`plan_generation`
-    을 지나지 않는다. 그래도 materialize 가 소비하는 계획은 같은 형(RC-07 불변 스냅샷)
-    이어야 한다 — 두 표면이 다른 입력 형으로 배치를 부르면 실행 의미가 갈라진다.
-    ``now=None`` 은 날짜 토큰이 생성 시각을 쓴다는 뜻(현 CLI 의미 그대로)이다.
-    """
-    return GenerationPlan(
-        template=template,
-        records=tuple(records),
-        out_dir=out_dir,
-        pattern=pattern,
-        marker=marker,
-        indices=tuple(range(len(records))),
-        source_pointer="",
-        overwrite=overwrite,
-        mapping=mapping,
-        now=now,
-    )
-
-
-@dataclass(frozen=True)
-class GenerationOutcome:
-    """run 1회의 stable result facts — 표면(제목·요약·payload)은 이것만 소비한다.
-
-    ``failed`` 는 취소 런에서 **시도분 중 실패**(attempted-succeeded)다 — 미착수를
-    실패로 세지 않는다(취소 산술의 정본). ``error`` 는 배치 진입 전 실패(구조
-    드리프트·산출물 충돌·폴더 오류)의 원본 예외 — 시도가 0 이므로 성공/실패로
-    가르지 않고(같은 레코드를 두 번 세지 않는다) 사유 번역은 호출자 몫이다.
-    ``stamp_error`` 는 완주 기록 실패의 loud surface(confirm-or-alarm) — 문서는
-    이미 만들어졌으므로 예외로 완료 서사를 날리지 않고 사유를 facts 로 남긴다.
-    """
-
-    status: str
-    cancelled: bool
-    succeeded: int
-    failed: int
-    total: int
-    attempted: int
-    unstarted: int
-    completed: bool
-    stamp_error: str = ""
-    stamped_job: "Job | None" = None
-    results: "tuple[Any, ...]" = ()
-    error: "BaseException | None" = None
-
-
-def run_generation(
-    run: GenerationRun,
-    plan: "GenerationPlan",
-    *,
-    engine: Any,
-    progress: "Callable[[int, int], None] | None" = None,
-    capture: "tuple[type[BaseException], ...]" = (),
-    store: "JobStorePort | None" = None,
-    completed_at: "Callable[[], str] | None" = None,
-    existing_outputs: "Callable[[str, list[str]], list[str]]",
-    ensure_output_dir: "Callable[[str], None]",
-) -> GenerationOutcome:
-    """확정된 plan 의 materialize → 완주 판정 → durable completion 기록 → facts.
-
-    ``capture`` 는 배치 진입 전 실패를 facts 로 회수할 예외 종류의 **호출자 선언**이다
-    — GUI 는 ``(ValueError, OSError)`` 전체를 결과 구획으로 회수하고, CLI 는
-    ``(OutputCollisionError, ValueError)`` 만 exit 1 로 다루며 환경성 OSError 를
-    최상위 번역 경계(exit 2)로 흘린다(RC-16). 선언 밖 예외는 그대로 상승한다.
-
-    완주(:func:`run_completed`)이고 ``store`` 가 선언됐을 때만
-    :func:`~hwpxfiller.application.jobs.stamp_run_completion` 으로 기록한다 —
-    기준선은 **이 run 이 고정한 규칙**(``run.rules``)이다(1R P1: 디스크의 지금
-    규칙으로 찍으면 배치 중 착지한 에디터 저장이 실행된 적 없는 규칙을 검토받은
-    것으로 만든다). ``store=None`` 은 「완주 스탬프 없음」의 명시 선언(CLI 계약)이다.
-    """
-    total = len(plan.records)
-    if progress is not None:
-        # 시작 델타(0/N) — 표면 진행바가 「시작했다」를 배치 첫 레코드 완료 전에 안다.
-        progress(0, total)
-    try:
-        batch = generate_batch(
-            plan.template, list(plan.records), plan.out_dir, plan.pattern, engine,
-            now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
-            progress=progress, cancelled=run.cancel.is_set,
-            existing_outputs=existing_outputs, ensure_output_dir=ensure_output_dir,
-        )
-    except capture as exc:
-        return GenerationOutcome(
-            status="failed", cancelled=False, succeeded=0, failed=total,
-            total=total, attempted=0, unstarted=total, completed=False, error=exc,
-        )
-
-    # getattr 기본값은 종전 컨트롤러 계약 그대로다 — 배치 대역(테스트 fake)이 협조적
-    # 취소 이전의 형(BatchResult 축소형)을 내도 「취소 없음·전건 시도」로 읽는다.
-    cancelled = bool(getattr(batch, "cancelled", False))
-    attempted = int(getattr(batch, "attempted", len(batch.results)))
-    completed = run_completed(cancelled, batch.failed)
-    stamp_error = ""
-    stamped: "Job | None" = None
-    if completed and store is not None:
-        if completed_at is None:
-            raise ValueError("완주 기록에는 completed_at 시각 선언이 필요합니다.")
-        try:
-            stamped = stamp_run_completion(
-                store, run.job_name, completed_at(), rules=run.rules
-            )
-        except (OSError, ValueError) as exc:
-            stamp_error = str(exc) or exc.__class__.__name__
-    return GenerationOutcome(
-        status=run_status(batch.succeeded, batch.total, cancelled),
-        cancelled=cancelled,
-        succeeded=batch.succeeded,
-        failed=attempted - batch.succeeded if cancelled else batch.failed,
-        total=batch.total,
-        attempted=attempted,
-        unstarted=batch.total - attempted,
-        completed=completed,
-        stamp_error=stamp_error,
-        stamped_job=stamped,
-        results=tuple(batch.results),
     )

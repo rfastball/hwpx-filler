@@ -1,35 +1,21 @@
-"""생성 원장 척추 — 매핑 전건 커버와 구조 드리프트의 순수 파생.
+"""템플릿-구조 드리프트의 순수 파생 — 매핑 전건 커버와 현재 템플릿 누름틀의 대칭차.
 
 별도 스냅샷을 저장하지 않는다. 사람이 확정한 매핑 커버가 기준선이고, 현재 템플릿
-누름틀과의 대칭차가 곧 템플릿-구조 드리프트다. 소스-구조와 값 공란은 서로 다른
-상태축으로 유지해 템플릿 드리프트만 하드게이트하고 값 공란은 ADR-E 확인을 보존한다.
+누름틀과의 대칭차가 곧 템플릿-구조 드리프트다(CLI 하드게이트·재연결 재진술·홈 건강 보기).
+
+종전 이 모듈이 함께 소유하던 legacy 생성 원장(``FillLedger``·``LedgerRow``·``OutputLedger`` —
+``GenerateResult`` 순서열에서 파생한 매핑 행·되읽기 증거)은 legacy 생성기와 함께 #1081 PR3 에서
+퇴역했다. 생성 원장은 managed 배달 원장(:func:`hwpxfiller.external.ledger_export
+.write_managed_delivery_ledger`)이 진다.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Iterable
 
 from .engine import HwpxEngine
-from .fields import FillNote
-from .mapping import FieldMapping, MappingProfile
-
-
-class StructureState(str, Enum):
-    """구조 이상 축. 템플릿과 소스의 처방이 달라 합쳐 버리지 않는다."""
-
-    OK = "ok"
-    TEMPLATE_DRIFT = "template_drift"
-    SOURCE_DRIFT = "source_drift"
-    TEMPLATE_AND_SOURCE_DRIFT = "template_and_source_drift"
-
-
-class ValueState(str, Enum):
-    """레코드 값 축(구조 드리프트와 독립, ADR-E 확인 대상)."""
-
-    OK = "ok"
-    EMPTY = "empty"
+from .mapping import MappingProfile
 
 
 @dataclass(frozen=True)
@@ -138,204 +124,3 @@ def template_path_drift(
     except Exception as exc:  # noqa: BLE001 - 구조를 증명 못 하면 fail-closed
         return TemplateStructureDrift(read_error=str(exc))
     return template_structure_drift(fields, mapping)
-
-
-@dataclass(frozen=True)
-class FillLedger:
-    """생성 전 구조/값 상태의 최소 원장. L2 export가 확장할 척추."""
-
-    template_drift: TemplateStructureDrift = field(default_factory=TemplateStructureDrift)
-    missing_sources: "tuple[str, ...]" = ()
-    empty_values: "tuple[str, ...]" = ()
-
-    @property
-    def structure_state(self) -> StructureState:
-        template_bad = self.template_drift.has_drift
-        source_bad = bool(self.missing_sources)
-        if template_bad and source_bad:
-            return StructureState.TEMPLATE_AND_SOURCE_DRIFT
-        if template_bad:
-            return StructureState.TEMPLATE_DRIFT
-        if source_bad:
-            return StructureState.SOURCE_DRIFT
-        return StructureState.OK
-
-    @property
-    def value_state(self) -> ValueState:
-        return ValueState.EMPTY if self.empty_values else ValueState.OK
-
-    @property
-    def template_structure_drift(self) -> bool:
-        return self.template_drift.has_drift
-
-    @property
-    def source_structure_drift(self) -> bool:
-        return bool(self.missing_sources)
-
-
-def build_fill_ledger(
-    template_fields: "Iterable[str]",
-    mapping: MappingProfile,
-    *,
-    source_fields: "Iterable[str] | None" = None,
-    empty_values: "Iterable[str]" = (),
-) -> FillLedger:
-    """구조/값 축을 한 번에 파생한다.
-
-    소스의 추가 열은 정상이다. 매핑이 요구하는 소스가 사라진 경우만 소스-구조
-    드리프트이며, 이는 loud 진단이되 템플릿 하드게이트와 달리 실행 하드락 사유가 아니다.
-    """
-    missing_sources: "tuple[str, ...]" = ()
-    if source_fields is not None:
-        available = set(source_fields)
-        required = list(dict.fromkeys(
-            m.source for m in mapping.mappings if m.source
-        ))
-        missing_sources = tuple(s for s in required if s not in available)
-    return FillLedger(
-        template_drift=template_structure_drift(template_fields, mapping),
-        missing_sources=missing_sources,
-        empty_values=tuple(dict.fromkeys(empty_values)),
-    )
-
-
-# ==================================================================== L2 원장 행 구성
-# 원장 payload 조립·마스킹·사이드카 경로 발급·원자 저장은 P2-18(#566)에서, 산출물
-# 되읽기 검증(verify_output — 파일 read 효과)은 P2-19R(#576)에서 External 로 승계됐다
-# (:mod:`hwpxfiller.external.ledger_export`). 이 모듈은 행·산출 원장의 순수 파생
-# (manifest_rows·ledger_outputs)만 소유한다.
-
-
-@dataclass(frozen=True)
-class LedgerRow:
-    """생성 원장의 필드당 1행 — dry-run 매니페스트와 사후 증거가 같은 형태를 쓴다.
-
-    ``injected`` 는 생성 후 되읽기 검증
-    (:func:`hwpxfiller.external.ledger_export.verify_output`)이 문서를 **되읽어** 채우는 증거값이다
-    (``GenerateResult.applied`` 는 엔진의 주장, 이 값은 산출물의 관측). ``None`` 은
-    "검증 대상 아님/미검증"(공란 선언·빈값 스킵·생성 실패)이지 성공 추정이 아니다.
-    """
-
-    field: str
-    status: str                          # "filled" | "blank" | "missing" | "drift"
-    source: str = ""                     # 이 필드가 읽는 소스 키(포인터, 값 아님)
-    type: str = ""
-    fmt: str = ""
-    preview_text: str = ""               # dry-run 결과값(텍스트) — HWPX 렌더 아님
-    injected: "bool | None" = None       # 되읽기 증거: True/False, None=해당없음·미검증
-    read_back: str = ""                  # injected=False 일 때 문서의 실제 값(증거)
-
-    def to_dict(self) -> dict:
-        return {
-            "field": self.field,
-            "status": self.status,
-            "source": self.source,
-            "type": self.type,
-            "fmt": self.fmt,
-            "preview_text": self.preview_text,
-            "injected": self.injected,
-            "read_back": self.read_back,
-        }
-
-
-def manifest_rows(
-    mapping: MappingProfile,
-    template_fields: "Iterable[str]",
-    mapped_record: "dict[str, str]",
-    *,
-    missing_marker: str = "",
-) -> "tuple[LedgerRow, ...]":
-    """레코드 1건의 dry-run 매니페스트 — 생성 전 "무엇이 어떻게 들어갈지".
-
-    행 순서·상태 판정은 run_state ``field_states`` 와 같은 규칙(매핑 계약순 + 템플릿
-    신규 유입순, 대칭차·충돌은 ``drift``)이다. ``missing_marker`` 가 주어지면 표식이
-    주입된 값도 미충족(``missing``)으로 분류하되 ``preview_text`` 는 실제 주입값(표식)
-    그대로 둔다 — 원장은 들어가는 값을 있는 그대로 기록한다.
-    """
-    drift = template_structure_drift(template_fields, mapping)
-    drift_fields = drift.symmetric_difference | set(drift.conflicting)
-    value_maps: "dict[str, FieldMapping]" = {}
-    for m in mapping.mappings:
-        value_maps.setdefault(m.template_field, m)
-    # 명시적 빈 고정값은 「빈 미리보기로 채워짐」이 아니라 ``blank`` 로 남는다 —
-    # filled 로 세면 원장이 조용한 값 누출처럼 읽힌다(선언이었음을 지운다).
-    blanks = set(mapping.declared_empty_fields())
-    rows: "list[LedgerRow]" = []
-    order = list(mapping.cover_fields()) + list(drift.template_only)
-    for name in dict.fromkeys(order):
-        m = value_maps.get(name)
-        source = m.source if m else ""
-        type_ = m.type if m else ""
-        fmt = m.fmt if m else ""
-        value = str(mapped_record.get(name, ""))
-        if name in drift_fields:
-            rows.append(LedgerRow(name, "drift", source, type_, fmt, value))
-        elif name in blanks:
-            rows.append(LedgerRow(name, "blank", type="const"))
-        else:
-            is_missing = value == "" or (
-                bool(missing_marker) and value == missing_marker.format(field=name)
-            )
-            rows.append(LedgerRow(
-                name, "missing" if is_missing else "filled",
-                source, type_, fmt, value,
-            ))
-    return tuple(rows)
-
-
-@dataclass(frozen=True)
-class OutputLedger:
-    """산출물 1건의 원장 — 생성 결과 + 필드행(검증 여부 포함)."""
-
-    output: str
-    ok: bool
-    rows: "tuple[LedgerRow, ...]" = ()
-    error: str = ""                      # 생성 실패 사유(엔진 보고)
-    verify_error: str = ""               # 되읽기 실패 사유(증거 부재는 시끄럽게)
-    # 채움 완화 사실(#154 — 인라인 요소 제거·값 런 합성 등). 원장은 증거 채널이라
-    # 완화가 여기 빠지면 "왜 표식이 사라졌나"가 사후에 복원 불가능해진다.
-    notes: "tuple[FillNote, ...]" = ()
-
-    def to_dict(self) -> dict:
-        return {
-            "output": self.output,
-            "ok": self.ok,
-            "error": self.error,
-            "verify_error": self.verify_error,
-            "notes": [
-                {"field": n.field, "kind": n.kind, "detail": list(n.detail)}
-                for n in self.notes
-            ],
-            "rows": [r.to_dict() for r in self.rows],
-        }
-
-
-def ledger_outputs(
-    results,
-    mapped_records: "list[dict[str, str]]",
-    mapping: MappingProfile,
-    template_fields: "Iterable[str]",
-    *,
-    missing_marker: str = "",
-) -> "tuple[OutputLedger, ...]":
-    """배치 결과(:class:`~hwpxfiller.domain.engine.GenerateResult` 순서열)와 매핑된
-    레코드를 합쳐 산출별 원장을 만든다(순수 행 구성).
-
-    성공 산출물의 되읽기 검증(파일 read 효과)은 P2-19R(#576)에서 External 로 이사했다 —
-    :func:`hwpxfiller.external.ledger_export.verified_outputs` 가 이 결과 위에 관측
-    증거를 얹는다.
-    """
-    template_order = list(template_fields)
-    entries: "list[OutputLedger]" = []
-    for res, record in zip(results, mapped_records, strict=True):
-        rows = manifest_rows(
-            mapping, template_order, record, missing_marker=missing_marker
-        )
-        entries.append(
-            OutputLedger(
-                res.output_path, res.ok, rows, res.error,
-                notes=tuple(res.notes),
-            )
-        )
-    return tuple(entries)
-

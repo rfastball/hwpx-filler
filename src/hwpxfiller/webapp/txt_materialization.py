@@ -4,7 +4,7 @@
 차단돼 있었다: 화면이 그리던 것은 「고른 내용만 보이게 접은 **투영**」이고 투영은 실행 권위가
 아니기 때문이다. 이 서비스가 그 투영 자리에 **Sealed Plan 이 정한 물질화 산출**을 세운다.
 
-`webapp/managed_generation.run_managed_generation` 과 같은 순서를 밟되 delivery 를 하지 않는다 —
+`external/managed_generation.run_managed_generation` 과 같은 순서를 밟되 delivery 를 하지 않는다 —
 TXT 의 착지점은 filesystem 이 아니라 클립보드이고, 새 배달 표면은 이 슬라이스의 범위 밖이다
 (#861 제외 항목). 그래서 여기서 멈추는 것은 **bytes** 다.
 
@@ -59,8 +59,8 @@ from ..external.materialization_start_gate import (
 from ..external.text_materialization_conformance import TXT_ENCODING
 from ..external.text_materialization_runner import txt_materialization_runner
 from ..external.work_template_store import WorkTemplateStoreError
-from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
-from .seal_execution_plan_service import SealExecutionPlanService
+from ..external.seal_execution_plan_product import ExecutionPlanSealedProductOutcome
+from ..external.seal_execution_plan_service import SealExecutionPlanService
 
 #: 거절 코드 — 전부 **상류 판정의 재진술**이다(이 모듈은 새 판정을 만들지 않는다).
 TXT_MEDIA_REQUIRED = "TXT_MEDIA_REQUIRED"

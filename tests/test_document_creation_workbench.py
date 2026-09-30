@@ -70,7 +70,7 @@ from hwpxfiller.application.selection_compatibility import (
 )
 
 # ─── 실제 권위 경로로 파생한 S6 부재 admission(재판정 아님을 증명) ─────────────────────────────
-from hwpxfiller.webapp.seal_execution_plan_product import s6_absent_runtime_conformance
+from hwpxfiller.external.seal_execution_plan_product import s6_absent_runtime_conformance
 
 
 def _s6_absent_admission() -> RuntimePolicyAdmission:

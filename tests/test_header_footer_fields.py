@@ -9,6 +9,10 @@ from hwpxcore.text_extract import extract_document
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.domain.fields import FieldDocument, field_xml_names, read_fields
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.headless_generation import TEMPLATE_INITIALIZATION, HeadlessRefused
+
+from _managed_fill import generate, only_document
 
 BODY = "Contents/section0.xml"
 UNTOUCHED_BODY = "Contents/section1.xml"
@@ -76,16 +80,24 @@ def test_field_part_order_and_same_name_first_value_are_explicit(tmp_path):
 def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_parts(
     tmp_path,
 ):
+    """같은 이름 필드를 본문·머리말·꼬리말 모두에 채우고 다른 파트는 보존한다(managed 경로).
+
+    ``유지필드`` 는 같은 값으로 연결한다 — managed 는 확정되지 않은 활성 필드로 실행 계획을
+    세우지 않으므로 「손대지 않는」 필드는 없다. 같은 값 채움은 그 파트의 의미를 바꾸지 않는다.
+    """
     template = _package_path(tmp_path)
     before = read_hwpx_package(template)
-    output = tmp_path / "filled.hwpx"
 
-    result = make_hwpx_engine().generate(str(template), {"공통": "새 계약값"}, str(output))
+    document = only_document(generate(
+        tmp_path,
+        template,
+        MappingProfile(mappings=[
+            FieldMapping("공통", "공통"), FieldMapping("유지필드", "유지필드"),
+        ]),
+        [{"공통": "새 계약값", "유지필드": "유지값"}],
+    ))
 
-    assert result.ok, result.error
-    assert result.applied == {"공통"}
-    assert result.unmatched == set()
-    after = read_hwpx_package(output)
+    after = read_hwpx_package(document.absolute_path)
     for part in (BODY, HEADER, FOOTER):
         doc = FieldDocument(after.entries[part])
         assert doc.read_field("공통") == "새 계약값"
@@ -94,7 +106,7 @@ def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_part
         assert label in {"본문", "머리말", "꼬리말"}
         assert f"{label} 의미 보존" in "".join(root.itertext())
 
-    for untouched in (UNTOUCHED_BODY, STYLE_HEADER, "BinData/keep.bin"):
+    for untouched in (STYLE_HEADER, "BinData/keep.bin"):
         assert after.entries[untouched] == before.entries[untouched]
     assert FieldDocument(after.entries[UNTOUCHED_BODY]).read_field("유지필드") == "유지값"
 
@@ -115,6 +127,7 @@ def test_unknown_header_structure_is_recorded_in_coverage_ledger(tmp_path):
 
 
 def test_field_bearing_unsupported_header_part_fails_loudly(tmp_path):
+    """필드를 든 미지원 머리말 파트 — 조용히 건너뛰지 않고 초기 등록에서 거절한다(write 0)."""
     pkg = HwpxPackage(
         entries={
             MIMETYPE_NAME: MIMETYPE_VALUE,
@@ -125,12 +138,14 @@ def test_field_bearing_unsupported_header_part_fails_loudly(tmp_path):
         stored={MIMETYPE_NAME},
     )
     template = tmp_path / "unsupported.hwpx"
-    output = tmp_path / "must-not-exist.hwpx"
     write_hwpx_package(template, pkg)
 
-    result = make_hwpx_engine().generate(str(template), {"공통": "새값"}, str(output))
+    result = generate(
+        tmp_path, template, MappingProfile(mappings=[FieldMapping("공통", "공통")]),
+        [{"공통": "새값"}], cover=False,
+    )
 
-    assert not result.ok
-    assert "지원하지 않는 필드 XML 파트" in result.error
-    assert "headerCustom.xml" in result.error
-    assert not output.exists()
+    assert isinstance(result, HeadlessRefused) and result.stage == TEMPLATE_INITIALIZATION
+    assert not (tmp_path / "managed-out").exists()
+
+

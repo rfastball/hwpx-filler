@@ -23,15 +23,13 @@ import zipfile
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from .application.generation import direct_plan, run_generation, start_run
-from .batch import OutputCollisionError
+from pathlib import Path
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
 from .external.hwpx_engine import make_hwpx_engine
 from .external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from .external.atomic import write_text_atomic
-from .external.output_files import ensure_output_directory, existing_output_paths
 from .domain.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .viewmodel.result_errors import describe_fill_note
@@ -457,8 +455,8 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--data", help="엑셀/CSV 데이터 경로 (--source excel)")
     ap.add_argument("--out", default="./out", help="결과 저장 폴더")
     ap.add_argument("--pattern", default=DEFAULT_FILENAME_PATTERN,
-                    help="파일명 패턴({{키}}, 기본 %(default)s). --source nara 는 영문 코드 "
-                         "키(예: 공고-{{bidNtceNo}})로 지정하세요 — 데이터에 없는 토큰은 오류")
+                    help="파일명 패턴({{필드}}, 기본 %(default)s). 토큰은 템플릿 필드 이름이며 "
+                         "연결된 값으로 채워집니다 — 풀 수 없는 토큰은 오류")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수). "
@@ -507,13 +505,14 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         # 데이터 경계 게이트(RC-03) — 인증 실패/기간 위반을 '0건 성공'으로 넘기지 않는다.
         print(f"[오류] 나라장터 취득 실패: {exc}", file=sys.stderr)
         return 1
-    source_records = records  # 원장 프로파일링용 — 매핑 적용 전 실제형 관측 대상.
+    source_records = records  # managed 는 매핑 전 원천 값을 받는다(연결 판본이 매핑한다).
 
     from .domain.mapping import FieldMapping, MappingProfile
 
-    # 이 실행의 기준 시각 — 본문의 ``today``(오늘 날짜) 유형과 파일명 날짜 토큰이 **같은
-    # 값**을 쓴다(RC-02). 두 자리가 각자 찍으면 하위-일 토큰에서 이름과 본문이 갈린다.
+    # 이 실행의 기준 시각 — 사전 게이트의 값 계산(``today`` 유형 등)이 쓴다.
     now = datetime.now()
+    required = engine.required_fields(args.template)
+    source_keys = _source_schema_keys(source_records)
     profile = None
     if args.profile:
         from .domain.fill_ledger import template_path_drift
@@ -522,31 +521,36 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         profile = load_mapping_profile(args.profile)
         drift = template_path_drift(args.template, profile, engine=engine)
         if drift.has_drift:
-            # 문구는 describe() 단일화(RC-03) — GUI/배치 경계와 같은 문장.
+            # 문구는 describe() 단일화(RC-03) — GUI 경계와 같은 문장.
             print("[오류] 템플릿 구조 드리프트 — " + drift.describe(sep="; "),
                   file=sys.stderr)
             return 1
         records = profile.apply_all(records, now=now)
-
-    required = engine.required_fields(args.template)
-    # 생성 경계 재검사(RC-03)용 매핑 — 프로파일이 없으면 "같은 이름 열 그대로"의 항등
-    # 매핑(요구 필드 스냅샷). validate 이후 템플릿이 교체되면(TOCTOU) generate_batch 가
-    # 원자 차단한다.
-    gate_mapping = profile or MappingProfile(
-        mappings=[FieldMapping(f, f) for f in required]
+    # 프로파일 없는 직접 채우기 — 「같은 이름 열을 그대로」의 항등 연결이다. 데이터에 없는
+    # 필드는 **명시적 비움**(빈 고정값)으로 연결한다: 연결되지 않은 필드는 실행 계획이
+    # 서지 않으므로, 종전 경고(「빈 값 생성」)가 말하던 결과를 연결로 선언한다.
+    mapping = profile or MappingProfile(
+        mappings=[
+            FieldMapping(f, f) if f in source_keys else FieldMapping(f, type="const")
+            for f in required
+        ]
     )
+    if profile is None:
+        missing = [f for f in required if f not in source_keys]
+        if missing:
+            print(f"[경고] 데이터에 없는 필드(빈 값 생성): {', '.join(missing)}",
+                  file=sys.stderr)
     # 명시적 비움(빈 고정값)은 빈 값 게이트의 대상이 아니다 — 사람이 이미 「이 필드는
     # 비운다」고 답한 자리라, 표식도 붙이지 않고 확인도 다시 묻지 않는다.
-    checked = [f for f in required if f not in set(gate_mapping.declared_empty_fields())]
+    checked = [f for f in required if f not in set(mapping.declared_empty_fields())]
     report = validate(checked, records)
     if report.missing_columns:
         print(f"[경고] 데이터에 없는 필드(빈 값 생성): {', '.join(report.missing_columns)}",
               file=sys.stderr)
-    marker = ""
     if report.empty_valued:
-        # ADR-E 빈값 게이트의 CLI 이식(RC-03) — 기본 차단, --ack-empty 옵트인 시
-        # GUI 와 동일한 표식을 주입하고 진행(동일 입력 → 두 표면 동일 문서 내용).
-        from .domain.job import MISSING_MARKER, mark_missing_values
+        # ADR-E 빈값 게이트의 CLI 이식(RC-03) — 기본 차단, --ack-empty 옵트인 시 GUI 와
+        # 같은 미입력 표식으로 진행(표식은 managed 레코드 검증이 GUI 와 같은 규칙으로 넣는다).
+        from .domain.job import MISSING_MARKER
 
         if not args.ack_empty:
             print("[오류] 값이 비어 있는 필드가 있습니다 — 표식 없이 조용히 생성하지 "
@@ -555,12 +559,11 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                   f"'{MISSING_MARKER.format(field='필드명')}' 표식을 넣고 진행).",
                   file=sys.stderr)
             return 1
-        marker = MISSING_MARKER
-        records = mark_missing_values(records, marker, fields=checked)
         print(f"[안내] 미입력 표식 주입: {', '.join(report.empty_valued)}", file=sys.stderr)
 
     # 파일명 계약 사전검증(RC-20) — 미치환 {{토큰}}이 조용히 실파일명이 되는 경로 차단.
-    # 본문 미치환 토큰은 시끄럽게 다루면서 파일명 토큰만 조용히 통과하던 비대칭 해소.
+    # 토큰은 연결된 템플릿 필드의 값으로 푼다(GUI 와 같은 배달 계획) — 필드가 아닌 원천 열
+    # 이름은 배달 계획이 OUTPUT_NAME_TOKEN_UNRESOLVED 로 거절한다.
     name_tokens = pattern_field_tokens(args.pattern)
     if records and name_tokens:
         unresolved = [t for t in name_tokens if not any(t in rec for rec in records)]
@@ -570,44 +573,99 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                 + ", ".join("{{" + t + "}}" for t in unresolved)
                 + " — --pattern 을 데이터 키에 맞게 지정하세요"
             )
-        partial = [t for t in name_tokens if not all(t in rec for rec in records)]
-        if partial:
-            print("[경고] 일부 레코드에 파일명 토큰 키가 없어 해당 파일명에 토큰이 남습니다: "
-                  + ", ".join("{{" + t + "}}" for t in partial), file=sys.stderr)
 
-    # 생성 척추는 GUI 와 같은 Application use case 다(P2-23). CLI 의 게이트 부재(검토
-    # 게이트 없음·완주 스탬프 없음(store=None)·취소 없음)는 인자 생략이 아니라 **의도된
-    # 제품 계약의 선언**이고, capture 는 exit 1 로 다룰 실패류의 선언이다 — 환경성
-    # OSError 는 최상위 번역 경계의 exit 2 로 흘린다(RC-16).
-    plan = direct_plan(args.template, records, args.out, args.pattern,
-                       marker=marker, overwrite=args.overwrite, mapping=gate_mapping,
-                       now=now)
-    outcome = run_generation(start_run(None), plan, engine=engine,
-                             capture=(OutputCollisionError, ValueError), store=None,
-                             existing_outputs=existing_output_paths,
-                             ensure_output_dir=ensure_output_directory)
-    if isinstance(outcome.error, OutputCollisionError):
+    # 생성 척추는 GUI 와 같은 managed 파이프라인이다(#1081 PR3) — 임시 작업공간에 이 실행만의
+    # Work 를 세워 초기 등록 → 연결 판본 → 봉인 → 레코드 검증 → 배달 계획 → 물질화 → 배달·되읽기.
+    # CLI 의 게이트 부재(검토 게이트·완주 스탬프·취소 없음)는 의도된 제품 계약이다.
+    import tempfile
+
+    from .external.headless_generation import run_headless_generation
+
+    with tempfile.TemporaryDirectory(prefix="hwpxfiller-cli-", ignore_cleanup_errors=True) as ws:
+        result = run_headless_generation(
+            workspace=Path(ws),
+            template_path=args.template,
+            mapping=mapping,
+            filename_pattern=args.pattern,
+            records=source_records,
+            source_schema_keys=source_keys,
+            output_directory=args.out,
+            overwrite=args.overwrite,
+            clock=datetime.now,
+        )
+    return _report_generation(args, result)
+
+
+def _source_schema_keys(records: "list[dict[str, str]]") -> "tuple[str, ...]":
+    """원천 레코드의 열 이름 — 첫 등장 순서, 레코드마다 빠진 열도 합친다."""
+    keys: dict[str, None] = {}
+    for record in records:
+        for key in record:
+            keys.setdefault(key, None)
+    return tuple(keys)
+
+
+def _report_generation(args, result) -> int:
+    """managed 결과를 CLI 문장·종료 코드로 번역한다(RC-16 — 게이트 1 · 환경 2).
+
+    판정은 이미 났다 — 여기서는 사실을 말하고, 파일을 만들었으면 원장(--ledger)을 남긴다.
+    """
+    from .external.delivery_coordinator import DeliveryAborted, DeliveryCompleted
+    from .external.headless_generation import (
+        TEMPLATE_INITIALIZATION,
+        HeadlessExecuted,
+        HeadlessNeedsOverwrite,
+        HeadlessRefused,
+    )
+    from .external.managed_generation import ManagedReadBackFailed
+
+    if isinstance(result, HeadlessNeedsOverwrite):
         # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
-        # 환경성 FileExistsError(--out 자리에 파일 등)는 최상위 경계의 exit 2 로 —
-        # 그 경우 '--overwrite' 안내는 거짓이라 붙이지 않는다(RC-16).
-        print(f"[오류] {outcome.error}", file=sys.stderr)
+        print("[오류] 같은 이름의 파일이 이미 있어 덮어쓰게 됩니다: "
+              + ", ".join(result.conflict_names), file=sys.stderr)
         print("덮어쓰려면 --overwrite 를 지정하세요.", file=sys.stderr)
         return 1
-    if outcome.error is not None:
-        # 생성 경계 드리프트 재검사(RC-03) — 검증 이후 템플릿 교체도 성공으로 못 섞인다.
-        print(f"[오류] {outcome.error}", file=sys.stderr)
+    if isinstance(result, HeadlessRefused):
+        if result.code == "PATH_OCCUPANCY_OBSERVATION_FAILED":
+            # --out 자리가 폴더가 아니거나 읽을 수 없다 — 환경성 실패(exit 2, RC-16).
+            print(f"[오류] 파일을 읽거나 쓸 수 없습니다: {args.out} — "
+                  + "; ".join(result.details), file=sys.stderr)
+            return 2
+        if result.stage == TEMPLATE_INITIALIZATION:
+            print("[오류] 이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다"
+                  f"({result.code}). 템플릿 파일을 확인하세요.", file=sys.stderr)
+            return 1
+        print(f"[오류] 문서를 만들지 않았습니다({result.code}).", file=sys.stderr)
+        for line in result.details:
+            print(f"  {line}", file=sys.stderr)
         return 1
-    print(f"완료: {outcome.succeeded}/{outcome.total} 성공 -> {args.out}")
+    assert isinstance(result, HeadlessExecuted)
+    outcome = result.outcome
+    if not isinstance(outcome, (DeliveryCompleted, DeliveryAborted, ManagedReadBackFailed)):
+        # 배달 전 거절(구간 표기·무결성·레코드 재검증) — write 0.
+        code = getattr(outcome, "code", type(outcome).__name__)
+        print(f"[오류] 문서를 만들지 않았습니다({code}): {getattr(outcome, 'detail', '')}",
+              file=sys.stderr)
+        return 1
+    total = len(result.resolved_delivery.ordered_items)
+    delivered = outcome.delivered
+    succeeded = len(delivered) - (1 if isinstance(outcome, ManagedReadBackFailed) else 0)
+    print(f"완료: {succeeded}/{total} 성공 -> {args.out}")
+    if isinstance(outcome, DeliveryAborted):
+        failed = result.resolved_delivery.ordered_items[outcome.failed_item_ordinal]
+        print(f"  [실패] {failed.resolved_output_relative_path}: {outcome.detail}",
+              file=sys.stderr)
+        unstarted = total - len(delivered) - 1
+        if unstarted:
+            print(f"  [미착수] {unstarted}건 — 앞서 쓴 문서는 그대로 유지됩니다.",
+                  file=sys.stderr)
+    if isinstance(outcome, ManagedReadBackFailed):
+        doc = delivered[outcome.failed_item_ordinal]
+        print(f"  [실패] {doc.relative_path}: 만든 뒤 다시 읽어 확인하지 못했습니다"
+              f"({outcome.detail})", file=sys.stderr)
     seen_notes = set()
-    for res in outcome.results:
-        if not res.ok:
-            print(f"  [실패] {res.output_path}: {res.error}", file=sys.stderr)
-            continue
-        if res.unmatched:
-            # 매칭 안 된 필드는 어느 채널에도 안 나오면 파이프라인 관점 완전 무음(RC-03).
-            print(f"  [주의] 매칭 안 된 필드({res.output_path}): "
-                  f"{', '.join(res.unmatched)}", file=sys.stderr)
-        for note in res.notes:
+    for doc in delivered:
+        for note in doc.execution_notes:
             # 완화 처리(경고 후 진행, #154)도 무음이면 조용한 데이터 손실 — RC-03 동형.
             # 노트는 템플릿 구조 속성이라 배치 전체에서 한 번만 알린다.
             if note in seen_notes:
@@ -617,36 +675,27 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
 
     if args.ledger:
         try:
-            _export_ledger(args, gate_mapping, required, source_records, records, outcome,
-                           marker)
+            _export_ledger(args, result)
         except Exception as exc:  # noqa: BLE001 - 증거 저장 실패는 조용히 넘기지 않는다
             # 원장은 사이드카 — 실패해도 '생성 실패'로 위장하지 않는다(RC-16, GUI 와 동형).
             print(f"[원장 실패] 사이드카를 저장하지 못했습니다: {exc} — "
-                  f"생성물({outcome.succeeded}건)은 저장돼 있습니다.", file=sys.stderr)
-    return 0 if outcome.failed == 0 else 1
+                  f"생성물({succeeded}건)은 저장돼 있습니다.", file=sys.stderr)
+    return 0 if isinstance(outcome, DeliveryCompleted) else 1
 
 
-def _export_ledger(
-    args, mapping, required, source_records, mapped_records, outcome, marker: str = "",
-) -> None:
-    """``--ledger`` opt-in — 원장 사이드카를 out 폴더에 저장(생성 성패와 독립).
+def _export_ledger(args, result) -> None:
+    """``--ledger`` opt-in — managed 배달 원장 사이드카를 out 폴더에 저장한다.
 
-    문맥 조립·행 구성·프로파일링·저장은 GUI 와 공유하는 단일 함수
-    :func:`~hwpxfiller.external.ledger_export.export_batch_ledger` 가 한다(RC-03 —
-    표면별 병렬 구현으로 원장 사실이 갈라지는 결함 봉합). ``marker`` 는 생성에
-    실제 쓴 표식과 동일해야 원장이 문서 실상(표식 잔존)을 증거한다.
-
-    프로파일 없는 직접 채우기(헤더=템플릿 필드)는 항등 매핑으로 원장 행을 만든다 —
-    소스출처·변환이 없는 게 아니라 "같은 이름 열을 그대로" 라는 사실의 기록이다.
-    소스 표기는 포인터-온리(경로·기간) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
+    GUI 「문서 만들기」가 배달마다 남기는 것과 **같은 원장**(``managed-delivery/v1``:
+    봉인 basis·plan digest, 문서별 처분·output digest·완화 노트, 중단 사실)이다(#1081 PR3).
+    ``work_authority_id`` 는 이 실행의 임시 Work 라 실행을 가리킬 뿐 재사용되지 않는다.
+    소스 표기는 포인터-온리(경로·기간·뷰) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
     파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 실행의 증거를 덮지 않는다.
     """
-    from .external.ledger_export import export_batch_ledger
+    from .application.execution_contract_set import plan_semantic_digest
+    from .external.ledger_export import write_managed_delivery_ledger
 
-    labels: "dict[str, str]" = {}
     if args.source == "nara":
-        from .data.nara import NaraStdDataSource
-        labels = NaraStdDataSource.field_labels()
         source = f"nara:표준입찰공고 {args.bgn}~{args.end}"
     elif args.source == "pclm":
         from .data.pclm import PclmDataSource
@@ -656,20 +705,16 @@ def _export_ledger(
         source = PclmDataSource(db=args.db, view=args.view).source_pointer()
     else:
         source = f"file:{args.data}"
-    sidecar = export_batch_ledger(
-        args.out,
-        template=args.template,
+    sidecar = write_managed_delivery_ledger(
+        result.resolved_delivery.output_directory,
+        generated_at=result.validated_at,
+        work_authority_id=result.work_authority_id,
+        execution_basis_digest=result.execution_basis_digest,
+        plan_semantic_digest=plan_semantic_digest(result.plan_payload),
+        result=result.outcome,
         source=source,
-        mapping=mapping,
-        template_fields=required,
-        results=outcome.results,
-        mapped_records=mapped_records,
-        source_records=source_records,
-        labels=labels,
-        missing_marker=marker,
     )
-    print(f"[원장] {sidecar} 저장 — 값은 텍스트 미리보기·되읽기이며 HWPX 렌더가 아닙니다.",
-          file=sys.stderr)
+    print(f"[원장] {sidecar} 저장", file=sys.stderr)
 
 
 if __name__ == "__main__":

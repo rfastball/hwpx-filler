@@ -39,7 +39,7 @@ from hwpxfiller.external.runtime_capability import (
     runtime_capability_manifest_payload,
     shipping_runtime_conformance_manifest,
 )
-from hwpxfiller.webapp.seal_execution_plan_product import (
+from hwpxfiller.external.seal_execution_plan_product import (
     RuntimeConformanceBinding,
     registry_conformance_for_plan_value,
 )

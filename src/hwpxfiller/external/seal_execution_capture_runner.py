@@ -1,6 +1,6 @@
 """SealExecutionPlan 의 production capture·fresh-observation seam 어댑터 (SX-SEAL · #719).
 
-:mod:`hwpxfiller.external.seal_orchestration_runner` 와 `webapp/seal_execution_plan_product` 가
+:mod:`hwpxfiller.external.seal_orchestration_runner` 와 `external/seal_execution_plan_product` 가
 injectable seam 으로 남긴 두 port 의 실 store 결선이다:
 
 - :meth:`read_summary` — current WorkTemplateApplication 요약(profile·application id)을 관찰한다.

@@ -33,9 +33,9 @@ from hwpxfiller.webapp.screen_workbench import (
     WorkbenchController,
     TargetFontSetting,
 )
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.txt_materialization import (
     TxtMaterializationRefused,
     TxtMaterializationService,

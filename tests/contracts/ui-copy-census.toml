@@ -1650,6 +1650,66 @@ file = "src/hwpxfiller/external/authoring_transfer.py"
 text = "항목을 다른 의미 영역 안에 넣을 수 없습니다."
 
 [[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "{}행 {} 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "값 형식이 올바르지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "데이터 값을 정확히 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "데이터 문제를 사용자 문안으로 표시할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "데이터 항목 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "문제 데이터의 원본 항목을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "문제 데이터의 필드를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "생성 예정 문서 이름을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "선택한 데이터 위치를 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "이 값을 문서 내용으로 해석할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "이 항목에 연결한 데이터 열이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "저장 폴더는 전체 경로여야 합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "파일 이름에 사용할 값을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/external/current_execution_preparation.py"
+text = "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/external/hwpx_authoring.py"
 text = "'{}' 항목의 시험 선택을 지정하세요."
 
@@ -2014,6 +2074,54 @@ file = "src/hwpxfiller/external/rhwp_preflight.py"
 text = "문서 내부 파일이 가져오기와 내보내기 사이에 변경되었습니다."
 
 [[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. 이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "current Active Field를 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "current Application structure를 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "legacy Mapping basis가 capture 이후 이동했습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "actor {} 는 이 Work 에 접근할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "문서 작업 권위를 다시 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "원본 파일을 읽지 못해 편집 여부를 확인할 수 없습니다. 파일 위치와 접근 권한을 확인한 뒤 「변경사항 확인」을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. 편집분을 반영하려면 「변경사항 확인」 뒤 적용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "이 변경사항은 현재 작업의 것이 아닙니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/external/template_change.py"
+text = "적용 무결성 확인에 실패했습니다 — 저장된 확인 결과를 신뢰할 수 없습니다"
+
+[[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
 
@@ -2241,15 +2349,7 @@ text = "먼저 데이터를 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "먼저 데이터를 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "생성할 문서를 최소 1건 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2265,16 +2365,7 @@ text = "저장 폴더를 지정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "저장 폴더를 지정하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "템플릿 경로가 비어 있습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해야 생성할 수 있습니다."
-legacy = true
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2720,66 +2811,6 @@ text = "자동 확인이 진행 중이라 누를 것이 없다. 숨기지 않고
 [[sentence]]
 file = "src/hwpxfiller/webapp/blocker_affordance.py"
 text = "정책이 거절한 상태라 사용자가 지금 지울 수단이 없다. 동사를 세우면 누를 수 있다는 거짓을 말하게 된다 — 그 자리는 생성 버튼의 사유 병기(「정책상 지금은 문서를 만들 수 없습니다」)가 맡는다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "{}행 {} 값을 정확히 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "값 형식이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "데이터 값을 정확히 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "데이터 문제를 사용자 문안으로 표시할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "데이터 항목 이름을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "문제 데이터의 원본 항목을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "문제 데이터의 필드를 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "생성 예정 문서 이름을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "선택한 데이터 위치를 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "이 값을 문서 내용으로 해석할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "이 항목에 연결한 데이터 열이 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "저장 폴더는 전체 경로여야 합니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "파일 이름에 사용할 값을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/current_execution_preparation.py"
-text = "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/data_zone.py"
@@ -3806,26 +3837,6 @@ file = "src/hwpxfiller/webapp/screens.py"
 text = "형식을 확인할 수 없던 작업이라 최근 사용 기록은 함께 지워집니다."
 
 [[sentence]]
-file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
-text = "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. 이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
-text = "current Active Field를 확인할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
-text = "current Application structure를 확인할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
-text = "legacy Mapping basis가 capture 이후 이동했습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/seal_execution_plan_service.py"
-text = "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
-
-[[sentence]]
 file = "src/hwpxfiller/webapp/selftest_api.py"
 text = "제시한 토큰이 이 호스트의 것이 아니다"
 
@@ -3856,34 +3867,6 @@ text = "포함할 내용을 불러오지 못했습니다. 문서 작업을 다�
 [[sentence]]
 file = "src/hwpxfiller/webapp/slot_configuration_product.py"
 text = "현재 문서 작업과 템플릿이 맞지 않아 포함할 내용을 불러오지 못했습니다. 문서 작업을 다시 연 뒤 템플릿을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "actor {} 는 이 Work 에 접근할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "문서 작업 권위를 다시 확인할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "원본 파일을 읽지 못해 편집 여부를 확인할 수 없습니다. 파일 위치와 접근 권한을 확인한 뒤 「변경사항 확인」을 누르세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. 편집분을 반영하려면 「변경사항 확인」 뒤 적용하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "이 변경사항은 현재 작업의 것이 아닙니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/template_change.py"
-text = "적용 무결성 확인에 실패했습니다 — 저장된 확인 결과를 신뢰할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/template_groups.py"

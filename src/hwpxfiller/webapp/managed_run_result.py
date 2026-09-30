@@ -18,8 +18,8 @@ from ..application.generation_delivery import CurrentResolvedDelivery
 from ..viewmodel.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
 from ..viewmodel.result_errors import classify_result_error, describe_fill_note
 from ..application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
-from .current_execution_preparation import CurrentDeliveryPreparation
-from .managed_generation import (
+from ..external.current_execution_preparation import CurrentDeliveryPreparation
+from ..external.managed_generation import (
     ManagedGenerationResult,
     ManagedReadBackFailed,
     ManagedRunCancelled,

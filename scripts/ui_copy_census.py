@@ -47,6 +47,14 @@ PY_GLOBS = (
     "src/hwpxfiller/external/authoring_transfer.py",
     "src/hwpxfiller/external/authoring_store.py",
     "src/hwpxfiller/external/rhwp_preflight.py",
+    # 문서 생성 척추(#1081 PR3). GUI 와 CLI 가 같은 managed 경로를 쓰도록 `webapp/` 에서
+    # `external/` 로 옮겼지만 그 거절·안내 문장은 여전히 「문서 만들기」 화면에 그대로 선다.
+    # 옮겼다는 이유로 census 밖으로 흘리면 문장 통제가 조용히 약해진다.
+    "src/hwpxfiller/external/current_execution_preparation.py",
+    "src/hwpxfiller/external/managed_generation.py",
+    "src/hwpxfiller/external/seal_execution_plan_product.py",
+    "src/hwpxfiller/external/seal_execution_plan_service.py",
+    "src/hwpxfiller/external/template_change.py",
 )
 #: 프런트 source. `frontend/src/selftest/**` 는 프로브·픽스처라 제품 문안이 아니다.
 JS_GLOBS = ("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/src/**/*.js",

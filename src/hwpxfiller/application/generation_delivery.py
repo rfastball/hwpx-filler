@@ -4,7 +4,7 @@
 이름 kernel :mod:`hwpxfiller.domain.output_name` 소유, #798), :class:`GenerationDeliveryBindingBasis`(inactive Field token 값 근거), batch-level
 :func:`resolve_generation_delivery_plan`, resolved output path canonical payload/digest, output
 blocker taxonomy, :class:`ManagedGenerationPlan` DTO, :class:`MaterializationInput` port,
-runtime conformance admission bridge, managed/legacy/continuation adapter 분리.
+runtime conformance admission bridge, managed adapter(S5 guarantee 단일 소유).
 
 핵심 불변식(issue #709):
 - **일반 token 은 target Field ID 다**(raw source key 아님, invariant 21). Active token 은 VDR 의
@@ -1503,7 +1503,7 @@ def evaluate_managed_run_admission(
     )
 
 
-# ─── managed/legacy/continuation adapter 분리 ─────────────────────────────────────────────
+# ─── managed adapter(S5 exact guarantee 소유자) ─────────────────────────────────────────────
 @dataclass(frozen=True)
 class ManagedPlanMaterializationAdapter:
     """S5 managed path — 입력은 Plan + VDR(MaterializationInput). S5 exact guarantee 를 표시한다."""
@@ -1515,32 +1515,10 @@ class ManagedPlanMaterializationAdapter:
         return materialization_inputs_of(self.managed_plan)
 
 
-@dataclass(frozen=True)
-class LegacySlotlessGenerationAdapter:
-    """transitional slotless 호환 경로 — S5 Plan/VDR/exact guarantee 를 소유하지 않는다."""
-
-    transitional_reason: str
-
-
-@dataclass(frozen=True)
-class LegacyContinuationGenerationAdapter:
-    """이전 output base 를 잇는 continuation — S5 보장 없음. continuation 은 applied Candidate 가 아니다."""
-
-    previous_output_base: str
-    transitional_reason: str
-
-
 def has_s5_exact_delivery_guarantee(adapter: object) -> bool:
-    """S5 exact delivery guarantee 는 managed adapter 만 진다 — legacy/continuation 은 False.
+    """S5 exact delivery guarantee 는 managed adapter 만 진다.
 
-    금지(invariant 23): S5 Plan → legacy GenerationPlan.template 변환, managed Plan 을 legacy
-    generate_batch 로 우회, continuation 을 applied Candidate 로 표시, legacy 결과에 S5 guarantee 표시.
+    금지(invariant 23): S5 Plan → 다른 생성기 입력 변환, managed Plan 우회, managed 가 아닌 결과에
+    S5 guarantee 표시. legacy slotless·continuation adapter 는 #1081 PR3 에서 걷혔다.
     """
     return isinstance(adapter, ManagedPlanMaterializationAdapter)
-
-
-def continuation_is_applied_candidate(
-    adapter: LegacyContinuationGenerationAdapter,
-) -> bool:
-    """continuation document 는 applied Candidate 가 아니다(항상 False) — S5 exact 계보에 넣지 않는다."""
-    return False

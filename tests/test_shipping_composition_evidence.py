@@ -34,9 +34,9 @@ from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.qualification_store import QualificationObjectStore
 from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
-from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 
 _NOW = datetime(2026, 8, 22, 9, 0, 0)
 _HS = "http://www.hancom.co.kr/hwpml/2011/section"

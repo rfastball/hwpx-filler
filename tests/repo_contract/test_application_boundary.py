@@ -11,10 +11,9 @@ APPLICATION_PACKAGE = ROOT / "src" / "hwpxfiller" / "application"
 ALLOWED_INTERNAL_PREFIXES = (
     "hwpxfiller.application",
     "hwpxfiller.domain",
-    # batch.py 와 viewmodel/run_state.py 는 handoff unit target=APPLICATION(물리 이관 전) —
-    # 생성 use case(application/generation.py)의 동륜이라 직접 소비가 inward 다.
-    # 물리 application/ 이관 시 이 두 줄도 옮겨 없앤다.
-    "hwpxfiller.batch",
+    # viewmodel/run_state.py 는 handoff unit target=APPLICATION(물리 이관 전) — 생성 판정의
+    # 동륜이라 직접 소비가 inward 다. 물리 application/ 이관 시 이 줄도 옮겨 없앤다.
+    # (legacy 일괄 생성 ``hwpxfiller.batch`` 는 #1081 PR3 에서 퇴역했다.)
     "hwpxfiller.viewmodel.run_state",
 )
 CONCRETE_ADAPTER_ROOTS = {

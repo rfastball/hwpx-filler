@@ -49,8 +49,6 @@ from hwpxfiller.application.work_bootstrap import (
 
 # ─── execution base 어휘(S5 v1 admitted base 는 정확히 하나) ─────────────────────────
 APPLIED_TEMPLATE_CANDIDATE = "APPLIED_TEMPLATE_CANDIDATE"
-# legacy continuation 은 previous output document 를 mutation base 로 쓴다 — managed S5 base 가 아니다.
-CONTINUATION_OUTPUT_DOCUMENT = "CONTINUATION_OUTPUT_DOCUMENT"
 MATERIALIZATION_BASE_CONTRACT_ID = "applied-template-candidate-base/v1"
 
 # S4 SlotSelectionInput → 실행 selection 의미의 pure projection 계약.
@@ -66,7 +64,6 @@ SLOT_CONFIGURATION_INCOMPLETE = "SLOT_CONFIGURATION_INCOMPLETE"
 QUALIFICATION_PROFILE_REVOKED = "QUALIFICATION_PROFILE_REVOKED"
 EXECUTION_PROFILE_NOT_SEALABLE = "EXECUTION_PROFILE_NOT_SEALABLE"
 EXECUTION_POLICY_NOT_ADMITTED = "EXECUTION_POLICY_NOT_ADMITTED"
-CONTINUATION_BASE_NOT_SUPPORTED = "CONTINUATION_BASE_NOT_SUPPORTED"
 
 # ─── context error 어휘(issue 열거 그대로) ─────────────────────────────────────────
 APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR = "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR"
@@ -492,34 +489,6 @@ CaptureExecutionQualificationResult = (
 )
 
 
-# ─── legacy continuation ≠ managed Plan materialization(타입 분리) ──────────────────
-@dataclass(frozen=True)
-class LegacyContinuationGenerationAdapter:
-    """previous output document 를 mutation base 로 쓰는 legacy adapter.
-
-    S5 exact guarantee·semantic currentness·Plan-bound Candidate provenance 를 **주장하지 않는다**.
-    managed Plan materialization 과 **별개 타입**이다.
-    """
-
-    supported_execution_base: str = CONTINUATION_OUTPUT_DOCUMENT
-    claims_exact_guarantee: bool = False
-    claims_plan_bound_provenance: bool = False
-
-
-@dataclass(frozen=True)
-class ManagedPlanMaterializationAdapter:
-    """exact applied Candidate 를 base 로 Plan-bound materialization 을 하는 managed adapter."""
-
-    supported_execution_base: str = APPLIED_TEMPLATE_CANDIDATE
-    claims_exact_guarantee: bool = True
-    claims_plan_bound_provenance: bool = True
-
-
-# 향후 managed continuation 모델(비범위 후속 — 여기서 구현하지 않는다):
-# ContinuationDocumentSnapshot(exact bytes/content digest, Field structure inspection evidence,
-# admissible operation projection, qualification contract, immutable snapshot ref).
-
-
 # ─── under-fence exact capture port ───────────────────────────────────────────────
 class CaptureExecutionQualificationInputUnderFence(Protocol):
     """caller 가 shared PerWorkMutationFence 를 이미 보유한 상태의 exact capture port.
@@ -819,20 +788,15 @@ def judge_captured_execution(
     """복원된 (template, selection, binding, policy) 로 capture result 합타입을 낸다(순수).
 
     순서:
-      1. execution base kind — continuation 이면 policy block, unknown 이면 context error.
+      1. execution base kind — applied Candidate 가 아니면 context error.
       2. S5-08 이 낸 policy block(revoked/unsealable/not-admitted)이 있으면 그대로 낸다.
       3. request↔template cross-reference — 위반이면 context error.
       4. selection/binding 중 domain-blocked 가 있으면 domain block(captured 부분도 cross-check).
       5. 둘 다 captured 면 full cross-reference 뒤 complete CapturedExecutionInput.
     """
-    # 1. execution base — continuation 은 exact applied Candidate 가 아니라 policy block.
+    # 1. execution base — S5 v1 admitted base 는 exact applied Candidate 하나다(이어채우기
+    #    continuation base 는 #1003 에서 제품이 걷었고 그 발판도 #1081 PR3 에서 걷혔다).
     base = resolved_seal_policy.execution_base_kind
-    if base == CONTINUATION_OUTPUT_DOCUMENT:
-        return CapturedExecutionPolicyBlock(
-            policy_code=CONTINUATION_BASE_NOT_SUPPORTED,
-            observed_at=captured_at,
-            qualification_profile_id=expected_profile_id,
-        )
     if base != APPLIED_TEMPLATE_CANDIDATE:
         # unknown base 는 latest/default 로 풀지 않는다 — 시끄럽게 fail-closed.
         return ExecutionCaptureContextError(
@@ -938,7 +902,6 @@ def judge_captured_execution(
 # 재-export — 소비자(runner·S5-08/10)가 blocker/policy 어휘를 한 곳에서 참조.
 __all__ = [
     "APPLIED_TEMPLATE_CANDIDATE",
-    "CONTINUATION_OUTPUT_DOCUMENT",
     "MATERIALIZATION_BASE_CONTRACT_ID",
     "EXECUTION_SELECTION_SEMANTICS_CONTRACT",
     "SLOTLESS",
@@ -951,7 +914,6 @@ __all__ = [
     "QUALIFICATION_PROFILE_REVOKED",
     "EXECUTION_PROFILE_NOT_SEALABLE",
     "EXECUTION_POLICY_NOT_ADMITTED",
-    "CONTINUATION_BASE_NOT_SUPPORTED",
     "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR",
     "QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR",
     "SELECTION_CONTRACT_INTEGRITY_ERROR",
@@ -980,8 +942,6 @@ __all__ = [
     "CapturedExecutionPolicyBlock",
     "ExecutionCaptureContextError",
     "CaptureExecutionQualificationResult",
-    "LegacyContinuationGenerationAdapter",
-    "ManagedPlanMaterializationAdapter",
     "CaptureExecutionQualificationInputUnderFence",
     "build_captured_execution_semantic_projection",
     "build_captured_attempt_semantic_projection",

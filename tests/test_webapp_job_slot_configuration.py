@@ -33,7 +33,7 @@ from hwpxfiller.webapp.slot_configuration_product import (
     SlotConfigurationProduct,
     SlotConfigurationProductError,
 )
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
 
 from tests.test_slot_configuration_product import _two_slot_template

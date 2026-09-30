@@ -47,7 +47,7 @@ from hwpxfiller.application.fresh_execution_observation import (
     decide_runtime_policy_admission,
 )
 from hwpxfiller.application.seal_execution_plan import AuthorizationError, RouteResolutionError
-from hwpxfiller.webapp.seal_execution_plan_product import (
+from hwpxfiller.external.seal_execution_plan_product import (
     EXECUTION_OBSERVATION_CONTEXT_ERROR,
     ExecutionPlanSealedProductOutcome,
     RuntimeMaterializerConformance,
@@ -169,7 +169,7 @@ def test_registry_binding_formal_injection_admits_and_ready(tmp_path) -> None:
     # S6-03(#810) 정식 주입 경로: runtime_conformance= kwarg(위조 가능한 판정 주입) 대신
     # shipping capability manifest 를 등록한 registry binding 으로 — 판정은 Plan value 파생.
     from hwpxfiller.external.runtime_capability import admitted_runtime_conformance_registry
-    from hwpxfiller.webapp.seal_execution_plan_product import RuntimeConformanceBinding
+    from hwpxfiller.external.seal_execution_plan_product import RuntimeConformanceBinding
 
     registry, manifest = admitted_runtime_conformance_registry()
     world = World()
@@ -196,7 +196,7 @@ def test_registry_binding_without_registered_manifest_stays_not_admitted(tmp_pat
         RuntimeMaterializerConformanceRegistry,
     )
     from hwpxfiller.external.runtime_capability import shipping_runtime_conformance_manifest
-    from hwpxfiller.webapp.seal_execution_plan_product import RuntimeConformanceBinding
+    from hwpxfiller.external.seal_execution_plan_product import RuntimeConformanceBinding
 
     world = World()
     product = SealExecutionPlanProduct(
@@ -344,7 +344,7 @@ def test_product_reaches_real_s5_10_service_and_seals(tmp_path) -> None:
 
 def test_product_contract_vocabulary_is_closed() -> None:
     # 노출 어휘가 닫힌 집합이다 — opaque ref code 는 사라지고 관찰 강등 code 만 남는다.
-    import hwpxfiller.webapp.seal_execution_plan_product as mod
+    import hwpxfiller.external.seal_execution_plan_product as mod
 
     assert isinstance(EXECUTION_OBSERVATION_CONTEXT_ERROR, str)
     for gone in ("PLAN_REFERENCE_INVALID", "PLAN_REFERENCE_UNRESOLVABLE",
@@ -448,3 +448,40 @@ def test_decide_admission_all_pass_admitted() -> None:
 def test_command_rejects_empty_fields() -> None:
     with pytest.raises(ValueError):
         SealExecutionPlanProductCommand(workspace_instance_id="", work_ref="r", request_id="r")
+
+
+# ══ 낮은 층위 branch — 방어적 갈래·selector 명시 ═══════════════════════════════════════
+def test_semantic_kernel_context_error_during_compile_is_a_context_error_observation(
+    tmp_path, monkeypatch
+) -> None:
+    """의미 kernel 이 compile 자체를 계산할 수 없다고 하면(SemanticKernelContextError) 그
+    실패를 user-fixable blocker 로 낮추지 않고 CONTEXT_ERROR 로 관찰한다."""
+    import hwpxfiller.external.seal_execution_plan_product as sep
+    from hwpxfiller.application.execution_semantic_kernel import SemanticKernelContextError
+    from hwpxfiller.application.fresh_execution_observation import (
+        SEALABILITY_CONTEXT_ERROR,
+        CurrentWorkExecutionObservation,
+    )
+
+    def boom(_current):
+        raise SemanticKernelContextError("의미를 계산할 수 없다")
+
+    monkeypatch.setattr(sep, "compile_sealed_plan_from_snapshot", boom)
+    h = _product(tmp_path, runtime=_admitting_runtime)
+    resp = h.product.seal_execution_plan(_pcmd("r1"))
+    assert isinstance(resp.fresh_observation, CurrentWorkExecutionObservation)
+    assert resp.fresh_observation.current_sealability == SEALABILITY_CONTEXT_ERROR
+
+
+def test_requested_exact_selectors_are_forwarded_not_defaulted(tmp_path) -> None:
+    """생략된 selector 만 AUTO 기본값에 맡긴다 — 명시(EXACT) selector 는 그대로 전달된다."""
+    from hwpxfiller.application.stored_execution_plan import RequestedExact
+
+    h = _product(tmp_path, runtime=_admitting_runtime)
+    resp = h.product.seal_execution_plan(
+        _pcmd("r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v2"))
+    )
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)
+    obs = resp.fresh_observation
+    assert isinstance(obs, CurrentSealedPlanObservation)
+    assert obs.sealed_plan_value.plan_schema_version == "hwpx-execution-plan/v2"

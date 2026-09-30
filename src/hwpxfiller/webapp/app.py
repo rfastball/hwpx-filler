@@ -76,12 +76,12 @@ from .document_run_coordinator import ARTIFACT_NOT_IN_SESSION
 from .screen_editor import EditorController
 from .screen_library import LibraryController
 from .screen_job import JobController
-from .template_change import TemplateChangeCoordinator
+from ..external.template_change import TemplateChangeCoordinator
 from .slot_configuration_product import (
     SlotConfigurationProduct,
     SlotConfigurationProductError,
 )
-from .seal_execution_plan_service import SealExecutionPlanService
+from ..external.seal_execution_plan_service import SealExecutionPlanService
 from .txt_materialization import (
     TxtMaterializationRefused,
     TxtMaterializationService,

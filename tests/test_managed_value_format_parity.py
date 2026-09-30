@@ -1,16 +1,13 @@
-"""legacy·managed 가 같은 작업에서 **같은 문서**를 낸다 — 값 표시형 동등성 (#1081 PR0b·PR2).
+"""managed 가 legacy 와 **같은 문서**를 낸다 — 값 표시형 동등성의 golden 고정 (#1081 PR0b·PR2·PR3).
 
-legacy 생성은 Mapping 의 ``type``·``fmt`` 로 값을 서식한다(``24750000`` → ``24,750,000원``).
-field-binding/v2 는 그 ``type`` 을 버려서 managed 경로가 같은 작업에서 서식 없는 값을 냈다.
-v3 는 표시형 kind 를 판본에 싣고 legacy 와 같은 해석기로 렌더한다 — 그 사실을 여기서 실제
-제품 조립(:class:`WebFrontend`)과 동봉 예제로 고정한다: 한 작업을 legacy 로 한 번, managed 로
-한 번 만들고 두 문서의 ``Contents/section0.xml`` 이 byte 동일한지 본다.
+legacy 생성은 Mapping 의 ``type``·``fmt`` 로 값을 서식했다(``24750000`` → ``24,750,000원``).
+field-binding/v3 는 표시형 kind 를 판본에 싣고 legacy 와 같은 해석기로 렌더한다. PR2 까지는
+같은 작업을 legacy·managed 로 한 번씩 만들어 ``Contents/section0.xml`` 이 byte 동일한지 봤다.
 
-PR2 부터 GUI 의 HWPX 문서 생성은 managed 하나다 — slot 없는 동봉 예제도 술어를 갈아 끼우지
-않고 **제품 경로 그대로** managed 로 간다. legacy 쪽은 GUI 에서 사라졌으므로 legacy 생성
-유스케이스(:func:`plan_generation`·:func:`run_generation`, CLI 가 아직 쓰는 그 경로)를 같은
-작업 세션의 실행뷰·데이터·선택으로 직접 불러 비교 기준을 만든다(PR3 에서 legacy 가 삭제되면
-이 비교도 함께 은퇴한다).
+PR3 에서 legacy 생성기가 삭제되며 그 비교의 한쪽이 사라졌다. 그래서 **삭제 직전 legacy 가 쓴
+section0.xml bytes** 를 ``tests/fixtures/slotless_section0_golden/<사례>/<순번>.section0.xml``
+로 박제하고(slot 없는 동봉 예제 3 사례), managed 제품 경로(:class:`WebFrontend` + 동봉 예제,
+술어·배선 교체 0)가 그 bytes 를 그대로 내는지 본다 — 동등성은 여전히 고정된다.
 """
 from __future__ import annotations
 
@@ -21,13 +18,10 @@ import pytest
 
 from _output_folder_pick import pick_output_folder
 
-from hwpxfiller.application.generation import plan_generation, run_generation, start_run
-from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.host.locations import home_dir
-from hwpxfiller.viewmodel.run_state import RunDataInput
 
 WORK = "동등성"
+GOLDEN = Path(__file__).parent / "fixtures" / "slotless_section0_golden"
 
 
 @pytest.fixture
@@ -81,36 +75,14 @@ def _sections(out: Path) -> dict[str, bytes]:
     return result
 
 
-def _legacy_generate(job_ctrl, out: Path) -> None:
-    """같은 작업 세션(실행뷰·데이터·선택)으로 legacy 생성 유스케이스를 직접 부른다."""
-    vm = job_ctrl.work.vm
-    data = RunDataInput(job_ctrl.data.datasource, tuple(job_ctrl.data.records))
-    decision = plan_generation(
-        vm,
-        data,
-        job_ctrl.data.selected_indices(),
-        str(out),
-        now=job_ctrl._clock(),
-        existing_outputs=existing_output_paths,
-    )
-    assert decision.rejection is None and decision.plan is not None, decision
-    outcome = run_generation(
-        start_run(None, job_name=WORK),
-        decision.plan,
-        engine=make_hwpx_engine(),
-        existing_outputs=existing_output_paths,
-        ensure_output_dir=ensure_output_directory,
-    )
-    assert outcome.completed and outcome.failed == 0, outcome
-
-
 @pytest.mark.parametrize(
-    ("template", "data", "overrides", "expected_texts"),
+    ("case", "template", "data", "overrides", "expected_texts"),
     [
         # 편집기 제안 그대로 — 계약금액은 amount 기본(「원」 붙임).
-        ("계약체결안내.hwpx", "계약목록.csv", {}, ["24,750,000원"]),
+        ("contract-default", "계약체결안내.hwpx", "계약목록.csv", {}, ["24,750,000원"]),
         # 표시형 코드를 고른 작업 — amount 코드·date 한글·text 마스크. 빈 칸(납품조건)은 표식.
         (
+            "contract-formats",
             "계약체결안내.hwpx",
             "계약목록_2.csv",
             {
@@ -121,11 +93,11 @@ def _legacy_generate(job_ctrl, out: Path) -> None:
             ["41,200,000"],
         ),
         # 다른 slot 없는 동봉 예제 — 편집기 제안 그대로(제안이 못 이은 칸은 표식).
-        ("구매추진안내.hwpx", "계약목록.csv", {}, []),
+        ("purchase-default", "구매추진안내.hwpx", "계약목록.csv", {}, []),
     ],
 )
-def test_legacy_and_managed_write_identical_section_xml(
-    app, tmp_path, template, data, overrides, expected_texts
+def test_managed_writes_the_section_xml_legacy_wrote(
+    app, tmp_path, case, template, data, overrides, expected_texts
 ):
     _save_work(app, template, data)
     _override_formats(app, overrides)
@@ -138,20 +110,17 @@ def test_legacy_and_managed_write_identical_section_xml(
         "전제: slot 없는 예제"
     )
 
-    legacy_out = tmp_path / "legacy"
-    _legacy_generate(job, legacy_out)
-
     managed_out = tmp_path / "managed"
     pick_output_folder(job, managed_out)
     managed = app.generate("job")
     assert managed["ok"] is True and managed["status"] == "completed", managed
-    assert "delivered" in managed, "전제: managed 파이프라인이 문서를 앉혔다"
 
-    legacy_sections = _sections(legacy_out)
-    managed_sections = _sections(managed_out)
-    assert list(managed_sections) == list(legacy_sections), "파일 이름이 갈렸다"
-    for name, body in legacy_sections.items():
-        assert managed_sections[name] == body, f"{name} 의 section0.xml 이 legacy 와 다르다"
-    joined = b"".join(managed_sections.values()).decode("utf-8")
+    managed_sections = list(_sections(managed_out).values())  # 파일 이름순 = 순번순
+    golden = [path.read_bytes() for path in sorted((GOLDEN / case).glob("*.section0.xml"))]
+    assert golden, f"golden 이 없다: {GOLDEN / case}"
+    assert len(managed_sections) == len(golden), "문서 수가 legacy 와 다르다"
+    for ordinal, (body, expected) in enumerate(zip(managed_sections, golden, strict=True), 1):
+        assert body == expected, f"{case} {ordinal:03d} 의 section0.xml 이 legacy golden 과 다르다"
+    joined = b"".join(managed_sections).decode("utf-8")
     for text in expected_texts:
         assert text in joined, f"표시형 결과 {text!r} 가 문서에 없다"
