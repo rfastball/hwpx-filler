@@ -51,9 +51,12 @@
  *                      — 비활성 요소의 `click()` 은 이벤트를 만들지 않으므로 「발신 0」을
  *                      배선 부재로 읽지 않기 위한 **부재판별력** 계기다 ·
  *                      mirror_focus_target_state=="ready" · job_grid_wide(2열) ·
- *                      preset_pressed=["true","false"](켜짐/꺼짐) ↔ preset_on_bg≠preset_off_bg ·
- *                      preset_warn_aria_disabled(true)+preset_warn_title(사유) · filter_save_shown ·
- *                      preset_toggle_sent(발신 이름열) · preset_menu_items(이름 바꾸기·삭제).
+ *                      preset_pressed=["true","false","false"](켜짐/꺼짐) ↔ preset_on_bg≠preset_off_bg ·
+ *                      preset_cluster(추정가격 무리 = 칩 2, 홀로 선 칩은 무리 밖) ·
+ *                      preset_warn_aria_disabled(true)+preset_warn_title(사유) · preset_on_title(조건) ·
+ *                      preset_edit_idle_opacity(0) ↔ preset_edit_focus_opacity(1)+tab 순서 ·
+ *                      filter_new_shown · preset_toggle_sent(발신 이름열) ·
+ *                      builder_*(열기·카드·「그리고」·상태·열 콤보박스 거르기·↓/Enter 로 카드 추가·닫기).
  *   · job_result     : renamed_keeps_result ↔ switch_resets_result ↔ data_swap_resets_result ↔
  *                      selection_change_keeps_result(+demotes) · foreign_*_hidden ↔
  *                      renamed_*_shown · folder_hidden_while_running ↔ folder_shown_on_result ·
@@ -281,14 +284,42 @@ function mirrorSnapshot() {
       columns: [{ name: "공고명", kind: "text", active: false },
         { name: "금액", kind: "amount", active: false }],
       adhoc_active: true,
-      preset_save: { can: true, reason: "" },
       presets: [
-        { name: "소기업", active: true, usable: true, reason: "" },
+        {
+          name: "소기업", active: true, usable: true, reason: "",
+          dimension: "추정가격", dimension_label: "추정가격",
+          description: "추정가격 < '100,000,000'",
+          state: { search: "", pruned: [], columns: { 추정가격: { text: "", values: null, range: {
+            first: { op: "lt", operand: "100,000,000" }, second: null, joiner: "and" } } } },
+        },
         {
           name: "중소기업", active: false, usable: false,
           reason: "이 필터의 열이 지금 데이터에 없습니다: 추정가격",
+          dimension: "추정가격", dimension_label: "추정가격", description: "",
+          state: { search: "", pruned: [], columns: { 추정가격: { text: "", values: null, range: {
+            first: { op: "ge", operand: "100,000,000" }, second: null, joiner: "and" } } } },
+        },
+        {
+          name: "전산", active: false, usable: true, reason: "",
+          dimension: "공고명", dimension_label: "공고명", description: "공고명 포함 '전산'",
+          state: { search: "", pruned: [], columns: { 공고명: { text: "전산", values: null, range: null } } },
         },
       ],
+      preset_groups: [
+        { key: "추정가격", label: "추정가격", names: ["소기업", "중소기업"] },
+        { key: "공고명", label: "공고명", names: ["전산"] },
+      ],
+      builder: {
+        total: 2, can_create: true, reason: "",
+        adhoc: { search: "전산", pruned: [], columns: {
+          금액: { text: "", values: null, range: {
+            first: { op: "ge", operand: "1,000,000" }, second: null, joiner: "and" } },
+        } },
+        columns: [
+          { name: "공고명", kind: "text", label: "텍스트", hidden: false, values: ["전산장비", "사무비품"], more: 0 },
+          { name: "금액", kind: "amount", label: "금액", hidden: false, values: [], more: 0 },
+        ],
+      },
     },
     table: {
       columns: [{ name: "공고명", kind: "text" }, { name: "금액", kind: "amount" }],
@@ -955,42 +986,152 @@ async function runJobMirror(ctx) {
   out.branch_bg = win.getComputedStyle(branchChip).backgroundColor;
   out.branch_border_style = win.getComputedStyle(branchChip).borderStyle;
 
-  /* 저장한 필터 칩(이름 붙인 필터, #1081 뒤 U 라운드) — 켜짐·꺼짐 배경 대조·경고 사유·
-     저장 단추 가부·토글 발신·이름 바꾸기/삭제 인라인 메뉴. */
+  /* 저장한 필터 칩(2026-09-30 재설계) — 같은 열 무리(알약 + 표지)·홀로 선 칩·켜짐/꺼짐 배경
+     대조·경고 사유·조건 title·⋯ 고치기의 머묾 노출(탭 순서 유지)·토글 발신·「+ 필터」 빌더. */
   out.preset_chips = doc.querySelectorAll("#jobFilterChips .fchip.preset").length;
   out.preset_pressed = Array.from(doc.querySelectorAll(".preset-toggle")).map(
     (e) => e.getAttribute("aria-pressed"),
   );
+  const cluster = doc.querySelector("#jobFilterChips .fcluster");
+  out.preset_cluster = cluster ? {
+    label: cluster.querySelector(".fcluster-label")?.textContent || "",
+    chips: Array.from(cluster.querySelectorAll(".preset-toggle")).map((e) => e.textContent),
+    border: win.getComputedStyle(cluster).borderTopStyle,
+  } : null;
+  out.preset_single_outside = !doc.querySelector('.fcluster [data-preset="전산"]')
+    && !!doc.querySelector('#jobFilterChips [data-preset="전산"]');
   const onToggle = doc.querySelector('.preset-toggle[data-preset="소기업"]');
   const warnToggle = doc.querySelector('.preset-toggle[data-preset="중소기업"]');
   out.preset_warn_title = warnToggle.title;
   out.preset_warn_aria_disabled = warnToggle.getAttribute("aria-disabled");
+  out.preset_on_title = onToggle.title;
   out.preset_on_bg = win.getComputedStyle(onToggle.closest(".fchip.preset")).backgroundColor;
   out.preset_off_bg = win.getComputedStyle(warnToggle.closest(".fchip.preset")).backgroundColor;
-  const saveBtn = doc.querySelector('button[data-act="filter-save"]');
-  out.filter_save_shown = !!saveBtn && !saveBtn.disabled;
+  const idleEdit = doc.querySelector('[data-preset-edit="전산"]');
+  out.preset_edit_idle_opacity = win.getComputedStyle(idleEdit).opacity;
+  out.preset_edit_in_tab_order = idleEdit.tabIndex >= 0
+    && win.getComputedStyle(idleEdit).display !== "none";
+  idleEdit.focus();
+  await ctx.sleep(220);                                // 전이(≤150ms)가 끝난 뒤 읽는다
+  out.preset_edit_focus_opacity = win.getComputedStyle(idleEdit).opacity;
+  idleEdit.blur();
+  const newBtn = doc.querySelector('#jobFilterChips [data-act="filter-new"]');
+  out.filter_new_shown = !!newBtn && isShown(ctx, newBtn);
+  out.filter_save_gone = !doc.querySelector('[data-act="filter-save"]');
 
   const presetSent = [];
+  const countSent = [];
+  const listSent = [];
   const presetStub = stubDispatch(services, (realCall) => function (screen, action, payload) {
     if (action === "toggle_filter_preset") {
       presetSent.push(payload.name);
       return Promise.resolve({ ok: true, active: false });
     }
+    if (action === "count_filter_state") {
+      countSent.push(payload.state);
+      return Promise.resolve({ ok: true, count: 1, total: 2, summary: "금액 ≥ '1,000,000'" });
+    }
+    if (action === "list_filter_columns") {
+      listSent.push(payload.query);
+      return Promise.resolve({ ok: true, columns: [
+        { name: "공고명", kind: "text", label: "텍스트", hidden: false, segments: [["공고", true], ["명", false]] },
+        { name: "금액", kind: "amount", label: "금액", hidden: false, segments: [["금액", false]] },
+      ] });
+    }
     return realCall.call(services.Bridge, screen, action, payload);
   });
   onToggle.click();                                   // ※ 가시성 단언 없음(레거시 그대로)
   await ctx.sleep(0);
-  presetStub.restore();
   out.preset_toggle_sent = String(JSON.stringify(presetSent));
 
-  const presetMenuBtn = doc.querySelector('[data-preset-menu="소기업"]');
-  presetMenuBtn.click();                               // 메뉴 열기
-  await ctx.sleep(0);
-  out.preset_menu_items = Array.from(doc.querySelectorAll(".preset-menu button")).map(
-    (e) => e.textContent,
-  );
-  presetMenuBtn.click();                               // 메뉴 닫기(뒤 단계 오염 금지)
-  await ctx.sleep(0);
+  /* 「+ 필터」 — 지금 조건(금액 ≥ · 검색)으로 채워진 카드가 트리거 아래에 서고, 살아 있는 수를
+     묻고, 맨 아래 열 콤보박스가 Python 거르기로 목록을 세워 ↓/Enter 로 카드를 더하며, Escape 로
+     닫히고 초점이 트리거로 돌아온다. */
+  newBtn.click();
+  await ctx.sleep(400);                                // 150ms 지연 + 응답 + 그리기
+  const builderRoot = doc.getElementById("jobFilterBuilder");
+  out.builder_open = !!builderRoot && isShown(ctx, builderRoot);
+  out.builder_title = builderRoot?.querySelector("#jobFilterBuilderTitle")?.textContent || "";
+  out.builder_note = builderRoot?.querySelector("[data-fb-from-adhoc]")?.textContent || "";
+  out.builder_cards = builderRoot
+    ? Array.from(builderRoot.querySelectorAll(".fb-card[data-fb-row] .fb-card-name")).map((e) => e.textContent)
+    : [];
+  out.builder_and = builderRoot
+    ? Array.from(builderRoot.querySelectorAll(".fb-and")).map((e) => e.textContent) : [];
+  out.builder_count = builderRoot?.querySelector("[data-fb-count] .fb-status-text")?.textContent || "";
+  out.builder_meter = builderRoot?.querySelector(".fb-meter-fill")?.style.transform || "";
+  out.builder_name_placeholder = builderRoot?.querySelector("[data-fb-name]")?.placeholder || "";
+  out.builder_count_sent = countSent.length > 0
+    && JSON.stringify(countSent[countSent.length - 1]?.columns?.금액?.range?.first || null);
+  out.builder_operand_align = (() => {
+    const input = builderRoot?.querySelector(".fb-operand.num");
+    return input ? win.getComputedStyle(input).textAlign : "";
+  })();
+  /* 배치는 연 직후에 잰다 — 트리거 아래에 붙고, 아래가 모자라면 위로 뒤집힌다(`Popover.place`). */
+  const openRect = builderRoot?.getBoundingClientRect();
+  const anchor = newBtn.getBoundingClientRect();
+  out.builder_anchored = !!openRect
+    && (openRect.top >= anchor.bottom - 1 || openRect.bottom <= anchor.top + 1);
+  out.builder_geometry = openRect ? {
+    viewport: [win.innerWidth, win.innerHeight], trigger: [Math.round(anchor.top), Math.round(anchor.bottom)],
+    top: Math.round(openRect.top), bottom: Math.round(openRect.bottom),
+    placement: builderRoot.dataset.placement || "",
+  } : null;
+  out.builder_width = openRect ? Math.round(openRect.width) : 0;
+  out.builder_fits_viewport = !!openRect && openRect.top >= 0 && openRect.bottom <= win.innerHeight + 1;
+  const picker = doc.getElementById("jobFilterColumnPicker");
+  out.builder_focus_picker = doc.activeElement === picker;
+  out.picker_role = picker?.getAttribute("role") || "";
+  if (picker) {
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
+    setter.call(picker, "공고");
+    picker.dispatchEvent(new win.Event("input", { bubbles: true }));
+    await ctx.sleep(250);                              // 80ms 지연 + 응답 + 그리기
+    out.picker_expanded = picker.getAttribute("aria-expanded");
+    out.picker_query_sent = listSent[listSent.length - 1] || "";
+    out.picker_options = Array.from(doc.querySelectorAll("#jobFilterColumnList [role=option]")).map(
+      (e) => e.querySelector(".fb-option-name")?.textContent || "",
+    );
+    out.picker_mark = doc.querySelector("#jobFilterColumnList mark")?.textContent || "";
+    /* 목록이 펼쳐져 빌더가 자라도 화면 안에 다시 선다(이름·footer 가 밀려 나가지 않는다). */
+    await ctx.sleep(80);
+    const grownRect = builderRoot.getBoundingClientRect();
+    const footRect = builderRoot.querySelector(".fb-foot")?.getBoundingClientRect();
+    const trig = newBtn.getBoundingClientRect();
+    out.picker_fits_viewport = grownRect.top >= 0 && grownRect.bottom <= win.innerHeight + 1
+      && !!footRect && footRect.bottom <= win.innerHeight + 1;
+    /* 자라도 트리거에 붙은 채다(아래면 트리거 아래에서 시작, 위면 트리거 위에서 끝) — 가리지 않는다. */
+    out.picker_anchored = grownRect.top >= trig.bottom - 1 || grownRect.bottom <= trig.top + 1;
+    out.picker_geometry = {
+      viewport: [win.innerWidth, win.innerHeight], trigger: [Math.round(trig.top), Math.round(trig.bottom)],
+      top: Math.round(grownRect.top), bottom: Math.round(grownRect.bottom),
+      placement: builderRoot.dataset.placement || "",
+    };
+    picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await ctx.sleep(0);
+    picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await ctx.sleep(80);
+    out.picker_added = Array.from(builderRoot.querySelectorAll(".fb-card[data-fb-row] .fb-card-name")).map(
+      (e) => e.textContent,
+    );
+    out.picker_focus_in_new_card = !!doc.activeElement?.closest?.('.fb-card[data-fb-column="공고명"]');
+  }
+  doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await ctx.sleep(50);
+  out.builder_closed_on_escape = !doc.getElementById("jobFilterBuilder");
+  out.builder_focus_returned = doc.activeElement === newBtn;
+
+  /* ⋯ 고치기 — 제목·이름 프리필·삭제 단추, 바깥 누름으로 닫힌다. */
+  doc.querySelector('[data-preset-edit="소기업"]').click();
+  await ctx.sleep(50);
+  const editRoot = doc.getElementById("jobFilterBuilder");
+  out.edit_title = editRoot?.querySelector("#jobFilterBuilderTitle")?.textContent || "";
+  out.edit_name = editRoot?.querySelector("[data-fb-name]")?.value || "";
+  out.edit_delete = !!editRoot?.querySelector('[data-act="fb-delete"]');
+  doc.body.dispatchEvent(new win.MouseEvent("mousedown", { bubbles: true }));
+  await ctx.sleep(50);
+  out.edit_closed_outside = !doc.getElementById("jobFilterBuilder");
+  presetStub.restore();
 
   out.strip_shown = isShown(ctx, doc.getElementById("jobSelStrip"));
   out.strip_text = doc.getElementById("jobSelStrip").textContent;

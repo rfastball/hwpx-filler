@@ -170,6 +170,8 @@ class JobController:
     name = "job"
     _DATA_ACTIONS = frozenset(ZONE_MUTATIONS) | {
         "filter_panel",
+        "count_filter_state",
+        "list_filter_columns",
         "range_draft_open",
         "range_draft_apply",
         "range_draft_cancel",

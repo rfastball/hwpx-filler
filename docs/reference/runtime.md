@@ -155,6 +155,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `browse_query` | — | `text` |
 | `browse_tab` | — | `tab` |
 | `cancel_generation` | — | — |
+| `count_filter_state` | `state` | — |
+| `create_filter_preset` | `name`, `state` | `from_adhoc`, `epoch` |
 | `delete_filter_preset` | `name` | `epoch` |
 | `dismiss_data_notice` | — | — |
 | `filter_clear` | — | `epoch` |
@@ -168,6 +170,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `filter_search` | — | `text`, `epoch` |
 | `guard_state` | — | — |
 | `hide_column` | `column` | `epoch` |
+| `list_filter_columns` | — | `query` |
 | `load_pool` | `key` | — |
 | `open_slot_configuration` | — | — |
 | `open_workbench` | — | — |
@@ -181,10 +184,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `refresh_slot_configuration` | — | `configuration_token` |
 | `relink_template` | `name` | `path`, `confirm` |
 | `remount_data` | — | `confirm` |
-| `rename_filter_preset` | `name`, `new_name` | `epoch` |
 | `rename_job` | `name` | `new` |
 | `resolve_execution` | — | — |
-| `save_filter_preset` | `name` | `epoch` |
 | `save_selection_preset` | `configuration_token`, `name` | `confirmed_overwrite_key` |
 | `select_failed` | — | — |
 | `select_job` | `name` | `confirm` |
@@ -200,6 +201,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `toggle_filter_preset` | `name` | `epoch` |
 | `toggle_record` | `index`, `value` | `epoch` |
 | `unhide_columns` | — | `epoch` |
+| `update_filter_preset` | `name`, `new_name`, `state` | `epoch` |
 
 ### library
 

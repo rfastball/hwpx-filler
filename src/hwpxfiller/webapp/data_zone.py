@@ -12,13 +12,16 @@ from pathlib import Path
 from typing import Callable
 
 from ..domain.dataset_reference import excel_identity, pclm_identity
+from ..domain.jamo import jamo_find
 from ..external.dataset_store import DatasetPoolRegistry
 from ..viewmodel.filter_state import (
+    KIND_AMOUNT,
+    KIND_DATE,
+    KIND_TEXT,
     FilterModel,
     FilterView,
-    RangeClause,
-    RangeCondition,
     cell_text,
+    range_condition_from_payload,
     sniff_column_kinds,
 )
 from ..viewmodel.selection_state import SelectionModel
@@ -38,7 +41,8 @@ EMPTY_FILTER = {
     "columns": [],
     "adhoc_active": False,
     "presets": [],
-    "preset_save": {"can": False, "reason": ""},
+    "preset_groups": [],
+    "builder": {"columns": [], "total": 0, "adhoc": None, "can_create": False, "reason": ""},
 }
 EMPTY_TABLE = {
     "columns": [],
@@ -53,7 +57,12 @@ VIEW_ORDER_DESC = "sourceDesc"
 VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
-#: 저장한 필터를 들 등록 데이터가 없는 마운트(등록하지 않은 파일)의 「필터 저장」 비활성 사유.
+#: 필터 빌더의 열 유형 표지(카드·콤보박스 줄) — 유형 판정과 함께 여기서 짓는다(표면이 되짓지 않는다).
+KIND_LABELS = {KIND_TEXT: "텍스트", KIND_AMOUNT: "금액", KIND_DATE: "날짜"}
+#: 빌더의 값 태그 상한 — 넘는 값은 「…외 N개」로 수만 말한다(고른 값은 상한 밖이어도 늘 보인다).
+BUILDER_VALUE_CAP = 50
+
+#: 저장한 필터를 들 등록 데이터가 없는 마운트(등록하지 않은 파일)의 「+ 필터」 거절 사유.
 _PRESET_NO_HOME = "필터는 등록 데이터에만 저장할 수 있습니다."
 
 
@@ -489,22 +498,11 @@ class JobDataSession:
         (confirm-or-alarm: 조용한 강등 대신 보이는 거절).
         """
         fm = self._filter_or_raise()
-        first = p.get("first")
         try:
-            if not first or not str(first.get("operand", "")).strip():
-                fm.set_range(p["column"], None)
-                return {"ok": True}
-            second = p.get("second")
-            cond = RangeCondition(
-                first=RangeClause(first["op"], str(first["operand"]).strip()),
-                second=(
-                    RangeClause(second["op"], str(second["operand"]).strip())
-                    if second and str(second.get("operand", "")).strip()
-                    else None
-                ),
-                joiner=p.get("joiner", "and"),
-            )
-            fm.set_range(p["column"], cond)
+            # 필터 빌더와 같은 옮김 함수 — 빈 첫 절 = 해제, 빈 둘째 절 = 1절 조건.
+            fm.set_range(p["column"], range_condition_from_payload(
+                p.get("first"), p.get("second"), p.get("joiner", "and"),
+            ))
             return {"ok": True}
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
@@ -543,10 +541,10 @@ class JobDataSession:
     _do_filter_panel.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     # ------------------------------------------- 저장한 필터(이름 붙인 칩, 2026-09-30)
-    # 켜고 끄기는 세션(존 필터)만 바꾸고, 저장·이름 바꾸기·삭제는 **등록 데이터**에 쓴다.
+    # 켜고 끄기는 세션(존 필터)만 바꾸고, 만들기·고치기·삭제는 **등록 데이터**에 쓴다.
     # 정의 변경은 초안 모델에서 검증 → 영속 → 원자 교체 순이다: 쓰기가 실패하면 화면의
     # 정의도 그대로다(영속과 화면이 갈리지 않는다). 거절은 ``{"ok": False, "error"}`` 로
-    # 돌려 이름 입력창·알림이 그대로 재진술한다(범위 조건 거절과 같은 경로).
+    # 돌려 필터 빌더가 제자리에서 재진술한다(범위 조건 거절과 같은 경로).
     def _preset_commit(self, trial: FilterModel, renamed: "dict[str, str] | None" = None) -> None:
         """검증된 초안의 정의를 등록 데이터에 쓰고, 초안을 존 필터로 원자 교체한다.
 
@@ -563,33 +561,101 @@ class JobDataSession:
             raise ValueError(_PRESET_NO_HOME)
         return self._filter_or_raise().clone()
 
-    def _do_save_filter_preset(self, p: dict) -> dict:
-        """「필터 저장」 — 지금 조건을 이름으로 저장하고 칩으로 켠다(보이는 행은 그대로)."""
+    @staticmethod
+    def _refusal(exc: ValueError) -> dict:
+        """거절 응답 — 문장 그대로 + 가리키는 열(있으면). 빌더가 그 열의 카드 아래에 세운다."""
+        out = {"ok": False, "error": str(exc)}
+        column = getattr(exc, "column", "")
+        if column:
+            out["column"] = column
+        return out
+
+    def _do_create_filter_preset(self, p: dict) -> dict:
+        """「+ 필터」 빌더의 저장 — 조건을 이름으로 저장하고 칩을 켠다.
+
+        ``from_adhoc`` 는 빌더가 지금 조건으로 채워져 열렸다는 표지다 — 저장 뒤 지금 조건을
+        비워 정의가 칩 하나로 접힌다(보이는 행은 그대로).
+        """
         try:
             trial = self._preset_trial()
-            name = trial.save_preset(str(p.get("name", "")))
+            name = trial.create_preset(
+                str(p.get("name", "")), p.get("state"), from_adhoc=bool(p.get("from_adhoc")),
+                records=self.records,
+            )
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
+            return self._refusal(exc)
         self._preset_commit(trial)
         return {"ok": True, "name": name}
 
+    def _do_update_filter_preset(self, p: dict) -> dict:
+        """칩 ⋯ 빌더의 저장 — 이름·조건을 고친다. 칩 순서·켜짐은 그대로 잇는다."""
+        name = str(p["name"])
+        try:
+            trial = self._preset_trial()
+            new_name = trial.update_preset(
+                name, str(p.get("new_name", "")), p.get("state"), records=self.records,
+            )
+        except ValueError as exc:
+            return self._refusal(exc)
+        self._preset_commit(trial, renamed={name: new_name})
+        return {"ok": True, "name": new_name}
+
+    def _do_count_filter_state(self, p: dict) -> dict:
+        """빌더의 살아 있는 수 — 후보 조건 하나만으로 지금 데이터에서 보이는 행 수 + 요약 문안.
+
+        무변이 질의(push 없음). ``summary`` 는 이름 칸 자리표시자(빈 이름 저장 때의 이름)다.
+        검증 거절은 ``{"ok": False, "error", "column"?}`` 로 돌려 빌더가 그 열의 카드 아래(열을
+        모르면 목록 아래)에서 재진술한다(알림 없음).
+        """
+        fm = self._filter_or_raise()
+        try:
+            count = fm.count_state(p.get("state"), self.records)
+            summary = fm.describe_state(p.get("state"), self.records)
+        except ValueError as exc:
+            return self._refusal(exc)
+        return {"ok": True, "count": count, "total": len(self.records), "summary": summary}
+
+    _do_count_filter_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_list_filter_columns(self, p: dict) -> dict:
+        """빌더 콤보박스의 열 목록 — 열 이름을 **전체 열 검색과 같은 자모 부분일치**로 거른다.
+
+        브라우저에 두 번째 매처를 두지 않으려고 Python 이 거르고, 강조는 표 셀과 같은 세그먼트
+        계약(원문 조각 + 매치 여부)으로 돌려준다. 빈 질의는 전 열이다. 순서는 표의 숨김 선언(#341)을
+        따른다 — 보이는 열(표 순서) 다음에 숨긴 열(``hidden``)이 선다. 이미 카드가 선 열을 빼는 일,
+        숨긴 열 접기, 「전체 열 검색」 줄은 표면이 한다(빌더 안 상태).
+        """
+        fm = self._filter_or_raise()
+        query = str(p.get("query") or "").strip()
+        hidden = self._zone_hidden()
+        columns = []
+        ordered = [c for c in fm.columns if c not in hidden] + [c for c in fm.columns if c in hidden]
+        for col in ordered:
+            found = jamo_find(col, query) if query else (0, 0)
+            if found is None:
+                continue
+            start, end = found
+            segments = [
+                (piece, hit)
+                for piece, hit in ((col[:start], False), (col[start:end], True), (col[end:], False))
+                if piece
+            ]
+            kind = fm.kind(col)
+            columns.append({
+                "name": col, "kind": kind, "label": KIND_LABELS.get(kind, ""),
+                "hidden": col in hidden, "segments": segments,
+            })
+        return {"ok": True, "columns": columns}
+
+    _do_list_filter_columns.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
     def _do_toggle_filter_preset(self, p: dict) -> dict:
-        """저장한 필터 칩 누르기 — 켜진 칩끼리는 누적(교집합)된다. 쓸 수 없는 칩은 거절."""
+        """저장한 필터 칩 누르기 — 같은 차원끼리 「또는」, 차원 사이 「그리고」로 합성된다."""
         try:
             active = self._filter_or_raise().toggle_preset(str(p["name"]))
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "active": active}
-
-    def _do_rename_filter_preset(self, p: dict) -> dict:
-        name = str(p["name"])
-        try:
-            trial = self._preset_trial()
-            new_name = trial.rename_preset(name, str(p.get("new_name", "")))
-        except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
-        self._preset_commit(trial, renamed={name: new_name})
-        return {"ok": True, "name": new_name}
 
     def _do_delete_filter_preset(self, p: dict) -> dict:
         """저장한 필터 삭제 — 켜져 있었으면 함께 꺼진다(보기 변화는 칩 줄이 말한다)."""
@@ -625,7 +691,7 @@ class JobDataSession:
         """등록 데이터의 저장한 필터 정의를 새 필터에 심는다(필터 설치 때 1회).
 
         슬롯이 그사이 사라졌거나 정의가 손상됐으면 저장할 곳이 없는 마운트로 접는다 —
-        「필터 저장」이 사유와 함께 막히고, 손상 항목은 등록 데이터 목록이 따로 드러낸다.
+        「+ 필터」가 사유와 함께 막히고, 손상 항목은 등록 데이터 목록이 따로 드러낸다.
         """
         try:
             self._preset_key = self._resolve_preset_home()
@@ -634,19 +700,73 @@ class JobDataSession:
         except (FileNotFoundError, ValueError):
             self._preset_key = ""
 
-    def preset_rows(self, fm: FilterModel) -> "list[dict]":
-        """칩 줄의 저장한 필터 칩 소재 — 켜짐·사용 가부·사유(판정은 모델)."""
+    def preset_rows(self, fm: FilterModel) -> "tuple[list[dict], list[dict]]":
+        """칩 줄의 저장한 필터 소재 — ``(칩 행, 무리)``. 판정은 전부 모델이 한다.
+
+        칩 행은 무리(차원) 첫 등장 순 → 저장 순으로 선다. 칩마다 켜짐·사용 가부·사유, 차원
+        열쇠·표지, 조건 문안(칩 ``title`` — 정의줄과 같은 생산자), 저장본(⋯ 고치기 프리필)을
+        싣는다. 무리는 ``{key, label, names}`` 로 렌더 순서 그대로다 — 표면은 칩이 둘 이상인
+        무리만 묶음으로 그린다.
+        """
         active = set(fm.active_presets)
-        rows = []
-        for preset in fm.presets:
-            usable, reason = fm.preset_status(preset["name"])
-            rows.append({
-                "name": preset["name"],
-                "active": preset["name"] in active,
-                "usable": usable,
-                "reason": reason,
+        states = {preset["name"]: preset["state"] for preset in fm.presets}
+        rows: "list[dict]" = []
+        groups: "list[dict]" = []
+        for names in fm.preset_groups():
+            key, label = fm.dimension_key(names[0]), fm.dimension_label(names[0])
+            groups.append({"key": key, "label": label, "names": list(names)})
+            for name in names:
+                usable, reason = fm.preset_status(name)
+                rows.append({
+                    "name": name,
+                    "active": name in active,
+                    "usable": usable,
+                    "reason": reason,
+                    "dimension": key,
+                    "dimension_label": label,
+                    "description": fm.preset_description(name, self.records) if usable else "",
+                    "state": states[name],
+                })
+        return rows, groups
+
+    def builder_source(self, fm: FilterModel) -> dict:
+        """필터 빌더의 소재 — 열(이름·유형·텍스트 열의 값 목록)과 전체 행 수, 프리필 재료.
+
+        값 목록은 **전 레코드** 기준이다(저장본은 지금 조건과 따로 평가되므로 열 머리 패널처럼
+        다른 조건 통과 행으로 좁히지 않는다). 등장 순, ``""``(빈값)은 말미 — 열 머리 패널과 같은
+        규칙이다. 태그는 :data:`BUILDER_VALUE_CAP` 개까지만 싣고 넘는 수는 ``more`` 로 말한다(표면의
+        「…외 N개」). 유형·표지·값은 여기서만 판정한다 — 표면이 다시 짓지 않는다.
+        """
+        columns = []
+        hidden = self._zone_hidden()
+        for col in fm.columns:
+            kind = fm.kind(col)
+            values: "list[str]" = []
+            if kind == KIND_TEXT:
+                seen: "dict[str, None]" = {}
+                has_empty = False
+                for record in self.records:
+                    value = cell_text(record, col)
+                    if value == "":
+                        has_empty = True
+                    else:
+                        seen.setdefault(value, None)
+                values = list(seen) + ([""] if has_empty else [])
+            more = max(0, len(values) - BUILDER_VALUE_CAP)
+            columns.append({
+                "name": col, "kind": kind, "label": KIND_LABELS.get(kind, ""),
+                # 표에서 숨긴 열(보기 축) — 콤보박스가 뒤로 접는다(판정은 여기서만).
+                "hidden": col in hidden,
+                "values": values[:BUILDER_VALUE_CAP], "more": more,
             })
-        return rows
+        return {
+            "columns": columns,
+            "total": len(self.records),
+            # 「+ 필터」를 지금 조건으로 채워 열 재료 — 없으면 빈 빌더(행 하나)로 연다.
+            "adhoc": fm.adhoc_state() if fm.has_adhoc() else None,
+            "can_create": bool(self._preset_key),
+            "reason": "" if self._preset_key else _PRESET_NO_HOME,
+        }
 
     # ------------------------------------------- 직전 필터 재적용(건 연속성, 결정 28)
     def stash_filter(self) -> None:
@@ -805,7 +925,7 @@ class JobDataSession:
             filter_parts = (
                 sum(1 for c in self.filter.columns if self.filter.has_condition(c))
                 + (1 if self.filter.search_text else 0)
-                + len(self.filter.active_presets)
+                + len(self.filter.active_preset_groups())
             )
         in_def = extra = 0
         armed = False
@@ -854,6 +974,7 @@ class JobDataSession:
         visible = self.display_indices(self._zone_visible(view))  # 표 순서 = 표시순 투영
         vis_set = set(visible)
         columns = fm.columns
+        presets, preset_groups = self.preset_rows(fm)
         table_rows = [
             {
                 **lead_for(i),
@@ -879,12 +1000,10 @@ class JobDataSession:
             "chips": view.adhoc_parts(),
             "definition": view.describe(),
             "adhoc_active": fm.has_adhoc(),
-            "presets": self.preset_rows(fm),
-            # 「필터 저장」 가부 — 지금 조건이 있고 저장할 등록 데이터가 있을 때만.
-            "preset_save": {
-                "can": bool(self._preset_key) and fm.has_adhoc(),
-                "reason": "" if self._preset_key else _PRESET_NO_HOME,
-            },
+            "presets": presets,
+            "preset_groups": preset_groups,
+            # 「+ 필터」 빌더의 소재 — 열 유형·값 목록·프리필·저장 가부(판정은 여기서만).
+            "builder": self.builder_source(fm),
             "branches": view.branches,  # 가지 칩(× 프루닝)
             "columns": [
                 {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)} for c in columns

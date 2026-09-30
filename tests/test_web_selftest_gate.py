@@ -1171,7 +1171,7 @@ class TestWebSelftestGate:
         assert j["ficos"] == 2, f"열 머리 필터 아이콘 수가 다릅니다: {j['ficos']!r}"
         assert "「전산」" in j["chips_text"], f"칩 줄 정의 재진술 누락: {j['chips_text']!r}"
         assert j["branch_prune"] is True, "가지 칩 × 프루닝 어포던스가 없습니다."
-        assert {"필터", "가지", "선택"} <= set(j["filter_role_labels"])
+        assert {"열 조건", "가지", "선택"} <= set(j["filter_role_labels"])
         assert j["definition_bg"] != j["branch_bg"]
         assert j["branch_border_style"] == "solid", "가지 칩 점선 방언이 남았습니다."
         assert j["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
@@ -1186,32 +1186,91 @@ class TestWebSelftestGate:
         # 재편에서 죽었다 — 그 수치를 정말 다시 물어야 하는 자리는 선택을 파기하는 전이의
         # 확인 모달 하나이고, 그 문안은 아래 `guard_body` 가 되읽는다.
 
-    def test_job_preset_chips_render_toggle_and_menu(self, selftest_result: dict) -> None:
-        # 저장한 필터 칩(이름 붙인 필터) — 판정(켜짐·사용 가부·사유·저장 가부)은 Python이
-        # 싣고, 화면은 그리기와 동사 호출만 한다. 두 칩(켜짐/쓸 수 없음)으로 양극을 함께 잰다.
+    def test_job_preset_chips_cluster_toggle_and_edit(self, selftest_result: dict) -> None:
+        # 저장한 필터 칩(2026-09-30 재설계) — 판정(켜짐·사용 가부·사유·차원·무리·조건 문안)은
+        # Python이 싣고, 화면은 그리기와 동사 호출만 한다. 같은 열의 두 칩은 알약 무리로,
+        # 홀로 선 칩은 무리 밖에 선다. ⋯ 고치기는 머물 때만 보이지만 탭 순서에는 늘 있다.
         j = probe(selftest_result, "job_mirror")
-        assert j["preset_chips"] == 2, f"저장한 필터 칩 렌더 수가 다릅니다: {j['preset_chips']!r}"
-        assert j["preset_pressed"] == ["true", "false"], (
+        assert j["preset_chips"] == 3, f"저장한 필터 칩 렌더 수가 다릅니다: {j['preset_chips']!r}"
+        assert j["preset_pressed"] == ["true", "false", "false"], (
             f"켜짐/꺼짐 표지가 순서대로 나오지 않았습니다: {j['preset_pressed']!r}"
         )
+        assert j["preset_cluster"] == {
+            "label": "추정가격", "chips": ["소기업", "중소기업"], "border": "solid",
+        }, f"같은 열 무리가 다르게 섰습니다: {j['preset_cluster']!r}"
+        assert j["preset_single_outside"] is True, "홀로 선 칩이 무리 안에 들어갔습니다."
         assert j["preset_warn_aria_disabled"] == "true", (
             "쓸 수 없는 필터 칩에 aria-disabled 가 없습니다 — 눌리는 것은 허용해도 표지는 있어야 합니다."
         )
         assert j["preset_warn_title"] == "이 필터의 열이 지금 데이터에 없습니다: 추정가격", (
             f"쓸 수 없는 사유가 title 로 안 왔습니다: {j['preset_warn_title']!r}"
         )
+        assert j["preset_on_title"] == "소기업: 추정가격 < '100,000,000'", (
+            f"켜진 칩의 title 이 Python 조건 문안이 아닙니다: {j['preset_on_title']!r}"
+        )
         assert j["preset_on_bg"] != j["preset_off_bg"], (
             "켜진 칩과 쓸 수 없는 칩의 배경이 같습니다 — 색만으로 상태를 가르면 안 되지만 배경 자체는 갈라야 합니다."
         )
-        assert j["filter_save_shown"] is True, (
-            "임시 조건이 있을 때 「필터 저장」 단추가 나오지 않았습니다."
+        assert j["preset_edit_idle_opacity"] == "0" and j["preset_edit_focus_opacity"] == "1", (
+            "⋯ 고치기가 머묾·초점 전에는 숨고 초점이 들면 드러나야 합니다: "
+            f"{j['preset_edit_idle_opacity']!r} → {j['preset_edit_focus_opacity']!r}"
+        )
+        assert j["preset_edit_in_tab_order"] is True, "⋯ 고치기가 탭 순서에서 빠졌습니다."
+        assert j["filter_new_shown"] is True and j["filter_save_gone"] is True, (
+            "「+ 필터」가 서고 퇴역한 「필터 저장」은 없어야 합니다."
         )
         assert j["preset_toggle_sent"] == '["소기업"]', (
             f"칩 클릭이 toggle_filter_preset 에 이름을 실어 보내지 않았습니다: {j['preset_toggle_sent']!r}"
         )
-        assert j["preset_menu_items"] == ["이름 바꾸기", "삭제"], (
-            f"⋯ 메뉴 항목이 다릅니다: {j['preset_menu_items']!r}"
+
+    def test_job_filter_builder_opens_counts_and_closes(self, selftest_result: dict) -> None:
+        # 「+ 필터」 빌더 — 지금 조건(금액 범위 + 검색)이 열마다 카드로 서고 카드 사이·새 조건 앞에
+        # 「그리고」가 선다. 살아 있는 수는 footer 상태(굵은 수 / 전체 + 막대)로, 요약은 이름 칸
+        # 자리표시자로 선다. 맨 아래 열 콤보박스는 Python 거르기(list_filter_columns)로 목록을 세우고
+        # 이미 카드가 선 열은 빼며, ↓/Enter 로 카드를 더하고 그 카드로 초점을 옮긴다.
+        # ⋯ 고치기는 같은 면을 고치기 모드로 열고 바깥 누름에 닫힌다.
+        j = probe(selftest_result, "job_mirror")
+        assert j["builder_open"] is True and j["builder_title"] == "필터 만들기"
+        assert j["builder_note"] == "열 머리 조건에서 채움"
+        assert j["builder_cards"] == ["금액", "전체 열 검색"] and j["builder_and"] == ["그리고", "그리고"], (
+            f"프리필 카드가 다릅니다: cards={j['builder_cards']!r} and={j['builder_and']!r}"
         )
+        assert j["builder_count"] == "1행 / 2행" and j["builder_meter"] == "scaleX(0.5)", (
+            f"살아 있는 수가 서지 않았습니다: {j['builder_count']!r} {j['builder_meter']!r}"
+        )
+        assert j["builder_name_placeholder"] == "금액 ≥ '1,000,000'", "이름 칸 자리표시자가 요약이 아닙니다."
+        assert j["builder_count_sent"] == '{"op":"ge","operand":"1,000,000"}', (
+            f"수 질의가 프리필 조건을 싣지 않았습니다: {j['builder_count_sent']!r}"
+        )
+        assert j["builder_operand_align"] == "right", "금액 칸은 오른쪽 정렬이어야 합니다."
+        assert j["builder_focus_picker"] is True and j["picker_role"] == "combobox", (
+            "빌더가 열리면 열 콤보박스에 초점이 가야 합니다."
+        )
+        assert (j["picker_expanded"], j["picker_query_sent"]) == ("true", "공고")
+        assert j["picker_options"] == ["공고명"] and j["picker_mark"] == "공고", (
+            f"콤보박스 목록이 다릅니다(쓴 열·검색 카드는 빠진다): {j['picker_options']!r}"
+        )
+        assert j["picker_added"] == ["금액", "전체 열 검색", "공고명"], (
+            f"카드가 더해지지 않았습니다: {j['picker_added']!r}"
+        )
+        assert j["picker_focus_in_new_card"] is True, "고른 열의 카드로 초점이 가지 않았습니다."
+        assert j["picker_fits_viewport"] is True, (
+            "열 목록이 펼쳐진 빌더가 화면 밖으로 자랐습니다 — 이름·footer 가 밀려 나가면 안 됩니다: "
+            f"{j['picker_geometry']!r}"
+        )
+        assert j["picker_anchored"] is True, (
+            f"자란 빌더가 트리거를 가렸습니다(높이를 잘라 붙은 채여야 합니다): {j['picker_geometry']!r}"
+        )
+        assert j["builder_anchored"] is True, (
+            f"빌더가 트리거에 붙지 않았습니다(아래 또는 뒤집힌 위): {j['builder_geometry']!r}"
+        )
+        assert j["builder_fits_viewport"] is True, "빌더가 화면 밖으로 나갔습니다(높이 = 화면 − 48px)."
+        assert 440 <= j["builder_width"] <= 470, f"빌더 폭이 다릅니다: {j['builder_width']!r}"
+        assert j["builder_closed_on_escape"] is True and j["builder_focus_returned"] is True, (
+            "Escape 로 닫히고 초점이 「+ 필터」로 돌아와야 합니다."
+        )
+        assert (j["edit_title"], j["edit_name"], j["edit_delete"]) == ("필터 고치기", "소기업", True)
+        assert j["edit_closed_outside"] is True, "바깥 누름에 빌더가 닫히지 않았습니다."
 
     def test_job_datazone_keeps_row_semantics_and_column_kinds(self, selftest_result: dict) -> None:
         """H-06: native 행/셀 의미와 Python 열 kind가 실 표 조판까지 도달한다."""

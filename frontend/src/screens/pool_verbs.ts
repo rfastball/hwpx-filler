@@ -44,7 +44,7 @@ export function dataRowMenuItems(row: Obj | null): ContextMenuItem[] {
 
 /** 계약 목록 블록이 아직 없을 때의 사유 — 죽은 버튼 대신 비활성 + `title`. */
 export const PCLM_UNAVAILABLE =
-  "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요.";
+  "계약 목록 정보를 아직 읽지 못했습니다. 잠시 뒤 다시 여세요.";
 
 /** 목록에서 사라진 키의 사유 — **조용한 반환 금지**.
  *

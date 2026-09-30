@@ -277,6 +277,10 @@ text = "파일 선택 창에서 파일을 고르세요…"
 
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
+text = "(비우면 조건이 이름이 됩니다)"
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
 text = "job table segment 형식이 손상됐습니다."
 
 [[sentence]]
@@ -298,6 +302,10 @@ text = "보기에서만 숨깁니다. 생성에는 그대로 쓰입니다."
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
 text = "열 {}개 숨김 — 생성에는 그대로 쓰입니다"
+
+[[sentence]]
+file = "frontend/src/screens/data_zone.ts"
+text = "열 이름을 적어 고르세요"
 
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
@@ -1015,7 +1023,7 @@ text = "{} 정리할까요?"
 
 [[sentence]]
 file = "frontend/src/screens/pool_verbs.ts"
-text = "계약 목록 정보를 아직 읽지 못했습니다 — 잠시 뒤 다시 열어 보세요."
+text = "계약 목록 정보를 아직 읽지 못했습니다. 잠시 뒤 다시 여세요."
 
 [[sentence]]
 file = "frontend/src/screens/pool_verbs.ts"

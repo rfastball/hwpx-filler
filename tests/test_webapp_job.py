@@ -6424,40 +6424,51 @@ def test_a_pclm_bound_job_that_lost_a_column_stays_visible_as_needs_action(tmp_p
 # ------------------------------- 저장한 필터 — 등록 데이터에 붙는 이름 칩(2026-09-30)
 #
 # 사용자 사례: 추정가격 1억 미만 = 소기업, 1억 이상 고시금액 미만 = 중소기업. 조건은 사용자가
-# 직접 세우고(추론 없음) 이름으로 저장한 뒤 칩을 눌러 누적한다. 정의는 등록 데이터 항목이 든다.
+# 「+ 필터」 빌더에서 직접 세우고(추론 없음) 이름으로 저장한다. 같은 열을 보는 칩끼리는 「또는」,
+# 다른 열과는 「그리고」다(슬라이서 관례, 사용자 확정). 정의는 등록 데이터 항목이 든다.
 def _price_csv(tmp_path) -> str:
     csv = tmp_path / "price.csv"
     csv.write_text(
-        "공고명,추정가격\n"
-        '청사 청소,"95,000,000"\n'
-        '전산 유지보수,"150,000,000"\n'
-        '공용차량 임차,"230,000,000"\n'
-        '사무용품,"50,000,000"\n'
-        '방역 용역,"219,999,999"\n',
+        "공고명,추정가격,계약일자\n"
+        '청사 청소,"95,000,000",2026-03-02\n'
+        '전산 유지보수,"150,000,000",2026-08-14\n'
+        '공용차량 임차,"230,000,000",2026-05-20\n'
+        '사무용품,"50,000,000",2026-09-01\n'
+        '방역 용역,"219,999,999",2026-06-30\n'
+        '급식 납품,"180,000,000",2026-02-11\n',
         encoding="utf-8",
     )
     return str(csv)
 
 
-def _save_price_presets(ctrl) -> None:
-    """「소기업」·「중소기업」을 화면 동사로 세운다 — 저장은 칩으로 접히니 곧바로 끈다."""
-    ctrl.dispatch("filter_col_range", {
-        "column": "추정가격", "first": {"op": "lt", "operand": "100,000,000"},
-    })
-    assert ctrl.dispatch("save_filter_preset", {"name": "소기업"}) == {
-        "ok": True, "name": "소기업",
-    }
-    assert ctrl.dispatch("toggle_filter_preset", {"name": "소기업"}) == {
-        "ok": True, "active": False,
-    }
-    ctrl.dispatch("filter_col_range", {
-        "column": "추정가격",
-        "first": {"op": "ge", "operand": "100,000,000"},
-        "second": {"op": "lt", "operand": "220,000,000"},
+def _range_state(column: str, first: tuple, second: "tuple | None" = None) -> dict:
+    """빌더가 보내는 조건 한 줄(범위) — ``export_state`` 의 지금 조건 모양 그대로."""
+    return {"columns": {column: {"range": {
+        "first": {"op": first[0], "operand": first[1]},
+        "second": {"op": second[0], "operand": second[1]} if second else None,
         "joiner": "and",
-    })
-    assert ctrl.dispatch("save_filter_preset", {"name": "중소기업"})["ok"] is True
+    }}}}
+
+
+_SMALL = _range_state("추정가격", ("lt", "100,000,000"))
+_MEDIUM = _range_state("추정가격", ("ge", "100,000,000"), ("lt", "220,000,000"))
+_FIRST_HALF = _range_state("계약일자", ("ge", "2026-01-01"), ("le", "2026-06-30"))
+
+
+def _create(ctrl, name: str, state: dict, **extra) -> dict:
+    return ctrl.dispatch("create_filter_preset", {"name": name, "state": state, **extra})
+
+
+def _price_presets(tmp_path):
+    """등록 데이터 하나를 겨누고 「소기업」·「중소기업」을 빌더 동사로 세운다(둘 다 꺼 둔다)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    assert _create(ctrl, "소기업", _SMALL) == {"ok": True, "name": "소기업"}
+    assert _create(ctrl, "중소기업", _MEDIUM) == {"ok": True, "name": "중소기업"}
+    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
     ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
+    return ctrl, pool, key
 
 
 def _visible_names(ctrl) -> "list[str]":
@@ -6465,116 +6476,225 @@ def _visible_names(ctrl) -> "list[str]":
     return sorted(row["cells"][0][0][0] for row in table["rows"])
 
 
-def test_filter_presets_worked_example_accumulates_and_survives_restart(tmp_path):
+def test_filter_presets_worked_example_or_within_a_column_and_across_columns(tmp_path):
     ctrl, pool = _pool_controller(tmp_path)
     key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
     assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     snap = ctrl.snapshot()["filter"]
-    assert snap["presets"] == [] and snap["adhoc_active"] is False
+    assert snap["presets"] == [] and snap["preset_groups"] == []
+    assert snap["adhoc_active"] is False
 
-    ctrl.dispatch("filter_col_range", {
-        "column": "추정가격", "first": {"op": "lt", "operand": "100,000,000"},
-    })
-    snap = ctrl.snapshot()["filter"]
-    assert snap["adhoc_active"] is True and snap["preset_save"] == {"can": True, "reason": ""}
-    assert ctrl.dispatch("save_filter_preset", {"name": "소기업"})["ok"] is True
-    # 저장 = 칩으로 결정화: 지금 조건은 비고, 같은 행이 칩 하나의 정의로 남는다.
-    snap = ctrl.snapshot()
-    assert snap["filter"]["chips"] == [] and snap["filter"]["adhoc_active"] is False
-    assert snap["filter"]["presets"] == [
-        {"name": "소기업", "active": True, "usable": True, "reason": ""},
-    ]
-    assert snap["filter"]["definition"] == "필터 '소기업'"
+    # 만들기 = 저장 + 켜기. 정의는 등록 데이터 항목에 붙는다(계약 목록 db 가 아니라 앱의 원장).
+    assert _create(ctrl, "소기업", _SMALL) == {"ok": True, "name": "소기업"}
     assert _visible_names(ctrl) == ["사무용품", "청사 청소"]
-    # 정의는 등록 데이터 항목에 붙는다(계약 목록 db 가 아니라 앱의 등록 원장).
+    assert ctrl.snapshot()["filter"]["definition"] == "필터 '소기업'"
     assert [p["name"] for p in pool.load(key).filters] == ["소기업"]
 
-    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
-    ctrl.dispatch("filter_col_range", {
-        "column": "추정가격",
-        "first": {"op": "ge", "operand": "100,000,000"},
-        "second": {"op": "lt", "operand": "220,000,000"},
-        "joiner": "and",
-    })
-    assert ctrl.dispatch("save_filter_preset", {"name": "중소기업"})["ok"] is True
-    assert _visible_names(ctrl) == ["방역 용역", "전산 유지보수"]
-
-    # 누적 — 소기업까지 켜면 교집합(빈 표)이고, 정의줄이 두 칩을 재진술한다.
-    assert ctrl.dispatch("toggle_filter_preset", {"name": "소기업"}) == {"ok": True, "active": True}
+    # 같은 열(추정가격)을 보는 둘째 칩 — 함께 켜면 합집합이다(고시금액 미만 전부, 5행).
+    assert _create(ctrl, "중소기업", _MEDIUM)["ok"] is True
     snap = ctrl.snapshot()
-    assert snap["table"]["visible_count"] == 0 and snap["filter"]["active"] is True
-    assert snap["filter"]["definition"] == "필터 '중소기업' · 필터 '소기업'"
-    assert [p["active"] for p in snap["filter"]["presets"]] == [True, True]
+    assert snap["table"]["visible_count"] == 5
+    assert _visible_names(ctrl) == ["급식 납품", "방역 용역", "사무용품", "전산 유지보수", "청사 청소"]
+    assert snap["filter"]["definition"] == "필터 '소기업' 또는 '중소기업'"
+    assert snap["filter"]["preset_groups"] == [
+        {"key": "추정가격", "label": "추정가격", "names": ["소기업", "중소기업"]},
+    ]
 
-    # 소기업만 끄면 중소기업 행이 남는다.
-    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
-    assert _visible_names(ctrl) == ["방역 용역", "전산 유지보수"]
+    # 다른 열(계약일자)의 칩은 교집합이다 — 소기업 ∧ 상반기.
+    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
+    assert _create(ctrl, "2026 상반기", _FIRST_HALF)["ok"] is True
+    assert _visible_names(ctrl) == ["청사 청소"]
+    assert ctrl.snapshot()["filter"]["definition"] == "필터 '소기업' · 필터 '2026 상반기'"
+    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})  # (소기업 ∨ 중소기업) ∧ 상반기
+    assert _visible_names(ctrl) == ["급식 납품", "방역 용역", "청사 청소"]
+    assert ctrl.snapshot()["guard"]["filter_parts"] == 2  # 무리 둘 = 조건 두 조각
 
     # 앱 재시작 — 새 컨트롤러가 같은 등록 원장에서 칩을 읽는다(켜짐은 세션 상태라 꺼져 있다).
     ctrl2, _pool = _pool_controller(tmp_path, registry=ctrl.registry)
     assert ctrl2.dispatch("load_pool", {"key": key})["ok"] is True
     snap2 = ctrl2.snapshot()
     assert [(p["name"], p["active"], p["usable"]) for p in snap2["filter"]["presets"]] == [
-        ("소기업", False, True), ("중소기업", False, True),
+        ("소기업", False, True), ("중소기업", False, True), ("2026 상반기", False, True),
     ]
-    assert snap2["table"]["visible_count"] == 5
+    assert snap2["table"]["visible_count"] == 6
     ctrl2.dispatch("toggle_filter_preset", {"name": "중소기업"})
-    assert _visible_names(ctrl2) == ["방역 용역", "전산 유지보수"]
+    ctrl2.dispatch("toggle_filter_preset", {"name": "소기업"})
+    assert snap2["table"]["visible_count"] == 6 and ctrl2.snapshot()["table"]["visible_count"] == 5
 
 
-def test_filter_preset_rename_and_delete_write_the_registration(tmp_path):
-    ctrl, pool = _pool_controller(tmp_path)
-    key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
-    ctrl.dispatch("load_pool", {"key": key})
-    _save_price_presets(ctrl)
-    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
-
-    assert ctrl.dispatch("rename_filter_preset", {"name": "중소기업", "new_name": "소기업"}) == {
-        "ok": False, "error": "같은 이름의 필터가 있습니다.",
+def test_filter_snapshot_carries_groups_dimensions_and_builder_source(tmp_path):
+    ctrl, _pool, _key = _price_presets(tmp_path)
+    assert _create(ctrl, "청소 상반기", {"columns": {
+        "공고명": {"text": "청소"}, **_FIRST_HALF["columns"],
+    }})["ok"] is True
+    assert _create(ctrl, "방역", {"search": "방역"})["ok"] is True
+    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
+    snap = ctrl.snapshot()["filter"]
+    assert snap["preset_groups"] == [
+        {"key": "추정가격", "label": "추정가격", "names": ["소기업", "중소기업"]},
+        {"key": "계약일자·공고명", "label": "공고명·계약일자", "names": ["청소 상반기"]},
+        {"key": "검색", "label": "검색", "names": ["방역"]},
+    ]
+    small = snap["presets"][0]
+    assert small == {
+        "name": "소기업", "active": True, "usable": True, "reason": "",
+        "dimension": "추정가격", "dimension_label": "추정가격",
+        # 칩 title 의 조건 문안 — 정의줄과 같은 생산자(단일 출처).
+        "description": "추정가격 < '100,000,000'",
+        "state": {"search": "", "pruned": [], "columns": {"추정가격": {
+            "text": "", "values": None,
+            "range": {"first": {"op": "lt", "operand": "100,000,000"}, "second": None,
+                      "joiner": "and"},
+        }}},
     }
-    assert ctrl.dispatch("rename_filter_preset", {"name": "중소기업", "new_name": ""}) == {
-        "ok": False, "error": "이름을 비울 수 없습니다.",
-    }
-    assert ctrl.dispatch("rename_filter_preset", {"name": "중소기업", "new_name": "중소"}) == {
-        "ok": True, "name": "중소",
-    }
-    assert [p["name"] for p in pool.load(key).filters] == ["소기업", "중소"]
-    assert ctrl.snapshot()["filter"]["presets"][1] == {
-        "name": "중소", "active": True, "usable": True, "reason": "",
-    }
-
-    assert ctrl.dispatch("delete_filter_preset", {"name": "중소"}) == {"ok": True}
-    assert [p["name"] for p in pool.load(key).filters] == ["소기업"]
-    snap = ctrl.snapshot()
-    assert snap["filter"]["active"] is False and snap["table"]["visible_count"] == 5
-    assert ctrl.dispatch("toggle_filter_preset", {"name": "중소"}) == {
-        "ok": False, "error": "저장한 필터를 찾을 수 없습니다: 중소",
-    }
-
-
-def test_filter_preset_save_is_refused_loudly(tmp_path):
-    """이름·조건·저장할 곳이 없으면 저장하지 않고 사유를 돌려준다(이름 입력창이 싣는다)."""
-    ctrl, pool = _pool_controller(tmp_path)
-    key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
-    ctrl.dispatch("load_pool", {"key": key})
-    assert ctrl.dispatch("save_filter_preset", {"name": "빈"}) == {
-        "ok": False, "error": "저장할 조건이 없습니다.",
-    }
+    assert snap["presets"][2]["description"] == (
+        "공고명 포함 '청소' · 계약일자 ≥ '2026-01-01' ∧ ≤ '2026-06-30'"
+    )
+    builder = snap["builder"]
+    assert builder["total"] == 6 and builder["can_create"] is True and builder["reason"] == ""
+    assert [(c["name"], c["kind"], c["label"], c["hidden"], c["more"]) for c in builder["columns"]] == [
+        ("공고명", "text", "텍스트", False, 0), ("추정가격", "amount", "금액", False, 0),
+        ("계약일자", "date", "날짜", False, 0),
+    ]
+    # 텍스트 열만 값 목록을 싣는다 — 전 레코드 기준(켜진 칩·지금 조건과 무관), 등장 순.
+    assert builder["columns"][0]["values"] == [
+        "청사 청소", "전산 유지보수", "공용차량 임차", "사무용품", "방역 용역", "급식 납품",
+    ]
+    assert builder["columns"][1]["values"] == [] and builder["adhoc"] is None
     ctrl.dispatch("filter_col_text", {"column": "공고명", "text": "전산"})
-    assert ctrl.dispatch("save_filter_preset", {"name": "  "}) == {
-        "ok": False, "error": "이름을 비울 수 없습니다.",
+    assert ctrl.snapshot()["filter"]["builder"]["adhoc"] == {
+        "search": "", "pruned": [],
+        "columns": {"공고명": {"text": "전산", "values": None, "range": None}},
     }
-    assert pool.load(key).filters == []
 
-    # 등록하지 않은 파일은 저장할 곳이 없다 — 칩 저장 단추가 사유와 함께 막힌다.
+
+def test_create_filter_preset_validation_matrix(tmp_path):
+    """이름·열·피연산자·조건이 틀리면 저장하지 않고 열 머리 편집기와 같은 문장으로 거절한다."""
+    ctrl, pool, key = _price_presets(tmp_path)
+    before = pool.load(key).filters
+    # 거절은 가리키는 열(`column`)을 함께 싣는다 — 빌더가 그 카드 아래에 문장을 세운다.
+    refusals = [
+        ("소기업", _SMALL, {"error": "같은 이름의 필터가 있습니다."}),
+        ("", {"columns": {}}, {"error": "저장할 조건이 없습니다."}),
+        ("지역", {"columns": {"지역": {"values": ["세종"]}}},
+         {"error": "이 필터의 열이 지금 데이터에 없습니다: 지역", "column": "지역"}),
+        ("억", _range_state("추정가격", ("lt", "1억")),
+         {"error": "'1억' 을(를) 금액(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 100,000,000).",
+          "column": "추정가격"}),
+        ("내일", _range_state("계약일자", ("ge", "내일")),
+         {"error": "'내일' 을(를) 날짜(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 2026-07-15).",
+          "column": "계약일자"}),
+        ("빈", {"columns": {}, "search": " "}, {"error": "저장할 조건이 없습니다."}),
+        ("깨짐", {"columns": ["추정가격"]}, {"error": "이 필터의 저장 형식을 읽을 수 없습니다."}),
+    ]
+    for name, state, refusal in refusals:
+        assert _create(ctrl, name, state) == {"ok": False, **refusal}, name
+    assert pool.load(key).filters == before  # 거절은 원장을 건드리지 않는다
+
+    # 이름을 비우면 조건 요약(칩 title 과 같은 문안)이 이름이 된다 — 같은 이름 규칙은 그대로.
+    assert _create(ctrl, "  ", _FIRST_HALF) == {
+        "ok": True, "name": "계약일자 ≥ '2026-01-01' ∧ ≤ '2026-06-30'",
+    }
+    assert _create(ctrl, "", _FIRST_HALF) == {"ok": False, "error": "같은 이름의 필터가 있습니다."}
+
+    # 등록하지 않은 파일은 저장할 곳이 없다 — 빌더 소재가 사유를 싣고 동사도 같은 사유로 거절.
     elsewhere = tmp_path / "plain"  # 다른 등록 원장 — 이 파일은 거기 등록돼 있지 않다
     elsewhere.mkdir()
     plain, _ = _controller(elsewhere)
     plain.load_data_path(_price_csv(elsewhere))
-    plain.dispatch("filter_col_text", {"column": "공고명", "text": "전산"})
     reason = "필터는 등록 데이터에만 저장할 수 있습니다."
-    assert plain.snapshot()["filter"]["preset_save"] == {"can": False, "reason": reason}
-    assert plain.dispatch("save_filter_preset", {"name": "전산"}) == {"ok": False, "error": reason}
+    builder = plain.snapshot()["filter"]["builder"]
+    assert (builder["can_create"], builder["reason"]) == (False, reason)
+    assert _create(plain, "소기업", _SMALL) == {"ok": False, "error": reason}
+
+
+def test_create_filter_preset_from_adhoc_keeps_the_visible_rows(tmp_path):
+    """열 머리 조건으로 채워 연 빌더의 저장 — 지금 조건이 칩 하나로 접히고 표는 그대로다."""
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
+    ctrl.dispatch("load_pool", {"key": key})
+    ctrl.dispatch("filter_col_range", {
+        "column": "추정가격", "first": {"op": "lt", "operand": "100,000,000"},
+    })
+    ctrl.dispatch("filter_search", {"text": "청"})
+    before = ctrl.snapshot()
+    assert before["filter"]["chips"] and before["filter"]["adhoc_active"] is True
+    adhoc = before["filter"]["builder"]["adhoc"]
+    assert _create(ctrl, "청소 소액", adhoc, from_adhoc=True) == {"ok": True, "name": "청소 소액"}
+    after = ctrl.snapshot()
+    assert after["filter"]["chips"] == [] and after["filter"]["adhoc_active"] is False
+    assert [r["index"] for r in after["table"]["rows"]] == [r["index"] for r in before["table"]["rows"]]
+    assert after["filter"]["presets"][0]["active"] is True
+    assert pool.load(key).filters[0]["state"]["search"] == "청"
+
+    # from_adhoc 없이 만들면 지금 조건은 그대로 남아 새 칩과 「그리고」로 얹힌다.
+    ctrl.dispatch("filter_col_text", {"column": "공고명", "text": "사무"})
+    assert _create(ctrl, "소기업", _SMALL)["ok"] is True
+    assert ctrl.snapshot()["filter"]["chips"] == ["공고명 포함 '사무'"]
+
+
+def test_update_filter_preset_renames_rewrites_and_persists(tmp_path):
+    ctrl, pool, key = _price_presets(tmp_path)
+    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
+
+    def update(name, new_name, state=_MEDIUM):
+        return ctrl.dispatch("update_filter_preset", {
+            "name": name, "new_name": new_name, "state": state,
+        })
+
+    assert update("중소기업", "소기업") == {"ok": False, "error": "같은 이름의 필터가 있습니다."}
+    assert update("중소기업", "중소기업", {"columns": {}}) == {
+        "ok": False, "error": "저장할 조건이 없습니다.",
+    }
+    assert update("없음", "없음") == {"ok": False, "error": "저장한 필터를 찾을 수 없습니다: 없음"}
+    assert update("중소기업", "중소") == {"ok": True, "name": "중소"}
+    assert [p["name"] for p in pool.load(key).filters] == ["소기업", "중소"]
+    row = ctrl.snapshot()["filter"]["presets"][1]
+    assert (row["name"], row["active"], row["usable"]) == ("중소", True, True)
+
+    # 조건을 바꾸면 차원도 바뀐다 — 칩이 다른 무리로 옮기고 보이는 행이 새 정의를 따른다.
+    assert update("중소", "중소", _FIRST_HALF) == {"ok": True, "name": "중소"}
+    snap = ctrl.snapshot()["filter"]
+    assert [g["names"] for g in snap["preset_groups"]] == [["소기업"], ["중소"]]
+    assert _visible_names(ctrl) == ["공용차량 임차", "급식 납품", "방역 용역", "청사 청소"]
+    assert pool.load(key).filters[1]["state"]["columns"].keys() == {"계약일자"}
+
+
+def test_count_filter_state_is_a_read_only_query(tmp_path):
+    ctrl, pool, key = _price_presets(tmp_path)
+    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})  # 켜진 칩·지금 조건과 무관하다
+    pushes: list = []
+    ctrl._push = lambda *a, **k: pushes.append(1)
+    # 수와 함께 요약 문안(이름 칸 자리표시자 = 빈 이름 저장 때의 이름)을 싣는다.
+    assert ctrl.dispatch("count_filter_state", {"state": _MEDIUM}) == {
+        "ok": True, "count": 3, "total": 6,
+        "summary": "추정가격 ≥ '100,000,000' ∧ < '220,000,000'",
+    }
+    assert ctrl.dispatch("count_filter_state", {"state": {"columns": {}}}) == {
+        "ok": True, "count": 6, "total": 6, "summary": "",
+    }
+    assert ctrl.dispatch("count_filter_state", {
+        "state": _range_state("추정가격", ("lt", "1억")),
+    }) == {
+        "ok": False,
+        "error": "'1억' 을(를) 금액(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 100,000,000).",
+        "column": "추정가격",
+    }
+    assert pushes == []  # 무변이 질의 — 스냅샷을 다시 밀지 않는다
+    assert ctrl.snapshot()["filter"]["definition"] == "필터 '소기업'"
+    assert [p["name"] for p in pool.load(key).filters] == ["소기업", "중소기업"]
+
+
+def test_filter_preset_delete_writes_the_registration(tmp_path):
+    ctrl, pool, key = _price_presets(tmp_path)
+    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
+    assert ctrl.dispatch("delete_filter_preset", {"name": "중소기업"}) == {"ok": True}
+    assert [p["name"] for p in pool.load(key).filters] == ["소기업"]
+    snap = ctrl.snapshot()
+    assert snap["filter"]["active"] is False and snap["table"]["visible_count"] == 6
+    assert ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"}) == {
+        "ok": False, "error": "저장한 필터를 찾을 수 없습니다: 중소기업",
+    }
 
 
 def test_filter_presets_follow_the_registration_for_direct_mounts(tmp_path):
@@ -6590,10 +6710,7 @@ def test_filter_presets_follow_the_registration_for_direct_mounts(tmp_path):
 
     ctrl._mount_pclm(db, _PCLM_VIEW)
     assert ctrl.data.pool_key == ""  # 풀 겨눔이 아닌 직접 마운트
-    ctrl.dispatch("filter_col_range", {
-        "column": "presmptPrce", "first": {"op": "lt", "operand": "1,000,000"},
-    })
-    assert ctrl.dispatch("save_filter_preset", {"name": "소액"})["ok"] is True
+    assert _create(ctrl, "소액", _range_state("presmptPrce", ("lt", "1,000,000")))["ok"] is True
     assert [p["name"] for p in pool.load(key).filters] == ["소액"]
     assert Path(db).read_bytes() == db_bytes  # db 파일은 그대로
 
@@ -6601,8 +6718,7 @@ def test_filter_presets_follow_the_registration_for_direct_mounts(tmp_path):
     csv = _price_csv(tmp_path)
     xkey = _pool_add(pool, "가격표", {"path": csv})
     ctrl.load_data_path(csv)
-    ctrl.dispatch("filter_col_text", {"column": "공고명", "text": "전산"})
-    assert ctrl.dispatch("save_filter_preset", {"name": "전산"})["ok"] is True
+    assert _create(ctrl, "전산", {"columns": {"공고명": {"text": "전산"}}})["ok"] is True
     assert [p["name"] for p in pool.load(xkey).filters] == ["전산"]
 
 
@@ -6617,9 +6733,10 @@ def test_filter_preset_on_a_missing_column_is_refused_with_its_reason(tmp_path):
     }])
     ctrl.dispatch("load_pool", {"key": key})
     reason = "이 필터의 열이 지금 데이터에 없습니다: 지역"
-    assert ctrl.snapshot()["filter"]["presets"] == [
-        {"name": "지역", "active": False, "usable": False, "reason": reason},
-    ]
+    row = ctrl.snapshot()["filter"]["presets"][0]
+    assert (row["name"], row["active"], row["usable"], row["reason"]) == ("지역", False, False, reason)
+    # 쓸 수 없는 칩도 자기 차원에 서고(정의 유래), 조건 문안 자리는 비운다(사유가 진다).
+    assert (row["dimension"], row["description"]) == ("지역", "")
     assert ctrl.dispatch("toggle_filter_preset", {"name": "지역"}) == {
         "ok": False, "error": reason,
     }
@@ -6627,16 +6744,18 @@ def test_filter_preset_on_a_missing_column_is_refused_with_its_reason(tmp_path):
 
 
 def test_filter_presets_ride_the_range_draft_and_the_reapply_slot(tmp_path):
-    ctrl, pool = _pool_controller(tmp_path)
-    key = _pool_add(pool, "입찰 공고", {"path": _price_csv(tmp_path)})
-    ctrl.dispatch("load_pool", {"key": key})
-    _save_price_presets(ctrl)
+    ctrl, pool, key = _price_presets(tmp_path)
 
     # 범위 초안에서 켠 칩은 적용 전까지 커밋된 범위를 바꾸지 않는다(§18.11-21).
     ctrl.dispatch("range_draft_open", {})
     ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
     assert ctrl.data.filter is not None and ctrl.data.filter.active_presets == []
     assert ctrl.snapshot()["range_draft"]["dirty"] is True
+    # 초안에서 고친 정의(이름)는 커밋된 필터에도 심긴다 — 정의는 데이터 하나에 하나다.
+    assert ctrl.dispatch("update_filter_preset", {
+        "name": "중소기업", "new_name": "중소", "state": _MEDIUM,
+    })["ok"] is True
+    assert [p["name"] for p in ctrl.data.filter.presets] == ["소기업", "중소"]
     ctrl.dispatch("range_draft_apply", {})
     assert ctrl.data.filter.active_presets == ["소기업"]
 
@@ -6646,3 +6765,84 @@ def test_filter_presets_ride_the_range_draft_and_the_reapply_slot(tmp_path):
     res = ctrl.dispatch("filter_reapply", {})
     assert res["ok"] is True and res["installed"] == ["필터 '소기업'"]
     assert _visible_names(ctrl) == ["사무용품", "청사 청소"]
+
+
+def _inline_pclm_v2(tmp_path) -> str:
+    """실 계약 목록이 없는 자리의 대역 — 같은 뷰 이름·같은 추정가격 서식(콤마 원문)."""
+    db = tmp_path / "pclm_inline.db"
+    connection = sqlite3.connect(db)
+    connection.execute('CREATE TABLE 계약 ("계약명" TEXT, "추정가격" TEXT);')
+    connection.executemany("INSERT INTO 계약 VALUES (?, ?);", [
+        ("청사 청소", "65,189,636"), ("전산 유지보수", "188,181,818"),
+        ("차량 임차", "909,090,909"), ("방역", "31,950,000"), ("급식", "225,491,817"),
+    ])
+    connection.execute('CREATE VIEW "v_통합_v2" AS SELECT * FROM 계약;')
+    connection.commit()
+    connection.close()
+    return str(db)
+
+
+def test_filter_presets_on_the_real_contract_list_view(tmp_path):
+    """계약 목록 `v_통합_v2` 에서 소기업·중소기업을 함께 켜면 고시금액 미만 전부가 보인다.
+
+    실 DB(``%LOCALAPPDATA%\\Pclm\\pclm.db``)가 있으면 **사본**을 겨눈다(원본은 읽지도 쓰지도
+    않는다). 없으면 같은 뷰 이름·서식의 대역으로 같은 단언을 한다 — 건너뛰지 않는다.
+    """
+    import os
+
+    from hwpxfiller.domain.format_engine import parse_number
+
+    real = Path(os.environ.get("LOCALAPPDATA", "")) / "Pclm" / "pclm.db"
+    if real.is_file():
+        db = str(tmp_path / "pclm_copy.db")
+        shutil.copyfile(real, db)
+    else:
+        db = _inline_pclm_v2(tmp_path)
+    connection = sqlite3.connect(db)
+    prices = [row[0] for row in connection.execute('SELECT "추정가격" FROM "v_통합_v2"')]
+    connection.close()
+    expected = sum(
+        1 for value in prices
+        if (number := parse_number(str(value or ""))) is not None and number < 220_000_000
+    )
+
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "계약 목록", {"db": db, "view": "v_통합_v2"}, kind="pclm")
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    kinds = {c["name"]: c["kind"] for c in ctrl.snapshot()["filter"]["builder"]["columns"]}
+    assert kinds["추정가격"] == "amount"
+    assert _create(ctrl, "소기업", _SMALL) == {"ok": True, "name": "소기업"}
+    assert _create(ctrl, "중소기업", _MEDIUM) == {"ok": True, "name": "중소기업"}
+    snap = ctrl.snapshot()
+    assert snap["filter"]["definition"] == "필터 '소기업' 또는 '중소기업'"
+    assert snap["table"]["visible_count"] == expected
+    assert ctrl.dispatch("count_filter_state", {"state": _SMALL})["total"] == len(prices)
+
+
+def test_list_filter_columns_matches_like_the_full_column_search(tmp_path):
+    """빌더 콤보박스의 열 거르기 — 전체 열 검색과 같은 자모 부분일치, 숨긴 열은 뒤(표 선언을 따른다)."""
+    ctrl, _pool, _key = _price_presets(tmp_path)
+    pushes: list = []
+    ctrl._push = lambda *a, **k: pushes.append(1)
+
+    def names(query):
+        result = ctrl.dispatch("list_filter_columns", {"query": query})
+        assert result["ok"] is True
+        return [(c["name"], c["label"], c["hidden"]) for c in result["columns"]]
+
+    assert names("") == [("공고명", "텍스트", False), ("추정가격", "금액", False), ("계약일자", "날짜", False)]
+    assert names("가곡") == []  # 자모가 어긋나면 없다
+    assert names("가ㄱ") == [("추정가격", "금액", False)]  # 「가격」을 치는 중(자모 단계 매치)
+    hit = ctrl.dispatch("list_filter_columns", {"query": "일자"})["columns"][0]
+    assert hit["segments"] == [["계약", False], ["일자", True]] or hit["segments"] == [("계약", False), ("일자", True)]
+    assert pushes == []  # 무변이 질의
+    del ctrl._push  # 이제 변이를 민다 — 스냅샷이 숨김을 반영해야 한다
+
+    # 표에서 숨긴 열은 빌더에도 숨김 표지를 달고 목록 뒤로 간다(여전히 검색된다).
+    ctrl.dispatch("hide_column", {"column": "공고명"})
+    assert names("") == [("추정가격", "금액", False), ("계약일자", "날짜", False), ("공고명", "텍스트", True)]
+    assert names("공고") == [("공고명", "텍스트", True)]
+    columns = ctrl.snapshot()["filter"]["builder"]["columns"]
+    assert [(c["name"], c["hidden"]) for c in columns] == [
+        ("공고명", True), ("추정가격", False), ("계약일자", False),
+    ]
