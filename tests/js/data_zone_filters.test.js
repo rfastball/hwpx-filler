@@ -18,6 +18,7 @@ import {
   SEARCH_ROW,
   blankRow,
   builderKeyAction,
+  builderPlacement,
   createCountRequester,
   focusFinder,
   focusReturnTarget,
@@ -323,4 +324,19 @@ test("저장·삭제 뒤 초점: 고친 칩은 새 이름의 ⋯, 지운 칩은 
   assert.equal(focusFinder({ edit: "없음" }, null, doc)(), null, "아직 다시 그려지지 않았으면 기다린다");
   const trigger = { isConnected: true };
   assert.equal(focusFinder("trigger", trigger, doc)(), trigger);
+});
+
+test("빌더 배치: 트리거에 붙은 채 높이를 자른다 — 아래가 320px 이상이면 아래, 아니면 넓은 쪽으로", () => {
+  const trigger = { top: 500, bottom: 530, left: 860 };
+  // 큰 화면(1440×900): 아래 공간 900−530−16−4 = 350 ≥ 320 → 아래, 최대 높이 350.
+  assert.deepEqual(builderPlacement(trigger, { width: 1440, height: 900 }, 460),
+    { placement: "below", maxHeight: 350, left: 860 });
+  // CI 처럼 낮은 화면(1024×768): 아래 218 < 320, 위 480 > 218 → 위로 뒤집고 위 공간이 최대 높이.
+  assert.deepEqual(builderPlacement(trigger, { width: 1024, height: 768 }, 460),
+    { placement: "above", maxHeight: 480, left: 560 });
+  // 아래가 모자라도 위보다 넓으면 아래에 남는다(트리거 위로 끌어올리지 않는다).
+  assert.deepEqual(builderPlacement({ top: 200, bottom: 230, left: 0 }, { width: 800, height: 520 }, 460),
+    { placement: "below", maxHeight: 270, left: 4 });
+  // 공간이 음수가 되면 0(가로는 화면 안으로 민다).
+  assert.equal(builderPlacement({ top: 10, bottom: 40, left: 900 }, { width: 900, height: 50 }, 460).maxHeight, 0);
 });

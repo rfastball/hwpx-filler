@@ -1072,6 +1072,11 @@ async function runJobMirror(ctx) {
   const anchor = newBtn.getBoundingClientRect();
   out.builder_anchored = !!openRect
     && (openRect.top >= anchor.bottom - 1 || openRect.bottom <= anchor.top + 1);
+  out.builder_geometry = openRect ? {
+    viewport: [win.innerWidth, win.innerHeight], trigger: [Math.round(anchor.top), Math.round(anchor.bottom)],
+    top: Math.round(openRect.top), bottom: Math.round(openRect.bottom),
+    placement: builderRoot.dataset.placement || "",
+  } : null;
   out.builder_width = openRect ? Math.round(openRect.width) : 0;
   out.builder_fits_viewport = !!openRect && openRect.top >= 0 && openRect.bottom <= win.innerHeight + 1;
   const picker = doc.getElementById("jobFilterColumnPicker");
@@ -1092,8 +1097,16 @@ async function runJobMirror(ctx) {
     await ctx.sleep(80);
     const grownRect = builderRoot.getBoundingClientRect();
     const footRect = builderRoot.querySelector(".fb-foot")?.getBoundingClientRect();
+    const trig = newBtn.getBoundingClientRect();
     out.picker_fits_viewport = grownRect.top >= 0 && grownRect.bottom <= win.innerHeight + 1
       && !!footRect && footRect.bottom <= win.innerHeight + 1;
+    /* 자라도 트리거에 붙은 채다(아래면 트리거 아래에서 시작, 위면 트리거 위에서 끝) — 가리지 않는다. */
+    out.picker_anchored = grownRect.top >= trig.bottom - 1 || grownRect.bottom <= trig.top + 1;
+    out.picker_geometry = {
+      viewport: [win.innerWidth, win.innerHeight], trigger: [Math.round(trig.top), Math.round(trig.bottom)],
+      top: Math.round(grownRect.top), bottom: Math.round(grownRect.bottom),
+      placement: builderRoot.dataset.placement || "",
+    };
     picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     await ctx.sleep(0);
     picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

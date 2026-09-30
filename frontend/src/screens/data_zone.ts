@@ -490,6 +490,42 @@ export function createCountRequester(deps: {
   };
 }
 
+/** 빌더 배치 — **트리거에 붙은 채** 높이를 자른다(공용 `Popover.place` 는 넘치면 트리거 위로
+ *  끌어올려 트리거를 가린다). 아래 공간(화면 아래 − 트리거 아래 − 16px)이 `min`(320px) 이상이거나
+ *  위보다 넓으면 아래에, 아니면 위로 뒤집고, 어느 쪽이든 그 공간이 최대 높이다 — 카드 목록만
+ *  스크롤하고 이름·footer 는 제자리다. 가로는 화면 안으로 민다. */
+export function builderPlacement(
+  anchor: { top: number; bottom: number; left: number },
+  viewport: { width: number; height: number },
+  width: number,
+  opts: { edge?: number; gap?: number; min?: number } = {},
+): { placement: "below" | "above"; maxHeight: number; left: number } {
+  const edge = opts.edge ?? 16;
+  const gap = opts.gap ?? 4;
+  const min = opts.min ?? 320;
+  const below = viewport.height - anchor.bottom - edge - gap;
+  const above = anchor.top - edge - gap;
+  const placeBelow = below >= min || below >= above;
+  const left = Math.max(4, Math.min(anchor.left, viewport.width - 4 - width));
+  return { placement: placeBelow ? "below" : "above", maxHeight: Math.max(0, placeBelow ? below : above), left };
+}
+
+/** `builderPlacement` 를 DOM 에 적용한다 — 최대 높이를 먼저 걸고 잘린 실제 높이로 위치를 정한다. */
+function placeBuilder(root: HTMLElement, anchor: HTMLElement, view: Window | null): void {
+  if (!view) return;
+  const rect = anchor.getBoundingClientRect();
+  const plan = builderPlacement(rect, { width: view.innerWidth, height: view.innerHeight },
+    root.getBoundingClientRect().width);
+  const cap = `${Math.floor(plan.maxHeight)}px`;
+  if (root.style.maxHeight !== cap) root.style.maxHeight = cap;
+  const height = root.getBoundingClientRect().height;
+  const top = plan.placement === "below" ? rect.bottom + 4 : rect.top - 4 - height;
+  root.style.left = `${plan.left}px`;
+  root.style.top = `${top}px`;
+  root.style.transformOrigin = `${Math.max(8, rect.left + rect.width / 2 - plan.left)}px ${plan.placement === "below" ? "top" : "bottom"}`;
+  root.dataset.placement = plan.placement === "below" ? "bottom" : "top";
+}
+
 /** 빌더 안 키 하나의 뜻 — 한글 조합 중(Enter·Escape 가 조합 확정)은 아무 뜻도 없다. */
 export function builderKeyAction(
   event: { key: string; isComposing?: boolean; keyCode?: number },
@@ -767,21 +803,21 @@ export function FilterBuilder(props: {
     focusRow.current = null;
     card?.querySelector<HTMLElement>("[data-fb-first]")?.focus();
   });
-  // 트리거 아래에 **그린 뒤** 붙인다(열 머리 패널과 같은 `Popover.place`). 카드·오류·수가 바뀌면
-  // 높이가 바뀌므로 그릴 때마다 다시 잰다 — 아래가 모자라면 위로 뒤집힌다.
+  // 트리거에 **그린 뒤** 붙인다(`builderPlacement` — 넘치면 트리거를 가리지 않고 높이를 자른다).
+  // 카드·오류·수가 바뀌면 높이가 바뀌므로 그릴 때마다 다시 잰다.
   useLayoutEffect(() => {
     const root = rootRef.current;
     const anchor = trigger.current;
-    if (root && anchor && anchor.isConnected) controller.placePopover(root, anchor);
+    if (root && anchor && anchor.isConnected) placeBuilder(root, anchor, controller.doc.defaultView);
   });
-  // 자식(열 콤보박스 목록·태그)이 스스로 자라도 다시 잰다 — 빌더의 렌더를 거치지 않는 높이 변화다.
+  // 자식(열 콤보박스 목록·태그)이 스스로 자라도 같은 규칙으로 다시 잰다 — 빌더의 렌더를 거치지 않는 높이 변화다.
   useEffect(() => {
     const root = rootRef.current;
     const Observer = controller.doc.defaultView?.ResizeObserver;
     if (!root || !Observer) return;
     const observer = new Observer(() => {
       const anchor = trigger.current;
-      if (anchor && anchor.isConnected) controller.placePopover(root, anchor);
+      if (anchor && anchor.isConnected) placeBuilder(root, anchor, controller.doc.defaultView);
     });
     observer.observe(root);
     return () => observer.disconnect();
