@@ -12,6 +12,9 @@ ref/retention port(:class:`ImmutableVdrStore`).
   policy 로 exact 텍스트를 낸다.
 - ``CONSTANT`` — Plan 의 canonical tagged constant 를 raw 값과 무관하게 resolve.
 - ``INTENTIONAL_BLANK`` — exact empty logical text(missing/null 승인이 아니라 의도된 빈칸).
+- ``RUNTIME_DATE`` — caller 가 실행당 **한 번** 캡처해 넘긴 시각(``runtime_clock``)을 규칙의 date
+  표시형으로 렌더한다(#950). 소스 값이 아니라 결측·표식이 없다 — 언제나 값이 선다. 시각이 없으면
+  ``datetime.now()`` 로 메우지 않고 context error 로 닫는다(RC-02: 이름·본문·미리보기가 한 시각).
 
 경계(issue #708): VDR 의 ``document_value`` 는 native writer 에 전달할 **logical Unicode text** 다 —
 XML escaped text·XML fragment·serialized ``hp:t`` bytes 가 아니다(그건 S6 소유). unresolved 는 조용한
@@ -59,13 +62,18 @@ from hwpxfiller.domain.field_binding import (
     BINDING_VALUE_VERSION,
     DOCUMENT_CONTENT_VALUE_POLICY_VERSION,
     EXACT_BLANK_POLICY,
+    RUNTIME_DATE,
     SOURCE_SCHEMA_VERSION,
     VALUE_KIND_TEXT,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
+    RuntimeClockError,
     UnsupportedDocumentValuePolicyError,
     UnsupportedValueFormatError,
+    parse_runtime_clock,
+    render_runtime_date,
     render_value_format,
+    require_runtime_date_format,
     require_text_slice,
     resolve_document_value_policy,
 )
@@ -95,6 +103,7 @@ SUPPORTED_PLAN_SCHEMA_VERSIONS = ("hwpx-execution-plan/v2",)
 _KIND_FROM_SOURCE = "FROM_SOURCE"
 _KIND_CONSTANT = "CONSTANT"
 _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
+_KIND_RUNTIME_DATE = RUNTIME_DATE
 
 # ─── record validation blocker 어휘(user-fixable, deterministic Plan order) ───────────────
 # (``RECORD_EXPLICIT_NULL_NOT_ALLOWED``·``RECORD_BLANK_POLICY_VIOLATION`` 은 #957 에서
@@ -128,6 +137,8 @@ UNSUPPORTED_RECORD_REVIEW_CONTRACT = "UNSUPPORTED_RECORD_REVIEW_CONTRACT"
 UNSUPPORTED_SOURCE_SCHEMA_CONTRACT = "UNSUPPORTED_SOURCE_SCHEMA_CONTRACT"
 UNSUPPORTED_BINDING_VALUE_CONTRACT = "UNSUPPORTED_BINDING_VALUE_CONTRACT"
 RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR = "RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR"
+#: RUNTIME_DATE requirement 가 있는데 실행 시각이 없거나 읽을 수 없다 — 시계를 대신 읽지 않는다.
+RUNTIME_CLOCK_UNAVAILABLE = RuntimeClockError.code
 
 
 class ValidatedRecordIntegrityError(Exception):
@@ -429,9 +440,44 @@ def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
     return _apply_whitespace_policy(text, policy.whitespace_policy)
 
 
+def _resolve_runtime_date(
+    ve: Mapping[str, Any], field_id: str, runtime_clock: str | None
+) -> str:
+    """RUNTIME_DATE 를 caller 가 캡처한 시각으로 렌더한다 — legacy ``today`` 와 같은 함수(#950).
+
+    Plan 사실(표시형 모양·가공 부재·값 정책)을 시각보다 먼저 본다: 시각이 없다는 이유로 거짓
+    모양이 통과하지 않게. 결과는 소스 값이 아니므로 미입력 표식 대상이 아니다.
+    """
+    if any(ve.get(key) is not None for key in ("text_slice", "source_key", "canonical_value")):
+        raise _ContextSignal(
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+            f"실행 시각 값에는 데이터 열·고정값·가공이 없다: requirement {field_id!r}",
+        )
+    format_code = ve.get("format_code")
+    try:
+        require_runtime_date_format(ve.get("format_kind"), format_code)
+    except UnsupportedValueFormatError as exc:
+        raise _ContextSignal(
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+            f"requirement {field_id!r} 의 실행 시각 표시형을 해석할 수 없다: {exc}",
+        ) from exc
+    policy = _resolve_policy(str(ve.get("document_content_value_policy_id")))
+    try:
+        now = parse_runtime_clock(runtime_clock)
+    except RuntimeClockError as exc:
+        raise _ContextSignal(
+            RUNTIME_CLOCK_UNAVAILABLE, f"requirement {field_id!r}: {exc}"
+        ) from exc
+    assert isinstance(format_code, str)  # require_runtime_date_format 이 강제
+    return _apply_whitespace_policy(
+        render_runtime_date(format_code, now), policy.whitespace_policy
+    )
+
+
 def _resolve_requirement(
     requirement: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
+    runtime_clock: str | None = None,
 ) -> _ResolvedValue | RecordValidationBlocker:
     field_id = requirement.get("field_id")
     if not isinstance(field_id, str) or field_id == "":
@@ -457,6 +503,8 @@ def _resolve_requirement(
         # WRITE_EMPTY_TEXT_PRESERVE_FIELD — field 는 보존, 값만 비운다. **표식이 아니다**:
         # Plan 이 「여기는 비운다」를 선언한 것이라 미입력이 아니다(빈 값과 의도된 공란의 구분).
         return _ResolvedValue("")
+    if kind == _KIND_RUNTIME_DATE:
+        return _ResolvedValue(_resolve_runtime_date(ve, field_id, runtime_clock))
     raise _ContextSignal(
         PLAN_INTEGRITY_ERROR, f"requirement {field_id!r} 의 value_expression kind 미상: {kind!r}"
     )
@@ -470,8 +518,13 @@ def validate_data_record_against_plan(
     review_evidence: RecordReviewEvidence | None = None,
     record_review_required: bool = False,
     validated_at: str,
+    runtime_clock: str | None = None,
 ) -> ValidateDataRecordResult:
     """exact Plan + raw snapshot → 모든 Active requirement 의 logical text 를 완성한 VDR(순수·deterministic).
+
+    ``runtime_clock`` 은 RUNTIME_DATE requirement 가 렌더할 실행 시각(ISO 8601)이다 — caller 가 실행당
+    한 번 캡처한 값을 넘긴다(managed 생성은 배달 계획의 ``captured_delivery_clock``, 곧 파일 이름 날짜
+    토큰과 같은 값). ``validated_at`` 은 provenance 라 값의 출처로 쓰지 않는다.
 
     precedence: (1) Plan/raw canonical integrity → (2) 미지원 contract → (3) review evidence
     integrity → (4) user-fixable blocker(값·검토) → (5) VDR 봉인·완결성 검증. context/integrity/미지원
@@ -484,6 +537,7 @@ def validate_data_record_against_plan(
             review_evidence=review_evidence,
             record_review_required=record_review_required,
             validated_at=validated_at,
+            runtime_clock=runtime_clock,
         )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
@@ -549,7 +603,11 @@ def current_record_validation_basis(
 
 
 def validate_data_record_against_current_value(
-    *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
+    *,
+    plan: SealedExecutionPlanValue,
+    snapshot: RawDataRecordSnapshot,
+    validated_at: str,
+    runtime_clock: str | None = None,
 ) -> ValidateCurrentDataRecordResult:
     basis = current_record_validation_basis(plan)
     try:
@@ -558,6 +616,7 @@ def validate_data_record_against_current_value(
             snapshot=snapshot,
             validated_at=validated_at,
             validation_basis=basis,
+            runtime_clock=runtime_clock,
         )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
@@ -568,7 +627,10 @@ def validate_data_records_against_current_value(
     plan: SealedExecutionPlanValue,
     snapshots: Iterable[RawDataRecordSnapshot],
     validated_at: str,
+    runtime_clock: str | None = None,
 ) -> tuple[ValidateCurrentDataRecordResult, ...]:
+    """여러 record 를 한 batch 로 검증한다 — ``runtime_clock`` 은 batch 전체가 **공유**한다(레코드마다
+    시각을 다시 찍으면 한 batch 안에서 「오늘 날짜」가 하위-일 경계를 넘어 갈린다)."""
     basis = current_record_validation_basis(plan)
     results: list[ValidateCurrentDataRecordResult] = []
     for snapshot in snapshots:
@@ -579,6 +641,7 @@ def validate_data_records_against_current_value(
                     snapshot=snapshot,
                     validated_at=validated_at,
                     validation_basis=basis,
+                    runtime_clock=runtime_clock,
                 )
             )
         except _ContextSignal as sig:
@@ -592,6 +655,7 @@ def _validate_current_value(
     snapshot: RawDataRecordSnapshot,
     validated_at: str,
     validation_basis: CurrentRecordValidationBasis,
+    runtime_clock: str | None = None,
 ) -> ValidateCurrentDataRecordResult:
     if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
@@ -608,7 +672,7 @@ def _validate_current_value(
     resolved: list[tuple[str, str]] = []
     marked: list[str] = []
     for requirement in plan.active_field_requirements:
-        outcome = _resolve_requirement(requirement, snapshot)
+        outcome = _resolve_requirement(requirement, snapshot, runtime_clock)
         if isinstance(outcome, RecordValidationBlocker):
             blockers.append(outcome)
         else:
@@ -645,6 +709,7 @@ def _validate(
     review_evidence: RecordReviewEvidence | None,
     record_review_required: bool,
     validated_at: str,
+    runtime_clock: str | None = None,
 ) -> ValidateDataRecordResult:
     # (1) Plan canonical integrity — nested digest·bijection·operation order·supported schema 재검증.
     #     tautological self-schema 가 아니라 validator 의 exact supported set 으로 검증한다(미지원 schema
@@ -736,7 +801,7 @@ def _validate(
     resolved: list[dict[str, Any]] = []
     marked: list[str] = []
     for index, requirement in enumerate(plan.active_field_requirements):
-        outcome = _resolve_requirement(requirement, snapshot)
+        outcome = _resolve_requirement(requirement, snapshot, runtime_clock)
         if isinstance(outcome, RecordValidationBlocker):
             ordered_blockers.append((index, outcome))
             continue

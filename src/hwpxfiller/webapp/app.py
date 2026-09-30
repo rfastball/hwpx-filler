@@ -274,7 +274,7 @@ def _content_selection_reader(
 
 def _txt_materialization_port(
     registry: JobRegistry, seal_execution: SealExecutionPlanService
-) -> "Callable[[str, dict, str], tuple[str | None, str]]":
+) -> "Callable[[str, dict, str, datetime], tuple[str | None, str]]":
     """TXT 물질화 서비스 → 작업대의 복사 포트(S10-04 #861).
 
     `_content_selection_reader` 와 같은 규율의 번역 한 겹이다: 작업대는 봉인·VDR·start gate 의
@@ -285,9 +285,12 @@ def _txt_materialization_port(
     service = TxtMaterializationService(registry, seal_execution, clock=datetime.now)
 
     def materialize(
-        work_ref: str, record: dict, request_id: str
+        work_ref: str, record: dict, request_id: str, now: datetime
     ) -> "tuple[str | None, str]":
-        outcome = service.materialize_record(work_ref, record, request_id=request_id)
+        # ``now`` 는 작업대가 카드 렌더에 쓴 그 시각이다 — 「오늘 날짜」가 카드와 같은 글자(RC-02).
+        outcome = service.materialize_record(
+            work_ref, record, request_id=request_id, runtime_now=now
+        )
         if isinstance(outcome, TxtMaterializationRefused):
             return None, outcome.detail
         return materialized_text(outcome), ""

@@ -47,7 +47,6 @@ from hwpxfiller.domain.fill_ledger import template_path_drift
 from hwpxfiller.external.delivery_coordinator import DeliveryCompleted
 from hwpxfiller.external.headless_generation import (
     HeadlessExecuted,
-    HeadlessRefused,
     run_headless_generation,
 )
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -169,12 +168,12 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
     assert read_fields(generated) == req.mapped_records()[0]
 
 
-def test_today_token_is_refused_loudly_by_the_managed_value_contract(tmp_path):
-    """U4-E1 #939 「오늘 날짜」 유형 — managed 값 계약은 아직 실행 시각 값을 싣지 않는다.
+def test_today_field_is_written_from_the_one_captured_run_clock(tmp_path):
+    """#950 「오늘 날짜」 유형 — managed 값 계약이 RUNTIME_DATE 규칙으로 실행 시각을 싣는다.
 
-    legacy 생성은 매핑 층에서 실행 시각을 본문에 넣었다. managed 값 계약에는 그 RUNTIME 계열
-    값이 아직 없어(#950) ``today`` 결속이 연결 판본에 들어가지 못한다 — 조용히 빈 값·데이터 열 값으로
-    채우지 않고 문서 0건으로 멈춘다(#1081 PR0b 결정 Q1: 계약 상향 전까지 차단 유지).
+    #1081 PR0b~PR3 동안 이 결속은 연결 판본에 들어가지 못해 문서 0건으로 멈췄다(회귀). 이제
+    판본은 date 표시형만 싣고, 값은 실행이 **한 번** 캡처한 시각에서 렌더된다 — 본문·파일 이름의
+    날짜 토큰·「오늘 날짜」 필드 토큰이 한 시각을 말한다(RC-02). 데이터 열은 읽지 않는다.
     """
     now = datetime(2026, 6, 15, 18, 4)
     src = source_for_path(DATA / "조달_한글.csv")
@@ -185,21 +184,26 @@ def test_today_token_is_refused_loudly_by_the_managed_value_contract(tmp_path):
         name="오늘 날짜 일괄",
         template_path=BID_NOTICE,
         mapping=MappingProfile(name="today", mappings=mappings),
-        filename_pattern="공고-{{date:%Y-%m-%d}}-{{입찰공고번호}}",
+        # 날짜 토큰과 「오늘 날짜」 필드 토큰을 함께 — 둘 다 같은 캡처 시각에서 나와야 한다.
+        filename_pattern="공고-{{date:%Y%m%d}}-{{" + field_name + "}}-{{입찰공고번호}}",
     )
     req = RunRequest(job, tuple(src.records()), selected_indices=[0])
-    # 매핑 층(표시·편집기 예시)은 여전히 실행 시각을 말한다 — 데이터 열을 읽지 않는다.
-    assert req.mapped_records(now=now)[0][field_name] == "2026-06-15"
+    # 매핑 층(표시·편집기 예시)은 실행 시각을 말한다 — 데이터 열을 읽지 않는다.
+    expected = req.mapped_records(now=now)[0][field_name]
+    assert expected == "2026-06-15"
+    assert src.records()[0][field_name] != expected  # 데이터 열 값이 아니다
 
     out = tmp_path / "out"
-    result = _generate(
+    done = _delivered(_generate(
         tmp_path, out, job.template_path, job.mapping, src.records()[:1], job.filename_pattern,
         now=now,
-    )
-    # 봉인이 서지 않는다 — ``today`` 결속은 연결 판본으로 들어가지 못해 그 필드가 미확정으로 남는다.
-    assert isinstance(result, HeadlessRefused), result
-    assert result.stage == "EXECUTION_NOT_SEALABLE", result
-    assert not out.exists()
+    ))
+    assert len(done.delivered) == 1
+    number = src.records()[0]["입찰공고번호"]
+    assert _outputs(out) == [f"공고-20260615-2026-06-15-{number}.hwpx"]
+    generated = read_hwpx_package(out / _outputs(out)[0])
+    # 본문 = 편집기 미리보기(legacy 매핑 층) = 파일 이름 토큰 — 한 시각.
+    assert read_fields(generated)[field_name] == expected
 
 
 # ----------------------------------------- 부분집합 템플릿(같은 데이터 → 10필드)

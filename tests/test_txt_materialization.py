@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
+import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -535,7 +536,7 @@ def test_a_throwing_materialization_port_blocks_the_copy_with_a_reason(
     harness.choose("첨부", "견적서")
     controller = harness.workbench()
 
-    def _boom(_work_ref, _record, _request_id):
+    def _boom(_work_ref, _record, _request_id, _now):
         raise RuntimeError("저장소가 사라졌다")
 
     controller._txt_materialization = _boom
@@ -545,3 +546,41 @@ def test_a_throwing_materialization_port_blocks_the_copy_with_a_reason(
     assert "저장소가 사라졌다" in result["error"]
     assert written == []
     assert controller.is_open  # 세션은 그대로다
+
+
+def test_today_row_copies_the_card_even_when_every_clock_read_is_a_new_day(
+    tmp_path: Path,
+) -> None:
+    """「오늘 날짜」(RUNTIME_DATE, #950) — 봉인된 TXT 산출이 카드와 같은 날짜다.
+
+    예전엔 이 작업이 봉인에서 막혔다(판본으로 옮길 수 없는 유형). 이제 판본은 RUNTIME_DATE 규칙을
+    싣고, 복사 거래는 시계를 **한 번** 읽어 카드 렌더와 봉인 물질화에 같이 넘긴다 — 시계를 읽을
+    때마다 하루씩 넘어가도 두 글자가 갈리지 않는다(갈리면 「보이는 것 ≠ 복사되는 것」으로 막힌다).
+    """
+    harness = _Harness(tmp_path, SLOT_BODY)
+
+    def today_manager(job) -> None:
+        for item in job.mapping.mappings:
+            if item.template_field == "담당자":
+                item.type, item.source, item.fmt = "today", "", "%Y.%m.%d"
+
+    harness.registry.mutate("안내문", today_manager)
+    harness.choose("첨부", "견적서")
+    ticks = iter(range(10_000))
+    controller = WorkbenchController(
+        harness.registry, lambda s, snap: None,
+        clock=lambda: datetime(2026, 6, 1, 9, 0) + timedelta(days=next(ticks)),
+        target_font=TargetFontSetting(),
+        content_selection=_content_selection_reader(harness.slot_product, harness.registry),
+        txt_materialization=_txt_materialization_port(harness.registry, harness.seal),
+    )
+    controller.open(harness.registry.load("안내문"), [(0, dict(RECORD))])
+
+    written: "list[str]" = []
+    result = controller.copy_to(controller.copy_token(), written.append)
+    assert result["copied"] is True, result
+    (text,) = written
+    assert re.fullmatch(
+        r"수신: ○○청\n담당자: 2026\.\d{2}\.\d{2}\n견적서를 첨부합니다\.\n끝\.\n", text
+    ), text
+    assert "홍길동" not in text  # 데이터 열이 아니라 실행 시각이다

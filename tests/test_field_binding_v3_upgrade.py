@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,7 @@ from hwpxfiller.application.stored_field_binding import ApplicationRevisionPoint
 from hwpxfiller.domain.field_binding import (
     FIELD_BINDING_SEMANTIC_VERSION,
     FIELD_BINDING_SEMANTIC_VERSION_V3,
+    RUNTIME_DATE,
     digest_binding_rules,
 )
 from hwpxfiller.domain.text_slice import TextSlice
@@ -208,3 +210,41 @@ def test_a_v3_revision_behind_a_sliced_mapping_stays_blocked_until_confirmed(app
     assert result["ok"] is True and result["status"] == "completed", result
     text = _section_text(out)
     assert "20260812-001" not in text and "20260812" in text
+
+
+def test_a_v3_revision_behind_a_today_row_stays_blocked_until_confirmed(app, tmp_path):
+    """「오늘 날짜」(RUNTIME_DATE, #950)는 v3 판에 설 수 없었다 — 판본 뒤의 편집이다.
+
+    v3 사영은 kind 를 담으므로 데이터 열 규칙(SOURCE)과 현재 Mapping 의 「오늘 날짜」가 갈라져
+    무손실 승격이 서지 않는다. 편집기 확정이 RUNTIME_DATE 규칙을 v4 판본에 싣고 생성이 선다.
+    """
+    out = tmp_path / "out"
+    work_id = _seat_slotless_work(app, out)
+    _write_as_previous_build(work_id)
+    job = app.controllers["job"]
+
+    def today_without_confirming(saved) -> None:
+        for item in saved.mapping.mappings:
+            if item.template_field == "납품조건":
+                item.type, item.source, item.fmt = "today", "", "%Y-%m-%d"
+
+    job.registry.mutate(WORK, today_without_confirming)
+    app.dispatch("job", "resolve_execution", {})
+    assert _current_revision(work_id).field_binding_semantic_contract_id == (
+        FIELD_BINDING_SEMANTIC_VERSION_V3
+    )
+    assert NEEDS_BINDING_SEMANTIC_MIGRATION in _seal_blockers(app)
+
+    assert job.on_editor_mapping_saved(WORK)["binding_commit_ok"] is True
+    current = _current_revision(work_id)
+    assert current.field_binding_semantic_contract_id == FIELD_BINDING_SEMANTIC_VERSION
+    rule = {r.field_id: r for r in current.binding_rules}["납품조건"]
+    assert (rule.binding_kind, rule.format_kind, rule.format_code) == (
+        RUNTIME_DATE, "date", "%Y-%m-%d"
+    )
+    job._clock = lambda: datetime(2026, 6, 15, 18, 4)
+    app.dispatch("job", "resolve_execution", {})
+    result = app.generate("job")
+    assert result["ok"] is True and result["status"] == "completed", result
+    text = _section_text(out)
+    assert ">2026-06-15<" in text and "계약 후 90일 이내" not in text

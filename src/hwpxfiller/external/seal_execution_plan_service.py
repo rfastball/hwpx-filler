@@ -35,7 +35,6 @@ from typing import Callable
 
 from ..application.document_creation_workbench import InputRequirement
 from ..application.field_binding_input import (
-    RUNTIME_TODAY_UNSUPPORTED,
     CurrentApplicationFieldStructure,
     FieldBindingMigrationDraft,
     FieldBindingReviewRequired,
@@ -655,13 +654,10 @@ _OUTDATED_PROJECTIONS = {
 
 
 # migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기
-# 한 곳에서만 조립한다(같은 사유를 두 자리가 다른 말로 하지 않게).
-_MIGRATION_BLOCKER_TEXT = {
-    RUNTIME_TODAY_UNSUPPORTED: (
-        "'오늘 날짜' 유형은 Field Binding 판본으로 아직 옮길 수 없습니다. "
-        "이 누름틀을 데이터 항목이나 고정값으로 바꾸고 다시 저장하세요"
-    ),
-}
+# 한 곳에서만 조립한다(같은 사유를 두 자리가 다른 말로 하지 않게). 지금 draft 가 세우는 명명
+# blocker 는 없다 — 「오늘 날짜」는 RUNTIME_DATE 규칙으로 옮겨진다(#950). 표는 사유 재진술의
+# 자리로 남긴다(새 blocker 가 생기면 문장도 여기 선다).
+_MIGRATION_BLOCKER_TEXT: dict[str, str] = {}
 _MIGRATION_BLOCKER_FALLBACK_TEXT = (
     "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
 )
@@ -677,8 +673,8 @@ def _resolved_rules(
     """현재 활성 Field 의 규칙 — 현재 Mapping 결정을 그대로 upsert 한다."""
     candidates = {item.field_id: item for item in draft.candidate_rules}
     # 후보가 없는 Field 는 draft 가 **왜** 못 지었는지를 blocker 로 이미 말했다 — 그
-    # 사유를 그대로 재진술한다 — 사유를 묻지 않고 한 이름으로 적으면 다른 원인
-    # (「오늘 날짜」 유형)까지 엉뚱한 이름으로 보고된다.
+    # 사유를 그대로 재진술한다 — 사유를 묻지 않고 한 이름으로 적으면 다른 원인까지
+    # 엉뚱한 이름으로 보고된다.
     reasons = {item.field_id: item.reason for item in draft.blockers}
     rules: list[FieldBindingRule] = []
     for entry in entries:

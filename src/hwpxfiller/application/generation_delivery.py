@@ -12,6 +12,11 @@ runtime conformance admission bridge, managed adapter(S5 guarantee 단일 소유
   revision 으로 해석한다.
 - **date·seq·duplicate suffix·item ordinal 은 batch 전체에서 한 번만 결정한다**(invariant 22).
   filename pattern 은 provenance 이고 실행 시점의 naming authority 는 resolved_output_relative_path 다.
+- **「오늘 날짜」(RUNTIME_DATE, #950)의 시각 권위는 ``captured_delivery_clock`` 하나다**(RC-02). 파일
+  이름의 날짜 토큰·「오늘 날짜」 Field 토큰(Active·inactive 모두)이 이 값으로 렌더되고, managed 생성은
+  문서 본문의 RUNTIME_DATE 도 같은 값으로 렌더한다(:mod:`hwpxfiller.external.managed_generation`).
+  그래서 Active RUNTIME_DATE 토큰은 VDR 값을 재사용하지 않고 이 시각에서 다시 렌더한다 — 레코드
+  준비(미리보기 VDR)는 배달 준비보다 먼저, 다른 순간에 찍히기 때문이다.
 - **S5 는 native mutation·Artifact·실제 delivery write·production Generate route cutover 를 하지
   않는다**(전부 S6). managed Plan 을 legacy generator 입력으로 변환하지 않는다(invariant 23).
 - confirm-or-alarm: 미치환/미해소 token 은 조용한 빈칸이 아니라 시끄러운 blocker. unknown pattern/
@@ -73,6 +78,7 @@ from hwpxfiller.domain.output_name import (
 )
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
+    RUNTIME_DATE,
     SOURCE,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
@@ -80,7 +86,9 @@ from hwpxfiller.domain.field_binding import (
     UnsupportedDocumentValuePolicyError,
     UnsupportedValueFormatError,
     encode_text_slice,
+    render_runtime_date,
     render_source_value,
+    require_runtime_date_format,
     require_single_rule_per_field,
     resolve_document_value_policy,
 )
@@ -154,6 +162,7 @@ S5_EXACT_DELIVERY_GUARANTEE = "s5-managed-delivery/v1"
 _KIND_FROM_SOURCE = "FROM_SOURCE"
 _KIND_CONSTANT = "CONSTANT"
 _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
+_KIND_RUNTIME_DATE = RUNTIME_DATE
 
 # current delivery disposition — publication guarantee 가 아니라 현재 관찰에 대한 계획이다.
 WRITE_NEW = "WRITE_NEW"
@@ -247,6 +256,14 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
         return {
             "kind": _KIND_CONSTANT,
             "canonical_value": encode_source_value(rule.canonical_constant_value),
+            "format_code": rule.format_code,
+            "document_content_value_policy_id": policy_id,
+        }
+    if rule.binding_kind == RUNTIME_DATE:
+        # 실행 계획의 인코딩과 같은 모양 — 시각은 싣지 않고(basis 는 시각과 무관) 표시형만 봉인한다.
+        return {
+            "kind": _KIND_RUNTIME_DATE,
+            "format_kind": rule.format_kind,
             "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
         }
@@ -449,15 +466,67 @@ def _render_delivery_format(value_expression: Mapping[str, Any], text: str) -> s
         ) from exc
 
 
+def _render_delivery_runtime_date(
+    value_expression: Mapping[str, Any], clock: datetime | None
+) -> str:
+    """RUNTIME_DATE 토큰 값 — 배달 시각(``captured_delivery_clock``)을 date 표시형으로 렌더한다.
+
+    legacy ``apply_transform("today", …)``·record validation 과 **같은 함수**
+    (:func:`~hwpxfiller.domain.field_binding.render_runtime_date`)다. 모양이 어긋나거나 시각이 없으면
+    원문·현재 시각으로 메우지 않고 닫는다.
+    """
+    format_code = value_expression.get("format_code")
+    if any(
+        value_expression.get(key) is not None
+        for key in ("text_slice", "source_key", "canonical_value")
+    ):
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            "실행 시각 값에는 데이터 열·고정값·가공이 없다",
+        )
+    try:
+        require_runtime_date_format(value_expression.get("format_kind"), format_code)
+    except UnsupportedValueFormatError as exc:
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            f"파일 이름 값의 실행 시각 표시형을 해석할 수 없다: {exc}",
+        ) from exc
+    if clock is None:
+        raise _DeliveryContextSignal(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+            "실행 시각 토큰을 렌더할 captured_delivery_clock 이 없다",
+        )
+    assert isinstance(format_code, str)  # require_runtime_date_format 이 강제
+    return render_runtime_date(format_code, clock)
+
+
+def _runtime_date_requirements(
+    requirements: Iterable[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    """Plan 의 Active RUNTIME_DATE requirement(field_id → value expression)."""
+    found: dict[str, Mapping[str, Any]] = {}
+    for requirement in requirements:
+        value_expression = requirement.get("value_expression")
+        if (
+            isinstance(value_expression, Mapping)
+            and value_expression.get("kind") == _KIND_RUNTIME_DATE
+        ):
+            found[str(requirement.get("field_id"))] = value_expression
+    return found
+
+
 def resolve_delivery_field_value(
     value_expression: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
+    *,
+    clock: datetime | None = None,
 ) -> str | tuple[str, str]:
     """inactive Field token 값을 exact requirement + raw snapshot 에서 해석한다.
 
     반환: exact logical text | (blocker_code, detail). 미지원 policy/contract 는 blocker 로
     낮추지 않고 ``_DeliveryContextSignal`` 로 닫는다(fail-closed). Active token 은 이 함수를 거치지 않고
-    VDR 값을 재사용한다. 소스 값은 언제나 타입 없는 텍스트다 — 여기서 판정하는 것은 존재뿐이다.
+    VDR 값을 재사용한다(RUNTIME_DATE 는 예외 — 모듈 설명). 소스 값은 언제나 타입 없는 텍스트다 —
+    여기서 판정하는 것은 존재뿐이다. ``clock`` 은 RUNTIME_DATE 가 렌더할 배달 시각이다.
     """
     try:
         policy = resolve_document_value_policy(
@@ -470,6 +539,10 @@ def resolve_delivery_field_value(
     kind = value_expression.get("kind")
     if kind == _KIND_INTENTIONAL_BLANK:
         return (OUTPUT_NAME_TOKEN_UNRESOLVED, "INTENTIONAL_BLANK 은 filename token 으로 미해소")
+    if kind == _KIND_RUNTIME_DATE:
+        return _apply_whitespace_policy(
+            _render_delivery_runtime_date(value_expression, clock), policy.whitespace_policy
+        )
     if kind == _KIND_CONSTANT:
         _require_no_delivery_format_code(value_expression)
         canonical = value_expression.get("canonical_value")
@@ -838,6 +911,9 @@ def _resolve_current(
         for requirement in delivery_binding_basis.output_name_requirements
     }
     expected_basis = current_record_validation_basis(sealed_execution_plan)
+    runtime_by_field = _runtime_date_requirements(
+        sealed_execution_plan.active_field_requirements
+    )
     blockers: list[DeliveryPlanBlocker] = []
     base_names: list[str] = []
     token_values: list[tuple[ResolvedTokenValue, ...]] = []
@@ -879,11 +955,14 @@ def _resolve_current(
         item_blocked = False
         for field_id in pattern_field_token_ids(tokens):
             value: str | tuple[str, str]
-            if field_id in active_map:
+            if field_id in runtime_by_field:
+                # 레코드 준비(미리보기 VDR)의 시각이 아니라 배달 시각 — 문서 본문과 같은 값.
+                value = _render_delivery_runtime_date(runtime_by_field[field_id], clock)
+            elif field_id in active_map:
                 value = active_map[field_id]
             elif field_id in inactive_by_field:
                 value = resolve_delivery_field_value(
-                    inactive_by_field[field_id], snapshot
+                    inactive_by_field[field_id], snapshot, clock=clock
                 )
             else:
                 value = (
@@ -1115,6 +1194,9 @@ def _resolve(
     }
     # 모든 VDR·item 이 결속돼야 하는 exact Plan identity(한 번만 계산).
     bound_plan_digest = plan_semantic_digest(sealed_execution_plan)
+    runtime_by_field = _runtime_date_requirements(
+        sealed_execution_plan.active_field_requirements
+    )
 
     # (4) item 순서대로 값 해석 → base name(dedupe 전). 입력 순서를 item ordinal 로 고정한다.
     blockers: list[DeliveryPlanBlocker] = []
@@ -1162,10 +1244,15 @@ def _resolve(
         field_values: dict[str, str] = {}
         item_blocked = False
         for field_id in pattern_field_token_ids(tokens):
-            if field_id in active_map:
-                text: str | tuple[str, str] = active_map[field_id]
+            text: str | tuple[str, str]
+            if field_id in runtime_by_field:
+                text = _render_delivery_runtime_date(runtime_by_field[field_id], clock)
+            elif field_id in active_map:
+                text = active_map[field_id]
             elif field_id in inactive_by_field:
-                text = resolve_delivery_field_value(inactive_by_field[field_id], snapshot)
+                text = resolve_delivery_field_value(
+                    inactive_by_field[field_id], snapshot, clock=clock
+                )
             else:  # basis 가 이 field 를 안 담았다(active 도 inactive 도 아님)
                 text = (
                     OUTPUT_NAME_TOKEN_UNRESOLVED,

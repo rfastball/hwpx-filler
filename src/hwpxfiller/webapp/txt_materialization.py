@@ -113,9 +113,18 @@ class TxtMaterializationService:
         # (:class:`ManagedRunContext`) 하나에서만 온다 — 두 곳에서 받으면 어긋날 자리가 생긴다.
 
     def materialize_record(
-        self, work_ref: str, record: Mapping[str, object], *, request_id: str
+        self,
+        work_ref: str,
+        record: Mapping[str, object],
+        *,
+        request_id: str,
+        runtime_now: datetime | None = None,
     ) -> TxtMaterializationResult:
-        """레코드 1건을 현재 basis 의 Sealed Plan 으로 물질화한다(실패는 사유 있는 거절)."""
+        """레코드 1건을 현재 basis 의 Sealed Plan 으로 물질화한다(실패는 사유 있는 거절).
+
+        ``runtime_now`` 는 「오늘 날짜」(RUNTIME_DATE)의 기준 시각이다 — 작업대가 카드 렌더에 쓴
+        값을 넘기면 복사본과 카드가 같은 글자다. 없으면 이 호출이 시계를 **한 번** 읽는다.
+        """
         job = self._registry.load(work_ref)
         if job.media != "txt":
             return TxtMaterializationRefused(
@@ -172,13 +181,16 @@ class TxtMaterializationService:
             )
 
         # 3. VDR — record 자격 판정은 record_validation 소유다(여기서 재조립 0).
-        validated_at = self._clock().isoformat(timespec="seconds")
+        validated_at = (
+            runtime_now if runtime_now is not None else self._clock()
+        ).isoformat(timespec="seconds")
         try:
             snapshot = self._capture(record, validated_at)
         except ValueError as exc:
             return TxtMaterializationRefused(RECORD_CAPTURE_FAILED, str(exc))
+        # 「오늘 날짜」(RUNTIME_DATE)도 이 물질화가 캡처한 그 시각으로 렌더한다(시계 1회).
         validated = validate_data_record_against_plan(
-            plan=plan, snapshot=snapshot, validated_at=validated_at
+            plan=plan, snapshot=snapshot, validated_at=validated_at, runtime_clock=validated_at
         )
         if isinstance(validated, RecordValidationBlocked):
             codes = ", ".join(sorted({b.code for b in validated.blockers}))

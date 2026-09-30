@@ -21,7 +21,6 @@ from hwpxfiller.application.field_binding_input import (
     decide_application_review_commit,
     decide_migration_commit,
     field_binding_authority_revision_identity,
-    RUNTIME_TODAY_UNSUPPORTED,
     prepare_legacy_field_binding_migration,
     review_field_binding_for_current_application,
     revision_from_input,
@@ -31,6 +30,7 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     INTENTIONAL_BLANK,
+    RUNTIME_DATE,
     SOURCE,
     ExactText,
     FieldBindingInputIntegrityError,
@@ -178,23 +178,28 @@ def test_empty_constant_is_an_exact_empty_text_candidate_not_a_blocker() -> None
     assert draft.blockers == ()
 
 
-def test_today_is_blocker_not_a_false_source_or_constant_rule() -> None:
-    """U4-E1 #939 — legacy ``today``(오늘 날짜)는 v1 binding kind 어휘에 대응이 없다.
+def test_today_migrates_to_a_runtime_date_rule_not_a_false_source_or_constant() -> None:
+    """#950 — legacy ``today``(오늘 날짜)는 RUNTIME_DATE 후보가 된다(U4-E1 #939 blocker 퇴역).
 
     값이 **실행 시각**에서 나오므로 SOURCE(데이터 열)도 CONSTANT(고정 리터럴)도 아니다.
     빈 ``source_key`` 의 SOURCE 나 그때의 렌더값을 담은 CONSTANT 로 접으면 판본에 **거짓
-    durable 규칙**을 적는다 — 조용히 틀리느니 명시 결정으로 남긴다.
+    durable 규칙**을 적는다 — 그 뜻 그대로의 kind 로 옮긴다. 표시형 ``fmt`` 도 함께 건너간다.
     """
     draft = _legacy([
         LegacyFieldBindingEntry("작성일", "today", "", "", "%Y-%m-%d"),
         LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
     ])
-    assert all(c.field_id != "작성일" for c in draft.candidate_rules)
-    assert [(b.field_id, b.reason) for b in draft.blockers] == [
-        ("작성일", RUNTIME_TODAY_UNSUPPORTED)
-    ]
-    # 다른 Field 는 그대로 후보가 된다(한 행의 미지원이 판본 전체를 삼키지 않는다).
-    assert [c.field_id for c in draft.candidate_rules] == ["계약명"]
+    assert draft.blockers == ()
+    by_field = {c.field_id: c for c in draft.candidate_rules}
+    today = by_field["작성일"]
+    assert today.binding_kind == RUNTIME_DATE
+    assert today.source_key is None and today.canonical_constant_value is None
+    assert (today.format_kind, today.format_code) == ("date", "%Y-%m-%d")
+    assert today.text_slice is None
+    # 소스 텍스트가 아니라 공백 결정을 묻지 않는다(보존 정책).
+    assert today.proposed_policy_id == POLICY.policy_id
+    assert today.whitespace_decision_required is False
+    assert by_field["계약명"].binding_kind == SOURCE
 
 
 def test_prepare_rejects_unknown_legacy_type() -> None:
@@ -208,7 +213,7 @@ def test_migration_commit_decision_paths() -> None:
         LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
     ])
     basis = draft.legacy_basis_fingerprint
-    # 미해결 blocker(빈칸 없음) → review required.
+    # 드러난 후보(빈칸 = 오늘 날짜)가 입력에서 빠졌다 → review required(silent drop 금지).
     partial = _input(rules=[_rule("계약명")])
     with pytest.raises(FieldBindingReviewRequired) as ei:
         decide_migration_commit(draft, partial, "A17", basis)

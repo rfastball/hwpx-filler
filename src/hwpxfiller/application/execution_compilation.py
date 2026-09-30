@@ -62,6 +62,8 @@ from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_d
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     EXACT_BLANK_POLICY,
+    FORMAT_KIND_DATE,
+    RUNTIME_DATE,
     SOURCE,
     VALUE_KIND_TEXT,
     CanonicalBindingValue,
@@ -139,7 +141,18 @@ class IntentionalBlank:
     exact_blank_policy: str = EXACT_BLANK_POLICY
 
 
-ActiveFieldValueExpression = FromSource | ConstantValue | IntentionalBlank
+@dataclass(frozen=True)
+class RuntimeDate:
+    """실행 시각 값(v4 RUNTIME_DATE, #950) — Plan 은 **규칙**만 봉인한다(시각은 record-independent
+    Plan 밖이다). 값은 실행이 한 번 캡처한 시각을 record validation 이 date 표시형으로 렌더한다.
+    """
+
+    format_code: str
+    document_content_value_policy_id: str
+    format_kind: str = FORMAT_KIND_DATE
+
+
+ActiveFieldValueExpression = FromSource | ConstantValue | IntentionalBlank | RuntimeDate
 
 
 # ─── Active Field projection(중복 정본 없음 — 하나의 projection) ────────────────────────
@@ -268,6 +281,10 @@ def _value_expression(rule: FieldBindingRule) -> ActiveFieldValueExpression:
     if rule.binding_kind == CONSTANT:
         assert rule.canonical_constant_value is not None
         return ConstantValue(rule.canonical_constant_value, rule.format_code, policy_id)
+    if rule.binding_kind == RUNTIME_DATE:
+        # RUNTIME_DATE 규칙은 date 표시형 쌍을 반드시 갖는다(FieldBindingRule 이 강제).
+        assert rule.format_code is not None and rule.format_kind is not None
+        return RuntimeDate(rule.format_code, policy_id, format_kind=rule.format_kind)
     return IntentionalBlank()  # INTENTIONAL_BLANK(BINDING_KINDS 소진)
 
 
@@ -400,6 +417,14 @@ def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
         return {
             "kind": "CONSTANT",
             "canonical_value": _encode_canonical_value(ve.canonical_value),
+            "format_code": ve.format_code,
+            "document_content_value_policy_id": ve.document_content_value_policy_id,
+        }
+    if isinstance(ve, RuntimeDate):
+        # 시각 자체는 싣지 않는다 — Plan 은 record·실행 시각과 무관한 의미다(같은 규칙 = 같은 digest).
+        return {
+            "kind": RUNTIME_DATE,
+            "format_kind": ve.format_kind,
             "format_code": ve.format_code,
             "document_content_value_policy_id": ve.document_content_value_policy_id,
         }
