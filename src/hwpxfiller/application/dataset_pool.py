@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -43,13 +44,7 @@ from ..domain.dataset_reference import (
     pclm_identity,
     reference_identity,
 )
-from ..domain.pclm_views import (
-    PCLM_VIEW_LABELS,
-    PCLM_VIEW_TITLES,
-    PCLM_VIEWS,
-    default_pclm_db,
-    sheet_title,
-)
+from ..domain.pclm_views import default_pclm_db
 from .nara_acquire import validate_range
 
 
@@ -282,14 +277,12 @@ def reference_summary(item: DatasetReference) -> str:
         sheet = opts.get("sheet")
         return f"파일: {name}" + (f" · 시트 {sheet}" if sheet else "")
     if item.kind == "pclm":
-        # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 면 하나. 표면 어휘는 「시트」로
-        # 통일한다(내부 어휘 「뷰」는 사용자가 읽을 자리에 서지 않는다). 면 이름도 제목으로
-        # 옮긴다 — 미지 이름(손편집·구판)은 감추지 않고 원문 그대로 남긴다.
+        # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 시트 하나. 시트 이름은 그 DB 가
+        # 가진 이름 그대로다(엑셀 시트 이름과 같다 — 옮길 제목표가 없다, 사용자 결정 2026-09-30).
         db = str(opts.get("db", ""))
         name = Path(db).name if db else "(경로 없음)"
         view = opts.get("view")
-        title = PCLM_VIEW_TITLES.get(str(view), view)
-        return f"DB: {name}" + (f" · 시트 {title}" if view else "")
+        return f"DB: {name}" + (f" · 시트 {view}" if view else "")
     if item.kind == "nara":
         bgn = opts.get("bgn_dt", "?")
         end = opts.get("end_dt", "?")
@@ -429,9 +422,8 @@ def reference_sheet(item: DatasetReference) -> str:
     """참조가 가리키는 **면 하나** — 엑셀은 시트, 계약 목록은 뷰. 나머지는 ``""``.
 
     :attr:`DatasetPoolRow.sheet` 가 엑셀만 드는 것과 달리 여기는 종류를 가로지른다: 상세
-    시트가 「시트: …」 한 줄로 말하는 것이 계약 목록에서는 뷰이기 때문이고, 그 두 좌표를
-    한 축으로 접는 자리가 하나여야 제목화(:func:`~hwpxfiller.domain.pclm_views.sheet_title`)
-    도 한 번만 지난다. 다시 연결은 엑셀에만 있는 동사라 두 값이 갈리는 자리가 없다.
+    시트가 「시트: …」 한 줄로 말하는 것이 계약 목록에서는 DB 의 뷰·표이기 때문이다. 다시
+    연결은 엑셀에만 있는 동사라 두 값이 갈리는 자리가 없다.
     """
     opts = item.opts if isinstance(item.opts, dict) else {}
     raw = opts.get("sheet") if item.kind == "excel" else (
@@ -469,8 +461,8 @@ class DatasetDetail:
 
     템플릿 쪽 :class:`~hwpxfiller.viewmodel.template_manager_state.TemplateDetail` 의 거울이고
     규율도 같다 — **재조립 금지**: 배지·상태·동사 목록은 :class:`DatasetPoolRow` 와 같은
-    출처(`_STATE_ACTIONS` · :meth:`DatasetPoolRow.actions`)이고, 시트 제목화는 링0
-    (:func:`~hwpxfiller.domain.pclm_views.sheet_title`) 그대로다. 이 클래스가 새로 판정하는
+    출처(`_STATE_ACTIONS` · :meth:`DatasetPoolRow.actions`)이고, 시트 이름은 참조가 든
+    원문 그대로다(계약 목록 시트도 DB 의 이름 그대로 — 제목표 없음). 이 클래스가 새로 판정하는
     것은 하나도 없다 — 참조 하나를 한 번 열어 본 결과를 한 모양으로 편다.
 
     ``error`` 는 **읽기 실패의 사유**다(파일 부재·시트 오타·손상). 그때 ``columns`` 는 비고,
@@ -486,8 +478,8 @@ class DatasetDetail:
     badge_label: str
     badge_level: str
     path: str = ""          # locate_path — 파일을 가리키는 참조만(엑셀 path·계약 목록 db)
-    sheet: str = ""         # 확정 면(엑셀 시트 / 계약 목록 뷰) — 다시 연결 프리필의 재료
-    sheet_title: str = ""   # 그 면의 표시명(계약 목록 뷰만 제목화)
+    sheet: str = ""         # 확정 면(엑셀 시트 / 계약 목록 시트) — 다시 연결 프리필의 재료
+    sheet_title: str = ""   # 그 면의 표시명 — 언제나 ``sheet`` 원문 그대로(제목표 퇴역)
     header_row: int = 0
     note: str = ""
     columns: "tuple[str, ...]" = ()
@@ -692,7 +684,7 @@ class DatasetPoolViewModel:
             badge_level=row.badge_level,
             path=row.locate_path,
             sheet=sheet,
-            sheet_title=sheet_title(row.kind, sheet),
+            sheet_title=sheet,
             header_row=reference_header_row(item),
             note=row.note,
             columns=columns,
@@ -745,7 +737,8 @@ class DatasetPoolViewModel:
         return item
 
     def register_pclm(
-        self, name: str, db: str = "", *, view: str, note: str = ""
+        self, name: str, db: str = "", *, view: str, sheets: "Sequence[str]",
+        note: str = "",
     ) -> DatasetReference:
         """계약 목록(pclm) 참조 등록 — **DB 경로 + 뷰만** 저장(스냅샷 아님, 실행 때 재읽기).
 
@@ -754,19 +747,21 @@ class DatasetPoolViewModel:
         두면 나중에 기본 자리가 바뀌었을 때 같은 항목이 조용히 다른 DB 를 가리키고,
         정체성(같은 데이터인가)도 지어지지 않아 중복 판정이 통째로 죽는다.
 
-        뷰는 여기서 검증한다(등록 시점 확정): 뷰 이름은 SELECT 에 그대로 박히는
-        허용목록이고(:data:`~hwpxfiller.domain.pclm_views.PCLM_VIEWS`), 잘못된 이름을
-        저장하면 실행 때마다 실패하는 죽은 참조가 조용히 생긴다(``register_nara`` 의 기간
-        검증과 같은 근거, RC-13). 거절은 쓸 수 있는 뷰를 설명과 함께 재진술한다.
+        시트는 여기서 검증한다(등록 시점 확정): ``sheets`` 는 **그 DB 가 실제로 가진**
+        시트 목록이다 — 호출자(링2 컨트롤러)가 어댑터
+        :func:`~hwpxfiller.data.pclm.list_sqlite_sheets` 로 읽어 넘긴다(Application 은 파일을
+        열지 않는다). 그 밖의 이름을 저장하면 실행 때마다 실패하는 죽은 참조가 조용히 생긴다
+        (``register_nara`` 의 기간 검증과 같은 근거, RC-13). 고정 허용목록은 사용자 결정
+        (2026-09-30)으로 걷혔다 — 기준은 그 DB 하나다. 거절은 쓸 수 있는 시트 이름을 재진술한다.
         """
         name = (name or "").strip()
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
-        if view not in PCLM_VIEWS:
+        if view not in sheets:
             raise ValueError(
                 f"계약 목록이 약속한 뷰가 아닙니다: {view!r}\n"
                 "쓸 수 있는 뷰:\n"
-                + "\n".join(f"  {v} — {PCLM_VIEW_LABELS[v]}" for v in PCLM_VIEWS)
+                + "\n".join(f"  {v}" for v in sheets)
             )
         opts: "dict[str, object]" = {"db": resolve_pclm_db(db), "view": view}
         item = DatasetReference(name=name, kind="pclm", opts=opts, note=note)

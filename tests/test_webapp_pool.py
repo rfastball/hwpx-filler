@@ -783,16 +783,22 @@ def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
 def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
     """신규 추가 / 무변경 멱등 확정 / 이름 갱신 확정(결속) — 엑셀 등록의 거울이다."""
     ctrl, reg, pushes = _controller(tmp_path)
-    db = str(tmp_path / "pclm.db")
+    db = _pclm_db(tmp_path / "pclm.db")
 
     res = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
     assert res["ok"] is True and res["name"] == "계약 목록"
     assert "추가했습니다" in _result(ctrl)["text"]
     row = pushes[-1][1]["column"]["rows"][0]
     assert row["icon"] == "pclm"                          # 계약 목록은 자기 표지로 선다
-    assert row["sub"] == "DB: pclm.db · 시트 통합"        # 표면 어휘는 시트 + 제목
-    # 없는 파일은 끊김으로 — 「폴더에서 보기」가 겨눌 경로는 그대로 든다.
-    assert row["path"] == db and "참조가 끊겼습니다" in row["reason"]
+    # 시트 이름은 DB 가 가진 이름 그대로다(엑셀 시트처럼 — 사용자 결정 2026-09-30).
+    assert row["sub"] == "DB: pclm.db · 시트 v_통합_v1"
+    assert row["path"] == db and row["reason"] == ""
+    # 등록 뒤 파일이 사라지면 끊김으로 — 「폴더에서 보기」가 겨눌 경로는 그대로 든다.
+    Path(db).unlink()
+    ctrl.dispatch("refresh", {})
+    gone = pushes[-1][1]["column"]["rows"][0]
+    assert gone["path"] == db and "참조가 끊겼습니다" in gone["reason"]
+    _pclm_db(Path(db))
 
     noop = ctrl.dispatch("register_pclm", {"name": "계약 목록", "db": db, "view": "v_통합_v1"})
     assert noop["ok"] is True and "needs_confirm" not in noop
@@ -830,6 +836,7 @@ def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    _pclm_db(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db", views=("v_계약_v1",))
     ctrl, reg, _ = _controller(tmp_path)
     res = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
     assert res["ok"] is True
@@ -844,25 +851,44 @@ def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
 
 
 def test_register_pclm_unknown_view_is_worded_not_raised(tmp_path):
-    """미지 뷰는 날것 예외가 아니라 사용자 문구 — 쓸 수 있는 뷰를 설명과 함께 재진술한다."""
-    from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
-
+    """그 DB 에 없는 시트는 날것 예외가 아니라 사용자 문구 — **그 DB 의** 시트를 재진술한다."""
     ctrl, _reg, _ = _controller(tmp_path)
-    res = ctrl.dispatch(
-        "register_pclm", {"name": "오타", "db": "C:/d/pclm.db", "view": "v_통합"})
+    db = _pclm_db(tmp_path / "pclm.db", views=("v_통합_v2", "v_접수_v1"))
+    res = ctrl.dispatch("register_pclm", {"name": "오타", "db": db, "view": "v_통합_v1"})
     assert res["ok"] is False
-    assert all(view in res["error"] for view in PCLM_VIEWS)
-    assert PCLM_VIEW_LABELS["v_통합_v1"] in res["error"]
+    assert all(sheet in res["error"] for sheet in ("v_통합_v2", "v_접수_v1", "계약"))
     assert _rows(ctrl) == [] and _result(ctrl)["level"] == "danger"
+    # 표도 시트다 — 그 DB 에 있으면 뷰가 아니어도 등록된다(엑셀 통합문서처럼).
+    table = ctrl.dispatch("register_pclm", {"name": "원천 표", "db": db, "view": "계약"})
+    assert table["ok"] is True
     empty = ctrl.dispatch("register_pclm", {"name": " ", "db": "C:/d/pclm.db",
                                             "view": "v_통합_v1"})
     assert empty["ok"] is False and "이름" in empty["error"]
 
 
+@pytest.mark.parametrize("broken", ["missing", "not-sqlite"])
+def test_register_pclm_on_an_unusable_db_restates_the_file_problem(tmp_path, broken):
+    """DB 파일이 없거나 SQLite 가 아니면 어댑터 문장 그대로 — 「삭제된 항목」으로 접지 않는다.
+
+    시트를 대조할 목록이 없으니 등록하지 않는다(죽은 참조를 세우지 않는다).
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    db = tmp_path / "pclm.db"
+    if broken == "not-sqlite":
+        db.write_bytes(b"not a database" * 20)
+    res = ctrl.dispatch("register_pclm", {"name": "계약", "db": str(db), "view": "v_통합_v1"})
+    assert res["ok"] is False
+    expected = "찾지 못했습니다" if broken == "missing" else "열지 못했습니다"
+    assert expected in res["error"]
+    assert "이미 삭제된 항목" not in res["error"]
+    assert _result(ctrl)["level"] == "danger"
+    assert reg.list_references()[0] == []
+
+
 def test_register_pclm_confirm_does_not_resurrect_deleted_item(tmp_path):
     """확인 사이 삭제됐으면 확정을 신규 등록 승인으로 바꾸지 않는다(엑셀 판과 같은 규율)."""
     ctrl, reg, _ = _controller(tmp_path)
-    db = str(tmp_path / "pclm.db")
+    db = _pclm_db(tmp_path / "pclm.db", views=("v_공고_v1",))
     ctrl.dispatch("register_pclm", {"name": "계약", "db": db, "view": "v_공고_v1"})
     first = ctrl.dispatch("register_pclm", {"name": "공고면", "db": db, "view": "v_공고_v1"})
     reg.delete(_rows(ctrl)[0]["key"])
@@ -899,66 +925,77 @@ def test_pclm_duplicates_merge_through_the_same_confirm_path(tmp_path):
     assert [r["name"] for r in _rows(ctrl)] == ["최신 계약"]
 
 
-def test_pclm_snapshot_block_carries_default_db_and_only_the_choosable_views(
-    tmp_path, monkeypatch,
-):
-    """스냅샷이 기본 DB 자리와 **고르게 할 뷰**를 낸다 — 그 둘뿐이다.
+def test_pclm_snapshot_block_lists_the_sheets_of_the_default_db(tmp_path, monkeypatch):
+    """스냅샷이 기본 DB 자리와 **그 DB 가 실제로 가진 시트**를 낸다 — 그 둘뿐이다.
 
-    ``views`` 는 새로 고를 수 있는 것이고(품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지
-    제외) 종전에 함께 실리던 **뷰 전수 제목표**(``titles``)는 웹 소비자 0 으로 걷혔다
-    (슬라이스 ⑤): 이미 선 마운트의 제목화는 Python 이 세션 행 부제를 지을 때 링0
-    ``sheet_title`` 하나로 끝난다 — 표를 웹에 다시 내리면 제목화가 두 층에서 갈린다.
+    고정 허용목록은 걷혔다(사용자 결정 2026-09-30): 목록은 뷰 먼저, 다음 표이고 각 항목은
+    시트 이름 하나다(제목·설명표 없음 — 엑셀 시트처럼 이름이 곧 표시명이다).
     """
-    from hwpxfiller.domain.pclm_views import (
-        PCLM_DOC_VIEWS,
-        PCLM_VIEW_DESCS,
-        PCLM_VIEW_TITLES,
-    )
-
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    default_db = tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
+    _pclm_db(default_db, views=("v_통합_v2", "v_접수_v1"))
     ctrl, _reg, _ = _controller(tmp_path)
     block = ctrl.initial()["pclm"]
-    assert block["default_db"] == str(
-        tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
-    )
-    assert [v["name"] for v in block["views"]] == list(PCLM_DOC_VIEWS)
-    assert "v_품목_v1" not in [v["name"] for v in block["views"]]
-    assert all(v["title"] == PCLM_VIEW_TITLES[v["name"]] for v in block["views"])
-    assert all(v["desc"] == PCLM_VIEW_DESCS[v["name"]] for v in block["views"])
-    # 종전 `label` 키는 폐기 — 표면이 「설명. 뜻」 한 줄을 다시 조립하지 않는다.
-    assert all("label" not in v for v in block["views"])
-    # 블록의 키 집합은 둘뿐이다(제목표는 소비자 0 으로 퇴역했다 — 슬라이스 ⑤).
+    assert block["default_db"] == str(default_db)
+    assert block["views"] == [
+        {"name": "v_통합_v2"}, {"name": "v_접수_v1"}, {"name": "계약"},
+    ]
     assert tuple(block) == ("default_db", "views")
 
 
-def test_targeting_gate_rejects_a_broken_pclm_view_and_still_freezes_nara(tmp_path):
-    """겨눔 관문의 백스톱 — 손편집·구판이 남긴 미지 뷰는 거절하고, 나라 동결은 그대로다.
+@pytest.mark.parametrize("broken", ["missing", "not-sqlite"])
+def test_pclm_snapshot_block_opens_with_no_sheets_when_the_db_is_unusable(
+    tmp_path, monkeypatch, broken,
+):
+    """기본 자리의 DB 가 없거나 못 읽으면 ``views`` 는 빈 목록 — 스냅샷은 실패하지 않는다.
 
-    등록 게이트(링1)가 뷰를 확정해도 그 게이트를 지나지 않은 항목(직접 쓴
-    ``.dataset.json``)이 있다. 뷰 이름은 SELECT 에 그대로 박히므로 다중 시트 게이트와
-    같은 자리에서 한 번 더 잡는다.
+    폼은 그대로 열리고, 그 파일 문제는 등록 게이트가 기존 문장으로 재진술한다.
     """
-    from hwpxfiller.domain.pclm_views import PCLM_VIEWS
-    from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT, load_pool_item_checked
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    default_db = tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
+    if broken == "not-sqlite":
+        default_db.parent.mkdir(parents=True)
+        default_db.write_bytes(b"not a database" * 20)
+    ctrl, _reg, _ = _controller(tmp_path)
+    block = ctrl.initial()["pclm"]
+    assert block == {"default_db": str(default_db), "views": []}
 
+
+def test_targeting_gate_leaves_pclm_sheets_to_the_real_load_and_still_freezes_nara(tmp_path):
+    """겨눔 관문은 계약 목록 시트를 판정하지 않는다 — 그 DB 에 없는 시트는 실제 로드가 거절한다.
+
+    고정 허용목록이 걷혔으므로 관문이 들 목록이 없다. 손편집·구판이 남긴 시트 이름은
+    소스가 SELECT 전에 대조해 **그 DB 의** 시트를 재진술하고, 공유 실행부가 그 문장을
+    그대로 옮긴다. 나라 동결은 그대로다.
+    """
+    from hwpxfiller.webapp.screens import (
+        NARA_FROZEN_TEXT,
+        load_pool_into,
+        load_pool_item_checked,
+    )
+
+    db = _pclm_db(tmp_path / "pclm.db", views=("v_통합_v2",))
     reg = DatasetPoolRegistry(tmp_path / "datasets")
     good = reg.add(DatasetReference(
-        name="정상", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합_v1"}))
+        name="정상", kind="pclm", opts={"db": db, "view": "v_통합_v2"}))
     broken = reg.add(DatasetReference(
-        name="구판", kind="pclm", opts={"db": "C:/d/pclm.db", "view": "v_통합"}))
-    missing = reg.add(DatasetReference(
-        name="뷰 없음", kind="pclm", opts={"db": "C:/d/other.db"}))
+        name="구판", kind="pclm", opts={"db": db, "view": "v_통합_v1"}))
     nara = reg.add(DatasetReference(
         name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
 
-    assert load_pool_item_checked(reg, good).opts["view"] == "v_통합_v1"
-    for key in (broken, missing):
-        with pytest.raises(ValueError) as caught:
-            load_pool_item_checked(reg, key)
-        assert reg.load(key).name in str(caught.value)      # 항목 이름으로 재진술
-        assert all(view in str(caught.value) for view in PCLM_VIEWS)
+    def loader(item):
+        return source_from_pool_item(item).records()
+
+    assert load_pool_item_checked(reg, good).opts["view"] == "v_통합_v2"
+    assert load_pool_item_checked(reg, broken).opts["view"] == "v_통합_v1"
+    assert load_pool_into(reg, good, loader)["ok"] is True
+    failed = load_pool_into(reg, broken, loader)
+    assert failed["ok"] is False
+    assert "v_통합_v1" in failed["error"]
+    assert "v_통합_v2" in failed["error"] and "계약" in failed["error"]
     with pytest.raises(ValueError, match="나라장터"):        # 동결 회귀 — 문구 불변
         load_pool_item_checked(reg, nara)
     assert NARA_FROZEN_TEXT.startswith("나라장터 소스는")
@@ -1127,13 +1164,16 @@ def _fixture_xlsx() -> str:
     return str(Path(__file__).parent / "fixtures" / "multi_sheet.xlsx")
 
 
-def _pclm_db(path: Path) -> str:
+def _pclm_db(path: Path, views: "tuple[str, ...]" = ("v_통합_v1",)) -> str:
+    """계약 목록이 내는 모양 — 표 ``계약`` 하나 위에 뷰 ``views`` 를 얹는다."""
     import sqlite3
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     connection.execute('CREATE TABLE 계약 ("계약번호" TEXT, "계약건명" TEXT);')
     connection.execute('INSERT INTO 계약 VALUES ("R1", "육군 조달");')
-    connection.execute('CREATE VIEW "v_통합_v1" AS SELECT * FROM 계약;')
+    for view in views:
+        connection.execute(f'CREATE VIEW "{view}" AS SELECT * FROM 계약;')
     connection.commit()
     connection.close()
     return str(path)
@@ -1179,8 +1219,8 @@ def test_review_of_a_broken_reference_opens_the_sheet_with_the_reason(tmp_path):
     assert _result(ctrl)["level"] == "danger"
 
 
-def test_review_of_a_contract_list_titles_the_view(tmp_path):
-    """계약 목록 상세 — 시트 자리에 뷰가 서고 내부 이름은 표면 문안으로 새지 않는다."""
+def test_review_of_a_contract_list_shows_the_sheet_name_as_is(tmp_path):
+    """계약 목록 상세 — 시트 자리에 DB 의 시트 이름이 그대로 선다(엑셀 시트처럼)."""
     ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch(
         "register_pclm",
@@ -1190,8 +1230,8 @@ def test_review_of_a_contract_list_titles_the_view(tmp_path):
     ctrl.dispatch("review", {"key": key})
 
     detail = ctrl.snapshot()["detail"]
-    assert detail["sheet"] == "v_통합_v1" and detail["sheet_title"] == "통합"
-    assert "시트: 통합" in detail["facts"]
+    assert detail["sheet"] == "v_통합_v1" and detail["sheet_title"] == "v_통합_v1"
+    assert "시트: v_통합_v1" in detail["facts"]
     assert detail["columns"] == ["계약번호", "계약건명"]
 
 

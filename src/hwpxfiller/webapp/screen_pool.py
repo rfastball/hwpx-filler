@@ -42,7 +42,7 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 **계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
 소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **스냅샷**(등록 폼이 물어야
-할 기본 DB 자리와 고르게 할 뷰)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
+할 기본 DB 자리와 고르게 할 시트)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
 둘은 폼(``#dataPickerPclm`` → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
 (``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
@@ -65,13 +65,9 @@ from ..application.dataset_pool import (
     resolve_pclm_db,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
+from ..data.pclm import list_sqlite_sheets  # 계약 목록 DB 의 시트 나열(등록 폼·게이트 공용)
 from ..domain.dataset_reference import DatasetReference, pclm_identity
-from ..domain.pclm_views import (
-    PCLM_DOC_VIEWS,
-    PCLM_VIEW_DESCS,
-    PCLM_VIEW_TITLES,
-    default_pclm_db,
-)
+from ..domain.pclm_views import default_pclm_db
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
 from .screens import PushSink
 
@@ -191,25 +187,29 @@ class PoolController:
         return notices
 
     def _pclm_block(self) -> dict:
-        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **고르게 할 뷰**.
+        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **그 DB 의 시트**.
 
-        웹이 뷰 목록을 리터럴로 들지 않는다: 허용목록도 그 문안도 링0 단일 출처
-        (:mod:`hwpxfiller.domain.pclm_views`)이고, 여기 스냅샷은 그 값을 옮기기만 한다 —
-        표면이 목록을 복제하면 뷰가 늘거나 문안이 갈릴 때 한쪽만 늙는다.
+        시트 목록은 하드코딩이 아니라 **기본 자리의 DB 를 실제로 나열한 것**이다
+        (:func:`~hwpxfiller.data.pclm.list_sqlite_sheets` — 뷰 먼저, 다음 표). 고정 허용목록은
+        사용자 결정(2026-09-30)으로 걷혔다: DB 를 엑셀 통합문서처럼 열고, 시트 이름은 그 DB 가
+        가진 이름 그대로 보인다. 웹은 목록을 리터럴로 들지 않고 옮기기만 한다.
 
-        ``views`` 는 **새로 고를 수 있는 것**이다
-        (:data:`~hwpxfiller.domain.pclm_views.PCLM_DOC_VIEWS`). 종전에 함께 실리던 뷰 전수
-        제목표(``titles``)는 웹 소비자가 0 이라 슬라이스 ⑤ 에서 걷혔다 — 이미 선 마운트의
-        제목화는 Python 이 세션 행 부제를 지을 때 링0
-        :func:`~hwpxfiller.domain.pclm_views.sheet_title` 하나로 끝난다(웹은 그 문장을 옮기기만
-        한다). 표를 웹에 다시 내리면 같은 제목화가 두 층에서 갈린다.
+        파일이 없거나 읽을 수 없으면 ``views`` 는 빈 목록이다 — 폼은 그대로 열리고, 등록을
+        누르면 게이트(:meth:`_do_register_pclm`)가 그 파일 문제를 기존 문장으로 재진술한다.
+        스냅샷이 그 사유를 따로 들지 않는 것은 판정 자리를 하나로 두기 위해서다. 사용자가 DB
+        자리를 바꿔 적으면 목록은 기본 자리의 것 그대로지만, 등록의 진실은 그 게이트가
+        **적힌 자리의 DB** 로 다시 판정한다.
+
+        나열은 스냅샷 시점(부팅·풀 동작 뒤) 한 번이다 — 렌더마다가 아니라 사건마다 지불한다.
         """
+        default_db = default_pclm_db()
+        try:
+            sheets = list_sqlite_sheets(default_db)
+        except (OSError, RuntimeError):  # 부재·열기 실패 — 폼은 열고 판정은 등록 게이트가
+            sheets = []
         return {
-            "default_db": str(default_pclm_db()),
-            "views": [
-                {"name": v, "title": PCLM_VIEW_TITLES[v], "desc": PCLM_VIEW_DESCS[v]}
-                for v in PCLM_DOC_VIEWS
-            ],
+            "default_db": str(default_db),
+            "views": [{"name": sheet} for sheet in sheets],
         }
 
     def snapshot(self) -> dict:
@@ -492,8 +492,10 @@ class PoolController:
 
         빈 ``db`` 는 「기본 자리」라는 뜻이라 조회 **전에** 해석한다
         (:func:`~hwpxfiller.application.dataset_pool.resolve_pclm_db`) — 조회와 등록이 다른
-        자리를 보면 같은 데이터가 2건이 된다. 뷰 검증은 링1 이 소유하고 여기는 그 거절을
-        재진술만 한다(다중 시트 게이트가 엑셀 등록에 서는 자리의 대응물).
+        자리를 보면 같은 데이터가 2건이 된다. 시트 검증은 링1 이 소유하고 여기는 그 거절을
+        재진술만 한다(다중 시트 게이트가 엑셀 등록에 서는 자리의 대응물). 링1 이 파일을 열 수
+        없으므로 **그 DB 가 실제로 가진 시트 목록**은 여기서 어댑터로 읽어 넘긴다 — 파일 부재·
+        열기 실패는 어댑터의 문장 그대로 재진술한다(목록 없이 등록하면 죽은 참조가 선다).
         """
         name = (p.get("name") or "").strip()
         db = resolve_pclm_db(str(p.get("db") or ""))
@@ -544,10 +546,22 @@ class PoolController:
                     # 확인 모달은 「기존 등록 갱신」에 대한 승인이다 — 그 사이 항목이
                     # 사라졌다고 신규 등록 승인으로 바꾸지 않는다.
                     return self._stale_item_result(name)
-                item = self.vm.register_pclm(name, db, view=view, note=note)
+                sheets: "list[str]" = []
+                # 빈 이름은 링1 이 먼저 거절한다 — 그 거절에 파일을 열 까닭이 없다.
+                if name:
+                    try:
+                        sheets = list_sqlite_sheets(db)
+                    except (FileNotFoundError, RuntimeError) as exc:
+                        # DB 파일 문제는 「항목이 사라졌다」(아래 stale 경로)와 다른 사실이다
+                        # — 어댑터 문장 그대로 재진술한다.
+                        self._set_result(str(exc), "danger")
+                        return {"ok": False, "error": str(exc)}
+                item = self.vm.register_pclm(
+                    name, db, view=view, sheets=sheets, note=note
+                )
         except FileNotFoundError:
             return self._stale_item_result(name)
-        except ValueError as exc:  # 빈 이름·미지 뷰·정체성 중복 백스톱 — 사용자 문구로
+        except ValueError as exc:  # 빈 이름·DB 에 없는 시트·정체성 중복 백스톱 — 사용자 문구로
             self._set_result(str(exc), "danger")
             return {"ok": False, "error": str(exc)}
         except OSError as exc:

@@ -3806,10 +3806,6 @@ text = "등록 데이터 '{}' 에 시트가 지정되지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screens.py"
-text = "등록 데이터 '{}' 의 계약 목록 뷰가 올바르지 않습니다. 쓸 수 있는 뷰:"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screens.py"
 text = "새 템플릿 경로가 비어 있습니다."
 
 [[sentence]]

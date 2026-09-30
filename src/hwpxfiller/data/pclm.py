@@ -1,22 +1,29 @@
-"""pclm(계약 목록) 데이터 소스 — 조달 계약 DB 의 계약면 뷰를 레코드로 낸다.
+"""계약 목록(pclm) 데이터 소스 — SQLite DB 하나를 **엑셀 통합문서처럼** 연다.
 
 pclm 은 나라장터에서 내려받은 입찰공고서·계약서 PDF 를 읽어 SQLite 에 쌓는 별개의
-프로그램이다. 이 저장소가 그쪽에 의존하는 것은 **뷰 네 개**뿐이다 — 테이블은 예고 없이
-바뀐다고 저쪽이 못박아 두었다(그쪽 ``docs/dataset-contract.md``).
+프로그램이다. 종전에는 이 저장소가 그쪽의 **뷰 네 개**만 허용목록으로 받았지만, 저쪽
+스키마가 자라며(뷰 15종·내부 표 수십 개) 허용목록은 새 면을 전부 거절하는 박제가 됐다.
+사용자 결정(2026-09-30)으로 하드코딩을 걷었다: 이 소스는 **pclm 의 스키마를 모른다**.
+DB 를 받아 그 안의 뷰와 표를 시트로 나열하고(:func:`list_sqlite_sheets`), 고른 시트 하나를
+레코드로 낸다 — 엑셀 통합문서에서 시트를 고르는 것과 같은 모양이다.
 
-**값을 손질하지 않는다.** 계약면의 모든 컬럼은 이미 *문서에 그대로 찍힐 문자열*이다 —
-금액 ``170,309,180``, 날짜 ``2026/10/24``, 비율 ``84.245``. 빈 값은 NULL 이 아니라 빈
-문자열로 오는데, 이것이 중요하다: 여기서 None 을 만들어 넣으면 「생성 값 미리보기」의
-**빈 값 경고가 죽고** 빈칸이 그대로 문서에 남는다. 그래서 읽어서 그대로 넘긴다.
+**시트 이름은 그 DB 가 가진 것만 SELECT 에 들어간다.** 고른 이름이 ``sqlite_master`` 에
+실제로 있는지 먼저 확인한 뒤에야 인용해 SELECT 에 박는다(``"`` 는 두 번 적어 이스케이프).
+허용목록이 겸하던 주입 방어를 이 대조가 잇는다 — 사용자가 고른 문자열이 SQL 로 흘러드는
+유일한 자리가 여기다.
+
+**값을 손질하지 않는다.** pclm 계약면의 컬럼은 이미 *문서에 그대로 찍힐 문자열*이다 —
+금액 ``170,309,180``, 날짜 ``2026/10/24``. 빈 값은 빈 문자열로 오고, NULL 이 오면 빈
+문자열로 받는다(None 을 만들어 넣으면 「생성 값 미리보기」의 **빈 값 경고가 죽는다**).
+숫자 칼럼(내부 표)은 ``str()`` 한 그대로다.
 
 **읽기 전용으로 연다.** 그 DB 를 쓰는 주체는 pclm 하나뿐이므로, 이쪽이 실수로도 쓰지
 못하게 ``mode=ro`` URI 로 붙는다. 저널이 WAL 이라 pclm 이 쓰는 중에도 읽기가 막히지 않는다.
 
-**어휘를 선언하지 않는다**(``field_labels`` 가 빈 dict). 컬럼 이름이 이미 한글이라
-엑셀 헤더와 똑같이 동작한다 — 이름 대응표를 들고 있을 필요가 없다.
+**어휘를 선언하지 않는다**(``field_labels`` 가 빈 dict). 컬럼 이름이 곧 헤더다 — 엑셀과 같다.
 
-한 줄이 뜻하는 것이 뷰마다 다르다. 계약 단위 문서에는 ``v_통합_v1``(계약 + 이어진 공고)
-이나 ``v_계약_v1`` 을, 품목 명세에는 ``v_품목_v1`` 을 쓴다 — 섞으면 안 된다.
+한 줄이 뜻하는 것은 시트마다 다르다(계약 1건 / 품목 1줄 …). 무엇을 고를지는 사람이 정한다 —
+이 소스는 기본 시트를 두지 않는다(조용히 한 면을 추측하면 문서 건수가 어긋난다).
 """
 from __future__ import annotations
 
@@ -24,42 +31,91 @@ import sqlite3
 import urllib.request
 from pathlib import Path
 
-# 뷰 어휘·기본 자리는 링0 이 소유한다(:mod:`hwpxfiller.domain.pclm_views`) — 등록 게이트
-# (Application)와 이 어댑터가 **같은 허용목록**을 봐야 하는데 Application 은 바깥 링을
+# 기본 자리는 링0 이 소유한다(:mod:`hwpxfiller.domain.pclm_views`) — 등록 게이트
+# (Application)와 이 어댑터가 **같은 자리**를 봐야 하는데 Application 은 바깥 링을
 # import 할 수 없기 때문이다. 여기서 계속 re-export 하므로 기존 소비자는 그대로다.
-from ..domain.pclm_views import (
-    DEFAULT_PCLM_VIEW,
-    PCLM_VIEW_LABELS,
-    PCLM_VIEWS,
-    default_pclm_db,
-)
+from ..domain.pclm_views import default_pclm_db
 
 __all__ = [
-    "DEFAULT_PCLM_VIEW",
-    "PCLM_VIEWS",
-    "PCLM_VIEW_LABELS",
     "PclmDataSource",
     "default_pclm_db",
+    "list_sqlite_sheets",
 ]
 
 
-class PclmDataSource:
-    """pclm 계약면 뷰 하나를 :class:`~hwpxfiller.domain.data_source.DataSource` 로 낸다.
+def _connect(db: Path) -> sqlite3.Connection:
+    """``db`` 를 읽기 전용으로 연다 — 부재는 ``FileNotFoundError``, 열기 실패는 ``RuntimeError``."""
+    if not db.exists():
+        raise FileNotFoundError(
+            f"pclm 자료를 찾지 못했습니다: {db}\n"
+            "계약 목록 앱을 한 번 실행했는지 확인하세요. "
+            "다른 자료를 읽으려면 db= 로 그 경로를 짚습니다."
+        )
+    # 드라이브 문자·공백·한글이 섞인 경로를 URI 로 옮긴다. 문자열을 이어 붙이면
+    # 경로 안의 ? 나 # 이 URI 의 문법으로 읽혀 엉뚱한 파일을 열거나 실패한다.
+    uri = f"file:{urllib.request.pathname2url(str(db))}?mode=ro"
+    try:
+        return sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise RuntimeError(f"pclm 자료를 열지 못했습니다: {db} ({exc})") from exc
 
-    :param db: pclm SQLite 파일. ``None`` 이면 :func:`default_pclm_db`.
-    :param view: :data:`PCLM_VIEWS` 중 하나. 그 밖의 이름은 ``ValueError``.
+
+def _sheets_of(connection: sqlite3.Connection, db: Path) -> "list[str]":
+    """열린 DB 의 시트 — 뷰 먼저, 다음 표. 각 무리 안은 ``sqlite_master`` 순서 그대로.
+
+    ``sqlite_`` 로 시작하는 이름(SQLite 내부 표)은 뺀다. 그 접두는 SQLite 가 대소문자를
+    가리지 않고 예약하므로 거르기도 대소문자를 가리지 않는다. 뷰가 먼저인 이유는 뷰가
+    그 DB 가 **밖에 내놓은** 면이기 때문이다(표는 뒤에 그대로 남긴다 — 숨기지 않는다).
+    """
+    try:
+        rows = connection.execute(
+            "SELECT type, name FROM sqlite_master "
+            "WHERE type IN ('view', 'table') ORDER BY rowid"
+        ).fetchall()
+    except sqlite3.Error as exc:  # 손상·SQLite 아닌 파일 — 열기 실패와 같은 문장
+        raise RuntimeError(f"pclm 자료를 열지 못했습니다: {db} ({exc})") from exc
+    visible = [
+        (kind, str(name)) for kind, name in rows
+        if not str(name).lower().startswith("sqlite_")
+    ]
+    return [n for k, n in visible if k == "view"] + [n for k, n in visible if k == "table"]
+
+
+def list_sqlite_sheets(db: "str | Path | None" = None) -> "list[str]":
+    """SQLite DB 가 가진 시트(뷰 먼저, 다음 표) — 등록 폼과 등록 게이트가 고를 목록.
+
+    :param db: SQLite 파일. ``None`` 이면 :func:`default_pclm_db`.
+    :raises FileNotFoundError: 파일이 없다.
+    :raises RuntimeError: 열 수 없거나 SQLite 가 아니다.
+    """
+    path = Path(db) if db is not None else default_pclm_db()
+    connection = _connect(path)
+    try:
+        return _sheets_of(connection, path)
+    finally:
+        connection.close()
+
+
+def _quote(name: str) -> str:
+    """SQL 식별자 인용 — ``"`` 는 두 번 적는다(표준 SQL 이스케이프)."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+class PclmDataSource:
+    """SQLite DB 의 시트 하나(뷰 또는 표)를 :class:`~hwpxfiller.domain.data_source.DataSource` 로 낸다.
+
+    :param db: SQLite 파일. ``None`` 이면 :func:`default_pclm_db`.
+    :param view: 시트 이름 — 그 DB 의 뷰 또는 표. 없는 이름은 로드 때 ``ValueError``
+        (쓸 수 있는 시트를 재진술한다). 키 이름 ``view`` 는 저장된 참조(``opts={db, view}``)
+        와의 호환을 위해 그대로 둔다.
     """
 
     def __init__(
         self,
         db: "str | Path | None" = None,
-        view: str = DEFAULT_PCLM_VIEW,
+        *,
+        view: str,
     ) -> None:
-        if view not in PCLM_VIEWS:
-            raise ValueError(
-                f"pclm 이 약속한 뷰가 아닙니다: {view!r}. "
-                f"쓸 수 있는 뷰: {', '.join(PCLM_VIEWS)}"
-            )
         self.db = Path(db) if db is not None else default_pclm_db()
         self.view = view
         self._fields: "list[str]" = []
@@ -72,36 +128,28 @@ class PclmDataSource:
         if self._loaded:
             return
 
-        if not self.db.exists():
-            raise FileNotFoundError(
-                f"pclm 자료를 찾지 못했습니다: {self.db}\n"
-                "계약 목록 앱을 한 번 실행했는지 확인하세요. "
-                "다른 자료를 읽으려면 db= 로 그 경로를 짚습니다."
-            )
-
-        # 드라이브 문자·공백·한글이 섞인 경로를 URI 로 옮긴다. 문자열을 이어 붙이면
-        # 경로 안의 ? 나 # 이 URI 의 문법으로 읽혀 엉뚱한 파일을 열거나 실패한다.
-        uri = f"file:{urllib.request.pathname2url(str(self.db))}?mode=ro"
-
+        connection = _connect(self.db)
         try:
-            connection = sqlite3.connect(uri, uri=True)
-        except sqlite3.Error as exc:
-            raise RuntimeError(f"pclm 자료를 열지 못했습니다: {self.db} ({exc})") from exc
-
-        try:
-            cursor = connection.execute(f'SELECT * FROM "{self.view}"')
-            self._fields = [column[0] for column in cursor.description]
-            rows = cursor.fetchall()
-        except sqlite3.Error as exc:
-            raise RuntimeError(
-                f"pclm 뷰를 읽지 못했습니다: {self.view} ({exc}). "
-                "계약 목록 앱을 한 번 열면 뷰가 다시 지어집니다."
-            ) from exc
+            # 고른 이름이 이 DB 에 실제로 있는지부터 — SELECT 에 박히는 것은 이 목록의 원소뿐이다.
+            sheets = _sheets_of(connection, self.db)
+            if not isinstance(self.view, str) or self.view not in sheets:
+                raise ValueError(
+                    f"pclm 이 약속한 뷰가 아닙니다: {self.view!r}. "
+                    f"쓸 수 있는 뷰: {', '.join(sheets)}"
+                )
+            try:
+                cursor = connection.execute(f"SELECT * FROM {_quote(self.view)}")
+                self._fields = [column[0] for column in cursor.description]
+                rows = cursor.fetchall()
+            except sqlite3.Error as exc:
+                raise RuntimeError(
+                    f"pclm 뷰를 읽지 못했습니다: {self.view} ({exc}). "
+                    "계약 목록 앱을 한 번 열면 뷰가 다시 지어집니다."
+                ) from exc
         finally:
             connection.close()
 
-        # 계약면은 빈 값을 빈 문자열로 내기로 되어 있지만, None 이 와도 빈 문자열로 받는다 —
-        # 레코드는 dict[str, str] 라는 포트 약속이 이쪽 책임이다.
+        # 빈 값은 빈 문자열로 받는다 — 레코드는 dict[str, str] 라는 포트 약속이 이쪽 책임이다.
         self._records = [
             {
                 name: "" if value is None else str(value)
@@ -122,7 +170,7 @@ class PclmDataSource:
         return list(self._fields)
 
     def field_labels(self) -> "dict[str, str]":
-        """컬럼 이름이 이미 한글 라벨이라 어휘가 없다(빈 dict) — 엑셀 헤더와 같다."""
+        """컬럼 이름이 곧 헤더라 어휘가 없다(빈 dict) — 엑셀 헤더와 같다."""
         return {}
 
     def source_pointer(self) -> str:

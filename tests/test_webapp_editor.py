@@ -3067,11 +3067,9 @@ def test_pool_origin_data_has_no_session_row(tmp_path):
     assert pairing["data_row"] is None, "풀 행과 세션 행이 같은 결속을 두 번 세웠습니다"
 
 
-def test_session_row_titles_a_pclm_view_and_carries_the_header_row(tmp_path):
-    """계약 목록 뷰의 **내부 이름**은 제목으로 옮겨 그린다(#937 — 표에 없으면 원문).
-
-    이 옮김이 종전에는 웹(`pool_list.ts`)에서 스냅샷 제목표를 다시 조회하며 일어났다.
-    행이 하나가 된 이상 문장도 한 층이 짓는다.
+def test_session_row_names_a_pclm_sheet_and_carries_the_header_row(tmp_path):
+    """계약 목록 시트는 DB 가 가진 이름 그대로 그린다(엑셀 시트처럼 — 제목표는 사용자 결정
+    2026-09-30 으로 걷혔다). 행이 하나라 문장도 한 층(Python)이 짓는다.
     """
     ctrl, _pool = _pool_editor(tmp_path)
     db = _pclm_db(tmp_path)
@@ -3081,9 +3079,9 @@ def test_session_row_titles_a_pclm_view_and_carries_the_header_row(tmp_path):
     row = ctrl.snapshot()["pairing"]["data_row"]
     assert row["icon"] == "pclm"
     # 계약면에는 헤더 행 축이 없다(0 = 해당 없음) — 없는 축을 0 으로 말하지 않는다.
-    assert row["sub"] == f"시트: 통합 · {len(ctrl.edit.records)}행"
+    assert row["sub"] == f"시트: {_PCLM_VIEW} · {len(ctrl.edit.records)}행"
 
-    # 표에 없는 이름은 감추지 않고 원문 그대로 남긴다.
+    # 구판·손편집이 남긴 이름도 감추지 않고 원문 그대로 남긴다.
     ctrl.edit.data_sheet = "v_손편집_v9"
     ctrl.edit.data_name_cache = None
     ctrl.refresh_panel()

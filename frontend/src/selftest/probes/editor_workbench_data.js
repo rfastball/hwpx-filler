@@ -2766,14 +2766,14 @@ export function createEditorWorkbenchDataProbes() {
               empty_hint: "", count_label: "3개", result: { text: "", level: "muted" },
             },
             /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
-               새로 고르게 할 것이다(품목 제외 3건). 뷰 전수 제목표(`titles`)는 소비자 0 으로
-               퇴역했다 — 이미 선 마운트의 제목화는 Python 이 세션 행 부제에서 끝낸다. */
+               기본 DB 를 실제로 나열한 시트다(뷰 먼저, 다음 표 — 고정 허용목록·제목표는
+               사용자 결정 2026-09-30 으로 걷혔다). 항목은 시트 이름 하나다. */
             pclm: {
               default_db: "C:/AppData/Local/Pclm/pclm.db",
               views: [
-                { name: "v_통합_v1", title: "통합", desc: "공고와 계약을 이어 붙인 표" },
-                { name: "v_공고_v1", title: "공고", desc: "공고 정보" },
-                { name: "v_계약_v1", title: "계약", desc: "계약 정보" },
+                { name: "v_통합_v2" },
+                { name: "v_접수_v1" },
+                { name: "계약" },
               ],
             },
             detail: null,
@@ -2849,8 +2849,8 @@ export function createEditorWorkbenchDataProbes() {
           const viewSelect = byId(ctx, "poolRegView");
           out.pclm_reg_view_options = viewSelect.options.length;
           out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
-          /* 옵션의 **값**은 백엔드 계약(실 뷰 이름)이고 **보이는 글자**는 제목이다. 둘을
-             따로 회수해 표면에 내부 이름이 새지 않는 것을 게이트가 잰다. */
+          /* 옵션의 **값**과 **보이는 글자**를 따로 회수한다 — 둘 다 그 DB 의 시트 이름
+             그대로인지(웹이 다시 옮기지 않는지)를 게이트가 잰다. */
           out.pclm_reg_view_values = Array.prototype.map.call(
             viewSelect.options, (o) => o.value).join("|");
           out.pclm_reg_view_text = Array.prototype.map.call(

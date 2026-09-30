@@ -135,12 +135,15 @@ def test_session_row_subtitle_drops_the_parts_that_have_nothing_to_say():
     assert _session(sheet="", header_row=0)["sub"] == "12행"
 
 
-def test_session_row_titles_a_contract_list_view_but_only_for_that_kind():
-    """계약 목록의 뷰 이름만 제목으로 옮긴다 — 엑셀 시트명은 그대로가 정답이다."""
-    assert _session(kind="pclm", sheet="v_통합_v1", header_row=0)["sub"] == "시트: 통합 · 12행"
-    # 표에 없는 이름(구판·손편집)은 감추지 않고 원문 그대로.
+def test_session_row_names_the_sheet_verbatim_for_every_kind():
+    """시트 이름은 종류를 가리지 않고 원문 그대로다 — 계약 목록도 엑셀 시트처럼 보인다.
+
+    종전의 계약 목록 제목표는 사용자 결정(2026-09-30)으로 걷혔다.
+    """
+    assert (
+        _session(kind="pclm", sheet="v_통합_v1", header_row=0)["sub"] == "시트: v_통합_v1 · 12행"
+    )
     assert "v_구판" in _session(kind="pclm", sheet="v_구판")["sub"]
-    # 종류가 엑셀이면 같은 글자라도 옮기지 않는다(제목표는 계약 목록의 어휘다).
     assert "v_통합_v1" in _session(sheet="v_통합_v1")["sub"]
 
 

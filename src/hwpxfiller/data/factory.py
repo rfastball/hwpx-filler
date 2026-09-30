@@ -36,7 +36,7 @@ def make_source(kind: str, **opts) -> DataSource:
     - ``"excel"``     — ``path=`` (+ 선택 ``sheet``/``header_row``)
     - ``"inline"``    — ``records=[dict...]`` (수기 1건 등 파일 없는 메모리 레코드, UD-25)
     - ``"nara"``      — ``service_key=``·``bgn_dt=``·``end_dt=`` … (조달청 표준 취득)
-    - ``"pclm"``      — ``db=``(생략 시 기본 자리)·``view=`` (계약 목록 SQLite 계약면)
+    - ``"pclm"``      — ``db=``(생략 시 기본 자리)·``view=`` (SQLite DB 의 시트 = 뷰 또는 표)
     - ``"pipeline"``  — ``sources=[DataSource...]``·``steps=[<recipe>...]`` (조립 파이프라인)
 
     ``"pipeline"`` 은 **이미 만들어진** ``DataSource`` 목록을 받는다 — 참조(kind+opts)로부터

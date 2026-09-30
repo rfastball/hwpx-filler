@@ -33,8 +33,11 @@ from hwpxfiller.domain.dataset_reference import (
     pclm_identity,
     reference_identity,
 )
-from hwpxfiller.domain.pclm_views import PCLM_VIEW_LABELS, PCLM_VIEWS
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
+
+# 등록 게이트가 대조할 **그 DB 의 시트 목록** — 실제로는 링2 가 어댑터로 읽어 넘긴다.
+# 고정 허용목록이 아니라 DB 마다 다른 값이라, 여기서는 그 모양만 흉내 낸다.
+SHEETS = ("v_통합_v1", "v_공고_v1", "v_계약_v1", "v_품목_v1", "계약")
 
 
 class InMemoryDatasetPool:
@@ -236,7 +239,7 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     vm = _vm(registry)
 
-    item = vm.register_pclm("계약 목록", view="v_통합_v1", note="기본 자리")
+    item = vm.register_pclm("계약 목록", view="v_통합_v1", sheets=SHEETS, note="기본 자리")
     assert item.kind == "pclm"
     assert set(item.opts) == {"db", "view"}
     assert item.opts["db"] == str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db")
@@ -244,7 +247,9 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
     assert vm.find_same_pclm(str(item.opts["db"]), "v_통합_v1") is not None
 
     # 명시 db 는 절대경로로 정규화돼 들어간다(표기 변형은 정체성이 흡수).
-    named = vm.register_pclm("다른 DB", str(tmp_path / "other.db"), view="v_품목_v1")
+    named = vm.register_pclm(
+        "다른 DB", str(tmp_path / "other.db"), view="v_품목_v1", sheets=SHEETS
+    )
     assert named.opts == {"db": str(tmp_path / "other.db"), "view": "v_품목_v1"}
     # 같은 DB 의 다른 뷰는 **다른 데이터**다(계약면마다 한 줄의 뜻이 다르다).
     assert vm.find_same_pclm(str(tmp_path / "other.db"), "v_통합_v1") is None
@@ -252,21 +257,28 @@ def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
 
 
 def test_register_pclm_is_fail_closed_on_name_view_and_duplicate(registry, tmp_path):
-    """빈 이름·미지 뷰·같은 정체성 재등록은 전부 loud — 죽은 참조를 조용히 만들지 않는다."""
+    """빈 이름·그 DB 에 없는 시트·같은 정체성 재등록은 전부 loud — 죽은 참조를 만들지 않는다."""
     vm = _vm(registry)
     db = str(tmp_path / "pclm.db")
     with pytest.raises(ValueError, match="이름"):
-        vm.register_pclm("  ", db, view="v_통합_v1")
+        vm.register_pclm("  ", db, view="v_통합_v1", sheets=SHEETS)
     with pytest.raises(ValueError) as caught:
-        vm.register_pclm("오타", db, view="v_통합")
-    # 거절은 쓸 수 있는 뷰를 설명과 함께 재진술한다(허용목록 재구현 금지의 관측면).
-    assert all(view in str(caught.value) for view in PCLM_VIEWS)
-    assert PCLM_VIEW_LABELS["v_품목_v1"] in str(caught.value)
+        vm.register_pclm("오타", db, view="v_통합", sheets=SHEETS)
+    # 거절은 **그 DB 의** 쓸 수 있는 시트를 재진술한다(고정 허용목록이 아니다).
+    assert all(sheet in str(caught.value) for sheet in SHEETS)
+    assert vm.is_empty()
+    # 목록은 호출자가 준 그 DB 의 것이다 — 다른 DB 의 시트 이름은 여기서 통하지 않는다.
+    with pytest.raises(ValueError):
+        vm.register_pclm("다른 DB 의 면", db, view="v_통합_v1", sheets=("계약",))
+    # 표도 시트다 — 뷰가 아니어도 그 DB 에 있으면 받는다(엑셀 통합문서처럼).
+    table = vm.register_pclm("원천 표", db, view="계약", sheets=SHEETS)
+    assert table.opts["view"] == "계약"
+    vm.delete(vm.rows()[0].key)
     assert vm.is_empty()
 
-    vm.register_pclm("계약", db, view="v_계약_v1")
+    vm.register_pclm("계약", db, view="v_계약_v1", sheets=SHEETS)
     with pytest.raises(ValueError, match="이미"):
-        vm.register_pclm("다른 이름", db, view="v_계약_v1")
+        vm.register_pclm("다른 이름", db, view="v_계약_v1", sheets=SHEETS)
     assert len(vm.rows()) == 1
 
 
@@ -274,7 +286,7 @@ def test_relabel_confirmed_raw_binds_pclm_to_shown_state(registry, tmp_path):
     """정체성 판 확정 왕복이 계약 목록에도 같은 결속으로 선다(종류별 확정 경로 복제 금지)."""
     vm = _vm(registry)
     db = str(tmp_path / "pclm.db")
-    vm.register_pclm("계약 목록", db, view="v_통합_v1")
+    vm.register_pclm("계약 목록", db, view="v_통합_v1", sheets=SHEETS)
     key = vm.rows()[0].key
     ident = pclm_identity(db, "v_통합_v1")
     _item, basis = vm.inspect(key)

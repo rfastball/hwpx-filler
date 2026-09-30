@@ -42,15 +42,14 @@ function sessionRead(value) {
 
 /** 스냅샷이 내려주는 계약 목록 블록(실 백엔드 `_pclm_block` 과 같은 모양).
  *
- * `views` 는 **새로 고르게 할** 것이다(품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지 제외).
- * 뷰 전수 제목표(`titles`)는 웹 소비자 0 으로 퇴역했다 — 이미 선 마운트의 제목화는 Python 이
- * 세션 행 부제를 지을 때 끝난다(`pool_column.session_data_row`). */
+ * `views` 는 백엔드가 기본 DB 를 **실제로 나열한** 시트다(뷰 먼저, 다음 표). 고정 허용목록과
+ * 제목·설명표는 사용자 결정(2026-09-30)으로 걷혔다 — 항목은 시트 이름 하나다. */
 const PCLM_BLOCK = {
   default_db: "C:/AppData/Local/Pclm/pclm.db",
   views: [
-    { name: "v_통합_v1", title: "통합", desc: "공고와 계약을 이어 붙인 표" },
-    { name: "v_공고_v1", title: "공고", desc: "공고 정보" },
-    { name: "v_계약_v1", title: "계약", desc: "계약 정보" },
+    { name: "v_통합_v2" },
+    { name: "v_접수_v1" },
+    { name: "계약" },
   ],
 };
 
@@ -494,12 +493,11 @@ test("계약 목록 폼 렌더 — db 프리필·시트 select(placeholder 포�
   assert.equal(markup.split("<option").length - 1, PCLM_BLOCK.views.length + 1,
     "고르게 할 시트 + 빈 placeholder");
   assert.ok(markup.includes("시트를 고르세요"), "빈 선택의 문안이 서야 한다");
-  // 값은 실 뷰 이름(백엔드 계약), 보이는 글자는 제목 — 표면에 내부 이름은 서지 않는다.
+  // 값도 보이는 글자도 그 DB 의 시트 이름 그대로다(엑셀 시트처럼) — 웹이 다시 옮기지 않는다.
   for (const view of PCLM_BLOCK.views) {
     assert.ok(markup.includes(`value="${view.name}"`), view.name);
-    assert.ok(markup.includes(`${view.title} — ${view.desc}`), view.title);
+    assert.ok(markup.includes(`>${view.name}</option>`), view.name);
   }
-  assert.equal(/>[^<]*v_[^<]*</.test(markup), false, "옵션 글자에 내부 이름이 새면 안 된다");
   // 좌표가 다른 종류라 경로·시트칸은 묻지 않는다(엑셀 모드에서만 산다).
   assert.equal(markup.includes('id="poolRegPath"'), false);
   assert.equal(markup.includes('id="poolRegSheet"'), false);
@@ -545,22 +543,19 @@ test("데이터 선택 면 — pclm 진입 버튼은 블록이 있을 때만 활
 });
 
 /* 「현재 데이터」는 목록 **첫 행**이다(③b) — 종전 카드의 승계처다. 그 행이 무엇을 말하는지
-   (시트·헤더 행·행 수, 계약 목록의 뷰 이름 제목화)는 **Python 이 짓는다**
-   (`webapp/pool_column.session_data_row` · 계약은 `tests/test_webapp_job.py`). 여기서 재는
-   것은 이 면이 그 문장을 **그대로 옮기는가** 하나다. */
-test("현재 데이터 행 — 부제는 Python 문안 그대로이고 웹이 제목표를 다시 조회하지 않는다", async () => {
+   (시트·헤더 행·행 수)는 **Python 이 짓는다** (`webapp/pool_column.session_data_row` · 계약은
+   `tests/test_webapp_job.py`). 여기서 재는 것은 이 면이 그 문장을 **그대로 옮기는가** 하나다. */
+test("현재 데이터 행 — 부제는 Python 문안 그대로이고 웹이 시트 이름을 다시 옮기지 않는다", async () => {
   const h = build({ pool: { pclm: PCLM_BLOCK } });
-  /* 양성·음성 한 쌍: 스냅샷이 이미 제목으로 옮긴 부제는 그대로 서고, 스냅샷이 원문
-     그대로 둔 이름(구판·손편집)도 **감추거나 다시 옮기지 않는다**. 웹이 제목표를
-     다시 조회하고 있으면 아래 둘째 단언이 빨강이 된다(같은 상태 두 곳 판정). */
+  /* 계약 목록 시트 이름은 DB 가 가진 이름 그대로 온다(제목표 퇴역, 2026-09-30). 웹이 무엇이든
+     다시 옮기고 있으면 원문 부제가 깨진다. */
   const { result } = await opened(h, {
     session: sessionRead({
-      data_row: sessionRow({ name: "계약 목록", sub: "시트: 통합 · 12행", icon: "pclm" }),
+      data_row: sessionRow({ name: "계약 목록", sub: "시트: v_통합_v2 · 12행", icon: "pclm" }),
     }),
   });
   const markup = renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
-  assert.ok(markup.includes("시트: 통합 · 12행"), markup);
-  assert.equal(markup.includes("v_통합_v1"), false, "내부 이름은 행에 서지 않는다");
+  assert.ok(markup.includes("시트: v_통합_v2 · 12행"), markup);
   h.controller.close(); await result;
 
   const legacy = build({ pool: { pclm: PCLM_BLOCK } });
