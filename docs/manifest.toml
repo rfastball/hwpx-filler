@@ -145,7 +145,7 @@ id = "product-purpose"
 document = "docs/product.md"
 sources = ["pyproject.toml", "src/hwpxfiller/cli.py"]
 tests = ["tests/test_job.py"]
-source_sha256 = "6d5def3633b81dfac65233c494389c558e6f3104e226bd5b42840c9e0c826a6d"
+source_sha256 = "e51b2f2aa3004e58332ab4b819eb081e29575fa74c186bd90a2cd0903605e206"
 body_sha256 = "1ef03a5aa82d63973066a413dc53235cc63a7715ec23621931bc37cf7d0d5dff"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "8e75fe2c5a819c11500fe300eb9d60c197f7b967c5835d0da9deb84d216aa087"
+source_sha256 = "3d5693c012addbf9ce59710f41f599578618ec6ecbd1e9caf353f65bb9bf6dde"
 body_sha256 = "0a80a50b08f0a552b34726334b3bc41763d6f0c25e240161b31816d983197b20"
 
 [[topic]]
