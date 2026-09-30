@@ -84,6 +84,23 @@
 .fchip button{border:0;background:transparent;color:var(--a-muted);cursor:pointer;
   font-size:var(--fs-caption);padding:0}
 .fchip button:hover{color:var(--a-danger)}
+/* 저장한 필터 칩 — 누르면 켜지고(누적), 켜진 칩은 정의 칩과 같은 액센트. 쓸 수 없는 칩은
+   경고 바탕 + 점선(색만으로 상태를 가르지 않는다). ⋯ 은 이름 바꾸기·삭제의 인라인 메뉴. */
+.fchips-cap{font-size:var(--fs-caption);font-weight:700}
+.fchip.preset{padding:0 var(--sp-4) 0 0;gap:0}
+.fchip.preset .preset-toggle{color:var(--a-ink);padding:var(--sp-2) var(--sp-8)}
+.fchip.preset .preset-toggle:hover{color:var(--a-primary)}
+.fchip.preset.on{border-color:color-mix(in srgb,var(--a-primary) 55%,var(--a-border));
+  background:color-mix(in srgb,var(--a-primary) 16%,var(--a-card))}
+.fchip.preset.on .preset-toggle{color:var(--a-primary);font-weight:700}
+.fchip.preset.warn{border-style:dashed;border-color:var(--a-warn);
+  background:color-mix(in srgb,var(--a-warn) 8%,var(--a-card))}
+.fchip.preset.warn .preset-toggle{color:var(--a-muted);cursor:not-allowed}
+.fchip.preset .preset-menu-btn:hover{color:var(--a-ink)}
+.fchip .preset-menu{display:inline-flex;gap:var(--sp-6);padding:0 var(--sp-4);
+  border-left:1px solid var(--a-border)}
+.fchip .preset-menu button{color:var(--a-ink)}
+.fchip .preset-menu button[data-preset-delete]:hover{color:var(--a-danger)}
 .filter-reapply{color:var(--a-primary);border-color:color-mix(in srgb,var(--a-primary) 30%,var(--a-border))}
 
 /* 필터 밖 선택 스트립(결정 3) — 관통 가시성. */

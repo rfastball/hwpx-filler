@@ -57,6 +57,7 @@ from hwpxfiller.domain.job import load_isolated
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
+    filter_presets_shape,
     reference_identity,
 )
 
@@ -313,6 +314,18 @@ class DatasetPoolRegistry:
             current.name = name
             if note:
                 current.note = note
+
+        return self.mutate(key, _update)
+
+    def set_filters(self, key: str, filters: "list[dict]") -> DatasetReference:
+        """저장한 필터 목록 교체 — 잠금 안 읽기-수정-쓰기(참조·수명·라벨 보존).
+
+        항목이 사라졌으면 :meth:`mutate` 가 ``FileNotFoundError`` 로 멈춘다(삭제된 등록을
+        필터 저장이 되살리지 않는다). 형상 검사는 Domain 값이 진다.
+        """
+
+        def _update(current: DatasetReference) -> None:
+            current.filters = filter_presets_shape(filters)
 
         return self.mutate(key, _update)
 

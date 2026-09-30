@@ -37,19 +37,15 @@ class RecordRange:
     def copy(self) -> "RecordRange":
         """깊은 복제 — 초안 진입(§18.10 "진입 때 RecordRangeState를 draft로 깊은 복제").
 
-        필터는 ``deepcopy`` 가 아니라 **모델 자신의 직렬화**(export/apply)로 복제한다:
-        같은 열 지형이라 무손실이고, 렌더 경로가 들고 있을 수 있는 라이브 캐시를 같이
-        복사해 오지 않는다(직전 필터 재적용의 초안 설치와 같은 기법).
+        필터는 ``deepcopy`` 가 아니라 **모델 자신의 직렬화**(:meth:`FilterModel.clone` —
+        export/apply)로 복제한다: 같은 열 지형이라 무손실이고, 렌더 경로가 들고 있을 수 있는
+        라이브 캐시를 같이 복사해 오지 않는다(직전 필터 재적용의 초안 설치와 같은 기법).
+        저장한 필터 정의도 함께 건너가 초안에서 칩을 켜고 끌 수 있다.
         """
         sel = SelectionModel(len(self.selection), all_selected=False)
         for i in self.selection.selected_indices():
             sel.toggle(i, True)
-        flt = None
-        if self.filter is not None:
-            flt = FilterModel(
-                self.filter.columns, {c: self.filter.kind(c) for c in self.filter.columns}
-            )
-            flt.apply_state(self.filter.export_state())
+        flt: "FilterModel | None" = self.filter.clone() if self.filter is not None else None
         return RecordRange(selection=sel, filter=flt, view_order=self.view_order)
 
     def fingerprint(self) -> str:

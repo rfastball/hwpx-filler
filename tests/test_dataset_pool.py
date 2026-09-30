@@ -622,3 +622,70 @@ def test_resolve_pool_source_nara_no_key_is_loud():
             nara_factory=make_nara_acquirer,
             source_factory=_forbidden_pool_factory,
         )
+
+
+# ------------------------------------------------ 저장한 필터(등록 데이터에 붙는 이름 칩)
+_SMALL = {
+    "name": "소기업",
+    "state": {"search": "", "pruned": [], "columns": {"추정가격": {
+        "text": "", "values": None,
+        "range": {"first": {"op": "lt", "operand": "100,000,000"}, "second": None,
+                  "joiner": "and"},
+    }}},
+}
+
+
+def test_saved_filters_roundtrip_through_the_registry(tmp_path):
+    """저장 → 다시 읽기(새 레지스트리 = 앱 재시작)에서 정의·순서가 그대로다. 참조·라벨 보존."""
+    directory = tmp_path / "datasets"
+    reg = DatasetPoolRegistry(directory)
+    key = reg.add(DatasetReference(name="입찰", kind="excel", opts={"path": "/d.xlsx"},
+                                   note="메모"))
+    medium = {"name": "중소기업", "state": {"search": "", "pruned": [], "columns": {}}}
+    updated = reg.set_filters(key, [_SMALL, medium])
+    assert [p["name"] for p in updated.filters] == ["소기업", "중소기업"]
+
+    back = DatasetPoolRegistry(directory).load(key)
+    assert back.filters == [_SMALL, medium]
+    assert (back.name, back.opts, back.note) == ("입찰", {"path": "/d.xlsx"}, "메모")
+    # 다른 수명 전이(보관·개명)가 필터를 떨어뜨리지 않는다 — 잠금 안 읽기-수정-쓰기.
+    reg.archive(key)
+    reg.relabel(key, "입찰(보관)")
+    assert DatasetPoolRegistry(directory).load(key).filters == [_SMALL, medium]
+    reg.set_filters(key, [])
+    raw = (directory / (key + DatasetPoolRegistry.SUFFIX)).read_text(encoding="utf-8")
+    assert '"filters"' not in raw  # 비면 쓰지 않는다 — 구판과 같은 형상
+
+
+def test_old_store_file_without_filters_loads_and_saves_unchanged(tmp_path):
+    """가산 키 하위호환 — 키가 없는 구판 파일은 빈 목록으로 읽히고 bytes 가 변하지 않는다."""
+    import json as _json
+
+    legacy = {"version": 1, "name": "구", "kind": "excel", "opts": {"path": "/d.xlsx"},
+              "status": "active", "created_at": "", "note": ""}
+    slot = tmp_path / "old.dataset.json"
+    text = _json.dumps(legacy, ensure_ascii=False, indent=2)
+    slot.write_text(text, encoding="utf-8")
+    item = load_reference(slot)
+    assert item.filters == []
+    save_reference(slot, item)
+    assert slot.read_text(encoding="utf-8") == text
+
+
+def test_malformed_saved_filters_are_a_loud_corruption(tmp_path):
+    """손상된 필터 목록은 조용히 버리지 않는다 — 그 항목이 손상 목록으로 드러난다."""
+    import json as _json
+
+    directory = tmp_path / "datasets"
+    reg = DatasetPoolRegistry(directory)
+    key = reg.add(DatasetReference(name="입찰", kind="excel", opts={"path": "/d.xlsx"}))
+    path = directory / (key + DatasetPoolRegistry.SUFFIX)
+    raw = _json.loads(path.read_text(encoding="utf-8"))
+    raw["filters"] = [{"name": "", "state": {}}]
+    path.write_text(_json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    entries, corrupt = reg.list_references()
+    assert entries == [] and len(corrupt) == 1
+    with pytest.raises(ValueError):
+        DatasetReference(name="x", kind="excel", filters=[_SMALL, dict(_SMALL)])  # 이름 겹침
+    with pytest.raises(FileNotFoundError):
+        reg.set_filters("missing", [_SMALL])  # 삭제된 등록을 필터 저장이 되살리지 않는다

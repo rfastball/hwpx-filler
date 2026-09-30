@@ -2175,6 +2175,10 @@ text = "'{}' 을(를) {}(으)로 읽을 수 없습니다. 숫자 형태로 입�
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/filter_state.py"
+text = "같은 이름의 필터가 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 값 {} 을(를) 해석할 수 없습니다"
 
 [[sentence]]
@@ -2188,6 +2192,18 @@ text = "범위 조건의 둘째 절 형식이 잘못됐습니다."
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/filter_state.py"
 text = "범위 조건의 첫 절이 비어 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/filter_state.py"
+text = "이 필터의 저장 형식을 읽을 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/filter_state.py"
+text = "이름을 비울 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/filter_state.py"
+text = "저장할 조건이 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/home_state.py"
@@ -2863,6 +2879,10 @@ text = "재적용할 직전 필터가 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/data_zone.py"
 text = "펼친 화면은 전체 열을 보여줍니다 — 열 숨기기는 인라인 표에서 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/data_zone.py"
+text = "필터는 등록 데이터에만 저장할 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/data_zone.py"

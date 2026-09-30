@@ -28,6 +28,7 @@ type Listener = () => void;
 
 type ModalPort = {
   confirm(spec: Obj): Promise<boolean>;
+  prompt(spec: Obj): Promise<string | null>;
   open(id: string, spec?: Obj): void;
   close(id: string): void;
 };
@@ -475,6 +476,9 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     client: deps.client,
     doc: deps.doc,
     notify: deps.notify,
+    /** 저장한 필터 칩의 이름 입력·삭제 확인 — 공용 modal 을 그대로 쓴다(새 다이얼로그 없음). */
+    prompt: (spec: Obj): Promise<string | null> => deps.modal.prompt(spec),
+    confirm: (spec: Obj): Promise<boolean> => deps.modal.confirm(spec),
     call,
     zone,
     browse,

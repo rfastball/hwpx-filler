@@ -1186,6 +1186,33 @@ class TestWebSelftestGate:
         # 재편에서 죽었다 — 그 수치를 정말 다시 물어야 하는 자리는 선택을 파기하는 전이의
         # 확인 모달 하나이고, 그 문안은 아래 `guard_body` 가 되읽는다.
 
+    def test_job_preset_chips_render_toggle_and_menu(self, selftest_result: dict) -> None:
+        # 저장한 필터 칩(이름 붙인 필터) — 판정(켜짐·사용 가부·사유·저장 가부)은 Python이
+        # 싣고, 화면은 그리기와 동사 호출만 한다. 두 칩(켜짐/쓸 수 없음)으로 양극을 함께 잰다.
+        j = probe(selftest_result, "job_mirror")
+        assert j["preset_chips"] == 2, f"저장한 필터 칩 렌더 수가 다릅니다: {j['preset_chips']!r}"
+        assert j["preset_pressed"] == ["true", "false"], (
+            f"켜짐/꺼짐 표지가 순서대로 나오지 않았습니다: {j['preset_pressed']!r}"
+        )
+        assert j["preset_warn_aria_disabled"] == "true", (
+            "쓸 수 없는 필터 칩에 aria-disabled 가 없습니다 — 눌리는 것은 허용해도 표지는 있어야 합니다."
+        )
+        assert j["preset_warn_title"] == "이 필터의 열이 지금 데이터에 없습니다: 추정가격", (
+            f"쓸 수 없는 사유가 title 로 안 왔습니다: {j['preset_warn_title']!r}"
+        )
+        assert j["preset_on_bg"] != j["preset_off_bg"], (
+            "켜진 칩과 쓸 수 없는 칩의 배경이 같습니다 — 색만으로 상태를 가르면 안 되지만 배경 자체는 갈라야 합니다."
+        )
+        assert j["filter_save_shown"] is True, (
+            "임시 조건이 있을 때 「필터 저장」 단추가 나오지 않았습니다."
+        )
+        assert j["preset_toggle_sent"] == '["소기업"]', (
+            f"칩 클릭이 toggle_filter_preset 에 이름을 실어 보내지 않았습니다: {j['preset_toggle_sent']!r}"
+        )
+        assert j["preset_menu_items"] == ["이름 바꾸기", "삭제"], (
+            f"⋯ 메뉴 항목이 다릅니다: {j['preset_menu_items']!r}"
+        )
+
     def test_job_datazone_keeps_row_semantics_and_column_kinds(self, selftest_result: dict) -> None:
         """H-06: native 행/셀 의미와 Python 열 kind가 실 표 조판까지 도달한다."""
         j = probe(selftest_result, "job_mirror")
