@@ -75,18 +75,25 @@ alarm) — 칩 줄·게이트가 같은 문안을 나른다.
 
 ## 저장한 필터(이름 붙인 필터 칩, 2026-09-30 사용자 확정)
 
-사용자가 지금 조건(열 조건·검색)을 이름으로 저장하고, 그 이름 칩을 눌러 **누적** 적용한다
-(예: 「소기업」 = 추정가격 < 1억, 「중소기업」 = 1억 ≤ 추정가격 < 고시금액). 문법을 새로
-짓지 않는다 — 저장본은 :meth:`FilterModel.export_state` 의 지금 조건 부분 그대로이고,
-평가는 저장본마다 **독립 모델**(같은 열 지형 + :meth:`FilterModel.apply_state`)로 한다. 그래서
-두 저장본이 같은 열을 조여도 서로 덮지 않고 교집합이 된다. 행은 지금 조건과 켜진 저장본
-**전부**를 통과해야 보인다. 정의줄은 켜진 저장본을 이름으로 함께 재진술해(:data:`PRESET_LABEL`)
+사용자가 조건(열 조건·검색)을 이름으로 저장하고, 그 이름 칩을 눌러 켜고 끈다(예: 「소기업」 =
+추정가격 < 1억, 「중소기업」 = 1억 ≤ 추정가격 < 고시금액). 문법을 새로 짓지 않는다 — 저장본은
+:meth:`FilterModel.export_state` 의 지금 조건 부분과 같은 모양이고, 평가는 저장본마다 **독립
+모델**(같은 열 지형 + :meth:`FilterModel.apply_state`)로 한다.
+
+**합성 규칙 = 슬라이서 관례**(2026-09-30 사용자 확정): 저장본의 **차원**은 그 저장본이 조이는
+열 이름 집합(+ 전체 열 검색이면 의사 차원 :data:`SEARCH_DIMENSION`)이다
+(:meth:`FilterModel.preset_dimension`). 같은 차원의 켜진 저장본끼리는 **또는**(합집합), 차원
+사이는 **그리고**(교집합)다 — 「소기업」과 「중소기업」을 함께 켜면 두 구간이 모두 보인다. 켜진
+저장본이 없는 차원은 아무것도 조이지 않는다. 지금 조건(열 머리·검색)은 늘 **그리고**로 얹힌다.
+정의줄은 켜진 차원마다 한 조각(``필터 '소기업' 또는 '중소기업'``)으로 재진술해(:data:`PRESET_LABEL`)
 게이트·「전체 선택」 담보가 그대로 덮는다. 교집합이 비면 빈 표 + 정의줄이다(조용한 빈칸 아님).
 
-저장본 정의의 영속은 이 모델 밖이다 — 등록 데이터 항목이 들고(:attr:`~hwpxfiller.domain.
-dataset_reference.DatasetReference.filters`), 세션이 :meth:`FilterModel.set_presets` 로 심는다.
-세션 이송(:meth:`export_state`)은 켜진 **이름**만 나른다. 지금 데이터에 없는 열·맞지 않는 범위를
-가리키는 저장본은 켤 수 없고, 사유는 :meth:`FilterModel.preset_status` 가 짓는다.
+저장본은 빌더가 보낸 조건을 :meth:`FilterModel.normalize_preset_state` 로 받는다 — 열 머리 편집기와
+같은 엄격 경로(없는 열·읽을 수 없는 피연산자·빈 조건은 시끄럽게 거절)다. 저장본 정의의 영속은 이
+모델 밖이다 — 등록 데이터 항목이 들고(:attr:`~hwpxfiller.domain.dataset_reference.
+DatasetReference.filters`), 세션이 :meth:`FilterModel.set_presets` 로 심는다. 세션 이송
+(:meth:`export_state`)은 켜진 **이름**만 나른다. 지금 데이터에 없는 열·맞지 않는 범위를 가리키는
+저장본은 켤 수 없고, 사유는 :meth:`FilterModel.preset_status` 가 짓는다.
 이는 결정 24의 「필터 영속 금지」를 **이름 붙인 저장본에 한해** 사용자가 명시로 연 것이다 —
 지금 조건·직전 필터 슬롯은 여전히 세션 메모리뿐이다.
 
@@ -115,6 +122,8 @@ __all__ = [
     "FilterModel",
     "FilterView",
     "PRESET_LABEL",
+    "SEARCH_DIMENSION",
+    "range_condition_from_payload",
 ]
 
 # 열 유형 — 범위 문법 자격(일자·금액)과 전열 검색 가지 후보(텍스트만)를 가른다.
@@ -156,6 +165,13 @@ _TIME_RE = re.compile(r"\d{1,2}:\d{2}")
 
 # 저장한 필터 — 정의줄 재진술 형태(문장 안 낫표 금지 규칙에 따라 작은따옴표).
 PRESET_LABEL = "필터 '{name}'"
+# 같은 차원의 켜진 저장본을 한 조각으로 잇는 말(합집합) — ``필터 '소기업' 또는 '중소기업'``.
+_PRESET_OR = " 또는 "
+_PRESET_GROUP_LABEL = "필터 {names}"
+# 전체 열 검색을 든 저장본의 의사 차원 — 열 이름과 겹치지 않는 예약 이름.
+SEARCH_DIMENSION = "__search__"
+# 차원 표지(칩 줄 무리 이름)에서 검색 차원을 부르는 말.
+_SEARCH_DIMENSION_LABEL = "검색"
 
 # 저장한 필터 거절 사유(사용자 문안 — 이름 입력창·칩 비활성 사유가 그대로 싣는다).
 _PRESET_NAME_EMPTY = "이름을 비울 수 없습니다."
@@ -240,6 +256,40 @@ class RangeCondition:
     joiner: str = "and"  # second 있을 때만 의미
 
 
+def range_condition_from_payload(
+    first: "dict | None", second: "dict | None" = None, joiner: "str | None" = "and"
+) -> "RangeCondition | None":
+    """표면이 보낸 범위 조건 dict → :class:`RangeCondition` — 열 머리 편집기·필터 빌더 공용.
+
+    빈 첫 절(피연산자 공백)은 조건 없음(``None``), 빈 둘째 절은 1절 조건이다. 피연산자는
+    양끝 공백을 다듬는다. 형식 손상(절이 dict 가 아님·연산자 누락)은 ``ValueError`` — 해석
+    가능성 검증은 :meth:`FilterModel.set_range` 가 한다(이 함수는 모양만 옮긴다).
+    """
+    def clause(raw: "object") -> "RangeClause | None":
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise ValueError(_PRESET_UNREADABLE)
+        operand = str(raw.get("operand", "") or "").strip()
+        if not operand:
+            return None
+        return RangeClause(str(raw.get("op", "")), operand)
+
+    head = clause(first)
+    if head is None:
+        return None
+    return RangeCondition(first=head, second=clause(second), joiner=str(joiner or "and"))
+
+
+def _cond_is_active(cond: dict) -> bool:
+    """직렬 열 조건 dict 가 무언가를 조이는가 — :meth:`_ColumnCondition.is_active` 의 직렬판."""
+    return (
+        cond.get("values") is not None
+        or bool(str(cond.get("text") or "").strip())
+        or bool(cond.get("range"))
+    )
+
+
 class _ColumnCondition:
     """열 하나의 조건 묶음(값 체크리스트·텍스트·범위) — FilterModel 내부 전용."""
 
@@ -290,7 +340,7 @@ class FilterModel:
         return self.has_adhoc() or bool(self._active_presets)
 
     def has_adhoc(self) -> bool:
-        """지금 조건(열 조건·검색)이 서 있는가 — 「필터 저장」의 재료 유무."""
+        """지금 조건(열 조건·검색)이 서 있는가 — 필터 빌더 프리필의 재료 유무."""
         return bool(self._search) or any(c.is_active() for c in self._cols.values())
 
     def has_condition(self, column: str) -> bool:
@@ -527,35 +577,171 @@ class FilterModel:
             raise ValueError(_PRESET_NAME_TAKEN)
         return name
 
-    def save_preset(self, name: str) -> str:
-        """지금 조건을 이름으로 저장하고 **칩으로 결정화**한다 — 저장한 이름을 돌려준다.
+    def normalize_preset_state(self, state: object, *, allow_empty: bool = False) -> dict:
+        """빌더가 보낸 조건 → 저장본 — 열 머리 편집기와 **같은 엄격 경로**로 검증한다.
 
-        지금 조건은 비우고 새 칩을 켠다: 술어가 같아 보이는 행은 변하지 않고, 정의가 칩
-        하나로 접힌다. 같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지 —
-        고치려면 지우고 다시 저장한다).
+        모양은 :meth:`export_state` 의 지금 조건 부분(``columns`` → ``{values|text|range}``,
+        ``search``, 선택 ``pruned``)이다. 지금 열 지형의 빈 모델에 조건을 하나씩 설치해 보고,
+        설치 규칙이 거절하면 그 문장을 그대로 올린다: 없는 열(:data:`_PRESET_COLUMN_MISSING`),
+        읽을 수 없는 범위 피연산자(:meth:`set_range`), 조이는 것이 없는 조건
+        (:data:`_PRESET_STATE_EMPTY` — ``allow_empty`` 면 통과), 모양 손상
+        (:data:`_PRESET_UNREADABLE`). :meth:`apply_state` 처럼 부분 설치 + 탈락 목록으로 강등하지
+        않는다 — 저장본은 이름과 다른 행을 보여 주면 안 된다. 반환은 설치 결과를 다시 직렬화한
+        정규형이다(트리밍·중복 제거가 반영된다).
+        """
+        if not isinstance(state, dict) or "active_presets" in state:
+            raise ValueError(_PRESET_UNREADABLE)
+        columns = state.get("columns") or {}
+        search = state.get("search") or ""
+        pruned = state.get("pruned") or []
+        if not (
+            isinstance(columns, dict) and isinstance(search, str) and isinstance(pruned, list)
+        ):
+            raise ValueError(_PRESET_UNREADABLE)
+        missing = [col for col in columns if col not in self._cols]
+        if missing:
+            raise ValueError(_PRESET_COLUMN_MISSING.format(columns=", ".join(missing)))
+        scratch = FilterModel(self._columns, self._kinds)
+        for col, cond in columns.items():
+            if not isinstance(cond, dict):
+                raise ValueError(_PRESET_UNREADABLE)
+            values, text = cond.get("values"), cond.get("text") or ""
+            if (values is not None and not isinstance(values, list)) or not isinstance(text, str):
+                raise ValueError(_PRESET_UNREADABLE)
+            if values is not None:
+                scratch.set_values(col, [str(v) for v in values])
+            scratch.set_text(col, text)
+            rng = cond.get("range")
+            if rng:
+                if not isinstance(rng, dict):
+                    raise ValueError(_PRESET_UNREADABLE)
+                scratch.set_range(col, range_condition_from_payload(
+                    rng.get("first"), rng.get("second"), rng.get("joiner", "and"),
+                ))
+        scratch.set_search(search)
+        if scratch.search_text:  # 쳐낸 가지는 검색 텍스트 수명 — 실재 열만 잇는다
+            scratch._pruned = {str(col) for col in pruned if col in self._cols}
+        if not allow_empty and not scratch.has_adhoc():
+            raise ValueError(_PRESET_STATE_EMPTY)
+        return scratch.adhoc_state()
+
+    def count_state(self, state: object, records: "list[dict]") -> int:
+        """빌더의 후보 조건 **하나만**으로 보이는 행 수 — 지금 조건·켜진 저장본과 무관.
+
+        저장본은 따로 평가돼 합성되므로(차원 규칙) 빌더의 수는 그 저장본 자신의 수다. 검증은
+        :meth:`normalize_preset_state` 와 같고, 조건이 비었으면 전 행이다(저장 거절은 저장이
+        말한다 — 빈 빌더를 열자마자 오류를 띄우지 않는다).
+        """
+        probe = FilterModel(self._columns, self._kinds)
+        probe.apply_state(self.normalize_preset_state(state, allow_empty=True))
+        return len(probe.visible_indices(records))
+
+    def create_preset(self, name: str, state: object, *, from_adhoc: bool = False) -> str:
+        """빌더의 조건을 이름으로 저장하고 **켠다** — 저장한 이름을 돌려준다.
+
+        같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지). ``from_adhoc`` 는
+        빌더가 지금 조건으로 채워져 열렸다는 표지다 — 저장 뒤 지금 조건을 비워 정의가 칩
+        하나로 접힌다(같은 차원의 다른 저장본이 켜져 있지 않으면 보이는 행은 그대로다).
         """
         name = self._check_new_name(name)
-        if not self.has_adhoc():
-            raise ValueError(_PRESET_STATE_EMPTY)
-        self._presets[name] = self._adhoc_state()
+        saved = self.normalize_preset_state(state)
+        self._presets[name] = saved
         self._preset_models.pop(name, None)
-        self._clear_adhoc()
+        if from_adhoc:
+            self._clear_adhoc()
         self._active_presets.append(name)
         return name
 
-    def rename_preset(self, name: str, new_name: str) -> str:
-        """이름 바꾸기 — 칩 순서·켜짐을 그대로 잇는다. 새 이름을 돌려준다."""
+    def update_preset(self, name: str, new_name: str, state: object) -> str:
+        """저장본 고치기(이름·조건) — 칩 순서·켜짐을 그대로 잇는다. 새 이름을 돌려준다.
+
+        검증은 만들기와 같고, 이름이 그대로면 이름 검사는 건너뛴다. 조건이 바뀌면 차원도 바뀔
+        수 있다(칩이 다른 무리로 옮겨 간다) — 켜짐은 그대로 잇는다.
+        """
         if name not in self._presets:
             raise ValueError(_PRESET_UNKNOWN.format(name=name))
-        if str(new_name).strip() == name:
-            return name
-        new_name = self._check_new_name(new_name)
+        new_name = str(new_name).strip()
+        if new_name != name:
+            new_name = self._check_new_name(new_name)
+        saved = self.normalize_preset_state(state)
         self._presets = {
-            (new_name if key == name else key): state for key, state in self._presets.items()
+            (new_name if key == name else key): (saved if key == name else value)
+            for key, value in self._presets.items()
         }
         self._preset_models = {}
         self._active_presets = [new_name if n == name else n for n in self._active_presets]
         return new_name
+
+    # ------------------------------------------------ 저장본 차원(합성 규칙의 단위)
+    def _preset_state(self, name: str) -> dict:
+        if name not in self._presets:
+            raise ValueError(_PRESET_UNKNOWN.format(name=name))
+        return self._presets[name]
+
+    def preset_columns(self, name: str) -> "frozenset[str]":
+        """저장본이 조이는 열 이름 집합(값 목록·텍스트·범위 중 하나라도 선 열).
+
+        손상된 저장본(모양이 틀림)은 빈 집합 — 켤 수 없으므로 합성에 들지 않는다.
+        """
+        columns = self._preset_state(name).get("columns")
+        if not isinstance(columns, dict):
+            return frozenset()
+        return frozenset(
+            col for col, cond in columns.items() if isinstance(cond, dict) and _cond_is_active(cond)
+        )
+
+    def preset_dimension(self, name: str) -> "frozenset[str]":
+        """저장본의 차원 — 조이는 열 + 전체 열 검색이면 :data:`SEARCH_DIMENSION`.
+
+        같은 차원의 켜진 저장본끼리 「또는」, 차원 사이 「그리고」(슬라이서 관례). 차원은
+        저장본 정의에서 나온다(지금 데이터에 그 열이 있는지와 무관 — 쓸 수 없는 저장본도 자기
+        무리에 선다).
+        """
+        search = self._preset_state(name).get("search")
+        extra = {SEARCH_DIMENSION} if isinstance(search, str) and search.strip() else set()
+        return self.preset_columns(name) | extra
+
+    def _group_key(self, name: str) -> object:
+        """무리 짓기 열쇠 — 차원이 빈(손상된) 저장본은 저마다 홀로 선다."""
+        return self.preset_dimension(name) or ("", name)
+
+    def preset_groups(self) -> "list[list[str]]":
+        """저장본 전부를 차원별로 — 무리는 첫 등장 순, 무리 안은 저장 순(칩 줄 렌더 순서)."""
+        groups: "dict[object, list[str]]" = {}
+        for name in self._presets:
+            groups.setdefault(self._group_key(name), []).append(name)
+        return list(groups.values())
+
+    def active_preset_groups(self) -> "list[list[str]]":
+        """켜진 저장본의 차원 무리 — 무리는 처음 켠 순, 무리 안은 켠 순(정의줄 재진술 순서)."""
+        groups: "dict[object, list[str]]" = {}
+        for name in self._active_presets:
+            groups.setdefault(self._group_key(name), []).append(name)
+        return list(groups.values())
+
+    def dimension_label(self, name: str) -> str:
+        """차원의 표지 — 지금 열 순서(없는 열은 뒤에 이름 순)로 열 이름, 검색은 「검색」."""
+        dim = self.preset_dimension(name)
+        ordered = [col for col in self._columns if col in dim]
+        ordered += sorted(col for col in dim if col not in self._cols and col != SEARCH_DIMENSION)
+        if SEARCH_DIMENSION in dim:
+            ordered.append(_SEARCH_DIMENSION_LABEL)
+        return "·".join(ordered)
+
+    def dimension_key(self, name: str) -> str:
+        """차원의 안정 열쇠 — 열 이름 정렬 후 「·」 연결, 검색은 「검색」(표면 무리 열쇠)."""
+        dim = self.preset_dimension(name)
+        parts = sorted(col for col in dim if col != SEARCH_DIMENSION)
+        if SEARCH_DIMENSION in dim:
+            parts.append(_SEARCH_DIMENSION_LABEL)
+        return "·".join(parts)
+
+    def preset_description(self, name: str, records: "list[dict]") -> str:
+        """저장본의 조건 문안 — 정의줄과 같은 생산자(:meth:`FilterView.adhoc_parts`)로 짓는다.
+
+        쓸 수 있는 저장본만 부른다(쓸 수 없는 칩의 설명 자리는 사유가 진다).
+        """
+        return " · ".join(self._preset_model(name).view(records).adhoc_parts())
 
     def delete_preset(self, name: str) -> None:
         """저장한 필터 삭제 — 켜져 있었으면 함께 꺼진다."""
@@ -580,6 +766,10 @@ class FilterModel:
         return twin
 
     # ------------------------------------------- 정의 이송(직전 필터 슬롯, 결정 28)
+    def adhoc_state(self) -> dict:
+        """지금 조건(열 조건·검색·프루닝)의 직렬 상태 — 저장본의 모양이자 빌더 프리필 재료."""
+        return self._adhoc_state()
+
     def _adhoc_state(self) -> dict:
         return {
             "search": self._search,
@@ -766,24 +956,27 @@ class FilterView:
     def __init__(self, model: FilterModel, records: "list[dict]") -> None:
         self._m = model
         self._records = records
-        # 켜진 저장한 필터의 통과 행(교집합) — 뷰 수명 1회 산출. None = 켜진 저장본 없음.
+        # 켜진 저장한 필터의 통과 행 — 뷰 수명 1회 산출. None = 켜진 저장본 없음.
         self._preset_pass: "set[int] | None" = self._compute_preset_pass()
         self.branches: "list[str]" = self._compute_branches()
 
     # ------------------------------------------------------------- 저장한 필터
     def _compute_preset_pass(self) -> "set[int] | None":
-        """켜진 저장한 필터 전부를 통과한 행 — 저장본마다 독립 모델의 가시 집합의 교집합.
+        """켜진 저장본의 합성 — 차원 무리 안은 합집합(또는), 무리 사이는 교집합(그리고).
 
-        같은 열을 조이는 두 저장본이 서로의 조건을 덮지 않는 근거다(각자 자기 모델에서
-        평가한 뒤 교차한다).
+        저장본마다 자기 독립 모델에서 평가한다 — 같은 열을 조이는 두 저장본이 서로의 조건을
+        덮지 않는 근거다. 켜진 저장본이 없는 차원은 무리가 없으므로 아무것도 조이지 않는다.
         """
         m = self._m
-        if not m._active_presets:
+        groups = m.active_preset_groups()
+        if not groups:
             return None
         passing: "set[int] | None" = None
-        for name in m._active_presets:
-            vis = set(m._preset_model(name).view(self._records).visible_indices())
-            passing = vis if passing is None else passing & vis
+        for names in groups:
+            union: "set[int]" = set()
+            for name in names:
+                union |= set(m._preset_model(name).view(self._records).visible_indices())
+            passing = union if passing is None else passing & union
         return passing if passing is not None else set()
 
     def _preset_ok(self, index: int) -> bool:
@@ -879,8 +1072,14 @@ class FilterView:
         return parts
 
     def preset_parts(self) -> "list[str]":
-        """켜진 저장한 필터의 재진술 — 켠 순서, 이름으로(정의줄 앞머리)."""
-        return [PRESET_LABEL.format(name=name) for name in self._m._active_presets]
+        """켜진 저장한 필터의 재진술 — 차원 무리마다 한 조각, 무리 안은 「또는」(켠 순서).
+
+        무리 사이의 「그리고」는 열 조건 조각 사이처럼 암묵이다(``·`` 로 이어 붙는다).
+        """
+        return [
+            _PRESET_GROUP_LABEL.format(names=_PRESET_OR.join(f"'{name}'" for name in names))
+            for names in self._m.active_preset_groups()
+        ]
 
     def describe_parts(self) -> "list[str]":
         """조건별 문안 목록 — 게이트 정의줄이 이어붙여 소비(결정 4 담보).

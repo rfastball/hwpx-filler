@@ -45,11 +45,11 @@ _ZONE_MUTATIONS = {
     "filter_clear": _schema(optional="epoch"),
     "filter_clear_col": _schema("column", "epoch"),
     "filter_reapply": _schema(optional="epoch"),
-    # 저장한 필터(이름 붙인 칩) — 켜고 끄기는 보기를, 저장·이름 바꾸기·삭제는 등록 데이터의
-    # 정의를 바꾼다. 저장은 지금 조건을 재료로 삼으므로 남의 세계에서 온 요청이면 안 된다.
-    "save_filter_preset": _schema("name", "epoch"),
+    # 저장한 필터(이름 붙인 칩) — 켜고 끄기는 보기를, 만들기·고치기·삭제는 등록 데이터의
+    # 정의를 바꾼다. `from_adhoc` 만들기는 지금 조건을 비우므로 남의 세계에서 온 요청이면 안 된다.
+    "create_filter_preset": _schema("name state", "from_adhoc epoch"),
+    "update_filter_preset": _schema("name new_name state", "epoch"),
     "toggle_filter_preset": _schema("name", "epoch"),
-    "rename_filter_preset": _schema("name new_name", "epoch"),
     "delete_filter_preset": _schema("name", "epoch"),
     # 사용자 열 선별(U2 §2.19, #341) — 표시 축뿐(숨긴 열도 필터·검색·생성에 그대로 참여).
     # 세션 소유·데이터 교체 시 소멸이라 존 변이와 같은 세대 검사를 받는다.
@@ -65,6 +65,8 @@ _DATA_ZONE = {
     **_ZONE_MUTATIONS,
     # 무변이 질의 — 세대와 무관하다(상태를 안 바꾸니 늦게 도착해도 해가 없다).
     "filter_panel": _schema("column"),
+    # 필터 빌더의 살아 있는 수 — 후보 조건만 평가한다(무변이, push 없음).
+    "count_filter_state": _schema("state"),
 }
 
 # 겨눔 대상은 슬롯 `key` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 겨눔의 정체가 못 된다).

@@ -13,8 +13,10 @@ from hwpxfiller.viewmodel.filter_state import (
     KIND_DATE,
     KIND_TEXT,
     FilterModel,
+    SEARCH_DIMENSION,
     RangeClause,
     RangeCondition,
+    range_condition_from_payload,
     sniff_column_kinds,
 )
 
@@ -481,34 +483,76 @@ def test_apply_state_prunes_only_existing_columns() -> None:
 # ------------------------------------------------ 저장한 필터(이름 붙인 칩, 2026-09-30)
 # 사용자 사례: 추정가격 1억 미만 = 소기업, 1억 이상 고시금액 미만 = 중소기업. 자동 추론은 없고
 # 고시금액(여기선 2억 2천만)은 사용자가 직접 친다. 값은 콤마 서식 원문 그대로다.
+# 합성 규칙(2026-09-30 사용자 확정, 슬라이서 관례): 같은 열을 보는 저장본끼리 「또는」,
+# 다른 열과는 「그리고」, 열 머리 조건은 늘 「그리고」.
 PRICE_ROWS = [
-    {"공고명": "청사 청소", "추정가격": "95,000,000"},
-    {"공고명": "전산 유지보수", "추정가격": "150,000,000"},
-    {"공고명": "공용차량 임차", "추정가격": "230,000,000"},
-    {"공고명": "사무용품", "추정가격": "50,000,000"},
-    {"공고명": "방역 용역", "추정가격": "219,999,999"},
+    {"공고명": "청사 청소", "추정가격": "95,000,000", "계약일자": "2026-03-02"},
+    {"공고명": "전산 유지보수", "추정가격": "150,000,000", "계약일자": "2026-08-14"},
+    {"공고명": "공용차량 임차", "추정가격": "230,000,000", "계약일자": "2026-05-20"},
+    {"공고명": "사무용품", "추정가격": "50,000,000", "계약일자": "2026-09-01"},
+    {"공고명": "방역 용역", "추정가격": "219,999,999", "계약일자": "2026-06-30"},
 ]
+
+SMALL = {"columns": {"추정가격": {"range": {
+    "first": {"op": "lt", "operand": "100,000,000"}, "second": None, "joiner": "and",
+}}}}
+MEDIUM = {"columns": {"추정가격": {"range": {
+    "first": {"op": "ge", "operand": "100,000,000"},
+    "second": {"op": "lt", "operand": "220,000,000"}, "joiner": "and",
+}}}}
+FIRST_HALF = {"columns": {"계약일자": {"range": {
+    "first": {"op": "ge", "operand": "2026-01-01"},
+    "second": {"op": "le", "operand": "2026-06-30"}, "joiner": "and",
+}}}}
 
 
 def price_model() -> FilterModel:
     kinds = sniff_column_kinds(PRICE_ROWS)
     assert kinds["추정가격"] == KIND_AMOUNT  # 콤마 서식 = 엄격 금액 형태
+    assert kinds["계약일자"] == KIND_DATE
     return FilterModel(list(PRICE_ROWS[0]), kinds)
 
 
 def _save_small_and_medium(m: FilterModel) -> None:
-    m.set_range("추정가격", RangeCondition(RangeClause("lt", "100,000,000")))
-    assert m.save_preset("소기업") == "소기업"
+    """빌더 경로로 두 저장본을 세운다 — 만들기는 켜므로 곧바로 끈다."""
+    assert m.create_preset("소기업", SMALL) == "소기업"
     m.deactivate_preset("소기업")
-    m.set_range("추정가격", RangeCondition(
-        RangeClause("ge", "100,000,000"), RangeClause("lt", "220,000,000"), "and",
-    ))
-    assert m.save_preset(" 중소기업 ") == "중소기업"  # 이름 양끝 공백은 다듬는다
+    assert m.create_preset(" 중소기업 ", MEDIUM) == "중소기업"  # 이름 양끝 공백은 다듬는다
     m.deactivate_preset("중소기업")
 
 
-def test_preset_worked_example_accumulates_as_intersection() -> None:
-    """칩을 누를수록 조건이 쌓인다 — 같은 열을 조이는 두 저장본은 서로 덮지 않고 교차한다."""
+def test_preset_dimension_is_the_constrained_columns_plus_search() -> None:
+    m = price_model()
+    _save_small_and_medium(m)
+    m.create_preset("상반기", FIRST_HALF)
+    m.create_preset("청소 상반기", {
+        "columns": {
+            "공고명": {"text": "청소", "values": None, "range": None},
+            "계약일자": FIRST_HALF["columns"]["계약일자"],
+        },
+    })
+    m.create_preset("전산 검색", {"search": "전산"})
+    m.create_preset("소액 전산", {"search": "전산", "columns": SMALL["columns"]})
+    assert m.preset_columns("소기업") == frozenset({"추정가격"})
+    assert m.preset_dimension("소기업") == m.preset_dimension("중소기업") == frozenset({"추정가격"})
+    assert m.preset_dimension("청소 상반기") == frozenset({"공고명", "계약일자"})
+    assert m.preset_columns("전산 검색") == frozenset()
+    assert m.preset_dimension("전산 검색") == frozenset({SEARCH_DIMENSION})
+    assert m.preset_dimension("소액 전산") == frozenset({"추정가격", SEARCH_DIMENSION})
+    # 무리 = 차원별(첫 등장 순), 표지는 열 순서·열쇠는 정렬, 검색은 「검색」.
+    assert m.preset_groups() == [
+        ["소기업", "중소기업"], ["상반기"], ["청소 상반기"], ["전산 검색"], ["소액 전산"],
+    ]
+    assert m.dimension_label("청소 상반기") == "공고명·계약일자"
+    assert m.dimension_key("청소 상반기") == "계약일자·공고명"
+    assert m.dimension_label("소액 전산") == m.dimension_key("소액 전산") == "추정가격·검색"
+    assert m.dimension_label("전산 검색") == "검색"
+    with pytest.raises(ValueError, match="찾을 수 없습니다"):
+        m.preset_dimension("없음")
+
+
+def test_same_dimension_presets_combine_with_or() -> None:
+    """같은 열을 보는 두 칩을 함께 켜면 두 구간이 모두 보인다 — 합집합."""
     m = price_model()
     _save_small_and_medium(m)
     assert not m.is_active() and m.visible_indices(PRICE_ROWS) == [0, 1, 2, 3, 4]
@@ -517,69 +561,165 @@ def test_preset_worked_example_accumulates_as_intersection() -> None:
     assert m.visible_indices(PRICE_ROWS) == [0, 3]  # 1억 미만만
     m.toggle_preset("중소기업")
     view = m.view(PRICE_ROWS)
-    assert view.visible_indices() == []  # 교집합 = 빈 표
-    # 빈 표의 이유는 정의줄이 말한다(조용한 빈칸이 아니다) — 켠 순서대로 이름으로.
-    assert view.describe() == "필터 '소기업' · 필터 '중소기업'"
-    assert m.is_active()
+    assert view.visible_indices() == [0, 1, 3, 4]  # 고시금액 미만 전부(합집합)
+    assert view.describe() == "필터 '소기업' 또는 '중소기업'"
+    assert view.preset_parts() == ["필터 '소기업' 또는 '중소기업'"]
+    assert m.active_preset_groups() == [["소기업", "중소기업"]]
 
     m.toggle_preset("소기업")  # 소기업만 끄면 중소기업 행이 남는다
     assert m.visible_indices(PRICE_ROWS) == [1, 4]
     assert m.describe(PRICE_ROWS) == "필터 '중소기업'"
 
 
+def test_different_dimensions_combine_with_and() -> None:
+    m = price_model()
+    _save_small_and_medium(m)
+    m.create_preset("상반기", FIRST_HALF)  # 만들기 = 켜짐
+    m.deactivate_preset("상반기")
+    m.toggle_preset("소기업")
+    m.toggle_preset("상반기")
+    view = m.view(PRICE_ROWS)
+    assert view.visible_indices() == [0]  # 1억 미만 ∩ 상반기
+    assert view.preset_parts() == ["필터 '소기업'", "필터 '상반기'"]
+    m.toggle_preset("중소기업")  # (소기업 ∨ 중소기업) ∧ 상반기
+    view = m.view(PRICE_ROWS)
+    assert view.visible_indices() == [0, 4]
+    assert view.describe() == "필터 '소기업' 또는 '중소기업' · 필터 '상반기'"
+
+
+def test_a_dimension_without_active_presets_imposes_nothing() -> None:
+    m = price_model()
+    _save_small_and_medium(m)
+    m.create_preset("상반기", FIRST_HALF)
+    m.deactivate_preset("상반기")
+    m.toggle_preset("상반기")  # 추정가격 무리는 전부 꺼짐 — 금액은 조이지 않는다
+    assert m.visible_indices(PRICE_ROWS) == [0, 2, 4]
+    assert m.describe(PRICE_ROWS) == "필터 '상반기'"
+
+
 def test_preset_and_adhoc_conditions_combine_with_and() -> None:
     m = price_model()
     _save_small_and_medium(m)
     m.toggle_preset("중소기업")
+    m.toggle_preset("소기업")
     m.set_text("공고명", "전산")
     view = m.view(PRICE_ROWS)
     assert view.visible_indices() == [1]
-    assert view.preset_parts() == ["필터 '중소기업'"]
+    assert view.preset_parts() == ["필터 '중소기업' 또는 '소기업'"]
     assert view.adhoc_parts() == ["공고명 포함 '전산'"]
-    assert view.describe_parts() == ["필터 '중소기업'", "공고명 포함 '전산'"]
+    assert view.describe_parts() == ["필터 '중소기업' 또는 '소기업'", "공고명 포함 '전산'"]
     # 값 목록(체크리스트 소재)도 켜진 저장본을 통과한 행만 본다.
-    assert view.column_values("공고명") == ["전산 유지보수", "방역 용역"]
+    m.set_text("공고명", "")
+    assert m.view(PRICE_ROWS).column_values("공고명") == [
+        "청사 청소", "전산 유지보수", "사무용품", "방역 용역",
+    ]
+    # 같은 열이라도 열 머리 조건은 저장본과 「그리고」다(차원 무리에 끼지 않는다).
+    m.set_range("추정가격", RangeCondition(RangeClause("ge", "100,000,000")))
+    assert m.visible_indices(PRICE_ROWS) == [1, 4]
 
 
-def test_save_preset_crystallizes_the_current_conditions() -> None:
-    """저장 = 지금 조건을 칩 하나로 접는다. 보이는 행은 그대로이고 지금 조건은 비워진다."""
+def test_create_preset_from_adhoc_crystallizes_the_current_conditions() -> None:
+    """지금 조건으로 채워 연 빌더의 저장 = 칩 하나로 접힌다. 보이는 행은 그대로다."""
     m = price_model()
     m.set_range("추정가격", RangeCondition(RangeClause("lt", "100,000,000")))
     m.set_search("청")
     before = m.visible_indices(PRICE_ROWS)
-    m.save_preset("소기업 청소")
+    m.create_preset("소기업 청소", m.adhoc_state(), from_adhoc=True)
     assert m.visible_indices(PRICE_ROWS) == before == [0]
     assert not m.has_adhoc() and m.active_presets == ["소기업 청소"]
     saved = m.presets[0]["state"]
     assert saved["search"] == "청" and "추정가격" in saved["columns"]
     assert "active_presets" not in saved  # 저장본은 지금 조건만 — 중첩 없음
+    # from_adhoc 가 아니면 지금 조건은 그대로 남는다(빌더가 새 조건을 들고 왔다).
+    m.set_text("공고명", "사무")
+    m.create_preset("상반기", FIRST_HALF)
+    assert m.has_adhoc() and m.active_presets == ["소기업 청소", "상반기"]
 
 
-def test_save_preset_refuses_loudly() -> None:
+def test_normalize_preset_state_takes_the_header_editors_strict_path() -> None:
+    m = price_model()
+    normalized = m.normalize_preset_state({
+        "columns": {
+            "공고명": {"values": ["청사 청소", "청사 청소", ""], "text": "  "},
+            "추정가격": {"range": {"first": {"op": "lt", "operand": " 100,000,000원 "},
+                                   "second": {"op": "ge", "operand": ""}, "joiner": "or"}},
+        },
+        "search": "  청  ",
+        "pruned": ["추정가격", "없는 열"],
+    })
+    assert normalized == {
+        "search": "청",
+        "pruned": ["추정가격"],
+        "columns": {
+            "공고명": {"text": "", "values": ["청사 청소", ""], "range": None},
+            "추정가격": {"text": "", "values": None, "range": {
+                "first": {"op": "lt", "operand": "100,000,000원"}, "second": None, "joiner": "or",
+            }},
+        },
+    }
+    with pytest.raises(ValueError, match="이 필터의 열이 지금 데이터에 없습니다: 지역"):
+        m.normalize_preset_state({"columns": {"지역": {"values": ["세종"]}}})
+    with pytest.raises(ValueError, match="'1억' 을\\(를\\) 금액\\(으\\)로 읽을 수 없습니다"):
+        m.normalize_preset_state({"columns": {"추정가격": {"range": {
+            "first": {"op": "lt", "operand": "1억"}}}}})
+    with pytest.raises(ValueError, match="'내일' 을\\(를\\) 날짜\\(으\\)로 읽을 수 없습니다"):
+        m.normalize_preset_state({"columns": {"계약일자": {"range": {
+            "first": {"op": "ge", "operand": "내일"}}}}})
+    with pytest.raises(ValueError, match="범위 조건은 일자·금액 열 전용입니다"):
+        m.normalize_preset_state({"columns": {"공고명": {"range": {
+            "first": {"op": "ge", "operand": "1"}}}}})
+    with pytest.raises(ValueError, match="저장할 조건이 없습니다"):
+        m.normalize_preset_state({"columns": {"공고명": {"text": " "}}, "search": " "})
+    assert m.normalize_preset_state({}, allow_empty=True)["columns"] == {}
+    for broken in ("x", {"columns": ["추정가격"]}, {"columns": {"공고명": "청"}},
+                   {"columns": {"공고명": {"values": "청"}}}, {"search": 3},
+                   {"columns": {"추정가격": {"range": ["lt"]}}}, {"active_presets": ["a"]}):
+        with pytest.raises(ValueError, match="이 필터의 저장 형식을 읽을 수 없습니다"):
+            m.normalize_preset_state(broken)
+
+
+def test_count_state_evaluates_the_candidate_alone() -> None:
+    m = price_model()
+    _save_small_and_medium(m)
+    m.toggle_preset("소기업")
+    m.set_text("공고명", "전산")  # 지금 조건·켜진 칩은 빌더의 수에 끼지 않는다
+    assert m.count_state(MEDIUM, PRICE_ROWS) == 2
+    assert m.count_state({"columns": {}}, PRICE_ROWS) == 5  # 빈 조건 = 전 행(저장이 거절)
+    with pytest.raises(ValueError, match="금액"):
+        m.count_state({"columns": {"추정가격": {"range": {
+            "first": {"op": "lt", "operand": "1억"}}}}}, PRICE_ROWS)
+
+
+def test_create_preset_refuses_loudly() -> None:
     m = price_model()
     with pytest.raises(ValueError, match="저장할 조건이 없습니다"):
-        m.save_preset("빈 필터")
-    m.set_text("공고명", "전산")
+        m.create_preset("빈 필터", {"columns": {}})
     with pytest.raises(ValueError, match="이름을 비울 수 없습니다"):
-        m.save_preset("   ")
-    m.save_preset("전산")
-    m.set_text("공고명", "청")
+        m.create_preset("   ", SMALL)
+    m.create_preset("전산", {"columns": {"공고명": {"text": "전산"}}})
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
-        m.save_preset("전산")  # 덮어쓰지 않는다 — 저장본의 조용한 소실 금지
+        m.create_preset("전산", {"columns": {"공고명": {"text": "청"}}})  # 덮어쓰지 않는다
     assert m.presets[0]["state"]["columns"]["공고명"]["text"] == "전산"
+    assert [p["name"] for p in m.presets] == ["전산"]  # 거절은 아무것도 남기지 않는다
 
 
-def test_preset_rename_and_delete() -> None:
+def test_update_preset_renames_and_rewrites_keeping_order_and_activation() -> None:
     m = price_model()
     _save_small_and_medium(m)
     m.toggle_preset("중소기업")
-    assert m.rename_preset("중소기업", "중소") == "중소"
+    assert m.update_preset("중소기업", "중소", MEDIUM) == "중소"
     assert [p["name"] for p in m.presets] == ["소기업", "중소"]  # 칩 순서 유지
     assert m.active_presets == ["중소"]  # 켜짐도 잇는다
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
-        m.rename_preset("중소", "소기업")
+        m.update_preset("중소", "소기업", MEDIUM)
     with pytest.raises(ValueError, match="이름을 비울 수 없습니다"):
-        m.rename_preset("중소", " ")
+        m.update_preset("중소", " ", MEDIUM)
+    with pytest.raises(ValueError, match="찾을 수 없습니다"):
+        m.update_preset("없음", "없음", MEDIUM)
+    # 조건을 바꾸면 차원도 바뀐다 — 칩이 다른 무리로 옮기고 평가도 새 정의를 쓴다.
+    assert m.update_preset("중소", "중소", FIRST_HALF) == "중소"
+    assert m.preset_dimension("중소") == frozenset({"계약일자"})
+    assert m.visible_indices(PRICE_ROWS) == [0, 2, 4]
     m.delete_preset("중소")  # 켜져 있던 칩을 지우면 함께 꺼진다
     assert m.active_presets == [] and m.visible_indices(PRICE_ROWS) == [0, 1, 2, 3, 4]
     with pytest.raises(ValueError, match="찾을 수 없습니다"):
@@ -597,6 +737,9 @@ def test_preset_on_missing_column_is_refused_with_reason() -> None:
     with pytest.raises(ValueError, match="열이 지금 데이터에 없습니다"):
         other.activate_preset("소기업")
     assert other.active_presets == []
+    # 쓸 수 없는 저장본도 자기 차원(정의 유래)에 선다 — 칩 줄의 무리는 그대로다.
+    assert other.preset_groups() == [["소기업", "중소기업"]]
+    assert other.dimension_label("소기업") == "추정가격"
     # 열은 있으나 유형이 바뀌어 범위가 서지 않는 경우도 부분 설치 없이 막는다.
     texty = FilterModel(["공고명", "추정가격"], {"공고명": KIND_TEXT, "추정가격": KIND_TEXT})
     texty.set_presets(m.presets)
@@ -619,8 +762,14 @@ def test_set_presets_reseeds_and_reports_deactivated() -> None:
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
         m.set_presets(renamed + [{"name": " 중소 ", "state": {}}])
     broken = FilterModel(list(PRICE_ROWS[0]))
-    broken.set_presets([{"name": "망가짐", "state": {"columns": ["추정가격"]}}])
+    broken.set_presets([
+        {"name": "망가짐", "state": {"columns": ["추정가격"]}},
+        {"name": "망가짐2", "state": {"columns": ["추정가격"]}},
+    ])
     assert broken.preset_status("망가짐") == (False, "이 필터의 저장 형식을 읽을 수 없습니다.")
+    # 손상된 저장본은 차원이 없어 저마다 홀로 선다(빈 이름의 무리로 뭉치지 않는다).
+    assert broken.preset_dimension("망가짐") == frozenset()
+    assert broken.preset_groups() == [["망가짐"], ["망가짐2"]]
 
 
 def test_export_apply_carry_active_preset_names_only() -> None:
@@ -628,19 +777,32 @@ def test_export_apply_carry_active_preset_names_only() -> None:
     m = price_model()
     _save_small_and_medium(m)
     m.toggle_preset("중소기업")
+    m.toggle_preset("소기업")
     m.set_text("공고명", "방역")
     state = m.export_state()
-    assert state["active_presets"] == ["중소기업"]
+    assert state["active_presets"] == ["중소기업", "소기업"]
     assert "presets" not in state
     twin = m.clone()
     assert twin.export_state() == state and twin.presets == m.presets
     assert twin.visible_indices(PRICE_ROWS) == [4]
+    assert twin.describe(PRICE_ROWS) == "필터 '중소기업' 또는 '소기업' · 공고명 포함 '방역'"
     bare = FilterModel(list(PRICE_ROWS[0]), sniff_column_kinds(PRICE_ROWS))
     installed, dropped = bare.apply_state(state)  # 정의 없는 모델엔 이름이 탈락으로 돌아온다
-    assert installed == ["공고명"] and dropped == ["필터 '중소기업'"]
+    assert installed == ["공고명"] and dropped == ["필터 '중소기업'", "필터 '소기업'"]
     blank = m.blank_copy()
     assert not blank.is_active() and blank.presets == m.presets
     installed, dropped = blank.apply_state(state)
-    assert installed == ["공고명", "필터 '중소기업'"] and dropped == []
+    assert installed == ["공고명", "필터 '중소기업'", "필터 '소기업'"] and dropped == []
     m.clear()  # 「필터 지우기」는 켜진 칩도 끈다(정의는 남는다)
     assert not m.is_active() and len(m.presets) == 2
+
+
+def test_range_condition_from_payload_shapes_both_editors() -> None:
+    assert range_condition_from_payload(None) is None
+    assert range_condition_from_payload({"op": "lt", "operand": "  "}) is None
+    cond = range_condition_from_payload(
+        {"op": "ge", "operand": " 1 "}, {"op": "lt", "operand": ""}, "or",
+    )
+    assert cond == RangeCondition(RangeClause("ge", "1"), None, "or")
+    with pytest.raises(ValueError, match="저장 형식"):
+        range_condition_from_payload("ge")
