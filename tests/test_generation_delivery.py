@@ -1164,6 +1164,28 @@ def test_inactive_source_token_is_sliced_before_the_format() -> None:
     ]
 
 
+def test_inactive_source_token_uses_a_v5_new_mode_slice() -> None:
+    """파일 이름 토큰도 v5 새 방식(‘x’ 지우기)을 쓴다 — Active 값과 같은 판정기다."""
+    from hwpxfiller.domain.text_slice import TextSlice
+
+    rule = FieldBindingRule(
+        field_id="f_dept", binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="dept",
+        text_slice=TextSlice("remove", find="(VAT 포함)"),
+    )
+    plan = _plan()
+    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
+    sealed = basis.output_name_requirements[0].value_expression
+    assert sealed["text_slice"] == {"mode": "remove", "find": "(VAT 포함)"}
+    res = _ok(_resolve(
+        plan, (_snapshot(dept="1,500,000원 (VAT 포함)"),), pattern="{{f_dept}}", basis=basis
+    ))
+    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
+        "1,500,000원.hwpx"
+    ]
+
+
 def test_inactive_source_without_slice_keeps_the_sealed_shape() -> None:
     """가공 없는 요구는 키가 없다 — v4 이전에 봉인된 basis 의 재계산 대조가 그대로 선다."""
     rule = FieldBindingRule(

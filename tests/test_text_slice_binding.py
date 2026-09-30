@@ -60,6 +60,31 @@ def test_outdated_framings_refuse_a_slice(contract) -> None:
         digest_binding_rules([_rule(text_slice=SPLIT)], contract_id=contract)
 
 
+def test_current_contract_registry_accepts_all_readable_versions() -> None:
+    """v5 는 유일한 실행 입력 판이고, v2·v3·v4 는 읽되 실행 입력이 되지 못한다."""
+    from hwpxfiller.domain.field_binding import (
+        FIELD_BINDING_SEMANTIC_VERSION,
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
+        is_current_field_binding_contract,
+        require_field_binding_contract,
+    )
+
+    for contract in (
+        FIELD_BINDING_SEMANTIC_VERSION_V2,
+        FIELD_BINDING_SEMANTIC_VERSION_V3,
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
+        FIELD_BINDING_SEMANTIC_VERSION,
+    ):
+        assert require_field_binding_contract(contract) == contract
+    assert is_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION) is True
+    for outdated in (
+        FIELD_BINDING_SEMANTIC_VERSION_V2,
+        FIELD_BINDING_SEMANTIC_VERSION_V3,
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
+    ):
+        assert is_current_field_binding_contract(outdated) is False
+
+
 def test_render_source_value_is_slice_then_format() -> None:
     assert render_source_value("amount", "", {"mode": "split", "delimiter": "원", "index": 1},
                                "170,309,180원 (VAT 포함)") == "170,309,180원"
@@ -79,6 +104,32 @@ def test_codec_round_trips_the_slice_and_omits_it_when_absent() -> None:
     encoded = _encode_rule(sliced)
     assert encoded["text_slice"] == {"mode": "chars", "start": 1, "length": 3}
     assert _decode_rule(encoded) == sliced
+
+
+def test_codec_round_trips_new_modes_and_distinguishes_empty_from_keep() -> None:
+    before = _rule(text_slice=TextSlice("before", delimiter="-"))
+    encoded = _encode_rule(before)
+    assert encoded["text_slice"] == {"mode": "before", "delimiter": "-"}
+    assert _decode_rule(encoded) == before
+    kept = _rule(text_slice=TextSlice("before", delimiter="-", on_missing="keep"))
+    kept_encoded = _encode_rule(kept)
+    assert kept_encoded["text_slice"] == {"mode": "before", "delimiter": "-", "on_missing": "keep"}
+    assert _decode_rule(kept_encoded) == kept
+    assert kept_encoded != encoded
+    replace = _rule(text_slice=TextSlice("replace", find="(주)", replace="주식회사"))
+    replace_encoded = _encode_rule(replace)
+    assert replace_encoded["text_slice"] == {
+        "mode": "replace", "find": "(주)", "replace": "주식회사",
+    }
+    assert _decode_rule(replace_encoded) == replace
+
+
+def test_codec_keeps_v4_shaped_stored_bytes() -> None:
+    """v4 가 적던 두 방식(글자 범위·구분자 나누기, 빠짐은 빈 값)의 저장 사전 모양은 v5 에서 그대로다."""
+    v4_shaped = _rule(text_slice=TextSlice("split", delimiter="-", index=1))
+    encoded = _encode_rule(v4_shaped)
+    assert encoded["text_slice"] == {"mode": "split", "delimiter": "-", "index": 1}
+    assert "on_missing" not in encoded["text_slice"]
 
 
 def test_codec_rejects_a_malformed_stored_slice() -> None:
@@ -158,7 +209,8 @@ def test_saving_a_slice_advances_the_binding_revision() -> None:
 
 # ─── outdated 판 무손실 승격 판정 — 사영에 가공이 남는다 ───────────────────────────────
 def test_outdated_projections_split_on_a_slice() -> None:
-    """v2·v3 판본의 규칙은 가공이 언제나 없다 — 현재 Mapping 에 가공이 있으면 승격하지 않는다."""
+    """v2·v3·v4 판본의 규칙은 사영이 명세를 그대로 비교한다 — 현재 Mapping 이 갈리면 승격하지 않는다."""
+    from hwpxfiller.domain.field_binding import FIELD_BINDING_SEMANTIC_VERSION_V4
     from hwpxfiller.external.seal_execution_plan_service import (
         _OUTDATED_PROJECTIONS,
         _v2_projection,
@@ -168,7 +220,10 @@ def test_outdated_projections_split_on_a_slice() -> None:
     assert set(_OUTDATED_PROJECTIONS) == {
         FIELD_BINDING_SEMANTIC_VERSION_V2,
         FIELD_BINDING_SEMANTIC_VERSION_V3,
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
     }
+    # v4 판은 v3 와 같은 사영 함수를 쓴다(가공 명세를 그대로 비교) — v4 가 적을 수 있던 두 방식뿐이다.
+    assert _OUTDATED_PROJECTIONS[FIELD_BINDING_SEMANTIC_VERSION_V4] is _v3_projection
     plain, sliced = _rule(), _rule(text_slice=SPLIT)
     for projection in (_v2_projection, _v3_projection):
         assert projection(plain) == projection(_rule())
@@ -177,3 +232,8 @@ def test_outdated_projections_split_on_a_slice() -> None:
     amount = _rule(format_kind="amount", format_code="")
     assert _v3_projection(amount) != _v3_projection(plain)
     assert _v2_projection(amount) == _v2_projection(plain)
+    # v4 는 새 방식(v5)·keep 을 적을 수 없었다 — 그 명세를 쓰는 현재 Mapping 은 v4 사영과 갈린다.
+    new_mode = _rule(text_slice=TextSlice("before", delimiter="-"))
+    assert _v3_projection(new_mode) != _v3_projection(plain)
+    kept = _rule(text_slice=TextSlice("chars", start=1, on_missing="keep"))
+    assert _v3_projection(kept) != _v3_projection(_rule(text_slice=TextSlice("chars", start=1)))

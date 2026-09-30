@@ -49,11 +49,15 @@ from .job_editor_state import (
     preserved_meta,
     validate_save,
 )
+from .slice_assist import slice_query
 from .work_mode import work_mode_label
 
 if TYPE_CHECKING:
     from ..domain.schema import TemplateSchema
     from .mapping_state import MappingModel, PartialGate
+
+#: 매핑 모델이 서기 전의 편집·질의 거절(편집 동사와 「가공」 질의가 같은 말로 닫는다).
+_NO_MODEL_MESSAGE = "매핑 모델이 준비되지 않았습니다."
 
 
 class EditorSavePort(Protocol):
@@ -491,7 +495,7 @@ class EditSession:
         if action not in mapping_actions:
             return False, None, False
         if self.model is None:
-            raise ValueError("매핑 모델이 준비되지 않았습니다.")
+            raise ValueError(_NO_MODEL_MESSAGE)
         index = int(payload.get("index", 0))
         if action not in ("unconfirm_all", "restore_confirmed"):
             self.unconfirm_undo = []  # 뒤따른 편집 뒤에는 옛 확인 근거를 되살리지 않는다.
@@ -550,6 +554,23 @@ class EditSession:
             self.unconfirm_undo = []
             return True, {"restored": restored}, False
         return True, None, False
+
+    def slice_query(self, action: str, payload: dict) -> dict:
+        """「가공」 편집 칸의 무변이 질의 — 불러온 행 미리보기(`preview_slice`)·끌어 고르기 후보
+        (`propose_slice`). 판정·문장은 :func:`~hwpxfiller.viewmodel.slice_assist.slice_query` 가 진다.
+        """
+        if self.model is None:
+            raise ValueError(_NO_MODEL_MESSAGE)
+        row = self.model.rows[int(payload["index"])]
+        return slice_query(
+            "propose" if action == "propose_slice" else "preview",
+            field=row.template_field,
+            source=row.source,
+            spec=row.slice,
+            enabled=row.slice_enabled(),
+            records=self.records,
+            payload=payload,
+        )
 
     def _resuggest_targets(self) -> "list[int]":
         if self.model is None:

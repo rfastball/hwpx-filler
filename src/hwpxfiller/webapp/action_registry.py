@@ -170,9 +170,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 구 `set_type`·`set_fmt` 두 발 사이에는 사람이 고른 표시형이 사라진 상태가 실재했다.
         # 유형 열이 표시형 select 로 흡수되며 그 짝이 한 액션이 됐다(`fmt` 는 기본형=빈 값).
         "set_display": _schema("index type", "fmt"),
-        # 가공(글자 범위·구분자 나누기, field-binding/v4) — `slice` 가 없거나 null 이면 해제다.
-        # 표시형과 다른 축이라 따로 둔다: 가공은 **칸의 어느 부분**을, 표시형은 **어떻게 보일지**를 정한다.
+        # 가공(field-binding/v5) — `slice` 가 없거나 null 이면 해제다. 표시형과 다른 축이라 따로
+        # 둔다: 가공은 **칸의 어느 부분·어느 글자**를, 표시형은 **어떻게 보일지**를 정한다.
         "set_slice": _schema("index", "slice"),
+        # 「가공」 편집 칸의 무변이 질의 — 불러온 행 미리보기(`sample` = 예시 행)와, 예시 값에서
+        # 끌어 고른 UTF-16 범위 `[start, end)` 를 재현하는 방식 후보. push 없음.
+        "preview_slice": _schema("index", "sample"),
+        "propose_slice": _schema("index sample start end"),
         "set_const": _schema("index const"),
         "set_confirmed": _schema("index confirmed"),
         # 이 필드는 채우지 않는다 — 행별 비움 선언(U6-C #977). 구 `confirm_all` +
@@ -293,6 +297,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_map_value": _schema("name", "text"),
         "set_map_fmt": _schema("name", "code"),
         "set_map_slice": _schema("name", "slice"),
+        # 「가공」 편집 칸의 무변이 질의 — 편집기 `preview_slice`·`propose_slice` 와 같은 몸통.
+        "preview_map_slice": _schema("name", "sample"),
+        "propose_map_slice": _schema("name sample start end"),
         "set_map_type": _schema("name type"),
         "set_confirmed": _schema("name value"),
         "revert_map": _schema("name"),

@@ -15,7 +15,7 @@ const SURFACE = [
   "type", "focus", "compose", "commit", "commitValue", "bindColumn", "saveRules", "copyCard",
   "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
   "setConfirmed", "setMapType", "setMapFmt", "revertMap",
-  "sliceViewModel", "commitSliceOnBlur", "chooseSliceMode", "toggleSliceEditor", "isSliceEditorOpen",
+  "sliceViewModel", "toggleSliceEditor", "isSliceEditorOpen", "slicePort",
   "guarded", "doc", "notify",
 ];
 
@@ -224,69 +224,66 @@ test("손상된 HostResult 는 조용히 통과하지 않는다 — 이탈이 lo
 });
 
 
-/* ================= 가공(글자 범위·구분자 나누기) ================= */
+/* ================= 가공(칩·팝오버) ================= */
 
 function slicedRow(slice) {
   return {
     name: "건명", source: "건명열", fmt_kind: "text", fmt_code: "", value: "R26", confirmed: false,
-    slice, slice_label: slice ? "구분자 '-' 1번째" : "없음", slice_enabled: true,
-    slice_modes: [
-      { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
-      { value: "split", label: "구분자로 나누기" },
-    ],
+    slice, slice_label: slice ? "‘-’ 앞까지" : "+ 가공", slice_enabled: true, slice_methods: [],
   };
 }
 
-test("가공 방식 select — 고르는 순간 set_map_slice 로 완성된 명세(또는 null)를 보낸다", async () => {
+test("가공 문 — 커밋은 set_map_slice, 질의 둘은 이름으로 정체를 싣는다", async () => {
+  const h = harness({
+    snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] },
+    onDispatch: (_s, action) => (action === "preview_map_slice" ? { ok: true, rows: [] }
+      : action === "propose_map_slice" ? { ok: true, candidates: [], message: "" } : {}),
+  });
+  h.controller.init();
+  const port = h.controller.slicePort("건명");
+  assert.equal(await port.commit({ mode: "before", delimiter: "-", on_missing: "keep" }), true);
+  assert.equal(await port.commit(null), true);
+  assert.deepEqual(await port.preview(null), { ok: true, rows: [] });
+  await port.preview(2);
+  await port.propose(0, 0, 13);
+  const sent = h.log.filter((row) => row[0] === "dispatch").map((row) => [row[2], row[3]]);
+  assert.deepEqual(sent, [
+    ["set_map_slice", { name: "건명", slice: { mode: "before", delimiter: "-", on_missing: "keep" } }],
+    ["set_map_slice", { name: "건명", slice: null }],
+    ["preview_map_slice", { name: "건명", sample: null }],
+    ["preview_map_slice", { name: "건명", sample: 2 }],
+    ["propose_map_slice", { name: "건명", sample: 0, start: 0, end: 13 }],
+  ]);
+});
+
+test("가공 문 — 거절은 알리고 커밋은 false, 질의는 거절로 돌려준다(삼키지 않는다)", async () => {
   const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
   h.controller.init();
-  h.controller.chooseSliceMode("건명", "split");
-  h.controller.chooseSliceMode("건명", "chars");
-  h.controller.chooseSliceMode("건명", "");
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const sent = h.log.filter((row) => row[0] === "dispatch" && row[2] === "set_map_slice")
-    .map((row) => row[3]);
-  assert.deepEqual(sent, [
-    { name: "건명", slice: { mode: "split", delimiter: ",", index: 1 } },
-    { name: "건명", slice: { mode: "chars", start: 1 } },
-    { name: "건명", slice: null },
-  ]);
-  assert.throws(() => h.controller.chooseSliceMode("건명", "regex"), /알 수 없는 가공 방식/);
+  h.client.dispatch = async () => ({ ok: false, failure: { name: "ValueError", message: "구분자를 비울 수 없습니다" } });
+  const port = h.controller.slicePort("건명");
+  assert.equal(await port.commit({ mode: "before", delimiter: "" }), false);
+  await assert.rejects(() => port.preview(null));
+  assert.equal(h.notices.length, 2);
+  assert.ok(h.notices.every((text) => String(text).includes("구분자를 비울 수 없습니다")));
 });
 
-test("가공 입력 blur — 행의 완성된 명세를 보내고, 불완전하면 조용히 보내지 않는다", async () => {
-  const split = { mode: "split", delimiter: "-", index: 1 };
-  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(split)] } });
-  h.controller.init();
-  h.controller.type(mapField("건명", "slice_index"), "-1");
-  h.controller.commitSliceOnBlur("건명", "slice_index");
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  h.controller.type(mapField("건명", "slice_delimiter"), "");
-  h.controller.commitSliceOnBlur("건명", "slice_delimiter");
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const sent = h.log.filter((row) => row[0] === "dispatch" && row[2] === "set_map_slice")
-    .map((row) => row[3]);
-  assert.deepEqual(sent, [{ name: "건명", slice: { mode: "split", delimiter: "-", index: -1 } }],
-    "빈 구분자는 발신 0 — 거절 문안은 Python 의 것이다");
-});
-
-test("가공 편집기 열림 — 한 번에 한 행, UI-local(발신 0)", () => {
+test("가공 팝오버 열림 — 한 번에 한 행, UI-local(발신 0), 닫기는 그 행만", () => {
   const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
   assert.equal(h.controller.isSliceEditorOpen("건명"), false);
   h.controller.toggleSliceEditor("건명");
   assert.equal(h.controller.isSliceEditorOpen("건명"), true);
+  assert.equal(h.controller.slicePort("건명").open, true);
   assert.equal(h.controller.sliceViewModel.getSnapshot(), "건명");
-  h.controller.toggleSliceEditor("건명");
+  h.controller.slicePort("다른").close();
+  assert.equal(h.controller.isSliceEditorOpen("건명"), true, "다른 행의 닫기는 무동작");
+  h.controller.slicePort("건명").close();
   assert.equal(h.controller.isSliceEditorOpen("건명"), false);
   assert.deepEqual(h.actions(), []);
 });
 
-test("서버 값 — 가공 입력은 확정된 방식의 칸만 채운다(값 발명 0)", () => {
+test("서버 값 — 가공은 행 축 초안이 아니다(팝오버가 자기 칸을 든다)", () => {
   const values = workbenchServerValues({
     rows: [slicedRow({ mode: "chars", start: 2, length: 3 })],
   });
-  assert.equal(values[mapField("건명", "slice_start")], "2");
-  assert.equal(values[mapField("건명", "slice_length")], "3");
-  assert.equal(values[mapField("건명", "slice_delimiter")], "");
-  assert.equal(values[mapField("건명", "slice_index")], "");
+  assert.deepEqual(Object.keys(values).filter((key) => key.includes("slice")), []);
 });

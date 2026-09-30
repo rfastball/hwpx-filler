@@ -2055,11 +2055,7 @@ function bindRow(index, field, state, over) {
     source_kind: state === "needs_source" ? "" : "column",
     source_value: state === "needs_source" ? "" : "col:업체명",
     source_missing_label: "",
-    slice: null, slice_label: "없음", slice_enabled: hasContent,
-    slice_modes: [
-      { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
-      { value: "split", label: "구분자로 나누기" },
-    ],
+    slice: null, slice_label: "+ 가공", slice_enabled: hasContent, slice_methods: [],
   }, over || {});
 }
 
@@ -2315,15 +2311,15 @@ test("U6-C 행 상태 class 넷은 두 CSS 에 **둘 다** 선언돼 있다 — 
 });
 
 
-/* ================= 가공(글자 범위·구분자 나누기) ================= */
+/* ================= 가공(칩·팝오버) ================= */
 
-test("가공 칸 — 요약 라벨·가부는 Python 값 그대로, 열 머리는 데이터 열과 표시형 사이", async () => {
+test("가공 칸 — 칩 문장·가부는 Python 값 그대로, 열 머리는 데이터 열과 표시형 사이", async () => {
   const h = harness({
     initial: async () => bindSnap({
       rows: [
         bindRow(0, "업체", "suggested", {
-          source: "업체명", slice: { mode: "split", delimiter: "-", index: 1 },
-          slice_label: "구분자 '-' 1번째",
+          source: "업체명", slice: { mode: "before", delimiter: "-", on_missing: "keep" },
+          slice_label: "‘-’ 앞까지",
         }),
         bindRow(1, "담당자", "needs_source", { preview: "", preview_kind: "none" }),
       ],
@@ -2332,48 +2328,66 @@ test("가공 칸 — 요약 라벨·가부는 Python 값 그대로, 열 머리�
   await h.controller.init();
   const markup = renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
   assert.ok(markup.includes("<th>데이터 열</th><th>가공</th><th>표시형</th>"), "열 순서");
-  assert.ok(markup.includes("구분자 &#x27;-&#x27; 1번째"), "요약 라벨은 Python 문안 그대로");
-  const buttons = [...markup.matchAll(/<button[^>]*data-act="row-slice"[^>]*>/g)].map((m) => m[0]);
-  assert.equal(buttons.length, 2);
-  assert.ok(!buttons[0].includes("disabled"), "slice_enabled 행은 눌린다");
-  assert.ok(buttons[1].includes("disabled"), "slice_enabled=false 행은 잠긴다(웹 재판정 0)");
+  assert.ok(markup.includes(">‘-’ 앞까지<"), "칩 문장은 Python 문안 그대로");
+  const chips = [...markup.matchAll(/<button[^>]*data-act="row-slice"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(chips.length, 2);
+  assert.ok(chips[0].includes('class="slicechip set"') && !chips[0].includes("disabled"));
+  assert.ok(chips[1].includes('class="slicechip add"') && chips[1].includes("disabled"),
+    "slice_enabled=false 행은 잠긴다(웹 재판정 0)");
+  assert.ok(!markup.includes("slicepop"), "닫힌 채로는 팝오버가 서지 않는다");
 });
 
-test("가공 방식 select — set_slice 로 완성된 명세(또는 null)를 한 발에 보낸다", async () => {
-  const h = harness({ initial: async () => bindSnap() });
+test("가공 문 — 커밋은 set_slice, 질의 둘은 행 index 로 정체를 싣는다", async () => {
+  const h = harness({
+    initial: async () => bindSnap(),
+    call: async (_screen, action) => (action === "preview_slice" ? { ok: true, rows: [] }
+      : action === "propose_slice" ? { ok: true, candidates: [], message: "" } : {}),
+  });
   await h.controller.init();
-  h.controller.chooseSliceMode(0, "chars");
-  h.controller.chooseSliceMode(0, "split");
-  h.controller.chooseSliceMode(0, "");
-  await h.controller.flushPendingEdits();
+  const port = h.controller.slicePort(0);
+  assert.equal(await port.commit({ mode: "remove", find: "(VAT 포함)" }), true);
+  assert.equal(await port.commit(null), true);
+  assert.deepEqual(await port.preview(null), { ok: true, rows: [] });
+  await port.propose(1, 2, 5);
   const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor")
     .map((row) => [row[2], row[3]]);
   assert.deepEqual(sent, [
-    ["set_slice", { index: 0, slice: { mode: "chars", start: 1 } }],
-    ["set_slice", { index: 0, slice: { mode: "split", delimiter: ",", index: 1 } }],
+    ["set_slice", { index: 0, slice: { mode: "remove", find: "(VAT 포함)" } }],
     ["set_slice", { index: 0, slice: null }],
+    ["preview_slice", { index: 0, sample: null }],
+    ["propose_slice", { index: 0, sample: 1, start: 2, end: 5 }],
   ]);
-  assert.throws(() => h.controller.chooseSliceMode(0, "regex"), /알 수 없는 가공 방식/);
 });
 
-test("가공 입력 blur — 행의 완성된 명세를 보내고 불완전하면 발신 0", async () => {
+test("가공 문 — 거절은 저장 알림 자리에 세우고 커밋은 false(발명한 문안 0)", async () => {
   const h = harness({
-    initial: async () => bindSnap({
-      rows: [bindRow(0, "업체", "suggested", {
-        source: "업체명", slice: { mode: "chars", start: 1, length: 3 },
-        slice_label: "글자 범위 1~3",
-      })],
-    }),
+    initial: async () => bindSnap(),
+    call: async (_screen, action) => {
+      if (action === "set_slice") throw new Error("구분자를 비울 수 없습니다");
+      return {};
+    },
   });
   await h.controller.init();
+  h.client.dispatch = async (screen, action, payload) => {
+    h.trace.push(["dispatch", screen, action, payload]);
+    return { ok: false, failure: { name: "ValueError", message: "구분자를 비울 수 없습니다" } };
+  };
+  assert.equal(await h.controller.slicePort(0).commit({ mode: "before", delimiter: "" }), false);
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(String(message?.text || "").includes("구분자를 비울 수 없습니다"));
+  await assert.rejects(() => h.controller.slicePort(0).preview(null));
+});
+
+test("가공 팝오버 열림 — 한 번에 한 행, UI-local(발신 0), 닫기는 그 행만", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  const before = h.trace.length;
   h.controller.toggleSliceEditor(0);
   assert.equal(h.controller.isSliceEditorOpen(0), true);
-  h.controller.type(rowField(0, "slice_length"), "");
-  h.controller.commitSliceOnBlur(0, "slice_length");     // 글자 수 비움 = 끝까지
-  h.controller.type(rowField(0, "slice_start"), "");
-  h.controller.commitSliceOnBlur(0, "slice_start");      // 시작 비움 = 불완전 → 발신 0
-  await h.controller.flushPendingEdits();
-  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor")
-    .map((row) => [row[2], row[3]]);
-  assert.deepEqual(sent, [["set_slice", { index: 0, slice: { mode: "chars", start: 1 } }]]);
+  assert.equal(h.controller.slicePort(0).open, true);
+  h.controller.slicePort(1).close();
+  assert.equal(h.controller.isSliceEditorOpen(0), true, "다른 행의 닫기는 무동작");
+  h.controller.slicePort(0).close();
+  assert.equal(h.controller.isSliceEditorOpen(0), false);
+  assert.equal(h.trace.length, before, "발신 0");
 });

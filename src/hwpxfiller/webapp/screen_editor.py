@@ -25,6 +25,8 @@ class EditorController:
 
     name = "editor"
     _NONMUTATING_ACTIONS = frozenset({"goto_section", "step_preview", "mapping_reset_stakes"})
+    #: 「가공」 편집 칸의 무변이 질의(불러온 행 미리보기·끌어 고르기 후보) — push 없이 결과만 낸다.
+    _QUERY_ACTIONS = frozenset({"preview_slice", "propose_slice"})
 
     def __init__(
         self,
@@ -136,6 +138,9 @@ class EditorController:
             self.refresh_panel()
 
     def dispatch(self, action: str, payload: dict):
+        if action in self._QUERY_ACTIONS:
+            # 무변이 질의 — 세션을 더럽히지 않고 push 도 없다(열린 「가공」 칸이 결과를 직접 그린다).
+            return self._dispatch(action, payload)
         if action not in self._NONMUTATING_ACTIONS:
             self.edit.clean = False
         was_complete = self.edit.mapping_complete()
@@ -160,6 +165,8 @@ class EditorController:
             return loader_actions[action](payload)
         if action == "save":
             return self.save_operation.save(payload)
+        if action == "preview_slice" or action == "propose_slice":
+            return self.edit.slice_query(action, payload)
         handled, result, confirmed_empty = self.edit.apply_mapping_action(action, payload)
         if not handled:
             raise ValueError(f"알 수 없는 editor 액션: {action!r}")

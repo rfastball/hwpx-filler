@@ -1972,16 +1972,39 @@ class TestWebSelftestGate:
         # WebView2 에 그려지고 발신되는지 되읽는다(백엔드 판정은 test_mapping_state).
         e = selftest_result["editor_binding"]
         assert e.get("error") is None, f"연결 확인 프로브 예외: {e.get('error')!r}"
-        # 가공(field-binding/v4) 칸이 데이터 열과 표시형 사이에 선다 — 값의 파이프라인 순서.
+        # 가공(field-binding/v5) 칸이 데이터 열과 표시형 사이에 선다 — 값의 파이프라인 순서.
         assert e["head_cols"] == ["템플릿 필드", "데이터 열", "가공", "표시형", "미리보기"], (
             f"연결 표 머리가 다섯 열이 아닙니다: {e['head_cols']!r}"
         )
         assert e["slice_buttons"] == [
-            {"label": "없음", "disabled": False},
-            {"label": "글자 범위 1~3", "disabled": False},
-            {"label": "없음", "disabled": False},
-            {"label": "없음", "disabled": True},
-        ], f"가공 칸이 Python 라벨·가부를 그대로 세우지 않습니다: {e['slice_buttons']!r}"
+            {"label": "+ 가공", "disabled": False},
+            {"label": "1번째 글자부터 3글자", "disabled": False},
+            {"label": "+ 가공", "disabled": False},
+            {"label": "+ 가공", "disabled": True},
+        ], f"가공 칩이 Python 문장·가부를 그대로 세우지 않습니다: {e['slice_buttons']!r}"
+        # 가공 팝오버(A+B) — 칩에 붙어 화면 안에 서고(칩을 가리지 않는다), 예시 값에 초점,
+        # 방식 아홉, 지금 방식이 골라져 있다. 미리보기·후보 질의는 이 행의 index 로 나가고, 끌어
+        # 고르면 첫 후보가 `set_slice` 로 커밋되며 그 방식 줄에 N/M행 맞음이 선다. Escape 는 닫고
+        # 초점을 칩으로 돌린다.
+        pop = e["slice_pop"]
+        assert pop and pop["inside"] and pop["attached"], f"가공 팝오버 배치가 틀립니다: {pop!r}"
+        assert pop["radios"] == 9 and pop["checked"] == "chars", f"방식 목록이 다릅니다: {pop!r}"
+        assert pop["focus_in_value"] is True and pop["expanded"] == "true", f"초점·펼침: {pop!r}"
+        assert pop["rows"] == 3 and pop["summary"] == "맞음 3행", f"미리보기가 다릅니다: {pop!r}"
+        assert e["slice_preview_call"] == 'preview_slice:{"index":1,"sample":null}', (
+            f"미리보기 질의가 다릅니다: {e['slice_preview_call']!r}"
+        )
+        assert e["slice_propose_call"] == (
+            'propose_slice:{"index":1,"sample":0,"start":0,"end":13}'
+        ), f"끌어 고르기 질의가 다릅니다: {e['slice_propose_call']!r}"
+        assert e["slice_apply_call"] == (
+            'set_slice:{"index":1,"slice":{"mode":"split","delimiter":"-","index":1,'
+            '"on_missing":"keep"}}'
+        ), f"첫 후보가 커밋되지 않았습니다: {e['slice_apply_call']!r}"
+        assert e["slice_tag"] == "3/3행 맞음", f"후보 꼬리표가 서지 않습니다: {e['slice_tag']!r}"
+        assert e["slice_closed"] is True and e["slice_focus_back"] is True, (
+            "Escape 가 팝오버를 닫고 초점을 칩으로 돌리지 않습니다."
+        )
         assert "사용하지 않는 데이터 열 1개" in e["foot_text"], (
             f"표 바닥이 안 쓰는 열 수를 잇지 않습니다: {e['foot_text']!r}"
         )

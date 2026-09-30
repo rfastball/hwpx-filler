@@ -31,7 +31,8 @@ from ..domain.mapping import (
     MappingProfile,
     suggest_mappings,
 )
-from ..domain.text_slice import TEXT_SLICE_CHARS, TextSlice, text_slice_from_payload
+from ..domain.text_slice import TextSlice, text_slice_from_payload
+from .slice_assist import slice_label, slice_methods
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import CompileState, TemplateStatus, compile_status
 
@@ -112,49 +113,19 @@ _FMT_OPTIONS = {
 #: 담을 것」과 「아직 모름」을 한 표식으로 접는다(조용한 거짓말).
 FIRST_ROW_STATES = ("ready", "pending", "error")
 
-#: 가공(글자 범위·구분자 나누기, field-binding/v4) 요약 라벨의 조각. 행의 가공 손잡이가 지금
-#: 무엇이 걸렸는지를 한 줄로 말한다 — 조합은 :func:`slice_label` 한 곳이다(웹이 명세를 읽어 문안을
-#: 짓지 않는다). 방식 이름은 편집 칸의 선택지 라벨과 같은 말이다.
-SLICE_NONE_LABEL = "없음"
-SLICE_MODE_LABEL = {
-    "chars": "글자 범위",
-    "split": "구분자로 나누기",
-}
-
-#: 가공 편집 칸의 방식 선택지(값 ``""`` = 가공 없음). 웹은 이 목록을 그대로 그린다 — 라벨을 웹이
-#: 다시 적으면 요약 라벨(:func:`slice_label`)과 선택지가 서로 다른 말을 하게 된다.
-SLICE_MODE_OPTIONS = (
-    {"value": "", "label": SLICE_NONE_LABEL},
-    {"value": "chars", "label": SLICE_MODE_LABEL["chars"]},
-    {"value": "split", "label": SLICE_MODE_LABEL["split"]},
-)
-
-
 def slice_projection(row: "RowState") -> dict:
-    """행의 가공 축 투영 — 편집기·작업대가 같은 키를 낸다(명세·요약·손잡이 술어·방식 선택지)."""
+    """행의 가공 축 투영 — 편집기·작업대가 같은 키를 낸다(명세·문장·손잡이 술어·방식 목록).
+
+    ``slice_label`` 은 칩이 말하는 문장(``‘-’ 앞까지``, 없으면 ``+ 가공``)이고 ``slice_methods`` 는
+    편집 칸의 방식 문장 조각이다 — 둘 다 :mod:`~hwpxfiller.viewmodel.slice_assist` 한 곳이 짓는다
+    (웹이 명세를 읽어 문장을 다시 짓지 않는다).
+    """
     return {
         "slice": None if row.slice is None else row.slice.to_dict(),
         "slice_label": slice_label(row.slice),
         "slice_enabled": row.slice_enabled(),
-        "slice_modes": [dict(option) for option in SLICE_MODE_OPTIONS],
+        "slice_methods": slice_methods(row.slice),
     }
-
-
-def slice_label(spec: "TextSlice | None") -> str:
-    """가공 명세 → 행에 서는 짧은 요약. 없으면 「없음」.
-
-    글자 범위는 ``글자 범위 1~3``(글자 수가 없으면 ``1~``), 구분자는 ``구분자 '-' 1번째`` —
-    음수 번째는 ``끝에서 1번째`` 로 읽는다(``-1`` 은 사람이 읽는 말이 아니다).
-    """
-    if spec is None:
-        return SLICE_NONE_LABEL
-    if spec.mode == TEXT_SLICE_CHARS:
-        assert spec.start is not None
-        end = "" if spec.length is None else str(spec.start + spec.length - 1)
-        return f"{SLICE_MODE_LABEL['chars']} {spec.start}~{end}"
-    assert spec.index is not None
-    where = f"{spec.index}번째" if spec.index > 0 else f"끝에서 {-spec.index}번째"
-    return f"구분자 '{spec.delimiter}' {where}"
 
 
 #: 아직 읽지 않은 첫 행 칸의 표식. 홑 문자 하나짜리 **빈 칸 마커**라
@@ -416,7 +387,7 @@ class RowState:
     type: str = "text"
     const: str = ""
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
-    #: 가공(글자 범위·구분자 나누기) — 열에서 값을 받는 동안만 산다. 고정값·오늘 날짜로 바뀌거나
+    #: 가공(일부만 쓰기·글자 고치기) — 열에서 값을 받는 동안만 산다. 고정값·오늘 날짜로 바뀌거나
     #: 결속이 새로 서면 걷힌다(표시형 청소와 같은 자리).
     slice: "TextSlice | None" = None
     confirmed: bool = False
@@ -684,7 +655,7 @@ class MappingModel:
         row.auto_confirmed_exact = False
 
     def set_slice(self, index: int, spec: object) -> None:
-        """가공(글자 범위·구분자 나누기) 설정·해제 — 편집이므로 확정 해제(:meth:`set_fmt` 과 같다).
+        """가공(일부만 쓰기·글자 고치기) 설정·해제 — 편집이므로 확정 해제(:meth:`set_fmt` 과 같다).
 
         ``spec`` 은 ``None``(가공 없음)·:class:`TextSlice`·직렬화 사전이다. 판정은 도메인 한 곳
         (:mod:`~hwpxfiller.domain.text_slice`)이 하고, 잘못된 명세는 고치지 않고 거절한다

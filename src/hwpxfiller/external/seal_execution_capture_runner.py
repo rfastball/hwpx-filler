@@ -456,7 +456,7 @@ class SealExecutionCaptureRunner:
             revision.field_binding_semantic_contract_id
         ):
             # outdated 판(v2)은 legacy ``type`` 을 잃은 채라 규칙만으로는 표시형을 알 수 없고, v3 는
-            # 가공(v4)을 실을 자리가 없다. 현재 판으로 다시 짓지 않고(그러면 표시형·가공 없음으로
+            # 가공(v4)을, v4 는 v5 가 더한 가공을 실을 자리가 없다. 현재 판으로 다시 짓지 않고(그러면 표시형·가공 없음으로
             # 조용히 읽힌다) 결속 축 blocker 로 닫는다 — 현재 Mapping 에서 다시 확정되면(자동 무손실
             # 승격·편집기 확정) 풀린다.
             return DomainBlockedFieldBinding(

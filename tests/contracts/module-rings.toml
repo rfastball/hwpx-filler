@@ -225,6 +225,12 @@ source_write_set = ["src/hwpxfiller/viewmodel/selection_state.py"]
 oracle_nodeid = "tests/test_selection_state.py"
 
 [[unit]]
+module = "hwpxfiller.viewmodel.slice_assist"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/viewmodel/slice_assist.py"]
+oracle_nodeid = "tests/test_slice_assist.py"
+
+[[unit]]
 module = "hwpxfiller.viewmodel.template_manager_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/template_manager_state.py"]

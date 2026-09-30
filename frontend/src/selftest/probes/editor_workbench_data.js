@@ -2933,14 +2933,66 @@ export function createEditorWorkbenchDataProbes() {
           /* 발신을 가로채 **무엇이 나갔는지**를 센다. 백엔드 왕복을 실제로 태우면 합성
              스냅샷이 실 컨트롤러 상태와 어긋나 이후 단계가 남의 세계를 잰다. */
           const calls = [];
+          /* 「가공」 팝오버의 두 질의는 Python 이 낼 모양 그대로 답한다(값은 합성 세계의 것). */
+          const SLICE_VALUES = ["R26BK09017075-000", "R26BK10020031-001", "R26BK12000097"];
+          const slicePreview = {
+            ok: true, slice: { mode: "chars", start: 1, length: 3 },
+            rows: SLICE_VALUES.map((value, index) => ({
+              index, label: (index + 1) + "행", pre: "", keep: value.slice(0, 3), post: value.slice(3),
+              result: value.slice(0, 3), marker: false, status: "hit", tags: [],
+            })),
+            rows_label: "불러온 3행 미리보기", summary: "맞음 3행", hint: "",
+            sample: { index: 0, value: SLICE_VALUES[0], pre: "", keep: "R26", post: "BK09017075-000", miss_tag: "" },
+            samples: SLICE_VALUES.map((_value, index) => ({
+              index, label: String(index + 1), aria: (index + 1) + "행", disabled: false, pressed: index === 0,
+            })),
+            miss_choice: null,
+          };
+          const sliceCandidate = {
+            mode: "split", slice: { mode: "split", delimiter: "-", index: 1, on_missing: "keep" },
+            label: "‘-’로 나눈 조각 중 첫째", matched: 3, total: 3, tag: "3/3행 맞음",
+            tip: "맞는 행: 값 있는 3행 중 3행", full: true,
+          };
           stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
             if (screen === "editor") {
               calls.push(action + ":" + JSON.stringify(payload || {}));
+              if (action === "preview_slice") return Promise.resolve(slicePreview);
+              if (action === "propose_slice") {
+                return Promise.resolve({ ok: true, candidates: [sliceCandidate], message: "" });
+              }
               return Promise.resolve({});
             }
             return real.call(this, screen, action, payload);
           });
           const COLUMNS = ["품명", "세부품명", "수량", "비고"];
+          /* `slice_assist.slice_methods` 의 모양 — 두 무리, 방식마다 문장 조각. */
+          const text = (input, label, wide) => ({ input, kind: "text", label, wide: !!wide });
+          const num = (input, label, optional) => ({ input, kind: "number", label, optional: !!optional });
+          const word = (t) => ({ text: t });
+          const method = (mode, missable, choice, ...parts) => ({
+            mode, parts, miss_choice: choice, on_missing: missable ? "keep" : null,
+          });
+          const SLICE_METHODS = [
+            { label: "일부만 쓰기", methods: [
+              method("before", true, true, text("delimiter", "앞까지의 기준 글자"), word("앞까지")),
+              method("after", true, true, text("delimiter", "뒤부터의 기준 글자"), word("뒤부터")),
+              method("between", true, true, text("open", "뒤부터의 기준 글자"), word("뒤부터"),
+                text("close", "앞까지의 기준 글자"), word("앞까지")),
+              method("split", true, false, text("delimiter", "나누는 글자"), word("로 나눈 조각 중"),
+                { input: "index", kind: "ordinal", label: "몇째 조각", options: [
+                  { value: 1, label: "첫째" }, { value: 2, label: "둘째" },
+                  { value: 3, label: "셋째" }, { value: -1, label: "마지막" }] }),
+              method("head", false, false, word("앞에서"), num("count", "앞에서 글자 수"), word("글자")),
+              method("tail", false, false, word("뒤에서"), num("count", "뒤에서 글자 수"), word("글자")),
+              method("chars", true, false, num("start", "몇 번째 글자부터"), word("번째 글자부터"),
+                num("length", "글자 수", true), word("글자")),
+            ] },
+            { label: "글자 고치기", methods: [
+              method("replace", false, false, text("find", "찾을 글자", true), word("대신"),
+                text("replace", "바꿀 글자", true)),
+              method("remove", false, false, text("find", "지울 글자", true), word("지우기")),
+            ] },
+          ];
           /* 표시형 select 가 든 **유형 축**(리뷰 1) — 그룹 라벨·항목 값은 Python 이 낸다. */
           const DISPLAY_GROUPS = [
             { label: "텍스트", options: [
@@ -2982,19 +3034,16 @@ export function createEditorWorkbenchDataProbes() {
               source_kind: state === "needs_source" ? "" : "column",
               source_value: state === "needs_source" ? "" : "col:품명",
               source_missing_label: "",
-              /* 가공(field-binding/v4) — 라벨·가부·방식 목록도 Python 값 그대로(웹 재판정 0). */
-              slice: null, slice_label: "없음", slice_enabled: hasContent,
-              slice_modes: [
-                { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
-                { value: "split", label: "구분자로 나누기" },
-              ],
+              /* 가공(field-binding/v5) — 칩 문장·가부·방식 목록도 Python 값 그대로(웹 재판정 0). */
+              slice: null, slice_label: "+ 가공", slice_enabled: hasContent,
+              slice_methods: SLICE_METHODS,
             }, over || {});
           };
           const rows = [
             row(0, "품명", "suggested", { source: "품명", source_value: "col:품명" }),
             row(1, "수량", "suggested", {
               source: "수량", source_value: "col:수량",
-              slice: { mode: "chars", start: 1, length: 3 }, slice_label: "글자 범위 1~3",
+              slice: { mode: "chars", start: 1, length: 3 }, slice_label: "1번째 글자부터 3글자",
             }),
             row(2, "규격", "edited", { source: "비고", source_value: "col:비고" }),
             row(3, "담당자", "needs_source", {
@@ -3037,6 +3086,50 @@ export function createEditorWorkbenchDataProbes() {
           out.slice_buttons = Array.prototype.map.call(
             root.querySelectorAll('table.map [data-act="row-slice"]'),
             (el) => ({ label: textOf(el).trim(), disabled: !!el.disabled }));
+          /* 가공 팝오버(A+B) — 칩을 누르면 칩에 붙어 서고(화면 안, 칩을 가리지 않는다), 예시 값에
+             초점이 가며, 미리보기를 묻는다. 끌어 고르면 후보를 묻고 첫 후보를 `set_slice` 로
+             보낸다. Escape 는 닫고 초점을 칩으로 돌린다. */
+          calls.length = 0;
+          const chip = root.querySelectorAll('table.map [data-act="row-slice"]')[1];
+          chip.click();
+          await settleUntil(ctx, () => !!root.querySelector(".slicepop .slicepop-grid .slicepop-rn"), 40);
+          const pop = root.querySelector(".slicepop");
+          const view = ctx.win;
+          if (pop && chip) {
+            const a = chip.getBoundingClientRect();
+            const b = pop.getBoundingClientRect();
+            out.slice_pop = {
+              placement: pop.dataset.placement || "",
+              inside: b.left >= 0 && b.top >= 0 && b.right <= view.innerWidth + 1
+                && b.bottom <= view.innerHeight + 1,
+              attached: pop.dataset.placement === "top" ? b.bottom <= a.top + 1 : b.top >= a.bottom - 1,
+              width: Math.round(b.width), height: Math.round(b.height),
+              viewport: [view.innerWidth, view.innerHeight],
+              radios: pop.querySelectorAll('input[type="radio"]').length,
+              checked: (pop.querySelector('input[type="radio"]:checked') || {}).value || "",
+              focus_in_value: !!(ctx.doc.activeElement
+                && ctx.doc.activeElement.hasAttribute("data-slice-value")),
+              expanded: chip.getAttribute("aria-expanded"),
+              rows: pop.querySelectorAll(".slicepop-rn").length,
+              summary: textOf(pop.querySelector(".slicepop-summary")).trim(),
+            };
+          } else { out.slice_pop = null; }
+          out.slice_preview_call = calls.find((call) => call.indexOf("preview_slice:") === 0) || "";
+          const value = pop && pop.querySelector("[data-slice-value]");
+          if (value) {
+            calls.length = 0;
+            value.focus();
+            value.setSelectionRange(0, 13);
+            value.dispatchEvent(new ctx.win.MouseEvent("mouseup", { bubbles: true }));
+            await settleUntil(ctx, () => calls.some((call) => call.indexOf("set_slice:") === 0), 40);
+            out.slice_propose_call = calls.find((call) => call.indexOf("propose_slice:") === 0) || "";
+            out.slice_apply_call = calls.find((call) => call.indexOf("set_slice:") === 0) || "";
+            out.slice_tag = textOf(pop.querySelector('[data-slice-method="split"] .slice-tag')).trim();
+          }
+          ctx.doc.activeElement && keydownOn(ctx, ctx.doc.activeElement, "Escape");
+          await settleUntil(ctx, () => !root.querySelector(".slicepop"), 40);
+          out.slice_closed = !root.querySelector(".slicepop");
+          out.slice_focus_back = ctx.doc.activeElement === chip;
           /* ② 머리 pill 셋 — 라벨도 수치도 Python 값 그대로. */
           out.pills = Array.prototype.map.call(
             root.querySelectorAll(".bindbar .pill"), (el) => textOf(el).trim());
