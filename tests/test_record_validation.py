@@ -69,6 +69,7 @@ from hwpxfiller.application.record_validation import (
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.domain.field_binding import ExactText
+from hwpxfiller.domain.text_slice import TextSlice
 from hwpxfiller.domain.job import MISSING_MARKER, mark_missing_values
 from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
@@ -766,6 +767,99 @@ def test_unsupported_value_format_is_context_error_even_on_blank_rows(value_expr
         res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText(raw))]))
         assert isinstance(res, RecordValidationContextError)
         assert res.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
+
+
+# ─── 가공(field-binding/v4) — 공백 정책 → 가공 → 표시형 ───────────────────────────────────
+@pytest.mark.parametrize(
+    ("kind", "code", "text_slice", "raw", "expected"),
+    [
+        (None, None, TextSlice("split", delimiter="-", index=1), " R26BK09017075-000 ",
+         "R26BK09017075"),
+        (None, None, TextSlice("chars", start=1, length=3), "R26TA0911050700", "R26"),
+        (None, None, TextSlice("split", delimiter=", ", index=-1),
+         "MPKPLA26910290, MPKPLA26910291", "MPKPLA26910291"),
+        ("amount", "", TextSlice("split", delimiter="원", index=1), "170,309,180원 (VAT 포함)",
+         "170,309,180원"),
+    ],
+)
+def test_source_value_is_sliced_before_the_format(kind, code, text_slice, raw, expected) -> None:
+    """VDR 의 document_value 는 편집기 미리보기(``FieldMapping.value_for``)와 같은 글자다."""
+    from hwpxfiller.domain.mapping import FieldMapping
+
+    ve = FromSource("amount", code, _STRIP_POLICY_ID, format_kind=kind, text_slice=text_slice)
+    encoded = encode_value_expression(ve)
+    assert encoded["text_slice"] == text_slice.to_dict()
+    plan = _single_source_plan(ve)
+    res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText(raw))]))
+    assert isinstance(res, ValidatedDataRecord)
+    assert res.document_values_in_order() == (("f_amount", expected),)
+    legacy = FieldMapping(
+        "f_amount", "amount", type=kind or "text", fmt=code or "", slice=text_slice
+    )
+    assert legacy.value_for({"amount": raw}) == expected
+
+
+def test_no_slice_leaves_the_plan_payload_unchanged() -> None:
+    """가공 없는 요구는 키 자체가 없다 — v4 이전에 봉인된 계획의 digest 가 그대로 선다."""
+    assert "text_slice" not in encode_value_expression(
+        FromSource("amount", None, _POLICY_ID)
+    )
+
+
+def test_slice_that_selects_nothing_is_marked() -> None:
+    """가공이 고른 부분이 비면 칸이 빈 행과 같은 표식이다(조용한 빈칸 금지)."""
+    plan = _single_source_plan(
+        FromSource("amount", None, _POLICY_ID, text_slice=TextSlice("split", delimiter="-", index=2))
+    )
+    res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText("구분자없음"))]))
+    assert isinstance(res, ValidatedDataRecord)
+    assert res.document_values_in_order() == (("f_amount", missing_value_marker("f_amount")),)
+    assert marked_missing_fields(res.validation_provenance) == ("f_amount",)
+
+
+def _resolve_raw(value_expression: dict, raw: str):
+    """해독 경계 시험 — 봉인 무결성(규칙↔요구 대조)이 막기 전의 값 해석기를 곧장 부른다.
+
+    봉인된 Plan 은 규칙에서 인코딩되므로 모양이 틀린 가공을 실을 수 없다. 해석기가 그런 모양을
+    칸 전체로 풀지 않는지는 이 경계에서 직접 본다(generation delivery 시험과 같은 방식).
+    """
+    from hwpxfiller.application import record_validation as rv
+
+    requirement = {"field_id": "f_amount", "value_expression": value_expression}
+    return rv._resolve_requirement(requirement, _snapshot([("amount", SourceText(raw))]))
+
+
+@pytest.mark.parametrize(
+    "text_slice",
+    [
+        {"mode": "regex", "pattern": ".*"},
+        {"mode": "split", "delimiter": "", "index": 1},
+        {"mode": "chars", "start": 0},
+    ],
+)
+def test_malformed_slice_is_context_error_even_on_blank_rows(text_slice) -> None:
+    """모양이 틀린 가공은 칸 전체로 풀지 않는다 — 값이 빈 행이어도 같은 context error 다."""
+    from hwpxfiller.application import record_validation as rv
+
+    ve = {**encode_value_expression(FromSource("amount", None, _POLICY_ID)), "text_slice": text_slice}
+    for raw in ("A-B", ""):
+        with pytest.raises(rv._ContextSignal) as caught:
+            _resolve_raw(ve, raw)
+        assert caught.value.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
+
+
+def test_constant_with_a_slice_is_context_error() -> None:
+    from hwpxfiller.application import record_validation as rv
+
+    with pytest.raises(rv._ContextSignal) as caught:
+        _resolve_raw({
+            "kind": "CONSTANT",
+            "canonical_value": {"kind": "TEXT", "text": "x"},
+            "format_code": None,
+            "document_content_value_policy_id": _POLICY_ID,
+            "text_slice": {"mode": "chars", "start": 1},
+        }, "1")
+    assert caught.value.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
 
 
 # ─── immutable VDR ref / retention ───────────────────────────────────────────────────────

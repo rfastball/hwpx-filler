@@ -59,6 +59,7 @@ from ..application.seal_execution_plan import (
 from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.field_binding import (
     FIELD_BINDING_SEMANTIC_VERSION_V2,
+    FIELD_BINDING_SEMANTIC_VERSION_V3,
     FieldBindingRule,
     is_current_field_binding_contract,
     resolve_document_value_policy,
@@ -322,15 +323,17 @@ class SealExecutionPlanService:
     def upgrade_outdated_binding_if_lossless(
         self, work_ref: str, request_id: str
     ) -> BindingCommitProjection | None:
-        """outdated(field-binding/v2) 판본을 현재 Mapping 에서 다시 확정한다 — **무손실일 때만**.
+        """outdated(field-binding/v2·v3) 판본을 현재 Mapping 에서 다시 확정한다 — **무손실일 때만**.
 
         v2 판본은 legacy ``type`` 을 버려 표시형을 모른다. 그 결정의 유일한 권위는 Work 의 현재
         Mapping 이다. 다만 Mapping 이 판본 뒤에 바뀌었을 수 있으므로(저장은 됐지만 확정이 거절된
-        편집), **v2 판본의 모든 규칙이 현재 Mapping 을 v2 모양으로 사영한 것과 정확히 같을 때만**
-        그 Mapping 이 곧 판본의 출처라고 보고 v3 로 다시 확정한다 — 그때 더해지는 것은 판본이
-        잃었던 ``type`` 하나뿐이다. 어긋나면 아무것도 하지 않고 None: capture 가
-        NEEDS_BINDING_SEMANTIC_MIGRATION 으로 닫은 채 남아 편집기 확정(#911)으로 간다.
-        매체는 판본을 쓰는 쪽이 갖는다(hwpx·txt 공용, 값 정책 번역은 확정 몸통이 진다).
+        편집), **판본의 모든 규칙이 현재 Mapping 을 그 판의 모양으로 사영한 것과 정확히 같을 때만**
+        그 Mapping 이 곧 판본의 출처라고 보고 현재 판(v4)으로 다시 확정한다 — v2 에서 더해지는 것은
+        판본이 잃었던 ``type`` 하나뿐이다. v3 판본은 가공(v4)이 설 수 없던 판이라 사영에 가공 없음이
+        들어간다: 현재 Mapping 에 가공이 있으면 판본 뒤의 편집이므로 승격하지 않는다(v2 도 같다).
+        어긋나면 아무것도 하지 않고 None: capture 가 NEEDS_BINDING_SEMANTIC_MIGRATION 으로 닫은 채
+        남아 편집기 확정(#911)으로 간다. 매체는 판본을 쓰는 쪽이 갖는다(hwpx·txt 공용, 값 정책
+        번역은 확정 몸통이 진다).
         """
         job = load_job(self._registry, work_ref)
         if not job.authority_id:
@@ -342,10 +345,12 @@ class SealExecutionPlanService:
             _source_schema_keys(job.mapping),
         )
         prior = None if current is None else current.prior_revision
-        if (
-            prior is None
-            or prior.field_binding_semantic_contract_id != FIELD_BINDING_SEMANTIC_VERSION_V2
-        ):
+        projection = (
+            None
+            if prior is None
+            else _OUTDATED_PROJECTIONS.get(prior.field_binding_semantic_contract_id)
+        )
+        if prior is None or projection is None:
             return None
         draft = prepare_legacy_field_binding_migration(
             work_authority_id=job.authority_id,
@@ -356,9 +361,9 @@ class SealExecutionPlanService:
         candidates = {item.field_id: item for item in draft.candidate_rules}
         for rule in prior.binding_rules:
             candidate = candidates.get(rule.field_id)
-            if candidate is None or _v2_projection(
+            if candidate is None or projection(
                 _rule_from_candidate(candidate, media=job.media)
-            ) != _v2_projection(rule):
+            ) != projection(rule):
                 return None
         try:
             return self._commit_mapping_binding(work_ref, request_id, media=job.media)
@@ -518,6 +523,7 @@ def _legacy_entries(mapping: MappingProfile) -> tuple[LegacyFieldBindingEntry, .
             item.source,
             item.const,
             item.fmt,
+            item.slice,
         )
         for item in mapping.mappings
     )
@@ -553,6 +559,7 @@ def _rule_from_candidate(
         format_code=candidate.format_code,
         canonical_constant_value=candidate.canonical_constant_value,
         format_kind=candidate.format_kind,
+        text_slice=candidate.text_slice,
     )
 
 
@@ -579,9 +586,11 @@ def _preserved_inactive_rules(
         return ()
     keep = frozenset(current.review.inactive_only_field_ids())
     candidates = {item.field_id: item for item in draft.candidate_rules}
+    # v3 판의 규칙은 그대로 현재 판(v4)의 규칙이다 — v3 에는 가공이 설 수 없었고 가공 없음이 곧
+    # v4 의 「칸 전체」다. 그래서 v3 판본의 보존 규칙은 v2 와 달리 그대로 이어 나른다.
     prior_is_current = is_current_field_binding_contract(
         prior.field_binding_semantic_contract_id
-    )
+    ) or prior.field_binding_semantic_contract_id == FIELD_BINDING_SEMANTIC_VERSION_V3
     preserved: list[FieldBindingRule] = []
     for rule in prior.binding_rules:
         if rule.field_id not in keep:
@@ -600,7 +609,9 @@ def _preserved_inactive_rules(
 def _v2_projection(rule: FieldBindingRule) -> tuple[object, ...]:
     """규칙을 field-binding/v2 가 적던 모양으로 사영한다 — v3 가 더한 표시형 kind 를 뺀다.
 
-    v2 는 legacy ``fmt`` 를 ``fmt or None`` 으로 적었으므로 빈 코드는 None 으로 접는다.
+    v2 는 legacy ``fmt`` 를 ``fmt or None`` 으로 적었으므로 빈 코드는 None 으로 접는다. 가공(v4)은
+    빼지 **않는다** — v2 판본의 규칙은 가공이 언제나 없으므로, 현재 Mapping 에 가공이 있으면 사영이
+    갈라져 무손실 승격이 서지 않는다(판본 뒤의 편집이다).
     """
     return (
         rule.field_id,
@@ -611,7 +622,36 @@ def _v2_projection(rule: FieldBindingRule) -> tuple[object, ...]:
         None
         if rule.canonical_constant_value is None
         else rule.canonical_constant_value.text,
+        rule.text_slice,
     )
+
+
+def _v3_projection(rule: FieldBindingRule) -> tuple[object, ...]:
+    """규칙을 field-binding/v3 모양으로 사영한다 — 표시형 쌍은 v3 framing 의 정본 모양으로 접는다.
+
+    가공은 사영에 **남긴다**: v3 판본의 규칙은 가공이 언제나 없으므로 현재 Mapping 에 가공이 있으면
+    갈라진다(:func:`_v2_projection` 과 같은 규율).
+    """
+    return (
+        rule.field_id,
+        rule.binding_kind,
+        rule.document_content_value_policy.policy_id,
+        rule.source_key,
+        rule.format_kind,
+        # 표시형 없음의 두 철자((None, None)·(None, ""))는 v3 framing 이 한 모양으로 적었다.
+        None if rule.format_kind is None else rule.format_code,
+        None
+        if rule.canonical_constant_value is None
+        else rule.canonical_constant_value.text,
+        rule.text_slice,
+    )
+
+
+#: 읽기만 하는 outdated 판 → 그 판이 적을 수 있던 모양으로의 사영(무손실 승격 판정).
+_OUTDATED_PROJECTIONS = {
+    FIELD_BINDING_SEMANTIC_VERSION_V2: _v2_projection,
+    FIELD_BINDING_SEMANTIC_VERSION_V3: _v3_projection,
+}
 
 
 # migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기

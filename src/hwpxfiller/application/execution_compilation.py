@@ -66,7 +66,9 @@ from hwpxfiller.domain.field_binding import (
     VALUE_KIND_TEXT,
     CanonicalBindingValue,
     FieldBindingRule,
+    encode_text_slice,
 )
+from hwpxfiller.domain.text_slice import TextSlice
 
 EXECUTION_SEMANTICS_CONTRACT = "execution-semantics/v1"
 OPERATION_ALPHABET_VERSION = "execution-operation-alphabet/v1"
@@ -116,12 +118,13 @@ class ExecutionCompilationError(ValueError):
 # ─── value expression 합타입(actual value 아님 — 규칙의 exact projection) ──────────────
 @dataclass(frozen=True)
 class FromSource:
-    """소스 값 하나 + 문서 값 정책 + 표시형(v3 ``format_kind`` × ``format_code``)."""
+    """소스 값 하나 + 문서 값 정책 + 표시형(v3 ``format_kind`` × ``format_code``) + 가공(v4)."""
 
     source_key: str
     format_code: str | None
     document_content_value_policy_id: str
     format_kind: str | None = None
+    text_slice: TextSlice | None = None
 
 
 @dataclass(frozen=True)
@@ -256,7 +259,11 @@ def _value_expression(rule: FieldBindingRule) -> ActiveFieldValueExpression:
         # SOURCE 규칙은 source_key 를 반드시 갖는다(FieldBindingRule 이 강제).
         assert rule.source_key is not None
         return FromSource(
-            rule.source_key, rule.format_code, policy_id, format_kind=rule.format_kind
+            rule.source_key,
+            rule.format_code,
+            policy_id,
+            format_kind=rule.format_kind,
+            text_slice=rule.text_slice,
         )
     if rule.binding_kind == CONSTANT:
         assert rule.canonical_constant_value is not None
@@ -376,7 +383,7 @@ def _encode_canonical_value(value: CanonicalBindingValue) -> dict[str, Any]:
 
 def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
     if isinstance(ve, FromSource):
-        return {
+        encoded: dict[str, Any] = {
             "kind": "FROM_SOURCE",
             "source_key": ve.source_key,
             # 표시형 쌍 — record validation 이 legacy 와 같은 해석기로 렌더한다(v3).
@@ -384,6 +391,11 @@ def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
             "format_code": ve.format_code,
             "document_content_value_policy_id": ve.document_content_value_policy_id,
         }
+        # 가공(v4)은 **있을 때만** 싣는다 — 가공 없는 요구의 canonical payload·digest 가 v4 이전과
+        # byte 동일하게 남는다(봉인된 계획의 재계산 대조가 판 올림만으로 깨지지 않게).
+        if ve.text_slice is not None:
+            encoded["text_slice"] = encode_text_slice(ve.text_slice)
+        return encoded
     if isinstance(ve, ConstantValue):
         return {
             "kind": "CONSTANT",

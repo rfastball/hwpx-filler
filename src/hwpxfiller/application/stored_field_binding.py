@@ -18,6 +18,9 @@ from hwpxfiller.domain.field_binding import (
     FieldBindingError,
     FieldBindingInputIntegrityError,
     FieldBindingRule,
+    UnsupportedTextSliceError,
+    encode_text_slice,
+    require_text_slice,
     resolve_document_value_policy,
 )
 from hwpxfiller.application.field_binding_input import FieldBindingRevision
@@ -245,8 +248,11 @@ def _encode_rule(rule: FieldBindingRule) -> dict[str, Any]:
     ``format_kind`` 는 field-binding/v3 표시형 슬롯이다. 규칙이 어느 판에 속하는지는 revision 의
     ``field_binding_semantic_contract_id`` 가 말하고, digest 재계산이 그 판의 framing 으로 대조한다
     — v2 판본에 kind 가 끼어들면 그 재계산이 시끄럽게 닫는다.
+
+    ``text_slice`` 는 field-binding/v4 가공 슬롯이고 **있을 때만** 적는다 — 가공 없는 규칙(모든 v2·v3
+    판본 포함)의 저장 표현이 v4 이전과 byte 동일하게 남는다.
     """
-    return {
+    out: dict[str, Any] = {
         "field_id": rule.field_id,
         "binding_kind": rule.binding_kind,
         "policy_id": rule.document_content_value_policy.policy_id,
@@ -259,6 +265,9 @@ def _encode_rule(rule: FieldBindingRule) -> dict[str, Any]:
             else rule.canonical_constant_value.text
         ),
     }
+    if rule.text_slice is not None:
+        out["text_slice"] = encode_text_slice(rule.text_slice)
+    return out
 
 
 def _decode_rule(data: Any) -> FieldBindingRule:
@@ -275,6 +284,10 @@ def _decode_rule(data: Any) -> FieldBindingRule:
     format_kind = data.get("format_kind")  # v2 판 기록에는 키가 없다(None)
     if format_kind is not None and not isinstance(format_kind, str):
         raise StoredFieldBindingError("format_kind 표현이 malformed")
+    try:
+        text_slice = require_text_slice(data.get("text_slice"))  # v2·v3 판 기록에는 키가 없다
+    except UnsupportedTextSliceError as exc:
+        raise StoredFieldBindingError("text_slice 표현이 malformed·미지원") from exc
     return FieldBindingRule(
         field_id=_require_nonempty(data.get("field_id"), "field_id"),
         binding_kind=_require_nonempty(data.get("binding_kind"), "binding_kind"),
@@ -285,6 +298,7 @@ def _decode_rule(data: Any) -> FieldBindingRule:
             None if constant_text is None else ExactText(constant_text)
         ),
         format_kind=format_kind,
+        text_slice=text_slice,
     )
 
 

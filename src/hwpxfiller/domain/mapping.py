@@ -27,6 +27,7 @@ from datetime import datetime
 
 from . import format_engine as _fe
 from .lint import similarity
+from .text_slice import TextSlice, apply_text_slice, text_slice_from_payload
 
 # 소스별 어휘(소스 키 → 한글 라벨)는 **코어가 소유하지 않는다**. 각 DataSource 가
 # ``field_labels()`` 로 자기 어휘를 선언하고(예: ``data/nara.py`` 의 나라장터 36쌍),
@@ -55,13 +56,17 @@ SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t not in _NON_CARRIER_TYPES)
 # ------------------------------------------------------------------ 변환
 def apply_transform(
     kind: str, value: str = "", const: str = "", fmt: str = "",
-    *, now: "datetime | None" = None,
+    *, now: "datetime | None" = None, text_slice: "TextSlice | None" = None,
 ) -> str:
     """단일 소스 값을 유형(``kind``)·표시형(``fmt``)에 따라 서식 엔진으로 포맷.
 
     ``fmt`` 는 유형 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
     코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). text/date/amount/today
     가 표시형을 가지며, const 는 리터럴을 낸다(빈 리터럴이면 빈 문자열).
+
+    ``text_slice`` 는 **가공**(:mod:`~hwpxfiller.domain.text_slice`)이다 — 소스 값을 나르는
+    유형에서만 뜻이 있고 순서는 strip → 가공 → 표시형이다(managed 경로의 공백 정책 → 가공 →
+    표시형과 같은 순서). const·today 는 원본 칸이 없어 가공을 보지 않는다.
 
     ``now`` 는 ``today`` 의 기준 시각이다. ``None`` 이면 ``datetime.now()`` 로 폴백한다
     (선례: :func:`~hwpxfiller.application.generation.direct_plan` 의 "now=None 은 생성
@@ -76,7 +81,7 @@ def apply_transform(
         # date 프리셋 9개가 그대로 성립한다. 새 서식 표를 만들면 두 벌이 갈린다.
         return _fe.render("date", fmt, (now or datetime.now()).strftime("%Y-%m-%d %H:%M"))
     if kind in ("text", "date", "amount"):
-        return _fe.render(kind, fmt, value.strip())
+        return _fe.render(kind, fmt, apply_text_slice(text_slice, value.strip()))
     # 미지 유형을 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
     # — 조용한 추측 대신 시끄럽게 실패한다(확인-또는-경보).
     raise ValueError(f"지원하지 않는 유형: {kind!r} (지원: {TYPES})")
@@ -92,6 +97,16 @@ class FieldMapping:
     type: str = "text"
     const: str = ""
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
+    #: 가공(글자 범위·구분자 나누기) — 없으면 칸 전체. 소스 carrier 유형에서만 적용된다.
+    slice: "TextSlice | None" = None
+
+    def __post_init__(self) -> None:
+        # 사전으로 들어온 명세도 같은 판정기를 지난다 — 잘못된 명세가 값 계산 때까지 숨지 않게.
+        self.slice = text_slice_from_payload(self.slice)
+        # 고정값·오늘 날짜에는 원본 칸이 없다 — 걸리지 않을 가공을 싣고 다니면 표시와 출력이
+        # 갈린다(「가공했다」고 보이는데 값은 그대로). 조용히 버리지 않고 거절한다.
+        if self.slice is not None and self.type in _NON_CARRIER_TYPES:
+            raise ValueError(f"{self.type!r} 유형에는 가공을 둘 수 없다: {self.template_field!r}")
 
     @property
     def is_declared_empty(self) -> bool:
@@ -107,17 +122,22 @@ class FieldMapping:
         self, record: "dict[str, object]", *, now: "datetime | None" = None
     ) -> str:
         return apply_transform(
-            self.type, str(record.get(self.source, "")), self.const, self.fmt, now=now
+            self.type, str(record.get(self.source, "")), self.const, self.fmt,
+            now=now, text_slice=self.slice,
         )
 
     def to_dict(self) -> dict:
-        return {
+        out: dict[str, object] = {
             "template_field": self.template_field,
             "source": self.source,
             "type": self.type,
             "const": self.const,
             "fmt": self.fmt,
         }
+        # 가산 키 — 가공이 있을 때만 적는다(없는 작업의 저장 bytes·지문이 그대로 남게).
+        if self.slice is not None:
+            out["slice"] = self.slice.to_dict()
+        return out
 
     @classmethod
     def from_dict(cls, d: dict) -> "FieldMapping":
@@ -141,6 +161,8 @@ class FieldMapping:
             type=type_,
             const=d.get("const", ""),
             fmt=d.get("fmt", ""),
+            # 가산 키(field-binding/v4 가공) — 없으면 가공 없음, 있으면 엄격 해독(모르는 모양 거절).
+            slice=text_slice_from_payload(d.get("slice")),
         )
 
 

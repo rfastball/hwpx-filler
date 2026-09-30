@@ -1037,3 +1037,105 @@ def test_name_token_values_feed_both_filename_previews():
     assert values == {
         "계약명": "청사 냉난방 교체", "금액": "", "작성일": "2026. 6. 15. 18:04",
     }
+
+
+# ─── 가공(글자 범위·구분자 나누기, field-binding/v4) ─────────────────────────────────
+def _bound_row_model(source: str = "입찰공고번호") -> MappingModel:
+    model = MappingModel(rows=[RowState("공고번호", spec=FieldSpec("공고번호", "text", 1, False))])
+    model.set_source(0, source)
+    return model
+
+
+def test_set_slice_is_an_edit_that_the_preview_reflects():
+    from hwpxfiller.viewmodel.mapping_state import row_projection
+
+    model = _bound_row_model()
+    model.set_confirmed(0, True)
+    model.set_slice(0, {"mode": "split", "delimiter": "-", "index": 1})
+    row = model.rows[0]
+    assert row.confirmed is False and row.touched is True, "가공도 편집이다 — 확인을 푼다"
+    record = {"입찰공고번호": "R26BK09017075-000"}
+    projection = row_projection(row, record, index=0, source_fields=["입찰공고번호"],
+                                has_records=True)
+    assert projection["preview"] == "R26BK09017075"
+    assert projection["slice"] == {"mode": "split", "delimiter": "-", "index": 1}
+    assert projection["slice_label"] == "구분자 '-' 1번째"
+    assert projection["slice_enabled"] is True
+    assert [m["value"] for m in projection["slice_modes"]] == ["", "chars", "split"]
+    assert row.to_mapping().to_dict()["slice"] == {"mode": "split", "delimiter": "-", "index": 1}
+    model.set_slice(0, None)
+    assert model.rows[0].slice is None and "slice" not in model.rows[0].to_mapping().to_dict()
+
+
+def test_slice_that_selects_nothing_previews_the_missing_marker():
+    """가공이 고른 부분이 비면 미리보기도 생성과 같은 표식을 말한다(record validation 과 같은 판정)."""
+    from hwpxfiller.viewmodel.mapping_state import row_projection
+
+    model = _bound_row_model()
+    model.set_slice(0, {"mode": "split", "delimiter": "-", "index": 5})
+    projection = row_projection(model.rows[0], {"입찰공고번호": "R26-000"}, index=0,
+                                source_fields=["입찰공고번호"], has_records=True)
+    assert projection["preview_kind"] == "missing"
+
+
+def test_slice_labels():
+    from hwpxfiller.domain.text_slice import TextSlice
+    from hwpxfiller.viewmodel.mapping_state import slice_label
+
+    assert slice_label(None) == "없음"
+    assert slice_label(TextSlice("chars", start=1, length=3)) == "글자 범위 1~3"
+    assert slice_label(TextSlice("chars", start=4)) == "글자 범위 4~"
+    assert slice_label(TextSlice("split", delimiter=", ", index=-1)) == "구분자 ', ' 끝에서 1번째"
+
+
+def test_slice_is_rejected_where_there_is_no_source_cell():
+    from hwpxfiller.domain.text_slice import TextSliceError
+
+    model = _bound_row_model()
+    with pytest.raises(TextSliceError, match="구분자를 비울 수 없습니다"):
+        model.set_slice(0, {"mode": "split", "delimiter": "", "index": 1})
+    assert model.rows[0].slice is None, "거절된 명세가 반쯤 적용되지 않는다"
+    model.set_display(0, "const", "")
+    with pytest.raises(ValueError, match="가공"):
+        model.set_slice(0, {"mode": "chars", "start": 1})
+    model.set_slice(0, None)  # 해제는 언제나 된다
+    unbound = MappingModel(rows=[RowState("공고번호")])
+    assert unbound.rows[0].slice_enabled() is False
+    with pytest.raises(ValueError, match="가공"):
+        unbound.set_slice(0, {"mode": "chars", "start": 1})
+
+
+@pytest.mark.parametrize(
+    "transition",
+    [
+        lambda m: m.set_display(0, "const", ""),
+        lambda m: m.set_display(0, "today", ""),
+        lambda m: m.set_type(0, "const"),
+        lambda m: m.set_manual(0, "직접"),
+        lambda m: m.bind_column(0, "다른열"),
+        lambda m: m.unbind(0),
+        lambda m: m.revert_to_auto(0),
+        lambda m: m.freeze_to_const(0, "굳힘"),
+    ],
+)
+def test_slice_lives_only_while_the_value_comes_from_a_column(transition):
+    """고정값·오늘 날짜로 바뀌거나 결속이 새로 서면 가공이 걷힌다(표시와 출력이 갈리지 않게)."""
+    model = _bound_row_model()
+    model.set_slice(0, {"mode": "chars", "start": 1, "length": 3})
+    transition(model)
+    assert model.rows[0].slice is None
+    model.rows[0].to_mapping()  # 고정값 FieldMapping 이 가공을 거절하는 불변식과도 어긋나지 않는다
+
+
+def test_slice_survives_a_display_kind_change_and_profile_round_trip():
+    model = _bound_row_model("계약금액")
+    model.set_slice(0, {"mode": "split", "delimiter": "원", "index": 1})
+    model.set_display(0, "amount", "")
+    assert model.rows[0].slice is not None, "표시형은 가공과 다른 축이다"
+    mapping = model.rows[0].to_mapping()
+    restored = MappingModel.from_profile(MappingProfile(mappings=[mapping]))
+    assert restored.rows[0].slice == model.rows[0].slice
+    assert mapping.value_for({"계약금액": "170,309,180원 (VAT 포함)"}) == "170,309,180원"
+    reapplied = _bound_row_model("계약금액")
+    reapplied.apply_profile(MappingProfile(mappings=[mapping]))
+    assert reapplied.rows[0].slice == model.rows[0].slice

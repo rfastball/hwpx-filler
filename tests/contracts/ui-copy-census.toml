@@ -1430,6 +1430,22 @@ file = "src/hwpxfiller/domain/template_authoring.py"
 text = "현재 시험에서 '{}'을 골라 '{}'은 제외되었습니다."
 
 [[sentence]]
+file = "src/hwpxfiller/domain/text_slice.py"
+text = "구분자를 비울 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/domain/text_slice.py"
+text = "글자 수는 1 이상이어야 합니다"
+
+[[sentence]]
+file = "src/hwpxfiller/domain/text_slice.py"
+text = "번째는 0이 될 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/domain/text_slice.py"
+text = "시작은 1 이상이어야 합니다"
+
+[[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
 text = "작업 위치 기록의 내용이 올바르지 않습니다."
 

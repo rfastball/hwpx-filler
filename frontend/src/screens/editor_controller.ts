@@ -15,7 +15,7 @@ import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
 import {
   NAME_FIELD, PATTERN_FIELD, editorRevision, editorServerValues, editorSession,
-  emptyDraft, ingestSnapshot, issueToken, markField, rowField, settle, typeInto,
+  emptyDraft, ingestSnapshot, issueToken, markField, rowField, settle, typeInto, valueOf,
 } from "./editor_state.ts";
 import type { DraftState, RowAxis } from "./editor_state.ts";
 import { SESSION_DATA_KEY } from "./pool_column.ts";
@@ -83,6 +83,9 @@ export type ViewState = {
   detailOpen: boolean;
   /** 시트가 열려 있는 동안의 동사 실패 문안 — 닫히면 걷힌다(다음 열림에 남지 않는다). */
   detailMessage: string | null;
+  /** 「가공」 인라인 편집기가 열려 있는 행 index — 한 번에 하나만 연다(`pendingConstFocus`
+   *  와 같은 1슬롯 표지). UI-local 상태라 서버 왕복이 없다. */
+  sliceOpenIndex: number | null;
   tokFoldOpen: boolean;
   saveMessage: { text: string; level: string } | null;
   invalidField: string;
@@ -127,7 +130,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   let draft: DraftState = emptyDraft();
   let view: ViewState = {
     libMenu: null, bindingMenu: false, pendingConstFocus: null,
-    detailOpen: false, detailMessage: null,
+    detailOpen: false, detailMessage: null, sliceOpenIndex: null,
     tokFoldOpen: false, saveMessage: null,
     invalidField: "", aim: "", aimed: "",
   };
@@ -224,15 +227,26 @@ export function createEditorController(deps: EditorControllerDeps) {
         commits.push(commit(field, "set_pattern", { pattern: state.draftValue }));
         continue;
       }
-      /* 행 축의 초안은 **고정값 입력 하나**다(U6-C 리뷰 2). 종전에는 데이터 열 select 도
-         초안을 가졌는데 그 값은 열 이름이 아니라 **항목 값**(`col:…`/`sp:…`)이라, 지연
-         flush 의 일반 갈래가 그것을 `set_source` 에 그대로 실어 존재하지 않는 열
+      /* 행 축의 초안은 **고정값 입력과 가공 입력 넷**이다(U6-C 리뷰 2). 종전에는 데이터 열
+         select 도 초안을 가졌는데 그 값은 열 이름이 아니라 **항목 값**(`col:…`/`sp:…`)이라,
+         지연 flush 의 일반 갈래가 그것을 `set_source` 에 그대로 실어 존재하지 않는 열
          「col:품명」에 결속시켰다 — R5 센티넬 금지의 정확한 위반이다. 두 select 는 이제
          초안을 두지 않고 고른 그 자리에서 kind 로 갈라 발행한다. */
-      const match = /^row:(\d+):(const)$/.exec(field);
+      const match = /^row:(\d+):(const|slice_start|slice_length|slice_delimiter|slice_index)$/
+        .exec(field);
       if (match === null) throw new Error(`알 수 없는 편집 draft field입니다: ${field}`);
       const index = Number(match[1]);
-      commits.push(commit(field, "set_const", { index, const: state.draftValue }));
+      const axis = match[2];
+      if (axis === "const") {
+        commits.push(commit(field, "set_const", { index, const: state.draftValue }));
+        continue;
+      }
+      /* 가공 넷은 **행 하나**의 완성된 명세로만 뜻이 있다(`chars` 는 start+length, `split`
+         은 delimiter+index) — 지금 손댄 축만 보내면 백엔드가 나머지 축을 추론해야 한다.
+         불완전한 입력(예: 빈 숫자칸)은 조용히 보내지 않는다(발명한 거절 문안 0 — 계약§). */
+      const spec = buildSliceSpec(index);
+      if (spec === null) continue;
+      commits.push(commit(field, "set_slice", { index, slice: spec }));
     }
     await Promise.all(commits);
     return deps.chain.chained(EDIT_CHAIN, () => Promise.resolve());
@@ -367,6 +381,78 @@ export function createEditorController(deps: EditorControllerDeps) {
     const state = draft.fields[rowField(index, axis)];
     if (state === undefined || !state.dirty) return;
     commitRowValue(index, axis, state.draftValue);
+  }
+
+  /* ---- 가공(구간) 슬라이스 — 「글자 범위」·「구분자로 나누기」(U6-C 승계) ----
+
+     방식(select)은 고르는 순간이 곧 커밋이라 draft 를 두지 않는다(`chooseSliceMode`,
+     select 축과 같은 자리). 나머지 넷(시작·글자 수·구분자·번째)은 타이핑 중간 상태를
+     지켜야 하는 입력이라(구분자는 IME 조합을 거친다) `const` 와 같은 draft 자리를 쓴다
+     (`RowAxis` 의 `slice_*`). 커밋은 **행 하나의 완성된 명세**로만 뜻이 있어, 손댄 축
+     하나만으로는 보내지 않고 그 행의 나머지 축까지 모아 한 번에 `set_slice` 로 보낸다. */
+
+  /** 지금 확정된 방식(`row.slice.mode`) — 방식 자체는 draft 가 아니라 스냅샷에 산다. */
+  function sliceMode(index: number): string {
+    const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
+    return String(((row || {}).slice || {}).mode || "");
+  }
+
+  /** draft 의 현재 값으로 완성된 명세를 짓는다 — **불완전하면 `null`**(발신하지 않는다).
+   *  숫자칸이 비어 있거나 정수로 읽히지 않는 입력을 거절 문안으로 짓지 않는다(그 문안은
+   *  Python 의 것이다) — 조용히 보내지 않고 다음 편집을 기다린다. */
+  function buildSliceSpec(index: number): Obj | null {
+    const mode = sliceMode(index);
+    if (mode === "chars") {
+      const startText = valueOf(draft, rowField(index, "slice_start"));
+      if (startText.trim() === "" || !/^-?\d+$/.test(startText.trim())) return null;
+      const start = Number(startText.trim());
+      const lengthText = valueOf(draft, rowField(index, "slice_length")).trim();
+      if (lengthText === "") return { mode: "chars", start };
+      if (!/^-?\d+$/.test(lengthText)) return null;
+      return { mode: "chars", start, length: Number(lengthText) };
+    }
+    if (mode === "split") {
+      const delimiter = valueOf(draft, rowField(index, "slice_delimiter"));
+      if (delimiter === "") return null;
+      const indexText = valueOf(draft, rowField(index, "slice_index")).trim();
+      if (indexText === "" || !/^-?\d+$/.test(indexText)) return null;
+      return { mode: "split", delimiter, index: Number(indexText) };
+    }
+    return null;
+  }
+
+  /** 가공 입력 blur 커밋 — 완성되지 않은 명세는 조용히 보내지 않는다(계약: 발명한 클라이언트
+   *  거절 문안 0). 손대지 않은 sibling 축까지 함께 실어 보내지만 정산 token 은 손댄 축만 든다. */
+  function commitSliceOnBlur(
+    index: number, axis: "slice_start" | "slice_length" | "slice_delimiter" | "slice_index",
+  ): void {
+    const field = rowField(index, axis);
+    const state = draft.fields[field];
+    if (state === undefined || !state.dirty) return;
+    const spec = buildSliceSpec(index);
+    if (spec === null) return;
+    void commit(field, "set_slice", { index, slice: spec });
+  }
+
+  /** 방식 select — 고르는 순간이 곧 커밋이다(§U6-C 리뷰 2 와 같은 자리, draft 없음).
+   *  기본값(`chars` 는 `start:1`, `split` 은 `delimiter:","·index:1`)은 여기서 짓되,
+   *  그 값의 **유효성 판정**은 여전히 Python 이 진다 — 여기서 검증하지 않는다. */
+  function chooseSliceMode(index: number, mode: string): void {
+    let spec: Obj | null;
+    if (mode === "") spec = null;
+    else if (mode === "chars") spec = { mode: "chars", start: 1 };
+    else if (mode === "split") spec = { mode: "split", delimiter: ",", index: 1 };
+    else throw new Error(`알 수 없는 가공 방식입니다: ${mode}`);
+    sendRowChoice("set_slice", { index, slice: spec });
+  }
+
+  /** 「가공」 인라인 편집기 토글 — 한 번에 한 행만 연다(1슬롯 표지, 서버 왕복 없음). */
+  function toggleSliceEditor(index: number): void {
+    patchView({ sliceOpenIndex: view.sliceOpenIndex === index ? null : index });
+  }
+
+  function isSliceEditorOpen(index: number): boolean {
+    return view.sliceOpenIndex === index;
   }
 
   /** 대기 중인 「고정값」 초점을 이 행이 가져간다 — 가져가면 표지를 걷는다(1회성).
@@ -1188,6 +1274,7 @@ export function createEditorController(deps: EditorControllerDeps) {
      *  JS 전용 상태라 백엔드 왕복이 없다. */
     clearSaveMessage,
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
+    commitSliceOnBlur, chooseSliceMode, toggleSliceEditor, isSliceEditorOpen,
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
     toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
     /** 항목 상세 시트(U6-E #979) — 여는 자리 둘(행 ⋮ · 게이트 존)이 같은 한 문을 지난다. */

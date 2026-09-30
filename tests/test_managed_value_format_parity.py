@@ -11,6 +11,7 @@ section0.xml bytes** 를 ``tests/fixtures/slotless_section0_golden/<사례>/<순
 """
 from __future__ import annotations
 
+import re
 import zipfile
 from pathlib import Path
 
@@ -124,3 +125,60 @@ def test_managed_writes_the_section_xml_legacy_wrote(
     joined = b"".join(managed_sections).decode("utf-8")
     for text in expected_texts:
         assert text in joined, f"표시형 결과 {text!r} 가 문서에 없다"
+
+
+def test_managed_writes_the_sliced_value_the_editor_previews(app, tmp_path):
+    """가공(field-binding/v4)이 걸린 작업 — 문서·파일 이름이 편집기 미리보기와 같은 글자다.
+
+    legacy 생성기는 사라졌으므로 비교의 다른 쪽은 편집기 미리보기가 쓰는 ``FieldMapping.value_for``
+    다(연결 표의 「미리보기」 칸이 곧 이것). 가공은 편집기 동사(`set_slice`)로 걸고 저장한다 —
+    제품 동선 그대로. 파일 이름 토큰도 같은 가공을 거친다.
+    """
+    editor = app.controllers["editor"]
+    app.dispatch("editor", "new_session", {})
+    app.dispatch("editor", "use_library_template", {"path": str(_asset("계약체결안내.hwpx"))})
+    editor.load_data_path(str(_asset("계약목록.csv")))
+    app.dispatch("editor", "goto_section", {"section": "binding"})
+    app.dispatch("editor", "confirm_suggested", {})
+    rows = {row["template_field"]: row for row in editor.snapshot()["rows"]}
+    slices = {
+        "공고번호": {"mode": "split", "delimiter": "-", "index": 1},
+        "계약금액": {"mode": "chars", "start": 1, "length": 3},  # 금액 기본 표시형과 함께
+    }
+    for name, spec in slices.items():
+        assert rows[name]["slice_enabled"] is True
+        app.dispatch("editor", "set_slice", {"index": rows[name]["index"], "slice": spec})
+        app.dispatch("editor", "set_confirmed", {"index": rows[name]["index"], "confirmed": True})
+    after = {row["template_field"]: row for row in editor.snapshot()["rows"]}
+    assert after["공고번호"]["preview"] == "20260812"
+    assert after["공고번호"]["slice_label"] == "구분자 '-' 1번째"
+    app.dispatch("editor", "set_pattern", {"pattern": "{{공고번호}}-{{seq:001}}"})
+    app.dispatch("editor", "set_name", {"name": WORK})
+    assert app.dispatch("editor", "save", {}) == {"ok": True, "saved_name": WORK}
+
+    job = app.controllers["job"]
+    saved = job.registry.load(WORK)
+    by_field = {m.template_field: m for m in saved.mapping.mappings}
+    assert by_field["공고번호"].slice is not None and by_field["계약금액"].slice is not None
+    app.dispatch("job", "select_job", {"name": WORK})
+    app.dispatch("job", "set_all", {})
+    out = tmp_path / "sliced"
+    pick_output_folder(job, out)
+    result = app.generate("job")
+    assert result["ok"] is True and result["status"] == "completed", result
+
+    sections = _sections(out)
+    records = job.data.records
+    assert len(sections) == len(records)
+    # 가공 전이면 ``20260812-001-001.hwpx`` 다 — 토큰 자리에 가공된 ``20260812`` 만 선다.
+    assert all(re.fullmatch(r"20260812-\d{3}\.hwpx", name) for name in sections), sorted(sections)
+    for record in records:
+        # 문서와 레코드를 가공되지 않은 칸(수요기관)으로 잇는다 — 출력 순서에 기대지 않는다.
+        (text,) = [
+            body.decode("utf-8") for body in sections.values()
+            if f">{record['수요기관']}<" in body.decode("utf-8")
+        ]
+        for field in slices:
+            expected = by_field[field].value_for(record)
+            assert f">{expected}<" in text, f"{field} 가 미리보기 값 {expected!r} 와 다르다"
+        assert f">{record['공고번호']}<" not in text, "가공 전 칸 전체가 문서에 남았다"

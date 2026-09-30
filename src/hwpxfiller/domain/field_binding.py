@@ -1,7 +1,7 @@
 """S5 Field Binding 의미 언어 — 값·소스 스키마·바인딩 규칙 계약 (S5-01 · #697).
 
 이 모듈이 소유하는 것: ``binding-value/v2`` 값 모델(:class:`CanonicalBindingValue` — exact
-logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v3`` 규칙 semantic
+logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v4`` 규칙 semantic
 모델과 exclusivity 불변식, ``document-content-value/v1`` 값 정책, Intentional Blank 의미,
 **표시형**(:data:`FORMAT_KINDS` × format code) 쌍의 계약과 렌더 단일 출처, 그리고 이 slice 국소
 canonical byte framing·digest.
@@ -13,6 +13,11 @@ legacy 와 managed 에서 다른 문서를 냈다. v3 는 ``format_kind`` 슬롯
 싣고, 렌더는 legacy 와 같은 :mod:`hwpxfiller.domain.format_engine` 한 곳이 한다.
 v2 판본은 읽을 수 있지만(``field-binding/v2`` 는 **outdated** 로만 지원) 실행 입력이 되지
 못한다 — ``type`` 이 없어 어떤 표시형이었는지 판본만으로는 알 수 없기 때문이다.
+
+**가공도 규칙이 나른다**(v4): 데이터 칸의 일부만 쓰는 기초 가공(:mod:`hwpxfiller.domain.text_slice`
+— 글자 범위·구분자 나누기)이 ``text_slice`` 슬롯으로 판본에 실린다. 순서는 공백 정책 → 가공 →
+표시형이고 렌더는 :func:`render_source_value` 한 곳이다. v3 판본도 v2 처럼 읽기만 하는 outdated
+판이다 — v3 에는 가공이 설 수 없었으므로 현재 Mapping 과 그대로 일치하면 무손실로 다시 확정된다.
 
 **값 유형 어휘는 없다**(v2): 데이터가 나르는 값은 언제나 타입 없는 텍스트다. 타입 추론은
 사용자가 고른 것이 아니라 필드 이름 휴리스틱의 산물이었고, 실제 문서에 적히는 값과도 무관한
@@ -33,11 +38,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from . import format_engine
+from .text_slice import TextSlice, TextSliceError, apply_text_slice, text_slice_from_payload
 
 _U32_MAX = 0xFFFF_FFFF
 
 # semantic 버전 — 코드·문서 단일 출처.
-FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v3"
+FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v4"
+#: 가공 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지). 가공이 설 수 없었던 판이라 현재 Mapping 과
+#: 일치하면 무손실로 v4 가 된다(``upgrade_outdated_binding_if_lossless``).
+FIELD_BINDING_SEMANTIC_VERSION_V3 = "field-binding/v3"
 #: 표시형 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지, :func:`is_current_field_binding_contract`).
 FIELD_BINDING_SEMANTIC_VERSION_V2 = "field-binding/v2"
 SOURCE_SCHEMA_VERSION = "source-schema/v2"
@@ -98,6 +107,16 @@ class UnsupportedValueFormatError(FieldBindingError):
     """표시형 쌍이 이 계약이 아는 모양이 아니다 — 원문으로 조용히 풀지 않는다."""
 
     code = "UNSUPPORTED_VALUE_FORMAT"
+
+
+class UnsupportedTextSliceError(UnsupportedValueFormatError):
+    """가공 명세가 이 계약이 아는 모양이 아니다(v4) — 값 렌더 축의 오류라 표시형 오류의 하위형이다.
+
+    하위형으로 두는 이유: 값을 렌더하는 소비자(record validation·delivery)가 이미 표시형 오류를
+    context error 로 닫는다. 새 오류 축을 따로 세우면 그중 한 자리가 잡지 못해 원문이 새어 나간다.
+    """
+
+    code = "UNSUPPORTED_TEXT_SLICE"
 
 
 # ─── 텍스트·스칼라 검증 ──────────────────────────────────────────────────────────
@@ -322,10 +341,49 @@ def render_value_format(
     return format_engine.render(format_kind, format_code, text)
 
 
+# ─── 가공(text slice) 계약 — v4 ──────────────────────────────────────────────────
+def require_text_slice(text_slice: object) -> TextSlice | None:
+    """가공 명세를 정본 객체로 — ``None``·:class:`TextSlice`·직렬화 사전만 받는다.
+
+    판정은 :mod:`hwpxfiller.domain.text_slice` 한 곳이다(편집 동사가 부르는 그 판정기). 모르는 모양은
+    :class:`UnsupportedTextSliceError` 로 거절한다 — 가공을 버리고 칸 전체를 쓰면 다른 글자가
+    조용히 문서로 나간다.
+    """
+    try:
+        return text_slice_from_payload(text_slice)
+    except TextSliceError as exc:
+        raise UnsupportedTextSliceError(str(exc)) from exc
+
+
+def encode_text_slice(text_slice: TextSlice | None) -> dict[str, object] | None:
+    """실행 계획·delivery basis 가 봉인하는 가공 표현(없으면 None)."""
+    return None if text_slice is None else text_slice.to_dict()
+
+
+def render_source_value(
+    format_kind: str | None,
+    format_code: str | None,
+    text_slice: object,
+    text: str,
+) -> str:
+    """소스 값 하나의 문서 글자 — **가공 → 표시형**(v4). 모든 managed 렌더의 단일 출처.
+
+    legacy :func:`hwpxfiller.domain.mapping.apply_transform` 과 같은 순서·같은 해석기다. 가공과
+    표시형의 모양은 값보다 먼저 판정한다(빈 값이라서 거짓 모양이 통과하지 않게).
+    """
+    require_value_format(format_kind, format_code)
+    spec = require_text_slice(text_slice)
+    return render_value_format(format_kind, format_code, apply_text_slice(spec, text))
+
+
 # ─── field-binding semantic contract registry ────────────────────────────────────
 #: 읽을 수 있는 판(저장 revision 해독용). 실행 입력은 현재 판만 된다.
 _SUPPORTED_SEMANTIC_CONTRACTS = frozenset(
-    {FIELD_BINDING_SEMANTIC_VERSION, FIELD_BINDING_SEMANTIC_VERSION_V2}
+    {
+        FIELD_BINDING_SEMANTIC_VERSION,
+        FIELD_BINDING_SEMANTIC_VERSION_V3,
+        FIELD_BINDING_SEMANTIC_VERSION_V2,
+    }
 )
 _SUPPORTED_SOURCE_SCHEMA_CONTRACTS = frozenset({SOURCE_SCHEMA_VERSION})
 
@@ -369,6 +427,9 @@ class FieldBindingRule:
     않았다). 쌍의 정본 모양은 현재 판 canonical framing 이 :func:`require_value_format` 으로
     강제한다 — 규칙 객체는 outdated(v2) 판본의 ``(None, code)`` 모양도 읽어야 해서, 여기서는
     kind 가 섰을 때의 모양과 SOURCE 전용만 본다.
+
+    ``text_slice`` 는 v4 가공 슬롯이다. SOURCE 규칙에만 서고(고정값에는 원본 칸이 없다) 모양은
+    :func:`require_text_slice` 가 규칙 구성 시점에 다시 판정한다 — 편집 시점 판정과 같은 판정기다.
     """
 
     field_id: str
@@ -378,6 +439,7 @@ class FieldBindingRule:
     format_code: str | None = None
     canonical_constant_value: CanonicalBindingValue | None = None
     format_kind: str | None = None
+    text_slice: TextSlice | None = None
 
     def __post_init__(self) -> None:
         _require_scalar_text(self.field_id, "field_id")
@@ -404,6 +466,14 @@ class FieldBindingRule:
                 require_value_format(self.format_kind, self.format_code)
             except UnsupportedValueFormatError as exc:
                 raise FieldBindingInputIntegrityError(str(exc)) from exc
+        if self.text_slice is not None:
+            if self.binding_kind != SOURCE:
+                raise FieldBindingInputIntegrityError(
+                    f"가공은 SOURCE 규칙에만 선다: {self.binding_kind!r}"
+                )
+            # 사전·다른 객체가 규칙에 끼면 framing·렌더가 다른 모양을 보게 된다 — 정본 객체만 받는다.
+            if not isinstance(self.text_slice, TextSlice):
+                raise FieldBindingInputIntegrityError("text_slice 는 TextSlice 이어야 한다")
         if self.binding_kind == SOURCE:
             self._require_source()
         elif self.binding_kind == CONSTANT:
@@ -489,12 +559,33 @@ def _u32(value: int) -> bytes:
     return value.to_bytes(4, "big")
 
 
-def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
-    """규칙 프레이밍 — v2 는 6 슬롯, v3 는 표시형 kind 슬롯을 source_key 뒤에 더한 7 슬롯.
+def _encode_text_slice(text_slice: TextSlice | None) -> bytes:
+    """가공 슬롯(v4) — 없음은 0x00, 있으면 0x01 + 방식 + 방식별 고정 칸(정수는 10진 표기)."""
+    if text_slice is None:
+        return b"\x00"
+    out = bytearray(b"\x01")
+    out += _text(text_slice.mode)
+    if text_slice.delimiter is None:  # chars — start 필수, length 선택
+        out += _text(str(text_slice.start))
+        out += _opt_text(None if text_slice.length is None else str(text_slice.length))
+    else:  # split — delimiter·index 필수
+        out += _text(text_slice.delimiter)
+        out += _text(str(text_slice.index))
+    return bytes(out)
 
-    v2 프레이밍은 **동결**이다(디스크의 v2 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
-    ``format_kind`` 가 설 수 없고, v3 판은 표시형 쌍의 정본 모양을 강제한다.
+
+def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
+    """규칙 프레이밍 — v2 는 6 슬롯, v3 는 표시형 kind 슬롯을 source_key 뒤에 더한 7 슬롯,
+    v4 는 v3 뒤에 가공 슬롯을 더한 8 슬롯.
+
+    v2·v3 프레이밍은 **동결**이다(디스크의 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
+    ``format_kind`` 가, v2·v3 판에는 ``text_slice`` 가 설 수 없다. v3 이후 판은 표시형 쌍의
+    정본 모양을 강제한다.
     """
+    if rule.text_slice is not None and contract_id != FIELD_BINDING_SEMANTIC_VERSION:
+        raise FieldBindingInputIntegrityError(
+            f"{contract_id} 판에는 가공이 없다: {rule.field_id!r}"
+        )
     out = bytearray()
     out += _text(rule.field_id)
     out += _text(rule.binding_kind)
@@ -521,6 +612,8 @@ def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
         if rule.canonical_constant_value is None
         else rule.canonical_constant_value.text
     )
+    if contract_id == FIELD_BINDING_SEMANTIC_VERSION:
+        out += _encode_text_slice(rule.text_slice)
     return bytes(out)
 
 

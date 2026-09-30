@@ -19,11 +19,12 @@ Qt·엔진·디스크에 의존하지 않는다.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .dataset_reference import excel_identity
-from .mapping import MappingProfile
+from .mapping import FieldMapping, MappingProfile
 from ..domain.validation import ValidationReport, validate
 
 if TYPE_CHECKING:
@@ -366,7 +367,7 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
 
     - ``template`` — 템플릿 경로(구조 위험)
     - ``filename`` — 파일명 패턴(파일명 집합 위험)
-    - ``field:<이름>:source`` — 그 필드의 source·type·const·blank(의미 연결 위험)
+    - ``field:<이름>:source`` — 그 필드의 source·type·const·blank·가공(의미 연결 위험)
     - ``field:<이름>:format`` — 그 필드의 표시형 코드(표시형 위험)
 
     키의 **등장·소멸**이 곧 필드 추가·삭제다(F-06 증거 표의 「의도적 미사용」 행) — 값만
@@ -382,9 +383,13 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
         # source 축은 "이 필드가 어떤 값을 낼 것인가"를 결정하는 전부다 — 유형·리터럴·
         # 비움 선언이 여기 든다(표시형만 fmt 로 뺀다). 구분자는 필드 이름·값에 못 들어가는
         # ``\x1f`` 라 "a|b" 와 "a" + "|b" 가 같은 지문으로 붕괴하지 않는다.
-        out[f"field:{name}:source"] = "\x1f".join(
-            (axes["source"], axes["type"], axes["const"], axes["blank"])
-        )
+        source_axes = [axes["source"], axes["type"], axes["const"], axes["blank"]]
+        # 가공은 **어느 부분의 값을 낼 것인가**라 의미 연결 축이다(표시형이 아니다). 있을 때만
+        # 잇는다 — 가공 없는 필드의 지문이 v4 이전과 같아야 저장된 검토 기준선이 헛 검토를 부르지
+        # 않는다.
+        if axes["slice"]:
+            source_axes.append(axes["slice"])
+        out[f"field:{name}:source"] = "\x1f".join(source_axes)
         out[f"field:{name}:format"] = axes["fmt"]
     return out
 
@@ -393,7 +398,17 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
 #: 않게). ``blank`` 축은 「비워 둠」 유형 퇴역 후 **언제나 ``""``** 이지만 자리는 남긴다 —
 #: 축을 빼면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다(옛 blank
 #: 선언을 든 작업은 값이 바뀌므로 어차피 한 번 재검토 대상이 된다).
-RULE_AXES = ("source", "type", "const", "blank", "fmt")
+#: ``slice`` 축(가공, field-binding/v4)은 가공이 없으면 ``""`` 이다. 이 축이 없던 때 디스크에
+#: 적힌 기준선은 :data:`LEGACY_RULE_AXES` 모양이고, 읽는 쪽이 ``slice=""`` 로 채운다(같은 뜻).
+RULE_AXES = ("source", "type", "const", "blank", "fmt", "slice")
+LEGACY_RULE_AXES = ("source", "type", "const", "blank", "fmt")
+
+
+def slice_axis_value(mapping: "FieldMapping") -> str:
+    """가공 축의 값 — 없으면 ``""``, 있으면 명세의 정본 JSON(키 정렬). 지문·판본 비교의 원재료."""
+    if mapping.slice is None:
+        return ""
+    return json.dumps(mapping.slice.to_dict(), ensure_ascii=False, sort_keys=True)
 
 
 def data_binding_of(job: "Job") -> "tuple[str, str, int, str]":
@@ -510,6 +525,7 @@ def rules_values(job: "Job") -> "dict":
                 # 기존 검토 기준선과 표기를 맞추려고 자리만 남긴다(RULE_AXES 주석).
                 "blank": "",
                 "fmt": m.fmt,
+                "slice": slice_axis_value(m),
             }
             for m in job.mapping.mappings
         },
