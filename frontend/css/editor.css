@@ -62,7 +62,10 @@ table.map th:nth-child(4){width:190px}  /* 표시형 */
 table.map th .stepper{float:right;font-weight:400}
 table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle;
   overflow:hidden}
-table.map .sel{width:100%}
+/* 칸을 채우는 select 는 **칸의 직계 자식**(표시형)뿐이다. 자손 전체(`table.map .sel`)로 걸면
+   칸 안에 그려지는 「가공」 팝오버(`.slicepop`, position:fixed)의 방식 줄 select 까지 닿아 순번
+   select 가 줄 폭을 다 먹고 문장이 깨졌다(실측 342px — `editor_binding` 의 방식 줄 기하). */
+table.map td>.sel{width:100%}
 /* 「데이터 열」 칸은 select·고정값 입력·상태 배지·재제안 버튼이 **한 줄에** 선다(U2 §2.6).
    flex 는 **`td` 가 아니라 안쪽 래퍼**에 건다: `td` 에 직접 걸면 `table-layout:fixed` 의
    열 정렬이 깨진다. */
