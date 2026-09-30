@@ -50,7 +50,10 @@
  *                      mirror_trigger_disabled_at_click(false) + mirror_click_seen(true)
  *                      — 비활성 요소의 `click()` 은 이벤트를 만들지 않으므로 「발신 0」을
  *                      배선 부재로 읽지 않기 위한 **부재판별력** 계기다 ·
- *                      mirror_focus_target_state=="ready" · job_grid_wide(2열).
+ *                      mirror_focus_target_state=="ready" · job_grid_wide(2열) ·
+ *                      preset_pressed=["true","false"](켜짐/꺼짐) ↔ preset_on_bg≠preset_off_bg ·
+ *                      preset_warn_aria_disabled(true)+preset_warn_title(사유) · filter_save_shown ·
+ *                      preset_toggle_sent(발신 이름열) · preset_menu_items(이름 바꾸기·삭제).
  *   · job_result     : renamed_keeps_result ↔ switch_resets_result ↔ data_swap_resets_result ↔
  *                      selection_change_keeps_result(+demotes) · foreign_*_hidden ↔
  *                      renamed_*_shown · folder_hidden_while_running ↔ folder_shown_on_result ·
@@ -277,6 +280,15 @@ function mirrorSnapshot() {
       definition: "(공고명) 포함 「전산」", branches: ["공고명"],
       columns: [{ name: "공고명", kind: "text", active: false },
         { name: "금액", kind: "amount", active: false }],
+      adhoc_active: true,
+      preset_save: { can: true, reason: "" },
+      presets: [
+        { name: "소기업", active: true, usable: true, reason: "" },
+        {
+          name: "중소기업", active: false, usable: false,
+          reason: "이 필터의 열이 지금 데이터에 없습니다: 추정가격",
+        },
+      ],
     },
     table: {
       columns: [{ name: "공고명", kind: "text" }, { name: "금액", kind: "amount" }],
@@ -942,6 +954,44 @@ async function runJobMirror(ctx) {
   out.definition_bg = win.getComputedStyle(definitionChip).backgroundColor;
   out.branch_bg = win.getComputedStyle(branchChip).backgroundColor;
   out.branch_border_style = win.getComputedStyle(branchChip).borderStyle;
+
+  /* 저장한 필터 칩(이름 붙인 필터, #1081 뒤 U 라운드) — 켜짐·꺼짐 배경 대조·경고 사유·
+     저장 단추 가부·토글 발신·이름 바꾸기/삭제 인라인 메뉴. */
+  out.preset_chips = doc.querySelectorAll("#jobFilterChips .fchip.preset").length;
+  out.preset_pressed = Array.from(doc.querySelectorAll(".preset-toggle")).map(
+    (e) => e.getAttribute("aria-pressed"),
+  );
+  const onToggle = doc.querySelector('.preset-toggle[data-preset="소기업"]');
+  const warnToggle = doc.querySelector('.preset-toggle[data-preset="중소기업"]');
+  out.preset_warn_title = warnToggle.title;
+  out.preset_warn_aria_disabled = warnToggle.getAttribute("aria-disabled");
+  out.preset_on_bg = win.getComputedStyle(onToggle.closest(".fchip.preset")).backgroundColor;
+  out.preset_off_bg = win.getComputedStyle(warnToggle.closest(".fchip.preset")).backgroundColor;
+  const saveBtn = doc.querySelector('button[data-act="filter-save"]');
+  out.filter_save_shown = !!saveBtn && !saveBtn.disabled;
+
+  const presetSent = [];
+  const presetStub = stubDispatch(services, (realCall) => function (screen, action, payload) {
+    if (action === "toggle_filter_preset") {
+      presetSent.push(payload.name);
+      return Promise.resolve({ ok: true, active: false });
+    }
+    return realCall.call(services.Bridge, screen, action, payload);
+  });
+  onToggle.click();                                   // ※ 가시성 단언 없음(레거시 그대로)
+  await ctx.sleep(0);
+  presetStub.restore();
+  out.preset_toggle_sent = String(JSON.stringify(presetSent));
+
+  const presetMenuBtn = doc.querySelector('[data-preset-menu="소기업"]');
+  presetMenuBtn.click();                               // 메뉴 열기
+  await ctx.sleep(0);
+  out.preset_menu_items = Array.from(doc.querySelectorAll(".preset-menu button")).map(
+    (e) => e.textContent,
+  );
+  presetMenuBtn.click();                               // 메뉴 닫기(뒤 단계 오염 금지)
+  await ctx.sleep(0);
+
   out.strip_shown = isShown(ctx, doc.getElementById("jobSelStrip"));
   out.strip_text = doc.getElementById("jobSelStrip").textContent;
   out.strip_bg = win.getComputedStyle(doc.getElementById("jobSelStrip")).backgroundColor;

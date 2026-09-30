@@ -73,10 +73,28 @@ alarm) — 칩 줄·게이트가 같은 문안을 나른다.
 산출·캐시해 셀마다 전 코퍼스를 재주사하는 비용(행×열×자모 분해가 셀 수만큼 곱해지는
 준제곱 렌더)을 차단한다(고효율 리뷰 반영). 모델의 동명 메서드는 단발 질의용 위임이다.
 
+## 저장한 필터(이름 붙인 필터 칩, 2026-09-30 사용자 확정)
+
+사용자가 지금 조건(열 조건·검색)을 이름으로 저장하고, 그 이름 칩을 눌러 **누적** 적용한다
+(예: 「소기업」 = 추정가격 < 1억, 「중소기업」 = 1억 ≤ 추정가격 < 고시금액). 문법을 새로
+짓지 않는다 — 저장본은 :meth:`FilterModel.export_state` 의 지금 조건 부분 그대로이고,
+평가는 저장본마다 **독립 모델**(같은 열 지형 + :meth:`FilterModel.apply_state`)로 한다. 그래서
+두 저장본이 같은 열을 조여도 서로 덮지 않고 교집합이 된다. 행은 지금 조건과 켜진 저장본
+**전부**를 통과해야 보인다. 정의줄은 켜진 저장본을 이름으로 함께 재진술해(:data:`PRESET_LABEL`)
+게이트·「전체 선택」 담보가 그대로 덮는다. 교집합이 비면 빈 표 + 정의줄이다(조용한 빈칸 아님).
+
+저장본 정의의 영속은 이 모델 밖이다 — 등록 데이터 항목이 들고(:attr:`~hwpxfiller.domain.
+dataset_reference.DatasetReference.filters`), 세션이 :meth:`FilterModel.set_presets` 로 심는다.
+세션 이송(:meth:`export_state`)은 켜진 **이름**만 나른다. 지금 데이터에 없는 열·맞지 않는 범위를
+가리키는 저장본은 켤 수 없고, 사유는 :meth:`FilterModel.preset_status` 가 짓는다.
+이는 결정 24의 「필터 영속 금지」를 **이름 붙인 저장본에 한해** 사용자가 명시로 연 것이다 —
+지금 조건·직전 필터 슬롯은 여전히 세션 메모리뿐이다.
+
 회귀 = ``tests/test_filter_state.py``. 표면 배선(열 테이블·아이콘 패널·스트립)은 PR-2b.
 """
 from __future__ import annotations
 
+import copy
 import operator
 import re
 from dataclasses import dataclass
@@ -96,6 +114,7 @@ __all__ = [
     "sniff_column_kinds",
     "FilterModel",
     "FilterView",
+    "PRESET_LABEL",
 ]
 
 # 열 유형 — 범위 문법 자격(일자·금액)과 전열 검색 가지 후보(텍스트만)를 가른다.
@@ -134,6 +153,18 @@ _AMOUNTISH_RE = re.compile(
 
 # 피연산자에 시각이 실렸는가 — 날짜 비교 입도 판정(시각 없으면 날짜 입도).
 _TIME_RE = re.compile(r"\d{1,2}:\d{2}")
+
+# 저장한 필터 — 정의줄 재진술 형태(문장 안 낫표 금지 규칙에 따라 작은따옴표).
+PRESET_LABEL = "필터 '{name}'"
+
+# 저장한 필터 거절 사유(사용자 문안 — 이름 입력창·칩 비활성 사유가 그대로 싣는다).
+_PRESET_NAME_EMPTY = "이름을 비울 수 없습니다."
+_PRESET_NAME_TAKEN = "같은 이름의 필터가 있습니다."
+_PRESET_STATE_EMPTY = "저장할 조건이 없습니다."
+_PRESET_COLUMN_MISSING = "이 필터의 열이 지금 데이터에 없습니다: {columns}"
+_PRESET_RANGE_UNFIT = "이 필터의 범위 조건을 지금 데이터 열에 적용할 수 없습니다: {columns}"
+_PRESET_UNREADABLE = "이 필터의 저장 형식을 읽을 수 없습니다."
+_PRESET_UNKNOWN = "저장한 필터를 찾을 수 없습니다: {name}"
 
 
 def cell_text(record: "dict", column: str) -> str:
@@ -239,6 +270,11 @@ class FilterModel:
         self._cols: "dict[str, _ColumnCondition]" = {c: _ColumnCondition() for c in columns}
         self._search = ""  # 전열 검색어(그룹 텍스트) — 그룹은 항상 최대 1개(미결 확정 2)
         self._pruned: "set[str]" = set()  # 쳐낸 가지 — 텍스트 수명(set_search 가 비움)
+        # 저장한 필터 — 이름 → 지금 조건 직렬 상태(삽입 순서 = 칩 순서). 정의는 세션이 심고
+        # (set_presets) 켜짐은 이 모델이 든다. 평가 모델은 이름별 지연 캐시다(열 지형 고정).
+        self._presets: "dict[str, dict]" = {}
+        self._active_presets: "list[str]" = []
+        self._preset_models: "dict[str, FilterModel]" = {}
 
     # ------------------------------------------------------------- 조회(정체)
     @property
@@ -250,7 +286,11 @@ class FilterModel:
         return self._kinds.get(column, KIND_TEXT)
 
     def is_active(self) -> bool:
-        """조건이 하나라도 서 있는가 — 칩 줄·「필터 없음」 판정."""
+        """조건이 하나라도 서 있는가 — 칩 줄·「필터 없음」 판정(켜진 저장한 필터 포함)."""
+        return self.has_adhoc() or bool(self._active_presets)
+
+    def has_adhoc(self) -> bool:
+        """지금 조건(열 조건·검색)이 서 있는가 — 「필터 저장」의 재료 유무."""
         return bool(self._search) or any(c.is_active() for c in self._cols.values())
 
     def has_condition(self, column: str) -> bool:
@@ -374,14 +414,173 @@ class FilterModel:
         self._require(column)
         self._cols[column] = _ColumnCondition()
 
-    # ------------------------------------------- 정의 이송(직전 필터 슬롯, 결정 28)
-    def export_state(self) -> dict:
-        """필터 정의의 직렬 상태 — 직전 필터 슬롯이 세션 사이로 나른다(결정 28).
+    # ------------------------------------------------- 저장한 필터(이름 붙인 칩)
+    @property
+    def presets(self) -> "list[dict]":
+        """저장한 필터 정의 ``[{name, state}]`` — 칩 순서. 영속 writer 에 그대로 넘기는 사본."""
+        return [
+            {"name": name, "state": copy.deepcopy(state)}
+            for name, state in self._presets.items()
+        ]
 
-        검색·프루닝 포함(프루닝 소실 창의 복원은 재적용의 소관 — 결정 27 명문). 활성
-        조건이 있는 열만 담는다. **저장이 아니라 전달**이다 — 슬롯은 세션 메모리(앱
-        수명)이고 디스크에 남지 않는다(필터 영속 뒷문 금지, 결정 8·24).
+    @property
+    def active_presets(self) -> "list[str]":
+        """켜진 저장한 필터 이름 — 켠 순서(정의줄 재진술 순서)."""
+        return list(self._active_presets)
+
+    def set_presets(
+        self, presets: "Iterable[dict]", *, renamed: "dict[str, str] | None" = None
+    ) -> "list[str]":
+        """저장한 필터 정의를 통째 심는다(세션 시드·재시드) — 꺼진 이름 목록을 돌려준다.
+
+        이름은 양끝 공백을 다듬고 비었거나 겹치면 시끄럽게 거절한다(정의 원천 손상은 조용히
+        고치지 않는다). 켜져 있던 이름 중 사라졌거나 지금 데이터에서 쓸 수 없게 된 것은
+        끄고 그 이름을 돌려준다 — 호출부가 보기 변화를 재진술한다. ``renamed`` 는 이름
+        바꾸기의 켜짐 승계표(옛 이름 → 새 이름)다.
         """
+        table: "dict[str, dict]" = {}
+        for entry in presets:
+            name = str(entry.get("name", "")).strip()
+            if not name:
+                raise ValueError(_PRESET_NAME_EMPTY)
+            if name in table:
+                raise ValueError(_PRESET_NAME_TAKEN)
+            state = entry.get("state")
+            table[name] = copy.deepcopy(state) if isinstance(state, dict) else {}
+        renamed = renamed or {}
+        self._presets = table
+        self._preset_models = {}
+        dropped: "list[str]" = []
+        kept: "list[str]" = []
+        for name in self._active_presets:
+            name = renamed.get(name, name)
+            if name in table and self.preset_status(name)[0]:
+                kept.append(name)
+            else:
+                dropped.append(name)
+        self._active_presets = kept
+        return dropped
+
+    def preset_status(self, name: str) -> "tuple[bool, str]":
+        """저장한 필터를 지금 데이터에서 쓸 수 있는가 — ``(가부, 사유)``.
+
+        열 결손·범위 부적합은 :meth:`apply_state` 의 탈락 목록을 그대로 읽는다(설치 규칙의
+        단일 출처). 부분 설치는 허용하지 않는다 — 조건 일부만 적용한 칩은 이름과 다른 행을
+        보여 준다.
+        """
+        if name not in self._presets:
+            return False, _PRESET_UNKNOWN.format(name=name)
+        state = self._presets[name]
+        if "active_presets" in state:  # 저장본은 지금 조건만 담는다 — 중첩은 손상이다
+            return False, _PRESET_UNREADABLE
+        try:
+            probe = FilterModel(self._columns, self._kinds)
+            _installed, dropped = probe.apply_state(state)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return False, _PRESET_UNREADABLE
+        missing = [d for d in dropped if not d.endswith("(범위)")]
+        if missing:
+            return False, _PRESET_COLUMN_MISSING.format(columns=", ".join(missing))
+        if dropped:
+            unfit = [d[: -len("(범위)")] for d in dropped]
+            return False, _PRESET_RANGE_UNFIT.format(columns=", ".join(unfit))
+        if not probe.has_adhoc():
+            return False, _PRESET_STATE_EMPTY
+        return True, ""
+
+    def _preset_model(self, name: str) -> "FilterModel":
+        """켜진 저장한 필터의 평가 모델 — 같은 열 지형의 독립 모델(지연 캐시)."""
+        model = self._preset_models.get(name)
+        if model is None:
+            model = FilterModel(self._columns, self._kinds)
+            model.apply_state(self._presets[name])
+            self._preset_models[name] = model
+        return model
+
+    def activate_preset(self, name: str) -> None:
+        """저장한 필터 켜기 — 쓸 수 없으면 사유와 함께 거절(조용한 무시 금지)."""
+        usable, reason = self.preset_status(name)
+        if not usable:
+            raise ValueError(reason)
+        if name not in self._active_presets:
+            self._active_presets.append(name)
+
+    def deactivate_preset(self, name: str) -> None:
+        if name not in self._presets:
+            raise ValueError(_PRESET_UNKNOWN.format(name=name))
+        if name in self._active_presets:
+            self._active_presets.remove(name)
+
+    def toggle_preset(self, name: str) -> bool:
+        """켜짐 뒤집기 — 새 켜짐을 돌려준다."""
+        if name in self._active_presets:
+            self.deactivate_preset(name)
+            return False
+        self.activate_preset(name)
+        return True
+
+    def _check_new_name(self, name: str) -> str:
+        name = str(name).strip()
+        if not name:
+            raise ValueError(_PRESET_NAME_EMPTY)
+        if name in self._presets:
+            raise ValueError(_PRESET_NAME_TAKEN)
+        return name
+
+    def save_preset(self, name: str) -> str:
+        """지금 조건을 이름으로 저장하고 **칩으로 결정화**한다 — 저장한 이름을 돌려준다.
+
+        지금 조건은 비우고 새 칩을 켠다: 술어가 같아 보이는 행은 변하지 않고, 정의가 칩
+        하나로 접힌다. 같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지 —
+        고치려면 지우고 다시 저장한다).
+        """
+        name = self._check_new_name(name)
+        if not self.has_adhoc():
+            raise ValueError(_PRESET_STATE_EMPTY)
+        self._presets[name] = self._adhoc_state()
+        self._preset_models.pop(name, None)
+        self._clear_adhoc()
+        self._active_presets.append(name)
+        return name
+
+    def rename_preset(self, name: str, new_name: str) -> str:
+        """이름 바꾸기 — 칩 순서·켜짐을 그대로 잇는다. 새 이름을 돌려준다."""
+        if name not in self._presets:
+            raise ValueError(_PRESET_UNKNOWN.format(name=name))
+        if str(new_name).strip() == name:
+            return name
+        new_name = self._check_new_name(new_name)
+        self._presets = {
+            (new_name if key == name else key): state for key, state in self._presets.items()
+        }
+        self._preset_models = {}
+        self._active_presets = [new_name if n == name else n for n in self._active_presets]
+        return new_name
+
+    def delete_preset(self, name: str) -> None:
+        """저장한 필터 삭제 — 켜져 있었으면 함께 꺼진다."""
+        if name not in self._presets:
+            raise ValueError(_PRESET_UNKNOWN.format(name=name))
+        del self._presets[name]
+        self._preset_models.pop(name, None)
+        if name in self._active_presets:
+            self._active_presets.remove(name)
+
+    # ------------------------------------------------------------- 복제
+    def blank_copy(self) -> "FilterModel":
+        """같은 열 지형·유형·저장한 필터 정의를 가진 **조건 없는** 모델(원자 교체 초안용)."""
+        twin = FilterModel(self._columns, self._kinds)
+        twin._presets = copy.deepcopy(self._presets)
+        return twin
+
+    def clone(self) -> "FilterModel":
+        """무손실 복제 — 정의는 사본, 조건·켜짐은 직렬 상태로 재설치(라이브 캐시 불복사)."""
+        twin = self.blank_copy()
+        twin.apply_state(self.export_state())
+        return twin
+
+    # ------------------------------------------- 정의 이송(직전 필터 슬롯, 결정 28)
+    def _adhoc_state(self) -> dict:
         return {
             "search": self._search,
             "pruned": sorted(self._pruned),
@@ -390,6 +589,19 @@ class FilterModel:
                 for col in self._columns if self._cols[col].is_active()
             },
         }
+
+    def export_state(self) -> dict:
+        """필터 정의의 직렬 상태 — 직전 필터 슬롯이 세션 사이로 나른다(결정 28).
+
+        검색·프루닝 포함(프루닝 소실 창의 복원은 재적용의 소관 — 결정 27 명문). 활성
+        조건이 있는 열만 담는다. **저장이 아니라 전달**이다 — 슬롯은 세션 메모리(앱
+        수명)이고 디스크에 남지 않는다(필터 영속 뒷문 금지, 결정 8·24). 켜진 저장한 필터는
+        **이름만** 싣는다(정의는 등록 데이터가 든다).
+        """
+        state = self._adhoc_state()
+        if self._active_presets:
+            state["active_presets"] = list(self._active_presets)
+        return state
 
     def apply_state(self, state: dict) -> "tuple[list[str], list[str]]":
         """직전 정의를 현 열 지형에 설치 — ``(설치 열, 탈락 항목)`` 반환(결정 28 백스톱).
@@ -435,13 +647,27 @@ class FilterModel:
         if search:
             self._search = search
             self._pruned = {p for p in state.get("pruned") or () if p in self._cols}
+        # 켜진 저장한 필터는 이름으로 온다 — 정의가 없거나 지금 데이터에서 쓸 수 없으면
+        # 열 결손과 같은 탈락 목록으로 돌려준다(부분 설치 + 고지, 호출부 재진술).
+        for name in state.get("active_presets") or ():
+            label = PRESET_LABEL.format(name=name)
+            try:
+                self.activate_preset(str(name))
+            except ValueError:
+                dropped.append(label)
+            else:
+                installed.append(label)
         return installed, dropped
 
-    def clear(self) -> None:
-        """전체 해제 — 열 조건·그룹·프루닝 전부."""
+    def _clear_adhoc(self) -> None:
         self._cols = {c: _ColumnCondition() for c in self._columns}
         self._search = ""
         self._pruned = set()
+
+    def clear(self) -> None:
+        """전체 해제 — 열 조건·그룹·프루닝·켜진 저장한 필터 전부(정의는 남는다)."""
+        self._clear_adhoc()
+        self._active_presets = []
 
     # ------------------------------------------------------------- 평가(술어)
     def _clause_pass(self, kind: str, clause: RangeClause, cell: str) -> bool:
@@ -540,7 +766,28 @@ class FilterView:
     def __init__(self, model: FilterModel, records: "list[dict]") -> None:
         self._m = model
         self._records = records
+        # 켜진 저장한 필터의 통과 행(교집합) — 뷰 수명 1회 산출. None = 켜진 저장본 없음.
+        self._preset_pass: "set[int] | None" = self._compute_preset_pass()
         self.branches: "list[str]" = self._compute_branches()
+
+    # ------------------------------------------------------------- 저장한 필터
+    def _compute_preset_pass(self) -> "set[int] | None":
+        """켜진 저장한 필터 전부를 통과한 행 — 저장본마다 독립 모델의 가시 집합의 교집합.
+
+        같은 열을 조이는 두 저장본이 서로의 조건을 덮지 않는 근거다(각자 자기 모델에서
+        평가한 뒤 교차한다).
+        """
+        m = self._m
+        if not m._active_presets:
+            return None
+        passing: "set[int] | None" = None
+        for name in m._active_presets:
+            vis = set(m._preset_model(name).view(self._records).visible_indices())
+            passing = vis if passing is None else passing & vis
+        return passing if passing is not None else set()
+
+    def _preset_ok(self, index: int) -> bool:
+        return self._preset_pass is None or index in self._preset_pass
 
     # ------------------------------------------------------------- 가지 산출
     def _compute_branches(self) -> "list[str]":
@@ -552,7 +799,7 @@ class FilterView:
         m, records = self._m, self._records
         if not m._search:
             return []
-        passing = [r for r in records if m.col_pass(r)]
+        passing = [r for i, r in enumerate(records) if self._preset_ok(i) and m.col_pass(r)]
         return [
             col for col in m._columns
             if m._kinds.get(col, KIND_TEXT) == KIND_TEXT
@@ -573,7 +820,7 @@ class FilterView:
         """필터를 통과한 행 인덱스(원본 순서) — 보기만 바꾼다, 선택은 관통(결정 3)."""
         return [
             i for i, r in enumerate(self._records)
-            if self._m.col_pass(r) and self._group_pass(r)
+            if self._preset_ok(i) and self._m.col_pass(r) and self._group_pass(r)
         ]
 
     # ------------------------------------------------- 값 목록(체크리스트 소재)
@@ -586,8 +833,12 @@ class FilterView:
         self._m._require(column)
         seen: "dict[str, None]" = {}
         has_empty = False
-        for r in self._records:
-            if not (self._m.col_pass(r, except_column=column) and self._group_pass(r)):
+        for i, r in enumerate(self._records):
+            if not (
+                self._preset_ok(i)
+                and self._m.col_pass(r, except_column=column)
+                and self._group_pass(r)
+            ):
                 continue
             v = cell_text(r, column)
             if v == "":
@@ -627,8 +878,20 @@ class FilterView:
             parts.append(head)
         return parts
 
+    def preset_parts(self) -> "list[str]":
+        """켜진 저장한 필터의 재진술 — 켠 순서, 이름으로(정의줄 앞머리)."""
+        return [PRESET_LABEL.format(name=name) for name in self._m._active_presets]
+
     def describe_parts(self) -> "list[str]":
-        """조건별 문안 목록 — 칩 줄이 한 칩씩, 게이트 정의줄이 이어붙여 소비(결정 4 담보)."""
+        """조건별 문안 목록 — 게이트 정의줄이 이어붙여 소비(결정 4 담보).
+
+        켜진 저장한 필터가 앞에, 지금 조건이 뒤에 선다. 칩 줄은 저장한 필터를 자기 칩으로
+        그리므로 지금 조건 부분(:meth:`adhoc_parts`)만 정의 칩으로 쓴다.
+        """
+        return self.preset_parts() + self.adhoc_parts()
+
+    def adhoc_parts(self) -> "list[str]":
+        """지금 조건(열 조건·검색)의 문안 목록 — 칩 줄의 정의 칩 소재."""
         parts: "list[str]" = []
         for col in self._m._columns:
             parts.extend(self._describe_column(col))

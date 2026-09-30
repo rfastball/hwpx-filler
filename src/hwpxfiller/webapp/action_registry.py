@@ -45,6 +45,12 @@ _ZONE_MUTATIONS = {
     "filter_clear": _schema(optional="epoch"),
     "filter_clear_col": _schema("column", "epoch"),
     "filter_reapply": _schema(optional="epoch"),
+    # 저장한 필터(이름 붙인 칩) — 켜고 끄기는 보기를, 저장·이름 바꾸기·삭제는 등록 데이터의
+    # 정의를 바꾼다. 저장은 지금 조건을 재료로 삼으므로 남의 세계에서 온 요청이면 안 된다.
+    "save_filter_preset": _schema("name", "epoch"),
+    "toggle_filter_preset": _schema("name", "epoch"),
+    "rename_filter_preset": _schema("name new_name", "epoch"),
+    "delete_filter_preset": _schema("name", "epoch"),
     # 사용자 열 선별(U2 §2.19, #341) — 표시 축뿐(숨긴 열도 필터·검색·생성에 그대로 참여).
     # 세션 소유·데이터 교체 시 소멸이라 존 변이와 같은 세대 검사를 받는다.
     "hide_column": _schema("column", "epoch"),

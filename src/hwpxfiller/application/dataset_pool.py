@@ -149,6 +149,8 @@ class DatasetPoolPort(Protocol):
 
     def relabel(self, key: str, name: str, *, note: str = "") -> DatasetReference: ...
 
+    def set_filters(self, key: str, filters: "list[dict]") -> DatasetReference: ...
+
     def relink_excel(
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",

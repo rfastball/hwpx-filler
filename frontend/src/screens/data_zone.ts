@@ -16,6 +16,8 @@ type Obj = Record<string, any>;
 type JobReadController = {
   doc: Document;
   notify(message: string): void;
+  prompt(spec: Obj): Promise<string | null>;
+  confirm(spec: Obj): Promise<boolean>;
   uiModel: {
     subscribe(listener: () => void): () => void;
     getSnapshot(): Obj;
@@ -125,6 +127,76 @@ function ColumnPanel(props: {
         onClick: () => { close(); void controller.zone("hide_column", { column }); } }, "이 열 숨기기") : null));
 }
 
+/* 저장한 필터 칩(이름 붙인 필터) — 판정(켜짐·사용 가부·사유·저장 가부)은 전부 Python 이
+   싣고, 여기는 그리기와 동사 호출만 한다. 쓸 수 없는 칩도 눌리게 두고(aria-disabled) 거절은
+   백엔드 사유를 그대로 알린다 — 비활성 단추는 사유를 말할 자리가 없다. */
+function PresetChips(props: { filter: Obj; controller: JobReadController }): ReactNode {
+  const { filter, controller } = props;
+  const presets = (filter.presets || []) as Obj[];
+  const [menu, setMenu] = useState("");
+  useEffect(() => {
+    if (menu && !presets.some((preset) => preset.name === menu)) setMenu("");
+  }, [menu, presets]);
+  if (!presets.length) return null;
+
+  async function toggle(name: string): Promise<void> {
+    const result = await controller.zone("toggle_filter_preset", { name });
+    if (result.stale) return;
+    if (result.ok === false) controller.notify(`확인 필요: ${result.error}`);
+  }
+
+  async function rename(name: string, trigger: HTMLElement | null): Promise<void> {
+    setMenu("");
+    await controller.prompt({
+      title: "이름 바꾸기", body: "이름", value: name, returnFocus: trigger,
+      validate: async (raw: unknown) => {
+        const result = await controller.zone("rename_filter_preset", { name, new_name: String(raw ?? "") });
+        return result.ok === false ? String(result.error || "") : "";
+      },
+    });
+  }
+
+  async function remove(name: string, trigger: HTMLElement | null): Promise<void> {
+    setMenu("");
+    const accepted = await controller.confirm({
+      title: "저장한 필터 삭제", body: `사라지는 것: 저장한 필터 '${name}'`,
+      confirmLabel: "삭제", cancelLabel: "취소", danger: true, returnFocus: trigger,
+    });
+    if (!accepted) return;
+    const result = await controller.zone("delete_filter_preset", { name });
+    if (result.stale) return;
+    if (result.ok === false) controller.notify(`확인 필요: ${result.error}`);
+  }
+
+  return createElement(Fragment, null,
+    h("span", { className: "fchips-cap muted", key: "preset-cap" }, "저장한 필터"),
+    ...presets.map((preset: Obj) => {
+      const name = String(preset.name);
+      const open = menu === name;
+      return h("span", {
+        className: `fchip preset${preset.active ? " on" : ""}${preset.usable ? "" : " warn"}`,
+        key: `p-${name}`,
+      },
+      h("button", {
+        className: "preset-toggle", type: "button", "data-preset": name, "data-busy-lock": true,
+        "aria-pressed": preset.active ? "true" : "false",
+        "aria-disabled": preset.usable ? undefined : "true",
+        title: preset.usable ? undefined : String(preset.reason || ""),
+        onClick: () => { void toggle(name); },
+      }, name),
+      h("button", {
+        className: "preset-menu-btn", type: "button", "data-preset-menu": name, "data-busy-lock": true,
+        "aria-haspopup": "menu", "aria-expanded": open ? "true" : "false", "aria-label": `${name} 메뉴`,
+        onClick: () => setMenu(open ? "" : name),
+      }, "⋯"),
+      open ? h("span", { className: "preset-menu", role: "menu" },
+        h("button", { type: "button", role: "menuitem", "data-preset-rename": name, "data-busy-lock": true,
+          onClick: (event: Obj) => { void rename(name, event.currentTarget); } }, "이름 바꾸기"),
+        h("button", { type: "button", role: "menuitem", "data-preset-delete": name, "data-busy-lock": true,
+          onClick: (event: Obj) => { void remove(name, event.currentTarget); } }, "삭제")) : null);
+    }));
+}
+
 export function JobDataZone(props: {
   snapshot: Obj;
   controller: JobReadController;
@@ -226,7 +298,9 @@ export function JobDataZone(props: {
   const selected = snapshot.zone_selected_count ?? snapshot.selected_count ?? 0;
   const hidden = table.hidden_selected || [];
   const hiddenColumns = table.hidden_columns || [];
-  const showChips = snapshot.has_data && (filter.active || hiddenColumns.length);
+  const presets = (filter.presets || []) as Obj[];
+  const showChips = snapshot.has_data && (filter.active || hiddenColumns.length || presets.length);
+  const presetSave = filter.preset_save || { can: false, reason: "" };
   // 표시순서 축은 초안이 열려 있으면 초안의 것이다(§18.11-21 — 적용 전 메인 범위 불변).
   const viewOrder = String(
     snapshot.range_draft?.open
@@ -297,12 +371,27 @@ export function JobDataZone(props: {
     // (구 `#jobOrderBar` 의 상시 재진술은 간소화 라운드에서 걷혔다 — 표가 그리는 순서가
     // 곧 생성 순서라는 사실은 스위치 자신의 title 이 말한다.)
     h("div", { className: "fchips", id: "jobFilterChips", hidden: !showChips },
+      h(PresetChips as any, { filter, controller }),
       ...(filter.active ? (filter.chips || []).map((chip: string, index: number) => h("span", { className: "fchip definition", key: `c-${index}` },
         h("span", { className: "chip-role" }, "필터"), chip)) : []),
       ...(filter.active ? (filter.branches || []).map((branch: string) => h("span", { className: "fchip branch", key: branch },
         h("span", { className: "chip-role" }, "가지"), branch,
         h("button", { "data-prune": branch, "data-busy-lock": true, "aria-label": `${branch} 가지 제거`,
           onClick: () => { void controller.zone("filter_prune", { column: branch }); } }, "×"))) : []),
+      // 「필터 저장」 — 지금 조건을 이름 붙인 칩으로 접는다. 가부·사유는 Python(`preset_save`).
+      filter.adhoc_active ? h("button", { className: "btn sm", type: "button", "data-act": "filter-save",
+        "data-busy-lock": presetSave.can ? true : undefined, disabled: !presetSave.can,
+        title: presetSave.can ? undefined : String(presetSave.reason || ""),
+        onClick: (event: Obj) => {
+          const trigger = event.currentTarget as HTMLElement;
+          void controller.prompt({
+            title: "필터 저장", body: "이름", value: "", returnFocus: trigger,
+            validate: async (raw: unknown) => {
+              const result = await controller.zone("save_filter_preset", { name: String(raw ?? "") });
+              return result.ok === false ? String(result.error || "") : "";
+            },
+          });
+        } }, "필터 저장") : null,
       filter.active ? h("button", { className: "btn sm", "data-act": "filter-clear", "data-busy-lock": true,
         onClick: () => { void controller.zone("filter_clear", {}); } }, "필터 지우기") : null,
       hiddenColumns.length ? h("span", { className: "fchip hidecols", title: hiddenColumns.join(", ") },

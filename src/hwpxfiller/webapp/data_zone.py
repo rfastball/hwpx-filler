@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
+from ..domain.dataset_reference import excel_identity, pclm_identity
 from ..external.dataset_store import DatasetPoolRegistry
 from ..viewmodel.filter_state import (
     FilterModel,
@@ -35,6 +36,9 @@ EMPTY_FILTER = {
     "definition": "",
     "branches": [],
     "columns": [],
+    "adhoc_active": False,
+    "presets": [],
+    "preset_save": {"can": False, "reason": ""},
 }
 EMPTY_TABLE = {
     "columns": [],
@@ -48,6 +52,9 @@ EMPTY_TABLE = {
 VIEW_ORDER_DESC = "sourceDesc"
 VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
+
+#: 저장한 필터를 들 등록 데이터가 없는 마운트(등록하지 않은 파일)의 「필터 저장」 비활성 사유.
+_PRESET_NO_HOME = "필터는 등록 데이터에만 저장할 수 있습니다."
 
 
 class JobDataSession:
@@ -66,6 +73,8 @@ class JobDataSession:
         self.zone_epoch = 0
         self._last_filter: "dict | None" = None
         self._filter_desc = ""
+        # 저장한 필터를 드는 등록 데이터 슬롯 키 — 필터 설치 때 해석해 둔다("" = 없음).
+        self._preset_key = ""
         self.data_key = ""
         self.label = ""
         self.source_kind = ""
@@ -533,6 +542,112 @@ class JobDataSession:
 
     _do_filter_panel.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
+    # ------------------------------------------- 저장한 필터(이름 붙인 칩, 2026-09-30)
+    # 켜고 끄기는 세션(존 필터)만 바꾸고, 저장·이름 바꾸기·삭제는 **등록 데이터**에 쓴다.
+    # 정의 변경은 초안 모델에서 검증 → 영속 → 원자 교체 순이다: 쓰기가 실패하면 화면의
+    # 정의도 그대로다(영속과 화면이 갈리지 않는다). 거절은 ``{"ok": False, "error"}`` 로
+    # 돌려 이름 입력창·알림이 그대로 재진술한다(범위 조건 거절과 같은 경로).
+    def _preset_commit(self, trial: FilterModel, renamed: "dict[str, str] | None" = None) -> None:
+        """검증된 초안의 정의를 등록 데이터에 쓰고, 초안을 존 필터로 원자 교체한다.
+
+        범위 초안이 열려 있으면 커밋된 필터에도 같은 정의를 심는다(정의는 데이터 하나에
+        하나다). 거기서 꺼지는 이름은 이름 바꾸기 승계표 밖에서 사라진 것뿐이다.
+        """
+        self.pool_registry.set_filters(self._preset_key, trial.presets)
+        self._zone_set_flt(trial)
+        if self.range_draft is not None and self.filter is not None:
+            self.filter.set_presets(trial.presets, renamed=renamed)
+
+    def _preset_trial(self) -> FilterModel:
+        if not self._preset_key:
+            raise ValueError(_PRESET_NO_HOME)
+        return self._filter_or_raise().clone()
+
+    def _do_save_filter_preset(self, p: dict) -> dict:
+        """「필터 저장」 — 지금 조건을 이름으로 저장하고 칩으로 켠다(보이는 행은 그대로)."""
+        try:
+            trial = self._preset_trial()
+            name = trial.save_preset(str(p.get("name", "")))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._preset_commit(trial)
+        return {"ok": True, "name": name}
+
+    def _do_toggle_filter_preset(self, p: dict) -> dict:
+        """저장한 필터 칩 누르기 — 켜진 칩끼리는 누적(교집합)된다. 쓸 수 없는 칩은 거절."""
+        try:
+            active = self._filter_or_raise().toggle_preset(str(p["name"]))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "active": active}
+
+    def _do_rename_filter_preset(self, p: dict) -> dict:
+        name = str(p["name"])
+        try:
+            trial = self._preset_trial()
+            new_name = trial.rename_preset(name, str(p.get("new_name", "")))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._preset_commit(trial, renamed={name: new_name})
+        return {"ok": True, "name": new_name}
+
+    def _do_delete_filter_preset(self, p: dict) -> dict:
+        """저장한 필터 삭제 — 켜져 있었으면 함께 꺼진다(보기 변화는 칩 줄이 말한다)."""
+        try:
+            trial = self._preset_trial()
+            trial.delete_preset(str(p["name"]))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._preset_commit(trial)
+        return {"ok": True}
+
+    def _resolve_preset_home(self) -> str:
+        """이 마운트의 저장한 필터를 드는 등록 데이터 슬롯 키 — 없으면 ``""``.
+
+        등록 데이터로 고른 마운트는 그 슬롯이다. 파일·계약 목록을 직접 연 마운트(작업의
+        데이터 연결·부팅 복원)는 **같은 데이터로 등록된 슬롯**을 정체성으로 찾는다 — 같은
+        데이터에 붙은 필터가 여는 경로에 따라 보였다 사라지지 않게. 계약 목록 db 파일에는
+        쓰지 않는다(그 파일의 writer 는 계약 목록 앱이다).
+        """
+        if self.pool_key:
+            return self.pool_key
+        if not self.path:
+            return ""
+        ident = (
+            pclm_identity(self.path, self.sheet)
+            if self.kind == "pclm"
+            else excel_identity(self.path, self.sheet)
+        )
+        found = self.pool_registry.find_identity_raw(ident)
+        return found[0] if found is not None else ""
+
+    def _seed_presets(self, model: FilterModel) -> None:
+        """등록 데이터의 저장한 필터 정의를 새 필터에 심는다(필터 설치 때 1회).
+
+        슬롯이 그사이 사라졌거나 정의가 손상됐으면 저장할 곳이 없는 마운트로 접는다 —
+        「필터 저장」이 사유와 함께 막히고, 손상 항목은 등록 데이터 목록이 따로 드러낸다.
+        """
+        try:
+            self._preset_key = self._resolve_preset_home()
+            if self._preset_key:
+                model.set_presets(self.pool_registry.load(self._preset_key).filters)
+        except (FileNotFoundError, ValueError):
+            self._preset_key = ""
+
+    def preset_rows(self, fm: FilterModel) -> "list[dict]":
+        """칩 줄의 저장한 필터 칩 소재 — 켜짐·사용 가부·사유(판정은 모델)."""
+        active = set(fm.active_presets)
+        rows = []
+        for preset in fm.presets:
+            usable, reason = fm.preset_status(preset["name"])
+            rows.append({
+                "name": preset["name"],
+                "active": preset["name"] in active,
+                "usable": usable,
+                "reason": reason,
+            })
+        return rows
+
     # ------------------------------------------- 직전 필터 재적용(건 연속성, 결정 28)
     def stash_filter(self) -> None:
         """죽는 세션의 활성 필터 정의를 직전 슬롯에 덮어쓴다(결정 28 — 1칸, 직전성).
@@ -597,8 +712,7 @@ class JobDataSession:
         if slot is None or not self._reapply_available():
             raise ValueError("재적용할 직전 필터가 없습니다.")
         state = slot["state"]
-        kinds = {c: fm.kind(c) for c in fm.columns}
-        probe = FilterModel(fm.columns, kinds)
+        probe = fm.blank_copy()  # 같은 지형·저장한 필터 정의 — 켜진 이름도 복원 대상이다
         installed, dropped = probe.apply_state(state)
         if not probe.is_active():
             return {
@@ -608,7 +722,7 @@ class JobDataSession:
             }
         records = self.records
         if probe.search_text and not probe.view(records).branches:
-            unpruned = FilterModel(fm.columns, kinds)
+            unpruned = fm.blank_copy()
             unpruned.apply_state(dict(state, pruned=[]))
             if unpruned.view(records).branches:  # 프루닝만 걷으면 가지가 산다 = 소실 유래
                 probe = unpruned
@@ -656,7 +770,9 @@ class JobDataSession:
         (열 지형이 바뀐다) — 정의 인계는 결정 28 재적용이 담당한다.
         """
         columns = list(records[0].keys()) if records else []
-        self.filter = FilterModel(columns, sniff_column_kinds(records, hints))
+        model = FilterModel(columns, sniff_column_kinds(records, hints))
+        self._seed_presets(model)
+        self.filter = model
 
     # ------------------------------------------------- 세션 가드 술어(블록 4, 결정 26·27)
     def selection_guard(
@@ -686,8 +802,10 @@ class JobDataSession:
         f_active = self.filter is not None and self.filter.is_active()
         filter_parts = 0
         if self.filter is not None and f_active:
-            filter_parts = sum(1 for c in self.filter.columns if self.filter.has_condition(c)) + (
-                1 if self.filter.search_text else 0
+            filter_parts = (
+                sum(1 for c in self.filter.columns if self.filter.has_condition(c))
+                + (1 if self.filter.search_text else 0)
+                + len(self.filter.active_presets)
             )
         in_def = extra = 0
         armed = False
@@ -756,8 +874,17 @@ class JobDataSession:
                 else ""
             ),
             "search": fm.search_text,
-            "chips": view.describe_parts(),  # 칩 줄 문안(정의줄 단일 출처, 결정 4)
+            # 칩 줄의 정의 칩 = 지금 조건 부분(정의줄 단일 출처, 결정 4). 켜진 저장한 필터는
+            # 자기 칩(``presets``)이 눌린 상태로 말하고, 정의줄(``definition``)은 둘 다 싣는다.
+            "chips": view.adhoc_parts(),
             "definition": view.describe(),
+            "adhoc_active": fm.has_adhoc(),
+            "presets": self.preset_rows(fm),
+            # 「필터 저장」 가부 — 지금 조건이 있고 저장할 등록 데이터가 있을 때만.
+            "preset_save": {
+                "can": bool(self._preset_key) and fm.has_adhoc(),
+                "reason": "" if self._preset_key else _PRESET_NO_HOME,
+            },
             "branches": view.branches,  # 가지 칩(× 프루닝)
             "columns": [
                 {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)} for c in columns

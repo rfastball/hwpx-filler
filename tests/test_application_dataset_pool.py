@@ -116,6 +116,12 @@ class InMemoryDatasetPool:
 
         return self._update(key, _c)
 
+    def set_filters(self, key, filters):
+        def _c(it):
+            it.filters = DatasetReference(name="", kind="", filters=filters).filters
+
+        return self._update(key, _c)
+
     def relink_excel(self, key, path, *, sheet=None, note="", name=""):
         taken = self.find_identity(path, sheet or "")
         if taken is not None and taken[0] != key:

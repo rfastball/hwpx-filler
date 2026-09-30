@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +47,11 @@ class DatasetReference:
 
     ``opts``에는 파일 경로나 나라장터 쿼리만 들며 레코드와 ServiceKey는 들지 않는다.
     가산 필드는 ``from_dict`` 기본값으로 구 직렬화 형상을 계속 읽는다.
+
+    ``filters`` 는 이 데이터에 붙은 **저장한 필터** ``[{"name", "state"}]`` 다(칩 순서). 행이
+    아니라 조건의 선언이라 「데이터·행 미저장」 불변식 안이다. ``state`` 의 문법은 필터
+    모델(:mod:`hwpxfiller.viewmodel.filter_state`)이 소유하고 여기는 형상만 지킨다. 비어
+    있으면 직렬화하지 않아 구판 파일과 bytes 가 같다.
     """
 
     name: str
@@ -55,10 +61,12 @@ class DatasetReference:
     created_at: str = ""
     note: str = ""
     version: int = 1
+    filters: "list[dict]" = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.status not in _STATUSES:
             raise ValueError(f"알 수 없는 데이터셋 상태입니다: {self.status!r}")
+        self.filters = filter_presets_shape(self.filters)
 
     def archive(self) -> None:
         self.status = STATUS_ARCHIVED
@@ -80,6 +88,7 @@ class DatasetReference:
             "status": self.status,
             "created_at": self.created_at,
             "note": self.note,
+            **({"filters": copy.deepcopy(self.filters)} if self.filters else {}),
         }
 
     @classmethod
@@ -97,7 +106,31 @@ class DatasetReference:
             created_at=value.get("created_at", ""),
             note=value.get("note", ""),
             version=value.get("version", 1),
+            filters=value.get("filters", []),
         )
+
+
+def filter_presets_shape(value: object) -> "list[dict]":
+    """저장한 필터 목록의 **형상**만 검사해 사본을 돌려준다 — 손상은 시끄럽게 거절한다.
+
+    각 항목은 ``{"name": 비지 않은 문자열, "state": 사전}`` 이고 이름은 겹치지 않는다.
+    조건 문법 검사는 필터 모델 소관이다(쓸 수 없는 저장본은 그 칩이 사유와 함께 막힌다).
+    """
+    if not isinstance(value, list):
+        raise ValueError("저장한 필터 목록 형식이 올바르지 않습니다.")
+    seen: "set[str]" = set()
+    presets: "list[dict]" = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ValueError("저장한 필터 항목 형식이 올바르지 않습니다.")
+        name, state = entry.get("name"), entry.get("state")
+        if not isinstance(name, str) or not name.strip() or not isinstance(state, dict):
+            raise ValueError("저장한 필터 항목 형식이 올바르지 않습니다.")
+        if name in seen:
+            raise ValueError(f"저장한 필터 이름이 겹칩니다: {name}")
+        seen.add(name)
+        presets.append({"name": name, "state": copy.deepcopy(state)})
+    return presets
 
 
 def reference_identity(item: DatasetReference) -> "str | None":
@@ -127,6 +160,7 @@ __all__ = [
     "STATUS_RETIRED",
     "DatasetReference",
     "excel_identity",
+    "filter_presets_shape",
     "pclm_identity",
     "reference_identity",
 ]
