@@ -55,7 +55,8 @@
  *                      preset_cluster(추정가격 무리 = 칩 2, 홀로 선 칩은 무리 밖) ·
  *                      preset_warn_aria_disabled(true)+preset_warn_title(사유) · preset_on_title(조건) ·
  *                      preset_edit_idle_opacity(0) ↔ preset_edit_focus_opacity(1)+tab 순서 ·
- *                      filter_new_shown · preset_toggle_sent(발신 이름열) · builder_*(열기·줄·수·닫기).
+ *                      filter_new_shown · preset_toggle_sent(발신 이름열) ·
+ *                      builder_*(열기·카드·「그리고」·상태·열 콤보박스 거르기·↓/Enter 로 카드 추가·닫기).
  *   · job_result     : renamed_keeps_result ↔ switch_resets_result ↔ data_swap_resets_result ↔
  *                      selection_change_keeps_result(+demotes) · foreign_*_hidden ↔
  *                      renamed_*_shown · folder_hidden_while_running ↔ folder_shown_on_result ·
@@ -315,8 +316,8 @@ function mirrorSnapshot() {
             first: { op: "ge", operand: "1,000,000" }, second: null, joiner: "and" } },
         } },
         columns: [
-          { name: "공고명", kind: "text", values: ["전산장비", "사무비품"] },
-          { name: "금액", kind: "amount", values: [] },
+          { name: "공고명", kind: "text", label: "텍스트", hidden: false, values: ["전산장비", "사무비품"], more: 0 },
+          { name: "금액", kind: "amount", label: "금액", hidden: false, values: [], more: 0 },
         ],
       },
     },
@@ -1020,6 +1021,7 @@ async function runJobMirror(ctx) {
 
   const presetSent = [];
   const countSent = [];
+  const listSent = [];
   const presetStub = stubDispatch(services, (realCall) => function (screen, action, payload) {
     if (action === "toggle_filter_preset") {
       presetSent.push(payload.name);
@@ -1027,7 +1029,14 @@ async function runJobMirror(ctx) {
     }
     if (action === "count_filter_state") {
       countSent.push(payload.state);
-      return Promise.resolve({ ok: true, count: 1, total: 2 });
+      return Promise.resolve({ ok: true, count: 1, total: 2, summary: "금액 ≥ '1,000,000'" });
+    }
+    if (action === "list_filter_columns") {
+      listSent.push(payload.query);
+      return Promise.resolve({ ok: true, columns: [
+        { name: "공고명", kind: "text", label: "텍스트", hidden: false, segments: [["공고", true], ["명", false]] },
+        { name: "금액", kind: "amount", label: "금액", hidden: false, segments: [["금액", false]] },
+      ] });
     }
     return realCall.call(services.Bridge, screen, action, payload);
   });
@@ -1035,20 +1044,52 @@ async function runJobMirror(ctx) {
   await ctx.sleep(0);
   out.preset_toggle_sent = String(JSON.stringify(presetSent));
 
-  /* 「+ 필터」 — 지금 조건(금액 ≥ · 검색)으로 채워진 빌더가 트리거 아래에 서고, 살아 있는 수를
-     묻고, Escape 로 닫히며 초점이 트리거로 돌아온다. */
+  /* 「+ 필터」 — 지금 조건(금액 ≥ · 검색)으로 채워진 카드가 트리거 아래에 서고, 살아 있는 수를
+     묻고, 맨 아래 열 콤보박스가 Python 거르기로 목록을 세워 ↓/Enter 로 카드를 더하며, Escape 로
+     닫히고 초점이 트리거로 돌아온다. */
   newBtn.click();
   await ctx.sleep(400);                                // 150ms 지연 + 응답 + 그리기
   const builderRoot = doc.getElementById("jobFilterBuilder");
   out.builder_open = !!builderRoot && isShown(ctx, builderRoot);
   out.builder_title = builderRoot?.querySelector("#jobFilterBuilderTitle")?.textContent || "";
-  out.builder_rows = builderRoot ? builderRoot.querySelectorAll(".fb-row").length : 0;
+  out.builder_note = builderRoot?.querySelector("[data-fb-from-adhoc]")?.textContent || "";
+  out.builder_cards = builderRoot
+    ? Array.from(builderRoot.querySelectorAll(".fb-card[data-fb-row] .fb-card-name")).map((e) => e.textContent)
+    : [];
   out.builder_and = builderRoot
     ? Array.from(builderRoot.querySelectorAll(".fb-and")).map((e) => e.textContent) : [];
-  out.builder_count = builderRoot?.querySelector("[data-fb-count]")?.textContent || "";
+  out.builder_count = builderRoot?.querySelector("[data-fb-count] .fb-status-text")?.textContent || "";
+  out.builder_meter = builderRoot?.querySelector(".fb-meter-fill")?.style.transform || "";
+  out.builder_name_placeholder = builderRoot?.querySelector("[data-fb-name]")?.placeholder || "";
   out.builder_count_sent = countSent.length > 0
     && JSON.stringify(countSent[countSent.length - 1]?.columns?.금액?.range?.first || null);
-  out.builder_focus_name = doc.activeElement?.hasAttribute?.("data-fb-name") || false;
+  out.builder_operand_align = (() => {
+    const input = builderRoot?.querySelector(".fb-operand.num");
+    return input ? win.getComputedStyle(input).textAlign : "";
+  })();
+  const picker = doc.getElementById("jobFilterColumnPicker");
+  out.builder_focus_picker = doc.activeElement === picker;
+  out.picker_role = picker?.getAttribute("role") || "";
+  if (picker) {
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
+    setter.call(picker, "공고");
+    picker.dispatchEvent(new win.Event("input", { bubbles: true }));
+    await ctx.sleep(250);                              // 80ms 지연 + 응답 + 그리기
+    out.picker_expanded = picker.getAttribute("aria-expanded");
+    out.picker_query_sent = listSent[listSent.length - 1] || "";
+    out.picker_options = Array.from(doc.querySelectorAll("#jobFilterColumnList [role=option]")).map(
+      (e) => e.querySelector(".fb-option-name")?.textContent || "",
+    );
+    out.picker_mark = doc.querySelector("#jobFilterColumnList mark")?.textContent || "";
+    picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await ctx.sleep(0);
+    picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await ctx.sleep(80);
+    out.picker_added = Array.from(builderRoot.querySelectorAll(".fb-card[data-fb-row] .fb-card-name")).map(
+      (e) => e.textContent,
+    );
+    out.picker_focus_in_new_card = !!doc.activeElement?.closest?.('.fb-card[data-fb-column="공고명"]');
+  }
   const rect = builderRoot?.getBoundingClientRect();
   const anchor = newBtn.getBoundingClientRect();
   out.builder_below_trigger = !!rect && rect.top >= anchor.bottom - 1;

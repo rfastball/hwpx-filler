@@ -180,6 +180,7 @@ export const SCREEN_ACTIONS = {
     unhide_columns: { required: [], optional: ["epoch"] },
     filter_panel: { required: ["column"], optional: [] },
     count_filter_state: { required: ["state"], optional: [] },
+    list_filter_columns: { required: [], optional: ["query"] },
     load_pool: { required: ["key"], optional: [] },
     guard_state: { required: [], optional: [] },
     refresh: { required: [], optional: [] },

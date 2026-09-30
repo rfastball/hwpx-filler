@@ -48,3 +48,21 @@ def test_legacy_flag_only_on_narration() -> None:
         + "\n".join(abusers)
         + "\n\n플래그는 낭독 패턴에 걸린 기존 문장의 유예이지 일반 면제가 아니다."
     )
+
+
+def test_slop_patterns_catch_their_class() -> None:
+    """상투어 부류(6~10) — 패턴마다 잡아야 할 문장과 놓아야 할 문장 한 쌍씩(`docs/ui-style.md#ui-copy`)."""
+    cases = {
+        6: ("손쉽게 필터를 저장합니다.", "필터를 저장했습니다."),
+        7: ("필터를 만들어 보세요.", "필터를 만드세요."),
+        8: ("필터를 저장했습니다!", "⚠ 파일을 읽을 수 없습니다. 다시 선택하세요."),
+        9: ("성공적으로 저장했습니다.", "저장할 조건이 없습니다."),
+        10: ("필터를 저장했어요.", "확인 필요"),
+    }
+    for number, (hit, miss) in cases.items():
+        assert number in [n for n, _why in census.narration_hits(hit)], f"패턴 {number} 가 놓쳤다: {hit}"
+        assert number not in [n for n, _why in census.narration_hits(miss)], f"패턴 {number} 가 잘못 잡았다: {miss}"
+    # 해요체는 문장으로 세어야 census 에 든다(세지 않으면 패턴 10 이 닿지 않는다). `~세요·~까요` 는 그대로.
+    assert census.is_sentence("필터를 저장했어요.") and census.is_sentence("열 이름이에요")
+    assert census.is_sentence("다시 선택하세요.") and not census.is_sentence("확인 필요")
+    assert 10 not in [n for n, _why in census.narration_hits("다시 선택하세요.")]

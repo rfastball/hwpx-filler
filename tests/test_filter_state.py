@@ -14,6 +14,7 @@ from hwpxfiller.viewmodel.filter_state import (
     KIND_TEXT,
     FilterModel,
     SEARCH_DIMENSION,
+    PresetStateError,
     RangeClause,
     RangeCondition,
     range_condition_from_payload,
@@ -694,13 +695,40 @@ def test_create_preset_refuses_loudly() -> None:
     m = price_model()
     with pytest.raises(ValueError, match="저장할 조건이 없습니다"):
         m.create_preset("빈 필터", {"columns": {}})
-    with pytest.raises(ValueError, match="이름을 비울 수 없습니다"):
-        m.create_preset("   ", SMALL)
+    with pytest.raises(ValueError, match="저장할 조건이 없습니다"):
+        m.create_preset("   ", {"columns": {}})  # 빈 이름 + 빈 조건 — 지을 요약도 없다
     m.create_preset("전산", {"columns": {"공고명": {"text": "전산"}}})
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
         m.create_preset("전산", {"columns": {"공고명": {"text": "청"}}})  # 덮어쓰지 않는다
     assert m.presets[0]["state"]["columns"]["공고명"]["text"] == "전산"
     assert [p["name"] for p in m.presets] == ["전산"]  # 거절은 아무것도 남기지 않는다
+
+
+def test_empty_name_takes_the_condition_summary() -> None:
+    """이름을 비우고 저장하면 조건 요약(칩 title 과 같은 문안)이 이름이 된다 — 같은 이름 규칙 그대로."""
+    m = price_model()
+    assert m.describe_state(SMALL, PRICE_ROWS) == "추정가격 < '100,000,000'"
+    assert m.describe_state({"columns": {}}, PRICE_ROWS) == ""
+    assert m.create_preset("  ", SMALL, records=PRICE_ROWS) == "추정가격 < '100,000,000'"
+    with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
+        m.create_preset("", SMALL, records=PRICE_ROWS)
+    assert m.update_preset("추정가격 < '100,000,000'", "", MEDIUM, records=PRICE_ROWS) == (
+        "추정가격 ≥ '100,000,000' ∧ < '220,000,000'"
+    )
+
+
+def test_state_refusals_point_at_their_column() -> None:
+    """거절은 가리키는 열을 싣는다 — 빌더가 그 카드 아래에 문장을 세운다(문장은 설치 규칙 그대로)."""
+    m = price_model()
+    with pytest.raises(PresetStateError) as caught:
+        m.normalize_preset_state({"columns": {"추정가격": {"range": {"first": {"op": "lt", "operand": "1억"}}}}})
+    assert caught.value.column == "추정가격" and "금액(으)로 읽을 수 없습니다" in str(caught.value)
+    with pytest.raises(PresetStateError) as caught:
+        m.normalize_preset_state({"columns": {"지역": {"values": ["세종"]}}})
+    assert caught.value.column == "지역"
+    with pytest.raises(PresetStateError) as caught:
+        m.normalize_preset_state({"columns": {}})
+    assert caught.value.column == ""
 
 
 def test_update_preset_renames_and_rewrites_keeping_order_and_activation() -> None:
@@ -712,8 +740,6 @@ def test_update_preset_renames_and_rewrites_keeping_order_and_activation() -> No
     assert m.active_presets == ["중소"]  # 켜짐도 잇는다
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
         m.update_preset("중소", "소기업", MEDIUM)
-    with pytest.raises(ValueError, match="이름을 비울 수 없습니다"):
-        m.update_preset("중소", " ", MEDIUM)
     with pytest.raises(ValueError, match="찾을 수 없습니다"):
         m.update_preset("없음", "없음", MEDIUM)
     # 조건을 바꾸면 차원도 바뀐다 — 칩이 다른 무리로 옮기고 평가도 새 정의를 쓴다.

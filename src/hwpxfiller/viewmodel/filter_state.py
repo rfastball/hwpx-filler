@@ -122,6 +122,7 @@ __all__ = [
     "FilterModel",
     "FilterView",
     "PRESET_LABEL",
+    "PresetStateError",
     "SEARCH_DIMENSION",
     "range_condition_from_payload",
 ]
@@ -254,6 +255,17 @@ class RangeCondition:
     first: RangeClause
     second: "RangeClause | None" = None
     joiner: str = "and"  # second 있을 때만 의미
+
+
+class PresetStateError(ValueError):
+    """저장본 조건 거절 — 문장은 설치 규칙의 것 그대로, ``column`` 은 거절이 가리키는 열("" = 전체).
+
+    빌더가 오류를 그 열의 카드 아래에 세우는 좌표다(판정은 여기서만 — 표면이 문장을 해부하지 않는다).
+    """
+
+    def __init__(self, message: str, column: str = "") -> None:
+        super().__init__(message)
+        self.column = column
 
 
 def range_condition_from_payload(
@@ -600,30 +612,46 @@ class FilterModel:
             raise ValueError(_PRESET_UNREADABLE)
         missing = [col for col in columns if col not in self._cols]
         if missing:
-            raise ValueError(_PRESET_COLUMN_MISSING.format(columns=", ".join(missing)))
+            raise PresetStateError(
+                _PRESET_COLUMN_MISSING.format(columns=", ".join(missing)), column=missing[0],
+            )
         scratch = FilterModel(self._columns, self._kinds)
         for col, cond in columns.items():
             if not isinstance(cond, dict):
-                raise ValueError(_PRESET_UNREADABLE)
+                raise PresetStateError(_PRESET_UNREADABLE, column=col)
             values, text = cond.get("values"), cond.get("text") or ""
             if (values is not None and not isinstance(values, list)) or not isinstance(text, str):
-                raise ValueError(_PRESET_UNREADABLE)
+                raise PresetStateError(_PRESET_UNREADABLE, column=col)
             if values is not None:
                 scratch.set_values(col, [str(v) for v in values])
             scratch.set_text(col, text)
             rng = cond.get("range")
             if rng:
-                if not isinstance(rng, dict):
-                    raise ValueError(_PRESET_UNREADABLE)
-                scratch.set_range(col, range_condition_from_payload(
-                    rng.get("first"), rng.get("second"), rng.get("joiner", "and"),
-                ))
+                try:
+                    if not isinstance(rng, dict):
+                        raise ValueError(_PRESET_UNREADABLE)
+                    scratch.set_range(col, range_condition_from_payload(
+                        rng.get("first"), rng.get("second"), rng.get("joiner", "and"),
+                    ))
+                except PresetStateError:
+                    raise
+                except ValueError as exc:  # 피연산자 거절 — 같은 문장, 그 열의 카드로
+                    raise PresetStateError(str(exc), column=col) from exc
         scratch.set_search(search)
         if scratch.search_text:  # 쳐낸 가지는 검색 텍스트 수명 — 실재 열만 잇는다
             scratch._pruned = {str(col) for col in pruned if col in self._cols}
         if not allow_empty and not scratch.has_adhoc():
-            raise ValueError(_PRESET_STATE_EMPTY)
+            raise PresetStateError(_PRESET_STATE_EMPTY)
         return scratch.adhoc_state()
+
+    def describe_state(self, state: object, records: "list[dict]") -> str:
+        """후보 조건의 요약 문안 — 칩 title 과 같은 생산자(정의줄 조각). 빈 조건이면 ``""``.
+
+        빌더 이름 칸의 자리표시자이자, 이름을 비우고 저장할 때의 이름이다.
+        """
+        probe = FilterModel(self._columns, self._kinds)
+        probe.apply_state(self.normalize_preset_state(state, allow_empty=True))
+        return " · ".join(probe.view(records).adhoc_parts())
 
     def count_state(self, state: object, records: "list[dict]") -> int:
         """빌더의 후보 조건 **하나만**으로 보이는 행 수 — 지금 조건·켜진 저장본과 무관.
@@ -636,15 +664,21 @@ class FilterModel:
         probe.apply_state(self.normalize_preset_state(state, allow_empty=True))
         return len(probe.visible_indices(records))
 
-    def create_preset(self, name: str, state: object, *, from_adhoc: bool = False) -> str:
+    def create_preset(
+        self, name: str, state: object, *, from_adhoc: bool = False,
+        records: "list[dict] | None" = None,
+    ) -> str:
         """빌더의 조건을 이름으로 저장하고 **켠다** — 저장한 이름을 돌려준다.
 
-        같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지). ``from_adhoc`` 는
-        빌더가 지금 조건으로 채워져 열렸다는 표지다 — 저장 뒤 지금 조건을 비워 정의가 칩
-        하나로 접힌다(같은 차원의 다른 저장본이 켜져 있지 않으면 보이는 행은 그대로다).
+        이름을 비우면 조건 요약(:meth:`describe_state` — 칩 title 과 같은 문안)이 이름이 된다.
+        같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지 — 요약 이름도 같다).
+        ``from_adhoc`` 는 빌더가 지금 조건으로 채워져 열렸다는 표지다 — 저장 뒤 지금 조건을
+        비워 정의가 칩 하나로 접힌다(같은 차원의 다른 저장본이 켜져 있지 않으면 보이는 행은 그대로다).
         """
-        name = self._check_new_name(name)
         saved = self.normalize_preset_state(state)
+        name = self._check_new_name(
+            str(name).strip() or self.describe_state(saved, list(records or []))
+        )
         self._presets[name] = saved
         self._preset_models.pop(name, None)
         if from_adhoc:
@@ -652,18 +686,20 @@ class FilterModel:
         self._active_presets.append(name)
         return name
 
-    def update_preset(self, name: str, new_name: str, state: object) -> str:
+    def update_preset(
+        self, name: str, new_name: str, state: object, *, records: "list[dict] | None" = None,
+    ) -> str:
         """저장본 고치기(이름·조건) — 칩 순서·켜짐을 그대로 잇는다. 새 이름을 돌려준다.
 
-        검증은 만들기와 같고, 이름이 그대로면 이름 검사는 건너뛴다. 조건이 바뀌면 차원도 바뀔
-        수 있다(칩이 다른 무리로 옮겨 간다) — 켜짐은 그대로 잇는다.
+        검증은 만들기와 같고(빈 이름 = 조건 요약), 이름이 그대로면 이름 검사는 건너뛴다. 조건이
+        바뀌면 차원도 바뀔 수 있다(칩이 다른 무리로 옮겨 간다) — 켜짐은 그대로 잇는다.
         """
         if name not in self._presets:
             raise ValueError(_PRESET_UNKNOWN.format(name=name))
-        new_name = str(new_name).strip()
+        saved = self.normalize_preset_state(state)
+        new_name = str(new_name).strip() or self.describe_state(saved, list(records or []))
         if new_name != name:
             new_name = self._check_new_name(new_name)
-        saved = self.normalize_preset_state(state)
         self._presets = {
             (new_name if key == name else key): (saved if key == name else value)
             for key, value in self._presets.items()

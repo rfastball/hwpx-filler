@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "035a4ef9251f2f9cc9cd943518f7e0ef119cf2fe6bccde152fa4ccf5ef3d752a"
+source_sha256 = "1bce3c655b5f070c4046f7d071e4894026575cf1dfece79a2b6ecc528896435e"
 body_sha256 = "6be19e5da8613a5634996f6c4af5eb76650ef2e396e6c46aae84ec19da23f04c"
 
 [[document]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
-source_sha256 = "93d4b5b7d0b0ef448a63b857033fbcc00270474297d28b3d39992d35cb0b6359"
+source_sha256 = "34ee7ec789e34ebb6ffd3e3f8972dac4d582828d5bb852d1453d464f26b3ed11"
 body_sha256 = "692faf62c7adb2e926525b1a70b88c31a2ab9c013e873d3a192d64400f757b26"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py"]
-source_sha256 = "11b95632c877062d7956bb0aaeb20cdfd41988e3351fcb43f6341dc492411710"
+source_sha256 = "60800713231a1cc3787de4a07e53c07f02e9540ee62ebcc6318d3b28d4fcc052"
 body_sha256 = "ca13e786a14bb07b3a9363ceea6201f8e9d2d999421473945957c72acf7df235"
 
 [[topic]]
@@ -201,7 +201,7 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "1390095714231eda8d0196b2cc37706a5f0a10e4f2a5762116661871fa3553ca"
+source_sha256 = "704b42c558f48f108853275d75ac79214b0fdb65b63db842d32258206888f52c"
 body_sha256 = "efa93f379f4f3e7f2a1a6d2d181410cd7217c2ae5628444e3b5c3c84cffadaed"
 
 [[topic]]
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "37cb470620f4416c9e4219fa6b8ad13367018cc7947fc373b106e13fadf6d0bb"
+source_sha256 = "abb5471203c39dc8122a9672e320827b14f113e1a00cbda827b246f8b6cabb61"
 body_sha256 = "2ce1407ab99cd8bfa2625ec3b674596cb9a4d56a937f65aafb4e8da4289c047e"
 
 [[topic]]
@@ -233,7 +233,7 @@ id = "ui-terms"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
 tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
-source_sha256 = "3626c379d82b7832bb5b5d6743f619423a9a908967973833e5600ea42f234314"
+source_sha256 = "cb77e0d82e83ad6105adbc179bb97b688e9604deff54c0122632518d04bd0239"
 body_sha256 = "425d790c07c39305b28ebe11d61901148cc7489d4498796ac1054d34c0546dd6"
 
 [[topic]]
@@ -241,15 +241,15 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.py"]
 tests = ["tests/repo_contract/test_ui_copy_census.py"]
-source_sha256 = "246d25da2dd7f1a8156e46ce373f97b121d5f0fec94a24b1e031cadfb99fcea5"
-body_sha256 = "d65f5ecec1affc142cc9f48ac9b98dddb11e7394ceaf8e1368dcadb2191882ae"
+source_sha256 = "03644c4737b977b45cbd8d0580d5667c518b2e45453df7ab967b8ff32ca7e92d"
+body_sha256 = "fbe2e268093bcd3f2abd7763431f31c003e1817b74a26fad3488967559d630a1"
 
 [[topic]]
 id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "8119a59e809c1a34e679469a68a9780a1ee0211738ab672537255edda1ecb4b4"
+source_sha256 = "2857de5c48fb380431bcbb2ce651fbf57aa93a0c9cabdcaf5a8740781db9d7af"
 body_sha256 = "3edd755e13396e4273390dc354498112a53e6555c711b1b5644db15c69cd4b3d"
 
 [[topic]]

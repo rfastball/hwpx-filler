@@ -170,6 +170,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `filter_search` | — | `text`, `epoch` |
 | `guard_state` | — | — |
 | `hide_column` | `column` | `epoch` |
+| `list_filter_columns` | — | `query` |
 | `load_pool` | `key` | — |
 | `open_slot_configuration` | — | — |
 | `open_workbench` | — | — |

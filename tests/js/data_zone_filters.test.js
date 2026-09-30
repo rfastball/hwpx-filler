@@ -11,18 +11,23 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  FOLD_ROW,
   FilterBuilder,
   FilterChipRow,
-  RANGE_OPS,
+  RANGE_WORDS,
   SEARCH_ROW,
   blankRow,
   builderKeyAction,
   createCountRequester,
   focusFinder,
   focusReturnTarget,
-  freeColumn,
+  formatAmount,
+  pickerKey,
+  pickerOptions,
+  rangeFromWords,
   rowsFromState,
   stateFromRows,
+  wordsFromRange,
 } from "../../frontend/src/screens/data_zone.ts";
 
 const SMALL = { search: "", pruned: [], columns: { 추정가격: { text: "", values: null, range: {
@@ -52,9 +57,9 @@ const FILTER = {
   builder: {
     total: 6, can_create: true, reason: "", adhoc: null,
     columns: [
-      { name: "공고명", kind: "text", values: ["청사 청소", "전산 유지보수", ""] },
-      { name: "추정가격", kind: "amount", values: [] },
-      { name: "계약일자", kind: "date", values: [] },
+      { name: "공고명", kind: "text", label: "텍스트", hidden: false, values: ["청사 청소", "전산 유지보수", ""], more: 0 },
+      { name: "추정가격", kind: "amount", label: "금액", hidden: false, values: [], more: 0 },
+      { name: "계약일자", kind: "date", label: "날짜", hidden: false, values: [], more: 0 },
     ],
   },
 };
@@ -95,7 +100,7 @@ test("같은 열의 칩 둘은 무리로, 홀로 선 칩은 맨 칩으로 선다
 
 test("칩 = 이름 하나를 든 눌림 단추 + 탭 순서에 늘 있는 ⋯ 고치기", () => {
   const html = chipRow(FILTER);
-  assert.ok(/data-preset="소기업"[^>]*aria-pressed="true"[^>]*title="추정가격 &lt; &#x27;소기업&#x27;"/.test(html),
+  assert.ok(/data-preset="소기업"[^>]*aria-pressed="true"[^>]*title="소기업: 추정가격 &lt; &#x27;소기업&#x27;"/.test(html),
     "켜진 칩의 title 은 Python 조건 문안이어야 합니다");
   assert.ok(/data-preset="지역"[^>]*aria-disabled="true"[^>]*title="이 필터의 열이 지금 데이터에 없습니다: 지역"/.test(html));
   const edits = html.match(/<button class="preset-edit"[^>]*>/g) || [];
@@ -123,7 +128,7 @@ test("「+ 필터」는 데이터가 있으면 늘 서고, 지금 조건 칩은 
   assert.ok(chipRow(FILTER, { hasData: false }).includes('hidden=""'));
 });
 
-test("빌더: 지금 조건 프리필은 열마다 한 줄, 줄 사이 「그리고」, 만들기 제목", () => {
+test("빌더: 지금 조건 프리필은 열마다 카드, 카드 사이 「그리고」, 맨 아래 새 조건 콤보박스", () => {
   const filter = Object.assign({}, FILTER, {
     builder: Object.assign({}, FILTER.builder, { adhoc: {
       search: "청", pruned: [],
@@ -135,35 +140,79 @@ test("빌더: 지금 조건 프리필은 열마다 한 줄, 줄 사이 「그리
   });
   const html = builderMarkup(filter, { mode: "create", name: "" });
   assert.ok(html.includes('id="jobFilterBuilder"') && html.includes('role="dialog"'));
-  assert.ok(html.includes(">필터 만들기<"));
-  assert.equal((html.match(/class="fb-row"/g) || []).length, 3, "공고명·추정가격·전체 열 검색 세 줄");
-  assert.equal((html.match(/class="fb-and"[^>]*>그리고</g) || []).length, 2, "줄 사이마다 「그리고」");
-  assert.ok(/data-fb-mode="values"/.test(html) && /data-fb-mode="range"/.test(html) && /data-fb-mode="search"/.test(html));
-  assert.ok(html.includes(">값 고르기<") && html.includes(">포함 글자<"), "텍스트 열은 방식을 고른다");
-  assert.ok(html.includes("(빈값)"), "빈 문자열은 (빈값)으로 선다");
-  assert.ok(html.includes(">+ 조건<") && html.includes(">저장<") && html.includes(">취소<"));
-  assert.ok(!html.includes('data-act="fb-delete"'), "만들기에는 삭제가 없다");
-  for (const [op] of RANGE_OPS) assert.ok(html.includes(`value="${op}"`));
+  assert.ok(html.includes(">필터 만들기<") && html.includes("열 머리 조건에서 채움"));
+  assert.equal((html.match(/class="fb-card" data-fb-row/g) || []).length, 3, "공고명·추정가격·전체 열 검색 세 카드");
+  assert.equal((html.match(/class="fb-and"[^>]*>그리고</g) || []).length, 3, "카드 사이와 새 조건 앞마다 「그리고」");
+  assert.ok(/<span class="fb-card-name" title="추정가격">추정가격<\/span><span class="fb-kind">금액<\/span>/.test(html),
+    "카드 머리 = 열 이름 + 유형 표지(Python 표지 그대로)");
+  assert.ok(html.includes('aria-label="추정가격 조건 지우기"'));
+  // 텍스트 카드: 값 고르기 | 포함 글자 분절 단추, 값은 눌림 태그, (빈값)
+  assert.ok(/data-fb-seg="values"[^>]*aria-pressed="true"[^>]*>값 고르기</.test(html));
+  assert.ok(/data-fb-val="청사 청소"[^>]*aria-pressed="true"/.test(html));
+  assert.ok(html.includes(">(빈값)<"));
+  // 금액 카드: 한국어 비교 말 일곱 개, 숫자 칸은 오른쪽 정렬 클래스
+  for (const [, label] of RANGE_WORDS) assert.ok(html.includes(`>${label.replace("<", "&lt;").replace(">", "&gt;")}<`), label);
+  assert.ok(/class="field fb-operand num"[^>]*value="100,000,000"/.test(html));
+  // 새 조건 콤보박스 — 늘 맨 아래, ARIA 콤보박스, 「+ 조건」 단추는 없다
+  assert.ok(/id="jobFilterColumnPicker"[^>]*role="combobox"[^>]*aria-expanded="false"/.test(html));
+  assert.ok(html.includes('placeholder="열 이름을 적어 고르세요"'));
+  assert.ok(html.lastIndexOf("fb-new") > html.lastIndexOf("data-fb-row"), "새 조건 카드는 맨 아래");
+  assert.ok(!html.includes("+ 조건"));
+  // 이름은 아래(선택), footer 는 상태 + 취소·저장
+  assert.ok(html.includes("(비우면 조건이 이름이 됩니다)"));
+  assert.ok(html.indexOf("data-fb-name") > html.lastIndexOf("fb-new"), "이름 칸은 카드 목록 아래");
+  assert.ok(html.includes(">저장<") && html.includes(">취소<") && !html.includes('data-act="fb-delete"'));
 });
 
-test("빌더: 빈 만들기는 첫 열 한 줄, 고치기는 이름·조건을 채우고 삭제를 든다", () => {
+test("빌더: 빈 만들기는 새 조건 카드 하나, 고치기는 이름·「사이」·삭제를 채운다", () => {
   const blank = builderMarkup(FILTER, { mode: "create", name: "" });
-  assert.equal((blank.match(/class="fb-row"/g) || []).length, 1);
-  assert.ok(!blank.includes('class="fb-and"'));
-  const edit = builderMarkup(FILTER, { mode: "edit", name: "소기업" });
-  assert.ok(edit.includes(">필터 고치기<") && edit.includes('value="소기업"'));
-  assert.ok(edit.includes('value="100,000,000"'), "저장본의 피연산자가 채워진다");
-  assert.ok(edit.includes('data-act="fb-delete"'));
+  assert.equal((blank.match(/data-fb-row=/g) || []).length, 0);
+  assert.ok(blank.includes("fb-new") && !blank.includes('class="fb-and"') && !blank.includes("열 머리 조건에서 채움"));
+  const medium = { search: "", pruned: [], columns: { 추정가격: { text: "", values: null, range: {
+    first: { op: "ge", operand: "100,000,000" }, second: { op: "lt", operand: "220,000,000" }, joiner: "and" } } } };
+  const filter = Object.assign({}, FILTER, { presets: [PRESET("중소기업", { state: medium })] });
+  const edit = builderMarkup(filter, { mode: "edit", name: "중소기업" });
+  assert.ok(edit.includes(">필터 고치기<") && edit.includes('value="중소기업"'));
+  assert.ok(/<option value="between" selected="">사이<\/option>/.test(edit), "≥ a 그리고 < b = 「사이」");
+  assert.ok(edit.includes('value="220,000,000"') && edit.includes(">이상<") && edit.includes(">미만<"));
+  assert.ok(edit.indexOf('data-act="fb-delete"') < edit.indexOf('data-fb-count'), "삭제는 footer 맨 왼쪽");
 });
 
-test("줄 ↔ 상태 옮김은 무손실이다 — 겹친 조건은 줄을 나누고, 빈 줄은 조건이 아니다", () => {
+test("비교 말 ↔ 연산자: 여섯은 1:1, 「사이」는 ≥ a 그리고 < b, 옮길 수 없는 2절은 기호 그대로", () => {
+  const pairs = { lt: "lt", le: "le", gt: "gt", ge: "ge", eq: "eq", ne: "ne" };
+  for (const [word, op] of Object.entries(pairs)) {
+    assert.deepEqual(rangeFromWords(word, "5", ""), { first: { op, operand: "5" }, second: null, joiner: "and" });
+    assert.deepEqual(wordsFromRange(rangeFromWords(word, "5", "")), { op: word, a: "5", b: "" });
+  }
+  assert.deepEqual(rangeFromWords("between", "1", "9"), {
+    first: { op: "ge", operand: "1" }, second: { op: "lt", operand: "9" }, joiner: "and",
+  });
+  assert.deepEqual(wordsFromRange(rangeFromWords("between", "1", "9")), { op: "between", a: "1", b: "9" });
+  assert.equal(rangeFromWords("lt", "  ", ""), null, "빈 값은 조건이 아니다");
+  assert.equal(wordsFromRange({ first: { op: "ge", operand: "1" }, second: { op: "le", operand: "9" }, joiner: "and" }), null);
+  assert.equal(wordsFromRange({ first: { op: "ge", operand: "1" }, second: { op: "lt", operand: "9" }, joiner: "or" }), null);
+  // 열 머리에서 건 2절(≥·≤)은 카드가 기호 2절로 그대로 들고 무손실로 돌려준다.
+  const legacy = { columns: { 계약일자: { text: "", values: null, range: {
+    first: { op: "ge", operand: "2026-01-01" }, second: { op: "le", operand: "2026-06-30" }, joiner: "and" } } },
+  search: "", pruned: [] };
+  const rows = rowsFromState(legacy, FILTER.builder.columns);
+  assert.ok(rows[0].legacy, "7개 말로 옮길 수 없는 범위");
+  assert.deepEqual(stateFromRows(rows), legacy);
+  // 금액 칸의 천 단위 쉼표 — 숫자 모양만 다시 쓴다(「1억」은 그대로 두고 Python 이 거절).
+  assert.equal(formatAmount("100000000"), "100,000,000");
+  assert.equal(formatAmount(" 1,0000.5 "), "10,000.5");
+  assert.equal(formatAmount("1억"), "1억");
+  assert.equal(formatAmount("-2500"), "-2,500");
+});
+
+test("카드 ↔ 상태 옮김은 무손실이다 — 겹친 조건은 카드를 나누고, 빈 카드는 조건이 아니다", () => {
   const columns = FILTER.builder.columns;
   const state = {
     search: "전산", pruned: ["공고명"],
     columns: {
       공고명: { text: "청", values: ["청사 청소", ""], range: null },
       추정가격: { text: "", values: null, range: { first: { op: "ge", operand: "1" },
-        second: { op: "lt", operand: "9" }, joiner: "or" } },
+        second: { op: "lt", operand: "9" }, joiner: "and" } },
     },
   };
   const rows = rowsFromState(state, columns);
@@ -171,13 +220,49 @@ test("줄 ↔ 상태 옮김은 무손실이다 — 겹친 조건은 줄을 나�
     ["공고명", "values"], ["공고명", "text"], ["추정가격", "range"], [SEARCH_ROW, "search"],
   ]);
   assert.deepEqual(stateFromRows(rows, ["공고명"]), state);
-  // 빈 줄(피연산자 없음·고른 값 없음·빈 글자)은 조건이 아니다 — 저장 거절은 Python 이 말한다.
   const blanks = [blankRow(1, "공고명", "text"), blankRow(2, "추정가격", "amount")];
   assert.deepEqual(stateFromRows(blanks), { columns: {}, search: "", pruned: [] });
-  // 새 줄은 아직 줄이 없는 첫 열 → 다 쓰였으면 「전체 열 검색」 → 그것도 있으면 없음.
-  assert.equal(freeColumn(columns, []), "공고명");
-  assert.equal(freeColumn(columns, rows.slice(0, 3).concat([blankRow(9, "계약일자", "date")])), SEARCH_ROW);
-  assert.equal(freeColumn(columns, rows.concat([blankRow(9, "계약일자", "date")])), "");
+});
+
+test("콤보박스 목록: 쓴 열은 빠지고, 숨긴 열은 뒤로 접히며, 「전체 열 검색」이 마지막", () => {
+  const matched = [
+    { name: "공고명", label: "텍스트", hidden: false, segments: [["공고명", false]] },
+    { name: "추정가격", label: "금액", hidden: false, segments: [["추정", false], ["가격", true]] },
+    { name: "비고", label: "텍스트", hidden: true, segments: [["비고", false]] },
+    { name: "메모", label: "텍스트", hidden: true, segments: [["메모", false]] },
+  ];
+  const rows = [blankRow(1, "공고명", "text")];
+  const folded = pickerOptions(matched, rows, { query: "", expanded: false });
+  assert.deepEqual(folded.map((o) => [o.name, o.label, o.muted, !!o.fold]), [
+    ["추정가격", "금액", false, false], ["숨긴 열 2개", "", true, true], ["전체 열 검색", "모든 열", false, false],
+  ]);
+  const opened = pickerOptions(matched, rows, { query: "", expanded: true });
+  assert.deepEqual(opened.map((o) => o.name), ["추정가격", "숨긴 열 2개", "비고", "메모", "전체 열 검색"]);
+  assert.ok(opened[2].muted && opened[3].muted, "숨긴 열은 흐리게");
+  // 질의가 있으면 접지 않고 결과에 섞인다(흐린 표지 유지).
+  const searched = pickerOptions(matched, rows, { query: "비", expanded: false });
+  assert.deepEqual(searched.map((o) => [o.name, o.muted]), [
+    ["추정가격", false], ["비고", true], ["메모", true], ["전체 열 검색", false],
+  ]);
+  const withSearch = pickerOptions(matched, rows.concat([blankRow(2, SEARCH_ROW, "")]), { query: "", expanded: false });
+  assert.ok(!withSearch.some((o) => o.value === SEARCH_ROW), "검색 카드가 있으면 그 줄은 빠진다");
+  assert.equal(FOLD_ROW === SEARCH_ROW, false);
+});
+
+test("콤보박스 키: ↑↓ 는 돌고, Enter 는 고르고, Escape 는 목록만 닫고, 조합 중에는 무시", () => {
+  const closed = { open: false, active: -1, count: 3 };
+  assert.deepEqual(pickerKey({ key: "ArrowDown" }, closed), { active: 0, open: true, choose: null, handled: true });
+  assert.deepEqual(pickerKey({ key: "ArrowUp" }, closed), { active: 2, open: true, choose: null, handled: true });
+  const open = { open: true, active: 2, count: 3 };
+  assert.equal(pickerKey({ key: "ArrowDown" }, open).active, 0, "끝에서 처음으로 돈다");
+  assert.equal(pickerKey({ key: "ArrowUp" }, { open: true, active: 0, count: 3 }).active, 2);
+  assert.deepEqual(pickerKey({ key: "Enter" }, open), { active: 2, open: false, choose: 2, handled: true });
+  assert.equal(pickerKey({ key: "Enter" }, { open: true, active: -1, count: 3 }).choose, 0, "고른 줄이 없으면 첫 줄");
+  assert.equal(pickerKey({ key: "Enter" }, closed).handled, false, "닫힌 목록의 Enter 는 넘긴다");
+  assert.deepEqual(pickerKey({ key: "Escape" }, open), { active: -1, open: false, choose: null, handled: true });
+  assert.equal(pickerKey({ key: "Escape" }, closed).handled, false, "닫힌 목록의 Escape 는 빌더를 닫는다");
+  assert.equal(pickerKey({ key: "Enter", isComposing: true }, open).handled, false);
+  assert.equal(pickerKey({ key: "ArrowDown", keyCode: 229 }, open).handled, false);
 });
 
 test("살아 있는 수: 마지막 입력 뒤 한 번만 묻고, 늦게 온 옛 응답은 버린다", async () => {

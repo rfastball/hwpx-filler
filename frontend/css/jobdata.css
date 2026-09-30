@@ -93,7 +93,8 @@
   transition:background-color var(--dur-press) var(--ease-out),border-color var(--dur-press) var(--ease-out)}
 .fchip.preset:hover{background:var(--n-hover)}
 .fchip.preset .preset-toggle{color:var(--a-ink);padding:var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-10);
-  border-radius:var(--rad-pill);line-height:1.5}
+  border-radius:var(--rad-pill);line-height:1.5;max-width:18em;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
 .fchip.preset .preset-toggle:hover{color:var(--a-ink)}
 .fchip.preset.on{border-color:color-mix(in srgb,var(--a-primary) 55%,var(--a-border));
   background:color-mix(in srgb,var(--a-primary) 16%,var(--a-card))}
@@ -129,34 +130,91 @@
   .fchip.preset,.fchip.preset .preset-edit{transition:none}
 }
 
-/* 필터 빌더(「+ 필터」·⋯) — 열 머리 패널(.colpanel)과 같은 부유 면에 폭만 넓힌다. 조건 한 줄 =
-   열 하나이고, 줄 사이 「그리고」가 무리 사이 결합을 글자로 말한다. */
-.colpanel.fbuilder{width:420px;max-width:calc(100vw - 32px);min-width:0}
-.fbuilder .fb-rows{display:flex;flex-direction:column;gap:var(--sp-6);
-  max-height:min(50vh,360px);overflow:auto;overscroll-behavior:contain}
-.fbuilder .fb-row{display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-8);
-  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt)}
-.fbuilder .fb-row-head{display:flex;gap:var(--sp-4);align-items:center}
-.fbuilder .fb-row-head .fb-col{flex:1;min-width:0;width:auto}
-.fbuilder .fb-row-head .fb-mode{flex:none;width:auto}
+/* 필터 빌더(「+ 필터」·⋯) — 열 머리 패널(.colpanel)과 같은 부유 면. 조건 = 열 하나당 카드, 카드
+   사이 가운데 「그리고」 줄, 맨 아래 늘 점선 「새 조건」 카드(열 콤보박스). 카드 목록만 스크롤하고
+   이름·footer 는 제자리에 선다(높이 = 화면 − 48px). */
+.colpanel.fbuilder{width:460px;max-width:calc(100vw - 32px);min-width:0;max-height:calc(100vh - 48px)}
+.fbuilder .fb-head{justify-content:flex-start;gap:var(--sp-8)}
+.fbuilder .fb-note{margin-left:auto;font-size:var(--fs-caption);font-weight:400;color:var(--a-muted)}
+.fbuilder .fb-rows{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:var(--sp-6);padding:2px}
+.fbuilder .fb-card{display:flex;flex-direction:column;gap:var(--sp-8);padding:var(--sp-10);
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
+.fbuilder .fb-card-head{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
+.fbuilder .fb-card-name{font-size:14px;font-weight:700;color:var(--a-ink);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbuilder .fb-kind{flex:none;font-size:11px;line-height:1.5;color:var(--n-ink-soft);
+  border:1px solid var(--n-border-strong);border-radius:var(--rad-pill);padding:0 var(--sp-6)}
+.fbuilder .fb-card-head .fb-remove{margin-left:auto}
+.fbuilder .fb-seg{margin-left:auto;display:inline-flex;flex:none;border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);overflow:hidden}
+.fbuilder .fb-seg + .fb-remove{margin-left:0}
+.fbuilder .fb-seg-btn{font:inherit;font-size:var(--fs-caption);border:0;background:transparent;
+  color:var(--n-ink-soft);padding:2px var(--sp-8);cursor:pointer;
+  transition:background-color var(--dur-press) var(--ease-out)}
+.fbuilder .fb-seg-btn + .fb-seg-btn{border-left:1px solid var(--n-border-strong)}
+.fbuilder .fb-seg-btn:hover{background:var(--n-hover)}
+.fbuilder .fb-seg-btn[aria-pressed="true"]{background:color-mix(in srgb,var(--a-primary) 12%,var(--a-card));
+  color:var(--a-primary);font-weight:700}
 .fbuilder .fb-remove{flex:none;display:inline-grid;place-items:center;width:24px;height:24px;padding:0;
   border:0;border-radius:var(--rad-control);background:transparent;color:var(--a-muted);cursor:pointer}
 .fbuilder .fb-remove:hover{background:var(--n-hover);color:var(--a-danger)}
-.fbuilder .fb-remove:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
 .fbuilder .fb-remove .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
-.fbuilder .fb-range{display:flex;flex-direction:column;gap:var(--sp-4)}
-.fbuilder .cp-vals{max-height:140px;background:var(--a-card)}
+.fbuilder .fb-range,.fbuilder .fb-range-words{display:flex;flex-direction:column;gap:var(--sp-4)}
+.fbuilder .fb-range-words{flex-direction:row;align-items:center;gap:var(--sp-6)}
+.fbuilder .fb-word{flex:none;width:auto}
+.fbuilder .fb-between{display:flex;align-items:center;gap:var(--sp-4);flex:1;min-width:0}
+.fbuilder .fb-operand{flex:1;min-width:0;width:auto}
+.fbuilder .fb-operand.num{text-align:right;font-variant-numeric:tabular-nums}
+.fbuilder .fb-unit{flex:none;font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.fbuilder .fb-tags{display:flex;flex-wrap:wrap;gap:var(--sp-4);max-height:132px;overflow:auto;padding:2px}
+.fbuilder .fb-tag{font:inherit;font-size:var(--fs-caption);max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-pill);background:var(--a-card);color:var(--a-ink);padding:2px var(--sp-10);
+  cursor:pointer;transition:background-color var(--dur-press) var(--ease-out),border-color var(--dur-press) var(--ease-out)}
+.fbuilder .fb-tag:hover{background:var(--n-hover)}
+.fbuilder .fb-tag[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary);font-weight:700;
+  background:color-mix(in srgb,var(--a-primary) 14%,var(--a-card))}
+.fbuilder .fb-more{align-self:center;font-size:var(--fs-caption);color:var(--a-muted)}
+.fbuilder .fb-seg-btn:focus-visible,.fbuilder .fb-tag:focus-visible,.fbuilder .fb-remove:focus-visible{
+  outline:2px solid var(--a-primary);outline-offset:1px}
 .fbuilder .fb-and{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--fs-caption);
   color:var(--a-muted)}
 .fbuilder .fb-and::before,.fbuilder .fb-and::after{content:"";flex:1;height:1px;background:var(--a-border)}
-.fbuilder .fb-add{align-self:flex-start;color:var(--a-primary)}
-.fbuilder .fb-count{min-height:1.5em;font-size:var(--fs-caption);color:var(--n-ink-soft);
-  font-variant-numeric:tabular-nums}
-.fbuilder .fb-foot{display:flex;gap:var(--sp-6);align-items:center;justify-content:flex-end;
+/* 「새 조건」 카드 — 점선 테두리가 「여기에 더한다」를 말한다. 목록은 카드 안에 펼쳐져 스크롤과 함께 간다. */
+.fbuilder .fb-new{border-style:dashed;border-color:var(--n-border-strong);background:transparent}
+.fbuilder .fb-new-cap{font-size:var(--fs-caption);font-weight:700;color:var(--n-ink-soft)}
+.fbuilder .fb-options{list-style:none;margin:0;padding:var(--sp-4);max-height:220px;overflow:auto;
+  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
+.fbuilder .fb-option{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
+  padding:var(--sp-4) var(--sp-8);border-radius:var(--rad-control);cursor:pointer;font-size:var(--fs-body)}
+.fbuilder .fb-option[aria-selected="true"]{background:var(--a-sel)}
+.fbuilder .fb-option-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbuilder .fb-option mark{background:transparent;color:var(--a-primary);font-weight:700}
+/* 표에서 숨긴 열 — 흐린 잉크(색만이 아니라 뒤에 선다·접는 줄이 이름을 말한다). */
+.fbuilder .fb-option.muted{color:var(--a-muted)}
+.fbuilder .fb-option.fold{font-size:var(--fs-caption)}
+.fbuilder .fb-fold-mark .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;display:block;transition:transform var(--dur-press) var(--ease-out)}
+.fbuilder .fb-option.fold[aria-expanded="true"] .fb-fold-mark .icon{transform:rotate(90deg)}
+.fbuilder .fb-name{flex:none}
+.fbuilder .fb-hint{font-weight:400;color:var(--a-muted)}
+.fbuilder .fb-foot{flex:none;display:flex;gap:var(--sp-8);align-items:center;
   padding-top:var(--sp-8);border-top:1px solid var(--a-border)}
-.fbuilder .fb-delete{margin-right:auto;color:var(--a-danger)}
+.fbuilder .fb-delete{color:var(--a-danger)}
 .fbuilder .fb-delete:hover:not(:disabled){color:var(--a-danger);
   background:color-mix(in srgb,var(--a-danger) 8%,var(--a-card))}
+.fbuilder .fb-status{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-8);
+  font-size:var(--fs-caption);color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
+.fbuilder .fb-status b{font-size:var(--fs-body);color:var(--a-ink)}
+.fbuilder .fb-meter{flex:none;width:120px;height:6px;border-radius:var(--rad-pill);
+  background:var(--n-track);overflow:hidden}
+.fbuilder .fb-meter-fill{display:block;width:100%;height:100%;background:var(--a-primary);
+  transform-origin:left center;transition:transform var(--dur-pop) var(--ease-out)}
+@media (prefers-reduced-motion:reduce){
+  .fbuilder .fb-seg-btn,.fbuilder .fb-tag,.fbuilder .fb-meter-fill,.fbuilder .fb-fold-mark .icon{transition:none}
+}
+
 .filter-reapply{color:var(--a-primary);border-color:color-mix(in srgb,var(--a-primary) 30%,var(--a-border))}
 
 /* 필터 밖 선택 스트립(결정 3) — 관통 가시성. */

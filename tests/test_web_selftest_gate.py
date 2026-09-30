@@ -1205,7 +1205,7 @@ class TestWebSelftestGate:
         assert j["preset_warn_title"] == "이 필터의 열이 지금 데이터에 없습니다: 추정가격", (
             f"쓸 수 없는 사유가 title 로 안 왔습니다: {j['preset_warn_title']!r}"
         )
-        assert j["preset_on_title"] == "추정가격 < '100,000,000'", (
+        assert j["preset_on_title"] == "소기업: 추정가격 < '100,000,000'", (
             f"켜진 칩의 title 이 Python 조건 문안이 아닙니다: {j['preset_on_title']!r}"
         )
         assert j["preset_on_bg"] != j["preset_off_bg"], (
@@ -1224,23 +1224,38 @@ class TestWebSelftestGate:
         )
 
     def test_job_filter_builder_opens_counts_and_closes(self, selftest_result: dict) -> None:
-        # 「+ 필터」 빌더 — 지금 조건(금액 범위 + 검색)으로 채워진 두 줄이 「그리고」로 이어지고,
-        # 살아 있는 수를 Python 질의로 묻고, 트리거 아래에 서며, Escape 로 닫혀 초점이 돌아온다.
+        # 「+ 필터」 빌더 — 지금 조건(금액 범위 + 검색)이 열마다 카드로 서고 카드 사이·새 조건 앞에
+        # 「그리고」가 선다. 살아 있는 수는 footer 상태(굵은 수 / 전체 + 막대)로, 요약은 이름 칸
+        # 자리표시자로 선다. 맨 아래 열 콤보박스는 Python 거르기(list_filter_columns)로 목록을 세우고
+        # 이미 카드가 선 열은 빼며, ↓/Enter 로 카드를 더하고 그 카드로 초점을 옮긴다.
         # ⋯ 고치기는 같은 면을 고치기 모드로 열고 바깥 누름에 닫힌다.
         j = probe(selftest_result, "job_mirror")
         assert j["builder_open"] is True and j["builder_title"] == "필터 만들기"
-        assert j["builder_rows"] == 2 and j["builder_and"] == ["그리고"], (
-            f"프리필 줄이 다릅니다: rows={j['builder_rows']!r} and={j['builder_and']!r}"
+        assert j["builder_note"] == "열 머리 조건에서 채움"
+        assert j["builder_cards"] == ["금액", "전체 열 검색"] and j["builder_and"] == ["그리고", "그리고"], (
+            f"프리필 카드가 다릅니다: cards={j['builder_cards']!r} and={j['builder_and']!r}"
         )
-        assert j["builder_count"] == "지금 데이터 2행 중 1행", (
-            f"살아 있는 수가 서지 않았습니다: {j['builder_count']!r}"
+        assert j["builder_count"] == "1행 / 2행" and j["builder_meter"] == "scaleX(0.5)", (
+            f"살아 있는 수가 서지 않았습니다: {j['builder_count']!r} {j['builder_meter']!r}"
         )
+        assert j["builder_name_placeholder"] == "금액 ≥ '1,000,000'", "이름 칸 자리표시자가 요약이 아닙니다."
         assert j["builder_count_sent"] == '{"op":"ge","operand":"1,000,000"}', (
             f"수 질의가 프리필 조건을 싣지 않았습니다: {j['builder_count_sent']!r}"
         )
-        assert j["builder_focus_name"] is True, "빌더가 열리면 이름 칸에 초점이 가야 합니다."
+        assert j["builder_operand_align"] == "right", "금액 칸은 오른쪽 정렬이어야 합니다."
+        assert j["builder_focus_picker"] is True and j["picker_role"] == "combobox", (
+            "빌더가 열리면 열 콤보박스에 초점이 가야 합니다."
+        )
+        assert (j["picker_expanded"], j["picker_query_sent"]) == ("true", "공고")
+        assert j["picker_options"] == ["공고명"] and j["picker_mark"] == "공고", (
+            f"콤보박스 목록이 다릅니다(쓴 열·검색 카드는 빠진다): {j['picker_options']!r}"
+        )
+        assert j["picker_added"] == ["금액", "전체 열 검색", "공고명"], (
+            f"카드가 더해지지 않았습니다: {j['picker_added']!r}"
+        )
+        assert j["picker_focus_in_new_card"] is True, "고른 열의 카드로 초점이 가지 않았습니다."
         assert j["builder_below_trigger"] is True, "빌더가 트리거 아래에 붙지 않았습니다."
-        assert 380 <= j["builder_width"] <= 440, f"빌더 폭이 다릅니다: {j['builder_width']!r}"
+        assert 440 <= j["builder_width"] <= 470, f"빌더 폭이 다릅니다: {j['builder_width']!r}"
         assert j["builder_closed_on_escape"] is True and j["builder_focus_returned"] is True, (
             "Escape 로 닫히고 초점이 「+ 필터」로 돌아와야 합니다."
         )

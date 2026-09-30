@@ -6552,8 +6552,9 @@ def test_filter_snapshot_carries_groups_dimensions_and_builder_source(tmp_path):
     )
     builder = snap["builder"]
     assert builder["total"] == 6 and builder["can_create"] is True and builder["reason"] == ""
-    assert [(c["name"], c["kind"]) for c in builder["columns"]] == [
-        ("공고명", "text"), ("추정가격", "amount"), ("계약일자", "date"),
+    assert [(c["name"], c["kind"], c["label"], c["hidden"], c["more"]) for c in builder["columns"]] == [
+        ("공고명", "text", "텍스트", False, 0), ("추정가격", "amount", "금액", False, 0),
+        ("계약일자", "date", "날짜", False, 0),
     ]
     # 텍스트 열만 값 목록을 싣는다 — 전 레코드 기준(켜진 칩·지금 조건과 무관), 등장 순.
     assert builder["columns"][0]["values"] == [
@@ -6571,22 +6572,30 @@ def test_create_filter_preset_validation_matrix(tmp_path):
     """이름·열·피연산자·조건이 틀리면 저장하지 않고 열 머리 편집기와 같은 문장으로 거절한다."""
     ctrl, pool, key = _price_presets(tmp_path)
     before = pool.load(key).filters
+    # 거절은 가리키는 열(`column`)을 함께 싣는다 — 빌더가 그 카드 아래에 문장을 세운다.
     refusals = [
-        ("", _SMALL, "이름을 비울 수 없습니다."),
-        ("  ", _SMALL, "이름을 비울 수 없습니다."),
-        ("소기업", _SMALL, "같은 이름의 필터가 있습니다."),
+        ("소기업", _SMALL, {"error": "같은 이름의 필터가 있습니다."}),
+        ("", {"columns": {}}, {"error": "저장할 조건이 없습니다."}),
         ("지역", {"columns": {"지역": {"values": ["세종"]}}},
-         "이 필터의 열이 지금 데이터에 없습니다: 지역"),
+         {"error": "이 필터의 열이 지금 데이터에 없습니다: 지역", "column": "지역"}),
         ("억", _range_state("추정가격", ("lt", "1억")),
-         "'1억' 을(를) 금액(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 100,000,000)."),
+         {"error": "'1억' 을(를) 금액(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 100,000,000).",
+          "column": "추정가격"}),
         ("내일", _range_state("계약일자", ("ge", "내일")),
-         "'내일' 을(를) 날짜(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 2026-07-15)."),
-        ("빈", {"columns": {}, "search": " "}, "저장할 조건이 없습니다."),
-        ("깨짐", {"columns": ["추정가격"]}, "이 필터의 저장 형식을 읽을 수 없습니다."),
+         {"error": "'내일' 을(를) 날짜(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 2026-07-15).",
+          "column": "계약일자"}),
+        ("빈", {"columns": {}, "search": " "}, {"error": "저장할 조건이 없습니다."}),
+        ("깨짐", {"columns": ["추정가격"]}, {"error": "이 필터의 저장 형식을 읽을 수 없습니다."}),
     ]
-    for name, state, error in refusals:
-        assert _create(ctrl, name, state) == {"ok": False, "error": error}, name
+    for name, state, refusal in refusals:
+        assert _create(ctrl, name, state) == {"ok": False, **refusal}, name
     assert pool.load(key).filters == before  # 거절은 원장을 건드리지 않는다
+
+    # 이름을 비우면 조건 요약(칩 title 과 같은 문안)이 이름이 된다 — 같은 이름 규칙은 그대로.
+    assert _create(ctrl, "  ", _FIRST_HALF) == {
+        "ok": True, "name": "계약일자 ≥ '2026-01-01' ∧ ≤ '2026-06-30'",
+    }
+    assert _create(ctrl, "", _FIRST_HALF) == {"ok": False, "error": "같은 이름의 필터가 있습니다."}
 
     # 등록하지 않은 파일은 저장할 곳이 없다 — 빌더 소재가 사유를 싣고 동사도 같은 사유로 거절.
     elsewhere = tmp_path / "plain"  # 다른 등록 원장 — 이 파일은 거기 등록돼 있지 않다
@@ -6634,7 +6643,6 @@ def test_update_filter_preset_renames_rewrites_and_persists(tmp_path):
         })
 
     assert update("중소기업", "소기업") == {"ok": False, "error": "같은 이름의 필터가 있습니다."}
-    assert update("중소기업", "") == {"ok": False, "error": "이름을 비울 수 없습니다."}
     assert update("중소기업", "중소기업", {"columns": {}}) == {
         "ok": False, "error": "저장할 조건이 없습니다.",
     }
@@ -6657,17 +6665,20 @@ def test_count_filter_state_is_a_read_only_query(tmp_path):
     ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})  # 켜진 칩·지금 조건과 무관하다
     pushes: list = []
     ctrl._push = lambda *a, **k: pushes.append(1)
+    # 수와 함께 요약 문안(이름 칸 자리표시자 = 빈 이름 저장 때의 이름)을 싣는다.
     assert ctrl.dispatch("count_filter_state", {"state": _MEDIUM}) == {
         "ok": True, "count": 3, "total": 6,
+        "summary": "추정가격 ≥ '100,000,000' ∧ < '220,000,000'",
     }
     assert ctrl.dispatch("count_filter_state", {"state": {"columns": {}}}) == {
-        "ok": True, "count": 6, "total": 6,
+        "ok": True, "count": 6, "total": 6, "summary": "",
     }
     assert ctrl.dispatch("count_filter_state", {
         "state": _range_state("추정가격", ("lt", "1억")),
     }) == {
         "ok": False,
         "error": "'1억' 을(를) 금액(으)로 읽을 수 없습니다. 숫자 형태로 입력하세요(예: 100,000,000).",
+        "column": "추정가격",
     }
     assert pushes == []  # 무변이 질의 — 스냅샷을 다시 밀지 않는다
     assert ctrl.snapshot()["filter"]["definition"] == "필터 '소기업'"
@@ -6806,3 +6817,32 @@ def test_filter_presets_on_the_real_contract_list_view(tmp_path):
     assert snap["filter"]["definition"] == "필터 '소기업' 또는 '중소기업'"
     assert snap["table"]["visible_count"] == expected
     assert ctrl.dispatch("count_filter_state", {"state": _SMALL})["total"] == len(prices)
+
+
+def test_list_filter_columns_matches_like_the_full_column_search(tmp_path):
+    """빌더 콤보박스의 열 거르기 — 전체 열 검색과 같은 자모 부분일치, 숨긴 열은 뒤(표 선언을 따른다)."""
+    ctrl, _pool, _key = _price_presets(tmp_path)
+    pushes: list = []
+    ctrl._push = lambda *a, **k: pushes.append(1)
+
+    def names(query):
+        result = ctrl.dispatch("list_filter_columns", {"query": query})
+        assert result["ok"] is True
+        return [(c["name"], c["label"], c["hidden"]) for c in result["columns"]]
+
+    assert names("") == [("공고명", "텍스트", False), ("추정가격", "금액", False), ("계약일자", "날짜", False)]
+    assert names("가곡") == []  # 자모가 어긋나면 없다
+    assert names("가ㄱ") == [("추정가격", "금액", False)]  # 「가격」을 치는 중(자모 단계 매치)
+    hit = ctrl.dispatch("list_filter_columns", {"query": "일자"})["columns"][0]
+    assert hit["segments"] == [["계약", False], ["일자", True]] or hit["segments"] == [("계약", False), ("일자", True)]
+    assert pushes == []  # 무변이 질의
+    del ctrl._push  # 이제 변이를 민다 — 스냅샷이 숨김을 반영해야 한다
+
+    # 표에서 숨긴 열은 빌더에도 숨김 표지를 달고 목록 뒤로 간다(여전히 검색된다).
+    ctrl.dispatch("hide_column", {"column": "공고명"})
+    assert names("") == [("추정가격", "금액", False), ("계약일자", "날짜", False), ("공고명", "텍스트", True)]
+    assert names("공고") == [("공고명", "텍스트", True)]
+    columns = ctrl.snapshot()["filter"]["builder"]["columns"]
+    assert [(c["name"], c["hidden"]) for c in columns] == [
+        ("공고명", True), ("추정가격", False), ("계약일자", False),
+    ]

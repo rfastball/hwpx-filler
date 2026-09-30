@@ -67,6 +67,8 @@ _DATA_ZONE = {
     "filter_panel": _schema("column"),
     # 필터 빌더의 살아 있는 수 — 후보 조건만 평가한다(무변이, push 없음).
     "count_filter_state": _schema("state"),
+    # 필터 빌더 콤보박스의 열 거르기 — 전체 열 검색과 같은 자모 부분일치(무변이, push 없음).
+    "list_filter_columns": _schema(optional="query"),
 }
 
 # 겨눔 대상은 슬롯 `key` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 겨눔의 정체가 못 된다).

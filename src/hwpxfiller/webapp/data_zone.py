@@ -12,8 +12,11 @@ from pathlib import Path
 from typing import Callable
 
 from ..domain.dataset_reference import excel_identity, pclm_identity
+from ..domain.jamo import jamo_find
 from ..external.dataset_store import DatasetPoolRegistry
 from ..viewmodel.filter_state import (
+    KIND_AMOUNT,
+    KIND_DATE,
     KIND_TEXT,
     FilterModel,
     FilterView,
@@ -53,6 +56,11 @@ EMPTY_TABLE = {
 VIEW_ORDER_DESC = "sourceDesc"
 VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
+
+#: 필터 빌더의 열 유형 표지(카드·콤보박스 줄) — 유형 판정과 함께 여기서 짓는다(표면이 되짓지 않는다).
+KIND_LABELS = {KIND_TEXT: "텍스트", KIND_AMOUNT: "금액", KIND_DATE: "날짜"}
+#: 빌더의 값 태그 상한 — 넘는 값은 「…외 N개」로 수만 말한다(고른 값은 상한 밖이어도 늘 보인다).
+BUILDER_VALUE_CAP = 50
 
 #: 저장한 필터를 들 등록 데이터가 없는 마운트(등록하지 않은 파일)의 「+ 필터」 거절 사유.
 _PRESET_NO_HOME = "필터는 등록 데이터에만 저장할 수 있습니다."
@@ -553,6 +561,15 @@ class JobDataSession:
             raise ValueError(_PRESET_NO_HOME)
         return self._filter_or_raise().clone()
 
+    @staticmethod
+    def _refusal(exc: ValueError) -> dict:
+        """거절 응답 — 문장 그대로 + 가리키는 열(있으면). 빌더가 그 열의 카드 아래에 세운다."""
+        out = {"ok": False, "error": str(exc)}
+        column = getattr(exc, "column", "")
+        if column:
+            out["column"] = column
+        return out
+
     def _do_create_filter_preset(self, p: dict) -> dict:
         """「+ 필터」 빌더의 저장 — 조건을 이름으로 저장하고 칩을 켠다.
 
@@ -563,9 +580,10 @@ class JobDataSession:
             trial = self._preset_trial()
             name = trial.create_preset(
                 str(p.get("name", "")), p.get("state"), from_adhoc=bool(p.get("from_adhoc")),
+                records=self.records,
             )
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
+            return self._refusal(exc)
         self._preset_commit(trial)
         return {"ok": True, "name": name}
 
@@ -574,26 +592,62 @@ class JobDataSession:
         name = str(p["name"])
         try:
             trial = self._preset_trial()
-            new_name = trial.update_preset(name, str(p.get("new_name", "")), p.get("state"))
+            new_name = trial.update_preset(
+                name, str(p.get("new_name", "")), p.get("state"), records=self.records,
+            )
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
+            return self._refusal(exc)
         self._preset_commit(trial, renamed={name: new_name})
         return {"ok": True, "name": new_name}
 
     def _do_count_filter_state(self, p: dict) -> dict:
-        """빌더의 살아 있는 수 — 후보 조건 하나만으로 지금 데이터에서 보이는 행 수.
+        """빌더의 살아 있는 수 — 후보 조건 하나만으로 지금 데이터에서 보이는 행 수 + 요약 문안.
 
-        무변이 질의(push 없음). 검증 거절은 ``{"ok": False, "error"}`` 로 돌려 빌더가 목록
-        아래에서 재진술한다(알림 없음).
+        무변이 질의(push 없음). ``summary`` 는 이름 칸 자리표시자(빈 이름 저장 때의 이름)다.
+        검증 거절은 ``{"ok": False, "error", "column"?}`` 로 돌려 빌더가 그 열의 카드 아래(열을
+        모르면 목록 아래)에서 재진술한다(알림 없음).
         """
         fm = self._filter_or_raise()
         try:
             count = fm.count_state(p.get("state"), self.records)
+            summary = fm.describe_state(p.get("state"), self.records)
         except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
-        return {"ok": True, "count": count, "total": len(self.records)}
+            return self._refusal(exc)
+        return {"ok": True, "count": count, "total": len(self.records), "summary": summary}
 
     _do_count_filter_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_list_filter_columns(self, p: dict) -> dict:
+        """빌더 콤보박스의 열 목록 — 열 이름을 **전체 열 검색과 같은 자모 부분일치**로 거른다.
+
+        브라우저에 두 번째 매처를 두지 않으려고 Python 이 거르고, 강조는 표 셀과 같은 세그먼트
+        계약(원문 조각 + 매치 여부)으로 돌려준다. 빈 질의는 전 열이다. 순서는 표의 숨김 선언(#341)을
+        따른다 — 보이는 열(표 순서) 다음에 숨긴 열(``hidden``)이 선다. 이미 카드가 선 열을 빼는 일,
+        숨긴 열 접기, 「전체 열 검색」 줄은 표면이 한다(빌더 안 상태).
+        """
+        fm = self._filter_or_raise()
+        query = str(p.get("query") or "").strip()
+        hidden = self._zone_hidden()
+        columns = []
+        ordered = [c for c in fm.columns if c not in hidden] + [c for c in fm.columns if c in hidden]
+        for col in ordered:
+            found = jamo_find(col, query) if query else (0, 0)
+            if found is None:
+                continue
+            start, end = found
+            segments = [
+                (piece, hit)
+                for piece, hit in ((col[:start], False), (col[start:end], True), (col[end:], False))
+                if piece
+            ]
+            kind = fm.kind(col)
+            columns.append({
+                "name": col, "kind": kind, "label": KIND_LABELS.get(kind, ""),
+                "hidden": col in hidden, "segments": segments,
+            })
+        return {"ok": True, "columns": columns}
+
+    _do_list_filter_columns.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     def _do_toggle_filter_preset(self, p: dict) -> dict:
         """저장한 필터 칩 누르기 — 같은 차원끼리 「또는」, 차원 사이 「그리고」로 합성된다."""
@@ -680,9 +734,11 @@ class JobDataSession:
 
         값 목록은 **전 레코드** 기준이다(저장본은 지금 조건과 따로 평가되므로 열 머리 패널처럼
         다른 조건 통과 행으로 좁히지 않는다). 등장 순, ``""``(빈값)은 말미 — 열 머리 패널과 같은
-        규칙이고 캡도 같다(없음). 유형·값은 여기서만 판정한다 — 표면이 다시 짓지 않는다.
+        규칙이다. 태그는 :data:`BUILDER_VALUE_CAP` 개까지만 싣고 넘는 수는 ``more`` 로 말한다(표면의
+        「…외 N개」). 유형·표지·값은 여기서만 판정한다 — 표면이 다시 짓지 않는다.
         """
         columns = []
+        hidden = self._zone_hidden()
         for col in fm.columns:
             kind = fm.kind(col)
             values: "list[str]" = []
@@ -696,7 +752,13 @@ class JobDataSession:
                     else:
                         seen.setdefault(value, None)
                 values = list(seen) + ([""] if has_empty else [])
-            columns.append({"name": col, "kind": kind, "values": values})
+            more = max(0, len(values) - BUILDER_VALUE_CAP)
+            columns.append({
+                "name": col, "kind": kind, "label": KIND_LABELS.get(kind, ""),
+                # 표에서 숨긴 열(보기 축) — 콤보박스가 뒤로 접는다(판정은 여기서만).
+                "hidden": col in hidden,
+                "values": values[:BUILDER_VALUE_CAP], "more": more,
+            })
         return {
             "columns": columns,
             "total": len(self.records),
