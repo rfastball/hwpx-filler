@@ -1939,6 +1939,22 @@ def test_previous_rules_field_entry_shape_is_loud():
         decode_job(d)
 
 
+def test_previous_rules_written_before_the_slice_axis_read_as_no_slice():
+    """가공 축(field-binding/v4) 이전에 적힌 직전 판본은 5 축이다 — 「가공 없음」으로 읽는다.
+
+    그 모양을 거절하면 업그레이드한 사용자의 작업이 전부 열리지 않고, 조용히 통과시키면 축이
+    빠진 사전이 판본 비교에서 「바뀐 필드」로 오판된다. 다른 모양(축 하나 빠짐)은 여전히 거절한다.
+    """
+    d = encode_job(_job())
+    legacy_axes = {"source": "a", "type": "text", "const": "", "blank": "", "fmt": ""}
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": legacy_axes}}
+    assert decode_job(d).previous_rules["fields"]["공고명"] == {**legacy_axes, "slice": ""}
+    broken = {k: v for k, v in legacy_axes.items() if k != "fmt"}
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": broken}}
+    with pytest.raises(ValueError, match="축은"):
+        decode_job(d)
+
+
 def test_previous_rules_template_and_filename_must_be_strings():
     """직전 판본의 template·filename 은 문자열이다 — 타입 훼손을 조용히 통과시키지 않는다."""
     from hwpxfiller.domain.job import rules_values

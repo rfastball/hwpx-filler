@@ -21,6 +21,7 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     FIELD_BINDING_SEMANTIC_VERSION,
     FIELD_BINDING_SEMANTIC_VERSION_V2,
+    FIELD_BINDING_SEMANTIC_VERSION_V3,
     FORMAT_KINDS,
     SOURCE,
     ExactText,
@@ -152,7 +153,10 @@ def test_v3_framing_carries_the_kind_and_changes_identity() -> None:
     plain = (_source("금액"),)
     amount = (_source("금액", kind="amount", code=""),)
     assert digest_binding_rules(amount) != digest_binding_rules(plain)
-    assert b"field-binding/v3" in canonicalize_binding_rules(amount)
+    assert b"field-binding/v4" in canonicalize_binding_rules(amount)
+    assert b"field-binding/v3" in canonicalize_binding_rules(
+        amount, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V3
+    )
     # 같은 규칙이라도 판이 다르면 다른 bytes 다(판이 framing 을 고른다).
     assert digest_binding_rules(plain) != digest_binding_rules(
         plain, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2
@@ -188,8 +192,13 @@ def test_v2_is_readable_but_not_an_execution_contract() -> None:
     assert is_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION)
     with pytest.raises(UnsupportedFieldBindingContractError):
         require_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V2)
+    # v3(가공 슬롯 이전 판)도 같은 자리 — 읽되 실행 입력이 되지 않는다.
+    assert require_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V3)
+    assert not is_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V3)
     with pytest.raises(UnsupportedFieldBindingContractError):
-        require_field_binding_contract("field-binding/v4")
+        require_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V3)
+    with pytest.raises(UnsupportedFieldBindingContractError):
+        require_field_binding_contract("field-binding/v5")
 
 
 def test_execution_input_is_always_the_current_contract() -> None:

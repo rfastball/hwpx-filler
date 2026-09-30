@@ -247,11 +247,11 @@ def test_migration_commit_blocks_dropped_candidate_unless_omitted() -> None:
 
 
 def test_revision_rejects_unsupported_contract_on_reconstruction() -> None:
-    # 저장 revision 이 미지원 contract 를 담으면 loud fail(#7). v3 가 현재 판이라 미래 판(v4)을 쓴다.
+    # 저장 revision 이 미지원 contract 를 담으면 loud fail(#7). v4 가 현재 판이라 미래 판(v5)을 쓴다.
     inp = _input()
     identity = field_binding_authority_revision_identity(
         work_authority_id=WORK, base_template_application_id="A17",
-        field_binding_semantic_contract_id="field-binding/v4",
+        field_binding_semantic_contract_id="field-binding/v5",
         source_schema_contract_id="source-schema/v2",
         raw_record_contract_id="raw-record/v1",
         canonical_binding_digest=inp.canonical_binding_digest,
@@ -261,7 +261,7 @@ def test_revision_rejects_unsupported_contract_on_reconstruction() -> None:
         FieldBindingRevision(
             work_authority_id=WORK, base_template_application_id="A17",
             field_binding_authority_revision=identity,
-            field_binding_semantic_contract_id="field-binding/v4",
+            field_binding_semantic_contract_id="field-binding/v5",
             source_schema_contract_id="source-schema/v2",
             raw_record_contract_id="raw-record/v1",
             binding_rules=inp.binding_rules, source_schema_keys=inp.source_schema_keys,

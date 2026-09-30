@@ -160,6 +160,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 구 `set_type`·`set_fmt` 두 발 사이에는 사람이 고른 표시형이 사라진 상태가 실재했다.
         # 유형 열이 표시형 select 로 흡수되며 그 짝이 한 액션이 됐다(`fmt` 는 기본형=빈 값).
         "set_display": _schema("index type", "fmt"),
+        # 가공(글자 범위·구분자 나누기, field-binding/v4) — `slice` 가 없거나 null 이면 해제다.
+        # 표시형과 다른 축이라 따로 둔다: 가공은 **칸의 어느 부분**을, 표시형은 **어떻게 보일지**를 정한다.
+        "set_slice": _schema("index", "slice"),
         "set_const": _schema("index const"),
         "set_confirmed": _schema("index confirmed"),
         # 이 필드는 채우지 않는다 — 행별 비움 선언(U6-C #977). 구 `confirm_all` +
@@ -273,12 +276,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_view": _schema(optional="view"),
         "set_target_font": _schema(optional="font"),
         "set_fullwidth": _schema("value"),
-        # 맞추기 동사 6종은 「기안」과 **같은 규약**이다(F6 3R — 공용 MappingVerbsMixin).
+        # 맞추기 동사 7종은 「기안」과 **같은 규약**이다(F6 3R — 공용 MappingVerbsMixin).
         # 정체는 **토큰 이름**이다: 행 index 는 템플릿을 다시 읽으면 흔들리지만 이름은 그
         # 표의 안정 식별자이고, 없는 이름은 `index_of` 가 시끄럽게 거절한다.
         "set_source": _schema("name", "col confirm"),
         "set_map_value": _schema("name", "text"),
         "set_map_fmt": _schema("name", "code"),
+        "set_map_slice": _schema("name", "slice"),
         "set_map_type": _schema("name type"),
         "set_confirmed": _schema("name value"),
         "revert_map": _schema("name"),

@@ -22,6 +22,7 @@ import {
   ingestSnapshot,
   issueToken,
   markField,
+  rowField,
   settle,
   typeInto,
   valueOf,
@@ -2054,6 +2055,11 @@ function bindRow(index, field, state, over) {
     source_kind: state === "needs_source" ? "" : "column",
     source_value: state === "needs_source" ? "" : "col:업체명",
     source_missing_label: "",
+    slice: null, slice_label: "없음", slice_enabled: hasContent,
+    slice_modes: [
+      { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
+      { value: "split", label: "구분자로 나누기" },
+    ],
   }, over || {});
 }
 
@@ -2306,4 +2312,68 @@ test("U6-C 행 상태 class 넷은 두 CSS 에 **둘 다** 선언돼 있다 — 
     assert.equal(product.includes(`tr.${stale}`), false, `editor.css 에 ${stale} 잔재`);
     assert.equal(forced.includes(`tr.${stale}`), false, `forced-colors.css 에 ${stale} 잔재`);
   }
+});
+
+
+/* ================= 가공(글자 범위·구분자 나누기) ================= */
+
+test("가공 칸 — 요약 라벨·가부는 Python 값 그대로, 열 머리는 데이터 열과 표시형 사이", async () => {
+  const h = harness({
+    initial: async () => bindSnap({
+      rows: [
+        bindRow(0, "업체", "suggested", {
+          source: "업체명", slice: { mode: "split", delimiter: "-", index: 1 },
+          slice_label: "구분자 '-' 1번째",
+        }),
+        bindRow(1, "담당자", "needs_source", { preview: "", preview_kind: "none" }),
+      ],
+    }),
+  });
+  await h.controller.init();
+  const markup = renderToStaticMarkup(createElement(EditorScreen, { controller: h.controller }));
+  assert.ok(markup.includes("<th>데이터 열</th><th>가공</th><th>표시형</th>"), "열 순서");
+  assert.ok(markup.includes("구분자 &#x27;-&#x27; 1번째"), "요약 라벨은 Python 문안 그대로");
+  const buttons = [...markup.matchAll(/<button[^>]*data-act="row-slice"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(buttons.length, 2);
+  assert.ok(!buttons[0].includes("disabled"), "slice_enabled 행은 눌린다");
+  assert.ok(buttons[1].includes("disabled"), "slice_enabled=false 행은 잠긴다(웹 재판정 0)");
+});
+
+test("가공 방식 select — set_slice 로 완성된 명세(또는 null)를 한 발에 보낸다", async () => {
+  const h = harness({ initial: async () => bindSnap() });
+  await h.controller.init();
+  h.controller.chooseSliceMode(0, "chars");
+  h.controller.chooseSliceMode(0, "split");
+  h.controller.chooseSliceMode(0, "");
+  await h.controller.flushPendingEdits();
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor")
+    .map((row) => [row[2], row[3]]);
+  assert.deepEqual(sent, [
+    ["set_slice", { index: 0, slice: { mode: "chars", start: 1 } }],
+    ["set_slice", { index: 0, slice: { mode: "split", delimiter: ",", index: 1 } }],
+    ["set_slice", { index: 0, slice: null }],
+  ]);
+  assert.throws(() => h.controller.chooseSliceMode(0, "regex"), /알 수 없는 가공 방식/);
+});
+
+test("가공 입력 blur — 행의 완성된 명세를 보내고 불완전하면 발신 0", async () => {
+  const h = harness({
+    initial: async () => bindSnap({
+      rows: [bindRow(0, "업체", "suggested", {
+        source: "업체명", slice: { mode: "chars", start: 1, length: 3 },
+        slice_label: "글자 범위 1~3",
+      })],
+    }),
+  });
+  await h.controller.init();
+  h.controller.toggleSliceEditor(0);
+  assert.equal(h.controller.isSliceEditorOpen(0), true);
+  h.controller.type(rowField(0, "slice_length"), "");
+  h.controller.commitSliceOnBlur(0, "slice_length");     // 글자 수 비움 = 끝까지
+  h.controller.type(rowField(0, "slice_start"), "");
+  h.controller.commitSliceOnBlur(0, "slice_start");      // 시작 비움 = 불완전 → 발신 0
+  await h.controller.flushPendingEdits();
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "editor")
+    .map((row) => [row[2], row[3]]);
+  assert.deepEqual(sent, [["set_slice", { index: 0, slice: { mode: "chars", start: 1 } }]]);
 });

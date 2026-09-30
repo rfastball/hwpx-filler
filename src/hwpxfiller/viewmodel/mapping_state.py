@@ -24,12 +24,14 @@ from ..domain.format_engine import presets as format_presets
 from ..domain.job import MISSING_MARKER
 from ..domain.lint import similarity
 from ..domain.mapping import (
+    SOURCE_CARRIER_TYPES,
     SUGGEST_THRESHOLD,
     TYPES,
     FieldMapping,
     MappingProfile,
     suggest_mappings,
 )
+from ..domain.text_slice import TEXT_SLICE_CHARS, TextSlice, text_slice_from_payload
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import CompileState, TemplateStatus, compile_status
 
@@ -109,6 +111,51 @@ _FMT_OPTIONS = {
 #: 존재 이유다 — 빈 레코드는 :data:`~hwpxfiller.domain.job.MISSING_MARKER` 를 찍어 「산출물이
 #: 담을 것」과 「아직 모름」을 한 표식으로 접는다(조용한 거짓말).
 FIRST_ROW_STATES = ("ready", "pending", "error")
+
+#: 가공(글자 범위·구분자 나누기, field-binding/v4) 요약 라벨의 조각. 행의 가공 손잡이가 지금
+#: 무엇이 걸렸는지를 한 줄로 말한다 — 조합은 :func:`slice_label` 한 곳이다(웹이 명세를 읽어 문안을
+#: 짓지 않는다). 방식 이름은 편집 칸의 선택지 라벨과 같은 말이다.
+SLICE_NONE_LABEL = "없음"
+SLICE_MODE_LABEL = {
+    "chars": "글자 범위",
+    "split": "구분자로 나누기",
+}
+
+#: 가공 편집 칸의 방식 선택지(값 ``""`` = 가공 없음). 웹은 이 목록을 그대로 그린다 — 라벨을 웹이
+#: 다시 적으면 요약 라벨(:func:`slice_label`)과 선택지가 서로 다른 말을 하게 된다.
+SLICE_MODE_OPTIONS = (
+    {"value": "", "label": SLICE_NONE_LABEL},
+    {"value": "chars", "label": SLICE_MODE_LABEL["chars"]},
+    {"value": "split", "label": SLICE_MODE_LABEL["split"]},
+)
+
+
+def slice_projection(row: "RowState") -> dict:
+    """행의 가공 축 투영 — 편집기·작업대가 같은 키를 낸다(명세·요약·손잡이 술어·방식 선택지)."""
+    return {
+        "slice": None if row.slice is None else row.slice.to_dict(),
+        "slice_label": slice_label(row.slice),
+        "slice_enabled": row.slice_enabled(),
+        "slice_modes": [dict(option) for option in SLICE_MODE_OPTIONS],
+    }
+
+
+def slice_label(spec: "TextSlice | None") -> str:
+    """가공 명세 → 행에 서는 짧은 요약. 없으면 「없음」.
+
+    글자 범위는 ``글자 범위 1~3``(글자 수가 없으면 ``1~``), 구분자는 ``구분자 '-' 1번째`` —
+    음수 번째는 ``끝에서 1번째`` 로 읽는다(``-1`` 은 사람이 읽는 말이 아니다).
+    """
+    if spec is None:
+        return SLICE_NONE_LABEL
+    if spec.mode == TEXT_SLICE_CHARS:
+        assert spec.start is not None
+        end = "" if spec.length is None else str(spec.start + spec.length - 1)
+        return f"{SLICE_MODE_LABEL['chars']} {spec.start}~{end}"
+    assert spec.index is not None
+    where = f"{spec.index}번째" if spec.index > 0 else f"끝에서 {-spec.index}번째"
+    return f"구분자 '{spec.delimiter}' {where}"
+
 
 #: 아직 읽지 않은 첫 행 칸의 표식. 홑 문자 하나짜리 **빈 칸 마커**라
 #: ``docs/ui-style.md#ui-copy`` §3-1(문장 안 em dash 금지)의 예외다 — 문장이 아니다.
@@ -283,6 +330,9 @@ def row_projection(
         # 웹이 되짚지 않는다(유형이 행 축이므로 후보도 행 축이다).
         "display_options": display_options(row, source_kind),
         "display_value": f"{row.type}:{row.fmt}",
+        # 가공(v4) — 명세 그대로(편집 칸이 채울 값)·요약 라벨·손잡이가 서는가. 술어는 여기 하나다:
+        # 고정값·오늘 날짜·무결속 행에는 가공할 원본 칸이 없다(웹이 유형을 보고 다시 판정하지 않는다).
+        **slice_projection(row),
         "confirmed": row.confirmed,
         "touched": row.touched,
         "has_content": row.has_content(),
@@ -366,6 +416,9 @@ class RowState:
     type: str = "text"
     const: str = ""
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
+    #: 가공(글자 범위·구분자 나누기) — 열에서 값을 받는 동안만 산다. 고정값·오늘 날짜로 바뀌거나
+    #: 결속이 새로 서면 걷힌다(표시형 청소와 같은 자리).
+    slice: "TextSlice | None" = None
     confirmed: bool = False
     suggestion_score: float = 0.0
     touched: bool = False  # 사람이 소스/내용을 직접 정함(수동=사람 소유). 미접촉=시스템 소유.
@@ -423,6 +476,7 @@ class RowState:
         self.source = ""
         self.const = ""
         self.fmt = ""
+        self.slice = None
         self.type = self.default_type()
         self.suggestion_score = 0.0
 
@@ -445,6 +499,10 @@ class RowState:
         """명시적 비움 — 아무것도 적지 않은 고정값(``FieldMapping.is_declared_empty`` 미러)."""
         return self.type == "const" and self.const == ""
 
+    def slice_enabled(self) -> bool:
+        """가공 손잡이가 서는가 — 열에서 값을 받는 행만(원본 칸이 있어야 그 일부를 고른다)."""
+        return self.type in SOURCE_CARRIER_TYPES and bool(self.source)
+
     def to_mapping(self) -> FieldMapping:
         return FieldMapping(
             template_field=self.template_field,
@@ -452,6 +510,8 @@ class RowState:
             type=self.type,
             const=self.const,
             fmt=self.fmt,
+            # 가공은 소스 carrier 유형에서만 방출한다(고정값·오늘 날짜의 FieldMapping 은 가공을 거절).
+            slice=self.slice if self.type in SOURCE_CARRIER_TYPES else None,
         )
 
 
@@ -569,6 +629,7 @@ class MappingModel:
                 type=m.type,
                 const=m.const,
                 fmt=m.fmt,
+                slice=m.slice,
                 confirmed=True,  # 베이스는 확정본
                 touched=True,  # 사람 소유(과거 확정 산출물) — 라이브 재제안 비대상(결정 12)
             ))
@@ -605,6 +666,7 @@ class MappingModel:
         row.type = type_
         row.fmt = ""  # 유형이 바뀌면 이전 표시형 키는 무효 → 기본으로.
         if type_ in ("const", "today"):
+            row.slice = None  # 원본 칸이 없는 유형 — 가공도 뜻이 없다(표시와 출력이 갈리지 않게).
             # 값의 출처가 열이 아니게 됐다 — 남긴 소스는 표에 「이 열」로 보이지만 값은
             # 상수·오늘 날짜다(``set_source`` 의 짝 규칙). 되돌리기용 소스 기억이 필요한
             # 자리는 ``set_manual`` 이고 그쪽은 이 관문을 지나지 않는다.
@@ -620,6 +682,27 @@ class MappingModel:
         row.confirmed = False
         row.touched = True
         row.auto_confirmed_exact = False
+
+    def set_slice(self, index: int, spec: object) -> None:
+        """가공(글자 범위·구분자 나누기) 설정·해제 — 편집이므로 확정 해제(:meth:`set_fmt` 과 같다).
+
+        ``spec`` 은 ``None``(가공 없음)·:class:`TextSlice`·직렬화 사전이다. 판정은 도메인 한 곳
+        (:mod:`~hwpxfiller.domain.text_slice`)이 하고, 잘못된 명세는 고치지 않고 거절한다
+        (``TextSliceError`` — 문장은 사용자가 고칠 자리를 말한다). 원본 칸이 없는 행(고정값·
+        오늘 날짜·무결속)에 가공을 **세우는** 것도 거절한다 — 해제(``None``)는 언제나 된다.
+        """
+        parsed = text_slice_from_payload(spec)
+        row = self.rows[index]
+        if parsed is not None and not row.slice_enabled():
+            raise ValueError(f"가공은 데이터 열 값에만 둘 수 있음: {row.template_field!r}")
+        row.slice = parsed
+        row.confirmed = False
+        row.touched = True
+        row.auto_confirmed_exact = False
+
+    def set_slice_for(self, template_field: str, spec: object) -> None:
+        """이름 API — 작업대 동사(`set_map_slice`)가 토큰 이름으로 부른다(:meth:`set_fmt_for` 짝)."""
+        self.set_slice(self.index_of(template_field), spec)
 
     def set_const(self, index: int, const: str) -> None:
         row = self.rows[index]
@@ -645,6 +728,7 @@ class MappingModel:
         row.fmt = fmt
         if type_ in ("const", "today"):
             row.source = ""
+            row.slice = None
         if type_ != "const":
             row.const = ""
         row.confirmed = False
@@ -1001,6 +1085,7 @@ class MappingModel:
         )
         row.const = ""
         row.fmt = ""
+        row.slice = None  # 새 결속은 새 칸 — 옛 칸 모양에 맞춘 가공을 이어 가지 않는다.
         row.confirmed = False
         row.touched = True
         row.auto_confirmed_exact = False
@@ -1014,6 +1099,7 @@ class MappingModel:
         row = self.rows[index]
         row.type = "const"
         row.const = value
+        row.slice = None  # 고정값에는 가공할 원본 칸이 없다.
         row.confirmed = False
         row.touched = True
         row.auto_confirmed_exact = False
@@ -1029,6 +1115,7 @@ class MappingModel:
         row.const = value
         row.source = ""
         row.fmt = ""
+        row.slice = None
         row.confirmed = False
         row.touched = True
         row.auto_confirmed_exact = False
@@ -1045,6 +1132,7 @@ class MappingModel:
         )
         row.const = ""
         row.fmt = ""
+        row.slice = None
         row.confirmed = False
         row.touched = True
         row.auto_confirmed_exact = False
@@ -1123,6 +1211,7 @@ class MappingModel:
             row.type = m.type
             row.const = m.const
             row.fmt = m.fmt
+            row.slice = m.slice
             # 프로파일 복원/이월된 행은 **사람 소유**(과거 확정 산출물 또는 touched 이월) —
             # touched=True 로 라이브 재제안이 덮지 못하게 한다(칩-라이브 결정 12). 확정 여부는
             # confirm 인자·missing_source 가 따로 결정한다(값 복원 ≠ 확정 도착).

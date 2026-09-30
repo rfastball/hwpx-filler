@@ -38,6 +38,7 @@ from hwpxfiller.domain.field_binding import (
     require_source_schema_contract,
     validate_source_schema_keys,
 )
+from hwpxfiller.domain.text_slice import TextSlice
 
 #: 소스 값을 나르는 legacy 유형(나머지는 const·today 로 따로 갈린다). 이 이름들은 곧 v3
 #: 표시형 kind 다 — legacy 에서도 유형은 값을 검증하지 않고 어느 해석기로 서식할지만 골랐다.
@@ -300,6 +301,8 @@ class LegacyFieldBindingEntry:
     source: str
     const: str
     fmt: str
+    #: 가공(field-binding/v4) — Mapping 의 ``slice`` 그대로. 소스 carrier 유형에서만 선다.
+    slice: TextSlice | None = None
 
 
 @dataclass(frozen=True)
@@ -315,6 +318,8 @@ class MigrationCandidateRule:
     whitespace_decision_required: bool
     #: 표시형 kind(v3) — legacy ``type`` 이 문서 글자를 정하던 결정. ``(None, None)`` = 값 그대로.
     format_kind: str | None = None
+    #: 가공(v4) — 칸의 어느 부분을 쓰는가. ``None`` = 칸 전체.
+    text_slice: TextSlice | None = None
 
 
 @dataclass(frozen=True)
@@ -358,6 +363,15 @@ def legacy_field_binding_basis_fingerprint(
             raw = part.encode("utf-8")
             hasher.update(len(raw).to_bytes(4, "big"))
             hasher.update(raw)
+        # 가공은 **있을 때만** 적는다 — 가공 없는 Mapping 의 지문이 v4 이전과 byte 동일하게 남는다
+        # (지문이 바뀌면 진행 중인 migration draft 가 전부 stale 로 읽힌다). 표지 바이트 0xFF 는
+        # UTF-8 에 나타나지 않으므로 다음 항목의 길이 접두와 섞이지 않는다.
+        if entry.slice is not None:
+            hasher.update(b"\xffslice")
+            for key, value in sorted(entry.slice.to_dict().items()):
+                raw = f"{key}={value}".encode("utf-8")
+                hasher.update(len(raw).to_bytes(4, "big"))
+                hasher.update(raw)
     return "sha256:" + hasher.hexdigest()
 
 
@@ -426,6 +440,8 @@ def prepare_legacy_field_binding_migration(
                 # legacy ``type``·``fmt`` 쌍을 그대로 옮긴다 — 렌더는 같은 해석기가 한다.
                 format_kind=format_kind,
                 format_code=format_code,
+                # 가공도 그대로 옮긴다(v4) — 판본이 칸의 어느 부분을 쓰는지까지 싣는다.
+                text_slice=entry.slice,
                 # legacy 는 값을 암묵 strip 했다 — 명시 whitespace 결정을 요구한다.
                 proposed_policy_id=DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP.policy_id,
                 whitespace_decision_required=True,

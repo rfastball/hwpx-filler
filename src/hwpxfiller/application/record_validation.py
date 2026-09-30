@@ -66,8 +66,10 @@ from hwpxfiller.domain.field_binding import (
     UnsupportedDocumentValuePolicyError,
     UnsupportedValueFormatError,
     render_value_format,
+    require_text_slice,
     resolve_document_value_policy,
 )
+from hwpxfiller.domain.text_slice import apply_text_slice
 from hwpxfiller.domain.job import MISSING_MARKER
 from hwpxfiller.domain.raw_data_record import (
     RAW_RECORD_CONTRACT_ID,
@@ -297,6 +299,12 @@ def _require_no_format_code(ve: Mapping[str, Any]) -> None:
             UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
             f"고정값에는 표시형을 적용하지 않는다: {ve.get('format_kind')!r}/{format_code!r}",
         )
+    # 가공(v4)도 같다 — 고정값에는 원본 칸이 없다. 실려 오면 버리지 않고 닫는다.
+    if ve.get("text_slice") is not None:
+        raise _ContextSignal(
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+            f"고정값에는 가공을 적용하지 않는다: {ve.get('text_slice')!r}",
+        )
 
 
 def _render_source_format(ve: Mapping[str, Any], field_id: str, text: str) -> str:
@@ -311,6 +319,20 @@ def _render_source_format(ve: Mapping[str, Any], field_id: str, text: str) -> st
         raise _ContextSignal(
             UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
             f"requirement {field_id!r} 의 표시형을 해석할 수 없다: {exc}",
+        ) from exc
+
+
+def _slice_source_text(ve: Mapping[str, Any], field_id: str, text: str) -> str:
+    """FROM_SOURCE 값에 규칙의 가공(v4)을 적용한다 — legacy ``apply_transform`` 과 같은 판정기·순서.
+
+    모르는 가공 모양은 칸 전체로 풀지 않고 context error 로 닫는다(원문을 내면 다른 글자가 나간다).
+    """
+    try:
+        return apply_text_slice(require_text_slice(ve.get("text_slice")), text)
+    except UnsupportedValueFormatError as exc:
+        raise _ContextSignal(
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+            f"requirement {field_id!r} 의 가공을 해석할 수 없다: {exc}",
         ) from exc
 
 
@@ -352,8 +374,10 @@ def _resolve_from_source(
     표식에는 whitespace policy 를 적용하지 않는다 — 그건 **소스 값**의 정규화 규칙이고
     표식은 우리가 짓는 리터럴이다.
     """
-    # 표시형 모양은 값의 존재와 무관한 Plan 사실이다 — 빈 행이라서 거짓 모양이 통과하지 않게 먼저 본다.
+    # 표시형·가공 모양은 값의 존재와 무관한 Plan 사실이다 — 빈 행이라서 거짓 모양이 통과하지 않게
+    # 먼저 본다.
     _render_source_format(ve, field_id, "")
+    _slice_source_text(ve, field_id, "")
     source_key = ve.get("source_key")
     if not isinstance(source_key, str):
         raise _ContextSignal(
@@ -374,8 +398,15 @@ def _resolve_from_source(
     assert value is not None  # has_key True 이고 NULL 이 아니면 텍스트
     if value.text.strip() == "":
         return _ResolvedValue(missing_value_marker(field_id), missing_marked=True)
-    # legacy 순서 그대로: 공백 정책(legacy 의 strip) → 표시형(legacy 의 format_engine.render).
-    text = _apply_whitespace_policy(value.text, policy.whitespace_policy)
+    # legacy 순서 그대로: 공백 정책(legacy 의 strip) → 가공(v4) → 표시형(legacy 의
+    # format_engine.render).
+    text = _slice_source_text(
+        ve, field_id, _apply_whitespace_policy(value.text, policy.whitespace_policy)
+    )
+    if text.strip() == "":
+        # 가공이 고른 부분이 비었다(범위 밖·빈 조각) — 칸이 빈 행과 같은 사실이다. 편집기
+        # 미리보기(`row_projection`)도 같은 자리에 표식을 보여 준다: 조용한 빈칸으로 두지 않는다.
+        return _ResolvedValue(missing_value_marker(field_id), missing_marked=True)
     return _ResolvedValue(_render_source_format(ve, field_id, text))
 
 

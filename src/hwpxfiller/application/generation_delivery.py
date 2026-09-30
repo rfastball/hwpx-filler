@@ -79,7 +79,8 @@ from hwpxfiller.domain.field_binding import (
     FieldBindingRule,
     UnsupportedDocumentValuePolicyError,
     UnsupportedValueFormatError,
-    render_value_format,
+    encode_text_slice,
+    render_source_value,
     require_single_rule_per_field,
     resolve_document_value_policy,
 )
@@ -99,6 +100,9 @@ if TYPE_CHECKING:
 FILENAME_PATTERN_CONTRACT_ID = "filename-pattern/v1"
 DELIVERY_CONTRACT_ID = "generation-delivery/v1"
 # v3: inactive FROM_SOURCE requirement 가 표시형 kind 를 함께 봉인한다(field-binding/v3).
+# field-binding/v4 의 가공은 이 schema 안의 **가산 키**(``text_slice``)로 싣는다 — 가공 없는 요구는
+# byte 동일하게 남아, 이미 봉인된 basis 의 재계산 대조(:func:`verify_delivery_binding_basis_integrity`)가
+# 판 올림만으로 깨지지 않는다. 가공이 있는 요구만 새 키를 갖고 그 digest 는 스스로 일관된다.
 DELIVERY_BINDING_BASIS_SCHEMA = "generation-delivery-binding-basis/v3"
 OUTPUT_NAME_BASIS_SCHEMA = "output-name-basis-canonical/v1"
 GENERATION_DELIVERY_PLAN_SCHEMA = "generation-delivery-plan-canonical/v1"
@@ -226,7 +230,7 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
     """
     policy_id = rule.document_content_value_policy.policy_id
     if rule.binding_kind == SOURCE:
-        return {
+        encoded: dict[str, Any] = {
             "kind": _KIND_FROM_SOURCE,
             "source_key": rule.source_key,
             # 표시형 쌍을 봉인한다 — Active 경로(VDR)와 같은 해석기로 파일 이름 값도 렌더한다.
@@ -234,6 +238,10 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
             "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
         }
+        # 가공(v4)은 있을 때만 싣는다 — Active 경로의 실행 계획 인코딩과 같은 규율.
+        if rule.text_slice is not None:
+            encoded["text_slice"] = encode_text_slice(rule.text_slice)
+        return encoded
     if rule.binding_kind == CONSTANT:
         assert rule.canonical_constant_value is not None  # CONSTANT 규칙 불변식
         return {
@@ -412,26 +420,32 @@ def _apply_whitespace_policy(text: str, whitespace_policy: str) -> str:
 def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> None:
     """고정값은 서식하지 않는다 — 표시형이 실려 오면 조용히 버리지 않고 fail-closed(Active 경로 일치)."""
     format_code = value_expression.get("format_code")
-    if (format_code is not None and format_code != "") or (
-        value_expression.get("format_kind") is not None
+    if (
+        (format_code is not None and format_code != "")
+        or value_expression.get("format_kind") is not None
+        or value_expression.get("text_slice") is not None
     ):
         raise _DeliveryContextSignal(
             UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-            "고정값에는 표시형을 적용하지 않는다: "
-            f"{value_expression.get('format_kind')!r}/{format_code!r}",
+            "고정값에는 표시형·가공을 적용하지 않는다: "
+            f"{value_expression.get('format_kind')!r}/{format_code!r}/"
+            f"{value_expression.get('text_slice')!r}",
         )
 
 
 def _render_delivery_format(value_expression: Mapping[str, Any], text: str) -> str:
-    """inactive FROM_SOURCE 값의 표시형 — Active 경로(record validation)와 같은 해석기·같은 규율."""
+    """inactive FROM_SOURCE 값의 가공·표시형 — Active 경로(record validation)와 같은 판정기·같은 순서."""
     try:
-        return render_value_format(
-            value_expression.get("format_kind"), value_expression.get("format_code"), text
+        return render_source_value(
+            value_expression.get("format_kind"),
+            value_expression.get("format_code"),
+            value_expression.get("text_slice"),
+            text,
         )
     except UnsupportedValueFormatError as exc:
         raise _DeliveryContextSignal(
             UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-            f"파일 이름 값의 표시형을 해석할 수 없다: {exc}",
+            f"파일 이름 값의 표시형·가공을 해석할 수 없다: {exc}",
         ) from exc
 
 

@@ -1,4 +1,4 @@
-"""맞추기 표의 **동사 6종** 공용 본체 — 「기안」 세션과 검토·복사 작업대가 공유한다.
+"""맞추기 표의 **동사 7종** 공용 본체 — 「기안」 세션과 검토·복사 작업대가 공유한다.
 
 두 표면은 같은 표를 그리고 같은 :class:`~hwpxfiller.viewmodel.mapping_state.MappingModel` 을
 부른다. F6 PR-A 는 그걸 알면서도 작업대 쪽 핸들러를 **손으로 다시 짰고**, 리뷰 3R 이 그
@@ -47,7 +47,7 @@ class _MappingVerbsHost(Protocol):
 
 
 class MappingVerbsMixin:
-    """맞추기 표의 동사 6종 — 두 표면이 **같은 규약**으로 부른다."""
+    """맞추기 표의 동사 7종 — 두 표면이 **같은 규약**으로 부른다."""
 
     def _after_mapping_edit(self) -> None:
         """편집 성사 뒤 훅. 기본은 무동작 — 파생으로 dirty 를 재는 표면(작업대)용."""
@@ -95,6 +95,15 @@ class MappingVerbsMixin:
     def _do_set_map_fmt(self: _MappingVerbsHost, p: dict) -> None:
         """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
         self.mapping.set_fmt_for(p["name"], p.get("code", ""))
+        self._after_mapping_edit()
+
+    def _do_set_map_slice(self: _MappingVerbsHost, p: dict) -> None:
+        """가공(글자 범위·구분자 나누기) 설정·해제 — 결속 열에서 오는 값에만 뜻이 있다.
+
+        판정은 모델(→ 도메인 :mod:`~hwpxfiller.domain.text_slice`)이 한다: 잘못된 명세·원본 칸이
+        없는 행은 시끄럽게 거절되고, ``slice`` 가 없거나 null 이면 해제다(편집기 `set_slice` 와 같은 규약).
+        """
+        self.mapping.set_slice_for(p["name"], p.get("slice"))
         self._after_mapping_edit()
 
     def _do_set_map_type(self: _MappingVerbsHost, p: dict) -> None:

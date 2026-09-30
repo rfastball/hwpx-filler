@@ -38,7 +38,7 @@ from ..domain.text_render import RenderReport, template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
 from ..viewmodel.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..viewmodel.filter_state import sniff_column_kinds
-from ..viewmodel.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel
+from ..viewmodel.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel, slice_projection
 from ..viewmodel.selection_state import SelectionModel
 from ..viewmodel.txt_card import card_text, gate_empty_fields, render_card
 from ..viewmodel.tutorial_state import Milestone
@@ -390,7 +390,7 @@ class WorkbenchController(MappingVerbsMixin):
         # 게이트의 축만이 아니라 **복사되는 문자열의 축**이기도 하다. 2R 에서 "확정을 켜도
         # 문장은 그대로"라고 단정한 것이 틀렸다(`live_profile` 의 계약이 반대로 적고 있다).
         rows = tuple(
-            (r.template_field, r.source, r.type, r.const, r.fmt, r.confirmed)
+            (r.template_field, r.source, r.type, r.const, r.fmt, r.slice, r.confirmed)
             for r in self.mapping.rows
         )
         return repr((rows, self._fullwidth))
@@ -468,6 +468,8 @@ class WorkbenchController(MappingVerbsMixin):
                 "value": row_values.get(r.template_field, ""),
                 "fmt_kind": r.type,
                 "fmt_code": r.fmt,
+                # 가공(v4) — 명세·요약 라벨·손잡이 술어는 링1 이 낸다(`row_projection` 과 같은 출처).
+                **slice_projection(r),
                 "suggest": suggestions.get(r.template_field, ""),
                 "can_revert": r.type == "const" and bool(r.source),
                 "confirmed": r.confirmed,
@@ -655,7 +657,7 @@ class WorkbenchController(MappingVerbsMixin):
     def _do_set_fullwidth(self, p: dict) -> None:
         self._fullwidth = bool(p["value"])
 
-    # ---- 필드 연결(좌 pane) — 동사 6종은 :class:`MappingVerbsMixin` 소유(F6 3R).
+    # ---- 필드 연결(좌 pane) — 동사 7종은 :class:`MappingVerbsMixin` 소유(F6 3R).
     # 손으로 다시 짜다 규약이 갈렸던 자리다(표시형이 이름 API 에 index 를 넘겨 **전부**
     # 터졌고, 되돌리기는 스니핑 유형을 잃었고, 결속은 직접 입력 값을 무확인 덮었다).
     # 여기 남는 것은 그 동사들이 쓰는 **훅** 둘뿐이다.

@@ -1886,9 +1886,16 @@ class TestWebSelftestGate:
         # WebView2 에 그려지고 발신되는지 되읽는다(백엔드 판정은 test_mapping_state).
         e = selftest_result["editor_binding"]
         assert e.get("error") is None, f"연결 확인 프로브 예외: {e.get('error')!r}"
-        assert e["head_cols"] == ["템플릿 필드", "데이터 열", "표시형", "미리보기"], (
-            f"7열이 4열로 접히지 않았습니다: {e['head_cols']!r}"
+        # 가공(field-binding/v4) 칸이 데이터 열과 표시형 사이에 선다 — 값의 파이프라인 순서.
+        assert e["head_cols"] == ["템플릿 필드", "데이터 열", "가공", "표시형", "미리보기"], (
+            f"연결 표 머리가 다섯 열이 아닙니다: {e['head_cols']!r}"
         )
+        assert e["slice_buttons"] == [
+            {"label": "없음", "disabled": False},
+            {"label": "글자 범위 1~3", "disabled": False},
+            {"label": "없음", "disabled": False},
+            {"label": "없음", "disabled": True},
+        ], f"가공 칸이 Python 라벨·가부를 그대로 세우지 않습니다: {e['slice_buttons']!r}"
         assert "사용하지 않는 데이터 열 1개" in e["foot_text"], (
             f"표 바닥이 안 쓰는 열 수를 잇지 않습니다: {e['foot_text']!r}"
         )

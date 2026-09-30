@@ -30,6 +30,7 @@ from hwpxfiller.application.jobs import (
 )
 from hwpxfiller.domain.job import (
     DEFAULT_FILENAME_PATTERN,
+    LEGACY_RULE_AXES,
     RULE_AXES,
     Job,
     advance_revisions,
@@ -285,6 +286,10 @@ def _rules_values_or_raise(raw: object) -> dict:
     for name, axes in fields.items():
         if not isinstance(name, str) or not isinstance(axes, dict):
             raise ValueError("'previous_rules.fields' 의 항목은 필드이름→축사전이어야 합니다")
+        # 가공 축(field-binding/v4) 이전에 적힌 기준선은 그 축이 없다 — 「가공 없음」과 같은 뜻이라
+        # ``""`` 로 채워 읽는다(파일은 다시 쓰지 않는다). 그 밖의 모양은 여전히 시끄럽게 거절한다.
+        if set(axes) == set(LEGACY_RULE_AXES):
+            axes = {**axes, "slice": ""}
         if set(axes) != set(RULE_AXES) or not all(
             isinstance(value, str) for value in axes.values()
         ):

@@ -481,6 +481,7 @@ class EditSession:
             "revert_source",
             "resuggest_all",
             "set_display",
+            "set_slice",
             "set_const",
             "set_confirmed",
             "confirm_suggested",
@@ -516,6 +517,9 @@ class EditSession:
             )
         elif action == "set_display":
             self.model.set_display(index, str(payload["type"]), str(payload.get("fmt") or ""))
+        elif action == "set_slice":
+            # 가공 — 명세 판정은 도메인 한 곳이 한다(잘못된 명세는 고치지 않고 거절).
+            self.model.set_slice(index, payload.get("slice"))
         elif action == "set_const":
             self.model.set_const(index, payload["const"])
         elif action == "set_confirmed":

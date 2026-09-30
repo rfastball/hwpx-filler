@@ -1142,6 +1142,51 @@ def test_inactive_source_token_is_rendered_with_the_rule_format() -> None:
     ]
 
 
+def test_inactive_source_token_is_sliced_before_the_format() -> None:
+    """파일 이름의 inactive token 도 Active 값과 같은 순서다 — 공백 정책 → 가공 → 표시형(v4)."""
+    from hwpxfiller.domain.text_slice import TextSlice
+
+    rule = FieldBindingRule(
+        field_id="f_dept", binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="dept", format_code="{:,}", format_kind="amount",
+        text_slice=TextSlice("split", delimiter="원", index=1),
+    )
+    plan = _plan()
+    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
+    sealed = basis.output_name_requirements[0].value_expression
+    assert sealed["text_slice"] == {"mode": "split", "delimiter": "원", "index": 1}
+    res = _ok(_resolve(
+        plan, (_snapshot(dept="1500000원 (VAT 포함)"),), pattern="{{f_dept}}", basis=basis
+    ))
+    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
+        "1,500,000.hwpx"
+    ]
+
+
+def test_inactive_source_without_slice_keeps_the_sealed_shape() -> None:
+    """가공 없는 요구는 키가 없다 — v4 이전에 봉인된 basis 의 재계산 대조가 그대로 선다."""
+    rule = FieldBindingRule(
+        field_id="f_dept", binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1, source_key="dept",
+    )
+    basis = _basis_dto(_plan(), pattern="{{f_dept}}", inactive_rules=(rule,))
+    assert "text_slice" not in basis.output_name_requirements[0].value_expression
+
+
+def test_inactive_malformed_slice_is_fail_closed() -> None:
+    ve = {"kind": "FROM_SOURCE", "source_key": "dept", "format_kind": None,
+          "format_code": None, "document_content_value_policy_id": _POLICY_ID,
+          "text_slice": {"mode": "split", "delimiter": "", "index": 1}}
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(ve, _snapshot())
+    constant = {"kind": "CONSTANT", "canonical_value": {"kind": "TEXT", "text": "x"},
+                "format_code": None, "document_content_value_policy_id": _POLICY_ID,
+                "text_slice": {"mode": "chars", "start": 1}}
+    with pytest.raises(gd._DeliveryContextSignal):  # 고정값에는 가공이 없다
+        gd.resolve_delivery_field_value(constant, _snapshot())
+
+
 def test_inactive_value_format_of_unknown_kind_is_fail_closed() -> None:
     ve = {"kind": "FROM_SOURCE", "source_key": "dept", "format_kind": "currency",
           "format_code": "", "document_content_value_policy_id": _POLICY_ID}

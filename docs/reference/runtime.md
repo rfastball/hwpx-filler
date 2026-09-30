@@ -138,6 +138,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `set_display` | `index`, `type` | `fmt` |
 | `set_name` | `name` | — |
 | `set_pattern` | `pattern` | — |
+| `set_slice` | `index` | `slice` |
 | `set_source` | `index`, `source` | — |
 | `step_preview` | `delta` | — |
 | `unconfirm_all` | — | — |
@@ -264,6 +265,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `set_current` | `index` | — |
 | `set_fullwidth` | `value` | — |
 | `set_map_fmt` | `name` | `code` |
+| `set_map_slice` | `name` | `slice` |
 | `set_map_type` | `name`, `type` | — |
 | `set_map_value` | `name` | `text` |
 | `set_source` | `name` | `col`, `confirm` |

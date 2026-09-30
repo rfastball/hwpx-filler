@@ -2982,11 +2982,20 @@ export function createEditorWorkbenchDataProbes() {
               source_kind: state === "needs_source" ? "" : "column",
               source_value: state === "needs_source" ? "" : "col:품명",
               source_missing_label: "",
+              /* 가공(field-binding/v4) — 라벨·가부·방식 목록도 Python 값 그대로(웹 재판정 0). */
+              slice: null, slice_label: "없음", slice_enabled: hasContent,
+              slice_modes: [
+                { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
+                { value: "split", label: "구분자로 나누기" },
+              ],
             }, over || {});
           };
           const rows = [
             row(0, "품명", "suggested", { source: "품명", source_value: "col:품명" }),
-            row(1, "수량", "suggested", { source: "수량", source_value: "col:수량" }),
+            row(1, "수량", "suggested", {
+              source: "수량", source_value: "col:수량",
+              slice: { mode: "chars", start: 1, length: 3 }, slice_label: "글자 범위 1~3",
+            }),
             row(2, "규격", "edited", { source: "비고", source_value: "col:비고" }),
             row(3, "담당자", "needs_source", {
               preview: "", preview_kind: "none", source_kind: "", source_value: "",
@@ -3024,6 +3033,10 @@ export function createEditorWorkbenchDataProbes() {
             root.querySelectorAll("table.map thead th"),
             (th) => th.firstChild ? String(th.firstChild.textContent).trim() : "");
           out.foot_text = textOf(root.querySelector("table.map tfoot td")).trim();
+          /* 가공 칸 — 요약 라벨·잠김이 Python 값 그대로 선다(행 4태 전수). */
+          out.slice_buttons = Array.prototype.map.call(
+            root.querySelectorAll('table.map [data-act="row-slice"]'),
+            (el) => ({ label: textOf(el).trim(), disabled: !!el.disabled }));
           /* ② 머리 pill 셋 — 라벨도 수치도 Python 값 그대로. */
           out.pills = Array.prototype.map.call(
             root.querySelectorAll(".bindbar .pill"), (el) => textOf(el).trim());

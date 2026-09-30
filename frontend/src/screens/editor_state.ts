@@ -51,10 +51,12 @@ export type FieldPatch = { focused?: boolean; composing?: boolean };
 export const NAME_FIELD = "name";
 export const PATTERN_FIELD = "pattern";
 
-/** 행 축의 **초안 대상**은 고정값 입력 하나다(U6-C 리뷰 2). 두 select(데이터 열·표시형)는
- *  고르는 순간이 곧 커밋이라 초안을 두지 않는다 — 두면 그 항목 값(`col:…`/`sp:…`)이 지연
- *  flush 의 일반 갈래로 새어 액션 payload 를 오염시킨다. */
-export type RowAxis = "const";
+/** 행 축의 **초안 대상**은 고정값 입력과 가공(구간) 입력 넷이다(U6-C 리뷰 2 · 가공 슬라이스).
+ *  두 select(데이터 열·표시형·가공 방식)는 고르는 순간이 곧 커밋이라 초안을 두지 않는다 —
+ *  두면 그 항목 값(`col:…`/`sp:…`)이 지연 flush 의 일반 갈래로 새어 액션 payload 를 오염시킨다.
+ *  가공의 「시작」·「글자 수」·「구분자」·「번째」는 타이핑 중간 상태가 있어야 하는 입력이라
+ *  (특히 구분자는 IME 조합을 거친다) const 와 같은 자리다. */
+export type RowAxis = "const" | "slice_start" | "slice_length" | "slice_delimiter" | "slice_index";
 
 /** 행 field 키 — 표시 순서가 아니라 **행 index** 로 짓는다(Python 이 든 정체). */
 export function rowField(index: number, axis: RowAxis): string {
@@ -223,8 +225,21 @@ export function editorServerValues(snapshot: Record<string, any>): ServerValues 
   for (const row of (snapshot.rows || []) as Array<Record<string, any>>) {
     const index = Number(row.index);
     /* 두 select 는 초안을 두지 않으므로 여기 실리지 않는다(U6-C 리뷰 2) — 서버 값이 곧
-       화면 값이고, 실패하면 재렌더가 그 값으로 되돌린다. 초안은 고정값 입력 하나다. */
+       화면 값이고, 실패하면 재렌더가 그 값으로 되돌린다. 초안은 고정값 입력과 가공 입력 넷이다. */
     values[rowField(index, "const")] = String(row.const ?? "");
+    /* 가공(slice) 입력 값은 **현재 확정된 방식**(`row.slice.mode`)이 든 축만 서버 값을 갖고,
+       그 밖은 빈 문자열이다 — 방식이 바뀌면(select 즉시 커밋) 다음 push 가 이 값들을 새로
+       채운다. 여기서 값을 발명하지 않는다(계약 밖 기본값 금지). */
+    const slice = (row.slice || null) as Record<string, any> | null;
+    const mode = String((slice || {}).mode || "");
+    values[rowField(index, "slice_start")] =
+      mode === "chars" ? String(slice?.start ?? "") : "";
+    values[rowField(index, "slice_length")] =
+      mode === "chars" ? String(slice?.length ?? "") : "";
+    values[rowField(index, "slice_delimiter")] =
+      mode === "split" ? String(slice?.delimiter ?? "") : "";
+    values[rowField(index, "slice_index")] =
+      mode === "split" ? String(slice?.index ?? "") : "";
   }
   return values;
 }

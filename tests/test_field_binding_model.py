@@ -47,8 +47,8 @@ def _source(field_id: str, key: str = "k") -> FieldBindingRule:
 
 # ─── 값 알파벳 — 단형(v2) ────────────────────────────────────────────────────────
 def test_contract_versions() -> None:
-    # 규칙 판은 v3(표시형 kind 슬롯, #1081 PR0b) — 값 알파벳·소스 스키마는 v2 그대로다.
-    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v3"
+    # 규칙 판은 v4(v3 표시형 kind 슬롯 #1081 PR0b + 가공 슬롯) — 값 알파벳·소스 스키마는 v2 그대로다.
+    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v4"
     assert SOURCE_SCHEMA_VERSION == "source-schema/v2"
     assert BINDING_VALUE_VERSION == "binding-value/v2"
 
@@ -238,13 +238,18 @@ def test_binding_rule_framing_v2_is_frozen_at_six_slots() -> None:
 
 
 def test_binding_rule_framing_v3_adds_the_format_kind_slot() -> None:
-    """v3 프레이밍 실측: source_key 뒤에 표시형 kind 슬롯 — 7 슬롯."""
-    from hwpxfiller.domain.field_binding import _encode_rule, _opt_text, _text
+    """v3 프레이밍 실측(동결): source_key 뒤에 표시형 kind 슬롯 — 7 슬롯."""
+    from hwpxfiller.domain.field_binding import (
+        FIELD_BINDING_SEMANTIC_VERSION_V3,
+        _encode_rule,
+        _opt_text,
+        _text,
+    )
 
     rule = FieldBindingRule(
         "f", SOURCE, POLICY, source_key="k", format_code="%Y", format_kind="date"
     )
-    assert _encode_rule(rule, FIELD_BINDING_SEMANTIC_VERSION) == (
+    assert _encode_rule(rule, FIELD_BINDING_SEMANTIC_VERSION_V3) == (
         _text("f")
         + _text(SOURCE)
         + _text(POLICY.policy_id)
@@ -254,7 +259,7 @@ def test_binding_rule_framing_v3_adds_the_format_kind_slot() -> None:
         + _opt_text(None)
     )
     const = FieldBindingRule("f", CONSTANT, POLICY, canonical_constant_value=ExactText(""))
-    assert _encode_rule(const, FIELD_BINDING_SEMANTIC_VERSION) == (
+    assert _encode_rule(const, FIELD_BINDING_SEMANTIC_VERSION_V3) == (
         _text("f")
         + _text(CONSTANT)
         + _text(POLICY.policy_id)
@@ -263,9 +268,44 @@ def test_binding_rule_framing_v3_adds_the_format_kind_slot() -> None:
         + _opt_text(None)
         + _opt_text("")
     )
-    assert FIELD_BINDING_SEMANTIC_VERSION.encode("utf-8") in canonicalize_binding_rules(
-        [rule]
+    assert FIELD_BINDING_SEMANTIC_VERSION_V3.encode("utf-8") in canonicalize_binding_rules(
+        [rule], contract_id=FIELD_BINDING_SEMANTIC_VERSION_V3
     )
+
+
+def test_binding_rule_framing_v4_adds_the_text_slice_slot() -> None:
+    """v4 프레이밍 실측: v3 7 슬롯 뒤에 가공 슬롯 — 없음 0x00, 있으면 0x01 + 방식별 고정 칸."""
+    from hwpxfiller.domain.field_binding import _encode_rule, _opt_text, _text
+    from hwpxfiller.domain.text_slice import TextSlice
+
+    head = (
+        _text("f") + _text(SOURCE) + _text(POLICY.policy_id) + _opt_text("k")
+        + _opt_text(None) + _opt_text(None) + _opt_text(None)
+    )
+    plain = FieldBindingRule("f", SOURCE, POLICY, source_key="k")
+    assert _encode_rule(plain, FIELD_BINDING_SEMANTIC_VERSION) == head + b"\x00"
+    chars = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=1, length=3)
+    )
+    assert _encode_rule(chars, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("chars") + _text("1") + _opt_text("3")
+    )
+    to_end = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=2)
+    )
+    assert _encode_rule(to_end, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("chars") + _text("2") + _opt_text(None)
+    )
+    split = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k",
+        text_slice=TextSlice("split", delimiter=", ", index=-1),
+    )
+    assert _encode_rule(split, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("split") + _text(", ") + _text("-1")
+    )
+    # 가공은 identity 다 — 가공만 다른 두 규칙은 다른 판본이다.
+    assert len({digest_binding_rules([r]) for r in (plain, chars, to_end, split)}) == 4
+    assert FIELD_BINDING_SEMANTIC_VERSION.encode("utf-8") in canonicalize_binding_rules([split])
 
 
 def test_empty_constant_text_is_not_absent_constant() -> None:
@@ -277,7 +317,8 @@ def test_empty_constant_text_is_not_absent_constant() -> None:
 
 # ─── registries / policies (no fallback) ─────────────────────────────────────────
 def test_contract_and_policy_registries_fail_closed() -> None:
-    assert require_field_binding_contract("field-binding/v3")
+    assert require_field_binding_contract("field-binding/v4")
+    assert require_field_binding_contract("field-binding/v3")  # outdated 판 — 읽기 전용
     assert require_field_binding_contract("field-binding/v2")  # outdated 판 — 읽기 전용
     assert require_source_schema_contract("source-schema/v2")
     # 퇴역한 v1 계약은 v2 로 풀지 않는다 — v1 은 store 마이그레이션 경로만 안다.

@@ -49,15 +49,16 @@ table.data-preview td{white-space:nowrap}
    튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
    U6-C(#977)에서 7열이 4열로 접혔다(동결 시안 장면 2) — 「확정」 체크는 데이터 열 칸의 상태
    배지로, 「타입/고정값」은 그 칸의 select 특수 항목으로, 「상태」는 배지 문안으로 흡수됐다.
-   min-width 는 고정 3열 합(620px) + 유연 미리보기 열의 실용 최소폭이다. */
+   min-width 는 고정 4열 합(750px, 가공 칸 포함) + 유연 미리보기 열의 실용 최소폭이다. */
 .tblwrap{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
-table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:860px;table-layout:fixed}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:990px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
 table.map th:nth-child(1){width:180px}  /* 템플릿 필드 */
 table.map th:nth-child(2){width:250px}  /* 데이터 열(select + 고정값 + 배지) */
-table.map th:nth-child(3){width:190px}  /* 표시형 */
-                                        /* 4열(미리보기)은 남는 폭을 다 쓴다 */
+table.map th:nth-child(3){width:130px}  /* 가공(글자 범위·구분자 나누기, field-binding/v4) */
+table.map th:nth-child(4){width:190px}  /* 표시형 */
+                                        /* 5열(미리보기)은 남는 폭을 다 쓴다 */
 table.map th .stepper{float:right;font-weight:400}
 table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle;
   overflow:hidden}
@@ -78,6 +79,14 @@ table.map .srccell .btn.icon{flex:none;font-size:var(--fs-dense);line-height:1}
 /* 배지는 줄지 않는다 — 좁은 칸에서 눌려 두 줄이 되면 행 높이가 행마다 갈리고, 그 갈림은
    실렌더 기하 단언(`editor_binding`)에서만 드러난다. */
 table.map .srccell .badge{flex:none}
+/* 「가공」 칸 — 요약 단추 하나, 열면 그 아래에 방식 select 와 방식별 입력이 줄바꿈으로 선다.
+   연결 표(`.map`)와 작업대 표(`.dmap`)가 같은 칸을 쓴다. 단추 문안이 길어도 칸을 밀지 않는다. */
+.slicecell{display:flex;flex-direction:column;align-items:stretch;gap:var(--sp-4);min-width:0}
+.slicecell>.btn{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:var(--fs-dense)}
+.sliceedit{display:flex;flex-wrap:wrap;gap:var(--sp-4)}
+.sliceedit .sel{flex:1 0 100%}
+.sliceedit .field{flex:1 0 6ch;width:6ch;min-width:0}
 table.map td .pv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.map tr:last-child td{border-bottom:0}
 table.map tfoot td{border-bottom:0;border-top:1px solid var(--a-border);color:var(--a-muted);

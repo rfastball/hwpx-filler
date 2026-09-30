@@ -43,6 +43,9 @@ PY_GLOBS = (
     # **그대로** 세운다. 문장을 webapp 에서 다시 감싸면 ~150 개를 이중 유지해야 하므로,
     # 범위를 여기까지만 넓히고(`domain/`·`external/` 전체가 아니다) 원본을 센다.
     "src/hwpxfiller/domain/template_authoring.py",
+    # 가공(글자 범위·구분자 나누기) 명세의 거절 사유도 같다 — 편집 동사가 도메인 판정기의
+    # `TextSliceError` 문장을 오류 배너에 그대로 세운다(링1 에서 다시 감싸지 않는다).
+    "src/hwpxfiller/domain/text_slice.py",
     "src/hwpxfiller/external/hwpx_authoring.py",
     "src/hwpxfiller/external/authoring_transfer.py",
     "src/hwpxfiller/external/authoring_store.py",

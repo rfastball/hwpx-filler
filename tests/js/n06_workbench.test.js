@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import { createWorkbenchController } from "../../frontend/src/screens/workbench.ts";
 import { Intent } from "../../frontend/js/intent.js";
+import { mapField, workbenchServerValues } from "../../frontend/src/screens/workbench_state.ts";
 
 const WB_CHAIN = "workbench:session";   // 화면 내부 상수와 같은 값 — 정산 계약의 키
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -13,7 +14,9 @@ const SURFACE = [
   "init", "leaveTo", "aimAt", "model", "draftModel",
   "type", "focus", "compose", "commit", "commitValue", "bindColumn", "saveRules", "copyCard",
   "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
-  "setConfirmed", "setMapType", "setMapFmt", "revertMap", "guarded", "doc", "notify",
+  "setConfirmed", "setMapType", "setMapFmt", "revertMap",
+  "sliceViewModel", "commitSliceOnBlur", "chooseSliceMode", "toggleSliceEditor", "isSliceEditorOpen",
+  "guarded", "doc", "notify",
 ];
 
 /* dirty 경로용 최소 open 스냅샷 — 이탈 3택이 읽는 seam 을 실측하기 위한 값. */
@@ -218,4 +221,72 @@ test("손상된 HostResult 는 조용히 통과하지 않는다 — 이탈이 lo
   h.client.dispatch = async () => ({ value: {} });   // ok 필드 없음
   await assert.rejects(() => h.controller.leaveTo("job"), /호스트 결과가 손상/);
   assert.deepEqual(h.navigations, [], "판독 실패 뒤 이동 0");
+});
+
+
+/* ================= 가공(글자 범위·구분자 나누기) ================= */
+
+function slicedRow(slice) {
+  return {
+    name: "건명", source: "건명열", fmt_kind: "text", fmt_code: "", value: "R26", confirmed: false,
+    slice, slice_label: slice ? "구분자 '-' 1번째" : "없음", slice_enabled: true,
+    slice_modes: [
+      { value: "", label: "없음" }, { value: "chars", label: "글자 범위" },
+      { value: "split", label: "구분자로 나누기" },
+    ],
+  };
+}
+
+test("가공 방식 select — 고르는 순간 set_map_slice 로 완성된 명세(또는 null)를 보낸다", async () => {
+  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
+  h.controller.init();
+  h.controller.chooseSliceMode("건명", "split");
+  h.controller.chooseSliceMode("건명", "chars");
+  h.controller.chooseSliceMode("건명", "");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const sent = h.log.filter((row) => row[0] === "dispatch" && row[2] === "set_map_slice")
+    .map((row) => row[3]);
+  assert.deepEqual(sent, [
+    { name: "건명", slice: { mode: "split", delimiter: ",", index: 1 } },
+    { name: "건명", slice: { mode: "chars", start: 1 } },
+    { name: "건명", slice: null },
+  ]);
+  assert.throws(() => h.controller.chooseSliceMode("건명", "regex"), /알 수 없는 가공 방식/);
+});
+
+test("가공 입력 blur — 행의 완성된 명세를 보내고, 불완전하면 조용히 보내지 않는다", async () => {
+  const split = { mode: "split", delimiter: "-", index: 1 };
+  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(split)] } });
+  h.controller.init();
+  h.controller.type(mapField("건명", "slice_index"), "-1");
+  h.controller.commitSliceOnBlur("건명", "slice_index");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  h.controller.type(mapField("건명", "slice_delimiter"), "");
+  h.controller.commitSliceOnBlur("건명", "slice_delimiter");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const sent = h.log.filter((row) => row[0] === "dispatch" && row[2] === "set_map_slice")
+    .map((row) => row[3]);
+  assert.deepEqual(sent, [{ name: "건명", slice: { mode: "split", delimiter: "-", index: -1 } }],
+    "빈 구분자는 발신 0 — 거절 문안은 Python 의 것이다");
+});
+
+test("가공 편집기 열림 — 한 번에 한 행, UI-local(발신 0)", () => {
+  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
+  assert.equal(h.controller.isSliceEditorOpen("건명"), false);
+  h.controller.toggleSliceEditor("건명");
+  assert.equal(h.controller.isSliceEditorOpen("건명"), true);
+  assert.equal(h.controller.sliceViewModel.getSnapshot(), "건명");
+  h.controller.toggleSliceEditor("건명");
+  assert.equal(h.controller.isSliceEditorOpen("건명"), false);
+  assert.deepEqual(h.actions(), []);
+});
+
+test("서버 값 — 가공 입력은 확정된 방식의 칸만 채운다(값 발명 0)", () => {
+  const values = workbenchServerValues({
+    rows: [slicedRow({ mode: "chars", start: 2, length: 3 })],
+  });
+  assert.equal(values[mapField("건명", "slice_start")], "2");
+  assert.equal(values[mapField("건명", "slice_length")], "3");
+  assert.equal(values[mapField("건명", "slice_delimiter")], "");
+  assert.equal(values[mapField("건명", "slice_index")], "");
 });
