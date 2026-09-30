@@ -14,7 +14,6 @@ import pytest
 from openpyxl import Workbook
 
 from hwpxfiller.cli import main
-from hwpxfiller.data.pclm import PCLM_VIEWS
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -476,21 +475,49 @@ def _pclm_db(path: Path, *, view: str = "v_통합_v1", rows=None) -> str:
     return str(path)
 
 
-def test_pclm_requires_explicit_view_with_view_listing(tmp_path, capsys):
-    """--view 미지정은 loud 실패 — 뷰마다 한 줄의 뜻이 달라 기본을 추측하지 않는다."""
-    db = _pclm_db(tmp_path / "pclm.db")
+def test_pclm_requires_explicit_view_and_lists_the_db_sheets(tmp_path, capsys):
+    """--view 미지정은 loud 실패 — **그 DB 의** 시트(뷰 먼저, 다음 표)를 나열하고 멈춘다.
+
+    시트마다 한 줄의 뜻이 달라 기본을 추측하지 않는다. 목록은 고정 허용목록이 아니라
+    그 DB 가 실제로 가진 것이다(사용자 결정 2026-09-30).
+    """
+    db = _pclm_db(tmp_path / "pclm.db", view="v_통합_v2")
     out = tmp_path / "out"
     with pytest.raises(SystemExit) as caught:
         main(["--template", TEMPLATE, "--source", "pclm", "--db", db, "--out", str(out)])
     assert caught.value.code == 2
     err = capsys.readouterr().err
-    for view in PCLM_VIEWS:
-        assert view in err          # 무엇을 고를 수 있는지 그 자리에서 나열
-    assert not out.exists()         # 조용한 생성 없음
+    assert "--view" in err
+    assert "  v_통합_v2\n  계약" in err  # 뷰 먼저, 다음 표 — 그 자리에서 나열
+    assert "v_통합_v1" not in err         # 박제된 옛 목록이 새지 않는다
+    assert not out.exists()               # 조용한 생성 없음
 
 
-def test_pclm_rejects_view_outside_the_contract(tmp_path, capsys):
-    """계약면 넷 밖의 이름은 소스가 거절하고 CLI 가 같은 목록으로 번역한다."""
+def test_pclm_without_view_on_missing_db_is_a_one_line_error(tmp_path, capsys):
+    """나열할 DB 가 없으면 traceback 대신 최상위 번역 경계의 한 줄(exit 2)."""
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "pclm", "--db",
+               str(tmp_path / "없다.db"), "--out", str(out)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "[오류]" in err
+    assert "Traceback" not in err
+    assert not out.exists()
+
+
+def test_pclm_without_view_on_a_non_sqlite_file_is_worded(tmp_path, capsys):
+    """SQLite 가 아닌 파일은 열기 실패 문장으로 멈춘다(exit 2, 원시 예외 없음)."""
+    bogus = tmp_path / "가짜.db"
+    bogus.write_bytes(b"not a database" * 20)
+    with pytest.raises(SystemExit) as caught:
+        main(["--template", TEMPLATE, "--source", "pclm", "--db", str(bogus),
+              "--out", str(tmp_path / "out")])
+    assert caught.value.code == 2
+    assert "열지 못했습니다" in capsys.readouterr().err
+
+
+def test_pclm_rejects_a_sheet_the_db_does_not_have(tmp_path, capsys):
+    """그 DB 에 없는 이름은 소스가 SELECT 전에 거절하고 CLI 가 그 문장(시트 목록 포함)을 옮긴다."""
     db = _pclm_db(tmp_path / "pclm.db")
     out = tmp_path / "out"
     with pytest.raises(SystemExit) as caught:
@@ -499,9 +526,19 @@ def test_pclm_rejects_view_outside_the_contract(tmp_path, capsys):
     assert caught.value.code == 2
     err = capsys.readouterr().err
     assert "v_없음" in err
-    for view in PCLM_VIEWS:
-        assert view in err
+    assert "v_통합_v1" in err and "계약" in err
     assert not out.exists()
+
+
+def test_pclm_reads_a_plain_table_as_a_sheet(tmp_path, capsys):
+    """표도 시트다 — 뷰가 아니어도 그 DB 에 있으면 엑셀 시트처럼 읽는다."""
+    db = _pclm_db(tmp_path / "pclm.db")
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "pclm", "--db", db,
+               "--view", "계약", "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 0
+    assert _outputs(out) == ["공고-R26TA0215950700.hwpx"]
 
 
 def test_pclm_fills_documents_from_a_view(tmp_path, capsys):

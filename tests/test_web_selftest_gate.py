@@ -427,8 +427,9 @@ class TestWebSelftestGate:
         (프로브 click 은 hidden 도 통과한다), 열린 폼은 기본 DB 자리를 프리필하되 시트는
         빈 placeholder 로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
 
-        표면 어휘도 여기서 잰다: 옵션의 **값**은 백엔드 계약(실 뷰 이름)이지만 **보이는
-        글자**에는 내부 이름도 저쪽 프로그램 이름도 서지 않는다.
+        표면 어휘도 여기서 잰다: 옵션의 **값**과 **보이는 글자**는 둘 다 그 DB 의 시트 이름
+        그대로다(엑셀 시트처럼 — 제목표는 사용자 결정 2026-09-30 으로 걷혔다). 진입 버튼
+        라벨에는 저쪽 프로그램 이름이 서지 않는다.
         """
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
@@ -438,14 +439,12 @@ class TestWebSelftestGate:
         assert probe["pclm_no_relink"] is True, probe
         assert probe["pclm_entry"] is True, probe
         assert probe["pclm_entry_text"] == "계약 목록(.db) 등록…", probe
-        # 고르게 할 시트 3 + 빈 placeholder 1 — 목록 첫 항목이 기본으로 서지 않는다.
-        # 품목 뷰는 1계약 N줄이라 반복 표가 서기 전까지 웹 등록에서 고르게 하지 않는다.
+        # 스냅샷이 준 시트 3 + 빈 placeholder 1 — 목록 첫 항목이 기본으로 서지 않는다.
         assert probe["pclm_reg_view_options"] == 4, probe
         assert probe["pclm_reg_db_prefill"] == "C:/AppData/Local/Pclm/pclm.db", probe
-        # 값은 실 뷰 이름 그대로(백엔드 계약), 글자는 제목 — 표면에 `v_` 이름이 새지 않는다.
-        assert probe["pclm_reg_view_values"] == "|v_통합_v1|v_공고_v1|v_계약_v1", probe
-        assert "v_" not in probe["pclm_reg_view_text"], probe
-        assert probe["pclm_reg_view_text"].startswith("시트를 고르세요|통합 —"), probe
+        # 값도 글자도 그 DB 의 시트 이름 그대로 — 웹이 다시 옮기지 않는다.
+        assert probe["pclm_reg_view_values"] == "|v_통합_v2|v_접수_v1|계약", probe
+        assert probe["pclm_reg_view_text"] == "시트를 고르세요|v_통합_v2|v_접수_v1|계약", probe
         assert probe["pclm_reg_view_label"] == "읽을 시트", probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(

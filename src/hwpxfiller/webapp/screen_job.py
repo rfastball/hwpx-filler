@@ -42,7 +42,6 @@ from ..domain.job import (
     template_media,
     work_mode,
 )
-from ..domain.pclm_views import PCLM_VIEW_TITLES  # 계약면 제목 — 라벨은 내부 이름을 안 든다
 from ..domain.output_folder_default import (
     SOURCE_REMEMBERED as OUTPUT_FOLDER_SOURCE_SETTING,
     OutputFolderResolution,
@@ -884,17 +883,16 @@ class JobController:
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self.runs.last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        # 라벨에 면을 병기한다 — db 하나에 계약면이 넷이라 파일 이름만으로는 **무엇이 서
+        # 라벨에 시트를 병기한다 — db 하나에 시트가 여럿이라 파일 이름만으로는 **무엇이 서
         # 있는지**를 말하지 못한다(엑셀의 `data_binding_label` 이 시트를 병기하는 것과 같은
         # 규율). 스냅샷 `data_target` 과 겹치는 것이 아니라, 저쪽은 성분이고 이쪽은 한 줄이다.
-        # 병기하는 것은 **제목**이다: 라벨은 사람이 읽는 한 줄이라 내부 이름(`v_통합_v1`)이
-        # 여기로 새면 결속 마운트 notice·소스 라벨까지 그 이름을 지고 다닌다. 미지 이름은
-        # 감추지 않고 원문 그대로 남긴다(구판·손편집을 조용히 지우지 않는다).
+        # 시트 이름은 DB 가 가진 이름 그대로다(엑셀 시트처럼 — 제목표는 사용자 결정
+        # 2026-09-30 으로 걷혔다).
         self._commit_data_mount(
             datasource=source,
             records=records,
             incoming=(db, view, 0, "pclm"),
-            label=f"{Path(db).name} · {PCLM_VIEW_TITLES.get(view, view)}",
+            label=f"{Path(db).name} · {view}",
             source_kind="pclm",
             path=db,
             sheet=view,

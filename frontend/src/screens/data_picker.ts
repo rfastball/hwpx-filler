@@ -245,8 +245,8 @@ export function createDataPickerController(args: {
     });
   }
 
-  /* 계약 목록 등록 — 물어야 할 두 좌표(기본 DB 자리·고를 수 있는 뷰)는 **스냅샷이 준다**.
-     웹이 뷰 목록이나 기본 경로를 리터럴로 들면 링0 허용목록이 늘 때 한쪽만 늙는다.
+  /* 계약 목록 등록 — 물어야 할 두 좌표(기본 DB 자리·그 DB 의 시트)는 **스냅샷이 준다**.
+     웹이 시트 목록이나 기본 경로를 리터럴로 들면 DB 의 시트가 바뀔 때 한쪽만 늙는다.
      블록이 아직 없으면 열지 않고 사유를 말한다(조용한 무반응 금지) — 버튼도 같은
      판정으로 비활성이라 정상 경로에서는 여기 닿지 않는다. */
   function openPclm(): void {
@@ -623,7 +623,7 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
     db: "", view: "", note: "", targetKey: "", pinMode: false, error: "",
   };
   const pclm = value.mode === "pclm";
-  /* 고를 수 있는 시트와 그 설명은 링0 단일 출처가 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
+  /* 고를 수 있는 시트는 백엔드가 기본 DB 를 실제로 나열해 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
   const views: Obj[] = (pool?.pclm?.views || []) as Obj[];
   return h("div", { className: "modal-card" },
     h("h3", { id: "poolRegTitle" }, value.title),
@@ -645,14 +645,14 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
         onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
     /* 시트는 **사용자가 확정**한다 — 목록 첫 항목을 기본으로 세우면 계약면이 조용히 섞여
        문서 건수가 어긋난다. 그래서 초기 선택은 빈 placeholder 이고, 빈 채 제출은 막는다.
-       보이는 것은 제목과 설명이고 `value` 는 실제 뷰 이름이다 — 백엔드 계약이 그 이름이라
-       표기만 사람 말로 옮긴다(내부 이름은 표면에 서지 않는다). */
+       보이는 글자도 `value` 도 그 DB 의 시트 이름 그대로다(엑셀 시트처럼 — 제목표는
+       사용자 결정 2026-09-30 으로 걷혔다). */
     pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "읽을 시트"),
       h("select", { className: "field", id: "poolRegView", value: value.view,
         onChange: (event: Obj) => controller.patchReg({ view: event.currentTarget.value }) },
       h("option", { value: "", key: "" }, PCLM_VIEW_PLACEHOLDER),
       ...views.map((view: Obj) => h("option", { value: String(view.name), key: String(view.name) },
-        `${view.title} — ${view.desc}`)))) : null,
+        String(view.name))))) : null,
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
       h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note,
         onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),

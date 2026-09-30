@@ -240,11 +240,13 @@ def test_pclm_row_renders_kind_label_summary_and_locate_path(tmp_path):
     """계약 목록 항목의 행 성형 — 종류 라벨·DB/시트 요약·로케이트 경로(끊김 배지가 볼 파일)."""
     vm = _vm(tmp_path)
     db = tmp_path / "pclm.db"
-    vm.register_pclm("계약 목록", str(db), view="v_품목_v1", note="품목 명세")
+    vm.register_pclm(
+        "계약 목록", str(db), view="v_품목_v1", sheets=("v_품목_v1",), note="품목 명세"
+    )
     row = vm.rows()[0]
     assert row.kind == "pclm" and row.kind_label == "계약 목록"
-    # 표면 어휘는 「시트」이고 면 이름은 제목으로 옮긴다 — 내부 이름(v_…)은 요약에 없다.
-    assert row.reference == "DB: pclm.db · 시트 품목"
+    # 표면 어휘는 「시트」이고 시트 이름은 DB 가 가진 이름 그대로다(엑셀 시트처럼).
+    assert row.reference == "DB: pclm.db · 시트 v_품목_v1"
     assert row.locate_path == str(db)   # 「끊김」 배지·로케이트가 같은 파일을 본다
     assert row.sheet == ""              # 시트는 엑셀 축 — 계약 목록은 뷰가 그 자리다
     assert row.note == "품목 명세"
@@ -362,7 +364,9 @@ def test_row_actions_carry_every_verb_the_column_menu_will_show(tmp_path):
     """
     vm = _vm(tmp_path)
     vm.register_excel("엑셀", "/a.xlsx", sheet="s")
-    vm.register_pclm("계약", str(tmp_path / "pclm.db"), view="v_통합_v1")
+    vm.register_pclm(
+        "계약", str(tmp_path / "pclm.db"), view="v_통합_v1", sheets=("v_통합_v1",)
+    )
     rows = {r.name: r for r in vm.rows()}
     assert [a.key for a in rows["엑셀"].actions()] == ["relink", "archive", "delete"]
     assert [a.label for a in rows["엑셀"].actions()][0] == "다시 연결…"
@@ -402,7 +406,7 @@ def test_review_reads_columns_and_restates_the_reference_facts(tmp_path):
     """엑셀 참조 하나의 상세 — 열 목록·정체 줄·동사가 **한 번 연 결과**에서 나온다(④).
 
     수치·문안은 이 투영이 새로 판정하지 않는다: 배지·동사는 목록 행과 같은 출처이고
-    시트 제목화는 링0 이다. 여기서 재는 것은 그 값들이 한 벌로 서는가다.
+    시트 이름은 참조가 든 원문이다. 여기서 재는 것은 그 값들이 한 벌로 서는가다.
     """
     from pathlib import Path
 
@@ -440,16 +444,18 @@ def test_review_of_a_broken_reference_is_a_reason_not_an_exception(tmp_path):
     assert "relink" in [a.key for a in detail.actions]
 
 
-def test_review_of_a_contract_list_titles_the_view_and_reads_its_columns(tmp_path):
-    """계약 목록 상세 — 시트 자리에 **뷰**가 서고 제목화는 링0 하나를 지난다."""
+def test_review_of_a_contract_list_names_the_sheet_and_reads_its_columns(tmp_path):
+    """계약 목록 상세 — 시트 자리에 DB 의 시트 이름이 그대로 선다(제목표 없음)."""
     vm = _vm(tmp_path)
-    vm.register_pclm("계약 목록", _pclm_db(tmp_path / "pclm.db"), view="v_통합_v1")
+    vm.register_pclm(
+        "계약 목록", _pclm_db(tmp_path / "pclm.db"), view="v_통합_v1", sheets=("v_통합_v1",)
+    )
 
     detail = vm.review(vm.rows()[0].key)
     assert detail.error == ""
     assert detail.sheet == "v_통합_v1"          # 값·SELECT 는 실이름으로 간다
-    assert detail.sheet_title == "통합"          # 표면은 제목으로 말한다
-    assert "시트: 통합" in detail.facts()
+    assert detail.sheet_title == "v_통합_v1"     # 표면도 같은 이름으로 말한다
+    assert "시트: v_통합_v1" in detail.facts()
     assert list(detail.columns) == ["계약번호", "계약건명"]
     # 계약 목록에는 참조 교체 동사가 없다(종류가 가르는 축) — 상세도 목록 행과 같다.
     assert [a.key for a in detail.actions] == ["archive", "delete"]
