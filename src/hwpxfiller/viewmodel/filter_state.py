@@ -77,8 +77,10 @@ alarm) — 칩 줄·게이트가 같은 문안을 나른다.
 
 사용자가 조건(열 조건·검색)을 이름으로 저장하고, 그 이름 칩을 눌러 켜고 끈다(예: 「소기업」 =
 추정가격 < 1억, 「중소기업」 = 1억 ≤ 추정가격 < 고시금액). 문법을 새로 짓지 않는다 — 저장본은
-:meth:`FilterModel.export_state` 의 지금 조건 부분과 같은 모양이고, 평가는 저장본마다 **독립
-모델**(같은 열 지형 + :meth:`FilterModel.apply_state`)로 한다.
+:meth:`FilterModel.export_state` 의 지금 조건 부분과 같은 모양이다. 켜진 저장본은 전체 열 검색의
+OR 그룹처럼 **이 모델 안의 무리**다(곁 모델을 따로 평가하지 않는다): 정의를 한 번 설치해 조건
+묶음(:class:`_ConditionGroup` — 열 조건 AND + 제 검색 OR)으로 들고, 열 조건과 같은 술어로 평가한다.
+평가·정의줄·게이트·「전체 선택」 담보·빌더의 수·전체 해제가 모두 이 모델 하나를 지난다.
 
 **합성 규칙 = 슬라이서 관례**(2026-09-30 사용자 확정): 저장본의 **차원**은 그 저장본이 조이는
 열 이름 집합(+ 전체 열 검색이면 의사 차원 :data:`SEARCH_DIMENSION`)이다
@@ -87,6 +89,12 @@ alarm) — 칩 줄·게이트가 같은 문안을 나른다.
 저장본이 없는 차원은 아무것도 조이지 않는다. 지금 조건(열 머리·검색)은 늘 **그리고**로 얹힌다.
 정의줄은 켜진 차원마다 한 조각(``필터 '소기업' 또는 '중소기업'``)으로 재진술해(:data:`PRESET_LABEL`)
 게이트·「전체 선택」 담보가 그대로 덮는다. 교집합이 비면 빈 표 + 정의줄이다(조용한 빈칸 아님).
+켜진 저장본이 조이는 열은 열 머리도 조건 표지를 세우고 그 무리 문안을 싣는다
+(:meth:`FilterModel.column_constraints`). 그 열의 열 머리 편집은 지금 조건(그리고)을 더할 뿐 칩을
+끄지 않는다. 「열 조건」 칩은 열 머리에서 건 조건만이다(저장본의 조이기는 제 칩이 말한다).
+
+이름을 비우고 저장하면 짧은 조건 요약(:meth:`FilterModel.name_state` — 값 하나면 ``열 값``, 여럿이면
+``열 첫값 외 N개``)이 이름이 된다. 조건 전문은 칩 ``title``(:meth:`FilterModel.preset_description`)이 든다.
 
 저장본은 빌더가 보낸 조건을 :meth:`FilterModel.normalize_preset_state` 로 받는다 — 열 머리 편집기와
 같은 엄격 경로(없는 열·읽을 수 없는 피연산자·빈 조건은 시끄럽게 거절)다. 저장본 정의의 영속은 이
@@ -318,6 +326,92 @@ class _ColumnCondition:
         return self.values is not None or bool(self.text) or self.range_ is not None
 
 
+class _ConditionGroup:
+    """저장한 필터 하나의 설치된 조건 묶음 — 모델 안 무리의 구성원(FilterModel 내부 전용).
+
+    열 조건(AND, 무언가를 조이는 열만)과 제 전체 열 검색(OR 가지, 쳐낸 가지는 정의에서 온다)을
+    든다. 평가는 소유 모델이 열 조건과 **같은 술어**로 한다 — 곁 모델을 따로 만들지 않는다.
+    """
+
+    __slots__ = ("cols", "search", "pruned")
+
+    def __init__(
+        self, cols: "dict[str, _ColumnCondition]", search: str, pruned: "frozenset[str]",
+    ) -> None:
+        self.cols = cols
+        self.search = search
+        self.pruned = pruned
+
+
+def _value_label(value: str) -> str:
+    return "(빈값)" if value == "" else value
+
+
+def _describe_condition(column: str, cond: _ColumnCondition) -> "list[str]":
+    """열 조건 하나의 정의줄 조각들 — 열 머리 조건·저장본 설명이 함께 쓰는 단일 생산자."""
+    parts: "list[str]" = []
+    if cond.values is not None:
+        vals = cond.values  # 저장 순서 그대로 — 사용자가 체크한 순서(시안 동형)
+        if len(vals) == 1:
+            parts.append(f"{column} = {_value_label(vals[0])}")
+        else:
+            inner = ", ".join(_value_label(v) for v in vals)
+            parts.append(f"{column} ∈ {{{inner}}}")
+    if cond.text:
+        parts.append(f"{column} 포함 '{cond.text}'")
+    if cond.range_ is not None:
+        r = cond.range_
+        head = f"{column} {RANGE_OP_LABELS[r.first.op]} '{r.first.operand}'"
+        if r.second is not None:
+            head += (
+                f" {_JOINER_LABELS[r.joiner]} "
+                f"{RANGE_OP_LABELS[r.second.op]} '{r.second.operand}'"
+            )
+        parts.append(head)
+    return parts
+
+
+def _search_part(search: str, branches: "list[str]") -> str:
+    """전체 열 검색 조각 — 가지가 없으면 「매치 없음」을 재진술한다(선언된 문안 편차)."""
+    if branches:
+        return f"({' ∨ '.join(branches)}) 포함 '{search}'"
+    return f"검색 '{search}' (매치 없음)"
+
+
+def _short_condition(column: str, cond: _ColumnCondition) -> "list[str]":
+    """칩 이름용 짧은 조각 — 값 하나 ``열 값``, 여럿 ``열 첫값 외 N개``, 범위는 기호·피연산자 그대로.
+
+    단위를 줄여 쓰지 않는다(피연산자는 사용자가 쓴 그대로). 「사이」(≥ a 그리고 < b)는 ``a~b`` 다.
+    """
+    parts: "list[str]" = []
+    if cond.values is not None:
+        vals = [_value_label(v) for v in cond.values]
+        if len(vals) == 1:
+            parts.append(f"{column} {vals[0]}")
+        elif vals:
+            parts.append(f"{column} {vals[0]} 외 {len(vals) - 1}개")
+        else:
+            parts.append(f"{column} ∈ {{}}")
+    if cond.text:
+        parts.append(f"{column} 포함 '{cond.text}'")
+    if cond.range_ is not None:
+        r = cond.range_
+        if (
+            r.second is not None and r.joiner == "and"
+            and r.first.op == "ge" and r.second.op == "lt"
+        ):
+            parts.append(f"{column} {r.first.operand}~{r.second.operand}")
+        else:
+            head = f"{column} {RANGE_OP_LABELS[r.first.op]} {r.first.operand}"
+            if r.second is not None:
+                head += (
+                    f" {_JOINER_LABELS[r.joiner]} "
+                    f"{RANGE_OP_LABELS[r.second.op]} {r.second.operand}"
+                )
+            parts.append(head)
+    return parts
+
+
 class FilterModel:
     """데이터 존 필터 상태 — 열 조건(AND) × 전열 OR 그룹. 뷰는 이 API 만 호출한다.
 
@@ -333,10 +427,10 @@ class FilterModel:
         self._search = ""  # 전열 검색어(그룹 텍스트) — 그룹은 항상 최대 1개(미결 확정 2)
         self._pruned: "set[str]" = set()  # 쳐낸 가지 — 텍스트 수명(set_search 가 비움)
         # 저장한 필터 — 이름 → 지금 조건 직렬 상태(삽입 순서 = 칩 순서). 정의는 세션이 심고
-        # (set_presets) 켜짐은 이 모델이 든다. 평가 모델은 이름별 지연 캐시다(열 지형 고정).
+        # (set_presets) 켜짐은 이 모델이 든다. 설치된 조건 묶음은 이름별 지연 캐시다(열 지형 고정).
         self._presets: "dict[str, dict]" = {}
         self._active_presets: "list[str]" = []
-        self._preset_models: "dict[str, FilterModel]" = {}
+        self._groups: "dict[str, _ConditionGroup]" = {}
 
     # ------------------------------------------------------------- 조회(정체)
     @property
@@ -511,7 +605,7 @@ class FilterModel:
             table[name] = copy.deepcopy(state) if isinstance(state, dict) else {}
         renamed = renamed or {}
         self._presets = table
-        self._preset_models = {}
+        self._groups = {}
         dropped: "list[str]" = []
         kept: "list[str]" = []
         for name in self._active_presets:
@@ -536,8 +630,7 @@ class FilterModel:
         if "active_presets" in state:  # 저장본은 지금 조건만 담는다 — 중첩은 손상이다
             return False, _PRESET_UNREADABLE
         try:
-            probe = FilterModel(self._columns, self._kinds)
-            _installed, dropped = probe.apply_state(state)
+            group, dropped = self._install_group(state)
         except (AttributeError, KeyError, TypeError, ValueError):
             return False, _PRESET_UNREADABLE
         missing = [d for d in dropped if not d.endswith("(범위)")]
@@ -546,18 +639,28 @@ class FilterModel:
         if dropped:
             unfit = [d[: -len("(범위)")] for d in dropped]
             return False, _PRESET_RANGE_UNFIT.format(columns=", ".join(unfit))
-        if not probe.has_adhoc():
+        if not group.cols and not group.search:
             return False, _PRESET_STATE_EMPTY
         return True, ""
 
-    def _preset_model(self, name: str) -> "FilterModel":
-        """켜진 저장한 필터의 평가 모델 — 같은 열 지형의 독립 모델(지연 캐시)."""
-        model = self._preset_models.get(name)
-        if model is None:
-            model = FilterModel(self._columns, self._kinds)
-            model.apply_state(self._presets[name])
-            self._preset_models[name] = model
-        return model
+    def _install_group(self, state: dict) -> "tuple[_ConditionGroup, list[str]]":
+        """저장본 정의 → 설치된 조건 묶음 + 탈락 목록 — 설치 규칙은 :meth:`apply_state` 하나다.
+
+        빈 초안 모델은 설치 규칙(열 결손·범위 부적합·피연산자 검증)을 빌려 쓰는 자리일 뿐이고,
+        평가는 돌려받은 묶음을 이 모델이 한다(곁 모델을 들고 있지 않는다).
+        """
+        scratch = FilterModel(self._columns, self._kinds)
+        _installed, dropped = scratch.apply_state(state)
+        cols = {col: cond for col, cond in scratch._cols.items() if cond.is_active()}
+        return _ConditionGroup(cols, scratch._search, frozenset(scratch._pruned)), dropped
+
+    def _group(self, name: str) -> _ConditionGroup:
+        """저장한 필터의 설치된 조건 묶음(지연 캐시) — 정의가 바뀌면 캐시를 비운다."""
+        group = self._groups.get(name)
+        if group is None:
+            group, _dropped = self._install_group(self._presets[name])
+            self._groups[name] = group
+        return group
 
     def activate_preset(self, name: str) -> None:
         """저장한 필터 켜기 — 쓸 수 없으면 사유와 함께 거절(조용한 무시 금지)."""
@@ -644,67 +747,65 @@ class FilterModel:
             raise PresetStateError(_PRESET_STATE_EMPTY)
         return scratch.adhoc_state()
 
-    def describe_state(self, state: object, records: "list[dict]") -> str:
-        """후보 조건의 요약 문안 — 칩 title 과 같은 생산자(정의줄 조각). 빈 조건이면 ``""``.
+    def name_state(self, state: object) -> str:
+        """후보 조건의 짧은 이름 — 빌더 이름 칸의 자리표시자이자 이름을 비우고 저장할 때의 이름.
 
-        빌더 이름 칸의 자리표시자이자, 이름을 비우고 저장할 때의 이름이다.
+        조각은 열 순서로 ``·`` 로 잇는다(:func:`_short_condition`, 검색은 ``검색 '어'``). 조건 전문은
+        칩 title(:meth:`preset_description`)이 든다. 빈 조건이면 ``""``.
         """
-        probe = FilterModel(self._columns, self._kinds)
-        probe.apply_state(self.normalize_preset_state(state, allow_empty=True))
-        return " · ".join(probe.view(records).adhoc_parts())
+        group, _dropped = self._install_group(self.normalize_preset_state(state, allow_empty=True))
+        parts: "list[str]" = []
+        for col in self._columns:
+            if col in group.cols:
+                parts.extend(_short_condition(col, group.cols[col]))
+        if group.search:
+            parts.append(f"검색 '{group.search}'")
+        return " · ".join(parts)
 
     def count_state(self, state: object, records: "list[dict]") -> int:
         """빌더의 후보 조건 **하나만**으로 보이는 행 수 — 지금 조건·켜진 저장본과 무관.
 
-        저장본은 따로 평가돼 합성되므로(차원 규칙) 빌더의 수는 그 저장본 자신의 수다. 검증은
-        :meth:`normalize_preset_state` 와 같고, 조건이 비었으면 전 행이다(저장 거절은 저장이
-        말한다 — 빈 빌더를 열자마자 오류를 띄우지 않는다).
+        저장본은 무리로 합성되므로(차원 규칙) 빌더의 수는 그 저장본 자신의 수다 — 무리 구성원을
+        평가하는 같은 술어(:meth:`_group_rows`)로 센다. 검증은 :meth:`normalize_preset_state` 와 같고,
+        조건이 비었으면 전 행이다(저장 거절은 저장이 말한다 — 빈 빌더를 열자마자 오류를 띄우지 않는다).
         """
-        probe = FilterModel(self._columns, self._kinds)
-        probe.apply_state(self.normalize_preset_state(state, allow_empty=True))
-        return len(probe.visible_indices(records))
+        group, _dropped = self._install_group(self.normalize_preset_state(state, allow_empty=True))
+        return len(self._group_rows(group, records))
 
-    def create_preset(
-        self, name: str, state: object, *, from_adhoc: bool = False,
-        records: "list[dict] | None" = None,
-    ) -> str:
+    def create_preset(self, name: str, state: object, *, from_adhoc: bool = False) -> str:
         """빌더의 조건을 이름으로 저장하고 **켠다** — 저장한 이름을 돌려준다.
 
-        이름을 비우면 조건 요약(:meth:`describe_state` — 칩 title 과 같은 문안)이 이름이 된다.
-        같은 이름은 덮어쓰지 않고 거절한다(저장본의 조용한 소실 금지 — 요약 이름도 같다).
-        ``from_adhoc`` 는 빌더가 지금 조건으로 채워져 열렸다는 표지다 — 저장 뒤 지금 조건을
-        비워 정의가 칩 하나로 접힌다(같은 차원의 다른 저장본이 켜져 있지 않으면 보이는 행은 그대로다).
+        이름을 비우면 짧은 조건 요약(:meth:`name_state`)이 이름이 된다. 같은 이름은 덮어쓰지 않고 거절한다(저장본의
+        조용한 소실 금지 — 요약 이름도 같다). ``from_adhoc`` 는 빌더가 지금 조건으로 채워져
+        열렸다는 표지다 — 저장 뒤 지금 조건을 비워 정의가 칩 하나로 접힌다(같은 차원의 다른
+        저장본이 켜져 있지 않으면 보이는 행은 그대로다).
         """
         saved = self.normalize_preset_state(state)
-        name = self._check_new_name(
-            str(name).strip() or self.describe_state(saved, list(records or []))
-        )
+        name = self._check_new_name(str(name).strip() or self.name_state(saved))
         self._presets[name] = saved
-        self._preset_models.pop(name, None)
+        self._groups.pop(name, None)
         if from_adhoc:
             self._clear_adhoc()
         self._active_presets.append(name)
         return name
 
-    def update_preset(
-        self, name: str, new_name: str, state: object, *, records: "list[dict] | None" = None,
-    ) -> str:
+    def update_preset(self, name: str, new_name: str, state: object) -> str:
         """저장본 고치기(이름·조건) — 칩 순서·켜짐을 그대로 잇는다. 새 이름을 돌려준다.
 
-        검증은 만들기와 같고(빈 이름 = 조건 요약), 이름이 그대로면 이름 검사는 건너뛴다. 조건이
+        검증은 만들기와 같고(빈 이름 = 짧은 조건 요약), 이름이 그대로면 이름 검사는 건너뛴다. 조건이
         바뀌면 차원도 바뀔 수 있다(칩이 다른 무리로 옮겨 간다) — 켜짐은 그대로 잇는다.
         """
         if name not in self._presets:
             raise ValueError(_PRESET_UNKNOWN.format(name=name))
         saved = self.normalize_preset_state(state)
-        new_name = str(new_name).strip() or self.describe_state(saved, list(records or []))
+        new_name = str(new_name).strip() or self.name_state(saved)
         if new_name != name:
             new_name = self._check_new_name(new_name)
         self._presets = {
             (new_name if key == name else key): (saved if key == name else value)
             for key, value in self._presets.items()
         }
-        self._preset_models = {}
+        self._groups = {}
         self._active_presets = [new_name if n == name else n for n in self._active_presets]
         return new_name
 
@@ -773,20 +874,81 @@ class FilterModel:
         return "·".join(parts)
 
     def preset_description(self, name: str, records: "list[dict]") -> str:
-        """저장본의 조건 문안 — 정의줄과 같은 생산자(:meth:`FilterView.adhoc_parts`)로 짓는다.
+        """저장본의 조건 문안 — 정의줄 조각과 같은 생산자(:func:`_describe_condition`)로 짓는다.
 
-        쓸 수 있는 저장본만 부른다(쓸 수 없는 칩의 설명 자리는 사유가 진다).
+        쓸 수 있는 저장본만 부른다(쓸 수 없는 칩의 설명 자리는 사유가 진다). 검색 조각의 가지는 그
+        저장본 자신의 열 조건을 통과한 행에서 산출한다(무리 구성원의 평가와 같은 기준).
         """
-        return " · ".join(self._preset_model(name).view(records).adhoc_parts())
+        return " · ".join(self._group_parts(self._group(name), records))
 
     def delete_preset(self, name: str) -> None:
-        """저장한 필터 삭제 — 켜져 있었으면 함께 꺼진다."""
+        """저장한 필터 삭제 — 켜져 있었으면 그 무리 구성원도 함께 빠진다."""
         if name not in self._presets:
             raise ValueError(_PRESET_UNKNOWN.format(name=name))
         del self._presets[name]
-        self._preset_models.pop(name, None)
+        self._groups.pop(name, None)
         if name in self._active_presets:
             self._active_presets.remove(name)
+
+    @staticmethod
+    def _group_label(names: "list[str]") -> str:
+        """켜진 차원 무리 하나의 재진술 — ``필터 '소기업' 또는 '중소기업'``(정의줄·열 머리 공용)."""
+        return _PRESET_GROUP_LABEL.format(names=_PRESET_OR.join(f"'{name}'" for name in names))
+
+    def column_constraints(self, column: str) -> "list[str]":
+        """이 열을 조이는 것의 문안 — 켜진 저장본 무리(열 머리 표지 소재) + 열 머리 조건.
+
+        열 머리는 켜진 저장본이 조이는 열에도 조건 표지를 세운다(저장본이 곁 평가가 아니라 이
+        모델의 무리라서다). 무리 하나는 한 조각(:meth:`_group_label`)이고, 지금 조건은 정의줄 조각
+        그대로다. 전체 열 검색은 열을 특정하지 않으므로 싣지 않는다. 빈 목록 = 조이지 않는 열.
+        """
+        self._require(column)
+        parts = [
+            self._group_label(names)
+            for names in self.active_preset_groups()
+            if column in self.preset_columns(names[0])
+        ]
+        return parts + _describe_condition(column, self._cols[column])
+
+    # ------------------------------------------------ 무리 구성원 평가(열 조건과 같은 술어)
+    def _search_branches(
+        self, search: str, pruned: "Iterable[str]", passing: "list[dict]",
+    ) -> "list[str]":
+        """전열 검색의 가지 — 실매치 있는 텍스트 열만, 쳐낸 열 제외(지금 조건·무리 구성원 공용)."""
+        skip = set(pruned)
+        return [
+            col for col in self._columns
+            if self._kinds.get(col, KIND_TEXT) == KIND_TEXT
+            and col not in skip
+            and any(jamo_contains(cell_text(r, col), search) for r in passing)
+        ]
+
+    def _group_rows(self, group: _ConditionGroup, records: "list[dict]") -> "set[int]":
+        """무리 구성원 하나를 통과하는 행 — 제 열 조건(AND) 그리고 제 검색 OR 가지.
+
+        가지는 제 열 조건을 통과한 행에서 산출한다(저장본은 이름이 가리키는 행을 늘 같은 기준으로
+        보인다 — 지금 조건이나 다른 무리가 그 뜻을 바꾸지 않는다).
+        """
+        rows = [i for i, r in enumerate(records) if self._conds_pass(group.cols, r)]
+        if not group.search:
+            return set(rows)
+        branches = self._search_branches(group.search, group.pruned, [records[i] for i in rows])
+        return {
+            i for i in rows
+            if any(jamo_contains(cell_text(records[i], b), group.search) for b in branches)
+        }
+
+    def _group_parts(self, group: _ConditionGroup, records: "list[dict]") -> "list[str]":
+        parts: "list[str]" = []
+        for col in self._columns:
+            if col in group.cols:
+                parts.extend(_describe_condition(col, group.cols[col]))
+        if group.search:
+            passing = [r for r in records if self._conds_pass(group.cols, r)]
+            parts.append(_search_part(
+                group.search, self._search_branches(group.search, group.pruned, passing),
+            ))
+        return parts
 
     # ------------------------------------------------------------- 복제
     def blank_copy(self) -> "FilterModel":
@@ -934,7 +1096,14 @@ class FilterModel:
 
     def col_pass(self, record: "dict", *, except_column: "str | None" = None) -> bool:
         """열 조건 전부(AND) — ``except_column`` 은 값 목록 산출용 자기 제외(엑셀 동형)."""
-        for col, cond in self._cols.items():
+        return self._conds_pass(self._cols, record, except_column=except_column)
+
+    def _conds_pass(
+        self, conds: "dict[str, _ColumnCondition]", record: "dict", *,
+        except_column: "str | None" = None,
+    ) -> bool:
+        """열 조건 묶음 하나의 AND 술어 — 지금 조건과 저장본 무리 구성원이 같은 술어를 쓴다."""
+        for col, cond in conds.items():
             if col == except_column or not cond.is_active():
                 continue
             cell = cell_text(record, col)
@@ -998,10 +1167,11 @@ class FilterView:
 
     # ------------------------------------------------------------- 저장한 필터
     def _compute_preset_pass(self) -> "set[int] | None":
-        """켜진 저장본의 합성 — 차원 무리 안은 합집합(또는), 무리 사이는 교집합(그리고).
+        """켜진 저장본 무리의 합성 — 차원 무리 안은 합집합(또는), 무리 사이는 교집합(그리고).
 
-        저장본마다 자기 독립 모델에서 평가한다 — 같은 열을 조이는 두 저장본이 서로의 조건을
-        덮지 않는 근거다. 켜진 저장본이 없는 차원은 무리가 없으므로 아무것도 조이지 않는다.
+        구성원은 이 모델이 든 설치된 조건 묶음이고 열 조건과 같은 술어로 평가된다 — 같은 열을
+        조이는 두 저장본이 서로의 조건을 덮지 않는 근거는 구성원마다 제 조건을 들기 때문이다.
+        켜진 저장본이 없는 차원은 무리가 없으므로 아무것도 조이지 않는다.
         """
         m = self._m
         groups = m.active_preset_groups()
@@ -1011,7 +1181,7 @@ class FilterView:
         for names in groups:
             union: "set[int]" = set()
             for name in names:
-                union |= set(m._preset_model(name).view(self._records).visible_indices())
+                union |= m._group_rows(m._group(name), self._records)
             passing = union if passing is None else passing & union
         return passing if passing is not None else set()
 
@@ -1029,12 +1199,7 @@ class FilterView:
         if not m._search:
             return []
         passing = [r for i, r in enumerate(records) if self._preset_ok(i) and m.col_pass(r)]
-        return [
-            col for col in m._columns
-            if m._kinds.get(col, KIND_TEXT) == KIND_TEXT
-            and col not in m._pruned
-            and any(jamo_contains(cell_text(r, col), m._search) for r in passing)
-        ]
+        return m._search_branches(m._search, m._pruned, passing)
 
     def _group_pass(self, record: "dict") -> bool:
         m = self._m
@@ -1080,63 +1245,43 @@ class FilterView:
         return values
 
     # ------------------------------------------------- 정의줄(재진술 단일 출처)
-    @staticmethod
-    def _value_label(value: str) -> str:
-        return "(빈값)" if value == "" else value
-
-    def _describe_column(self, column: str) -> "list[str]":
-        cond = self._m._cols[column]
-        parts: "list[str]" = []
-        if cond.values is not None:
-            vals = cond.values  # 저장 순서 그대로 — 사용자가 체크한 순서(시안 동형)
-            if len(vals) == 1:
-                parts.append(f"{column} = {self._value_label(vals[0])}")
-            else:
-                inner = ", ".join(self._value_label(v) for v in vals)
-                parts.append(f"{column} ∈ {{{inner}}}")
-        if cond.text:
-            parts.append(f"{column} 포함 '{cond.text}'")
-        if cond.range_ is not None:
-            r = cond.range_
-            head = f"{column} {RANGE_OP_LABELS[r.first.op]} '{r.first.operand}'"
-            if r.second is not None:
-                head += (
-                    f" {_JOINER_LABELS[r.joiner]} "
-                    f"{RANGE_OP_LABELS[r.second.op]} '{r.second.operand}'"
-                )
-            parts.append(head)
-        return parts
-
     def preset_parts(self) -> "list[str]":
         """켜진 저장한 필터의 재진술 — 차원 무리마다 한 조각, 무리 안은 「또는」(켠 순서).
 
         무리 사이의 「그리고」는 열 조건 조각 사이처럼 암묵이다(``·`` 로 이어 붙는다).
         """
-        return [
-            _PRESET_GROUP_LABEL.format(names=_PRESET_OR.join(f"'{name}'" for name in names))
-            for names in self._m.active_preset_groups()
-        ]
+        return [FilterModel._group_label(names) for names in self._m.active_preset_groups()]
 
     def describe_parts(self) -> "list[str]":
         """조건별 문안 목록 — 게이트 정의줄이 이어붙여 소비(결정 4 담보).
 
         켜진 저장한 필터가 앞에, 지금 조건이 뒤에 선다. 칩 줄은 저장한 필터를 자기 칩으로
-        그리므로 지금 조건 부분(:meth:`adhoc_parts`)만 정의 칩으로 쓴다.
+        그리므로 지금 조건 부분(:meth:`adhoc_chips`)만 「열 조건」 칩으로 쓴다.
         """
         return self.preset_parts() + self.adhoc_parts()
 
     def adhoc_parts(self) -> "list[str]":
-        """지금 조건(열 조건·검색)의 문안 목록 — 칩 줄의 정의 칩 소재."""
-        parts: "list[str]" = []
-        for col in self._m._columns:
-            parts.extend(self._describe_column(col))
-        if self._m._search:
-            if self.branches:
-                parts.append(f"({' ∨ '.join(self.branches)}) 포함 '{self._m._search}'")
-            else:
-                # 선언된 문안 편차 — 시안은 생략하지만 빈 화면의 이유는 재진술해야 한다.
-                parts.append(f"검색 '{self._m._search}' (매치 없음)")
-        return parts
+        """지금 조건(열 조건·검색)의 문안 목록 — 정의줄의 뒷부분."""
+        return [part for chip in self.adhoc_chips() for part in chip["parts"]]
+
+    def adhoc_chips(self) -> "list[dict]":
+        """「열 조건」 칩 소재 — 열 머리에서 건 조건만, 열마다 한 칩(``{column, text, parts}``).
+
+        ``column`` 은 칩의 × 가 지우는 열이다. 전체 열 검색은 ``column == ""`` 인 칩 하나로 말미에
+        서고(검색창이 그 편집기라 × 를 달지 않는다), 켜진 저장본의 조이기는 제 칩이 말하므로 여기
+        되풀지 않는다. 문안은 정의줄 조각과 같은 생산자다.
+        """
+        m = self._m
+        chips: "list[dict]" = []
+        for col in m._columns:
+            parts = _describe_condition(col, m._cols[col])
+            if parts:
+                chips.append({"column": col, "text": " · ".join(parts), "parts": parts})
+        if m._search:
+            # 선언된 문안 편차 — 시안은 생략하지만 빈 화면의 이유는 재진술해야 한다.
+            part = _search_part(m._search, self.branches)
+            chips.append({"column": "", "text": part, "parts": [part]})
+        return chips
 
     def describe(self) -> str:
         """정의줄 전체 — 「전체 선택」·게이트 재진술이 그대로 나른다(문안 단일 출처)."""

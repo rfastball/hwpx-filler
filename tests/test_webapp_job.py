@@ -2388,7 +2388,8 @@ def test_filter_search_shapes_table_and_chips(tmp_path):
     ]
     assert t["visible_count"] == 1 and [r["index"] for r in t["rows"]] == [0]
     assert snap["filter"]["branches"] == ["bidNtceNm"]
-    assert any("전산" in c for c in snap["filter"]["chips"])
+    assert any("전산" in c["text"] for c in snap["filter"]["chips"])
+    assert snap["filter"]["chips"][-1]["column"] == ""  # 검색 칩은 열이 없다(× 없음)
     # 셀 = 하이라이트 세그먼트(파이썬이 잘라 조각으로 — 인덱스 무전달, jamo 계약).
     # 파이썬 층에선 튜플, json.dumps 가 배열로 직렬화한다.
     cells = t["rows"][0]["cells"]
@@ -6568,6 +6569,38 @@ def test_filter_snapshot_carries_groups_dimensions_and_builder_source(tmp_path):
     }
 
 
+def test_column_headers_carry_saved_filter_constraints_and_show_all_clears_everything(tmp_path):
+    """켜진 저장한 필터가 조이는 열은 열 머리도 표지를 세운다(무리 문안) — 머리 편집은 칩을 끄지
+    않고 「그리고」로 얹히며, 「열 조건」 칩은 머리 조건만이다. 「모두 보기」(filter_clear)는 전부 푼다."""
+    ctrl, pool, key = _price_presets(tmp_path)
+    ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})
+    ctrl.dispatch("toggle_filter_preset", {"name": "중소기업"})
+    columns = {c["name"]: c for c in ctrl.snapshot()["filter"]["columns"]}
+    assert columns["추정가격"] == {
+        "name": "추정가격", "kind": "amount", "active": False, "filtered": True,
+        "constraints": ["필터 '소기업' 또는 '중소기업'"],
+    }
+    assert columns["공고명"]["filtered"] is False and columns["공고명"]["constraints"] == []
+    assert ctrl.snapshot()["filter"]["chips"] == []  # 저장본의 조이기는 제 칩이 말한다
+
+    ctrl.dispatch("filter_col_range", {"column": "추정가격", "first": {"op": "ge", "operand": "100,000,000"}})
+    snap = ctrl.snapshot()["filter"]
+    assert [p["active"] for p in snap["presets"]] == [True, True]  # 머리 편집은 칩을 끄지 않는다
+    price = next(c for c in snap["columns"] if c["name"] == "추정가격")
+    assert price["active"] is True and price["constraints"] == [
+        "필터 '소기업' 또는 '중소기업'", "추정가격 ≥ '100,000,000'",
+    ]
+    assert snap["chips"] == [{"column": "추정가격", "text": "추정가격 ≥ '100,000,000'"}]
+    assert snap["definition"] == "필터 '소기업' 또는 '중소기업' · 추정가격 ≥ '100,000,000'"
+    assert _visible_names(ctrl) == ["급식 납품", "방역 용역", "전산 유지보수"]
+
+    ctrl.dispatch("filter_clear", {})  # 「모두 보기」 — 정의는 남는다
+    snap = ctrl.snapshot()["filter"]
+    assert snap["active"] is False and [p["active"] for p in snap["presets"]] == [False, False]
+    assert not any(c["filtered"] for c in snap["columns"])
+    assert [p["name"] for p in pool.load(key).filters] == ["소기업", "중소기업"]
+
+
 def test_create_filter_preset_validation_matrix(tmp_path):
     """이름·열·피연산자·조건이 틀리면 저장하지 않고 열 머리 편집기와 같은 문장으로 거절한다."""
     ctrl, pool, key = _price_presets(tmp_path)
@@ -6591,9 +6624,9 @@ def test_create_filter_preset_validation_matrix(tmp_path):
         assert _create(ctrl, name, state) == {"ok": False, **refusal}, name
     assert pool.load(key).filters == before  # 거절은 원장을 건드리지 않는다
 
-    # 이름을 비우면 조건 요약(칩 title 과 같은 문안)이 이름이 된다 — 같은 이름 규칙은 그대로.
+    # 이름을 비우면 짧은 조건 요약이 이름이 된다(전문은 칩 title) — 같은 이름 규칙은 그대로.
     assert _create(ctrl, "  ", _FIRST_HALF) == {
-        "ok": True, "name": "계약일자 ≥ '2026-01-01' ∧ ≤ '2026-06-30'",
+        "ok": True, "name": "계약일자 ≥ 2026-01-01 ∧ ≤ 2026-06-30",
     }
     assert _create(ctrl, "", _FIRST_HALF) == {"ok": False, "error": "같은 이름의 필터가 있습니다."}
 
@@ -6630,7 +6663,7 @@ def test_create_filter_preset_from_adhoc_keeps_the_visible_rows(tmp_path):
     # from_adhoc 없이 만들면 지금 조건은 그대로 남아 새 칩과 「그리고」로 얹힌다.
     ctrl.dispatch("filter_col_text", {"column": "공고명", "text": "사무"})
     assert _create(ctrl, "소기업", _SMALL)["ok"] is True
-    assert ctrl.snapshot()["filter"]["chips"] == ["공고명 포함 '사무'"]
+    assert ctrl.snapshot()["filter"]["chips"] == [{"column": "공고명", "text": "공고명 포함 '사무'"}]
 
 
 def test_update_filter_preset_renames_rewrites_and_persists(tmp_path):
@@ -6665,10 +6698,10 @@ def test_count_filter_state_is_a_read_only_query(tmp_path):
     ctrl.dispatch("toggle_filter_preset", {"name": "소기업"})  # 켜진 칩·지금 조건과 무관하다
     pushes: list = []
     ctrl._push = lambda *a, **k: pushes.append(1)
-    # 수와 함께 요약 문안(이름 칸 자리표시자 = 빈 이름 저장 때의 이름)을 싣는다.
+    # 수와 함께 짧은 이름(이름 칸 자리표시자 = 빈 이름 저장 때의 이름)을 싣는다.
     assert ctrl.dispatch("count_filter_state", {"state": _MEDIUM}) == {
         "ok": True, "count": 3, "total": 6,
-        "summary": "추정가격 ≥ '100,000,000' ∧ < '220,000,000'",
+        "summary": "추정가격 100,000,000~220,000,000",
     }
     assert ctrl.dispatch("count_filter_state", {"state": {"columns": {}}}) == {
         "ok": True, "count": 6, "total": 6, "summary": "",

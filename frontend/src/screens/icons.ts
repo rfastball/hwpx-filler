@@ -19,13 +19,17 @@ const ICONS: Record<string, Part[]> = {
   more: [dot(4.5), dot(10), dot(15.5)],
   "chevron-left": [path("M12 4.5L6.5 10l5.5 5.5")],
   "chevron-right": [path("M8 4.5l5.5 5.5L8 15.5")],
+  "chevron-down": [path("M5 8l5 5 5-5")],
+  "arrow-down": [path("M10 3.5v13M5 11.5l5 5 5-5")],
+  "arrow-up": [path("M10 16.5v-13M5 8.5l5-5 5 5")],
+  expand: [path("M12 3.5h4.5V8M16.5 3.5L11 9M8 16.5H3.5V12M3.5 16.5L9 11")],
   undo: [path("M7.5 4.5L4 8l3.5 3.5"), path("M4 8h7.5a4.5 4.5 0 0 1 0 9H9")],
   redo: [path("M12.5 4.5L16 8l-3.5 3.5"), path("M16 8H8.5a4.5 4.5 0 0 0 0 9H11")],
   trash: [path("M4 6h12M8 6V4h4v2M5.5 6l.8 10h7.4l.8-10M8.5 9v4.5M11.5 9v4.5")],
   search: [["circle", { cx: 8.5, cy: 8.5, r: 5 }], path("M12.3 12.3L16.5 16.5")],
 };
 
-/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·실행 취소·다시 실행·삭제·찾기). */
+/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·펼침·실행 취소·다시 실행·삭제·찾기). */
 export function icon(name: keyof typeof ICONS | string): ReactNode {
   return draw("icon", ICONS[name] || []);
 }
