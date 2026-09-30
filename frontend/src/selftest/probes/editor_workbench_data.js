@@ -3113,6 +3113,39 @@ export function createEditorWorkbenchDataProbes() {
               rows: pop.querySelectorAll(".slicepop-rn").length,
               summary: textOf(pop.querySelector(".slicepop-summary")).trim(),
             };
+            /* 방식 줄 기하(실렌더) — 팝오버는 표 칸(`table.map td`) 안에 그려지므로 표의 컨트롤
+               규칙(`table.map .sel{width:100%}` 따위)이 닿으면 칸 입력이 줄 폭을 다 먹고 문장이
+               깨진다. 정적 렌더 테스트는 CSS 를 못 보니 여기서만 드러난다: 줄마다 한 줄로 목록 열
+               안에 서는가, 칸 입력마다 폭이 제 내용 크기인가. */
+            const methodsCol = pop.querySelector(".slicepop-methods");
+            const colRect = methodsCol ? methodsCol.getBoundingClientRect() : null;
+            const fontPx = parseFloat(view.getComputedStyle(pop).fontSize) || 13;
+            out.slice_rows_geom = Array.prototype.map.call(
+              pop.querySelectorAll("[data-slice-method]"), (label) => {
+                const r = label.getBoundingClientRect();
+                const radio = label.querySelector('input[type="radio"]');
+                const rr = radio ? radio.getBoundingClientRect() : r;
+                const tops = Array.prototype.map.call(label.children,
+                  (child) => Math.round(child.getBoundingClientRect().top + child.getBoundingClientRect().height / 2));
+                return {
+                  mode: label.getAttribute("data-slice-method"),
+                  width: Math.round(r.width), scroll: label.scrollWidth, client: label.clientWidth,
+                  inside: !!colRect && r.left >= colRect.left - 1 && r.right <= colRect.right + 1,
+                  /* 한 줄 — 줄 높이가 한 줄 컨트롤 높이 안이고 자식 중심선이 한 줄에 모인다. */
+                  one_line: r.height <= Math.max(40, rr.height * 3)
+                    && Math.max(...tops) - Math.min(...tops) <= 6,
+                };
+              });
+            out.slice_inputs_geom = Array.prototype.map.call(
+              pop.querySelectorAll(".slicepop-methods [data-slice-input]"), (el) => {
+                const cs = view.getComputedStyle(el);
+                return {
+                  input: el.getAttribute("data-slice-input"), tag: el.tagName.toLowerCase(),
+                  width: Math.round(el.getBoundingClientRect().width), font_px: fontPx,
+                  col_width: colRect ? Math.round(colRect.width) : 0,
+                  flex_grow: cs.flexGrow, css_width: cs.width,
+                };
+              });
           } else { out.slice_pop = null; }
           out.slice_preview_call = calls.find((call) => call.indexOf("preview_slice:") === 0) || "";
           const value = pop && pop.querySelector("[data-slice-value]");

@@ -65,7 +65,37 @@ jobs:
           "IS_PRERELEASE=$flag" | Out-File $env:GITHUB_ENV -Append
       - name: Quality and tests
         shell: pwsh
+        # 101 실주행(tests/test_quickstart_101_live.py)은 여기서도 돈다. 증거 자리를 주지 않으면
+        # 보고서·화소·표준출력이 pytest 임시 폴더와 함께 사라져, 빨강 한 번이 어느 걸음에서
+        # 무엇을 봤는지 아무것도 남지 않는다(v0.11.0 태그 실행). quality.yml live 잡과 같은 자리다.
+        env:
+          HWPX_LIVE_EVIDENCE_DIR: ${{ github.workspace }}/live-evidence
         run: .\test.ps1
+      - name: Collect live diagnostics
+        if: failure()
+        shell: pwsh
+        # 실패한 실주행은 임시 홈을 지우지 않고 남긴다(하니스 계약). 그 잔재의 진단 파일만
+        # 회수 자리로 옮긴다 — 홈 전체를 올리면 실 문서까지 따라온다.
+        run: |
+          $target = "$env:GITHUB_WORKSPACE/live-evidence"
+          New-Item -ItemType Directory -Force $target | Out-Null
+          Get-ChildItem $env:TEMP -Directory -Filter 'hwpx-101-*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $leftover = $_
+              Get-ChildItem $leftover.FullName -Recurse -File `
+                -Include '_live101_hang_stacks.txt', '_live101_result.json' `
+                -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                  Copy-Item $_.FullName (Join-Path $target "$($leftover.Name)-$($_.Name)") -Force
+                }
+            }
+      - name: Upload live evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-live-evidence
+          path: live-evidence
+          if-no-files-found: warn
       - name: Build portable applications
         shell: pwsh
         run: .\build.ps1

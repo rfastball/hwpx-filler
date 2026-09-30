@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "87ca163649c17e26d0641cfe6683033eb5e6c877d004b7d3a02bbde9367b175f"
+source_sha256 = "054b03f19c0b141ff23aaa0addac3aa3b3bbfd22afa8ddbbb560cbb0ba342f52"
 body_sha256 = "6be19e5da8613a5634996f6c4af5eb76650ef2e396e6c46aae84ec19da23f04c"
 
 [[document]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "8feb116b16954429d679703dbeaa9d320b577e7b2683d4b0dc9f7e8547b64677"
+source_sha256 = "ea419da2befa51ef01467cb3a2ffb8113877b2ea5020ded727cdfdd52e212447"
 body_sha256 = "3edd755e13396e4273390dc354498112a53e6555c711b1b5644db15c69cd4b3d"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "3d5693c012addbf9ce59710f41f599578618ec6ecbd1e9caf353f65bb9bf6dde"
+source_sha256 = "b63c8241e58fbad3232c45fe2dff6d2b58d4ee71c9a4d1d4591e80db6b5362cd"
 body_sha256 = "0a80a50b08f0a552b34726334b3bc41763d6f0c25e240161b31816d983197b20"
 
 [[topic]]

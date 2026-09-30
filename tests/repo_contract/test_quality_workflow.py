@@ -584,6 +584,25 @@ def test_release_reconciles_the_web_artifact_across_every_shipped_copy() -> None
     assert "Sort-Object -Unique" not in reconcile
 
 
+def test_release_keeps_the_live_101_evidence_when_its_tests_fail() -> None:
+    """릴리스의 테스트 단계도 101 실주행을 태운다 — 빨강이면 그 증거가 잡 밖으로 나와야 한다.
+
+    v0.11.0 태그 실행은 「현재 작업대 관찰이 없다」 한 줄만 남기고 끝났다. 보고서·화소가
+    pytest 임시 폴더에 떨어져 잡과 함께 사라졌기 때문이다. quality.yml live 잡이 지는 같은
+    자리(``HWPX_LIVE_EVIDENCE_DIR``)를 릴리스에도 주고, 실패하면 올린다.
+    """
+    tests = _release_step("Quality and tests")
+    target = "${{ github.workspace }}/live-evidence"
+    assert (tests.get("env") or {}).get("HWPX_LIVE_EVIDENCE_DIR") == target
+    upload = _release_step("Upload live evidence")
+    assert upload.get("if") == "failure()"
+    assert upload["with"]["path"] == "live-evidence"
+    steps = _release_steps()
+    assert steps.index(tests) < steps.index(upload) < steps.index(
+        _release_step("Build portable applications")
+    )
+
+
 def test_installed_copy_is_verified_before_it_is_uninstalled() -> None:
     """순서가 계약이다 — 제거한 뒤에는 설치본에 무엇이 실렸는지 물을 수 없다.
 

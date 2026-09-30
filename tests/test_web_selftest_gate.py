@@ -2040,6 +2040,26 @@ class TestWebSelftestGate:
         assert pop["radios"] == 9 and pop["checked"] == "chars", f"방식 목록이 다릅니다: {pop!r}"
         assert pop["focus_in_value"] is True and pop["expanded"] == "true", f"초점·펼침: {pop!r}"
         assert pop["rows"] == 3 and pop["summary"] == "맞음 3행", f"미리보기가 다릅니다: {pop!r}"
+        # 방식 줄 기하 — 팝오버는 표 칸 안에 그려지므로 표 컨트롤 규칙(`table.map .sel{width:100%}`)이
+        # 닿으면 「몇째 조각」 select 가 줄 폭을 다 먹어 문장이 깨진다(사용자 보고). 줄 아홉이 모두
+        # 목록 열 안에서 한 줄로 서고, 칸 입력은 제 내용 폭이다(늘어나지 않는다).
+        rows_geom = e["slice_rows_geom"]
+        assert len(rows_geom) == 9, f"방식 줄 기하를 못 쟀습니다: {rows_geom!r}"
+        for row in rows_geom:
+            assert row["inside"] and row["scroll"] <= row["client"] + 1 and row["one_line"], (
+                f"방식 줄이 목록 열 안에 한 줄로 서지 않습니다: {row!r}"
+            )
+        inputs_geom = e["slice_inputs_geom"]
+        assert inputs_geom and any(i["tag"] == "select" for i in inputs_geom), (
+            f"방식 줄 칸 입력을 못 쟀습니다: {inputs_geom!r}"
+        )
+        for item in inputs_geom:
+            # 가장 넓은 칸(`.wide` 104px)도 목록 열의 절반을 넘지 않고, 칸은 늘지 않는다(flex-grow 0).
+            # 순번 select 는 「마지막」 한 낱말 폭 — 글자 크기의 10배(≈10ch) 안이다.
+            bound = item["font_px"] * 10 if item["tag"] == "select" else item["col_width"] / 2
+            assert item["width"] <= bound and item["flex_grow"] == "0", (
+                f"방식 줄 칸 입력이 열 폭을 차지합니다: {item!r}"
+            )
         assert e["slice_preview_call"] == 'preview_slice:{"index":1,"sample":null}', (
             f"미리보기 질의가 다릅니다: {e['slice_preview_call']!r}"
         )
