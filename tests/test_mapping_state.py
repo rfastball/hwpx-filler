@@ -1059,9 +1059,14 @@ def test_set_slice_is_an_edit_that_the_preview_reflects():
                                 has_records=True)
     assert projection["preview"] == "R26BK09017075"
     assert projection["slice"] == {"mode": "split", "delimiter": "-", "index": 1}
-    assert projection["slice_label"] == "구분자 '-' 1번째"
+    assert projection["slice_label"] == "‘-’로 나눈 조각 중 첫째"
     assert projection["slice_enabled"] is True
-    assert [m["value"] for m in projection["slice_modes"]] == ["", "chars", "split"]
+    part_modes = [m["mode"] for m in projection["slice_methods"][0]["methods"]]
+    edit_modes = [m["mode"] for m in projection["slice_methods"][1]["methods"]]
+    assert projection["slice_methods"][0]["label"] == "일부만 쓰기"
+    assert part_modes == ["before", "after", "between", "split", "head", "tail", "chars"]
+    assert projection["slice_methods"][1]["label"] == "글자 고치기"
+    assert edit_modes == ["replace", "remove"]
     assert row.to_mapping().to_dict()["slice"] == {"mode": "split", "delimiter": "-", "index": 1}
     model.set_slice(0, None)
     assert model.rows[0].slice is None and "slice" not in model.rows[0].to_mapping().to_dict()
@@ -1082,10 +1087,10 @@ def test_slice_labels():
     from hwpxfiller.domain.text_slice import TextSlice
     from hwpxfiller.viewmodel.mapping_state import slice_label
 
-    assert slice_label(None) == "없음"
-    assert slice_label(TextSlice("chars", start=1, length=3)) == "글자 범위 1~3"
-    assert slice_label(TextSlice("chars", start=4)) == "글자 범위 4~"
-    assert slice_label(TextSlice("split", delimiter=", ", index=-1)) == "구분자 ', ' 끝에서 1번째"
+    assert slice_label(None) == "+ 가공"
+    assert slice_label(TextSlice("chars", start=1, length=3)) == "1번째 글자부터 3글자"
+    assert slice_label(TextSlice("chars", start=4)) == "4번째 글자부터"
+    assert slice_label(TextSlice("split", delimiter=", ", index=-1)) == "‘, ’로 나눈 조각 중 마지막"
 
 
 def test_slice_is_rejected_where_there_is_no_source_cell():

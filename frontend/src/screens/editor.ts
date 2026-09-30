@@ -7,6 +7,7 @@ import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { NoticeBox } from "./notice_box.ts";
 import { invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
+import { SliceCell } from "./slice_popover.ts";
 import {
   PCLM_UNAVAILABLE, ROW_DETAIL_LABEL, mergeSessionRow, poolHeadSub,
 } from "./pool_verbs.ts";
@@ -592,99 +593,6 @@ function DataColumnCell(props: {
     }, "↻") : null);
 }
 
-/** 「가공」 칸 — 표시형 **전에** 소스 값의 일부만 취한다(글자 범위 · 구분자로 나누기).
- *
- *  버튼 문안(`row.slice_label`)·가부(`row.slice_enabled`)·방식 목록(`row.slice_modes`)은
- *  전부 Python 이 낸다 — 여기서 유형·소스로 다시 판정하지 않는다. 열림 상태는 이 칸 하나의
- *  UI-local 표지(`sliceOpenIndex`)이고, 방식 select 는 고르는 순간이 곧 커밋이라(고정값
- *  select 와 같은 자리) draft 가 없다. 나머지 네 입력(시작·글자 수·구분자·번째)은 고정값
- *  입력과 같은 draft 자리를 쓴다 — 구분자는 한글일 수 있어 IME 조합을 지킨다. */
-function SliceCell(props: {
-  row: Obj; draft: DraftState; controller: EditorController;
-}): ReactNode {
-  const { row, draft, controller } = props;
-  const index = Number(row.index);
-  const open = controller.isSliceEditorOpen(index);
-  const modes = (row.slice_modes || []) as Obj[];
-  const mode = String((row.slice || {}).mode || "");
-  const toggle = h("button", {
-    className: "btn sm", type: "button", "data-act": "row-slice", "data-index": index,
-    "aria-label": `${row.template_field} 가공`, "aria-expanded": open,
-    disabled: !row.slice_enabled,
-    onClick: () => controller.toggleSliceEditor(index),
-  }, String(row.slice_label || ""));
-  if (!open) return h("div", { className: "slicecell" }, toggle);
-  let fields: ReactNode = null;
-  if (mode === "chars") {
-    fields = createElement(Fragment, null,
-      h("input", {
-        className: "field sm", type: "number", min: 1, key: "start",
-        "data-act": "row-slice-start", "data-index": index,
-        placeholder: "시작", "aria-label": "시작",
-        value: valueOf(draft, rowField(index, "slice_start")),
-        onChange: (event: Obj) => controller.type(
-          rowField(index, "slice_start"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(rowField(index, "slice_start"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "slice_start"), false);
-          controller.commitSliceOnBlur(index, "slice_start");
-        },
-      }),
-      h("input", {
-        className: "field sm", type: "number", min: 1, key: "length",
-        "data-act": "row-slice-length", "data-index": index,
-        placeholder: "글자 수", "aria-label": "글자 수",
-        value: valueOf(draft, rowField(index, "slice_length")),
-        onChange: (event: Obj) => controller.type(
-          rowField(index, "slice_length"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(rowField(index, "slice_length"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "slice_length"), false);
-          controller.commitSliceOnBlur(index, "slice_length");
-        },
-      }));
-  } else if (mode === "split") {
-    fields = createElement(Fragment, null,
-      h("input", {
-        className: "field sm", type: "text", key: "delimiter",
-        "data-act": "row-slice-delimiter", "data-index": index,
-        placeholder: "구분자", "aria-label": "구분자",
-        value: valueOf(draft, rowField(index, "slice_delimiter")),
-        onChange: (event: Obj) => controller.type(
-          rowField(index, "slice_delimiter"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(rowField(index, "slice_delimiter"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "slice_delimiter"), false);
-          controller.commitSliceOnBlur(index, "slice_delimiter");
-        },
-        onCompositionStart: () => controller.compose(rowField(index, "slice_delimiter"), true),
-        onCompositionEnd: () => controller.compose(rowField(index, "slice_delimiter"), false),
-      }),
-      h("input", {
-        className: "field sm", type: "number", key: "index",
-        "data-act": "row-slice-index", "data-index": index,
-        placeholder: "번째", "aria-label": "번째",
-        value: valueOf(draft, rowField(index, "slice_index")),
-        onChange: (event: Obj) => controller.type(
-          rowField(index, "slice_index"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(rowField(index, "slice_index"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "slice_index"), false);
-          controller.commitSliceOnBlur(index, "slice_index");
-        },
-      }));
-  }
-  return h("div", { className: "slicecell" }, toggle,
-    h("div", { className: "sliceedit" },
-      h("select", {
-        className: "sel sm", "data-act": "row-slice-mode", "data-index": index, value: mode,
-        onChange: (event: Obj) => controller.chooseSliceMode(index, String(event.currentTarget.value)),
-      }, ...modes.map((option) => h("option", {
-        value: String(option.value), key: String(option.value),
-      }, String(option.label)))),
-      fields));
-}
-
 function MapRow(props: {
   row: Obj; snapshot: Obj; draft: DraftState; controller: EditorController;
 }): ReactNode {
@@ -702,7 +610,12 @@ function MapRow(props: {
       h("span", { className: "tbadge" },
         `[추정: ${INFERRED_LABEL[row.inferred_type] || row.inferred_type || ""}]`)),
     h("td", null, h(DataColumnCell as any, { row, snapshot, draft, controller })),
-    h("td", null, h(SliceCell as any, { row, draft, controller })),
+    /* 「가공」 칸 — 칩과 칩에 붙는 편집 팝오버(`slice_popover.ts`, 작업대 표와 공용). 문장·가부·
+       방식 목록·후보·미리보기는 전부 Python 이 낸다(웹 재판정 0). */
+    h("td", null, h(SliceCell as any, {
+      row, field: String(row.template_field), port: controller.slicePort(index),
+      chipProps: { "data-act": "row-slice", "data-index": index },
+    })),
     /* 표시형 select 가 **유형 축까지 든다**(리뷰 1). `infer_type` 은 이름 키워드
        휴리스틱이라 「계약일」이 text 로 추정되면 날짜 서식을 영영 못 고르는 자리가 생겼다 —
        옵션을 유형별 그룹으로 묶어 한 번의 선택이 (유형, 표시형) 한 쌍을 원자적으로 세운다.

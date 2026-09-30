@@ -98,7 +98,7 @@ class MappingVerbsMixin:
         self._after_mapping_edit()
 
     def _do_set_map_slice(self: _MappingVerbsHost, p: dict) -> None:
-        """가공(글자 범위·구분자 나누기) 설정·해제 — 결속 열에서 오는 값에만 뜻이 있다.
+        """가공(일부만 쓰기·글자 고치기) 설정·해제 — 결속 열에서 오는 값에만 뜻이 있다.
 
         판정은 모델(→ 도메인 :mod:`~hwpxfiller.domain.text_slice`)이 한다: 잘못된 명세·원본 칸이
         없는 행은 시끄럽게 거절되고, ``slice`` 가 없거나 null 이면 해제다(편집기 `set_slice` 와 같은 규약).

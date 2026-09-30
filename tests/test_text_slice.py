@@ -46,6 +46,151 @@ def test_no_slice_is_the_whole_text() -> None:
     assert apply_text_slice(None, " 그대로 ") == " 그대로 "
 
 
+# ─── v5 새 방식(before·after·between·head·tail·replace·remove) — 값·자리 표 ────────────
+@pytest.mark.parametrize(
+    ("spec", "text", "expected_text", "expected_span"),
+    [
+        (TextSlice("before", delimiter="-"), "R26BK09017075-000", "R26BK09017075", (0, 13)),
+        (TextSlice("before", delimiter="원"), "170,309,180원 (VAT 포함)", "170,309,180", (0, 11)),
+        (TextSlice("after", delimiter="-"), "R26BK09017075-000", "000", (14, 17)),
+        (TextSlice("after", delimiter="("), "170,309,180원 (VAT 포함)", "VAT 포함)", (14, 21)),
+        (
+            TextSlice("between", open="(", close=")"), "170,309,180원 (VAT 포함)",
+            "VAT 포함", (14, 20),
+        ),
+        (TextSlice("head", count=3), "R26BK09017075", "R26", (0, 3)),
+        (TextSlice("head", count=100), "짧음", "짧음", (0, 2)),  # 짧은 값은 그대로 — 빠짐이 아니다
+        (TextSlice("tail", count=3), "R26BK09017075", "075", (10, 13)),
+        (TextSlice("tail", count=100), "짧음", "짧음", (0, 2)),
+        (TextSlice("replace", find="(주)", replace="주식회사"), "(주) 대한", "주식회사 대한", None),
+        (TextSlice("remove", find="(VAT 포함)"), "170,309,180원 (VAT 포함)", "170,309,180원", None),
+    ],
+)
+def test_new_mode_apply_and_span(spec, text, expected_text, expected_span) -> None:
+    outcome = spec.evaluate(text)
+    assert outcome.text == expected_text
+    assert outcome.span == expected_span
+    assert outcome.missed is False
+    assert spec.apply(text) == expected_text
+
+
+def test_before_after_between_strip_the_result() -> None:
+    assert TextSlice("before", delimiter="-").apply(" R26 -000") == "R26"
+    assert TextSlice("after", delimiter="-").apply("R26- 000 ") == "000"
+    assert TextSlice("between", open="(", close=")").apply("x( y )z") == "y"
+
+
+def test_chars_head_tail_do_not_strip() -> None:
+    assert TextSlice("chars", start=1, length=4).apply(" abc ") == " abc"
+    assert TextSlice("head", count=3).apply("  ab") == "  a"
+    assert TextSlice("tail", count=3).apply("ab  ") == "b  "
+
+
+def test_replace_and_remove_replace_every_occurrence_then_strip() -> None:
+    assert TextSlice("replace", find="a", replace="b").apply(" aaa ") == "bbb"
+    assert TextSlice("remove", find="a").apply(" a a a ") == ""  # 지운 뒤 공백뿐이면 strip 이 전부 걷는다
+    assert TextSlice("remove", find="a").apply(" a b a ") == "b"
+
+
+# ─── 빠짐(missable modes): 키 없음=empty, "empty" 명시=원문과 동형, "keep"=원본 그대로 ───────
+@pytest.mark.parametrize(
+    ("spec", "text"),
+    [
+        (TextSlice("before", delimiter="X"), "abc"),
+        (TextSlice("after", delimiter="X"), "abc"),
+        (TextSlice("between", open="(", close=")"), "no parens"),
+        (TextSlice("split", delimiter="-", index=5), "a-b"),
+        (TextSlice("chars", start=50), "abc"),
+    ],
+)
+def test_missable_modes_default_to_empty_on_miss(spec, text) -> None:
+    assert spec.on_missing == "empty"
+    outcome = spec.evaluate(text)
+    assert outcome.missed is True
+    assert outcome.text == ""
+    assert outcome.span is None
+    assert spec.apply(text) == ""
+
+
+@pytest.mark.parametrize(
+    ("mode", "kwargs", "text"),
+    [
+        ("before", {"delimiter": "X"}, "abc"),
+        ("after", {"delimiter": "X"}, "abc"),
+        ("between", {"open": "(", "close": ")"}, "no parens"),
+        ("split", {"delimiter": "-", "index": 5}, "a-b"),
+        ("chars", {"start": 50}, "abc"),
+    ],
+)
+def test_keep_on_missing_returns_the_original_text(mode, kwargs, text) -> None:
+    spec = TextSlice(mode, on_missing="keep", **kwargs)
+    outcome = spec.evaluate(text)
+    assert outcome.missed is True
+    assert outcome.text == text
+    assert outcome.span is None
+
+
+def test_explicit_empty_on_missing_normalizes_away() -> None:
+    """저장 표현에서 ``"on_missing": "empty"`` 는 키 없음과 같은 뜻으로 정규화된다."""
+    explicit = TextSlice.from_dict({"mode": "before", "delimiter": "X", "on_missing": "empty"})
+    implicit = TextSlice.from_dict({"mode": "before", "delimiter": "X"})
+    assert explicit == implicit
+    assert "on_missing" not in explicit.to_dict()
+
+
+def test_head_tail_replace_remove_never_miss() -> None:
+    for spec, text in (
+        (TextSlice("head", count=5), ""),
+        (TextSlice("tail", count=5), ""),
+        (TextSlice("replace", find="x", replace="y"), "no match"),
+        (TextSlice("remove", find="x"), "no match"),
+    ):
+        assert spec.evaluate(text).missed is False
+
+
+# ─── v5 검증 — 새 방식·on_missing 위반 ─────────────────────────────────────────────
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"mode": "before", "delimiter": ""}, "구분자를 비울 수 없습니다"),
+        ({"mode": "before"}, "구분자를 비울 수 없습니다"),
+        ({"mode": "after", "delimiter": ""}, "구분자를 비울 수 없습니다"),
+        ({"mode": "between", "open": "", "close": ")"}, "가공 기준 글자가 비었음"),
+        ({"mode": "between", "open": "(", "close": ""}, "가공 기준 글자가 비었음"),
+        ({"mode": "between", "open": "("}, "가공 기준 글자가 비었음"),
+        ({"mode": "head", "count": 0}, "글자 수는 1 이상이어야 합니다"),
+        ({"mode": "head"}, "글자 수는 1 이상이어야 합니다"),
+        ({"mode": "tail", "count": 0}, "글자 수는 1 이상이어야 합니다"),
+        ({"mode": "head", "count": True}, "정수가 아님"),
+        ({"mode": "head", "count": "3"}, "정수가 아님"),
+        ({"mode": "replace", "find": "", "replace": "y"}, "찾을 글자가 비었음"),
+        ({"mode": "replace", "find": "x", "replace": ""}, "바꿀 글자가 비었음"),
+        ({"mode": "replace", "find": "x"}, "바꿀 글자가 비었음"),
+        ({"mode": "remove", "find": ""}, "찾을 글자가 비었음"),
+        ({"mode": "remove"}, "찾을 글자가 비었음"),
+        # from_dict 는 빠짐 없는 방식에 on_missing 키 자체를 허용하지 않는다(모르는 키로 거절).
+        ({"mode": "head", "count": 3, "on_missing": "keep"}, "모르는 키"),
+        ({"mode": "tail", "count": 3, "on_missing": "empty"}, "모르는 키"),
+        ({"mode": "replace", "find": "x", "replace": "y", "on_missing": "keep"}, "모르는 키"),
+        ({"mode": "remove", "find": "x", "on_missing": "keep"}, "모르는 키"),
+        ({"mode": "before", "delimiter": "x", "on_missing": "vanish"}, "알 수 없는 빠짐 처리"),
+        ({"mode": "before", "delimiter": "\ud800"}, "유효하지 않은 Unicode"),
+        ({"mode": "between", "open": "(", "close": ")", "start": 1}, "모르는 키"),
+    ],
+)
+def test_v5_malformed_spec_is_rejected_loudly(payload, message) -> None:
+    with pytest.raises(TextSliceError, match=message):
+        text_slice_from_payload(payload)
+
+
+def test_constructor_rejects_on_missing_on_a_non_missable_mode() -> None:
+    """생성자로 직접 지어도 같은 판정기다 — ``from_dict`` 의 키 거절과는 다른 경로(모양은 맞되 뜻이 없음)."""
+    with pytest.raises(TextSliceError, match="빠짐 처리가 없음"):
+        TextSlice("head", count=3, on_missing="keep")
+    with pytest.raises(TextSliceError, match="빠짐 처리가 없음"):
+        TextSlice("replace", find="x", replace="y", on_missing="keep")
+
+
 # ─── 판정(모양) — 잘못된 명세는 고치지 않고 거절 ─────────────────────────────────
 @pytest.mark.parametrize(
     ("payload", "message"),
@@ -100,6 +245,63 @@ def test_round_trip(spec, encoded) -> None:
     assert TextSlice.from_dict(encoded) == spec
     assert text_slice_from_payload(spec) is spec
     assert text_slice_from_payload(None) is None
+
+
+@pytest.mark.parametrize(
+    ("spec", "encoded"),
+    [
+        (TextSlice("before", delimiter="-"), {"mode": "before", "delimiter": "-"}),
+        (
+            TextSlice("before", delimiter="-", on_missing="keep"),
+            {"mode": "before", "delimiter": "-", "on_missing": "keep"},
+        ),
+        (TextSlice("after", delimiter="("), {"mode": "after", "delimiter": "("}),
+        (
+            TextSlice("between", open="(", close=")"),
+            {"mode": "between", "open": "(", "close": ")"},
+        ),
+        (
+            TextSlice("between", open="(", close=")", on_missing="keep"),
+            {"mode": "between", "open": "(", "close": ")", "on_missing": "keep"},
+        ),
+        (TextSlice("split", delimiter="-", index=1), {"mode": "split", "delimiter": "-", "index": 1}),
+        (
+            TextSlice("split", delimiter="-", index=1, on_missing="keep"),
+            {"mode": "split", "delimiter": "-", "index": 1, "on_missing": "keep"},
+        ),
+        (TextSlice("head", count=4), {"mode": "head", "count": 4}),
+        (TextSlice("tail", count=8), {"mode": "tail", "count": 8}),
+        (TextSlice("chars", start=3, length=4), {"mode": "chars", "start": 3, "length": 4}),
+        (
+            TextSlice("chars", start=3, on_missing="keep"),
+            {"mode": "chars", "start": 3, "on_missing": "keep"},
+        ),
+        (
+            TextSlice("replace", find="(주)", replace="주식회사"),
+            {"mode": "replace", "find": "(주)", "replace": "주식회사"},
+        ),
+        (
+            TextSlice("remove", find="(VAT 포함)"),
+            {"mode": "remove", "find": "(VAT 포함)"},
+        ),
+    ],
+)
+def test_round_trip_every_mode(spec, encoded) -> None:
+    """9 방식 전부 — 쓰지 않는 칸은 적지 않고 ``on_missing`` 은 ``keep`` 일 때만 적는다."""
+    assert spec.to_dict() == encoded
+    assert TextSlice.from_dict(encoded) == spec
+    assert text_slice_from_payload(encoded) == spec
+
+
+def test_v4_shaped_specs_serialize_byte_identically_to_before() -> None:
+    """v4 가 적던 두 방식(글자 범위·구분자 나누기, 빠짐은 빈 값)의 dict 모양은 v5 에서 그대로다."""
+    assert TextSlice("split", delimiter="-", index=1).to_dict() == {
+        "mode": "split", "delimiter": "-", "index": 1,
+    }
+    assert TextSlice("chars", start=1, length=3).to_dict() == {
+        "mode": "chars", "start": 1, "length": 3,
+    }
+    assert TextSlice("chars", start=2).to_dict() == {"mode": "chars", "start": 2}
 
 
 # ─── Mapping — 저장·적용 ──────────────────────────────────────────────────────────

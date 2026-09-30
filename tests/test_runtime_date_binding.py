@@ -136,9 +136,15 @@ def test_runtime_date_rule_requires_a_whitespace_preserving_policy() -> None:
 
 
 # ─── 판 framing·저장 codec ──────────────────────────────────────────────────────────
-def test_runtime_date_is_sealed_only_by_the_current_contract() -> None:
+def test_runtime_date_is_sealed_only_by_v4_and_v5() -> None:
+    """RUNTIME_DATE(v4, #950)는 가공 슬롯이 선 판(v4·v5)에만 봉인된다 — v2·v3 는 동결이다."""
+    from hwpxfiller.domain.field_binding import FIELD_BINDING_SEMANTIC_VERSION_V4
+
     rules = (_today(),)
     assert canonicalize_binding_rules(rules).count(RUNTIME_DATE.encode("utf-8")) == 1
+    assert canonicalize_binding_rules(
+        rules, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V4
+    ).count(RUNTIME_DATE.encode("utf-8")) == 1
     for frozen in (FIELD_BINDING_SEMANTIC_VERSION_V2, FIELD_BINDING_SEMANTIC_VERSION_V3):
         with pytest.raises(FieldBindingInputIntegrityError):
             canonicalize_binding_rules(rules, contract_id=frozen)
@@ -154,7 +160,7 @@ def test_runtime_date_digest_is_deterministic_and_distinct() -> None:
         "작성일", SOURCE, POLICY, source_key="", format_kind="date", format_code="kor"
     )
     assert digest_binding_rules((_today(code="kor"),)) != digest_binding_rules((source_date,))
-    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v4"
+    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v5"
 
 
 def test_stored_codec_round_trips_a_runtime_date_rule() -> None:

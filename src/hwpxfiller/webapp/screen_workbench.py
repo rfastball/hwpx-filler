@@ -40,6 +40,7 @@ from ..viewmodel.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..viewmodel.filter_state import sniff_column_kinds
 from ..viewmodel.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel, slice_projection
 from ..viewmodel.selection_state import SelectionModel
+from ..viewmodel.slice_assist import slice_query
 from ..viewmodel.txt_card import card_text, gate_empty_fields, render_card
 from ..viewmodel.tutorial_state import Milestone
 from ..viewmodel.txt_queue import TxtQueueModel
@@ -670,6 +671,33 @@ class WorkbenchController(MappingVerbsMixin):
         if not source:
             return ""
         return sniff_column_kinds(self.records).get(source, "")
+
+    # ---- 「가공」 편집 칸의 무변이 질의 — 편집기 `preview_slice`·`propose_slice` 와 같은 몸통.
+    def _slice_query(self, kind: str, p: dict) -> dict:
+        self._require_open()
+        assert self.mapping is not None  # 열린 세션은 연결 모델을 든다(`_require_open`)
+        row = self.mapping.rows[self.mapping.index_of(p["name"])]
+        return slice_query(
+            kind,
+            field=row.template_field,
+            source=row.source,
+            spec=row.slice,
+            enabled=row.slice_enabled(),
+            records=self.records,
+            payload=p,
+        )
+
+    def _do_preview_map_slice(self, p: dict) -> dict:
+        """불러온 행 미리보기 — 행마다 원본·남긴 자리·결과·상태와 예시 값."""
+        return self._slice_query("preview", p)
+
+    _do_preview_map_slice.is_query = True  # type: ignore[attr-defined]
+
+    def _do_propose_map_slice(self, p: dict) -> dict:
+        """예시 값에서 끌어 고른 부분을 재현하는 방식 후보 — 좋은 것부터."""
+        return self._slice_query("propose", p)
+
+    _do_propose_map_slice.is_query = True  # type: ignore[attr-defined]
 
     # ---- 복사 게이트(브리지가 클립보드를 쓰기 전에 묻는다)
     def _do_copy_precheck(self, p: dict) -> dict:

@@ -1,0 +1,838 @@
+{
+ "methods": [
+  {
+   "label": "일부만 쓰기",
+   "methods": [
+    {
+     "miss_choice": true,
+     "mode": "before",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "앞까지의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "앞까지"
+      }
+     ]
+    },
+    {
+     "miss_choice": true,
+     "mode": "after",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "뒤부터의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "뒤부터"
+      }
+     ]
+    },
+    {
+     "miss_choice": true,
+     "mode": "between",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "open",
+       "kind": "text",
+       "label": "뒤부터의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "뒤부터"
+      },
+      {
+       "input": "close",
+       "kind": "text",
+       "label": "앞까지의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "앞까지"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "split",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "나누는 글자",
+       "wide": false
+      },
+      {
+       "attach": true,
+       "text": "로 나눈 조각 중"
+      },
+      {
+       "input": "index",
+       "kind": "ordinal",
+       "label": "몇째 조각",
+       "options": [
+        {
+         "label": "첫째",
+         "value": 1
+        },
+        {
+         "label": "둘째",
+         "value": 2
+        },
+        {
+         "label": "셋째",
+         "value": 3
+        },
+        {
+         "label": "마지막",
+         "value": -1
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "head",
+     "on_missing": null,
+     "parts": [
+      {
+       "text": "앞에서"
+      },
+      {
+       "input": "count",
+       "kind": "number",
+       "label": "앞에서 글자 수",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "tail",
+     "on_missing": null,
+     "parts": [
+      {
+       "text": "뒤에서"
+      },
+      {
+       "input": "count",
+       "kind": "number",
+       "label": "뒤에서 글자 수",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "chars",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "start",
+       "kind": "number",
+       "label": "몇 번째 글자부터",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "번째 글자부터"
+      },
+      {
+       "input": "length",
+       "kind": "number",
+       "label": "글자 수",
+       "optional": true
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "label": "글자 고치기",
+   "methods": [
+    {
+     "miss_choice": false,
+     "mode": "replace",
+     "on_missing": null,
+     "parts": [
+      {
+       "input": "find",
+       "kind": "text",
+       "label": "찾을 글자",
+       "wide": true
+      },
+      {
+       "text": "대신"
+      },
+      {
+       "input": "replace",
+       "kind": "text",
+       "label": "바꿀 글자",
+       "wide": true
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "remove",
+     "on_missing": null,
+     "parts": [
+      {
+       "input": "find",
+       "kind": "text",
+       "label": "지울 글자",
+       "wide": true
+      },
+      {
+       "text": "지우기"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "methods_split5": [
+  {
+   "label": "일부만 쓰기",
+   "methods": [
+    {
+     "miss_choice": true,
+     "mode": "before",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "앞까지의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "앞까지"
+      }
+     ]
+    },
+    {
+     "miss_choice": true,
+     "mode": "after",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "뒤부터의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "뒤부터"
+      }
+     ]
+    },
+    {
+     "miss_choice": true,
+     "mode": "between",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "open",
+       "kind": "text",
+       "label": "뒤부터의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "뒤부터"
+      },
+      {
+       "input": "close",
+       "kind": "text",
+       "label": "앞까지의 기준 글자",
+       "wide": false
+      },
+      {
+       "text": "앞까지"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "split",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "delimiter",
+       "kind": "text",
+       "label": "나누는 글자",
+       "wide": false
+      },
+      {
+       "attach": true,
+       "text": "로 나눈 조각 중"
+      },
+      {
+       "input": "index",
+       "kind": "ordinal",
+       "label": "몇째 조각",
+       "options": [
+        {
+         "label": "첫째",
+         "value": 1
+        },
+        {
+         "label": "둘째",
+         "value": 2
+        },
+        {
+         "label": "셋째",
+         "value": 3
+        },
+        {
+         "label": "다섯째",
+         "value": 5
+        },
+        {
+         "label": "마지막",
+         "value": -1
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "head",
+     "on_missing": null,
+     "parts": [
+      {
+       "text": "앞에서"
+      },
+      {
+       "input": "count",
+       "kind": "number",
+       "label": "앞에서 글자 수",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "tail",
+     "on_missing": null,
+     "parts": [
+      {
+       "text": "뒤에서"
+      },
+      {
+       "input": "count",
+       "kind": "number",
+       "label": "뒤에서 글자 수",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "chars",
+     "on_missing": "keep",
+     "parts": [
+      {
+       "input": "start",
+       "kind": "number",
+       "label": "몇 번째 글자부터",
+       "optional": false
+      },
+      {
+       "attach": true,
+       "text": "번째 글자부터"
+      },
+      {
+       "input": "length",
+       "kind": "number",
+       "label": "글자 수",
+       "optional": true
+      },
+      {
+       "attach": true,
+       "text": "글자"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "label": "글자 고치기",
+   "methods": [
+    {
+     "miss_choice": false,
+     "mode": "replace",
+     "on_missing": null,
+     "parts": [
+      {
+       "input": "find",
+       "kind": "text",
+       "label": "찾을 글자",
+       "wide": true
+      },
+      {
+       "text": "대신"
+      },
+      {
+       "input": "replace",
+       "kind": "text",
+       "label": "바꿀 글자",
+       "wide": true
+      }
+     ]
+    },
+    {
+     "miss_choice": false,
+     "mode": "remove",
+     "on_missing": null,
+     "parts": [
+      {
+       "input": "find",
+       "kind": "text",
+       "label": "지울 글자",
+       "wide": true
+      },
+      {
+       "text": "지우기"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "preview_before": {
+  "hint": "",
+  "miss_choice": {
+   "choices": [
+    {
+     "label": "원본 그대로",
+     "value": "keep"
+    },
+    {
+     "label": "빈 값",
+     "value": "empty"
+    }
+   ],
+   "label": "‘원’ 없는 행",
+   "value": "keep"
+  },
+  "ok": true,
+  "rows": [
+   {
+    "index": 0,
+    "keep": "170,309,180",
+    "label": "1행",
+    "marker": false,
+    "post": "원 (VAT 포함)",
+    "pre": "",
+    "result": "170,309,180",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 1,
+    "keep": "48,500,000",
+    "label": "2행",
+    "marker": false,
+    "post": "원 (VAT 포함)",
+    "pre": "",
+    "result": "48,500,000",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 2,
+    "keep": "9,900,000",
+    "label": "3행",
+    "marker": false,
+    "post": "원",
+    "pre": "",
+    "result": "9,900,000",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 3,
+    "keep": "1,230,000",
+    "label": "4행",
+    "marker": false,
+    "post": "원 (VAT 별도)",
+    "pre": "",
+    "result": "1,230,000",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 4,
+    "keep": "",
+    "label": "5행",
+    "marker": true,
+    "post": "",
+    "pre": "",
+    "result": "〘미입력·계약금액〙",
+    "status": "empty",
+    "tags": []
+   }
+  ],
+  "rows_label": "불러온 5행 미리보기",
+  "sample": {
+   "index": 0,
+   "keep": "170,309,180",
+   "miss_tag": "",
+   "post": "원 (VAT 포함)",
+   "pre": "",
+   "value": "170,309,180원 (VAT 포함)"
+  },
+  "samples": [
+   {
+    "aria": "1행",
+    "disabled": false,
+    "index": 0,
+    "label": "1",
+    "pressed": true
+   },
+   {
+    "aria": "2행",
+    "disabled": false,
+    "index": 1,
+    "label": "2",
+    "pressed": false
+   },
+   {
+    "aria": "3행",
+    "disabled": false,
+    "index": 2,
+    "label": "3",
+    "pressed": false
+   },
+   {
+    "aria": "4행",
+    "disabled": false,
+    "index": 3,
+    "label": "4",
+    "pressed": false
+   },
+   {
+    "aria": "5행, 빈 값",
+    "disabled": true,
+    "index": 4,
+    "label": "5",
+    "pressed": false
+   }
+  ],
+  "slice": {
+   "delimiter": "원",
+   "mode": "before",
+   "on_missing": "keep"
+  },
+  "summary": "맞음 4행 · 빈 값 1행"
+ },
+ "preview_between": {
+  "hint": "",
+  "miss_choice": {
+   "choices": [
+    {
+     "label": "원본 그대로",
+     "value": "keep"
+    },
+    {
+     "label": "빈 값",
+     "value": "empty"
+    }
+   ],
+   "label": "‘(’ 또는 ‘)’ 없는 행",
+   "value": "empty"
+  },
+  "ok": true,
+  "rows": [
+   {
+    "index": 0,
+    "keep": "VAT 포함",
+    "label": "1행",
+    "marker": false,
+    "post": ")",
+    "pre": "170,309,180원 (",
+    "result": "VAT 포함",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 1,
+    "keep": "VAT 포함",
+    "label": "2행",
+    "marker": false,
+    "post": ")",
+    "pre": "48,500,000원 (",
+    "result": "VAT 포함",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 2,
+    "keep": "",
+    "label": "3행",
+    "marker": true,
+    "post": "",
+    "pre": "9,900,000원",
+    "result": "〘미입력·계약금액〙",
+    "status": "miss",
+    "tags": [
+     "‘(’ 또는 ‘)’ 없음"
+    ]
+   },
+   {
+    "index": 3,
+    "keep": "VAT 별도",
+    "label": "4행",
+    "marker": false,
+    "post": ")",
+    "pre": "1,230,000원 (",
+    "result": "VAT 별도",
+    "status": "hit",
+    "tags": []
+   },
+   {
+    "index": 4,
+    "keep": "",
+    "label": "5행",
+    "marker": true,
+    "post": "",
+    "pre": "",
+    "result": "〘미입력·계약금액〙",
+    "status": "empty",
+    "tags": []
+   }
+  ],
+  "rows_label": "불러온 5행 미리보기",
+  "sample": {
+   "index": 2,
+   "keep": "",
+   "miss_tag": "‘(’ 또는 ‘)’ 없음",
+   "post": "",
+   "pre": "9,900,000원",
+   "value": "9,900,000원"
+  },
+  "samples": [
+   {
+    "aria": "1행",
+    "disabled": false,
+    "index": 0,
+    "label": "1",
+    "pressed": false
+   },
+   {
+    "aria": "2행",
+    "disabled": false,
+    "index": 1,
+    "label": "2",
+    "pressed": false
+   },
+   {
+    "aria": "3행",
+    "disabled": false,
+    "index": 2,
+    "label": "3",
+    "pressed": true
+   },
+   {
+    "aria": "4행",
+    "disabled": false,
+    "index": 3,
+    "label": "4",
+    "pressed": false
+   },
+   {
+    "aria": "5행, 빈 값",
+    "disabled": true,
+    "index": 4,
+    "label": "5",
+    "pressed": false
+   }
+  ],
+  "slice": {
+   "close": ")",
+   "mode": "between",
+   "open": "("
+  },
+  "summary": "맞음 3행 · 확인 필요 1행 · 빈 값 1행"
+ },
+ "preview_none": {
+  "hint": "쓸 부분을 끌어 고르거나 방식을 고르세요.",
+  "miss_choice": null,
+  "ok": true,
+  "rows": [
+   {
+    "index": 0,
+    "keep": "",
+    "label": "1행",
+    "marker": false,
+    "post": "",
+    "pre": "170,309,180원 (VAT 포함)",
+    "result": "170,309,180원 (VAT 포함)",
+    "status": "plain",
+    "tags": []
+   },
+   {
+    "index": 1,
+    "keep": "",
+    "label": "2행",
+    "marker": false,
+    "post": "",
+    "pre": "48,500,000원 (VAT 포함)",
+    "result": "48,500,000원 (VAT 포함)",
+    "status": "plain",
+    "tags": []
+   },
+   {
+    "index": 2,
+    "keep": "",
+    "label": "3행",
+    "marker": false,
+    "post": "",
+    "pre": "9,900,000원",
+    "result": "9,900,000원",
+    "status": "plain",
+    "tags": []
+   },
+   {
+    "index": 3,
+    "keep": "",
+    "label": "4행",
+    "marker": false,
+    "post": "",
+    "pre": "1,230,000원 (VAT 별도)",
+    "result": "1,230,000원 (VAT 별도)",
+    "status": "plain",
+    "tags": []
+   },
+   {
+    "index": 4,
+    "keep": "",
+    "label": "5행",
+    "marker": true,
+    "post": "",
+    "pre": "",
+    "result": "〘미입력·계약금액〙",
+    "status": "empty",
+    "tags": []
+   }
+  ],
+  "rows_label": "불러온 5행 미리보기",
+  "sample": {
+   "index": 0,
+   "keep": "",
+   "miss_tag": "",
+   "post": "",
+   "pre": "170,309,180원 (VAT 포함)",
+   "value": "170,309,180원 (VAT 포함)"
+  },
+  "samples": [
+   {
+    "aria": "1행",
+    "disabled": false,
+    "index": 0,
+    "label": "1",
+    "pressed": true
+   },
+   {
+    "aria": "2행",
+    "disabled": false,
+    "index": 1,
+    "label": "2",
+    "pressed": false
+   },
+   {
+    "aria": "3행",
+    "disabled": false,
+    "index": 2,
+    "label": "3",
+    "pressed": false
+   },
+   {
+    "aria": "4행",
+    "disabled": false,
+    "index": 3,
+    "label": "4",
+    "pressed": false
+   },
+   {
+    "aria": "5행, 빈 값",
+    "disabled": true,
+    "index": 4,
+    "label": "5",
+    "pressed": false
+   }
+  ],
+  "slice": null,
+  "summary": "빈 값 1행"
+ },
+ "propose_amount": {
+  "candidates": [
+   {
+    "full": true,
+    "label": "‘원’ 앞까지",
+    "matched": 4,
+    "mode": "before",
+    "slice": {
+     "delimiter": "원",
+     "mode": "before",
+     "on_missing": "keep"
+    },
+    "tag": "4/4행 맞음",
+    "tip": "맞는 행: 값 있는 4행 중 4행",
+    "total": 4
+   },
+   {
+    "full": false,
+    "label": "앞에서 11글자",
+    "matched": 1,
+    "mode": "head",
+    "slice": {
+     "count": 11,
+     "mode": "head"
+    },
+    "tag": "1/4행 맞음",
+    "tip": "맞는 행: 값 있는 4행 중 1행",
+    "total": 4
+   }
+  ],
+  "message": "",
+  "ok": true
+ },
+ "propose_none": {
+  "candidates": [],
+  "message": "고른 부분에 맞는 방식이 없습니다. 방식을 직접 고르세요.",
+  "ok": true
+ }
+}

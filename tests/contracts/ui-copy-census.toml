@@ -1094,6 +1094,10 @@ file = "frontend/src/screens/sheet_picker.ts"
 text = "에 시트가 여러 개입니다. 채울 시트를 선택하세요."
 
 [[sentence]]
+file = "frontend/src/screens/slice_popover.ts"
+text = "예시 값: 쓸 부분을 끌어 고르면 방식이 맞춰집니다"
+
+[[sentence]]
 file = "frontend/src/screens/workbench.ts"
 text = "{} 확정-비움으로 선언한 항목은 여기 세지 않습니다."
 
@@ -2419,6 +2423,14 @@ text = "파일 이름 규칙이 올바르지 않습니다."
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/slice_assist.py"
+text = "고른 부분에 맞는 방식이 없습니다. 방식을 직접 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/slice_assist.py"
+text = "쓸 부분을 끌어 고르거나 방식을 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/template_manager_state.py"

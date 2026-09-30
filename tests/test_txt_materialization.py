@@ -279,7 +279,7 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
     )
     row = next(r for r in controller.snapshot()["rows"] if r["name"] == "건명")
     assert row["value"] == "R26BK09017075"
-    assert row["slice_label"] == "구분자 '-' 1번째" and row["slice_enabled"] is True
+    assert row["slice_label"] == "‘-’로 나눈 조각 중 첫째" and row["slice_enabled"] is True
     with pytest.raises(ValueError, match="구분자를 비울 수 없습니다"):
         controller.dispatch(
             "set_map_slice", {"name": "건명", "slice": {"mode": "split", "delimiter": "", "index": 1}}
@@ -287,6 +287,41 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
     controller.dispatch("set_confirmed", {"name": "건명", "value": True})
     saved = controller.dispatch("save_rules", {})
     assert saved["needs_confirm"] is True  # 기본 규칙 저장은 본 문안 그대로 확인받는다(§11)
+    saved = controller.dispatch(
+        "save_rules", {"confirm": True, "confirmed_text": saved["confirm_text"]}
+    )
+    stored = {m.template_field: m for m in harness.registry.load("안내문").mapping.mappings}
+    assert stored["건명"].slice is not None, saved
+
+    written: "list[str]" = []
+    result = controller.copy_to(controller.copy_token(), written.append)
+    assert result["copied"] is True, result
+    assert written == [
+        "수신: ○○청\n담당자: 홍길동\n계약서를 첨부합니다. R26BK09017075\n끝.\n"
+    ]
+
+
+def test_v5_new_mode_slice_copies_the_same_text_the_card_shows(tmp_path: Path) -> None:
+    """v5 새 방식(‘앞까지’)도 v4 시절과 같은 규율 — 봉인된 산출이 카드와 같은 글자다."""
+    harness = _Harness(tmp_path, SLOT_BODY)
+    harness.choose("첨부", "계약서")
+    record = {**RECORD, "건명": "R26BK09017075-000"}
+    controller = WorkbenchController(
+        harness.registry, lambda s, snap: None, clock=_clock(),
+        target_font=TargetFontSetting(),
+        content_selection=_content_selection_reader(harness.slot_product, harness.registry),
+        txt_materialization=_txt_materialization_port(harness.registry, harness.seal),
+    )
+    controller.open(harness.registry.load("안내문"), [(0, record)])
+    controller.dispatch(
+        "set_map_slice",
+        {"name": "건명", "slice": {"mode": "before", "delimiter": "-", "on_missing": "keep"}},
+    )
+    row = next(r for r in controller.snapshot()["rows"] if r["name"] == "건명")
+    assert row["value"] == "R26BK09017075"
+    assert row["slice_label"] == "‘-’ 앞까지" and row["slice_enabled"] is True
+    controller.dispatch("set_confirmed", {"name": "건명", "value": True})
+    saved = controller.dispatch("save_rules", {})
     saved = controller.dispatch(
         "save_rules", {"confirm": True, "confirmed_text": saved["confirm_text"]}
     )

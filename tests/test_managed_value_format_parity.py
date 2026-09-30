@@ -21,6 +21,7 @@ import pytest
 
 from _output_folder_pick import pick_output_folder
 
+from hwpxfiller.domain.text_slice import TextSlice
 from hwpxfiller.host.locations import home_dir
 
 WORK = "동등성"
@@ -153,7 +154,7 @@ def test_managed_writes_the_sliced_value_the_editor_previews(app, tmp_path):
         app.dispatch("editor", "set_confirmed", {"index": rows[name]["index"], "confirmed": True})
     after = {row["template_field"]: row for row in editor.snapshot()["rows"]}
     assert after["공고번호"]["preview"] == "20260812"
-    assert after["공고번호"]["slice_label"] == "구분자 '-' 1번째"
+    assert after["공고번호"]["slice_label"] == "‘-’로 나눈 조각 중 첫째"
     app.dispatch("editor", "set_pattern", {"pattern": "{{공고번호}}-{{seq:001}}"})
     app.dispatch("editor", "set_name", {"name": WORK})
     assert app.dispatch("editor", "save", {}) == {"ok": True, "saved_name": WORK}
@@ -183,6 +184,53 @@ def test_managed_writes_the_sliced_value_the_editor_previews(app, tmp_path):
         for field in slices:
             expected = by_field[field].value_for(record)
             assert f">{expected}<" in text, f"{field} 가 미리보기 값 {expected!r} 와 다르다"
+        assert f">{record['공고번호']}<" not in text, "가공 전 칸 전체가 문서에 남았다"
+
+
+def test_managed_writes_a_v5_new_mode_slice_the_editor_previews(app, tmp_path):
+    """v5 새 방식(‘앞까지’)·``keep`` 도 문서·미리보기가 같은 글자다 — v4 시절과 같은 규율."""
+    editor = app.controllers["editor"]
+    app.dispatch("editor", "new_session", {})
+    app.dispatch("editor", "use_library_template", {"path": str(_asset("계약체결안내.hwpx"))})
+    editor.load_data_path(str(_asset("계약목록.csv")))
+    app.dispatch("editor", "goto_section", {"section": "binding"})
+    app.dispatch("editor", "confirm_suggested", {})
+    rows = {row["template_field"]: row for row in editor.snapshot()["rows"]}
+    spec = {"mode": "before", "delimiter": "-", "on_missing": "keep"}
+    assert rows["공고번호"]["slice_enabled"] is True
+    app.dispatch("editor", "set_slice", {"index": rows["공고번호"]["index"], "slice": spec})
+    app.dispatch(
+        "editor", "set_confirmed", {"index": rows["공고번호"]["index"], "confirmed": True}
+    )
+    after = {row["template_field"]: row for row in editor.snapshot()["rows"]}
+    assert after["공고번호"]["preview"] == "20260812"
+    assert after["공고번호"]["slice_label"] == "‘-’ 앞까지"
+    app.dispatch("editor", "set_name", {"name": WORK})
+    assert app.dispatch("editor", "save", {}) == {"ok": True, "saved_name": WORK}
+
+    job = app.controllers["job"]
+    saved = job.registry.load(WORK)
+    by_field = {m.template_field: m for m in saved.mapping.mappings}
+    assert by_field["공고번호"].slice == TextSlice(
+        "before", delimiter="-", on_missing="keep"
+    )
+    app.dispatch("job", "select_job", {"name": WORK})
+    app.dispatch("job", "set_all", {})
+    out = tmp_path / "sliced_v5"
+    pick_output_folder(job, out)
+    result = app.generate("job")
+    assert result["ok"] is True and result["status"] == "completed", result
+
+    sections = _sections(out)
+    records = job.data.records
+    assert len(sections) == len(records)
+    for record in records:
+        (text,) = [
+            body.decode("utf-8") for body in sections.values()
+            if f">{record['수요기관']}<" in body.decode("utf-8")
+        ]
+        expected = by_field["공고번호"].value_for(record)
+        assert f">{expected}<" in text
         assert f">{record['공고번호']}<" not in text, "가공 전 칸 전체가 문서에 남았다"
 
 

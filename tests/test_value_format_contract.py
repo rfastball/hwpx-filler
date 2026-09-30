@@ -21,6 +21,7 @@ from hwpxfiller.domain.field_binding import (
     FIELD_BINDING_SEMANTIC_VERSION,
     FIELD_BINDING_SEMANTIC_VERSION_V2,
     FIELD_BINDING_SEMANTIC_VERSION_V3,
+    FIELD_BINDING_SEMANTIC_VERSION_V4,
     FORMAT_KINDS,
     SOURCE,
     ExactText,
@@ -152,7 +153,7 @@ def test_v3_framing_carries_the_kind_and_changes_identity() -> None:
     plain = (_source("금액"),)
     amount = (_source("금액", kind="amount", code=""),)
     assert digest_binding_rules(amount) != digest_binding_rules(plain)
-    assert b"field-binding/v4" in canonicalize_binding_rules(amount)
+    assert b"field-binding/v5" in canonicalize_binding_rules(amount)
     assert b"field-binding/v3" in canonicalize_binding_rules(
         amount, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V3
     )
@@ -196,8 +197,13 @@ def test_v2_is_readable_but_not_an_execution_contract() -> None:
     assert not is_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V3)
     with pytest.raises(UnsupportedFieldBindingContractError):
         require_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V3)
+    # v4(가공 방식 확장 이전 판)도 같은 자리 — 읽되 실행 입력이 되지 않는다.
+    assert require_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V4)
+    assert not is_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V4)
     with pytest.raises(UnsupportedFieldBindingContractError):
-        require_field_binding_contract("field-binding/v5")
+        require_current_field_binding_contract(FIELD_BINDING_SEMANTIC_VERSION_V4)
+    with pytest.raises(UnsupportedFieldBindingContractError):
+        require_field_binding_contract("field-binding/v6")
 
 
 def test_execution_input_is_always_the_current_contract() -> None:

@@ -783,6 +783,14 @@ def test_unsupported_value_format_is_context_error_even_on_blank_rows(value_expr
          "MPKPLA26910290, MPKPLA26910291", "MPKPLA26910291"),
         ("amount", "", TextSlice("split", delimiter="원", index=1), "170,309,180원 (VAT 포함)",
          "170,309,180원"),
+        # v5 새 방식 — 앞까지·사이·지우기.
+        (None, None, TextSlice("before", delimiter="-"), "R26BK09017075-000", "R26BK09017075"),
+        (None, None, TextSlice("between", open="(", close=")"),
+         "170,309,180원 (VAT 포함)", "VAT 포함"),
+        (None, None, TextSlice("remove", find="(VAT 포함)"), "170,309,180원 (VAT 포함)",
+         "170,309,180원"),
+        # keep — 기준 글자가 없는 행은 빈 값이 아니라 원본 그대로다.
+        (None, None, TextSlice("before", delimiter="X", on_missing="keep"), "abc", "abc"),
     ],
 )
 def test_source_value_is_sliced_before_the_format(kind, code, text_slice, raw, expected) -> None:
@@ -807,6 +815,20 @@ def test_no_slice_leaves_the_plan_payload_unchanged() -> None:
     assert "text_slice" not in encode_value_expression(
         FromSource("amount", None, _POLICY_ID)
     )
+
+
+def test_slice_keep_on_missing_falls_back_to_the_original_text() -> None:
+    """``on_missing="keep"`` 은 기준 글자·조각·범위가 없어도 빈 값 표식을 내지 않는다."""
+    plan = _single_source_plan(
+        FromSource(
+            "amount", None, _POLICY_ID,
+            text_slice=TextSlice("split", delimiter="-", index=2, on_missing="keep"),
+        )
+    )
+    res = _validate(plan=plan, snapshot=_snapshot([("amount", SourceText("구분자없음"))]))
+    assert isinstance(res, ValidatedDataRecord)
+    assert res.document_values_in_order() == (("f_amount", "구분자없음"),)
+    assert marked_missing_fields(res.validation_provenance) == ()
 
 
 def test_slice_that_selects_nothing_is_marked() -> None:

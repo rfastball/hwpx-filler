@@ -129,6 +129,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `goto_section` | `section` | — |
 | `mapping_reset_stakes` | — | — |
 | `new_session` | — | — |
+| `preview_slice` | `index` | `sample` |
+| `propose_slice` | `index`, `sample`, `start`, `end` | — |
 | `restore_confirmed` | — | — |
 | `resuggest_all` | — | — |
 | `revert_source` | `index` | — |
@@ -265,6 +267,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `close` | — | — |
 | `copy_precheck` | — | — |
 | `leave_guard` | — | — |
+| `preview_map_slice` | `name` | `sample` |
+| `propose_map_slice` | `name`, `sample`, `start`, `end` | — |
 | `revert_map` | `name` | — |
 | `save_rules` | — | `confirm`, `confirmed_text` |
 | `set_confirmed` | `name`, `value` | — |

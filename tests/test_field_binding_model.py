@@ -47,8 +47,8 @@ def _source(field_id: str, key: str = "k") -> FieldBindingRule:
 
 # ─── 값 알파벳 — 단형(v2) ────────────────────────────────────────────────────────
 def test_contract_versions() -> None:
-    # 규칙 판은 v4(v3 표시형 kind 슬롯 #1081 PR0b + 가공 슬롯) — 값 알파벳·소스 스키마는 v2 그대로다.
-    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v4"
+    # 규칙 판은 v5(v4 가공 두 방식 슬롯 + v5 가공 방식 확장·빠짐 처리) — 값 알파벳·소스 스키마는 v2 그대로다.
+    assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v5"
     assert SOURCE_SCHEMA_VERSION == "source-schema/v2"
     assert BINDING_VALUE_VERSION == "binding-value/v2"
 
@@ -273,8 +273,76 @@ def test_binding_rule_framing_v3_adds_the_format_kind_slot() -> None:
     )
 
 
-def test_binding_rule_framing_v4_adds_the_text_slice_slot() -> None:
-    """v4 프레이밍 실측: v3 7 슬롯 뒤에 가공 슬롯 — 없음 0x00, 있으면 0x01 + 방식별 고정 칸."""
+def test_binding_rule_framing_v4_is_frozen_at_the_pre_v5_byte_layout() -> None:
+    """v4 프레이밍(**동결**, #1097 당시 실측): v3 7 슬롯 뒤에 가공 슬롯 — 없음 0x00,
+    있으면 0x01 + 방식(``chars``/``split``만) + 방식별 고정 칸(빠짐 처리 칸이 없다)."""
+    from hwpxfiller.domain.field_binding import (
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
+        _encode_rule,
+        _opt_text,
+        _text,
+    )
+    from hwpxfiller.domain.text_slice import TextSlice
+
+    head = (
+        _text("f") + _text(SOURCE) + _text(POLICY.policy_id) + _opt_text("k")
+        + _opt_text(None) + _opt_text(None) + _opt_text(None)
+    )
+    plain = FieldBindingRule("f", SOURCE, POLICY, source_key="k")
+    assert _encode_rule(plain, FIELD_BINDING_SEMANTIC_VERSION_V4) == head + b"\x00"
+    chars = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=1, length=3)
+    )
+    assert _encode_rule(chars, FIELD_BINDING_SEMANTIC_VERSION_V4) == (
+        head + b"\x01" + _text("chars") + _text("1") + _opt_text("3")
+    )
+    to_end = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=2)
+    )
+    assert _encode_rule(to_end, FIELD_BINDING_SEMANTIC_VERSION_V4) == (
+        head + b"\x01" + _text("chars") + _text("2") + _opt_text(None)
+    )
+    split = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k",
+        text_slice=TextSlice("split", delimiter=", ", index=-1),
+    )
+    assert _encode_rule(split, FIELD_BINDING_SEMANTIC_VERSION_V4) == (
+        head + b"\x01" + _text("split") + _text(", ") + _text("-1")
+    )
+    # 가공은 identity 다 — 가공만 다른 두 규칙은 다른 판본이다.
+    assert len({
+        digest_binding_rules([r], contract_id=FIELD_BINDING_SEMANTIC_VERSION_V4)
+        for r in (plain, chars, to_end, split)
+    }) == 4
+    assert FIELD_BINDING_SEMANTIC_VERSION_V4.encode("utf-8") in canonicalize_binding_rules(
+        [split], contract_id=FIELD_BINDING_SEMANTIC_VERSION_V4
+    )
+
+
+def test_binding_rule_framing_v4_refuses_a_v5_only_slice() -> None:
+    """v4 는 두 방식(글자 범위·구분자 나누기)·빈 값만 적는다 — 새 방식·keep 은 이 판으로 봉인 못한다."""
+    from hwpxfiller.domain.field_binding import (
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
+        _encode_rule,
+    )
+    from hwpxfiller.domain.text_slice import TextSlice
+
+    before = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k",
+        text_slice=TextSlice("before", delimiter="-"),
+    )
+    with pytest.raises(FieldBindingInputIntegrityError):
+        _encode_rule(before, FIELD_BINDING_SEMANTIC_VERSION_V4)
+    keep_chars = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k",
+        text_slice=TextSlice("chars", start=1, on_missing="keep"),
+    )
+    with pytest.raises(FieldBindingInputIntegrityError):
+        _encode_rule(keep_chars, FIELD_BINDING_SEMANTIC_VERSION_V4)
+
+
+def test_binding_rule_framing_v5_adds_the_new_modes_and_on_missing_slot() -> None:
+    """v5 프레이밍 실측: 방식의 정본 키 순서대로 선택 칸을 적고, 빠짐 있는 방식은 on_missing 을 언제나 적는다."""
     from hwpxfiller.domain.field_binding import _encode_rule, _opt_text, _text
     from hwpxfiller.domain.text_slice import TextSlice
 
@@ -288,24 +356,39 @@ def test_binding_rule_framing_v4_adds_the_text_slice_slot() -> None:
         "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=1, length=3)
     )
     assert _encode_rule(chars, FIELD_BINDING_SEMANTIC_VERSION) == (
-        head + b"\x01" + _text("chars") + _text("1") + _opt_text("3")
+        head + b"\x01" + _text("chars") + _opt_text("1") + _opt_text("3") + _text("empty")
     )
-    to_end = FieldBindingRule(
-        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("chars", start=2)
-    )
-    assert _encode_rule(to_end, FIELD_BINDING_SEMANTIC_VERSION) == (
-        head + b"\x01" + _text("chars") + _text("2") + _opt_text(None)
-    )
-    split = FieldBindingRule(
+    kept_chars = FieldBindingRule(
         "f", SOURCE, POLICY, source_key="k",
-        text_slice=TextSlice("split", delimiter=", ", index=-1),
+        text_slice=TextSlice("chars", start=1, length=3, on_missing="keep"),
     )
-    assert _encode_rule(split, FIELD_BINDING_SEMANTIC_VERSION) == (
-        head + b"\x01" + _text("split") + _text(", ") + _text("-1")
+    assert _encode_rule(kept_chars, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("chars") + _opt_text("1") + _opt_text("3") + _text("keep")
     )
-    # 가공은 identity 다 — 가공만 다른 두 규칙은 다른 판본이다.
-    assert len({digest_binding_rules([r]) for r in (plain, chars, to_end, split)}) == 4
-    assert FIELD_BINDING_SEMANTIC_VERSION.encode("utf-8") in canonicalize_binding_rules([split])
+    before = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("before", delimiter="-")
+    )
+    assert _encode_rule(before, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("before") + _opt_text("-") + _text("empty")
+    )
+    head_mode = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k", text_slice=TextSlice("head", count=4)
+    )
+    assert _encode_rule(head_mode, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("head") + _opt_text("4")
+    )  # head 는 빠짐이 없다 — on_missing 칸이 없다
+    replace = FieldBindingRule(
+        "f", SOURCE, POLICY, source_key="k",
+        text_slice=TextSlice("replace", find="(주)", replace="주식회사"),
+    )
+    assert _encode_rule(replace, FIELD_BINDING_SEMANTIC_VERSION) == (
+        head + b"\x01" + _text("replace") + _opt_text("(주)") + _opt_text("주식회사")
+    )
+    # 가공은 identity 다 — 가공만 다른 규칙은 다른 판본이다.
+    assert len({
+        digest_binding_rules([r]) for r in (plain, chars, kept_chars, before, head_mode, replace)
+    }) == 6
+    assert FIELD_BINDING_SEMANTIC_VERSION.encode("utf-8") in canonicalize_binding_rules([before])
 
 
 def test_empty_constant_text_is_not_absent_constant() -> None:

@@ -12,10 +12,12 @@
      쓴 상태다.
    - 복사는 사전확인이 본 **그 카드**의 토큰을 실어 보낸다. 그사이 작업점이 옮겨졌으면 백엔드가
      stale 로 돌려주고, 확인하지 않은 카드가 클립보드로 나가지 않는다. */
-import { createElement, Fragment, useEffect, useSyncExternalStore } from "react";
+import { createElement, useEffect, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
+import { SliceCell } from "./slice_popover.ts";
+import type { SlicePort } from "./slice_popover.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import { SegmentView } from "./segment_view.ts";
@@ -289,66 +291,32 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     deps.navigation.go(target, { force: true });
   }
 
-  /* ---- 가공(구간) 슬라이스 — 편집기 화면(`editor_controller.ts`)과 같은 규칙 ----
-     방식(select)은 고르는 순간이 곧 커밋이라 draft 가 없다. 나머지 넷(시작·글자 수·
-     구분자·번째)은 `const`/`fmt` 와 같은 draft 자리(`MapAxis` 의 `slice_*`)를 쓰고,
-     완성된 명세로만 뜻이 있어 손댄 축 하나만으로는 보내지 않는다. */
+  /* ---- 「가공」 팝오버 — 편집기 화면(`editor_controller.ts` 의 `slicePort`)과 같은 문 ----
+     칸의 뜻은 전부 Python 이 낸다. 여기는 행 이름으로 정체를 감싼 문만 짓는다: 명세 커밋
+     (`set_map_slice`)과 무변이 질의 둘(`preview_map_slice`·`propose_map_slice`). 질의도 같은
+     체인에 선다 — 방금 보낸 커밋 뒤의 상태를 읽어야 한다. */
 
-  function sliceMode(name: string): string {
-    const row = ((snapshot().rows || []) as Obj[]).find((r) => String(r.name) === name);
-    return String(((row || {}).slice || {}).mode || "");
-  }
-
-  /** draft 의 현재 값으로 완성된 명세를 짓는다 — **불완전하면 `null`**(발신하지 않는다).
-   *  숫자칸이 비어 있거나 정수로 읽히지 않는 입력을 거절 문안으로 짓지 않는다(그 문안은
-   *  Python 의 것이다). */
-  function buildSliceSpec(name: string): Obj | null {
-    const mode = sliceMode(name);
-    if (mode === "chars") {
-      const startText = valueOf(draft, mapField(name, "slice_start"));
-      if (startText.trim() === "" || !/^-?\d+$/.test(startText.trim())) return null;
-      const start = Number(startText.trim());
-      const lengthText = valueOf(draft, mapField(name, "slice_length")).trim();
-      if (lengthText === "") return { mode: "chars", start };
-      if (!/^-?\d+$/.test(lengthText)) return null;
-      return { mode: "chars", start, length: Number(lengthText) };
-    }
-    if (mode === "split") {
-      const delimiter = valueOf(draft, mapField(name, "slice_delimiter"));
-      if (delimiter === "") return null;
-      const indexText = valueOf(draft, mapField(name, "slice_index")).trim();
-      if (indexText === "" || !/^-?\d+$/.test(indexText)) return null;
-      return { mode: "split", delimiter, index: Number(indexText) };
-    }
-    return null;
-  }
-
-  /** 가공 입력 blur 커밋 — 완성되지 않은 명세는 조용히 보내지 않는다. */
-  function commitSliceOnBlur(
-    name: string, axis: "slice_start" | "slice_length" | "slice_delimiter" | "slice_index",
-  ): void {
-    const field = mapField(name, axis);
-    const state = draft.fields[field];
-    if (state === undefined || !state.dirty) return;
-    const spec = buildSliceSpec(name);
-    if (spec === null) return;
-    void commit(field, "set_map_slice", { name, slice: spec });
-  }
-
-  /** 방식 select — 고르는 순간이 곧 커밋이다(draft 없음). 기본값의 **유효성 판정**은
-   *  여전히 Python 이 진다 — 여기서 검증하지 않는다. */
-  function chooseSliceMode(name: string, mode: string): void {
-    let spec: Obj | null;
-    if (mode === "") spec = null;
-    else if (mode === "chars") spec = { mode: "chars", start: 1 };
-    else if (mode === "split") spec = { mode: "split", delimiter: ",", index: 1 };
-    else throw new Error(`알 수 없는 가공 방식입니다: ${mode}`);
-    void sendWb("set_map_slice", { name, slice: spec }).catch((error) => {
+  async function commitSlice(name: string, slice: Obj | null): Promise<boolean> {
+    try {
+      await sendWb("set_map_slice", { name, slice });
+      return true;
+    } catch (error) {
       deps.notify(String((error as Obj)?.message || error));
-    });
+      return false;
+    }
   }
 
-  /** 「가공」 인라인 편집기 토글 — 한 번에 한 행만 연다. */
+  /** 무변이 질의의 거절도 알린다 — 조용히 삼키지 않고, 부른 칸에는 거절로 돌려준다. */
+  async function sliceQuery(send: () => Promise<Obj>): Promise<Obj> {
+    try {
+      return await send();
+    } catch (error) {
+      deps.notify(String((error as Obj)?.message || error));
+      throw error;
+    }
+  }
+
+  /** 「가공」 팝오버 토글 — 한 번에 한 행만 연다. */
   function toggleSliceEditor(name: string): void {
     sliceOpenName = sliceOpenName === name ? null : name;
     emitSliceView();
@@ -356,6 +324,24 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
 
   function isSliceEditorOpen(name: string): boolean {
     return sliceOpenName === name;
+  }
+
+  /** 행 하나의 「가공」 칸이 쓰는 문 — 정체는 토큰 이름이다. */
+  function slicePort(name: string): SlicePort {
+    return {
+      doc: deps.doc,
+      open: sliceOpenName === name,
+      toggle: () => toggleSliceEditor(name),
+      close: () => {
+        if (sliceOpenName !== name) return;
+        sliceOpenName = null;
+        emitSliceView();
+      },
+      commit: (slice) => commitSlice(name, slice),
+      preview: (sample) => sliceQuery(() => sendWb("preview_map_slice", { name, sample })),
+      propose: (sample, start, end) =>
+        sliceQuery(() => sendWb("propose_map_slice", { name, sample, start, end })),
+    };
   }
 
   return {
@@ -404,7 +390,7 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
         return () => { sliceViewListeners.delete(listener); };
       },
     },
-    commitSliceOnBlur, chooseSliceMode, toggleSliceEditor, isSliceEditorOpen,
+    toggleSliceEditor, isSliceEditorOpen, slicePort,
     guarded,
     doc: deps.doc,
     notify: deps.notify,
@@ -415,94 +401,6 @@ export type WorkbenchController = ReturnType<typeof createWorkbenchController>;
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
-}
-
-/** 「가공」 칸 — 편집기 화면(`editor.ts` 의 `SliceCell`)과 **같은 형**이다. 문안·가부·방식
- *  목록은 Python 이 낸다. 열림 상태는 이 화면의 이름 키 1슬롯 표지에서 온다. */
-function SliceCell(props: {
-  row: Obj; draft: DraftState; open: boolean; controller: WorkbenchController;
-}): ReactNode {
-  const { row, draft, open, controller } = props;
-  const name = String(row.name);
-  const key = encodeURIComponent(name);
-  const modes = (row.slice_modes || []) as Obj[];
-  const mode = String((row.slice || {}).mode || "");
-  const toggle = h("button", {
-    className: "btn sm", type: "button", id: `wbMap-slice-${key}`, "data-name": name,
-    "aria-label": `${name} 가공`, "aria-expanded": open,
-    disabled: !row.slice_enabled,
-    onClick: () => controller.toggleSliceEditor(name),
-  }, String(row.slice_label || ""));
-  if (!open) return h("div", { className: "slicecell" }, toggle);
-  let fields: ReactNode = null;
-  if (mode === "chars") {
-    fields = createElement(Fragment, null,
-      h("input", {
-        className: "field sm", type: "number", min: 1, key: "start",
-        id: `wbMap-slice-start-${key}`, "data-name": name,
-        placeholder: "시작", "aria-label": "시작",
-        value: valueOf(draft, mapField(name, "slice_start")),
-        onChange: (event: Obj) => controller.type(
-          mapField(name, "slice_start"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(mapField(name, "slice_start"), true),
-        onBlur: () => {
-          controller.focus(mapField(name, "slice_start"), false);
-          controller.commitSliceOnBlur(name, "slice_start");
-        },
-      }),
-      h("input", {
-        className: "field sm", type: "number", min: 1, key: "length",
-        id: `wbMap-slice-length-${key}`, "data-name": name,
-        placeholder: "글자 수", "aria-label": "글자 수",
-        value: valueOf(draft, mapField(name, "slice_length")),
-        onChange: (event: Obj) => controller.type(
-          mapField(name, "slice_length"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(mapField(name, "slice_length"), true),
-        onBlur: () => {
-          controller.focus(mapField(name, "slice_length"), false);
-          controller.commitSliceOnBlur(name, "slice_length");
-        },
-      }));
-  } else if (mode === "split") {
-    fields = createElement(Fragment, null,
-      h("input", {
-        className: "field sm", type: "text", key: "delimiter",
-        id: `wbMap-slice-delimiter-${key}`, "data-name": name,
-        placeholder: "구분자", "aria-label": "구분자",
-        value: valueOf(draft, mapField(name, "slice_delimiter")),
-        onChange: (event: Obj) => controller.type(
-          mapField(name, "slice_delimiter"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(mapField(name, "slice_delimiter"), true),
-        onBlur: () => {
-          controller.focus(mapField(name, "slice_delimiter"), false);
-          controller.commitSliceOnBlur(name, "slice_delimiter");
-        },
-        onCompositionStart: () => controller.compose(mapField(name, "slice_delimiter"), true),
-        onCompositionEnd: () => controller.compose(mapField(name, "slice_delimiter"), false),
-      }),
-      h("input", {
-        className: "field sm", type: "number", key: "index",
-        id: `wbMap-slice-index-${key}`, "data-name": name,
-        placeholder: "번째", "aria-label": "번째",
-        value: valueOf(draft, mapField(name, "slice_index")),
-        onChange: (event: Obj) => controller.type(
-          mapField(name, "slice_index"), String(event.currentTarget.value)),
-        onFocus: () => controller.focus(mapField(name, "slice_index"), true),
-        onBlur: () => {
-          controller.focus(mapField(name, "slice_index"), false);
-          controller.commitSliceOnBlur(name, "slice_index");
-        },
-      }));
-  }
-  return h("div", { className: "slicecell" }, toggle,
-    h("div", { className: "sliceedit" },
-      h("select", {
-        className: "sel sm", id: `wbMap-slice-mode-${key}`, "data-name": name, value: mode,
-        onChange: (event: Obj) => controller.chooseSliceMode(name, String(event.currentTarget.value)),
-      }, ...modes.map((option) => h("option", {
-        value: String(option.value), key: String(option.value),
-      }, String(option.label)))),
-      fields));
 }
 
 function MapRow(props: {
@@ -545,7 +443,12 @@ function MapRow(props: {
       className: "btn sm maprev", id: `wbMap-rev-${key}`, "data-name": name,
       onClick: () => controller.guarded(() => controller.revertMap(name)),
     }, "자동으로 되돌리기") : null)),
-  h("td", null, h(SliceCell as any, { row, draft, open: sliceOpen === name, controller })),
+  /* 「가공」 칸 — 편집기 연결 표와 같은 칩·팝오버(`slice_popover.ts`). 열림은 이름 키 1슬롯
+     표지(`sliceOpen`)가 다시 그리기를 부른다. */
+  h("td", null, h(SliceCell as any, {
+    row, field: name, port: { ...controller.slicePort(name), open: sliceOpen === name },
+    chipProps: { id: `wbMap-slice-${key}`, "data-name": name },
+  })),
   h("td", { className: "maptype-cell" }, isAuto
     ? h("select", {
       className: "field sm maptype", id: `wbMap-type-${key}`, "data-name": name,

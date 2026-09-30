@@ -99,7 +99,8 @@ class FieldMapping:
     type: str = "text"
     const: str = ""
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
-    #: 가공(글자 범위·구분자 나누기) — 없으면 칸 전체. 소스 carrier 유형에서만 적용된다.
+    #: 가공(일부만 쓰기·글자 고치기, :mod:`~hwpxfiller.domain.text_slice`) — 없으면 칸 전체. 소스 carrier
+    #: 유형에서만 적용된다.
     slice: "TextSlice | None" = None
 
     def __post_init__(self) -> None:

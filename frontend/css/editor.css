@@ -49,14 +49,14 @@ table.data-preview td{white-space:nowrap}
    튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
    U6-C(#977)에서 7열이 4열로 접혔다(동결 시안 장면 2) — 「확정」 체크는 데이터 열 칸의 상태
    배지로, 「타입/고정값」은 그 칸의 select 특수 항목으로, 「상태」는 배지 문안으로 흡수됐다.
-   min-width 는 고정 4열 합(750px, 가공 칸 포함) + 유연 미리보기 열의 실용 최소폭이다. */
+   min-width 는 고정 4열 합(790px, 가공 칸 포함) + 유연 미리보기 열의 실용 최소폭이다. */
 .tblwrap{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
-table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:990px;table-layout:fixed}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:1030px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
 table.map th:nth-child(1){width:180px}  /* 템플릿 필드 */
 table.map th:nth-child(2){width:250px}  /* 데이터 열(select + 고정값 + 배지) */
-table.map th:nth-child(3){width:130px}  /* 가공(글자 범위·구분자 나누기, field-binding/v4) */
+table.map th:nth-child(3){width:170px}  /* 가공(칩 한 줄 — 문장이 길면 말줄임, 전문은 title) */
 table.map th:nth-child(4){width:190px}  /* 표시형 */
                                         /* 5열(미리보기)은 남는 폭을 다 쓴다 */
 table.map th .stepper{float:right;font-weight:400}
@@ -79,14 +79,121 @@ table.map .srccell .btn.icon{flex:none;font-size:var(--fs-dense);line-height:1}
 /* 배지는 줄지 않는다 — 좁은 칸에서 눌려 두 줄이 되면 행 높이가 행마다 갈리고, 그 갈림은
    실렌더 기하 단언(`editor_binding`)에서만 드러난다. */
 table.map .srccell .badge{flex:none}
-/* 「가공」 칸 — 요약 단추 하나, 열면 그 아래에 방식 select 와 방식별 입력이 줄바꿈으로 선다.
-   연결 표(`.map`)와 작업대 표(`.dmap`)가 같은 칸을 쓴다. 단추 문안이 길어도 칸을 밀지 않는다. */
-.slicecell{display:flex;flex-direction:column;align-items:stretch;gap:var(--sp-4);min-width:0}
-.slicecell>.btn{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:var(--fs-dense)}
-.sliceedit{display:flex;flex-wrap:wrap;gap:var(--sp-4)}
-.sliceedit .sel{flex:1 0 100%}
-.sliceedit .field{flex:1 0 6ch;width:6ch;min-width:0}
+/* 「가공」 칸 — 칩 하나(연결 표 `.map`·작업대 표 `.dmap` 공용). 걸린 가공은 채운 칩이 문장으로,
+   없으면 점선 칩 「+ 가공」 이다. 문장이 길어도 칸을 밀지 않고 말줄임(전문은 title). */
+.slicecell{display:flex;min-width:0}
+.slicechip{font:inherit;font-size:var(--fs-dense);max-width:100%;min-height:24px;box-sizing:border-box;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;
+  border:1px solid var(--n-border-strong);border-radius:var(--rad-control);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-2) var(--sp-8)}
+.slicechip:hover:not(:disabled){background:var(--n-hover)}
+.slicechip.set{background:var(--a-sel);border-color:color-mix(in srgb,var(--a-primary) 45%,var(--a-sel));
+  color:var(--a-primary);font-weight:600}
+.slicechip.add{border-style:dashed;background:transparent;color:var(--n-ink-soft)}
+.slicechip.open{border-color:var(--a-primary);border-style:solid}
+.slicechip:disabled{opacity:.5;cursor:not-allowed}
+.slicechip:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+
+/* 「가공」 팝오버 — 칩에 붙는 부유 면(position:fixed, 필터 빌더와 같은 배치 규칙). 넘치면 칩을
+   가리지 않고 최대 높이를 자르며, 가운데 몸통(방식 목록·미리보기)만 스크롤한다. */
+.slicepop{position:fixed;z-index:var(--z-popover);width:880px;max-width:calc(100vw - 32px);
+  display:flex;flex-direction:column;min-height:0;box-sizing:border-box;
+  background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);
+  box-shadow:0 16px 40px var(--a-shadow);color:var(--a-ink);font-size:var(--fs-dense)}
+.slicepop-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
+  padding:var(--sp-10) var(--sp-16);border-bottom:1px solid var(--n-track)}
+.slicepop-title{display:flex;align-items:baseline;gap:var(--sp-8);min-width:0}
+.slicepop-name{font-size:var(--fs-strong);font-weight:700}
+.slicepop-sub{font-size:var(--fs-caption);color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slicepop-x{flex:none;width:28px;height:28px;padding:0;display:inline-grid;place-items:center;cursor:pointer;
+  border:0;border-radius:var(--rad-control);background:transparent;color:var(--n-ink-soft)}
+.slicepop-x:hover{background:var(--n-hover);color:var(--n-ink-control)}
+.slicepop-x .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+.slicepop-cap{font-size:var(--fs-caption);font-weight:600;color:var(--a-muted)}
+.slicepop-strip{flex:none;padding:var(--sp-10) var(--sp-16);border-bottom:1px solid var(--n-track);
+  background:var(--n-surface-alt)}
+.slicepop-strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-6)}
+.slicepop-samples{display:flex;gap:var(--sp-4);flex-wrap:wrap}
+.slicepop-sample{font:inherit;font-size:var(--fs-caption);min-width:28px;cursor:pointer;
+  border:1px solid var(--n-border-strong);border-radius:var(--rad-pill);background:var(--a-card);
+  color:var(--n-ink-control);padding:0 var(--sp-8)}
+.slicepop-sample:hover:not(:disabled){background:var(--n-hover)}
+.slicepop-sample[aria-pressed="true"]{background:var(--a-primary);border-color:var(--a-primary);
+  color:var(--a-on-accent);font-weight:600}
+.slicepop-sample:disabled{opacity:.45;cursor:not-allowed}
+/* 예시 값 — 투명 글자의 읽기 전용 입력 위에서 끌어 고르고, 밑층이 같은 글자를 그리며 지금 가공이
+   남기는 자리를 칠한다. 두 층은 글꼴·크기·자간·안쪽 여백이 같아야 겹친다. */
+.slicepop-pick{position:relative;height:44px;border:1px solid var(--n-border-control);
+  border-radius:var(--rad-surface);background:var(--a-card)}
+.slicepop-pick:focus-within{border-color:var(--a-primary);outline:2px solid color-mix(in srgb,var(--a-primary) 30%,transparent)}
+.slicepop-under,.slicepop-value{position:absolute;inset:0;margin:0;padding:0 var(--sp-12);box-sizing:border-box;
+  font-family:var(--font-mono);font-size:var(--fs-kpi);line-height:42px;letter-spacing:0;white-space:pre}
+.slicepop-under{overflow:hidden;color:var(--a-muted)}
+.slicepop-under .slicepop-keep{color:var(--a-ink);background:var(--a-sel);border-radius:var(--rad-control)}
+.slicepop-value{width:100%;height:100%;border:0;background:transparent;color:transparent;
+  caret-color:var(--a-ink);outline:none;cursor:text}
+.slicepop-value::selection{background:color-mix(in srgb,var(--a-primary) 30%,transparent);color:transparent}
+.slicepop-status{display:flex;align-items:center;gap:var(--sp-8);min-height:20px;margin-top:var(--sp-6);
+  font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.slicepop-none{color:var(--a-warn)}
+.slice-warn{flex:none;display:inline-block;font-size:var(--fs-caption);font-weight:600;white-space:nowrap;
+  color:var(--a-warn);border:1px solid color-mix(in srgb,var(--a-warn) 45%,var(--a-card));
+  background:color-mix(in srgb,var(--a-warn) 10%,var(--a-card));border-radius:var(--rad-pill);padding:0 var(--sp-8)}
+.slicepop-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;
+  display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr)}
+.slicepop-methods{display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-8) var(--sp-10) var(--sp-12);
+  border-right:1px solid var(--n-track)}
+.slicepop-group{padding:var(--sp-4) var(--sp-8)}
+.slicepop-group:not(:first-child){padding-top:var(--sp-10)}
+.slice-method{display:flex;align-items:center;gap:var(--sp-6);min-height:34px;box-sizing:border-box;
+  padding:0 var(--sp-8);border:1px solid transparent;border-radius:var(--rad-control);cursor:pointer;
+  color:var(--n-ink-control)}
+.slice-method:hover{background:var(--n-hover)}
+.slice-method.on{background:var(--a-sel);border-color:color-mix(in srgb,var(--a-primary) 35%,var(--a-sel))}
+.slice-method input[type=radio]{flex:none;margin:0 var(--sp-2) 0 0;accent-color:var(--a-primary)}
+.slice-method .slice-word{white-space:nowrap}
+/* 앞 칸에 붙는 조사·단위(「로 나눈 조각 중」·「글자」) — 칸과 글자 사이를 줄여 한 말로 읽힌다. */
+.slice-method .slice-word.attach{margin-left:calc(-1 * var(--sp-4))}
+.slice-method .slice-in{flex:none;width:52px;height:26px;padding:0 var(--sp-6);font-family:var(--font-mono);
+  font-size:var(--fs-dense);text-align:center}
+.slice-method .slice-in.wide{width:104px;text-align:left}
+.slice-method .slice-ordinal{flex:none;width:auto;height:26px}
+.slice-tag{margin-left:auto;flex:none;font-size:11px;font-weight:600;white-space:nowrap;
+  border-radius:var(--rad-pill);padding:0 var(--sp-6);border:1px solid}
+.slice-tag.good{color:var(--a-ok);border-color:color-mix(in srgb,var(--a-ok) 45%,var(--a-card));
+  background:color-mix(in srgb,var(--a-ok) 10%,var(--a-card))}
+.slice-tag.bad{color:var(--a-warn);border-color:color-mix(in srgb,var(--a-warn) 45%,var(--a-card));
+  background:color-mix(in srgb,var(--a-warn) 10%,var(--a-card))}
+.slicepop-preview{display:flex;flex-direction:column;gap:var(--sp-8);min-width:0;padding:var(--sp-10) var(--sp-16) var(--sp-12)}
+.slicepop-preview-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-8)}
+.slicepop-summary{font-size:var(--fs-caption);color:var(--n-ink-soft);text-align:right}
+.slicepop-grid{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1.15fr);
+  gap:var(--sp-6) var(--sp-8);align-items:center}
+.slicepop-rn{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.slicepop-orig{font-family:var(--font-mono);color:var(--a-muted);white-space:pre;overflow:hidden;text-overflow:ellipsis}
+.slicepop-orig .slicepop-keep{color:var(--a-ink);background:var(--a-sel);border-radius:3px}
+.slicepop-arrow{color:var(--a-muted)}
+.slicepop-out{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
+.slicepop-res{font-family:var(--font-mono);font-weight:600;white-space:pre;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.slicepop-res.odd{color:var(--a-warn)}
+.slicepop-res.marker{color:var(--a-danger);font-family:inherit}
+.slicepop-miss{display:flex;align-items:center;gap:var(--sp-10);flex-wrap:wrap;padding:var(--sp-8) var(--sp-10);
+  border:1px solid var(--n-track);border-radius:var(--rad-surface);background:var(--n-surface-alt)}
+.slicepop-seg{display:inline-flex;border:1px solid var(--n-border-strong);border-radius:var(--rad-control);overflow:hidden}
+.slicepop-seg button{font:inherit;font-size:var(--fs-dense);border:0;background:var(--a-card);cursor:pointer;
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-10)}
+.slicepop-seg button+button{border-left:1px solid var(--n-border-strong)}
+.slicepop-seg button:hover{background:var(--n-hover)}
+.slicepop-seg button[aria-pressed="true"]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.slicepop-foot{flex:none;display:flex;justify-content:space-between;align-items:center;gap:var(--sp-8);
+  padding:var(--sp-8) var(--sp-16);border-top:1px solid var(--n-track);background:var(--n-surface-alt);
+  border-radius:0 0 var(--rad-overlay) var(--rad-overlay)}
+.slicepop-x:focus-visible,.slicepop-sample:focus-visible,.slicepop-seg button:focus-visible{
+  outline:2px solid var(--a-primary);outline-offset:2px}
+@media (max-width:760px){
+  .slicepop-body{grid-template-columns:minmax(0,1fr)}
+  .slicepop-methods{border-right:0;border-bottom:1px solid var(--n-track)}
+}
 table.map td .pv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.map tr:last-child td{border-bottom:0}
 table.map tfoot td{border-bottom:0;border-top:1px solid var(--a-border);color:var(--a-muted);

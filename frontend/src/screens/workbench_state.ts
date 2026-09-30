@@ -12,9 +12,7 @@ import type { DraftState, ServerValues } from "./editor_state.ts";
 
 export const TARGET_FONT_FIELD = "targetFont";
 
-export type MapAxis =
-  | "source" | "type" | "fmt" | "value" | "confirmed"
-  | "slice_start" | "slice_length" | "slice_delimiter" | "slice_index";
+export type MapAxis = "source" | "type" | "fmt" | "value" | "confirmed";
 
 /** 작업대 행은 index 가 아니라 **토큰 이름**이 정체다(겨눔·복사 전 확인이 이름으로 말한다). */
 export function mapField(name: string, axis: MapAxis): string {
@@ -32,16 +30,6 @@ export function workbenchServerValues(snapshot: Record<string, any>): ServerValu
     values[mapField(name, "fmt")] = String(row.fmt_code ?? "");
     values[mapField(name, "value")] = String(row.value ?? "");
     values[mapField(name, "confirmed")] = row.confirmed ? "1" : "";
-    /* 가공(slice) 입력 값은 **현재 확정된 방식**(`row.slice.mode`)이 든 축만 서버 값을
-       갖는다 — 여기서 값을 발명하지 않는다(계약 밖 기본값 금지). 편집기와 같은 규칙
-       (`editor_state.ts` 의 `editorServerValues`). */
-    const slice = (row.slice || null) as Record<string, any> | null;
-    const mode = String((slice || {}).mode || "");
-    values[mapField(name, "slice_start")] = mode === "chars" ? String(slice?.start ?? "") : "";
-    values[mapField(name, "slice_length")] = mode === "chars" ? String(slice?.length ?? "") : "";
-    values[mapField(name, "slice_delimiter")] =
-      mode === "split" ? String(slice?.delimiter ?? "") : "";
-    values[mapField(name, "slice_index")] = mode === "split" ? String(slice?.index ?? "") : "";
   }
   return values;
 }

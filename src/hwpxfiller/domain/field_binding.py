@@ -1,7 +1,7 @@
 """S5 Field Binding 의미 언어 — 값·소스 스키마·바인딩 규칙 계약 (S5-01 · #697).
 
 이 모듈이 소유하는 것: ``binding-value/v2`` 값 모델(:class:`CanonicalBindingValue` — exact
-logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v4`` 규칙 semantic
+logical text 단형), ``source-schema/v2`` exact key 계약, ``field-binding/v5`` 규칙 semantic
 모델과 exclusivity 불변식, ``document-content-value/v1`` 값 정책, Intentional Blank 의미,
 **표시형**(:data:`FORMAT_KINDS` × format code) 쌍의 계약과 렌더 단일 출처, 그리고 이 slice 국소
 canonical byte framing·digest.
@@ -15,9 +15,14 @@ v2 판본은 읽을 수 있지만(``field-binding/v2`` 는 **outdated** 로만 �
 못한다 — ``type`` 이 없어 어떤 표시형이었는지 판본만으로는 알 수 없기 때문이다.
 
 **가공도 규칙이 나른다**(v4): 데이터 칸의 일부만 쓰는 기초 가공(:mod:`hwpxfiller.domain.text_slice`
-— 글자 범위·구분자 나누기)이 ``text_slice`` 슬롯으로 판본에 실린다. 순서는 공백 정책 → 가공 →
+— v4 는 글자 범위·구분자 나누기)이 ``text_slice`` 슬롯으로 판본에 실린다. 순서는 공백 정책 → 가공 →
 표시형이고 렌더는 :func:`render_source_value` 한 곳이다. v3 판본도 v2 처럼 읽기만 하는 outdated
 판이다 — v3 에는 가공이 설 수 없었으므로 현재 Mapping 과 그대로 일치하면 무손실로 다시 확정된다.
+
+**가공 방식이 늘었다**(v5): 앞까지·뒤부터·사이·앞/뒤에서 N글자·바꾸기·지우기와 빠짐 처리
+(``on_missing`` — 빈 값/원본 그대로)가 더해졌다. v4 framing 은 두 방식(글자 범위·구분자 나누기)과
+빈 값만 적을 수 있으므로 동결하고 판을 올린다. v4 판본은 outdated 로 읽기만 하고, 현재 Mapping 의
+v4 사영과 그대로 일치하면(v4 의 두 방식은 v5 에서 같은 뜻이다) 봉인 직전 무손실로 v5 가 된다.
 
 **「오늘 날짜」도 규칙이 나른다**(v4, #950): 값이 데이터 열도 고정 리터럴도 아닌 **실행 시각**에서
 오는 Field 는 :data:`RUNTIME_DATE` kind 다. 규칙은 date 표시형 쌍만 싣고(source·constant·가공 없음),
@@ -44,14 +49,23 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from . import format_engine
-from .text_slice import TextSlice, TextSliceError, apply_text_slice, text_slice_from_payload
+from .text_slice import (
+    SLICE_KEYS_BY_MODE,
+    TextSlice,
+    TextSliceError,
+    apply_text_slice,
+    text_slice_from_payload,
+)
 
 _U32_MAX = 0xFFFF_FFFF
 
 # semantic 버전 — 코드·문서 단일 출처.
-FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v4"
+FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v5"
+#: 가공이 두 방식(글자 범위·구분자 나누기)·빈 값뿐이던 판 — 읽기만 한다(실행 입력 금지). 그 명세는
+#: v5 에서 같은 뜻이라 현재 Mapping 과 일치하면 무손실로 v5 가 된다(``upgrade_outdated_binding_if_lossless``).
+FIELD_BINDING_SEMANTIC_VERSION_V4 = "field-binding/v4"
 #: 가공 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지). 가공이 설 수 없었던 판이라 현재 Mapping 과
-#: 일치하면 무손실로 v4 가 된다(``upgrade_outdated_binding_if_lossless``).
+#: 일치하면 무손실로 현재 판이 된다(``upgrade_outdated_binding_if_lossless``).
 FIELD_BINDING_SEMANTIC_VERSION_V3 = "field-binding/v3"
 #: 표시형 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지, :func:`is_current_field_binding_contract`).
 FIELD_BINDING_SEMANTIC_VERSION_V2 = "field-binding/v2"
@@ -434,6 +448,7 @@ def render_runtime_date(format_code: str, now: datetime) -> str:
 _SUPPORTED_SEMANTIC_CONTRACTS = frozenset(
     {
         FIELD_BINDING_SEMANTIC_VERSION,
+        FIELD_BINDING_SEMANTIC_VERSION_V4,
         FIELD_BINDING_SEMANTIC_VERSION_V3,
         FIELD_BINDING_SEMANTIC_VERSION_V2,
     }
@@ -634,10 +649,21 @@ def _u32(value: int) -> bytes:
     return value.to_bytes(4, "big")
 
 
-def _encode_text_slice(text_slice: TextSlice | None) -> bytes:
-    """가공 슬롯(v4) — 없음은 0x00, 있으면 0x01 + 방식 + 방식별 고정 칸(정수는 10진 표기)."""
+#: 가공 슬롯·실행 시각 kind 가 설 수 있는 판(v4 이후). v4 framing 은 동결이다.
+_SLICE_SLOT_CONTRACTS = frozenset({FIELD_BINDING_SEMANTIC_VERSION_V4, FIELD_BINDING_SEMANTIC_VERSION})
+
+
+def _encode_text_slice_v4(text_slice: TextSlice | None) -> bytes:
+    """가공 슬롯(v4, **동결**) — 없음은 0x00, 있으면 0x01 + 방식 + 방식별 고정 칸(정수는 10진 표기).
+
+    v4 는 글자 범위·구분자 나누기와 빈 값만 적을 수 있다. 그 밖의 명세를 이 판으로 봉인하지 않는다.
+    """
     if text_slice is None:
         return b"\x00"
+    if not text_slice.is_v4_expressible:
+        raise FieldBindingInputIntegrityError(
+            f"{FIELD_BINDING_SEMANTIC_VERSION_V4} 판에는 이 가공이 없다: {text_slice.to_dict()!r}"
+        )
     out = bytearray(b"\x01")
     out += _text(text_slice.mode)
     if text_slice.delimiter is None:  # chars — start 필수, length 선택
@@ -649,23 +675,41 @@ def _encode_text_slice(text_slice: TextSlice | None) -> bytes:
     return bytes(out)
 
 
+def _encode_text_slice_v5(text_slice: TextSlice | None) -> bytes:
+    """가공 슬롯(v5) — 없음은 0x00, 있으면 0x01 + 방식 + 방식의 정본 키 순서대로 선택 칸 + 빠짐 처리.
+
+    칸 배치는 방식 문자열이 정한다(:data:`~hwpxfiller.domain.text_slice.SLICE_KEYS_BY_MODE`). 정수는
+    10진 표기다. 빠짐이 있는 방식은 ``on_missing`` 을 언제나 적는다(기본값도 bytes 에 선다).
+    """
+    if text_slice is None:
+        return b"\x00"
+    out = bytearray(b"\x01")
+    out += _text(text_slice.mode)
+    for key in SLICE_KEYS_BY_MODE[text_slice.mode]:
+        value = getattr(text_slice, key)
+        out += _opt_text(None if value is None else str(value))
+    if text_slice.missable:
+        out += _text(text_slice.on_missing)
+    return bytes(out)
+
+
 def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
     """규칙 프레이밍 — v2 는 6 슬롯, v3 는 표시형 kind 슬롯을 source_key 뒤에 더한 7 슬롯,
-    v4 는 v3 뒤에 가공 슬롯을 더한 8 슬롯.
+    v4·v5 는 v3 뒤에 가공 슬롯을 더한 8 슬롯(가공 슬롯의 안쪽 모양만 판마다 다르다).
 
     RUNTIME_DATE(v4)는 슬롯을 더하지 않는다: kind 문자열이 SOURCE 와 갈라 주고 source_key·constant·
     가공은 0x00, 표시형 쌍(``date``·code)만 선다 — 같은 규칙은 언제나 같은 bytes 다.
 
-    v2·v3 프레이밍은 **동결**이다(디스크의 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
-    ``format_kind`` 가, v2·v3 판에는 ``text_slice`` 가 설 수 없다. v3 이후 판은 표시형 쌍의
-    정본 모양을 강제한다.
+    v2·v3·v4 프레이밍은 **동결**이다(디스크의 판본 digest 가 이 bytes 로 적혀 있다). v2 판에는
+    ``format_kind`` 가, v2·v3 판에는 ``text_slice`` 가, v4 판에는 v5 가 더한 가공이 설 수 없다.
+    v3 이후 판은 표시형 쌍의 정본 모양을 강제한다.
     """
-    if rule.text_slice is not None and contract_id != FIELD_BINDING_SEMANTIC_VERSION:
+    if rule.text_slice is not None and contract_id not in _SLICE_SLOT_CONTRACTS:
         raise FieldBindingInputIntegrityError(
             f"{contract_id} 판에는 가공이 없다: {rule.field_id!r}"
         )
     # 실행 시각 kind 도 v4 에서 생겼다 — v2·v3 판으로는 봉인하지 못한다(framing 동결).
-    if rule.binding_kind == RUNTIME_DATE and contract_id != FIELD_BINDING_SEMANTIC_VERSION:
+    if rule.binding_kind == RUNTIME_DATE and contract_id not in _SLICE_SLOT_CONTRACTS:
         raise FieldBindingInputIntegrityError(
             f"{contract_id} 판에는 실행 시각 규칙이 없다: {rule.field_id!r}"
         )
@@ -695,8 +739,10 @@ def _encode_rule(rule: FieldBindingRule, contract_id: str) -> bytes:
         if rule.canonical_constant_value is None
         else rule.canonical_constant_value.text
     )
-    if contract_id == FIELD_BINDING_SEMANTIC_VERSION:
-        out += _encode_text_slice(rule.text_slice)
+    if contract_id == FIELD_BINDING_SEMANTIC_VERSION_V4:
+        out += _encode_text_slice_v4(rule.text_slice)
+    elif contract_id == FIELD_BINDING_SEMANTIC_VERSION:
+        out += _encode_text_slice_v5(rule.text_slice)
     return bytes(out)
 
 
