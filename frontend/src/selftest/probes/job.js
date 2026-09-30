@@ -51,10 +51,14 @@
  *                      — 비활성 요소의 `click()` 은 이벤트를 만들지 않으므로 「발신 0」을
  *                      배선 부재로 읽지 않기 위한 **부재판별력** 계기다 ·
  *                      mirror_focus_target_state=="ready" · job_grid_wide(2열) ·
- *                      preset_pressed=["true","false","false"](켜짐/꺼짐) ↔ preset_on_bg≠preset_off_bg ·
+ *                      preset_pressed=["true","false","true"](켜짐/꺼짐) ↔ preset_on_bg≠preset_off_bg ·
  *                      preset_cluster(추정가격 무리 = 칩 2, 홀로 선 칩은 무리 밖) ·
  *                      preset_warn_aria_disabled(true)+preset_warn_title(사유) · preset_on_title(조건) ·
- *                      preset_edit_idle_opacity(0) ↔ preset_edit_focus_opacity(1)+tab 순서 ·
+ *                      preset_menu_buttons(▾ = 켜진 칩만) ↔ preset_off_reserve(꺼진 칩은 빈자리 0) ·
+ *                      preset_ctx_menu(Shift+F10 → 고치기·삭제, Escape 복귀) · head_fico(저장본이 조이는
+ *                      열 머리 표지·title) · show_all(표시 수 바로 뒤) ↔ job_data_first.show_all_absent ·
+ *                      chip_row(격자 3칸·줄바꿈·「+ 필터」 고정·한 높이, 넓은 폭 ↔ 좁은 폭) ·
+ *                      table_expand(표 모서리 ⤢ 가 가로 스크롤 뒤에도 제자리·보임) ·
  *                      filter_new_shown · preset_toggle_sent(발신 이름열) ·
  *                      builder_*(열기·카드·「그리고」·상태·열 콤보박스 거르기·↓/Enter 로 카드 추가·닫기).
  *   · job_result     : renamed_keeps_result ↔ switch_resets_result ↔ data_swap_resets_result ↔
@@ -279,10 +283,13 @@ function mirrorSnapshot() {
     filter: {
       active: true, reapply_available: true, reapply_hint: "(공고명) 포함 「전산」",
       search: "전산",
-      chips: ["(공고명) 포함 「전산」"],
-      definition: "(공고명) 포함 「전산」", branches: ["공고명"],
-      columns: [{ name: "공고명", kind: "text", active: false },
-        { name: "금액", kind: "amount", active: false }],
+      chips: [{ column: "금액", text: "금액 ≥ '1,000,000'" }, { column: "", text: "(공고명) 포함 「전산」" }],
+      definition: "필터 '소기업' · 필터 '전산' · 금액 ≥ '1,000,000' · (공고명) 포함 「전산」",
+      branches: ["공고명"],
+      columns: [
+        { name: "공고명", kind: "text", active: false, filtered: true, constraints: ["필터 '전산'"] },
+        { name: "금액", kind: "amount", active: true, filtered: true, constraints: ["금액 ≥ '1,000,000'"] },
+      ],
       adhoc_active: true,
       presets: [
         {
@@ -300,7 +307,7 @@ function mirrorSnapshot() {
             first: { op: "ge", operand: "100,000,000" }, second: null, joiner: "and" } } } },
         },
         {
-          name: "전산", active: false, usable: true, reason: "",
+          name: "전산", active: true, usable: true, reason: "",
           dimension: "공고명", dimension_label: "공고명", description: "공고명 포함 '전산'",
           state: { search: "", pruned: [], columns: { 공고명: { text: "전산", values: null, range: null } } },
         },
@@ -480,12 +487,120 @@ function measureActionbarPlaneWithEmptyNote(ctx) {
 function measureCapActions(ctx) {
   const doc = ctx.doc;
   const head = doc.getElementById("jobRecsHead");
-  const btn = head && head.querySelector("#jobDataExpand");
+  // ⤢ 는 표 모서리로 갔다(2026-09-30) — 이 줄의 끝 행동은 이제 순서 스위치다. 같은 사실(행동이
+  // 그 줄의 오른쪽 끝에 선다)을 그 자리의 새 주인으로 잰다.
+  const btn = head && head.querySelector("#jobOrderToggle");
   if (!head || !btn) return null;
   return {
     display: ctx.win.getComputedStyle(head).display,
     far_edge: Math.round(head.getBoundingClientRect().right - btn.getBoundingClientRect().right),
   };
+}
+
+/** 칩 줄 격자와 표 모서리 ⤢ 의 실렌더 기하(2026-09-30 재설계). 칩이 넘치는 합성판을 잠시 밀어
+ *  잰 뒤 원판으로 되돌린다.
+ *  - 칩 줄: 머리표 | 칩 영역 | 「+ 필터」 세 칸. 칩 영역만 줄을 바꾸고 둘째 줄은 첫 칩 시작선에
+ *    맞으며, 「+ 필터」는 첫 줄 오른쪽 끝에 남는다. 칩·무리·「열 조건」 칩·「+ 필터」는 한 높이.
+ *    넓은 폭과 좁은 폭(작업 패널을 720px 로 고정) 두 극을 잰다.
+ *  - ⤢: 표 틀의 오른쪽 위에 붙어 가로 스크롤 뒤에도 같은 자리이고, 그 자리의 맨 위 요소다. */
+async function measureChipRowAndCorner(ctx, out, snap) {
+  const doc = ctx.doc;
+  const win = ctx.win;
+  const many = deepCopy(snap);
+  const names = ["1억미만", "1억이상고시미만", "총액계약", "육군 공고", "담당자 김담당", "집행관 박집행",
+    "공고본번호 R26BK01560904 외 1개 그리고 아주 긴 이름", "하자담보 3년", "제한경쟁", "해군 공고",
+    "공군 공고", "국방부 공고", "분할납품 가능", "기초금액 1억 이상"];
+  many.filter.presets = names.map((name, index) => ({
+    name, active: index === 1, usable: true, reason: "",
+    dimension: index < 2 ? "추정가격" : `열${index}`, dimension_label: index < 2 ? "추정가격" : `열${index}`,
+    description: `${name} 조건`, state: { search: "", pruned: [], columns: {} },
+  }));
+  many.filter.preset_groups = [{ key: "추정가격", label: "추정가격", names: names.slice(0, 2) }]
+    .concat(names.slice(2).map((name, index) => ({ key: `열${index + 2}`, label: `열${index + 2}`, names: [name] })));
+  // 가로 스크롤이 서도록 열을 넉넉히 둔다(⤢ 가 스크롤과 함께 가지 않는지 재기 위해).
+  const cols = Array.from({ length: 18 }, (_, index) => `열${index}`);
+  many.table = Object.assign({}, many.table, {
+    columns: cols.map((name) => ({ name, kind: "text" })),
+    rows: [{ index: 0, selected: true, name: "doc-001.hwpx", summary: "a",
+      cells: cols.map((name) => [[`${name} 값이 꽤 긴 칸입니다`, false]]) }],
+  });
+  many.filter.columns = cols.map((name) => ({ name, kind: "text", active: false, filtered: false, constraints: [] }));
+  await pushUntil(ctx, "job", many, () => doc.querySelectorAll("#jobFilterChips .fchip.preset").length === names.length);
+  await ctx.sleep(50);
+
+  const row = () => {
+    const box = doc.getElementById("jobFilterChips");
+    const cap = box.querySelector(".fchips-cap");
+    const area = box.querySelector(".fchips-area");
+    const plus = box.querySelector('[data-act="filter-new"]');
+    const items = Array.from(area.children).filter((e) => !e.classList.contains("fchips-sep"));
+    const rects = items.map((e) => e.getBoundingClientRect());
+    const firstTop = Math.min(...rects.map((r) => r.top));
+    const firstLeft = Math.min(...rects.filter((r) => Math.abs(r.top - firstTop) < 1).map((r) => r.left));
+    // 줄마다 첫 항목(가장 왼쪽)의 시작선 — 둘째 줄부터가 첫 칩 시작선에 맞는지 본다.
+    const lineStarts = new Map();
+    for (const r of rects) {
+      if (r.top <= firstTop + 1) continue;
+      const key = Math.round(r.top);
+      lineStarts.set(key, Math.min(lineStarts.has(key) ? lineStarts.get(key) : Infinity, r.left));
+    }
+    const laterLefts = Array.from(lineStarts.values());
+    const heights = Array.from(box.querySelectorAll(".fchips-area > .fchip, .fchips-area > .fcluster"))
+      .concat([plus]).map((e) => Math.round(e.getBoundingClientRect().height * 10) / 10);
+    const plusRect = plus.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+    const longest = box.querySelector('.preset-toggle[data-preset^="공고본번호"] .preset-name');
+    return {
+      display: win.getComputedStyle(box).display,
+      lines: new Set(rects.map((r) => Math.round(r.top))).size,
+      hanging: laterLefts.length > 0 && laterLefts.every((left) => Math.abs(left - firstLeft) <= 1),
+      starts: [Math.round(firstLeft)].concat(laterLefts.map((left) => Math.round(left))),
+      after_caption: !!cap && firstLeft >= cap.getBoundingClientRect().right,
+      plus_top: Math.round(plusRect.top - firstTop),
+      plus_right: Math.round(boxRect.right - plusRect.right),
+      plus_outside_area: !area.contains(plus),
+      heights: Array.from(new Set(heights)),
+      long_name_clipped: !!longest && longest.scrollWidth > longest.clientWidth,
+      long_title: longest ? longest.parentElement.title.startsWith("공고본번호") : false,
+    };
+  };
+  out.chip_row = row();
+  const jobPanel = doc.getElementById("jobPanel");
+  const flex = jobPanel.style.flex;
+  const width = jobPanel.style.width;
+  jobPanel.style.flex = "0 0 720px"; jobPanel.style.width = "720px";
+  await ctx.sleep(50);
+  out.chip_row_narrow = row();
+  jobPanel.style.flex = flex; jobPanel.style.width = width;
+  await ctx.sleep(50);
+
+  const host = doc.getElementById("jobTableHost");
+  const wrap = doc.getElementById("jobTableWrap");
+  const btn = doc.getElementById("jobDataExpand");
+  const place = () => {
+    const h = host.getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    const hit = doc.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return {
+      right: Math.round(h.right - b.right), top: Math.round(b.top - h.top),
+      on_top: !!hit && (hit === btn || btn.contains(hit)),
+    };
+  };
+  out.table_expand = btn && host && wrap ? {
+    in_host: host.contains(btn) && !wrap.contains(btn),
+    label: btn.getAttribute("aria-label"), title: btn.title, text: btn.textContent,
+    scroll_width: wrap.scrollWidth > wrap.clientWidth,
+    before: place(),
+  } : null;
+  if (out.table_expand) {
+    wrap.scrollLeft = 400;
+    await ctx.sleep(50);
+    out.table_expand.scrolled = wrap.scrollLeft > 0;
+    out.table_expand.after = place();
+    wrap.scrollLeft = 0;
+  }
+  await pushUntil(ctx, "job", snap, () => doc.querySelectorAll("#jobFilterChips .fchip.preset").length === snap.filter.presets.length);
+  await ctx.sleep(0);
 }
 
 /** 레거시가 `_probe_late`(app.py:3888)로 회수하던 탐색 3필드의 모양. `String`·`!!` 변환까지
@@ -697,6 +812,8 @@ async function runJobDataFirst(ctx) {
   out.actionbar_plane = measureActionbarPlane(ctx);
   out.actionbar_plane_empty_note = measureActionbarPlaneWithEmptyNote(ctx);
   out.cap_actions = measureCapActions(ctx);
+  out.show_all_absent = !doc.getElementById("jobShowAll");
+  out.sel_count_plain = doc.getElementById("jobSelCount")?.textContent || "";
   out.actionbar_shown = isShown(ctx, doc.getElementById("jobActionBar"));
   out.cands_row_shown = isShown(ctx, doc.getElementById("jobCandsRow"));
   out.cand_buttons = doc.querySelectorAll("#jobCandidates [data-cand]").length;
@@ -987,7 +1104,7 @@ async function runJobMirror(ctx) {
   out.branch_border_style = win.getComputedStyle(branchChip).borderStyle;
 
   /* 저장한 필터 칩(2026-09-30 재설계) — 같은 열 무리(알약 + 표지)·홀로 선 칩·켜짐/꺼짐 배경
-     대조·경고 사유·조건 title·⋯ 고치기의 머묾 노출(탭 순서 유지)·토글 발신·「+ 필터」 빌더. */
+     대조·경고 사유·조건 title·▾ 메뉴(켜진 칩만)·문맥 메뉴·토글 발신·「+ 필터」 빌더. */
   out.preset_chips = doc.querySelectorAll("#jobFilterChips .fchip.preset").length;
   out.preset_pressed = Array.from(doc.querySelectorAll(".preset-toggle")).map(
     (e) => e.getAttribute("aria-pressed"),
@@ -1007,14 +1124,45 @@ async function runJobMirror(ctx) {
   out.preset_on_title = onToggle.title;
   out.preset_on_bg = win.getComputedStyle(onToggle.closest(".fchip.preset")).backgroundColor;
   out.preset_off_bg = win.getComputedStyle(warnToggle.closest(".fchip.preset")).backgroundColor;
-  const idleEdit = doc.querySelector('[data-preset-edit="전산"]');
-  out.preset_edit_idle_opacity = win.getComputedStyle(idleEdit).opacity;
-  out.preset_edit_in_tab_order = idleEdit.tabIndex >= 0
-    && win.getComputedStyle(idleEdit).display !== "none";
-  idleEdit.focus();
-  await ctx.sleep(220);                                // 전이(≤150ms)가 끝난 뒤 읽는다
-  out.preset_edit_focus_opacity = win.getComputedStyle(idleEdit).opacity;
-  idleEdit.blur();
+  /* ▾ 는 켜진 칩에만 선다 — 꺼진 칩은 이름 단추가 칩 폭 전부다(빈자리 예약 0, 테두리 2px 만). */
+  out.preset_menu_buttons = Array.from(doc.querySelectorAll("#jobFilterChips [data-preset-menu]")).map(
+    (e) => e.getAttribute("data-preset-menu"),
+  );
+  out.preset_off_reserve = Math.round(
+    warnToggle.closest(".fchip.preset").getBoundingClientRect().width - warnToggle.getBoundingClientRect().width,
+  );
+  /* 문맥 메뉴 키(Shift+F10)는 꺼진 칩에도 같은 메뉴(고치기·삭제)를 세우고 첫 항목으로 초점을 옮긴다.
+     Escape 는 메뉴만 닫고 연 칩으로 초점을 돌린다. */
+  warnToggle.focus();
+  warnToggle.dispatchEvent(new win.KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true }));
+  await ctx.sleep(50);
+  const ctxPop = doc.querySelector('[data-preset-pop="중소기업"]');
+  out.preset_ctx_menu = ctxPop ? {
+    role: ctxPop.getAttribute("role"),
+    items: Array.from(ctxPop.querySelectorAll('[role="menuitem"]')).map((e) => e.textContent),
+    focus_first: doc.activeElement === ctxPop.querySelector('[role="menuitem"]'),
+    shown: isShown(ctx, ctxPop),
+  } : null;
+  if (ctxPop) {
+    ctxPop.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await ctx.sleep(50);
+  }
+  out.preset_ctx_closed = !doc.querySelector("[data-preset-pop]") && doc.activeElement === warnToggle;
+  warnToggle.blur();
+  /* 저장한 필터가 조이는 열의 머리도 표지를 세우고, title 이 무엇이 조이는지 이름으로 말한다. */
+  out.head_fico = Array.from(doc.querySelectorAll("#jobTableHead .fico[data-col]")).map(
+    (e) => [e.getAttribute("data-col"), e.classList.contains("on"), e.title],
+  );
+  /* 「모두 보기」 — 필터가 선 동안 표시 수 바로 뒤의 조용한 글 링크. 「필터 지우기」는 없다. */
+  const showAll = doc.getElementById("jobShowAll");
+  out.show_all = showAll ? {
+    text: showAll.textContent,
+    after_count: showAll.previousElementSibling === doc.getElementById("jobSelCount"),
+    count_text: doc.getElementById("jobSelCount").textContent,
+    border: win.getComputedStyle(showAll).borderTopColor === "rgba(0, 0, 0, 0)",
+    underline: win.getComputedStyle(showAll).textDecorationLine,
+  } : null;
+  out.filter_clear_gone = !doc.querySelector('[data-act="filter-clear"]');
   const newBtn = doc.querySelector('#jobFilterChips [data-act="filter-new"]');
   out.filter_new_shown = !!newBtn && isShown(ctx, newBtn);
   out.filter_save_gone = !doc.querySelector('[data-act="filter-save"]');
@@ -1026,6 +1174,10 @@ async function runJobMirror(ctx) {
     if (action === "toggle_filter_preset") {
       presetSent.push(payload.name);
       return Promise.resolve({ ok: true, active: false });
+    }
+    if (action === "filter_clear") {
+      presetSent.push("모두 보기");
+      return Promise.resolve({});
     }
     if (action === "count_filter_state") {
       countSent.push(payload.state);
@@ -1041,6 +1193,8 @@ async function runJobMirror(ctx) {
     return realCall.call(services.Bridge, screen, action, payload);
   });
   onToggle.click();                                   // ※ 가시성 단언 없음(레거시 그대로)
+  await ctx.sleep(0);
+  if (showAll) showAll.click();
   await ctx.sleep(0);
   out.preset_toggle_sent = String(JSON.stringify(presetSent));
 
@@ -1121,8 +1275,12 @@ async function runJobMirror(ctx) {
   out.builder_closed_on_escape = !doc.getElementById("jobFilterBuilder");
   out.builder_focus_returned = doc.activeElement === newBtn;
 
-  /* ⋯ 고치기 — 제목·이름 프리필·삭제 단추, 바깥 누름으로 닫힌다. */
-  doc.querySelector('[data-preset-edit="소기업"]').click();
+  /* ▾ → 「고치기」 — 제목·이름 프리필·삭제 단추, 바깥 누름으로 닫힌다. */
+  const menuBtn = doc.querySelector('[data-preset-menu="소기업"]');
+  menuBtn.click();
+  await ctx.sleep(50);
+  out.preset_menu_expanded = menuBtn.getAttribute("aria-expanded");
+  doc.querySelector('[data-preset-pop="소기업"] [data-preset-act="edit"]')?.click();
   await ctx.sleep(50);
   const editRoot = doc.getElementById("jobFilterBuilder");
   out.edit_title = editRoot?.querySelector("#jobFilterBuilderTitle")?.textContent || "";
@@ -1132,6 +1290,8 @@ async function runJobMirror(ctx) {
   await ctx.sleep(50);
   out.edit_closed_outside = !doc.getElementById("jobFilterBuilder");
   presetStub.restore();
+
+  await measureChipRowAndCorner(ctx, out, snap);
 
   out.strip_shown = isShown(ctx, doc.getElementById("jobSelStrip"));
   out.strip_text = doc.getElementById("jobSelStrip").textContent;

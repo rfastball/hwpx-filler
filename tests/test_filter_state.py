@@ -619,6 +619,47 @@ def test_preset_and_adhoc_conditions_combine_with_and() -> None:
     assert m.visible_indices(PRICE_ROWS) == [1, 4]
 
 
+def test_column_headers_see_saved_filter_groups_and_header_edits_keep_the_chip_on() -> None:
+    """켜진 저장본은 이 모델의 무리다 — 그 열의 머리도 조건 표지(무리 문안)를 세우고, 그 열의
+    머리 편집은 지금 조건(그리고)을 더할 뿐 칩을 끄지 않는다. 「열 조건」 칩은 머리 조건만이다."""
+    m = price_model()
+    _save_small_and_medium(m)
+    assert m.column_constraints("추정가격") == []
+    m.toggle_preset("소기업")
+    m.toggle_preset("중소기업")
+    assert m.column_constraints("추정가격") == ["필터 '소기업' 또는 '중소기업'"]
+    assert m.column_constraints("공고명") == [] and not m.has_condition("추정가격")
+    m.set_range("추정가격", RangeCondition(RangeClause("ge", "100,000,000")))
+    assert m.active_presets == ["소기업", "중소기업"]  # 머리 편집은 칩을 끄지 않는다
+    assert m.column_constraints("추정가격") == [
+        "필터 '소기업' 또는 '중소기업'", "추정가격 ≥ '100,000,000'",
+    ]
+    view = m.view(PRICE_ROWS)
+    assert view.visible_indices() == [1, 4]  # (소기업 ∨ 중소기업) ∧ 머리 조건
+    assert [chip["column"] for chip in view.adhoc_chips()] == ["추정가격"]
+    assert view.adhoc_chips()[0]["text"] == "추정가격 ≥ '100,000,000'"
+    m.set_search("청")
+    chips = m.view(PRICE_ROWS).adhoc_chips()
+    assert [chip["column"] for chip in chips] == ["추정가격", ""]  # 검색 칩은 열이 없다(× 없음)
+    assert chips[-1]["text"] == "검색 '청' (매치 없음)"
+    m.clear()  # 「모두 보기」 — 머리 조건·검색·켜진 저장본 전부(정의는 남는다)
+    assert not m.is_active() and m.column_constraints("추정가격") == [] and len(m.presets) == 2
+
+
+def test_saved_filter_search_is_a_group_member_evaluated_by_the_same_predicates() -> None:
+    """검색을 든 저장본도 곁 모델 없이 평가된다 — 가지는 그 저장본 자신의 열 조건을 통과한 행에서."""
+    m = price_model()
+    m.create_preset("소액 청소", {"columns": SMALL["columns"], "search": "청소"})
+    assert m.visible_indices(PRICE_ROWS) == [0]
+    assert m.preset_description("소액 청소", PRICE_ROWS) == (
+        "추정가격 < '100,000,000' · (공고명) 포함 '청소'"
+    )
+    assert m.count_state({"search": "용", "columns": {}}, PRICE_ROWS) == 3  # 공용·사무용품·용역
+    m.set_search("방역")  # 지금 검색은 그리고 — 저장본의 가지 산출을 바꾸지 않는다
+    assert m.visible_indices(PRICE_ROWS) == []
+    assert not hasattr(m, "_preset_models")  # 곁 평가 모델을 들지 않는다
+
+
 def test_create_preset_from_adhoc_crystallizes_the_current_conditions() -> None:
     """지금 조건으로 채워 연 빌더의 저장 = 칩 하나로 접힌다. 보이는 행은 그대로다."""
     m = price_model()
@@ -704,17 +745,38 @@ def test_create_preset_refuses_loudly() -> None:
     assert [p["name"] for p in m.presets] == ["전산"]  # 거절은 아무것도 남기지 않는다
 
 
-def test_empty_name_takes_the_condition_summary() -> None:
-    """이름을 비우고 저장하면 조건 요약(칩 title 과 같은 문안)이 이름이 된다 — 같은 이름 규칙 그대로."""
+def test_empty_name_takes_the_short_condition_summary() -> None:
+    """이름을 비우고 저장하면 짧은 조건 요약이 이름이 된다 — 같은 이름 규칙 그대로, 전문은 title 이 든다."""
     m = price_model()
-    assert m.describe_state(SMALL, PRICE_ROWS) == "추정가격 < '100,000,000'"
-    assert m.describe_state({"columns": {}}, PRICE_ROWS) == ""
-    assert m.create_preset("  ", SMALL, records=PRICE_ROWS) == "추정가격 < '100,000,000'"
+    assert m.name_state(SMALL) == "추정가격 < 100,000,000"
+    assert m.name_state({"columns": {}}) == ""
+    assert m.create_preset("  ", SMALL) == "추정가격 < 100,000,000"
     with pytest.raises(ValueError, match="같은 이름의 필터가 있습니다"):
-        m.create_preset("", SMALL, records=PRICE_ROWS)
-    assert m.update_preset("추정가격 < '100,000,000'", "", MEDIUM, records=PRICE_ROWS) == (
+        m.create_preset("", SMALL)
+    # 「사이」(≥ a 그리고 < b)는 ``a~b`` 다 — 단위를 줄여 쓰지 않는다(피연산자는 쓴 그대로).
+    assert m.update_preset("추정가격 < 100,000,000", "", MEDIUM) == "추정가격 100,000,000~220,000,000"
+    # 전문은 칩 title(정의줄 조각과 같은 생산자)이 든다.
+    assert m.preset_description("추정가격 100,000,000~220,000,000", PRICE_ROWS) == (
         "추정가격 ≥ '100,000,000' ∧ < '220,000,000'"
     )
+
+
+def test_short_names_count_extra_values_and_keep_other_shapes() -> None:
+    m = price_model()
+    many = {"columns": {"공고명": {"values": ["청사 청소", "전산 유지보수", "", "방역 용역"]}}}
+    assert m.name_state(many) == "공고명 청사 청소 외 3개"
+    assert m.name_state({"columns": {"공고명": {"values": [""]}}}) == "공고명 (빈값)"
+    assert m.name_state({"columns": {"공고명": {"text": "전산"}}, "search": "청"}) == (
+        "공고명 포함 '전산' · 검색 '청'"
+    )
+    two = {"columns": {"계약일자": {"range": {
+        "first": {"op": "ge", "operand": "2026-01-01"},
+        "second": {"op": "le", "operand": "2026-06-30"}, "joiner": "and"}}}}
+    assert m.name_state(two) == "계약일자 ≥ 2026-01-01 ∧ ≤ 2026-06-30"  # 「사이」 모양이 아니면 기호 그대로
+    # 열 순서로 잇는다(빌더 카드 순서가 아니라 표의 열 순서).
+    assert m.name_state({"columns": {
+        "추정가격": SMALL["columns"]["추정가격"], "공고명": {"values": ["사무용품"]},
+    }}) == "공고명 사무용품 · 추정가격 < 100,000,000"
 
 
 def test_state_refusals_point_at_their_column() -> None:
@@ -819,7 +881,7 @@ def test_export_apply_carry_active_preset_names_only() -> None:
     assert not blank.is_active() and blank.presets == m.presets
     installed, dropped = blank.apply_state(state)
     assert installed == ["공고명", "필터 '중소기업'", "필터 '소기업'"] and dropped == []
-    m.clear()  # 「필터 지우기」는 켜진 칩도 끈다(정의는 남는다)
+    m.clear()  # 「모두 보기」는 켜진 칩도 끈다(정의는 남는다)
     assert not m.is_active() and len(m.presets) == 2
 
 

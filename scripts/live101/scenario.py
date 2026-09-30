@@ -442,7 +442,7 @@ def run(ctx: ScenarioContext) -> dict:
     # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------
     # 여는 것 자체가 Python 왕복(초안 생성)이고, 여기서의 편집은 **적용 전까지** 메인 범위를
     # 바꾸지 않는다. 캡처 뒤 **취소**로 나오므로 아래 단계들의 상태는 그대로다.
-    s.click_sel("#jobDataExpand", what="펼쳐서 행 고르기")
+    s.click_sel("#jobDataExpand", what="표 크게 열기")
     s.wait(
         "!document.getElementById('dataSheet').classList.contains('hidden')"
         " && document.getElementById('dataSheetSlot').contains("

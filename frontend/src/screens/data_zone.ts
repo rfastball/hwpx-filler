@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { roveFocus } from "./authoring_a11y.ts";
 import { icon } from "./icons.ts";
 
 type Obj = Record<string, any>;
@@ -41,7 +42,10 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
 }
 
 function useUi(controller: JobReadController) {
-  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot);
+  // 셋째 인자는 서버 렌더(단위 테스트의 정적 마크업)용 — 앱에서는 쓰이지 않고 같은 스냅샷을 읽는다.
+  return useSyncExternalStore(
+    controller.uiModel.subscribe, controller.uiModel.getSnapshot, controller.uiModel.getSnapshot,
+  );
 }
 
 function asObject(value: unknown, label: string): Obj {
@@ -134,48 +138,145 @@ function ColumnPanel(props: {
         onClick: () => { close(); void controller.zone("hide_column", { column }); } }, "이 열 숨기기") : null));
 }
 
-/* 저장한 필터 칩 줄(2026-09-30 재설계 — 슬라이서 관례) — 판정(켜짐·사용 가부·사유·차원·무리·
-   조건 문안·저장 가부)은 전부 Python 이 싣고, 여기는 그리기와 동사 호출만 한다.
+/* 저장한 필터 칩 줄(2026-09-30 재설계) — 판정(켜짐·사용 가부·사유·차원·무리·조건 문안·저장 가부)은
+   전부 Python 이 싣고, 여기는 그리기와 동사 호출만 한다.
 
-   - 같은 차원(같은 열)을 보는 칩이 둘 이상이면 **무리**(알약 묶음 + 열 이름 표지)로 선다 —
-     무리 안은 「또는」, 무리 사이는 「그리고」라는 합성 규칙을 모양이 말한다. 홀로 선 칩은
-     묶지 않는다(표지 하나에 칩 하나는 소음이다).
-   - 칩은 이름 하나를 든 `<button aria-pressed>` 이고, 조건 문안은 Python 이 지은 `description`
-     을 `title` 로 싣는다(정의줄과 같은 생산자). ⋯ 은 칩에 머물거나 초점이 들 때만 보이지만
-     탭 순서에는 늘 있다(`opacity` — `display:none` 이 아니다).
+   - 줄은 세 칸 격자다: 「저장한 필터」 머리표 | 칩 영역 | 「+ 필터」. 칩 영역만 줄을 바꾸고(둘째 줄은
+     첫 칩 시작선에 맞는다), 「+ 필터」는 칩 수와 무관하게 첫 줄 오른쪽에 선다.
+   - 같은 차원(같은 열)을 보는 칩이 둘 이상이면 **무리**(알약 묶음 + 열 이름 표지)로 선다 — 무리 안은
+     「또는」, 무리 사이는 「그리고」라는 합성 규칙을 모양이 말한다. 홀로 선 칩은 묶지 않는다.
+   - 칩은 이름 하나를 든 `<button aria-pressed>` 이고, 조건 문안은 Python 이 지은 `description` 을
+     `title` 로 싣는다. 켜진 칩에만 ▾ 메뉴 단추(「고치기」·「삭제」)가 선다 — 꺼진 칩은 빈자리를
+     남기지 않는다. 어느 칩이든 문맥 메뉴 동작(오른쪽 누름·Shift+F10·메뉴 키)이 같은 메뉴를 연다.
    - 쓸 수 없는 칩도 눌리게 두고(aria-disabled) 거절은 백엔드 사유를 그대로 알린다 — 비활성
      단추는 사유를 말할 자리가 없다. */
-function PresetChip(props: {
+
+/** 저장한 필터 삭제 확인 — 칩 메뉴와 빌더 「삭제」가 같은 모달을 쓴다(손실 집합 = 그 저장본 하나).
+ *  지금 조건·다른 칩은 그대로라 손실로 적지 않는다. 확인하면 삭제 동사의 결과를, 취소면 null 을 준다. */
+export async function deletePreset(
+  controller: JobReadController, name: string, returnFocus: HTMLElement | null,
+): Promise<Obj | null> {
+  const accepted = await controller.confirm({
+    title: "저장한 필터 삭제", body: `사라지는 것: 저장한 필터 '${name}'`,
+    confirmLabel: "삭제", cancelLabel: "취소", danger: true, returnFocus,
+  });
+  if (!accepted) return null;
+  return controller.zone("delete_filter_preset", { name });
+}
+
+/** 칩에서 메뉴를 여는 키인가 — Shift+F10·메뉴 키(APG 문맥 메뉴). 한글 조합 중에는 아니다. */
+export function isMenuKey(event: { key: string; shiftKey?: boolean; isComposing?: boolean }): boolean {
+  if (event.isComposing) return false;
+  return event.key === "ContextMenu" || (event.key === "F10" && !!event.shiftKey);
+}
+
+type MenuSpec = { name: string; trigger: HTMLElement | null };
+
+function PresetMenu(props: {
+  name: string;
+  close(focusTrigger: boolean): void;
+  onEdit(): void;
+  onDelete(): void;
+}): ReactNode {
+  const { name, close, onEdit, onDelete } = props;
+  const root = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    root.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const doc = root.current?.ownerDocument;
+    if (!doc) return;
+    function onDown(event: MouseEvent): void {
+      const target = event.target as Node | null;
+      if (target && root.current?.parentElement?.contains(target)) return;
+      closeRef.current(false); // 바깥 누름은 누른 자리가 초점을 가진다
+    }
+    doc.addEventListener("mousedown", onDown, true);
+    return () => doc.removeEventListener("mousedown", onDown, true);
+  }, []);
+  return h("div", {
+    className: "ctx-menu preset-pop", role: "menu", ref: root, "aria-label": `${name} 필터 메뉴`,
+    "data-preset-pop": name,
+    onKeyDown: (event: Obj) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key === "Tab") { close(false); return; }
+      roveFocus(event as any, event.currentTarget, '[role="menuitem"]', "vertical");
+    },
+  },
+  h("button", {
+    type: "button", role: "menuitem", tabIndex: -1, "data-preset-act": "edit", "data-busy-lock": true,
+    onClick: onEdit,
+  }, "고치기"),
+  h("button", {
+    type: "button", role: "menuitem", tabIndex: -1, className: "danger", "data-preset-act": "delete",
+    "data-busy-lock": true, onClick: onDelete,
+  }, "삭제"));
+}
+
+export function PresetChip(props: {
   preset: Obj;
   controller: JobReadController;
-  editing: boolean;
+  menu: MenuSpec | null;
+  openMenu(name: string, trigger: HTMLElement): void;
+  closeMenu(focusTrigger: boolean): void;
   onEdit(name: string, trigger: HTMLElement): void;
 }): ReactNode {
-  const { preset, controller, editing, onEdit } = props;
+  const { preset, controller, menu, openMenu, closeMenu, onEdit } = props;
   const name = String(preset.name);
+  const active = !!preset.active;
+  const open = menu?.name === name;
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
   async function toggle(): Promise<void> {
     const result = await controller.zone("toggle_filter_preset", { name });
     if (result.stale) return;
     if (result.ok === false) controller.notify(`확인 필요: ${result.error}`);
   }
   return h("span", {
-    className: `fchip preset${preset.active ? " on" : ""}${preset.usable ? "" : " warn"}`,
+    className: `fchip preset${active ? " on" : ""}${preset.usable ? "" : " warn"}`,
     "data-preset-chip": name,
   },
   h("button", {
-    className: "preset-toggle", type: "button", "data-preset": name, "data-busy-lock": true,
-    "aria-pressed": preset.active ? "true" : "false",
+    className: "preset-toggle", type: "button", "data-preset": name, "data-busy-lock": true, ref: toggleRef,
+    "aria-pressed": active ? "true" : "false",
     "aria-disabled": preset.usable ? undefined : "true",
     // 툴팁 = `이름: 설명`(긴 이름은 칩에서 말줄임된다). 쓸 수 없는 칩은 사유 한 문장이 진다.
     title: preset.usable ? `${name}: ${String(preset.description || "")}` : String(preset.reason || ""),
     onClick: () => { void toggle(); },
-  }, name),
-  h("button", {
-    className: "preset-edit", type: "button", "data-preset-edit": name, "data-busy-lock": true,
-    "aria-label": `${name} 필터 고치기`, title: `${name} 필터 고치기`, "aria-haspopup": "dialog",
-    "aria-expanded": editing ? "true" : "false",
-    onClick: (event: Obj) => onEdit(name, event.currentTarget as HTMLElement),
-  }, icon("more")));
+    onContextMenu: (event: Obj) => { event.preventDefault(); openMenu(name, event.currentTarget as HTMLElement); },
+    onKeyDown: (event: Obj) => {
+      if (!isMenuKey({ key: event.key, shiftKey: event.shiftKey, isComposing: event.nativeEvent?.isComposing })) return;
+      event.preventDefault();
+      openMenu(name, event.currentTarget as HTMLElement);
+    },
+  }, h("span", { className: "preset-name" }, name)),
+  active ? h("button", {
+    className: "preset-menu", type: "button", "data-preset-menu": name, "data-busy-lock": true,
+    "aria-label": `${name} 필터 메뉴`, title: `${name} 필터 메뉴`, "aria-haspopup": "menu",
+    "aria-expanded": open ? "true" : "false",
+    onClick: (event: Obj) => {
+      if (open) closeMenu(true);
+      else openMenu(name, event.currentTarget as HTMLElement);
+    },
+  }, icon("chevron-down")) : null,
+  open ? h(PresetMenu as any, {
+    name,
+    close: closeMenu,
+    onEdit: () => {
+      closeMenu(false);
+      const trigger = toggleRef.current;
+      if (trigger) onEdit(name, trigger);
+    },
+    onDelete: () => {
+      const trigger = menu?.trigger || toggleRef.current;
+      closeMenu(false);
+      void deletePreset(controller, name, trigger).then((result) => {
+        if (!result || result.stale) return;
+        if (result.ok === false) { controller.notify(`확인 필요: ${result.error}`); return; }
+        // 지운 칩은 사라진다 — 초점은 늘 서 있는 「+ 필터」로(빌더 「삭제」와 같은 착지).
+        controller.doc.querySelector<HTMLElement>('[data-act="filter-new"]')?.focus();
+      });
+    },
+  }) : null);
 }
 
 export function FilterChipRow(props: {
@@ -188,33 +289,63 @@ export function FilterChipRow(props: {
   onEdit(name: string, trigger: HTMLElement): void;
 }): ReactNode {
   const { filter, hasData, hiddenColumns, controller, builder, onNew, onEdit } = props;
+  const [menu, setMenu] = useState<MenuSpec | null>(null);
   const presets = (filter.presets || []) as Obj[];
   const byName = new Map(presets.map((preset) => [String(preset.name), preset]));
   const groups = (filter.preset_groups || []) as Obj[];
   const source = (filter.builder || {}) as Obj;
-  const chips = filter.active ? (filter.chips || []) as string[] : [];
+  const chips = filter.active ? (filter.chips || []) as Obj[] : [];
   const branches = filter.active ? (filter.branches || []) as string[] : [];
-  const tail = chips.length + branches.length + (filter.active ? 1 : 0) + (hiddenColumns.length ? 1 : 0);
+  const tail = chips.length + branches.length + (hiddenColumns.length ? 1 : 0);
+  const openMenu = (name: string, trigger: HTMLElement) => setMenu({ name, trigger });
+  const closeMenu = (focusTrigger: boolean) => {
+    const trigger = menu?.trigger;
+    setMenu(null);
+    if (focusTrigger && trigger && trigger.isConnected) trigger.focus();
+  };
   const chip = (preset: Obj) => h(PresetChip as any, {
-    key: `p-${preset.name}`, preset, controller, onEdit,
-    editing: builder?.mode === "edit" && builder.name === preset.name,
+    key: `p-${preset.name}`, preset, controller, onEdit, openMenu, closeMenu,
+    menu: menu && byName.has(menu.name) ? menu : null,
   });
-  return h("div", { className: "fchips", id: "jobFilterChips", hidden: !hasData },
+  return h("div", { className: `fchips${presets.length ? "" : " nocap"}`, id: "jobFilterChips", hidden: !hasData },
     presets.length ? h("span", { className: "fchips-cap", key: "preset-cap" }, "저장한 필터") : null,
-    ...groups.map((group: Obj) => {
-      const members = ((group.names || []) as string[])
-        .map((name) => byName.get(String(name))).filter(Boolean) as Obj[];
-      if (members.length < 2) return members.length ? chip(members[0]) : null;
-      return h("span", {
-        className: "fcluster", role: "group", key: `g-${group.key}`,
-        "data-dimension": String(group.key), "aria-label": String(group.label),
+    h("div", { className: "fchips-area", key: "area" },
+      ...groups.map((group: Obj) => {
+        const members = ((group.names || []) as string[])
+          .map((name) => byName.get(String(name))).filter(Boolean) as Obj[];
+        if (members.length < 2) return members.length ? chip(members[0]) : null;
+        return h("span", {
+          className: "fcluster", role: "group", key: `g-${group.key}`,
+          "data-dimension": String(group.key), "aria-label": String(group.label),
+        },
+        h("span", { className: "fcluster-label", "aria-hidden": "true" }, String(group.label)),
+        ...members.map(chip));
+      }),
+      presets.length && tail ? h("span", { className: "fchips-sep", "aria-hidden": "true", key: "sep" }) : null,
+      // 열 머리에서 세운 지금 조건 — 저장한 필터와 갈라 읽히게 「열 조건」으로 부른다. × 는 그 열의
+      // 조건만 지운다(검색 칩은 검색창이 편집기라 × 가 없다). 문안은 Python 정의줄 조각 그대로.
+      ...chips.map((item: Obj, index: number) => h("span", {
+        className: "fchip definition", key: `c-${index}`, title: String(item.text || ""),
+        "data-chip-column": item.column ? String(item.column) : undefined,
       },
-      h("span", { className: "fcluster-label", "aria-hidden": "true" }, String(group.label)),
-      ...members.map(chip));
-    }),
+      h("span", { className: "chip-role" }, "열 조건"),
+      h("span", { className: "chip-text" }, String(item.text || "")),
+      item.column ? h("button", {
+        type: "button", "data-clear-col": String(item.column), "data-busy-lock": true,
+        "aria-label": `${item.column} 열 조건 지우기`,
+        onClick: () => { void controller.zone("filter_clear_col", { column: String(item.column) }); },
+      }, "×") : null)),
+      ...branches.map((branch: string) => h("span", { className: "fchip branch", key: `b-${branch}` },
+        h("span", { className: "chip-role" }, "가지"), branch,
+        h("button", { "data-prune": branch, "data-busy-lock": true, "aria-label": `${branch} 가지 제거`,
+          onClick: () => { void controller.zone("filter_prune", { column: branch }); } }, "×"))),
+      hiddenColumns.length ? h("span", { className: "fchip hidecols", title: hiddenColumns.join(", "), key: "hidecols" },
+        h("span", { className: "chip-role" }, "보기"), `열 ${hiddenColumns.length}개 숨김 — 생성에는 그대로 쓰입니다`,
+        h("button", { "data-act": "unhide-cols", "data-busy-lock": true, "aria-label": "숨긴 열 모두 표시",
+          onClick: () => { void controller.zone("unhide_columns", {}); } }, "×")) : null),
     // 「+ 필터」 — 저장할 곳(등록 데이터)이 없으면 눌러도 사유를 알린다(판정·사유는 Python).
     h("button", {
-      className: "btn sm fnew", type: "button", "data-act": "filter-new", "data-busy-lock": true,
+      className: "btn sm fnew", type: "button", "data-act": "filter-new", "data-busy-lock": true, key: "new",
       "aria-haspopup": "dialog", "aria-expanded": builder?.mode === "create" ? "true" : "false",
       "aria-disabled": source.can_create === false ? "true" : undefined,
       title: source.can_create === false ? String(source.reason || "") : undefined,
@@ -225,35 +356,22 @@ export function FilterChipRow(props: {
         }
         onNew(event.currentTarget as HTMLElement);
       },
-    }, "+ 필터"),
-    tail ? h("span", { className: "fchips-sep", "aria-hidden": "true" }) : null,
-    // 열 머리에서 세운 지금 조건 — 저장한 필터와 갈라 읽히게 「열 조건」으로 부른다.
-    ...chips.map((text: string, index: number) => h("span", { className: "fchip definition", key: `c-${index}` },
-      h("span", { className: "chip-role" }, "열 조건"), text)),
-    ...branches.map((branch: string) => h("span", { className: "fchip branch", key: `b-${branch}` },
-      h("span", { className: "chip-role" }, "가지"), branch,
-      h("button", { "data-prune": branch, "data-busy-lock": true, "aria-label": `${branch} 가지 제거`,
-        onClick: () => { void controller.zone("filter_prune", { column: branch }); } }, "×"))),
-    filter.active ? h("button", { className: "btn sm", "data-act": "filter-clear", "data-busy-lock": true,
-      onClick: () => { void controller.zone("filter_clear", {}); } }, "필터 지우기") : null,
-    hiddenColumns.length ? h("span", { className: "fchip hidecols", title: hiddenColumns.join(", ") },
-      h("span", { className: "chip-role" }, "보기"), `열 ${hiddenColumns.length}개 숨김 — 생성에는 그대로 쓰입니다`,
-      h("button", { "data-act": "unhide-cols", "data-busy-lock": true, "aria-label": "숨긴 열 모두 표시",
-        onClick: () => { void controller.zone("unhide_columns", {}); } }, "×")) : null);
+    }, "+ 필터"));
 }
 
-/* ---------------------------------------------------------------- 필터 빌더(「+ 필터」·⋯)
+/* ---------------------------------------------------------------- 필터 빌더(「+ 필터」·칩 메뉴 「고치기」)
    조건 = 열 하나당 카드 하나(상태 문법이 열마다 조건 하나를 든다). 카드는 세로로 쌓이고 사이에
    가운데 「그리고」 줄이 선다. 맨 아래에는 늘 점선 「새 조건」 카드가 있고, 그 안의 콤보박스가 열을
    고른다(40–60열 계약 목록에서 select 는 못 쓴다). 열 이름 거르기는 Python `list_filter_columns`
-   가 한다 — 전체 열 검색과 같은 자모 부분일치를 브라우저에 다시 짓지 않는다.
+   가 한다 — 전체 열 검색과 같은 자모 부분일치를 브라우저에 다시 짓지 않는다. 「+ 필터」는 지금 열 조건
+   (검색 포함)으로 채워 열고, 「비우고 시작」이 그 초안을 비운다.
    카드 편집기는 열 유형(Python 판정)을 따른다: 금액·날짜 = 한국어 비교 말 7개(「사이」 = ≥ a 그리고
    < b), 텍스트 = 값 고르기(태그) | 포함 글자. 열 머리 메뉴에서 건 2절 AND/OR 범위처럼 7개 말로
    옮길 수 없는 조건은 그 편집기(기호 2절) 그대로 보인다 — 옮기다 조용히 바꾸지 않는다.
    검증·수·요약·저장은 전부 Python 동사다. */
 export type BuilderSpec = { mode: "create" | "edit"; name: string };
 /** 닫힌 뒤 초점이 갈 자리 — 연 단추(`trigger`) · 누른 자리 그대로(`none`) · 「+ 필터」(`new`) ·
- *  고친 칩의 ⋯(`{ edit: 새 이름 }` — 이름이 바뀌면 칩이 다시 그려지므로 이름으로 찾는다). */
+ *  고친 칩(`{ edit: 새 이름 }` — 이름이 바뀌면 칩이 다시 그려지므로 이름으로 찾는다). */
 export type BuilderFocus = "trigger" | "none" | "new" | { edit: string };
 export type BuilderColumn = { name: string; kind: string; label?: string; values: string[]; more?: number };
 type Clause = { op: string; operand: string };
@@ -537,21 +655,21 @@ export function builderKeyAction(
   return null;
 }
 
-/** 닫힌 뒤 초점이 돌아갈 자리 — 연 단추, 사라졌으면(삭제한 칩의 ⋯) 「+ 필터」. */
+/** 닫힌 뒤 초점이 돌아갈 자리 — 연 단추, 사라졌으면(삭제한 칩) 「+ 필터」. */
 export function focusReturnTarget(trigger: HTMLElement | null, doc: Document): HTMLElement | null {
   if (trigger && trigger.isConnected) return trigger;
   return doc.querySelector<HTMLElement>('[data-act="filter-new"]');
 }
 
-/** `BuilderFocus` → 찾을 자리. 칩 ⋯ 은 이름으로 찾는다(선택자 이스케이프 없이 속성값 비교). */
+/** `BuilderFocus` → 찾을 자리. 고친 칩은 이름으로 찾는다(선택자 이스케이프 없이 속성값 비교). */
 export function focusFinder(
   focus: BuilderFocus, trigger: HTMLElement | null, doc: Document,
 ): (() => HTMLElement | null) | null {
   if (focus === "none") return null;
   if (focus === "trigger") return () => focusReturnTarget(trigger, doc);
   if (focus === "new") return () => doc.querySelector<HTMLElement>('[data-act="filter-new"]');
-  return () => Array.from(doc.querySelectorAll<HTMLElement>("[data-preset-edit]"))
-    .find((element) => element.getAttribute("data-preset-edit") === focus.edit) || null;
+  return () => Array.from(doc.querySelectorAll<HTMLElement>("[data-preset]"))
+    .find((element) => element.getAttribute("data-preset") === focus.edit) || null;
 }
 
 function CardEditor(props: {
@@ -758,6 +876,7 @@ export function FilterBuilder(props: {
   });
   const [name, setName] = useState(spec.mode === "edit" ? spec.name : "");
   const [rows, setRows] = useState<BuilderRow[]>(init.rows);
+  const [fromAdhoc, setFromAdhoc] = useState(init.fromAdhoc);
   const [count, setCount] = useState<Obj | null>(null);
   const [countError, setCountError] = useState<{ error: string; column: string }>({ error: "", column: "" });
   const [saveError, setSaveError] = useState<{ error: string; column: string }>({ error: "", column: "" });
@@ -868,7 +987,7 @@ export function FilterBuilder(props: {
       const result = spec.mode === "edit"
         ? await controller.zone("update_filter_preset", { name: spec.name, new_name: name, state })
         : await controller.zone("create_filter_preset", {
-          name, state, ...(init.fromAdhoc ? { from_adhoc: true } : {}),
+          name, state, ...(fromAdhoc ? { from_adhoc: true } : {}),
         });
       if (result.stale) { close("trigger"); return; }
       if (result.ok === false) {
@@ -886,18 +1005,23 @@ export function FilterBuilder(props: {
   async function removePreset(button: HTMLElement): Promise<void> {
     suspended.current = true;
     try {
-      const accepted = await controller.confirm({
-        title: "저장한 필터 삭제", body: `사라지는 것: 저장한 필터 '${spec.name}'`,
-        confirmLabel: "삭제", cancelLabel: "취소", danger: true, returnFocus: button,
-      });
-      if (!accepted) return;
-      const result = await controller.zone("delete_filter_preset", { name: spec.name });
+      const result = await deletePreset(controller, spec.name, button);
+      if (result === null) return;
       if (result.stale) { close("trigger"); return; }
       if (result.ok === false) { setSaveError({ error: String(result.error || ""), column: "" }); return; }
-      close("new"); // 지운 칩의 ⋯ 은 사라진다
+      close("new"); // 지운 칩은 사라진다
     } finally {
       suspended.current = false;
     }
+  }
+
+  function resetDraft(): void {
+    // 「비우고 시작」 — 지금 조건으로 채운 초안을 비운다(저장 전이라 잃는 것이 없다). 초안이 지금
+    // 조건에서 오지 않았으므로 저장이 지금 조건을 접지도 않는다.
+    clearSaveError();
+    setRows([]);
+    setFromAdhoc(false);
+    pickerRef.current?.focus();
   }
 
   // 오류는 가리키는 열의 카드 아래에, 열을 모르는 오류는 카드 목록 아래에 선다.
@@ -925,7 +1049,11 @@ export function FilterBuilder(props: {
   },
   h("div", { className: "cp-head fb-head" },
     h("span", { id: "jobFilterBuilderTitle" }, title),
-    init.fromAdhoc ? h("span", { className: "fb-note", "data-fb-from-adhoc": true }, "열 머리 조건에서 채움") : null),
+    fromAdhoc ? h("span", { className: "fb-note", "data-fb-from-adhoc": true }, "열 머리 조건에서 채움") : null,
+    spec.mode === "create" && rows.length ? h("button", {
+      className: "btn sm quiet fb-reset", type: "button", "data-act": "fb-reset", "data-busy-lock": true,
+      onClick: resetDraft,
+    }, "비우고 시작") : null),
   h("div", { className: "fb-rows" }, ...listed),
   failure.error && !cardOf
     ? h("div", { className: "cp-err", role: "alert", "data-fb-error": true }, failure.error) : null,
@@ -977,7 +1105,7 @@ export function JobDataZone(props: {
   // 배치 한 번에 재렌더가 한 번 더 붙는다.
   const panelRoot = useRef<HTMLElement | null>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
-  // 필터 빌더(「+ 필터」·칩 ⋯) — 열 머리 패널과 같은 배치·같은 트리거 ref 규칙.
+  // 필터 빌더(「+ 필터」·칩 메뉴 「고치기」) — 열 머리 패널과 같은 배치·같은 트리거 ref 규칙.
   const [builder, setBuilder] = useState<BuilderSpec | null>(null);
   const builderRoot = useRef<HTMLElement | null>(null);
   const builderTrigger = useRef<HTMLElement | null>(null);
@@ -1096,6 +1224,7 @@ export function JobDataZone(props: {
   }
 
   const selected = snapshot.zone_selected_count ?? snapshot.selected_count ?? 0;
+  const total = snapshot.record_count || 0;
   const hidden = table.hidden_selected || [];
   const hiddenColumns = table.hidden_columns || [];
   // 표시순서 축은 초안이 열려 있으면 초안의 것이다(§18.11-21 — 적용 전 메인 범위 불변).
@@ -1140,14 +1269,21 @@ export function JobDataZone(props: {
           if (!result.ok) controller.notify(`확인 필요: ${result.error}`);
         } }, "직전 필터 재적용"),
       h("div", { className: "acts" }, h("span", { className: "muted capnote", id: "jobSelCount" },
-        `선택 ${selected}/${snapshot.record_count || 0}${filter.active ? ` · 표시 ${table.visible_count || 0}` : ""}`),
+        `선택 ${selected}/${total}${filter.active ? ` · 표시 ${table.visible_count || 0}/${total}` : ""}`),
+      // 「모두 보기」 — 필터·검색이 서 있을 때만, 표시 수 바로 뒤의 조용한 글 링크다. 열 조건·검색·켜진
+      // 저장한 필터를 전부 푼다(저장한 필터 정의는 남는다 — `FilterModel.clear`).
+      filter.active ? h("button", {
+        className: "btn showall", id: "jobShowAll", type: "button", "data-act": "filter-show-all",
+        "data-busy-lock": true,
+        onClick: () => { void controller.zone("filter_clear", {}); },
+      }, "모두 보기") : null,
       // 「전체 선택/해제」 두 버튼은 표 머리 체크박스로 갔다(U4 11번). 그 자리가 곧 그 동사가
       // 겨누는 열이라, 표와 무관한 줄에서 표를 조작하던 어긋남이 사라진다.
       //
-      // 표시순서도 여기서 `<select>` 를 버린다(U4 7번). 2값 고정 축이라(F3 계약) 스위치가
-      // 정확한 형태이고, 기본값(`sourceDesc` — 최신 행 먼저)에서 **벗어난 상태만** 눌린 것으로
-      // 표현한다. 기본값 자체는 그대로다: 요구는 기본값이 아니라 컨트롤의 시각 비중이었다.
-      h("button", { className: "btn sm", id: "jobOrderToggle", type: "button", "data-busy-lock": true,
+      // 표시순서는 2값 고정 축이라(F3 계약) 스위치다. 이름표는 **지금 방향**을 말한다 — 기본값
+      // (`sourceDesc`)은 「↓ 아래 행부터」(데이터의 마지막 행이 표 맨 위), 바꾸면 「↑ 위 행부터」.
+      // 기본값에서 벗어난 상태만 눌린 것으로 표현한다(`aria-pressed`).
+      h("button", { className: "btn sm order-toggle", id: "jobOrderToggle", type: "button", "data-busy-lock": true,
         "aria-pressed": viewOrder === "sourceAsc" ? "true" : "false",
         // 이 컨트롤이 무슨 축을 모는지 DOM 이 **선언**한다 — `<select>` 시절 `options` 가
         // 지던 「2값 고정」(F3)을 스위치에서도 게이트가 되읽을 수 있어야 한다.
@@ -1157,14 +1293,9 @@ export function JobDataZone(props: {
           void controller.zone("set_view_order", {
             value: viewOrder === "sourceAsc" ? "sourceDesc" : "sourceAsc",
           });
-        } }, `⇅ ${viewOrder === "sourceAsc" ? "원본 순서" : "원본 역순"}`),
-      // 「펼쳐서 행 고르기」도 표를 여는 동사라 표 머리에 선다(U4 10번). **시트 안에서는
-      // 그리지 않는다** — 자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의
-      // 취소·적용이 이미 진다.
-      ui.sheetOpen ? null : h("button", {
-        className: "btn sm", id: "jobDataExpand", type: "button",
-        onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
-      }, "펼쳐서 행 고르기 ⤢"))),
+        } },
+      icon(viewOrder === "sourceAsc" ? "arrow-up" : "arrow-down"),
+      h("span", null, viewOrder === "sourceAsc" ? "위 행부터" : "아래 행부터")))),
     // (구 `#jobOrderBar` 의 상시 재진술은 간소화 라운드에서 걷혔다 — 표가 그리는 순서가
     // 곧 생성 순서라는 사실은 스위치 자신의 title 이 말한다.)
     // 칩 줄은 데이터가 있으면 늘 선다 — 「+ 필터」가 여기 산다(필터가 없어도 만들 수 있어야 한다).
@@ -1194,13 +1325,18 @@ export function JobDataZone(props: {
               ...(table.columns || []).map((raw: unknown, index: number) => {
                 const column = columnMeta(raw);
                 if (column.visible === false) return null;
+                // 표지는 이 열을 조이는 모든 것(열 머리 조건 + 켜진 저장한 필터 무리)을 따른다 — 판정과
+                // 문안(`constraints`)은 Python 이 싣고, title 이 무엇이 조이는지 이름으로 말한다.
+                const meta = (filter.columns?.[index] || {}) as Obj;
+                const constraints = Array.isArray(meta.constraints) ? meta.constraints as string[] : [];
                 return h("th", { className: `col-${column.kind || "text"}`, key: column.name },
                   h("span", null, column.name),
                   h("button", {
-                    className: `fico${filter.columns?.[index]?.active ? " on" : ""}`,
+                    className: `fico${meta.filtered ? " on" : ""}`,
                     "data-col": column.name,
                     "data-busy-lock": true,
                     "aria-label": `${column.name} 열 필터`,
+                    title: constraints.length ? constraints.join(" · ") : undefined,
                     "aria-expanded": panel?.column === column.name,
                     onClick: (event: Obj) => { void openPanel(column.name, event.currentTarget); },
                   }, "▾"));
@@ -1252,6 +1388,15 @@ export function JobDataZone(props: {
         : filter.active
           ? "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요."
           : "데이터에 행이 없습니다."),
+      // 「표 크게 열기」 — 표 오른쪽 위 모서리의 그림 단추(U4 10번의 표를 여는 동사). 스크롤하는 표 안이
+      // 아니라 표 틀(`.jobtb-host`)에 붙어 가로 스크롤에도 제자리다. **시트 안에서는 그리지 않는다** —
+      // 자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의 취소·적용이 이미 진다.
+      // 데이터가 없으면 표처럼 숨는다(노드는 선다 — 범위 편집기 거절 경로의 겨눔 좌표다).
+      !ui.sheetOpen ? h("button", {
+        className: "jobtb-expand", id: "jobDataExpand", type: "button", hidden: !snapshot.has_data,
+        "aria-label": "표 크게 열기", title: "표 크게 열기",
+        onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
+      }, icon("expand")) : null,
       panel
         ? h(ColumnPanel as any, {
           controller, column: panel.column, data: panel.data, close: () => setPanel(null),

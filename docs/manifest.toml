@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "8567c8f85ba3dc707b3a9f25862ec208e07717d33addd3c9545873c9e4429c51"
+source_sha256 = "87ca163649c17e26d0641cfe6683033eb5e6c877d004b7d3a02bbde9367b175f"
 body_sha256 = "6be19e5da8613a5634996f6c4af5eb76650ef2e396e6c46aae84ec19da23f04c"
 
 [[document]]
@@ -201,15 +201,15 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "704b42c558f48f108853275d75ac79214b0fdb65b63db842d32258206888f52c"
-body_sha256 = "efa93f379f4f3e7f2a1a6d2d181410cd7217c2ae5628444e3b5c3c84cffadaed"
+source_sha256 = "99d2fa9f7d8b3cf9f712f045f0658a48e7c7b0707495ee9a139e02b72c06555b"
+body_sha256 = "55e0c0c4ee32acff7b3ab25b3de13c65e0586e736c672b561c3477464b0e5627"
 
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "97da5be7864390a94f5a79facc7cfff047db351afbeeb87e19bcc1949062ab50"
+source_sha256 = "bccc1f82708c98c968e64b98f207fde2015ba19ff77050fed999393dbbe13b40"
 body_sha256 = "2ce1407ab99cd8bfa2625ec3b674596cb9a4d56a937f65aafb4e8da4289c047e"
 
 [[topic]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "bc4d617dcc5f89bae1de372b1aa57c874624bd40d0a5052a71cb75635f1cbf29"
+source_sha256 = "8feb116b16954429d679703dbeaa9d320b577e7b2683d4b0dc9f7e8547b64677"
 body_sha256 = "3edd755e13396e4273390dc354498112a53e6555c711b1b5644db15c69cd4b3d"
 
 [[topic]]

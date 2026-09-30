@@ -539,9 +539,10 @@ class TestWebSelftestGate:
         assert v["control_before"] is True, "양성대조 실패 — 렌더가 컨트롤 상태를 안 씁니다."
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
-        assert v["label_before"].endswith("원본 역순")
-        assert v["label_after_roundtrip"].endswith("원본 순서")
-        assert v["label_restored"].endswith("원본 역순")
+        # 이름표는 지금 방향을 말한다(2026-09-30): 기본 sourceDesc = 「아래 행부터」.
+        assert v["label_before"] == "아래 행부터"
+        assert v["label_after_roundtrip"] == "위 행부터"
+        assert v["label_restored"] == "아래 행부터"
 
     def test_range_draft_refuses_to_open_without_data(self, selftest_result: dict) -> None:
         """재작성 F3 — 데이터 없이 여는 범위 편집기는 **거절**이고, 초안은 서지 않는다.
@@ -988,18 +989,19 @@ class TestWebSelftestGate:
             f"빈 게이트 문안이 자리를 차지해 버튼이 {j['actionbar_plane_empty_note']}px "
             "물러섰습니다 — 폭 0 이어도 flex 항목이면 앞의 gap 이 남습니다."
         )
-        # 표 머리 줄의 ⤢ 는 오른쪽 끝이다(리뷰 R5 의 결함류 그대로) — 규칙은 둘 다 살아 있고
-        # **어느 쪽이 이기는가**만 갈리는 자리라 정적 검사가 못 본다. 겨눔은 U4 10번에서
-        # 「현재 데이터」 캡션에서 표 머리(`#jobRecsHead`)로 옮겨왔다: 지키는 사실은 클래스
-        # 이름이 아니라 「행동이 그 줄의 오른쪽 끝에 선다」이고, 그 줄이 바뀐 것뿐이다.
+        # 표 머리 줄의 끝 행동은 오른쪽 끝이다(리뷰 R5 의 결함류 그대로) — 규칙은 둘 다 살아 있고
+        # **어느 쪽이 이기는가**만 갈리는 자리라 정적 검사가 못 본다. ⤢ 가 표 모서리로 간 뒤
+        # (2026-09-30) 그 줄의 끝 행동은 순서 스위치다 — 지키는 사실은 그대로다.
         cap = j["cap_actions"]
-        assert cap, "표 머리 줄의 ⤢ 를 찾지 못했습니다 — 프로브 겨눔 소실."
+        assert cap, "표 머리 줄의 순서 스위치를 찾지 못했습니다 — 프로브 겨눔 소실."
         assert cap["display"] == "flex", (
             f"표 머리 줄이 flex 를 잃었습니다({cap['display']!r}) — 곁의 규칙이 덮었습니다."
         )
         assert abs(cap["far_edge"]) <= 1, (
-            f"⤢ 가 표 머리 줄 오른쪽 끝에서 {cap['far_edge']}px 물러섰습니다."
+            f"순서 스위치가 표 머리 줄 오른쪽 끝에서 {cap['far_edge']}px 물러섰습니다."
         )
+        # 필터가 없으면 「모두 보기」도 표시 수도 없다(job_mirror.show_all 의 음성 짝).
+        assert j["show_all_absent"] is True and "표시" not in j["sel_count_plain"], j["sel_count_plain"]
         assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         # 확인 필요·순위 밖은 후보 줄에서 수치 + 출구로만 말한다(슬라이스 3 구획 이사).
         assert j["cand_exit"] is True, "문서 탐색 출구가 후보 줄에 없습니다."
@@ -1189,10 +1191,11 @@ class TestWebSelftestGate:
     def test_job_preset_chips_cluster_toggle_and_edit(self, selftest_result: dict) -> None:
         # 저장한 필터 칩(2026-09-30 재설계) — 판정(켜짐·사용 가부·사유·차원·무리·조건 문안)은
         # Python이 싣고, 화면은 그리기와 동사 호출만 한다. 같은 열의 두 칩은 알약 무리로,
-        # 홀로 선 칩은 무리 밖에 선다. ⋯ 고치기는 머물 때만 보이지만 탭 순서에는 늘 있다.
+        # 홀로 선 칩은 무리 밖에 선다. ▾ 메뉴 단추는 켜진 칩에만 서고(꺼진 칩은 빈자리 0),
+        # 문맥 메뉴 키는 어느 칩에서든 같은 메뉴(고치기·삭제)를 연다.
         j = probe(selftest_result, "job_mirror")
         assert j["preset_chips"] == 3, f"저장한 필터 칩 렌더 수가 다릅니다: {j['preset_chips']!r}"
-        assert j["preset_pressed"] == ["true", "false", "false"], (
+        assert j["preset_pressed"] == ["true", "false", "true"], (
             f"켜짐/꺼짐 표지가 순서대로 나오지 않았습니다: {j['preset_pressed']!r}"
         )
         assert j["preset_cluster"] == {
@@ -1211,16 +1214,62 @@ class TestWebSelftestGate:
         assert j["preset_on_bg"] != j["preset_off_bg"], (
             "켜진 칩과 쓸 수 없는 칩의 배경이 같습니다 — 색만으로 상태를 가르면 안 되지만 배경 자체는 갈라야 합니다."
         )
-        assert j["preset_edit_idle_opacity"] == "0" and j["preset_edit_focus_opacity"] == "1", (
-            "⋯ 고치기가 머묾·초점 전에는 숨고 초점이 들면 드러나야 합니다: "
-            f"{j['preset_edit_idle_opacity']!r} → {j['preset_edit_focus_opacity']!r}"
+        assert j["preset_menu_buttons"] == ["소기업", "전산"], (
+            f"▾ 는 켜진 칩에만 서야 합니다: {j['preset_menu_buttons']!r}"
         )
-        assert j["preset_edit_in_tab_order"] is True, "⋯ 고치기가 탭 순서에서 빠졌습니다."
+        assert 0 <= j["preset_off_reserve"] <= 2, (
+            f"꺼진 칩이 메뉴 단추 자리를 {j['preset_off_reserve']}px 비워 둡니다(테두리 2px 만 허용)."
+        )
+        assert j["preset_ctx_menu"] == {
+            "role": "menu", "items": ["고치기", "삭제"], "focus_first": True, "shown": True,
+        }, f"문맥 메뉴 키가 칩 메뉴를 세우지 않았습니다: {j['preset_ctx_menu']!r}"
+        assert j["preset_ctx_closed"] is True, "Escape 가 메뉴를 닫고 칩으로 초점을 돌리지 않았습니다."
+        assert j["preset_menu_expanded"] == "true", "▾ 가 메뉴 열림을 aria-expanded 로 말하지 않습니다."
         assert j["filter_new_shown"] is True and j["filter_save_gone"] is True, (
             "「+ 필터」가 서고 퇴역한 「필터 저장」은 없어야 합니다."
         )
-        assert j["preset_toggle_sent"] == '["소기업"]', (
-            f"칩 클릭이 toggle_filter_preset 에 이름을 실어 보내지 않았습니다: {j['preset_toggle_sent']!r}"
+        assert j["preset_toggle_sent"] == '["소기업","모두 보기"]', (
+            f"칩·「모두 보기」 클릭이 동사를 보내지 않았습니다: {j['preset_toggle_sent']!r}"
+        )
+
+    def test_job_headers_show_all_and_chip_row_geometry(self, selftest_result: dict) -> None:
+        # 켜진 저장한 필터가 조이는 열의 머리도 표지(.on)를 세우고 title 이 그 무리를 이름으로
+        # 말한다(판정·문안은 Python 투영). 「필터 지우기」는 없고 표시 수 바로 뒤에 「모두 보기」가
+        # 조용한 글 링크로 선다. 칩 줄은 세 칸 격자라 칩이 넘쳐도 「+ 필터」는 첫 줄 오른쪽 끝에
+        # 고정되고, 둘째 줄은 첫 칩 시작선에 맞으며, 칩·무리·「+ 필터」는 한 높이(28px)다.
+        # 표 모서리 ⤢ 는 표 틀에 붙어 가로 스크롤 뒤에도 제자리이고 맨 위에 보인다.
+        j = probe(selftest_result, "job_mirror")
+        assert j["head_fico"] == [
+            ["공고명", True, "필터 '전산'"], ["금액", True, "금액 ≥ '1,000,000'"],
+        ], f"열 머리 표지가 저장한 필터·열 조건을 따르지 않습니다: {j['head_fico']!r}"
+        show = j["show_all"]
+        assert show and show["text"] == "모두 보기" and show["after_count"] is True, show
+        assert show["count_text"] == "선택 2/2 · 표시 1/2", show
+        assert show["border"] is True and show["underline"] == "underline", show
+        assert j["filter_clear_gone"] is True, "퇴역한 「필터 지우기」가 되살아났습니다."
+        for key in ("chip_row", "chip_row_narrow"):
+            row = j[key]
+            assert row["display"] == "grid", f"{key}: 칩 줄이 격자가 아닙니다: {row!r}"
+            assert row["lines"] >= 2, f"{key}: 칩이 넘치는 판인데 줄을 바꾸지 않았습니다: {row!r}"
+            assert row["hanging"] is True and row["after_caption"] is True, (
+                f"{key}: 둘째 줄이 첫 칩 시작선에 맞지 않습니다: {row!r}"
+            )
+            assert abs(row["plus_top"]) <= 1 and 0 <= row["plus_right"] <= 1, (
+                f"{key}: 「+ 필터」가 첫 줄 오른쪽 끝에 고정되지 않았습니다: {row!r}"
+            )
+            assert row["plus_outside_area"] is True, f"{key}: 「+ 필터」가 칩 흐름 안에 들었습니다."
+            assert row["heights"] == [28], f"{key}: 칩·무리·「+ 필터」 높이가 갈립니다: {row!r}"
+            assert row["long_name_clipped"] is True and row["long_title"] is True, (
+                f"{key}: 긴 이름이 말줄임되지 않거나 title 이 없습니다: {row!r}"
+            )
+        corner = j["table_expand"]
+        assert corner and corner["in_host"] is True, f"⤢ 가 표 틀 밖이거나 스크롤 표 안입니다: {corner!r}"
+        assert (corner["label"], corner["title"], corner["text"]) == ("표 크게 열기", "표 크게 열기", ""), corner
+        assert corner["scroll_width"] is True and corner["scrolled"] is True, f"가로 스크롤이 서지 않았습니다: {corner!r}"
+        assert corner["before"] == corner["after"], f"⤢ 가 가로 스크롤을 따라 움직였습니다: {corner!r}"
+        assert corner["after"]["on_top"] is True, f"가로 스크롤 뒤 ⤢ 가 가려졌습니다: {corner!r}"
+        assert 0 <= corner["after"]["right"] <= 12 and 0 <= corner["after"]["top"] <= 4, (
+            f"⤢ 가 표 오른쪽 위 모서리에 서지 않았습니다: {corner!r}"
         )
 
     def test_job_filter_builder_opens_counts_and_closes(self, selftest_result: dict) -> None:
@@ -1228,7 +1277,7 @@ class TestWebSelftestGate:
         # 「그리고」가 선다. 살아 있는 수는 footer 상태(굵은 수 / 전체 + 막대)로, 요약은 이름 칸
         # 자리표시자로 선다. 맨 아래 열 콤보박스는 Python 거르기(list_filter_columns)로 목록을 세우고
         # 이미 카드가 선 열은 빼며, ↓/Enter 로 카드를 더하고 그 카드로 초점을 옮긴다.
-        # ⋯ 고치기는 같은 면을 고치기 모드로 열고 바깥 누름에 닫힌다.
+        # 칩 메뉴 「고치기」는 같은 면을 고치기 모드로 열고 바깥 누름에 닫힌다.
         j = probe(selftest_result, "job_mirror")
         assert j["builder_open"] is True and j["builder_title"] == "필터 만들기"
         assert j["builder_note"] == "열 머리 조건에서 채움"

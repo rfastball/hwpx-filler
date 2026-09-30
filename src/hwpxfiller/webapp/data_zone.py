@@ -66,6 +66,18 @@ BUILDER_VALUE_CAP = 50
 _PRESET_NO_HOME = "필터는 등록 데이터에만 저장할 수 있습니다."
 
 
+def _column_filter(fm: FilterModel, column: str) -> dict:
+    """열 머리 필터 표지 소재 — 판정(조이는가·무엇이)은 모델이 한다(표면은 그리기만)."""
+    constraints = fm.column_constraints(column)
+    return {
+        "name": column,
+        "kind": fm.kind(column),
+        "active": fm.has_condition(column),
+        "filtered": bool(constraints),
+        "constraints": constraints,
+    }
+
+
 class JobDataSession:
     """마운트와 그 위의 데이터 존 상태를 원자적으로 소유한다."""
 
@@ -580,7 +592,6 @@ class JobDataSession:
             trial = self._preset_trial()
             name = trial.create_preset(
                 str(p.get("name", "")), p.get("state"), from_adhoc=bool(p.get("from_adhoc")),
-                records=self.records,
             )
         except ValueError as exc:
             return self._refusal(exc)
@@ -588,29 +599,28 @@ class JobDataSession:
         return {"ok": True, "name": name}
 
     def _do_update_filter_preset(self, p: dict) -> dict:
-        """칩 ⋯ 빌더의 저장 — 이름·조건을 고친다. 칩 순서·켜짐은 그대로 잇는다."""
+        """칩 메뉴 「고치기」 빌더의 저장 — 이름·조건을 고친다. 칩 순서·켜짐은 그대로 잇는다."""
         name = str(p["name"])
         try:
             trial = self._preset_trial()
-            new_name = trial.update_preset(
-                name, str(p.get("new_name", "")), p.get("state"), records=self.records,
-            )
+            new_name = trial.update_preset(name, str(p.get("new_name", "")), p.get("state"))
         except ValueError as exc:
             return self._refusal(exc)
         self._preset_commit(trial, renamed={name: new_name})
         return {"ok": True, "name": new_name}
 
     def _do_count_filter_state(self, p: dict) -> dict:
-        """빌더의 살아 있는 수 — 후보 조건 하나만으로 지금 데이터에서 보이는 행 수 + 요약 문안.
+        """빌더의 살아 있는 수 — 후보 조건 하나만으로 지금 데이터에서 보이는 행 수 + 짧은 이름.
 
-        무변이 질의(push 없음). ``summary`` 는 이름 칸 자리표시자(빈 이름 저장 때의 이름)다.
+        무변이 질의(push 없음). ``summary`` 는 이름 칸 자리표시자(빈 이름 저장 때의 이름 —
+        :meth:`FilterModel.name_state`)다.
         검증 거절은 ``{"ok": False, "error", "column"?}`` 로 돌려 빌더가 그 열의 카드 아래(열을
         모르면 목록 아래)에서 재진술한다(알림 없음).
         """
         fm = self._filter_or_raise()
         try:
             count = fm.count_state(p.get("state"), self.records)
-            summary = fm.describe_state(p.get("state"), self.records)
+            summary = fm.name_state(p.get("state"))
         except ValueError as exc:
             return self._refusal(exc)
         return {"ok": True, "count": count, "total": len(self.records), "summary": summary}
@@ -704,7 +714,7 @@ class JobDataSession:
         """칩 줄의 저장한 필터 소재 — ``(칩 행, 무리)``. 판정은 전부 모델이 한다.
 
         칩 행은 무리(차원) 첫 등장 순 → 저장 순으로 선다. 칩마다 켜짐·사용 가부·사유, 차원
-        열쇠·표지, 조건 문안(칩 ``title`` — 정의줄과 같은 생산자), 저장본(⋯ 고치기 프리필)을
+        열쇠·표지, 조건 문안(칩 ``title`` — 정의줄과 같은 생산자), 저장본(메뉴 「고치기」 프리필)을
         싣는다. 무리는 ``{key, label, names}`` 로 렌더 순서 그대로다 — 표면은 칩이 둘 이상인
         무리만 묶음으로 그린다.
         """
@@ -995,9 +1005,12 @@ class JobDataSession:
                 else ""
             ),
             "search": fm.search_text,
-            # 칩 줄의 정의 칩 = 지금 조건 부분(정의줄 단일 출처, 결정 4). 켜진 저장한 필터는
-            # 자기 칩(``presets``)이 눌린 상태로 말하고, 정의줄(``definition``)은 둘 다 싣는다.
-            "chips": view.adhoc_parts(),
+            # 「열 조건」 칩 = 열 머리에서 건 조건만, 열마다 한 칩(``column`` = × 가 지우는 열, 검색은
+            # ""). 문안은 정의줄 조각과 같은 생산자(결정 4). 켜진 저장한 필터는 자기 칩(``presets``)이
+            # 눌린 상태로 말하고, 정의줄(``definition``)은 둘 다 싣는다.
+            "chips": [
+                {"column": chip["column"], "text": chip["text"]} for chip in view.adhoc_chips()
+            ],
             "definition": view.describe(),
             "adhoc_active": fm.has_adhoc(),
             "presets": presets,
@@ -1005,9 +1018,9 @@ class JobDataSession:
             # 「+ 필터」 빌더의 소재 — 열 유형·값 목록·프리필·저장 가부(판정은 여기서만).
             "builder": self.builder_source(fm),
             "branches": view.branches,  # 가지 칩(× 프루닝)
-            "columns": [
-                {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)} for c in columns
-            ],
+            # 열 머리 표지 — ``active`` 는 열 머리 조건, ``constraints`` 는 이 열을 조이는 것 전부의
+            # 문안(켜진 저장본 무리 + 머리 조건)이다. 표지(``filtered``)와 title 이 둘을 함께 말한다.
+            "columns": [_column_filter(fm, c) for c in columns],
         }
         # 사용자 열 선별(U2 §2.19, #341) — **표시 여부를 여기서 판정**해 얹는다. 숨김은
         # 표시 축뿐이라 위 필터 평가·셀 합성(검색 하이라이트 포함)은 숨긴 열도 그대로

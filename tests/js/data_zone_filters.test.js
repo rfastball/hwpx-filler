@@ -1,9 +1,11 @@
 /* 저장한 필터 칩 줄 + 필터 빌더(`data_zone.ts`, 2026-09-30 재설계) — 판정은 하나도 여기 없다.
  *
- * 이 파일이 재는 것은 넷이다: ①Python 이 준 무리(`preset_groups`)를 그대로 그리는가 — 칩이
- * 둘 이상이면 알약 무리 + 열 이름 표지, 하나면 맨 칩 ②⋯ 고치기가 **탭 순서에 늘 있는** 단추인가
- * (숨김은 CSS opacity 의 몫이라 마크업에는 늘 선다) ③빌더가 줄을 상태 모양으로만 옮기는가 —
- * 줄 사이 「그리고」, 겹친 조건의 무손실 분할, 살아 있는 수의 지연·순서 ④닫힘의 키·초점 규칙. */
+ * 이 파일이 재는 것은 다섯이다: ①칩 줄이 세 칸 격자(머리표 | 칩 영역 | 「+ 필터」)이고 Python 이 준
+ * 무리(`preset_groups`)를 그대로 그리는가 — 칩이 둘 이상이면 알약 무리 + 열 이름 표지, 하나면 맨 칩
+ * ②▾ 메뉴 단추는 **켜진 칩에만** 서고, 메뉴(고치기·삭제)는 어느 칩이든 문맥 메뉴 키로도 열린다
+ * ③머리 줄 — 「표시 N/M」·「모두 보기」(필터가 설 때만)·순서 스위치(지금 방향)·표 모서리 ⤢
+ * ④빌더가 줄을 상태 모양으로만 옮기는가 — 줄 사이 「그리고」, 겹친 조건의 무손실 분할, 살아 있는 수의
+ * 지연·순서, 「비우고 시작」 ⑤닫힘의 키·초점 규칙. */
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -14,15 +16,19 @@ import {
   FOLD_ROW,
   FilterBuilder,
   FilterChipRow,
+  JobDataZone,
+  PresetChip,
   RANGE_WORDS,
   SEARCH_ROW,
   blankRow,
   builderKeyAction,
   builderPlacement,
   createCountRequester,
+  deletePreset,
   focusFinder,
   focusReturnTarget,
   formatAmount,
+  isMenuKey,
   pickerKey,
   pickerOptions,
   rangeFromWords,
@@ -40,7 +46,7 @@ const PRESET = (name, extra) => Object.assign({
 }, extra || {});
 
 const FILTER = {
-  active: true, chips: ["공고명 포함 '전산'"], branches: [],
+  active: true, chips: [{ column: "공고명", text: "공고명 포함 '전산'" }], branches: [],
   presets: [
     PRESET("소기업", { active: true }),
     PRESET("중소기업"),
@@ -65,15 +71,15 @@ const FILTER = {
   },
 };
 
-function controller() {
-  return {
+function controller(extra) {
+  return Object.assign({
     doc: { defaultView: null },
     notify() {}, prompt: async () => null, confirm: async () => false,
     uiModel: { subscribe: () => () => {}, getSnapshot: () => ({}) },
     zone: async () => ({ ok: true }), call: async () => ({}),
     scheduleColumnText() {}, scheduleSearch() {}, openDataSheet: async () => {},
     closeDataSheet() {}, discardRange: async () => {}, applyRange: async () => {}, placePopover() {},
-  };
+  }, extra || {});
 }
 
 const chipRow = (filter, extra) => renderToStaticMarkup(createElement(FilterChipRow, Object.assign({
@@ -86,47 +92,154 @@ const builderMarkup = (filter, spec) => renderToStaticMarkup(createElement(Filte
   close() {},
 }));
 
+function Scroll(props) {
+  return createElement("div", { className: "tbwrap jobtbwrap", id: "jobTableWrap", hidden: props.hidden }, props.children);
+}
+
+const zoneMarkup = (snapshot, ui) => renderToStaticMarkup(createElement(JobDataZone, {
+  snapshot: Object.assign({
+    has_data: true, record_count: 11, zone_selected_count: 3, view_order: "sourceDesc",
+    filter: { active: false, search: "", columns: [], presets: [], preset_groups: [], builder: FILTER.builder },
+    table: {
+      columns: [{ name: "공고명", kind: "text", visible: true }, { name: "추정가격", kind: "amount", visible: true }],
+      rows: [{ index: 0, cells: [[["청사 청소", false]], [["95,000,000", false]]] }],
+      visible_count: 11, hidden_selected: [], hidden_columns: [],
+    },
+  }, snapshot || {}),
+  controller: controller({ uiModel: { subscribe: () => () => {}, getSnapshot: () => ui || {} } }),
+  scroll: Scroll,
+}));
+
+test("칩 줄 = 세 칸 격자: 머리표 | 칩 영역 | 「+ 필터」 — 「+ 필터」는 칩 영역 밖 마지막 칸이다", () => {
+  const html = chipRow(FILTER);
+  assert.ok(html.startsWith('<div class="fchips" id="jobFilterChips">'), html.slice(0, 80));
+  const cap = html.indexOf('<span class="fchips-cap">저장한 필터</span>');
+  const area = html.indexOf('<div class="fchips-area">');
+  const plus = html.indexOf('data-act="filter-new"');
+  assert.ok(cap >= 0 && cap < area && area < plus, "머리표 → 칩 영역 → 「+ 필터」 순서");
+  // 「+ 필터」는 칩 영역의 자식이 아니다(영역이 닫힌 뒤에 선다) — 칩이 늘어도 따라 흐르지 않는다.
+  assert.ok(html.lastIndexOf("</div>", plus) > area, "칩 영역이 「+ 필터」 앞에서 닫힌다");
+  assert.ok(html.endsWith("+ 필터</button></div>"));
+  // 저장본이 없으면 머리표 칸이 빠진다(.nocap) — 「열 조건」 칩만 있어도 격자는 그대로다.
+  const bare = chipRow(Object.assign({}, FILTER, { presets: [], preset_groups: [] }));
+  assert.ok(bare.startsWith('<div class="fchips nocap"') && !bare.includes("fchips-cap"));
+  assert.ok(!bare.includes("fchips-sep"), "저장본이 없으면 구분선도 없다");
+});
+
 test("같은 열의 칩 둘은 무리로, 홀로 선 칩은 맨 칩으로 선다 — 무리는 Python 이 정한 그대로", () => {
   const html = chipRow(FILTER);
   const clusters = html.match(/<span class="fcluster"[^>]*>/g) || [];
   assert.equal(clusters.length, 1, "무리는 칩이 둘 이상인 차원 하나뿐이어야 합니다");
   assert.ok(clusters[0].includes('data-dimension="추정가격"') && clusters[0].includes('role="group"'));
   assert.ok(html.includes('<span class="fcluster-label" aria-hidden="true">추정가격</span>'));
-  // 무리 안에 두 칩이 순서대로, 무리 밖에 홀로 선 칩이 있다.
   const inside = html.slice(html.indexOf('class="fcluster"'), html.indexOf('data-preset-chip="상반기"'));
   assert.ok(inside.indexOf('data-preset="소기업"') < inside.indexOf('data-preset="중소기업"'));
   assert.equal((html.match(/fcluster-label/g) || []).length, 1, "홀로 선 칩에는 표지가 서지 않습니다");
-  assert.ok(html.indexOf("저장한 필터") < html.indexOf('class="fcluster"'), "캡션이 칩보다 앞섭니다");
 });
 
-test("칩 = 이름 하나를 든 눌림 단추 + 탭 순서에 늘 있는 ⋯ 고치기", () => {
+test("칩 = 이름 하나를 든 눌림 단추, ▾ 메뉴 단추는 켜진 칩에만 선다(꺼진 칩은 빈자리 없음)", () => {
   const html = chipRow(FILTER);
   assert.ok(/data-preset="소기업"[^>]*aria-pressed="true"[^>]*title="소기업: 추정가격 &lt; &#x27;소기업&#x27;"/.test(html),
-    "켜진 칩의 title 은 Python 조건 문안이어야 합니다");
+    "켜진 칩의 title 은 `이름: Python 조건 문안`");
   assert.ok(/data-preset="지역"[^>]*aria-disabled="true"[^>]*title="이 필터의 열이 지금 데이터에 없습니다: 지역"/.test(html));
-  const edits = html.match(/<button class="preset-edit"[^>]*>/g) || [];
-  assert.equal(edits.length, 4, "칩마다 ⋯ 고치기가 섭니다");
-  for (const edit of edits) {
-    assert.ok(!/hidden|display:none|tabindex="-1"/.test(edit), `⋯ 은 탭 순서에서 빠지면 안 됩니다: ${edit}`);
-  }
-  assert.ok(html.includes('aria-label="소기업 필터 고치기"'));
-  assert.ok(html.includes('<svg class="icon"'), "⋯ 은 글자가 아니라 그린 아이콘입니다");
+  const menus = html.match(/<button class="preset-menu"[^>]*>/g) || [];
+  assert.equal(menus.length, 1, "켜진 칩(소기업) 하나에만 ▾");
+  assert.ok(menus[0].includes('data-preset-menu="소기업"') && menus[0].includes('aria-label="소기업 필터 메뉴"')
+    && menus[0].includes('aria-haspopup="menu"') && menus[0].includes('aria-expanded="false"'));
+  assert.ok(!html.includes("preset-edit") && !html.includes("필터 고치기"), "⋯ 고치기 단추는 없다");
+  assert.ok(html.includes('<span class="preset-name">중소기업</span>'), "이름은 말줄임 칸에 든다");
 });
 
-test("「+ 필터」는 데이터가 있으면 늘 서고, 지금 조건 칩은 「열 조건」으로 불린다", () => {
+test("칩 메뉴: 고치기·삭제 두 항목, 문맥 메뉴 키(Shift+F10·메뉴 키)가 같은 메뉴를 연다", () => {
+  const trigger = { isConnected: true, focus() {} };
+  const open = renderToStaticMarkup(createElement(PresetChip, {
+    preset: PRESET("상반기"), controller: controller(), menu: { name: "상반기", trigger },
+    openMenu() {}, closeMenu() {}, onEdit() {},
+  }));
+  assert.ok(/<div class="ctx-menu preset-pop" role="menu" aria-label="상반기 필터 메뉴"/.test(open),
+    "꺼진 칩도 문맥 메뉴로 같은 메뉴가 선다");
+  const items = open.match(/role="menuitem"[^>]*>[^<]*</g) || [];
+  assert.deepEqual(items.map((item) => item.replace(/.*>/, "").replace("<", "")), ["고치기", "삭제"]);
+  assert.ok(/class="danger"[^>]*data-preset-act="delete"/.test(open), "삭제는 위험 글자색");
+  assert.equal(isMenuKey({ key: "F10", shiftKey: true }), true);
+  assert.equal(isMenuKey({ key: "ContextMenu" }), true);
+  assert.equal(isMenuKey({ key: "F10" }), false);
+  assert.equal(isMenuKey({ key: "Enter" }), false);
+  assert.equal(isMenuKey({ key: "ContextMenu", isComposing: true }), false);
+});
+
+test("칩 메뉴 「삭제」는 저장본 하나만 손실로 적는 확인 뒤에만 지운다", async () => {
+  const calls = [];
+  const ctrl = controller({
+    confirm: async (spec) => { calls.push(["confirm", spec]); return calls.length > 1; },
+    zone: async (action, payload) => { calls.push([action, payload]); return { ok: true }; },
+  });
+  assert.equal(await deletePreset(ctrl, "소기업", null), null, "취소면 지우지 않는다");
+  assert.deepEqual(calls.map((c) => c[0]), ["confirm"]);
+  assert.deepEqual(await deletePreset(ctrl, "소기업", null), { ok: true });
+  const spec = calls[1][1];
+  assert.equal(spec.title, "저장한 필터 삭제");
+  assert.equal(spec.body, "사라지는 것: 저장한 필터 '소기업'");
+  assert.equal(spec.confirmLabel, "삭제");
+  assert.deepEqual(calls[2], ["delete_filter_preset", { name: "소기업" }]);
+});
+
+test("「+ 필터」는 데이터가 있으면 늘 서고, 열 머리 조건 칩은 「열 조건」 + × (검색 칩은 × 없음)", () => {
   const empty = chipRow({ active: false, presets: [], preset_groups: [], builder: FILTER.builder });
   assert.ok(!empty.includes(" hidden=\"\""), "필터가 없어도 칩 줄은 섭니다");
   assert.ok(empty.includes('data-act="filter-new"') && empty.includes("+ 필터"));
-  assert.ok(!empty.includes("저장한 필터") && !empty.includes("fchips-sep"),
-    "저장본이 없으면 캡션이, 뒤따르는 칩이 없으면 구분선이 서지 않습니다");
-  const html = chipRow(FILTER);
-  assert.ok(html.includes('<span class="chip-role">열 조건</span>공고명 포함 &#x27;전산&#x27;'));
-  assert.ok(html.indexOf('data-act="filter-new"') < html.indexOf("fchips-sep"));
+  assert.ok(!empty.includes("저장한 필터") && !empty.includes("fchips-sep"));
+  const html = chipRow(Object.assign({}, FILTER, {
+    chips: FILTER.chips.concat([{ column: "", text: "(공고명) 포함 '청'" }]),
+  }));
+  assert.ok(html.includes('<span class="chip-role">열 조건</span><span class="chip-text">공고명 포함 &#x27;전산&#x27;</span>'));
+  assert.ok(/data-clear-col="공고명"[^>]*aria-label="공고명 열 조건 지우기"/.test(html));
+  assert.equal((html.match(/data-clear-col=/g) || []).length, 1, "검색 칩에는 × 가 없다");
+  assert.ok(html.indexOf("fchips-sep") < html.indexOf("chip-role"), "저장본 칩 뒤 구분선, 그 뒤 「열 조건」");
+  assert.ok(!html.includes('data-act="filter-clear"') && !html.includes("필터 지우기"), "「필터 지우기」는 없다");
   const blocked = chipRow(Object.assign({}, FILTER, {
     builder: Object.assign({}, FILTER.builder, { can_create: false, reason: "필터는 등록 데이터에만 저장할 수 있습니다." }),
   }));
   assert.ok(/data-act="filter-new"[^>]*aria-disabled="true"[^>]*title="필터는 등록 데이터에만 저장할 수 있습니다."/.test(blocked));
   assert.ok(chipRow(FILTER, { hasData: false }).includes('hidden=""'));
+});
+
+test("머리 줄: 필터가 서면 「표시 N/M」 + 「모두 보기」, 순서 스위치는 지금 방향, ⤢ 는 표 모서리", () => {
+  const plain = zoneMarkup();
+  assert.ok(plain.includes('id="jobSelCount">선택 3/11</span>'), "필터가 없으면 표시 수·「모두 보기」 없음");
+  assert.ok(!plain.includes("모두 보기"));
+  assert.ok(/id="jobOrderToggle"[^>]*aria-pressed="false"[^>]*data-order-values="sourceDesc,sourceAsc"/.test(plain));
+  assert.ok(/id="jobOrderToggle"[^>]*><svg class="icon"[^>]*>.*?<\/svg><span>아래 행부터<\/span><\/button>/.test(plain),
+    "기본(sourceDesc) = ↓ 아래 행부터");
+  assert.ok(!plain.includes("원본 역순") && !plain.includes("원본 순서") && !plain.includes("펼쳐서"));
+  const asc = zoneMarkup({ view_order: "sourceAsc" });
+  assert.ok(/id="jobOrderToggle"[^>]*aria-pressed="true"/.test(asc) && asc.includes("<span>위 행부터</span>"));
+  // ⤢ 는 표 틀(.jobtb-host)의 자식이고 스크롤하는 표(#jobTableWrap) 밖이다.
+  const host = plain.slice(plain.indexOf('id="jobTableHost"'));
+  const wrapEnd = host.indexOf("</table></div>");
+  const expand = host.indexOf('id="jobDataExpand"');
+  assert.ok(expand > wrapEnd && wrapEnd > 0, "⤢ 는 스크롤 표 바깥, 표 틀 안");
+  assert.ok(/class="jobtb-expand" id="jobDataExpand" type="button" aria-label="표 크게 열기" title="표 크게 열기"><svg/.test(plain));
+  assert.ok(!zoneMarkup({}, { sheetOpen: true }).includes('id="jobDataExpand"'), "시트 안에서는 그리지 않는다");
+  assert.ok(/id="jobDataExpand" type="button" hidden=""/.test(zoneMarkup({ has_data: false })),
+    "데이터가 없으면 표처럼 숨는다(노드는 선다)");
+
+  const filtered = zoneMarkup({
+    filter: Object.assign({}, FILTER, {
+      columns: [
+        { name: "공고명", kind: "text", active: false, filtered: false, constraints: [] },
+        { name: "추정가격", kind: "amount", active: false, filtered: true, constraints: ["필터 '소기업'"] },
+      ],
+    }),
+    table: Object.assign({}, { columns: [{ name: "공고명", kind: "text" }, { name: "추정가격", kind: "amount" }],
+      rows: [], visible_count: 7, hidden_selected: [], hidden_columns: [] }),
+  });
+  assert.ok(filtered.includes('id="jobSelCount">선택 3/11 · 표시 7/11</span><button class="btn showall" id="jobShowAll"'),
+    "「모두 보기」는 표시 수 바로 뒤");
+  assert.ok(filtered.includes(">모두 보기</button>"));
+  // 저장한 필터가 조이는 열의 머리도 표지를 세우고 title 이 그 무리를 이름으로 말한다.
+  assert.ok(/class="fico on" data-col="추정가격"[^>]*title="필터 &#x27;소기업&#x27;"/.test(filtered));
+  assert.ok(/class="fico" data-col="공고명"/.test(filtered));
 });
 
 test("빌더: 지금 조건 프리필은 열마다 카드, 카드 사이 「그리고」, 맨 아래 새 조건 콤보박스", () => {
@@ -142,6 +255,8 @@ test("빌더: 지금 조건 프리필은 열마다 카드, 카드 사이 「그�
   const html = builderMarkup(filter, { mode: "create", name: "" });
   assert.ok(html.includes('id="jobFilterBuilder"') && html.includes('role="dialog"'));
   assert.ok(html.includes(">필터 만들기<") && html.includes("열 머리 조건에서 채움"));
+  assert.ok(/class="btn sm quiet fb-reset"[^>]*data-act="fb-reset"[^>]*>비우고 시작</.test(html),
+    "지금 조건으로 채운 초안은 「비우고 시작」으로 비운다");
   assert.equal((html.match(/class="fb-card" data-fb-row/g) || []).length, 3, "공고명·추정가격·전체 열 검색 세 카드");
   assert.equal((html.match(/class="fb-and"[^>]*>그리고</g) || []).length, 3, "카드 사이와 새 조건 앞마다 「그리고」");
   assert.ok(/<span class="fb-card-name" title="추정가격">추정가격<\/span><span class="fb-kind">금액<\/span>/.test(html),
@@ -169,6 +284,7 @@ test("빌더: 빈 만들기는 새 조건 카드 하나, 고치기는 이름·�
   const blank = builderMarkup(FILTER, { mode: "create", name: "" });
   assert.equal((blank.match(/data-fb-row=/g) || []).length, 0);
   assert.ok(blank.includes("fb-new") && !blank.includes('class="fb-and"') && !blank.includes("열 머리 조건에서 채움"));
+  assert.ok(!blank.includes("비우고 시작"), "비울 초안이 없으면 「비우고 시작」도 없다");
   const medium = { search: "", pruned: [], columns: { 추정가격: { text: "", values: null, range: {
     first: { op: "ge", operand: "100,000,000" }, second: { op: "lt", operand: "220,000,000" }, joiner: "and" } } } };
   const filter = Object.assign({}, FILTER, { presets: [PRESET("중소기업", { state: medium })] });
@@ -177,6 +293,7 @@ test("빌더: 빈 만들기는 새 조건 카드 하나, 고치기는 이름·�
   assert.ok(/<option value="between" selected="">사이<\/option>/.test(edit), "≥ a 그리고 < b = 「사이」");
   assert.ok(edit.includes('value="220,000,000"') && edit.includes(">이상<") && edit.includes(">미만<"));
   assert.ok(edit.indexOf('data-act="fb-delete"') < edit.indexOf('data-fb-count'), "삭제는 footer 맨 왼쪽");
+  assert.ok(!edit.includes("비우고 시작"), "고치기는 저장본으로 연다 — 비우기는 만들기의 몫");
 });
 
 test("비교 말 ↔ 연산자: 여섯은 1:1, 「사이」는 ≥ a 그리고 < b, 옮길 수 없는 2절은 기호 그대로", () => {
@@ -308,7 +425,7 @@ test("닫힘 규칙: Escape 닫기·이름칸 Enter 저장, 한글 조합 중에
   assert.equal(focusReturnTarget(null, doc), plus);
 });
 
-test("저장·삭제 뒤 초점: 고친 칩은 새 이름의 ⋯, 지운 칩은 「+ 필터」, 바깥 누름은 그대로", () => {
+test("저장·삭제 뒤 초점: 고친 칩은 새 이름의 칩, 지운 칩은 「+ 필터」, 바깥 누름은 그대로", () => {
   const plus = { id: "plus" };
   const edits = [
     { getAttribute: () => "소기업" },
@@ -316,7 +433,7 @@ test("저장·삭제 뒤 초점: 고친 칩은 새 이름의 ⋯, 지운 칩은 
   ];
   const doc = {
     querySelector: (selector) => (selector === '[data-act="filter-new"]' ? plus : null),
-    querySelectorAll: (selector) => (selector === "[data-preset-edit]" ? edits : []),
+    querySelectorAll: (selector) => (selector === "[data-preset]" ? edits : []),
   };
   assert.equal(focusFinder("none", null, doc), null);
   assert.equal(focusFinder("new", null, doc)(), plus);
