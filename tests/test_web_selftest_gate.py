@@ -1254,6 +1254,9 @@ class TestWebSelftestGate:
             f"카드가 더해지지 않았습니다: {j['picker_added']!r}"
         )
         assert j["picker_focus_in_new_card"] is True, "고른 열의 카드로 초점이 가지 않았습니다."
+        assert j["picker_fits_viewport"] is True, (
+            "열 목록이 펼쳐진 빌더가 화면 밖으로 자랐습니다 — 이름·footer 가 밀려 나가면 안 됩니다."
+        )
         assert j["builder_anchored"] is True, "빌더가 트리거에 붙지 않았습니다(아래 또는 뒤집힌 위)."
         assert j["builder_fits_viewport"] is True, "빌더가 화면 밖으로 나갔습니다(높이 = 화면 − 48px)."
         assert 440 <= j["builder_width"] <= 470, f"빌더 폭이 다릅니다: {j['builder_width']!r}"

@@ -1088,6 +1088,12 @@ async function runJobMirror(ctx) {
       (e) => e.querySelector(".fb-option-name")?.textContent || "",
     );
     out.picker_mark = doc.querySelector("#jobFilterColumnList mark")?.textContent || "";
+    /* 목록이 펼쳐져 빌더가 자라도 화면 안에 다시 선다(이름·footer 가 밀려 나가지 않는다). */
+    await ctx.sleep(80);
+    const grownRect = builderRoot.getBoundingClientRect();
+    const footRect = builderRoot.querySelector(".fb-foot")?.getBoundingClientRect();
+    out.picker_fits_viewport = grownRect.top >= 0 && grownRect.bottom <= win.innerHeight + 1
+      && !!footRect && footRect.bottom <= win.innerHeight + 1;
     picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     await ctx.sleep(0);
     picker.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

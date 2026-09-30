@@ -774,6 +774,18 @@ export function FilterBuilder(props: {
     const anchor = trigger.current;
     if (root && anchor && anchor.isConnected) controller.placePopover(root, anchor);
   });
+  // 자식(열 콤보박스 목록·태그)이 스스로 자라도 다시 잰다 — 빌더의 렌더를 거치지 않는 높이 변화다.
+  useEffect(() => {
+    const root = rootRef.current;
+    const Observer = controller.doc.defaultView?.ResizeObserver;
+    if (!root || !Observer) return;
+    const observer = new Observer(() => {
+      const anchor = trigger.current;
+      if (anchor && anchor.isConnected) controller.placePopover(root, anchor);
+    });
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [controller, rootRef, trigger]);
   useEffect(() => {
     const doc = controller.doc;
     function onKey(event: KeyboardEvent): void {
