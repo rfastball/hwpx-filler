@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "3d5693c012addbf9ce59710f41f599578618ec6ecbd1e9caf353f65bb9bf6dde"
+source_sha256 = "b63c8241e58fbad3232c45fe2dff6d2b58d4ee71c9a4d1d4591e80db6b5362cd"
 body_sha256 = "0a80a50b08f0a552b34726334b3bc41763d6f0c25e240161b31816d983197b20"
 
 [[topic]]

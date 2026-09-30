@@ -833,10 +833,25 @@ def _current_view(snapshot: dict) -> dict:
     return view
 
 
-def _workbench(snapshot: dict) -> dict:
+def _workbench(snapshot: dict, where: str) -> dict:
+    """현재 작업대 관찰 — 없으면 **어느 걸음에서 무엇이 서 있었는지**와 함께 실패한다.
+
+    관찰은 HWPX 작업이 앉아 있을 때만 선다. 그래서 부재는 거의 언제나 「작업이 풀렸다」의
+    다른 이름이고, 그 사유는 같은 스냅샷의 작업 이름·안내 문안이 말한다. 값만 싣고 죽으면
+    (`None`) 걸음이 일곱 군데라 CI 한 번의 빨강을 어디에도 귀속할 수 없다(v0.11.0 릴리스).
+    """
     value = snapshot.get("workbench_observation")
     if not isinstance(value, dict) or value.get("supported") is not True:
-        raise ScenarioFailure(f"current workbench observation이 없습니다: {value!r}")
+        context = {
+            "job_name": snapshot.get("job_name"),
+            "has_job": snapshot.get("has_job"),
+            "has_data": snapshot.get("has_data"),
+            "selected_count": snapshot.get("selected_count"),
+            "data_notice": snapshot.get("data_notice"),
+        }
+        raise ScenarioFailure(
+            f"current workbench observation이 없습니다({where}): {value!r} — {context!r}"
+        )
     return value
 
 
@@ -1029,10 +1044,10 @@ def run_sx(ctx: ScenarioContext) -> dict:
         _pick_option(s, selector, what="initial canonical Option 선택")
         s.wait(f"document.querySelector({json.dumps(selector)}).checked", "Option fresh 반영", requires=[selector])
 
-    before_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
+    before_fields = tuple(_workbench(_snapshot(s), "H3 Option A").get("active_field_requirement_ids") or ())
     _pick_option(s, "#cs-opt-0-1", what="S1 Option B 전환")
     s.wait("document.getElementById('cs-opt-0-1').checked", "Option B fresh recompute", requires=["#cs-opt-0-1"])
-    after_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
+    after_fields = tuple(_workbench(_snapshot(s), "H3 Option B").get("active_field_requirement_ids") or ())
     _expect(before_fields != after_fields, "H3: Option A↔B 뒤 Active Field가 변하지 않았습니다")
     _pick_option(s, "#cs-opt-0-0", what="preserved Option 복원")
     s.wait("document.getElementById('cs-opt-0-0').checked", "preserved Option 복원 반영", requires=["#cs-opt-0-0"])
@@ -1270,7 +1285,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.wait("document.querySelector('#scr-editor').textContent.includes('저장했습니다')", "Binding 저장", timeout=30.0, requires=["#scr-editor"])
     s.click_sel("#editorBack", what="편집기 복귀")
     s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
-    binding_after = _workbench(_snapshot(s))
+    binding_after = _workbench(_snapshot(s), "H4 Binding 저장 뒤 복귀")
     # U3-03(#876): 「입력이 필요한 항목」 존은 조치 필요만 싣는다 — 수리된 Active Field 는 활성
     # 누름틀로는 남고 이 목록에서만 사라진다. 그 둘을 함께 봐야 「갱신됐다」가 증명된다.
     repaired = {
@@ -1317,7 +1332,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         timeout=30.0,
         requires=["#jobRecordValidationAdvisory"],
     )
-    record_before = _workbench(_snapshot(s))
+    record_before = _workbench(_snapshot(s), "H5 빈 값 데이터 전환 뒤")
     record_advisory = str(
         s.js("document.getElementById('jobRecordValidationAdvisory').textContent")
     )
@@ -1382,7 +1397,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         raise ScenarioFailure(f"SX-05 배달 계획이 서지 않았습니다 — blockers={blockers!r}") from exc
     # 파괴 **전**: 계획된 문서는 전부 새 파일이다(`WRITE_NEW`) — 이 음성 대조가 없으면
     # 아래 파괴 대조가 「원래 그랬다」와 구별되지 않는다.
-    before_collision = _workbench(_snapshot(s))
+    before_collision = _workbench(_snapshot(s), "H5 충돌 전 배달 계획")
     dispositions_before = [
         item["collision_disposition"]
         for item in before_collision["delivery"]["planned_documents"]
@@ -1411,7 +1426,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 파괴 **후**: 처분이 `WRITE_OVERWRITE` 로 서고, 그래도 관찰 축은 막지 않는다
     # (U4 계열2-27). 확인은 **실행 축**에 산다 — 생성을 눌렀을 때 되돌아오는
     # `needs_overwrite` 왕복이 그것이고, 그 자리는 legacy·managed 공용 하나다(#957).
-    required = _workbench(_snapshot(s))
+    required = _workbench(_snapshot(s), "H5 충돌 뒤 배달 계획")
     _expect(
         "WRITE_OVERWRITE" in [
             item["collision_disposition"]
@@ -1431,7 +1446,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "S6-03 admitted enabled create",
         requires=["#jobManagedCreate"],
     )
-    final_managed = _workbench(_snapshot(s))
+    final_managed = _workbench(_snapshot(s), "H6 문서 만들기 직전")
     planned_names = [
         item["relative_path"]
         for item in final_managed["delivery"]["planned_documents"]
@@ -1596,7 +1611,7 @@ def run_restart(ctx: ScenarioContext) -> dict:
         slot["slot_id"]: [option["option_id"] for option in slot["options"] if option["effective"]]
         for slot in view["projection"]["slots"]
     }
-    wb = _workbench(current)
+    wb = _workbench(current, "restart 뒤 작업 재선택")
     # U3-03(#876): 수리된 Binding 은 활성 누름틀로 남되 「입력이 필요한 항목」에는 안 실린다.
     binding = {
         "field_id": "추가확인",
