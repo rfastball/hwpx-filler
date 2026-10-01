@@ -10,12 +10,23 @@ from pathlib import Path
 from hwpxfiller.web_artifact import WebArtifactViolation, resolve_web_artifact
 
 #: 배포본에 함께 실려야 하는 법적 고지 — PyInstaller datas(``packaging/hwpx_filler_web.spec``)가
-#: bundle_root 최상단에 싣는다(FB-06 #1082, 사용자 확정: 파일 동봉만·앱 내 표면 없음).
-REQUIRED_NOTICE_FILES: tuple[str, ...] = ("LICENSE", "THIRD_PARTY_NOTICES")
+#: bundle_root 에 싣는다(FB-06 #1082, 사용자 확정: 파일 동봉만·앱 내 표면 없음).
+#: ``licenses/`` 아래는 THIRD_PARTY_NOTICES 가 가리키는 원문 동봉본이다(#1107).
+REQUIRED_NOTICE_FILES: tuple[str, ...] = (
+    "LICENSE",
+    "THIRD_PARTY_NOTICES",
+    "licenses/rhwp/LICENSE.txt",
+    "licenses/rhwp/THIRD_PARTY_LICENSES.txt",
+    "licenses/rhwp/FONTS.txt",
+    "licenses/rhwp/SourceHanSerifK-OFL.txt",
+    "licenses/rhwp/canvaskit-wasm-LICENSE.txt",
+    "licenses/pretendard/OFL.txt",
+    "licenses/python/LICENSE.txt",
+)
 
 
 def verify_third_party_notices(bundle_root: Path) -> None:
-    """번들 최상단에 LICENSE·THIRD_PARTY_NOTICES 가 실제로 있는지 확인한다.
+    """번들에 LICENSE·THIRD_PARTY_NOTICES 와 고지 원문 동봉본이 실제로 있는지 확인한다.
 
     누락은 조용한 성공이 아니라 :class:`WebArtifactViolation`이다 — 앱 산출물 검증과
     같은 실패 어휘를 쓴다.

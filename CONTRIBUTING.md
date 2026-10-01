@@ -66,7 +66,8 @@ GUI와 CLI는 독립 onedir 번들이며 exe 하나가 아닌 폴더 전체를 �
 퇴역 모듈 부재·필수 모듈 포함, Node 없는 PATH의 seal selfcheck, 실제 WebView2·same-origin·
 외부망 차단을 검사한다. CLI의 schema·fieldize·lint·drift도 실행한다. lint의 발견 exit 1은
 정상 결과다. 함수 내 import는 CLI spec에 명시한다. GUI 런타임은 CLI에서 제외하고 Qt·Node·
-node_modules·frontend 소스는 번들하지 않는다. 설치·제거·서명은 release workflow의 책임이며
+node_modules·frontend 소스와 빌드 전용 Pillow·setuptools는 번들하지 않는다. 동봉 제3자
+구성요소의 고지는 `THIRD_PARTY_NOTICES`와 GUI 번들의 `licenses/`가 함께 싣는다. 설치·제거·서명은 release workflow의 책임이며
 PR distribution 게이트에 포함됐다고 설명하지 않는다.
 
 <a id="changes"></a>

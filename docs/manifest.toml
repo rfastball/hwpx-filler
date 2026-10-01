@@ -67,7 +67,7 @@ max_lines = 230
 sources = ["docs/product.md"]
 tests = ["tests/test_job.py"]
 source_sha256 = "f50f52e7d767b07bdb2244cfc7d510a1c4368c9adeba1f06762c0b42eab60767"
-body_sha256 = "87ab5063a4c2e48929e2d1a837085d6c7bd4df752e5c97cfe88b7cf9c54545f9"
+body_sha256 = "ab8477c253f7689f9c7dca38f5aa904898d13e1b800ad1479152e0bc57bddd49"
 
 [[document]]
 path = "AGENTS.md"
@@ -77,7 +77,7 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "417dc5fb6420180a6b5866f851b108917e55de8a5a2395da4075c51de682f630"
+source_sha256 = "ce5cc98cf6ecdf946dafae4fc14889c3c8a0118f336be562b72420f3154df5fe"
 body_sha256 = "e713e9f7bbeaffd8753f45938bd717eaa5cfbccd72a51cdc38f8af85b885ddd1"
 
 [[document]]
@@ -257,8 +257,8 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "b63c8241e58fbad3232c45fe2dff6d2b58d4ee71c9a4d1d4591e80db6b5362cd"
-body_sha256 = "0a80a50b08f0a552b34726334b3bc41763d6f0c25e240161b31816d983197b20"
+source_sha256 = "2185b7b2f253b2e52794769d00714e143c4ee5ff47b4b886b1d2818a4176f357"
+body_sha256 = "29e1bb017573409e87983cc8d0c6e2bec90a7eaf8564fbef93622658aeea9273"
 
 [[topic]]
 id = "changes"
