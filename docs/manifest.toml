@@ -67,7 +67,7 @@ max_lines = 230
 sources = ["docs/product.md"]
 tests = ["tests/test_job.py"]
 source_sha256 = "f50f52e7d767b07bdb2244cfc7d510a1c4368c9adeba1f06762c0b42eab60767"
-body_sha256 = "ab8477c253f7689f9c7dca38f5aa904898d13e1b800ad1479152e0bc57bddd49"
+body_sha256 = "61f50530937656237b77efce5c65f977f165a1963eefdf59d3279f5bc4ea8663"
 
 [[document]]
 path = "AGENTS.md"
