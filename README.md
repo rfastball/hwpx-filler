@@ -159,4 +159,4 @@ uv sync --locked --all-extras --group dev --group build
 
 ## 라이선스
 
-[MIT](LICENSE). 동봉 폰트 Pretendard는 SIL OFL 1.1입니다.
+[MIT](LICENSE). 함께 배포하는 제3자 구성요소와 글꼴의 고지는 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES)에 있습니다.

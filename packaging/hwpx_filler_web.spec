@@ -17,11 +17,19 @@ hiddenimports 는 **해소 가능한 이름만** 담는다 — PyInstaller 는 �
 넘기므로 유령 항목이 계약처럼 남는다. verify_specs.py 가 find_spec 으로 그것을 거절한다.
 """
 
+import sys
 from pathlib import Path
 
 SPEC_DIR = Path(SPECPATH)  # noqa: F821 - PyInstaller 주입 전역
 REPO = SPEC_DIR.parent
 SRC = str(REPO / "src")
+
+# 동결 런타임이 실어 가는 CPython 자체의 라이선스(PSF-2.0 + 동봉 C 라이브러리 일부) — 빌드에 쓴
+# 인터프리터 설치본의 LICENSE.txt 를 그대로 싣는다(#1107). 없으면 조용히 빼지 않고 빌드를 멈춘다:
+# 고지 없는 런타임 동봉은 성공이 아니다.
+PYTHON_LICENSE = Path(sys.base_prefix) / "LICENSE.txt"
+if not PYTHON_LICENSE.is_file():
+    raise SystemExit(f"CPython LICENSE.txt 를 찾지 못했습니다: {PYTHON_LICENSE}")
 
 # 버전 리소스는 build.ps1 산출 — 있으면 붙이고, 없으면 생략(스펙 단독 검증 가능).
 version_path = REPO / "build" / "version" / "hwpx_filler_version.txt"
@@ -48,6 +56,15 @@ a = Analysis(
         # 여기 한 곳만 채우면 두 배포 형태 모두 실린다.
         (str(REPO / "LICENSE"), "."),
         (str(REPO / "THIRD_PARTY_NOTICES"), "."),
+        # THIRD_PARTY_NOTICES 가 가리키는 원문 동봉본(#1107). 경로 목록은
+        # scripts/verify_packaged_web.py 의 REQUIRED_NOTICE_FILES 가 배포본에서 다시 확인한다.
+        (str(REPO / "vendor" / "rhwp" / "LICENSE.txt"), "licenses/rhwp"),
+        (str(REPO / "vendor" / "rhwp" / "THIRD_PARTY_LICENSES.txt"), "licenses/rhwp"),
+        (str(REPO / "vendor" / "rhwp" / "FONTS.txt"), "licenses/rhwp"),
+        (str(REPO / "vendor" / "rhwp" / "SourceHanSerifK-OFL.txt"), "licenses/rhwp"),
+        (str(REPO / "vendor" / "rhwp" / "canvaskit-wasm-LICENSE.txt"), "licenses/rhwp"),
+        (str(REPO / "frontend" / "fonts" / "OFL.txt"), "licenses/pretendard"),
+        (str(PYTHON_LICENSE), "licenses/python"),
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[
@@ -73,6 +90,13 @@ a = Analysis(
         "hwpxdiff",
         # 표준 슬리밍.
         "tkinter", "unittest", "pydoc", "matplotlib", "numpy",
+        # 빌드 환경(dev·build 그룹)에서 딸려 오던 비런타임 패키지(#1107).
+        # - PIL: openpyxl.drawing.image 가 try/except ImportError 로만 찾는다. 앱은
+        #   load_workbook(read_only=True)만 써서 그림 파트를 읽지 않는다(src/ 는 PIL 미사용).
+        # - setuptools(+_distutils_hack·pkg_resources): cffi 의 컴파일 경로
+        #   (ffi.compile/verify → _shimmed_dist_utils)만 부른다. clr_loader 는 cffi ABI
+        #   모드(cdef + dlopen)만 쓰므로 런타임에 닿지 않는다.
+        "PIL", "setuptools", "_distutils_hack", "pkg_resources",
     ],
     noarchive=False,
 )

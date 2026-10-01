@@ -38,6 +38,11 @@ a = Analysis(
         "tkinter",
         "unittest",
         "pydoc",
+        # 빌드 환경에서 딸려 오던 비런타임 패키지(#1107) — 근거는 hwpx_filler_web.spec 참고.
+        "PIL",
+        "setuptools",
+        "_distutils_hack",
+        "pkg_resources",
     ],
     noarchive=False,
 )

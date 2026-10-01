@@ -205,6 +205,13 @@ function Test-BundleBoundary([string]$BundleDir) {
     if ($nodeRuntime) {
         throw "build-time frontend 도구/source가 번들에 남음: $($nodeRuntime.FullName -join ', ')"
     }
+    # 빌드 환경에서 딸려 오던 비런타임 패키지(#1107) — spec excludes 가 풀리면 고지에 없는
+    # 제3자 코드가 다시 실린다.
+    $buildOnly = Get-ChildItem $BundleDir -Recurse -Directory |
+        Where-Object Name -In @('PIL', 'setuptools', '_distutils_hack', 'pkg_resources')
+    if ($buildOnly) {
+        throw "비런타임 빌드 의존성이 번들에 남음: $($buildOnly.FullName -join ', ')"
+    }
 }
 
 function Test-WheelDistribution {
