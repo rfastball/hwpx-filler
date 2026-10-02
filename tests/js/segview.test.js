@@ -134,6 +134,20 @@ test("paint: 신원 — data-token 은 이름 있는 조각에만, literal 에�
   assert.equal(paint([{ text: "머리", name: "이름" }]).includes("data-token"), false);
 });
 
+test("paint: 작업대에서만 이름 있는 조각이 키보드 손잡이가 된다", () => {
+  const segments = [
+    { text: "머리" },
+    { kind: "fill", name: "수신", text: "회계과" },
+    { kind: "blank", name: "비고" },
+    { kind: "missing", text: "{{미상}}" },
+  ];
+  const html = renderToStaticMarkup(createElement(SegmentView, { segments, interactive: true }));
+  assert.equal(html.match(/role="button"/g).length, 2);
+  assert.ok(html.includes('data-token="수신" role="button" tabindex="0" aria-label="회계과 (수신 규칙)"'));
+  assert.ok(html.includes('data-token="비고" title="{{비고}}: 빈 값" role="button" tabindex="0" aria-label="〈빈 값〉 (비고 규칙)"'));
+  assert.equal(paint(segments).includes('role="button"'), false);
+});
+
 test("paint: 오늘의 잘못된 입력 처리 — 고치지 말고 받아쓴다", () => {
   // text 없는 fill 은 String(undefined) 을 태워 문자열 "undefined" 가 그대로 보인다.
   assert.equal(

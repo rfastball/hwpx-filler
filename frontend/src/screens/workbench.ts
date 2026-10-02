@@ -502,6 +502,7 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
      그때 카드가 없어 **영영** 안 붙는다 — 열림 여부를 의존에 넣어 카드가 서는 커밋에서 붙고
      닫히는 커밋에서 걷힌다. 열린 채 스냅샷이 갱신되는 동안에는 값이 안 바뀌어 재부착이 없다. */
   const cardOpen = snapshot !== null && !!snapshot.open;
+  const currentIndex = snapshot?.card?.index;
   useEffect(() => {
     const card = controller.doc.getElementById("wbCard");
     if (card === null) return;
@@ -509,9 +510,33 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
       const segment = (event.target as Element | null)?.closest<HTMLElement>("[data-token]");
       if (segment != null) controller.aimAt(segment.dataset.token || "");
     };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const segment = (event.target as Element | null)?.closest<HTMLElement>("[data-token][role=button]");
+      if (!segment) return;
+      event.preventDefault();
+      controller.aimAt(segment.dataset.token || "");
+    };
     card.addEventListener("click", onClick);
-    return () => card.removeEventListener("click", onClick);
+    card.addEventListener("keydown", onKeyDown);
+    return () => {
+      card.removeEventListener("click", onClick);
+      card.removeEventListener("keydown", onKeyDown);
+    };
   }, [controller, cardOpen]);
+  useEffect(() => {
+    if (!cardOpen) return;
+    const dots = controller.doc.getElementById("wbDots");
+    const current = dots?.querySelector<HTMLElement>('[aria-current="step"]');
+    if (!dots || !current) return;
+    dots.querySelectorAll<HTMLButtonElement>(".wc-dot").forEach((button) => {
+      button.tabIndex = button === current ? 0 : -1;
+    });
+    const box = dots.getBoundingClientRect();
+    const item = current.getBoundingClientRect();
+    if (item.top < box.top) dots.scrollTop -= box.top - item.top;
+    else if (item.bottom > box.bottom) dots.scrollTop += item.bottom - box.bottom;
+  }, [controller, cardOpen, currentIndex]);
 
   if (snapshot === null || !snapshot.open) {
     /* 세션 없음 — 화면은 라우팅 가드가 막는다. 골격은 그대로 두고 값만 비운다. */
@@ -599,14 +624,34 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
           h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0])),
         /* 1건이면 순회할 곳이 없어 큐 장치가 숨는다(퇴화 승계) — 정보가 없어서지 장식이라서가 아니다. */
         h("div", {
-          className: "wb-dots", id: "wbDots", role: "list", "aria-label": "큐 진행 표시",
+          className: "wb-dots", id: "wbDots", role: "group", "aria-label": "큐 진행 표시",
           hidden: degenerate,
+          onFocus: (event: Obj) => {
+            const target = (event.target as Element).closest(".wc-dot") as HTMLButtonElement | null;
+            if (!target) return;
+            const previous = event.currentTarget.querySelector('.wc-dot[tabindex="0"]') as HTMLButtonElement | null;
+            if (previous && previous !== target) previous.tabIndex = -1;
+            target.tabIndex = 0;
+          },
+          onKeyDown: (event: Obj) => {
+            const buttons = Array.from(event.currentTarget.querySelectorAll(".wc-dot")) as HTMLButtonElement[];
+            const index = buttons.indexOf(event.target as HTMLButtonElement);
+            if (index < 0) return;
+            const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+              : event.key === "ArrowRight" || event.key === "ArrowDown" ? index + 1
+                : event.key === "ArrowLeft" || event.key === "ArrowUp" ? index - 1 : -1;
+            if (next < 0 || next >= buttons.length) return;
+            event.preventDefault();
+            buttons[next].focus();
+          },
         }, ...(degenerate ? [] : ((card.index_map || []) as Obj[]).map((dot) => {
           const label = DOT_STATE_LABEL[dot.state] || dot.state;
           const why = label + (dot.recheck ? " · 다시 확인 필요" : "");
           return h("button", {
-            className: `wc-dot ${dot.state}${dot.recheck ? " gap" : ""}`, role: "listitem",
+            className: `wc-dot ${dot.state}${dot.recheck ? " gap" : ""}`, type: "button",
             "data-i": dot.index, key: String(dot.index),
+            tabIndex: dot.state === "current" ? 0 : -1,
+            "aria-current": dot.state === "current" ? "step" : undefined,
             "aria-label": `${dot.row}행 ${why}`, title: `${dot.row}행 · ${why}`,
             onClick: () => controller.guarded(() => controller.setCurrent(Number(dot.index))),
           });
@@ -614,7 +659,7 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         h("article", {
           className: `wb-preview wc-render f-${snapshot.target_font || "gulimche"}`,
           id: "wbCard", "data-preserve-scroll": true,
-        }, h(SegmentView as any, { segments: card.segments || [] })),
+        }, h(SegmentView as any, { segments: card.segments || [], interactive: true })),
         /* 린트는 **표지 + 행동**이 한 벌이다 — 경고만 두면 문제를 통보받고 손잡이는 없다. */
         h("p", { className: "muted", id: "wbLint", style: { display: lint.active ? "" : "none" } },
           lint.applied
