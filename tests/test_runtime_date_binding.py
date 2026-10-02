@@ -94,7 +94,7 @@ def _today(field_id: str = "작성일", code: str = "") -> FieldBindingRule:
 # ─── 규칙 불변식 ──────────────────────────────────────────────────────────────────
 def test_presets_are_the_date_presets() -> None:
     assert DATE_PRESETS == [code for _label, code in format_engine.presets("date")]
-    assert len(DATE_PRESETS) == 9
+    assert len(DATE_PRESETS) == 10
 
 
 def test_runtime_date_rule_carries_only_the_date_format_pair() -> None:
