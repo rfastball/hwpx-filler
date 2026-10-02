@@ -185,7 +185,7 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py"]
 tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py"]
-source_sha256 = "8ed3349a6c7908ede9201752b173005a11bda39df2a366e8421879fa9b8b1eab"
+source_sha256 = "d214dfcb8296f7327d5e0336d7a175a0c1e67250f7147b201670ff73f7e0c2ad"
 body_sha256 = "b27e662f4f3beb9badda884c2dc08e856fed5943f027ecdb0f1bf91c8dcf5327"
 
 [[topic]]
@@ -201,15 +201,15 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "99d2fa9f7d8b3cf9f712f045f0658a48e7c7b0707495ee9a139e02b72c06555b"
-body_sha256 = "55e0c0c4ee32acff7b3ab25b3de13c65e0586e736c672b561c3477464b0e5627"
+source_sha256 = "56de924032410a20b3a31d5f07855997d170f549b7c1fe7f29278742f8217d61"
+body_sha256 = "a4d298323b376b34eebd95c5d8c6bed4d7addd191d186df146fedbbf064c5330"
 
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "bccc1f82708c98c968e64b98f207fde2015ba19ff77050fed999393dbbe13b40"
+source_sha256 = "a584795421066315359ef9345b8432c7218e9218c69b4074ca3b5a2fea970378"
 body_sha256 = "2ce1407ab99cd8bfa2625ec3b674596cb9a4d56a937f65aafb4e8da4289c047e"
 
 [[topic]]

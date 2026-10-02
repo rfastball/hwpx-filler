@@ -438,9 +438,17 @@ def test_generate_managed_locked_never_rereads_live_vm():
     managed 하나)."""
     import inspect
 
-    src = inspect.getsource(JobController._generate_managed_locked)
-    assert "self.vm." not in src, "생성 본체가 라이브 vm 을 재참조합니다(P1 재유입)."
-    assert "run_vm." in src
+    # 본체는 준비(잠금 안) → 실행(잠금 밖) → 채택(잠금 안) 세 자리로 나뉘었다 — 셋 다 같은 규율.
+    for part in (
+        JobController._generate_managed_locked,
+        JobController._run_managed_unlocked,
+        JobController._adopt_managed_outcome,
+    ):
+        src = inspect.getsource(part)
+        assert "self.vm." not in src, "생성 본체가 라이브 vm 을 재참조합니다(P1 재유입)."
+        assert "self.work.vm." not in src, "생성 본체가 라이브 vm 을 재참조합니다(P1 재유입)."
+    assert "run_vm." in inspect.getsource(JobController._generate_managed_locked)
+    assert "run_vm." in inspect.getsource(JobController._adopt_managed_outcome)
 
 
 # --------------------------------------- data-first 첫 슬라이스 성공 기준(계획 §5)
@@ -6879,3 +6887,168 @@ def test_list_filter_columns_matches_like_the_full_column_search(tmp_path):
     assert [(c["name"], c["hidden"]) for c in columns] == [
         ("공고명", True), ("추정가격", False), ("계약일자", False),
     ]
+
+
+# ------------------------------- 세션 상태 직렬화 — 저장 직후 갱신·선택 경합(빈 이름 작업 파일)
+def _two_bound_jobs(tmp_path):
+    """앉은 작업(공고서, d.csv 결속) + 다른 데이터에 결속된 새 작업(공고서2, d2.csv).
+
+    「저장하고 문서 만들기로」의 모양 그대로다: 새 작업을 고르면 그 데이터를 다시 세우고,
+    그 마운트가 데이터가 다른 앞 작업을 해제한다.
+    """
+    ctrl, _ = _controller(tmp_path, managed=True)
+    _data_csv(tmp_path)
+    other = tmp_path / "d2.csv"
+    other.write_text("bidNtceNm,presmptPrce\n책상,500\n", encoding="utf-8")
+    seated = ctrl.registry.load("공고서")
+    ctrl.registry.save(Job(
+        name="공고서2", template_path=seated.template_path, mapping=seated.mapping,
+        filename_pattern=seated.filename_pattern, **_bound_to(str(other)),
+    ))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.work.name == "공고서" and ctrl.work.vm is not None
+    return ctrl
+
+
+def test_snapshot_reads_the_seat_it_captured_even_if_released_midway(tmp_path, monkeypatch):
+    """스냅샷은 시작 때 포획한 활성 작업만 읽는다 — 도중 해제가 빈 이름 조회로 새지 않는다.
+
+    결함 재현의 결정적 판: HWPX 패널을 짓는 도중(`vm.refresh`) 앞 작업이 해제되면, 종전에는
+    `_configuration_zones` 가 세션 이름을 다시 읽어 ``source_drift("")`` →
+    ``jobs/unnamed.job.json`` FileNotFoundError 로 스냅샷째 죽었다.
+    """
+    ctrl = _two_bound_jobs(tmp_path)
+    vm = ctrl.work.vm
+    original = vm.refresh
+
+    def release_midway(*args, **kwargs):
+        ctrl._release_active_work()          # 다른 전이가 끼어든 자리(같은 스레드로 고정)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(vm, "refresh", release_midway)
+    asked: list[str] = []
+    real_drift = ctrl._template_change.source_drift
+    monkeypatch.setattr(
+        ctrl._template_change, "source_drift",
+        lambda name: (asked.append(name), real_drift(name))[1],
+    )
+
+    snap = ctrl.refresh_panel()
+
+    assert snap["job_name"] == "공고서", "포획한 작업을 끝까지 말해야 한다"
+    assert asked and "" not in asked, f"빈 이름으로 원본 대조를 했다: {asked}"
+    monkeypatch.setattr(vm, "refresh", original)
+    assert ctrl.refresh_panel()["job_name"] == "", "다음 스냅샷은 해제된 지금을 말한다"
+
+
+def test_refresh_and_prefer_work_do_not_interleave(tmp_path, monkeypatch):
+    """목록 갱신(refresh)의 스냅샷이 도는 동안 작업 선택(prefer_work)은 끼어들지 못한다.
+
+    두 요청은 pywebview 별도 스레드다. 스냅샷 한가운데서 선택 쪽이 앞 작업을 해제할 기회를
+    0.5초 주고(잠금이 없으면 그 안에 해제가 일어난다), 해제가 스냅샷 **뒤에만** 일어났는지 잰다.
+    """
+    ctrl = _two_bound_jobs(tmp_path)
+    inside, released = threading.Event(), threading.Event()
+    real_release = ctrl._release_active_work
+
+    def spy_release():
+        real_release()
+        released.set()
+
+    monkeypatch.setattr(ctrl, "_release_active_work", spy_release)
+    vm = ctrl.work.vm
+    original = vm.refresh
+    interleaved: list[bool] = []
+
+    def held_snapshot(*args, **kwargs):
+        if not interleaved:
+            inside.set()
+            released.wait(timeout=0.5)
+            interleaved.append(released.is_set())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(vm, "refresh", held_snapshot)
+    errors: list[BaseException] = []
+
+    def run(fn):
+        try:
+            fn()
+        except BaseException as exc:  # noqa: BLE001 — 스레드 예외를 본 스레드에서 단언한다
+            errors.append(exc)
+
+    a = threading.Thread(target=run, args=(lambda: ctrl.dispatch("refresh", {}),))
+    b = threading.Thread(target=run, args=(
+        lambda: (inside.wait(timeout=5), ctrl.dispatch("prefer_work", {"name": "공고서2"})),
+    ))
+    a.start()
+    b.start()
+    a.join(timeout=30)
+    b.join(timeout=30)
+
+    assert not errors, errors
+    assert interleaved == [False], "선택이 진행 중인 스냅샷 한가운데서 앞 작업을 해제했다"
+    assert ctrl.work.name == "공고서2"
+
+
+def test_cancel_generation_does_not_wait_for_the_state_lock(tmp_path, monkeypatch):
+    """중단 요청은 상태 잠금 뒤에 줄 서지 않는다 — 다른 스레드가 잠금을 쥐고 있어도 즉시 선다."""
+    ctrl, _ = _controller(tmp_path)
+    cancelled, holder_ready = threading.Event(), threading.Event()
+    monkeypatch.setattr(ctrl.runs, "request_cancel", cancelled.set)
+
+    def hold_lock():
+        with ctrl._state_lock:
+            holder_ready.set()
+            cancelled.wait(timeout=5)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert holder_ready.wait(timeout=5)
+    canceller = threading.Thread(target=ctrl.dispatch, args=("cancel_generation", {}))
+    canceller.start()
+    assert cancelled.wait(timeout=5), "중단 요청이 잠금을 기다렸다"
+    holder.join(timeout=5)
+    canceller.join(timeout=5)
+
+
+def test_generation_releases_the_state_lock_while_delivering(tmp_path, monkeypatch):
+    """배달 파이프라인이 도는 동안 상태 잠금은 비어 있다 — 진행 중 갱신·중단이 런 뒤에 줄 서지 않게.
+
+    입력은 잠금 안에서 고정했고(``_ManagedRunCall``), 상태를 바꾸는 전이는
+    ``generation_lock`` 판정이 막는다(`test_stamp_goes_to_the_job_the_run_started_on`).
+    """
+    import hwpxfiller.webapp.document_run_coordinator as coordinator
+
+    ctrl, _ = _controller(tmp_path, managed=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    pick_output_folder(ctrl, tmp_path / "out")
+    real_run = coordinator.run_managed_generation
+    free: list[bool] = []
+
+    def probe(**kwargs):
+        def try_lock():
+            got = ctrl._state_lock.acquire(blocking=False)
+            if got:
+                ctrl._state_lock.release()
+            free.append(got)
+
+        other = threading.Thread(target=try_lock)
+        other.start()
+        other.join(timeout=5)
+        return real_run(**kwargs)
+
+    monkeypatch.setattr(coordinator, "run_managed_generation", probe)
+    assert ctrl.generate()["ok"] is True
+    assert free == [True], "배달 중에 상태 잠금을 쥐고 있었다"
+
+
+def test_registry_load_refuses_an_empty_name_before_touching_disk(tmp_path):
+    """빈 이름은 ``unnamed.job.json`` 의 파일 부재로 둔갑하지 않는다 — 읽기 전에 거절한다.
+
+    쓰기 쪽 slug(``unnamed``)는 그대로다: 이미 그 이름으로 저장된 작업이 있을 수 있다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    with pytest.raises(ValueError, match="이름이 비어 있습니다"):
+        reg.load("")
+    assert reg.path_for("").name == "unnamed.job.json"

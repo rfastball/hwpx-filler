@@ -677,6 +677,16 @@ class JobRegistry:
         return self.path_for(name).exists()
 
     def load(self, name: str) -> Job:
+        """이름으로 작업을 읽는다. **빈 이름은 읽기 전에 거절한다.**
+
+        빈 이름은 slug 규칙(:func:`_slug`)에서 ``unnamed`` 가 돼, 그대로 두면 「작업이 선택되지
+        않았다」는 호출자 쪽 사실이 존재한 적 없는 ``unnamed.job.json`` 의 파일 부재로 둔갑한다
+        (저장 직후 갱신·선택 경합에서 실제로 그렇게 보였다). 저장 쪽 slug 는 그대로다 — 이미
+        ``unnamed`` 로 저장된 작업이 있을 수 있으므로 쓰기·경로 계산(:meth:`path_for`)은 바꾸지
+        않고, 이름 없는 **읽기**만 막는다.
+        """
+        if not name:
+            raise ValueError("이름이 비어 있습니다")
         return self._load(self.path_for(name))
 
     def content_fingerprint(self, job: Job) -> str:

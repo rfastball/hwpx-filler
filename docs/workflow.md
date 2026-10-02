@@ -135,7 +135,7 @@ Python 투영이며 판정 전에는 수정이 잠긴 채 확인 중으로 보�
 | `DocumentRunCoordinator` | 잠금·취소·입력 고정·덮어쓰기·결과·배달 |
 | `JobController` | 위 책임의 브리지 조정 |
 
-snapshot은 준비된 view의 순수 성형이며 IO는 `refresh_panel()` 같은 명시 경계에 둔다.
+`JobController`는 상태 잠금 하나로 dispatch·초기 당김·브리지·다른 화면의 직접 진입을 직렬화한다(생성 중단 요청과 입력을 고정한 뒤의 배달 구간만 잠금 밖). snapshot은 시작 때 한 번 포획한 활성 작업만 읽는 준비된 view의 순수 성형이며 IO는 `refresh_panel()` 같은 명시 경계에 둔다.
 브리지는 `mounted_data_descriptor`·`owned_session_paths`로 필요한 설명과 경로만 읽는다.
 편집기 handoff는 포획한 참조를 넘기고 풀을 다시 조회하지 않는다.
 

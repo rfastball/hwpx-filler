@@ -40,6 +40,25 @@ class DataTransitionReconciliation:
 
 
 @dataclass(frozen=True)
+class ActiveWorkView:
+    """한 스냅샷이 끝까지 쓰는 활성 작업 좌표 — 시작 시 한 번 포획한다.
+
+    세션 필드를 렌더 도중 다시 읽으면 그 사이 다른 전이(작업 해제·교체)가 끼어 한 패널이
+    두 작업을 섞어 말한다. 저장 직후 갱신과 작업 선택이 겹쳐 빈 이름으로 작업 파일을 찾던
+    결함이 그 자리다. 렌더 경로는 이 값만 읽고, 세션의 현재값과의 대조(stale 판정)만
+    라이브 필드를 본다.
+    """
+
+    name: str
+    vm: RunViewModel | None
+    is_txt: bool
+    unsupported: bool
+    data_unbound: bool
+    browse_tab: str
+    browse_query: str
+
+
+@dataclass(frozen=True)
 class ActiveWorkReload:
     changed: bool = False
     rules_changed: bool = False
@@ -107,6 +126,18 @@ class ActiveWorkSession:
         if value != self._name:
             self._name = value
             self._on_work_changed()
+
+    def view(self) -> ActiveWorkView:
+        """지금 앉은 작업의 좌표를 한 벌로 포획한다(렌더 1회분)."""
+        return ActiveWorkView(
+            name=self._name,
+            vm=self.vm,
+            is_txt=self.is_txt,
+            unsupported=self.unsupported,
+            data_unbound=self.data_unbound,
+            browse_tab=self.browse_tab,
+            browse_query=self.browse_query,
+        )
 
     def clear(self) -> None:
         self.vm = None
@@ -375,6 +406,7 @@ class ActiveWorkSession:
 
 __all__ = [
     "ActiveWorkReload",
+    "ActiveWorkView",
     "ActiveWorkSession",
     "DataTransitionReconciliation",
     "PreferredWorkDecision",

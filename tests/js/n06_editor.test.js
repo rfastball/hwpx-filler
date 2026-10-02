@@ -430,6 +430,63 @@ test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async
   ], "버튼이 blur보다 먼저 와도 이름 변경이 저장 판정보다 먼저 착지해야 한다");
 });
 
+/* 「저장하고 문서 만들기로」는 목록 갱신(job/refresh)을 **끝낸 뒤** 착석(prefer_work)을 보낸다.
+   기다리지 않고 이어 쏘면 두 요청이 백엔드의 별도 스레드에서 겹쳐, 갱신 쪽 스냅샷이 짓는 도중
+   선택 쪽이 앞 작업을 해제했다(빈 이름으로 `jobs/unnamed.job.json` 을 찾던 결함). */
+test("저장하고 문서 만들기로 — 목록 갱신이 끝난 뒤에야 prefer_work 를 보낸다", async () => {
+  let finishRefresh = () => {};
+  const h = harness({
+    call: async (_screen, action) => (action === "save" ? { ok: true } : {}),
+  });
+  h.ports.jobRead.bind({
+    refreshList: () => {
+      h.trace.push(["ports.refreshList"]);
+      return new Promise((resolve) => { finishRefresh = () => { h.trace.push(["refreshList.done"]); resolve(); }; });
+    },
+    openBrowseNeedsAction: async () => {},
+  });
+  h.ports.editorEntry.bind({
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
+    restoreEntryFocus() {},
+  });
+  await h.controller.init();
+
+  const pending = h.controller.saveAndOpen();
+  for (let i = 0; i < 20 && !h.names().includes("ports.refreshList"); i += 1) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const preferBefore = h.trace.some((row) => row[0] === "dispatch" && row[2] === "prefer_work");
+  assert.equal(preferBefore, false, "목록 갱신이 끝나기 전에 착석 요청이 나갔다");
+  finishRefresh();
+  await pending;
+
+  const order = h.trace
+    .filter((row) => row[0] === "ports.refreshList" || row[0] === "refreshList.done"
+      || (row[0] === "dispatch" && (row[2] === "save" || row[2] === "prefer_work")))
+    .map((row) => (row[0] === "dispatch" ? row[2] : row[0]));
+  assert.deepEqual(order, ["save", "ports.refreshList", "refreshList.done", "prefer_work"]);
+  assert.equal(h.names().filter((name) => name === "ports.refreshList").length, 1,
+    "갱신은 한 번이다 — 저장 안의 배경 갱신과 겹쳐 두 번 쏘지 않는다");
+  assert.ok(h.names().includes("navigation.go"), "착지까지 간다");
+});
+
+test("작업 저장 — 제자리 저장은 목록 갱신을 배경으로 한 번 쏘고 기다리지 않는다(결정 40)", async () => {
+  const h = harness({
+    call: async (_screen, action) => (action === "save" ? { ok: true } : {}),
+  });
+  h.ports.jobRead.bind({
+    refreshList: () => {
+      h.trace.push(["ports.refreshList"]);
+      return new Promise(() => {});   // 끝나지 않는 갱신 — 저장이 그것을 기다리면 이 테스트가 멈춘다
+    },
+    openBrowseNeedsAction: async () => {},
+  });
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), true);
+  assert.equal(h.names().filter((name) => name === "ports.refreshList").length, 1);
+  assert.equal(h.trace.some((row) => row[0] === "dispatch" && row[2] === "prefer_work"), false);
+});
+
 /* ---------------- ③④ 교차 포트·landOn 순서 ---------------- */
 
 test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복원, late-binding", async () => {

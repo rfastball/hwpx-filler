@@ -819,7 +819,12 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
-  async function doSave(flags: Obj = {}): Promise<boolean> {
+  /** 저장 한 번. ``listRefresh: "background"`` 가 기본이다 — 일반 [작업 저장]은 제자리
+   *  저장이라(결정 40) 「문서 만들기」 목록만 뒤에서 다시 받게 하고 기다리지 않는다.
+   *  ``"caller"`` 는 그 갱신을 호출자가 직접 순서 안에서 보내겠다는 뜻이다(`saveAndOpen`). */
+  async function doSave(
+    flags: Obj = {}, options: { listRefresh?: "background" | "caller" } = {},
+  ): Promise<boolean> {
     await flushPendingEdits();
     let result: Obj;
     try {
@@ -838,7 +843,7 @@ export function createEditorController(deps: EditorControllerDeps) {
          「저장됐다」와 「이 칸이 잘못됐다」를 동시에 말한다. */
       if (view.invalidField !== "") patchView({ invalidField: "" });
       /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
-      void deps.ports.jobRead.current().refreshList();
+      if (options.listRefresh !== "caller") void deps.ports.jobRead.current().refreshList();
       return true;
     }
     if (result.needs_overwrite) {
@@ -849,7 +854,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       })) {
         return doSave({
           ...flags, confirm_overwrite: true, confirmed_overwrite_text: result.overwrite_text,
-        });
+        }, options);
       }
       return false;
     }
@@ -870,12 +875,17 @@ export function createEditorController(deps: EditorControllerDeps) {
    *     사용」과 **같은 순서**로 보낸다. 여기서 `select_job` 을 직접 쏘면 준비·호환 판정이
    *     표면에 한 벌 더 생긴다.
    *  ③ **이동만 실패해도 저장 성공을 숨기지 않는다.** 착지가 안 되면 머무르며 그 사실을
-   *     `#save-msg` 로 재진술한다 — 저장은 이미 일어났고 사람이 다시 누를 일이 아니다. */
+   *     `#save-msg` 로 재진술한다 — 저장은 이미 일어났고 사람이 다시 누를 일이 아니다.
+   *  ④ **목록 갱신을 끝낸 뒤 착석을 보낸다.** 저장 뒤 목록 갱신(`job/refresh`)을 기다리지 않고
+   *     `prefer_work` 를 이어 쏘면 두 요청이 별도 스레드에서 겹친다 — 한쪽이 스냅샷을 짓는
+   *     사이 다른 쪽이 앞 작업을 해제해 빈 이름으로 작업 파일을 찾던 결함이 그 자리다(백엔드는
+   *     상태 잠금으로 직렬화하지만, 순서가 정해진 두 요청을 표면이 경주시킬 이유도 없다). */
   async function saveAndOpen(): Promise<void> {
-    if (!(await doSave({}))) return;
+    if (!(await doSave({}, { listRefresh: "caller" }))) return;
     const name = String(snapshot().name || "");
     let result: Obj;
     try {
+      await deps.ports.jobRead.current().refreshList();
       result = await dispatch("job", "prefer_work", { name });
       await deps.navigation.refresh("job");
     } catch (error) {

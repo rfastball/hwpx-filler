@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 import threading
+from typing import Concatenate, ParamSpec, TypeVar
 
 from ..application.generation import (
+    GenerationRun,
     blank_marker,
 )
 from ..application.jobs import (
@@ -60,6 +64,7 @@ from ..viewmodel.run_state import (
     FileSourceFactoryPort,
     PoolSourceFactoryPort,
     RunDataInput,
+    RunViewModel,
     resolve_file_source,
     resolve_pool_source,
     template_missing,
@@ -75,7 +80,7 @@ from ..viewmodel.work_candidates import (
     workbench_entry_gate,
 )
 from .action_registry import ZONE_MUTATIONS
-from .active_work_session import ActiveWorkSession
+from .active_work_session import ActiveWorkSession, ActiveWorkView
 from ..external.template_change import (
     NO_SOURCE_DRIFT_JUDGMENT,
     unsupported_zone,
@@ -135,6 +140,7 @@ from .document_run_coordinator import (
     CompletionStamp,
     DocumentRunCoordinator,
     ManagedRunInput,
+    ManagedRunResult,
     RunInputCapture,
 )
 from .screens import (
@@ -161,6 +167,34 @@ _REMOUNT_FAILED = "데이터를 다시 읽지 못했습니다. {reason}"
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _serialized(
+    method: "Callable[Concatenate[JobController, _P], _R]",
+) -> "Callable[Concatenate[JobController, _P], _R]":
+    """컨트롤러 상태 잠금 안에서 실행한다 — dispatch 밖에서 들어오는 진입점(브리지·타 컨트롤러)용."""
+
+    @wraps(method)
+    def locked(self: "JobController", *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with self._state_lock:
+            return method(self, *args, **kwargs)
+
+    return locked
+
+
+@dataclass(frozen=True)
+class _ManagedRunCall:
+    """잠금 안에서 확정한 managed 실행 인자 — 잠금 밖 실행 구간이 이것만 쓴다."""
+
+    run: GenerationRun
+    run_vm: RunViewModel
+    managed: ManagedRunInput
+    now: datetime
+    confirm_overwrite: bool
+    overwrite_pin_key: str
 
 
 # 전체 표시순서는 로드 순서 index의 내림/오름차순이라 동률이 없다.
@@ -241,6 +275,15 @@ class JobController:
         # 표시 이름은 스냅샷당 한 시각을 공유하고 실행은 진입 시각을 별도로 잡는다.
         self._names_now: "datetime | None" = None
         self._panel_snapshot: dict = {}
+        # **세션 상태 잠금**(RLock) — pywebview 는 js_api 호출마다 스레드를 따로 쓴다. 이 잠금이
+        # 없으면 「저장하고 문서 만들기로」의 목록 갱신(refresh)과 작업 선택(prefer_work)이 동시에
+        # 돌아, 한쪽이 스냅샷을 짓는 사이 다른 쪽이 활성 작업을 해제해 빈 이름으로 작업 파일을
+        # 찾았다. dispatch·초기 당김·브리지/타 컨트롤러 직접 진입점이 모두 이 잠금 안에서 돈다.
+        # 예외 둘: ① `cancel_generation` 은 잠금 없이 받는다 — 진행 중 런을 멈추는 동사가 그 런
+        # 뒤에 줄 서면 안 된다. ② 생성은 실행 구간(배달 파이프라인)에서 잠금을 놓는다 — 그 구간의
+        # 입력은 잠금 안에서 고정했고, 상태를 바꾸는 전이는 `generation_lock` 판정이 이미 막는다.
+        # 재진입(RLock)이라 잠금 안 push·`refresh_panel` 재호출이 자기 교착을 만들지 않는다.
+        self._state_lock = threading.RLock()
 
     # --------------------------------------------- 진행 중인 런과의 경합 거절
     def raise_if_generating(self, then_do: str) -> None:
@@ -262,13 +305,16 @@ class JobController:
 
     # ------------------------------------------------------------- 스냅샷
     # -------------------------------------------- 범위 상태 접근(커밋 vs 초안, 판정 A·D)
+    @_serialized
     def delivered_artifact(self, ordinal: int) -> "DeliveredDocument | None":
         return self.runs.delivered_artifact(ordinal)
 
+    @_serialized
     def delivered_artifact_paths(self) -> "tuple[str, ...]":
         """앱이 이 세션에서 배달한 경로만 소유 경로 화이트리스트에 제공한다."""
         return self.runs.delivered_paths()
 
+    @_serialized
     def mounted_data_descriptor(self, path: str, sheet: str = "") -> dict:
         """브리지가 방금 성립한 파일 마운트를 되돌려줄 명시 값."""
         return {
@@ -278,6 +324,7 @@ class JobController:
             "rows": len(self.data.records),
         }
 
+    @_serialized
     def owned_session_paths(self) -> "tuple[str, ...]":
         """경로 어포던스가 허용할 실행 세션의 정확한 좌표."""
         return (self.runs.out_dir, *self.runs.delivered_paths())
@@ -300,11 +347,20 @@ class JobController:
     def _run_data(self) -> RunDataInput:
         return RunDataInput(self.data.datasource, tuple(self.data.records))
 
-    def _run_marker(self, indices: "list[int]", data: "RunDataInput | None" = None) -> str:
-        """표시와 생성이 공유하는 미입력 표식을 현재 실행 입력에서 계산한다."""
-        if self.work.vm is None or not indices:
+    def _run_marker(
+        self,
+        indices: "list[int]",
+        data: "RunDataInput | None" = None,
+        vm: "RunViewModel | None" = None,
+    ) -> str:
+        """표시와 생성이 공유하는 미입력 표식을 현재 실행 입력에서 계산한다.
+
+        렌더 경로는 스냅샷이 포획한 ``vm`` 을 넘긴다(세션 필드 재읽기 금지).
+        """
+        target = self.work.vm if vm is None else vm
+        if target is None or not indices:
             return ""
-        return blank_marker(self.work.vm.blank_fields(data or self._run_data(), indices))
+        return blank_marker(target.blank_fields(data or self._run_data(), indices))
 
     def _review(
         self,
@@ -353,10 +409,12 @@ class JobController:
 
     _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
+    @_serialized
     def snapshot(self) -> dict:
         """마지막으로 준비한 패널을 IO나 상태 변경 없이 복사해 반환한다."""
         return deepcopy(self._panel_snapshot)
 
+    @_serialized
     def refresh_panel(self) -> dict:
         """외부 상태를 읽고 실행 준비를 갱신한 뒤 패널 읽기 모델을 설치한다."""
         self._panel_snapshot = deepcopy(self._prepare_panel_snapshot())
@@ -372,19 +430,23 @@ class JobController:
             registry_notice_text = (
                 "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
             )
-        base = self._prepare_base_panel(jobs, registry_notice_text)
-        if self.work.is_txt:
-            return self._prepare_txt_panel(base, jobs)
-        if self.work.vm is None:
-            return self._prepare_empty_panel(base, jobs)
-        return self._prepare_hwpx_panel(base)
+        # 활성 작업은 **여기서 한 번** 포획해 끝까지 그 값만 쓴다(세션 잠금과 이중 방어).
+        seat = self.work.view()
+        base = self._prepare_base_panel(seat, jobs, registry_notice_text)
+        if seat.is_txt:
+            return self._prepare_txt_panel(seat, base, jobs)
+        if seat.vm is None:
+            return self._prepare_empty_panel(seat, base, jobs)
+        return self._prepare_hwpx_panel(seat, seat.vm, base)
 
-    def _prepare_base_panel(self, jobs: list[Job], registry_notice_text: str) -> dict:
+    def _prepare_base_panel(
+        self, seat: ActiveWorkView, jobs: list[Job], registry_notice_text: str
+    ) -> dict:
         """Prepare branch-independent values and hand JSON shaping to the presenter."""
         notice_text = " ".join(filter(None, (self.data.notice_text, registry_notice_text)))
         notice_level = "warn" if registry_notice_text else self.data.notice_level
-        run_action = self._run_action()
-        output_folder = self._output_folder_dict()
+        run_action = self._run_action(seat.is_txt)
+        output_folder = self._output_folder_dict(seat)
         selection_key = self._selection_key()
         data_target = self.data.data_target()
         data_row = self.data.data_row()
@@ -410,20 +472,20 @@ class JobController:
             jobs=jobs,
             bound=bound,
             fields=fields,
-            active_name=self.work.name,
+            active_name=seat.name,
             txt_template_count=txt_template_count,
             template_missing_by_path=template_missing_by_path,
         )
         browse = browse_payload(
             bound=bound,
             fields=fields,
-            browse_tab=self.work.browse_tab,
-            browse_query=self.work.browse_query,
+            browse_tab=seat.browse_tab,
+            browse_query=seat.browse_query,
         )
         return base_panel_snapshot(
-            job_name=self.work.name,
+            job_name=seat.name,
             last_run_job=self.runs.last_run_job,
-            job_data_unbound=self.work.data_unbound,
+            job_data_unbound=seat.data_unbound,
             run_action=run_action,
             out_dir=self.runs.out_dir,
             output_folder=output_folder,
@@ -448,7 +510,7 @@ class JobController:
             content_presets=self.execution.blank_presets_zone(),
         )
 
-    def _prepare_txt_panel(self, base: dict, jobs: list[Job]) -> dict:
+    def _prepare_txt_panel(self, seat: ActiveWorkView, base: dict, jobs: list[Job]) -> dict:
         zone_indices = self.data.zone_indices()
         display_order = self.data.display_indices(list(range(len(self.data.records))))
         record_rows = record_table_rows(
@@ -465,11 +527,11 @@ class JobController:
             record_rows,
             settled=set(self.runs.last_generated or ()),
         )
-        txt_job = next((job for job in jobs if job.name == self.work.name), None)
+        txt_job = next((job for job in jobs if job.name == seat.name), None)
         template_path = txt_job.template_path if txt_job is not None else ""
         is_template_missing = template_missing(template_path)
         configuration_zones = self._configuration_zones(
-            template_media(template_path), is_template_missing
+            seat, template_media(template_path), is_template_missing
         )
         gate = workbench_entry_gate(
             has_data=self.data.datasource is not None,
@@ -504,7 +566,7 @@ class JobController:
             configuration_zones=configuration_zones,
         )
 
-    def _prepare_empty_panel(self, base: dict, jobs: list[Job]) -> dict:
+    def _prepare_empty_panel(self, seat: ActiveWorkView, base: dict, jobs: list[Job]) -> dict:
         zone_indices = self.data.zone_indices()
         display_order = self.data.display_indices(list(range(len(self.data.records))))
         record_rows = record_table_rows(
@@ -527,14 +589,14 @@ class JobController:
             has_candidates=bool(base["candidates"]["top"]),
         )
         unsupported_job = (
-            next((job for job in jobs if job.name == self.work.name), None)
-            if self.work.unsupported
+            next((job for job in jobs if job.name == seat.name), None)
+            if seat.unsupported
             else None
         )
         template_path = unsupported_job.template_path if unsupported_job is not None else ""
-        if self.work.unsupported:
+        if seat.unsupported:
             gate = unsupported_media_gate()
-        is_template_missing = template_missing(template_path) if self.work.name else False
+        is_template_missing = template_missing(template_path) if seat.name else False
         return work_panel_snapshot(
             base,
             managed_hwpx=False,
@@ -562,21 +624,20 @@ class JobController:
             review=review_payload(ReviewRequirement()),
         )
 
-    def _prepare_hwpx_panel(self, base: dict) -> dict:
-        assert self.work.vm is not None
-        job = self.work.vm.job
+    def _prepare_hwpx_panel(self, seat: ActiveWorkView, vm: RunViewModel, base: dict) -> dict:
+        job = vm.job
         # 문서 생성 경로는 managed 하나다(#1081 PR2) — HWPX ∧ 작업 권위면 managed 표면이다.
-        managed_hwpx = self._is_managed_hwpx_work(job)
+        managed_hwpx = self._is_managed_hwpx_work(job, seat.name)
         indices = self.data.selected_indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
         # 요구 판정(blank_set)까지 전부 이 한 집합을 소비한다. 표식이 붙으면 파일명 패턴이
         # 그 필드를 참조할 때 이름·수렴·경로 길이가 전부 달라진다(1R P2 · 4R P2) —
         # 표시와 생성이 같은 술어를 공유해야 하는 이유.
         run_data = self._run_data()
-        blanks = self.work.vm.blank_fields(run_data, indices) if indices else []
+        blanks = vm.blank_fields(run_data, indices) if indices else []
         marker = blank_marker(blanks)
         # 검토 요구(F5) — 판정은 durable 기준선이 진다(승인 대조는 #957 에서 사망).
-        req = self._review(indices=indices, blanks=blanks, data=run_data)
+        req = self._review(vm=vm, indices=indices, blanks=blanks, data=run_data)
         # 파일명 날짜 토큰의 기준 시각 — **이 스냅샷의 것**이다(#957 재정의).
         #
         # 종전엔 미리보기가 본 이름을 붙들려고 「보는 동안·승인이 서 있는 동안·본 뒤 입력이
@@ -596,16 +657,16 @@ class JobController:
         # 날짜 토큰용으로 캡처한 값을 그대로 넘겨 한 스냅샷 안에서 이름과 본문이 한 시각을
         # 말한다. 여기서 따로 찍으면 표 「문서」 열과 본문 미리 값이 하위-일 경계에서 갈린다.
         mapped = (
-            self.work.vm.mapped_records(run_data, indices, now=self._names_now) if indices else []
+            vm.mapped_records(run_data, indices, now=self._names_now) if indices else []
         )
         run_mapped = (
-            self.work.vm.mapped_records(run_data, indices, marker, now=self._names_now)
+            vm.mapped_records(run_data, indices, marker, now=self._names_now)
             if marker
             else mapped
         )
         # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
         # 요구 자체가 사전검증 고지의 입력이다.
-        status = self.work.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
+        status = vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             run_data,
             indices,
             self.runs.out_dir,
@@ -623,9 +684,9 @@ class JobController:
         zone_mapped = run_mapped
         if has_draft:
             # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
-            zone_marker = self._run_marker(zone_indices, run_data)
+            zone_marker = self._run_marker(zone_indices, run_data, vm)
             zone_mapped = (
-                self.work.vm.mapped_records(
+                vm.mapped_records(
                     run_data, zone_indices, zone_marker, now=self._names_now
                 )
                 if zone_indices
@@ -654,11 +715,11 @@ class JobController:
         # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
         tmissing = template_missing(job.template_path)
         tconn = connection_label(tmissing)
-        configuration_zones = self._configuration_zones(job.media, tmissing)
+        configuration_zones = self._configuration_zones(seat, job.media, tmissing)
         # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
-        workbench_observation = self._workbench_observation_zone(tmissing)
+        workbench_observation = self._workbench_observation_zone(seat, tmissing=tmissing)
         # 사전검증의 필드 판정이 통과해도 행 미선택·실행 준비 부족이면 생성 가능하다는
         # 뜻이 아니다. 실제 생성 동사의 판정을 그대로 읽고, 비차단 고지는 보존한다.
         if status.preflight.level == "ok":
@@ -672,7 +733,7 @@ class JobController:
         else:
             preflight_text = status.preflight.text
         name_tokens = (
-            self.work.vm.unresolved_name_tokens() if status.gate.reason == "name_tokens" else []
+            vm.unresolved_name_tokens() if status.gate.reason == "name_tokens" else []
         )
         return work_panel_snapshot(
             base,
@@ -704,6 +765,7 @@ class JobController:
             configuration_zones=configuration_zones,
         )
 
+    @_serialized
     def initial(self) -> dict:
         """화면 부팅 스냅샷 — 기억한 데이터를 **먼저** 마운트한다(U3-07 · #880).
 
@@ -807,11 +869,13 @@ class JobController:
             return _REMEMBERED_DATA_FAILED.format(reason=exc)
         return ""
 
+    @_serialized
     def new_work_handoff(self) -> "tuple[dict, str]":
         """현재 마운트의 작업 생성용 데이터 참조를 반환한다."""
         return self.data.new_work_handoff()
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
+    @_serialized
     def load_data_path(
         self,
         path: str,
@@ -962,7 +1026,9 @@ class JobController:
         self._invalidate_data_results()
 
     # ── 저장 폴더 도출(U3-06 · #879 → 전역화) ────────────────────────────────────
-    def _output_folder_resolution(self) -> OutputFolderResolution:
+    def _output_folder_resolution(
+        self, template_path: "str | None" = None
+    ) -> OutputFolderResolution:
         """실제로 쓸 저장 폴더 + 출처 + 사유 — ① 설정한 전역 폴더 ② 템플릿 옆 Results.
 
         판정은 링0 순수 함수(:func:`resolve_output_folder`)가 지고 관찰(설정한 폴더가 지금도
@@ -976,11 +1042,24 @@ class JobController:
         답으로 말한다(그것이 종전 세션 명시 지정 축에서 실제로 샜던 자리다).
         """
         return output_folder_resolution(
-            template_path=(self.work.vm.job.template_path if self.work.vm is not None else ""),
+            template_path=(
+                self._live_template_path() if template_path is None else template_path
+            ),
             remembered_directory=self._remembered_output_directory,
         )
 
-    def _effective_delivery(self) -> "tuple[RunDeliveryIntent | None, OutputFolderResolution]":
+    def _live_template_path(self) -> str:
+        """세션에 앉은 실행뷰의 템플릿 경로(없으면 ``""``) — 명령 경로용 현재값."""
+        return self.work.vm.job.template_path if self.work.vm is not None else ""
+
+    @staticmethod
+    def _seat_template_path(seat: ActiveWorkView) -> str:
+        """스냅샷이 포획한 실행뷰의 템플릿 경로 — 렌더 경로용(세션 재읽기 금지)."""
+        return seat.vm.job.template_path if seat.vm is not None else ""
+
+    def _effective_delivery(
+        self, template_path: "str | None" = None
+    ) -> "tuple[RunDeliveryIntent | None, OutputFolderResolution]":
         """delivery 해결에 실제로 쓰이는 intent + 그 폴더의 출처(한 번의 도출로 둘 다).
 
         도출조차 불가능한 경우(템플릿 경로 부재)만 intent 가 ``None`` 이고, 그때만 저장 폴더
@@ -988,7 +1067,7 @@ class JobController:
         durable state 를 만들지 않는다(intent 수명 규약 불변). intent 는 **매번 도출에서
         물질화**된다: 세션이 들고 있던 명시 지정 축은 전역화로 사라졌다.
         """
-        resolution = self._output_folder_resolution()
+        resolution = self._output_folder_resolution(template_path)
         if not resolution.resolved:
             return None, resolution
         return (
@@ -996,10 +1075,13 @@ class JobController:
             resolution,
         )
 
-    def _effective_run_delivery_intent(self) -> "RunDeliveryIntent | None":
+    def _effective_run_delivery_intent(
+        self, template_path: "str | None" = None
+    ) -> "RunDeliveryIntent | None":
         """실제로 쓰이는 intent만 — 출처가 필요한 호출부는 :meth:`_effective_delivery` 를 쓴다."""
-        return self._effective_delivery()[0]
+        return self._effective_delivery(template_path)[0]
 
+    @_serialized
     def remembered_output_directory(self) -> str:
         """설정된 **전역 저장 폴더**의 지금 값 — 읽기 전용 공개 seam(U6-D #978 리뷰 3).
 
@@ -1010,17 +1092,18 @@ class JobController:
         """
         return self._remembered_output_directory
 
-    def _output_folder_dict(self) -> dict:
+    def _output_folder_dict(self, seat: ActiveWorkView) -> dict:
         """스냅샷의 ``output_folder`` 존 — 성형도 **공용 함수 하나**다(U6-D #978).
 
         존의 모양(키 넷)을 화면마다 다시 적으면 링0 판정이 하나여도 한쪽만 하향 사유를
         빠뜨리는 자리가 생긴다.
         """
         return output_folder_zone(
-            template_path=(self.work.vm.job.template_path if self.work.vm is not None else ""),
+            template_path=self._seat_template_path(seat),
             remembered_directory=self._remembered_output_directory,
         )
 
+    @_serialized
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 **전역** 저장 폴더를 세운다.
 
@@ -1055,7 +1138,18 @@ class JobController:
         save_last_output_directory(path)
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
+    #: 상태 잠금 없이 받는 동사 — 진행 중 런을 멈추는 요청이 그 런 뒤에 줄 서지 않게 한다.
+    #: 핸들러는 런 핸들의 취소 표지만 세우고(`DocumentRunCoordinator.request_cancel`), 뒤따르는
+    #: push 는 `refresh_panel` 이 다시 잠금을 잡는다.
+    _LOCK_FREE_ACTIONS = frozenset({"cancel_generation"})
+
     def dispatch(self, action: str, payload: dict):
+        if action in self._LOCK_FREE_ACTIONS:
+            return self._dispatch(action, payload)
+        with self._state_lock:
+            return self._dispatch(action, payload)
+
+    def _dispatch(self, action: str, payload: dict):
         if self.data.is_stale_edit(action, payload, set(ZONE_MUTATIONS)):
             return {"stale": True, "epoch": self.data.zone_epoch}
         owner = self.data if action in self._DATA_ACTIONS else self
@@ -1125,9 +1219,9 @@ class JobController:
             self.runs.discard_delivery()
         return True
 
-    def _run_action(self) -> dict:
+    def _run_action(self, is_txt: bool) -> dict:
         """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
-        if self.work.is_txt:
+        if is_txt:
             n = self.data.selection.selected_count()
             return {"key": "workbench", "label": f"검토·복사 시작 · {n}건"}
         return {"key": "generate", "label": "이 작업으로 문서 생성"}
@@ -1596,6 +1690,7 @@ class JobController:
     #  술어 `_guard_state` 의 나머지 두 소비자 — `session_guard_for`(홈 삭제 가드, #268)와
     #  `_do_guard_state`(데이터 재겨눔·재연결 사전 확인) — 는 그대로 산다.)
 
+    @_serialized
     def session_guard_for(self, name: str) -> "dict | None":
         """타 화면(홈) 삭제 가드 조회(#268 리뷰) — 이 화면이 ``name`` 에 무장 세션을 열어
         두었으면 가드 수치(+``screen``)를 돌려준다. 판정·수치는 :meth:`_guard_state` 단일
@@ -1755,78 +1850,50 @@ class JobController:
         )
 
     def _generate_with_token(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
-        """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
-        if self.work.vm is None:
-            return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
-        job = self.work.vm.job
-        # HWPX 문서 생성은 managed 하나다(#1081 PR2) — 경로 선택은 아래 `_is_managed_hwpx_work`.
+        """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다.
 
-        if self.data.range_draft is not None:
-            # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
-            # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
-            # 계약면 2). 거절 문안이 다음 행동(적용 또는 취소)을 지목한다.
-            return {
-                "ok": False,
-                "level": "warn",
-                "error": "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요.",
-            }
-        run_vm = self.work.vm
-        run = self.runs.begin(
-            getattr(run_vm, "job", None), job_name=self.work.name, token=run_token
-        )
-        if run is None:
-            return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
-        try:
-            # 잠금 직후 VM·데이터·출력 폴더를 한 번만 붙든다.
-            run_input = self.runs.capture_input(
-                datasource=self.data.datasource,
-                records=self.data.records,
-                indices=self.data.selected_indices(),
-                snapshot_generation=self.data.snapshot_generation,
-                work_ref=self.work.name,
-                source_schema_keys=(
-                    tuple(self.data.filter.columns)
-                    if self.data.filter is not None
-                    else tuple(self.data.records[0].keys())
-                    if self.data.records
-                    else ()
-                ),
-                output_directory=self.runs.out_dir,
-            )
-            run_now = self.runs.capture_now(
-                confirm_overwrite=confirm_overwrite,
-                pin_key=self._overwrite_pin_key(),
-                clock=self._clock,
-            )
-            if run_now is None:
-                # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
-                # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
-                result = {
+        **상태 잠금은 세 구간으로 나눠 잡는다.** 판정·런 개시·입력 고정·실행 준비는 한 잠금
+        구간이다(그 사이 다른 전이가 끼면 고정한 입력이 이미 낡는다). 배달 파이프라인 실행은
+        잠금 **밖**이다: 입력은 :class:`_ManagedRunCall` 에 고정됐고, 그 구간에 상태를 바꾸는
+        전이(작업·데이터 교체, 범위 편집, 재연결)는 ``generation_lock`` 판정이 이미 거절한다.
+        여기서 잠금을 쥐고 있으면 진행 중에 오는 목록 갱신·창 복귀 재당김이 런이 끝날 때까지
+        멈춘다. 결과 채택과 push 는 다시 잠금 안이다.
+        """
+        with self._state_lock:
+            if self.work.vm is None:
+                return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
+            job = self.work.vm.job
+            # HWPX 문서 생성은 managed 하나다(#1081 PR2) — 경로 선택은 아래 `_is_managed_hwpx_work`.
+
+            if self.data.range_draft is not None:
+                # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
+                # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
+                # 계약면 2). 거절 문안이 다음 행동(적용 또는 취소)을 지목한다.
+                return {
                     "ok": False,
                     "level": "warn",
-                    "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
-                    "문서 만들기를 다시 실행하세요.",
+                    "error": "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요.",
                 }
-            elif self._is_managed_hwpx_work(job):
-                # 문서 생성 경로는 managed 하나다(#1081 PR2) — 봉인 → 레코드 검증 → start gate →
-                # 배달. 준비 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
-                result = self._generate_managed_locked(
-                    run,
-                    run_vm,
-                    run_input,
-                    confirm_overwrite=confirm_overwrite,
-                    now=run_now,
+            run_vm = self.work.vm
+            run = self.runs.begin(
+                getattr(run_vm, "job", None), job_name=self.work.name, token=run_token
+            )
+            if run is None:
+                return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
+            try:
+                step = self._prepare_generation(
+                    run, run_vm, job, confirm_overwrite=confirm_overwrite
                 )
+            except BaseException:
+                self.runs.finish()
+                raise
+        try:
+            if isinstance(step, _ManagedRunCall):
+                outcome = self._run_managed_unlocked(step)
+                with self._state_lock:
+                    result = self._adopt_managed_outcome(step, outcome)
             else:
-                # 실행뷰는 HWPX 작업에만 선다(TXT·미지원 매체는 위 `vm is None` 에서 닫혔다).
-                # 여기 온 것은 작업 권위가 서지 않은 HWPX — 착석의 자동 준비(초기 등록)가
-                # 거절된 작업이다(#932 B5). 종전 legacy 갈래가 생성 시점 초기 등록 실패로
-                # 내던 거절을 같은 문장으로 낸다. 우회 경로로 문서를 만들지 않는다(#1081 PR2).
-                result = {
-                    "ok": False,
-                    "error": TEMPLATE_INITIALIZATION_REFUSAL,
-                    "level": "warn",
-                }
+                result = step
         finally:
             self.runs.finish()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
@@ -1834,11 +1901,67 @@ class JobController:
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
         # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
         if result.get("ok"):
-            self._note_tutorial_generation(result)
-            self._push()
+            with self._state_lock:
+                self._note_tutorial_generation(result)
+                self._push()
         return result
 
+    def _prepare_generation(
+        self, run: GenerationRun, run_vm: RunViewModel, job: Job, *, confirm_overwrite: bool
+    ) -> "dict | _ManagedRunCall":
+        """잠금 안 — 런 입력을 고정하고 실행할지(``_ManagedRunCall``) 거절할지(dict) 정한다."""
+        # 잠금 직후 VM·데이터·출력 폴더를 한 번만 붙든다.
+        run_input = self.runs.capture_input(
+            datasource=self.data.datasource,
+            records=self.data.records,
+            indices=self.data.selected_indices(),
+            snapshot_generation=self.data.snapshot_generation,
+            work_ref=self.work.name,
+            source_schema_keys=(
+                tuple(self.data.filter.columns)
+                if self.data.filter is not None
+                else tuple(self.data.records[0].keys())
+                if self.data.records
+                else ()
+            ),
+            output_directory=self.runs.out_dir,
+        )
+        run_now = self.runs.capture_now(
+            confirm_overwrite=confirm_overwrite,
+            pin_key=self._overwrite_pin_key(),
+            clock=self._clock,
+        )
+        if run_now is None:
+            # 낡은 확인 — 물어본 배치가 이미 없다. 조용히 새 배치에 적용하지 않고
+            # 사유를 돌려준다(웹은 다시 눌러 새 확인 왕복을 연다).
+            return {
+                "ok": False,
+                "level": "warn",
+                "error": "생성 대상이 바뀌어 덮어쓰기 확인을 다시 받아야 합니다. "
+                "문서 만들기를 다시 실행하세요.",
+            }
+        if self._is_managed_hwpx_work(job):
+            # 문서 생성 경로는 managed 하나다(#1081 PR2) — 봉인 → 레코드 검증 → start gate →
+            # 배달. 준비 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
+            return self._generate_managed_locked(
+                run,
+                run_vm,
+                run_input,
+                confirm_overwrite=confirm_overwrite,
+                now=run_now,
+            )
+        # 실행뷰는 HWPX 작업에만 선다(TXT·미지원 매체는 위 `vm is None` 에서 닫혔다).
+        # 여기 온 것은 작업 권위가 서지 않은 HWPX — 착석의 자동 준비(초기 등록)가
+        # 거절된 작업이다(#932 B5). 종전 legacy 갈래가 생성 시점 초기 등록 실패로
+        # 내던 거절을 같은 문장으로 낸다. 우회 경로로 문서를 만들지 않는다(#1081 PR2).
+        return {
+            "ok": False,
+            "error": TEMPLATE_INITIALIZATION_REFUSAL,
+            "level": "warn",
+        }
+
     # ------------------------------------------- 튜토리얼 루프 감지(#894)
+    @_serialized
     def note_template_compiled(self, path: str) -> None:
         """tpl 채널의 **누름틀 변환 성립** 통지를 받는다(T16 의 재료).
 
@@ -1916,8 +2039,12 @@ class JobController:
         *,
         confirm_overwrite: bool = False,
         now: "datetime | None" = None,
-    ) -> dict:
-        """확인된 managed 준비 값을 실행 coordinator에 넘긴다."""
+    ) -> "dict | _ManagedRunCall":
+        """확인된 managed 준비 값을 실행 인자로 고정한다(상태 잠금 안).
+
+        실행 자체는 :meth:`_run_managed_unlocked`, 결과 채택은 :meth:`_adopt_managed_outcome`
+        가 진다 — 둘 다 여기서 고정한 ``run_vm``·``run_input`` 만 쓴다(라이브 vm 재참조 금지).
+        """
         self.runs.adopt_run_metadata(run)
         try:
             observation = self.workbench_observation(
@@ -1972,9 +2099,10 @@ class JobController:
                 "error": "현재 환경에서는 문서를 만들 수 없습니다",
                 "level": "warn",
             }
-        result = self.runs.run_managed(
-            run,
-            ManagedRunInput(
+        return _ManagedRunCall(
+            run=run,
+            run_vm=run_vm,
+            managed=ManagedRunInput(
                 payload=payload,
                 preparation=prep,
                 context=context,
@@ -1987,11 +2115,29 @@ class JobController:
             now=now if now is not None else self._clock(),
             confirm_overwrite=confirm_overwrite,
             overwrite_pin_key=self._overwrite_pin_key(),
+        )
+
+    def _run_managed_unlocked(self, call: _ManagedRunCall) -> ManagedRunResult:
+        """배달 파이프라인 실행 — 상태 잠금 **밖**이다(`_generate_with_token` 의 구간 설명).
+
+        진행 델타(`_push_progress`)는 런 핸들만 읽어 잠금이 필요 없고, 취소 동사는 잠금 없이
+        들어와 이 런의 취소 표지를 세운다.
+        """
+        return self.runs.run_managed(
+            call.run,
+            call.managed,
+            now=call.now,
+            confirm_overwrite=call.confirm_overwrite,
+            overwrite_pin_key=call.overwrite_pin_key,
             progress=self._push_progress,
             completion=CompletionStamp(
                 self.registry, lambda: self._clock().isoformat(timespec="seconds")
             ),
         )
+
+    def _adopt_managed_outcome(self, call: _ManagedRunCall, result: ManagedRunResult) -> dict:
+        """실행 결과를 세션에 채택한다(상태 잠금 안). 고정한 ``run_vm`` 만 채택 대상이다."""
+        run_vm = call.run_vm
         if result.executed:
             # 배달 준비는 **폴더 관찰**에 묶여 있다(folder 변경 무효화와 같은 축). 이 런이
             # 파일을 앉혔거나 앉히려 했으므로 그 관찰은 더는 사실이 아니다 — 버리지 않으면
@@ -2023,23 +2169,30 @@ class JobController:
         """
         return asdict(response)
 
-    def _configuration_zones(self, media: str, template_missing: bool) -> dict:
-        """Prepare the three configuration zones in their required dependency order."""
+    def _configuration_zones(
+        self, seat: ActiveWorkView, media: str, template_missing: bool
+    ) -> dict:
+        """Prepare the three configuration zones in their required dependency order.
+
+        작업 이름은 스냅샷이 포획한 ``seat`` 의 것이다 — 렌더 도중 세션 필드를 다시 읽으면
+        그 사이 해제된 작업 대신 빈 이름으로 작업 파일을 찾는다.
+        """
         template_change = unsupported_zone()
         if self._template_change is not None:
             drift = (
                 NO_SOURCE_DRIFT_JUDGMENT
                 if template_missing
-                else self._template_change.source_drift(self.work.name)
+                else self._template_change.source_drift(seat.name)
             )
             template_change = self._template_change.zone(
-                self.work.name,
+                seat.name,
                 media,
                 template_missing,
                 source_drift=drift,
             )
-        slot_configuration = self._slot_configuration_zone(template_missing)
+        slot_configuration = self._slot_configuration_zone(seat.name, template_missing)
         content_presets = self._content_presets_zone(
+            seat.name,
             template_missing,
             savable_selection=self._savable_selection(slot_configuration),
         )
@@ -2049,20 +2202,22 @@ class JobController:
             "content_presets": content_presets,
         }
 
-    def _is_managed_hwpx_work(self, job) -> bool:
+    def _is_managed_hwpx_work(self, job, work_ref: "str | None" = None) -> bool:
         """이 Work 가 managed 문서 생성 대상인가 = HWPX ∧ 작업 권위(#1081 PR2).
 
         slot 유무로 legacy 와 가르던 갈래는 사라졌다 — slot 없는 HWPX 도 봉인·물질화·배달을 탄다.
         권위가 서지 않은 HWPX(착석 초기화 실패)는 생성하지 않고 작업대 관찰이 그 사유를 말한다.
         """
-        return self.execution.is_managed_hwpx(self.work.name, job)
+        return self.execution.is_managed_hwpx(
+            self.work.name if work_ref is None else work_ref, job
+        )
 
     # `_seat_is_managed_hwpx` 는 여기 있었다(#905) — 명령 좌표가 managed 갈래인지 묻는 술어였고
     # 유일한 소비자가 `set_output_folder` 의 갈래 분기였다. 저장 폴더가 전역화되면서 그 분기
     # 자체가 사라져 소비자 0 이 됐으므로 함께 걷는다(되살릴 일이 생기면 `_is_managed_hwpx_work`
     # 가 그대로 있다).
 
-    def _slot_configuration_zone(self, tmissing: bool) -> dict:
+    def _slot_configuration_zone(self, work_ref: str, tmissing: bool) -> dict:
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
 
         미주입·미선택·미지원 매체·템플릿 부재면 명시적 unsupported(분기별 키 동형). 초기화 전(Work
@@ -2077,18 +2232,20 @@ class JobController:
         문자열을 다시 조립하면 새 매체가 설 때 한 가지만 늙는다.
         """
         job = (
-            load_job(self.registry, self.work.name)
-            if self.execution.slot_configuration is not None and self.work.name and not tmissing
+            load_job(self.registry, work_ref)
+            if self.execution.slot_configuration is not None and work_ref and not tmissing
             else None
         )
-        return self.execution.slot_zone(self.work.name, job, tmissing)
+        return self.execution.slot_zone(work_ref, job, tmissing)
 
     # ── 작업대 Observation 존(SX-03 #726) — 합성 observation → JSON-safe dict ───────────────
     @staticmethod
     def _workbench_observation_blank() -> dict:
         return {"supported": False, "kind": None}
 
-    def _workbench_observation_zone(self, tmissing: bool) -> dict:
+    def _workbench_observation_zone(
+        self, seat: "ActiveWorkView | None" = None, *, tmissing: bool
+    ) -> dict:
         """스냅샷의 ``workbench_observation`` 존 — 합성 Observation(또는 ContextError)을 실어 보낸다.
 
         미조립·미선택·템플릿 부재면 명시적 unsupported. 그 밖에는 :meth:`workbench_observation` 을
@@ -2103,10 +2260,11 @@ class JobController:
         는 앞의 절반을 blank 로 접고 뒤의 절반으로는 스냅샷 조립을 통째로 죽였다. 집합 **밖**의
         예외는 그대로 전파한다 — 모르는 실패를 조용한 화면 값으로 바꾸지 않는다.
         """
-        if self.execution.workbench_product is None or not self.work.name or tmissing:
+        seat = self.work.view() if seat is None else seat
+        if self.execution.workbench_product is None or not seat.name or tmissing:
             return self._workbench_observation_blank()
         try:
-            observation = self.workbench_observation()
+            observation = self.workbench_observation(seat=seat)
         except CONTEXT_ERROR_TYPES as exc:
             observation = DocumentCreationWorkbenchContextError(
                 context_error_code(exc), str(exc) or "현재 실행 맥락을 복원하지 못했습니다"
@@ -2213,7 +2371,9 @@ class JobController:
         projection = view.get("projection") or {}
         return bool(projection.get("savable_selection"))
 
-    def _content_presets_zone(self, tmissing: bool, *, savable_selection: bool) -> dict:
+    def _content_presets_zone(
+        self, work_ref: str, tmissing: bool, *, savable_selection: bool
+    ) -> dict:
         """스냅샷의 ``content_presets`` 존 — 홈 레지스트리 목록 + 손상 항목 병기.
 
         지원 조건은 ``slot_configuration`` 존과 **동형**이다(미주입·미선택·미지원 매체·템플릿
@@ -2232,12 +2392,12 @@ class JobController:
         저장 파일은 그대로다(목록의 좁힘이지 삭제가 아니다).
         """
         job = (
-            load_job(self.registry, self.work.name)
-            if self.execution.slot_configuration is not None and self.work.name and not tmissing
+            load_job(self.registry, work_ref)
+            if self.execution.slot_configuration is not None and work_ref and not tmissing
             else None
         )
         return self.execution.presets_zone(
-            self.work.name,
+            work_ref,
             job,
             tmissing,
             savable_selection=savable_selection,
@@ -2278,6 +2438,7 @@ class JobController:
         return self._slot_response_dict(response)
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
+    @_serialized
     def editor_binding_confirm_pending(self, work_ref: str) -> bool:
         """편집 중 작업의 **연결 확정 대기** 여부(#911) — :meth:`on_editor_mapping_saved` 의 짝.
 
@@ -2329,6 +2490,7 @@ class JobController:
         finally:
             self.runs.lock.release()
 
+    @_serialized
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
         job = load_job(self.registry, work_ref)
@@ -2436,6 +2598,8 @@ class JobController:
     def _current_record_validation(
         self,
         run_input: RunInputCapture | None = None,
+        *,
+        seat_name: "str | None" = None,
     ) -> tuple[RecordValidationSummary, WorkbenchContextIntegrity | None]:
         fresh = self.execution.fresh_observation
         if not self.execution.is_settled_current:
@@ -2443,7 +2607,13 @@ class JobController:
         if not isinstance(fresh, CurrentSealedPlanObservation):
             return RecordValidationSummary(), None
         plan = fresh.sealed_plan_value
-        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        work_ref = (
+            run_input.work_ref
+            if run_input is not None
+            else self.work.name
+            if seat_name is None
+            else seat_name
+        )
         indices = (
             run_input.indices if run_input is not None else tuple(self.data.selected_indices())
         )
@@ -2575,9 +2745,11 @@ class JobController:
         *,
         run_input: RunInputCapture | None = None,
         filename_pattern: str | None = None,
+        seat: "ActiveWorkView | None" = None,
     ) -> tuple[DeliveryPreviewSummary, WorkbenchContextIntegrity | None]:
-        intent, folder_resolution = self._effective_delivery()
-        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        seat = self.work.view() if seat is None else seat
+        intent, folder_resolution = self._effective_delivery(self._seat_template_path(seat))
+        work_ref = run_input.work_ref if run_input is not None else seat.name
         generation = (
             run_input.snapshot_generation
             if run_input is not None
@@ -2589,8 +2761,8 @@ class JobController:
         exact_pattern = (
             filename_pattern
             if filename_pattern is not None
-            else self.work.vm.job.filename_pattern
-            if self.work.vm is not None
+            else seat.vm.job.filename_pattern
+            if seat.vm is not None
             else ""
         )
         return self.execution.resolve_delivery(
@@ -2612,11 +2784,17 @@ class JobController:
         *,
         run_input: RunInputCapture | None = None,
         filename_pattern: str | None = None,
+        seat: "ActiveWorkView | None" = None,
     ):
-        """현재 config를 읽고 레코드·배달 준비를 갱신해 Observation을 만든다."""
+        """현재 config를 읽고 레코드·배달 준비를 갱신해 Observation을 만든다.
+
+        ``seat`` 는 렌더가 포획한 활성 작업 좌표다. 생략하면 지금 세션에서 한 번 포획한다 —
+        어느 쪽이든 이 합성 안에서는 그 한 벌만 읽는다(stale 대조만 세션 현재값을 본다).
+        """
         if self.execution.workbench_product is None:
             raise ValueError("작업대 Observation 기능이 조립되지 않았습니다")
-        work_ref = run_input.work_ref if run_input is not None else self.work.name
+        seat = self.work.view() if seat is None else seat
+        work_ref = run_input.work_ref if run_input is not None else seat.name
         job = (
             load_job(self.registry, work_ref)
             if self.execution.slot_configuration is not None and work_ref
@@ -2625,12 +2803,15 @@ class JobController:
         configuration = self.execution.capture_workbench_configuration(job=job, work_ref=work_ref)
         if not self.execution.is_settled_current:
             self.execution.invalidate_preparations()
-        record_validation, context_integrity = self._current_record_validation(run_input)
+        record_validation, context_integrity = self._current_record_validation(
+            run_input, seat_name=seat.name
+        )
         if context_integrity is None:
             delivery, context_integrity = self._current_delivery(
                 record_validation,
                 run_input=run_input,
                 filename_pattern=filename_pattern,
+                seat=seat,
             )
         else:
             delivery = DeliveryPreviewSummary(resolvable=False)
@@ -2650,26 +2831,28 @@ class JobController:
             total_record_count=(
                 len(run_input.data.records) if run_input is not None else len(self.data.records)
             ),
-            active_work_data_bound=not self.work.data_unbound,
+            active_work_data_bound=not seat.data_unbound,
             record_validation=record_validation,
             delivery=delivery,
-            template_change_verdict=self._template_change_verdict(),
-            run_delivery_intent=self._effective_run_delivery_intent(),
+            template_change_verdict=self._template_change_verdict(seat.name),
+            run_delivery_intent=self._effective_run_delivery_intent(
+                self._seat_template_path(seat)
+            ),
             context_integrity=context_integrity,
         )
 
-    def _template_change_verdict(self) -> "str | None":
+    def _template_change_verdict(self, work_ref: str) -> "str | None":
         """현재 작업의 템플릿 확인 상태를 읽기 전용으로 투영한다.
 
         렌더 경로에서 권위를 만들지 않으며 status 판정은 application 함수에 위임한다.
         """
-        if self._template_change is None or not self.work.name:
+        if self._template_change is None or not work_ref:
             return None
         try:
-            if load_job(self.registry, self.work.name).media != "hwpx":
+            if load_job(self.registry, work_ref).media != "hwpx":
                 return None
             preparation = self._template_change.get_current_template_change_preparation(
-                self.work.name
+                work_ref
             )
         except Exception:  # noqa: BLE001 — 조회 실패는 확인 요구가 아니다(context 축 소관).
             return None
@@ -2677,14 +2860,14 @@ class JobController:
         # 드리프트도 같은 요구를 세운다(#932 B5) — 존이 조치가 있을 때만 서게 된 뒤로,
         # 원본이 갈린 사실을 사용자가 못 본 채 캡처본으로 생성할 창이 생겼다. 판정은 여전히
         # application 층 한 곳이고 여기는 축을 실어 나르기만 한다.
-        return workbench_template_change_verdict(status, self._source_drift_state())
+        return workbench_template_change_verdict(status, self._source_drift_state(work_ref))
 
-    def _source_drift_state(self) -> "str | None":
+    def _source_drift_state(self, work_ref: str) -> "str | None":
         """현재 작업의 원본 드리프트 상태 — 읽기 전용(digest 비교뿐, 권위 발급 없음)."""
-        if self._template_change is None or not self.work.name:
+        if self._template_change is None or not work_ref:
             return None
         try:
-            return self._template_change.source_drift(self.work.name).state
+            return self._template_change.source_drift(work_ref).state
         except Exception:  # noqa: BLE001 — 조회 실패는 요구가 아니다(context 축 소관).
             return None
 
