@@ -2540,7 +2540,7 @@ class TestWebSelftestGate:
             f"카드가 f-gulimche 글꼴 선언을 추종하지 않습니다: {w['font_family']!r}"
         )
         assert w["dot_hit"] == ["24px", "24px"] and w["dot_mark"] == ["14px", "14px"]
-        assert w["dots_overflow"] == "visible"
+        assert w["dots_overflow"] == "auto"
         p = h["popover_place"]
         assert (
             p["placement"] == "top" and p["in_viewport"] is True and p["origin"].endswith(" bottom")

@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "d8b9e03f12116782cb911c728160ba7c9476d68e9175ca54f8967447009fe9a2"
+source_sha256 = "bb00639baf757683847d8834fefe77303e2a1500881499a751eb83f428ada041"
 body_sha256 = "f1c8c7f160abc0b54fec9c55fd56a1c96396eb4bea084ecb70caf7747f68cd58"
 
 [[topic]]
