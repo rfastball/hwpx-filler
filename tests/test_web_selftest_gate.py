@@ -2779,7 +2779,14 @@ class TestWebSelftestGate:
         assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]
         # 등록만 되고 아무도 못 부르던 seam 둘이 실제로 손잡이가 됐는가(4R P2).
         assert w["font_value"] == "malgun", w["font_value"]
+        assert w["font_width"] < 180, f"글꼴 선택기가 툴바 폭을 점유합니다: {w['font_width']!r}"
         assert w["dots"] == ["7행 · 작업 중 · 다시 확인 필요", "4행 · 대기"], w["dots"]
+        assert w["dots_role"] == "group" and w["dot_button_role"] is None
+        assert w["dot_tabstops"] == 1 and w["dot_arrow_focus"] == "1", w
+        assert w["view_pressed"] == ["true", "false"] and w["view_colors_differ"], w
+        assert w["large_queue"]["count"] == 500 and w["large_queue"]["scrolls"], w
+        assert w["large_queue"]["height"] <= 97 and w["large_queue"]["current_visible"], w
+        assert w["large_queue"]["preview_clear"] and w["large_queue"]["tabstops"] == 1, w
         # 순회 경계는 Python 이 낸 값을 그대로 쓴다(2R P1): 표시 자리가 머리(1/3)인데도
         # 순회상 후미면 「이전」이 열리고 「다음」이 닫힌다 — 서수로 계산하면 정반대가 된다.
         assert (w["prev_disabled"], w["next_disabled"]) == (False, True), (
@@ -2796,6 +2803,9 @@ class TestWebSelftestGate:
         assert w["aim_marked"] not in ("", "none"), (
             f"겨눈 행이 아무 표지도 못 받습니다(표 클래스↔스타일시트 드리프트): {w['aim_marked']!r}"
         )
+        assert w["token_role"] == "button" and w["keyboard_aim_row"] == "수신", w
+        assert w["narrow_larger"]["width"] <= 760 and w["narrow_larger"]["body_height"] > 100, w
+        assert w["narrow_larger"]["scrolls"] and w["narrow_larger"]["card_reachable"], w
         # 큐 퇴화 — 1건이면 이전/다음·자동 전진이 사라진다.
         assert w["degen_prev"] == "none" and w["degen_adv"] == "none"
         # 이탈: 가드를 먼저 묻고(leave_guard) 세션을 닫은 뒤에야 화면이 바뀐다.

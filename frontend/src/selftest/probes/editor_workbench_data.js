@@ -2321,8 +2321,9 @@ export function createEditorWorkbenchDataProbes() {
       legacySite: 3814,
       deadlineMs: 2500,
       deadlineRationale:
-        "공용 `_probe_late` 예산 2.5초 그대로(내부 대기 160+120+260ms 가 그 안에 든다).",
+        "공용 `_probe_late` 예산 2.5초 그대로(내부 대기 160+300+300+120+120+260ms).",
       completionField: "pending",
+      requiresHost: ["window_resize"],
       after: ["editor_txt_band"],
       afterReason: "레거시 드라이버 순서 그대로(3808 → 3814).",
       async run(ctx) {
@@ -2405,7 +2406,21 @@ export function createEditorWorkbenchDataProbes() {
           })();
           out.dots = Array.prototype.map.call(
             ctx.doc.querySelectorAll("#wbDots .wc-dot"), (d) => d.getAttribute("title"));
+          out.dots_role = byId(ctx, "wbDots").getAttribute("role");
+          out.dot_button_role = ctx.doc.querySelector("#wbDots .wc-dot").getAttribute("role");
+          out.dot_tabstops = ctx.doc.querySelectorAll('#wbDots .wc-dot[tabindex="0"]').length;
+          const firstDot = ctx.doc.querySelector('#wbDots .wc-dot[data-i="0"]');
+          firstDot.focus();
+          firstDot.dispatchEvent(new ctx.doc.defaultView.KeyboardEvent("keydown", {
+            key: "ArrowRight", bubbles: true,
+          }));
+          out.dot_arrow_focus = ctx.doc.activeElement?.getAttribute("data-i");
+          const views = ctx.doc.querySelectorAll("[data-wb-view]");
+          out.view_pressed = Array.from(views, (button) => button.getAttribute("aria-pressed"));
+          out.view_colors_differ = styleOf(ctx, views[0]).backgroundColor
+            !== styleOf(ctx, views[1]).backgroundColor;
           out.font_value = byId(ctx, "wbTargetFont").value;
+          out.font_width = byId(ctx, "wbTargetFont").getBoundingClientRect().width;
           out.prev_disabled = byId(ctx, "wbPrev").disabled;
           out.next_disabled = byId(ctx, "wbNext").disabled;
           out.save_enabled = !byId(ctx, "wbSaveRules").disabled;
@@ -2427,6 +2442,63 @@ export function createEditorWorkbenchDataProbes() {
             if (!a || a.tagName !== "TR" || !a.cells.length) return "";
             return styleOf(ctx, a.cells[0]).boxShadow;
           })();
+          (function () {
+            const segment = ctx.doc.querySelector('#wbCard [data-token="수신"]');
+            segment.focus();
+            segment.dispatchEvent(new ctx.doc.defaultView.KeyboardEvent("keydown", {
+              key: "Enter", bubbles: true,
+            }));
+          })();
+          out.keyboard_aim_row = ctx.doc.activeElement?.getAttribute("data-name");
+          out.token_role = ctx.doc.querySelector('#wbCard [data-token="수신"]').getAttribute("role");
+          const root = ctx.doc.documentElement;
+          const scaleBefore = root.getAttribute("data-font-scale");
+          try {
+            root.setAttribute("data-font-scale", "larger");
+            await ctx.host("window_resize", { width: 760, height: 600 });
+            await ctx.sleep(300);
+            const body = ctx.doc.querySelector(".wb-body");
+            const card = byId(ctx, "wbCard");
+            const bodyBox = body.getBoundingClientRect();
+            body.scrollTop = body.scrollHeight;
+            const cardBox = card.getBoundingClientRect();
+            out.narrow_larger = {
+              width: ctx.win.innerWidth, body_height: bodyBox.height,
+              scrolls: body.scrollHeight > body.clientHeight,
+              card_reachable: Math.min(cardBox.bottom, bodyBox.bottom)
+                > Math.max(cardBox.top, bodyBox.top),
+            };
+          } finally {
+            if (scaleBefore === null) root.removeAttribute("data-font-scale");
+            else root.setAttribute("data-font-scale", scaleBefore);
+            await ctx.host("window_resize", { width: 1440, height: 900 });
+            await ctx.sleep(300);
+          }
+          ctx.push("workbench", Object.assign({}, snap, {
+            total: 500,
+            card: Object.assign({}, snap.card, {
+              index: 499, position: 499,
+              index_map: Array.from({ length: 500 }, (_, index) => ({
+                index, row: index + 1, state: index === 499 ? "current" : "uncopied",
+                recheck: false,
+              })),
+            }),
+          }));
+          await ctx.sleep(120);
+          const dots = byId(ctx, "wbDots");
+          const currentDot = dots.querySelector('[aria-current="step"]');
+          const dotBox = dots.getBoundingClientRect();
+          const currentBox = currentDot?.getBoundingClientRect();
+          const previewBox = byId(ctx, "wbCard").getBoundingClientRect();
+          const footBox = ctx.doc.querySelector(".wb-foot").getBoundingClientRect();
+          out.large_queue = {
+            count: dots.querySelectorAll(".wc-dot").length,
+            height: dotBox.height, scrolls: dots.scrollHeight > dots.clientHeight,
+            current_visible: !!currentBox && currentBox.top >= dotBox.top - 1
+              && currentBox.bottom <= dotBox.bottom + 1,
+            preview_clear: previewBox.height >= 180 && previewBox.bottom <= footBox.top + 1,
+            tabstops: dots.querySelectorAll('.wc-dot[tabindex="0"]').length,
+          };
           /* 큐 퇴화 — 1건이면 순회 장치가 숨는다(정보가 없어서지 장식이라서가 아니다). */
           ctx.push("workbench", Object.assign({}, snap, {
             total: 1, copied_count: 0,

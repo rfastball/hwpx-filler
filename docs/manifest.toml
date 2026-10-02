@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "054b03f19c0b141ff23aaa0addac3aa3b3bbfd22afa8ddbbb560cbb0ba342f52"
+source_sha256 = "5c888a68292b1983435612184071ce0a95ecbede1633e4b7fbe640dbbb231b82"
 body_sha256 = "6be19e5da8613a5634996f6c4af5eb76650ef2e396e6c46aae84ec19da23f04c"
 
 [[document]]
@@ -217,7 +217,7 @@ id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py"]
-source_sha256 = "edf0c5537f32cdadfc95fa38f05f36028a3272a843bef6964b670f300659195b"
+source_sha256 = "e0cb671c034ead58118c87c5e46c621519ae9311d2d2f41ac3e680cd8363d98a"
 body_sha256 = "9f8381b7c374c61c69c267c1f1783cac77f2e26fc0caa4df1b7037559996adc3"
 
 [[topic]]
@@ -248,9 +248,9 @@ body_sha256 = "fbe2e268093bcd3f2abd7763431f31c003e1817b74a26fad3488967559d630a1"
 id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
-tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py"]
-source_sha256 = "ea419da2befa51ef01467cb3a2ffb8113877b2ea5020ded727cdfdd52e212447"
-body_sha256 = "3edd755e13396e4273390dc354498112a53e6555c711b1b5644db15c69cd4b3d"
+tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
+source_sha256 = "d8b9e03f12116782cb911c728160ba7c9476d68e9175ca54f8967447009fe9a2"
+body_sha256 = "f1c8c7f160abc0b54fec9c55fd56a1c96396eb4bea084ecb70caf7747f68cd58"
 
 [[topic]]
 id = "development"
