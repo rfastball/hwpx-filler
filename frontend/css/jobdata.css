@@ -10,6 +10,12 @@
 .jobsearch-ico{position:absolute;left:var(--sp-8);top:50%;transform:translateY(-50%);
   color:var(--a-muted);pointer-events:none;display:block}
 .jobtb-host{position:relative}
+.data-tabs{display:flex;gap:var(--sp-4);overflow-x:auto;max-width:100%;padding:var(--sp-4);border-top:1px solid var(--a-border)}
+.data-tab{flex:none;max-width:18em;padding:var(--sp-8) var(--sp-12);border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink);font:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.data-tab:hover{background:var(--a-sel)}
+.data-tab[aria-pressed="true"]{background:var(--a-card);border-color:var(--a-primary);color:var(--a-primary);font-weight:600}
+.data-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.data-tab:disabled{color:var(--a-muted);cursor:not-allowed}
 .jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
 .jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}

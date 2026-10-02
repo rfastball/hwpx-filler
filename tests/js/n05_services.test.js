@@ -423,8 +423,9 @@ test("시트는 명시 선택 뒤에만 로드되고 취소는 null·발신 0이
   const selected = sheetPickerHarness();
   const selection = selected.controller.port.choose("job", SHEET_PAYLOAD);
   assert.deepEqual(selected.loads, []);
-  await selected.controller.pick("S2");
-  assert.deepEqual(selected.loads, [["load_data_sheet", "job", "D:\\d.xlsx", "S2"]]);
+  selected.controller.toggle("S2");
+  await selected.controller.pick();
+  assert.deepEqual(selected.loads, [["load_data_sheet", "job", "D:\\d.xlsx", ["S2"]]]);
   assert.deepEqual(await selection, { label: "선택" });
 
   const cancelled = sheetPickerHarness();
@@ -443,8 +444,9 @@ test("시트 선택은 동시 클릭과 늦은 close에도 정확히 한 번만 
   });
   const selection = h.controller.port.choose("job", SHEET_PAYLOAD);
   await assert.rejects(() => h.controller.port.choose("editor", SHEET_PAYLOAD), /이미 열려 있습니다/);
-  const first = h.controller.pick("S1");
-  await h.controller.pick("S2");
+  h.controller.toggle("S1");
+  const first = h.controller.pick();
+  await h.controller.pick();
   assert.equal(h.loads.length, 1);
   release();
   await first;
@@ -452,6 +454,58 @@ test("시트 선택은 동시 클릭과 늦은 close에도 정확히 한 번만 
   h.close();
   h.close();
   assert.equal(h.loads.length, 1);
+});
+
+test("다중 시트 등록은 부분 실패를 남기고 실패 항목만 재시도한다", async () => {
+  let attempt = 0;
+  const h = sheetPickerHarness(async () => ({ ok: true, value: ++attempt === 1
+    ? { mount: { label: "S1" }, sheets: [{ name: "S1", key: "one", error: "" }, { name: "S2", error: "잠김" }] }
+    : attempt === 2
+      ? { mount: null, error: "활성화 실패", sheets: [{ name: "S2", key: "two", error: "" }] }
+    : { mount: { label: "S2" }, sheets: [{ name: "S2", key: "two", error: "" }] } }));
+  const selection = h.controller.port.choose("job", SHEET_PAYLOAD);
+  await h.controller.pick();
+  assert.equal(h.loads.length, 0);
+  h.controller.selectAll();
+  await h.controller.pick();
+  assert.deepEqual(h.loads[0], ["load_data_sheet", "job", "D:\\d.xlsx", ["S1", "S2"]]);
+  assert.deepEqual(h.controller.model.getSnapshot().selected, ["S2"]);
+  assert.equal(h.controller.model.getSnapshot().result.sheets[1].error, "잠김");
+  await h.controller.pick();
+  assert.deepEqual(h.loads[1][3], ["S2"]);
+  assert.equal(h.controller.model.getSnapshot()?.result.error, "활성화 실패");
+  h.controller.toggle("S2");
+  await h.controller.pick();
+  assert.deepEqual(await selection, { label: "S2" });
+});
+
+test("데이터 전환은 진행 중 요청을 직렬화하고 마지막 탭만 이어서 불러온다", async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let releaseJob;
+  const heldJob = new Promise((resolve) => { releaseJob = resolve; });
+  const h = reactZoneHarness(async (_screen, action, payload) => {
+    if (action === "load_pool" && payload.key === "one") await held;
+    if (action === "select_job") await heldJob;
+    return { ok: true };
+  });
+  const first = h.controller.switchData("one");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await h.controller.selectJob("다른 작업"), false);
+  await h.controller.openBrowse();
+  assert.equal(h.controller.newWorkFromData(), false);
+  const second = h.controller.switchData("two");
+  const last = h.controller.switchData("three");
+  assert.deepEqual(h.calls.map((call) => call[2].key), ["one"]);
+  release();
+  await Promise.all([first, second, last]);
+  assert.deepEqual(h.calls.map((call) => call[2].key), ["one", "three"]);
+  assert.equal(h.controller.uiModel.getSnapshot().switchingData, "");
+  const job = h.controller.selectJob("다른 작업");
+  await h.controller.switchData("four");
+  releaseJob();
+  assert.equal(await job, true);
+  assert.deepEqual(h.calls.map((call) => call[1]), ["load_pool", "load_pool", "select_job"]);
 });
 
 /* ---------------- 공용 cfg ---------------- */

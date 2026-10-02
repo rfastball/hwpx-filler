@@ -2579,9 +2579,11 @@ export function createEditorWorkbenchDataProbes() {
           const p1 = SheetPicker.choose("job", payload);
           await settleUntil(ctx, () => ctx.doc.querySelectorAll("#sheetList .sheet-opt").length > 0);
           const opened = !byId(ctx, "sheetModal").classList.contains("hidden");
-          const btns = ctx.doc.querySelectorAll("#sheetList .sheet-opt");
+          const btns = ctx.doc.querySelectorAll("#sheetList input[data-sheet]");
           const focusFirst = ctx.doc.activeElement === btns[0];
           btns[1].dispatchEvent(new ctx.win.MouseEvent("click", { bubbles: true }));
+          await settleRender(ctx);
+          byId(ctx, "sheetImport").click();
           /* onPick 은 Bridge.loadDataSheet(Promise)를 await 한 뒤 close 하므로 마이크로태스크를
              먼저 흘려 실제 is-closing 진입을 만든 다음 transitionend 를 완료시킨다. */
           await Promise.resolve();

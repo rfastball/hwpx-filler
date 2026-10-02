@@ -48,7 +48,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `generate` | `screen: str, confirm_overwrite: bool=False, run_token: str=''` |
 | `import_template_file` | `screen: str` |
 | `initial` | `screen: str` |
-| `load_data_sheet` | `screen: str, path: str, sheet: str` |
+| `load_data_sheet` | `screen: str, path: str, sheet: str &#124; list[str]` |
 | `new_job_from_data` | `context: 'dict &#124; None'=None` |
 | `open_authoring_document` | `path: str='', as_template: bool=False` |
 | `open_job_in_editor` | `name: str, context: 'dict &#124; None'=None` |

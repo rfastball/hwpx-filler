@@ -69,6 +69,7 @@ type UiState = {
   pendingSearch: string | null;
   pendingColumn: { column: string; text: string } | null;
   tableScrollTop: number;
+  switchingData: string;
 };
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
@@ -104,11 +105,14 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     pendingSearch: null,
     pendingColumn: null,
     tableScrollTop: 0,
+    switchingData: "",
   };
   const listeners = new Set<Listener>();
   let zoneTail = Promise.resolve();
   let browseTail = Promise.resolve();
   let switching = false;
+  let dataSwitchTail = Promise.resolve();
+  let dataSwitchIntent = 0;
   let browseGeneration = 0;
   let browseAfterClose: (() => void) | null = null;
   let searchTimer: number | null = null;
@@ -213,7 +217,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 
   async function selectJob(name: string): Promise<boolean> {
     if (name.trim() === "") throw new Error("JobReadPort: 빈 작업 이름은 열 수 없습니다.");
-    if (switching) return false;
+    if (switching || ui.switchingData) return false;
     switching = true;
     patchUi({ openingName: name });
     try {
@@ -250,6 +254,28 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     return deps.ports.jobRunCoordination.current().confirmDestructiveIfArmed(
       "데이터 변경 확인", "데이터를 바꾸면", "데이터 바꾸고 버리기",
     );
+  }
+
+  function switchData(key: string): Promise<void> {
+    if (switching) return Promise.resolve();
+    const intent = ++dataSwitchIntent;
+    patchUi({ switchingData: key });
+    const next = dataSwitchTail.then(async () => {
+      if (intent !== dataSwitchIntent) return;
+      try {
+        if (snapshot()?.data_pool_key === key || !(await confirmDataSwap())) return;
+        await flushPendingEdits();
+        if (intent !== dataSwitchIntent) return;
+        const result = await call("job", "load_pool", { key });
+        if (result.ok === false) deps.notify(String(result.error));
+      } catch (error) {
+        deps.notify(String((error as Obj)?.message || error));
+      } finally {
+        if (intent === dataSwitchIntent) patchUi({ switchingData: "" });
+      }
+    });
+    dataSwitchTail = next;
+    return next;
   }
 
   /* 현재 데이터를 **다시 읽는다**(U4 항목 5 · #932 U4-C). 판정·수치·문안은 전부 Python
@@ -390,6 +416,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   function newWorkFromData(extraEvidence: Obj = {}): unknown {
+    if (ui.switchingData) return false;
     const current = snapshot();
     const gate = current?.new_work || { can: true, reason: "" };
     if (gate.can === false) {
@@ -434,6 +461,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   async function openBrowse(returnFocus: HTMLElement | null = null): Promise<void> {
+    if (ui.switchingData) return;
     browseGeneration += 1;
     browseAfterClose = null;
     deps.modal.open("jobBrowseSheet", {
@@ -465,6 +493,8 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 
   const controller = {
     model,
+    poolModel: deps.runtime.model<Obj | null>("pool"),
+    switchData,
     uiModel: {
       getSnapshot: () => ui,
       subscribe(listener: Listener): () => void {
@@ -490,6 +520,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     /** 불러온 사실은 「현재 데이터」 존의 라벨이 이미 보인다 — 성공에 따로 착지를 두지
      *  않는다(실패는 피커 자신이 그 자리에서 말한다). */
     openDataPicker(): void {
+      if (ui.switchingData) return;
       void deps.dataPicker.open({
         screen: "job",
         session: currentData,
@@ -628,9 +659,29 @@ export function JobDataBody(props: { controller: JobReadController; location: "i
   const ui = useUi(props.controller);
   if (snapshot === null) return null;
   if ((props.location === "sheet") !== ui.sheetOpen) return null;
-  return h(JobDataZone as any, {
-    snapshot, controller: props.controller, scroll: JobTableScroll,
-  });
+  return createElement(Fragment, null,
+    h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll }),
+    props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null);
+}
+
+function JobDataTabs(props: { controller: JobReadController }): ReactNode {
+  const { controller } = props;
+  const snapshot = useJob(controller);
+  const ui = useUi(controller);
+  const pool = useSyncExternalStore(controller.poolModel.subscribe, controller.poolModel.getSnapshot);
+  const rows = pool?.column?.rows || [];
+  useEffect(() => {
+    void controller.call("pool", "refresh", {}).catch((error) => controller.notify(String(error)));
+  }, [controller]);
+  if (!rows.length) return null;
+  return h("div", { className: "data-tabs", role: "group", "aria-label": "등록 데이터 전환",
+    "aria-busy": !!ui.switchingData },
+    ...rows.map((row: Obj) => h("button", {
+      type: "button", key: row.key, className: "data-tab", "data-busy-lock": true,
+      "aria-pressed": snapshot?.data_pool_key === row.key,
+      disabled: row.selectable === false || !!ui.openingName, title: row.reason || `${row.name}: ${row.sub}`,
+      onClick: () => { void controller.switchData(row.key); },
+    }, row.name, ui.switchingData === row.key ? " · 여는 중…" : "")));
 }
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {
@@ -645,6 +696,7 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
       "aria-pressed": row.favorited ? "true" : "false", "aria-label": `${row.name} ${row.favorited ? "즐겨찾기에서 제거" : "즐겨찾기에 추가"}`,
       onClick: () => { void controller.toggleFavorite(row.name, !!row.favorited); } }, row.favorited ? "★" : "☆"),
     h("button", { className: "cand-pick", type: "button", id: `jobCand-${key}`, "data-cand": row.name,
+      disabled: !!ui.switchingData,
       "data-missing": missing ? "1" : undefined, "data-busy-lock": true, "aria-pressed": active ? "true" : "false",
       onClick: () => {
         if (missing) { void controller.relinkTemplateFor(row.name); return; }
@@ -666,10 +718,11 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
 }
 
 function NewWorkButton(props: { snapshot: Obj; controller: JobReadController }): ReactNode {
+  const ui = useUi(props.controller);
   const gate = props.snapshot.new_work || { can: true, reason: "" };
   return createElement(Fragment, null,
     h("button", { className: "btn sm", type: "button", id: "jobCandNewWork", "data-new-work": gate.can === false ? undefined : true,
-      "data-busy-lock": gate.can === false ? undefined : true, disabled: gate.can === false, title: gate.reason || "",
+      "data-busy-lock": gate.can === false ? undefined : true, disabled: gate.can === false || !!ui.switchingData, title: gate.reason || "",
       onClick: () => { void props.controller.newWorkFromData(); } }, "＋ 이 데이터로 새 작업"),
     gate.can === false ? h("span", { className: "cand-newwork-why muted" }, gate.reason) : null);
 }
@@ -686,6 +739,7 @@ export function JobNoDataExit(props: { controller: JobReadController }): ReactNo
 
 export function JobCandidates(props: { controller: JobReadController }): ReactNode {
   const snapshot = useJob(props.controller);
+  const ui = useUi(props.controller);
   if (snapshot === null || !snapshot.has_data) return null;
   const candidates = snapshot.candidates || { top: [], more: 0, needs_count: 0, sections: [] };
   const top = candidates.top || [];
@@ -713,6 +767,7 @@ export function JobCandidates(props: { controller: JobReadController }): ReactNo
         : cards,
       bits.length ? h("span", { className: "cand-more muted" }, ...bits, " — ",
         h("button", { className: "btn sm", type: "button", id: "jobBrowseOpen", "data-browse-open": true,
+          disabled: !!ui.switchingData,
           "data-busy-lock": true, onClick: (event: Obj) => { void props.controller.openBrowse(event.currentTarget); } }, "문서 작업 찾기…")) : null,
       h("span", { className: "cand-newwork" }, h(NewWorkButton as any, { snapshot, controller: props.controller })),
       candidates.txt_note ? h("details", {
