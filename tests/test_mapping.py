@@ -87,7 +87,7 @@ _FIXED_NOW = datetime(2026, 6, 15, 18, 4)
 
 
 def test_today_reuses_every_date_preset_losslessly():
-    """판정 1: today 는 date 서식 어휘·프리셋 9개를 **그대로** 재사용한다.
+    """판정 1: today 는 date 서식 어휘·프리셋 전부를 **그대로** 재사용한다.
 
     직렬화(``%Y-%m-%d %H:%M``)를 ``parse_dt`` 가 연·월·일·시·분 전부 되읽으므로 date 와
     같은 코드가 같은 결과를 낸다 — 새 서식 표를 만들 근거가 없다는 것이 이 단언이다.
@@ -105,6 +105,7 @@ def test_today_preset_values_are_pinned():
     """대표 프리셋의 실제 산출 — 어휘 재사용이 '같은 값'을 뜻함을 값으로 못박는다."""
     assert apply_transform("today", now=_FIXED_NOW) == "2026. 6. 15. 18:04"
     assert apply_transform("today", fmt="y2", now=_FIXED_NOW) == "'26.6.15. 18:04"
+    assert apply_transform("today", fmt="ym", now=_FIXED_NOW) == "2026. 6."
     assert apply_transform("today", fmt="kor", now=_FIXED_NOW) == "2026년 6월 15일 18:04"
     assert apply_transform("today", fmt="%Y-%m-%d", now=_FIXED_NOW) == "2026-06-15"
     assert apply_transform("today", fmt="%H:%M", now=_FIXED_NOW) == "18:04"

@@ -42,6 +42,24 @@ def test_date_reserved_codes_short_and_korean():
     assert render("date", "kor", "2026-06-15") == "2026년 6월 15일"
 
 
+def test_date_reserved_code_year_month():
+    # 예약코드 ym = 공문서 표준 연·월(월 비패딩·끝점). 일·시각은 붙이지 않는다.
+    assert render("date", "ym", "2026-09-01") == "2026. 9."
+    assert render("date", "ym", "2026-10-12") == "2026. 10."
+    assert render("date", "ym", "2026/10/12 09:00:00") == "2026. 10."
+    assert render("date", "ym", "2026-06-15 18:00") == "2026. 6."
+    assert render("date", "ym", "2026-06-15") == "2026. 6."
+    # 해석 불가 값은 원본(degrade) — 기존 예약코드와 같은 규칙.
+    assert render("date", "ym", "미정") == "미정"
+    assert render("date", "ym", "") == ""
+
+
+def test_today_shares_the_year_month_preset():
+    # 「오늘 날짜」는 date 와 같은 표 — 「표준(연·월)」도 같은 자리에 있다.
+    assert presets("today") == presets("date")
+    assert dict(presets("today"))["표준(연·월)"] == "ym"
+
+
 def test_date_time_only_value_parses():
     # 시각 단독값('HHMM'·'HH:MM')도 시각 서식으로 렌더된다.
     assert render("date", "%H:%M", "1400") == "14:00"
@@ -75,6 +93,10 @@ def test_presets_are_label_code_pairs():
     dt = dict(presets("date"))
     assert dt["표준"] == ""            # 공문서 표준(기본)
     assert dt["표준(약식)"] == "y2"     # 축약형(추천 2순위)
+    assert dt["표준(연·월)"] == "ym"    # 공문서 머리의 연·월 표기
+    # 「표준(연·월)」은 「표준(약식)」 바로 다음 자리.
+    labels = [label for label, _ in presets("date")]
+    assert labels[:4] == ["표준", "표준(약식)", "표준(연·월)", "한글"]
     assert dt["한글"] == "kor"          # 한글은 예약코드로 보존
     assert dt["ISO"] == "%Y-%m-%d"
     # 시각·날짜+시각 프리셋 신설.

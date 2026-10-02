@@ -107,6 +107,18 @@ def _dot_dt(value: str, *, short: bool = False) -> str:
     return out
 
 
+def _dot_ym(value: str) -> str:
+    """공문서 표준 연·월 표시(예약코드 ``ym``) — ``2026. 9.``·``2026. 10.``(월 비패딩·끝점).
+
+    공문서 머리의 연·월 표기를 날짜 값에서 만든다. :func:`_dot_dt` 와 같은 해석기를 쓰되
+    일·시각은 붙이지 않는다. 해석 실패 시 원본(degrade).
+    """
+    dt = parse_dt(value)
+    if dt is None:
+        return value
+    return f"{dt.year}. {dt.month}."
+
+
 # ---- 마스크(자릿수 그룹) — stdlib 서식 스펙으로 안 되는 전화/사업자번호 등 ----
 def _mask_phone(value: str) -> str:
     """전화번호 자릿수 마스크. 자릿수가 안 맞으면 원본(degrade)."""
@@ -148,6 +160,7 @@ class StdlibFormatEngine:
         "date": [
             ("표준", ""),                      # 2026. 7. 17. (공문서 표준·기본)
             ("표준(약식)", "y2"),               # '26.7.17. (2자리 연도 축약·추천 2순위)
+            ("표준(연·월)", "ym"),              # 2026. 7. (공문서 머리의 연·월 표기)
             ("한글", "kor"),                    # 2026년 6월 15일
             ("ISO", "%Y-%m-%d"),               # 2026-06-15
             ("점", "%Y.%m.%d"),                # 2026.06.15
@@ -195,6 +208,8 @@ class StdlibFormatEngine:
             return _dot_dt(value)  # 공문서 표준 기본(2026. 7. 17.)
         if code == "y2":
             return _dot_dt(value, short=True)  # 예약코드: 축약형('26.7.17.)
+        if code == "ym":
+            return _dot_ym(value)  # 예약코드: 연·월(2026. 7.)
         if code == "kor":
             return _korean_dt(value)  # 예약코드: 한글 표기(비패딩)
         dt = parse_dt(value)
