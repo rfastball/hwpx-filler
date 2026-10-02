@@ -1,16 +1,7 @@
-/* R4-02 시트 선택 확정 게이트의 React 후계(legacy `frontend/js/sheet_picker.js`).
-
-   계약은 한 줄로 안 바뀐다(#33 · confirm-or-alarm): **조용한 첫 시트 로드 금지**.
-   `pick_data_file` 이 `{needs_sheet, …}` 를 돌려주면 사용자가 시트를 명시로 고른 뒤에만
-   `load_data_sheet` 가 나간다. 취소·Escape·배경 닫기는 겨눔 전체를 중단한다(첫 시트로
-   강등하지 않는다) — 로드가 **아예 일어나지 않는 것**이 취소의 의미다.
-
-   반환도 그대로다: 마운트 descriptor · `ERROR:…` · `null`(취소). 호출자(`data_picker`·편집기)는
-   `SheetPickerPort` 하나만 알고, 이 구현은 #414 가 legacy 로 bind 해 둔 그 포트를 정확히
-   한 번 handoff 받는다(패킷 rev4).
-
-   settle-once 는 여기 산다: 확정 즉시 추가 클릭이 두 번째 로드를 태우지 않고, 닫힘 통지가
-   다시 와도 이미 정산된 약속은 다시 해소되지 않는다. */
+/* 명시적으로 고른 시트를 일괄 등록하고 활성 데이터 하나의 descriptor를 반환한다.
+   등록 전 취소는 로드 0건이다. 처리 중 닫기를 막고, 부분 실패 뒤 닫기는 이미
+   활성화한 결과를 반환한다. 실패 항목과 활성화 오류는 창 안에서 재진술한다.
+   호출자는 SheetPickerPort 하나만 사용하며 확정·닫힘은 정확히 한 번 정산한다. */
 import { createElement, useEffect, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
@@ -37,6 +28,8 @@ type Session = {
   name: string;
   path: string;
   sheets: Obj[];
+  selected: string[];
+  result: Obj | null;
   /** 확정·취소 어느 쪽이든 **정확히 한 번** 해소한다. */
   settle(value: DataMountDescriptor | `ERROR:${string}` | null): void;
   /** 로드가 나간 뒤의 추가 클릭을 막는다(이중 로드 금지). */
@@ -68,6 +61,8 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
         name: String(body.name || ""),
         path: String(body.path || ""),
         sheets: (body.sheets || []) as Obj[],
+        selected: [],
+        result: null,
         picking: false,
         settle(value) {
           if (settled) return;
@@ -79,22 +74,43 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
         },
       };
       emit();
-      /* 닫힘은 경로를 가리지 않고 취소로 귀결된다 — 취소 버튼·Escape·배경 모두 같은 통지다. */
-      deps.modal.open("sheetModal", { onClose: () => { session?.settle(null); } });
+      /* 취소·Escape·배경 닫기는 같은 가드와 결과를 사용한다. */
+      deps.modal.open("sheetModal", {
+        beforeClose: () => !session?.picking,
+        onClose: () => { session?.settle(session.result?.mount || null); },
+      });
     });
   }
 
-  async function pick(sheet: string): Promise<void> {
+  async function pick(): Promise<void> {
     const current = session;
     if (current === null || current.picking) return;
-    current.picking = true;
+    const selected = current.selected;
+    if (!selected.length) return;
+    session = { ...current, picking: true };
     emit();
     try {
       const result = expectHostValue(
-        await deps.client.invoke("load_data_sheet", current.screen, current.path, sheet),
+        await deps.client.invoke("load_data_sheet", current.screen, current.path, selected),
         "load_data_sheet",
       );
-      current.settle(result as DataMountDescriptor | `ERROR:${string}`);
+      if (result && typeof result === "object" && Array.isArray((result as Obj).sheets)) {
+        const incoming = result as Obj;
+        const outcomes = new Map((current.result?.sheets || []).map((row: Obj) => [row.name, row]));
+        for (const row of incoming.sheets) outcomes.set(row.name, row);
+        const batch = { ...incoming, mount: incoming.mount || current.result?.mount,
+          sheets: [...outcomes.values()] } as Obj;
+        const failed = batch.sheets.filter((row: Obj) => row.error);
+        if (!failed.length && batch.mount && !batch.error) {
+          current.settle(batch.mount);
+        } else {
+          session = { ...current, picking: false, result: batch,
+            selected: failed.map((row: Obj) => row.name) };
+          emit();
+        }
+      } else {
+        current.settle(result as DataMountDescriptor | `ERROR:${string}`);
+      }
     } catch (error) {
       current.settle(`ERROR:${String((error as Obj)?.message || error)}`);
     }
@@ -111,7 +127,20 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
       },
     },
     pick,
-    cancel(): void { deps.modal.close("sheetModal"); },
+    toggle(name: string): void {
+      if (!session || session.picking) return;
+      const selected = session.selected.includes(name)
+        ? session.selected.filter((value) => value !== name) : [...session.selected, name];
+      session = { ...session, selected };
+      emit();
+    },
+    selectAll(): void {
+      if (!session || session.picking) return;
+      session = { ...session, selected: session.selected.length === session.sheets.length
+        ? [] : session.sheets.map((row) => String(row.name)) };
+      emit();
+    },
+    cancel(): void { if (!session?.picking) deps.modal.close("sheetModal"); },
     doc: deps.doc,
   };
 }
@@ -135,22 +164,35 @@ export function SheetPickerDialog(props: { controller: SheetPickerController }):
   }, [session?.id]);
   const sheets = session?.sheets || [];
   return h("div", { className: "modal-card" },
-    h("h3", { id: "sheetTitle" }, "시트 선택"),
+    h("h3", { id: "sheetTitle" }, "가져올 시트 선택"),
     h("p", { className: "modal-sub" },
       h("span", { className: "mono", id: "sheetModalFile" }, session?.name || ""),
-      " 에 시트가 여러 개입니다. 채울 시트를 선택하세요."),
+      ),
+    h("label", { className: "sheet-opt" },
+      h("input", { type: "checkbox", checked: !!sheets.length && session?.selected.length === sheets.length,
+        ref: (el: HTMLInputElement | null) => { if (el) el.indeterminate = !!session?.selected.length && session.selected.length < sheets.length; },
+        disabled: !!session?.picking, onChange: controller.selectAll }), "전체 선택"),
     h("div", { id: "sheetList", className: "sheet-list" },
-      ...sheets.map((sheet: Obj, index: number) => h("button", {
-        type: "button", className: "btn sheet-opt", key: String(sheet.name),
+      ...sheets.map((sheet: Obj, index: number) => h("label", {
+        className: "sheet-opt", key: String(sheet.name),
+      }, h("input", {
+        type: "checkbox", checked: session?.selected.includes(String(sheet.name)) || false,
         "data-sheet": String(sheet.name),
         /* 리터럴로 쓴다 — 조건부 전개는 소유권 추출기가 못 보는 자리라 이 축이 분모에서
            조용히 빠진다. `undefined` 는 React 가 속성을 생략한다(산출 동일). */
         "data-first": index === 0 ? "1" : undefined,
         disabled: !!session?.picking,
-        onClick: () => { void controller.pick(String(sheet.name)); },
-      },
+        onChange: () => controller.toggle(String(sheet.name)),
+      }),
       h("span", { className: "mono sheet-name" }, String(sheet.name)),
-      h("span", { className: "muted sheet-dim" }, `${sheet.rows}행 × ${sheet.cols}열`)))),
+      h("span", { className: "muted sheet-dim" }, `약 ${sheet.rows}행 × ${sheet.cols}열`)))),
+    session?.result ? h("div", { role: "status", className: "note" },
+      ...session.result.sheets.map((row: Obj) => h("div", { key: row.name },
+        `${row.name}: ${row.error || "등록됨"}`)),
+      session.result.error ? h("div", { className: "danger" }, session.result.error) : null) : null,
     h("div", { className: "modal-actions" },
-      h("button", { className: "btn", id: "sheetCancel", onClick: controller.cancel }, "취소")));
+      h("button", { className: "btn", id: "sheetCancel", disabled: !!session?.picking,
+        onClick: controller.cancel }, session?.result ? "닫기" : "취소"),
+      h("button", { className: "btn primary", id: "sheetImport", disabled: !!session?.picking || !session?.selected.length,
+        onClick: () => { void controller.pick(); } }, session?.picking ? "가져오는 중…" : `선택한 ${session?.selected.length || 0}개 시트 가져오기`)));
 }

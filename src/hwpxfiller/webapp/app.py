@@ -95,6 +95,7 @@ from .screen_tutorial import TutorialController
 from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
+    NO_ROWS_TEXT,
     collect_owned_paths,
     validate_owned_path,
 )
@@ -673,7 +674,7 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return self._mount_descriptor(screen, path)
 
-    def load_data_sheet(self, screen: str, path: str, sheet: str) -> "str | dict | None":
+    def load_data_sheet(self, screen: str, path: str, sheet: str | list[str]) -> "str | dict | None":
         """웹에서 확정한 시트로 데이터 로드(#33) — 다중 시트 확정 게이트의 착지 지점.
 
         ``sheet`` 는 반드시 해당 워크북의 **실제 시트명**이어야 한다 — 모르는 이름을 조용히
@@ -683,6 +684,10 @@ class WebFrontend:
         성사 반환은 :meth:`pick_data_file` 과 같은 descriptor(U2 §2.7 3행)다.
         """
         try:
+            if screen not in {"job", "editor"} or not isinstance(path, str) or not path:
+                raise ValueError("데이터를 가져올 화면과 파일을 확인하세요.")
+            if isinstance(sheet, list):
+                return self._register_data_sheets(screen, path, sheet)
             names = [n for n, _r, _c in sheet_overview(path)]
             if sheet not in names:
                 return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다. 시트를 다시 선택하세요."
@@ -690,6 +695,51 @@ class WebFrontend:
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return self._mount_descriptor(screen, path, sheet)
+
+    def _register_data_sheets(self, screen: str, path: str, sheets: list[str]) -> dict:
+        """여러 참조를 등록하고 하나만 마운트한다. 실패 항목만 재시도할 수 있다."""
+        if not sheets or any(not isinstance(name, str) or not name for name in sheets):
+            raise ValueError("가져올 시트를 선택하세요.")
+        names = [name for name, _rows, _cols in sheet_overview(path)]
+        if any(name not in names for name in sheets):
+            raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
+        pool = self._controller("pool")
+        results = []
+        first = None
+        for name in names:
+            if name not in sheets:
+                continue
+            try:
+                if not source_for_path(path, sheet=name).records():
+                    raise ValueError(NO_ROWS_TEXT)
+                same = pool.vm.find_same_data(path, name)
+                if same is None:
+                    pool.vm.register_excel(name, path, sheet=name)
+                    same = pool.vm.find_same_data(path, name)
+                if same is None:
+                    raise ValueError("등록 데이터를 찾을 수 없습니다. 다시 가져오세요.")
+                key, _item = same
+                results.append({"name": name, "key": key, "error": ""})
+                if first is None:
+                    first = (key, name)
+            except Exception as exc:  # noqa: BLE001 — 항목별 실패를 보존한다
+                results.append({"name": name, "error": str(exc)})
+        pool.dispatch("refresh", {})
+        mount = None
+        error = ""
+        if first is not None:
+            key, name = first
+            try:
+                if screen == "job":
+                    result = self._controller(screen).dispatch("load_pool", {"key": key})
+                    if not result.get("ok"):
+                        raise ValueError(result["error"])
+                else:
+                    self._controller(screen).load_data_path(path, sheet=name)
+                mount = self._mount_descriptor(screen, path, name)
+            except Exception as exc:  # noqa: BLE001 — 등록과 활성화 결과를 구분한다
+                error = str(exc)
+        return {"sheets": results, "mount": mount, "error": error}
 
     def copy_clipboard(self, screen: str, token: "str | None" = None) -> dict:
         """작업점 카드 렌더를 OS 클립보드로 — 거래는 **컨트롤러가 원자로 소유**한다(5R P1).

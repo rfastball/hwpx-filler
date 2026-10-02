@@ -483,6 +483,61 @@ def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].edit.data_path == ""  # 로드되지 않음
 
 
+@pytest.mark.parametrize("screen", ["job", "editor"])
+def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, monkeypatch):
+    frontend = _frontend(tmp_path, monkeypatch)
+    names = ["낙찰현황", "공고목록", "공고목록"]
+    result = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
+    assert result["error"] == ""
+    assert result["mount"]["sheet"] == "공고목록"  # 원본 순서, 단일 활성
+    assert len(result["sheets"]) == 2
+    keys = [row["key"] for row in result["sheets"]]
+    pool = frontend.controllers["pool"].vm
+    pool.relabel(keys[0], "사용자 이름", note="보존")
+    again = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
+    assert [row["key"] for row in again["sheets"]] == keys
+    assert len(pool.rows()) == 2
+    assert pool.registry.load(keys[0]).name == "사용자 이름"
+    assert pool.registry.load(keys[0]).note == "보존"
+    if screen == "job":
+        job = frontend.controllers["job"]
+        assert job.data.pool_key == keys[0]
+        assert len(job.data.records) == 2
+        assert job.dispatch("load_pool", {"key": keys[1]})["ok"]
+        assert len(job.data.records) == 3
+        before = job.data.records
+        assert not job.dispatch("load_pool", {"key": "missing"})["ok"]
+        assert job.data.records is before
+
+
+def test_sheet_batch_partial_failure_and_invalid_input_preserve_data(tmp_path, monkeypatch):
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    frontend.load_data_sheet("job", str(MULTI_SHEET), "공고목록")
+    job = frontend.controllers["job"]
+    before = job.data.records
+    for invalid in ([], [1], ["없는 시트"]):
+        assert frontend.load_data_sheet("job", str(MULTI_SHEET), invalid).startswith("ERROR:")
+        assert job.data.records is before
+    factory = app_mod.source_for_path
+
+    def source(path, **opts):
+        if opts["sheet"] == "공고목록":
+            raise OSError("읽기 실패")
+        return factory(path, **opts)
+
+    monkeypatch.setattr(app_mod, "source_for_path", source)
+    result = frontend.load_data_sheet("job", str(MULTI_SHEET), ["공고목록", "낙찰현황"])
+    assert result["sheets"][0]["error"] == "읽기 실패"
+    assert result["mount"]["sheet"] == "낙찰현황"
+    assert len(frontend.controllers["pool"].vm.rows()) == 1
+    before = job.data.records
+    failed = frontend.load_data_sheet("job", str(MULTI_SHEET), ["공고목록"])
+    assert failed["mount"] is None
+    assert job.data.records is before
+
+
 def test_web_assets_present_and_wired():
     """정적 소스 골격과 단일 module entry가 기존 자산 graph를 소유하는가."""
     for rel in (
