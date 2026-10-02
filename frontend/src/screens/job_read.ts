@@ -217,7 +217,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 
   async function selectJob(name: string): Promise<boolean> {
     if (name.trim() === "") throw new Error("JobReadPort: 빈 작업 이름은 열 수 없습니다.");
-    if (switching) return false;
+    if (switching || ui.switchingData) return false;
     switching = true;
     patchUi({ openingName: name });
     try {
@@ -257,6 +257,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   function switchData(key: string): Promise<void> {
+    if (switching) return Promise.resolve();
     const intent = ++dataSwitchIntent;
     patchUi({ switchingData: key });
     const next = dataSwitchTail.then(async () => {
@@ -415,6 +416,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   function newWorkFromData(extraEvidence: Obj = {}): unknown {
+    if (ui.switchingData) return false;
     const current = snapshot();
     const gate = current?.new_work || { can: true, reason: "" };
     if (gate.can === false) {
@@ -459,6 +461,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   async function openBrowse(returnFocus: HTMLElement | null = null): Promise<void> {
+    if (ui.switchingData) return;
     browseGeneration += 1;
     browseAfterClose = null;
     deps.modal.open("jobBrowseSheet", {
@@ -676,7 +679,7 @@ function JobDataTabs(props: { controller: JobReadController }): ReactNode {
     ...rows.map((row: Obj) => h("button", {
       type: "button", key: row.key, className: "data-tab", "data-busy-lock": true,
       "aria-pressed": snapshot?.data_pool_key === row.key,
-      disabled: row.selectable === false, title: row.reason || `${row.name}: ${row.sub}`,
+      disabled: row.selectable === false || !!ui.openingName, title: row.reason || `${row.name}: ${row.sub}`,
       onClick: () => { void controller.switchData(row.key); },
     }, row.name, ui.switchingData === row.key ? " · 여는 중…" : "")));
 }
@@ -693,6 +696,7 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
       "aria-pressed": row.favorited ? "true" : "false", "aria-label": `${row.name} ${row.favorited ? "즐겨찾기에서 제거" : "즐겨찾기에 추가"}`,
       onClick: () => { void controller.toggleFavorite(row.name, !!row.favorited); } }, row.favorited ? "★" : "☆"),
     h("button", { className: "cand-pick", type: "button", id: `jobCand-${key}`, "data-cand": row.name,
+      disabled: !!ui.switchingData,
       "data-missing": missing ? "1" : undefined, "data-busy-lock": true, "aria-pressed": active ? "true" : "false",
       onClick: () => {
         if (missing) { void controller.relinkTemplateFor(row.name); return; }
@@ -714,10 +718,11 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
 }
 
 function NewWorkButton(props: { snapshot: Obj; controller: JobReadController }): ReactNode {
+  const ui = useUi(props.controller);
   const gate = props.snapshot.new_work || { can: true, reason: "" };
   return createElement(Fragment, null,
     h("button", { className: "btn sm", type: "button", id: "jobCandNewWork", "data-new-work": gate.can === false ? undefined : true,
-      "data-busy-lock": gate.can === false ? undefined : true, disabled: gate.can === false, title: gate.reason || "",
+      "data-busy-lock": gate.can === false ? undefined : true, disabled: gate.can === false || !!ui.switchingData, title: gate.reason || "",
       onClick: () => { void props.controller.newWorkFromData(); } }, "＋ 이 데이터로 새 작업"),
     gate.can === false ? h("span", { className: "cand-newwork-why muted" }, gate.reason) : null);
 }
@@ -734,6 +739,7 @@ export function JobNoDataExit(props: { controller: JobReadController }): ReactNo
 
 export function JobCandidates(props: { controller: JobReadController }): ReactNode {
   const snapshot = useJob(props.controller);
+  const ui = useUi(props.controller);
   if (snapshot === null || !snapshot.has_data) return null;
   const candidates = snapshot.candidates || { top: [], more: 0, needs_count: 0, sections: [] };
   const top = candidates.top || [];
@@ -761,6 +767,7 @@ export function JobCandidates(props: { controller: JobReadController }): ReactNo
         : cards,
       bits.length ? h("span", { className: "cand-more muted" }, ...bits, " — ",
         h("button", { className: "btn sm", type: "button", id: "jobBrowseOpen", "data-browse-open": true,
+          disabled: !!ui.switchingData,
           "data-busy-lock": true, onClick: (event: Obj) => { void props.controller.openBrowse(event.currentTarget); } }, "문서 작업 찾기…")) : null,
       h("span", { className: "cand-newwork" }, h(NewWorkButton as any, { snapshot, controller: props.controller })),
       candidates.txt_note ? h("details", {

@@ -482,12 +482,18 @@ test("다중 시트 등록은 부분 실패를 남기고 실패 항목만 재시
 test("데이터 전환은 진행 중 요청을 직렬화하고 마지막 탭만 이어서 불러온다", async () => {
   let release;
   const held = new Promise((resolve) => { release = resolve; });
+  let releaseJob;
+  const heldJob = new Promise((resolve) => { releaseJob = resolve; });
   const h = reactZoneHarness(async (_screen, action, payload) => {
     if (action === "load_pool" && payload.key === "one") await held;
+    if (action === "select_job") await heldJob;
     return { ok: true };
   });
   const first = h.controller.switchData("one");
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await h.controller.selectJob("다른 작업"), false);
+  await h.controller.openBrowse();
+  assert.equal(h.controller.newWorkFromData(), false);
   const second = h.controller.switchData("two");
   const last = h.controller.switchData("three");
   assert.deepEqual(h.calls.map((call) => call[2].key), ["one"]);
@@ -495,6 +501,11 @@ test("데이터 전환은 진행 중 요청을 직렬화하고 마지막 탭만 
   await Promise.all([first, second, last]);
   assert.deepEqual(h.calls.map((call) => call[2].key), ["one", "three"]);
   assert.equal(h.controller.uiModel.getSnapshot().switchingData, "");
+  const job = h.controller.selectJob("다른 작업");
+  await h.controller.switchData("four");
+  releaseJob();
+  assert.equal(await job, true);
+  assert.deepEqual(h.calls.map((call) => call[1]), ["load_pool", "load_pool", "select_job"]);
 });
 
 /* ---------------- 공용 cfg ---------------- */

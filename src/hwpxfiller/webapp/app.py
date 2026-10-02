@@ -55,6 +55,7 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
 from ..data.factory import source_for_path, source_from_pool_item
+from ..application.dataset_pool import DatasetPoolRow
 from ..viewmodel.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
@@ -96,6 +97,7 @@ from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
     NO_ROWS_TEXT,
+    source_label,
     collect_owned_paths,
     validate_owned_path,
 )
@@ -710,15 +712,19 @@ class WebFrontend:
             if name not in sheets:
                 continue
             try:
-                if not source_for_path(path, sheet=name).records():
-                    raise ValueError(NO_ROWS_TEXT)
                 same = pool.vm.find_same_data(path, name)
+                source = source_from_pool_item(same[1]) if same else source_for_path(path, sheet=name)
+                if not source.records():
+                    raise ValueError(NO_ROWS_TEXT)
                 if same is None:
                     pool.vm.register_excel(name, path, sheet=name)
                     same = pool.vm.find_same_data(path, name)
                 if same is None:
                     raise ValueError("등록 데이터를 찾을 수 없습니다. 다시 가져오세요.")
-                key, _item = same
+                key, item = same
+                reason = DatasetPoolRow.from_item(key, item).select_block_reason()
+                if reason:
+                    raise ValueError(reason)
                 results.append({"name": name, "key": key, "error": ""})
                 if first is None:
                     first = (key, name)
@@ -730,13 +736,12 @@ class WebFrontend:
         if first is not None:
             key, name = first
             try:
-                if screen == "job":
-                    result = self._controller(screen).dispatch("load_pool", {"key": key})
-                    if not result.get("ok"):
-                        raise ValueError(result["error"])
-                else:
-                    self._controller(screen).load_data_path(path, sheet=name)
+                action = "load_pool" if screen == "job" else "use_pool_data"
+                result = self._controller(screen).dispatch(action, {"key": key})
+                if not result.get("ok"):
+                    raise ValueError(result["error"])
                 mount = self._mount_descriptor(screen, path, name)
+                mount["label"] = result["label"] if screen == "job" else source_label("pool", result["label"])
             except Exception as exc:  # noqa: BLE001 — 등록과 활성화 결과를 구분한다
                 error = str(exc)
         return {"sheets": results, "mount": mount, "error": error}

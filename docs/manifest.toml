@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py"]
-source_sha256 = "032470735db3478e3ad19de6e7a097772dbd9ace921be881a133c69a33fcf1d6"
+source_sha256 = "b8b2ada78c8ee3ed4a6a42beded55936cf2d5ec1185702106e8289907738bf45"
 body_sha256 = "692faf62c7adb2e926525b1a70b88c31a2ab9c013e873d3a192d64400f757b26"
 
 [[topic]]
@@ -202,14 +202,14 @@ document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
 source_sha256 = "56de924032410a20b3a31d5f07855997d170f549b7c1fe7f29278742f8217d61"
-body_sha256 = "d8abfdb5b3c449f5409af3cf5c6218f5480929140dae5f312c2c829a459092a1"
+body_sha256 = "4a9693a1f1f4945c8f5fbf4ce0f8b3d2df569e4fafe0ca5ba73b7259419f6530"
 
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "f916c80ad741cd518faaad32521236984cccd96ef3c4686d547254d9cb421295"
+source_sha256 = "3ec6920eca3341082eda81f4aa7ef5155c31a1347863c55f31780769a870f647"
 body_sha256 = "2ce1407ab99cd8bfa2625ec3b674596cb9a4d56a937f65aafb4e8da4289c047e"
 
 [[topic]]

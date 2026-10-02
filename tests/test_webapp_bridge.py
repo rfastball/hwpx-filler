@@ -495,6 +495,7 @@ def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, mo
     pool = frontend.controllers["pool"].vm
     pool.relabel(keys[0], "사용자 이름", note="보존")
     again = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
+    assert again["mount"]["label"] == "등록 데이터: 사용자 이름"
     assert [row["key"] for row in again["sheets"]] == keys
     assert len(pool.rows()) == 2
     assert pool.registry.load(keys[0]).name == "사용자 이름"
@@ -508,6 +509,19 @@ def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, mo
         before = job.data.records
         assert not job.dispatch("load_pool", {"key": "missing"})["ok"]
         assert job.data.records is before
+
+    item = pool.registry.load(keys[0])
+    item.opts["header_row"] = 2
+    pool.registry.save_at(keys[0], item)
+    custom = frontend.load_data_sheet(screen, str(MULTI_SHEET), ["공고목록"])
+    assert custom["error"] == ""
+    assert custom["mount"]["rows"] == 1
+    if screen == "editor":
+        assert frontend.controllers[screen].edit.data_header_row == 2
+    pool.registry.archive(keys[0])
+    archived = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
+    assert "활성화" in archived["sheets"][0]["error"]
+    assert archived["mount"]["sheet"] == "낙찰현황"
 
 
 def test_sheet_batch_partial_failure_and_invalid_input_preserve_data(tmp_path, monkeypatch):
