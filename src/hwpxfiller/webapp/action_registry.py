@@ -369,15 +369,24 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # (tpl→편집기 재정산 선례). 웹이 소유하는 것은 종료·재개, 순간 카드 소비 되알림, 그리고
     # 안내 초점 지정·해제다 — 전부 「무엇을 보여줄까」이지 「무엇을 달성했는가」가 아니다.
     "tutorial": {
+        # Frozen checklist contract remains parseable for historical controller tests;
+        # the shipped OnboardingController does not implement these actions.
         "dismiss": _schema(),
-        "resume": _schema(),
-        # 동시 1장·억제·자동 소멸은 표면 몫이라 링1 은 미소비 목록만 낸다. 표면이 띄운 한
-        # 장을 되알리지 않으면 같은 카드가 다음 스냅샷에서 다시 뜬다 — 그래서 소비가 액션이다.
         "consume_moment": _schema("milestone"),
-        # 안내 초점 축(#918 C) — **달성 기록을 되돌리는 액션이 아니다**. 기록은 단조·영속이고
-        # 여기서 옮기는 것은 안내가 겨누는 과정뿐이다. 초점은 표시 이력이라 영속하지 않는다.
         "focus_tier": _schema("tier"),
         "clear_focus": _schema(),
+        "later": _schema(),
+        "start": _schema("scenario_id"),
+        "select": _schema("scenario_id"),
+        "pause": _schema(),
+        "skip": _schema(),
+        "resume": _schema(),
+        "restart": _schema("scenario_id"),
+        "next": _schema(),
+        "prepare_examples": _schema(optional="derived"),
+        "cleanup_preview": _schema(),
+        "cleanup": _schema("token"),
+        "reset_progress": _schema("confirm"),
     },
 }
 

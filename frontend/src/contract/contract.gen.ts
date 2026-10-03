@@ -261,10 +261,21 @@ export const SCREEN_ACTIONS = {
   },
   tutorial: {
     dismiss: { required: [], optional: [] },
-    resume: { required: [], optional: [] },
     consume_moment: { required: ["milestone"], optional: [] },
     focus_tier: { required: ["tier"], optional: [] },
     clear_focus: { required: [], optional: [] },
+    later: { required: [], optional: [] },
+    start: { required: ["scenario_id"], optional: [] },
+    select: { required: ["scenario_id"], optional: [] },
+    pause: { required: [], optional: [] },
+    skip: { required: [], optional: [] },
+    resume: { required: [], optional: [] },
+    restart: { required: ["scenario_id"], optional: [] },
+    next: { required: [], optional: [] },
+    prepare_examples: { required: [], optional: ["derived"] },
+    cleanup_preview: { required: [], optional: [] },
+    cleanup: { required: ["token"], optional: [] },
+    reset_progress: { required: ["confirm"], optional: [] },
   },
 } as const;
 
