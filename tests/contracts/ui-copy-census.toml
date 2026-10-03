@@ -647,10 +647,6 @@ text = "데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작
 
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
-text = "데이터를 선택하세요"
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
 text = "쓸 작업을 이미 알고 있다면 「문서 작업」에서 고른 뒤 문서 만들기에서 사용을 누르세요."
 
 [[sentence]]

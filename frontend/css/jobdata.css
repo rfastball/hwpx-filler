@@ -18,7 +18,7 @@
 .data-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-3px}
 .data-tab:disabled{color:var(--a-muted);cursor:not-allowed}
 @media (forced-colors:active){.data-tab[aria-pressed="true"]{border-bottom-color:Highlight}.data-tab:focus-visible{outline-color:Highlight}}
-.jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
+.jobtbwrap{max-height:var(--job-table-max-height,280px);overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
 .jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}
 .jobtb th{position:sticky;top:0;z-index:1;text-align:left;
