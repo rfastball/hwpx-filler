@@ -9,6 +9,7 @@ import "../css/library.css";
 import "../css/forced-colors.css";
 import "../css/jobdata.css";
 import "../css/tail.css";
+import "../css/tutorial.css";
 
 /* 제품 entry 의 JS 는 합성 루트 하나다. N-07 까지는 그 자리가 `compat.js` 였고 entry 는 그것을
    **부작용 import** 로 실었다 — 모듈 평가가 곧 부팅이었다. N-10 이 임시 전역 스물일곱을 지우며

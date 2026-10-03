@@ -85,6 +85,8 @@ import { createBridgeClient } from "./runtime/client.ts";
 import { createShellNav } from "./shell/nav.ts";
 import { createSnapshotStore } from "./state/store.ts";
 import { createScreenRuntime } from "./screens/runtime.ts";
+import { expectHostValue } from "./screens/runtime.ts";
+import { overlayEngine } from "./overlay/instance.ts";
 import { createScreenPorts } from "./screens/ports.ts";
 import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
 import {
@@ -457,6 +459,20 @@ export function bootProduct() {
     /* R2-03 — 트리의 StoreSignal 이 이 store 를 구독한다. boot.ts 가 늦은 결속 슬롯으로
        요소 factory 에 넘기므로 여기서는 객체째 한 번 건네면 된다. */
     store,
+    tutorial: {
+      doc: document,
+      model: runtime.model("tutorial"),
+      loadInitial: () => runtime.loadInitial("tutorial"),
+      dispatch: (action, payload = {}) => client.dispatch("tutorial", action, payload)
+        .then((result) => expectHostValue(result, `tutorial ${action}`)),
+      nav: shellNav,
+      overlay: {
+        subscribe: (listener) => overlayEngine.subscribe(listener),
+        isBusy: () => overlayEngine.depth() > 0,
+      },
+      confirm: (options) => Modal.confirm(options),
+      alarm: (message) => window.alert(message),
+    },
     /* R3-01 — 트리의 OverlayHost 가 완전 데이터-구동 표면 4(confirm·choose·prompt·토스트)를
        렌더·집행한다. 문서 리스너는 여기 몫이 아니다(dismissal=위 구성 시 부착, keydown=
        instance.ts 첫 open 부착). */

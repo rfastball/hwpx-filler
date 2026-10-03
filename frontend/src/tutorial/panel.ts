@@ -1,453 +1,293 @@
-/* 온보딩 튜토리얼 — 체크리스트 셸 패널 + 순간 카드 (슬라이스 E · #894).
- *
- * 이 부품은 현재 웹 진입점에 마운트하지 않는다. 비노출 경계는 `docs/product.md#product-scope`가 소유한다.
- *
- * ## 이 파일이 판정하지 않는 것 — 전부다
- *
- * 단계·티어·달성·다음 걸음·졸업·제안·순간 카드 문안은 **링1**(`viewmodel/tutorial_state.py`)이
- * 소유하고 스냅샷으로 내려온다. 여기는 그것을 그리기만 한다. 문안을 조립하거나 「어느
- * 단계가 끝났는가」를 다시 세면 그 순간 같은 상태의 두 번째 판정자가 된다(제품 규칙).
- * 이 파일에 사용자 대면 문장으로 남는 것은 패널 자체의 조작 라벨뿐이다(제목·접기·닫기·
- * 다시 열기) — 그것들은 링1 커리큘럼이 아니라 이 표면의 가구다.
- *
- * ## 왜 `.topbar` 가 아니라 셸 레벨인가
- *
- * editor·workbench 는 몰입 표면이라 body 클래스가 상단 토바를 덮는다(`IMMERSIVE_SURFACES`).
- * 토바 안에 패널을 두면 네 화면 중 둘에서 사라진다. 그래서 패널은 React 트리의 셸 레벨
- * 형제(`react/boundary.ts` 의 `createAppElement`)로 서고 `#reactRoot` 안에 그려진다 —
- * 화면 stage 밖이라 화면 전환이 이 서브트리를 unmount 하지 않는다.
- *
- * 화면 전환은 `shellNav.subscribe()` 로 **관측**한다. `go()` 성공을 낙관 가정하지 않는
- * 이유는 편집기 이탈 가드가 전환을 취소할 수 있어서다 — 취소된 전환으로 패널이 남의 화면
- * 이름을 달면 CSS 좌표가 실제와 어긋난다.
- *
- * ## 순간 카드 — 요소를 짚지 않는다
- *
- * 코치마크는 기각이다(§1 D3): 앵커 좌표가 DOM 계약의 소비자가 되면 화면 개편마다
- * 드리프트한다. 그래서 카드는 어떤 요소도 겨누지 않는 고정 자리에 뜨고, `pointer-events`
- * 를 받지 않아 클릭을 **가로채지 않는다**(CSS 소유). 확인 모달이 떠 있는 동안은 억제하고,
- * 동시 1장이며, 자동 소멸한다.
- *
- * 큐 소비는 백엔드 왕복이다(`consume_moment`). 프런트가 자기 안에서 지우면 다음 스냅샷이
- * 같은 카드를 다시 싣는다 — 소비 사실의 정본은 링1 의 큐 하나다.
- *
- * ## 세 국면 — 진행 · 완주 · 초점 (#918 A·C)
- *
- * 렌더 분기는 `started`·`dismissed` 둘이 아니라 본문의 세 국면을 함께 가른다.
- *
- * - **진행**: 다음 걸음 한 줄 + 전 과정 체크리스트 + 다시 보기 자리.
- * - **완주**(`standard_complete` ∧ 초점 없음): 체크리스트 대신 완주 문안 + 다시 보기 자리.
- *   18/18 인 채 「다음 걸음」을 계속 가리키던 것이 #918 A 다.
- * - **초점**(`focus_tier` ≠ ""): 그 과정 하나만 + 되돌아가지 않는 것의 문안 + 해제 동선.
- *
- * 국면 판정의 재료(`standard_complete`·`focus_tier`·`guided_tier`·문안)는 전부 링1 이 실어
- * 보낸다. 여기서 하는 것은 그 값들로 어느 가지를 그릴지 고르는 일뿐이다.
- */
-import { createElement, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
+/* Eight task lessons. The host owns lesson state; this surface owns only geometry and controls. */
+import { createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 
-/** 순간 카드가 화면에 머무는 시간(ms). 억제 중에는 이 시계가 돌지 않는다 — 모달에 가려
- *  있던 시간이 표시 시간으로 소진되면 사용자는 그 카드를 영영 못 본다. */
-export const MOMENT_VISIBLE_MS = 6000;
-
-export type TutorialStepSnapshot = {
-  milestone: string;
-  title: string;
-  next_step: string;
-  moment_copy: string;
-  achieved: boolean;
+export type Lesson = {
+  id: string; title: string; description: string; recommended: boolean;
+  completed: boolean; checkpoint: number; step_count: number;
 };
-
-export type TutorialTierSnapshot = {
-  tier: string;
-  label: string;
-  title: string;
-  optional: boolean;
-  complete: boolean;
-  graduation_copy: string;
-  invitation: string;
-  /** 이 과정을 다시 겨눴을 때 **되돌아가지 않는 것**의 문안(없으면 ""). */
-  replay_caveat: string;
-  achieved_count: number;
-  step_count: number;
-  steps: readonly TutorialStepSnapshot[];
+export type TutorialBeat = {
+  id: string; title: string; body: string; mode: "explain" | "action" | "finish";
+  screen: string | null; target: string | null;
+  placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
 };
-
-export type TutorialMomentSnapshot = {
-  milestone: string;
-  title: string;
-  moment_copy: string;
-};
-
 export type TutorialSnapshot = {
-  kind: string;
-  started: boolean;
-  active: boolean;
-  dismissed: boolean;
-  achieved_count: number;
-  step_count: number;
-  standard_complete: boolean;
-  all_complete: boolean;
-  /** 파생 제안(첫 미졸업 과정). 그릴 때 보는 것은 `guided_tier` 다. */
-  suggested_tier: string;
-  /** 사용자가 명시로 겨눈 과정(없으면 ""). 국면을 가르는 축. */
-  focus_tier: string;
-  /** 안내가 실제로 겨누는 과정 = 초점 ?? 제안. 둘을 표면이 다시 합치지 않는다. */
-  guided_tier: string;
-  focus_caveat: string;
-  completion_title: string;
-  completion_copy: string;
-  revisit_prompt: string;
-  tiers: readonly TutorialTierSnapshot[];
-  moment_queue: readonly TutorialMomentSnapshot[];
+  kind: "tutorial-lessons/v1";
+  invitation: { visible: boolean; title: string; body: string };
+  active: boolean; paused: boolean; scenario_id: string | null; checkpoint: number;
+  scenarios: readonly Lesson[];
+  stages?: readonly { id: string; title: string; status: "done" | "current" | "pending" }[];
+  beat: TutorialBeat | null;
+  show_result?: boolean;
+  result?: null | { title: string; body: string; count: number; screen: string; target: string; documents: readonly { name: string; path: string; kind: string }[]; actions: readonly { label: string; target: string }[] };
+  recovery: { title: string; body: string } | null;
+  resources: { ready: boolean; summary: string; files?: readonly { name: string; path: string; kind: string }[] };
+  copy: {
+    start: string; later: string; pause: string; resume: string; skip: string;
+    restart: string; next: string; prepare: string; cleanup: string; reset: string;
+    open_tutorial: string; close: string; choose_scenario: string; reset_confirm: string; cleanup_confirm: string;
+  };
 };
-
 export type TutorialPorts = {
-  /** `runtime.model("tutorial")` — 안정 참조 subscribe/getSnapshot 쌍. */
-  model: {
-    getSnapshot(): unknown;
-    subscribe(listener: () => void): () => void;
-  };
-  /** 부팅 1회 당김(`runtime.loadInitial("tutorial")`). 실패는 경보로 착지한다. */
+  model: { getSnapshot(): unknown; subscribe(listener: () => void): () => void };
   loadInitial(): Promise<unknown>;
-  /** `client.dispatch("tutorial", …)` 의 좁은 투영. */
   dispatch(action: string, payload?: Record<string, unknown>): Promise<unknown>;
-  /** 셸 상태기계 관측 — 전환·ready 전이. 판정은 저쪽 소유이고 여기는 읽기만 한다. */
-  nav: {
-    subscribe(listener: () => void): () => void;
-    currentScreen(): string | null;
-  };
-  /** overlay 엔진 관측 — 확인 모달이 떠 있는가(순간 카드 억제 축). */
-  overlay: {
-    subscribe(listener: () => void): () => void;
-    isBusy(): boolean;
-  };
+  nav: { subscribe(listener: () => void): () => void; currentScreen(): string | null; go(screen: string): void };
+  overlay: { subscribe(listener: () => void): () => void; isBusy(): boolean };
+  confirm(options: { title: string; body: string; confirmLabel: string; cancelLabel: string; danger: boolean }): Promise<boolean>;
   alarm(message: string): void;
+  doc: Document;
+  portal?: (children: ReactNode, container: Element) => ReactNode;
 };
 
-/** 스냅샷 형상의 이름표 — 링1 `_SNAPSHOT_KIND` 와 같은 값. 형상을 되묻지 않고 분기한다. */
-const SNAPSHOT_KIND = "tutorial-checklist/v1";
+const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
+  "new-job": "#jobCandNewWork, #libraryNewWork",
+  "template-list": "#editorTplList",
+  "data-picker": "#jobBtnPickData, #editorPoolBrowse, #dataPickerBrowse",
+  mapping: "#editorPairZone, #wbMapPanel",
+  "filename-pattern": "#editor-body input[data-act='pattern']",
+  "save-job": "#editor-foot button[data-act='save']",
+  "job-list": "#jobBrowseOpen, #jobCandidates",
+  "row-filter": "#jobFilterSearch",
+  "row-selection": "#jobSelAll, #jobTableBody",
+  "content-options": "#jobContentSelectionZone",
+  generate: "#jobManagedCreate, #jobGenBtn",
+  results: "#jobResult",
+  "txt-review": "#wbCard",
+  "txt-copy": "#wbCopy",
+  "prepare-examples": "#tutorialPrepare",
+  "authoring-canvas": "#authoring-canvas, #authoring-outline-title",
+  trial: "#authoring-dock-tab-trial, .authoring-trial-input .btn.primary",
+  "save-template": "[data-guide='save-template']",
+  "apply-change": "[data-guide='apply-change'], #authoring-dock-tab-impact",
+});
 
-/** 도착 전(null)·형상 불일치는 **그리지 않는다**. 추측해 반쪽 패널을 세우지 않는다. */
-function asSnapshot(value: unknown): TutorialSnapshot | null {
-  if (value === null || typeof value !== "object") return null;
-  const candidate = value as { kind?: unknown };
-  if (candidate.kind !== SNAPSHOT_KIND) return null;
+export function anchorSelector(key: string | null): string | null {
+  return key ? ANCHORS[key] ?? null : null;
+}
+
+function visibleElement(doc: Document, selector: string | null): HTMLElement | null {
+  if (!selector) return null;
+  for (const candidate of doc.querySelectorAll<HTMLElement>(selector)) {
+    const rect = candidate.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")) return candidate;
+  }
+  return null;
+}
+
+type Geometry = { x: number; y: number; width: number; height: number; side: TutorialBeat["placement"] };
+export function placeCoach(target: DOMRect, viewport: { width: number; height: number }, preferred: TutorialBeat["placement"], coachHeight = 162): Geometry {
+  const gap = 18, pad = 12, coachW = Math.min(320, viewport.width - 2 * pad), coachH = coachHeight;
+  const space = { top: target.top, bottom: viewport.height - target.bottom, left: target.left, right: viewport.width - target.right };
+  const fit = (side: Exclude<TutorialBeat["placement"], "center">) => space[side] >= (side === "top" || side === "bottom" ? coachH : coachW) + gap;
+  let side = preferred;
+  if (side !== "center" && !fit(side)) {
+    const ordered: Array<Exclude<TutorialBeat["placement"], "center">> = ["bottom", "top", "right", "left"];
+    ordered.sort((a, b) => space[b] - space[a]);
+    side = ordered[0];
+  }
+  const centerX = target.left + target.width / 2;
+  const centerY = target.top + target.height / 2;
+  const rawX = side === "right" ? target.right + gap : side === "left" ? target.left - coachW - gap : centerX - coachW / 2;
+  const rawY = side === "bottom" ? target.bottom + gap : side === "top" ? target.top - coachH - gap : centerY - coachH / 2;
+  return {
+    x: Math.max(pad, Math.min(rawX, viewport.width - coachW - pad)),
+    y: Math.max(pad, Math.min(rawY, viewport.height - coachH - pad)),
+    width: coachW, height: coachH, side,
+  };
+}
+
+function readSnapshot(value: unknown): TutorialSnapshot | null {
+  if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "tutorial-lessons/v1") return null;
   return value as TutorialSnapshot;
 }
 
-/** 지금 안내할 걸음 — 겨눈 과정(링1 판정)의 첫 미달성 단계. 없으면 `null`.
- *
- *  「어느 과정인가」는 링1 이 정한다(`guided_tier` = 명시 초점 ?? 파생 제안). 여기서 하는
- *  것은 그 과정 안에서 표 순서상 첫 미달성을 고르는 일뿐이고, 그 순서 역시 링1 이 실어 보낸
- *  배열 순서다. 다 걸은 과정을 겨누면 남은 걸음이 없어 `null` 이고, 그때 안내 자리에 서는
- *  것은 「다음 걸음」이 아니라 완주 문안이다(#918 A). */
-export function nextStepOf(snapshot: TutorialSnapshot): TutorialStepSnapshot | null {
-  const tier = snapshot.tiers.find((entry) => entry.tier === snapshot.guided_tier);
-  if (tier === undefined) return null;
-  return tier.steps.find((step) => !step.achieved) ?? null;
+function Ring(props: { fraction: number }): ReactNode {
+  const offset = 63 * (1 - props.fraction);
+  return h("svg", { className: "tutorial-ring", viewBox: "0 0 24 24", "aria-hidden": true },
+    h("circle", { className: "tutorial-ring-bg", cx: 12, cy: 12, r: 10 }),
+    h("circle", { className: "tutorial-ring-fg", cx: 12, cy: 12, r: 10, strokeDasharray: 63, strokeDashoffset: offset }));
 }
 
-/** 지금 겨눈 과정의 스냅샷 — 명시 초점이 없으면 `null`(국면 판정의 축).
- *
- *  파생 제안으로는 이 값이 서지 않는다: 제안은 「다음에 갈 곳」이고 초점은 「지금 이것만
- *  본다」라서, 둘을 한 값으로 합치면 아직 안 걸은 과정이 혼자 서고 나머지가 사라진다. */
-export function focusedTierOf(snapshot: TutorialSnapshot): TutorialTierSnapshot | null {
-  if (snapshot.focus_tier === "") return null;
-  return snapshot.tiers.find((entry) => entry.tier === snapshot.focus_tier) ?? null;
-}
-
-function stepNode(step: TutorialStepSnapshot): ReactNode {
-  /* 완료 단계는 순간 카드 문안을 **펼침에 남긴다**(§1 D3) — 카드를 놓쳐도 같은 말이
-     여기 있어야 「지나갔는데 왜 그랬는지 모른다」가 생기지 않는다. */
-  return createElement(
-    "li",
-    {
-      key: step.milestone,
-      className: step.achieved ? "tut-step is-done" : "tut-step",
-      "data-milestone": step.milestone,
-      "data-achieved": step.achieved ? "1" : "0",
-    },
-    createElement("span", { className: "tut-step-mark", "aria-hidden": "true" }, step.achieved ? "✓" : "○"),
-    createElement(
-      "span",
-      { className: "tut-step-body" },
-      createElement("span", { className: "tut-step-title" }, step.title),
-      step.achieved
-        ? createElement("span", { className: "tut-step-note" }, step.moment_copy)
-        : null,
-    ),
-  );
-}
-
-function tierNode(tier: TutorialTierSnapshot, guided: string): ReactNode {
-  return createElement(
-    "section",
-    {
-      key: tier.tier,
-      className: tier.complete ? "tut-tier is-complete" : "tut-tier",
-      "data-tier": tier.tier,
-      "data-complete": tier.complete ? "1" : "0",
-    },
-    createElement(
-      "h4",
-      { className: "tut-tier-head" },
-      createElement("span", { className: "tut-tier-label" }, tier.label),
-      createElement("span", { className: "tut-tier-title" }, tier.title),
-      createElement(
-        "span",
-        { className: "tut-tier-count" },
-        `${tier.achieved_count}/${tier.step_count}`,
-      ),
-    ),
-    /* 졸업 문안은 졸업했을 때, 초대 문안은 **지금 제안 중인 티어**일 때만 선다. 둘을 늘
-       같이 그리면 아직 시작도 안 한 티어가 "할 수 있습니다"라고 말한다. */
-    tier.complete
-      ? createElement("p", { className: "tut-tier-grad" }, tier.graduation_copy)
-      : tier.tier === guided
-        ? createElement("p", { className: "tut-tier-invite" }, tier.invitation)
-        : null,
-    createElement("ul", { className: "tut-steps" }, tier.steps.map(stepNode)),
-  );
-}
-
-/** 다시 볼 과정을 고르는 자리 — 안내 한 줄(링1 문안) + 과정 버튼들.
- *
- *  이 줄이 #918 C 의 답이다: 지나간 과정을 겨눌 길이 없어서 안내는 늘 「첫 미졸업」만
- *  가리켰고, 다 걸으면 그마저 사라졌다. 버튼이 보내는 것은 초점뿐이고 **달성 기록은 손대지
- *  않는다** — 한 일을 안 했다고 말하지 않는다(링1 머리말 「두 축」). */
-function revisitNode(
-  snapshot: TutorialSnapshot,
-  send: (action: string, payload?: Record<string, unknown>) => void,
-): ReactNode {
-  return createElement(
-    "div",
-    { key: "revisit", className: "tut-revisit" },
-    createElement("p", { id: "tutorialRevisit", className: "tut-revisit-lead" }, snapshot.revisit_prompt),
-    createElement(
-      "div",
-      { id: "tutorialTierPicker", className: "tut-picker", role: "group", "aria-labelledby": "tutorialRevisit" },
-      ...snapshot.tiers.map((tier) => createElement(
-        "button",
-        {
-          key: tier.tier,
-          type: "button",
-          className: "btn sm tut-pick",
-          "data-tier": tier.tier,
-          onClick: () => { send("focus_tier", { tier: tier.tier }); },
-        },
-        createElement("span", { className: "tut-pick-label" }, tier.label),
-        createElement(
-          "span",
-          { className: "tut-pick-count" },
-          `${tier.achieved_count}/${tier.step_count}`,
-        ),
-      )),
-    ),
-  );
-}
-
-/** 완주 자리 — 체크리스트가 서던 곳에 완주 문안이 선다.
- *
- *  표준 완주와 전체 완주가 다른 말을 하지만 그 갈림은 링1 이 이미 했다: 여기 오는 것은
- *  문자열 둘뿐이라 표면이 「어디까지 했는가」를 다시 세지 않는다. */
-function completionNode(snapshot: TutorialSnapshot): ReactNode {
-  return createElement(
-    "div",
-    { key: "complete", id: "tutorialComplete", className: "tut-done" },
-    createElement("strong", { className: "tut-done-title" }, snapshot.completion_title),
-    createElement("p", { className: "tut-done-copy" }, snapshot.completion_copy),
-  );
-}
-
-/** 지금 띄울 카드 한 장 — 없으면 `null`. **큐에서 파생**이지 지역 상태가 아니다.
- *
- *  지역 상태로 들고 있다가 「띄우자마자 소비」하면, 소비가 큐를 줄이는 순간 화면의 카드와
- *  큐가 갈려 두 곳이 같은 것을 다르게 안다. 그래서 화면은 늘 **큐의 맨 앞**이고, 소비는
- *  그 장의 시간이 다 됐을 때 일어난다 — 소비가 곧 다음 장으로 넘어가는 사건이다.
- *
- *  억제(확인 모달)와 미시작·닫힘에서는 아무 장도 서지 않는다. 큐는 그대로 남으므로
- *  모달이 닫히면 같은 장이 처음부터 다시 선다. */
-export function momentToShow(input: {
-  active: boolean;
-  suppressed: boolean;
-  queue: readonly TutorialMomentSnapshot[] | undefined;
-}): TutorialMomentSnapshot | null {
-  if (!input.active || input.suppressed) return null;
-  const queue = input.queue;
-  if (queue === undefined || queue.length === 0) return null;
-  return queue[0] ?? null;
-}
-
-/** 순간 카드 하나 — 요소를 겨누지 않는 고정 자리(머리말). */
-function momentNode(moment: TutorialMomentSnapshot): ReactNode {
-  return createElement(
-    "div",
-    {
-      id: "tutorialMoment",
-      className: "tut-moment",
-      role: "status",
-      "aria-live": "polite",
-      "data-milestone": moment.milestone,
-    },
-    createElement("strong", { className: "tut-moment-title" }, moment.title),
-    createElement("span", { className: "tut-moment-copy" }, moment.moment_copy),
-  );
-}
-
-/** 셸 레벨 튜토리얼 표면 — 체크리스트 패널 + 순간 카드. 트리에 정확히 하나. */
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
+  const snapshot = readSnapshot(raw);
   const screen = useSyncExternalStore(ports.nav.subscribe, ports.nav.currentScreen, ports.nav.currentScreen);
-  const suppressed = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.isBusy, ports.overlay.isBusy);
+  const overlayBusy = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.isBusy, ports.overlay.isBusy);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [coachHeight, setCoachHeight] = useState(162);
+  const [resultHeight, setResultHeight] = useState(330);
+  const [resultDismissed, setResultDismissed] = useState(false);
 
-  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => { void ports.loadInitial().catch((error) => ports.alarm(String(error))); }, [ports]);
 
-  const snapshot = useMemo(() => asSnapshot(raw), [raw]);
+  const act = useCallback(async (action: string, payload?: Record<string, unknown>) => {
+    if (pending) return;
+    setPending(true);
+    try { await ports.dispatch(action, payload); }
+    catch (error) { ports.alarm(String(error)); }
+    finally { setPending(false); }
+  }, [pending, ports]);
 
-  const { alarm } = ports;
-  const send = useCallback(
-    (action: string, payload?: Record<string, unknown>): void => {
-      ports.dispatch(action, payload).catch((error: unknown) => {
-        alarm(`튜토리얼 ${action} 실패 — ${String(error)}`);
-      });
-    },
-    [ports, alarm],
-  );
-
-  /* 부팅 당김 — 화면 init 시퀀스에 얹지 않는다. 이 표면은 화면이 아니라 셸 레벨이고,
-     자기 채널의 첫 스냅샷을 자기가 당기는 것이 소유 경계와 맞는다(`loadInitial` 은 채널당
-     한 번을 기억하므로 재마운트가 왕복을 늘리지 않는다). */
-  useEffect(() => {
-    ports.loadInitial().catch((error: unknown) => {
-      alarm(`튜토리얼 초기 상태를 불러오지 못했습니다 — ${String(error)}`);
+  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const result = snapshot?.show_result && !snapshot.active && !overlayBusy ? snapshot.result : null;
+  useEffect(() => setResultDismissed(false), [result?.title]);
+  const target = beat && (beat.screen === null || beat.screen === screen) && !overlayBusy ? beat.target
+    : result && result.screen === screen ? result.target : null;
+  useLayoutEffect(() => {
+    if (!target) { setRect(null); return; }
+    let frame = 0;
+    const measure = () => {
+      const element = visibleElement(ports.doc, anchorSelector(target));
+      const next = element?.getBoundingClientRect() ?? null;
+      const shown = next && next.right > 0 && next.bottom > 0 && next.left < window.innerWidth && next.top < window.innerHeight ? next : null;
+      setRect((before) => before?.x === shown?.x && before?.y === shown?.y && before?.width === shown?.width && before?.height === shown?.height ? before : shown);
+    };
+    const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
+    measure();
+    const observer = new MutationObserver((mutations) => {
+      if (mutations.some((change) => !(change.target as Element).closest?.("#tutorialPanelRoot"))) update();
     });
-  }, [ports, alarm]);
+    observer.observe(ports.doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class", "style", "inert"] });
+    ports.doc.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(frame); observer.disconnect();
+      ports.doc.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [target, ports.doc, screen, open]);
 
-  const card = momentToShow({
-    active: snapshot !== null && snapshot.active,
-    suppressed,
-    queue: snapshot?.moment_queue,
-  });
-  const shown = card === null ? "" : card.milestone;
+  useLayoutEffect(() => {
+    const coach = ports.doc.getElementById("tutorialCoach");
+    if (!coach) return;
+    const observer = new ResizeObserver(() => setCoachHeight(coach.getBoundingClientRect().height));
+    observer.observe(coach);
+    return () => observer.disconnect();
+  }, [beat?.id, rect, ports.doc]);
 
-  /* 자동 소멸 = **소비**다. 시간이 다 되면 되알리고, 큐가 줄면서 다음 장이 그 자리에 선다.
-     억제 중에는 시계가 아예 서지 않는다(`card` 가 null 이라 이 effect 가 걸리지 않는다) —
-     모달에 가려 있던 시간이 표시 시간으로 소진되면 그 카드는 영영 안 보인 채 사라진다. */
-  useEffect(() => {
-    if (shown === "") return undefined;
-    const timer = setTimeout(() => { send("consume_moment", { milestone: shown }); }, MOMENT_VISIBLE_MS);
-    return () => { clearTimeout(timer); };
-  }, [shown, send]);
+  useLayoutEffect(() => {
+    const card = ports.doc.getElementById("tutorialFinale");
+    if (!card) return;
+    const observer = new ResizeObserver(() => setResultHeight(card.getBoundingClientRect().height));
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [result?.title, rect, ports.doc]);
 
-  if (snapshot === null || !snapshot.started) return null;
+  const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
+  const count = snapshot?.scenarios.filter((item) => item.completed).length ?? 0;
+  const total = snapshot?.scenarios.length ?? 0;
+  const stages = snapshot?.stages ?? [];
+  const stageDone = stages.filter((stage) => stage.status === "done").length;
+  const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
+  const shown = Boolean(beat && !overlayBusy && (rect || beat.placement === "center" || beat.target === null));
+  const resultShown = Boolean(result && !resultDismissed && result.screen === screen && rect);
+  const position = rect && beat ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, beat.placement, coachHeight) : null;
+  const resultPosition = rect && result ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, "right", resultHeight) : null;
+  const spotStyle: CSSProperties | undefined = rect ? {
+    left: Math.max(0, rect.left - 6), top: Math.max(0, rect.top - 6),
+    width: rect.width + 12, height: rect.height + 12,
+  } : undefined;
+  const coachStyle: CSSProperties | undefined = position ? { left: position.x, top: position.y, width: position.width } : undefined;
 
-  /* 명시 종료 뒤에도 **되돌아올 문**은 남긴다 — 닫기가 곧 영구 소멸이면 그것은 종료가
-     아니라 파괴다(진행 기록은 그대로 살아 있다). */
-  if (snapshot.dismissed) {
-    return createElement(
-      "div",
-      { id: "tutorialPanelRoot", className: "tut-root is-dismissed", "data-screen": screen ?? "" },
-      createElement(
-        "button",
-        {
-          type: "button",
-          id: "tutorialResume",
-          className: "btn sm tut-resume",
-          onClick: () => { send("resume"); },
-        },
-        "튜토리얼 다시 열기",
-      ),
-    );
-  }
-
-  const next = nextStepOf(snapshot);
-  const focused = focusedTierOf(snapshot);
-  /* 국면 셋(머리말): 초점이 서면 초점, 아니면 완주 여부. 「완주」의 기준은 링1 의 표준 완주
-     (고급까지)다 — 선택 진입인 심화를 안 걸었다고 계속 걸음을 재촉하지 않는다(§3.6). */
-  const phase = focused !== null ? "focus" : snapshot.standard_complete ? "complete" : "progress";
-  const body: ReactNode[] = [];
-  if (phase === "focus" && focused !== null) {
-    if (next !== null) {
-      body.push(createElement("p", { key: "next", id: "tutorialNextStep", className: "tut-next" }, next.next_step));
+  const confirmAction = async (action: "reset_progress" | "cleanup") => {
+    if (!snapshot) return;
+    if (action === "cleanup") {
+      try {
+        const preview = await ports.dispatch("cleanup_preview", {}) as { token: string; rows: readonly { name: string; path: string; delete: boolean; reason: string }[]; delete_count: number };
+        const details = preview.rows.map((entry) => `${entry.delete ? "삭제" : "보존"} · ${entry.name} — ${entry.path}\n${entry.reason}`).join("\n\n");
+        const ok = await ports.confirm({ title: snapshot.copy.cleanup, body: `${snapshot.copy.cleanup_confirm}\n\n${details}`, confirmLabel: snapshot.copy.cleanup, cancelLabel: snapshot.copy.close, danger: true });
+        if (ok) await act("cleanup", { token: preview.token });
+      } catch (error) { ports.alarm(String(error)); }
+      return;
     }
-    /* 되돌아가지 않는 것을 먼저 말하고 목록을 준다 — 「다시 보기」를 「되돌리기」로 읽고
-       걷기 시작한 뒤에 알리면 이미 두 번째 작업이 생긴 뒤다(#918 C 한계 문안). */
-    if (snapshot.focus_caveat !== "") {
-      body.push(createElement("p", { key: "caveat", id: "tutorialFocusCaveat", className: "tut-caveat" }, snapshot.focus_caveat));
-    }
-    body.push(tierNode(focused, snapshot.guided_tier));
-    body.push(createElement(
-      "button",
-      {
-        key: "clear",
-        type: "button",
-        id: "tutorialFocusClear",
-        className: "btn sm tut-focus-clear",
-        onClick: () => { send("clear_focus"); },
-      },
-      "전체 보기",
-    ));
-  } else if (phase === "complete") {
-    body.push(completionNode(snapshot));
-    body.push(revisitNode(snapshot, send));
-  } else {
-    if (next !== null) {
-      body.push(createElement("p", { key: "next", id: "tutorialNextStep", className: "tut-next" }, next.next_step));
-    }
-    body.push(...snapshot.tiers.map((tier) => tierNode(tier, snapshot.guided_tier)));
-    body.push(revisitNode(snapshot, send));
-  }
+    const ok = await ports.confirm({ title: snapshot.copy.reset, body: snapshot.copy.reset_confirm,
+      confirmLabel: snapshot.copy.reset, cancelLabel: snapshot.copy.close, danger: true });
+    if (ok) await act(action, { confirm: true });
+  };
 
-  return createElement(
-    "div",
-    { id: "tutorialPanelRoot", className: "tut-root", "data-screen": screen ?? "" },
-    createElement(
-      "aside",
-      {
-        id: "tutorialPanel",
-        className: collapsed ? "tut-panel is-collapsed" : "tut-panel",
-        "aria-labelledby": "tutorialPanelTitle",
-        "data-collapsed": collapsed ? "1" : "0",
-        "data-phase": phase,
-      },
-      createElement(
-        "header",
-        { className: "tut-head" },
-        createElement("h3", { id: "tutorialPanelTitle", className: "tut-title" }, "튜토리얼"),
-        createElement(
-          "span",
-          { id: "tutorialProgress", className: "tut-progress" },
-          `${snapshot.achieved_count}/${snapshot.step_count}`,
-        ),
-        createElement(
-          "button",
-          {
-            type: "button",
-            id: "tutorialCollapse",
-            className: "btn sm tut-collapse",
-            "aria-expanded": collapsed ? "false" : "true",
-            "aria-controls": "tutorialBody",
-            onClick: () => { setCollapsed((value) => !value); },
-          },
-          collapsed ? "펼치기" : "접기",
-        ),
-        createElement(
-          "button",
-          {
-            type: "button",
-            id: "tutorialDismiss",
-            className: "btn sm tut-dismiss",
-            onClick: () => { send("dismiss"); },
-          },
-          "튜토리얼 닫기",
-        ),
-      ),
-      /* 접힘은 렌더를 걷는다(hidden 이 아니라 부재) — 접힌 목록이 초점 순서에 남아 Tab 이
-         보이지 않는 곳으로 가지 않게. 머리 줄은 남아 진행 수치를 계속 말한다. */
-      collapsed ? null : createElement("div", { id: "tutorialBody", className: "tut-body" }, ...body),
-    ),
-    /* 억제 중에는 `momentToShow` 가 null 을 낸다 — 큐는 그대로라 모달이 닫히면 다시 선다. */
-    card === null ? null : momentNode(card),
-  );
+  const entry = ports.doc.getElementById("tutorialEntrySlot");
+  if (!entry) return null;
+  const label = snapshot?.copy.open_tutorial ?? "튜토리얼";
+  const hud = h("div", { className: "tutorial-hud" },
+    h("button", { id: "tutorialOpen", className: "tutorial-hud-pill", type: "button", "aria-label": label,
+      "aria-expanded": open, "aria-controls": "tutorialPanel", onClick: () => setOpen(!open) },
+      h(Ring, { fraction }), h("span", { className: "tutorial-hud-label" }, snapshot?.active ? stages.find((stage) => stage.status === "current")?.title ?? selected?.title ?? "튜토리얼" : "튜토리얼"),
+      h("span", { className: "tutorial-hud-dots", "aria-hidden": true }, ...stages.map((stage) => h("i", {
+        key: stage.id, className: stage.status, title: stage.title,
+      }))), snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null));
+
+  const list = snapshot?.scenarios.map((item) => h("li", { key: item.id, className: item.id === selected?.id ? "current" : item.completed ? "done" : "" },
+    h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? "✓" : ""),
+    h("span", null, item.title), item.recommended ? h("span", { className: "tutorial-recommended" }, "★") : null,
+    h("button", { type: "button", className: "btn sm", disabled: pending,
+      onClick: () => { void act(item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select", item.id === snapshot.scenario_id && snapshot.paused ? {} : { scenario_id: item.id }); setOpen(false); } },
+      item.id === snapshot.scenario_id && snapshot.paused ? snapshot.copy.resume : snapshot.copy.choose_scenario)));
+
+  return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "" },
+    (ports.portal ?? createPortal)(hud, entry),
+    open && snapshot && !snapshot.invitation.visible ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+      onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
+      } },
+      h("header", null, h("h2", null, "튜토리얼"), h("span", null, `${count}/${total}`)),
+      h("ol", { className: "tutorial-list" }, ...list ?? []),
+      snapshot.resources.summary ? h("p", { className: "tutorial-resource" }, snapshot.resources.summary) : null,
+      snapshot.recovery?.body && snapshot.recovery.body !== snapshot.resources.summary
+        ? h("p", { className: "tutorial-resource" }, snapshot.recovery.body) : null,
+      snapshot.resources.files?.length ? h("ul", { className: "tutorial-resources" }, ...snapshot.resources.files.map((file) => h("li", { key: file.path },
+        h("strong", null, file.name), h("code", null, file.path)))) : null,
+      h("div", { className: "tutorial-actions" },
+        snapshot.active ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act(snapshot.paused ? "resume" : "pause") }, snapshot.paused ? snapshot.copy.resume : snapshot.copy.pause) : null,
+        snapshot.active ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("skip") }, snapshot.copy.skip) : null,
+        selected ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("restart", { scenario_id: snapshot.scenario_id }) }, snapshot.copy.restart) : null,
+        h("button", { id: "tutorialPrepare", className: "btn sm", type: "button", disabled: pending, onClick: () => void act("prepare_examples") }, snapshot.copy.prepare),
+        h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("cleanup") }, snapshot.copy.cleanup),
+        h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("reset_progress") }, snapshot.copy.reset))) : null,
+    snapshot?.invitation.visible ? h("section", { className: "tutorial-invite", role: "dialog", "aria-modal": false, "aria-labelledby": "tutorialInviteTitle" },
+      h("h2", { id: "tutorialInviteTitle" }, snapshot.invitation.title), h("p", null, snapshot.invitation.body),
+      h("div", { className: "tutorial-actions" },
+        h("button", { type: "button", className: "btn", disabled: pending, onClick: () => void act("later") }, snapshot.copy.later),
+        h("button", { type: "button", className: "btn primary", disabled: pending,
+          onClick: () => void act("start", { scenario_id: snapshot.scenarios.find((item) => item.recommended)?.id ?? "first_hwpx" }) }, snapshot.copy.start))) : null,
+    beat && !overlayBusy && !shown ? h("button", { className: "tutorial-recover", type: "button", onClick: () => {
+      if (beat.screen && beat.screen !== screen) ports.nav.go(beat.screen);
+      else if (beat.target === "prepare-examples") setOpen(true);
+      else visibleElement(ports.doc, anchorSelector(beat.target))?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, title: snapshot?.recovery?.body ?? beat.body }, h("span", { className: "tutorial-recover-dot", "aria-hidden": true }), snapshot?.recovery?.title ?? beat.title) : null,
+    result && !resultShown && !resultDismissed ? h("button", { className: "tutorial-recover", type: "button", onClick: () => {
+      if (result.screen !== screen) ports.nav.go(result.screen);
+      else visibleElement(ports.doc, anchorSelector(result.target))?.scrollIntoView({ block: "center", behavior: "smooth" });
+    } }, h("span", { className: "tutorial-recover-dot", "aria-hidden": true }), result.title) : null,
+    resultShown && result && resultPosition ? h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
+      style: { left: resultPosition.x, top: resultPosition.y } },
+      h("div", { className: "tutorial-fin-fan", "aria-hidden": true }, ...result.documents.slice(0, 3).map((document, index) =>
+        h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}` },
+          h("span", { className: "tutorial-fin-lines" }), h("span", null, document.kind)))),
+      h("div", { className: "tutorial-fin-count" }, h("strong", null, String(result.count)), h("span", null, result.documents.length ? "문서" : "완료")),
+      h("h2", null, result.title), h("p", null, result.body),
+      result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
+      h("div", { className: "tutorial-actions" }, ...result.actions.map((action) => h("button", { key: action.target,
+        type: "button", className: "btn sm", onClick: () => {
+          const element = visibleElement(ports.doc, anchorSelector(action.target));
+          element?.scrollIntoView({ block: "center", behavior: "smooth" });
+          element?.focus({ preventScroll: true });
+        } }, action.label)), h("button", { type: "button", className: "btn sm", onClick: () => setResultDismissed(true) }, snapshot!.copy.close))) : null,
+    shown && beat ? h("div", { className: "tutorial-guide" },
+      rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true }) : h("div", { className: "tutorial-scrim", "aria-hidden": true }),
+      rect ? h("div", { className: "tutorial-shield", style: { top: 0, left: 0, right: 0, height: Math.max(0, rect.top - 6) } }) : null,
+      rect ? h("div", { className: "tutorial-shield", style: { top: rect.bottom + 6, left: 0, right: 0, bottom: 0 } }) : null,
+      rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: 0, width: Math.max(0, rect.left - 6), height: rect.height + 12 } }) : null,
+      rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: rect.right + 6, right: 0, height: rect.height + 12 } }) : null,
+      h("section", { id: "tutorialCoach", className: "tutorial-coach", style: coachStyle,
+        role: "dialog", "aria-modal": false, "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
+        "data-side": position?.side ?? "center" },
+        position ? h("span", { className: "tutorial-arrow", "aria-hidden": true }) : null,
+        h("span", { className: "tutorial-eyebrow" }, selected?.title ?? "튜토리얼", selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : ""),
+        h("h2", { id: "tutorialBeatTitle" }, beat.title), h("p", { id: "tutorialBeatBody", "aria-live": "polite" }, beat.body),
+        beat.mode === "explain" && beat.can_next ? h("div", { className: "tutorial-coach-foot" },
+          h("button", { className: "btn primary sm", type: "button", disabled: pending, onClick: () => void act("next") }, snapshot!.copy.next)) : null)) : null);
 }
