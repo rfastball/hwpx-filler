@@ -563,6 +563,31 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
     _mutate(mutate)
 
 
+def load_tutorial_lessons() -> dict:
+    """Read the new curriculum independently of frozen T0–T17 progress."""
+    bucket = _read().get("tutorial")
+    raw = bucket.get("lessons") if isinstance(bucket, dict) else None
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_tutorial_lessons(value: dict) -> None:
+    if not isinstance(value, dict) or value.get("version") != 1:
+        raise ValueError("학습 기록 형식이 올바르지 않습니다.")
+    _save_nested("tutorial", "lessons", value)
+
+
+def load_tutorial_practice() -> dict:
+    bucket = _read().get("tutorial")
+    raw = bucket.get("practice") if isinstance(bucket, dict) else None
+    return raw if isinstance(raw, dict) else {"version": 1, "entries": []}
+
+
+def save_tutorial_practice(value: dict) -> None:
+    if not isinstance(value, dict) or value.get("version") != 1 or not isinstance(value.get("entries"), list):
+        raise ValueError("연습 파일 기록 형식이 올바르지 않습니다.")
+    _save_nested("tutorial", "practice", value)
+
+
 # 예제 세트 설치 manifest(#891 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``
 # 중첩 키 아래 ``manifest`` 칸이다(#893 진행 칸이 예고한 자리). 그룹은 실체가 아니라 소속이라
 # 「그룹 삭제 한 번으로 통째 제거」가 성립하지 않는다: 제거(슬라이스 C)는 **여기 기재된 항목만**

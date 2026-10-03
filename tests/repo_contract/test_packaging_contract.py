@@ -118,6 +118,18 @@ def test_non_literal_hidden_import_is_rejected(tmp_path: Path) -> None:
         module.main(spec_dir=sandbox)
 
 
+def test_missing_tutorial_asset_is_rejected(tmp_path: Path) -> None:
+    """GUI bundle에서 실습 원본 한 개가 빠지면 빌드 전에 거절한다."""
+    module = _verify_specs()
+    sandbox = _spec_sandbox(tmp_path)
+    target = sandbox / "hwpx_filler_web.spec"
+    source = target.read_text(encoding="utf-8")
+    target.write_text(source.replace('    "공고목록.xlsx",\n', "", 1), encoding="utf-8")
+
+    with pytest.raises(AssertionError, match="정확히 네 개"):
+        module.main(spec_dir=sandbox)
+
+
 def test_selfcheck_has_no_constant_verdict_variable() -> None:
     """``--selfcheck`` 의 판정은 리터럴 대입으로 만들어지지 않는다.
 

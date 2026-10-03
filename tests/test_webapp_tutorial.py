@@ -806,3 +806,391 @@ def test_generation_from_a_template_compiled_in_this_session(tmp_path):
     seen.clear()
     assert ctrl.generate(confirm_overwrite=True)["ok"] is True
     assert str(Milestone.GENERATE_FROM_COMPILED) in seen
+
+
+def test_new_lessons_invite_once_and_ignore_legacy_progress(tmp_path, monkeypatch):
+    from hwpxfiller.viewmodel.tutorial_lessons import LessonProgress
+    from hwpxfiller.webapp.onboarding import first_launch_candidate
+
+    new_home = tmp_path / "new"
+    assert first_launch_candidate(new_home)
+    state = LessonProgress({"achieved": ["T0", "T17"], "dismissed": False}, first_launch=True)
+    assert state.snapshot()["invitation"]["visible"]
+    assert not any(row["completed"] for row in state.snapshot()["scenarios"])
+    state.later()
+    restored = LessonProgress(state.progress(), first_launch=True)
+    assert not restored.snapshot()["invitation"]["visible"]
+
+    old_home = tmp_path / "old"
+    old_home.mkdir()
+    (old_home / "settings.json").write_text("{}", encoding="utf-8")
+    assert not first_launch_candidate(old_home)
+    malformed = LessonProgress({"version": 1, "selected": []}, first_launch=False)
+    assert malformed.selected is None
+
+
+def test_new_lessons_restart_keeps_completion_but_clears_round_evidence():
+    from hwpxfiller.viewmodel.tutorial_lessons import LessonProgress
+
+    state = LessonProgress()
+    state.select("option_apply")
+    record = state.record("option_apply")
+    record["checkpoint"] = 7
+    record["completed"] = True
+    record["context"] = {
+        "assets": {"keep": "resource"}, "job_name": "keep-job", "trial_options": ["A", "B"],
+        "reviewed_rows": [0, 1], "copied_rows": [0, 1], "applied": True,
+    }
+    state.restart("option_apply")
+    assert record["checkpoint"] == 0 and record["completed"]
+    assert record["context"] == {"assets": {"keep": "resource"}, "job_name": "keep-job"}
+    assert state.snapshot()["active"] and not state.snapshot()["show_result"]
+
+
+def test_fresh_practice_is_adopted_only_by_its_own_lesson_restart(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    frontend = WebFrontend()
+    tutorial = frontend.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "field_trial"})
+    original = tutorial.snapshot()["resources"]["files"]
+    record = tutorial.progress.record("field_trial")
+    record["checkpoint"] = 2
+    record["completed"] = True
+    tutorial.dispatch("prepare_examples", {})
+    pending = record["context"]["pending_assets"]
+    assert tutorial.snapshot()["resources"]["files"] == original
+    tutorial.dispatch("select", {"scenario_id": "contract_txt"})
+    assert tutorial.progress.record("contract_txt")["context"].get("pending_assets") is None
+    tutorial.dispatch("restart", {"scenario_id": "field_trial"})
+    assert tutorial.snapshot()["resources"]["files"][0]["path"] == pending["물품 구매입찰 공고.hwpx"]["path"]
+    assert record["completed"] and record["checkpoint"] == 0
+    assert all(Path(item["path"]).exists() for item in original)
+
+
+def test_old_product_completion_cannot_advance_a_new_lesson(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    frontend = WebFrontend()
+    tutorial = frontend.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "contract_txt"})
+    old_token = tutorial.observation_token()
+    tutorial.dispatch("select", {"scenario_id": "purchase_txt"})
+    checkpoint = tutorial.progress.record("purchase_txt")["checkpoint"]
+    assert not tutorial.observe_product("editor", "use_library_template", {}, {"ok": True}, token=old_token)
+    assert tutorial.progress.record("purchase_txt")["checkpoint"] == checkpoint
+
+
+def test_modified_practice_file_pauses_guidance_without_erasing_checkpoint(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "first_hwpx"})
+    tutorial.dispatch("next", {})
+    record = tutorial.progress.record("first_hwpx")
+    data = Path(record["context"]["assets"]["공고목록.xlsx"]["path"])
+    data.write_bytes(data.read_bytes() + b"user-edit")
+    token = tutorial.observation_token()
+    assert not tutorial.observe_product("editor", "use_library_template", {}, {"ok": True}, token=token)
+    snap = tutorial.snapshot()
+    assert not snap["active"] and snap["paused"]
+    assert "수정" in snap["recovery"]["body"]
+    assert record["checkpoint"] == 1 and data.is_file()
+
+
+@pytest.mark.parametrize("lesson_id,template_prefix,sheet", [
+    ("contract_txt", "낙찰자 선정", "계약"),
+    ("purchase_txt", "계약방법 결정", "공고"),
+])
+def test_txt_lesson_reaches_verified_copy_via_product_actions(
+    tmp_path, monkeypatch, lesson_id, template_prefix, sheet,
+):
+    from hwpxfiller.webapp import app as app_module
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    copied = []
+    monkeypatch.setattr(app_module, "set_clipboard_text", copied.append)
+    frontend = WebFrontend()
+    send = frontend.dispatch
+    send("tutorial", "select", {"scenario_id": lesson_id})
+    files = frontend.initial("tutorial")["resources"]["files"]
+    template = next(item["path"] for item in files if item["name"].startswith(template_prefix))
+    data = next(item["path"] for item in files if item["name"] == "공고목록.xlsx")
+    send("editor", "new_session", {})
+    send("editor", "use_library_template", {"path": template})
+    frontend.load_data_sheet("editor", data, sheet)
+    send("editor", "goto_section", {"section": "binding"})
+    editor = frontend.controllers["editor"]
+    rows = {row.template_field: (index, row) for index, row in enumerate(editor.edit.model.rows)}
+    if lesson_id == "contract_txt":
+        firm = rows["대표계약업체"][0]
+        amount = rows["계약보증금"][0]
+        send("editor", "set_source", {"index": firm, "source": "계약상대자"})
+        send("editor", "set_confirmed", {"index": firm, "confirmed": True})
+        send("editor", "set_display", {"index": amount, "type": "amount", "fmt": ""})
+        send("editor", "set_confirmed", {"index": amount, "confirmed": True})
+    else:
+        item = rows["군품명"][0]
+        send("editor", "set_slice", {"index": item, "slice": {"mode": "split", "delimiter": ",", "index": 1}})
+        send("editor", "set_confirmed", {"index": item, "confirmed": True})
+        for index, row in enumerate(editor.edit.model.rows):
+            if row.type in {"date", "amount"}:
+                send("editor", "set_display", {"index": index, "type": row.type, "fmt": ""})
+                send("editor", "set_confirmed", {"index": index, "confirmed": True})
+        send("editor", "set_confirmed", {"index": rows["낙찰자결정방법"][0], "confirmed": True})
+    send("editor", "set_name", {"name": f"튜토리얼 {lesson_id}"})
+    assert send("editor", "save", {})["ok"]
+    send("job", "select_job", {"name": editor.edit.job_name, "confirm": True})
+    send("job", "set_none", {})
+    for index in (0, 1):
+        send("job", "toggle_record", {"index": index, "value": True})
+    send("job", "open_workbench", {})
+    send("workbench", "step", {"delta": 1})
+    assert frontend.initial("tutorial")["checkpoint"] == 5
+    precheck = send("workbench", "copy_precheck", {})
+    assert frontend.copy_clipboard("workbench", precheck["token"])["copied"]
+    if lesson_id == "contract_txt":
+        card = frontend.controllers["workbench"].snapshot()["card"]
+        other = next(item["index"] for item in card["index_map"] if item["row"] != card["source_row"])
+        send("workbench", "set_current", {"index": other})
+        precheck = send("workbench", "copy_precheck", {})
+        assert frontend.copy_clipboard("workbench", precheck["token"])["copied"]
+        assert len(copied) == 2 and copied[0] != copied[1]
+        assert all("원" in text for text in copied)
+    else:
+        assert len(copied) == 1 and "드릴" in copied[0]
+        assert "드릴,전동식,휴대용" not in copied[0]
+    snap = frontend.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"] == 6
+    assert snap["result"]["count"] == len(copied)
+
+
+def _authoring_lesson(tmp_path, monkeypatch, lesson_id):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    app.dispatch("tutorial", "select", {"scenario_id": lesson_id})
+    path = next(item["path"] for item in app.initial("tutorial")["resources"]["files"]
+                if item["name"].startswith("낙찰자 선정"))
+    opened = app.open_authoring_document(path, True)
+    return app, opened
+
+
+def _authoring_command(app, session_id, command):
+    current = app.dispatch("authoring", "content", {"session_id": session_id})
+    preview = app.dispatch("authoring", "preview", {
+        "session_id": session_id, "revision": current["revision"], "command": command,
+    })
+    return app.dispatch("authoring", "update", {
+        "session_id": session_id, "revision": current["revision"], "content": preview["content"],
+    })
+
+
+def test_field_lesson_trials_and_saves_practice_txt(tmp_path, monkeypatch):
+    app, opened = _authoring_lesson(tmp_path, monkeypatch, "field_trial")
+    sid = opened["session_id"]
+    content = opened["content"]
+    start = len(content[:content.index("10일")].encode("utf-16-le")) // 2
+    updated = _authoring_command(app, sid, {
+        "type": "create_field", "start": start, "end": start + 3, "name": "재배정기한",
+    })
+    rev = updated["revision"]
+    values = {row["name"]: "연습값" for row in updated["analysis"]["fields"]}
+    app.dispatch("authoring", "trial_input", {
+        "session_id": sid, "revision": rev, "values": values, "selected": {},
+    })
+    trial = app.dispatch("authoring", "trial", {"session_id": sid, "revision": rev})
+    assert not trial["report"].get("errors")
+    saved = app.dispatch("authoring", "save", {"session_id": sid, "revision": rev})
+    assert saved["ok"] and Path(saved["path"]).is_file()
+    snap = app.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"] == 5
+    assert snap["result"]["count"] == 1
+
+
+def test_option_lesson_trials_both_then_applies_and_reviews_content(tmp_path, monkeypatch):
+    app, opened = _authoring_lesson(tmp_path, monkeypatch, "option_apply")
+    sid, content = opened["session_id"], opened["content"]
+    start = content.index("3. ")
+    end = content.index("\n\n붙임", start)
+    _authoring_command(app, sid, {"type": "create_slot", "start": start, "end": end,
+                                  "id": "예산재배정", "label": "예산 재배정 안내"})
+    content = app.dispatch("authoring", "content", {"session_id": sid})["content"]
+    start = content.index("3. ")
+    _authoring_command(app, sid, {"type": "create_option", "start": start,
+                                  "end": content.index("\n", start), "slot_id": "예산재배정",
+                                  "id": "안내포함", "label": "안내 포함"})
+    current = app.dispatch("authoring", "content", {"session_id": sid})
+    content = current["content"].replace("{{/선택}}\n{{/항목}}", "{{/선택}}\n\n{{/항목}}", 1)
+    app.dispatch("authoring", "update", {"session_id": sid, "revision": current["revision"], "content": content})
+    empty = content.index("\n\n{{/항목}}") + 1
+    updated = _authoring_command(app, sid, {"type": "create_option", "start": empty,
+                                           "end": empty + 1, "slot_id": "예산재배정",
+                                           "id": "안내생략", "label": "안내 생략"})
+    values = {row["name"]: "연습값" for row in updated["analysis"]["fields"]}
+
+    def trial(option):
+        rev = app.dispatch("authoring", "content", {"session_id": sid})["revision"]
+        app.dispatch("authoring", "trial_input", {"session_id": sid, "revision": rev,
+                                                  "values": values, "selected": {"예산재배정": option}})
+        return app.dispatch("authoring", "trial", {"session_id": sid, "revision": rev})
+
+    trial("안내포함")
+    current = app.dispatch("authoring", "content", {"session_id": sid})
+    app.dispatch("authoring", "update", {"session_id": sid, "revision": current["revision"],
+                                         "content": current["content"] + "\n"})
+    trial("안내생략")
+    assert app.initial("tutorial")["checkpoint"] == 3  # old revision cannot count
+    trial("안내포함")
+    rev = app.dispatch("authoring", "content", {"session_id": sid})["revision"]
+    assert app.dispatch("authoring", "save", {"session_id": sid, "revision": rev})["ok"]
+    impact = app.dispatch("authoring", "impact", {"session_id": sid, "revision": rev})
+    name = impact["jobs"][0]["name"]
+    prepared = app.dispatch("authoring", "prepare_apply", {"session_id": sid, "revision": rev,
+                                                             "job_name": name})
+    assert prepared["preparation"]["status"] == "ready"
+    applied = app.dispatch("authoring", "apply_job", {"session_id": sid, "revision": rev,
+                                                       "job_name": name,
+                                                       "change_token": prepared["change_token"]})
+    assert applied["status"] == "applied"
+    app.dispatch("job", "select_job", {"name": name, "confirm": True})
+    app.dispatch("job", "set_all", {})
+    view = app.dispatch("job", "open_slot_configuration", {})["current_view"]
+    slot_id = view["projection"]["slots"][0]["slot_id"]
+    app.dispatch("job", "select_slot_option", {"configuration_token": view["new_configuration_token"],
+                                                "slot_id": slot_id, "option_id": "안내포함",
+                                                "request_id": "tutorial-include"})
+    app.dispatch("job", "open_workbench", {})
+    card = app.controllers["workbench"].snapshot()["card"]
+    assert "예산 재배정 여부" in "".join(part["text"] for part in card["segments"])
+    snap = app.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"] == 7
+    assert snap["result"]["count"] == 1
+
+
+def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    send = app.dispatch
+    send("tutorial", "select", {"scenario_id": "replace_data"})
+    tutorial = app.controllers["tutorial"]
+    name = tutorial._context()["job_name"]
+    original = tutorial._context()["assets"]["공고목록.xlsx"]["path"]
+    derived = send("tutorial", "prepare_examples", {})["path"]
+    assert derived != original and app.initial("tutorial")["checkpoint"] == 1
+    assert not str(app.open_job_in_editor(name)).startswith("ERROR:")
+    app.load_data_sheet("editor", derived, "공고")
+    assert app.initial("tutorial")["checkpoint"] == 2
+    send("editor", "goto_section", {"section": "binding"})
+    send("editor", "resuggest_all", {})
+    send("editor", "confirm_suggested", {})
+    assert send("editor", "save", {})["ok"]
+    assert app.initial("tutorial")["checkpoint"] == 3
+    send("job", "select_job", {"name": name, "confirm": True})
+    snap = app.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"] == 4
+    assert app.controllers["job"].data.path == derived
+    assert app.controllers["job"].data.sheet == "공고"
+    assert snap["result"]["count"] == 1
+
+
+def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    send = app.dispatch
+    send("tutorial", "select", {"scenario_id": "blank_values"})
+    derived = send("tutorial", "prepare_examples", {})["path"]
+    assert Path(derived).is_file() and app.initial("tutorial")["checkpoint"] == 1
+    name = app.controllers["tutorial"]._context()["job_name"]
+    send("job", "select_job", {"name": name, "confirm": True})
+    send("job", "set_none", {})
+    send("job", "toggle_record", {"index": 0, "value": True})
+    send("job", "open_workbench", {})
+    send("workbench", "set_current", {"index": 0})
+    card = app.controllers["workbench"].snapshot()["card"]
+    assert "계약보증금" in card["empty_fields"]
+    assert app.initial("tutorial")["checkpoint"] == 2
+    send("workbench", "set_map_value", {"name": "계약보증금", "text": "1000000"})
+    assert "계약보증금" not in app.controllers["workbench"].snapshot()["card"]["empty_fields"]
+    assert app.initial("tutorial")["checkpoint"] == 3
+    send("tutorial", "next", {})
+    snap = app.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"] == 4
+    assert snap["result"]["count"] == 1
+
+
+def _select_notice_options(app, company_label, request_prefix):
+    for slot_label, option_label in (("입찰참가자격", company_label), ("낙찰자 결정방법", "고시 미만")):
+        view = app.dispatch("job", "open_slot_configuration", {})["current_view"]
+        slot = next(item for item in view["projection"]["slots"] if item["display_text"] == slot_label)
+        option = next(item for item in slot["options"] if item["display_text"] == option_label)
+        app.dispatch("job", "select_slot_option", {
+            "configuration_token": view["new_configuration_token"], "slot_id": slot["slot_id"],
+            "option_id": option["option_id"], "request_id": f"{request_prefix}-{slot_label}",
+        })
+
+
+@pytest.mark.parametrize("lesson_id,indices,memo,company", [
+    ("first_hwpx", (0, 1, 2), "소기업·소상공인", "소기업·소상공인"),
+    ("repeat_hwpx", (3, 4, 5), "중·소기업", "중·소기업"),
+])
+def test_notice_lesson_generates_exact_three_rows_with_options(
+    tmp_path, monkeypatch, lesson_id, indices, memo, company,
+):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    send = app.dispatch
+    send("tutorial", "select", {"scenario_id": lesson_id})
+    tutorial = app.controllers["tutorial"]
+    if lesson_id == "first_hwpx":
+        send("tutorial", "next", {})
+        files = app.initial("tutorial")["resources"]["files"]
+        template = next(item["path"] for item in files if item["name"].endswith(".hwpx"))
+        data = next(item["path"] for item in files if item["name"] == "공고목록.xlsx")
+        send("editor", "new_session", {})
+        send("editor", "use_library_template", {"path": template})
+        app.load_data_sheet("editor", data, "공고")
+        send("editor", "goto_section", {"section": "binding"})
+        send("editor", "confirm_suggested", {})
+        send("editor", "goto_section", {"section": "filename"})
+        send("editor", "set_pattern", {"pattern": "구매입찰공고-{{입찰공고번호}}"})
+        send("editor", "set_name", {"name": "튜토리얼 공고서"})
+        assert send("editor", "save", {})["ok"]
+        name = app.controllers["editor"].edit.job_name
+    else:
+        name = tutorial._context()["job_name"]
+    send("job", "select_job", {"name": name, "confirm": True})
+    if lesson_id == "repeat_hwpx":
+        send("job", "set_none", {})
+    send("job", "filter_col_text", {"column": "메모", "text": memo})
+    for index in indices:
+        send("job", "toggle_record", {"index": index, "value": True})
+    _select_notice_options(app, company, lesson_id)
+    app.controllers["job"].set_output_folder(str(tmp_path / "out"))
+    generated = app.generate("job")
+    assert generated["ok"] and generated["succeeded"] == 3
+    snap = app.initial("tutorial")
+    if lesson_id == "first_hwpx":
+        assert snap["checkpoint"] == 11
+        # The product reopens the delivered bytes and checks their structure.
+        job = app.controllers["job"]
+        ordinal = job.runs.delivered[0].item_ordinal
+        send("job", "artifact_open", {"ordinal": ordinal + 1000})
+        assert app.initial("tutorial")["checkpoint"] == 11
+        send("job", "artifact_open", {"ordinal": ordinal})
+        snap = app.initial("tutorial")
+    assert snap["checkpoint"] == snap["beat_count"]
+    assert snap["result"]["count"] == 3
+    assert len(snap["result"]["documents"]) == 3

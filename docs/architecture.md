@@ -38,6 +38,9 @@ Python→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스�
 `aria-hidden`을 함께 적용한다. 구독·listener·worker·vendor 객체는 설치한 소유자가 해제한다.
 제품의 렌더 계약은 전체 `innerHTML` 재구성 후 범용 복원이 아니다. 연속성은 행동으로 검증한다.
 
+튜토리얼은 화면과 별도인 셸 표면이다. Python이 학습 위치와 연습 자원·성공 사건을 판정하고,
+웹은 안내 대상과 진행을 투영한다. 화면 이동은 기존 셸 이탈 판정을 거친다.
+
 상단 탭은 `job`(문서 만들기)·`library`(문서 작업), `editor`·`workbench`·`authoring`은 몰입 화면이다.
 이탈 판정은 [shell/nav.ts](../frontend/src/shell/nav.ts), 화면 적용·listener 수명은 셸이 소유한다.
 [overlay/engine.ts](../frontend/src/overlay/engine.ts)는 DOM 없는 스택 상태기계로 확인 promise,
