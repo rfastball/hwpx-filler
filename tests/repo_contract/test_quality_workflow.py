@@ -529,16 +529,25 @@ def test_no_gate_opt_out_is_switched_on_inside_the_workflow() -> None:
         assert f'{variable} = "1"' not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
 
 
-def test_release_builds_the_exact_frontend_before_tests_and_packaging() -> None:
+def test_release_builds_once_in_tests_then_packages_the_verified_frontend() -> None:
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    steps = _release_steps()
+    tests = _release_step("Quality and tests")
+    package = _release_step("Build portable applications")
+    setup_node = next(
+        step for step in steps if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    runner = (ROOT / "test.ps1").read_text(encoding="utf-8-sig")
+    builder = (ROOT / "build-web.ps1").read_text(encoding="utf-8-sig")
 
     assert release.count("actions/setup-node@v4") == 1
     assert "node-version-file: .node-version" in release
-    assert "Verify exact Node and npm" in release
-    assert "'v24.18.1'" in release and "'11.16.0'" in release
-    assert release.index("npm.cmd ci") < release.index("npm.cmd run build")
-    assert release.index("npm.cmd run verify:web") < release.index(".\\test.ps1")
-    assert release.index("npm.cmd run verify:web") < release.index(".\\build.ps1")
+    assert tests["run"] == r".\test.ps1"
+    assert "& (Join-Path $PSScriptRoot 'build-web.ps1')" in runner
+    assert "[string]$Mode = 'Build'" in builder
+    assert package["run"] == r".\packaging\build.ps1 -Target filler -WebMode VerifyExisting"
+    assert steps.index(setup_node) < steps.index(tests) < steps.index(package)
+    assert "npm.cmd ci" not in release and "npm.cmd run build" not in release
 
 
 def _release_steps() -> list[dict]:
