@@ -238,7 +238,7 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .zone-cap{display:block}
 .zone-cap{margin-bottom:var(--sp-10);color:var(--n-header-ink)}
 .zone-cap.job-data-heading{display:flex;align-items:center;gap:var(--sp-12);min-width:0}
-.job-data-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-data-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .job-data-actions{display:flex;align-items:center;gap:var(--sp-4);flex:none;font-weight:400}
 .job-data-actions .btn{white-space:nowrap}
 /* 선택 폼 한 줄을 걷은 높이는 정상 사용 중 표의 추가 행에 돌려준다. */
