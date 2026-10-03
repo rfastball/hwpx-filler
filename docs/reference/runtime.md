@@ -256,10 +256,6 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 |---|---|---|
 | `cleanup` | `token` | — |
 | `cleanup_preview` | — | — |
-| `clear_focus` | — | — |
-| `consume_moment` | `milestone` | — |
-| `dismiss` | — | — |
-| `focus_tier` | `tier` | — |
 | `later` | — | — |
 | `next` | — | — |
 | `pause` | — | — |

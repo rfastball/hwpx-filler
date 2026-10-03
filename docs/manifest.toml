@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "c5260dfa7346d90e18b01cda612cd32f93dcd9486933e4bd4ca42e55bba8c043"
+source_sha256 = "ad8bca807ea72aa4b01d7f0b5cf79c630fad47d6dc2e34f083095d7e685061ff"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/test_webapp_tutorial.py"]
-source_sha256 = "0ca60c66ececa889ab1f75264ef8a55260fa2668013b74a0c3da0d6dfd0789da"
+source_sha256 = "dd8c99f4cfcdc8ad4b2ed602e08161f732d7e9ec7c511fb42654a5129baa9c71"
 body_sha256 = "352bada44aed95e1742e23e30d529012367e2f0e5d77fa2c0b05c5bdf426f475"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py"]
-source_sha256 = "e33222fe062f09dba244c1b258ab994b5d83fcea2d9c1a3bec2c1aca2799c792"
+source_sha256 = "7459a2518aee42fc209bab4c81475cdbf53a8827bdee8b62c72a32c2f0bf3490"
 body_sha256 = "ca13e786a14bb07b3a9363ceea6201f8e9d2d999421473945957c72acf7df235"
 
 [[topic]]
@@ -225,7 +225,7 @@ id = "workflow-storage"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts"]
 tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py"]
-source_sha256 = "d76500a8ecd47132c40a698da27042c251966c9f9741edbf71adf2875a52d9af"
+source_sha256 = "98d7cf33e274aa1e3b5fc81f4a7667b86718d1d6c4b73951919503f51994c401"
 body_sha256 = "98ad9273e7ef7b35f4ba917251b02a86257de8bea548f3b2de9ab91a13bcde20"
 
 [[topic]]

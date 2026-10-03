@@ -237,6 +237,12 @@ source_write_set = ["src/hwpxfiller/viewmodel/template_manager_state.py"]
 oracle_nodeid = "tests/test_compile_badge.py::test_template_manager_rows_derive_from_single_source"
 
 [[unit]]
+module = "hwpxfiller.viewmodel.tutorial_lessons"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/viewmodel/tutorial_lessons.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py::test_new_lessons_restart_keeps_completion_but_clears_round_evidence"
+
+[[unit]]
 module = "hwpxfiller.viewmodel.tutorial_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/tutorial_state.py"]
@@ -433,6 +439,12 @@ module = "hwpxfiller.webapp.screen_template"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_template.py"]
 oracle_nodeid = "tests/test_dispatch_wiring.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.onboarding"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/onboarding.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py::test_notice_lesson_generates_exact_three_rows_with_options"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_tutorial"

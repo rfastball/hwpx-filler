@@ -260,10 +260,6 @@ export const SCREEN_ACTIONS = {
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
   },
   tutorial: {
-    dismiss: { required: [], optional: [] },
-    consume_moment: { required: ["milestone"], optional: [] },
-    focus_tier: { required: ["tier"], optional: [] },
-    clear_focus: { required: [], optional: [] },
     later: { required: [], optional: [] },
     start: { required: ["scenario_id"], optional: [] },
     select: { required: ["scenario_id"], optional: [] },

@@ -60,9 +60,8 @@ def _tutorial() -> "tuple[TutorialController, list, list]":
 
 
 def _send(ctrl, action: str, payload: "dict | None" = None):
-    """실 브리지와 **같은 관문**을 지난다 — 컨트롤러 직접 호출은 스키마 검증 아래로 샌다."""
-    checked = validate_dispatch(ctrl.name, action, payload or {})
-    return ctrl.dispatch(action, checked)
+    """동결된 링1 컨트롤러의 내부 동작만 검사한다(제품 브리지는 새 과정 소유)."""
+    return ctrl.dispatch(action, payload or {})
 
 
 def _collector() -> "tuple[list, object]":
@@ -173,12 +172,14 @@ def test_focus_actions_move_the_aim_without_touching_the_record(tmp_path):
     assert len(saved) == writes
 
 
-def test_unknown_focus_tier_is_loud_and_missing_key_never_reaches_the_controller():
+def test_frozen_focus_refuses_unknown_tier_and_is_not_a_public_action():
     ctrl, _, _ = _tutorial()
     with pytest.raises(ValueError, match="알 수 없는 튜토리얼 과정"):
         _send(ctrl, "focus_tier", {"tier": "초급"})
-    # 스키마 관문이 먼저 선다 — payload 오타가 `dict.get` 으로 조용히 흘러 기본값이 되지 않는다.
+    # 동결 UI 동사는 새 제품 브리지에 노출되지 않는다.
     with pytest.raises(ValueError):
+        validate_dispatch("tutorial", "focus_tier", {"tier": "basic"})
+    with pytest.raises(KeyError):
         _send(ctrl, "focus_tier", {"teir": "basic"})
 
 

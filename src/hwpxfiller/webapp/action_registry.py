@@ -361,20 +361,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "slot_decompile_all": _schema("path", "confirm"),
         "slot_remove": _schema("path slot_id", "confirm"),
     },
-    # 온보딩 튜토리얼 체크리스트(#894 · https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §4.3) — **화면이 아니라 채널**
-    # 이다: DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이다. 그래도 화면 키를 갖는 이유는
-    # 스냅샷 채널과 디스패치 어휘가 이 표에서만 유도되기 때문이고(`SCREEN_ACTIONS` 손 목록
-    # 금지), 같은 형태의 선례가 화면 사망 후 채널만 남은 `pool` 이다.
-    # 마일스톤 **통지**는 여기 없다 — 그것은 웹이 부르는 표면이 아니라 컨트롤러 간 seam 이다
-    # (tpl→편집기 재정산 선례). 웹이 소유하는 것은 종료·재개, 순간 카드 소비 되알림, 그리고
-    # 안내 초점 지정·해제다 — 전부 「무엇을 보여줄까」이지 「무엇을 달성했는가」가 아니다.
+    # 튜토리얼은 셸의 안내 패널이지만 브리지에서는 화면과 같은 스냅샷 채널이다.
+    # 공개 명령은 새 8과정만 소유하고, OnboardingController가 실제 제품 동작을 관찰한다.
+    # 동결 T0–T17의 순간 카드·초점 명령은 제품 브리지에 노출하지 않는다.
     "tutorial": {
-        # Frozen checklist contract remains parseable for historical controller tests;
-        # the shipped OnboardingController does not implement these actions.
-        "dismiss": _schema(),
-        "consume_moment": _schema("milestone"),
-        "focus_tier": _schema("tier"),
-        "clear_focus": _schema(),
         "later": _schema(),
         "start": _schema("scenario_id"),
         "select": _schema("scenario_id"),
