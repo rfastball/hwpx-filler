@@ -20,6 +20,7 @@ const ICONS: Record<string, Part[]> = {
   "chevron-left": [path("M12 4.5L6.5 10l5.5 5.5")],
   "chevron-right": [path("M8 4.5l5.5 5.5L8 15.5")],
   "chevron-down": [path("M5 8l5 5 5-5")],
+  check: [path("M5 10.5l3.2 3.2L15 6.8")],
   "arrow-down": [path("M10 3.5v13M5 11.5l5 5 5-5")],
   "arrow-up": [path("M10 16.5v-13M5 8.5l5-5 5 5")],
   expand: [path("M12 3.5h4.5V8M16.5 3.5L11 9M8 16.5H3.5V12M3.5 16.5L9 11")],
@@ -29,7 +30,7 @@ const ICONS: Record<string, Part[]> = {
   search: [["circle", { cx: 8.5, cy: 8.5, r: 5 }], path("M12.3 12.3L16.5 16.5")],
 };
 
-/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·펼침·실행 취소·다시 실행·삭제·찾기). */
+/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·확인 표지·펼침·실행 취소·다시 실행·삭제·찾기). */
 export function icon(name: keyof typeof ICONS | string): ReactNode {
   return draw("icon", ICONS[name] || []);
 }
