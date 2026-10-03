@@ -22,6 +22,7 @@ from _output_folder_pick import pick_output_folder
 from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
 )
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY
 from hwpxfiller.host.locations import home_dir
 
 
@@ -83,16 +84,15 @@ def _open_compiled_slot_work(app, tmp_path: Path) -> None:
 
 
 def test_freshly_compiled_slot_work_generates_without_reconfirming_bindings(app, tmp_path):
-    """구간 템플릿 새 작업 — 구간을 고르는 순간 저장한 연결이 최초 판본이 되고 생성이 열린다."""
+    """구간 템플릿 새 작업은 저장된 Mapping 으로 준비되어 생성이 열린다."""
     _open_compiled_slot_work(app, tmp_path)
 
     wb = _workbench(app)
     assert wb["input_requirements"] == []
     assert "REVIEW_BINDING" not in wb["blockers"]
     assert wb["primary_action"] == "CREATE_DOCUMENTS"
-    assert list((home_dir() / "template_authority" / "field_bindings").glob("*.json")), (
-        "저장본이 최초 Field Binding 판본으로 들어가지 않았습니다"
-    )
+    assert app.controllers["job"].registry.load("공고작업").binding_authority == JOB_MAPPING_AUTHORITY
+    assert not list((home_dir() / "template_authority" / "field_bindings").glob("*.json"))
 
     result = app.generate("job")
     assert result["ok"] is True and result["succeeded"] == 3 and result["failed"] == 0

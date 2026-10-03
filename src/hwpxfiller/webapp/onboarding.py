@@ -7,7 +7,7 @@ import re
 import threading
 from typing import Any
 
-from ..domain.job import Job
+from ..domain.job import JOB_MAPPING_AUTHORITY, Job
 from ..domain.mapping import FieldMapping, MappingProfile
 
 from ..external import settings
@@ -182,7 +182,8 @@ class OnboardingController:
         name = f"튜토리얼 {BY_ID[lesson_id].title} {ctx['batch']}"
         job = Job(name=name, template_path=template_path, mapping=mapping,
                   filename_pattern="구매입찰공고-{{입찰공고번호}}" if not is_txt else "",
-                  data_path=data_path, data_sheet=sheet)
+                  data_path=data_path, data_sheet=sheet,
+                  binding_authority=JOB_MAPPING_AUTHORITY)
         self.practice.jobs.save(job)
         if lesson_id == "option_apply":
             # Establish the pre-edit template basis without seating or replacing the

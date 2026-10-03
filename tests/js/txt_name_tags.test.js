@@ -101,6 +101,30 @@ test("FB-03: offsets stay source offsets — an edit before or after a name tag 
   assert.equal(front.doc.slice(moved.from - 1, moved.to), "새{{담당}}");
 });
 
+test("late TXT analysis preserves mapped name tags and atomic ranges until its source matches", () => {
+  const text = "가나 " + DOC;
+  const shifted = (by) => SPANS.map((span) => ({ ...span, start: span.start + by, end: span.end + by }));
+  for (const labels of ["selected", "all", "none"]) {
+    for (const stale of [
+      { sourceDoc: "가 " + DOC, spans: shifted(2) },
+      { sourceDoc: text.replace("제목", "문서"), spans: [] },
+    ]) {
+      const spec = { spans: SPANS, edits: [{ start: 0, end: 0, text: "가나 " }], updates: [{ ...stale, labels }] };
+      const drawn = lintpadDecorations(DOC, spec);
+      const tokens = drawn.filter((item) => item.layer === "token");
+      assert.equal(tokens.length, SPANS.length, "늦은 분석이 이름표를 지우면 원문이 노출된다");
+      assert.deepEqual(tokens.map(({ from, to }) => [from, to, drawn.doc.slice(from, to)]),
+        shifted(3).map(({ start, end, source }) => [start, end, source]));
+      assert.deepEqual(drawn.atoms, tokens.map(({ from, to }) => ({ from, to })));
+      assert.equal(tokens[0].className, labels === "none" ? "cm-txtToken" : "cm-txtField");
+      assert.equal(drawn.doc, text, "장식 갱신은 입력한 본문을 바꾸지 않는다");
+      const current = lintpadDecorations(DOC, { ...spec, updates: [...spec.updates, { sourceDoc: text, spans: [] }] });
+      assert.equal(current.filter((item) => item.layer === "token").length, 0, "현재 분석의 토큰 해제는 적용한다");
+      assert.deepEqual(current.atoms, []);
+    }
+  }
+});
+
 test("FB-03: coordinates from outside (problems, search, outline) never leave the caret inside a hidden token", () => {
   const atoms = [{ from: 4, to: 11 }, { from: 20, to: 30 }];
   assert.deepEqual(snapOutOfTokens(atoms, 6, 6), [4, 4], "가까운 앞 경계");

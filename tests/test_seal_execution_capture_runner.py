@@ -70,10 +70,14 @@ from hwpxfiller.application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from hwpxfiller.domain.slot_selection import SlotSelection, SlotSelectionSet
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.candidate_store import CandidateObjectStore
 from hwpxfiller.external.qualification_store import QualificationObjectStore
 from hwpxfiller.external.field_binding_store import WorkFieldBindingStore
-from hwpxfiller.external.seal_execution_capture_runner import SealExecutionCaptureRunner
+from hwpxfiller.external.seal_execution_capture_runner import (
+    ExecutionCaptureIntegrityError,
+    SealExecutionCaptureRunner,
+)
 from hwpxfiller.external.work_configuration_store import WorkSlotConfigurationStore
 from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 
@@ -225,7 +229,7 @@ def _seed_v2_work(
         )
 
 
-def _runner(root) -> SealExecutionCaptureRunner:
+def _runner(root, *, job_for_work=None) -> SealExecutionCaptureRunner:
     return SealExecutionCaptureRunner(
         work_state_store=AtomicWorkTemplateStateStore(root / "works"),
         qualification_store=QualificationObjectStore(root / "qualification"),
@@ -233,6 +237,7 @@ def _runner(root) -> SealExecutionCaptureRunner:
         slot_config_store=WorkSlotConfigurationStore(root / "slot_configs"),
         field_binding_store=WorkFieldBindingStore(root / "field_bindings"),
         clock=lambda: AT,
+        job_for_work=job_for_work,
     )
 
 
@@ -249,6 +254,17 @@ def _capture(root, app=APP, profile=PROFILE):
 
 
 # ─── read_summary ──────────────────────────────────────────────────────────────────────
+def test_binding_review_rejects_missing_or_wrong_routed_job(tmp_path) -> None:
+    _seed_v2_work(tmp_path)
+    missing = _runner(tmp_path, job_for_work=lambda _work: None)
+    with pytest.raises(ExecutionCaptureIntegrityError, match="Job"):
+        missing.read_current_field_binding_review(WS, WORK)
+
+    wrong = _runner(tmp_path, job_for_work=lambda _work: Job(name="other", authority_id="other"))
+    with pytest.raises(ExecutionCaptureIntegrityError, match="identity"):
+        wrong.read_current_field_binding_review(WS, WORK)
+
+
 def test_read_summary_returns_current_profile_and_application(tmp_path) -> None:
     _seed_v2_work(tmp_path)
     summary = _runner(tmp_path).read_summary(WS, WORK)

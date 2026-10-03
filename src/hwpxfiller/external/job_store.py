@@ -30,6 +30,7 @@ from hwpxfiller.application.jobs import (
 )
 from hwpxfiller.domain.job import (
     DEFAULT_FILENAME_PATTERN,
+    JOB_MAPPING_AUTHORITY,
     LEGACY_RULE_AXES,
     RULE_AXES,
     Job,
@@ -242,6 +243,8 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
     ``root`` 는 ``template_key`` 승격이 기준으로 삼을 서식 폴더다(U6-A #975). 미주입이면
     프로세스의 루트 권위(:func:`_resolved_root`)를 쓴다.
     """
+    if job.binding_authority not in ("", JOB_MAPPING_AUTHORITY):
+        raise ValueError(f"알 수 없는 작업 binding_authority: {job.binding_authority!r}")
     return {
         "version": job.version,
         "name": job.name,
@@ -252,6 +255,7 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
         "template_key": library_key_for(job.template_path, root),
         "filename_pattern": job.filename_pattern,
         "mapping": job.mapping.to_dict(),
+        "binding_authority": job.binding_authority,
         # 데이터 결속 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
         # 미지 키로 무시하고, 구 JSON 은 decode 의 기본값으로 「데이터 연결 필요」에 착지한다.
         # 이름 축(구 default_dataset_ref)은 되살아나지 않는다 — 정체성은 경로+시트다(U2 판정 C).
@@ -373,6 +377,9 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
     template_path = _resolve_template_link(
         _str("template_path"), _str("template_key"), root
     )
+    binding_authority = _str("binding_authority")
+    if binding_authority not in ("", JOB_MAPPING_AUTHORITY):
+        raise ValueError(f"알 수 없는 작업 binding_authority: {binding_authority!r}")
     return Job(
         name=_str("name"),
         template_path=template_path,
@@ -402,6 +409,7 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
         template_revision=_revision("template_revision"),
         binding_revision=_revision("binding_revision"),
         previous_rules=_rules_values_or_raise(d.get("previous_rules", {})),
+        binding_authority=binding_authority,
     )
 
 

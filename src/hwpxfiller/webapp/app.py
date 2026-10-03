@@ -489,6 +489,8 @@ class WebFrontend:
                 #  줄과 구간 항목 목록은 `tpl` 채널 스냅샷이 정본이고 고르기 단계 표면이
                 #  그 채널을 직접 구독한다. 중계가 있으면 같은 값이 두 스냅샷에 실린다.)
                 after_mapping_saved=job_ctrl.on_editor_mapping_saved,
+                save_guard=job_ctrl.editor_save_guard,
+                unrepresented_legacy_rules=job_ctrl.unrepresented_legacy_rules,
                 # 그 확정의 **읽기 짝**(#911) — 편집기 footer 가 확정 동사를 세울지 말지는
                 # 같은 컨트롤러가 관리 검토에 쓰는 사실 하나로 정해진다(두 표면 한 판정).
                 binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,

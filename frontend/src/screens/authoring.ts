@@ -563,7 +563,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
-            updateLintpad(handle, { spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
+            updateLintpad(handle, { sourceDoc: analysis.source_text, spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
               regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
           },
         };

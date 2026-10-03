@@ -26,7 +26,7 @@ from _output_folder_pick import pick_output_folder
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
-from hwpxfiller.domain.job import Job, rules_fingerprints
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
@@ -624,6 +624,7 @@ def _job_controller(
                 FieldMapping(template_field="추정가격", source="presmptPrce"),
             ]),
             filename_pattern=f"{name}-{{{{seq:001}}}}",
+            binding_authority=JOB_MAPPING_AUTHORITY,
             **binding,
         )
         job.reviewed_rules = rules_fingerprints(job)

@@ -14,7 +14,7 @@ import {
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
 import {
-  NAME_FIELD, PATTERN_FIELD, editorRevision, editorServerValues, editorSession,
+  NAME_FIELD, PATTERN_FIELD, editorServerValues, editorSession,
   emptyDraft, ingestSnapshot, issueToken, markField, rowField, settle, typeInto,
 } from "./editor_state.ts";
 import type { DraftState, RowAxis } from "./editor_state.ts";
@@ -162,7 +162,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (editorSession(current) !== draft.session) clearSaveMessage();
     draft = ingestSnapshot(draft, {
       session: editorSession(current),
-      revision: editorRevision(current),
       values: editorServerValues(current),
     });
     emitDraft();

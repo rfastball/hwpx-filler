@@ -1747,22 +1747,16 @@ def test_switching_only_the_sheet_is_unsaved_work(tmp_path):
     assert ctrl.has_unsaved_work() is True
 
 
-def test_unsaved_work_is_derived_not_flagged(tmp_path):
-    """저장된 작업의 미저장 판정은 **파생**이다 — 손으로 켠 클린 표지가 이를 덮지 못한다.
-
-    표지 방식은 변이 자리·되돌리기 자리가 늘 때마다 한 곳이 빠졌고, 빠짐은 「저장됨」이라는
-    거짓말이나 되돌린 뒤의 헛확인 둘 중 하나로 나타났다. 파생은 빠질 자리가 없다: 여기서
-    표지를 거짓으로 세워 두고도 판정이 patch 를 보는지 확인한다(양방향).
-    """
+def test_unsaved_work_follows_saved_patch_and_discard(tmp_path):
+    """저장된 작업의 변경은 이탈을 막고, patch 폐기는 가드를 해제한다."""
     ctrl, _ = _controller26(tmp_path)
     assert _save_named(ctrl, "파생판정")["ok"] is True
     ctrl.load_job("파생판정")
+    assert ctrl.has_unsaved_work() is False
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
-    ctrl.edit.clean = True                                # 표지를 거짓으로 세운다
-    assert ctrl.has_unsaved_work() is True, "표지가 실재하는 patch 를 덮었습니다."
+    assert ctrl.has_unsaved_work() is True
     ctrl.dispatch("discard_patch", {})
-    ctrl.edit.clean = False                               # 반대 방향도 표지 무관
-    assert ctrl.has_unsaved_work() is False, "되돌린 뒤에도 헛확인을 묻습니다(과경고)."
+    assert ctrl.has_unsaved_work() is False
 
 
 def test_editing_tabs_move_freely_and_autodiscard_the_blocking_patch(tmp_path):
@@ -2775,16 +2769,17 @@ def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_pat
         ctrl.load_job("겨눔작업", target="template/x")       # fail-closed 관통(make_context)
 
 
-def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_path) -> None:
+def test_post_save_observation_failure_keeps_atomic_save_and_warns(tmp_path) -> None:
     calls: list[str] = []
 
     def fail_after_save(work_ref: str) -> None:
         calls.append(work_ref)
-        raise RuntimeError("binding commit failed")
+        raise RuntimeError("observation failed")
 
     ctrl, _ = _controller(tmp_path, after_mapping_saved=fail_after_save)
 
     assert _save_named(ctrl, "\ubd80\ubd84\uc131\uacf5")["ok"] is True
+    calls.clear()
     ctrl.load_job(
         "\ubd80\ubd84\uc131\uacf5",
         entry_reason="run_failure",   # #957: `preview_result` 진입 사유는 어휘에서 걷혔다
@@ -2793,14 +2788,34 @@ def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_pat
     )
     result = ctrl.dispatch("save", {})
 
-    assert result["ok"] is False
-    assert result["legacy_saved"] is True
-    assert result["binding_commit_ok"] is False
+    assert result["ok"] is True
+    assert "legacy_saved" not in result
+    assert "binding_commit_ok" not in result
     assert calls == ["\ubd80\ubd84\uc131\uacf5"]
     saved = JobRegistry(tmp_path / "jobs").load("\ubd80\ubd84\uc131\uacf5")
     assert saved.mapping.mappings
-    assert ctrl.snapshot()["notice"]["level"] == "danger"
-    assert "Field Binding" in result["block_reason"]
+    assert ctrl.snapshot()["notice"]["level"] == "warn"
+    assert "observation failed" in result["warning"]
+
+
+def test_post_save_notification_failures_still_invalidate_execution(tmp_path) -> None:
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "후행실패")["ok"] is True
+    ctrl.load_job("후행실패")
+    called: list[str] = []
+
+    def fail(_value=None):
+        raise RuntimeError("refresh failed")
+
+    ctrl.save_operation._saved = fail
+    ctrl.save_operation._refresh_binding = fail
+    ctrl.save_operation._after_mapping_saved = called.append
+    result = ctrl.dispatch("save", {})
+
+    assert result["ok"] is True
+    assert called == ["후행실패"]
+    assert "refresh failed" in result["warning"]
+    assert "binding_commit_ok" not in result
 
 
 # ── 연결 확정 대기(#911) — 무장 사유를 **더한다**(dirty 술어는 무회귀) ──────────────────────
@@ -2819,74 +2834,6 @@ def test_binding_confirm_pending_is_absent_for_an_ordinary_job(tmp_path) -> None
     assert snap["binding_confirm"]["label"]
     # 설명 줄은 없다 — 전제 조건 낭독은 걷혔다(COPY_STYLE_GUIDE §8 낭독 패턴 1).
     assert "hint" not in snap["binding_confirm"]
-
-
-def test_binding_confirm_pending_survives_a_clean_reentry_and_clears_on_confirm(
-    tmp_path,
-) -> None:
-    """확정 대기 사실은 **손댄 것이 없는** 재진입에서도 참이고, 무변경 확정으로 걷힌다.
-
-    이 두 값이 #911 의 결함과 수리다: 종전에는 dirty 하나가 두 동사를 잠가, 매핑이 이미
-    옳은 작업은 확정을 요구받으면서 그 확정을 수행할 활성 동사가 없었다.
-    """
-    name = "확정대기"
-    probe_calls: list[str] = []
-    committed: list[str] = []
-    pending = {"value": True}
-
-    def probe(work_ref: str) -> bool:
-        probe_calls.append(work_ref)
-        return pending["value"]
-
-    def commit(work_ref: str) -> None:
-        committed.append(work_ref)
-        pending["value"] = False       # 확정이 성립하면 대기는 사라진다(실 서비스의 전이).
-
-    ctrl, _ = _controller(
-        tmp_path, after_mapping_saved=commit, binding_confirm_pending=probe
-    )
-    assert _save_named(ctrl, name)["ok"] is True
-    registry = JobRegistry(tmp_path / "jobs")
-    job = registry.load(name)
-    job.authority_id = "managed-work-911"
-    registry.save(job, allow_overwrite=True)
-
-    ctrl.load_job(name)
-    snap = ctrl.snapshot()
-    assert snap["dirty"] is False, "손대지 않은 재진입이라 변경 기반 무장은 닫혀 있다"
-    assert snap["binding_confirm"]["pending"] is True
-
-    result = ctrl.dispatch("save", {})    # 무변경 확정 — payload 는 평소 저장과 같다
-
-    assert result["ok"] is True
-    assert committed == [name], "무변경 저장도 결속 확정을 부른다"
-    assert ctrl.snapshot()["binding_confirm"]["pending"] is False, (
-        "확정이 성립했으면 확정 동사는 스스로 걷힌다"
-    )
-    assert probe_calls, "판정은 백엔드에 물어본다(표면 추론 금지)"
-
-
-def test_binding_confirm_pending_stays_true_when_the_commit_fails(tmp_path) -> None:
-    """확정이 실패하면 대기는 그대로다 — 실패를 성공처럼 접어 동사를 걷지 않는다."""
-    name = "확정실패"
-
-    def fail(work_ref: str) -> None:
-        raise RuntimeError("binding commit failed")
-
-    ctrl, _ = _controller(
-        tmp_path, after_mapping_saved=fail, binding_confirm_pending=lambda _ref: True
-    )
-    assert _save_named(ctrl, name)["ok"] is True
-    registry = JobRegistry(tmp_path / "jobs")
-    job = registry.load(name)
-    job.authority_id = "managed-work-911"
-    registry.save(job, allow_overwrite=True)
-    ctrl.load_job(name)
-
-    result = ctrl.dispatch("save", {})
-
-    assert result["ok"] is False and result["legacy_saved"] is True
-    assert ctrl.snapshot()["binding_confirm"]["pending"] is True
 
 
 def test_binding_confirm_probe_failure_never_arms_the_verb(tmp_path) -> None:

@@ -35,7 +35,7 @@ from _output_folder_pick import pick_output_folder
 from hwpxfiller.cli import main as cli_main
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain import format_engine
-from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -273,7 +273,7 @@ def _txt_work(tmp_path: Path):
     registry.save(Job(name="안내문", template_path=str(template), mapping=MappingProfile(mappings=[
         FieldMapping(template_field="수신", source="수신처"),
         FieldMapping(template_field="건명", source="값"),
-    ])))
+    ]), binding_authority=JOB_MAPPING_AUTHORITY))
     slots = SlotConfigurationProduct(registry, root=root, clock=lambda: NOW)
     job = JobController(
         registry, lambda s, snap: None,

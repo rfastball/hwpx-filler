@@ -60,11 +60,7 @@ class AuthoringStore:
         target = self._path("cases", key)
         if not target.is_file():
             return []
-        record = json.loads(target.read_text(encoding="utf-8"))
-        if (not isinstance(record, dict) or type(record.get("version")) is not int
-                or record["version"] != 1 or not isinstance(record.get("cases"), list)):
-            raise ValueError("지원하지 않는 시험 케이스 형식입니다.")
-        return record["cases"]
+        return self.import_cases(target)
 
     def write_cases(self, key: str, cases: list[dict]) -> None:
         target = self._path("cases", key)

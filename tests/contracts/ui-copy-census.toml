@@ -1459,10 +1459,6 @@ text = "지원하지 않는 시험 케이스 형식입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
-text = "지원하지 않는 시험 케이스 형식입니다."
-
-[[sentence]]
-file = "src/hwpxfiller/external/authoring_store.py"
 text = "지원하지 않는 작업 위치 기록 형식입니다."
 
 [[sentence]]
@@ -2095,19 +2091,23 @@ text = "문서 내부 파일이 가져오기와 내보내기 사이에 변경되
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "current Active Field를 확인할 수 없습니다"
+text = "Field Binding capture 에 routed Job 이 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "current Application structure를 확인할 수 없습니다"
+text = "Field Binding capture 의 Work identity 가 이동했습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "legacy Mapping basis가 capture 이후 이동했습니다"
+text = "이전 Field Binding 의 Work 상태를 확인할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
+text = "현재 템플릿 Application 을 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "현재 템플릿의 Field 구조를 확인할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/template_change.py"
@@ -2143,7 +2143,15 @@ text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
+text = ". 연결을 검토한 뒤 다시 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "매핑 모델이 준비되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/edit_session.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
@@ -2365,11 +2373,11 @@ text = "[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 �
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2377,23 +2385,7 @@ text = "나라장터 취득 어댑터가 주입되지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "먼저 데이터를 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "생성할 문서를 최소 1건 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 있습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "저장 폴더를 지정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2401,20 +2393,7 @@ text = "템플릿 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 수 있습니다:"
-legacy = true
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일 이름 규칙이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/slice_assist.py"
@@ -3799,10 +3778,6 @@ text = "먼저 작업을 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "문서 생성이 진행 중입니다. 끝난 뒤에 {}."
 
 [[sentence]]
@@ -4287,7 +4262,3 @@ text = "실행 계획을 봉인할 수 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/txt_materialization.py"
 text = "이 작업의 실행 권위를 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/txt_materialization.py"
-text = "이 작업의 템플릿 확인이 아직 끝나지 않았습니다."

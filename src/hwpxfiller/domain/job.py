@@ -216,6 +216,9 @@ def require_hwpx(job: "Job") -> "Job":
 
 
 # ------------------------------------------------------------------ 모델
+JOB_MAPPING_AUTHORITY = "job-mapping/v1"
+
+
 @dataclass
 class Job:
     """저장되는 생성 작업 — durable 바인딩 {템플릿·매핑·파일명}. 데이터·행은 제외.
@@ -309,6 +312,8 @@ class Job:
     # 날 증거가 조용히 거짓말한다. 1세대만 두는 이유: 계약에 판본 이력 표면이 없다 —
     # 요구 없는 무한 누적을 durable 파일에 지불하지 않는다. 형상은 :func:`rules_values`.
     previous_rules: "dict" = field(default_factory=dict)
+    # 새 저장본은 Mapping 자체가 실행 연결의 권위다. 빈 값은 구 S5 판본을 읽는 저장본.
+    binding_authority: str = ""
 
     @property
     def media(self) -> str:

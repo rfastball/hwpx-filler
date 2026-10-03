@@ -94,12 +94,8 @@ function StoreSignal(props: {
 }
 
 /** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다.
- *  자식 다섯: 마운트 신호 · store 신호 · overlay host · shell host · 화면 portal host.
- *
- *  튜토리얼 셸 표면은 여기 있었다(#894) — 화면 portal 이 아니라 트리의 **형제**로 서서 몰입
- *  표면(editor·workbench)에서도 살아남는 자리였다. #941 에서 진입 표면이 배포본에서 걷히며
- *  마운트가 끊겼고, 컴포넌트(`../tutorial/panel.ts`)와 링1·컨트롤러는 동결로 남는다 —
- *  되살릴 때는 이 자리에 형제로 다시 건다(그 이유가 곧 자리의 이유다). */
+ *  자식 여섯: 마운트 신호 · store 신호 · overlay host · shell host · 화면 portal host · 튜토리얼.
+ *  튜토리얼은 화면 portal 의 형제로 서서 몰입 표면(editor·workbench)에서도 살아남는다. */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;

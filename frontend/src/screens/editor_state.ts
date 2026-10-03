@@ -7,7 +7,7 @@
 
    불변식(패킷 rev2 §2.2):
 
-   1. full push 는 새 `serverValue`/`baseRevision` 를 저장한다.
+   1. full push 는 새 `serverValue` 를 저장한다.
    2. `dirty || focused || composing` 인 field 의 `draftValue` 는 **덮지 않는다**.
    3. 손대지 않은 field 만 새 server 값을 흡수한다.
    4. 변이는 단조 증가 `pendingToken` 을 발급하고, 응답은 **session 과 token 이 모두** 맞을
@@ -20,8 +20,6 @@
    쓴 규칙과 같다. 되돌릴 자리가 없는 대기는 열린 저장 버튼의 거짓 근거가 된다. */
 
 export type FieldState = {
-  /** 이 값을 낸 스냅샷 판본. 늦은 응답이 어느 세대의 답인지 가른다. */
-  baseRevision: number;
   /** Python 이 아는 값. */
   serverValue: string;
   /** 사용자가 보고 있는 값. clean 이면 serverValue 와 같다. */
@@ -38,7 +36,6 @@ export type FieldState = {
 export type DraftState = {
   /** 편집 세션의 정체 — 바뀌면 모든 draft 를 버린다. */
   session: string;
-  revision: number;
   fields: Readonly<Record<string, FieldState>>;
   /** 마지막으로 발급한 token. 화면 전체에서 단조 증가한다. */
   lastToken: number;
@@ -63,9 +60,8 @@ export function rowField(index: number, axis: RowAxis): string {
   return `row:${index}:${axis}`;
 }
 
-function cleanField(value: string, revision: number): FieldState {
+function cleanField(value: string): FieldState {
   return {
-    baseRevision: revision,
     serverValue: value,
     draftValue: value,
     dirty: false,
@@ -77,7 +73,7 @@ function cleanField(value: string, revision: number): FieldState {
 }
 
 export function emptyDraft(): DraftState {
-  return { session: "", revision: 0, fields: {}, lastToken: 0, staleResponses: 0 };
+  return { session: "", fields: {}, lastToken: 0, staleResponses: 0 };
 }
 
 /** 스냅샷이 든 편집 가능 값 전수. 여기 없는 키는 그 스냅샷에서 편집 대상이 아니다. */
@@ -86,14 +82,14 @@ export type ServerValues = Readonly<Record<string, string>>;
 /** 전송 스냅샷 흡수 — 규칙 1~3. 세션이 바뀌면 전부 새로 세운다. */
 export function ingestSnapshot(
   state: DraftState,
-  args: { session: string; revision: number; values: ServerValues },
+  args: { session: string; values: ServerValues },
 ): DraftState {
   const fresh = args.session !== state.session;
   const fields: Record<string, FieldState> = {};
   for (const [key, value] of Object.entries(args.values)) {
     const previous = fresh ? undefined : state.fields[key];
     if (previous === undefined) {
-      fields[key] = cleanField(value, args.revision);
+      fields[key] = cleanField(value);
       continue;
     }
     const held = previous.dirty || previous.focused || previous.composing;
@@ -106,14 +102,12 @@ export function ingestSnapshot(
       ? {
         ...previous,
         serverValue: value,
-        baseRevision: args.revision,
         dirty: previous.draftValue !== value,
       }
-      : { ...cleanField(value, args.revision), focused: previous.focused, error: previous.error };
+      : { ...cleanField(value), focused: previous.focused, error: previous.error };
   }
   return {
     session: args.session,
-    revision: args.revision,
     fields,
     lastToken: state.lastToken,
     staleResponses: fresh ? 0 : state.staleResponses,
@@ -234,9 +228,4 @@ export function editorServerValues(snapshot: Record<string, any>): ServerValues 
 /** 세션 정체 — 편집 대상이 바뀌면 draft 를 들고 가지 않는다. */
 export function editorSession(snapshot: Record<string, any>): string {
   return snapshot.is_draft ? "draft" : `job:${String(snapshot.editing_origin ?? "")}`;
-}
-
-export function editorRevision(snapshot: Record<string, any>): number {
-  const revisions = snapshot.revisions || {};
-  return Number(revisions.binding ?? 0) * 1000 + Number(revisions.template ?? 0);
 }

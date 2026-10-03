@@ -90,11 +90,14 @@ class CurrentSealedPlanObservation:
 
     sealed_plan_value: SealedExecutionPlanValue
     runtime_policy_admission: RuntimePolicyAdmission
-    materialization_readiness: str  # READY | NOT_READY
     observed_at: str
     # 같은 current capture 에서 온 exact binding facts. delivery-only inactive token 해석에
     # 소비되며 Plan identity·durable state 가 아니다.
     current_field_binding: FieldBindingInput | None = None
+
+    @property
+    def materialization_readiness(self) -> str:
+        return decide_materialization_readiness(self.runtime_policy_admission)
 
 
 @dataclass(frozen=True)

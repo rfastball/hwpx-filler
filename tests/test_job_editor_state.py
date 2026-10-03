@@ -226,7 +226,7 @@ def test_overwrite_confirm_text_restates_actual_victim():
 #: (구 default_dataset_ref 의 **이름 축**은 #347(U2 §5.3 판정 D)에서 폐기된 채다. U4-C 가
 #:  되들인 결속은 경로+시트+헤더 행 세 성분이고 아래에 분류돼 있다.)
 _EDITOR_REBUILDS = {
-    "version", "name", "template_path", "mapping", "filename_pattern",
+    "version", "name", "template_path", "mapping", "filename_pattern", "binding_authority",
     # 데이터 결속 성분(U4 §2.4 · #932 U4-C) — 「다시 짓는다」 갈래다. 보존으로
     # 선언하면 편집기가 결속을 바꿀 수 없고(그것이 지금 유일한 동선이다),
     # 레지스트리 파생으로 선언하면 저장이 사용자가 고른 데이터를 발명하게 된다.

@@ -99,6 +99,8 @@ export type LintpadUpdateSpec = {
    * 되돌려 넣으면 캐럿이 문서 끝으로 튄다(React 값-되먹임 결함류).
    */
   doc?: string;
+  /** 장식을 분석한 TXT 본문. 지금 본문과 다르면 이동해 둔 장식을 유지한다. */
+  sourceDoc?: string;
   /** 강조 좌표 전집. 넘기지 않으면 기존 강조를 그대로 둔다(문서 변경에 따라 매핑된다). */
   spans?: readonly LintpadSpan[];
   /** 문제 표지 전집(별도 층) — 필드·표지 강조와 겹쳐도 잘리지 않는다. 넘기지 않으면 그대로 둔다. */
@@ -417,11 +419,13 @@ export type LintpadDrawn = {
 
 /** 장식 층(강조·이름표·문제·짝·범위 막대)이 한 문서에서 실제로 무엇을 그리는가 — DOM 없이 상태만 세워 확인하는 단위 창구.
  *  `edits` 는 판정을 얹은 **뒤** 친 편집이다(판정 왕복 사이의 매핑을 잰다). `atoms` 는 원자 범위 facet 이 편집기에
- *  실제로 내주는 범위다. vendor 타입은 밖으로 나가지 않는다(평범한 조각 목록만 돌려준다). */
+ *  실제로 내주는 범위다. `updates`는 편집 뒤 도착한 장식이며 실제 뷰와 같은 갱신을 쓴다.
+ *  vendor 타입은 밖으로 나가지 않는다(평범한 조각 목록만 돌려준다). */
 export function lintpadDecorations(
   doc: string, spec: {
     spans?: readonly LintpadSpan[]; problems?: readonly LintpadProblem[]; pairs?: readonly LintpadPair[]; caret?: number;
     labels?: LintpadLabels; regions?: readonly LintpadRegion[]; edits?: readonly { start: number; end: number; text: string }[];
+    updates?: readonly LintpadUpdateSpec[];
   },
 ): LintpadDrawn[] & { doc: string; atoms: { from: number; to: number }[] } {
   let state = EditorState.create({ doc, extensions: [spanField, regionField, problemField, pairField] });
@@ -431,6 +435,7 @@ export function lintpadDecorations(
     selection: spec.caret === undefined ? undefined : { anchor: spec.caret },
   }).state;
   if (spec.edits?.length) state = state.update({ changes: spec.edits.map((edit) => ({ from: edit.start, to: edit.end, insert: edit.text })) }).state;
+  for (const update of spec.updates || []) state = state.update(lintpadUpdate(state, update)).state;
   const out: LintpadDrawn[] = [];
   const read = (layer: LintpadDrawn["layer"], set: DecorationSet) => set.between(0, state.doc.length, (from, to, value) => {
     const widget = value.spec.widget;
@@ -742,26 +747,30 @@ export function lintpadCommand(handle: LintpadHandle, command: "undo" | "redo" |
   return ({ undo, redo, search: openSearchPanel })[command](view);
 }
 
+/** 실제 뷰와 단위 창구가 같은 문서·장식 갱신을 쓴다. */
+function lintpadUpdate(state: EditorState, spec: LintpadUpdateSpec) {
+  const replacing = spec.doc !== undefined && spec.doc !== state.doc.toString();
+  // 분석 왕복·한글 조합 중에는 본문이 더 앞서 있을 수 있다. 좌표를 덮지 않고 표시 방식만 바꾼다.
+  const current = spec.sourceDoc === undefined || spec.sourceDoc === (spec.doc ?? state.doc.toString());
+  const effects = [
+    ...(spec.labels === undefined ? [] : [setLabels.of(spec.labels)]),
+    ...(current && spec.spans !== undefined ? [setSpans.of(spec.spans)] : []),
+    ...(current && spec.regions !== undefined ? [setRegions.of(spec.regions)] : []),
+    ...(current && spec.problems !== undefined ? [setProblems.of(spec.problems)] : []),
+    ...(current && spec.pairs !== undefined ? [setPairs.of(spec.pairs)] : []),
+  ];
+  return {
+    changes: replacing ? { from: 0, to: state.doc.length, insert: spec.doc } : undefined,
+    effects,
+  };
+}
+
 /** 외부 상태 → 뷰(`update_owner`). 문서 교체와 강조 갱신을 **한 트랜잭션**으로 보낸다. */
 export function updateLintpad(handle: LintpadHandle, spec: LintpadUpdateSpec): void {
   const view = VIEWS.get(handle);
   if (view === undefined) return;
-  // 강조만 바꾸는 호출(장식)은 문서 전체를 문자열로 만들지 않는다 — 비교할 새 문서가 있을 때만 읽는다.
-  const replacing = spec.doc !== undefined && spec.doc !== view.state.doc.toString();
-  const effects = [
-    ...(spec.labels === undefined ? [] : [setLabels.of(spec.labels)]),
-    ...(spec.spans === undefined ? [] : [setSpans.of(spec.spans)]),
-    ...(spec.regions === undefined ? [] : [setRegions.of(spec.regions)]),
-    ...(spec.problems === undefined ? [] : [setProblems.of(spec.problems)]),
-    ...(spec.pairs === undefined ? [] : [setPairs.of(spec.pairs)]),
-  ];
-  if (!replacing && !effects.length) return;
-  view.dispatch({
-    changes: replacing
-      ? { from: 0, to: view.state.doc.length, insert: spec.doc }
-      : undefined,
-    effects,
-  });
+  const update = lintpadUpdate(view.state, spec);
+  if (update.changes || update.effects.length) view.dispatch(update);
 }
 
 /** 해제(`dispose_owner`) — React 언마운트가 부른다. 두 번 불러도 안전하다. */

@@ -33,7 +33,6 @@ class AuthoringSession:
     cases: list[dict] = field(default_factory=list)
     cases_error: str = ""
     cases_dirty: bool = False
-    trial_inputs_dirty: bool = False
     values: dict = field(default_factory=dict)
     selected: dict = field(default_factory=dict)
     trial_input_revision: int = 0
@@ -55,6 +54,13 @@ class AuthoringSession:
             or self.trial_values_revision != self.trial_input_revision
         )
 
+    @property
+    def trial_inputs_dirty(self) -> bool:
+        return bool(self.values or self.selected) and not any(
+            case.get("values") == self.values and case.get("selected") == self.selected
+            for case in self.cases
+        )
+
     def replace_content(self, content: bytes, analysis: dict) -> None:
         if content == self.content:
             return
@@ -68,7 +74,3 @@ class AuthoringSession:
         self.values = dict(values)
         self.selected = dict(selected)
         self.trial_input_revision += 1
-        self.trial_inputs_dirty = bool(self.values or self.selected) and not any(
-            case.get("values") == self.values and case.get("selected") == self.selected
-            for case in self.cases
-        )
