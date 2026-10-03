@@ -1586,8 +1586,6 @@ class AuthoringController:
         self._validate_cases([case])
         session.cases = [c for c in session.cases if c["name"] != case["name"]] + [case]
         session.cases_dirty = True
-        if case["values"] == session.values and case["selected"] == session.selected:
-            session.trial_inputs_dirty = False
         return {"ok": True, "case": case}
 
     def _do_case_remove(self, p: dict) -> dict:
@@ -1597,10 +1595,6 @@ class AuthoringController:
         if len(session.cases) == before:
             raise ValueError("시험 케이스를 찾을 수 없습니다.")
         session.cases_dirty = True
-        session.trial_inputs_dirty = bool(session.values or session.selected) and not any(
-            case["values"] == session.values and case["selected"] == session.selected
-            for case in session.cases
-        )
         return {"ok": True}
 
     def _do_save_cases(self, p: dict) -> dict:

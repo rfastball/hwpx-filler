@@ -2365,11 +2365,11 @@ text = "[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 �
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2377,23 +2377,7 @@ text = "나라장터 취득 어댑터가 주입되지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "먼저 데이터를 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "생성할 문서를 최소 1건 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 있습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "저장 폴더를 지정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2401,20 +2385,7 @@ text = "템플릿 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 수 있습니다:"
-legacy = true
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일 이름 규칙이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/slice_assist.py"

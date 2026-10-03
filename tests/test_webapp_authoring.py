@@ -176,6 +176,13 @@ def test_cases_have_an_independent_explicit_save_and_close_guard(tmp_path: Path)
         "needs_confirm": True, "document_dirty": False, "dirty": False,
         "cases_dirty": True, "trial_inputs_dirty": False,
     }
+    ctrl.dispatch("case_upsert", {"session_id": sid, "revision": 0, "name": "검토", "values": {"이름": "다른 값"}, "selected": {}})
+    assert ctrl.snapshot()["tabs"][0]["trial_inputs_dirty"] is True
+    ctrl.dispatch("case_upsert", {"session_id": sid, "revision": 0, "name": "검토", "values": {"이름": "홍길동"}, "selected": {}})
+    assert ctrl.snapshot()["tabs"][0]["trial_inputs_dirty"] is False
+    ctrl.dispatch("case_remove", {"session_id": sid, "revision": 0, "name": "검토"})
+    assert ctrl.snapshot()["tabs"][0]["trial_inputs_dirty"] is True
+    ctrl.dispatch("case_upsert", {"session_id": sid, "revision": 0, "name": "검토", "values": {"이름": "홍길동"}, "selected": {}})
     assert _controller(tmp_path).open_path(path)["analysis"]["fields"][0]["name"] == "이름"
     ctrl.dispatch("save_cases", {"session_id": sid})
     again = _controller(tmp_path)

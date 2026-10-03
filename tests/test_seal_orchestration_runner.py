@@ -646,6 +646,11 @@ def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypat
     candidate = compile_candidate(_captured(), theorem_registry=injected)
     assert isinstance(candidate, PlanCandidate)
     assert seen == [injected]  # DEFAULT 가 아니라 injected 를 그대로 받았다
+    mismatched = _captured(policy=_policy(
+        composition_theorem_evidence_manifest_digest="sha256:wrong"
+    ))
+    with pytest.raises(ExecutionQualificationContextError):
+        compile_candidate(mismatched, theorem_registry=injected)
 
 
 def test_finding3_capture_policy_mismatch_rejected_fail_closed() -> None:

@@ -1,4 +1,4 @@
-"""실행 ViewModel — Qt 불필요(헤드리스). 대상 전환·사전검증·게이트·표식 주입 계약.
+"""실행 ViewModel — Qt 불필요(헤드리스). 사전검증·필드 상태·표식 주입 계약.
 
 위젯의 QThread/QMessageBox 없이 백엔드 결정 로직을 여기서 못박는다(누수 제거의 회귀 방어).
 """
@@ -46,8 +46,7 @@ def _job(tmp_path) -> Job:
             FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
         filename_pattern="doc-{{공고명}}",
-        # 실행 게이트가 데이터 결속을 요구한다(#932 U4-C) — 미결속이면 「연결 필요」가
-        # 앞서 서서, 이 파일이 재려는 뒤 단들(드리프트·토큰·폴더·선택)에 도달하지 못한다.
+        # 데이터 결속은 작업대 실행 판정의 입력이다.
         data_path=str(tmp_path / "d.csv"), data_sheet="", data_header_row=0,
     )
 
@@ -142,28 +141,6 @@ def test_field_states_report_missing_without_an_ack_axis(tmp_path):
     for dead in ("acknowledge", "unacknowledge", "reset_acks", "acked_count", "unmet_blanks"):
         assert not hasattr(vm, dead), f"폐기된 ack 표면이 부활했습니다: {dead}"
     assert not hasattr(states["추정가격"], "acknowledged")
-    # 빈 값이 있어도 링1 게이트는 전제조건만 본다(§2.13 — 승인 단이 blank_set 을 진다).
-    assert vm.gate_state(data, [0, 1], "out").enabled is True
-
-
-def test_gate_absorbs_preconditions_inline(tmp_path):
-    """UD-06: 데이터·폴더·레코드 전제조건을 게이트로 흡수 — '버튼 비활성 + 인라인 사유'.
-
-    이전에는 활성 primary + 클릭 후 차단 모달로 이원화됐다(초기 상태 침묵).
-    """
-    # 데이터 미겨눔 → 닫힌 인라인 게이트('먼저 데이터를 선택하세요').
-    vm_nodata = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
-    gate = vm_nodata.gate_state(RunDataInput(None, ()), [0])
-    assert gate.enabled is False and gate.level == "warn" and "데이터" in gate.text
-
-    vm = _vm(tmp_path)
-    # 저장 폴더 미지정 → 인라인 warn(모달 아님).
-    data = _data()
-    gate = vm.gate_state(data, [0, 1])
-    assert gate.enabled is False and gate.level == "warn" and "저장 폴더" in gate.text
-    # 선택 0건 → 인라인 warn(문구는 사용자 어휘 '문서', R-copy PR #85 리뷰).
-    gate = vm.gate_state(data, [], "out")
-    assert gate.enabled is False and gate.level == "warn" and "생성할 문서" in gate.text
 
 
 def test_field_states_empty_without_data(tmp_path):
@@ -186,13 +163,9 @@ def test_declared_empty_is_quiet_but_uncovered_template_field_is_drift(tmp_path)
     states = {s.name: s.state for s in vm.field_states(data, [0])}
     assert states == {"공고명": "filled", "추정가격": "filled"}
     assert "추정가격" not in vm.blank_fields(data, [0])
-    assert vm.gate_state(data, [0], "out").enabled is True
-
     _write_template(job.template_path, ["공고명", "추정가격", "신규필드"])
     states = {s.name: s.state for s in vm.field_states(data, [0])}
     assert states["신규필드"] == "drift"
-    gate = vm.gate_state(data, [0], "out")
-    assert not gate.enabled and gate.level == "danger" and "신규필드" in gate.text
 
 
 def test_mapping_orphan_is_drift_and_hard_gate(tmp_path):
@@ -201,8 +174,6 @@ def test_mapping_orphan_is_drift_and_hard_gate(tmp_path):
     drift = vm.structure_drift()
     assert drift.mapping_orphaned == ("추정가격",)
     assert {s.name: s.state for s in vm.field_states(_data(), [0])}["추정가격"] == "drift"
-    gate = vm.gate_state(_data(), [0], "out")
-    assert not gate.enabled and gate.reason == "drift" and "추정가격" in gate.text
 
 
 def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
@@ -213,41 +184,12 @@ def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
 
     vm.job.template_path = str(tmp_path / "broken.hwpx")
     (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
-    gate = vm.gate_state(_data(), [0], "out")
-    assert not gate.enabled and gate.level == "danger" and gate.reason == "template_unreadable"
+    assert vm.structure_drift().read_error
 
 
 # ------------------------------------------------------------- 덮어쓰기 확인(RC-02)
 # ------------------------------------------------------------ 생성 계획(RC-07)
-# ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
-def test_gate_state_single_decision_drift_open(tmp_path):
-    """게이트 표시 결정(활성/level/text)이 vm 단일 산출 — 위젯 재조립 없음(RC-23).
-
-    구 「미확인 미입력(warn)」 단은 필드축 ack 폐기(U2 §2.13)로 죽었다 — 빈 값이 있어도
-    링1 게이트는 전제조건 축만 보고, 표식 승인은 blank_set 검토 요구(호출측)가 진다.
-    """
-    vm = _vm(tmp_path)
-
-    # 빈 값(추정가격)이 있어도 전제조건이 충족되면 링1 게이트는 열린다(§2.13).
-    gate = vm.gate_state(_data(), [0, 1], "out")
-    assert gate.enabled is True and gate.level == "" and gate.text == ""
-
-    # 드리프트 → danger 차단.
-    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
-    gate = vm.gate_state(_data(), [0, 1])
-    assert gate.enabled is False and gate.level == "danger"
-    assert "매핑을 다시 확정" in gate.text and "신규필드" in gate.text
-
-
-def test_gate_state_read_error_fails_closed(tmp_path):
-    vm = _vm(tmp_path)
-    (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
-    vm.job.template_path = str(tmp_path / "broken.hwpx")
-    gate = vm.gate_state(_data(), [0])
-    assert gate.enabled is False and gate.level == "danger"
-    assert "읽을 수 없어" in gate.text
-
-
+# ------------------------------------------------ 진단 상태 스냅샷(RC-23)
 def test_preflight_reflects_drift_no_green_pass_during_block(tmp_path):
     """RC-23 모순 신호 해소 — 드리프트 차단 중 사전검증이 '통과' 녹색으로 남지 않는다."""
     vm = _vm(tmp_path)
@@ -258,10 +200,7 @@ def test_preflight_reflects_drift_no_green_pass_during_block(tmp_path):
 
 
 def test_refresh_is_single_snapshot_and_parses_template_once(tmp_path, monkeypatch):
-    """상태 리프레시 1회 = 템플릿 구조 1회 재읽기(RC-23: zip 5회 재파싱 해소).
-
-    스냅샷의 세 표시면(사전검증·필드 상태·게이트)이 같은 계산에서 나온다.
-    """
+    """상태 리프레시 1회에서 사전검증·필드 상태가 구조를 한 번 읽는다."""
     from hwpxfiller.domain.engine import HwpxEngine
 
     vm = _vm(tmp_path)
@@ -279,7 +218,6 @@ def test_refresh_is_single_snapshot_and_parses_template_once(tmp_path, monkeypat
     assert {s.name: s.state for s in snap.field_states} == {
         "공고명": "filled", "추정가격": "missing",
     }
-    assert snap.gate.enabled is False and snap.gate.level == "warn"
 
 
 def test_data_input_is_explicit_and_vm_owns_no_data(tmp_path):
@@ -305,42 +243,26 @@ def _job_with_pattern(tmp_path, pattern, *, blank_price=False):
     return job
 
 
-def test_unresolved_name_token_closes_gate_danger(tmp_path):
-    """매핑이 채우지 않는 파일명 토큰 = danger 차단 + 사전검증 녹색 금지(F34).
+def test_unresolved_name_token_is_reported_in_preflight(tmp_path):
+    """매핑이 채우지 않는 파일명 토큰은 사전검증에 남는다(F34).
 
     101 워크스루 실증 결함: '공고서-{{ID}}' 패턴이 무경고 통과해 미해소 {{ID}} 가
     실파일명으로 출하됐다(CLI 엔 게이트 있음 — 표면 비대칭).
     """
     vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
     status = vm.refresh(_data(), [0, 1], str(tmp_path / "out"))
-    assert status.gate.enabled is False and status.gate.level == "danger"
-    assert "{{ID}}" in status.gate.text and "파일명 패턴" in status.gate.text
+    assert vm.unresolved_name_tokens() == ["ID"]
     assert status.preflight.level == "danger"              # '검증 완료' 녹색과 공존 금지
     assert "파일명" in status.preflight.text
 
 
 @pytest.mark.parametrize("pattern", ["{{공고명", "../{{공고명}}", "C:{{공고명}}", "CON"])
-def test_unmakeable_output_names_close_the_gate(tmp_path, pattern):
-    """이름 kernel 이 이름을 만들 수 없으면(#798) 게이트가 차단한다 — 배달 계획이 서지 않는 것과
-    같은 사실이다. 종전 legacy 는 닫히지 않은 ``{{`` 를 리터럴로, ``../`` 를 폴더 밖으로 썼다."""
-    from hwpxfiller.viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT
+def test_unmakeable_output_names_are_reported_by_audit(tmp_path, pattern):
+    """이름 kernel이 이름을 만들 수 없으면 감사 결과에 거절이 남는다."""
 
     vm = RunViewModel(_job_with_pattern(tmp_path, pattern), engine=make_hwpx_engine())
     status = vm.refresh(_data(), [0, 1], str(tmp_path / "out"))
-    assert status.gate.enabled is False and status.gate.level == "danger"
-    assert status.gate.reason == "name_invalid"
-    assert status.gate.text == OUTPUT_NAME_INVALID_TEXT
     assert status.audit.refusal_code and status.audit.names == ()
-
-
-def test_unresolved_name_token_fires_before_data_selection(tmp_path):
-    """토큰 계약은 작업 정의 수준 — 데이터 미겨눔에서도 danger 로 먼저 발화한다(F34).
-
-    고칠 수 없는 작업에 데이터부터 고르게 하지 않는다(경고 순서의 정직성)."""
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())  # 데이터 없음
-    status = vm.refresh(RunDataInput(None, ()), [])
-    assert status.gate.enabled is False and status.gate.level == "danger"
-    assert "{{ID}}" in status.gate.text
 
 
 def test_declared_empty_field_token_is_unresolved(tmp_path):
@@ -349,20 +271,8 @@ def test_declared_empty_field_token_is_unresolved(tmp_path):
     assert vm.unresolved_name_tokens() == ["추정가격"]
 
 
-def test_name_token_gate_points_at_a_screen_that_exists(tmp_path):
-    """게이트 문안이 사망한 화면을 지시하지 않는다(#128) — 「작업 에디터」는 결정 39·40 으로 사망.
-
-    같은 자리 드리프트 배너는 이미 "편집에서…"로 개정돼 있었다. 두 danger 가 같은 목적지를
-    다르게 부르면 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
-    """
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
-    text = vm.refresh(_data(), [0, 1], str(tmp_path / "out")).gate.text
-    assert "작업 에디터" not in text, f"사망한 화면을 지시합니다: {text!r}"
-    assert "편집에서 파일명 패턴을 고쳐야" in text, text
-
-
-def test_mapped_and_reserved_tokens_open_gate(tmp_path):
-    """매핑 커버 토큰·예약 토큰({{date}}/{{seq}})·기본 패턴은 게이트를 닫지 않는다(F34b)."""
+def test_mapped_and_reserved_tokens_are_resolved(tmp_path):
+    """매핑 커버 토큰·예약 토큰({{date}}/{{seq}})·기본 패턴은 해소된다."""
     from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN
 
     for pattern in ("doc-{{공고명}}", "doc-{{date}}-{{seq:001}}", DEFAULT_FILENAME_PATTERN):
@@ -371,12 +281,12 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
         status = vm.refresh(
             _data(), [0, 1], str(tmp_path / "out"), now=datetime(2026, 7, 21)
         )
-        assert "파일명 패턴" not in status.gate.text
+        assert "파일명 패턴" not in status.preflight.text
 
 
 # ------------------------------------------------ 검토는 게이트가 아니라 고지다(#957)
-def test_review_requirement_no_longer_closes_the_gate(tmp_path):
-    """#957 정책 선회 — 검토 요구가 서 있어도 **게이트는 열린다**.
+def test_review_requirement_is_nonblocking_notice(tmp_path):
+    """#957 정책 선회 — 검토 요구는 사전검증의 비차단 고지다.
 
     U4 §34(「빈 값도 확인하면 생성 허용 — 게이트 유지 확정」)의 명시적 뒤집기다: 이상은
     알리되 생성을 막지 않고, 사용자가 결과 문서를 한 번 더 본다. 게이트 서열에서 검토 단이
@@ -386,16 +296,9 @@ def test_review_requirement_no_longer_closes_the_gate(tmp_path):
     req = review_requirement(vm.job)  # 완주 이력 없음 = 새 작업(§13-3)
     assert req.required
 
-    # 전제조건은 그대로 게이트다 — 검토만 걷혔다.
     data = _data()
-    gate = vm.refresh(data, [], "out", review_notice=req).gate
-    assert "선택하세요" in gate.text and gate.reason == ""
-    gate = vm.refresh(data, [1], "", review_notice=req).gate
-    assert "저장 폴더" in gate.text and gate.reason == ""
-
     # 빈 값 없는 레코드만 골라 다른 경고와 섞이지 않는 자리를 만든다.
     status = vm.refresh(data, [1], "out", review_notice=req)
-    assert status.gate.enabled is True and status.gate.reason == ""
     # 그리고 **아무 말도 하지 않는다**: 첫 실행 고지는 간소화 라운드에서 퇴역했다 —
     # 결과 확인은 상수라 「첫 실행입니다」가 바꾸는 행동이 없다. 요구는 서 있어도
     # 사전검증은 조용하고, 없는 실행을 들먹이는 일반 문안으로 새지도 않는다.
@@ -412,7 +315,6 @@ def test_changed_rules_notice_names_the_targets(tmp_path):
     vm.job.reviewed_rules = dict(rules_fingerprints(vm.job))
     vm.job.mapping.mappings[0].source = "presmptPrce"   # source 축 변경 = semantic_binding
     status = vm.refresh(_data(), [1], "out", review_notice=review_requirement(vm.job))
-    assert status.gate.enabled is True
     assert status.preflight.notices == (
         "[알림] 마지막 실행 이후 바뀐 규칙이 있습니다: 공고명(연결). "
         "결과 문서를 열어 확인하세요.",
@@ -429,26 +331,15 @@ def test_blank_values_do_not_get_a_second_notice(tmp_path):
     req = review_requirement(vm.job, blank_fields=blanks)
     assert req.risk_class == "blank_set"
     status = vm.refresh(data, [0, 1], "out", review_notice=req)
-    assert status.gate.enabled is True
     assert status.preflight.notices == ()
     assert "[알림]" not in status.preflight.text
 
 
-def test_drift_still_outranks_and_blocks(tmp_path):
-    """구조 불일치(danger)는 그대로 차단이다 — 걷힌 것은 검토 단뿐이다."""
-    vm = _vm(tmp_path)
-    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
-    gate = vm.refresh(
-        _data(), [0, 1], "out", review_notice=review_requirement(vm.job)
-    ).gate
-    assert gate.reason == "drift" and gate.level == "danger"
-
-
-def test_no_review_requirement_leaves_the_gate_open(tmp_path):
-    """§13-2 — 규칙이 그대로면 게이트는 열려 있고 고지도 없다."""
+def test_no_review_requirement_leaves_preflight_without_notice(tmp_path):
+    """§13-2 — 규칙이 그대로면 사전검증 고지가 없다."""
     vm = _vm(tmp_path)
     status = vm.refresh(_data(), [1], "out", review_notice=None)
-    assert status.gate.enabled is True and status.preflight.notices == ()
+    assert status.preflight.notices == ()
 
 
 def test_path_length_warns_without_blocking_generation(tmp_path):
@@ -461,7 +352,6 @@ def test_path_length_warns_without_blocking_generation(tmp_path):
     vm = _vm(tmp_path)
     vm.job.filename_pattern = "{{공고명}}" + "가" * 250
     status = vm.refresh(_data(), [0, 1], "C:/out")
-    assert status.gate.enabled is True, "휴리스틱이 생성을 막고 있습니다."
     assert status.preflight.level == "warn"
     assert "저장에 실패할 수 있는 문서 2건" in status.preflight.text
     assert len(status.audit.too_long) == 2
@@ -477,12 +367,6 @@ def test_path_length_is_silent_where_the_limit_does_not_exist(tmp_path, monkeypa
     # 붙지 않는다**는 사실이다(존재하지 않는 한계로 경보하지 않는다).
     assert status.audit.too_long == ()
     assert "저장에 실패할 수 있는" not in status.preflight.text
-
-
-def test_short_paths_do_not_warn(tmp_path):
-    vm = _vm(tmp_path)
-    status = vm.gate_state(_data(), [0, 1], "C:/out")
-    assert status.enabled is True
 
 
 def test_audit_and_table_share_one_captured_timestamp(tmp_path):

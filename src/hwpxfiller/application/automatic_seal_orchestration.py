@@ -17,7 +17,6 @@ currentness/basis 를 직접 계산하지 않는다. 실제 트리거 배선은 
      CURRENT 유지.
    - CHECKING 동안 **Plan-affecting 입력만** 잠시 비활성화(플래그), 전역 잠금 아님.
    - stale/failure 뒤 **무한 자동 재시도 금지** — 실패 상한 도달 시 수동 복구 요구를 상태로 표현.
-   - 연속 변경 짧게 coalesce 가능(coalescing 의도를 플래그로 표현하되 실제 타이머는 만들지 않는다).
 
 3. **사용자에게 Plan/Seal 관리 동사를 노출하지 않는다는 계약** — 이 모듈은 seal now/reseal/publish
    같은 **수동 seal 동사를 export 하지 않는다**. 전이 함수는 사건에 대한 반응이지 사용자 동사가
@@ -59,13 +58,11 @@ DEFAULT_MAX_CONSECUTIVE_SEAL_FAILURES = 3
 class AutomaticSealOrchestration:
     """orchestration 상태 값 — durable current state 가 아니라 session 진행 상태의 순수 값 모델.
 
-    ``consecutive_seal_failures`` 는 상한 대비용이고, ``coalescing_pending`` 은 CHECKING 중 도착한
-    basis 변경을 **타이머 없이** 이어붙이려는 의도 플래그다(settle 때 소비).
+    ``consecutive_seal_failures`` 는 상한 대비용이다.
     """
 
     state: str = IDLE
     consecutive_seal_failures: int = 0
-    coalescing_pending: bool = False
 
     def __post_init__(self) -> None:
         if self.state not in ORCHESTRATION_STATES:
@@ -116,8 +113,7 @@ def on_durable_command_settled(
 
     - command 실패 → seal 시작 안 함, 상태 유지(반응할 basis 변경이 없다).
     - 성공 + ``effective_basis_changed=True``:
-        - 이미 CHECKING 이면 두 번째 seal 을 동시에 띄우지 않고 **coalescing_pending** 만 세운다
-          (연속 변경 coalesce — 타이머 없음). ``should_start_seal=False``.
+        - 이미 CHECKING 이면 두 번째 seal 을 시작하지 않는다. ``should_start_seal=False``.
         - FAILED 면 자동 재시도하지 않는다 — 수동 복구 전까지 FAILED 유지. ``should_start_seal=False``.
         - 그 밖(IDLE/SETTLED_CURRENT/STALE)에서는 CHECKING 으로 진입하고 ``should_start_seal=True``.
     - 성공 + ``effective_basis_changed=False``(detached/inactive-only same basis):
@@ -132,15 +128,11 @@ def on_durable_command_settled(
             # 무한 자동 재시도 금지 — 수동 복구 전까지 FAILED 를 벗어나지 않는다.
             return OrchestrationTransition(current, should_start_seal=False)
         if current.state == CHECKING:
-            # 진행 중 seal 위에 두 번째를 겹치지 않고 coalesce 의도만 표시(타이머 없음).
-            return OrchestrationTransition(
-                replace(current, coalescing_pending=True), should_start_seal=False
-            )
+            return OrchestrationTransition(current, should_start_seal=False)
         return OrchestrationTransition(
             AutomaticSealOrchestration(
                 state=CHECKING,
                 consecutive_seal_failures=current.consecutive_seal_failures,
-                coalescing_pending=False,
             ),
             should_start_seal=True,
         )
@@ -149,7 +141,7 @@ def on_durable_command_settled(
     if current.state == CHECKING:
         return OrchestrationTransition(current, should_start_seal=False)
     return OrchestrationTransition(
-        replace(current, state=SETTLED_CURRENT, coalescing_pending=False),
+        replace(current, state=SETTLED_CURRENT),
         should_start_seal=False,
     )
 
@@ -160,62 +152,29 @@ def on_seal_settled(
     seal_succeeded: bool,
     resulting_currentness_current: bool,
     max_consecutive_seal_failures: int = DEFAULT_MAX_CONSECUTIVE_SEAL_FAILURES,
-) -> OrchestrationTransition:
+) -> AutomaticSealOrchestration:
     """진행 중 automatic seal 이 끝났을 때의 전이. ``resulting_currentness_current`` 는 backend 판정.
 
     - CHECKING 이 아닌데 호출되면 no-op(상태 유지).
     - 성공 + current: SETTLED_CURRENT, 실패 수 0 으로 reset.
-        - 단, seal 도중 새 basis 변경이 coalesce 대기 중이면 곧바로 다시 CHECKING(coalescing 소비,
-          ``should_start_seal=True``) — 사용자 변경에 의한 것이라 무한 자동 재시도가 아니다.
     - 성공했지만 여전히 stale(basis 가 또 움직임): STALE. 자동으로 다시 seal 하지 않는다.
     - 실패: 연속 실패 수 +1. 상한 도달 시 FAILED(수동 복구), 그 전이면 STALE. 어느 쪽도 자동 재시도
       하지 않는다.
     """
     if current.state != CHECKING:
-        return OrchestrationTransition(current, should_start_seal=False)
+        return current
 
     if seal_succeeded and resulting_currentness_current:
-        if current.coalescing_pending:
-            # coalesce 대기 중이던 사용자 변경을 이제 이어서 검사한다.
-            return OrchestrationTransition(
-                AutomaticSealOrchestration(
-                    state=CHECKING,
-                    consecutive_seal_failures=0,
-                    coalescing_pending=False,
-                ),
-                should_start_seal=True,
-            )
-        return OrchestrationTransition(
-            AutomaticSealOrchestration(
-                state=SETTLED_CURRENT,
-                consecutive_seal_failures=0,
-                coalescing_pending=False,
-            ),
-            should_start_seal=False,
-        )
+        return AutomaticSealOrchestration(state=SETTLED_CURRENT)
 
     if seal_succeeded and not resulting_currentness_current:
         # seal 은 됐지만 그 사이 basis 가 또 움직였다 — stale 로 알리고 자동 재시도하지 않는다.
-        return OrchestrationTransition(
-            AutomaticSealOrchestration(
-                state=STALE,
-                consecutive_seal_failures=0,
-                coalescing_pending=False,
-            ),
-            should_start_seal=False,
-        )
+        return AutomaticSealOrchestration(state=STALE)
 
     # 실패 — 연속 실패 수를 올리고 상한에서 수동 복구로 전환한다(무한 자동 재시도 금지).
     failures = current.consecutive_seal_failures + 1
     next_state = FAILED if failures >= max_consecutive_seal_failures else STALE
-    return OrchestrationTransition(
-        AutomaticSealOrchestration(
-            state=next_state,
-            consecutive_seal_failures=failures,
-            coalescing_pending=False,
-        ),
-        should_start_seal=False,
-    )
+    return AutomaticSealOrchestration(state=next_state, consecutive_seal_failures=failures)
 
 
 def request_manual_recovery(
@@ -229,6 +188,4 @@ def request_manual_recovery(
     """
     if current.state != FAILED:
         return current
-    return AutomaticSealOrchestration(
-        state=IDLE, consecutive_seal_failures=0, coalescing_pending=False
-    )
+    return AutomaticSealOrchestration()

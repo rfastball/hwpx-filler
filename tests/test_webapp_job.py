@@ -1304,13 +1304,8 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
     assert snap["blank_fields"] == []             # drift 필드는 빈 값 축이 아니다
 
 
-def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
-    """미해소 파일명 토큰이 스냅샷에 실린다(#128) — 거울 자리 차단 배너의 재료.
-
-    종전엔 이 danger 가 게이트 캡션 한 줄로만 살아서, 거울은 전 행 「채움」으로 건강해
-    보이고 재진술 블록은 danger 라 말없이 사라졌다(신호 없는 차단). 게이트 문안과 같은
-    사실이므로 산출은 run_state 단일 출처를 그대로 싣는다.
-    """
+def test_snapshot_carries_unresolved_name_tokens(tmp_path):
+    """미해소 파일명 토큰은 진단 스냅샷에 남고 사전검증은 통과로 표시하지 않는다."""
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명"])
     reg = JobRegistry(tmp_path / "jobs")
@@ -1324,20 +1319,15 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["name_tokens"] == ["미해소"]
-    assert snap["gate"]["level"] == "danger" and snap["gate"]["enabled"] is False
-    # 빈 값 축은 건강하다 — 이 danger 를 말할 표면은 배너 하나뿐이라는 뜻이다(신호 소실 방지).
+    assert snap["preflight"]["level"] == "danger"
+    assert snap["gate"]["enabled"] is False
     assert snap["blank_fields"] == []
     ctrl.dispatch("select_job", {"name": ""})           # 미겨눔 골격도 키를 갖춘다
     assert ctrl.snapshot()["name_tokens"] == []
 
 
-def test_name_token_banner_yields_to_template_read_error(tmp_path):
-    """게이트 서열을 거울이 재유도하지 않는다(리뷰 F2) — 템플릿을 못 읽으면 그쪽이 이긴다.
-
-    토큰 미해소는 템플릿 상태와 무관하게 참이라, 사실만 보고 배너를 그리면 게이트는
-    "구조를 읽을 수 없다"고 막는데 거울은 "파일명을 고치라"고 말한다 — 사용자를 엉뚱한
-    수리로 보낸다(#128 이 없앤 어긋남의 반대 방향 재발).
-    """
+def test_template_read_error_keeps_diagnostics_and_generation_blocked(tmp_path):
+    """손상된 템플릿에서도 토큰 진단은 사실대로 남고 생성은 닫힌다."""
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명"])
     reg = JobRegistry(tmp_path / "jobs")
@@ -1349,25 +1339,24 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
     ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
+    assert ctrl.snapshot()["name_tokens"] == ["미해소"]
     template.write_bytes(b"not a zip")                      # 템플릿 손상 → 구조 재읽기 실패
     snap = ctrl.refresh_panel()
-    assert snap["gate"]["level"] == "danger" and "읽을 수 없어" in snap["gate"]["text"]
-    assert snap["name_tokens"] == [], (
-        "템플릿을 못 읽는데 거울이 파일명 토큰 배너를 세웁니다 — 게이트와 다른 수리를 지시."
-    )
+    assert snap["preflight"]["level"] == "danger"
+    assert snap["gate"]["enabled"] is False
+    assert snap["name_tokens"] == ["미해소"]
 
 
 def test_select_none_closes_record_gate(tmp_path):
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     pick_output_folder(ctrl, tmp_path / "out")
-    assert ctrl.snapshot()["gate"]["enabled"] is True
+    assert ctrl.snapshot()["workbench_observation"]["create_action"]["enabled"] is True
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
     assert snap["selected_count"] == 0
-    assert snap["gate"]["enabled"] is False and "생성할 문서" in snap["gate"]["text"]
+    assert snap["workbench_observation"]["create_action"]["enabled"] is False
 
 
 def test_deselect_job_returns_to_empty_panel(tmp_path):
@@ -1808,13 +1797,13 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
 # ------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 판정 D)
 # --------------------- 결속 없는 작업의 실행 차단·복구 동사(U4 §2.4 · #932 U4-C)
 def test_an_unbound_job_cannot_generate_and_says_where_to_fix_it(tmp_path):
-    """결속이 「필수」라면 실행 게이트도 그것을 요구한다.
+    """결속 없는 작업의 생성 동사는 닫히고 편집기 복구 동사는 남는다.
 
     저장 게이트만 요구하면 「필수」는 한 자리에서만 참인 말이 되고, 구판 작업은 매 세션
     데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다. 대신 좌초시키지 않는다 —
     고칠 자리(편집기)를 가리키는 동사가 같은 화면에 함께 선다(`job_data_unbound`).
     """
-    ctrl, _ = _controller(tmp_path)
+    ctrl, _ = _controller(tmp_path, managed=True)
     ctrl.registry.save(
         replace(ctrl.registry.load("공고서"), **_bound_to("")), allow_overwrite=True,
     )
@@ -1822,8 +1811,7 @@ def test_an_unbound_job_cannot_generate_and_says_where_to_fix_it(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("set_all", {})
     snap = ctrl.snapshot()
-    assert snap["gate"]["enabled"] is False
-    assert "연결된 데이터가 없습니다" in snap["gate"]["text"]
+    assert snap["workbench_observation"]["create_action"]["enabled"] is False
     # 복구 동사를 그릴 판정은 **여기 하나**다 — 표면이 라벨 유무로 유추하면 세션 마운트가
     # 서 있는 동안 「연결됐다」로 잘못 읽는다(그 둘은 다른 사실이다).
     assert snap["job_data_unbound"] is True

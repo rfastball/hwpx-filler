@@ -5,10 +5,8 @@
   2. effective meaning 변경(선택 Option) → Active Field/operations 가 정확히 변경.
   3. C1~C10 위반 → fail-closed(Plan 을 내지 않는다).
   4. durable Plan store 없이도 durable authority 에서 Plan 재계산 가능.
-  + parity: kernel 산출 semantic 은 기존 검증된 capture+compile seam 과 동일하다
-    (비교 대상: exact Candidate·effective content·Active Fields·ordered operations·
-     composition verdict·실행 최소 contract semantics. 비교 대상 아님: plan digest·request id·
-     first-seen history·theorem evidence digest·Profile admission state·store ref).
+  + command 후보는 kernel 값을 실제로 소비하고, materialization 호환 payload 에 같은
+    Active Fields·ordered operations·exact bases·contract semantics 를 싣는다.
 
 fixture 는 기존 pure-path 테스트(:mod:`tests.test_execution_compilation`)의 native-free builder 를
 그대로 재사용한다 — 새 fixture 체계를 세우지 않는다. policy 는 compile 이 요구하는 supported
@@ -67,7 +65,7 @@ def _judge(authority):
 
 
 def _assert_semantic_parity(kern, candidate):
-    """kernel value 의 실행 의미가 legacy compile_candidate 산출과 동일함을 semantic 축으로 확인한다.
+    """kernel value 가 materialization payload 경계를 통과해도 같은 의미인지 확인한다.
 
     비교 축: effective content/Active Field(active_field_requirements)·ordered operations·exact
     template/selection/binding basis·소비되는 contract semantics. 비교 대상 아님: plan digest·request
@@ -276,19 +274,29 @@ def test_plan_recomputable_without_store_or_closed_manifest():
         assert token not in src, f"kernel 이 {token} 를 쓰면 안 된다(closed manifest/control plane 결합)"
 
 
-# ── parity: kernel semantic == 기존 capture+compile seam ───────────────────────────────
-def test_semantic_parity_with_existing_capture_compile_seam():
+# ── command payload 가 kernel semantic 을 소비 ────────────────────────────────────────────
+def test_candidate_payload_uses_kernel_value(monkeypatch):
     structure = _structure()
     authority = _authority(structure)
     kern_value = compute_sealed_execution_plan(authority)
     assert isinstance(kern_value, SealedExecutionPlanValue)
 
-    # 기존 seam 을 직접 구동: judge_captured_execution → compile_candidate.
+    # 명령 후보가 같은 kernel 값을 실제로 소비하고 legacy payload 로만 투영한다.
     captured = _judge(authority)
     assert isinstance(captured, CapturedExecutionInput)
+    import hwpxfiller.application.seal_execution_plan as seal_module
+
+    seen = []
+
+    def compile_kernel(snapshot):
+        seen.append(snapshot)
+        return kern_value
+
+    monkeypatch.setattr(seal_module, "compile_sealed_plan_from_snapshot", compile_kernel)
     candidate = compile_candidate(captured)
 
-    # 실행 의미(Active Fields·ordered operations·bases·소비 contract semantics)가 동일하다.
+    assert seen == [captured]
+    # payload 경계가 kernel 의미(Active Fields·operations·bases·contracts)를 그대로 싣는다.
     _assert_semantic_parity(kern_value, candidate)
     # kernel 이 만든 snapshot 도 동일 seam 산출과 같다.
     assert compute_execution_snapshot(authority) == captured

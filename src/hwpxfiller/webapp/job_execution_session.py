@@ -355,8 +355,8 @@ class JobExecutionSession:
         )
         return result is not None and result.changed
 
-    def run_automatic_seal(self, work_ref: str, *, max_coalesced: int) -> None:
-        """CHECKING 전이를 실제 seal 호출과 결속해 coalesce를 유한하게 소진한다.
+    def run_automatic_seal(self, work_ref: str) -> None:
+        """CHECKING 전이를 한 번의 실제 seal 호출과 결속한다.
 
         봉인 전에 판본 없는 새 Work 의 저장 Mapping 을 먼저 들인다 — 그러지 않으면 이 봉인이
         편집기에서 이미 확정한 연결을 전부 「입력이 필요한 항목」으로 되돌려 세운다. 들이기
@@ -372,22 +372,18 @@ class JobExecutionSession:
         except Exception:  # noqa: BLE001 - product failures drive the state machine.
             self.settle_seal(succeeded=False, current=False)
             return
-        for _ in range(max_coalesced):
-            try:
-                response = self.seal_execution.seal_execution_plan(
-                    work_ref, uuid.uuid4().hex
-                )
-            except Exception:  # noqa: BLE001 - product failures drive the state machine.
-                self.settle_seal(succeeded=False, current=False)
-                return
-            self.absorb_seal_response(response)
-            if not self.settle_seal(
-                succeeded=True,
-                current=isinstance(
-                    response.fresh_observation, CurrentSealedPlanObservation
-                ),
-            ):
-                return
+        try:
+            response = self.seal_execution.seal_execution_plan(
+                work_ref, uuid.uuid4().hex
+            )
+        except Exception:  # noqa: BLE001 - product failures drive the state machine.
+            self.settle_seal(succeeded=False, current=False)
+            return
+        self.absorb_seal_response(response)
+        self.settle_seal(
+            succeeded=True,
+            current=isinstance(response.fresh_observation, CurrentSealedPlanObservation),
+        )
 
     def refresh_observation(self, work_ref: str) -> None:
         if self.seal_execution is None or not work_ref:
@@ -436,14 +432,12 @@ class JobExecutionSession:
             self.orchestration = request_manual_recovery(self.orchestration)
         return self.start_after_durable_change()
 
-    def settle_seal(self, *, succeeded: bool, current: bool) -> bool:
-        transition = on_seal_settled(
+    def settle_seal(self, *, succeeded: bool, current: bool) -> None:
+        self.orchestration = on_seal_settled(
             self.orchestration,
             seal_succeeded=succeeded,
             resulting_currentness_current=current,
         )
-        self.orchestration = transition.next_state
-        return transition.should_start_seal
 
     def absorb_seal_response(self, response) -> None:
         """한 응답에서 나온 관찰·basis·payload를 같은 세대로 보관한다."""
