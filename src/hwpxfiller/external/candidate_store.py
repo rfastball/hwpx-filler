@@ -82,7 +82,7 @@ class CandidateObjectStore:
     def _put(self, kind: str, identity: str, content: dict) -> None:
         path = self._path(kind, identity)
         if path.exists():
-            existing = json.loads(path.read_text("utf-8")).get("content")
+            existing = self._get(kind, identity)
             if existing != content:
                 raise ObjectAlreadyExists(
                     f"{kind}/{identity} 에 다른 payload 를 쓸 수 없다(create-once)"

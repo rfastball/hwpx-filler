@@ -1463,10 +1463,6 @@ text = "지원하지 않는 시험 케이스 형식입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
-text = "지원하지 않는 시험 케이스 형식입니다."
-
-[[sentence]]
-file = "src/hwpxfiller/external/authoring_store.py"
 text = "지원하지 않는 작업 위치 기록 형식입니다."
 
 [[sentence]]
