@@ -63,9 +63,9 @@ function measureReactRuntime(ctx) {
 
 async function measureTutorialSurface(ctx) {
   const doc = ctx.doc;
-  const api = ctx.win.pywebview && ctx.win.pywebview.api;
-  if (!api || typeof api.initial !== "function") ctx.fail(ERROR_CODES.CONTRACT, "tutorial initial 통로가 없습니다.");
-  const real = await api.initial("tutorial");
+  const bridge = ctx.services.Bridge;
+  if (!bridge || typeof bridge.initial !== "function") ctx.fail(ERROR_CODES.CONTRACT, "tutorial initial 통로가 없습니다.");
+  const real = await bridge.initial("tutorial");
   if (!real || real.kind !== "tutorial-lessons/v1") ctx.fail(ERROR_CODES.CONTRACT, "tutorial-lessons/v1 실 스냅샷이 없습니다.");
   const nav = ctx.services.Nav;
   if (!nav || typeof nav.go !== "function" || typeof nav.currentScreen !== "function") ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 화면 이동 관측점이 없습니다.");
