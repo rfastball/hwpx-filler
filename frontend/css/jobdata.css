@@ -18,6 +18,7 @@
 .data-tab:only-child[aria-pressed="true"]:not(:disabled){color:var(--n-ink-soft);font-weight:500;border-bottom-color:var(--n-border-strong)}
 .data-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-3px}
 .data-tab:disabled{color:var(--a-muted);cursor:not-allowed}
+.data-tabs[aria-busy="true"] .data-tab:not(:disabled){cursor:progress}
 @media (forced-colors:active){.data-tabs .data-tab[aria-pressed="true"]{border-bottom-color:Highlight}.data-tab:focus-visible{outline-color:Highlight}}
 .jobtbwrap{max-height:var(--job-table-max-height,280px);overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}

@@ -676,7 +676,7 @@ export function JobDataTabs(props: { controller: JobReadController }): ReactNode
       ref: row.active ? activeTab : undefined, "aria-pressed": row.active,
       disabled: row.selectable === false || !!ui.openingName, title: row.reason || row.sheet,
       onClick: () => { void controller.switchData(row.key, row.sheet); },
-    }, row.sheet, ui.switchingData === row.sheet ? " · 여는 중…" : "")));
+    }, row.sheet)));
 }
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {
