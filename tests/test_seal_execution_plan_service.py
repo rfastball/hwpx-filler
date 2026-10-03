@@ -14,6 +14,7 @@ idempotency·opaque ref restart·admission-store 조회 테스트는 그 축이 
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 
 import pytest
@@ -25,11 +26,15 @@ from hwpxfiller.application.fresh_execution_observation import (
     CurrentWorkExecutionObservation,
 )
 from hwpxfiller.application.jobs import Job
-from hwpxfiller.application.field_binding_input import (
-    FieldBindingReviewRequired,
-    StaleFieldBindingBasis,
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY
+from hwpxfiller.application.field_binding_input import field_binding_authority_revision_identity
+from hwpxfiller.application.stored_field_binding import ApplicationRevisionPointer
+from hwpxfiller.domain.field_binding import (
+    FIELD_BINDING_SEMANTIC_VERSION_V2,
+    FIELD_BINDING_SEMANTIC_VERSION_V3,
+    FIELD_BINDING_SEMANTIC_VERSION_V4,
+    digest_binding_rules,
 )
-from hwpxfiller.domain.field_binding import RUNTIME_DATE
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.field_binding_store import WorkFieldBindingStore, load_current_revision
 from hwpxfiller.application.seal_execution_plan import RouteResolutionError
@@ -43,7 +48,6 @@ from hwpxfiller.external.seal_execution_plan_product import (
 from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 
-import hwpxfiller.external.seal_execution_plan_service as service_module
 from tests.test_execution_compilation import WORK
 from tests.test_seal_execution_capture_runner import WS, _seed_v2_work
 
@@ -74,6 +78,7 @@ def _service(tmp_path, *, with_binding: bool) -> SealExecutionPlanService:
                 FieldMapping("\uae08\uc561", source="\uae08\uc561\uc5f4"),
             ]
         )
+        job.binding_authority = JOB_MAPPING_AUTHORITY
         registry.save(job, allow_overwrite=True)
     return SealExecutionPlanService(registry, root=root, clock=datetime.now)
 
@@ -246,6 +251,11 @@ def test_passive_binding_review_does_not_create_workspace_metadata(tmp_path) -> 
 
     assert service.current_binding_review(WORK_REF) is None
     assert workspace.read() is None
+    registry.save(Job(name="draft", template_path="managed.hwpx"))
+    assert service.current_binding_review("draft") is None
+    assert service.managed_run_context("draft") is None
+    assert registry.load("draft").authority_id == ""
+    assert workspace.read() is None
 
 
 def _complete_mapping(value: str = "v") -> MappingProfile:
@@ -262,127 +272,6 @@ def _complete_mapping(value: str = "v") -> MappingProfile:
     )
 
 
-def test_saved_mapping_commits_revision_and_recomputes_sealed_value(tmp_path) -> None:
-    root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
-    registry = _registry(tmp_path)
-    job = registry.load(WORK_REF)
-    job.mapping = _complete_mapping()
-    registry.save(job, allow_overwrite=True)
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-
-    committed = service.commit_current_mapping(WORK_REF, "binding-1")
-
-    assert committed is not None and committed.changed is True
-    revision = load_current_revision(
-        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
-    )
-    assert revision is not None
-    assert tuple(rule.field_id for rule in revision.binding_rules) == (
-        "\uc131\uba85",
-        "\uc8fc\uc18c",
-        "\ud56d\ubaa9",
-    )
-    resp = service.seal_execution_plan(WORK_REF, "seal-after-binding")
-    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)
-    assert isinstance(resp.fresh_observation, CurrentSealedPlanObservation)
-    unchanged = service.commit_current_mapping(WORK_REF, "binding-2")
-    assert unchanged is not None and unchanged.changed is False
-    assert unchanged.revision_id == committed.revision_id
-
-
-# ─── 새 Work 의 저장 Mapping 들이기(0.9.0 실사용 보고) ─────────────────────────────────────
-def _unbound_world(tmp_path, mapping: MappingProfile):
-    root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
-    registry = _registry(tmp_path)
-    job = registry.load(WORK_REF)
-    job.mapping = mapping
-    registry.save(job, allow_overwrite=True)
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-    return root, registry, service
-
-
-def test_adopt_turns_a_covering_saved_mapping_into_the_first_revision(tmp_path) -> None:
-    root, _registry_unused, service = _unbound_world(tmp_path, _complete_mapping())
-
-    adopted = service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-1")
-
-    assert adopted is not None and adopted.changed is True
-    assert load_current_revision(
-        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
-    ) is not None
-    assert _review_states(service) == {
-        "성명": ("PRESERVED", False),
-        "주소": ("PRESERVED", False),
-        "항목": ("PRESERVED", False),
-    }
-    assert isinstance(
-        service.seal_execution_plan(WORK_REF, "seal-adopted").command_outcome,
-        ExecutionPlanSealedProductOutcome,
-    )
-
-
-def test_adopt_leaves_an_undecided_active_field_for_explicit_review(tmp_path) -> None:
-    # 저장본에 결정이 없는 활성 Field(항목)가 있으면 아무것도 쓰지 않는다 — 추측으로 채우지 않는다.
-    partial = MappingProfile(
-        mappings=[
-            FieldMapping("성명", type="const", const="v"),
-            FieldMapping("주소", type="const", const="v"),
-        ]
-    )
-    root, _registry_unused, service = _unbound_world(tmp_path, partial)
-
-    assert service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-partial") is None
-
-    assert load_current_revision(
-        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
-    ) is None
-    assert _review_states(service)["항목"] == ("NEW_ACTIVE_FIELD", True)
-
-
-def test_adopt_never_rewrites_a_work_that_already_has_a_revision(tmp_path) -> None:
-    # 판본이 하나라도 있으면 저장본이 달라져도 들이지 않는다 — 그 확정은 명시 동사(#911)의 몫이다.
-    root, registry, service = _unbound_world(tmp_path, _complete_mapping("first"))
-    first = service.commit_current_mapping(WORK_REF, "commit-first")
-    assert first is not None
-    job = registry.load(WORK_REF)
-    job.mapping = _complete_mapping("second")
-    registry.save(job, allow_overwrite=True)
-
-    assert service.adopt_saved_mapping_if_unbound(WORK_REF, "adopt-after") is None
-
-    revision = load_current_revision(
-        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
-    )
-    assert revision is not None
-    assert revision.field_binding_authority_revision == first.revision_id
-
-
-# ─── U3-04(#877): 판본은 활성 절단이 아니라 upsert + 비활성 규칙 보존 ────────────────────
-def _roundtrip_world(tmp_path):
-    """옵션 왕복 시나리오의 실 store 세계 — Mapping 은 네 Field 전건 확정 상태."""
-    root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
-    # seed 한 config aggregate 와 같은 workspace identity 를 쓴다(select 가 그 aggregate 를 연다).
-    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
-    registry = _registry(tmp_path)
-    job = registry.load(WORK_REF)
-    job.mapping = _complete_mapping()
-    registry.save(job, allow_overwrite=True)
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-    slots = SlotConfigurationProduct(registry, root=root, clock=datetime.now)
-    return root, registry, service, slots
-
-
-def _select_option(slots, option_id: str, request_id: str) -> None:
-    opened = slots.open_slot_configuration(WORK_REF)
-    token = opened.current_view.new_configuration_token
-    assert token is not None
-    response = slots.select_slot_option(WORK_REF, token, "s1", option_id, request_id)
-    assert response.mutation_outcome is not None
-
-
 def _review_states(service) -> dict[str, tuple[str, bool]]:
     projection = service.current_binding_review(WORK_REF)
     assert projection is not None
@@ -392,294 +281,204 @@ def _review_states(service) -> dict[str, tuple[str, bool]]:
     }
 
 
-def test_option_roundtrip_needs_no_reconfirmation_after_both_options_committed(
-    tmp_path,
-) -> None:
-    # A 확정 → B 전환(재확정 요구) → B 확정 → A 재선택. 마지막 단계에서 재확정 요구는 0 건이고
-    # seal 이 그대로 통과한다 — 확정한 규칙이 비활성이 됐다고 판본에서 탈락하지 않기 때문이다.
-    root, _registry_unused, service, slots = _roundtrip_world(tmp_path)
-    bindings = WorkFieldBindingStore(root / "field_bindings")
+def test_saved_mapping_seals_without_a_second_binding_write(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    job.binding_authority = JOB_MAPPING_AUTHORITY
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
 
-    # 1) 옵션 o1(항목 활성)에서 확정.
-    first = service.commit_current_mapping(WORK_REF, "commit-o1")
-    assert first is not None and first.changed is True
     assert isinstance(
-        service.seal_execution_plan(WORK_REF, "seal-o1").command_outcome,
+        service.seal_execution_plan(WORK_REF, "seal-mapping").command_outcome,
         ExecutionPlanSealedProductOutcome,
     )
+    assert load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    ) is None
+    assert all(not required for _, required in _review_states(service).values())
 
-    # 2) 옵션 o2 로 전환 — 금액은 판본에 규칙이 없는 활성 Field 라 재확정을 요구한다.
-    _select_option(slots, "o2", "select-o2")
-    assert _review_states(service) == {
-        "성명": ("PRESERVED", False),
-        "주소": ("PRESERVED", False),
-        "항목": ("INACTIVE_ONLY", False),
-        "금액": ("NEW_ACTIVE_FIELD", True),
-    }
+
+def test_option_roundtrip_keeps_inactive_mapping_rule_without_recommit(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    job.binding_authority = JOB_MAPPING_AUTHORITY
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    slots = SlotConfigurationProduct(registry, root=root, clock=datetime.now)
+
+    for index, option_id in enumerate(("o1", "o2", "o1")):
+        opened = slots.open_slot_configuration(WORK_REF)
+        token = opened.current_view.new_configuration_token
+        assert token is not None
+        slots.select_slot_option(WORK_REF, token, "s1", option_id, f"select-{index}")
+        assert isinstance(
+            service.seal_execution_plan(WORK_REF, f"seal-{index}").command_outcome,
+            ExecutionPlanSealedProductOutcome,
+        )
+        assert all(not required for _, required in _review_states(service).values())
+    assert load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    ) is None
+
+
+def test_legacy_mapping_binding_conflict_requires_explicit_job_save(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=True)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping("edited")
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    prior = load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1")
+    assert prior is not None
+
+    blocked = service.seal_execution_plan(WORK_REF, "before-explicit-save")
+    assert isinstance(blocked.command_outcome, ExecutionQualificationBlockedProductOutcome)
+    assert any(required for _, required in _review_states(service).values())
+
+    job = registry.load(WORK_REF)
+    job.binding_authority = JOB_MAPPING_AUTHORITY  # explicit editor-save outcome
+    registry.save(job, allow_overwrite=True)
+    sealed = service.seal_execution_plan(WORK_REF, "after-explicit-save")
+    assert isinstance(sealed.command_outcome, ExecutionPlanSealedProductOutcome)
+    assert load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1") == prior
+
+
+def test_legacy_matching_schema_still_rejects_different_rules(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=True)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = MappingProfile(mappings=[
+        FieldMapping("성명", source="이름"),
+        FieldMapping("주소", source="unused"),
+        FieldMapping("항목", type="blank"),
+        FieldMapping("금액", source="금액열"),
+    ])
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+
     assert isinstance(
-        service.seal_execution_plan(WORK_REF, "seal-o2-before").command_outcome,
+        service.seal_execution_plan(WORK_REF, "matching-schema-conflict").command_outcome,
         ExecutionQualificationBlockedProductOutcome,
     )
-
-    # 3) 옵션 o2 에서 확정 — 판본은 교체가 아니라 upsert 다(비활성 항목 규칙이 남는다).
-    second = service.commit_current_mapping(WORK_REF, "commit-o2")
-    assert second is not None and second.changed is True
-    revision = load_current_revision(bindings, WORK, "app-1")
-    assert revision is not None
-    assert {rule.field_id for rule in revision.binding_rules} == {
-        "성명",
-        "주소",
-        "항목",
-        "금액",
-    }
-
-    # 4) 옵션 o1 로 되돌아옴 — 재확정 요구 0 건, seal 통과.
-    _select_option(slots, "o1", "select-o1-again")
-    states = _review_states(service)
-    assert states == {
-        "성명": ("PRESERVED", False),
-        "주소": ("PRESERVED", False),
-        "항목": ("PRESERVED", False),
-        "금액": ("INACTIVE_ONLY", False),
-    }
-    assert [field for field, (_, action) in states.items() if action] == []
-    assert isinstance(
-        service.seal_execution_plan(WORK_REF, "seal-o1-again").command_outcome,
-        ExecutionPlanSealedProductOutcome,
-    )
+    assert any(required for _, required in _review_states(service).values())
 
 
-def test_preserved_inactive_rule_follows_the_current_mapping_decision(tmp_path) -> None:
-    # 보존의 스코프는 판본이고 값은 Mapping 이다 — 비활성 동안 Mapping 이 바뀌면 판본이 따라간다
-    # (편집기가 보여주는 값과 판본이 조용히 갈라지지 않는다).
-    root, registry, service, slots = _roundtrip_world(tmp_path)
-    service.commit_current_mapping(WORK_REF, "commit-o1")
-    _select_option(slots, "o2", "select-o2")
-
-    job = registry.load(WORK_REF)
-    job.mapping = _complete_mapping("고침")  # 항목(비활성) 포함 전건 재작성
-    registry.save(job, allow_overwrite=True)
-    service.commit_current_mapping(WORK_REF, "commit-o2-edited")
-
-    revision = load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1")
-    assert revision is not None
-    values = {
-        rule.field_id: rule.canonical_constant_value.text
-        for rule in revision.binding_rules
-    }
-    assert values["항목"] == "고침-항목"  # 비활성인데도 최신 결정
-    assert values["금액"] == "고침-금액"
-
-
-def test_inactive_field_switched_to_today_carries_the_runtime_date_rule(
-    tmp_path,
-) -> None:
-    # 비활성 Field 가 「오늘 날짜」로 바뀌면 판본은 그 결정을 RUNTIME_DATE 규칙으로 싣는다
-    # (#950 — 예전엔 옮길 수 없어 이전 규칙을 보존했다). 스코프는 판본, 값은 Mapping(#877).
-    root, registry, service, slots = _roundtrip_world(tmp_path)
-    service.commit_current_mapping(WORK_REF, "commit-o1")
-    _select_option(slots, "o2", "select-o2")
-
-    job = registry.load(WORK_REF)
-    job.mapping.mappings[2] = FieldMapping("항목", type="today")
-    registry.save(job, allow_overwrite=True)
-    committed = service.commit_current_mapping(WORK_REF, "commit-o2-blank")
-    assert committed is not None
-
-    revision = load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1")
-    assert revision is not None
-    kept = {rule.field_id: rule for rule in revision.binding_rules}
-    assert set(kept) == {"성명", "주소", "항목", "금액"}
-    assert kept["항목"].binding_kind == RUNTIME_DATE
-    assert kept["항목"].canonical_constant_value is None
-    assert (kept["항목"].format_kind, kept["항목"].format_code) == ("date", "")
-
-
-def test_empty_constant_mapping_commits_as_an_exact_empty_text_rule(tmp_path) -> None:
-    """빈 고정값은 모호하지 않다 — ``ExactText("")`` 규칙으로 그대로 확정된다.
-
-    옛 ``blank``(출력 제외)는 Intentional Blank 와 뜻이 갈려 명시 결정을 요구했다. 그
-    유형이 퇴역하고 「빈 문자열을 써 넣는다」 하나만 남으면서 그 모호함도 함께 죽었다.
-    """
+def test_legacy_s5_only_inactive_rule_cannot_disappear_on_editor_save(tmp_path) -> None:
     root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
+    _seed_v2_work(root, with_binding=True)
     registry = _registry(tmp_path)
-    job = registry.load(WORK_REF)
-    job.mapping = _complete_mapping()
-    job.mapping.mappings[2] = FieldMapping("\ud56d\ubaa9", type="const")
-    registry.save(job, allow_overwrite=True)
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-
-    assert service.commit_current_mapping(WORK_REF, "binding-empty-const") is not None
-    revision = load_current_revision(
-        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    previous = registry.load(WORK_REF)
+    candidate = registry.load(WORK_REF)
+    # The old S5 aggregate carries the option-only “금액” rule, absent from
+    # Mapping. A projected editor save must refuse a silent loss of that rule.
+    candidate.mapping = MappingProfile(
+        mappings=[FieldMapping(field, type="const", const="new") for field in ("성명", "주소", "항목")]
     )
-    assert revision is not None
-    rule = {r.field_id: r for r in revision.binding_rules}["\ud56d\ubaa9"]
-    assert rule.canonical_constant_value.text == ""
+    candidate.binding_authority = JOB_MAPPING_AUTHORITY
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    all_fields = frozenset(("성명", "주소", "항목", "금액"))
+    assert service.unrepresented_legacy_rules(previous, candidate, all_fields) == ("금액",)
+
+    candidate.mapping.mappings.append(FieldMapping("금액", type="const", const=""))
+    assert service.unrepresented_legacy_rules(previous, candidate, all_fields) == ()
+
+    candidate.mapping.mappings.pop()
+    # The editor is showing a newer template without that old field. It is
+    # removed, not an omitted inactive decision from the current schema.
+    assert service.unrepresented_legacy_rules(
+        previous, candidate, frozenset(("성명", "주소", "항목"))
+    ) == ()
+    previous.authority_id = "missing-work"
+    with pytest.raises(ValueError, match="Work 상태"):
+        service.unrepresented_legacy_rules(previous, candidate, all_fields)
 
 
-def test_mapping_basis_change_during_commit_writes_no_revision(
-    tmp_path, monkeypatch
-) -> None:
+@pytest.mark.parametrize("contract", (
+    FIELD_BINDING_SEMANTIC_VERSION_V2,
+    FIELD_BINDING_SEMANTIC_VERSION_V3,
+    FIELD_BINDING_SEMANTIC_VERSION_V4,
+))
+def test_outdated_s5_stays_blocked_until_explicit_job_save(tmp_path, contract) -> None:
     root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
+    _seed_v2_work(root, with_binding=True)
     registry = _registry(tmp_path)
     job = registry.load(WORK_REF)
     job.mapping = _complete_mapping()
     registry.save(job, allow_overwrite=True)
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-    real_commit = service_module.commit_field_binding_migration
-
-    def race_mapping(*args, **kwargs):
-        raced = registry.load(WORK_REF)
-        raced.mapping = _complete_mapping("raced")
-        registry.save(raced, allow_overwrite=True)
-        return real_commit(*args, **kwargs)
-
-    monkeypatch.setattr(
-        service_module,
-        "commit_field_binding_migration",
-        race_mapping,
-    )
-
-    with pytest.raises(StaleFieldBindingBasis):
-        service.commit_current_mapping(WORK_REF, "binding-stale")
-
-    assert not WorkFieldBindingStore(root / "field_bindings").exists(WORK)
-
-
-# ─── 낮은 층위 branch — 권위 미발급·매체 불일치·방어적 갈래 ──────────────────────────────
-def test_reads_return_none_before_authority_is_issued(tmp_path) -> None:
-    """권위(``Job.authority_id``)가 아직 없으면 workspace 조차 만들지 않고 None(발급 0)."""
-    root = tmp_path / "authority"
-    _seed_v2_work(root, with_binding=False)
-    registry = JobRegistry(tmp_path / "jobs")
-    registry.save(Job(name=WORK_REF, template_path="managed.hwpx"))  # authority_id 미발급
-    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
-
-    assert service.managed_run_context(WORK_REF) is None
-    assert service.current_binding_review(WORK_REF) is None
-    assert service.upgrade_outdated_binding_if_lossless(WORK_REF, "r1") is None
-    assert WorkspaceMetadataStore(root).read() is None
-
-
-def test_commit_mapping_binding_returns_none_when_media_does_not_match_the_job(
-    tmp_path,
-) -> None:
-    """저장한 Job 의 매체(hwpx)와 다른 매체로 확정을 부르면(txt) 아무것도 하지 않는다."""
-    service = _service(tmp_path, with_binding=True)
-    assert service.commit_txt_mapping(WORK_REF, "r1") is None
-
-
-def test_commit_mapping_binding_raises_when_current_review_is_unreadable(
-    tmp_path, monkeypatch
-) -> None:
-    """capture 가 current Active Field 구조를 못 읽으면(None) 확정은 검토 요구로 닫는다."""
-    service = _service(tmp_path, with_binding=True)
-    monkeypatch.setattr(
-        service._capture, "read_current_field_binding_review", lambda *a, **k: None
-    )
-    with pytest.raises(FieldBindingReviewRequired):
-        service.commit_current_mapping(WORK_REF, "r1")
-
-
-def test_current_application_field_structure_raises_when_capture_returns_none(
-    tmp_path, monkeypatch
-) -> None:
-    """두 번째 확정부터 쓰는 basis 콜백 — capture 가 현재 구조를 못 돌려주면 StaleFieldBindingBasis."""
-    root = default_template_authority_dir()
-    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
-    service = _service(tmp_path, with_binding=True)
-    first = service.commit_current_mapping(WORK_REF, "r1")
-    assert first is not None
-    # 첫 호출은 review 자체가 이 구조를 이미 한 번 읽는 통로다 — 그 호출은 실물을 그대로
-    # 돌려주고, commit 몸통이 basis 콜백으로 부르는 **두 번째부터**만 None 을 흉내낸다.
-    real = service._capture.current_application_field_structure
-    calls = {"n": 0}
-
-    def sometimes_none(*a, **k):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return real(*a, **k)
-        return None
-
-    monkeypatch.setattr(service._capture, "current_application_field_structure", sometimes_none)
-    with pytest.raises(StaleFieldBindingBasis):
-        service.commit_current_mapping(WORK_REF, "r2")
-
-
-def test_upgrade_outdated_binding_returns_none_when_the_commit_itself_is_blocked(
-    tmp_path, monkeypatch
-) -> None:
-    """무손실 승격 조건은 서지만, 실제 확정이 검토를 요구하면 승격하지 않고 None.
-
-    (v3 판본을 v2 표기로 재작성해 「무손실」 조건은 자연히 만족시키고, 확정 몸통
-    ``_commit_mapping_binding`` 만 seam 하나로 가로채 검토-요구 예외를 강제한다 — 그 경로가
-    실제로 나는 것은 활성 Field 가 새로 생긴 사이 좁은 창뿐이라 정상 흐름에서 재현하기
-    어렵다.)
-    """
-    import dataclasses
-
-    from hwpxfiller.application.stored_field_binding import ApplicationRevisionPointer
-    from hwpxfiller.domain.field_binding import (
-        FIELD_BINDING_SEMANTIC_VERSION_V2,
-        digest_binding_rules,
-    )
-    from hwpxfiller.application.field_binding_input import (
-        field_binding_authority_revision_identity,
-    )
-
-    root = default_template_authority_dir()
-    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
-    service = _service(tmp_path, with_binding=True)
-    committed = service.commit_current_mapping(WORK_REF, "r1")
-    assert committed is not None
     store = WorkFieldBindingStore(root / "field_bindings")
     current = load_current_revision(store, WORK, "app-1")
     assert current is not None
-    v2_rules = current.binding_rules
-    digest = digest_binding_rules(v2_rules, contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2)
+    rules = (
+        tuple(dataclasses.replace(rule, format_kind=None, format_code=rule.format_code or None)
+              for rule in current.binding_rules)
+        if contract == FIELD_BINDING_SEMANTIC_VERSION_V2
+        else current.binding_rules
+    )
+    digest = digest_binding_rules(rules, contract_id=contract)
     revision_id = field_binding_authority_revision_identity(
-        work_authority_id=current.work_authority_id,
-        base_template_application_id=current.base_template_application_id,
-        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
+        work_authority_id=WORK,
+        base_template_application_id="app-1",
+        field_binding_semantic_contract_id=contract,
         source_schema_contract_id=current.source_schema_contract_id,
         raw_record_contract_id=current.raw_record_contract_id,
         canonical_binding_digest=digest,
         canonical_source_schema_digest=current.canonical_source_schema_digest,
     )
-    v2 = dataclasses.replace(
-        current,
+    old = dataclasses.replace(
+        current, binding_rules=rules,
         field_binding_authority_revision=revision_id,
-        field_binding_semantic_contract_id=FIELD_BINDING_SEMANTIC_VERSION_V2,
-        binding_rules=v2_rules,
+        field_binding_semantic_contract_id=contract,
         canonical_binding_digest=digest,
     )
     stored = store.load(WORK)
+    store.update(WORK, stored.aggregate_version, lambda aggregate: dataclasses.replace(
+        aggregate,
+        aggregate_version=aggregate.aggregate_version + 1,
+        current_by_application=(ApplicationRevisionPointer("app-1", revision_id),),
+        immutable_binding_revisions=aggregate.immutable_binding_revisions + (old,),
+    ))
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
 
-    def mutate(aggregate):
-        pointers = tuple(
-            ApplicationRevisionPointer(p.application_id, revision_id)
-            if p.application_id == "app-1"
-            else p
-            for p in aggregate.current_by_application
-        )
-        return dataclasses.replace(
-            aggregate,
-            aggregate_version=aggregate.aggregate_version + 1,
-            current_by_application=pointers,
-            immutable_binding_revisions=aggregate.immutable_binding_revisions + (v2,),
-        )
+    blocked = service.seal_execution_plan(WORK_REF, "before-explicit-save")
+    assert isinstance(blocked.command_outcome, ExecutionQualificationBlockedProductOutcome)
+    assert "NEEDS_BINDING_SEMANTIC_MIGRATION" in blocked.command_outcome.normalized_blockers
+    assert service.current_binding_review(WORK_REF) is not None
+    assert load_current_revision(store, WORK, "app-1") == old
 
-    store.update(WORK, stored.aggregate_version, mutate)
-    assert load_current_revision(store, WORK, "app-1").field_binding_semantic_contract_id == (
-        FIELD_BINDING_SEMANTIC_VERSION_V2
-    )
+    job = registry.load(WORK_REF)
+    job.binding_authority = JOB_MAPPING_AUTHORITY
+    registry.save(job, allow_overwrite=True)
+    sealed = service.seal_execution_plan(WORK_REF, "after-explicit-save")
+    assert isinstance(sealed.command_outcome, ExecutionPlanSealedProductOutcome)
+    assert load_current_revision(store, WORK, "app-1") == old
 
-    def refuse(*_a, **_k):
-        raise FieldBindingReviewRequired("X", "새 활성 Field 에 결정이 필요합니다")
 
-    monkeypatch.setattr(service, "_commit_mapping_binding", refuse)
-
-    assert service.upgrade_outdated_binding_if_lossless(WORK_REF, "r2") is None
+def test_routed_job_context_is_nested_and_identity_checked(tmp_path) -> None:
+    service = _service(tmp_path, with_binding=False)
+    registry = service._registry
+    other = Job(name="other", template_path="managed.hwpx", authority_id="other-work")
+    registry.save(other)
+    outer = service._routed_work_ref.set(WORK_REF)
+    try:
+        assert service._routed_job(WORK).name == WORK_REF
+        inner = service._routed_work_ref.set("other")
+        try:
+            assert service._routed_job("other-work").name == "other"
+            with pytest.raises(ValueError, match="identity"):
+                service._routed_job(WORK)
+        finally:
+            service._routed_work_ref.reset(inner)
+        assert service._routed_job(WORK).name == WORK_REF
+    finally:
+        service._routed_work_ref.reset(outer)
+    with pytest.raises(ValueError, match="routed Job"):
+        service._routed_job(WORK)

@@ -66,7 +66,7 @@ def _override_formats(app, overrides: dict[str, tuple[str, str]]) -> None:
 
     job_ctrl.registry.mutate(WORK, change)
     app.dispatch("job", "select_job", {"name": WORK})
-    assert job_ctrl.on_editor_mapping_saved(WORK)["binding_commit_ok"] is True
+    job_ctrl.on_editor_mapping_saved(WORK)
 
 
 def _sections(out: Path) -> dict[str, bytes]:
@@ -320,7 +320,7 @@ def test_today_body_and_name_agree_even_when_every_clock_read_is_a_new_day(app, 
 
     job.registry.mutate(WORK, to_today)
     app.dispatch("job", "select_job", {"name": WORK})
-    assert job.on_editor_mapping_saved(WORK)["binding_commit_ok"] is True
+    job.on_editor_mapping_saved(WORK)
     ticks = iter(range(10_000))
     job._clock = lambda: TODAY_NOW.replace(day=1) + timedelta(days=next(ticks))
     app.dispatch("job", "set_all", {})

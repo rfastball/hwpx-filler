@@ -205,35 +205,3 @@ def test_saving_a_slice_advances_the_binding_revision() -> None:
     advance_revisions(current, previous)
     assert current.binding_revision == previous.binding_revision + 1
     assert current.previous_rules["fields"]["공고번호"]["slice"] == ""
-
-
-# ─── outdated 판 무손실 승격 판정 — 사영에 가공이 남는다 ───────────────────────────────
-def test_outdated_projections_split_on_a_slice() -> None:
-    """v2·v3·v4 판본의 규칙은 사영이 명세를 그대로 비교한다 — 현재 Mapping 이 갈리면 승격하지 않는다."""
-    from hwpxfiller.domain.field_binding import FIELD_BINDING_SEMANTIC_VERSION_V4
-    from hwpxfiller.external.seal_execution_plan_service import (
-        _OUTDATED_PROJECTIONS,
-        _v2_projection,
-        _v3_projection,
-    )
-
-    assert set(_OUTDATED_PROJECTIONS) == {
-        FIELD_BINDING_SEMANTIC_VERSION_V2,
-        FIELD_BINDING_SEMANTIC_VERSION_V3,
-        FIELD_BINDING_SEMANTIC_VERSION_V4,
-    }
-    # v4 판은 v3 와 같은 사영 함수를 쓴다(가공 명세를 그대로 비교) — v4 가 적을 수 있던 두 방식뿐이다.
-    assert _OUTDATED_PROJECTIONS[FIELD_BINDING_SEMANTIC_VERSION_V4] is _v3_projection
-    plain, sliced = _rule(), _rule(text_slice=SPLIT)
-    for projection in (_v2_projection, _v3_projection):
-        assert projection(plain) == projection(_rule())
-        assert projection(plain) != projection(sliced)
-    # v3 사영은 표시형 kind 를 담고(v3 판본은 kind 를 알았다), v2 사영은 버린다.
-    amount = _rule(format_kind="amount", format_code="")
-    assert _v3_projection(amount) != _v3_projection(plain)
-    assert _v2_projection(amount) == _v2_projection(plain)
-    # v4 는 새 방식(v5)·keep 을 적을 수 없었다 — 그 명세를 쓰는 현재 Mapping 은 v4 사영과 갈린다.
-    new_mode = _rule(text_slice=TextSlice("before", delimiter="-"))
-    assert _v3_projection(new_mode) != _v3_projection(plain)
-    kept = _rule(text_slice=TextSlice("chars", start=1, on_missing="keep"))
-    assert _v3_projection(kept) != _v3_projection(_rule(text_slice=TextSlice("chars", start=1)))

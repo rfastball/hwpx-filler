@@ -17,7 +17,7 @@ import pytest
 
 from _output_folder_pick import pick_output_folder
 
-from hwpxfiller.domain.job import Job, rules_fingerprints
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job, rules_fingerprints
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
@@ -117,6 +117,7 @@ def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
         # 두 자리에 적으면 한쪽만 고쳐지는 날 후보가 조용히 0건이 된다.
         **_bound_to(_data_csv_path(tmp_path)),
         filename_pattern="doc-{{seq:001}}",
+        binding_authority=JOB_MAPPING_AUTHORITY,
     )
     if reviewed:
         # 기준선만 세운다 — `last_run_at` 은 건드리지 않는다: 실행 이력은 순위·완주 스탬프
@@ -1226,6 +1227,7 @@ def _mirror_job(tmp_path) -> JobRegistry:
             FieldMapping(template_field="비고", type="const"),   # 명시적 비움
         ]),
         filename_pattern="doc-{{seq:001}}",
+        binding_authority=JOB_MAPPING_AUTHORITY,
     ))
     return reg
 
@@ -5466,7 +5468,7 @@ def test_a_template_apply_closes_generation_until_the_binding_is_confirmed(tmp_p
             FieldMapping(template_field="담당자", type="const", const="홍길동")
         ),
     )
-    assert ctrl.on_editor_mapping_saved("공고서")["binding_commit_ok"] is True
+    ctrl.on_editor_mapping_saved("공고서")
     reopened = ctrl.refresh_panel()
     assert reopened["workbench_observation"]["create_action"]["enabled"] is True
     made = ctrl.generate()
@@ -5859,8 +5861,7 @@ def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
 def test_generation_recovers_after_repairing_bad_template(tmp_path):
     """#681 F4: 초기 등록이 거절된 템플릿을 고쳐 다시 고르면 새로 준비돼 문서를 만든다.
 
-    초기 등록의 재시도는 착석이 진다(#932 B5 — 같은 실물이면 재시도하지 않고, 실물이
-    바뀌면 새 id 로 다시 준비한다). 생성은 그 권위만 쓴다(#1081 PR2).
+    초기 등록의 재시도는 착석이 진다(#932 B5). 생성은 그 권위만 쓴다(#1081 PR2).
     """
     import shutil
 

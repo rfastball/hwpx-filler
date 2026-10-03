@@ -640,7 +640,8 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
     import pytest
 
     job = Job(name="계약", template_path="/t.hwpx",
-              mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]))
+              mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]),
+              binding_authority="job-mapping/v1")
     path = tmp_path / "j.job.json"
     save_job(path, job)
     existing = path.read_text(encoding="utf-8")
@@ -649,10 +650,26 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr("hwpxfiller.external.atomic.os.replace", _boom)
+    job.mapping.mappings[0].source = "changed"
     with pytest.raises(OSError):
         save_job(path, job)
     assert path.read_text(encoding="utf-8") == existing  # 무손상
     assert load_job(path).name == "계약"                  # 여전히 로드 가능
+    assert load_job(path).mapping.mappings[0].source == "name"
+
+
+def test_binding_authority_marker_rejects_unknown_or_malformed_values():
+    import pytest
+
+    legacy = encode_job(_job())
+    assert decode_job({key: value for key, value in legacy.items() if key != "binding_authority"}).binding_authority == ""
+    for marker in (None, 3, "job-mapping/v2"):
+        with pytest.raises(ValueError, match="binding_authority"):
+            decode_job({**legacy, "binding_authority": marker})
+    unsupported = _job()
+    unsupported.binding_authority = "job-mapping/v2"
+    with pytest.raises(ValueError, match="binding_authority"):
+        encode_job(unsupported)
 
 
 def test_clone_concurrent_calls_get_unique_names(tmp_path):

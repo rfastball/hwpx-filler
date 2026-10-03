@@ -323,55 +323,10 @@ class JobExecutionSession:
             input_requirements=input_requirements,
         )
 
-    def commit_current_mapping(self, work_ref: str):
-        if self.seal_execution is None:
-            raise ValueError("Field Binding is not configured.")
-        return self.seal_execution.commit_current_mapping(work_ref, uuid.uuid4().hex)
-
-    def adopt_saved_mapping_if_unbound(self, work_ref: str) -> bool:
-        """판본 없는 새 Work 에 저장된 Mapping 을 최초 판본으로 들인다 — 들였으면 True.
-
-        판정은 :meth:`SealExecutionPlanService.adopt_saved_mapping_if_unbound` 가 진다. 생성과의
-        상호배제는 그 전제가 준다: 판본이 없는 Work 는 봉인이 서지 않아 managed 실행이 그
-        결속을 쥐고 있을 수 없고, durable 쓰기 자체는 commit 의 PerWorkFence 가 직렬화한다.
-        """
-        if self.seal_execution is None or not work_ref:
-            return False
-        result = self.seal_execution.adopt_saved_mapping_if_unbound(
-            work_ref, uuid.uuid4().hex
-        )
-        return result is not None and result.changed
-
-    def upgrade_outdated_binding_if_lossless(self, work_ref: str) -> bool:
-        """outdated(v2·v3·v4) Field Binding 판본을 현재 Mapping 에서 무손실로 다시 확정한다 — 했으면 True.
-
-        판정은 :meth:`SealExecutionPlanService.upgrade_outdated_binding_if_lossless` 가 진다.
-        봉인 직전(:meth:`run_automatic_seal`)에만 부른다 — 들이기와 같은 자리·같은 fence 규율이다.
-        """
-        if self.seal_execution is None or not work_ref:
-            return False
-        result = self.seal_execution.upgrade_outdated_binding_if_lossless(
-            work_ref, uuid.uuid4().hex
-        )
-        return result is not None and result.changed
-
     def run_automatic_seal(self, work_ref: str) -> None:
-        """CHECKING 전이를 한 번의 실제 seal 호출과 결속한다.
-
-        봉인 전에 판본 없는 새 Work 의 저장 Mapping 을 먼저 들인다 — 그러지 않으면 이 봉인이
-        편집기에서 이미 확정한 연결을 전부 「입력이 필요한 항목」으로 되돌려 세운다. 들이기
-        실패는 봉인 실패와 같은 전이로 시끄럽게 닫는다(조용히 건너뛰고 봉인하지 않는다).
-        """
+        """CHECKING 전이를 한 번의 실제 seal 호출과 결속한다."""
         if self.seal_execution is None:
             raise ValueError("실행 확인 기능이 조립되지 않았습니다")
-        try:
-            self.adopt_saved_mapping_if_unbound(work_ref)
-            # 이전 판(v2·v3·v4) 판본은 표시형·가공을 다 싣지 못한다 — Mapping 이 그 판본의 출처임이 증명되면 봉인
-            # 전에 현재 판으로 다시 확정한다(아니면 봉인이 결속 축 blocker 로 시끄럽게 닫는다).
-            self.upgrade_outdated_binding_if_lossless(work_ref)
-        except Exception:  # noqa: BLE001 - product failures drive the state machine.
-            self.settle_seal(succeeded=False, current=False)
-            return
         try:
             response = self.seal_execution.seal_execution_plan(
                 work_ref, uuid.uuid4().hex

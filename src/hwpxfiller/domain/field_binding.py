@@ -62,10 +62,10 @@ _U32_MAX = 0xFFFF_FFFF
 # semantic 버전 — 코드·문서 단일 출처.
 FIELD_BINDING_SEMANTIC_VERSION = "field-binding/v5"
 #: 가공이 두 방식(글자 범위·구분자 나누기)·빈 값뿐이던 판 — 읽기만 한다(실행 입력 금지). 그 명세는
-#: v5 에서 같은 뜻이라 현재 Mapping 과 일치하면 무손실로 v5 가 된다(``upgrade_outdated_binding_if_lossless``).
+#: v5 에서 같은 뜻이지만 자동 승격하지 않는다. 명시적 편집기 저장이 Job Mapping 권위를 세운다.
 FIELD_BINDING_SEMANTIC_VERSION_V4 = "field-binding/v4"
 #: 가공 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지). 가공이 설 수 없었던 판이라 현재 Mapping 과
-#: 일치하면 무손실로 현재 판이 된다(``upgrade_outdated_binding_if_lossless``).
+#: 명시적 편집기 저장으로만 현재 Job Mapping 권위로 옮긴다.
 FIELD_BINDING_SEMANTIC_VERSION_V3 = "field-binding/v3"
 #: 표시형 슬롯이 없던 판 — 읽기만 한다(실행 입력 금지, :func:`is_current_field_binding_contract`).
 FIELD_BINDING_SEMANTIC_VERSION_V2 = "field-binding/v2"

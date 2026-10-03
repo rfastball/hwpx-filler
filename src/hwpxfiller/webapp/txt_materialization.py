@@ -24,13 +24,6 @@ from ..application.execution_contract_set import (
     SealedExecutionPlanSemanticPayload,
     plan_semantic_digest,
 )
-from ..application.execution_compilation import ACTIVE_FIELD_UNBOUND
-from ..application.field_binding_input import (
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-    FieldBindingReviewRequired,
-    StaleFieldBindingBasis,
-)
 from ..application.generation_delivery import (
     MaterializationInput,
     MaterializationInputPort,
@@ -143,25 +136,6 @@ class TxtMaterializationService:
                 TEMPLATE_INITIALIZATION_REQUIRED,
                 f"이 작업의 템플릿 확인이 아직 끝나지 않았습니다({exc}).",
             )
-        if _needs_field_binding(outcome):
-            # 2. 내부 pin — 빠진 것이 Binding 판본뿐일 때만 현재 Mapping 을 확정하고 한 번
-            #    다시 봉인한다(사용자에겐 seal 동사 비노출 — 자동 seal 규율).
-            try:
-                committed = self._seal.commit_txt_mapping(
-                    work_ref, f"{request_id}:binding"
-                )
-            except (FieldBindingReviewRequired, StaleFieldBindingBasis) as exc:
-                return TxtMaterializationRefused(
-                    getattr(exc, "code", "FIELD_BINDING_REVIEW_REQUIRED"), str(exc)
-                )
-            if committed is None:
-                return TxtMaterializationRefused(
-                    TEMPLATE_INITIALIZATION_REQUIRED,
-                    "이 작업의 템플릿 확인이 아직 끝나지 않았습니다.",
-                )
-            outcome = self._seal.seal_execution_plan(
-                work_ref, f"{request_id}:resealed"
-            ).command_outcome
         if not isinstance(outcome, ExecutionPlanSealedProductOutcome):
             return TxtMaterializationRefused(
                 EXECUTION_PLAN_NOT_SEALED, _blocked_detail(outcome)
@@ -255,24 +229,6 @@ class TxtMaterializationService:
 def materialized_text(document: MaterializedDocumentBytes) -> str:
     """검증된 산출 bytes 의 텍스트 얼굴 — 디코드도 산출과 **같은 엄격 UTF-8** 이다."""
     return document.output_bytes.decode(TXT_ENCODING)
-
-
-def _needs_field_binding(outcome: object) -> bool:
-    """봉인이 막힌 이유가 **Binding 판본 부재뿐**인가 — 내부 pin 이 풀 수 있는 유일한 축이다.
-
-    ``ACTIVE_FIELD_UNBOUND`` 도 든다: 선택을 바꾸면 Active Field 집합이 달라져 옛 판본이
-    새 필드를 못 덮는다 — 그건 작업의 Mapping 이 이미 답을 갖고 있는 상태이므로 재확정으로
-    풀린다. 정말 Mapping 에 없으면 :meth:`commit_txt_mapping` 이 빠진 이름을 들어 거절한다.
-
-    구성(SLOT_CONFIGURATION_INCOMPLETE)·데이터 열 부재·정책 차단은 여기 들지 않는다: 그것은
-    사용자가 먼저 고쳐야 하는 사실이라, Binding 을 확정해도 같은 자리에서 다시 막힌다.
-    """
-    blockers = getattr(outcome, "normalized_blockers", ())
-    return bool(blockers) and set(blockers) <= {
-        NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-        NEEDS_BINDING_SEMANTIC_MIGRATION,
-        ACTIVE_FIELD_UNBOUND,
-    }
 
 
 def _blocked_detail(outcome: object) -> str:

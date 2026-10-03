@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, ContextManager
 
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
+from ..external.job_binding_projection import mapping_rules
+from ..domain.job import Job
 from ..external.template_root import TemplateRoot
 from ..viewmodel.edit_session import (
     SECTION_TEMPLATE,
@@ -38,6 +40,8 @@ class EditorController:
         remembered_output_directory: "Callable[[], str] | None" = None,
         is_library_path: "Callable[[str, str], bool] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
+        save_guard: "Callable[[], ContextManager[bool]] | None" = None,
+        unrepresented_legacy_rules: "Callable[[Job, Job, frozenset[str]], tuple[str, ...]] | None" = None,
         binding_confirm_pending: "Callable[[str], bool] | None" = None,
         tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
@@ -72,6 +76,9 @@ class EditorController:
                 Milestone.SAVE_TXT_JOB if job.media == "txt" else Milestone.SAVE_JOB
             ),
             after_mapping_saved=after_mapping_saved,
+            save_guard=save_guard,
+            validate_binding=mapping_rules,
+            unrepresented_legacy_rules=unrepresented_legacy_rules,
         )
         self.projection.push = self._push
         self.loader.push = self._push

@@ -27,6 +27,7 @@ from hwpxfiller.application.document_creation_vocabulary import (
     DEFAULT_COLLISION_POLICY,
 )
 from hwpxfiller.application.jobs import Job
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -125,6 +126,13 @@ def _controller(
     reg.save(Job(
         name=WORK_REF, template_path=template_path,
         data_path=str(tmp_path / "d.csv"), data_sheet="", data_header_row=0,
+        mapping=(MappingProfile(mappings=[
+            FieldMapping("성명", source="이름"),
+            FieldMapping("주소", type="const", const="서울"),
+            FieldMapping("항목", type="const", const=""),
+            FieldMapping("금액", source="금액열"),
+        ]) if with_binding else MappingProfile()),
+        binding_authority=JOB_MAPPING_AUTHORITY if with_binding else "",
     ))
     reg.assign_authority_id(WORK_REF, WORK)
     kwargs = dict(
@@ -1920,11 +1928,12 @@ def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) ->
     ctrl = _controller(tmp_path, with_binding=False)
     job = ctrl.registry.load(WORK_REF)
     job.mapping = _saved_active_mapping()
+    job.binding_authority = JOB_MAPPING_AUTHORITY
     ctrl.registry.save(job, allow_overwrite=True)
 
     result = ctrl.on_editor_mapping_saved(WORK_REF)
 
-    assert result["binding_commit_ok"] is True
+    assert result == {}
     assert ctrl.execution.sealed_basis_digest is not None
     assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
@@ -1936,12 +1945,13 @@ def test_binding_commit_for_other_work_does_not_absorb_observation(
     ctrl = _controller(tmp_path, with_binding=False)
     job = ctrl.registry.load(WORK_REF)
     job.mapping = _saved_active_mapping()
+    job.binding_authority = JOB_MAPPING_AUTHORITY
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.work.name = "\ub2e4\ub978\uc791\uc5c5"
 
     result = ctrl.on_editor_mapping_saved(WORK_REF)
 
-    assert result["binding_commit_ok"] is True
+    assert result == {}
     assert ctrl.execution.fresh_observation is None
     assert ctrl.execution.sealed_basis_digest is None
     assert ctrl.execution.orchestration.state == "IDLE"

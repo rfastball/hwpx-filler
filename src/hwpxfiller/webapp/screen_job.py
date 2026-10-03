@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -1391,12 +1392,11 @@ class JobController:
         # 자동 확인(seal)의 트리거는 **준비 이전의** 권위를 본다: 종전 bootstrap 동사였던
         # 「변경사항 확인」도 seal 을 켜지 않았으므로, 준비를 앞당긴 것이 자동 seal 까지
         # 딸려 켜면 그건 이 판정이 안 받은 두 번째 변경이다(준비 ≠ 재확인).
-        # 단 **방금 권위가 선 새 작업**은 편집기 저장이 결속 확정을 부르지 못한 채 왔다(권위가
-        # 저장 뒤에 섰으므로). 저장본의 결정이 활성 Field 를 전부 덮으면 그것을 최초 판본으로
-        # 들이고, 그 durable 변경에 대해서만 자동 확인을 켠다 — 편집기 저장이 했을 일 그대로다.
+        # 방금 권위가 선 새 작업은 저장된 Mapping 으로 자동 확인한다. 최초 준비가 실패해
+        # 권위가 없다면 확인을 시작하지 않는다(실패 정리 뒤 유령 Work ID 재발급 방지).
         if job.media == "hwpx" and was_prepared:
             self._maybe_auto_check(effective_basis_changed=True)
-        elif job.media == "hwpx" and self._adopt_saved_mapping_for_new_work(name):
+        elif job.media == "hwpx" and job.binding_authority and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -2445,42 +2445,40 @@ class JobController:
             input_requirements=(projection.input_requirements if projection is not None else ()),
         )
 
-    def _adopt_saved_mapping_for_new_work(self, work_ref: str) -> bool:
-        """방금 권위가 선 새 작업의 저장 Mapping 을 최초 판본으로 들인다 — 들였으면 True.
-
-        :meth:`on_editor_mapping_saved` 와 같은 생성 잠금 규율을 따른다. 잠금을 못 잡으면(생성
-        중) 여기서 들이지 않는다 — 그 Work 의 다음 자동 확인이 봉인 전에 같은 들이기를 다시
-        시도하므로(:meth:`JobExecutionSession.run_automatic_seal`) 결정이 사라지지 않는다.
-        """
-        if self.execution.seal_execution is None:
-            return False
-        if not self.runs.lock.acquire(blocking=False):
-            return False
+    @contextmanager
+    def editor_save_guard(self):
+        """Exclude generation throughout editor validation and atomic Job write."""
+        admitted = self.runs.lock.acquire(blocking=False)
         try:
-            return self.execution.adopt_saved_mapping_if_unbound(work_ref)
+            yield admitted
         finally:
-            self.runs.lock.release()
+            if admitted:
+                self.runs.lock.release()
+
+    def unrepresented_legacy_rules(
+        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
+    ) -> tuple[str, ...]:
+        if self.execution.seal_execution is None:
+            return ()
+        return self.execution.seal_execution.unrepresented_legacy_rules(
+            previous, candidate, editor_field_ids
+        )
 
     @_serialized
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
-        """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
+        """Observe a saved Job definition; the atomic Job write already committed it."""
+        if self.work.name != work_ref:
+            return {}
+        # Clear stale ready/prepared evidence before any observation that can fail.
+        self.execution.invalidate()
         job = load_job(self.registry, work_ref)
         if job.media != "hwpx" or not job.authority_id:
-            return {"binding_commit_ok": False, "binding_revision_id": None}
-        if self.execution.seal_execution is None:
-            raise ValueError("Field Binding is not configured.")
+            return {}
         if not self.runs.lock.acquire(blocking=False):
-            raise ValueError(
-                "\ubb38\uc11c \uc0dd\uc131\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4. \ub05d\ub09c \ub4a4\uc5d0 Mapping\uc744 \uc800\uc7a5\ud558\uc138\uc694."
-            )
+            return {}
         try:
-            result = self.execution.commit_current_mapping(work_ref)
-            if result is not None and self.work.name == work_ref:
-                self._maybe_auto_check(effective_basis_changed=result.changed)
-            return {
-                "binding_commit_ok": result is not None,
-                "binding_revision_id": result.revision_id if result is not None else None,
-            }
+            self._maybe_auto_check(effective_basis_changed=True)
+            return {}
         finally:
             self.runs.lock.release()
 
