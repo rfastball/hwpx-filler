@@ -61,6 +61,8 @@ def _spec_datas_destinations() -> set[str]:
         raise AssertionError("Analysis(datas=...) 를 찾지 못했습니다")
     destinations: set[str] = set()
     for element in datas.elts:
+        if not isinstance(element, ast.Tuple):
+            continue  # 튜토리얼 자산 전개식은 고지 파일 경로가 아니다.
         source, dest = element.elts
         if not (isinstance(dest, ast.Constant) and isinstance(dest.value, str)):
             continue
