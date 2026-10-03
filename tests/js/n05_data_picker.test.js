@@ -595,6 +595,8 @@ test("계약 목록 폼 렌더 — db 프리필·미선택 체크박스가 서�
   assert.ok(markup.includes('id="poolRegView"'), "시트 체크박스 그룹이 서야 한다");
   assert.equal(markup.split('type="checkbox"').length - 1, PCLM_BLOCK.views.length + 1);
   assert.equal(markup.includes('checked=""'), false);
+  assert.ok(markup.includes("0개 시트 선택"));
+  assert.ok(markup.indexOf('id="poolRegDb"') < markup.indexOf('id="poolRegName"'));
   assert.ok(markup.includes("시트를 고르세요"), "빈 선택의 문안이 서야 한다");
   // 값도 보이는 글자도 그 DB 의 시트 이름 그대로다(엑셀 시트처럼) — 웹이 다시 옮기지 않는다.
   for (const view of PCLM_BLOCK.views) {
@@ -617,6 +619,12 @@ test("엑셀 폼 렌더 — 파일의 시트를 이름 있는 체크박스로 �
   assert.ok(markup.includes("<legend") && markup.includes("사용할 시트"));
   assert.equal(markup.split('type="checkbox"').length - 1, 4);
   assert.equal(markup.split('checked=""').length - 1, 1);
+  assert.ok(markup.includes("1개 시트 선택"));
+  const fieldOrder = ["poolRegPath", "poolRegName", "poolRegSheet", "poolRegNote", "poolRegOk"].map((id) => markup.indexOf(`id="${id}"`));
+  assert.deepEqual(fieldOrder, [...fieldOrder].sort((a, b) => a - b));
+  h.controller.selectRegSheets(["S1", "S2", "물품"]);
+  const all = renderToStaticMarkup(createElement(PoolRegistrationDialog, { controller: h.controller }));
+  assert.ok(all.includes("3개 시트 선택"));
   assert.ok(markup.includes("전체 선택") && markup.includes("S1") && markup.includes("S2"));
   assert.equal(markup.includes('id="poolRegDb"'), false);
   assert.equal(markup.includes('id="poolRegView"'), false);

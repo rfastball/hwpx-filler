@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "7a415aafa3eb571d52f338cb0dc1c9aca9945d04be7c789d107d576c9d3b34f6"
+source_sha256 = "484c7ab0461f918474c0e62c5f04056a0d4cf94b5681e7d2bfef3eeb91a419fb"
 body_sha256 = "0220fd674f2a5d6d0add5e6b4afeff8006c181a517aff07e7aa6f1cbba9b0fea"
 
 [[document]]
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "580879e37b9bc1b8bb1b405dd4dd5e33440aecba05f657fe6ceb114648e47d4e"
+source_sha256 = "0a55d7d860c9877b0222c73659c0588fb4f527d7b9e051501ab9a9590afacb0e"
 body_sha256 = "ca03c1ee80e21fe19b9f720bac49e382e30cf36cc7fccb755aac7bcd2a16fe1d"
 
 [[topic]]
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "a0a6062ec6fb29545a0a85c83544c6449a51f58d9860f6ce29c37fba8fc5c8ba"
-body_sha256 = "5e062b436b415474a3a2fb9dd818e31f5837601fbfce0ad10b59f8459338fbdb"
+source_sha256 = "b3b116c0743366c449243f146e397eb803946979a35e93fd8333d18332cb6fe6"
+body_sha256 = "90094c5348b0faa512cf2378b8b0e7b46738ca09da529a625a1742126d872219"
 
 [[topic]]
 id = "development"

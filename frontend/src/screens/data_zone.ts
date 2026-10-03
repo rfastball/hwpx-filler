@@ -1095,6 +1095,7 @@ export function JobDataZone(props: {
   snapshot: Obj;
   controller: JobReadController;
   scroll: any;
+  tabs?: ReactNode;
 }): ReactNode {
   const { snapshot, controller, scroll: Scroll } = props;
   const filter = snapshot.filter || { active: false, search: "", columns: [] };
@@ -1379,6 +1380,7 @@ export function JobDataZone(props: {
                     id: `jobCell-${row.index}-${index}`, tabIndex: -1,
                   }, h(Segments as any, { value: cell })));
             })))))),
+      props.tabs,
       h("div", {
         className: "job-empty muted",
         id: "jobTableEmpty",

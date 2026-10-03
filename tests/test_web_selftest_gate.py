@@ -368,7 +368,7 @@ class TestWebSelftestGate:
 
         정적 DOM 계약이 못 잡는 세 승계 의무를 실 렌더로 못박는다: 보관 항목이 목록에
         남아 `활성화` 에 도달 가능할 것(§10.7.2 C), 손상 격리가 상주 재진술될 것(RC-05),
-        「이 데이터 고정」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
+        「이 데이터 등록」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
 
         이 면은 고르기 열 공용 ③b 에서 **공용 `PoolColumn`** 이 됐다 — 카드·행 안 버튼이
         `.pitem` 행과 ⋯ 메뉴로 승계됐고, 「현재 데이터」 구획은 목록 첫 행이 됐다. 재는
@@ -390,16 +390,16 @@ class TestWebSelftestGate:
         assert probe["corrupt_shown"] is True, probe
         # 고정 = 등록 모달 재사용이되 진입 사유가 제목·프리필로 드러난다.
         assert probe["pin_offered"] is True, probe
-        assert probe["pin_title"] == "이 데이터 고정", probe
-        # 제목과 확정 버튼이 같은 동사를 쓴다 — 「고정」을 열고 「등록」을 누르게 하지 않는다.
-        assert probe["pin_ok"] == "고정", probe
+        assert probe["pin_title"] == "이 데이터 등록", probe
+        # 제목과 확정 버튼이 같은 동사를 쓴다 — 등록 진입과 확정의 용어를 맞춘다.
+        assert probe["pin_ok"] == "등록", probe
         assert probe["pin_path"] == "C:/d/대장.xlsx", probe
         assert probe["pin_sheet"] == "물품", probe
 
     def test_data_picker_single_path(self, selftest_result: dict) -> None:
         """데이터 선택 면 단일 경로화(U2 §2.7) — 문안이 약속한 고정 기회가 실제로 선다.
 
-        찾아보기 성사 뒤에도 면이 열려 있고 「이 데이터 고정」이 **가시**여야 한다(1행) —
+        찾아보기 성사 뒤에도 면이 열려 있고 「이 데이터 등록」이 **가시**여야 한다(1행) —
         프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다. 그 적재의
         증언은 면 안 문안이다(③b): 세션 행은 이제 작업 스냅샷이 내므로, 브리지를 스텁한
         이 창에서 행이 바뀌기를 재면 프로브가 제 손으로 세운 값을 되읽게 된다.
@@ -2663,7 +2663,7 @@ class TestWebSelftestGate:
             f" {e['pool_current_marked']!r}"
         )
         assert e["pin_btn"] is True, (
-            "파일로 연 데이터인데 「이 데이터 고정…」이 서지 않았습니다 —"
+            "파일로 연 데이터인데 「이 데이터 등록…」이 서지 않았습니다 —"
             " 그 문은 세션 행이 있을 때만, 그리고 있으면 반드시 섭니다."
         )
         # 이미 고른 항목 재선택은 **무동작**이다(리뷰 1) — 통과시키면 세션이 통째로 끊긴다.

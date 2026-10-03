@@ -228,7 +228,7 @@ text = "일치하는 명령이 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
-text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요."
+text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 등록…」으로 남겨 두세요."
 legacy = true
 
 [[sentence]]

@@ -41,7 +41,7 @@ export type PickerSessionRead = () => {
   data_row: Obj | null;
   /** 그 마운트가 풀 슬롯에서 왔으면 그 키, 아니면 `""`. */
   data_pool_key: string;
-  /** 「이 데이터 고정…」 프리필의 시트 자리(`data_target.sheet`). */
+  /** 「이 데이터 등록…」 프리필의 시트 자리(`data_target.sheet`). */
   sheet: string;
 };
 
@@ -209,7 +209,7 @@ export function createDataPickerController(args: {
       };
       patch({
         session: nextSession,
-        status: `${result.label} — ${result.rows}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요.`,
+        status: `${result.label} — ${result.rows}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 등록…」으로 남겨 두세요.`,
         level: "ok",
       });
       session.onLoaded?.(result.label);
@@ -282,7 +282,7 @@ export function createDataPickerController(args: {
     patchReg({ sheets: selected, ...(reg.mode === "pclm" ? { view: primary } : { sheet: primary }), error: "" });
   }
 
-  /** 「이 데이터 고정…」 — 프리필 재료는 **전부 Python 값**이다(③b): 이름·경로는 세션 행,
+  /** 「이 데이터 등록…」 — 프리필 재료는 **전부 Python 값**이다(③b): 이름·경로는 세션 행,
    *  시트는 마운트 대상 재진술(`data_target.sheet`)이다. 웹이 라벨을 다시 쪼개거나 경로
    *  모양으로 시트를 되추측하지 않는다. */
   function openPin(): void {
@@ -290,7 +290,7 @@ export function createDataPickerController(args: {
     const row = seen.data_row;
     if (!row?.path) return;
     openRegDialog({
-      title: "이 데이터 고정", okLabel: "고정", name: String(row.name || ""),
+      title: "이 데이터 등록", okLabel: "등록", name: String(row.name || ""),
       path: String(row.path), sheet: seen.sheet || "", pinMode: true,
     });
   }
@@ -530,7 +530,7 @@ export function createDataPickerController(args: {
           onClose: () => finish(state.session?.mounted || null),
         });
         void dispatch("pool", "refresh", {}).catch((error) => {
-          patch({ status: `⚠ 고정한 데이터를 읽을 수 없습니다: ${String(error)}`, level: "danger" });
+          patch({ status: `⚠ 등록한 데이터를 읽을 수 없습니다: ${String(error)}`, level: "danger" });
         });
       });
     },
@@ -629,13 +629,13 @@ function dialogHost(
         title: controller.poolModel.getSnapshot()?.pclm ? "" : PCLM_UNAVAILABLE,
         onClick: controller.openPclm,
       }, "계약 목록(.db) 등록…"),
-      /* 「이 데이터 고정…」은 **고정할 것이 있고 아직 고정되지 않았을 때만** 선다: 풀에서
+      /* 「이 데이터 등록…」은 **고정할 것이 있고 아직 고정되지 않았을 때만** 선다: 풀에서
          고른 데이터는 이미 등록된 참조라 다시 고정하면 같은 파일의 참조가 둘로 갈린다. */
       sessionRow && !seen.data_pool_key ? h("button", {
         className: "btn sm", id: "dataPickerPin", "data-busy-lock": true, key: "pin",
         onClick: controller.openPin,
-      }, "이 데이터 고정…") : null),
-    emptyFallback: "고정한 데이터를 읽는 중…",
+      }, "이 데이터 등록…") : null),
+    emptyFallback: "등록한 데이터를 읽는 중…",
   };
 }
 
@@ -686,9 +686,7 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
   const pclm = value.mode === "pclm";
   return h("div", { className: "modal-card pool-registration", "aria-busy": value.inspecting || value.submitting },
     h("h3", { id: "poolRegTitle" }, value.title),
-    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
-      h("input", { className: "field", id: "poolRegName", type: "text", value: value.name, disabled: value.submitting,
-        placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
+    h("div", { className: "pool-registration-body" },
     pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "파일 경로(.xlsx/.csv)"),
       h("span", { className: "row" }, h("input", { className: "field mono spacer", id: "poolRegPath", type: "text",
         value: value.path, readOnly: value.pinMode, disabled: value.submitting,
@@ -701,16 +699,21 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
       h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db, disabled: value.submitting,
         onBlur: () => { void controller.inspectRegSheets(); },
         onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
+    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
+      h("input", { className: "field", id: "poolRegName", type: "text", value: value.name, disabled: value.submitting,
+        placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
     !pclm && value.inspectedPath && value.availableSheets.length === 0 ? null : h("fieldset", {
       className: "pool-reg-sheets", id: pclm ? "poolRegView" : "poolRegSheet", disabled: value.inspecting || value.submitting,
     }, h("legend", { className: "lbl" }, "사용할 시트"),
-    value.availableSheets.length > 0 ? h("label", { className: "pool-reg-sheet pool-reg-sheet-all" },
+    value.availableSheets.length > 0 ? h("div", { className: "pool-reg-sheet-head" },
+      h("label", { className: "pool-reg-sheet pool-reg-sheet-all" },
       h("input", { type: "checkbox", checked: value.sheets.length === value.availableSheets.length,
         ref: (input: HTMLInputElement | null) => {
           if (input) input.indeterminate = value.sheets.length > 0 && value.sheets.length < value.availableSheets.length;
         },
         onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked ? value.availableSheets.map((sheet) => sheet.name) : []) }),
-      h("span", null, "전체 선택")) : null,
+      h("span", null, "전체 선택")),
+      h("span", { className: "pool-reg-sheet-count" }, `${value.sheets.length}개 시트 선택`)) : null,
     h("div", { className: "pool-reg-sheet-list" },
       ...value.availableSheets.map((sheet) => h("label", { className: "pool-reg-sheet", key: sheet.name },
         h("input", { type: "checkbox", checked: value.sheets.includes(sheet.name),
@@ -722,7 +725,7 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
       h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note, disabled: value.submitting,
         onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),
-    h("p", { className: "note dangerbox", role: "alert", style: { display: value.error ? "" : "none" } }, value.error),
+    h("p", { className: "note dangerbox", role: "alert", style: { display: value.error ? "" : "none" } }, value.error)),
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "poolRegCancel", onClick: controller.closeReg }, "취소"),
       h("button", { className: "btn primary", id: "poolRegOk",

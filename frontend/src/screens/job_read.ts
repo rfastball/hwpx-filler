@@ -655,9 +655,8 @@ export function JobDataBody(props: { controller: JobReadController; location: "i
   const ui = useUi(props.controller);
   if (snapshot === null) return null;
   if ((props.location === "sheet") !== ui.sheetOpen) return null;
-  return createElement(Fragment, null,
-    h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll }),
-    props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null);
+  return h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll,
+    tabs: props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null });
 }
 
 export function JobDataTabs(props: { controller: JobReadController }): ReactNode {
