@@ -209,7 +209,7 @@ class AuthoringController:
 
     def _analyze(self, media: str, content: bytes) -> dict:
         parsed = self._parse(media, content)
-        return semantics.analyze(media, parsed) if media == "txt" else analyze_hwpx(parsed)
+        return {**semantics.analyze(media, parsed), "source_text": parsed} if media == "txt" else analyze_hwpx(parsed)
 
     def _session(self, payload: dict, *, revision: bool = False) -> AuthoringSession:
         sid = payload.get("session_id")

@@ -91,11 +91,13 @@ def test_crlf_txt_is_served_in_editor_coordinates_and_saved_back_with_its_line_b
     opened = ctrl.open_path(path)
     sid, text = opened["session_id"], opened["content"]
     assert "\r" not in text
+    assert opened["analysis"]["source_text"] == text
     occurrences = [item for field in opened["analysis"]["fields"] for item in field["occurrences"]]
     assert sorted(item["name"] for item in occurrences) == ["연락처", "이름"]
     for item in occurrences:
         assert _utf16_slice(text, item["start"], item["end"]) == "{{" + item["name"] + "}}"
     tab = ctrl.snapshot()["tabs"][0]
+    assert tab["analysis"]["source_text"] == text
     assert tab["dirty"] is False
     assert ctrl.dispatch("check_external", {"session_id": sid})["changed"] is False
     assert ctrl.dispatch("external_content", {"session_id": sid})["content"] == text
@@ -105,7 +107,9 @@ def test_crlf_txt_is_served_in_editor_coordinates_and_saved_back_with_its_line_b
         "type": "create_field", "start": start, "end": start + 2, "name": "주소"}})
     assert plan["content"] == text.replace("주소: 서울", "주소: {{주소}}")
     # 편집기가 CRLF 를 보내도 세션은 LF 로 든다 — 줄바꿈만 다르면 변경이 아니다.
-    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": plan["content"].replace("\n", "\r\n")})
+    updated = ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": plan["content"].replace("\n", "\r\n")})
+    assert updated["analysis"]["source_text"] == plan["content"]
+    assert ctrl.snapshot()["tabs"][0]["analysis"]["source_text"] == plan["content"]
     assert ctrl.snapshot()["tabs"][0]["dirty"] is True
     assert ctrl.dispatch("content", {"session_id": sid})["content"] == plan["content"]
     assert ctrl.dispatch("save", {"session_id": sid, "revision": 1})["ok"] is True
