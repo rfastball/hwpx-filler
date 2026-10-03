@@ -321,10 +321,10 @@ class TestWebSelftestGate:
         assert re.fullmatch(r"[0-9]+", runtime["store_rev"]), runtime
 
     def test_tutorial_guide_hit_targets_in_existing_window(self, selftest_result: dict) -> None:
-        """기존 selftest 창에서 실제 HUD·타깃·가림막의 클릭 계층을 확인한다."""
+        """기존 selftest 창에서 실제 HUD·타깃·주변 조작의 클릭 계층을 확인한다."""
         surface = probe(selftest_result, "react_runtime")["tutorial_surface"]
         expected = {
-            "target_hit", "shield_hit", "hud_hit", "panel_hit",
+            "target_hit", "off_target_free", "hud_hit", "panel_hit",
             "coach_in_view", "spot_covers_target", "coach_150_in_view", "hud_150_hit",
         }
         assert set(surface) == expected, surface

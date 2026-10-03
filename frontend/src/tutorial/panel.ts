@@ -9,7 +9,7 @@ export type Lesson = {
 };
 export type TutorialBeat = {
   id: string; title: string; body: string; mode: "explain" | "action" | "finish";
-  screen: string | null; target: string | null;
+  screen: string | null; entry_screen?: string | null; target: string | null;
   placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
 };
 export type TutorialSnapshot = {
@@ -58,7 +58,7 @@ const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "txt-copy": "#wbCopy",
   "prepare-examples": "#tutorialPrepare",
   "authoring-canvas": "#authoring-canvas, #authoring-outline-title",
-  trial: "#authoring-dock-tab-trial, .authoring-trial-input .btn.primary",
+  trial: ".authoring-toolbar-end button[aria-pressed]",
   "save-template": "[data-guide='save-template']",
   "apply-change": "[data-guide='apply-change'], #authoring-dock-tab-impact",
 });
@@ -183,7 +183,8 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const stages = snapshot?.stages ?? [];
   const stageDone = stages.filter((stage) => stage.status === "done").length;
   const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
-  const shown = Boolean(beat && !overlayBusy && (rect || beat.placement === "center" || beat.target === null));
+  const shown = Boolean(beat && !overlayBusy && (rect || beat.placement === "center" || beat.target === null
+    || (beat.mode === "action" && (beat.screen === null || beat.screen === screen))));
   const resultShown = Boolean(result && !resultDismissed && result.screen === screen && rect);
   const position = rect && beat ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, beat.placement, coachHeight) : null;
   const resultPosition = rect && result ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, "right", resultHeight) : null;
@@ -254,7 +255,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
         h("button", { type: "button", className: "btn primary", disabled: pending,
           onClick: () => void act("start", { scenario_id: snapshot.scenarios.find((item) => item.recommended)?.id ?? "first_hwpx" }) }, snapshot.copy.start))) : null,
     beat && !overlayBusy && !shown ? h("button", { className: "tutorial-recover", type: "button", onClick: () => {
-      if (beat.screen && beat.screen !== screen) ports.nav.go(beat.screen);
+      if (beat.screen && beat.screen !== screen) ports.nav.go(beat.entry_screen ?? beat.screen);
       else if (beat.target === "prepare-examples") setOpen(true);
       else visibleElement(ports.doc, anchorSelector(beat.target))?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, title: snapshot?.recovery?.body ?? beat.body }, h("span", { className: "tutorial-recover-dot", "aria-hidden": true }), snapshot?.recovery?.title ?? beat.title) : null,
@@ -276,12 +277,13 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
           element?.scrollIntoView({ block: "center", behavior: "smooth" });
           element?.focus({ preventScroll: true });
         } }, action.label)), h("button", { type: "button", className: "btn sm", onClick: () => setResultDismissed(true) }, snapshot!.copy.close))) : null,
-    shown && beat ? h("div", { className: "tutorial-guide" },
-      rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true }) : h("div", { className: "tutorial-scrim", "aria-hidden": true }),
-      rect ? h("div", { className: "tutorial-shield", style: { top: 0, left: 0, right: 0, height: Math.max(0, rect.top - 6) } }) : null,
-      rect ? h("div", { className: "tutorial-shield", style: { top: rect.bottom + 6, left: 0, right: 0, bottom: 0 } }) : null,
-      rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: 0, width: Math.max(0, rect.left - 6), height: rect.height + 12 } }) : null,
-      rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: rect.right + 6, right: 0, height: rect.height + 12 } }) : null,
+    shown && beat ? h("div", { className: "tutorial-guide", "data-mode": beat.mode },
+      rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true })
+        : beat.mode === "explain" ? h("div", { className: "tutorial-scrim", "aria-hidden": true }) : null,
+      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: 0, left: 0, right: 0, height: Math.max(0, rect.top - 6) } }) : null,
+      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.bottom + 6, left: 0, right: 0, bottom: 0 } }) : null,
+      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: 0, width: Math.max(0, rect.left - 6), height: rect.height + 12 } }) : null,
+      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: rect.right + 6, right: 0, height: rect.height + 12 } }) : null,
       h("section", { id: "tutorialCoach", className: "tutorial-coach", style: coachStyle,
         role: "dialog", "aria-modal": false, "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
         "data-side": position?.side ?? "center" },

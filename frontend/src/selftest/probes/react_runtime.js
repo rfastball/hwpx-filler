@@ -108,7 +108,7 @@ async function measureTutorialSurface(ctx) {
     const panelHit = hit(panel);
     const normal = {
       target_hit: targetHit === target || target.contains(targetHit),
-      shield_hit: !!outsideHit?.closest(".tutorial-shield"),
+      off_target_free: !!outsideHit && !outsideHit.closest(".tutorial-guide, .tutorial-shield"),
       hud_hit: entryHit === entry || entry.contains(entryHit),
       panel_hit: panelHit === panel || panel.contains(panelHit),
       coach_in_view: bounds(coach),
