@@ -199,13 +199,14 @@ def test_error_str_carries_event_and_code():
 # ------------------------------------------------------------------ 표현식
 
 
-def test_all_four_event_expressions_are_rooted_and_legacy_free():
-    expressions = {
-        "snapshot": product_api.snapshot_expression("job", {"rows": 3}),
-        "close-request": product_api.close_request_expression({"armed": True, "reasons": []}),
-        "preferences": product_api.preferences_expression({"font_scale": 1.0}, "dark"),
-        "notice": product_api.notice_expression("무언가 잘못됐다"),
-    }
+def test_client_events_are_rooted_legacy_free_and_match_wire_shapes():
+    evaluator = FakeEvaluator(*([{"ok": True}] * 4))
+    client = ProductApiClient(evaluator, durable_alert=lambda _: None)
+    client.push("job", {"rows": 3})
+    client.close_request({"armed": True})
+    client.preferences({"font_scale": 1.0}, "dark")
+    client.notice("경보")
+    expressions = dict(zip(CAPABILITIES, evaluator.calls, strict=True))
     for event, expression in expressions.items():
         assert expression.startswith(f"{ROOT} ? {ROOT}.deliver("), event
         assert expression.endswith(") : null"), event
@@ -214,25 +215,22 @@ def test_all_four_event_expressions_are_rooted_and_legacy_free():
         for token in LEGACY_TOKENS:
             assert token not in expression, (event, token)
         assert "__hwpxTest" not in expression
-
-
-def test_envelope_shapes_match_the_agreed_table():
-    assert argument_of(product_api.snapshot_expression("job", {"rows": 3})) == {
+    assert argument_of(expressions["snapshot"]) == {
         "version": 1,
         "event": "snapshot",
         "payload": {"screen": "job", "snapshot": {"rows": 3}},
     }
-    assert argument_of(product_api.close_request_expression({"armed": True})) == {
+    assert argument_of(expressions["close-request"]) == {
         "version": 1,
         "event": "close-request",
         "payload": {"state": {"armed": True}},
     }
-    assert argument_of(product_api.preferences_expression({"font_scale": 1.0}, "dark")) == {
+    assert argument_of(expressions["preferences"]) == {
         "version": 1,
         "event": "preferences",
         "payload": {"personalization": {"font_scale": 1.0}, "theme": "dark"},
     }
-    assert argument_of(product_api.notice_expression("경보")) == {
+    assert argument_of(expressions["notice"]) == {
         "version": 1,
         "event": "notice",
         "payload": {"message": "[hwpx] 경보"},
@@ -272,7 +270,9 @@ def test_unicode_and_nested_payload_survives_the_literal():
         "목록": [{"깊이": {"더": ["끝", 1, True, None]}}, "文書", "🚚"],
         "빈": {},
     }
-    expression = product_api.snapshot_expression("작업/일", snapshot)
+    evaluator = FakeEvaluator({"ok": True})
+    ProductApiClient(evaluator).push("작업/일", snapshot)
+    expression = evaluator.last
     envelope = argument_of(expression)
     assert envelope["payload"]["snapshot"] == snapshot
     assert envelope["payload"]["screen"] == "작업/일"
@@ -280,7 +280,9 @@ def test_unicode_and_nested_payload_survives_the_literal():
 
 
 def test_lone_surrogate_escapes_instead_of_breaking_the_expression():
-    expression = product_api.notice_expression("깨진 \ud800 이름")
+    evaluator = FakeEvaluator({"ok": True})
+    ProductApiClient(evaluator, durable_alert=lambda _: None).notice("깨진 \ud800 이름")
+    expression = evaluator.last
     expression.encode("utf-8")  # UTF-8 로 실려 나갈 수 있어야 한다(던지면 실패)
     assert argument_of(expression)["payload"]["message"] == "[hwpx] 깨진 \ud800 이름"
 
@@ -288,7 +290,9 @@ def test_lone_surrogate_escapes_instead_of_breaking_the_expression():
 def test_js_line_terminators_are_escaped():
     """U+2028·U+2029 는 JS 소스에서 줄 종결자로 읽힐 수 있다 — 표현식이 쪼개지면 안 된다."""
     message = "앞\u2028뒤\u2029끝"
-    expression = product_api.notice_expression(message)
+    evaluator = FakeEvaluator({"ok": True})
+    ProductApiClient(evaluator, durable_alert=lambda _: None).notice(message)
+    expression = evaluator.last
     assert "\u2028" not in expression and "\u2029" not in expression
     assert argument_of(expression)["payload"]["message"] == "[hwpx] " + message
 

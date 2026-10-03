@@ -459,7 +459,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
      *  WebView2 에서 서는지 되읽는다. 귀속 판정(`acceptDirect`)을 지나지 **않는다**:
      *  이 입구는 실행이 아니라 렌더를 겨누고, 토큰 없는 dict 를 넣는 것이 그 시험의 요지다. */
     renderResult(res: Obj): void {
-      setRun({ ...run, result: res, resultFingerprint: sessionKeyOf(run.lastFull), running: false });
+      setRun({ ...run, result: res, running: false });
     },
     markResultStale(): void {
       if (run.result === null) return;

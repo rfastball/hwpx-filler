@@ -349,7 +349,6 @@ class EditSession:
     reload_failure: str = ""
     notice_text: str = ""
     notice_level: str = "muted"
-    clean: bool = False
     # index + 확인 전 소유권/근거 — 모두 해제의 짧은 복원 슬롯.
     unconfirm_undo: "list[tuple[int, bool, bool, bool]]" = field(default_factory=list)
     binding_confirm_pending: bool = False
@@ -426,8 +425,6 @@ class EditSession:
     def has_unsaved_work(self) -> bool:
         if self.base is not None:
             return bool(self.dirty_sections() or self.dirty_extras())
-        if self.clean:
-            return False
         return bool(self.extras_diff(None)) or self.model is not None
 
     def model_key_now(self) -> tuple:

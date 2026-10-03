@@ -74,9 +74,8 @@ export function createAppShell(args: AppShellArgs) {
 
   /* 셸 전역 설정의 유일한 문 — ⚙ 하나가 설정 모달을 연다(#957 계열 단순화 슬라이스 D).
      종전에는 순환 토글 둘(`#themeToggle`·`#fontScaleToggle`)이 여기 서서 클릭마다 값을 한 칸
-     돌리고 라벨 span 을 손으로 동기했다. 그 라벨 동기가 셸 `catchUp` 의 유일한 소비자이기도
-     했다 — 지금은 값 표시가 React 세그먼트의 `aria-pressed` 이고 그 값은 서비스 사건 구독에서
-     파생되므로, 놓침 창을 셸이 따라잡을 이유가 사라졌다. */
+     돌리고 라벨 span 을 손으로 동기했다. 지금은 React 세그먼트의 `aria-pressed` 가
+     서비스 사건 구독에서 파생되므로 셸이 라벨을 동기할 이유가 없다. */
   const settingsOpen = document.getElementById("settingsOpen");
 
   const attachments: ShellAttachment[] = [];
@@ -154,10 +153,6 @@ export function createAppShell(args: AppShellArgs) {
   const shellHost: ShellHostPorts = {
     nav: shellNav,
     attachments,
-    /* 따라잡기 소비자 0 — 셸이 손으로 동기하던 라벨 둘이 설정 모달의 파생 표시로 옮겨갔다.
-       포트는 남긴다: 「부착 전에 지나간 사건」이라는 결함류는 그대로 있고, 다음 셸 표시가
-       생기면 그 자리에서 다시 등록한다. */
-    catchUp: [],
     boot: {
       win: window,
       hostReady: () => Bridge.hostReady(),

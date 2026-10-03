@@ -39,11 +39,6 @@ export function workbenchSession(snapshot: Record<string, any>): string {
   return snapshot.open ? `wb:${String(snapshot.job_name ?? "")}` : "";
 }
 
-export function workbenchRevision(snapshot: Record<string, any>): number {
-  const revision = snapshot.revision || {};
-  return Number(revision.binding ?? 0) * 1000 + Number(revision.template ?? 0);
-}
-
 /** 체크박스 축의 표시값 — reducer 는 문자열만 들므로 경계에서 한 번만 번역한다. */
 export function checked(state: DraftState, key: string): boolean {
   return (state.fields[key]?.draftValue ?? "") === "1";

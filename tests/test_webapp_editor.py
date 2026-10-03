@@ -1747,22 +1747,16 @@ def test_switching_only_the_sheet_is_unsaved_work(tmp_path):
     assert ctrl.has_unsaved_work() is True
 
 
-def test_unsaved_work_is_derived_not_flagged(tmp_path):
-    """저장된 작업의 미저장 판정은 **파생**이다 — 손으로 켠 클린 표지가 이를 덮지 못한다.
-
-    표지 방식은 변이 자리·되돌리기 자리가 늘 때마다 한 곳이 빠졌고, 빠짐은 「저장됨」이라는
-    거짓말이나 되돌린 뒤의 헛확인 둘 중 하나로 나타났다. 파생은 빠질 자리가 없다: 여기서
-    표지를 거짓으로 세워 두고도 판정이 patch 를 보는지 확인한다(양방향).
-    """
+def test_unsaved_work_follows_saved_patch_and_discard(tmp_path):
+    """저장된 작업의 변경은 이탈을 막고, patch 폐기는 가드를 해제한다."""
     ctrl, _ = _controller26(tmp_path)
     assert _save_named(ctrl, "파생판정")["ok"] is True
     ctrl.load_job("파생판정")
+    assert ctrl.has_unsaved_work() is False
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
-    ctrl.edit.clean = True                                # 표지를 거짓으로 세운다
-    assert ctrl.has_unsaved_work() is True, "표지가 실재하는 patch 를 덮었습니다."
+    assert ctrl.has_unsaved_work() is True
     ctrl.dispatch("discard_patch", {})
-    ctrl.edit.clean = False                               # 반대 방향도 표지 무관
-    assert ctrl.has_unsaved_work() is False, "되돌린 뒤에도 헛확인을 묻습니다(과경고)."
+    assert ctrl.has_unsaved_work() is False
 
 
 def test_editing_tabs_move_freely_and_autodiscard_the_blocking_patch(tmp_path):

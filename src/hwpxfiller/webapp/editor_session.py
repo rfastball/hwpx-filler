@@ -535,7 +535,6 @@ class EditorLoader:
         return path.name
 
     def load_template_path(self, path: str, *, emit_push: bool = True) -> None:
-        self.edit.clean = False
         self.edit.session_detail_cache = None
         self.edit.template_path = path
         self.projection._rederive_job_name()
@@ -665,7 +664,6 @@ class EditorLoader:
     ) -> None:
         if not records:
             raise ValueError(NO_ROWS_TEXT)
-        self.edit.clean = False
         self.edit.data_path = path
         self.edit.data_sheet = sheet
         self.edit.data_header_row = header_row
@@ -822,7 +820,6 @@ class EditorLoader:
         if handoff_failure:
             lines.append(f"연결된 데이터를 다시 읽지 못했습니다: {handoff_failure}")
         self._set_notice("\n".join(lines), "warn" if lines else "ok")
-        self.edit.clean = True
         if probe_binding:
             self._refresh_binding_confirm_pending()
         if emit_push:

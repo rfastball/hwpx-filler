@@ -211,22 +211,6 @@ def notice_payload(message: str) -> dict:
     return {"message": NOTICE_PREFIX + message}
 
 
-def snapshot_expression(screen: str, snapshot: Mapping[str, object]) -> str:
-    return deliver_expression(EVENT_SNAPSHOT, snapshot_payload(screen, snapshot))
-
-
-def close_request_expression(state: Mapping[str, object]) -> str:
-    return deliver_expression(EVENT_CLOSE_REQUEST, close_request_payload(state))
-
-
-def preferences_expression(personalization: Mapping[str, object], theme: object = None) -> str:
-    return deliver_expression(EVENT_PREFERENCES, preferences_payload(personalization, theme))
-
-
-def notice_expression(message: str) -> str:
-    return deliver_expression(EVENT_NOTICE, notice_payload(message))
-
-
 # ------------------------------------------------------------------ describe
 
 

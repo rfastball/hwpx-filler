@@ -156,7 +156,6 @@ test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소
   const shell = {
     nav: { markReady: () => {} },
     attachments: [],
-    catchUp: [],
     boot: { win: { addEventListener: () => {}, removeEventListener: () => {} },
       hostReady: () => false, initSequence: [] },
   };

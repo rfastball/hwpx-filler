@@ -24,7 +24,6 @@ class EditorController:
     """Public editor bridge over one ``EditSession`` and its I/O operations."""
 
     name = "editor"
-    _NONMUTATING_ACTIONS = frozenset({"goto_section", "step_preview", "mapping_reset_stakes"})
     #: 「가공」 편집 칸의 무변이 질의(불러온 행 미리보기·끌어 고르기 후보) — push 없이 결과만 낸다.
     _QUERY_ACTIONS = frozenset({"preview_slice", "propose_slice"})
 
@@ -141,8 +140,6 @@ class EditorController:
         if action in self._QUERY_ACTIONS:
             # 무변이 질의 — 세션을 더럽히지 않고 push 도 없다(열린 「가공」 칸이 결과를 직접 그린다).
             return self._dispatch(action, payload)
-        if action not in self._NONMUTATING_ACTIONS:
-            self.edit.clean = False
         was_complete = self.edit.mapping_complete()
         result = self._dispatch(action, payload)
         if not was_complete and self.edit.mapping_complete():
