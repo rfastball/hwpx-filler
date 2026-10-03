@@ -403,14 +403,14 @@ class TestWebSelftestGate:
         프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다. 그 적재의
         증언은 면 안 문안이다(③b): 세션 행은 이제 작업 스냅샷이 내므로, 브리지를 스텁한
         이 창에서 행이 바뀌기를 재면 프로브가 제 손으로 세운 값을 되읽게 된다.
-        「＋ 직접 등록…」은 소멸(4행), pin 모드의 path·sheet 는 읽기전용 + 폼 안
-        찾아보기 감춤(5행)이다.
+        「＋ 직접 등록…」은 소멸(4행), pin 모드의 경로는 읽기전용이고 찾아보기는
+        숨긴다. 같은 파일의 시트는 추가로 선언할 수 있다.
         """
         probe = selftest_result["data_picker"]
         assert probe["error"] is None, probe
         assert probe["register_gone"] is True, probe
         assert probe["pin_path_readonly"] is True, probe
-        assert probe["pin_sheet_readonly"] is True, probe
+        assert probe["pin_sheet_selectable"] is True, probe
         assert probe["pin_browse_hidden"] is True, probe
         # 찾아보기 마운트 성사 = 면 유지 + 재진술 + 고정 버튼 가시(허가지 의무가 아니다).
         assert probe["browse_kept_open"] is True, probe
@@ -435,9 +435,9 @@ class TestWebSelftestGate:
         엑셀과 좌표가 다른 종류라 정적 계약만으로는 「목록에 그려지는가」·「엑셀 전용
         동사가 새지 않는가」를 못 본다. 진입 버튼은 존재가 아니라 **가시**여야 하고
         (프로브 click 은 hidden 도 통과한다), 열린 폼은 기본 DB 자리를 프리필하되 시트는
-        빈 placeholder 로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
+        미선택으로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
 
-        표면 어휘도 여기서 잰다: 옵션의 **값**과 **보이는 글자**는 둘 다 그 DB 의 시트 이름
+        표면 어휘도 여기서 잰다: 체크박스의 **보이는 글자**는 그 DB 의 시트 이름
         그대로다(엑셀 시트처럼 — 제목표는 사용자 결정 2026-09-30 으로 걷혔다). 진입 버튼
         라벨에는 저쪽 프로그램 이름이 서지 않는다.
         """
@@ -449,13 +449,13 @@ class TestWebSelftestGate:
         assert probe["pclm_no_relink"] is True, probe
         assert probe["pclm_entry"] is True, probe
         assert probe["pclm_entry_text"] == "계약 목록(.db) 등록…", probe
-        # 스냅샷이 준 시트 3 + 빈 placeholder 1 — 목록 첫 항목이 기본으로 서지 않는다.
-        assert probe["pclm_reg_view_options"] == 4, probe
+        # 조회된 시트 3개는 미선택이며 사용자가 여러 시트를 선언할 수 있다.
+        assert probe["pclm_reg_view_options"] == 3, probe
         assert probe["pclm_reg_db_prefill"] == "C:/AppData/Local/Pclm/pclm.db", probe
-        # 값도 글자도 그 DB 의 시트 이름 그대로 — 웹이 다시 옮기지 않는다.
-        assert probe["pclm_reg_view_values"] == "|v_통합_v2|v_접수_v1|계약", probe
-        assert probe["pclm_reg_view_text"] == "시트를 고르세요|v_통합_v2|v_접수_v1|계약", probe
-        assert probe["pclm_reg_view_label"] == "읽을 시트", probe
+        assert probe["pclm_reg_view_text"] == "v_통합_v2|v_접수_v1|계약", probe
+        assert probe["pclm_reg_view_label"] == "사용할 시트", probe
+        assert probe["pclm_reg_initial_empty"] is True, probe
+        assert probe["pclm_reg_multiple_selected"] is True, probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self,
