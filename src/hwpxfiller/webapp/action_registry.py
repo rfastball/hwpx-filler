@@ -73,7 +73,7 @@ _DATA_ZONE = {
 
 # 겨눔 대상은 슬롯 `key` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 겨눔의 정체가 못 된다).
 _POOL_TARGETING = {
-    "load_pool": _schema("key"),
+    "load_pool": _schema("key", "sheet"),
 }
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
@@ -328,14 +328,15 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "archive": _schema("key"),
         "activate": _schema("key"),
         "delete": _schema("key", "confirm basis"),
-        "register_excel": _schema("name path", "sheet note confirm basis"),
+        "inspect_sheets": _schema("path", "kind"),
+        "register_excel": _schema("name path", "sheet sheets note confirm basis"),
         # 계약 목록(pclm) 등록 — 엑셀 등록의 거울이되 좌표가 다르다(경로+시트 → DB+뷰).
         # `db` 가 선택인 이유는 **빈 값이 「기본 자리」라는 뜻**이기 때문이고(미기재가 아니다),
         # 그 해석은 링1 `resolve_pclm_db` 가 등록 시점에 한다. `view` 는 필수다 —
         # 뷰는 사용자가 고르는 확정이지 기본값으로 추측할 것이 아니다(ADR N).
-        "register_pclm": _schema("name view", "db note confirm basis"),
+        "register_pclm": _schema("name view", "db views note confirm basis"),
         # 다시 연결(#67) — 같은 슬롯의 참조 교체(수명 보존). 확인 라운드트립.
-        "relink": _schema("key path", "sheet note name confirm basis"),
+        "relink": _schema("key path", "sheet sheets note name confirm basis"),
         # 구판(이름=키) 마이그레이션의 병합 확정 — 남길 슬롯 1건, 확인 라운드트립.
         "resolve_duplicate": _schema("keep", "confirm basis"),
     },

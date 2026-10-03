@@ -10,12 +10,14 @@
 .jobsearch-ico{position:absolute;left:var(--sp-8);top:50%;transform:translateY(-50%);
   color:var(--a-muted);pointer-events:none;display:block}
 .jobtb-host{position:relative}
-.data-tabs{display:flex;gap:var(--sp-4);overflow-x:auto;max-width:100%;padding:var(--sp-4);border-top:1px solid var(--a-border)}
-.data-tab{flex:none;max-width:18em;padding:var(--sp-8) var(--sp-12);border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink);font:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-.data-tab:hover{background:var(--a-sel)}
-.data-tab[aria-pressed="true"]{background:var(--a-card);border-color:var(--a-primary);color:var(--a-primary);font-weight:600}
-.data-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.data-tabs{display:flex;overflow-x:auto;max-width:100%;padding:0 var(--sp-8);border-top:1px solid var(--a-border);background:var(--n-surface-alt);scrollbar-width:thin}
+.data-tab{flex:none;min-height:calc(var(--sp-24) + var(--sp-8));max-width:24em;padding:var(--sp-6) var(--sp-16);border:0;border-right:1px solid var(--a-border);border-bottom:3px solid transparent;border-radius:0;background:transparent;color:var(--n-ink-soft);font:inherit;font-size:var(--fs-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.data-tab:hover:not(:disabled){background:var(--n-hover);color:var(--a-ink)}
+.data-tab:active:not(:disabled){background:var(--n-pressed)}
+.data-tab[aria-pressed="true"]{background:var(--a-card);border-bottom-color:var(--a-primary);color:var(--a-primary);font-weight:600}
+.data-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-3px}
 .data-tab:disabled{color:var(--a-muted);cursor:not-allowed}
+@media (forced-colors:active){.data-tab[aria-pressed="true"]{border-bottom-color:Highlight}.data-tab:focus-visible{outline-color:Highlight}}
 .jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
 .jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}

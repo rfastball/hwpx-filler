@@ -19,7 +19,7 @@ const SURFACE = [
   "openPclm", "choose", "refresh", "poolAction", "resolveDuplicate", "noticeAction",
   "rowContextMenu", "toggleRowMenu", "closeRowMenu", "handleRowMenu",
   "openDetail", "closeDetail", "handleDetailVerb", "popover",
-  "openRegDialog", "patchReg", "closeReg", "browseRegPath", "submitReg", "client", "notify",
+  "openRegDialog", "patchReg", "inspectRegSheets", "selectRegSheets", "closeReg", "browseRegPath", "submitReg", "client", "notify",
 ];
 
 /** 스냅샷이 낸 세션 행 하나(`webapp/pool_column.session_data_row` 와 같은 키 집합).
@@ -57,6 +57,7 @@ function build(options = {}) {
   let pool = options.pool ?? { pclm: null };
   const poolListeners = new Set();
   const dispatchCalls = [];
+  const inspectionCalls = [];
   const invokeCalls = [];
   const modalCalls = [];
   const confirms = [];
@@ -72,6 +73,13 @@ function build(options = {}) {
   });
   const client = {
     async dispatch(screen, action, payload) {
+      if (action === "inspect_sheets") {
+        inspectionCalls.push([screen, action, payload]);
+        return { ok: true, value: options.inspect ? await options.inspect(payload) : {
+          ok: true, sheets: payload.path.endsWith(".csv") ? [] : (payload.kind === "pclm"
+            ? PCLM_BLOCK.views.map((view) => view.name) : ["S1", "S2", "물품"]).map((name) => ({ name, rows: 3, cols: 2 })),
+        } };
+      }
       dispatchCalls.push([screen, action, payload]);
       const value = options.dispatch ? await options.dispatch(screen, action, payload) : {};
       return { ok: true, value };
@@ -104,7 +112,7 @@ function build(options = {}) {
     notify: (message) => notifications.push(String(message)),
   });
   return {
-    controller, client, dispatchCalls, invokeCalls, modalCalls, confirms, sheetCalls,
+    controller, client, dispatchCalls, inspectionCalls, invokeCalls, modalCalls, confirms, sheetCalls,
     notifications, initialCalls,
     setPool(value) { pool = value; for (const listener of poolListeners) listener(); },
   };
@@ -356,17 +364,19 @@ test("등록 validation — 이름·경로가 비면 발신하지 않고 오류�
   assert.deepEqual(h.dispatchCalls, []);
 });
 
-test("등록 확정 — trim된 register_excel payload를 보낸다", async () => {
+test("등록 확정 — 선언한 여러 시트와 기본 시트를 한 register_excel payload로 보낸다", async () => {
   const h = build();
-  h.controller.openRegDialog({ name: " 이름 ", path: " C:/a.xlsx ", sheet: " S1 ", note: " 메모 " });
+  h.controller.openRegDialog({ name: " 이름 ", path: " C:/a.xlsx ", sheet: " S1 ", sheets: ["S1", "S2"], note: " 메모 " });
+  await tick();
   await h.controller.submitReg();
-  assert.deepEqual(h.dispatchCalls[0], ["pool", "register_excel", { name: "이름", path: "C:/a.xlsx", sheet: "S1", note: "메모" }]);
+  assert.deepEqual(h.dispatchCalls[0], ["pool", "register_excel", { name: "이름", path: "C:/a.xlsx", sheet: "S1", sheets: ["S1", "S2"], note: "메모" }]);
   assert.equal(h.controller.regModel.getSnapshot(), null);
 });
 
 test("등록 overwrite 거절 — basis 2차 발신 없이 modal을 유지한다", async () => {
   const h = build({ dispatch: async () => ({ needs_confirm: true, basis: "b", confirm_text: "겹침" }), confirm: false });
-  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx", sheet: "S1" });
+  await tick();
   await h.controller.submitReg();
   assert.equal(h.dispatchCalls.length, 1);
   assert.notEqual(h.controller.regModel.getSnapshot(), null);
@@ -375,7 +385,8 @@ test("등록 overwrite 거절 — basis 2차 발신 없이 modal을 유지한다
 test("등록 overwrite 승인 — confirm+basis를 실은 2차 발신만 확정한다", async () => {
   let count = 0;
   const h = build({ dispatch: async () => (++count === 1 ? { needs_confirm: true, basis: "b", confirm_text: "겹침" } : { ok: true }), confirm: true });
-  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx", sheet: "S1" });
+  await tick();
   await h.controller.submitReg();
   assert.equal(h.dispatchCalls.length, 2);
   assert.equal(h.dispatchCalls[1][2].confirm, true);
@@ -386,9 +397,11 @@ test("다시 연결 — 같은 slot key와 편집한 경로를 relink payload로
   const h = build();
   h.controller.openRegDialog({ targetKey: "slot", name: "이름", path: "C:/old.xlsx" });
   h.controller.patchReg({ path: "C:/new.xlsx" });
+  await h.controller.inspectRegSheets();
+  h.controller.selectRegSheets(["S2"]);
   await h.controller.submitReg();
   assert.deepEqual(h.dispatchCalls[0], ["pool", "relink", {
-    key: "slot", name: "이름", path: "C:/new.xlsx", sheet: "", note: "",
+    key: "slot", name: "이름", path: "C:/new.xlsx", sheet: "S2", sheets: ["S2"], note: "",
   }]);
 });
 
@@ -397,6 +410,83 @@ test("등록 path 찾아보기 — invoke 결과를 현재 registration state에
   h.controller.openRegDialog({ name: "이름", path: "C:/old.xlsx" });
   await h.controller.browseRegPath();
   assert.equal(h.controller.regModel.getSnapshot().path, "C:/picked.xlsx");
+  assert.deepEqual(h.inspectionCalls.at(-1), ["pool", "inspect_sheets", { path: "C:/picked.xlsx" }]);
+  assert.deepEqual(h.controller.regModel.getSnapshot().sheets, []);
+
+  let picked;
+  const late = build({ invoke: () => new Promise((resolve) => { picked = resolve; }) });
+  late.controller.openRegDialog({ name: "이름", path: "C:/old.xlsx" });
+  const browse = late.controller.browseRegPath();
+  late.controller.closeReg();
+  late.controller.openRegDialog({ name: "새 등록", path: "C:/new.xlsx" });
+  picked("C:/picked.xlsx");
+  await browse;
+  assert.equal(late.controller.regModel.getSnapshot().path, "C:/new.xlsx");
+});
+
+test("등록 시트 선택 — 검사 전·미선택·변경한 경로를 막고 CSV는 빈 선언으로 보낸다", async () => {
+  let resolveInspection;
+  const h = build({ inspect: () => new Promise((resolve) => { resolveInspection = resolve; }) });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls, []);
+  resolveInspection({ ok: true, sheets: [{ name: "S1", rows: 3, cols: 2 }] });
+  await tick();
+  assert.deepEqual(h.controller.regModel.getSnapshot().sheets, [], "첫 시트는 자동 선택하지 않는다");
+  await h.controller.submitReg();
+  assert.match(h.controller.regModel.getSnapshot().error, /읽을 시트를 고르세요/);
+  h.controller.selectRegSheets(["S1"]);
+  h.controller.patchReg({ path: "C:/data.csv" });
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls, [], "경로 변경 뒤 재검사 없는 등록을 막는다");
+  const inspection = h.controller.inspectRegSheets();
+  resolveInspection({ ok: true, sheets: [] });
+  await inspection;
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls[0][2], { name: "이름", path: "C:/data.csv", sheet: "", sheets: [], note: "" });
+});
+
+test("등록 검사 — 늦게 온 이전 경로·닫은 창의 결과는 버리고 현재 실패는 표시한다", async () => {
+  const pending = [];
+  const h = build({ inspect: () => new Promise((resolve) => { pending.push(resolve); }) });
+  h.controller.openRegDialog({ name: "이름", path: "C:/old.xlsx", sheet: "S1" });
+  h.controller.patchReg({ path: "C:/new.xlsx" });
+  const inspection = h.controller.inspectRegSheets();
+  pending[0]({ ok: true, sheets: [{ name: "OLD", rows: 1, cols: 1 }] });
+  await tick();
+  assert.equal(h.controller.regModel.getSnapshot().inspecting, true);
+  assert.deepEqual(h.controller.regModel.getSnapshot().availableSheets, []);
+  pending[1]({ ok: false, error: "파일 확인 실패" });
+  await inspection;
+  assert.equal(h.controller.regModel.getSnapshot().error, "파일 확인 실패");
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls, []);
+  const retry = h.controller.inspectRegSheets();
+  h.controller.closeReg();
+  h.controller.openRegDialog({ name: "다른 등록", path: "C:/new.xlsx" });
+  pending[2]({ ok: true, sheets: [{ name: "OLD", rows: 1, cols: 1 }] });
+  await retry;
+  assert.equal(h.controller.regModel.getSnapshot().inspecting, true);
+  assert.deepEqual(h.controller.regModel.getSnapshot().availableSheets, []);
+  pending[3]({ ok: true, sheets: [{ name: "NEW", rows: 1, cols: 1 }] });
+  await tick();
+  assert.equal(h.controller.regModel.getSnapshot().availableSheets[0].name, "NEW");
+});
+
+test("등록 제출 — 중복 발신을 막고 이전 창의 완료는 새 창을 닫지 않는다", async () => {
+  let complete;
+  const h = build({ dispatch: () => new Promise((resolve) => { complete = resolve; }) });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx", sheet: "S1" });
+  await tick();
+  const submission = h.controller.submitReg();
+  await h.controller.submitReg();
+  assert.equal(h.dispatchCalls.length, 1);
+  assert.equal(h.controller.regModel.getSnapshot().submitting, true);
+  h.controller.closeReg();
+  h.controller.openRegDialog({ name: "새 등록", path: "C:/new.xlsx" });
+  complete({ ok: true });
+  await submission;
+  assert.equal(h.controller.regModel.getSnapshot().name, "새 등록");
 });
 
 test("삭제 — needs_confirm 뒤 basis를 보존한 2단 왕복이다", async () => {
@@ -442,13 +532,23 @@ test("계약 목록 진입 — 스냅샷에 블록이 없으면 열지 않고 �
   h.controller.close(); await result;
 });
 
-test("계약 목록 등록 — register_pclm payload는 name·db·view·note다", async () => {
+test("계약 목록 등록 — DB를 검사하고 선언한 views와 기본 view를 전달한다", async () => {
   const h = build({ pool: { pclm: PCLM_BLOCK } });
   h.controller.openRegDialog({ mode: "pclm", name: " 계약 ", db: " C:/d/pclm.db ", note: " 메모 " });
-  h.controller.patchReg({ view: "v_공고_v1" });
+  await tick();
+  assert.deepEqual(h.inspectionCalls[0], ["pool", "inspect_sheets", { path: "C:/d/pclm.db", kind: "pclm" }]);
+  h.controller.selectRegSheets(["v_통합_v2", "v_접수_v1"]);
+  h.controller.patchReg({ db: " C:/d/new.db " });
+  assert.deepEqual(h.controller.regModel.getSnapshot().sheets, []);
+  assert.equal(h.controller.regModel.getSnapshot().view, "");
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls, [], "DB 경로 변경 뒤 검사 없이 이전 시트를 보내지 않는다");
+  await h.controller.inspectRegSheets();
+  assert.deepEqual(h.inspectionCalls.at(-1)[2], { path: "C:/d/new.db", kind: "pclm" });
+  h.controller.selectRegSheets(["v_통합_v2", "v_접수_v1"]);
   await h.controller.submitReg();
   assert.deepEqual(h.dispatchCalls[0], ["pool", "register_pclm", {
-    name: "계약", db: "C:/d/pclm.db", view: "v_공고_v1", note: "메모",
+    name: "계약", db: "C:/d/new.db", view: "v_통합_v2", views: ["v_통합_v2", "v_접수_v1"], note: "메모",
   }]);
   assert.equal(h.controller.regModel.getSnapshot(), null);
 });
@@ -456,6 +556,7 @@ test("계약 목록 등록 — register_pclm payload는 name·db·view·note다"
 test("계약 목록 등록 — 시트가 비면 발신하지 않고 확정을 요구한다", async () => {
   const h = build();
   h.controller.openRegDialog({ mode: "pclm", name: "계약", db: "C:/d/pclm.db" });
+  await tick();
   await h.controller.submitReg();
   assert.match(h.controller.regModel.getSnapshot().error, /읽을 시트를 고르세요/);
   assert.deepEqual(h.dispatchCalls, []);
@@ -473,7 +574,8 @@ test("계약 목록 등록 — 라벨 갱신 확정도 같은 basis 왕복을 �
       ? { needs_confirm: true, basis: "b", confirm_text: "이미 고정" } : { ok: true }),
     confirm: true,
   });
-  h.controller.openRegDialog({ mode: "pclm", name: "통합면", db: "C:/d/pclm.db", view: "v_통합_v1" });
+  h.controller.openRegDialog({ mode: "pclm", name: "통합면", db: "C:/d/pclm.db", view: "v_통합_v2" });
+  await tick();
   await h.controller.submitReg();
   assert.equal(h.dispatchCalls.length, 2);
   assert.equal(h.dispatchCalls[1][0] + "/" + h.dispatchCalls[1][1], "pool/register_pclm");
@@ -481,22 +583,22 @@ test("계약 목록 등록 — 라벨 갱신 확정도 같은 basis 왕복을 �
   assert.equal(h.dispatchCalls[1][2].basis, "b");
 });
 
-test("계약 목록 폼 렌더 — db 프리필·시트 select(placeholder 포함)가 서고 경로·시트칸은 없다", () => {
+test("계약 목록 폼 렌더 — db 프리필·미선택 체크박스가 서고 엑셀 경로칸은 없다", async () => {
   const h = build({ pool: { pclm: PCLM_BLOCK } });
   h.controller.openRegDialog({ mode: "pclm", db: PCLM_BLOCK.default_db });
+  await tick();
   const markup = renderToStaticMarkup(
     createElement(PoolRegistrationDialog, { controller: h.controller }));
   assert.ok(markup.includes('id="poolRegDb"'), "DB 자리 입력이 서야 한다");
   assert.ok(markup.includes(PCLM_BLOCK.default_db), "기본 자리를 프리필한다");
-  assert.ok(markup.includes("읽을 시트"), "라벨은 표면 어휘(시트)로 말한다");
-  assert.ok(markup.includes('id="poolRegView"'), "시트 select 가 서야 한다");
-  assert.equal(markup.split("<option").length - 1, PCLM_BLOCK.views.length + 1,
-    "고르게 할 시트 + 빈 placeholder");
+  assert.ok(markup.includes("사용할 시트"), "라벨은 표면 어휘(시트)로 말한다");
+  assert.ok(markup.includes('id="poolRegView"'), "시트 체크박스 그룹이 서야 한다");
+  assert.equal(markup.split('type="checkbox"').length - 1, PCLM_BLOCK.views.length + 1);
+  assert.equal(markup.includes('checked=""'), false);
   assert.ok(markup.includes("시트를 고르세요"), "빈 선택의 문안이 서야 한다");
   // 값도 보이는 글자도 그 DB 의 시트 이름 그대로다(엑셀 시트처럼) — 웹이 다시 옮기지 않는다.
   for (const view of PCLM_BLOCK.views) {
-    assert.ok(markup.includes(`value="${view.name}"`), view.name);
-    assert.ok(markup.includes(`>${view.name}</option>`), view.name);
+    assert.ok(markup.includes(`>${view.name}</span>`), view.name);
   }
   // 좌표가 다른 종류라 경로·시트칸은 묻지 않는다(엑셀 모드에서만 산다).
   assert.equal(markup.includes('id="poolRegPath"'), false);
@@ -505,12 +607,17 @@ test("계약 목록 폼 렌더 — db 프리필·시트 select(placeholder 포�
   assert.equal(markup.includes("modal-sub"), false);
 });
 
-test("엑셀 폼 렌더 — 기존 좌표만 서고 pclm 필드는 나오지 않는다", () => {
+test("엑셀 폼 렌더 — 파일의 시트를 이름 있는 체크박스로 보여 주고 등록 선언을 표시한다", async () => {
   const h = build({ pool: { pclm: PCLM_BLOCK } });
-  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx" });
+  h.controller.openRegDialog({ name: "이름", path: "C:/a.xlsx", sheets: ["S2"] });
+  await tick();
   const markup = renderToStaticMarkup(
     createElement(PoolRegistrationDialog, { controller: h.controller }));
   assert.ok(markup.includes('id="poolRegPath"') && markup.includes('id="poolRegSheet"'));
+  assert.ok(markup.includes("<legend") && markup.includes("사용할 시트"));
+  assert.equal(markup.split('type="checkbox"').length - 1, 4);
+  assert.equal(markup.split('checked=""').length - 1, 1);
+  assert.ok(markup.includes("전체 선택") && markup.includes("S1") && markup.includes("S2"));
   assert.equal(markup.includes('id="poolRegDb"'), false);
   assert.equal(markup.includes('id="poolRegView"'), false);
   assert.equal(markup.includes("modal-sub"), false);   // 부제는 두 모드 다 사라졌다
@@ -658,7 +765,7 @@ test("「자세히…」 — 상세가 남의 항목이면 시트를 열지 않�
 });
 
 test("다이얼로그 「다시 연결」 프리필도 상세 투영을 읽는다(옛 목록 소비 0)", async () => {
-  const h = build({ pool: poolWithDetail() });
+  const h = build({ pool: poolWithDetail({ sheets: ["물품", "S2"] }) });
   const { result } = await opened(h);
   const row = h.controller.poolModel.getSnapshot().column.rows[0];
   h.dispatchCalls.length = 0;
@@ -672,6 +779,7 @@ test("다이얼로그 「다시 연결」 프리필도 상세 투영을 읽는�
   assert.deepEqual(
     [reg.targetKey, reg.name, reg.path, reg.sheet, reg.note],
     ["k1", "7월 공고목록", "C:/d/7월.xlsx", "물품", "분기 집계"]);
+  assert.deepEqual(reg.sheets, ["물품", "S2"]);
   h.controller.close(); await result;
 });
 

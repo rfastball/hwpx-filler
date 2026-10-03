@@ -56,6 +56,7 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
 from ..data.factory import source_for_path, source_from_pool_item
 from ..application.dataset_pool import DatasetPoolRow
+from ..domain.dataset_reference import reference_for_sheet, reference_sheets
 from ..viewmodel.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
     DATA_ANCHORED_ENTRY_REASONS,
     SECTION_BINDING,
@@ -698,7 +699,9 @@ class WebFrontend:
         self._observe_tutorial(screen, "pick_data_file", {"path": path}, mounted, token=tutorial_token)
         return mounted
 
-    def load_data_sheet(self, screen: str, path: str, sheet: str | list[str]) -> "str | dict | None":
+    def load_data_sheet(
+        self, screen: str, path: str, sheet: str | list[str], confirmation: dict | None = None,
+    ) -> "str | dict | None":
         """웹에서 확정한 시트로 데이터 로드(#33) — 다중 시트 확정 게이트의 착지 지점.
 
         ``sheet`` 는 반드시 해당 워크북의 **실제 시트명**이어야 한다 — 모르는 이름을 조용히
@@ -711,8 +714,13 @@ class WebFrontend:
         try:
             if screen not in {"job", "editor"} or not isinstance(path, str) or not path:
                 raise ValueError("데이터를 가져올 화면과 파일을 확인하세요.")
+            if confirmation is not None and (
+                not isinstance(sheet, list) or not isinstance(confirmation, dict)
+                or set(confirmation) != {"basis"} or not isinstance(confirmation["basis"], str)
+            ):
+                raise ValueError("데이터를 가져올 화면과 파일을 확인하세요.")
             if isinstance(sheet, list):
-                result = self._register_data_sheets(screen, path, sheet)
+                result = self._register_data_sheets(screen, path, sheet, confirmation)
                 if result.get("mount") and not result.get("error"):
                     self._observe_tutorial(
                         screen, "load_data_sheet", {"path": path, "sheet": sheet}, result, token=tutorial_token,
@@ -730,52 +738,67 @@ class WebFrontend:
         )
         return mounted
 
-    def _register_data_sheets(self, screen: str, path: str, sheets: list[str]) -> dict:
-        """여러 참조를 등록하고 하나만 마운트한다. 실패 항목만 재시도할 수 있다."""
+    def _register_data_sheets(
+        self, screen: str, path: str, sheets: list[str], confirmation: dict | None = None,
+    ) -> dict:
+        """선택 시트를 모두 검증한 뒤 한 등록으로 저장하고 기본 시트만 마운트한다."""
         if not sheets or any(not isinstance(name, str) or not name for name in sheets):
             raise ValueError("가져올 시트를 선택하세요.")
         names = [name for name, _rows, _cols in sheet_overview(path)]
         if any(name not in names for name in sheets):
             raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
         pool = self._controller("pool")
+        selected = [name for name in names if name in sheets]
+        same = pool.vm.find_same_data(path, selected[0])
         results = []
-        first = None
-        for name in names:
-            if name not in sheets:
-                continue
+        for name in selected:
             try:
-                same = pool.vm.find_same_data(path, name)
-                source = source_from_pool_item(same[1]) if same else source_for_path(path, sheet=name)
+                if same and name in reference_sheets(same[1]):
+                    source = source_from_pool_item(reference_for_sheet(same[1], name))
+                else:
+                    source = source_for_path(
+                        path, sheet=name, header_row=same[1].opts.get("header_row", 1) if same else 1,
+                    )
                 if not source.records():
                     raise ValueError(NO_ROWS_TEXT)
-                if same is None:
-                    pool.vm.register_excel(name, path, sheet=name)
-                    same = pool.vm.find_same_data(path, name)
-                if same is None:
-                    raise ValueError("등록 데이터를 찾을 수 없습니다. 다시 가져오세요.")
-                key, item = same
-                reason = DatasetPoolRow.from_item(key, item).select_block_reason()
-                if reason:
-                    raise ValueError(reason)
-                results.append({"name": name, "key": key, "error": ""})
-                if first is None:
-                    first = (key, name)
+                if same:
+                    reason = DatasetPoolRow.from_item(*same).select_block_reason()
+                    if reason:
+                        raise ValueError(reason)
+                results.append({"name": name, "error": ""})
             except Exception as exc:  # noqa: BLE001 — 항목별 실패를 보존한다
                 results.append({"name": name, "error": str(exc)})
-        pool.dispatch("refresh", {})
+        errors = [f"{row['name']}: {row['error']}" for row in results if row["error"]]
+        if errors:
+            return {"sheets": results, "mount": None, "error": "\n".join(errors)}
+        payload = {
+            "name": same[1].name if same else Path(path).stem,
+            "path": path, "sheet": selected[0], "sheets": selected,
+        }
+        if confirmation is not None:
+            payload.update(confirm=True, basis=confirmation["basis"])
+        registered = pool.dispatch("register_excel", payload)
+        if registered.get("needs_confirm"):
+            return {"sheets": [], "mount": None, "error": "", **registered}
+        if not registered.get("ok"):
+            return {"sheets": results, "mount": None, "error": registered["error"]}
+        same = pool.vm.find_same_data(path, selected[0])
+        if same is None:
+            raise ValueError("등록 데이터를 찾을 수 없습니다. 다시 가져오세요.")
+        key, _item = same
+        for row in results:
+            row["key"] = key
         mount = None
         error = ""
-        if first is not None:
-            key, name = first
-            try:
-                action = "load_pool" if screen == "job" else "use_pool_data"
-                result = self._controller(screen).dispatch(action, {"key": key})
-                if not result.get("ok"):
-                    raise ValueError(result["error"])
-                mount = self._mount_descriptor(screen, path, name)
-                mount["label"] = result["label"] if screen == "job" else source_label("pool", result["label"])
-            except Exception as exc:  # noqa: BLE001 — 등록과 활성화 결과를 구분한다
-                error = str(exc)
+        try:
+            action = "load_pool" if screen == "job" else "use_pool_data"
+            result = self._controller(screen).dispatch(action, {"key": key})
+            if not result.get("ok"):
+                raise ValueError(result["error"])
+            mount = self._mount_descriptor(screen, path, selected[0])
+            mount["label"] = result["label"] if screen == "job" else source_label("pool", result["label"])
+        except Exception as exc:  # noqa: BLE001 — 등록과 활성화 결과를 구분한다
+            error = str(exc)
         return {"sheets": results, "mount": mount, "error": error}
 
     def copy_clipboard(self, screen: str, token: "str | None" = None) -> dict:

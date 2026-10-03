@@ -256,17 +256,19 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     );
   }
 
-  function switchData(key: string): Promise<void> {
+  function switchData(key: string, sheet?: string): Promise<void> {
     if (switching) return Promise.resolve();
     const intent = ++dataSwitchIntent;
-    patchUi({ switchingData: key });
+    patchUi({ switchingData: sheet ?? key });
     const next = dataSwitchTail.then(async () => {
       if (intent !== dataSwitchIntent) return;
       try {
-        if (snapshot()?.data_pool_key === key || !(await confirmDataSwap())) return;
+        const current = snapshot();
+        if ((current?.data_pool_key === key && (sheet === undefined || current?.data_target?.sheet === sheet))
+          || !(await confirmDataSwap())) return;
         await flushPendingEdits();
         if (intent !== dataSwitchIntent) return;
-        const result = await call("job", "load_pool", { key });
+        const result = await call("job", "load_pool", { key, ...(sheet === undefined ? {} : { sheet }) });
         if (result.ok === false) deps.notify(String(result.error));
       } catch (error) {
         deps.notify(String((error as Obj)?.message || error));
@@ -587,7 +589,7 @@ function useJob(controller: JobReadController): Obj | null {
 }
 
 function useUi(controller: JobReadController): UiState {
-  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot);
+  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot, controller.uiModel.getSnapshot);
 }
 
 
@@ -664,24 +666,24 @@ export function JobDataBody(props: { controller: JobReadController; location: "i
     props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null);
 }
 
-function JobDataTabs(props: { controller: JobReadController }): ReactNode {
+export function JobDataTabs(props: { controller: JobReadController }): ReactNode {
   const { controller } = props;
   const snapshot = useJob(controller);
   const ui = useUi(controller);
-  const pool = useSyncExternalStore(controller.poolModel.subscribe, controller.poolModel.getSnapshot);
-  const rows = pool?.column?.rows || [];
+  const rows = snapshot?.data_sheet_tabs || [];
+  const activeTab = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    void controller.call("pool", "refresh", {}).catch((error) => controller.notify(String(error)));
-  }, [controller]);
+    activeTab.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [snapshot?.data_pool_key, snapshot?.data_target?.sheet]);
   if (!rows.length) return null;
-  return h("div", { className: "data-tabs", role: "group", "aria-label": "등록 데이터 전환",
+  return h("div", { className: "data-tabs", role: "group", "aria-label": "사용할 시트",
     "aria-busy": !!ui.switchingData },
     ...rows.map((row: Obj) => h("button", {
-      type: "button", key: row.key, className: "data-tab", "data-busy-lock": true,
-      "aria-pressed": snapshot?.data_pool_key === row.key,
-      disabled: row.selectable === false || !!ui.openingName, title: row.reason || `${row.name}: ${row.sub}`,
-      onClick: () => { void controller.switchData(row.key); },
-    }, row.name, ui.switchingData === row.key ? " · 여는 중…" : "")));
+      type: "button", key: row.sheet, className: "data-tab", "data-busy-lock": true,
+      ref: row.active ? activeTab : undefined, "aria-pressed": row.active,
+      disabled: row.selectable === false || !!ui.openingName, title: row.reason || row.sheet,
+      onClick: () => { void controller.switchData(row.key, row.sheet); },
+    }, row.sheet, ui.switchingData === row.sheet ? " · 여는 중…" : "")));
 }
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {

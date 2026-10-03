@@ -93,7 +93,7 @@
 [design_tokens.json](../src/hwpxfiller/viewmodel/design_tokens.json) →
 [생성기](../scripts/gen_design_tokens.py) → [tokens.css](../frontend/css/tokens.css)가 소유한다.
 값을 이 문서에 복제하지 않는다. 컴포넌트는 제품 CSS·React와
-[갤러리](reference/ui-gallery.html), vendor 경계는 [아키텍처](architecture.md)가 소유한다.
+[갤러리](reference/ui-gallery.html), vendor 경계는 [아키텍처](architecture.md)가 소유한다. 데이터 하단은 평평한 시트 탭 띠로 활성 시트를 표면·굵기·밑줄로 구별하고 가로 스크롤·키보드 초점·전체 이름 툴팁을 유지한다. 등록창은 파일에서 읽은 시트 체크 목록을 쓴다.
 
 TXT 검토·복사 작업대는 좁은 창·큰 글자에서도 제목과 본문을 읽을 수 있게 재배치한다. 진행 점은 높이를 제한하고
 현재 항목이 바뀌면 그 점이 보이게 한다. 본문 조각에서 연결 행으로 가는 동작은 키보드로도 실행하며,

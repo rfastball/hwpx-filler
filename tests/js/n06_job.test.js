@@ -17,7 +17,7 @@ import {
   initialRunState,
   isForeignResult,
 } from "../../frontend/src/screens/job_run_state.ts";
-import { JobDataHeader, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
+import { JobDataHeader, JobDataTabs, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
@@ -817,6 +817,23 @@ function dataHeaderStub(snapshot) {
     dismissDataNotice: async () => ({}),
   };
 }
+
+test("하단 탭은 현재 등록의 시트 투영과 비활성 사유만 렌더한다", () => {
+  const snapshot = { has_data: true, has_job: false, data_sheet_tabs: [
+    { key: "book", sheet: "공고목록", active: true, selectable: true },
+    { key: "book", sheet: "낙찰현황", active: false, selectable: false, reason: "보관됨" },
+  ] };
+  const ui = { switchingData: "", openingName: "" };
+  const controller = { ...dataHeaderStub(snapshot),
+    uiModel: { getSnapshot: () => ui, subscribe: () => () => {} },
+    poolModel: { getSnapshot() { throw new Error("전체 등록 목록을 읽으면 안 된다"); } },
+  };
+  const markup = renderToStaticMarkup(createElement(JobDataTabs, { controller }));
+  assert.match(markup, /aria-pressed="true"[^>]*>공고목록/);
+  assert.match(markup, /disabled="" title="보관됨"[^>]*>낙찰현황/);
+  snapshot.data_sheet_tabs = [];
+  assert.equal(renderToStaticMarkup(createElement(JobDataTabs, { controller })), "");
+});
 
 test('#945 F4 데이터 통지에는 닫기 단추가 선다', () => {
   const markup = renderToStaticMarkup(createElement(JobDataHeader, {

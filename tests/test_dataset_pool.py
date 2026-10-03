@@ -16,8 +16,11 @@ from hwpxfiller.domain.dataset_reference import (
     STATUS_RETIRED,
     DatasetReference,
     excel_identity,
+    filters_for_sheet,
     pclm_identity,
     reference_identity,
+    reference_for_sheet,
+    reference_sheets,
 )
 from hwpxfiller.external import dataset_store
 from hwpxfiller.external.dataset_store import (
@@ -642,8 +645,10 @@ def test_saved_filters_roundtrip_through_the_registry(tmp_path):
     key = reg.add(DatasetReference(name="입찰", kind="excel", opts={"path": "/d.xlsx"},
                                    note="메모"))
     medium = {"name": "중소기업", "state": {"search": "", "pruned": [], "columns": {}}}
-    updated = reg.set_filters(key, [_SMALL, medium])
+    updated = reg.set_filters(key, [_SMALL, medium], sheet="")
     assert [p["name"] for p in updated.filters] == ["소기업", "중소기업"]
+    assert filters_for_sheet(updated, "") == [_SMALL, medium]
+    assert reference_for_sheet(updated, "").opts == updated.opts
 
     back = DatasetPoolRegistry(directory).load(key)
     assert back.filters == [_SMALL, medium]
@@ -652,6 +657,8 @@ def test_saved_filters_roundtrip_through_the_registry(tmp_path):
     reg.archive(key)
     reg.relabel(key, "입찰(보관)")
     assert DatasetPoolRegistry(directory).load(key).filters == [_SMALL, medium]
+    reg.relink_excel(key, "/d.xlsx", sheet="기본", sheets=["기본"])
+    assert filters_for_sheet(reg.load(key), "기본") == [_SMALL, medium]
     reg.set_filters(key, [])
     raw = (directory / (key + DatasetPoolRegistry.SUFFIX)).read_text(encoding="utf-8")
     assert '"filters"' not in raw  # 비면 쓰지 않는다 — 구판과 같은 형상
@@ -670,6 +677,64 @@ def test_old_store_file_without_filters_loads_and_saves_unchanged(tmp_path):
     assert item.filters == []
     save_reference(slot, item)
     assert slot.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize("kind,path_key,sheet_key", [("excel", "path", "sheet"), ("pclm", "db", "view")])
+def test_declared_sheets_keep_filters_separate_across_reload_and_default_change(
+    tmp_path, kind, path_key, sheet_key,
+):
+    from hwpxfiller.application.dataset_pool import bound_state, confirm_basis, StaleConfirmError
+
+    reg = DatasetPoolRegistry(tmp_path)
+    key = reg.add(DatasetReference(
+        name="월별 자료", kind=kind,
+        opts={path_key: "/d.xlsx", sheet_key: "1월", "sheets": ["1월", "2월"]},
+    ))
+    reg.set_filters(key, [_SMALL], sheet="1월")
+    february = {"name": "2월 조건", "state": {"search": "서울"}}
+    reg.set_filters(key, [february], sheet="2월")
+    back = DatasetPoolRegistry(tmp_path).load(key)
+    assert reference_sheets(back) == ["1월", "2월"]
+    assert filters_for_sheet(back, "1월") == [_SMALL]
+    selected = reference_for_sheet(back, "2월")
+    assert selected.opts[sheet_key] == "2월" and selected.filters == [february]
+    assert back.opts[sheet_key] == "1월"
+    with pytest.raises(ValueError, match="등록된 시트"):
+        reg.set_filters(key, [], sheet="3월")
+    with pytest.raises(ValueError, match="등록된 시트"):
+        reference_for_sheet(back, "3월")
+    basis = confirm_basis([bound_state(key, back)])
+    identity_of = pclm_identity if kind == "pclm" else excel_identity
+    ident = identity_of("/d.xlsx", "2월")
+    assert reg.find_identity_raw(ident)[0] == key
+    _, changed = reg.relabel_confirmed_raw(
+        ident, "월별 자료", sheets=["2월", "1월"], expected_basis=basis,
+    )
+    assert changed.filters == [february]
+    assert filters_for_sheet(changed, "1월") == [_SMALL]
+    with pytest.raises(StaleConfirmError):
+        reg.relabel_confirmed_raw(
+            ident, "덮어쓰기", sheets=["2월"], expected_basis=basis,
+        )
+    assert reg.load(key).name == "월별 자료"
+
+
+def test_member_lookup_prefers_exact_legacy_registration_and_rejects_ambiguity(tmp_path):
+    reg = DatasetPoolRegistry(tmp_path)
+    first = reg.add(DatasetReference(
+        name="상반기", kind="excel",
+        opts={"path": "/d.xlsx", "sheet": "1월", "sheets": ["1월", "2월"]},
+    ))
+    assert reg.find_identity("/d.xlsx", "2월")[0] == first
+    reg.add(DatasetReference(
+        name="부분", kind="excel",
+        opts={"path": "/d.xlsx", "sheet": "3월", "sheets": ["3월", "2월"]},
+    ))
+    assert reg.find_identity("/d.xlsx", "2월") is None
+    legacy = reg.add(DatasetReference(
+        name="구판 2월", kind="excel", opts={"path": "/d.xlsx", "sheet": "2월"},
+    ))
+    assert reg.find_identity("/d.xlsx", "2월")[0] == legacy
 
 
 def test_malformed_saved_filters_are_a_loud_corruption(tmp_path):

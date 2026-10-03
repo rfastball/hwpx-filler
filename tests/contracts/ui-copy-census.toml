@@ -249,6 +249,10 @@ text = "등록하지 못했습니다."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
+text = "등록하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
 text = "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
 
 [[sentence]]
@@ -257,15 +261,15 @@ text = "시트 선택을 취소했습니다 — 데이터는 그대로입니다.
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
-text = "시트를 고르세요"
-
-[[sentence]]
-file = "frontend/src/screens/data_picker.ts"
 text = "이름과 파일 경로를 입력하세요."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
 text = "이름을 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
@@ -3025,6 +3029,10 @@ text = "데이터를 가져올 화면과 파일을 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
+text = "데이터를 가져올 화면과 파일을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
 text = "등록 데이터를 찾을 수 없습니다. 다시 가져오세요."
 
 [[sentence]]
@@ -3975,7 +3983,7 @@ text = "템플릿을 연결해야 문서를 만들 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
-text = "'{}' 의 참조를 새 파일로 바꿉니다. 기존: {} 새 파일: {}{}{}"
+text = "'{}' 의 참조를 새 파일로 바꿉니다. 기존: {} 새 파일: {}{}{}{}"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
@@ -4003,7 +4011,27 @@ text = "새 파일 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "시트를 찾을 수 없습니다. 파일을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "시트를 찾을 수 없습니다. 파일을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
 text = "이름도 '{}' → '{}' 으로 바뀝니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"

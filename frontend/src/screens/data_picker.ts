@@ -90,6 +90,11 @@ type RegState = {
   name: string;
   path: string;
   sheet: string;
+  sheets: string[];
+  availableSheets: { name: string }[];
+  inspectedPath: string;
+  inspecting: boolean;
+  submitting: boolean;
   db: string;
   view: string;
   note: string;
@@ -97,9 +102,6 @@ type RegState = {
   pinMode: boolean;
   error: string;
 };
-
-/** 시트 미선택 placeholder — 목록 첫 항목을 기본으로 세우지 않는다(사용자가 확정할 값이다). */
-const PCLM_VIEW_PLACEHOLDER = "시트를 고르세요";
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
@@ -122,6 +124,8 @@ export function createDataPickerController(args: {
     detailOpen: false, detailMessage: "",
   };
   let reg: RegState | null = null;
+  let regRevision = 0;
+  let inspectionRevision = 0;
   const listeners = new Set<Listener>();
   const regListeners = new Set<Listener>();
 
@@ -130,6 +134,10 @@ export function createDataPickerController(args: {
   function patch(next: Partial<PickerState>): void { state = { ...state, ...next }; emit(); }
   function patchReg(next: Partial<RegState>): void {
     if (reg === null) return;
+    if ((next.path !== undefined && next.path !== reg.path) || (next.db !== undefined && next.db !== reg.db)) {
+      inspectionRevision++;
+      next = { ...next, sheet: "", view: "", sheets: [], availableSheets: [], inspectedPath: "", inspecting: false, error: "" };
+    }
     reg = { ...reg, ...next };
     emitReg();
   }
@@ -213,6 +221,8 @@ export function createDataPickerController(args: {
   }
 
   function openRegDialog(options: Partial<RegState>): void {
+    regRevision++;
+    const initialSheet = options.mode === "pclm" ? options.view : options.sheet;
     reg = {
       title: options.title || "데이터 등록",
       okLabel: options.okLabel || "등록",
@@ -220,7 +230,9 @@ export function createDataPickerController(args: {
       name: options.name || "",
       path: options.path || "",
       sheet: options.sheet || "",
-      db: options.db || "",
+      sheets: options.sheets ?? (initialSheet?.trim() ? [initialSheet.trim()] : []),
+      availableSheets: [], inspectedPath: "", inspecting: false, submitting: false,
+      db: options.db ?? (options.mode === "pclm" ? String(poolModel.getSnapshot()?.pclm?.default_db || "") : ""),
       view: options.view || "",
       note: options.note || "",
       targetKey: options.targetKey || "",
@@ -230,6 +242,44 @@ export function createDataPickerController(args: {
     emitReg();
     const focusId = reg.mode === "pclm" || options.pinMode ? "poolRegName" : "poolRegPath";
     modal.open("poolRegModal", { initialFocus: args.doc.getElementById(focusId) });
+    void inspectRegSheets();
+  }
+
+  async function inspectRegSheets(): Promise<void> {
+    if (reg === null || reg.submitting) return;
+    const pclm = reg.mode === "pclm";
+    const path = (pclm ? reg.db : reg.path).trim();
+    if (!path) return;
+    if (reg.inspectedPath === path || reg.inspecting) return;
+    const revision = regRevision;
+    const request = ++inspectionRevision;
+    const current = () => reg !== null && regRevision === revision && inspectionRevision === request;
+    patchReg({ inspecting: true, error: "" });
+    try {
+      const result = await dispatch("pool", "inspect_sheets", pclm ? { path, kind: "pclm" } : { path });
+      if (!current()) return;
+      if (result.ok !== true || !Array.isArray(result.sheets)) {
+        patchReg({ error: result.error || "등록하지 못했습니다." });
+        return;
+      }
+      const availableSheets = result.sheets as RegState["availableSheets"];
+      const sheets = reg!.sheets.filter((name) => availableSheets.some((sheet) => sheet.name === name));
+      const initialSheet = (pclm ? reg!.view : reg!.sheet).trim();
+      const selected = sheets.includes(initialSheet) ? initialSheet : sheets[0] || "";
+      patchReg({ availableSheets, sheets, ...(pclm ? { view: selected } : { sheet: selected }), inspectedPath: path });
+    } catch (error) {
+      if (current()) patchReg({ error: String((error as Obj)?.message || error) });
+    } finally {
+      if (current()) patchReg({ inspecting: false });
+    }
+  }
+
+  function selectRegSheets(sheets: string[]): void {
+    if (reg === null || reg.inspecting || reg.submitting) return;
+    const selected = reg.availableSheets.map((sheet) => sheet.name).filter((name) => sheets.includes(name));
+    const initialSheet = reg.mode === "pclm" ? reg.view : reg.sheet;
+    const primary = selected.includes(initialSheet) ? initialSheet : selected[0] || "";
+    patchReg({ sheets: selected, ...(reg.mode === "pclm" ? { view: primary } : { sheet: primary }), error: "" });
   }
 
   /** 「이 데이터 고정…」 — 프리필 재료는 **전부 Python 값**이다(③b): 이름·경로는 세션 행,
@@ -259,43 +309,48 @@ export function createDataPickerController(args: {
   }
 
   async function submitReg(): Promise<void> {
-    if (reg === null) return;
+    if (reg === null || reg.submitting) return;
     const pclm = reg.mode === "pclm";
     const action = pclm ? "register_pclm" : reg.targetKey ? "relink" : "register_excel";
     const payload: Obj = pclm
-      ? { name: reg.name.trim(), db: reg.db.trim(), view: reg.view, note: reg.note.trim() }
+      ? { name: reg.name.trim(), db: reg.db.trim(), view: reg.view, views: [...reg.sheets], note: reg.note.trim() }
       : {
-        name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), note: reg.note.trim(),
+        name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), sheets: [...reg.sheets], note: reg.note.trim(),
       };
     if (!pclm && reg.targetKey) payload.key = reg.targetKey;
     if (pclm) {
-      /* 빈 뷰는 백엔드가 「약속한 뷰가 아닙니다」로 거절하지만, 사용자가 아직 **고르지
-         않은 것**과 **틀리게 고른 것**은 다른 사건이라 여기서 그 말로 막는다. db 는
-         비어도 된다(백엔드가 「기본 자리」로 해석) — 폼은 그 자리를 미리 보여 준다. */
       if (!payload.name) { patchReg({ error: "이름을 입력하세요." }); return; }
-      if (!payload.view) {
-        patchReg({ error: "읽을 시트를 고르세요." });
-        return;
-      }
     } else if (!payload.name || !payload.path) {
       patchReg({ error: "이름과 파일 경로를 입력하세요." });
       return;
     }
+    if (reg.inspecting || !reg.inspectedPath || reg.inspectedPath !== (pclm ? payload.db : payload.path)) return;
+    if ((pclm || reg.availableSheets.length > 0) && reg.sheets.length === 0) {
+      patchReg({ error: "읽을 시트를 고르세요." });
+      return;
+    }
+    const revision = regRevision;
+    const okLabel = reg.okLabel;
+    patchReg({ submitting: true });
     try {
       let result = await dispatch("pool", action, payload);
+      if (reg === null || regRevision !== revision) return;
       if (result.needs_confirm) {
         const accepted = await modal.confirm({
-          body: result.confirm_text, confirmLabel: reg.okLabel, cancelLabel: "취소", danger: true,
+          body: result.confirm_text, confirmLabel: okLabel, cancelLabel: "취소", danger: true,
         });
-        if (!accepted) return;
+        if (!accepted || reg === null || regRevision !== revision) return;
         result = await dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
       }
+      if (reg === null || regRevision !== revision) return;
       if (result.ok === false) { patchReg({ error: result.error || "등록하지 못했습니다." }); return; }
       modal.close("poolRegModal");
       reg = null;
       emitReg();
     } catch (error) {
-      patchReg({ error: String((error as Obj)?.message || error) });
+      if (regRevision === revision) patchReg({ error: String((error as Obj)?.message || error) });
+    } finally {
+      if (regRevision === revision) patchReg({ submitting: false });
     }
   }
 
@@ -311,7 +366,7 @@ export function createDataPickerController(args: {
        그 투영 그대로(`path`·`sheet`·`note`)다. */
     openRelink: (row: Obj) => openRegDialog({
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
-      name: row.name, path: row.path, sheet: row.sheet, note: row.note,
+      name: row.name, path: row.path, sheet: row.sheet, sheets: row.sheets, note: row.note,
     }),
     poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
     reveal: (path: string) => invokePathAction({
@@ -507,10 +562,18 @@ export function createDataPickerController(args: {
     popover: args.popover,
     openRegDialog,
     patchReg,
-    closeReg(): void { modal.close("poolRegModal"); reg = null; emitReg(); },
+    inspectRegSheets,
+    selectRegSheets,
+    closeReg(): void { modal.close("poolRegModal"); regRevision++; reg = null; emitReg(); },
     browseRegPath: async (): Promise<void> => {
+      if (reg === null || reg.submitting) return;
+      const revision = regRevision;
+      const previousPath = reg.path;
       const path = await invoke("pick_pool_data_file");
-      if (path) patchReg({ path: String(path) });
+      if (path && reg !== null && regRevision === revision && reg.path === previousPath) {
+        patchReg({ path: String(path) });
+        await inspectRegSheets();
+      }
     },
     submitReg,
     client,
@@ -615,49 +678,56 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
   const state = useSyncExternalStore(
     controller.regModel.subscribe, controller.regModel.getSnapshot,
     controller.regModel.getSnapshot);
-  const pool = useSyncExternalStore(
-    controller.poolModel.subscribe, controller.poolModel.getSnapshot,
-    controller.poolModel.getSnapshot);
   const value = state || {
     title: "데이터 등록", okLabel: "등록", mode: "excel", name: "", path: "", sheet: "",
+    sheets: [], availableSheets: [], inspectedPath: "", inspecting: false, submitting: false,
     db: "", view: "", note: "", targetKey: "", pinMode: false, error: "",
   };
   const pclm = value.mode === "pclm";
-  /* 고를 수 있는 시트는 백엔드가 기본 DB 를 실제로 나열해 스냅샷으로 내려준 것만 쓴다(웹에 리터럴 0). */
-  const views: Obj[] = (pool?.pclm?.views || []) as Obj[];
-  return h("div", { className: "modal-card" },
+  return h("div", { className: "modal-card pool-registration", "aria-busy": value.inspecting || value.submitting },
     h("h3", { id: "poolRegTitle" }, value.title),
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
-      h("input", { className: "field", id: "poolRegName", type: "text", value: value.name,
+      h("input", { className: "field", id: "poolRegName", type: "text", value: value.name, disabled: value.submitting,
         placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
     pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "파일 경로(.xlsx/.csv)"),
       h("span", { className: "row" }, h("input", { className: "field mono spacer", id: "poolRegPath", type: "text",
-        value: value.path, readOnly: value.pinMode, onChange: (event: Obj) => controller.patchReg({ path: event.currentTarget.value }) }),
+        value: value.path, readOnly: value.pinMode, disabled: value.submitting,
+        onBlur: () => { void controller.inspectRegSheets(); },
+        onChange: (event: Obj) => controller.patchReg({ path: event.currentTarget.value }) }),
       h("button", { className: "btn", id: "poolRegBrowse", type: "button", hidden: value.pinMode,
+        disabled: value.submitting,
         onClick: () => { void controller.browseRegPath(); } }, "찾아보기…"))),
-    pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "시트(선택)"),
-      h("input", { className: "field", id: "poolRegSheet", type: "text", value: value.sheet,
-        readOnly: value.pinMode, onChange: (event: Obj) => controller.patchReg({ sheet: event.currentTarget.value }) })),
-    /* DB 자리는 편집 가능하다 — 기본 자리를 프리필하되 다른 사본을 가리킬 수 있어야 한다.
-       비우면 백엔드가 「기본 자리」로 해석해 opts 에 박는다(미기재로 두지 않는다). */
     pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리"),
-      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db,
+      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db, disabled: value.submitting,
+        onBlur: () => { void controller.inspectRegSheets(); },
         onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
-    /* 시트는 **사용자가 확정**한다 — 목록 첫 항목을 기본으로 세우면 계약면이 조용히 섞여
-       문서 건수가 어긋난다. 그래서 초기 선택은 빈 placeholder 이고, 빈 채 제출은 막는다.
-       보이는 글자도 `value` 도 그 DB 의 시트 이름 그대로다(엑셀 시트처럼 — 제목표는
-       사용자 결정 2026-09-30 으로 걷혔다). */
-    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "읽을 시트"),
-      h("select", { className: "field", id: "poolRegView", value: value.view,
-        onChange: (event: Obj) => controller.patchReg({ view: event.currentTarget.value }) },
-      h("option", { value: "", key: "" }, PCLM_VIEW_PLACEHOLDER),
-      ...views.map((view: Obj) => h("option", { value: String(view.name), key: String(view.name) },
-        String(view.name))))) : null,
+    !pclm && value.inspectedPath && value.availableSheets.length === 0 ? null : h("fieldset", {
+      className: "pool-reg-sheets", id: pclm ? "poolRegView" : "poolRegSheet", disabled: value.inspecting || value.submitting,
+    }, h("legend", { className: "lbl" }, "사용할 시트"),
+    value.availableSheets.length > 0 ? h("label", { className: "pool-reg-sheet pool-reg-sheet-all" },
+      h("input", { type: "checkbox", checked: value.sheets.length === value.availableSheets.length,
+        ref: (input: HTMLInputElement | null) => {
+          if (input) input.indeterminate = value.sheets.length > 0 && value.sheets.length < value.availableSheets.length;
+        },
+        onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked ? value.availableSheets.map((sheet) => sheet.name) : []) }),
+      h("span", null, "전체 선택")) : null,
+    h("div", { className: "pool-reg-sheet-list" },
+      ...value.availableSheets.map((sheet) => h("label", { className: "pool-reg-sheet", key: sheet.name },
+        h("input", { type: "checkbox", checked: value.sheets.includes(sheet.name),
+          onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked
+            ? [...value.sheets, sheet.name] : value.sheets.filter((name) => name !== sheet.name)) }),
+        h("span", null, sheet.name)))),
+    value.inspecting ? h("p", { className: "capnote", role: "status" }, "읽는 중…") : null,
+    value.sheets.length === 0 && !value.inspecting ? h("p", { className: "capnote" }, "읽을 시트를 고르세요.") : null),
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
-      h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note,
+      h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note, disabled: value.submitting,
         onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),
     h("p", { className: "note dangerbox", role: "alert", style: { display: value.error ? "" : "none" } }, value.error),
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "poolRegCancel", onClick: controller.closeReg }, "취소"),
-      h("button", { className: "btn primary", id: "poolRegOk", onClick: () => { void controller.submitReg(); } }, value.okLabel)));
+      h("button", { className: "btn primary", id: "poolRegOk",
+        disabled: value.submitting || value.inspecting || !value.inspectedPath
+          || value.inspectedPath !== (pclm ? value.db : value.path).trim()
+          || ((pclm || value.availableSheets.length > 0) && value.sheets.length === 0),
+        onClick: () => { void controller.submitReg(); } }, value.okLabel)));
 }

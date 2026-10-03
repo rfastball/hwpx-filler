@@ -501,6 +501,7 @@ class JobController:
             data_target=data_target,
             data_row=data_row,
             data_pool_key=self.data.pool_key,
+            data_sheet_tabs=self.data.sheet_tabs(),
             data_notice=({"level": notice_level, "text": notice_text} if notice_text else None),
             artifact_view=artifact_view,
             new_work={"can": not blocked, "reason": blocked},
@@ -823,7 +824,7 @@ class JobController:
         계약 목록 db 도 그 술어의 대상이다(가리키는 것이 파일이면 종류를 묻지 않는다).
         """
         if descriptor["source"] == "pool":
-            result = self._do_load_pool({"key": descriptor["pool_key"]})
+            result = self._do_load_pool({"key": descriptor["pool_key"], "sheet": descriptor["sheet"]})
             if result.get("ok"):
                 return ""
             return _REMEMBERED_DATA_FAILED.format(reason=result.get("error", ""))
@@ -1286,7 +1287,7 @@ class JobController:
                 "confirm_text": _REMOUNT_CONFIRM.format(count=selected),
             }
         if self.data.source_kind == "pool":
-            return self._do_load_pool({"key": self.data.pool_key})
+            return self._do_load_pool({"key": self.data.pool_key, "sheet": self.data.sheet})
         try:
             if self.data.source_kind == "pclm":
                 # 슬롯 없는 마운트라 되돌려 줄 진입점이 파일 갈래가 아니다(#937) — 성분은
@@ -1733,7 +1734,7 @@ class JobController:
             resolved.append(source)
             return records
 
-        res = load_pool_into(self.data.pool_registry, key, load)
+        res = load_pool_into(self.data.pool_registry, key, load, sheet=p.get("sheet"))
         if not res["ok"]:
             return res
         item = res["item"]

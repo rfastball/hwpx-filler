@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "df6cf7391609bf15a4f0fde22667e79b77be04e57ab4fa20fa9d207d3267c03b"
+source_sha256 = "d7a860d969b334d6aa65cc28c358c2365c2cd84b949ffe2b5d82a827b31b57e7"
 body_sha256 = "0220fd674f2a5d6d0add5e6b4afeff8006c181a517aff07e7aa6f1cbba9b0fea"
 
 [[document]]
@@ -153,7 +153,7 @@ id = "product-scope"
 document = "docs/product.md"
 sources = ["packaging/verify_specs.py", "packaging/hwpx_filler_web.spec", "src/hwpxfiller/webapp/onboarding.py", "src/hwpxfiller/viewmodel/tutorial_lessons.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxcore/package.py", "src/hwpxfiller/external/hwpx_package_io.py", "frontend/src/react/*.ts", "frontend/index.html"]
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_package_budget.py"]
-source_sha256 = "41ae4e182d63f89345092bb25644d2e168b54f1c13f5373570389d563701be93"
+source_sha256 = "f877fa38ce1872030452352e6c7a58b9092eafa10da65ec510621c2116e6c40d"
 body_sha256 = "6d464ff6cad680db1d9611712a1d190a9efbf8486098f13ae1694235899daab1"
 
 [[topic]]
@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "8193ff0c96c2689dae14ee37df4a8e002715a27c994001c504ab13127aa29378"
+source_sha256 = "9191e95d4c5ff1114ed4848e9a734c3caa194668d0d80f268a5ce9d218b9b061"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/test_webapp_tutorial.py"]
-source_sha256 = "9af0fee1200439f3918f870507b26e299f31045327ffcc4b510531dd1cbd31c3"
+source_sha256 = "79862d2256ecc7db1f5ffbcc67ae51b2380f6ec08050f9226db4213389c6c0c0"
 body_sha256 = "352bada44aed95e1742e23e30d529012367e2f0e5d77fa2c0b05c5bdf426f475"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py"]
-source_sha256 = "7459a2518aee42fc209bab4c81475cdbf53a8827bdee8b62c72a32c2f0bf3490"
+source_sha256 = "8b59cffc3e1fca2eb8a5c71d2342637dc395782aed8fcc34d82613da2c8cd727"
 body_sha256 = "ca13e786a14bb07b3a9363ceea6201f8e9d2d999421473945957c72acf7df235"
 
 [[topic]]
@@ -201,15 +201,15 @@ id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py"]
-source_sha256 = "2ea35d39993c3f9b4a166954e9da985c1eb5fad72d9bb547afb4dde222f6f67b"
-body_sha256 = "4a9693a1f1f4945c8f5fbf4ce0f8b3d2df569e4fafe0ca5ba73b7259419f6530"
+source_sha256 = "93dd21d2afbf4b8da273d7a02c92720fd1a12b65c9242964d3969050f6b18a19"
+body_sha256 = "a9804fc395c1ab3fb6bfc120af71d124b0bbcd7e7cf5fdddde332030a4871fec"
 
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "f204e4eda25291c62cd752ca3ef9856d83b7c7edb383ce598e96655f2ab0a528"
+source_sha256 = "cfad9ad219524f97f3a1dbcaf300591272ea0d3771ed34384d544e3c6a5f8f33"
 body_sha256 = "ca03c1ee80e21fe19b9f720bac49e382e30cf36cc7fccb755aac7bcd2a16fe1d"
 
 [[topic]]
@@ -233,7 +233,7 @@ id = "ui-terms"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
 tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
-source_sha256 = "7db8ee90c81679836e62860974b12ecfe5d7bb73a9bc7762c79aa5a0df44abb1"
+source_sha256 = "77d1f7b484422f1c8d3ae0ba2613335f06bb71c40f141b770c93532c2f389ef6"
 body_sha256 = "8879c5777fc703e8f163df4f116778998973e516a05119da8e93984736bd991b"
 
 [[topic]]
@@ -249,8 +249,8 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "293faba6860f94d5f778a9311a51059a063e100f5a0e75eb6035fde9b9873913"
-body_sha256 = "7fa8667419a847ec99a8699e3f43eb3eb2777649f9985553bf1a0a1fbbf44f55"
+source_sha256 = "2745249751db2f169772c36829563da7ddd0012f7ed99de93f8d3ca568ab3656"
+body_sha256 = "dfe60b2e6ea043f2d136fdc3a7cd6075c04e9b0e86a33f28e5db3fc5f3828684"
 
 [[topic]]
 id = "development"

@@ -1648,6 +1648,44 @@ def test_pool_mount_data_row_stands_beside_its_slot_key(tmp_path):
     assert snap["data_row"]["key"] == "session"
 
 
+@pytest.mark.parametrize("kind", ["excel", "pclm"])
+def test_registered_sheet_tabs_switch_restore_and_isolate_filters(tmp_path, kind):
+    ctrl, pool = _pool_controller(tmp_path)
+    first, second = ("공고목록", "낙찰현황") if kind == "excel" else (_PCLM_VIEW, "계약")
+    opts = {"path": str(MULTI_SHEET), "sheet": first} if kind == "excel" else {
+        "db": _pclm_db(tmp_path), "view": first,
+    }
+    key = _pool_add(pool, "월별 공고", {**opts, "sheets": [first, second]}, kind=kind)
+    other = _pool_add(pool, "다른 데이터", {"path": _data_csv(tmp_path)})
+    assert ctrl.refresh_panel()["data_sheet_tabs"] == []
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"]
+    tabs = ctrl.snapshot()["data_sheet_tabs"]
+    assert [(r["key"], r["sheet"], r["active"]) for r in tabs] == [
+        (key, first, True), (key, second, False),
+    ]
+    column = next(iter(ctrl.data.records[0]))
+    assert _create(ctrl, "공고 필터", {"columns": {column: {"text": "공고"}}})["ok"]
+    assert ctrl.dispatch("load_pool", {"key": key, "sheet": second})["ok"]
+    assert ctrl.data.filter.presets == []
+    column = next(iter(ctrl.data.records[0]))
+    assert _create(ctrl, "낙찰 필터", {"columns": {column: {"text": "낙찰"}}})["ok"]
+    assert ctrl.dispatch("remount_data", {})["ok"]
+    assert ctrl.data.sheet == second
+    assert [p["name"] for p in ctrl.data.filter.presets] == ["낙찰 필터"]
+    descriptor = dict(ctrl._remembered_data_source)
+    assert ctrl.dispatch("load_pool", {"key": key, "sheet": first})["ok"]
+    assert [p["name"] for p in ctrl.data.filter.presets] == ["공고 필터"]
+    before = ctrl.data.records
+    assert not ctrl.dispatch("load_pool", {"key": key, "sheet": "미등록"})["ok"]
+    assert ctrl.data.sheet == first and ctrl.data.records is before
+    assert ctrl._mount_remembered_data(descriptor) == ""
+    assert ctrl.data.sheet == second
+    assert ctrl.refresh_panel()["data_sheet_tabs"][1]["active"]
+    assert pool.load(key).opts["sheet" if kind == "excel" else "view"] == first
+    assert ctrl.dispatch("load_pool", {"key": other})["ok"]
+    assert ctrl.snapshot()["data_sheet_tabs"] == []
+
+
 def test_pclm_mount_data_row_names_the_sheet_in_the_subtitle(tmp_path):
     """계약 목록 — 부제의 시트 이름은 DB 가 가진 이름 그대로다(엑셀 시트처럼).
 

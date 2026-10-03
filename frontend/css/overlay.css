@@ -129,6 +129,19 @@
    그리던 자리라, 규칙이 남아 있으면 다음 손이 그 문법을 되살린다.
    표준 모달보다 넓은 것은 그대로다 — 행 하나가 이름·부제·배지·⋯ 를 함께 이는다. */
 .data-picker{width:min(760px,94vw)}
+.pool-registration{max-height:86vh;overflow-y:auto}
+.pool-reg-sheets{min-width:0;margin:var(--sp-12) 0;padding:0;border:0}
+.pool-reg-sheets legend{margin-bottom:var(--sp-6)}
+.pool-reg-sheet-list{max-height:24vh;overflow-y:auto;border-bottom:1px solid var(--a-border)}
+.pool-reg-sheet{display:flex;align-items:center;gap:var(--sp-8);min-height:36px;
+  padding:var(--sp-6) var(--sp-8);cursor:pointer}
+.pool-reg-sheet span{min-width:0;overflow-wrap:anywhere}
+.pool-reg-sheet input{flex:none;accent-color:var(--a-primary)}
+.pool-reg-sheet:has(input:checked){background:var(--a-sel)}
+.pool-reg-sheet:hover{background:var(--a-window)}
+.pool-reg-sheet:has(input:focus-visible){outline:2px solid var(--a-primary);outline-offset:-2px}
+.pool-reg-sheet-all{border-bottom:1px solid var(--a-border);font-weight:600}
+.pool-reg-sheets:disabled .pool-reg-sheet{cursor:default;color:var(--a-muted)}
 /* 구획 골격은 **산출물 관찰 시트**가 계속 쓴다(`job_artifact.ts`) — 다이얼로그가 이 어휘를
    놓았다고 규칙을 지우면 그 시트의 캡·설명 줄이 함께 무너진다. */
 .picker-sec{margin-top:var(--sp-16)}

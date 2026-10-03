@@ -1,6 +1,5 @@
-/* 명시적으로 고른 시트를 일괄 등록하고 활성 데이터 하나의 descriptor를 반환한다.
-   등록 전 취소는 로드 0건이다. 처리 중 닫기를 막고, 부분 실패 뒤 닫기는 이미
-   활성화한 결과를 반환한다. 실패 항목과 활성화 오류는 창 안에서 재진술한다.
+/* 명시적으로 고른 시트를 등록 하나에 선언하고 활성 데이터의 descriptor를 반환한다.
+   등록 전 취소는 로드 0건이다. 처리 중 닫기를 막고 실패는 창 안에서 재진술한다.
    호출자는 SheetPickerPort 하나만 사용하며 확정·닫힘은 정확히 한 번 정산한다. */
 import { createElement, useEffect, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -14,7 +13,7 @@ import { expectHostValue } from "./runtime.ts";
 type Obj = Record<string, any>;
 type Listener = () => void;
 
-type ModalPort = { open(id: string, spec?: Obj): void; close(id: string): void };
+type ModalPort = { open(id: string, spec?: Obj): void; close(id: string): void; confirm(spec: Obj): Promise<boolean> };
 
 export type SheetPickerDeps = {
   doc: Document;
@@ -90,22 +89,28 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
     session = { ...current, picking: true };
     emit();
     try {
-      const result = expectHostValue(
+      let result = expectHostValue(
         await deps.client.invoke("load_data_sheet", current.screen, current.path, selected),
         "load_data_sheet",
       );
+      if (result && typeof result === "object" && (result as Obj).needs_confirm) {
+        const confirmation = result as Obj;
+        if (!(await deps.modal.confirm({ body: confirmation.confirm_text,
+          confirmLabel: "등록", cancelLabel: "취소", danger: true }))) {
+          session = { ...current, picking: false };
+          emit();
+          return;
+        }
+        result = expectHostValue(await deps.client.invoke("load_data_sheet",
+          current.screen, current.path, selected, { basis: confirmation.basis }), "load_data_sheet");
+      }
       if (result && typeof result === "object" && Array.isArray((result as Obj).sheets)) {
-        const incoming = result as Obj;
-        const outcomes = new Map((current.result?.sheets || []).map((row: Obj) => [row.name, row]));
-        for (const row of incoming.sheets) outcomes.set(row.name, row);
-        const batch = { ...incoming, mount: incoming.mount || current.result?.mount,
-          sheets: [...outcomes.values()] } as Obj;
+        const batch = result as Obj;
         const failed = batch.sheets.filter((row: Obj) => row.error);
         if (!failed.length && batch.mount && !batch.error) {
           current.settle(batch.mount);
         } else {
-          session = { ...current, picking: false, result: batch,
-            selected: failed.map((row: Obj) => row.name) };
+          session = { ...current, picking: false, result: batch };
           emit();
         }
       } else {
@@ -188,7 +193,7 @@ export function SheetPickerDialog(props: { controller: SheetPickerController }):
       h("span", { className: "muted sheet-dim" }, `약 ${sheet.rows}행 × ${sheet.cols}열`)))),
     session?.result ? h("div", { role: "status", className: "note" },
       ...session.result.sheets.map((row: Obj) => h("div", { key: row.name },
-        `${row.name}: ${row.error || "등록됨"}`)),
+        row.error || row.key ? `${row.name}: ${row.error || "등록됨"}` : null)),
       session.result.error ? h("div", { className: "danger" }, session.result.error) : null) : null,
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "sheetCancel", disabled: !!session?.picking,

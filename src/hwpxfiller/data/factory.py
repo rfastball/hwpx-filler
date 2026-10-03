@@ -44,6 +44,7 @@ def make_source(kind: str, **opts) -> DataSource:
     미래 종류(``"cumulative"`` 등)는 여기에 분기만 추가한다.
     """
     if kind == "excel":
+        opts.pop("sheets", None)  # 등록 범위는 소스 생성자 옵션이 아니다.
         return ExcelDataSource(**opts)
     if kind == "inline":
         from ..domain.inline import InlineDataSource
@@ -56,6 +57,7 @@ def make_source(kind: str, **opts) -> DataSource:
     if kind == "pclm":
         from .pclm import PclmDataSource
 
+        opts.pop("sheets", None)
         return PclmDataSource(**opts)
     if kind == "pipeline":
         from .pipeline import PipelineSource

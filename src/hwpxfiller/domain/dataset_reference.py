@@ -62,11 +62,20 @@ class DatasetReference:
     note: str = ""
     version: int = 1
     filters: "list[dict]" = field(default_factory=list)
+    sheet_filters: "dict[str, list[dict]]" = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.status not in _STATUSES:
             raise ValueError(f"알 수 없는 데이터셋 상태입니다: {self.status!r}")
         self.filters = filter_presets_shape(self.filters)
+        reference_sheets(self)
+        if not isinstance(self.sheet_filters, dict) or any(
+            not isinstance(name, str) or not name for name in self.sheet_filters
+        ):
+            raise ValueError("시트별 필터 형식이 올바르지 않습니다.")
+        self.sheet_filters = {
+            name: filter_presets_shape(presets) for name, presets in self.sheet_filters.items()
+        }
 
     def archive(self) -> None:
         self.status = STATUS_ARCHIVED
@@ -89,6 +98,7 @@ class DatasetReference:
             "created_at": self.created_at,
             "note": self.note,
             **({"filters": copy.deepcopy(self.filters)} if self.filters else {}),
+            **({"sheet_filters": copy.deepcopy(self.sheet_filters)} if self.sheet_filters else {}),
         }
 
     @classmethod
@@ -107,7 +117,65 @@ class DatasetReference:
             note=value.get("note", ""),
             version=value.get("version", 1),
             filters=value.get("filters", []),
+            sheet_filters=value.get("sheet_filters", {}),
         )
+
+
+def reference_sheets(item: DatasetReference) -> "list[str]":
+    """등록된 시트 선언. 구판 단일 시트 참조는 그대로 한 장으로 읽는다."""
+    if not isinstance(item.opts, dict):
+        raise ValueError("등록 데이터 참조 형식이 올바르지 않습니다.")
+    raw = item.opts.get("sheet") if item.kind == "excel" else item.opts.get("view")
+    if item.kind not in {"excel", "pclm"} or "sheets" not in item.opts:
+        return [raw] if isinstance(raw, str) and raw else []
+    sheets = item.opts["sheets"]
+    if (
+        not isinstance(sheets, list) or not sheets
+        or any(not isinstance(name, str) or not name for name in sheets)
+        or len(set(sheets)) != len(sheets)
+        or raw not in sheets
+    ):
+        raise ValueError("등록할 시트와 기본 시트를 확인하세요.")
+    return list(sheets)
+
+
+def reference_for_sheet(
+    item: DatasetReference, sheet: "str | None" = None,
+) -> DatasetReference:
+    """등록 선언 안의 시트를 읽을 사본. 저장된 기본 시트는 바꾸지 않는다."""
+    selected = copy.deepcopy(item)
+    if sheet is None:
+        return selected
+    if sheet == "" and not reference_sheets(item):
+        return selected
+    if sheet not in reference_sheets(item):
+        raise ValueError("등록된 시트를 선택하세요.")
+    selected.filters = filters_for_sheet(item, sheet)
+    selected.opts["sheet" if item.kind == "excel" else "view"] = sheet
+    return selected
+
+
+def filters_for_sheet(item: DatasetReference, sheet: "str | None" = None) -> "list[dict]":
+    """기본 시트의 구판 필터와 다른 시트의 필터를 분리해 읽는다."""
+    default = item.opts.get("sheet" if item.kind == "excel" else "view")
+    if sheet is None or sheet == (default or "") or item.kind not in {"excel", "pclm"}:
+        return copy.deepcopy(item.filters)
+    if sheet not in reference_sheets(item):
+        raise ValueError("등록된 시트를 선택하세요.")
+    return copy.deepcopy(item.sheet_filters.get(sheet, []))
+
+
+def excel_reference_opts(
+    path: str, sheet: "str | None" = None, sheets: "list[str] | None" = None,
+) -> "dict[str, object]":
+    """엑셀 등록·재연결이 공유하는 참조 형상."""
+    opts: "dict[str, object]" = {"path": path}
+    if sheet:
+        opts["sheet"] = sheet
+    if sheets is not None:
+        opts["sheets"] = list(sheets)
+    DatasetReference(name="", kind="excel", opts=opts)
+    return opts
 
 
 def filter_presets_shape(value: object) -> "list[dict]":
@@ -160,7 +228,11 @@ __all__ = [
     "STATUS_RETIRED",
     "DatasetReference",
     "excel_identity",
+    "excel_reference_opts",
+    "filters_for_sheet",
     "filter_presets_shape",
     "pclm_identity",
     "reference_identity",
+    "reference_sheets",
+    "reference_for_sheet",
 ]

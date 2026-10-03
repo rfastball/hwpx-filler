@@ -497,14 +497,16 @@ def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, mo
     again = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
     assert again["mount"]["label"] == "등록 데이터: 사용자 이름"
     assert [row["key"] for row in again["sheets"]] == keys
-    assert len(pool.rows()) == 2
+    assert len(pool.rows()) == 1
+    assert keys[0] == keys[1]
+    assert pool.registry.load(keys[0]).opts["sheets"] == ["공고목록", "낙찰현황"]
     assert pool.registry.load(keys[0]).name == "사용자 이름"
     assert pool.registry.load(keys[0]).note == "보존"
     if screen == "job":
         job = frontend.controllers["job"]
         assert job.data.pool_key == keys[0]
         assert len(job.data.records) == 2
-        assert job.dispatch("load_pool", {"key": keys[1]})["ok"]
+        assert job.dispatch("load_pool", {"key": keys[0], "sheet": "낙찰현황"})["ok"]
         assert len(job.data.records) == 3
         before = job.data.records
         assert not job.dispatch("load_pool", {"key": "missing"})["ok"]
@@ -514,6 +516,11 @@ def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, mo
     item.opts["header_row"] = 2
     pool.registry.save_at(keys[0], item)
     custom = frontend.load_data_sheet(screen, str(MULTI_SHEET), ["공고목록"])
+    assert custom["needs_confirm"]
+    assert pool.registry.load(keys[0]).opts["sheets"] == ["공고목록", "낙찰현황"]
+    custom = frontend.load_data_sheet(
+        screen, str(MULTI_SHEET), ["공고목록"], {"basis": custom["basis"]},
+    )
     assert custom["error"] == ""
     assert custom["mount"]["rows"] == 1
     if screen == "editor":
@@ -521,10 +528,10 @@ def test_sheet_batch_registers_reuses_and_mounts_only_first(screen, tmp_path, mo
     pool.registry.archive(keys[0])
     archived = frontend.load_data_sheet(screen, str(MULTI_SHEET), names)
     assert "활성화" in archived["sheets"][0]["error"]
-    assert archived["mount"]["sheet"] == "낙찰현황"
+    assert archived["mount"] is None
 
 
-def test_sheet_batch_partial_failure_and_invalid_input_preserve_data(tmp_path, monkeypatch):
+def test_sheet_batch_failure_and_invalid_input_preserve_data(tmp_path, monkeypatch):
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
@@ -533,6 +540,9 @@ def test_sheet_batch_partial_failure_and_invalid_input_preserve_data(tmp_path, m
     before = job.data.records
     for invalid in ([], [1], ["없는 시트"]):
         assert frontend.load_data_sheet("job", str(MULTI_SHEET), invalid).startswith("ERROR:")
+        assert job.data.records is before
+    for selection, confirmation in (("공고목록", {"basis": "stale"}), (["공고목록"], {"confirm": True})):
+        assert frontend.load_data_sheet("job", str(MULTI_SHEET), selection, confirmation).startswith("ERROR:")
         assert job.data.records is before
     factory = app_mod.source_for_path
 
@@ -544,8 +554,10 @@ def test_sheet_batch_partial_failure_and_invalid_input_preserve_data(tmp_path, m
     monkeypatch.setattr(app_mod, "source_for_path", source)
     result = frontend.load_data_sheet("job", str(MULTI_SHEET), ["공고목록", "낙찰현황"])
     assert result["sheets"][0]["error"] == "읽기 실패"
-    assert result["mount"]["sheet"] == "낙찰현황"
-    assert len(frontend.controllers["pool"].vm.rows()) == 1
+    assert result["mount"] is None
+    assert result["error"]
+    assert not frontend.controllers["pool"].vm.rows()
+    assert job.data.records is before
     before = job.data.records
     failed = frontend.load_data_sheet("job", str(MULTI_SHEET), ["공고목록"])
     assert failed["mount"] is None
