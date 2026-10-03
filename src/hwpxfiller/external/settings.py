@@ -60,6 +60,7 @@ __all__ = (
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
+    "restore_tutorial_preferences",
     "load_tutorial_progress",
     "save_tutorial_progress",
     "load_job_collapsed_groups",
@@ -214,6 +215,19 @@ def _mutate(mutator) -> None:
 def _save_key(key: str, value) -> None:
     """단일 키 영속 — RMW·원자성·재시도 계약은 :func:`_mutate` 공용 몸통이 진다."""
     _mutate(lambda data: data.__setitem__(key, value))
+
+
+def restore_tutorial_preferences(data_source: dict | None, output_directory: str) -> None:
+    """Restore only practice's remembered mount/output, preserving unrelated preferences."""
+    def restore(data: dict) -> None:
+        for key, value in (("last_data_source", data_source),
+                           ("last_output_directory", output_directory)):
+            if value:
+                data[key] = value
+            else:
+                data.pop(key, None)
+
+    _mutate(restore)
 
 
 def _save_nested(top_key: str, sub_key: str, sub_value) -> None:

@@ -95,6 +95,15 @@ def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_p
         frontend.save_authoring_document(opened["session_id"], -1)
     with pytest.raises(ValueError, match="변경"):
         frontend.save_authoring_document(opened["session_id"], 0.0)
+    options = []
+    monkeypatch.setattr(app_mod, "_file_dialog", lambda _filters, **kw: options.append(kw) or None)
+    tutorial = frontend.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "field_trial"})
+    assert frontend.open_authoring_document("", True) is None
+    assert options[-1]["initial_path"] == tutorial._asset("낙찰자 선정 및 계약체결 안내.txt")
+    tutorial.dispatch("pause", {})
+    assert frontend.open_authoring_document("", True) is None
+    assert options[-1] == {}
 
 
 def test_authoring_result_export_defaults_to_a_trial_named_file(tmp_path, monkeypatch):
@@ -337,7 +346,8 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
-    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(MULTI_SHEET))
+    options = []
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: options.append(k) or str(MULTI_SHEET))
 
     result = frontend.pick_data_file("editor")
     assert isinstance(result, dict) and result["needs_sheet"] is True
@@ -347,6 +357,20 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert result["sheets"][0]["rows"] and result["sheets"][0]["cols"]  # 행×열 근사 동반
     # 핵심: 아직 아무 것도 로드하지 않았다(조용한 첫 시트 강등 없음).
     assert frontend.controllers["editor"].edit.data_path == ""
+    assert "initial_path" not in options[-1]
+    tutorial = frontend.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "first_hwpx"})
+    tutorial.dispatch("next", {})
+    frontend.dispatch("editor", "use_library_template", {"path": tutorial._asset("물품 구매입찰 공고.hwpx")})
+    # The hint reaches the native seam but choosing a different workbook remains valid.
+    result = frontend.pick_data_file("editor")
+    assert result["path"] == str(MULTI_SHEET)
+    assert options[-1]["initial_path"] == tutorial._asset("공고목록.xlsx")
+    assert frontend.pick_pool_data_file() == str(MULTI_SHEET)
+    assert options[-1]["initial_path"] == tutorial._asset("공고목록.xlsx")
+    tutorial.dispatch("pause", {})
+    frontend.pick_pool_data_file()
+    assert "initial_path" not in options[-1]
 
 
 def test_pick_data_file_cancel_preserves_committed_job_session(tmp_path, monkeypatch):

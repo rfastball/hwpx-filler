@@ -923,8 +923,12 @@ def test_txt_lesson_reaches_verified_copy_via_product_actions(
     files = frontend.initial("tutorial")["resources"]["files"]
     template = next(item["path"] for item in files if item["name"].startswith(template_prefix))
     data = next(item["path"] for item in files if item["name"] == "공고목록.xlsx")
+    beat = frontend.initial("tutorial")["beat"]
+    assert beat["guidance"]["library"]["target"] == "new-job"
+    assert Path(template).name in beat["body"] and Path(data).name in beat["body"]
     send("editor", "new_session", {})
     send("editor", "use_library_template", {"path": template})
+    assert frontend.initial("tutorial")["beat"]["target"] == "data-picker"
     frontend.load_data_sheet("editor", data, sheet)
     send("editor", "goto_section", {"section": "binding"})
     editor = frontend.controllers["editor"]
@@ -949,8 +953,10 @@ def test_txt_lesson_reaches_verified_copy_via_product_actions(
     assert send("editor", "save", {})["ok"]
     send("job", "select_job", {"name": editor.edit.job_name, "confirm": True})
     send("job", "set_none", {})
+    assert frontend.initial("tutorial")["beat"]["guidance"]["job"]["target"] == "row-selection"
     for index in (0, 1):
         send("job", "toggle_record", {"index": index, "value": True})
+    assert frontend.initial("tutorial")["beat"]["guidance"]["job"]["target"] == "open-workbench"
     send("job", "open_workbench", {})
     send("workbench", "step", {"delta": 1})
     assert frontend.initial("tutorial")["checkpoint"] == 5
@@ -978,6 +984,7 @@ def _authoring_lesson(tmp_path, monkeypatch, lesson_id):
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     app = WebFrontend()
     app.dispatch("tutorial", "select", {"scenario_id": lesson_id})
+    assert app.initial("tutorial")["beat"]["target"] == "authoring-open"
     path = next(item["path"] for item in app.initial("tutorial")["resources"]["files"]
                 if item["name"].startswith("낙찰자 선정"))
     opened = app.open_authoring_document(path, True)
@@ -1088,7 +1095,13 @@ def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path,
     original = tutorial._context()["assets"]["공고목록.xlsx"]["path"]
     derived = send("tutorial", "prepare_examples", {})["path"]
     assert derived != original and app.initial("tutorial")["checkpoint"] == 1
+    guide = app.initial("tutorial")["beat"]["guidance"]
+    assert guide["job"]["primary"]["screen"] == "library"
+    assert guide["library"]["target"] == "edit-job"
+    assert tutorial.file_picker_hint("data", "job") == ""
     assert not str(app.open_job_in_editor(name)).startswith("ERROR:")
+    assert app.initial("tutorial")["beat"]["guidance"]["editor"]["target"] == "data-picker"
+    assert tutorial.file_picker_hint("data", "editor") == derived
     app.load_data_sheet("editor", derived, "공고")
     assert app.initial("tutorial")["checkpoint"] == 2
     send("editor", "goto_section", {"section": "binding"})
@@ -1111,7 +1124,7 @@ def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, m
     app = WebFrontend()
     send = app.dispatch
     send("tutorial", "select", {"scenario_id": "blank_values"})
-    derived = send("tutorial", "prepare_examples", {})["path"]
+    derived = app.controllers["tutorial"]._context()["derived_data_path"]
     assert Path(derived).is_file() and app.initial("tutorial")["checkpoint"] == 1
     name = app.controllers["tutorial"]._context()["job_name"]
     send("job", "select_job", {"name": name, "confirm": True})
@@ -1121,6 +1134,9 @@ def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, m
     send("workbench", "set_current", {"index": 0})
     card = app.controllers["workbench"].snapshot()["card"]
     assert "계약보증금" in card["empty_fields"]
+    assert "단위" not in card["empty_fields"]
+    unit = next(row for row in app.controllers["workbench"].snapshot()["rows"] if row["name"] == "단위")
+    assert unit["blank_declared"] and unit["value"] == ""
     assert app.initial("tutorial")["checkpoint"] == 2
     send("workbench", "set_map_value", {"name": "계약보증금", "text": "1000000"})
     assert "계약보증금" not in app.controllers["workbench"].snapshot()["card"]["empty_fields"]
@@ -1129,6 +1145,7 @@ def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, m
     snap = app.initial("tutorial")
     assert snap["checkpoint"] == snap["beat_count"] == 4
     assert snap["result"]["count"] == 1
+    assert snap["result"]["next_scenario_id"] == "field_trial"
 
 
 def _select_notice_options(app, company_label, request_prefix):
@@ -1196,3 +1213,105 @@ def test_notice_lesson_generates_exact_three_rows_with_options(
     assert snap["checkpoint"] == snap["beat_count"]
     assert snap["result"]["count"] == 3
     assert len(snap["result"]["documents"]) == 3
+
+
+@pytest.mark.parametrize("origin,changed", [
+    ("job", False), ("job", True), ("job", "missing"),
+    ("editor", False), ("authoring", False), ("workbench", False),
+])
+def test_practice_exit_restores_original_context_only_on_identical_data(tmp_path, monkeypatch, origin, changed):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    job = app.controllers["job"]
+    template = tutorial.practice.template_root / "원래 서식.txt"
+    template.parent.mkdir(parents=True, exist_ok=True)
+    template.write_text("{{이름}}", encoding="utf-8")
+    data = tmp_path / "original.csv"
+    data.write_text("이름\n원래\n다른\n", encoding="utf-8-sig")
+    saved = Job(name="원래 작업", template_path=str(template), data_path=str(data),
+                mapping=MappingProfile(mappings=[FieldMapping("이름", "이름")]),
+                binding_authority=JOB_MAPPING_AUTHORITY)
+    job.registry.save(saved)
+    job.load_data_path(str(data))
+    assert job.dispatch("prefer_work", {"name": saved.name})["promoted"]
+    job.dispatch("filter_col_text", {"column": "이름", "text": "원래"})
+    job.dispatch("toggle_record", {"index": 0, "value": True})
+    original_range = job.data.committed_range().fingerprint()
+    original_source = settings.load_last_data_source()
+    if origin == "editor":
+        app.controllers["editor"].load_job(saved.name)
+    if origin == "authoring":
+        authoring_id = app.open_authoring_document(str(template), True)["session_id"]
+    if origin == "workbench":
+        assert job.dispatch("open_workbench", {})["ok"]
+    guard = tutorial.dispatch("preflight", {"screen": origin, "action": "select", "scenario_id": "blank_values"})
+    assert guard["ok"] and not guard["needs_confirm"]
+    if origin == "editor":
+        app.controllers["editor"].dispatch("new_session", {})
+    tutorial.dispatch("select", {"scenario_id": "blank_values", "transition_token": guard["transition_token"]})
+    practice_name = tutorial._context()["job_name"]
+    job.dispatch("select_job", {"name": practice_name})
+    tutorial.dispatch("select", {"scenario_id": "field_trial"})  # must not replace the original return context
+    if origin == "authoring":
+        app.open_authoring_document(tutorial._asset("낙찰자 선정 및 계약체결 안내.txt"), True)
+    job.set_output_folder(str(tmp_path / "practice-output"))
+    settings.save_theme("dark")
+    if changed is True:
+        data.write_text("이름\n바뀐\n다른\n", encoding="utf-8-sig")
+    elif changed == "missing":
+        data.unlink()
+    result = tutorial.dispatch("exit", {})
+    if changed == "missing":
+        assert result["ok"] is False and result["error"]
+        assert tutorial.snapshot()["practice"]["active"]
+        data.write_text("이름\n원래\n다른\n", encoding="utf-8-sig")
+        result = tutorial.dispatch("exit", {})
+    assert result["ok"] and result["screen"] == origin
+    assert job.work.name == saved.name and job.data.path == str(data)
+    assert settings.load_last_data_source() == original_source
+    assert settings.load_last_output_directory() == "" and job.remembered_output_directory() == ""
+    assert settings.load_theme() == "dark"
+    assert not tutorial.snapshot()["practice"]["active"]
+    assert not tutorial.snapshot()["show_result"]
+    if changed is True:
+        assert job.data.selected_indices() == [] and not job.data.filter.is_active()
+        assert "변경" in result["notice"]
+    else:
+        assert job.data.committed_range().fingerprint() == original_range
+    if origin == "editor":
+        assert app.controllers["editor"].edit.base.name == saved.name
+    if origin == "authoring":
+        assert app.controllers["authoring"].active_id == authoring_id
+    if origin == "workbench":
+        assert app.controllers["workbench"].job_name == saved.name
+    assert job.registry.load(practice_name)  # no automatic practice deletion
+
+
+def test_practice_transition_guards_stale_tokens_and_keeps_exit_after_setup_failure(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    editor = app.controllers["editor"]
+    editor.dispatch("set_name", {"name": "미저장 작업"})
+    before = tutorial.progress.progress()
+    guard = tutorial.dispatch("preflight", {"screen": "editor", "action": "select", "scenario_id": "first_hwpx"})
+    assert guard["needs_confirm"] and tutorial.progress.progress() == before
+    with pytest.raises(ValueError, match="저장하지 않은"):
+        tutorial.dispatch("select", {"scenario_id": "first_hwpx"})
+    tutorial.dispatch("preflight", {"screen": "editor", "action": "navigate", "destination_screen": "library"})
+    editor.dispatch("new_session", {})
+    with pytest.raises(ValueError, match="다시 시도"):
+        tutorial.dispatch("select", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
+    guard = tutorial.dispatch("preflight", {"screen": "library", "action": "select", "scenario_id": "first_hwpx"})
+    monkeypatch.setattr(tutorial.practice, "prepare", lambda **_kw: (_ for _ in ()).throw(OSError("prepare failure")))
+    with pytest.raises(OSError, match="prepare failure"):
+        tutorial.dispatch("select", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
+    assert tutorial.snapshot()["practice"]["active"]
+    assert tutorial.progress.selected is None
+    assert tutorial.dispatch("exit", {}) == {"ok": True, "screen": "library", "notice": ""}
+    assert settings.load_last_data_source() is None

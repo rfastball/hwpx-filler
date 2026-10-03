@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
+from contextlib import nullcontext
 import re
 import threading
 from typing import Any
+from uuid import uuid4
 
 from ..domain.job import JOB_MAPPING_AUTHORITY, Job
 from ..domain.mapping import FieldMapping, MappingProfile
@@ -35,6 +38,8 @@ class OnboardingController:
         self.controllers: dict = {}
         self._recovery: str | None = None
         self._lock = threading.RLock()
+        self._return_context: dict | None = None
+        self._pending_transition: dict | None = None
 
     def bind(self, controllers: dict) -> None:
         self.controllers = controllers
@@ -111,10 +116,224 @@ class OnboardingController:
         snap["resources"] = {"ready": ready, "summary": f"{summary} {notice}".strip(), "files": files}
         reason = self._recovery or (None if ready or not self.progress.selected else summary)
         snap["recovery"] = {"title": "연습 파일을 확인하세요", "body": reason} if reason else None
+        snap["practice"] = {"active": self._return_context is not None,
+                            "return_screen": self._return_context.get("screen") if self._return_context else None}
+        if snap["beat"]:
+            self._guide(snap["beat"])
         return snap
+
+    def _capture_return(self, screen: str) -> dict:
+        job = self._job()
+        data = job.data
+        return {"screen": screen, "job_name": job.work.name,
+                "editor_job": self._editor().edit.base.name if self._editor().edit.base else "",
+                "source": {"path": data.path, "sheet": data.sheet, "header_row": data.header_row,
+                           "kind": data.kind, "source_kind": data.source_kind, "pool_key": data.pool_key},
+                "records": deepcopy(data.records), "range": data.committed_range().copy(),
+                "hidden_columns": set(data.hidden_columns),
+                "remembered_data": deepcopy(job._remembered_data_source),
+                "output_directory": job.remembered_output_directory(),
+                "authoring_id": self.controllers["authoring"].active_id,
+                "workbench_row": (self._workbench().snapshot().get("card") or {}).get("source_row")}
+
+    def _preflight(self, payload: dict) -> dict:
+        self._pending_transition = None
+        screen = payload["screen"]
+        action = payload["action"]
+        if screen not in {"job", "library", "editor", "workbench", "authoring"}:
+            raise ValueError("돌아갈 화면을 확인할 수 없습니다.")
+        if action not in {"start", "select", "restart", "resume", "exit", "navigate"}:
+            raise ValueError("튜토리얼 전환을 다시 시도하세요.")
+        scenario = payload.get("scenario_id")
+        if scenario is not None and scenario not in BY_ID:
+            raise ValueError("과정을 다시 고르세요.")
+        self._job().raise_if_generating_before_swap("튜토리얼을 전환하세요")
+        destination = payload.get("destination_screen", "job") if action == "navigate" else "job"
+        if destination not in {"job", "library", "editor", "workbench", "authoring"}:
+            raise ValueError("돌아갈 화면을 확인할 수 없습니다.")
+        token = uuid4().hex
+        if action != "navigate":
+            self._pending_transition = {"token": token, "action": action, "scenario_id": scenario,
+                                        "basis": self._transition_basis(),
+                                        "context": self._capture_return(screen) if self._return_context is None else None}
+        dirty = screen == "editor" and self._editor().has_unsaved_work()
+        return {"ok": True, "transition_token": token, "needs_confirm": dirty, "target_screen": destination,
+                "confirm_text": "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?" if dirty else ""}
+
+    def _transition_basis(self) -> tuple:
+        job = self._job()
+        return (job.work.name, id(job.data), job.data.snapshot_generation,
+                job.data.committed_range().fingerprint())
+
+    def _transition_context(self, action: str, payload: dict) -> dict | None:
+        self._job().raise_if_generating_before_swap("튜토리얼을 전환하세요")
+        token = payload.get("transition_token")
+        if token is None:
+            if self._editor().has_unsaved_work():
+                raise ValueError("저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?")
+            return self._capture_return("job") if self._return_context is None else None
+        pending = self._pending_transition
+        if (not pending or token != pending["token"] or action != pending["action"]
+                or payload.get("scenario_id") != pending["scenario_id"]
+                or pending["basis"] != self._transition_basis()):
+            raise ValueError("튜토리얼 전환을 다시 시도하세요.")
+        self._pending_transition = None
+        return pending["context"]
+
+    def _exit(self) -> dict:
+        original = self._return_context
+        if original is None:
+            self.progress.pause()
+            return {"ok": True, "screen": "job", "notice": ""}
+        job = self._job()
+        self.progress.pause()
+        try:
+            job.raise_if_generating_before_swap("연습을 종료하세요")
+            job.dispatch("select_job", {"name": "", "confirm": True})
+            source = original["source"]
+            if source["source_kind"] == "pool":
+                result = job.dispatch("load_pool", {"key": source["pool_key"], "sheet": source["sheet"]})
+                if isinstance(result, dict) and result.get("ok") is False:
+                    raise ValueError(result.get("error", "데이터를 불러오지 못했습니다."))
+            elif source["source_kind"]:
+                job._mount_by_kind(source["path"], source["sheet"], source["header_row"], source["kind"])
+            else:
+                from .data_zone import JobDataSession
+
+                job.data = JobDataSession(job.data.pool_registry)
+            if original["job_name"]:
+                restored = job.dispatch("prefer_work", {"name": original["job_name"]})
+                if not restored.get("promoted"):
+                    raise ValueError(f"'{original['job_name']}' 작업을 현재 데이터에 연결할 수 없습니다.")
+            notice = ""
+            same_source = all(getattr(job.data, key) == value for key, value in source.items())
+            if same_source and job.data.records == original["records"]:
+                saved_range = original["range"].copy()
+                job.data.selection = saved_range.selection
+                job.data.filter = saved_range.filter
+                job.data.view_order = saved_range.view_order
+                job.data.hidden_columns = original["hidden_columns"]
+            else:
+                notice = "원래 데이터가 변경되어 필터와 행 선택을 복원하지 않았습니다."
+                job.data.set_notice(notice)
+            screen = original["screen"]
+            if screen == "editor" and original["editor_job"]:
+                self._editor().load_job(original["editor_job"])
+            elif screen == "authoring" and original["authoring_id"]:
+                self.controllers["authoring"].dispatch("activate", {"session_id": original["authoring_id"]})
+            elif screen == "workbench":
+                opened = job.dispatch("open_workbench", {})
+                if opened.get("ok") is True:
+                    card = self._workbench().snapshot().get("card") or {}
+                    index = next((item["index"] for item in card.get("index_map", [])
+                                  if item["row"] == original["workbench_row"]), None)
+                    if index is not None:
+                        self._workbench().dispatch("set_current", {"index": index})
+                else:
+                    screen = "job"
+                    notice = " ".join(filter(None, (notice, opened.get("error"))))
+            elif screen == "editor":
+                screen = "job" if original["job_name"] else "library"
+            settings.restore_tutorial_preferences(original["remembered_data"], original["output_directory"])
+            job._remembered_data_source = original["remembered_data"]
+            job._remembered_output_directory = original["output_directory"]
+            job.runs.out_dir = job._output_folder_resolution().directory
+            job._push()
+        except (ValueError, OSError, KeyError) as exc:
+            self._recovery = f"원래 작업으로 돌아오지 못했습니다: {exc}. 연습 종료를 다시 시도하세요."
+            return {"ok": False, "error": self._recovery, "screen": "library"}
+        self._return_context = None
+        self._recovery = None
+        self.progress.result = None
+        return {"ok": True, "screen": screen, "notice": notice}
+
+    def _guide(self, beat: dict) -> None:
+        """Project intermediate product actions; the browser only locates their controls."""
+        ctx = self._context()
+        lesson = self.progress.selected
+        template_name = {"first_hwpx": "물품 구매입찰 공고.hwpx",
+                         "purchase_txt": "계약방법 결정 및 구매추진 안내.txt",
+                         "contract_txt": "낙찰자 선정 및 계약체결 안내.txt"}.get(lesson or "")
+        body = beat["body"]
+        if beat["screen"] == "editor" and template_name and lesson:
+            editor = self._editor().edit
+            sheet = "계약" if lesson == "contract_txt" else "공고"
+            if editor.template_path != self._asset(template_name):
+                prerequisite = next(item for item in BY_ID[lesson].beats if item.target == "template-list")
+                beat["target"], beat["title"], body = prerequisite.target, prerequisite.title, prerequisite.body
+            elif editor.data_path != self._asset("공고목록.xlsx") or editor.data_sheet != sheet:
+                prerequisite = next(item for item in BY_ID[lesson].beats
+                                    if item.target == ("data-picker" if lesson == "first_hwpx" else "template-list"))
+                beat["target"], beat["title"], body = "data-picker", prerequisite.title, prerequisite.body
+        for name in self.practice_names():
+            path = self._asset(name)
+            if path:
+                body = body.replace(name, Path(path).name)
+        if template_name and beat["target"] == "template-list":
+            body += f"\n서식: {Path(self._asset(template_name)).name}"
+            if lesson != "first_hwpx":
+                body += f"\n데이터: {Path(self._asset('공고목록.xlsx')).name}"
+            if self._editor().edit.template_path == self._asset(template_name):
+                beat["target"] = "data-picker"
+        if template_name and beat["target"] == "data-picker":
+            data_name = Path(self._asset("공고목록.xlsx")).name
+            if data_name not in body:
+                body += f"\n데이터: {data_name}"
+        if ctx.get("derived_data_path") and lesson in {"replace_data", "blank_values"}:
+            body += f"\n데이터: {Path(ctx['derived_data_path']).name} · {ctx['derived_sheet']}"
+        if lesson in {"field_trial", "option_apply"} and beat["id"] == "open":
+            beat["target"] = "authoring-open"
+            body += f"\n서식: {Path(self._asset('낙찰자 선정 및 계약체결 안내.txt')).name}"
+        if ctx.get("job_name"):
+            body += f"\n작업: {ctx['job_name']}"
+        beat["body"] = body
+        guidance = {}
+        if beat["screen"]:
+            guidance[beat["screen"]] = {"body": body, "target": beat["target"]}
+        if beat["target"] == "prepare-examples":
+            beat["primary"] = {"action": "prepare_examples", "label": "연습 파일 새로 준비"}
+        if beat["screen"] == "editor" and not ctx.get("job_name"):
+            guidance["library"] = {"body": body, "target": "new-job"}
+            guidance["job"] = {"body": body, "target": "new-job"}
+        elif beat["screen"] == "editor":
+            guidance["library"] = {"body": body, "target": "edit-job"}
+            guidance["job"] = {"body": body, "target": None,
+                               "primary": {"action": "navigate", "screen": "library",
+                                           "label": "현재 단계로 돌아가기"}}
+            beat["entry_screen"] = "library"
+            if self._editor().edit.job_name != ctx["job_name"]:
+                guidance["editor"] = {"body": body, "target": None,
+                                      "primary": {"action": "navigate", "screen": "library",
+                                                  "label": "현재 단계로 돌아가기"}}
+        if beat["screen"] in {"job", "workbench"} and ctx.get("job_name"):
+            guidance["library"] = {"body": body, "target": "library-jobs"}
+            if self._job().work.name != ctx["job_name"]:
+                guidance["job"] = {"body": body, "target": "job-list"}
+            elif beat["screen"] == "workbench":
+                target = "open-workbench" if self._job().data.selection.selected_count() else "row-selection"
+                guidance["job"] = {"body": body, "target": target}
+            beat["entry_screen"] = "job"
+        beat["guidance"] = guidance
 
     def initial(self) -> dict:
         return self.snapshot()
+
+    def file_picker_hint(self, kind: str, screen: str = "") -> str:
+        """Suggest the current practice asset without restricting the native file picker."""
+        with self._lock:
+            if self._return_context is None or not self.progress.active or not self._resources()[0]:
+                return ""
+            beat = self._snapshot()["beat"]
+            if not beat or (screen and screen != beat["screen"]):
+                return ""
+            target = beat["guidance"].get(screen or beat["screen"], {}).get("target", beat["target"])
+            if kind == "data" and target == "data-picker":
+                if self.progress.selected == "replace_data":
+                    return self._context().get("derived_data_path", "")
+                return self._asset("공고목록.xlsx")
+            if kind == "template" and target == "authoring-open":
+                return self._asset("낙찰자 선정 및 계약체결 안내.txt")
+            return ""
 
     def _prepare(self, *, derived: str = "") -> dict:
         batch = self.practice.prepare(derived=derived)
@@ -145,11 +364,17 @@ class OnboardingController:
         if scenario_id not in BY_ID:
             raise ValueError("과정을 다시 고르세요.")
         self.progress.select(scenario_id)
+        if not self.progress.active:
+            self.progress.restart(scenario_id)
+            self._prepare()
         ctx = self._context()
         if "assets" not in ctx:
             self._prepare()
         if scenario_id in {"repeat_hwpx", "replace_data", "option_apply"} and not ctx.get("job_name"):
             self._seed_job(scenario_id)
+        beat = self.progress.beat()
+        if scenario_id == "blank_values" and beat is not None and beat.id == "prepare":
+            self._dispatch("prepare_examples", {})
         ready, reason = self._resources()
         self._recovery = None if ready else reason
         if not ready:
@@ -179,6 +404,9 @@ class OnboardingController:
                             "대표계약업체": "계약상대자"}
         mapping = MappingProfile(mappings=[FieldMapping(field, source_overrides.get(field, field))
                                            for field in fields])
+        if lesson_id == "blank_values":
+            mapping.mappings = [FieldMapping("단위", type="const") if item.template_field == "단위" else item
+                                for item in mapping.mappings]
         name = f"튜토리얼 {BY_ID[lesson_id].title} {ctx['batch']}"
         job = Job(name=name, template_path=template_path, mapping=mapping,
                   filename_pattern="구매입찰공고-{{입찰공고번호}}" if not is_txt else "",
@@ -196,9 +424,33 @@ class OnboardingController:
 
     def dispatch(self, action: str, payload: dict):
         with self._lock:
-            return self._dispatch(action, payload)
+            transition = action in {"preflight", "start", "select", "restart", "resume", "exit"}
+            with self._job()._state_lock if transition else nullcontext():
+                before = deepcopy(self.progress) if transition else None
+                try:
+                    return self._dispatch(action, payload)
+                except Exception:
+                    if before is not None:
+                        self.progress = before
+                        self._persist()
+                        self._emit()
+                    raise
 
     def _dispatch(self, action: str, payload: dict):
+        if action == "preflight":
+            return self._preflight(payload)
+        if action == "exit":
+            self._transition_context(action, payload)
+            result = self._exit()
+            self._persist()
+            self._emit()
+            return result
+        context = None
+        if action in {"start", "select", "restart", "resume"}:
+            context = self._transition_context(action, payload)
+            if context is not None:
+                # Keep the escape route even when preparing a lesson fails after guarded leave.
+                self._return_context = context
         if action == "later":
             self.progress.later()
         elif action in {"start", "select"}:
@@ -215,8 +467,11 @@ class OnboardingController:
                 self.progress.select(self.progress.selected)
         elif action == "restart":
             scenario_id = payload["scenario_id"]
+            completed = self.progress.record(scenario_id)["completed"]
             self.progress.restart(scenario_id)
             ctx = self._context()
+            if "assets" not in ctx or (completed and "pending_assets" not in ctx):
+                self._prepare()
             if isinstance(ctx.get("pending_assets"), dict) and isinstance(ctx.get("pending_batch"), str):
                 assets = ctx["pending_assets"]
                 if set(assets) != set(self.practice_names()) or not all(
@@ -231,6 +486,8 @@ class OnboardingController:
                 self._recovery = None if ready else reason
                 if not ready:
                     self.progress.pause()
+            if scenario_id == "blank_values" and self.progress.active:
+                self._dispatch("prepare_examples", {})
         elif action == "next":
             self.progress.next()
             if (self.progress.selected == "blank_values"
@@ -272,6 +529,9 @@ class OnboardingController:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
         self._persist()
         self._emit()
+        if action in {"start", "select", "restart", "resume"}:
+            beat = self.snapshot()["beat"] or {}
+            return {"ok": True, "screen": beat.get("entry_screen") or beat.get("screen") or "job"}
         return None
 
     def observation_token(self) -> tuple[str | None, str | None, int]:
@@ -323,6 +583,8 @@ class OnboardingController:
             advanced = True
         if advanced or repr(self._context()) != before:
             self._persist()
+        if advanced or repr(self._context()) != before or action in {
+                "use_library_template", "select_job", "prefer_work", "toggle_record", "set_all", "set_none"}:
             self._emit()
         return advanced
 
@@ -446,7 +708,7 @@ class OnboardingController:
             lesson = self.progress.selected
             required = expected_rows.get(lesson) if lesson else None
             same_job = job.work.name == ctx.get("job_name") and bool(ctx.get("job_name"))
-            if event in {"notice_job_opened", "derived_reopened"} and action == "select_job":
+            if event in {"notice_job_opened", "derived_reopened"} and action in {"select_job", "prefer_work"}:
                 if event == "notice_job_opened":
                     return {} if same_job else None
                 if same_job and job.data.path == ctx.get("derived_data_path") and job.data.sheet == ctx.get("derived_sheet"):
@@ -547,7 +809,12 @@ class OnboardingController:
         self.progress.result = {"screen": screen, "target": target, "title": title,
                                 "body": body, "count": len(documents) if count is None else count,
                                 "documents": documents,
-                                "actions": [{"label": "결과 보기", "target": target}]}
+                                "actions": [{"label": "결과 확인", "target": target}]}
+        lessons = list(BY_ID)
+        if self.progress.selected in lessons and lessons.index(self.progress.selected) + 1 < len(lessons):
+            next_id = lessons[lessons.index(self.progress.selected) + 1]
+            self.progress.result["next_scenario_id"] = next_id
+            self.progress.result["next_scenario_label"] = BY_ID[next_id].title
 
     def _match_authoring(self, event: str, screen: str, action: str, result) -> dict | None:
         if screen != "authoring" or not isinstance(result, dict):

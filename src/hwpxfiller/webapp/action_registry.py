@@ -366,13 +366,15 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # 공개 명령은 새 8과정만 소유하고, OnboardingController가 실제 제품 동작을 관찰한다.
     # 동결 T0–T17의 순간 카드·초점 명령은 제품 브리지에 노출하지 않는다.
     "tutorial": {
+        "preflight": _schema("screen action", optional="scenario_id destination_screen"),
+        "exit": _schema(optional="transition_token"),
         "later": _schema(),
-        "start": _schema("scenario_id"),
-        "select": _schema("scenario_id"),
+        "start": _schema("scenario_id", optional="transition_token"),
+        "select": _schema("scenario_id", optional="transition_token"),
         "pause": _schema(),
         "skip": _schema(),
-        "resume": _schema(),
-        "restart": _schema("scenario_id"),
+        "resume": _schema(optional="transition_token"),
+        "restart": _schema("scenario_id", optional="transition_token"),
         "next": _schema(),
         "prepare_examples": _schema(optional="derived"),
         "cleanup_preview": _schema(),

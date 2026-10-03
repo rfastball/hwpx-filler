@@ -26,7 +26,7 @@ test("공개 표면은 계약 표와 정확히 같다", () => {
   assert.deepEqual(Object.keys(engine).sort(), [
     "acquireDialog", "depth", "handleKeydown", "isDialogPending", "isOpen",
     "keydownWanted", "open", "releaseDialog", "requestClose", "settleClose",
-    "subscribe", "trapTab",
+    "subscribe", "topHost", "trapTab",
   ]);
   for (const key of Object.keys(engine)) assert.equal(typeof engine[key], "function");
 });
@@ -45,6 +45,19 @@ test("open — show(depth)→focusInitial 순서, 이중 open 은 스택을 늘�
   engine.open(b);
   assert.deepEqual(log.slice(2), ["B.show(1)", "B.focusInitial"], "중첩 층위가 depth 로 내려간다");
   assert.equal(engine.depth(), 2);
+  assert.equal(engine.topHost(), "B");
+});
+
+test("topHost는 열린 최상단만 내고 닫힘 전이 중에는 비운다", () => {
+  const engine = createOverlayEngine();
+  const log = [];
+  assert.equal(engine.topHost(), null);
+  engine.open({ host: "A", executor: recorder(log, "A") });
+  engine.open({ host: "B", executor: recorder(log, "B") });
+  engine.requestClose("B");
+  assert.equal(engine.topHost(), null);
+  engine.settleClose("B");
+  assert.equal(engine.topHost(), "A");
 });
 
 test("keydownWanted — 첫 open 에 서고 스택이 빌 때 내린다(현 부착 의미 보존)", () => {

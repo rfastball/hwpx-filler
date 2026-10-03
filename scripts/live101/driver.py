@@ -534,7 +534,7 @@ def _run_with_home(
     #: `main()` 이 정상 반환하면 선다 — 워치독을 **해제**하는 신호(#426 리뷰 P1).
     finished = threading.Event()
 
-    def answer_file_dialog(filters, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
+    def answer_file_dialog(filters, owner_title=None, *, initial_path=""):  # noqa: ARG001 — 시그니처 계약 유지
         return answers.popleft() if answers else None
 
     def answer_folder_dialog(title, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지

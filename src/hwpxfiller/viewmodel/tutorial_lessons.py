@@ -83,7 +83,7 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("prepare", "빈 값이 있는 연습 시트", "원본 예제에는 빈 셀이 없습니다. 빈 셀 하나가 있는 연습 사본을 준비하세요.", None, "prepare-examples", "blank_data_prepared"),
         Beat("observe", "빈 값 표식 확인", "문서 작업에서 준비된 계약 연습 작업을 열고 빈 값이 있는 행을 검토·복사 작업대로 보내세요. 카드의 〈빈 값〉 표시를 확인하세요.", "workbench", "txt-review", "blank_observed", entry_screen="library"),
         Beat("repair", "직접 입력으로 고치기", "그 행의 필요한 값을 직접 입력해 다시 확인하세요.", "workbench", "txt-review", "blank_repaired"),
-        Beat("compare", "의도적인 비움 비교", "의도적으로 비워 둔 값과 누락된 값을 비교하세요.", "workbench", "txt-review"),
+        Beat("compare", "의도적인 비움 비교", "직접 입력으로 고친 '계약보증금'과 의도적으로 비워 둔 '단위'를 비교하세요.", "workbench", "txt-review"),
     )),
     Lesson("field_trial", "내 필드와 결과 시험", "TXT에 필드를 만들고 시험값으로 확인합니다.", (
         Beat("open", "연습 TXT 열기", "템플릿 작업대의 파일 열기로 계약 안내 TXT 연습 사본을 여세요.", "authoring", "authoring-canvas", "field_practice_opened", entry_screen="authoring"),
@@ -259,5 +259,6 @@ class LessonProgress:
                 "cleanup_confirm": "아래 목록에서 삭제로 표시한 연습 사본만 지웁니다. 수정한 파일과 작업이 참조하는 파일은 그대로 둡니다.",
                 "reset_confirm": "모든 과정의 학습 위치와 완료 기록을 지웁니다. 연습 파일, 사용자 파일, 저장한 작업과 생성 결과는 그대로 둡니다.",
                 "open_tutorial": "튜토리얼", "close": "닫기", "choose_scenario": "과정 고르기",
+                "practice": "연습 중", "exit": "연습 종료", "return": "현재 단계로 돌아가기",
             },
         }

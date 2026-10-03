@@ -135,7 +135,7 @@ SAVE_COPY_FAILED = "SAVE_COPY_FAILED"
 _live_file_dialogs: "live_run.FileDialogs | None" = None
 
 
-def _file_dialog(filters: "list[tuple[str, str]]") -> "str | None":
+def _file_dialog(filters: "list[tuple[str, str]]", *, initial_path: str = "") -> "str | None":
     """native 파일 열기의 **유일한 입구**.
 
     호출부가 ``open_file_dialog`` 를 직접 부르면 라이브 실행의 대체가 그 자리만 비껴간다 —
@@ -144,9 +144,10 @@ def _file_dialog(filters: "list[tuple[str, str]]") -> "str | None":
     (``tests/test_architecture.py`` 가 우회 호출 0을 센다).
     """
     dialogs = _live_file_dialogs
+    options = {"initial_path": initial_path} if initial_path else {}
     if dialogs is not None:
-        return dialogs.open_file(filters, owner_title=WINDOW_TITLE)
-    return open_file_dialog(filters, owner_title=WINDOW_TITLE)
+        return dialogs.open_file(filters, owner_title=WINDOW_TITLE, **options)
+    return open_file_dialog(filters, owner_title=WINDOW_TITLE, **options)
 
 
 def _folder_dialog(title: str) -> "str | None":
@@ -676,7 +677,7 @@ class WebFrontend:
         tutorial_token = self._controller("tutorial").observation_token()
         log(f"pick_data_file: enter screen={screen}")
         filters = _EXCEL_OR_ANY_FILTERS
-        path = _file_dialog(filters)
+        path = _file_dialog(filters, initial_path=self._controller("tutorial").file_picker_hint("data", screen))
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
             return None
@@ -941,7 +942,7 @@ class WebFrontend:
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
         """
         filters = _EXCEL_OR_ANY_FILTERS
-        return _file_dialog(filters)
+        return _file_dialog(filters, initial_path=self._controller("tutorial").file_picker_hint("data"))
 
     def pick_template_path(self) -> "str | None":
         """템플릿 다시 연결(#67) '찾아보기' → **경로만** 반환(``pick_pool_data_file`` 미러).
@@ -961,7 +962,9 @@ class WebFrontend:
             if not self._controller("tpl").is_live_path(media, path):
                 raise ValueError("현재 템플릿 목록에 없는 경로입니다.")
         else:
-            path = _file_dialog(_TEMPLATE_FILTERS) or ""
+            hint = self._controller("tutorial").file_picker_hint("template", "authoring")
+            path = (_file_dialog(_TEMPLATE_FILTERS, initial_path=hint) if hint
+                    else _file_dialog(_TEMPLATE_FILTERS)) or ""
         result = self._controller("authoring").open_path(path, as_template=as_template) if path else None
         if result is not None:
             self._observe_tutorial("authoring", "open_authoring_document", {"path": path}, result, token=tutorial_token)

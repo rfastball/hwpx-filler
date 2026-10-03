@@ -103,6 +103,12 @@ export function createOverlayEngine() {
       return stack.length;
     },
 
+    /** 현재 상단의 열린 host. 닫힘 전이 중인 host는 안내를 붙일 수 없다. */
+    topHost(): unknown | null {
+      const record = top();
+      return record && !record.closing ? record.entry.host : null;
+    },
+
     /** 관측면 — host 가 스택에 있는가(이중 open 판정을 소비자도 물을 수 있게). */
     isOpen(host: unknown): boolean {
       return recordOf(host) !== null;

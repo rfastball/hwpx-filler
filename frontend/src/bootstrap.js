@@ -87,6 +87,7 @@ import { createSnapshotStore } from "./state/store.ts";
 import { createScreenRuntime } from "./screens/runtime.ts";
 import { expectHostValue } from "./screens/runtime.ts";
 import { overlayEngine } from "./overlay/instance.ts";
+import { closeTutorialOverlays, createTutorialSession } from "./tutorial/session.ts";
 import { createScreenPorts } from "./screens/ports.ts";
 import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
 import {
@@ -450,6 +451,25 @@ export function bootProduct() {
      Vanilla fallback 은 만들지 않는다(#405 불변식). node 의 합성 루트 테스트 환경에선 대역
      DOM 이 실 createRoot 를 통과하지 못해 이 경보가 매번 도는 것이 허용 상태다 — 실물
      커밋 증거는 live 게이트의 마운트 마커 되읽기가 진다. */
+  const tutorialDispatch = createTutorialSession({
+    dispatch: (action, payload) => client.dispatch("tutorial", action, payload)
+      .then((result) => expectHostValue(result, `tutorial ${action}`)),
+    currentScreen: () => shellNav.currentScreen(),
+    go: (screen) => shellNav.go(screen),
+    leave: (screen, target) => {
+      if (screen === "editor") return EditorController.leaveTo(target);
+      if (screen === "workbench") return WorkbenchController.leaveTo(target);
+      return AuthoringController.leaveTo(target);
+    },
+    flush: (screen) => {
+      if (screen === "editor") return EditorController.flushPendingEdits();
+      if (screen === "authoring") return AuthoringController.flushAll();
+      return Promise.resolve();
+    },
+    closeOverlays: () => closeTutorialOverlays(overlayEngine),
+    confirm: (options) => Modal.confirm(options),
+    notice: (message) => window.alert(message),
+  });
   bootReactRoot({
     doc: document,
     alarm: (message) => {
@@ -463,12 +483,15 @@ export function bootProduct() {
       doc: document,
       model: runtime.model("tutorial"),
       loadInitial: () => runtime.loadInitial("tutorial"),
-      dispatch: (action, payload = {}) => client.dispatch("tutorial", action, payload)
-        .then((result) => expectHostValue(result, `tutorial ${action}`)),
+      dispatch: tutorialDispatch,
       nav: shellNav,
       overlay: {
         subscribe: (listener) => overlayEngine.subscribe(listener),
         isBusy: () => overlayEngine.depth() > 0,
+        currentHost: () => {
+          const host = overlayEngine.topHost();
+          return typeof Element !== "undefined" && host instanceof Element ? host : null;
+        },
       },
       confirm: (options) => Modal.confirm(options),
       alarm: (message) => window.alert(message),

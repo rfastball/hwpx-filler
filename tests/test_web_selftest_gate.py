@@ -326,6 +326,8 @@ class TestWebSelftestGate:
         expected = {
             "target_hit", "off_target_free", "hud_hit", "panel_hit",
             "coach_in_view", "spot_covers_target", "coach_150_in_view", "hud_150_hit",
+            "dialog_guide_in_focus_boundary", "dialog_exit_reachable", "dialog_target_hit",
+            "dialog_escape_keeps_guide",
         }
         assert set(surface) == expected, surface
         assert all(surface[key] is True for key in expected), surface

@@ -85,6 +85,7 @@ async function measureTutorialSurface(ctx) {
       ...real,
       invitation: { ...real.invitation, visible: false },
       active: true, paused: false, scenario_id: "first_hwpx", checkpoint: 0,
+      practice: { active: true, return_screen: oldScreen },
       stages: [{ id: "a", title: "고르기", status: "current" }],
       beat: { id: "selftest-target", title: "대상 확인", body: "실제 데이터 버튼을 누르는 안내입니다.",
         mode: "action", screen: "job", target: "data-picker", placement: "right", can_next: false },
@@ -118,10 +119,29 @@ async function measureTutorialSurface(ctx) {
     doc.documentElement.setAttribute("data-font-scale", "larger");
     await new Promise((resolve) => ctx.win.requestAnimationFrame(() => ctx.win.requestAnimationFrame(resolve)));
     await ctx.waitFor(() => bounds(coach), { what: "150% 코치 기하", timeoutMs: 1000 });
-    return { ...normal, coach_150_in_view: bounds(coach), hud_150_hit: (() => {
+    const large = { coach_150_in_view: bounds(coach), hud_150_hit: (() => {
       const now = hit(entry); return now === entry || entry.contains(now);
     })() };
+    entry.click();
+    target.click();
+    await ctx.waitFor(() => !!doc.querySelector("#dataPickerModal #tutorialCoach"),
+      { what: "데이터 선택 대화상자 안의 연습 안내", timeoutMs: 2000 });
+    const modal = doc.getElementById("dataPickerModal");
+    const inline = modal.querySelector("#tutorialCoach");
+    const exit = modal.querySelector("#tutorialDialogExit");
+    const browse = doc.getElementById("dataPickerBrowse");
+    exit.focus();
+    const dialog = {
+      dialog_guide_in_focus_boundary: modal.contains(inline) && inline.getAttribute("role") === "region",
+      dialog_exit_reachable: doc.activeElement === exit,
+      dialog_target_hit: (() => { const current = hit(browse); return current === browse || browse.contains(current); })(),
+    };
+    exit.dispatchEvent(new ctx.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await ctx.waitFor(() => !doc.querySelector("#dataPickerModal #tutorialCoach") && !!doc.querySelector("#tutorialPanelRoot #tutorialCoach"),
+      { what: "Escape 뒤 현재 단계 안내 복귀", timeoutMs: 2000 });
+    return { ...normal, ...large, ...dialog, dialog_escape_keeps_guide: !!doc.getElementById("tutorialCoach") };
   } finally {
+    ctx.services.Modal?.close("dataPickerModal");
     if (oldScale === null) doc.documentElement.removeAttribute("data-font-scale");
     else doc.documentElement.setAttribute("data-font-scale", oldScale);
     ctx.push("tutorial", real);

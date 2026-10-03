@@ -604,7 +604,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     # 데이터를 끌고 오고(§2.4) 그 착지가 곧 승격이다. 종전 증거 둘
     # (`active_work_absent_after_mount`·`preferred_notice_requires_selection`)은 그 계약이
     # 뒤집히며 **생산자 0** 이 됐다 — 이름만 남기면 다음 사람이 없는 계약을 읽는다.
-    assert observed["bound_work_arrives_with_its_data"], observed
+    assert observed["bound_work_arrives_with_its_data"] == "발주목록.csv", observed
     assert observed["work_candidate_actionable"] == "발주요청서"
     assert observed["explicit_work_selected"] == "발주요청서"
     assert str(observed["txt_copied"]).startswith("1 /"), observed["txt_copied"]

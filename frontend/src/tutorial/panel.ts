@@ -11,22 +11,27 @@ export type TutorialBeat = {
   id: string; title: string; body: string; mode: "explain" | "action" | "finish";
   screen: string | null; entry_screen?: string | null; target: string | null;
   placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
+  primary?: GuideAction;
+  guidance?: Record<string, { body: string; target: string | null; primary?: GuideAction }>;
 };
+type GuideAction = { action: "prepare_examples" | "navigate"; label: string; screen?: string };
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
   invitation: { visible: boolean; title: string; body: string };
   active: boolean; paused: boolean; scenario_id: string | null; checkpoint: number;
+  practice?: { active: boolean; return_screen: string | null };
   scenarios: readonly Lesson[];
   stages?: readonly { id: string; title: string; status: "done" | "current" | "pending" }[];
   beat: TutorialBeat | null;
   show_result?: boolean;
-  result?: null | { title: string; body: string; count: number; screen: string; target: string; documents: readonly { name: string; path: string; kind: string }[]; actions: readonly { label: string; target: string }[] };
+  result?: null | { title: string; body: string; count: number; screen: string; target: string; documents: readonly { name: string; path: string; kind: string }[]; actions: readonly { label: string; target: string }[]; next_scenario_id?: string; next_scenario_label?: string };
   recovery: { title: string; body: string } | null;
   resources: { ready: boolean; summary: string; files?: readonly { name: string; path: string; kind: string }[] };
   copy: {
     start: string; later: string; pause: string; resume: string; skip: string;
     restart: string; next: string; prepare: string; cleanup: string; reset: string;
     open_tutorial: string; close: string; choose_scenario: string; reset_confirm: string; cleanup_confirm: string;
+    practice: string; exit: string; return: string;
   };
 };
 export type TutorialPorts = {
@@ -34,7 +39,7 @@ export type TutorialPorts = {
   loadInitial(): Promise<unknown>;
   dispatch(action: string, payload?: Record<string, unknown>): Promise<unknown>;
   nav: { subscribe(listener: () => void): () => void; currentScreen(): string | null; go(screen: string): void };
-  overlay: { subscribe(listener: () => void): () => void; isBusy(): boolean };
+  overlay: { subscribe(listener: () => void): () => void; isBusy(): boolean; currentHost?(): Element | null };
   confirm(options: { title: string; body: string; confirmLabel: string; cancelLabel: string; danger: boolean }): Promise<boolean>;
   alarm(message: string): void;
   doc: Document;
@@ -42,14 +47,17 @@ export type TutorialPorts = {
 };
 
 const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
-  "new-job": "#jobCandNewWork, #libraryNewWork",
+  "new-job": "#jobCandNewWork, #libraryNewWork, #jobPickInLibrary",
   "template-list": "#editorTplList",
   "data-picker": "#jobBtnPickData, #editorPoolBrowse, #dataPickerBrowse",
   mapping: "#editorPairZone, #wbMapPanel",
   "filename-pattern": "#editor-body input[data-act='pattern']",
   "save-job": "#editor-foot button[data-act='save']",
-  "job-list": "#jobBrowseOpen, #jobCandidates",
-  "row-filter": "#jobFilterSearch",
+  "job-list": "#jobBrowseRows, #jobBrowseOpen, #jobCandidates, #libraryList",
+  "library-jobs": "#libraryDetail [data-use], #libraryList",
+  "edit-job": "#libraryDetail [data-edit], #libraryList",
+  "open-workbench": "#jobGenBtn",
+  "row-filter": "#jobTableHead .fico[data-col='메모']",
   "row-selection": "#jobSelAll, #jobTableBody",
   "content-options": "#jobContentSelectionZone",
   generate: "#jobManagedCreate, #jobGenBtn",
@@ -58,7 +66,8 @@ const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "txt-copy": "#wbCopy",
   "prepare-examples": "#tutorialPrepare",
   "authoring-canvas": "#authoring-canvas, #authoring-outline-title",
-  trial: ".authoring-toolbar-end button[aria-pressed]",
+  "authoring-open": "#authoring-menu[aria-label='파일'] [role='menuitem']:first-child, .authoring-empty-actions button:first-child, .authoring-head button[aria-haspopup='menu']",
+  trial: ".authoring-dock.trial #authoring-dock-panel, .authoring-toolbar-end button[aria-pressed]",
   "save-template": "[data-guide='save-template']",
   "apply-change": "[data-guide='apply-change'], #authoring-dock-tab-impact",
 });
@@ -67,13 +76,22 @@ export function anchorSelector(key: string | null): string | null {
   return key ? ANCHORS[key] ?? null : null;
 }
 
-function visibleElement(doc: Document, selector: string | null): HTMLElement | null {
+function visibleElement(doc: ParentNode, selector: string | null): HTMLElement | null {
   if (!selector) return null;
-  for (const candidate of doc.querySelectorAll<HTMLElement>(selector)) {
-    const rect = candidate.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")) return candidate;
+  for (const preferred of selector.split(",")) {
+    for (const candidate of doc.querySelectorAll<HTMLElement>(preferred.trim())) {
+      const rect = candidate.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")) return candidate;
+    }
   }
   return null;
+}
+
+const noHost = () => null;
+
+export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
+  if (item.completed) return "restart";
+  return item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select";
 }
 
 type Geometry = { x: number; y: number; width: number; height: number; side: TutorialBeat["placement"] };
@@ -115,6 +133,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const snapshot = readSnapshot(raw);
   const screen = useSyncExternalStore(ports.nav.subscribe, ports.nav.currentScreen, ports.nav.currentScreen);
   const overlayBusy = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.isBusy, ports.overlay.isBusy);
+  const overlayHost = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.currentHost ?? noHost, ports.overlay.currentHost ?? noHost);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -125,23 +144,38 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   useEffect(() => { void ports.loadInitial().catch((error) => ports.alarm(String(error))); }, [ports]);
 
   const act = useCallback(async (action: string, payload?: Record<string, unknown>) => {
-    if (pending) return;
+    if (pending) return false;
     setPending(true);
-    try { await ports.dispatch(action, payload); }
-    catch (error) { ports.alarm(String(error)); }
+    try {
+      const result = await ports.dispatch(action, payload) as { cancelled?: boolean } | null;
+      if (action === "exit" && result?.cancelled !== true) setOpen(false);
+      return result?.cancelled !== true;
+    }
+    catch (error) { ports.alarm(String(error)); return false; }
     finally { setPending(false); }
   }, [pending, ports]);
 
-  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const baseBeat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const guidance = screen ? baseBeat?.guidance?.[screen] : undefined;
+  const beat = baseBeat && guidance ? { ...baseBeat, ...guidance, screen } : baseBeat;
+  const practice = snapshot?.practice?.active === true;
+  // Put help in the existing focus boundary; never create a second modal or intercept Escape.
+  const dialogRelevant = !!overlayHost && !!beat && (
+    !!overlayHost.querySelector(anchorSelector(beat.target) ?? "[data-tutorial-no-target]")
+    || beat.target === "data-picker" && overlayHost.matches("#dataPickerModal, #poolRegModal, #sheetModal")
+    || ["row-filter", "row-selection"].includes(beat.target ?? "") && overlayHost.matches("#dataSheet")
+    || beat.target === "job-list" && overlayHost.matches("#jobBrowseSheet"));
+  const dialogHost = dialogRelevant ? overlayHost!.querySelector(".modal-card, .sheet-card, [role='dialog']") ?? overlayHost : null;
+  const canGuide = !overlayBusy || !!dialogHost;
   const result = snapshot?.show_result && !snapshot.active && !overlayBusy ? snapshot.result : null;
   useEffect(() => setResultDismissed(false), [result?.title]);
-  const target = beat && (beat.screen === null || beat.screen === screen) && !overlayBusy ? beat.target
+  const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beat.target
     : result && result.screen === screen ? result.target : null;
   useLayoutEffect(() => {
     if (!target) { setRect(null); return; }
     let frame = 0;
     const measure = () => {
-      const element = visibleElement(ports.doc, anchorSelector(target));
+      const element = visibleElement(dialogHost ?? ports.doc, anchorSelector(target));
       const next = element?.getBoundingClientRect() ?? null;
       const shown = next && next.right > 0 && next.bottom > 0 && next.left < window.innerWidth && next.top < window.innerHeight ? next : null;
       setRect((before) => before?.x === shown?.x && before?.y === shown?.y && before?.width === shown?.width && before?.height === shown?.height ? before : shown);
@@ -149,7 +183,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     measure();
     const observer = new MutationObserver((mutations) => {
-      if (mutations.some((change) => !(change.target as Element).closest?.("#tutorialPanelRoot"))) update();
+      if (mutations.some((change) => !(change.target as Element).closest?.("#tutorialPanelRoot, #tutorialCoach"))) update();
     });
     observer.observe(ports.doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class", "style", "inert"] });
     ports.doc.addEventListener("scroll", update, true);
@@ -159,7 +193,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       ports.doc.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
-  }, [target, ports.doc, screen, open]);
+  }, [target, ports.doc, screen, open, dialogHost]);
 
   useLayoutEffect(() => {
     const coach = ports.doc.getElementById("tutorialCoach");
@@ -178,14 +212,14 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   }, [result?.title, rect, ports.doc]);
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
+  const nextLesson = snapshot?.scenarios.find((item) => item.id === result?.next_scenario_id);
   const count = snapshot?.scenarios.filter((item) => item.completed).length ?? 0;
   const total = snapshot?.scenarios.length ?? 0;
   const stages = snapshot?.stages ?? [];
   const stageDone = stages.filter((stage) => stage.status === "done").length;
   const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
-  const shown = Boolean(beat && !overlayBusy && (rect || beat.placement === "center" || beat.target === null
-    || (beat.mode === "action" && (beat.screen === null || beat.screen === screen))));
-  const resultShown = Boolean(result && !resultDismissed && result.screen === screen && rect);
+  const shown = Boolean(beat && canGuide);
+  const resultShown = Boolean(result && !resultDismissed);
   const position = rect && beat ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, beat.placement, coachHeight) : null;
   const resultPosition = rect && result ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, "right", resultHeight) : null;
   const spotStyle: CSSProperties | undefined = rect ? {
@@ -193,6 +227,20 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     width: rect.width + 12, height: rect.height + 12,
   } : undefined;
   const coachStyle: CSSProperties | undefined = position ? { left: position.x, top: position.y, width: position.width } : undefined;
+
+  const recover = async () => {
+    const element = visibleElement(dialogHost ?? ports.doc, anchorSelector(beat?.target ?? null));
+    if (element) {
+      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+      element.focus({ preventScroll: true });
+    } else if (beat?.screen === null || beat?.screen === screen || beat?.entry_screen === screen) setOpen(true);
+    else if (beat) await act("return_to_step", { screen: beat.entry_screen ?? beat.screen });
+  };
+  const chooseLesson = async (item: Lesson) => {
+    if (!snapshot) return;
+    const action = lessonAction(item, snapshot);
+    if (await act(action, action === "resume" ? {} : { scenario_id: item.id })) setOpen(false);
+  };
 
   const confirmAction = async (action: "reset_progress" | "cleanup") => {
     if (!snapshot) return;
@@ -213,24 +261,41 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const entry = ports.doc.getElementById("tutorialEntrySlot");
   if (!entry) return null;
   const label = snapshot?.copy.open_tutorial ?? "튜토리얼";
+  const exitButton = (id?: string) => practice ? h("button", { id, className: "btn sm tutorial-exit", type: "button", disabled: pending,
+    onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
   const hud = h("div", { className: "tutorial-hud" },
     h("button", { id: "tutorialOpen", className: "tutorial-hud-pill", type: "button", "aria-label": label,
       "aria-expanded": open, "aria-controls": "tutorialPanel", onClick: () => setOpen(!open) },
-      h(Ring, { fraction }), h("span", { className: "tutorial-hud-label" }, snapshot?.active ? stages.find((stage) => stage.status === "current")?.title ?? selected?.title ?? "튜토리얼" : "튜토리얼"),
-      h("span", { className: "tutorial-hud-dots", "aria-hidden": true }, ...stages.map((stage) => h("i", {
+      h(Ring, { fraction: practice ? fraction : 0 }), h("span", { className: "tutorial-hud-label" }, practice ? snapshot!.copy.practice : "튜토리얼"),
+      practice ? h("span", { className: "tutorial-hud-dots", "aria-hidden": true }, ...stages.map((stage) => h("i", {
         key: stage.id, className: stage.status, title: stage.title,
-      }))), snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null));
+      }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), exitButton("tutorialExit"));
 
   const list = snapshot?.scenarios.map((item) => h("li", { key: item.id, className: item.id === selected?.id ? "current" : item.completed ? "done" : "" },
     h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? "✓" : ""),
     h("span", null, item.title), item.recommended ? h("span", { className: "tutorial-recommended" }, "★") : null,
     h("button", { type: "button", className: "btn sm", disabled: pending,
-      onClick: () => { void act(item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select", item.id === snapshot.scenario_id && snapshot.paused ? {} : { scenario_id: item.id }); setOpen(false); } },
-      item.id === snapshot.scenario_id && snapshot.paused ? snapshot.copy.resume : snapshot.copy.choose_scenario)));
+      onClick: () => void chooseLesson(item) },
+      item.completed ? snapshot.copy.restart : item.id === snapshot.scenario_id && snapshot.paused ? snapshot.copy.resume : snapshot.copy.choose_scenario)));
 
-  return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "" },
+  const coach = shown && beat ? h("section", { id: "tutorialCoach", className: `tutorial-coach${dialogHost ? " tutorial-coach-inline" : ""}`,
+    style: dialogHost ? undefined : coachStyle, role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
+    "data-side": dialogHost ? "inline" : position?.side ?? "center" },
+    h("header", { className: "tutorial-coach-heading" }, h("h2", { id: "tutorialBeatTitle" }, beat.title),
+      h("span", { className: "tutorial-step" }, selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "")),
+    h("p", { id: "tutorialBeatBody", "aria-live": "polite" }, beat.body),
+    h("div", { className: "tutorial-coach-foot" },
+      beat.primary && !overlayBusy ? h("button", { id: "tutorialPrimary", className: "btn primary sm", type: "button", disabled: pending,
+        onClick: () => void act(beat.primary!.action, beat.primary!.screen ? { screen: beat.primary!.screen } : {}) }, beat.primary.label) : null,
+      !beat.primary && !rect && beat.target && !overlayBusy ? h("button", { id: "tutorialReturn", className: "btn primary sm", type: "button", disabled: pending,
+        onClick: () => void recover() }, snapshot!.copy.return) : null,
+      beat.mode === "explain" && beat.can_next ? h("button", { className: "btn primary sm", type: "button", disabled: pending,
+        onClick: () => void act("next") }, snapshot!.copy.next) : null,
+      dialogHost ? exitButton("tutorialDialogExit") : null)) : null;
+
+  return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
     (ports.portal ?? createPortal)(hud, entry),
-    open && snapshot && !snapshot.invitation.visible ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
@@ -242,29 +307,24 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       snapshot.resources.files?.length ? h("ul", { className: "tutorial-resources" }, ...snapshot.resources.files.map((file) => h("li", { key: file.path },
         h("strong", null, file.name), h("code", null, file.path)))) : null,
       h("div", { className: "tutorial-actions" },
-        snapshot.active ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act(snapshot.paused ? "resume" : "pause") }, snapshot.paused ? snapshot.copy.resume : snapshot.copy.pause) : null,
+        snapshot.active || snapshot.paused ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act(snapshot.paused ? "resume" : "pause") }, snapshot.paused ? snapshot.copy.resume : snapshot.copy.pause) : null,
         snapshot.active ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("skip") }, snapshot.copy.skip) : null,
         selected ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("restart", { scenario_id: snapshot.scenario_id }) }, snapshot.copy.restart) : null,
         h("button", { id: "tutorialPrepare", className: "btn sm", type: "button", disabled: pending, onClick: () => void act("prepare_examples") }, snapshot.copy.prepare),
-        h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("cleanup") }, snapshot.copy.cleanup),
-        h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("reset_progress") }, snapshot.copy.reset))) : null,
-    snapshot?.invitation.visible ? h("section", { className: "tutorial-invite", role: "dialog", "aria-modal": false, "aria-labelledby": "tutorialInviteTitle" },
+        !practice ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("cleanup") }, snapshot.copy.cleanup) : null,
+        !practice ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("reset_progress") }, snapshot.copy.reset) : null)) : null,
+    snapshot?.invitation.visible && !overlayBusy ? h("section", { className: "tutorial-invite", role: "region", "aria-labelledby": "tutorialInviteTitle" },
       h("h2", { id: "tutorialInviteTitle" }, snapshot.invitation.title), h("p", null, snapshot.invitation.body),
       h("div", { className: "tutorial-actions" },
         h("button", { type: "button", className: "btn", disabled: pending, onClick: () => void act("later") }, snapshot.copy.later),
         h("button", { type: "button", className: "btn primary", disabled: pending,
           onClick: () => void act("start", { scenario_id: snapshot.scenarios.find((item) => item.recommended)?.id ?? "first_hwpx" }) }, snapshot.copy.start))) : null,
-    beat && !overlayBusy && !shown ? h("button", { className: "tutorial-recover", type: "button", onClick: () => {
-      if (beat.screen && beat.screen !== screen) ports.nav.go(beat.entry_screen ?? beat.screen);
-      else if (beat.target === "prepare-examples") setOpen(true);
-      else visibleElement(ports.doc, anchorSelector(beat.target))?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, title: snapshot?.recovery?.body ?? beat.body }, h("span", { className: "tutorial-recover-dot", "aria-hidden": true }), snapshot?.recovery?.title ?? beat.title) : null,
-    result && !resultShown && !resultDismissed ? h("button", { className: "tutorial-recover", type: "button", onClick: () => {
-      if (result.screen !== screen) ports.nav.go(result.screen);
-      else visibleElement(ports.doc, anchorSelector(result.target))?.scrollIntoView({ block: "center", behavior: "smooth" });
-    } }, h("span", { className: "tutorial-recover-dot", "aria-hidden": true }), result.title) : null,
-    resultShown && result && resultPosition ? h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
-      style: { left: resultPosition.x, top: resultPosition.y } },
+    practice && snapshot?.paused && !overlayBusy ? h("section", { className: "tutorial-paused-card", role: "region", "aria-label": snapshot.copy.pause },
+      h("p", null, snapshot.recovery?.body ?? selected?.title),
+      h("button", { id: "tutorialResume", className: "btn primary sm", type: "button", disabled: pending,
+        onClick: () => void act("resume") }, snapshot.copy.resume)) : null,
+    resultShown && result ? h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
+      style: resultPosition ? { left: resultPosition.x, top: resultPosition.y } : undefined },
       h("div", { className: "tutorial-fin-fan", "aria-hidden": true }, ...result.documents.slice(0, 3).map((document, index) =>
         h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}` },
           h("span", { className: "tutorial-fin-lines" }), h("span", null, document.kind)))),
@@ -273,23 +333,16 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
       h("div", { className: "tutorial-actions" }, ...result.actions.map((action) => h("button", { key: action.target,
         type: "button", className: "btn sm", onClick: () => {
+          setResultDismissed(true);
+          if (result.screen !== screen) { void act("navigate", { screen: result.screen }); return; }
           const element = visibleElement(ports.doc, anchorSelector(action.target));
-          element?.scrollIntoView({ block: "center", behavior: "smooth" });
+          element?.scrollIntoView({ block: "center", behavior: "instant" });
           element?.focus({ preventScroll: true });
-        } }, action.label)), h("button", { type: "button", className: "btn sm", onClick: () => setResultDismissed(true) }, snapshot!.copy.close))) : null,
-    shown && beat ? h("div", { className: "tutorial-guide", "data-mode": beat.mode },
-      rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true })
-        : beat.mode === "explain" ? h("div", { className: "tutorial-scrim", "aria-hidden": true }) : null,
-      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: 0, left: 0, right: 0, height: Math.max(0, rect.top - 6) } }) : null,
-      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.bottom + 6, left: 0, right: 0, bottom: 0 } }) : null,
-      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: 0, width: Math.max(0, rect.left - 6), height: rect.height + 12 } }) : null,
-      beat.mode === "explain" && rect ? h("div", { className: "tutorial-shield", style: { top: rect.top - 6, left: rect.right + 6, right: 0, height: rect.height + 12 } }) : null,
-      h("section", { id: "tutorialCoach", className: "tutorial-coach", style: coachStyle,
-        role: "dialog", "aria-modal": false, "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
-        "data-side": position?.side ?? "center" },
-        position ? h("span", { className: "tutorial-arrow", "aria-hidden": true }) : null,
-        h("span", { className: "tutorial-eyebrow" }, selected?.title ?? "튜토리얼", selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : ""),
-        h("h2", { id: "tutorialBeatTitle" }, beat.title), h("p", { id: "tutorialBeatBody", "aria-live": "polite" }, beat.body),
-        beat.mode === "explain" && beat.can_next ? h("div", { className: "tutorial-coach-foot" },
-          h("button", { className: "btn primary sm", type: "button", disabled: pending, onClick: () => void act("next") }, snapshot!.copy.next)) : null)) : null);
+        } }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
+          onClick: () => void chooseLesson(nextLesson) }, result.next_scenario_label ?? nextLesson.title) : null,
+        h("button", { type: "button", className: nextLesson ? "btn sm" : "btn primary sm", onClick: () => { setResultDismissed(true); setOpen(true); } }, snapshot!.copy.choose_scenario),
+        exitButton())) : null,
+    dialogHost && coach ? (ports.portal ?? createPortal)(coach, dialogHost)
+      : coach ? h("div", { className: "tutorial-guide", "data-mode": beat!.mode },
+        rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true }) : null, coach) : null);
 }
