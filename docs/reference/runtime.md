@@ -254,11 +254,18 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 
 | 액션 | 필수 키 | 선택 키 |
 |---|---|---|
-| `clear_focus` | — | — |
-| `consume_moment` | `milestone` | — |
-| `dismiss` | — | — |
-| `focus_tier` | `tier` | — |
+| `cleanup` | `token` | — |
+| `cleanup_preview` | — | — |
+| `later` | — | — |
+| `next` | — | — |
+| `pause` | — | — |
+| `prepare_examples` | — | `derived` |
+| `reset_progress` | `confirm` | — |
+| `restart` | `scenario_id` | — |
 | `resume` | — | — |
+| `select` | `scenario_id` | — |
+| `skip` | — | — |
+| `start` | `scenario_id` | — |
 
 ### workbench
 

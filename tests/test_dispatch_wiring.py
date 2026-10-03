@@ -16,7 +16,7 @@ from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
-from hwpxfiller.webapp.screen_tutorial import TutorialController
+from hwpxfiller.webapp.onboarding import OnboardingController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
 from hwpxfiller.webapp.screen_authoring import AuthoringController
 from hwpxfiller.viewmodel.edit_session import EditSession
@@ -35,7 +35,7 @@ CONTROLLERS = {
     "authoring": AuthoringController,
     # 화면이 아니라 채널이다(#894) — DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이지만,
     # 스냅샷 채널과 디스패치 어휘는 이 registry 에서만 나온다(`pool` 과 같은 형상).
-    "tutorial": TutorialController,
+    "tutorial": OnboardingController,
 }
 
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신
@@ -59,11 +59,32 @@ _LITERAL_CALL = re.compile(
 )
 
 
+class _StubTutorial:
+    def observation_token(self):
+        return (None, None, 0)
+
+    def observe_product(self, *_args, **_kwargs):
+        return False
+
+
 def _controller_actions(controller: type) -> set[str]:
     """Collect the effective dispatch surface, including inherited mixins."""
 
     if controller is EditorController:
         return _editor_actions()
+    if controller is OnboardingController:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(OnboardingController._dispatch)))
+        actions = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare) or not isinstance(node.left, ast.Name) or node.left.id != "action":
+                continue
+            for comparator in node.comparators:
+                if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                    actions.add(comparator.value)
+                elif isinstance(comparator, (ast.Set, ast.Tuple)):
+                    actions.update(item.value for item in comparator.elts
+                                   if isinstance(item, ast.Constant) and isinstance(item.value, str))
+        return actions
 
     owners = controller.__mro__
     if controller is JobController:
@@ -163,7 +184,7 @@ def test_webfrontend_dispatch_enforces_registry_before_controller() -> None:
             return {"action": action, "payload": payload}
 
     api = WebFrontend.__new__(WebFrontend)
-    api.controllers = {"pool": Stub()}
+    api.controllers = {"pool": Stub(), "tutorial": _StubTutorial()}
     assert api.dispatch("pool", "refresh", None) == {"action": "refresh", "payload": {}}
     rejected = api.dispatch("pool", "refresh", {"typo": True})
     assert set(rejected) == {_DISPATCH_REJECTION_KEY}
@@ -180,7 +201,7 @@ def test_webfrontend_dispatch_envelopes_expected_refusal_but_not_defects() -> No
             raise self.error
 
     api = WebFrontend.__new__(WebFrontend)
-    api.controllers = {"pool": Stub(ValueError("데이터가 없습니다"))}
+    api.controllers = {"pool": Stub(ValueError("데이터가 없습니다")), "tutorial": _StubTutorial()}
     assert api.dispatch("pool", "refresh", {}) == {
         _DISPATCH_REJECTION_KEY: {
             "name": "ValueError",
@@ -188,6 +209,6 @@ def test_webfrontend_dispatch_envelopes_expected_refusal_but_not_defects() -> No
         }
     }
 
-    api.controllers = {"pool": Stub(RuntimeError("controller defect"))}
+    api.controllers = {"pool": Stub(RuntimeError("controller defect")), "tutorial": _StubTutorial()}
     with pytest.raises(RuntimeError, match="controller defect"):
         api.dispatch("pool", "refresh", {})

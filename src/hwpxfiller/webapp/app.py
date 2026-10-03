@@ -92,7 +92,8 @@ from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
 from .screen_template import TemplateController
 from .screen_authoring import AuthoringController
-from .screen_tutorial import TutorialController
+from .onboarding import OnboardingController, first_launch_candidate
+from ..external.tutorial_practice import PracticeFiles
 from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
@@ -306,6 +307,7 @@ class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
 
     def __init__(self, template_root: "TemplateRoot | None" = None) -> None:
+        first_launch = first_launch_candidate(home_dir())
         # 창 참조는 비공개(_) — pywebview 의 js_api 자동노출 반영(util.get_functions)이 공개
         # 속성을 dir() 로 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 로
         # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
@@ -367,10 +369,9 @@ class WebFrontend:
         # 온보딩 튜토리얼 체크리스트(#894) — **다른 컨트롤러보다 먼저** 세운다: 통지 지점을
         # 가진 넷이 이 컨트롤러의 `notify` 를 생성자 주입으로 받기 때문이다. VM 하나·영속
         # 하나를 이것만 소유하고, 나머지는 콜러블 한 개만 든다(푸시 sink 주입과 같은 규율).
-        tutorial_ctrl = TutorialController(
-            self._push,
-            load_progress=settings.load_tutorial_progress,
-            save_progress=settings.save_tutorial_progress,
+        tutorial_ctrl = OnboardingController(
+            self._push, PracticeFiles(self._template_root.path(), home_dir(), job_registry),
+            first_launch=first_launch,
         )
 
         # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
@@ -497,6 +498,7 @@ class WebFrontend:
             ),
         )
         self.controllers = {c.name: c for c in controllers}
+        tutorial_ctrl.bind(self.controllers)
         # 라이브러리 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 라이브러리가 「문서
         # 만들기」보다 먼저 생성되므로 사후 주입. 삭제는 이 조회로 무장 세션을 먼저 묻는다.
         # (「기안」 가드는 화면 사망(F6 PR-B)과 함께 걷혔다 — 작업대는 몰입 표면이라
@@ -535,6 +537,17 @@ class WebFrontend:
         except KeyError:  # confirm-or-alarm: 미등록 화면은 시끄럽게.
             raise ValueError(f"등록되지 않은 화면: {screen!r}") from None
 
+    def _observe_tutorial(self, screen: str, action: str, payload: dict, result, *, token=None) -> None:
+        """Tutorial failure cannot turn a successful product command into a retry."""
+        try:
+            self._controller("tutorial").observe_product(screen, action, payload, result, token=token)
+        except Exception as exc:  # noqa: BLE001 — product result must survive observer failure
+            try:
+                settings.alert(f"튜토리얼 진행 확인 실패: {exc!r}")
+                self._controller("tutorial").observation_failed(str(exc))
+            except Exception as reporting_exc:  # noqa: BLE001 — preserve original product result
+                log(f"tutorial observer reporting failed: {reporting_exc!r}")
+
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> "product_api.DeliveryOutcome | None":
         """제품 공개 경계 하나로만 나간다(N-07 · D-06) — 내부 이름 `window.__push` 는 모른다.
@@ -566,7 +579,11 @@ class WebFrontend:
         """
         try:
             checked = validate_dispatch(screen, action, {} if payload is None else payload)
-            return self._controller(screen).dispatch(action, checked)
+            tutorial_token = self._controller("tutorial").observation_token() if screen != "tutorial" else None
+            result = self._controller(screen).dispatch(action, checked)
+            if screen != "tutorial":
+                self._observe_tutorial(screen, action, checked, result, token=tutorial_token)
+            return result
         except ValueError as exc:
             return {
                 _DISPATCH_REJECTION_KEY: {
@@ -655,6 +672,7 @@ class WebFrontend:
         선택 면이 닫히지 않고 「현재 데이터」를 재진술하려면 이 호출의 결과만으로 고정
         버튼(`origin==="file" && path`)이 서야 한다.
         """
+        tutorial_token = self._controller("tutorial").observation_token()
         log(f"pick_data_file: enter screen={screen}")
         filters = _EXCEL_OR_ANY_FILTERS
         path = _file_dialog(filters)
@@ -676,7 +694,9 @@ class WebFrontend:
             self._controller(screen).load_data_path(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return self._mount_descriptor(screen, path)
+        mounted = self._mount_descriptor(screen, path)
+        self._observe_tutorial(screen, "pick_data_file", {"path": path}, mounted, token=tutorial_token)
+        return mounted
 
     def load_data_sheet(self, screen: str, path: str, sheet: str | list[str]) -> "str | dict | None":
         """웹에서 확정한 시트로 데이터 로드(#33) — 다중 시트 확정 게이트의 착지 지점.
@@ -687,18 +707,28 @@ class WebFrontend:
         파일이 사라지거나 잠기면 그 실패도 웹에 시끄럽게 되돌린다(P2).
         성사 반환은 :meth:`pick_data_file` 과 같은 descriptor(U2 §2.7 3행)다.
         """
+        tutorial_token = self._controller("tutorial").observation_token()
         try:
             if screen not in {"job", "editor"} or not isinstance(path, str) or not path:
                 raise ValueError("데이터를 가져올 화면과 파일을 확인하세요.")
             if isinstance(sheet, list):
-                return self._register_data_sheets(screen, path, sheet)
+                result = self._register_data_sheets(screen, path, sheet)
+                if result.get("mount") and not result.get("error"):
+                    self._observe_tutorial(
+                        screen, "load_data_sheet", {"path": path, "sheet": sheet}, result, token=tutorial_token,
+                    )
+                return result
             names = [n for n, _r, _c in sheet_overview(path)]
             if sheet not in names:
                 return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다. 시트를 다시 선택하세요."
             self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return self._mount_descriptor(screen, path, sheet)
+        mounted = self._mount_descriptor(screen, path, sheet)
+        self._observe_tutorial(
+            screen, "load_data_sheet", {"path": path, "sheet": sheet}, mounted, token=tutorial_token,
+        )
+        return mounted
 
     def _register_data_sheets(self, screen: str, path: str, sheets: list[str]) -> dict:
         """여러 참조를 등록하고 하나만 마운트한다. 실패 항목만 재시도할 수 있다."""
@@ -759,10 +789,16 @@ class WebFrontend:
         can_copy/note_copied 네 걸음)은 소비자 0 이라 걷었다. 거래 없는 화면의 호출은
         오배선이므로 loud 거절한다(조용한 반쪽 복사 금지).
         """
+        tutorial_token = self._controller("tutorial").observation_token()
         atomic = getattr(self._controller(screen), "copy_to", None)
         if atomic is None:
             raise ValueError(f"'{screen}' 화면은 클립보드 복사 거래를 소유하지 않습니다.")
-        return atomic(token or "", set_clipboard_text)
+        result = atomic(token or "", set_clipboard_text)
+        if result.get("copied") is True:
+            self._observe_tutorial(
+                screen, "copy_clipboard", {"token": token}, result, token=tutorial_token,
+            )
+        return result
 
     def pick_output_folder(self, screen: str) -> "str | None":
         """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 「작업」 세션 패널의 네이티브 표면.
@@ -786,10 +822,13 @@ class WebFrontend:
         ``run_token`` 은 호출자가 낸 불투명 상관 문자열이다 — 컨트롤러가 판정에 쓰지 않고
         direct 반환·진행 델타에 그대로 되돌린다(R4-03). 생략하면 ``""``.
         """
-        return self._controller(screen).generate(
+        tutorial_token = self._controller("tutorial").observation_token()
+        result = self._controller(screen).generate(
             confirm_overwrite=bool(confirm_overwrite),
             run_token=run_token if isinstance(run_token, str) else "",
         )
+        self._observe_tutorial(screen, "generate", {}, result, token=tutorial_token)
+        return result
 
     # (import_library_template 브리지는 tpl 화면과 함께 사망(F8) — 소비자 0 인 통로는 남기지
     #  않는다(F2 PR-B set_rail_collapsed 선례). 유일 가져오기 = import_template_file(통일,
@@ -891,6 +930,7 @@ class WebFrontend:
 
     def open_authoring_document(self, path: str = "", as_template: bool = False) -> "dict | None":
         """라이브러리의 검증된 경로 또는 native 선택 결과만 저작 세션에 연다."""
+        tutorial_token = self._controller("tutorial").observation_token()
         if not isinstance(path, str) or not isinstance(as_template, bool):
             raise ValueError("문서 열기 인자가 잘못되었습니다.")
         if path:
@@ -899,16 +939,23 @@ class WebFrontend:
                 raise ValueError("현재 템플릿 목록에 없는 경로입니다.")
         else:
             path = _file_dialog(_TEMPLATE_FILTERS) or ""
-        return self._controller("authoring").open_path(path, as_template=as_template) if path else None
+        result = self._controller("authoring").open_path(path, as_template=as_template) if path else None
+        if result is not None:
+            self._observe_tutorial("authoring", "open_authoring_document", {"path": path}, result, token=tutorial_token)
+        return result
 
     def save_authoring_document(self, session_id: str, revision: int) -> "dict | None":
+        tutorial_token = self._controller("tutorial").observation_token()
         controller = self._controller("authoring")
         content = controller.dispatch("content", {"session_id": session_id})
         if type(revision) is not int or content["revision"] != revision:
             raise ValueError("문서가 변경되었습니다. 다시 저장하세요.")
         media = content["media"]
         path = _save_dialog(f"새 템플릿.{media}", [(media.upper(), f"*.{media}")], media)
-        return controller.save_to_path(session_id, revision, path) if path else None
+        result = controller.save_to_path(session_id, revision, path) if path else None
+        if result is not None:
+            self._observe_tutorial("authoring", "save_authoring_document", {"path": path}, result, token=tutorial_token)
+        return result
 
     def authoring_cases_file(self, session_id: str, action: str) -> "dict | None":
         controller = self._controller("authoring")
