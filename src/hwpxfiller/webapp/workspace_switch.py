@@ -103,11 +103,17 @@ class WorkspaceSwitch:
         self.refresh()
 
     def refresh(self) -> None:
-        """활성 그래프의 모든 채널을 지금 스냅샷으로 다시 민다(공유 튜토리얼 채널 제외)."""
+        """활성 그래프의 모든 채널을 지금 스냅샷으로 다시 민다(공유 튜토리얼 채널 제외).
+
+        ``snapshot()`` 이 아니라 웹 부팅과 같은 입구 ``initial()`` 을 지난다. 「문서 만들기」·
+        편집기의 ``snapshot()`` 은 마지막으로 준비한 패널의 사본이라, 막 조립한 그래프에서는
+        빈 ``{}`` 다 — 그대로 밀면 화면 계약(``has_data``/``has_job``)을 어긴 스냅샷이 렌더를
+        깨뜨린다. ``initial()`` 은 패널을 준비한 뒤 돌려주므로 재활성화된 그래프에서도 최신이다.
+        """
         tutorial = self.active.controllers.get("tutorial")
         for name, controller in self.active.controllers.items():
             if controller is not tutorial:
-                self._push(name, controller.snapshot())
+                self._push(name, controller.initial())
 
     def all_controllers(self) -> "list[Any]":
         """메모리에 있는 모든 그래프의 컨트롤러 — 창 종료 가드가 비활성 쪽 손실도 묻는다."""
