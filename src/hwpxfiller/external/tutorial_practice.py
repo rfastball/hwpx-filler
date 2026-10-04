@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import sys
 import uuid
@@ -16,6 +17,11 @@ ORIGINALS = (
     "계약방법 결정 및 구매추진 안내.txt",
     "공고목록.xlsx",
 )
+
+UNREADABLE_REFERENCES = "읽을 수 없는 작업이나 등록 데이터가 있어 연습 파일 정리를 중단했습니다."
+JOB_REFERENCE = "저장한 작업이 참조합니다."
+POOL_REFERENCE = "등록 데이터가 참조합니다."
+MISSING = "연습 파일이 없거나 이동했습니다."
 
 
 def asset_root() -> Path:
@@ -32,11 +38,16 @@ def fingerprint(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _path_key(path: str | Path) -> str:
+    return os.path.normcase(str(Path(path).resolve()))
+
+
 class PracticeFiles:
-    def __init__(self, template_root: Path, home: Path, jobs) -> None:
+    def __init__(self, template_root: Path, home: Path, jobs, pools) -> None:
         self.template_root = template_root
         self.data_root = home / "tutorial_practice"
         self.jobs = jobs
+        self.pools = pools
 
     def _manifest(self) -> dict:
         raw = settings.load_tutorial_practice()
@@ -61,7 +72,7 @@ class PracticeFiles:
             if path.resolve().parent != root.resolve():
                 return False, "연습 파일이 다른 위치를 가리킵니다."
             if not path.is_file():
-                return False, "연습 파일이 없거나 이동했습니다."
+                return False, MISSING
             if fingerprint(path) != entry["sha256"]:
                 return False, "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
             return True, ""
@@ -109,14 +120,49 @@ class PracticeFiles:
             raise
         return {"batch": batch, "entries": entries}
 
-    def _referenced(self) -> set[str]:
-        """Any registry failure aborts cleanup; unknown is never unreferenced."""
-        return {
-            str(Path(path).resolve())
-            for job in self.jobs.list_jobs()
-            for path in (job.template_path, job.data_path)
-            if path
-        }
+    def _referenced(self) -> dict[str, str]:
+        """Path key -> preservation reason; unknown is never unreferenced.
+
+        Any registry failure, and any job or pool entry that cannot be read, aborts
+        cleanup: an unreadable record may be the one that needs a practice copy.
+        """
+        jobs, corrupt_jobs = self.jobs.list_jobs_with_corruption()
+        entries, corrupt_pool = self.pools.list_references()
+        if corrupt_jobs or corrupt_pool:
+            raise ValueError(UNREADABLE_REFERENCES)
+        referenced: dict[str, str] = {}
+        for _key, item in entries:
+            for raw in (item.opts.get("path"), item.opts.get("db")):
+                if isinstance(raw, str) and raw:
+                    referenced[_path_key(raw)] = POOL_REFERENCE
+        for job in jobs:
+            for path in (job.template_path, job.data_path):
+                if path:
+                    referenced[_path_key(path)] = JOB_REFERENCE
+        return referenced
+
+    def _vanished(self, entry: dict) -> bool:
+        """True only for a record of this app's own copy path where nothing exists now.
+
+        An interrupted cleanup (or a lost manifest save) leaves such records behind.
+        Dropping one removes no file: anything present at the path, an unexpected
+        name or location, or an unreadable state keeps the record.
+        """
+        try:
+            name, batch, path = entry["name"], entry["batch"], Path(entry["path"])
+            if name not in ORIGINALS or not isinstance(batch, str) or not batch:
+                return False
+            root = self.data_root if name.endswith(".xlsx") else self.template_root
+            original = Path(name)
+            if path != root / f"{original.stem} (연습 {batch}){original.suffix}":
+                return False
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                return True
+            return False
+        except (KeyError, OSError, TypeError, ValueError):
+            return False
 
     def cleanup_preview(self) -> dict:
         referenced = self._referenced()
@@ -126,8 +172,12 @@ class PracticeFiles:
                 raise ValueError("연습 파일 기록이 손상됐습니다. 정리를 중단했습니다.")
             ready, reason = self.validate(entry)
             path = Path(entry.get("path", ""))
-            if ready and str(path.resolve()) in referenced:
-                ready, reason = False, "저장한 작업이 참조합니다."
+            if not ready and self._vanished(entry):
+                # Nothing to delete; confirming cleanup drops the stale record.
+                ready, reason = True, MISSING
+            key = _path_key(path)
+            if ready and key in referenced:
+                ready, reason = False, referenced[key]
             rows.append({"name": entry.get("name", ""), "path": str(path),
                          "delete": ready, "reason": reason})
         token = hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()
@@ -141,15 +191,28 @@ class PracticeFiles:
         deletions = [row for row in preview["rows"] if row["delete"]]
         # Check the whole set before deleting anything. A changed file must not
         # turn a confirmed cleanup into a partial, surprising operation.
+        targets: list[tuple[str, bool]] = []
         for row in deletions:
             entry = next((item for item in manifest["entries"]
                           if item.get("path") == row["path"]), None)
-            if entry is None or not self.validate(entry)[0]:
+            if entry is None:
                 raise ValueError("연습 파일 상태가 바뀌었습니다. 정리 내용을 다시 확인하세요.")
-        removed = set()
-        for row in deletions:
-            Path(row["path"]).unlink()
-            removed.add(row["path"])
-        manifest["entries"] = [e for e in manifest["entries"] if e.get("path") not in removed]
-        settings.save_tutorial_practice(manifest)
+            vanished = row["reason"] == MISSING
+            if not (self._vanished(entry) if vanished else self.validate(entry)[0]):
+                raise ValueError("연습 파일 상태가 바뀌었습니다. 정리 내용을 다시 확인하세요.")
+            targets.append((row["path"], not vanished))
+        removed: set[str] = set()
+        try:
+            for path, exists in targets:
+                if exists:
+                    Path(path).unlink()
+                removed.add(path)
+        finally:
+            # Record every removal that happened, even when a later unlink failed; the
+            # failure itself still propagates. If this save fails too, the records left
+            # behind are recognised as vanished copies by the next preview.
+            if removed:
+                manifest["entries"] = [e for e in manifest["entries"]
+                                       if e.get("path") not in removed]
+                settings.save_tutorial_practice(manifest)
         return {"removed": len(removed), "preserved": len(preview["rows"]) - len(removed)}
