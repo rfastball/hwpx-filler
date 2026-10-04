@@ -430,7 +430,7 @@ function_complexity = 11
 function_complexity = 38
 
 [budget."frontend/src/tutorial/panel.ts::TutorialPanel"]
-function_complexity = 73
+function_complexity = 63
 function_statements = 60
 
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
@@ -1149,9 +1149,6 @@ module_statements = 389
 [budget."src/hwpxfiller/viewmodel/template_manager_state.py::TemplateManagerViewModel"]
 class_methods = 43
 
-[budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.__init__"]
-function_complexity = 11
-
 [budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.snapshot"]
 function_complexity = 14
 
@@ -1180,7 +1177,7 @@ class_methods = 21
 function_complexity = 22
 
 [budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 686
+module_statements = 684
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
 class_methods = 39
@@ -1262,30 +1259,20 @@ function_complexity = 16
 [budget."src/hwpxfiller/webapp/managed_run_result.py::project_managed_run_result"]
 function_complexity = 14
 
-[budget."src/hwpxfiller/webapp/onboarding.py"]
-module_statements = 343
-
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
 class_methods = 34
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._guide"]
-function_complexity = 38
-function_statements = 56
+function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
-function_complexity = 27
+function_complexity = 14
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._preflight"]
 function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
 function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController.file_picker_hint"]
-function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/product_api.py::preferences_outcome"]
 function_complexity = 16

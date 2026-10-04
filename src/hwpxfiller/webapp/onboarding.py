@@ -14,12 +14,13 @@ import threading
 from typing import Any
 from uuid import uuid4
 
-from ..external.tutorial_practice import ORIGINALS, PracticeFiles, fingerprint
+from ..external.tutorial_practice import ORIGINALS, PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
+from .onboarding_guide import advance_current, guide_beat, observe_ui_press, picker_hint, rewind_unmet_inputs
 from .onboarding_match_results import match_event
 from .onboarding_practice import (
-    NO_RETURN_SCREEN, capture_return, practice_resources, restore_screen, start_fresh,
+    NO_RETURN_SCREEN, capture_return, note_practice_save, practice_resources, restore_screen, start_fresh,
 )
 
 
@@ -106,7 +107,7 @@ class OnboardingController:
         snap["practice"] = {"active": self._return_context is not None,
                             "return_screen": self._return_context.get("screen") if self._return_context else None}
         if snap["beat"]:
-            self._guide(snap["beat"])
+            guide_beat(self, snap["beat"])
         return snap
 
     def _preflight(self, payload: dict) -> dict:
@@ -171,72 +172,6 @@ class OnboardingController:
         screen, notice = restore_screen(self, original)
         return {"ok": True, "screen": screen, "notice": notice}
 
-    def _guide(self, beat: dict) -> None:
-        """Project intermediate product actions; the browser only locates their controls."""
-        ctx = self._context()
-        lesson = self.progress.selected
-        template_name = {"first_hwpx": "물품 구매입찰 공고.hwpx",
-                         "purchase_txt": "계약방법 결정 및 구매추진 안내.txt",
-                         "contract_txt": "낙찰자 선정 및 계약체결 안내.txt"}.get(lesson or "")
-        body = beat["body"]
-        if beat["screen"] == "editor" and template_name and lesson:
-            editor = self._editor().edit
-            sheet = "계약" if lesson == "contract_txt" else "공고"
-            if editor.template_path != self._asset(template_name):
-                prerequisite = next(item for item in BY_ID[lesson].beats if item.target == "template-list")
-                beat["target"], beat["title"], body = prerequisite.target, prerequisite.title, prerequisite.body
-            elif editor.data_path != self._asset("공고목록.xlsx") or editor.data_sheet != sheet:
-                prerequisite = next(item for item in BY_ID[lesson].beats
-                                    if item.target == ("data-picker" if lesson == "first_hwpx" else "template-list"))
-                beat["target"], beat["title"], body = "data-picker", prerequisite.title, prerequisite.body
-        for name in self.practice_names():
-            path = self._asset(name)
-            if path:
-                body = body.replace(name, Path(path).name)
-        if template_name and beat["target"] == "template-list":
-            body += f"\n서식: {Path(self._asset(template_name)).name}"
-            if lesson != "first_hwpx":
-                body += f"\n데이터: {Path(self._asset('공고목록.xlsx')).name}"
-            if self._editor().edit.template_path == self._asset(template_name):
-                beat["target"] = "data-picker"
-        if template_name and beat["target"] == "data-picker":
-            data_name = Path(self._asset("공고목록.xlsx")).name
-            if data_name not in body:
-                body += f"\n데이터: {data_name}"
-        if ctx.get("derived_data_path") and lesson in {"replace_data", "blank_values"}:
-            body += f"\n데이터: {Path(ctx['derived_data_path']).name} · {ctx['derived_sheet']}"
-        if lesson in {"field_trial", "option_apply"} and beat["id"] == "open":
-            beat["target"] = "authoring-open"
-            body += f"\n서식: {Path(self._asset('낙찰자 선정 및 계약체결 안내.txt')).name}"
-        if ctx.get("job_name"):
-            body += f"\n작업: {ctx['job_name']}"
-        beat["body"] = body
-        guidance = {}
-        if beat["screen"]:
-            guidance[beat["screen"]] = {"body": body, "target": beat["target"]}
-        if beat["screen"] == "editor" and not ctx.get("job_name"):
-            guidance["library"] = {"body": body, "target": "new-job"}
-            guidance["job"] = {"body": body, "target": "new-job"}
-        elif beat["screen"] == "editor":
-            guidance["library"] = {"body": body, "target": "edit-job"}
-            guidance["job"] = {"body": body, "target": None,
-                               "primary": {"action": "navigate", "screen": "library",
-                                           "label": "현재 단계로 돌아가기"}}
-            beat["entry_screen"] = "library"
-            if self._editor().edit.job_name != ctx["job_name"]:
-                guidance["editor"] = {"body": body, "target": None,
-                                      "primary": {"action": "navigate", "screen": "library",
-                                                  "label": "현재 단계로 돌아가기"}}
-        if beat["screen"] in {"job", "workbench"} and ctx.get("job_name"):
-            guidance["library"] = {"body": body, "target": "library-jobs"}
-            if self._job().work.name != ctx["job_name"]:
-                guidance["job"] = {"body": body, "target": "job-list"}
-            elif beat["screen"] == "workbench":
-                target = "open-workbench" if self._job().data.selection.selected_count() else "row-selection"
-                guidance["job"] = {"body": body, "target": target}
-            beat["entry_screen"] = "job"
-        beat["guidance"] = guidance
-
     def initial(self) -> dict:
         return self.snapshot()
 
@@ -245,17 +180,7 @@ class OnboardingController:
         with self._lock:
             if self._return_context is None or not self.progress.active or not self._resources()[0]:
                 return ""
-            beat = self._snapshot()["beat"]
-            if not beat or (screen and screen != beat["screen"]):
-                return ""
-            target = beat["guidance"].get(screen or beat["screen"], {}).get("target", beat["target"])
-            if kind == "data" and target == "data-picker":
-                if self.progress.selected == "replace_data":
-                    return self._context().get("derived_data_path", "")
-                return self._asset("공고목록.xlsx")
-            if kind == "template" and target == "authoring-open":
-                return self._asset("낙찰자 선정 및 계약체결 안내.txt")
-            return ""
+            return picker_hint(self, kind, screen)
 
     def _select(self, scenario_id: str) -> None:
         if scenario_id not in BY_ID:
@@ -298,28 +223,32 @@ class OnboardingController:
             return result
         if action in {"start", "select", "restart", "resume"}:
             return self._enter(action, payload)
-        if action == "later":
-            self.progress.later()
-        elif action in {"pause", "skip"}:
-            self.progress.pause()
-        elif action == "next":
-            self.progress.next()
-            if (self.progress.selected == "blank_values"
-                    and self.progress.record("blank_values")["completed"]):
-                self._finish_result("빈 값 확인 완료", "빈 값 표식과 직접 입력 결과를 확인했습니다.",
-                                    "workbench", "txt-review", [], count=1)
-        elif action in {"cleanup_preview", "cleanup"}:
+        if action in {"cleanup_preview", "cleanup"}:
             return self._legacy_cleanup(action, payload)
+        if action == "observe_ui":
+            observe_ui_press(self, payload)
+        elif action == "next":
+            self._next()
         elif action == "reset_progress":
             if payload.get("confirm") is not True:
                 raise ValueError("모든 학습 기록을 지울지 확인하세요.")
             self.progress = LessonProgress({"version": 1, "invite_seen": True})
             self._recovery = None
+        elif action == "later":
+            self.progress.later()
+        elif action in {"pause", "skip"}:
+            self.progress.pause()
         else:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
         self._persist()
         self._emit()
         return None
+
+    def _next(self) -> None:
+        self.progress.next()
+        if self.progress.selected == "blank_values" and self.progress.record("blank_values")["completed"]:
+            self._finish_result("빈 값 확인 완료", "〈빈 값〉 표식과 비움 확정을 확인했습니다.",
+                                "workbench", "txt-review", [], count=1)
 
     def _enter(self, action: str, payload: dict) -> dict:
         """Start, switch or resume a lesson inside the practice workspace."""
@@ -380,15 +309,7 @@ class OnboardingController:
         if isinstance(result, dict) and (result.get("ok") is False
                                          or result.get("needs_confirm") or result.get("needs_overwrite")):
             return False
-        if (self.progress.selected in {"field_trial", "option_apply"}
-                and screen == "authoring" and action in {"save", "save_authoring_document"}
-                and isinstance(result, dict) and result.get("ok") is True):
-            path = result.get("path")
-            authoring = self.controllers["authoring"]
-            session = authoring.sessions.get(authoring.active_id)
-            if (isinstance(path, str) and path == self._asset("낙찰자 선정 및 계약체결 안내.txt")
-                    and session is not None and session.source_path == path):
-                self._context().setdefault("saved_fingerprints", {})[path] = fingerprint(Path(path))
+        note_practice_save(self, screen, action, result)
         ready, reason = self._resources()
         if not ready:
             self._recovery = reason
@@ -396,17 +317,9 @@ class OnboardingController:
             self._persist()
             self._emit()
             return False
-        advanced = False
         before = repr(self._context())
-        # A single successful command can establish adjacent facts (e.g. template+sheet).
-        for _ in range(2):
-            beat = self.progress.beat()
-            if beat is None or beat.event is None:
-                break
-            context = self._matches(beat.event, screen, action, payload, result)
-            if context is None or not self.progress.observed(beat.event, context=context):
-                break
-            advanced = True
+        rewound = rewind_unmet_inputs(self)
+        advanced = advance_current(self, screen, action, payload, result) or rewound
         if advanced or repr(self._context()) != before:
             self._persist()
         if advanced or repr(self._context()) != before or action in {

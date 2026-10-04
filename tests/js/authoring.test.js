@@ -571,7 +571,7 @@ test("F38/F19/U11: the impact panel renders structure_delta·identifier changes�
   assert.ok(markup.includes("<p>저장 이후 본문 변경 있음</p>"));
   assert.ok(markup.includes("<p>연결된 작업의 영향은 확인하지 않았습니다.</p><p>확인하지 않은 작업 1개</p>"));
   assert.ok(markup.includes(`<p>${TPL_STATUS_COPY.ready}</p>`));
-  assert.ok(markup.includes('<button type="button" class="btn" data-guide="apply-change" disabled="" aria-disabled="true" title="템플릿을 저장한 뒤 확인할 수 있습니다.">적용 영향 확인</button><p class="authoring-reason">템플릿을 저장한 뒤 확인할 수 있습니다.</p>'));
+  assert.ok(markup.includes('<button type="button" class="btn" data-guide="apply-check" disabled="" aria-disabled="true" title="템플릿을 저장한 뒤 확인할 수 있습니다.">적용 영향 확인</button><p class="authoring-reason">템플릿을 저장한 뒤 확인할 수 있습니다.</p>'));
 });
 
 test("F26: 원문 표기 asks Python's syntax action and renders read-only sections with a copy button", async () => {
@@ -744,7 +744,7 @@ test("§10: screen readers get the field name, use count, parent item and proble
   // UX-10 R2: 문맥 줄은 Python 의 location_label 그대로다 — 원시 글자 offset(「문서 · 0–7」)은 보이지 않는다.
   assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">문단 1</p>'));
   assert.ok(!markup.includes("0–7"));
-  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
+  assert.match(markup, /<input class="field" data-guide="property-name" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
   assert.equal(outlineLabel("option", { id: "q" }, 0, "doc"), "선택 · q · 상위 항목 doc");
 });
 
@@ -1511,14 +1511,14 @@ test("UX-10 R2: a text-range selection opens a 고른 문구 target card; the co
   let markup = render(controller);
   assert.ok(markup.includes('<div class="authoring-target" id="authoring-properties-target"><span class="authoring-target-kind"><span class="authoring-kind">고른 문구</span></span><p class="authoring-target-name quote" title="{{수요기관}}">{{수요기관}}</p></div>'));
   assert.ok(markup.includes('<p class="authoring-context" id="authoring-properties-context">공고 구분 · 문단 5</p>'));
-  assert.match(markup, /<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
+  assert.match(markup, /<input class="field" data-guide="property-name" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-context"/);
   assert.ok(!markup.includes("6–14"), "원시 offset 은 보이지 않는다");
   // 글자를 확정할 수 없는 범위는 카드를 세우지 않는다(빈 카드 금지, R5). 위치 라벨이 없으면 문맥 줄도 없고 설명도 가리키지 않는다.
   controller.update({ context: { slot_id: null, option_id: null, location_label: null, selected_text: null } });
   markup = render(controller);
   assert.ok(!markup.includes('class="authoring-target"'), "보일 글자가 없으면 대상 카드가 없다");
   assert.ok(!markup.includes('id="authoring-properties-context"'));
-  assert.match(markup, /<input class="field" list="authoring-existing-fields" value=""\/>/, "설명이 가리킬 카드·문맥 줄이 없다");
+  assert.match(markup, /<input class="field" data-guide="property-name" list="authoring-existing-fields" value=""\/>/, "설명이 가리킬 카드·문맥 줄이 없다");
   // 캐럿(빈 범위)은 대상 카드가 없다.
   controller.update({ selection: { entry: "s0", paragraph: 4, start: 6, end: 6 } });
   assert.ok(!render(controller).includes('<span class="authoring-kind">고른 문구</span>'));
@@ -1655,11 +1655,11 @@ test("IDE-01 P-03: the 결과 시험 tab badge counts Python's trial_missing, th
   assert.ok(markup.includes('id="authoring-dock-tab-problems" class="authoring-dock-tab" tabindex="-1" aria-selected="false">문제</button>'), "문제 0 이면 배지 없음");
   assert.ok(markup.includes('공고명<input class="field" aria-invalid="true" value=""/>'), "손대지 않은 필드 입력칸");
   assert.ok(markup.includes('기관<input class="field" value="조달청"/>'), "값이 있는 입력칸은 표지가 없다");
-  assert.ok(markup.includes('<select class="field" aria-invalid="true">'), "시험 선택이 없는 항목");
+  assert.match(markup, /<select class="field" data-guide="trial-slot" data-slot="[^"]+" aria-invalid="true">/, "시험 선택이 없는 항목");
   assert.ok(!markup.includes("미입력"), "폐기 어휘를 넓히지 않는다");
-  assert.ok(markup.includes('<div class="authoring-actions start"><button type="button" class="btn">필드 이름 사용</button></div>'));
+  assert.ok(markup.includes('<div class="authoring-actions start"><button type="button" class="btn" data-guide="trial-fill-names">필드 이름 사용</button></div>'));
   Object.assign(snapshot.tabs[0], { trial_missing: { fields: [], slots: [] } });
-  assert.ok(render(controller).includes('<button type="button" class="btn" disabled="">필드 이름 사용</button>'), "채울 필드가 없으면 비활성");
+  assert.ok(render(controller).includes('<button type="button" class="btn" disabled="" data-guide="trial-fill-names">필드 이름 사용</button>'), "채울 필드가 없으면 비활성");
 });
 
 test("IDE-01 P-03: 필드 이름 사용 dispatches trial_fill_names behind the pending input, adopts Python's values and re-runs the automatic trial", async () => {
@@ -1846,7 +1846,7 @@ test("IDE-04: the 결과 시험 badge stands only after a trial was attempted �
   controller.update({ dock: "trial", trial: true });
   const tab = (markup) => between(markup, 'id="authoring-dock-tab-trial"', "</button>");
   assert.ok(!tab(render(controller)).includes("authoring-badge"), "갓 연 문서의 결과 시험 탭에는 배지가 없다");
-  assert.ok(render(controller).includes('<button type="button" class="btn">필드 이름 사용</button>'), "공백 투영은 그대로 — 「필드 이름 사용」은 첫 시험 전에도 켜진다");
+  assert.ok(render(controller).includes('<button type="button" class="btn" data-guide="trial-fill-names">필드 이름 사용</button>'), "공백 투영은 그대로 — 「필드 이름 사용」은 첫 시험 전에도 켜진다");
   await controller.trialInput({ 수요기관: "조달청" }, {}, "수요기관");
   Object.assign(snapshot.tabs[0], { trial_missing: { fields: ["공고명", "추정가격", "담당자"], slots: [] } });
   assert.ok(tab(render(controller)).includes('<span class="authoring-badge">3</span>'), "값 하나 뒤에는 남은 수");
@@ -1972,7 +1972,7 @@ test("IDE-03 P-06: an invalid_name refusal stands under the offending input — 
   let markup = render(controller);
   assert.equal(controller.viewModel.getSnapshot().error, "", "오류 띠가 아니다");
   assert.ok(!markup.includes("authoring-error") && !markup.includes("authoring-refusal"), "거절 구획·오류 띠가 서지 않는다");
-  assert.ok(markup.includes('<input class="field" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-name-reason" aria-invalid="true" value="수요기관"/>'), "입력은 그대로 남고 칸이 거절을 설명으로 가리킨다");
+  assert.ok(markup.includes('<input class="field" data-guide="property-name" list="authoring-existing-fields" aria-describedby="authoring-properties-target authoring-properties-name-reason" aria-invalid="true" value="수요기관"/>'), "입력은 그대로 남고 칸이 거절을 설명으로 가리킨다");
   assert.ok(markup.includes(`<p class="authoring-reason" id="authoring-properties-name-reason" role="alert">${message}</p>`));
   // 식별자 칸의 거절은 접힌 「연결 식별자」를 펴고 그 칸 곁에 선다(P-11a).
   controller.update({ commandType: "create_slot" });

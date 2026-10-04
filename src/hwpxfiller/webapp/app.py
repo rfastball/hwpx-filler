@@ -291,8 +291,8 @@ class WebFrontend:
         except KeyError:  # confirm-or-alarm: 미등록 화면은 시끄럽게.
             raise ValueError(f"등록되지 않은 화면: {screen!r}") from None
 
-    def _observe_tutorial(self, screen: str, action: str, payload: dict, result, *, token=None) -> None:
-        """Tutorial failure cannot turn a successful product command into a retry."""
+    def _observe_tutorial(self, screen: str, action: str, payload: dict, result, *, token=None):
+        """Tutorial failure cannot turn a successful product command into a retry; returns ``result``."""
         try:
             self._controller("tutorial").observe_product(screen, action, payload, result, token=token)
         except Exception as exc:  # noqa: BLE001 — product result must survive observer failure
@@ -301,6 +301,7 @@ class WebFrontend:
                 self._controller("tutorial").observation_failed(str(exc))
             except Exception as reporting_exc:  # noqa: BLE001 — preserve original product result
                 log(f"tutorial observer reporting failed: {reporting_exc!r}")
+        return result
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> "product_api.DeliveryOutcome | None":
@@ -439,18 +440,17 @@ class WebFrontend:
         try:
             overview = ambiguous_sheets(path)  # 모호할 때만 확정을 요구(빈 목록=단일/CSV)
             if overview:
-                return {
+                return self._observe_tutorial(screen, "pick_data_file", {"path": path}, {
                     "needs_sheet": True,
                     "path": path,
                     "name": Path(path).name,
                     "sheets": [{"name": n, "rows": r, "cols": c} for n, r, c in overview],
-                }
+                }, token=tutorial_token)
             self._controller(screen).load_data_path(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        mounted = self._mount_descriptor(screen, path)
-        self._observe_tutorial(screen, "pick_data_file", {"path": path}, mounted, token=tutorial_token)
-        return mounted
+        return self._observe_tutorial(screen, "pick_data_file", {"path": path},
+                                      self._mount_descriptor(screen, path), token=tutorial_token)
 
     def load_data_sheet(
         self, screen: str, path: str, sheet: str | list[str], confirmation: dict | None = None,
@@ -599,12 +599,10 @@ class WebFrontend:
         direct 반환·진행 델타에 그대로 되돌린다(R4-03). 생략하면 ``""``.
         """
         tutorial_token = self._controller("tutorial").observation_token()
-        result = self._controller(screen).generate(
+        return self._observe_tutorial(screen, "generate", {}, self._controller(screen).generate(
             confirm_overwrite=bool(confirm_overwrite),
             run_token=run_token if isinstance(run_token, str) else "",
-        )
-        self._observe_tutorial(screen, "generate", {}, result, token=tutorial_token)
-        return result
+        ), token=tutorial_token)
 
     # (import_library_template 브리지는 tpl 화면과 함께 사망(F8) — 소비자 0 인 통로는 남기지
     #  않는다(F2 PR-B set_rail_collapsed 선례). 유일 가져오기 = import_template_file(통일,
@@ -890,6 +888,7 @@ class WebFrontend:
         「문서 만들기」에 되묻는다 — 근거는 :meth:`new_job_from_data` 와 같다.
         """
         ctx = context or {}
+        tutorial_token = self._controller("tutorial").observation_token()
         try:
             # **진행 중 런과 겹치는 진입은 거절한다**(9R P1). `setBusy()` 는 「문서 만들기」
             # 루트 아래만 비활성화하므로 상단 탭·라이브러리 컨트롤은 생성 중에도 눌린다 —
@@ -909,7 +908,7 @@ class WebFrontend:
             )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return name
+        return self._observe_tutorial("editor", "open_job_in_editor", {"name": name}, name, token=tutorial_token)
 
     def _mounted_data_handoff(self, entry_reason: str) -> dict:
         """이 진입이 들고 갈 「문서 만들기」의 데이터 참조 — 인계가 없으면 빈 사전(#878).

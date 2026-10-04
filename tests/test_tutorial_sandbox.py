@@ -284,7 +284,7 @@ def test_lesson_seeding_failure_leaves_progress_and_workspace_unchanged(tmp_path
     def broken_seed(*_args):
         raise ValueError("seed failed")
 
-    monkeypatch.setattr(onboarding_practice, "_seed_job", broken_seed)
+    monkeypatch.setattr(onboarding_practice, "seed_before_switch", broken_seed)
     with pytest.raises(ValueError, match="seed failed"):
         tutorial.dispatch("select", {"scenario_id": "repeat_hwpx"})
     assert tutorial.progress.progress() == before

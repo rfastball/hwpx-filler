@@ -363,7 +363,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "slot_remove": _schema("path slot_id", "confirm"),
     },
     # 튜토리얼은 셸의 안내 패널이지만 브리지에서는 화면과 같은 스냅샷 채널이다.
-    # 공개 명령은 새 8과정만 소유하고, OnboardingController가 실제 제품 동작을 관찰한다.
+    # 공개 명령은 새 9과정만 소유하고, OnboardingController가 실제 제품 동작을 관찰한다.
     # 동결 T0–T17의 순간 카드·초점 명령은 제품 브리지에 노출하지 않는다.
     "tutorial": {
         "preflight": _schema("screen action", optional="scenario_id destination_screen"),
@@ -376,6 +376,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "resume": _schema(optional="transition_token"),
         "restart": _schema("scenario_id", optional="transition_token"),
         "next": _schema(),
+        # 제품 명령이 없는 누르기(독·팝오버 열기, 시트 체크, 상단 이동)의 UI 사실 보고(#1127) —
+        # 웹은 「지금 단계의 상자 컨트롤을 눌렀다」만 싣고, 그 단계가 끝났는지는 Python 이 정한다.
+        "observe_ui": _schema("scenario_id checkpoint anchor"),
         "cleanup_preview": _schema(),
         "cleanup": _schema("token"),
         "reset_progress": _schema("confirm"),

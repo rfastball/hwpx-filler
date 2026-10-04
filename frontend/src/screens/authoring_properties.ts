@@ -187,7 +187,8 @@ export function SemanticForm({ controller, selected, selection, preview, onClose
     !available.enabled && available.reason && h("p", { className: "authoring-reason", id: "authoring-properties-reason" }, available.reason),
     !available.enabled && available.alternative && h("div", null, button(available.alternative.label, () => switchType(available.alternative!.command_type))),
     locationLabel && h("p", { className: "authoring-context", id: "authoring-properties-context" }, locationLabel),
-    ...field(nameLabel, "name", name, setName, nameLabel === "필드 이름" ? { list: "authoring-existing-fields" } : {}),
+    // `data-guide`: 튜토리얼 안내가 이 칸 하나를 상자로 겨누는 좌표(#1127) — 표시·동작과 무관하다.
+    ...field(nameLabel, "name", name, setName, { "data-guide": "property-name", ...(nameLabel === "필드 이름" ? { list: "authoring-existing-fields" } : {}) }),
     type === "create_field" && h("datalist", { id: "authoring-existing-fields" }, ...candidates.map((candidate: Obj) => h("option", { key: candidate.name, value: candidate.name, label: `${candidate.name} · 사용 위치 ${candidate.count ?? 0}곳` }))),
     // 연결 식별자(P-11a): 만들기에서는 접는다(요약이 칸의 이름이다). 이름 변경은 기존 작업 연결에 닿으므로 펼친 칸이다.
     !FIELD_TYPES.includes(type) && (["create_slot", "create_option"].includes(type)
