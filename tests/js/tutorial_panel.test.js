@@ -4,12 +4,13 @@
  * Selected layer: Node render/action projection; modal focus and CSS stay in the existing WebView2 window.
  * Expected cost delta: three small Node cases, zero new resource launches.
  * Evidence to retire: constant lesson-count assertion and impossible active+paused fixture.
+ * Open panel body: one featured lesson owns the only primary action; rows, files and maintenance stay quiet.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TutorialPanel, anchorSelector, lessonAction, placeCoach } from "../../frontend/src/tutorial/panel.ts";
+import { TutorialLessons, TutorialPanel, anchorSelector, featuredAction, featuredLesson, lessonAction, placeCoach, runResultAction } from "../../frontend/src/tutorial/panel.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "prepare", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -133,4 +134,151 @@ test("semantic anchors resolve to real controls and coach flips/clamps to viewpo
   const left = placeCoach({ left: 4, right: 40, top: 200, bottom: 230, width: 36, height: 30 },
     { width: 420, height: 600 }, "left", 180);
   assert.ok(left.x >= 12 && left.x + left.width <= 420 - 12);
+});
+
+function lessons(snap, options = {}) {
+  const noop = () => {};
+  return renderToStaticMarkup(createElement(TutorialLessons, { snapshot: snap, pending: false, practice: !!options.practice,
+    run: noop, close: noop, act: noop, confirm: noop }));
+}
+// TutorialLessons is hook-free, so its element tree can be walked and a button's handler invoked directly.
+function buttonById(node, id) {
+  if (!node || typeof node !== "object") return null;
+  if (Array.isArray(node)) { for (const child of node) { const hit = buttonById(child, id); if (hit) return hit; } return null; }
+  if (node.props?.id === id) return node;
+  return buttonById(node.props?.children, id);
+}
+function press(snap, id) {
+  const calls = [];
+  const tree = TutorialLessons({ snapshot: snap, pending: false, practice: false,
+    run: (item, action) => calls.push([action, item.id]), close: () => calls.push(["close"]),
+    act: (action) => calls.push([action]), confirm: (action) => calls.push([action]) });
+  buttonById(tree, id).props.onClick();
+  return calls;
+}
+const count = (html, pattern) => (html.match(pattern) || []).length;
+
+test("open panel features the recommended lesson with the only primary action and quiet whole-row choices", () => {
+  const html = lessons(snapshot());
+  assert.match(html, /<h3 id="tutorialFeaturedTitle">과정 1<\/h3>/);
+  assert.match(html, /설명 1/);
+  assert.equal(count(html, /btn primary/g), 1);
+  assert.match(html, /id="tutorialContinue"[^>]*>COPY:start</);
+  assert.equal(count(html, /class="tutorial-row"/g), 7);
+  assert.equal(count(html, /aria-label="과정 \d, COPY:choose_scenario"/g), 7);
+  assert.doesNotMatch(html, />COPY:choose_scenario</);
+  assert.equal(count(html, /과정 1</g), 1);
+  assert.doesNotMatch(html, /★|✓|›|tutorial-recommended|COPY:resume|COPY:restart|COPY:pause|COPY:skip/);
+  assert.match(html, /<svg[^>]*aria-hidden="true"/);
+});
+
+test("paused current lesson resumes from its step; completed rows reveal restart", () => {
+  const snap = snapshot({ paused: true, scenario_id: "repeat_hwpx" });
+  snap.scenarios[0] = { ...snap.scenarios[0], completed: true, checkpoint: 3 };
+  snap.scenarios[1] = { ...snap.scenarios[1], checkpoint: 2 };
+  snap.scenarios[3] = { ...snap.scenarios[3], checkpoint: 1 };
+  assert.equal(featuredLesson(snap)?.id, "repeat_hwpx");
+  const html = lessons(snap);
+  assert.match(html, /tutorialFeaturedTitle">과정 2</);
+  assert.match(html, /tutorial-progress">2\/3</);
+  assert.match(html, /id="tutorialContinue"[^>]*>COPY:resume</);
+  assert.equal(count(html, /btn primary/g), 1);
+  assert.equal(count(html, />COPY:restart</g), 2);
+  assert.doesNotMatch(html, /COPY:pause|COPY:skip/);
+  const done = html.slice(html.indexOf('<li class="done"'));
+  assert.match(done.slice(0, done.indexOf("</li>")), /<button type="button" class="tutorial-row">.*<svg.*과정 1.*tutorial-row-action">COPY:restart/);
+  assert.match(html, /aria-label="과정 4, COPY:choose_scenario".*tutorial-progress">1\/3</);
+  assert.equal(count(html, /1\/8</g), 1);
+});
+
+test("running lesson keeps pause and skip beside its featured continue, not in maintenance", () => {
+  const snap = snapshot({ active: true, scenario_id: "contract_txt", checkpoint: 0 });
+  const html = lessons(snap);
+  const featured = html.slice(html.indexOf("tutorial-featured"), html.indexOf("</section>"));
+  assert.match(featured, /tutorialFeaturedTitle">과정 3</);
+  assert.match(featured, /tutorial-progress">0\/3</);
+  assert.match(featured, />COPY:resume<.*>COPY:pause<.*>COPY:skip</);
+  assert.doesNotMatch(featured, /COPY:restart/);
+  const maintenance = html.slice(html.indexOf("tutorial-maintenance"));
+  assert.doesNotMatch(maintenance, /COPY:pause|COPY:skip|COPY:resume/);
+});
+
+test("practice files sit behind a closed disclosure with names, paths stay copyable, prepare stays outside it", () => {
+  const files = [{ name: "물품 구매입찰 공고.hwpx", path: "C:\연습\물품 구매입찰 공고.hwpx", kind: "template" },
+    { name: "공고목록.xlsx", path: "C:\연습\공고목록.xlsx", kind: "data" }];
+  const snap = snapshot({ scenario_id: "first_hwpx", paused: true, resources: { ready: true, summary: "연습 파일 2건", files },
+    recovery: { title: "확인", body: "연습 파일을 다시 확인하세요." } });
+  const html = lessons(snap);
+  assert.match(html, /<details class="tutorial-disclosure"><summary>/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+  assert.match(html, /<summary>.*연습 파일 2건<\/summary>/);
+  assert.match(html, /<li title="C:\연습\공고목록\.xlsx"><span class="tutorial-file-name">공고목록\.xlsx<\/span><span class="tutorial-file-path">C:\연습\공고목록\.xlsx<\/span>/);
+  assert.doesNotMatch(html, /<code|<strong/);
+  assert.match(html, /tutorial-recovery">연습 파일을 다시 확인하세요\./);
+  assert.ok(html.indexOf('id="tutorialPrepare"') > html.indexOf("</details>"));
+  assert.match(html, /COPY:cleanup.*COPY:reset/);
+  assert.equal(count(html, /tutorial-destructive/g), 2);
+  const practice = lessons(snap, { practice: true });
+  assert.match(practice, /id="tutorialPrepare"/);
+  assert.doesNotMatch(practice, /COPY:cleanup|COPY:reset/);
+  const same = lessons(snapshot({ resources: { ready: false, summary: "예제 준비 필요" }, recovery: { title: "확인", body: "예제 준비 필요" } }));
+  assert.equal(count(same, /예제 준비 필요/g), 1);
+  assert.doesNotMatch(same, /<details/);
+});
+
+test("finished curriculum lists every lesson as a restart row without a featured action", () => {
+  const snap = snapshot({ scenario_id: "option_apply" });
+  snap.scenarios = snap.scenarios.map((item) => ({ ...item, completed: true, checkpoint: item.step_count }));
+  assert.equal(featuredLesson(snap), null);
+  const html = lessons(snap);
+  assert.doesNotMatch(html, /tutorial-featured|btn primary/);
+  assert.equal(count(html, />COPY:restart</g), 8);
+  assert.match(html, /8\/8</);
+});
+
+test("re-running a completed lesson keeps it featured with pause and skip while it runs", () => {
+  const snap = snapshot({ active: true, scenario_id: "contract_txt", checkpoint: 2 });
+  snap.scenarios[2] = { ...snap.scenarios[2], completed: true, checkpoint: 2 };
+  assert.equal(featuredLesson(snap)?.id, "contract_txt");
+  assert.equal(featuredAction(snap.scenarios[2], snap), "close");
+  const html = lessons(snap);
+  const featured = html.slice(html.indexOf("tutorial-featured"), html.indexOf("</section>"));
+  assert.match(featured, /tutorialFeaturedTitle">과정 3<.*tutorial-progress">2\/3</);
+  assert.match(featured, /id="tutorialContinue"[^>]*>COPY:resume<.*>COPY:restart<.*>COPY:pause<.*>COPY:skip</);
+  assert.equal(count(html, /과정 3</g), 1);
+  assert.deepEqual(press(snap, "tutorialContinue"), [["close"]]);
+});
+
+test("a paused re-run of a completed lesson resumes from the featured block instead of restarting", () => {
+  const snap = snapshot({ paused: true, scenario_id: "contract_txt", checkpoint: 2 });
+  snap.scenarios[2] = { ...snap.scenarios[2], completed: true, checkpoint: 2 };
+  assert.equal(lessonAction(snap.scenarios[2], snap), "restart");
+  assert.equal(featuredAction(snap.scenarios[2], snap), "resume");
+  const html = lessons(snap);
+  assert.match(html, /tutorialFeaturedTitle">과정 3</);
+  assert.match(html, /id="tutorialContinue"[^>]*>COPY:resume</);
+  assert.doesNotMatch(html, /COPY:pause|COPY:skip/);
+  assert.equal(count(html, /과정 3</g), 1);
+  assert.deepEqual(press(snap, "tutorialContinue"), [["resume", "contract_txt"]]);
+});
+
+test("finale result action dismisses the card only after navigation succeeds; on its own screen it reveals the target", async () => {
+  const trace = (navigated) => {
+    const calls = [];
+    return { calls, steps: {
+      navigate: async () => { calls.push("navigate"); if (navigated instanceof Error) throw navigated; return navigated; },
+      reveal: () => calls.push("reveal"), dismiss: () => calls.push("dismiss") } };
+  };
+  const cancelled = trace(false);
+  await runResultAction("job", "library", cancelled.steps);
+  assert.deepEqual(cancelled.calls, ["navigate"], "취소된 이탈·실패한 dispatch 는 결과 카드를 남긴다");
+  const moved = trace(true);
+  await runResultAction("job", "library", moved.steps);
+  assert.deepEqual(moved.calls, ["navigate", "dismiss"]);
+  const here = trace(true);
+  await runResultAction("job", "job", here.steps);
+  assert.deepEqual(here.calls, ["dismiss", "reveal"], "같은 화면은 이동 없이 대상으로 간다");
+  const failed = trace(new Error("dispatch failed"));
+  await assert.rejects(runResultAction("job", "library", failed.steps));
+  assert.deepEqual(failed.calls, ["navigate"]);
 });

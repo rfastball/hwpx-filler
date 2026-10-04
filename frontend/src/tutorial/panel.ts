@@ -1,7 +1,8 @@
 /* Eight task lessons. The host owns lesson state; this surface owns only geometry and controls. */
-import { createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { icon } from "../screens/icons.ts";
 
 export type Lesson = {
   id: string; title: string; description: string; recommended: boolean;
@@ -89,9 +90,39 @@ function visibleElement(doc: ParentNode, selector: string | null): HTMLElement |
 
 const noHost = () => null;
 
+/** Finale result action. On another screen the card is dismissed only after navigation succeeds — a cancelled leave
+ *  guard or a failed dispatch keeps the result summary on screen. On the result's own screen it reveals the target. */
+export async function runResultAction(resultScreen: string, screen: string | null,
+  steps: { navigate(): Promise<boolean>; reveal(): void; dismiss(): void }): Promise<void> {
+  if (resultScreen !== screen) {
+    if (await steps.navigate()) steps.dismiss();
+    return;
+  }
+  steps.dismiss();
+  steps.reveal();
+}
+
 export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
   if (item.completed) return "restart";
   return item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select";
+}
+
+/** The one lesson the open panel features: the current lesson while it is in progress (a re-run of a completed
+ *  lesson included), else the next unfinished one to start. */
+export function featuredLesson(snapshot: TutorialSnapshot): Lesson | null {
+  const current = snapshot.scenarios.find((item) => item.id === snapshot.scenario_id);
+  if (current && (snapshot.active || snapshot.paused)) return current;
+  const open = snapshot.scenarios.filter((item) => !item.completed);
+  return open.find((item) => item.id === snapshot.scenario_id)
+    ?? open.find((item) => item.recommended) ?? open[0] ?? null;
+}
+
+/** Featured primary: a running current lesson continues behind the panel ("close"), a paused current lesson resumes
+ *  even when it was completed before; any other lesson follows the row action. */
+export function featuredAction(item: Lesson, snapshot: TutorialSnapshot): string {
+  if (item.id === snapshot.scenario_id && snapshot.active) return "close";
+  if (item.id === snapshot.scenario_id && snapshot.paused) return "resume";
+  return lessonAction(item, snapshot);
 }
 
 type Geometry = { x: number; y: number; width: number; height: number; side: TutorialBeat["placement"] };
@@ -126,6 +157,71 @@ function Ring(props: { fraction: number }): ReactNode {
   return h("svg", { className: "tutorial-ring", viewBox: "0 0 24 24", "aria-hidden": true },
     h("circle", { className: "tutorial-ring-bg", cx: 12, cy: 12, r: 10 }),
     h("circle", { className: "tutorial-ring-fg", cx: 12, cy: 12, r: 10, strokeDasharray: 63, strokeDashoffset: offset }));
+}
+
+type LessonControls = {
+  snapshot: TutorialSnapshot; pending: boolean; practice: boolean;
+  run(item: Lesson, action: string): void; close(): void;
+  act(action: "pause" | "skip" | "prepare_examples"): void; confirm(action: "reset_progress" | "cleanup"): void;
+};
+
+/** Open panel body. One featured lesson owns the only primary action; other lessons are quiet whole-row choices,
+ *  practice copies sit behind one disclosure, and maintenance stays a quiet text row at the bottom. */
+export function TutorialLessons(props: LessonControls): ReactNode {
+  const { snapshot, pending, practice } = props;
+  const count = snapshot.scenarios.filter((item) => item.completed).length;
+  const featured = featuredLesson(snapshot);
+  const current = !!featured && featured.id === snapshot.scenario_id;
+  const running = current && snapshot.active;
+  const started = !!featured && (featured.checkpoint > 0 || current && (snapshot.active || snapshot.paused));
+  const primary = featured ? featuredAction(featured, snapshot) : null;
+  const quiet = (label: string, onClick: () => void, extra?: Record<string, unknown>) =>
+    h("button", { className: "btn quiet sm", type: "button", disabled: pending, onClick, ...extra }, label);
+
+  const featuredBlock = featured ? h("section", { className: "tutorial-featured", "aria-labelledby": "tutorialFeaturedTitle" },
+    h("header", { className: "tutorial-featured-head" },
+      h("h3", { id: "tutorialFeaturedTitle" }, featured.title),
+      started ? h("span", { className: "tutorial-progress" }, `${featured.checkpoint}/${featured.step_count}`) : null),
+    featured.description ? h("p", null, featured.description) : null,
+    h("div", { className: "tutorial-featured-actions" },
+      // A running lesson continues behind the panel: closing returns to it without a host transition.
+      h("button", { id: "tutorialContinue", className: "btn primary sm", type: "button", disabled: pending,
+        onClick: () => primary === "close" ? props.close() : props.run(featured, primary!) },
+        primary === "restart" ? snapshot.copy.restart : started ? snapshot.copy.resume : snapshot.copy.start),
+      started && featured.checkpoint > 0 && primary !== "restart" ? quiet(snapshot.copy.restart, () => props.run(featured, "restart")) : null,
+      running ? quiet(snapshot.copy.pause, () => props.act("pause")) : null,
+      running ? quiet(snapshot.copy.skip, () => props.act("skip")) : null)) : null;
+
+  const rows = snapshot.scenarios.filter((item) => item.id !== featured?.id).map((item) => h("li", { key: item.id, className: item.completed ? "done" : undefined },
+    h("button", { type: "button", className: "tutorial-row", disabled: pending,
+      "aria-label": item.completed ? undefined : `${item.title}, ${snapshot.copy.choose_scenario}`,
+      onClick: () => props.run(item, lessonAction(item, snapshot)) },
+      h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? icon("check") : null),
+      h("span", { className: "tutorial-row-title" }, item.title),
+      !item.completed && item.checkpoint > 0 ? h("span", { className: "tutorial-progress" }, `${item.checkpoint}/${item.step_count}`) : null,
+      item.completed ? h("span", { className: "tutorial-row-action" }, snapshot.copy.restart)
+        : h("span", { className: "tutorial-row-go", "aria-hidden": true }, icon("chevron-right")))));
+
+  const files = snapshot.resources.files ?? [];
+  const fileList = files.length ? h("ul", { className: "tutorial-files" }, ...files.map((file) => h("li", { key: file.path, title: file.path },
+    h("span", { className: "tutorial-file-name" }, file.name), h("span", { className: "tutorial-file-path" }, file.path)))) : null;
+  const summary = snapshot.resources.summary;
+  const recovery = snapshot.recovery?.body && snapshot.recovery.body !== summary ? snapshot.recovery.body : null;
+
+  return h(Fragment, null,
+    h("header", null, h("h2", null, "튜토리얼"), h("span", null, `${count}/${snapshot.scenarios.length}`)),
+    featuredBlock,
+    rows.length ? h("ol", { className: "tutorial-list" }, ...rows) : null,
+    recovery || summary || fileList ? h("div", { className: "tutorial-resource" },
+      recovery ? h("p", { className: "tutorial-recovery" }, recovery) : null,
+      // Practice copies stay one disclosure away; the summary alone carries readiness.
+      fileList && summary ? h("details", { className: "tutorial-disclosure" },
+        h("summary", null, h("span", { className: "tutorial-disclosure-mark", "aria-hidden": true }, icon("chevron-right")), summary), fileList)
+        : summary ? h("p", null, summary) : fileList) : null,
+    h("div", { className: "tutorial-maintenance" },
+      quiet(snapshot.copy.prepare, () => props.act("prepare_examples"), { id: "tutorialPrepare" }),
+      !practice ? quiet(snapshot.copy.cleanup, () => props.confirm("cleanup"), { className: "btn quiet sm tutorial-destructive" }) : null,
+      !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
 }
 
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
@@ -213,8 +309,6 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
   const nextLesson = snapshot?.scenarios.find((item) => item.id === result?.next_scenario_id);
-  const count = snapshot?.scenarios.filter((item) => item.completed).length ?? 0;
-  const total = snapshot?.scenarios.length ?? 0;
   const stages = snapshot?.stages ?? [];
   const stageDone = stages.filter((stage) => stage.status === "done").length;
   const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
@@ -236,10 +330,11 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     } else if (beat?.screen === null || beat?.screen === screen || beat?.entry_screen === screen) setOpen(true);
     else if (beat) await act("return_to_step", { screen: beat.entry_screen ?? beat.screen });
   };
-  const chooseLesson = async (item: Lesson) => {
-    if (!snapshot) return;
-    const action = lessonAction(item, snapshot);
+  const runLesson = async (item: Lesson, action: string) => {
     if (await act(action, action === "resume" ? {} : { scenario_id: item.id })) setOpen(false);
+  };
+  const chooseLesson = async (item: Lesson) => {
+    if (snapshot) await runLesson(item, lessonAction(item, snapshot));
   };
 
   const confirmAction = async (action: "reset_progress" | "cleanup") => {
@@ -271,13 +366,6 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
         key: stage.id, className: stage.status, title: stage.title,
       }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), exitButton("tutorialExit"));
 
-  const list = snapshot?.scenarios.map((item) => h("li", { key: item.id, className: item.id === selected?.id ? "current" : item.completed ? "done" : "" },
-    h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? "✓" : ""),
-    h("span", null, item.title), item.recommended ? h("span", { className: "tutorial-recommended" }, "★") : null,
-    h("button", { type: "button", className: "btn sm", disabled: pending,
-      onClick: () => void chooseLesson(item) },
-      item.completed ? snapshot.copy.restart : item.id === snapshot.scenario_id && snapshot.paused ? snapshot.copy.resume : snapshot.copy.choose_scenario)));
-
   const coach = shown && beat ? h("section", { id: "tutorialCoach", className: `tutorial-coach${dialogHost ? " tutorial-coach-inline" : ""}`,
     style: dialogHost ? undefined : coachStyle, role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
     "data-side": dialogHost ? "inline" : position?.side ?? "center" },
@@ -299,20 +387,10 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
-      h("header", null, h("h2", null, "튜토리얼"), h("span", null, `${count}/${total}`)),
-      h("ol", { className: "tutorial-list" }, ...list ?? []),
-      snapshot.resources.summary ? h("p", { className: "tutorial-resource" }, snapshot.resources.summary) : null,
-      snapshot.recovery?.body && snapshot.recovery.body !== snapshot.resources.summary
-        ? h("p", { className: "tutorial-resource" }, snapshot.recovery.body) : null,
-      snapshot.resources.files?.length ? h("ul", { className: "tutorial-resources" }, ...snapshot.resources.files.map((file) => h("li", { key: file.path },
-        h("strong", null, file.name), h("code", null, file.path)))) : null,
-      h("div", { className: "tutorial-actions" },
-        snapshot.active || snapshot.paused ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act(snapshot.paused ? "resume" : "pause") }, snapshot.paused ? snapshot.copy.resume : snapshot.copy.pause) : null,
-        snapshot.active ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("skip") }, snapshot.copy.skip) : null,
-        selected ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void act("restart", { scenario_id: snapshot.scenario_id }) }, snapshot.copy.restart) : null,
-        h("button", { id: "tutorialPrepare", className: "btn sm", type: "button", disabled: pending, onClick: () => void act("prepare_examples") }, snapshot.copy.prepare),
-        !practice ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("cleanup") }, snapshot.copy.cleanup) : null,
-        !practice ? h("button", { className: "btn sm", type: "button", disabled: pending, onClick: () => void confirmAction("reset_progress") }, snapshot.copy.reset) : null)) : null,
+      h(TutorialLessons, { snapshot, pending, practice,
+        run: (item, action) => void runLesson(item, action),
+        close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
+        act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,
     snapshot?.invitation.visible && !overlayBusy ? h("section", { className: "tutorial-invite", role: "region", "aria-labelledby": "tutorialInviteTitle" },
       h("h2", { id: "tutorialInviteTitle" }, snapshot.invitation.title), h("p", null, snapshot.invitation.body),
       h("div", { className: "tutorial-actions" },
@@ -332,13 +410,15 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       h("h2", null, result.title), h("p", null, result.body),
       result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
       h("div", { className: "tutorial-actions" }, ...result.actions.map((action) => h("button", { key: action.target,
-        type: "button", className: "btn sm", onClick: () => {
-          setResultDismissed(true);
-          if (result.screen !== screen) { void act("navigate", { screen: result.screen }); return; }
-          const element = visibleElement(ports.doc, anchorSelector(action.target));
-          element?.scrollIntoView({ block: "center", behavior: "instant" });
-          element?.focus({ preventScroll: true });
-        } }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
+        type: "button", className: "btn sm", onClick: () => void runResultAction(result.screen, screen, {
+          navigate: () => act("navigate", { screen: result.screen }),
+          reveal: () => {
+            const element = visibleElement(ports.doc, anchorSelector(action.target));
+            element?.scrollIntoView({ block: "center", behavior: "instant" });
+            element?.focus({ preventScroll: true });
+          },
+          dismiss: () => setResultDismissed(true),
+        }) }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
           onClick: () => void chooseLesson(nextLesson) }, result.next_scenario_label ?? nextLesson.title) : null,
         h("button", { type: "button", className: nextLesson ? "btn sm" : "btn primary sm", onClick: () => { setResultDismissed(true); setOpen(true); } }, snapshot!.copy.choose_scenario),
         exitButton())) : null,
