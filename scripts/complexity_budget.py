@@ -341,6 +341,10 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--tighten", action="store_true", help="줄어든 값 내리기·낡은 항목 지우기")
     mode.add_argument("--write-initial", action="store_true", help="기준에 원장이 없을 때 생성")
     args = parser.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:  # 콘솔 코드페이지와 무관하게 한글·기호를 그대로 낸다
+            reconfigure(encoding="utf-8", errors="backslashreplace")
     units, _ = measure.measure_repository(ROOT)
     found = readings(units)
     if args.check:
