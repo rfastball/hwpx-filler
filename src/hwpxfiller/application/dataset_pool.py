@@ -41,8 +41,10 @@ from ..domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     DatasetReference,
+    excel_reference_opts,
     pclm_identity,
     reference_identity,
+    reference_sheets,
 )
 from ..domain.pclm_views import default_pclm_db
 from .nara_acquire import validate_range
@@ -149,27 +151,31 @@ class DatasetPoolPort(Protocol):
 
     def relabel(self, key: str, name: str, *, note: str = "") -> DatasetReference: ...
 
-    def set_filters(self, key: str, filters: "list[dict]") -> DatasetReference: ...
+    def set_filters(
+        self, key: str, filters: "list[dict]", *, sheet: "str | None" = None,
+    ) -> DatasetReference: ...
 
     def relink_excel(
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference: ...
 
     def relabel_confirmed_raw(
         self, ident: str, name: str, *,
-        note: str = "", expected_basis: "str | None",
+        note: str = "", expected_basis: "str | None", sheets: "list[str] | None" = None,
     ) -> "tuple[str, DatasetReference]": ...
 
     def relabel_confirmed(
         self, path: str, sheet: "str | None", name: str, *,
-        note: str = "", expected_basis: "str | None",
+        note: str = "", expected_basis: "str | None", sheets: "list[str] | None" = None,
     ) -> "tuple[str, DatasetReference]": ...
 
     def relink_confirmed(
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
         expected_basis: "str | None",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference: ...
 
     def delete_confirmed(
@@ -276,14 +282,14 @@ def reference_summary(item: DatasetReference) -> str:
     if item.kind == "excel":
         path = str(opts.get("path", ""))
         name = Path(path).name if path else "(경로 없음)"
-        sheet = opts.get("sheet")
+        sheet = ", ".join(reference_sheets(item))
         return f"파일: {name}" + (f" · 시트 {sheet}" if sheet else "")
     if item.kind == "pclm":
         # 엑셀 문형의 거울 — 가리키는 파일 하나 + 그 안의 시트 하나. 시트 이름은 그 DB 가
         # 가진 이름 그대로다(엑셀 시트 이름과 같다 — 옮길 제목표가 없다, 사용자 결정 2026-09-30).
         db = str(opts.get("db", ""))
         name = Path(db).name if db else "(경로 없음)"
-        view = opts.get("view")
+        view = ", ".join(reference_sheets(item))
         return f"DB: {name}" + (f" · 시트 {view}" if view else "")
     if item.kind == "nara":
         bgn = opts.get("bgn_dt", "?")
@@ -344,6 +350,7 @@ class DatasetPoolRow:
     locate_path: str = ""
     # 확정 시트(#67 다시 연결 프리필) — 엑셀 참조만. 미지정/비엑셀은 "".
     sheet: str = ""
+    sheets: "tuple[str, ...]" = ()
 
     def actions(self) -> "list[PoolAction]":
         """이 행의 ⋯ 메뉴가 세울 관리 동사 **전부** — 표면이 제 판정으로 더하지 않는다.
@@ -417,6 +424,7 @@ class DatasetPoolRow:
             note=item.note,
             locate_path=locate_path,
             sheet=sheet,
+            sheets=tuple(reference_sheets(item)),
         )
 
 
@@ -481,6 +489,7 @@ class DatasetDetail:
     badge_level: str
     path: str = ""          # locate_path — 파일을 가리키는 참조만(엑셀 path·계약 목록 db)
     sheet: str = ""         # 확정 면(엑셀 시트 / 계약 목록 시트) — 다시 연결 프리필의 재료
+    sheets: "tuple[str, ...]" = ()
     sheet_title: str = ""   # 그 면의 표시명 — 언제나 ``sheet`` 원문 그대로(제목표 퇴역)
     header_row: int = 0
     note: str = ""
@@ -526,6 +535,7 @@ class DatasetDetail:
             "badge_level": self.badge_level,
             "path": self.path,
             "sheet": self.sheet,
+            "sheets": list(self.sheets),
             "sheet_title": self.sheet_title,
             "header_row": self.header_row,
             "note": self.note,
@@ -686,7 +696,8 @@ class DatasetPoolViewModel:
             badge_level=row.badge_level,
             path=row.locate_path,
             sheet=sheet,
-            sheet_title=sheet,
+            sheets=tuple(reference_sheets(item)),
+            sheet_title=", ".join(reference_sheets(item)),
             header_row=reference_header_row(item),
             note=row.note,
             columns=columns,
@@ -718,7 +729,8 @@ class DatasetPoolViewModel:
         return self.registry.find_identity_raw(pclm_identity(db, view))
 
     def register_excel(
-        self, name: str, path: str, *, sheet: "str | None" = None, note: str = ""
+        self, name: str, path: str, *, sheet: "str | None" = None, note: str = "",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """엑셀/CSV 참조 등록 — **경로만** 저장(스냅샷 아님, 실행 때 재읽기).
 
@@ -730,9 +742,7 @@ class DatasetPoolViewModel:
             raise ValueError("데이터셋 이름을 입력하세요.")
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
-        opts: "dict[str, object]" = {"path": path}
-        if sheet:
-            opts["sheet"] = sheet
+        opts = excel_reference_opts(path, sheet, sheets)
         item = DatasetReference(name=name, kind="excel", opts=opts, note=note)
         self.registry.add(item)
         self.refresh()
@@ -740,7 +750,7 @@ class DatasetPoolViewModel:
 
     def register_pclm(
         self, name: str, db: str = "", *, view: str, sheets: "Sequence[str]",
-        note: str = "",
+        note: str = "", selected_sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """계약 목록(pclm) 참조 등록 — **DB 경로 + 뷰만** 저장(스냅샷 아님, 실행 때 재읽기).
 
@@ -759,13 +769,16 @@ class DatasetPoolViewModel:
         name = (name or "").strip()
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
-        if view not in sheets:
+        selected = selected_sheets if selected_sheets is not None else [view]
+        if view not in sheets or any(name not in sheets for name in selected):
             raise ValueError(
                 f"계약 목록이 약속한 뷰가 아닙니다: {view!r}\n"
                 "쓸 수 있는 뷰:\n"
                 + "\n".join(f"  {v}" for v in sheets)
             )
         opts: "dict[str, object]" = {"db": resolve_pclm_db(db), "view": view}
+        if selected_sheets is not None:
+            opts["sheets"] = list(selected_sheets)
         item = DatasetReference(name=name, kind="pclm", opts=opts, note=note)
         self.registry.add(item)
         self.refresh()
@@ -788,6 +801,7 @@ class DatasetPoolViewModel:
     def relabel_confirmed(
         self, path: str, sheet: "str | None", name: str, *,
         note: str = "", basis: "str | None",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """라벨 갱신 확정(같은 데이터 재등록의 2차) — 결속 대조·갱신은 어댑터가 한 잠금 안에서.
 
@@ -798,13 +812,14 @@ class DatasetPoolViewModel:
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
         _key, item = self.registry.relabel_confirmed(
-            path, sheet or "", name, note=note, expected_basis=basis
+            path, sheet or "", name, note=note, expected_basis=basis, sheets=sheets
         )
         self.refresh()
         return item
 
     def relabel_confirmed_raw(
-        self, ident: str, name: str, *, note: str = "", basis: "str | None"
+        self, ident: str, name: str, *, note: str = "", basis: "str | None",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """정체성으로 겨눈 라벨 갱신 확정 — 종류를 묻지 않는 :meth:`relabel_confirmed` 의 몸통.
 
@@ -817,7 +832,7 @@ class DatasetPoolViewModel:
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
         _key, item = self.registry.relabel_confirmed_raw(
-            ident, name, note=note, expected_basis=basis
+            ident, name, note=note, expected_basis=basis, sheets=sheets
         )
         self.refresh()
         return item
@@ -830,6 +845,7 @@ class DatasetPoolViewModel:
         sheet: "str | None" = None,
         note: str = "",
         name: str = "",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """다시 연결 확정 — 기존 슬롯의 **참조(kind+opts)만** 갱신한다(수명 보존, C3).
 
@@ -840,7 +856,7 @@ class DatasetPoolViewModel:
         """
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
-        item = self.registry.relink_excel(key, path, sheet=sheet, note=note, name=name)
+        item = self.registry.relink_excel(key, path, sheet=sheet, note=note, name=name, sheets=sheets)
         self.refresh()
         return item
 
@@ -848,12 +864,13 @@ class DatasetPoolViewModel:
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
         basis: "str | None",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """다시 연결 확정(2차) — 1차가 보여준 슬롯 상태의 지문에 결속된 원자 갱신(2R P2)."""
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
         item = self.registry.relink_confirmed(
-            key, path, sheet=sheet, note=note, name=name, expected_basis=basis
+            key, path, sheet=sheet, note=note, name=name, expected_basis=basis, sheets=sheets
         )
         self.refresh()
         return item

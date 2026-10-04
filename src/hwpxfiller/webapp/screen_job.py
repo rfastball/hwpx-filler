@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -62,6 +63,7 @@ from ..viewmodel.review_state import (
 )
 from ..viewmodel.run_state import (
     FileSourceFactoryPort,
+    GateState,
     PoolSourceFactoryPort,
     RunDataInput,
     RunViewModel,
@@ -499,6 +501,7 @@ class JobController:
             data_target=data_target,
             data_row=data_row,
             data_pool_key=self.data.pool_key,
+            data_sheet_tabs=self.data.sheet_tabs(),
             data_notice=({"level": notice_level, "text": notice_text} if notice_text else None),
             artifact_view=artifact_view,
             new_work={"can": not blocked, "reason": blocked},
@@ -511,6 +514,51 @@ class JobController:
         )
 
     def _prepare_txt_panel(self, seat: ActiveWorkView, base: dict, jobs: list[Job]) -> dict:
+        txt_job = next((job for job in jobs if job.name == seat.name), None)
+        template_path = txt_job.template_path if txt_job is not None else ""
+        is_template_missing = template_missing(template_path)
+        configuration_zones = self._configuration_zones(
+            seat, template_media(template_path), is_template_missing
+        )
+        gate = workbench_entry_gate(
+            has_data=self.data.datasource is not None,
+            selected_count=self.data.selection.selected_count(),
+            template_ready=not is_template_missing,
+        )
+        return self._prepare_unmanaged_panel(
+            base,
+            template_path,
+            is_template_missing,
+            gate,
+            configuration_zones=configuration_zones,
+        )
+
+    def _prepare_empty_panel(self, seat: ActiveWorkView, base: dict, jobs: list[Job]) -> dict:
+        gate = prework_gate(
+            has_data=self.data.datasource is not None,
+            selected_count=self.data.selection.selected_count(),
+            has_candidates=bool(base["candidates"]["top"]),
+        )
+        unsupported_job = (
+            next((job for job in jobs if job.name == seat.name), None)
+            if seat.unsupported
+            else None
+        )
+        template_path = unsupported_job.template_path if unsupported_job is not None else ""
+        if seat.unsupported:
+            gate = unsupported_media_gate()
+        is_template_missing = template_missing(template_path) if seat.name else False
+        return self._prepare_unmanaged_panel(base, template_path, is_template_missing, gate)
+
+    def _prepare_unmanaged_panel(
+        self,
+        base: dict,
+        template_path: str,
+        is_template_missing: bool,
+        gate: GateState,
+        *,
+        configuration_zones: dict | None = None,
+    ) -> dict:
         zone_indices = self.data.zone_indices()
         display_order = self.data.display_indices(list(range(len(self.data.records))))
         record_rows = record_table_rows(
@@ -526,17 +574,6 @@ class JobController:
             zone_indices,
             record_rows,
             settled=set(self.runs.last_generated or ()),
-        )
-        txt_job = next((job for job in jobs if job.name == seat.name), None)
-        template_path = txt_job.template_path if txt_job is not None else ""
-        is_template_missing = template_missing(template_path)
-        configuration_zones = self._configuration_zones(
-            seat, template_media(template_path), is_template_missing
-        )
-        gate = workbench_entry_gate(
-            has_data=self.data.datasource is not None,
-            selected_count=self.data.selection.selected_count(),
-            template_ready=not is_template_missing,
         )
         return work_panel_snapshot(
             base,
@@ -566,64 +603,6 @@ class JobController:
             configuration_zones=configuration_zones,
         )
 
-    def _prepare_empty_panel(self, seat: ActiveWorkView, base: dict, jobs: list[Job]) -> dict:
-        zone_indices = self.data.zone_indices()
-        display_order = self.data.display_indices(list(range(len(self.data.records))))
-        record_rows = record_table_rows(
-            records=self.data.records,
-            display_order=display_order,
-            selected_model_indices=zone_indices,
-            mapped_records=[],
-            filename_pattern=None,
-            names_now=None,
-            filename_source_columns=[],
-        )
-        filter_snapshot, table_snapshot, guard_snapshot = self.data.panel_sections(
-            zone_indices,
-            record_rows,
-            settled=set(self.runs.last_generated or ()),
-        )
-        gate = prework_gate(
-            has_data=self.data.datasource is not None,
-            selected_count=self.data.selection.selected_count(),
-            has_candidates=bool(base["candidates"]["top"]),
-        )
-        unsupported_job = (
-            next((job for job in jobs if job.name == seat.name), None)
-            if seat.unsupported
-            else None
-        )
-        template_path = unsupported_job.template_path if unsupported_job is not None else ""
-        if seat.unsupported:
-            gate = unsupported_media_gate()
-        is_template_missing = template_missing(template_path) if seat.name else False
-        return work_panel_snapshot(
-            base,
-            managed_hwpx=False,
-            template_path=template_path,
-            template_missing=is_template_missing,
-            connection_label=connection_label(is_template_missing),
-            filename_pattern="",
-            has_data=self.data.datasource is not None,
-            record_count=len(self.data.records),
-            selected_count=self.data.selection.selected_count(),
-            records=record_rows,
-            filter_snapshot=filter_snapshot,
-            table_snapshot=table_snapshot,
-            guard_snapshot=guard_snapshot,
-            preflight={"level": "", "text": ""},
-            blank_fields=[],
-            drift=[],
-            name_tokens=[],
-            gate={
-                "enabled": gate.enabled,
-                "level": gate.level,
-                "text": gate.text,
-                "reason": gate.reason,
-            },
-            review=review_payload(ReviewRequirement()),
-        )
-
     def _prepare_hwpx_panel(self, seat: ActiveWorkView, vm: RunViewModel, base: dict) -> dict:
         job = vm.job
         # 문서 생성 경로는 managed 하나다(#1081 PR2) — HWPX ∧ 작업 권위면 managed 표면이다.
@@ -644,8 +623,8 @@ class JobController:
         # 그대로인 동안」 세 조건으로 이 값을 얼렸다. 그 세 조건은 전부 확인 면의 사건이었고,
         # 면이 사라진 지금 남으면 아무도 기대지 않는 값을 얼리는 죽은 규칙이다.
         #
-        # 지금 계약은 둘로 갈린다. **표시**는 스냅샷당 1회 캡처라 한 스냅샷 안의 소비처(게이트
-        # 감사·표 「문서」 열·이름 계획)가 서로 맞고, **생성**은 실행 진입 시 1회 캡처라 한 런의
+        # 지금 계약은 둘로 갈린다. **표시**는 스냅샷당 1회 캡처라 한 스냅샷 안의 소비처(이름
+        # 감사·표 「문서」 열)가 서로 맞고, **생성**은 실행 진입 시 1회 캡처라 한 런의
         # 이름·본문·충돌 판정이 한 시각을 말한다. 두 시각이 갈리는 것은 결함이 아니다 — 확인의
         # 자리가 만들어진 문서로 옮겨졌기 때문이다(#957). 다만 **덮어쓰기 확인 왕복** 안에서는
         # 갈리면 안 되고, 그 일치는 :attr:`_overwrite_now_pin` 이 진다.
@@ -666,7 +645,7 @@ class JobController:
         )
         # 검토 요구는 **게이트가 아니라 고지**로 넘긴다(#957) — 해소 사건이 없으므로
         # 요구 자체가 사전검증 고지의 입력이다.
-        status = vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
+        status = vm.refresh(  # 사전검증+배지+이름 감사 단일 산출(RC-23)
             run_data,
             indices,
             self.runs.out_dir,
@@ -720,21 +699,15 @@ class JobController:
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
         workbench_observation = self._workbench_observation_zone(seat, tmissing=tmissing)
-        # 사전검증의 필드 판정이 통과해도 행 미선택·실행 준비 부족이면 생성 가능하다는
-        # 뜻이 아니다. 실제 생성 동사의 판정을 그대로 읽고, 비차단 고지는 보존한다.
+        # 사전검증은 진단·고지이고, 생성 가능 여부는 작업대의 동사 하나가 소유한다.
+        create_action = workbench_observation.get("create_action") or {}
         if status.preflight.level == "ok":
-            can_create = status.gate.enabled and (
-                not managed_hwpx
-                or workbench_observation.get("create_action", {}).get("enabled") is True
-            )
             preflight_text = "\n".join(
-                ((_PREFLIGHT_OK_TEXT,) if can_create else ()) + status.preflight.notices
+                ((_PREFLIGHT_OK_TEXT,) if create_action.get("enabled") is True else ())
+                + status.preflight.notices
             )
         else:
             preflight_text = status.preflight.text
-        name_tokens = (
-            vm.unresolved_name_tokens() if status.gate.reason == "name_tokens" else []
-        )
         return work_panel_snapshot(
             base,
             managed_hwpx=managed_hwpx,
@@ -752,12 +725,12 @@ class JobController:
             preflight={"level": status.preflight.level, "text": preflight_text},
             blank_fields=blanks,
             drift=drift_fields,
-            name_tokens=name_tokens,
+            name_tokens=vm.unresolved_name_tokens(),
             gate={
-                "enabled": status.gate.enabled,
-                "level": status.gate.level,
-                "text": status.gate.text,
-                "reason": status.gate.reason,
+                "enabled": create_action.get("enabled") is True,
+                "level": "",
+                "text": create_action.get("disabled_reason") or "",
+                "reason": "",
             },
             review=review_payload(req),
             rules_key=req.rules_key,
@@ -851,7 +824,7 @@ class JobController:
         계약 목록 db 도 그 술어의 대상이다(가리키는 것이 파일이면 종류를 묻지 않는다).
         """
         if descriptor["source"] == "pool":
-            result = self._do_load_pool({"key": descriptor["pool_key"]})
+            result = self._do_load_pool({"key": descriptor["pool_key"], "sheet": descriptor["sheet"]})
             if result.get("ok"):
                 return ""
             return _REMEMBERED_DATA_FAILED.format(reason=result.get("error", ""))
@@ -1314,7 +1287,7 @@ class JobController:
                 "confirm_text": _REMOUNT_CONFIRM.format(count=selected),
             }
         if self.data.source_kind == "pool":
-            return self._do_load_pool({"key": self.data.pool_key})
+            return self._do_load_pool({"key": self.data.pool_key, "sheet": self.data.sheet})
         try:
             if self.data.source_kind == "pclm":
                 # 슬롯 없는 마운트라 되돌려 줄 진입점이 파일 갈래가 아니다(#937) — 성분은
@@ -1366,7 +1339,7 @@ class JobController:
         명시 철회). 종전 서술은 「작업 선택은 데이터를 세우지 않는다」였고 그 귀결이
         「작업을 열면 데이터가 이미 서 있다」의 소멸이었다. 결속이 durable 이 된 지금
         작업은 자기 데이터를 들고 오고, 이미 그 데이터가 서 있으면 아무 일도 하지 않는다.
-        결속이 없는 구판 작업은 조용히 지나간다 — 「데이터 연결 필요」는 게이트가 말한다.
+        결속이 없는 구판 작업은 조용히 지나간다 — 편집 복구 동사는 작업 사실을 읽는다.
         """
         name = p["name"]
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
@@ -1420,12 +1393,11 @@ class JobController:
         # 자동 확인(seal)의 트리거는 **준비 이전의** 권위를 본다: 종전 bootstrap 동사였던
         # 「변경사항 확인」도 seal 을 켜지 않았으므로, 준비를 앞당긴 것이 자동 seal 까지
         # 딸려 켜면 그건 이 판정이 안 받은 두 번째 변경이다(준비 ≠ 재확인).
-        # 단 **방금 권위가 선 새 작업**은 편집기 저장이 결속 확정을 부르지 못한 채 왔다(권위가
-        # 저장 뒤에 섰으므로). 저장본의 결정이 활성 Field 를 전부 덮으면 그것을 최초 판본으로
-        # 들이고, 그 durable 변경에 대해서만 자동 확인을 켠다 — 편집기 저장이 했을 일 그대로다.
+        # 방금 권위가 선 새 작업은 저장된 Mapping 으로 자동 확인한다. 최초 준비가 실패해
+        # 권위가 없다면 확인을 시작하지 않는다(실패 정리 뒤 유령 Work ID 재발급 방지).
         if job.media == "hwpx" and was_prepared:
             self._maybe_auto_check(effective_basis_changed=True)
-        elif job.media == "hwpx" and self._adopt_saved_mapping_for_new_work(name):
+        elif job.media == "hwpx" and job.binding_authority and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -1762,7 +1734,7 @@ class JobController:
             resolved.append(source)
             return records
 
-        res = load_pool_into(self.data.pool_registry, key, load)
+        res = load_pool_into(self.data.pool_registry, key, load, sheet=p.get("sheet"))
         if not res["ok"]:
             return res
         item = res["item"]
@@ -2474,42 +2446,40 @@ class JobController:
             input_requirements=(projection.input_requirements if projection is not None else ()),
         )
 
-    def _adopt_saved_mapping_for_new_work(self, work_ref: str) -> bool:
-        """방금 권위가 선 새 작업의 저장 Mapping 을 최초 판본으로 들인다 — 들였으면 True.
-
-        :meth:`on_editor_mapping_saved` 와 같은 생성 잠금 규율을 따른다. 잠금을 못 잡으면(생성
-        중) 여기서 들이지 않는다 — 그 Work 의 다음 자동 확인이 봉인 전에 같은 들이기를 다시
-        시도하므로(:meth:`JobExecutionSession.run_automatic_seal`) 결정이 사라지지 않는다.
-        """
-        if self.execution.seal_execution is None:
-            return False
-        if not self.runs.lock.acquire(blocking=False):
-            return False
+    @contextmanager
+    def editor_save_guard(self):
+        """Exclude generation throughout editor validation and atomic Job write."""
+        admitted = self.runs.lock.acquire(blocking=False)
         try:
-            return self.execution.adopt_saved_mapping_if_unbound(work_ref)
+            yield admitted
         finally:
-            self.runs.lock.release()
+            if admitted:
+                self.runs.lock.release()
+
+    def unrepresented_legacy_rules(
+        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
+    ) -> tuple[str, ...]:
+        if self.execution.seal_execution is None:
+            return ()
+        return self.execution.seal_execution.unrepresented_legacy_rules(
+            previous, candidate, editor_field_ids
+        )
 
     @_serialized
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
-        """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
+        """Observe a saved Job definition; the atomic Job write already committed it."""
+        if self.work.name != work_ref:
+            return {}
+        # Clear stale ready/prepared evidence before any observation that can fail.
+        self.execution.invalidate()
         job = load_job(self.registry, work_ref)
         if job.media != "hwpx" or not job.authority_id:
-            return {"binding_commit_ok": False, "binding_revision_id": None}
-        if self.execution.seal_execution is None:
-            raise ValueError("Field Binding is not configured.")
+            return {}
         if not self.runs.lock.acquire(blocking=False):
-            raise ValueError(
-                "\ubb38\uc11c \uc0dd\uc131\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4. \ub05d\ub09c \ub4a4\uc5d0 Mapping\uc744 \uc800\uc7a5\ud558\uc138\uc694."
-            )
+            return {}
         try:
-            result = self.execution.commit_current_mapping(work_ref)
-            if result is not None and self.work.name == work_ref:
-                self._maybe_auto_check(effective_basis_changed=result.changed)
-            return {
-                "binding_commit_ok": result is not None,
-                "binding_revision_id": result.revision_id if result is not None else None,
-            }
+            self._maybe_auto_check(effective_basis_changed=True)
+            return {}
         finally:
             self.runs.lock.release()
 
@@ -2537,16 +2507,10 @@ class JobController:
     def _run_automatic_seal(self) -> None:
         """진행 중 orchestration(CHECKING)에서 실 seal 을 돌리고 결과로 다음 상태를 판정한다.
 
-        coalesce 대기(진행 중 도착한 basis 변경)를 소진할 때만 다시 seal 한다 — 무한 자동 재시도 0.
         route/context 예외는 seal 실패(연속 실패 수 상한 → 수동 복구)로, 반환된 terminal outcome 은
         '실행됨'으로 본다(qualification/policy block 은 실패가 아니라 not-current 로 알린다).
         """
-        self.execution.run_automatic_seal(
-            self.work.name, max_coalesced=self._MAX_AUTO_SEAL_COALESCE
-        )
-
-    #: 진행 중 seal 위에 coalesce 로 이어붙는 연속 확인의 상한(무한 루프 방지).
-    _MAX_AUTO_SEAL_COALESCE = 4
+        self.execution.run_automatic_seal(self.work.name)
 
     def _capture_current_selected_records(
         self,

@@ -39,16 +39,22 @@ from hwpxfiller.application.execution_capture import (
     ResolvedSealPolicy,
 )
 from hwpxfiller.application.execution_compilation import (
-    ExecutionCompilationContextError,
-    ExecutionQualificationBlocked as CompileQualificationBlocked,
-    QualifiedExecutionCompilation,
-    qualify_and_compile_execution,
+    COMPOSITION_POLICY_IDENTITY_MISMATCH,
+    COMPOSITION_PREMISES_NOT_PASSED,
 )
 from hwpxfiller.application.execution_composition import (
     DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+    CompositionAdmissionError,
     TheoremEvidenceRegistry,
     resolve_native_primitive_contract,
-    verify_execution_composition_premises,
+    theorem_evidence_digest,
+    verify_theorem_evidence_integrity,
+)
+from hwpxfiller.application.execution_semantic_kernel import (
+    SealedExecutionPlanBlocked,
+    SealedExecutionPlanValue,
+    SemanticKernelContextError,
+    compile_sealed_plan_from_snapshot,
 )
 from hwpxfiller.application.execution_contract_set import (
     AttemptSealCaptureEvidence,
@@ -246,9 +252,8 @@ def require_exact_selector_consistency(
 class PlanCandidate:
     """complete capture 가 sealable Plan 으로 compile 된 결과 — final gate seal 후보.
 
-    R2-04b-2(#740): durable store 가 없어 plan_payload·plan_semantic_digest·dependency_set 를 싣지
-    않는다. final gate 의 basis-equality staleness 판정과 성공 outcome 이 쓰는 ``execution_basis_digest``
-    만 identity 로 남긴다.
+    R2-04b-2(#740): durable store 와 plan_semantic_digest identity 는 없다. ``plan_payload`` 는
+    materialization 경계의 in-memory 화물이며, final gate 는 ``execution_basis_digest`` 로 대조한다.
     """
 
     qualification_profile_id: str
@@ -309,54 +314,54 @@ def compile_candidate(
     *,
     theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> CandidateCompilation:
-    """complete capture → composition 증명 + compile + Plan candidate 구성(순수, fence 밖).
+    """complete capture → theorem 확인 + 공통 kernel compile + Plan candidate 구성.
 
     context/composition/integrity 실패는 user-fixable blocker 로 낮추지 않고 attempt 로 raise 한다.
     """
     policy = captured.resolved_seal_policy
     require_exact_selector_consistency_for_compile(policy)
-    structure = captured.template.qualification.execution_structure
-    # theorem evidence 를 (composition, native primitive) 로 resolve — 미등록은 attempt(fail-closed).
+    # command 경계의 등록 theorem 만 확인한다. C1~C10·capture 결속·실행 의미는 kernel 이
+    # 한 번 판정한다. kernel 자체는 registry 에 의존하지 않는다.
     try:
         theorem = theorem_registry.resolve(
             policy.composition_contract_id, policy.native_primitive_contract_id
         )
-        # native primitive manifest 도 policy 가 선언한 것을 **표에서 푼다**(S10-04 · #861):
-        # 상수를 박으면 TXT Plan 이 HWPX primitive 로 증명돼 조용히 틀린다.
-        native_primitive = resolve_native_primitive_contract(
-            policy.native_primitive_contract_id
-        )
+        resolve_native_primitive_contract(policy.native_primitive_contract_id)
     except Exception as exc:  # UnsupportedCompositionContract 등
         raise UnsupportedLocalImplementation(
             f"미지원 composition/native primitive contract: {exc}"
         ) from exc
-    composition_result = verify_execution_composition_premises(
-        structure=structure,
-        native_primitive_contract=native_primitive,
-        theorem_evidence=theorem,
-        composition_contract_id=policy.composition_contract_id,
-        theorem_registry=theorem_registry,
-    )
-    compiled = qualify_and_compile_execution(
-        captured=captured, composition_result=composition_result
-    )
-    if isinstance(compiled, ExecutionCompilationContextError):
+    try:
+        verify_theorem_evidence_integrity(theorem, registry=theorem_registry)
+    except CompositionAdmissionError as exc:
         raise ExecutionQualificationContextError(
-            f"compile context error({compiled.code}): {compiled.detail}",
-            cause_code=compiled.code,
+            f"theorem evidence 미증명: {exc}",
+            cause_code=COMPOSITION_PREMISES_NOT_PASSED,
+        ) from exc
+    if theorem_evidence_digest(theorem) != policy.composition_theorem_evidence_manifest_digest:
+        raise ExecutionQualificationContextError(
+            "theorem evidence 가 resolved policy 와 불일치",
+            cause_code=COMPOSITION_POLICY_IDENTITY_MISMATCH,
         )
+    try:
+        value = compile_sealed_plan_from_snapshot(captured)
+    except SemanticKernelContextError as exc:
+        raise ExecutionQualificationContextError(
+            f"compile context error({exc.cause_code}): {exc}",
+            cause_code=exc.cause_code,
+        ) from exc
     evidence = complete_capture_evidence(captured)
-    if isinstance(compiled, CompileQualificationBlocked):
+    if isinstance(value, SealedExecutionPlanBlocked):
         return BlockedCandidate(
-            qualification_profile_id=captured.template.qualification.qualification_profile_id,
-            template_application_id=captured.template.applied.template_application_id,
+            qualification_profile_id=value.qualification_profile_id,
+            template_application_id=value.template_application_id,
             resolved_seal_policy=policy,
-            normalized_blockers=tuple(b.code for b in compiled.normalized_blockers),
+            normalized_blockers=value.normalized_blockers,
             capture_evidence=evidence,
             captured_execution_input_digest=evidence.captured_execution_input_digest,
         )
-    assert isinstance(compiled, QualifiedExecutionCompilation)
-    return _build_plan_candidate(captured, compiled, evidence, theorem_registry)
+    assert isinstance(value, SealedExecutionPlanValue)
+    return _build_plan_candidate(captured, value, evidence, theorem_registry)
 
 
 def require_exact_selector_consistency_for_compile(policy: ResolvedSealPolicy) -> None:
@@ -373,30 +378,31 @@ def require_exact_selector_consistency_for_compile(policy: ResolvedSealPolicy) -
 
 def _build_plan_candidate(
     captured: CapturedExecutionInput,
-    compiled: QualifiedExecutionCompilation,
+    value: SealedExecutionPlanValue,
     evidence: CompleteSealCaptureEvidence,
     theorem_registry: TheoremEvidenceRegistry,
 ) -> PlanCandidate:
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
     applied = captured.template.applied
+    semantics = value.contract_semantics
     profile_semantic_digest = qualification_profile_semantic_digest(
         qual.qualification_profile_semantic_payload
     )
     contracts = build_execution_contract_set(
         slot_selection_contract_id=captured.selection.selection_semantic_contract_id,
         field_binding_contract_id=captured.field_binding.field_binding_semantic_contract_id,
-        source_schema_contract_id=captured.field_binding.source_schema_contract_id,
-        raw_record_contract_id=policy.raw_record_contract_id,
+        source_schema_contract_id=semantics.source_schema_contract_id,
+        raw_record_contract_id=semantics.raw_record_contract_id,
         execution_semantic_contract_id=policy.execution_semantic_contract_id,
-        binding_value_contract_id=policy.binding_value_contract_id,
-        document_value_resolution_contract_id=policy.document_value_resolution_contract_id,
-        record_validation_contract_id=policy.record_validation_contract_id,
-        record_review_contract_id=policy.record_review_contract_id,
-        composition_contract_id=policy.composition_contract_id,
-        native_primitive_contract_id=policy.native_primitive_contract_id,
-        materialization_base_contract_id=policy.materialization_base_contract_id,
-        materialization_contract_id=policy.materialization_contract_id,
+        binding_value_contract_id=semantics.binding_value_contract_id,
+        document_value_resolution_contract_id=semantics.document_value_resolution_contract_id,
+        record_validation_contract_id=semantics.record_validation_contract_id,
+        record_review_contract_id=semantics.record_review_contract_id,
+        composition_contract_id=semantics.composition_contract_id,
+        native_primitive_contract_id=semantics.native_primitive_contract_id,
+        materialization_base_contract_id=semantics.materialization_base_contract_id,
+        materialization_contract_id=semantics.materialization_contract_id,
         composition_theorem_evidence_manifest_digest=(
             policy.composition_theorem_evidence_manifest_digest
         ),
@@ -408,23 +414,22 @@ def _build_plan_candidate(
         workspace_instance_id=captured.workspace_instance_id,
         work_authority_id=captured.work_authority_id,
         qualification_profile_semantic_digest=profile_semantic_digest,
-        template=compiled.exact_template_execution_basis,
+        template=value.exact_template_execution_basis,
         contracts=contracts,
-        selection=compiled.effective_selection_basis,
-        field_binding=compiled.effective_field_binding_basis,
+        selection=value.effective_selection_basis,
+        field_binding=value.effective_field_binding_basis,
     )
     verify_execution_basis_integrity(basis)
     # durable store·dependency retention·plan_semantic_digest identity 는 없다(R2-04b-2). 다만 sealed
     # plan payload 는 여전히 조립한다 — S6 materialization/conformance gate 가 소비하는 compiled plan
     # 이라 store artifact 가 아니다. candidate 는 그 payload + final gate staleness 가 쓰는
     # execution_basis_digest 만 싣는다(publication kind·plan digest 없음).
-    semantic_payload = compiled.execution_basis_semantic_payload
     plan_payload = build_sealed_plan(
         execution_basis=basis,
-        active_field_requirements=semantic_payload["active_field_requirements"],
-        ordered_operations=semantic_payload["ordered_operations"],
-        plan_schema_version=policy.plan_schema_version,
-        canonical_encoding_version=policy.canonical_encoding_version,
+        active_field_requirements=value.active_field_requirements,
+        ordered_operations=value.ordered_operations,
+        plan_schema_version=value.plan_schema_version,
+        canonical_encoding_version=value.canonical_encoding_version,
     )
     return PlanCandidate(
         qualification_profile_id=qual.qualification_profile_id,

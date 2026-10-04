@@ -826,8 +826,8 @@ test("client.dispatch 프로퍼티 교체가 관측된다 — 메서드 사전 �
 
 const DRAFT_SESSION = "job:작업A";
 
-function draft(values, revision = 1) {
-  return ingestSnapshot(emptyDraft(), { session: DRAFT_SESSION, revision, values });
+function draft(values) {
+  return ingestSnapshot(emptyDraft(), { session: DRAFT_SESSION, values });
 }
 
 test("push는 편집 중인 field를 보존하고 손대지 않은 이웃만 갱신한다", () => {
@@ -841,7 +841,6 @@ test("push는 편집 중인 field를 보존하고 손대지 않은 이웃만 갱
     const held = valueOf(state, NAME_FIELD);
     state = ingestSnapshot(state, {
       session: DRAFT_SESSION,
-      revision: 2,
       values: { [NAME_FIELD]: "서버 값", [PATTERN_FIELD]: "새 규칙" },
     });
     assert.equal(valueOf(state, NAME_FIELD), held);
@@ -867,7 +866,6 @@ test("token/session이 낡은 응답은 draft를 바꾸지 않고 stale로 관�
 
   const moved = ingestSnapshot(late, {
     session: "job:작업B",
-    revision: 1,
     values: { [NAME_FIELD]: "B" },
   });
   assert.equal(valueOf(moved, NAME_FIELD), "B");

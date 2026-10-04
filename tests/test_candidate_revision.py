@@ -177,11 +177,14 @@ def test_get_blob_rejects_content_address_forgery(tmp_path) -> None:
 
 def test_read_detects_corrupted_revision(tmp_path) -> None:
     store = CandidateObjectStore(tmp_path)
-    _capture(store, rev="R1")
+    result = _capture(store, rev="R1")
+    assert isinstance(result, CandidateRevisionCreated)
     path = tmp_path / "revisions" / "R1.json"
     tampered = json.loads(path.read_text("utf-8"))
-    tampered["content"]["exact_content_digest"] = "sha256:tampered"
+    tampered["digest"] = "sha256:tampered"
     path.write_text(json.dumps(tampered), "utf-8")
+    with pytest.raises(ObjectCorrupt):
+        store.put_revision(result.revision)
     with pytest.raises(ObjectCorrupt):
         store.get_revision("R1")
 

@@ -1,6 +1,8 @@
 /* Product composition: one public global, one push path, and correctly wired services. */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { closeTutorialOverlays, createTutorialSession } from "../../frontend/src/tutorial/session.ts";
+import { createOverlayEngine } from "../../frontend/src/overlay/engine.ts";
 
 const BOOTSTRAP = "../../frontend/src/bootstrap.js";
 
@@ -366,4 +368,136 @@ test("프로브가 포트를 갈아끼우면 store 도 legacy 처럼 조용해�
   });
   assert.equal(composed.store.revision("job"), 1, "restore 뒤에도 store 에 닿지 않습니다.");
   assert.deepEqual(composed.store.get("job"), { rows: 2 });
+});
+
+test("연습 진입 취소·화면 이탈 거절은 시작 액션을 보내지 않는다", async () => {
+  for (const stopAt of ["confirm", "leave"]) {
+    let screen = "editor";
+    const calls = [];
+    const dispatch = createTutorialSession({
+      dispatch: async (action, payload) => {
+        calls.push([action, payload]);
+        return { ok: true, needs_confirm: true, confirm_text: "미저장 변경", target_screen: "job", transition_token: "ticket" };
+      },
+      currentScreen: () => screen,
+      go: (target) => { screen = target; },
+      leave: async (_from, target) => { if (stopAt !== "leave") screen = target; },
+      flush: async () => { calls.push(["flush"]); },
+      closeOverlays: async () => true,
+      confirm: async () => stopAt !== "confirm",
+      notice: () => {},
+    });
+    assert.deepEqual(await dispatch("start", { scenario_id: "first_hwpx" }), { cancelled: true });
+    assert.deepEqual(calls.map(([action]) => action), ["flush", "preflight"]);
+  }
+});
+
+test("연습 종료는 이탈 성공 후 토큰으로 복원하고 호스트 반환 화면으로 이동한다", async () => {
+  let screen = "workbench";
+  const calls = [];
+  const dispatch = createTutorialSession({
+    dispatch: async (action, payload) => {
+      calls.push([action, payload]);
+      return action === "preflight"
+        ? { ok: true, needs_confirm: false, target_screen: "job", transition_token: "ticket" }
+        : { ok: true, screen: "editor", notice: "선택을 복원하지 못함" };
+    },
+    currentScreen: () => screen,
+    go: (target) => { calls.push(["go", target]); screen = target; },
+    leave: async (from, target) => { calls.push(["leave", from, target]); screen = target; },
+    flush: async () => {},
+    closeOverlays: async () => { calls.push(["closeOverlays"]); return true; },
+    confirm: async () => true,
+    notice: (message) => { calls.push(["notice", message]); },
+  });
+  assert.deepEqual(await dispatch("exit"), { ok: true, screen: "editor", notice: "선택을 복원하지 못함" });
+  assert.deepEqual(calls, [
+    ["preflight", { screen: "workbench", action: "exit" }],
+    ["closeOverlays"],
+    ["leave", "workbench", "job"],
+    ["exit", { transition_token: "ticket" }],
+    ["go", "editor"],
+    ["notice", "선택을 복원하지 못함"],
+  ]);
+});
+
+test("도움말 화면 이동도 편집기 미저장 확인 뒤에만 이탈한다", async () => {
+  let screen = "editor";
+  let allowed = false;
+  const calls = [];
+  const dispatch = createTutorialSession({
+    dispatch: async (action, payload) => {
+      calls.push([action, payload]);
+      return { ok: true, needs_confirm: true, confirm_text: "미저장 변경", target_screen: "library" };
+    },
+    currentScreen: () => screen,
+    go: (target) => { screen = target; },
+    leave: async (_from, target) => { calls.push(["leave", target]); screen = target; },
+    flush: async () => { calls.push(["flush"]); },
+    closeOverlays: async () => true,
+    confirm: async () => allowed,
+    notice: () => {},
+  });
+  assert.deepEqual(await dispatch("return_to_step", { screen: "library" }), { cancelled: true });
+  assert.deepEqual(calls.map(([action]) => action), ["flush", "preflight"]);
+  allowed = true;
+  assert.deepEqual(await dispatch("return_to_step", { screen: "library" }), { ok: true });
+  assert.deepEqual(calls.at(-1), ["leave", "library"]);
+  assert.equal(screen, "library");
+});
+
+test("연습 시작은 호스트가 반환한 단계 화면에 착지한다", async () => {
+  let screen = "job";
+  const calls = [];
+  const dispatch = createTutorialSession({
+    dispatch: async (action, payload) => {
+      calls.push([action, payload]);
+      return action === "preflight"
+        ? { ok: true, needs_confirm: false, target_screen: "job", transition_token: "ticket" }
+        : { ok: true, screen: "library" };
+    },
+    currentScreen: () => screen,
+    go: (target) => { screen = target; },
+    leave: async () => {},
+    flush: async () => {},
+    closeOverlays: async () => true,
+    confirm: async () => true,
+    notice: () => {},
+  });
+  assert.deepEqual(await dispatch("start", { scenario_id: "first_hwpx" }), { ok: true, screen: "library" });
+  assert.equal(screen, "library");
+  assert.deepEqual(calls, [
+    ["preflight", { screen: "job", action: "start", scenario_id: "first_hwpx" }],
+    ["start", { scenario_id: "first_hwpx", transition_token: "ticket" }],
+  ]);
+});
+
+test("같은 작업 화면으로 연습 종료해도 열린 모달을 정산하고, 닫기 가드가 거절하면 종료하지 않는다", async () => {
+  for (const allowed of [false, true]) {
+    const overlay = createOverlayEngine();
+    const host = { id: "dataPickerModal" };
+    overlay.open({ host, beforeClose: () => allowed, executor: {
+      show() {}, beginClose() { queueMicrotask(() => overlay.settleClose(host)); }, finishClose() {},
+      focusInitial() {}, trapTab() { return false; }, restoreFocus() {},
+    } });
+    const calls = [];
+    const dispatch = createTutorialSession({
+      dispatch: async (action) => {
+        calls.push(action);
+        return action === "preflight"
+          ? { ok: true, needs_confirm: false, target_screen: "job", transition_token: "ticket" }
+          : { ok: true, screen: "job" };
+      },
+      currentScreen: () => "job",
+      go: (target) => { calls.push(`go:${target}`); },
+      leave: async () => {},
+      flush: async () => {},
+      closeOverlays: () => closeTutorialOverlays(overlay),
+      confirm: async () => true,
+      notice: () => {},
+    });
+    assert.deepEqual(await dispatch("exit"), allowed ? { ok: true, screen: "job" } : { cancelled: true });
+    assert.deepEqual(calls, allowed ? ["preflight", "exit", "go:job"] : ["preflight"]);
+    assert.equal(overlay.isOpen(host), !allowed);
+  }
 });

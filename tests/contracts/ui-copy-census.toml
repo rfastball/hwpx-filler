@@ -228,7 +228,7 @@ text = "일치하는 명령이 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
-text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요."
+text = "{} — {}건을 불러왔습니다. 이대로 쓰려면 [닫기], 자주 쓰는 파일이면 「이 데이터 등록…」으로 남겨 두세요."
 legacy = true
 
 [[sentence]]
@@ -249,6 +249,10 @@ text = "등록하지 못했습니다."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
+text = "등록하지 못했습니다."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
 text = "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
 
 [[sentence]]
@@ -257,15 +261,15 @@ text = "시트 선택을 취소했습니다 — 데이터는 그대로입니다.
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
-text = "시트를 고르세요"
-
-[[sentence]]
-file = "frontend/src/screens/data_picker.ts"
 text = "이름과 파일 경로를 입력하세요."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
 text = "이름을 입력하세요."
+
+[[sentence]]
+file = "frontend/src/screens/data_picker.ts"
+text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
@@ -640,10 +644,6 @@ text = "검색으로 {}건이 목록에서 빠졌습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
 text = "데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작업이 여기에 표시됩니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
-text = "데이터를 선택하세요"
 
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
@@ -1190,8 +1190,8 @@ file = "frontend/src/state/store.ts"
 text = "이미 해제된 구독입니다 — 해제는 등록마다 정확히 1회여야 합니다."
 
 [[sentence]]
-file = "frontend/src/tutorial/panel.ts"
-text = "튜토리얼 초기 상태를 불러오지 못했습니다 — {}"
+file = "frontend/src/tutorial/session.ts"
+text = "튜토리얼 전환을 다시 시도하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/application/dataset_pool.py"
@@ -1456,10 +1456,6 @@ text = "시작은 1 이상이어야 합니다"
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
 text = "작업 위치 기록의 내용이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/external/authoring_store.py"
-text = "지원하지 않는 시험 케이스 형식입니다."
 
 [[sentence]]
 file = "src/hwpxfiller/external/authoring_store.py"
@@ -2099,19 +2095,23 @@ text = "문서 내부 파일이 가져오기와 내보내기 사이에 변경되
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "current Active Field를 확인할 수 없습니다"
+text = "Field Binding capture 에 routed Job 이 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "current Application structure를 확인할 수 없습니다"
+text = "Field Binding capture 의 Work identity 가 이동했습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "legacy Mapping basis가 capture 이후 이동했습니다"
+text = "이전 Field Binding 의 Work 상태를 확인할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
+text = "현재 템플릿 Application 을 확인할 수 없습니다"
+
+[[sentence]]
+file = "src/hwpxfiller/external/seal_execution_plan_service.py"
+text = "현재 템플릿의 Field 구조를 확인할 수 없습니다"
 
 [[sentence]]
 file = "src/hwpxfiller/external/template_change.py"
@@ -2147,7 +2147,15 @@ text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
+text = ". 연결을 검토한 뒤 다시 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "매핑 모델이 준비되지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/edit_session.py"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
@@ -2369,11 +2377,11 @@ text = "[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 �
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 템플릿 구조가 확정 매핑과 다릅니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요."
+text = "[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2381,23 +2389,7 @@ text = "나라장터 취득 어댑터가 주입되지 않았습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "먼저 데이터를 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "생성할 문서를 최소 1건 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 있습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "저장 폴더를 지정하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
@@ -2405,20 +2397,7 @@ text = "템플릿 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 수 있습니다:"
-legacy = true
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "템플릿 구조를 읽을 수 없어 생성이 차단됩니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
 text = "파일 이름 규칙이 올바르지 않습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/run_state.py"
-text = "파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: {}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/slice_assist.py"
@@ -2487,6 +2466,254 @@ text = "표시할 템플릿이 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/template_manager_state.py"
 text = "항목 {}개를 전부 구간 표기로 되돌립니다. 되돌린 뒤: '{}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다. 한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'계약보증금' 표시형을 금액 '원'으로 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'군품명'을 쉼표로 나눈 첫 조각으로 가공하세요. 예제의 '드릴,전동식,휴대용'은 '드릴'이 됩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'낙찰자결정방법'은 '낙찰방법', '담당자 전화번호'는 '담당자전화'로 연결된 제안을 직접 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'대표계약업체'에 '계약상대자' 열을 직접 연결하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'안내 포함'은 문단을, '안내 생략'은 빈 줄을 담게 만드세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "3번 문단을 '예산 재배정 안내' 항목으로 묶으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "TXT에 필드를 만들고 시험값으로 확인합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "각 행의 채운 문장을 따로 복사하세요. 앱은 외부 붙여넣기를 확인하지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "검색된 3행을 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "결과 3건과 파일 이름을 확인하고 한 문서의 내용을 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "결과 시험에 필드값을 넣으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "계약 데이터 2건을 확인하고 각각 복사합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "공고목록.xlsx의 '공고' 시트를 연결하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "공고서 작업을 만들고 3건을 생성합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "구매추진 TXT 작업을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "구조 오류 없이 템플릿을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "구조 오류가 없는 '사용 준비' 상태로 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "군품명의 첫 조각과 날짜·금액 표시를 확인합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "그 행의 필요한 값을 직접 입력해 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "날짜와 금액의 표시형을 미리보기로 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "다른 행과 내용을 골라 같은 작업을 다시 실행합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "두 갈래를 시험하고 저장한 변경을 작업에 적용합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "두 선택을 각각 시험하고 현재 결과를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "메모 열에서 '소기업·소상공인'인 행만 찾으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "메모에서 '중·소기업' 묶음인 R26BK99000004-000부터 006-000까지 찾으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "모든 과정의 학습 위치와 완료 기록을 지웁니다. 연습 파일, 사용자 파일, 저장한 작업과 생성 결과는 그대로 둡니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 만들기에서 '안내 포함'을 고르고 검토·복사 작업대에서 예산 재배정 문단을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 새 작업을 열고 계약 안내 TXT와 공고목록.xlsx의 '계약' 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 새 작업을 열고 구매추진 안내 TXT와 '공고' 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 새 작업을 열고 연습용 '물품 구매입찰 공고' 서식을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 준비된 계약 연습 작업을 열고 빈 값이 있는 행을 검토·복사 작업대로 보내세요. 카드의 〈빈 값〉 표시를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 준비된 공고서 작업을 문서 만들기로 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "문서 작업에서 준비된 연습 작업의 편집기를 열고 새 데이터 사본의 공고 시트를 연결하세요. 연결을 다시 제안하고 두 제안을 확인한 뒤 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "본문의 '10일'을 골라 '재배정기한' 필드로 만드세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "빈 값 표식을 확인하고 직접 입력으로 고칩니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "새 행의 입찰공고번호가 파일 이름에 들어가는지 확인하고 문서를 만드세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "선택한 3행의 문서 만들기를 실행하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "시험을 실행해 현재 구성의 결과를 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "아래 목록에서 삭제로 표시한 연습 사본만 지웁니다. 수정한 파일과 작업이 참조하는 파일은 그대로 둡니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "앞서 고른 행을 해제해 새 묶음과 섞이지 않게 하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "연결된 작업의 변경사항을 확인하고 적용하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "연결을 확인하고 TXT 작업을 저장하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "연습 데이터 사본을 작업에 다시 연결합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "연습 사본을 데이터 선택 목록에 연결하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "연습용 공고서와 공고 데이터로 첫 문서를 만드세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "예제 서식과 데이터로 첫 문서를 만드세요. 시작할 때 연습 사본을 준비합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "원본 예제에는 빈 셀이 없습니다. 빈 셀 하나가 있는 연습 사본을 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "원본과 별개인 연습 데이터 사본을 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "이 단계는 실제 동작을 마친 뒤에 넘어갈 수 있습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "이번 묶음의 3행만 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "입찰참가자격은 '소기업·소상공인', 낙찰자 결정방법은 '고시 미만'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "입찰참가자격은 '중·소기업', 낙찰자 결정방법은 '고시 미만'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "작업을 저장하고 다시 열어 새 경로와 시트가 유지되는지 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "저장한 계약 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 두 행을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "저장한 공고서 작업을 문서 만들기에서 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "저장한 구매추진 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 행의 문장을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "직접 입력으로 고친 '계약보증금'과 의도적으로 비워 둔 '단위'를 비교하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "템플릿 작업대의 파일 열기로 계약 안내 TXT 연습 사본을 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "템플릿 작업대의 파일 열기로 준비된 작업에 연결된 계약 안내 TXT 연습 사본을 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "파일 이름 규칙을 구매입찰공고-{{입찰공고번호}}로 정하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "필요한 행의 TXT를 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "확인한 연결과 파일 이름 규칙으로 작업을 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"
@@ -2795,6 +3022,10 @@ text = "WebView2 selftest {}: 전체 예산 안에 종료되지 않았습니다 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
 text = "가져올 시트를 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/app.py"
+text = "데이터를 가져올 화면과 파일을 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/app.py"
@@ -3186,6 +3417,142 @@ file = "src/hwpxfiller/webapp/mapping_verbs.py"
 text = "{{{}}} 에 직접 입력한 값 '{}'은 '{}' 열의 값으로 바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
 
 [[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "'{}' 작업을 현재 데이터에 연결할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "결과 문서의 내용을 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "고른 안내 문단의 채운 내용을 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "과정을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "과정을 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "과정을 다시 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "다른 연습 데이터 기록을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "데이터를 불러오지 못했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "돌아갈 화면을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "돌아갈 화면을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "모든 학습 기록을 지울지 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "빈 값 표식과 직접 입력 결과를 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "새 연습 파일을 준비했습니다. 이 파일로 시작하려면 해당 과정의 안내를 처음부터 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "새 연습 파일을 확인할 수 없습니다. 사본을 다시 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "새 행의 입찰공고번호로 문서를 만들었습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "서로 다른 {}개 행을 복사했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "안내 진행을 확인하지 못했습니다: {}. 작업 결과는 보존됐습니다. 튜토리얼에서 다시 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습 파일 4건이 준비됐습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습 파일을 먼저 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습 파일을 확인하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습 파일이 준비되지 않았습니다. 예제로 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "연습을 종료하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "원래 데이터가 변경되어 필터와 행 선택을 복원하지 않았습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "원래 작업으로 돌아오지 못했습니다: {}. 연습 종료를 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "이 과정용 연습 작업 '{}'을 준비했습니다. 다른 과정의 완료 기록은 바꾸지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "재배정기한 필드를 시험하고 사용 준비 상태로 저장했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "저장한 작업을 다시 열어 새 파일과 시트를 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "튜토리얼 전환을 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "튜토리얼 전환을 다시 시도하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "튜토리얼을 전환하세요"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
+text = "튜토리얼을 전환하세요"
+
+[[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"
 text = "HWPX 또는 TXT 파일만 열 수 있습니다."
 
@@ -3475,10 +3842,6 @@ text = "먼저 작업을 선택하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_job.py"
-text = "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/screen_job.py"
 text = "문서 생성이 진행 중입니다. 끝난 뒤에 {}."
 
 [[sentence]]
@@ -3676,7 +4039,7 @@ text = "템플릿을 연결해야 문서를 만들 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
-text = "'{}' 의 참조를 새 파일로 바꿉니다. 기존: {} 새 파일: {}{}{}"
+text = "'{}' 의 참조를 새 파일로 바꿉니다. 기존: {} 새 파일: {}{}{}{}"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
@@ -3704,7 +4067,27 @@ text = "새 파일 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "시트를 찾을 수 없습니다. 파일을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "시트를 찾을 수 없습니다. 파일을 다시 선택하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
 text = "이름도 '{}' → '{}' 으로 바뀝니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_pool.py"
+text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_pool.py"
@@ -3963,7 +4346,3 @@ text = "실행 계획을 봉인할 수 없습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/txt_materialization.py"
 text = "이 작업의 실행 권위를 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/txt_materialization.py"
-text = "이 작업의 템플릿 확인이 아직 끝나지 않았습니다."

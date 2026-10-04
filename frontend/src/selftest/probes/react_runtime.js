@@ -61,6 +61,96 @@ function measureReactRuntime(ctx) {
   };
 }
 
+async function measureTutorialSurface(ctx) {
+  const doc = ctx.doc;
+  const bridge = ctx.services.Bridge;
+  if (!bridge || typeof bridge.initial !== "function") ctx.fail(ERROR_CODES.CONTRACT, "tutorial initial 통로가 없습니다.");
+  const real = await bridge.initial("tutorial");
+  if (!real || real.kind !== "tutorial-lessons/v1") ctx.fail(ERROR_CODES.CONTRACT, "tutorial-lessons/v1 실 스냅샷이 없습니다.");
+  const nav = ctx.services.Nav;
+  if (!nav || typeof nav.go !== "function" || typeof nav.currentScreen !== "function") ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 화면 이동 관측점이 없습니다.");
+  const oldScreen = nav.currentScreen();
+  const oldScale = doc.documentElement.getAttribute("data-font-scale");
+  const hit = (element) => {
+    const box = element.getBoundingClientRect();
+    return doc.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  };
+  const bounds = (element) => {
+    const box = element.getBoundingClientRect();
+    return box.left >= 0 && box.top >= 0 && box.right <= ctx.win.innerWidth && box.bottom <= ctx.win.innerHeight;
+  };
+  try {
+    nav.go("job", { force: true });
+    const synthetic = {
+      ...real,
+      invitation: { ...real.invitation, visible: false },
+      active: true, paused: false, scenario_id: "first_hwpx", checkpoint: 0,
+      practice: { active: true, return_screen: oldScreen },
+      stages: [{ id: "a", title: "고르기", status: "current" }],
+      beat: { id: "selftest-target", title: "대상 확인", body: "실제 데이터 버튼을 누르는 안내입니다.",
+        mode: "action", screen: "job", target: "data-picker", placement: "right", can_next: false },
+      show_result: false, result: null,
+    };
+    ctx.push("tutorial", synthetic);
+    await ctx.waitFor(() => !!doc.getElementById("tutorialCoach") && !!doc.getElementById("jobBtnPickData"),
+      { what: "튜토리얼 코치와 실제 데이터 버튼", timeoutMs: 2000 });
+    const entry = doc.getElementById("tutorialOpen");
+    const target = doc.getElementById("jobBtnPickData");
+    const spot = doc.querySelector(".tutorial-spot");
+    const coach = doc.getElementById("tutorialCoach");
+    if (!entry || !target || !spot || !coach) ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 필수 DOM 요소가 없습니다.");
+    await ctx.waitFor(() => spot.getBoundingClientRect().width > 0, { what: "튜토리얼 spotlight 기하", timeoutMs: 1000 });
+    const targetHit = hit(target);
+    const outsideHit = doc.elementFromPoint(8, ctx.win.innerHeight - 8);
+    const entryHit = hit(entry);
+    entry.click();
+    await ctx.waitFor(() => !!doc.getElementById("tutorialPanel"), { what: "HUD 펼침", timeoutMs: 1000 });
+    const panel = doc.getElementById("tutorialPanel");
+    const panelHit = hit(panel);
+    const normal = {
+      target_hit: targetHit === target || target.contains(targetHit),
+      off_target_free: !!outsideHit && !outsideHit.closest(".tutorial-guide, .tutorial-shield"),
+      hud_hit: entryHit === entry || entry.contains(entryHit),
+      panel_hit: panelHit === panel || panel.contains(panelHit),
+      coach_in_view: bounds(coach),
+      spot_covers_target: (() => { const a = spot.getBoundingClientRect(); const b = target.getBoundingClientRect();
+        return a.left <= b.left && a.top <= b.top && a.right >= b.right && a.bottom >= b.bottom; })(),
+    };
+    doc.documentElement.setAttribute("data-font-scale", "larger");
+    await new Promise((resolve) => ctx.win.requestAnimationFrame(() => ctx.win.requestAnimationFrame(resolve)));
+    await ctx.waitFor(() => bounds(coach), { what: "150% 코치 기하", timeoutMs: 1000 });
+    const large = { coach_150_in_view: bounds(coach), hud_150_hit: (() => {
+      const now = hit(entry); return now === entry || entry.contains(now);
+    })() };
+    entry.click();
+    target.click();
+    await ctx.waitFor(() => !!doc.querySelector("#dataPickerModal #tutorialCoach"),
+      { what: "데이터 선택 대화상자 안의 연습 안내", timeoutMs: 2000 });
+    const modal = doc.getElementById("dataPickerModal");
+    const inline = modal.querySelector("#tutorialCoach");
+    const exit = modal.querySelector("#tutorialDialogExit");
+    const browse = doc.getElementById("dataPickerBrowse");
+    exit.focus();
+    const dialog = {
+      dialog_guide_in_focus_boundary: modal.contains(inline) && inline.getAttribute("role") === "region",
+      dialog_exit_reachable: doc.activeElement === exit,
+      dialog_target_hit: (() => { const current = hit(browse); return current === browse || browse.contains(current); })(),
+    };
+    exit.dispatchEvent(new ctx.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await ctx.waitFor(() => !doc.querySelector("#dataPickerModal #tutorialCoach") && !!doc.querySelector("#tutorialPanelRoot #tutorialCoach"),
+      { what: "Escape 뒤 현재 단계 안내 복귀", timeoutMs: 2000 });
+    return { ...normal, ...large, ...dialog, dialog_escape_keeps_guide: !!doc.getElementById("tutorialCoach") };
+  } finally {
+    ctx.services.Modal?.close("dataPickerModal");
+    if (oldScale === null) doc.documentElement.removeAttribute("data-font-scale");
+    else doc.documentElement.setAttribute("data-font-scale", oldScale);
+    ctx.push("tutorial", real);
+    const entry = doc.getElementById("tutorialOpen");
+    if (entry?.getAttribute("aria-expanded") === "true") entry.click();
+    if (oldScreen && oldScreen !== nav.currentScreen()) nav.go(oldScreen, { force: true });
+  }
+}
+
 /** 판정 술어 — 위반이면 사유 문자열, 정상이면 null. 프로브와 단위 테스트가 **같은 하나**를
  *  쓴다(두 곳이 따로 판정하면 「루프는 통과, 게이트는 빨강」 갈림이 생긴다 — live 게이트 선례). */
 export function judgeReactRuntime(value) {
@@ -88,11 +178,10 @@ export function createReactRuntimeProbes() {
       /* 레거시 부재 신설 축 — 전 레거시 자리(최대 3993)를 넘는 단일 관례값. 실행 순서
          tiebreak 에만 닿고 이 프로브의 판독은 순서 독립이다(값 단언 없음). */
       legacySite: 9990,
-      deadlineMs: 5000,
+      deadlineMs: 7000,
       deadlineRationale:
-        "DOM 속성 3판독(ms 단위) + 커밋 effect 대기 상한. 마커는 부팅 커밋이 심고 프로브는"
-        + " 다중 왕복 뒤에 돌므로 실측상 즉시 참이나, 경합 창을 시한으로 닫는다 — 신설 축이라"
-        + " 레거시 예산 표 밖이고, 이 값은 그 표의 최소 예산(2500ms)의 배수 수준을 넘지 않는다.",
+        "React 마커 판독과 같은 창의 tutorial HUD·spotlight hit test. tutorial 스냅샷과"
+        + " 글자 150%를 임시 적용해 측정한 뒤 원복하며 별도 부팅은 없다.",
       precondition: (ctx) => {
         const root = ctx.doc.getElementById(ROOT_ID);
         return root !== null
@@ -104,6 +193,7 @@ export function createReactRuntimeProbes() {
         const value = measureReactRuntime(ctx);
         const violation = judgeReactRuntime(value);
         if (violation !== null) ctx.fail(ERROR_CODES.CONTRACT, violation);
+        value.tutorial_surface = await measureTutorialSurface(ctx);
         return { react_runtime: value };
       },
     },

@@ -256,17 +256,19 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     );
   }
 
-  function switchData(key: string): Promise<void> {
+  function switchData(key: string, sheet?: string): Promise<void> {
     if (switching) return Promise.resolve();
     const intent = ++dataSwitchIntent;
-    patchUi({ switchingData: key });
+    patchUi({ switchingData: sheet ?? key });
     const next = dataSwitchTail.then(async () => {
       if (intent !== dataSwitchIntent) return;
       try {
-        if (snapshot()?.data_pool_key === key || !(await confirmDataSwap())) return;
+        const current = snapshot();
+        if ((current?.data_pool_key === key && (sheet === undefined || current?.data_target?.sheet === sheet))
+          || !(await confirmDataSwap())) return;
         await flushPendingEdits();
         if (intent !== dataSwitchIntent) return;
-        const result = await call("job", "load_pool", { key });
+        const result = await call("job", "load_pool", { key, ...(sheet === undefined ? {} : { sheet }) });
         if (result.ok === false) deps.notify(String(result.error));
       } catch (error) {
         deps.notify(String((error as Obj)?.message || error));
@@ -587,7 +589,7 @@ function useJob(controller: JobReadController): Obj | null {
 }
 
 function useUi(controller: JobReadController): UiState {
-  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot);
+  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot, controller.uiModel.getSnapshot);
 }
 
 
@@ -596,31 +598,25 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
   if (snapshot === null) return h("p", { className: "muted", role: "status" }, "데이터 상태를 읽는 중…");
   const notice = snapshot.data_notice;
   return createElement(Fragment, null,
-    // 「펼쳐서 행 고르기 ⤢」는 여기 없다(U4 10번) — 표를 여는 동사라 표 머리로 갔다.
-    // 옮긴 것은 **진입점뿐**이고 초안 거래(`RecordRangeDraft`·존 13액션·「적용 전 메인 범위
-    // 불변」 §18.11-21)와 면 수명주기는 그대로다.
-    h("div", { className: "zone-cap job-data-heading" }, h("span", null, "현재 데이터"),
-      createElement(RefreshButton, {
-        id: "jobBtnRemountData", label: "데이터 새로고침", disabled: !snapshot.has_data,
-        onRefresh: props.controller.remountData, notify: props.controller.notify,
-      })),
-    /* 라벨은 확장자를 세지 않는다 — 마운트되는 종류가 엑셀/CSV 하나가 아니게 됐고(#937
-       계약 목록), 여기 서는 값은 종류를 이미 말한다(`data_source_label`). */
-    h("div", { className: "run-row" }, h("span", { className: "lbl" }, "데이터"),
-      h("input", { className: "field ro", id: "jobDataLabel", type: "text", readOnly: true,
-        value: snapshot.data_source_label || "", placeholder: "데이터를 선택하세요" }),
-      h("button", { className: "btn primary", id: "jobBtnPickData", "data-busy-lock": true,
-        onClick: props.controller.openDataPicker }, "데이터 선택…"),
-      /* 결속 부재의 복구 동사(#932 U4-C) — 판정은 Python 한 자리(`job_data_unbound`)이고
-         여기서는 그리기만 한다. 데이터 머리에 두는 이유는 이 상태가 **작업의 데이터**에
-         관한 사실이라서다: 게이트가 「현재 데이터」 구획을 지목하면 눈이 닿는 자리가
-         여기고, 없는 자리를 가리키는 지시는 이행 불가능하다. */
-      snapshot.job_data_unbound
-        ? h("button", { className: "btn primary sm", id: "jobConnectData", type: "button",
+    h("div", { className: "zone-cap job-data-heading", "data-loaded": snapshot.has_data },
+      h("span", { className: "job-data-name", id: "jobDataLabel",
+        title: snapshot.data_label || "현재 데이터" },
+        snapshot.has_data ? snapshot.data_label : "현재 데이터"),
+      h("div", { className: "job-data-actions" },
+        h("button", { className: snapshot.has_data ? "btn quiet sm" : "btn primary",
+          id: "jobBtnPickData", type: "button", "data-busy-lock": true,
+          onClick: props.controller.openDataPicker }, snapshot.has_data ? "변경…" : "데이터 선택…"),
+        createElement(RefreshButton, {
+          id: "jobBtnRemountData", label: "데이터 새로고침", disabled: !snapshot.has_data,
+          onRefresh: props.controller.remountData, notify: props.controller.notify,
+        }))),
+    /* 결속 복구는 Python 판정을 그대로 따르며 조용한 교체 동작과 별도로 강조한다. */
+    snapshot.job_data_unbound
+      ? h("div", { className: "run-row" }, h("button", { className: "btn primary sm", id: "jobConnectData", type: "button",
           "data-busy-lock": true,
           title: "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다.",
-          onClick: () => { void props.controller.connectJobData(); } }, "데이터 연결하기…")
-        : null),
+          onClick: () => { void props.controller.connectJobData(); } }, "데이터 연결하기…"))
+      : null,
     /* 데이터 통지(U4 §2.12 · #945) — 상자·닫기는 `NoticeBox` 가, 문안 조립(「확인 필요: 」
        접두)과 레벨 판정은 여기가 그대로 진다. 이 채널은 매 변이 자동 소멸이 아니라
        **사유가 해소될 때까지 남는** 수동 소멸이라 닫기 동사를 가진다. */
@@ -659,29 +655,28 @@ export function JobDataBody(props: { controller: JobReadController; location: "i
   const ui = useUi(props.controller);
   if (snapshot === null) return null;
   if ((props.location === "sheet") !== ui.sheetOpen) return null;
-  return createElement(Fragment, null,
-    h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll }),
-    props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null);
+  return h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll,
+    tabs: props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null });
 }
 
-function JobDataTabs(props: { controller: JobReadController }): ReactNode {
+export function JobDataTabs(props: { controller: JobReadController }): ReactNode {
   const { controller } = props;
   const snapshot = useJob(controller);
   const ui = useUi(controller);
-  const pool = useSyncExternalStore(controller.poolModel.subscribe, controller.poolModel.getSnapshot);
-  const rows = pool?.column?.rows || [];
+  const rows = snapshot?.data_sheet_tabs || [];
+  const activeTab = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    void controller.call("pool", "refresh", {}).catch((error) => controller.notify(String(error)));
-  }, [controller]);
+    activeTab.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [snapshot?.data_pool_key, snapshot?.data_target?.sheet]);
   if (!rows.length) return null;
-  return h("div", { className: "data-tabs", role: "group", "aria-label": "등록 데이터 전환",
+  return h("div", { className: "data-tabs", role: "group", "aria-label": "사용할 시트",
     "aria-busy": !!ui.switchingData },
     ...rows.map((row: Obj) => h("button", {
-      type: "button", key: row.key, className: "data-tab", "data-busy-lock": true,
-      "aria-pressed": snapshot?.data_pool_key === row.key,
-      disabled: row.selectable === false || !!ui.openingName, title: row.reason || `${row.name}: ${row.sub}`,
-      onClick: () => { void controller.switchData(row.key); },
-    }, row.name, ui.switchingData === row.key ? " · 여는 중…" : "")));
+      type: "button", key: row.sheet, className: "data-tab", "data-busy-lock": true,
+      ref: row.active ? activeTab : undefined, "aria-pressed": row.active,
+      disabled: row.selectable === false || !!ui.openingName, title: row.reason || row.sheet,
+      onClick: () => { void controller.switchData(row.key, row.sheet); },
+    }, row.sheet)));
 }
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {

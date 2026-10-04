@@ -6,8 +6,9 @@
 
 배치·공유: :class:`hwpxfiller.webapp.slot_configuration_product.SlotConfigurationProduct`·
 :class:`TemplateChangeCoordinator` 와 **같은 template authority root**(:func:`default_template_authority_dir`)
-아래 같은 subdir 을 연다 — bootstrap 이 세운 Work/Application/PASS Evidence·slot config·field
-binding 을 그대로 읽는다(별도 스토어 조립 없음). :class:`WorkspaceMetadataStore` 는 root 를 직접
+아래 같은 subdir 을 연다 — bootstrap 이 세운 Work/Application/PASS Evidence·slot config와
+구판 field binding을 읽는다(별도 스토어 조립 없음). 새 저장본의 실행 Binding은 Job Mapping에서
+읽기 시점에 파생하며 S5 저장소에 다시 쓰지 않는다. :class:`WorkspaceMetadataStore` 는 root 를 직접
 공유해 SlotConfigurationProduct 와 **같은 workspace_instance_id** 를 쓰고, 따라서 per-Work fence
 키(ws, work_id)도 같은 namespace 에 든다.
 
@@ -16,66 +17,37 @@ binding 을 그대로 읽는다(별도 스토어 조립 없음). :class:`Workspa
 조회하지 않고 매 호출 current authority 를 PerWorkFence 하나 아래 재계산한다(``fresh_observation``).
 그래서 이 service 는 route·auth·capture·summary·shipping policy seam 만 결선한다.
 
-SX-03(#726): passive Binding review는 읽기만 하고, exact binding/<fieldId> 편집 저장 명령만
-기존 S5 commit 함수로 Work-default immutable revision을 쓴다. commit 함수가 PerWorkFence 아래
-Application 구조와 legacy Mapping 지문을 다시 확인하며, seal은 계속 current value 재계산이다.
-
-U3-04(#877): 그 commit 의 의미는 **활성 Field upsert + 기존 판본의 비활성 Field 규칙 보존** 이다
-(활성 Field 로 잘라 교체하지 않는다). 확정 이후 Option 을 바꿔 비활성이 됐다는 사실만으로 규칙을
-버리면 그 Option 으로 되돌아올 때마다 같은 결정을 다시 확정하게 된다 — 옵션 왕복이 재확정을
-무한히 요구하던 결함의 자리가 여기였다.
+구판 Job은 S5 판본과 Mapping을 대조해 충돌·이전 의미 판본을 검토 요구로 닫는다. 명시적
+편집기 저장이 Job Mapping 권위를 세운 뒤에는 모든 규칙(비활성 Field 포함)을 그 저장본에서
+파생하므로 Option 왕복에 추가 확정이나 S5 쓰기가 필요 없다.
 """
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from ..application.document_creation_workbench import InputRequirement
-from ..application.field_binding_input import (
-    CurrentApplicationFieldStructure,
-    FieldBindingMigrationDraft,
-    FieldBindingReviewRequired,
-    LegacyFieldBindingEntry,
-    MigrationCandidateRule,
-    StaleFieldBindingBasis,
-    build_field_binding_input,
-    legacy_field_binding_basis_fingerprint,
-    prepare_legacy_field_binding_migration,
-)
 from ..application.jobs import (
     JobStorePort,
     ensure_job_authority_id,
     load_job,
 )
 from ..application.execution_composition import RuntimeMaterializerConformanceRegistry
+from ..application.execution_structure import decode_execution_structure
 from ..application.seal_execution_plan import (
     RouteResolutionError,
     SealExecutionPlanCommand,
 )
 from ..application.shipping_seal_policy import resolve_shipping_policy
-from ..domain.field_binding import (
-    FIELD_BINDING_SEMANTIC_VERSION_V2,
-    FIELD_BINDING_SEMANTIC_VERSION_V3,
-    FIELD_BINDING_SEMANTIC_VERSION_V4,
-    FieldBindingRule,
-    is_current_field_binding_contract,
-    resolve_document_value_policy,
-    txt_document_value_policy,
-)
 from ..domain.job import Job
-from ..domain.mapping import MappingProfile
-from ..domain.raw_data_record import RAW_RECORD_CONTRACT_ID
+from ..domain.job import JOB_MAPPING_AUTHORITY
 from .candidate_store import CandidateObjectStore
-from .field_binding_store import (
-    LegacyMigrationBasis,
-    WorkFieldBindingStore,
-    commit_field_binding_for_current_application,
-    commit_field_binding_migration,
-    load_current_revision,
-)
+from .job_binding_projection import source_schema_keys as _source_schema_keys
+from .field_binding_store import WorkFieldBindingStore
 from .qualification_store import QualificationObjectStore
 from .runtime_capability import (
     admitted_runtime_conformance_registry,
@@ -91,6 +63,7 @@ from .work_configuration_store import (
     WorkspaceMetadataStore,
 )
 from .work_template_store import AtomicWorkTemplateStateStore
+from .work_template_store import WorkAggregateNotFound
 from .seal_execution_plan_product import (
     RuntimeConformanceBinding,
     SealExecutionPlanProduct,
@@ -105,14 +78,6 @@ class BindingReviewProjection:
 
     active_field_ids: tuple[str, ...]
     input_requirements: tuple[InputRequirement, ...]
-
-
-@dataclass(frozen=True)
-class BindingCommitProjection:
-    """Result of translating the saved legacy Mapping into S5 authority."""
-
-    changed: bool
-    revision_id: str
 
 
 @dataclass(frozen=True)
@@ -140,6 +105,11 @@ class SealExecutionPlanService:
         self._registry = registry
         self._root = Path(root)
         self._clock = clock
+        # Per-call routing context, never a shared current-Work cache. Capture loads
+        # the Job by its verified name so each basis read sees current atomic JSON.
+        self._routed_work_ref: ContextVar[str | None] = ContextVar(
+            "seal_routed_work_ref", default=None
+        )
         # SlotConfigurationProduct·TemplateChangeCoordinator 와 같은 subdir(공유 authority root).
         work_state = AtomicWorkTemplateStateStore(self._root / "works")
         qualification = QualificationObjectStore(self._root / "qualification")
@@ -150,7 +120,7 @@ class SealExecutionPlanService:
         self._workspace = WorkspaceMetadataStore(self._root)
 
         self._work_state = work_state
-        self._field_binding = field_binding
+        self._qualification = qualification
         capture = SealExecutionCaptureRunner(
             work_state_store=work_state,
             qualification_store=qualification,
@@ -158,6 +128,7 @@ class SealExecutionPlanService:
             slot_config_store=slot_config,
             field_binding_store=field_binding,
             clock=self._seal_clock,
+            job_for_work=self._routed_job,
         )
         self._capture = capture
         # S6-03(#810) 정식 주입 경로: shipping capability manifest 를 등록한 registry 인스턴스를
@@ -211,13 +182,17 @@ class SealExecutionPlanService:
         )
 
         def read_basis() -> "str | None":
-            return observe_current_basis_digest(
-                command,
-                work_id,
-                read_summary=self._capture.read_summary,
-                capture_under_fence=self._capture.capture_execution,
-                resolve_shipping_policy=resolve_shipping_policy,
-            )
+            token = self._routed_work_ref.set(work_ref)
+            try:
+                return observe_current_basis_digest(
+                    command,
+                    work_id,
+                    read_summary=self._capture.read_summary,
+                    capture_under_fence=self._capture.capture_execution,
+                    resolve_shipping_policy=resolve_shipping_policy,
+                )
+            finally:
+                self._routed_work_ref.reset(token)
 
         return ManagedRunContext(
             root=self._root,
@@ -246,7 +221,11 @@ class SealExecutionPlanService:
         command = SealExecutionPlanProductCommand(
             workspace_instance_id=ws, work_ref=work_ref, request_id=request_id
         )
-        return self._product.seal_execution_plan(command)
+        token = self._routed_work_ref.set(work_ref)
+        try:
+            return self._product.seal_execution_plan(command)
+        finally:
+            self._routed_work_ref.reset(token)
 
     def current_binding_review(self, work_ref: str) -> BindingReviewProjection | None:
         """Read-only Active Field/Binding review projection for the current exact basis."""
@@ -256,12 +235,11 @@ class SealExecutionPlanService:
         workspace_id = self._workspace.read()
         if workspace_id is None:
             return None
-        current: CurrentFieldBindingReview | None = (
-            self._capture.read_current_field_binding_review(
-                workspace_id,
-                job.authority_id,
-                _source_schema_keys(job.mapping),
-            )
+        current: CurrentFieldBindingReview | None = self._capture.read_current_field_binding_review(
+            workspace_id,
+            job.authority_id,
+            _source_schema_keys(job.mapping),
+            job=job,
         )
         if current is None:
             return None
@@ -282,217 +260,55 @@ class SealExecutionPlanService:
     def _seal_clock(self) -> str:
         return self._clock().isoformat()
 
-    def commit_current_mapping(
-        self, work_ref: str, request_id: str
-    ) -> BindingCommitProjection | None:
-        """Commit an explicit legacy Mapping save as the Work-default S5 revision."""
-        return self._commit_mapping_binding(work_ref, request_id, media="hwpx")
-
-    def adopt_saved_mapping_if_unbound(
-        self, work_ref: str, request_id: str
-    ) -> BindingCommitProjection | None:
-        """권위 발급 **전에** 저장된 Mapping 을 이 Work 의 최초 Field Binding 판본으로 들인다.
-
-        새 작업의 편집기 저장은 권위(``authority_id``)가 아직 없어 결속 확정을 부르지 못한다 —
-        권위는 「문서 만들기」 착석이 나중에 발급한다(#932 B5). 그 사이에 판본이 없으면 현재 활성
-        Field 전건이 NEW_ACTIVE_FIELD 로 서서, 사용자가 방금 편집기에서 확정한 연결을 한 번 더
-        확정하라는 요구가 된다. 저장본의 결정이 활성 Field 를 전부 덮고 있으면 그 결정이 곧 확정이다.
-
-        들이는 조건은 셋이 모두 설 때뿐이다: hwpx·권위 있음, 현재 활성 Field 를 읽을 수 있음(구간
-        선택 전이면 아직 모른다), **이전 판본이 전혀 없음**. 판본이 하나라도 있으면(BROKEN·템플릿
-        변경 뒤의 새 Field) 여기서 판단하지 않는다 — 그 확정은 #911 의 명시 동사가 진다. 결정이
-        빠진 활성 Field 가 있으면 커밋이 거절하고(``FieldBindingReviewRequired``) 그 Field 는
-        NEW_ACTIVE_FIELD 검토로 남는다. 들였으면 커밋 결과를, 아니면 None 을 돌려준다.
-        """
+    def _routed_job(self, work_id: str) -> Job:
+        work_ref = self._routed_work_ref.get()
+        if work_ref is None:
+            raise ValueError("Field Binding capture 에 routed Job 이 없습니다")
         job = load_job(self._registry, work_ref)
-        if job.media != "hwpx" or not job.authority_id:
-            return None
-        workspace_id = self._workspace.get_or_create(self._seal_clock())
-        current = self._capture.read_current_field_binding_review(
-            workspace_id,
-            job.authority_id,
-            _source_schema_keys(job.mapping),
-        )
-        if current is None or current.has_prior_revision:
-            return None
+        if job.authority_id != work_id:
+            raise ValueError("Field Binding capture 의 Work identity 가 이동했습니다")
+        return job
+
+    def unrepresented_legacy_rules(
+        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
+    ) -> tuple[str, ...]:
+        """Names of still-present S5 rules an explicit Job save cannot carry.
+
+        Called by the editor while it holds the generation lease, before replacing
+        Job JSON. A field removed from the current template is BROKEN, not inactive.
+        """
+        if previous.binding_authority == JOB_MAPPING_AUTHORITY or not previous.authority_id:
+            return ()
         try:
-            return self._commit_mapping_binding(work_ref, request_id, media="hwpx")
-        except FieldBindingReviewRequired:
-            return None
-
-    def upgrade_outdated_binding_if_lossless(
-        self, work_ref: str, request_id: str
-    ) -> BindingCommitProjection | None:
-        """outdated(field-binding/v2·v3·v4) 판본을 현재 Mapping 에서 다시 확정한다 — **무손실일 때만**.
-
-        v2 판본은 legacy ``type`` 을 버려 표시형을 모른다. 그 결정의 유일한 권위는 Work 의 현재
-        Mapping 이다. 다만 Mapping 이 판본 뒤에 바뀌었을 수 있으므로(저장은 됐지만 확정이 거절된
-        편집), **판본의 모든 규칙이 현재 Mapping 을 그 판의 모양으로 사영한 것과 정확히 같을 때만**
-        그 Mapping 이 곧 판본의 출처라고 보고 현재 판(v5)으로 다시 확정한다 — v2 에서 더해지는 것은
-        판본이 잃었던 ``type`` 하나뿐이다. v3 판본은 가공(v4)이 설 수 없던 판이라 사영에 가공 없음이
-        들어간다: 현재 Mapping 에 가공이 있으면 판본 뒤의 편집이므로 승격하지 않는다(v2 도 같다).
-        v4 판본의 가공(글자 범위·구분자 나누기, 빠짐은 빈 값)은 v5 에서 같은 뜻이다 — 사영은 명세를
-        그대로 비교하므로 현재 Mapping 이 v5 가 더한 방식이나 원본 그대로를 쓰면 갈라진다.
-        어긋나면 아무것도 하지 않고 None: capture 가 NEEDS_BINDING_SEMANTIC_MIGRATION 으로 닫은 채
-        남아 편집기 확정(#911)으로 간다. 매체는 판본을 쓰는 쪽이 갖는다(hwpx·txt 공용, 값 정책
-        번역은 확정 몸통이 진다).
-        """
-        job = load_job(self._registry, work_ref)
-        if not job.authority_id:
-            return None
-        workspace_id = self._workspace.get_or_create(self._seal_clock())
-        current = self._capture.read_current_field_binding_review(
-            workspace_id,
-            job.authority_id,
-            _source_schema_keys(job.mapping),
+            aggregate = self._work_state.load(previous.authority_id)
+        except WorkAggregateNotFound as exc:
+            raise ValueError("이전 Field Binding 의 Work 상태를 확인할 수 없습니다") from exc
+        application_id = aggregate.work.current_template_application_id
+        prior = self._capture._nearest_binding_revision(aggregate, application_id)
+        if prior is None:
+            return ()
+        application = next(
+            (item for item in aggregate.applications if item.application_id == application_id),
+            None,
         )
-        prior = None if current is None else current.prior_revision
-        projection = (
-            None
-            if prior is None
-            else _OUTDATED_PROJECTIONS.get(prior.field_binding_semantic_contract_id)
-        )
-        if prior is None or projection is None:
-            return None
-        draft = prepare_legacy_field_binding_migration(
-            work_authority_id=job.authority_id,
-            base_template_application_id=prior.base_template_application_id,
-            legacy_entries=_legacy_entries(job.mapping),
-            captured_at=self._seal_clock(),
-        )
-        candidates = {item.field_id: item for item in draft.candidate_rules}
-        for rule in prior.binding_rules:
-            candidate = candidates.get(rule.field_id)
-            if candidate is None or projection(
-                _rule_from_candidate(candidate, media=job.media)
-            ) != projection(rule):
-                return None
-        try:
-            return self._commit_mapping_binding(work_ref, request_id, media=job.media)
-        except (FieldBindingReviewRequired, StaleFieldBindingBasis):
-            # 확정이 사용자 결정을 요구하거나 그사이 기준이 움직였다 — 승격하지 않고 blocker 로 남긴다.
-            return None
-
-    def commit_txt_mapping(
-        self, work_ref: str, request_id: str
-    ) -> BindingCommitProjection | None:
-        """TXT Work 의 현재 Mapping 을 S5 Field Binding 판본으로 확정한다(S10-04 · #861).
-
-        :meth:`commit_current_mapping` 과 **같은 몸통**이다 — 검토 축(현재 Active Field 전건에
-        Mapping 결정이 있는가)도, 판본 규율(migration 1회 → 이후 current-application commit)도
-        같다. 갈리는 것은 값 정책의 escaping 책임 하나뿐이고 그 번역은
-        :func:`~hwpxfiller.domain.field_binding.txt_document_value_policy` 가 진다.
-
-        메서드를 가른 이유는 media 가드가 **검토 축의 사실**이라서다: hwpx 진입점은 편집기
-        저장 사건에 결속돼 있고 TXT 진입점은 작업대 복사 직전의 내부 pin 이다. 한 메서드가 두
-        진입 문맥을 겸하면 어느 쪽이 이 판본을 만들었는지 사후에 말할 수 없다.
-        """
-        return self._commit_mapping_binding(work_ref, request_id, media="txt")
-
-    def _commit_mapping_binding(
-        self, work_ref: str, request_id: str, *, media: str
-    ) -> BindingCommitProjection | None:
-        job = load_job(self._registry, work_ref)
-        if job.media != media or not job.authority_id:
-            return None
-        workspace_id = self._workspace.get_or_create(self._seal_clock())
-        entries = _legacy_entries(job.mapping)
-        schema_keys = _source_schema_keys(job.mapping)
-        captured_at = self._seal_clock()
-        current = self._capture.read_current_field_binding_review(
-            workspace_id,
-            job.authority_id,
-            schema_keys,
-        )
-        if current is None:
-            raise FieldBindingReviewRequired(
-                "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
-                "current Active Field를 확인할 수 없습니다",
-            )
-
-        active = frozenset(current.active_field_ids)
-        mapped = {entry.template_field for entry in entries}
-        # 미매핑 검사는 **활성 Field 기준**이다(#877 재확인): 비활성 Field 는 이번 실행에 참여하지
-        # 않으므로 Mapping 결정이 없어도 확정을 막지 않는다. 그 Field 가 다시 활성이 되는 순간
-        # review 가 NEW_ACTIVE_FIELD 로 세워 그때 묻는다.
-        missing = tuple(
-            field_id for field_id in current.active_field_ids if field_id not in mapped
-        )
-        if missing:
-            raise FieldBindingReviewRequired(
-                "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
-                f"현재 Active Field의 Mapping 결정이 필요합니다: {', '.join(missing)}",
-            )
-
-        draft = prepare_legacy_field_binding_migration(
-            work_authority_id=job.authority_id,
-            base_template_application_id=current.review.target_application_id,
-            legacy_entries=entries,
-            captured_at=captured_at,
-        )
-        # 판본 스코프 = 활성 Field upsert + 이미 확정된 비활성 Field 규칙 보존(#877). 판본이 없는
-        # 최초 migration 이면 보존할 규칙도 없다(빈 tuple).
-        binding_rules = _resolved_rules(
-            draft, entries, active, media=media
-        ) + _preserved_inactive_rules(draft, current, media=media)
-        resolved = build_field_binding_input(
-            workspace_instance_id=workspace_id,
-            work_authority_id=job.authority_id,
-            base_template_application_id=current.review.target_application_id,
-            binding_rules=binding_rules,
-            source_schema_keys=schema_keys,
-            raw_record_contract_id=RAW_RECORD_CONTRACT_ID,
-            captured_at=captured_at,
-        )
-        prior = load_current_revision(
-            self._field_binding,
-            job.authority_id,
-            current.review.target_application_id,
-        )
-        basis = _BindingCommitBasis(
-            self,
-            work_ref,
-            job.authority_id,
-            workspace_id,
-            schema_keys,
-            legacy_field_binding_basis_fingerprint(entries),
-        )
-        if current.has_prior_revision:
-            result = commit_field_binding_for_current_application(
-                self._field_binding,
-                basis,
-                workspace_instance_id=workspace_id,
-                work_authority_id=job.authority_id,
-                request_id=request_id,
-                review=current.review,
-                resolved_input=resolved,
-                now=captured_at,
-            )
-        else:
-            result = commit_field_binding_migration(
-                self._field_binding,
-                basis,
-                workspace_instance_id=workspace_id,
-                work_authority_id=job.authority_id,
-                request_id=request_id,
-                draft=draft,
-                resolved_input=resolved,
-                # 최초 판본에는 보존할 이전 규칙이 없다 — 활성 아닌 legacy entry 는 여기서
-                # **명시 omission** 으로 회계된다(silent drop 금지). upsert 의미와 충돌하지
-                # 않는다: 그 Field 가 활성이 되면 review 가 NEW_ACTIVE_FIELD 로 세워 확정을
-                # 받고, 그 뒤로는 비활성이 되어도 판본이 규칙을 보존한다(#877).
-                omitted_field_ids={
-                    entry.template_field
-                    for entry in entries
-                    if entry.template_field not in active
-                },
-                now=captured_at,
-            )
-        revision_id = result.revision.field_binding_authority_revision
-        return BindingCommitProjection(
-            changed=prior is None
-            or prior.field_binding_authority_revision != revision_id,
-            revision_id=revision_id,
+        if application is None:
+            raise ValueError("현재 템플릿 Application 을 확인할 수 없습니다")
+        evidence = self._qualification.get_evidence(application.pass_evidence_id)
+        projection = evidence.structure_projection
+        if projection is None:
+            raise ValueError("현재 템플릿의 Field 구조를 확인할 수 없습니다")
+        structure = decode_execution_structure(projection.payload)
+        present_fields = {
+            occurrence.field_id
+            for occurrence in structure.field_occurrences
+        }
+        saved_fields = {item.template_field for item in candidate.mapping.mappings}
+        return tuple(
+            rule.field_id
+            for rule in prior.binding_rules
+            if rule.field_id in present_fields
+            and rule.field_id in editor_field_ids
+            and rule.field_id not in saved_fields
         )
 
     def _resolve_route(self, workspace_instance_id: str, work_ref: str) -> str:
@@ -511,238 +327,6 @@ class SealExecutionPlanService:
 
 
 __all__ = [
-    "BindingCommitProjection",
     "BindingReviewProjection",
     "SealExecutionPlanService",
 ]
-
-
-def _legacy_entries(mapping: MappingProfile) -> tuple[LegacyFieldBindingEntry, ...]:
-    return tuple(
-        LegacyFieldBindingEntry(
-            item.template_field,
-            item.type,
-            item.source,
-            item.const,
-            item.fmt,
-            item.slice,
-        )
-        for item in mapping.mappings
-    )
-
-
-def _source_schema_keys(mapping: MappingProfile) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            item.source
-            for item in mapping.mappings
-            if item.type in {"text", "date", "amount"}
-        )
-    )
-
-
-def _rule_from_candidate(
-    candidate: MigrationCandidateRule, *, media: str
-) -> FieldBindingRule:
-    """migration 후보 규칙 → exact FieldBindingRule(활성 upsert·보존 갱신 공용).
-
-    값 정책은 매체가 가른다(S10-04 · #861): 같은 whitespace/line-break 의미를 갖되 escaping
-    책임이 다르다. 사용자에게 다시 묻지 않고 표로 옮긴다 — 이미 확정한 값 의미를 매체가
-    바뀌었다고 재확인시키는 것은 같은 결정을 두 번 시키는 것이다.
-    """
-    resolve_policy = (
-        txt_document_value_policy if media == "txt" else resolve_document_value_policy
-    )
-    return FieldBindingRule(
-        field_id=candidate.field_id,
-        binding_kind=candidate.binding_kind,
-        document_content_value_policy=resolve_policy(candidate.proposed_policy_id),
-        source_key=candidate.source_key,
-        format_code=candidate.format_code,
-        canonical_constant_value=candidate.canonical_constant_value,
-        format_kind=candidate.format_kind,
-        text_slice=candidate.text_slice,
-    )
-
-
-def _preserved_inactive_rules(
-    draft: FieldBindingMigrationDraft,
-    current: CurrentFieldBindingReview,
-    *,
-    media: str,
-) -> tuple[FieldBindingRule, ...]:
-    """이미 확정된 Field 가 비활성이 되어도 판본에서 사라지지 않게 규칙을 이어 나른다(#877).
-
-    **스코프는 판본, 값은 Mapping** 이다: 어떤 Field 가 판본에 드는지는 「한 번이라도 확정됐는가」
-    (review 의 INACTIVE_ONLY 분류)가 정하고, 그 Field 의 값 결정은 그것이 아직 Mapping 에 살아
-    있으면 **현재 Mapping** 이 정한다. 이전 규칙을 무조건 그대로 박으면 편집기가 보여주는 값과
-    판본이 조용히 갈라진다 — 같은 상태를 두 곳이 판정하지 않게 Mapping 을 우선한다. Mapping 에서
-    사라졌거나 명시 결정이 남은 항목은 이전 규칙을 그대로 보존한다(비활성이라 실행에 참여
-    하지 않고, 다시 활성이 되면 그때 review·commit 이 명시 결정을 요구한다).
-
-    BROKEN(템플릿에서 사라진 Field)은 보존 대상이 아니다 — review 분류가 이미 갈라 두었고,
-    존재하지 않는 Field 규칙을 실은 판본은 commit 결정이 거절한다.
-    """
-    prior = current.prior_revision
-    if prior is None:
-        return ()
-    keep = frozenset(current.review.inactive_only_field_ids())
-    candidates = {item.field_id: item for item in draft.candidate_rules}
-    # v3·v4 판의 규칙은 그대로 현재 판(v5)의 규칙이다 — v3 에는 가공이 설 수 없었고(가공 없음이 곧
-    # 「칸 전체」), v4 의 두 방식·빈 값은 v5 에서 같은 뜻이다. 그래서 v2 와 달리 그대로 이어 나른다.
-    prior_is_current = is_current_field_binding_contract(
-        prior.field_binding_semantic_contract_id
-    ) or prior.field_binding_semantic_contract_id in (
-        FIELD_BINDING_SEMANTIC_VERSION_V3,
-        FIELD_BINDING_SEMANTIC_VERSION_V4,
-    )
-    preserved: list[FieldBindingRule] = []
-    for rule in prior.binding_rules:
-        if rule.field_id not in keep:
-            continue
-        candidate = candidates.get(rule.field_id)
-        if candidate is not None:
-            preserved.append(_rule_from_candidate(candidate, media=media))
-        elif prior_is_current:
-            preserved.append(rule)
-        # outdated(v2) 판의 규칙은 Mapping 없이는 표시형을 되살릴 수 없다 — 표시형 없음으로
-        # 옮겨 적으면 그 Field 가 다시 활성이 되는 날 다른 글자가 조용히 나간다. 보존하지 않고
-        # 떨군다: 다시 활성이 되면 review 가 NEW_ACTIVE_FIELD 로 세워 확정을 받는다(시끄러운 쪽).
-    return tuple(preserved)
-
-
-def _v2_projection(rule: FieldBindingRule) -> tuple[object, ...]:
-    """규칙을 field-binding/v2 가 적던 모양으로 사영한다 — v3 가 더한 표시형 kind 를 뺀다.
-
-    v2 는 legacy ``fmt`` 를 ``fmt or None`` 으로 적었으므로 빈 코드는 None 으로 접는다. 가공(v4)은
-    빼지 **않는다** — v2 판본의 규칙은 가공이 언제나 없으므로, 현재 Mapping 에 가공이 있으면 사영이
-    갈라져 무손실 승격이 서지 않는다(판본 뒤의 편집이다).
-    """
-    return (
-        rule.field_id,
-        rule.binding_kind,
-        rule.document_content_value_policy.policy_id,
-        rule.source_key,
-        rule.format_code or None,
-        None
-        if rule.canonical_constant_value is None
-        else rule.canonical_constant_value.text,
-        rule.text_slice,
-    )
-
-
-def _v3_projection(rule: FieldBindingRule) -> tuple[object, ...]:
-    """규칙을 field-binding/v3·v4 모양으로 사영한다 — 표시형 쌍은 그 framing 의 정본 모양으로 접는다.
-
-    가공은 사영에 **남긴다**: v3 판본의 규칙은 가공이 언제나 없으므로 현재 Mapping 에 가공이 있으면
-    갈라진다(:func:`_v2_projection` 과 같은 규율). v4 판본의 가공은 v4 가 적을 수 있던 명세뿐이라
-    현재 Mapping 이 v5 가 더한 가공을 쓰면 명세 비교에서 갈라진다.
-    """
-    return (
-        rule.field_id,
-        rule.binding_kind,
-        rule.document_content_value_policy.policy_id,
-        rule.source_key,
-        rule.format_kind,
-        # 표시형 없음의 두 철자((None, None)·(None, ""))는 v3 framing 이 한 모양으로 적었다.
-        None if rule.format_kind is None else rule.format_code,
-        None
-        if rule.canonical_constant_value is None
-        else rule.canonical_constant_value.text,
-        rule.text_slice,
-    )
-
-
-#: 읽기만 하는 outdated 판 → 그 판이 적을 수 있던 모양으로의 사영(무손실 승격 판정).
-_OUTDATED_PROJECTIONS = {
-    FIELD_BINDING_SEMANTIC_VERSION_V2: _v2_projection,
-    FIELD_BINDING_SEMANTIC_VERSION_V3: _v3_projection,
-    FIELD_BINDING_SEMANTIC_VERSION_V4: _v3_projection,
-}
-
-
-# migration blocker 사유 → 사람이 읽는 문장. 코드는 링1/application 어휘이고 문안은 여기
-# 한 곳에서만 조립한다(같은 사유를 두 자리가 다른 말로 하지 않게). 지금 draft 가 세우는 명명
-# blocker 는 없다 — 「오늘 날짜」는 RUNTIME_DATE 규칙으로 옮겨진다(#950). 표는 사유 재진술의
-# 자리로 남긴다(새 blocker 가 생기면 문장도 여기 선다).
-_MIGRATION_BLOCKER_TEXT: dict[str, str] = {}
-_MIGRATION_BLOCKER_FALLBACK_TEXT = (
-    "legacy Mapping을 Field Binding 규칙으로 옮길 수 없습니다"
-)
-
-
-def _resolved_rules(
-    draft: FieldBindingMigrationDraft,
-    entries: tuple[LegacyFieldBindingEntry, ...],
-    active: frozenset[str],
-    *,
-    media: str = "hwpx",
-) -> tuple[FieldBindingRule, ...]:
-    """현재 활성 Field 의 규칙 — 현재 Mapping 결정을 그대로 upsert 한다."""
-    candidates = {item.field_id: item for item in draft.candidate_rules}
-    # 후보가 없는 Field 는 draft 가 **왜** 못 지었는지를 blocker 로 이미 말했다 — 그
-    # 사유를 그대로 재진술한다 — 사유를 묻지 않고 한 이름으로 적으면 다른 원인까지
-    # 엉뚱한 이름으로 보고된다.
-    reasons = {item.field_id: item.reason for item in draft.blockers}
-    rules: list[FieldBindingRule] = []
-    for entry in entries:
-        if entry.template_field not in active:
-            continue
-        candidate = candidates.get(entry.template_field)
-        if candidate is None:
-            raise FieldBindingReviewRequired(
-                "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED",
-                _MIGRATION_BLOCKER_TEXT.get(
-                    reasons.get(entry.template_field, ""),
-                    _MIGRATION_BLOCKER_FALLBACK_TEXT,
-                )
-                + f": {entry.template_field!r}",
-            )
-        rules.append(_rule_from_candidate(candidate, media=media))
-    return tuple(rules)
-
-
-@dataclass(frozen=True)
-class _BindingCommitBasis:
-    service: SealExecutionPlanService
-    work_ref: str
-    work_authority_id: str
-    workspace_instance_id: str
-    source_schema_keys: tuple[str, ...]
-    legacy_fingerprint: str
-
-    def _current_job(self) -> Job:
-        job = load_job(self.service._registry, self.work_ref)
-        if job.authority_id != self.work_authority_id or (
-            legacy_field_binding_basis_fingerprint(_legacy_entries(job.mapping))
-            != self.legacy_fingerprint
-        ):
-            raise StaleFieldBindingBasis(
-                "legacy Mapping basis가 capture 이후 이동했습니다"
-            )
-        return job
-
-    def current_legacy_migration_basis(
-        self, work_authority_id: str
-    ) -> LegacyMigrationBasis:
-        self._current_job()
-        aggregate = self.service._work_state.load(work_authority_id)
-        return LegacyMigrationBasis(
-            aggregate.work.current_template_application_id,
-            self.legacy_fingerprint,
-        )
-
-    def current_application_field_structure(
-        self, work_authority_id: str
-    ) -> CurrentApplicationFieldStructure:
-        self._current_job()
-        structure = self.service._capture.current_application_field_structure(
-            self.workspace_instance_id,
-            work_authority_id,
-            self.source_schema_keys,
-        )
-        if structure is None:
-            raise StaleFieldBindingBasis(
-                "current Application structure를 확인할 수 없습니다"
-            )
-        return structure

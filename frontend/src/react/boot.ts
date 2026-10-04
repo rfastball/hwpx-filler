@@ -14,6 +14,7 @@ import type { SnapshotStore } from "../state/store.ts";
 import type { OverlayHostPorts } from "../overlay/host.ts";
 import type { ShellHostPorts } from "../shell/host.ts";
 import type { ProductScreensPorts } from "../screens/product_screens.ts";
+import type { TutorialPorts } from "../tutorial/panel.ts";
 
 export const REACT_ROOT_ID = "reactRoot";
 
@@ -29,6 +30,7 @@ type BootHost = {
   overlay: OverlayHostPorts;
   shell: ShellHostPorts;
   screens: ProductScreensPorts;
+  tutorial: TutorialPorts;
 };
 
 let controller: ReturnType<typeof createReactRootController> | null = null;
@@ -43,6 +45,7 @@ let currentTarget: Element | null = null;
 let currentOverlay: OverlayHostPorts | null = null;
 let currentShell: ShellHostPorts | null = null;
 let currentScreens: ProductScreensPorts | null = null;
+let currentTutorial: TutorialPorts | null = null;
 
 /** 제품 React root 를 세운다 — 합성 루트가 기존 조립 **뒤에** 정확히 한 번 부른다.
  *  실패는 경보 후 `false` 다: 부팅을 React 마운트에 매달지 않되, 침묵으로 접지도 않는다. */
@@ -52,7 +55,7 @@ export function bootReactRoot(host: BootHost): boolean {
       createRoot: (container) => createRoot(container),
       createAppElement: ({ onCommit }) => {
         if (currentStore === null || currentTarget === null || currentOverlay === null
-          || currentShell === null || currentScreens === null) {
+          || currentShell === null || currentScreens === null || currentTutorial === null) {
           /* boot() 밖에서 불릴 길은 없다 — 이 throw 는 그 계약이 깨졌을 때의 시끄러운
              착지이고, root.ts 의 boot catch 가 경보 후 false 로 접는다. */
           throw new Error("React 요소 factory 가 늦은 결속 슬롯 밖에서 불렸습니다.");
@@ -68,6 +71,7 @@ export function bootReactRoot(host: BootHost): boolean {
           overlay: currentOverlay,
           shell: currentShell,
           screens: currentScreens,
+          tutorial: currentTutorial,
         });
       },
       alarm: host.alarm,
@@ -83,5 +87,6 @@ export function bootReactRoot(host: BootHost): boolean {
   currentOverlay = host.overlay;
   currentShell = host.shell;
   currentScreens = host.screens;
+  currentTutorial = host.tutorial;
   return controller.boot(target);
 }

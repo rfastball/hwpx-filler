@@ -1,6 +1,6 @@
-"""실행(Run) 화면 ViewModel — Qt 비의존 실행 결정(사전검증·게이트·계획).
+"""실행(Run) 화면 ViewModel — Qt 비의존 진단(사전검증·필드 상태·이름 감사).
 
-웹 작업 컨트롤러(:class:`~hwpxfiller.webapp.screen_job.JobController`)는 이 뷰모델에 실행 결정을
+웹 작업 컨트롤러(:class:`~hwpxfiller.webapp.screen_job.JobController`)는 이 뷰모델에 실행 진단을
 위임한다. 컨트롤러가 소유한 현재 데이터는 :class:`RunDataInput` 으로 매 호출 명시하고,
 이 뷰모델은 ``HwpxEngine``·``RunRequest`` 로 판정만 한다(링1: PySide6 금지).
 **매핑 재확정 없음** — 매핑은 작업 정의 때 확정됐고 여기선 사전검증만 한다.
@@ -23,7 +23,7 @@ from ..domain.fill_ledger import (
     template_path_drift,
     template_structure_drift,
 )
-from ..domain.job import Job, RunRequest, has_data_binding, require_hwpx
+from ..domain.job import Job, RunRequest, require_hwpx
 from ..domain.mapping import MappingProfile
 from ..naming import (
     OutputNameAudit,
@@ -76,46 +76,27 @@ class FieldState:
     state: str            # "filled" | "missing" | "drift"(구조 불일치)
 
 
-#: 이 작업이 어떤 데이터에도 연결돼 있지 않다(U4 §2.4 · #932 U4-C). 축 이름이 따로 필요한
-#: 이유는 표면의 지목이 달라서다 — `no_data` 는 「지금 무엇이 마운트됐나」의 세션 사실이고
-#: 이쪽은 「이 작업이 무엇을 기억하나」의 작업 사실이라, 고칠 자리도 피커가 아니라 편집기다.
-GATE_REASON_DATA_UNBOUND = "data_unbound"
-
-
 @dataclass(frozen=True)
 class GateState:
-    """생성 게이트의 **단일 표시 결정**(RC-23) — 표현 계층은 이걸 그대로 렌더만 한다.
-
-    unmet/drift 판정과 차단 문구가 표현 계층에 재조립되던 이중 진실을 소거한다 —
-    버튼 활성 여부와 게이트 라벨(level/text)이 한 산출에서 나온다.
-    """
+    """TXT·작업 미선택 화면의 진입 게이트 표시값."""
 
     enabled: bool
     level: str  # ""/"warn"/"danger" (style.mark 레벨)
     text: str
-    #: 차단 사유의 기계 판독 이름 — **표시면이 게이트 서열을 재유도하지 않게** 한다(리뷰 F2).
-    #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
-    #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
-    #: ""=이 사유 축과 무관(warn·열림).
-    #: 값: drift | template_unreadable | name_tokens
+    #: 차단 사유의 기계 판독 이름(TXT 진입·작업 미선택 구획 지목).
     reason: str = ""
 
 
 @dataclass(frozen=True)
 class RunStatus:
-    """상태 리프레시 1회의 **단일 스냅샷**(RC-23) — 사전검증·필드 배지·게이트.
+    """상태 리프레시 1회의 진단 스냅샷 — 사전검증·필드 상태·이름 감사.
 
-    한 번의 계산(레코드 매핑 1회 + 템플릿 구조 1회 재읽기)에서 세 표시면이 전부
-    파생된다 — 표시면마다 재질의해 리프레시 1회당 템플릿 zip 을 5회 재파싱하고
-    표시면 간 모순(상단 '통과' 녹색 + 하단 드리프트 차단)이 생기던 결함의 봉합.
+    레코드 매핑과 템플릿 구조를 한 번씩 계산해 진단 표시면이 같은 사실을 공유한다.
     """
 
     preflight: PreflightResult
     field_states: "tuple[FieldState, ...]"
-    gate: GateState
-    #: 이 실행이 발급할 이름과 그 집합 성질(C-01, 재작성 F5). 게이트와 표 「문서」 열이
-    #: **같은 산출**을 재사용한다 — 표면이 따로 계획하면 화면이 실행과 다른 이름을 말할 수
-    #: 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
+    #: 이름과 그 집합 성질(C-01). 표 「문서」 열과 같은 시각·매핑을 재사용한다.
     audit: OutputNameAudit = field(default_factory=OutputNameAudit)
 
 
@@ -229,8 +210,7 @@ def unresolved_name_tokens_in(
 def unresolved_name_tokens_for(job: "Job") -> "list[str]":
     """:func:`unresolved_name_tokens_in` 의 ``Job`` 결속 형태.
 
-    실행 게이트(:meth:`RunViewModel._name_token_gate`)와 전역 건강 보기(§19.7 번역)가 이
-    한 몸통을 공유한다 — 두 표면이 같은 상태를 다르게 부르지 않게(리뷰 P2). 저장 게이트가
+    저장 게이트와 전역 건강 보기(§19.7 번역)가 이 한 몸통을 공유한다. 저장 게이트가
     선 뒤에도 **방어층으로 남는다**: 이 앱 밖에서 편집되거나 저장 게이트 이전에 만들어진
     작업은 여전히 미해소 토큰을 들 수 있다(조용한 리터럴 파일명 금지).
     """
@@ -292,26 +272,10 @@ class RunViewModel:
         """
         return list(self.refresh(data, indices).field_states)
 
-    # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
+    # ------------------------------------------------ 진단 스냅샷(RC-23)
     def unresolved_name_tokens(self) -> "list[str]":
         """이 작업의 미해소 파일명 토큰 — 판정 몸통은 :func:`unresolved_name_tokens_for`."""
         return unresolved_name_tokens_for(self.job)
-
-    def _name_token_gate(self) -> "GateState | None":
-        """미해소 파일명 토큰의 게이트 발화(danger·차단) — 없으면 None."""
-        unresolved = self.unresolved_name_tokens()
-        if not unresolved:
-            return None
-        toks = ", ".join("{{" + t + "}}" for t in unresolved)
-        # 문안이 사망한 화면을 지시하지 않게(#128): 「작업 에디터」 화면·레일 항목은 결정 39·40
-        # 으로 사망했고 같은 자리 드리프트 배너는 이미 "편집에서…"로 개정돼 있었다. 두 danger 가
-        # 같은 목적지를 다르게 부르면, 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
-        return GateState(
-            False, "danger",
-            f"파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: "
-            f"{toks}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
-            reason="name_tokens",
-        )
 
     def refresh(
         self, data: RunDataInput, indices: "list[int]", out_dir: str = "", *,
@@ -319,28 +283,17 @@ class RunViewModel:
         mapped: "list[dict] | None" = None,
         now: "datetime | None" = None,
     ) -> RunStatus:
-        """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
+        """사전검증·필드 상태·이름 감사를 같은 매핑·템플릿 구조에서 만든다.
 
-        레코드 매핑·템플릿 구조를 **각 1회만** 계산해 세 표시면이 같은 사실에서
-        나온다(RC-23: 표시면별 재질의가 만들던 모순 신호·zip 5회 재파싱 해소).
-        데이터 미겨눔이면 표시면은 공백이되 게이트는 **닫힌 인라인 사유**로 발화한다
-        (UD-06: '활성 primary + 클릭 후 모달' 이원화를 '버튼 비활성 + 인라인 사유'로 통일
-        — 초기 상태 침묵 해소). 저장 폴더·레코드 선택 같은 warn 급 전제조건도 여기서
-        게이트로 흡수해 모달은 danger 예외에만 남긴다. 파일명 토큰 계약(F34)은 데이터
-        없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
-        작업에 데이터부터 고르게 하지 않는다.
+        데이터 미겨눔이면 진단은 공백이다. 생성 가능 여부는 작업대 관찰의 동사가 판정한다.
 
         ``review_notice`` 는 현재 **검토 요구**(:func:`~hwpxfiller.viewmodel.review_state.review_requirement`)
-        다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 게이트 서열에
-        끼지 않는다 — #957 정책 선회로 검토는 차단이 아니라 사전검증의 비차단 고지이고,
+        다. 종전의 ``review_unmet``(승인 대조를 통과 못 한 요구)과 달리 실행을 막지
+        않는다 — #957 정책 선회로 검토는 사전검증의 비차단 고지이고,
         승인이라는 해소 사건 자체가 없어져 「미승인분」이라는 축도 함께 사라졌다.
         """
-        name_gate = self._name_token_gate()
         if data.datasource is None:
-            return RunStatus(
-                PreflightResult(), (),
-                name_gate or GateState(False, "warn", "먼저 데이터를 선택하세요."),
-            )
+            return RunStatus(PreflightResult(), ())
         idx = list(indices)
         req = self.request(data, idx)
         src = req.source_report()
@@ -360,21 +313,12 @@ class RunViewModel:
         )
         return RunStatus(
             preflight=self._compose_preflight(
-                src, out, drift, name_gate is not None, len(audit.too_long),
+                src, out, drift, bool(self.unresolved_name_tokens()), len(audit.too_long),
                 review_notice,
             ),
             field_states=tuple(states),
-            gate=self._compose_gate(
-                states, drift, idx, out_dir, name_gate, audit,
-            ),
             audit=audit,
         )
-
-    def gate_state(
-        self, data: RunDataInput, indices: "list[int]", out_dir: str = ""
-    ) -> GateState:
-        """생성 게이트 표시 결정(활성/level/text)의 단일 통합(RC-23)."""
-        return self.refresh(data, indices, out_dir).gate
 
     def _structure_snapshot(self) -> "tuple[TemplateStructureDrift, set[str]]":
         """템플릿 구조 1회 재읽기 → (드리프트, 현재 누름틀 집합).
@@ -406,68 +350,6 @@ class RunViewModel:
                 states.append(FieldState(name, "missing" if name in empty else "filled"))
         return states
 
-    def _compose_gate(
-        self, states: "list[FieldState]", drift: TemplateStructureDrift,
-        indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
-        audit: "OutputNameAudit | None" = None,
-    ) -> GateState:
-        """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
-        이름 불가(danger) > **데이터 결속(warn)** > 세션 전제조건(warn) > 열림.
-
-        결속 단이 세션 전제조건보다 앞선 이유는 **고칠 자리가 다르기** 때문이다(U4 §2.4):
-        저장 폴더·행 선택은 이 화면에서 지우지만 결속은 편집기를 지난다. 세션을 다 갖춰도
-        남는 결핍을 뒤에 두면 사용자가 준비를 마친 뒤에야 진짜 막힌 이유를 듣는다.
-
-        구 「미확인 미입력」 단은 필드축 ack 폐기(U2 §2.13)와 함께 죽었고, 그 자리를
-        이어받았던 **검토 요구 단도 #957 에서 사망**했다: 신뢰 정책이 「이상이 있으면
-        알려주되 생성을 막지 않는다」로 선회해 검토는 차단이 아니라 :meth:`_compose_preflight`
-        의 비차단 고지가 됐다. 빈 값도 게이트가 아니다 — 표식이 문서에 박히므로 조용한
-        통과가 아니고, 확인은 결과 문서에서 한다.
-
-        UD-06: 저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
-        산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
-        재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재는 착석·작업대 관찰이
-        말한다(legacy 생성의 모달 백스톱 ``validate_generate`` 는 #1081 PR3 에서 퇴역).
-        """
-        if drift.has_drift:
-            if drift.read_error:
-                return GateState(
-                    False, "danger", "템플릿 구조를 읽을 수 없어 생성이 차단됩니다.",
-                    reason="template_unreadable",
-                )
-            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
-            return GateState(
-                False, "danger",
-                "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 "
-                "수 있습니다: " + ", ".join(names),
-                reason="drift",
-            )
-        if name_gate is not None:
-            return name_gate
-        if audit is not None and audit.refusal_code:
-            # 이름 kernel 이 이름을 만들 수 없다고 판정했다(#798) — 배달 계획이 서지 않는 것과
-            # 같은 사실을 같은 등급(차단)으로 말한다. 버튼을 열어 두면 생성이 예외로 끝난다.
-            return GateState(False, "danger", OUTPUT_NAME_INVALID_TEXT, reason="name_invalid")
-        # 데이터 결속은 **작업 정의 수준의 결핍**이다(U4 §2.4 · #932 U4-C): 저장 게이트가
-        # 요구하는 것을 실행 게이트가 통과시키면 「필수」는 한 자리에서만 참인 말이 되고,
-        # 그 작업은 매 세션 데이터를 다시 물으면서도 무엇이 잘못됐는지 말하지 않는다.
-        #
-        # **자리는 danger 뒤·세션 전제조건 앞**이다. 구조가 깨진 것(드리프트·미해소 토큰)은
-        # 차단 등급이 더 높아 먼저 말해야 하고, 반대로 저장 폴더·행 선택 같은 세션 준비보다는
-        # 앞선다 — 세션을 다 갖춰도 이 결핍은 남고 고칠 자리도 다르다(피커가 아니라 편집기).
-        if not has_data_binding(self.job):
-            return GateState(
-                False, "warn",
-                "이 작업에 연결된 데이터가 없습니다. 데이터를 연결해야 문서를 만들 수 "
-                "있습니다.",
-                reason=GATE_REASON_DATA_UNBOUND,
-            )
-        if not out_dir:
-            return GateState(False, "warn", "저장 폴더를 지정하세요.")
-        if not indices:
-            return GateState(False, "warn", "생성할 문서를 최소 1건 선택하세요.")
-        return GateState(True, "", "")
-
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
         long_paths: int = 0, review_notice: "ReviewRequirement | None" = None,
@@ -478,12 +360,9 @@ class RunViewModel:
                 "[치명] 데이터에 없는 항목입니다(빈 값 생성됨): " + ", ".join(src.missing_columns)
             )
         if drift.has_drift:
-            # 게이트가 상세 사유를 렌더한다 — 여기선 '통과' 녹색이 남지 않게만 알린다.
-            parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요.")
+            parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다.")
         if name_unresolved:
-            # 상세(토큰 목록·복구 동선)는 게이트가 렌더한다(F34) — 여기선 '통과' 녹색이
-            # 미해소 파일명과 공존하는 모순 신호만 차단한다(RC-23 동형).
-            parts.append("[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요.")
+            parts.append("[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다.")
         if out.empty_valued:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).

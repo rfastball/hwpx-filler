@@ -39,11 +39,17 @@ version_res = str(version_path) if version_path.exists() else None
 icon_path = SPEC_DIR / "hwpx-filler.ico"
 icon_res = str(icon_path) if icon_path.exists() else None
 
-# 온보딩 동봉 예제 자산(#891)은 **싣지 않는다**(#941). 앱 안의 설치 진입점이 배포본에서
-# 걷혔으므로 그 자산을 실어도 사용자가 닿을 길이 없고, 닿을 길 없는 동봉은 배포본 크기와
-# 「무엇이 출하됐는가」의 답만 흐린다. 자산 원천(`examples/onboarding/`)과 그 해석기
-# (`external.example_pack.asset_root()` 의 sys._MEIPASS 분기)는 저장소에 동결로 남는다 —
-# 표면을 되살리는 변경이 이 자리에 datas 합류를 함께 되돌린다.
+# 매뉴얼 기반 튜토리얼 원본 네 개만 싣는다. 실습 사본은 사용자가 시작할 때 준비하며,
+# 과거 examples/onboarding 생성 자산과 스크립트는 계속 동결·비동봉이다.
+TUTORIAL_ASSETS = (
+    "물품 구매입찰 공고.hwpx",
+    "낙찰자 선정 및 계약체결 안내.txt",
+    "계약방법 결정 및 구매추진 안내.txt",
+    "공고목록.xlsx",
+)
+for name in TUTORIAL_ASSETS:
+    if not (REPO / "examples" / "tutorial" / name).is_file():
+        raise SystemExit(f"튜토리얼 원본이 없습니다: {name}")
 
 a = Analysis(
     [str(SPEC_DIR / "hwpx_filler_web_entry.py")],
@@ -51,6 +57,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(REPO / "build" / "web"), "web"),  # sealed Vite output only
+        *((str(REPO / "examples" / "tutorial" / name), "examples/tutorial") for name in TUTORIAL_ASSETS),
         # 프로젝트 라이선스 + 제3자 고지 취합본 — 설치본·포터블 산출물 동봉(사용자 확정: 파일
         # 동봉만, 앱 내 표면 없음). Inno Setup [Files] 는 이 dist 폴더 전체를 재귀 복사하므로
         # 여기 한 곳만 채우면 두 배포 형태 모두 실린다.

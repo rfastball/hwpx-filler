@@ -18,6 +18,12 @@ REQUIRED_HIDDEN = {
     # CLI 문서 생성의 managed 척추(#1081 PR3) — 함수 안 import 라 정적 분석에 기대지 않는다.
     "hwpxfiller.external.headless_generation",
 }
+TUTORIAL_ASSETS = {
+    "물품 구매입찰 공고.hwpx",
+    "낙찰자 선정 및 계약체결 안내.txt",
+    "계약방법 결정 및 구매추진 안내.txt",
+    "공고목록.xlsx",
+}
 
 
 class SpecContractError(AssertionError):
@@ -101,9 +107,27 @@ def main(spec_dir: Path | None = None) -> int:
     assert '(str(REPO / "frontend"), "web")' not in web, (
         "web spec: frontend source를 runtime data로 번들하면 안 됩니다"
     )
-    # 온보딩 동봉 예제(#891)는 **배포본에 실리지 않는다**(#941) — 앱 안의 설치 진입점이
-    # 걷혔으므로 닿을 길 없는 동봉이다. 동봉 금지가 새 계약이라 부재를 단언한다: 표면을
-    # 되살리는 변경은 이 단언을 존재 단언으로 함께 뒤집어야 한다(조용한 재유입 금지).
+    # 새 튜토리얼의 매뉴얼 기반 원본 네 개만 GUI에 싣는다. 동결된 옛 생성 예제는 제외한다.
+    asset_assignments = (
+        node for node in ast.parse(web).body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "TUTORIAL_ASSETS" for target in node.targets)
+    )
+    asset_assignment = next(asset_assignments, None)
+    assert asset_assignment is not None, "web spec: 튜토리얼 자산 선언 누락"
+    try:
+        declared_assets = ast.literal_eval(asset_assignment.value)
+    except (ValueError, TypeError) as exc:
+        raise SpecContractError("web spec: 튜토리얼 자산은 문자열 리터럴이어야 합니다") from exc
+    assert set(declared_assets) == TUTORIAL_ASSETS and len(declared_assets) == len(TUTORIAL_ASSETS), (
+        f"web spec: 튜토리얼 자산은 정확히 네 개여야 합니다: {declared_assets}"
+    )
+    assert '"examples/tutorial") for name in TUTORIAL_ASSETS' in web, (
+        "web spec: 선언된 튜토리얼 자산의 도착 경로 누락"
+    )
+    assert all((HERE.parent / "examples" / "tutorial" / name).is_file() for name in TUTORIAL_ASSETS), (
+        "web spec: 튜토리얼 원본 파일 누락"
+    )
     assert 'ONBOARDING_SRC' not in web, (
         "web spec: 온보딩 예제 자산이 다시 번들에 실렸습니다 — 진입 표면이 걷힌 동안에는"
         " 닿을 길이 없습니다(#941)"
@@ -112,7 +136,7 @@ def main(spec_dir: Path | None = None) -> int:
         "web spec: 온보딩 예제 자산 datas 합류가 재유입했습니다(#941)"
     )
     assert '"examples/onboarding' not in web, (
-        "web spec: 온보딩 예제 도착 경로가 재유입했습니다(#941)"
+        "web spec: 동결된 옛 온보딩 예제 도착 경로가 재유입했습니다(#941)"
     )
     assert '(str(REPO / "examples"), "examples")' not in web, (
         "web spec: examples/ 를 통째로 번들하면 안 됩니다(스크립트·테스트 유입)"

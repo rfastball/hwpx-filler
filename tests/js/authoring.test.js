@@ -571,7 +571,7 @@ test("F38/F19/U11: the impact panel renders structure_delta·identifier changes�
   assert.ok(markup.includes("<p>저장 이후 본문 변경 있음</p>"));
   assert.ok(markup.includes("<p>연결된 작업의 영향은 확인하지 않았습니다.</p><p>확인하지 않은 작업 1개</p>"));
   assert.ok(markup.includes(`<p>${TPL_STATUS_COPY.ready}</p>`));
-  assert.ok(markup.includes('<button type="button" class="btn" disabled="" aria-disabled="true" title="템플릿을 저장한 뒤 확인할 수 있습니다.">적용 영향 확인</button><p class="authoring-reason">템플릿을 저장한 뒤 확인할 수 있습니다.</p>'));
+  assert.ok(markup.includes('<button type="button" class="btn" data-guide="apply-change" disabled="" aria-disabled="true" title="템플릿을 저장한 뒤 확인할 수 있습니다.">적용 영향 확인</button><p class="authoring-reason">템플릿을 저장한 뒤 확인할 수 있습니다.</p>'));
 });
 
 test("F26: 원문 표기 asks Python's syntax action and renders read-only sections with a copy button", async () => {
@@ -929,12 +929,12 @@ test("§3.1 head band: back icon, title, 파일 menu, the open-document tabs and
   const head = markup.slice(markup.indexOf('<header class="authoring-head">'), markup.indexOf("</header>") + 9);
   assert.ok(head.startsWith('<header class="authoring-head"><button type="button" class="btn icon" aria-label="돌아가기" title="돌아가기">'), "돌아가기는 그림 단추(이름은 aria-label·title)");
   assert.ok(head.includes('</button><h1>템플릿 저작</h1><button type="button" class="btn quiet" aria-haspopup="menu" aria-expanded="false">파일</button><div class="authoring-tabs" role="tablist" aria-label="열린 문서">'));
-  assert.ok(head.endsWith('</div><button type="button" class="btn quiet">저장</button></header>'), "띠 끝의 저장 — 저장할 것이 없으면 물러선 단추");
+  assert.ok(head.endsWith('</div><button type="button" class="btn quiet" data-guide="save-template">저장</button></header>'), "띠 끝의 저장 — 저장할 것이 없으면 물러선 단추");
   for (const moved of ["문서 열기", "새 TXT", "다른 이름으로 저장", ">돌아가기<"]) assert.ok(!head.includes(moved.startsWith(">") ? moved : `>${moved}</button>`), moved);
   assert.ok(!markup.slice(markup.indexOf("</header>")).includes('class="authoring-tabs"'), "탭 줄은 머리 띠 밖에 따로 서지 않는다");
   snapshot.tabs[0].dirty = true;
   markup = render(controller);
-  assert.ok(markup.includes('<button type="button" class="btn primary">저장</button></header>'), "저장할 변경이 있으면 채움");
+  assert.ok(markup.includes('<button type="button" class="btn primary" data-guide="save-template">저장</button></header>'), "저장할 변경이 있으면 채움");
 });
 
 test("§3.1 파일 menu: 문서 열기·새 TXT·저장(Ctrl+S)·다른 이름으로 저장 as an APG menu; with no document the two save items are aria-disabled", async () => {
@@ -955,7 +955,7 @@ test("§3.1 파일 menu: 문서 열기·새 TXT·저장(Ctrl+S)·다른 이름�
   assert.ok(menu.includes('role="menuitem" tabindex="-1">문서 열기</button>') && menu.includes('role="menuitem" tabindex="-1">새 TXT</button>'));
   assert.ok(menu.includes('role="menuitem" tabindex="-1" aria-disabled="true" aria-keyshortcuts="Control+S">저장<kbd'));
   assert.ok(menu.includes('role="menuitem" tabindex="-1" aria-disabled="true">다른 이름으로 저장</button>'));
-  assert.ok(markup.includes('<header class="authoring-head">') && markup.includes('<button type="button" class="btn quiet" disabled="">저장</button></header>'), "문서가 없으면 띠의 저장은 꺼진다");
+  assert.ok(markup.includes('<header class="authoring-head">') && markup.includes('<button type="button" class="btn quiet" data-guide="save-template" disabled="">저장</button></header>'), "문서가 없으면 띠의 저장은 꺼진다");
   assert.equal(escapeShell(controller), "menu");
   assert.equal(controller.viewModel.getSnapshot().contextMenu, null);
 });

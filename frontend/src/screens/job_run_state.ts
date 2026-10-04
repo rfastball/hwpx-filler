@@ -53,8 +53,6 @@ export type JobRunState = {
   lastFull: Record<string, any> | null;
   progress: RunProgress | null;
   result: RunResult | null;
-  /** 결과를 만든 그 실행의 세션 지문 — 강등·초기화 판정의 비교군. */
-  resultFingerprint: SessionKey | null;
   running: boolean;
   active: RunIdentity | null;
   /** 방금 종료된 op 의 토큰 — terminal barrier 가 **자기 이름을 댈 수 있게** 남긴다.
@@ -68,7 +66,7 @@ export type JobRunState = {
 
 export function initialRunState(): JobRunState {
   return {
-    lastFull: null, progress: null, result: null, resultFingerprint: null,
+    lastFull: null, progress: null, result: null,
     running: false, active: null, finishedToken: "", screenEpoch: 0, discarded: [],
   };
 }
@@ -182,7 +180,7 @@ export function acceptFull(state: JobRunState, snapshot: Record<string, any>): J
   const disposal = disposeBySession(state, prev, next);
   const base = { ...state, lastFull: snapshot };
   if (disposal.kind === "reset") {
-    return { ...base, result: null, resultFingerprint: null, progress: null };
+    return { ...base, result: null, progress: null };
   }
   if (disposal.kind === "stale" && state.result !== null) {
     return { ...base, result: { ...state.result, stale: true } };
@@ -214,13 +212,12 @@ export function acceptDirect(state: JobRunState, result: RunResult): JobRunState
     finishedToken: token,
     progress: null,
     result,
-    resultFingerprint: sessionKeyOf(state.lastFull),
   };
 }
 
 /** 사용자의 명시 파기 — 로그에 흔적을 남기지 않는다(치우라는 행동을 반만 들으면 안 된다). */
 export function closeResult(state: JobRunState): JobRunState {
-  return { ...state, result: null, resultFingerprint: null, progress: null };
+  return { ...state, result: null, progress: null };
 }
 
 /** 화면 폐기·재진입 — 세대를 올려 앞선 실행의 모든 응답을 한 번에 남으로 만든다. */

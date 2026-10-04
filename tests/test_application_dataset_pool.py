@@ -30,8 +30,11 @@ from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
+    excel_reference_opts,
+    filter_presets_shape,
     pclm_identity,
     reference_identity,
+    reference_sheets,
 )
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 
@@ -82,17 +85,25 @@ class InMemoryDatasetPool:
         return entries, list(self.corrupt)
 
     def find_identity_raw(self, ident):
+        members = []
         for k, it in self.list_references()[0]:
             if reference_identity(it) == ident:
                 return (k, it)
-        return None
+            identity_of = pclm_identity if it.kind == "pclm" else excel_identity
+            path_key = "db" if it.kind == "pclm" else "path"
+            if it.kind in {"excel", "pclm"} and any(
+                identity_of(str(it.opts.get(path_key, "")), sheet) == ident
+                for sheet in reference_sheets(it)
+            ):
+                members.append((k, it))
+        return members[0] if len(members) == 1 else None
 
     def find_identity(self, path, sheet=""):
         return self.find_identity_raw(excel_identity(path, sheet))
 
     def add(self, item):
         ident = reference_identity(item)
-        if ident is not None and self.find_identity_raw(ident):
+        if ident is not None and any(reference_identity(it) == ident for it in self.slots.values()):
             raise ValueError("같은 데이터가 이미 고정돼 있습니다.")
         self._seq += 1
         key = f"mem{self._seq:04d}"
@@ -116,23 +127,38 @@ class InMemoryDatasetPool:
 
         return self._update(key, _c)
 
-    def set_filters(self, key, filters):
+    def set_filters(self, key, filters, *, sheet=None):
         def _c(it):
-            it.filters = DatasetReference(name="", kind="", filters=filters).filters
+            presets = filter_presets_shape(filters)
+            default = it.opts.get("sheet" if it.kind == "excel" else "view")
+            if sheet is None or it.kind not in {"excel", "pclm"} or sheet == (default or ""):
+                it.filters = presets
+            elif sheet in reference_sheets(it):
+                it.sheet_filters[sheet] = presets
+            else:
+                raise ValueError("등록된 시트를 선택하세요.")
 
         return self._update(key, _c)
 
-    def relink_excel(self, key, path, *, sheet=None, note="", name=""):
-        taken = self.find_identity(path, sheet or "")
+    def _replace_opts(self, it, opts, *, kind=None):
+        target_kind = kind or it.kind
+        sheet_key = "sheet" if target_kind == "excel" else "view"
+        previous, current = it.opts.get(sheet_key), opts.get(sheet_key)
+        if it.kind == target_kind and isinstance(previous, str) and previous and previous != current:
+            it.sheet_filters[previous] = it.filters
+            it.filters = it.sheet_filters.pop(str(current), [])
+        it.kind, it.opts = target_kind, opts
+
+    def relink_excel(self, key, path, *, sheet=None, note="", name="", sheets=None):
+        ident = excel_identity(path, sheet or "")
+        taken = next(((k, it) for k, it in self.slots.items()
+                      if reference_identity(it) == ident), None)
         if taken is not None and taken[0] != key:
             raise ValueError(f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다.")
-        opts: "dict[str, object]" = {"path": path}
-        if sheet:
-            opts["sheet"] = sheet
+        opts = excel_reference_opts(path, sheet, sheets)
 
         def _c(it):
-            it.kind = "excel"
-            it.opts = opts
+            self._replace_opts(it, opts, kind="excel")
             if note:
                 it.note = note
             if name:
@@ -140,26 +166,53 @@ class InMemoryDatasetPool:
 
         return self._update(key, _c)
 
-    def relabel_confirmed_raw(self, ident, name, *, note="", expected_basis):
+    def relabel_confirmed_raw(self, ident, name, *, note="", expected_basis, sheets=None):
         same = self.find_identity_raw(ident)
         if same is None:
             raise FileNotFoundError(name)
         key, existing = same
         self._check(expected_basis, [bound_state(key, existing)])
+        if sheets is not None:
+            sheet_key = "sheet" if existing.kind == "excel" else "view"
+            opts = {**existing.opts, "sheets": list(sheets), sheet_key: sheets[0] if sheets else ""}
+            DatasetReference(name=name, kind=existing.kind, opts=opts)
+
+            def _c(it):
+                self._replace_opts(it, opts)
+                it.name = name
+                if note:
+                    it.note = note
+
+            return key, self._update(key, _c)
         return key, self.relabel(key, name, note=note)
 
-    def relabel_confirmed(self, path, sheet, name, *, note="", expected_basis):
-        return self.relabel_confirmed_raw(
-            excel_identity(path, sheet or ""), name, note=note,
-            expected_basis=expected_basis,
-        )
+    def relabel_confirmed(self, path, sheet, name, *, note="", expected_basis, sheets=None):
+        if sheets is None:
+            return self.relabel_confirmed_raw(
+                excel_identity(path, sheet or ""), name, note=note,
+                expected_basis=expected_basis,
+            )
+        opts = excel_reference_opts(path, sheet, sheets)
+        same = self.find_identity(path, sheet)
+        if same is None:
+            raise FileNotFoundError(name)
+        key, existing = same
+        self._check(expected_basis, [bound_state(key, existing)])
+
+        def _c(it):
+            self._replace_opts(it, {**it.opts, **opts})
+            it.name = name
+            if note:
+                it.note = note
+
+        return key, self._update(key, _c)
 
     def relink_confirmed(
-        self, key, path, *, sheet=None, note="", name="", expected_basis
+        self, key, path, *, sheet=None, note="", name="", expected_basis, sheets=None,
     ):
         current = self.load(key)
         self._check(expected_basis, [bound_state(key, current)])
-        return self.relink_excel(key, path, sheet=sheet, note=note, name=name)
+        return self.relink_excel(key, path, sheet=sheet, note=note, name=name, sheets=sheets)
 
     def delete_confirmed(self, key, *, expected_basis):
         item = self.load(key)
@@ -276,6 +329,11 @@ def test_register_pclm_is_fail_closed_on_name_view_and_duplicate(registry, tmp_p
     # 목록은 호출자가 준 그 DB 의 것이다 — 다른 DB 의 시트 이름은 여기서 통하지 않는다.
     with pytest.raises(ValueError):
         vm.register_pclm("다른 DB 의 면", db, view="v_통합_v1", sheets=("계약",))
+    for selected in ([], ["v_통합_v1", "없는 시트"], ["v_통합_v1", "v_통합_v1"]):
+        with pytest.raises(ValueError):
+            vm.register_pclm(
+                "선언 오류", db, view="v_통합_v1", sheets=SHEETS, selected_sheets=selected,
+            )
     # 표도 시트다 — 뷰가 아니어도 그 DB 에 있으면 받는다(엑셀 통합문서처럼).
     table = vm.register_pclm("원천 표", db, view="계약", sheets=SHEETS)
     assert table.opts["view"] == "계약"
@@ -292,14 +350,20 @@ def test_relabel_confirmed_raw_binds_pclm_to_shown_state(registry, tmp_path):
     """정체성 판 확정 왕복이 계약 목록에도 같은 결속으로 선다(종류별 확정 경로 복제 금지)."""
     vm = _vm(registry)
     db = str(tmp_path / "pclm.db")
-    vm.register_pclm("계약 목록", db, view="v_통합_v1", sheets=SHEETS)
+    vm.register_pclm(
+        "계약 목록", db, view="v_통합_v1", sheets=SHEETS,
+        selected_sheets=["v_통합_v1", "v_공고_v1"],
+    )
     key = vm.rows()[0].key
     ident = pclm_identity(db, "v_통합_v1")
     _item, basis = vm.inspect(key)
 
-    updated = vm.relabel_confirmed_raw(ident, "계약 목록(통합)", basis=basis)
+    updated = vm.relabel_confirmed_raw(
+        ident, "계약 목록(통합)", basis=basis, sheets=["v_통합_v1", "v_계약_v1"],
+    )
     assert updated.name == "계약 목록(통합)"
-    assert updated.opts == {"db": db, "view": "v_통합_v1"}  # 참조 불변
+    assert updated.opts == {"db": db, "view": "v_통합_v1", "sheets": ["v_통합_v1", "v_계약_v1"]}
+    assert registry.find_identity_raw(pclm_identity(db, "v_계약_v1"))[0] == key
     with pytest.raises(StaleConfirmError):
         vm.relabel_confirmed_raw(ident, "또 갱신", basis=basis)
     with pytest.raises(StaleConfirmError):
@@ -433,16 +497,26 @@ def test_relink_and_relabel_carry_sheet_note_name_for_both_ports(registry):
     key = vm.rows()[0].key
     _item, basis = vm.inspect(key)
     updated = vm.relink_confirmed(
-        key, "/b.xlsx", sheet="7월", note="월분 교체", name="발주 7월", basis=basis
+        key, "/b.xlsx", sheet="7월", sheets=["7월", "8월"],
+        note="월분 교체", name="발주 7월", basis=basis,
     )
     assert updated.kind == "excel"
-    assert updated.opts == {"path": "/b.xlsx", "sheet": "7월"}
+    assert updated.opts == {"path": "/b.xlsx", "sheet": "7월", "sheets": ["7월", "8월"]}
     assert updated.note == "월분 교체" and updated.name == "발주 7월"
 
     same = registry.find_identity("/b.xlsx", "7월")
     assert same is not None and same[0] == key
     relabeled = registry.relabel(key, "발주 8월", note="차월 재사용")
     assert relabeled.name == "발주 8월" and relabeled.note == "차월 재사용"
+    _, declaration_basis = vm.inspect(key)
+    changed = vm.relabel_confirmed(
+        "/b.xlsx", "8월", "발주 8월", sheets=["8월", "9월"], basis=declaration_basis,
+    )
+    assert changed.opts == {"path": "/b.xlsx", "sheet": "8월", "sheets": ["8월", "9월"]}
+    with pytest.raises(StaleConfirmError):
+        vm.relabel_confirmed(
+            "/b.xlsx", "8월", "발주 8월", sheets=["8월"], basis=declaration_basis,
+        )
 
     # 확인 사이 삭제된 슬롯의 확정은 부활이 아니라 loud 부재로 접힌다(손상 키 포함).
     _item2, fresh = vm.inspect(key)

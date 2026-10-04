@@ -657,8 +657,8 @@ def test_txt_drift_severity_follows_the_txt_run_gate(tmp_path):
 def test_unresolved_filename_tokens_surface_in_health(tmp_path):
     """파일명 토큰을 못 채우는 작업은 「확인 필요」에 든다(리뷰 P2).
 
-    실행 게이트가 danger 로 차단하는 **데이터 무관** 상태라 라이브러리에서 먼저 말할 수 있다.
-    판정 몸통은 실행 게이트와 공유한다(두 표면이 같은 상태를 다르게 부르지 않게).
+    **데이터 무관** 상태라 라이브러리에서 먼저 말할 수 있다.
+    판정 몸통은 실행 진단과 공유한다(두 표면이 같은 상태를 다르게 부르지 않게).
     """
     reg = JobRegistry(tmp_path / "tokens")
     tpl = _compiled_hwpx(tmp_path, "tok.hwpx")             # 필드 = 계약명
@@ -670,49 +670,6 @@ def test_unresolved_filename_tokens_surface_in_health(tmp_path):
     rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
     assert library_health(rows["토큰불일치"]) == (3, "파일명 패턴의 토큰을 채우지 못합니다.")
     assert library_health(rows["토큰정상"])[0] == 0
-
-
-def test_health_translation_covers_every_data_independent_gate_reason():
-    """**근본 조치**(리뷰 7라운드): 실행 게이트의 데이터-무관 차단 사유를 건강 번역이 전부 덮는다.
-
-    이 PR 의 라운드들은 같은 결함류를 하나씩 잡았다 — 실행은 차단하는데 라이브러리는 건강으로
-    분류하는 상태(미연결·못 읽는 템플릿·PARTIAL·구조 드리프트·미해소 토큰·못 읽는 txt).
-    개별 대응 대신 **누락을 세는 가드**를 둔다: run_state 가 새 차단 사유(GateState.reason)를
-    만들면, home_state 의 번역이 그 이름을 알고 있어야 이 테스트가 통과한다.
-    """
-    import re
-    from pathlib import Path as _Path
-
-    root = _Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "viewmodel"
-    reasons = set(re.findall(r'reason="([a-z_]+)"', (root / "run_state.py").read_text(encoding="utf-8")))
-    assert reasons, "run_state 에서 게이트 사유를 찾지 못했습니다(정규식 stale)."
-    covered = (root / "home_state.py").read_text(encoding="utf-8")
-    # 번역이 각 사유에 대응하는 근거를 갖는지 — 이름 자체 또는 그 사유의 판정 입력이 보이면 통과.
-    evidence = {
-        "name_tokens": "unresolved_name_tokens",
-        "drift": "structure_drift",
-        "template_unreadable": "compile_state is None",
-    }
-    # **건강 사유가 아니라고 선언한** 차단 사유 — 이유를 여기 적는다. 가드의 이빨은 그대로다:
-    # 새 사유는 번역을 얻든 여기서 배제 근거를 얻든, 둘 중 하나를 **명시적으로** 해야 한다.
-    not_health = {
-        # 검토 요구(재작성 F5)는 결함이 아니라 **정상 흐름의 한 단계**다. 계약 §19.7 의 원인
-        # 표는 손상·경로 없음·미지원·드리프트·끊어진 참조뿐인 **결함의 닫힌 목록**이고, 여기
-        # 검토를 끼우면 새로 만든 모든 작업이 「확인 필요」에 서서 그 구획이 뜻을 잃는다
-        # (경보 인플레이션 — 진짜 고장 난 작업이 새 작업들 사이에 묻힌다).
-        "review_required",
-        # 출력 이름 거절(#798)은 **데이터 의존** 사유다 — 게이트는 선택한 레코드로 이름을 계획해
-        # 본 결과(감사)에서만 서고, 레코드가 없으면 발화하지 않는다. 같은 패턴도 값(장치 이름·
-        # 빈 값)에 따라 통과·거절이 갈리므로 레코드 없는 라이브러리 행에서 판정할 근거가 없다.
-        "name_invalid",
-    }
-    missing = [
-        r for r in reasons if r not in not_health and evidence.get(r, r) not in covered
-    ]
-    assert not missing, (
-        "실행 게이트가 차단하는데 라이브러리 건강 번역이 모르는 사유입니다 — "
-        f"library_health() 에 분기를 더하거나 evidence·not_health 표를 갱신하세요: {missing}"
-    )
 
 
 def test_library_projection_ands_active_tag_facets(tmp_path):

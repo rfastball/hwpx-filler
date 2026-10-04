@@ -234,10 +234,16 @@ body.resizing-master{cursor:col-resize;user-select:none}
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
 .zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
 .zone + .zone{border-top:1px solid var(--a-border)}
-/* 기본 캡션은 블록, 현재 데이터 머리는 제목과 새로고침을 양 끝에 배치한다. */
+/* 데이터 머리는 출처 이름과 보조 동작 한 줄이며, 긴 이름은 동작을 밀어내지 않는다. */
 .zone-cap{display:block}
 .zone-cap{margin-bottom:var(--sp-10);color:var(--n-header-ink)}
-.zone-cap.job-data-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-12)}
+.zone-cap.job-data-heading{display:flex;align-items:center;gap:var(--sp-12);min-width:0}
+.job-data-name{font-weight:600;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-data-actions{display:flex;align-items:center;gap:var(--sp-4);flex:none;font-weight:400}
+.job-data-actions .btn{display:inline-flex;align-items:center;justify-content:center;min-height:calc(var(--sp-24) + var(--sp-4));white-space:nowrap}
+.job-data-heading[data-loaded="true"] .job-data-actions .btn{height:calc(var(--sp-24) + var(--sp-4));padding-top:0;padding-bottom:0}
+/* 선택 폼 한 줄을 걷은 높이는 정상 사용 중 표의 추가 행에 돌려준다. */
+.job-data-zone:has(.job-data-heading[data-loaded="true"]){--job-table-max-height:calc(280px + var(--sp-24) + var(--sp-16))}
 /* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
    (이 데이터에 사용할 문서·생성 준비 — 구 「선택한 작업」 존은 U2 §4 로 사망).
    구 `.job-duo`(표|거울 병치, #272)를

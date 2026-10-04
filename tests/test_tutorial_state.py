@@ -385,6 +385,26 @@ def test_settings_tolerates_partial_corruption_but_rejects_invalid_saves():
         settings.save_tutorial_progress(achieved=["T0"], dismissed="yes")
 
 
+def test_new_tutorial_settings_fail_closed_and_preserve_legacy_bucket():
+    settings._save_key("tutorial", "손상")
+    assert settings.load_tutorial_lessons() == {}
+    assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
+    settings._save_key("tutorial", {"achieved": ["T0"], "lessons": [], "practice": "broken"})
+    assert settings.load_tutorial_lessons() == {}
+    assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
+
+    with pytest.raises(ValueError, match="학습 기록"):
+        settings.save_tutorial_lessons({"version": 2})
+    with pytest.raises(ValueError, match="연습 파일 기록"):
+        settings.save_tutorial_practice({"version": 1, "entries": "not-a-list"})
+    settings.save_tutorial_lessons({"version": 1, "invite_seen": True})
+    settings.save_tutorial_practice({"version": 1, "entries": []})
+    bucket = settings._read()["tutorial"]
+    assert bucket["achieved"] == ["T0"]
+    assert settings.load_tutorial_lessons()["invite_seen"] is True
+    assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
+
+
 def test_view_model_progress_is_the_settings_payload():
     """링1 은 settings 를 모른다 — 왕복은 값으로만 이뤄진다."""
     vm = TutorialViewModel()

@@ -57,8 +57,11 @@ from hwpxfiller.domain.job import load_isolated
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
+    excel_reference_opts,
     filter_presets_shape,
+    pclm_identity,
     reference_identity,
+    reference_sheets,
 )
 
 # 같은 디렉터리를 보는 인스턴스들의 공유 쓰기 경계는 :mod:`.write_locks` 가 소유한다
@@ -66,6 +69,21 @@ from hwpxfiller.domain.dataset_reference import (
 
 
 # ------------------------------------------------------------------ persistence codec
+def _replace_reference_opts(
+    item: DatasetReference, opts: "dict[str, object]", *, kind: "str | None" = None,
+) -> None:
+    """기본 시트가 바뀌어도 필터는 원래 시트에 남긴다."""
+    target_kind = kind or item.kind
+    sheet_key = "sheet" if target_kind == "excel" else "view"
+    previous = item.opts.get(sheet_key)
+    current = opts.get(sheet_key)
+    if item.kind == target_kind and isinstance(previous, str) and previous and previous != current:
+        item.sheet_filters[previous] = item.filters
+        item.filters = item.sheet_filters.pop(str(current), [])
+    item.kind = target_kind
+    item.opts = opts
+
+
 def save_reference(path: "str | Path", ref: DatasetReference) -> None:
     """참조 1건을 슬롯 파일에 원자 저장 — 구 ``DatasetPoolItem.save`` 원문(bytes 완전 동일).
 
@@ -151,7 +169,8 @@ class DatasetPoolRegistry:
         with self._write_lock:
             ident = reference_identity(item)
             if ident is not None:
-                found = self.find_identity_raw(ident)
+                found = next((entry for entry in self.list_entries(corrupted=[])
+                              if reference_identity(entry[1]) == ident), None)
                 if found is not None:
                     raise ValueError(
                         f"같은 데이터(경로·시트)가 이미 '{found[1].name}' 으로 고정돼 "
@@ -271,10 +290,18 @@ class DatasetPoolRegistry:
         self, ident: str
     ) -> "tuple[str, DatasetReference] | None":
         """정체성 문자열로 슬롯 조회 — 손상 파일은 건너뛴다(손상 표면화는 목록 계약 소관)."""
+        members = []
         for key, item in self.list_entries(corrupted=[]):
             if reference_identity(item) == ident:
                 return (key, item)
-        return None
+            identity_of = pclm_identity if item.kind == "pclm" else excel_identity
+            path_key = "db" if item.kind == "pclm" else "path"
+            if item.kind in {"excel", "pclm"} and any(
+                identity_of(str(item.opts.get(path_key, "")), name) == ident
+                for name in reference_sheets(item)
+            ):
+                members.append((key, item))
+        return members[0] if len(members) == 1 else None
 
     def find_identity(
         self, path: "str | Path", sheet: "str | None" = ""
@@ -317,7 +344,9 @@ class DatasetPoolRegistry:
 
         return self.mutate(key, _update)
 
-    def set_filters(self, key: str, filters: "list[dict]") -> DatasetReference:
+    def set_filters(
+        self, key: str, filters: "list[dict]", *, sheet: "str | None" = None,
+    ) -> DatasetReference:
         """저장한 필터 목록 교체 — 잠금 안 읽기-수정-쓰기(참조·수명·라벨 보존).
 
         항목이 사라졌으면 :meth:`mutate` 가 ``FileNotFoundError`` 로 멈춘다(삭제된 등록을
@@ -325,13 +354,20 @@ class DatasetPoolRegistry:
         """
 
         def _update(current: DatasetReference) -> None:
-            current.filters = filter_presets_shape(filters)
+            presets = filter_presets_shape(filters)
+            default = current.opts.get("sheet" if current.kind == "excel" else "view")
+            if sheet is None or current.kind not in {"excel", "pclm"} or sheet == (default or ""):
+                current.filters = presets
+            elif sheet in reference_sheets(current):
+                current.sheet_filters[sheet] = presets
+            else:
+                raise ValueError("등록된 시트를 선택하세요.")
 
         return self.mutate(key, _update)
 
     def relabel_confirmed_raw(
         self, ident: str, name: str, *,
-        note: str = "", expected_basis: "str | None",
+        note: str = "", expected_basis: "str | None", sheets: "list[str] | None" = None,
     ) -> "tuple[str, DatasetReference]":
         """「같은 데이터 재등록 = 라벨 갱신」의 확정 착지 — 정체성 보유 슬롯을 잠금 안 대조 후 갱신.
 
@@ -351,20 +387,49 @@ class DatasetPoolRegistry:
                 raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {name}")
             key, existing = same
             self._check_basis(expected_basis, [bound_state(key, existing)])
+            if sheets is not None:
+                sheet_key = "sheet" if existing.kind == "excel" else "view"
+                opts = {**existing.opts, "sheets": list(sheets), sheet_key: sheets[0] if sheets else ""}
+                DatasetReference(name=name, kind=existing.kind, opts=opts)
+
+                def _update(current: DatasetReference) -> None:
+                    _replace_reference_opts(current, opts)
+                    current.name = name
+                    if note:
+                        current.note = note
+
+                return key, self.mutate(key, _update)
             return key, self.relabel(key, name, note=note)
 
     def relabel_confirmed(
         self, path: str, sheet: "str | None", name: str, *,
-        note: str = "", expected_basis: "str | None",
+        note: str = "", expected_basis: "str | None", sheets: "list[str] | None" = None,
     ) -> "tuple[str, DatasetReference]":
         """엑셀/CSV 판 :meth:`relabel_confirmed_raw` — 경로+시트를 정체성으로 옮기는 랩퍼."""
-        return self.relabel_confirmed_raw(
-            excel_identity(path, sheet or ""), name, note=note,
-            expected_basis=expected_basis,
-        )
+        with self._write_lock:
+            if sheets is None:
+                return self.relabel_confirmed_raw(
+                    excel_identity(path, sheet or ""), name, note=note,
+                    expected_basis=expected_basis,
+                )
+            opts = excel_reference_opts(path, sheet, sheets)
+            same = self.find_identity(path, sheet)
+            if same is None:
+                raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {name}")
+            key, existing = same
+            self._check_basis(expected_basis, [bound_state(key, existing)])
+
+            def _update(current: DatasetReference) -> None:
+                _replace_reference_opts(current, {**current.opts, **opts}, kind="excel")
+                current.name = name
+                if note:
+                    current.note = note
+
+            return key, self.mutate(key, _update)
 
     def _relink_locked(
         self, key: str, path: str, *, sheet: "str | None", note: str, name: str,
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """다시 연결의 공용 몸통 — 정체성 검사와 변이가 **한 잠금 안**이다(코덱스 1R P2).
 
@@ -378,22 +443,21 @@ class DatasetPoolRegistry:
         kind 도 excel 로 착지한다(cross-kind 전이 재진술은
         :func:`~hwpxfiller.application.dataset_pool.kind_transition_clause`).
         """
-        opts: "dict[str, object]" = {"path": path}
-        if sheet:
-            opts["sheet"] = sheet
+        opts = excel_reference_opts(path, sheet, sheets)
 
         def _update(current: DatasetReference) -> None:
             # 호출자가 본 행은 확인 모달 전 스냅샷일 수 있다. 현재 디스크 항목을 잠금 안에서
             # 다시 읽어 참조 필드만 바꿔야 동시 보관 상태·메모를 되돌리거나 삭제를 부활시키지 않는다.
-            current.kind = "excel"  # kind/opts 정합 — 하이브리드 손상 항목 금지(r4)
-            current.opts = opts
+            _replace_reference_opts(current, opts, kind="excel")
             if note:
                 current.note = note
             if name:  # 라벨은 정체성이 아니라(§5.3 C) 같은 확정에 함께 갱신해도 안전하다
                 current.name = name
 
         with self._write_lock:
-            taken = self.find_identity(path, sheet or "")
+            ident = excel_identity(path, sheet or "")
+            taken = next((entry for entry in self.list_entries(corrupted=[])
+                          if reference_identity(entry[1]) == ident), None)
             if taken is not None and taken[0] != key:
                 raise ValueError(
                     f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다. "
@@ -404,6 +468,7 @@ class DatasetPoolRegistry:
     def relink_excel(
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """다시 연결 — 같은 슬롯의 참조(kind+opts)만 갱신한다(수명 보존, C3).
 
@@ -412,12 +477,13 @@ class DatasetPoolRegistry:
         사건**이라(월별 파일 갈아끼우기) 정체성이 바뀌어도 슬롯은 산다 — §5.3 이 id 축을
         기각한 바로 그 근거다. 새 참조가 **다른 슬롯의 정체성**과 겹치면 loud 거절.
         """
-        return self._relink_locked(key, path, sheet=sheet, note=note, name=name)
+        return self._relink_locked(key, path, sheet=sheet, note=note, name=name, sheets=sheets)
 
     def relink_confirmed(
         self, key: str, path: str, *,
         sheet: "str | None" = None, note: str = "", name: str = "",
         expected_basis: "str | None",
+        sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """확정 결속 다시 연결 — 1차가 보여준 슬롯 상태의 지문 대조 후 :meth:`relink_excel`.
 
@@ -428,7 +494,7 @@ class DatasetPoolRegistry:
         with self._write_lock:
             current = self._slot_or_missing(key)
             self._check_basis(expected_basis, [bound_state(key, current)])
-            return self._relink_locked(key, path, sheet=sheet, note=note, name=name)
+            return self._relink_locked(key, path, sheet=sheet, note=note, name=name, sheets=sheets)
 
     def delete_confirmed(self, key: str, *, expected_basis: "str | None") -> DatasetReference:
         """확정 결속 삭제 — 지문 대조 후 삭제, 지워진 항목을 반환한다(결과 문구 소재).

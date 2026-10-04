@@ -60,7 +60,6 @@ from ..application.fresh_execution_observation import (
     ExecutionObservationContextError,
     FreshExecutionObservation,
     RuntimeAdmissionFacts,
-    decide_materialization_readiness,
     decide_runtime_policy_admission,
 )
 from ..application.seal_execution_plan import (
@@ -466,11 +465,9 @@ class SealExecutionPlanProduct:
                 materializer_conformance=conformance.verdict,
             )
         )
-        readiness = decide_materialization_readiness(admission)
         return CurrentSealedPlanObservation(
             sealed_plan_value=value,
             runtime_policy_admission=admission,
-            materialization_readiness=readiness,
             observed_at=self._clock(),
             current_field_binding=current_field_binding,
         )

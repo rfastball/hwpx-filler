@@ -85,6 +85,9 @@ import { createBridgeClient } from "./runtime/client.ts";
 import { createShellNav } from "./shell/nav.ts";
 import { createSnapshotStore } from "./state/store.ts";
 import { createScreenRuntime } from "./screens/runtime.ts";
+import { expectHostValue } from "./screens/runtime.ts";
+import { overlayEngine } from "./overlay/instance.ts";
+import { closeTutorialOverlays, createTutorialSession } from "./tutorial/session.ts";
 import { createScreenPorts } from "./screens/ports.ts";
 import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
 import {
@@ -448,6 +451,25 @@ export function bootProduct() {
      Vanilla fallback 은 만들지 않는다(#405 불변식). node 의 합성 루트 테스트 환경에선 대역
      DOM 이 실 createRoot 를 통과하지 못해 이 경보가 매번 도는 것이 허용 상태다 — 실물
      커밋 증거는 live 게이트의 마운트 마커 되읽기가 진다. */
+  const tutorialDispatch = createTutorialSession({
+    dispatch: (action, payload) => client.dispatch("tutorial", action, payload)
+      .then((result) => expectHostValue(result, `tutorial ${action}`)),
+    currentScreen: () => shellNav.currentScreen(),
+    go: (screen) => shellNav.go(screen),
+    leave: (screen, target) => {
+      if (screen === "editor") return EditorController.leaveTo(target);
+      if (screen === "workbench") return WorkbenchController.leaveTo(target);
+      return AuthoringController.leaveTo(target);
+    },
+    flush: (screen) => {
+      if (screen === "editor") return EditorController.flushPendingEdits();
+      if (screen === "authoring") return AuthoringController.flushAll();
+      return Promise.resolve();
+    },
+    closeOverlays: () => closeTutorialOverlays(overlayEngine),
+    confirm: (options) => Modal.confirm(options),
+    notice: (message) => window.alert(message),
+  });
   bootReactRoot({
     doc: document,
     alarm: (message) => {
@@ -457,6 +479,23 @@ export function bootProduct() {
     /* R2-03 — 트리의 StoreSignal 이 이 store 를 구독한다. boot.ts 가 늦은 결속 슬롯으로
        요소 factory 에 넘기므로 여기서는 객체째 한 번 건네면 된다. */
     store,
+    tutorial: {
+      doc: document,
+      model: runtime.model("tutorial"),
+      loadInitial: () => runtime.loadInitial("tutorial"),
+      dispatch: tutorialDispatch,
+      nav: shellNav,
+      overlay: {
+        subscribe: (listener) => overlayEngine.subscribe(listener),
+        isBusy: () => overlayEngine.depth() > 0,
+        currentHost: () => {
+          const host = overlayEngine.topHost();
+          return typeof Element !== "undefined" && host instanceof Element ? host : null;
+        },
+      },
+      confirm: (options) => Modal.confirm(options),
+      alarm: (message) => window.alert(message),
+    },
     /* R3-01 — 트리의 OverlayHost 가 완전 데이터-구동 표면 4(confirm·choose·prompt·토스트)를
        렌더·집행한다. 문서 리스너는 여기 몫이 아니다(dismissal=위 구성 시 부착, keydown=
        instance.ts 첫 open 부착). */

@@ -555,11 +555,16 @@ def test_copy_is_bound_to_the_card_that_was_prechecked(tmp_path):
 
 def test_stale_copy_writes_nothing_and_says_so(tmp_path):
     """어긋난 토큰은 **조용한 무동작이 아니라** stale 재진술 — 큐도 스탬프도 움직이지 않는다."""
+    from types import SimpleNamespace
+
     from hwpxfiller.webapp.app import WebFrontend
 
     ctrl, reg, _ = _open(tmp_path)
     frontend = object.__new__(WebFrontend)
-    frontend.controllers = {"workbench": ctrl}
+    frontend.controllers = {
+        "workbench": ctrl,
+        "tutorial": SimpleNamespace(observation_token=lambda: (None, None, 0)),
+    }
 
     res = frontend.copy_clipboard("workbench", "그사이-바뀐-토큰")
     assert res["copied"] is False and res["stale"] is True

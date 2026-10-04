@@ -19,7 +19,7 @@ from typing import Callable, Iterable, Protocol
 from ..application.jobs import CrossMediaRelinkError, relink_template
 from ..application.dataset_pool import reference_missing as reference_missing
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference, reference_identity
+from ..domain.dataset_reference import DatasetReference, reference_for_sheet, reference_identity
 from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
@@ -221,7 +221,8 @@ NO_ROWS_TEXT = "데이터에 행이 없습니다."
 
 
 def load_pool_into(
-    pool_registry: DatasetPoolRegistry, key: str, loader: "Callable[[DatasetReference], list]"
+    pool_registry: DatasetPoolRegistry, key: str, loader: "Callable[[DatasetReference], list]",
+    *, sheet: str | None = None,
 ) -> dict:
     """등록 데이터 겨눔의 공유 실행부 — 나라 동결·모호 시트·죽은 참조·레코드 0건을 단일
     문구 체계로 재진술한다(run/txt 화면 동형).
@@ -233,7 +234,7 @@ def load_pool_into(
     '데이터') — 여기로 수렴해 락스텝 편집 부담과 재표류를 없앤다.
     """
     try:
-        item = load_pool_item_checked(pool_registry, key)
+        item = reference_for_sheet(load_pool_item_checked(pool_registry, key), sheet)
         records = loader(item)
     except ValueError as exc:  # 동결 거절·항목 부재·모호 시트 — 문구 그대로 재진술
         return {"ok": False, "error": str(exc)}

@@ -165,7 +165,7 @@ function reactZoneHarness(onDispatch) {
       },
     },
   });
-  return { controller, client, ports, calls, timers };
+  return { controller, client, ports, calls, timers, snapshot };
 }
 
 /* ================= 1. 공개 표면이 §1 표와 정확히 일치 ================= */
@@ -383,7 +383,7 @@ const SHEET_PAYLOAD = {
   sheets: [{ name: "S1" }, { name: "S2" }],
 };
 
-function sheetPickerHarness(invoke) {
+function sheetPickerHarness(invoke, confirm = false) {
   const loads = [];
   let openSpec = null;
   const controller = createSheetPickerController({
@@ -397,6 +397,7 @@ function sheetPickerHarness(invoke) {
     modal: {
       open: (_id, spec) => { openSpec = spec; },
       close() {},
+      confirm: async () => confirm,
     },
   });
   return { controller, loads, close: () => openSpec.onClose() };
@@ -456,10 +457,10 @@ test("시트 선택은 동시 클릭과 늦은 close에도 정확히 한 번만 
   assert.equal(h.loads.length, 1);
 });
 
-test("다중 시트 등록은 부분 실패를 남기고 실패 항목만 재시도한다", async () => {
+test("다중 시트 등록은 실패하면 선언 전체를 유지하고 한 등록으로 재시도한다", async () => {
   let attempt = 0;
   const h = sheetPickerHarness(async () => ({ ok: true, value: ++attempt === 1
-    ? { mount: { label: "S1" }, sheets: [{ name: "S1", key: "one", error: "" }, { name: "S2", error: "잠김" }] }
+    ? { mount: null, error: "잠김", sheets: [{ name: "S1", error: "" }, { name: "S2", error: "잠김" }] }
     : attempt === 2
       ? { mount: null, error: "활성화 실패", sheets: [{ name: "S2", key: "two", error: "" }] }
     : { mount: { label: "S2" }, sheets: [{ name: "S2", key: "two", error: "" }] } }));
@@ -469,14 +470,34 @@ test("다중 시트 등록은 부분 실패를 남기고 실패 항목만 재시
   h.controller.selectAll();
   await h.controller.pick();
   assert.deepEqual(h.loads[0], ["load_data_sheet", "job", "D:\\d.xlsx", ["S1", "S2"]]);
-  assert.deepEqual(h.controller.model.getSnapshot().selected, ["S2"]);
+  assert.deepEqual(h.controller.model.getSnapshot().selected, ["S1", "S2"]);
   assert.equal(h.controller.model.getSnapshot().result.sheets[1].error, "잠김");
   await h.controller.pick();
-  assert.deepEqual(h.loads[1][3], ["S2"]);
+  assert.deepEqual(h.loads[1][3], ["S1", "S2"]);
   assert.equal(h.controller.model.getSnapshot()?.result.error, "활성화 실패");
-  h.controller.toggle("S2");
   await h.controller.pick();
   assert.deepEqual(await selection, { label: "S2" });
+});
+
+test("시트 선언 변경은 확인한 basis를 되싣고 취소 시 선언을 유지한다", async () => {
+  for (const accept of [false, true]) {
+    let calls = 0;
+    const h = sheetPickerHarness(async () => ({ ok: true, value: ++calls === 1
+      ? { needs_confirm: true, basis: "current", confirm_text: "시트 변경", sheets: [] }
+      : { mount: { label: "등록" }, sheets: [{ name: "S1", key: "one", error: "" }] } }), accept);
+    const selection = h.controller.port.choose("job", SHEET_PAYLOAD);
+    h.controller.toggle("S1");
+    await h.controller.pick();
+    if (accept) {
+      assert.deepEqual(h.loads[1][4], { basis: "current" });
+      assert.deepEqual(await selection, { label: "등록" });
+    } else {
+      assert.equal(h.loads.length, 1);
+      assert.deepEqual(h.controller.model.getSnapshot().selected, ["S1"]);
+      h.close();
+      assert.equal(await selection, null);
+    }
+  }
 });
 
 test("데이터 전환은 진행 중 요청을 직렬화하고 마지막 탭만 이어서 불러온다", async () => {
@@ -506,6 +527,15 @@ test("데이터 전환은 진행 중 요청을 직렬화하고 마지막 탭만 
   releaseJob();
   assert.equal(await job, true);
   assert.deepEqual(h.calls.map((call) => call[1]), ["load_pool", "load_pool", "select_job"]);
+});
+
+test("같은 등록의 다른 시트로 전환하고 현재 시트는 다시 읽지 않는다", async () => {
+  const h = reactZoneHarness();
+  Object.assign(h.snapshot, { data_pool_key: "one", data_target: { sheet: "S1" } });
+  await h.controller.switchData("one", "S1");
+  assert.deepEqual(h.calls, []);
+  await h.controller.switchData("one", "S2");
+  assert.deepEqual(h.calls[0], ["job", "load_pool", { key: "one", sheet: "S2" }]);
 });
 
 /* ---------------- 공용 cfg ---------------- */

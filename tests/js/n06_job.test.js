@@ -17,7 +17,7 @@ import {
   initialRunState,
   isForeignResult,
 } from "../../frontend/src/screens/job_run_state.ts";
-import { JobDataHeader, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
+import { JobDataHeader, JobDataTabs, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
@@ -818,6 +818,23 @@ function dataHeaderStub(snapshot) {
   };
 }
 
+test("하단 탭은 현재 등록의 시트 투영과 비활성 사유만 렌더한다", () => {
+  const snapshot = { has_data: true, has_job: false, data_sheet_tabs: [
+    { key: "book", sheet: "공고목록", active: true, selectable: true },
+    { key: "book", sheet: "낙찰현황", active: false, selectable: false, reason: "보관됨" },
+  ] };
+  const ui = { switchingData: "", openingName: "" };
+  const controller = { ...dataHeaderStub(snapshot),
+    uiModel: { getSnapshot: () => ui, subscribe: () => () => {} },
+    poolModel: { getSnapshot() { throw new Error("전체 등록 목록을 읽으면 안 된다"); } },
+  };
+  const markup = renderToStaticMarkup(createElement(JobDataTabs, { controller }));
+  assert.match(markup, /aria-pressed="true"[^>]*>공고목록/);
+  assert.match(markup, /disabled="" title="보관됨"[^>]*>낙찰현황/);
+  snapshot.data_sheet_tabs = [];
+  assert.equal(renderToStaticMarkup(createElement(JobDataTabs, { controller })), "");
+});
+
 test('#945 F4 데이터 통지에는 닫기 단추가 선다', () => {
   const markup = renderToStaticMarkup(createElement(JobDataHeader, {
     controller: dataHeaderStub({
@@ -833,14 +850,28 @@ test('#945 F4 데이터 통지에는 닫기 단추가 선다', () => {
   assert.ok(markup.includes('확인 필요: 연결된 데이터가 없습니다.'));
 });
 
-test('#945 F4 통지가 없으면 닫기도 없다', () => {
+test('데이터 머리는 출처와 보조 변경을 한 줄에 두고 미선택·결속 복구를 강조한다', () => {
+  const snapshot = {
+    has_job: true, has_data: true, job_name: 'A', data_notice: null,
+    data_label: '10월 계약대장', data_source_label: '등록: 10월 계약대장',
+  };
   const markup = renderToStaticMarkup(createElement(JobDataHeader, {
-    controller: dataHeaderStub({
-      has_job: true, has_data: true, job_name: 'A', data_notice: null,
-    }),
+    controller: dataHeaderStub(snapshot),
   }));
   assert.equal(markup.includes('jobDataNoticeClose'), false);
   assert.match(markup, /class="zone-cap job-data-heading"[\s\S]*id="jobBtnRemountData"[\s\S]*<svg/);
   assert.ok(markup.includes('aria-label="데이터 새로고침"'));
   assert.equal(markup.includes('>다시 읽기<'), false);
+  assert.match(markup, /id="jobDataLabel"[^>]*>10월 계약대장<\/span>/);
+  assert.match(markup, /class="btn quiet sm"[^>]*id="jobBtnPickData"[^>]*>변경…/);
+  assert.equal(markup.includes('<input'), false);
+  const empty = renderToStaticMarkup(createElement(JobDataHeader, {
+    controller: dataHeaderStub({ ...snapshot, has_data: false, data_label: '' }),
+  }));
+  assert.match(empty, /class="btn primary"[^>]*id="jobBtnPickData"[^>]*>데이터 선택…/);
+  assert.match(empty, /id="jobBtnRemountData"[^>]*disabled=""/);
+  const unbound = renderToStaticMarkup(createElement(JobDataHeader, {
+    controller: dataHeaderStub({ ...snapshot, job_data_unbound: true }),
+  }));
+  assert.match(unbound, /class="btn primary sm"[^>]*id="jobConnectData"[^>]*>데이터 연결하기…/);
 });

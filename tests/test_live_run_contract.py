@@ -554,11 +554,14 @@ def test_native_dialogs_have_a_single_entrance(monkeypatch) -> None:
     네이티브 창에 매달렸다(그 경로를 밟는 대본이 아직 없었을 뿐이다).
     """
     answered: "list[str]" = []
+    hints: list[str] = []
     monkeypatch.setattr(
         app_mod,
         "_live_file_dialogs",
         live_run.FileDialogs(
-            open_file=lambda filters, owner_title=None: answered.append("file") or "F",
+            open_file=lambda filters, owner_title=None, initial_path="": (
+                answered.append("file") or hints.append(initial_path) or "F"
+            ),
             open_folder=lambda title, owner_title=None: answered.append("folder") or "D",
             save_file=lambda name, filters, ext="", owner_title=None: (
                 answered.append("save") or "S"
@@ -567,9 +570,11 @@ def test_native_dialogs_have_a_single_entrance(monkeypatch) -> None:
     )
 
     assert app_mod._file_dialog([("x", "*.x")]) == "F"
+    assert app_mod._file_dialog([("x", "*.x")], initial_path="practice.x") == "F"
     assert app_mod._folder_dialog("고르세요") == "D"
     assert app_mod._save_dialog("a.hwpx", [("x", "*.x")], "hwpx") == "S"
-    assert answered == ["file", "folder", "save"]
+    assert answered == ["file", "file", "folder", "save"]
+    assert hints == ["", "practice.x"]
 
 
 # ------------------------------------------------------------------ 대역

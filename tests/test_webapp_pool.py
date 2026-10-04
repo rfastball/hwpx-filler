@@ -262,6 +262,50 @@ def test_register_excel_multi_sheet_without_sheet_is_blocked(tmp_path):
     assert reg.load(key).opts["sheet"] == "낙찰현황"
 
 
+def test_registered_sheet_group_inspection_validation_and_confirmation(tmp_path):
+    from hwpxfiller.webapp.screens import load_pool_into
+
+    ctrl, reg, _ = _controller(tmp_path)
+    inspected = ctrl.dispatch("inspect_sheets", {"path": str(MULTI_SHEET)})
+    assert inspected["ok"]
+    names = [row["name"] for row in inspected["sheets"]]
+    assert names == ["공고목록", "낙찰현황"]
+    payload = {"name": "통합", "path": str(MULTI_SHEET), "sheet": names[0], "note": "보존"}
+    for invalid in ([], ["없는 시트"], "공고목록"):
+        assert not ctrl.dispatch("register_excel", {**payload, "sheets": invalid})["ok"]
+        assert not reg.list_entries()
+    assert ctrl.dispatch("register_excel", {**payload, "sheets": names})["ok"]
+    key = _rows(ctrl)[0]["key"]
+    assert reg.load(key).opts["sheets"] == names
+    loaded = load_pool_into(reg, key, lambda item: [item.opts["sheet"]], sheet=names[1])
+    assert loaded["records"] == [names[1]]
+    assert reg.load(key).opts["sheet"] == names[0]
+    assert not load_pool_into(reg, key, lambda item: [item], sheet="없는 시트")["ok"]
+
+    changed = {**payload, "sheets": names[:1]}
+    prompt = ctrl.dispatch("register_excel", changed)
+    assert prompt["needs_confirm"] and names[0] in prompt["confirm_text"]
+    assert reg.load(key).opts["sheets"] == names
+    assert ctrl.dispatch("register_excel", {**changed, "confirm": True, "basis": prompt["basis"]})["ok"]
+    assert reg.load(key).opts["sheets"] == names[:1]
+    assert reg.load(key).note == "보존"
+    relink = ctrl.dispatch("relink", {"key": key, "path": str(MULTI_SHEET), "sheets": names})
+    assert relink["needs_confirm"]
+    assert ctrl.dispatch("relink", {
+        "key": key, "path": str(MULTI_SHEET), "sheets": names,
+        "confirm": True, "basis": relink["basis"],
+    })["ok"]
+    assert reg.load(key).opts["sheets"] == names
+    csv = tmp_path / "표.csv"
+    csv.write_text("이름\n홍길동\n", encoding="utf-8")
+    assert ctrl.dispatch("inspect_sheets", {"path": str(csv)}) == {"ok": True, "sheets": []}
+    assert ctrl.dispatch("register_excel", {
+        "name": "CSV", "path": str(csv), "sheet": "", "sheets": [],
+    })["ok"]
+    csv_item = next(item for _, item in reg.list_entries() if item.name == "CSV")
+    assert "sheets" not in csv_item.opts and "sheet" not in csv_item.opts
+
+
 def test_existing_nara_item_is_shown_not_hidden(tmp_path):
     """나라 등록은 동결로 미노출이지만, 기존 nara 항목은 숨기지 않고 표시한다(조용한 은닉 금지)."""
     ctrl, reg, _ = _controller(tmp_path)
@@ -830,6 +874,25 @@ def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
     assert len(rows) == 1 and rows[0]["name"] == "통합면"      # 2건이 되지 않는다
     assert reg.load(rows[0]["key"]).opts == {"db": db, "view": "v_통합_v1"}
 
+    from hwpxfiller.data.factory import source_from_pool_item
+    from hwpxfiller.webapp.screens import load_pool_into
+
+    inspected = ctrl.dispatch("inspect_sheets", {"kind": "pclm", "path": db})
+    assert inspected == {"ok": True, "sheets": [{"name": "v_통합_v1"}, {"name": "계약"}]}
+    payload = {"name": "통합면", "db": db, "view": "v_통합_v1", "views": ["v_통합_v1", "계약"]}
+    for invalid in ([], ["v_통합_v1", "없는 시트"], None):
+        assert not ctrl.dispatch("register_pclm", {**payload, "views": invalid})["ok"]
+        assert "sheets" not in reg.load(key).opts
+    group = ctrl.dispatch("register_pclm", payload)
+    assert group["needs_confirm"] and "계약" in group["confirm_text"]
+    assert ctrl.dispatch("register_pclm", {**payload, "confirm": True, "basis": group["basis"]})["ok"]
+    assert len(reg.list_entries()) == 1 and reg.load(key).opts["sheets"] == payload["views"]
+    loaded = load_pool_into(reg, key, lambda item: source_from_pool_item(item).records(), sheet="계약")
+    assert loaded["ok"] and loaded["records"][0]["계약번호"] == "R1"
+    assert loaded["item"].opts["view"] == "계약" and reg.load(key).opts["view"] == "v_통합_v1"
+    assert not load_pool_into(reg, key, lambda item: [item], sheet="없는 시트")["ok"]
+    assert "needs_confirm" not in ctrl.dispatch("register_pclm", payload)
+
 
 def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
     """db 를 비우면 「기본 자리」로 해석돼 opts 에 박힌다 — 조회와 등록이 같은 자리를 본다."""
@@ -883,6 +946,11 @@ def test_register_pclm_on_an_unusable_db_restates_the_file_problem(tmp_path, bro
     assert "이미 삭제된 항목" not in res["error"]
     assert _result(ctrl)["level"] == "danger"
     assert reg.list_references()[0] == []
+    grouped = ctrl.dispatch("register_pclm", {
+        "name": "계약", "db": str(db), "view": "v_통합_v1", "views": ["v_통합_v1"],
+    })
+    assert not grouped["ok"] and expected in grouped["error"]
+    assert "이미 삭제된 항목" not in grouped["error"]
 
 
 def test_register_pclm_confirm_does_not_resurrect_deleted_item(tmp_path):

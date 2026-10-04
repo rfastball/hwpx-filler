@@ -298,9 +298,12 @@ async function authoringFileItem(ctx, label) {
  *  규칙대로 흉내 낸다: Tab = 문서 순서의 다음 탭 가능 원소, Enter = 버튼이면 click(), 폼
  *  입력칸이면 requestSubmit(). 좌표 클릭은 쓰지 않는다. OS 수준 키 주입(SendInput)은 사용자
  *  데스크톱을 건드리므로 쓰지 않는다 — 실 IME 조합도 같은 이유로 자동화하지 않는다. */
-const TABBABLE = 'button:not([disabled]),input:not([disabled]):not([type="hidden"]),'
-  + 'select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),'
-  + '[contenteditable="true"],iframe,details>summary';
+/* tabindex="-1"(roving 의 대기 탭·트리 줄, 탭 안의 닫기 단추)은 초점은 받아도 Tab 순서가 아니다 — 브라우저처럼 뺀다.
+   빼지 않으면 Shift+Tab 흉내가 고르지 않은 보기 탭에 바로 서서, 활성화가 화살표가 아니라 focus 사건(창이 OS 초점을
+   쥘 때만 온다)에 걸린다. iframe 은 제품의 첫 조작 후보 규칙(authoring_layout)과 같게 그대로 둔다. */
+const TABBABLE = ['button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])',
+  'textarea:not([disabled])', '[tabindex]', '[contenteditable="true"]', 'details>summary']
+  .map((part) => `${part}:not([tabindex="-1"])`).concat("iframe").join(",");
 
 /** 접힌 details 의 본문(요약 줄 밖)에 있는가 — Chromium 은 그 자리를 그리지 않고 초점도 주지 않는다. */
 function insideClosedDetails(el) {
@@ -471,6 +474,8 @@ async function probeAuthoringKeyboard(ctx, out) {
     out.kbd_fields_view = nav.tabTo(outlineTab, 6, true)
       && nav.arrowTo((el) => outlineTab(el) && textOf(el).trim().indexOf("필드") === 0, "ArrowRight", 2);
     await settleRender(ctx);
+    // 초점만이 아니라 보기가 실제로 바뀌었는가 — 아니면 다음 Tab 이 숨지 않은 구조 tree 로 들어가 같은 이름의 사용 위치 줄을 고른다.
+    out.kbd_fields_view = out.kbd_fields_view && nav.active().getAttribute("aria-selected") === "true";
     if (!out.kbd_fields_view) return;
     // 구조 목록은 APG tree 다(UX-04): 한 번의 Tab 으로 들어오고 ↓ 로 줄을 옮긴다.
     out.kbd_field_focused = await nav.treeTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
@@ -2754,6 +2759,15 @@ export function createEditorWorkbenchDataProbes() {
         const out = { pending: true };
         try {
           Nav.go("job");
+          const inspectionStub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+            if (screen === "pool" && action === "inspect_sheets") {
+              return Promise.resolve({ ok: true, sheets: (payload.kind === "pclm"
+                ? ["v_통합_v2", "v_접수_v1", "계약"] : ["물품", "예산"])
+                .map((name) => ({ name })) });
+            }
+            return real(screen, action, payload);
+          });
+          ctx.state.restoreInspection = () => { inspectionStub.restore(); };
           /* open()은 pool/refresh를 fire-and-forget으로 쏜다. 이 프로브는 바로 아래의 합성 pool
              snapshot이 정본이므로, 늦은 실 refresh가 React 목록을 0행으로 되돌리지 못하게
              그 한 발신만 같은 Bridge/typed 수명에서 흡수한다. */
@@ -2904,15 +2918,17 @@ export function createEditorWorkbenchDataProbes() {
           out.pin_title = textOf(byId(ctx, "poolRegTitle"));
           out.pin_ok = textOf(byId(ctx, "poolRegOk"));
           out.pin_path = byId(ctx, "poolRegPath").value;
-          out.pin_sheet = byId(ctx, "poolRegSheet").value;
-          /* pin 모드 참조 잠금(U2 §2.7 5행) — path·sheet 읽기전용 + 폼 안 찾아보기 감춤. */
+          const pinSheets = byId(ctx, "poolRegSheet");
+          out.pin_sheet = textOf(pinSheets.querySelector(".pool-reg-sheet-list input:checked + span"));
+          /* 경로는 고정하고 같은 파일에서 사용할 시트는 추가로 선언할 수 있다. */
           out.pin_path_readonly = byId(ctx, "poolRegPath").readOnly;
-          out.pin_sheet_readonly = byId(ctx, "poolRegSheet").readOnly;
+          out.pin_sheet_selectable = !pinSheets.disabled
+            && pinSheets.querySelectorAll(".pool-reg-sheet-list input").length === 2;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
           /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
              가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 기본 DB
-             자리를 프리필하고 **고르게 할 시트 + 빈 placeholder** 를 세운다(시트는 사용자
+             자리를 프리필하고 **미선택 시트 목록** 을 세운다(시트는 사용자
              확정). 라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
           const pclmEntry = byId(ctx, "dataPickerPclm");
           out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
@@ -2921,15 +2937,19 @@ export function createEditorWorkbenchDataProbes() {
           pclmEntry.click();
           await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
           const viewSelect = byId(ctx, "poolRegView");
-          out.pclm_reg_view_options = viewSelect.options.length;
+          const sheetInputs = Array.from(viewSelect.querySelectorAll(".pool-reg-sheet-list input"));
+          out.pclm_reg_view_options = sheetInputs.length;
           out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
-          /* 옵션의 **값**과 **보이는 글자**를 따로 회수한다 — 둘 다 그 DB 의 시트 이름
-             그대로인지(웹이 다시 옮기지 않는지)를 게이트가 잰다. */
-          out.pclm_reg_view_values = Array.prototype.map.call(
-            viewSelect.options, (o) => o.value).join("|");
-          out.pclm_reg_view_text = Array.prototype.map.call(
-            viewSelect.options, (o) => textOf(o)).join("|");
-          out.pclm_reg_view_label = textOf(viewSelect.closest(".ctl").querySelector(".lbl"));
+          out.pclm_reg_view_text = sheetInputs.map((input) => textOf(input.nextElementSibling)).join("|");
+          out.pclm_reg_view_label = textOf(viewSelect.querySelector("legend"));
+          out.pclm_reg_initial_empty = sheetInputs.every((input) => !input.checked)
+            && byId(ctx, "poolRegOk").disabled;
+          sheetInputs[0].click();
+          await ctx.sleep(0);
+          sheetInputs[1].click();
+          await ctx.sleep(0);
+          out.pclm_reg_multiple_selected = viewSelect.querySelectorAll(".pool-reg-sheet-list input:checked").length === 2
+            && !byId(ctx, "poolRegOk").disabled;
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(
@@ -2970,6 +2990,7 @@ export function createEditorWorkbenchDataProbes() {
       },
       teardown(ctx) {
         if (ctx.state.restorePick) ctx.state.restorePick();
+        if (ctx.state.restoreInspection) ctx.state.restoreInspection();
       },
     },
 

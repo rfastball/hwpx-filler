@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
-from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.domain.text_structure import scan_text_structure
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -96,7 +96,10 @@ class _Harness:
         self.template.write_text(body, encoding="utf-8", newline="\n")
         self.registry = JobRegistry(tmp_path / "jobs")
         self.registry.save(
-            Job(name="안내문", template_path=str(self.template), mapping=_profile())
+            Job(
+                name="안내문", template_path=str(self.template), mapping=_profile(),
+                binding_authority=JOB_MAPPING_AUTHORITY,
+            )
         )
         self.slot_product = SlotConfigurationProduct(
             self.registry, root=self.root, clock=_clock()
@@ -496,8 +499,8 @@ def test_a_field_without_a_mapping_decision_is_a_binding_review_refusal(
         "안내문", RECORD, request_id="c1"
     )
     assert isinstance(outcome, TxtMaterializationRefused)
-    assert outcome.code == "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED"
-    assert "건명" in outcome.detail
+    assert outcome.code == "EXECUTION_PLAN_NOT_SEALED"
+    assert "ACTIVE_FIELD_UNBOUND" in outcome.detail
 
 
 def test_start_gate_refusal_reaches_the_caller_verbatim(

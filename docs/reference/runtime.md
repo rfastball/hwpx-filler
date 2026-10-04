@@ -48,7 +48,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `generate` | `screen: str, confirm_overwrite: bool=False, run_token: str=''` |
 | `import_template_file` | `screen: str` |
 | `initial` | `screen: str` |
-| `load_data_sheet` | `screen: str, path: str, sheet: str &#124; list[str]` |
+| `load_data_sheet` | `screen: str, path: str, sheet: str &#124; list[str], confirmation: dict &#124; None=None` |
 | `new_job_from_data` | `context: 'dict &#124; None'=None` |
 | `open_authoring_document` | `path: str='', as_template: bool=False` |
 | `open_job_in_editor` | `name: str, context: 'dict &#124; None'=None` |
@@ -173,7 +173,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `guard_state` | — | — |
 | `hide_column` | `column` | `epoch` |
 | `list_filter_columns` | — | `query` |
-| `load_pool` | `key` | — |
+| `load_pool` | `key` | `sheet` |
 | `open_slot_configuration` | — | — |
 | `open_workbench` | — | — |
 | `prefer_work` | `name` | — |
@@ -229,10 +229,11 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `activate` | `key` | — |
 | `archive` | `key` | — |
 | `delete` | `key` | `confirm`, `basis` |
+| `inspect_sheets` | `path` | `kind` |
 | `refresh` | — | — |
-| `register_excel` | `name`, `path` | `sheet`, `note`, `confirm`, `basis` |
-| `register_pclm` | `name`, `view` | `db`, `note`, `confirm`, `basis` |
-| `relink` | `key`, `path` | `sheet`, `note`, `name`, `confirm`, `basis` |
+| `register_excel` | `name`, `path` | `sheet`, `sheets`, `note`, `confirm`, `basis` |
+| `register_pclm` | `name`, `view` | `db`, `views`, `note`, `confirm`, `basis` |
+| `relink` | `key`, `path` | `sheet`, `sheets`, `note`, `name`, `confirm`, `basis` |
 | `resolve_duplicate` | `keep` | `confirm`, `basis` |
 | `review` | `key` | — |
 
@@ -254,11 +255,20 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 
 | 액션 | 필수 키 | 선택 키 |
 |---|---|---|
-| `clear_focus` | — | — |
-| `consume_moment` | `milestone` | — |
-| `dismiss` | — | — |
-| `focus_tier` | `tier` | — |
-| `resume` | — | — |
+| `cleanup` | `token` | — |
+| `cleanup_preview` | — | — |
+| `exit` | — | `transition_token` |
+| `later` | — | — |
+| `next` | — | — |
+| `pause` | — | — |
+| `preflight` | `screen`, `action` | `scenario_id`, `destination_screen` |
+| `prepare_examples` | — | `derived` |
+| `reset_progress` | `confirm` | — |
+| `restart` | `scenario_id` | `transition_token` |
+| `resume` | — | `transition_token` |
+| `select` | `scenario_id` | `transition_token` |
+| `skip` | — | — |
+| `start` | `scenario_id` | `transition_token` |
 
 ### workbench
 

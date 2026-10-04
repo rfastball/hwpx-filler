@@ -64,9 +64,9 @@ from ..application.dataset_pool import (
     reference_summary,
     resolve_pclm_db,
 )
-from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
+from ..data.excel import ambiguous_sheet_error, sheet_overview
 from ..data.pclm import list_sqlite_sheets  # 계약 목록 DB 의 시트 나열(등록 폼·게이트 공용)
-from ..domain.dataset_reference import DatasetReference, pclm_identity
+from ..domain.dataset_reference import DatasetReference, pclm_identity, reference_sheets
 from ..domain.pclm_views import default_pclm_db
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
 from .screens import PushSink
@@ -385,6 +385,40 @@ class PoolController:
         return {"ok": True}
 
     # ---- 등록(참조만 — 경로 포인터, 스냅샷·데이터 없음)
+    def _do_inspect_sheets(self, p: dict) -> dict:
+        try:
+            if p.get("kind") == "pclm":
+                return {
+                    "ok": True,
+                    "sheets": [{"name": name} for name in list_sqlite_sheets(resolve_pclm_db(p["path"]))],
+                }
+            overview = sheet_overview(p["path"])
+        except Exception as exc:  # noqa: BLE001 — 손상·이동·잠김을 폼에 재진술
+            return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "sheets": [{"name": name, "rows": rows, "cols": cols} for name, rows, cols in overview],
+        }
+
+    @staticmethod
+    def _registration_sheets(p: dict) -> tuple[str | None, list[str] | None]:
+        sheet = p.get("sheet") or None
+        if "sheets" not in p:
+            return sheet, None
+        selected = p["sheets"]
+        names = [name for name, _rows, _cols in sheet_overview(p.get("path") or "")]
+        if not isinstance(selected, list) or (names and not selected):
+            raise ValueError("읽을 시트를 고르세요.")
+        if any(not isinstance(name, str) or name not in names for name in selected):
+            raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
+        if not names:
+            return None, None  # CSV에는 시트 선언이 없다.
+        selected = list(dict.fromkeys(selected))
+        sheet = sheet or selected[0]
+        if sheet not in selected:
+            raise ValueError("읽을 시트를 고르세요.")
+        return sheet, selected
+
     def _do_register_excel(self, p: dict) -> dict:
         """엑셀/CSV 참조 등록 — 중복 판정은 **정체성**(경로+시트, §5.3 C)이다.
 
@@ -405,7 +439,11 @@ class PoolController:
         """
         name = (p.get("name") or "").strip()
         path = p.get("path") or ""
-        sheet = p.get("sheet") or None
+        try:
+            sheet, sheets = self._registration_sheets(p)
+        except Exception as exc:  # noqa: BLE001 — 검사 중 파일이 사라져도 저장하지 않는다.
+            self._set_result(str(exc), "danger")
+            return {"ok": False, "error": str(exc)}
         note = p.get("note") or ""
         # 다중 시트 확정 게이트(#33) — 시트 미지정 참조는 실행 복원 때 첫 시트를 조용히 읽는다.
         # 워크북에 시트가 여럿이면 등록을 막고 시트 지정을 요구한다. 판정+문구·읽기 실패(파일
@@ -421,7 +459,10 @@ class PoolController:
                 key, existing = same
                 changes_name = bool(name) and name != existing.name
                 changes_note = bool(note) and note != existing.note
-                if not changes_name and not changes_note:
+                changes_sheets = sheets is not None and (
+                    sheets != reference_sheets(existing) or sheet != existing.opts.get("sheet")
+                )
+                if not changes_name and not changes_note and not changes_sheets:
                     # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접되, 보고도
                     # 잠금 안 재검증을 지난다(코덱스 #578 P2): find 스냅샷만으로 성사를
                     # 말하면 확인 사이 다른 스레드의 삭제가 거짓 「이미 고정」을 만든다.
@@ -430,7 +471,7 @@ class PoolController:
                     # StaleConfirmError 로 정직하게 갈린다.
                     try:
                         item = self.vm.relabel_confirmed(
-                            path, sheet, existing.name, note="",
+                            path, sheet, existing.name, note="", sheets=sheets,
                             basis=confirm_basis([bound_state(key, existing)]),
                         )
                     except StaleConfirmError:
@@ -449,12 +490,17 @@ class PoolController:
                         "confirm_text": (
                             f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
                             f"({display_reference(existing)}).\n"
+                            f"같은 등록을 유지하고 이름·메모·사용할 시트를 갱신합니다: '{name}'."
+                            f"\n사용할 시트: {', '.join(sheets or [])}"
+                            if changes_sheets else
+                            f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
+                            f"({display_reference(existing)}).\n"
                             f"같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'."
                         ),
                     }
                 try:
                     item = self.vm.relabel_confirmed(
-                        path, sheet, name, note=note, basis=p.get("basis")
+                        path, sheet, name, note=note, sheets=sheets, basis=p.get("basis")
                     )
                 except StaleConfirmError:
                     self.vm.refresh()
@@ -464,7 +510,7 @@ class PoolController:
                     # 확인 모달은 "기존 등록 갱신"에 대한 승인이다. 모달을 읽는 사이 다른
                     # 화면이 항목을 삭제했다면 이를 신규 등록 승인으로 바꾸지 않는다.
                     return self._stale_item_result(name)
-                item = self.vm.register_excel(name, path, sheet=sheet, note=note)
+                item = self.vm.register_excel(name, path, sheet=sheet, sheets=sheets, note=note)
         except FileNotFoundError:
             # 분류 직후~어댑터 잠금 획득 사이 삭제된 경우도 신규 등록으로 부활시키지 않는다.
             return self._stale_item_result(name)
@@ -502,18 +548,38 @@ class PoolController:
         view = str(p.get("view") or "")
         note = p.get("note") or ""
         try:
+            selected_sheets = p.get("views")
+            available_sheets = None
+            if "views" in p:
+                if (
+                    not isinstance(selected_sheets, list) or not selected_sheets
+                    or any(not isinstance(name, str) or not name for name in selected_sheets)
+                    or view not in selected_sheets
+                ):
+                    raise ValueError("읽을 시트를 고르세요.")
+                try:
+                    available_sheets = list_sqlite_sheets(db)
+                except (FileNotFoundError, RuntimeError) as exc:
+                    self._set_result(str(exc), "danger")
+                    return {"ok": False, "error": str(exc)}
+                if any(name not in available_sheets for name in selected_sheets):
+                    raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
+                selected_sheets = [view, *dict.fromkeys(name for name in selected_sheets if name != view)]
             same = self.vm.find_same_pclm(db, view)
             if same is not None:
                 key, existing = same
                 changes_name = bool(name) and name != existing.name
                 changes_note = bool(note) and note != existing.note
                 ident = pclm_identity(db, view)
-                if not changes_name and not changes_note:
+                changes_sheets = selected_sheets is not None and (
+                    selected_sheets != reference_sheets(existing) or view != existing.opts.get("view")
+                )
+                if not changes_name and not changes_note and not changes_sheets:
                     # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접되, 보고도 잠금
                     # 안 재검증을 지난다(엑셀 판과 같은 근거, 코덱스 #578 P2).
                     try:
                         item = self.vm.relabel_confirmed_raw(
-                            ident, existing.name, note="",
+                            ident, existing.name, note="", sheets=selected_sheets,
                             basis=confirm_basis([bound_state(key, existing)]),
                         )
                     except StaleConfirmError:
@@ -531,12 +597,17 @@ class PoolController:
                         "confirm_text": (
                             f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
                             f"({display_reference(existing)}).\n"
+                            f"같은 등록을 유지하고 이름·메모·사용할 시트를 갱신합니다: '{name}'."
+                            f"\n사용할 시트: {', '.join(selected_sheets or [])}"
+                            if changes_sheets else
+                            f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
+                            f"({display_reference(existing)}).\n"
                             f"같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'."
                         ),
                     }
                 try:
                     item = self.vm.relabel_confirmed_raw(
-                        ident, name, note=note, basis=p.get("basis")
+                        ident, name, note=note, sheets=selected_sheets, basis=p.get("basis")
                     )
                 except StaleConfirmError:
                     self.vm.refresh()
@@ -550,14 +621,14 @@ class PoolController:
                 # 빈 이름은 링1 이 먼저 거절한다 — 그 거절에 파일을 열 까닭이 없다.
                 if name:
                     try:
-                        sheets = list_sqlite_sheets(db)
+                        sheets = available_sheets if available_sheets is not None else list_sqlite_sheets(db)
                     except (FileNotFoundError, RuntimeError) as exc:
                         # DB 파일 문제는 「항목이 사라졌다」(아래 stale 경로)와 다른 사실이다
                         # — 어댑터 문장 그대로 재진술한다.
                         self._set_result(str(exc), "danger")
                         return {"ok": False, "error": str(exc)}
                 item = self.vm.register_pclm(
-                    name, db, view=view, sheets=sheets, note=note
+                    name, db, view=view, sheets=sheets, selected_sheets=selected_sheets, note=note
                 )
         except FileNotFoundError:
             return self._stale_item_result(name)
@@ -589,7 +660,11 @@ class PoolController:
         """
         key = p["key"]
         path = p.get("path") or ""
-        sheet = p.get("sheet") or None
+        try:
+            sheet, sheets = self._registration_sheets(p)
+        except Exception as exc:  # noqa: BLE001 — 파일 검사 실패를 재진술
+            self._set_result(str(exc), "danger")
+            return {"ok": False, "error": str(exc)}
         note = p.get("note") or ""
         name = (p.get("name") or "").strip()
         if not path:
@@ -619,12 +694,13 @@ class PoolController:
                 "confirm_text": (
                     f"'{item.name}' 의 참조를 새 파일로 바꿉니다.\n"
                     f"기존: {display_reference(item)}\n새 파일: {path}"
+                    f"{(' · ' + ', '.join(sheets)) if sheets else ''}"
                     f"{kind_transition_clause(item)}{rename_clause}"
                 ),
             }
         try:
             updated = self.vm.relink_confirmed(
-                key, path, sheet=sheet, note=note, name=name, basis=p.get("basis")
+                key, path, sheet=sheet, sheets=sheets, note=note, name=name, basis=p.get("basis")
             )
         except StaleConfirmError:
             self.vm.refresh()   # 화면을 실상에 — 재확인의 근거는 새 상태다

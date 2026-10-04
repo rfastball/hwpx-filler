@@ -60,6 +60,7 @@ __all__ = (
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
+    "restore_tutorial_preferences",
     "load_tutorial_progress",
     "save_tutorial_progress",
     "load_job_collapsed_groups",
@@ -214,6 +215,19 @@ def _mutate(mutator) -> None:
 def _save_key(key: str, value) -> None:
     """단일 키 영속 — RMW·원자성·재시도 계약은 :func:`_mutate` 공용 몸통이 진다."""
     _mutate(lambda data: data.__setitem__(key, value))
+
+
+def restore_tutorial_preferences(data_source: dict | None, output_directory: str) -> None:
+    """Restore only practice's remembered mount/output, preserving unrelated preferences."""
+    def restore(data: dict) -> None:
+        for key, value in (("last_data_source", data_source),
+                           ("last_output_directory", output_directory)):
+            if value:
+                data[key] = value
+            else:
+                data.pop(key, None)
+
+    _mutate(restore)
 
 
 def _save_nested(top_key: str, sub_key: str, sub_value) -> None:
@@ -561,6 +575,31 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
         data["tutorial"] = bucket
 
     _mutate(mutate)
+
+
+def load_tutorial_lessons() -> dict:
+    """Read the new curriculum independently of frozen T0–T17 progress."""
+    bucket = _read().get("tutorial")
+    raw = bucket.get("lessons") if isinstance(bucket, dict) else None
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_tutorial_lessons(value: dict) -> None:
+    if not isinstance(value, dict) or value.get("version") != 1:
+        raise ValueError("학습 기록 형식이 올바르지 않습니다.")
+    _save_nested("tutorial", "lessons", value)
+
+
+def load_tutorial_practice() -> dict:
+    bucket = _read().get("tutorial")
+    raw = bucket.get("practice") if isinstance(bucket, dict) else None
+    return raw if isinstance(raw, dict) else {"version": 1, "entries": []}
+
+
+def save_tutorial_practice(value: dict) -> None:
+    if not isinstance(value, dict) or value.get("version") != 1 or not isinstance(value.get("entries"), list):
+        raise ValueError("연습 파일 기록 형식이 올바르지 않습니다.")
+    _save_nested("tutorial", "practice", value)
 
 
 # 예제 세트 설치 manifest(#891 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``

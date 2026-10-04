@@ -75,6 +75,9 @@ def test_register_validation_is_fail_closed(tmp_path):
         vm.register_nara("긴기간", "202601010000", "202607010000")
     with pytest.raises(ValueError):
         vm.register_nara("형식오류", "2026-06-01 00", "202606302359")
+    for sheets in ([], ["첫째", "첫째"], ["둘째"], ["첫째", ""]):
+        with pytest.raises(ValueError):
+            vm.register_excel("시트 선언", "/x.xlsx", sheet="첫째", sheets=sheets)
     assert vm.is_empty()  # 거절된 등록은 흔적 없음
 
 

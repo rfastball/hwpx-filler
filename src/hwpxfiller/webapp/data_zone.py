@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from ..domain.dataset_reference import excel_identity, pclm_identity
+from ..domain.dataset_reference import excel_identity, pclm_identity, reference_sheets, filters_for_sheet
+from ..application.dataset_pool import DatasetPoolRow
 from ..domain.jamo import jamo_find
 from ..external.dataset_store import DatasetPoolRegistry
 from ..viewmodel.filter_state import (
@@ -371,6 +372,25 @@ class JobDataSession:
             record_count=len(self.records),
         )
 
+    def sheet_tabs(self) -> list[dict]:
+        """현재 마운트한 등록 하나가 선언한 시트만 투영한다."""
+        if not self.pool_key or not self.path:
+            return []
+        try:
+            item = self.pool_registry.load(self.pool_key)
+        except (FileNotFoundError, ValueError):
+            return []
+        row = DatasetPoolRow.from_item(self.pool_key, item)
+        # 재연결한 등록과 아직 열린 옛 파일을 한 탭 띠에 섞지 않는다.
+        if item.kind != (self.kind or "excel") or excel_identity(row.locate_path) != excel_identity(self.path):
+            return []
+        reason = row.select_block_reason()
+        return [
+            {"key": self.pool_key, "sheet": sheet, "active": sheet == self.sheet,
+             "selectable": not reason, "reason": reason}
+            for sheet in reference_sheets(item) if sheet
+        ]
+
     def new_work_handoff(self) -> "tuple[dict, str]":
         """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.
 
@@ -563,7 +583,7 @@ class JobDataSession:
         범위 초안이 열려 있으면 커밋된 필터에도 같은 정의를 심는다(정의는 데이터 하나에
         하나다). 거기서 꺼지는 이름은 이름 바꾸기 승계표 밖에서 사라진 것뿐이다.
         """
-        self.pool_registry.set_filters(self._preset_key, trial.presets)
+        self.pool_registry.set_filters(self._preset_key, trial.presets, sheet=self.sheet)
         self._zone_set_flt(trial)
         if self.range_draft is not None and self.filter is not None:
             self.filter.set_presets(trial.presets, renamed=renamed)
@@ -706,7 +726,7 @@ class JobDataSession:
         try:
             self._preset_key = self._resolve_preset_home()
             if self._preset_key:
-                model.set_presets(self.pool_registry.load(self._preset_key).filters)
+                model.set_presets(filters_for_sheet(self.pool_registry.load(self._preset_key), self.sheet))
         except (FileNotFoundError, ValueError):
             self._preset_key = ""
 

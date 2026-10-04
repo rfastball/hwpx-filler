@@ -18,6 +18,7 @@ import ctypes
 import sys
 import threading
 from ctypes import wintypes
+from pathlib import Path
 from typing import Callable
 
 from .debug import log
@@ -147,18 +148,23 @@ def _owner_hwnd(owner_title: "str | None"):
 
 
 def open_file_dialog(
-    filters: "list[tuple[str, str]]", owner_title: "str | None" = None
+    filters: "list[tuple[str, str]]", owner_title: "str | None" = None,
+    *, initial_path: str = "",
 ) -> "str | None":
     """네이티브 열기 다이얼로그. 선택 경로 또는 None(취소). ``filters``=(설명, 패턴) 쌍."""
     _require_windows()
 
     def call() -> "str | None":
         buf = ctypes.create_unicode_buffer(_MAX)
+        if initial_path:
+            buf.value = str(Path(initial_path))
         ofn = _OPENFILENAMEW()
         ofn.lStructSize = ctypes.sizeof(ofn)
         ofn.hwndOwner = _owner_hwnd(owner_title)
         ofn.lpstrFilter = _filter_block(filters)
         ofn.lpstrFile = ctypes.cast(buf, wintypes.LPWSTR)
+        if initial_path:
+            ofn.lpstrInitialDir = str(Path(initial_path).parent)
         ofn.nMaxFile = _MAX
         ofn.Flags = (
             OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST

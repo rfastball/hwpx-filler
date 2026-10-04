@@ -234,8 +234,9 @@ test("UX-05: a push that repeats the same trial revision keeps the trial viewer 
 
 /* ---------- UX-04 키보드 모델 — 실제 커밋 위에서 핸들러를 React 위임 차례(대상 → 조상)대로 부른다 ---------- */
 const propsOf = (node) => node[Object.keys(node).find((key) => key.startsWith("__reactProps$"))] || {};
-/** 사건 하나를 대상에서 조상 쪽으로 흘린다. 멈추면 선다. 초점이 옮겨지면 새 초점 원소에서 onFocus 를 흘린다(React 의 focusin). */
-function fire(env, target, type, init = {}) {
+/** 사건 하나를 대상에서 조상 쪽으로 흘린다. 멈추면 선다. 초점이 옮겨지면 새 초점 원소에서 onFocus 를 흘린다(React 의 focusin).
+ *  `focusEvents: false` 는 창이 OS 초점을 쥐지 않은 때다 — 브라우저는 activeElement 만 옮기고 focus 사건은 창이 초점을 받을 때로 미룬다. */
+function fire(env, target, type, init = {}, { focusEvents = true } = {}) {
   const handler = { keydown: "onKeyDown", click: "onClick", contextmenu: "onContextMenu", focus: "onFocus", mouseenter: "onMouseEnter", mouseleave: "onMouseLeave" }[type];
   let stopped = false;
   let prevented = false;
@@ -246,7 +247,7 @@ function fire(env, target, type, init = {}) {
       clientX: 0, clientY: 0, nativeEvent: { isComposing: false }, preventDefault() { prevented = true; }, stopPropagation() { stopped = true; }, ...init }));
   }
   const after = env.document.activeElement;
-  if (type !== "focus" && after !== before && after?.parentNode) fire(env, after, "focus");
+  if (focusEvents && type !== "focus" && after !== before && after?.parentNode) fire(env, after, "focus");
   return { prevented, stopped };
 }
 const press = (env, key, init = {}) => fire(env, env.document.activeElement, "keydown", { key, ...init });
@@ -725,6 +726,26 @@ const spineTab = () => ({ ...hwpxTab(), trial_result: null, trial_state: "curren
       { name: "담당자", count: 1, occurrences: [{ entry: SECTION, occurrence: 4, paragraph: 9, order: 7, slot_id: null, option_id: null, context: "[담당자]" }] }] } });
 const labelOf = (node) => node.getAttribute("aria-label");
 const childItems = (node) => [...(node.querySelector('[role="group"]')?.childNodes || [])].filter((child) => child.getAttribute?.("role") === "treeitem");
+
+test("UX-09 APG tabs (outline): an arrow selects the view it moves to even when no focus event arrives (window without OS focus)", async () => {
+  const env = await boot({ ...hwpxTab(), trial_result: null, trial_state: "untried" });
+  const tab = (view) => env.container.querySelector(`#authoring-outline-${view}`);
+  const panel = (view) => env.container.querySelector(`#authoring-outline-${view}-panel`);
+  tab("structure").focus();
+  // 창이 OS 초점을 잃으면 element.focus() 는 activeElement 만 옮기고 focus 사건을 미룬다 — 자동 활성화가 그 사건에 기대면 보기가 그대로다.
+  const unfocusedWindow = (key) => fire(env, env.document.activeElement, "keydown", { key }, { focusEvents: false });
+  unfocusedWindow("ArrowRight");
+  await settle();
+  assert.equal(env.document.activeElement, tab("fields"));
+  assert.equal(tab("fields").getAttribute("aria-selected"), "true", "→ 가 옮긴 탭이 곧바로 고른 보기다(APG 자동 활성화)");
+  assert.ok(panel("structure").hasAttribute("hidden") && !panel("fields").hasAttribute("hidden"));
+  assert.equal(fieldRow(env, "필드 · 이름").getAttribute("tabindex"), "0", "Tab 의 입구는 보이는 보기의 tree 다");
+  unfocusedWindow("Home");
+  await settle();
+  assert.equal(tab("structure").getAttribute("aria-selected"), "true");
+  assert.ok(panel("fields").hasAttribute("hidden"));
+  env.root.unmount();
+});
 
 test("UX-09: the structure view is a document spine — slots hold options, uses stand where they are, in Python's order", async () => {
   const env = await boot(spineTab());

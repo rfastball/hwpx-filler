@@ -88,37 +88,14 @@ def test_failed_durable_command_does_not_start_seal():
     assert t.next_state.state == SETTLED_CURRENT
 
 
-# ─── coalescing(타이머 없이 플래그로) ────────────────────────────────────────────────────────
-def test_basis_change_while_checking_coalesces_without_second_seal():
-    checking = AutomaticSealOrchestration(state=CHECKING)
-    t = on_durable_command_settled(
-        checking, durable_command_succeeded=True, effective_basis_changed=True
-    )
-    assert t.should_start_seal is False  # 두 번째 seal 을 동시에 띄우지 않는다
-    assert t.next_state.state == CHECKING
-    assert t.next_state.coalescing_pending is True
-
-
-def test_coalesced_change_resumed_after_seal_settles():
-    checking = AutomaticSealOrchestration(state=CHECKING, coalescing_pending=True)
-    t = on_seal_settled(
-        checking, seal_succeeded=True, resulting_currentness_current=True
-    )
-    # 대기 중이던 사용자 변경을 이어 검사한다(사용자 변경 유래 → 무한 자동 재시도 아님).
-    assert t.should_start_seal is True
-    assert t.next_state.state == CHECKING
-    assert t.next_state.coalescing_pending is False
-
-
 # ─── seal 성공/실패 전이 ────────────────────────────────────────────────────────────────────
 def test_seal_success_current_settles():
     checking = AutomaticSealOrchestration(state=CHECKING, consecutive_seal_failures=2)
     t = on_seal_settled(
         checking, seal_succeeded=True, resulting_currentness_current=True
     )
-    assert t.should_start_seal is False
-    assert t.next_state.state == SETTLED_CURRENT
-    assert t.next_state.consecutive_seal_failures == 0  # 성공은 실패 수를 reset
+    assert t.state == SETTLED_CURRENT
+    assert t.consecutive_seal_failures == 0  # 성공은 실패 수를 reset
 
 
 def test_seal_success_but_still_stale_goes_stale_without_retry():
@@ -126,8 +103,7 @@ def test_seal_success_but_still_stale_goes_stale_without_retry():
     t = on_seal_settled(
         checking, seal_succeeded=True, resulting_currentness_current=False
     )
-    assert t.should_start_seal is False  # 자동 재시도 안 함
-    assert t.next_state.state == STALE
+    assert t.state == STALE  # 자동 재시도 안 함
 
 
 def test_seal_settled_when_not_checking_is_noop():
@@ -135,8 +111,7 @@ def test_seal_settled_when_not_checking_is_noop():
     t = on_seal_settled(
         settled, seal_succeeded=True, resulting_currentness_current=True
     )
-    assert t.next_state.state == SETTLED_CURRENT
-    assert t.should_start_seal is False
+    assert t == settled
 
 
 # ─── 실패 뒤 무한 재시도 아님 → 상한 도달 시 수동 복구 ───────────────────────────────────────
@@ -145,9 +120,8 @@ def test_failure_below_cap_goes_stale_no_auto_retry():
     t = on_seal_settled(
         checking, seal_succeeded=False, resulting_currentness_current=False
     )
-    assert t.should_start_seal is False
-    assert t.next_state.state == STALE
-    assert t.next_state.consecutive_seal_failures == 1
+    assert t.state == STALE
+    assert t.consecutive_seal_failures == 1
 
 
 def test_failures_reaching_cap_require_manual_recovery():
@@ -157,9 +131,8 @@ def test_failures_reaching_cap_require_manual_recovery():
     t = on_seal_settled(
         state, seal_succeeded=False, resulting_currentness_current=False
     )
-    assert t.next_state.state == FAILED
-    assert t.next_state.requires_manual_recovery is True
-    assert t.should_start_seal is False
+    assert t.state == FAILED
+    assert t.requires_manual_recovery is True
 
 
 def test_failed_state_does_not_auto_restart_on_basis_change():

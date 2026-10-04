@@ -22,7 +22,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import { SegmentView } from "./segment_view.ts";
 import {
-  TARGET_FONT_FIELD, checked, mapField, workbenchRevision, workbenchServerValues, workbenchSession,
+  TARGET_FONT_FIELD, checked, mapField, workbenchServerValues, workbenchSession,
 } from "./workbench_state.ts";
 import {
   emptyDraft, ingestSnapshot, issueToken, markField, settle, typeInto, valueOf,
@@ -83,7 +83,6 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     if (current === null) return;
     draft = ingestSnapshot(draft, {
       session: workbenchSession(current),
-      revision: workbenchRevision(current),
       values: workbenchServerValues(current),
     });
     emitDraft();

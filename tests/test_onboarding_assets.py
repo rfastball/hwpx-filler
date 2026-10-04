@@ -1,6 +1,6 @@
 """온보딩 예제 자산 계약 — `https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md` §2 의 검사 가능한 얼굴.
 
-지키는 것은 여섯이다.
+동결된 옛 생성 자산에 대해 지키는 것은 여섯이다. 새 매뉴얼 기반 자산의 시트 계약은 마지막 테스트가 검사한다.
 
 1. **재생성 결정론** — `examples/onboarding/make_assets.py` 를 임시 폴더에 다시 돌리면
    커밋된 자산과 **bytes 가 같다**. 손편집이 끼면 여기서 갈라진다.
@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 
 from hwpxfiller.application.field_binding_input import (
     LegacyFieldBindingEntry,
@@ -51,6 +52,7 @@ from hwpxfiller.external.template_inspection import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ASSETS = REPO_ROOT / "examples" / "onboarding"
 SCRIPT = ASSETS / "make_assets.py"
+TUTORIAL_ASSETS = REPO_ROOT / "examples" / "tutorial"
 
 #: §2.3 의 CSV 열 8개 — 순서까지 계약이다.
 HEADER = [
@@ -362,3 +364,183 @@ def test_no_real_world_identifier_survives_in_the_assets(needle: str) -> None:
     """원형 실문서의 식별 가능한 값이 자산 어디에도 없다(§2.1, 예외 없음)."""
     hits = [where for where, text in _asset_texts().items() if needle in text]
     assert hits == [], f"금지 문자열 「{needle}」 이 남아 있다: {hits}"
+
+
+def test_shipped_manual_workbook_has_the_practice_rows_without_blanks() -> None:
+    """새 튜토리얼의 시트·행과 별도 결측 연습본의 필요성을 원본으로 확인한다."""
+    workbook = load_workbook(TUTORIAL_ASSETS / "공고목록.xlsx", read_only=True, data_only=True)
+    try:
+        assert workbook.sheetnames == ["공고", "계약"]
+        for name, expected_rows in (("공고", 12), ("계약", 6)):
+            rows = list(workbook[name].values)
+            assert len(rows) == expected_rows + 1  # 헤더 한 행
+            assert all(value is not None and str(value).strip() for row in rows for value in row)
+    finally:
+        workbook.close()
+
+
+def test_practice_cleanup_preserves_changed_and_referenced_files(tmp_path: Path) -> None:
+    """A fresh batch is independent; cleanup only removes intact, unreferenced copies."""
+    from types import SimpleNamespace
+
+    from hwpxfiller.external.tutorial_practice import PracticeFiles
+
+    jobs = SimpleNamespace(list_jobs=lambda: [])
+    practice = PracticeFiles(tmp_path / "templates", tmp_path / "home", jobs)
+    first = practice.prepare()
+    second = practice.prepare(derived="blank")
+    assert practice.latest("공고목록.xlsx") == second["entries"][0]
+    assert practice.latest("없는 예제.xlsx") is None
+    assert {entry["name"] for entry in first["entries"]} == {
+        "물품 구매입찰 공고.hwpx", "낙찰자 선정 및 계약체결 안내.txt",
+        "계약방법 결정 및 구매추진 안내.txt", "공고목록.xlsx",
+    }
+    assert second["entries"][0]["path"] != first["entries"][-1]["path"]
+    blank = load_workbook(second["entries"][0]["path"], read_only=True, data_only=True)
+    try:
+        assert blank["계약"]["K2"].value is None
+    finally:
+        blank.close()
+
+    edited = Path(first["entries"][1]["path"])
+    edited.write_text(edited.read_text(encoding="utf-8") + "\n사용자 편집", encoding="utf-8")
+    linked = Path(first["entries"][0]["path"])
+    jobs.list_jobs = lambda: [SimpleNamespace(template_path=str(linked), data_path="")]
+    preview = practice.cleanup_preview()
+    rows = {row["path"]: row for row in preview["rows"]}
+    assert not rows[str(edited)]["delete"] and "수정" in rows[str(edited)]["reason"]
+    assert not rows[str(linked)]["delete"] and "참조" in rows[str(linked)]["reason"]
+    assert preview["delete_count"] == 3
+    assert practice.cleanup(preview["token"])["removed"] == 3
+    assert edited.is_file() and linked.is_file()
+
+
+def test_practice_cleanup_fails_closed_on_changed_preview_or_escape(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.external import settings
+    from hwpxfiller.external.tutorial_practice import PracticeFiles
+
+    practice = PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                             SimpleNamespace(list_jobs=lambda: []))
+    batch = practice.prepare()
+    preview = practice.cleanup_preview()
+    changed = Path(batch["entries"][0]["path"])
+    changed.write_bytes(changed.read_bytes() + b"changed")
+    with pytest.raises(ValueError, match="상태가 바뀌었습니다"):
+        practice.cleanup(preview["token"])
+    assert all(Path(entry["path"]).exists() for entry in batch["entries"])
+
+    outside = tmp_path / "keep.txt"
+    outside.write_text("keep", encoding="utf-8")
+    manifest = settings.load_tutorial_practice()
+    manifest["entries"].append({"name": "낙찰자 선정 및 계약체결 안내.txt",
+                                "path": str(outside), "sha256": "irrelevant", "batch": "forged"})
+    settings.save_tutorial_practice(manifest)
+    forged = next(row for row in practice.cleanup_preview()["rows"] if row["path"] == str(outside))
+    assert not forged["delete"]
+    assert outside.read_text(encoding="utf-8") == "keep"
+
+
+def test_practice_entry_validation_rejects_missing_malformed_and_parent_escape(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.external.tutorial_practice import PracticeFiles
+
+    practice = PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                             SimpleNamespace(list_jobs=lambda: []))
+    entry = practice.prepare()["entries"][0]
+    assert practice.validate(entry) == (True, "")
+    assert not practice.validate({"name": entry["name"]})[0]
+
+    copied = Path(entry["path"])
+    copied.unlink()
+    ready, reason = practice.validate(entry)
+    assert not ready and "없거나 이동" in reason
+
+    outside = tmp_path / "outside.hwpx"
+    outside.write_bytes(b"user document")
+    forged = {**entry, "path": str(practice.template_root / ".." / outside.name)}
+    ready, reason = practice.validate(forged)
+    assert not ready and "다른 위치" in reason
+    assert outside.read_bytes() == b"user document"
+
+
+def test_practice_prepare_fails_closed_and_rolls_back_partial_copies(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.external import tutorial_practice
+
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                                               SimpleNamespace(list_jobs=lambda: []))
+    with pytest.raises(ValueError, match="알 수 없는"):
+        practice.prepare(derived="user-file")
+
+    source = tmp_path / "bundle"
+    source.mkdir()
+    monkeypatch.setattr(tutorial_practice, "asset_root", lambda: source)
+    with pytest.raises(FileNotFoundError, match="동봉 예제"):
+        practice.prepare()
+    assert not practice.template_root.exists() and not practice.data_root.exists()
+
+    for name in tutorial_practice.ORIGINALS:
+        shutil.copyfile(TUTORIAL_ASSETS / name, source / name)
+    monkeypatch.setattr(tutorial_practice.settings, "save_tutorial_practice",
+                        lambda _value: (_ for _ in ()).throw(OSError("settings disk failed")))
+    with pytest.raises(OSError, match="settings disk failed"):
+        practice.prepare()
+    assert not list(practice.template_root.iterdir())
+    assert not list(practice.data_root.iterdir())
+
+
+def test_practice_cleanup_stops_for_unknown_registry_or_changed_preflight(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.external import tutorial_practice
+
+    jobs = SimpleNamespace(list_jobs=lambda: [])
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home", jobs)
+    batch = practice.prepare()
+    paths = [Path(entry["path"]) for entry in batch["entries"]]
+    jobs.list_jobs = lambda: (_ for _ in ()).throw(OSError("job registry unreadable"))
+    with pytest.raises(OSError, match="job registry unreadable"):
+        practice.cleanup_preview()
+    assert all(path.exists() for path in paths)
+
+    jobs.list_jobs = lambda: []
+    preview = practice.cleanup_preview()
+    validate = practice.validate
+    calls = 0
+
+    def changes_after_preview(entry):
+        nonlocal calls
+        calls += 1
+        return (False, "연습 파일이 수정됐습니다.") if calls == 5 else validate(entry)
+
+    monkeypatch.setattr(practice, "validate", changes_after_preview)
+    with pytest.raises(ValueError, match="상태가 바뀌었습니다"):
+        practice.cleanup(preview["token"])
+    assert all(path.exists() for path in paths)
+
+
+def test_practice_manifest_corruption_blocks_cleanup_and_frozen_assets_use_bundle(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.external import tutorial_practice
+
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                                               SimpleNamespace(list_jobs=lambda: []))
+    monkeypatch.setattr(tutorial_practice.settings, "load_tutorial_practice",
+                        lambda: {"version": 1, "entries": [None]})
+    assert practice.latest("공고목록.xlsx") is None  # 손상 항목을 사본으로 오인하지 않는다.
+    with pytest.raises(ValueError, match="손상"):
+        practice.cleanup_preview()
+    monkeypatch.setattr(tutorial_practice.settings, "load_tutorial_practice",
+                        lambda: {"version": 99, "entries": []})
+    with pytest.raises(ValueError, match="기록"):
+        practice.prepare()
+
+    bundle = tmp_path / "frozen"
+    monkeypatch.setattr(tutorial_practice.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(tutorial_practice.sys, "_MEIPASS", str(bundle), raising=False)
+    assert tutorial_practice.asset_root() == bundle / "examples" / "tutorial"

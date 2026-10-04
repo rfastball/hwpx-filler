@@ -25,7 +25,7 @@ _NATIVE_REASON = (
 
 @pytest.mark.native
 @pytest.mark.skipif(_NATIVE_GATE, reason=_NATIVE_REASON)
-def test_dialog_sta_probe_distinguishes_selection_cancel_and_error() -> None:
+def test_dialog_sta_probe_distinguishes_selection_cancel_and_error(monkeypatch) -> None:
     """실 대화상자를 띄우지 않고 실제 STA 경계에서 3가지 공용 API 결과를 왕복한다."""
     selected = dialogs._in_sta_thread(
         lambda: dialogs._common_dialog_result(1, r"C:\문서\선택.hwpx", 0)
@@ -41,6 +41,17 @@ def test_dialog_sta_probe_distinguishes_selection_cancel_and_error() -> None:
             lambda: dialogs._common_dialog_result(0, "", 0x3002)
         )
     assert raised.value.errno == 0x3002
+    offered = []
+
+    def choose(pointer):
+        request = ctypes.cast(pointer, ctypes.POINTER(dialogs._OPENFILENAMEW)).contents
+        offered.append((request.lpstrInitialDir, request.lpstrFile))
+        return 1
+
+    monkeypatch.setattr(ctypes.windll.comdlg32, "GetOpenFileNameW", choose)
+    initial = r"C:\연습\공고목록.xlsx"
+    assert dialogs.open_file_dialog([("Excel", "*.xlsx")], initial_path=initial) == initial
+    assert offered == [(r"C:\연습", initial)]
 
 
 @pytest.mark.native

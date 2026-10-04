@@ -39,7 +39,7 @@ from ..application.generation_delivery import (
     DeliveryPlanContextError,
 )
 from ..application.run_delivery_intent import OVERWRITE_EXPLICIT, RunDeliveryIntent
-from ..domain.job import Job
+from ..domain.job import JOB_MAPPING_AUTHORITY, Job
 from ..domain.mapping import MappingProfile
 from .current_execution_preparation import (
     DELIVERY_BLOCKER_PHRASES,
@@ -124,6 +124,7 @@ def run_headless_generation(
             template_path=str(Path(template_path).resolve()),
             mapping=mapping,
             filename_pattern=filename_pattern,
+            binding_authority=JOB_MAPPING_AUTHORITY,
         )
     )
 
@@ -136,8 +137,6 @@ def run_headless_generation(
         )
 
     seal = SealExecutionPlanService(registry, root=root, clock=clock)
-    # 편집기 저장이 하던 「저장한 연결을 최초 판본으로 들이기」 — 착석 자동 확인과 같은 동사.
-    seal.adopt_saved_mapping_if_unbound(HEADLESS_WORK_NAME, uuid.uuid4().hex)
     response = seal.seal_execution_plan(HEADLESS_WORK_NAME, uuid.uuid4().hex)
     fresh = response.fresh_observation
     outcome = response.command_outcome

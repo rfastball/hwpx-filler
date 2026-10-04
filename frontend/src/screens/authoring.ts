@@ -563,7 +563,7 @@ function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj
             // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
-            updateLintpad(handle, { spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
+            updateLintpad(handle, { sourceDoc: analysis.source_text, spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
               regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
           },
         };
@@ -1224,15 +1224,21 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
   const structureNodes = spineNodes(spine, !filtering);
 
   const tabButton = (key: "structure" | "fields", id: string, label: ReactNode[]) => h("button", { key, type: "button", role: "tab", id, className: "authoring-outline-tab",
-    tabIndex: tab === key ? 0 : -1, "aria-selected": tab === key, "aria-controls": `${id}-panel`, onClick: () => setTab(key), onFocus: () => setTab(key) }, ...label);
+    tabIndex: tab === key ? 0 : -1, "aria-selected": tab === key, "aria-controls": `${id}-panel`, "data-outline-view": key,
+    onClick: () => setTab(key), onFocus: () => setTab(key) }, ...label);
   const tree = (key: "structure" | "fields", labelledBy: string, nodes: TreeNode[], path: string[]) => nodes.length > 0 && h(OutlineTree, { key: `${item.id}:${key}:${filtering ? "filter" : "all"}`,
     labelledBy, nodes, current: path, inactive: tab !== key, onSelect, onMenu, onHighlight: highlight });
   return h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: onContext },
     h("div", { className: "authoring-outline-head" },
       sectionLabel("템플릿 구조", { id: "authoring-outline-title" }),
-      // 두 보기는 한 쌍의 APG tabs 다(자동 활성화 — ←→ 로 옮기면 그 보기가 선다).
+      // 두 보기는 한 쌍의 APG tabs 다(자동 활성화 — ←→ 로 옮기면 그 보기가 선다). 화살표가 옮긴 탭은 키 처리 안에서 고른다 —
+      // focus 사건은 창이 OS 초점을 쥘 때만 오므로(배경 창이면 activeElement 만 옮는다) 활성화를 그 사건에 맡기지 않는다.
       h("div", { className: "authoring-outline-tabs", role: "tablist", "aria-labelledby": "authoring-outline-title",
-        onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal"); } },
+        onKeyDown: (event: any) => {
+          if (!roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal")) return;
+          const moved = event.currentTarget.ownerDocument?.activeElement?.getAttribute?.("data-outline-view");
+          if (moved === "structure" || moved === "fields") setTab(moved);
+        } },
         tabButton("structure", "authoring-outline-structure", ["구조"]),
         tabButton("fields", "authoring-outline-fields", ["필드", " ", h("span", { key: "count", className: "authoring-tab-count" }, String(fields.length))])),
       h("label", { className: "authoring-filter" }, icon("search"),
@@ -1592,11 +1598,11 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       ...(view.impact?.jobs || []).map((job: Obj) => { const blocked = view.impact.save_required || view.impact.usable === false; return h("div", { key: job.name }, h("strong", null, job.name),
         job.change_status && h("p", null, TPL_STATUS_COPY[job.change_status] || job.change_status),
         h("p", null, `추가 필드: ${(job.added_fields || []).join(", ") || "없음"} · 없어진 필드: ${(job.removed_fields || job.unmapped_fields || []).join(", ") || "없음"}`),
-        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
+        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { "data-guide": "apply-change", disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
         blocked && job.blocked_reason && h("p", { className: "authoring-reason" }, job.blocked_reason)); }),
       view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
         ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
-        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { disabled: !view.jobApply.change_token }))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { "data-guide": "apply-change", disabled: !view.jobApply.change_token }))));
     const fix = key === "problems" && view.preview ? problemFix(item.problems, view.command) : null;
     // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
     // 문제 한 건은 행이다(UX-09): 심각도 글자 칩 · 종류 · 설명 · 흐린 대상. 이동하는 다음 행동(「원문으로 이동」)은 그 행 자체이고
@@ -1712,7 +1718,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
         iconButton("close", `${tab.name} 닫기`, (event: any) => { event.stopPropagation(); closeTab(tab.id); }, { tabIndex: -1 }));
     })),
       // 머리 띠의 주 행동은 저장이다 — 저장할 변경이 있거나 새 템플릿이라 저장이 필요할 때만 채움으로 선다.
-      button("저장", act(() => controller.save(), "save"), { disabled: !item,
+      button("저장", act(() => controller.save(), "save"), { "data-guide": "save-template", disabled: !item,
         className: item && (item.dirty || item.save_as_required || controller.pending(item.id)) ? "btn primary" : "btn quiet" })),
     // 오류 띠(§10·UX-04): 첫 문장만 보이고 기술 세부는 「자세히」 안에 둔다. 사용자가 닫거나 같은 종류의 작업이 성공해야 걷힌다.
     errorView && h("div", { className: "authoring-error" },

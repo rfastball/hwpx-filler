@@ -4,7 +4,7 @@
  *
  * 이 컴포넌트는 화면이 없다(`null` 렌더). 소유하는 것은 수명주기 둘뿐이다:
  *
- * - **셸 리스너 부착/해제** — 탭 클릭·도구 클릭·개인화/테마 라벨 동기·비동기 백스톱.
+ * - **셸 리스너 부착/해제** — 탭 클릭·도구 클릭·비동기 백스톱.
  *   대상·핸들러는 집행 adapter(shell/app.ts)가 구성 시 캡처해 서술로 넘긴다(`attachments`) —
  *   판정·문안·DOM 기입은 전부 그쪽 소유이고, 여기는 부착과 **대칭 해제**만 진다(재초기화가
  *   리스너를 복제하지 않는다는 불변식의 구조적 거처 — Popover.documentAttachments 를
@@ -43,11 +43,6 @@ export type ShellHostPorts = {
   nav: { markReady(): void };
   /** 셸 리스너 전수 — adapter 구성 시 캡처(NodeList 캡처 시점 보존, 패킷 §1 ③). */
   attachments: readonly ShellAttachment[];
-  /** 부착 직후의 따라잡기 — 부착이 비동기라 **부착 전에 지나간 사건**(부팅 preferences
-   *  주입의 라벨 동기 등)을 현재 상태 재판독으로 만회한다. 선판정+이벤트와 같은 규약의
-   *  사건판이다: 사건이 먼저면 여기가, 나중이면 리스너가 잇는다 — 어느 쪽이든 창이 없다
-   *  (#74 라벨 어긋남 결함류의 구조 폐쇄). */
-  catchUp: ReadonlyArray<() => void>;
   boot: {
     /** ready 사건의 대상 — 제품은 window, 테스트는 대역. */
     win: ShellAttachment["target"];
@@ -64,7 +59,6 @@ export function attachShell(ports: ShellHostPorts): () => void {
   for (const attachment of ports.attachments) {
     attachment.target.addEventListener(attachment.type, attachment.handler);
   }
-  for (const step of ports.catchUp) step();
   const onHostReady = (): void => {
     ports.nav.markReady();
     for (const step of ports.boot.initSequence) step();

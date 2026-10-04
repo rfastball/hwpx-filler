@@ -35,19 +35,6 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact Node and npm
-        shell: pwsh
-        run: |
-          $actualNode = (node.exe --version).Trim()
-          $actualNpm = (npm.cmd --version).Trim()
-          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
-          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
-      - name: Install locked frontend toolchain
-        run: npm.cmd ci
-      - name: Build and verify sealed frontend
-        run: |
-          npm.cmd run build
-          npm.cmd run verify:web
       - name: Validate release version
         run: uv run python scripts/check_release_version.py $env:RELEASE_TAG
       - name: Determine prerelease flag
@@ -98,7 +85,7 @@ jobs:
           if-no-files-found: warn
       - name: Build portable applications
         shell: pwsh
-        run: .\build.ps1
+        run: .\packaging\build.ps1 -Target filler -WebMode VerifyExisting
       - name: Validate signing configuration
         shell: pwsh
         run: |

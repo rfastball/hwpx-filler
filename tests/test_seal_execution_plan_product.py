@@ -337,9 +337,15 @@ def test_route_failure_propagates_no_terminal(tmp_path) -> None:
 def test_product_reaches_real_s5_10_service_and_seals(tmp_path) -> None:
     # durable store 가 없다 — Product 는 실 S5-10 orchestration 을 타고 sealed current-value 를 낸다.
     h = _product(tmp_path)
-    outcome = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
+    response = h.product.seal_execution_plan(_pcmd("r1"))
+    outcome = response.command_outcome
     assert isinstance(outcome, ExecutionPlanSealedProductOutcome)
     assert outcome.execution_basis_digest  # nonempty basis identity
+    assert isinstance(response.fresh_observation, CurrentSealedPlanObservation)
+    current = response.fresh_observation.sealed_plan_value
+    assert outcome.plan_payload.active_field_requirements == current.active_field_requirements
+    assert outcome.plan_payload.ordered_operations == current.ordered_operations
+    assert outcome.plan_payload.execution_basis.template == current.exact_template_execution_basis
 
 
 def test_product_contract_vocabulary_is_closed() -> None:

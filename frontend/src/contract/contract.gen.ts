@@ -183,7 +183,7 @@ export const SCREEN_ACTIONS = {
     filter_panel: { required: ["column"], optional: [] },
     count_filter_state: { required: ["state"], optional: [] },
     list_filter_columns: { required: [], optional: ["query"] },
-    load_pool: { required: ["key"], optional: [] },
+    load_pool: { required: ["key"], optional: ["sheet"] },
     guard_state: { required: [], optional: [] },
     refresh: { required: [], optional: [] },
     remount_data: { required: [], optional: ["confirm"] },
@@ -243,9 +243,10 @@ export const SCREEN_ACTIONS = {
     archive: { required: ["key"], optional: [] },
     activate: { required: ["key"], optional: [] },
     delete: { required: ["key"], optional: ["basis", "confirm"] },
-    register_excel: { required: ["name", "path"], optional: ["basis", "confirm", "note", "sheet"] },
-    register_pclm: { required: ["name", "view"], optional: ["basis", "confirm", "db", "note"] },
-    relink: { required: ["key", "path"], optional: ["basis", "confirm", "name", "note", "sheet"] },
+    inspect_sheets: { required: ["path"], optional: ["kind"] },
+    register_excel: { required: ["name", "path"], optional: ["basis", "confirm", "note", "sheet", "sheets"] },
+    register_pclm: { required: ["name", "view"], optional: ["basis", "confirm", "db", "note", "views"] },
+    relink: { required: ["key", "path"], optional: ["basis", "confirm", "name", "note", "sheet", "sheets"] },
     resolve_duplicate: { required: ["keep"], optional: ["basis", "confirm"] },
   },
   tpl: {
@@ -260,11 +261,20 @@ export const SCREEN_ACTIONS = {
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
   },
   tutorial: {
-    dismiss: { required: [], optional: [] },
-    resume: { required: [], optional: [] },
-    consume_moment: { required: ["milestone"], optional: [] },
-    focus_tier: { required: ["tier"], optional: [] },
-    clear_focus: { required: [], optional: [] },
+    preflight: { required: ["action", "screen"], optional: ["destination_screen", "scenario_id"] },
+    exit: { required: [], optional: ["transition_token"] },
+    later: { required: [], optional: [] },
+    start: { required: ["scenario_id"], optional: ["transition_token"] },
+    select: { required: ["scenario_id"], optional: ["transition_token"] },
+    pause: { required: [], optional: [] },
+    skip: { required: [], optional: [] },
+    resume: { required: [], optional: ["transition_token"] },
+    restart: { required: ["scenario_id"], optional: ["transition_token"] },
+    next: { required: [], optional: [] },
+    prepare_examples: { required: [], optional: ["derived"] },
+    cleanup_preview: { required: [], optional: [] },
+    cleanup: { required: ["token"], optional: [] },
+    reset_progress: { required: ["confirm"], optional: [] },
   },
 } as const;
 
@@ -323,7 +333,7 @@ export interface HostApi {
   import_template_file(screen: unknown): unknown;
   pick_templates_root(screen: unknown): unknown;
   pick_data_file(screen: unknown): unknown;
-  load_data_sheet(screen: unknown, path: unknown, sheet: unknown): unknown;
+  load_data_sheet(screen: unknown, path: unknown, sheet: unknown, confirmation?: unknown): unknown;
   copy_clipboard(screen: unknown, token?: unknown): unknown;
   pick_output_folder(screen: unknown): unknown;
   generate(screen: unknown, confirm_overwrite?: unknown, run_token?: unknown): unknown;

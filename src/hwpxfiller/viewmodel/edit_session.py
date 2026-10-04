@@ -33,12 +33,13 @@ section 으로 가려면 지금 patch 를 저장하거나 버려야 한다. 그�
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, ContextManager, Protocol
 
-from ..domain.job import DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
+from ..domain.job import JOB_MAPPING_AUTHORITY, DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
 from ..domain.mapping import MappingProfile
 from .job_editor_state import (
     EMPTY_PRESERVED,
@@ -349,7 +350,6 @@ class EditSession:
     reload_failure: str = ""
     notice_text: str = ""
     notice_level: str = "muted"
-    clean: bool = False
     # index + 확인 전 소유권/근거 — 모두 해제의 짧은 복원 슬롯.
     unconfirm_undo: "list[tuple[int, bool, bool, bool]]" = field(default_factory=list)
     binding_confirm_pending: bool = False
@@ -426,8 +426,6 @@ class EditSession:
     def has_unsaved_work(self) -> bool:
         if self.base is not None:
             return bool(self.dirty_sections() or self.dirty_extras())
-        if self.clean:
-            return False
         return bool(self.extras_diff(None)) or self.model is not None
 
     def model_key_now(self) -> tuple:
@@ -591,6 +589,9 @@ class EditSaveOperation:
         refresh_binding: "Callable[[], None]",
         saved: "Callable[[Job], object]",
         after_mapping_saved: "Callable[[str], object] | None" = None,
+        save_guard: "Callable[[], ContextManager[bool]] | None" = None,
+        validate_binding: "Callable[[Job], object] | None" = None,
+        unrepresented_legacy_rules: "Callable[[Job, Job, frozenset[str]], tuple[str, ...]] | None" = None,
     ) -> None:
         self.edit = edit
         self.store = store
@@ -601,6 +602,9 @@ class EditSaveOperation:
         self._refresh_binding = refresh_binding
         self._saved = saved
         self._after_mapping_saved = after_mapping_saved
+        self._save_guard = save_guard or (lambda: nullcontext(True))
+        self._validate_binding = validate_binding or (lambda _job: None)
+        self._unrepresented_legacy_rules = unrepresented_legacy_rules
 
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.edit.notice_text = text
@@ -685,12 +689,50 @@ class EditSaveOperation:
                 "block_reason": verdict.block_reason,
                 "blocked_field": verdict.blocked_field,
             }
-        # Target reread, confirmation check, preserved metadata, write, and landing reload
-        # share one lock; splitting them permits a concurrent writer to be silently lost.
-        with self.store.write_lock():
-            result = self._save_locked(p, verdict)
-        saved_job = self.store.load(str(result["saved_name"])) if result.get("ok") else None
-        return self._sync_saved_mapping(result, saved_job)
+        # Lock order: generation lease before registry write lock. Hold it through
+        # validation and atomic Job replacement so a run cannot start in the gap.
+        with self._save_guard() as admitted:
+            if not admitted:
+                return {
+                    "ok": False,
+                    "block_reason": "문서 생성이 진행 중입니다. 끝난 뒤에 Mapping을 저장하세요.",
+                }
+            with self.store.write_lock():
+                result = self._save_locked(p, verdict)
+        saved_job = None
+        if result.get("ok"):
+            try:
+                saved_job = self.store.load(str(result["saved_name"]))
+            except Exception as exc:
+                self._post_save_warning(result, f"저장한 작업을 다시 읽지 못했습니다: {exc}")
+        if saved_job is not None:
+            try:
+                self._saved(saved_job)
+            except Exception as exc:
+                self._post_save_warning(result, f"저장 알림을 갱신하지 못했습니다: {exc}")
+        # Clear/refresh execution evidence even when tutorial or landing reload failed.
+        if result.get("ok") and self._after_mapping_saved is not None:
+            try:
+                self._after_mapping_saved(str(result["saved_name"]))
+            except Exception as exc:
+                self._post_save_warning(result, f"실행 확인을 갱신하지 못했습니다: {exc}")
+        try:
+            self._refresh_binding()
+        except Exception as exc:
+            if result.get("ok"):
+                self._post_save_warning(result, f"연결 상태를 갱신하지 못했습니다: {exc}")
+            else:
+                raise
+        return result
+
+    def _post_save_warning(self, result: dict, detail: str) -> None:
+        previous = str(result.get("warning", ""))
+        prefix = "작업은 저장됐지만 "
+        if previous.startswith(prefix):
+            previous = previous[len(prefix):]
+        warning = prefix + (previous + "; " if previous else "") + detail
+        self._set_notice(warning, "warn")
+        result["warning"] = warning
 
     def _validate_save_request(self):
         return validate_save(
@@ -701,43 +743,6 @@ class EditSaveOperation:
             data_path=self.edit.data_path,
             media=template_media(self.edit.template_path) if self.edit.template_path else "hwpx",
         )
-
-    def _sync_saved_mapping(self, result: dict, saved_job: "Job | None") -> dict:
-        if saved_job is not None:
-            self._saved(saved_job)
-        if (
-            not result.get("ok")
-            or self._after_mapping_saved is None
-            or (
-                not (
-                    self.edit.context.target.startswith("binding/")
-                    or (
-                        saved_job is not None
-                        and saved_job.media == "hwpx"
-                        and bool(saved_job.authority_id)
-                    )
-                )
-            )
-        ):
-            self._refresh_binding()
-            return result
-        try:
-            self._after_mapping_saved(str(result["saved_name"]))
-        except Exception as exc:
-            # The job write is already committed. Report partial success instead of pretending
-            # that a binding follow-up failure rolled durable storage back.
-            message = f"작업 Mapping은 저장됐지만 Field Binding 검토를 완료하지 못했습니다: {exc}"
-            self._set_notice(message, "danger")
-            self._refresh_binding()
-            return {
-                "ok": False,
-                "legacy_saved": True,
-                "binding_commit_ok": False,
-                "saved_name": result["saved_name"],
-                "block_reason": message,
-            }
-        self._refresh_binding()
-        return result
 
     def _save_locked(self, p: dict, verdict) -> dict:
         missing = self._missing_template_block()
@@ -782,10 +787,44 @@ class EditSaveOperation:
             favorited_at=str(preserved["favorited_at"]),
             reviewed_rules=dict(preserved["reviewed_rules"]),
             authority_id=str(preserved["authority_id"]),
+            binding_authority=JOB_MAPPING_AUTHORITY,
         )
+        previous = self.store.load(job.name) if self.store.exists(job.name) else None
+        if previous is not None and previous.template_path == job.template_path:
+            # The editor can project fewer rows than a saved Mapping when an Option
+            # is inactive. Keep rules still belonging to this template unless the
+            # editor supplied that field (including an explicit empty decision).
+            present = {item.template_field for item in job.mapping.mappings}
+            schema_fields = (
+                set(self.edit.schema.field_names()) if self.edit.schema is not None else set()
+            )
+            for item in previous.mapping.mappings:
+                if item.template_field in schema_fields and item.template_field not in present:
+                    job.mapping.mappings.append(deepcopy(item))
+                    present.add(item.template_field)
+        self._validate_binding(job)
+        if previous is not None and self._unrepresented_legacy_rules is not None:
+            missing_rules = self._unrepresented_legacy_rules(
+                previous, job,
+                frozenset(self.edit.schema.field_names()) if self.edit.schema else frozenset(),
+            )
+            if missing_rules:
+                return {
+                    "ok": False,
+                    "block_reason": (
+                        "이전 연결 규칙을 현재 편집기에서 보존할 수 없습니다: "
+                        + ", ".join(missing_rules)
+                        + ". 연결을 검토한 뒤 다시 저장하세요."
+                    ),
+                }
         self.store.save(job, allow_overwrite=True)
         saved = self.edit.job_name
-        return self._land_saved_job_locked(saved)
+        try:
+            return self._land_saved_job_locked(saved)
+        except Exception as exc:
+            result = {"ok": True, "saved_name": saved}
+            self._post_save_warning(result, f"저장한 작업을 화면에 다시 싣지 못했습니다: {exc}")
+            return result
 
     def _land_saved_job_locked(self, saved: str) -> dict:
         saved_job = self.store.load(saved)

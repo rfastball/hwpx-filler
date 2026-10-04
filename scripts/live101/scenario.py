@@ -378,13 +378,14 @@ def run(ctx: ScenarioContext) -> dict:
         # 화면이 다시 마운트되는 동안 두 요소는 잠시 사라진다(스냅샷 null 렌더) —
         # 부재를 실패가 아니라 「아직」으로 접어야 착지를 기다릴 수 있다.
         "if(!d||!n)return false;"
-        "return d.value.length > 0 && n.textContent.trim() === '발주요청서';})()",
+        "return d.textContent.trim() === '발주목록.csv'"
+        " && n.textContent.trim() === '발주요청서';})()",
         "결속 데이터·작업 동시 착지",
         timeout=25.0,
         requires=["#jobDataLabel", "#jobActionName"],
     )
     seen["bound_work_arrives_with_its_data"] = str(
-        s.js("document.getElementById('jobDataLabel').value")
+        s.js("document.getElementById('jobDataLabel').textContent.trim()")
     ).strip()
 
     candidate = '#jobCandidates button[data-cand="발주요청서"]'
