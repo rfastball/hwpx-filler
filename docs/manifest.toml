@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/test_webapp_tutorial.py", "tests/test_native_positive.py"]
-source_sha256 = "534e7f76d7f19181784fd6c5c0abccd54a8237a0094a1eb1f350b89a64f16a30"
+source_sha256 = "409c5445a6c24262f86e84a70fe444832fb8e7712960b7ea4f8711b8d11cacd9"
 body_sha256 = "233304702d1aff7973dcd5151c83b018196667f0a224ff1ff20116f1ff0c6187"
 
 [[topic]]

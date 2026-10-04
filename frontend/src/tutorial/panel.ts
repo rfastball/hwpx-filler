@@ -95,11 +95,22 @@ export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
   return item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select";
 }
 
-/** The one lesson the open panel features: the unfinished current lesson, else the next unfinished one to start. */
+/** The one lesson the open panel features: the current lesson while it is in progress (a re-run of a completed
+ *  lesson included), else the next unfinished one to start. */
 export function featuredLesson(snapshot: TutorialSnapshot): Lesson | null {
+  const current = snapshot.scenarios.find((item) => item.id === snapshot.scenario_id);
+  if (current && (snapshot.active || snapshot.paused)) return current;
   const open = snapshot.scenarios.filter((item) => !item.completed);
   return open.find((item) => item.id === snapshot.scenario_id)
     ?? open.find((item) => item.recommended) ?? open[0] ?? null;
+}
+
+/** Featured primary: a running current lesson continues behind the panel ("close"), a paused current lesson resumes
+ *  even when it was completed before; any other lesson follows the row action. */
+export function featuredAction(item: Lesson, snapshot: TutorialSnapshot): string {
+  if (item.id === snapshot.scenario_id && snapshot.active) return "close";
+  if (item.id === snapshot.scenario_id && snapshot.paused) return "resume";
+  return lessonAction(item, snapshot);
 }
 
 type Geometry = { x: number; y: number; width: number; height: number; side: TutorialBeat["placement"] };
@@ -138,7 +149,7 @@ function Ring(props: { fraction: number }): ReactNode {
 
 type LessonControls = {
   snapshot: TutorialSnapshot; pending: boolean; practice: boolean;
-  choose(item: Lesson): void; restart(item: Lesson): void; close(): void;
+  run(item: Lesson, action: string): void; close(): void;
   act(action: "pause" | "skip" | "prepare_examples"): void; confirm(action: "reset_progress" | "cleanup"): void;
 };
 
@@ -151,6 +162,7 @@ export function TutorialLessons(props: LessonControls): ReactNode {
   const current = !!featured && featured.id === snapshot.scenario_id;
   const running = current && snapshot.active;
   const started = !!featured && (featured.checkpoint > 0 || current && (snapshot.active || snapshot.paused));
+  const primary = featured ? featuredAction(featured, snapshot) : null;
   const quiet = (label: string, onClick: () => void, extra?: Record<string, unknown>) =>
     h("button", { className: "btn quiet sm", type: "button", disabled: pending, onClick, ...extra }, label);
 
@@ -162,15 +174,16 @@ export function TutorialLessons(props: LessonControls): ReactNode {
     h("div", { className: "tutorial-featured-actions" },
       // A running lesson continues behind the panel: closing returns to it without a host transition.
       h("button", { id: "tutorialContinue", className: "btn primary sm", type: "button", disabled: pending,
-        onClick: () => running ? props.close() : props.choose(featured) }, started ? snapshot.copy.resume : snapshot.copy.start),
-      started && featured.checkpoint > 0 ? quiet(snapshot.copy.restart, () => props.restart(featured)) : null,
+        onClick: () => primary === "close" ? props.close() : props.run(featured, primary!) },
+        primary === "restart" ? snapshot.copy.restart : started ? snapshot.copy.resume : snapshot.copy.start),
+      started && featured.checkpoint > 0 && primary !== "restart" ? quiet(snapshot.copy.restart, () => props.run(featured, "restart")) : null,
       running ? quiet(snapshot.copy.pause, () => props.act("pause")) : null,
       running ? quiet(snapshot.copy.skip, () => props.act("skip")) : null)) : null;
 
   const rows = snapshot.scenarios.filter((item) => item.id !== featured?.id).map((item) => h("li", { key: item.id, className: item.completed ? "done" : undefined },
     h("button", { type: "button", className: "tutorial-row", disabled: pending,
       "aria-label": item.completed ? undefined : `${item.title}, ${snapshot.copy.choose_scenario}`,
-      onClick: () => props.choose(item) },
+      onClick: () => props.run(item, lessonAction(item, snapshot)) },
       h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? icon("check") : null),
       h("span", { className: "tutorial-row-title" }, item.title),
       !item.completed && item.checkpoint > 0 ? h("span", { className: "tutorial-progress" }, `${item.checkpoint}/${item.step_count}`) : null,
@@ -305,13 +318,11 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     } else if (beat?.screen === null || beat?.screen === screen || beat?.entry_screen === screen) setOpen(true);
     else if (beat) await act("return_to_step", { screen: beat.entry_screen ?? beat.screen });
   };
-  const chooseLesson = async (item: Lesson) => {
-    if (!snapshot) return;
-    const action = lessonAction(item, snapshot);
+  const runLesson = async (item: Lesson, action: string) => {
     if (await act(action, action === "resume" ? {} : { scenario_id: item.id })) setOpen(false);
   };
-  const restartLesson = async (item: Lesson) => {
-    if (await act("restart", { scenario_id: item.id })) setOpen(false);
+  const chooseLesson = async (item: Lesson) => {
+    if (snapshot) await runLesson(item, lessonAction(item, snapshot));
   };
 
   const confirmAction = async (action: "reset_progress" | "cleanup") => {
@@ -365,7 +376,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
       h(TutorialLessons, { snapshot, pending, practice,
-        choose: (item) => void chooseLesson(item), restart: (item) => void restartLesson(item),
+        run: (item, action) => void runLesson(item, action),
         close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
         act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,
     snapshot?.invitation.visible && !overlayBusy ? h("section", { className: "tutorial-invite", role: "region", "aria-labelledby": "tutorialInviteTitle" },

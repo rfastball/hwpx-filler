@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TutorialLessons, TutorialPanel, anchorSelector, featuredLesson, lessonAction, placeCoach } from "../../frontend/src/tutorial/panel.ts";
+import { TutorialLessons, TutorialPanel, anchorSelector, featuredAction, featuredLesson, lessonAction, placeCoach } from "../../frontend/src/tutorial/panel.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "prepare", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -139,7 +139,22 @@ test("semantic anchors resolve to real controls and coach flips/clamps to viewpo
 function lessons(snap, options = {}) {
   const noop = () => {};
   return renderToStaticMarkup(createElement(TutorialLessons, { snapshot: snap, pending: false, practice: !!options.practice,
-    choose: noop, restart: noop, close: noop, act: noop, confirm: noop }));
+    run: noop, close: noop, act: noop, confirm: noop }));
+}
+// TutorialLessons is hook-free, so its element tree can be walked and a button's handler invoked directly.
+function buttonById(node, id) {
+  if (!node || typeof node !== "object") return null;
+  if (Array.isArray(node)) { for (const child of node) { const hit = buttonById(child, id); if (hit) return hit; } return null; }
+  if (node.props?.id === id) return node;
+  return buttonById(node.props?.children, id);
+}
+function press(snap, id) {
+  const calls = [];
+  const tree = TutorialLessons({ snapshot: snap, pending: false, practice: false,
+    run: (item, action) => calls.push([action, item.id]), close: () => calls.push(["close"]),
+    act: (action) => calls.push([action]), confirm: (action) => calls.push([action]) });
+  buttonById(tree, id).props.onClick();
+  return calls;
 }
 const count = (html, pattern) => (html.match(pattern) || []).length;
 
@@ -219,4 +234,30 @@ test("finished curriculum lists every lesson as a restart row without a featured
   assert.doesNotMatch(html, /tutorial-featured|btn primary/);
   assert.equal(count(html, />COPY:restart</g), 8);
   assert.match(html, /8\/8</);
+});
+
+test("re-running a completed lesson keeps it featured with pause and skip while it runs", () => {
+  const snap = snapshot({ active: true, scenario_id: "contract_txt", checkpoint: 2 });
+  snap.scenarios[2] = { ...snap.scenarios[2], completed: true, checkpoint: 2 };
+  assert.equal(featuredLesson(snap)?.id, "contract_txt");
+  assert.equal(featuredAction(snap.scenarios[2], snap), "close");
+  const html = lessons(snap);
+  const featured = html.slice(html.indexOf("tutorial-featured"), html.indexOf("</section>"));
+  assert.match(featured, /tutorialFeaturedTitle">과정 3<.*tutorial-progress">2\/3</);
+  assert.match(featured, /id="tutorialContinue"[^>]*>COPY:resume<.*>COPY:restart<.*>COPY:pause<.*>COPY:skip</);
+  assert.equal(count(html, /과정 3</g), 1);
+  assert.deepEqual(press(snap, "tutorialContinue"), [["close"]]);
+});
+
+test("a paused re-run of a completed lesson resumes from the featured block instead of restarting", () => {
+  const snap = snapshot({ paused: true, scenario_id: "contract_txt", checkpoint: 2 });
+  snap.scenarios[2] = { ...snap.scenarios[2], completed: true, checkpoint: 2 };
+  assert.equal(lessonAction(snap.scenarios[2], snap), "restart");
+  assert.equal(featuredAction(snap.scenarios[2], snap), "resume");
+  const html = lessons(snap);
+  assert.match(html, /tutorialFeaturedTitle">과정 3</);
+  assert.match(html, /id="tutorialContinue"[^>]*>COPY:resume</);
+  assert.doesNotMatch(html, /COPY:pause|COPY:skip/);
+  assert.equal(count(html, /과정 3</g), 1);
+  assert.deepEqual(press(snap, "tutorialContinue"), [["resume", "contract_txt"]]);
 });
