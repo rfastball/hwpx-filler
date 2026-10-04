@@ -1315,3 +1315,25 @@ def test_practice_transition_guards_stale_tokens_and_keeps_exit_after_setup_fail
     assert tutorial.progress.selected is None
     assert tutorial.dispatch("exit", {}) == {"ok": True, "screen": "library", "notice": ""}
     assert settings.load_last_data_source() is None
+
+
+def test_blank_lesson_restart_seeds_a_new_job_instead_of_overwriting_saved_edits(tmp_path, monkeypatch):
+    """#1117: each blank round prepares fresh data, so its job is a new one beside the user's."""
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "blank_values"})
+    name = tutorial._context()["job_name"]
+    registry = app._job_registry
+    edited = registry.load(name)
+    edited.filename_pattern = "사용자 편집-{{계약번호}}"
+    registry.save(edited)
+
+    tutorial.dispatch("restart", {"scenario_id": "blank_values"})
+    context = tutorial._context()
+    assert context["job_name"] != name
+    assert registry.load(name).filename_pattern == "사용자 편집-{{계약번호}}"
+    assert registry.load(context["job_name"]).data_path == context["derived_data_path"]
+    assert tutorial.progress.record("blank_values")["checkpoint"] == 1

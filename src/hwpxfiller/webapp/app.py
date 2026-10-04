@@ -372,7 +372,8 @@ class WebFrontend:
         # 가진 넷이 이 컨트롤러의 `notify` 를 생성자 주입으로 받기 때문이다. VM 하나·영속
         # 하나를 이것만 소유하고, 나머지는 콜러블 한 개만 든다(푸시 sink 주입과 같은 규율).
         tutorial_ctrl = OnboardingController(
-            self._push, PracticeFiles(self._template_root.path(), home_dir(), job_registry),
+            self._push, PracticeFiles(self._template_root.path(), home_dir(), job_registry,
+                                       pool_registry),
             first_launch=first_launch,
         )
 

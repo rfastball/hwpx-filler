@@ -407,7 +407,10 @@ class OnboardingController:
         if lesson_id == "blank_values":
             mapping.mappings = [FieldMapping("단위", type="const") if item.template_field == "단위" else item
                                 for item in mapping.mappings]
-        name = f"튜토리얼 {BY_ID[lesson_id].title} {ctx['batch']}"
+        # Each blank round prepares a fresh data copy, so the job takes that copy's batch:
+        # a restart seeds a new job beside the user's saved one instead of re-saving over it.
+        batch = ctx["derived_entry"]["batch"] if lesson_id == "blank_values" else ctx["batch"]
+        name = f"튜토리얼 {BY_ID[lesson_id].title} {batch}"
         job = Job(name=name, template_path=template_path, mapping=mapping,
                   filename_pattern="구매입찰공고-{{입찰공고번호}}" if not is_txt else "",
                   data_path=data_path, data_sheet=sheet,
